@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    android:orientation="vertical" >
+
+    <TextView 
+    		android:id="@+id/brightness_text"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20px"
+        android:layout_marginLeft="50px"/>
+        
+		<SeekBar   
+			android:id="@+id/brightness_seek"  
+			android:layout_width="500px"  
+			android:layout_height="wrap_content"
+			android:layout_marginLeft="50px"/>
+			
+		<TextView 
+    		android:id="@+id/contrast_text"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20px"
+        android:layout_marginLeft="50px"/>
+        
+		<SeekBar   
+			android:id="@+id/contrast_seek"  
+			android:layout_width="500px"  
+			android:layout_height="wrap_content"
+			android:layout_marginLeft="50px"/> 
+			
+		<TextView 
+    		android:id="@+id/saturation_text"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20px"
+        android:layout_marginLeft="50px"/>
+        
+		<SeekBar   
+			android:id="@+id/saturation_seek"  
+			android:layout_width="500px"  
+			android:layout_height="wrap_content"
+			android:layout_marginLeft="50px"/>
+			
+		<TextView 
+    		android:id="@+id/hue_text"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20px"
+        android:layout_marginLeft="50px"/>
+        
+		<SeekBar   
+			android:id="@+id/hue_seek"  
+			android:layout_width="500px"  
+			android:layout_height="wrap_content"
+			android:layout_marginLeft="50px"/> 
+
+    <Button
+        android:id="@+id/remove_output"
+        android:layout_width="500px"
+        android:layout_height="wrap_content"
+        android:text="@string/remove_output" 
+        android:layout_marginTop="20px"
+        android:layout_marginLeft="50px"/>
+    
+
+</LinearLayout>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent" android:orientation="vertical" android:layout_gravity="center" android:background="@drawable/bg1"> 
+<TextView  
+    android:text="@string/hello" android:layout_width="wrap_content" android:layout_height="wrap_content"
+    android:layout_gravity="center" android:textSize="20sp" android:layout_marginTop="5px"/>
+<Button android:id="@+id/button1" android:layout_height="wrap_content" android:text="@string/displayformat720p50" android:layout_width="500px" android:layout_gravity="center" android:textSize="20sp" android:layout_marginTop="00px"></Button>
+<Button android:id="@+id/button2" android:layout_height="wrap_content" android:text="@string/displayformat720p60" android:layout_width="500px" android:layout_gravity="center" android:textSize="20sp" android:layout_marginTop="10px"></Button>
+<Button android:id="@+id/button3" android:layout_height="wrap_content" android:text="@string/displayformat1080i50" android:layout_width="500px" android:layout_gravity="center" android:textSize="20sp" android:layout_marginTop="10px"></Button>
+<Button android:id="@+id/button4" android:layout_height="wrap_content" android:text="@string/displayformat1080i60" android:layout_width="500px" android:layout_gravity="center" android:textSize="20sp" android:layout_marginTop="10px"></Button>
+<Button android:id="@+id/button5" android:layout_height="wrap_content" android:text="@string/displayformat1080p50" android:layout_width="500px" android:layout_gravity="center" android:textSize="20sp" android:layout_marginTop="10px"></Button>
+<Button android:id="@+id/button6" android:layout_height="wrap_content" android:text="@string/displayformat1080p60" android:layout_width="500px" android:layout_gravity="center" android:textSize="20sp" android:layout_marginTop="10px"></Button>
+<Button android:id="@+id/button7" android:layout_height="wrap_content" android:text="@string/displayformat720p603d" android:layout_width="500px" android:layout_gravity="center" android:textSize="20sp" android:layout_marginTop="10px"></Button>
+<Button android:id="@+id/button8" android:layout_height="wrap_content" android:text="@string/displayformat1080p24" android:layout_width="500px" android:layout_gravity="center" android:textSize="20sp" android:layout_marginTop="10px"></Button>
+<Button android:id="@+id/button9" android:layout_height="wrap_content" android:text="@string/displayformat1080p483d" android:layout_width="500px" android:layout_gravity="center" android:textSize="20sp" android:layout_marginTop="10px"></Button>
+<Button android:id="@+id/button10" android:layout_height="wrap_content" android:text="@string/displayformat2160p30" android:layout_width="500px" android:layout_gravity="center" android:textSize="20sp" android:layout_marginTop="10px"></Button>
+
+  <TextView android:text="@string/comments" android:layout_gravity="center" android:id="@+id/textView3" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="20sp" android:layout_marginTop="10px"></TextView>
+</LinearLayout>
