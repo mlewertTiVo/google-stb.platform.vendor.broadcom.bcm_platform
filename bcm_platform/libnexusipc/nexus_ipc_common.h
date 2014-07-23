@@ -283,9 +283,8 @@ static void get_initial_output_formats_from_property(NEXUS_VideoFormat *hd_forma
     {
         if (strncmp((char *) value, "1080p",5)==0)
         {
-            /* Note: V3D needs 720p surface to work on, later in 
-               NexusService::instantiate)() the display resolution is changed to 1080p */
-            fmt = NEXUS_VideoFormat_e720p;
+            LOGW("Set output format to e1080p");
+            fmt = NEXUS_VideoFormat_e1080p;
         }
         else if(strncmp((char *) value, "3d720p",6)==0)
         {
@@ -322,7 +321,7 @@ static void get_initial_output_formats_from_property(NEXUS_VideoFormat *hd_forma
     }
     else
     {
-        LOGW("Set output format to default e720p");
+        LOGW("Set SD output format to default Ntsc");
         fmt = NEXUS_VideoFormat_eNtsc;
     }
     if(sd_format) *sd_format = fmt;

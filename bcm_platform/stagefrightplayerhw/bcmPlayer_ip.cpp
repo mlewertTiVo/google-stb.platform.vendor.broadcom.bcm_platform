@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2013 Broadcom Corporation
+ *    (c)2010-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -36,86 +36,10 @@
  * ANY LIMITED REMEDY.
  *
  * $brcm_Workfile: bcmPlayer_ip.cpp $
- * $brcm_Revision: 17 $
- * $brcm_Date: 2/14/13 1:36p $
- * 
- * Module Description:
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/stagefrightplayerhw/bcmPlayer_ip.cpp $
- * 
- * 17   2/14/13 1:36p mnelis
- * SWANDROID-336: Refactor bcmplayer_ip code
- * 
- * 15   1/7/13 1:14p mnelis
- * SWANDROID-293: Don't call B_Os_Uninit twice
- * 
- * 14   11/15/12 10:57a mnelis
- * SWANDROID-165: Set an Androidy user-agent
- * 
- * 13   11/6/12 2:29p mnelis
- * SWANDROID-189: Call B_Os_Uninit at uninit time.
- * 
- * 12   10/17/12 5:52p mnelis
- * SWANDROID-189: Cleanup URL parsing code, avoiding globals to store bits
- *  and pieces.
- * 
- * 11   9/24/12 6:47p mnelis
- * SWANDROID-78: Fix HTML5 streaming behavior
- * 
- * 10   9/19/12 2:02p mnelis
- * SWANDROID-78: General tidyup
- * 
- * 9   9/14/12 1:28p mnelis
- * SWANDROID-78: Use NEXUS_ANY_ID for STC channel and store playbackip in
- *  nexus_handle struct
- * 
- * 8   6/21/12 3:08p franktcc
- * SWANDROID-120: Adding error callback function
- * 
- * 7   6/5/12 2:39p kagrawal
- * SWANDROID-108:Added support to use simple decoder APIs
- * 
- * 6   2/24/12 4:12p kagrawal
- * SWANDROID-12: Dynamic client creation using IPC over binder
- * 
- * 5   2/8/12 2:54p kagrawal
- * SWANDROID-12: Initial support for Nexus client-server mode
- * 
- * 4   12/29/11 6:45p franktcc
- * SW7425-2069: bcmPlayer code refactoring.
- * 
- * 3   12/13/11 10:27a franktcc
- * SW7420-1906: Adding capability of setAspectRatio to ICS
- * 
- * 2   12/10/11 7:19p franktcc
- * SW7425-1845: Adding end of stream callback to nexus media player
- * 
- * 2   11/28/11 6:11p franktcc
- * SW7425-1845: Adding end of stream callback to nexus media player.
- * 
- * 6   10/19/11 4:08p franktcc
- * SW7425-1540: Correct uninit sequence.
- * 
- * 5   9/22/11 5:00p zhangjq
- * SW7425-1328 : support file handle type of URI in bcmPlayer
- * 
- * 4   8/25/11 7:31p franktcc
- * SW7420-2020: Enable PIP/Dual Decode
- * 
- * 3   8/22/11 5:35p zhangjq
- * SW7425-1172 : adjust architecture of bcmPlayer
- * 
- * 1   8/22/11 4:05p zhangjq
- * SW7425-1172 : adjust architecture of bcmPlayer
  *
  *****************************************************************************/
 // Verbose messages removed
 // #define LOG_NDEBUG 0
-
-// comment this out to disable buffer monitoring thread
-// #define ENABLE_BUFFER_MONITORING 1
 
 #define LOG_TAG "bcmPlayer_ip"
 
@@ -130,17 +54,23 @@
 #include "ip_psi.h"
 
 extern bcmPlayer_base_nexus_handle_t nexus_handle[MAX_NEXUS_PLAYER];
+extern "C" int get_hostname_uri_from_url(char *url, char *hostname, unsigned int *portnum, char **uri);
 
 #define BCMPLAYER_IP_DBG LOGV("bcmPlayer_ip : %s : Enter", __FUNCTION__);
 
 bool ipSetOpenSessionParams(int iPlayerIndex, B_PlaybackIpSessionOpenSettings *sessionOpenSettings);
 bool ipSetSetupSessionParams(BcmPlayerIpHandle *ipHandle, B_PlaybackIpSessionSetupSettings *sessionSetupSettings);
-bool ipSetupNexusResources(bcmPlayer_base_nexus_handle_t *nexus_handle, int iPlayerIndex);
+bool ipSetupNexusResources(bcmPlayer_base_nexus_handle_t *nexus_handle);
 void ipSetTransportUsage(BcmPlayerIpHandle *ipHandle);
 static void preChargeNetworkBuffer (unsigned int preChargeTime /* in sec */, BcmPlayerIpHandle* ipHandle);
 static void *bcmPlayerIpBufferMonitoringThread (void *arg);
+static void bcmPlayerIp_endOfStreamCallback (void *context, int param);
 NEXUS_PidChannelHandle ipGetVideoPidChannel(bcmPlayer_base_nexus_handle_t *nexusHandle);
 NEXUS_PidChannelHandle ipGetAudioPidChannel(bcmPlayer_base_nexus_handle_t *nexusHandle);
+NEXUS_PidChannelHandle ipGetPcrPidChannel(bcmPlayer_base_nexus_handle_t *nexusHandle);
+
+// comment this out to disable buffer monitoring thread
+// #define ENABLE_BUFFER_MONITORING 1
 
 // Configurables.
 /* Data cache size: 30 sec worth for a max bitrate of 3Mbps */
@@ -150,6 +80,8 @@ NEXUS_PidChannelHandle ipGetAudioPidChannel(bcmPlayer_base_nexus_handle_t *nexus
 #define BCMPLAYER_IP_BUFF_THREAD_LOOP_MSEC 500
 #define BCMPLAYER_IP_PRECHARGE_TIME_SEC 20
 #define BCMPLAYER_IP_PRECHARGE_INIT_TIME_SEC 5
+
+#define BCMPLAYER_IP_NETWORK_MAX_JITTER 300 /* in msec */
 
 // Work-around for audio issues in SWANDROID-372
 #define WA_SWANDROID_372 1
@@ -169,14 +101,12 @@ static void preChargeNetworkBuffer (unsigned int preChargeTime /* in secs */, Bc
     int                     noChangeInBufferDepth = 0;
     int                     BufferingTime = 0;
 
-    if (ipHandle == NULL)
-    {
+    if (ipHandle == NULL) {
         LOGE ("%s: invalid ipHandle", __FUNCTION__);
         return;
     }
 
-    if (ipHandle->endOfStream == true) 
-    {
+    if (ipHandle->endOfStream == true) {
         LOGE("Buffering Aborted due to EOF");
         return;
     }
@@ -184,21 +114,18 @@ static void preChargeNetworkBuffer (unsigned int preChargeTime /* in secs */, Bc
     /* check how much data is currently buffered: this is from the last seek point */
     BKNI_Sleep (100);    /* sleep little bit to get IP thread finish off any buffering */
     rc = B_PlaybackIp_GetStatus (ipHandle->playbackIp, &playbackIpStatus);
-    if (rc) 
-    {
+    if (rc) {
         LOGE ("NEXUS Error (%d) at %d, returning...", rc, __LINE__);
         return;
     }
 
-    if (playbackIpStatus.curBufferDuration >= (1000*ipHandle->preChargeTime)) 
-    {
+    if (playbackIpStatus.curBufferDuration >= (1000*ipHandle->preChargeTime)) {
         LOGV ("Already buffered %lu milli-sec of data, required %u milli-sec of buffer...",
               playbackIpStatus.curBufferDuration, preChargeTime*1000);
         return;
     }
 
-    if (playbackIpStatus.curBufferDuration >= BCMPLAYER_IP_MAX_BUFF_SEC*1000) 
-    {
+    if (playbackIpStatus.curBufferDuration >= BCMPLAYER_IP_MAX_BUFF_SEC*1000) {
         LOGV ("Buffer Full %d  / %d ", (int)playbackIpStatus.curBufferDuration, (int)playbackIpStatus.maxBufferDuration);
         return; 
     }   
@@ -209,16 +136,14 @@ static void preChargeNetworkBuffer (unsigned int preChargeTime /* in secs */, Bc
           playbackIpStatus.curBufferDuration, preChargeTime*1000);
 
     rc = B_PlaybackIp_GetSettings(ipHandle->playbackIp, &playbackIpSettings);
-    if (rc) 
-    {
+    if (rc) {
         LOGE ("NEXUS Error (%d) at %d, returning...", rc, __LINE__);
         return;
     }
 
     playbackIpSettings.preChargeBuffer = true;
     rc = B_PlaybackIp_SetSettings(ipHandle->playbackIp, &playbackIpSettings);
-    if (rc) 
-    {
+    if (rc) {
         LOGE ("NEXUS Error (%d) at %d, returning...", rc, __LINE__);
         return;
     }
@@ -226,18 +151,15 @@ static void preChargeNetworkBuffer (unsigned int preChargeTime /* in secs */, Bc
     BufferingTime=0;
 
     /* now monitor the buffer depth until it reaches the desired preChargeTime value */
-    do 
-    {
+    do {
         BKNI_Sleep (100);    /* sleep little bit to get IP thread finish off any buffering */
 
-        if (ipHandle->endOfStream == true)
-        {
+        if (ipHandle->endOfStream == true) {
             break;
         }
 
         rc = B_PlaybackIp_GetStatus(ipHandle->playbackIp, &playbackIpStatus);
-        if (rc) 
-        {
+        if (rc) {
             LOGE ("NEXUS Error (%d) at %d, returning...", rc, __LINE__);
             return;
         }
@@ -247,33 +169,27 @@ static void preChargeNetworkBuffer (unsigned int preChargeTime /* in secs */, Bc
               (int)playbackIpStatus.maxBufferDuration, 
               preChargeTime*1000);
 
-        if (playbackIpStatus.curBufferDuration >= playbackIpStatus.maxBufferDuration) 
-        {
+        if (playbackIpStatus.curBufferDuration >= playbackIpStatus.maxBufferDuration) {
             LOGV ("currently buffered %lu max duration %d milli-sec worth data, so done buffering",
                   (long unsigned int)playbackIpStatus.curBufferDuration, 
                   (int)playbackIpStatus.maxBufferDuration);
             break;
         }
 
-        if (!prevBufferDuration) 
-        {
+        if (!prevBufferDuration) {
             prevBufferDuration = playbackIpStatus.curBufferDuration;
         } 
-        else 
-        {
-            if (prevBufferDuration == playbackIpStatus.curBufferDuration) 
-            {
+        else {
+            if (prevBufferDuration == playbackIpStatus.curBufferDuration) {
                 noChangeInBufferDepth++;
             } 
-            else  
-            {
+            else  {
                 noChangeInBufferDepth = 0;
                 prevBufferDuration = playbackIpStatus.curBufferDuration;
             }
         }
         BufferingTime++;
-        if (noChangeInBufferDepth >= 1000) 
-        {
+        if (noChangeInBufferDepth >= 1000) {
             LOGV ("Warning: can't buffer up to the required buffer depth,"
                   "currently buffered %lu max duration %d milli-sec worth data, so done buffering",
                   (long unsigned int)playbackIpStatus.curBufferDuration,
@@ -281,8 +197,7 @@ static void preChargeNetworkBuffer (unsigned int preChargeTime /* in secs */, Bc
             break;
         }
         
-        if (ipHandle->runMonitoringThread == false)
-        {
+        if (ipHandle->runMonitoringThread == false) {
             LOGV("exiting %s", __FUNCTION__);
             return;
         }
@@ -294,20 +209,17 @@ static void preChargeNetworkBuffer (unsigned int preChargeTime /* in secs */, Bc
     /* tell IP Applib to stop buffering */
     playbackIpSettings.preChargeBuffer = false;
     rc = B_PlaybackIp_SetSettings (ipHandle->playbackIp, &playbackIpSettings);
-    if (rc) 
-    {
+    if (rc) {
         LOGE("NEXUS Error (%d)", rc);
         return;
     }
 
-    if (ipHandle->endOfStream) 
-    {
+    if (ipHandle->endOfStream) {
         LOGE ("Buffering Aborted due to EOF, buffered %lu milli-sec",
               playbackIpStatus.curBufferDuration);
         return;
     } 
-    else if (playbackIpStatus.serverClosed) 
-    {
+    else if (playbackIpStatus.serverClosed) {
         LOGV ("Can't Buffer anymore due to server closed connection "
               "buffered %lu milli-sec worth of data...",
               playbackIpStatus.curBufferDuration);
@@ -315,8 +227,7 @@ static void preChargeNetworkBuffer (unsigned int preChargeTime /* in secs */, Bc
         // but we may not have played all this data, so let playback finish
         return;
     } 
-    else 
-    {
+    else {
         LOGV ("Buffering Complete (buffered %lu milli-sec worth of data)"
               ", serverClosed %d...",
               playbackIpStatus.curBufferDuration, playbackIpStatus.serverClosed);
@@ -327,9 +238,10 @@ static void preChargeNetworkBuffer (unsigned int preChargeTime /* in secs */, Bc
 
 static void *bcmPlayerIpBufferMonitoringThread (void *arg)
 {
-    int                       iPlayerIndex;
     BERR_Code                 rc = B_ERROR_SUCCESS;
-    BcmPlayerIpHandle*        ipHandle = (BcmPlayerIpHandle *)arg;
+    int                       iPlayerIndex;
+    bcmPlayer_base_nexus_handle_t *nexusHandle = (bcmPlayer_base_nexus_handle_t *)arg;
+    BcmPlayerIpHandle*        ipHandle = nexusHandle->ipHandle;
     B_PlaybackIpStatus        playbackIpStatus;
     NEXUS_VideoDecoderStatus  vdecoderStatus;
     NEXUS_AudioDecoderStatus  adecoderStatus;
@@ -342,131 +254,99 @@ static void *bcmPlayerIpBufferMonitoringThread (void *arg)
 
     nexusRC = NEXUS_SUCCESS;
     
-    if (ipHandle == NULL)
-    {
+    if (ipHandle == NULL) {
         LOGE ("invalid ipHandle");
         return NULL;
     }
 
-    if (ipHandle->usePlaypump)
-    {
-        LOGE ("not using playback");
-        return NULL;
-    }
+    iPlayerIndex = nexusHandle->iPlayerIndex;
 
-    if (nexus_handle[0].ipHandle == ipHandle)
-    {
-        iPlayerIndex = 0;
-    }
-    else if (nexus_handle[1].ipHandle == ipHandle)
-    {
-        iPlayerIndex = 1;
-    }
-    else
-    {
-        LOGE("invalid ipHandle %p", ipHandle);
+    if (ipHandle->usePlaypump) {
+        LOGE ("not using playback");
         return NULL;
     }
 
     playbackIpStatus.serverClosed = false;
 
     /* monitor playback buffer */
-    while (ipHandle->runMonitoringThread == true)
-    {
-        while (ipHandle->monitoringBuffer == true)
-        {
+    while (ipHandle->runMonitoringThread == true) {
+        while (ipHandle->monitoringBuffer == true) {
             rc = B_PlaybackIp_GetStatus (ipHandle->playbackIp, &playbackIpStatus);
-            if (rc != B_ERROR_SUCCESS) 
-            {
+            if (rc != B_ERROR_SUCCESS) {
                 LOGE("%s: B_PlaybackIp_GetStatus returned : %d\n", __FUNCTION__, rc);
                 return NULL;
             }
             LOGV("eos %d serverclosed %d", ipHandle->endOfStream, ipHandle->endOfStream);
 
-            while ((ipHandle->endOfStream == false) && (ipHandle->endOfStream == false))
-            {
+            while ((ipHandle->endOfStream == false) && (ipHandle->endOfStream == false)) {
                 /* Get status */
-                if (nexus_handle[iPlayerIndex].simpleVideoDecoder == NULL)
-                {
+                if (nexusHandle->simpleVideoDecoder == NULL) {
                   LOGE("Invalid simpleVideoDecoder handle\n");
                   return NULL;
                 }
-                nexusRC = NEXUS_SimpleVideoDecoder_GetStatus(nexus_handle[iPlayerIndex].simpleVideoDecoder, &vdecoderStatus );
-                if (nexusRC != NEXUS_SUCCESS)
-                {
+                nexusRC = NEXUS_SimpleVideoDecoder_GetStatus(nexusHandle->simpleVideoDecoder, &vdecoderStatus );
+                if (nexusRC != NEXUS_SUCCESS) {
                     LOGE("NEXUS_SimpleVideoDecoder_GetStatus error %d", nexusRC);
                 }
-                else
-                {
+                else {
                     LOGV ("video %.4dx%.4d, pts %#x, (ptsStcDiff %d) fifoSize=%d, fifoDepth=%d, fullness %d%% queueDepth=%d",
                       vdecoderStatus.source.width, vdecoderStatus.source.height, vdecoderStatus.pts, vdecoderStatus.ptsStcDifference,
                       vdecoderStatus.fifoSize, vdecoderStatus.fifoDepth,
                       vdecoderStatus.fifoSize?(vdecoderStatus.fifoDepth*100)/vdecoderStatus.fifoSize:0,
                       vdecoderStatus.queueDepth);
                 }
-                if (nexus_handle[iPlayerIndex].simpleAudioDecoder == NULL)
-                {
+                if (nexusHandle->simpleAudioDecoder == NULL) {
                     LOGE("Invalid simpleAudioDecoder handle\n");
                     return NULL;
                 }
 
-                nexusRC = NEXUS_SimpleAudioDecoder_GetStatus(nexus_handle[iPlayerIndex].simpleAudioDecoder, &adecoderStatus );
-                if (nexusRC != NEXUS_SUCCESS)
-                {
+                nexusRC = NEXUS_SimpleAudioDecoder_GetStatus(nexusHandle->simpleAudioDecoder, &adecoderStatus );
+                if (nexusRC != NEXUS_SUCCESS) {
                     LOGE("NEXUS_SimpleAudioDecoder_GetStatus error %d", nexusRC);
                 }
-                else
-                {
+                else {
                     LOGV ("audio %s:[ms=%d] fifoDepth=%d, fifoSize=%d, queuedFrames=%d", __FUNCTION__,
                     (int)adecoderStatus.pts/45, adecoderStatus.fifoDepth, adecoderStatus.fifoSize, adecoderStatus.queuedFrames); 
                 }
                 rc = B_PlaybackIp_GetStatus(ipHandle->playbackIp, &playbackIpStatus);
-                if (rc != B_ERROR_SUCCESS) 
-                {
+                if (rc != B_ERROR_SUCCESS) {
                     LOGE("%s: B_PlaybackIp_GetStatus returned : %d\n", __FUNCTION__, rc);
                     return NULL;
                 }
 
-                if (nexus_handle[iPlayerIndex].playpump == NULL)
-                {
+                if (nexusHandle->playpump == NULL) {
                     LOGE ("Invalid playpump handle\n");
                     return NULL;
                 }
-                NEXUS_Playpump_GetStatus(nexus_handle[iPlayerIndex].playpump, &ppStatus);
+                NEXUS_Playpump_GetStatus(nexusHandle->playpump, &ppStatus);
 
-                if (nexus_handle[iPlayerIndex].playback == NULL)
-                {
+                if (nexusHandle->playback == NULL) {
                     LOGE ("Invalid nexus playback handle\n");
                     return NULL;
                 }
-                NEXUS_Playback_GetStatus(nexus_handle[iPlayerIndex].playback, &pbStatus);
+                NEXUS_Playback_GetStatus(nexusHandle->playback, &pbStatus);
                 LOGV ("playback: ip pos %lu, pb pos %lu, fed %lu, first %lu, last %lu, PB buffer depth %d, size %d, played bytes %lld", 
                       pbStatus.position, pbStatus.readPosition, pbStatus.readPosition - pbStatus.position,
                       pbStatus.first, pbStatus.last, ppStatus.fifoDepth, ppStatus.fifoSize, ppStatus.bytesPlayed);
 
-                if (ipHandle->psi.mpegType == NEXUS_TransportType_eMp4) 
-                {
+                if (ipHandle->psi.mpegType == NEXUS_TransportType_eMp4) {
                       curBufferDuration = pbStatus.readPosition - pbStatus.position;
                       LOGV ("buffered %d mill-seconds worth of MP4 content", curBufferDuration);
                 }
-                else if (ipHandle->psi.mpegType == NEXUS_TransportType_eAsf) 
-                {
+                else if (ipHandle->psi.mpegType == NEXUS_TransportType_eAsf) {
                     curBufferDuration = (ppStatus.mediaPts -
                     (ipHandle->psi.videoPid?vdecoderStatus.pts:adecoderStatus.pts))/45;
                     LOGV ("buffered %d milli-seconds worth of ASF content", curBufferDuration);
                 } 
-                else 
-                {
+                else {
                     // we need to use alternate means to determine the amount of buffering in system since
                     // such formats are not processed in sw and thus we don't know the curBufferDepth
                     // instead, we can detect the underflow condition by monitoring the last pts displayed,
                     //once it doesn't change, we are definitely underflowing and thus can precharge
                     // by default, set curBufferDuration to a higher number to avoid precharging
                     curBufferDuration = 99999; // set to some large value
-                    if (ipHandle->prevPts) 
-                    {
-                        if (ipHandle->prevPts == (ipHandle->psi.videoPid?vdecoderStatus.pts:adecoderStatus.pts)) 
-                        {
+                    if (ipHandle->prevPts) {
+                        if (ipHandle->prevPts == (ipHandle->psi.videoPid?vdecoderStatus.pts:adecoderStatus.pts)) {
                             /* pts hasn't changed, so we are underflowing, set flag to precharge */
                             LOGV ("pts hasn't changed, so we are underflowing, prev pts,"
                             "%u, cur pts %u, pre charge time %d",
@@ -481,14 +361,12 @@ static void *bcmPlayerIpBufferMonitoringThread (void *arg)
                     ipHandle->psi.videoPid?vdecoderStatus.pts:adecoderStatus.pts);
                 }
 
-                if (ipHandle->preChargeTime && (curBufferDuration < 200) && (curBufferDuration != 0))
-                {
+                if (ipHandle->preChargeTime && (curBufferDuration < 200) && (curBufferDuration != 0)) {
                     // we are precharging & current buffer level is below the low water mark, so start 
                     // pre-charging however, sleep quickly to see if underflow is due to EOF. Otherwise,
                     // we will Pause Playback too quickly before we get the EOF callback. Sleep gives 
                     // Nexus Playback a chance to invoke the eof callback.
-                    if (ipHandle->endOfStream == true) 
-                    {
+                    if (ipHandle->endOfStream == true) {
                         LOGE ("Underflow is due to EOF, breaking out...");
                         break;
                     }
@@ -496,26 +374,22 @@ static void *bcmPlayerIpBufferMonitoringThread (void *arg)
                     /* notify app that the ip player is pausing temporarily to buffer more data. */
                     bcmPlayer_bufferingPauseStartCallback (iPlayerIndex);
 
-                    if (NEXUS_Playback_Pause(nexus_handle[iPlayerIndex].playback))
-                    {
+                    if (NEXUS_Playback_Pause(nexusHandle->playback)) {
                         LOGE ("ERROR: Failed to pause Nexus playback");
                         break;
                     }
                     LOGV ("Paused Nexus Playback...");
 
                     /* Now pre-charge the network buffer */
-                    if (ipHandle->firstBuff)
-                    {
+                    if (ipHandle->firstBuff) {
                         preChargeNetworkBuffer (BCMPLAYER_IP_PRECHARGE_INIT_TIME_SEC, ipHandle);
                         ipHandle->firstBuff = false;
                     }
-                    else
-                    {
+                    else {
                         preChargeNetworkBuffer (ipHandle->preChargeTime, ipHandle);
                     }
 
-                    if (ipHandle->runMonitoringThread == false)
-                    {
+                    if (ipHandle->runMonitoringThread == false) {
                         ipHandle->monitoringBuffer = false;
                         /* need to return quickly from uninit */
                         LOGV ("exiting %s", __FUNCTION__);
@@ -526,16 +400,14 @@ static void *bcmPlayerIpBufferMonitoringThread (void *arg)
                     /* Notify app that the ip player is resuming playback after buffering. */
                     bcmPlayer_bufferingPauseEndCallback (iPlayerIndex);
 
-                    if (NEXUS_Playback_Play(nexus_handle[iPlayerIndex].playback)) 
-                    {
+                    if (NEXUS_Playback_Play(nexusHandle->playback)) {
                         LOGE ("ERROR: Failed to play Nexus playback from pause");
                         break;
                     }
                 }
                 BKNI_Sleep(1000);
             }
-            if (ipHandle->endOfStream == true)
-            {
+            if (ipHandle->endOfStream == true) {
                 ipHandle->monitoringBuffer = false;
             }
             BKNI_Sleep(100);
@@ -549,13 +421,13 @@ static void *bcmPlayerIpBufferMonitoringThread (void *arg)
 static void bcmPlayer_uninit_ip (int iPlayerIndex) 
 {
     B_PlaybackIpError   rc;
-    BcmPlayerIpHandle*  ipHandle = nexus_handle[iPlayerIndex].ipHandle;
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+    BcmPlayerIpHandle*  ipHandle = nexusHandle->ipHandle;
     uint32_t            waitCount = 0;
 
     BCMPLAYER_IP_DBG;
 
-    if (ipHandle)
-    {
+    if (ipHandle) {
         /* Make sure buffering is stopped. */
         /* Can't do playback IP pause in B_PlaybackIpState_eBuffering. */
         /* Activity Manager expects reply within 500 ms */
@@ -563,79 +435,35 @@ static void bcmPlayer_uninit_ip (int iPlayerIndex)
         ipHandle->runMonitoringThread = false;
 
         rc = B_PlaybackIp_SessionStop(ipHandle->playbackIp);
-        if (rc != B_ERROR_SUCCESS) 
-        {
+        if (rc != B_ERROR_SUCCESS) {
             LOGE("%s: B_PlaybackIp_SessionStop returned : %d\n", __FUNCTION__, rc);
         }
 
-        if ((ipHandle->endOfStream == false) && (ipHandle->monitoringBuffer == true))
-        {
+        if (ipHandle->endOfStream == false) {
             ipHandle->endOfStream = true;  
-            LOGV("wait for buffering thread to stop\n");
-            do 
-            {
+
+            while (ipHandle->monitoringBuffer == true && waitCount < 20) {
+                LOGV("%s: waiting for buffering thread to stop (count %d)...", __FUNCTION__, (int)waitCount);
                 BKNI_Sleep (100);
                 waitCount++;
-                LOGV("%s waiting for buffering thread to loop %d", __FUNCTION__, (int)waitCount);
-            } while ((ipHandle->monitoringBuffer == true) && (waitCount < 20));
+            }
         }
 
-        if (bcmPlayer_ip_bufferingThreadId[iPlayerIndex] != (pthread_t)NULL)
-        {
+        if (bcmPlayer_ip_bufferingThreadId[iPlayerIndex] != (pthread_t)NULL) {
             LOGV ("ending buffer monitoring thread");
             rc = pthread_join (bcmPlayer_ip_bufferingThreadId[iPlayerIndex], NULL);
-            if (rc !=0)
-            {
+            if (rc !=0) {
                 LOGE ("%s: pthread_join buffering monitoring thread failed %d", __FUNCTION__, rc);
             }
-            else
-            {
+            else {
                 bcmPlayer_ip_bufferingThreadId[iPlayerIndex] = (pthread_t)NULL;
             }
         }
     }
 
+    nexusHandle->file = NULL;
     bcmPlayer_uninit_base(iPlayerIndex);
-
-    if (ipHandle) {
-        if (ipHandle->playbackIp) {
-            rc = B_PlaybackIp_SessionStop(ipHandle->playbackIp);
-            if (rc != B_ERROR_SUCCESS) {
-                LOGD("B_PlaybackIp_SessionStop rc = %d\n", rc);
-            }
-
-            rc = B_PlaybackIp_SessionClose(ipHandle->playbackIp);
-            if (rc != B_ERROR_SUCCESS) {
-                LOGD("B_PlaybackIp_SessionClose rc = %d\n", rc);
-            }
-
-            rc = B_PlaybackIp_Close(ipHandle->playbackIp);
-            if (rc != B_ERROR_SUCCESS) {
-                LOGD("B_PlaybackIp_Close rc = %d\n", rc);
-            }
-
-            if (ipHandle->sslCtx) {
-                B_PlaybackIp_SslUnInit(ipHandle->sslCtx);
-                ipHandle->sslCtx = NULL;
-            }
-        }
-
-        if (ipHandle->timebase) {
-            NEXUS_Timebase_Close(ipHandle->timebase);
-        }
-
-        ipHandle->endOfStream = false;
-
-        free(ipHandle);
-        ipHandle = NULL;
-
-        B_Os_Uninit();
-    }
-
-    if (nexus_handle[iPlayerIndex].stcChannel) {
-        NEXUS_StcChannel_Close(nexus_handle[iPlayerIndex].stcChannel);
-        nexus_handle[iPlayerIndex].stcChannel = NULL;
-    }
+    B_Os_Uninit();
 
     return;
 }
@@ -644,10 +472,13 @@ static int bcmPlayer_setDataSource_ip(
         int iPlayerIndex, const char *url, uint16_t *videoWidth, uint16_t *videoHeight, char* extraHeader) 
 {
     int rc;
+    BcmPlayerIpHandle* ipHandle = nexus_handle[iPlayerIndex].ipHandle;
+    B_PlaybackIpSessionOpenSettings sessionOpenSettings;
+    B_PlaybackIpSessionOpenStatus sessionOpenStatus;
+
     BCMPLAYER_IP_DBG;
 
-    if (nexus_handle[iPlayerIndex].ipHandle == NULL) 
-    {
+    if (ipHandle == NULL) {
         LOGE("%s: ipHandle == NULL", __FUNCTION__);
         return 1;
     }
@@ -658,25 +489,7 @@ static int bcmPlayer_setDataSource_ip(
         return 1;
     }
 
-    return 0;
-}
-
-static int bcmPlayer_prepare_ip(int iPlayerIndex) {
-    B_PlaybackIpSessionOpenSettings sessionOpenSettings;
-    B_PlaybackIpSessionOpenStatus sessionOpenStatus;
-    B_PlaybackIpSessionSetupSettings sessionSetupSettings;
-    B_PlaybackIpSessionSetupStatus sessionSetupStatus;
-    BcmPlayerIpHandle* ipHandle = nexus_handle[iPlayerIndex].ipHandle;
-    B_PlaybackIpError   rc;
-
-    BCMPLAYER_IP_DBG;
-
-    if(ipHandle == NULL) {
-        LOGE("%s: ipHandle == NULL", __FUNCTION__);
-        return 1;
-    }
-
-    if(!ipSetOpenSessionParams(iPlayerIndex, &sessionOpenSettings)) {
+    if (!ipSetOpenSessionParams(iPlayerIndex, &sessionOpenSettings)) {
         LOGE("%s: Couldn't setOpenSessionParams", __FUNCTION__);
         return 1;
     }
@@ -686,97 +499,134 @@ static int bcmPlayer_prepare_ip(int iPlayerIndex) {
         LOGE("%s: B_PlaybackIp_SessionOpen returned: %d", __FUNCTION__, rc);
         return 1;
     }
+    ipHandle->sessionOpened = true;
 
     if (sessionOpenStatus.u.http.responseHeaders != NULL) {
-        LOGV("%s: HTTP Response: %s", __FUNCTION__,
-            sessionOpenStatus.u.http.responseHeaders);
+        LOGV("%s: HTTP Response: %s", __FUNCTION__, sessionOpenStatus.u.http.responseHeaders);
         free(sessionOpenStatus.u.http.responseHeaders);
+    }
+
+    return 0;
+}
+
+static int bcmPlayer_prepare_ip(int iPlayerIndex)
+{
+    B_PlaybackIpError rc;
+    B_PlaybackIpSessionSetupSettings sessionSetupSettings;
+    B_PlaybackIpSessionSetupStatus sessionSetupStatus;
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+    BcmPlayerIpHandle* ipHandle = nexusHandle->ipHandle;
+
+    BCMPLAYER_IP_DBG;
+
+    if (ipHandle == NULL) {
+        LOGE("%s: ipHandle == NULL", __FUNCTION__);
+        return 1;
     }
 
     if (!ipSetSetupSessionParams(ipHandle, &sessionSetupSettings)) {
         LOGE("%s: Couldn't setSetupSessionParams", __FUNCTION__);
-        return 1;
+        goto bcmPlayer_SessionSetup_err;
     }
 
     rc = B_PlaybackIp_SessionSetup(ipHandle->playbackIp, &sessionSetupSettings, &sessionSetupStatus);
     if (rc != B_ERROR_SUCCESS) {
         LOGE("%s: B_PlaybackIp_SessionSetup returned: %d", __FUNCTION__, rc);
-        return 1;
+        goto bcmPlayer_SessionSetup_err;
     }
 
-    if (sessionOpenSettings.socketOpenSettings.protocol == B_PlaybackIpProtocol_eRtpNoRtcp
-        || sessionOpenSettings.socketOpenSettings.protocol == B_PlaybackIpProtocol_eUdp) {
+    if (ipHandle->protocol == B_PlaybackIpProtocol_eRtpNoRtcp || ipHandle->protocol == B_PlaybackIpProtocol_eUdp) {
         psiCollectionDataType  collectionData;
         B_PlaybackIpPsiInfo psiList[1];
         memset(&collectionData, 0, sizeof(psiCollectionDataType));
-        collectionData.playpump = nexus_handle[iPlayerIndex].playpump;
+        collectionData.playpump = nexusHandle->playpump;
         collectionData.playbackIp = ipHandle->playbackIp;
         LOGD(("Acquiring PSI info..."));
         int numPrograms = 0;
         acquirePsiInfo(&collectionData, psiList, 1, &numPrograms);
-        if (numPrograms <= 0)
-        {
+        if (numPrograms <= 0) {
             LOGE("%s: UDP/RTP: Didn't find any programs", __FUNCTION__);
-            return 1;
+            goto bcmPlayer_SessionSetup_err;
         }
-        ipHandle->psi =  psiList[0];
-    } else if (!sessionSetupStatus.u.http.psi.psiValid) {
-        LOGE("%s: psiValid == false", __FUNCTION__);
-        return 1;
-    } else {
-        ipHandle->psi = sessionSetupStatus.u.http.psi;
+        ipHandle->psi = psiList[0];
+    }
+    else if (ipHandle->protocol == B_PlaybackIpProtocol_eRtsp) {
+        if (sessionSetupStatus.u.rtsp.psi.psiValid) {
+            ipHandle->psi = sessionSetupStatus.u.rtsp.psi;
+        }
+        else {
+            LOGE("%s: Couldn't get PSI information from RTSP stream!", __FUNCTION__);
+            goto bcmPlayer_SessionSetup_err;
+        }
+    }
+    else if (ipHandle->protocol == B_PlaybackIpProtocol_eHttp) {
+        if (sessionSetupStatus.u.http.psi.psiValid) {
+            ipHandle->psi = sessionSetupStatus.u.http.psi;
+        } else {
+            LOGE("%s: Couldn't get PSI information from HTTP(S) stream!", __FUNCTION__);
+            goto bcmPlayer_SessionSetup_err;
+        }
     }
 
     ipSetTransportUsage(ipHandle);
 
-    LOGD("%s: PSI information found : W/H : %dx%d VideoCodec : %d AudioCodec : %d VideoPID : %d AudioPID : %d ",
+    LOGD("%s: PSI information found: W/H=%dx%d, VideoCodec=%d, AudioCodec=%d, VideoPID=0x%04x, AudioPID=0x%04x, PcrPID=0x%04x, Stream Type=%d",
         __FUNCTION__,
         ipHandle->psi.videoWidth,
         ipHandle->psi.videoHeight,
         ipHandle->psi.videoCodec,
         ipHandle->psi.audioCodec,
         ipHandle->psi.videoPid,
-        ipHandle->psi.audioPid);
+        ipHandle->psi.audioPid,
+        ipHandle->psi.pcrPid,
+        ipHandle->psi.mpegType);
 
-    if (!ipSetupNexusResources(&nexus_handle[iPlayerIndex], iPlayerIndex)) {
+    if (!ipSetupNexusResources(nexusHandle)) {
         LOGE("%s: Couldn't setupNexusResources", __FUNCTION__);
-        return -1;
+        goto bcmPlayer_SessionSetup_err;
     }
 
-    nexus_handle[iPlayerIndex].file = sessionSetupStatus.u.http.file;
+    nexusHandle->file = sessionSetupStatus.u.http.file;
 
-    bcmPlayer_widthHeightCallback(iPlayerIndex,
-           sessionSetupStatus.u.http.psi.videoWidth,
-           sessionSetupStatus.u.http.psi.videoHeight);
+    bcmPlayer_widthHeightCallback(iPlayerIndex, ipHandle->psi.videoWidth, ipHandle->psi.videoHeight);
 
     return 0;
+
+bcmPlayer_SessionSetup_err:
+    if (ipHandle->playbackIp) {
+        B_PlaybackIp_SessionClose(ipHandle->playbackIp);
+        ipHandle->sessionOpened = false;
+    }
+    return 1;
 }
 
 static int bcmPlayer_init_ip(int iPlayerIndex) 
 {
     int                 rc = 0;
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+    BcmPlayerIpHandle* ipHandle;
     pthread_attr_t      attr;
     struct sched_param  param;
 
     BCMPLAYER_IP_DBG;
 
-    nexus_handle[iPlayerIndex].ipHandle  = (BcmPlayerIpHandle *) malloc(sizeof(BcmPlayerIpHandle));
-    if (nexus_handle[iPlayerIndex].ipHandle == NULL) {
+    ipHandle = nexusHandle->ipHandle = (BcmPlayerIpHandle *) malloc(sizeof(BcmPlayerIpHandle));
+    if (ipHandle == NULL) {
         LOGE("%s: Couldn't allocate IP handle", __FUNCTION__);
         return 1;
     }
 
-    memset(nexus_handle[iPlayerIndex].ipHandle, 0, sizeof(BcmPlayerIpHandle));
+    memset(ipHandle, 0, sizeof(*ipHandle));
 
     B_Os_Init();
 
-    nexus_handle[iPlayerIndex].ipHandle->playbackIp = B_PlaybackIp_Open(NULL);
-    if (nexus_handle[iPlayerIndex].ipHandle->playbackIp == NULL) {
+    ipHandle->playbackIp = B_PlaybackIp_Open(NULL);
+    if (ipHandle->playbackIp == NULL) {
         LOGE("%s: playbackIp == NULL", __FUNCTION__);
         // Can't continue without a playback_ip handle so free our handle
         // to cause set data source to fail.
-        free(nexus_handle[iPlayerIndex].ipHandle);
-        nexus_handle[iPlayerIndex].ipHandle = NULL;
+        free(ipHandle);
+        nexusHandle->ipHandle = NULL;
     }
 
     rc = bcmPlayer_init_base(iPlayerIndex);
@@ -784,19 +634,19 @@ static int bcmPlayer_init_ip(int iPlayerIndex)
     if (rc == 0) {
         // Now connect the client resources
         b_refsw_client_client_info client_info;
-        nexus_handle[iPlayerIndex].ipcclient->getClientInfo(nexus_handle[iPlayerIndex].nexus_client, &client_info);
+        nexusHandle->ipcclient->getClientInfo(nexusHandle->nexus_client, &client_info);
 
         b_refsw_client_connect_resource_settings connectSettings;
 
-        BKNI_Memset(&connectSettings, 0, sizeof(connectSettings));
+        nexusHandle->ipcclient->getDefaultConnectClientSettings(&connectSettings);
         
         connectSettings.simpleVideoDecoder[0].id = client_info.videoDecoderId;
         connectSettings.simpleVideoDecoder[0].surfaceClientId = client_info.surfaceClientId;
         connectSettings.simpleVideoDecoder[0].windowId = iPlayerIndex; /* Main or PIP Window */
-        if (nexus_handle[iPlayerIndex].bSupportsHEVC == true)
-        {
-            if ((nexus_handle[iPlayerIndex].maxVideoFormat >= NEXUS_VideoFormat_e3840x2160p24hz) &&
-                (nexus_handle[iPlayerIndex].maxVideoFormat < NEXUS_VideoFormat_e4096x2160p24hz))
+
+        if (nexusHandle->bSupportsHEVC == true) {
+            if ((nexusHandle->maxVideoFormat >= NEXUS_VideoFormat_e3840x2160p24hz) &&
+                (nexusHandle->maxVideoFormat < NEXUS_VideoFormat_e4096x2160p24hz))
             {
                 connectSettings.simpleVideoDecoder[0].decoderCaps.maxWidth = 3840;
                 connectSettings.simpleVideoDecoder[0].decoderCaps.maxHeight = 2160;
@@ -805,15 +655,15 @@ static int bcmPlayer_init_ip(int iPlayerIndex)
         }
         connectSettings.simpleAudioDecoder.id = client_info.audioDecoderId;
 
-        if (nexus_handle[iPlayerIndex].ipcclient->connectClientResources(nexus_handle[iPlayerIndex].nexus_client, &connectSettings) != true) {
-            LOGE("%s: Could not connect client \"%s\" resources!", __FUNCTION__, nexus_handle[iPlayerIndex].ipcclient->getClientName());
+        if (nexusHandle->ipcclient->connectClientResources(nexusHandle->nexus_client, &connectSettings) != true) {
+            LOGE("%s: Could not connect client \"%s\" resources!", __FUNCTION__, nexusHandle->ipcclient->getClientName());
             rc = 1;
         }
         else {
-            nexus_handle[iPlayerIndex].ipHandle->preChargeTime    = BCMPLAYER_IP_PRECHARGE_TIME_SEC;
-            nexus_handle[iPlayerIndex].ipHandle->firstBuff        = true;
-            nexus_handle[iPlayerIndex].ipHandle->monitoringBuffer = false;
-            nexus_handle[iPlayerIndex].ipHandle->endOfStream      = false;
+            ipHandle->preChargeTime    = BCMPLAYER_IP_PRECHARGE_TIME_SEC;
+            ipHandle->firstBuff        = true;
+            ipHandle->monitoringBuffer = false;
+            ipHandle->endOfStream      = false;
 
 #ifdef ENABLE_BUFFER_MONITORING
 
@@ -822,13 +672,12 @@ static int bcmPlayer_init_ip(int iPlayerIndex)
             param.sched_priority = 60;    /* check min/max */
             pthread_attr_setschedparam(&attr, &param);
             
-            if (bcmPlayer_ip_bufferingThreadId[iPlayerIndex] == (pthread_t)NULL)
-            {
+            if (bcmPlayer_ip_bufferingThreadId[iPlayerIndex] == (pthread_t)NULL) {
                 rc = pthread_create (
                   &bcmPlayer_ip_bufferingThreadId[iPlayerIndex],
                   NULL,
                   bcmPlayerIpBufferMonitoringThread,
-                  (void *)(nexus_handle[iPlayerIndex].ipHandle)
+                  (void *)(ipHandle)
                   );
                 pthread_attr_destroy(&attr);
 
@@ -836,7 +685,7 @@ static int bcmPlayer_init_ip(int iPlayerIndex)
                     LOGE("%s: failed to create bufferingThread %d", __FUNCTION__, rc);
                 }
                 else {
-                    nexus_handle[iPlayerIndex].ipHandle->runMonitoringThread = true;
+                    ipHandle->runMonitoringThread = true;
                     LOGV ("created buffering thread\n");
                 }
             }
@@ -857,8 +706,7 @@ static int bcmPlayer_start_ip(int iPlayerIndex)
 
     BCMPLAYER_IP_DBG;
 
-    if (ipHandle == NULL || ipHandle->playbackIp == NULL) 
-    {
+    if (ipHandle == NULL || ipHandle->playbackIp == NULL) {
         LOGE("%s: ipHandle == NULL || ipHandle->playbackIp == NULL", __FUNCTION__);
         return -1;
     }
@@ -867,11 +715,19 @@ static int bcmPlayer_start_ip(int iPlayerIndex)
 
         if (nexusHandle->simpleVideoDecoder && ipHandle->psi.videoCodec) {
             NEXUS_SimpleVideoDecoderStartSettings videoProgram;
+            NEXUS_VideoDecoderSettings videoDecoderSettings;
 
             NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&videoProgram);
             videoProgram.settings.codec = ipHandle->psi.videoCodec;
-            videoProgram.settings.stcChannel = nexusHandle->stcChannel;
             videoProgram.settings.pidChannel = nexusHandle->videoPidChannel;
+            NEXUS_SimpleVideoDecoder_GetSettings(nexus_handle[iPlayerIndex].simpleVideoDecoder, &videoDecoderSettings);
+            if ((iPlayerIndex == 0) && 
+                (videoDecoderSettings.supportedCodecs[NEXUS_VideoCodec_eH265]) &&
+                ((nexus_handle[iPlayerIndex].maxVideoFormat >= NEXUS_VideoFormat_e3840x2160p24hz) &&
+                    (nexus_handle[iPlayerIndex].maxVideoFormat < NEXUS_VideoFormat_e4096x2160p24hz))) {
+                    videoProgram.maxWidth  = 3840;
+                    videoProgram.maxHeight = 2160;
+                }
             rc = NEXUS_SimpleVideoDecoder_Start(nexusHandle->simpleVideoDecoder, &videoProgram);
             if (rc != NEXUS_SUCCESS) {
                 LOGE("%s: NEXUS_SimpleVideoDecoder_Start returned : %d", __FUNCTION__, rc);
@@ -884,7 +740,6 @@ static int bcmPlayer_start_ip(int iPlayerIndex)
 
             NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&audioProgram);
             audioProgram.primary.codec = ipHandle->psi.audioCodec;
-            audioProgram.primary.stcChannel = nexusHandle->stcChannel;
             audioProgram.primary.pidChannel = nexusHandle->audioPidChannel;
             NEXUS_SimpleAudioDecoder_Start(nexusHandle->simpleAudioDecoder, &audioProgram);
             if (rc != NEXUS_SUCCESS) {
@@ -900,7 +755,11 @@ static int bcmPlayer_start_ip(int iPlayerIndex)
                 return -1;
             }
         } else {
-            rc = NEXUS_Playback_Start(nexusHandle->playback, nexusHandle->file, NULL);
+            NEXUS_PlaybackStartSettings playbackStartSettings;
+
+            NEXUS_Playback_GetDefaultStartSettings(&playbackStartSettings);
+            playbackStartSettings.mpeg2TsIndexType = NEXUS_PlaybackMpeg2TsIndexType_eSelf;
+            rc = NEXUS_Playback_Start(nexusHandle->playback, nexusHandle->file, &playbackStartSettings);
             if (rc != NEXUS_SUCCESS) {
                 LOGE("%s: NEXUS_Playback_Start returned : %d", __FUNCTION__, rc);
                 return -1;
@@ -912,16 +771,23 @@ static int bcmPlayer_start_ip(int iPlayerIndex)
         sessionStartSettings.nexusHandles.playback = nexusHandle->playback;
         sessionStartSettings.nexusHandles.simpleVideoDecoder = nexusHandle->simpleVideoDecoder;
         sessionStartSettings.nexusHandles.simpleAudioDecoder = nexusHandle->simpleAudioDecoder;
-        sessionStartSettings.nexusHandles.stcChannel = nexusHandle->stcChannel;
+        sessionStartSettings.nexusHandles.simpleStcChannel   = nexusHandle->simpleStcChannel;
+        sessionStartSettings.nexusHandles.videoPidChannel    = nexusHandle->videoPidChannel;
+        sessionStartSettings.nexusHandles.audioPidChannel    = nexusHandle->audioPidChannel;
+        sessionStartSettings.nexusHandles.pcrPidChannel      = nexusHandle->pcrPidChannel;
         sessionStartSettings.nexusHandlesValid = true;
         sessionStartSettings.mpegType = ipHandle->psi.mpegType;
+
+        if (ipHandle->protocol == B_PlaybackIpProtocol_eRtsp) {
+            sessionStartSettings.u.rtsp.mediaTransportProtocol = B_PlaybackIpProtocol_eRtp;
+            sessionStartSettings.u.rtsp.keepAliveInterval = 10;  /* send rtsp heart beats (keepalive) every 10sec */
+        }
 
         rc = B_PlaybackIp_SessionStart(ipHandle->playbackIp, &sessionStartSettings, &sessionStartStatus);
         if (rc != B_ERROR_SUCCESS) {
             LOGE("%s: B_PlaybackIp_SessionStart returned: %d", __FUNCTION__, rc);
             return -1;
         }
-
     }
     else {
         rc = B_PlaybackIp_Play(ipHandle->playbackIp);
@@ -931,8 +797,7 @@ static int bcmPlayer_start_ip(int iPlayerIndex)
         }
     }
     
-    if (bcmPlayer_ip_bufferingThreadId[iPlayerIndex] != (pthread_t)NULL)
-    {
+    if (bcmPlayer_ip_bufferingThreadId[iPlayerIndex] != (pthread_t)NULL) {
         ipHandle->monitoringBuffer = true;
         ipHandle->endOfStream      = false;
     }
@@ -947,19 +812,20 @@ static int bcmPlayer_start_ip(int iPlayerIndex)
         audioTrick.rate = NEXUS_NORMAL_DECODE_RATE; 
         NEXUS_SimpleAudioDecoder_SetTrickState(nexus_handle[iPlayerIndex].simpleAudioDecoder, &audioTrick);        
     }
-#endif 
+#endif
 
     return 0;
 }
 
-static int bcmPlayer_isPlaying_ip(int iPlayerIndex) {
+static int bcmPlayer_isPlaying_ip(int iPlayerIndex)
+{
     BcmPlayerIpHandle* ipHandle = nexus_handle[iPlayerIndex].ipHandle;
     B_PlaybackIpStatus playbackIpStatus;
     B_PlaybackIpError rc;
 
     BCMPLAYER_IP_DBG;
 
-    if(ipHandle == NULL || ipHandle->playbackIp == NULL) {
+    if (ipHandle == NULL || ipHandle->playbackIp == NULL) {
         LOGE("%s: ipHandle == NULL || ipHandle->playbackIp == NULL", __FUNCTION__);
         return -1;
     }
@@ -976,50 +842,6 @@ static int bcmPlayer_isPlaying_ip(int iPlayerIndex) {
 
 int bcmPlayer_pause_ip(int iPlayerIndex) 
 {
-    BcmPlayerIpHandle* ipHandle = nexus_handle[iPlayerIndex].ipHandle;
-    B_PlaybackIpTrickModesSettings ipTrickModeSettings;
-    B_PlaybackIpError rc;
-
-    BCMPLAYER_IP_DBG;
-
-    if(ipHandle == NULL || ipHandle->playbackIp == NULL) 
-    {
-        LOGE("%s: ipHandle == NULL || ipHandle->playbackIp == NULL", __FUNCTION__);
-        return -1;
-    }
-
-    rc = B_PlaybackIp_GetTrickModeSettings(ipHandle->playbackIp, &ipTrickModeSettings);
-    if (rc != B_ERROR_SUCCESS) 
-    {
-        LOGE("%s: B_PlaybackIp_GetTrickModeSettings returned : %d\n", __FUNCTION__, rc);
-        return -1;
-    }
-
-    /* Must use connection stalling for HTTPS content */
-    ipTrickModeSettings.pauseMethod = B_PlaybackIpPauseMethod_UseConnectionStalling;
-
-    rc = B_PlaybackIp_Pause(ipHandle->playbackIp, &ipTrickModeSettings);
-    if (rc != B_ERROR_SUCCESS) 
-    {
-        LOGE("%s: B_PlaybackIp_Pause returned : %d\n", __FUNCTION__, rc);
-        return -1;
-    }
-
-#if WA_SWANDROID_372
-    /* B_PlaybackIp_Pause() is pausing the playback/playpump, not the decoder. As a result,
-       the residual audio stream in CDB/ITB continue to play for substantial time. Hence, pausing 
-       the audio decoder here. We set to normal playback rate in bcmPlayer_start)ip(). */
-    LOGD("%s: Pausing audio explicitly on playback_ip pause",__FUNCTION__);
-    NEXUS_AudioDecoderTrickState audioTrick;
-    NEXUS_SimpleAudioDecoder_GetTrickState(nexus_handle[iPlayerIndex].simpleAudioDecoder, &audioTrick);
-    audioTrick.rate = 0; //pause
-    NEXUS_SimpleAudioDecoder_SetTrickState(nexus_handle[iPlayerIndex].simpleAudioDecoder, &audioTrick);        
-#endif
-
-    return 0;
-}
-
-int bcmPlayer_seekTo_ip(int iPlayerIndex, int msec) {
     bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
     BcmPlayerIpHandle* ipHandle = nexusHandle->ipHandle;
     B_PlaybackIpTrickModesSettings ipTrickModeSettings;
@@ -1027,19 +849,69 @@ int bcmPlayer_seekTo_ip(int iPlayerIndex, int msec) {
 
     BCMPLAYER_IP_DBG;
 
-    if(ipHandle == NULL || ipHandle->playbackIp == NULL) {
+    if (ipHandle == NULL || ipHandle->playbackIp == NULL) {
+        LOGE("%s: ipHandle == NULL || ipHandle->playbackIp == NULL", __FUNCTION__);
+        return -1;
+    }
+
+    /* Cannot pause a live stream like RTP/UDP */
+    if (ipHandle->protocol == B_PlaybackIpProtocol_eRtsp ||
+        ipHandle->protocol == B_PlaybackIpProtocol_eRtpNoRtcp ||
+        ipHandle->protocol == B_PlaybackIpProtocol_eUdp) {
+        LOGW("%s: Pause not supported for RTSP/RTP/UDP - ignoring.", __FUNCTION__);
+    }
+    else {
+        rc = B_PlaybackIp_GetTrickModeSettings(ipHandle->playbackIp, &ipTrickModeSettings);
+        if (rc != B_ERROR_SUCCESS) {
+            LOGE("%s: B_PlaybackIp_GetTrickModeSettings returned : %d\n", __FUNCTION__, rc);
+            return -1;
+        }
+
+        /* Must use connection stalling for HTTPS content */
+        ipTrickModeSettings.pauseMethod = B_PlaybackIpPauseMethod_UseConnectionStalling;
+
+        rc = B_PlaybackIp_Pause(ipHandle->playbackIp, &ipTrickModeSettings);
+        if (rc != B_ERROR_SUCCESS) {
+            LOGE("%s: B_PlaybackIp_Pause returned : %d\n", __FUNCTION__, rc);
+            return -1;
+        }
+
+#if WA_SWANDROID_372
+        /* B_PlaybackIp_Pause() is pausing the playback/playpump, not the decoder. As a result,
+           the residual audio stream in CDB/ITB continue to play for substantial time. Hence, pausing 
+           the audio decoder here. We set to normal playback rate in bcmPlayer_start)ip(). */
+        LOGD("%s: Pausing audio explicitly on playback_ip pause",__FUNCTION__);
+        NEXUS_AudioDecoderTrickState audioTrick;
+        NEXUS_SimpleAudioDecoder_GetTrickState(nexus_handle[iPlayerIndex].simpleAudioDecoder, &audioTrick);
+        audioTrick.rate = 0; //pause
+        NEXUS_SimpleAudioDecoder_SetTrickState(nexus_handle[iPlayerIndex].simpleAudioDecoder, &audioTrick);        
+#endif
+
+    }
+    return 0;
+}
+
+int bcmPlayer_seekTo_ip(int iPlayerIndex, int msec)
+{
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+    BcmPlayerIpHandle* ipHandle = nexusHandle->ipHandle;
+    B_PlaybackIpTrickModesSettings ipTrickModeSettings;
+    B_PlaybackIpError rc;
+
+    BCMPLAYER_IP_DBG;
+
+    if (ipHandle == NULL || ipHandle->playbackIp == NULL) {
         LOGE("%s: ipHandle == NULL || ipHandle->playbackIp == NULL", __FUNCTION__);
         return -1;
     }
 
     /* Don't perform a PlaybackIP Seek until it has started... */
-    if (nexus_handle->state != eBcmPlayerStatePrepared) {
-
+    if (nexusHandle->state != eBcmPlayerStatePrepared) {
 #if WA_SWANDROID_372
         if (nexusHandle->simpleAudioDecoder && ipHandle->psi.audioCodec) {
             // flush any residual audio in seek
             LOGD("%s: Flushing residual audio on seek",__FUNCTION__);
-            NEXUS_SimpleAudioDecoder_Flush(nexus_handle->simpleAudioDecoder);
+            NEXUS_SimpleAudioDecoder_Flush(nexusHandle->simpleAudioDecoder);
         }
 #endif 
 
@@ -1057,19 +929,21 @@ int bcmPlayer_seekTo_ip(int iPlayerIndex, int msec) {
             return -1;
         }
     }
-    nexus_handle->seekPositionMs = msec;
+    nexusHandle->seekPositionMs = msec;
 
     return 0;
 }
 
-int bcmPlayer_getCurrentPosition_ip(int iPlayerIndex, int *msec) {
-    BcmPlayerIpHandle* ipHandle = nexus_handle[iPlayerIndex].ipHandle;
+int bcmPlayer_getCurrentPosition_ip(int iPlayerIndex, int *msec)
+{
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+    BcmPlayerIpHandle* ipHandle = nexusHandle->ipHandle;
     B_PlaybackIpStatus playbackIpStatus;
     B_PlaybackIpError rc;
 
     BCMPLAYER_IP_DBG;
 
-    if(ipHandle == NULL || ipHandle->playbackIp == NULL) {
+    if (ipHandle == NULL || ipHandle->playbackIp == NULL) {
         LOGE("%s: ipHandle == NULL || ipHandle->playbackIp == NULL", __FUNCTION__);
         return -1;
     }
@@ -1086,22 +960,20 @@ int bcmPlayer_getCurrentPosition_ip(int iPlayerIndex, int *msec) {
     }
 
     *msec = playbackIpStatus.position;
-    // If audio only ES, then bmedia seems to reset the current position after a seek.
-    if (!ipHandle->psi.videoCodec) {
-        *msec += nexus_handle[iPlayerIndex].seekPositionMs;
-    }
+
     LOGV("[%d]%s: position=%dms", iPlayerIndex, __FUNCTION__, *msec);
 
     return 0;
 }
 
-int bcmPlayer_getDuration_ip(int iPlayerIndex, int *msec) {
+int bcmPlayer_getDuration_ip(int iPlayerIndex, int *msec)
+{
     BcmPlayerIpHandle* ipHandle = nexus_handle[iPlayerIndex].ipHandle;
     B_PlaybackIpError rc;
 
     BCMPLAYER_IP_DBG;
 
-    if(ipHandle == NULL || ipHandle->playbackIp == NULL) {
+    if (ipHandle == NULL || ipHandle->playbackIp == NULL) {
         LOGE("%s: ipHandle == NULL || ipHandle->playbackIp == NULL", __FUNCTION__);
         return -1;
     }
@@ -1120,12 +992,13 @@ int bcmPlayer_getDuration_ip(int iPlayerIndex, int *msec) {
 
 static int bcmPlayer_stop_ip (int iPlayerIndex) 
 {
-    BcmPlayerIpHandle* ipHandle = nexus_handle[iPlayerIndex].ipHandle;
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+    BcmPlayerIpHandle* ipHandle = nexusHandle->ipHandle;
     B_PlaybackIpError rc;
 
     BCMPLAYER_IP_DBG;
 
-    if(ipHandle == NULL || ipHandle->playbackIp == NULL) {
+    if (ipHandle == NULL || ipHandle->playbackIp == NULL) {
         LOGE("%s: ipHandle == NULL || ipHandle->playbackIp == NULL", __FUNCTION__);
         return -1;
     }
@@ -1137,7 +1010,7 @@ static int bcmPlayer_stop_ip (int iPlayerIndex)
     }
 
     ipHandle->monitoringBuffer = false;
-    nexus_handle[iPlayerIndex].seekPositionMs = 0;
+    nexusHandle->seekPositionMs = 0;
 
     return 0;
 }
@@ -1145,11 +1018,10 @@ static int bcmPlayer_stop_ip (int iPlayerIndex)
 int bcmPlayer_getMediaExtractorFlags_ip(int iPlayerIndex, unsigned *flags)
 {
     BcmPlayerIpHandle* ipHandle = nexus_handle[iPlayerIndex].ipHandle;
-    char *url = nexus_handle[iPlayerIndex].url;
 
     BCMPLAYER_IP_DBG;
 
-    if(ipHandle == NULL || ipHandle->playbackIp == NULL) {
+    if (ipHandle == NULL || ipHandle->playbackIp == NULL) {
         LOGE("%s: ipHandle == NULL || ipHandle->playbackIp == NULL", __FUNCTION__);
         return -1;
     }
@@ -1159,7 +1031,7 @@ int bcmPlayer_getMediaExtractorFlags_ip(int iPlayerIndex, unsigned *flags)
         return -1;
     }
 
-    if ((strncmp(url, "http://", 7) == 0) || (strncmp(url, "https://", 8) == 0)) {
+    if (ipHandle->protocol == B_PlaybackIpProtocol_eHttp) {
         /* If we are an HLS unbounded live stream then, we cannot enable trick-play operations */
         if (!((ipHandle->psi.hlsSessionEnabled == true) && (ipHandle->psi.duration == 9999999))) {
             *flags = ( CAN_SEEK_BACKWARD |
@@ -1177,58 +1049,39 @@ int bcmPlayer_getMediaExtractorFlags_ip(int iPlayerIndex, unsigned *flags)
     return 0;
 }
 
-void bcmPlayerIp_endOfStreamCallback (void *context, int param)
+static void bcmPlayerIp_endOfStreamCallback (void *context, int param)
 {
     B_PlaybackIpError   rc = 0;
-    BcmPlayerIpHandle*  ipHandle = nexus_handle[param].ipHandle;
+    bcmPlayer_base_nexus_handle_t *nexusHandle = (bcmPlayer_base_nexus_handle_t *)context;
+    BcmPlayerIpHandle*  ipHandle = nexusHandle->ipHandle;
     B_PlaybackIpStatus  playbackIpStatus;
     uint32_t            waitCount = 0;
 
     BCMPLAYER_IP_DBG;
 
-    if (ipHandle != NULL)
-    {
+    if (ipHandle != NULL) {
         /* Make sure buffering is stopped. */
         /* Can't do playback IP pause in B_PlaybackIpState_eBuffering. */
-        if (ipHandle->endOfStream == false)
-        {
+        if (ipHandle->endOfStream == false) {
             ipHandle->endOfStream = true;  
-            LOGV("wait for buffering thread to loop\n");
-            do 
-            {
+
+            while (ipHandle->monitoringBuffer == true && waitCount < 20) {
+                LOGV("%s: waiting for buffering thread to stop (count %d)...", __FUNCTION__, (int)waitCount);
                 BKNI_Sleep (100);
                 waitCount++;
-                LOGV("%s waiting for buffering thread to loop %d", __FUNCTION__, (int)waitCount);
-            } while ((ipHandle->monitoringBuffer == true) && (waitCount < 20));
+            }
         }
     }
-    bcmPlayer_endOfStreamCallback (context, param);
+    bcmPlayer_endOfStreamCallback(context, param);
     return;
 }
 
-void player_reg_ip(bcmPlayer_func_t *pFuncs){
-    pFuncs->bcmPlayer_init_func = bcmPlayer_init_ip;
-    pFuncs->bcmPlayer_uninit_func = bcmPlayer_uninit_ip;
-    pFuncs->bcmPlayer_setDataSource_func = bcmPlayer_setDataSource_ip;
-    pFuncs->bcmPlayer_prepare_func = bcmPlayer_prepare_ip;
-    pFuncs->bcmPlayer_start_func = bcmPlayer_start_ip;
-    pFuncs->bcmPlayer_stop_func = bcmPlayer_stop_ip;
-    pFuncs->bcmPlayer_pause_func = bcmPlayer_pause_ip;
-    pFuncs->bcmPlayer_isPlaying_func = bcmPlayer_isPlaying_ip;
-    pFuncs->bcmPlayer_seekTo_func = bcmPlayer_seekTo_ip;
-    pFuncs->bcmPlayer_getCurrentPosition_func = bcmPlayer_getCurrentPosition_ip;
-    pFuncs->bcmPlayer_getDuration_func = bcmPlayer_getDuration_ip;
-    pFuncs->bcmPlayer_getMediaExtractorFlags_func = bcmPlayer_getMediaExtractorFlags_ip;
-}
-
-void ipPlaybackIpEventCallback (void * appCtx, B_PlaybackIpEventIds eventId) {
-
-    BCMPLAYER_IP_DBG;
-
-    int iPlayerIndex = (int)appCtx;
+void ipPlaybackIpEventCallback (void * appCtx, B_PlaybackIpEventIds eventId)
+{
+    bcmPlayer_base_nexus_handle_t *nexusHandle = (bcmPlayer_base_nexus_handle_t *)appCtx;
+    int iPlayerIndex = nexusHandle->iPlayerIndex;
     int durationMs;
     int positionMs;
-    BcmPlayerIpHandle *ipHandle = nexus_handle[iPlayerIndex].ipHandle;
 
     LOGV("%s: eventId: %d", __FUNCTION__, eventId);
 
@@ -1237,7 +1090,7 @@ void ipPlaybackIpEventCallback (void * appCtx, B_PlaybackIpEventIds eventId) {
         if (bcmPlayer_getDuration_ip(iPlayerIndex, &durationMs) == 0) {
             if (bcmPlayer_getCurrentPosition_ip(iPlayerIndex, &positionMs) == 0) {
                 if (positionMs >= durationMs) {
-                    bcmPlayerIp_endOfStreamCallback(NULL, iPlayerIndex);
+                    bcmPlayerIp_endOfStreamCallback(nexusHandle, iPlayerIndex);
                 }
             }
         }
@@ -1245,7 +1098,9 @@ void ipPlaybackIpEventCallback (void * appCtx, B_PlaybackIpEventIds eventId) {
     return;
 }
 
-void ipSetTransportUsage(BcmPlayerIpHandle *ipHandle) {
+void ipSetTransportUsage(BcmPlayerIpHandle *ipHandle)
+{
+    B_PlaybackIpProtocol protocol = ipHandle->protocol;
 
     BCMPLAYER_IP_DBG;
 
@@ -1254,89 +1109,48 @@ void ipSetTransportUsage(BcmPlayerIpHandle *ipHandle) {
         return;
     }
 
-    // Additional factors may affect this.
-    if (ipHandle->psi.hlsSessionEnabled 
-        || ipHandle->psi.mpegType == NEXUS_TransportType_eTs) {
+    /* For RTP, UDP, RTSP based protocols, use Nexus Playpump as data is being pushed by the server and
+       thus can't use the Nexus playback as it pulls data from IP library. */
+    if (protocol != B_PlaybackIpProtocol_eHttp) {
         ipHandle->usePlaypump = true;
-    } else {
-        ipHandle->usePlaypump = false;
+        ipHandle->liveMode = true;
     }
+    else {
+        ipHandle->liveMode = ipHandle->psi.liveChannel;
 
+        // Additional factors may affect this.
+        if (ipHandle->psi.hlsSessionEnabled || ipHandle->psi.liveChannel) {
+            ipHandle->usePlaypump = true;
+        }
+        else {
+            ipHandle->usePlaypump = false;
+        }
+    }
+    LOGV("%s: usePlaypump=%d, liveMode=%d", __FUNCTION__, ipHandle->usePlaypump, ipHandle->liveMode);
     return;
 }
 
-int ipParseURL(char *urlstr, char *hostname, unsigned int *portnum, char **uri) {
-    char *hostPtr, *portPtr, *uriPtr;
+bool ipSetOpenSessionParams(int iPlayerIndex, B_PlaybackIpSessionOpenSettings *sessionOpenSettings)
+{
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+    BcmPlayerIpHandle* ipHandle = nexusHandle->ipHandle;
+    char *url = nexusHandle->url;
 
     BCMPLAYER_IP_DBG;
-
-    if (!urlstr || !hostname || !portnum || !uri) {
-        LOGE("%s: !urlstr || !hostname || !portnum || !uri ", __FUNCTION__);
-        return -1;
-    }
-
-    // Skip over the protocol if it's there
-    hostPtr = strstr(urlstr, "://");
-    if (hostPtr) {
-        hostPtr +=3;
-    } else {
-        // Not found
-        hostPtr = urlstr;
-    }
-
-    // Find the port if it's there
-    uriPtr = strstr(hostPtr, "/");
-    portPtr = strstr(hostPtr, ":");
-    if (portPtr) {
-       if (portPtr < uriPtr || !uriPtr) {
-            if (atoi(portPtr+1))
-                *portnum = atoi(portPtr+1);
-            // We can now copy the hostname as we know where it ends
-            // Hostname can only be 255 chars
-            memset(hostname, 0, 256);
-            strncpy(hostname, hostPtr, ((portPtr - hostPtr) < 255)? (portPtr - hostPtr) : 255);
-       } else {
-           portPtr = NULL;  // Reset Port Pointer
-       }
-    }
-
-    if (!portPtr && uriPtr) {
-        // No port specified so still need to fill in hostname
-        memset(hostname, 0, 256);
-        strncpy(hostname, hostPtr, ((uriPtr - hostPtr) < 255)? (uriPtr - hostPtr) : 255);
-    } else if (!portPtr && !uriPtr) {
-        // No port and no uri, copy the rest
-        memset(hostname, 0, 256);
-        strncpy(hostname, hostPtr, 255);
-    }
-
-    *uri = uriPtr;
-
-    LOGI("%s: Hostname %s", __FUNCTION__, hostname);
-    LOGI("%s: Port %d", __FUNCTION__, *portnum);
-    LOGI("%s: URI %s", __FUNCTION__, uri? *uri : "");
-
-    return 0;
-}
-
-bool ipSetOpenSessionParams(int iPlayerIndex, B_PlaybackIpSessionOpenSettings *sessionOpenSettings) {
-
-    BCMPLAYER_IP_DBG;
-
-    BcmPlayerIpHandle* ipHandle = nexus_handle[iPlayerIndex].ipHandle;
-    char *url = nexus_handle[iPlayerIndex].url;
 
     if (sessionOpenSettings == NULL || ipHandle == NULL) {
         LOGE("%s: sessionOpenSettings == NULL  || ipHandle == NULL", __FUNCTION__);
         return false;
     }
 
-    memset(sessionOpenSettings, 0, sizeof(*sessionOpenSettings));
+    B_PlaybackIp_GetDefaultSessionOpenSettings(sessionOpenSettings);
 
     if (strncmp("http://", url, 7) == 0){
+        ipHandle->protocol = B_PlaybackIpProtocol_eHttp;
         sessionOpenSettings->socketOpenSettings.protocol = B_PlaybackIpProtocol_eHttp;
         sessionOpenSettings->socketOpenSettings.port = 80;
     } else if (strncmp("https://", url, 8) == 0) {
+        ipHandle->protocol = B_PlaybackIpProtocol_eHttp;
         sessionOpenSettings->socketOpenSettings.protocol = B_PlaybackIpProtocol_eHttp;
         sessionOpenSettings->socketOpenSettings.port = 443;
         sessionOpenSettings->security.securityProtocol = B_PlaybackIpSecurityProtocol_Ssl;
@@ -1356,44 +1170,57 @@ bool ipSetOpenSessionParams(int iPlayerIndex, B_PlaybackIpSessionOpenSettings *s
 			return false;
 		}
         sessionOpenSettings->security.initialSecurityContext = ipHandle->sslCtx;
+    } else if (strncmp("rtsp://", url, 7) == 0) {
+        ipHandle->protocol = B_PlaybackIpProtocol_eRtsp;
+        sessionOpenSettings->socketOpenSettings.protocol = B_PlaybackIpProtocol_eRtsp;
+        sessionOpenSettings->socketOpenSettings.port = 554;
+        sessionOpenSettings->useNexusPlaypump = true;
     } else if (strncmp("rtp://", url, 6) == 0) {
+        ipHandle->protocol = B_PlaybackIpProtocol_eRtpNoRtcp;
         sessionOpenSettings->socketOpenSettings.protocol = B_PlaybackIpProtocol_eRtpNoRtcp;
         sessionOpenSettings->socketOpenSettings.port = 5004;
+        sessionOpenSettings->useNexusPlaypump = true;
     } else if (strncmp("udp://", url, 6) == 0) {
+        ipHandle->protocol = B_PlaybackIpProtocol_eUdp;
         sessionOpenSettings->socketOpenSettings.protocol = B_PlaybackIpProtocol_eUdp;
         sessionOpenSettings->socketOpenSettings.port = 5004;
+        sessionOpenSettings->useNexusPlaypump = true;
     } else {
         LOGE("%s: Cannot get protocol for URL : %s", __FUNCTION__, url);
         return false;
     }
 
-    ipParseURL(url, 
+    if (get_hostname_uri_from_url(url, 
             sessionOpenSettings->socketOpenSettings.ipAddr,
             &sessionOpenSettings->socketOpenSettings.port,
-            &sessionOpenSettings->socketOpenSettings.url);
+            &sessionOpenSettings->socketOpenSettings.url) != 0) {
+        LOGW("%s: Cannot get ipaddr/uri/port number from \"%s\"!", __FUNCTION__, url);
+    }
 
-    if (sessionOpenSettings->socketOpenSettings.protocol == B_PlaybackIpProtocol_eHttps
-        || sessionOpenSettings->socketOpenSettings.protocol == B_PlaybackIpProtocol_eHttp) {
+    if (ipHandle->protocol == B_PlaybackIpProtocol_eHttp) {
         sessionOpenSettings->ipMode = B_PlaybackIpClockRecoveryMode_ePull;
         sessionOpenSettings->networkTimeout = 5;    /* 5s timeout for network outage events */
         sessionOpenSettings->u.http.networkBufferSize = BCMPLAYER_NETWORK_BUFFER_SIZE;
         sessionOpenSettings->u.http.userAgent = userAgent;
-        sessionOpenSettings->nonBlockingMode = false;
-        sessionOpenSettings->eventCallback = ipPlaybackIpEventCallback;
-        sessionOpenSettings->appCtx = (void *)iPlayerIndex;
-    } else if (sessionOpenSettings->socketOpenSettings.protocol == B_PlaybackIpProtocol_eRtpNoRtcp
-        || sessionOpenSettings->socketOpenSettings.protocol == B_PlaybackIpProtocol_eUdp) {
-        sessionOpenSettings->ipMode = B_PlaybackIpClockRecoveryMode_ePushWithPcrSyncSlip;
-        sessionOpenSettings->maxNetworkJitter = 300;
-        sessionOpenSettings->networkTimeout = 1;  /* timeout in 1 sec during network outage events */
-        sessionOpenSettings->nonBlockingMode = false;
     }
+    else if (ipHandle->protocol == B_PlaybackIpProtocol_eRtsp ||
+             ipHandle->protocol == B_PlaybackIpProtocol_eRtpNoRtcp ||
+             ipHandle->protocol == B_PlaybackIpProtocol_eUdp) {
+        sessionOpenSettings->ipMode = B_PlaybackIpClockRecoveryMode_ePushWithPcrSyncSlip;
+        sessionOpenSettings->networkTimeout = 1;  /* timeout in 1 sec during network outage events */
+        sessionOpenSettings->maxNetworkJitter = BCMPLAYER_IP_NETWORK_MAX_JITTER;
+        sessionOpenSettings->u.rtsp.userAgent = userAgent;
+        sessionOpenSettings->u.rtsp.copyResponseHeaders = false;
+    }
+    sessionOpenSettings->eventCallback = ipPlaybackIpEventCallback;
+    sessionOpenSettings->appCtx = (void *)nexusHandle;
+    sessionOpenSettings->nonBlockingMode = false;
 
     return true;
 }
 
-bool ipSetSetupSessionParams(BcmPlayerIpHandle *ipHandle, B_PlaybackIpSessionSetupSettings *sessionSetupSettings) {
-
+bool ipSetSetupSessionParams(BcmPlayerIpHandle *ipHandle, B_PlaybackIpSessionSetupSettings *sessionSetupSettings)
+{
     BCMPLAYER_IP_DBG;
 
     if (sessionSetupSettings == NULL || ipHandle == NULL) {
@@ -1403,21 +1230,34 @@ bool ipSetSetupSessionParams(BcmPlayerIpHandle *ipHandle, B_PlaybackIpSessionSet
 
     B_PlaybackIp_GetDefaultSessionSetupSettings(sessionSetupSettings);
 
-    sessionSetupSettings->u.http.skipPsiParsing = false;
-    sessionSetupSettings->u.http.enablePayloadScanning = true; /* turn on the deep packet inspection */
-    sessionSetupSettings->u.http.avgBitRate = 20000000;
+    if (ipHandle->protocol == B_PlaybackIpProtocol_eHttp) {
+        sessionSetupSettings->u.http.skipPsiParsing = false;
+        sessionSetupSettings->u.http.enablePayloadScanning = true; /* turn on the deep packet inspection */
 
-    /* set a limit on how long the psi parsing should continue before returning */
-    sessionSetupSettings->u.http.psiParsingTimeLimit = 3 * 1000; /* Wait up to 3s for PSI information to be parsed */
+        /* set a limit on how long the psi parsing should continue before returning */
+        sessionSetupSettings->u.http.psiParsingTimeLimit = 30 * 1000; /* Wait up to 30s for PSI information to be parsed */
+    }
+    else if (ipHandle->protocol == B_PlaybackIpProtocol_eRtsp) {
+        sessionSetupSettings->u.rtsp.userAgent = userAgent;
+        sessionSetupSettings->u.rtsp.copyResponseHeaders = false;
+        sessionSetupSettings->u.rtsp.psiParsingTimeLimit = 3000;      /* Wait up to 3s for PSI information */
+    }
+    else if (ipHandle->protocol == B_PlaybackIpProtocol_eUdp ||
+             ipHandle->protocol == B_PlaybackIpProtocol_eRtpNoRtcp) {
+        sessionSetupSettings->u.udp.skipPsiParsing = false;
+        sessionSetupSettings->u.udp.psiParsingTimeLimit = 3000;       /* Wait up to 3s for PSI information */
+    }
 
     return true;
 }
 
-bool ipSetupNexusResources(bcmPlayer_base_nexus_handle_t *nexusHandle, int iPlayerIndex) {
+bool ipSetupNexusResources(bcmPlayer_base_nexus_handle_t *nexusHandle)
+{
     NEXUS_Error               rc;
+    int                       iPlayerIndex;
     BcmPlayerIpHandle*        ipHandle;
     B_PlaybackIpSettings      playbackIpSettings;
-    NEXUS_StcChannelSettings  stcChannelSettings;
+    NEXUS_SimpleStcChannelSettings  stcChannelSettings;
     NEXUS_ClientConfiguration clientConfig;
 
     BCMPLAYER_IP_DBG;
@@ -1433,60 +1273,62 @@ bool ipSetupNexusResources(bcmPlayer_base_nexus_handle_t *nexusHandle, int iPlay
         return false;
     }
 
-    ipHandle->timebase = NEXUS_Timebase_Open(NEXUS_ANY_ID);
-    if (ipHandle->timebase == NEXUS_Timebase_eInvalid 
-        || ipHandle->timebase >= NEXUS_Timebase_eMax) {
-        LOGE("%s: ipHandle->timebase == NULL", __FUNCTION__);
-        return false;
-    }
+    iPlayerIndex = nexusHandle->iPlayerIndex;
 
-    NEXUS_StcChannel_GetDefaultSettings(NEXUS_ANY_ID, &stcChannelSettings);
-    stcChannelSettings.timebase = ipHandle->timebase;
-    stcChannelSettings.autoConfigTimebase = false;
-    stcChannelSettings.mode = NEXUS_StcChannelMode_eAuto;
-    nexusHandle->stcChannel = NEXUS_StcChannel_Open(NEXUS_ANY_ID, &stcChannelSettings);
-    if (nexusHandle->stcChannel == NULL) {
-        LOGE("%s: stcChannel == NULL", __FUNCTION__);
-        return false;
-    }
-
-    if (ipHandle->usePlaypump) 
-    {
-        NEXUS_PlaypumpSettings      playpumpSettings;
+    if (ipHandle->usePlaypump) {
+        NEXUS_PlaypumpSettings playpumpSettings;
 
         NEXUS_Playpump_GetSettings(nexusHandle->playpump, &playpumpSettings);
         playpumpSettings.mode = NEXUS_PlaypumpMode_eFifo;
         playpumpSettings.transportType = nexusHandle->ipHandle->psi.mpegType;
-        if (nexusHandle->ipHandle->psi.transportTimeStampEnabled) {
+        if (ipHandle->psi.transportTimeStampEnabled) {
             playpumpSettings.timestamp.type = NEXUS_TransportTimestampType_eMod300;
             playpumpSettings.timestamp.pacing = false;
             LOGD("Setting timestamp flag");
         }
         rc = NEXUS_Playpump_SetSettings(nexusHandle->playpump, &playpumpSettings);
-        if (rc != NEXUS_SUCCESS) 
-        {
+        if (rc != NEXUS_SUCCESS) {
             LOGE("%s: NEXUS_Playpump_SetSettings returned : %d", __FUNCTION__, rc);
             return false;
         }
+
+#ifndef BCMPLAYER_RTSP_STCCHANNEL_SUPPORT
+        /* If we are running RTSP-ES, then please disable STC channel as the PCR's are invalid... */
+        if (ipHandle->protocol == B_PlaybackIpProtocol_eRtsp && nexusHandle->simpleStcChannel != NULL) {
+            NEXUS_SimpleStcChannel_Destroy(nexusHandle->simpleStcChannel);
+            nexusHandle->simpleStcChannel = NULL;
+        }
+#endif
     } 
-    else 
-    {
+    else {
         NEXUS_PlaybackSettings playbackSettings;
         NEXUS_CallbackDesc endOfStreamCallbackDesc;
+
         NEXUS_Playback_GetSettings(nexusHandle->playback, &playbackSettings);
-        playbackSettings.endOfStreamAction = NEXUS_PlaybackLoopMode_eLoop;
+        playbackSettings.playpumpSettings.mode = NEXUS_PlaypumpMode_eFifo;
+        if (ipHandle->psi.transportTimeStampEnabled) {
+            playbackSettings.playpumpSettings.timestamp.type = NEXUS_TransportTimestampType_eMod300;
+            playbackSettings.playpumpSettings.timestamp.pacing = false;
+        }
         playbackSettings.playpump = nexusHandle->playpump;
-        playbackSettings.playpumpSettings.transportType = nexusHandle->ipHandle->psi.mpegType;
-        playbackSettings.stcChannel = nexusHandle->stcChannel;
+        playbackSettings.playpumpSettings.transportType = ipHandle->psi.mpegType;
+        playbackSettings.simpleStcChannel = nexusHandle->simpleStcChannel;
+        playbackSettings.stcTrick = nexusHandle->simpleStcChannel != NULL;
 
         endOfStreamCallbackDesc.callback = bcmPlayerIp_endOfStreamCallback;
-        endOfStreamCallbackDesc.context = NULL;
+        endOfStreamCallbackDesc.context = nexusHandle;
         endOfStreamCallbackDesc.param = iPlayerIndex;
         playbackSettings.endOfStreamCallback = endOfStreamCallbackDesc;
+        playbackSettings.endOfStreamAction = NEXUS_PlaybackLoopMode_ePause;
+
+        /* If we are processing an audio only stream, then enable stream processing... */
+        if ((nexusHandle->simpleAudioDecoder && ipHandle->psi.audioCodec) && 
+           !(nexusHandle->simpleVideoDecoder && ipHandle->psi.videoCodec)) {
+            playbackSettings.enableStreamProcessing = true;
+        }
 
         rc = NEXUS_Playback_SetSettings(nexusHandle->playback, &playbackSettings);
-        if (rc != NEXUS_SUCCESS) 
-        {
+        if (rc != NEXUS_SUCCESS) {
             LOGE("%s: NEXUS_Playback_SetSettings returned : %d", __FUNCTION__, rc);
             return false;
         }
@@ -1498,12 +1340,85 @@ bool ipSetupNexusResources(bcmPlayer_base_nexus_handle_t *nexusHandle, int iPlay
             LOGE("%s: nexusHandle->videoPidChannel == NULL", __FUNCTION__);
             return false;
         }
+
+        if (!ipHandle->psi.transportTimeStampEnabled && ipHandle->liveMode) {
+            NEXUS_VideoDecoderSettings videoDecoderSettings;
+
+            /* increase the ptsOffset so that CDB can be used at the de-jitter buffer */
+            NEXUS_SimpleVideoDecoder_GetSettings(nexusHandle->simpleVideoDecoder, &videoDecoderSettings);
+            videoDecoderSettings.ptsOffset = BCMPLAYER_IP_NETWORK_MAX_JITTER * 45;    /* In 45Khz clock */
+            rc = NEXUS_SimpleVideoDecoder_SetSettings(nexusHandle->simpleVideoDecoder, &videoDecoderSettings);
+            if (rc != NEXUS_SUCCESS) {
+                LOGE("%s: NEXUS_SimpleVideoDecoder_SetSettings failed (rc=%d)!", __FUNCTION__, rc);
+                return false;
+            }
+        }
     }
 
     if (nexusHandle->simpleAudioDecoder && ipHandle->psi.audioCodec) {
         nexusHandle->audioPidChannel = ipGetAudioPidChannel(nexusHandle);
         if (nexusHandle->audioPidChannel == NULL) {
             LOGE("%s: nexusHandle->audioPidChannel == NULL", __FUNCTION__);
+            return false;
+        }
+
+        if (!ipHandle->psi.transportTimeStampEnabled && ipHandle->liveMode) {
+            NEXUS_SimpleAudioDecoderSettings audioDecoderSettings;
+
+            /* increase the ptsOffset so that CDB can be used at the de-jitter buffer */
+            NEXUS_SimpleAudioDecoder_GetSettings(nexusHandle->simpleAudioDecoder , &audioDecoderSettings);
+            audioDecoderSettings.primary.ptsOffset = BCMPLAYER_IP_NETWORK_MAX_JITTER * 45;    /* In 45Khz clock */
+            rc = NEXUS_SimpleAudioDecoder_SetSettings(nexusHandle->simpleAudioDecoder, &audioDecoderSettings);
+            if (rc != NEXUS_SUCCESS) {
+                LOGE("%s: NEXUS_SimpleAudioDecoder_SetSettings failed (rc=%d)!", __FUNCTION__, rc);
+                return false;
+            }
+        }
+    }
+
+    nexusHandle->pcrPidChannel = ipGetPcrPidChannel(nexusHandle);
+
+    if (nexusHandle->simpleStcChannel) {
+        NEXUS_SimpleStcChannel_GetDefaultSettings(&stcChannelSettings);
+
+        if (ipHandle->psi.hlsSessionEnabled || !ipHandle->liveMode) {
+            stcChannelSettings.mode = NEXUS_StcChannelMode_eAuto;
+            stcChannelSettings.modeSettings.Auto.transportType = ipHandle->psi.mpegType;
+        }
+        else if (ipHandle->psi.transportTimeStampEnabled) {
+            /* when timestamps are present, dejittering is done before feeding to xpt and thus is treated as a live playback */
+            stcChannelSettings.modeSettings.highJitter.mode = NEXUS_SimpleStcChannelHighJitterMode_eTtsPacing;
+            stcChannelSettings.mode = NEXUS_StcChannelMode_ePcr;
+            stcChannelSettings.modeSettings.pcr.pidChannel = nexusHandle->pcrPidChannel;
+        }
+        else {
+            /* when timestamps are not present, we directly feed the jittered packets to the transport */
+            /* and set the max network jitter in highJitterThreshold. */
+            /* This enables the SimpleStc to internally program the various stc & timebase related thresholds to account for network jitter */
+            stcChannelSettings.modeSettings.highJitter.threshold = BCMPLAYER_IP_NETWORK_MAX_JITTER;
+            stcChannelSettings.modeSettings.highJitter.mode = NEXUS_SimpleStcChannelHighJitterMode_eDirect;
+            stcChannelSettings.mode = NEXUS_StcChannelMode_ePcr;
+            stcChannelSettings.modeSettings.pcr.pidChannel = nexusHandle->pcrPidChannel;
+        }
+        rc = NEXUS_SimpleStcChannel_SetSettings(nexusHandle->simpleStcChannel, &stcChannelSettings);
+        if (rc != NEXUS_SUCCESS) {
+            LOGE("%s(%d): Could not set simple stcChannel!", __FUNCTION__, iPlayerIndex);
+            return false;
+        }
+    }
+
+    if (nexusHandle->videoPidChannel) {
+        rc = NEXUS_SimpleVideoDecoder_SetStcChannel(nexusHandle->simpleVideoDecoder, nexusHandle->simpleStcChannel);
+        if (rc != NEXUS_SUCCESS) {
+            LOGE("%s: Could not set stc channel for simple video decoder (rc=%d)!", __FUNCTION__, rc);
+            return false;
+        }
+    }
+
+    if (nexusHandle->audioPidChannel) {
+        rc = NEXUS_SimpleAudioDecoder_SetStcChannel(nexusHandle->simpleAudioDecoder, nexusHandle->simpleStcChannel);
+        if (rc != NEXUS_SUCCESS) {
+            LOGE("%s: Could not set stc channel for simple audio decoder (rc=%d)!", __FUNCTION__, rc);
             return false;
         }
     }
@@ -1515,20 +1430,19 @@ bool ipSetupNexusResources(bcmPlayer_base_nexus_handle_t *nexusHandle, int iPlay
     }
 
     playbackIpSettings.nexusHandlesValid = true;
-    if (ipHandle->usePlaypump) {
-        playbackIpSettings.nexusHandles.playpump = nexusHandle->playpump;
-    } else {
-        playbackIpSettings.nexusHandles.playback = nexusHandle->playback;
-    }
+    playbackIpSettings.nexusHandles.playpump = nexusHandle->playpump;
+    playbackIpSettings.nexusHandles.playback = nexusHandle->playback;
     playbackIpSettings.nexusHandles.simpleVideoDecoder = nexusHandle->simpleVideoDecoder;
     playbackIpSettings.nexusHandles.simpleAudioDecoder = nexusHandle->simpleAudioDecoder;
-    playbackIpSettings.nexusHandles.stcChannel         = nexusHandle->stcChannel;
+    playbackIpSettings.nexusHandles.simpleStcChannel   = nexusHandle->simpleStcChannel;
     playbackIpSettings.nexusHandles.videoPidChannel    = nexusHandle->videoPidChannel;
     playbackIpSettings.nexusHandles.audioPidChannel    = nexusHandle->audioPidChannel;
+    playbackIpSettings.nexusHandles.pcrPidChannel      = nexusHandle->pcrPidChannel;
     playbackIpSettings.useNexusPlaypump = ipHandle->usePlaypump;
 #ifdef ENABLE_BUFFER_MONITORING
     playbackIpSettings.preChargeBuffer = true;
 #endif
+    playbackIpSettings.enableEndOfStreamLooping = nexusHandle->bKeepLooping;
 
     rc = B_PlaybackIp_SetSettings(ipHandle->playbackIp, &playbackIpSettings);
     if (rc != B_ERROR_SUCCESS) {
@@ -1538,85 +1452,159 @@ bool ipSetupNexusResources(bcmPlayer_base_nexus_handle_t *nexusHandle, int iPlay
     return true;
 }
 
-NEXUS_PidChannelHandle ipGetVideoPidChannel(bcmPlayer_base_nexus_handle_t *nexusHandle) {
+NEXUS_PidChannelHandle ipGetVideoPidChannel(bcmPlayer_base_nexus_handle_t *nexusHandle)
+{
     BcmPlayerIpHandle *ipHandle;
-
-    BCMPLAYER_IP_DBG;
-
-    if (nexusHandle == NULL) {
-        LOGE("%s: nexusHandle == NULL", __FUNCTION__);
-        return NULL;
-    }
-
-    ipHandle = nexusHandle->ipHandle;
-
-    if (ipHandle == NULL) {
-        LOGE("%s: ipHandle == NULL", __FUNCTION__);
-        return NULL;
-    }
-
-    if (ipHandle->usePlaypump) {
-        NEXUS_PlaypumpOpenPidChannelSettings playpumpPidSettings;
-
-        NEXUS_Playpump_GetDefaultOpenPidChannelSettings(&playpumpPidSettings);
-        playpumpPidSettings.pidType = NEXUS_PidType_eVideo;
-        return NEXUS_Playpump_OpenPidChannel(nexusHandle->playpump,
-                                             ipHandle->psi.videoPid,
-                                             &playpumpPidSettings);
-    } else {
-        NEXUS_PlaybackPidChannelSettings playbackPidSettings;
-
-        NEXUS_Playback_GetDefaultPidChannelSettings(&playbackPidSettings);
-        playbackPidSettings.pidSettings.pidType = NEXUS_PidType_eVideo;
-        playbackPidSettings.pidTypeSettings.video.codec = ipHandle->psi.videoCodec;
-        playbackPidSettings.pidTypeSettings.video.index = true;
-        playbackPidSettings.pidTypeSettings.video.simpleDecoder = nexusHandle->simpleVideoDecoder;
-        return NEXUS_Playback_OpenPidChannel(nexusHandle->playback,
-                                             ipHandle->psi.videoPid,
-                                             &playbackPidSettings);
-    }
-
-    return NULL;
-}
-
-NEXUS_PidChannelHandle ipGetAudioPidChannel(bcmPlayer_base_nexus_handle_t *nexusHandle) {
-    BcmPlayerIpHandle *ipHandle;
-
     NEXUS_PidChannelHandle pidCh = NULL;
 
     BCMPLAYER_IP_DBG;
 
     if (nexusHandle == NULL) {
         LOGE("%s: nexusHandle == NULL", __FUNCTION__);
-        return NULL;
     }
+    else {
+        ipHandle = nexusHandle->ipHandle;
 
-    ipHandle = nexusHandle->ipHandle;
+        if (ipHandle == NULL) {
+            LOGE("%s: ipHandle == NULL", __FUNCTION__);
+        }
+        else {
+            if (ipHandle->usePlaypump) {
+                NEXUS_PlaypumpOpenPidChannelSettings playpumpPidSettings;
 
-    if (ipHandle == NULL) {
-        LOGE("%s: ipHandle == NULL", __FUNCTION__);
-        return NULL;
+                NEXUS_Playpump_GetDefaultOpenPidChannelSettings(&playpumpPidSettings);
+                playpumpPidSettings.pidType = NEXUS_PidType_eVideo;
+                pidCh = NEXUS_Playpump_OpenPidChannel(nexusHandle->playpump, ipHandle->psi.videoPid, &playpumpPidSettings);
+            } else {
+                NEXUS_PlaybackPidChannelSettings playbackPidSettings;
+
+                NEXUS_Playback_GetDefaultPidChannelSettings(&playbackPidSettings);
+                playbackPidSettings.pidSettings.pidType = NEXUS_PidType_eVideo;
+                playbackPidSettings.pidTypeSettings.video.codec = ipHandle->psi.videoCodec;
+                playbackPidSettings.pidTypeSettings.video.index = true;
+                playbackPidSettings.pidTypeSettings.video.simpleDecoder = nexusHandle->simpleVideoDecoder;
+                pidCh = NEXUS_Playback_OpenPidChannel(nexusHandle->playback, ipHandle->psi.videoPid, &playbackPidSettings);
+            }
+        }
     }
-
-    if (ipHandle->usePlaypump) {
-        NEXUS_PlaypumpOpenPidChannelSettings playpumpPidSettings;
-
-        NEXUS_Playpump_GetDefaultOpenPidChannelSettings(&playpumpPidSettings);
-        playpumpPidSettings.pidType = NEXUS_PidType_eAudio;
-        playpumpPidSettings.pidTypeSettings.audio.codec = ipHandle->psi.audioCodec;
-        pidCh = NEXUS_Playpump_OpenPidChannel(nexusHandle->playpump,
-                                             ipHandle->psi.audioPid,
-                                             &playpumpPidSettings);
-    } else {
-        NEXUS_PlaybackPidChannelSettings playbackPidSettings;
-        NEXUS_Playback_GetDefaultPidChannelSettings(&playbackPidSettings);
-        playbackPidSettings.pidSettings.pidType = NEXUS_PidType_eAudio;
-        playbackPidSettings.pidSettings.pidTypeSettings.audio.codec = ipHandle->psi.audioCodec;
-        playbackPidSettings.pidTypeSettings.audio.simpleDecoder = nexusHandle->simpleAudioDecoder;
-        pidCh = NEXUS_Playback_OpenPidChannel(nexusHandle->playback,
-                                             ipHandle->psi.audioPid,
-                                             &playbackPidSettings);
-    }
-
     return pidCh;
 }
+
+NEXUS_PidChannelHandle ipGetAudioPidChannel(bcmPlayer_base_nexus_handle_t *nexusHandle)
+{
+    BcmPlayerIpHandle *ipHandle;
+    NEXUS_PidChannelHandle pidCh = NULL;
+
+    BCMPLAYER_IP_DBG;
+
+    if (nexusHandle == NULL) {
+        LOGE("%s: nexusHandle == NULL", __FUNCTION__);
+    }
+    else {
+        ipHandle = nexusHandle->ipHandle;
+
+        if (ipHandle == NULL) {
+            LOGE("%s: ipHandle == NULL", __FUNCTION__);
+        }
+        else {
+            if (ipHandle->usePlaypump) {
+                NEXUS_PlaypumpOpenPidChannelSettings playpumpPidSettings;
+
+                NEXUS_Playpump_GetDefaultOpenPidChannelSettings(&playpumpPidSettings);
+                playpumpPidSettings.pidType = NEXUS_PidType_eAudio;
+                playpumpPidSettings.pidTypeSettings.audio.codec = ipHandle->psi.audioCodec;
+                pidCh = NEXUS_Playpump_OpenPidChannel(nexusHandle->playpump, ipHandle->psi.audioPid, &playpumpPidSettings);
+            } else {
+                NEXUS_PlaybackPidChannelSettings playbackPidSettings;
+
+                NEXUS_Playback_GetDefaultPidChannelSettings(&playbackPidSettings);
+                playbackPidSettings.pidSettings.pidType = NEXUS_PidType_eAudio;
+                playbackPidSettings.pidSettings.pidTypeSettings.audio.codec = ipHandle->psi.audioCodec;
+                playbackPidSettings.pidTypeSettings.audio.simpleDecoder = nexusHandle->simpleAudioDecoder;
+                pidCh = NEXUS_Playback_OpenPidChannel(nexusHandle->playback, ipHandle->psi.audioPid, &playbackPidSettings);
+            }
+        }
+    }
+    return pidCh;
+}
+
+NEXUS_PidChannelHandle ipGetPcrPidChannel(bcmPlayer_base_nexus_handle_t *nexusHandle)
+{
+    BcmPlayerIpHandle *ipHandle;
+    NEXUS_PidChannelHandle pidCh = NULL;
+
+    BCMPLAYER_IP_DBG;
+
+    if (nexusHandle == NULL) {
+        LOGE("%s: nexusHandle == NULL", __FUNCTION__);
+    }
+    else {
+        ipHandle = nexusHandle->ipHandle;
+
+        if (ipHandle == NULL) {
+            LOGE("%s: ipHandle == NULL", __FUNCTION__);
+        }
+        else {
+            if (ipHandle->usePlaypump) {
+                if (ipHandle->psi.pcrPid && ipHandle->psi.pcrPid != ipHandle->psi.audioPid && ipHandle->psi.pcrPid != ipHandle->psi.videoPid) {
+                    NEXUS_PlaypumpOpenPidChannelSettings playpumpPidSettings;
+
+                    /* Open the pcr pid channel */
+                    NEXUS_Playpump_GetDefaultOpenPidChannelSettings(&playpumpPidSettings);
+                    playpumpPidSettings.pidType = NEXUS_PidType_eUnknown;
+                    pidCh = NEXUS_Playpump_OpenPidChannel(nexusHandle->playpump, ipHandle->psi.pcrPid, &playpumpPidSettings);
+                }
+                else {
+                    if (ipHandle->psi.pcrPid == ipHandle->psi.audioPid)
+                        pidCh = nexusHandle->audioPidChannel;
+                    else
+                        pidCh = nexusHandle->videoPidChannel;
+                }
+            }
+        }
+    }
+    return pidCh;
+}
+
+int bcmPlayer_setLooping_ip(int iPlayerIndex, int loop)
+{
+    B_PlaybackIpError rc;
+    BcmPlayerIpHandle* ipHandle = nexus_handle[iPlayerIndex].ipHandle;
+    B_PlaybackIpSettings playbackIpSettings;
+
+    BCMPLAYER_IP_DBG;
+
+    rc = B_PlaybackIp_GetSettings(ipHandle->playbackIp, &playbackIpSettings);
+    if (rc != B_ERROR_SUCCESS) {
+        LOGE("%s: B_PlaybackIp_GetSettings returned: %d", __FUNCTION__, rc);
+        return -1;
+    }
+
+    playbackIpSettings.enableEndOfStreamLooping = (loop != 0);
+
+    rc = B_PlaybackIp_SetSettings(ipHandle->playbackIp, &playbackIpSettings);
+    if (rc != B_ERROR_SUCCESS) {
+        LOGE("%s: B_PlaybackIp_SetSettings returned: %d", __FUNCTION__, rc);
+        return -1;
+    }
+
+    return 0;
+}
+
+void player_reg_ip(bcmPlayer_func_t *pFuncs)
+{
+    pFuncs->bcmPlayer_init_func = bcmPlayer_init_ip;
+    pFuncs->bcmPlayer_uninit_func = bcmPlayer_uninit_ip;
+    pFuncs->bcmPlayer_setDataSource_func = bcmPlayer_setDataSource_ip;
+    pFuncs->bcmPlayer_prepare_func = bcmPlayer_prepare_ip;
+    pFuncs->bcmPlayer_start_func = bcmPlayer_start_ip;
+    pFuncs->bcmPlayer_stop_func = bcmPlayer_stop_ip;
+    pFuncs->bcmPlayer_pause_func = bcmPlayer_pause_ip;
+    pFuncs->bcmPlayer_isPlaying_func = bcmPlayer_isPlaying_ip;
+    pFuncs->bcmPlayer_seekTo_func = bcmPlayer_seekTo_ip;
+    pFuncs->bcmPlayer_getCurrentPosition_func = bcmPlayer_getCurrentPosition_ip;
+    pFuncs->bcmPlayer_getDuration_func = bcmPlayer_getDuration_ip;
+    pFuncs->bcmPlayer_getMediaExtractorFlags_func = bcmPlayer_getMediaExtractorFlags_ip;
+    pFuncs->bcmPlayer_setLooping_func = bcmPlayer_setLooping_ip;
+}
+

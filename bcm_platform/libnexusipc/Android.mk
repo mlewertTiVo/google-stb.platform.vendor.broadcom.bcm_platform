@@ -17,6 +17,16 @@ LOCAL_PATH := $(call my-dir)
 APPLIBS_TOP ?=$(LOCAL_PATH)/../../../../../../../..
 NEXUS_TOP ?= $(LOCAL_PATH)/../../../../../../../../../nexus
 
+ifeq ($(NEXUS_MODE),proxy)
+NEXUS_LIB=libnexus
+else
+ifeq ($(NEXUS_WEBCPU),core1_server)
+NEXUS_LIB=libnexus_webcpu
+else
+NEXUS_LIB=libnexus_client
+endif
+endif
+
 include $(REFSW_PATH)/bin/include/platform_app.inc
 ifeq ($(ANDROID_SUPPORTS_NXCLIENT),y)
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
@@ -57,11 +67,11 @@ endif
 #----------------------
 include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false
-LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexus 
+LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder $(NEXUS_LIB)
 
 LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
                     $(REFSW_PATH)/../libnexusservice \
-					$(TOP)/frameworks/native/include
+                    $(TOP)/frameworks/native/include
 
 ifeq ($(ANDROID_USES_TRELLIS_WM),y)
 LOCAL_SHARED_LIBRARIES += libstlport
@@ -142,13 +152,12 @@ include $(BUILD_SHARED_LIBRARY)
 #----------------------
 include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false
-LOCAL_LDFLAGS := -lnexus -L$(REFSW_PATH)/bin
 
-LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusipcclient
+LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusipcclient $(NEXUS_LIB)
 
 LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
                     $(REFSW_PATH)/../libnexusservice \
-					$(TOP)/frameworks/native/include
+                    $(TOP)/frameworks/native/include
 
 ifeq ($(ANDROID_USES_TRELLIS_WM),y)
 LOCAL_SHARED_LIBRARIES += libstlport

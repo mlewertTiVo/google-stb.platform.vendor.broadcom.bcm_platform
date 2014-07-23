@@ -459,7 +459,7 @@ AudioStreamOutNEXUS * AudioStreamOutNEXUS::create()
 
     audioStreamOutNexus->ipcclient->getClientInfo(audioStreamOutNexus->nexus_client, &client_info);
 
-    BKNI_Memset(&connectSettings, 0, sizeof(connectSettings));
+    audioStreamOutNexus->ipcclient->getDefaultConnectClientSettings(&connectSettings);
     connectSettings.simpleAudioPlayback[0].id = client_info.audioPlaybackId;
 
     if (audioStreamOutNexus->ipcclient->connectClientResources(audioStreamOutNexus->nexus_client, &connectSettings) == 0) {

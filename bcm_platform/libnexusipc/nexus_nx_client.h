@@ -108,6 +108,8 @@ public:
         StandbyMonitorThread &operator=(const StandbyMonitorThread &);
     };
 
+    virtual void getDefaultConnectClientSettings(b_refsw_client_connect_resource_settings *settings);
+
     /* These API's require a Nexus Client Context as they handle per client resources... */
     virtual NexusClientContext * createClientContext(const b_refsw_client_client_configuration *config);
     virtual void destroyClientContext(NexusClientContext * client);

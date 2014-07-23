@@ -6,6 +6,16 @@ endif
 
 LOCAL_PATH:= $(call my-dir)
 
+ifeq ($(NEXUS_MODE),proxy)
+NEXUS_LIB=libnexus
+else
+ifeq ($(NEXUS_WEBCPU),core1_server)
+NEXUS_LIB=libnexus_webcpu
+else
+NEXUS_LIB=libnexus_client
+endif
+endif
+
 include $(REFSW_PATH)/bin/include/platform_app.inc
 ifeq ($(ANDROID_SUPPORTS_NXCLIENT),y)
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
@@ -13,8 +23,8 @@ endif
 
 include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false
-#LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusfrontendservice
-LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusipcclient
+
+LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusipcclient $(NEXUS_LIB)
 
 ifeq ($(ANDROID_SUPPORTS_NXCLIENT),y)
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
@@ -24,11 +34,7 @@ else
 LOCAL_SHARED_LIBRARIES += libnexusservice
 endif
 
-LOCAL_LDFLAGS := -lnexus -L$(REFSW_PATH)/bin
 LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include $(JNI_H_INCLUDE) 
-#LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusfrontendservice
-#LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
-#					$(REFSW_PATH)/../libnexusservice
 LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusservice
 LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc
 

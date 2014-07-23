@@ -313,6 +313,11 @@ bool NexusIPCClient::addGraphicsWindow(NexusClientContext * client)
     return cmd.param.addGraphicsWindow.out.status;
 }
 
+void NexusIPCClient::getDefaultConnectClientSettings(b_refsw_client_connect_resource_settings *settings)
+{
+    BKNI_Memset(settings, 0, sizeof(*settings));
+}
+
 /* Client side implementation of the APIs that are transferred to the server process over binder */
 NexusClientContext * NexusIPCClient::createClientContext(const b_refsw_client_client_configuration *config)
 {

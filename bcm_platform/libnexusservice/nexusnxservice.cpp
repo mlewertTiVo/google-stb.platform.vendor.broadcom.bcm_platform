@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2013 Broadcom Corporation
+ *    (c)2010-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -701,7 +701,8 @@ bool NexusNxService::connectClientResources(NexusClientContext * client, b_refsw
 #endif
     }
 
-    /* Connect HDMI input resource... */
+    /* Connect HDMI input resource if < URSR 14.2... */
+#if ANDROID_SUPPORTS_HDMI_LEGACY
     if (pConnectSettings->hdmiInput.id != 0) {
         connectSettings.hdmiInput.id                                = pConnectSettings->hdmiInput.id;
         connectSettings.hdmiInput.surfaceClientId                   = pConnectSettings->hdmiInput.surfaceClientId;
@@ -714,6 +715,7 @@ bool NexusNxService::connectClientResources(NexusClientContext * client, b_refsw
         connectSettings.hdmiInput.hdDvi                             = pConnectSettings->hdmiInput.hdDvi;
 #endif
     }
+#endif
 
     /* Connect Simple Encoder resources... */
     for (i = 0; i < NXCLIENT_MAX_IDS && i < CLIENT_MAX_IDS && pConnectSettings->simpleEncoder[i].id != 0; i++) {

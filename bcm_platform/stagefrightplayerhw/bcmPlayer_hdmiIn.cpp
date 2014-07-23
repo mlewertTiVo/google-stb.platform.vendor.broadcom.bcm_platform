@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2012 Broadcom Corporation
+ *    (c)2010-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -36,63 +36,11 @@
  * ANY LIMITED REMEDY.
  *
  * $brcm_Workfile: bcmPlayer_hdmiIn.cpp $
- * $brcm_Revision: 10 $
- * $brcm_Date: 12/3/12 3:27p $
- * 
- * Module Description:
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/stagefrightplayerhw/bcmPlayer_hdmiIn.cpp $
- * 
- * 10   12/3/12 3:27p saranya
- * SWANDROID-266: Removed Non-IPC Standalone Mode
- * 
- * 9   9/26/12 11:49a alexpan
- * SWANDROID-224: Fix hdmi-input pink screen problem
- * 
- * 8   6/20/12 11:16a kagrawal
- * SWANDROID-108: Add support for HDMI-Input with SimpleDecoder and w/ or
- *  w/o nexus client server mode
- * 
- * 7   6/5/12 2:39p kagrawal
- * SWANDROID-108:Added support to use simple decoder APIs
- * 
- * 6   3/6/12 8:09p alexpan
- * SWANDROID-41: Fix build errors for platforms without hdmi-in
- * 
- * 5   2/24/12 4:11p kagrawal
- * SWANDROID-12: Dynamic client creation using IPC over binder
- * 
- * 4   2/8/12 2:53p kagrawal
- * SWANDROID-12: Initial support for Nexus client-server mode
- * 
- * 3   12/29/11 6:46p franktcc
- * SW7425-2069: bcmPlayer code refactoring.
- * 
- * 2   12/10/11 7:18p franktcc
- * SW7425-1845: Adding end of stream callback to nexus media player and
- *  fixed HDMI crash issue
- * 
- * 7   11/28/11 6:16p franktcc
- * SW7425-1845: Adding end of stream callback to nexus media player.
- * 
- * 6   11/9/11 5:05p fzhang
- * SW7425-1346: Fix crash when quit from hdmi-in player
- * 
- * 5   9/22/11 4:59p zhangjq
- * SW7425-1328 : support file handle type of URI in bcmPlayer
- * 
- * 4   8/25/11 7:31p franktcc
- * SW7420-2020: Enable PIP/Dual Decode
- * 
- * 3   8/22/11 5:34p zhangjq
- * SW7425-1172 : adjust architecture of bcmPlayer
- * 
- * 1   8/22/11 4:04p zhangjq
- * SW7425-1172 : adjust architecture of bcmPlayer
  *
  *****************************************************************************/
+// Verbose messages removed
+//#define LOG_NDEBUG 0
+
 #define LOG_TAG "bcmPlayer_hdmiIn"
 
 #include "bcmPlayer.h"
@@ -106,73 +54,167 @@ static int bcmPlayer_init_hdmiIn(int iPlayerIndex)
 {
     int rc;
 
-    LOGV("bcmPlayer_init_hdmiIn");
+    LOGV("[%d]bcmPlayer_init_hdmiIn", iPlayerIndex);
 
     rc = bcmPlayer_init_base(iPlayerIndex);
 
-    LOGD("bcmPlayer_init_hdmiIn() completed (rc=%d)", rc);
+    LOGD("[%d]bcmPlayer_init_hdmiIn() completed (rc=%d)", iPlayerIndex, rc);
     return rc;
 }
     
-static void bcmPlayer_uninit_hdmiIn(int iPlayerIndex) {
-    LOGV("bcmPlayer_uninit_hdmiIn");
+static void bcmPlayer_uninit_hdmiIn(int iPlayerIndex)
+{
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+
+    LOGV("[%d]bcmPlayer_uninit_hdmiIn", iPlayerIndex);
     
     bcmPlayer_uninit_base(iPlayerIndex);
 
-    if(nexus_handle[iPlayerIndex].file){
-        NEXUS_FilePlay_Close(nexus_handle[iPlayerIndex].file);
-        nexus_handle[iPlayerIndex].file = NULL;
+#if NEXUS_NUM_HDMI_INPUTS
+    if (nexusHandle->hdmiInput) {
+        NEXUS_HdmiInput_Close(nexusHandle->hdmiInput);
+        nexusHandle->hdmiInput = NULL;
     }
-    
-    LOGD("bcmPlayer_uninit_hdmiIn() completed");
+#endif
+
+    LOGD("[%d]bcmPlayer_uninit_hdmiIn() completed", iPlayerIndex);
 }
 
-static void playback_turnoff(int iPlayerIndex){
-    if(nexus_handle[iPlayerIndex].playback)
-    {
+static void playback_turnoff(int iPlayerIndex)
+{
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+
+    if (nexusHandle->playback) {
         NEXUS_PlaybackStatus status;
         
-        NEXUS_Playback_GetStatus(nexus_handle[iPlayerIndex].playback, &status);
+        NEXUS_Playback_GetStatus(nexusHandle->playback, &status);
 
-        if(status.state == NEXUS_PlaybackState_ePaused)
-        {
+        if (status.state == NEXUS_PlaybackState_ePaused) {
             LOGE("PLAYBACK HASN'T BEEN STARTED YET!");
         }
 
-        if(status.state == NEXUS_PlaybackState_ePlaying || status.state == NEXUS_PlaybackState_ePaused)
-        {
-            NEXUS_Playback_Stop(nexus_handle[iPlayerIndex].playback);
+        if (status.state == NEXUS_PlaybackState_ePlaying || status.state == NEXUS_PlaybackState_ePaused) {
+            NEXUS_Playback_Stop(nexusHandle->playback);
 
-            while(status.state == NEXUS_PlaybackState_ePlaying || status.state == NEXUS_PlaybackState_ePaused)
-                NEXUS_Playback_GetStatus(nexus_handle[iPlayerIndex].playback, &status);
-
-            //usleep(2000000);/* wait for playback stoping */
+            while (status.state == NEXUS_PlaybackState_ePlaying || status.state == NEXUS_PlaybackState_ePaused) {
+                NEXUS_Playback_GetStatus(nexusHandle->playback, &status);
+            }
         }
     }
 
-    if(nexus_handle[iPlayerIndex].file){
-        NEXUS_FilePlay_Close(nexus_handle[iPlayerIndex].file);
-        nexus_handle[iPlayerIndex].file = NULL;
+    if (nexusHandle->playback) {
+        NEXUS_Playback_CloseAllPidChannels(nexusHandle->playback);    
+        NEXUS_Playback_Destroy(nexusHandle->playback);
+        nexusHandle->playback = NULL;
     }
 
-    if(nexus_handle[iPlayerIndex].playback)
-        NEXUS_Playback_CloseAllPidChannels(nexus_handle[iPlayerIndex].playback);    
-    if(nexus_handle[iPlayerIndex].playback)
-        NEXUS_Playback_Destroy(nexus_handle[iPlayerIndex].playback);
-    nexus_handle[iPlayerIndex].playback = NULL;
-
-    if(nexus_handle[iPlayerIndex].playpump)
-        NEXUS_Playpump_Close(nexus_handle[iPlayerIndex].playpump);
-    nexus_handle[iPlayerIndex].playpump = NULL;
+    if (nexusHandle->playpump) {
+        NEXUS_Playpump_Close(nexusHandle->playpump);
+        nexusHandle->playpump = NULL;
+    }
 }
+
+#if NEXUS_NUM_HDMI_INPUTS && NEXUS_NUM_HDMI_OUTPUTS && !ANDROID_SUPPORTS_HDMI_LEGACY
+struct hdmi_edid {
+    const uint8_t *data;
+    unsigned size;
+    bool allocated;
+};
+
+static void get_hdmi_output_edid(NEXUS_HdmiOutputHandle hdmiOutput, struct hdmi_edid *edid)
+{
+    NEXUS_Error rc;
+    uint8_t *attachedRxEdid;
+    size_t attachedRxEdidSize;
+    NEXUS_HdmiOutputBasicEdidData hdmiOutputBasicEdidData;
+    NEXUS_HdmiOutputEdidBlock edidBlock;
+    NEXUS_HdmiOutputStatus status;
+    unsigned i;
+
+    static const uint8_t sampleEdid[] =
+    {
+        0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x08, 0x6D, 0x74, 0x22, 0x05, 0x01, 0x11, 0x20,
+        0x00, 0x14, 0x01, 0x03, 0x80, 0x00, 0x00, 0x78, 0x0A, 0xDA, 0xFF, 0xA3, 0x58, 0x4A, 0xA2, 0x29,
+        0x17, 0x49, 0x4B, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x3A, 0x80, 0x18, 0x71, 0x38, 0x2D, 0x40, 0x58, 0x2C,
+        0x45, 0x00, 0xBA, 0x88, 0x21, 0x00, 0x00, 0x1E, 0x01, 0x1D, 0x80, 0x18, 0x71, 0x1C, 0x16, 0x20,
+        0x58, 0x2C, 0x25, 0x00, 0xBA, 0x88, 0x21, 0x00, 0x00, 0x9E, 0x00, 0x00, 0x00, 0xFC, 0x00, 0x42,
+        0x43, 0x4D, 0x37, 0x34, 0x32, 0x32, 0x2F, 0x37, 0x34, 0x32, 0x35, 0x0A, 0x00, 0x00, 0x00, 0xFD,
+        0x00, 0x17, 0x3D, 0x0F, 0x44, 0x0F, 0x00, 0x0A, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x01, 0x89,
+
+        0x02, 0x03, 0x3C, 0x71, 0x7F, 0x03, 0x0C, 0x00, 0x40, 0x00, 0xB8, 0x2D, 0x2F, 0x80, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0xE3, 0x05, 0x1F, 0x01, 0x49, 0x90, 0x05, 0x20, 0x04, 0x03, 0x02, 0x07,
+        0x06, 0x01, 0x29, 0x09, 0x07, 0x01, 0x11, 0x07, 0x00, 0x15, 0x07, 0x00, 0x01, 0x1D, 0x00, 0x72,
+        0x51, 0xD0, 0x1E, 0x20, 0x6E, 0x28, 0x55, 0x00, 0xBA, 0x88, 0x21, 0x00, 0x00, 0x1E, 0x8C, 0x0A,
+        0xD0, 0x8A, 0x20, 0xE0, 0x2D, 0x10, 0x10, 0x3E, 0x96, 0x00, 0xBA, 0x88, 0x21, 0x00, 0x00, 0x18,
+        0x8C, 0x0A, 0xD0, 0x8A, 0x20, 0xE0, 0x2D, 0x10, 0x10, 0x3E, 0x96, 0x00, 0x0B, 0x88, 0x21, 0x00,
+        0x00, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x9D
+    };
+
+    memset(edid, 0, sizeof(*edid));
+
+    /* default to sample edid if not connect or there's any failure */
+    edid->data = sampleEdid;
+    edid->size = sizeof(sampleEdid);
+
+    if (hdmiOutput) {
+        NEXUS_HdmiOutput_GetStatus(hdmiOutput, &status);
+    }
+    else {
+        status.connected = false;
+    }
+    if (!status.connected) {
+        return;
+    }
+
+    rc = NEXUS_HdmiOutput_GetBasicEdidData(hdmiOutput, &hdmiOutputBasicEdidData);
+    if (rc!=NEXUS_SUCCESS) {
+        ALOGE("%s: Unable to get downstream EDID; Use default EDID for repeater's EDID", __FUNCTION__);
+        return;
+    }
+    /* allocate space to hold the EDID blocks */
+    attachedRxEdidSize = (hdmiOutputBasicEdidData.extensions + 1) * sizeof(edidBlock.data);
+    attachedRxEdid = (uint8_t *)BKNI_Malloc(attachedRxEdidSize);
+    for (i = 0; i <= hdmiOutputBasicEdidData.extensions; i++) {
+        unsigned j;
+
+        rc = NEXUS_HdmiOutput_GetEdidBlock(hdmiOutput, i, &edidBlock);
+        if (rc!=NEXUS_SUCCESS) {
+            ALOGE("%s: Error retrieving EDID Block %d from attached receiver;", __FUNCTION__, i);
+            BKNI_Free(attachedRxEdid);
+            return;
+        }
+
+        /* copy EDID data */
+        for (j=0; j < sizeof(edidBlock.data); j++)  {
+            assert(i*sizeof(edidBlock.data)+j < attachedRxEdidSize);
+            attachedRxEdid[i*sizeof(edidBlock.data)+j] = edidBlock.data[j];
+        }
+    }
+    edid->data = attachedRxEdid;
+    edid->allocated = true;
+    edid->size = attachedRxEdidSize;
+    return;
+}
+
+static void free_hdmi_output_edid(struct hdmi_edid *edid)
+{
+    if (edid->allocated && edid->data) {
+        BKNI_Free((void*)edid->data);
+        edid->data = NULL;
+    }
+}
+#endif
 
 int bcmPlayer_setDataSource_hdmiIn(int iPlayerIndex, const char *url, uint16_t *videoWidth, uint16_t *videoHeight, char* extraHeader)
 {
     int rc = 0;
     b_refsw_client_client_info client_info;
     b_refsw_client_connect_resource_settings connectSettings;
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
 
-    LOGV("bcmPlayer_setDataSource_hdmiIn('%s')", url); 
+    LOGV("[%d]bcmPlayer_setDataSource_hdmiIn('%s')", iPlayerIndex, url); 
 
     *videoWidth = 1280;
     *videoHeight = 720;
@@ -180,23 +222,109 @@ int bcmPlayer_setDataSource_hdmiIn(int iPlayerIndex, const char *url, uint16_t *
     // firstly, remove playback handle
     playback_turnoff(iPlayerIndex);
 
-    nexus_handle[iPlayerIndex].ipcclient->getClientInfo(nexus_handle[iPlayerIndex].nexus_client, &client_info);
+    nexusHandle->ipcclient->getClientInfo(nexusHandle->nexus_client, &client_info);
 
     // Now connect the client resources
-    BKNI_Memset(&connectSettings, 0, sizeof(connectSettings));
+    nexusHandle->ipcclient->getDefaultConnectClientSettings(&connectSettings);
     connectSettings.hdmiInput.id = client_info.hdmiInputId;
     connectSettings.hdmiInput.windowId = iPlayerIndex;
     connectSettings.hdmiInput.surfaceClientId = client_info.surfaceClientId;
     connectSettings.simpleAudioDecoder.id = client_info.audioDecoderId;
 
-    if (nexus_handle[iPlayerIndex].ipcclient->connectClientResources(nexus_handle[iPlayerIndex].nexus_client, &connectSettings) != true) {
-        LOGE("%s: Could not connect client \"%s\" resources!", __FUNCTION__, nexus_handle[iPlayerIndex].ipcclient->getClientName());
+#if !ANDROID_SUPPORTS_HDMI_LEGACY
+    connectSettings.simpleVideoDecoder[0].id = client_info.videoDecoderId;
+    connectSettings.simpleVideoDecoder[0].surfaceClientId = client_info.surfaceClientId;
+    connectSettings.simpleVideoDecoder[0].windowId = iPlayerIndex; /* Main or PIP Window */
+    connectSettings.simpleVideoDecoder[0].decoderCaps.maxWidth = 0;
+    connectSettings.simpleVideoDecoder[0].decoderCaps.maxHeight = 0;
+#endif
+
+    if (nexusHandle->ipcclient->connectClientResources(nexusHandle->nexus_client, &connectSettings) != true) {
+        LOGE("%s: Could not connect client \"%s\" resources!", __FUNCTION__, nexusHandle->ipcclient->getClientName());
         rc = 1;
     }
     else {
-        LOGI("%s: video and audio are all started via hdmi_in", __FUNCTION__);
+#if NEXUS_NUM_HDMI_INPUTS && NEXUS_NUM_HDMI_OUTPUTS && !ANDROID_SUPPORTS_HDMI_LEGACY
+        /* With URSR 14.2, NxClient HDMI Input architecture has completely changed and we need to open the HDMI input
+           in the same process that starts the simple A/V decoders (HDMI). */
+        struct hdmi_edid edid;
+        unsigned index = 0;
+        NEXUS_HdmiOutputHandle hdmiOutput;
+        NEXUS_HdmiInputHandle hdmiInput;
+        NEXUS_HdmiInputSettings hdmiInputSettings;
+
+        hdmiOutput = NEXUS_HdmiOutput_Open(NEXUS_ALIAS_ID + 0, NULL);
+        get_hdmi_output_edid(hdmiOutput, &edid);
+        if (hdmiOutput) {
+            NEXUS_HdmiOutput_Close(hdmiOutput);
+        }
+
+        NEXUS_HdmiInput_GetDefaultSettings(&hdmiInputSettings);
+        hdmiInputSettings.timebase = NEXUS_Timebase_e0;
+        hdmiInputSettings.frontend.hpdDisconnected = false;
+        hdmiInputSettings.useInternalEdid = true;
+        nexusHandle->hdmiInput = NEXUS_HdmiInput_OpenWithEdid(index, &hdmiInputSettings, edid.data, edid.size);
+        if (!nexusHandle->hdmiInput) {
+            ALOGE("%s: HdmiInput %d not available", __FUNCTION__, index);
+            rc = NEXUS_NOT_AVAILABLE;
+        }
+        free_hdmi_output_edid(&edid);
+#endif
     }
     return rc;
+}
+
+static int bcmPlayer_start_hdmiIn(int iPlayerIndex) 
+{
+#if NEXUS_NUM_HDMI_INPUTS && NEXUS_NUM_HDMI_OUTPUTS && !ANDROID_SUPPORTS_HDMI_LEGACY
+    NEXUS_Error rc;
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+
+    LOGV("[%d]bcmPlayer_start_hdmiIn", iPlayerIndex);
+
+    rc = NEXUS_SimpleVideoDecoder_StartHdmiInput(nexusHandle->simpleVideoDecoder, nexusHandle->hdmiInput, NULL);
+    if (rc != NEXUS_SUCCESS) {
+        LOGE("%s: NEXUS_SimpleVideoDecoder_StartHdmiInput returned : %d", __FUNCTION__, rc);
+        return -1;
+    }
+
+    rc = NEXUS_SimpleAudioDecoder_StartHdmiInput(nexusHandle->simpleAudioDecoder, nexusHandle->hdmiInput, NULL);
+    if (rc != NEXUS_SUCCESS) {
+        LOGE("%s: NEXUS_SimpleAudioDecoder_StartHdmiInput returned : %d", __FUNCTION__, rc);
+        return -1;
+    }
+#endif
+    LOGI("[%d]%s: video and audio are all started via hdmi_in", iPlayerIndex, __FUNCTION__);
+    return 0;
+}
+
+static int bcmPlayer_isPlaying_hdmiIn(int iPlayerIndex)
+{
+    bool playing = true;
+#if NEXUS_NUM_HDMI_INPUTS && NEXUS_NUM_HDMI_OUTPUTS && !ANDROID_SUPPORTS_HDMI_LEGACY
+    NEXUS_Error rc;
+    NEXUS_VideoDecoderStatus status;
+
+    LOGV("[%d]%s", iPlayerIndex, __FUNCTION__);
+
+    rc = NEXUS_SimpleVideoDecoder_GetStatus(nexus_handle[iPlayerIndex].simpleVideoDecoder, &status);
+
+    if (rc == NEXUS_SUCCESS) {
+        playing = status.started;
+        LOGV("[%d]%s: isPlaying=%d", iPlayerIndex, __FUNCTION__, status.started);
+    }
+    else {
+        playing = false;
+    }
+#endif
+    return playing;
+}
+
+int bcmPlayer_getCurrentPosition_hdmiIn(int iPlayerIndex, int *msec)
+{
+    *msec = 0;
+    LOGV("[%d]%s: position=%dms", iPlayerIndex, __FUNCTION__, *msec);
+    return 0;
 }
 
 static int bcmPlayer_getMediaExtractorFlags_hdmiIn(int iPlayerIndex, unsigned *flags)
@@ -208,11 +336,15 @@ static int bcmPlayer_getMediaExtractorFlags_hdmiIn(int iPlayerIndex, unsigned *f
     return 0;
 }
 
-void player_reg_hdmiIn(bcmPlayer_func_t *pFuncs){
-
+void player_reg_hdmiIn(bcmPlayer_func_t *pFuncs)
+{
     /* assign function pointers implemented in this module */
     pFuncs->bcmPlayer_init_func = bcmPlayer_init_hdmiIn;
     pFuncs->bcmPlayer_uninit_func = bcmPlayer_uninit_hdmiIn;
     pFuncs->bcmPlayer_setDataSource_func = bcmPlayer_setDataSource_hdmiIn;
+    pFuncs->bcmPlayer_start_func = bcmPlayer_start_hdmiIn;
+    pFuncs->bcmPlayer_isPlaying_func = bcmPlayer_isPlaying_hdmiIn;
+    pFuncs->bcmPlayer_getCurrentPosition_func = bcmPlayer_getCurrentPosition_hdmiIn;
     pFuncs->bcmPlayer_getMediaExtractorFlags_func = bcmPlayer_getMediaExtractorFlags_hdmiIn;
 }
+

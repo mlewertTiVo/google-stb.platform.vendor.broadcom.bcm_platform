@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2013 Broadcom Corporation
+ *    (c)2010-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -36,96 +36,6 @@
  * ANY LIMITED REMEDY.
  *
  * $brcm_Workfile: nexusservice.cpp $
- * $brcm_Revision: 23 $
- * $brcm_Date: 12/3/12 3:24p $
- * 
- * Module Description:
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/libnexusservice/nexusservice.cpp $
- * 
- * 24   1/24/13 5:44p mnelis
- * SWANDROID-301: Add Zorder support
- * 
- * 23   12/3/12 3:24p saranya
- * SWANDROID-266: Removed Non-IPC Standalone Mode
- * 
- * 22   9/20/12 6:28p kagrawal
- * SWANDROID-218: Give framebuffer_heap(1) for the SD display while
- *  setting up the NSC server
- * 
- * 21   9/13/12 11:32a kagrawal
- * SWANDROID-104: Added support for dynamic display resolution change,
- *  1080p and screen resizing
- * 
- * 20   9/12/12 3:59p nitinb
- * SWANDROID-197: Implement volume control at audio output level
- * 
- * 19   9/4/12 6:54p nitinb
- * SWANDROID-197:Implement volume control functionality on nexus server
- *  side
- * 
- * 18   7/30/12 4:08p kagrawal
- * SWANDROID-104: Support for composite output
- * 
- * 17   7/6/12 9:12p ajitabhp
- * SWANDROID-128: FIXED Graphics Window Resource Leakage in SBS and NSC
- *  mode.
- * 
- * 16   6/24/12 10:53p alexpan
- * SWANDROID-108: Fix build errors for platforms without hdmi-in after
- *  changes for SimpleDecoder
- * 
- * 15   6/22/12 3:01p kagrawal
- * SWANDROID-118: Fix for 3D display format in NSC client-server mode
- * 
- * 14   6/22/12 2:35a ajitabhp
- * SWANDROID-121: Overscan fix enabled for NSC client server mode.
- * 
- * 13   6/20/12 6:00p kagrawal
- * SWANDROID-118: Extended get_output_format() to return width and height
- * 
- * 12   6/20/12 11:22a kagrawal
- * SWANDROID-108: Add support for HDMI-Input with SimpleDecoder and w/ or
- *  w/o nexus client server mode
- * 
- * 11   6/5/12 2:38p kagrawal
- * SWANDROID-108:Added support to use simple decoder APIs
- * 
- * 10   5/29/12 6:58p ajitabhp
- * SWANDROID-96: Fixed the problem with environment variable
- * 
- * 9   5/28/12 5:12p kagrawal
- * SWANDROID-101: Calling authenticated_join only for untrusted mode
- * 
- * 8   4/13/12 1:15p ajitabhp
- * SWANDROID-65: Memory Owner ship problem resolved in multi-process mode.
- * 
- * 7   4/3/12 5:00p kagrawal
- * SWANDROID-56: Added support for VideoWindow configuration in NSC mode
- * 
- * 6   3/27/12 4:06p mzhuang
- * SW7425-2633: audio mixer errors after audio flinger restart
- * 
- * 5   3/15/12 4:52p mzhuang
- * SW7425-2633: audio mixer errors after audio flinger restart
- * 
- * 4   3/1/12 1:49p franktcc
- * SW7425-2196: Adding display format for svc/mvc
- * 
- * 3   2/24/12 4:09p kagrawal
- * SWANDROID-12: Dynamic client creation using IPC over binder
- * 
- * 2   2/8/12 2:52p kagrawal
- * SWANDROID-12: Initial support for Nexus client-server mode
- * 
- * 3   9/19/11 5:23p fzhang
- * SW7425-1307: Add libaudio support on 7425 Honeycomb
- * 
- * 2   8/25/11 7:30p franktcc
- * SW7420-2020: Enable PIP/Dual Decode
- * 
  * 
  *****************************************************************************/
   
@@ -133,8 +43,9 @@
 #undef LOG_TAG
 #endif
 
-#define LOG_TAG "NexusService"
 //#define LOG_NDEBUG 0
+
+#define LOG_TAG "NexusService"
 
 #include <utils/Log.h>
 
@@ -167,11 +78,18 @@
 #define UINT32_C(x)  (x ## U)
 
 /* We don't need to perform client reference counting for URSR14.1 or later */
-#if defined(NEXUS_COMMON_PLATFORM_VERSION) && defined(NEXUS_PLATFORM_VERSION) && (NEXUS_COMMON_PLATFORM_VERSION < NEXUS_PLATFORM_VERSION(14,1)) || \
-   !defined(NEXUS_COMMON_PLATFORM_VERSION) || !defined(NEXUS_PLATFORM_VERSION)
+#if defined(NEXUS_PLATFORM_VERSION_NUMBER) && defined(NEXUS_PLATFORM_VERSION) && (NEXUS_PLATFORM_VERSION_NUMBER < NEXUS_PLATFORM_VERSION(14,1)) || \
+   !defined(NEXUS_PLATFORM_VERSION_NUMBER) || !defined(NEXUS_PLATFORM_VERSION)
 #define MAX_CLIENTS 32
 #define MAX_OBJECTS MAX_CLIENTS
 #endif
+
+/* The main heap normally has full access */
+#ifdef NEXUS_PLATFORM_DEFAULT_HEAP
+#define NEXUS_MAIN_HEAP_IDX NEXUS_PLATFORM_DEFAULT_HEAP
+#else
+#define NEXUS_MAIN_HEAP_IDX NEXUS_MEMC0_MAIN_HEAP
+#endif 
 
 typedef struct NexusClientContext {
     BDBG_OBJECT(NexusClientContext)
@@ -274,6 +192,7 @@ void NexusService::platformInitAudio(void)
     int i;
     NEXUS_Error rc;
     NEXUS_PlatformConfiguration             platformConfig;
+    NEXUS_AudioPlaybackOpenSettings         simpleAudioDecoderOpenSettings;
     NEXUS_SimpleAudioDecoderServerSettings  simpleAudioDecoderSettings;
     NEXUS_SimpleAudioPlaybackServerSettings simpleAudioPlaybackSettings;
     NEXUS_AudioDecoderOpenSettings          audioDecoderOpenSettings;
@@ -281,8 +200,7 @@ void NexusService::platformInitAudio(void)
     NEXUS_Platform_GetConfiguration(&platformConfig);
 
     /* create audio decoders */
-    for (i=0; i<MAX_AUDIO_DECODERS; i++) 
-    {
+    for (i=0; i<MAX_AUDIO_DECODERS; i++) {
         NEXUS_AudioDecoder_GetDefaultOpenSettings(&audioDecoderOpenSettings);
         audioDecoderOpenSettings.fifoSize = AUDIO_DECODER_FIFO_SIZE;
         audioDecoderOpenSettings.type     = NEXUS_AudioDecoderType_eDecode;
@@ -292,12 +210,13 @@ void NexusService::platformInitAudio(void)
     /* open audio mixer */
     mixer = NEXUS_AudioMixer_Open(NULL);
 
-    /* open the audio playback */
-    for (i=0; i<MAX_AUDIO_DECODERS; i++) 
-    {
-        audioPlayback[i] = NEXUS_AudioPlayback_Open(i, NULL);
-    }
+    NEXUS_AudioPlayback_GetDefaultOpenSettings(&simpleAudioDecoderOpenSettings);
+    simpleAudioDecoderOpenSettings.heap = platformConfig.heap[NEXUS_MAIN_HEAP_IDX]; /* eFull mapping */
 
+    /* open the audio playback */
+    for (i=0; i<MAX_AUDIO_DECODERS; i++) {
+        audioPlayback[i] = NEXUS_AudioPlayback_Open(i, &simpleAudioDecoderOpenSettings);
+    }
 
     /* Connect audio inputs to the mixer and mixer to the outputs */
     rc = NEXUS_AudioMixer_AddInput(mixer, NEXUS_AudioDecoder_GetConnector(audioDecoder[0], NEXUS_AudioDecoderConnectorType_eStereo));
@@ -324,16 +243,16 @@ void NexusService::platformInitAudio(void)
 #endif
 
     /* create simple audio decoder */
-    for (i=0; i<MAX_AUDIO_DECODERS; i++) 
-    {
+    for (i=0; i<MAX_AUDIO_DECODERS; i++) {
         NEXUS_SimpleAudioDecoder_GetDefaultServerSettings(&simpleAudioDecoderSettings);
         simpleAudioDecoderSettings.primary = audioDecoder[i];
+        simpleAudioDecoderSettings.hdmi.outputs[0] = platformConfig.outputs.hdmi[0];
+        simpleAudioDecoderSettings.stcIndex = i;  /* Must set this to be able to do STC trick modes! */
         simpleAudioDecoder[i] = NEXUS_SimpleAudioDecoder_Create(i, &simpleAudioDecoderSettings);
     }
 
     /* create simple audio player */
-    for (i=0; i<MAX_AUDIO_DECODERS; i++) 
-    {
+    for (i=0; i<MAX_AUDIO_DECODERS; i++) {
         NEXUS_SimpleAudioPlayback_GetDefaultServerSettings(&simpleAudioPlaybackSettings);
         simpleAudioPlaybackSettings.decoder = simpleAudioDecoder[i]; /* linked to the audio decoder for StcChannel */
         simpleAudioPlaybackSettings.playback = audioPlayback[i];
@@ -419,8 +338,7 @@ void NexusService::platformInitVideo(void)
         }
     }
     
-    for(int i=0; i<2; i++)
-    {
+    for(int i=0; i<MAX_VIDEO_DECODERS; i++) {
         NEXUS_SimpleVideoDecoderServerSettings settings;
 
         // open video decoder
@@ -437,10 +355,10 @@ void NexusService::platformInitVideo(void)
         NEXUS_VideoDecoderSettings videoDecoderSettings;
         NEXUS_PlatformSettings     platformSettings;
         NEXUS_Platform_GetSettings(&platformSettings);
-        if ((i==0) && (platformSettings.videoDecoderModuleSettings.supportedCodecs[NEXUS_VideoCodec_eH265] == NEXUS_VideoCodec_eH265))
+        if ((i==0) && (platformSettings.videoDecoderModuleSettings.supportedCodecs[NEXUS_VideoCodec_eH265]))
         {
             NEXUS_VideoDecoder_GetSettings(videoDecoder[i], &videoDecoderSettings);
-            videoDecoderSettings.supportedCodecs[NEXUS_VideoCodec_eH265] = NEXUS_VideoCodec_eH265;
+            videoDecoderSettings.supportedCodecs[NEXUS_VideoCodec_eH265] = true;
             videoDecoderSettings.maxWidth  = 3840; 
             videoDecoderSettings.maxHeight = 2160;
             NEXUS_VideoDecoder_SetSettings(videoDecoder[i], &videoDecoderSettings);
@@ -450,6 +368,7 @@ void NexusService::platformInitVideo(void)
         NEXUS_SimpleVideoDecoder_GetDefaultServerSettings(&settings);
         settings.videoDecoder = videoDecoder[i];
         settings.window[0] = NULL;
+        settings.stcIndex = i;  /* Must set this to be able to do STC trick modes! */
         simpleVideoDecoder[i] = NEXUS_SimpleVideoDecoder_Create(i, &settings);
         if(!simpleVideoDecoder[i]) while(1){LOGE("NEXUS_SimpleVideoDecoder_Open(%d) failed!!",i);}        
 
@@ -462,9 +381,8 @@ void NexusService::platformInitVideo(void)
         // to the video window.
         //
         NEXUS_SimpleVideoDecoder_GetServerSettings(simpleVideoDecoder[i], &settings);
-        for(int j=0; j<MAX_NUM_DISPLAYS; j++) 
-        {
-            settings.window[j] = displayState[j].video_window[i];
+        for (int j=0; j<MAX_NUM_DISPLAYS; j++) {
+            settings.window[j] = displayState[j].video_window[i >= MAX_VIDEO_WINDOWS_PER_DISPLAY ? MAX_VIDEO_WINDOWS_PER_DISPLAY-1 : i];
         }
         NEXUS_SimpleVideoDecoder_SetServerSettings(simpleVideoDecoder[i], &settings);
 #endif
@@ -483,7 +401,7 @@ void NexusService::platformInitVideo(void)
 
 void NexusService::setVideoState(bool enable)
 {
-    for(int i=0; i<2; i++)
+    for(int i=0; i<MAX_VIDEO_DECODERS; i++)
     {
         NEXUS_SimpleVideoDecoderServerSettings settings;
 
@@ -602,41 +520,34 @@ void NexusService::platformInit()
     NEXUS_Platform_GetConfiguration(&platformConfig);
     NEXUS_Platform_GetDefaultStartServerSettings(&serverSettings);
 
+    LOGI("***************************\n\tStarting server in mode %d \n***************************", ANDROID_CLIENT_SECURITY_MODE);
+
     serverSettings.allowUnprotectedClientsToCrash = true;
-    serverSettings.allowUnauthenticatedClients = true;
-    serverSettings.unauthenticatedConfiguration.mode = (NEXUS_ClientMode) ANDROID_CLIENT_SECURITY_MODE;
-    LOGI("***************************\n\tStarting server in %d mode \n*************************",ANDROID_CLIENT_SECURITY_MODE);
-    serverSettings.unauthenticatedConfiguration.heap[0] = NEXUS_Platform_GetFramebufferHeap(NEXUS_OFFSCREEN_SURFACE);
-    serverSettings.unauthenticatedConfiguration.heap[1] = platformConfig.heap[NEXUS_MEMC0_MAIN_HEAP];
-#if (BCHP_CHIP == 7425) || (BCHP_CHIP == 7435)
-    serverSettings.unauthenticatedConfiguration.heap[2] = platformConfig.heap[NEXUS_MEMC1_MAIN_HEAP];
-    serverSettings.unauthenticatedConfiguration.heap[3] = platformConfig.heap[NEXUS_MEMC0_DRIVER_HEAP];   
-#endif
+    serverSettings.allowUnauthenticatedClients = false;
+
     rc = NEXUS_Platform_StartServer(&serverSettings);
-    if(rc!=NEXUS_SUCCESS) 
-    {
+    if (rc != NEXUS_SUCCESS) {
         LOGE("%s:NEXUS_Platform_StartServer Failed (rc=%d)!\n", __PRETTY_FUNCTION__, rc);
         BDBG_ASSERT(rc == NEXUS_SUCCESS);
     }
 
-    for(i=0; i<MAX_NUM_DISPLAYS; i++)
-    {
+    for (i=0; i<MAX_NUM_DISPLAYS; i++) {
         BKNI_Memset(&displayState[i], 0, sizeof(DisplayState));
     }
-    for(i=0; i<MAX_AUDIO_DECODERS; i++)
-    {
+
+    for (i=0; i<MAX_AUDIO_DECODERS; i++) {
         audioDecoder[i] = NULL;
         audioPlayback[i] = NULL;
         simpleAudioDecoder[i] = NULL;
         simpleAudioPlayback[i] = NULL;
     }
-    for(i=0; i<MAX_VIDEO_DECODERS; i++)
-    {
+
+    for (i=0; i<MAX_VIDEO_DECODERS; i++) {
         videoDecoder[i] = NULL;
         simpleVideoDecoder[i] = NULL;
     }
-    for(i=0; i<MAX_ENCODERS; i++)
-    {
+
+    for (i=0; i<MAX_ENCODERS; i++) {
         simpleEncoder[i] = NULL;
     }
 
@@ -673,10 +584,8 @@ void NexusService::platformInit()
 #endif
 
     // special handling for 1080p HD display
-    if(property_get("ro.hd_output_format", value, NULL)) 
-    {
-        if (strncmp((char *) value, "1080p",5)==0)
-        {
+    if (property_get("ro.hd_output_format", value, NULL)) {
+        if (strncmp((char *) value, "1080p",5)==0) {
             LOGW("Set HD output format to 1080p...");
             NEXUS_DisplaySettings settings;
             getDisplaySettings(HD_DISPLAY, &settings);
@@ -697,7 +606,7 @@ void NexusService::platformUninit()
     }
 #endif
 
-    if(gfx2D) {
+    if (gfx2D) {
         NEXUS_Graphics2D_Close(gfx2D);
         gfx2D = NULL;
     }
@@ -767,7 +676,17 @@ NEXUS_ClientHandle NexusService::clientJoin(const b_refsw_client_client_name *pC
             NEXUS_Platform_GetDefaultClientSettings(&clientSettings);
             clientSettings.authentication.certificate = pClientAuthenticationSettings->certificate;
             NEXUS_Platform_GetConfiguration(&platformConfig);
-            clientSettings.configuration.heap[0] = platformConfig.heap[0];
+            clientSettings.configuration.heap[0] = NEXUS_Platform_GetFramebufferHeap(NEXUS_OFFSCREEN_SURFACE);
+            clientSettings.configuration.heap[1] = platformConfig.heap[NEXUS_MAIN_HEAP_IDX];
+#ifdef NEXUS_VIDEO_SECURE_HEAP
+            clientSettings.configuration.heap[2] = platformConfig.heap[NEXUS_VIDEO_SECURE_HEAP];
+#endif
+#ifdef NEXUS_SECONDARY_OFFSCREEN_SURFACE
+            clientSettings.configuration.heap[3] = NEXUS_Platform_GetFramebufferHeap(NEXUS_SECONDARY_OFFSCREEN_SURFACE);
+            if (clientSettings.configuration.heap[3] == clientSettings.configuration.heap[0]) {
+                clientSettings.configuration.heap[3] = NULL;
+            }
+#endif
             clientSettings.configuration.mode = (NEXUS_ClientMode)ANDROID_CLIENT_SECURITY_MODE;
             nexusClient = NEXUS_Platform_RegisterClient(&clientSettings);
             if (nexusClient) {
@@ -901,17 +820,13 @@ bool NexusService::addGraphicsWindow(NexusClientContext * client)
 
     LOGD("%s[%d]: >>>>>>>>>>>>>>>>>>>>>>>>>> addGraphicsWindow Called Creating NSCClient[IPC] <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<",__FUNCTION__,__LINE__);
     /* See if we need to tweak the graphics to fit on the screen */
-    if(property_get("ro.screenresize.x", value, NULL))
-    {
+    if (property_get("ro.screenresize.x", value, NULL)) {
         xoff = atoi(value);
-        if(property_get("ro.screenresize.y", value, NULL))
-        {
+        if (property_get("ro.screenresize.y", value, NULL)) {
             yoff = atoi(value);
-            if(property_get("ro.screenresize.w", value, NULL))
-            {
+            if (property_get("ro.screenresize.w", value, NULL)) {
                 width = atoi(value);
-                if(property_get("ro.screenresize.h", value, NULL))
-                {
+                if (property_get("ro.screenresize.h", value, NULL)) {
                     height = atoi(value);
                     enable_offset = true;
                 }
@@ -920,8 +835,7 @@ bool NexusService::addGraphicsWindow(NexusClientContext * client)
     }
 
     /* If user has not set gfx window size, read them from HD output's properties */
-    if((config->resources.screen.position.width == 0) && (config->resources.screen.position.height == 0))
-    {
+    if ((config->resources.screen.position.width == 0) && (config->resources.screen.position.height == 0)) {
         NEXUS_VideoFormatInfo fmt_info;
         NEXUS_VideoFormat hd_fmt, sd_fmt;
         
@@ -933,8 +847,7 @@ bool NexusService::addGraphicsWindow(NexusClientContext * client)
     }
 
     client->resources.graphicsSurface = NEXUS_SurfaceCompositor_CreateClient(surface_compositor, server->lastId.surfaceClientId);
-    if(!client->resources.graphicsSurface)
-    {
+    if (!client->resources.graphicsSurface) {
         (void)BERR_TRACE(BERR_NOT_SUPPORTED);
         goto err_screen;
     }
@@ -943,16 +856,14 @@ bool NexusService::addGraphicsWindow(NexusClientContext * client)
     
     client->info.surfaceClientId = server->lastId.surfaceClientId;
     p_client_settings = (NEXUS_SurfaceCompositorClientSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorClientSettings));
-    if(p_client_settings)
-    {
+    if (p_client_settings) {
         NEXUS_SurfaceCompositor_GetClientSettings(surface_compositor, client->resources.graphicsSurface, p_client_settings);
         p_client_settings->composition.position = config->resources.screen.position;
         p_client_settings->composition.zorder = client->info.surfaceClientId;
         p_client_settings->composition.virtualDisplay.width = config->resources.screen.position.width;
         p_client_settings->composition.virtualDisplay.height = config->resources.screen.position.height;
 
-        if(enable_offset)
-        {
+        if (enable_offset) {
             LOGD("######### REPOSITIONING REQUIRED %d %d %d %d ###############\n",xoff,yoff,width,height);
             p_client_settings->composition.clipRect.width = p_client_settings->composition.virtualDisplay.width;
             p_client_settings->composition.clipRect.height = p_client_settings->composition.virtualDisplay.height;
@@ -964,8 +875,7 @@ bool NexusService::addGraphicsWindow(NexusClientContext * client)
 
         rc = NEXUS_SurfaceCompositor_SetClientSettings(surface_compositor, client->resources.graphicsSurface, p_client_settings);
         BKNI_Free(p_client_settings);
-        if(rc!=NEXUS_SUCCESS)
-        {
+        if (rc!=NEXUS_SUCCESS) {
             (void)BERR_TRACE(BERR_NOT_SUPPORTED);
             goto err_screen_settings;
         }
@@ -991,8 +901,7 @@ void NexusService::getClientComposition(NexusClientContext * client, NEXUS_Surfa
     NEXUS_SurfaceCompositorClientSettings *p_client_settings = NULL;
 
     p_client_settings = (NEXUS_SurfaceCompositorClientSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorClientSettings));
-    if(p_client_settings)
-    {
+    if (p_client_settings) {
         NEXUS_SurfaceCompositor_GetClientSettings(surface_compositor, surfaceclient, p_client_settings);
         *pComposition = p_client_settings->composition;
         BKNI_Free(p_client_settings);
@@ -1005,16 +914,16 @@ void NexusService::setClientComposition(NexusClientContext * client, NEXUS_Surfa
     NEXUS_Error rc;
 
     p_client_settings = (NEXUS_SurfaceCompositorClientSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorClientSettings));
-    if(p_client_settings)
-    {
+    if (p_client_settings) {
         NEXUS_SurfaceCompositor_GetClientSettings(surface_compositor, surfaceclient, p_client_settings);    
         p_client_settings->composition = *pComposition;
         LOGD("%s: setting client composition [%d,%d,%d,%d]",__FUNCTION__, pComposition->position.x,
         pComposition->position.y, pComposition->position.width, pComposition->position.height);
     
         rc = NEXUS_SurfaceCompositor_SetClientSettings(surface_compositor, surfaceclient, p_client_settings);
-        if(rc != NEXUS_SUCCESS)
+        if (rc != NEXUS_SUCCESS) {
             LOGE("%s:%d NEXUS_SurfaceCompositor_SetClientSettings() returned error, rc=%d",__FUNCTION__,__LINE__,rc);
+        }
 
         BKNI_Free(p_client_settings);
     }
@@ -1031,8 +940,7 @@ void NexusService::getVideoWindowSettings(NexusClientContext * client, uint32_t 
     }
 
     // Always return settings for primary display (HD_DISPLAY) as client code works only on HD_DISPLAY
-    if(displayState[HD_DISPLAY].video_window[window_id])
-    {
+    if (displayState[HD_DISPLAY].video_window[window_id]) {
         NEXUS_DisplaySettings disp_settings;
         NEXUS_VideoFormatInfo fmt_info;
         
@@ -1062,13 +970,10 @@ void NexusService::setVideoWindowSettings(NexusClientContext * client, uint32_t 
         return;
     }
 
-    for(int display_id = HD_DISPLAY; display_id < MAX_NUM_DISPLAYS; display_id++)
-    {
-        if(displayState[display_id].video_window[window_id])
-        {
+    for (int display_id = HD_DISPLAY; display_id < MAX_NUM_DISPLAYS; display_id++) {
+        if (displayState[display_id].video_window[window_id]) {
             NEXUS_VideoWindow_GetSettings(displayState[display_id].video_window[window_id], &nSettings);
-            if(display_id == HD_DISPLAY)
-            {
+            if (display_id == HD_DISPLAY) {
                 /* NOTE: virtual display settings are ignored. */
                 nSettings.position        = settings->position;
                 nSettings.clipRect        = settings->clipRect;
@@ -1077,8 +982,7 @@ void NexusService::setVideoWindowSettings(NexusClientContext * client, uint32_t 
                 nSettings.autoMaster      = settings->autoMaster;
                 nSettings.zorder          = settings->zorder;
             }
-            else
-            {                
+            else {                
                 // User has passed the settings for HD_DISPLAY, so do the necessary HD to SD translation (wherever applicable) before passing it to nexus
                 uint32_t sd_width, sd_height;
                 uint32_t hd_width, hd_height;
@@ -1117,8 +1021,7 @@ void NexusService::setVideoWindowSettings(NexusClientContext * client, uint32_t 
             }
 
             LOGV ("position.width %d position.height %d %s %d", nSettings.position.width, nSettings.position.height, __FUNCTION__, __LINE__);
-            if ((nSettings.position.width < 2) || (nSettings.position.height < 1))
-            {
+            if ((nSettings.position.width < 2) || (nSettings.position.height < 1)) {
               LOGE ("window width %d x height %d is too small", nSettings.position.width, nSettings.position.height);
               // interlaced content min is 2x2
               nSettings.position.width = 2;
@@ -1133,17 +1036,16 @@ void NexusService::setVideoWindowSettings(NexusClientContext * client, uint32_t 
 
 void NexusService::getDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings *settings)
 {
-    if (display_id >= MAX_NUM_DISPLAYS)
-    {
+    if (display_id >= MAX_NUM_DISPLAYS) {
         LOGE("display_id(%d) cannot be more than 1!",display_id);
         return;
     }
-    if(displayState[display_id].display)
-    {
+    if (displayState[display_id].display) {
         NEXUS_Display_GetSettings(displayState[display_id].display, settings);
     }
-    else
+    else {
         LOGE("displayHandle[%d] is NULL",display_id);
+    }
     
     return;
 }
@@ -1154,8 +1056,7 @@ void NexusService::setDisplayState(bool enable)
     int rc;
     
     p_surface_compositor_settings = (NEXUS_SurfaceCompositorSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorSettings));
-    if(NULL == p_surface_compositor_settings) 
-    {
+    if (NULL == p_surface_compositor_settings) {
         while(1) LOGE("%s:%d BKNI_Malloc failed",__FUNCTION__,__LINE__);
         return;
     }
@@ -1170,8 +1071,7 @@ void NexusService::setDisplayState(bool enable)
         NEXUS_SurfaceCompositor_SetSettings(surface_compositor, p_surface_compositor_settings);
         
         rc = BKNI_WaitForEvent(inactiveEvent, 5000);        
-        if (rc)            
-        {   
+        if (rc) {   
             LOGE("Did not receive NSC inactive event!");
             if(p_surface_compositor_settings) 
                 BKNI_Free(p_surface_compositor_settings);
@@ -1184,21 +1084,20 @@ void NexusService::setDisplayState(bool enable)
         NEXUS_SurfaceCompositor_SetSettings(surface_compositor, p_surface_compositor_settings);
     }
     
-    if(p_surface_compositor_settings) 
+    if (p_surface_compositor_settings) {
         BKNI_Free(p_surface_compositor_settings);
+    }
     return;
 }
 
 void NexusService::setDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings *settings)
 {
-    if (display_id >= MAX_NUM_DISPLAYS)
-    {
+    if (display_id >= MAX_NUM_DISPLAYS) {
         LOGE("display_id(%d) cannot be more than 1!",display_id);
         return;
     }
 
-    if(displayState[display_id].display)    
-    {        
+    if (displayState[display_id].display) {        
         /* set display setting, now we only support format change. sd display format should be changed based on hd display format */        
         NEXUS_SurfaceCompositorSettings *p_surface_compositor_settings = NULL;
         NEXUS_DisplaySettings disp_settings;
@@ -1206,15 +1105,13 @@ void NexusService::setDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings
         int rc;
         
         NEXUS_Display_GetSettings(displayState[display_id].display, &disp_settings);
-        if (disp_settings.format == settings->format)
-        {  
+        if (disp_settings.format == settings->format) {  
             LOGE("display_id(%d) no format change ",display_id);
             return;
         }
 
         p_surface_compositor_settings = (NEXUS_SurfaceCompositorSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorSettings));
-        if(NULL == p_surface_compositor_settings) 
-        {
+        if (NULL == p_surface_compositor_settings) {
             while(1) LOGE("%s:%d BKNI_Malloc failed",__FUNCTION__,__LINE__);
             return;
         }
@@ -1227,11 +1124,11 @@ void NexusService::setDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings
         NEXUS_SurfaceCompositor_SetSettings(surface_compositor, p_surface_compositor_settings);
         
         rc = BKNI_WaitForEvent(inactiveEvent, 5000);        
-        if (rc)            
-        {   
+        if (rc) {   
             LOGE("Did not receive NSC inactive event - not changing the display resolution for display=%d",display_id);
-            if(p_surface_compositor_settings) 
+            if (p_surface_compositor_settings) {
                 BKNI_Free(p_surface_compositor_settings);
+            }
             return;
         }
         
@@ -1247,32 +1144,32 @@ void NexusService::setDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings
         p_surface_compositor_settings->display[display_id].framebuffer.height = formatInfo.height;
 
         /* NSC settings when transitioning to/from 3D display format */
-        if(HD_DISPLAY == display_id)
-        {    
-            if ((NEXUS_VideoFormat_e720p_3DOU_AS == settings->format) || (NEXUS_VideoFormat_e1080p24hz_3DOU_AS == settings->format))
-            {
+        if (HD_DISPLAY == display_id) {    
+            if ((NEXUS_VideoFormat_e720p_3DOU_AS == settings->format) || (NEXUS_VideoFormat_e1080p24hz_3DOU_AS == settings->format)) {
                 // when transitioning to 3D display format, following are needed or else vertical display resolution will be half
                 p_surface_compositor_settings->display[HD_DISPLAY].display3DSettings.overrideOrientation = true;
                 p_surface_compositor_settings->display[HD_DISPLAY].display3DSettings.orientation = NEXUS_VideoOrientation_e2D;
             }
-            else
-            {
+            else {
                 // when transitioning from 3D display format, disable overrideOrientation
                 p_surface_compositor_settings->display[HD_DISPLAY].display3DSettings.overrideOrientation = false;
                 p_surface_compositor_settings->display[HD_DISPLAY].display3DSettings.orientation = NEXUS_VideoOrientation_e2D;
             }
         }
         
-        if (display_id == SD_DISPLAY) /* no scaler in gfd1, we should use the whole sd framebuffer */
+        if (display_id == SD_DISPLAY) {/* no scaler in gfd1, we should use the whole sd framebuffer */
             p_surface_compositor_settings->display[display_id].graphicsSettings.clip.width = 0;
+        }
         
         NEXUS_SurfaceCompositor_SetSettings(surface_compositor, p_surface_compositor_settings);
         
-        if(p_surface_compositor_settings) 
+        if (p_surface_compositor_settings) {
             BKNI_Free(p_surface_compositor_settings);
+        }
     }
-    else
+    else {
         LOGE("displayHandle[%d] is NULL",display_id);        
+    }
     return;
 }
 
@@ -1307,7 +1204,6 @@ void NexusService::setPictureCtrlCommonSettings(uint32_t window_id, NEXUS_Pictur
 
 void NexusService::getGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings)
 {
-    
     if (display_id >= MAX_NUM_DISPLAYS) {
         LOGE("%s: display_id(%d) cannot be >= %d!", __FUNCTION__, display_id, MAX_NUM_DISPLAYS);
         return;
@@ -1548,12 +1444,12 @@ static void source_changed(void *context, int param)
 
 static void avmute_changed(void *context, int param)
 {
-    NexusClientContext *client;
+    NEXUS_HdmiInputHandle hdmiInput;
     NEXUS_HdmiInputStatus hdmiInputStatus ;
     BSTD_UNUSED(param);
 
-    client = (NexusClientContext *) context ;
-    NEXUS_HdmiInput_GetStatus(client->resources.hdmiInput.handle, &hdmiInputStatus) ;
+    hdmiInput = (NEXUS_HdmiInputHandle) context ;
+    NEXUS_HdmiInput_GetStatus(hdmiInput, &hdmiInputStatus) ;
 
     if (!hdmiInputStatus.validHdmiStatus) {
         LOGV("avmute_changed callback: Unable to get hdmiInput status\n") ;
@@ -1568,13 +1464,14 @@ static void avmute_changed(void *context, int param)
 bool NexusService::connectHdmiInput(NexusClientContext * client, b_refsw_client_connect_resource_settings *pConnectSettings)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
-#if NEXUS_NUM_HDMI_INPUTS && NEXUS_NUM_HDMI_OUTPUTS
+#if NEXUS_NUM_HDMI_INPUTS && NEXUS_NUM_HDMI_OUTPUTS && ANDROID_SUPPORTS_HDMI_LEGACY
     unsigned timeout = 4;
     unsigned hdmiInputIndex = 0;
 
     NEXUS_PlatformConfiguration platformConfig;
     NEXUS_HdmiInputSettings hdmiInputSettings;
     NEXUS_HdmiOutputStatus hdmiOutputStatus;
+    NEXUS_HdmiOutputHandle hdmiOutput;
     NEXUS_AudioOutput hdmiAudioOutput;
 
     NEXUS_HdmiInput_GetDefaultSettings(&hdmiInputSettings);
@@ -1599,9 +1496,11 @@ bool NexusService::connectHdmiInput(NexusClientContext * client, b_refsw_client_
 
     NEXUS_Platform_GetConfiguration(&platformConfig);
 
+    hdmiOutput = platformConfig.outputs.hdmi[0];
+
     do {
         /* check for connected downstream device */
-        rc = NEXUS_HdmiOutput_GetStatus(platformConfig.outputs.hdmi[0], &hdmiOutputStatus);
+        rc = NEXUS_HdmiOutput_GetStatus(hdmiOutput, &hdmiOutputStatus);
         if (rc) BERR_TRACE(rc);
         if ( !hdmiOutputStatus.connected ) {
             LOGW("Waiting for HDMI Tx Device");
@@ -1619,14 +1518,15 @@ bool NexusService::connectHdmiInput(NexusClientContext * client, b_refsw_client_
         unsigned i, j;
 
         /* Get EDID of attached receiver*/
-        NEXUS_HdmiOutput_GetBasicEdidData(platformConfig.outputs.hdmi[0], &hdmiOutputBasicEdidData);
+        NEXUS_HdmiOutput_GetBasicEdidData(hdmiOutput, &hdmiOutputBasicEdidData);
 
         /* allocate space to hold the EDID blocks */
         attachedRxEdid = (unsigned char*) BKNI_Malloc((hdmiOutputBasicEdidData.extensions+1)* sizeof(edidBlock.data));
         for (i=0; i<= hdmiOutputBasicEdidData.extensions; i++) {
-            rc = NEXUS_HdmiOutput_GetEdidBlock(platformConfig.outputs.hdmi[0], i, &edidBlock);
-            if (rc)
+            rc = NEXUS_HdmiOutput_GetEdidBlock(hdmiOutput, i, &edidBlock);
+            if (rc) {
                 LOGE("Error retrieve EDID from attached receiver");
+            }
 
             for (j=0; j < sizeof(edidBlock.data); j++) {
                 attachedRxEdid[i*sizeof(edidBlock.data)+j] = edidBlock.data[j];
@@ -1656,7 +1556,7 @@ bool NexusService::connectHdmiInput(NexusClientContext * client, b_refsw_client_
 
         NEXUS_HdmiInput_GetSettings(client->resources.hdmiInput.handle, &hdmiInputSettings) ;
         hdmiInputSettings.avMuteChanged.callback = avmute_changed;
-        hdmiInputSettings.avMuteChanged.context = client;
+        hdmiInputSettings.avMuteChanged.context = client->resources.hdmiInput.handle;
         NEXUS_HdmiInput_SetSettings(client->resources.hdmiInput.handle, &hdmiInputSettings) ;
         
 #if NEXUS_NUM_AUDIO_INPUT_CAPTURES
@@ -1678,7 +1578,7 @@ bool NexusService::connectHdmiInput(NexusClientContext * client, b_refsw_client_
              */
             setAudioState(false);
 
-            hdmiAudioOutput = NEXUS_HdmiOutput_GetAudioConnector(platformConfig.outputs.hdmi[0]);
+            hdmiAudioOutput = NEXUS_HdmiOutput_GetAudioConnector(hdmiOutput);
 
             rc = NEXUS_AudioOutput_RemoveAllInputs(hdmiAudioOutput);
             if (rc != NEXUS_SUCCESS) {
@@ -1727,7 +1627,7 @@ bool NexusService::connectHdmiInput(NexusClientContext * client, b_refsw_client_
 #endif
     return (rc == NEXUS_SUCCESS);
 
-#if NEXUS_NUM_HDMI_INPUTS
+#if NEXUS_NUM_HDMI_INPUTS && NEXUS_NUM_HDMI_OUTPUTS && ANDROID_SUPPORTS_HDMI_LEGACY
 err_hdmi_input:
 #if NEXUS_NUM_AUDIO_INPUT_CAPTURES
     if (client->resources.hdmiInput.captureInput != NULL) {
@@ -1750,14 +1650,13 @@ err_hdmi_input:
 bool NexusService::disconnectHdmiInput(NexusClientContext * client)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
-#if NEXUS_NUM_HDMI_INPUTS && NEXUS_NUM_HDMI_OUTPUTS
+#if NEXUS_NUM_HDMI_INPUTS && NEXUS_NUM_HDMI_OUTPUTS && ANDROID_SUPPORTS_HDMI_LEGACY
 #if NEXUS_NUM_AUDIO_INPUT_CAPTURES
     NEXUS_PlatformConfiguration platformConfig;
     NEXUS_AudioOutput           hdmiAudioOutput;
 #endif
 
-    if (client->resources.hdmiInput.handle)
-    {
+    if (client->resources.hdmiInput.handle) {
         NEXUS_StopCallbacks(client->resources.hdmiInput.handle);
 
 #if NEXUS_NUM_AUDIO_INPUT_CAPTURES
@@ -1794,8 +1693,7 @@ bool NexusService::disconnectHdmiInput(NexusClientContext * client)
         
         // Remove all video inputs (this will remove hdmi-input earlier added to the video window)
         // There is 1-1 mapping between simpleVideoDecoder and videoWindow
-        for(int display_id = HD_DISPLAY; display_id < MAX_NUM_DISPLAYS; display_id++)
-        {
+        for (int display_id = HD_DISPLAY; display_id < MAX_NUM_DISPLAYS; display_id++) {
             NEXUS_VideoWindow_RemoveAllInputs(displayState[display_id].video_window[window_id]);
             settings.window[display_id] = displayState[display_id].video_window[window_id];
         }
@@ -1882,8 +1780,7 @@ bool NexusService::setPowerState(b_powerState pmState)
     NEXUS_Error rc = NEXUS_SUCCESS;
     NEXUS_PlatformStandbySettings nexusStandbySettings;
 
-    if (pmState != powerState)
-    {
+    if (pmState != powerState) {
         NEXUS_Platform_GetStandbySettings(&nexusStandbySettings);
 
         switch (pmState)
@@ -1923,7 +1820,7 @@ bool NexusService::setPowerState(b_powerState pmState)
                 nexusStandbySettings.wakeupSettings.uhf = 1;
                 nexusStandbySettings.wakeupSettings.transport = 1;
 #if NEXUS_HAS_CEC
-		if (isCecEnabled(0)) {
+                if (isCecEnabled(0)) {
                     nexusStandbySettings.wakeupSettings.cec = 1;
                 }
 #endif
@@ -1943,7 +1840,7 @@ bool NexusService::setPowerState(b_powerState pmState)
                 nexusStandbySettings.wakeupSettings.ir = 1;
                 nexusStandbySettings.wakeupSettings.uhf = 1;
 #if NEXUS_HAS_CEC
-		if (isCecEnabled(0)) {
+                if (isCecEnabled(0)) {
                     nexusStandbySettings.wakeupSettings.cec = 1;
                 }
 #endif
@@ -2019,25 +1916,21 @@ bool NexusService::getFrame(NexusClientContext * client,
         createSettings.height = height;
         createSettings.pMemory = (void*) pTemp;   
         dstSurface = NEXUS_Surface_Create(&createSettings);
-        if(!dstSurface)
-        {
+        if (!dstSurface) {
             while(1) LOGE("Creating Surface Failed!!");
         }
 
         //ALOGD("%s %d"************",__FUNCTION__,__LINE__);
         unsigned int reTryCnt=0;
-        do 
-        {
+        do {
             stripedSurface = NEXUS_VideoDecoder_CreateStripedSurface(decoder);
-            if(stripedSurface == NULL)
-            {
+            if (stripedSurface == NULL) {
                 BKNI_Sleep(12);
                 reTryCnt++;
             }
-        }while((stripedSurface == NULL) && (reTryCnt <  10));
+        } while((stripedSurface == NULL) && (reTryCnt <  10));
 
-        if( stripedSurface == NULL )
-        {
+        if ( stripedSurface == NULL ) {
             LOGE("Creating Striped Surface Failed!!");
             NEXUS_Surface_Destroy(dstSurface);
             ALOGD("%s:%d EXITING",__FUNCTION__,__LINE__);
@@ -2046,8 +1939,7 @@ bool NexusService::getFrame(NexusClientContext * client,
 
         //ALOGD("%s %d"************",__FUNCTION__,__LINE__);
         rc = NEXUS_Graphics2D_DestripeToSurface( gfx2D, stripedSurface, dstSurface, NULL );
-        if(rc) 
-        {
+        if (rc) {
             while(1) LOGE("%s:De-Stripe To surface Failed\n",__FUNCTION__);
             NEXUS_Surface_Destroy(dstSurface);
             NEXUS_VideoDecoder_DestroyStripedSurface(decoder,stripedSurface);
@@ -2059,13 +1951,12 @@ bool NexusService::getFrame(NexusClientContext * client,
         // Wait for the De-Stripe to finish....
         //rc = NEXUS_Graphics2D_Checkpoint( gfx2D, NULL );
 
-        do
-        {
+        do {
             rc = NEXUS_Graphics2D_Checkpoint(gfx2D, NULL);
-            if (rc == (NEXUS_Error) NEXUS_GRAPHICS2D_QUEUED)
+            if (rc == (NEXUS_Error) NEXUS_GRAPHICS2D_QUEUED) {
                 rc = BKNI_WaitForEvent(gfxDone, 1000);
-        } 
-        while (rc == (NEXUS_Error) NEXUS_GRAPHICS2D_QUEUE_FULL) ;
+            }
+        } while (rc == (NEXUS_Error) NEXUS_GRAPHICS2D_QUEUE_FULL);
 
         //ALOGD("%s %d"************",__FUNCTION__,__LINE__);
         NEXUS_Surface_Destroy(dstSurface);

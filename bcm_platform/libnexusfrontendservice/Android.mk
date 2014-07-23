@@ -16,11 +16,20 @@
 REFSW_PATH :=vendor/broadcom/bcm_platform/brcm_nexus
 LOCAL_PATH := $(call my-dir)
 
+ifeq ($(NEXUS_MODE),proxy)
+NEXUS_LIB=libnexus
+else
+ifeq ($(NEXUS_WEBCPU),core1_server)
+NEXUS_LIB=libnexus_webcpu
+else
+NEXUS_LIB=libnexus_client
+endif
+endif
+
 include $(REFSW_PATH)/bin/include/platform_app.inc
 
 # Nexus multi-process, client-server related CFLAGS
 MP_CFLAGS = -DANDROID_CLIENT_SECURITY_MODE=$(ANDROID_CLIENT_SECURITY_MODE)
-
 
 ifeq ($(ANDROID_SUPPORTS_SD_DISPLAY),y)
 MP_CFLAGS += -DANDROID_SUPPORTS_SD_DISPLAY=1
@@ -31,8 +40,7 @@ endif
 
 include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false
-LOCAL_LDFLAGS := -lnexus -L$(REFSW_PATH)/bin
-LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder
+LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder $(NEXUS_LIB)
 LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include
 
 LOCAL_SRC_FILES := 	\

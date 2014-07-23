@@ -1,64 +1,40 @@
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
-
-JB_OR_OLDER := $(shell test "${BRCM_ANDROID_VERSION}" \< "kk" && echo "y")
-
+ifeq ($(BROADCOM_WIFI_CHIPSET), 4360b)
+LOCAL_MODULE :=driver/wl.ko
+else
 LOCAL_MODULE :=driver/bcmdhd.ko
-LOCAL_MODULE_TAGS := optional debug
-LOCAL_MODULE_CLASS := ETC
-LOCAL_MODULE_PATH := $(TARGET_OUT)/vendor/broadcom/dhd
-LOCAL_SRC_FILES := $(LOCAL_MODULE)
-
-include $(BUILD_PREBUILT)
-
-include $(CLEAR_VARS)
-LOCAL_MODULE := firmware/rtecdc.bin.trx
-LOCAL_MODULE_TAGS := optional debug
-LOCAL_MODULE_CLASS := ETC
-LOCAL_MODULE_PATH := $(TARGET_OUT)/vendor/broadcom/dhd
-LOCAL_SRC_FILES := $(LOCAL_MODULE)
-
-include $(BUILD_PREBUILT)
-
-include $(CLEAR_VARS)
-LOCAL_MODULE := firmware/43242-rtecdc.bin.trx
+endif
 LOCAL_MODULE_TAGS := optional debug
 LOCAL_MODULE_CLASS := ETC
 LOCAL_MODULE_PATH := $(TARGET_OUT)/vendor/broadcom/dhd
 LOCAL_SRC_FILES := $(LOCAL_MODULE)
 include $(BUILD_PREBUILT)
-include $(CLEAR_VARS)
-LOCAL_MODULE := firmware/43569-rtecdc.bin.trx
-LOCAL_MODULE_TAGS := optional debug
-LOCAL_MODULE_CLASS := ETC
-LOCAL_MODULE_PATH := $(TARGET_OUT)/vendor/broadcom/dhd
-LOCAL_SRC_FILES := $(LOCAL_MODULE)
-include $(BUILD_PREBUILT)
-include $(CLEAR_VARS)
-LOCAL_MODULE := nvrams/fake43236usb_p532.nvm
-LOCAL_MODULE_TAGS := optional debug
-LOCAL_MODULE_CLASS := ETC
-LOCAL_MODULE_PATH := $(TARGET_OUT)/vendor/broadcom/dhd
-LOCAL_SRC_FILES := $(LOCAL_MODULE)
 
+
+ifneq (,$(filter 43242a1 43236b 43569a0 ,$(BROADCOM_WIFI_CHIPSET)))
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := firmware/fw.bin.trx
+LOCAL_MODULE_TAGS := optional debug
+LOCAL_MODULE_CLASS := ETC
+LOCAL_MODULE_PATH := $(TARGET_OUT)/vendor/broadcom/dhd
+LOCAL_SRC_FILES := $(LOCAL_MODULE)
 include $(BUILD_PREBUILT)
 
 include $(CLEAR_VARS)
-LOCAL_MODULE := nvrams/bcm943242usbref_p461_comp.txt
+LOCAL_MODULE := nvrams/nvm.txt
 LOCAL_MODULE_TAGS := optional debug
 LOCAL_MODULE_CLASS := ETC
 LOCAL_MODULE_PATH := $(TARGET_OUT)/vendor/broadcom/dhd
 LOCAL_SRC_FILES := $(LOCAL_MODULE)
 include $(BUILD_PREBUILT)
-include $(CLEAR_VARS)
-LOCAL_MODULE := nvrams/bcm943569usb_p26x_desense_3_comp.txt
-LOCAL_MODULE_TAGS := optional debug
-LOCAL_MODULE_CLASS := ETC
-LOCAL_MODULE_PATH := $(TARGET_OUT)/vendor/broadcom/dhd
-LOCAL_SRC_FILES := $(LOCAL_MODULE)
-include $(BUILD_PREBUILT)
-ifeq ($(JB_OR_OLDER),y)
+
+endif
+
+
+ifneq ($(BRCM_ANDROID_VERSION),kk)
 include $(CLEAR_VARS)
 LOCAL_MODULE := android.hardware.wifi.xml
 LOCAL_MODULE_TAGS := optional debug

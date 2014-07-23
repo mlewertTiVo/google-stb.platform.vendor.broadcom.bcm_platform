@@ -39,12 +39,10 @@
 #ifndef NEXUSSURFACE_H_
 #define NEXUSSURFACE_H_
 
-
 #define BCM_TRACK_ALLOCATIONS
 #define BCM_DEBUG_MSG
 #define BCM_DEBUG_TRACEMSG      LOGD
 #define BCM_DEBUG_ERRMSG        LOGD
-
 
 #include "nexus_types.h"
 #include "nexus_platform.h"
@@ -66,62 +64,36 @@
 
 struct private_handle_t;
 
-/*
- * We just want to wrap the allocate and free calls so that later we will
- * be able to move them to IPC mechanisms when running in multi-process
- * mode.
- * Using two versions of the same function.
- * */
-void FreeNexusMemory(unsigned int phyAddr);
-void FreeNexusMemory(void * pMemory);
-unsigned int AllocateNexusMemory(size_t size, size_t alignment, void **alloced);
-
-NEXUS_HeapHandle getNexusHeap(void);
-
 class NexusSurface
 {
 public:
-    NexusSurface();
+   NexusSurface();
 
-    void init(void);
-    void flip();
+   void init(void);
+   void flip();
 
-    NEXUS_HeapHandle getFrameBufferHeap()
-    {
-        return frameBuffHeapHandle;
-    }
+   struct {
+      NEXUS_SurfaceHandle surfHnd;
+      NEXUS_SurfaceMemory surfBuf;
+   } surface[2];
 
-    struct {
-         NEXUS_SurfaceHandle surfHnd;
-         NEXUS_SurfaceMemory surfBuf;
-    } surface[2];
+   unsigned int     lineLen;
+   unsigned int     numOfSurf;
+   unsigned int     Xres;
+   unsigned int     Yres;
+   unsigned int     Xdpi;
+   unsigned int     Ydpi;
+   unsigned int     fps;
+   unsigned int     bpp;
+   unsigned int     currentSurf;
+   unsigned int     lastSurf;
 
-    unsigned int     lineLen;
-    unsigned int     numOfSurf;
-    unsigned int     Xres;
-    unsigned int     Yres;
-    unsigned int     Xdpi;
-    unsigned int     Ydpi;
-    unsigned int     fps;
-    unsigned int     bpp;
-    unsigned int     currentSurf;
-    unsigned int     lastSurf;
+   int              fd;
 
 private:
-    bool                            inited;
-    unsigned                        ref_cnt;
-    void                            initHeapHandles();
-    NEXUS_HeapHandle                gfxHeapHandle;
-    NEXUS_HeapHandle                frameBuffHeapHandle;
-    NEXUS_VideoDecoderHandle        videoDecoder[2];
-    NEXUS_SimpleVideoDecoderHandle  simpleVideoDecoder[2];
-    NEXUS_SurfaceClientHandle       blit_client;
-    NEXUS_Graphics2DHandle          gfxHandle;
-    BKNI_EventHandle                packetSpaceAvailableEvent;
-    BKNI_EventHandle                checkpointEvent;
+   NEXUS_VideoDecoderHandle        videoDecoder[2];
+   NEXUS_SimpleVideoDecoderHandle  simpleVideoDecoder[2];
+   NEXUS_SurfaceClientHandle       blitClient;
 };
 
-extern "C" void printHandleInfo(private_handle_t *privHnd);
-
 #endif
-

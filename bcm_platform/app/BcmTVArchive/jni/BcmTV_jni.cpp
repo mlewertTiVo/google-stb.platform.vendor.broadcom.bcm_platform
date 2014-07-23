@@ -72,15 +72,13 @@ using namespace Trellis::Media;
 #ifdef ANDROID_USES_ARTEMIS
 	#define DISABLE_FCC
 	#define DISABLE_PIP
-	#define SVC_NAME_1	"ArtemisTV"
-	#define SVC_NAME_2	"ArtemisTV."
+	#define SVC_NAME	"ArtemisTV"
 #else
-	#define SVC_NAME_1	"MediaService"
-	#define SVC_NAME_2	"MediaService."
+	#define SVC_NAME	"TVService"
 #endif
 
 // Enable this for debug prints
-#define DEBUG_JNI
+//#define DEBUG_JNI
 
 #ifdef DEBUG_JNI
 #define TV_LOG	ALOGE
@@ -138,7 +136,7 @@ public:
 		public:
 			LocalParameters(Util::Param& p) 
 			{
-				p.add("client", SVC_NAME_1);
+				p.add("client", SVC_NAME);
 			}
     };
 
@@ -174,8 +172,8 @@ public:
 
 		if (_config == NULL) 
 		{
-			TV_LOG("libbcmtv_jni: Setting up TV Channels & guide");
-			_config = ITVConfig::resolve(Orb::ServiceInfo(SVC_NAME_1));
+			TV_LOG("libbcmtv_jni: Setting up TV Channels & guide (using service: %s)", SVC_NAME);
+			_config = ITVConfig::resolve(Orb::ServiceInfo(SVC_NAME));
 
 			if (_config != NULL)
 			{
@@ -184,7 +182,7 @@ public:
 			}
 
             _config->addListener(&listenerAdaptor);
-            _channel = ITVChannel::resolve(Orb::ServiceInfo(SVC_NAME_1));
+            _channel = ITVChannel::resolve(Orb::ServiceInfo(SVC_NAME));
 
 			if (_channel != NULL)
 			{
@@ -192,7 +190,7 @@ public:
 				TV_LOG("libbcmtv_jni: _channel is valid!!");
 			}
 
-			_guide = ITVGuide::resolve(Orb::ServiceInfo(SVC_NAME_1));
+			_guide = ITVGuide::resolve(Orb::ServiceInfo(SVC_NAME));
 
 			if (_guide != NULL)
 			{
@@ -390,6 +388,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvarchive_BcmTVArchive_JNI_setMode(JNIE
 {
 	JNITVPlayerContext *pCon = (JNITVPlayerContext *)j_con;
 
+#ifdef DISABLE_FCC
+	pCon->bFCCMode = false;
+#else
 	// Check if we need to enable FCC
 	if (bIsFCCOn)
 		pCon->bFCCMode = true;
@@ -397,6 +398,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvarchive_BcmTVArchive_JNI_setMode(JNIE
 	// or disable it
 	else
 		pCon->bFCCMode = false;
+#endif
+
+	TV_LOG("JNI_setMode: FCC_Mode = %d", pCon->bFCCMode);
 
 	return 0;
 }
@@ -409,10 +413,6 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvarchive_BcmTVArchive_JNI_getC
 	char szChannelInfo[255];
 	int i;
 	Ch_List *pTemp;
-	IMediaPlayer *mp_primer;
-	ITV::Channel selectedChannel;
-	IBroadcastSource::BroadcastItemContainer container;
-	IBroadcastSource::BroadcastMediaItem *mediaItem;
 
 	// Get channel list
     pCon->channelList = pCon->getChannelList();
@@ -504,7 +504,7 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvarchive_BcmTVArchive_JNI_getC
 	// Initialize the media players
     for (i = 0; i < pCon->iNumPrimers; i++)
 	{
-        j_mp_fcc[i] = (IMediaPlayer *)Trellis::Media::IMediaPlayer::resolve("MediaService.");
+        j_mp_fcc[i] = (IMediaPlayer *)Trellis::Media::IMediaPlayer::resolve(SVC_NAME);
 	}
 
 	// Start prime based on the requested channel #
@@ -515,7 +515,7 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvarchive_BcmTVArchive_JNI_getC
 	pCon->bRePrime = false;
 
 	// Save the global reference (non-FCC)
-	j_mp_main = (IMediaPlayer *)Trellis::Media::IMediaPlayer::resolve(SVC_NAME_2);
+	j_mp_main = (IMediaPlayer *)Trellis::Media::IMediaPlayer::resolve(SVC_NAME);
 
 	TV_LOG("JNI_getChannelList: Exit");
     return retArray;
@@ -604,30 +604,18 @@ JNIEXPORT jboolean JNICALL Java_com_broadcom_tvarchive_BcmTVArchive_JNI_setChann
 		ITV::Channel selectedChannel = pCon->channelList[iNum];
 		TV_LOG("JNI_setChannel: selectedChannel-ID:  %s!!", selectedChannel.getId().c_str());
 
-#ifdef ANDROID_USES_ARTEMIS
 		const IMedia::MediaItem mediaItem = pCon->_channel->getChannel(selectedChannel.getId());
 		TV_LOG("JNI_setChannel: mediaItem retrieved");
 
 		if (j_mp_main == NULL)
 		{
 			TV_LOG("JNI_setChannel: Reinitializing j_mp_main");
-			j_mp_main = (IMediaPlayer *)Trellis::Media::IMediaPlayer::resolve(SVC_NAME_2);
+			j_mp_main = (IMediaPlayer *)Trellis::Media::IMediaPlayer::resolve(SVC_NAME);
 		}
 
+		TV_LOG("JNI_setChannel: Calling setDataSource!!");
 		mediaPlayer = (IMediaPlayer *)j_mp_main;
 		mediaPlayer->setDataSource(mediaItem);
-#else
-		// Create the container
-		TV_LOG("JNI_setChannel: Initializing the broadcast container (ID:  %s)!!", selectedChannel.getId().c_str());
-		IBroadcastSource::BroadcastItemContainer container = pCon->_channel->getBroadcastMediaItem(selectedChannel.getId());
-
-		// Crate the mediaItem
-		TV_LOG("JNI_setChannel: Setting up the mediaItem!!");
-		IBroadcastSource::BroadcastMediaItem *mediaItem = container.get();
-
-		mediaPlayer = (IMediaPlayer *)j_mp_main;
-		mediaPlayer->setDataSource(*mediaItem);
-#endif
 
 		mediaPlayer->prepare();
 		mediaPlayer->start();
@@ -681,26 +669,23 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvarchive_BcmTVArchive_JNI_setChannel_p
 #ifndef DISABLE_PIP
 	TV_LOG("JNI_setChannel_pip: Enter (iNum = %d)", iNum);
 
+	IMedia::MediaItem mediaItem;
 	JNITVPlayerContext *pCon = (JNITVPlayerContext *)j_con;
 
 	// Save the pip reference
-	j_mp_pip = (IMediaPlayer *)Trellis::Media::IMediaPlayer::resolve(SVC_NAME_2);	
+	j_mp_pip = (IMediaPlayer *)Trellis::Media::IMediaPlayer::resolve(SVC_NAME);	
 
 	// Select the required channel
 	TV_LOG("JNI_setChannel_pip: Setting up the channel...");
 	ITV::Channel selectedChannel = pCon->channelList[iNum];
 
-	// Create the container
-	TV_LOG("JNI_setChannel_pip: Initializing the broadcast container (ID:  %s)...", selectedChannel.getId().c_str());
-    IBroadcastSource::BroadcastItemContainer container = pCon->_channel->getBroadcastMediaItem(selectedChannel.getId());
-
-	// Crate the mediaItem
-	TV_LOG("JNI_setChannel_pip: Setting up the mediaItem!!");
-    IBroadcastSource::BroadcastMediaItem *mediaItem = container.get();
+	// Create the mediaItem
+	mediaItem = pCon->_channel->getChannel(selectedChannel.getId());
+	TV_LOG("JNI_setChannel: mediaItem retrieved");
 
 	// Make sure we process video only for PIP
 	TV_LOG("JNI_setChannel_pip: Setting decoder type to VIDEO_DECODER_PIP...");
-	mediaItem->setDecoderType(IMedia::VIDEO_DECODER_PIP);
+	mediaItem.setDecoderType(IMedia::VIDEO_DECODER_PIP);
 
 	// Store in the local reference
 	TV_LOG("JNI_setChannel_pip: Deriving from global reference...");
@@ -711,7 +696,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvarchive_BcmTVArchive_JNI_setChannel_p
 	mediaPlayer->setVideoWindowPosition(x, y, w, h);
 
 	TV_LOG("JNI_setChannel_pip: Calling setDataSource...");
-	mediaPlayer->setDataSource(*mediaItem);
+	mediaPlayer->setDataSource(mediaItem);
+
+	TV_LOG("JNI_setChannel_pip: Calling prepare...");
 	mediaPlayer->prepare();
 
 	TV_LOG("JNI_setChannel_pip: Calling start...");
@@ -760,10 +747,9 @@ void merge_prime_and_new_lists(int iNum)
     IMediaPlayer *mp_primer;
     int i, j = 0, k, iTmp, iAfter, iBefore;
 	ITV::Channel selectedChannel;
-	IBroadcastSource::BroadcastItemContainer container;
-	IBroadcastSource::BroadcastMediaItem *mediaItem;
 	int iShortList[MAX_PRIMERS], iNewList[MAX_PRIMERS], iSkipList[MAX_PRIMERS];
 	bool bPrimeFound = false;
+	IMedia::MediaItem mediaItem;
 
 	// Reset the skip & short lists
 	memset(iShortList, -1, (MAX_PRIMERS * sizeof(int)));
@@ -841,15 +827,18 @@ void merge_prime_and_new_lists(int iNum)
 			TV_LOG("merge_prime_and_new_lists: Adding prime = %d (i = %d)", iTmp, i);
 
 			mp_primer = (IMediaPlayer *)j_mp_fcc[i];
+
+			TV_LOG("merge_prime_and_new_lists: Calling reset");
 			mp_primer->reset();
 
 			selectedChannel = pCon->channelList[iTmp];
-			container = pCon->_channel->getBroadcastMediaItem(selectedChannel.getId());
+			mediaItem = pCon->_channel->getChannel(selectedChannel.getId());
+			TV_LOG("merge_prime_and_new_lists: mediaItem retrieved");
 
-			mediaItem = container.get();
-			mediaItem->setPrimingMode(true);
+			mediaItem.setPrimingMode(true);
+			mp_primer->setDataSource(mediaItem);
+			TV_LOG("merge_prime_and_new_lists: setDataSource called");
 
-			mp_primer->setDataSource(*mediaItem);
 			mp_primer->prepare();
 
 			if (iTmp == iNum)
@@ -910,6 +899,8 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvarchive_BcmTVArchive_JNI_close(JNIEnv
 	JNITVPlayerContext *pCon = (JNITVPlayerContext *)j_con;
 	IMediaPlayer *mp_primer;
 	int i;
+
+	TV_LOG("JNI_close: Will release the media player!!");
 
 	// Release the media player
 	if (j_mp_main != NULL)

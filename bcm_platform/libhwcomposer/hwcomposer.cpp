@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+// Verbose messages removed
+//#define LOG_NDEBUG 0
+
 #include <hardware/hardware.h>
 
 #include <fcntl.h>
@@ -178,12 +181,12 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
                     iWindowIndex, video_window_zorder, video_window_visible[iWindowIndex], (void *)client_context, bcmBuffer->sharedDataPhyAddr, timestamp);
 
             // if the video display rectangle is changed by app, set video window according to parameters
-            if (client_context && ((ctx->last_displayFrame[iWindowIndex].left   != layer->displayFrame.left)   ||
-                                   (ctx->last_displayFrame[iWindowIndex].top    != layer->displayFrame.top)    ||
-                                   (ctx->last_displayFrame[iWindowIndex].right  != layer->displayFrame.right)  ||
-                                   (ctx->last_displayFrame[iWindowIndex].bottom != layer->displayFrame.bottom) ||
-                                   (ctx->last_video_window_zorder[iWindowIndex] != video_window_zorder)        ||
-                                   (ctx->last_video_window_visible[iWindowIndex].visible != video_window_visible[iWindowIndex])))
+            if ((ctx->last_displayFrame[iWindowIndex].left   != layer->displayFrame.left)   ||
+                (ctx->last_displayFrame[iWindowIndex].top    != layer->displayFrame.top)    ||
+                (ctx->last_displayFrame[iWindowIndex].right  != layer->displayFrame.right)  ||
+                (ctx->last_displayFrame[iWindowIndex].bottom != layer->displayFrame.bottom) ||
+                (ctx->last_video_window_zorder[iWindowIndex] != video_window_zorder)        ||
+                (ctx->last_video_window_visible[iWindowIndex].visible != video_window_visible[iWindowIndex]))
             {
                 int x, y, w, h;
                 x = layer->displayFrame.left;
@@ -194,20 +197,28 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
                 ALOGD("%s: VideoWindow parameters [%d]: layer=%d, client_context=%p %dx%d@%d,%d visible=%d",
                         __FUNCTION__, iWindowIndex, video_window_zorder, (void *)client_context, w, h, x, y, video_window_visible[iWindowIndex]);
 
-                pIpcClient->getVideoWindowSettings(client_context, iWindowIndex, &window_settings);
+                if (client_context != NULL) {
+                    if (w > 1 && h > 1) {
+                        pIpcClient->getVideoWindowSettings(client_context, iWindowIndex, &window_settings);
 
-                window_settings.position.x = x;
-                window_settings.position.y = y;
-                window_settings.position.width = w;
-                window_settings.position.height = h;
-                window_settings.visible = video_window_visible[iWindowIndex];
-                window_settings.zorder = video_window_zorder;
-                
-                pIpcClient->setVideoWindowSettings(client_context, iWindowIndex, &window_settings);
+                        window_settings.position.x = x;
+                        window_settings.position.y = y;
+                        window_settings.position.width = w;
+                        window_settings.position.height = h;
+                        window_settings.visible = video_window_visible[iWindowIndex];
+                        window_settings.zorder = video_window_zorder;
+                        
+                        pIpcClient->setVideoWindowSettings(client_context, iWindowIndex, &window_settings);
+                    }
+                    else {
+                        ALOGW("%s: Ignoring layer as size is invalid (%dx%d)!", __FUNCTION__, w, h);
+                    }
+                }
                 ctx->last_video_window_visible[iWindowIndex].visible = video_window_visible[iWindowIndex];
 
                 if (window_settings.visible == false) {
-                    ALOGV("%s: About to signal that window %d has been made invisible...", __FUNCTION__, iWindowIndex);
+                    ALOGV("%s: About to signal to sharedDataPhyAddr=0x%08x that window %d has been made invisible...", __FUNCTION__,
+                            bcmBuffer->sharedDataPhyAddr, iWindowIndex);
                     android_atomic_release_store(0, &pSharedData->videoWindow.windowIdPlusOne);
                 }
             }

@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2012 Broadcom Corporation
+ *    (c)2010-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -36,52 +36,11 @@
  * ANY LIMITED REMEDY.
  *
  * $brcm_Workfile: bcmPlayer_live.cpp $
- * $brcm_Revision: 8 $
- * $brcm_Date: 9/14/12 1:29p $
- * 
- * Module Description:
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/stagefrightplayerhw/bcmPlayer_live.cpp $
- * 
- * 8   9/14/12 1:29p mnelis
- * SWANDROID-78: Use NEXUS_ANY_ID for STC channel
- * 
- * 7   6/5/12 2:39p kagrawal
- * SWANDROID-108:Added support to use simple decoder APIs
- * 
- * 6   2/24/12 4:12p kagrawal
- * SWANDROID-12: Dynamic client creation using IPC over binder
- * 
- * 5   2/8/12 2:54p kagrawal
- * SWANDROID-12: Initial support for Nexus client-server mode
- * 
- * 4   12/29/11 6:45p franktcc
- * SW7425-2069: bcmPlayer code refactoring.
- * 
- * 3   12/13/11 10:27a franktcc
- * SW7420-1906: Adding capability of setAspectRatio to ICS
- * 
- * 2   12/10/11 7:19p franktcc
- * SW7425-1845: Adding end of stream callback to nexus media player
- * 
- * 6   11/28/11 6:17p franktcc
- * SW7425-1845: Adding end of stream callback to nexus media player.
- * 
- * 5   9/22/11 5:02p zhangjq
- * SW7425-1328 : support file handle type of URI in bcmPlayer
- * 
- * 4   8/25/11 7:31p franktcc
- * SW7420-2020: Enable PIP/Dual Decode
- * 
- * 3   8/22/11 5:36p zhangjq
- * SW7425-1172 : adjust architecture of bcmPlayer
- * 
- * 1   8/22/11 4:05p zhangjq
- * SW7425-1172 : adjust architecture of bcmPlayer
  *
  *****************************************************************************/
+// Verbose messages removed
+// #define LOG_NDEBUG 0
+
 #define LOG_TAG "bcmPlayer_live"
 
 #include "bcmPlayer.h"
@@ -116,7 +75,7 @@ static int bcmPlayer_init_live(int iPlayerIndex)
 
         b_refsw_client_connect_resource_settings connectSettings;
 
-        BKNI_Memset(&connectSettings, 0, sizeof(connectSettings));
+        nexus_handle[iPlayerIndex].ipcclient->getDefaultConnectClientSettings(&connectSettings);
         /* TODO: Set NxClient_VideoDecoderCapabilities and NxClient_VideoWindowCapabilities of connectSettings */
         connectSettings.simpleVideoDecoder[0].id = client_info.videoDecoderId;
         connectSettings.simpleVideoDecoder[0].surfaceClientId = client_info.surfaceClientId;
@@ -154,11 +113,6 @@ static void bcmPlayer_uninit_live(int iPlayerIndex)
         NEXUS_FilePlay_Close(nexus_handle[iPlayerIndex].file);
         nexus_handle[iPlayerIndex].file = NULL;
     }
-    
-    if(nexus_handle[iPlayerIndex].stcChannel)
-        NEXUS_StcChannel_Close(nexus_handle[iPlayerIndex].stcChannel);
-        
-    nexus_handle[iPlayerIndex].stcChannel = NULL;
     
     LOGD("bcmPlayer_uninit_live()  completed");
 }
@@ -206,7 +160,7 @@ static int bcmPlayer_setDataSource_live(
         int iPlayerIndex, const char *url, uint16_t *videoWidth, uint16_t *videoHeight, char* extraHeader) {
     LOGV("bcmPlayer_setDataSource_live('%s')", url); 
 
-    NEXUS_StcChannelSettings stcSettings;
+    NEXUS_SimpleStcChannelSettings stcSettings;
     
 /*    memset(&live_stream_info, 0x0, sizeof(live_config));*/
     
@@ -238,6 +192,7 @@ static int bcmPlayer_setDataSource_live(
 
     NEXUS_VideoDecoderStartSettings videoProgram;
     NEXUS_AudioDecoderStartSettings audioProgram;
+    NEXUS_VideoDecoderSettings videoDecoderSettings;
 
     /*firstly, remove playback handle*/
     playback_turnoff(iPlayerIndex);
@@ -249,34 +204,37 @@ static int bcmPlayer_setDataSource_live(
     parserBandSettings.transportType = NEXUS_TransportType_eTs;
     NEXUS_ParserBand_SetSettings(parserBand, &parserBandSettings);
 
-    NEXUS_StcChannel_GetDefaultSettings(NEXUS_ANY_ID, &stcSettings);
-    stcSettings.timebase = NEXUS_Timebase_e0;
-    nexus_handle[iPlayerIndex].stcChannel = NEXUS_StcChannel_Open(NEXUS_ANY_ID, &stcSettings);
-    if (nexus_handle[iPlayerIndex].stcChannel == NULL)
-    {
-        LOGE("can not open a STC channel");
-        return 1;
-    }
-
     nexus_handle[iPlayerIndex].videoPidChannel = NEXUS_PidChannel_Open(parserBand, live_stream_info.v, NULL);
     nexus_handle[iPlayerIndex].audioPidChannel = NEXUS_PidChannel_Open(parserBand, live_stream_info.a, NULL);
     NEXUS_VideoDecoder_GetDefaultStartSettings(&videoProgram);
     videoProgram.codec = live_stream_info.v_codec;
     videoProgram.pidChannel = nexus_handle[iPlayerIndex].videoPidChannel;
-    videoProgram.stcChannel = nexus_handle[iPlayerIndex].stcChannel;
     NEXUS_AudioDecoder_GetDefaultStartSettings(&audioProgram);
     audioProgram.codec = live_stream_info.a_codec;
     audioProgram.pidChannel = nexus_handle[iPlayerIndex].audioPidChannel;
-    audioProgram.stcChannel = nexus_handle[iPlayerIndex].stcChannel;
 
-    NEXUS_StcChannel_GetSettings(nexus_handle[iPlayerIndex].stcChannel, &stcSettings);
-    stcSettings.mode = NEXUS_StcChannelMode_ePcr; /* live */
-    stcSettings.modeSettings.pcr.pidChannel = nexus_handle[iPlayerIndex].videoPidChannel; /* PCR happens to be on video pid */
-    NEXUS_StcChannel_SetSettings(nexus_handle[iPlayerIndex].stcChannel, &stcSettings);
+    if (nexus_handle[iPlayerIndex].simpleStcChannel) {
+        NEXUS_SimpleStcChannel_GetSettings(nexus_handle[iPlayerIndex].simpleStcChannel, &stcSettings);
+        stcSettings.mode = NEXUS_StcChannelMode_ePcr; /* live */
+        stcSettings.modeSettings.pcr.pidChannel = nexus_handle[iPlayerIndex].videoPidChannel; /* PCR happens to be on video pid */
+        stcSettings.modeSettings.pcr.offsetThreshold = 0xFF;
+        NEXUS_SimpleStcChannel_SetSettings(nexus_handle[iPlayerIndex].simpleStcChannel, &stcSettings);
+    }
+
+    NEXUS_SimpleVideoDecoder_SetStcChannel(nexus_handle[iPlayerIndex].simpleVideoDecoder, nexus_handle[iPlayerIndex].simpleStcChannel);
+    NEXUS_SimpleAudioDecoder_SetStcChannel(nexus_handle[iPlayerIndex].simpleAudioDecoder, nexus_handle[iPlayerIndex].simpleStcChannel);
 
     NEXUS_SimpleVideoDecoderStartSettings svdStartSettings;
     NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&svdStartSettings);
+    NEXUS_SimpleVideoDecoder_GetSettings(nexus_handle[iPlayerIndex].simpleVideoDecoder, &videoDecoderSettings);
     svdStartSettings.settings = videoProgram;
+    if ((iPlayerIndex == 0) && 
+        (videoDecoderSettings.supportedCodecs[NEXUS_VideoCodec_eH265]) &&
+        ((nexus_handle[iPlayerIndex].maxVideoFormat >= NEXUS_VideoFormat_e3840x2160p24hz) &&
+            (nexus_handle[iPlayerIndex].maxVideoFormat < NEXUS_VideoFormat_e4096x2160p24hz))) {
+            svdStartSettings.maxWidth  = 3840;
+            svdStartSettings.maxHeight = 2160;
+        }
     NEXUS_SimpleVideoDecoder_Start(nexus_handle[iPlayerIndex].simpleVideoDecoder, &svdStartSettings);
 
     NEXUS_SimpleAudioDecoderStartSettings sadStartSettings;

@@ -43,6 +43,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+
 #include "NexusSurface.h"
 #include "nexus_base_mmap.h"
 #include "nexus_memory.h"
@@ -59,30 +64,28 @@
 #include "IAndroidBAMEventListener.h"
 using namespace Trellis;
 using namespace Trellis::Application;
-#endif 
+#endif
+
+#include "nx_ashmem.h"
 
 extern "C" void *v3d_get_nexus_client_context(void);
 
 NexusSurface::NexusSurface()
 {
-    ref_cnt = 0;
-    lineLen = 0;
-    numOfSurf = 0;
-    Xres = 0;
-    Yres = 0;
-    Xdpi = 0;
-    Ydpi = 0;
-    fps = 0;
-    bpp=0;
-    currentSurf = 0;
-    lastSurf = 0;
-    blit_client = NULL;
-    inited=false;
-    frameBuffHeapHandle = NULL;
-    gfxHeapHandle = NULL;
+   lineLen = 0;
+   numOfSurf = 0;
+   Xres = 0;
+   Yres = 0;
+   Xdpi = 0;
+   Ydpi = 0;
+   fps = 0;
+   bpp =0;
+   currentSurf = 0;
+   lastSurf = 0;
+   blitClient = NULL;
 }
 
-NEXUS_SurfaceClientHandle       g_blit_client;
+NEXUS_SurfaceClientHandle       gBlitClient;
 
 static NexusIPCClientBase      *gIpcClient = NexusIPCClientFactory::getClient("Android-Gralloc");
 
@@ -92,402 +95,208 @@ extern "C" void initOrb(IApplicationContainer* app);
 class bamLiteObjects : public StandaloneApplication
 {
 public:
-    bamLiteObjects(IAndroidBAMEventListener *androidBAMEventListener):StandaloneApplication(0,NULL)
-    {
-        StandaloneApplication::init();
-        Util::Param& p = getParameters();
-        p.add("server", "AndroidApplicationDelegate0");
-        Broker::registerServerLib<IWindowManager>();
-        applicationFactory = new AndroidApplicationFactory();
-        windowManager = new AndroidWindowManager(0, applicationFactory, 0/*argc*/, NULL/*argv*/, androidBAMEventListener);
-        initOrb(this);
-        windowManager->init();
-    }
+   bamLiteObjects(IAndroidBAMEventListener *androidBAMEventListener):StandaloneApplication(0,NULL)
+   {
+      StandaloneApplication::init();
+      Util::Param& p = getParameters();
+      p.add("server", "AndroidApplicationDelegate0");
+      Broker::registerServerLib<IWindowManager>();
+      applicationFactory = new AndroidApplicationFactory();
+      windowManager = new AndroidWindowManager(0, applicationFactory, 0/*argc*/, NULL/*argv*/, androidBAMEventListener);
+      initOrb(this);
+      windowManager->init();
+   }
 
-    ~bamLiteObjects()
-    {
-        delete windowManager;
-        delete applicationFactory;
-    }
+   ~bamLiteObjects()
+   {
+      delete windowManager;
+      delete applicationFactory;
+   }
 
 private:
-    AndroidApplicationFactory *applicationFactory;
-    AndroidWindowManager *windowManager;
+   AndroidApplicationFactory *applicationFactory;
+   AndroidWindowManager *windowManager;
 };
 
 static bamLiteObjects *androidBamLite = NULL;
-#endif /* ANDROID_USES_TRELLIS_WM */
+#endif // ANDROID_USES_TRELLIS_WM
 
 static BKNI_EventHandle flipDone;
-/* 2nd Event which is used in hwcomposer as a vsync */
+// 2nd Event which is used in hwcomposer as a vsync
 static BKNI_EventHandle hwcomposer_flipDone;
 
 void hwcomposer_wait_vsync(void)
 {
-    /* In terms of a producer, this needs to be 16ms.   Android stops making frame
-       updates when no activity happens, but this heartbeat needs to still be alive.
-       This should be either 1) real callback from NSC (the vsync as near as can be) or
-       2) a 16ms timer */
-    BKNI_WaitForEvent(hwcomposer_flipDone, 16);
+   // In terms of a producer, this needs to be 16ms.   Android stops making frame
+   // updates when no activity happens, but this heartbeat needs to still be alive.
+   // This should be either 1) real callback from NSC (the vsync as near as can be) or
+   // 2) a 16ms timer
+   BKNI_WaitForEvent(hwcomposer_flipDone, 16);
 }
 
 static void bcm_flip_done(void *context, int param)
 {
-    NEXUS_SurfaceHandle surface;
-    size_t num;
-    NEXUS_SurfaceClient_RecycleSurface(g_blit_client, &surface, 1, &num);
-    BKNI_SetEvent((BKNI_EventHandle)context);
-
-    /* Trigger vsync in libhwcomposer */
-    BKNI_SetEvent((BKNI_EventHandle)param);
-}
-
-static void bcm_generic_done(void *context, int param)
-{
-   /* Simply trigger the event */
-   BSTD_UNUSED(param);
+   NEXUS_SurfaceHandle surface;
+   size_t num;
+   NEXUS_SurfaceClient_RecycleSurface(gBlitClient, &surface, 1, &num);
    BKNI_SetEvent((BKNI_EventHandle)context);
-}
 
-static void
-checkNexusMemStatus(size_t size,
-                    NEXUS_HeapHandle heap,
-                    const char *caller)
-{
-    NEXUS_MemoryStatus    memStatus;
-    NEXUS_Heap_GetStatus(heap, &memStatus);
-    const int oneK = 1024;
-    const int oneMeg = oneK*oneK;
-    int requestedSize = size/oneK;
-    char unit = 'K';
-
-    if(requestedSize>oneK) {
-        requestedSize = size/oneMeg;
-        unit = 'M';
-    }
-
-    if(size > memStatus.largestFreeBlock)
-    {
-        while(1)
-        {
-            BCM_DEBUG_ERRMSG("MemStatus: Caller: %s FATAL ERROR !! Request:%d%c LBA:%dM Used: %dM",
-                             caller,
-                             requestedSize,unit,
-                             memStatus.largestFreeBlock/oneMeg,
-                             (memStatus.size-memStatus.free)/oneMeg);
-            usleep(500000);
-        }
-    }
-
-    BCM_DEBUG_ERRMSG("MemStatus: Caller:%s Request:%d%c LBA:%dM Used: %dM",
-                     caller,
-                     requestedSize,unit,
-                     memStatus.largestFreeBlock/oneMeg,
-                     (memStatus.size-memStatus.free)/oneMeg);
-}
-
-void
-NexusSurface::initHeapHandles()
-{
-    /*Currently we are only supporting one display.*/
-    frameBuffHeapHandle = getNexusHeap();
-    gfxHeapHandle = getNexusHeap();
-
-    if(frameBuffHeapHandle  == NULL || gfxHeapHandle == NULL)
-        BCM_DEBUG_ERRMSG("Invalid Heap Handles Recieved!!");
-
-    LOGD("NexusSurface[3]:: GOT BOTH HEAP HANDLES AS FrameBuffHeap=%p gfxHeap=%p\n",
-        frameBuffHeapHandle,
-        gfxHeapHandle);
-
-    return;
+   // Trigger vsync in libhwcomposer
+   BKNI_SetEvent((BKNI_EventHandle)param);
 }
 
 void NexusSurface::init(void)
 {
-    NEXUS_SurfaceCreateSettings     createSettings;
-    NEXUS_GraphicsSettings          graphicsSettings;
-    NEXUS_VideoFormatInfo           videoFormatInfo;
-    NEXUS_Error                     rc;
-    NEXUS_PlatformSettings          platformSettings;
-    unsigned int                    surface_pitch;
-    unsigned int                    surface_mem_size;
-    void                           *framebuffer_mem;
-    NEXUS_MemoryAllocationSettings  allocSettings;
-    NEXUS_Graphics2DOpenSettings    openGraphicsSettings;
-    NEXUS_Graphics2DSettings        gfxSettings;
-    NEXUS_ClientConfiguration       clientConfig;
-    NEXUS_PlatformConfiguration     platformConfig;
+   NEXUS_SurfaceCreateSettings     createSettings;
+   NEXUS_GraphicsSettings          graphicsSettings;
+   NEXUS_VideoFormatInfo           videoFormatInfo;
+   NEXUS_Error                     rc;
+   NEXUS_PlatformSettings          platformSettings;
+   unsigned int                    surfacePitch;
+   unsigned int                    surfaceSize;
+   void                           *vAddr;
+   unsigned int                    phyAddr;
+   NEXUS_PlatformConfiguration     platformConfig;
 
-    int err =0;
-    int i =0;
-    int ret;
-    FILE *hd;
-    int enable_offset,xoff,yoff,width,height;
-    char value[PROPERTY_VALUE_MAX];
-    uint32_t fmt_width, fmt_height;
-    NEXUS_SurfaceClientSettings client_settings;
-    unsigned client_id = 0;    
-    NexusClientContext *nexus_client = NULL; 
-    nexus_client = (reinterpret_cast<NexusClientContext *>(v3d_get_nexus_client_context()));
-    if(nexus_client)
-        LOGI("%s:%d recvd client_handle = %p",__FUNCTION__,__LINE__, (void *)nexus_client);
-    else
-        while(1) LOGE("%s:%d got NULL client handle",__FUNCTION__,__LINE__);
+   int ret;
+   int enable_offset,xoff,yoff,width,height;
+   char value[PROPERTY_VALUE_MAX];
+   uint32_t fmt_width, fmt_height;
+   NEXUS_SurfaceClientSettings clientSettings;
+   unsigned client_id = 0;
+   NexusClientContext *nexus_client = NULL;
+   nexus_client = (reinterpret_cast<NexusClientContext *>(v3d_get_nexus_client_context()));
+   if (nexus_client)
+      LOGI("%s:%d recvd client_handle = %p", __FUNCTION__, __LINE__, (void *)nexus_client);
+   else
+      while(1) LOGE("%s:%d got NULL client handle", __FUNCTION__, __LINE__);
 
-    gIpcClient->addGraphicsWindow(nexus_client);
+   gIpcClient->addGraphicsWindow(nexus_client);
 
-    BCM_DEBUG_MSG("NexusSurface::::: process's UID=%d AND GID=%d ProcessID:%x \n", getuid(), getgid(),getpid());
-    BCM_DEBUG_ERRMSG("NexusSurface Constructor called [INTEGRATED-VERSION]\n");
+   BCM_DEBUG_MSG("NexusSurface::::: process's UID=%d AND GID=%d ProcessID:%x \n", getuid(), getgid(),getpid());
+   BCM_DEBUG_ERRMSG("NexusSurface Constructor called [INTEGRATED-VERSION]\n");
 
-    initHeapHandles();
-    NEXUS_Platform_GetConfiguration(&platformConfig);
+   NEXUS_Platform_GetConfiguration(&platformConfig);
 
-    /* Init Surface */
-    NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
+   // Init Surface
+   NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
+   createSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
+   // nx_ashmem works out of this heap
+   createSettings.heap = NEXUS_Platform_GetFramebufferHeap(NEXUS_OFFSCREEN_SURFACE);
 
-    createSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
+   NEXUS_SurfaceComposition composition;
+   gIpcClient->getClientComposition(nexus_client, &composition);
 
-    createSettings.heap = getFrameBufferHeap();
+   xoff = composition.position.x;
+   yoff = composition.position.y;
+   width = composition.position.width;
+   height = composition.position.height;
+   createSettings.width = width;
+   createSettings.height = height;
 
-    NEXUS_SurfaceComposition composition;
+   // allocate 2x frame buffer memory, for preventing memory gap between 2 frame buffers
+   surfacePitch = createSettings.width * NEXUS_GRALLOC_BYTES_PER_PIXEL;
+   surfaceSize = createSettings.height * surfacePitch; // size for single frame buffer
 
-    gIpcClient->getClientComposition(nexus_client, &composition);
+   fd = open("/dev/nx_ashmem", O_RDWR, 0);
+   if ((fd == -1) || (!fd)) {
+      LOGE("Open to /dev/nx_ashmem failed 0x%x\n", fd);
+      goto err_graphics;
+   }
 
-    xoff = composition.position.x;
-    yoff = composition.position.y;
-    width = composition.position.width;
-    height = composition.position.height;
-    createSettings.width = width;
-    createSettings.height = height;
+   // nx_ashmem always aligns to 4k.  Add an additional 4k block at the start for shared memory.
+   // This needs reference counting in the same way as the regular blocks
+   ret = ioctl(fd, NX_ASHMEM_SET_SIZE, surfaceSize * 2);
+   if (ret < 0) {
+      LOGE("Setting size of buffer failed\n");
+      goto err_graphics;
+   };
 
-    /* allocate 2x frame buffer memory, for preventing memory gap between 2 frame buffers */
-    surface_pitch = createSettings.width * NEXUS_GRALLOC_BYTES_PER_PIXEL;
-    surface_mem_size = createSettings.height * surface_pitch; /* size for single frame buffer */
-    NEXUS_Memory_GetDefaultAllocationSettings(&allocSettings);
-    allocSettings.alignment = 1 << createSettings.alignment;
-    allocSettings.heap = getFrameBufferHeap();
+   // This is similar to the mmap call in ashmem, but nexus doesnt work in this way, so tunnel
+   // via IOCTL
+   phyAddr = (NEXUS_Addr)ioctl(fd, NX_ASHMEM_GETMEM);
+   if (phyAddr == 0) {
+      BCM_DEBUG_ERRMSG("NEXUSSURFACE.CPP: Nexus Framebuffer memory allocation failed\n");
+      goto err_graphics;
+   }
 
-    checkNexusMemStatus(surface_mem_size*2,allocSettings.heap,__FUNCTION__);
-    NEXUS_Memory_Allocate(surface_mem_size*2, &allocSettings, &framebuffer_mem );
-    if(framebuffer_mem == NULL) {
-        BCM_DEBUG_ERRMSG("NEXUSSURFACE.CPP: Nexus Framebuffer memory allocation failed\n");
-    }
-    surface[0].surfBuf.buffer = framebuffer_mem;
-    surface[1].surfBuf.buffer = (void *)((unsigned int)framebuffer_mem + surface_mem_size);
-    LOGI("Framebuffers created at [0]%p and [1]%p surface_mem_size=%x",surface[0].surfBuf.buffer,surface[1].surfBuf.buffer,surface_mem_size);
+   vAddr = NEXUS_OffsetToCachedAddr(phyAddr);
 
-    for(i=0;i<2;i++)
-    {
-        createSettings.pMemory = surface[i].surfBuf.buffer;
-        surface[i].surfHnd = NEXUS_Surface_Create(&createSettings);
-        if(surface[i].surfHnd == NULL)
-        {
-            BCM_DEBUG_ERRMSG("NEXUSSURFACE.CPP: Nexus Framebuffer surface creation failed\n");
-        }
-        NEXUS_Surface_GetMemory(surface[i].surfHnd, &surface[i].surfBuf);
-        BCM_DEBUG_MSG("NEXUSSURFACE.CPP: == On Init Nexus Surface [WithHandle: %p] Creation Successful ==",surface[i].surfHnd);
-    }
+   surface[0].surfBuf.buffer = vAddr;
+   surface[1].surfBuf.buffer = (void *)((unsigned int)vAddr + surfaceSize);
+   LOGI("Framebuffers created at %p and %p surfaceSize %d",
+      surface[0].surfBuf.buffer,
+      surface[1].surfBuf.buffer,
+      surfaceSize);
 
-    BKNI_CreateEvent(&flipDone);
-    BKNI_CreateEvent(&hwcomposer_flipDone);
-    b_refsw_client_client_info client_info;
-    gIpcClient->getClientInfo(nexus_client, &client_info);
-    client_id = client_info.surfaceClientId;
-    LOGD("%s:%d NSC client ID returned by the server dynamically is %d",__FUNCTION__,__LINE__,client_id);
+   for(int i=0; i < 2; i++)
+   {
+      createSettings.pMemory = surface[i].surfBuf.buffer;
+      surface[i].surfHnd = NEXUS_Surface_Create(&createSettings);
+      if(surface[i].surfHnd == NULL)
+      {
+         BCM_DEBUG_ERRMSG("NEXUSSURFACE.CPP: Nexus Framebuffer surface creation failed\n");
+      }
+      NEXUS_Surface_GetMemory(surface[i].surfHnd, &surface[i].surfBuf);
+      BCM_DEBUG_MSG("NEXUSSURFACE.CPP: == On Init Nexus Surface [WithHandle: %p] Creation Successful ==", surface[i].surfHnd);
+   }
+
+   BKNI_CreateEvent(&flipDone);
+   BKNI_CreateEvent(&hwcomposer_flipDone);
+   b_refsw_client_client_info client_info;
+   gIpcClient->getClientInfo(nexus_client, &client_info);
+   client_id = client_info.surfaceClientId;
+   LOGD("%s:%d NSC client ID returned by the server dynamically is %d", __FUNCTION__, __LINE__, client_id);
 
 #if ANDROID_USES_TRELLIS_WM
-    androidBamLite = new bamLiteObjects(gIpcClient);
+   androidBamLite = new bamLiteObjects(gIpcClient);
 #endif
 
-    blit_client = NEXUS_SurfaceClient_Acquire(client_id);
-    if (!blit_client) 
-    {
-        while(1) LOGE("%s:%d NEXUS_SurfaceClient_Acquire %d failed",__FUNCTION__,__LINE__, client_id);
-        goto err_graphics;
-    }
+   blitClient = NEXUS_SurfaceClient_Acquire(client_id);
+   if (!blitClient)
+   {
+      while(1) LOGE("%s:%d NEXUS_SurfaceClient_Acquire %d failed", __FUNCTION__, __LINE__, client_id);
+      goto err_graphics;
+   }
 
-    g_blit_client = blit_client;
+   gBlitClient = blitClient;
 
-    NEXUS_SurfaceClient_GetSettings(blit_client, &client_settings);
-    client_settings.recycled.callback = bcm_flip_done;
-    client_settings.recycled.context = (void *)flipDone;
-    client_settings.recycled.param = (int)hwcomposer_flipDone;
-    rc = NEXUS_SurfaceClient_SetSettings(blit_client, &client_settings);
-    if (rc) {
-        while(1) LOGE("%s:%d NEXUS_SurfaceClient_SetSettings %d failed",__FUNCTION__,__LINE__, client_id);
-        goto err_graphics;
-    }
+   NEXUS_SurfaceClient_GetSettings(blitClient, &clientSettings);
+   clientSettings.recycled.callback = bcm_flip_done;
+   clientSettings.recycled.context = (void *)flipDone;
+   clientSettings.recycled.param = (int)hwcomposer_flipDone;
+   rc = NEXUS_SurfaceClient_SetSettings(blitClient, &clientSettings);
+   if (rc) {
+      while(1) LOGE("%s:%d NEXUS_SurfaceClient_SetSettings %d failed",__FUNCTION__,__LINE__, client_id);
+      goto err_graphics;
+   }
 
-/* Init Graphics to quickly fill the two framebuffers */
-#ifndef UINT32_C
-#define UINT32_C (unsigned int)
-#endif
+   NEXUS_SurfaceClient_PushSurface(blitClient,surface[1].surfHnd, NULL, false);
 
-    NEXUS_Graphics2D_GetDefaultOpenSettings(&openGraphicsSettings);
-    NEXUS_Platform_GetClientConfiguration(&clientConfig);
-    openGraphicsSettings.heap = clientConfig.heap[1];
-
-    gfxHandle = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &openGraphicsSettings);
-
-    if(!gfxHandle) {goto err_graphics;}
-
-    BKNI_CreateEvent(&checkpointEvent);
-    BKNI_CreateEvent(&packetSpaceAvailableEvent);
-
-    /* setup the callbacks to make the NEXUS_Graphics2D_Checkpoint actually do something */
-    NEXUS_Graphics2D_GetSettings(gfxHandle, &gfxSettings);
-    gfxSettings.checkpointCallback.callback = bcm_generic_done;
-    gfxSettings.checkpointCallback.context = checkpointEvent;
-    gfxSettings.packetSpaceAvailable.callback = bcm_generic_done;
-    gfxSettings.packetSpaceAvailable.context = packetSpaceAvailableEvent;
-    NEXUS_Graphics2D_SetSettings(gfxHandle, &gfxSettings);
-
-    while (1)
-    {
-        /* NEXUS_Graphics2D_Memset32 count is in words, not in bytes) */
-        rc = NEXUS_Graphics2D_Memset32(gfxHandle, framebuffer_mem, 0, ((surface_mem_size * 2) / sizeof(uint32_t)));
-        if (rc == NEXUS_GRAPHICS2D_QUEUE_FULL)
-            BKNI_WaitForEvent(packetSpaceAvailableEvent, BKNI_INFINITE);
-        else
-            break;
-    }
-
-    rc = NEXUS_Graphics2D_Checkpoint(gfxHandle, NULL);
-    if (rc == NEXUS_GRAPHICS2D_QUEUED)
-        BKNI_WaitForEvent(checkpointEvent, BKNI_INFINITE);
-
-    NEXUS_SurfaceClient_PushSurface(blit_client,surface[1].surfHnd, NULL, false);
-
-    currentSurf = 0;
-    lineLen = surface[0].surfBuf.pitch;
-    numOfSurf = 2;
-    Xres = createSettings.width;
-    Yres = createSettings.height;
-    Xdpi = 160;
-    Ydpi = 160;
-    fps = 60;
-    bpp = NEXUS_GRALLOC_BYTES_PER_PIXEL*8;
-    inited= true;
+   currentSurf = 0;
+   lineLen = surface[0].surfBuf.pitch;
+   numOfSurf = 2;
+   Xres = createSettings.width;
+   Yres = createSettings.height;
+   Xdpi = 160;
+   Ydpi = 160;
+   fps = 60;
+   bpp = NEXUS_GRALLOC_BYTES_PER_PIXEL*8;
 
 done:
-    ref_cnt++;
-    return;
+   return;
 
-err_graphics: //fall-thru
-    while(1) {
-        LOGE("ABOUT TO EXIT PROCESS WHICH SHOULD NOT HAPPEN.");
-        sleep(1);
-    }
-    _exit(1);
+err_graphics: // fall-thru
+   while(1) {
+      LOGE("ABOUT TO EXIT PROCESS WHICH SHOULD NOT HAPPEN.");
+      sleep(1);
+   }
+   _exit(1);
 }
 
 void NexusSurface::flip(void)
 {
-    NEXUS_SurfaceClient_PushSurface(blit_client, surface[currentSurf].surfHnd,NULL,false);
-    currentSurf = currentSurf ^ 0x1;
-    BKNI_WaitForEvent(flipDone, BKNI_INFINITE);
+   NEXUS_SurfaceClient_PushSurface(blitClient, surface[currentSurf].surfHnd, NULL, false);
+   currentSurf = currentSurf ^ 0x1;
+   BKNI_WaitForEvent(flipDone, BKNI_INFINITE);
 }
-
-void 
-printHandleInfo(private_handle_t *privHnd)
-{
-    BCM_TRACK_ALLOCATIONS("\n ====== HANDLE INFORMATION ========== \n Privatehandle:%p Flags: %x Sz:%d AllocPid:%d",
-        privHnd,privHnd->flags,privHnd->size,privHnd->pid);
-
-#if 0
-    if(privHnd->sharedDataPhyAddr)
-    {
-        PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(privHnd->sharedDataPhyAddr);
-
-        BCM_TRACK_ALLOCATIONS("refCnt:%d w:%d h:%d fmt:%d bpp:%d SharedDataPhyAddr=%p nxSurfPhyAddr:%p LockedCnt:%d",pSharedData->refCnt,
-            pSharedData->width,pSharedData->height,pSharedData->format,
-            pSharedData->bpp,privHnd->sharedDataPhyAddr, pSharedData->nxSurfacePhysicalAddress,pSharedData->lockedCnt);
-
-        if(pSharedData->regBuffPidCnt)
-        {
-            BCM_TRACK_ALLOCATIONS("Buffer Registered With %d Processes With Pids: ",pSharedData->regBuffPidCnt);
-            for(unsigned i=0; i < pSharedData->regBuffPidCnt; i++) BCM_TRACK_ALLOCATIONS(" %d ",pSharedData->regBuffPids[i]);
-        }
-    }
-#endif
-}
-
-NEXUS_HeapHandle getNexusHeap(void)
-{
-#if ((ANDROID_CLIENT_SECURITY_MODE == 0) || (ANDROID_CLIENT_SECURITY_MODE==1)) 
-    NEXUS_HeapHandle heap = NULL;
-    NEXUS_MemoryStatus status;
-    heap = NEXUS_Platform_GetFramebufferHeap(0);
-    int rc = NEXUS_Heap_GetStatus(heap, &status);
-    BDBG_ASSERT(!rc);
-    BCM_DEBUG_MSG("%s[%d]: client heap:%p MEMC-index %d, offset %#x, addr %p, size %d (%#x), alignment %d\n",
-        __FUNCTION__,__LINE__, heap, status.memcIndex, status.offset, status.addr,
-        status.size, status.size, status.alignment);
-
-    return heap;
-#else
-    NEXUS_ClientConfiguration clientConfig;
-    NEXUS_HeapHandle heap = NULL;
-
-    NEXUS_Platform_GetClientConfiguration(&clientConfig);
-    /* Return the first heap - TODO: do we have to return a specific heap? */
-    for (int i=0;i<NEXUS_MAX_HEAPS;i++) 
-    {
-        NEXUS_MemoryStatus status;
-        heap = clientConfig.heap[i];
-        if (heap)
-        {
-            int rc = NEXUS_Heap_GetStatus(heap, &status);
-            BDBG_ASSERT(!rc);
-            BCM_DEBUG_MSG("%s[%d]: client heap:%p [%d]: MEMC %d, offset %#x, addr %p, size %d (%#x), alignment %d\n",
-                __FUNCTION__,__LINE__, heap, i, status.memcIndex, status.offset, status.addr,
-                status.size, status.size, status.alignment);
-            break;
-        }
-    }
-    return heap;
-#endif
-
-}
-
-unsigned int
-AllocateNexusMemory(size_t     size,        // Size of the memory that you want to allocate
-                    size_t     alignment,   // set to 0 for using default alignment
-                    void       **alloced)
-{
-    int rc=0;
-    NEXUS_MemoryAllocationSettings settings;
-    NEXUS_Memory_GetDefaultAllocationSettings(&settings);
-
-    settings.alignment = alignment;
-    settings.heap = getNexusHeap();
-
-    rc = NEXUS_Memory_Allocate(size,&settings,alloced);
-    BDBG_ASSERT(!rc);
-    if(*alloced == NULL)
-    {
-        BCM_DEBUG_ERRMSG("%s[%d]: Nexus Memory Allocation Failed [Sz: %d  Alignment:%d]",
-                __FUNCTION__,__LINE__,
-                size, alignment);
-
-        BDBG_ASSERT(0);
-        return 0;
-    }
-
-    memset(*alloced,0,size);
-    return NEXUS_AddrToOffset(*alloced);
-}
-
-void FreeNexusMemory(void * pMemory)
-{
-    NEXUS_Memory_Free(pMemory);
-}
-
-void FreeNexusMemory(unsigned int phyAddr)
-{
-    NEXUS_Memory_Free(NEXUS_OffsetToCachedAddr(phyAddr));
-}
-
-
-

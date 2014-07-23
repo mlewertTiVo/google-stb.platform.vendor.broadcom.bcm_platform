@@ -62,7 +62,7 @@ endif
 include vendor/broadcom/bcm_platform/libnexusservice/Android.mk
 
 ifeq ($(BOARD_USES_GENERIC_AUDIO),false)
-include vendor/broadcom/bcm_platform/libaudio/Android.mk
+include vendor/broadcom/bcm_platform/libaudio2/Android.mk
 endif
 include vendor/broadcom/bcm_platform/stagefrightplayerhw/Android.mk
 #include vendor/broadcom/bcm_platform/libstagefrighthw/Android.mk

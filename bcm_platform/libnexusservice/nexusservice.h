@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2013 Broadcom Corporation
+ *    (c)2011-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -36,79 +36,6 @@
  * ANY LIMITED REMEDY.
  *
  * $brcm_Workfile: nexusservice.h $
- * $brcm_Revision: 19 $
- * $brcm_Date: 12/3/12 3:24p $
- * 
- * Module Description:
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/libnexusservice/nexusservice.h $
- * 
- * 19   12/3/12 3:24p saranya
- * SWANDROID-266: Removed Non-IPC Standalone Mode
- * 
- * 18   9/13/12 11:32a kagrawal
- * SWANDROID-104: Added support for dynamic display resolution change,
- *  1080p and screen resizing
- * 
- * 17   9/4/12 6:54p nitinb
- * SWANDROID-197:Implement volume control functionality on nexus server
- *  side
- * 
- * 16   7/30/12 4:08p kagrawal
- * SWANDROID-104: Support for composite output
- * 
- * 15   7/6/12 9:13p ajitabhp
- * SWANDROID-128: FIXED Graphics Window Resource Leakage in SBS and NSC
- *  mode.
- * 
- * 14   6/24/12 10:51p alexpan
- * SWANDROID-108: Fix build errors for platforms without hdmi-in after
- *  changes for SimpleDecoder
- * 
- * 13   6/20/12 6:00p kagrawal
- * SWANDROID-118: Extended get_output_format() to return width and height
- * 
- * 12   6/20/12 11:16a kagrawal
- * SWANDROID-108: Add support for HDMI-Input with SimpleDecoder and w/ or
- *  w/o nexus client server mode
- * 
- * 11   6/5/12 2:38p kagrawal
- * SWANDROID-108:Added support to use simple decoder APIs
- * 
- * 10   5/29/12 6:58p ajitabhp
- * SWANDROID-96: Fixed the problem with environment variable
- * 
- * 9   5/28/12 5:12p kagrawal
- * SWANDROID-101: Calling authenticated_join only for untrusted mode
- * 
- * 8   5/7/12 3:45p ajitabhp
- * SWANDROID-96: Initial checkin for android side by side implementation.
- * 
- * 7   4/13/12 1:15p ajitabhp
- * SWANDROID-65: Memory Owner ship problem resolved in multi-process mode.
- * 
- * 6   4/3/12 5:00p kagrawal
- * SWANDROID-56: Added support for VideoWindow configuration in NSC mode
- * 
- * 5   3/27/12 4:05p mzhuang
- * SW7425-2633: audio mixer errors after audio flinger restart
- * 
- * 4   3/15/12 4:51p mzhuang
- * SW7425-2633: audio mixer errors after audio flinger restart
- * 
- * 3   2/24/12 4:10p kagrawal
- * SWANDROID-12: Dynamic client creation using IPC over binder
- * 
- * 2   2/8/12 2:52p kagrawal
- * SWANDROID-12: Initial support for Nexus client-server mode
- * 
- * 3   9/19/11 5:23p fzhang
- * SW7425-1307: Add libaudio support on 7425 Honeycomb
- * 
- * 2   8/25/11 7:30p franktcc
- * SW7420-2020: Enable PIP/Dual Decode
  * 
  *****************************************************************************/
 #ifndef _NEXUSSERVICE_H_
@@ -163,11 +90,7 @@
 #include "nexus_picture_ctrl.h"
 
 /*If the security mode is not eUntrusted then we do Join else we do Authenticated Join*/
-#if (ANDROID_CLIENT_SECURITY_MODE != 2)
-#define NEXUS_ABSTRACTED_JOIN(auth) NEXUS_Platform_Join()
-#else
 #define NEXUS_ABSTRACTED_JOIN(auth) NEXUS_Platform_AuthenticatedJoin(auth)
-#endif
 
 #if (ANDROID_SUPPORTS_SD_DISPLAY && (NEXUS_NUM_DISPLAYS >= 2))
 #define MAX_NUM_DISPLAYS (2)
@@ -223,7 +146,9 @@ public:
                                  Parcel *reply,
                                  uint32_t flags);
 
-    /* These API's require a Nexus Client Context as they handle per client resources... */
+    /* These API's require a Nexus Client Context as they handle per client resources.
+       Each of these methods *MUST* be implemented for each class that derives from it
+       because NexusClientContext cannot be referenced between implementations. */
     virtual NexusClientContext * createClientContext(const b_refsw_client_client_configuration *config);
     virtual void destroyClientContext(NexusClientContext * client);
     virtual void getClientInfo(NexusClientContext * client, b_refsw_client_client_info *info);  

@@ -72,6 +72,8 @@ class NexusIPCClientBase : public NexusIPCCommon
 public: 
     virtual ~NexusIPCClientBase() { }
 
+    virtual void getDefaultConnectClientSettings(b_refsw_client_connect_resource_settings *settings) = 0;
+
     /* Trellis BPM server expects clients to acquire SimpleVideoDecoder, SimpleAudioDecoder and 
        SimpleAudioPlayback through it. An attempt to directly acquire them may fail. Hence, 
        below wrapper API's.

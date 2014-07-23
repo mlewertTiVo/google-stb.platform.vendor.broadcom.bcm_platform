@@ -23,6 +23,19 @@ MP_CFLAGS = -DANDROID_CLIENT_SECURITY_MODE=$(ANDROID_CLIENT_SECURITY_MODE)
 
 ifeq ($(ANDROID_SUPPORTS_NXCLIENT),y)
 MP_CFLAGS += -DANDROID_SUPPORTS_NXCLIENT
+
+ifeq ($(NEXUS_MODE),proxy)
+NEXUS_LIB=libnexus
+else
+ifeq ($(NEXUS_WEBCPU),core1_server)
+NEXUS_LIB=libnexus_webcpu
+else
+NEXUS_LIB=libnexus_client
+endif
+endif
+
+else
+NEXUS_LIB=libnexus
 endif
 
 ifeq ($(ANDROID_UNDER_LXC),y)
@@ -44,6 +57,8 @@ else
 MP_CFLAGS += -DATP_BUILD=0
 endif
 
+include $(CLEAR_VARS)
+
 ifeq ($(ANDROID_ENABLE_REMOTEA),y)
 LOCAL_CFLAGS += -DANDROID_ENABLE_REMOTEA
 endif
@@ -53,10 +68,8 @@ ifeq ($(ANDROID_SUPPORTS_NXCLIENT),y)
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 endif
 
-include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false
-LOCAL_LDFLAGS := -lnexus -L$(REFSW_PATH)/bin
-LOCAL_SHARED_LIBRARIES := liblog libcutils libbinder libutils libnexusipcclient libnexusservice
+LOCAL_SHARED_LIBRARIES := liblog libcutils libbinder libutils libnexusipcclient libnexusservice $(NEXUS_LIB)
 
 ifeq ($(ANDROID_SUPPORTS_FRONTEND_SERVICE),y)
 LOCAL_SHARED_LIBRARIES += libnexusfrontendservice
@@ -80,6 +93,9 @@ LOCAL_CFLAGS += $(NEXUS_CFLAGS) -DANDROID $(MP_CFLAGS)
 LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 ifeq ($(SBS_USES_TRELLIS_INPUT_EVENTS),y)
 LOCAL_CFLAGS += -DSBS_USES_TRELLIS_INPUT_EVENTS
+endif
+ifeq ($(BCM_OMX_SUPPORT_ENCODER),y)
+LOCAL_CFLAGS += -DBCM_OMX_SUPPORT_ENCODER
 endif
 
 include $(BUILD_EXECUTABLE)

@@ -6,16 +6,25 @@ endif
 
 LOCAL_PATH:= $(call my-dir)
 
-include $(REFSW_PATH)/bin/include/platform_app.inc
+ifeq ($(NEXUS_MODE),proxy)
+NEXUS_LIB=libnexus
+else
+ifeq ($(NEXUS_WEBCPU),core1_server)
+NEXUS_LIB=libnexus_webcpu
+else
+NEXUS_LIB=libnexus_client
+endif
+endif
 
 include $(CLEAR_VARS)
-LOCAL_PRELINK_MODULE := false
-#LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusfrontendservice
-LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusipcclient
+include $(REFSW_PATH)/bin/include/platform_app.inc
 
-LOCAL_LDFLAGS := -lnexus -L$(REFSW_PATH)/bin
+LOCAL_PRELINK_MODULE := false
+
+LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder
+LOCAL_SHARED_LIBRARIES += libnexusipcclient $(NEXUS_LIB)
+
 LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include $(JNI_H_INCLUDE) 
-#LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusfrontendservice
 
 LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusservice
 LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc

@@ -17,6 +17,22 @@ REFSW_PATH :=vendor/broadcom/bcm_platform/brcm_nexus
 LOCAL_PATH := $(call my-dir)
 NEXUS_TOP ?= $(LOCAL_PATH)/../../../../../../../../../nexus
 
+ifeq ($(ANDROID_SUPPORTS_NXCLIENT),y)
+
+ifeq ($(NEXUS_MODE),proxy)
+NEXUS_LIB=libnexus
+else
+ifeq ($(NEXUS_WEBCPU),core1_server)
+NEXUS_LIB=libnexus_webcpu
+else
+NEXUS_LIB=libnexus_client
+endif
+endif
+
+else
+NEXUS_LIB=libnexus
+endif
+
 include $(REFSW_PATH)/bin/include/platform_app.inc
 ifeq ($(ANDROID_SUPPORTS_NXCLIENT),y)
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
@@ -48,6 +64,12 @@ ifeq ($(ANDROID_SUPPORTS_ANALOG_INPUT),y)
 MP_CFLAGS += -DANDROID_SUPPORTS_ANALOG_INPUT
 endif
 
+endif
+
+ifeq ($(ANDROID_ENABLE_HDMI_LEGACY),y)
+MP_CFLAGS += -DANDROID_SUPPORTS_HDMI_LEGACY=1
+else
+MP_CFLAGS += -DANDROID_SUPPORTS_HDMI_LEGACY=0
 endif
 
 ifeq ($(ANDROID_USES_TRELLIS_WM),y)
@@ -87,7 +109,7 @@ endif
 
 include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false
-LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexus libstagefright_foundation
+LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder $(NEXUS_LIB) libstagefright_foundation
 
 ifeq ($(ANDROID_USES_TRELLIS_WM),y)
 LOCAL_SHARED_LIBRARIES += libstlport

@@ -1,0 +1,2 @@
+# nx_ashmem driver needs to have the same permissions as ashmem
+/dev/nx_ashmem            0666   root       root

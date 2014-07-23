@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2013 Broadcom Corporation
+ *    (c)2010-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -36,48 +36,11 @@
  * ANY LIMITED REMEDY.
  *
  * $brcm_Workfile: bcmPlayer_rawdata.cpp $
- * $brcm_Revision: 9 $
- * $brcm_Date: 2/7/13 11:06a $
- * 
- * Module Description:
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/stagefrightplayerhw/bcmPlayer_rawdata.cpp $
- * 
- * 9   2/7/13 11:06a mnelis
- * SWANDROID-274: Correct media state handling
- * 
- * 8   12/20/12 6:56p mnelis
- * SWANDROID-276: Improve buffering handling
- * 
- * 7   12/19/12 10:12p robertwm
- * SWANDROID-281: UriPlayer does not work in playing UDP/RTP multicast.
- * 
- * 6   12/14/12 2:29p kagrawal
- * SWANDROID-277: Wrapper IPC APIs for
- *  NEXUS_SimpleXXX_Acquire()/_Release()
- * 
- * 5   12/11/12 10:57p robertwm
- * SWANDROID-255: [BCM97346 & BCM97425] Widevine DRM and GTS support
- * 
- * SWANDROID-255/1   12/11/12 1:59a robertwm
- * SWANDROID-255:  [BCM97346 & BCM97425] Widevine DRM and GTS support.
- * 
- * 4   9/14/12 1:31p mnelis
- * SWANDROID-78: Use NEXUS_ANY_ID for STC channel
- * 
- * 3   6/5/12 2:40p kagrawal
- * SWANDROID-108:Added support to use simple decoder APIs
- * 
- * 2   5/8/12 2:20p franktcc
- * SWANDROID-67: Fixed compiling error when enable nexus multi-process
- * 
- * 1   5/3/12 3:47p franktcc
- * SWANDROID-67: Adding UDP/RTP/RTSP streaming playback support
  *
  *****************************************************************************/
+// Verbose messages removed
 //#define LOG_NDEBUG 0
+
 #define LOG_TAG "bcmPlayer_rawdata"
 
 #include <utils/Errors.h>
@@ -152,12 +115,13 @@ static bool               forcePause[MAX_NEXUS_PLAYER]    = {
 static void spaceAvailableCallback(void *context, int param)
 {
     BSTD_UNUSED(param);
-    LOGV("---> [%d]%s(%p)", iPlayerIndex, __FUNCTION__, context);
+    LOGV("---> [%d]%s(%p)", param, __FUNCTION__, context);
     B_Event_Set(context);
 }
 
 static int bcmPlayer_init_rawdata(int iPlayerIndex)
 {
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
     NEXUS_PlaypumpOpenSettings  *pPlaypumpOpenSettings = NULL;
     NEXUS_ClientConfiguration   *pClientConfig         = NULL;
     NEXUS_SyncChannelSettings   *pSyncChannelSettings  = NULL;
@@ -181,9 +145,9 @@ static int bcmPlayer_init_rawdata(int iPlayerIndex)
         return rc;
     }
 
-    if(nexus_handle[iPlayerIndex].playback) {
-        NEXUS_Playback_Destroy(nexus_handle[iPlayerIndex].playback);
-        nexus_handle[iPlayerIndex].playback = NULL;
+    if (nexusHandle->playback) {
+        NEXUS_Playback_Destroy(nexusHandle->playback);
+        nexusHandle->playback = NULL;
     }
 
     pPlaypumpOpenSettings = (NEXUS_PlaypumpOpenSettings *)BKNI_Malloc(sizeof(NEXUS_PlaypumpOpenSettings));
@@ -206,80 +170,51 @@ static int bcmPlayer_init_rawdata(int iPlayerIndex)
             NEXUS_Platform_GetClientConfiguration(pClientConfig);
 
             pPlaypumpOpenSettings->heap = pClientConfig->heap[1]; /* playpump requires heap with eFull mapping */
-            nexus_handle[iPlayerIndex].audioPlaypump = NEXUS_Playpump_Open(NEXUS_ANY_ID, pPlaypumpOpenSettings);
+            nexusHandle->audioPlaypump = NEXUS_Playpump_Open(NEXUS_ANY_ID, pPlaypumpOpenSettings);
             if (pClientConfig) {
                 BKNI_Free(pClientConfig);
             }
             if (pPlaypumpOpenSettings) {
                 BKNI_Free(pPlaypumpOpenSettings);
             }
-            if (nexus_handle[iPlayerIndex].audioPlaypump == NULL) {
+            if (nexusHandle->audioPlaypump == NULL) {
                 LOGE("[%d]%s: Nexus playpump open failed!", iPlayerIndex, __FUNCTION__);
                 rc = 1;
             }
             else {
-                /* create a sync channel */
-                pSyncChannelSettings = (NEXUS_SyncChannelSettings *)BKNI_Malloc(sizeof(NEXUS_SyncChannelSettings));
-                if (pSyncChannelSettings == NULL) {
-                    LOGE("[%d]%s: pSyncChannelSettings is null!", iPlayerIndex, __FUNCTION__);
-                    NEXUS_Playpump_Close(nexus_handle[iPlayerIndex].audioPlaypump);
-                    nexus_handle[iPlayerIndex].audioPlaypump = NULL;
+                // Now connect the client resources
+                b_refsw_client_client_info client_info;
+                nexusHandle->ipcclient->getClientInfo(nexusHandle->nexus_client, &client_info);
+
+                b_refsw_client_connect_resource_settings connectSettings;
+
+                nexusHandle->ipcclient->getDefaultConnectClientSettings(&connectSettings);
+
+                connectSettings.simpleVideoDecoder[0].id = client_info.videoDecoderId;
+                connectSettings.simpleVideoDecoder[0].surfaceClientId = client_info.surfaceClientId;
+                connectSettings.simpleVideoDecoder[0].windowId = iPlayerIndex; /* Main or PIP Window */
+                if (nexusHandle->bSupportsHEVC == true) {
+                    if ((nexusHandle->maxVideoFormat >= NEXUS_VideoFormat_e3840x2160p24hz) &&
+                        (nexusHandle->maxVideoFormat < NEXUS_VideoFormat_e4096x2160p24hz))
+                    {
+                        connectSettings.simpleVideoDecoder[0].decoderCaps.maxWidth = 3840;
+                        connectSettings.simpleVideoDecoder[0].decoderCaps.maxHeight = 2160;
+                    }
+                    connectSettings.simpleVideoDecoder[0].decoderCaps.supportedCodecs[NEXUS_VideoCodec_eH265] = true;
+                }
+                connectSettings.simpleAudioDecoder.id = client_info.audioDecoderId;
+
+                if (nexusHandle->ipcclient->connectClientResources(nexusHandle->nexus_client, &connectSettings) != true) {
+                    LOGE("[%d]%s: Could not connect client \"%s\" resources!", iPlayerIndex, __FUNCTION__,
+                          nexusHandle->ipcclient->getClientName());
+                    NEXUS_Playpump_Close(nexusHandle->audioPlaypump);
+                    nexusHandle->audioPlaypump = NULL;
                     rc = 1;
                 }
-                else {
-                    NEXUS_SyncChannel_GetDefaultSettings(pSyncChannelSettings);
-                    pSyncChannelSettings->adjustmentThreshold    = 300;
-                    pSyncChannelSettings->enableMuteControl      = true;
-                    pSyncChannelSettings->enablePrecisionLipsync = true;
-                    nexus_handle[iPlayerIndex].syncChannel = NEXUS_SyncChannel_Create(pSyncChannelSettings);
-                    if (pSyncChannelSettings) {
-                        BKNI_Free(pSyncChannelSettings);
-                    }
-                    if (nexus_handle[iPlayerIndex].syncChannel == NULL) {
-                        LOGE("[%d]%s: Nexus syncChannel open failed!", iPlayerIndex, __FUNCTION__);
-                        NEXUS_Playpump_Close(nexus_handle[iPlayerIndex].audioPlaypump);
-                        nexus_handle[iPlayerIndex].audioPlaypump = NULL;
-                        rc = 1;
-                    }
-                    else {
-                        // Now connect the client resources
-                        b_refsw_client_client_info client_info;
-                        nexus_handle[iPlayerIndex].ipcclient->getClientInfo(nexus_handle[iPlayerIndex].nexus_client, &client_info);
 
-                        b_refsw_client_connect_resource_settings connectSettings;
-
-                        BKNI_Memset(&connectSettings, 0, sizeof(connectSettings));
-
-                        connectSettings.simpleVideoDecoder[0].id = client_info.videoDecoderId;
-                        connectSettings.simpleVideoDecoder[0].surfaceClientId = client_info.surfaceClientId;
-                        connectSettings.simpleVideoDecoder[0].windowId = iPlayerIndex; /* Main or PIP Window */
-                        if (nexus_handle[iPlayerIndex].bSupportsHEVC == true)
-                        {
-                            if ((nexus_handle[iPlayerIndex].maxVideoFormat >= NEXUS_VideoFormat_e3840x2160p24hz) &&
-                                (nexus_handle[iPlayerIndex].maxVideoFormat < NEXUS_VideoFormat_e4096x2160p24hz))
-                            {
-                                connectSettings.simpleVideoDecoder[0].decoderCaps.maxWidth = 3840;
-                                connectSettings.simpleVideoDecoder[0].decoderCaps.maxHeight = 2160;
-                            }
-                            connectSettings.simpleVideoDecoder[0].decoderCaps.supportedCodecs[NEXUS_VideoCodec_eH265] = NEXUS_VideoCodec_eH265;
-                        }
-                        connectSettings.simpleAudioDecoder.id = client_info.audioDecoderId;
-
-                        if (nexus_handle[iPlayerIndex].ipcclient->connectClientResources(nexus_handle[iPlayerIndex].nexus_client, &connectSettings) != true){
-                            LOGE("[%d]%s: Could not connect client \"%s\" resources!", iPlayerIndex, __FUNCTION__,
-                                  nexus_handle[iPlayerIndex].ipcclient->getClientName());
-                            NEXUS_SyncChannel_Destroy(nexus_handle[iPlayerIndex].syncChannel);
-                            nexus_handle[iPlayerIndex].syncChannel = NULL;
-                            NEXUS_Playpump_Close(nexus_handle[iPlayerIndex].audioPlaypump);
-                            nexus_handle[iPlayerIndex].audioPlaypump = NULL;
-                            rc = 1;
-                        }
-
-                        videoFlushing[iPlayerIndex] = false;
-                        audioFlushing[iPlayerIndex] = false;
-                        forcePause[iPlayerIndex] = false;
-                    }
-                }
+                videoFlushing[iPlayerIndex] = false;
+                audioFlushing[iPlayerIndex] = false;
+                forcePause[iPlayerIndex] = false;
             }
         }
     }
@@ -291,12 +226,10 @@ static int bcmPlayer_init_rawdata(int iPlayerIndex)
     
 static void bcmPlayer_uninit_rawdata(int iPlayerIndex) 
 {
-
-    NEXUS_PlaybackStatus status;
     LOGD("==> [%d]bcmPlayer_uninit_rawdata", iPlayerIndex);
 
-    playpump_status[iPlayerIndex] = STOP;
     MUTEX_RAWDATA_LOCK(iPlayerIndex);
+    playpump_status[iPlayerIndex] = STOP;
     videoFlushing[iPlayerIndex] = true;
     audioFlushing[iPlayerIndex] = true;
     MUTEX_RAWDATA_UNLOCK(iPlayerIndex);
@@ -304,97 +237,9 @@ static void bcmPlayer_uninit_rawdata(int iPlayerIndex)
     B_Event_Set(videoDataEvent[iPlayerIndex]);
     B_Event_Set(audioDataEvent[iPlayerIndex]);
 
-    if(nexus_handle[iPlayerIndex].playpump){
-        NEXUS_Playpump_Stop(nexus_handle[iPlayerIndex].playpump);
-    }
-    if(nexus_handle[iPlayerIndex].audioPlaypump){
-        NEXUS_Playpump_Stop(nexus_handle[iPlayerIndex].audioPlaypump);
-    }
-
-    if(nexus_handle[iPlayerIndex].simpleVideoDecoder)
-        NEXUS_SimpleVideoDecoder_Stop(nexus_handle[iPlayerIndex].simpleVideoDecoder);
-
-    if(nexus_handle[iPlayerIndex].simpleAudioDecoder)
-        NEXUS_SimpleAudioDecoder_Stop(nexus_handle[iPlayerIndex].simpleAudioDecoder);
-
-    if(nexus_handle[iPlayerIndex].playback) {
-        NEXUS_Playback_GetStatus(nexus_handle[iPlayerIndex].playback, &status);
-        
-        if(status.state == NEXUS_PlaybackState_ePaused) {
-            LOGW("[%d]%s: PLAYBACK HASN'T BEEN STARTED YET!", iPlayerIndex, __FUNCTION__);
-        }
-
-        if(status.state == NEXUS_PlaybackState_ePlaying || status.state == NEXUS_PlaybackState_ePaused) {
-            NEXUS_Playback_Stop(nexus_handle[iPlayerIndex].playback);
-                
-            while(status.state == NEXUS_PlaybackState_ePlaying || status.state == NEXUS_PlaybackState_ePaused)
-                  NEXUS_Playback_GetStatus(nexus_handle[iPlayerIndex].playback, &status);
-                    
-            //usleep(2000000);/* wait for playback stoping */
-        }
-    }
-    
     MUTEX_RAWDATA_LOCK(iPlayerIndex);
 
-    if(nexus_handle[iPlayerIndex].playback)
-        NEXUS_Playback_CloseAllPidChannels(nexus_handle[iPlayerIndex].playback);    
-
-    if(nexus_handle[iPlayerIndex].playback) {
-        NEXUS_Playback_Destroy(nexus_handle[iPlayerIndex].playback);
-        nexus_handle[iPlayerIndex].playback = NULL;
-    }
-
-    if(nexus_handle[iPlayerIndex].videoPidChannel) {
-        NEXUS_Playpump_ClosePidChannel(nexus_handle[iPlayerIndex].playpump, nexus_handle[iPlayerIndex].videoPidChannel);
-        nexus_handle[iPlayerIndex].videoPidChannel = NULL;
-    }
-    
-    if(nexus_handle[iPlayerIndex].audioPidChannel) {
-        if(nexus_handle[iPlayerIndex].audioPlaypump) {
-            NEXUS_Playpump_ClosePidChannel(nexus_handle[iPlayerIndex].audioPlaypump, nexus_handle[iPlayerIndex].audioPidChannel);
-        }
-        else {
-            NEXUS_Playpump_ClosePidChannel(nexus_handle[iPlayerIndex].playpump, nexus_handle[iPlayerIndex].audioPidChannel);
-        }
-        nexus_handle[iPlayerIndex].audioPidChannel = NULL;
-    }
-    
-    if(nexus_handle[iPlayerIndex].playpump) {
-        NEXUS_Playpump_Close(nexus_handle[iPlayerIndex].playpump);
-        nexus_handle[iPlayerIndex].playpump = NULL;
-    }
-    
-    if(nexus_handle[iPlayerIndex].audioPlaypump) {
-        NEXUS_Playpump_Close(nexus_handle[iPlayerIndex].audioPlaypump);
-        nexus_handle[iPlayerIndex].audioPlaypump = NULL;
-    }
-    
-    if(nexus_handle[iPlayerIndex].simpleVideoDecoder) {
-        nexus_handle[iPlayerIndex].ipcclient->releaseVideoDecoderHandle(nexus_handle[iPlayerIndex].simpleVideoDecoder);
-        nexus_handle[iPlayerIndex].simpleVideoDecoder = NULL;
-    }
-
-    if(nexus_handle[iPlayerIndex].simpleAudioDecoder) {
-        nexus_handle[iPlayerIndex].ipcclient->releaseAudioDecoderHandle(nexus_handle[iPlayerIndex].simpleAudioDecoder);
-        nexus_handle[iPlayerIndex].simpleAudioDecoder = NULL;
-    }
-
-    if(nexus_handle[iPlayerIndex].stcChannel) {
-        NEXUS_StcChannel_Invalidate(nexus_handle[iPlayerIndex].stcChannel);
-        NEXUS_StcChannel_Close(nexus_handle[iPlayerIndex].stcChannel);
-        nexus_handle[iPlayerIndex].stcChannel = NULL;
-    }
-
-    /* disconnect sync channel */
-    if(nexus_handle[iPlayerIndex].syncChannel) {
-        NEXUS_SyncChannelSettings syncChannelSettings;
-        NEXUS_SyncChannel_GetSettings(nexus_handle[iPlayerIndex].syncChannel, &syncChannelSettings);
-        syncChannelSettings.videoInput = NULL;
-        syncChannelSettings.audioInput[0] = NULL;
-        syncChannelSettings.audioInput[1] = NULL;
-        NEXUS_SyncChannel_SetSettings(nexus_handle[iPlayerIndex].syncChannel, &syncChannelSettings);
-        NEXUS_SyncChannel_Destroy(nexus_handle[iPlayerIndex].syncChannel);
-    }
+    bcmPlayer_uninit_base(iPlayerIndex);
 
     B_Event_Destroy(videoDataEvent[iPlayerIndex]);
     B_Event_Destroy(audioDataEvent[iPlayerIndex]);
@@ -403,16 +248,15 @@ static void bcmPlayer_uninit_rawdata(int iPlayerIndex)
     MUTEX_RAWDATA_DESTROY(iPlayerIndex);
 }
 
-static int bcmPlayer_setDataSource_rawdata(
-        int iPlayerIndex, const char *url, uint16_t *videoWidth, uint16_t *videoHeight, char* extraHeader)
+static int bcmPlayer_setDataSource_rawdata(int iPlayerIndex, const char *url, uint16_t *videoWidth, uint16_t *videoHeight, char* extraHeader)
 {
-
-    NEXUS_StcChannelSettings stcSettings;
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+    NEXUS_SimpleStcChannelSettings stcSettings;
     NEXUS_PidChannelHandle videoPidChannel;
     NEXUS_VideoDecoderStartSettings videoProgram;
+    NEXUS_VideoDecoderSettings videoDecoderSettings;
     NEXUS_SimpleAudioDecoderStartSettings audioProgram;
     NEXUS_PlaypumpSettings playpumpSettings;
-    NEXUS_SyncChannelSettings syncChannelSettings;
     NEXUS_SimpleVideoDecoderServerSettings videoSettings;
     NEXUS_SimpleAudioDecoderServerSettings audioSettings;
     stream_format_info *pSfInfo;
@@ -425,11 +269,10 @@ static int bcmPlayer_setDataSource_rawdata(
 
     memset(pSfInfo, 0, sizeof(*pSfInfo));
 
-    if (extraHeader)
-    {
-        probe_stream_format(extraHeader, nexus_handle[iPlayerIndex].videoTrackIndex, nexus_handle[iPlayerIndex].audioTrackIndex, pSfInfo);
+    if (extraHeader) {
+        probe_stream_format(extraHeader, nexusHandle->videoTrackIndex, nexusHandle->audioTrackIndex, pSfInfo);
 
-        if(!pSfInfo->transportType) {
+        if (!pSfInfo->transportType) {
             LOGE("[%d]%s: Cannot support the stream type of file:%s !", iPlayerIndex, __FUNCTION__, url);
             return 1;
         }
@@ -437,45 +280,33 @@ static int bcmPlayer_setDataSource_rawdata(
         *videoWidth  = pSfInfo->videoWidth;
         *videoHeight = pSfInfo->videoHeight;
     }
-    else{
+    else {
         pSfInfo->videoWidth = *videoWidth;
         pSfInfo->videoHeight = *videoHeight; 
-       // Video/Audio codec
-       pSfInfo->videoCodec = NEXUS_VideoCodec_eH264;
-       pSfInfo->audioCodec = NEXUS_AudioCodec_eAacAdts;
+        // Video/Audio codec
+        pSfInfo->videoCodec = NEXUS_VideoCodec_eH264;
+        pSfInfo->audioCodec = NEXUS_AudioCodec_eAacAdts;
 
-       // PES info
-       pSfInfo->videoPid = 0xE0;
-       pSfInfo->audioPid = 0xC0;
-       pSfInfo->transportType = NEXUS_TransportType_eMpeg2Pes;
+        // PES info
+        pSfInfo->videoPid = 0xE0;
+        pSfInfo->audioPid = 0xC0;
+        pSfInfo->transportType = NEXUS_TransportType_eMpeg2Pes;
     }
 
-   
-    
-    NEXUS_StcChannel_GetDefaultSettings(NEXUS_ANY_ID, &stcSettings);
-    stcSettings.timebase = NEXUS_Timebase_e0;
-    stcSettings.mode = NEXUS_StcChannelMode_eAuto;
-    stcSettings.modeSettings.Auto.transportType = pSfInfo->transportType;
-//    stcSettings.modeSettings.Auto.behavior = NEXUS_StcChannelAutoModeBehavior_eAudioMaster;
-//    stcSettings.modeSettings.Auto.behavior = NEXUS_StcChannelAutoModeBehavior_eVideoMaster;
-#if 0
-    stcSettings.modeSettings.Auto.behavior = NEXUS_StcChannelAutoModeBehavior_eFirstAvailable;
-    stcSettings.modeSettings.Auto.offsetThreshold = 30;
-#endif
-    nexus_handle[iPlayerIndex].stcChannel = NEXUS_StcChannel_Open(NEXUS_ANY_ID, &stcSettings);
-    
-    if(NULL == nexus_handle[iPlayerIndex].stcChannel) {
-        LOGE("[%d]%s: stcChannel open fails!!!", iPlayerIndex, __FUNCTION__);
-        return -1;
+    if (nexusHandle->simpleStcChannel) {
+        NEXUS_SimpleStcChannel_GetSettings(nexusHandle->simpleStcChannel, &stcSettings);
+        stcSettings.mode = NEXUS_StcChannelMode_eAuto;
+        stcSettings.modeSettings.Auto.transportType = pSfInfo->transportType;
+        rc = NEXUS_SimpleStcChannel_SetSettings(nexusHandle->simpleStcChannel, &stcSettings);
     }
-        
+    
     LOGV("[%d]bcmPlayer_setDataSource_rawdata, videoPid   = %d", iPlayerIndex, pSfInfo->videoPid);
     LOGV("[%d]bcmPlayer_setDataSource_rawdata, videoCodec = %d", iPlayerIndex, pSfInfo->videoCodec);
     LOGV("[%d]bcmPlayer_setDataSource_rawdata, audioPid   = %d", iPlayerIndex, pSfInfo->audioPid);
     LOGV("[%d]bcmPlayer_setDataSource_rawdata, audioCodec = %d", iPlayerIndex, pSfInfo->audioCodec);
     LOGV("[%d]bcmPlayer_setDataSource_rawdata, w x h = %d x %d", iPlayerIndex, pSfInfo->videoWidth, pSfInfo->videoHeight);
 
-    NEXUS_Playpump_GetSettings(nexus_handle[iPlayerIndex].playpump, &playpumpSettings);
+    NEXUS_Playpump_GetSettings(nexusHandle->playpump, &playpumpSettings);
 
     playpumpSettings.originalTransportType = NEXUS_TransportType_eUnknown;
     playpumpSettings.transportType = pSfInfo->transportType;
@@ -484,14 +315,14 @@ static int bcmPlayer_setDataSource_rawdata(
     playpumpSettings.dataCallback.callback = spaceAvailableCallback;
     playpumpSettings.dataCallback.context = videoDataEvent[iPlayerIndex];
     playpumpSettings.dataCallback.param = iPlayerIndex;
-    rc = NEXUS_Playpump_SetSettings(nexus_handle[iPlayerIndex].playpump, &playpumpSettings);
+    rc = NEXUS_Playpump_SetSettings(nexusHandle->playpump, &playpumpSettings);
 
     if (rc != NEXUS_SUCCESS) {
         LOGE("[%d]%s: NEXUS_Playpump_SetSettings failed for playpump [rc=%d]!!!", iPlayerIndex, __FUNCTION__, rc);
-        return false;
+        return 1;
     }
 
-    NEXUS_Playpump_GetSettings(nexus_handle[iPlayerIndex].audioPlaypump, &playpumpSettings);
+    NEXUS_Playpump_GetSettings(nexusHandle->audioPlaypump, &playpumpSettings);
 
     playpumpSettings.originalTransportType = NEXUS_TransportType_eMpeg2Pes;
     playpumpSettings.transportType = pSfInfo->transportType;
@@ -501,73 +332,104 @@ static int bcmPlayer_setDataSource_rawdata(
     playpumpSettings.dataCallback.context = audioDataEvent[iPlayerIndex];
     playpumpSettings.dataCallback.param = iPlayerIndex;
 
-    rc = NEXUS_Playpump_SetSettings(nexus_handle[iPlayerIndex].audioPlaypump, &playpumpSettings);
+    rc = NEXUS_Playpump_SetSettings(nexusHandle->audioPlaypump, &playpumpSettings);
     if (rc != NEXUS_SUCCESS) {
         LOGE("[%d]%s: NEXUS_Playpump_SetSettings failed for audioPlaypump [rc=%d]!!!", iPlayerIndex, __FUNCTION__, rc);
-        return false;
+        return 1;
     }
 
     if (pSfInfo->videoCodec != NEXUS_VideoCodec_eUnknown) {
-        nexus_handle[iPlayerIndex].videoPidChannel = NEXUS_Playpump_OpenPidChannel(nexus_handle[iPlayerIndex].playpump, pSfInfo->videoPid, NULL);
-        if(nexus_handle[iPlayerIndex].videoPidChannel) {    
+        nexusHandle->videoPidChannel = NEXUS_Playpump_OpenPidChannel(nexusHandle->playpump, pSfInfo->videoPid, NULL);
+        if (nexusHandle->videoPidChannel) {    
             LOGV("[%d]bcmPlayer_setDataSource_rawdata, videoPidChannel", iPlayerIndex);
             NEXUS_VideoDecoder_GetDefaultStartSettings(&videoProgram);
             videoProgram.codec = pSfInfo->videoCodec;
-            videoProgram.pidChannel = nexus_handle[iPlayerIndex].videoPidChannel;
-            videoProgram.stcChannel = nexus_handle[iPlayerIndex].stcChannel;
+            videoProgram.pidChannel = nexusHandle->videoPidChannel;
         }
     }
     
     if (pSfInfo->audioCodec != NEXUS_AudioCodec_eUnknown) {
         if (pSfInfo->transportType == NEXUS_TransportType_eTs) {
-            nexus_handle[iPlayerIndex].audioPidChannel = NEXUS_Playpump_OpenPidChannel(nexus_handle[iPlayerIndex].playpump, pSfInfo->audioPid, NULL);
-            if(nexus_handle[iPlayerIndex].audioPlaypump) {
-                NEXUS_Playpump_Close(nexus_handle[iPlayerIndex].audioPlaypump);
-                nexus_handle[iPlayerIndex].audioPlaypump = NULL;
+            nexusHandle->audioPidChannel = NEXUS_Playpump_OpenPidChannel(nexusHandle->playpump, pSfInfo->audioPid, NULL);
+            if (nexusHandle->audioPlaypump) {
+                NEXUS_Playpump_Close(nexusHandle->audioPlaypump);
+                nexusHandle->audioPlaypump = NULL;
             }
         }
         else {
-            nexus_handle[iPlayerIndex].audioPidChannel = NEXUS_Playpump_OpenPidChannel(nexus_handle[iPlayerIndex].audioPlaypump, pSfInfo->audioPid, NULL);
+            nexusHandle->audioPidChannel = NEXUS_Playpump_OpenPidChannel(nexusHandle->audioPlaypump, pSfInfo->audioPid, NULL);
         }
             
-        if(nexus_handle[iPlayerIndex].audioPidChannel) {    
+        if (nexusHandle->audioPidChannel) {    
             LOGV("[%d]bcmPlayer_setDataSource_rawdata, audioPidChannel", iPlayerIndex);
             NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&audioProgram); 
             audioProgram.primary.codec = pSfInfo->audioCodec;        
-            audioProgram.primary.pidChannel = nexus_handle[iPlayerIndex].audioPidChannel;        
-            audioProgram.primary.stcChannel = nexus_handle[iPlayerIndex].stcChannel;        
+            audioProgram.primary.pidChannel = nexusHandle->audioPidChannel;        
         }
     }
 
-
-    /* connect sync channel */
-    if(nexus_handle[iPlayerIndex].simpleVideoDecoder && nexus_handle[iPlayerIndex].simpleAudioDecoder) {
-        NEXUS_SimpleVideoDecoder_GetServerSettings(nexus_handle[iPlayerIndex].simpleVideoDecoder, &videoSettings);
-        NEXUS_SimpleAudioDecoder_GetServerSettings(nexus_handle[iPlayerIndex].simpleAudioDecoder, &audioSettings);
-        NEXUS_SyncChannel_GetSettings(nexus_handle[iPlayerIndex].syncChannel, &syncChannelSettings);
-        syncChannelSettings.videoInput = NEXUS_VideoDecoder_GetConnector(videoSettings.videoDecoder);
-        syncChannelSettings.audioInput[0] = NEXUS_AudioDecoder_GetConnector(audioSettings.primary, NEXUS_AudioDecoderConnectorType_eStereo);
-        syncChannelSettings.audioInput[1] = NULL;
-        //NEXUS_SyncChannel_SetSettings(nexus_handle[iPlayerIndex].syncChannel, &syncChannelSettings);
+    /* Setup A/V decoder stc channels before starting decoding... */
+    if (nexusHandle->simpleVideoDecoder && nexusHandle->videoPidChannel) {
+        rc = NEXUS_SimpleVideoDecoder_SetStcChannel(nexusHandle->simpleVideoDecoder, nexusHandle->simpleStcChannel);
+        if (rc != NEXUS_SUCCESS) {
+            LOGE("[%d]%s: Could not set Simple Video Decoder Stc Channel!", iPlayerIndex, __FUNCTION__);
+            if (nexusHandle->audioPidChannel) {
+                NEXUS_Playpump_ClosePidChannel(nexusHandle->audioPlaypump, nexusHandle->audioPidChannel);
+                nexusHandle->audioPidChannel = NULL;
+            }
+            if (nexusHandle->videoPidChannel) {
+                NEXUS_Playpump_ClosePidChannel(nexusHandle->playpump, nexusHandle->videoPidChannel);
+                nexusHandle->videoPidChannel = NULL;
+            }
+            return 1;
+        }
     }
 
+    if (nexusHandle->simpleAudioDecoder && nexusHandle->audioPidChannel) {
+        rc = NEXUS_SimpleAudioDecoder_SetStcChannel(nexusHandle->simpleAudioDecoder, nexusHandle->simpleStcChannel);
+        if (rc != NEXUS_SUCCESS) {
+            LOGE("[%d]%s: Could not set Simple Audio Decoder Stc Channel!", iPlayerIndex, __FUNCTION__);
+            if (nexusHandle->audioPidChannel) {
+                NEXUS_Playpump_ClosePidChannel(nexusHandle->audioPlaypump, nexusHandle->audioPidChannel);
+                nexusHandle->audioPidChannel = NULL;
+            }
+            if (nexusHandle->videoPidChannel) {
+                NEXUS_Playpump_ClosePidChannel(nexusHandle->playpump, nexusHandle->videoPidChannel);
+                nexusHandle->videoPidChannel = NULL;
+            }
+            return 1;
+        }
+    }
 
-    if(nexus_handle[iPlayerIndex].simpleVideoDecoder && nexus_handle[iPlayerIndex].videoPidChannel) {
+    if (nexusHandle->simpleVideoDecoder && nexusHandle->videoPidChannel) {
         LOGV("[%d]bcmPlayer_setDataSource_rawdata, simpleVideoDecoder", iPlayerIndex);
         NEXUS_SimpleVideoDecoderStartSettings svdStartSettings;
+
         NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&svdStartSettings);
         svdStartSettings.settings = videoProgram;
-
-        NEXUS_SimpleVideoDecoder_Start(nexus_handle[iPlayerIndex].simpleVideoDecoder, &svdStartSettings);
+        NEXUS_SimpleVideoDecoder_GetSettings(nexusHandle->simpleVideoDecoder, &videoDecoderSettings);
+        if ((iPlayerIndex == 0) && 
+            (videoDecoderSettings.supportedCodecs[NEXUS_VideoCodec_eH265]) &&
+            ((nexusHandle->maxVideoFormat >= NEXUS_VideoFormat_e3840x2160p24hz) &&
+                (nexusHandle->maxVideoFormat < NEXUS_VideoFormat_e4096x2160p24hz))) {
+                svdStartSettings.maxWidth  = 3840;
+                svdStartSettings.maxHeight = 2160;
+        }
+        NEXUS_SimpleVideoDecoder_Start(nexusHandle->simpleVideoDecoder, &svdStartSettings);
     }
         
-    if(nexus_handle[iPlayerIndex].simpleAudioDecoder && nexus_handle[iPlayerIndex].audioPidChannel) {    
+    if (nexusHandle->simpleAudioDecoder && nexusHandle->audioPidChannel) {    
         LOGV("[%d]bcmPlayer_setDataSource_rawdata, simpleAudioDecoder", iPlayerIndex);
-        NEXUS_SimpleAudioDecoder_Start(nexus_handle[iPlayerIndex].simpleAudioDecoder, &audioProgram);
+        NEXUS_SimpleAudioDecoder_Start(nexusHandle->simpleAudioDecoder, &audioProgram);
     }
     
-    if(nexus_handle[iPlayerIndex].playpump)NEXUS_Playpump_Start(nexus_handle[iPlayerIndex].playpump);
-    if(nexus_handle[iPlayerIndex].audioPlaypump)NEXUS_Playpump_Start(nexus_handle[iPlayerIndex].audioPlaypump);
+    if (nexusHandle->playpump) {
+        NEXUS_Playpump_Start(nexusHandle->playpump);
+    }
+
+    if (nexusHandle->audioPlaypump) {
+        NEXUS_Playpump_Start(nexusHandle->audioPlaypump);
+    }
 
     playpump_status[iPlayerIndex] = PLAY;
 
@@ -578,6 +440,7 @@ static int bcmPlayer_setDataSource_rawdata(
 
 static int bcmPlayer_putData_rawdata(int iPlayerIndex, const void *rawdata, size_t data_len)
 {
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
     void *buffer;
     size_t buffer_size;
     unsigned data_played = 0;
@@ -585,11 +448,11 @@ static int bcmPlayer_putData_rawdata(int iPlayerIndex, const void *rawdata, size
     NEXUS_Error rc;
     uint16_t waitPutData=0;
 
-    if(playpump_status[iPlayerIndex] == STOP){
+    if (playpump_status[iPlayerIndex] == STOP) {
         LOGE("[%d][VIDEO] playpump_status is STOP!!", iPlayerIndex);
         return 1;
     }
-    if(nexus_handle[iPlayerIndex].playpump == NULL){
+    if (nexusHandle->playpump == NULL) {
         LOGE("[%d][VIDEO] nexus_handle.playpump is NULL ..!!", iPlayerIndex);
         return 1;
     }
@@ -599,9 +462,8 @@ static int bcmPlayer_putData_rawdata(int iPlayerIndex, const void *rawdata, size
     MUTEX_RAWDATA_UNLOCK(iPlayerIndex);
     
     LOGV("[%d][VIDEO] data_len = %d; rawdata = %p\n\n", iPlayerIndex, data_len, rawdata);
-    LOGV("[%d][VIDEO] nexus_handle.playpump = %p\n", iPlayerIndex, nexus_handle[iPlayerIndex].playpump);
-    while(data_played < data_len && playpump_status[iPlayerIndex] != STOP && nexus_handle[iPlayerIndex].playpump)
-    {
+    LOGV("[%d][VIDEO] nexus_handle.playpump = %p\n", iPlayerIndex, nexusHandle->playpump);
+    while(data_played < data_len && playpump_status[iPlayerIndex] != STOP && nexusHandle->playpump) {
         MUTEX_RAWDATA_LOCK(iPlayerIndex);
         if (videoFlushing[iPlayerIndex]) {
             MUTEX_RAWDATA_UNLOCK(iPlayerIndex);
@@ -609,15 +471,15 @@ static int bcmPlayer_putData_rawdata(int iPlayerIndex, const void *rawdata, size
             return 0;
         }
 
-        if(nexus_handle[iPlayerIndex].playpump){
+        if (nexusHandle->playpump) {
             NEXUS_PlaypumpStatus status;
 
-            NEXUS_Playpump_GetStatus(nexus_handle[iPlayerIndex].playpump, &status);
+            NEXUS_Playpump_GetStatus(nexusHandle->playpump, &status);
             LOGV("[%d]Video playpump: depth=%d, size=%d, desc depth=%d, desc size=%d, played=%lld",
                     iPlayerIndex, status.fifoDepth, status.fifoSize, status.descFifoDepth, status.descFifoSize, status.bytesPlayed);
 
-            rc = NEXUS_Playpump_GetBuffer(nexus_handle[iPlayerIndex].playpump, &buffer, &buffer_size);
-            if(rc != 0) {
+            rc = NEXUS_Playpump_GetBuffer(nexusHandle->playpump, &buffer, &buffer_size);
+            if (rc != 0) {
                 LOGE("[%d][VIDEO] bcmPlayer_putData_rawdata: NEXUS_Playpump_GetBuffer failed, rc:0x%x", iPlayerIndex, rc);
                 MUTEX_RAWDATA_UNLOCK(iPlayerIndex);
                 return 1;
@@ -625,7 +487,8 @@ static int bcmPlayer_putData_rawdata(int iPlayerIndex, const void *rawdata, size
         }
         MUTEX_RAWDATA_UNLOCK(iPlayerIndex);
         LOGV("[%d][VIDEO] data_len = %d; buffer_size = %d;\n\n", iPlayerIndex, data_len, buffer_size);
-        if(buffer_size == 0) {
+
+        if (buffer_size == 0) {
             LOGV("[%d]%s: Waiting for space in video playpump...", iPlayerIndex, __FUNCTION__);
             B_Event_Wait(videoDataEvent[iPlayerIndex], B_WAIT_FOREVER);
             continue;
@@ -636,19 +499,19 @@ static int bcmPlayer_putData_rawdata(int iPlayerIndex, const void *rawdata, size
         }
 
         MUTEX_RAWDATA_LOCK(iPlayerIndex);
-        if(buffer_size > 0 && nexus_handle[iPlayerIndex].playpump && !videoFlushing[iPlayerIndex]) {
+        if (buffer_size > 0 && nexusHandle->playpump && !videoFlushing[iPlayerIndex]) {
             BKNI_Memcpy(buffer,&data_buffer[data_played],buffer_size);
-            rc = NEXUS_Playpump_WriteComplete(nexus_handle[iPlayerIndex].playpump, 0, buffer_size);
+            rc = NEXUS_Playpump_WriteComplete(nexusHandle->playpump, 0, buffer_size);
             if (rc != NEXUS_SUCCESS) {
                 LOGE("[%d][VIDEO] bcmPlayer_putData_rawdata: NEXUS_Playpump_WriteComplete failed, rc:0x%x", iPlayerIndex, rc);
             }
-            else{
+            else {
                 LOGV("[%d][VIDEO] putData_rawdata: played %d bytes", iPlayerIndex, buffer_size);
                 data_played += buffer_size;
             }
             MUTEX_RAWDATA_UNLOCK(iPlayerIndex);
         }
-        else{
+        else {
             MUTEX_RAWDATA_UNLOCK(iPlayerIndex);
             usleep(10000);
            // LOGV("[%d][VIDEO] bcmPlayer_putData_rawdata: buffer_size:%d, data_len:%d ..!!", iPlayerIndex, buffer_size,data_len);
@@ -661,6 +524,7 @@ static int bcmPlayer_putData_rawdata(int iPlayerIndex, const void *rawdata, size
       
 static int bcmPlayer_putAudioData_rawdata(int iPlayerIndex, const void *rawdata, size_t data_len) 
 {
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
     void *buffer;
     size_t buffer_size;
     unsigned data_played = 0;
@@ -668,11 +532,11 @@ static int bcmPlayer_putAudioData_rawdata(int iPlayerIndex, const void *rawdata,
 
     NEXUS_Error rc;
 
-    if(playpump_status[iPlayerIndex] == STOP){
+    if (playpump_status[iPlayerIndex] == STOP) {
         LOGE("[%d][AUDIO] playpump_status is STOP!!", iPlayerIndex);
         return 1;
     }
-    if(nexus_handle[iPlayerIndex].audioPlaypump == NULL){
+    if (nexusHandle->audioPlaypump == NULL) {
         LOGE("[%d][AUDIO] nexus_handle.audioPlaypump is NULL ..!!", iPlayerIndex);
         return 1;
     }
@@ -683,10 +547,9 @@ static int bcmPlayer_putAudioData_rawdata(int iPlayerIndex, const void *rawdata,
     
     LOGV("[%d][AUDIO] data_len = %d; rawdata = %p\n\n", iPlayerIndex, data_len, rawdata);
     LOGV("[%d][AUDIO] header = 0x%08x", iPlayerIndex, *(unsigned int *)rawdata);
-    LOGV("[%d][AUDIO] nexus_handle.playpump = %p\n", iPlayerIndex, nexus_handle[iPlayerIndex].audioPlaypump);
+    LOGV("[%d][AUDIO] nexus_handle.playpump = %p\n", iPlayerIndex, nexusHandle->audioPlaypump);
      
-    while (data_played < data_len && playpump_status[iPlayerIndex] != STOP && nexus_handle[iPlayerIndex].audioPlaypump) 
-    {
+    while (data_played < data_len && playpump_status[iPlayerIndex] != STOP && nexusHandle->audioPlaypump) {
         void *playpump_buffer;
         unsigned buffer_size;
 
@@ -697,22 +560,24 @@ static int bcmPlayer_putAudioData_rawdata(int iPlayerIndex, const void *rawdata,
             return 0;
         }
 
-        if(nexus_handle[iPlayerIndex].audioPlaypump){
+        if (nexusHandle->audioPlaypump) {
             NEXUS_PlaypumpStatus status;
 
-            NEXUS_Playpump_GetStatus(nexus_handle[iPlayerIndex].audioPlaypump, &status);
+            NEXUS_Playpump_GetStatus(nexusHandle->audioPlaypump, &status);
             LOGV("[%d]Audio playpump: depth=%d, size=%d, desc depth=%d, desc size=%d, played=%lld",
                     iPlayerIndex, status.fifoDepth, status.fifoSize, status.descFifoDepth, status.descFifoSize, status.bytesPlayed);
 
             if (forcePause[iPlayerIndex] && playpump_status[iPlayerIndex] == PLAY) {
                 if (status.descFifoDepth > 0) {
-                    NEXUS_StcChannel_SetRate(nexus_handle[iPlayerIndex].stcChannel, 1, 0);
-                    LOGV("[%d]%s: Unfreezing", iPlayerIndex, __FUNCTION__);
-                    forcePause[iPlayerIndex] = false;
+                    if (nexusHandle->simpleStcChannel) {
+                        NEXUS_SimpleStcChannel_Freeze(nexusHandle->simpleStcChannel, false);
+                        LOGV("[%d]%s: Unfreezing", iPlayerIndex, __FUNCTION__);
+                        forcePause[iPlayerIndex] = false;
+                    }
                 }
             }
 
-            rc = NEXUS_Playpump_GetBuffer(nexus_handle[iPlayerIndex].audioPlaypump, &buffer, &buffer_size);
+            rc = NEXUS_Playpump_GetBuffer(nexusHandle->audioPlaypump, &buffer, &buffer_size);
             if (rc != NEXUS_SUCCESS) {
                 LOGE("[%d][AUDIO] NEXUS_Playpump_GetBuffer failed!!, rc:0x%x", iPlayerIndex, rc);
                 MUTEX_RAWDATA_UNLOCK(iPlayerIndex);
@@ -734,20 +599,20 @@ static int bcmPlayer_putAudioData_rawdata(int iPlayerIndex, const void *rawdata,
         }
      
         MUTEX_RAWDATA_LOCK(iPlayerIndex);
-        if(buffer_size>0 && nexus_handle[iPlayerIndex].audioPlaypump && !audioFlushing[iPlayerIndex]) {
+        if (buffer_size>0 && nexusHandle->audioPlaypump && !audioFlushing[iPlayerIndex]) {
             BKNI_Memcpy(buffer, &data_buffer[data_played], buffer_size);
          
-            rc = NEXUS_Playpump_WriteComplete(nexus_handle[iPlayerIndex].audioPlaypump, 0, buffer_size);
-            if(rc != NEXUS_SUCCESS){
+            rc = NEXUS_Playpump_WriteComplete(nexusHandle->audioPlaypump, 0, buffer_size);
+            if (rc != NEXUS_SUCCESS) {
                 LOGE("[%d][AUDIO] NEXUS_Playpump_WriteComplete failed!! rc:0x%x", iPlayerIndex, rc);
             }
-            else{
+            else {
                 LOGV("[%d][AUDIO] audioPutData_rawdata: played %d bytes", iPlayerIndex, buffer_size);
                 data_played += buffer_size;
             }
             MUTEX_RAWDATA_UNLOCK(iPlayerIndex);
         }
-        else{
+        else {
             MUTEX_RAWDATA_UNLOCK(iPlayerIndex);
             usleep(10000);
             //LOGV("[%d][AUDIO] audioPutData_rawdata: buffer_size:%d, data_len:%d ..!!", iPlayerIndex, buffer_size,data_len);
@@ -760,20 +625,21 @@ static int bcmPlayer_putAudioData_rawdata(int iPlayerIndex, const void *rawdata,
          
 static int bcmPlayer_start_rawdata(int iPlayerIndex)
 {
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+
     LOGD("[%d]bcmPlayer_start_rawdata", iPlayerIndex);
 
-    if (playpump_status[iPlayerIndex] == PAUSE)
-    {
-        if (nexus_handle[iPlayerIndex].stcChannel) {
-            if(nexus_handle[iPlayerIndex].audioPlaypump) {
+    if (playpump_status[iPlayerIndex] == PAUSE) {
+        if (nexusHandle->simpleStcChannel) {
+            if (nexusHandle->audioPlaypump) {
                 NEXUS_PlaypumpStatus status;
 
-                NEXUS_Playpump_GetStatus(nexus_handle[iPlayerIndex].audioPlaypump, &status);
+                NEXUS_Playpump_GetStatus(nexusHandle->audioPlaypump, &status);
                 LOGV("[%d]Audio playpump start: depth=%d, size=%d, desc depth=%d, desc size=%d, played=%lld",
                         iPlayerIndex, status.fifoDepth, status.fifoSize, status.descFifoDepth, status.descFifoSize, status.bytesPlayed);
 
                 if (status.descFifoDepth > 0) {
-                    NEXUS_StcChannel_SetRate(nexus_handle[iPlayerIndex].stcChannel, 1, 0);
+                    NEXUS_SimpleStcChannel_Freeze(nexusHandle->simpleStcChannel, false);
                     forcePause[iPlayerIndex] = false;
                     LOGV("[%d]%s: Starting Playback", iPlayerIndex, __FUNCTION__);
                 }
@@ -781,15 +647,15 @@ static int bcmPlayer_start_rawdata(int iPlayerIndex)
                     forcePause[iPlayerIndex] = true;
                 }
             }
-            else if(nexus_handle[iPlayerIndex].playpump) {
+            else if (nexusHandle->playpump) {
                 NEXUS_PlaypumpStatus status;
 
-                NEXUS_Playpump_GetStatus(nexus_handle[iPlayerIndex].playpump, &status);
+                NEXUS_Playpump_GetStatus(nexusHandle->playpump, &status);
                 LOGV("[%d]Playpump start: depth=%d, size=%d, desc depth=%d, desc size=%d, played=%lld",
                         iPlayerIndex, status.fifoDepth, status.fifoSize, status.descFifoDepth, status.descFifoSize, status.bytesPlayed);
 
                 if (status.fifoDepth > (status.fifoSize / 2)) {
-                    NEXUS_StcChannel_SetRate(nexus_handle[iPlayerIndex].stcChannel, 1, 0);
+                    NEXUS_SimpleStcChannel_Freeze(nexusHandle->simpleStcChannel, false);
                     forcePause[iPlayerIndex] = false;
                     LOGV("[%d]%s: Starting Playback", iPlayerIndex, __FUNCTION__);
                 }
@@ -799,7 +665,7 @@ static int bcmPlayer_start_rawdata(int iPlayerIndex)
 
             }
             else {
-                NEXUS_StcChannel_SetRate(nexus_handle[iPlayerIndex].stcChannel, 1, 0);
+                NEXUS_SimpleStcChannel_Freeze(nexusHandle->simpleStcChannel, false);
                 LOGV("[%d]%s: Starting Playback", iPlayerIndex, __FUNCTION__);
             }
         }
@@ -811,14 +677,18 @@ static int bcmPlayer_start_rawdata(int iPlayerIndex)
      
 static int bcmPlayer_stop_rawdata(int iPlayerIndex)
 {
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+
     LOGD("[%d]bcmPlayer_stop_rawdata", iPlayerIndex);
 
     if (playpump_status[iPlayerIndex] != STOP) {
-        if (nexus_handle[iPlayerIndex].audioPlaypump != NULL)
-            NEXUS_Playpump_Stop(nexus_handle[iPlayerIndex].audioPlaypump);
+        if (nexusHandle->audioPlaypump != NULL) {
+            NEXUS_Playpump_Stop(nexusHandle->audioPlaypump);
+        }
 
-        if (nexus_handle[iPlayerIndex].playpump != NULL)
-            NEXUS_Playpump_Stop(nexus_handle[iPlayerIndex].playpump);
+        if (nexusHandle->playpump != NULL) {
+            NEXUS_Playpump_Stop(nexusHandle->playpump);
+        }
     }
 
     playpump_status[iPlayerIndex] = STOP;
@@ -835,11 +705,13 @@ static int bcmPlayer_stop_rawdata(int iPlayerIndex)
 
 static int bcmPlayer_pause_rawdata(int iPlayerIndex) 
 {
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+
     LOGD("[%d]bcmPlayer_pause_rawdata", iPlayerIndex);
 
     if (playpump_status[iPlayerIndex] == PLAY) {
-        if (nexus_handle[iPlayerIndex].stcChannel) {
-            NEXUS_StcChannel_SetRate(nexus_handle[iPlayerIndex].stcChannel, 0, 0);
+        if (nexusHandle->simpleStcChannel) {
+            NEXUS_SimpleStcChannel_Freeze(nexusHandle->simpleStcChannel, true);
         }
     }
 
@@ -849,6 +721,7 @@ static int bcmPlayer_pause_rawdata(int iPlayerIndex)
 
 static int bcmPlayer_get_position_rawdata(int iPlayerIndex, int *msec) 
 {
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
     NEXUS_Error              nexusRC;
     NEXUS_VideoDecoderStatus decoderStatus;
 
@@ -856,13 +729,13 @@ static int bcmPlayer_get_position_rawdata(int iPlayerIndex, int *msec)
   
     MUTEX_RAWDATA_LOCK(iPlayerIndex);
     
-    if (nexus_handle[iPlayerIndex].simpleVideoDecoder != NULL) {
-        nexusRC = NEXUS_SimpleVideoDecoder_GetStatus(nexus_handle[iPlayerIndex].simpleVideoDecoder, &decoderStatus );
+    if (nexusHandle->simpleVideoDecoder != NULL) {
+        nexusRC = NEXUS_SimpleVideoDecoder_GetStatus(nexusHandle->simpleVideoDecoder, &decoderStatus );
         if (nexusRC != NEXUS_SUCCESS) {
             LOGE("[%d]%s: NEXUS_SimpleVideoDecoder_GetStatus returned %d!", iPlayerIndex, __FUNCTION__, nexusRC);
         }
         else {
-            if(decoderStatus.firstPtsPassed && decoderStatus.pts) {
+            if (decoderStatus.firstPtsPassed && decoderStatus.pts) {
                 *msec = (int)decoderStatus.pts/45;
             }
             else {
@@ -879,52 +752,54 @@ static int bcmPlayer_get_position_rawdata(int iPlayerIndex, int *msec)
 
 int bcmPlayer_seekto_rawdata(int iPlayerIndex, int msec)
 {
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+
     MUTEX_RAWDATA_LOCK(iPlayerIndex);
     videoFlushing[iPlayerIndex] = true;
     audioFlushing[iPlayerIndex] = true;
     MUTEX_RAWDATA_UNLOCK(iPlayerIndex);
 
     /* The Data seek is handled in NexusPlayer, this is here to flush the pipeline. */
-    if(nexus_handle[iPlayerIndex].playpump){
-        NEXUS_Playpump_SetPause(nexus_handle[iPlayerIndex].playpump, true);
-        NEXUS_Playpump_Flush(nexus_handle[iPlayerIndex].playpump);
+    if (nexusHandle->playpump) {
+        NEXUS_Playpump_SetPause(nexusHandle->playpump, true);
+        NEXUS_Playpump_Flush(nexusHandle->playpump);
     }
 
-    if(nexus_handle[iPlayerIndex].audioPlaypump){
-        NEXUS_Playpump_SetPause(nexus_handle[iPlayerIndex].audioPlaypump, true);
-        NEXUS_Playpump_Flush(nexus_handle[iPlayerIndex].audioPlaypump);
+    if (nexusHandle->audioPlaypump) {
+        NEXUS_Playpump_SetPause(nexusHandle->audioPlaypump, true);
+        NEXUS_Playpump_Flush(nexusHandle->audioPlaypump);
     }
 
-    if(nexus_handle[iPlayerIndex].simpleVideoDecoder)
-        NEXUS_SimpleVideoDecoder_Flush(nexus_handle[iPlayerIndex].simpleVideoDecoder);
+    if (nexusHandle->simpleVideoDecoder) {
+        NEXUS_SimpleVideoDecoder_Flush(nexusHandle->simpleVideoDecoder);
+    }
 
-    if(nexus_handle[iPlayerIndex].simpleAudioDecoder)
-        NEXUS_SimpleAudioDecoder_Flush(nexus_handle[iPlayerIndex].simpleAudioDecoder);
+    if (nexusHandle->simpleAudioDecoder) {
+        NEXUS_SimpleAudioDecoder_Flush(nexusHandle->simpleAudioDecoder);
+    }
 
-    if(nexus_handle[iPlayerIndex].stcChannel) {
-        NEXUS_StcChannel_Invalidate(nexus_handle[iPlayerIndex].stcChannel);
+    if (nexusHandle->simpleStcChannel) {
+        NEXUS_SimpleStcChannel_Invalidate(nexusHandle->simpleStcChannel);
         //if (playpump_status[iPlayerIndex] == PAUSE)
         {
             forcePause[iPlayerIndex] = true;
-            NEXUS_StcChannel_SetRate(nexus_handle[iPlayerIndex].stcChannel, 0, 0);
+            NEXUS_SimpleStcChannel_Freeze(nexusHandle->simpleStcChannel, true);
             LOGV("[%d]%s: Stc Channel frozen", iPlayerIndex, __FUNCTION__);
         }
     }
 
-    if(nexus_handle[iPlayerIndex].playpump){
-        NEXUS_Playpump_SetPause(nexus_handle[iPlayerIndex].playpump, false);
+    if (nexusHandle->playpump) {
+        NEXUS_Playpump_SetPause(nexusHandle->playpump, false);
     }
 
-    if(nexus_handle[iPlayerIndex].audioPlaypump){
-        NEXUS_Playpump_SetPause(nexus_handle[iPlayerIndex].audioPlaypump, false);
+    if (nexusHandle->audioPlaypump) {
+        NEXUS_Playpump_SetPause(nexusHandle->audioPlaypump, false);
     }
 
-
-    if (nexus_handle[iPlayerIndex].playpump)
-    {
+    if (nexusHandle->playpump) {
         NEXUS_PlaypumpStatus status;
 
-        NEXUS_Playpump_GetStatus(nexus_handle[iPlayerIndex].playpump, &status);
+        NEXUS_Playpump_GetStatus(nexusHandle->playpump, &status);
         LOGV("[%d]%s: Video playpump: depth=%d, size=%d, desc depth=%d, desc size=%d, played=%lld",
                 iPlayerIndex, __FUNCTION__, status.fifoDepth, status.fifoSize, status.descFifoDepth, status.descFifoSize, status.bytesPlayed);
     }
@@ -945,22 +820,23 @@ int bcmPlayer_isPlaying_rawdata(int iPlayerIndex)
 int bcmPlayer_prepare_rawdata(int iPlayerIndex)
 {
     NEXUS_Error rc = 0;
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
 
     LOGD("[%d]%s", iPlayerIndex, __FUNCTION__);
     
-    if(nexus_handle[iPlayerIndex].stcChannel) {
+    if (nexusHandle->simpleStcChannel) {
         forcePause[iPlayerIndex] = true;
         if (playpump_status[iPlayerIndex] != PAUSE) {
-            rc = NEXUS_StcChannel_SetRate(nexus_handle[iPlayerIndex].stcChannel, 0, 0);
+            rc = NEXUS_SimpleStcChannel_Freeze(nexusHandle->simpleStcChannel, true);
             if (rc == NEXUS_SUCCESS) {
                 playpump_status[iPlayerIndex] = PAUSE;
                 LOGV("[%d]%s: Stc Channel frozen", iPlayerIndex, __FUNCTION__);
 
-                if(nexus_handle[iPlayerIndex].audioPlaypump) {
+                if (nexusHandle->audioPlaypump) {
                     do {
                         NEXUS_PlaypumpStatus audioStatus;
 
-                        NEXUS_Playpump_GetStatus(nexus_handle[iPlayerIndex].audioPlaypump, &audioStatus);
+                        NEXUS_Playpump_GetStatus(nexusHandle->audioPlaypump, &audioStatus);
 
                         LOGV("[%d]%s[AUDIO]: depth=%d, size=%d, desc depth=%d, desc size=%d, played=%lld", iPlayerIndex, __FUNCTION__,
                                 audioStatus.fifoDepth, audioStatus.fifoSize, audioStatus.descFifoDepth, audioStatus.descFifoSize, audioStatus.bytesPlayed);
@@ -972,11 +848,11 @@ int bcmPlayer_prepare_rawdata(int iPlayerIndex)
                         usleep(100000);
                     } while (playpump_status[iPlayerIndex] != STOP);
                 }
-                else if(nexus_handle[iPlayerIndex].playpump) {
+                else if (nexusHandle->playpump) {
                     do {
                         NEXUS_PlaypumpStatus pumpStatus;
 
-                        NEXUS_Playpump_GetStatus(nexus_handle[iPlayerIndex].playpump, &pumpStatus);
+                        NEXUS_Playpump_GetStatus(nexusHandle->playpump, &pumpStatus);
 
                         LOGV("[%d]%s[PUMP]: depth=%d, size=%d, desc depth=%d, desc size=%d, played=%lld", iPlayerIndex, __FUNCTION__,
                                 pumpStatus.fifoDepth, pumpStatus.fifoSize, pumpStatus.descFifoDepth, pumpStatus.descFifoSize, pumpStatus.bytesPlayed);
@@ -1004,9 +880,11 @@ int bcmPlayer_reset_rawdata(int iPlayerIndex)
 
 int bcmPlayer_getFifoDepth_rawdata(int iPlayerIndex, bcmPlayer_fifo_t fifo, int *depth) {
 
+    bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
+
     LOGD("[%d]%s: fifo %d", iPlayerIndex, __FUNCTION__, fifo);
 
-    if(depth == NULL) {
+    if (depth == NULL) {
         LOGE("[%d]%s: depth=NULL!!!", iPlayerIndex, __FUNCTION__);
         return 1;
     }
@@ -1016,9 +894,9 @@ int bcmPlayer_getFifoDepth_rawdata(int iPlayerIndex, bcmPlayer_fifo_t fifo, int 
     switch (fifo)
     {
         case FIFO_VIDEO:
-            if (nexus_handle[iPlayerIndex].simpleVideoDecoder != NULL) {
+            if (nexusHandle->simpleVideoDecoder != NULL) {
                 NEXUS_VideoDecoderStatus decoderStatus;
-                if (NEXUS_SimpleVideoDecoder_GetStatus(nexus_handle[iPlayerIndex].simpleVideoDecoder, &decoderStatus ) == NEXUS_SUCCESS) {
+                if (NEXUS_SimpleVideoDecoder_GetStatus(nexusHandle->simpleVideoDecoder, &decoderStatus ) == NEXUS_SUCCESS) {
                     LOGV("[%d]%s:[ms=%d (pts passed=%d)] fifoDepth=%d, fifoSize=%d, queueDepth=%d", iPlayerIndex, __FUNCTION__,
                             (int)decoderStatus.pts/45, decoderStatus.firstPtsPassed, decoderStatus.fifoDepth, decoderStatus.fifoSize, decoderStatus.queueDepth); 
                     *depth = decoderStatus.fifoDepth;
@@ -1029,9 +907,9 @@ int bcmPlayer_getFifoDepth_rawdata(int iPlayerIndex, bcmPlayer_fifo_t fifo, int 
             }
             break;
         case FIFO_AUDIO:
-            if (nexus_handle[iPlayerIndex].simpleAudioDecoder != NULL) {
+            if (nexusHandle->simpleAudioDecoder != NULL) {
                 NEXUS_AudioDecoderStatus decoderStatus;
-                if (NEXUS_SimpleAudioDecoder_GetStatus(nexus_handle[iPlayerIndex].simpleAudioDecoder, &decoderStatus ) == NEXUS_SUCCESS) {
+                if (NEXUS_SimpleAudioDecoder_GetStatus(nexusHandle->simpleAudioDecoder, &decoderStatus ) == NEXUS_SUCCESS) {
                     LOGV("[%d]%s:[ms=%d] fifoDepth=%d, fifoSize=%d, queuedFrames=%d", iPlayerIndex, __FUNCTION__,
                             (int)decoderStatus.pts/45, decoderStatus.fifoDepth, decoderStatus.fifoSize, decoderStatus.queuedFrames); 
                     *depth = decoderStatus.fifoDepth;

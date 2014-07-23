@@ -59,9 +59,7 @@ static void JobCallbackHandler(void *context, int param)
 {
    NEXUS_Graphicsv3dNotification nNot;
    private_handle_t* hnd = (private_handle_t*)context;
-
    NEXUS_Graphicsv3d_GetNotification((NEXUS_Graphicsv3dHandle)hnd->lockHnd, &nNot);
-
    BKNI_SetEvent((BKNI_EventHandle)hnd->lockEvent);
 }
 
@@ -91,11 +89,8 @@ static int createHwBacking(private_handle_t* hnd)
    uint32_t yTiles;
    uint32_t numDirtyTiles;
    uint32_t numBytes;
-   int align = 16;
    int stride;
-   void * p;
-   pix_format_e converterFormat, ltConverterFormat;
-   void * src, * dst;
+   int align = 16;
 
    if (BKNI_CreateEvent(&jobDone) != BERR_SUCCESS)
       goto error0;
@@ -118,14 +113,17 @@ static int createHwBacking(private_handle_t* hnd)
 
    stride = (hnd->width * hnd->bpp + (align-1)) & ~(align-1);
    // TF converter must have 4k alignment on tiles
-   AllocateNexusMemory(hnd->height * stride, 4096, &p);
 
-   if (p == NULL)
+   NEXUS_MemoryAllocationSettings allocationSettings;
+   NEXUS_Memory_GetDefaultAllocationSettings(&allocationSettings);
+   allocationSettings.alignment = 4096;
+   allocationSettings.heap = NEXUS_Platform_GetFramebufferHeap(NEXUS_OFFSCREEN_SURFACE);
+   NEXUS_Memory_Allocate(hnd->height * stride, &allocationSettings, &hnd->lockTmp);
+   if (hnd->lockTmp == NULL)
    {
       LOGE("%s:: Unable to allocate nexus memory for raster backing", __FUNCTION__);
       goto error2;
    }
-   hnd->lockTmp = p;
 
    // allocate enough space for the CLE
    xTiles = (hnd->width  + 63) / 64;
@@ -137,56 +135,17 @@ static int createHwBacking(private_handle_t* hnd)
    if (numBytes < NULL_LIST_SIZE)
       numBytes = NULL_LIST_SIZE;    // Must have at least this many bytes in case we need a NULL list
 
-   AllocateNexusMemory(numBytes, 0, (void **)&p);
-   if (p == NULL)
+   NEXUS_Memory_Allocate(numBytes, &allocationSettings, &hnd->lockHWCLE);
+   if (hnd->lockHWCLE == NULL)
    {
       LOGE("%s:: Unable to allocate nexus memory for HW CLE list", __FUNCTION__);
       goto error3;
-   }
-   hnd->lockHWCLE = p;
-
-   // 16byte alignment for TLB HW conversion
-   src = NEXUS_OffsetToCachedAddr(hnd->nxSurfacePhysicalAddress);
-   dst = hnd->lockTmp;
-   converterFormat = translateConversionFormat(hnd->oglFormat, &ltConverterFormat);
-   if (hnd->bpp == 16)
-   {
-      if (hnd->width <= 32 || hnd->height <= 32)
-         converterFormat = ltConverterFormat;
-   }
-   else // 32bpp
-   {
-      if (hnd->width <= 16 || hnd->height <= 16)
-         converterFormat = ltConverterFormat;
-   }
-
-   if ((src != NULL) && (dst != NULL))
-   {
-      NEXUS_FlushCache(dst, hnd->height * stride);
-      // Dont want CPU evictions to trample HW converter
-      NEXUS_FlushCache(src, hnd->oglSize);
-
-      tfconvert_hw(converterFormat, false,
-                  (uint8_t *)hnd->lockHWCLE,
-                  (NEXUS_Graphicsv3dHandle)hnd->lockHnd,
-                  (uint8_t *)dst,
-                  hnd->width, stride,
-                  hnd->height, 0, 0,
-                  hnd->width, hnd->height,
-                  (uint8_t *)src, hnd->width,
-                  hnd->oglStride,
-                  hnd->height, 0, 0);
-
-      // CPU may have pulled some of the lines in, flush again to make sure the copy is good
-      NEXUS_FlushCache(dst, hnd->height * stride);
-
-      BKNI_WaitForEvent((BKNI_EventHandle)(hnd->lockEvent), BKNI_INFINITE);
    }
 
    return 0;
 
 error3:
-   FreeNexusMemory(hnd->lockTmp);
+   NEXUS_Memory_Free(hnd->lockTmp);
 
 error2:
    NEXUS_Graphicsv3d_Destroy(nexusHandle);
@@ -206,14 +165,12 @@ void destroyHwBacking(private_handle_t* hnd)
    NEXUS_Graphicsv3d_Destroy((NEXUS_Graphicsv3dHandle)hnd->lockHnd);
    BKNI_DestroyEvent((BKNI_EventHandle)hnd->lockEvent);
 
-   FreeNexusMemory(hnd->lockTmp);
+   NEXUS_Memory_Free(hnd->lockTmp);
    hnd->lockTmp = NULL;
 
-   FreeNexusMemory(hnd->lockHWCLE);
+   NEXUS_Memory_Free(hnd->lockHWCLE);
    hnd->lockHWCLE = NULL;
 }
-
-
 
 int gralloc_register_buffer(gralloc_module_t const* module,
    buffer_handle_t handle)
@@ -229,7 +186,6 @@ int gralloc_register_buffer(gralloc_module_t const* module,
    }
 
    LOGE("%s : HandlePID:%d procssPID;%d", __FUNCTION__, hnd->pid, getpid());
-   printHandleInfo(hnd);
 
    if (hnd->pid != getpid())
    {
@@ -271,7 +227,6 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
 {
    private_handle_t* hnd = (private_handle_t*)handle;
 
-
    if (private_handle_t::validate(handle) < 0)
    {
       LOGE("%s : INVALID HANDLE !!", __FUNCTION__);
@@ -279,7 +234,6 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
    }
 
    LOGE("%s : HandlePID:%d procssPID:%d", __FUNCTION__, hnd->pid, getpid());
-   printHandleInfo(hnd);
 
    destroyHwBacking(hnd);
 
@@ -307,6 +261,10 @@ int gralloc_lock(gralloc_module_t const* module,
    }
    else
    {
+      int stride;
+      void * src, *dst;
+      int align = 16;
+      pix_format_e converterFormat, ltConverterFormat;
       private_handle_t* hnd = (private_handle_t*)handle;
 
       // lock comes from the same process space as the alloc.  This happens in the case of the
@@ -314,6 +272,46 @@ int gralloc_lock(gralloc_module_t const* module,
       // for the raster version.  Create the stuff here.  It will need to be destroyed in free
       if (hnd->lockTmp == NULL)
          createHwBacking(hnd);
+
+      stride = (hnd->width * hnd->bpp + (align - 1)) & ~(align - 1);
+
+      src = NEXUS_OffsetToCachedAddr(hnd->nxSurfacePhysicalAddress);
+      dst = hnd->lockTmp;
+
+      converterFormat = translateConversionFormat(hnd->oglFormat, &ltConverterFormat);
+      if (hnd->bpp == 16)
+      {
+         if (hnd->width <= 32 || hnd->height <= 32)
+            converterFormat = ltConverterFormat;
+      }
+      else // 32bpp
+      {
+         if (hnd->width <= 16 || hnd->height <= 16)
+            converterFormat = ltConverterFormat;
+      }
+
+      if ((src != NULL) && (dst != NULL))
+      {
+         NEXUS_FlushCache(dst, hnd->height * stride);
+         // Dont want CPU evictions to trample HW converter
+         NEXUS_FlushCache(src, hnd->oglSize);
+
+         tfconvert_hw(converterFormat, false,
+            (uint8_t *)hnd->lockHWCLE,
+            (NEXUS_Graphicsv3dHandle)hnd->lockHnd,
+            (uint8_t *)dst,
+            hnd->width, stride,
+            hnd->height, 0, 0,
+            hnd->width, hnd->height,
+            (uint8_t *)src, hnd->width,
+            hnd->oglStride,
+            hnd->height, 0, 0);
+
+         // CPU may have pulled some of the lines in, flush again to make sure the copy is good
+         NEXUS_FlushCache(dst, hnd->height * stride);
+
+         BKNI_WaitForEvent((BKNI_EventHandle)(hnd->lockEvent), BKNI_INFINITE);
+      }
 
       LOGV("%s : successfully locked", __FUNCTION__);
       *vaddr = hnd->lockTmp;

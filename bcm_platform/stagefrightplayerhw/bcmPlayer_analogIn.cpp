@@ -153,7 +153,8 @@ int bcmPlayer_setDataSource_analogIn(int iPlayerIndex, const char *url, uint16_t
     nexus_handle[iPlayerIndex].ipcclient->getClientInfo(nexus_handle[iPlayerIndex].nexus_client, &client_info);
 
     // Now connect the client resources
-    BKNI_Memset(&connectSettings, 0, sizeof(connectSettings));
+    nexus_handle[iPlayerIndex].ipcclient->getDefaultConnectClientSettings(&connectSettings);
+
     // hdmiIn for dvi input
     connectSettings.hdmiInput.id = client_info.hdmiInputId;
     connectSettings.hdmiInput.windowId = iPlayerIndex;

@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2012 Broadcom Corporation
+ *    (c)2011-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -36,37 +36,6 @@
  * ANY LIMITED REMEDY.
  *
  * $brcm_Workfile: get_ip_addr_from_url.c $
- * $brcm_Revision: 4 $
- * $brcm_Date: 11/29/12 12:21p $
- * 
- * Module Description:
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/stagefrightplayerhw/get_ip_addr_from_url.c $
- * 
- * 4   11/29/12 12:21p mnelis
- * SWANDROID-241: Don't set port if it can't be found in URL
- * 
- * 3   11/13/12 3:05p mnelis
- * SWANDROID-241: RTSP streaming playback doesn't work
- * 
- * 2   10/17/12 5:52p mnelis
- * SWANDROID-189: Cleanup URL parsing code, avoiding globals to store bits
- *  and pieces.
- * 
- * 2   7/28/11 3:38p franktcc
- * SW7420-2012: Use binder interface for handle sharing
- * 
- * 3   6/30/11 12:21p kagrawal
- * SW7420-1909: Added changes for DLNA client A/V playback
- * 
- * 2   4/27/11 6:35p franktcc
- * SW7420-1482: Fixed youtube playback problem caused by missing HTTP
- *  header
- * 
- * 1   1/12/11 6:53p alexpan
- * SW7420-1240: Add html5 video support
  * 
  *****************************************************************************/
 
@@ -78,7 +47,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int get_hostname_uri_from_url(const char *urlstr, char *hostname, int *portnum, char **uri)
+int get_hostname_uri_from_url(char *urlstr, char *hostname, unsigned int *portnum, char **uri)
 {
     char *hostPtr, *portPtr, *uriPtr;
 
@@ -87,34 +56,38 @@ int get_hostname_uri_from_url(const char *urlstr, char *hostname, int *portnum, 
         return -1;
     }
 
-    /* Skip over the protocol if it's there */
+    // Skip over the protocol if it's there
     hostPtr = strstr(urlstr, "://");
     if (hostPtr) {
         hostPtr +=3;
     } else {
-        /* Not found */
+        // Not found
         hostPtr = urlstr;
     }
 
-    /*Find the port if it's there*/
+    // Find the port if it's there
+    uriPtr = strstr(hostPtr, "/");
     portPtr = strstr(hostPtr, ":");
     if (portPtr) {
-        if (atoi(portPtr+1))
-            *portnum = atoi(portPtr+1);
-        /* We can now copy the hostname as we know where it ends*/
-        /* Hostname can only be 255 chars */
-        memset(hostname, 0, 256);
-        strncpy(hostname, hostPtr, ((portPtr - hostPtr) < 255)? (portPtr - hostPtr) : 255);
+       if (portPtr < uriPtr || !uriPtr) {
+            if (atoi(portPtr+1)) {
+                *portnum = atoi(portPtr+1);
+            }
+            // We can now copy the hostname as we know where it ends
+            // Hostname can only be 255 chars
+            memset(hostname, 0, 256);
+            strncpy(hostname, hostPtr, ((portPtr - hostPtr) < 255)? (portPtr - hostPtr) : 255);
+       } else {
+           portPtr = NULL;  // Reset Port Pointer
+       }
     }
 
-    uriPtr = strstr(hostPtr, "/");
-
     if (!portPtr && uriPtr) {
-        /* No port specified so still need to fill in hostname*/
+        // No port specified so still need to fill in hostname
         memset(hostname, 0, 256);
         strncpy(hostname, hostPtr, ((uriPtr - hostPtr) < 255)? (uriPtr - hostPtr) : 255);
     } else if (!portPtr && !uriPtr) {
-        /* No port and no uri, copy the rest*/
+        // No port and no uri, copy the rest
         memset(hostname, 0, 256);
         strncpy(hostname, hostPtr, 255);
     }

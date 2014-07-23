@@ -99,7 +99,6 @@ public class MediaPlayerActivity extends Activity {
     public void onStart() {
         super.onStart();
         Log.d(TAG, "onStart...");
-
         Bundle extras = getIntent().getExtras();
         String sCoverUri = extras.getString("CoverURI");
         
@@ -119,23 +118,55 @@ public class MediaPlayerActivity extends Activity {
         mVideoView.requestFocus();
         mVideoView.setOnPreparedListener(new MediaPlayer.OnPreparedListener()
         {
+            private boolean canEnableLoopback(String Uri)
+            {
+                String rtspUri = new String("rtsp");
+                String udpUri = new String("udp");
+                String rtpUri = new String("rtp");
+                String httpUri = new String("http");
+
+                if( Uri.regionMatches (true, 0, rtspUri, 0, rtspUri.length()) || 
+                    Uri.regionMatches (true, 0, udpUri, 0, udpUri.length()) ||
+                    Uri.regionMatches (true, 0, rtpUri, 0, rtpUri.length()) ||
+                    Uri.regionMatches (true, 0, httpUri, 0, httpUri.length()) )
+                {
+                    Log.d(TAG,"Streaming Protocol Identified- Disable Looping");
+                    return false;
+                }
+
+                return true;
+            }
+
             @Override
             public void onPrepared(MediaPlayer m)
             {
+                Log.d(TAG, "VideoView Media Player Ready For Playback");
                 try {
-                    if (m.isPlaying()) {
+
+                    if (m.isPlaying()) 
+                    {
+                       Log.d(TAG, "isPlayeing Is Set: Stopping/Releasing and Creating New Media Player");
                         m.stop();
                         m.release();
                         m = new MediaPlayer();
                     }
-                    m.setLooping(true);
+
+                    Bundle extras = getIntent().getExtras();
+                    String sCoverUri = extras.getString("CoverURI");
+
+                    if(canEnableLoopback(sCoverUri))
+                    {
+                        Log.d(TAG, "Enabling Looping Now");
+                        m.setLooping(true);
+                    }else{
+                        Log.d(TAG, "Looping Not Enabled");
+                    }
                     m.start();
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
             }
         });
-        Log.d(TAG, "Playback Start...");
     }
     
     @Override

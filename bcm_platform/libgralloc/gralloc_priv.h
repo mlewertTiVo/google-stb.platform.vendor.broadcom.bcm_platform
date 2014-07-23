@@ -40,13 +40,13 @@ struct private_module_t;
 struct private_handle_t;
 
 struct private_module_t {
-    gralloc_module_t base;
+   gralloc_module_t base;
 
-    struct private_handle_t* framebuffer;
-    uint32_t numBuffers;
-    uint32_t bufferMask;
-    pthread_mutex_t lock;
-    void *nexSurf;
+   struct private_handle_t* framebuffer;
+   uint32_t numBuffers;
+   uint32_t bufferMask;
+   pthread_mutex_t lock;
+   void *nexSurf;
 };
 
 /*****************************************************************************/
@@ -56,15 +56,15 @@ struct private_module_t {
 
 #define PRIV_FLAGS_FRAMEBUFFER 0x00000001
 
-typedef struct __SHARED_DATA_{
-    struct {
-        volatile int32_t layerIdPlusOne;
-        volatile int32_t windowIdPlusOne;
-        bool             windowVisible;
-        void *           nexusClientContext;
-        int64_t          timestamp;
-    } videoWindow;
-}SHARED_DATA,*PSHARED_DATA;
+typedef struct __SHARED_DATA_ {
+   struct {
+      volatile int32_t layerIdPlusOne;
+      volatile int32_t windowIdPlusOne;
+      bool             windowVisible;
+      void *           nexusClientContext;
+      int64_t          timestamp;
+   } videoWindow;
+} SHARED_DATA, *PSHARED_DATA;
 
 #ifdef __cplusplus
 struct private_handle_t : public native_handle {
@@ -75,6 +75,7 @@ struct private_handle_t {
 
 // file-descriptors
 /*1.*/        int         fd;
+/*2.*/        int         fd2;   // used for the small shared data block (SHARED_DATA)
 
 /*Ints Counter*/
 /*1.*/        unsigned    nxSurfacePhysicalAddress;
@@ -97,11 +98,11 @@ struct private_handle_t {
 
 #ifdef __cplusplus
     static const int sNumInts = 17;
-    static const int sNumFds = 1;
+    static const int sNumFds = 2;
     static const int sMagic = 0x3141592;
 
-    private_handle_t(int fd, int size, int flags) :
-        fd(fd), nxSurfacePhysicalAddress(0),
+    private_handle_t(int fd, int fd2, int size, int flags) :
+        fd(fd), fd2(fd2), nxSurfacePhysicalAddress(0),
         magic(sMagic), flags(flags), size(size),
         pid(getpid()), lockTmp(0), lockHnd(0), lockEvent(0), lockHWCLE(0),
         oglStride(0), oglFormat(0), oglSize(0)
@@ -114,7 +115,7 @@ struct private_handle_t {
     //
     // Free the shared data in Destructor
     //
-    ~private_handle_t() 
+    ~private_handle_t()
     {
         magic = 0;
     }

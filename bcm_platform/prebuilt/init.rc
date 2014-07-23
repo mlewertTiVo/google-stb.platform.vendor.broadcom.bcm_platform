@@ -7,10 +7,12 @@
 import /init.environ.rc
 import /init.usb.rc
 import /init.${ro.hardware}.rc
+import /init.${ro.zygote}.rc
 import /init.trace.rc
 
 # Wifi driver init if configured
 import /init.brcm_dhd.rc
+import /init.brcm_wl.rc
 # Bluetooth driver init if configured
 import /init.brcm_bt.rc
 
@@ -38,24 +40,24 @@ on early-init
 
 on init
 
-sysclktz 0
+    sysclktz 0
 
-loglevel 3
+    loglevel 3
 
-# Backward compatibility
+    # Backward compatibility
     symlink /system/etc /etc
     symlink /sys/kernel/debug /d
 
-# Right now vendor lives on the same filesystem as system,
-# but someday that may change.
+    # Right now vendor lives on the same filesystem as system,
+    # but someday that may change.
     symlink /system/vendor /vendor
 
-# Create cgroup mount point for cpu accounting
+    # Create cgroup mount point for cpu accounting
     mkdir /acct
     mount cgroup none /acct cpuacct
     mkdir /acct/uid
 
-# Create cgroup mount point for memory
+    # Create cgroup mount point for memory
     mount tmpfs none /sys/fs/cgroup mode=0750,uid=0,gid=1000
     mkdir /sys/fs/cgroup/memory 0750 root system
     mount cgroup none /sys/fs/cgroup/memory memory
@@ -77,12 +79,9 @@ loglevel 3
     mount tmpfs tmpfs /mnt/shell mode=0700,uid=0,gid=0
     mkdir /mnt/shell/emulated 0700 shell shell
 
-# Mount system and data on eMMC device
-   mount ext4 /dev/block/mmcblk0p7 /system
-   mount ext4 /dev/block/mmcblk0p8 /data 
-
-# External storage directories
+    # External storage directories
     # See storage config details at http://source.android.com/tech/storage/
+    mkdir /mnt/shell 0700 shell shell
     mkdir /mnt/media_rw 0700 media_rw media_rw
     mkdir /mnt/media_rw/sdcard 0700 media_rw media_rw
     mkdir /mnt/media_rw/sdcard1 0700 media_rw media_rw
@@ -97,6 +96,9 @@ loglevel 3
     symlink /storage/sdcard /mnt/sdcard
 
     export EXTERNAL_STORAGE /storage/sdcard
+    export EMULATED_STORAGE_SOURCE /storage/sdcard
+    export EMULATED_STORAGE_TARGET /storage/sdcard
+    export ANDROID_STORAGE /storage
  
     # for backwards compatibility
     symlink /mnt/shell/emulated/0 /storage/emulated/legacy
@@ -139,13 +141,20 @@ loglevel 3
     write /proc/sys/kernel/sched_child_runs_first 0
     write /proc/sys/kernel/randomize_va_space 2
     write /proc/sys/kernel/kptr_restrict 2
-    write /proc/sys/kernel/dmesg_restrict 1
     write /proc/sys/vm/mmap_min_addr 32768
     write /proc/sys/net/ipv4/ping_group_range "0 2147483647"
+    write /proc/sys/net/unix/max_dgram_qlen 300
     write /proc/sys/kernel/sched_rt_runtime_us 950000
     write /proc/sys/kernel/sched_rt_period_us 1000000
 
-# Create cgroup mount points for process groups
+    # reflect fwmark from incoming packets onto generated replies
+    write /proc/sys/net/ipv4/fwmark_reflect 1
+    write /proc/sys/net/ipv6/fwmark_reflect 1
+
+    # set fwmark on accepted sockets
+    write /proc/sys/net/ipv4/tcp_fwmark_accept 1
+
+    # Create cgroup mount points for process groups
     mkdir /dev/cpuctl
     mount cgroup none /dev/cpuctl cpu
     chown system system /dev/cpuctl
@@ -170,24 +179,49 @@ loglevel 3
     write /dev/cpuctl/apps/bg_non_interactive/cpu.rt_runtime_us 700000
     write /dev/cpuctl/apps/bg_non_interactive/cpu.rt_period_us 1000000
 
-# qtaguid will limit access to specific data based on group memberships.
-#   net_bw_acct grants impersonation of socket owners.
-#   net_bw_stats grants access to other apps' detailed tagged-socket stats.
+    # qtaguid will limit access to specific data based on group memberships.
+    #   net_bw_acct grants impersonation of socket owners.
+    #   net_bw_stats grants access to other apps' detailed tagged-socket stats.
     chown root net_bw_acct /proc/net/xt_qtaguid/ctrl
     chown root net_bw_stats /proc/net/xt_qtaguid/stats
 
-# Allow everybody to read the xt_qtaguid resource tracking misc dev.
-# This is needed by any process that uses socket tagging.
+    # Allow everybody to read the xt_qtaguid resource tracking misc dev.
+    # This is needed by any process that uses socket tagging.
     chmod 0644 /dev/xt_qtaguid
 
-# Create location for fs_mgr to store abbreviated output from filesystem
-# checker programs.
+    # Create location for fs_mgr to store abbreviated output from filesystem
+    # checker programs.
     mkdir /dev/fscklogs 0770 root system
 
-# pstore/ramoops previous console log
+    # pstore/ramoops previous console log
     mount pstore pstore /sys/fs/pstore
     chown system log /sys/fs/pstore/console-ramoops
     chmod 0440 /sys/fs/pstore/console-ramoops
+
+# Healthd can trigger a full boot from charger mode by signaling this
+# property when the power button is held.
+on property:sys.boot_from_charger_mode=1
+    class_stop charger
+    trigger late-init
+
+# Load properties from /system/ + /factory after fs mount.
+on load_all_props_action
+    load_all_props
+
+# Mount filesystems and start core system services.
+on late-init
+    trigger early-fs
+    trigger fs
+    trigger post-fs
+    trigger post-fs-data
+
+    # Load properties from /system/ + /factory after fs mount. Place
+    # this in another action so that the load will be scheduled after the prior
+    # issued fs triggers have completed.
+    trigger load_all_props_action
+
+    trigger early-boot
+    trigger boot
 
 on post-fs
     mkdir /data/vendor 0755 system system   
@@ -228,6 +262,9 @@ on post-fs
     chmod 0220 /proc/sysrq-trigger
     chown system log /proc/last_kmsg
     chmod 0440 /proc/last_kmsg
+
+    # make the selinux kernel policy world-readable
+    chmod 0444 /sys/fs/selinux/policy
 
     # create the lost+found directories, so as to enforce our permissions
     mkdir /cache/lost+found 0770 root root
@@ -271,11 +308,16 @@ on post-fs-data
     mkdir /data/misc/radio 0770 system radio
     mkdir /data/misc/sms 0770 system radio
     mkdir /data/misc/zoneinfo 0775 system system
-    restorecon_recursive /data/misc/zoneinfo
     mkdir /data/misc/vpn 0770 system vpn
+    mkdir /data/misc/shared_relro 0771 shared_relro shared_relro
     mkdir /data/misc/systemkeys 0700 system system
-    # give system access to wpa_supplicant.conf for backup and restore
     mkdir /data/misc/wifi 0770 wifi wifi
+    mkdir /data/misc/wifi/sockets 0770 wifi wifi
+    mkdir /data/misc/wifi/wpa_supplicant 0770 wifi wifi
+    mkdir /data/misc/ethernet 0770 system system
+    mkdir /data/misc/dhcp 0770 dhcp dhcp
+    mkdir /data/misc/user 0771 root root
+    # give system access to wpa_supplicant.conf for backup and restore
     chmod 0660 /data/misc/wifi/wpa_supplicant.conf
     mkdir /data/misc/vpn/profiles 0770 system system
     # JIRA SWANDROID-6
@@ -283,10 +325,6 @@ on post-fs-data
  
     mkdir /data/local 0751 root root
     mkdir /data/misc/media 0700 media media
-
-    # Set security context of any pre-existing /data/misc/adb/adb_keys file.
-    restorecon /data/misc/adb
-    restorecon /data/misc/adb/adb_keys
 
     # For security reasons, /data/local/tmp should always be empty.
     # Do not place files or directories in /data/local/tmp
@@ -304,6 +342,7 @@ on post-fs-data
     #mkdir /data/dalvik-cache 0771 system system
     # SECURITY WARNING - This setting is for development only
     mkdir /data/dalvik-cache 0777 system system
+    mkdir /data/dalvik-cache/profiles 0711 system system
 
     # create resource-cache and double-check the perms
     mkdir /data/resource-cache 0771 system system
@@ -336,6 +375,9 @@ on post-fs-data
     # Reload policy from /data/security if present.
     setprop selinux.reload_policy 1
 
+    # Set SELinux security contexts on upgrade or policy update.
+    restorecon_recursive /data
+
     # If there is no fs-post-data action in the init.<device>.rc file, you
     # must uncomment this line, otherwise encrypted filesystems
     # won't work.
@@ -347,32 +389,25 @@ on post-fs-data
     chown system system /sys/class/android_usb/android0/f_rndis/ethaddr
     chmod 0660 /sys/class/android_usb/android0/f_rndis/ethaddr
 
-# SWANDROID-473
-# Setup paths used for socket communication with the dhcp daemon(dhcpd)
-    mkdir /data/misc/dhcpcd 0770 dhcp dhcp
-    chown dhcp dhcp /data/misc/dhcpcd
-    mkdir /data/misc/dhcp 0770 dhcp dhcp
-    chown dhcp dhcp /data/misc/dhcp
-
 on boot
-# basic network init
+    # basic network init
     ifup lo
     hostname localhost
     domainname localdomain
 	setprop persist.sys.timezone "America/Los_Angeles"
 
-# set RLIMIT_NICE to allow priorities from 19 to -20
+    # set RLIMIT_NICE to allow priorities from 19 to -20
     setrlimit 13 40 40
 
-# Memory management.  Basic kernel parameters, and allow the high
-# level system server to be able to adjust the kernel OOM driver
-# parameters to match how it is managing things.
+    # Memory management.  Basic kernel parameters, and allow the high
+    # level system server to be able to adjust the kernel OOM driver
+    # parameters to match how it is managing things.
     write /proc/sys/vm/overcommit_memory 1
     write /proc/sys/vm/min_free_order_shift 4
     chown root system /sys/module/lowmemorykiller/parameters/adj
-    chmod 0664 /sys/module/lowmemorykiller/parameters/adj
+    chmod 0220 /sys/module/lowmemorykiller/parameters/adj
     chown root system /sys/module/lowmemorykiller/parameters/minfree
-    chmod 0664 /sys/module/lowmemorykiller/parameters/minfree
+    chmod 0220 /sys/module/lowmemorykiller/parameters/minfree
 
     # Tweak background writeout
     write /proc/sys/vm/dirty_expire_centisecs 200
@@ -450,26 +485,26 @@ on boot
     chown system system /sys/fs/selinux/load
     chown system system /sys/fs/selinux/enforce
 
-# Define TCP buffer sizes for various networks
-#   ReadMin, ReadInitial, ReadMax, WriteMin, WriteInitial, WriteMax,
+    # Define TCP buffer sizes for various networks
+    #   ReadMin, ReadInitial, ReadMax, WriteMin, WriteInitial, WriteMax,
     setprop net.tcp.buffersize.default  4096,87380,110208,4096,16384,110208
     setprop net.tcp.buffersize.wifi     524288,1048576,2097152,262144,524288,1048576
     setprop net.tcp.buffersize.ethernet 524288,1048576,3145728,524288,1048576,2097152
     setprop net.tcp.buffersize.lte      524288,1048576,2097152,262144,524288,1048576
-    setprop net.tcp.buffersize.umts     4094,87380,110208,4096,16384,110208
-    setprop net.tcp.buffersize.hspa     4094,87380,262144,4096,16384,262144
-    setprop net.tcp.buffersize.hsupa    4094,87380,262144,4096,16384,262144
-    setprop net.tcp.buffersize.hsdpa    4094,87380,262144,4096,16384,262144
-    setprop net.tcp.buffersize.hspap    4094,87380,1220608,4096,16384,1220608
-    setprop net.tcp.buffersize.edge     4093,26280,35040,4096,16384,35040
-    setprop net.tcp.buffersize.gprs     4092,8760,11680,4096,8760,11680
+    setprop net.tcp.buffersize.umts     58254,349525,1048576,58254,349525,1048576
+    setprop net.tcp.buffersize.hspa     40778,244668,734003,16777,100663,301990
+    setprop net.tcp.buffersize.hsupa    40778,244668,734003,16777,100663,301990
+    setprop net.tcp.buffersize.hsdpa    61167,367002,1101005,8738,52429,262114
+    setprop net.tcp.buffersize.hspap    122334,734003,2202010,32040,192239,576717
+    setprop net.tcp.buffersize.edge     4093,26280,70800,4096,16384,70800
+    setprop net.tcp.buffersize.gprs     4092,8760,48000,4096,8760,48000
     setprop net.tcp.buffersize.evdo     4094,87380,262144,4096,16384,262144
+
+    # Define default initial receive window size in segments.
+    setprop net.tcp.default_init_rwnd 60
 
 # Set this property so surfaceflinger is not started by system_init
     setprop system_init.startsurfaceflinger 0
-
-# Set the display density
-    setprop ro.sf.lcd_density 160
 
     class_start core
 
@@ -477,7 +512,19 @@ on property:hw.nexus.platforminit=on
     class_start main
 
 on nonencrypted
+    class_start main
     class_start late_start
+
+on property:vold.decrypt=trigger_default_encryption
+    start defaultcrypto
+
+on property:vold.decrypt=trigger_encryption
+    start surfaceflinger
+    start encrypt
+    class_start main
+
+on property:sys.init_log_level=*
+    loglevel ${sys.init_log_level}
 
 on charger
     class_start charger
@@ -505,7 +552,9 @@ on property:vold.decrypt=trigger_shutdown_framework
 on property:sys.powerctl=*
     powerctl ${sys.powerctl}
 
-# system server cannot write to /proc/sys files, so proxy it through init
+# system server cannot write to /proc/sys files,
+# and chown/chmod does not work for /proc/sys/ entries.
+# So proxy writes through init.
 on property:sys.sysctl.extra_free_kbytes=*
     write /proc/sys/vm/extra_free_kbytes ${sys.sysctl.extra_free_kbytes}
 
@@ -514,6 +563,10 @@ service fuse_sdcard /system/bin/sdcard -u 1023 -g 1023 /mnt/media_rw/sdcard /sto
     class late_start
     disabled
 
+# "tcp_default_init_rwnd" Is too long!
+on property:sys.sysctl.tcp_def_init_rwnd=*
+    write /proc/sys/net/ipv4/tcp_default_init_rwnd ${sys.sysctl.tcp_def_init_rwnd}
+
 ## Daemon processes to be run by init.
 ##
 service ueventd /sbin/ueventd
@@ -521,13 +574,15 @@ service ueventd /sbin/ueventd
     critical
     seclabel u:r:ueventd:s0
 
+service logd /system/bin/logd
+    class core
+    socket logd stream 0666 logd logd
+    socket logdr seqpacket 0666 logd logd
+    socket logdw dgram 0222 logd logd
+    seclabel u:r:logd:s0
+
 service healthd /sbin/healthd
     class core
-    critical
-    seclabel u:r:healthd:s0
-
-service healthd-charger /sbin/healthd -n
-    class charger
     critical
     seclabel u:r:healthd:s0
 
@@ -536,13 +591,14 @@ service console /system/bin/sh
     console
     disabled
     user root
-    group log
+    group shell log
+    seclabel u:r:shell:s0
 
 on property:ro.debuggable=1
     start console
 
 # adbd is controlled via property triggers in init.<platform>.usb.rc
-service adbd /sbin/adbd
+service adbd /sbin/adbd --root_seclabel=u:r:su:s0
     class core
     socket adbd stream 660 system system
     disabled
@@ -557,11 +613,12 @@ service lmkd /system/bin/lmkd
     critical
     socket lmkd seqpacket 0660 system system
 
-service dhcpcd_eth0 /system/bin/dhcpcd -dABKL
-    class main
-    group dhcp
-    disabled
-    oneshot
+# SWANDROID-473
+# Setup paths used for socket communication with the dhcp daemon(dhcpd)
+#    mkdir /data/misc/dhcpcd 0770 dhcp dhcp
+#    chown dhcp dhcp /data/misc/dhcpcd
+#    mkdir /data/misc/dhcp 0770 dhcp dhcp
+#    chown dhcp dhcp /data/misc/dhcp
 
 # This property trigger has added to imitiate the previous behavior of "adb root".
 # The adb gadget driver used to reset the USB bus when the adbd daemon exited,
@@ -606,8 +663,12 @@ service netd /system/bin/netd
     socket netd stream 0660 root system
     socket dnsproxyd stream 0660 root inet
     socket mdns stream 0660 root system
+    socket fwmarkd stream 0660 root inet
 
 service debuggerd /system/bin/debuggerd
+    class main
+
+service debuggerd64 /system/bin/debuggerd64
     class main
 
 # Run nexus daemon
@@ -643,14 +704,6 @@ service inputflinger /system/bin/inputflinger
     group input
     onrestart restart zygote
 
-service zygote /system/bin/app_process -Xzygote /system/bin --zygote --start-system-server
-    class main
-    socket zygote stream 660 root system
-    onrestart write /sys/android_power/request_state wake
-    onrestart write /sys/power/state on
-    onrestart restart media
-    onrestart restart netd
-
 service drm /system/bin/drmserver
     class main
     user drm
@@ -662,9 +715,23 @@ service media /system/bin/mediaserver
     group audio camera inet net_bt net_bt_admin net_bw_acct drmrpc mediadrm
     ioprio rt 4
 
+# One shot invocation to deal with encrypted volume.
+service defaultcrypto /system/bin/vdc --wait cryptfs mountdefaultencrypted
+    disabled
+    oneshot
+    # vold will set vold.decrypt to trigger_restart_framework (default
+    # encryption) or trigger_restart_min_framework (other encryption)
+
+# One shot invocation to encrypt unencrypted volumes
+service encrypt /system/bin/vdc --wait cryptfs enablecrypto inplace default
+    disabled
+    oneshot
+    # vold will set vold.decrypt to trigger_restart_framework (default
+    # encryption)
+
 service bootanim /system/bin/bootanimation
     class main
-    user graphics
+    user system
     group graphics
     disabled
     oneshot
@@ -673,7 +740,7 @@ service installd /system/bin/installd
     class main
     socket installd stream 600 system system
 
-service flash_recovery /system/etc/install-recovery.sh
+service flash_recovery /system/bin/install-recovery.sh
     class main
     oneshot
 
@@ -697,7 +764,6 @@ service keystore /system/bin/keystore /data/misc/keystore
     class main
     user keystore
     group keystore drmrpc
-    socket keystore stream 666
 
 service dumpstate /system/bin/dumpstate -s
     class main
@@ -717,8 +783,18 @@ service mdnsd /system/bin/mdnsd
     disabled
     oneshot
 
+service pre-recovery /system/bin/uncrypt
+    class main
+    disabled
+    oneshot
+
 # MoCA
 #service MoCA /system/etc/moca/init.moca.sh
 #    class main
 #    oneshot
 
+# Set to 'y' to enable droping linux cache periodically.
+# SWLINUX-2786, only for 7251 platform, and only need to be enabled when linux version is 3.8 or earlier.
+service drop-cache /system/etc/cache.sh
+    class main
+    oneshot

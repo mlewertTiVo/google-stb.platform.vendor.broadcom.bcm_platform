@@ -4,7 +4,7 @@ BSEAV_TOP  ?= ../../../../../../../../../BSEAV
 include $(CLEAR_VARS)
 LOCAL_MODULE := libnexus
 LOCAL_SRC_FILES := bin/libnexus.so
-LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_TAGS := optional debug
 LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_STRIP_MODULE := true
@@ -48,6 +48,22 @@ ifeq ($(ANDROID_SUPPORTS_NXCLIENT),y)
 include $(CLEAR_VARS)
 LOCAL_MODULE := libnxclient
 LOCAL_SRC_FILES := bin/libnxclient.so
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_SUFFIX := .so
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+LOCAL_STRIP_MODULE := true
+include $(BUILD_PREBUILT)
+endif
+
+ifeq ($(NEXUS_MODE),client)
+include $(CLEAR_VARS)
+ifeq ($(NEXUS_WEBCPU),core1_server)
+LOCAL_MODULE := libnexus_webcpu
+LOCAL_SRC_FILES := bin/libnexus_webcpu.so
+else
+LOCAL_MODULE := libnexus_client
+LOCAL_SRC_FILES := bin/libnexus_client.so
+endif
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES

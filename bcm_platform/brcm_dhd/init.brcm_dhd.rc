@@ -4,13 +4,9 @@ on init
     chown root root /system/vendor/broadcom/dhd/driver/bcmdhd.ko
     chmod 0744 /system/vendor/broadcom/dhd/driver/bcmdhd.ko
     insmod /system/vendor/broadcom/dhd/driver/bcmdhd.ko
+
 # Bring up wifi first before wpa supplicant
-# for 43236
-#service dhd_fwload /system/bin/bcmdl -n /system/vendor/broadcom/dhd/nvrams/fake43236usb_p532.nvm /system/vendor/broadcom/dhd/firmware/rtecdc.bin.trx
-# for 43242
-service dhd_fwload /system/bin/bcmdl -n /system/vendor/broadcom/dhd/nvrams/bcm943242usbref_p461_comp.txt /system/vendor/broadcom/dhd/firmware/43242-rtecdc.bin.trx
-# for 43569
-#service dhd_fwload /system/bin/bcmdl -n /system/vendor/broadcom/dhd/nvrams/bcm943569usb_p26x_desense_3_comp.txt /system/vendor/broadcom/dhd/firmware/43569-rtecdc.bin.trx
+service dhd_fwload /system/bin/bcmdl -n /system/vendor/broadcom/dhd/nvrams/nvm.txt /system/vendor/broadcom/dhd/firmware/fw.bin.trx
     class core
     oneshot
 

@@ -1,1 +1,1 @@
-/block/sda auto vfat defaults voldmanaged=sdcard:auto,noemulatedsd
+*/block/sda* auto vfat defaults voldmanaged=sdcard:auto

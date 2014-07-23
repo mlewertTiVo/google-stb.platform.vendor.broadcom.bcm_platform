@@ -17,6 +17,16 @@ REFSW_PATH :=vendor/broadcom/bcm_platform/brcm_nexus
 LOCAL_PATH := $(call my-dir)
 APPLIBS_TOP ?= $(LOCAL_PATH)/../../../../../../../..
 
+ifeq ($(NEXUS_MODE),proxy)
+NEXUS_LIB=libnexus
+else
+ifeq ($(NEXUS_WEBCPU),core1_server)
+NEXUS_LIB=libnexus_webcpu
+else
+NEXUS_LIB=libnexus_client
+endif
+endif
+
 # Nexus multi-process, client-server related CFLAGS
 MP_CFLAGS = -DANDROID_CLIENT_SECURITY_MODE=$(ANDROID_CLIENT_SECURITY_MODE)
 NEXUS_TOP ?= $(LOCAL_PATH)/../../../../../../../../../nexus
@@ -35,6 +45,16 @@ MP_CFLAGS += -DANDROID_SUPPORTS_ANALOG_INPUT
 endif		
 endif
 
+ifeq ($(ANDROID_ENABLE_HDMI_LEGACY),y)
+MP_CFLAGS += -DANDROID_SUPPORTS_HDMI_LEGACY=1
+else
+MP_CFLAGS += -DANDROID_SUPPORTS_HDMI_LEGACY=0
+endif
+
+ifneq ($(SPF_SUPPORT),y)
+MP_CFLAGS += -DBCMPLAYER_RTSP_STCCHANNEL_SUPPORT
+endif
+
 # Test for version earlier than KK
 JB_OR_EARLIER := $(shell test "${BRCM_ANDROID_VERSION}" \< "kk" && echo "y")
 
@@ -47,7 +67,7 @@ endif
 include $(REFSW_PATH)/bin/include/platform_app.inc
 include $(REFSW_PATH)/bin/include/b_playback_ip_lib.inc
 
-BCMPLAYER_SHARED_LIBRARIES := liblog libcutils libbinder libutils libb_os libb_playback_ip libnexus libb_psip libnexusipcclient
+BCMPLAYER_SHARED_LIBRARIES := liblog libcutils libbinder libutils libb_os libb_playback_ip libb_psip libnexusipcclient $(NEXUS_LIB)
 
 ifeq ($(LIVEMEDIA_SUPPORT),y)
 BCMPLAYER_SHARED_LIBRARIES += libBasicUsageEnvironment libgroupsock libliveMedia
@@ -77,7 +97,6 @@ BCMPLAYER_SRC_FILES := \
         bcmPlayer_hdmiIn.cpp \
 		bcmPlayer_analogIn.cpp \
         bcmPlayer_rawdata.cpp \
-        bcmPlayer_rtsp.cpp \
         get_ip_addr_from_url.c \
         stream_probe.c \
         bcmESPlayer.cpp \

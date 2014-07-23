@@ -82,4 +82,15 @@ public class hdmiinplayer extends Activity {
         videoView.start();
         Log.d(TAG, "Playback Start...");
     }
+
+    protected void onPause() {
+        VideoView videoView = (VideoView) findViewById(R.id.videoView1);
+
+        super.onPause();
+
+        /** TODO: App state control for resume */
+        videoView.stopPlayback();            
+        Log.d(TAG, "Playback Stopped...");
+        finish();
+    }
 }

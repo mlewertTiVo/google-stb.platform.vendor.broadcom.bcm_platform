@@ -86,7 +86,7 @@
 
 NexusNxClient::StandbyMonitorThread::~StandbyMonitorThread()
 {
-    ALOGD("%s: called", __PRETTY_FUNCTION__); 
+   ALOGD("%s: called", __PRETTY_FUNCTION__); 
 
     if (this->name != NULL) {
         free(name);
@@ -215,6 +215,29 @@ NEXUS_Error standby_check(NEXUS_PlatformStandbyMode mode)
     return (count < NXCLIENT_PM_TIMEOUT_COUNT) ? NEXUS_SUCCESS : NEXUS_TIMEOUT;
 }
 
+void NexusNxClient::getDefaultConnectClientSettings(b_refsw_client_connect_resource_settings *settings)
+{
+    unsigned i;
+    NxClient_ConnectSettings connectSettings;
+
+    BKNI_Memset(settings, 0, sizeof(*settings));
+    NxClient_GetDefaultConnectSettings(&connectSettings);
+
+    // Setup simple video decoder caps...
+    for (i = 0; i < CLIENT_MAX_IDS, i < NXCLIENT_MAX_IDS; i++) {
+        memcpy(&settings->simpleVideoDecoder[i].decoderCaps,
+               &connectSettings.simpleVideoDecoder[i].decoderCapabilities,
+               sizeof(settings->simpleVideoDecoder[0].decoderCaps));
+        memcpy(&settings->simpleVideoDecoder[i].windowCaps,
+               &connectSettings.simpleVideoDecoder[i].windowCapabilities,
+               sizeof(settings->simpleVideoDecoder[0].windowCaps));
+    }
+
+    // Setup simple audio decoder caps...
+    memcpy(&settings->simpleAudioDecoder.decoderCaps,
+           &connectSettings.simpleAudioDecoder.decoderCapabilities,
+           sizeof(settings->simpleAudioDecoder.decoderCaps));
+}
 
 /* Client side implementation of the APIs that are transferred to the server process over binder */
 NexusClientContext * NexusNxClient::createClientContext(const b_refsw_client_client_configuration *config)

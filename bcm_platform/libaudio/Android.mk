@@ -7,24 +7,34 @@ NEXUS_TOP ?= $(LOCAL_PATH)/../../../../../../../../../nexus
 # Nexus multi-process, client-server related CFLAGS
 MP_CFLAGS = -DANDROID_CLIENT_SECURITY_MODE=$(ANDROID_CLIENT_SECURITY_MODE)
 
+ifeq ($(NEXUS_MODE),proxy)
+NEXUS_LIB=libnexus
+else
+ifeq ($(NEXUS_WEBCPU),core1_server)
+NEXUS_LIB=libnexus_webcpu
+else
+NEXUS_LIB=libnexus_client
+endif
+endif
+
 include $(CLEAR_VARS)
 
 include $(REFSW_PATH)/bin/include/platform_app.inc
 
 LOCAL_SRC_FILES:=  \
-   AudioPolicyManager.cpp
+    AudioPolicyManager.cpp
 
 LOCAL_SHARED_LIBRARIES := \
-                libnexus \
-                libcutils \
-                libutils \
-                libmedia
+    $(NEXUS_LIB) \
+    libcutils \
+    libutils \
+    libmedia
     
 LOCAL_STATIC_LIBRARIES := \
-                libmedia_helper
+    libmedia_helper
 
 LOCAL_WHOLE_STATIC_LIBRARIES := \
-                libaudiopolicy_legacy  
+    libaudiopolicy_legacy  
 
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 LOCAL_MODULE_TAGS := optional
@@ -38,7 +48,7 @@ LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 
 LOCAL_SHARED_LIBRARIES := \
-    libnexus \
+    $(NEXUS_LIB) \
     libutils \
     libcutils \
     libmedia \

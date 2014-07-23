@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2013 Broadcom Corporation
+ *    (c)2011-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -36,49 +36,6 @@
  * ANY LIMITED REMEDY.
  *
  * $brcm_Workfile: bcmPlayer_nexus.h $
- * $brcm_Revision: 11 $
- * $brcm_Date: 2/14/13 1:36p $
- * 
- * Module Description:
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/stagefrightplayerhw/bcmPlayer_nexus.h $
- * 
- * 11   2/14/13 1:36p mnelis
- * SWANDROID-336: Refactor bcmplayer_ip code
- * 
- * 10   12/11/12 10:57p robertwm
- * SWANDROID-255: [BCM97346 & BCM97425] Widevine DRM and GTS support
- * 
- * 9   12/3/12 3:27p saranya
- * SWANDROID-266: Removed Non-IPC Standalone Mode
- * 
- * 8   9/19/12 1:32p mnelis
- * SWANDROID-78: Implement APK file playback.
- * 
- * 7   9/14/12 1:28p mnelis
- * SWANDROID-78: Use NEXUS_ANY_ID for STC channel and store playbackip in
- *  nexus_handle struct
- * 
- * 6   6/5/12 2:40p kagrawal
- * SWANDROID-108:Added support to use simple decoder APIs
- * 
- * 5   5/24/12 5:07p franktcc
- * SWANDROID-103: Updated code to match playback_ip changes to support
- *  some China streaming sites.
- * 
- * 4   2/24/12 4:12p kagrawal
- * SWANDROID-12: Dynamic client creation using IPC over binder
- * 
- * 3   2/8/12 2:54p kagrawal
- * SWANDROID-12: Initial support for Nexus client-server mode
- * 
- * 2   1/17/12 3:19p franktcc
- * SW7425-2196: Adding H.264 SVC/MVC codec support for 3d video
- * 
- * 1   12/29/11 6:36p franktcc
- * SW7425-2069: bcmPlayer code refactoring.
  * 
  *****************************************************************************/
 #ifndef BCM_PLAYER_NEXUS_H
@@ -145,10 +102,13 @@ typedef enum{
 // IP source specific items
 typedef struct BcmPlayerIpHandle {
     B_PlaybackIpHandle          playbackIp;
+    B_PlaybackIpProtocol        protocol;
     B_PlaybackIpPsiInfo         psi;
     NEXUS_Timebase              timebase;
     bool                        usePlaypump;
+    bool                        liveMode;
     bool                        endOfStream;
+    bool                        sessionOpened;
     uint32_t                    prevPts;
     uint32_t                    preChargeTime;
     bool                        firstBuff;
@@ -158,14 +118,14 @@ typedef struct BcmPlayerIpHandle {
 } BcmPlayerIpHandle;
 
 typedef struct bcmPlayer_base_nexus_handle {
+    int                          iPlayerIndex;
     NEXUS_PlaypumpHandle         playpump;
     NEXUS_PlaypumpHandle         audioPlaypump; 
-    NEXUS_SyncChannelHandle     syncChannel; 
     NEXUS_PlaybackHandle         playback;
     NEXUS_VideoWindowHandle     video_window;
     NEXUS_SimpleVideoDecoderHandle     simpleVideoDecoder;
     NEXUS_SimpleAudioDecoderHandle     simpleAudioDecoder;
-    NEXUS_StcChannelHandle      stcChannel;
+    NEXUS_SimpleStcChannelHandle       simpleStcChannel;
     NEXUS_PidChannelHandle      videoPidChannel;
     NEXUS_PidChannelHandle      pcrPidChannel;
     NEXUS_PidChannelHandle      enhancementVideoPidChannel;
@@ -175,9 +135,11 @@ typedef struct bcmPlayer_base_nexus_handle {
 #if NEXUS_NUM_HDDVI_INPUTS    
     NEXUS_HdDviInputHandle      hddvi;
 #endif 
+#if NEXUS_NUM_HDMI_INPUTS
+    NEXUS_HdmiInputHandle       hdmiInput;
+#endif 
     NEXUS_SimpleAudioPlaybackHandle simpleAudioPlayback;
     BcmPlayerIpHandle           *ipHandle;
-    B_PlaybackIpHandle          playbackIp;
     NexusClientContext          *nexus_client;
     NexusIPCClientBase          *ipcclient;
     PSHARED_DATA                mSharedData;
@@ -185,6 +147,7 @@ typedef struct bcmPlayer_base_nexus_handle {
     char                        *extraHeaders;
     int                         videoTrackIndex;
     int                         audioTrackIndex;
+    bool                        bKeepLooping;
     bool                        bSupportsHEVC;
     NEXUS_VideoFormat           maxVideoFormat;
     int                         seekPositionMs;

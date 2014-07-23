@@ -19,6 +19,16 @@ ifeq ($(GOOGLE_TREE_BUILD),n)
 NEXUS_TOP := $(LOCAL_PATH)/../../../../../../../../../nexus
 endif
 
+ifeq ($(NEXUS_MODE),proxy)
+NEXUS_LIB=libnexus
+else
+ifeq ($(NEXUS_WEBCPU),core1_server)
+NEXUS_LIB=libnexus_webcpu
+else
+NEXUS_LIB=libnexus_client
+endif
+endif
+
 # HAL module implemenation, not prelinked and stored in
 # hw/<OVERLAY_HARDWARE_MODULE_ID>.<ro.product.board>.so
 
@@ -40,11 +50,12 @@ include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 
-LOCAL_SHARED_LIBRARIES := libnexus liblog libcutils libbinder libutils libnexusipcclient
+LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) liblog libcutils libbinder libutils libnexusipcclient
 
 LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
                     $(REFSW_PATH)/../libnexusservice
 LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc
+LOCAL_C_INCLUDES += $(REFSW_PATH)/../../drivers/nx_ashmem
 
 REMOVE_NEXUS_CFLAGS := -Wstrict-prototypes -march=armv7-a
 MANGLED_NEXUS_CFLAGS := $(filter-out $(REMOVE_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
