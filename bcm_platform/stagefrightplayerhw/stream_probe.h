@@ -92,7 +92,9 @@ typedef struct stream_format_info_t {
     uint16_t videoWidth; /* coded video width, or 0 if unknown */
     uint16_t videoHeight; /* coded video height, or 0 if unknown  */
     int64_t offset;
+    unsigned tsPktLen;  /* Transport Stream packet length (188 or 192 bytes typically) */
     bool m2ts;
+    bool indexPresent;  /* File has an index object */
 }stream_format_info;
 
 bool isAwesomePlayerAudioCodecSupported(NEXUS_AudioCodec audioCodec);

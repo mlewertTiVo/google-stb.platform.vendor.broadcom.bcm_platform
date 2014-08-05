@@ -45,7 +45,13 @@
  * Revision History:
  * 
   *****************************************************************************/
+#include <errno.h>
 #include "brcm_memtrack.h"
+
+#include "nexus_ipc_client_factory.h"
+#include "nexus_memory.h"
+
+extern "C" void *v3d_get_nexus_client_context(void);
 
 int brcm_memtrack_init(const struct memtrack_module *module)
 {
@@ -58,6 +64,13 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
                                 struct memtrack_record *records,
                                 size_t *num_records)
 {
+    NexusClientContext *nexus_client = NULL;
+    nexus_client = (reinterpret_cast<NexusClientContext *>(v3d_get_nexus_client_context()));
+    if (nexus_client)
+       LOGI("%s:%d recvd client_handle = %p", __FUNCTION__, __LINE__, (void *)nexus_client);
+    else
+       while(1) LOGE("%s:%d got NULL client handle", __FUNCTION__, __LINE__);
+
     if (type == MEMTRACK_TYPE_GL || type == MEMTRACK_TYPE_GRAPHICS) {
         return 0;
     }

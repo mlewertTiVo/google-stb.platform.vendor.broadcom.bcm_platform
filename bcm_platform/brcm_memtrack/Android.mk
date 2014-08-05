@@ -23,6 +23,8 @@ include $(REFSW_PATH)/bin/include/platform_app.inc
 LOCAL_SRC_FILES:=  \
     brcm_memtrack.cpp
 
+LOCAL_C_INCLUDES += hardware/libhardware/include
+
 LOCAL_SHARED_LIBRARIES := \
     $(NEXUS_LIB)
 

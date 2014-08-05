@@ -73,7 +73,7 @@ NEXUS_FilePlayHandle b_customfile_open(
 
 extern bcmPlayer_base_nexus_handle_t nexus_handle[MAX_NEXUS_PLAYER];
 
-static int bcmPlayer_connectResources_local(int iPlayerIndex) 
+static int bcmPlayer_connectResources_local(int iPlayerIndex, stream_format_info *info) 
 {
     int rc = 0;
     bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
@@ -88,15 +88,15 @@ static int bcmPlayer_connectResources_local(int iPlayerIndex)
         connectSettings.simpleVideoDecoder[0].id = client_info.videoDecoderId;
         connectSettings.simpleVideoDecoder[0].surfaceClientId = client_info.surfaceClientId;
         connectSettings.simpleVideoDecoder[0].windowId = iPlayerIndex; /* Main or PIP Window */
-        if (nexusHandle->bSupportsHEVC == true)
-        {
+        connectSettings.simpleVideoDecoder[0].decoderCaps.supportedCodecs[info->videoCodec] = true;
+
+        if (nexusHandle->bSupportsHEVC == true) {
             if ((nexusHandle->maxVideoFormat >= NEXUS_VideoFormat_e3840x2160p24hz) &&
-                (nexusHandle->maxVideoFormat < NEXUS_VideoFormat_e4096x2160p24hz))
-            {
+                (nexusHandle->maxVideoFormat < NEXUS_VideoFormat_e4096x2160p24hz)) {
                 connectSettings.simpleVideoDecoder[0].decoderCaps.maxWidth = 3840;
                 connectSettings.simpleVideoDecoder[0].decoderCaps.maxHeight = 2160;
             }
-            connectSettings.simpleVideoDecoder[0].decoderCaps.supportedCodecs[NEXUS_VideoCodec_eH265] = NEXUS_VideoCodec_eH265;
+            connectSettings.simpleVideoDecoder[0].decoderCaps.supportedCodecs[NEXUS_VideoCodec_eH265] = true;
         }
     }
     if (nexusHandle->audioTrackIndex != -1) {
@@ -116,9 +116,6 @@ static int bcmPlayer_init_local(int iPlayerIndex)
 
     rc = bcmPlayer_init_base(iPlayerIndex);
 
-    if (rc == 0) {
-        rc = bcmPlayer_connectResources_local(iPlayerIndex);
-    }
     return rc;
 }
 
@@ -147,6 +144,7 @@ static int bcmPlayer_probeStreamFormat_local(int iPlayerIndex, const char *url, 
     bcm_stream_format_info.offset = offset;
 
     probe_stream_format(url, nexusHandle->videoTrackIndex, nexusHandle->audioTrackIndex, &bcm_stream_format_info);
+
     if (!bcm_stream_format_info.transportType) {
         LOGE("Not support the stream type of file:%s !", url); 
         return -1;
@@ -196,36 +194,30 @@ static int bcmPlayer_startVideoDecoder_local(int iPlayerIndex, stream_format_inf
     if (nexusHandle->simpleVideoDecoder && info->videoCodec) {
         LOGD("bcm_stream_format_info.videoPid = %d;  bcm_stream_format_info.extVideoPid = %d", info->videoPid, info->extVideoPid);
         
-        rc = NEXUS_SimpleVideoDecoder_SetStcChannel(nexusHandle->simpleVideoDecoder, nexusHandle->simpleStcChannel);
-        if (rc != NEXUS_SUCCESS) {
-            LOGE("%s: Could not set stc channel for simple video decoder (rc=%d)!", __FUNCTION__, rc);
+        NEXUS_VideoDecoder_GetDefaultStartSettings(&videoProgram);
+        videoProgram.codec = info->videoCodec;
+        videoProgram.pidChannel = nexusHandle->videoPidChannel;
+        if (info->extVideoPid) {
+            videoProgram.enhancementPidChannel = nexusHandle->enhancementVideoPidChannel;
         }
-        else {
-            NEXUS_VideoDecoder_GetDefaultStartSettings(&videoProgram);
-            videoProgram.codec = info->videoCodec;
-            videoProgram.pidChannel = nexusHandle->videoPidChannel;
-            if (info->extVideoPid) {
-                videoProgram.enhancementPidChannel = nexusHandle->enhancementVideoPidChannel;
-            }
 
-            NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&svdStartSettings);
-            svdStartSettings.settings = videoProgram;
-            NEXUS_SimpleVideoDecoder_GetSettings(nexusHandle->simpleVideoDecoder, &videoDecoderSettings);
-            
-            if ((iPlayerIndex == 0) && 
-                (videoDecoderSettings.supportedCodecs[NEXUS_VideoCodec_eH265]) &&
-                (info->videoCodec == NEXUS_VideoCodec_eH265) &&
-                ((nexusHandle->maxVideoFormat >= NEXUS_VideoFormat_e3840x2160p24hz) &&
-                    (nexusHandle->maxVideoFormat < NEXUS_VideoFormat_e4096x2160p24hz)))
-            {
-                svdStartSettings.maxWidth  = 3840;
-                svdStartSettings.maxHeight = 2160;
-            }
+        NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&svdStartSettings);
+        svdStartSettings.settings = videoProgram;
+        NEXUS_SimpleVideoDecoder_GetSettings(nexusHandle->simpleVideoDecoder, &videoDecoderSettings);
+        
+        if ((iPlayerIndex == 0) && 
+            (videoDecoderSettings.supportedCodecs[NEXUS_VideoCodec_eH265]) &&
+            (info->videoCodec == NEXUS_VideoCodec_eH265) &&
+            ((nexusHandle->maxVideoFormat >= NEXUS_VideoFormat_e3840x2160p24hz) &&
+                (nexusHandle->maxVideoFormat < NEXUS_VideoFormat_e4096x2160p24hz)))
+        {
+            svdStartSettings.maxWidth  = 3840;
+            svdStartSettings.maxHeight = 2160;
+        }
 
-            rc = NEXUS_SimpleVideoDecoder_Start(nexusHandle->simpleVideoDecoder, &svdStartSettings);
-            if (rc != 0) {
-                LOGE("[%d]%s: Could not start SimpleVideoDecoder [rc=%d]!!!", iPlayerIndex, __FUNCTION__, rc);
-            }
+        rc = NEXUS_SimpleVideoDecoder_Start(nexusHandle->simpleVideoDecoder, &svdStartSettings);
+        if (rc != 0) {
+            LOGE("[%d]%s: Could not start SimpleVideoDecoder [rc=%d]!!!", iPlayerIndex, __FUNCTION__, rc);
         }
     }
     return rc;
@@ -279,7 +271,10 @@ static int bcmPlayer_setupVideoDecoder_local(int iPlayerIndex, stream_format_inf
                 }
             }
 
-            rc = bcmPlayer_startVideoDecoder_local(iPlayerIndex, info);
+            rc = NEXUS_SimpleVideoDecoder_SetStcChannel(nexusHandle->simpleVideoDecoder, nexusHandle->simpleStcChannel);
+            if (rc != NEXUS_SUCCESS) {
+                LOGE("%s: Could not set stc channel for simple video decoder (rc=%d)!", __FUNCTION__, rc);
+            }
         }
     }
     return rc;
@@ -317,6 +312,7 @@ static int bcmPlayer_setupAudioDecoder_local(int iPlayerIndex, stream_format_inf
     if (nexusHandle->simpleAudioDecoder && info->audioCodec) {
         NEXUS_Playback_GetDefaultPidChannelSettings(&pidSettings);
         pidSettings.pidSettings.pidType = NEXUS_PidType_eAudio;
+        pidSettings.pidSettings.pidTypeSettings.audio.codec = info->audioCodec;
         pidSettings.pidTypeSettings.audio.simpleDecoder = nexusHandle->simpleAudioDecoder;
         nexusHandle->audioPidChannel = NEXUS_Playback_OpenPidChannel(nexusHandle->playback, info->audioPid, &pidSettings);
 
@@ -325,7 +321,10 @@ static int bcmPlayer_setupAudioDecoder_local(int iPlayerIndex, stream_format_inf
             rc = 1;
         }
         else {
-            rc = bcmPlayer_startAudioDecoder_local(iPlayerIndex, info);
+            rc = NEXUS_SimpleAudioDecoder_SetStcChannel(nexusHandle->simpleAudioDecoder, nexusHandle->simpleStcChannel);
+            if (rc != NEXUS_SUCCESS) {
+                LOGE("%s: Could not set stc channel for simple audio decoder (rc=%d)!", __FUNCTION__, rc);
+            }
         }
     }
     return rc;
@@ -345,7 +344,7 @@ static int bcmPlayer_setDataSource_local(
     NEXUS_FilePlayOpenSettings filePlaySettings;
     int64_t file_chunk_eof = 0, file_chunk_bof = 0;
 
-    LOGD("bcmPlayer_setDataSource_local('%s')", url); 
+    LOGD("bcmPlayer_setDataSource_local('%s, %s')", url, extraHeader); 
 
     if (extraHeader) {
         sscanf(extraHeader, "bof=%lld&eof=%lld", &file_chunk_bof, &file_chunk_eof);
@@ -364,6 +363,10 @@ static int bcmPlayer_setDataSource_local(
 #endif
     filePlaySettings.data.filename = url;
 
+    if (bcm_stream_format_info.indexPresent == true) {
+        filePlaySettings.index.filename = url;
+    }
+
     if (bcm_stream_format_info.transportType == NEXUS_TransportType_eWav) {
         filePlaySettings.index.filename = NULL;
         nexusHandle->file = NEXUS_FilePlay_Open(&filePlaySettings);
@@ -374,7 +377,6 @@ static int bcmPlayer_setDataSource_local(
         }
     }
     else {
-        filePlaySettings.index.filename = url;
         nexusHandle->file = NEXUS_FilePlay_Open(&filePlaySettings);
         if (!nexusHandle->file) {
             LOGE("can't open file:%s\n", url);
@@ -413,9 +415,10 @@ static int bcmPlayer_setDataSource_local(
     NEXUS_Playback_GetSettings(nexusHandle->playback, &playbackSettings);
     playbackSettings.playpump = nexusHandle->playpump;
     playbackSettings.playpumpSettings.transportType = bcm_stream_format_info.transportType;
+    playbackSettings.playpumpSettings.timestamp.type = NEXUS_TransportTimestampType_eNone;
 
-    if (bcm_stream_format_info.m2ts == true) {
-        playbackSettings.playpumpSettings.timestamp.type = NEXUS_TransportTimestampType_e30_2U_Mod300;
+    if (bcm_stream_format_info.m2ts == true || bcm_stream_format_info.tsPktLen == 192) {
+        playbackSettings.playpumpSettings.timestamp.type = NEXUS_TransportTimestampType_eMod300;
     }
 
     LOGD("bcm_stream_format_info.transportType = %d", bcm_stream_format_info.transportType);
@@ -424,7 +427,7 @@ static int bcmPlayer_setDataSource_local(
     playbackSettings.endOfStreamAction = NEXUS_PlaybackLoopMode_eLoop;
     playbackSettings.simpleStcChannel = nexusHandle->simpleStcChannel;
     playbackSettings.stcTrick = nexusHandle->simpleStcChannel != NULL;
-    LOGD("set   playbackSettings.stcChannel = stcChannel ");
+    LOGD("set   playbackSettings.simpleStcChannel = %p", playbackSettings.simpleStcChannel);
 
     /* end of stream callback */
     endOfStreamCallbackDesc.callback = bcmPlayer_endOfStreamCallback;
@@ -434,6 +437,12 @@ static int bcmPlayer_setDataSource_local(
 
     NEXUS_Playback_SetSettings(nexusHandle->playback, &playbackSettings);
 
+    rc = bcmPlayer_connectResources_local(iPlayerIndex, &bcm_stream_format_info);
+    if (rc != 0) {
+        LOGE("[%d]%s: Error connecting video/audio decoder resources!", iPlayerIndex, __FUNCTION__);
+        return -1;
+    }
+    
     /* Playback must be told which stream ID is used for video and for audio. */
     rc = bcmPlayer_setupVideoDecoder_local(iPlayerIndex, &bcm_stream_format_info);
     if (rc != 0) {
@@ -444,6 +453,18 @@ static int bcmPlayer_setDataSource_local(
     rc = bcmPlayer_setupAudioDecoder_local(iPlayerIndex, &bcm_stream_format_info);
     if (rc != 0) {
         LOGE("[%d]%s: Error setting up audio decoder!", iPlayerIndex, __FUNCTION__);
+        return -1;
+    }
+
+    rc = bcmPlayer_startVideoDecoder_local(iPlayerIndex, &bcm_stream_format_info);
+    if (rc != 0) {
+        LOGE("[%d]%s: Error starting video decoder!", iPlayerIndex, __FUNCTION__);
+        return -1;
+    }
+
+    rc = bcmPlayer_startAudioDecoder_local(iPlayerIndex, &bcm_stream_format_info);
+    if (rc != 0) {
+        LOGE("[%d]%s: Error starting audio decoder!", iPlayerIndex, __FUNCTION__);
         return -1;
     }
 
@@ -542,7 +563,7 @@ int  bcmPlayer_selectTrack_local(int iPlayerIndex, bcmPlayer_track_t trackType, 
                 LOGE("[%d]%s: Could not probe stream \"%s\"!", iPlayerIndex, __FUNCTION__, nexusHandle->url);
             }
             else {
-                rc = bcmPlayer_connectResources_local(iPlayerIndex);
+                rc = bcmPlayer_connectResources_local(iPlayerIndex, &bcm_stream_format_info);
 
                 if (rc == 0) {
                     if (select) {
@@ -554,7 +575,14 @@ int  bcmPlayer_selectTrack_local(int iPlayerIndex, bcmPlayer_track_t trackType, 
                             LOGE("[%d]%s: Error setting up audio decoder!", iPlayerIndex, __FUNCTION__);
                             return -1;
                         }
+
+                        rc = bcmPlayer_startAudioDecoder_local(iPlayerIndex, &bcm_stream_format_info);
+                        if (rc != 0) {
+                            LOGE("[%d]%s: Error starting audio decoder!", iPlayerIndex, __FUNCTION__);
+                            return -1;
+                        }
                     }
+
                     rc = bcmPlayer_startVideoDecoder_local(iPlayerIndex, &bcm_stream_format_info);
                     if (rc == 0) {
                         bcmPlayer_start_base(iPlayerIndex);
@@ -574,7 +602,7 @@ int  bcmPlayer_selectTrack_local(int iPlayerIndex, bcmPlayer_track_t trackType, 
                 LOGE("[%d]%s: Could not probe stream \"%s\"!", iPlayerIndex, __FUNCTION__, nexusHandle->url);
             }
             else {
-                rc = bcmPlayer_connectResources_local(iPlayerIndex);
+                rc = bcmPlayer_connectResources_local(iPlayerIndex, &bcm_stream_format_info);
 
                 if (rc == 0) {
                     if (select) {
@@ -583,6 +611,12 @@ int  bcmPlayer_selectTrack_local(int iPlayerIndex, bcmPlayer_track_t trackType, 
                         rc = bcmPlayer_setupVideoDecoder_local(iPlayerIndex, &bcm_stream_format_info);
                         if (rc != 0) {
                             LOGE("[%d]%s: Error setting up video decoder!", iPlayerIndex, __FUNCTION__);
+                            return -1;
+                        }
+
+                        rc = bcmPlayer_startVideoDecoder_local(iPlayerIndex, &bcm_stream_format_info);
+                        if (rc != 0) {
+                            LOGE("[%d]%s: Error starting video decoder!", iPlayerIndex, __FUNCTION__);
                             return -1;
                         }
                     }

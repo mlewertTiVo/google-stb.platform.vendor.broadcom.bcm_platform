@@ -76,6 +76,7 @@
 #include "bmedia_probe.h"
 #include "bmedia_types.h"
 #include "bmedia_cdxa.h"
+#include "bmpeg2ts_probe.h"
 #include "bfile_stdio.h"
 #include "stream_probe.h"
 
@@ -200,7 +201,7 @@ static const NEXUS_AudioCodec AwesomePlayerSupportedNexusAudioCodecs[] = {
 bool isAwesomePlayerAudioCodecSupported(NEXUS_AudioCodec audioCodec)
 {
     bool supported = false;
-    int i;
+    unsigned i;
 
     for (i = 0; i < sizeof(AwesomePlayerSupportedNexusAudioCodecs)/sizeof(AwesomePlayerSupportedNexusAudioCodecs[0]); i++) {
         if (audioCodec == AwesomePlayerSupportedNexusAudioCodecs[i]) {
@@ -244,21 +245,28 @@ void probe_stream_format(const char *url, int videoTrackIndex, int audioTrackInd
     probe_config.probe_offset = p_stream_format_info->offset;
     stream = bmedia_probe_parse(probe, fd, &probe_config);
 
-    if (stream && stream->type == bstream_mpeg_type_cdxa) {
-        bcdxa_file_t cdxa_file;
-        bmedia_stream_to_string(stream, stream_info, sizeof(stream_info));
-        LOGV( "Media Probe:\n" "%s\n\n", stream_info);
-        cdxa_file = bcdxa_file_create(fd);
-        if (cdxa_file) {
-            const bmedia_probe_stream *cdxa_stream;
-            cdxa_stream = bmedia_probe_parse(probe, bcdxa_file_get_file_interface(cdxa_file), &probe_config);
-            bcdxa_file_destroy(cdxa_file);
-            if (cdxa_stream) {
-                bmedia_probe_stream_free(probe, stream);
-                stream = cdxa_stream;
+    if (stream) {
+        if (stream->type == bstream_mpeg_type_cdxa) {
+            bcdxa_file_t cdxa_file;
+            bmedia_stream_to_string(stream, stream_info, sizeof(stream_info));
+            LOGV( "Media Probe:\n" "%s\n\n", stream_info);
+            cdxa_file = bcdxa_file_create(fd);
+            if (cdxa_file) {
+                const bmedia_probe_stream *cdxa_stream;
+                cdxa_stream = bmedia_probe_parse(probe, bcdxa_file_get_file_interface(cdxa_file), &probe_config);
+                bcdxa_file_destroy(cdxa_file);
+                if (cdxa_stream) {
+                    bmedia_probe_stream_free(probe, stream);
+                    stream = cdxa_stream;
+                }
             }
         }
+        else if (stream->type == bstream_mpeg_type_ts) {
+            p_stream_format_info->tsPktLen = ((bmpeg2ts_probe_stream*)stream)->pkt_len;
+        }
     }
+
+    p_stream_format_info->indexPresent = (stream->index == bmedia_probe_index_available || stream->index == bmedia_probe_index_required);
 
     /* now stream is either NULL, or stream descriptor with linked list of audio/video tracks */
     bfile_stdio_read_detach(fd);

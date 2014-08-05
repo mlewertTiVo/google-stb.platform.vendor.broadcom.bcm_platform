@@ -48,5 +48,7 @@
 #ifndef BRCM_MEMTRACK_HARDWARE_NEXUS_H
 #define BRCM_MEMTRACK_HARDWARE_NEXUS_H
 
+#include <hardware/memtrack.h>
+
 #endif
 

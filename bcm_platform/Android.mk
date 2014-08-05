@@ -10,6 +10,7 @@ include vendor/broadcom/bcm_platform/nexusinit/Android.mk
 include vendor/broadcom/bcm_platform/libgralloc/Android.mk
 include vendor/broadcom/bcm_platform/libnexusipc/Android.mk
 include vendor/broadcom/bcm_platform/libGLES_nexus/Android.mk
+include vendor/broadcom/bcm_platform/brcm_memtrack/Android.mk
 
 ifneq ($(GOOGLE_TREE_BUILD),n)
     BCM_APPS_PATH := vendor/broadcom/bcm_platform/app
@@ -17,6 +18,7 @@ else
     BCM_APPS_PATH:=$(LOCAL_PATH)/../../../../../../../../opensource/android/src/broadcom/app
 endif
 
+# Broadcom Test apps
 include ${BCM_APPS_PATH}/BcmChangeDisplayFormat/Android.mk
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
 include ${BCM_APPS_PATH}/BcmCoverFlow/Android.mk
