@@ -82,6 +82,9 @@ import android.graphics.Paint;
 
 class CoverFlowView extends View{
 
+    static final String appPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).getPath()+"/BcmCoverFlow";
+    //static final String appPath = Environment.getLegacyExternalStorageDirectory().getPath()+"/BcmCoverFlow";
+
     /* Callback invoked when the surface dimensions change. */
     public void setSurfaceSize(int width, int height) {
 
@@ -371,7 +374,7 @@ class CoverFlowView extends View{
         Resources res = mContext.getResources();
 
         //Open designate directory
-        appDir = new File(Environment.getExternalStorageDirectory().getPath()+"/BcmCoverFlow");
+        appDir = new File(appPath);
 
         //If external images exists, use it. If not, use built-in.
         if(appDir.isDirectory()){            
@@ -399,15 +402,14 @@ class CoverFlowView extends View{
             else{
                 iNumberOfPosters = aiCoverResList.length-1;/* -1 to remove default loading image */
                 mExtPoster = false;
-                Log.w(TAG, 
-                "No any png or jpg found in "+Environment.getExternalStorageDirectory().getPath()+"/BcmCoverFlow");
+                Log.w(TAG, "No png or jpg images found in " + appPath);
             }
         }
         else{
             //No image in the dir, use built-in images.
             iNumberOfPosters = aiCoverResList.length;
             mExtPoster = false;
-            Log.d(TAG, "Folder "+Environment.getExternalStorageDirectory().getPath()+"/BcmCoverFlow"+" doesn't exist");
+            Log.d(TAG, "Folder " + appPath + " doesn't exist");
         }
 
         //Either loading poster images from external dir or built-in
@@ -456,7 +458,7 @@ class CoverFlowView extends View{
             }
         }
         else{
-            Log.w(TAG, "Using default posters because posters not found in "+Environment.getExternalStorageDirectory().getPath()+"/BcmCoverFlow");
+            Log.w(TAG, "Using default posters because posters not found in " + appPath);
             //Allocate memory for every cover
             for(int iIdx = 0; iIdx < iNumberOfPosters; iIdx++)
                 astCovers[iIdx] = new Cover();
@@ -510,11 +512,11 @@ class CoverFlowView extends View{
                                     };
 
     /** Cover files URI list, !!!!! The number of URI must meet aiCoverResList !!!!! */
-    static String[] aiCoverUriList = {  "/BcmCoverFlow/elephantsdream-hd-large.mov",
-                                        "/BcmCoverFlow/BigBuckBunny_320x180.mp4",
-                                        "/BcmCoverFlow/Polygons8_HQ.mp4",
-                                        "/BcmCoverFlow/sintel-1024-stereo.mp4",
-                                        "/BcmCoverFlow/gov.archives.arc.49442_512kb.mp4",
+    static String[] aiCoverUriList = {  "elephantsdream-hd-large.mov",
+                                        "BigBuckBunny_320x180.mp4",
+                                        "Polygons8_HQ.mp4",
+                                        "sintel-1024-stereo.mp4",
+                                        "gov.archives.arc.49442_512kb.mp4",
                                         ""/** necessary end */
                                         };
     
@@ -701,7 +703,7 @@ class CoverFlowView extends View{
             return null;
         }
         else{
-            return Environment.getExternalStorageDirectory().getPath()+aiCoverUriList[iFocusCoverIndex];
+            return appPath + "/" + aiCoverUriList[iFocusCoverIndex];
         }
     }
 

@@ -167,6 +167,7 @@ typedef struct b_video_decoder_caps
 {
     unsigned fifoSize; /* actual fifo should be at least this size */
     unsigned maxWidth, maxHeight;
+    unsigned colorDepth; /* 0 or 8 is 8-bit, 10 is 10-bit */
     bool supportedCodecs[NEXUS_VideoCodec_eMax];
     bool avc51Enabled;
 } b_video_decoder_caps;
@@ -176,8 +177,17 @@ typedef struct b_audio_decoder_caps
     bool encoder; /* if true, prefer decoders which are dedicated for transcode */
 } b_audio_decoder_caps;
 
+typedef enum b_video_window_type
+{
+    eVideoWindowType_eMain, /* full screen capable */
+    eVideoWindowType_ePip,  /* reduced size only. typically quarter screen. */
+    eVideoWindowType_eNone, /* app will do video as graphics */
+    eVideoWindowType_Max
+} b_video_window_type;
+
 typedef struct b_video_window_caps
 {
+    b_video_window_type type;
     unsigned maxWidth, maxHeight; /* TODO: these are unused becaused server API requires global, not per-client, id */
     bool encoder; /* if true, prefer decoders which are dedicated for transcode */
     bool deinterlaced; /* if true, deinterlacing is required. if false, not required. */

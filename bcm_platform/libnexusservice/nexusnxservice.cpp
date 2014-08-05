@@ -662,6 +662,16 @@ void NexusNxService::setVideoWindowSettings(NexusClientContext * client, uint32_
     return;
 }
 
+#ifdef ANDROID_SUPPORTS_NXCLIENT_VIDEO_WINDOW_TYPE
+static const NxClient_VideoWindowType videoWindowTypeConversion[] =
+{
+    NxClient_VideoWindowType_eMain, /* full screen capable */
+    NxClient_VideoWindowType_ePip,  /* reduced size only. typically quarter screen. */
+    NxClient_VideoWindowType_eNone,  /* app will do video as graphics */
+    NxClient_VideoWindowType_Max
+};
+#endif
+
 bool NexusNxService::connectClientResources(NexusClientContext * client, b_refsw_client_connect_resource_settings *pConnectSettings)
 {
     NEXUS_Error rc;
@@ -686,6 +696,10 @@ bool NexusNxService::connectClientResources(NexusClientContext * client, b_refsw
         connectSettings.simpleVideoDecoder[i].windowCapabilities.maxHeight      = pConnectSettings->simpleVideoDecoder[i].windowCaps.maxHeight;
         connectSettings.simpleVideoDecoder[i].windowCapabilities.encoder        = pConnectSettings->simpleVideoDecoder[i].windowCaps.encoder;
         connectSettings.simpleVideoDecoder[i].windowCapabilities.deinterlaced   = pConnectSettings->simpleVideoDecoder[i].windowCaps.deinterlaced;
+#ifdef ANDROID_SUPPORTS_NXCLIENT_VIDEO_WINDOW_TYPE
+        connectSettings.simpleVideoDecoder[i].windowCapabilities.type           =
+                    videoWindowTypeConversion[pConnectSettings->simpleVideoDecoder[i].windowCaps.type];
+#endif
     }
 
     /* Connect simple audio decoder resource... */

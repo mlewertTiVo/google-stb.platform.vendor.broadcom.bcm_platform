@@ -86,7 +86,7 @@
 
 NexusNxClient::StandbyMonitorThread::~StandbyMonitorThread()
 {
-   ALOGD("%s: called", __PRETTY_FUNCTION__); 
+    ALOGD("%s: called", __PRETTY_FUNCTION__); 
 
     if (this->name != NULL) {
         free(name);
@@ -215,6 +215,16 @@ NEXUS_Error standby_check(NEXUS_PlatformStandbyMode mode)
     return (count < NXCLIENT_PM_TIMEOUT_COUNT) ? NEXUS_SUCCESS : NEXUS_TIMEOUT;
 }
 
+#ifdef ANDROID_SUPPORTS_NXCLIENT_VIDEO_WINDOW_TYPE
+static const b_video_window_type videoWindowTypeConversion[] =
+{
+    eVideoWindowType_eMain, /* full screen capable */
+    eVideoWindowType_ePip,  /* reduced size only. typically quarter screen. */
+    eVideoWindowType_eNone,  /* app will do video as graphics */
+    eVideoWindowType_Max
+};
+#endif
+
 void NexusNxClient::getDefaultConnectClientSettings(b_refsw_client_connect_resource_settings *settings)
 {
     unsigned i;
@@ -225,18 +235,30 @@ void NexusNxClient::getDefaultConnectClientSettings(b_refsw_client_connect_resou
 
     // Setup simple video decoder caps...
     for (i = 0; i < CLIENT_MAX_IDS, i < NXCLIENT_MAX_IDS; i++) {
-        memcpy(&settings->simpleVideoDecoder[i].decoderCaps,
-               &connectSettings.simpleVideoDecoder[i].decoderCapabilities,
-               sizeof(settings->simpleVideoDecoder[0].decoderCaps));
-        memcpy(&settings->simpleVideoDecoder[i].windowCaps,
-               &connectSettings.simpleVideoDecoder[i].windowCapabilities,
-               sizeof(settings->simpleVideoDecoder[0].windowCaps));
+        memset(&settings->simpleVideoDecoder[i].decoderCaps, 0, sizeof(settings->simpleVideoDecoder[0].decoderCaps));
+        settings->simpleVideoDecoder[i].decoderCaps.fifoSize     = connectSettings.simpleVideoDecoder[i].decoderCapabilities.fifoSize;
+        settings->simpleVideoDecoder[i].decoderCaps.avc51Enabled = connectSettings.simpleVideoDecoder[i].decoderCapabilities.avc51Enabled;
+        settings->simpleVideoDecoder[i].decoderCaps.maxWidth     = connectSettings.simpleVideoDecoder[i].decoderCapabilities.maxWidth;
+        settings->simpleVideoDecoder[i].decoderCaps.maxHeight    = connectSettings.simpleVideoDecoder[i].decoderCapabilities.maxHeight;
+        settings->simpleVideoDecoder[i].decoderCaps.colorDepth   = connectSettings.simpleVideoDecoder[i].decoderCapabilities.colorDepth;
+
+        memcpy(&settings->simpleVideoDecoder[i].decoderCaps.supportedCodecs[0],
+               &connectSettings.simpleVideoDecoder[i].decoderCapabilities.supportedCodecs[0],
+               sizeof(settings->simpleVideoDecoder[0].decoderCaps.supportedCodecs));
+
+        memset(&settings->simpleVideoDecoder[i].windowCaps, 0, sizeof(settings->simpleVideoDecoder[0].windowCaps));
+        settings->simpleVideoDecoder[i].windowCaps.maxWidth      = connectSettings.simpleVideoDecoder[i].windowCapabilities.maxWidth;
+        settings->simpleVideoDecoder[i].windowCaps.maxHeight     = connectSettings.simpleVideoDecoder[i].windowCapabilities.maxHeight;
+        settings->simpleVideoDecoder[i].windowCaps.deinterlaced  = connectSettings.simpleVideoDecoder[i].windowCapabilities.deinterlaced;
+        settings->simpleVideoDecoder[i].windowCaps.encoder       = connectSettings.simpleVideoDecoder[i].windowCapabilities.encoder;
+#ifdef ANDROID_SUPPORTS_NXCLIENT_VIDEO_WINDOW_TYPE
+        settings->simpleVideoDecoder[i].windowCaps.type          = videoWindowTypeConversion[connectSettings.simpleVideoDecoder[i].windowCapabilities.type];
+#endif
     }
 
     // Setup simple audio decoder caps...
-    memcpy(&settings->simpleAudioDecoder.decoderCaps,
-           &connectSettings.simpleAudioDecoder.decoderCapabilities,
-           sizeof(settings->simpleAudioDecoder.decoderCaps));
+    memset(&settings->simpleAudioDecoder.decoderCaps, 0, sizeof(settings->simpleAudioDecoder.decoderCaps));
+    settings->simpleAudioDecoder.decoderCaps.encoder             = connectSettings.simpleAudioDecoder.decoderCapabilities.encoder;
 }
 
 /* Client side implementation of the APIs that are transferred to the server process over binder */

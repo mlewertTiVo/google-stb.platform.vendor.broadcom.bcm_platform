@@ -74,6 +74,7 @@ public class BcmDemoPIP extends Activity {
     RelativeLayout.LayoutParams lp1, lp2;
     DisplayMetrics dm;
     private final static String LOGTAG = "BcmDemoPIP";
+    private final static String appPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).getPath()+"/BcmCoverFlow/";
     
     /** Called when the activity is first created. */
     @Override
@@ -111,7 +112,8 @@ public class BcmDemoPIP extends Activity {
         Log.w(LOGTAG, "###########Start Video 1");
         mediaController.setAnchorView(vv1);
         //Fixed Video URI for demo purpose
-        Uri videoUri = Uri.parse(Environment.getExternalStorageDirectory().getPath()+"/BcmCoverFlow/elephantsdream-hd-large.mov");
+        //Uri videoUri = Uri.parse(Environment.getExternalStorageDirectory().getPath()+"/BcmCoverFlow/elephantsdream-hd-large.mov");
+        Uri videoUri = Uri.parse(appPath + "elephantsdream-hd-large.mov");
         vv1.setMediaController(mediaController);
         vv1.setVideoURI(videoUri);
         vv1.requestFocus();
@@ -151,7 +153,8 @@ public class BcmDemoPIP extends Activity {
                 Log.w(LOGTAG, "###########Start Video 2");
                 mediaController2.setAnchorView(vv2);
                 //Fixed Video URI for demo purpose
-                Uri videoUri2 = Uri.parse(Environment.getExternalStorageDirectory().getPath()+"/BcmCoverFlow/BigBuckBunny_320x180.mp4");
+                //Uri videoUri2 = Uri.parse(Environment.getExternalStorageDirectory().getPath()+"/BcmCoverFlow/BigBuckBunny_320x180.mp4");
+                Uri videoUri2 = Uri.parse(appPath + "BigBuckBunny_320x180.mp4");
                 vv2.setMediaController(mediaController2);
                 vv2.setVideoURI(videoUri2);
                 vv2.setOnPreparedListener(PreparedListener);

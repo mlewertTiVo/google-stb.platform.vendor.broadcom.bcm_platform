@@ -1,0 +1,30 @@
+- read_media should be made to check the is_enabled flag for all streams on 
+  video/audio/text ports and ensure only one stream is enabled (probably choosing
+  the first enabled track for this). This is important as not doing this could
+  lead to unexpected problems, especially if someone external to us writes a new
+  container implementation(!). Furthermore, a clarification to the container 
+  API could be added that states that a container will enable all tracks by default
+  (unless the container format has information instructing otherwise).
+
+- SW-3138, the old AVI lib checks fourcc codes, we need to find out if there's
+  a more sensible way to do this and discuss with James C. whether this really needs
+  to be such a low-level check (better to have it in the video decoder in that case
+  as anyone can still supply us divx video via OpenMAX buffers bypassing the AVI parser).
+
+  As a further note to this, DIVX conformance requires that clips that go beyond the 
+  spec maximum resolution should not be played back (how stupid is that?); the easiest
+  and (way cleaner way than the one we used to have which was returning a specific OpenMAX
+  error reserved for this) is to check this in the media player (i.e. in our case, 
+  the playerx/trickplay demo apps themselves).
+
+- Check that the fourcc mapping functions have a common logic - currently, vfw_to_codec seems
+  to have slightly different semantics from fourcc_to_codec (i.e. return _UNKNOWN or do nothing
+  if 4cc code is not recognized).
+
+- Extend LOG_DEBUG macro so that it either prints the __FILE__, __LINE__ stuff or peeks into ctx to
+  log the handler's name, etc.
+
+- Would it be beneficial if the containers could report the clip size as metadata (in addition to
+  duration) i.e. when streaming/downloading, the I/O layer might not know the size of the stream
+  (although it would probably know in most cases like HTTP)?
+
