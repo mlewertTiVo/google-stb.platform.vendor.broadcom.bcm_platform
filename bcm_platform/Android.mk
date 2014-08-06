@@ -115,6 +115,15 @@ ifeq ($(ANDROID_ENABLE_CEC),y)
 include vendor/broadcom/bcm_platform/cmds/cec/Android.mk
 endif
 
+ifeq ($(ANDROID_ENABLE_BCM_OMX_PROTOTYPE),y)
+include vendor/broadcom/bcm_platform/libstagefrighthw/Android.mk
+include vendor/broadcom/bcm_platform/omx_components/audio/omx_audio_dec/Android.mk
+include vendor/broadcom/bcm_platform/omx_components/video/omx_video_codec/Android.mk
+include vendor/broadcom/bcm_platform/omx_components/video/omx_video_encoder/Android.mk
+include vendor/broadcom/bcm_platform/omx_core/Android.mk
+include vendor/broadcom/bcm_platform/utils/Android.mk
+endif
+
 #
 #include $(CLEAR_VARS)
 #

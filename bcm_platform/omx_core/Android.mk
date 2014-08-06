@@ -1,0 +1,34 @@
+LOCAL_PATH:= $(call my-dir)
+
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES:= \
+    src/BcmOMX_Core.c \
+    src/BcmOMX_Core_Wrapper.c
+
+LOCAL_C_INCLUDES += \
+	$(TOP)/frameworks/native/include/media/openmax \
+    $(LOCAL_PATH)/inc
+    
+LOCAL_SHARED_LIBRARIES := \
+    libdl \
+    liblog 
+
+LOCAL_CFLAGS := -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
+
+ifeq ($(ANDROID_ENABLE_BCM_OMX_PROTOTYPE),y)
+LOCAL_CFLAGS += -DENABLE_BCM_OMX_PROTOTYPE
+ifeq ($(OMX_EXTEND_CODECS_SUPPORT),y)
+LOCAL_CFLAGS += -DOMX_EXTEND_CODECS_SUPPORT
+endif
+ifeq ($(BCM_OMX_SUPPORT_ENCODER),y)
+LOCAL_CFLAGS += -DBCM_OMX_SUPPORT_ENCODER
+endif
+ifeq ($(BCM_OMX_SUPPORT_AC3_CODEC),y)
+LOCAL_CFLAGS += -DBCM_OMX_SUPPORT_AC3_CODEC
+endif
+endif
+
+LOCAL_MODULE:= libOMX_Core
+LOCAL_MODULE_TAGS := optional
+include $(BUILD_SHARED_LIBRARY)
