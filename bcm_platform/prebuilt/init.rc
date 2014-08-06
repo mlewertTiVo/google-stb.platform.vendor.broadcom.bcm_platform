@@ -87,21 +87,29 @@ on init
     mkdir /mnt/media_rw/sdcard1 0700 media_rw media_rw
     mkdir /storage 0751 root sdcard_r
     mkdir /storage/emulated/ 0555 root root
-    mount tmpfs tmpfs /storage/emulated/ mode=0700,uid=0,gid=0
+#   mount tmpfs tmpfs /storage/emulated/ mode=0700,uid=0,gid=0
     mkdir /storage/sdcard 0700 root root
     mkdir /storage/sdcard1 0700 root root
     mkdir /storage/usbdisk0 0700 root root
-    
-    symlink /storage/sdcard /sdcard
-    symlink /storage/sdcard /mnt/sdcard
 
-    export EXTERNAL_STORAGE /storage/sdcard
-    export EMULATED_STORAGE_SOURCE /storage/sdcard
-    export EMULATED_STORAGE_TARGET /storage/sdcard
+    # Support legacy paths
+#   symlink /storage/sdcard /sdcard
+#   symlink /storage/sdcard /mnt/sdcard
+    symlink /storage/emulated/legacy /sdcard
+    symlink /storage/emulated/legacy /mnt/sdcard
+    symlink /storage/emulated/legacy /storage/sdcard0
+    
+
+#   export EXTERNAL_STORAGE /storage/sdcard
+    export EXTERNAL_STORAGE /storage/emulated/legacy
+    export EMULATED_STORAGE_SOURCE /mnt/shell/emulated
+    export EMULATED_STORAGE_TARGET /storage/emulated
+
     export ANDROID_STORAGE /storage
  
     # for backwards compatibility
-    symlink /mnt/shell/emulated/0 /storage/emulated/legacy
+    symlink /mnt/shell/emulated /storage/emulated/legacy
+    symlink /mnt/shell/emulated/0 /storage/emulated/0
     symlink /storage/sdcard1 /extSdCard
     symlink /storage/sdcard1 /mnt/extSdCard
     symlink /storage/sdcard1 /external_sd
@@ -222,6 +230,10 @@ on late-init
 
     trigger early-boot
     trigger boot
+
+on fs
+    mount_all /fstab.bcm_platform
+    setprop ro.crypto.fuse_sdcard true
 
 on post-fs
     mkdir /data/vendor 0755 system system   
@@ -513,6 +525,7 @@ on property:hw.nexus.platforminit=on
 
 on nonencrypted
     class_start main
+    start vdc
     class_start late_start
 
 on property:vold.decrypt=trigger_default_encryption
@@ -559,8 +572,14 @@ on property:sys.sysctl.extra_free_kbytes=*
     write /proc/sys/vm/extra_free_kbytes ${sys.sysctl.extra_free_kbytes}
 
 # FUSE mounting necessary for correct sdcard access
-service fuse_sdcard /system/bin/sdcard -u 1023 -g 1023 /mnt/media_rw/sdcard /storage/sdcard
+#service fuse_sdcard /system/bin/sdcard -u 1023 -g 1023 /mnt/media_rw/sdcard /storage/sdcard
+service fuse_sdcard /system/bin/sdcard -u 1023 -g 1023 -d /mnt/media_rw/sdcard /mnt/shell/emulated
     class late_start
+    disabled
+
+# Temporary service for the L-PDK to mount sdcard volume(s)
+service vdc /system/bin/vdc --wait volume mount /storage/sdcard
+    oneshot
     disabled
 
 # "tcp_default_init_rwnd" Is too long!
