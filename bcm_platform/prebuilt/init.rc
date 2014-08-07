@@ -212,6 +212,10 @@ on property:sys.boot_from_charger_mode=1
     class_stop charger
     trigger late-init
 
+# When boot has completed we can start any relevant services
+on property:sys.boot_completed=1
+    class_start boot_complete
+
 # Load properties from /system/ + /factory after fs mount.
 on load_all_props_action
     load_all_props
@@ -812,8 +816,16 @@ service pre-recovery /system/bin/uncrypt
 #    class main
 #    oneshot
 
+# This sets the 'keep awake while plugged in' setting to true to ensure the STB never enter sleep on user inactivity
+service disable-sleep /system/bin/logwrapper /system/bin/svc power stayon true
+    class boot_complete
+    user system
+    group system
+    oneshot
+
 # Set to 'y' to enable droping linux cache periodically.
 # SWLINUX-2786, only for 7251 platform, and only need to be enabled when linux version is 3.8 or earlier.
 service drop-cache /system/etc/cache.sh
     class main
     oneshot
+
