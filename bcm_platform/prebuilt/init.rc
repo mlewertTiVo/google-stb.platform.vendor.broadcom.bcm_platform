@@ -44,6 +44,8 @@ on init
 
     loglevel 3
 
+    symlink /system/lib/egl/libGLES_nexus.so /system/lib/libGLES_nexus.so
+
     # Backward compatibility
     symlink /system/etc /etc
     symlink /sys/kernel/debug /d
@@ -93,24 +95,18 @@ on init
     mkdir /storage/usbdisk0 0700 root root
 
     # Support legacy paths
-#   symlink /storage/sdcard /sdcard
-#   symlink /storage/sdcard /mnt/sdcard
-    symlink /storage/emulated/legacy /sdcard
-    symlink /storage/emulated/legacy /mnt/sdcard
-    symlink /storage/emulated/legacy /storage/sdcard0
+    symlink /storage/sdcard /sdcard
+    symlink /storage/sdcard /mnt/sdcard
+    symlink /storage/sdcard /storage/sdcard0
     
 
-#   export EXTERNAL_STORAGE /storage/sdcard
-    export EXTERNAL_STORAGE /storage/emulated/legacy
-    export EMULATED_STORAGE_SOURCE /mnt/shell/emulated
-    export EMULATED_STORAGE_TARGET /storage/emulated
-
+    export EXTERNAL_STORAGE /storage/sdcard
+    export EMULATED_STORAGE_SOURCE /storage/sdcard
+    export EMULATED_STORAGE_TARGET /storage/sdcard
     export ANDROID_STORAGE /storage
  
     # for backwards compatibility
-    symlink /mnt/shell/emulated /storage/emulated/legacy
-    symlink /mnt/shell/emulated/0 /storage/emulated/0
-    symlink /storage/sdcard1 /extSdCard
+     symlink /storage/sdcard1 /extSdCard
     symlink /storage/sdcard1 /mnt/extSdCard
     symlink /storage/sdcard1 /external_sd
     symlink /storage/usbdisk0 /usbdisk0
@@ -529,7 +525,6 @@ on property:hw.nexus.platforminit=on
 
 on nonencrypted
     class_start main
-    start vdc
     class_start late_start
 
 on property:vold.decrypt=trigger_default_encryption
@@ -576,14 +571,8 @@ on property:sys.sysctl.extra_free_kbytes=*
     write /proc/sys/vm/extra_free_kbytes ${sys.sysctl.extra_free_kbytes}
 
 # FUSE mounting necessary for correct sdcard access
-#service fuse_sdcard /system/bin/sdcard -u 1023 -g 1023 /mnt/media_rw/sdcard /storage/sdcard
-service fuse_sdcard /system/bin/sdcard -u 1023 -g 1023 -d /mnt/media_rw/sdcard /mnt/shell/emulated
+service fuse_sdcard /system/bin/sdcard -u 1023 -g 1023 -d /mnt/media_rw/sdcard /storage/sdcard
     class late_start
-    disabled
-
-# Temporary service for the L-PDK to mount sdcard volume(s)
-service vdc /system/bin/vdc --wait volume mount /storage/sdcard
-    oneshot
     disabled
 
 # "tcp_default_init_rwnd" Is too long!
@@ -643,6 +632,14 @@ service lmkd /system/bin/lmkd
 #    mkdir /data/misc/dhcp 0770 dhcp dhcp
 #    chown dhcp dhcp /data/misc/dhcp
 
+
+
+service dhcpcd_gphy /system/bin/dhcpcd -dABKL
+    class main
+    group dhcp
+    disabled
+    oneshot
+
 # This property trigger has added to imitiate the previous behavior of "adb root".
 # The adb gadget driver used to reset the USB bus when the adbd daemon exited,
 # and the host side adb relied on this behavior to force it to reconnect with the
@@ -689,9 +686,6 @@ service netd /system/bin/netd
     socket fwmarkd stream 0660 root inet
 
 service debuggerd /system/bin/debuggerd
-    class main
-
-service debuggerd64 /system/bin/debuggerd64
     class main
 
 # Run nexus daemon

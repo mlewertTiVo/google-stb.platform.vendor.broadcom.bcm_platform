@@ -495,7 +495,7 @@ static int gralloc_free(alloc_device_t* dev,
 
 static int gralloc_close(struct hw_device_t *dev)
 {
-   LOGD("%s [%d]: Vector Graphics Allocator [KK] Build Date[%s Time:%s]\n",
+   LOGD("%s [%d]: Vector Graphics Allocator [L] Build Date[%s Time:%s]\n",
                __FUNCTION__,__LINE__,
                __DATE__,
                __TIME__);
@@ -514,12 +514,10 @@ int gralloc_device_open(const hw_module_t* module, const char* name,
    NEXUS_PlatformStatus        pStatus;
    int status = -EINVAL;
 
-   LOGD("%s[%d]: Vector Graphics Allocator [KK] Build Date[%s Time:%s]\n",
+   LOGD("%s[%d]: Vector Graphics Allocator [L] Build Date[%s Time:%s]\n",
                __FUNCTION__,__LINE__,
                __DATE__,
                __TIME__);
-
-   LOGD("%s: Graphics Allocator IN CLIENT-SERVER MODE",__FUNCTION__);
 
    if (!strcmp(name, GRALLOC_HARDWARE_GPU0))
    {
