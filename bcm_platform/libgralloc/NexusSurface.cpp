@@ -68,7 +68,7 @@ using namespace Trellis::Application;
 
 #include "nx_ashmem.h"
 
-extern "C" void *v3d_get_nexus_client_context(void);
+extern void *gralloc_v3d_get_nexus_client_context(void);
 
 NexusSurface::NexusSurface()
 {
@@ -165,7 +165,7 @@ void NexusSurface::init(void)
    NEXUS_SurfaceClientSettings clientSettings;
    unsigned client_id = 0;
    NexusClientContext *nexus_client = NULL;
-   nexus_client = (reinterpret_cast<NexusClientContext *>(v3d_get_nexus_client_context()));
+   nexus_client = (reinterpret_cast<NexusClientContext *>(gralloc_v3d_get_nexus_client_context()));
    if (nexus_client)
       LOGI("%s:%d recvd client_handle = %p", __FUNCTION__, __LINE__, (void *)nexus_client);
    else

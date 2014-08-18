@@ -50,7 +50,7 @@ include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 
-LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) liblog libcutils libbinder libutils libnexusipcclient
+LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) liblog libcutils libbinder libutils libnexusipcclient libdl
 
 LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
                     $(REFSW_PATH)/../libnexusservice
@@ -62,11 +62,6 @@ MANGLED_NEXUS_CFLAGS := $(filter-out $(REMOVE_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
 
 LOCAL_CFLAGS:= -DLOG_TAG=\"gralloc\" $(MANGLED_NEXUS_CFLAGS) -DANDROID $(MP_CFLAGS)
 LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
-
-# Brcm h/w OpenGL support
-LOCAL_C_INCLUDES += frameworks/base/include/ui
-LOCAL_CFLAGS += -DBRCM_OPENGL -DBRCM_OPENGL_NO_RSO_SURFACES
-LOCAL_SHARED_LIBRARIES += libGLES_nexus
 
 ifeq ($(ANDROID_USES_TRELLIS_WM),y)
 LOCAL_SHARED_LIBRARIES += libstlport

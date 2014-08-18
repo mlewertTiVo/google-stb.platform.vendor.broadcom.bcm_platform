@@ -34,7 +34,6 @@
 
 #include <hardware/hardware.h>
 #include <hardware/gralloc.h>
-#include <utils/Vector.h>
 
 #include "gralloc_priv.h"
 
@@ -48,10 +47,68 @@
 
 #include "nx_ashmem.h"
 
-using namespace android;
-using android::Vector;
+void __attribute__ ((constructor)) gralloc_explicit_load(void);
+void __attribute__ ((destructor)) gralloc_explicit_unload(void);
 
-extern "C" void BEGLint_BufferGetRequirements(BEGL_PixmapInfo *, BEGL_BufferSettings *);
+static void (* dyn_BEGLint_BufferGetRequirements)(BEGL_PixmapInfo *, BEGL_BufferSettings *);
+static void * (* dyn_v3d_get_nexus_client_context)(void);
+static void (* dyn_v3d_android_load)(void);
+static void (* dyn_v3d_android_unload)(void);
+#define LOAD_FN(lib, name) \
+if (!(dyn_ ## name = (typeof(dyn_ ## name)) dlsym(lib, #name))) \
+   LOGE("failed resolving '%s'", #name); \
+else \
+   LOGI("resolved '%s' to %p", #name, dyn_ ## name);
+static void *gl_dyn_lib;
+
+static void gralloc_load_lib(void)
+{
+   const char *gl_dyn_lib_path = "/system/lib/egl/libGLES_nexus.so";
+   gl_dyn_lib = dlopen(gl_dyn_lib_path, RTLD_LAZY | RTLD_LOCAL);
+   if (!gl_dyn_lib) {
+      // try legacy path as well.
+      const char *gl_dyn_lib_path = "/vendor/lib/egl/libGLES_nexus.so";
+      gl_dyn_lib = dlopen(gl_dyn_lib_path, RTLD_LAZY | RTLD_LOCAL);
+      if (!gl_dyn_lib) {
+         LOGE("failed loading essential GLES library '%s': <%s>!", gl_dyn_lib_path, dlerror());
+      }
+   }
+
+   // load wanted functions from the library now.
+   LOAD_FN(gl_dyn_lib, BEGLint_BufferGetRequirements);
+   LOAD_FN(gl_dyn_lib, v3d_get_nexus_client_context);
+   LOAD_FN(gl_dyn_lib, v3d_android_load);
+   LOAD_FN(gl_dyn_lib, v3d_android_unload);
+
+   if (dyn_v3d_android_load) {
+      dyn_v3d_android_load();
+   }
+   else {
+      LOGE("%s : failed explicit NEXUS init, it will break!",
+           __FUNCTION__);
+   }
+}
+
+#undef LOAD_FN
+
+void gralloc_explicit_load(void)
+{
+   gralloc_load_lib();
+}
+
+void gralloc_explicit_unload(void)
+{
+   if (dyn_v3d_android_unload) {
+      dyn_v3d_android_unload();
+   }
+
+   dlclose(gl_dyn_lib);
+}
+
+void * gralloc_v3d_get_nexus_client_context(void)
+{
+   return dyn_v3d_get_nexus_client_context();
+}
 
 /*****************************************************************************/
 
@@ -300,7 +357,7 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
       int ret;
       // We need to call the V3D driver buffer get requirements function in order to
       // get the parameters of the shadow buffer that we are creating.
-      BEGLint_BufferGetRequirements(&bufferRequirements, &bufferConstrainedRequirements);
+      dyn_BEGLint_BufferGetRequirements(&bufferRequirements, &bufferConstrainedRequirements);
 
       // nx_ashmem always aligns to 4k.  Add an additional 4k block at the start for shared memory.
       // This needs reference counting in the same way as the regular blocks
