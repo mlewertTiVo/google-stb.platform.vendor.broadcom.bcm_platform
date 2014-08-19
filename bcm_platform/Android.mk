@@ -1,4 +1,4 @@
-# make file for new hardware  from 
+# make file for new hardware  from
 #
 
 LOCAL_PATH := $(call my-dir)
@@ -64,7 +64,7 @@ endif
 include vendor/broadcom/bcm_platform/libnexusservice/Android.mk
 
 ifeq ($(BOARD_USES_GENERIC_AUDIO),false)
-include vendor/broadcom/bcm_platform/libaudio2/Android.mk
+include vendor/broadcom/bcm_platform/brcm_audio/Android.mk
 endif
 #include vendor/broadcom/bcm_platform/stagefrightplayerhw/Android.mk
 #include vendor/broadcom/bcm_platform/libstagefrighthw/Android.mk
@@ -127,5 +127,5 @@ endif
 #
 #include $(CLEAR_VARS)
 #
-# include more board specific stuff here? Such as Audio parameters.      
+# include more board specific stuff here? Such as Audio parameters.
 #
