@@ -89,7 +89,7 @@ on init
     mkdir /mnt/media_rw/sdcard1 0700 media_rw media_rw
     mkdir /storage 0751 root sdcard_r
     mkdir /storage/emulated/ 0555 root root
-#   mount tmpfs tmpfs /storage/emulated/ mode=0700,uid=0,gid=0
+    mount tmpfs tmpfs /storage/emulated/ mode=0700,uid=0,gid=0
     mkdir /storage/sdcard 0700 root root
     mkdir /storage/sdcard1 0700 root root
     mkdir /storage/usbdisk0 0700 root root
@@ -99,14 +99,12 @@ on init
     symlink /storage/sdcard /mnt/sdcard
     symlink /storage/sdcard /storage/sdcard0
     
-
     export EXTERNAL_STORAGE /storage/sdcard
-    export EMULATED_STORAGE_SOURCE /storage/sdcard
-    export EMULATED_STORAGE_TARGET /storage/sdcard
     export ANDROID_STORAGE /storage
  
     # for backwards compatibility
-     symlink /storage/sdcard1 /extSdCard
+    symlink /mnt/shell/emulated/0 /storage/emulated/legacy
+    symlink /storage/sdcard1 /extSdCard
     symlink /storage/sdcard1 /mnt/extSdCard
     symlink /storage/sdcard1 /external_sd
     symlink /storage/usbdisk0 /usbdisk0
