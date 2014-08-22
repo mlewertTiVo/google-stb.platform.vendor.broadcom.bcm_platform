@@ -1892,7 +1892,7 @@ static void* ComponentThread(void* pThreadData)
                      * it. 
                      */
                     ALOGD("====EOS On Input====");
-                    pMyData->pPESFeeder->NotifyEOS(pInBufHdr->nFlags);
+                    pMyData->pPESFeeder->NotifyEOS(pInBufHdr->nFlags,pInBufHdr->nTimeStamp);
 
                     pInBufHdr->nFlags = 0;
                 }

@@ -56,12 +56,6 @@
 #define LOG_TAG "BCM.VIDEO.DECODER"
 //#define LOG_NDEBUG 0
 
-#ifdef BKNI_Malloc
-#undef BKNI_Malloc
-#define BKNI_Malloc malloc
-#undef BKNI_Free
-#define BKNI_Free free
-#endif
 
 struct CodecProfileLevel {
     OMX_U32 mProfile;
@@ -85,6 +79,8 @@ static const CodecProfileLevel kProfileLevels[] = {
     { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel42 },
     { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel5  },
     { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel51 },
+    { OMX_VIDEO_AVCProfileHigh, OMX_VIDEO_AVCLevel31 },
+    { OMX_VIDEO_AVCProfileHigh, OMX_VIDEO_AVCLevel4 }
 };
 
 typedef struct _CODEC_TO_MIME_MAP_
@@ -105,7 +101,6 @@ static const CODEC_TO_MIME_MAP CodecToMIME[] =
     {OMX_VIDEO_CodingAVC,               "video/avc"             },
     {OMX_VIDEO_CodingMJPEG,             "video/mjpeg"           },
     {OMX_VIDEO_CodingVP8,               "video/x-vnd.on2.vp8"   },
-    {OMX_VIDEO_CodingVP9,               "video/x-vnd.on2.vp9"   },
 #ifdef OMX_EXTEND_CODECS_SUPPORT
     {OMX_VIDEO_CodingVC1,               "video/wvc1"            },
     {OMX_VIDEO_CodingSPARK,             "video/spark"           },
@@ -132,7 +127,6 @@ static const OMX_TO_NEXUS_MAP OMXToNexusTable[] = {
     { OMX_VIDEO_CodingAVC,          NEXUS_VideoCodec_eH264},
     { OMX_VIDEO_CodingMJPEG,        NEXUS_VideoCodec_eMotionJpeg},
     { OMX_VIDEO_CodingVP8,          NEXUS_VideoCodec_eVp8},
-    { OMX_VIDEO_CodingVP9,          NEXUS_VideoCodec_eNone},
 #ifdef OMX_EXTEND_CODECS_SUPPORT
 	{ OMX_VIDEO_CodingVC1,          NEXUS_VideoCodec_eVc1},
     { OMX_VIDEO_CodingSPARK,        NEXUS_VideoCodec_eSpark},
@@ -141,12 +135,18 @@ static const OMX_TO_NEXUS_MAP OMXToNexusTable[] = {
 #endif
 };
 
+typedef struct _PID_INFO_
+{
+    OMX_U32 pid;
+} PID_INFO;
 
 #define OMX_IndexEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexGetAndroidNativeBufferUsage            0x7F000002
 #define OMX_IndexStoreMetaDataInBuffers                 0x7F000003
 #define OMX_IndexUseAndroidNativeBuffer                 0x7F000004
 #define OMX_IndexUseAndroidNativeBuffer2                0x7F000005
+#define OMX_IndexDisplayFrameBuffer                     0x7F000006
+#define OMX_IndexProcessID                              0x7F000007
 
 extern "C"
 {
@@ -240,14 +240,10 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     OMX_U32 err;
     uint nIndex;
 
-    ALOGE("%s %d: Component Handle :%p BUILD-DATE:%s BUILD-TIME:%s ",
-            __FUNCTION__,__LINE__,hComponent,__DATE__,__TIME__);
     pComp = (OMX_COMPONENTTYPE *) hComponent;
 
     // Create private data
-    ALOGE("%s %d malloc size=%d",__FUNCTION__,__LINE__,sizeof(BCM_OMX_CONTEXT));
     pMyData = (BCM_OMX_CONTEXT *)BKNI_Malloc(sizeof(BCM_OMX_CONTEXT));
-    ALOGE("%s %d",__FUNCTION__,__LINE__);
     if(pMyData == NULL)
     {
         LOGE("Error in allocating mem for pMyData\n");
@@ -255,15 +251,14 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
         goto EXIT;
     }
 
-    ALOGE("%s %d",__FUNCTION__,__LINE__);
     BKNI_Memset(pMyData, 0x0, sizeof(BCM_OMX_CONTEXT));
-    ALOGE("%s %d",__FUNCTION__,__LINE__);
 
     pComp->pComponentPrivate = (OMX_PTR)pMyData;
     pMyData->state = OMX_StateLoaded;
     pMyData->hSelf = hComponent;
 
-    ALOGE("%s %d",__FUNCTION__,__LINE__);
+    ALOGV("%s %d: Component Handle :%p BUILD-DATE:%s BUILD-TIME:%s ",
+            __FUNCTION__,__LINE__,hComponent,__DATE__,__TIME__);
 
     ALOGV("%s Output Buffers Locked On Alloc: %s",__FUNCTION__
 #ifdef LOCK_FOR_BUFFER_LIFETIME
@@ -287,7 +282,6 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pComp->EmptyThisBuffer      = OMX_VDEC_EmptyThisBuffer;
     pComp->FillThisBuffer       = OMX_VDEC_FillThisBuffer;
 
-    ALOGE("%s %d",__FUNCTION__,__LINE__);
 
     // Empty Buffer Done
     // Fill Buffer Done
@@ -298,7 +292,6 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sPortParam.nStartPortNumber = 0x0;
 
     // Initialize the video parameters for input port 
-    ALOGE("%s %d",__FUNCTION__,__LINE__);
     OMX_CONF_INIT_STRUCT_PTR(&pMyData->sInPortDef, OMX_PARAM_PORTDEFINITIONTYPE);
     pMyData->sInPortDef.nPortIndex = 0x0;
     pMyData->sInPortDef.bEnabled = OMX_TRUE;
@@ -392,6 +385,17 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
         goto EXIT;
 
     }
+
+    pMyData->pInBufHdrRes = (OMX_BUFFERHEADERTYPE**) 
+        BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * NUM_IN_BUFFERS); 
+
+    if(pMyData->pInBufHdrRes == NULL)
+    {
+        LOGE("Error in allocating mem for pMyData->pInBufHdrRes\n");
+        eError = OMX_ErrorInsufficientResources;
+        goto EXIT;
+    }
+        
     for (nIndex = 0; nIndex < pMyData->sInPortDef.nBufferCountActual; nIndex++)
     {
         pMyData->sInBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*) 
@@ -407,7 +411,6 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sInBufList.eDir = OMX_DirInput;    
 
     // Initialize the output buffer list 
-    ALOGE("%s %d",__FUNCTION__,__LINE__);
     BKNI_Memset(&(pMyData->sOutBufList), 0x0, sizeof(BufferList));
     pMyData->sOutBufList.pBufHdr = (OMX_BUFFERHEADERTYPE**) 
         BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * MAX_NUM_OUT_BUFFERS); 
@@ -474,7 +477,6 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
       THIS CODE BLOCK SHOULD BE MOVED ----> Do This when Entering the
       Executing State...Cleanyup When Exiting Executing State
      ****************************************************************/ 
-    ALOGE("%s %d",__FUNCTION__,__LINE__);
 
     pMyData->pAndVidWindow = new AndroidVideoWindow();
 
@@ -484,7 +486,6 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
 
     pMyData->pTstable = new bcmOmxTimestampTable(MAX_NUM_TIMESTAMPS);
 
-    ALOGE("%s %d",__FUNCTION__,__LINE__);
 
     if (OMX_COMPRESSION_FORMAT == OMX_VIDEO_CodingWMV)
     {
@@ -904,6 +905,11 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
             ((GetAndroidNativeBufferUsageParams *)pParamStruct)->nUsage =
                     GRALLOC_USAGE_EXTERNAL_DISP | GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN;
             break;
+        case OMX_IndexProcessID:
+            ALOGV("%s: OMX_IndexProcessID\n",__FUNCTION__);
+            ((PID_INFO*)pParamStruct)->pid = getpid();
+            return OMX_ErrorNone;
+            break;
         default:
             ALOGE("%s:  UNHANDLED PARAMETER INDEX %d",__FUNCTION__, nParamIndex);
             eError = OMX_ErrorUnsupportedIndex;
@@ -925,7 +931,10 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
     pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
     OMX_CONF_CHECK_CMD(pMyData, pParamStruct, 1);
 
-    if (pMyData->state != OMX_StateLoaded)
+    // Allow case of OMX_IndexDisplayFrameBuffer outside OMX_StateLoaded. This case is used
+    // temporarily to display frames in media codec path. This will get moved out to seperate function
+    // later.
+    if ((pMyData->state != OMX_StateLoaded)&&(nParamIndex!=OMX_IndexDisplayFrameBuffer))
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
 
     switch (nParamIndex)
@@ -1075,6 +1084,14 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
     {
         ALOGV("%s: OMX_IndexUseAndroidNativeBuffer2\n",__FUNCTION__);
         return OMX_ErrorUnsupportedSetting;
+        break;
+    }
+    case OMX_IndexDisplayFrameBuffer:
+    {
+        // Display video frames for media codec path.
+        // This code should moved out of OMX_VDEC_SetParameter later.
+        PDISPLAY_FRAME pDispFrame = (PDISPLAY_FRAME)pParamStruct;
+        pDispFrame->pDisplayFn(pDispFrame, pDispFrame->DisplayCnxt);
         break;
     }
     default: // one case for enable graphics if required check ????
@@ -1262,9 +1279,16 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
     pGraphicBuffer->lock(GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_SW_READ_OFTEN, (void**)&pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer);
     pDispFr = (PDISPLAY_FRAME)pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer;
     memset(pDispFr, 0, sizeof(DISPLAY_FRAME));
+#else
+    pGraphicBuffer->lock(GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_SW_READ_OFTEN, (void**)&pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer);
+    pDispFr = (PDISPLAY_FRAME)pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer;
+    memset(pDispFr, 0, sizeof(DISPLAY_FRAME));
+    pGraphicBuffer->unlock();
 #endif
 
     pMyData->sOutBufList.pBufHdr[nIndex]->pInputPortPrivate = (OMX_PTR) pGraphicBuffer;
+    pMyData->sOutBufList.pBufHdr[nIndex]->pPlatformPrivate = (OMX_PTR) &nativeBuffer;
+
     LoadBufferHeader(pMyData->sOutBufList, pMyData->sOutBufList.pBufHdr[nIndex],  
             pAppPrivate, nSizeBytes, nPortIndex, *bufferHeader, pPortDef);
 
@@ -1374,6 +1398,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
         LoadBufferHeader(pMyData->sInBufList, pMyData->sInBufList.pBufHdr[nIndex], pAppPrivate, 
                 nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);      
 
+        CopyBufferHeaderList(pMyData->sInBufList, pPortDef, pMyData->pInBufHdrRes);
     }else{
 
         while (1) 
@@ -1474,7 +1499,9 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_FreeBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
             pBufferHdr->pInputPortPrivate = NULL;
         }
 
+        unsigned int prevSize = pMyData->sInBufList.nAllocSize;
         ListFreeBuffer(pMyData->sInBufList, pBufferHdr, pPortDef)
+        ListFreeBufferExt(pMyData->sInBufList, pBufferHdr, pPortDef,prevSize,pMyData->pInBufHdrRes)
 
     } else if (nPortIndex == pMyData->sOutPortDef.nPortIndex) {
         if(pBufferHdr->pBuffer)
@@ -1603,6 +1630,12 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
     if(pBufferHdr->nFlags & OMX_BUFFERFLAG_EXTRADATA)
     {
         ALOGE("%s: OMX_BUFFERFLAG_EXTRADATA FLAG SET FOR INPUT :%d ",__FUNCTION__,pBufferHdr->nFlags);
+    }
+
+    if(pBufferHdr->nFlags & OMX_BUFFERFLAG_EOS)
+    {
+    	ALOGD("%s: FilledLen:%d pInBufHdr->nTimeStamp:%lld",
+    		__FUNCTION__, pBufferHdr->nFilledLen, pBufferHdr->nTimeStamp);
     }
 
     if (pBufferHdr->nFilledLen) 
@@ -1774,7 +1807,8 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
         }
 
         // This is valid data size need to transfer to hardware
-        pNxInputCnxt->SzValidPESData = SzValidPESData; 
+        pNxInputCnxt->SzValidPESData = SzValidPESData;
+        pNxInputCnxt->FramePTS=nTimestamp;
     }
 
     // Put the command and data in the pipe 
@@ -2396,7 +2430,6 @@ static void* ComponentThread(void* pThreadData)
             }
             else if (cmd == EmptyBuf)
             {
-
                 // Empty buffer 
                 ListSetEntry(pMyData->sInBufList, ((OMX_BUFFERHEADERTYPE *) cmddata)) 
                     // Mark current buffer if there is outstanding command 
@@ -2428,10 +2461,13 @@ static void* ComponentThread(void* pThreadData)
             if (pInBufHdr)
             {
                 OMX_U32 nFlags=0;
+                unsigned long long EOSTimeStamp=0;
                 if (pInBufHdr->nFlags & OMX_BUFFERFLAG_EOS)
                 {
                     nFlags =  pInBufHdr->nFlags;
                     pInBufHdr->nFlags = 0;
+
+                    EOSTimeStamp = CONVERT_USEC_45KHZ(pInBufHdr->nTimeStamp);
                 }
 
                 // Check for mark buffers
@@ -2494,7 +2530,8 @@ static void* ComponentThread(void* pThreadData)
                      * it.
                      */
                     ALOGD("====EOS On Input====");
-                    pMyData->pPESFeeder->NotifyEOS(nFlags);
+
+                    pMyData->pPESFeeder->NotifyEOS(nFlags,EOSTimeStamp);
                     nFlags = 0;
                 }
 
@@ -2541,8 +2578,6 @@ static void* ComponentThread(void* pThreadData)
                     pOutBufHdr->nFilledLen = sizeof(DISPLAY_FRAME);
                     nTimeStamp = pMyData->pOMXNxDecoder->GetFrameTimeStampMs(pNxDecoFr);
                     pOutBufHdr->nTimeStamp= pMyData->pTstable->retrieve(nTimeStamp);
-                    pNxDecoFr->pSetPlayerParams = pMyData->pAndVidWindow;
-
                 }else{
 
                     // This may be a frame with NULL data
@@ -2562,6 +2597,19 @@ static void* ComponentThread(void* pThreadData)
                 {
                     BCMOMX_DBG_ASSERT(pGraphicBuffer);
                     pGraphicBuffer->unlock();
+                }
+
+                if(pOutBufHdr->pPlatformPrivate) 
+                {
+                    //We Store the pointer to the anb in pPlatformPrivate
+                    // We cannot use that pointer here becuase the pointer 
+                    // changes after the allocation. We get a new ANB from
+                    // The Graphic buffer itself.
+                    ANativeWindowBuffer *anb=NULL;
+                    anb = pGraphicBuffer->getNativeBuffer();
+                    BCMOMX_DBG_ASSERT(anb);
+                    pMyData->pAndVidWindow->SetPrivData(anb, 0); 
+                    pOutBufHdr->pPlatformPrivate=NULL;
                 }
 
                 pMyData->pCallbacks->FillBufferDone(pMyData->hSelf,
@@ -2589,8 +2637,6 @@ EXIT:
 
 }//ComponentThread(void* pThreadData)
 
-#define CONVERT_USEC_45KHZ(_tUs_)     (((uint64_t(_tUs_))*45)/1000)
-#define CONVERT_45KHZ_USEC(_t45khz_)	((_t45khz_*1000)/45)
 
 bcmOmxTimestampTable::bcmOmxTimestampTable(unsigned int n_size)
     :size(n_size), usage_count(0)

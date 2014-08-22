@@ -11,7 +11,6 @@ typedef struct _DISPLAY_FRAME_
     void *                                  DecodedFr;
     void *                                  DisplayCnxt;
     unsigned int                            OutFlags;
-    SavePlayerSpecificContext               *pSetPlayerParams;
 }DISPLAY_FRAME,
 *PDISPLAY_FRAME;
  

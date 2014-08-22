@@ -26,6 +26,40 @@ static void EOSXferDoneCallBack(unsigned int Param1,
     return;
 }
 
+#ifndef GENERATE_DUMMY_EOS
+#define B_STREAM_ID 0xe0
+
+static void FormBppPacket(unsigned char *pBuffer, uint32_t opcode)
+{
+    BKNI_Memset(pBuffer, 0, 184);
+    /* PES Header */
+    pBuffer[0] = 0x00;
+    pBuffer[1] = 0x00;
+    pBuffer[2] = 0x01;
+    pBuffer[3] = B_STREAM_ID;
+    pBuffer[4] = 0x00;
+    pBuffer[5] = 178;
+    pBuffer[6] = 0x81;
+    pBuffer[7] = 0x01;
+    pBuffer[8] = 0x14;
+    pBuffer[9] = 0x80;
+    pBuffer[10] = 0x42; /* B */
+    pBuffer[11] = 0x52; /* R */
+    pBuffer[12] = 0x43; /* C */
+    pBuffer[13] = 0x4d; /* M */
+    /* 14..25 are unused and set to 0 by above memset */
+    pBuffer[26] = 0xff;
+    pBuffer[27] = 0xff;
+    pBuffer[28] = 0xff;
+    /* sub-stream id - not used in this config */;
+    /* Next 4 are opcode 0000_000ah = inline flush/tpd */
+    pBuffer[30] = (opcode>>24) & 0xff;
+    pBuffer[31] = (opcode>>16) & 0xff;
+    pBuffer[32] = (opcode>>8) & 0xff;
+    pBuffer[33] = (opcode>>0) & 0xff;
+}
+#endif
+
 bool
 PESFeeder::IsPlayPumpStarted()
 {
@@ -74,7 +108,8 @@ PESFeeder::PESFeeder(char const *ClientName,
         NEXUS_VideoCodec vidCdc) :
         FdrEvtLsnr(NULL), NexusPID(InputPID), CntDesc(NumDescriptors),
         FiredCnt(0), FlushCnt(0), SendCfgDataOnNextInput(false),
-        pCfgDataMgr(NULL), vidCodec(vidCdc),pInterNotifyCnxt(NULL) 
+        pCfgDataMgr(NULL), vidCodec(vidCdc),pInterNotifyCnxt(NULL),
+        LastInputTimeStamp(0)
 #ifdef DEBUG_PES_DATA
     , DataBeforFlush(new DumpData("DataBeforFlush"))
     , DataAfterFlush(new DumpData("DataAfterFlush"))
@@ -666,6 +701,7 @@ PESFeeder::XFerDoneCallBack()
         PLIST_ENTRY pDoneEntry = RemoveTailList(&ActiveQ);
         BCMOMX_DBG_ASSERT(pDoneEntry);                    
         PNEXUS_INPUT_CONTEXT pDoneCnxt = CONTAINING_RECORD(pDoneEntry,NEXUS_INPUT_CONTEXT,ListEntry);
+
         if (pDoneCnxt->DoneContext.pFnDoneCallBack) 
         {
             //Fire The Call Back
@@ -706,7 +742,14 @@ PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
     }
 
     pNxInCnxt->NxDesc[0].addr       = pNxInCnxt->PESData;
-    pNxInCnxt->NxDesc[0].length     = pNxInCnxt->SzValidPESData;  
+    pNxInCnxt->NxDesc[0].length     = pNxInCnxt->SzValidPESData;
+
+    // The Last Time Stamp That We sent To Hardware...
+    if(pNxInCnxt->FramePTS)
+    {
+    	LOG_INFO("%s: Updating LastTimeStamp: %lld", LastInputTimeStamp);
+    	LastInputTimeStamp = pNxInCnxt->FramePTS;
+    }
 
 #ifdef DEBUG_PES_DATA
     if (!FlushCnt) {
@@ -743,7 +786,17 @@ PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
     return true;
 }
 
-
+#ifndef GENERATE_DUMMY_EOS
+bool
+PESFeeder::PrepareEOSData()
+{
+    FormBppPacket(pPESEosBuffer, 0xa); /* Inline flush / TPD */
+    FormBppPacket(pPESEosBuffer+184, 0x82); /* LAST */
+    FormBppPacket(pPESEosBuffer+368, 0xa); /* Inline flush / TPD */
+    NEXUS_FlushCache(pPESEosBuffer, PES_EOS_BUFFER_SIZE);
+    return true;
+}
+#else
 bool
 PESFeeder::PrepareEOSData()
 {
@@ -802,13 +855,14 @@ PESFeeder::PrepareEOSData()
     CopyPESData(pPESEosBuffer+CopiedSz,PES_EOS_BUFFER_SIZE-CopiedSz);
     return true;
 }
+#endif
 
 //
-// The EOS is not working becuase the memory allocated for EOS is 
-// not from heap[1]. See AllocatePESBuffer function for allocating this memory.
+// This Will Work Only if memory allocated for EOS is
+// from heap[1]. Use AllocatePESBuffer function for allocating this memory.
 //
 bool
-PESFeeder::NotifyEOS(unsigned int ClientFlags)
+PESFeeder::NotifyEOS(unsigned int ClientFlags, unsigned long long EOSFrameKey)
 {
     LOG_EOS_DBG("[%s]%s: Notifying EOS To Hardware",ClientIDString,__FUNCTION__);
 
@@ -819,11 +873,19 @@ PESFeeder::NotifyEOS(unsigned int ClientFlags)
     pInterNotifyCnxt->DoneContext.Param1 = NULL;
     pInterNotifyCnxt->DoneContext.Param2 = NULL;
     pInterNotifyCnxt->DoneContext.Param3 = NULL;
+    pInterNotifyCnxt->FramePTS=0;
     pInterNotifyCnxt->DoneContext.pFnDoneCallBack = EOSXferDoneCallBack;
 
     if (FdrEvtLsnr) 
     {
-        FdrEvtLsnr->InputEOSReceived(ClientFlags);
+    	if(!EOSFrameKey)
+    	{
+    		ALOGD("%s: EOS Buffer Has TimeStamp Of Zero.Using Last Buffer's Time Stamp:%lld",
+    				__PRETTY_FUNCTION__,LastInputTimeStamp);
+    		EOSFrameKey = LastInputTimeStamp;
+    	}
+
+        FdrEvtLsnr->InputEOSReceived(ClientFlags,EOSFrameKey);
     }
 
     SendPESDataToHardware(pInterNotifyCnxt);

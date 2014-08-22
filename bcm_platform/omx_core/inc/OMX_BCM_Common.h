@@ -148,6 +148,7 @@ typedef struct _BCM_OMX_CONTEXT_
     BufferList                      sInBufList;
     BufferList                      sOutBufList;
     OMX_BUFFERHEADERTYPE            **pOutBufHdrRes;
+    OMX_BUFFERHEADERTYPE            **pInBufHdrRes;
 #ifdef ENABLE_BCM_OMX_PROTOTYPE 
     BCM_AAC_PARAMETERS              BCMAacParams;
     OMXNexusDecoder                 *pOMXNxDecoder;

@@ -16,14 +16,23 @@
 #include "ErrorStatus.h"
 #include "PlatformSpecificIFace.h"
 
+//#define GENERATE_DUMMY_EOS
+
 // Length of the buffer queues 
 #define DECODE_DEPTH                    16
 #define DOWN_CNT_DEPTH                  16
 
 
+#define MIN_BUFFER_TO_HOLD_IN_DECODE_QUEUE  1
+#define MAX_FRAME_SEQ_NUMBER                0xffffffff
+
 using namespace android;
 //using android::Vector;
 
+#define SET_BIT(_X_, BIT)       (_X_ |= (1<<BIT))
+#define CLEAR_BIT (_X_, BIT)    (_X_ &= ~(1<<BIT))
+#define TOGGLE_BIT(_X_, BIT)    (_X_ ^= (1<<BIT))
+#define TEST_BIT(_X_, BIT)      (_X_ & (1<<BIT))
 
 typedef enum __BufferState__
 {
@@ -57,10 +66,68 @@ public:
     bool StartDecoder(unsigned int);
     
 //Implement InputEOSListener
-    void InputEOSReceived(unsigned int);
+    void InputEOSReceived(unsigned int,unsigned long long);
     bool GetDecoSts(NEXUS_VideoDecoderStatus *);
 
+//Source Change CallBack from Decoder
+    void SourceChangedCallback();
+
 private:
+    typedef enum _EOS_States_
+    {
+        EOS_Init =0,
+        EOS_ReceivedOnInput=1,
+        EOS_ReceivedFromHardware=2,
+        EOS_DeliveredOnOutput=3,
+    }EOS_States;
+
+    //EOS Occureed On Input Side, Look For Or Generate EOS On Output side
+    unsigned  	EOSState;
+
+    inline bool IsEOSComplete()
+    {
+        return  ( (TEST_BIT(EOSState, EOS_ReceivedOnInput) &&
+                     TEST_BIT(EOSState, EOS_ReceivedFromHardware) &&
+                     TEST_BIT(EOSState, EOS_DeliveredOnOutput)) ? true:false) ;
+    }
+
+    inline bool IsEOSReceivedOnInput()
+    {
+        return TEST_BIT(EOSState, EOS_ReceivedOnInput) ? true:false;
+    }
+
+    inline bool IsEOSReceivedFromHardware()
+    {
+        return TEST_BIT(EOSState,EOS_ReceivedFromHardware) ? true:false;
+    }
+
+    inline bool IsEOSDeliveredOnOutput()
+    {
+        return TEST_BIT(EOSState,EOS_DeliveredOnOutput) ? true:false;
+    }
+
+    inline void ReSetEOSState()
+    {
+        EOSState=EOS_Init;
+    }
+
+    inline void EOSReceivedOnInput()
+    {
+        SET_BIT(EOSState, EOS_ReceivedOnInput);
+        return;
+    }
+
+    inline void EOSReceivedFromHardware()
+    {
+        SET_BIT(EOSState, EOS_ReceivedFromHardware);
+        return;
+    }
+
+    inline void EOSDeliveredToOutput()
+    {
+        SET_BIT(EOSState, EOS_DeliveredOnOutput);
+        return;
+    }
 
     typedef struct _NEXUS_DECODED_FRAME_
     {
@@ -81,15 +148,17 @@ private:
 
     // Just to make sure that you get >=  
     // frame every time and not lower.
-    // Else we will have to scan the queue everytime
+    // Else we will have to scan the queue every time
     unsigned int                    NextExpectedFr;
 
 //Data FOR Special Conditions Like EOS 
-    unsigned int                    ClientFlags;        //Like EOS or something
+    unsigned int                    ClientFlags;        // Like EOS or something
+    unsigned long long              EOSFrameKey;        // Something that identifies the EOS frame
 
-    //EOS Occureed On Input Side, Look For Or Generate EOS On ouput side
-    bool                            StartEOSDetection;  
-    unsigned int                    DownCnt;
+
+#ifdef GENERATE_DUMMY_EOS
+    unsigned int            DownCnt;
+#endif
 
     //Usage
     //Mutex::Autolock lock(nexSurf->mFreeListLock);
@@ -108,12 +177,17 @@ private:
     unsigned int        DebugCounter;
 
 // Data For Statistic Parameters
-    unsigned int        FlushCnt;
+   unsigned int        FlushCnt;
 
    unsigned int         VideoPid;
    bool                 FlushDecoder();
    NEXUS_VideoCodec     NxVideoCodec;
+
 private:
+
+#ifndef GENERATE_DUMMY_EOS
+    void OnEOSMoveAllDecodedToDeliveredList();
+#endif
     void StopDecoder();
     bool StartDecoder(NEXUS_PidChannelHandle videoPIDChannel);
     bool PauseDecoder();
@@ -122,9 +196,16 @@ private:
     bool FrameAlreadyExist(PLIST_ENTRY,PNEXUS_DECODED_FRAME);
     bool IsDecoderStarted();
     bool ReturnFrameSynchronized(PNEXUS_DECODED_FRAME,bool FlagDispFrame=false);
+
+#ifdef GENERATE_DUMMY_EOS
     bool DetectEOS();
+#else
+    unsigned int DetectEOS(PNEXUS_DECODED_FRAME pNxDecFr);
+#endif
+
     void PrintDecoStats();
-    
+
+    bool ReturnPacketsAfterEOS();
 
     /*Hide the operations that you don't support*/
     OMXNexusDecoder(OMXNexusDecoder &CpyFromMe);

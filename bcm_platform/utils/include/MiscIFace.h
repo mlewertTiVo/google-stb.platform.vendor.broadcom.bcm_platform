@@ -1,6 +1,9 @@
 #ifndef  __MISC_INTERFACES__
 #define __MISC_INTERFACES__
 
+#define CONVERT_USEC_45KHZ(_tUs_)     	(((uint64_t(_tUs_))*45)/1000)
+#define CONVERT_45KHZ_USEC(_t45khz_)	((_t45khz_*1000)/45)
+
 /**
  * @brief : This interface is used to notify the Object 
  * that is interested in getting the notification when the 
@@ -54,7 +57,7 @@ public:
 class FeederEventsListener
 {
 public:
-    virtual void InputEOSReceived(unsigned int)=0;
+    virtual void InputEOSReceived(unsigned int, unsigned long long)=0;
     virtual ~FeederEventsListener(){return;}
 };
 

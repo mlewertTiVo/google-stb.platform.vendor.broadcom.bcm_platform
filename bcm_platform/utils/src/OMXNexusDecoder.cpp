@@ -12,6 +12,8 @@
 #define LOG_ERROR               ALOGD
 #define LOG_INFO
 
+#define LOG_EVERY_DELIVERY
+
 //Enable logging for output time stamps on every frame.8
 #define LOG_OUTPUT_TS
 
@@ -19,15 +21,27 @@
 #define LOG_DECODER_STATE
 #define DECODER_STATE_FREQ     30      //Print decoder state after every XX output frames.
 
+#ifndef GENERATE_DUMMY_EOS
+static void SourceChangedCallbackDispatcher(void *pParam, int param)
+{
+    LOG_EOS_DBG("%s",__FUNCTION__);
+    OMXNexusDecoder *pNxDecoder = (OMXNexusDecoder *)pParam;
+    pNxDecoder->SourceChangedCallback();
+}
+#endif
 
-OMXNexusDecoder::OMXNexusDecoder(char * CallerName, 
-                                 NEXUS_VideoCodec NxCodec,
-                                 PaltformSpecificContext *pSetPlatformContext) 
-    : decoHandle(NULL),  ipcclient(NULL), DebugCounter(0),
-    nexus_client(NULL), LastErr(ErrStsSuccess),
-    NextExpectedFr(1), EmptyFrListLen(0), DecodedFrListLen(0),
-    FlushCnt(0), ClientFlags(0), DownCnt(DOWN_CNT_DEPTH),
-    StartEOSDetection(false), DecoEvtLisnr(NULL)
+OMXNexusDecoder::OMXNexusDecoder(char *CallerName, NEXUS_VideoCodec NxCodec,
+                                 PaltformSpecificContext *pSetPlatformContext) :
+    decoHandle(NULL), ipcclient(NULL),
+    DebugCounter(0), nexus_client(NULL),
+    LastErr(ErrStsSuccess), NextExpectedFr(1),
+    EmptyFrListLen(0), DecodedFrListLen(0),
+    FlushCnt(0), ClientFlags(0),
+    EOSState(EOS_Init), DecoEvtLisnr(NULL),
+    EOSFrameKey(0)
+#ifdef GENERATE_DUMMY_EOS
+    , DownCnt(DOWN_CNT_DEPTH)
+#endif
 {
     LOG_CREATE_DESTROY("%s: ENTER ===",__FUNCTION__);
     InitializeListHead(&EmptyFrList);
@@ -93,6 +107,21 @@ OMXNexusDecoder::OMXNexusDecoder(char * CallerName,
         LOG_CREATE_DESTROY("%s: Acquired Video Decoder Handle", __FUNCTION__);
     }
 
+#ifndef GENERATE_DUMMY_EOS
+    NEXUS_VideoDecoderSettings vidDecSettings;
+    NEXUS_Error errCode;
+
+    NEXUS_SimpleVideoDecoder_GetSettings(decoHandle, &vidDecSettings);
+    vidDecSettings.sourceChanged.callback = SourceChangedCallbackDispatcher;
+    vidDecSettings.sourceChanged.context = static_cast <void *>(this);
+    errCode = NEXUS_SimpleVideoDecoder_SetSettings(decoHandle, &vidDecSettings);
+    if(errCode != NEXUS_SUCCESS)
+    {
+        LOG_WARNING("%s:Failed To Install The Source Changes CallBack",__FUNCTION__);
+    }
+
+#endif
+
     for (unsigned int i=0; i < DECODE_DEPTH; i++) 
     {
         PNEXUS_DECODED_FRAME pDecoFr = (PNEXUS_DECODED_FRAME) 
@@ -114,7 +143,14 @@ OMXNexusDecoder::OMXNexusDecoder(char * CallerName,
         pSetPlatformContext->SetPlatformSpecificContext(nexus_client);
     }
 
-    if ( LastErr ) LOG_ERROR("%s: COMEPLETION WITH ERROR Error:%d", __FUNCTION__, LastErr); 
+    if ( LastErr ) LOG_ERROR("%s: COMEPLETION WITH ERROR Error:%d", __FUNCTION__, LastErr);
+
+#ifdef GENERATE_DUMMY_EOS
+    LOG_WARNING("WIll Use Dummy EOS Generation Logic");
+#else
+    LOG_WARNING("Will Use Hardware EOS Generation Logic");
+#endif
+
     LOG_CREATE_DESTROY("%s: EXIT ===",__FUNCTION__);
 }
 
@@ -142,6 +178,10 @@ OMXNexusDecoder::~OMXNexusDecoder()
     //Remaining in decoded list goes away
     while (!IsListEmpty(&DecodedFrList))
     {
+        LOG_ERROR("THIS IS A BUG. ALL THE FRAMES FROM THE DECODED LIST SHOULD BE:-"
+                "\nRETURNED TO THE HARDWARE AND MOVED TO THE FREE LIST."
+                "\nWE SHOULD NOT HAVE ANYTHING IN THE DECODED LIST HERE" );
+
         PLIST_ENTRY ThisEntry =  RemoveTailList(&DecodedFrList);
         DecodedFrListLen--;
         PNEXUS_DECODED_FRAME pDecoFr = CONTAINING_RECORD(ThisEntry,NEXUS_DECODED_FRAME,ListEntry);
@@ -154,6 +194,9 @@ OMXNexusDecoder::~OMXNexusDecoder()
     //Remaining in Delivered list goes away
     while (!IsListEmpty(&DeliveredFrList))
     {
+        LOG_ERROR("THIS IS A BUG. ALL THE FRAMES FROM THE DELIVERED LIST SHOULD BE:-"
+                "\nRETURNED TO THE HARDWARE AND MOVED TO THE FREE LIST."
+                "\nWE SHOULD NOT HAVE ANYTHING IN THE DELIVERED LIST HERE" );
         PLIST_ENTRY ThisEntry =  RemoveTailList(&DeliveredFrList);
         PNEXUS_DECODED_FRAME pDecoFr = CONTAINING_RECORD(ThisEntry,NEXUS_DECODED_FRAME,ListEntry);
         free(pDecoFr);
@@ -419,6 +462,61 @@ OMXNexusDecoder::Flush()
     return true;
 }
 
+
+#ifndef GENERATE_DUMMY_EOS
+// Return the BTP packet to the hardware if required....
+// Always called with lock held....From ReturnFrameSynchronised, we returning the 
+// last packet to the hardware.
+
+void
+OMXNexusDecoder::OnEOSMoveAllDecodedToDeliveredList()
+{
+
+
+    while (!IsListEmpty(&DecodedFrList))
+    {
+        PNEXUS_DECODED_FRAME pRetPacket = NULL;
+        PLIST_ENTRY ThisEntry =  RemoveTailList(&DecodedFrList);
+        DecodedFrListLen--;
+
+        pRetPacket = CONTAINING_RECORD(ThisEntry, NEXUS_DECODED_FRAME,
+                                       ListEntry);
+        // This is the last packet that should be there in
+        pRetPacket->BuffState = BufferState_Delivered;
+        InsertHeadList(&DeliveredFrList, &pRetPacket->ListEntry);
+    }
+}
+
+bool OMXNexusDecoder::ReturnPacketsAfterEOS()
+{
+    while (!IsListEmpty(&DeliveredFrList))
+    {
+        PNEXUS_DECODED_FRAME pRetPacket = NULL;
+        PLIST_ENTRY ThisEntry = RemoveTailList(&DeliveredFrList);
+        pRetPacket = CONTAINING_RECORD(ThisEntry, NEXUS_DECODED_FRAME,
+                                       ListEntry);
+
+        NEXUS_VideoDecoderReturnFrameSettings RetFrSetting;
+        RetFrSetting.display = false;
+        LOG_EOS_DBG(
+            "%s: Returning Packet After EOS SeqNo:%d ClientFlags:%d SerialNum:%d Pts:%d",
+            __FUNCTION__, pRetPacket->ClientFlags,
+            pRetPacket->FrStatus.serialNumber, pRetPacket->FrStatus.pts);
+
+        NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(decoHandle,&RetFrSetting,1);
+            pRetPacket->BuffState = BufferState_Init;
+    
+    //Return the Frame Back To Empty List
+        InsertHeadList(&EmptyFrList, &pRetPacket->ListEntry);
+        EmptyFrListLen++;
+    }
+
+    //All the frames should be present in the Free list...
+    BCMOMX_DBG_ASSERT(EmptyFrListLen==DECODE_DEPTH);
+    return true;
+}
+#endif
+
 //
 // Lock is Already Taken
 //private
@@ -485,17 +583,47 @@ OMXNexusDecoder::ReturnFrameSynchronized(PNEXUS_DECODED_FRAME pNxDecFrame, bool 
                             RetFrSetting.display ? "true":"false" ,
                             pFrFromList->FrStatus.pts,
                             pFrFromList->FrStatus.ptsValid);
+            }else{
+                LOG_EVERY_DELIVERY("%s Return [DISPLAY] Frame [%d] Displayed:%s PTS:%d [PTSValid:%d]",
+                                    __FUNCTION__,pFrFromList->FrStatus.serialNumber,
+                                    RetFrSetting.display ? "true":"false" ,
+                                    pFrFromList->FrStatus.pts,
+                                    pFrFromList->FrStatus.ptsValid);
             }
+
             //Validate the Buffer State
             BCMOMX_DBG_ASSERT(pFrFromList->BuffState==BufferState_Delivered);
             pFrFromList->BuffState = BufferState_Init; 
-            
-            NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(decoHandle,&RetFrSetting,1);   
 
+#ifndef GENERATE_DUMMY_EOS
+            // The BTP Packet is never delivered to client, it is sitting in
+            // decoded list. This means that we should never come here with
+            // lastPicture flag set. Lets validate this condition.
+            BCMOMX_DBG_ASSERT(!pFrFromList->FrStatus.lastPicture);
+
+            //We should never get in to the condition where we are returning
+            // a packet with a seqNumber greater than the seq number of BTP packet
+            bool returnRemainingPackets = (IsEOSComplete()
+                                           && (pFrFromList->ClientFlags));
+
+#endif
+
+            NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(decoHandle,&RetFrSetting,1);   
             //Return the Frame Back To Empty List
             InsertHeadList(&EmptyFrList,&pFrFromList->ListEntry);
             EmptyFrListLen++;
             BCMOMX_DBG_ASSERT(EmptyFrListLen <= DECODE_DEPTH);
+
+#ifndef GENERATE_DUMMY_EOS
+            if (returnRemainingPackets)
+            {
+                LOG_EOS_DBG("%s [%d]: Returning All Packets To Hardware After EOS",
+                            __FUNCTION__,__LINE__);
+
+                ReturnPacketsAfterEOS();
+            }
+#endif
+            
             if (Done) return true;
 
         }else{
@@ -631,6 +759,12 @@ OMXNexusDecoder::GetFramesFromHardware()
         return false;
     }
 
+    if (IsEOSReceivedFromHardware())
+    {
+        LOG_EOS_DBG("%s We Have Already Received EOS From HArdware,"
+                    " Not pulling anymore frames!!", __FUNCTION__);
+        return false;
+    }
     if (NumFramesToFetch) 
     {
         unsigned int NumFramesOut;
@@ -677,6 +811,25 @@ OMXNexusDecoder::GetFramesFromHardware()
                 }
 
                 NextExpectedFr =  pFreeFr->FrStatus.serialNumber + 1;
+                
+#ifndef GENERATE_DUMMY_EOS
+                if ((pFreeFr->FrStatus.lastPicture) || (IsEOSReceivedOnInput() &&
+                     (pFreeFr->MilliSecTS == EOSFrameKey)))
+                {
+                    LOG_EOS_DBG("%s [%d]: Detected Last Frame On SeqN- %d LastPicFlag:%d"
+                        "EOSState:0x%x ClientFlags:%d pFreeFr->MilliSecTS:%lld EOSFrameKey:%lld",
+                                __FUNCTION__, __LINE__,
+                        pFreeFr->FrStatus.serialNumber, pFreeFr->FrStatus.lastPicture,
+                        EOSState, ClientFlags, pFreeFr->MilliSecTS, EOSFrameKey);
+
+                    
+                    // We should always have the EOS on the input side
+                    // Because only then we have sent the BTP/BPP packet to the hardware.
+                    BCMOMX_DBG_ASSERT((ClientFlags) && (EOSFrameKey));
+                    EOSReceivedFromHardware();
+                    pFreeFr->ClientFlags = ClientFlags;
+                }
+#endif
 
                 //Insert At Head... 
                 InsertHeadList(&DecodedFrList,&pFreeFr->ListEntry);
@@ -685,9 +838,7 @@ OMXNexusDecoder::GetFramesFromHardware()
 
                 LastErr = ErrStsSuccess;
 
-                LOG_OUTPUT_TS("%s  Accepted FRAME SeqNo:%d NxTimeStamp:%d Ts[Ms]:%lld!!",
-                             __FUNCTION__, pFreeFr->FrStatus.serialNumber,
-                             pFreeFr->FrStatus.pts, pFreeFr->MilliSecTS);
+                LOG_OUTPUT_TS("%s  Accepted FRAME SeqNo:%d NxTimeStamp:%d Ts[Ms]:%lld ClientFlags:%d!!", __FUNCTION__, pFreeFr->FrStatus.serialNumber, pFreeFr->FrStatus.pts, pFreeFr->MilliSecTS, pFreeFr->ClientFlags);
 
                 DebugCounter = (DebugCounter + 1) % DECODER_STATE_FREQ;
                 if(!DebugCounter) PrintDecoStats();
@@ -713,55 +864,86 @@ OMXNexusDecoder::GetDecodedFrame(PDISPLAY_FRAME pOutFrame)
     }
 
     Mutex::Autolock lock(mListLock);
-
-    // Clear the output memory
     memset(pOutFrame,0,sizeof(DISPLAY_FRAME));
+
+#ifndef GENERATE_DUMMY_EOS
+    if(IsEOSDeliveredOnOutput())
+    {
+        // We do not deliver Any Frames After The EOS Is Set On Output, So The BTP packet will always
+        // be in the decoded list and we remove it from there when the
+        // we return the EOS marked packet to the hardware.
+        pOutFrame->OutFlags = ClientFlags;
+        return false;
+    }
+
+    //We got a EOS on Input and From Hardware
+#endif
 
     //Deliver From DecodedQueue Tail (size -1)
     if(!IsListEmpty(&DecodedFrList)) 
     {
         PLIST_ENTRY DeliverEntry = RemoveTailList(&DecodedFrList);
+        bool retVal = false;
         DecodedFrListLen--;
-
         BCMOMX_DBG_ASSERT(DecodedFrListLen <= DECODE_DEPTH);
 
         if (DeliverEntry) 
         {
-            PNEXUS_DECODED_FRAME pDecoFr = CONTAINING_RECORD(DeliverEntry, NEXUS_DECODED_FRAME, ListEntry); 
-            pDecoFr->BuffState = BufferState_Delivered; 
+            PNEXUS_DECODED_FRAME pDecoFr = CONTAINING_RECORD(DeliverEntry,
+                                                             NEXUS_DECODED_FRAME, ListEntry);
+            pDecoFr->BuffState = BufferState_Delivered;
 
-          //Clear the out flags.
+            //Clear the out flags.
             pOutFrame->OutFlags       = 0;
-            pOutFrame->DisplayCnxt    = this;
-            pOutFrame->DecodedFr      = pDecoFr;
-            pOutFrame->pDisplayFn     = DisplayBuffer;
+#ifndef GENERATE_DUMMY_EOS
+            	pOutFrame->OutFlags = DetectEOS(pDecoFr);
+#endif
+            if (!pDecoFr->FrStatus.lastPicture)
+            {
+                pOutFrame->DisplayCnxt = this;
+                pOutFrame->DecodedFr = pDecoFr;
+                pOutFrame->pDisplayFn = DisplayBuffer;
+                InsertHeadList(&DeliveredFrList, &pDecoFr->ListEntry);
+                LOG_EVERY_DELIVERY("%s  Delivered FRAME SeqNo:%d TimeStamp:%d pOutFrame->OutFlags:%d !!",
+                                   __FUNCTION__, pDecoFr->FrStatus.serialNumber, pDecoFr->FrStatus.pts, pOutFrame->OutFlags);
+                retVal = true;
+            } else {
+                LOG_EVERY_DELIVERY("%s  lastPicture Set, Not Delivering To Client Frame FRAME SeqNo:%d!!", __FUNCTION__, pDecoFr->FrStatus.serialNumber);
+                InsertHeadList(&DeliveredFrList, &pDecoFr->ListEntry);
+                retVal = false;
+            }
 
-            InsertHeadList(&DeliveredFrList,&pDecoFr->ListEntry);
-
-            LOG_INFO("%s  Delivered FRAME SeqNo:%d!!",
-            __FUNCTION__,pDecoFr->FrStatus.serialNumber);
-
-            return true;
+#ifndef GENERATE_DUMMY_EOS
+            if (pOutFrame->OutFlags)
+            {
+                // Looks like the EOS is set...Move All The Frames To Delivered List
+                // Logically, all the frames should be in delivered list when we hit the EOS.
+                OnEOSMoveAllDecodedToDeliveredList();
+            }
+#endif
+            return retVal;
         }
     }
 
-	// If there is anything to deliver or display, We do not process EOS.
-	// Let both the list get empty and then we will process the EOS.
-	if(IsListEmpty(&DecodedFrList) && IsListEmpty(&DeliveredFrList))
-	{
-		BCMOMX_DBG_ASSERT(!DecodedFrListLen);
+#ifdef GENERATE_DUMMY_EOS
+    // If there is anything to deliver or display, We do not process EOS.
+    // Let both the list get empty and then we will process the EOS.
+    if(IsListEmpty(&DecodedFrList) && IsListEmpty(&DeliveredFrList))
+    {
+        BCMOMX_DBG_ASSERT(!DecodedFrListLen);
+        pOutFrame->OutFlags=0;
 
-		pOutFrame->OutFlags=0;
-		if (DetectEOS())
-		{
-			LOG_EOS_DBG("%s: Delivering EOS Frame ClientFlags[%d]",__FUNCTION__,ClientFlags);
-			pOutFrame->OutFlags = ClientFlags;
-			if (DecoEvtLisnr) DecoEvtLisnr->EOSDelivered();
-			ClientFlags=0;
-		}
-	}else{
-		DownCnt=DOWN_CNT_DEPTH;
-	}
+        if (DetectEOS())
+        {
+            LOG_EOS_DBG("%s: Delivering EOS Frame ClientFlags[%d]",__FUNCTION__,ClientFlags);
+            pOutFrame->OutFlags = ClientFlags;
+            if (DecoEvtLisnr) DecoEvtLisnr->EOSDelivered();
+            ClientFlags=0;
+        }
+    }else{
+        DownCnt=DOWN_CNT_DEPTH;
+    }
+#endif
 
     LastErr = ErrStsNexusGetDecodedFrFail;
     return false;
@@ -848,31 +1030,36 @@ OMXNexusDecoder::GetDecoSts(NEXUS_VideoDecoderStatus *vdecStatus)
  * @return bool 
  */
 
-void 
-OMXNexusDecoder::InputEOSReceived(unsigned int ClientFlagsData)
+void OMXNexusDecoder::InputEOSReceived(unsigned int ClientFlagsData,
+                                       unsigned long long EOSFrameKeyData)
 {
-    LOG_EOS_DBG("%s: Entering EOS Detection Mode",__FUNCTION__);
+    LOG_EOS_DBG("%s: Entering EOS Detection Mode=== ClientFlagData:%d EOSFrameKeyData%lld",
+                __FUNCTION__, ClientFlagsData, EOSFrameKeyData);
 
-    // Get in to EOS Detection Mode....
-    StartEOSDetection=true;
-
+    EOSReceivedOnInput();
     //Save The Flags that Client Wants Us To Set In The 
     //Output frames On Detection Of EOS.
     ClientFlags = ClientFlagsData;
+    EOSFrameKey = EOSFrameKeyData;
+    BCMOMX_DBG_ASSERT(EOSFrameKey);
+
+#ifdef GENERATE_DUMMY_EOS
     DownCnt = DOWN_CNT_DEPTH;
+#endif
+
 }
 
-bool 
+#ifdef GENERATE_DUMMY_EOS
+bool
 OMXNexusDecoder::DetectEOS()
 {
     NEXUS_VideoDecoderStatus  VidDecoSts;
-
-    if(false == StartEOSDetection)
+    if(false == IsEOSReceivedOnInput())
     {
         return false;
     }
-    
-    LOG_EOS_DBG("%s: EOSDetect[%s] ",__FUNCTION__,StartEOSDetection ? "TRUE":"FALSE");
+
+    LOG_EOS_DBG("%s: EOSDetect[%s] ",__FUNCTION__,IsEOSReceivedOnInput() ? "TRUE":"FALSE");
     
     GetDecoSts(&VidDecoSts);    
     if (VidDecoSts.started) 
@@ -885,12 +1072,55 @@ OMXNexusDecoder::DetectEOS()
             LOG_EOS_DBG("%s: --- EOS DETECTED ---",__FUNCTION__);
 
             //Just have to detect the EOS only once
-            StartEOSDetection=false;
+            ReSetEOSState();
             return true;
         }
     }
 
     return false;
+}
+#else
+unsigned int OMXNexusDecoder::DetectEOS(PNEXUS_DECODED_FRAME pDecoFr)
+{
+    if (pDecoFr == NULL) return 0;
+
+    if(IsEOSReceivedOnInput() && IsEOSReceivedFromHardware())
+    {
+        if (pDecoFr->ClientFlags)
+        {
+            LOG_EOS_DBG(
+                "%s  EOS [Flags= %d] Marked On FRAME SeqNo:%d LastPicture:%d!! EOSFrameKey:%lld pDecoFr->MilliSecTS:%lld",
+                __FUNCTION__, pDecoFr->ClientFlags,
+                    pDecoFr->FrStatus.serialNumber,
+                pDecoFr->FrStatus.lastPicture,
+                EOSFrameKey,
+                pDecoFr->MilliSecTS);
+
+            EOSDeliveredToOutput();
+            if (DecoEvtLisnr) DecoEvtLisnr->EOSDelivered();
+            return pDecoFr->ClientFlags; //Mark this as EOS because this is the seq number that we wanted to mark
+        }
+    }
+
+
+    return 0;
+}
+
+#endif
+
+void
+OMXNexusDecoder::SourceChangedCallback()
+{
+    NEXUS_VideoDecoderStatus vdecStatus;
+    if(GetDecoSts(&vdecStatus))
+    {
+        LOG_EOS_DBG("%s: Number Pictures Decoded:- %d",
+                __FUNCTION__,vdecStatus.numDecoded);
+
+    }else{
+        LOG_ERROR("%s Failed To Get Decoder State",__FUNCTION__);
+    }
+
 }
 
 bool

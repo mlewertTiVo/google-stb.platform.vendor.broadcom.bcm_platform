@@ -71,7 +71,6 @@ ComponentTable componentTable[] = {
  {"OMX.BCM.mpeg4.decoder", 1, {"1"} },
  {"OMX.BCM.vpx.decoder", 1, {"1"} },
 #ifdef OMX_EXTEND_CODECS_SUPPORT
- {"OMX.BCM.vp9.decoder", 1, {"1"} },
  {"OMX.BCM.wmv.decoder", 1, {"1"} },
  {"OMX.BCM.vc1.decoder", 1, {"1"} },
  {"OMX.BCM.spark.decoder", 1, {"1"} },

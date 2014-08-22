@@ -837,7 +837,7 @@ OMXNexusAudioDecoder::RetriveFrameFromHardware()
 
 
 void 
-OMXNexusAudioDecoder::InputEOSReceived(unsigned int InputFlags)
+OMXNexusAudioDecoder::InputEOSReceived(unsigned int InputFlags,unsigned long long NotUsedVariable)
 {
     LOG_EOS_DBG("%s %d: EOS Received On The Input Side",__FUNCTION__,__LINE__);
     StartEOSDetection=true;

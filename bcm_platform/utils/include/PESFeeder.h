@@ -17,12 +17,16 @@
 #include "LinkedList.h"
 #include "TuneableDefines.h"
 
-
 //#define DEBUG_PES_DATA  
 
 using namespace android;
 #define PES_HEADER_SIZE             128
+#ifdef GENERATE_DUMMY_EOS
 #define PES_EOS_BUFFER_SIZE         1024
+#else
+#define PES_EOS_BUFFER_SIZE         (3*184)
+#endif
+
 #define CODEC_CONFIG_BUFFER_SIZE    1024
 #define PES_BUFFER_SIZE(_BuffSz_)   (PES_HEADER_SIZE + _BuffSz_ + (4 * 1024) + CODEC_CONFIG_BUFFER_SIZE)
 
@@ -45,6 +49,7 @@ typedef struct _NEXUS_INPUT_CONTEXT_
     unsigned char   *PESData;
     size_t          SzPESBuffer;        // Total Size Of the PES Buffer We Allocated
     size_t          SzValidPESData;     // Size Of Valid Data In PES Buffer.
+    unsigned long long FramePTS;	// The PTS That we Just Sent To Hardware
     NEXUS_PlaypumpScatterGatherDescriptor NxDesc[1];  
     DONE_CONTEXT    DoneContext;
     LIST_ENTRY      ListEntry;
@@ -109,7 +114,7 @@ public :
 
     bool StartDecoder(StartDecoderIFace *pStartDecoIface);
     bool RegisterFeederEventsListener(FeederEventsListener *pInEvtLisnr);
-    bool NotifyEOS(unsigned int);
+    bool NotifyEOS(unsigned int,unsigned long long);
 
     bool Flush();
 
@@ -170,7 +175,7 @@ private :
     DumpData                        *DataBeforFlush;
     DumpData                        *DataAfterFlush;
 #endif 
-
+    unsigned long long				LastInputTimeStamp;
 private :
     
     size_t InitiatePESHeader(unsigned int PtsUs, 

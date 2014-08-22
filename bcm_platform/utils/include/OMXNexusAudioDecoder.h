@@ -62,7 +62,7 @@ public:
 
     // FeederEventsListener Interface Function To Get the Notification 
     // For EOS 
-    void InputEOSReceived(unsigned int );
+    void InputEOSReceived(unsigned int, unsigned long long);
 
     bool RegisterDecoderEventListener(DecoderEventsListener *);    
 
