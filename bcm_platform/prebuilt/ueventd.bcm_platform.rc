@@ -1,2 +1,9 @@
 # nx_ashmem driver needs to have the same permissions as ashmem
 /dev/nx_ashmem            0666   root       root
+
+# access for camera.
+/dev/video0               0660   root       root
+
+# huh??
+/dev/mem                  0770   root       root
+

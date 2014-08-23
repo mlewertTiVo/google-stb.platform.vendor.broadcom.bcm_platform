@@ -1,1 +1,74 @@
-setprop chrome.tv.hole_threshold 0
+# import other bcm_platform specific init.
+import /init.brcm_dhd.rc
+import /init.brcm_wl.rc
+import /init.brcm_bt.rc
+
+on early-init
+   # Needed by NxServer
+   mkdir /tmp 0775 root system
+
+   mkdir /storage/emulated/ 0555 root root
+   mkdir /storage/sdcard 0700 root root
+   mkdir /storage/usbdisk0 0700 root root
+
+   symlink /storage/sdcard /sdcard
+   symlink /storage/sdcard /mnt/sdcard
+   symlink /storage/sdcard /storage/sdcard0
+   symlink /storage/usbdisk0 /usbdisk0
+   symlink /storage/usbdisk0 /mnt/usbdisk0
+
+   export EXTERNAL_STORAGE /storage/sdcard
+   export EMULATED_STORAGE_SOURCE /storage/sdcard
+   export EMULATED_STORAGE_TARGET /storage/sdcard
+
+on fs
+   mount_all /fstab.bcm_platform
+   setprop ro.crypto.fuse_sdcard true
+   setprop chrome.tv.hole_threshold 0
+
+on post-fs
+   # NFS/USB boot - need to remount (again) in RW the rootfs.
+   mount rootfs rootfs / rw remount
+
+on post-fs-data
+   mkdir /data/misc/moca 0777 system system
+
+   chown system system /sys/class/android_usb/android0/f_mass_storage/lun/file
+   chmod 0660 /sys/class/android_usb/android0/f_mass_storage/lun/file
+   chown system system /sys/class/android_usb/android0/f_rndis/ethaddr
+   chmod 0660 /sys/class/android_usb/android0/f_rndis/ethaddr
+
+   # huh??
+   setprop system_init.startsurfaceflinger 0
+
+on property:hw.nexus.platforminit=on
+   class_start main
+
+service fuse_sdcard /system/bin/sdcard -u 1023 -g 1023 -d /mnt/media_rw/sdcard /storage/sdcard
+   class late_start
+   disabled
+
+service dhcpcd_gphy /system/bin/dhcpcd -dABKL
+   class main
+   group dhcp
+   disabled
+   oneshot
+
+service bcm-setup /system/bin/nexusinit
+   class core
+   user root
+   group system
+   critical
+   oneshot
+
+service disable-sleep /system/bin/logwrapper /system/bin/svc power stayon true
+   class boot_complete
+   user system
+   group system
+   oneshot
+
+# SWLINUX-2786, only for 7251 platform, and only need to be enabled when linux
+# version is 3.8 or earlier.
+service drop-cache /system/etc/cache.sh
+   class main
+   oneshot
