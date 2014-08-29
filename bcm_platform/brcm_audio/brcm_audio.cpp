@@ -190,13 +190,18 @@ static int bout_set_format(struct audio_stream *stream,
 static int bout_standby(struct audio_stream *stream)
 {
     struct brcm_stream_out *bout = (struct brcm_stream_out *)stream;
-    int ret;
+    int ret = 0;
 
     LOGV("%s: at %d, stream = 0x%X\n",
          __FUNCTION__, __LINE__, (uint32_t)stream);
 
     pthread_mutex_lock(&bout->lock);
-    ret = bout->ops.do_bout_standby(bout);
+
+    if (bout->started) {
+        ret = bout->ops.do_bout_stop(bout);
+        bout->started = false;
+    }
+
     pthread_mutex_unlock(&bout->lock);
 
     return ret;
@@ -221,6 +226,10 @@ static int bout_dump(const struct audio_stream *stream, int fd)
             bout->buffer_size,
             bout->started ? "true": "false",
             bout->suspended ? "true": "false");
+
+    if (bout->ops.do_bout_dump) {
+        bout->ops.do_bout_dump(bout, fd);
+    }
 
     return 0;
 }
@@ -304,7 +313,7 @@ static int bout_set_volume(struct audio_stream_out *aout,
                            float left, float right)
 {
     struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
-    int ret;
+    int ret = 0;
 
     LOGV("%s: at %d, stream = 0x%X, left = %f, right = %f\n",
          __FUNCTION__, __LINE__, (uint32_t)aout, left, right);
@@ -321,17 +330,22 @@ static ssize_t bout_write(struct audio_stream_out *aout,
 {
     struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
     size_t bytes_written;
+    int ret = 0;
 
     pthread_mutex_lock(&bout->lock);
-#if DUMMY_AUDIO
-    struct brcm_device *bdev = bout->bdev;
 
-    if (bdev->fd >= 0) {
-        bytes_written = write(bdev->fd, buffer, bytes);
+     if (!bout->started) {
+        ret = bout->ops.do_bout_start(bout);
+        if (ret) {
+            LOGE("%s: at %d, start failed\n",
+                 __FUNCTION__, __LINE__);
+            return ret;
+        }
+        bout->started = true;
     }
-    else
-#endif
-        bytes_written = bout->ops.do_bout_write(bout, buffer, bytes);
+
+    bytes_written = bout->ops.do_bout_write(bout, buffer, bytes);
+
     pthread_mutex_unlock(&bout->lock);
 
     LOGVV("%s: at %d, stream = 0x%X, bytes = %d, bytes_written = %d",
@@ -433,13 +447,18 @@ static int bin_set_format(struct audio_stream *stream,
 static int bin_standby(struct audio_stream *stream)
 {
     struct brcm_stream_in *bin = (struct brcm_stream_in *)stream;
-    int ret;
+    int ret = 0;
 
     LOGV("%s: at %d, stream = 0x%X\n",
          __FUNCTION__, __LINE__, (uint32_t)stream);
 
     pthread_mutex_lock(&bin->lock);
-    ret = bin->ops.do_bin_standby(bin);
+
+    if (bin->started) {
+        ret = bin->ops.do_bin_stop(bin);
+        bin->started = false;
+    }
+
     pthread_mutex_unlock(&bin->lock);
 
     return ret;
@@ -455,8 +474,6 @@ static int bin_dump(const struct audio_stream *stream, int fd)
             "\tchannel_mask = 0x%X\n"
             "\tformat = %d\n"
             "\tbuffer_size = %d\n"
-            "\tfragment = 0x%X\n"
-            "\tfd =%d\n"
             "\tstarted: %s\n"
             "\tsuspended: %s\n",
             bin->devices,
@@ -464,10 +481,12 @@ static int bin_dump(const struct audio_stream *stream, int fd)
             bin->config.channel_mask,
             bin->config.format,
             bin->buffer_size,
-            bin->fragment,
-            bin->fd,
             bin->started ? "true": "false",
             bin->suspended ? "true": "false");
+
+    if (bin->ops.do_bin_dump) {
+        bin->ops.do_bin_dump(bin, fd);
+    }
 
     return 0;
 }
@@ -552,17 +571,22 @@ static ssize_t bin_read(struct audio_stream_in *ain,
 {
     struct brcm_stream_in *bin = (struct brcm_stream_in *)ain;
     size_t bytes_read;
+    int ret = 0;
 
     pthread_mutex_lock(&bin->lock);
-#if DUMMY_AUDIO
-    struct brcm_device *bdev = bin->bdev;
 
-    if (bdev->fd >= 0) {
-        bytes_read = read(bdev->fd, buffer, bytes);
+    if (!bin->started) {
+        ret = bin->ops.do_bin_start(bin);
+        if (ret) {
+            LOGE("%s: at %d, start failed\n",
+                 __FUNCTION__, __LINE__);
+            return ret;
+        }
+        bin->started = true;
     }
-    else
-#endif
-        bytes_read = bin->ops.do_bin_read(bin, buffer, bytes);
+
+    bytes_read = bin->ops.do_bin_read(bin, buffer, bytes);
+
     pthread_mutex_unlock(&bin->lock);
 
     LOGVV("%s: at %d, stream = 0x%X, bytes = %d, bytes_read = %d\n",
@@ -766,7 +790,7 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     struct brcm_device *bdev = (struct brcm_device *)adev;
     struct brcm_stream_out *bout;
     brcm_devices_out_t bdevices;
-    int ret;
+    int ret = 0;
 
     UNUSED(handle);
     UNUSED(flags);
@@ -791,7 +815,8 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
 
     bout = (struct brcm_stream_out *)calloc(1, sizeof(struct brcm_stream_out));
     if (!bout) {
-        LOGE("%s: at %d, alloc failed\n", __FUNCTION__, __LINE__);
+        LOGE("%s: at %d, alloc failed\n",
+             __FUNCTION__, __LINE__);
         return -ENOMEM;
     }
 
@@ -825,6 +850,10 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
         ret = -EINVAL;
         goto err_alloc;
     }
+
+#if DUMMY_AUDIO_OUT
+    bout->ops = dummy_bout_ops;
+#endif
 
     bout->devices = devices;
     bout->config = *config;
@@ -909,7 +938,7 @@ static int bdev_open_input_stream(struct audio_hw_device *adev,
     struct brcm_device *bdev = (struct brcm_device *)adev;
     struct brcm_stream_in *bin;
     brcm_devices_in_t bdevices;
-    int ret;
+    int ret = 0;
 
     UNUSED(handle);
     UNUSED(flags);
@@ -935,7 +964,8 @@ static int bdev_open_input_stream(struct audio_hw_device *adev,
 
     bin = (struct brcm_stream_in *)calloc(1, sizeof(struct brcm_stream_in));
     if (!bin) {
-        LOGE("%s: at %d, alloc failed\n", __FUNCTION__, __LINE__);
+        LOGE("%s: at %d, alloc failed\n",
+             __FUNCTION__, __LINE__);
         return -ENOMEM;
     }
 
@@ -967,6 +997,10 @@ static int bdev_open_input_stream(struct audio_hw_device *adev,
         ret = -EINVAL;
         goto err_alloc;
     }
+
+#if DUMMY_AUDIO_IN
+    bin->ops = dummy_bin_ops;
+#endif
 
     bin->devices = devices;
     bin->config = *config;
@@ -1086,12 +1120,6 @@ static int bdev_close(hw_device_t *dev)
         }
     }
 
-#if DUMMY_AUDIO
-    if (bdev->fd >= 0) {
-        close(bdev->fd);
-    }
-#endif
-
     free(bdev);
 
     LOGI("Audio device closed, dev = 0x%X\n", (uint32_t)dev);
@@ -1102,7 +1130,7 @@ static int bdev_open(const hw_module_t *module, const char *name,
                      hw_device_t **dev)
 {
     struct brcm_device *bdev;
-    int ret;
+    int ret = 0;
 
     LOGV("%s: at %d\n", __FUNCTION__, __LINE__);
 
@@ -1114,7 +1142,8 @@ static int bdev_open(const hw_module_t *module, const char *name,
 
     bdev = (struct brcm_device *)calloc(1, sizeof(struct brcm_device));
     if (!bdev) {
-        LOGE("%s: at %d, alloc failed\n", __FUNCTION__, __LINE__);
+        LOGE("%s: at %d, alloc failed\n",
+             __FUNCTION__, __LINE__);
         return -ENOMEM;
     }
 
@@ -1140,14 +1169,6 @@ static int bdev_open(const hw_module_t *module, const char *name,
     bdev->adev.open_input_stream = bdev_open_input_stream;
     bdev->adev.close_input_stream = bdev_close_input_stream;
     bdev->adev.dump = bdev_dump;
-
-#if DUMMY_AUDIO
-    bdev->fd = open(DUMMY_AUDIO_OUT_DEVICE_NAME, O_RDWR);
-    if (bdev->fd < 0) {
-        free(bdev);
-        return -ENOSYS;
-    }
-#endif
 
     *dev = &bdev->adev.common;
 

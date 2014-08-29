@@ -78,75 +78,83 @@ const static uint32_t builtin_in_sample_rates[] = {
  * Operation Functions
  */
 
-static int builtin_bin_standby(struct brcm_stream_in *bin)
+static int builtin_bin_start(struct brcm_stream_in *bin)
 {
-    if (bin->started) {
-        bin->started = false;
+    int fd = bin->builtin.fd;
+    int fmt, channels, speed, fragment;
+    int ret = 0;
+
+    if (fd < 0) {
+        LOGE("%s: at %d, device not open\n",
+             __FUNCTION__, __LINE__);
+        return -ENOSYS;
     }
+
+    ret = ioctl(fd, SNDCTL_DSP_RESET, &fmt);
+    if (ret) {
+        LOGE("%s: at %d, device reset failed, ret = %d\n",
+             __FUNCTION__, __LINE__, ret);
+        return -ENOSYS;
+    }
+
+    fmt = (bin->config.format == AUDIO_FORMAT_PCM_16_BIT) ?
+        AFMT_S16_LE : AFMT_S8;
+    ret = ioctl(fd, SNDCTL_DSP_SETFMT, &fmt);
+    if (ret) {
+        LOGE("%s: at %d, set format failed, ret = %d\n",
+             __FUNCTION__, __LINE__, ret);
+        return -ENOSYS;
+    }
+
+    channels = (bin->config.channel_mask == AUDIO_CHANNEL_IN_STEREO) ?
+        1 : 0;
+    ret = ioctl(fd, SNDCTL_DSP_CHANNELS, &channels);
+    if (ret) {
+        LOGE("%s: at %d, set channels failed, ret = %d\n",
+             __FUNCTION__, __LINE__, ret);
+        return -ENOSYS;
+    }
+
+    speed = bin->config.sample_rate;
+    ret = ioctl(fd, SNDCTL_DSP_SPEED, &speed);
+    if (ret) {
+        LOGE("%s: at %d, set speed failed, ret = %d\n",
+             __FUNCTION__, __LINE__, ret);
+        return -ENOSYS;
+    }
+
+    fragment = bin->builtin.fragment;
+    ret = ioctl(fd, SNDCTL_DSP_SETFRAGMENT, &fragment);
+    if (ret) {
+        LOGE("%s: at %d, set fragment failed, ret = %d\n",
+             __FUNCTION__, __LINE__, ret);
+        return -ENOSYS;
+    }
+
+    return 0;
+}
+
+static int builtin_bin_stop(struct brcm_stream_in *bin)
+{
+    UNUSED(bin);
     return 0;
 }
 
 static int builtin_bin_read(struct brcm_stream_in *bin,
                             void *buffer, size_t bytes)
 {
+    int fd = bin->builtin.fd;
     int bytes_read = 0;
     int ret = 0;
 
-    if (bin->fd < 0) {
+    if (fd < 0) {
         LOGE("%s: at %d, device not open\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
 
-    if (!bin->started) {
-        int fmt, channels, speed, fragment;
-
-        ret = ioctl(bin->fd, SNDCTL_DSP_RESET, &fmt);
-        if (ret) {
-            LOGE("%s: at %d, device reset failed, ret = %d\n",
-                 __FUNCTION__, __LINE__, ret);
-            return -ENOSYS;
-        }
-
-        fmt = (bin->config.format == AUDIO_FORMAT_PCM_16_BIT) ?
-            AFMT_S16_LE : AFMT_S8;
-        ret = ioctl(bin->fd, SNDCTL_DSP_SETFMT, &fmt);
-        if (ret) {
-            LOGE("%s: at %d, set format failed, ret = %d\n",
-                 __FUNCTION__, __LINE__, ret);
-            return -ENOSYS;
-        }
-
-        channels = (bin->config.channel_mask == AUDIO_CHANNEL_IN_STEREO) ?
-            1 : 0;
-        ret = ioctl(bin->fd, SNDCTL_DSP_CHANNELS, &channels);
-        if (ret) {
-            LOGE("%s: at %d, set channels failed, ret = %d\n",
-                 __FUNCTION__, __LINE__, ret);
-            return -ENOSYS;
-        }
-
-        speed = bin->config.sample_rate;
-        ret = ioctl(bin->fd, SNDCTL_DSP_SPEED, &speed);
-        if (ret) {
-            LOGE("%s: at %d, set speed failed, ret = %d\n",
-                 __FUNCTION__, __LINE__, ret);
-            return -ENOSYS;
-        }
-
-        fragment = bin->fragment;
-        ret = ioctl(bin->fd, SNDCTL_DSP_SETFRAGMENT, &fragment);
-        if (ret) {
-            LOGE("%s: at %d, set fragment failed, ret = %d\n",
-                 __FUNCTION__, __LINE__, ret);
-            return -ENOSYS;
-        }
-
-        bin->started = true;
-    }
-
     while (bytes > 0) {
-        ret = read(bin->fd, (void *)((int)buffer + bytes_read), bytes);
+        ret = read(fd, (void *)((int)buffer + bytes_read), bytes);
         if (ret < 0) {
             if (errno != EAGAIN) {
                 LOGE("%s: at %d, device read failed, ret = %d\n",
@@ -162,7 +170,7 @@ static int builtin_bin_read(struct brcm_stream_in *bin,
         bytes_read += ret;
     }
 
-    /* Return error if no bytes written */
+    /* Return error if no bytes read */
     if (bytes_read == 0) {
         return ret;
     }
@@ -172,6 +180,7 @@ static int builtin_bin_read(struct brcm_stream_in *bin,
 static int builtin_bin_open(struct brcm_stream_in *bin)
 {
     struct audio_config *config = &bin->config;
+    int fd;
     int i;
 
     /* Check if config is supported */
@@ -196,32 +205,49 @@ static int builtin_bin_open(struct brcm_stream_in *bin)
         brcm_audio_input_buffer_size(config->sample_rate,
                                      config->format,
                                      popcount(config->channel_mask));
-    bin->fragment = BUILTIN_IN_DEFAULT_FRAGMENT;
 
     /* Open input device */
-    bin->fd = open(BUILTIN_IN_DEFAULT_DEVICE_NAME, O_RDWR);
-    if (bin->fd < 0) {
+    fd = open(BUILTIN_IN_DEFAULT_DEVICE_NAME, O_RDWR);
+    if (fd < 0) {
         LOGE("%s: at %d, device open failed\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
+
+    bin->builtin.fd = fd;
+    bin->builtin.fragment = BUILTIN_IN_DEFAULT_FRAGMENT;
 
     return 0;
 }
 
 static int builtin_bin_close(struct brcm_stream_in *bin)
 {
-    builtin_bin_standby(bin);
+    int fd = bin->builtin.fd;
 
-    if (bin->fd >= 0) {
-        close(bin->fd);
+    builtin_bin_stop(bin);
+
+    if (fd >= 0) {
+        close(fd);
     }
+    return 0;
+}
+
+static int builtin_bin_dump(struct brcm_stream_in *bin, int fd)
+{
+    dprintf(fd, "\nbuiltin_bin_dump:\n"
+            "\tfragment = %d\n"
+            "\tfd = %d\n",
+            bin->builtin.fragment,
+            bin->builtin.fd);
+
     return 0;
 }
 
 struct brcm_stream_in_ops builtin_bin_ops = {
     .do_bin_open = builtin_bin_open,
     .do_bin_close = builtin_bin_close,
-    .do_bin_standby = builtin_bin_standby,
-    .do_bin_read = builtin_bin_read
+    .do_bin_start = builtin_bin_start,
+    .do_bin_stop = builtin_bin_stop,
+    .do_bin_read = builtin_bin_read,
+    .do_bin_dump = builtin_bin_dump
 };

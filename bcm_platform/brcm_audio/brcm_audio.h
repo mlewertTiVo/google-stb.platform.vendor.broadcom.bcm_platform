@@ -106,8 +106,8 @@ extern "C" {
 #define UNUSED(x) (void)(x)
 #endif
 
-#define DUMMY_AUDIO 0
-#define DUMMY_AUDIO_DEVICE_NAME "/dev/null"
+#define DUMMY_AUDIO_OUT 0
+#define DUMMY_AUDIO_IN  1
 
 typedef enum {
     BRCM_DEVICE_OUT_NEXUS = 0,
@@ -129,22 +129,27 @@ struct brcm_device {
     audio_devices_t in_devices;
     bool mic_mute;
 
-#if DUMMY_AUDIO
-    int fd;
-#endif
-
     struct brcm_stream_out *bouts[BRCM_DEVICE_OUT_MAX];
     struct brcm_stream_in *bins[BRCM_DEVICE_IN_MAX];
 };
 
 struct brcm_stream_out_ops {
     int (*do_bout_open)(struct brcm_stream_out *bout);
+
     int (*do_bout_close)(struct brcm_stream_out *bout);
-    int (*do_bout_standby)(struct brcm_stream_out *bout);
+
+    int (*do_bout_start)(struct brcm_stream_out *bout);
+
+    int (*do_bout_stop)(struct brcm_stream_out *bout);
+
     int (*do_bout_write)(struct brcm_stream_out *bout,
                          const void *buffer, size_t bytes);
+
     int (*do_bout_set_volume)(struct brcm_stream_out *bout,
                               float left, float right);
+
+    /* optional */
+    int (*do_bout_dump)(struct brcm_stream_out *bout, int fd);
 };
 
 struct brcm_stream_out {
@@ -158,21 +163,40 @@ struct brcm_stream_out {
     bool started;
     bool suspended;
 
-    NexusIPCClientBase *ipc_client;
-    NexusClientContext *nexus_client;
-    NEXUS_SimpleAudioPlaybackHandle simple_playback;
-    NEXUS_SimpleAudioDecoderHandle  simple_decoder;
-    BKNI_EventHandle event;
+    union {
+        /* nexus specific */
+        struct {
+            NexusIPCClientBase *ipc_client;
+            NexusClientContext *nexus_client;
+            NEXUS_SimpleAudioPlaybackHandle simple_playback;
+            NEXUS_SimpleAudioDecoderHandle  simple_decoder;
+            BKNI_EventHandle event;
+        } nexus;
+#if DUMMY_AUDIO_OUT
+        /* dummy specific */
+        struct {
+            int fd;
+        } dummy;
+#endif
+    };
 
     struct brcm_device *bdev;
 };
 
 struct brcm_stream_in_ops {
     int (*do_bin_open)(struct brcm_stream_in *bin);
+
     int (*do_bin_close)(struct brcm_stream_in *bin);
-    int (*do_bin_standby)(struct brcm_stream_in *bin);
+
+    int (*do_bin_start)(struct brcm_stream_in *bin);
+
+    int (*do_bin_stop)(struct brcm_stream_in *bin);
+
     int (*do_bin_read)(struct brcm_stream_in *bin,
                        void *buffer, size_t bytes);
+
+    /* optional */
+    int (*do_bin_dump)(struct brcm_stream_in *bin, int fd);
 };
 
 struct brcm_stream_in {
@@ -186,17 +210,38 @@ struct brcm_stream_in {
     bool started;
     bool suspended;
 
-    int fragment;
-    int fd;
+    union {
+        /* builtin specific */
+        struct {
+            int fragment;
+            int fd;
+        } builtin;
+#if DUMMY_AUDIO_IN
+        /* dummy specific */
+        struct {
+            int fd;
+        } dummy;
+#endif
+    };
 
     struct brcm_device *bdev;
 };
 
-extern struct brcm_stream_out_ops nexus_bout_ops;
-extern struct brcm_stream_in_ops builtin_bin_ops;
 
 extern size_t brcm_audio_input_buffer_size(unsigned int sample_rate,
                                            audio_format_t format,
                                            unsigned int channel_count);
+
+extern struct brcm_stream_out_ops nexus_bout_ops;
+
+#if DUMMY_AUDIO_OUT
+extern struct brcm_stream_out_ops dummy_bout_ops;
+#endif
+
+extern struct brcm_stream_in_ops builtin_bin_ops;
+
+#if DUMMY_AUDIO_IN
+extern struct brcm_stream_in_ops dummy_bin_ops;
+#endif
 
 #endif // BRCM_AUDIO_H
