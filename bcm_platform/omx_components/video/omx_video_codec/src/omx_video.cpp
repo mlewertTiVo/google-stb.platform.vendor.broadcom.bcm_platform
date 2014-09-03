@@ -101,6 +101,8 @@ static const CODEC_TO_MIME_MAP CodecToMIME[] =
     {OMX_VIDEO_CodingAVC,               "video/avc"             },
     {OMX_VIDEO_CodingMJPEG,             "video/mjpeg"           },
     {OMX_VIDEO_CodingVP8,               "video/x-vnd.on2.vp8"   },
+    {OMX_VIDEO_CodingVP9,               "video/x-vnd.on2.vp9"   },
+    {OMX_VIDEO_CodingHEVC,              "video/hevc"            },
 #ifdef OMX_EXTEND_CODECS_SUPPORT
     {OMX_VIDEO_CodingVC1,               "video/wvc1"            },
     {OMX_VIDEO_CodingSPARK,             "video/spark"           },
@@ -127,6 +129,7 @@ static const OMX_TO_NEXUS_MAP OMXToNexusTable[] = {
     { OMX_VIDEO_CodingAVC,          NEXUS_VideoCodec_eH264},
     { OMX_VIDEO_CodingMJPEG,        NEXUS_VideoCodec_eMotionJpeg},
     { OMX_VIDEO_CodingVP8,          NEXUS_VideoCodec_eVp8},
+    { OMX_VIDEO_CodingVP9,          NEXUS_VideoCodec_eNone},
 #ifdef OMX_EXTEND_CODECS_SUPPORT
 	{ OMX_VIDEO_CodingVC1,          NEXUS_VideoCodec_eVc1},
     { OMX_VIDEO_CodingSPARK,        NEXUS_VideoCodec_eSpark},
@@ -241,6 +244,8 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     uint nIndex;
 
     pComp = (OMX_COMPONENTTYPE *) hComponent;
+
+    BKNI_Init();
 
     // Create private data
     pMyData = (BCM_OMX_CONTEXT *)BKNI_Malloc(sizeof(BCM_OMX_CONTEXT));
@@ -581,16 +586,16 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
             pMyData->pAndVidWindow=NULL;
         }
 
-        if(pMyData->pOMXNxDecoder)
-        {
-            delete pMyData->pOMXNxDecoder;
-            pMyData->pOMXNxDecoder=NULL;
-        }
-
         if(pMyData->pPESFeeder)
         {
             delete pMyData->pPESFeeder;
             pMyData->pPESFeeder = NULL;
+        }
+
+        if(pMyData->pOMXNxDecoder)
+        {
+            delete pMyData->pOMXNxDecoder;
+            pMyData->pOMXNxDecoder=NULL;
         }
 
         if(pMyData->pTstable)
