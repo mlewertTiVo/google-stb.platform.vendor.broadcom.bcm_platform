@@ -914,7 +914,7 @@ bool ContainersExtractor::override(const char *mime, DataSource *source) {
         // MPEG audio sniffing is pretty unreliable so we'll run
         // through our containers anyway and should still use
         // stagefright's extractor if it really is MPEG audio
-        !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) ||
+//        !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) ||
         !strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_AVI) ||
         !strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_WVM)) {
         return true;

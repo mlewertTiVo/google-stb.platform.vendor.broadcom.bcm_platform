@@ -13,7 +13,7 @@ LOCAL_SRC_FILES := $(LOCAL_MODULE)
 include $(BUILD_PREBUILT)
 
 
-ifneq (,$(filter 43242a1 43236b 43569a0 ,$(BROADCOM_WIFI_CHIPSET)))
+ifneq (,$(filter 43242a1 43236b 43569a0 43570a0 ,$(BROADCOM_WIFI_CHIPSET)))
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := firmware/fw.bin.trx
@@ -31,6 +31,23 @@ LOCAL_MODULE_PATH := $(TARGET_OUT)/vendor/broadcom/dhd
 LOCAL_SRC_FILES := $(LOCAL_MODULE)
 include $(BUILD_PREBUILT)
 
+ifneq ($(findstring $(BROADCOM_WIFI_CHIPSET), 43570a0),)
+include $(CLEAR_VARS)
+LOCAL_MODULE := wl
+LOCAL_MODULE_TAGS := optional debug
+LOCAL_MODULE_CLASS := ETC
+LOCAL_MODULE_PATH := $(TARGET_OUT)/bin
+LOCAL_SRC_FILES := tools/wl
+include $(BUILD_PREBUILT)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := dhd
+LOCAL_MODULE_TAGS := optional debug
+LOCAL_MODULE_CLASS := ETC
+LOCAL_MODULE_PATH := $(TARGET_OUT)/bin
+LOCAL_SRC_FILES := tools/dhd
+include $(BUILD_PREBUILT)
+endif
 endif
 
 
@@ -48,7 +65,8 @@ endif
 
 ########################
 include $(CLEAR_VARS)
-include vendor/broadcom/bcm_platform/brcm_dhd/bcmdl/Android.mk
+# bcmdl is not built on L until libusb-compat is available
+#include vendor/broadcom/bcm_platform/brcm_dhd/bcmdl/Android.mk
 
 
 

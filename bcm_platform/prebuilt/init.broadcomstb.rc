@@ -2,6 +2,7 @@
 import /init.brcm_dhd.rc
 import /init.brcm_wl.rc
 import /init.brcm_bt.rc
+import /init.brcm_pfd.rc
 
 on early-init
    # Needed by NxServer

@@ -1,3 +1,5 @@
+
+ifneq ($(BROADCOM_ANDROID_VERSION),l)
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
@@ -17,4 +19,5 @@ LOCAL_CFLAGS := -DBCMTRXV2
 
 LOCAL_PRELINK_MODULE := false
 include $(BUILD_EXECUTABLE)
+endif
 
