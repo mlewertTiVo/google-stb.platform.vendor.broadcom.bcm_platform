@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2013 Broadcom Corporation
+ *    (c)2011-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -53,44 +53,68 @@ public:
     virtual status_t platformInit();
     virtual void platformUninit();
     virtual bool isPlatformInitialised();
-    virtual bool getHdmiStatus(NEXUS_HdmiOutputStatus *pStatus);
-    virtual status_t sendCecMessage(uint8_t destAddr, size_t length, uint8_t *pBuffer);
+    virtual bool getCecPhysicalAddress(b_cecPhysicalAddress *pCecPhyAddr);
+    virtual status_t sendCecMessage(uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pBuffer);
     virtual bool setPowerState(b_powerState pmState);
     virtual bool getPowerStatus(uint8_t *pPowerStatus);
+    virtual bool getCecStatus(b_cecStatus *pCecStatus);
+    virtual bool setLogicalAddress(uint8_t addr);
+    virtual status_t setEventListener(const sp<INexusHdmiCecMessageEventListener> &listener);
 
 protected:
+    struct EventListener;
     struct CecRxMessageHandler;
     struct CecTxMessageHandler;
 
     uint32_t                            cecId;
     NEXUS_CecHandle                     cecHandle;
+    uint8_t                             mLogicalAddress;
 
     // Protected constructor prevents a client from creating an instance of this
     // class directly, but allows a sub-class to call it through inheritence.
-    CecServiceManager(uint32_t cecId = 0) : cecId(cecId), cecHandle(NULL), mCecRxMessageHandler(NULL), mCecTxMessageHandler(NULL) {
+    CecServiceManager(uint32_t cecId = 0) :
+        cecId(cecId), cecHandle(NULL), mLogicalAddress(0xFF), mCecRxMessageHandler(NULL), mCecTxMessageHandler(NULL) {
         ALOGV("%s: called for CEC%d", __PRETTY_FUNCTION__, cecId);
     }
 
     static sp<CecServiceManager> instantiate(uint32_t cecId) { return new CecServiceManager(cecId); }
 
 private:
-    uint8_t                             cecPowerStatus;
-    Mutex                               mCecDeviceReadyLock;
-    Condition                           mCecDeviceReadyCondition;
-    Mutex                               mCecGetPowerStatusLock;
-    Condition                           mCecGetPowerStatusCondition;
-    sp<ALooper>                         mCecRxMessageLooper;
-    sp<CecRxMessageHandler>             mCecRxMessageHandler;
-    sp<ALooper>                         mCecTxMessageLooper;
-    sp<CecTxMessageHandler>             mCecTxMessageHandler;
+    uint8_t                                 mCecPowerStatus;
+    Mutex                                   mCecDeviceReadyLock;
+    Condition                               mCecDeviceReadyCondition;
+    Mutex                                   mCecMessageTransmittedLock;
+    Condition                               mCecMessageTransmittedCondition;
+    Mutex                                   mCecGetPowerStatusLock;
+    Condition                               mCecGetPowerStatusCondition;
+    sp<ALooper>                             mCecRxMessageLooper;
+    sp<CecRxMessageHandler>                 mCecRxMessageHandler;
+    sp<ALooper>                             mCecTxMessageLooper;
+    sp<CecTxMessageHandler>                 mCecTxMessageHandler;
+    sp<INexusHdmiCecMessageEventListener>   mEventListener;
 
     static void deviceReady_callback(void *context, int param);
     static void msgReceived_callback(void *context, int param);
     static void msgTransmitted_callback(void *context, int param);
 
+    /* Helper functions... */
+    int getDeviceType();
+
     /* Disallow copy constructor and copy operator... */
     CecServiceManager(const CecServiceManager &);
     CecServiceManager &operator=(const CecServiceManager &);
+};
+
+struct NexusService::CecServiceManager::EventListener : public BnNexusHdmiCecMessageEventListener
+{
+public:
+    EventListener(const sp<NexusService::CecServiceManager> sm) : mCecServiceManager(sm) {
+        ALOGV("%s: called", __PRETTY_FUNCTION__);
+    }
+    virtual status_t onHdmiCecMessageReceived(int32_t portId, INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message);
+
+private:
+    sp<NexusService::CecServiceManager> mCecServiceManager;
 };
 
 struct NexusService::CecServiceManager::CecRxMessageHandler : public AHandler
@@ -129,7 +153,8 @@ private:
     {
         uint8_t opCodeCommand;
         uint8_t opCodeResponse;
-        void (NexusService::CecServiceManager::CecRxMessageHandler::*getParamFunc[numMaxParameters])(unsigned inLength, uint8_t *content, unsigned *outLength);
+        void (NexusService::CecServiceManager::CecRxMessageHandler::*getParamFunc[numMaxParameters])(unsigned inLength,
+                uint8_t *content, unsigned *outLength);
     };
 
     static const struct opCodeCommandList opCodeList[];

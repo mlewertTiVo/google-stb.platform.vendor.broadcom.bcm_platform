@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2012 Broadcom Corporation
+ *    (c)2010-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -82,7 +82,10 @@
    entered the desired standby mode. */
 #define NXCLIENT_PM_TIMEOUT_COUNT (20)
 
+#ifdef UINT32_C
+#undef UINT32_C
 #define UINT32_C(x)  (x ## U)
+#endif
 
 NexusNxClient::StandbyMonitorThread::~StandbyMonitorThread()
 {

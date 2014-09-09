@@ -76,7 +76,7 @@
 #include "nexus_audio_playback.h"
 #include "nexus_video_decoder_extra.h"
 #include "nexus_base_mmap.h"
-#if NEXUS_NUM_HDMI_INPUTS
+#if NEXUS_HAS_HDMI_INPUT
 #include "nexus_hdmi_input.h"
 #endif
 
@@ -87,7 +87,10 @@
 #include "nxclient_local.h"
 #endif
 
+#ifdef UINT32_C
+#undef UINT32_C
 #define UINT32_C(x)  (x ## U)
+#endif
 
 typedef struct NexusClientContext {
     BDBG_OBJECT(NexusClientContext)
@@ -112,6 +115,9 @@ typedef struct NexusServerContext {
 #if ANDROID_SUPPORTS_EMBEDDED_NXSERVER
     BKNI_MutexHandle lock;
     nxserver_t nxserver;
+#endif
+#if NEXUS_HAS_HDMI_OUTPUT
+    sp<INexusHdmiHotplugEventListener> mHdmiHotplugEventListener[NEXUS_NUM_HDMI_OUTPUTS];
 #endif
     struct StandbyMonitorThread : public android::Thread {
 
@@ -196,6 +202,50 @@ bool NexusServerContext::StandbyMonitorThread::threadLoop()
     return false;
 }
 
+void NexusNxService::hotplugCallback(void *context __unused, int param __unused)
+{
+#if NEXUS_HAS_HDMI_OUTPUT
+    NexusNxService *pNexusNxService = reinterpret_cast<NexusNxService *>(context);
+
+    LOGV("%s: Received HDMI%d hotplug event", __func__, param);
+    if (pNexusNxService->server->mHdmiHotplugEventListener[param] != NULL) {
+        int rc;
+        NxClient_DisplayStatus status;
+        rc = NxClient_GetDisplayStatus(&status);
+        if (!rc) {
+            LOGV("%s: Firing off HDMI%d hotplug %s event...", __FUNCTION__, param, status.hdmi.status.connected ? "connected" : "disconnected");
+            pNexusNxService->server->mHdmiHotplugEventListener[param]->onHdmiHotplugEventReceived(param, status.hdmi.status.connected);
+        }
+    }
+#endif
+}
+
+int NexusNxService::platformInitHdmiOutputs()
+{
+    int rc = 0;
+#if NEXUS_HAS_HDMI_OUTPUT
+
+    NxClient_CallbackThreadSettings settings;
+
+    NxClient_GetDefaultCallbackThreadSettings(&settings);
+    settings.hdmiOutputHotplug.callback = hotplugCallback;
+    settings.hdmiOutputHotplug.context = this;
+    settings.hdmiOutputHotplug.param = 0;
+    rc = NxClient_StartCallbackThread(&settings);
+    if (rc) {
+        LOGE("%s: Could not initialise HDMI outputs!!!", __FUNCTION__);
+    }
+#endif
+    return rc;
+}
+
+void NexusNxService::platformUninitHdmiOutputs()
+{
+#if NEXUS_HAS_HDMI_OUTPUT
+    NxClient_StopCallbackThread();
+#endif
+}
+
 void NexusNxService::platformInit()
 {
     NEXUS_Error rc;
@@ -260,10 +310,12 @@ void NexusNxService::platformInit()
         }
     }
 #endif
+    platformInitHdmiOutputs();
 }
 
 void NexusNxService::platformUninit()
 {
+    platformUninitHdmiOutputs();
 #if NEXUS_HAS_CEC
     for (unsigned i = 0; i < NEXUS_NUM_CEC; i++) {
         if (mCecServiceManager[i] != NULL) {
@@ -618,7 +670,7 @@ void NexusNxService::setClientComposition(NexusClientContext * client, NEXUS_Sur
     return;
 }
 
-void NexusNxService::getVideoWindowSettings(NexusClientContext * client, uint32_t window_id, b_video_window_settings *settings)
+void NexusNxService::getVideoWindowSettings(NexusClientContext * client, uint32_t window_id __unused, b_video_window_settings *settings)
 {
     NEXUS_SurfaceComposition surfaceComposition;
 
@@ -633,7 +685,7 @@ void NexusNxService::getVideoWindowSettings(NexusClientContext * client, uint32_
     return;
 }
 
-void NexusNxService::setVideoWindowSettings(NexusClientContext * client, uint32_t window_id, b_video_window_settings *settings)
+void NexusNxService::setVideoWindowSettings(NexusClientContext * client, uint32_t window_id __unused, b_video_window_settings *settings)
 {
     NEXUS_SurfaceComposition surfaceComposition;
 
@@ -759,3 +811,22 @@ bool NexusNxService::disconnectClientResources(NexusClientContext * client)
     }
     return ok;
 }
+
+status_t NexusNxService::setHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener)
+{
+    status_t status = OK;
+    ALOGV("%s: HDMI%d listener=%p", __FUNCTION__, portId, listener.get());
+
+#if NEXUS_HAS_HDMI_OUTPUT
+    if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
+        server->mHdmiHotplugEventListener[portId] = listener;
+    }
+    else
+#endif
+    {
+        LOGE("%s: No HDMI%d output on this device!!!", __FUNCTION__, portId);
+        status = INVALID_OPERATION;
+    }
+    return status;
+}
+

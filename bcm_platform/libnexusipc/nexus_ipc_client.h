@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2013 Broadcom Corporation
+ *    (c)2011-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -36,8 +36,6 @@
  * ANY LIMITED REMEDY.
  *
  * $brcm_Workfile: nexus_ipc_client.h $
- * $brcm_Revision: 16 $
- * $brcm_Date: 1/14/13 3:58p $
  * 
  * Module Description:
  * This file contains the class that implements the binder IPC communication
@@ -47,71 +45,6 @@
  * On the client side, the definition of these API functions simply encapsulate
  * the API into a command + param format and sends the command over binder to
  * the server side for actual execution.
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/libnexusipc/nexus_ipc_client.h $
- * 
- * 16   1/14/13 3:58p hvasudev
- * SWANDROID-298: In LXC mode, we need to make sure the BcmAppMgr is
- *  started and ready to accept socket calls from the client. The timer
- *  makes sure it waits for the signal from the app and only then kicks
- *  off the connect call
- * 
- * 15   12/14/12 2:28p kagrawal
- * SWANDROID-277: Wrapper IPC APIs for
- *  NEXUS_SimpleXXX_Acquire()/_Release()
- * 
- * 14   10/3/12 9:51a hvasudev
- * SWANDROID-180: Fix for audio getting muted when we switch back in
- *  Android in SBS mode (via the desktop icon instead of the AngryBirds
- *  icon)
- * 
- * 13   9/13/12 11:31a kagrawal
- * SWANDROID-104: Added support for dynamic display resolution change,
- *  1080p and screen resizing
- * 
- * 12   9/4/12 6:53p nitinb
- * SWANDROID-197:Implement volume control functionality on nexus server
- *  side
- * 
- * 11   8/13/12 12:48p hvasudev
- * SWANDROID-180: Support to connect from native code to BcmAppMgr over
- *  sockets
- * 
- * 10   7/30/12 4:06p kagrawal
- * SWANDROID-104: Support for composite output
- * 
- * 9   7/11/12 5:19p hvasudev
- * SWANDROID-137: Launching AngryBirds via the 'am' command (when the
- *  Trellis icon is selected)
- * 
- * 8   7/6/12 9:11p ajitabhp
- * SWANDROID-128: FIXED Graphics Window Resource Leakage in SBS and NSC
- *  mode.
- * 
- * 7   6/24/12 10:31p alexpan
- * SWANDROID-108: Fix build errors for platforms without hdmi-in after
- *  changes for SimpleDecoder
- * 
- * 6   6/20/12 11:09a kagrawal
- * SWANDROID-108: Add support for HDMI-Input with SimpleDecoder and w/ or
- *  w/o nexus client server mode
- * 
- * 5   5/28/12 5:02p kagrawal
- * SWANDROID-96: SBS with Trellis BAM Lite
- * 
- * 4   5/7/12 3:44p ajitabhp
- * SWANDROID-96: Initial checkin for android side by side implementation.
- * 
- * 3   4/13/12 1:15p ajitabhp
- * SWANDROID-65: Memory Owner ship problem resolved in multi-process mode.
- * 
- * 2   4/3/12 4:59p kagrawal
- * SWANDROID-56: Added support for VideoWindow configuration in NSC mode
- * 
- * 1   2/24/12 1:56p kagrawal
- * SWANDROID-12: Initial version of ipc over binder
  * 
  *****************************************************************************/
 #ifndef _NEXUS_IPC_CLIENT_H_
@@ -146,6 +79,9 @@ public:
     virtual bool disconnectClientResources(NexusClientContext * client);
 
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/
+    virtual status_t setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener);
+    virtual status_t setHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener);
+
     virtual void getPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings);
     virtual void setPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings);
     virtual void getGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings);
@@ -159,8 +95,10 @@ public:
     virtual b_powerState getPowerState();
     virtual bool setCecPowerState(uint32_t cecId, b_powerState pmState);
     virtual bool getCecPowerStatus(uint32_t cecId, uint8_t *pPowerStatus);
-    virtual bool sendCecMessage(uint32_t cecId, uint8_t destAddr, size_t length, uint8_t *pMessage);
+    virtual bool getCecStatus(uint32_t cecId, b_cecStatus *pCecStatus);
+    virtual bool sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage);
     virtual bool isCecEnabled(uint32_t cecId);
+    virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr);
 
     /* Trellis BPM server expects clients to acquire SimpleVideoDecoder, SimpleAudioDecoder and 
        SimpleAudioPlayback through it. An attempt to directly acquire them may fail. Hence, 

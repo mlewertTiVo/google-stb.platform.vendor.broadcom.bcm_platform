@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2012 Broadcom Corporation
+ *    (c)2011-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -36,41 +36,12 @@
  * ANY LIMITED REMEDY.
  *
  * $brcm_Workfile: nexus_interface.h $
- * $brcm_Revision: 6 $
- * $brcm_Date: 12/3/12 3:24p $
- * 
- * Module Description:
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/libnexusservice/nexus_interface.h $
- * 
- * 6   12/3/12 3:24p saranya
- * SWANDROID-266: Removed Non-IPC Standalone Mode
- * 
- * 5   6/20/12 11:09a kagrawal
- * SWANDROID-108: Add support for HDMI-Input with SimpleDecoder and w/ or
- *  w/o nexus client server mode
- * 
- * 4   6/5/12 2:37p kagrawal
- * SWANDROID-108:Added support to use simple decoder APIs
- * 
- * 3   3/15/12 4:52p mzhuang
- * SW7425-2633: audio mixer errors after audio flinger restart
- * 
- * 2   2/24/12 4:09p kagrawal
- * SWANDROID-12: Dynamic client creation using IPC over binder
- * 
- * 3   9/19/11 5:23p fzhang
- * SW7425-1307: Add libaudio support on 7425 Honeycomb
- * 
- * 2   8/25/11 7:30p franktcc
- * SW7420-2020: Enable PIP/Dual Decode
  * 
  *****************************************************************************/
 #ifndef _NEXUS_INTERFACE_H_
 #define _NEXUS_INTERFACE_H_
 
+#include <binder/IBinder.h>
 #include <binder/IInterface.h>
 #include <binder/Parcel.h>
 #include <utils/RefBase.h>
@@ -105,7 +76,9 @@
 
 
 typedef enum {
-        API_OVER_BINDER
+        API_OVER_BINDER,
+        SET_HDMI_CEC_MESSAGE_EVENT_LISTENER,
+        SET_HDMI_HOTPLUG_EVENT_LISTENER
 } NEXUS_TRANSACT_ID;
 
 class INexusClient: public android::IInterface {
@@ -115,7 +88,8 @@ public:
         virtual void NexusHandles(NEXUS_TRANSACT_ID eTransactId, int32_t *pHandle) = 0;
 
         typedef struct api_data api_data; 
-        virtual void api_over_binder(api_data *cmd) {return;};  
+        virtual void api_over_binder(api_data *cmd) = 0;
+        virtual android::IBinder* get_remote() = 0;
 };
 
 #endif

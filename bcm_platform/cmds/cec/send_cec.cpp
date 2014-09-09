@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2013 Broadcom Corporation
+ *    (c)2010-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -47,7 +47,7 @@ using namespace android;
 
 #define MAX_MESSAGE_LEN 16
 
-/* Usage: send_cec [-d destination address] -m "message"
+/* Usage: send_cec [-s source address] [-d destination address] -m "message"
    e.g. send_cec -m "0x36"                  [put TV in to standby on CEC0]
         send_cec -m "0x04"                  [bring TV out of standby on CEC0]
         send_cec -d 0xF -m "0x82 0x30 0x00" [set TV HDMI input to CEC0]
@@ -56,14 +56,14 @@ using namespace android;
 
 void usage(char *cmd)
 {
-    fprintf(stderr, "Usage: %s [-i cec id] [-d destination address] -m \"message\"\n"
+    fprintf(stderr, "Usage: %s [-i cec id] [-s source address] [-d destination address] -m \"message\"\n"
                     "e.g. %s -m \"0x36\"                  [put TV in to standby on CEC0]\n"
                     "     %s -m \"0x04\"                  [bring TV out of standby on CEC0]\n"
                     "     %s -d 0xF -m \"0x82 0x30 0x00\" [set TV HDMI input to STB]\n"
                     "     %s -i 1 -m \"0x36\"             [put TV in to standby on CEC1]\n\n", cmd, cmd, cmd, cmd, cmd);
 }
 
-int parseArgs(int argc, char *argv[], uint8_t *pCecId, uint8_t *pDestAddr, size_t *pLength, uint8_t *pMessage)
+int parseArgs(int argc, char *argv[], uint8_t *pCecId, uint8_t *pSrcAddr, uint8_t *pDestAddr, size_t *pLength, uint8_t *pMessage)
 {
    int opt;
    char *endptr;
@@ -80,11 +80,33 @@ int parseArgs(int argc, char *argv[], uint8_t *pCecId, uint8_t *pDestAddr, size_
        return -1;
    }
 
+   *pSrcAddr  = 4;  // Default address is that of STB
    *pDestAddr = 0;  // Default address is that of TV
    *pCecId    = 0;  // Default to CEC0
 
-   while ((opt = getopt(argc, argv, "d:i:m:h")) != -1) {
+   while ((opt = getopt(argc, argv, "s:d:i:m:h")) != -1) {
        switch (opt) {
+       case 's':
+           if (optarg != NULL) {
+               tmpValue = strtoul(optarg, &endptr, 0);
+               if (*endptr == '\0') {
+                   if (tmpValue > 0xf) {
+                       fprintf(stderr, "ERROR: source address 0x%08lx out of range (0x0 to 0xf)!\n", tmpValue);
+                       return -1;
+                   }
+                   else {
+                       *pSrcAddr = *(uint8_t *)&tmpValue;
+                   }
+               }
+               else {
+                    fprintf(stderr, "ERROR: Invalid source address (must be between 0x0 and 0xF)!\n");
+                    return -1;
+               }
+           }
+           else {
+                fprintf(stderr, "ERROR: No source address specified!\n");
+           }
+           break;
        case 'd':
            if (optarg != NULL) {
                tmpValue = strtoul(optarg, &endptr, 0);
@@ -169,12 +191,12 @@ int parseArgs(int argc, char *argv[], uint8_t *pCecId, uint8_t *pDestAddr, size_
    return 0;
 }
 
-bool sendCecMessage(uint8_t cecId, uint8_t destAddr, size_t length, uint8_t *pMessage)
+bool sendCecMessage(uint8_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage)
 {
     bool success;
     NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("send_cec");
 
-    success = pIpcClient->sendCecMessage(cecId, destAddr, length, pMessage);
+    success = pIpcClient->sendCecMessage(cecId, srcAddr, destAddr, length, pMessage);
     delete pIpcClient;
 
     return success;
@@ -185,6 +207,7 @@ int main(int argc, char** argv)
     char value[PROPERTY_VALUE_MAX];
     uint8_t message[MAX_MESSAGE_LEN];
     uint8_t cecId;
+    uint8_t srcAddr;
     uint8_t destAddr;
     size_t length;
     int enableCec;
@@ -193,7 +216,7 @@ int main(int argc, char** argv)
     enableCec = atoi(value);
 
     if (enableCec) {
-        if (parseArgs(argc, argv, &cecId, &destAddr, &length, message) != 0) {
+        if (parseArgs(argc, argv, &cecId, &srcAddr, &destAddr, &length, message) != 0) {
             return -1;
         }
         else {
@@ -201,7 +224,7 @@ int main(int argc, char** argv)
                 fprintf(stderr, "ERROR: Invalid message length %d!\n", length);
                 return -1;
             }
-            if (sendCecMessage(cecId, destAddr, length, message) == false) {
+            if (sendCecMessage(cecId, srcAddr, destAddr, length, message) == false) {
                 fprintf(stderr, "ERROR: Cannot send CEC%d message with optcode 0x%02X!\n", cecId, message[0]);
                 return -1;
             }

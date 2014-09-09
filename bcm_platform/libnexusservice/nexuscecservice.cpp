@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2013 Broadcom Corporation
+ *    (c)2010-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -97,50 +97,60 @@ const struct NexusService::CecServiceManager::CecRxMessageHandler::opCodeCommand
 /******************************************************************************
   CecRxMessageHandler methods
 ******************************************************************************/
-void NexusService::CecServiceManager::CecRxMessageHandler::getPhysicalAddress(unsigned inLength, uint8_t *content, unsigned *outLength )
+void NexusService::CecServiceManager::CecRxMessageHandler::getPhysicalAddress(unsigned inLength __unused, uint8_t *content, unsigned *outLength )
 {
-    NEXUS_CecStatus status;
+    b_cecStatus status;
 
-    NEXUS_Cec_GetStatus( mCecServiceManager->cecHandle, &status );
-
-    content[0] = status.physicalAddress[0];
-    content[1] = status.physicalAddress[1];
-    *outLength = 2;
-}
-
-void NexusService::CecServiceManager::CecRxMessageHandler::getDeviceType(unsigned inLength, uint8_t *content, unsigned *outLength )
-{
-    NEXUS_CecStatus status;
-
-    NEXUS_Cec_GetStatus( mCecServiceManager->cecHandle, &status );
-
-    switch (status.deviceType)
-    {
-        case NEXUS_CecDeviceType_eTv: content[0] = 0; break;
-        case NEXUS_CecDeviceType_eRecordingDevice: content[0] = 1; break;
-        case NEXUS_CecDeviceType_eReserved: content[0] = 2; break;
-        case NEXUS_CecDeviceType_eTuner: content[0] = 3; break;
-        case NEXUS_CecDeviceType_ePlaybackDevice: content[0] = 4; break;
-        case NEXUS_CecDeviceType_eAudioSystem: content[0] = 5; break;
-        case NEXUS_CecDeviceType_ePureCecSwitch: content[0] = 6; break;
-        case NEXUS_CecDeviceType_eVideoProcessor: content[0] = 7; break;
-        default: BDBG_WRN(("Unknown Device Type!!!")); break;
+    if (mCecServiceManager->getCecStatus(&status) == true) {
+        content[0] = status.physicalAddress[0];
+        content[1] = status.physicalAddress[1];
+        *outLength = 2;
     }
-    *outLength = 1;
+    else {
+        ALOGE("%s: Could not get CEC%d physical address!!!", __PRETTY_FUNCTION__, cecId);
+    }
 }
 
-void NexusService::CecServiceManager::CecRxMessageHandler::getCecVersion(unsigned inLength, uint8_t *content, unsigned *outLength )
+void NexusService::CecServiceManager::CecRxMessageHandler::getDeviceType(unsigned inLength __unused, uint8_t *content, unsigned *outLength )
 {
-    NEXUS_CecStatus status;
+    b_cecStatus status;
 
-    NEXUS_Cec_GetStatus( mCecServiceManager->cecHandle, &status );
+    if (mCecServiceManager->getCecStatus(&status) == true) {
 
-    BDBG_WRN(("CEC Version Requested -> Version: %#x",status.cecVersion));
-    content[0] = status.cecVersion;
-    *outLength = 1;
+        switch (status.deviceType)
+        {
+            case NEXUS_CecDeviceType_eTv: content[0] = 0; break;
+            case NEXUS_CecDeviceType_eRecordingDevice: content[0] = 1; break;
+            case NEXUS_CecDeviceType_eReserved: content[0] = 2; break;
+            case NEXUS_CecDeviceType_eTuner: content[0] = 3; break;
+            case NEXUS_CecDeviceType_ePlaybackDevice: content[0] = 4; break;
+            case NEXUS_CecDeviceType_eAudioSystem: content[0] = 5; break;
+            case NEXUS_CecDeviceType_ePureCecSwitch: content[0] = 6; break;
+            case NEXUS_CecDeviceType_eVideoProcessor: content[0] = 7; break;
+            default: BDBG_WRN(("Unknown Device Type!!!")); break;
+        }
+        *outLength = 1;
+    }
+    else {
+        ALOGE("%s: Could not get CEC%d device type!!!", __PRETTY_FUNCTION__, cecId);
+    }
 }
 
-void NexusService::CecServiceManager::CecRxMessageHandler::getOsdName (unsigned inLength, uint8_t *content, unsigned *outLength )
+void NexusService::CecServiceManager::CecRxMessageHandler::getCecVersion(unsigned inLength __unused, uint8_t *content, unsigned *outLength )
+{
+    b_cecStatus status;
+
+    if (mCecServiceManager->getCecStatus(&status) == true) {
+        BDBG_WRN(("CEC Version Requested -> Version: %#x", status.cecVersion));
+        content[0] = status.cecVersion;
+        *outLength = 1;
+    }
+    else {
+        ALOGE("%s: Could not get CEC%d version!!!", __PRETTY_FUNCTION__, cecId);
+    }
+}
+
+void NexusService::CecServiceManager::CecRxMessageHandler::getOsdName (unsigned inLength __unused, uint8_t *content, unsigned *outLength )
 {
 #define OSDNAME_SIZE 7 /* Size no larger than 15 */
     char osdName[]= "BRCMSTB";
@@ -152,7 +162,7 @@ void NexusService::CecServiceManager::CecRxMessageHandler::getOsdName (unsigned 
     *outLength = OSDNAME_SIZE;
 }
 
-void NexusService::CecServiceManager::CecRxMessageHandler::getDeviceVendorID(unsigned inLength, uint8_t *content, unsigned *outLength )
+void NexusService::CecServiceManager::CecRxMessageHandler::getDeviceVendorID(unsigned inLength __unused, uint8_t *content, unsigned *outLength )
 {
 #define VendorID_SIZE 4 /* Size no larger than 15 */
     char vendorID[]= "BRCM";
@@ -164,9 +174,9 @@ void NexusService::CecServiceManager::CecRxMessageHandler::getDeviceVendorID(uns
     *outLength = VendorID_SIZE;
 }
 
-void NexusService::CecServiceManager::CecRxMessageHandler::enterStandby (unsigned inLength, uint8_t *content, unsigned *outLength )
+void NexusService::CecServiceManager::CecRxMessageHandler::enterStandby (unsigned inLength __unused, uint8_t *content __unused, unsigned *outLength __unused )
 {
-    LOGD("%s: TV STANDBY RECEIVED: STB WILL NOW ENTER S3 STANDBY...", __FUNCTION__);
+    LOGD("%s: TV STANDBY RECEIVED: STB WILL NOW ENTER STANDBY...", __FUNCTION__);
     
     system("/system/bin/input keyevent POWER");
 }
@@ -176,7 +186,7 @@ void NexusService::CecServiceManager::CecRxMessageHandler::reportPowerStatus (un
     if (inLength > 1) {
         // Signal reception of power status to other threads...
         mCecServiceManager->mCecGetPowerStatusLock.lock();
-        mCecServiceManager->cecPowerStatus = *content;
+        mCecServiceManager->mCecPowerStatus = *content;
         mCecServiceManager->mCecGetPowerStatusCondition.broadcast();
         mCecServiceManager->mCecGetPowerStatusLock.unlock();
     }
@@ -237,7 +247,7 @@ void NexusService::CecServiceManager::CecRxMessageHandler::responseLookUp( const
 
                 LOGV("%s: Transmitting CEC%d response:0x%02X...", __FUNCTION__, cecId, responseBuffer[0]);
 
-                if (mCecServiceManager->sendCecMessage(destAddr, responseLength, responseBuffer) == OK) {
+                if (mCecServiceManager->sendCecMessage(mCecServiceManager->mLogicalAddress, destAddr, responseLength, responseBuffer) == OK) {
                     LOGV("%s: Successfully transmitted CEC%d response: 0x%02X", __FUNCTION__, cecId, responseBuffer[0]);
                 }
                 else {
@@ -304,6 +314,7 @@ NexusService::CecServiceManager::CecRxMessageHandler::~CecRxMessageHandler()
 ******************************************************************************/
 status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(const sp<AMessage> &msg)
 {
+    int32_t srcaddr;
     int32_t destaddr;
     int32_t opcode;
     size_t  length;
@@ -312,7 +323,13 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
     char msgBuffer[3*(NEXUS_CEC_MESSAGE_DATA_SIZE +1)];
     NEXUS_CecMessage transmitMessage;
     unsigned i, j;
+    unsigned loops;
+    unsigned maxLoops;
 
+    if (!msg->findInt32("srcaddr", &srcaddr)) {
+        LOGE("%s: Could not find \"srcaddr\" in CEC%d message!", __FUNCTION__, cecId);
+        return FAILED_TRANSACTION;
+    }
     if (!msg->findInt32("destaddr", &destaddr)) {
         LOGE("%s: Could not find \"destaddr\" in CEC%d message!", __FUNCTION__, cecId);
         return FAILED_TRANSACTION;
@@ -326,67 +343,87 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
         return FAILED_TRANSACTION;
     }
 
-    if (length > 0) {
-        unsigned loops;
-        NEXUS_CecStatus status;
+    if (mCecServiceManager->cecHandle == NULL) {
+        LOGE("%s: ERROR: cecHandle is NULL!!!", __PRETTY_FUNCTION__);
+        return DEAD_OBJECT;
+    }
 
-        if (mCecServiceManager->cecHandle == NULL) {
-            LOGE("%s: ERROR: cecHandle is NULL!!!", __PRETTY_FUNCTION__);
-            return DEAD_OBJECT;
+    NEXUS_Cec_GetDefaultMessageData(&transmitMessage);
+    transmitMessage.initiatorAddr = srcaddr;
+    transmitMessage.destinationAddr = destaddr;
+    transmitMessage.length = length;
+    transmitMessage.buffer[0] = opcode;
+
+    msgBuffer[0] = '\0';
+
+    if (length > 1) {
+        if (!msg->findBuffer("params", &params)) {
+            LOGE("%s: Could not find \"params\" in CEC%d message!", __FUNCTION__, cecId);
+            return FAILED_TRANSACTION;
         }
 
-        LOGV("%s: Getting CEC%d status...", __PRETTY_FUNCTION__, cecId);
+        if (params != NULL) {
+            pBuffer = params->base();
 
-        NEXUS_Cec_GetStatus(mCecServiceManager->cecHandle, &status);
-
-        NEXUS_Cec_GetDefaultMessageData(&transmitMessage);
-        transmitMessage.initiatorAddr = status.logicalAddress;
-        transmitMessage.destinationAddr = destaddr;
-        transmitMessage.length = length;
-        transmitMessage.buffer[0] = opcode;
-
-        msgBuffer[0] = '\0';
-
-        if (length > 1) {
-            if (!msg->findBuffer("params", &params)) {
-                LOGE("%s: Could not find \"params\" in CEC%d message!", __FUNCTION__, cecId);
-                return FAILED_TRANSACTION;
-            }
-
-            if (params != NULL) {
-                pBuffer = params->base();
-
-                for (i = 0, j = 0; i < length-1 && j<(sizeof(msgBuffer)-1); i++) {
-                    transmitMessage.buffer[i+1] = *pBuffer;
-                    j += BKNI_Snprintf(msgBuffer + j, sizeof(msgBuffer)-j, "%02X ", *pBuffer++);
-                }           
-            }
+            for (i = 0, j = 0; i < length-1 && j<(sizeof(msgBuffer)-1); i++) {
+                transmitMessage.buffer[i+1] = *pBuffer;
+                j += BKNI_Snprintf(msgBuffer + j, sizeof(msgBuffer)-j, "%02X ", *pBuffer++);
+            }           
         }
+    }
 
-        for (loops = 0; loops < 5; loops++) {
-            NEXUS_Error rc;
+    // Is this a polling message?
+    if (srcaddr == destaddr) {
+        maxLoops = 2;
+    } else {
+        maxLoops = 5;
+    }
 
-            LOGD("%s: Outputting CEC%d message: dest addr=0x%02X opcode=0x%02X length=%d params=\'%s\' [thread %d]", __FUNCTION__,
-                  cecId, destaddr, opcode, length, msgBuffer, gettid());
+    for (loops = 0; loops < maxLoops; loops++) {
+        NEXUS_Error rc;
 
-            rc = NEXUS_Cec_TransmitMessage(mCecServiceManager->cecHandle, &transmitMessage);
-            if (rc == NEXUS_SUCCESS) {
-                LOGV("%s: Successfully sent CEC%d message: opcode=0x%02X.", __FUNCTION__, cecId, opcode);
-                // Always wait 35ms for (start + header block) and (25ms x length) + 25ms between transmitting messages...
-                usleep((60 + 25*length) * 1000);
-                break;
+        LOGD("%s: Outputting CEC%d message: src addr=0x%02X dest addr=0x%02X opcode=0x%02X length=%d params=\'%s\' [thread %d]", __FUNCTION__,
+              cecId, srcaddr, destaddr, opcode, length, msgBuffer, gettid());
+
+        mCecServiceManager->mCecMessageTransmittedLock.lock();
+        rc = NEXUS_Cec_TransmitMessage(mCecServiceManager->cecHandle, &transmitMessage);
+        if (rc == NEXUS_SUCCESS) {
+            status_t status;
+
+            LOGV("%s: Waiting for CEC%d message to be transmitted...", __FUNCTION__, cecId);
+            // Now wait up to 500ms for message to be transmitted...
+            status = mCecServiceManager->mCecMessageTransmittedCondition.waitRelative(mCecServiceManager->mCecMessageTransmittedLock, 500*1000*1000);
+            mCecServiceManager->mCecMessageTransmittedLock.unlock();
+
+            if (status == OK) {
+                b_cecStatus cecStatus;
+                
+                if (mCecServiceManager->getCecStatus(&cecStatus) == true) {
+                    if (cecStatus.txMessageAck == true) {
+                        LOGV("%s: Successfully sent CEC%d message: opcode=0x%02X.", __FUNCTION__, cecId, opcode);
+                        break;
+                    }
+                    else {
+                        ALOGW("%s: Sent CEC%d message: opcode=0x%02X, but no ACK received!", __FUNCTION__, cecId, opcode);
+                    }
+                }
+                else {
+                    ALOGE("%s: Could not get CEC%d status!!!", __PRETTY_FUNCTION__, cecId);
+                }
             }
             else {
-                LOGE("%s: ERROR sending CEC%d message: opcode=0x%02X [rc=%d]%s", __FUNCTION__, cecId, opcode, rc, loops<4 ? " - retrying..." : "!!!");
-                usleep(500 * 1000);
+                LOGW("%s: Timed out waiting for CEC%d message be transmitted!", __FUNCTION__, cecId);
             }
+            // Always wait 35ms for (start + header block) and (25ms x length) + 25ms between transmitting messages...
+            usleep((60 + 25*length) * 1000);
         }
-        return (loops < 5) ? OK : UNKNOWN_ERROR;
+        else {
+            mCecServiceManager->mCecMessageTransmittedLock.unlock();
+            LOGE("%s: ERROR sending CEC%d message: opcode=0x%02X [rc=%d]%s", __FUNCTION__, cecId, opcode, rc, loops<(maxLoops-1) ? " - retrying..." : "!!!");
+            usleep(500 * 1000);
+        }
     }
-    else {
-        LOGE("%s: ERROR cannot output message of length 0!!!", __FUNCTION__);
-        return BAD_VALUE;
-    }
+    return (loops < maxLoops) ? OK : UNKNOWN_ERROR;
 }
 
 void NexusService::CecServiceManager::CecTxMessageHandler::onMessageReceived(const sp<AMessage> &msg)
@@ -422,6 +459,33 @@ NexusService::CecServiceManager::CecTxMessageHandler::~CecTxMessageHandler()
 }
 
 /******************************************************************************
+  EventListener methods
+******************************************************************************/
+status_t
+NexusService::CecServiceManager::EventListener::onHdmiCecMessageReceived(int32_t portId, INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message)
+{
+    ALOGV("%s: portId=%d, %d, %d, %d", __FUNCTION__, portId, message->initiator, message->destination, message->length);
+
+    sp<AMessage> msg = new AMessage;
+    sp<ABuffer> buf = new ABuffer(message->length);
+
+    msg->setInt32("opcode", message->body[0]);
+    msg->setSize("length",  message->length);
+
+    if (message->length > 1) {
+        buf->setRange(0, 0);
+        memcpy(buf->data(), &message->body[1], message->length-1);
+        buf->setRange(0, message->length-1);
+        msg->setBuffer("params", buf);
+    }
+    msg->setWhat(NexusService::CecServiceManager::CecRxMessageHandler::kWhatParse);
+    msg->setTarget(mCecServiceManager->mCecRxMessageHandler->id());
+    msg->post();
+
+    return NO_ERROR;
+}
+
+/******************************************************************************
   CecServiceManager methods
 ******************************************************************************/
 void NexusService::CecServiceManager::deviceReady_callback(void *context, int param)
@@ -437,6 +501,8 @@ void NexusService::CecServiceManager::deviceReady_callback(void *context, int pa
                 status.messageTransmitPending ? "" : "Not "
                 );
         LOGV("%s: Logical Address <%d> Acquired", __FUNCTION__, status.logicalAddress);
+        pCecServiceManager->mLogicalAddress = status.logicalAddress;
+
         LOGV("%s: Physical Address: %X.%X.%X.%X", __FUNCTION__,
             (status.physicalAddress[0] & 0xF0) >> 4, 
             (status.physicalAddress[0] & 0x0F),
@@ -471,26 +537,26 @@ void NexusService::CecServiceManager::msgReceived_callback(void *context, int pa
                 (status.physicalAddress[1] & 0xF0) >> 4, (status.physicalAddress[1] & 0x0F),
                 status.logicalAddress) ;
 
+            pCecServiceManager->mLogicalAddress = status.logicalAddress;
             NEXUS_Cec_ReceiveMessage(pCecServiceManager->cecHandle, &receivedMessage);
 
             LOGV("%s: Cec%d message received length %d.", __FUNCTION__, param, receivedMessage.data.length);
 
             if (pCecServiceManager->isPlatformInitialised() && receivedMessage.data.length > 0) {
-                sp<AMessage> msg = new AMessage;
-                sp<ABuffer> buf = new ABuffer(receivedMessage.data.length);
+                status_t ret;
+                INexusHdmiCecMessageEventListener::hdmiCecMessage_t hdmiMessage;
 
-                msg->setInt32("opcode",  receivedMessage.data.buffer[0]);
-                msg->setSize("length",  receivedMessage.data.length);
+                memset(&hdmiMessage, 0, sizeof(hdmiMessage));
+                hdmiMessage.initiator = receivedMessage.data.initiatorAddr;
+                hdmiMessage.destination = receivedMessage.data.destinationAddr;
+                hdmiMessage.length = (receivedMessage.data.length <= HDMI_CEC_MESSAGE_BODY_MAX_LENGTH) ? 
+                                      receivedMessage.data.length : HDMI_CEC_MESSAGE_BODY_MAX_LENGTH;
+                memcpy(hdmiMessage.body, receivedMessage.data.buffer, hdmiMessage.length);
 
-                if (receivedMessage.data.length > 1) {
-                    buf->setRange(0, 0);
-                    memcpy(buf->data(), &receivedMessage.data.buffer[1], receivedMessage.data.length-1);
-                    buf->setRange(0, receivedMessage.data.length-1);
-                    msg->setBuffer("params", buf);
+                ret = pCecServiceManager->mEventListener->onHdmiCecMessageReceived(param, &hdmiMessage);
+                if (ret != NO_ERROR) {
+                    LOGE("%s: Cec%d onHdmiCecMessageReceived failed (rc=%d)!!!", __FUNCTION__, param, ret);
                 }
-                msg->setWhat(CecRxMessageHandler::kWhatParse);
-                msg->setTarget(pCecServiceManager->mCecRxMessageHandler->id());
-                msg->post();
             }
         }
     }
@@ -504,7 +570,7 @@ void NexusService::CecServiceManager::msgTransmitted_callback(void *context, int
     if (pCecServiceManager->cecHandle) {
         NEXUS_Cec_GetStatus(pCecServiceManager->cecHandle, &status);
     
-        LOGV("%s: Device %sReady, Xmit %sPending", __FUNCTION__,
+        LOGV("%s: CEC%d Device %sReady, Xmit %sPending", __FUNCTION__, param,
                 status.ready ? "" : "Not ",
                 status.messageTransmitPending ? "" : "Not "
                 );
@@ -518,10 +584,14 @@ void NexusService::CecServiceManager::msgTransmitted_callback(void *context, int
             status.transmitMessageAcknowledged ? "Yes" : "No") ;
         LOGV("%s: Xmit Msg Pending: %s", __FUNCTION__, 
             status.messageTransmitPending ? "Yes" : "No") ;
+
+        pCecServiceManager->mCecMessageTransmittedLock.lock();
+        pCecServiceManager->mCecMessageTransmittedCondition.broadcast();
+        pCecServiceManager->mCecMessageTransmittedLock.unlock();
     }
 }
 
-bool NexusService::CecServiceManager::getHdmiStatus(NEXUS_HdmiOutputStatus *pStatus)
+bool NexusService::CecServiceManager::getCecPhysicalAddress(b_cecPhysicalAddress *pCecPhyAddr)
 {
     bool success = false;
 #if NEXUS_HAS_HDMI_OUTPUT
@@ -531,71 +601,75 @@ bool NexusService::CecServiceManager::getHdmiStatus(NEXUS_HdmiOutputStatus *pSta
     NEXUS_HdmiOutputHandle hdmiOutput;
     unsigned loops;
 
-    NEXUS_Platform_GetConfiguration(&platformConfig);
-    hdmiOutput = platformConfig.outputs.hdmi[cecId];
+    if (cecId < NEXUS_NUM_HDMI_OUTPUTS) {
+        NEXUS_Platform_GetConfiguration(&platformConfig);
+        hdmiOutput = platformConfig.outputs.hdmi[cecId];
 
-    if (hdmiOutput != NULL) {
-        for (loops = 0; loops < 4; loops++) {
-            LOGV("%s: Waiting for HDMI output %d to be connected...", __FUNCTION__, cecId);
-            rc = NEXUS_HdmiOutput_GetStatus(hdmiOutput, &status);
-            if ((rc == NEXUS_SUCCESS) && status.connected) {
-                break;
+        if (hdmiOutput != NULL) {
+            for (loops = 0; loops < 4; loops++) {
+                LOGV("%s: Waiting for HDMI output %d to be connected...", __FUNCTION__, cecId);
+                rc = NEXUS_HdmiOutput_GetStatus(hdmiOutput, &status);
+                if ((rc == NEXUS_SUCCESS) && status.connected) {
+                    break;
+                }
+                usleep(250 * 1000);
             }
-            usleep(250 * 1000);
+        }
+
+        if (rc == NEXUS_SUCCESS && status.connected) {
+            LOGV("%s: HDMI output %d is connected.", __FUNCTION__, cecId);
+            success = true;
+            pCecPhyAddr->addressA = status.physicalAddressA;
+            pCecPhyAddr->addressB = status.physicalAddressB;
+            pCecPhyAddr->addressC = status.physicalAddressC;
+            pCecPhyAddr->addressD = status.physicalAddressD;
+        }
+        else {
+            LOGW("%s: HDMI output %d not connected.", __FUNCTION__, cecId);
         }
     }
-
-    if (rc == NEXUS_SUCCESS && status.connected) {
-        LOGV("%s: HDMI output %d is connected.", __FUNCTION__, cecId);
-        success = true;
-        *pStatus = status;
-    }
     else {
-        LOGW("%s: HDMI output %d not connected.", __FUNCTION__, cecId);
+        LOGE("%s: HDMI output %d does not exist on this platform!!!", __FUNCTION__, cecId);
     }
 #endif
     return success;
 }
 
-status_t NexusService::CecServiceManager::sendCecMessage(uint8_t destAddr, size_t length, uint8_t *pBuffer)
+status_t NexusService::CecServiceManager::sendCecMessage(uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pBuffer)
 {
     status_t err = BAD_VALUE;
 
-    if (length > 0) {
-        sp<AMessage> msg = new AMessage;
-        sp<ABuffer> buf = new ABuffer(length);
+    sp<AMessage> msg = new AMessage;
+    sp<ABuffer> buf = new ABuffer(length);
 
-        msg->setInt32("destaddr", destAddr);
-        msg->setInt32("opcode", *pBuffer);
-        msg->setSize("length",  length);
+    msg->setInt32("srcaddr", srcAddr);
+    msg->setInt32("destaddr", destAddr);
+    msg->setInt32("opcode", *pBuffer);
+    msg->setSize("length",  length);
 
-        if (length > 1) {
-            buf->setRange(0, 0);
-            memcpy(buf->data(), &pBuffer[1], length-1);
-            buf->setRange(0, length-1);
-            msg->setBuffer("params", buf);
-        }
-        msg->setWhat(CecTxMessageHandler::kWhatSend);
-        msg->setTarget(mCecTxMessageHandler->id());
+    if (length > 1) {
+        buf->setRange(0, 0);
+        memcpy(buf->data(), &pBuffer[1], length-1);
+        buf->setRange(0, length-1);
+        msg->setBuffer("params", buf);
+    }
+    msg->setWhat(CecTxMessageHandler::kWhatSend);
+    msg->setTarget(mCecTxMessageHandler->id());
 
-        ALOGV("%s: Posting message to looper...", __PRETTY_FUNCTION__);
-        sp<AMessage> response;
-        err = msg->postAndAwaitResponse(&response);
+    ALOGV("%s: Posting message to looper...", __PRETTY_FUNCTION__);
+    sp<AMessage> response;
+    err = msg->postAndAwaitResponse(&response);
 
-        if (err != OK) {
-            LOGE("%s: ERROR posting message (err=%d)!!!", __FUNCTION__, err);
-            return err;
-        }
-        else {
-            ALOGV("%s: Returned from posting message to looper.", __PRETTY_FUNCTION__);
-        }
-
-        if (!response->findInt32("err", &err)) {
-            err = OK;
-        }
+    if (err != OK) {
+        LOGE("%s: ERROR posting message (err=%d)!!!", __FUNCTION__, err);
+        return err;
     }
     else {
-        LOGE("%s: Invalid message length of 0!", __FUNCTION__);
+        ALOGV("%s: Returned from posting message to looper.", __PRETTY_FUNCTION__);
+    }
+
+    if (!response->findInt32("err", &err)) {
+        err = OK;
     }
     return err;
 }
@@ -614,7 +688,7 @@ bool NexusService::CecServiceManager::setPowerState(b_powerState pmState)
         buffer[0] = NEXUS_CEC_OpImageViewOn;
 
         LOGV("%s: Sending <Image View On> message to turn TV connected to HDMI output %d on...", __FUNCTION__, cecId);
-        if (sendCecMessage(destAddr, length, buffer) == OK) {
+        if (sendCecMessage(mLogicalAddress, destAddr, length, buffer) == OK) {
             LOGD("%s: Successfully sent <Image View On> CEC%d message.", __FUNCTION__, cecId);
             success = true;
         }
@@ -623,22 +697,23 @@ bool NexusService::CecServiceManager::setPowerState(b_powerState pmState)
         }
 
         if (success) {
-            NEXUS_CecStatus status;
+            b_cecStatus status;
 
-            NEXUS_Cec_GetStatus(cecHandle, &status);
+            if (getCecStatus(&status) == true) {
+                LOGV("%s: Broadcasting <Active Source> message to ensure TV is displaying our content from HDMI output %d...", __FUNCTION__, cecId);
+                destAddr = 0xF;    // Broadcast address
+                length = 3;
+                buffer[0] = NEXUS_CEC_OpActiveSource;
+                buffer[1] = status.physicalAddress[0];
+                buffer[2] = status.physicalAddress[1];
 
-            LOGV("%s: Broadcasting <Active Source> message to ensure TV is displaying our content from HDMI output %d...", __FUNCTION__, cecId);
-            destAddr = 0xF;    // Broadcast address
-            length = 3;
-            buffer[0] = NEXUS_CEC_OpActiveSource;
-            buffer[1] = status.physicalAddress[0];
-            buffer[2] = status.physicalAddress[1];
-
-            if (sendCecMessage(destAddr, length, buffer) == OK) {
-                LOGD("%s: Successfully sent <Active Source> CEC%d message.", __FUNCTION__, cecId);
-                success = true;
+                if (sendCecMessage(mLogicalAddress, destAddr, length, buffer) == OK) {
+                    LOGD("%s: Successfully sent <Active Source> CEC%d message.", __FUNCTION__, cecId);
+                    success = true;
+                }
             }
-            else {
+
+            if (success == false) {
                 LOGE("%s: ERROR sending <Image View On> CEC%d message!!!", __FUNCTION__, cecId);
             }
         }
@@ -649,7 +724,7 @@ bool NexusService::CecServiceManager::setPowerState(b_powerState pmState)
         buffer[0] = NEXUS_CEC_OpStandby;
 
         LOGV("%s: Sending <Standby> message to place TV connected to HDMI output %d in standby...", __FUNCTION__, cecId);
-        if (sendCecMessage(destAddr, length, buffer) == OK) {
+        if (sendCecMessage(mLogicalAddress, destAddr, length, buffer) == OK) {
             LOGD("%s: Successfully sent <Standby> Cec%d message.", __FUNCTION__, cecId);
             success = true;
         }
@@ -672,7 +747,7 @@ bool NexusService::CecServiceManager::getPowerStatus(uint8_t *pPowerStatus)
     buffer[0] = NEXUS_CEC_OpGiveDevicePowerStatus;
 
     LOGV("%s: Sending <Give Device Power Status> message to HDMI output %d on...", __FUNCTION__, cecId);
-    if (sendCecMessage(destAddr, length, buffer) == OK) {
+    if (sendCecMessage(mLogicalAddress, destAddr, length, buffer) == OK) {
         status_t status;
 
         LOGD("%s: Successfully sent <Give Device Power Status> Cec%d message.", __FUNCTION__, cecId);
@@ -683,12 +758,12 @@ bool NexusService::CecServiceManager::getPowerStatus(uint8_t *pPowerStatus)
         mCecGetPowerStatusLock.unlock();
 
         if (status == OK) {
-            if (cecPowerStatus < 4) {
-                *pPowerStatus = cecPowerStatus;
+            if (mCecPowerStatus < 4) {
+                *pPowerStatus = mCecPowerStatus;
                 success = true;
             }
             else {
-                LOGE("%s: Invalid <Power Status> parameter 0x%0x!", __FUNCTION__, cecPowerStatus);
+                LOGE("%s: Invalid <Power Status> parameter 0x%0x!", __FUNCTION__, mCecPowerStatus);
             }
         }
         else {
@@ -701,14 +776,80 @@ bool NexusService::CecServiceManager::getPowerStatus(uint8_t *pPowerStatus)
     return success;
 }
 
+static const b_cecDeviceType fromNexusCecDeviceType[] =
+{
+    eCecDeviceType_eTv,
+    eCecDeviceType_eRecordingDevice,
+    eCecDeviceType_eReserved,
+    eCecDeviceType_eTuner,
+    eCecDeviceType_ePlaybackDevice,
+    eCecDeviceType_eAudioSystem,
+    eCecDeviceType_ePureCecSwitch,
+    eCecDeviceType_eVideoProcessor
+};
+
+bool NexusService::CecServiceManager::getCecStatus(b_cecStatus *pCecStatus)
+{
+    bool success = true;
+    NEXUS_CecStatus status;
+
+    if (NEXUS_Cec_GetStatus(cecHandle, &status) != NEXUS_SUCCESS) {
+        LOGE("%s: ERROR: Cannot obtain Nexus Cec Status!!!", __PRETTY_FUNCTION__);
+        success = false;
+    }
+    else {
+        memset(pCecStatus, 0, sizeof(*pCecStatus));
+        pCecStatus->ready              = status.ready;
+        pCecStatus->messageRx          = status.messageReceived;
+        pCecStatus->messageTxPending   = status.messageTransmitPending;
+        pCecStatus->txMessageAck       = status.transmitMessageAcknowledged;
+        pCecStatus->physicalAddress[0] = status.physicalAddress[0];
+        pCecStatus->physicalAddress[1] = status.physicalAddress[1];
+        pCecStatus->logicalAddress     = status.logicalAddress;
+        mLogicalAddress                = status.logicalAddress;
+        pCecStatus->deviceType         = fromNexusCecDeviceType[status.deviceType];
+        pCecStatus->cecVersion         = status.cecVersion;
+    }
+    return success;
+}
+
+status_t NexusService::CecServiceManager::setEventListener(const sp<INexusHdmiCecMessageEventListener> &listener)
+{
+    mEventListener = listener;
+    return NO_ERROR;
+}
+
+bool NexusService::CecServiceManager::setLogicalAddress(uint8_t addr)
+{
+    NEXUS_CecSettings cecSettings;
+
+    NEXUS_Cec_GetSettings(cecHandle, &cecSettings);
+    cecSettings.logicalAddress = addr;
+    LOGV("%s: settings CEC%d logical address to 0x%02x", __FUNCTION__, cecId, addr);
+    return (NEXUS_Cec_SetSettings(cecHandle, &cecSettings) == NEXUS_SUCCESS);
+}
+
+/* Android-L sets up a property to define the device type and hence
+   the logical address of the device.  */
+int NexusService::CecServiceManager::getDeviceType()
+{
+    char value[PROPERTY_VALUE_MAX];
+    int type = -1;
+
+    if (property_get("ro.hdmi.device_type", value, NULL)) {
+        type = atoi(value);
+    }
+    return type;
+}
+
 status_t NexusService::CecServiceManager::platformInit()
 {
     status_t status = OK;
     NEXUS_Error rc;
     NEXUS_PlatformConfiguration platformConfig;
-    NEXUS_HdmiOutputStatus hdmiOutputStatus;
     NEXUS_CecSettings cecSettings;
-    NEXUS_CecStatus cecStatus;
+    b_cecStatus cecStatus;
+    b_cecPhysicalAddress cecPhyAddr;
     unsigned loops;
 
     NEXUS_Platform_GetConfiguration(&platformConfig);
@@ -724,7 +865,9 @@ status_t NexusService::CecServiceManager::platformInit()
         }
     }
 
-    if (status == OK && getHdmiStatus(&hdmiOutputStatus)) {
+    if (status == OK && getCecPhysicalAddress(&cecPhyAddr)) {
+        int deviceType = getDeviceType();
+
         NEXUS_Cec_GetSettings(cecHandle, &cecSettings);
             cecSettings.enabled = false;
             cecSettings.messageReceivedCallback.callback = msgReceived_callback;
@@ -739,10 +882,14 @@ status_t NexusService::CecServiceManager::platformInit()
             cecSettings.logicalAddressAcquiredCallback.context = this;
             cecSettings.logicalAddressAcquiredCallback.param = cecId;
 
-            cecSettings.physicalAddress[0]= (hdmiOutputStatus.physicalAddressA << 4) 
-                | hdmiOutputStatus.physicalAddressB;
-            cecSettings.physicalAddress[1]= (hdmiOutputStatus.physicalAddressC << 4) 
-                | hdmiOutputStatus.physicalAddressD;
+            cecSettings.physicalAddress[0] = (cecPhyAddr.addressA << 4) | cecPhyAddr.addressB;
+            cecSettings.physicalAddress[1] = (cecPhyAddr.addressC << 4) | cecPhyAddr.addressD;
+
+        if (deviceType != -1) {
+            cecSettings.disableLogicalAddressPolling = true;
+            cecSettings.logicalAddress = 0xff;
+            LOGD("%s: setting CEC%d logical address to 0xFF", __FUNCTION__, cecId);
+        }
         
         rc = NEXUS_Cec_SetSettings(cecHandle, &cecSettings);
 
@@ -760,54 +907,65 @@ status_t NexusService::CecServiceManager::platformInit()
                 status = UNKNOWN_ERROR;
             }
             else {
-                for (loops = 0; loops < 5; loops++) {
-                    LOGV("%s: Waiting for Cec%d logical address...", __FUNCTION__, cecId);
-                    mCecDeviceReadyLock.lock();
-                    status = mCecDeviceReadyCondition.waitRelative(mCecDeviceReadyLock, 1 * 1000 * 1000 * 1000);  // Wait up to 1s
-                    mCecDeviceReadyLock.unlock();
-                    if (status == OK) {
-                        break;
+                if (deviceType == -1) {
+                    for (loops = 0; loops < 5; loops++) {
+                        LOGV("%s: Waiting for Cec%d logical address...", __FUNCTION__, cecId);
+                        mCecDeviceReadyLock.lock();
+                        status = mCecDeviceReadyCondition.waitRelative(mCecDeviceReadyLock, 1 * 1000 * 1000 * 1000);  // Wait up to 1s
+                        mCecDeviceReadyLock.unlock();
+                        if (status == OK) {
+                            break;
+                        }
                     }
                 }
 
-                NEXUS_Cec_GetStatus(cecHandle, &cecStatus);
+                if (getCecStatus(&cecStatus) == true) {
 
-                LOGV("%s: Device %sReady, Xmit %sPending", __FUNCTION__,
-                        cecStatus.ready ? "" : "Not ",
-                        cecStatus.messageTransmitPending ? "" : "Not "
-                        );
+                    LOGV("%s: Device %sReady, Xmit %sPending", __FUNCTION__,
+                            cecStatus.ready ? "" : "Not ",
+                            cecStatus.messageTxPending ? "" : "Not "
+                            );
 
-                if (cecStatus.logicalAddress == 0xFF) {
-                    LOGE("%s: No Cec capable device found on HDMI output %d!", __FUNCTION__, cecId);
-                    status = NO_INIT;
+                    if (deviceType == -1 && cecStatus.logicalAddress == 0xFF) {
+                        LOGE("%s: No Cec capable device found on HDMI output %d!", __FUNCTION__, cecId);
+                        status = NO_INIT;
+                    }
+                    else {
+                        char looperName[] = "Cec   x Message Looper";
+                        looperName[3] = '0' + cecId;
+
+                        LOGD("%s: CEC capable device found on HDMI output %d.", __FUNCTION__, cecId);
+
+                        // Create looper to receive CEC messages...
+                        looperName[5] = 'R';
+                        mCecRxMessageLooper = new ALooper;
+                        mCecRxMessageLooper->setName(looperName);
+                        mCecRxMessageLooper->start();
+
+                        // Create Handler to handle reception of CEC messages...
+                        mCecRxMessageHandler = NexusService::CecServiceManager::CecRxMessageHandler::instantiate(this, cecId);
+                        mCecRxMessageLooper->registerHandler(mCecRxMessageHandler);
+
+                        // Create looper to send CEC messages...
+                        looperName[5] = 'T';
+                        mCecTxMessageLooper = new ALooper;
+                        mCecTxMessageLooper->setName(looperName);
+                        mCecTxMessageLooper->start();
+
+                        // Create Handler to handle transmission of CEC messages...
+                        mCecTxMessageHandler = NexusService::CecServiceManager::CecTxMessageHandler::instantiate(this, cecId);
+                        mCecTxMessageLooper->registerHandler(mCecTxMessageHandler);
+
+                        // Create HDMI CEC Message Event Listener only for non Android-L builds
+                        if (deviceType == -1) {
+                            mEventListener = new NexusService::CecServiceManager::EventListener(this);
+                            status = setEventListener(mEventListener);
+                        }
+                    }
                 }
                 else {
-                    char looperName[] = "Cec   x Message Looper";
-                    looperName[3] = '0' + cecId;
-
-                    LOGD("%s: CEC capable device found on HDMI output %d.", __FUNCTION__, cecId);
-
-                    // Create looper to receive CEC messages...
-                    looperName[5] = 'R';
-                    mCecRxMessageLooper = new ALooper;
-                    mCecRxMessageLooper->setName(looperName);
-                    mCecRxMessageLooper->start();
-
-                    // Create Handler to handle reception of CEC messages...
-                    mCecRxMessageHandler = NexusService::CecServiceManager::CecRxMessageHandler::instantiate(this, cecId);
-                    mCecRxMessageLooper->registerHandler(mCecRxMessageHandler);
-
-                    // Create looper to send CEC messages...
-                    looperName[5] = 'T';
-                    mCecTxMessageLooper = new ALooper;
-                    mCecTxMessageLooper->setName(looperName);
-                    mCecTxMessageLooper->start();
-
-                    // Create Handler to handle transmission of CEC messages...
-                    mCecTxMessageHandler = NexusService::CecServiceManager::CecTxMessageHandler::instantiate(this, cecId);
-                    mCecTxMessageLooper->registerHandler(mCecTxMessageHandler);
-
-                    status = OK;
+                    ALOGE("%s: Could not get CEC%d status!!!", __PRETTY_FUNCTION__, cecId);
+                    status = NO_INIT;
                 }
             }
         }
@@ -827,6 +985,12 @@ bool NexusService::CecServiceManager::isPlatformInitialised()
 void NexusService::CecServiceManager::platformUninit()
 {
     NEXUS_PlatformConfiguration platformConfig;
+    int deviceType = getDeviceType();
+
+    if (deviceType == -1 && mEventListener != NULL) {
+        setEventListener(NULL);
+        mEventListener = NULL;
+    }
 
     if (mCecTxMessageLooper != NULL) {
         mCecTxMessageLooper->unregisterHandler(mCecTxMessageHandler->id());

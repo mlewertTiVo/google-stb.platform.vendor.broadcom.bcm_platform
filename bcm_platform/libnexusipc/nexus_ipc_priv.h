@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2012 Broadcom Corporation
+ *    (c)2011-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -36,48 +36,10 @@
  * ANY LIMITED REMEDY.
  *
  * $brcm_Workfile: nexus_ipc_priv.h $
- * $brcm_Revision: 9 $
- * $brcm_Date: 9/13/12 11:31a $
  * 
  * Module Description:
  * This header file defines the command that is used to encapsulate an API call
  * from the client in a parcel and is sent over binder to the server.
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/libnexusipc/nexus_ipc_priv.h $
- * 
- * 9   9/13/12 11:31a kagrawal
- * SWANDROID-104: Added support for dynamic display resolution change,
- *  1080p and screen resizing
- * 
- * 8   9/4/12 6:53p nitinb
- * SWANDROID-197:Implement volume control functionality on nexus server
- *  side
- * 
- * 7   7/30/12 4:07p kagrawal
- * SWANDROID-104: Support for composite output
- * 
- * 6   7/6/12 9:12p ajitabhp
- * SWANDROID-128: FIXED Graphics Window Resource Leakage in SBS and NSC
- *  mode.
- * 
- * 5   6/24/12 10:31p alexpan
- * SWANDROID-108: Fix build errors for platforms without hdmi-in after
- *  changes for SimpleDecoder
- * 
- * 4   6/20/12 11:09a kagrawal
- * SWANDROID-108: Add support for HDMI-Input with SimpleDecoder and w/ or
- *  w/o nexus client server mode
- * 
- * 3   4/13/12 1:15p ajitabhp
- * SWANDROID-65: Memory Owner ship problem resolved in multi-process mode.
- * 
- * 2   4/3/12 4:59p kagrawal
- * SWANDROID-56: Added support for VideoWindow configuration in NSC mode
- * 
- * 1   2/24/12 1:56p kagrawal
- * SWANDROID-12: Initial version of ipc over binder
  * 
  *****************************************************************************/
 #ifndef _NEXUS_IPC_PRIV_H_
@@ -102,7 +64,9 @@ enum api_name{
     api_getPowerState,
     api_setCecPowerState,
     api_getCecPowerStatus,
+    api_getCecStatus,
     api_sendCecMessage,
+    api_setCecLogicalAddress,
     api_getFrame,
     api_connectClientResources,
     api_disconnectClientResources,
@@ -305,6 +269,18 @@ typedef union api_param
     struct {
         struct {
             uint32_t cecId;
+        } in;
+
+        struct {
+            b_cecStatus cecStatus;
+            bool status;
+        } out;
+    } getCecStatus;
+
+    struct {
+        struct {
+            uint32_t cecId;
+            uint8_t  srcAddr;
             uint8_t  destAddr;
             size_t   length;
             uint8_t  message[NEXUS_CEC_MESSAGE_DATA_SIZE];
@@ -314,6 +290,17 @@ typedef union api_param
             bool status;
         } out;
     } sendCecMessage;
+
+    struct {
+        struct {
+            uint32_t cecId;
+            uint8_t  addr;
+        } in;
+
+        struct {
+            bool status;
+        } out;
+    } setCecLogicalAddress;
 
     struct {
         struct {

@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2013 Broadcom Corporation
+ *    (c)2010-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -47,7 +47,7 @@
 #include "nexusnxcecservice.h"
 #include "nxclient.h"
 
-bool NexusNxService::CecServiceManager::getHdmiStatus(NEXUS_HdmiOutputStatus *pStatus)
+bool NexusNxService::CecServiceManager::getCecPhysicalAddress(b_cecPhysicalAddress *pCecPhyAddr)
 {
     bool success = false;
 #if NEXUS_HAS_HDMI_OUTPUT
@@ -57,22 +57,30 @@ bool NexusNxService::CecServiceManager::getHdmiStatus(NEXUS_HdmiOutputStatus *pS
     NxClient_DisplayStatus status;
     unsigned loops;
 
-    for (loops = 0; loops < 4; loops++) {
-        ALOGV("%s: Waiting for HDMI output %d to be connected...", __FUNCTION__, cecId);
-        rc = NxClient_GetDisplayStatus(&status);
-        if ((rc == NEXUS_SUCCESS) && status.hdmi.status.connected) {
-            break;
+    if (cecId < NEXUS_NUM_HDMI_OUTPUTS) {
+        for (loops = 0; loops < 4; loops++) {
+            ALOGV("%s: Waiting for HDMI output %d to be connected...", __FUNCTION__, cecId);
+            rc = NxClient_GetDisplayStatus(&status);
+            if ((rc == NEXUS_SUCCESS) && status.hdmi.status.connected) {
+                break;
+            }
+            usleep(250 * 1000);
         }
-        usleep(250 * 1000);
-    }
 
-    if (rc == NEXUS_SUCCESS && status.hdmi.status.connected) {
-        ALOGV("%s: HDMI output %d is connected.", __FUNCTION__, cecId);
-        success = true;
-        *pStatus = status.hdmi.status;
+        if (rc == NEXUS_SUCCESS && status.hdmi.status.connected) {
+            ALOGV("%s: HDMI output %d is connected.", __FUNCTION__, cecId);
+            success = true;
+            pCecPhyAddr->addressA = status.hdmi.status.physicalAddressA;
+            pCecPhyAddr->addressB = status.hdmi.status.physicalAddressB;
+            pCecPhyAddr->addressC = status.hdmi.status.physicalAddressC;
+            pCecPhyAddr->addressD = status.hdmi.status.physicalAddressD;
+        }
+        else {
+            ALOGW("%s: HDMI output %d not connected.", __FUNCTION__, cecId);
+        }
     }
     else {
-        ALOGW("%s: HDMI output %d not connected.", __FUNCTION__, cecId);
+        LOGE("%s: HDMI output %d does not exist on this platform!!!", __FUNCTION__, cecId);
     }
 #else
 #warning Reference software does not support obtaining HDMI output status in NxClient mode

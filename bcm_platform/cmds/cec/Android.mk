@@ -37,6 +37,10 @@ LOCAL_CFLAGS += -Wno-multichar -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGI=ALO
 
 include $(BUILD_EXECUTABLE)
 
+ANDROID_KK_OR_OLDER := $(shell test "${BRCM_ANDROID_VERSION}" \< "l" && echo "y")
+
+ifeq ($(ANDROID_KK_OR_OLDER),y)
+
 #
 # Executable get_cec
 #
@@ -72,3 +76,5 @@ endif
 LOCAL_CFLAGS += -Wno-multichar -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGI=ALOGI -DLOGV=ALOGV
 
 include $(BUILD_EXECUTABLE)
+
+endif

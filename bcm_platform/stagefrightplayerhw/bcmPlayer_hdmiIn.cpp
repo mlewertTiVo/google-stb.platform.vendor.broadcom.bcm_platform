@@ -70,7 +70,7 @@ static void bcmPlayer_uninit_hdmiIn(int iPlayerIndex)
     
     bcmPlayer_uninit_base(iPlayerIndex);
 
-#if NEXUS_NUM_HDMI_INPUTS
+#if NEXUS_HAS_HDMI_INPUT
     if (nexusHandle->hdmiInput) {
         NEXUS_HdmiInput_Close(nexusHandle->hdmiInput);
         nexusHandle->hdmiInput = NULL;
@@ -114,7 +114,7 @@ static void playback_turnoff(int iPlayerIndex)
     }
 }
 
-#if NEXUS_NUM_HDMI_INPUTS && NEXUS_NUM_HDMI_OUTPUTS && !ANDROID_SUPPORTS_HDMI_LEGACY
+#if NEXUS_HAS_HDMI_INPUT && NEXUS_HAS_HDMI_OUTPUT && !ANDROID_SUPPORTS_HDMI_LEGACY
 struct hdmi_edid {
     const uint8_t *data;
     unsigned size;
@@ -244,7 +244,7 @@ int bcmPlayer_setDataSource_hdmiIn(int iPlayerIndex, const char *url, uint16_t *
         rc = 1;
     }
     else {
-#if NEXUS_NUM_HDMI_INPUTS && NEXUS_NUM_HDMI_OUTPUTS && !ANDROID_SUPPORTS_HDMI_LEGACY
+#if NEXUS_HAS_HDMI_INPUT && NEXUS_HAS_HDMI_OUTPUT && !ANDROID_SUPPORTS_HDMI_LEGACY
         /* With URSR 14.2, NxClient HDMI Input architecture has completely changed and we need to open the HDMI input
            in the same process that starts the simple A/V decoders (HDMI). */
         struct hdmi_edid edid;
@@ -276,7 +276,7 @@ int bcmPlayer_setDataSource_hdmiIn(int iPlayerIndex, const char *url, uint16_t *
 
 static int bcmPlayer_start_hdmiIn(int iPlayerIndex) 
 {
-#if NEXUS_NUM_HDMI_INPUTS && NEXUS_NUM_HDMI_OUTPUTS && !ANDROID_SUPPORTS_HDMI_LEGACY
+#if NEXUS_HAS_HDMI_INPUT && NEXUS_HAS_HDMI_OUTPUT && !ANDROID_SUPPORTS_HDMI_LEGACY
     NEXUS_Error rc;
     bcmPlayer_base_nexus_handle_t *nexusHandle = &nexus_handle[iPlayerIndex];
 
@@ -301,7 +301,7 @@ static int bcmPlayer_start_hdmiIn(int iPlayerIndex)
 static int bcmPlayer_isPlaying_hdmiIn(int iPlayerIndex)
 {
     bool playing = true;
-#if NEXUS_NUM_HDMI_INPUTS && NEXUS_NUM_HDMI_OUTPUTS && !ANDROID_SUPPORTS_HDMI_LEGACY
+#if NEXUS_HAS_HDMI_INPUT && NEXUS_HAS_HDMI_OUTPUT && !ANDROID_SUPPORTS_HDMI_LEGACY
     NEXUS_Error rc;
     NEXUS_VideoDecoderStatus status;
 

@@ -111,9 +111,9 @@ ifeq ($(ANDROID_SUPPORTS_WIDEVINE),y)
 include vendor/broadcom/bcm_platform/libwidevine/Android.mk
 endif
 
-ifeq ($(ANDROID_ENABLE_CEC),y)
+# HDMI CEC support...
 include vendor/broadcom/bcm_platform/cmds/cec/Android.mk
-endif
+include vendor/broadcom/bcm_platform/hdmi_cec/Android.mk
 
 ifeq ($(ANDROID_ENABLE_BCM_OMX_PROTOTYPE),y)
 include vendor/broadcom/bcm_platform/libstagefrighthw/Android.mk

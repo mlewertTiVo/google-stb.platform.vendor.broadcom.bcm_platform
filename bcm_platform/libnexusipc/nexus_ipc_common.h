@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2012 Broadcom Corporation
+ *    (c)2011-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -36,55 +36,21 @@
  * ANY LIMITED REMEDY.
  *
  * $brcm_Workfile: nexus_ipc_common.h $
- * $brcm_Revision: 9 $
- * $brcm_Date: 9/13/12 11:31a $
  * 
  * Module Description:
  * This header file contains the prototype of the API functions and their params.
  * This file is included by both the client and the server code and provides the 
  * identical interface to them.
  * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/libnexusipc/nexus_ipc_common.h $
- * 
- * 9   9/13/12 11:31a kagrawal
- * SWANDROID-104: Added support for dynamic display resolution change,
- *  1080p and screen resizing
- * 
- * 8   7/30/12 4:07p kagrawal
- * SWANDROID-104: Support for composite output
- * 
- * 7   7/6/12 9:12p ajitabhp
- * SWANDROID-128: FIXED Graphics Window Resource Leakage in SBS and NSC
- *  mode.
- * 
- * 6   6/24/12 10:31p alexpan
- * SWANDROID-108: Fix build errors for platforms without hdmi-in after
- *  changes for SimpleDecoder
- * 
- * 5   6/20/12 11:09a kagrawal
- * SWANDROID-108: Add support for HDMI-Input with SimpleDecoder and w/ or
- *  w/o nexus client server mode
- * 
- * 4   5/7/12 3:44p ajitabhp
- * SWANDROID-96: Initial checkin for android side by side implementation.
- * 
- * 3   4/13/12 1:16p ajitabhp
- * SWANDROID-65: Memory ownership problem resolved in multi-process mode.
- * 
- * 2   4/3/12 4:59p kagrawal
- * SWANDROID-56: Added support for VideoWindow configuration in NSC mode
- * 
- * 1   2/24/12 1:56p kagrawal
- * SWANDROID-12: Initial version of ipc over binder
- * 
  *****************************************************************************/
 #ifndef _NEXUS_IPC_COMMON_H_
 #define _NEXUS_IPC_COMMON_H_
 
-#include "cutils/properties.h"
+#include <cutils/properties.h>
+#include <utils/Errors.h>
 
+#include "INexusHdmiCecMessageEventListener.h"
+#include "INexusHdmiHotplugEventListener.h"
 #include "nexus_surface_compositor_types.h"
 #include "nexus_types.h"
 #include "nexus_platform.h"
@@ -105,7 +71,9 @@
 /* Define the maximum size of the client name */
 #define CLIENT_MAX_NAME 32
 
-#define MIN(a,b)	 ((a) < (b)? (a) : (b))
+#define MIN(a,b)    ((a) < (b)? (a) : (b))
+
+using namespace android;
 
 /* API parameters */
 // adopted these from Trellis
@@ -162,6 +130,37 @@ typedef enum b_powerState {
     ePowerState_S4, // Suspend to disk (not implemented on our kernels)
     ePowerState_Max
 } b_powerState;
+
+typedef enum b_cecDeviceType
+{
+    eCecDeviceType_eTv = 0,
+    eCecDeviceType_eRecordingDevice,
+    eCecDeviceType_eReserved,
+    eCecDeviceType_eTuner,
+    eCecDeviceType_ePlaybackDevice,
+    eCecDeviceType_eAudioSystem,
+    eCecDeviceType_ePureCecSwitch,
+    eCecDeviceType_eVideoProcessor,
+    eCecDeviceType_eMax
+} b_cecDeviceType;
+
+typedef struct b_cecPhysicalAddress {
+    uint8_t addressA;           /* Physical Address for HDMI node A */
+    uint8_t addressB;           /* Physical Address for HDMI node B */
+    uint8_t addressC;           /* Physical Address for HDMI node C */
+    uint8_t addressD;           /* Physical Address for HDMI node D */
+} b_cecPhysicalAddress;
+
+typedef struct b_cecStatus {
+    bool ready;                 /* device is ready */
+    bool messageRx;             /* If true, call NEXUS_Cec_ReceiveMessage to receive a message. */
+    bool messageTxPending;      /* If true, you must wait before calling NEXUS_Cec_TransmitMessage again. */
+    bool txMessageAck;          /* status from last transmitted message */
+    uint8_t physicalAddress[2];
+    uint8_t logicalAddress;     /* 0xFF means uninitialized logical address */
+    b_cecDeviceType deviceType;
+    unsigned cecVersion;        /* Cec Protocol version the platform is running */
+} b_cecStatus;
 
 typedef struct b_video_decoder_caps
 {
@@ -258,6 +257,9 @@ public:
     virtual bool disconnectClientResources(NexusClientContext * client)=0;
 
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/
+    virtual status_t setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener) = 0;
+    virtual status_t setHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener) = 0;
+
     virtual void getPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings) = 0;
     virtual void setPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings) = 0;
     virtual void getGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings) = 0;
@@ -271,8 +273,10 @@ public:
     virtual b_powerState getPowerState()=0;
     virtual bool setCecPowerState(uint32_t cecId, b_powerState pmState)=0;
     virtual bool getCecPowerStatus(uint32_t cecId, uint8_t *pPowerStatus)=0;
-    virtual bool sendCecMessage(uint32_t cecId, uint8_t destAddr, size_t length, uint8_t *pMessage)=0;
+    virtual bool getCecStatus(uint32_t cecId, b_cecStatus *pCecStatus)=0;
+    virtual bool sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage)=0;
     virtual bool isCecEnabled(uint32_t cecId)=0;
+    virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr)=0;
 };
 
 /* -----------------------------------------------------------------------------

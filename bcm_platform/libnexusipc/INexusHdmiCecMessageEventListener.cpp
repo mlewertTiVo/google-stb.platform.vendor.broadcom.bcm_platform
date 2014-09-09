@@ -34,47 +34,61 @@
  * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE 
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
  * ANY LIMITED REMEDY.
- *
+ * 
  *****************************************************************************/
-#ifndef _NEXUSNXCECSERVICE_H_
-#define _NEXUSNXCECSERVICE_H_
+#undef LOG_TAG
+#define LOG_TAG "INexusHdmiCecMessageEventListener"
+#include <utils/Log.h>
 
-#include "nexusnxservice.h"
-#include "nexuscecservice.h"
+#include "INexusHdmiCecMessageEventListener.h"
 
 using namespace android;
 
-struct NexusNxService::CecServiceManager : public NexusService::CecServiceManager
-{
-public:
-    friend class NexusNxService;
-    virtual      ~CecServiceManager();
-    //virtual status_t platformInit();
-    //virtual void platformUninit();
-    //virtual bool isPlatformInitialised();
-    virtual bool getCecPhysicalAddress(b_cecPhysicalAddress *pCecPhyAddr);
-    //virtual status_t sendCecMessage(uint8_t destAddr, size_t length, uint8_t *pBuffer);
-    //virtual bool setPowerState(b_powerState pmState);
-    //virtual bool getPowerStatus(uint8_t *pPowerStatus);
-
-protected:
-    struct CecRxMessageHandler;
-    struct CecTxMessageHandler;
-
-    // Protected constructor prevents a client from creating an instance of this
-    // class directly, but allows a sub-class to call it through inheritence.
-    CecServiceManager(uint32_t cecId = 0) : NexusService::CecServiceManager(cecId) {
-        ALOGV("%s: called for CEC%d", __PRETTY_FUNCTION__, cecId);
-    }
-
-    static sp<NexusService::CecServiceManager> instantiate(uint32_t cecId) {
-        return new CecServiceManager(cecId);
-    }
-
-private:
-    /* Disallow copy constructor and copy operator... */
-    CecServiceManager(const CecServiceManager &);
-    CecServiceManager &operator=(const CecServiceManager &);
+enum {
+    ON_HDMI_CEC_MESSAGE_RECEIVED = IBinder::FIRST_CALL_TRANSACTION,
 };
 
-#endif // _NEXUSNXCECSERVICE_H_
+class BpNexusHdmiCecMessageEventListener : public BpInterface<INexusHdmiCecMessageEventListener>
+{
+public:
+    BpNexusHdmiCecMessageEventListener(const sp<IBinder>& impl) : BpInterface<INexusHdmiCecMessageEventListener>(impl) { }
+
+    /* HDMI related events... */
+    virtual status_t onHdmiCecMessageReceived(int32_t portId, INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message);
+};
+
+/* The process that receives HDMI CEC events from Nexus should be responsible for calling this function
+   so that other "client" process(es) can receive this event. */
+status_t BpNexusHdmiCecMessageEventListener::onHdmiCecMessageReceived(int32_t portId, INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message)
+{
+    Parcel data, reply;
+
+    data.writeInterfaceToken(INexusHdmiCecMessageEventListener::getInterfaceDescriptor());
+    data.writeInt32(portId);
+    data.write(message, sizeof(*message));
+    return remote()->transact(ON_HDMI_CEC_MESSAGE_RECEIVED, data, &reply);
+}
+
+IMPLEMENT_META_INTERFACE(NexusHdmiCecMessageEventListener, "com.broadcom.bse.nexusHdmiCecMessageEventListenerInterface");
+
+status_t BnNexusHdmiCecMessageEventListener::onTransact(uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags)
+{
+    status_t ret;
+
+    switch (code) {
+        case ON_HDMI_CEC_MESSAGE_RECEIVED: {
+            int32_t portId;
+            INexusHdmiCecMessageEventListener::hdmiCecMessage_t message;
+            CHECK_INTERFACE(INexusHdmiCecMessageEventListener, data, reply);
+            portId = data.readInt32();
+            ret = data.read(&message, sizeof(message));
+            if (ret == OK) {
+                ret = onHdmiCecMessageReceived(portId, &message);
+            }
+        } break;
+
+        default:
+            ret = BBinder::onTransact(code, data, reply, flags);
+    }
+    return ret;
+}

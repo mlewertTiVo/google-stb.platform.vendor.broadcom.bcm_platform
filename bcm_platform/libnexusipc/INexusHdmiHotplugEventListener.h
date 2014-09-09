@@ -34,47 +34,36 @@
  * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE 
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
  * ANY LIMITED REMEDY.
- *
+ * 
  *****************************************************************************/
-#ifndef _NEXUSNXCECSERVICE_H_
-#define _NEXUSNXCECSERVICE_H_
+#ifndef _INEXUS_HDMI_HOTPLUG_EVENT_LISTENER_H_
+#define _INEXUS_HDMI_HOTPLUG_EVENT_LISTENER_H_
 
-#include "nexusnxservice.h"
-#include "nexuscecservice.h"
+#include <binder/IInterface.h>
+#include <binder/Parcel.h>
+#include <utils/Errors.h>
+#include <utils/RefBase.h>
+#include <utils/String16.h>
 
-using namespace android;
+namespace android {
 
-struct NexusNxService::CecServiceManager : public NexusService::CecServiceManager
+class INexusHdmiHotplugEventListener : public IInterface
 {
-public:
-    friend class NexusNxService;
-    virtual      ~CecServiceManager();
-    //virtual status_t platformInit();
-    //virtual void platformUninit();
-    //virtual bool isPlatformInitialised();
-    virtual bool getCecPhysicalAddress(b_cecPhysicalAddress *pCecPhyAddr);
-    //virtual status_t sendCecMessage(uint8_t destAddr, size_t length, uint8_t *pBuffer);
-    //virtual bool setPowerState(b_powerState pmState);
-    //virtual bool getPowerStatus(uint8_t *pPowerStatus);
+    public:
+    DECLARE_META_INTERFACE(NexusHdmiHotplugEventListener);
 
-protected:
-    struct CecRxMessageHandler;
-    struct CecTxMessageHandler;
-
-    // Protected constructor prevents a client from creating an instance of this
-    // class directly, but allows a sub-class to call it through inheritence.
-    CecServiceManager(uint32_t cecId = 0) : NexusService::CecServiceManager(cecId) {
-        ALOGV("%s: called for CEC%d", __PRETTY_FUNCTION__, cecId);
-    }
-
-    static sp<NexusService::CecServiceManager> instantiate(uint32_t cecId) {
-        return new CecServiceManager(cecId);
-    }
-
-private:
-    /* Disallow copy constructor and copy operator... */
-    CecServiceManager(const CecServiceManager &);
-    CecServiceManager &operator=(const CecServiceManager &);
+    virtual status_t onHdmiHotplugEventReceived(int32_t portId, bool connected) = 0;
 };
 
-#endif // _NEXUSNXCECSERVICE_H_
+class BnNexusHdmiHotplugEventListener : public BnInterface<INexusHdmiHotplugEventListener>
+{
+    public:
+    virtual status_t onTransact( uint32_t code,
+                                 const Parcel& data,
+                                 Parcel* reply,
+                                 uint32_t flags = 0);
+};
+
+}; // namespace android
+#endif
+

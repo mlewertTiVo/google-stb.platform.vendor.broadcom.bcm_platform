@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2013 Broadcom Corporation
+ *    (c)2011-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -72,6 +72,9 @@ public:
     virtual bool disconnectClientResources(NexusClientContext * client);
 
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/
+    //virtual status_t setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener);
+    virtual status_t setHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener);
+
     //virtual void getPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings);
     //virtual void setPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings);
     //virtual void getGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings);
@@ -85,8 +88,10 @@ public:
     //virtual b_powerState getPowerState();
     //virtual bool setCecPowerState(uint32_t cecId, b_powerState pmState);
     //virtual bool getCecPowerStatus(uint32_t cecId, uint8_t *pPowerStatus);
-    //virtual bool sendCecMessage(uint32_t cecId, uint8_t destAddr, size_t length, uint8_t *pMessage);
+    //virtual bool getCecStatus(uint32_t cecId, b_cecStatus *pCecStatus);
+    //virtual bool sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage);
     //virtual bool isCecEnabled(uint32_t cecId);
+    //virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr);
 
 protected:
 #if NEXUS_HAS_CEC
@@ -98,6 +103,10 @@ protected:
     //virtual NEXUS_ClientHandle getNexusClient(NexusClientContext * client);
 
 private:
+    int platformInitHdmiOutputs(void);
+    void platformUninitHdmiOutputs();
+    static void hotplugCallback(void *context, int param);
+
     NEXUS_SurfaceCompositorClientId     graphicSurfaceClientId;
 };
 

@@ -34,47 +34,58 @@
  * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE 
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
  * ANY LIMITED REMEDY.
- *
+ * 
  *****************************************************************************/
-#ifndef _NEXUSNXCECSERVICE_H_
-#define _NEXUSNXCECSERVICE_H_
+#undef LOG_TAG
+#define LOG_TAG "INexusHdmiHotplugEventListener"
+#include <utils/Log.h>
 
-#include "nexusnxservice.h"
-#include "nexuscecservice.h"
+#include "INexusHdmiHotplugEventListener.h"
 
 using namespace android;
 
-struct NexusNxService::CecServiceManager : public NexusService::CecServiceManager
-{
-public:
-    friend class NexusNxService;
-    virtual      ~CecServiceManager();
-    //virtual status_t platformInit();
-    //virtual void platformUninit();
-    //virtual bool isPlatformInitialised();
-    virtual bool getCecPhysicalAddress(b_cecPhysicalAddress *pCecPhyAddr);
-    //virtual status_t sendCecMessage(uint8_t destAddr, size_t length, uint8_t *pBuffer);
-    //virtual bool setPowerState(b_powerState pmState);
-    //virtual bool getPowerStatus(uint8_t *pPowerStatus);
-
-protected:
-    struct CecRxMessageHandler;
-    struct CecTxMessageHandler;
-
-    // Protected constructor prevents a client from creating an instance of this
-    // class directly, but allows a sub-class to call it through inheritence.
-    CecServiceManager(uint32_t cecId = 0) : NexusService::CecServiceManager(cecId) {
-        ALOGV("%s: called for CEC%d", __PRETTY_FUNCTION__, cecId);
-    }
-
-    static sp<NexusService::CecServiceManager> instantiate(uint32_t cecId) {
-        return new CecServiceManager(cecId);
-    }
-
-private:
-    /* Disallow copy constructor and copy operator... */
-    CecServiceManager(const CecServiceManager &);
-    CecServiceManager &operator=(const CecServiceManager &);
+enum {
+    ON_HDMI_HOTPLUG_EVENT_RECEIVED = IBinder::FIRST_CALL_TRANSACTION,
 };
 
-#endif // _NEXUSNXCECSERVICE_H_
+class BpNexusHdmiHotplugEventListener : public BpInterface<INexusHdmiHotplugEventListener>
+{
+public:
+    BpNexusHdmiHotplugEventListener(const sp<IBinder>& impl) : BpInterface<INexusHdmiHotplugEventListener>(impl) { }
+
+    virtual status_t onHdmiHotplugEventReceived(int32_t portId, bool connected);
+};
+
+/* The process that receives HDMI Hotplug events from Nexus should be responsible for calling this function
+   so that other "client" process(es) can receive this event. */
+status_t BpNexusHdmiHotplugEventListener::onHdmiHotplugEventReceived(int32_t portId, bool connected)
+{
+    Parcel data, reply;
+
+    data.writeInterfaceToken(INexusHdmiHotplugEventListener::getInterfaceDescriptor());
+    data.writeInt32(portId);
+    data.writeInt32(connected ? 1 : 0);
+    return remote()->transact(ON_HDMI_HOTPLUG_EVENT_RECEIVED, data, &reply);
+}
+
+IMPLEMENT_META_INTERFACE(NexusHdmiHotplugEventListener, "com.broadcom.bse.nexusHdmiHotplugEventListenerInterface");
+
+status_t BnNexusHdmiHotplugEventListener::onTransact(uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags)
+{
+    status_t ret;
+
+    switch (code) {
+        case ON_HDMI_HOTPLUG_EVENT_RECEIVED: {
+            int32_t portId;
+            int32_t connected;
+            CHECK_INTERFACE(INexusHdmiHotplugEventListener, data, reply);
+            portId = data.readInt32();
+            connected = data.readInt32();
+            ret = onHdmiHotplugEventReceived(portId, !!connected);
+        } break;
+
+        default:
+            ret = BBinder::onTransact(code, data, reply, flags);
+    }
+    return ret;
+}

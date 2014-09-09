@@ -113,7 +113,7 @@ endif
 
 include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false
-LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder $(NEXUS_LIB) libstagefright_foundation
+LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusipceventlistener $(NEXUS_LIB) libstagefright_foundation
 
 ifeq ($(ANDROID_USES_TRELLIS_WM),y)
 LOCAL_SHARED_LIBRARIES += libstlport

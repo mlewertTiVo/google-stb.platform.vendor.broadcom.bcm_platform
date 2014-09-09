@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2012 Broadcom Corporation
+ *    (c)2010-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -36,8 +36,6 @@
  * ANY LIMITED REMEDY.
  *
  * $brcm_Workfile: nexus_ipc_client.cpp $
- * $brcm_Revision: 10 $
- * $brcm_Date: 12/14/12 2:28p $
  * 
  * Module Description:
  * This file contains the implementation of the class that uses binder IPC
@@ -47,47 +45,6 @@
  * On the client side, the definition of these API functions simply encapsulate
  * the API into a command + param format and sends the command over binder to
  * the server side for actual execution.
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/libnexusipc/nexus_ipc_client.cpp $
- * 
- * 10   12/14/12 2:28p kagrawal
- * SWANDROID-277: Wrapper IPC APIs for
- *  NEXUS_SimpleXXX_Acquire()/_Release()
- * 
- * 9   9/13/12 11:30a kagrawal
- * SWANDROID-104: Added support for dynamic display resolution change,
- *  1080p and screen resizing
- * 
- * 8   9/4/12 6:53p nitinb
- * SWANDROID-197:Implement volume control functionality on nexus server
- *  side
- * 
- * 7   7/30/12 4:06p kagrawal
- * SWANDROID-104: Support for composite output
- * 
- * 6   7/6/12 9:11p ajitabhp
- * SWANDROID-128: FIXED Graphics Window Resource Leakage in SBS and NSC
- *  mode.
- * 
- * 5   6/24/12 10:31p alexpan
- * SWANDROID-108: Fix build errors for platforms without hdmi-in after
- *  changes for SimpleDecoder
- * 
- * 4   6/20/12 11:08a kagrawal
- * SWANDROID-108: Add support for HDMI-Input with SimpleDecoder and w/ or
- *  w/o nexus client server mode
- * 
- * 3   4/13/12 1:15p ajitabhp
- * SWANDROID-65: Memory Owner ship problem resolved in multi-process mode.
- * 
- * 2   4/3/12 4:59p kagrawal
- * SWANDROID-56: Added support for VideoWindow configuration in NSC mode
- * 
- * 1   2/24/12 1:50p kagrawal
- * SWANDROID-12: Initial version of ipc over binder
- * 
  *
  *****************************************************************************/
   
@@ -147,6 +104,11 @@ public:
         data.write(cmd, sizeof(api_data));
         remote()->transact(API_OVER_BINDER, data, &reply);
         reply.read(&cmd->param, sizeof(cmd->param));
+    }
+
+    IBinder* get_remote()
+    {
+        return remote();
     }
 };
 android_IMPLEMENT_META_INTERFACE(NexusClient, NEXUS_INTERFACE_NAME)
@@ -632,17 +594,40 @@ bool NexusIPCClient::getCecPowerStatus(uint32_t cecId, uint8_t *pPowerStatus)
     return cmd.param.getCecPowerStatus.out.status;
 }
 
-bool NexusIPCClient::sendCecMessage(uint32_t cecId, uint8_t destAddr, size_t length, uint8_t *pMessage)
+bool NexusIPCClient::getCecStatus(uint32_t cecId, b_cecStatus *pCecStatus)
+{
+    api_data cmd;
+    BKNI_Memset(&cmd, 0, sizeof(cmd));
+    cmd.api = api_getCecStatus;
+    cmd.param.getCecStatus.in.cecId = cecId;
+    iNC->api_over_binder(&cmd);
+    *pCecStatus = cmd.param.getCecStatus.out.cecStatus;
+    return cmd.param.getCecStatus.out.status;
+}
+
+bool NexusIPCClient::sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage)
 {
     api_data cmd;
     BKNI_Memset(&cmd, 0, sizeof(cmd));
     cmd.api = api_sendCecMessage;
     cmd.param.sendCecMessage.in.cecId = cecId;
+    cmd.param.sendCecMessage.in.srcAddr = srcAddr;
     cmd.param.sendCecMessage.in.destAddr = destAddr;
     cmd.param.sendCecMessage.in.length = length;
     memcpy(cmd.param.sendCecMessage.in.message, pMessage, MIN(length, NEXUS_CEC_MESSAGE_DATA_SIZE));
     iNC->api_over_binder(&cmd);
     return cmd.param.sendCecMessage.out.status;
+}
+
+bool NexusIPCClient::setCecLogicalAddress(uint32_t cecId, uint8_t addr)
+{
+    api_data cmd;
+    BKNI_Memset(&cmd, 0, sizeof(cmd));
+    cmd.api = api_setCecLogicalAddress;
+    cmd.param.setCecLogicalAddress.in.cecId = cecId;
+    cmd.param.setCecLogicalAddress.in.addr = addr;
+    iNC->api_over_binder(&cmd);
+    return cmd.param.setCecLogicalAddress.out.status;
 }
 
 bool NexusIPCClient::connectClientResources(NexusClientContext * client, b_refsw_client_connect_resource_settings *pConnectSettings)
@@ -709,6 +694,26 @@ NEXUS_SimpleEncoderHandle NexusIPCClient::acquireSimpleEncoderHandle()
 void NexusIPCClient::releaseSimpleEncoderHandle(NEXUS_SimpleEncoderHandle handle)
 {
     NEXUS_SimpleEncoder_Release(handle);
+}
+
+status_t NexusIPCClient::setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener)
+{
+    android::Parcel data, reply;
+    data.writeInterfaceToken(android::String16(NEXUS_INTERFACE_NAME));
+    data.writeInt32(cecId);
+    data.writeStrongBinder(listener->asBinder());
+    iNC->get_remote()->transact(SET_HDMI_CEC_MESSAGE_EVENT_LISTENER, data, &reply);
+    return reply.readInt32();
+}
+
+status_t NexusIPCClient::setHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener)
+{
+    android::Parcel data, reply;
+    data.writeInterfaceToken(android::String16(NEXUS_INTERFACE_NAME));
+    data.writeInt32(portId);
+    data.writeStrongBinder(listener->asBinder());
+    iNC->get_remote()->transact(SET_HDMI_HOTPLUG_EVENT_LISTENER, data, &reply);
+    return reply.readInt32();
 }
 
 void NexusIPCClient::getPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings)

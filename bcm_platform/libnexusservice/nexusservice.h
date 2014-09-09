@@ -59,14 +59,14 @@
 #if NEXUS_NUM_COMPONENT_OUTPUTS
 #include "nexus_component_output.h"
 #endif
-#if NEXUS_NUM_HDMI_OUTPUTS
+#if NEXUS_HAS_HDMI_OUTPUT
 #include "nexus_hdmi_output.h"
 #include "nexus_hdmi_output_hdcp.h"
 #if NEXUS_HAS_CEC
 #include "nexus_cec.h"
 #endif
 #endif
-#if NEXUS_NUM_HDMI_INPUTS
+#if NEXUS_HAS_HDMI_INPUT
 #include "nexus_hdmi_input.h"
 #endif
 #include "nexus_video_input.h"
@@ -106,9 +106,10 @@
 
 #define HD_DISPLAY (0)
 #define SD_DISPLAY (1)
-#define MAX_AUDIO_DECODERS (2)
-#define MAX_VIDEO_DECODERS (2)
-#define MAX_ENCODERS (2)
+#define MAX_AUDIO_DECODERS  ((NEXUS_NUM_AUDIO_DECODERS  < 2) ? NEXUS_NUM_AUDIO_DECODERS  : 2)
+#define MAX_AUDIO_PLAYBACKS ((NEXUS_NUM_AUDIO_PLAYBACKS < 2) ? NEXUS_NUM_AUDIO_PLAYBACKS : 2)
+#define MAX_VIDEO_DECODERS  ((NEXUS_NUM_VIDEO_DECODERS  < 2) ? NEXUS_NUM_VIDEO_DECODERS  : 2)
+#define MAX_ENCODERS        ((NEXUS_NUM_VIDEO_ENCODERS  < 2) ? NEXUS_NUM_VIDEO_ENCODERS  : 2)
 #define AUDIO_DECODER_FIFO_SIZE  2*1024*1024
 #define VIDEO_DECODER_FIFO_SIZE 10*1024*1024
 
@@ -163,6 +164,9 @@ public:
     virtual bool disconnectClientResources(NexusClientContext * client);
 
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/
+    virtual status_t setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener);
+    virtual status_t setHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener);
+
     virtual void getPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings);
     virtual void setPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings);
     virtual void getGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings);
@@ -176,8 +180,10 @@ public:
     virtual b_powerState getPowerState();
     virtual bool setCecPowerState(uint32_t cecId, b_powerState pmState);
     virtual bool getCecPowerStatus(uint32_t cecId, uint8_t *pPowerStatus);
-    virtual bool sendCecMessage(uint32_t cecId, uint8_t destAddr, size_t length, uint8_t *pMessage);
+    virtual bool getCecStatus(uint32_t cecId, b_cecStatus *pCecStatus);
+    virtual bool sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage);
     virtual bool isCecEnabled(uint32_t cecId);
+    virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr);
 
 protected:
 #if NEXUS_HAS_CEC
@@ -199,9 +205,12 @@ private:
     /* These API's are private helper functions... */
     NEXUS_ClientHandle clientJoin(const b_refsw_client_client_name *pClientName, NEXUS_ClientAuthenticationSettings *pClientAuthenticationSettings);
     NEXUS_Error clientUninit(NEXUS_ClientHandle clientHandle);
-    void platformInitSurfaceCompositor(void);
-    void platformInitVideo(void);    
-    void platformInitAudio(void);    
+    int platformInitSurfaceCompositor(void);
+    int platformInitVideo(void);    
+    int platformInitAudio(void);    
+    int platformInitHdmiOutputs(void);
+    void platformUninitHdmiOutputs();
+    static void hotplugCallback(void *context, int param);
     void setDisplayState(bool enable);
     void setVideoState(bool enable);
     void setAudioState(bool enable);
