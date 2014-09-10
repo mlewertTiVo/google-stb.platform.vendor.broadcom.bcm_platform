@@ -64,8 +64,9 @@ ifeq ($(JB_OR_EARLIER),y)
 MP_CFLAGS += -DANDROID_SUPPORTS_O_DIRECT
 endif
 
-include $(REFSW_PATH)/bin/include/platform_app.inc
-include $(REFSW_PATH)/bin/include/b_playback_ip_lib.inc
+include $(DEVICE_REFSW_PLAY_BUILD_CONFIG)
+$(warning NX-BUILD: CFG: ${DEVICE_REFSW_BUILD_CONFIG}, CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
+
 
 BCMPLAYER_SHARED_LIBRARIES := liblog libcutils libbinder libutils libb_os libb_playback_ip libb_psip libnexusipcclient $(NEXUS_LIB)
 
@@ -103,7 +104,7 @@ BCMPLAYER_SRC_FILES := \
         ip_psi.c
 
 #if you want to get LOGV message, please add "-DLOG_NDEBUG=0" compiler flags behind "LOCAL_CFLAGS" define
-BCMPLAYER_CFLAGS := $(NEXUS_CFLAGS) -DANDROID  -DFEATURE_GPU_ACCEL_H264_BRCM -DFEATURE_AUDIO_HWCODEC
+BCMPLAYER_CFLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID  -DFEATURE_GPU_ACCEL_H264_BRCM -DFEATURE_AUDIO_HWCODEC
 BCMPLAYER_CFLAGS += $(addprefix -D,$(B_PLAYBACK_IP_LIB_DEFINES)) $(MP_CFLAGS)
 BCMPLAYER_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 

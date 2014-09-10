@@ -32,7 +32,7 @@ endif
 # HAL module implemenation, not prelinked and stored in
 # hw/<OVERLAY_HARDWARE_MODULE_ID>.<ro.product.board>.so
 
-include $(REFSW_PATH)/bin/include/platform_app.inc
+$(warning NX-BUILD: CFG: ${DEVICE_REFSW_BUILD_CONFIG}, CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
 
 # Nexus multi-process, client-server related 
 MP_CFLAGS = -DANDROID_CLIENT_SECURITY_MODE=$(ANDROID_CLIENT_SECURITY_MODE)
@@ -56,59 +56,13 @@ LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
                     $(REFSW_PATH)/../libnexusservice
 LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc
 LOCAL_C_INCLUDES += $(REFSW_PATH)/../../drivers/nx_ashmem
+LOCAL_C_INCLUDES += $(REFSW_PATH)/../../refsw/rockford/middleware/v3d/interface/khronos/include
 
 REMOVE_NEXUS_CFLAGS := -Wstrict-prototypes -march=armv7-a
 MANGLED_NEXUS_CFLAGS := $(filter-out $(REMOVE_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
 
-LOCAL_CFLAGS:= -DLOG_TAG=\"gralloc\" $(MANGLED_NEXUS_CFLAGS) -DANDROID $(MP_CFLAGS)
+LOCAL_CFLAGS:= -DLOG_TAG=\"gralloc\" $(MANGLED_NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
 LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
-
-ifeq ($(ANDROID_USES_TRELLIS_WM),y)
-LOCAL_SHARED_LIBRARIES += libstlport
-
-LOCAL_STATIC_LIBRARIES := libtrellis_application_androidwindowmanager_impl \
-                          libtrellis_application_delegatewindowmanager_impl \
-                          libtrellis_application_windowmanager_impl \
-                          libtrellis_application_applicationmanager_impl \
-                          libtrellis_application_authorizationattributesmanager_impl \
-                          libtrellis_application_authorizationattributesmanager_proxy \
-                          libtrellis_application_packagemanager_proxy \
-                          libtrellis_application_windowmanager_proxy \
-                          libtrellis_application_servicemanager_proxy \
-                          libtrellis_application_applicationmanager_proxy \
-                          libtrellis_application_service_proxy \
-                          libtrellis_application_inputdriver_proxy \
-                          libtrellis_application_window_proxy \
-                          libtrellis_application_application_proxy \
-                          libtrellis_application_usernotification_proxy \
-                          libtrellis_trellis-core 
-
-LOCAL_C_INCLUDES += $(APPLIBS_TOP)/broadcom/trellis-core/common \
-                    $(APPLIBS_TOP)/broadcom/trellis-core/osapi \
-                    $(APPLIBS_TOP)/broadcom/trellis-core/rpc/orb \
-                    $(APPLIBS_TOP)/broadcom/trellis-core/rpc \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/androidwindowmanager/impl \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/windowmanager/impl \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/windowmanager/include \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/windowmanager/proxy/generated \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/applicationmanager/impl \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/applicationmanager/include \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/applicationmanager/proxy/generated \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/application/include \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/application/proxy/generated \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/window/include \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/window/proxy/generated \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/servicemanager/include \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/servicemanager/proxy/generated \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/packagemanager/include \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/packagemanager/proxy/generated \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/usernotification/include \
-                    $(APPLIBS_TOP)/broadcom/services/application/components/usernotification/proxy/generated \
-                    $(APPLIBS_TOP)/opensource/boost/boost_1_52_0 \
-                    $(APPLIBS_TOP)/opensource/boost/boost_1_52_0/boost \
-                    external/stlport/stlport \
-                    bionic
-endif
 
 LOCAL_SRC_FILES := \
         gralloc.cpp \

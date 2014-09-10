@@ -20,7 +20,7 @@ BSEAV_TOP  ?= ../../../../../../../../../BSEAV
 GLOB_PATH  := $(BSEAV_TOP)/lib/glob
 POWER_PATH := $(BSEAV_TOP)/lib/power_standby
 
-include $(REFSW_PATH)/bin/include/platform_app.inc
+$(warning NX-BUILD: CFG: ${DEVICE_REFSW_BUILD_CONFIG}, CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
 
 # Linux 3.3 supports the /sys/devices/platform/brcmstb sysfs layout.
 PMLIB_SUPPORTS_BRCMSTB_SYSFS := $(shell test "${LINUXVER}" \< "3.8.0" && echo "y")
@@ -37,7 +37,7 @@ LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/$(GLOB_PATH) \
                     $(LOCAL_PATH)/$(POWER_PATH)
                     
-LOCAL_CFLAGS:= $(NEXUS_CFLAGS) -DANDROID $(MP_CFLAGS)
+LOCAL_CFLAGS:= $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
 LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 
 ifeq ($(PMLIB_SUPPORTS_BRCMSTB_SYSFS), y)

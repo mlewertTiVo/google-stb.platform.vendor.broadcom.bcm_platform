@@ -6,8 +6,8 @@ endif
 LOCAL_PATH := $(call my-dir)
 APPLIB_TOP := $(LOCAL_PATH)/../../../../../../..
 
-include $(REFSW_PATH)/bin/include/platform_app.inc
 include $(CLEAR_VARS)
+$(warning NX-BUILD: CFG: ${DEVICE_REFSW_BUILD_CONFIG}, CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
 
 LOCAL_MODULE            := libjni_bcmfp
 LOCAL_SRC_FILES         := BcmFP_jni.cpp

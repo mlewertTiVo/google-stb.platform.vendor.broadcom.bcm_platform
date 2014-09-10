@@ -12,7 +12,7 @@ NEXUS_LIB=libnexus_client
 endif
 endif    
 
-include $(REFSW_PATH)/bin/include/platform_app.inc
+$(warning NX-BUILD: CFG: ${DEVICE_REFSW_BUILD_CONFIG}, CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
 
 include $(CLEAR_VARS)
 
@@ -38,6 +38,8 @@ LOCAL_C_INCLUDES += \
     $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
     $(TOP)/vendor/broadcom/bcm_platform/libnexusipc 
 
+LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
+
 LOCAL_SHARED_LIBRARIES := \
     libdl \
     liblog \
@@ -47,7 +49,7 @@ LOCAL_SHARED_LIBRARIES := \
 	libnexusipcclient \
     libui
 
-LOCAL_CFLAGS := $(NEXUS_CFLAGS) 
+LOCAL_CFLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) 
 LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 ifeq ($(BCM_OMX_SUPPORT_ENCODER),y)
 LOCAL_CFLAGS += -DBCM_OMX_SUPPORT_ENCODER

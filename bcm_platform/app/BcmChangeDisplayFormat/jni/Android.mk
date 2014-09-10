@@ -17,7 +17,8 @@ endif
 endif
 
 include $(CLEAR_VARS)
-include $(REFSW_PATH)/bin/include/platform_app.inc
+
+$(warning NX-BUILD: CFG: ${DEVICE_REFSW_BUILD_CONFIG}, CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
 
 LOCAL_PRELINK_MODULE := false
 
@@ -30,7 +31,7 @@ LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc
 
 LOCAL_SRC_FILES := jni_changedisplayformat.cpp
 
-LOCAL_CFLAGS:= $(NEXUS_CFLAGS) -DANDROID
+LOCAL_CFLAGS:= $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID
 
 # Test for version newer than ICS
 JB_OR_NEWER := $(shell test "${BRCM_ANDROID_VERSION}" \> "ics" && echo "y")

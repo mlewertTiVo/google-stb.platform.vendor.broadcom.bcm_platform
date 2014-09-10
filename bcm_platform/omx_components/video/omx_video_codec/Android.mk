@@ -15,7 +15,7 @@ NEXUS_LIB=libnexus_client
 endif
 endif
 
-include $(REFSW_PATH)/bin/include/platform_app.inc
+$(warning NX-BUILD: CFG: ${DEVICE_REFSW_BUILD_CONFIG}, CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
 
 COMMON_INCLUDE_FILES =  $(TOP)/frameworks/native/include/media/openmax \
                         $(TOP)/frameworks/native/include/utils \
@@ -28,6 +28,8 @@ COMMON_INCLUDE_FILES =  $(TOP)/frameworks/native/include/media/openmax \
                         $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
                         $(TOP)/vendor/broadcom/bcm_platform/libnexusipc \
                         $(TOP)/vendor/broadcom/bcm_platform/libgralloc
+
+COMMON_INCLUDE_FILES += ${NXCLIENT_INCLUDES}
 
 COMMON_SHARED_LIBRARIES=    libc \
                             libutils\
@@ -43,7 +45,7 @@ ifneq ($(ANDROID_SUPPORTS_NXCLIENT),y)
 COMMON_SHARED_LIBRARIES += libnexusservice
 endif
 
-COMMON_C_FLAGS := $(NEXUS_CFLAGS)
+COMMON_C_FLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES))
 COMMON_C_FLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 COMMON_C_FLAGS += -DENABLE_BCM_OMX_PROTOTYPE
 ifeq ($(OMX_EXTEND_CODECS_SUPPORT),y)

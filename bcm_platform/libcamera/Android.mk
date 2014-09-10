@@ -13,17 +13,16 @@ NEXUS_LIB=libnexus_client
 endif
 endif
 
-include $(REFSW_PATH)/bin/include/platform_app.inc
-
 # HAL module implemenation, not prelinked and stored in
 # hw/<OVERLAY_HARDWARE_MODULE_ID>.<ro.product.board>.so
 include $(CLEAR_VARS)
 
+$(warning NX-BUILD: CFG: ${DEVICE_REFSW_BUILD_CONFIG}, CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
 
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 LOCAL_SHARED_LIBRARIES := liblog libEGL libui libjpeg libcamera_client libcutils libdl libbinder libutils $(NEXUS_LIB)
-LOCAL_CFLAGS:= $(NEXUS_CFLAGS) -DANDROID -DLOG_TAG=\"CameraDevHAL\"
+LOCAL_CFLAGS:= $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID -DLOG_TAG=\"CameraDevHAL\"
 
 HARDWARE_CAMERA_HAL_SRC := \
 	CameraHAL_Mod.cpp \

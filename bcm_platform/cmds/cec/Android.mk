@@ -5,7 +5,8 @@ LOCAL_PATH := $(call my-dir)
 # Executable send_cec
 #
 include $(CLEAR_VARS)
-include $(REFSW_PATH)/bin/include/platform_app.inc
+
+$(warning NX-BUILD: CFG: ${DEVICE_REFSW_BUILD_CONFIG}, CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
 
 LOCAL_SRC_FILES := \
     send_cec.cpp
@@ -27,7 +28,7 @@ LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
 					$(REFSW_PATH)/../libnexusservice \
 					$(REFSW_PATH)/../libnexusipc
 
-LOCAL_CFLAGS := $(NEXUS_CFLAGS) -DANDROID
+LOCAL_CFLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID
 
 ifeq ($(TARGET_ARCH),mips)
 LOCAL_CFLAGS += -DTARGET_ARCH_MIPS
@@ -45,7 +46,8 @@ ifeq ($(ANDROID_KK_OR_OLDER),y)
 # Executable get_cec
 #
 include $(CLEAR_VARS)
-include $(REFSW_PATH)/bin/include/platform_app.inc
+
+$(warning NX-BUILD: CFG: ${DEVICE_REFSW_BUILD_CONFIG}, CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
 
 LOCAL_SRC_FILES := \
     get_cec.cpp
@@ -67,7 +69,7 @@ LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
 					$(REFSW_PATH)/../libnexusservice \
 					$(REFSW_PATH)/../libnexusipc
 
-LOCAL_CFLAGS := $(NEXUS_CFLAGS) -DANDROID
+LOCAL_CFLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID
 
 ifeq ($(TARGET_ARCH),mips)
 LOCAL_CFLAGS += -DTARGET_ARCH_MIPS

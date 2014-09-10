@@ -18,7 +18,7 @@ LOCAL_STATIC_LIBRARIES  := libtrellis_media_mediaplayer_proxy libtrellis_media_n
 LOCAL_STATIC_LIBRARIES  += libtrellis_media_mediastore_proxy libtrellis_media_mediastreamer_proxy libtrellis_media_filesource_proxy libtrellis_media_tv_proxy libtrellis_media_broadcastsource_proxy libtrellis_media_source_proxy libtrellis_media_media_proxy 
 LOCAL_STATIC_LIBRARIES  += libtrellis_trellis-core
 
-LOCAL_CFLAGS			+= $(MEDIA_MEDIAPLAYER_PROXY_CFLAGS) -DATP_BUILD -DTRELLIS_ANDROID_BUILD $(NEXUS_CFLAGS)
+LOCAL_CFLAGS			+= $(MEDIA_MEDIAPLAYER_PROXY_CFLAGS) -DATP_BUILD -DTRELLIS_ANDROID_BUILD $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES))
 
 ifeq ($(ANDROID_USES_ARTEMIS),y)
 LOCAL_CFLAGS += -DANDROID_USES_ARTEMIS
