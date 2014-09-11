@@ -12,31 +12,47 @@
 //Path independent Debug Messages
 #define LOG_WARNING             ALOGD
 #define LOG_ERROR               ALOGD
-#define LOG_INFO                
+#define LOG_INFO                ALOGD
 
-OMXNexusVideoEncoder::OMXNexusVideoEncoder(char *CallerName)
+static void imageBufferCallbackDispatcher(void *context, int param)
+{
+    OMXNexusVideoEncoder    *pEncoder = (OMXNexusVideoEncoder *)context;
+    pEncoder->imageBufferCallback();
+}
+
+OMXNexusVideoEncoder::OMXNexusVideoEncoder(char *CallerName, int numInBuf)
     : EncoderHandle(NULL),
-    LastErr(ErrStsSuccess),EmptyFrListLen(0),EncodedFrListLen(0),
+    NumNxSurfaces(numInBuf),
+    EmptyFrListLen(0),EncodedFrListLen(0),
+    LastErr(ErrStsSuccess),
     EncoderStarted(false),
     CaptureFrames(true)
 {
     LOG_CREATE_DESTROY("%s: ENTER ===",__FUNCTION__);
     InitializeListHead(&EmptyFrList);
     InitializeListHead(&EncodedFrList);
+    InitializeListHead(&SurfaceBusyList);
+    InitializeListHead(&SurfaceAvailList);
+    InitializeListHead(&InputContextList);
 
     b_refsw_client_client_configuration         config;
     b_refsw_client_client_info                  client_info;
     b_refsw_client_connect_resource_settings    connectSettings;
     NxIPCClient = NexusIPCClientFactory::getClient(CallerName);
+    NEXUS_SurfaceCreateSettings surfaceCfg;
 
     BKNI_Memset(&config, 0, sizeof(config));
     BKNI_Snprintf(config.name.string,sizeof(config.name.string),CallerName);
-    
+
     config.resources.encoder = true;
     config.resources.audioDecoder = false;
-    config.resources.audioPlayback = false;            
+    config.resources.audioPlayback = false;
+#ifdef ENCODE_DISPLAY
     config.resources.videoDecoder = false;
-    config.resources.screen.required = false;   
+#else
+    config.resources.videoDecoder = true;
+#endif
+    config.resources.screen.required = false;
 
     NxClientCntxt = NxIPCClient->createClientContext(&config);
 
@@ -59,7 +75,13 @@ OMXNexusVideoEncoder::OMXNexusVideoEncoder(char *CallerName)
 
     connectSettings.simpleEncoder[0].id = client_info.encoderId;
     connectSettings.simpleEncoder[0].video.cpuAccessible = true;
-	connectSettings.simpleEncoder[0].display = true;
+#ifdef ENCODE_DISPLAY
+    connectSettings.simpleEncoder[0].display = true;
+#else
+    connectSettings.simpleEncoder[0].display = false;
+    connectSettings.simpleVideoDecoder[0].id = client_info.videoDecoderId;
+    connectSettings.simpleVideoDecoder[0].windowCaps.encoder = true;
+#endif
 
     if (true != NxIPCClient->connectClientResources(NxClientCntxt, &connectSettings)) 
     {
@@ -78,15 +100,83 @@ OMXNexusVideoEncoder::OMXNexusVideoEncoder(char *CallerName)
 
     if ( NULL == EncoderHandle )
     {
-        LOG_ERROR("%s Unable to acquire Simple Audio Encoder \n",__FUNCTION__);
+        LOG_ERROR("%s Unable to acquire Simple Encoder \n",__FUNCTION__);
         LastErr = ErrStsDecoAcquireFail;
         return;
     }else{
         LOG_CREATE_DESTROY("%s: Acquired Encoder Handle", __FUNCTION__);
     }
 
+    DecoderHandle = NxIPCClient->acquireVideoDecoderHandle();
+    if ( NULL == DecoderHandle )
+    {
+        LOG_ERROR("%s Unable to acquire Simple Video Decoder \n",__FUNCTION__);
+        LastErr = ErrStsDecoAcquireFail;
+        return;
+    }else{
+        LOG_CREATE_DESTROY("%s: Acquired Simple Video Decoder Handle", __FUNCTION__);
+    }
+
+    NEXUS_SimpleStcChannelSettings stcSettings;
+    NEXUS_Error rc;
+
+    StcChannel = NEXUS_SimpleStcChannel_Create(NULL);
+    NEXUS_SimpleStcChannel_GetSettings(StcChannel, &stcSettings);
+    stcSettings.mode = NEXUS_StcChannelMode_eAuto;
+    rc = NEXUS_SimpleStcChannel_SetSettings(StcChannel, &stcSettings);
+    if (rc) 
+    {
+        LOG_ERROR("%s",__FUNCTION__);
+        LastErr = ErrStSTCChannelFailed;
+        return;
+    } else {
+            LOG_CREATE_DESTROY("%s: Set STC Channel ", __FUNCTION__);
+    }
+
+    rc = NEXUS_SimpleVideoDecoder_SetStcChannel(DecoderHandle, StcChannel);
+    if (rc) 
+    {
+        LOG_ERROR("%s",__FUNCTION__);
+        LastErr = ErrStSTCChannelFailed;
+        return;
+    } else {
+            LOG_CREATE_DESTROY("%s: Set STC Channel ", __FUNCTION__);
+    }
+
     FrRepeatParams.TimeStamp=0;
     FrRepeatParams.TimeStampInterpolated=0;
+
+#if 0
+    NEXUS_Surface_GetDefaultCreateSettings(&surfaceCfg);
+    surfaceCfg.heap = NEXUS_Platform_GetFramebufferHeap(NEXUS_OFFSCREEN_SURFACE);
+    //TODO: Remove width/height hardcoding
+    surfaceCfg.width  = 1280; /*720;*/
+    surfaceCfg.height = 720; /* 480 */
+    surfaceCfg.pixelFormat = NEXUS_PixelFormat_eCr8_Y18_Cb8_Y08;
+
+
+    pSurface = (PNEXUS_SURFACE*) malloc(sizeof(PNEXUS_SURFACE)*NumNxSurfaces);
+
+    for (unsigned int i = 0; i < NumNxSurfaces; i++)
+    {
+        pSurface[i] = (PNEXUS_SURFACE) malloc(sizeof(PNEXUS_SURFACE));
+        //LOG_CREATE_DESTROY("%s: 1 with while(1)",__FUNCTION__);while(1);
+        if (!pSurface[i])
+        {
+            LastErr = ErrStsNexusSurfaceFailed;
+            return;
+        }
+        pSurface[i]->handle = NEXUS_Surface_Create(&surfaceCfg);
+        if (!pSurface[i]->handle) 
+        {
+            LastErr = ErrStsNexusSurfaceFailed;
+            return;
+        }
+        //LOG_CREATE_DESTROY("%s: 2 with while (1)",__FUNCTION__); while(1);
+        InsertHeadList(&SurfaceAvailList, &pSurface[i]->ListEntry);
+    }
+    LOG_CREATE_DESTROY("%s: Nexus surfaces created",__FUNCTION__);
+#endif
 
     for (unsigned int i=0; i < VIDEO_ENCODE_DEPTH; i++) 
     {
@@ -97,7 +187,7 @@ OMXNexusVideoEncoder::OMXNexusVideoEncoder(char *CallerName)
             LastErr = ErrStsOutOfResource;
             return;
         }
-        
+
         pEncoFr->FrameData = new Vector <NEXUS_VideoEncoderDescriptor *>();
         FAST_INIT_ENC_VID_FR(pEncoFr);
         InitializeListHead(&pEncoFr->ListEntry);
@@ -173,6 +263,12 @@ OMXNexusVideoEncoder::StartEncoder()
 {
     NEXUS_Error errCode;
     NEXUS_SimpleEncoderStartSettings EncoderStartSettings;
+    NEXUS_VideoImageInputSettings imageInputSetting;
+    NEXUS_SimpleEncoderSettings encoderSettings;
+    NEXUS_SurfaceCreateSettings surfaceCfg;
+    NEXUS_ClientConfiguration clientConfig;
+    int i;
+    NEXUS_VideoImageInputStatus imageInputStatus;
 
     if (EncoderStarted) 
     {
@@ -182,11 +278,22 @@ OMXNexusVideoEncoder::StartEncoder()
         LastErr = ErrStsStartEncoFailed;
         return false;
     }
-    
+
+    NEXUS_SimpleEncoder_GetSettings(EncoderHandle, &encoderSettings);
+    encoderSettings.video.width = 1280;
+    encoderSettings.video.height = 720;
+    encoderSettings.videoEncoder.frameRate = NEXUS_VideoFrameRate_e14_985;
+    NEXUS_SimpleEncoder_SetSettings(EncoderHandle, &encoderSettings);
+    BDBG_MSG(("Encoder setup done"));
+
     NEXUS_SimpleEncoder_GetDefaultStartSettings(&EncoderStartSettings);
+#ifdef ENCODE_DISPLAY
     EncoderStartSettings.input.display = true;
+#else
+    EncoderStartSettings.input.video = DecoderHandle;
+#endif
     EncoderStartSettings.output.video.settings.codec = NEXUS_VideoCodec_eH264;
-	EncoderStartSettings.output.transport.type = NEXUS_TransportType_eEs;
+    EncoderStartSettings.output.transport.type = NEXUS_TransportType_eEs;
 
 //TODO: Revisit
 #if 0
@@ -213,6 +320,66 @@ OMXNexusVideoEncoder::StartEncoder()
             __FUNCTION__, __LINE__, errCode);
     }
 
+    ImageInput = NEXUS_SimpleVideoDecoder_StartImageInput(DecoderHandle, NULL);
+    if (!ImageInput)
+    {
+        LOG_ERROR("%s[%d]: NEXUS_SimpleVideoDecoder_StartImageInput Failed !!",
+            __FUNCTION__, __LINE__);
+
+        LastErr = ErrStsStartEncoFailed;
+        return false;
+    } else 
+    {
+        LOG_START_STOP_DBG("%s[%d]: Image Input Started Successfully !!",
+            __FUNCTION__, __LINE__);
+    }
+
+    NEXUS_Surface_GetDefaultCreateSettings(&surfaceCfg);
+
+    NEXUS_Platform_GetClientConfiguration(&clientConfig);
+    for (i=0;i<NEXUS_MAX_HEAPS;i++) {
+        NEXUS_MemoryStatus s;
+        if (!clientConfig.heap[i] || NEXUS_Heap_GetStatus(clientConfig.heap[i], &s)) continue;
+        if (s.memcIndex == imageInputStatus.memcIndex && (s.memoryType & NEXUS_MemoryType_eApplication) && s.largestFreeBlock >= 960*1080*2) {
+            surfaceCfg.heap = clientConfig.heap[i];
+            BDBG_WRN(("found heap[%d] on MEMC%d for VideoImageInput", i, s.memcIndex));
+            break;
+        }
+    }
+    if (!surfaceCfg.heap) {
+        BDBG_ERR(("no heap found. RTS failure likely."));
+    }
+    //TODO: Remove width/height hardcoding
+    surfaceCfg.width  = 1280; /*720;*/
+    surfaceCfg.height = 720; /* 480 */
+    surfaceCfg.pixelFormat = NEXUS_PixelFormat_eCr8_Y18_Cb8_Y08;
+
+
+    pSurface = (PNEXUS_SURFACE*) malloc(sizeof(PNEXUS_SURFACE)*NumNxSurfaces);
+
+    for (unsigned int i = 0; i < NumNxSurfaces; i++)
+    {
+        pSurface[i] = (PNEXUS_SURFACE) malloc(sizeof(PNEXUS_SURFACE));
+        if (!pSurface[i])
+        {
+            LastErr = ErrStsNexusSurfaceFailed;
+            return false;
+        }
+        pSurface[i]->handle = NEXUS_Surface_Create(&surfaceCfg);
+        if (!pSurface[i]->handle) 
+        {
+            LastErr = ErrStsNexusSurfaceFailed;
+            return false;
+        }
+        InsertHeadList(&SurfaceAvailList, &pSurface[i]->ListEntry);
+    }
+    LOG_CREATE_DESTROY("%s: Nexus surfaces created",__FUNCTION__);
+
+    NEXUS_VideoImageInput_GetSettings(ImageInput, &imageInputSetting);
+    imageInputSetting.imageCallback.callback = imageBufferCallbackDispatcher;
+    imageInputSetting.imageCallback.context  = static_cast <void *>(this);
+    NEXUS_VideoImageInput_SetSettings(ImageInput, &imageInputSetting);
+
     LastErr = ErrStsSuccess;
     EncoderStarted = true;
     StartCaptureFrames();
@@ -238,7 +405,8 @@ OMXNexusVideoEncoder::StopEncoder()
 
         LastErr = ErrStsDecoNotStarted;
     }
-    
+
+    //TODO: Destroy nexus surfaces
     return;
 }
 
@@ -267,6 +435,35 @@ OMXNexusVideoEncoder::PrintVideoEncoderStatus()
              EncSts.video.pictureIdLastEncoded
              );
 
+}
+
+bool
+OMXNexusVideoEncoder::EncodeFrame(PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pNxInputContext)
+{
+    NEXUS_SurfaceMemory mem;
+    NEXUS_VideoImageInputSurfaceSettings surfSettings;
+    Mutex::Autolock lock(mListLock);
+    InsertHeadList(&InputContextList,&pNxInputContext->ListEntry);
+
+    // Assign a nexus surface
+    BCMOMX_DBG_ASSERT(!IsListEmpty(&SurfaceAvailList));
+    PLIST_ENTRY pSurfaceEntry = RemoveTailList(&SurfaceAvailList);
+    BCMOMX_DBG_ASSERT(pSurfaceEntry);
+    PNEXUS_SURFACE pNxSurface = CONTAINING_RECORD(pSurfaceEntry, NEXUS_SURFACE, ListEntry);
+    pNxInputContext->pNxSurface = pNxSurface;
+    // Maybe SurfaceBusyList is redundant? Enable if needed.
+    //InsertHeadList(&SurfaceBusyList, &pNxSurface->ListEntry);
+
+    NEXUS_Surface_GetMemory(pNxInputContext->pNxSurface->handle, &mem);
+    BCMOMX_DBG_ASSERT(mem.buffer);
+    memcpy(mem.buffer, pNxInputContext->bufPtr, pNxInputContext->bufSize);
+    NEXUS_Surface_Flush(pNxInputContext->pNxSurface->handle);
+
+    NEXUS_VideoImageInput_GetDefaultSurfaceSettings(&surfSettings);
+    surfSettings.pts = CONVERT_USEC_45KHZ(pNxInputContext->uSecTS);
+    NEXUS_VideoImageInput_PushSurface(ImageInput, pNxInputContext->pNxSurface->handle, &surfSettings);
+
+    return true;
 }
 
 bool
@@ -352,42 +549,42 @@ OMXNexusVideoEncoder::GetEncodedFrame(PDELIVER_ENCODED_FRAME pDeliverFr)
                            pVidEncOut->length);
         }
 
-		batom_cursor_from_vec(&BatomCursor, BatomVector, NumVectors);
-		unsigned int SizeToCopy = batom_cursor_size(&BatomCursor); 
+        batom_cursor_from_vec(&BatomCursor, BatomVector, NumVectors);
+        unsigned int SizeToCopy = batom_cursor_size(&BatomCursor); 
 
 
-		if (SizeToCopy > pDeliverFr->SzVidDataBuff) 
-		{
-			LOG_ERROR("%s: Input Buffer Sz [%d] Not Enough To Hold Encoded Video Data [Sz:%d]",
-					  __FUNCTION__,pDeliverFr->SzVidDataBuff,SizeToCopy);
+        if (SizeToCopy > pDeliverFr->SzVidDataBuff) 
+        {
+            LOG_ERROR("%s: Input Buffer Sz [%d] Not Enough To Hold Encoded Video Data [Sz:%d]",
+                  __FUNCTION__,pDeliverFr->SzVidDataBuff,SizeToCopy);
 
-			BCMOMX_DBG_ASSERT(SizeToCopy <= pDeliverFr->SzVidDataBuff); 
-			ReturnEncodedFrameSynchronized(pNxVidEncFr);
-			LastErr = ErrStsOutOfResource;
-			return false;
-		}
+            BCMOMX_DBG_ASSERT(SizeToCopy <= pDeliverFr->SzVidDataBuff); 
+            ReturnEncodedFrameSynchronized(pNxVidEncFr);
+            LastErr = ErrStsOutOfResource;
+            return false;
+        }
 
-		unsigned int CopiedSz=0;
+        unsigned int CopiedSz=0;
 
-		CopiedSz =  batom_cursor_copy(&BatomCursor,	pDeliverFr->pVideoDataBuff, SizeToCopy);
-		
-		if (CopiedSz != SizeToCopy) 
-		{
-			LOG_ERROR("%s: Cursor Copy Error Requested Size %d != Copied Sz:%d",
-					  __FUNCTION__,SizeToCopy,CopiedSz);
+        CopiedSz =  batom_cursor_copy(&BatomCursor,	pDeliverFr->pVideoDataBuff, SizeToCopy);
 
-			BCMOMX_DBG_ASSERT(CopiedSz == SizeToCopy); 
-			ReturnEncodedFrameSynchronized(pNxVidEncFr);
-			LastErr = ErrStsNexusReturnedErr;
-			return false;
-		}
+        if (CopiedSz != SizeToCopy) 
+        {
+            LOG_ERROR("%s: Cursor Copy Error Requested Size %d != Copied Sz:%d",
+                  __FUNCTION__,SizeToCopy,CopiedSz);
 
-		pDeliverFr->OutFlags = pNxVidEncFr->ClientFlags;
-		pDeliverFr->usTimeStamp = pNxVidEncFr->usTimeStampOriginal;
-		pDeliverFr->SzFilled = SizeToCopy;
-		ReturnEncodedFrameSynchronized(pNxVidEncFr);
-		LastErr = ErrStsSuccess;
-		return true; 
+            BCMOMX_DBG_ASSERT(CopiedSz == SizeToCopy); 
+            ReturnEncodedFrameSynchronized(pNxVidEncFr);
+            LastErr = ErrStsNexusReturnedErr;
+            return false;
+        }
+
+        pDeliverFr->OutFlags = pNxVidEncFr->ClientFlags;
+        pDeliverFr->usTimeStamp = pNxVidEncFr->usTimeStampOriginal;
+        pDeliverFr->SzFilled = SizeToCopy;
+        ReturnEncodedFrameSynchronized(pNxVidEncFr);
+        LastErr = ErrStsSuccess;
+        return true; 
     }
 
     return false;
@@ -614,6 +811,8 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
                                                    &pFrames2, 
                                                    &SzFr2);
 
+    LOG_INFO("%s: pFrames1 = %p, SzFr1 = %d, pFrames2 = %p, SzFr2 = %d",__FUNCTION__, pFrames1, SzFr1, pFrames2, SzFr2);
+
     if ( (NxErrCode != NEXUS_SUCCESS) || (0 == SzFr1 + SzFr2) || (0 == SzFr1)) 
     {
         LOG_ERROR("%s[%d]: No Encoded Frames From Encoder Sts:%d Sz1:%d Sz2:%d",
@@ -661,8 +860,7 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
     unsigned int DiscardedCnt=0;
 
     PNEXUS_ENCODED_VIDEO_FRAME  pEmptyFr=NULL;
-    
-    
+
     while (NumToProcess) 
     {
         if ( pCurrVidEncDescr[0].flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_FRAME_START )
@@ -685,7 +883,7 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
             PLIST_ENTRY pThisEntry = RemoveTailList(&EmptyFrList); 
             EmptyFrListLen--;
             BCMOMX_DBG_ASSERT(pThisEntry);
-            pEmptyFr = CONTAINING_RECORD(pThisEntry,NEXUS_ENCODED_VIDEO_FRAME,ListEntry);    
+            pEmptyFr = CONTAINING_RECORD(pThisEntry,NEXUS_ENCODED_VIDEO_FRAME,ListEntry);
             FAST_INIT_ENC_VID_FR(pEmptyFr);
         }
 
@@ -700,13 +898,15 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
             {
                 pEmptyFr->usTimeStampIntepolated = (pCurrVidEncDescr[0].pts/90) * 1000;
             }
-            
-            pEmptyFr->CombinedSz += pCurrVidEncDescr[0].length;
-            pEmptyFr->BaseAddr = (unsigned int) EncSts.video.pBufferBase;
 
-            pEmptyFr->FrameData->add((NEXUS_VideoEncoderDescriptor *) pCurrVidEncDescr);
-            
-            if ( pCurrVidEncDescr[0].flags & NEXUS_AUDIOMUXOUTPUTFRAME_FLAG_FRAME_END ) // TODO: Won't compile.
+            if (!(pCurrVidEncDescr[0].flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_FRAME_START))
+            {
+                pEmptyFr->CombinedSz += pCurrVidEncDescr[0].length;
+                pEmptyFr->BaseAddr = (unsigned int) EncSts.video.pBufferBase;
+                
+                pEmptyFr->FrameData->add((NEXUS_VideoEncoderDescriptor *) pCurrVidEncDescr);
+            }
+            else //if ( pCurrVidEncDescr[0].flags & NEXUS_AUDIOMUXOUTPUTFRAME_FLAG_FRAME_END ) // TODO: Won't compile.
             {
                 if(false == ShouldDiscardFrame(pEmptyFr))
                 {
@@ -765,6 +965,38 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
          __FUNCTION__,__LINE__,FramesRetrived);
 
     return FramesRetrived;
+}
+
+void
+OMXNexusVideoEncoder::imageBufferCallback()
+{
+    ALOGD("%s",__FUNCTION__);
+
+    NEXUS_SurfaceHandle freeSurface=NULL;
+    unsigned num_entries = 0;
+    NEXUS_VideoImageInput_RecycleSurface(ImageInput, &freeSurface , 1, &num_entries);
+    ALOGE("%s: num_entries = %d",__FUNCTION__, num_entries);
+    if (!num_entries)
+        return;
+
+    BCMOMX_DBG_ASSERT(!IsListEmpty(&InputContextList));
+    PLIST_ENTRY pDoneEntry = RemoveTailList(&InputContextList);
+    BCMOMX_DBG_ASSERT(pDoneEntry);
+    PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pDoneCnxt = CONTAINING_RECORD(pDoneEntry,NEXUS_VIDEO_ENCODER_INPUT_CONTEXT,ListEntry);
+
+    BCMOMX_DBG_ASSERT(num_entries==1);
+    LOG_INFO("%s:pDoneCnxt = %p, freeSurface = %p, pDoneCnxt->pNxSurface->handle = %p",__FUNCTION__, pDoneCnxt, freeSurface, pDoneCnxt->pNxSurface->handle);
+    BCMOMX_DBG_ASSERT(freeSurface==pDoneCnxt->pNxSurface->handle);
+
+    if (pDoneCnxt->DoneContext.pFnDoneCallBack)
+    {
+        //Fire The Call Back
+        pDoneCnxt->DoneContext.pFnDoneCallBack(pDoneCnxt->DoneContext.Param1,
+                pDoneCnxt->DoneContext.Param2,
+                pDoneCnxt->DoneContext.Param3); 
+    }
+
+    InsertHeadList(&SurfaceAvailList, &pDoneCnxt->pNxSurface->ListEntry);
 }
 
 

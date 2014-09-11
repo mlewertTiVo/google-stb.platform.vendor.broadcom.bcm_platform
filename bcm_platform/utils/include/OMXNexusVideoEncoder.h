@@ -46,16 +46,44 @@ typedef struct _NEXUS_ENCODED_VIDEO_FRAME_
 }NEXUS_ENCODED_VIDEO_FRAME,
 *PNEXUS_ENCODED_VIDEO_FRAME;
 
+typedef void (*ENCODER_BUFFER_DONE_CALLBACK) (unsigned int, unsigned int,unsigned int);
+
+typedef struct ENCODER_DONE_CONTEXT_
+{   
+    unsigned int                    Param1;
+    unsigned int                    Param2;
+    unsigned int                    Param3;
+    ENCODER_BUFFER_DONE_CALLBACK    pFnDoneCallBack;
+}ENCODER_DONE_CONTEXT;
+
+typedef struct _NEXUS_SURFACE_
+{
+    NEXUS_SurfaceHandle             handle;
+    LIST_ENTRY                      ListEntry;
+} NEXUS_SURFACE, *PNEXUS_SURFACE;
+
+typedef struct _NEXUS_VIDEO_ENCODER_INPUT_CONTEXT_
+{
+    unsigned char                   *bufPtr;   // Pointer to uncompressed input data buffer
+    unsigned int                    bufSize;   // Size of uncompressed input data buffer
+    PNEXUS_SURFACE                  pNxSurface;
+	unsigned long long				uSecTS;
+    ENCODER_BUFFER_DONE_CALLBACK    pFnDoneCallBack;
+    ENCODER_DONE_CONTEXT            DoneContext;
+    LIST_ENTRY                      ListEntry;
+}NEXUS_VIDEO_ENCODER_INPUT_CONTEXT,
+*PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT;
 
 class OMXNexusVideoEncoder 
 {
 
 public:
     
-    OMXNexusVideoEncoder (char *callerName);
+    OMXNexusVideoEncoder (char *callerName, int numInBuf);
     
     ~OMXNexusVideoEncoder ();
     bool StartEncoder();        
+    bool EncodeFrame(PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pNxInputContext);
     bool GetEncodedFrame(PDELIVER_ENCODED_FRAME);
 
 
@@ -64,6 +92,7 @@ public:
     // FeederEventsListener Interface Function To Get the Notification 
     // For EOS 
     void InputEOSReceived(unsigned int );
+    void imageBufferCallback();
 
 private:
 
@@ -75,6 +104,11 @@ private:
         *PFRAME_REPEAT_PARAMS;
 
     NEXUS_SimpleEncoderHandle           EncoderHandle;
+    NEXUS_SimpleVideoDecoderHandle      DecoderHandle;
+    NEXUS_SimpleStcChannelHandle        StcChannel;
+    NEXUS_VideoImageInputHandle         ImageInput;
+    PNEXUS_SURFACE                      *pSurface;
+    unsigned int                        NumNxSurfaces;
 
     //Pool Of Empty frames.
     LIST_ENTRY                          EmptyFrList;
@@ -84,11 +118,16 @@ private:
     LIST_ENTRY                          EncodedFrList;
     unsigned int                        EncodedFrListLen;
 
+    LIST_ENTRY                          SurfaceBusyList;
+    LIST_ENTRY                          SurfaceAvailList;
+
+    LIST_ENTRY                          InputContextList;
+
     ErrorStatus                         LastErr;
     NexusIPCClientBase                  *NxIPCClient;
     NexusClientContext                  *NxClientCntxt;
 
-    bool                                 EncoderStarted;
+    bool                                EncoderStarted;
 
     //Usage
     //Mutex::Autolock lock(nexSurf->mFreeListLock);
@@ -116,12 +155,6 @@ private:
 //    void            PrintAudioMuxOutFrame(const NEXUS_AudioMuxOutputFrame *);
 //    void            PrintFrame(const PNEXUS_DECODED_AUDIO_FRAME); 
     void            PrintVideoEncoderStatus();
-
-
-private:
-    /*Hide the operations that you don't support*/
-    OMXNexusVideoEncoder(OMXNexusVideoEncoder &);
-    void operator=(OMXNexusVideoEncoder *);
 
 };
 

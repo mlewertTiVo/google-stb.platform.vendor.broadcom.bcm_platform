@@ -38,6 +38,9 @@ static const CODEC_TO_MIME_MAP CodecToMIME[] =
 #endif
 };
 
+// Debug Message Macros
+#define CONFIG_LOG_MSG                  ALOGD
+
 #define OMX_IndexStoreMetaDataInBuffers                 0x7F000001
 
 extern "C"
@@ -210,10 +213,10 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     //Set The Input Port Format Structure
     OMX_CONF_INIT_STRUCT_PTR(&pMyData->sInPortFormat, OMX_VIDEO_PARAM_PORTFORMATTYPE);
     pMyData->sInPortFormat.eCompressionFormat = OMX_VIDEO_CodingUnused;
-    pMyData->sInPortFormat.eColorFormat = OMX_COLOR_FormatAndroidOpaque; //OMX_COLOR_FormatYUV420Planar;
+    pMyData->sInPortFormat.eColorFormat = OMX_COLOR_FormatYUV420Planar; //Support this as additonal format - OMX_COLOR_FormatAndroidOpaque.
     pMyData->sInPortFormat.nIndex=0;            //N-1 Where N Is the number of formats supported. We only Support One format for Now.
     pMyData->sInPortFormat.xFramerate=15;
-    pMyData->sInPortFormat.nPortIndex=0;    
+    pMyData->sInPortFormat.nPortIndex=0;
 
     //Set The Output Port Format Structure
     OMX_CONF_INIT_STRUCT_PTR(&pMyData->sOutPortFormat, OMX_VIDEO_PARAM_PORTFORMATTYPE);
@@ -237,7 +240,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sOutPortDef.format.video.cMIMEType = GetMimeFromOmxCodingType(OMX_COMPRESSION_FORMAT);
     pMyData->sOutPortDef.format.video.pNativeRender = NULL;
 
-	//This will be over written later in SetParams
+    //This will be over written later in SetParams
     pMyData->sOutPortDef.format.video.nFrameWidth = 176;
     pMyData->sOutPortDef.format.video.nFrameHeight = 144;
 
@@ -248,7 +251,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sOutPortDef.format.video.bFlagErrorConcealment = OMX_FALSE;
     pMyData->sOutPortDef.format.video.eCompressionFormat = OMX_VIDEO_CodingAVC;
 
-    pMyData->sOutPortDef.format.video.eColorFormat = OMX_COLOR_FormatYUV420Planar;
+    pMyData->sOutPortDef.format.video.eColorFormat = OMX_COLOR_FormatUnused;
     pMyData->sOutPortDef.nBufferSize = VIDEO_ENCODER_OUTPUT_BUFFER_SIZE;
     pMyData->sOutPortDef.format.video.pNativeWindow = NULL;
 
@@ -341,15 +344,15 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
         goto EXIT;
     }
 
-	pMyData->pOMXNxVidEnc = new OMXNexusVideoEncoder(LOG_TAG);
+    pMyData->pOMXNxVidEnc = new OMXNexusVideoEncoder(LOG_TAG, VIDEO_ENCODER_NUM_IN_BUFFERS);
 
-	if (false == pMyData->pOMXNxVidEnc->StartEncoder())
-	{
-		ALOGE("%s: Failed To Start The Encoder",__FUNCTION__);
-		goto EXIT;
-	}
+    if (false == pMyData->pOMXNxVidEnc->StartEncoder())
+    {
+        ALOGE("%s: Failed To Start The Encoder",__FUNCTION__);
+        goto EXIT;
+    }
 
-	return eError;
+    return eError;
 
 EXIT:
     OMX_VENC_DeInit(hComponent);
@@ -544,6 +547,7 @@ extern "C" OMX_ERRORTYPE OMX_VENC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
     switch (nParamIndex)
     {
         case OMX_IndexParamVideoInit:
+            CONFIG_LOG_MSG("%s: OMX_IndexParamVideoInit",__FUNCTION__);
             BKNI_Memcpy(pParamStruct, &pMyData->sPortParam, sizeof(OMX_PORT_PARAM_TYPE));
             break;
 
@@ -551,12 +555,12 @@ extern "C" OMX_ERRORTYPE OMX_VENC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
 
             if (((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sInPortDef.nPortIndex)
             {
-                ALOGD("%s: OMX_IndexParamPortDefinition: Input Port",__FUNCTION__);
+                CONFIG_LOG_MSG("%s: OMX_IndexParamPortDefinition: Input Port",__FUNCTION__);
                 PrintPortDefInfo(&pMyData->sInPortDef);
                 BKNI_Memcpy(pParamStruct, &pMyData->sInPortDef, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
 
             }else if (((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sOutPortDef.nPortIndex) {
-                ALOGD("%s: OMX_IndexParamPortDefinition: Output Port",__FUNCTION__);
+                CONFIG_LOG_MSG("%s: OMX_IndexParamPortDefinition: Output Port",__FUNCTION__);
                 PrintPortDefInfo(&pMyData->sOutPortDef);
                BKNI_Memcpy(pParamStruct, &pMyData->sOutPortDef, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
 
@@ -567,12 +571,12 @@ extern "C" OMX_ERRORTYPE OMX_VENC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
            break;
 
         case OMX_IndexParamPriorityMgmt:
-            ALOGD("%s: OMX_IndexParamPriorityMgmt",__FUNCTION__);
+           CONFIG_LOG_MSG("%s: OMX_IndexParamPriorityMgmt",__FUNCTION__);
            BKNI_Memcpy(pParamStruct, &pMyData->sPriorityMgmt, sizeof(OMX_PRIORITYMGMTTYPE));
            break;
 
         case OMX_IndexParamVideoMpeg2:
-            ALOGD("%s: OMX_IndexParamVideoMpeg2",__FUNCTION__);
+            CONFIG_LOG_MSG("%s: OMX_IndexParamVideoMpeg2",__FUNCTION__);
             if (((OMX_VIDEO_PARAM_MPEG2TYPE *)(pParamStruct))->nPortIndex == pMyData->sMpeg2.nPortIndex)
                 BKNI_Memcpy(pParamStruct, &pMyData->sMpeg2, sizeof(OMX_VIDEO_PARAM_MPEG2TYPE));
             else
@@ -607,7 +611,7 @@ extern "C" OMX_ERRORTYPE OMX_VENC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
 #endif
         case OMX_IndexParamVideoPortFormat:
         {
-            ALOGD("%s: OMX_IndexParamVideoPortFormat",__FUNCTION__);
+            CONFIG_LOG_MSG("%s: OMX_IndexParamVideoPortFormat",__FUNCTION__);
              OMX_VIDEO_PARAM_PORTFORMATTYPE *pFormatParams=
                 (OMX_VIDEO_PARAM_PORTFORMATTYPE *)pParamStruct; 
 
@@ -641,28 +645,28 @@ extern "C" OMX_ERRORTYPE OMX_VENC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
             return OMX_ErrorNone;
         }
         break;
-		case OMX_IndexParamVideoAvc:
-		{
-            ALOGD("%s: OMX_IndexParamVideoAvc",__FUNCTION__);
-			OMX_VIDEO_PARAM_AVCTYPE *pFormatParams =
-				(OMX_VIDEO_PARAM_AVCTYPE *)pParamStruct;
+        case OMX_IndexParamVideoAvc:
+        {
+            CONFIG_LOG_MSG("%s: OMX_IndexParamVideoAvc",__FUNCTION__);
+            OMX_VIDEO_PARAM_AVCTYPE *pFormatParams =
+                (OMX_VIDEO_PARAM_AVCTYPE *)pParamStruct;
             if (pFormatParams->nPortIndex == pMyData->sOutPortDef.nPortIndex)
-			{
-				BKNI_Memcpy(pParamStruct, &pMyData->sAvcVideoParams, sizeof(OMX_VIDEO_PARAM_AVCTYPE));
-			}
-			else
-			{
-				return OMX_ErrorUnsupportedSetting;
-			}
-		}
-		break;
-		case OMX_IndexParamVideoBitrate:
-		{
-			//TODO: Implement this case.
+            {
+                BKNI_Memcpy(pParamStruct, &pMyData->sAvcVideoParams, sizeof(OMX_VIDEO_PARAM_AVCTYPE));
+            }
+            else
+            {
+                return OMX_ErrorUnsupportedSetting;
+            }
+        }
+        break;
+        case OMX_IndexParamVideoBitrate:
+        {
+            //TODO: Implement this case.
             ALOGD("%s: OMX_IndexParamVideoBitrate",__FUNCTION__);
-			
-		}
-		break;
+
+        }
+        break;
         default:
             ALOGD("%s:  UNHANDLED PARAMETER INDEX %d",__FUNCTION__, nParamIndex);
             eError = OMX_ErrorUnsupportedIndex;
@@ -690,12 +694,12 @@ extern "C" OMX_ERRORTYPE OMX_VENC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
     switch (nParamIndex)
     {
         case OMX_IndexParamVideoInit:
-            ALOGD("%s: OMX_IndexParamVideoInit",__FUNCTION__);
+            CONFIG_LOG_MSG("%s: OMX_IndexParamVideoInit",__FUNCTION__);
             BKNI_Memcpy(&pMyData->sPortParam, pParamStruct, sizeof(OMX_PORT_PARAM_TYPE));
             break;
     
         case OMX_IndexParamPortDefinition:
-            ALOGD("%s: OMX_IndexParamPortDefinition",__FUNCTION__);
+            CONFIG_LOG_MSG("%s: OMX_IndexParamPortDefinition",__FUNCTION__);
             PrintPortDefInfo((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct));
             if ( ((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex  == pMyData->sInPortDef.nPortIndex)
             {
@@ -707,7 +711,7 @@ extern "C" OMX_ERRORTYPE OMX_VENC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
                 // Saying port setting changed if the parameters are not same
                 //
 
-				BKNI_Memcpy(&pMyData->sOutPortDef, pParamStruct, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
+                BKNI_Memcpy(&pMyData->sOutPortDef, pParamStruct, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
                 
             }else { 
                 eError = OMX_ErrorBadPortIndex; 
@@ -716,13 +720,13 @@ extern "C" OMX_ERRORTYPE OMX_VENC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
             break;
 
         case OMX_IndexParamPriorityMgmt:
-            ALOGD("%s: OMX_IndexParamPriorityMgmt",__FUNCTION__);
+            CONFIG_LOG_MSG("%s: OMX_IndexParamPriorityMgmt",__FUNCTION__);
 
             BKNI_Memcpy(&pMyData->sPriorityMgmt, pParamStruct, sizeof (OMX_PRIORITYMGMTTYPE));
             break;
 
         case OMX_IndexParamVideoMpeg2:
-            ALOGD("%s: OMX_IndexParamVideoMpeg2",__FUNCTION__);
+            CONFIG_LOG_MSG("%s: OMX_IndexParamVideoMpeg2",__FUNCTION__);
 
             if (((OMX_VIDEO_PARAM_MPEG2TYPE *)(pParamStruct))->nPortIndex == pMyData->sMpeg2.nPortIndex)
                 BKNI_Memcpy(&pMyData->sMpeg2, pParamStruct, sizeof (OMX_VIDEO_PARAM_MPEG2TYPE));
@@ -732,14 +736,14 @@ extern "C" OMX_ERRORTYPE OMX_VENC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
            
         case OMX_IndexParamVideoPortFormat:
         {
-            ALOGD("%s: OMX_IndexParamVideoPortFormat",__FUNCTION__);
+            CONFIG_LOG_MSG("%s: OMX_IndexParamVideoPortFormat",__FUNCTION__);
             OMX_VIDEO_PARAM_PORTFORMATTYPE *pFormatParams =
             (OMX_VIDEO_PARAM_PORTFORMATTYPE *)pParamStruct;
 
             
             if (pFormatParams->nPortIndex == pMyData->sOutPortDef.nPortIndex)
             {
-                ALOGD("%s: OMX_IndexParamVideoPortFormat Output Port Setting CompFmt:%d ColFmt:%d Index:%d PortIndex:%d xFrameRate:%d",
+                CONFIG_LOG_MSG("%s: OMX_IndexParamVideoPortFormat Output Port Setting CompFmt:%d ColFmt:%d Index:%d PortIndex:%d xFrameRate:%d",
                     __FUNCTION__,
                     pFormatParams->eCompressionFormat,
                     pFormatParams->eColorFormat,
@@ -751,7 +755,7 @@ extern "C" OMX_ERRORTYPE OMX_VENC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
 
             }else if(pFormatParams->nPortIndex == pMyData->sInPortDef.nPortIndex){
 
-                ALOGD("%s: OMX_IndexParamVideoPortFormat InputPort Setting CompFmt:%d ColFmt:%d Index:%d PortIndex:%d xFrameRate:%d",
+                CONFIG_LOG_MSG("%s: OMX_IndexParamVideoPortFormat InputPort Setting CompFmt:%d ColFmt:%d Index:%d PortIndex:%d xFrameRate:%d",
                     __FUNCTION__,
                     pFormatParams->eCompressionFormat,
                     pFormatParams->eColorFormat,
@@ -767,43 +771,43 @@ extern "C" OMX_ERRORTYPE OMX_VENC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
             return OMX_ErrorNone;
         }   
         break;
-		case OMX_IndexParamVideoAvc:
-		{
-			OMX_VIDEO_PARAM_AVCTYPE *pFormatParams =
-				(OMX_VIDEO_PARAM_AVCTYPE *)pParamStruct;
-            ALOGD("%s: OMX_IndexParamVideoAvc, nPortIndex = %d",__FUNCTION__,pFormatParams->nPortIndex);
+        case OMX_IndexParamVideoAvc:
+        {
+            OMX_VIDEO_PARAM_AVCTYPE *pFormatParams =
+                (OMX_VIDEO_PARAM_AVCTYPE *)pParamStruct;
+            CONFIG_LOG_MSG("%s: OMX_IndexParamVideoAvc, nPortIndex = %d",__FUNCTION__,pFormatParams->nPortIndex);
             if (pFormatParams->nPortIndex == pMyData->sOutPortDef.nPortIndex)
-			{
-				BKNI_Memcpy(&pMyData->sAvcVideoParams, pParamStruct, sizeof(OMX_VIDEO_PARAM_AVCTYPE));
-			}
+            {
+                BKNI_Memcpy(&pMyData->sAvcVideoParams, pParamStruct, sizeof(OMX_VIDEO_PARAM_AVCTYPE));
+            }
             else if (pFormatParams->nPortIndex == pMyData->sInPortDef.nPortIndex)
-			{
-				BKNI_Memcpy(&pMyData->sAvcVideoParams, pParamStruct, sizeof(OMX_VIDEO_PARAM_AVCTYPE));
-			}
-			else
-			{
-				return OMX_ErrorUnsupportedSetting;
-			}
-		}
-		break;
-		case OMX_IndexParamVideoBitrate:
-		{
-            ALOGD("%s: OMX_IndexParamVideoBitrate",__FUNCTION__);
-			//TODO: Implement this case.
-			
-		}
-		break;
-		case OMX_IndexStoreMetaDataInBuffers:
-		{
-			//TODO: Implement this case.
-            ALOGD("%s: OMX_IndexStoreMetaDataInBuffers",__FUNCTION__);
-		}
-		break;
+            {
+                BKNI_Memcpy(&pMyData->sAvcVideoParams, pParamStruct, sizeof(OMX_VIDEO_PARAM_AVCTYPE));
+            }
+            else
+            {
+                return OMX_ErrorUnsupportedSetting;
+            }
+        }
+        break;
+        case OMX_IndexParamVideoBitrate:
+        {
+            CONFIG_LOG_MSG("%s: OMX_IndexParamVideoBitrate",__FUNCTION__);
+            //TODO: Implement this case.
+
+        }
+        break;
+        case OMX_IndexStoreMetaDataInBuffers:
+        {
+            //TODO: Implement this case.
+            CONFIG_LOG_MSG("%s: OMX_IndexStoreMetaDataInBuffers",__FUNCTION__);
+        }
+        break;
 
         default: // one case for enable graphics if required check ????
             //eError = OMX_ErrorUnsupportedIndex;
 
-            ALOGD("%s: UNHANDLED PARAMETER INDEX %d",__FUNCTION__,nParamIndex);
+            CONFIG_LOG_MSG("%s: UNHANDLED PARAMETER INDEX %d",__FUNCTION__,nParamIndex);
             eError = OMX_ErrorNone;
             break;
     }
@@ -821,8 +825,8 @@ extern "C" OMX_ERRORTYPE OMX_VENC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
 
     pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
 
-    PNEXUS_INPUT_CONTEXT pNxInputCnxt = 
-               (PNEXUS_INPUT_CONTEXT)pBufferHdr->pInputPortPrivate;
+    PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pNxInputCnxt = 
+               (PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT)pBufferHdr->pInputPortPrivate;
 
     OMX_CONF_CHECK_CMD(pMyData, pBufferHdr, 1);
     OMX_CONF_CHK_VERSION(pBufferHdr, OMX_BUFFERHEADERTYPE, eError);
@@ -899,11 +903,11 @@ extern "C" OMX_ERRORTYPE OMX_VENC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
         ALOGE("%s: OMX_BUFFERFLAG_EOS FLAG SET FOR INPUT :%d ",__FUNCTION__,pBufferHdr->nFlags);
     }
 
-    pMyData->pCallbacks->EmptyBufferDone(pMyData->hSelf, pMyData->pAppData, pBufferHdr);
+    pNxInputCnxt->uSecTS = pBufferHdr->nTimeStamp;
 
     // Put the command and data in the pipe 
-//        write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
-//        write(pMyData->cmddatapipe[1], &pBufferHdr, sizeof(OMX_BUFFERHEADERTYPE*));
+        write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
+        write(pMyData->cmddatapipe[1], &pBufferHdr, sizeof(OMX_BUFFERHEADERTYPE*));
 
 OMX_CONF_CMD_BAIL:  
     return eError;
@@ -922,7 +926,7 @@ extern "C" OMX_ERRORTYPE OMX_VENC_UseBuffer(OMX_IN OMX_HANDLETYPE hComponent,
     OMX_ERRORTYPE eError = OMX_ErrorNone;
     OMX_PARAM_PORTDEFINITIONTYPE *pPortDef;
     OMX_U32 nIndex = 0x0;
-    
+
     pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
     OMX_CONF_CHECK_CMD(pMyData, ppBufferHdr, pBuffer);
 
@@ -946,17 +950,23 @@ extern "C" OMX_ERRORTYPE OMX_VENC_UseBuffer(OMX_IN OMX_HANDLETYPE hComponent,
     {
         ListAllocate(pMyData->sInBufList, nIndex);
         if (pMyData->sInBufList.pBufHdr[nIndex] == NULL)
-        {         
+        {
             pMyData->sInBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*) 
-                                        malloc(sizeof(OMX_BUFFERHEADERTYPE)) ;
+                                        malloc(sizeof(OMX_BUFFERHEADERTYPE));
             if (!pMyData->sInBufList.pBufHdr[nIndex])
-            OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);  
+            OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
 
             OMX_CONF_INIT_STRUCT_PTR (pMyData->sInBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
-        }  
+        }
+
+        pMyData->sInBufList.pBufHdr[nIndex]->pInputPortPrivate =
+            (OMX_PTR) malloc(sizeof(NEXUS_VIDEO_ENCODER_INPUT_CONTEXT));
+        if (!pMyData->sInBufList.pBufHdr[nIndex]->pInputPortPrivate)
+        OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
+
         pMyData->sInBufList.pBufHdr[nIndex]->pBuffer = pBuffer;
         LoadBufferHeader(pMyData->sInBufList, pMyData->sInBufList.pBufHdr[nIndex], pAppPrivate, 
-                                            nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);    
+                                            nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);
     }
     else
     {
@@ -966,12 +976,12 @@ extern "C" OMX_ERRORTYPE OMX_VENC_UseBuffer(OMX_IN OMX_HANDLETYPE hComponent,
             pMyData->sOutBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*) 
                                           malloc(sizeof(OMX_BUFFERHEADERTYPE));
             if (!pMyData->sOutBufList.pBufHdr[nIndex])
-                OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);  
+                OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
             
             OMX_CONF_INIT_STRUCT_PTR (pMyData->sOutBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
         }  
         pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer = pBuffer; 
-        LoadBufferHeader(pMyData->sOutBufList, pMyData->sOutBufList.pBufHdr[nIndex],  
+        LoadBufferHeader(pMyData->sOutBufList, pMyData->sOutBufList.pBufHdr[nIndex],
                        pAppPrivate, nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);
         CopyBufferHeaderList(pMyData->sOutBufList, pPortDef, pMyData->pOutBufHdrRes);
         
@@ -1307,8 +1317,8 @@ static void* ComponentThread(void* pThreadData)
                                 while (1)
                                 {
                                     /* Ports have to be populated before transition completes*/
-                                    if ((!pMyData->sInPortDef.bEnabled && !pMyData->sOutPortDef.bEnabled)||              
-                                        (pMyData->sInPortDef.bPopulated && pMyData->sOutPortDef.bPopulated)) 
+                                    if ((!pMyData->sInPortDef.bEnabled && !pMyData->sOutPortDef.bEnabled)||
+                                        (pMyData->sInPortDef.bPopulated && pMyData->sOutPortDef.bPopulated))
                                     {
                                         pMyData->state = OMX_StateIdle;
                                         ALOGD("%s %d: State Transition Event: [To: OMX_StateIdle] [Completed]",
@@ -1586,6 +1596,54 @@ static void* ComponentThread(void* pThreadData)
         }
         
 
+        //Input Buffer Processing...
+
+        if (pMyData->state == OMX_StateExecuting && pMyData->sInPortDef.bEnabled && 
+                (pMyData->sInBufList.nSizeOfList > 0))
+        {
+            ListGetEntry(pMyData->sInBufList, pInBufHdr)
+                // If there is no output buffer, get one from list 
+                // Check for EOS flag 
+            if (pInBufHdr)
+            {
+                OMX_U32 nFlags=0;
+                unsigned long long EOSTimeStamp=0;
+                // TODO: Mark Buffers and EOS
+
+                if(pInBufHdr->nFilledLen)
+                {
+                    PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pNxInputCnxt =
+                        (PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT)pInBufHdr->pInputPortPrivate;
+
+                    // fill in the Done context and be ready for
+                    // Firing the Empty Buffer done once the DMA is complete
+
+                    pNxInputCnxt->bufPtr = pInBufHdr->pBuffer;
+                    pNxInputCnxt->bufSize = pInBufHdr->nFilledLen;
+                    pNxInputCnxt->DoneContext.Param1 = (unsigned int) pMyData->hSelf;
+                    pNxInputCnxt->DoneContext.Param2 = (unsigned int) pMyData->pAppData;
+                    pNxInputCnxt->DoneContext.Param3 = (unsigned int) pInBufHdr;
+
+                    pNxInputCnxt->DoneContext.pFnDoneCallBack =
+                        (BUFFER_DONE_CALLBACK) pMyData->pCallbacks->EmptyBufferDone;
+
+                    pInBufHdr->nFilledLen =0;
+
+                    if(false == pMyData->pOMXNxVidEnc->EncodeFrame(pNxInputCnxt))
+                    {
+                        LOGE("%s: Sending The Data To The Hardware Failed",__FUNCTION__);
+                        LOGE("%s: Call back Will Not Be Fired, Encode May Stop",__FUNCTION__);
+                        BCMOMX_DBG_ASSERT(false);
+                    }
+
+                }else{
+                        pMyData->pCallbacks->EmptyBufferDone(pMyData->hSelf, pMyData->pAppData, pInBufHdr);
+                }
+
+                pInBufHdr = NULL;
+            }
+        }
+
         //Output Buffer Processing...
         if (pMyData->state == OMX_StateExecuting  &&  pMyData->sOutPortDef.bEnabled && 
             ((pMyData->sOutBufList.nSizeOfList > 0) || pOutBufHdr))
@@ -1608,7 +1666,7 @@ static void* ComponentThread(void* pThreadData)
                 {
                     //pOutBufHdr->nFilledLen = sizeof(DELIVER_ENCODED_FRAME);
 
-					pOutBufHdr->nFilledLen = DeliverFr.SzFilled;
+                    pOutBufHdr->nFilledLen = DeliverFr.SzFilled;
                     pOutBufHdr->nTimeStamp= DeliverFr.usTimeStamp;
 
                 }else{
@@ -1623,8 +1681,8 @@ static void* ComponentThread(void* pThreadData)
                     }
                     // This may be a frame with NULL data
                     pOutBufHdr->nFilledLen = 0; 
-				}
-				
+                }
+
                pMyData->pCallbacks->FillBufferDone(pMyData->hSelf,
                                                       pMyData->pAppData,
                                                       pOutBufHdr);
