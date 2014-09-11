@@ -1,0 +1,157 @@
+# best tool since sliced bread - generates an android device configuration
+# from the refsw plat defines needed, the android device fully inherits from
+# 'bcm_platform' which continues to be the reference and what is seen on
+# target, but it turns on the needed knobs for refsw compatibility of the
+# target.
+#
+# this will create a ./device/broadcom/<chip-num><chip-rev><board-type>
+# which inherits fully from ./device/broadcom/bcm_platform.
+#
+# next, user can run the standard android build commands and select the
+# target device which has been created automagically.
+#
+# the tool relies on the 'plat' tool from the refsw, so it is guaranteed to
+# be able to support any device so long a refsw platform exists for it, which
+# should be always the case.
+#
+import re, sys, os
+from subprocess import call,check_output
+from stat import *
+
+# debug this script.
+verbose=0
+
+def parse_and_select(l):
+	selected = False
+	data = re.findall('NEXUS_PLATFORM', l)
+	if len(data) > 0:
+		selected = True
+		if verbose:
+			print 'selecting: %s' % l
+	data = re.findall('BCHP_VER', l)
+	if len(data) > 0:
+		selected = True
+		if verbose:
+			print 'selecting: %s' % l
+	data = re.findall('B_REFSW_', l)
+	if len(data) > 0:
+		data = re.findall('=[yn]', l)
+		if len(data) > 0:
+			selected = True
+			if verbose:
+				print 'selecting: %s' % l
+	data = re.findall('NEXUS_USE_', l)
+	if len(data) > 0:
+		data = re.findall('=[yn]', l)
+		if len(data) > 0:
+			selected = True
+			if verbose:
+				print 'selecting: %s' % l
+	if verbose and (selected == False):
+		print 'ignoring: %s' % l
+	return selected
+
+# empty existing generated repo is applicable or create the device root for it.
+def rmdir_then_mkdir(d):
+	if os.path.exists(d):
+		for root, dirs, files in os.walk(d, topdown=False):
+			for name in files:
+				os.remove(os.path.join(root, name))
+	else:
+		os.makedirs(d)
+
+# header generation for modules we create.
+def write_header(s, d):
+	os.write(s, "# copyright 2014 - broadcom canada ltd.\n#\n")
+	os.write(s, "# warning: auto-generated module, edit at your own risks...\n#\n\n")
+	os.write(s, "# this configuration is for device %s\n\n" % d)
+
+# how you should use this.
+def plat_droid_usage():
+	print 'usage: plat-droid.py <chip-number> <chip-rev> <board-type>'
+	print '\t<platform>    - the BCM platform number to build for, eg: 97252, 97445, ...'
+	print '\t<chip-rev>    - the BCM chip revision of interest, eg: A0, B0, C1, ...'
+	print '\t<board-type>  - the target board type, eg: SV, C'
+	print '\n'
+	sys.exit(0)
+
+# read input and bail if the format is not what we expect.
+input = len(sys.argv)
+if input < 4 :
+	plat_droid_usage()
+
+chip=str(sys.argv[1]).upper()
+revision=str(sys.argv[2]).upper()
+boardtype=str(sys.argv[3]).upper()
+
+# create android cruft.
+androiddevice='%s%s%s' % (chip, revision, boardtype)
+devicedirectory='./device/broadcom/bcm_%s/' % (androiddevice)
+if verbose:
+	print 'creating android device: %s, in directory: %s' % (androiddevice, devicedirectory)
+# minimum modules for android device build created by this script.
+vendorsetup="vendorsetup.sh"
+androidproduct="AndroidProducts.mk"
+target="bcm_%s.mk" % (androiddevice)
+boardconfig="BoardConfig.mk"
+# clean old config, do this here so even if we fail later on we do not
+# keep around some old stuff.
+rmdir_then_mkdir(devicedirectory)
+
+# run the refsw plat tool to get the generated versions of the config.
+run_plat='bash -c "source ./vendor/broadcom/refsw/BSEAV/tools/build/plat %s %s %s"' % (chip, revision, boardtype)
+if verbose:
+	print run_plat
+refsw_configuration='export PLATFORM=%s' % chip
+lines = check_output(run_plat,shell=True).splitlines()
+for line in lines:
+	line = line.rstrip()
+	if parse_and_select(line):
+		refsw_configuration='%s\nexport %s' % (refsw_configuration, line)
+
+# sanity.
+if len(refsw_configuration) <= 0:
+	print '\nerror: refsw configuration for %s turned out empty - no android configuration issued.\n' % androiddevice
+	plat_droid_usage()
+else:
+	if verbose:
+		print '\nrefsw configuration gathered: %s' % refsw_configuration
+
+# now generate all the needed modules for the android device build.
+f='%s%s' % (devicedirectory, vendorsetup)
+s=os.open(f, os.O_WRONLY|os.O_CREAT)
+write_header(s, androiddevice)
+# note: additional combo can be added if need be (ie: -user)
+os.write(s, "add_lunch_combo bcm_%s-eng\n" % androiddevice)
+os.write(s, "add_lunch_combo bcm_%s-userdebug\n" % androiddevice)
+os.close(s);
+
+f='%s%s' % (devicedirectory, androidproduct)
+s=os.open(f, os.O_WRONLY|os.O_CREAT)
+write_header(s, androiddevice)
+os.write(s, "PRODUCT_MAKEFILES := $(LOCAL_DIR)/bcm_%s.mk\n" % androiddevice)
+os.close(s);
+
+f='%s%s' % (devicedirectory, target)
+s=os.open(f, os.O_WRONLY|os.O_CREAT)
+write_header(s, androiddevice)
+# this needs to be included before we absorb the rest of the platform config since
+# the latter needs some of those definitions.
+os.write(s, "# start of refsw gathered configuration\n\n")
+os.write(s, "%s\n\n" % refsw_configuration)
+os.write(s, "# end of refsw gathered config...\n")
+os.write(s, "\n\ninclude device/broadcom/bcm_platform/bcm_platform.mk")
+os.write(s, "\n\nPRODUCT_NAME := bcm_%s\n" % androiddevice)
+os.close(s);
+
+f='%s%s' % (devicedirectory, boardconfig)
+s=os.open(f, os.O_WRONLY|os.O_CREAT)
+write_header(s, androiddevice)
+os.write(s, "include device/broadcom/bcm_platform/BoardConfig.mk\n")
+os.close(s);
+
+# yeah! happy...
+print '\n'
+print 'congratulations! device bcm_%s configured, you may proceed with android build...' % androiddevice
+print '\thint - select lunch combo: bcm_%s-[eng|userdebug].' % androiddevice
+
