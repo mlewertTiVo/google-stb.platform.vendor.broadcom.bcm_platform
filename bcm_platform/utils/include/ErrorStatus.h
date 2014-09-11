@@ -27,7 +27,9 @@ typedef enum _ErrorStatus__
     ErrStsEncoNotStarted,
     ErrStsEncodeListEmpty,
     ErrStsEncodeListFull,
-    ErrStsStartEncoFailed
+    ErrStsStartEncoFailed,
+    ErrStSTCChannelFailed,
+    ErrStsNexusSurfaceFailed
 #endif    
 }ErrorStatus;
 

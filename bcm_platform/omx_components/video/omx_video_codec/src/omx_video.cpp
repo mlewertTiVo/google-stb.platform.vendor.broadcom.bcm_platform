@@ -130,10 +130,11 @@ static const OMX_TO_NEXUS_MAP OMXToNexusTable[] = {
     { OMX_VIDEO_CodingMJPEG,        NEXUS_VideoCodec_eMotionJpeg},
     { OMX_VIDEO_CodingVP8,          NEXUS_VideoCodec_eVp8},
     { OMX_VIDEO_CodingVP9,          NEXUS_VideoCodec_eNone},
+	{OMX_VIDEO_CodingHEVC,          NEXUS_VideoCodec_eH265},
 #ifdef OMX_EXTEND_CODECS_SUPPORT
 	{ OMX_VIDEO_CodingVC1,          NEXUS_VideoCodec_eVc1},
     { OMX_VIDEO_CodingSPARK,        NEXUS_VideoCodec_eSpark},
-	{ OMX_VIDEO_CodingDIVX311,      NEXUS_VideoCodec_eDivx311},
+    { OMX_VIDEO_CodingDIVX311,      NEXUS_VideoCodec_eDivx311},
     { OMX_VIDEO_CodingH265,         NEXUS_VideoCodec_eH265},
 #endif
 };
@@ -261,6 +262,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pComp->pComponentPrivate = (OMX_PTR)pMyData;
     pMyData->state = OMX_StateLoaded;
     pMyData->hSelf = hComponent;
+    pMyData->bSetStartUpTimeDone=false;
 
     ALOGV("%s %d: Component Handle :%p BUILD-DATE:%s BUILD-TIME:%s ",
             __FUNCTION__,__LINE__,hComponent,__DATE__,__TIME__);
@@ -701,14 +703,16 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_GetExtensionIndex(OMX_IN OMX_HANDLETYPE hCompo
     else if(0 == strcmp("OMX.google.android.index.getAndroidNativeBufferUsage", cParameterName))
         *pIndexType = (OMX_INDEXTYPE)OMX_IndexGetAndroidNativeBufferUsage;
 
-//    else if(0 == strcmp("OMX.google.android.index.storeMetaDataInBuffers", cParameterName))
-//        *pIndexType = (OMX_INDEXTYPE)OMX_IndexStoreMetaDataInBuffers;
+//  else if(0 == strcmp("OMX.google.android.index.storeMetaDataInBuffers", cParameterName))
+//      *pIndexType = (OMX_INDEXTYPE)OMX_IndexStoreMetaDataInBuffers;
 
     else if(0 == strcmp("OMX.google.android.index.useAndroidNativeBuffer", cParameterName))
         *pIndexType = (OMX_INDEXTYPE)OMX_IndexUseAndroidNativeBuffer;
-
     else
+    {
+        ALOGE("[%s][%s][%d]Returning UnSupported Index For %s",__FILE__,__FUNCTION__,__LINE__,cParameterName);
         eError =  OMX_ErrorUnsupportedIndex;
+    }
     return eError;
 }
 
@@ -945,11 +949,13 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
     switch (nParamIndex)
     {
         case OMX_IndexParamVideoInit:
+        {
             ALOGV("%s: OMX_IndexParamVideoInit",__FUNCTION__);
             BKNI_Memcpy(&pMyData->sPortParam, pParamStruct, sizeof(OMX_PORT_PARAM_TYPE));
             break;
-
+        }
         case OMX_IndexParamPortDefinition:
+        {
             ALOGV("%s: OMX_IndexParamPortDefinition",__FUNCTION__);
             PrintPortDefInfo((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct));
             if ( ((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex  == pMyData->sInPortDef.nPortIndex)
@@ -1000,117 +1006,126 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
 
                 //                }
 
-    }else { 
-        eError = OMX_ErrorBadPortIndex; 
-    }
+            }else { 
+                eError = OMX_ErrorBadPortIndex; 
+            }
 
-    break;
-
-    case OMX_IndexParamPriorityMgmt:
-    {
-        ALOGV("%s: OMX_IndexParamPriorityMgmt",__FUNCTION__);
-        BKNI_Memcpy(&pMyData->sPriorityMgmt, pParamStruct, sizeof (OMX_PRIORITYMGMTTYPE));
-        break;
-    }
-
-
-    case OMX_IndexParamVideoMpeg2:
-    {
-        ALOGV("%s: OMX_IndexParamVideoMpeg2",__FUNCTION__);
-        if (((OMX_VIDEO_PARAM_MPEG2TYPE *)(pParamStruct))->nPortIndex == pMyData->sMpeg2.nPortIndex)
-            BKNI_Memcpy(&pMyData->sMpeg2, pParamStruct, sizeof (OMX_VIDEO_PARAM_MPEG2TYPE));
-        else
-            eError = OMX_ErrorBadPortIndex;
-        break;
-    }
-
-    case OMX_IndexParamVideoPortFormat:
-    {
-        ALOGV("%s: OMX_IndexParamVideoPortFormat",__FUNCTION__);
-        OMX_VIDEO_PARAM_PORTFORMATTYPE *pFormatParams =
-            (OMX_VIDEO_PARAM_PORTFORMATTYPE *)pParamStruct;
-
-
-        if (pFormatParams->nPortIndex == pMyData->sOutPortDef.nPortIndex)
-        {
-            ALOGV("%s: OMX_IndexParamVideoPortFormat Output Port Setting CompFmt:%d ColFmt:%d Index:%d PortIndex:%d xFrameRate:%d",
-                    __FUNCTION__,
-                    pFormatParams->eCompressionFormat,
-                    pFormatParams->eColorFormat,
-                    pFormatParams->nIndex,
-                    pFormatParams->nPortIndex,
-                    pFormatParams->xFramerate);
-
-            BKNI_Memcpy(&pMyData->sOutPortFormat,pFormatParams,sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE));
-
-        }else if(pFormatParams->nPortIndex == pMyData->sInPortDef.nPortIndex){
-
-            ALOGV("%s: OMX_IndexParamVideoPortFormat InputPort Setting CompFmt:%d ColFmt:%d Index:%d PortIndex:%d xFrameRate:%d",
-                    __FUNCTION__,
-                    pFormatParams->eCompressionFormat,
-                    pFormatParams->eColorFormat,
-                    pFormatParams->nIndex,
-                    pFormatParams->nPortIndex,
-                    pFormatParams->xFramerate);
-
-            BKNI_Memcpy(&pMyData->sInPortFormat,pFormatParams,sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE));
-        }else{
-            return OMX_ErrorUndefined;
+            break;
         }
 
-        return OMX_ErrorNone;
-    }   
-    break;
-    case OMX_IndexEnableAndroidNativeGraphicsBuffer:
-    ALOGV("%s: OMX_IndexEnableAndroidNativeGraphicsBuffer\n",__FUNCTION__);
-    ALOGV("%s, nSize = %lu, nPortIndex = %lu", __FUNCTION__,((struct EnableAndroidNativeBuffersParams  *)pParamStruct)->nSize,
-            ((struct EnableAndroidNativeBuffersParams  *)pParamStruct)->nPortIndex);
-    BKNI_Memcpy(&pMyData->sNativeBufParam, pParamStruct, sizeof(struct EnableAndroidNativeBuffersParams));
-    break;
+        case OMX_IndexParamPriorityMgmt:
+        {
+            ALOGV("%s: OMX_IndexParamPriorityMgmt",__FUNCTION__);
+            BKNI_Memcpy(&pMyData->sPriorityMgmt, pParamStruct, sizeof (OMX_PRIORITYMGMTTYPE));
+            break;
+        }
+        case OMX_IndexParamVideoMpeg2:
+        {
+            ALOGV("%s: OMX_IndexParamVideoMpeg2",__FUNCTION__);
+            if (((OMX_VIDEO_PARAM_MPEG2TYPE *)(pParamStruct))->nPortIndex == pMyData->sMpeg2.nPortIndex)
+                BKNI_Memcpy(&pMyData->sMpeg2, pParamStruct, sizeof (OMX_VIDEO_PARAM_MPEG2TYPE));
+            else
+                eError = OMX_ErrorBadPortIndex;
+            break;
+        }
 
-    case OMX_IndexStoreMetaDataInBuffers:
-    {
-        ALOGV("%s: OMX_IndexStoreMetaDataInBuffers\n",__FUNCTION__);
-        BCMOMX_DBG_ASSERT(false);
-        break;
-    }
-    case OMX_IndexUseAndroidNativeBuffer:
-    {
-        ALOGV("%s: OMX_IndexUseAndroidNativeBuffer\n", __FUNCTION__);
-        eError = OMX_VDEC_UseANativeWindowBuffer(hComponent,
-                ((struct UseAndroidNativeBufferParams  *)pParamStruct)->bufferHeader,
-                ((struct UseAndroidNativeBufferParams  *)pParamStruct)->nPortIndex,
-                ((struct UseAndroidNativeBufferParams  *)pParamStruct)->pAppPrivate,
-                ((struct UseAndroidNativeBufferParams  *)pParamStruct)->nSize,
-                ((struct UseAndroidNativeBufferParams  *)pParamStruct)->nativeBuffer);
-        break;
-    }
-    case OMX_IndexUseAndroidNativeBuffer2:
-    {
-        ALOGV("%s: OMX_IndexUseAndroidNativeBuffer2\n",__FUNCTION__);
-        return OMX_ErrorUnsupportedSetting;
-        break;
-    }
-    case OMX_IndexDisplayFrameBuffer:
-    {
-        // Display video frames for media codec path.
-        // This code should moved out of OMX_VDEC_SetParameter later.
-        PDISPLAY_FRAME pDispFrame = (PDISPLAY_FRAME)pParamStruct;
-        pDispFrame->pDisplayFn(pDispFrame, pDispFrame->DisplayCnxt);
-        break;
-    }
-    default: // one case for enable graphics if required check ????
-    {
-        //eError = OMX_ErrorUnsupportedIndex;
+        case OMX_IndexParamVideoPortFormat:
+        {
+            ALOGV("%s: OMX_IndexParamVideoPortFormat",__FUNCTION__);
+            OMX_VIDEO_PARAM_PORTFORMATTYPE *pFormatParams =
+                (OMX_VIDEO_PARAM_PORTFORMATTYPE *)pParamStruct;
 
-        ALOGE("%s: UNHANDLED PARAMETER INDEX %d",__FUNCTION__,nParamIndex);
-        eError = OMX_ErrorNone;
-        break;
+
+            if (pFormatParams->nPortIndex == pMyData->sOutPortDef.nPortIndex)
+            {
+                ALOGV("%s: OMX_IndexParamVideoPortFormat Output Port Setting CompFmt:%d ColFmt:%d Index:%d PortIndex:%d xFrameRate:%d",
+                        __FUNCTION__,
+                        pFormatParams->eCompressionFormat,
+                        pFormatParams->eColorFormat,
+                        pFormatParams->nIndex,
+                        pFormatParams->nPortIndex,
+                        pFormatParams->xFramerate);
+
+                BKNI_Memcpy(&pMyData->sOutPortFormat,pFormatParams,sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE));
+
+            }else if(pFormatParams->nPortIndex == pMyData->sInPortDef.nPortIndex){
+
+                ALOGV("%s: OMX_IndexParamVideoPortFormat InputPort Setting CompFmt:%d ColFmt:%d Index:%d PortIndex:%d xFrameRate:%d",
+                        __FUNCTION__,
+                        pFormatParams->eCompressionFormat,
+                        pFormatParams->eColorFormat,
+                        pFormatParams->nIndex,
+                        pFormatParams->nPortIndex,
+                        pFormatParams->xFramerate);
+
+                BKNI_Memcpy(&pMyData->sInPortFormat,pFormatParams,sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE));
+            }else{
+                return OMX_ErrorUndefined;
+            }
+
+            return OMX_ErrorNone;
+            //break;
+        }   
+
+        case OMX_IndexEnableAndroidNativeGraphicsBuffer:
+        {
+            ALOGV("%s: OMX_IndexEnableAndroidNativeGraphicsBuffer\n",__FUNCTION__);
+            ALOGV("%s, nSize = %lu, nPortIndex = %lu", __FUNCTION__,((struct EnableAndroidNativeBuffersParams  *)pParamStruct)->nSize,
+                    ((struct EnableAndroidNativeBuffersParams  *)pParamStruct)->nPortIndex);
+            BKNI_Memcpy(&pMyData->sNativeBufParam, pParamStruct, sizeof(struct EnableAndroidNativeBuffersParams));
+            break;
+        }
+
+        case OMX_IndexStoreMetaDataInBuffers:
+        {
+            ALOGV("%s: OMX_IndexStoreMetaDataInBuffers\n",__FUNCTION__);
+            struct PrepareForAdaptivePlaybackParams *pAdaptivePlayStruct=NULL;
+            pAdaptivePlayStruct = (struct PrepareForAdaptivePlaybackParams *) pParamStruct;
+            ALOGD("%s[%d]: AdaptivePlayback Enable:%d MaxWidth:%d MaxHeight:%d",
+                  __FUNCTION__,__LINE__,
+                  pAdaptivePlayStruct->bEnable,
+                  pAdaptivePlayStruct->nMaxFrameWidth,
+                  pAdaptivePlayStruct->nMaxFrameHeight);
+            //BCMOMX_DBG_ASSERT(false);
+            break;
+        }
+        case OMX_IndexUseAndroidNativeBuffer:
+        {
+            ALOGV("%s: OMX_IndexUseAndroidNativeBuffer\n", __FUNCTION__);
+            eError = OMX_VDEC_UseANativeWindowBuffer(hComponent,
+                    ((struct UseAndroidNativeBufferParams  *)pParamStruct)->bufferHeader,
+                    ((struct UseAndroidNativeBufferParams  *)pParamStruct)->nPortIndex,
+                    ((struct UseAndroidNativeBufferParams  *)pParamStruct)->pAppPrivate,
+                    ((struct UseAndroidNativeBufferParams  *)pParamStruct)->nSize,
+                    ((struct UseAndroidNativeBufferParams  *)pParamStruct)->nativeBuffer);
+            break;
+        }
+        case OMX_IndexUseAndroidNativeBuffer2:
+        {
+            ALOGV("%s: OMX_IndexUseAndroidNativeBuffer2\n",__FUNCTION__);
+            return OMX_ErrorUnsupportedSetting;
+            break;
+        }
+        case OMX_IndexDisplayFrameBuffer:
+        {
+            // Display video frames for media codec path.
+            // This code should moved out of OMX_VDEC_SetParameter later.
+            PDISPLAY_FRAME pDispFrame = (PDISPLAY_FRAME)pParamStruct;
+            pDispFrame->pDisplayFn(pDispFrame, pDispFrame->DisplayCnxt);
+            break;
+        }
+        default: // one case for enable graphics if required check ????
+        {
+            //eError = OMX_ErrorUnsupportedIndex;
+
+            ALOGE("%s: UNHANDLED PARAMETER INDEX %d",__FUNCTION__,nParamIndex);
+            eError = OMX_ErrorNone;
+            break;
+        }
     }
-}
 
 OMX_CONF_CMD_BAIL:  
-return eError;
+    return eError;
 }
 
 extern "C" OMX_ERRORTYPE OMX_VDEC_UseBuffer(OMX_IN OMX_HANDLETYPE hComponent,
@@ -1584,7 +1599,6 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter);
     }
 
-
     /* The flags that we need to process
      * OMX_BUFFERFLAG_EOS - Taken Care.
      * -----> Tells the decoder that this input frames is the last input for this stream
@@ -1639,18 +1653,20 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
 
     if(pBufferHdr->nFlags & OMX_BUFFERFLAG_EOS)
     {
-    	ALOGD("%s: FilledLen:%d pInBufHdr->nTimeStamp:%lld",
-    		__FUNCTION__, pBufferHdr->nFilledLen, pBufferHdr->nTimeStamp);
+        ALOGD("%s: FilledLen:%d pInBufHdr->nTimeStamp:%lld",
+            __FUNCTION__, pBufferHdr->nFilledLen, pBufferHdr->nTimeStamp);
     }
 
     if (pBufferHdr->nFilledLen) 
     {
+        bool SendConfigDataToHw=false;
+
         // For WMV we save the configuration data differently...
         if (!((OMX_VIDEO_CodingWMV == OMX_COMPRESSION_FORMAT) 
 #ifdef OMX_EXTEND_CODECS_SUPPORT
-			|| (OMX_VIDEO_CodingDIVX311 == OMX_COMPRESSION_FORMAT)
-#endif			
-			))
+            || (OMX_VIDEO_CodingDIVX311 == OMX_COMPRESSION_FORMAT)
+#endif          
+            ))
         {
             if (pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG) 
             {
@@ -1662,6 +1678,17 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
         }
 
         nTimestamp = pMyData->pTstable->store(pBufferHdr->nTimeStamp);
+        if(false == pMyData->bSetStartUpTimeDone)
+        {
+            if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)) 
+            {
+                pMyData->bSetStartUpTimeDone=true;
+
+                ALOGD("%s: Setting The Startup Time [OriginalTime:%lld] [TimeToDecoder:%d]",
+                      __FUNCTION__,pBufferHdr->nTimeStamp,nTimestamp); 
+                pMyData->pOMXNxDecoder->SetStartupTime(nTimestamp);    
+            }
+        }
 
         switch (OMX_COMPRESSION_FORMAT) {
             case OMX_VIDEO_CodingVP8:
@@ -1674,13 +1701,16 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
 
                     B_MEDIA_SAVE_UINT32_BE(&es_header[4], pBufferHdr->nFilledLen);
 
-                    SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
-                            es_header,
-                            es_header_size,
-                            pBufferHdr->pBuffer,
-                            pBufferHdr->nFilledLen,
-                            pNxInputCnxt->PESData,
-                            pNxInputCnxt->SzPESBuffer);
+                    if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)) 
+                    {
+                        SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
+                                es_header,
+                                es_header_size,
+                                pBufferHdr->pBuffer,
+                                pBufferHdr->nFilledLen,
+                                pNxInputCnxt->PESData,
+                                pNxInputCnxt->SzPESBuffer);
+                    }
                     break;
                 }
 
@@ -1690,13 +1720,16 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
                     uint8_t es_header[4]= {0x00, 0x00, 0x01, 0x0D};
                     uint32_t es_header_size = 4;
 
-                    SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
-                            es_header,
-                            es_header_size,
-                            pBufferHdr->pBuffer,
-                            pBufferHdr->nFilledLen,
-                            pNxInputCnxt->PESData,
-                            pNxInputCnxt->SzPESBuffer);
+                    if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)) 
+                    {
+                        SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
+                                es_header,
+                                es_header_size,
+                                pBufferHdr->pBuffer,
+                                pBufferHdr->nFilledLen,
+                                pNxInputCnxt->PESData,
+                                pNxInputCnxt->SzPESBuffer);
+                    }
                     break;
                 }
             case OMX_VIDEO_CodingWMV:
@@ -1733,10 +1766,12 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
                         }
 
                         SzValidPESData = pMyData->pPESFeeder->ProcessESData(-1,
-                                            config_header,
-                                            config_header_length,
-                                            pNxInputCnxt->PESData,
-                                            pNxInputCnxt->SzPESBuffer);
+                                           config_header,
+                                           config_header_length,
+                                           pNxInputCnxt->PESData,
+                                           pNxInputCnxt->SzPESBuffer);
+
+                        SendConfigDataToHw=true;
 
                         free(config_header);
                     }
@@ -1784,10 +1819,10 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
                                 pNxInputCnxt->PESData,
                                 pNxInputCnxt->SzPESBuffer);
 
+                        SendConfigDataToHw=true;
                     }
                     else
                     {
-
                         SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
                                 payload_header,
                                 payload_header_size,
@@ -1803,17 +1838,29 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
 
             default:
                 {
-                    SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
-                            pBufferHdr->pBuffer,
-                            pBufferHdr->nFilledLen,
-                            pNxInputCnxt->PESData,
-                            pNxInputCnxt->SzPESBuffer);
+                    if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG))
+                    {
+                        SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
+                                pBufferHdr->pBuffer,
+                                pBufferHdr->nFilledLen,
+                                pNxInputCnxt->PESData,
+                                pNxInputCnxt->SzPESBuffer);
+                    }
                 }
         }
 
         // This is valid data size need to transfer to hardware
         pNxInputCnxt->SzValidPESData = SzValidPESData;
         pNxInputCnxt->FramePTS=nTimestamp;
+        if (pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)
+        {
+            //We do not want to send the config data alone
+            ALOGD("Codec Config Data Flag Set ----Setting The size To Zero");
+            if (false == SendConfigDataToHw)
+            {
+                pBufferHdr->nFilledLen = 0; 
+            }
+        }
     }
 
     // Put the command and data in the pipe 
@@ -1988,6 +2035,10 @@ static bool portSettingChanged(BCM_OMX_CONTEXT* pMyData)
     static bool
 FlushInput(BCM_OMX_CONTEXT *pBcmContext)
 {
+    // On Flush, We will start from a different 
+    // Location, Need to set the start up time 
+    // again.
+    pBcmContext->bSetStartUpTimeDone = false;
     if(pBcmContext->pPESFeeder)
     {
         if(false == pBcmContext->pPESFeeder->Flush())
@@ -2003,29 +2054,50 @@ FlushInput(BCM_OMX_CONTEXT *pBcmContext)
     static void 
 CleanUpOutputBuffer(OMX_BUFFERHEADERTYPE *pOMXBuffhdr)
 {
+    void *pBuffer=NULL;
+    bool unLockBuffer=false;
+    GraphicBuffer *pGraphicBuffer=NULL;
+    
     if (!pOMXBuffhdr) 
     {
         ALOGV("%s: EXIT-1 == \n\n ",__FUNCTION__);
         return;
     }
+
     //Clear the Filled Len and 
     pOMXBuffhdr->nFilledLen =0;
+#ifdef LOCK_FOR_BUFFER_LIFETIME
+        //We have already acquired the lock while allocating the buffer
+        // and placed the pointer in pBufferHdr->pBuffer
+        pBuffer = pOMXBuffhdr->pBuffer;
+#else
+        pGraphicBuffer = (GraphicBuffer *) pOMXBuffhdr->pInputPortPrivate;
+        BCMOMX_DBG_ASSERT(pGraphicBuffer);
+        pGraphicBuffer->lock(GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_SW_READ_OFTEN, (void**)&pBuffer);
+        unLockBuffer = true;
+#endif
 
     // Now Clear the Buffer.
-    PDISPLAY_FRAME pNxDecoFr = 
-        (PDISPLAY_FRAME) pOMXBuffhdr->pBuffer;
-
+    PDISPLAY_FRAME pNxDecoFr = (PDISPLAY_FRAME) pBuffer;
+    BCMOMX_DBG_ASSERT(pNxDecoFr);
     if (pNxDecoFr) 
     {
         memset(pNxDecoFr ,0,sizeof(DISPLAY_FRAME));
     }
 
+    if(unLockBuffer)
+    {
+        BCMOMX_DBG_ASSERT(pGraphicBuffer);
+        pGraphicBuffer->unlock();
+    }
     return;
 }
 
-    static bool
+static bool
 FlushOutput(BCM_OMX_CONTEXT *pBcmContext)
 {
+    OMX_PARAM_PORTDEFINITIONTYPE *pPortDef;
+    pPortDef = &pBcmContext->sOutPortDef;
     if (pBcmContext->pOMXNxDecoder) 
     {   
         if (false == pBcmContext->pOMXNxDecoder->Flush()) 
@@ -2034,7 +2106,7 @@ FlushOutput(BCM_OMX_CONTEXT *pBcmContext)
             return false;
         }
     }
-
+    
     ListFlushEntriesWithCleanup(pBcmContext->sOutBufList, pBcmContext,CleanUpOutputBuffer);
     //ListFlushEntries(pBcmContext->sOutBufList, pBcmContext);
     pBcmContext->pTstable->flush();

@@ -12,7 +12,7 @@
 #define LOG_ERROR               ALOGD
 #define LOG_INFO
 
-#define LOG_EVERY_DELIVERY
+#define LOG_EVERY_DELIVERY      
 
 //Enable logging for output time stamps on every frame.8
 #define LOG_OUTPUT_TS
@@ -38,7 +38,7 @@ OMXNexusDecoder::OMXNexusDecoder(char *CallerName, NEXUS_VideoCodec NxCodec,
     EmptyFrListLen(0), DecodedFrListLen(0),
     FlushCnt(0), ClientFlags(0),
     EOSState(EOS_Init), DecoEvtLisnr(NULL),
-    EOSFrameKey(0)
+    EOSFrameKey(0),StartupTime(STARTUP_TIME_INVALID)
 #ifdef GENERATE_DUMMY_EOS
     , DownCnt(DOWN_CNT_DEPTH)
 #endif
@@ -544,8 +544,11 @@ OMXNexusDecoder::ReturnFrameSynchronized(PNEXUS_DECODED_FRAME pNxDecFrame, bool 
     if (!FrameAlreadyExist(&DeliveredFrList, pNxDecFrame))
     {
         //Frame does not exists..Nothing to remove
-        LOG_ERROR("%s Return Frame Called But Frame Does Not Exists",__FUNCTION__);
-        BCMOMX_DBG_ASSERT(false);
+        LOG_ERROR("%s Return Frame Called But Frame Does Not Exists, pFrame:%p Display:%d",
+                    __FUNCTION__,
+                    pNxDecFrame,
+                    FlagDispFrame);
+
         return false;
     }
 
@@ -578,13 +581,14 @@ OMXNexusDecoder::ReturnFrameSynchronized(PNEXUS_DECODED_FRAME pNxDecFrame, bool 
 
             if (!RetFrSetting.display) 
             {
-                LOG_WARNING("%s Return [DROP] Frame [%d] Displayed:%s PTS:%d [PTSValid:%d]", 
-                            __FUNCTION__,pFrFromList->FrStatus.serialNumber,
+                LOG_WARNING("%s Return [DROP] Frame [Addr:%p][SeqNo:%d] Displayed:%s PTS:%d [PTSValid:%d]", 
+                            __FUNCTION__,pFrFromList,
+                            pFrFromList->FrStatus.serialNumber,
                             RetFrSetting.display ? "true":"false" ,
                             pFrFromList->FrStatus.pts,
                             pFrFromList->FrStatus.ptsValid);
             }else{
-                LOG_EVERY_DELIVERY("%s Return [DISPLAY] Frame [%d] Displayed:%s PTS:%d [PTSValid:%d]",
+                LOG_INFO("%s Return [DISPLAY] Frame [%d] Displayed:%s PTS:%d [PTSValid:%d]",
                                     __FUNCTION__,pFrFromList->FrStatus.serialNumber,
                                     RetFrSetting.display ? "true":"false" ,
                                     pFrFromList->FrStatus.pts,
@@ -728,7 +732,7 @@ OMXNexusDecoder::CheckAndClearBufferState(PDISPLAY_FRAME pOutputFr)
         }
     }
     
-    if(BufferState_Delivered == pProcessFr->BuffState)
+    if(BufferState_Init != pProcessFr->BuffState)
     {
         LOG_ERROR("%s: INVALID BUFFER STATE----ASSERTING NOW!!!!\n\n",__FUNCTION__);    
         BCMOMX_DBG_ASSERT(pProcessFr->BuffState == BufferState_Init);
@@ -786,6 +790,39 @@ OMXNexusDecoder::GetFramesFromHardware()
                     continue;
                 }
 
+                if( (StartupTime != STARTUP_TIME_INVALID) && 
+                    (OutFrameStatus[FrCnt].pts < StartupTime) && 
+                    (false == OutFrameStatus[FrCnt].lastPicture) && 
+                    (OutFrameStatus[FrCnt].ptsValid) )
+                {
+                    LOG_WARNING("%s:  ========= WARNING THIS SHOULD NEVER HAPPEN ========== "
+                                "SeqNo[%d] FramePts[%d] < StartupTime[%d]: Returning Frame Back To Hardware",
+                              __FUNCTION__,
+                                OutFrameStatus[FrCnt].serialNumber,
+                                OutFrameStatus[FrCnt].pts,
+                                StartupTime);
+
+                    BCMOMX_DBG_ASSERT(false);
+
+#if 0
+                    if ( (!FrCnt) &&                        //This is the First Frame We Got
+                         IsListEmpty(&DecodedFrList) &&     //We Dont have any other frames in the Decoded List
+                         IsListEmpty(&DeliveredFrList) )    //We Dont have any other frames in the delivered list
+                    {
+                        NEXUS_VideoDecoderReturnFrameSettings RetFrSetting;                        
+                        RetFrSetting.display = false;
+                        NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(decoHandle,&RetFrSetting,1);   
+                    }else{
+                        LOG_WARNING("%s: FramePts[%d] < StartupTime[%d]: Waiting For Queues To Drain",
+                                  __FUNCTION__,
+                                  OutFrameStatus[FrCnt].pts,
+                                  StartupTime);
+                    }
+
+                    return true;
+#endif
+                }
+
                 //Get A Free Entry...
                 pListEntry =  RemoveTailList(&EmptyFrList);
                 if (!pListEntry) 
@@ -825,7 +862,12 @@ OMXNexusDecoder::GetFramesFromHardware()
                     
                     // We should always have the EOS on the input side
                     // Because only then we have sent the BTP/BPP packet to the hardware.
-                    BCMOMX_DBG_ASSERT((ClientFlags) && (EOSFrameKey));
+                    if(!EOSFrameKey)
+                    {
+                         LOG_WARNING("%s [%d]: EOS Frame Key is Zero[%lld]. ", __FUNCTION__, __LINE__, EOSFrameKey);
+                    }
+
+                    BCMOMX_DBG_ASSERT(ClientFlags);
                     EOSReceivedFromHardware();
                     pFreeFr->ClientFlags = ClientFlags;
                 }
@@ -872,11 +914,11 @@ OMXNexusDecoder::GetDecodedFrame(PDISPLAY_FRAME pOutFrame)
         // We do not deliver Any Frames After The EOS Is Set On Output, So The BTP packet will always
         // be in the decoded list and we remove it from there when the
         // we return the EOS marked packet to the hardware.
-        pOutFrame->OutFlags = ClientFlags;
+        //pOutFrame->OutFlags = ClientFlags;
+        LOG_EOS_DBG("%s: EOS Delivered To Output, Not Delivering Anything",__FUNCTION__);
         return false;
     }
-
-    //We got a EOS on Input and From Hardware
+   
 #endif
 
     //Deliver From DecodedQueue Tail (size -1)
@@ -896,7 +938,7 @@ OMXNexusDecoder::GetDecodedFrame(PDISPLAY_FRAME pOutFrame)
             //Clear the out flags.
             pOutFrame->OutFlags       = 0;
 #ifndef GENERATE_DUMMY_EOS
-            	pOutFrame->OutFlags = DetectEOS(pDecoFr);
+            pOutFrame->OutFlags = DetectEOS(pDecoFr);
 #endif
             if (!pDecoFr->FrStatus.lastPicture)
             {
@@ -904,8 +946,12 @@ OMXNexusDecoder::GetDecodedFrame(PDISPLAY_FRAME pOutFrame)
                 pOutFrame->DecodedFr = pDecoFr;
                 pOutFrame->pDisplayFn = DisplayBuffer;
                 InsertHeadList(&DeliveredFrList, &pDecoFr->ListEntry);
-                LOG_EVERY_DELIVERY("%s  Delivered FRAME SeqNo:%d TimeStamp:%d pOutFrame->OutFlags:%d !!",
-                                   __FUNCTION__, pDecoFr->FrStatus.serialNumber, pDecoFr->FrStatus.pts, pOutFrame->OutFlags);
+                LOG_EVERY_DELIVERY("%s  Delivered FRAME SeqNo:%d TimeStamp:%d pOutFrame->OutFlags:%d StartupTime:%d!!",
+                                   __FUNCTION__, 
+                                   pDecoFr->FrStatus.serialNumber, 
+                                   pDecoFr->FrStatus.pts, 
+                                   pOutFrame->OutFlags,
+                                   StartupTime);
                 retVal = true;
             } else {
                 LOG_EVERY_DELIVERY("%s  lastPicture Set, Not Delivering To Client Frame FRAME SeqNo:%d!!", __FUNCTION__, pDecoFr->FrStatus.serialNumber);
@@ -958,6 +1004,13 @@ OMXNexusDecoder::GetFrameTimeStampMs(PDISPLAY_FRAME pFrame)
     pNxDecoFr = (PNEXUS_DECODED_FRAME) pFrame->DecodedFr;
     if (!pNxDecoFr) return 0;
     return pNxDecoFr->MilliSecTS;
+}
+
+void 
+OMXNexusDecoder::SetStartupTime(unsigned int StartTimeStamp)
+{
+    StartupTime = StartTimeStamp;    
+    ReSetEOSState();
 }
 
 bool
@@ -1041,7 +1094,16 @@ void OMXNexusDecoder::InputEOSReceived(unsigned int ClientFlagsData,
     //Output frames On Detection Of EOS.
     ClientFlags = ClientFlagsData;
     EOSFrameKey = EOSFrameKeyData;
-    BCMOMX_DBG_ASSERT(EOSFrameKey);
+    if(!EOSFrameKey)
+    {
+        LOG_WARNING("%s [%d]: EOS Frame Key Received is Zero[%lld]. "
+                    "Next Frame With Zero TimeStamp Will be EOS Frame"
+                    ,__FUNCTION__, 
+                    __LINE__,
+                    EOSFrameKey);
+    }
+    // Looks like Zero Time Stamp Is a Valid Test Case For the CTS Test. We cannot assert on that condition.
+    //BCMOMX_DBG_ASSERT(EOSFrameKey); 
 
 #ifdef GENERATE_DUMMY_EOS
     DownCnt = DOWN_CNT_DEPTH;

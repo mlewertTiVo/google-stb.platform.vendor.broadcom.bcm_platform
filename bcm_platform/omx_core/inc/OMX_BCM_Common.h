@@ -155,11 +155,12 @@ typedef struct _BCM_OMX_CONTEXT_
     OMXNexusAudioDecoder            *pOMXNxAudioDec;
     PESFeeder                       *pPESFeeder;
     AndroidVideoWindow              *pAndVidWindow;
-    bcmOmxTimestampTable			*pTstable;
+    bcmOmxTimestampTable            *pTstable;
+    bool                            bSetStartUpTimeDone;
 #endif
 #ifdef BCM_OMX_SUPPORT_ENCODER
-	OMXNexusVideoEncoder			*pOMXNxVidEnc;
-	OMX_VIDEO_PARAM_AVCTYPE			sAvcVideoParams;
+    OMXNexusVideoEncoder            *pOMXNxVidEnc;
+    OMX_VIDEO_PARAM_AVCTYPE         sAvcVideoParams;
 #endif
 } BCM_OMX_CONTEXT;
 
@@ -305,6 +306,7 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
  */
 
 #define ListFlushEntriesWithCleanup(_pH, _pC, CleanUpFunc)                                          \
+{                                                                                                   \
     ALOGD("ListFlushEntriesWithCleanup: ListSizeToFlush:%d \n",_pH.nSizeOfList);                    \
     while (_pH.nSizeOfList > 0)                                                                     \
     {                                                                                               \
@@ -322,8 +324,8 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
        {                                                                                            \
           _pH.nReadPos = 0;                                                                         \
        }                                                                                            \
-    }                                                                                       
-
+    }                                                                                               \                                                                                  
+}                                                                                           
 /*
  * Flushes all entries from the BufferList structure.
  * The nSizeOfList gives the number of valid entries in the list.
@@ -387,7 +389,7 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
     {                                                                   \
         if (_pHB[_nIndex] == _pB)                                       \
         {                                                               \
-            if (_pHB[_nIndex])                                   \
+            if (_pHB[_nIndex])                                          \
             {                                                           \
                 if (prevAllocSize==_pH.nAllocSize)                      \
                 {                                                       \
@@ -459,8 +461,8 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
 
 #define CopyBufferHeaderList(_pList, _pPortDef, _pBufHdr)                               \
     if (_pPortDef->bPopulated == OMX_TRUE) {                                            \
-        unsigned int i;                                                                          \
-        for (i = 0; i <= _pList.nListEnd; i++) {                                         \
+        unsigned int i;                                                                 \
+        for (i = 0; i <= _pList.nListEnd; i++) {                                        \
             _pBufHdr[i] = _pList.pBufHdr[i];                                            \
         }                                                                               \
     }

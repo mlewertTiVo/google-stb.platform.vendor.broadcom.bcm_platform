@@ -25,6 +25,7 @@
 
 #define MIN_BUFFER_TO_HOLD_IN_DECODE_QUEUE  1
 #define MAX_FRAME_SEQ_NUMBER                0xffffffff
+#define STARTUP_TIME_INVALID                0xffffffff
 
 using namespace android;
 //using android::Vector;
@@ -57,7 +58,7 @@ public:
     bool GetFramesFromHardware();
     bool GetDecodedFrame(PDISPLAY_FRAME);
     unsigned GetFrameTimeStampMs(PDISPLAY_FRAME);
-
+    void SetStartupTime(unsigned int);
     ErrorStatus GetLastError();
     bool RegisterDecoderEventListener(DecoderEventsListener *);    
     bool Flush();
@@ -82,7 +83,7 @@ private:
     }EOS_States;
 
     //EOS Occureed On Input Side, Look For Or Generate EOS On Output side
-    unsigned  	EOSState;
+    unsigned    EOSState;
 
     inline bool IsEOSComplete()
     {
@@ -155,6 +156,8 @@ private:
     unsigned int                    ClientFlags;        // Like EOS or something
     unsigned long long              EOSFrameKey;        // Something that identifies the EOS frame
 
+//Startup Time for The Frames That We Want To Start Delivering with
+    unsigned int                    StartupTime;        // Specifically 32-Bit becuase Our Hardware Expects 32-bit
 
 #ifdef GENERATE_DUMMY_EOS
     unsigned int            DownCnt;

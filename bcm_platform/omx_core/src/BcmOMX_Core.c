@@ -67,6 +67,9 @@ ComponentTable componentTable[] = {
  {"OMX.BCM.aac.decoder", 1, {"1"} }, // roles to be populated 
  {"OMX.BCM.mpeg2.decoder", 1, {"1"} },
  {"OMX.BCM.h264.decoder", 1, {"1"} },
+#ifdef ENABLE_SECURE_DECODERS
+ {"OMX.BCM.h264.decoder.secure", 1, {"1"} },
+#endif
  {"OMX.BCM.h263.decoder", 1, {"1"} },
  {"OMX.BCM.mpeg4.decoder", 1, {"1"} },
  {"OMX.BCM.vpx.decoder", 1, {"1"} },
@@ -74,10 +77,10 @@ ComponentTable componentTable[] = {
  {"OMX.BCM.wmv.decoder", 1, {"1"} },
  {"OMX.BCM.vc1.decoder", 1, {"1"} },
  {"OMX.BCM.spark.decoder", 1, {"1"} },
- {"OMX.BCM.rv.decoder", 1, {"1"} },
+ //{"OMX.BCM.rv.decoder", 1, {"1"} },
  {"OMX.BCM.divx.decoder", 1, {"1"} },
  {"OMX.BCM.h265.decoder", 1, {"1"} },
- {"OMX.BCM.mjpeg.decoder", 1, {"1"} },
+// {"OMX.BCM.mjpeg.decoder", 1, {"1"} },
 #endif
 #ifdef BCM_OMX_SUPPORT_ENCODER
  {"OMX.BCM.h264.encoder", 1, {"1"} },
@@ -141,7 +144,11 @@ OMX_ERRORTYPE OMX_GetHandle(OMX_HANDLETYPE * pHandle,
     OMX_STRING cComponentName, OMX_PTR pAppData,
     OMX_CALLBACKTYPE * pCallBacks)
 {
-    LOGD("BCM OMX CORE OMX_GetHandle\n");
+    ALOGD("[%s][%s][%d]: Enter",
+      __FILE__, 
+      __FUNCTION__,
+      __LINE__);
+
 
     static const char prefix[] = "lib";
     static const char postfix[] = ".so";
@@ -249,7 +256,10 @@ OMX_ERRORTYPE OMX_GetHandle(OMX_HANDLETYPE * pHandle,
 \**************************************************************************/
 OMX_ERRORTYPE OMX_FreeHandle(OMX_HANDLETYPE hComponent)
 {
-    LOGD("BCM OMX CORE OMX_FreeHandle\n");
+    ALOGD("[%s][%s][%d]: Enter",
+          __FILE__, 
+          __FUNCTION__,
+          __LINE__);
     
     OMX_ERRORTYPE eError = OMX_ErrorUndefined;
     OMX_COMPONENTTYPE *pHandle = (OMX_COMPONENTTYPE *) hComponent;
@@ -265,7 +275,7 @@ OMX_ERRORTYPE OMX_FreeHandle(OMX_HANDLETYPE hComponent)
 
   if (i >= COUNTOF(pModules))
   {
-    LOGE ("%s Couldn't find component handle",__FUNCTION__);
+    ALOGE ("%s Couldn't find component handle",__FUNCTION__);
         eError = OMX_ErrorComponentNotFound;
     return eError;
   }
@@ -301,9 +311,12 @@ OMX_ERRORTYPE OMX_FreeHandle(OMX_HANDLETYPE hComponent)
 \**************************************************************************/
 OMX_ERRORTYPE OMX_Deinit()
 {
-    LOGD("BCM OMX CORE OMX_Deinit\n");
-    OMX_ERRORTYPE eError = OMX_ErrorNone;
+    ALOGD("[%s][%s][%d]: Enter-Returning OMX_ErrorNone",
+          __FILE__, 
+          __FUNCTION__,
+          __LINE__);
 
+    OMX_ERRORTYPE eError = OMX_ErrorNone;
     return eError;
 }
 
@@ -328,7 +341,11 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_SetupTunnel(OMX_IN OMX_HANDLETYPE
     hOutput, OMX_IN OMX_U32 nPortOutput, OMX_IN OMX_HANDLETYPE hInput,
     OMX_IN OMX_U32 nPortInput)
 {
-   LOGE("BCM OMX CORE OMX_SetupTunnel\n");
+    ALOGD("[%s][%s][%d]: Enter-Returning OMX_ErrorNone",
+          __FILE__, 
+          __FUNCTION__,
+          __LINE__);
+
     OMX_ERRORTYPE eError = OMX_ErrorNone;
     return eError;
 }
@@ -351,18 +368,29 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_SetupTunnel(OMX_IN OMX_HANDLETYPE
 OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_ComponentNameEnum(OMX_OUT OMX_STRING
     cComponentName, OMX_IN OMX_U32 nNameLength, OMX_IN OMX_U32 nIndex)
 {
-   LOGE("BCM OMX CORE OMX_ComponentNameEnum\n");
+    ALOGD("[%s][%s][%d]: nIndex:%d nNameLength:%d \n",
+          __FILE__, 
+          __FUNCTION__,
+          __LINE__,
+          nIndex,
+          nNameLength);
 
     OMX_ERRORTYPE eError = OMX_ErrorNone;
-    
+
     if (nIndex >= tableCount)
     {
+        ALOGE("[%s][%s][%d]: No More Components\n",__FILE__, __FUNCTION__,__LINE__);
         eError = OMX_ErrorNoMore;
-    } else
-    {
+    } else {
+        ALOGD("[%s][%s][%d]: LengthOfNameString:%d PassedInBufferSz:%d\n",
+              __FILE__, __FUNCTION__,__LINE__,
+              strlen(componentTable[nIndex].name),
+              nNameLength);
+
         strcpy(cComponentName, componentTable[nIndex].name);
     }
-      EXIT:
+
+EXIT:
     return eError;
 }
 
@@ -386,7 +414,11 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_ComponentNameEnum(OMX_OUT OMX_STRING
 OMX_API OMX_ERRORTYPE OMX_GetRolesOfComponent(OMX_IN OMX_STRING
     cComponentName, OMX_INOUT OMX_U32 * pNumRoles, OMX_OUT OMX_U8 ** roles)
 {
-    ALOGD("BCM OMX CORE OMX_GetRolesOfComponent\n");
+    ALOGD("[%s][%s][%d]: Enter- Returning None",
+          __FILE__, 
+          __FUNCTION__,
+          __LINE__);
+
     OMX_ERRORTYPE eError = OMX_ErrorNone;
     return eError;
 }
@@ -409,7 +441,11 @@ OMX_API OMX_ERRORTYPE OMX_GetRolesOfComponent(OMX_IN OMX_STRING
 OMX_API OMX_ERRORTYPE OMX_GetComponentsOfRole(OMX_IN OMX_STRING role,
     OMX_INOUT OMX_U32 * pNumComps, OMX_INOUT OMX_U8 ** compNames)
 {
-    LOGV("BCM OMX CORE OMX_GetComponentsOfRole\n");
+    ALOGD("[%s][%s][%d]: Enter-Returning None",
+      __FILE__, 
+      __FUNCTION__,
+      __LINE__);
+
     OMX_ERRORTYPE eError = OMX_ErrorNone;
     return eError;
 }
@@ -421,7 +457,11 @@ PRINT TABLE FOR DEBUGGING PURPOSES ONLY
 
 OMX_API OMX_ERRORTYPE OMX_PrintComponentTable()
 {
-    LOGE("BCM OMX CORE OMX_PrintComponentTable\n");
+    ALOGD("[%s][%s][%d]: Enter-Returning None",
+          __FILE__, 
+          __FUNCTION__,
+          __LINE__);
+
     OMX_ERRORTYPE eError = OMX_ErrorNone;
     
     return eError;
@@ -431,9 +471,12 @@ OMX_API OMX_ERRORTYPE OMX_PrintComponentTable()
 
 OMX_ERRORTYPE OMX_BuildComponentTable()
 {
-    LOGE("BCM OMX CORE OMX_BuildComponentTable\n");
+    ALOGD("[%s][%s][%d]: Enter-Returning None",
+          __FILE__, 
+          __FUNCTION__,
+          __LINE__);
+
     OMX_ERRORTYPE eError = OMX_ErrorNone;
-    
     return eError;
 }
 
@@ -442,6 +485,11 @@ OMX_ERRORTYPE ComponentTable_EventHandler(OMX_IN OMX_HANDLETYPE hComponent,
     OMX_IN OMX_EVENTTYPE eEvent,
     OMX_IN OMX_U32 nData1, OMX_IN OMX_U32 nData2, OMX_IN OMX_PTR pEventData)
 {
+    ALOGD("[%s][%s][%d]: Enter-Returning OMX_ErrorNotImplemented",
+          __FILE__, 
+          __FUNCTION__,
+          __LINE__);
+
     return OMX_ErrorNotImplemented;
 }
 
@@ -449,12 +497,22 @@ OMX_ERRORTYPE ComponentTable_EmptyBufferDone(OMX_OUT OMX_HANDLETYPE
     hComponent, OMX_OUT OMX_PTR pAppData,
     OMX_OUT OMX_BUFFERHEADERTYPE * pBuffer)
 {
+    ALOGD("[%s][%s][%d]: Enter-Returning OMX_ErrorNotImplemented",
+          __FILE__, 
+          __FUNCTION__,
+          __LINE__);
+
     return OMX_ErrorNotImplemented;
 }
 
 OMX_ERRORTYPE ComponentTable_FillBufferDone(OMX_OUT OMX_HANDLETYPE hComponent,
     OMX_OUT OMX_PTR pAppData, OMX_OUT OMX_BUFFERHEADERTYPE * pBuffer)
 {
+    ALOGD("[%s][%s][%d]: Enter-Returning OMX_ErrorNotImplemented",
+          __FILE__, 
+          __FUNCTION__,
+          __LINE__);
+
     return OMX_ErrorNotImplemented;
 }
 

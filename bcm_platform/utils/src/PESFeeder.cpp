@@ -396,11 +396,12 @@ PESFeeder::InitiatePESHeader(unsigned int pts45KHz,
 // Buffer. 
 //
 size_t
-PESFeeder::ProcessESData(unsigned int pts, 
-        unsigned char *pDataBuffer, 
-        size_t SzDataBuff,
-        unsigned char *pOutData,
-        size_t SzOutData)
+PESFeeder::ProcessESData(
+        unsigned int    pts, 
+        unsigned char   *pDataBuffer, 
+        size_t          SzDataBuff,
+        unsigned char   *pOutData,
+        size_t          SzOutData)
 {
     unsigned int SzPESHeader=0;
     unsigned int SzTotalPESData=0,SzTotalInData=0;
@@ -747,8 +748,8 @@ PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
     // The Last Time Stamp That We sent To Hardware...
     if(pNxInCnxt->FramePTS)
     {
-    	LOG_INFO("%s: Updating LastTimeStamp: %lld", LastInputTimeStamp);
-    	LastInputTimeStamp = pNxInCnxt->FramePTS;
+        LOG_INFO("%s: Updating LastTimeStamp: %lld", LastInputTimeStamp);
+        LastInputTimeStamp = pNxInCnxt->FramePTS;
     }
 
 #ifdef DEBUG_PES_DATA
@@ -878,12 +879,12 @@ PESFeeder::NotifyEOS(unsigned int ClientFlags, unsigned long long EOSFrameKey)
 
     if (FdrEvtLsnr) 
     {
-    	if(!EOSFrameKey)
-    	{
-    		ALOGD("%s: EOS Buffer Has TimeStamp Of Zero.Using Last Buffer's Time Stamp:%lld",
-    				__PRETTY_FUNCTION__,LastInputTimeStamp);
-    		EOSFrameKey = LastInputTimeStamp;
-    	}
+        if(!EOSFrameKey)
+        {
+            ALOGD("%s: EOS Buffer Has TimeStamp Of Zero.Using Last Buffer's Time Stamp:%lld",
+                    __PRETTY_FUNCTION__,LastInputTimeStamp);
+            EOSFrameKey = LastInputTimeStamp;
+        }
 
         FdrEvtLsnr->InputEOSReceived(ClientFlags,EOSFrameKey);
     }
@@ -934,7 +935,7 @@ PESFeeder::SaveCodecConfigData(void *pData,size_t SzData)
     }
 
     SzSavedConfigData = pCfgDataMgr->GetConfigDataSz();
-
+    SendCfgDataOnNextInput=true;
     LOG_CONFIG_MSGS("[%s]%s: Config Data Saved MAXSZ:%d RequestedSz:%d CurrSz:%d",
           ClientIDString,__FUNCTION__,
           CODEC_CONFIG_BUFFER_SIZE,
@@ -1196,7 +1197,7 @@ ConfigDataMgrWithSend::SendConfigDataToHW()
    
     // Specifically using non-interuptable wait becuase we need to make sure that 
     // the transfer happens or else the seek would not work.
-    BERR_Code WaitErr = BKNI_WaitForEvent(XferDoneEvt,5);
+    BERR_Code WaitErr = BKNI_WaitForEvent(XferDoneEvt,500);
     if (BERR_SUCCESS != WaitErr  )
     {
         LOG_ERROR("%s: Wait Failed For Config Transfer Err:%d\n",
