@@ -30,9 +30,11 @@ def parse_and_select(l):
 			print 'selecting: %s' % l
 	data = re.findall('BCHP_VER', l)
 	if len(data) > 0:
-		selected = True
-		if verbose:
-			print 'selecting: %s' % l
+		data = re.findall('=', l)
+		if len(data) > 0:
+			selected = True
+			if verbose:
+				print 'selecting: %s' % l
 	data = re.findall('B_REFSW_', l)
 	if len(data) > 0:
 		data = re.findall('=[yn]', l)
@@ -59,6 +61,9 @@ def rmdir_then_mkdir(d):
 				os.remove(os.path.join(root, name))
 	else:
 		os.makedirs(d)
+
+def rmdir_device_root(d):
+	os.rmdir(d)
 
 # header generation for modules we create.
 def write_header(s, d):
@@ -120,6 +125,7 @@ for line in lines:
 # sanity.
 if len(refsw_configuration_selected) <= 0:
 	print '\nerror: refsw configuration for %s turned out empty - no android configuration issued.\n' % androiddevice
+	rmdir_device_root(devicedirectory)
 	plat_droid_usage()
 else:
 	refsw_configuration_selected='%s\n%s' % (refsw_configuration_selected, refsw_configuration)
