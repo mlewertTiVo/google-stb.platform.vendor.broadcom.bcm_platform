@@ -68,10 +68,11 @@ def write_header(s, d):
 
 # how you should use this.
 def plat_droid_usage():
-	print 'usage: plat-droid.py <platform> <chip-rev> <board-type>'
+	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [aosp]'
 	print '\t<platform>    - the BCM platform number to build for, eg: 97252, 97445, ...'
 	print '\t<chip-rev>    - the BCM chip revision of interest, eg: A0, B0, C1, ...'
 	print '\t<board-type>  - the target board type, eg: SV, C'
+	print '\t[aosp]        - if wanting to build for AOSP exclusively'
 	print '\n'
 	sys.exit(0)
 
@@ -79,6 +80,10 @@ def plat_droid_usage():
 input = len(sys.argv)
 if input < 4 :
 	plat_droid_usage()
+if input > 4 :
+	aosp=str(sys.argv[4]).upper()
+else :
+	aosp='nope'
 
 chip=str(sys.argv[1]).upper()
 revision=str(sys.argv[2]).upper()
@@ -86,6 +91,8 @@ boardtype=str(sys.argv[3]).upper()
 
 # create android cruft.
 androiddevice='%s%s%s' % (chip, revision, boardtype)
+if aosp == "AOSP":
+	androiddevice='%s_%s' % (androiddevice, aosp)
 devicedirectory='./device/broadcom/bcm_%s/' % (androiddevice)
 if verbose:
 	print 'creating android device: %s, in directory: %s' % (androiddevice, devicedirectory)
@@ -143,6 +150,9 @@ os.write(s, "# start of refsw gathered configuration\n\n")
 os.write(s, "%s\n\n" % refsw_configuration_selected)
 os.write(s, "# end of refsw gathered config...\n")
 os.write(s, "\n\ninclude device/broadcom/bcm_platform/bcm_platform.mk")
+if aosp == "AOSP":
+	os.write(s, "\n\n# AOSP setting tweaks...\n")
+	os.write(s, "include device/broadcom/common/settings_aosp.mk")
 os.write(s, "\n\nPRODUCT_NAME := bcm_%s\n" % androiddevice)
 os.close(s);
 
