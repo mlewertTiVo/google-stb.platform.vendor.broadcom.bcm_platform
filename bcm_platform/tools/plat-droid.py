@@ -103,19 +103,21 @@ run_plat='bash -c "source ./vendor/broadcom/refsw/BSEAV/tools/build/plat %s %s %
 if verbose:
 	print run_plat
 refsw_configuration='export PLATFORM=%s' % chip
+refsw_configuration_selected=''
 lines = check_output(run_plat,shell=True).splitlines()
 for line in lines:
 	line = line.rstrip()
 	if parse_and_select(line):
-		refsw_configuration='%s\nexport %s' % (refsw_configuration, line)
+		refsw_configuration_selected='%s\nexport %s' % (refsw_configuration_selected, line)
 
 # sanity.
-if len(refsw_configuration) <= 0:
+if len(refsw_configuration_selected) <= 0:
 	print '\nerror: refsw configuration for %s turned out empty - no android configuration issued.\n' % androiddevice
 	plat_droid_usage()
 else:
+	refsw_configuration_selected='%s\n%s' % (refsw_configuration_selected, refsw_configuration)
 	if verbose:
-		print '\nrefsw configuration gathered: %s' % refsw_configuration
+		print '\nrefsw configuration gathered: %s' % refsw_configuration_selected
 
 # now generate all the needed modules for the android device build.
 f='%s%s' % (devicedirectory, vendorsetup)
@@ -138,7 +140,7 @@ write_header(s, androiddevice)
 # this needs to be included before we absorb the rest of the platform config since
 # the latter needs some of those definitions.
 os.write(s, "# start of refsw gathered configuration\n\n")
-os.write(s, "%s\n\n" % refsw_configuration)
+os.write(s, "%s\n\n" % refsw_configuration_selected)
 os.write(s, "# end of refsw gathered config...\n")
 os.write(s, "\n\ninclude device/broadcom/bcm_platform/bcm_platform.mk")
 os.write(s, "\n\nPRODUCT_NAME := bcm_%s\n" % androiddevice)
