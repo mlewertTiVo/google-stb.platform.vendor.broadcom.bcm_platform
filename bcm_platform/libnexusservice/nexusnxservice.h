@@ -92,6 +92,7 @@ public:
     //virtual bool sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage);
     //virtual bool isCecEnabled(uint32_t cecId);
     //virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr);
+    virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus);
 
 protected:
 #if NEXUS_HAS_CEC

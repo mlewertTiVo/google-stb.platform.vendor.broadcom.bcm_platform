@@ -83,7 +83,7 @@ static void hdmi_cec_clear_logical_address(const struct hdmi_cec_device* dev)
 
     sp<NexusHdmiCecDevice> device = get_nexus_hdmi_cec_device(dev);
 
-    ALOGV("%s: clear logical address to FF", __PRETTY_FUNCTION__);
+    ALOGV("%s: clear logical address to 0xFF", __PRETTY_FUNCTION__);
 
     device->setCecLogicalAddress(0xFF);
 }
@@ -101,11 +101,19 @@ static void hdmi_cec_clear_logical_address(const struct hdmi_cec_device* dev)
  */
 static int hdmi_cec_get_physical_address(const struct hdmi_cec_device* dev, uint16_t* addr)
 {
+    int status;
     sp<NexusHdmiCecDevice> device = get_nexus_hdmi_cec_device(dev);
 
     HDMI_CEC_TRACE_ENTER;
 
-    return (device->getCecPhysicalAddress(addr) == NO_ERROR) ? 0 : -EINVAL;
+    status = device->getCecPhysicalAddress(addr);
+
+    if (status == NO_ERROR) {
+        ALOGV("%s: CEC physical address = %d.%d.%d.%d", __PRETTY_FUNCTION__,
+              (*addr >> 12) & 0x0f, (*addr >> 8) & 0x0f, (*addr >> 4) & 0x0f, *addr & 0x0f);
+    }
+
+    return (status == NO_ERROR) ? 0 : -EINVAL;
 }
 
 /*
@@ -125,7 +133,8 @@ static int hdmi_cec_send_message(const struct hdmi_cec_device* dev, const cec_me
 {
     sp<NexusHdmiCecDevice> device = get_nexus_hdmi_cec_device(dev);
 
-    HDMI_CEC_TRACE_ENTER;
+    ALOGV("%s: initiator=%d, destination=%d, length=%d, opcode=0x%02x", __PRETTY_FUNCTION__,
+            message->initiator, message->destination, message->length, message->body[0]);
 
     if (device->sendCecMessage(message) != NO_ERROR) {
         ALOGE("%s: Could not send CEC message!!!", __PRETTY_FUNCTION__);
@@ -160,6 +169,8 @@ static void hdmi_cec_get_version(const struct hdmi_cec_device* dev, int* version
     HDMI_CEC_TRACE_ENTER;
 
     device->getCecVersion(version);
+
+    ALOGV("%s: CEC version=%d", __PRETTY_FUNCTION__, *version);
 }
 
 /*
@@ -174,6 +185,8 @@ static void hdmi_cec_get_vendor_id(const struct hdmi_cec_device* dev, uint32_t* 
     HDMI_CEC_TRACE_ENTER;
 
     device->getCecVendorId(vendor_id);
+
+    ALOGV("%s: CEC vendor id=0x%08x", __PRETTY_FUNCTION__, *vendor_id);
 }
 
 /*
@@ -187,16 +200,18 @@ static void hdmi_cec_get_port_info(const struct hdmi_cec_device* dev, struct hdm
 
     HDMI_CEC_TRACE_ENTER;
 
-    //device->getCecPortInfo(list, total);
-
     hdmi_port_info* ports;
     int numPorts;
     device->getCecPortInfo(&ports, &numPorts);
 
     for (int i = 0; i < numPorts; ++i) {
         hdmi_port_info* info = &ports[i];
-        ALOGV("%s: port[%d]: type=%d, phy addr=%d, cec=%d, arc=%d", __FUNCTION__, i,
-                info->type, info->physical_address, info->cec_supported, info->arc_supported);
+        ALOGV("%s: port[%d]: type=%d, phy addr=%d.%d.%d.%d, cec=%d, arc=%d", __FUNCTION__, i, info->type,
+                (info->physical_address >> 12) & 0x0f, 
+                (info->physical_address >>  8) & 0x0f, 
+                (info->physical_address >>  4) & 0x0f, 
+                (info->physical_address      ) & 0x0f, 
+                info->cec_supported, info->arc_supported);
     }
 
     *list=ports;
@@ -243,7 +258,7 @@ static void hdmi_cec_set_option(const struct hdmi_cec_device* dev, int flag, int
  */
 static void hdmi_cec_set_audio_return_channel(const struct hdmi_cec_device* dev __unused, int flag __unused)
 {
-    HDMI_CEC_TRACE_ENTER;
+    ALOGV("%s: flag=0x%08x", __PRETTY_FUNCTION__, flag);
 }
 
 /*
@@ -264,6 +279,7 @@ static int hdmi_cec_is_connected(const struct hdmi_cec_device* dev, int port_id)
             connected = HDMI_CONNECTED;
         }
     }
+    ALOGV("%s: HDMI%d is %s", __PRETTY_FUNCTION__, port_id, (connected == HDMI_CONNECTED) ? "connected" : "disconnected");
     return connected;
 }
 
@@ -275,13 +291,15 @@ static int hdmi_cec_device_close(struct hw_device_t *dev)
     HDMI_CEC_TRACE_ENTER;
 
     if (ctx) {
-        if (ctx->mNexusHdmiCecDevice->uninitialise() != NO_ERROR) {
-            status = -EINVAL;
+        if (ctx->mNexusHdmiCecDevice != NULL) {
+            if (ctx->mNexusHdmiCecDevice->uninitialise() != NO_ERROR) {
+                status = -EINVAL;
+            }
+            else {
+                ALOGI("%s: Successfully destroyed NexusHdmiCecDevice", __PRETTY_FUNCTION__);
+            }
+            ctx->mNexusHdmiCecDevice = NULL;
         }
-        else {
-            ALOGI("%s: Successfully destroyed NexusHdmiCecDevice", __PRETTY_FUNCTION__);
-        }
-        ctx->mNexusHdmiCecDevice = NULL;
         free(ctx);
     }
     return status;
@@ -321,11 +339,17 @@ static int hdmi_cec_device_open(const struct hw_module_t* module, const char* na
         dev->mNexusHdmiCecDevice = new NexusHdmiCecDevice();
         if (dev->mNexusHdmiCecDevice == NULL) {
             ALOGE("%s: cannot instantiate NexusHdmiCecDevice!!!", __PRETTY_FUNCTION__);
+            free(dev);
         }
         else {
             status = dev->mNexusHdmiCecDevice->initialise();
             if (status == NO_ERROR) {
                 ALOGI("%s: Successfully instantiated NexusHdmiCecDevice. :)", __PRETTY_FUNCTION__);
+            }
+            else {
+                ALOGE("%s: Could not initialise NexusHdmiCecDevice!!!", __PRETTY_FUNCTION__);
+                dev->mNexusHdmiCecDevice = NULL;
+                free(dev);
             }
         }
     }

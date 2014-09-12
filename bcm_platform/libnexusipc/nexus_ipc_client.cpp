@@ -120,14 +120,14 @@ android::sp<INexusClient> NexusIPCClient::iNC;
 
 NexusIPCClient::NexusIPCClient(const char *clientName) : NexusIPCClientBase(clientName)
 {
-    LOGV("++++++ %s: \"%s\" ++++++", __FUNCTION__, getClientName());
+    LOGV("++++++ %s: \"%s\" ++++++", __PRETTY_FUNCTION__, getClientName());
 
     bindNexusService();
 }
 
 NexusIPCClient::~NexusIPCClient()
 {
-    LOGV("~~~~~~ %s: \"%s\" ~~~~~~", __FUNCTION__, getClientName());
+    LOGV("~~~~~~ %s: \"%s\" ~~~~~~", __PRETTY_FUNCTION__, getClientName());
 
     unbindNexusService();
 }
@@ -137,7 +137,7 @@ void NexusIPCClient::bindNexusService()
     android::Mutex::Autolock autoLock(mLock);
 
     if (mBindRefCount == 0) {
-        LOGV("++++++ %s: \"%s\" ++++++", __FUNCTION__, getClientName());
+        LOGV("++++++ %s: \"%s\" ++++++", __PRETTY_FUNCTION__, getClientName());
 
         android::sp<android::IServiceManager> sm = android::defaultServiceManager();
         android::sp<android::IBinder> binder;
@@ -146,11 +146,11 @@ void NexusIPCClient::bindNexusService()
             if (binder != 0) {
                 break;
             }
-            LOGW("%s: client \"%s\" waiting for NexusService...", __FUNCTION__, getClientName());
+            LOGW("%s: client \"%s\" waiting for NexusService...", __PRETTY_FUNCTION__, getClientName());
             usleep(500000);
         } while(true);
 
-        LOGI("%s: client \"%s\" acquired NexusService...", __FUNCTION__, getClientName());
+        LOGI("%s: client \"%s\" acquired NexusService...", __PRETTY_FUNCTION__, getClientName());
         iNC = android::interface_cast<INexusClient>(binder);
     }
     mBindRefCount++;
@@ -164,11 +164,11 @@ void NexusIPCClient::unbindNexusService()
         mBindRefCount--;
 
         if (mBindRefCount == 0) {
-            LOGV("~~~~~~ %s: \"%s\" ~~~~~~", __FUNCTION__, getClientName());
+            LOGV("~~~~~~ %s: \"%s\" ~~~~~~", __PRETTY_FUNCTION__, getClientName());
         }
     }
     else {
-        LOGE("%s: Already unbound from Nexus Service!!", __FUNCTION__);
+        LOGE("%s: Already unbound from Nexus Service!!", __PRETTY_FUNCTION__);
     }
 }
 
@@ -181,7 +181,7 @@ NEXUS_Error NexusIPCClient::clientJoin()
     if (mJoinRefCount == 0) {
         api_data cmd;
 
-        LOGV("++++ %s: \"%s\" ++++", __FUNCTION__, getClientName());
+        LOGV("++++ %s: \"%s\" ++++", __PRETTY_FUNCTION__, getClientName());
 
         BKNI_Memset(&cmd, 0, sizeof(cmd));
         cmd.api = api_clientJoin;
@@ -193,29 +193,29 @@ NEXUS_Error NexusIPCClient::clientJoin()
         if (clientHandle != NULL) {
             NEXUS_ClientAuthenticationSettings *pAuthentication = &cmd.param.clientJoin.in.clientAuthenticationSettings;
 
-            LOGI("%s: Authentication returned successfully for client \"%s\", certificate=%s", __FUNCTION__,
+            LOGI("%s: Authentication returned successfully for client \"%s\", certificate=%s", __PRETTY_FUNCTION__,
                     getClientName(), pAuthentication->certificate.data);
 
             do {
                 rc = NEXUS_ABSTRACTED_JOIN(pAuthentication);
                 if(rc != NEXUS_SUCCESS)
                 {
-                    LOGE("%s: NEXUS_Platform_AuthenticatedJoin failed for client \"%s\"!!!\n", __FUNCTION__, getClientName());
+                    LOGE("%s: NEXUS_Platform_AuthenticatedJoin failed for client \"%s\"!!!\n", __PRETTY_FUNCTION__, getClientName());
                     sleep(1);
                 } else {
-                    LOGI("%s: NEXUS_Platform_AuthenticatedJoin succeeded for client \"%s\".\n", __FUNCTION__, getClientName());
+                    LOGI("%s: NEXUS_Platform_AuthenticatedJoin succeeded for client \"%s\".\n", __PRETTY_FUNCTION__, getClientName());
                 }
             } while (rc != NEXUS_SUCCESS);
         }
         else {
-            LOGE("%s: FATAL: could not obtain join client \"%s\" with server!!!", __FUNCTION__, getClientName());
+            LOGE("%s: FATAL: could not obtain join client \"%s\" with server!!!", __PRETTY_FUNCTION__, getClientName());
             rc = NEXUS_NOT_INITIALIZED;
         }
     }
 
     if (rc == NEXUS_SUCCESS) {
         mJoinRefCount++;
-        LOGV("*** %s: incrementing join count to %d for client \"%s\". ***", __FUNCTION__, mJoinRefCount, getClientName());
+        LOGV("*** %s: incrementing join count to %d for client \"%s\". ***", __PRETTY_FUNCTION__, mJoinRefCount, getClientName());
     }
     return rc;
 }
@@ -227,12 +227,12 @@ NEXUS_Error NexusIPCClient::clientUninit()
 
     if (mJoinRefCount > 0) {
         mJoinRefCount--;
-        LOGV("*** %s: decrementing join count to %d for client \"%s\". ***", __FUNCTION__, mJoinRefCount, getClientName());
+        LOGV("*** %s: decrementing join count to %d for client \"%s\". ***", __PRETTY_FUNCTION__, mJoinRefCount, getClientName());
 
         if (mJoinRefCount == 0) {
             api_data cmd;
 
-            LOGV("---- %s: \"%s\" ----", __FUNCTION__, getClientName());
+            LOGV("---- %s: \"%s\" ----", __PRETTY_FUNCTION__, getClientName());
 
             BKNI_Memset(&cmd, 0, sizeof(cmd));
             cmd.api = api_clientUninit;
@@ -241,15 +241,15 @@ NEXUS_Error NexusIPCClient::clientUninit()
 
             rc = cmd.param.clientUninit.out.status;
             if (rc == NEXUS_SUCCESS) {
-                LOGI("%s: NEXUS_Platform_Uninit called for client \"%s\".", __FUNCTION__, getClientName());
+                LOGI("%s: NEXUS_Platform_Uninit called for client \"%s\".", __PRETTY_FUNCTION__, getClientName());
                 NEXUS_Platform_Uninit();
             }
             else {
-                LOGE("%s: Failed to uninitialise client \"%s\"!!!", __FUNCTION__, getClientName());
+                LOGE("%s: Failed to uninitialise client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
             }
         }
     } else {
-        LOGE("%s: NEXUS is already uninitialised!", __FUNCTION__);
+        LOGE("%s: NEXUS is already uninitialised!", __PRETTY_FUNCTION__);
         rc = NEXUS_NOT_INITIALIZED;
     }
     return rc;
@@ -257,14 +257,14 @@ NEXUS_Error NexusIPCClient::clientUninit()
 
 bool NexusIPCClient::addGraphicsWindow(NexusClientContext * client)
 {
-	LOGE("%s: Enter...", __FUNCTION__);
+    LOGE("%s: Enter...", __PRETTY_FUNCTION__);
 
 #ifdef SBS_USES_TRELLIS_INPUT_EVENTS
-	// Open event driver to write Trellis events
-	fd = open("/dev/event_write", O_RDWR);
+    // Open event driver to write Trellis events
+    fd = open("/dev/event_write", O_RDWR);
 
-	if (fd < 0)
-		LOGE("ERROR: Couldn't open SBS event write device. Input devices will not work.");
+    if (fd < 0)
+        LOGE("ERROR: Couldn't open SBS event write device. Input devices will not work.");
 #endif
 
     api_data cmd;
@@ -288,7 +288,7 @@ NexusClientContext * NexusIPCClient::createClientContext(const b_refsw_client_cl
     b_refsw_client_client_configuration inConfig;
     api_data cmd;
 
-    LOGV("%s: Client \"%s\" Num VDec=%d,ADec=%d,APlay=%d,Enc=%d,Surf=%d...", __FUNCTION__, getClientName(),
+    LOGV("%s: Client \"%s\" Num VDec=%d,ADec=%d,APlay=%d,Enc=%d,Surf=%d...", __PRETTY_FUNCTION__, getClientName(),
             config->resources.videoDecoder,
             config->resources.audioDecoder,
             config->resources.audioPlayback,
@@ -309,10 +309,10 @@ NexusClientContext * NexusIPCClient::createClientContext(const b_refsw_client_cl
     }
 
     if (client == NULL) {
-        LOGE("%s: Could not create client \"%s\" context!!!", __FUNCTION__, getClientName());
+        LOGE("%s: Could not create client \"%s\" context!!!", __PRETTY_FUNCTION__, getClientName());
     }
     else {
-        LOGI("%s: \"%s\" client=%p", __FUNCTION__, getClientName(), client);
+        LOGI("%s: \"%s\" client=%p", __PRETTY_FUNCTION__, getClientName(), client);
     }
     return client;
 }
@@ -559,7 +559,7 @@ b_powerState NexusIPCClient::getPowerState()
     return cmd.param.getPowerState.out.pmState;
 }
 
-bool NexusIPCClient::isCecEnabled(uint32_t cecId)
+bool NexusIPCClient::isCecEnabled(uint32_t cecId __unused)
 {
     bool enabled = false;
 #if NEXUS_HAS_CEC
@@ -628,6 +628,17 @@ bool NexusIPCClient::setCecLogicalAddress(uint32_t cecId, uint8_t addr)
     cmd.param.setCecLogicalAddress.in.addr = addr;
     iNC->api_over_binder(&cmd);
     return cmd.param.setCecLogicalAddress.out.status;
+}
+
+bool NexusIPCClient::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus)
+{
+    api_data cmd;
+    BKNI_Memset(&cmd, 0, sizeof(cmd));
+    cmd.api = api_getHdmiOutputStatus;
+    cmd.param.getHdmiOutputStatus.in.portId = portId;
+    iNC->api_over_binder(&cmd);
+    *pHdmiOutputStatus = cmd.param.getHdmiOutputStatus.out.hdmiOutputStatus;
+    return cmd.param.getHdmiOutputStatus.out.status;
 }
 
 bool NexusIPCClient::connectClientResources(NexusClientContext * client, b_refsw_client_connect_resource_settings *pConnectSettings)
@@ -795,8 +806,8 @@ char pkg_name[255];
 #define CMD_START_ANGRYBIRDS    "START_AB"
 #define CMD_STOP_ANGRYBIRDS     "STOP_AB"
 #define CMD_DESKTOP_HIDE        "DESKTOP_HIDE"
-#define CMD_DESKTOP_SHOW		"DESKTOP_SHOW"
-#define CMD_DESKTOP_SHOW_NO_APP	"DESKTOP_SHOW_NO_APP"
+#define CMD_DESKTOP_SHOW        "DESKTOP_SHOW"
+#define CMD_DESKTOP_SHOW_NO_APP "DESKTOP_SHOW_NO_APP"
 
 /* -----------------------------------------------------------------------------------------
  *            IAndroidBAMEventListener Interface Implementation
@@ -805,7 +816,7 @@ char pkg_name[255];
 
 void NexusIPCClient::setVisibility(const std::string& uid, bool visibility)
 {
-    LOGD("%s: Set the Visibility To %d", __FUNCTION__, visibility);
+    LOGD("%s: Set the Visibility To %d", __PRETTY_FUNCTION__, visibility);
     NEXUS_SurfaceComposition comp;
 
     /* A NULL nexus client context indicates the default master graphics surface */
@@ -816,7 +827,7 @@ void NexusIPCClient::setVisibility(const std::string& uid, bool visibility)
 
 void NexusIPCClient::handleFocus(const std::string& uid, bool obtained)
 {
-    LOGD("%s : %d ", __FUNCTION__, __LINE__);
+    LOGD("%s : %d ", __PRETTY_FUNCTION__, __LINE__);
     //
     // EventHub.cpp rejects/accepts input events based on a property "input.DisableAllInput" 
     // 
@@ -838,7 +849,7 @@ void NexusIPCClient::handleFocus(const std::string& uid, bool obtained)
  */
 void NexusIPCClient::terminate(const std::string& uid)
 {
-    LOGD("%s : %d ", __FUNCTION__, __LINE__);
+    LOGD("%s : %d ", __PRETTY_FUNCTION__, __LINE__);
     setVisibility(uid,false);
 
     if (bSockConnected)
@@ -857,7 +868,7 @@ void NexusIPCClient::terminate(const std::string& uid)
 
 std::string NexusIPCClient::launch(const std::string& uid)
 {
-    LOGD("%s : %d ", __FUNCTION__, __LINE__);
+    LOGD("%s : %d ", __PRETTY_FUNCTION__, __LINE__);
     std::string szLaunchParms = uid.c_str();
     iPos = szLaunchParms.find("angrybirds");
 
@@ -907,18 +918,18 @@ std::string NexusIPCClient::launch(const std::string& uid)
     {
         if (iPos != std::string::npos)
         {
-			if (CheckAB() == 0)
-			{
-				LOGD("NexusIPCClient::launch, uid = %s (launching AngryBirds...)", szLaunchParms.c_str());
-				StartAB();
-				bAngryBirdsActive = true;
-			}
+            if (CheckAB() == 0)
+            {
+                LOGD("NexusIPCClient::launch, uid = %s (launching AngryBirds...)", szLaunchParms.c_str());
+                StartAB();
+                bAngryBirdsActive = true;
+            }
 
-			else
-			{
-				LOGD("NexusIPCClient::launch, uid = %s (Cannot launch AngryBirds (not installed, unmuting desktop)...)", szLaunchParms.c_str());
-				DesktopShowNoApp();
-			}
+            else
+            {
+                LOGD("NexusIPCClient::launch, uid = %s (Cannot launch AngryBirds (not installed, unmuting desktop)...)", szLaunchParms.c_str());
+                DesktopShowNoApp();
+            }
         }else{
             LOGE("NexusIPCClient::launch, uid = %s (Unmuting desktop...)", szLaunchParms.c_str());
             DesktopShow();
@@ -930,27 +941,27 @@ std::string NexusIPCClient::launch(const std::string& uid)
 
 bool NexusIPCClient::handleEvent(const std::string& uid, Trellis::Application::IWindow::Event * event)
 {
-    LOGD("%s : %d ", __FUNCTION__, __LINE__);
+    LOGD("%s : %d ", __PRETTY_FUNCTION__, __LINE__);
 #ifdef SBS_USES_TRELLIS_INPUT_EVENTS
     struct input_event ie;
     int rel_x, rel_y, n, ascii_code, i;
     bool needShift = false;
 
     if (fd) 
-	{
+    {
         if (event->getObjectType() == Trellis::TypeManager<Trellis::Application::IWindow::KeyEvent>::getInstance().getName())
-		{
+        {
             const Trellis::Application::IWindow::KeyEvent& keyEvent = dynamic_cast<const Trellis::Application::IWindow::KeyEvent&>(*event);
             ie.type = EV_KEY;
             ie.code = trellisAndroidKeymap[keyEvent.getKeyCode()];
             ie.value = keyEvent.getPressed();
 
-			// Remap the "Last" button as "Escape" (will
-			// allow transitioning out of an active app)
-			if (ie.code == KEY_LAST)
-				ie.code = KEY_BACK;
+            // Remap the "Last" button as "Escape" (will
+            // allow transitioning out of an active app)
+            if (ie.code == KEY_LAST)
+                ie.code = KEY_BACK;
 
-			LOGD("%s: Detected KeyEvent: code = %d, value = %d", __FUNCTION__, ie.code, ie.value);
+            LOGD("%s: Detected KeyEvent: code = %d, value = %d", __PRETTY_FUNCTION__, ie.code, ie.value);
             n = write(fd, (char *) &ie, sizeof(ie));
 
             ie.type = EV_SYN;
@@ -963,8 +974,8 @@ bool NexusIPCClient::handleEvent(const std::string& uid, Trellis::Application::I
         // keyboard and mouse devices directly, we don't need this. Kept disabled for future reference
 #if 0
         else if (event->getObjectType() == Trellis::TypeManager<Trellis::IWindow::AsciiEvent>::getInstance().getName())
-		{
-			LOGD("%s: Detected AsciiEvent", __FUNCTION__);
+        {
+            LOGD("%s: Detected AsciiEvent", __PRETTY_FUNCTION__);
 
             const Trellis::IWindow::AsciiEvent& asciiEvent = dynamic_cast<const Trellis::IWindow::AsciiEvent&>(*event);
 
@@ -999,8 +1010,8 @@ bool NexusIPCClient::handleEvent(const std::string& uid, Trellis::Application::I
         }
 
         else if (event->getObjectType() == Trellis::TypeManager<Trellis::IWindow::MouseEvent>::getInstance().getName())
-		{
-			LOGD("%s: Detected MouseEvent", __FUNCTION__);
+        {
+            LOGD("%s: Detected MouseEvent", __PRETTY_FUNCTION__);
 
             const Trellis::IWindow::MouseEvent& mouseEvent = dynamic_cast<const Trellis::IWindow::MouseEvent&>(*event);
             rel_x = (int)(mouseEvent.getMovement().getDeltaX());
@@ -1074,7 +1085,7 @@ bool NexusIPCClient::handleEvent(const std::string& uid, Trellis::Application::I
 void NexusIPCClient::TimerHandler(sigval_t s_val)
 {
     NexusIPCClient *pIPC = (NexusIPCClient *)s_val.sival_ptr;
-    LOGD("%s : %d ", __FUNCTION__, __LINE__);
+    LOGD("%s : %d ", __PRETTY_FUNCTION__, __LINE__);
 
     if (!bSockConnected)
     {
@@ -1100,18 +1111,18 @@ void NexusIPCClient::TimerHandler(sigval_t s_val)
     {
         if (iPos != std::string::npos)
         {
-			if (pIPC->CheckAB() == 0)
-			{
-				LOGD("NexusIPCClient::TimerHandler (launching AngryBirds...)");
-				pIPC->StartAB();
-				bAngryBirdsActive = true;
-			}
+            if (pIPC->CheckAB() == 0)
+            {
+                LOGD("NexusIPCClient::TimerHandler (launching AngryBirds...)");
+                pIPC->StartAB();
+                bAngryBirdsActive = true;
+            }
 
-			else
-			{
-				LOGD("NexusIPCClient::TimerHandler (Cannot launch AngryBirds (not installed)...)");
-				pIPC->DesktopShowNoApp();
-			}
+            else
+            {
+                LOGD("NexusIPCClient::TimerHandler (Cannot launch AngryBirds (not installed)...)");
+                pIPC->DesktopShowNoApp();
+            }
         }else{
             LOGE("NexusIPCClient::TimerHandler (Unmuting desktop...)");
             pIPC->DesktopShow();
@@ -1122,7 +1133,7 @@ void NexusIPCClient::TimerHandler(sigval_t s_val)
 
 void NexusIPCClient::ConnectToServerSocket()
 {
-    LOGD("%s : %d Enter", __FUNCTION__, __LINE__);
+    LOGD("%s : %d Enter", __PRETTY_FUNCTION__, __LINE__);
 
     int err, i;
     struct sockaddr_un addr;
@@ -1141,7 +1152,7 @@ void NexusIPCClient::ConnectToServerSocket()
     if (hSockHandle < 0) 
     {
         err = errno;
-        LOGE("%s: Cannot open socket: %s (%d)\n", __FUNCTION__, strerror(err), err);
+        LOGE("%s: Cannot open socket: %s (%d)\n", __PRETTY_FUNCTION__, strerror(err), err);
         errno = err;
         return;
     }
@@ -1150,7 +1161,7 @@ void NexusIPCClient::ConnectToServerSocket()
     if (connect(hSockHandle, (struct sockaddr *) &addr, iLen) < 0)
     {
         err = errno;
-        LOGE("%s: connect() failed: %s (%d)\n", __FUNCTION__, strerror(err), err);
+        LOGE("%s: connect() failed: %s (%d)\n", __PRETTY_FUNCTION__, strerror(err), err);
         close(hSockHandle);
         errno = err;
         return;
@@ -1163,72 +1174,72 @@ void NexusIPCClient::ConnectToServerSocket()
 
 int NexusIPCClient::CheckAB()
 {
-	DIR           *d;
-	struct dirent *dir;
-	char lib_path[255], *pAB, *pPkg;
-	bool bDirFound = false;
-	int iRet = 1;
+    DIR           *d;
+    struct dirent *dir;
+    char lib_path[255], *pAB, *pPkg;
+    bool bDirFound = false;
+    int iRet = 1;
 
-	// First up, try looking for the AngryBirds directory
-	d = opendir("/data/app-lib/");
+    // First up, try looking for the AngryBirds directory
+    d = opendir("/data/app-lib/");
 
-	if (d)
-	{
-		while ((dir = readdir(d)) != NULL)
-		{
-			LOGE("CheckAB: dir = %s\n", dir->d_name);
+    if (d)
+    {
+        while ((dir = readdir(d)) != NULL)
+        {
+            LOGE("CheckAB: dir = %s\n", dir->d_name);
 
-			pAB = strstr(dir->d_name, "com.rovio.angrybirds");
-			if (pAB != NULL)
-			{
-				LOGE("CheckAB: AB tree detected, will look for the library...");
+            pAB = strstr(dir->d_name, "com.rovio.angrybirds");
+            if (pAB != NULL)
+            {
+                LOGE("CheckAB: AB tree detected, will look for the library...");
 
-				strcpy(lib_path, "/data/app-lib/");
-				strcat(lib_path, dir->d_name);
+                strcpy(lib_path, "/data/app-lib/");
+                strcat(lib_path, dir->d_name);
 
-				// Save the package name (discard everything after '-')
-				strcpy(pkg_name, dir->d_name);
-				pPkg = strchr(pkg_name, '-');
+                // Save the package name (discard everything after '-')
+                strcpy(pkg_name, dir->d_name);
+                pPkg = strchr(pkg_name, '-');
 
-				if (pPkg)
-				{
-					pkg_name[pPkg - pkg_name] = '\0';
-					LOGE("CheckAB: pkg_name = %s", pkg_name);
-				}
+                if (pPkg)
+                {
+                    pkg_name[pPkg - pkg_name] = '\0';
+                    LOGE("CheckAB: pkg_name = %s", pkg_name);
+                }
 
-				bDirFound = true;
-				break;
-			}
-		}
+                bDirFound = true;
+                break;
+            }
+        }
 
-		closedir(d);
+        closedir(d);
 
-		if (bDirFound)
-		{
-			// Now, look for the library name
-			d = opendir(lib_path);
+        if (bDirFound)
+        {
+            // Now, look for the library name
+            d = opendir(lib_path);
 
-			while ((dir = readdir(d)) != NULL)
-			{
-				pAB = strstr(dir->d_name, "lib");
+            while ((dir = readdir(d)) != NULL)
+            {
+                pAB = strstr(dir->d_name, "lib");
 
-				if (pAB != NULL)
-				{
-					strcat(lib_path, "/");
-					strcat(lib_path, dir->d_name);
-					iRet = 0;
+                if (pAB != NULL)
+                {
+                    strcat(lib_path, "/");
+                    strcat(lib_path, dir->d_name);
+                    iRet = 0;
 
-					LOGE("CheckAB: Found the library %s", lib_path);
-					break;
-				}
-			}
+                    LOGE("CheckAB: Found the library %s", lib_path);
+                    break;
+                }
+            }
 
-			closedir(d);
-		}
-	}
+            closedir(d);
+        }
+    }
 
-	LOGE("CheckAB: iRet = %d", iRet);
-	return iRet;
+    LOGE("CheckAB: iRet = %d", iRet);
+    return iRet;
 }
 
 void NexusIPCClient::StartAB()
@@ -1236,12 +1247,12 @@ void NexusIPCClient::StartAB()
     int result;
     socklen_t iLen;
     char szSockBuffer[255];
-    LOGD("%s : %d ", __FUNCTION__, __LINE__);
+    LOGD("%s : %d ", __PRETTY_FUNCTION__, __LINE__);
 
     strcpy(szSockBuffer, CMD_START_ANGRYBIRDS);
 
-	// Add the package name as well
-	strcat(szSockBuffer, pkg_name);
+    // Add the package name as well
+    strcat(szSockBuffer, pkg_name);
 
     iLen = strlen(szSockBuffer);
     szSockBuffer[iLen] = '\0';
@@ -1257,7 +1268,7 @@ void NexusIPCClient::StopAB()
     socklen_t iLen;
     char szSockBuffer[255];
 
-    LOGD("%s : %d ", __FUNCTION__, __LINE__);
+    LOGD("%s : %d ", __PRETTY_FUNCTION__, __LINE__);
     szSockBuffer[0] = '\0';
     strcpy(szSockBuffer, CMD_STOP_ANGRYBIRDS);
     iLen = strlen(szSockBuffer);
@@ -1274,7 +1285,7 @@ void NexusIPCClient::DesktopShow()
     socklen_t iLen;
     char szSockBuffer[255];
 
-    LOGD("%s : %d ", __FUNCTION__, __LINE__);
+    LOGD("%s : %d ", __PRETTY_FUNCTION__, __LINE__);
     szSockBuffer[0] = '\0';
     strcpy(szSockBuffer, CMD_DESKTOP_SHOW);
     iLen = strlen(szSockBuffer);
@@ -1291,7 +1302,7 @@ void NexusIPCClient::DesktopShowNoApp()
     socklen_t iLen;
     char szSockBuffer[255];
 
-    LOGD("%s : %d ", __FUNCTION__, __LINE__);
+    LOGD("%s : %d ", __PRETTY_FUNCTION__, __LINE__);
     szSockBuffer[0] = '\0';
     strcpy(szSockBuffer, CMD_DESKTOP_SHOW_NO_APP);
     iLen = strlen(szSockBuffer);
@@ -1308,7 +1319,7 @@ void NexusIPCClient::DesktopHide()
     socklen_t iLen;
     char szSockBuffer[255];
 
-    LOGD("%s : %d ", __FUNCTION__, __LINE__);
+    LOGD("%s : %d ", __PRETTY_FUNCTION__, __LINE__);
     szSockBuffer[0] = '\0';
     strcpy(szSockBuffer, CMD_DESKTOP_HIDE);
     iLen = strlen(szSockBuffer);

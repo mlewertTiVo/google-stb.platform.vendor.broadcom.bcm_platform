@@ -67,6 +67,7 @@ enum api_name{
     api_getCecStatus,
     api_sendCecMessage,
     api_setCecLogicalAddress,
+    api_getHdmiOutputStatus,
     api_getFrame,
     api_connectClientResources,
     api_disconnectClientResources,
@@ -301,6 +302,17 @@ typedef union api_param
             bool status;
         } out;
     } setCecLogicalAddress;
+
+    struct {
+        struct {
+            uint32_t portId;
+        } in;
+
+        struct {
+            b_hdmiOutputStatus hdmiOutputStatus;
+            bool status;
+        } out;
+    } getHdmiOutputStatus;
 
     struct {
         struct {

@@ -99,6 +99,7 @@ public:
     virtual bool sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage);
     virtual bool isCecEnabled(uint32_t cecId);
     virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr);
+    virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus);
 
     /* Trellis BPM server expects clients to acquire SimpleVideoDecoder, SimpleAudioDecoder and 
        SimpleAudioPlayback through it. An attempt to directly acquire them may fail. Hence, 
@@ -145,12 +146,12 @@ public:
 
     // BcmApp manager related
     virtual void ConnectToServerSocket();
-	virtual int  CheckAB();
+    virtual int  CheckAB();
     virtual void StartAB();
     virtual void StopAB();
     virtual void DesktopHide();
     virtual void DesktopShow();
-	virtual void DesktopShowNoApp();
+    virtual void DesktopShowNoApp();
     static  void TimerHandler(sigval_t);
 #endif
 

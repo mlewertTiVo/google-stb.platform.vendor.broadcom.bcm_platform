@@ -47,49 +47,6 @@
 #include "nexusnxcecservice.h"
 #include "nxclient.h"
 
-bool NexusNxService::CecServiceManager::getCecPhysicalAddress(b_cecPhysicalAddress *pCecPhyAddr)
-{
-    bool success = false;
-#if NEXUS_HAS_HDMI_OUTPUT
-
-#ifdef ANDROID_SUPPORTS_NXCLIENT_HDMI_STATUS
-    NEXUS_Error rc = NEXUS_NOT_SUPPORTED;
-    NxClient_DisplayStatus status;
-    unsigned loops;
-
-    if (cecId < NEXUS_NUM_HDMI_OUTPUTS) {
-        for (loops = 0; loops < 4; loops++) {
-            ALOGV("%s: Waiting for HDMI output %d to be connected...", __FUNCTION__, cecId);
-            rc = NxClient_GetDisplayStatus(&status);
-            if ((rc == NEXUS_SUCCESS) && status.hdmi.status.connected) {
-                break;
-            }
-            usleep(250 * 1000);
-        }
-
-        if (rc == NEXUS_SUCCESS && status.hdmi.status.connected) {
-            ALOGV("%s: HDMI output %d is connected.", __FUNCTION__, cecId);
-            success = true;
-            pCecPhyAddr->addressA = status.hdmi.status.physicalAddressA;
-            pCecPhyAddr->addressB = status.hdmi.status.physicalAddressB;
-            pCecPhyAddr->addressC = status.hdmi.status.physicalAddressC;
-            pCecPhyAddr->addressD = status.hdmi.status.physicalAddressD;
-        }
-        else {
-            ALOGW("%s: HDMI output %d not connected.", __FUNCTION__, cecId);
-        }
-    }
-    else {
-        LOGE("%s: HDMI output %d does not exist on this platform!!!", __FUNCTION__, cecId);
-    }
-#else
-#warning Reference software does not support obtaining HDMI output status in NxClient mode
-    success = true;
-#endif
-#endif
-    return success;
-}
-
 NexusNxService::CecServiceManager::~CecServiceManager()
 {
     ALOGV("%s: for CEC%d called", __PRETTY_FUNCTION__, cecId); 

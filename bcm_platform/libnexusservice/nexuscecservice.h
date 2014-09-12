@@ -53,7 +53,6 @@ public:
     virtual status_t platformInit();
     virtual void platformUninit();
     virtual bool isPlatformInitialised();
-    virtual bool getCecPhysicalAddress(b_cecPhysicalAddress *pCecPhyAddr);
     virtual status_t sendCecMessage(uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pBuffer);
     virtual bool setPowerState(b_powerState pmState);
     virtual bool getPowerStatus(uint8_t *pPowerStatus);
@@ -66,18 +65,19 @@ protected:
     struct CecRxMessageHandler;
     struct CecTxMessageHandler;
 
+    NexusService *                      mNexusService;
     uint32_t                            cecId;
     NEXUS_CecHandle                     cecHandle;
     uint8_t                             mLogicalAddress;
 
     // Protected constructor prevents a client from creating an instance of this
     // class directly, but allows a sub-class to call it through inheritence.
-    CecServiceManager(uint32_t cecId = 0) :
-        cecId(cecId), cecHandle(NULL), mLogicalAddress(0xFF), mCecRxMessageHandler(NULL), mCecTxMessageHandler(NULL) {
+    CecServiceManager(NexusService *ns, uint32_t cecId = 0) :
+        mNexusService(ns), cecId(cecId), cecHandle(NULL), mLogicalAddress(0xFF), mCecRxMessageHandler(NULL), mCecTxMessageHandler(NULL) {
         ALOGV("%s: called for CEC%d", __PRETTY_FUNCTION__, cecId);
     }
 
-    static sp<CecServiceManager> instantiate(uint32_t cecId) { return new CecServiceManager(cecId); }
+    static sp<CecServiceManager> instantiate(NexusService *ns, uint32_t cecId) { return new CecServiceManager(ns, cecId); }
 
 private:
     uint8_t                                 mCecPowerStatus;

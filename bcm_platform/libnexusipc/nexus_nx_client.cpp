@@ -115,7 +115,7 @@ bool NexusNxClient::StandbyMonitorThread::threadLoop()
     NEXUS_Error rc;
     NxClient_StandbyStatus standbyStatus, prevStatus;
 
-    LOGD("%s: Entering for client \"%s\"", __FUNCTION__, getName());
+    LOGD("%s: Entering for client \"%s\"", __PRETTY_FUNCTION__, getName());
 
     NxClient_GetStandbyStatus(&standbyStatus);
     
@@ -131,7 +131,7 @@ bool NexusNxClient::StandbyMonitorThread::threadLoop()
         prevStatus = standbyStatus;
         BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
     }
-    LOGD("%s: Exiting for client \"%s\"", __FUNCTION__, getName());
+    LOGD("%s: Exiting for client \"%s\"", __PRETTY_FUNCTION__, getName());
     return false;
 }
 
@@ -144,7 +144,7 @@ NEXUS_Error NexusNxClient::clientJoin()
     android::Mutex::Autolock autoLock(mLock);
 
     if (mJoinRefCount == 0) {
-        LOGI("++++ %s: \"%s\" ++++", __FUNCTION__, getClientName());
+        LOGI("++++ %s: \"%s\" ++++", __PRETTY_FUNCTION__, getClientName());
 
         NxClient_GetDefaultJoinSettings(&joinSettings);
         BKNI_Snprintf(&joinSettings.name[0], NXCLIENT_MAX_NAME, "%s", getClientName());
@@ -152,18 +152,18 @@ NEXUS_Error NexusNxClient::clientJoin()
         do {
             rc = NxClient_Join(&joinSettings);
             if (rc != NEXUS_SUCCESS) {
-                LOGW("%s: NxServer is not ready, waiting...", __FUNCTION__);
+                LOGW("%s: NxServer is not ready, waiting...", __PRETTY_FUNCTION__);
                 usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
             }
             else {
-                LOGD("%s: NxClient_Join succeeded for client \"%s\".", __FUNCTION__, getClientName());
+                LOGD("%s: NxClient_Join succeeded for client \"%s\".", __PRETTY_FUNCTION__, getClientName());
             }
         } while (rc != NEXUS_SUCCESS);
     }
 
     if (rc == NEXUS_SUCCESS) {
         mJoinRefCount++;
-        LOGV("*** %s: incrementing join count to %d for client \"%s\". ***", __FUNCTION__, mJoinRefCount, getClientName());
+        LOGV("*** %s: incrementing join count to %d for client \"%s\". ***", __PRETTY_FUNCTION__, mJoinRefCount, getClientName());
     }
     return rc;
 }
@@ -176,14 +176,14 @@ NEXUS_Error NexusNxClient::clientUninit()
 
     if (mJoinRefCount > 0) {
         mJoinRefCount--;
-        LOGV("*** %s: decrementing join count to %d for client \"%s\". ***", __FUNCTION__, mJoinRefCount, getClientName());
+        LOGV("*** %s: decrementing join count to %d for client \"%s\". ***", __PRETTY_FUNCTION__, mJoinRefCount, getClientName());
 
         if (mJoinRefCount == 0) {
-            LOGI("---- %s: Calling NxClient_Uninit() for client \"%s\" ----", __FUNCTION__, getClientName());
+            LOGI("---- %s: Calling NxClient_Uninit() for client \"%s\" ----", __PRETTY_FUNCTION__, getClientName());
             NxClient_Uninit();
         }
     } else {
-        LOGE("%s: NEXUS is already uninitialised!", __FUNCTION__);
+        LOGE("%s: NEXUS is already uninitialised!", __PRETTY_FUNCTION__);
         rc = NEXUS_NOT_INITIALIZED;
     }
     return rc;
@@ -191,12 +191,12 @@ NEXUS_Error NexusNxClient::clientUninit()
 
 NexusNxClient::NexusNxClient(const char *client_name) : NexusIPCClient(client_name)
 {
-    LOGV("++++++ %s: \"%s\" ++++++", __FUNCTION__, getClientName());
+    LOGV("++++++ %s: \"%s\" ++++++", __PRETTY_FUNCTION__, getClientName());
 }
 
 NexusNxClient::~NexusNxClient()
 {
-    LOGV("~~~~~~ %s: \"%s\" ~~~~~~", __FUNCTION__, getClientName());
+    LOGV("~~~~~~ %s: \"%s\" ~~~~~~", __PRETTY_FUNCTION__, getClientName());
 }
 
 NEXUS_Error standby_check(NEXUS_PlatformStandbyMode mode)
@@ -207,7 +207,7 @@ NEXUS_Error standby_check(NEXUS_PlatformStandbyMode mode)
     while (count < NXCLIENT_PM_TIMEOUT_COUNT) {
         NEXUS_Platform_GetStandbySettings( &standbySettings );
         if (standbySettings.mode == mode) {
-            LOGD("%s: Entered S%d", __FUNCTION__, mode);
+            LOGD("%s: Entered S%d", __PRETTY_FUNCTION__, mode);
             break;
         }
         else {
@@ -300,20 +300,20 @@ void NexusNxClient::destroyClientContext(NexusClientContext * client)
 void NexusNxClient::getClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *composition)
 {
     if (client == NULL) {
-        LOGE("%s: FATAL: Client context argument is NULL!!!", __FUNCTION__);
+        LOGE("%s: FATAL: Client context argument is NULL!!!", __PRETTY_FUNCTION__);
     }
     else if (composition == NULL) {
-        LOGE("%s: FATAL: Client composition argument is NULL!!!", __FUNCTION__);
+        LOGE("%s: FATAL: Client composition argument is NULL!!!", __PRETTY_FUNCTION__);
     }
     else if (client->nexusClient == NULL) {
-        LOGE("%s: Invalid nexus client handle for client \"%s\"!!!", __FUNCTION__, client->createConfig.name.string);
+        LOGE("%s: Invalid nexus client handle for client \"%s\"!!!", __PRETTY_FUNCTION__, client->createConfig.name.string);
     }
     else if (client->resources.videoSurface == NULL) {
-        LOGE("%s: Invalid surface client handle for client \"%s\"!!!", __FUNCTION__, client->createConfig.name.string);
+        LOGE("%s: Invalid surface client handle for client \"%s\"!!!", __PRETTY_FUNCTION__, client->createConfig.name.string);
     }
     else {
         NxClient_Config_GetSurfaceClientComposition(client->nexusClient, client->resources.videoSurface, composition);
-        LOGD("%s: Nexus Client \"%s\" surfaceClientId=%d, %d,%d@%d,%d", __FUNCTION__, client->createConfig.name.string,
+        LOGD("%s: Nexus Client \"%s\" surfaceClientId=%d, %d,%d@%d,%d", __PRETTY_FUNCTION__, client->createConfig.name.string,
             client->info.surfaceClientId, composition->position.width, composition->position.height, composition->position.x, composition->position.y);
     }
     return;
@@ -322,25 +322,25 @@ void NexusNxClient::getClientComposition(NexusClientContext * client, NEXUS_Surf
 void NexusNxClient::setClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *composition)
 {
     if (client == NULL) {
-        LOGE("%s: FATAL: Client context argument is NULL!!!", __FUNCTION__);
+        LOGE("%s: FATAL: Client context argument is NULL!!!", __PRETTY_FUNCTION__);
         //BDBG_ASSERT(client != NULL);
     }
 
     if (composition == NULL) {
-        LOGE("%s: FATAL: Client composition argument is NULL!!!", __FUNCTION__);
+        LOGE("%s: FATAL: Client composition argument is NULL!!!", __PRETTY_FUNCTION__);
         //BDBG_ASSERT(composition != NULL);
     }
 
     if (client->nexusClient == NULL) {
-        LOGE("%s: Invalid nexus client handle for client \"%s\"!!!", __FUNCTION__, client->createConfig.name.string);
+        LOGE("%s: Invalid nexus client handle for client \"%s\"!!!", __PRETTY_FUNCTION__, client->createConfig.name.string);
     }
     else {
         if (client->resources.videoSurface == NULL) {
-            LOGE("%s: Invalid surface client handle for client \"%s\"!!!", __FUNCTION__, client->createConfig.name.string);
+            LOGE("%s: Invalid surface client handle for client \"%s\"!!!", __PRETTY_FUNCTION__, client->createConfig.name.string);
         }
         else {
             NxClient_Config_SetSurfaceClientComposition(client->nexusClient, client->resources.videoSurface, composition);
-            LOGD("%s: Nexus Client \"%s\" surfaceClientId=%d, %d,%d@%d,%d", __FUNCTION__, client->createConfig.name.string,
+            LOGD("%s: Nexus Client \"%s\" surfaceClientId=%d, %d,%d@%d,%d", __PRETTY_FUNCTION__, client->createConfig.name.string,
                 client->info.surfaceClientId, composition->position.width, composition->position.height, composition->position.x, composition->position.y);
         }
     }
@@ -349,22 +349,22 @@ void NexusNxClient::setClientComposition(NexusClientContext * client, NEXUS_Surf
 void NexusNxClient::getVideoWindowSettings(NexusClientContext * client, uint32_t window_id, b_video_window_settings *settings)
 {
     if (client == NULL) {
-        LOGE("%s: FATAL: Client context argument is NULL!!!", __FUNCTION__);
+        LOGE("%s: FATAL: Client context argument is NULL!!!", __PRETTY_FUNCTION__);
         //BDBG_ASSERT(client != NULL);
     }
 
-    LOGD("%s: Client \"%s\" surfaceClientId=%d pid=%d", __FUNCTION__, client->createConfig.name.string, client->info.surfaceClientId, client->pid);
+    LOGD("%s: Client \"%s\" surfaceClientId=%d pid=%d", __PRETTY_FUNCTION__, client->createConfig.name.string, client->info.surfaceClientId, client->pid);
     return;
 }
 
 void NexusNxClient::setVideoWindowSettings(NexusClientContext * client, uint32_t window_id, b_video_window_settings *settings)
 {
     if (client == NULL) {
-        LOGE("%s: FATAL: Client context argument is NULL!!!", __FUNCTION__);
+        LOGE("%s: FATAL: Client context argument is NULL!!!", __PRETTY_FUNCTION__);
         //BDBG_ASSERT(client != NULL);
     }
 
-    LOGD("%s: Client \"%s\" surfaceClientId=%d pid=%d", __FUNCTION__, client->createConfig.name.string, client->info.surfaceClientId, client->pid);
+    LOGD("%s: Client \"%s\" surfaceClientId=%d pid=%d", __PRETTY_FUNCTION__, client->createConfig.name.string, client->info.surfaceClientId, client->pid);
 
     return;
 }
@@ -388,7 +388,7 @@ void NexusNxClient::getDisplaySettings(uint32_t display_id, NEXUS_DisplaySetting
             clientUninit();
         }
         else {
-            LOGE("%s: Could not join client \"%s\"!!!", __FUNCTION__, getClientName());
+            LOGE("%s: Could not join client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
         }
     }
     
@@ -416,7 +416,7 @@ void NexusNxClient::setDisplaySettings(uint32_t display_id, NEXUS_DisplaySetting
             clientUninit();
         }
         else {
-            LOGE("%s: Could not join client \"%s\"!!!", __FUNCTION__, getClientName());
+            LOGE("%s: Could not join client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
         }
     }
 
@@ -460,7 +460,7 @@ void NexusNxClient::setAudioVolume(float leftVol, float rightVol)
     int32_t leftVolume;
     int32_t rightVolume;
 
-    LOGD("nexus_nx_client %s:%d left=%f right=%f\n",__FUNCTION__,__LINE__,leftVol,rightVol);
+    LOGD("nexus_nx_client %s:%d left=%f right=%f\n",__PRETTY_FUNCTION__,__LINE__,leftVol,rightVol);
 
     leftVolume = leftVol*AUDIO_VOLUME_SETTING_MAX;
     rightVolume = rightVol*AUDIO_VOLUME_SETTING_MAX;
@@ -489,7 +489,7 @@ void NexusNxClient::setAudioVolume(float leftVol, float rightVol)
         clientUninit();
     }
     else {
-        LOGE("%s: Could not join client \"%s\"!!!", __FUNCTION__, getClientName());
+        LOGE("%s: Could not join client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
     }
 
     return;
@@ -500,7 +500,7 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
     NEXUS_Error rc = NEXUS_SUCCESS;
     NxClient_StandbySettings standbySettings;
 
-    LOGD("%s: pmState = %d",__FUNCTION__, pmState);
+    LOGD("%s: pmState = %d",__PRETTY_FUNCTION__, pmState);
 
     rc = clientJoin();
 
@@ -513,7 +513,7 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
         {
             case ePowerState_S0:
             {
-                LOGD("%s: About to set power state S0...", __FUNCTION__);
+                LOGD("%s: About to set power state S0...", __PRETTY_FUNCTION__);
                 standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eOn;
                 rc = NxClient_SetStandbySettings(&standbySettings);
                 break;
@@ -521,7 +521,7 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
 
             case ePowerState_S1:
             {
-                LOGD("%s: About to set power state S1...", __FUNCTION__);
+                LOGD("%s: About to set power state S1...", __PRETTY_FUNCTION__);
                 standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eActive;
                 rc = NxClient_SetStandbySettings(&standbySettings);
                 break;
@@ -529,7 +529,7 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
 
             case ePowerState_S2:
             {
-                LOGD("%s: About to set power state S2...", __FUNCTION__);
+                LOGD("%s: About to set power state S2...", __PRETTY_FUNCTION__);
                 standbySettings.settings.mode = NEXUS_PlatformStandbyMode_ePassive;
                 standbySettings.settings.wakeupSettings.ir = 1;
                 standbySettings.settings.wakeupSettings.uhf = 1;
@@ -547,7 +547,7 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
 
             case ePowerState_S3:
             {
-                LOGD("%s: About to set power state S3...", __FUNCTION__);
+                LOGD("%s: About to set power state S3...", __PRETTY_FUNCTION__);
                 standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eDeepSleep;
                 standbySettings.settings.wakeupSettings.ir = 1;
                 standbySettings.settings.wakeupSettings.uhf = 1;
@@ -560,14 +560,14 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
                 standbySettings.settings.wakeupSettings.timeout = 0;
                 rc = NxClient_SetStandbySettings(&standbySettings);
                 if (rc != NEXUS_SUCCESS) {
-                    LOGE("%s: NxClient_SetStandbySettings failed [rc=%d]!", __FUNCTION__, rc);
+                    LOGE("%s: NxClient_SetStandbySettings failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
                 }
                 break;
             }
 
             default:
             {
-                LOGE("%s: invalid power state %d!", __FUNCTION__, pmState);
+                LOGE("%s: invalid power state %d!", __PRETTY_FUNCTION__, pmState);
                 rc = NEXUS_INVALID_PARAMETER;
                 break;
             }
@@ -577,14 +577,14 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
         if (rc == NEXUS_SUCCESS && pmState != ePowerState_S0) {
             rc = standby_check(standbySettings.settings.mode);
             if (rc != NEXUS_SUCCESS) {
-                LOGE("%s: standby_check failed [rc=%d]!", __FUNCTION__, rc);
+                LOGE("%s: standby_check failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
             }
         }
 
         clientUninit();
     }
     else {
-        LOGE("%s: Could not join client \"%s\"!!!", __FUNCTION__, getClientName());
+        LOGE("%s: Could not join client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
     }
 
     return (rc == NEXUS_SUCCESS) ? true : false;
@@ -626,9 +626,9 @@ b_powerState NexusNxClient::getPowerState()
                      "IR      : %d\n"
                      "UHF     : %d\n"
                      "XPT     : %d\n"
-                     "CEC     : %d\n"	  
-                     "GPIO    : %d\n"	  
-                     "Timeout : %d\n", __FUNCTION__,
+                     "CEC     : %d\n"
+                     "GPIO    : %d\n"
+                     "Timeout : %d\n", __PRETTY_FUNCTION__,
                      state,
                      standbyStatus.status.wakeupStatus.ir, 
                      standbyStatus.status.wakeupStatus.uhf,
@@ -642,7 +642,7 @@ b_powerState NexusNxClient::getPowerState()
         clientUninit();
     }
     else {
-        LOGE("%s: Could not join client \"%s\"!!!", __FUNCTION__, getClientName());
+        LOGE("%s: Could not join client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
     }
 
     return state;
@@ -698,7 +698,7 @@ void NexusNxClient::getPictureCtrlCommonSettings(uint32_t window_id, NEXUS_Pictu
     NEXUS_Error rc;
 
     if (window_id >= MAX_VIDEO_WINDOWS_PER_DISPLAY) {
-        LOGE("%s: window_id(%d) cannot be >= %d!", __FUNCTION__, window_id, MAX_VIDEO_WINDOWS_PER_DISPLAY);
+        LOGE("%s: window_id(%d) cannot be >= %d!", __PRETTY_FUNCTION__, window_id, MAX_VIDEO_WINDOWS_PER_DISPLAY);
         return;
     }
 
@@ -716,17 +716,17 @@ void NexusNxClient::getPictureCtrlCommonSettings(uint32_t window_id, NEXUS_Pictu
                 releaseVideoDecoderHandle(simpleVideoDecoder);
             }
             else {
-                LOGE("%s: Could not acquire video decoder handle for window %d!", __FUNCTION__, window_id);
+                LOGE("%s: Could not acquire video decoder handle for window %d!", __PRETTY_FUNCTION__, window_id);
             }
 #endif
             clientUninit();
         }
         else {
-            LOGE("%s: Could not join client \"%s\"!!!", __FUNCTION__, getClientName());
+            LOGE("%s: Could not join client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
         }
     }
     else {
-        LOGE("%s: invalid parameter - \"settings\" is NULL!", __FUNCTION__);
+        LOGE("%s: invalid parameter - \"settings\" is NULL!", __PRETTY_FUNCTION__);
     }
     return;
 }
@@ -736,7 +736,7 @@ void NexusNxClient::setPictureCtrlCommonSettings(uint32_t window_id, NEXUS_Pictu
     NEXUS_Error rc;
 
     if (window_id >= MAX_VIDEO_WINDOWS_PER_DISPLAY) {
-        LOGE("%s: window_id(%d) cannot be >= %d!", __FUNCTION__, window_id, MAX_VIDEO_WINDOWS_PER_DISPLAY);
+        LOGE("%s: window_id(%d) cannot be >= %d!", __PRETTY_FUNCTION__, window_id, MAX_VIDEO_WINDOWS_PER_DISPLAY);
         return;
     }
 
@@ -755,17 +755,17 @@ void NexusNxClient::setPictureCtrlCommonSettings(uint32_t window_id, NEXUS_Pictu
                 releaseVideoDecoderHandle(simpleVideoDecoder);
             }
             else {
-                LOGE("%s: Could not acquire video decoder handle for window %d!", __FUNCTION__, window_id);
+                LOGE("%s: Could not acquire video decoder handle for window %d!", __PRETTY_FUNCTION__, window_id);
             }
 #endif
             clientUninit();
         }
         else {
-            LOGE("%s: Could not join client \"%s\"!!!", __FUNCTION__, getClientName());
+            LOGE("%s: Could not join client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
         }
     }
     else {
-        LOGE("%s: invalid parameter - \"settings\" is NULL!", __FUNCTION__);
+        LOGE("%s: invalid parameter - \"settings\" is NULL!", __PRETTY_FUNCTION__);
     }
     return;
 }
@@ -775,7 +775,7 @@ void NexusNxClient::getGraphicsColorSettings(uint32_t display_id, NEXUS_Graphics
     NEXUS_Error rc;
 
     if (display_id >= 1) {  // NxClient only exposes a single display at the moment
-        LOGE("%s: display_id(%d) cannot be >= %d!", __FUNCTION__, display_id, 1);
+        LOGE("%s: display_id(%d) cannot be >= %d!", __PRETTY_FUNCTION__, display_id, 1);
         return;
     }
 
@@ -793,11 +793,11 @@ void NexusNxClient::getGraphicsColorSettings(uint32_t display_id, NEXUS_Graphics
 #endif
         }
         else {
-            LOGE("%s: Could not join client \"%s\"!!!", __FUNCTION__, getClientName());
+            LOGE("%s: Could not join client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
         }
     }
     else {
-        LOGE("%s: invalid parameter - \"settings\" is NULL!", __FUNCTION__);
+        LOGE("%s: invalid parameter - \"settings\" is NULL!", __PRETTY_FUNCTION__);
     }
 
     return;
@@ -808,7 +808,7 @@ void NexusNxClient::setGraphicsColorSettings(uint32_t display_id, NEXUS_Graphics
     NEXUS_Error rc;
 
     if (display_id >= 1) {  // NxClient only exposes a single display at the moment
-        LOGE("%s: display_id(%d) cannot be >= %d!", __FUNCTION__, display_id, 1);
+        LOGE("%s: display_id(%d) cannot be >= %d!", __PRETTY_FUNCTION__, display_id, 1);
         return;
     }
 
@@ -826,11 +826,11 @@ void NexusNxClient::setGraphicsColorSettings(uint32_t display_id, NEXUS_Graphics
             clientUninit();
         }
         else {
-            LOGE("%s: Could not join client \"%s\"!!!", __FUNCTION__, getClientName());
+            LOGE("%s: Could not join client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
         }
     }
     else {
-        LOGE("%s: invalid parameter - \"settings\" is NULL!", __FUNCTION__);
+        LOGE("%s: invalid parameter - \"settings\" is NULL!", __PRETTY_FUNCTION__);
     }
     return;
 }
@@ -857,7 +857,7 @@ void NexusNxClient::setDisplayOutputs(int display)
         clientUninit();
     }
     else {
-        LOGE("%s: Could not join client \"%s\"!!!", __FUNCTION__, getClientName());
+        LOGE("%s: Could not join client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
     }
     return;
 }
@@ -879,5 +879,59 @@ void NexusNxClient::setAudioMute(int mute)
         clientUninit();
     }
     return;
+}
+
+bool NexusNxClient::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus)
+{
+    NEXUS_Error rc = NEXUS_NOT_SUPPORTED;
+#ifdef ANDROID_SUPPORTS_NXCLIENT_HDMI_STATUS
+#if NEXUS_HAS_HDMI_OUTPUT
+    if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
+        unsigned loops;
+        NxClient_DisplayStatus status;
+
+        memset(pHdmiOutputStatus, 0, sizeof(*pHdmiOutputStatus));
+        
+        for (loops = 0; loops < 4; loops++) {
+            LOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
+            rc = NxClient_GetDisplayStatus(&status);
+            if ((rc == NEXUS_SUCCESS) && status.hdmi.status.connected) {
+                break;
+            }
+            usleep(250 * 1000);
+        }
+        
+        if (rc == NEXUS_SUCCESS) {
+            if (status.hdmi.status.connected) {
+                pHdmiOutputStatus->connected            = status.hdmi.status.connected;
+                pHdmiOutputStatus->rxPowered            = status.hdmi.status.rxPowered;
+                pHdmiOutputStatus->hdmiDevice           = status.hdmi.status.hdmiDevice;
+                pHdmiOutputStatus->videoFormat          = status.hdmi.status.videoFormat;
+                pHdmiOutputStatus->preferredVideoFormat = status.hdmi.status.preferredVideoFormat;
+                pHdmiOutputStatus->aspectRatio          = status.hdmi.status.aspectRatio;
+                pHdmiOutputStatus->colorSpace           = status.hdmi.status.colorSpace;
+                pHdmiOutputStatus->audioFormat          = status.hdmi.status.audioFormat;
+                pHdmiOutputStatus->audioSamplingRate    = status.hdmi.status.audioSamplingRate;
+                pHdmiOutputStatus->audioSamplingSize    = status.hdmi.status.audioSamplingSize;
+                pHdmiOutputStatus->audioChannelCount    = status.hdmi.status.audioChannelCount;
+                pHdmiOutputStatus->physicalAddress[0]   = status.hdmi.status.physicalAddressA << 4 | status.hdmi.status.physicalAddressB;
+                pHdmiOutputStatus->physicalAddress[1]   = status.hdmi.status.physicalAddressC << 4 | status.hdmi.status.physicalAddressD;
+            }
+        }
+        else {
+            LOGE("%s: Could not get HDMI%d output status!!!", __PRETTY_FUNCTION__, portId);
+        }
+    }
+    else
+#endif
+    {
+        LOGE("%s: No HDMI%d output on this device!!!", __PRETTY_FUNCTION__, portId);
+    }
+#else
+#warning Reference software does not support obtaining HDMI output status in NxClient mode
+    rc = NEXUS_SUCCESS;
+#endif
+    return (rc == NEXUS_SUCCESS);
+
 }
 

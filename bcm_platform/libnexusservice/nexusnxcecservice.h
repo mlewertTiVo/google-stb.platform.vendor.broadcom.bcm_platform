@@ -52,7 +52,6 @@ public:
     //virtual status_t platformInit();
     //virtual void platformUninit();
     //virtual bool isPlatformInitialised();
-    virtual bool getCecPhysicalAddress(b_cecPhysicalAddress *pCecPhyAddr);
     //virtual status_t sendCecMessage(uint8_t destAddr, size_t length, uint8_t *pBuffer);
     //virtual bool setPowerState(b_powerState pmState);
     //virtual bool getPowerStatus(uint8_t *pPowerStatus);
@@ -63,12 +62,12 @@ protected:
 
     // Protected constructor prevents a client from creating an instance of this
     // class directly, but allows a sub-class to call it through inheritence.
-    CecServiceManager(uint32_t cecId = 0) : NexusService::CecServiceManager(cecId) {
+    CecServiceManager(NexusNxService *ns, uint32_t cecId = 0) : NexusService::CecServiceManager(ns, cecId) {
         ALOGV("%s: called for CEC%d", __PRETTY_FUNCTION__, cecId);
     }
 
-    static sp<NexusService::CecServiceManager> instantiate(uint32_t cecId) {
-        return new CecServiceManager(cecId);
+    static sp<NexusService::CecServiceManager> instantiate(NexusNxService *ns, uint32_t cecId) {
+        return new CecServiceManager(ns, cecId);
     }
 
 private:

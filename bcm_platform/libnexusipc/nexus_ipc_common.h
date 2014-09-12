@@ -144,13 +144,6 @@ typedef enum b_cecDeviceType
     eCecDeviceType_eMax
 } b_cecDeviceType;
 
-typedef struct b_cecPhysicalAddress {
-    uint8_t addressA;           /* Physical Address for HDMI node A */
-    uint8_t addressB;           /* Physical Address for HDMI node B */
-    uint8_t addressC;           /* Physical Address for HDMI node C */
-    uint8_t addressD;           /* Physical Address for HDMI node D */
-} b_cecPhysicalAddress;
-
 typedef struct b_cecStatus {
     bool ready;                 /* device is ready */
     bool messageRx;             /* If true, call NEXUS_Cec_ReceiveMessage to receive a message. */
@@ -161,6 +154,26 @@ typedef struct b_cecStatus {
     b_cecDeviceType deviceType;
     unsigned cecVersion;        /* Cec Protocol version the platform is running */
 } b_cecStatus;
+
+typedef struct b_hdmiOutputStatus
+{
+    bool connected;             /* True if Rx device is connected; device may be ON or OFF */
+                                /* if !connected the remaining values should be ignored */
+                                /* HDMI Rx capability information (EDID) can be read with Rx power off */
+
+    bool rxPowered;             /* True if Rx device is powered ON, false OFF */
+    bool hdmiDevice;            /* True if Rx supports HDMI, false if supports only DVI */
+
+    uint8_t physicalAddress[2]; /* device physical address: read from attached EDID */
+    NEXUS_VideoFormat videoFormat;
+    NEXUS_VideoFormat preferredVideoFormat;  /* monitor's preferred video format */
+    NEXUS_AspectRatio aspectRatio;
+    NEXUS_ColorSpace colorSpace;
+    NEXUS_AudioCodec audioFormat;
+    unsigned audioSamplingRate; /* in units of Hz */
+    unsigned audioSamplingSize;
+    unsigned audioChannelCount;
+} b_hdmiOutputStatus;
 
 typedef struct b_video_decoder_caps
 {
@@ -277,6 +290,7 @@ public:
     virtual bool sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage)=0;
     virtual bool isCecEnabled(uint32_t cecId)=0;
     virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr)=0;
+    virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus)=0;
 };
 
 /* -----------------------------------------------------------------------------

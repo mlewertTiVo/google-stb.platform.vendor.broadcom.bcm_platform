@@ -141,6 +141,7 @@ NexusHdmiCecDevice::~NexusHdmiCecDevice()
 status_t NexusHdmiCecDevice::initialise()
 {
     status_t ret = NO_INIT;
+    b_cecStatus cecStatus;
 
     HDMI_CEC_TRACE_ENTER;
 
@@ -150,47 +151,61 @@ status_t NexusHdmiCecDevice::initialise()
         ALOGE("%s: cannot create NexusIPCClient!!!", __PRETTY_FUNCTION__);
     }
     else {
-        b_cecStatus cecStatus;
+        mHdmiHotplugEventListener = new HdmiHotplugEventListener(this);
 
-        if (pIpcClient->getCecStatus(mCecId, &cecStatus) != true) {
-            ALOGE("%s: cannot get CEC status!!!", __PRETTY_FUNCTION__);
-            ret = UNKNOWN_ERROR;
+        if (mHdmiHotplugEventListener == NULL) {
+            ALOGE("%s: cannot create HDMI hotplug event listener!!!", __PRETTY_FUNCTION__);
+            delete pIpcClient;
+            pIpcClient = NULL;
         }
         else {
-            if (cecStatus.ready) {
-                mHdmiCecMessageEventListener = new HdmiCecMessageEventListener(this);
-
-                if (mHdmiCecMessageEventListener == NULL) {
-                    ALOGE("%s: cannot create HDMI CEC message event listener!!!", __PRETTY_FUNCTION__);
-                }
-                else {
-                    // Attempt to register the HDMI CEC Message Event Listener with NexusService
-                    ret = pIpcClient->setHdmiCecMessageEventListener(mCecId, mHdmiCecMessageEventListener);
-                    if (ret != NO_ERROR) {
-                        ALOGE("%s: could not register HDMI CEC message event listener (rc=%d)!!!", __PRETTY_FUNCTION__, ret);
-                        mHdmiCecMessageEventListener = NULL;
+            // Attempt to register the HDMI Hotplug Event Listener with NexusService
+            ret = pIpcClient->setHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
+            if (ret != NO_ERROR) {
+                ALOGE("%s: could not register HDMI hotplug event listener (rc=%d)!!!", __PRETTY_FUNCTION__, ret);
+                mHdmiHotplugEventListener = NULL;
+                delete pIpcClient;
+                pIpcClient = NULL;
+            }
+            else {
+                if (pIpcClient->isCecEnabled(mCecId) == true) {
+                    if (pIpcClient->getCecStatus(mCecId, &cecStatus) != true) {
+                        ALOGE("%s: cannot get CEC status!!!", __PRETTY_FUNCTION__);
+                        mHdmiHotplugEventListener = NULL;
+                        delete pIpcClient;
+                        pIpcClient = NULL;
+                        ret = UNKNOWN_ERROR;
                     }
-                    else {
-                        mHdmiHotplugEventListener = new HdmiHotplugEventListener(this);
+                    else if (cecStatus.ready) {
+                        mHdmiCecMessageEventListener = new HdmiCecMessageEventListener(this);
 
-                        if (mHdmiHotplugEventListener == NULL) {
-                            ALOGE("%s: cannot create HDMI hotplug event listener!!!", __PRETTY_FUNCTION__);
+                        if (mHdmiCecMessageEventListener == NULL) {
+                            ALOGE("%s: cannot create HDMI CEC message event listener!!!", __PRETTY_FUNCTION__);
+                            mHdmiHotplugEventListener = NULL;
+                            delete pIpcClient;
+                            pIpcClient = NULL;
+                            ret = NO_INIT;
                         }
                         else {
-                            // Attempt to register the HDMI Hotplug Event Listener with NexusService
-                            ret = pIpcClient->setHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
+                            // Attempt to register the HDMI CEC Message Event Listener with NexusService
+                            ret = pIpcClient->setHdmiCecMessageEventListener(mCecId, mHdmiCecMessageEventListener);
                             if (ret != NO_ERROR) {
-                                ALOGE("%s: could not register HDMI hotplug event listener (rc=%d)!!!", __PRETTY_FUNCTION__, ret);
-                                mHdmiHotplugEventListener = NULL;
+                                ALOGE("%s: could not register HDMI CEC message event listener (rc=%d)!!!", __PRETTY_FUNCTION__, ret);
                                 mHdmiCecMessageEventListener = NULL;
+                                mHdmiHotplugEventListener = NULL;
+                                delete pIpcClient;
+                                pIpcClient = NULL;
                             }
                         }
                     }
+                    else {
+                        ALOGE("%s: CEC%d not ready!!!", __PRETTY_FUNCTION__, mCecId);
+                        mHdmiHotplugEventListener = NULL;
+                        delete pIpcClient;
+                        pIpcClient = NULL;
+                        ret = UNKNOWN_ERROR;
+                    }
                 }
-            }
-            else {
-                ALOGE("%s: CEC%d not ready!!!", __PRETTY_FUNCTION__, mCecId);
-                ret = UNKNOWN_ERROR;
             }
         }
     }
@@ -224,7 +239,7 @@ status_t NexusHdmiCecDevice::setCecLogicalAddress(uint8_t addr)
     }
 
     if (pIpcClient->setCecLogicalAddress(mCecId, addr) == false) {
-        ALOGE("%s: cannot add CEC%d logical address %d!!!", __PRETTY_FUNCTION__, mCecId, addr);
+        ALOGE("%s: cannot add CEC%d logical address 0x%02x!!!", __PRETTY_FUNCTION__, mCecId, addr);
         return UNKNOWN_ERROR;
     }
 
@@ -245,14 +260,13 @@ bool NexusHdmiCecDevice::getState()
         return NO_INIT;
     }
 
-    b_cecStatus cecStatus;
+    b_hdmiOutputStatus hdmiOutputStatus;
 
-    if (pIpcClient->getCecStatus(mCecId, &cecStatus) != true) {
-        ALOGE("%s: cannot get CEC status!!!", __PRETTY_FUNCTION__);
+    if (pIpcClient->getHdmiOutputStatus(mCecId, &hdmiOutputStatus) != true) {
+        ALOGE("%s: cannot get HDMI%d output status!!!", __PRETTY_FUNCTION__, mCecId);
         return UNKNOWN_ERROR;
     }
-
-    return cecStatus.ready;
+    return hdmiOutputStatus.connected;
 }
 
 void NexusHdmiCecDevice::registerEventCallback(const struct hdmi_cec_device* dev, event_callback_t callback, void *arg)
@@ -273,14 +287,14 @@ status_t NexusHdmiCecDevice::getCecPhysicalAddress(uint16_t* addr)
         return NO_INIT;
     }
 
-    b_cecStatus cecStatus;
+    b_hdmiOutputStatus status;
 
-    if (pIpcClient->getCecStatus(mCecId, &cecStatus) != true) {
-        ALOGE("%s: cannot get CEC status!!!", __PRETTY_FUNCTION__);
+    if (pIpcClient->getHdmiOutputStatus(mCecId, &status) != true) {
+        ALOGE("%s: cannot get HDMI%d output status!!!", __PRETTY_FUNCTION__, mCecId);
         return UNKNOWN_ERROR;
     }
 
-    *addr = (cecStatus.physicalAddress[0] * 256) + cecStatus.physicalAddress[1];
+    *addr = (status.physicalAddress[0] * 256) + status.physicalAddress[1];
     return NO_ERROR;
 }
 
@@ -340,6 +354,9 @@ status_t NexusHdmiCecDevice::sendCecMessage(const cec_message_t *message)
 
 status_t NexusHdmiCecDevice::getCecPortInfo(struct hdmi_port_info* list[], int* total)
 {
+    bool cecEnabled;
+    b_cecStatus cecStatus;
+
     HDMI_CEC_TRACE_ENTER;
 
     if (pIpcClient == NULL) {
@@ -347,18 +364,23 @@ status_t NexusHdmiCecDevice::getCecPortInfo(struct hdmi_port_info* list[], int* 
         return NO_INIT;
     }
 
-    b_cecStatus cecStatus;
-
-    if (pIpcClient->getCecStatus(mCecId, &cecStatus) != true) {
-        ALOGE("%s: cannot get CEC status!!!", __PRETTY_FUNCTION__);
-        return UNKNOWN_ERROR;
-    }
+    cecEnabled = pIpcClient->isCecEnabled(mCecId);
 
     mPortInfo[0].type = HDMI_OUTPUT;
     mPortInfo[0].port_id = mCecId + 1;
-    mPortInfo[0].cec_supported = true;
+    mPortInfo[0].cec_supported = cecEnabled;
     mPortInfo[0].arc_supported = false;
-    mPortInfo[0].physical_address = (cecStatus.physicalAddress[0] * 256) + cecStatus.physicalAddress[1];
+    mPortInfo[0].physical_address = 0;
+
+    if (cecEnabled) {
+        if (pIpcClient->getCecStatus(mCecId, &cecStatus) != true) {
+            ALOGE("%s: cannot get CEC%d status!!!", __PRETTY_FUNCTION__, mCecId);
+            return UNKNOWN_ERROR;
+        }
+        else {
+            mPortInfo[0].physical_address = (cecStatus.physicalAddress[0] * 256) + cecStatus.physicalAddress[1];
+        }
+    }
 
     list[0] = mPortInfo;
     *total = 1; // TODO use NEXUS_NUM_CEC

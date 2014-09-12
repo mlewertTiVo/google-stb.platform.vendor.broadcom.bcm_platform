@@ -85,17 +85,17 @@ else
 LOCAL_SHARED_LIBRARIES += libnxclient
 endif
 
-LOCAL_SRC_FILES := 	\
-	nexusservice.cpp
+LOCAL_SRC_FILES := \
+    nexusservice.cpp
 
 ifneq ($(findstring NEXUS_HAS_CEC,$(NEXUS_APP_DEFINES)),)
-LOCAL_SRC_FILES +=	\
-	nexuscecservice.cpp \
-	nexusnxcecservice.cpp
+LOCAL_SRC_FILES += \
+    nexuscecservice.cpp \
+    nexusnxcecservice.cpp
 endif
 
 LOCAL_SRC_FILES += nexusnxservice.cpp
-	
+
 LOCAL_MODULE_TAGS := optional
 
 LOCAL_MODULE := libnexusservice

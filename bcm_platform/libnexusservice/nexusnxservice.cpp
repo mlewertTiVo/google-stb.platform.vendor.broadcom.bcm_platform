@@ -183,7 +183,7 @@ bool NexusServerContext::StandbyMonitorThread::threadLoop()
     NEXUS_Error rc;
     NxClient_StandbyStatus standbyStatus, prevStatus;
 
-    LOGD("%s: Entering for client \"%s\"", __FUNCTION__, getName());
+    LOGD("%s: Entering for client \"%s\"", __PRETTY_FUNCTION__, getName());
 
     NxClient_GetStandbyStatus(&standbyStatus);
     prevStatus = standbyStatus;
@@ -198,7 +198,7 @@ bool NexusServerContext::StandbyMonitorThread::threadLoop()
         prevStatus = standbyStatus;
         BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
     }
-    LOGD("%s: Exiting for client \"%s\"", __FUNCTION__, getName());
+    LOGD("%s: Exiting for client \"%s\"", __PRETTY_FUNCTION__, getName());
     return false;
 }
 
@@ -213,7 +213,7 @@ void NexusNxService::hotplugCallback(void *context __unused, int param __unused)
         NxClient_DisplayStatus status;
         rc = NxClient_GetDisplayStatus(&status);
         if (!rc) {
-            LOGV("%s: Firing off HDMI%d hotplug %s event...", __FUNCTION__, param, status.hdmi.status.connected ? "connected" : "disconnected");
+            LOGV("%s: Firing off HDMI%d hotplug %s event...", __PRETTY_FUNCTION__, param, status.hdmi.status.connected ? "connected" : "disconnected");
             pNexusNxService->server->mHdmiHotplugEventListener[param]->onHdmiHotplugEventReceived(param, status.hdmi.status.connected);
         }
     }
@@ -233,7 +233,7 @@ int NexusNxService::platformInitHdmiOutputs()
     settings.hdmiOutputHotplug.param = 0;
     rc = NxClient_StartCallbackThread(&settings);
     if (rc) {
-        LOGE("%s: Could not initialise HDMI outputs!!!", __FUNCTION__);
+        LOGE("%s: Could not initialise HDMI outputs!!!", __PRETTY_FUNCTION__);
     }
 #endif
     return rc;
@@ -296,16 +296,16 @@ void NexusNxService::platformInit()
     while (i--) {
         if (isCecEnabled(i)) {
             ALOGV("%s: Instantiating CecServiceManager[%d]...", __PRETTY_FUNCTION__, i);
-            mCecServiceManager[i] = CecServiceManager::instantiate(i);
+            mCecServiceManager[i] = CecServiceManager::instantiate(this, i);
 
             if (mCecServiceManager[i] != NULL) {
                 if (mCecServiceManager[i]->platformInit() != OK) {
-                    LOGE("%s: ERROR initialising CecServiceManager platform for CEC%d!", __FUNCTION__, i);
+                    LOGE("%s: ERROR initialising CecServiceManager platform for CEC%d!", __PRETTY_FUNCTION__, i);
                     mCecServiceManager[i] = NULL;
                 }
             }
             else {
-                LOGE("%s: ERROR instantiating CecServiceManager for CEC%d!", __FUNCTION__, i);
+                LOGE("%s: ERROR instantiating CecServiceManager for CEC%d!", __PRETTY_FUNCTION__, i);
             }
         }
     }
@@ -423,7 +423,7 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
     {
         rc = NxClient_Alloc(&allocSettings, &allocResults);
         if (rc) {
-            LOGE("%s: Cannot allocate NxClient resources! (rc=%d)!", __FUNCTION__, rc);
+            LOGE("%s: Cannot allocate NxClient resources! (rc=%d)!", __PRETTY_FUNCTION__, rc);
             goto err_client;
         }
         else {
@@ -488,7 +488,7 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
 
     client->ipc.nexusClient = getNexusClient(client);
 
-    LOGI("%s: Exiting with client=%p", __FUNCTION__, (void *)client);
+    LOGI("%s: Exiting with client=%p", __PRETTY_FUNCTION__, (void *)client);
     return client;
 
 err_client:
@@ -502,7 +502,7 @@ void NexusNxService::destroyClientContext(NexusClientContext * client)
     NxClient_AllocResults resources;
     void *res;
 
-    LOGI("%s: client=\"%s\"", __FUNCTION__, client->createConfig.name.string);
+    LOGI("%s: client=\"%s\"", __PRETTY_FUNCTION__, client->createConfig.name.string);
 
     if (client->resources.videoSurface != NULL) {
         NEXUS_SurfaceClient_ReleaseVideoWindow(client->resources.videoSurface);
@@ -606,8 +606,8 @@ bool NexusNxService::addGraphicsWindow(NexusClientContext * client)
     }
 
 #if (ANDROID_USES_TRELLIS_WM==1)
-	// Disable Android visibility by default in SBS mode
-	surfSettings.visible = 0;
+    // Disable Android visibility by default in SBS mode
+    surfSettings.visible = 0;
 #endif
 
     NxClient_SetSurfaceClientComposition(graphicSurfaceClientId, &surfSettings);
@@ -793,7 +793,7 @@ bool NexusNxService::connectClientResources(NexusClientContext * client, b_refsw
 
     rc = NxClient_Connect(&connectSettings, &client->ipc.connectId);
     if (rc)  {
-        LOGE("%s: Could NOT connect resources (rc=%d)!", __FUNCTION__, rc);
+        LOGE("%s: Could NOT connect resources (rc=%d)!", __PRETTY_FUNCTION__, rc);
     }
     return (rc == 0);
 }
@@ -806,7 +806,7 @@ bool NexusNxService::disconnectClientResources(NexusClientContext * client)
         client->ipc.connectId = 0;
     }
     else {
-        LOGE("%s: No resources to disconnect!", __FUNCTION__);
+        LOGE("%s: No resources to disconnect!", __PRETTY_FUNCTION__);
         ok = false;
     }
     return ok;
@@ -815,7 +815,7 @@ bool NexusNxService::disconnectClientResources(NexusClientContext * client)
 status_t NexusNxService::setHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener)
 {
     status_t status = OK;
-    ALOGV("%s: HDMI%d listener=%p", __FUNCTION__, portId, listener.get());
+    ALOGV("%s: HDMI%d listener=%p", __PRETTY_FUNCTION__, portId, listener.get());
 
 #if NEXUS_HAS_HDMI_OUTPUT
     if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
@@ -824,9 +824,63 @@ status_t NexusNxService::setHdmiHotplugEventListener(uint32_t portId, const sp<I
     else
 #endif
     {
-        LOGE("%s: No HDMI%d output on this device!!!", __FUNCTION__, portId);
+        LOGE("%s: No HDMI%d output on this device!!!", __PRETTY_FUNCTION__, portId);
         status = INVALID_OPERATION;
     }
     return status;
 }
 
+bool NexusNxService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus)
+{
+    NEXUS_Error rc = NEXUS_NOT_SUPPORTED;
+#ifdef ANDROID_SUPPORTS_NXCLIENT_HDMI_STATUS
+#if NEXUS_HAS_HDMI_OUTPUT
+    memset(pHdmiOutputStatus, 0, sizeof(*pHdmiOutputStatus));
+
+    if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
+        unsigned loops;
+        NxClient_DisplayStatus status;
+
+        
+        for (loops = 0; loops < 4; loops++) {
+            LOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
+            rc = NxClient_GetDisplayStatus(&status);
+            if ((rc == NEXUS_SUCCESS) && status.hdmi.status.connected) {
+                break;
+            }
+            usleep(250 * 1000);
+        }
+        
+        if (rc == NEXUS_SUCCESS) {
+            if (status.hdmi.status.connected) {
+                pHdmiOutputStatus->connected            = status.hdmi.status.connected;
+                pHdmiOutputStatus->rxPowered            = status.hdmi.status.rxPowered;
+                pHdmiOutputStatus->hdmiDevice           = status.hdmi.status.hdmiDevice;
+                pHdmiOutputStatus->videoFormat          = status.hdmi.status.videoFormat;
+                pHdmiOutputStatus->preferredVideoFormat = status.hdmi.status.preferredVideoFormat;
+                pHdmiOutputStatus->aspectRatio          = status.hdmi.status.aspectRatio;
+                pHdmiOutputStatus->colorSpace           = status.hdmi.status.colorSpace;
+                pHdmiOutputStatus->audioFormat          = status.hdmi.status.audioFormat;
+                pHdmiOutputStatus->audioSamplingRate    = status.hdmi.status.audioSamplingRate;
+                pHdmiOutputStatus->audioSamplingSize    = status.hdmi.status.audioSamplingSize;
+                pHdmiOutputStatus->audioChannelCount    = status.hdmi.status.audioChannelCount;
+                pHdmiOutputStatus->physicalAddress[0]   = status.hdmi.status.physicalAddressA << 4 | status.hdmi.status.physicalAddressB;
+                pHdmiOutputStatus->physicalAddress[1]   = status.hdmi.status.physicalAddressC << 4 | status.hdmi.status.physicalAddressD;
+            }
+        }
+        else {
+            LOGE("%s: Could not get HDMI%d output status!!!", __PRETTY_FUNCTION__, portId);
+        }
+    }
+    else
+#endif
+    {
+        LOGE("%s: No HDMI%d output on this device!!!", __PRETTY_FUNCTION__, portId);
+    }
+#else
+#warning Reference software does not support obtaining HDMI output status in NxClient mode
+    rc = NEXUS_SUCCESS;
+#endif
+    return (rc == NEXUS_SUCCESS);
+
+}
