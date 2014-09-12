@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # best tool since sliced bread - generates an android device configuration
 # from the refsw plat defines needed, the android device fully inherits from
 # 'bcm_platform' which continues to be the reference and what is seen on
