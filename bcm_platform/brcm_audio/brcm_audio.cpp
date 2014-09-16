@@ -820,6 +820,8 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
         return -ENOMEM;
     }
 
+    pthread_mutex_init(&bout->lock, NULL);
+
     bout->aout.common.get_sample_rate = bout_get_sample_rate;
     bout->aout.common.set_sample_rate = bout_set_sample_rate;
     bout->aout.common.get_buffer_size = bout_get_buffer_size;
@@ -892,6 +894,7 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     pthread_mutex_unlock(&bdev->lock);
 
  err_alloc:
+    pthread_mutex_destroy(&bout->lock);
     free(bout);
     return ret;
 }
@@ -921,6 +924,7 @@ static void bdev_close_output_stream(struct audio_hw_device *adev,
     pthread_mutex_unlock(&bout->lock);
     pthread_mutex_unlock(&bdev->lock);
 
+    pthread_mutex_destroy(&bout->lock);
     free(bout);
 
     LOGI("Audio output stream closed, stream = 0x%X\n", (uint32_t)aout);
@@ -968,6 +972,8 @@ static int bdev_open_input_stream(struct audio_hw_device *adev,
              __FUNCTION__, __LINE__);
         return -ENOMEM;
     }
+
+    pthread_mutex_init(&bin->lock, NULL);
 
     bin->ain.common.get_sample_rate = bin_get_sample_rate;
     bin->ain.common.set_sample_rate = bin_set_sample_rate;
@@ -1039,6 +1045,7 @@ static int bdev_open_input_stream(struct audio_hw_device *adev,
     pthread_mutex_unlock(&bdev->lock);
 
  err_alloc:
+    pthread_mutex_destroy(&bin->lock);
     free(bin);
     return ret;
 }
@@ -1068,6 +1075,7 @@ static void bdev_close_input_stream(struct audio_hw_device *adev,
     pthread_mutex_unlock(&bin->lock);
     pthread_mutex_unlock(&bdev->lock);
 
+    pthread_mutex_destroy(&bin->lock);
     free(bin);
 
     LOGI("Audio input stream closed, stream = 0x%X\n", (uint32_t)ain);
@@ -1120,6 +1128,7 @@ static int bdev_close(hw_device_t *dev)
         }
     }
 
+    pthread_mutex_destroy(&bdev->lock);
     free(bdev);
 
     LOGI("Audio device closed, dev = 0x%X\n", (uint32_t)dev);
@@ -1146,6 +1155,8 @@ static int bdev_open(const hw_module_t *module, const char *name,
              __FUNCTION__, __LINE__);
         return -ENOMEM;
     }
+
+    pthread_mutex_init(&bdev->lock, NULL);
 
     bdev->adev.common.tag = HARDWARE_DEVICE_TAG;
     bdev->adev.common.version = AUDIO_DEVICE_API_VERSION_2_0;

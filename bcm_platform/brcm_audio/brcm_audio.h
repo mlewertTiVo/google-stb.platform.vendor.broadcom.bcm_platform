@@ -61,6 +61,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+/* LOG_NDEBUG = 0 allows debug logs */
+#define LOG_NDEBUG 1
+
 /* Android headers with "C" linkage */
 #include <cutils/log.h>
 #include <cutils/properties.h>
@@ -78,22 +81,17 @@ extern "C" {
 /* Nexus headers */
 #include "bstd.h"
 #include "berr.h"
-#include "nexus_platform.h"
 #include "nexus_types.h"
 #include "nexus_platform.h"
 #include "nexus_audio_playback.h"
 #include "nexus_audio_mixer.h"
 #include "nexus_audio_dac.h"
-#include "nexus_audio_decoder.h"
 #include "nexus_audio_output.h"
 #include "nexus_audio_input.h"
-
-#include "nexus_simple_audio_decoder.h"
 #include "nexus_simple_audio_playback.h"
-
 #include "nexus_ipc_client_factory.h"
 
-#define LOG_NDEBUG 1
+/* VERY_VERBOSE = 1 allows additional debug logs */
 #define VERY_VERBOSE 0
 
 #ifdef VERY_VERBOSE
@@ -169,7 +167,6 @@ struct brcm_stream_out {
             NexusIPCClientBase *ipc_client;
             NexusClientContext *nexus_client;
             NEXUS_SimpleAudioPlaybackHandle simple_playback;
-            NEXUS_SimpleAudioDecoderHandle  simple_decoder;
             BKNI_EventHandle event;
         } nexus;
 #if DUMMY_AUDIO_OUT

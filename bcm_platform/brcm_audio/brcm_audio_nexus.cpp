@@ -53,10 +53,20 @@
 #undef LOG_TAG
 #define LOG_TAG "BrcmAudioNexus"
 
-#define NEXUS_OUT_DEFAULT_SAMPLE_RATE   48000
+#define NEXUS_OUT_DEFAULT_SAMPLE_RATE   44100
 #define NEXUS_OUT_DEFAULT_CHANNELS      AUDIO_CHANNEL_OUT_STEREO
 #define NEXUS_OUT_DEFAULT_FORMAT        AUDIO_FORMAT_PCM_16_BIT
 #define NEXUS_OUT_DEFAULT_BUFFER_SIZE   8192
+
+/* Supported stream out sample rate */
+const static uint32_t nexus_out_sample_rates[] = {
+    44100,
+    48000,
+    176400,
+    192000
+};
+#define NEXUS_OUT_SAMPLE_RATE_COUNT                     \
+    (sizeof(nexus_out_sample_rates) / sizeof(uint32_t))
 
 /*
  * Utility Functions
@@ -218,10 +228,19 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     b_refsw_client_client_info client_info;
     b_refsw_client_connect_resource_settings client_settings;
     BKNI_EventHandle event;
-    int ret = 0;
+    int i, ret = 0;
 
-    /* Only allow default config */
-    config->sample_rate = NEXUS_OUT_DEFAULT_SAMPLE_RATE;
+    /* Check if sample rate is supported */
+    for (i = 0; i < (int)NEXUS_OUT_SAMPLE_RATE_COUNT; i++) {
+        if (config->sample_rate == nexus_out_sample_rates[i]) {
+            break;
+        }
+    }
+    if (i == NEXUS_OUT_SAMPLE_RATE_COUNT) {
+        config->sample_rate = NEXUS_OUT_DEFAULT_SAMPLE_RATE;
+    }
+
+    /* Only allow default config for others */
     config->channel_mask = NEXUS_OUT_DEFAULT_CHANNELS;
     config->format = NEXUS_OUT_DEFAULT_FORMAT;
     bout->buffer_size = NEXUS_OUT_DEFAULT_BUFFER_SIZE;
@@ -256,7 +275,7 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
         LOGE("%s: at %d, connet Nexus client resources failed, ret = %d\n",
              __FUNCTION__, __LINE__, ret);
         ret = -ENOSYS;
-        goto err_client;
+        goto err_connect;
     }
 
     simple_playback = ipc_client->acquireAudioPlaybackHandle();
@@ -288,6 +307,8 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
 
  err_client:
     ipc_client->disconnectClientResources(nexus_client);
+
+ err_connect:
     ipc_client->destroyClientContext(nexus_client);
 
  err_ipc:
