@@ -56,12 +56,14 @@
 #define NEXUS_OUT_DEFAULT_SAMPLE_RATE   44100
 #define NEXUS_OUT_DEFAULT_CHANNELS      AUDIO_CHANNEL_OUT_STEREO
 #define NEXUS_OUT_DEFAULT_FORMAT        AUDIO_FORMAT_PCM_16_BIT
-#define NEXUS_OUT_DEFAULT_BUFFER_SIZE   8192
 
 /* Supported stream out sample rate */
 const static uint32_t nexus_out_sample_rates[] = {
+    32000,
     44100,
     48000,
+    88200,
+    96000,
     176400,
     192000
 };
@@ -243,7 +245,11 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     /* Only allow default config for others */
     config->channel_mask = NEXUS_OUT_DEFAULT_CHANNELS;
     config->format = NEXUS_OUT_DEFAULT_FORMAT;
-    bout->buffer_size = NEXUS_OUT_DEFAULT_BUFFER_SIZE;
+
+    bout->buffer_size =
+        get_brcm_audio_buffer_size(config->sample_rate,
+                                   config->format,
+                                   popcount(config->channel_mask));
 
     /* Open Nexus simple playback */
     ipc_client = NexusIPCClientFactory::getClient("AudioStreamOut");

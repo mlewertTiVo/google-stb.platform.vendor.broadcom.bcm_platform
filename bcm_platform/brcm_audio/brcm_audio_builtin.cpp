@@ -202,9 +202,9 @@ static int builtin_bin_open(struct brcm_stream_in *bin)
     }
 
     bin->buffer_size =
-        brcm_audio_input_buffer_size(config->sample_rate,
-                                     config->format,
-                                     popcount(config->channel_mask));
+        get_brcm_audio_buffer_size(config->sample_rate,
+                                   config->format,
+                                   popcount(config->channel_mask));
 
     /* Open input device */
     fd = open(BUILTIN_IN_DEFAULT_DEVICE_NAME, O_RDWR);

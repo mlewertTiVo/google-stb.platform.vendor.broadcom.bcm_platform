@@ -225,9 +225,9 @@ struct brcm_stream_in {
 };
 
 
-extern size_t brcm_audio_input_buffer_size(unsigned int sample_rate,
-                                           audio_format_t format,
-                                           unsigned int channel_count);
+extern size_t get_brcm_audio_buffer_size(unsigned int sample_rate,
+                                         audio_format_t format,
+                                         unsigned int channel_count);
 
 extern struct brcm_stream_out_ops nexus_bout_ops;
 

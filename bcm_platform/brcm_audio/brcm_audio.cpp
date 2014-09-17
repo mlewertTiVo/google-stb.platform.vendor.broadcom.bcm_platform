@@ -57,14 +57,14 @@
  * Utility Functions
  */
 
-size_t brcm_audio_input_buffer_size(unsigned int sample_rate,
-                                    audio_format_t format,
-                                    unsigned int channel_count)
+size_t get_brcm_audio_buffer_size(unsigned int sample_rate,
+                                  audio_format_t format,
+                                  unsigned int channel_count)
 {
     size_t size;
 
     if (sample_rate < 8000 ||
-        sample_rate > 48000) {
+        sample_rate > 192000) {
         LOGW("%s: at %d, bad sampling rate %d\n",
              __FUNCTION__, __LINE__, sample_rate);
         return 0;
@@ -82,20 +82,23 @@ size_t brcm_audio_input_buffer_size(unsigned int sample_rate,
         return 0;
     }
 
-    if (sample_rate < 11025) {
+    if (sample_rate < 12000) {
         size = 256;
     }
-    else if (sample_rate < 22050) {
+    else if (sample_rate < 24000) {
         size = 512;
     }
     else if (sample_rate < 32000) {
         size = 768;
     }
-    else if (sample_rate < 44100) {
+    else if (sample_rate < 48000) {
         size = 1024;
     }
+    else if (sample_rate < 96000) {
+        size = 4096;
+    }
     else {
-        size = 2048;
+        size = 8192;
     }
     return size * channel_count * audio_bytes_per_sample(format);
 }
@@ -769,9 +772,9 @@ static size_t bdev_get_input_buffer_size(const struct audio_hw_device *adev,
     UNUSED(adev);
 
     buffer_size =
-        brcm_audio_input_buffer_size(config->sample_rate,
-                                     config->format,
-                                     popcount(config->channel_mask));
+        get_brcm_audio_buffer_size(config->sample_rate,
+                                   config->format,
+                                   popcount(config->channel_mask));
 
     LOGV("%s: at %d, dev = 0x%X, buffer_size = %d\n",
          __FUNCTION__, __LINE__, (uint32_t)adev, buffer_size);
