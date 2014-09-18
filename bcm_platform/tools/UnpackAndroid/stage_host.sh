@@ -1,45 +1,30 @@
 #!/bin/bash
 
-if [ $# -lt 3 ]
-  then
-    echo "Usage: stage_host.sh <tools_dir> <image_dir> <staging_dir>"
-    echo "       tools_dir: directory containing the UnpackAndroid tools"
-    echo "       image_dir: directory containing boot.img, system.img and userdata.img. Ex. out/target/product/bcm_platform"
-    echo "       staging_dir: directory where the filesystem will be staged to on your Linux machine; make sure that this directory has NFS access"
-    exit
-fi
+tools_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-if [ -e "$3/tools" ]
+if [ $# -lt 2 ]
   then
     echo ""
-    echo "!!! ERROR !!!"
-    echo " A file or folder named \"tools\" already exists in $3"
-    echo " Please remove it in $3 manually if possible, or provide another staging_dir."
+    echo "Usage: stage_host.sh <image_dir> <staging_dir>"
+    echo "           image_dir  : Absolute path to the directory containing boot.img, system.img and userdata.img."
+    echo "                        Ex. <workspace>/out/target/product/bcm_platform"
+    echo "           staging_dir: Absolute path to a directory where the filesystem will be staged to in your Linux machine."
+    echo "                        Make sure that this directory has NFS access."
     echo ""
     exit
 fi
 
-echo "1) Cleaning up staging dir: $3"
-echo "   ... removing the tools folder"
-rm -rf $3/tools
+echo "1) Cleaning up staging dir: $2"
 echo "   ... removing the boot folder"
-rm -rf $3/boot
+rm -rf $2/boot
 
-echo "2) Copying UnpackAndroid tools"
-cp -rf $1 $3/tools
+echo "2) Copying kernel"
+cp $1/kernel $2
 
-echo "3) Copying stage_target.sh"
-cp ./stage_target.sh $3
-
-echo "4) Copying kernel"
-cp $2/kernel $3
-
-echo "5) Unpacking ramdisk"
-cd $3
-./tools/split_boot $2/boot.img
-./tools/simg2img $2/system.img ./boot/system.raw.img
-./tools/simg2img $2/userdata.img ./boot/userdata.raw.img
-
-rm -rf ./tools
+echo "3) Unpacking ramdisk"
+cd $2
+$tools_dir/tools/split_boot $1/boot.img
+$tools_dir/tools/simg2img $1/system.img ./boot/system.raw.img
+$tools_dir/tools/simg2img $1/userdata.img ./boot/userdata.raw.img
 
 echo "!!! Done staging !!!" 
