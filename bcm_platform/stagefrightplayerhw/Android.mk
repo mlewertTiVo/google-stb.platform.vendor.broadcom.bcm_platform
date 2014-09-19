@@ -64,8 +64,8 @@ ifeq ($(JB_OR_EARLIER),y)
 MP_CFLAGS += -DANDROID_SUPPORTS_O_DIRECT
 endif
 
-include $(DEVICE_REFSW_PLAY_BUILD_CONFIG)
-$(warning NX-BUILD: CFG: ${DEVICE_REFSW_BUILD_CONFIG}, CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
+include ${REFSW_BASE_DIR}/nexus/lib/playback_ip/b_playback_ip_lib.inc
+$(warning NX-BUILD: CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
 
 
 BCMPLAYER_SHARED_LIBRARIES := liblog libcutils libbinder libutils libb_os libb_playback_ip libb_psip libnexusipcclient $(NEXUS_LIB)
@@ -96,7 +96,7 @@ BCMPLAYER_SRC_FILES := \
         bcmPlayer_ip.cpp \
         bcmPlayer_live.cpp \
         bcmPlayer_hdmiIn.cpp \
-		bcmPlayer_analogIn.cpp \
+	bcmPlayer_analogIn.cpp \
         bcmPlayer_rawdata.cpp \
         get_ip_addr_from_url.c \
         stream_probe.c \

@@ -14,7 +14,7 @@ NEXUS_LIB=libnexus_client
 endif
 endif	
 
-$(warning NX-BUILD: CFG: ${DEVICE_REFSW_BUILD_CONFIG}, CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
+$(warning NX-BUILD: CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
 
 COMMON_INCLUDE_FILES=   $(TOP)/frameworks/native/include/media/openmax \
                         $(TOP)/frameworks/native/include/utils \

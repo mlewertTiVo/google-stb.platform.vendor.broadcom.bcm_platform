@@ -63,7 +63,7 @@ LOCAL_CFLAGS += -DANDROID_ENABLE_REMOTEA
 endif
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
-$(warning NX-BUILD: CFG: ${DEVICE_REFSW_BUILD_CONFIG}, CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
+$(warning NX-BUILD: CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
 
 LOCAL_PRELINK_MODULE := false
 LOCAL_SHARED_LIBRARIES := liblog libcutils libbinder libutils libnexusipcclient libnexusservice $(NEXUS_LIB)
