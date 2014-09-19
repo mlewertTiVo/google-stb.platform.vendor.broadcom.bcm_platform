@@ -218,7 +218,9 @@ void startNxServer(void)
     if (strcmp(value, "nxclient") != 0) {
         strcat(cmdRunNxServer, "-ir none ");
     }
+#if !ANDROID_ENABLE_1080P_GRAPHICS_FB_DISPLAY
     strcat(cmdRunNxServer, "-ignore_edid ");
+#endif
 #ifdef BCM_OMX_SUPPORT_ENCODER
     strcat(cmdRunNxServer, "-session0 hd,encode ");
 #else
