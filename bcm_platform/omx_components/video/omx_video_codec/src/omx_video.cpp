@@ -54,6 +54,7 @@
 
 #undef LOG_TAG
 #define LOG_TAG "BCM.VIDEO.DECODER"
+#define USE_ANB_PRIVATE_DATA 1
 //#define LOG_NDEBUG 0
 
 
@@ -221,13 +222,15 @@ extern "C"
 
 }
 
-    NEXUS_VideoCodec
+static
+NEXUS_VideoCodec
 MapOMXVideoCodecToNexus(OMX_VIDEO_CODINGTYPE OMxCodec)
 {
     return OMXToNexusTable[OMxCodec].NexusCodec;
 }
 
-    OMX_STRING
+static
+OMX_STRING
 GetMimeFromOmxCodingType(OMX_VIDEO_CODINGTYPE OMXCodingType)
 {
     ALOGV("%s: Identified Mime Type Is %s",__FUNCTION__, CodecToMIME[OMXCodingType].Mime);
@@ -264,11 +267,11 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->hSelf = hComponent;
     pMyData->bSetStartUpTimeDone=false;
 
-    ALOGV("%s %d: Component Handle :%p BUILD-DATE:%s BUILD-TIME:%s ",
+    ALOGD("%s %d: Component Handle :%p BUILD-DATE:%s BUILD-TIME:%s ",
             __FUNCTION__,__LINE__,hComponent,__DATE__,__TIME__);
 
-    ALOGV("%s Output Buffers Locked On Alloc: %s",__FUNCTION__
-#ifdef LOCK_FOR_BUFFER_LIFETIME
+    ALOGD("%s Use Output Buffers PrivateData: %s",__FUNCTION__
+#ifdef USE_ANB_PRIVATE_DATA
             ,"enabled");
 #else
             ,"disabled");
@@ -1295,8 +1298,9 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
             (native_handle_t*) nativeBuffer->handle,
             false);
 
-#ifdef LOCK_FOR_BUFFER_LIFETIME
-    pGraphicBuffer->lock(GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_SW_READ_OFTEN, (void**)&pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer);
+#ifdef USE_ANB_PRIVATE_DATA
+    pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer = 
+       (OMX_U8*) GetDisplayFrameFromANB(pGraphicBuffer->getNativeBuffer());
     pDispFr = (PDISPLAY_FRAME)pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer;
     memset(pDispFr, 0, sizeof(DISPLAY_FRAME));
 #else
@@ -1524,19 +1528,6 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_FreeBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
         ListFreeBufferExt(pMyData->sInBufList, pBufferHdr, pPortDef,prevSize,pMyData->pInBufHdrRes)
 
     } else if (nPortIndex == pMyData->sOutPortDef.nPortIndex) {
-        if(pBufferHdr->pBuffer)
-        {
-            if (pMyData->sNativeBufParam.enable==OMX_TRUE)
-            {
-                //GraphicBuffer * pGraphicBuffer = ((PDISPLAY_FRAME) pBufferHdr->pBuffer)->pGraphicBuffer;
-                GraphicBuffer * pGraphicBuffer = (GraphicBuffer *) pBufferHdr->pInputPortPrivate;
-                ALOGV("%s, pBufHdr = %p, pBuffer = %p, pGraphicBuffer = %p",__FUNCTION__, pBufferHdr, pBufferHdr->pBuffer,pGraphicBuffer);
-#ifdef LOCK_FOR_BUFFER_LIFETIME
-                //We Acquired the Buffer at alloc time and we free it here.
-                pGraphicBuffer->unlock();
-#endif
-            }
-        }
 
         pPortDef = &pMyData->sOutPortDef;
         unsigned int prevSize = pMyData->sOutBufList.nAllocSize;
@@ -1898,16 +1889,13 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_FillThisBuffer(OMX_HANDLETYPE hComponent, OMX_
 
     if(pMyData->sNativeBufParam.enable == true)
     {
-#ifdef LOCK_FOR_BUFFER_LIFETIME
-        //We have already acquired the lock while allocating the buffer
-        //and placed the pointer in pBufferHdr->pBuffer
-        pBuffer = pBufferHdr->pBuffer;
-#else
-        // We have not acquired the lock at allocation time.
-        // We need to acquire the lock everytime we need to access the
-        // buffer.
         pGraphicBuffer = (GraphicBuffer *) pBufferHdr->pInputPortPrivate;
         BCMOMX_DBG_ASSERT(pGraphicBuffer);
+
+#ifdef USE_ANB_PRIVATE_DATA
+        pBuffer = GetDisplayFrameFromANB(pGraphicBuffer->getNativeBuffer());
+        BCMOMX_DBG_ASSERT(pBuffer == pBufferHdr->pBuffer);
+#else
         pGraphicBuffer->lock(GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_SW_READ_OFTEN, (void**)&pBuffer);
         unLockBuffer=true;
 #endif
@@ -2066,13 +2054,13 @@ CleanUpOutputBuffer(OMX_BUFFERHEADERTYPE *pOMXBuffhdr)
 
     //Clear the Filled Len and 
     pOMXBuffhdr->nFilledLen =0;
-#ifdef LOCK_FOR_BUFFER_LIFETIME
-        //We have already acquired the lock while allocating the buffer
-        // and placed the pointer in pBufferHdr->pBuffer
-        pBuffer = pOMXBuffhdr->pBuffer;
+    pGraphicBuffer = (GraphicBuffer *) pOMXBuffhdr->pInputPortPrivate;
+    BCMOMX_DBG_ASSERT(pGraphicBuffer);
+
+#ifdef USE_ANB_PRIVATE_DATA
+        pBuffer = GetDisplayFrameFromANB(pGraphicBuffer->getNativeBuffer());
+        BCMOMX_DBG_ASSERT(pBuffer == pOMXBuffhdr->pBuffer);
 #else
-        pGraphicBuffer = (GraphicBuffer *) pOMXBuffhdr->pInputPortPrivate;
-        BCMOMX_DBG_ASSERT(pGraphicBuffer);
         pGraphicBuffer->lock(GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_SW_READ_OFTEN, (void**)&pBuffer);
         unLockBuffer = true;
 #endif
@@ -2631,13 +2619,13 @@ static void* ComponentThread(void* pThreadData)
                 GraphicBuffer *pGraphicBuffer=NULL;
                 if(pMyData->sNativeBufParam.enable == true)
                 {
-#ifdef LOCK_FOR_BUFFER_LIFETIME
-                    //We have already acquired the lock while allocating the buffer
-                    // and placed the pointer in pBufferHdr->pBuffer
-                    pBuffer = pOutBufHdr->pBuffer;
-#else
                     pGraphicBuffer = (GraphicBuffer *) pOutBufHdr->pInputPortPrivate;
                     BCMOMX_DBG_ASSERT(pGraphicBuffer);
+
+#ifdef USE_ANB_PRIVATE_DATA
+                    pBuffer = GetDisplayFrameFromANB(pGraphicBuffer->getNativeBuffer());
+                    BCMOMX_DBG_ASSERT(pBuffer == pOutBufHdr->pBuffer);
+#else
                     pGraphicBuffer->lock(GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_SW_READ_OFTEN, (void**)&pBuffer);
                     unLockBuffer = true;
 #endif

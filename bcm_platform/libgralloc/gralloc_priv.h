@@ -31,8 +31,8 @@ extern "C" {
 #include <unistd.h>
 #include <cutils/native_handle.h>
 #include <linux/fb.h>
-
 #include "nexus_base_mmap.h"
+#include "DisplayFrame.h"
 
 /*****************************************************************************/
 
@@ -64,6 +64,9 @@ typedef struct __SHARED_DATA_ {
       void *           nexusClientContext;
       int64_t          timestamp;
    } videoWindow;
+
+   //Metadata For Video Buffers
+   DISPLAY_FRAME    DisplayFrame;
 } SHARED_DATA, *PSHARED_DATA;
 
 #ifdef __cplusplus

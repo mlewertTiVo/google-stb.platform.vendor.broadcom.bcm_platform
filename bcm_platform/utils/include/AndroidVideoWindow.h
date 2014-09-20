@@ -16,7 +16,6 @@
 #define LOG_CREATE_DESTROY      ALOGE
 
 
-
 class AndroidVideoWindow : public PaltformSpecificContext,
                            public SavePlayerSpecificContext 
 {

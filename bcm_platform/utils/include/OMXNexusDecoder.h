@@ -9,6 +9,7 @@
 #include "nexus_ipc_client_factory.h"
 #include "nexus_playback.h"
 #include "nexus_base_mmap.h"
+#include "AndroidSpecificIFace.h"
 #include "ReturnBuffer.h"
 #include "LinkedList.h"
 #include "MiscIFace.h"
