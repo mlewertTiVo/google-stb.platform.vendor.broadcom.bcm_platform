@@ -92,6 +92,7 @@ private:
     sp<ALooper>                             mCecTxMessageLooper;
     sp<CecTxMessageHandler>                 mCecTxMessageHandler;
     sp<INexusHdmiCecMessageEventListener>   mEventListener;
+    Mutex                                   mEventListenerLock;
 
     static void deviceReady_callback(void *context, int param);
     static void msgReceived_callback(void *context, int param);
@@ -109,6 +110,9 @@ struct NexusService::CecServiceManager::EventListener : public BnNexusHdmiCecMes
 {
 public:
     EventListener(const sp<NexusService::CecServiceManager> sm) : mCecServiceManager(sm) {
+        ALOGV("%s: called", __PRETTY_FUNCTION__);
+    }
+    virtual ~EventListener() {
         ALOGV("%s: called", __PRETTY_FUNCTION__);
     }
     virtual status_t onHdmiCecMessageReceived(int32_t portId, INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message);

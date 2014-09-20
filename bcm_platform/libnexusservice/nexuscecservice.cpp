@@ -553,10 +553,14 @@ void NexusService::CecServiceManager::msgReceived_callback(void *context, int pa
                                       receivedMessage.data.length : HDMI_CEC_MESSAGE_BODY_MAX_LENGTH;
                 memcpy(hdmiMessage.body, receivedMessage.data.buffer, hdmiMessage.length);
 
-                ret = pCecServiceManager->mEventListener->onHdmiCecMessageReceived(param, &hdmiMessage);
-                if (ret != NO_ERROR) {
-                    LOGE("%s: Cec%d onHdmiCecMessageReceived failed (rc=%d)!!!", __PRETTY_FUNCTION__, param, ret);
+                pCecServiceManager->mEventListenerLock.lock();
+                if (pCecServiceManager->mEventListener != NULL) {
+                    ret = pCecServiceManager->mEventListener->onHdmiCecMessageReceived(param, &hdmiMessage);
+                    if (ret != NO_ERROR) {
+                        LOGE("%s: Cec%d onHdmiCecMessageReceived failed (rc=%d)!!!", __PRETTY_FUNCTION__, param, ret);
+                    }
                 }
+                pCecServiceManager->mEventListenerLock.unlock();
             }
         }
     }
@@ -801,7 +805,10 @@ bool NexusService::CecServiceManager::getCecStatus(b_cecStatus *pCecStatus)
 
 status_t NexusService::CecServiceManager::setEventListener(const sp<INexusHdmiCecMessageEventListener> &listener)
 {
+    mEventListenerLock.lock();
+    LOGV("%s: listener=%p", __PRETTY_FUNCTION__, listener.get());
     mEventListener = listener;
+    mEventListenerLock.unlock();
     return NO_ERROR;
 }
 
@@ -944,8 +951,8 @@ status_t NexusService::CecServiceManager::platformInit()
 
                         // Create HDMI CEC Message Event Listener only for non Android-L builds
                         if (deviceType == -1) {
-                            mEventListener = new NexusService::CecServiceManager::EventListener(this);
-                            status = setEventListener(mEventListener);
+                            sp<INexusHdmiCecMessageEventListener> eventListener = new NexusService::CecServiceManager::EventListener(this);
+                            status = setEventListener(eventListener);
                         }
                     }
                 }
@@ -975,7 +982,6 @@ void NexusService::CecServiceManager::platformUninit()
 
     if (deviceType == -1 && mEventListener != NULL) {
         setEventListener(NULL);
-        mEventListener = NULL;
     }
 
     if (mCecTxMessageLooper != NULL) {
