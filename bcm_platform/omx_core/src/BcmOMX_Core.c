@@ -67,6 +67,7 @@ ComponentTable componentTable[] = {
  {"OMX.BCM.aac.decoder", 1, {"1"} }, // roles to be populated 
  {"OMX.BCM.mpeg2.decoder", 1, {"1"} },
  {"OMX.BCM.h264.decoder", 1, {"1"} },
+ {"OMX.BCM.h265.decoder", 1, {"1"} },
 #ifdef ENABLE_SECURE_DECODERS
  {"OMX.BCM.h264.decoder.secure", 1, {"1"} },
 #endif
@@ -78,8 +79,7 @@ ComponentTable componentTable[] = {
  {"OMX.BCM.vc1.decoder", 1, {"1"} },
  {"OMX.BCM.spark.decoder", 1, {"1"} },
  //{"OMX.BCM.rv.decoder", 1, {"1"} },
- {"OMX.BCM.divx.decoder", 1, {"1"} },
- {"OMX.BCM.h265.decoder", 1, {"1"} },
+ {"OMX.BCM.divx.decoder", 1, {"1"} }, 
 // {"OMX.BCM.mjpeg.decoder", 1, {"1"} },
 #endif
 #ifdef BCM_OMX_SUPPORT_ENCODER
@@ -144,10 +144,11 @@ OMX_ERRORTYPE OMX_GetHandle(OMX_HANDLETYPE * pHandle,
     OMX_STRING cComponentName, OMX_PTR pAppData,
     OMX_CALLBACKTYPE * pCallBacks)
 {
-    ALOGD("[%s][%s][%d]: Enter",
+    ALOGD("[%s][%s][%d]: Enter: component name = %s",
       __FILE__, 
       __FUNCTION__,
-      __LINE__);
+      __LINE__,
+	  cComponentName);
 
 
     static const char prefix[] = "lib";

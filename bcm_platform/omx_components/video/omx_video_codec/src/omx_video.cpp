@@ -2531,8 +2531,11 @@ static void* ComponentThread(void* pThreadData)
                 {
                     nFlags =  pInBufHdr->nFlags;
                     pInBufHdr->nFlags = 0;
-
-                    EOSTimeStamp = CONVERT_USEC_45KHZ(pInBufHdr->nTimeStamp);
+                    if(pInBufHdr->nTimeStamp <= 0) {
+                        EOSTimeStamp = 0;
+                    } else {
+                        EOSTimeStamp = CONVERT_USEC_45KHZ(pInBufHdr->nTimeStamp);
+                    }
                 }
 
                 // Check for mark buffers

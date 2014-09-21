@@ -819,6 +819,13 @@ PESFeeder::PrepareEOSData()
         0x00, 0x00, 0x01, 0xB1
     };
 
+    unsigned char b_eos_h265[5] = 
+    {
+        0x00, 0x00, 0x01, 0x4A, 0x01
+    };
+
+    
+
 
     switch(vidCodec)
     {
@@ -830,6 +837,10 @@ PESFeeder::PrepareEOSData()
             pSeqEndCode = b_eos_Mpeg4Part2;
             seqEndCodeSize = sizeof(b_eos_Mpeg4Part2);
             break;
+        case NEXUS_VideoCodec_eH265:
+            pSeqEndCode = b_eos_h265;
+            seqEndCodeSize = sizeof(b_eos_h265);
+            break;            
         case NEXUS_VideoCodec_eVp8:
         case NEXUS_VideoCodec_eH264:
         default:
