@@ -218,9 +218,13 @@ void startNxServer(void)
     if (strcmp(value, "nxclient") != 0) {
         strcat(cmdRunNxServer, "-ir none ");
     }
-#if !ANDROID_ENABLE_1080P_GRAPHICS_FB_DISPLAY
-    strcat(cmdRunNxServer, "-ignore_edid ");
-#endif
+    /* If the HD output resolution is set to 1080p, then we can use the HDMI preferred output format
+       (typically 1080p also) and not ignore the HDMI EDID information from the connected TV. */
+    if (property_get("ro.hd_output_format", value, NULL)) {
+        if (strncmp((char *) value, "1080p", 5) != 0) {
+            strcat(cmdRunNxServer, "-ignore_edid ");
+        }
+    }
 #ifdef BCM_OMX_SUPPORT_ENCODER
     strcat(cmdRunNxServer, "-session0 hd,encode ");
 #else
