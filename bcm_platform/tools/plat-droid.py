@@ -111,6 +111,14 @@ boardconfig="BoardConfig.mk"
 # keep around some old stuff.
 rmdir_then_mkdir(devicedirectory)
 
+# get the toolchain expected for kernel image and modules build
+run_toolchain='bash -c "cat ./kernel/rootfs/toolchain"'
+if verbose:
+	print run_toolchain
+lines = check_output(run_toolchain,shell=True).splitlines()
+# eventually those should go into 'prebuilt' instead of being side-used...
+kerneltoolchain="/opt/toolchains/%s/bin" % lines[0].rstrip()
+
 # run the refsw plat tool to get the generated versions of the config.
 run_plat='bash -c "source ./vendor/broadcom/refsw/BSEAV/tools/build/plat %s %s %s"' % (chip, revision, boardtype)
 if verbose:
@@ -161,6 +169,9 @@ if aosp == "AOSP":
 	os.write(s, "\n\n# AOSP setting tweaks...\n")
 	os.write(s, "include device/broadcom/common/settings_aosp.mk")
 os.write(s, "\n\nPRODUCT_NAME := bcm_%s\n" % androiddevice)
+os.write(s, "\n# exporting toolchains path for kernel image+modules\n")
+os.write(s, "export PATH := %s:${PATH}\n" % kerneltoolchain)
+
 os.close(s);
 
 f='%s%s' % (devicedirectory, boardconfig)
