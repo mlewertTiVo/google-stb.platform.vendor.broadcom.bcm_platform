@@ -93,3 +93,7 @@ service dhd_fwload /system/bin/dhd -i wlan0 download /system/vendor/broadcom/dhd
     class core
     oneshot
 
+service dhd_wlan0_up /system/bin/ifconfig wlan0 up
+    class core
+    oneshot
+
