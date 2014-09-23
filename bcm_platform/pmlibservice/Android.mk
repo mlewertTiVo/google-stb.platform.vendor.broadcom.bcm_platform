@@ -16,7 +16,15 @@
 REFSW_PATH := vendor/broadcom/bcm_platform/brcm_nexus
 
 LOCAL_PATH := $(call my-dir)
+
+ifeq ($(shell test -d vendor/broadcom/refsw/BSEAV && echo "y"),y)
+BSEAV_INC_PATH := vendor/broadcom/refsw/BSEAV
+BSEAV_TOP := ../../refsw/BSEAV
+else
+BSEAV_INC_PATH := $(LOCAL_PATH)
 BSEAV_TOP  ?= ../../../../../../../../../BSEAV
+endif
+
 GLOB_PATH  := $(BSEAV_TOP)/lib/glob
 POWER_PATH := $(BSEAV_TOP)/lib/power_standby
 
@@ -34,8 +42,8 @@ LOCAL_PRELINK_MODULE := false
 LOCAL_SHARED_LIBRARIES := liblog libcutils libdl libbinder libutils 
 
 LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
-LOCAL_C_INCLUDES += $(LOCAL_PATH)/$(GLOB_PATH) \
-                    $(LOCAL_PATH)/$(POWER_PATH)
+LOCAL_C_INCLUDES += $(BSEAV_INC_PATH)/$(GLOB_PATH) \
+                    $(BSEAV_INC_PATH)/$(POWER_PATH)
                     
 LOCAL_CFLAGS:= $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
 LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI

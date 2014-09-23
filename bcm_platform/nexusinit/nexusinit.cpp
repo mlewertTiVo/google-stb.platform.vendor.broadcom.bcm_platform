@@ -71,9 +71,9 @@
 #endif
 
 #ifdef NEXUS_MODE_proxy
-#define NEXUS_DRIVER_FILENAME    "/system/etc/nexus.ko"
+#define NEXUS_DRIVER_FILENAME          "/system/etc/nexus.ko"
 #else
-#define NEXUS_DRIVER_FILENAME    "/system/etc/bcmdriver.ko"
+#define NEXUS_DRIVER_FILENAME          "/system/etc/bcmdriver.ko"
 #endif
 #define NEXUS_IR_INPUT_DRIVER_FILENAME "/system/etc/nexus_ir_input_event.ko"
 #define EVENT_FORWARD_DRIVER_FILENAME  "/system/etc/event_forward.ko"
@@ -172,7 +172,7 @@ BERR_Code nexusinit_ir()
 {
 #ifdef NEXUS_MODE_proxy
     char module_arg[16];
-    char value[PROPERTY_VALUE_MAX];	
+    char value[PROPERTY_VALUE_MAX];
 
     strncpy(module_arg, "", sizeof(module_arg));
 
@@ -231,7 +231,7 @@ void startNxServer(void)
     strcat(cmdRunNxServer, "-transcode off ");
 #endif
 #if !ANDROID_SUPPORTS_FRONTEND_SERVICE
-	strcat(cmdRunNxServer, "-frontend off ");
+    strcat(cmdRunNxServer, "-frontend off ");
 #endif
     strcat(cmdRunNxServer, "&");
     ALOGI("NXSERVER CMD: %s",cmdRunNxServer);
@@ -285,7 +285,7 @@ int main(void)
 
     if (stat(NXSERVER_FILENAME, &buffer) == 0) {
 
-		startNxServer();
+        startNxServer();
 
         /* Make sure we wait a bit before installing the IR input driver */
         sleep(3);
@@ -328,46 +328,46 @@ int main(void)
 #endif /* ANDROID_SUPPORTS_NXCLIENT */
 #else // ATP_BUILD && ANDROID_UNDER_LXC cases
 
-	FILE *f_list;
-	char line[4096];
-	bool bFound = false;
+    FILE *f_list;
+    char line[4096];
+    bool bFound = false;
 
-	do
-	{
-		system("ps &> /tmp/proclist.txt");
+    do
+    {
+        system("ps &> /tmp/proclist.txt");
 
-		f_list = fopen("/tmp/proclist.txt", "r");
+        f_list = fopen("/tmp/proclist.txt", "r");
 
-		if (!f_list)
-		{
-			LOGE("Failed to open /tmp/proclist.txt");
-			return BERR_UNKNOWN;
-		}
+        if (!f_list)
+        {
+            LOGE("Failed to open /tmp/proclist.txt");
+            return BERR_UNKNOWN;
+        }
 
-		while (fgets(line, sizeof(line), f_list)) 
-		{
-			char *p_service;
+        while (fgets(line, sizeof(line), f_list)) 
+        {
+            char *p_service;
 
-			p_service = strstr (line, "platform_service");
+            p_service = strstr (line, "platform_service");
 
-			if (p_service)
-			{
-				bFound = true;
-				LOGE("platform_service is now running!!");
-				break;
-			}
+            if (p_service)
+            {
+                bFound = true;
+                LOGE("platform_service is now running!!");
+                break;
+            }
 
-			else
-			{
-				LOGE("Waiting for platform_service...");
-			}
-		}
+            else
+            {
+                LOGE("Waiting for platform_service...");
+            }
+        }
 
-		if (f_list)
-			fclose(f_list);
-	}while(!bFound);
+        if (f_list)
+            fclose(f_list);
+    }while(!bFound);
 
-	// Wait for a brief moment before installing the nx_ashmem driver
+    // Wait for a brief moment before installing the nx_ashmem driver
     sleep(3);
 
     /* Add the nx_ashmem module which is required for gralloc to function */
@@ -376,8 +376,8 @@ int main(void)
         return BERR_UNKNOWN;
     }
 
-	// Just set this property to unhook Android
-	property_set("hw.nexus.platforminit", "on");
+    // Just set this property to unhook Android
+    property_set("hw.nexus.platforminit", "on");
 #endif
 
 #ifdef ANDROID_SUPPORTS_NXCLIENT
@@ -394,11 +394,11 @@ int main(void)
 #endif
 
 #ifdef SBS_USES_TRELLIS_INPUT_EVENTS
-	// Frist, create the device node
-	system("busybox mknod /dev/event_write c 34 0");
-	system("busybox chmod 666 /dev/event_write");
+    // Frist, create the device node
+    system("busybox mknod /dev/event_write c 34 0");
+    system("busybox chmod 666 /dev/event_write");
 
-	// Now, install the drivers
+    // Now, install the drivers
     if (nexusinit_insmod(EVENT_FORWARD_DRIVER_FILENAME, "") != BERR_SUCCESS) {
         LOGE("nexusinit: FATAL: insmod failed on %s!", EVENT_FORWARD_DRIVER_FILENAME);
         _exit(1);
