@@ -159,9 +159,10 @@ struct brcm_stream_out_ops dummy_bout_ops = {
 
 #if DUMMY_AUDIO_IN
 
-#define DUMMY_IN_DEFAULT_SAMPLE_RATE    8000
+#define DUMMY_IN_DEFAULT_SAMPLE_RATE    44100
 #define DUMMY_IN_DEFAULT_CHANNELS       AUDIO_CHANNEL_IN_MONO
 #define DUMMY_IN_DEFAULT_FORMAT         AUDIO_FORMAT_PCM_16_BIT
+#define DUMMY_IN_DEFAULT_BUFFER_SIZE    4096
 #define DUMMY_IN_DEFAULT_DEVICE_NAME    "/dev/zero"
 
 /*
@@ -210,6 +211,7 @@ static int dummy_bin_open(struct brcm_stream_in *bin)
     config->sample_rate = DUMMY_IN_DEFAULT_SAMPLE_RATE;
     config->channel_mask = DUMMY_IN_DEFAULT_CHANNELS;
     config->format = DUMMY_IN_DEFAULT_FORMAT;
+    bin->buffer_size = DUMMY_IN_DEFAULT_BUFFER_SIZE;
 
     /* Open input device */
     fd = open(DUMMY_IN_DEFAULT_DEVICE_NAME, O_RDWR);
