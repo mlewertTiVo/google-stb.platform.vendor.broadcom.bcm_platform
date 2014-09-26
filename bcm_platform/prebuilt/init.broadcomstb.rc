@@ -28,6 +28,9 @@ on fs
    setprop chrome.tv.hole_threshold 0
 
 on post-fs
+   # Prevent Nexus file from being created in /tmp by default
+   export nexus_ipc_dir /dev
+
    # NFS/USB boot - need to remount (again) in RW the rootfs.
    mount rootfs rootfs / rw remount
 
