@@ -14,7 +14,7 @@ NEXUS_LIB=libnexus_client
 endif
 endif	
 
-$(warning NX-BUILD: CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
+include ${REFSW_BASE_DIR}/nexus/lib/playback_ip/b_playback_ip_lib.inc
 
 COMMON_INCLUDE_FILES=   $(TOP)/frameworks/native/include/media/openmax \
                         $(TOP)/frameworks/native/include/utils \
@@ -41,6 +41,7 @@ COMMON_SHARED_LIBRARIES += libnexusservice
 endif
 
 COMMON_C_FLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES))
+COMMON_C_FLAGS += $(addprefix -I,$(B_PLAYBACK_IP_LIB_PUBLIC_INCLUDES))
 COMMON_C_FLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 COMMON_C_FLAGS += -DENABLE_BCM_OMX_PROTOTYPE
 COMMON_C_FLAGS += -DBCM_OMX_SUPPORT_ENCODER
