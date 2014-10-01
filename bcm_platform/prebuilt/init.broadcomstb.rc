@@ -2,6 +2,7 @@
 import /init.brcm_dhd.rc
 import /init.brcm_wl.rc
 import /init.brcm_bt.rc
+import /init.nfs.rc
 
 on early-init
    # Needed by NxServer
@@ -30,6 +31,11 @@ on fs
    setprop ro.crypto.fuse_sdcard true
    setprop chrome.tv.hole_threshold 0
 
+on boot
+   # Subsytem Ramdump collection
+   mkdir /data/tombstones 0777 system system
+   mkdir /data/tombstones/ramdump 0777 system system
+
 on post-fs
    # Prevent Nexus file from being created in /tmp by default
    export nexus_ipc_dir /dev
@@ -37,10 +43,8 @@ on post-fs
    # Eliminate writable file in /sys to pass android.permission CTS
    chmod 0664 /sys/kernel/wakeup_reasons/last_resume_reason
 
-   # NFS/USB boot - need to remount (again) in RW the rootfs.
-   mount rootfs rootfs / rw remount
-
 on post-fs-data
+   mkdir /data/media 0770 media_rw media_rw
    mkdir /data/misc/moca 0777 system system
 
    chown system system /sys/class/android_usb/android0/f_mass_storage/lun/file

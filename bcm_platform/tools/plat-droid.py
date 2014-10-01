@@ -78,8 +78,10 @@ def plat_droid_usage():
 	print '\t<platform>    - the BCM platform number to build for, eg: 97252, 97445, ...'
 	print '\t<chip-rev>    - the BCM chip revision of interest, eg: A0, B0, C1, ...'
 	print '\t<board-type>  - the target board type, eg: SV, C'
-	print '\t[aosp|redux]  - aosp: if wanting to build for AOSP exclusively'
+	print '\t[aosp|redux|cts]'
+        print '\t              - aosp: if wanting to build for AOSP exclusively'
 	print '\t              - redux: if wanting to build redux image (minimal android)'
+        print '\t              - cts: if wanting to build CTS image (multi-partition boot, proper permissions)'
 	print '\n'
 	sys.exit(0)
 
@@ -98,7 +100,7 @@ boardtype=str(sys.argv[3]).upper()
 
 # create android cruft.
 androiddevice='%s%s%s' % (chip, revision, boardtype)
-if target_option == "AOSP" or target_option == "REDUX":
+if target_option == "AOSP" or target_option == "REDUX" or target_option == "CTS":
 	androiddevice='%s_%s' % (androiddevice, target_option)
 devicedirectory='./device/broadcom/bcm_%s/' % (androiddevice)
 if verbose:
@@ -166,12 +168,18 @@ os.write(s, "# start of refsw gathered configuration\n\n")
 os.write(s, "%s\n\n" % refsw_configuration_selected)
 os.write(s, "# end of refsw gathered config...\n")
 if target_option == "REDUX":
-	os.write(s, "\n\n# REDUX setting tweaks...\n")
-	os.write(s, "include device/broadcom/common/settings_redux.mk")
+	os.write(s, "\n\n# REDUX target set...\n")
+	os.write(s, "include device/broadcom/common/target_redux.mk")
+if target_option == "CTS":
+        os.write(s, "\n\n# CTS target set...\n")
+        os.write(s, "include device/broadcom/common/target_cts.mk")
 os.write(s, "\n\ninclude device/broadcom/bcm_platform/bcm_platform.mk")
 if target_option == "AOSP":
 	os.write(s, "\n\n# AOSP setting tweaks...\n")
 	os.write(s, "include device/broadcom/common/settings_aosp.mk")
+if target_option == "CTS":
+        os.write(s, "\n\n# CTS setting tweaks...\n")
+        os.write(s, "include device/broadcom/common/settings_cts.mk")
 os.write(s, "\n\nPRODUCT_NAME := bcm_%s\n" % androiddevice)
 os.write(s, "\n# exporting toolchains path for kernel image+modules\n")
 os.write(s, "export PATH := %s:${PATH}\n" % kerneltoolchain)
