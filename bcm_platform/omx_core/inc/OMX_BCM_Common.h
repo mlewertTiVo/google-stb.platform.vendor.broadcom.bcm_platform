@@ -157,6 +157,7 @@ typedef struct _BCM_OMX_CONTEXT_
     AndroidVideoWindow              *pAndVidWindow;
     bcmOmxTimestampTable            *pTstable;
     bool                            bSetStartUpTimeDone;
+    bool                            bHwNeedsFlush;
 #endif
 #ifdef BCM_OMX_SUPPORT_ENCODER
     OMXNexusVideoEncoder            *pOMXNxVidEnc;

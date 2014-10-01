@@ -153,6 +153,7 @@ typedef struct _PID_INFO_
 #define OMX_IndexDisplayFrameBuffer                     0x7F000006
 #define OMX_IndexProcessID                              0x7F000007
 
+#define GET_DECODER_ID(_deco_)   _deco_->GetDecoderID()
 extern "C"
 {
 
@@ -266,6 +267,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->state = OMX_StateLoaded;
     pMyData->hSelf = hComponent;
     pMyData->bSetStartUpTimeDone=false;
+    pMyData->bHwNeedsFlush = false;
 
     ALOGD("%s %d: Component Handle :%p BUILD-DATE:%s BUILD-TIME:%s ",
             __FUNCTION__,__LINE__,hComponent,__DATE__,__TIME__);
@@ -523,6 +525,10 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     {
         ALOGE("%s: Failed To Start The Decoder",__FUNCTION__);
         goto EXIT;
+    }else{
+        ALOGI("%s: Decoder[%d]: Started Successfully",
+              __FUNCTION__,
+              GET_DECODER_ID(pMyData->pOMXNxDecoder));
     }
 
     /*****************************************************************************/        
@@ -1233,8 +1239,6 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
     GraphicBuffer *pGraphicBuffer;
     PDISPLAY_FRAME pDispFr;
 
-    ALOGV("Ajitabh: %s, nPortIndex = %lu, nSizeBytes = %lu Format:%d NativeBuffer->Width:%d NativeBuffer->Height:%d NativeWindowBufferHandle:%p",
-            __FUNCTION__, nPortIndex, nSizeBytes, nativeBuffer->format, nativeBuffer->width, nativeBuffer->height, nativeBuffer->handle);
 
     if (!hComponent) {
         ALOGE("ERROR at %s line %d",__FUNCTION__,__LINE__);
@@ -1253,6 +1257,11 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
         ALOGE("ERROR at %s line %d",__FUNCTION__,__LINE__);
         return OMX_ErrorBadParameter;
     }
+    ALOGV("%s Decoder[%d]: nPortIndex = %lu, nSizeBytes = %lu Format:%d NativeBuffer->Width:%d NativeBuffer->Height:%d NativeWindowBufferHandle:%p",
+            __FUNCTION__,GET_DECODER_ID(pMyData->pOMXNxDecoder), 
+          nPortIndex, nSizeBytes, nativeBuffer->format, 
+          nativeBuffer->width, nativeBuffer->height, 
+          nativeBuffer->handle);
 
     if (nPortIndex == pMyData->sInPortDef.nPortIndex)
         pPortDef = &pMyData->sInPortDef;
@@ -1493,7 +1502,8 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_FreeBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
     OMX_CONF_CHECK_CMD(pMyData, pBufferHdr, 1);
     OMX_CONF_CHK_VERSION(pBufferHdr, OMX_BUFFERHEADERTYPE, eError);
 
-    ALOGV("%s, hComponent = %p, nPortIndex = %lu, pBufferHdr = %p",__FUNCTION__, hComponent, nPortIndex, pBufferHdr);
+    ALOGV("%s Decoder[%d], hComponent = %p, nPortIndex = %lu, pBufferHdr = %p",
+          __FUNCTION__,GET_DECODER_ID(pMyData->pOMXNxDecoder), hComponent, nPortIndex, pBufferHdr);
 
     // Match the pBufferHdr to the appropriate entry in the BufferList 
     // and free the allocated memory 
@@ -1644,7 +1654,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
 
     if(pBufferHdr->nFlags & OMX_BUFFERFLAG_EOS)
     {
-        ALOGD("%s: FilledLen:%d pInBufHdr->nTimeStamp:%lld",
+        ALOGD("%s: FilledLen:%d pInBufHdr->nTimeStamp:%lld EOS FLAG SET ON INPUT",
             __FUNCTION__, pBufferHdr->nFilledLen, pBufferHdr->nTimeStamp);
     }
 
@@ -1652,6 +1662,8 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
     {
         bool SendConfigDataToHw=false;
 
+        if (pMyData->bHwNeedsFlush==false) 
+            pMyData->bHwNeedsFlush = true;
         // For WMV we save the configuration data differently...
         if (!((OMX_VIDEO_CodingWMV == OMX_COMPRESSION_FORMAT) 
 #ifdef OMX_EXTEND_CODECS_SUPPORT
@@ -2029,6 +2041,7 @@ FlushInput(BCM_OMX_CONTEXT *pBcmContext)
     pBcmContext->bSetStartUpTimeDone = false;
     if(pBcmContext->pPESFeeder)
     {
+        ALOGD("==Flushing PEsFeeder==");
         if(false == pBcmContext->pPESFeeder->Flush())
         {
             ALOGE("==FLUSH FAILED ON INPUT PORT==");
@@ -2088,10 +2101,14 @@ FlushOutput(BCM_OMX_CONTEXT *pBcmContext)
     pPortDef = &pBcmContext->sOutPortDef;
     if (pBcmContext->pOMXNxDecoder) 
     {   
-        if (false == pBcmContext->pOMXNxDecoder->Flush()) 
+        if(pBcmContext->bHwNeedsFlush)
         {
-            ALOGE("==FLUSH FAILED ON OUTPUT PORT==");     
-            return false;
+            pBcmContext->bHwNeedsFlush=false;
+        	if (false == pBcmContext->pOMXNxDecoder->Flush()) 
+        	{
+            	ALOGE("==FLUSH FAILED ON OUTPUT PORT==");     
+            	return false;
+            }
         }
     }
     
@@ -2204,7 +2221,9 @@ static void* ComponentThread(void* pThreadData)
 
                                             break;
                                         } else if (nTimeout < OMX_MAX_TIMEOUTS) {
-                                            BKNI_Sleep(100);
+                                            ALOGD("%s %d: State Transition Event: [To: State_Loaded] [Waiting (2)] [Timeouts:%d]",
+                                                    __FUNCTION__,__LINE__,nTimeout);
+                                            BKNI_Sleep(2);
                                         }
                                     }
                                 }else{
@@ -2231,6 +2250,8 @@ static void* ComponentThread(void* pThreadData)
                                     // Return buffers if currently in pause or executing
                                     if (pMyData->state == OMX_StatePause || pMyData->state == OMX_StateExecuting)
                                     {  
+                                        ALOGD("%s %d: Flush On State Transition From %d To Idle",
+                                              __FUNCTION__,__LINE__,pMyData->state);
                                         FlushInput(pMyData);
                                         FlushOutput(pMyData);
                                     }
@@ -2251,6 +2272,8 @@ static void* ComponentThread(void* pThreadData)
 
                                             break;
                                         }
+                                        ALOGD("%s %d: State Transition Event: [To: OMX_StateIdle] [Waiting(2)]",
+                                                __FUNCTION__,__LINE__);
                                         BKNI_Sleep(2);
                                     }
                                 }
@@ -2264,6 +2287,8 @@ static void* ComponentThread(void* pThreadData)
                                     // Return buffers if currently in pause
                                     if (pMyData->state == OMX_StatePause)
                                     {
+                                        ALOGD("%s %d: Flush On State Transition From %d To Executing",
+                                              __FUNCTION__,__LINE__,pMyData->state);
                                         FlushInput(pMyData);
                                         FlushOutput(pMyData);
                                     }
@@ -2404,7 +2429,7 @@ static void* ComponentThread(void* pThreadData)
                 // It is assumed that 0 is input and 1 is output port for this component.
                 // The cmddata value -1 means both input and output ports will be restarted.
 
-                ALOGV("%s: RESTART PORT PortIndex : %d", __FUNCTION__, cmddata);
+                ALOGD("%s: RESTART PORT PortIndex : %d", __FUNCTION__, cmddata);
 
                 if (cmddata == 0x0 || cmddata == -1)
                     pMyData->sInPortDef.bEnabled = OMX_TRUE;
@@ -2454,6 +2479,8 @@ static void* ComponentThread(void* pThreadData)
                                 OMX_ErrorPortUnresponsiveDuringAllocation,0,NULL);
                         break;
                     }
+                    ALOGD("%s %d: Waiting (5)",
+                            __FUNCTION__,__LINE__);
                     BKNI_Sleep(5);
                 }
             }
@@ -2575,6 +2602,7 @@ static void* ComponentThread(void* pThreadData)
                     pNxInputCnxt->DoneContext.pFnDoneCallBack =
                         (BUFFER_DONE_CALLBACK) pMyData->pCallbacks->EmptyBufferDone;
 
+                    pMyData->bHwNeedsFlush = true;
                     if(false == pMyData->pPESFeeder->SendPESDataToHardware(pNxInputCnxt))
                     {
                         LOGE("%s: Sending The Data To The Hardware Failed",__FUNCTION__);
@@ -2676,7 +2704,7 @@ static void* ComponentThread(void* pThreadData)
                     ANativeWindowBuffer *anb=NULL;
                     anb = pGraphicBuffer->getNativeBuffer();
                     BCMOMX_DBG_ASSERT(anb);
-                    pMyData->pAndVidWindow->SetPrivData(anb, 0); 
+                    pMyData->pAndVidWindow->SetPrivData(anb, pMyData->pOMXNxDecoder->GetDecoderID()); 
                     pOutBufHdr->pPlatformPrivate=NULL;
                 }
 

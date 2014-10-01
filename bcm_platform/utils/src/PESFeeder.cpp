@@ -748,7 +748,7 @@ PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
     // The Last Time Stamp That We sent To Hardware...
     if(pNxInCnxt->FramePTS)
     {
-        LOG_INFO("%s: Updating LastTimeStamp: %lld", LastInputTimeStamp);
+        LOG_INFO("%s: Updating LastTimeStamp: %lld", __FUNCTION__, LastInputTimeStamp);
         LastInputTimeStamp = pNxInCnxt->FramePTS;
     }
 

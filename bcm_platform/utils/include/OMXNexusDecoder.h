@@ -2,6 +2,7 @@
 #define _OMX_NEXUS_VIDEO_DECODER_
  
 #include <utils/Log.h>
+#include <utils/List.h>
 #include <utils/threads.h> // Mutex Class operations
  
 #include "nexus_types.h"
@@ -73,8 +74,14 @@ public:
 
 //Source Change CallBack from Decoder
     void SourceChangedCallback();
+    unsigned int GetDecoderID();
 
 private:
+    void AddDecoderToList();
+    void RemoveDecoderFromList();
+    static List<OMXNexusDecoder *> DecoderInstanceList;
+    static Mutex        mDecoderIniLock;
+    unsigned int        DecoderID;
     typedef enum _EOS_States_
     {
         EOS_Init =0,

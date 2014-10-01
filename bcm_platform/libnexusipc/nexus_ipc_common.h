@@ -63,7 +63,7 @@
 #define NXCLIENT_SERVER_TIMEOUT_IN_MS (500)
 
 /* Define the timeout to wait for polling the standby status. */
-#define NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS  (100)
+define NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS  (20)
 
 /* Define the maximum number of client ID's */
 #define CLIENT_MAX_IDS 16
