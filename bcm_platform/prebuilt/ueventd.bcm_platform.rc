@@ -8,9 +8,10 @@
 /dev/mem                  0770   root       root
 
 # BT USB device nodes
-subsystem usbmisc
-	devname uevent_devname
 /dev/hiddev0              0777   bluetooth  bluetooth
 /dev/hiddev1              0777   bluetooth  bluetooth
 /dev/btusb0               0777   bluetooth  bluetooth
+
+# nexus in disguise...
+/dev/mali                 0666   root       root
 		

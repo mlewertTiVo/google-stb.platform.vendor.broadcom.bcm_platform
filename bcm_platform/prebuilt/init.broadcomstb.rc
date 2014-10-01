@@ -22,6 +22,9 @@ on init
 
    export EXTERNAL_STORAGE /storage/sdcard
 
+   # allocate a node which is part of the CTS exception list.
+   export NEXUS_DEVICE_NODE /dev/mali
+
 on fs
    mount_all /fstab.bcm_platform
    setprop ro.crypto.fuse_sdcard true
