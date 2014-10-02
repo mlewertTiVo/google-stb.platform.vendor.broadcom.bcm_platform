@@ -107,8 +107,8 @@ ifeq ($(ANDROID_SUPPORTS_FRONTEND_SERVICE),y)
 include vendor/broadcom/bcm_platform/libnexusfrontendservice/Android.mk
 endif
 
-ifeq ($(ANDROID_SUPPORTS_WIDEVINE),y)
-include vendor/broadcom/bcm_platform/libwidevine/Android.mk
+ifneq ($(filter $(ANDROID_SUPPORTS_WIDEVINE) $(ANDROID_SUPPORTS_PLAYREADY),y),)
+include vendor/broadcom/bcm_platform/libsecurity/Android.mk
 endif
 
 # HDMI CEC support...
