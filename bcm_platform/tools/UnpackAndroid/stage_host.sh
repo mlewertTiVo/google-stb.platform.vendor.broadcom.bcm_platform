@@ -27,4 +27,7 @@ $tools_dir/tools/split_boot $1/boot.img
 $tools_dir/tools/simg2img $1/system.img ./boot/system.raw.img
 $tools_dir/tools/simg2img $1/userdata.img ./boot/userdata.raw.img
 
+echo "4) Copying stage_target.sh"
+cp $tools_dir/stage_target.sh $2
+
 echo "!!! Done staging !!!" 
