@@ -79,7 +79,7 @@ class OMXNexusVideoEncoder
 
 public:
     
-    OMXNexusVideoEncoder (char *callerName, int numInBuf);
+    OMXNexusVideoEncoder (char const *callerName, int numInBuf);
     
     ~OMXNexusVideoEncoder ();
     bool StartEncoder();        

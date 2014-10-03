@@ -1,5 +1,6 @@
 
 #include "OMXNexusDecoder.h"
+#include <utils/Log.h>
 
 //Path level Debug Messages
 #define LOG_START_STOP_DBG  
@@ -26,24 +27,29 @@ Mutex   OMXNexusDecoder::mDecoderIniLock;
 #ifndef GENERATE_DUMMY_EOS
 static void SourceChangedCallbackDispatcher(void *pParam, int param)
 {
+    BSTD_UNUSED(param);
     LOG_EOS_DBG("%s",__FUNCTION__);
     OMXNexusDecoder *pNxDecoder = (OMXNexusDecoder *)pParam;
     pNxDecoder->SourceChangedCallback();
 }
 #endif
 
-OMXNexusDecoder::OMXNexusDecoder(char *CallerName, NEXUS_VideoCodec NxCodec,
+OMXNexusDecoder::OMXNexusDecoder(char const *CallerName, NEXUS_VideoCodec NxCodec,
                                  PaltformSpecificContext *pSetPlatformContext) :
-    decoHandle(NULL), ipcclient(NULL),
-    DebugCounter(0), nexus_client(NULL),
-    LastErr(ErrStsSuccess), NextExpectedFr(1),
-    EmptyFrListLen(0), DecodedFrListLen(0),
-    FlushCnt(0), ClientFlags(0), DecoderID(0),
-    EOSState(EOS_Init), DecoEvtLisnr(NULL),
-    EOSFrameKey(0),StartupTime(STARTUP_TIME_INVALID)
+    DecoderID(0),
+    EOSState(EOS_Init),
+    DecoEvtLisnr(NULL),
+    decoHandle(NULL), ipcclient(NULL), nexus_client(NULL),
+    NextExpectedFr(1),
+    ClientFlags(0), EOSFrameKey(0),
+    StartupTime(STARTUP_TIME_INVALID),
 #ifdef GENERATE_DUMMY_EOS
-    , DownCnt(DOWN_CNT_DEPTH)
+    DownCnt(DOWN_CNT_DEPTH),
 #endif
+    EmptyFrListLen(0), DecodedFrListLen(0),
+    LastErr(ErrStsSuccess),
+    DebugCounter(0),
+    FlushCnt(0)
 {
     Mutex::Autolock lock(mDecoderIniLock);
     AddDecoderToList();
@@ -1233,7 +1239,7 @@ void
 OMXNexusDecoder::AddDecoderToList()
 {
     List<OMXNexusDecoder *>::iterator it = DecoderInstanceList.begin();
-    int minId = 0;
+    unsigned int minId = 0;
     while (it != DecoderInstanceList.end()) 
     {
         if ((*it)->DecoderID == minId) 

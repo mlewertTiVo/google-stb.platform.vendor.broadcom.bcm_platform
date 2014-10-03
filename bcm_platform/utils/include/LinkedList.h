@@ -8,7 +8,7 @@
  * Reason                                                       *
 *****************************************************************/
 
-#define NULL 0
+#include <cstddef>
 
 typedef struct _LIST_ENTRY {
    struct _LIST_ENTRY *Flink;

@@ -57,6 +57,7 @@
 #define USE_ANB_PRIVATE_DATA 1
 //#define LOG_NDEBUG 0
 
+#define UNUSED __attribute__((unused))
 
 struct CodecProfileLevel {
     OMX_U32 mProfile;
@@ -94,21 +95,21 @@ static const CODEC_TO_MIME_MAP CodecToMIME[] =
 {
     {OMX_VIDEO_CodingUnused,            NULL                    },
     {OMX_VIDEO_CodingAutoDetect,        NULL                    },
-    {OMX_VIDEO_CodingMPEG2,             "video/mpeg2"           },
-    {OMX_VIDEO_CodingH263,              "video/3gpp"            },
-    {OMX_VIDEO_CodingMPEG4,             "video/mp4v-es"         },
-    {OMX_VIDEO_CodingWMV,               "video/wmv3"            },
-    {OMX_VIDEO_CodingRV,                "video/real"            },
-    {OMX_VIDEO_CodingAVC,               "video/avc"             },
-    {OMX_VIDEO_CodingMJPEG,             "video/mjpeg"           },
-    {OMX_VIDEO_CodingVP8,               "video/x-vnd.on2.vp8"   },
-    {OMX_VIDEO_CodingVP9,               "video/x-vnd.on2.vp9"   },
-    {OMX_VIDEO_CodingHEVC,              "video/hevc"            },
+    {OMX_VIDEO_CodingMPEG2, (OMX_STRING)"video/mpeg2"           },
+    {OMX_VIDEO_CodingH263,  (OMX_STRING)"video/3gpp"            },
+    {OMX_VIDEO_CodingMPEG4, (OMX_STRING)"video/mp4v-es"         },
+    {OMX_VIDEO_CodingWMV,   (OMX_STRING)"video/wmv3"            },
+    {OMX_VIDEO_CodingRV,    (OMX_STRING)"video/real"            },
+    {OMX_VIDEO_CodingAVC,   (OMX_STRING)"video/avc"             },
+    {OMX_VIDEO_CodingMJPEG, (OMX_STRING)"video/mjpeg"           },
+    {OMX_VIDEO_CodingVP8,   (OMX_STRING)"video/x-vnd.on2.vp8"   },
+    {OMX_VIDEO_CodingVP9,   (OMX_STRING)"video/x-vnd.on2.vp9"   },
+    {OMX_VIDEO_CodingHEVC,  (OMX_STRING)"video/hevc"            },
 #ifdef OMX_EXTEND_CODECS_SUPPORT
-    {OMX_VIDEO_CodingVC1,               "video/wvc1"            },
-    {OMX_VIDEO_CodingSPARK,             "video/spark"           },
-    {OMX_VIDEO_CodingDIVX311,           "video/divx"            },
-    {OMX_VIDEO_CodingH265,              "video/hevc"            },
+    {OMX_VIDEO_CodingVC1,   (OMX_STRING)"video/wvc1"            },
+    {OMX_VIDEO_CodingSPARK, (OMX_STRING)"video/spark"           },
+    {OMX_VIDEO_CodingDIVX311,(OMX_STRING)"video/divx"            },
+    {OMX_VIDEO_CodingH265,  (OMX_STRING)"video/hevc"            },
 #endif
 };
 
@@ -354,7 +355,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sOutPortDef.nBufferCountActual = NUM_OUT_BUFFERS;
 
 
-    pMyData->sOutPortDef.format.video.cMIMEType = "video/raw";
+    pMyData->sOutPortDef.format.video.cMIMEType = (OMX_STRING)"video/raw";
     pMyData->sOutPortDef.format.video.pNativeRender = NULL;
 
     pMyData->sOutPortDef.format.video.nFrameWidth = OUT_VIDEO_BUFF_WIDTH;
@@ -544,6 +545,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
 
     BCM_OMX_CONTEXT *pMyData;
     OMX_ERRORTYPE eError = OMX_ErrorNone;
+    void *pError = (void*)&eError;
     ThrCmdType eCmd = Stop;
     OMX_U32 nIndex = 0;
     NEXUS_PlaypumpStatus playpumpStatus;
@@ -576,7 +578,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
 
         // Wait for thread to exit so we can get the status into "error"
         if(0 != pMyData->thread_id)
-            pthread_join(pMyData->thread_id, (void**)&eError);
+            pthread_join(pMyData->thread_id, &pError);
 
         // close the pipe handles 
         if(pMyData->cmdpipe[0])
@@ -666,14 +668,15 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SendCommand(OMX_IN OMX_HANDLETYPE hComponent,
                 OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadPortIndex);
             break;
         default:
+            eCmd1 = (ThrCmdType)eCmd; // or return OMX_ErrorBadParameter?
             break;
     }
 
-    write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
+    write(pMyData->cmdpipe[1], &eCmd1, sizeof(eCmd));
 
     // In case of MarkBuf, the pCmdData parameter is used to carry the data.
     // In other cases, the nParam1 parameter carries the data.    
-    if(eCmd == MarkBuf)
+    if(eCmd1 == MarkBuf)
         write(pMyData->cmddatapipe[1], &pCmdData, sizeof(OMX_PTR));
     else 
         write(pMyData->cmddatapipe[1], &nParam, sizeof(nParam));
@@ -699,7 +702,7 @@ OMX_CONF_CMD_BAIL:
     return eError;
 
 }
-extern "C" OMX_ERRORTYPE OMX_VDEC_GetExtensionIndex(OMX_IN OMX_HANDLETYPE hComponent,
+extern "C" OMX_ERRORTYPE OMX_VDEC_GetExtensionIndex(OMX_IN OMX_HANDLETYPE hComponent UNUSED,
         OMX_IN OMX_STRING cParameterName, OMX_OUT OMX_INDEXTYPE * pIndexType)
 {
     trace t(__FUNCTION__);
@@ -725,8 +728,8 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_GetExtensionIndex(OMX_IN OMX_HANDLETYPE hCompo
     return eError;
 }
 
-extern "C" OMX_ERRORTYPE OMX_VDEC_GetConfig(OMX_IN OMX_HANDLETYPE hComponent,
-        OMX_IN OMX_INDEXTYPE nIndex,OMX_INOUT OMX_PTR pComponentConfigStructure)
+extern "C" OMX_ERRORTYPE OMX_VDEC_GetConfig(OMX_IN OMX_HANDLETYPE hComponent UNUSED,
+        OMX_IN OMX_INDEXTYPE nIndex,OMX_INOUT OMX_PTR pComponentConfigStructure UNUSED)
 {
     ALOGV("%s: ENTER With Index:%d \n",__FUNCTION__,nIndex);
     OMX_ERRORTYPE eError = OMX_ErrorNone;
@@ -755,8 +758,8 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_GetConfig(OMX_IN OMX_HANDLETYPE hComponent,
     return OMX_ErrorUndefined;
 }
 
-extern "C" OMX_ERRORTYPE OMX_VDEC_SetConfig(OMX_IN OMX_HANDLETYPE hComponent,
-        OMX_IN OMX_INDEXTYPE nIndex,OMX_IN OMX_PTR pComponentConfigStructure)
+extern "C" OMX_ERRORTYPE OMX_VDEC_SetConfig(OMX_IN OMX_HANDLETYPE hComponent UNUSED,
+        OMX_IN OMX_INDEXTYPE nIndex UNUSED,OMX_IN OMX_PTR pComponentConfigStructure UNUSED)
 {
     ALOGV("%s: ENTER \n",__FUNCTION__);
     OMX_ERRORTYPE eError = OMX_ErrorNone;
@@ -819,7 +822,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
     if (pMyData->state == OMX_StateInvalid)
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
 
-    switch (nParamIndex)
+    switch ((OMX_U32)nParamIndex)
     {
         case OMX_IndexParamVideoInit:
             BKNI_Memcpy(pParamStruct, &pMyData->sPortParam, sizeof(OMX_PORT_PARAM_TYPE));
@@ -955,7 +958,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
     if ((pMyData->state != OMX_StateLoaded)&&(nParamIndex!=OMX_IndexDisplayFrameBuffer))
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
 
-    switch (nParamIndex)
+    switch ((OMX_U32)nParamIndex)
     {
         case OMX_IndexParamVideoInit:
         {
@@ -1565,7 +1568,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
     BCM_OMX_CONTEXT *pMyData;
     ThrCmdType eCmd = EmptyBuf;
     OMX_ERRORTYPE eError = OMX_ErrorNone;
-    size_t SzValidPESData;
+    size_t SzValidPESData = 0;
     uint64_t nTimestamp;
 
     pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
@@ -2367,7 +2370,7 @@ static void* ComponentThread(void* pThreadData)
 
                 ALOGD("%s: STOP PORT PortIndex : %d", __FUNCTION__, cmddata);
 
-                if (cmddata == 0x0 || cmddata == -1)
+                if (cmddata == 0x0 || cmddata == (OMX_U32)-1)
                 {
                     // Return all input buffers 
                     FlushInput(pMyData);
@@ -2375,7 +2378,7 @@ static void* ComponentThread(void* pThreadData)
                     // Disable port 
                     pMyData->sInPortDef.bEnabled = OMX_FALSE;
                 }
-                if (cmddata == 0x1 || cmddata == -1)
+                if (cmddata == 0x1 || cmddata == (OMX_U32)-1)
                 {
                     // Return all output buffers 
                     FlushOutput(pMyData);
@@ -2401,7 +2404,7 @@ static void* ComponentThread(void* pThreadData)
                                 OMX_EventCmdComplete, OMX_CommandPortDisable, 0x1, NULL);
                         break;
                     }
-                    if (cmddata == -1 &&  !pMyData->sInPortDef.bPopulated && 
+                    if (cmddata == (OMX_U32)-1 &&  !pMyData->sInPortDef.bPopulated &&
                             !pMyData->sOutPortDef.bPopulated)
                     {
                         // Return cmdcomplete event if inout & output unpopulated 
@@ -2431,10 +2434,10 @@ static void* ComponentThread(void* pThreadData)
 
                 ALOGD("%s: RESTART PORT PortIndex : %d", __FUNCTION__, cmddata);
 
-                if (cmddata == 0x0 || cmddata == -1)
+                if (cmddata == 0x0 || cmddata == (OMX_U32)-1)
                     pMyData->sInPortDef.bEnabled = OMX_TRUE;
 
-                if (cmddata == 0x1 || cmddata == -1)
+                if (cmddata == 0x1 || cmddata == (OMX_U32)-1)
                     pMyData->sOutPortDef.bEnabled = OMX_TRUE;
 
                 // Wait for port to be populated 
@@ -2459,7 +2462,7 @@ static void* ComponentThread(void* pThreadData)
                         break;
                     }
                     // Return cmdcomplete event if input and output ports populated 
-                    else if (cmddata == -1 && (pMyData->state == OMX_StateLoaded || 
+                    else if (cmddata == (OMX_U32)-1 && (pMyData->state == OMX_StateLoaded ||
                                 (pMyData->sInPortDef.bPopulated && 
                                  pMyData->sOutPortDef.bPopulated)))
                     {
@@ -2492,7 +2495,7 @@ static void* ComponentThread(void* pThreadData)
                 // The cmddata value -1 means that both input and output ports will be flushed.
 
                 ALOGV("%s: FLUSH PORT PortIndex : %d", __FUNCTION__, cmddata);
-                if (cmddata == 0x0 || cmddata == -1)
+                if (cmddata == 0x0 || cmddata == (OMX_U32)-1)
                 {
                     //                  // Return all Input buffers and send cmdcomplete
                     FlushInput(pMyData);
@@ -2500,7 +2503,7 @@ static void* ComponentThread(void* pThreadData)
                             OMX_EventCmdComplete, OMX_CommandFlush, 0x0, NULL);
                 }
 
-                if (cmddata == 0x1 || cmddata == -1)
+                if (cmddata == 0x1 || cmddata == (OMX_U32)-1)
                 {
                     //                  // Return all output buffers and send cmdcomplete
                     FlushOutput(pMyData);

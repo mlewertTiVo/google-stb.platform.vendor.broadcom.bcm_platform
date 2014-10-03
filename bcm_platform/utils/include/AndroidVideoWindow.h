@@ -2,6 +2,7 @@
 #define __ANDROID_VIDEO_WINDOW__HEADER__
 
 
+#include "nexus_platform.h"
 #include <cutils/atomic.h>
 #include "gralloc_priv.h"
 #include "PlatformSpecificIFace.h"

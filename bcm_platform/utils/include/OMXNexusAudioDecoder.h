@@ -1,8 +1,6 @@
 #ifndef _OMX_NEXUS_AUDIO_DECODER_
 #define _OMX_NEXUS_AUDIO_DECODER_
 
-#include <utils/Vector.h>
-
 #include "nexus_types.h"
 #include "nexus_platform.h"
 #include "nexus_ipc_client_factory.h"
@@ -14,6 +12,8 @@
 #include "MiscIFace.h"
 #include "BcmDebug.h"
 #include "ErrorStatus.h"
+
+#include <utils/Vector.h>
 
 // Length of the buffer queues 
 #define AUDIO_DECODE_DEPTH          16

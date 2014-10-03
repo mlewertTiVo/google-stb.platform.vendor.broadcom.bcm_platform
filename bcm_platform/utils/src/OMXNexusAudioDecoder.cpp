@@ -1,4 +1,5 @@
 #include "OMXNexusAudioDecoder.h"
+#include <utils/Log.h>
 
 #undef LOG_TAG
 #define LOG_TAG "BCM_OMX_AUDIO_DEC"
@@ -17,10 +18,13 @@
 
 OMXNexusAudioDecoder::OMXNexusAudioDecoder(char *CallerName, NEXUS_AudioCodec NxCodec)
     : AudioDecoHandle(NULL),EncoderHandle(NULL),
-    LastErr(ErrStsSuccess),EmptyFrListLen(0),DecodedFrListLen(0),
-    StartEOSDetection(false), DecoderStarted(false),
-    DecoEvtLisnr(NULL),FlushCnt(0), CaptureFrames(true),NxPIDChannel(0),
-    NxAudioCodec(NxCodec)
+    EmptyFrListLen(0),DecodedFrListLen(0),
+    LastErr(ErrStsSuccess),
+    DecoderStarted(false),
+    StartEOSDetection(false),
+    DecoEvtLisnr(NULL),FlushCnt(0), NxPIDChannel(0),
+    NxAudioCodec(NxCodec),
+    CaptureFrames(true)
 {
     LOG_CREATE_DESTROY("%s: ENTER ===",__FUNCTION__);
     InitializeListHead(&EmptyFrList);
@@ -839,6 +843,7 @@ OMXNexusAudioDecoder::RetriveFrameFromHardware()
 void 
 OMXNexusAudioDecoder::InputEOSReceived(unsigned int InputFlags,unsigned long long NotUsedVariable)
 {
+    BSTD_UNUSED(NotUsedVariable);
     LOG_EOS_DBG("%s %d: EOS Received On The Input Side",__FUNCTION__,__LINE__);
     StartEOSDetection=true;
     ClientFlags = InputFlags;

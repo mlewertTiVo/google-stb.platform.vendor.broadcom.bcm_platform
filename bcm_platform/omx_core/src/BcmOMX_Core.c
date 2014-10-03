@@ -53,6 +53,7 @@
 #define MAXCOMP (50)
 #define MAXROLES (20)
 
+#define UNUSED __attribute__((unused))
 
 /** Determine the number of elements in an array */
 #define COUNTOF(x) (sizeof(x)/sizeof(x[0]))
@@ -156,9 +157,9 @@ OMX_ERRORTYPE OMX_GetHandle(OMX_HANDLETYPE * pHandle,
     OMX_ERRORTYPE(*pComponentInit) (OMX_HANDLETYPE *);
     OMX_ERRORTYPE eError = OMX_ErrorNone;
     OMX_COMPONENTTYPE *componentType;
-    int i;
+    unsigned int i;
     const char *pErr = dlerror();
-    char *dlError = NULL;
+    const char *dlError = NULL;
     char buf[sizeof(prefix) + 128 + sizeof(postfix)];
 
 
@@ -264,7 +265,7 @@ OMX_ERRORTYPE OMX_FreeHandle(OMX_HANDLETYPE hComponent)
     
     OMX_ERRORTYPE eError = OMX_ErrorUndefined;
     OMX_COMPONENTTYPE *pHandle = (OMX_COMPONENTTYPE *) hComponent;
-    int i;
+    unsigned int i;
 
     
     /* Locate the component handle in the array of handles */
@@ -338,9 +339,11 @@ OMX_ERRORTYPE OMX_Deinit()
 *
 **************************************************************************/
 /* OMX_SetupTunnel */
-OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_SetupTunnel(OMX_IN OMX_HANDLETYPE
-    hOutput, OMX_IN OMX_U32 nPortOutput, OMX_IN OMX_HANDLETYPE hInput,
-    OMX_IN OMX_U32 nPortInput)
+OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_SetupTunnel(
+    OMX_IN OMX_HANDLETYPE hOutput UNUSED,
+    OMX_IN OMX_U32 nPortOutput UNUSED,
+    OMX_IN OMX_HANDLETYPE hInput UNUSED,
+    OMX_IN OMX_U32 nPortInput UNUSED)
 {
     ALOGD("[%s][%s][%d]: Enter-Returning OMX_ErrorNone",
           __FILE__, 
@@ -412,8 +415,10 @@ EXIT:
 * Note
 *
 **************************************************************************/
-OMX_API OMX_ERRORTYPE OMX_GetRolesOfComponent(OMX_IN OMX_STRING
-    cComponentName, OMX_INOUT OMX_U32 * pNumRoles, OMX_OUT OMX_U8 ** roles)
+OMX_API OMX_ERRORTYPE OMX_GetRolesOfComponent(
+    OMX_IN OMX_STRING cComponentName UNUSED,
+    OMX_INOUT OMX_U32 * pNumRoles UNUSED,
+    OMX_OUT OMX_U8 ** roles UNUSED)
 {
     ALOGD("[%s][%s][%d]: Enter- Returning None",
           __FILE__, 
@@ -439,8 +444,10 @@ OMX_API OMX_ERRORTYPE OMX_GetRolesOfComponent(OMX_IN OMX_STRING
 * Note
 *
 **************************************************************************/
-OMX_API OMX_ERRORTYPE OMX_GetComponentsOfRole(OMX_IN OMX_STRING role,
-    OMX_INOUT OMX_U32 * pNumComps, OMX_INOUT OMX_U8 ** compNames)
+OMX_API OMX_ERRORTYPE OMX_GetComponentsOfRole(
+    OMX_IN OMX_STRING role UNUSED,
+    OMX_INOUT OMX_U32 * pNumComps UNUSED,
+    OMX_INOUT OMX_U8 ** compNames UNUSED)
 {
     ALOGD("[%s][%s][%d]: Enter-Returning None",
       __FILE__, 
@@ -481,10 +488,13 @@ OMX_ERRORTYPE OMX_BuildComponentTable()
     return eError;
 }
 
-OMX_ERRORTYPE ComponentTable_EventHandler(OMX_IN OMX_HANDLETYPE hComponent,
-    OMX_IN OMX_PTR pAppData,
-    OMX_IN OMX_EVENTTYPE eEvent,
-    OMX_IN OMX_U32 nData1, OMX_IN OMX_U32 nData2, OMX_IN OMX_PTR pEventData)
+OMX_ERRORTYPE ComponentTable_EventHandler(
+    OMX_IN OMX_HANDLETYPE hComponent UNUSED,
+    OMX_IN OMX_PTR pAppData UNUSED,
+    OMX_IN OMX_EVENTTYPE eEvent UNUSED,
+    OMX_IN OMX_U32 nData1 UNUSED,
+    OMX_IN OMX_U32 nData2 UNUSED,
+    OMX_IN OMX_PTR pEventData UNUSED)
 {
     ALOGD("[%s][%s][%d]: Enter-Returning OMX_ErrorNotImplemented",
           __FILE__, 
@@ -494,9 +504,10 @@ OMX_ERRORTYPE ComponentTable_EventHandler(OMX_IN OMX_HANDLETYPE hComponent,
     return OMX_ErrorNotImplemented;
 }
 
-OMX_ERRORTYPE ComponentTable_EmptyBufferDone(OMX_OUT OMX_HANDLETYPE
-    hComponent, OMX_OUT OMX_PTR pAppData,
-    OMX_OUT OMX_BUFFERHEADERTYPE * pBuffer)
+OMX_ERRORTYPE ComponentTable_EmptyBufferDone(
+    OMX_OUT OMX_HANDLETYPE hComponent UNUSED,
+    OMX_OUT OMX_PTR pAppData UNUSED,
+    OMX_OUT OMX_BUFFERHEADERTYPE * pBuffer UNUSED)
 {
     ALOGD("[%s][%s][%d]: Enter-Returning OMX_ErrorNotImplemented",
           __FILE__, 
@@ -506,8 +517,10 @@ OMX_ERRORTYPE ComponentTable_EmptyBufferDone(OMX_OUT OMX_HANDLETYPE
     return OMX_ErrorNotImplemented;
 }
 
-OMX_ERRORTYPE ComponentTable_FillBufferDone(OMX_OUT OMX_HANDLETYPE hComponent,
-    OMX_OUT OMX_PTR pAppData, OMX_OUT OMX_BUFFERHEADERTYPE * pBuffer)
+OMX_ERRORTYPE ComponentTable_FillBufferDone(
+    OMX_OUT OMX_HANDLETYPE hComponent UNUSED,
+    OMX_OUT OMX_PTR pAppData UNUSED,
+    OMX_OUT OMX_BUFFERHEADERTYPE * pBuffer UNUSED)
 {
     ALOGD("[%s][%s][%d]: Enter-Returning OMX_ErrorNotImplemented",
           __FILE__, 

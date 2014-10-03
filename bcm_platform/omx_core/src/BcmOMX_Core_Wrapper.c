@@ -45,25 +45,31 @@
 #include <utils/Log.h>
 #undef LOG_TAG
 #define LOG_TAG "BCM_OMX_CORE_WRAPPER"
+#define UNUSED __attribute__((unused))
 
-OMX_ERRORTYPE BcmComponentTable_EventHandler(OMX_IN OMX_HANDLETYPE hComponent,
-    OMX_IN OMX_PTR pAppData,
-    OMX_IN OMX_EVENTTYPE eEvent,
-    OMX_IN OMX_U32 nData1, OMX_IN OMX_U32 nData2, OMX_IN OMX_PTR pEventData)
+OMX_ERRORTYPE BcmComponentTable_EventHandler(
+    OMX_IN OMX_HANDLETYPE hComponent UNUSED,
+    OMX_IN OMX_PTR pAppData UNUSED,
+    OMX_IN OMX_EVENTTYPE eEvent UNUSED,
+    OMX_IN OMX_U32 nData1 UNUSED,
+    OMX_IN OMX_U32 nData2 UNUSED,
+    OMX_IN OMX_PTR pEventData UNUSED)
 {
     return OMX_ErrorNotImplemented;
 }
 
-OMX_ERRORTYPE BcmComponentTable_EmptyBufferDone(OMX_OUT OMX_HANDLETYPE
-    hComponent, OMX_OUT OMX_PTR pAppData,
-    OMX_OUT OMX_BUFFERHEADERTYPE * pBuffer)
+OMX_ERRORTYPE BcmComponentTable_EmptyBufferDone(
+    OMX_OUT OMX_HANDLETYPE hComponent UNUSED,
+    OMX_OUT OMX_PTR pAppData UNUSED,
+    OMX_OUT OMX_BUFFERHEADERTYPE * pBuffer UNUSED)
 {
     return OMX_ErrorNotImplemented;
 }
 
-OMX_ERRORTYPE BcmComponentTable_FillBufferDone(OMX_OUT OMX_HANDLETYPE
-    hComponent, OMX_OUT OMX_PTR pAppData,
-    OMX_OUT OMX_BUFFERHEADERTYPE * pBuffer)
+OMX_ERRORTYPE BcmComponentTable_FillBufferDone(
+    OMX_OUT OMX_HANDLETYPE hComponent UNUSED,
+    OMX_OUT OMX_PTR pAppData UNUSED,
+    OMX_OUT OMX_BUFFERHEADERTYPE * pBuffer UNUSED)
 {
     return OMX_ErrorNotImplemented;
 }
@@ -137,8 +143,9 @@ OMX_API OMX_ERRORTYPE BcmOMX_SetupTunnel(OMX_IN OMX_HANDLETYPE hOutput,
     return OMX_SetupTunnel(hOutput, nPortOutput, hInput, nPortInput);
 }
 
-OMX_API OMX_ERRORTYPE BcmOMX_GetContentPipe(OMX_OUT OMX_HANDLETYPE * hPipe,
-    OMX_IN OMX_STRING szURI)
+OMX_API OMX_ERRORTYPE BcmOMX_GetContentPipe(
+    OMX_OUT OMX_HANDLETYPE * hPipe UNUSED,
+    OMX_IN OMX_STRING szURI UNUSED)
 {
 
     LOGV("BcmOMX_GetContentPipe\n");

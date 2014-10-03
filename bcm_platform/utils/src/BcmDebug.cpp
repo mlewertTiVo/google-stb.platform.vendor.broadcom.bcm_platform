@@ -37,8 +37,13 @@ DumpData::WriteData(void * StartAddr, size_t Sz)
 
 
 // Trace Class Implementation
+#ifdef ENABLE_FUNCTION_TRACE
+#define MAYBE_UNUSED
+#else
+#define MAYBE_UNUSED __attribute__((unused))
+#endif
 
-trace::trace(char const * functionName)
+trace::trace(char const * functionName MAYBE_UNUSED)
 {
 #ifdef ENABLE_FUNCTION_TRACE
     funcName = strdup(functionName);
@@ -46,7 +51,7 @@ trace::trace(char const * functionName)
 #endif
 }
 
-trace::trace(char const * functionName, char * params)
+trace::trace(char const * functionName MAYBE_UNUSED, char * params MAYBE_UNUSED)
 {
 #ifdef ENABLE_FUNCTION_TRACE
     funcName = strdup(functionName);

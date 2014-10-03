@@ -249,7 +249,7 @@ typedef struct _BCM_OMX_CONTEXT_
  * Actual allocation happens in the caller function.
  */
 #define ListAllocate(_pH, _nIndex)              \
-   if (_pH.nListEnd == -1){                     \
+   if (_pH.nListEnd == (OMX_U32)-1){            \
       _pH.nListEnd = 0;                         \
       _pH.nWritePos = 0;                        \
       }                                         \
@@ -271,7 +271,7 @@ typedef struct _BCM_OMX_CONTEXT_
    if (_pH.nSizeOfList < (_pH.nListEnd + 1)){   \
       _pH.nSizeOfList++;                        \
       _pH.pBufHdr[_pH.nWritePos++] = _pB;       \
-      if (_pH.nReadPos == -1)                   \
+      if (_pH.nReadPos == (OMX_U32)-1)          \
          _pH.nReadPos = 0;                      \
       if (_pH.nWritePos > _pH.nListEnd)         \
          _pH.nWritePos = 0;                     \
@@ -325,7 +325,7 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
        {                                                                                            \
           _pH.nReadPos = 0;                                                                         \
        }                                                                                            \
-    }                                                                                               \                                                                                  
+    }                                                                                               \
 }                                                                                           
 /*
  * Flushes all entries from the BufferList structure.
@@ -338,7 +338,7 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
     {                                                                                               \
        _pH.nSizeOfList--;                                                                           \
        if (_pH.eDir == OMX_DirInput)                                                                \
-       {                                                                                            \                                                                      
+       {                                                                                            \
           _pC->pCallbacks->EmptyBufferDone(_pC->hSelf,_pC->pAppData,_pH.pBufHdr[_pH.nReadPos++]);   \
        } else if (_pH.eDir == OMX_DirOutput){                                                       \
           _pC->pCallbacks->FillBufferDone(_pC->hSelf,_pC->pAppData,_pH.pBufHdr[_pH.nReadPos++]);    \
@@ -375,9 +375,9 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
                                                                         \
            if (_pH.nAllocSize == 0)                                     \
            {                                                            \
-              _pH.nWritePos = -1;                                       \
-              _pH.nReadPos = -1;                                        \
-              _pH.nListEnd = -1;                                        \
+              _pH.nWritePos = (OMX_U32)-1;                              \
+              _pH.nReadPos = (OMX_U32)-1;                               \
+              _pH.nListEnd = (OMX_U32)-1;                               \
               _pH.nSizeOfList = 0;                                      \
               _pP->bPopulated = OMX_FALSE;                              \
            }                                                            \
@@ -401,9 +401,9 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
             }                                                           \
             if (_pH.nAllocSize == 0)                                    \
             {                                                           \
-                _pH.nWritePos = -1;                                     \
-                _pH.nReadPos = -1;                                      \
-                _pH.nListEnd = -1;                                      \
+                _pH.nWritePos = (OMX_U32)-1;                            \
+                _pH.nReadPos = (OMX_U32)-1;                             \
+                _pH.nListEnd = (OMX_U32)-1;                             \
                 _pH.nSizeOfList = 0;                                    \
                 _pP->bPopulated = OMX_FALSE;                            \
             }                                                           \
@@ -426,12 +426,12 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
            if (_pH.pBufHdr[_nIndex]->pBuffer)                        \
               _pH.pBufHdr[_nIndex]->pBuffer = NULL;                  \
            OMX_BUFFERHEADERTYPE *bufhdr = (OMX_BUFFERHEADERTYPE *)_pH.pBufHdr[_nIndex]; \
-           free(bufhdr);                                    \
+           free(bufhdr);                                             \
            _pH.pBufHdr[_nIndex] = NULL;                              \
            if (_pH.nAllocSize == 0){                                 \
-              _pH.nWritePos = -1;                                    \
-              _pH.nReadPos = -1;                                     \
-              _pH.nListEnd = -1;                                     \
+              _pH.nWritePos = (OMX_U32)-1;                           \
+              _pH.nReadPos = (OMX_U32)-1;                            \
+              _pH.nListEnd = (OMX_U32)-1;                            \
               _pH.nSizeOfList = 0;                                   \
               }                                                      \
            }                                                         \

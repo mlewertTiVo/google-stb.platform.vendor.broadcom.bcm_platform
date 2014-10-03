@@ -1,7 +1,6 @@
 #ifndef _OMX_NEXUS_VIDEO_DECODER_
 #define _OMX_NEXUS_VIDEO_DECODER_
  
-#include <utils/Log.h>
 #include <utils/List.h>
 #include <utils/threads.h> // Mutex Class operations
  
@@ -49,7 +48,7 @@ class OMXNexusDecoder : public StartDecoderIFace,
                         public FeederEventsListener
 {
 public:
-    OMXNexusDecoder(    char * CallerName, 
+    OMXNexusDecoder(    char const * CallerName,
                         NEXUS_VideoCodec NxVideoCodec,
                         PaltformSpecificContext *);
 

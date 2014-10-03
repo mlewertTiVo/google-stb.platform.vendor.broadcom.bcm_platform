@@ -1,10 +1,6 @@
 #ifndef _PES_CONVERSION_CLASS_
 #define _PES_CONVERSION_CLASS_
 
-#include <utils/Log.h>
-#include <utils/threads.h> // Mutex Class operations
-#include "BcmDebug.h"
-
 /*Required Nexus Files....*/
 
 #include "nexus_platform.h"
@@ -16,6 +12,10 @@
 #include "MiscIFace.h"
 #include "LinkedList.h"
 #include "TuneableDefines.h"
+
+#include <utils/Log.h>
+#include <utils/threads.h> // Mutex Class operations
+#include "BcmDebug.h"
 
 //#define DEBUG_PES_DATA  
 

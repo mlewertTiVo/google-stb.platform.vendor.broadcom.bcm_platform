@@ -12,15 +12,17 @@
 #define LOG_ERROR               ALOGD
 #define LOG_WARNING             ALOGD
 
-static void DescDoneCallBack(void *context, int param)
+#define UNUSED __attribute__((unused))
+
+static void DescDoneCallBack(void *context, int param UNUSED)
 {
     PESFeeder *pPESFeeder = (PESFeeder *) context;
     pPESFeeder->XFerDoneCallBack();
 }
 
-static void EOSXferDoneCallBack(unsigned int Param1, 
-        unsigned int Param2, 
-        unsigned int Param3)
+static void EOSXferDoneCallBack(unsigned int Param1 UNUSED,
+        unsigned int Param2 UNUSED,
+        unsigned int Param3 UNUSED)
 {
     LOG_EOS_DBG("%s:  EOS Xfer Complete",__FUNCTION__);
     return;
@@ -102,18 +104,20 @@ PESFeeder::StartPlayPump()
 }
 
 PESFeeder::PESFeeder(char const *ClientName,
-        unsigned int InputPID, 
-        unsigned int NumDescriptors, 
+        unsigned int InputPID,
+        unsigned int NumDescriptors,
         NEXUS_TransportType NxTransType,
         NEXUS_VideoCodec vidCdc) :
-        FdrEvtLsnr(NULL), NexusPID(InputPID), CntDesc(NumDescriptors),
-        FiredCnt(0), FlushCnt(0), SendCfgDataOnNextInput(false),
+        FdrEvtLsnr(NULL), NexusPID(InputPID),
+        SendCfgDataOnNextInput(false),
         pCfgDataMgr(NULL), vidCodec(vidCdc),pInterNotifyCnxt(NULL),
-        LastInputTimeStamp(0)
+        CntDesc(NumDescriptors),
+        FiredCnt(0), FlushCnt(0),
 #ifdef DEBUG_PES_DATA
-    , DataBeforFlush(new DumpData("DataBeforFlush"))
-    , DataAfterFlush(new DumpData("DataAfterFlush"))
+        DataBeforFlush(new DumpData("DataBeforFlush")),
+        DataAfterFlush(new DumpData("DataAfterFlush")),
 #endif
+        LastInputTimeStamp(0)
 {
     strcpy((char *)ClientIDString,ClientName);
     LOG_CREATE_DESTROY("[%s]%s: Enter",ClientIDString,__FUNCTION__);
@@ -148,7 +152,7 @@ PESFeeder::PESFeeder(char const *ClientName,
     }
     PlayPumpSettings.dataCallback.callback = DescDoneCallBack;
     PlayPumpSettings.dataCallback.context = this;
-    PlayPumpSettings.dataCallback.param = NULL;
+    PlayPumpSettings.dataCallback.param = 0; /* unused */
     //PlayPumpSettings.dataNotCpuAccessible = true;
     NEXUS_Playpump_SetSettings(NxPlayPumpHandle, &PlayPumpSettings);
 
@@ -365,7 +369,7 @@ PESFeeder::InitiatePESHeader(unsigned int pts45KHz,
     /*Initialize the PES info structure*/
     bmedia_pes_info_init(&pes_info, NexusPID);
 
-    if(pts45KHz == -1)  /* VC1 simple and main profile will use it for config data special handling */
+    if(pts45KHz == (unsigned int)-1)  /* VC1 simple and main profile will use it for config data special handling */
     {
         pes_info.pts_valid = true;
         pes_info.pts = (uint32_t)0xFFFFFFFFF;
@@ -882,9 +886,9 @@ PESFeeder::NotifyEOS(unsigned int ClientFlags, unsigned long long EOSFrameKey)
     pInterNotifyCnxt->SzPESBuffer =  PES_EOS_BUFFER_SIZE;
     pInterNotifyCnxt->SzValidPESData = PES_EOS_BUFFER_SIZE;
     pInterNotifyCnxt->PESData = pPESEosBuffer;
-    pInterNotifyCnxt->DoneContext.Param1 = NULL;
-    pInterNotifyCnxt->DoneContext.Param2 = NULL;
-    pInterNotifyCnxt->DoneContext.Param3 = NULL;
+    pInterNotifyCnxt->DoneContext.Param1 = 0;
+    pInterNotifyCnxt->DoneContext.Param2 = 0;
+    pInterNotifyCnxt->DoneContext.Param3 = 0;
     pInterNotifyCnxt->FramePTS=0;
     pInterNotifyCnxt->DoneContext.pFnDoneCallBack = EOSXferDoneCallBack;
 
@@ -1104,10 +1108,10 @@ ConfigDataMgr::DiscardConfigData()
 
 ConfigDataMgrWithSend::ConfigDataMgrWithSend(DataSender& SenderObj,
                                              unsigned int ptsToUse)
-    : Sender(SenderObj), ptsToUseForPES(ptsToUse),
-      SzCodecConfigData(0),pCodecConfigData(NULL),
-      pPESCodecConfigData(NULL),SzPESCodecConfigData(0),
-      allocedSzPESBuffer(PES_BUFFER_SIZE(CODEC_CONFIG_BUFFER_SIZE))
+    : SzCodecConfigData(0),pCodecConfigData(NULL),
+      allocedSzPESBuffer(PES_BUFFER_SIZE(CODEC_CONFIG_BUFFER_SIZE)),
+      SzPESCodecConfigData(0),pPESCodecConfigData(NULL),
+      Sender(SenderObj), ptsToUseForPES(ptsToUse)
 {
     LOG_INFO("%s: Default Config Data Mgr Created",__PRETTY_FUNCTION__); 
 
@@ -1180,7 +1184,7 @@ ConfigDataMgrWithSend::SaveConfigData(void *pData,size_t SzData)
                                                  SzCodecConfigData,
                                                  pPESCodecConfigData,
                                                  allocedSzPESBuffer);
-    
+
     LOG_CONFIG_MSGS("[%s]: PES Config Data Saved ReqSz[%d] TotalCfgDataSz[%d]"
                     " PESConvertedSz[%d] MAXOUTBUFFSZ[%d]",
                         __PRETTY_FUNCTION__,SzData,SzCodecConfigData,
@@ -1200,8 +1204,8 @@ ConfigDataMgrWithSend::SendConfigDataToHW()
     XferContext.SzValidPESData = SzPESCodecConfigData;
     XferContext.PESData = pPESCodecConfigData;
     XferContext.DoneContext.Param1 = (unsigned int) this;
-    XferContext.DoneContext.Param2 = NULL;
-    XferContext.DoneContext.Param3 = NULL;
+    XferContext.DoneContext.Param2 = 0;
+    XferContext.DoneContext.Param3 = 0;
     XferContext.DoneContext.pFnDoneCallBack = ConfigDataSentAsPES;
     LOG_CONFIG_MSGS("[%s]: -Calling Send Data To Hardware",__PRETTY_FUNCTION__);
     Sender.SendPESDataToHardware(&XferContext);
@@ -1246,8 +1250,8 @@ ConfigDataMgrWithSend::DiscardConfigData()
 static 
 void 
 ConfigDataSentAsPES(unsigned int Param1, 
-                     unsigned int Param2, 
-                     unsigned int Param3)
+                     unsigned int Param2 UNUSED,
+                     unsigned int Param3 UNUSED)
 {
     LOG_CONFIG_MSGS("[%s]: Config Data Callback Called",__PRETTY_FUNCTION__);
     ConfigDataMgrWithSend *thisPtr = (ConfigDataMgrWithSend *) Param1;

@@ -7,6 +7,7 @@ LOCAL_SRC_FILES := \
     BcmOMXPlugin.cpp
 
 LOCAL_CFLAGS := -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
+LOCAL_CFLAGS += -Werror
 
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/native/include/media/hardware \
