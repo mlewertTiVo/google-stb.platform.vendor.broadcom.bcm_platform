@@ -74,11 +74,11 @@ def write_header(s, d):
 
 # how you should use this.
 def plat_droid_usage():
-	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [aosp|redux]'
+	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [aosp|redux|cts]'
 	print '\t<platform>    - the BCM platform number to build for, eg: 97252, 97445, ...'
 	print '\t<chip-rev>    - the BCM chip revision of interest, eg: A0, B0, C1, ...'
 	print '\t<board-type>  - the target board type, eg: SV, C'
-	print '\t[aosp|redux|cts]'
+	print '\t[aosp|redux|cts] (note: mutually exclusive at this time)'
         print '\t              - aosp: if wanting to build for AOSP exclusively'
 	print '\t              - redux: if wanting to build redux image (minimal android)'
         print '\t              - cts: if wanting to build CTS image (multi-partition boot, proper permissions)'
