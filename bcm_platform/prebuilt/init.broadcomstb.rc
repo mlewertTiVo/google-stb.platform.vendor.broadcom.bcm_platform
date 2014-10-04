@@ -23,8 +23,9 @@ on init
 
    export EXTERNAL_STORAGE /storage/sdcard
 
-   # allocate a node which is part of the CTS exception list.
+   # allocate node(s) which are part of the CTS exception list.
    export NEXUS_DEVICE_NODE /dev/mali
+   export NEXUS_WAKE_DEVICE_NODE /dev/mali0
 
 on fs
    mount_all /fstab.bcm_platform
