@@ -269,8 +269,16 @@ int main(void)
     mknod("/dev/brcm0", 0666 | S_IFCHR, makedev(30, 0));
     umask(old_umask);
 #endif
-    /* insmod nexus.ko driver first */
 
+    property_get("ro.nexus.devname", value, NULL);
+    if (strlen(value) > 0) {
+        strcat(value2, "devname=\"");
+        strcat(value2, value);
+        strcat(value2, "\"");
+        LOGD("nexusinit: ro.nexus.devname=%s", value2);
+    }
+
+    /* insmod nexus.ko driver first */
     if(nexusinit_insmod(NEXUS_DRIVER_FILENAME, value2) != BERR_SUCCESS) {
         LOGE("nexusinit: FATAL: insmod failed on %s!",NEXUS_DRIVER_FILENAME);
         _exit(1);

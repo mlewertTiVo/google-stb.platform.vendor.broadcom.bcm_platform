@@ -31,6 +31,8 @@ on fs
    mount_all /fstab.bcm_platform
    setprop ro.crypto.fuse_sdcard true
    setprop chrome.tv.hole_threshold 0
+   setprop ro.nexus.devname mali
+   setprop ro.nexus.wake.devname mali0
 
 on boot
    # Subsytem Ramdump collection
