@@ -12,7 +12,7 @@ NEXUS_LIB=libnexus_client
 endif
 endif    
 
-$(warning NX-BUILD: CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
+include ${REFSW_BASE_DIR}/nexus/lib/playback_ip/b_playback_ip_lib.inc
 
 include $(CLEAR_VARS)
 
@@ -52,6 +52,7 @@ LOCAL_SHARED_LIBRARIES := \
 REMOVE_NEXUS_CFLAGS := -Wstrict-prototypes -march=armv7-a
 
 LOCAL_CFLAGS := $(filter-out $(REMOVE_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
+LOCAL_CFLAGS += $(addprefix -I,$(B_PLAYBACK_IP_LIB_PUBLIC_INCLUDES))
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
 LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
