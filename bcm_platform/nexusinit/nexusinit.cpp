@@ -241,7 +241,7 @@ void startNxServer(void)
 int main(void)
 {
     char value[PROPERTY_VALUE_MAX];
-    char value2[PROPERTY_VALUE_MAX + sizeof("config=")] = { 0 };
+    char value2[2 * PROPERTY_VALUE_MAX] = { 0 };
     NEXUS_Error rc;
     NEXUS_PlatformSettings platformSettings;
     NEXUS_PlatformStartServerSettings serverSettings;
@@ -272,6 +272,9 @@ int main(void)
 
     property_get("ro.nexus.devname", value, NULL);
     if (strlen(value) > 0) {
+        if (strlen(value2) > 0) {
+           strcat(value2, " ");
+        }
         strcat(value2, "devname=\"");
         strcat(value2, value);
         strcat(value2, "\"");
