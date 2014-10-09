@@ -43,10 +43,10 @@ LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_SHARED_LIBRARIES := \
     libdl \
     liblog \
-	libutils \
+    libutils \
     libcutils \
     $(NEXUS_LIB) \
-	libnexusipcclient \
+    libnexusipcclient \
     libui
 
 REMOVE_NEXUS_CFLAGS := -Wstrict-prototypes -march=armv7-a

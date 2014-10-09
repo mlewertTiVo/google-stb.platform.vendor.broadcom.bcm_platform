@@ -1,6 +1,11 @@
 
 #include "OMXNexusDecoder.h"
 #include <utils/Log.h>
+#include <cutils/properties.h>
+
+// Property to control whether to ask for 4K decoder by default (no).
+#define BCM_OMX_NEXUS_DECODER_H265_ASK_4K "bcm.omx.nx.dec.h265.ask4k"
+#define BCM_OMX_NEXUS_DECODER_H265_ASK_4K_DEFAULT "0"
 
 //Path level Debug Messages
 #define LOG_START_STOP_DBG  
@@ -289,8 +294,14 @@ OMXNexusDecoder::StartDecoder(NEXUS_PidChannelHandle videoPIDChannel)
     /* can't support two decoders if all are H265 format. */
     if (NEXUS_VideoCodec_eH265 == NxVideoCodec)
     {
-        videoProgram.maxWidth  = 3840;
-        videoProgram.maxHeight = 2160;
+        char value[PROPERTY_VALUE_MAX];
+        property_get(BCM_OMX_NEXUS_DECODER_H265_ASK_4K, value, BCM_OMX_NEXUS_DECODER_H265_ASK_4K_DEFAULT);
+
+        if (!strcmp(value, "1"))
+        {
+           videoProgram.maxWidth  = 3840;
+           videoProgram.maxHeight = 2160;
+        }
     }
 
     LOG_START_STOP_DBG("%s %d Decoder[%d]: Starting Decoder For PID:%p",
