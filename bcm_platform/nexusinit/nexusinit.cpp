@@ -225,9 +225,7 @@ void startNxServer(void)
             strcat(cmdRunNxServer, "-ignore_edid ");
         }
     }
-#ifdef BCM_OMX_SUPPORT_ENCODER
-    strcat(cmdRunNxServer, "-session0 hd,encode ");
-#else
+#ifndef BCM_OMX_SUPPORT_ENCODER
     strcat(cmdRunNxServer, "-transcode off ");
 #endif
 #if !ANDROID_SUPPORTS_FRONTEND_SERVICE

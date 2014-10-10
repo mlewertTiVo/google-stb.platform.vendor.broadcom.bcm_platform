@@ -53,5 +53,7 @@
 #define VIDEO_ENCODER_OUTPUT_BUFFER_SIZE       (3072 * 1024)     // 128 KB Of Input Buffer
 #define VIDEO_ENCODER_NUM_OUT_BUFFERS         8                // Output Buffers
 #define VIDEO_ENCODER_MAX_NUM_OUT_BUFFERS     32               // Max of output buffers
+#define VIDEO_ENCODER_DEFAULT_FRAMERATE         983040          // 15 Frames/sec in Q16 format
+
 #endif
 

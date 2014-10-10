@@ -36,7 +36,8 @@ LOCAL_C_INCLUDES += \
     $(TOP)/frameworks/av/include \
     $(TOP)/vendor/broadcom/bcm_platform/brcm_nexus/bin/include \
     $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
-    $(TOP)/vendor/broadcom/bcm_platform/libnexusipc 
+    $(TOP)/vendor/broadcom/bcm_platform/libnexusipc \
+    $(TOP)/frameworks/native/include/media/openmax
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 

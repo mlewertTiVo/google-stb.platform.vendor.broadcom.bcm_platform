@@ -14,6 +14,8 @@
 #include "MiscIFace.h"
 #include "BcmDebug.h"
 #include "ErrorStatus.h"
+#include "OMX_IVCommon.h"
+#include "OMX_Video.h"
 
 
 #define FRAME_TYPE_T NEXUS_VideoEncoderDescriptor
@@ -33,6 +35,12 @@ using  android::Vector;
         _ENC_FR_->usTimeStampIntepolated=0; \
         _ENC_FR_->FrameData->clear();  
 
+typedef enum _Encode_Frame_Type_
+{
+    Encode_Frame_Type_SPS = 0,
+    Encode_Frame_Type_PPS = 1,
+    Encode_Frame_Type_Picture = 2
+} Encode_Frame_Type;
 
 typedef struct _NEXUS_ENCODED_VIDEO_FRAME_
 {
@@ -66,13 +74,25 @@ typedef struct _NEXUS_VIDEO_ENCODER_INPUT_CONTEXT_
 {
     unsigned char                   *bufPtr;   // Pointer to uncompressed input data buffer
     unsigned int                    bufSize;   // Size of uncompressed input data buffer
+    OMX_COLOR_FORMATTYPE            colorFormat;
+    unsigned int                    width;
+    unsigned int                    height;
     PNEXUS_SURFACE                  pNxSurface;
-	unsigned long long				uSecTS;
+    unsigned long long              uSecTS;
     ENCODER_BUFFER_DONE_CALLBACK    pFnDoneCallBack;
     ENCODER_DONE_CONTEXT            DoneContext;
     LIST_ENTRY                      ListEntry;
 }NEXUS_VIDEO_ENCODER_INPUT_CONTEXT,
 *PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT;
+
+typedef struct _VIDEO_ENCODER_START_PARAMS_
+{
+    unsigned int                    width;
+    unsigned int                    height;
+    NEXUS_VideoFrameRate            frameRate;
+    OMX_VIDEO_PARAM_AVCTYPE         avcParams;
+} VIDEO_ENCODER_START_PARAMS,
+*PVIDEO_ENCODER_START_PARAMS;
 
 class OMXNexusVideoEncoder 
 {
@@ -82,7 +102,9 @@ public:
     OMXNexusVideoEncoder (char const *callerName, int numInBuf);
     
     ~OMXNexusVideoEncoder ();
-    bool StartEncoder();        
+    bool StartEncoder(PVIDEO_ENCODER_START_PARAMS startParams);
+    void StopEncoder();
+    bool Flush();
     bool EncodeFrame(PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pNxInputContext);
     bool GetEncodedFrame(PDELIVER_ENCODED_FRAME);
 
@@ -120,6 +142,7 @@ private:
 
     LIST_ENTRY                          SurfaceBusyList;
     LIST_ENTRY                          SurfaceAvailList;
+    unsigned int                        SurfaceAvailListLen;
 
     LIST_ENTRY                          InputContextList;
 
@@ -128,7 +151,7 @@ private:
     NexusClientContext                  *NxClientCntxt;
 
     bool                                EncoderStarted;
-
+    bool                                CodecConfigDone;
     //Usage
     //Mutex::Autolock lock(nexSurf->mFreeListLock);
     Mutex   mListLock;
@@ -138,6 +161,8 @@ private:
     // The input is not there. We need to keep track when to capture 
     // and when Stop The Capture.
     bool                                CaptureFrames;
+    DumpData                            *pdumpES;
+    VIDEO_ENCODER_START_PARAMS          EncoderStartParams;
 private: 
     unsigned int    RetriveFrameFromHardware();
     void            StartCaptureFrames();
@@ -145,10 +170,9 @@ private:
     bool            CaptureFrameEnabled();
 
     bool            ShouldDiscardFrame(PNEXUS_ENCODED_VIDEO_FRAME pCheckFr);
-    bool            GetFrameStart(NEXUS_VideoEncoderDescriptor *,size_t, unsigned int *);
+    bool            GetFrameStart(NEXUS_VideoEncoderDescriptor *,size_t, Encode_Frame_Type, unsigned int *);
     
     bool            ReturnEncodedFrameSynchronized(PNEXUS_ENCODED_VIDEO_FRAME);
-    void            StopEncoder();
     bool            IsEncoderStarted();
 //    bool            DetectEOS();
 //    bool            FlushDecoder();

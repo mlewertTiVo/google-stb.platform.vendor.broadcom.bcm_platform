@@ -38,6 +38,18 @@ static const CODEC_TO_MIME_MAP CodecToMIME[] =
 #endif
 };
 
+typedef struct _OMX_TO_NEXUS_FRAMERATE_MAP_
+{
+    OMX_U32     OmxFramerate;
+    NEXUS_VideoFrameRate    NxFrameRate;
+} OMX_TO_NEXUS_FRAMERATE_MAP, *POMX_TO_NEXUS_FRAMERATE_MAP;
+
+static const OMX_TO_NEXUS_FRAMERATE_MAP frameRateTypeConversion[] =
+{
+        {983040,    NEXUS_VideoFrameRate_e15}
+ //TODO: Populate other values
+};
+
 // Debug Message Macros
 #define CONFIG_LOG_MSG                  ALOGD
 
@@ -121,18 +133,55 @@ GetMimeFromOmxCodingType(OMX_VIDEO_CODINGTYPE OMXCodingType)
     return CodecToMIME[OMXCodingType].Mime;
 }
 
+NEXUS_VideoFrameRate
+MapOMXFrameRateToNexus(OMX_U32 omxFR)
+{
+    for (unsigned int i = 0; i < sizeof(frameRateTypeConversion)/sizeof(frameRateTypeConversion[0]); i++)
+    {
+        if (frameRateTypeConversion[i].OmxFramerate==omxFR)
+            return frameRateTypeConversion[i].NxFrameRate;
+    }
+    return NEXUS_VideoFrameRate_eUnknown;
+}
+
+static bool
+StartEncoder(BCM_OMX_CONTEXT *pBcmContext)
+{
+    bool ret = false;
+    VIDEO_ENCODER_START_PARAMS startParams;
+
+    startParams.width = pBcmContext->sInPortDef.format.video.nFrameWidth;
+    startParams.height = pBcmContext->sInPortDef.format.video.nFrameHeight;
+    startParams.frameRate = MapOMXFrameRateToNexus(pBcmContext->sInPortDef.format.video.xFramerate);
+    if (startParams.frameRate==NEXUS_VideoFrameRate_eUnknown)
+    {
+        ALOGE("%s:Unsupported frame rate.",__FUNCTION__);
+        return false;
+    }
+    startParams.avcParams = pBcmContext->sAvcVideoParams;
+
+    ret = pBcmContext->pOMXNxVidEnc->StartEncoder(&startParams);
+    return ret;
+}
+
+static void
+StopEncoder(BCM_OMX_CONTEXT *pBcmContext)
+{
+    pBcmContext->pOMXNxVidEnc->StopEncoder();
+}
+
 static bool
 FlushInput(BCM_OMX_CONTEXT *pBcmContext)
 {
-    BCMOMX_DBG_ASSERT(OMX_FALSE);
-    return false;
+    // Hardware flush is handled in FlashOutput
+    return true;
 }
 
 static bool
 FlushOutput(BCM_OMX_CONTEXT *pBcmContext)
 {
-    BCMOMX_DBG_ASSERT(OMX_FALSE);
-    return false;
+    pBcmContext->pOMXNxVidEnc->Flush();
+    return true;
 }
 
 extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
@@ -204,7 +253,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
      pMyData->sInPortDef.format.video.nStride = pMyData->sInPortDef.format.video.nFrameWidth;
      pMyData->sInPortDef.format.video.nSliceHeight = pMyData->sInPortDef.format.video.nFrameHeight;
      pMyData->sInPortDef.format.video.nBitrate = 0;
-     pMyData->sInPortDef.format.video.xFramerate = 0;
+     pMyData->sInPortDef.format.video.xFramerate = VIDEO_ENCODER_DEFAULT_FRAMERATE;
      pMyData->sInPortDef.format.video.bFlagErrorConcealment = OMX_FALSE;
      pMyData->sInPortDef.format.video.eCompressionFormat = OMX_VIDEO_CodingUnused;
      pMyData->sInPortDef.format.video.eColorFormat = OMX_COLOR_FormatYUV420Planar;
@@ -215,7 +264,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sInPortFormat.eCompressionFormat = OMX_VIDEO_CodingUnused;
     pMyData->sInPortFormat.eColorFormat = OMX_COLOR_FormatYUV420Planar; //Support this as additonal format - OMX_COLOR_FormatAndroidOpaque.
     pMyData->sInPortFormat.nIndex=0;            //N-1 Where N Is the number of formats supported. We only Support One format for Now.
-    pMyData->sInPortFormat.xFramerate=15;
+    pMyData->sInPortFormat.xFramerate=VIDEO_ENCODER_DEFAULT_FRAMERATE;
     pMyData->sInPortFormat.nPortIndex=0;
 
     //Set The Output Port Format Structure
@@ -223,7 +272,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sOutPortFormat.eCompressionFormat = OMX_VIDEO_CodingAVC;
     pMyData->sOutPortFormat.eColorFormat = OMX_COLOR_FormatUnused;
     pMyData->sOutPortFormat.nIndex=0;            //N-1 Where N Is the number of formats supported. We only Support One format for Now.
-    pMyData->sOutPortFormat.xFramerate=0;
+    pMyData->sOutPortFormat.xFramerate=VIDEO_ENCODER_DEFAULT_FRAMERATE;
     pMyData->sOutPortFormat.nPortIndex=1;    
 
     // Initialize the video parameters for output port
@@ -247,7 +296,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sOutPortDef.format.video.nStride = pMyData->sOutPortDef.format.video.nFrameWidth;
     pMyData->sOutPortDef.format.video.nSliceHeight = pMyData->sOutPortDef.format.video.nFrameHeight;
     pMyData->sOutPortDef.format.video.nBitrate = 64000;
-    pMyData->sOutPortDef.format.video.xFramerate = 15;
+    pMyData->sOutPortDef.format.video.xFramerate = VIDEO_ENCODER_DEFAULT_FRAMERATE;
     pMyData->sOutPortDef.format.video.bFlagErrorConcealment = OMX_FALSE;
     pMyData->sOutPortDef.format.video.eCompressionFormat = OMX_VIDEO_CodingAVC;
 
@@ -346,11 +395,13 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
 
     pMyData->pOMXNxVidEnc = new OMXNexusVideoEncoder(LOG_TAG, VIDEO_ENCODER_NUM_IN_BUFFERS);
 
+#if 0
     if (false == pMyData->pOMXNxVidEnc->StartEncoder())
     {
         ALOGE("%s: Failed To Start The Encoder",__FUNCTION__);
         goto EXIT;
     }
+#endif
 
     return eError;
 
@@ -653,6 +704,7 @@ extern "C" OMX_ERRORTYPE OMX_VENC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
             if (pFormatParams->nPortIndex == pMyData->sOutPortDef.nPortIndex)
             {
                 BKNI_Memcpy(pParamStruct, &pMyData->sAvcVideoParams, sizeof(OMX_VIDEO_PARAM_AVCTYPE));
+                ALOGD("Profile = %d, Level = %d", pFormatParams->eProfile, pFormatParams->eLevel);
             }
             else
             {
@@ -779,10 +831,12 @@ extern "C" OMX_ERRORTYPE OMX_VENC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
             if (pFormatParams->nPortIndex == pMyData->sOutPortDef.nPortIndex)
             {
                 BKNI_Memcpy(&pMyData->sAvcVideoParams, pParamStruct, sizeof(OMX_VIDEO_PARAM_AVCTYPE));
+                ALOGD("Profile = %d, Level = %d", pFormatParams->eProfile, pFormatParams->eLevel);
             }
             else if (pFormatParams->nPortIndex == pMyData->sInPortDef.nPortIndex)
             {
                 BKNI_Memcpy(&pMyData->sAvcVideoParams, pParamStruct, sizeof(OMX_VIDEO_PARAM_AVCTYPE));
+                ALOGD("Profile = %d, Level = %d", pFormatParams->eProfile, pFormatParams->eLevel);
             }
             else
             {
@@ -1256,6 +1310,11 @@ static void* ComponentThread(void* pThreadData)
                         {
                             if (pMyData->state == OMX_StateIdle || pMyData->state == OMX_StateWaitForResources)
                             {
+                                if (pMyData->state == OMX_StateIdle)
+                                {
+
+                                    StopEncoder(pMyData);
+                                }
                                 nTimeout = 0x0;
                                 while (1)
                                 {
@@ -1314,6 +1373,11 @@ static void* ComponentThread(void* pThreadData)
                                     FlushOutput(pMyData);
                                 }
                                 nTimeout = 0x0;
+
+                                if (pMyData->state == OMX_StateLoaded || pMyData->state == OMX_StateWaitForResources)
+                                {
+                                    StartEncoder(pMyData);
+                                }
                                 while (1)
                                 {
                                     /* Ports have to be populated before transition completes*/
@@ -1620,6 +1684,9 @@ static void* ComponentThread(void* pThreadData)
 
                     pNxInputCnxt->bufPtr = pInBufHdr->pBuffer;
                     pNxInputCnxt->bufSize = pInBufHdr->nFilledLen;
+                    pNxInputCnxt->colorFormat = pMyData->sInPortDef.format.video.eColorFormat;
+                    pNxInputCnxt->height = pMyData->sInPortDef.format.video.nFrameHeight;
+                    pNxInputCnxt->width = pMyData->sInPortDef.format.video.nFrameWidth;
                     pNxInputCnxt->DoneContext.Param1 = (unsigned int) pMyData->hSelf;
                     pNxInputCnxt->DoneContext.Param2 = (unsigned int) pMyData->pAppData;
                     pNxInputCnxt->DoneContext.Param3 = (unsigned int) pInBufHdr;
@@ -1665,12 +1732,10 @@ static void* ComponentThread(void* pThreadData)
                 if (pMyData->pOMXNxVidEnc->GetEncodedFrame(&DeliverFr))
                 {
                     //pOutBufHdr->nFilledLen = sizeof(DELIVER_ENCODED_FRAME);
-
                     pOutBufHdr->nFilledLen = DeliverFr.SzFilled;
                     pOutBufHdr->nTimeStamp= DeliverFr.usTimeStamp;
-
+                    pOutBufHdr->nFlags |= DeliverFr.OutFlags;
                 }else{
-                       
                     if (DeliverFr.OutFlags & OMX_BUFFERFLAG_EOS) 
                     {
                         ALOGD("EOS MARKED ON THE OUTPUT FRAME:%d",
