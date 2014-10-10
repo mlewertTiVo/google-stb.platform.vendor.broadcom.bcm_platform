@@ -6,7 +6,7 @@ then
   echo "       <b-z>: Any letter from b to z, corresponding to your usb drive."
   echo "              'a' is not permitted because it is probably your main hard drive,"
   echo "              and this script first deletes existing partitions."
-  echo "Example: sudo ./sdf_format_android_8GB.sh sdf"
+  echo "Example: sudo ./format_android_usb_8GB.sh sdf"
   echo "Note: Partition table requires a USB drive of 8GB or larger."
   exit
 fi
