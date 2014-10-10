@@ -85,6 +85,12 @@ public class TunerService extends TvInputService {
 
     private TvInputManager mManager = null;
     private ResolveInfo mResolveInfo;
+    private static List<ChannelInfo> sSampleChannels = null;
+
+    private static final String CHANNEL_1_NUMBER = "1-1";
+    private static final String CHANNEL_1_NAME = "Tuner_Channel";
+    private static final String PROGRAM_1_TITLE = "Sample";
+    private static final String PROGRAM_1_DESC = "Sample Video";
 
     @Override
     public void onCreate() {
@@ -146,30 +152,85 @@ public class TunerService extends TvInputService {
         if (DEBUG) 
 			Log.d(TAG, "onHardwareAdded returns " + info);
 
-		ComponentName mComponentName = new ComponentName(getApplicationContext(), TunerService.class);
-        Log.e(TAG, "TunerService::onHardwareAdded(), mComponentName = " +mComponentName.toString());
-
-        ContentResolver mContentResolver = getApplicationContext().getContentResolver();
-        String mInputId = info.getId();
-        Log.e(TAG, "TunerService::onHardwareAdded(), mInputId = " +mInputId);
-
-        ContentValues values = createDummyChannelValues(mInputId);
-        Uri mChannelsUri = TvContract.buildChannelsUriForInput(mInputId);
-        Log.e(TAG, "TunerService::onHardwareAdded(), mChannelsUri = " + mChannelsUri.toString());
-
-        Uri rowUri = mContentResolver.insert(mChannelsUri, values);
-        Log.e(TAG, "TunerService::onHardwareAdded(), rowUri = " +rowUri.toString());
-
-        long channelId = ContentUris.parseId(rowUri);
-        Log.e(TAG, "TunerService::onHardwareAdded(), channelId = " +channelId);
-
-        Uri channelUri = TvContract.buildChannelUri(channelId);
-        Log.e(TAG, "TunerService::onHardwareAdded(), channelUri = " +channelUri.toString());
-
-        TvContract.buildProgramsUriForChannel(channelId);
-        TvContract.buildProgramsUriForChannel(channelUri);
+        // Create some sample channels
+        createSampleChannels(info.getId());
 
         return info;
+    }
+
+    private void createSampleChannels(String inputId) 
+    {
+        List<ChannelInfo> channels = null;
+        Class clazz = TunerService.class;
+
+        sSampleChannels = new ArrayList<ChannelInfo>();
+        sSampleChannels.add(
+                new ChannelInfo(CHANNEL_1_NUMBER, CHANNEL_1_NAME, null, 0, 0, 1, 640, 480, 2,
+                        false,
+                new ProgramInfo(PROGRAM_1_TITLE, null, PROGRAM_1_DESC, 0, 3600,
+                        null, null, 0)));
+
+        Uri uri = TvContract.buildChannelsUriForInput(inputId);
+        String[] projection = { TvContract.Channels._ID };
+
+        Cursor cursor = null;
+        try 
+        {
+            while (true) {
+                cursor = getContentResolver().query(uri, projection, null, null, null);
+                if (cursor != null && cursor.getCount() > 0) {
+                    return;
+                }
+                if (cursor != null) {
+                    cursor.close();
+                }
+                if (DEBUG) 
+                    Log.d(TAG, "Couldn't find the channel list. Inserting new channels...");
+
+                // Insert channels into the database. This needs to be done only for the first time.
+                populateChannels(this, inputId, sSampleChannels);
+            }
+        }
+        
+        finally 
+        {
+            if (cursor != null) 
+            {
+                cursor.close();
+            }
+        }
+    }
+
+    public static void populateChannels(Context context, String inputId, List<ChannelInfo> channels) 
+    {
+        ContentValues values = new ContentValues();
+        values.put(TvContract.Channels.COLUMN_INPUT_ID, inputId);
+        Map<Uri, String> logos = new HashMap<Uri, String>();
+
+        for (ChannelInfo channel : channels) 
+        {
+            values.put(TvContract.Channels.COLUMN_DISPLAY_NUMBER, channel.mNumber);
+            values.put(TvContract.Channels.COLUMN_DISPLAY_NAME, channel.mName);
+            values.put(TvContract.Channels.COLUMN_ORIGINAL_NETWORK_ID, channel.mOriginalNetworkId);
+            values.put(TvContract.Channels.COLUMN_TRANSPORT_STREAM_ID, channel.mTransportStreamId);
+            values.put(TvContract.Channels.COLUMN_SERVICE_ID, channel.mServiceId);
+
+            values.put(TvContract.Channels.COLUMN_VIDEO_FORMAT, TvContract.Channels.VIDEO_FORMAT_480P);
+
+            Uri uri = context.getContentResolver().insert(TvContract.Channels.CONTENT_URI, values);
+/*
+            if (!TextUtils.isEmpty(channel.mLogoUrl)) 
+            {
+                logos.put(TvContract.buildChannelLogoUri(uri), channel.mLogoUrl);
+            }
+*/
+        }
+/*
+        if (!logos.isEmpty()) 
+        {
+            new InsertLogosTask(context).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, logos);
+        }
+*/
     }
 
     private static ContentValues createDummyChannelValues(String inputId) {
@@ -201,6 +262,59 @@ public class TunerService extends TvInputService {
 			Log.d(TAG, "onHardwareRemoved returns " + deviceId);
 
         return inputId;
+    }
+
+  public static final class ChannelInfo {
+        public final String mNumber;
+        public final String mName;
+        public final String mLogoUrl;
+        public final int mOriginalNetworkId;
+        public final int mTransportStreamId;
+        public final int mServiceId;
+        public final int mVideoWidth;
+        public final int mVideoHeight;
+        public final int mAudioChannel;
+        public final boolean mHasClosedCaption;
+        public final ProgramInfo mProgram;
+
+        public ChannelInfo(String number, String name, String logoUrl, int originalNetworkId,
+                int transportStreamId, int serviceId, int videoWidth, int videoHeight,
+                int audioChannel, boolean hasClosedCaption, ProgramInfo program) {
+            mNumber = number;
+            mName = name;
+            mLogoUrl = logoUrl;
+            mOriginalNetworkId = originalNetworkId;
+            mTransportStreamId = transportStreamId;
+            mServiceId = serviceId;
+            mVideoWidth = videoWidth;
+            mVideoHeight = videoHeight;
+            mAudioChannel = audioChannel;
+            mHasClosedCaption = hasClosedCaption;
+            mProgram = program;
+        }
+    }
+
+    public static final class ProgramInfo {
+        public final String mTitle;
+        public final String mPosterArtUri;
+        public final String mDescription;
+        public final long mStartTimeSec;
+        public final long mDurationSec;
+        public final String mUrl;
+        public final int mResourceId;
+        public final TvContentRating[] mContentRatings;
+
+        public ProgramInfo(String title, String posterArtUri, String description, long startTimeSec,
+                long durationSec, TvContentRating[] contentRatings, String url, int resourceId) {
+            mTitle = title;
+            mPosterArtUri = posterArtUri;
+            mDescription = description;
+            mStartTimeSec = startTimeSec;
+            mDurationSec = durationSec;
+            mContentRatings = contentRatings;
+            mUrl = url;
+            mResourceId = resourceId;
+        }
     }
 
     private class TunerTvInputSessionImpl extends Session {
