@@ -74,14 +74,15 @@ def write_header(s, d):
 
 # how you should use this.
 def plat_droid_usage():
-	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [aosp|redux|cts]'
+	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [redux|aosp|cts|ctsaosp]'
 	print '\t<platform>    - the BCM platform number to build for, eg: 97252, 97445, ...'
 	print '\t<chip-rev>    - the BCM chip revision of interest, eg: A0, B0, C1, ...'
 	print '\t<board-type>  - the target board type, eg: SV, C'
-	print '\t[aosp|redux|cts] (note: mutually exclusive at this time)'
-        print '\t              - aosp: if wanting to build for AOSP exclusively'
-	print '\t              - redux: if wanting to build redux image (minimal android)'
-        print '\t              - cts: if wanting to build CTS image (multi-partition boot, proper permissions)'
+	print '\t[redux|aosp|cts|ctsaosp] (note: mutually exclusive)'
+	print '\t              - redux: redux platform support image (minimal android)'
+        print '\t              - aosp: AOSP feature set and integration exclusively'
+        print '\t              - cts: CTS ready image (multi-partition boot, proper permissions)'
+        print '\t              - ctsaosp: CTS image with AOSP exclusive support (best of both worlds)'
 	print '\n'
 	sys.exit(0)
 
@@ -100,7 +101,7 @@ boardtype=str(sys.argv[3]).upper()
 
 # create android cruft.
 androiddevice='%s%s%s' % (chip, revision, boardtype)
-if target_option == "AOSP" or target_option == "REDUX" or target_option == "CTS":
+if target_option == "AOSP" or target_option == "REDUX" or target_option == "CTS" or target_option == "CTSAOSP":
 	androiddevice='%s_%s' % (androiddevice, target_option)
 devicedirectory='./device/broadcom/bcm_%s/' % (androiddevice)
 if verbose:
@@ -170,16 +171,16 @@ os.write(s, "# end of refsw gathered config...\n")
 if target_option == "REDUX":
 	os.write(s, "\n\n# REDUX target set...\n")
 	os.write(s, "include device/broadcom/common/target_redux.mk")
-if target_option == "CTS":
+if target_option == "CTS" or target_option == "CTSAOSP":
         os.write(s, "\n\n# CTS target set...\n")
         os.write(s, "include device/broadcom/common/target_cts.mk")
 os.write(s, "\n\ninclude device/broadcom/bcm_platform/bcm_platform.mk")
-if target_option == "AOSP":
-	os.write(s, "\n\n# AOSP setting tweaks...\n")
-	os.write(s, "include device/broadcom/common/settings_aosp.mk")
-if target_option == "CTS":
+if target_option == "CTS" or target_option == "CTSAOSP":
         os.write(s, "\n\n# CTS setting tweaks...\n")
         os.write(s, "include device/broadcom/common/settings_cts.mk")
+if target_option == "AOSP" or target_option == "CTSAOSP":
+	os.write(s, "\n\n# AOSP setting tweaks...\n")
+	os.write(s, "include device/broadcom/common/settings_aosp.mk")
 os.write(s, "\n\nPRODUCT_NAME := bcm_%s\n" % androiddevice)
 os.write(s, "\n# exporting toolchains path for kernel image+modules\n")
 os.write(s, "export PATH := %s:${PATH}\n" % kerneltoolchain)
@@ -195,5 +196,7 @@ os.close(s);
 # yeah! happy...
 print '\n'
 print 'congratulations! device bcm_%s configured, you may proceed with android build...' % androiddevice
-print '\thint - select lunch combo: bcm_%s-[eng|userdebug].' % androiddevice
+print '\t1) source ./build/envsetup.sh'
+print '\t2) lunch bcm_%s-[eng|userdebug|user].' % androiddevice
+print '\n'
 
