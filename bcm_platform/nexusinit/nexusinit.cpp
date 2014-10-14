@@ -80,6 +80,7 @@
 #define EVENT_WRITE_DRIVER_FILENAME    "/system/etc/event_write.ko"
 #define NXSERVER_FILENAME              "/system/bin/nxserver"
 #define NX_ASHMEM_DRIVER_FILENAME      "/system/etc/nx_ashmem.ko"
+#define WAKEUP_DRIVER_FILENAME         "/system/etc/wakeup_drv.ko"
 
 extern "C" long int init_module(void *, unsigned long, const char*);
 extern "C" long int delete_module(const char *, unsigned long, unsigned long, unsigned long);
@@ -253,10 +254,28 @@ int main(void)
     android::ProcessState::self()->startThreadPool();
 
 #if ((ATP_BUILD==0) && (ANDROID_UNDER_LXC==0))
+    property_get("ro.nexus.wake.devname", value, NULL);
+    if (strlen(value) > 0) {
+        strcpy(value2, "devname=\"");
+        strcat(value2, value);
+        strcat(value2, "\"");
+        LOGD("nexusinit: ro.nexus.wake.devname=%s", value2);
+    }
+
+    /* insmod wakeup driver first */
+    if(nexusinit_insmod(WAKEUP_DRIVER_FILENAME, value2) != BERR_SUCCESS) {
+        LOGE("nexusinit: FATAL: insmod failed on %s!", WAKEUP_DRIVER_FILENAME);
+        _exit(1);
+    }
+    else {
+        LOGI("nexusinit: insmod %s succeeded", WAKEUP_DRIVER_FILENAME);
+    }
+
 #ifdef NEXUS_MODE_proxy
     /* Pull the nexus arguments and pass them to the module init */
     property_get("ro.nexus_config", value, NULL);
 
+    value2[0] = '\0';
     if (strlen(value) > 0) {
         strcat(value2, "config=");
         strcat(value2, value);
@@ -281,7 +300,7 @@ int main(void)
 
     /* insmod nexus.ko driver first */
     if(nexusinit_insmod(NEXUS_DRIVER_FILENAME, value2) != BERR_SUCCESS) {
-        LOGE("nexusinit: FATAL: insmod failed on %s!",NEXUS_DRIVER_FILENAME);
+        LOGE("nexusinit: FATAL: insmod failed on %s!", NEXUS_DRIVER_FILENAME);
         _exit(1);
     }
     else {

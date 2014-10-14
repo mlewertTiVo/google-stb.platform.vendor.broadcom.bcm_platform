@@ -120,6 +120,19 @@ static NexusPowerState PowerStateToNexusPowerState(b_powerState state)
     return pmState;
 }
 
+/* Android-L sets up a property to define the device type and hence
+   the logical address of the device.  */
+int NexusPower_getDeviceType()
+{
+    char value[PROPERTY_VALUE_MAX];
+    int type = -1;
+
+    if (property_get("ro.hdmi.device_type", value, NULL)) {
+        type = atoi(value);
+    }
+    return type;
+}
+
 NEXUS_Error
 NexusPower_SetPowerState(NexusPowerState pmState)
 {
@@ -127,6 +140,7 @@ NexusPower_SetPowerState(NexusPowerState pmState)
     NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("Android-Power");
     b_powerState   state;
     const uint32_t cecId = 0;   // Hardcoded CEC id to 0
+    int deviceType = NexusPower_getDeviceType();
 
     state = NexusPowerStateToPowerState(pmState);
 
@@ -139,12 +153,12 @@ NexusPower_SetPowerState(NexusPowerState pmState)
             LOGE("%s: Could not set PowerState %d!", __FUNCTION__, state);
             rc = NEXUS_UNKNOWN;
         }
-        else if (pIpcClient->isCecEnabled(cecId) && pIpcClient->setCecPowerState(cecId, state) != true) {
+        else if (deviceType == -1 && pIpcClient->isCecEnabled(cecId) && pIpcClient->setCecPowerState(cecId, state) != true) {
             LOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, cecId, state);
         }
     }
     else {
-        if (pIpcClient->isCecEnabled(cecId) && pIpcClient->setCecPowerState(cecId, state) != true) {
+        if (deviceType == -1 && pIpcClient->isCecEnabled(cecId) && pIpcClient->setCecPowerState(cecId, state) != true) {
             LOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, cecId, state);
         }
 
