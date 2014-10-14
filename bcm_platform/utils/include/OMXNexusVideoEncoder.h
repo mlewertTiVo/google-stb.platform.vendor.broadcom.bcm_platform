@@ -42,8 +42,6 @@
 #ifndef _OMX_NEXUS_VIDEO_ENCODER_
 #define _OMX_NEXUS_VIDEO_ENCODER_
 
-#include <utils/Vector.h>
-
 #include "nexus_types.h"
 #include "nexus_platform.h"
 #include "nexus_ipc_client_factory.h"
@@ -58,6 +56,7 @@
 #include "OMX_IVCommon.h"
 #include "OMX_Video.h"
 
+#include <utils/Vector.h>
 
 #define FRAME_TYPE_T NEXUS_VideoEncoderDescriptor
 
@@ -140,7 +139,7 @@ class OMXNexusVideoEncoder
 
 public:
 
-    OMXNexusVideoEncoder (char const *callerName, int numInBuf);
+    OMXNexusVideoEncoder (const char *callerName, int numInBuf);
 
     ~OMXNexusVideoEncoder ();
     bool StartEncoder(PVIDEO_ENCODER_START_PARAMS startParams);

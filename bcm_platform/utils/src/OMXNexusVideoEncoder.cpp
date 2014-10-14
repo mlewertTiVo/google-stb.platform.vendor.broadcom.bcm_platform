@@ -56,6 +56,10 @@
 #define LOG_ERROR               ALOGD
 #define LOG_INFO                ALOGD
 
+#ifndef UNUSED
+#define UNUSED(x)               (void)(x)
+#endif
+
 #define NAL_UNIT_TYPE_SPS       7
 #define NAL_UNIT_TYPE_PPS       8
 
@@ -64,6 +68,8 @@
 #define GET_NAL_UNIT_TYPE(x)    (x & 0x1F)
 static void imageBufferCallbackDispatcher(void *context, int param)
 {
+    UNUSED(param);
+
     OMXNexusVideoEncoder    *pEncoder = (OMXNexusVideoEncoder *)context;
     pEncoder->imageBufferCallback();
 }
@@ -182,7 +188,7 @@ static NEXUS_VideoCodecLevel convertOMXLevelTypetoNexus(OMX_VIDEO_AVCLEVELTYPE l
     return NEXUS_VideoCodecLevel_e31;
 }
 
-OMXNexusVideoEncoder::OMXNexusVideoEncoder(char *CallerName, int numInBuf)
+OMXNexusVideoEncoder::OMXNexusVideoEncoder(const char *callerName, int numInBuf)
     : EncoderHandle(NULL),
     NumNxSurfaces(numInBuf),
     EmptyFrListLen(0),EncodedFrListLen(0),
@@ -201,11 +207,11 @@ OMXNexusVideoEncoder::OMXNexusVideoEncoder(char *CallerName, int numInBuf)
     b_refsw_client_client_configuration         config;
     b_refsw_client_client_info                  client_info;
     b_refsw_client_connect_resource_settings    connectSettings;
-    NxIPCClient = NexusIPCClientFactory::getClient(CallerName);
+    NxIPCClient = NexusIPCClientFactory::getClient(callerName);
     NEXUS_SurfaceCreateSettings surfaceCfg;
 
     BKNI_Memset(&config, 0, sizeof(config));
-    BKNI_Snprintf(config.name.string,sizeof(config.name.string),CallerName);
+    BKNI_Snprintf(config.name.string,sizeof(config.name.string),callerName);
 
     config.resources.encoder = true;
     config.resources.audioDecoder = false;
@@ -1306,6 +1312,8 @@ OMXNexusVideoEncoder::imageBufferCallback()
 void
 OMXNexusVideoEncoder::InputEOSReceived(unsigned int InputFlags)
 {
+    UNUSED(InputFlags);
+
     LOG_EOS_DBG("%s %d: EOS Received On The Input Side",__FUNCTION__,__LINE__);
     BCMOMX_DBG_ASSERT(false);
     return;
