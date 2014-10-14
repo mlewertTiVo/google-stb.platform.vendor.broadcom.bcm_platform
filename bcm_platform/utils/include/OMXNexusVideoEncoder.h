@@ -1,3 +1,44 @@
+/******************************************************************************
+* (c) 2014 Broadcom Corporation
+*
+* This program is the proprietary software of Broadcom Corporation and/or its
+* licensors, and may only be used, duplicated, modified or distributed pursuant
+* to the terms and conditions of a separate, written license agreement executed
+* between you and Broadcom (an "Authorized License").  Except as set forth in
+* an Authorized License, Broadcom grants no license (express or implied), right
+* to use, or waiver of any kind with respect to the Software, and Broadcom
+* expressly reserves all rights in and to the Software and all intellectual
+* property rights therein.  IF YOU HAVE NO AUTHORIZED LICENSE, THEN YOU
+* HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY WAY, AND SHOULD IMMEDIATELY
+* NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.
+*
+* Except as expressly set forth in the Authorized License,
+*
+* 1. This program, including its structure, sequence and organization,
+*    constitutes the valuable trade secrets of Broadcom, and you shall use all
+*    reasonable efforts to protect the confidentiality thereof, and to use
+*    this information only in connection with your use of Broadcom integrated
+*    circuit products.
+*
+* 2. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS"
+*    AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR
+*    WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT
+*    TO THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED
+*    WARRANTIES OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A
+*    PARTICULAR PURPOSE, LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET
+*    ENJOYMENT, QUIET POSSESSION OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME
+*    THE ENTIRE RISK ARISING OUT OF USE OR PERFORMANCE OF THE SOFTWARE.
+*
+* 3. TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS
+*    LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT,
+*    OR EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO
+*    YOUR USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN
+*    ADVISED OF THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS
+*    OF THE AMOUNT ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER
+*    IS GREATER. THESE LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF
+*    ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
+******************************************************************************/
+
 #ifndef _OMX_NEXUS_VIDEO_ENCODER_
 #define _OMX_NEXUS_VIDEO_ENCODER_
 
@@ -20,9 +61,9 @@
 
 #define FRAME_TYPE_T NEXUS_VideoEncoderDescriptor
 
-// Length of the buffer queues 
+// Length of the buffer queues
 #define VIDEO_ENCODE_DEPTH              16
-#define EOS_DOWN_CNT_DEPTH_ENCODE       16  
+#define EOS_DOWN_CNT_DEPTH_ENCODE       16
 
 using namespace android;
 using  android::Vector;
@@ -33,7 +74,7 @@ using  android::Vector;
         _ENC_FR_->CombinedSz=0;            \
         _ENC_FR_->usTimeStampOriginal=0;   \
         _ENC_FR_->usTimeStampIntepolated=0; \
-        _ENC_FR_->FrameData->clear();  
+        _ENC_FR_->FrameData->clear();
 
 typedef enum _Encode_Frame_Type_
 {
@@ -44,20 +85,20 @@ typedef enum _Encode_Frame_Type_
 
 typedef struct _NEXUS_ENCODED_VIDEO_FRAME_
 {
-    Vector < FRAME_TYPE_T *>            *FrameData;     // Vector of chunks of data  
-    unsigned int                        BaseAddr;       // Base address returned by nexus  
+    Vector < FRAME_TYPE_T *>            *FrameData;     // Vector of chunks of data
+    unsigned int                        BaseAddr;       // Base address returned by nexus
     unsigned int                        CombinedSz;     // Total size of all the chunks in the frame vector
-    unsigned long long                  usTimeStampOriginal;  // Timestamp in us 
+    unsigned long long                  usTimeStampOriginal;  // Timestamp in us
     unsigned long long                  usTimeStampIntepolated;// Timestamp in us
-    unsigned int                        ClientFlags;  // OMX (Or any other) Flags associated with buffer (if Any)  
-    LIST_ENTRY                          ListEntry;    // Linked List  
+    unsigned int                        ClientFlags;  // OMX (Or any other) Flags associated with buffer (if Any)
+    LIST_ENTRY                          ListEntry;    // Linked List
 }NEXUS_ENCODED_VIDEO_FRAME,
 *PNEXUS_ENCODED_VIDEO_FRAME;
 
 typedef void (*ENCODER_BUFFER_DONE_CALLBACK) (unsigned int, unsigned int,unsigned int);
 
 typedef struct ENCODER_DONE_CONTEXT_
-{   
+{
     unsigned int                    Param1;
     unsigned int                    Param2;
     unsigned int                    Param3;
@@ -94,13 +135,13 @@ typedef struct _VIDEO_ENCODER_START_PARAMS_
 } VIDEO_ENCODER_START_PARAMS,
 *PVIDEO_ENCODER_START_PARAMS;
 
-class OMXNexusVideoEncoder 
+class OMXNexusVideoEncoder
 {
 
 public:
-    
+
     OMXNexusVideoEncoder (char const *callerName, int numInBuf);
-    
+
     ~OMXNexusVideoEncoder ();
     bool StartEncoder(PVIDEO_ENCODER_START_PARAMS startParams);
     void StopEncoder();
@@ -111,8 +152,8 @@ public:
 
     ErrorStatus GetLastError();
 
-    // FeederEventsListener Interface Function To Get the Notification 
-    // For EOS 
+    // FeederEventsListener Interface Function To Get the Notification
+    // For EOS
     void InputEOSReceived(unsigned int );
     void imageBufferCallback();
 
@@ -156,14 +197,14 @@ private:
     //Mutex::Autolock lock(nexSurf->mFreeListLock);
     Mutex   mListLock;
     FRAME_REPEAT_PARAMS                 FrRepeatParams;
-    
-    // Our Encoder Keep spewing Out Frames with TS of Zero Even when 
-    // The input is not there. We need to keep track when to capture 
+
+    // Our Encoder Keep spewing Out Frames with TS of Zero Even when
+    // The input is not there. We need to keep track when to capture
     // and when Stop The Capture.
     bool                                CaptureFrames;
     DumpData                            *pdumpES;
     VIDEO_ENCODER_START_PARAMS          EncoderStartParams;
-private: 
+private:
     unsigned int    RetriveFrameFromHardware();
     void            StartCaptureFrames();
     void            StopCaptureFrames();
@@ -171,13 +212,13 @@ private:
 
     bool            ShouldDiscardFrame(PNEXUS_ENCODED_VIDEO_FRAME pCheckFr);
     bool            GetFrameStart(NEXUS_VideoEncoderDescriptor *,size_t, Encode_Frame_Type, unsigned int *);
-    
+
     bool            ReturnEncodedFrameSynchronized(PNEXUS_ENCODED_VIDEO_FRAME);
     bool            IsEncoderStarted();
 //    bool            DetectEOS();
 //    bool            FlushDecoder();
 //    void            PrintAudioMuxOutFrame(const NEXUS_AudioMuxOutputFrame *);
-//    void            PrintFrame(const PNEXUS_DECODED_AUDIO_FRAME); 
+//    void            PrintFrame(const PNEXUS_DECODED_AUDIO_FRAME);
     void            PrintVideoEncoderStatus();
 
 };

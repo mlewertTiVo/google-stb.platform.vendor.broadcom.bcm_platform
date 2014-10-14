@@ -1,3 +1,43 @@
+/******************************************************************************
+* (c) 2014 Broadcom Corporation
+*
+* This program is the proprietary software of Broadcom Corporation and/or its
+* licensors, and may only be used, duplicated, modified or distributed pursuant
+* to the terms and conditions of a separate, written license agreement executed
+* between you and Broadcom (an "Authorized License").  Except as set forth in
+* an Authorized License, Broadcom grants no license (express or implied), right
+* to use, or waiver of any kind with respect to the Software, and Broadcom
+* expressly reserves all rights in and to the Software and all intellectual
+* property rights therein.  IF YOU HAVE NO AUTHORIZED LICENSE, THEN YOU
+* HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY WAY, AND SHOULD IMMEDIATELY
+* NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.
+*
+* Except as expressly set forth in the Authorized License,
+*
+* 1. This program, including its structure, sequence and organization,
+*    constitutes the valuable trade secrets of Broadcom, and you shall use all
+*    reasonable efforts to protect the confidentiality thereof, and to use
+*    this information only in connection with your use of Broadcom integrated
+*    circuit products.
+*
+* 2. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS"
+*    AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR
+*    WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT
+*    TO THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED
+*    WARRANTIES OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A
+*    PARTICULAR PURPOSE, LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET
+*    ENJOYMENT, QUIET POSSESSION OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME
+*    THE ENTIRE RISK ARISING OUT OF USE OR PERFORMANCE OF THE SOFTWARE.
+*
+* 3. TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS
+*    LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT,
+*    OR EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO
+*    YOUR USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN
+*    ADVISED OF THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS
+*    OF THE AMOUNT ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER
+*    IS GREATER. THESE LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF
+*    ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
+******************************************************************************/
 
 #include <utils/Log.h>
 #include "PESConverter.h"
@@ -25,12 +65,12 @@ PESConverter::CommonInit()
     }
 
     AccumulatorObject = batom_accum_create(AtomFactory);
-    if (!AccumulatorObject) 
-    { 
+    if (!AccumulatorObject)
+    {
         AccumulatorObject = 0;
         LOG_ERROR("Constructor Failed Failed to create accumulator object!!");
         ObjState = state_init_err_accum_create;
-        return; 
+        return;
     }
     ObjState = state_init_success;
     return;
@@ -87,7 +127,7 @@ bool PESConverter::InitiatePESHeader(unsigned int pts, size_t pktSz)
     if(pts)
     {
         uint64_t pts_45Khz = CALCULATE_PTS(pts);
-        
+
 //         LOG_INFO("%s Calculated PTS for PES :%lld For VideoPID:%d",
 //             __FUNCTION__,pts_45Khz,VideoPID);
 
@@ -97,23 +137,23 @@ bool PESConverter::InitiatePESHeader(unsigned int pts, size_t pktSz)
 
     pes_header_len = bmedia_pes_header_init(pesHeader, pktSz, &pes_info);
     batom_accum_clear(AccumulatorObject);
-    batom_accum_add_range(AccumulatorObject, pesHeader, pes_header_len); 
+    batom_accum_add_range(AccumulatorObject, pesHeader, pes_header_len);
     return true;
-}   
+}
 
 size_t
-PESConverter::ProcessESData(unsigned int pts, 
-                            unsigned char *pBuffer, 
+PESConverter::ProcessESData(unsigned int pts,
+                            unsigned char *pBuffer,
                             size_t bufferSz)
 {
     size_t   PESDataSz=0;
-    
+
     if(!ValidateState())
     {
         LOG_ERROR("%s Invalid Object State :%d",__FUNCTION__,ObjState);
         return 0;
     }
-    
+
     if( (!pBuffer) || (!bufferSz))
     {
         LOG_ERROR("%s: Invalid Parameters",__FUNCTION__);
@@ -147,25 +187,25 @@ PESConverter::getPESDataLen()
 
 
 /************************************************************************
-* Summary: The function copies the PES data to the provided buffer. 
-* Returns Amount of data to be copied which may be less than the 
+* Summary: The function copies the PES data to the provided buffer.
+* Returns Amount of data to be copied which may be less than the
 * required size in case there is less data. This is a safe copy
-* In case the data is more and the provided buffer is less only 
-* the data equal to the size of the provided buffer will be 
-* copied.   
+* In case the data is more and the provided buffer is less only
+* the data equal to the size of the provided buffer will be
+* copied.
 *************************************************************************/
 
-size_t 
+size_t
 PESConverter::CopyPESData(void *pBuffer, size_t bufferSz)
 {
     size_t copiedSz=0;
-    
+
     if(!ValidateState())
     {
         LOG_ERROR("%s Invalid Object State :%d",__FUNCTION__,ObjState);
         return 0;
     }
-    
+
     if( (!pBuffer) || (!bufferSz))
     {
         LOG_ERROR("%s: Invalid Parameters",__FUNCTION__);
@@ -182,13 +222,13 @@ PESConverter::SendPESDataToHardware()
     void            *pPlayPumpBuffer=NULL;
     size_t          PlayPumpBuffSz=0, PESDataLen=0;
     unsigned int    RetryCnt=700;
-    
+
     if(!ValidateState())
     {
         LOG_ERROR("%s Invalid Object State :%d",__FUNCTION__,ObjState);
         return false;
     }
-    
+
     if (!NxPlayPumpHandle)
     {
         LOG_ERROR("%s: Invalid Parameters [NULL PlayPump To Send Data]",__FUNCTION__);
@@ -224,9 +264,9 @@ PESConverter::SendPESDataToHardware()
             if ( (RetryCnt > 50) && (RetryCnt < 60)) BKNI_Sleep(3);
             continue;
         }
-                
+
         copiedSz = CopyPESData((unsigned char *)pPlayPumpBuffer,PlayPumpBuffSz);
-        
+
         if(copiedSz)
         {
             NEXUS_Error rc = NEXUS_Playpump_WriteComplete(NxPlayPumpHandle, 0, copiedSz);
@@ -241,7 +281,7 @@ PESConverter::SendPESDataToHardware()
         //LOG_INFO("%s PES-Data-Len II :%d",__FUNCTION__,PESDataLen);
 
         if(PESDataLen)
-        { 
+        {
             LOG_INFO("%s More Data To Write:%d",__FUNCTION__,PESDataLen);
         }
     }
@@ -265,7 +305,7 @@ PESConverter::DetectInputFifioFull(size_t requestedSz)
     }
 
     rc = NEXUS_Playpump_GetStatus(NxPlayPumpHandle, &playpumpStatus);
-    if (rc != NEXUS_SUCCESS) 
+    if (rc != NEXUS_SUCCESS)
     {
         LOG_ERROR("%s : BCMESPlayer::sendData: NEXUS_Playpump_GetStatus failed!!",__FUNCTION__);
         return true; /*Assume FIFO is FULL*/
@@ -280,7 +320,7 @@ PESConverter::DetectInputFifioFull(size_t requestedSz)
     {
 //         ..LOG_ERROR("%s : FIFO FULL CONDITION HIT [FD:%d TSH:%d FS:%d] SizeToChk:%d EmptySz:%d !!",__FUNCTION__,
 //             playpumpStatus.fifoDepth, TshFifoFull, playpumpStatus.fifoSize,SizeToChk,EmptySz);
-        
+
         return true;
     }
 
@@ -291,7 +331,7 @@ bool
 PESConverter::NotifyEOS()
 {
     unsigned char * b_eos_filler;
-    unsigned char b_eos_h264[4] = 
+    unsigned char b_eos_h264[4] =
     {
         0x00, 0x00, 0x01, 0x0A
     };
@@ -322,7 +362,7 @@ PESConverter::NotifyEOS()
 
     InitiatePESHeader(0, 16 * 256);
 
-    for(unsigned i = 0; i < 16; i++) 
+    for(unsigned i = 0; i < 16; i++)
     {
         batom_accum_add_range(AccumulatorObject, b_eos_h264, 256);
     }

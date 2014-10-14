@@ -1,3 +1,43 @@
+/******************************************************************************
+* (c) 2014 Broadcom Corporation
+*
+* This program is the proprietary software of Broadcom Corporation and/or its
+* licensors, and may only be used, duplicated, modified or distributed pursuant
+* to the terms and conditions of a separate, written license agreement executed
+* between you and Broadcom (an "Authorized License").  Except as set forth in
+* an Authorized License, Broadcom grants no license (express or implied), right
+* to use, or waiver of any kind with respect to the Software, and Broadcom
+* expressly reserves all rights in and to the Software and all intellectual
+* property rights therein.  IF YOU HAVE NO AUTHORIZED LICENSE, THEN YOU
+* HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY WAY, AND SHOULD IMMEDIATELY
+* NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.
+*
+* Except as expressly set forth in the Authorized License,
+*
+* 1. This program, including its structure, sequence and organization,
+*    constitutes the valuable trade secrets of Broadcom, and you shall use all
+*    reasonable efforts to protect the confidentiality thereof, and to use
+*    this information only in connection with your use of Broadcom integrated
+*    circuit products.
+*
+* 2. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS"
+*    AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR
+*    WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT
+*    TO THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED
+*    WARRANTIES OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A
+*    PARTICULAR PURPOSE, LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET
+*    ENJOYMENT, QUIET POSSESSION OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME
+*    THE ENTIRE RISK ARISING OUT OF USE OR PERFORMANCE OF THE SOFTWARE.
+*
+* 3. TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS
+*    LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT,
+*    OR EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO
+*    YOUR USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN
+*    ADVISED OF THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS
+*    OF THE AMOUNT ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER
+*    IS GREATER. THESE LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF
+*    ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
+******************************************************************************/
 
 #include "OMXNexusDecoder.h"
 #include <utils/Log.h>
@@ -8,8 +48,8 @@
 #define BCM_OMX_NEXUS_DECODER_H265_ASK_4K_DEFAULT "0"
 
 //Path level Debug Messages
-#define LOG_START_STOP_DBG  
-#define LOG_EOS_DBG             ALOGD         
+#define LOG_START_STOP_DBG
+#define LOG_EOS_DBG             ALOGD
 #define LOG_FLUSH_MSGS          ALOGD
 #define LOG_CREATE_DESTROY      ALOGD
 
@@ -18,7 +58,7 @@
 #define LOG_ERROR               ALOGD
 #define LOG_INFO
 
-#define LOG_EVERY_DELIVERY      
+#define LOG_EVERY_DELIVERY
 
 //Enable logging for output time stamps on every frame.8
 #define LOG_OUTPUT_TS
@@ -68,35 +108,35 @@ OMXNexusDecoder::OMXNexusDecoder(char const *CallerName, NEXUS_VideoCodec NxCode
     b_refsw_client_connect_resource_settings    connectSettings;
 
     //Validate the Nexus Codec Passed.
-    BCMOMX_DBG_ASSERT((NxCodec > NEXUS_VideoCodec_eNone) && (NxCodec < NEXUS_VideoCodec_eMax)); 
+    BCMOMX_DBG_ASSERT((NxCodec > NEXUS_VideoCodec_eNone) && (NxCodec < NEXUS_VideoCodec_eMax));
 
     NxVideoCodec = NxCodec;
 
     ipcclient= NexusIPCClientFactory::getClient(CallerName);
-    
+
     BKNI_Memset(&config, 0, sizeof(config));
     BKNI_Snprintf(config.name.string,sizeof(config.name.string),CallerName);
     config.resources.screen.required = true;
     config.resources.audioDecoder = false;
-    config.resources.audioPlayback = false;            
+    config.resources.audioPlayback = false;
     config.resources.videoDecoder = true;
     nexus_client = ipcclient->createClientContext(&config);
 
-    if (nexus_client == NULL) 
+    if (nexus_client == NULL)
     {
-        LOG_ERROR("%s Decoder[%d]: Could not create client \"%s\" context!", 
+        LOG_ERROR("%s Decoder[%d]: Could not create client \"%s\" context!",
                   __FUNCTION__,DecoderID, ipcclient->getClientName());
         LastErr = ErrStsClientCreateFail;
         return;
     }else {
-        LOG_CREATE_DESTROY("%s Decoder[%d]: OMX client \"%s\" context created successfully: client=0x%p", 
+        LOG_CREATE_DESTROY("%s Decoder[%d]: OMX client \"%s\" context created successfully: client=0x%p",
                  __FUNCTION__, DecoderID, ipcclient->getClientName(), nexus_client);
     }
 
     decoHandle = ipcclient->acquireVideoDecoderHandle();
-    if ( NULL == decoHandle )    
-    {        
-        LOG_ERROR("%s Decoder[%d]:Unable to acquire Simple Video Decoder \n",__FUNCTION__,DecoderID); 
+    if ( NULL == decoHandle )
+    {
+        LOG_ERROR("%s Decoder[%d]:Unable to acquire Simple Video Decoder \n",__FUNCTION__,DecoderID);
         LastErr = ErrStsDecoAcquireFail;
         return;
     }else{
@@ -109,11 +149,11 @@ OMXNexusDecoder::OMXNexusDecoder(char const *CallerName, NEXUS_VideoCodec NxCode
     LOG_CREATE_DESTROY("%s Decoder[%d]: Server Assigned Decoder ID:%p", __FUNCTION__,DecoderID,client_info.videoDecoderId);
     connectSettings.simpleVideoDecoder[0].id = client_info.videoDecoderId;
     connectSettings.simpleVideoDecoder[0].surfaceClientId = client_info.surfaceClientId;
-    connectSettings.simpleVideoDecoder[0].windowId = DecoderID; 
+    connectSettings.simpleVideoDecoder[0].windowId = DecoderID;
 
-    connectSettings.simpleVideoDecoder[0].windowCaps.type = 
+    connectSettings.simpleVideoDecoder[0].windowCaps.type =
         (DecoderID == 0) ? eVideoWindowType_eMain : eVideoWindowType_ePip;
-    if (true != ipcclient->connectClientResources(nexus_client, &connectSettings)) 
+    if (true != ipcclient->connectClientResources(nexus_client, &connectSettings))
     {
         LOG_ERROR("%s Decoder[%d]: Could not connect client \"%s\" resources!",
             __FUNCTION__,DecoderID, ipcclient->getClientName());
@@ -150,18 +190,18 @@ OMXNexusDecoder::OMXNexusDecoder(char const *CallerName, NEXUS_VideoCodec NxCode
 
 #endif
 
-    for (unsigned int i=0; i < DECODE_DEPTH; i++) 
+    for (unsigned int i=0; i < DECODE_DEPTH; i++)
     {
-        PNEXUS_DECODED_FRAME pDecoFr = (PNEXUS_DECODED_FRAME) 
+        PNEXUS_DECODED_FRAME pDecoFr = (PNEXUS_DECODED_FRAME)
                         malloc(sizeof(NEXUS_DECODED_FRAME));
-        if (!pDecoFr) 
+        if (!pDecoFr)
         {
             LOG_ERROR("%s Decoder[%d]: Memory Allocation Failure",__FUNCTION__, DecoderID);
             RemoveDecoderFromList();
             LastErr = ErrStsOutOfResource;
             return;
         }
-        pDecoFr->BuffState = BufferState_Init; 
+        pDecoFr->BuffState = BufferState_Init;
         InitializeListHead(&pDecoFr->ListEntry);
         InsertHeadList(&EmptyFrList,&pDecoFr->ListEntry);
         EmptyFrListLen++;
@@ -196,7 +236,7 @@ OMXNexusDecoder::~OMXNexusDecoder()
     ipcclient->destroyClientContext(nexus_client);
 
     //The Whole Free List Goes Away
-    while (!IsListEmpty(&EmptyFrList)) 
+    while (!IsListEmpty(&EmptyFrList))
     {
         PLIST_ENTRY ThisEntry =  RemoveTailList(&EmptyFrList);
         EmptyFrListLen--;
@@ -233,7 +273,7 @@ OMXNexusDecoder::~OMXNexusDecoder()
         PNEXUS_DECODED_FRAME pDecoFr = CONTAINING_RECORD(ThisEntry,NEXUS_DECODED_FRAME,ListEntry);
         free(pDecoFr);
     }
-    
+
     delete ipcclient;
     LOG_CREATE_DESTROY("%s Decoder[%d]: EXIT ===",__FUNCTION__,DecoderID);
 }
@@ -242,14 +282,14 @@ OMXNexusDecoder::~OMXNexusDecoder()
 bool
 OMXNexusDecoder::RegisterDecoderEventListener(DecoderEventsListener * RgstLstnr)
 {
-    if (!RgstLstnr) 
+    if (!RgstLstnr)
     {
         LOG_ERROR("%s Decoder[%d]: --Invalid Input Parameter--",__FUNCTION__,DecoderID);
         LastErr = ErrStsInvalidParam;
         return false;
     }
 
-    if (DecoEvtLisnr) 
+    if (DecoEvtLisnr)
     {
         LOG_ERROR("%s Decoder[%d]: --Listener Already Registered--",__FUNCTION__,DecoderID);
         LastErr = ErrStsInvalidParam;
@@ -261,7 +301,7 @@ OMXNexusDecoder::RegisterDecoderEventListener(DecoderEventsListener * RgstLstnr)
 }
 
 
-bool 
+bool
 OMXNexusDecoder::StartDecoder(unsigned int ClientParam)
 {
     LOG_START_STOP_DBG("%s %d Decoder[%d]: With PID:%p",
@@ -286,10 +326,10 @@ OMXNexusDecoder::StartDecoder(NEXUS_PidChannelHandle videoPIDChannel)
 
     NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&videoProgram);
     //videoProgram.settings.codec = NEXUS_VideoCodec_eH264;
-    videoProgram.settings.codec = NxVideoCodec; 
+    videoProgram.settings.codec = NxVideoCodec;
     videoProgram.settings.pidChannel = videoPIDChannel;
     videoProgram.settings.appDisplayManagement = true; /* Set this so that you can get the frames back.*/
-    videoProgram.displayEnabled=true;                  /* False for soft gfx */ 
+    videoProgram.displayEnabled=true;                  /* False for soft gfx */
 
     /* can't support two decoders if all are H265 format. */
     if (NEXUS_VideoCodec_eH265 == NxVideoCodec)
@@ -324,7 +364,7 @@ void
 OMXNexusDecoder::StopDecoder()
 {
     NEXUS_Error nxErr = NEXUS_SUCCESS;
-    
+
     if(IsDecoderStarted())
     {
         LOG_START_STOP_DBG("%s %d Decoder[%d]: Issuing StopDecoder To hardware 0x%x",
@@ -336,7 +376,7 @@ OMXNexusDecoder::StopDecoder()
 bool
 OMXNexusDecoder::FrameAlreadyExist(PLIST_ENTRY pListHead, PNEXUS_DECODED_FRAME pNxDecFrame)
 {
-    if (IsListEmpty(pListHead)) 
+    if (IsListEmpty(pListHead))
     {
         return false;
     }
@@ -351,7 +391,7 @@ OMXNexusDecoder::UnPauseDecoder()
     NEXUS_VideoDecoderTrickState DecoTrickState;
     NEXUS_SimpleVideoDecoder_GetTrickState(decoHandle,&DecoTrickState);
 
-    if (DecoTrickState.rate) 
+    if (DecoTrickState.rate)
     {
         LOG_ERROR("%s Decoder[%d]: Decoder Already UnPaused",__FUNCTION__,DecoderID);
         return true; //Not Really An Error
@@ -359,10 +399,10 @@ OMXNexusDecoder::UnPauseDecoder()
 
     DecoTrickState.rate = NEXUS_NORMAL_DECODE_RATE;
     NxErr = NEXUS_SimpleVideoDecoder_SetTrickState(decoHandle,&DecoTrickState);
-    if (NEXUS_SUCCESS == NxErr) 
+    if (NEXUS_SUCCESS == NxErr)
     {
         LOG_INFO("%s Decoder[%d]: Decoder UnPaused ==",__FUNCTION__,DecoderID);
-        return true; 
+        return true;
     }
 
     LOG_ERROR("%s Decoder[%d]: Decoder UnPause Failed ==",__FUNCTION__,DecoderID);
@@ -376,7 +416,7 @@ OMXNexusDecoder::PauseDecoder()
     NEXUS_VideoDecoderTrickState DecoTrickState;
     NEXUS_SimpleVideoDecoder_GetTrickState(decoHandle,&DecoTrickState);
 
-    if (!DecoTrickState.rate) 
+    if (!DecoTrickState.rate)
     {
         LOG_ERROR("%s Decoder[%d]: Decoder Already Paused",__FUNCTION__,DecoderID);
         return true; //Not Really An Error
@@ -384,10 +424,10 @@ OMXNexusDecoder::PauseDecoder()
 
     DecoTrickState.rate = 0;
     NxErr = NEXUS_SimpleVideoDecoder_SetTrickState(decoHandle,&DecoTrickState);
-    if (NEXUS_SUCCESS == NxErr) 
+    if (NEXUS_SUCCESS == NxErr)
     {
         LOG_INFO("%s Decoder[%d]: Decoder Paused ==",__FUNCTION__,DecoderID);
-        return true; 
+        return true;
     }
 
     LOG_ERROR("%s Decoder[%d]: Decoder Pause Failed ==",__FUNCTION__,DecoderID);
@@ -397,7 +437,7 @@ OMXNexusDecoder::PauseDecoder()
 bool
 OMXNexusDecoder::FlushDecoder()
 {
-    if (DecoEvtLisnr) DecoEvtLisnr->FlushStarted(); 
+    if (DecoEvtLisnr) DecoEvtLisnr->FlushStarted();
 
     StopDecoder();
     if (!StartDecoder(VideoPid))
@@ -406,7 +446,7 @@ OMXNexusDecoder::FlushDecoder()
         return false;
     }
 
-    if (DecoEvtLisnr) DecoEvtLisnr->FlushDone(); 
+    if (DecoEvtLisnr) DecoEvtLisnr->FlushDone();
 
     return true;
 }
@@ -414,7 +454,7 @@ OMXNexusDecoder::FlushDecoder()
 bool
 OMXNexusDecoder::Flush()
 {
-    LOG_FLUSH_MSGS("%s Decoder[%d]: FLUSH START", __FUNCTION__,DecoderID); 
+    LOG_FLUSH_MSGS("%s Decoder[%d]: FLUSH START", __FUNCTION__,DecoderID);
     Mutex::Autolock lock(mListLock);
     FlushCnt++;
 
@@ -428,11 +468,11 @@ OMXNexusDecoder::Flush()
     // accept anything that decoder returns after flush. The counter will automatically
     // normalize itself WRT the first frame received.
     NextExpectedFr=1;
-    
- 
+
+
     LOG_FLUSH_MSGS("%s Decoder[%d]: Flushing Delivered List",__FUNCTION__,DecoderID);
     //Process the Delivered List
-    while (!IsListEmpty(&DeliveredFrList)) 
+    while (!IsListEmpty(&DeliveredFrList))
     {
         PNEXUS_DECODED_FRAME pFrFromList = NULL;
         PLIST_ENTRY ThisEntry =  RemoveTailList(&DeliveredFrList);
@@ -440,11 +480,11 @@ OMXNexusDecoder::Flush()
         pFrFromList = CONTAINING_RECORD(ThisEntry,NEXUS_DECODED_FRAME,ListEntry);
         BCMOMX_DBG_ASSERT(pFrFromList);
         BCMOMX_DBG_ASSERT(pFrFromList->BuffState==BufferState_Delivered);
-        pFrFromList->BuffState = BufferState_Init; 
+        pFrFromList->BuffState = BufferState_Init;
 
         NEXUS_VideoDecoderReturnFrameSettings RetFrSetting;
         RetFrSetting.display = false;
-        
+
         LOG_FLUSH_MSGS("%s Decoder[%d]: Return [FLUSH-DROP] Frame [%d] Displayed:%s PTS:%lld [PTSValid:%d]",
                   __FUNCTION__,DecoderID,pFrFromList->FrStatus.serialNumber,
                        RetFrSetting.display ? "true":"false" ,
@@ -459,7 +499,7 @@ OMXNexusDecoder::Flush()
 
     LOG_FLUSH_MSGS("%s Decoder[%d]: Flushing Decoded List",__FUNCTION__,DecoderID);
     //Process the Decoded List
-    while (!IsListEmpty(&DecodedFrList)) 
+    while (!IsListEmpty(&DecodedFrList))
     {
         PNEXUS_DECODED_FRAME pFrFromList = NULL;
         PLIST_ENTRY ThisEntry =  RemoveTailList(&DecodedFrList);
@@ -468,7 +508,7 @@ OMXNexusDecoder::Flush()
         pFrFromList = CONTAINING_RECORD(ThisEntry,NEXUS_DECODED_FRAME,ListEntry);
         BCMOMX_DBG_ASSERT(pFrFromList);
         BCMOMX_DBG_ASSERT(pFrFromList->BuffState==BufferState_Decoded);
-        pFrFromList->BuffState = BufferState_Init; 
+        pFrFromList->BuffState = BufferState_Init;
 
         NEXUS_VideoDecoderReturnFrameSettings RetFrSetting;
         RetFrSetting.display = false;
@@ -484,7 +524,7 @@ OMXNexusDecoder::Flush()
         BCMOMX_DBG_ASSERT(EmptyFrListLen <= DECODE_DEPTH);
     }
 
-    if (EmptyFrListLen != DECODE_DEPTH) 
+    if (EmptyFrListLen != DECODE_DEPTH)
     {
         LOG_ERROR("%s Decoder[%d]: WE HAVE LOST SOME FRAMES ExpectedFLL[%d] RealFLL[%d]",
                  __FUNCTION__,DecoderID,
@@ -501,14 +541,14 @@ OMXNexusDecoder::Flush()
         FlushDecoder();
     }
 
-    LOG_FLUSH_MSGS("%s Decoder[%d]: FLUSH DONE", __FUNCTION__,DecoderID); 
+    LOG_FLUSH_MSGS("%s Decoder[%d]: FLUSH DONE", __FUNCTION__,DecoderID);
     return true;
 }
 
 
 #ifndef GENERATE_DUMMY_EOS
 // Return the BTP packet to the hardware if required....
-// Always called with lock held....From ReturnFrameSynchronised, we returning the 
+// Always called with lock held....From ReturnFrameSynchronised, we returning the
 // last packet to the hardware.
 
 void
@@ -543,14 +583,14 @@ bool OMXNexusDecoder::ReturnPacketsAfterEOS()
         RetFrSetting.display = false;
 
         LOG_EOS_DBG("%s Decoder[%d]: Returning Packet After EOS SeqNo:%d ClientFlags:%d Pts:%d",
-            __FUNCTION__, DecoderID, 
-            pRetPacket->FrStatus.serialNumber, 
+            __FUNCTION__, DecoderID,
+            pRetPacket->FrStatus.serialNumber,
             pRetPacket->ClientFlags,
             pRetPacket->FrStatus.pts);
 
         NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(decoHandle,&RetFrSetting,1);
             pRetPacket->BuffState = BufferState_Init;
-    
+
     //Return the Frame Back To Empty List
         InsertHeadList(&EmptyFrList, &pRetPacket->ListEntry);
         EmptyFrListLen++;
@@ -597,25 +637,25 @@ OMXNexusDecoder::ReturnFrameSynchronized(PNEXUS_DECODED_FRAME pNxDecFrame, bool 
         return false;
     }
 
-    while (!IsListEmpty(&DeliveredFrList)) 
+    while (!IsListEmpty(&DeliveredFrList))
     {
         bool Done=false;
         PNEXUS_DECODED_FRAME pFrFromList = NULL;
         PLIST_ENTRY ThisEntry =  RemoveTailList(&DeliveredFrList);
         pFrFromList = CONTAINING_RECORD(ThisEntry,NEXUS_DECODED_FRAME,ListEntry);
 
-        if ( (pFrFromList) && 
+        if ( (pFrFromList) &&
              (pFrFromList->FrStatus.serialNumber <= pNxDecFrame->FrStatus.serialNumber))
         {
             NEXUS_VideoDecoderReturnFrameSettings RetFrSetting;
             RetFrSetting.display = false;
 
-            if (pFrFromList->FrStatus.serialNumber == pNxDecFrame->FrStatus.serialNumber)     
+            if (pFrFromList->FrStatus.serialNumber == pNxDecFrame->FrStatus.serialNumber)
             {
                 Done = true;
                 if(true == FlagDispFrame) RetFrSetting.display = true;
-                
-                if (pFrFromList != pNxDecFrame) 
+
+                if (pFrFromList != pNxDecFrame)
                 {
                     LOG_ERROR("%s Decoder[%d]:: |**ERROR**| Frame Number Match But Addresses Dont!! This Should Never Happen!!",
                               __FUNCTION__,DecoderID);
@@ -624,9 +664,9 @@ OMXNexusDecoder::ReturnFrameSynchronized(PNEXUS_DECODED_FRAME pNxDecFrame, bool 
                 }
             }
 
-            if (!RetFrSetting.display) 
+            if (!RetFrSetting.display)
             {
-                LOG_WARNING("%s Decoder[%d]: Return [DROP] Frame [Addr:%p][SeqNo:%d] Displayed:%s PTS:%d [PTSValid:%d]", 
+                LOG_WARNING("%s Decoder[%d]: Return [DROP] Frame [Addr:%p][SeqNo:%d] Displayed:%s PTS:%d [PTSValid:%d]",
                             __FUNCTION__,DecoderID ,pFrFromList,
                             pFrFromList->FrStatus.serialNumber,
                             RetFrSetting.display ? "true":"false" ,
@@ -642,7 +682,7 @@ OMXNexusDecoder::ReturnFrameSynchronized(PNEXUS_DECODED_FRAME pNxDecFrame, bool 
 
             //Validate the Buffer State
             BCMOMX_DBG_ASSERT(pFrFromList->BuffState==BufferState_Delivered);
-            pFrFromList->BuffState = BufferState_Init; 
+            pFrFromList->BuffState = BufferState_Init;
 
 #ifndef GENERATE_DUMMY_EOS
             // The BTP Packet is never delivered to client, it is sitting in
@@ -657,7 +697,7 @@ OMXNexusDecoder::ReturnFrameSynchronized(PNEXUS_DECODED_FRAME pNxDecFrame, bool 
 
 #endif
 
-            NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(decoHandle,&RetFrSetting,1);   
+            NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(decoHandle,&RetFrSetting,1);
             //Return the Frame Back To Empty List
             InsertHeadList(&EmptyFrList,&pFrFromList->ListEntry);
             EmptyFrListLen++;
@@ -672,7 +712,7 @@ OMXNexusDecoder::ReturnFrameSynchronized(PNEXUS_DECODED_FRAME pNxDecFrame, bool 
                 ReturnPacketsAfterEOS();
             }
 #endif
-            
+
             if (Done) return true;
 
         }else{
@@ -680,12 +720,12 @@ OMXNexusDecoder::ReturnFrameSynchronized(PNEXUS_DECODED_FRAME pNxDecFrame, bool 
                       __FUNCTION__,DecoderID);
 
             //Inserting back in Tail ONLY HERE so that the list state is not
-            //changed. 
-            if(ThisEntry) InsertTailList(&DeliveredFrList,ThisEntry);   
-            return false; 
+            //changed.
+            if(ThisEntry) InsertTailList(&DeliveredFrList,ThisEntry);
+            return false;
         }
     }
-    
+
     LastErr = ErrStsRetFramesNoFrProcessed;
     return false;
 }
@@ -695,14 +735,14 @@ OMXNexusDecoder::DisplayFrame(PDISPLAY_FRAME pDispFr)
 {
     Mutex::Autolock lock(mListLock);
 
-    if (!pDispFr) 
+    if (!pDispFr)
     {
         LOG_ERROR("%s Decoder[%d]: Invalid Parameter In Display Frame",__FUNCTION__,DecoderID);
         LastErr = ErrStsInvalidParam;
         return false;
     }
 
-    if (!pDispFr->DecodedFr || (pDispFr->DisplayCnxt != this) )  
+    if (!pDispFr->DecodedFr || (pDispFr->DisplayCnxt != this) )
     {
         LOG_ERROR("%s Decoder[%d]: Nothing To Display %p %p %p!!",
                   __FUNCTION__,DecoderID,
@@ -714,7 +754,7 @@ OMXNexusDecoder::DisplayFrame(PDISPLAY_FRAME pDispFr)
         return false;
     }
 
-    if (false == IsDecoderStarted()) 
+    if (false == IsDecoderStarted())
     {
         LastErr = ErrStsDecoNotStarted;
         LOG_ERROR("%s Decoder[%d]: Decoder Not Started",__FUNCTION__,DecoderID);
@@ -722,8 +762,8 @@ OMXNexusDecoder::DisplayFrame(PDISPLAY_FRAME pDispFr)
     }
 
     LastErr = ErrStsSuccess;
-    PNEXUS_DECODED_FRAME pNxDecFrame = 
-        (PNEXUS_DECODED_FRAME) pDispFr->DecodedFr; 
+    PNEXUS_DECODED_FRAME pNxDecFrame =
+        (PNEXUS_DECODED_FRAME) pDispFr->DecodedFr;
 
     return ReturnFrameSynchronized(pNxDecFrame ,true);
 }
@@ -749,12 +789,12 @@ OMXNexusDecoder::CheckAndClearBufferState(PDISPLAY_FRAME pOutputFr)
     PNEXUS_DECODED_FRAME pProcessFr;
 
     Mutex::Autolock lock(mListLock);
-    
+
     //If we have not delivered anything, we have nothing to drop.
     if(IsListEmpty(&DeliveredFrList))
     {
-        // This is not an error. We are checking every frame for its state 
-        return; 
+        // This is not an error. We are checking every frame for its state
+        return;
     }
 
     pProcessFr = (PNEXUS_DECODED_FRAME) pOutputFr->DecodedFr;
@@ -772,14 +812,14 @@ OMXNexusDecoder::CheckAndClearBufferState(PDISPLAY_FRAME pOutputFr)
     {
         if(false == DropFrame(pProcessFr))
         {
-            LOG_ERROR("%s Decoder[%d]: Drop Frame Failed!!\n\n",__FUNCTION__,DecoderID);    
+            LOG_ERROR("%s Decoder[%d]: Drop Frame Failed!!\n\n",__FUNCTION__,DecoderID);
             BCMOMX_DBG_ASSERT(false);
         }
     }
-    
+
     if(BufferState_Init != pProcessFr->BuffState)
     {
-        LOG_ERROR("%s Decoder[%d]: INVALID BUFFER STATE----ASSERTING NOW!!!!\n\n",__FUNCTION__,DecoderID);    
+        LOG_ERROR("%s Decoder[%d]: INVALID BUFFER STATE----ASSERTING NOW!!!!\n\n",__FUNCTION__,DecoderID);
         BCMOMX_DBG_ASSERT(pProcessFr->BuffState == BufferState_Init);
     }
 }
@@ -793,13 +833,13 @@ OMXNexusDecoder::GetFramesFromHardware()
 
     Mutex::Autolock lock(mListLock);
 
-    if (!IsListEmpty(&EmptyFrList)) 
+    if (!IsListEmpty(&EmptyFrList))
         NumFramesToFetch = EmptyFrListLen;
 
     //
     // Decide on how many frame can you fetch...
     //
-    if (NumFramesToFetch > DECODE_DEPTH) 
+    if (NumFramesToFetch > DECODE_DEPTH)
     {
         LOG_ERROR("%s Decoder[%d]: ==ERROR== Trying To Fetch [%d] More Than The DECODE_DEPTH[%d] !!",
                   __FUNCTION__,DecoderID,NumFramesToFetch,DECODE_DEPTH);
@@ -814,19 +854,19 @@ OMXNexusDecoder::GetFramesFromHardware()
                     " Not pulling anymore frames!!", __FUNCTION__,DecoderID);
         return false;
     }
-    if (NumFramesToFetch) 
+    if (NumFramesToFetch)
     {
         unsigned int NumFramesOut;
         NEXUS_VideoDecoderFrameStatus OutFrameStatus[DECODE_DEPTH];
 
         errCode = NEXUS_SimpleVideoDecoder_GetDecodedFrames(decoHandle,
                                                     OutFrameStatus,
-                                                    NumFramesToFetch, 
+                                                    NumFramesToFetch,
                                                     &NumFramesOut);
 
         if (errCode == NEXUS_SUCCESS)
         {
-            for (unsigned int FrCnt=0 ; FrCnt < NumFramesOut ; FrCnt++) 
+            for (unsigned int FrCnt=0 ; FrCnt < NumFramesOut ; FrCnt++)
             {
                 PNEXUS_DECODED_FRAME    pFreeFr=NULL;
 
@@ -835,9 +875,9 @@ OMXNexusDecoder::GetFramesFromHardware()
                     continue;
                 }
 
-                if( (StartupTime != STARTUP_TIME_INVALID) && 
-                    (OutFrameStatus[FrCnt].pts < StartupTime) && 
-                    (false == OutFrameStatus[FrCnt].lastPicture) && 
+                if( (StartupTime != STARTUP_TIME_INVALID) &&
+                    (OutFrameStatus[FrCnt].pts < StartupTime) &&
+                    (false == OutFrameStatus[FrCnt].lastPicture) &&
                     (OutFrameStatus[FrCnt].ptsValid) )
                 {
                     LOG_WARNING("%s Decoder[%d]:  ========= WARNING THIS SHOULD NEVER HAPPEN ========== "
@@ -854,9 +894,9 @@ OMXNexusDecoder::GetFramesFromHardware()
                          IsListEmpty(&DecodedFrList) &&     //We Dont have any other frames in the Decoded List
                          IsListEmpty(&DeliveredFrList) )    //We Dont have any other frames in the delivered list
                     {
-                        NEXUS_VideoDecoderReturnFrameSettings RetFrSetting;                        
+                        NEXUS_VideoDecoderReturnFrameSettings RetFrSetting;
                         RetFrSetting.display = false;
-                        NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(decoHandle,&RetFrSetting,1);   
+                        NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(decoHandle,&RetFrSetting,1);
                     }else{
                         LOG_WARNING("%s: FramePts[%d] < StartupTime[%d]: Waiting For Queues To Drain",
                                   __FUNCTION__,
@@ -870,7 +910,7 @@ OMXNexusDecoder::GetFramesFromHardware()
 
                 //Get A Free Entry...
                 pListEntry =  RemoveTailList(&EmptyFrList);
-                if (!pListEntry) 
+                if (!pListEntry)
                 {
                     LOG_ERROR("%s Decoder[%d]: ==== ERROR Got A Frame But No Entry In Free List[%d]===",
                               __FUNCTION__,DecoderID,EmptyFrListLen);
@@ -881,10 +921,10 @@ OMXNexusDecoder::GetFramesFromHardware()
 
                 EmptyFrListLen--;
 
-                pFreeFr = CONTAINING_RECORD(pListEntry, NEXUS_DECODED_FRAME, ListEntry); 
+                pFreeFr = CONTAINING_RECORD(pListEntry, NEXUS_DECODED_FRAME, ListEntry);
                 pFreeFr->FrStatus = OutFrameStatus[FrCnt];
                 pFreeFr->ClientFlags=0;
-                pFreeFr->BuffState = BufferState_Decoded; 
+                pFreeFr->BuffState = BufferState_Decoded;
                 pFreeFr->MilliSecTS =0;
                 if(pFreeFr->FrStatus.ptsValid)
                 {
@@ -893,7 +933,7 @@ OMXNexusDecoder::GetFramesFromHardware()
                 }
 
                 NextExpectedFr =  pFreeFr->FrStatus.serialNumber + 1;
-                
+
 #ifndef GENERATE_DUMMY_EOS
                 if ((pFreeFr->FrStatus.lastPicture) || (IsEOSReceivedOnInput() &&
                      (pFreeFr->MilliSecTS == EOSFrameKey)))
@@ -904,12 +944,12 @@ OMXNexusDecoder::GetFramesFromHardware()
                         pFreeFr->FrStatus.serialNumber, pFreeFr->FrStatus.lastPicture,
                         EOSState, ClientFlags, pFreeFr->MilliSecTS, EOSFrameKey);
 
-                    
+
                     // We should always have the EOS on the input side
                     // Because only then we have sent the BTP/BPP packet to the hardware.
                     if(!EOSFrameKey)
                     {
-                         LOG_WARNING("%s [%d] Decoder[%d]: EOS Frame Key is Zero[%lld]. ", 
+                         LOG_WARNING("%s [%d] Decoder[%d]: EOS Frame Key is Zero[%lld]. ",
                                      __FUNCTION__, __LINE__, DecoderID,EOSFrameKey);
                     }
 
@@ -919,18 +959,18 @@ OMXNexusDecoder::GetFramesFromHardware()
                 }
 #endif
 
-                //Insert At Head... 
+                //Insert At Head...
                 InsertHeadList(&DecodedFrList,&pFreeFr->ListEntry);
                 DecodedFrListLen++;
                 BCMOMX_DBG_ASSERT(DecodedFrListLen <= DECODE_DEPTH);
 
                 LastErr = ErrStsSuccess;
 
-                LOG_OUTPUT_TS("%s Decoder[%d]: Accepted FRAME SeqNo:%d NxTimeStamp:%d Ts[Ms]:%lld ClientFlags:%d!!", 
+                LOG_OUTPUT_TS("%s Decoder[%d]: Accepted FRAME SeqNo:%d NxTimeStamp:%d Ts[Ms]:%lld ClientFlags:%d!!",
                               __FUNCTION__, DecoderID,
-                              pFreeFr->FrStatus.serialNumber, 
-                              pFreeFr->FrStatus.pts, 
-                              pFreeFr->MilliSecTS, 
+                              pFreeFr->FrStatus.serialNumber,
+                              pFreeFr->FrStatus.pts,
+                              pFreeFr->MilliSecTS,
                               pFreeFr->ClientFlags);
 
                 DebugCounter = (DebugCounter + 1) % DECODER_STATE_FREQ;
@@ -970,18 +1010,18 @@ OMXNexusDecoder::GetDecodedFrame(PDISPLAY_FRAME pOutFrame)
                     __FUNCTION__,DecoderID);
         return false;
     }
-   
+
 #endif
 
     //Deliver From DecodedQueue Tail (size -1)
-    if(!IsListEmpty(&DecodedFrList)) 
+    if(!IsListEmpty(&DecodedFrList))
     {
         PLIST_ENTRY DeliverEntry = RemoveTailList(&DecodedFrList);
         bool retVal = false;
         DecodedFrListLen--;
         BCMOMX_DBG_ASSERT(DecodedFrListLen <= DECODE_DEPTH);
 
-        if (DeliverEntry) 
+        if (DeliverEntry)
         {
             PNEXUS_DECODED_FRAME pDecoFr = CONTAINING_RECORD(DeliverEntry,
                                                              NEXUS_DECODED_FRAME, ListEntry);
@@ -1000,13 +1040,13 @@ OMXNexusDecoder::GetDecodedFrame(PDISPLAY_FRAME pOutFrame)
                 InsertHeadList(&DeliveredFrList, &pDecoFr->ListEntry);
                 LOG_EVERY_DELIVERY("%s Decoder[%d]: Delivered FRAME SeqNo:%d TimeStamp:%d pOutFrame->OutFlags:%d StartupTime:%d!!",
                                    __FUNCTION__, DecoderID,
-                                   pDecoFr->FrStatus.serialNumber, 
-                                   pDecoFr->FrStatus.pts, 
+                                   pDecoFr->FrStatus.serialNumber,
+                                   pDecoFr->FrStatus.pts,
                                    pOutFrame->OutFlags,
                                    StartupTime);
                 retVal = true;
             } else {
-                LOG_EVERY_DELIVERY("%s  Decoder[%d]: lastPicture Set, Not Delivering To Client Frame FRAME SeqNo:%d!!", 
+                LOG_EVERY_DELIVERY("%s  Decoder[%d]: lastPicture Set, Not Delivering To Client Frame FRAME SeqNo:%d!!",
                                    __FUNCTION__, DecoderID,
                                    pDecoFr->FrStatus.serialNumber);
                 InsertHeadList(&DeliveredFrList, &pDecoFr->ListEntry);
@@ -1060,10 +1100,10 @@ OMXNexusDecoder::GetFrameTimeStampMs(PDISPLAY_FRAME pFrame)
     return pNxDecoFr->MilliSecTS;
 }
 
-void 
+void
 OMXNexusDecoder::SetStartupTime(unsigned int StartTimeStamp)
 {
-    StartupTime = StartTimeStamp;    
+    StartupTime = StartTimeStamp;
     ReSetEOSState();
 }
 
@@ -1082,7 +1122,7 @@ OMXNexusDecoder::IsDecoderStarted()
     return false;
 }
 
-void 
+void
 OMXNexusDecoder::PrintDecoStats()
 {
     NEXUS_VideoDecoderStatus vdecStatus;
@@ -1102,13 +1142,13 @@ OMXNexusDecoder::PrintDecoStats()
     }
 }
 
-ErrorStatus 
+ErrorStatus
 OMXNexusDecoder::GetLastError()
 {
     return LastErr;
 }
 
-bool 
+bool
 OMXNexusDecoder::GetDecoSts(NEXUS_VideoDecoderStatus *vdecStatus)
 {
     NEXUS_Error nxErr = NEXUS_SUCCESS;
@@ -1118,23 +1158,23 @@ OMXNexusDecoder::GetDecoSts(NEXUS_VideoDecoderStatus *vdecStatus)
         LastErr = ErrStsSuccess;
         return true;
     }
-    
+
     LOG_ERROR("%s Decoder[%d]: Failed To Get Decoder State",__FUNCTION__,DecoderID);
     LastErr = ErrStsNexusGetDecoStsFailed;
     return false;
 }
 
 /**
- * InputEOSReceived: 
- * @brief : This function notifies that the EOS is received on 
+ * InputEOSReceived:
+ * @brief : This function notifies that the EOS is received on
  *       the input side. Any logic to enable the EOS detection
  *       in this class should start at this point.
- * 
- *  
- * @param ClientFlags : The Flags that are requied to be passed 
+ *
+ *
+ * @param ClientFlags : The Flags that are requied to be passed
  *                    back when the EOS Frame is detected.
- * 
- * @return bool 
+ *
+ * @return bool
  */
 
 void OMXNexusDecoder::InputEOSReceived(unsigned int ClientFlagsData,
@@ -1144,7 +1184,7 @@ void OMXNexusDecoder::InputEOSReceived(unsigned int ClientFlagsData,
                 __FUNCTION__, DecoderID, ClientFlagsData, EOSFrameKeyData);
 
     EOSReceivedOnInput();
-    //Save The Flags that Client Wants Us To Set In The 
+    //Save The Flags that Client Wants Us To Set In The
     //Output frames On Detection Of EOS.
     ClientFlags = ClientFlagsData;
     EOSFrameKey = EOSFrameKeyData;
@@ -1152,12 +1192,12 @@ void OMXNexusDecoder::InputEOSReceived(unsigned int ClientFlagsData,
     {
         LOG_WARNING("%s [%d] Decoder[%d]: EOS Frame Key Received is Zero[%lld]. "
                     "Next Frame With Zero TimeStamp Will be EOS Frame"
-                    ,__FUNCTION__, 
+                    ,__FUNCTION__,
                     __LINE__, DecoderID,
                     EOSFrameKey);
     }
     // Looks like Zero Time Stamp Is a Valid Test Case For the CTS Test. We cannot assert on that condition.
-    //BCMOMX_DBG_ASSERT(EOSFrameKey); 
+    //BCMOMX_DBG_ASSERT(EOSFrameKey);
 
 #ifdef GENERATE_DUMMY_EOS
     DownCnt = DOWN_CNT_DEPTH;
@@ -1178,15 +1218,15 @@ OMXNexusDecoder::DetectEOS()
     LOG_EOS_DBG("%s Decoder[%d]: EOSDetect[%s] ",
                 __FUNCTION__, DecoderID,
                 IsEOSReceivedOnInput() ? "TRUE":"FALSE");
-    
-    GetDecoSts(&VidDecoSts);    
-    if (VidDecoSts.started) 
+
+    GetDecoSts(&VidDecoSts);
+    if (VidDecoSts.started)
     {
         if (DownCnt)
         {
             DownCnt--;
         }else{
-            
+
             LOG_EOS_DBG("%s Decoder[%d]: --- EOS DETECTED ---",__FUNCTION__,DecoderID);
 
             //Just have to detect the EOS only once
@@ -1241,7 +1281,7 @@ OMXNexusDecoder::SourceChangedCallback()
 
 }
 
-unsigned int 
+unsigned int
 OMXNexusDecoder::GetDecoderID()
 {
     return DecoderID;
@@ -1251,9 +1291,9 @@ OMXNexusDecoder::AddDecoderToList()
 {
     List<OMXNexusDecoder *>::iterator it = DecoderInstanceList.begin();
     unsigned int minId = 0;
-    while (it != DecoderInstanceList.end()) 
+    while (it != DecoderInstanceList.end())
     {
-        if ((*it)->DecoderID == minId) 
+        if ((*it)->DecoderID == minId)
         {
             minId++;
             it = DecoderInstanceList.begin();
@@ -1269,9 +1309,9 @@ void
 OMXNexusDecoder::RemoveDecoderFromList()
 {
     List<OMXNexusDecoder *>::iterator it;
-    for (it = DecoderInstanceList.begin(); it != DecoderInstanceList.end(); it++) 
+    for (it = DecoderInstanceList.begin(); it != DecoderInstanceList.end(); it++)
     {
-        if ((*it)->DecoderID == DecoderID) 
+        if ((*it)->DecoderID == DecoderID)
         {
             DecoderInstanceList.erase(it);
             break;
@@ -1294,7 +1334,7 @@ DisplayBuffer (void *pInFrame, void *pInOMXNxDeco)
 
         return false;
     }
-        
+
     return pOMXNxDeco->DisplayFrame(pFrame);
 }
 

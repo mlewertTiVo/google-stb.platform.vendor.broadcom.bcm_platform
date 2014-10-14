@@ -1,6 +1,6 @@
 /******************************************************************************
  *    (c)2010-2013 Broadcom Corporation
- * 
+ *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
@@ -9,30 +9,30 @@
  * Software, and Broadcom expressly reserves all rights in and to the Software and all
  * intellectual property rights therein.  IF YOU HAVE NO AUTHORIZED LICENSE, THEN YOU
  * HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY WAY, AND SHOULD IMMEDIATELY
- * NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.  
- *  
+ * NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.
+ *
  * Except as expressly set forth in the Authorized License,
- *  
+ *
  * 1.     This program, including its structure, sequence and organization, constitutes the valuable trade
  * secrets of Broadcom, and you shall use all reasonable efforts to protect the confidentiality thereof,
  * and to use this information only in connection with your use of Broadcom integrated circuit products.
- *  
- * 2.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS" 
- * AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR 
- * WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT TO 
- * THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED WARRANTIES 
- * OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A PARTICULAR PURPOSE, 
- * LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET ENJOYMENT, QUIET POSSESSION 
- * OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME THE ENTIRE RISK ARISING OUT OF 
+ *
+ * 2.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS"
+ * AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR
+ * WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT TO
+ * THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED WARRANTIES
+ * OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A PARTICULAR PURPOSE,
+ * LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET ENJOYMENT, QUIET POSSESSION
+ * OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME THE ENTIRE RISK ARISING OUT OF
  * USE OR PERFORMANCE OF THE SOFTWARE.
- * 
- * 3.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS 
- * LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT, OR 
- * EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO YOUR 
- * USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN ADVISED OF 
- * THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS OF THE AMOUNT 
- * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE 
- * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
+ *
+ * 3.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS
+ * LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT, OR
+ * EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO YOUR
+ * USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN ADVISED OF
+ * THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS OF THE AMOUNT
+ * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE
+ * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
  ******************************************************************************/
 
@@ -48,7 +48,7 @@
 #include "gralloc.h"
 #include "GraphicBuffer.h"
 
-   
+
 #include <utils/Log.h>
 #include <utils/List.h>
 
@@ -91,7 +91,7 @@ typedef struct _CODEC_TO_MIME_MAP_
     OMX_STRING              Mime;
 }CODEC_TO_MIME_MAP,*PCODEC_TO_MIME_MAP;
 
-static const CODEC_TO_MIME_MAP CodecToMIME[] = 
+static const CODEC_TO_MIME_MAP CodecToMIME[] =
 {
     {OMX_VIDEO_CodingUnused,            NULL                    },
     {OMX_VIDEO_CodingAutoDetect,        NULL                    },
@@ -117,7 +117,7 @@ static const CODEC_TO_MIME_MAP CodecToMIME[] =
 typedef struct _OMX_TO_NEXUS_MAP_
 {
     OMX_VIDEO_CODINGTYPE   OMxCoding;
-    NEXUS_VideoCodec       NexusCodec; 
+    NEXUS_VideoCodec       NexusCodec;
 }OMX_TO_NEXUS_MAP, *POMX_TO_NEXUS_MAP;
 
 static const OMX_TO_NEXUS_MAP OMXToNexusTable[] = {
@@ -206,7 +206,7 @@ extern "C"
 
 
     OMX_ERRORTYPE OMX_VDEC_SetCallbacks(OMX_IN  OMX_HANDLETYPE hComponent,
-            OMX_IN  OMX_CALLBACKTYPE* pCallbacks, 
+            OMX_IN  OMX_CALLBACKTYPE* pCallbacks,
             OMX_IN  OMX_PTR pAppData);
 
     OMX_ERRORTYPE OMX_VDEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent);
@@ -280,7 +280,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
             ,"disabled");
 #endif
 
-    pComp->SetParameter         = OMX_VDEC_SetParameter;        
+    pComp->SetParameter         = OMX_VDEC_SetParameter;
     pComp->GetParameter         = OMX_VDEC_GetParameter;
     pComp->GetExtensionIndex    = OMX_VDEC_GetExtensionIndex;
     pComp->SendCommand          = OMX_VDEC_SendCommand;
@@ -299,12 +299,12 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     // Empty Buffer Done
     // Fill Buffer Done
 
-    // Initialize component data structures to default values 
+    // Initialize component data structures to default values
     OMX_CONF_INIT_STRUCT_PTR(&pMyData->sPortParam, OMX_PORT_PARAM_TYPE);
     pMyData->sPortParam.nPorts = 0x2;
     pMyData->sPortParam.nStartPortNumber = 0x0;
 
-    // Initialize the video parameters for input port 
+    // Initialize the video parameters for input port
     OMX_CONF_INIT_STRUCT_PTR(&pMyData->sInPortDef, OMX_PARAM_PORTDEFINITIONTYPE);
     pMyData->sInPortDef.nPortIndex = 0x0;
     pMyData->sInPortDef.bEnabled = OMX_TRUE;
@@ -334,7 +334,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sInPortFormat.eColorFormat = OMX_COLOR_FormatUnused;
     pMyData->sInPortFormat.nIndex=0;            //N-1 Where N Is the number of formats supported. We only Support One format for Now.
     pMyData->sInPortFormat.xFramerate=0;
-    pMyData->sInPortFormat.nPortIndex=0;    
+    pMyData->sInPortFormat.nPortIndex=0;
 
     //Set The Output Port Format Structure
     OMX_CONF_INIT_STRUCT_PTR(&pMyData->sOutPortFormat, OMX_VIDEO_PARAM_PORTFORMATTYPE);
@@ -342,7 +342,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sOutPortFormat.eColorFormat = OMX_COLOR_FormatMonochrome;
     pMyData->sOutPortFormat.nIndex=0;            //N-1 Where N Is the number of formats supported. We only Support One format for Now.
     pMyData->sOutPortFormat.xFramerate=0;
-    pMyData->sOutPortFormat.nPortIndex=1;    
+    pMyData->sOutPortFormat.nPortIndex=1;
 
     // Initialize the video parameters for output port
     OMX_CONF_INIT_STRUCT_PTR(&pMyData->sOutPortDef, OMX_PARAM_PORTDEFINITIONTYPE);
@@ -351,7 +351,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sOutPortDef.bPopulated = OMX_FALSE;
     pMyData->sOutPortDef.eDomain = OMX_PortDomainVideo;
     pMyData->sOutPortDef.eDir = OMX_DirOutput;
-    pMyData->sOutPortDef.nBufferCountMin = NUM_OUT_BUFFERS; 
+    pMyData->sOutPortDef.nBufferCountMin = NUM_OUT_BUFFERS;
     pMyData->sOutPortDef.nBufferCountActual = NUM_OUT_BUFFERS;
 
 
@@ -375,7 +375,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
 
 #else
     /* We are getting eColorFormat value as pixelFormat in Gralloc without proper conversion. Appropriate value of
-       eColorFormat would be OMX_COLOR_Format16bitRGB565. However, pixelFormat 
+       eColorFormat would be OMX_COLOR_Format16bitRGB565. However, pixelFormat
        HAL_PIXEL_FORMAT_RGBA_5551 is not supported in Gralloc. Hence setting ecolorFormat to
        OMX_COLOR_FormatMonochrome, which has same value as of HAL_PIXEL_FORMAT_RGBA_8888
        in pixelFormat and supported in Gralloc. */
@@ -386,10 +386,10 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
 
     pMyData->sOutPortDef.format.video.pNativeWindow = NULL;
 
-    // Initialize the input buffer list 
+    // Initialize the input buffer list
     BKNI_Memset(&(pMyData->sInBufList), 0x0, sizeof(BufferList));
     pMyData->sInBufList.pBufHdr = (OMX_BUFFERHEADERTYPE**)
-        BKNI_Malloc(sizeof(OMX_BUFFERHEADERTYPE*)* pMyData->sInPortDef.nBufferCountActual);  
+        BKNI_Malloc(sizeof(OMX_BUFFERHEADERTYPE*)* pMyData->sInPortDef.nBufferCountActual);
 
     if(pMyData->sInBufList.pBufHdr == NULL)
     {
@@ -399,8 +399,8 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
 
     }
 
-    pMyData->pInBufHdrRes = (OMX_BUFFERHEADERTYPE**) 
-        BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * NUM_IN_BUFFERS); 
+    pMyData->pInBufHdrRes = (OMX_BUFFERHEADERTYPE**)
+        BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * NUM_IN_BUFFERS);
 
     if(pMyData->pInBufHdrRes == NULL)
     {
@@ -408,10 +408,10 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
         eError = OMX_ErrorInsufficientResources;
         goto EXIT;
     }
-        
+
     for (nIndex = 0; nIndex < pMyData->sInPortDef.nBufferCountActual; nIndex++)
     {
-        pMyData->sInBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*) 
+        pMyData->sInBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
             malloc(sizeof(OMX_BUFFERHEADERTYPE));
         OMX_CONF_INIT_STRUCT_PTR (pMyData->sInBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
     }
@@ -421,15 +421,15 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sInBufList.nListEnd = -1;
     pMyData->sInBufList.nWritePos = -1;
     pMyData->sInBufList.nReadPos = -1;
-    pMyData->sInBufList.eDir = OMX_DirInput;    
+    pMyData->sInBufList.eDir = OMX_DirInput;
 
-    // Initialize the output buffer list 
+    // Initialize the output buffer list
     BKNI_Memset(&(pMyData->sOutBufList), 0x0, sizeof(BufferList));
-    pMyData->sOutBufList.pBufHdr = (OMX_BUFFERHEADERTYPE**) 
-        BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * MAX_NUM_OUT_BUFFERS); 
+    pMyData->sOutBufList.pBufHdr = (OMX_BUFFERHEADERTYPE**)
+        BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * MAX_NUM_OUT_BUFFERS);
 
-    pMyData->pOutBufHdrRes= (OMX_BUFFERHEADERTYPE**) 
-        BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * MAX_NUM_OUT_BUFFERS); 
+    pMyData->pOutBufHdrRes= (OMX_BUFFERHEADERTYPE**)
+        BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * MAX_NUM_OUT_BUFFERS);
 
 
     if(pMyData->sOutBufList.pBufHdr == NULL)
@@ -442,7 +442,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
 
     for (nIndex = 0; nIndex < MAX_NUM_OUT_BUFFERS; nIndex++)
     {
-        pMyData->sOutBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*) 
+        pMyData->sOutBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
             malloc(sizeof(OMX_BUFFERHEADERTYPE));
 
         if(pMyData->sOutBufList.pBufHdr[nIndex] == NULL)
@@ -462,7 +462,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sOutBufList.nReadPos = -1;
     pMyData->sOutBufList.eDir = OMX_DirOutput;
 
-    // Create the pipe used to send commands to the thread 
+    // Create the pipe used to send commands to the thread
     err = pipe((int*)pMyData->cmdpipe);
     if (err)
     {
@@ -470,7 +470,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
         goto EXIT;
     }
 
-    // Create the pipe used to send command data to the thread 
+    // Create the pipe used to send command data to the thread
     err = pipe((int*)pMyData->cmddatapipe);
     if (err)
     {
@@ -478,7 +478,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
         goto EXIT;
     }
 
-    // Create the component thread 
+    // Create the component thread
     err = pthread_create(&pMyData->thread_id, NULL, ComponentThread, pMyData);
     if( err || !pMyData->thread_id )
     {
@@ -489,7 +489,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     /**************************************************************
       THIS CODE BLOCK SHOULD BE MOVED ----> Do This when Entering the
       Executing State...Cleanyup When Exiting Executing State
-     ****************************************************************/ 
+     ****************************************************************/
 
     pMyData->pAndVidWindow = new AndroidVideoWindow();
 
@@ -508,7 +508,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
                             NEXUS_TransportType_eAsf,
                             MapOMXVideoCodecToNexus(OMX_COMPRESSION_FORMAT));
     }
-    else 
+    else
     {
         pMyData->pPESFeeder = new PESFeeder(LOG_TAG,
                             PES_VIDEO_PID,
@@ -532,7 +532,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
               GET_DECODER_ID(pMyData->pOMXNxDecoder));
     }
 
-    /*****************************************************************************/        
+    /*****************************************************************************/
     return eError;
 
 EXIT:
@@ -564,12 +564,12 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
     if (pMyData != NULL)
     {
         if (pMyData->sInBufList.nAllocSize > 0)
-            ListFreeAllBuffers(pMyData->sInBufList, nIndex)  
+            ListFreeAllBuffers(pMyData->sInBufList, nIndex)
 
                 if (pMyData->sOutBufList.nAllocSize > 0)
-                    ListFreeAllBuffers(pMyData->sOutBufList, nIndex)   
+                    ListFreeAllBuffers(pMyData->sOutBufList, nIndex)
 
-                        // Put the command and data in the pipe 
+                        // Put the command and data in the pipe
                         if(0!= pMyData->cmdpipe[1])
                             write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
 
@@ -580,7 +580,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
         if(0 != pMyData->thread_id)
             pthread_join(pMyData->thread_id, &pError);
 
-        // close the pipe handles 
+        // close the pipe handles
         if(pMyData->cmdpipe[0])
             close(pMyData->cmdpipe[0]);
 
@@ -640,7 +640,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SendCommand(OMX_IN OMX_HANDLETYPE hComponent,
 
     pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
     OMX_CONF_CHECK_CMD(pMyData, 1, 1);
-    if (eCmd == OMX_CommandMarkBuffer) 
+    if (eCmd == OMX_CommandMarkBuffer)
         OMX_CONF_CHECK_CMD(pCmdData, 1, 1);
 
     if (pMyData->state == OMX_StateInvalid)
@@ -648,15 +648,15 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SendCommand(OMX_IN OMX_HANDLETYPE hComponent,
 
     switch (eCmd)
     {
-        case OMX_CommandStateSet: 
+        case OMX_CommandStateSet:
             eCmd1 = SetState;
             break;
-        case OMX_CommandFlush: 
+        case OMX_CommandFlush:
             eCmd1 = Flush;
             if ((int)nParam > 1 && (int)nParam != -1)
                 OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadPortIndex);
             break;
-        case OMX_CommandPortDisable: 
+        case OMX_CommandPortDisable:
             eCmd1 = StopPort;
             break;
         case OMX_CommandPortEnable:
@@ -675,14 +675,14 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SendCommand(OMX_IN OMX_HANDLETYPE hComponent,
     write(pMyData->cmdpipe[1], &eCmd1, sizeof(eCmd));
 
     // In case of MarkBuf, the pCmdData parameter is used to carry the data.
-    // In other cases, the nParam1 parameter carries the data.    
+    // In other cases, the nParam1 parameter carries the data.
     if(eCmd1 == MarkBuf)
         write(pMyData->cmddatapipe[1], &pCmdData, sizeof(OMX_PTR));
-    else 
+    else
         write(pMyData->cmddatapipe[1], &nParam, sizeof(nParam));
 
 OMX_CONF_CMD_BAIL:
-    return eError; 
+    return eError;
 }
 
 extern "C" OMX_ERRORTYPE OMX_VDEC_GetState(OMX_IN  OMX_HANDLETYPE hComponent,
@@ -698,7 +698,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_GetState(OMX_IN  OMX_HANDLETYPE hComponent,
 
     *pState = pMyData->state;
 
-OMX_CONF_CMD_BAIL:  
+OMX_CONF_CMD_BAIL:
     return eError;
 
 }
@@ -770,7 +770,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetConfig(OMX_IN OMX_HANDLETYPE hComponent UNU
 
 static void PrintPortDefInfo(OMX_PARAM_PORTDEFINITIONTYPE   *pPortDef)
 {
-    if (pPortDef) 
+    if (pPortDef)
     {
         ALOGD("%s: nPortIndex:%lu nBufferCountActual:%lu nBufferCountMin:%lu nBufferSize:%lu ",
                 __FUNCTION__,
@@ -881,12 +881,12 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
                 profileLevel->eProfile = kProfileLevels[index].mProfile;
                 profileLevel->eLevel = kProfileLevels[index].mLevel;
                 return OMX_ErrorNone;
-            } 
+            }
         case OMX_IndexParamVideoPortFormat:
             {
                 ALOGV("%s: OMX_IndexParamVideoPortFormat",__FUNCTION__);
                 OMX_VIDEO_PARAM_PORTFORMATTYPE *pFormatParams=
-                    (OMX_VIDEO_PARAM_PORTFORMATTYPE *)pParamStruct; 
+                    (OMX_VIDEO_PARAM_PORTFORMATTYPE *)pParamStruct;
 
                 if (pFormatParams->nPortIndex == pMyData->sInPortDef.nPortIndex)
                 {
@@ -937,7 +937,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
             break;
     }
 
-OMX_CONF_CMD_BAIL:  
+OMX_CONF_CMD_BAIL:
     return eError;
 }
 
@@ -972,13 +972,13 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
             PrintPortDefInfo((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct));
             if ( ((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex  == pMyData->sInPortDef.nPortIndex)
             {
-                BKNI_Memcpy(&pMyData->sInPortDef, pParamStruct, sizeof(OMX_PARAM_PORTDEFINITIONTYPE)); 
+                BKNI_Memcpy(&pMyData->sInPortDef, pParamStruct, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
 
             }else if ( ( (OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sOutPortDef.nPortIndex) {
                 //
-                // You cannot blindly copy the data You will need to raise a event here 
+                // You cannot blindly copy the data You will need to raise a event here
                 // Saying port setting changed if the parameters are not same
-                // 
+                //
                 OMX_PARAM_PORTDEFINITIONTYPE * pNewPortSettings = (OMX_PARAM_PORTDEFINITIONTYPE *)pParamStruct;
 
                 size_t OriginalBuffSz = pMyData->sOutPortDef.nBufferSize;
@@ -1018,8 +1018,8 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
 
                 //                }
 
-            }else { 
-                eError = OMX_ErrorBadPortIndex; 
+            }else {
+                eError = OMX_ErrorBadPortIndex;
             }
 
             break;
@@ -1077,7 +1077,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
 
             return OMX_ErrorNone;
             //break;
-        }   
+        }
 
         case OMX_IndexEnableAndroidNativeGraphicsBuffer:
         {
@@ -1136,7 +1136,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
         }
     }
 
-OMX_CONF_CMD_BAIL:  
+OMX_CONF_CMD_BAIL:
     return eError;
 }
 
@@ -1168,7 +1168,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseBuffer(OMX_IN OMX_HANDLETYPE hComponent,
 
     if (!pPortDef->bEnabled)
     {
-        ALOGE("%s %d: Invalid Port Index [Curr State :%d]" 
+        ALOGE("%s %d: Invalid Port Index [Curr State :%d]"
               "\n =============PRINTING PORT INFO ON ERROR ==============="
             , __FUNCTION__, __LINE__, pMyData->state);
         PrintPortDefInfo(pPortDef);
@@ -1185,45 +1185,45 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseBuffer(OMX_IN OMX_HANDLETYPE hComponent,
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter);
     }
 
-    // Find an empty position in the BufferList and allocate memory for the buffer header. 
-    // Use the buffer passed by the client to initialize the actual buffer 
-    // inside the buffer header. 
+    // Find an empty position in the BufferList and allocate memory for the buffer header.
+    // Use the buffer passed by the client to initialize the actual buffer
+    // inside the buffer header.
     if (nPortIndex == pMyData->sInPortDef.nPortIndex)
     {
         ListAllocate(pMyData->sInBufList, nIndex);
         if (pMyData->sInBufList.pBufHdr[nIndex] == NULL)
-        {         
-            pMyData->sInBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*) 
+        {
+            pMyData->sInBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
                 malloc(sizeof(OMX_BUFFERHEADERTYPE)) ;
             if (!pMyData->sInBufList.pBufHdr[nIndex])
-                OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);  
+                OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
 
             OMX_CONF_INIT_STRUCT_PTR (pMyData->sInBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
-        }  
+        }
         pMyData->sInBufList.pBufHdr[nIndex]->pBuffer = pBuffer;
-        LoadBufferHeader(pMyData->sInBufList, pMyData->sInBufList.pBufHdr[nIndex], pAppPrivate, 
-                nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);    
+        LoadBufferHeader(pMyData->sInBufList, pMyData->sInBufList.pBufHdr[nIndex], pAppPrivate,
+                nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);
     }
     else
     {
         ListAllocate(pMyData->sOutBufList,  nIndex);
         if (pMyData->sOutBufList.pBufHdr[nIndex] == NULL)
-        {         
-            pMyData->sOutBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*) 
+        {
+            pMyData->sOutBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
                 malloc(sizeof(OMX_BUFFERHEADERTYPE));
             if (!pMyData->sOutBufList.pBufHdr[nIndex])
-                OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);  
+                OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
 
             OMX_CONF_INIT_STRUCT_PTR (pMyData->sOutBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
-        }  
-        pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer = pBuffer; 
-        LoadBufferHeader(pMyData->sOutBufList, pMyData->sOutBufList.pBufHdr[nIndex],  
+        }
+        pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer = pBuffer;
+        LoadBufferHeader(pMyData->sOutBufList, pMyData->sOutBufList.pBufHdr[nIndex],
                 pAppPrivate, nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);
         CopyBufferHeaderList(pMyData->sOutBufList, pPortDef, pMyData->pOutBufHdrRes);
 
-    }  
+    }
 
-OMX_CONF_CMD_BAIL:  
+OMX_CONF_CMD_BAIL:
     return eError;
 }
 
@@ -1261,9 +1261,9 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
         return OMX_ErrorBadParameter;
     }
     ALOGV("%s Decoder[%d]: nPortIndex = %lu, nSizeBytes = %lu Format:%d NativeBuffer->Width:%d NativeBuffer->Height:%d NativeWindowBufferHandle:%p",
-            __FUNCTION__,GET_DECODER_ID(pMyData->pOMXNxDecoder), 
-          nPortIndex, nSizeBytes, nativeBuffer->format, 
-          nativeBuffer->width, nativeBuffer->height, 
+            __FUNCTION__,GET_DECODER_ID(pMyData->pOMXNxDecoder),
+          nPortIndex, nSizeBytes, nativeBuffer->format,
+          nativeBuffer->width, nativeBuffer->height,
           nativeBuffer->handle);
 
     if (nPortIndex == pMyData->sInPortDef.nPortIndex)
@@ -1285,19 +1285,19 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
 
 
-    // Find an empty position in the BufferList and allocate memory for the buffer header. 
-    // Use the buffer passed by the client to initialize the actual buffer 
-    // inside the buffer header. 
+    // Find an empty position in the BufferList and allocate memory for the buffer header.
+    // Use the buffer passed by the client to initialize the actual buffer
+    // inside the buffer header.
     ListAllocate(pMyData->sOutBufList,  nIndex);
     if (pMyData->sOutBufList.pBufHdr[nIndex] == NULL)
-    {         
-        pMyData->sOutBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*) 
+    {
+        pMyData->sOutBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
             malloc(sizeof(OMX_BUFFERHEADERTYPE));
         if (!pMyData->sOutBufList.pBufHdr[nIndex])
-            OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);  
+            OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
 
         OMX_CONF_INIT_STRUCT_PTR (pMyData->sOutBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
-    }  
+    }
 
 
     BCMOMX_DBG_ASSERT(pMyData->sNativeBufParam.enable==OMX_TRUE);
@@ -1311,7 +1311,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
             false);
 
 #ifdef USE_ANB_PRIVATE_DATA
-    pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer = 
+    pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer =
        (OMX_U8*) GetDisplayFrameFromANB(pGraphicBuffer->getNativeBuffer());
     pDispFr = (PDISPLAY_FRAME)pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer;
     memset(pDispFr, 0, sizeof(DISPLAY_FRAME));
@@ -1325,11 +1325,11 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
     pMyData->sOutBufList.pBufHdr[nIndex]->pInputPortPrivate = (OMX_PTR) pGraphicBuffer;
     pMyData->sOutBufList.pBufHdr[nIndex]->pPlatformPrivate = (OMX_PTR) &nativeBuffer;
 
-    LoadBufferHeader(pMyData->sOutBufList, pMyData->sOutBufList.pBufHdr[nIndex],  
+    LoadBufferHeader(pMyData->sOutBufList, pMyData->sOutBufList.pBufHdr[nIndex],
             pAppPrivate, nSizeBytes, nPortIndex, *bufferHeader, pPortDef);
 
     CopyBufferHeaderList(pMyData->sOutBufList, pPortDef, pMyData->pOutBufHdrRes);
-OMX_CONF_CMD_BAIL:  
+OMX_CONF_CMD_BAIL:
     return eError;
 }
 
@@ -1364,10 +1364,10 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
 
     if (nSizeBytes != pPortDef->nBufferSize || pPortDef->bPopulated)
-        OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter);  
+        OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter);
 
-    // Find an empty position in the BufferList and allocate memory for the buffer header 
-    // and the actual buffer 
+    // Find an empty position in the BufferList and allocate memory for the buffer header
+    // and the actual buffer
     if (nPortIndex == pMyData->sInPortDef.nPortIndex)
     {
         NEXUS_Error errCode;
@@ -1375,20 +1375,20 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
 
         //First Allocate The Buffer Header
         if (pMyData->sInBufList.pBufHdr[nIndex] == NULL)
-        {         
-            pMyData->sInBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*) 
+        {
+            pMyData->sInBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
                 malloc(sizeof(OMX_BUFFERHEADERTYPE)) ;
 
             if (!pMyData->sInBufList.pBufHdr[nIndex])
-                OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);  
+                OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
 
-            OMX_CONF_INIT_STRUCT_PTR (pMyData->sInBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);  
-        } 
+            OMX_CONF_INIT_STRUCT_PTR (pMyData->sInBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
+        }
 
         ALOGV("%s: Allocating Input Buffer :%lu",__FUNCTION__,nSizeBytes);
 
         //  Now Allocate The Memory For The Buffer
-        //  We Do not Need Nexus Memory For This Buffers. This 
+        //  We Do not Need Nexus Memory For This Buffers. This
         // Buffer will contain the ES data after container parsing.
         pMyData->sInBufList.pBufHdr[nIndex]->pBuffer = (OMX_U8*)
             BKNI_Malloc(nSizeBytes);
@@ -1400,25 +1400,25 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
         }
 
         //
-        // Along with this allocate the Memory for the input context that we maintain 
+        // Along with this allocate the Memory for the input context that we maintain
         // for each buffer. We do not need nexus memory for this as well.
         //
-        pMyData->sInBufList.pBufHdr[nIndex]->pInputPortPrivate = 
+        pMyData->sInBufList.pBufHdr[nIndex]->pInputPortPrivate =
             (OMX_PTR) BKNI_Malloc(sizeof(NEXUS_INPUT_CONTEXT));
 
-        if (!pMyData->sInBufList.pBufHdr[nIndex]->pInputPortPrivate) 
+        if (!pMyData->sInBufList.pBufHdr[nIndex]->pInputPortPrivate)
         {
             ALOGE("%s: Failed To Allocate Nexus Memory For CONTEXT ",__FUNCTION__);
             OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
         }
 
-        PNEXUS_INPUT_CONTEXT pInNxCnxt =  
-            (PNEXUS_INPUT_CONTEXT ) 
+        PNEXUS_INPUT_CONTEXT pInNxCnxt =
+            (PNEXUS_INPUT_CONTEXT )
             pMyData->sInBufList.pBufHdr[nIndex]->pInputPortPrivate;
 
         //
-        // Allocate a PES buffer that will be consumed by the 
-        // transport block. 
+        // Allocate a PES buffer that will be consumed by the
+        // transport block.
         //
         pInNxCnxt->SzPESBuffer = PES_BUFFER_SIZE(nSizeBytes);
         pInNxCnxt->PESData = (OMX_U8 *)
@@ -1431,34 +1431,34 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
             OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
         }
 
-        LoadBufferHeader(pMyData->sInBufList, pMyData->sInBufList.pBufHdr[nIndex], pAppPrivate, 
-                nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);      
+        LoadBufferHeader(pMyData->sInBufList, pMyData->sInBufList.pBufHdr[nIndex], pAppPrivate,
+                nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);
 
         CopyBufferHeaderList(pMyData->sInBufList, pPortDef, pMyData->pInBufHdrRes);
     }else{
 
-        while (1) 
+        while (1)
         {
-            ALOGE("%s: Allocating Memory On Output Port--- ERROR WE ARE NOT ADVERTISING THIS QUIRK !!", 
+            ALOGE("%s: Allocating Memory On Output Port--- ERROR WE ARE NOT ADVERTISING THIS QUIRK !!",
                     __FUNCTION__);
 
             BKNI_Sleep(10);
         }
-        /**************************************************************** 
+        /****************************************************************
           We may need this code later on if we ever advertise this stuff...
           ListAllocate(pMyData->sOutBufList,  nIndex);
 
         //First Allocate The Buffer Header
         if (pMyData->sOutBufList.pBufHdr[nIndex] == NULL)
         {
-        pMyData->sOutBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*) 
+        pMyData->sOutBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
         BKNI_Malloc(sizeof(OMX_BUFFERHEADERTYPE)) ;
 
         if (!pMyData->sOutBufList.pBufHdr[nIndex])
-        OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);  
+        OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
 
-        OMX_CONF_INIT_STRUCT_PTR(pMyData->sOutBufList.pBufHdr[nIndex],OMX_BUFFERHEADERTYPE);    
-        }  
+        OMX_CONF_INIT_STRUCT_PTR(pMyData->sOutBufList.pBufHdr[nIndex],OMX_BUFFERHEADERTYPE);
+        }
 
         //Now Allocate The Memory For The Buffer
         pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer = (OMX_U8*) malloc(sizeof(NEXUS_DECODED_FRAME));
@@ -1475,19 +1475,19 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
         __FUNCTION__,nIndex,pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer);
 
 #if ORIGINAL_CODE
-pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer = (OMX_U8*) 
+pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer = (OMX_U8*)
 BKNI_Malloc(nSizeBytes);
 #endif
 
-if (!pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer) 
+if (!pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer)
 OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
 
-LoadBufferHeader(pMyData->sOutBufList, pMyData->sOutBufList.pBufHdr[nIndex],  
+LoadBufferHeader(pMyData->sOutBufList, pMyData->sOutBufList.pBufHdr[nIndex],
 pAppPrivate, nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);
          ****************************************************************/
-    }  
+    }
 
-OMX_CONF_CMD_BAIL:  
+OMX_CONF_CMD_BAIL:
     return eError;
 }
 
@@ -1508,8 +1508,8 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_FreeBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
     ALOGV("%s Decoder[%d], hComponent = %p, nPortIndex = %lu, pBufferHdr = %p",
           __FUNCTION__,GET_DECODER_ID(pMyData->pOMXNxDecoder), hComponent, nPortIndex, pBufferHdr);
 
-    // Match the pBufferHdr to the appropriate entry in the BufferList 
-    // and free the allocated memory 
+    // Match the pBufferHdr to the appropriate entry in the BufferList
+    // and free the allocated memory
 
     if (nPortIndex == pMyData->sInPortDef.nPortIndex)
     {
@@ -1523,16 +1523,16 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_FreeBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
 
         if(pBufferHdr->pInputPortPrivate)
         {
-            PNEXUS_INPUT_CONTEXT pInNxCnxt =  
+            PNEXUS_INPUT_CONTEXT pInNxCnxt =
                 (PNEXUS_INPUT_CONTEXT) pBufferHdr->pInputPortPrivate;
 
-            if (pInNxCnxt->PESData) 
+            if (pInNxCnxt->PESData)
             {
                 pMyData->pPESFeeder->FreePESBuffer(pInNxCnxt->PESData);
                 pInNxCnxt->PESData=NULL;
             }
 
-            BKNI_Free(pBufferHdr->pInputPortPrivate); 
+            BKNI_Free(pBufferHdr->pInputPortPrivate);
             pBufferHdr->pInputPortPrivate = NULL;
         }
 
@@ -1557,7 +1557,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_FreeBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
     }
 
-OMX_CONF_CMD_BAIL:  
+OMX_CONF_CMD_BAIL:
     return eError;
 }
 
@@ -1573,7 +1573,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
 
     pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
 
-    PNEXUS_INPUT_CONTEXT pNxInputCnxt = 
+    PNEXUS_INPUT_CONTEXT pNxInputCnxt =
         (PNEXUS_INPUT_CONTEXT)pBufferHdr->pInputPortPrivate;
 
     OMX_CONF_CHECK_CMD(pMyData, pBufferHdr, 1);
@@ -1597,7 +1597,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
     }
 
-    if (!pBufferHdr->pInputPortPrivate) 
+    if (!pBufferHdr->pInputPortPrivate)
     {
         ALOGE("%s %d: Invalid Param - ",__FUNCTION__,__LINE__);
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter);
@@ -1612,7 +1612,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
      * OMX_BUFFERFLAG_ENDOFFRAME: Taken Care.
      * -----> Marks the frame boundary on the input side.
      * OMX_BUFFERFLAG_CODECCONFIG is an optional flag that is set by an output port when all bytes
-     * in the buffer form part or all of a set of codec specific configuration data. 
+     * in the buffer form part or all of a set of codec specific configuration data.
      * OMX_BUFFERFLAG_STARTTIME - Set by the source of a stream on the buffer that
      * contains the starting timestamp for the stream. The starting timestamp
      * corresponds to the first data that should be displayed at startup or
@@ -1625,20 +1625,20 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
      * The OMX_BUFFERFLAG_DECODEONLY flag is associated with buffer data and propagated in a manner
      * identical to that of the buffer timestamp. A component that renders data should ignore all
      * buffers with the OMX_BUFFERFLAG_DECODEONLY flag set.
-     * OMX_BUFFERFLAG_DATACORRUPT flag is set when the data in the associated buffer is identified  
+     * OMX_BUFFERFLAG_DATACORRUPT flag is set when the data in the associated buffer is identified
      * as corrupt.
      * OMX_BUFFERFLAG_SYNCFRAME should be set by an output port to indicate that the buffer content
      * contains a coded synchronization frame. A coded synchronization frame is a frame that can be
      * reconstructed without reference to any other frame information. An example of a video
      * synchronization frame is an MPEG4 I-VOP. If the OMX_BUFFERFLAG_SYNCFRAME flag is set then
-     * the buffer may only contain one frame. 
+     * the buffer may only contain one frame.
      * The OMX_BUFFERFLAG_EXTRADATA is used to identify the availability of additional information
      * after the buffer payload. Each extra block of data is preceded by an OMX_OTHER_EXTRADATATYPE
      * structure, which provides specific information about the extra data. Extra data shall only be
-     * present when the OMX_BUFFERFLAG_EXTRADATA is signaled. 
+     * present when the OMX_BUFFERFLAG_EXTRADATA is signaled.
      */
 
-    // Print the Unhandled flag So that we realize that we might need to 
+    // Print the Unhandled flag So that we realize that we might need to
     // Take care of it
     if(pBufferHdr->nFlags & OMX_BUFFERFLAG_DECODEONLY)
     {
@@ -1661,20 +1661,20 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
             __FUNCTION__, pBufferHdr->nFilledLen, pBufferHdr->nTimeStamp);
     }
 
-    if (pBufferHdr->nFilledLen) 
+    if (pBufferHdr->nFilledLen)
     {
         bool SendConfigDataToHw=false;
 
-        if (pMyData->bHwNeedsFlush==false) 
+        if (pMyData->bHwNeedsFlush==false)
             pMyData->bHwNeedsFlush = true;
         // For WMV we save the configuration data differently...
-        if (!((OMX_VIDEO_CodingWMV == OMX_COMPRESSION_FORMAT) 
+        if (!((OMX_VIDEO_CodingWMV == OMX_COMPRESSION_FORMAT)
 #ifdef OMX_EXTEND_CODECS_SUPPORT
             || (OMX_VIDEO_CodingDIVX311 == OMX_COMPRESSION_FORMAT)
-#endif          
+#endif
             ))
         {
-            if (pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG) 
+            if (pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)
             {
                 if(false == pMyData->pPESFeeder->SaveCodecConfigData(pBufferHdr->pBuffer,pBufferHdr->nFilledLen))
                 {
@@ -1686,13 +1686,13 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
         nTimestamp = pMyData->pTstable->store(pBufferHdr->nTimeStamp);
         if(false == pMyData->bSetStartUpTimeDone)
         {
-            if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)) 
+            if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG))
             {
                 pMyData->bSetStartUpTimeDone=true;
 
                 ALOGD("%s: Setting The Startup Time [OriginalTime:%lld] [TimeToDecoder:%d]",
-                      __FUNCTION__,pBufferHdr->nTimeStamp,nTimestamp); 
-                pMyData->pOMXNxDecoder->SetStartupTime(nTimestamp);    
+                      __FUNCTION__,pBufferHdr->nTimeStamp,nTimestamp);
+                pMyData->pOMXNxDecoder->SetStartupTime(nTimestamp);
             }
         }
 
@@ -1707,7 +1707,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
 
                     B_MEDIA_SAVE_UINT32_BE(&es_header[4], pBufferHdr->nFilledLen);
 
-                    if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)) 
+                    if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG))
                     {
                         SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
                                 es_header,
@@ -1726,7 +1726,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
                     uint8_t es_header[4]= {0x00, 0x00, 0x01, 0x0D};
                     uint32_t es_header_size = 4;
 
-                    if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)) 
+                    if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG))
                     {
                         SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
                                 es_header,
@@ -1764,7 +1764,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
                         hdr += pBufferHdr->nFilledLen;
                         memset(hdr, 0, 7);
 
-                        // Save Codec Config Data will pes convert internally. And will issue the config data to 
+                        // Save Codec Config Data will pes convert internally. And will issue the config data to
                         // hardware on every flush.
                         if(false == pMyData->pPESFeeder->SaveCodecConfigData(config_header, config_header_length))
                         {
@@ -1812,7 +1812,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
                         sequence_header[26] = (pMyData->sOutPortDef.format.video.nFrameHeight >> 2)&0xFF;
                         sequence_header[27] = (((pMyData->sOutPortDef.format.video.nFrameHeight)&0x3) << 6)| 0x20 /*'100000'*/;
 
-                        // Save Codec Config Data will pes convert internally. And will issue the config data to 
+                        // Save Codec Config Data will pes convert internally. And will issue the config data to
                         // hardware on every flush.
                         if(false == pMyData->pPESFeeder->SaveCodecConfigData(sequence_header, sequence_header_size))
                         {
@@ -1864,16 +1864,16 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
             ALOGD("Codec Config Data Flag Set ----Setting The size To Zero");
             if (false == SendConfigDataToHw)
             {
-                pBufferHdr->nFilledLen = 0; 
+                pBufferHdr->nFilledLen = 0;
             }
         }
     }
 
-    // Put the command and data in the pipe 
+    // Put the command and data in the pipe
     write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
     write(pMyData->cmddatapipe[1], &pBufferHdr, sizeof(OMX_BUFFERHEADERTYPE*));
 
-OMX_CONF_CMD_BAIL:  
+OMX_CONF_CMD_BAIL:
     return eError;
 }
 
@@ -1922,10 +1922,10 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_FillThisBuffer(OMX_HANDLETYPE hComponent, OMX_
     //At this point we should always have something in pBuffer.
     BCMOMX_DBG_ASSERT(pBuffer);
     /**************************************************************
-     *The Dropped Frames are recycled Back to the component without                                                            
-     *Actually any notification. We have an internal state in the                                                                                                                          
-     *frame that tells us if the frame we consumed or just recycled.                                                                                                                                                                                     
-     *We drop the frames here which are not consumed.                                                                                                                                                                                                                                                   
+     *The Dropped Frames are recycled Back to the component without
+     *Actually any notification. We have an internal state in the
+     *frame that tells us if the frame we consumed or just recycled.
+     *We drop the frames here which are not consumed.
      ***************************************************************/
     pMyData->pOMXNxDecoder->CheckAndClearBufferState((PDISPLAY_FRAME) pBuffer);
     if(unLockBuffer)
@@ -1936,17 +1936,17 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_FillThisBuffer(OMX_HANDLETYPE hComponent, OMX_
 
     pMyData->pOMXNxDecoder->GetFramesFromHardware();
 
-    // Put the command and data in the pipe 
+    // Put the command and data in the pipe
     write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
     write(pMyData->cmddatapipe[1], &pBufferHdr, sizeof(OMX_BUFFERHEADERTYPE*));
 
-OMX_CONF_CMD_BAIL:   
+OMX_CONF_CMD_BAIL:
     return eError;
 }
 
 
 extern "C" OMX_ERRORTYPE OMX_VDEC_SetCallbacks(OMX_IN  OMX_HANDLETYPE hComponent,
-        OMX_IN  OMX_CALLBACKTYPE* pCallbacks, 
+        OMX_IN  OMX_CALLBACKTYPE* pCallbacks,
         OMX_IN  OMX_PTR pAppData)
 
 {
@@ -1961,14 +1961,14 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetCallbacks(OMX_IN  OMX_HANDLETYPE hComponent
     pMyData->pCallbacks = pCallbacks;
     pMyData->pAppData = pAppData;
 
-OMX_CONF_CMD_BAIL:  
+OMX_CONF_CMD_BAIL:
     return eError;
 }
 
 static bool portSettingChanged(BCM_OMX_CONTEXT* pMyData)
 {
     NEXUS_Error nxErr = NEXUS_SUCCESS;
-    NEXUS_VideoDecoderStatus vdecStatus; 
+    NEXUS_VideoDecoderStatus vdecStatus;
     trace t(__FUNCTION__);
     if(false == pMyData->pOMXNxDecoder->GetDecoSts(&vdecStatus))
     {
@@ -1991,13 +1991,13 @@ static bool portSettingChanged(BCM_OMX_CONTEXT* pMyData)
     //      def->format.video.nFrameHeight = mHeight;
     //      def->format.video.nStride = def->format.video.nFrameWidth;
     //      def->format.video.nSliceHeight = def->format.video.nFrameHeight;
-    // 
+    //
     //      def = &editPortInfo(1)->mDef;
     //      def->format.video.nFrameWidth = mWidth;
     //      def->format.video.nFrameHeight = mHeight;
     //      def->format.video.nStride = def->format.video.nFrameWidth;
     //      def->format.video.nSliceHeight = def->format.video.nFrameHeight;
-    // 
+    //
     //      def->nBufferSize =
     //          (((def->format.video.nFrameWidth + 15) & -16)
     //          * ((def->format.video.nFrameHeight + 15) & -16) * 3) / 2;
@@ -2022,10 +2022,10 @@ static bool portSettingChanged(BCM_OMX_CONTEXT* pMyData)
 #else
         pMyData->sOutPortDef.nBufferSize =     pMyData->sOutPortDef.format.video.nFrameWidth *
             pMyData->sOutPortDef.format.video.nFrameHeight * 2;
-#endif        
+#endif
 
         ALOGD("%s %d: Emitting Port Settings Changed Event",__FUNCTION__,__LINE__);
-        pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData, 
+        pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData,
                 OMX_EventPortSettingsChanged, 1, 0, NULL);
 
         return true;
@@ -2038,8 +2038,8 @@ static bool portSettingChanged(BCM_OMX_CONTEXT* pMyData)
     static bool
 FlushInput(BCM_OMX_CONTEXT *pBcmContext)
 {
-    // On Flush, We will start from a different 
-    // Location, Need to set the start up time 
+    // On Flush, We will start from a different
+    // Location, Need to set the start up time
     // again.
     pBcmContext->bSetStartUpTimeDone = false;
     if(pBcmContext->pPESFeeder)
@@ -2055,20 +2055,20 @@ FlushInput(BCM_OMX_CONTEXT *pBcmContext)
     return true;
 }
 
-    static void 
+    static void
 CleanUpOutputBuffer(OMX_BUFFERHEADERTYPE *pOMXBuffhdr)
 {
     void *pBuffer=NULL;
     bool unLockBuffer=false;
     GraphicBuffer *pGraphicBuffer=NULL;
-    
-    if (!pOMXBuffhdr) 
+
+    if (!pOMXBuffhdr)
     {
         ALOGV("%s: EXIT-1 == \n\n ",__FUNCTION__);
         return;
     }
 
-    //Clear the Filled Len and 
+    //Clear the Filled Len and
     pOMXBuffhdr->nFilledLen =0;
     pGraphicBuffer = (GraphicBuffer *) pOMXBuffhdr->pInputPortPrivate;
     BCMOMX_DBG_ASSERT(pGraphicBuffer);
@@ -2084,7 +2084,7 @@ CleanUpOutputBuffer(OMX_BUFFERHEADERTYPE *pOMXBuffhdr)
     // Now Clear the Buffer.
     PDISPLAY_FRAME pNxDecoFr = (PDISPLAY_FRAME) pBuffer;
     BCMOMX_DBG_ASSERT(pNxDecoFr);
-    if (pNxDecoFr) 
+    if (pNxDecoFr)
     {
         memset(pNxDecoFr ,0,sizeof(DISPLAY_FRAME));
     }
@@ -2102,19 +2102,19 @@ FlushOutput(BCM_OMX_CONTEXT *pBcmContext)
 {
     OMX_PARAM_PORTDEFINITIONTYPE *pPortDef;
     pPortDef = &pBcmContext->sOutPortDef;
-    if (pBcmContext->pOMXNxDecoder) 
-    {   
+    if (pBcmContext->pOMXNxDecoder)
+    {
         if(pBcmContext->bHwNeedsFlush)
         {
             pBcmContext->bHwNeedsFlush=false;
-        	if (false == pBcmContext->pOMXNxDecoder->Flush()) 
+        	if (false == pBcmContext->pOMXNxDecoder->Flush())
         	{
-            	ALOGE("==FLUSH FAILED ON OUTPUT PORT==");     
+            	ALOGE("==FLUSH FAILED ON OUTPUT PORT==");
             	return false;
             }
         }
     }
-    
+
     ListFlushEntriesWithCleanup(pBcmContext->sOutBufList, pBcmContext,CleanUpOutputBuffer);
     //ListFlushEntries(pBcmContext->sOutBufList, pBcmContext);
     pBcmContext->pTstable->flush();
@@ -2142,17 +2142,17 @@ static void* ComponentThread(void* pThreadData)
     size_t buffer_size;
     NEXUS_Error errCode;
 
-    // Variables related to decoder timeouts 
+    // Variables related to decoder timeouts
     OMX_HANDLETYPE hTimeout;
     OMX_BOOL bTimeout;
     OMX_U32 nTimeout;
 
-    // Recover the pointer to my component specific data 
+    // Recover the pointer to my component specific data
     BCM_OMX_CONTEXT* pMyData = (BCM_OMX_CONTEXT*)pThreadData;
 
     while (1)
     {
-        fd1 = pMyData->cmdpipe[0]; 
+        fd1 = pMyData->cmdpipe[0];
         FD_ZERO(&rfds);
         FD_SET(fd1,&rfds);
 
@@ -2170,28 +2170,28 @@ static void* ComponentThread(void* pThreadData)
             if (cmd == SetState)
             {
                 // If the parameter states a transition to the same state
-                //   raise a same state transition error. 
+                //   raise a same state transition error.
                 ALOGV("OMXVideo: SET STATE COMMAND: To %d\n",cmddata);
 
                 if (pMyData->state == (OMX_STATETYPE)(cmddata))
                 {
-                    pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData, 
-                            OMX_EventError, OMX_ErrorSameState, 0 , NULL);    
-                }else{   
-                    // transitions/callbacks made based on state transition table 
-                    // cmddata contains the target state 
+                    pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData,
+                            OMX_EventError, OMX_ErrorSameState, 0 , NULL);
+                }else{
+                    // transitions/callbacks made based on state transition table
+                    // cmddata contains the target state
                     switch ((OMX_STATETYPE)(cmddata))
                     {
                         case OMX_StateInvalid:
                             {
                                 pMyData->state = OMX_StateInvalid;
-                                pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData, 
+                                pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData,
                                         OMX_EventError, OMX_ErrorInvalidState, 0 , NULL);
 
-                                pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData, 
+                                pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData,
                                         OMX_EventCmdComplete, OMX_CommandStateSet, pMyData->state, NULL);
                                 break;
-                            }      
+                            }
 
                         case OMX_StateLoaded:
                             {
@@ -2201,7 +2201,7 @@ static void* ComponentThread(void* pThreadData)
                                     while (1)
                                     {
                                         // Transition happens only when the ports are unpopulated
-                                        if (!pMyData->sInPortDef.bPopulated && 
+                                        if (!pMyData->sInPortDef.bPopulated &&
                                                 !pMyData->sOutPortDef.bPopulated)
                                         {
                                             ALOGV("%s %d: State Transition Event: [To: State_Loaded] [Completed] [Timeouts:%d]",
@@ -2209,7 +2209,7 @@ static void* ComponentThread(void* pThreadData)
 
                                             pMyData->state = OMX_StateLoaded;
                                             pMyData->pCallbacks->EventHandler(pMyData->hSelf,
-                                                    pMyData->pAppData, OMX_EventCmdComplete, 
+                                                    pMyData->pAppData, OMX_EventCmdComplete,
                                                     OMX_CommandStateSet, pMyData->state, NULL);
 
                                             break;
@@ -2219,7 +2219,7 @@ static void* ComponentThread(void* pThreadData)
                                                     __FUNCTION__,__LINE__,nTimeout);
 
                                             pMyData->pCallbacks->EventHandler(
-                                                    pMyData->hSelf,pMyData->pAppData, OMX_EventError, 
+                                                    pMyData->hSelf,pMyData->pAppData, OMX_EventError,
                                                     OMX_ErrorInsufficientResources, 0 , NULL);
 
                                             break;
@@ -2234,11 +2234,11 @@ static void* ComponentThread(void* pThreadData)
                                     ALOGE("%s %d: State Transition Event: [To: State_Loaded] [ERROR OMX_ErrorIncorrectStateTransition]",
                                             __FUNCTION__,__LINE__);
 
-                                    pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData, 
+                                    pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData,
                                             OMX_EventError, OMX_ErrorIncorrectStateTransition, 0 , NULL);
                                 }
                                 break;
-                            }   
+                            }
 
                         case OMX_StateIdle:
                             {
@@ -2247,12 +2247,12 @@ static void* ComponentThread(void* pThreadData)
                                     ALOGE("%s %d: State Transition Event: [To: OMX_StateIdle] [ERROR]",
                                             __FUNCTION__,__LINE__);
 
-                                    pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData, 
+                                    pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData,
                                             OMX_EventError, OMX_ErrorIncorrectStateTransition, 0 , NULL);
                                 }else{
                                     // Return buffers if currently in pause or executing
                                     if (pMyData->state == OMX_StatePause || pMyData->state == OMX_StateExecuting)
-                                    {  
+                                    {
                                         ALOGD("%s %d: Flush On State Transition From %d To Idle",
                                               __FUNCTION__,__LINE__,pMyData->state);
                                         FlushInput(pMyData);
@@ -2262,15 +2262,15 @@ static void* ComponentThread(void* pThreadData)
                                     while (1)
                                     {
                                         /* Ports have to be populated before transition completes*/
-                                        if ((!pMyData->sInPortDef.bEnabled && !pMyData->sOutPortDef.bEnabled)||              
-                                                (pMyData->sInPortDef.bPopulated && pMyData->sOutPortDef.bPopulated)) 
+                                        if ((!pMyData->sInPortDef.bEnabled && !pMyData->sOutPortDef.bEnabled)||
+                                                (pMyData->sInPortDef.bPopulated && pMyData->sOutPortDef.bPopulated))
                                         {
                                             pMyData->state = OMX_StateIdle;
                                             ALOGV("%s %d: State Transition Event: [To: OMX_StateIdle] [Completed]",
                                                     __FUNCTION__,__LINE__);
 
                                             pMyData->pCallbacks->EventHandler(pMyData->hSelf,
-                                                    pMyData->pAppData, OMX_EventCmdComplete, 
+                                                    pMyData->pAppData, OMX_EventCmdComplete,
                                                     OMX_CommandStateSet, pMyData->state, NULL);
 
                                             break;
@@ -2281,10 +2281,10 @@ static void* ComponentThread(void* pThreadData)
                                     }
                                 }
                                 break;
-                            }      
+                            }
                         case OMX_StateExecuting:
                             {
-                                // Transition can only happen from pause or idle state 
+                                // Transition can only happen from pause or idle state
                                 if (pMyData->state == OMX_StateIdle ||  pMyData->state == OMX_StatePause)
                                 {
                                     // Return buffers if currently in pause
@@ -2307,14 +2307,14 @@ static void* ComponentThread(void* pThreadData)
                                     ALOGE("%s %d: State Transition Event: [To: OMX_StateExecuting] [Error]",
                                             __FUNCTION__,__LINE__);
 
-                                    pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData, 
+                                    pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData,
                                             OMX_EventError, OMX_ErrorIncorrectStateTransition, 0 , NULL);
                                 }
                                 break;
                             }
                         case OMX_StatePause:
                             {
-                                // Transition can only happen from idle or executing state 
+                                // Transition can only happen from idle or executing state
                                 if (pMyData->state == OMX_StateIdle ||pMyData->state == OMX_StateExecuting)
                                 {
                                     pMyData->state = OMX_StatePause;
@@ -2329,7 +2329,7 @@ static void* ComponentThread(void* pThreadData)
                                     ALOGE("%s %d: State Transition Event: [To: OMX_StatePause] [Error]",
                                             __FUNCTION__,__LINE__);
 
-                                    pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData, 
+                                    pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData,
                                             OMX_EventError, OMX_ErrorIncorrectStateTransition, 0 , NULL);
                                 }
                                 break;
@@ -2343,17 +2343,17 @@ static void* ComponentThread(void* pThreadData)
                                     ALOGV("%s %d: State Transition Event: [To: OMX_StateWaitForResources] [Completed]",
                                             __FUNCTION__,__LINE__);
 
-                                    pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData, 
+                                    pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData,
                                             OMX_EventCmdComplete, OMX_CommandStateSet, pMyData->state, NULL);
                                 } else {
                                     ALOGV("%s %d: State Transition Event: [To: OMX_StateWaitForResources] [ERROR]",
                                             __FUNCTION__,__LINE__);
 
-                                    pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData, 
+                                    pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData,
                                             OMX_EventError, OMX_ErrorIncorrectStateTransition, 0 , NULL);
                                 }
                                 break;
-                            }   
+                            }
                         default :
                             ALOGE("%s %d: State Transition Event: ==INVALID STATE ==",
                                     __FUNCTION__,__LINE__);
@@ -2372,15 +2372,15 @@ static void* ComponentThread(void* pThreadData)
 
                 if (cmddata == 0x0 || cmddata == (OMX_U32)-1)
                 {
-                    // Return all input buffers 
+                    // Return all input buffers
                     FlushInput(pMyData);
 
-                    // Disable port 
+                    // Disable port
                     pMyData->sInPortDef.bEnabled = OMX_FALSE;
                 }
                 if (cmddata == 0x1 || cmddata == (OMX_U32)-1)
                 {
-                    // Return all output buffers 
+                    // Return all output buffers
                     FlushOutput(pMyData);
 
                     // Disable port
@@ -2392,32 +2392,32 @@ static void* ComponentThread(void* pThreadData)
                 {
                     if (cmddata == 0x0 && !pMyData->sInPortDef.bPopulated)
                     {
-                        // Return cmdcomplete event if input unpopulated 
-                        pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData, 
+                        // Return cmdcomplete event if input unpopulated
+                        pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData,
                                 OMX_EventCmdComplete, OMX_CommandPortDisable, 0x0, NULL);
                         break;
                     }
                     if (cmddata == 0x1 && !pMyData->sOutPortDef.bPopulated)
                     {
-                        // Return cmdcomplete event if output unpopulated 
-                        pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData, 
+                        // Return cmdcomplete event if output unpopulated
+                        pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData,
                                 OMX_EventCmdComplete, OMX_CommandPortDisable, 0x1, NULL);
                         break;
                     }
                     if (cmddata == (OMX_U32)-1 &&  !pMyData->sInPortDef.bPopulated &&
                             !pMyData->sOutPortDef.bPopulated)
                     {
-                        // Return cmdcomplete event if inout & output unpopulated 
-                        pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData, 
+                        // Return cmdcomplete event if inout & output unpopulated
+                        pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData,
                                 OMX_EventCmdComplete, OMX_CommandPortDisable, 0x0, NULL);
-                        pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData, 
+                        pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData,
                                 OMX_EventCmdComplete, OMX_CommandPortDisable, 0x1, NULL);
                         break;
                     }
                     if (nTimeout++ > OMX_MAX_TIMEOUTS)
                     {
-                        pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData, 
-                                OMX_EventError, OMX_ErrorPortUnresponsiveDuringDeallocation, 
+                        pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData,
+                                OMX_EventError, OMX_ErrorPortUnresponsiveDuringDeallocation,
                                 0 , NULL);
                         break;
                     }
@@ -2440,45 +2440,45 @@ static void* ComponentThread(void* pThreadData)
                 if (cmddata == 0x1 || cmddata == (OMX_U32)-1)
                     pMyData->sOutPortDef.bEnabled = OMX_TRUE;
 
-                // Wait for port to be populated 
+                // Wait for port to be populated
                 nTimeout = 0x0;
                 while (1)
                 {
-                    // Return cmdcomplete event if input port populated 
-                    if (cmddata == 0x0 && (pMyData->state == OMX_StateLoaded || 
+                    // Return cmdcomplete event if input port populated
+                    if (cmddata == 0x0 && (pMyData->state == OMX_StateLoaded ||
                                 pMyData->sInPortDef.bPopulated))
                     {
-                        pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData, 
+                        pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData,
                                 OMX_EventCmdComplete, OMX_CommandPortEnable, 0x0, NULL);
                         break;
                     }
-                    // Return cmdcomplete event if output port populated 
-                    else if (cmddata == 0x1 && (pMyData->state == OMX_StateLoaded || 
+                    // Return cmdcomplete event if output port populated
+                    else if (cmddata == 0x1 && (pMyData->state == OMX_StateLoaded ||
                                 pMyData->sOutPortDef.bPopulated))
                     {
-                        pMyData->pCallbacks->EventHandler(pMyData->hSelf, 
-                                pMyData->pAppData, OMX_EventCmdComplete, 
+                        pMyData->pCallbacks->EventHandler(pMyData->hSelf,
+                                pMyData->pAppData, OMX_EventCmdComplete,
                                 OMX_CommandPortEnable, 0x1, NULL);
                         break;
                     }
-                    // Return cmdcomplete event if input and output ports populated 
+                    // Return cmdcomplete event if input and output ports populated
                     else if (cmddata == (OMX_U32)-1 && (pMyData->state == OMX_StateLoaded ||
-                                (pMyData->sInPortDef.bPopulated && 
+                                (pMyData->sInPortDef.bPopulated &&
                                  pMyData->sOutPortDef.bPopulated)))
                     {
-                        pMyData->pCallbacks->EventHandler(pMyData->hSelf, 
-                                pMyData->pAppData, OMX_EventCmdComplete, 
+                        pMyData->pCallbacks->EventHandler(pMyData->hSelf,
+                                pMyData->pAppData, OMX_EventCmdComplete,
                                 OMX_CommandPortEnable, 0x0, NULL);
-                        pMyData->pCallbacks->EventHandler(pMyData->hSelf, 
-                                pMyData->pAppData, OMX_EventCmdComplete, 
+                        pMyData->pCallbacks->EventHandler(pMyData->hSelf,
+                                pMyData->pAppData, OMX_EventCmdComplete,
                                 OMX_CommandPortEnable, 0x1, NULL);
                         break;
                     }
                     else if (nTimeout++ > OMX_MAX_TIMEOUTS)
                     {
                         pMyData->pCallbacks->EventHandler(
-                                pMyData->hSelf,pMyData->pAppData, 
-                                OMX_EventError, 
+                                pMyData->hSelf,pMyData->pAppData,
+                                OMX_EventError,
                                 OMX_ErrorPortUnresponsiveDuringAllocation,0,NULL);
                         break;
                     }
@@ -2489,7 +2489,7 @@ static void* ComponentThread(void* pThreadData)
             }
             else if (cmd == Flush)
             {
-                // Flush port(s) 
+                // Flush port(s)
                 // cmddata contains the port index to be flushed.
                 // It is assumed that 0 is input and 1 is output port for this component
                 // The cmddata value -1 means that both input and output ports will be flushed.
@@ -2499,7 +2499,7 @@ static void* ComponentThread(void* pThreadData)
                 {
                     //                  // Return all Input buffers and send cmdcomplete
                     FlushInput(pMyData);
-                    pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData, 
+                    pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData,
                             OMX_EventCmdComplete, OMX_CommandFlush, 0x0, NULL);
                 }
 
@@ -2507,30 +2507,30 @@ static void* ComponentThread(void* pThreadData)
                 {
                     //                  // Return all output buffers and send cmdcomplete
                     FlushOutput(pMyData);
-                    pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData, 
+                    pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData,
                             OMX_EventCmdComplete, OMX_CommandFlush, 0x1, NULL);
                 }
             }
             else if (cmd == Stop)
             {
-                // Kill thread 
+                // Kill thread
                 ALOGD("%s: STOP CALLED--- EXITING THE THREAD", __FUNCTION__);
                 goto EXIT;
             }
             else if (cmd == FillBuf)
             {
-                // Fill buffer 
+                // Fill buffer
 
-                ListSetEntry(pMyData->sOutBufList, ((OMX_BUFFERHEADERTYPE*) cmddata)) 
+                ListSetEntry(pMyData->sOutBufList, ((OMX_BUFFERHEADERTYPE*) cmddata))
             }
             else if (cmd == EmptyBuf)
             {
-                // Empty buffer 
-                ListSetEntry(pMyData->sInBufList, ((OMX_BUFFERHEADERTYPE *) cmddata)) 
-                    // Mark current buffer if there is outstanding command 
+                // Empty buffer
+                ListSetEntry(pMyData->sInBufList, ((OMX_BUFFERHEADERTYPE *) cmddata))
+                    // Mark current buffer if there is outstanding command
                     if (pMarkBuf)
                     {
-                        ((OMX_BUFFERHEADERTYPE *)(cmddata))->hMarkTargetComponent = 
+                        ((OMX_BUFFERHEADERTYPE *)(cmddata))->hMarkTargetComponent =
                             pMarkBuf->hMarkTargetComponent;
 
                         ((OMX_BUFFERHEADERTYPE *)(cmddata))->pMarkData = pMarkBuf->pMarkData;
@@ -2545,14 +2545,14 @@ static void* ComponentThread(void* pThreadData)
             }
         }
 
-        // Input Buffer processing 
-        // Only happens when the component is in executing state. 
-        if (pMyData->state == OMX_StateExecuting && pMyData->sInPortDef.bEnabled && 
+        // Input Buffer processing
+        // Only happens when the component is in executing state.
+        if (pMyData->state == OMX_StateExecuting && pMyData->sInPortDef.bEnabled &&
                 (pMyData->sInBufList.nSizeOfList > 0))
         {
             ListGetEntry(pMyData->sInBufList, pInBufHdr)
-                // If there is no output buffer, get one from list 
-                // Check for EOS flag 
+                // If there is no output buffer, get one from list
+                // Check for EOS flag
             if (pInBufHdr)
             {
                 OMX_U32 nFlags=0;
@@ -2639,7 +2639,7 @@ static void* ComponentThread(void* pThreadData)
         }
 
         //Output Buffer Processing...
-        if (pMyData->state == OMX_StateExecuting  &&  pMyData->sOutPortDef.bEnabled && 
+        if (pMyData->state == OMX_StateExecuting  &&  pMyData->sOutPortDef.bEnabled &&
                 ((pMyData->sOutBufList.nSizeOfList > 0) || pOutBufHdr))
         {
             if (!pOutBufHdr)
@@ -2698,16 +2698,16 @@ static void* ComponentThread(void* pThreadData)
                     pGraphicBuffer->unlock();
                 }
 
-                if(pOutBufHdr->pPlatformPrivate) 
+                if(pOutBufHdr->pPlatformPrivate)
                 {
                     //We Store the pointer to the anb in pPlatformPrivate
-                    // We cannot use that pointer here becuase the pointer 
+                    // We cannot use that pointer here becuase the pointer
                     // changes after the allocation. We get a new ANB from
                     // The Graphic buffer itself.
                     ANativeWindowBuffer *anb=NULL;
                     anb = pGraphicBuffer->getNativeBuffer();
                     BCMOMX_DBG_ASSERT(anb);
-                    pMyData->pAndVidWindow->SetPrivData(anb, pMyData->pOMXNxDecoder->GetDecoderID()); 
+                    pMyData->pAndVidWindow->SetPrivData(anb, pMyData->pOMXNxDecoder->GetDecoderID());
                     pOutBufHdr->pPlatformPrivate=NULL;
                 }
 

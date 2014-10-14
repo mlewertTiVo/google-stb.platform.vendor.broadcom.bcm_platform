@@ -1,3 +1,44 @@
+/******************************************************************************
+* (c) 2014 Broadcom Corporation
+*
+* This program is the proprietary software of Broadcom Corporation and/or its
+* licensors, and may only be used, duplicated, modified or distributed pursuant
+* to the terms and conditions of a separate, written license agreement executed
+* between you and Broadcom (an "Authorized License").  Except as set forth in
+* an Authorized License, Broadcom grants no license (express or implied), right
+* to use, or waiver of any kind with respect to the Software, and Broadcom
+* expressly reserves all rights in and to the Software and all intellectual
+* property rights therein.  IF YOU HAVE NO AUTHORIZED LICENSE, THEN YOU
+* HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY WAY, AND SHOULD IMMEDIATELY
+* NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.
+*
+* Except as expressly set forth in the Authorized License,
+*
+* 1. This program, including its structure, sequence and organization,
+*    constitutes the valuable trade secrets of Broadcom, and you shall use all
+*    reasonable efforts to protect the confidentiality thereof, and to use
+*    this information only in connection with your use of Broadcom integrated
+*    circuit products.
+*
+* 2. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS"
+*    AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR
+*    WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT
+*    TO THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED
+*    WARRANTIES OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A
+*    PARTICULAR PURPOSE, LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET
+*    ENJOYMENT, QUIET POSSESSION OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME
+*    THE ENTIRE RISK ARISING OUT OF USE OR PERFORMANCE OF THE SOFTWARE.
+*
+* 3. TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS
+*    LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT,
+*    OR EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO
+*    YOUR USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN
+*    ADVISED OF THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS
+*    OF THE AMOUNT ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER
+*    IS GREATER. THESE LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF
+*    ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
+******************************************************************************/
+
 #ifndef _PES_CONVERSION_CLASS_
 #define _PES_CONVERSION_CLASS_
 
@@ -17,7 +58,7 @@
 #include <utils/threads.h> // Mutex Class operations
 #include "BcmDebug.h"
 
-//#define DEBUG_PES_DATA  
+//#define DEBUG_PES_DATA
 
 using namespace android;
 #define PES_HEADER_SIZE             128
@@ -33,7 +74,7 @@ using namespace android;
 typedef void (*BUFFER_DONE_CALLBACK) (unsigned int, unsigned int,unsigned int);
 
 typedef struct _DONE_CONTEXT_
-{   
+{
     unsigned int            Param1;
     unsigned int            Param2;
     unsigned int            Param3;
@@ -50,7 +91,7 @@ typedef struct _NEXUS_INPUT_CONTEXT_
     size_t          SzPESBuffer;        // Total Size Of the PES Buffer We Allocated
     size_t          SzValidPESData;     // Size Of Valid Data In PES Buffer.
     unsigned long long FramePTS;	// The PTS That we Just Sent To Hardware
-    NEXUS_PlaypumpScatterGatherDescriptor NxDesc[1];  
+    NEXUS_PlaypumpScatterGatherDescriptor NxDesc[1];
     DONE_CONTEXT    DoneContext;
     LIST_ENTRY      ListEntry;
 }NEXUS_INPUT_CONTEXT, *PNEXUS_INPUT_CONTEXT;
@@ -58,8 +99,8 @@ typedef struct _NEXUS_INPUT_CONTEXT_
 class DataSender
 {
 public:
-    virtual size_t ProcessESData(unsigned int pts, 
-                                unsigned char *pDataBuffer, 
+    virtual size_t ProcessESData(unsigned int pts,
+                                unsigned char *pDataBuffer,
                                 size_t SzDataBuff,
                                 unsigned char *pOutData,
                                 size_t SzOutData)=0;
@@ -78,20 +119,20 @@ class ConfigDataMgr;
 class ConfigDataMgrWithSend;
 class ConfigDataMgrFactory;
 
-class PESFeeder : public DecoderEventsListener, 
+class PESFeeder : public DecoderEventsListener,
                   public DataSender
 {
 public :
     PESFeeder(char const *ClientName,
-              unsigned int vPID, 
-              unsigned int NumDescriptors, 
+              unsigned int vPID,
+              unsigned int NumDescriptors,
               NEXUS_TransportType NxTransType,
               NEXUS_VideoCodec vidCdc=NEXUS_VideoCodec_eNone);
 
     ~PESFeeder();
 
-    size_t ProcessESData(unsigned int pts, 
-                         unsigned char *pDataBuffer, 
+    size_t ProcessESData(unsigned int pts,
+                         unsigned char *pDataBuffer,
                          size_t SzDataBuff,
                          unsigned char *pOutData,
                          size_t SzOutData);
@@ -99,7 +140,7 @@ public :
     size_t  ProcessESData(unsigned int pts,
                           unsigned char *pHeaderToInsert,
                           size_t SzHdrBuff,
-                          unsigned char *pDataBuffer, 
+                          unsigned char *pDataBuffer,
                           size_t SzDataBuff,
                           unsigned char *pOutData,
                           size_t SzOutData);
@@ -136,8 +177,8 @@ private :
         Pauser (Pauser& CpyFromMe);
         void operator=(Pauser& Rhs);
     };
-    
-    //Event listeners 
+
+    //Event listeners
     FeederEventsListener            *FdrEvtLsnr;
 
     /*Instance Variables*/
@@ -150,23 +191,23 @@ private :
 
 
     unsigned char                   *pPESEosBuffer;
-    
+
 
     //Size of Valid Codec Config Data. MAX is CODEC_CONFIG_BUFFER_SIZE
     bool                            SendCfgDataOnNextInput;
     CfgMgr                          *pCfgDataMgr;
-    NEXUS_VideoCodec                vidCodec;    
-    
+    NEXUS_VideoCodec                vidCodec;
+
     //For Internal Data Transfer
     PNEXUS_INPUT_CONTEXT            pInterNotifyCnxt;
 
     //Usage
     //Mutex::Autolock lock(nexSurf->mFreeListLock);
-    unsigned int                    CntDesc;    //Number Of Descriptors We have Requestd  
+    unsigned int                    CntDesc;    //Number Of Descriptors We have Requestd
     Mutex                           mListLock;
-   
-    LIST_ENTRY                      ActiveQ;  // Fired Desc Wait Here i.e We Can Fire More Than One  
-    unsigned int                    FiredCnt; // Check Later If This Is Needed!!  
+
+    LIST_ENTRY                      ActiveQ;  // Fired Desc Wait Here i.e We Can Fire More Than One
+    unsigned int                    FiredCnt; // Check Later If This Is Needed!!
 
     //Flush Statistics
     unsigned int                    FlushCnt;
@@ -174,16 +215,16 @@ private :
 #ifdef DEBUG_PES_DATA
     DumpData                        *DataBeforFlush;
     DumpData                        *DataAfterFlush;
-#endif 
+#endif
     unsigned long long				LastInputTimeStamp;
 private :
-    
-    size_t InitiatePESHeader(unsigned int PtsUs, 
+
+    size_t InitiatePESHeader(unsigned int PtsUs,
                            size_t SzDataBuff,
                            unsigned char *pHeaderBuff,
                            size_t SzHdrBuff);
-    
-    bool PrepareEOSData();  
+
+    bool PrepareEOSData();
     void DiscardConfigData();
     void StopPlayPump();
     void StartPlayPump();
@@ -193,7 +234,7 @@ private :
     /*Operations Hidden from outside world*/
     PESFeeder (PESFeeder& CpyFromMe);
     void operator=(PESFeeder& Rhs);
-    
+
 };
 
 //Default Configuration Data Manager Class
@@ -250,16 +291,16 @@ private:
     void operator=(ConfigDataMgr& Rhs);
 };
 
-static 
-void ConfigDataSentAsPES(unsigned int Param1, 
-                         unsigned int Param2, 
+static
+void ConfigDataSentAsPES(unsigned int Param1,
+                         unsigned int Param2,
                          unsigned int Param3);
 
 class ConfigDataMgrWithSend : public CfgMgr
 {
 public:
     ConfigDataMgrWithSend(DataSender&,unsigned int);
-    ~ConfigDataMgrWithSend(); 
+    ~ConfigDataMgrWithSend();
     bool SaveConfigData(void *, size_t);
     void SendConfigDataToHW();
     void DiscardConfigData();
@@ -281,12 +322,12 @@ private:
 
     unsigned int    ptsToUseForPES;
     NEXUS_INPUT_CONTEXT   XferContext;
-    BKNI_EventHandle      XferDoneEvt;  
+    BKNI_EventHandle      XferDoneEvt;
     void XferDoneNotification();
 
 
-    friend void ConfigDataSentAsPES(unsigned int Param1, 
-                                    unsigned int Param2, 
+    friend void ConfigDataSentAsPES(unsigned int Param1,
+                                    unsigned int Param2,
                                     unsigned int Param3);
 
 private:
