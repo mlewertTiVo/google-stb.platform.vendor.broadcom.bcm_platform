@@ -264,8 +264,8 @@ int main(void)
 
     /* insmod wakeup driver first */
     if(nexusinit_insmod(WAKEUP_DRIVER_FILENAME, value2) != BERR_SUCCESS) {
-        LOGE("nexusinit: FATAL: insmod failed on %s!", WAKEUP_DRIVER_FILENAME);
-        _exit(1);
+        LOGE("nexusinit: insmod failed on %s!", WAKEUP_DRIVER_FILENAME);
+        /* failure is non fatal. */
     }
     else {
         LOGI("nexusinit: insmod %s succeeded", WAKEUP_DRIVER_FILENAME);
@@ -298,9 +298,10 @@ int main(void)
         LOGD("nexusinit: ro.nexus.devname=%s", value2);
     }
 
-    /* insmod nexus.ko driver first */
+    /* insmod nexus.ko driver second */
     if(nexusinit_insmod(NEXUS_DRIVER_FILENAME, value2) != BERR_SUCCESS) {
         LOGE("nexusinit: FATAL: insmod failed on %s!", NEXUS_DRIVER_FILENAME);
+        /* failure is FATAL. */
         _exit(1);
     }
     else {
