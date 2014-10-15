@@ -56,16 +56,6 @@
 #include "cutils/properties.h"
 #include "nexus_ipc_client_factory.h"
 
-#if ANDROID_USES_TRELLIS_WM
-#include "Broker.h"
-#include "StandaloneApplication.h"
-#include "AndroidApplicationFactory.h"
-#include "AndroidWindowManager.h"
-#include "IAndroidBAMEventListener.h"
-using namespace Trellis;
-using namespace Trellis::Application;
-#endif
-
 #include "nx_ashmem.h"
 
 extern void *gralloc_v3d_get_nexus_client_context(void);
@@ -88,38 +78,6 @@ NexusSurface::NexusSurface()
 NEXUS_SurfaceClientHandle       gBlitClient;
 
 static NexusIPCClientBase      *gIpcClient = NexusIPCClientFactory::getClient("Android-Gralloc");
-
-#if ANDROID_USES_TRELLIS_WM
-extern "C" void initOrb(IApplicationContainer* app);
-
-class bamLiteObjects : public StandaloneApplication
-{
-public:
-   bamLiteObjects(IAndroidBAMEventListener *androidBAMEventListener):StandaloneApplication(0,NULL)
-   {
-      StandaloneApplication::init();
-      Util::Param& p = getParameters();
-      p.add("server", "AndroidApplicationDelegate0");
-      Broker::registerServerLib<IWindowManager>();
-      applicationFactory = new AndroidApplicationFactory();
-      windowManager = new AndroidWindowManager(0, applicationFactory, 0/*argc*/, NULL/*argv*/, androidBAMEventListener);
-      initOrb(this);
-      windowManager->init();
-   }
-
-   ~bamLiteObjects()
-   {
-      delete windowManager;
-      delete applicationFactory;
-   }
-
-private:
-   AndroidApplicationFactory *applicationFactory;
-   AndroidWindowManager *windowManager;
-};
-
-static bamLiteObjects *androidBamLite = NULL;
-#endif // ANDROID_USES_TRELLIS_WM
 
 static BKNI_EventHandle flipDone;
 // 2nd Event which is used in hwcomposer as a vsync
@@ -247,10 +205,6 @@ void NexusSurface::init(void)
    gIpcClient->getClientInfo(nexus_client, &client_info);
    client_id = client_info.surfaceClientId;
    LOGD("%s:%d NSC client ID returned by the server dynamically is %d", __FUNCTION__, __LINE__, client_id);
-
-#if ANDROID_USES_TRELLIS_WM
-   androidBamLite = new bamLiteObjects(gIpcClient);
-#endif
 
    blitClient = NEXUS_SurfaceClient_Acquire(client_id);
    if (!blitClient)
