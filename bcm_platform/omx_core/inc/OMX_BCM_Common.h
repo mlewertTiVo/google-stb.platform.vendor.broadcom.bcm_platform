@@ -158,6 +158,7 @@ typedef struct _BCM_OMX_CONTEXT_
     bcmOmxTimestampTable            *pTstable;
     bool                            bSetStartUpTimeDone;
     bool                            bHwNeedsFlush;
+    bool                            bUseNoDataCopy;
 #endif
 #ifdef BCM_OMX_SUPPORT_ENCODER
     OMXNexusVideoEncoder            *pOMXNxVidEnc;

@@ -270,8 +270,10 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->bSetStartUpTimeDone=false;
     pMyData->bHwNeedsFlush = false;
 
-    ALOGD("%s %d: Component Handle :%p BUILD-DATE:%s BUILD-TIME:%s ",
-            __FUNCTION__,__LINE__,hComponent,__DATE__,__TIME__);
+    pMyData->bUseNoDataCopy = true;
+
+    ALOGD("%s %d: Component Handle :%p BUILD-DATE:%s BUILD-TIME:%s pMyData->bUseNoDataCopy:%d",
+            __FUNCTION__,__LINE__,hComponent,__DATE__,__TIME__,pMyData->bUseNoDataCopy);
 
     ALOGD("%s Use Output Buffers PrivateData: %s",__FUNCTION__
 #ifdef USE_ANB_PRIVATE_DATA
@@ -545,7 +547,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
 
     BCM_OMX_CONTEXT *pMyData;
     OMX_ERRORTYPE eError = OMX_ErrorNone;
-    void *pError = (void*)&eError;
+    void *ret;
     ThrCmdType eCmd = Stop;
     OMX_U32 nIndex = 0;
     NEXUS_PlaypumpStatus playpumpStatus;
@@ -578,7 +580,10 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
 
         // Wait for thread to exit so we can get the status into "error"
         if(0 != pMyData->thread_id)
-            pthread_join(pMyData->thread_id, &pError);
+        {
+            pthread_join(pMyData->thread_id, &ret);
+            eError = (OMX_ERRORTYPE) (uintptr_t) ret;
+        }
 
         // close the pipe handles
         if(pMyData->cmdpipe[0])
@@ -733,27 +738,6 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_GetConfig(OMX_IN OMX_HANDLETYPE hComponent UNU
 {
     ALOGV("%s: ENTER With Index:%d \n",__FUNCTION__,nIndex);
     OMX_ERRORTYPE eError = OMX_ErrorNone;
-
-    //    switch (nIndex)
-    //    {
-    //        case OMX_IndexConfigCommonOutputCrop:
-    //        {
-    //            OMX_CONFIG_RECTTYPE *rectParams = (OMX_CONFIG_RECTTYPE *)pComponentConfigStructure;
-    //            rectParams->nLeft       = 10;
-    //            rectParams->nTop        = 10;
-    //            rectParams->nWidth      = 100;
-    //            rectParams->nHeight     = 100;
-    //            eError                  = OMX_ErrorNone;
-    //            break;
-    //        }
-    //
-    //        default:
-    //        {
-    //            eError = OMX_ErrorUnsupportedIndex;
-    //            break;
-    //        }
-    //    }
-
     ALOGV("%s: EXIT \n",__FUNCTION__);
     return OMX_ErrorUndefined;
 }
@@ -832,16 +816,15 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
 
             if (((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sInPortDef.nPortIndex)
             {
-                //PrintPortDefInfo(&pMyData->sInPortDef);
                 BKNI_Memcpy(pParamStruct, &pMyData->sInPortDef, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
 
-            }else if (((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sOutPortDef.nPortIndex) {
-                //PrintPortDefInfo(&pMyData->sOutPortDef);
+            }
+            else if (((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sOutPortDef.nPortIndex)
+            {
                BKNI_Memcpy(pParamStruct, &pMyData->sOutPortDef, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
 
-            } else {
+            } else
                 eError = OMX_ErrorBadPortIndex;
-            }
 
             break;
 
@@ -974,7 +957,9 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
             {
                 BKNI_Memcpy(&pMyData->sInPortDef, pParamStruct, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
 
-            }else if ( ( (OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sOutPortDef.nPortIndex) {
+            }
+            else if ( ( (OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sOutPortDef.nPortIndex)
+            {
                 //
                 // You cannot blindly copy the data You will need to raise a event here
                 // Saying port setting changed if the parameters are not same
@@ -1002,25 +987,9 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
                         pMyData->sOutPortDef.format.video.nFrameWidth,
                         pMyData->sOutPortDef.format.video.nFrameHeight,
                         pMyData->sOutPortDef.nBufferSize);
-
-#if 0
-                pMyData->sOutPortDef.format.video.nFrameWidth = OUT_VIDEO_BUFF_WIDTH;
-                pMyData->sOutPortDef.format.video.nFrameHeight = OUT_VIDEO_BUFF_HEIGHT;
-                pMyData->sOutPortDef.format.video.nStride = pMyData->sOutPortDef.format.video.nFrameWidth;
-                pMyData->sOutPortDef.format.video.nSliceHeight = pMyData->sOutPortDef.format.video.nFrameHeight;
-
-#endif // 0
-
-                //pMyData->sOutPortDef.format.video.nFrameWidth = ((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->format.video.nFrameWidth;
-                //pMyData->sOutPortDef.format.video.nFrameHeight != ((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->format.video.nFrameHeight;
-                //pMyData->sOutPortDef.format.video.nStride = pMyData->sOutPortDef.format.video.nFrameWidth;
-                //pMyData->sOutPortDef.format.video.nSliceHeight = pMyData->sOutPortDef.format.video.nFrameHeight;
-
-                //                }
-
-            }else {
-                eError = OMX_ErrorBadPortIndex;
             }
+            else
+                eError = OMX_ErrorBadPortIndex;
 
             break;
         }
@@ -1220,7 +1189,6 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseBuffer(OMX_IN OMX_HANDLETYPE hComponent,
         LoadBufferHeader(pMyData->sOutBufList, pMyData->sOutBufList.pBufHdr[nIndex],
                 pAppPrivate, nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);
         CopyBufferHeaderList(pMyData->sOutBufList, pPortDef, pMyData->pOutBufHdrRes);
-
     }
 
 OMX_CONF_CMD_BAIL:
@@ -1243,20 +1211,21 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
     PDISPLAY_FRAME pDispFr;
 
 
-    if (!hComponent) {
+    if (!hComponent)
+    {
         ALOGE("ERROR at %s line %d",__FUNCTION__,__LINE__);
         return OMX_ErrorBadParameter;
     }
 
-    if (!bufferHeader) {
+    if (!bufferHeader)
+    {
         ALOGE("ERROR at %s line %d",__FUNCTION__,__LINE__);
         return OMX_ErrorBadParameter;
     }
 
     pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
-    //OMX_CONF_CHECK_CMD(pMyData, bufferHeader, nativeBuffer);
-
-    if (!pMyData) {
+    if (!pMyData)
+    {
         ALOGE("ERROR at %s line %d",__FUNCTION__,__LINE__);
         return OMX_ErrorBadParameter;
     }
@@ -1276,14 +1245,14 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter);
     }
 
-    if (!pPortDef) {
+    if (!pPortDef)
+    {
         ALOGE("ERROR at %s line %d",__FUNCTION__,__LINE__);
         return OMX_ErrorBadParameter;
     }
 
     if (!pPortDef->bEnabled)
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
-
 
     // Find an empty position in the BufferList and allocate memory for the buffer header.
     // Use the buffer passed by the client to initialize the actual buffer
@@ -1298,7 +1267,6 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
 
         OMX_CONF_INIT_STRUCT_PTR (pMyData->sOutBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
     }
-
 
     BCMOMX_DBG_ASSERT(pMyData->sNativeBufParam.enable==OMX_TRUE);
 
@@ -1333,7 +1301,6 @@ OMX_CONF_CMD_BAIL:
     return eError;
 }
 
-
 extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponent,
         OMX_INOUT OMX_BUFFERHEADERTYPE** ppBufferHdr,
         OMX_IN OMX_U32 nPortIndex,
@@ -1356,9 +1323,8 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
         pPortDef = &pMyData->sInPortDef;
     }else if (nPortIndex == pMyData->sOutPortDef.nPortIndex){
         pPortDef = &pMyData->sOutPortDef;
-    }else{
+    }else
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter);
-    }
 
     if (!pPortDef->bEnabled)
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
@@ -1385,45 +1351,28 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
             OMX_CONF_INIT_STRUCT_PTR (pMyData->sInBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
         }
 
-        ALOGV("%s: Allocating Input Buffer :%lu",__FUNCTION__,nSizeBytes);
-
-        //  Now Allocate The Memory For The Buffer
-        //  We Do not Need Nexus Memory For This Buffers. This
-        // Buffer will contain the ES data after container parsing.
-        pMyData->sInBufList.pBufHdr[nIndex]->pBuffer = (OMX_U8*)
-            BKNI_Malloc(nSizeBytes);
-
-        if (!pMyData->sInBufList.pBufHdr[nIndex]->pBuffer)
-        {
-            ALOGE("%s: Failed To Allocate Nexus Memory For Input Buffer",__FUNCTION__);
-            OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
-        }
-
-        //
         // Along with this allocate the Memory for the input context that we maintain
         // for each buffer. We do not need nexus memory for this as well.
-        //
         pMyData->sInBufList.pBufHdr[nIndex]->pInputPortPrivate =
             (OMX_PTR) BKNI_Malloc(sizeof(NEXUS_INPUT_CONTEXT));
 
         if (!pMyData->sInBufList.pBufHdr[nIndex]->pInputPortPrivate)
         {
-            ALOGE("%s: Failed To Allocate Nexus Memory For CONTEXT ",__FUNCTION__);
+            ALOGE("%s: Failed To Allocate Memory For Input CONTEXT ",__FUNCTION__);
             OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
         }
 
         PNEXUS_INPUT_CONTEXT pInNxCnxt =
-            (PNEXUS_INPUT_CONTEXT )
-            pMyData->sInBufList.pBufHdr[nIndex]->pInputPortPrivate;
+            (PNEXUS_INPUT_CONTEXT )pMyData->sInBufList.pBufHdr[nIndex]->pInputPortPrivate;
 
-        //
+        memset(pInNxCnxt, 0, sizeof(NEXUS_INPUT_CONTEXT));
+        ALOGV("%s: Allocating Nexus Memory For InputBuffer :%lu",__FUNCTION__,nSizeBytes);
+
         // Allocate a PES buffer that will be consumed by the
         // transport block.
-        //
         pInNxCnxt->SzPESBuffer = PES_BUFFER_SIZE(nSizeBytes);
         pInNxCnxt->PESData = (OMX_U8 *)
             pMyData->pPESFeeder->AllocatePESBuffer(pInNxCnxt->SzPESBuffer);
-
 
         if (!pInNxCnxt->PESData)
         {
@@ -1431,60 +1380,43 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
             OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
         }
 
+        if (pMyData->bUseNoDataCopy)
+        {
+            uintptr_t BufferStart=0, BufferEnd=0;
+            BufferStart = (uintptr_t) GET_DATA_START_PTR(pInNxCnxt->PESData);
+            BufferEnd =   (uintptr_t) pInNxCnxt->PESData + PES_BUFFER_SIZE(nSizeBytes);
+
+            ALOGE("%s [Zero Copy]: Input Memory Allocation Info BufferStart:%p BufferEnd:%p nSizeBytes:%d TotalSz:%d AllocedAt:%p",
+                  __FUNCTION__,BufferStart,BufferEnd,nSizeBytes,PES_BUFFER_SIZE(nSizeBytes),pInNxCnxt->PESData);
+            BCMOMX_DBG_ASSERT(BufferStart > (uintptr_t)pInNxCnxt->PESData);
+            BCMOMX_DBG_ASSERT((BufferEnd - BufferStart) == nSizeBytes);
+            pMyData->sInBufList.pBufHdr[nIndex]->pBuffer = (unsigned char *)BufferStart;
+        }
+        else
+        {
+            ALOGE("%s : Input Memory Allocation Using Malloc:%p",
+                  __FUNCTION__,pMyData->sInBufList.pBufHdr[nIndex]->pBuffer);
+            pMyData->sInBufList.pBufHdr[nIndex]->pBuffer = (OMX_U8*) BKNI_Malloc(nSizeBytes);
+        }
+
+        if (!pMyData->sInBufList.pBufHdr[nIndex]->pBuffer)
+        {
+            ALOGE("%s: Failed To Allocate Nexus Memory For Input Buffer",__FUNCTION__);
+            OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
+        }
+
         LoadBufferHeader(pMyData->sInBufList, pMyData->sInBufList.pBufHdr[nIndex], pAppPrivate,
                 nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);
 
         CopyBufferHeaderList(pMyData->sInBufList, pPortDef, pMyData->pInBufHdrRes);
-    }else{
+    }
+    else
+    while (1)
+    {
+        ALOGE("%s: Allocating Memory On Output Port--- ERROR WE ARE NOT ADVERTISING THIS QUIRK !!",
+                __FUNCTION__);
 
-        while (1)
-        {
-            ALOGE("%s: Allocating Memory On Output Port--- ERROR WE ARE NOT ADVERTISING THIS QUIRK !!",
-                    __FUNCTION__);
-
-            BKNI_Sleep(10);
-        }
-        /****************************************************************
-          We may need this code later on if we ever advertise this stuff...
-          ListAllocate(pMyData->sOutBufList,  nIndex);
-
-        //First Allocate The Buffer Header
-        if (pMyData->sOutBufList.pBufHdr[nIndex] == NULL)
-        {
-        pMyData->sOutBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
-        BKNI_Malloc(sizeof(OMX_BUFFERHEADERTYPE)) ;
-
-        if (!pMyData->sOutBufList.pBufHdr[nIndex])
-        OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
-
-        OMX_CONF_INIT_STRUCT_PTR(pMyData->sOutBufList.pBufHdr[nIndex],OMX_BUFFERHEADERTYPE);
-        }
-
-        //Now Allocate The Memory For The Buffer
-        pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer = (OMX_U8*) malloc(sizeof(NEXUS_DECODED_FRAME));
-
-        PNEXUS_DECODED_FRAME pNxDecoFr = (PNEXUS_DECODED_FRAME) pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer;
-
-
-        pNxDecoFr->BuffState = BufferState_Init;
-        pNxDecoFr->DispIface.pDisplayFn = DisplayBuffer;
-        pNxDecoFr->DispIface.DecodedFr = pNxDecoFr;
-        pNxDecoFr->DispIface.DisplayCnxt = pMyData->pOMXNxDecoder;
-
-        ALOGD("%s: Allocated OutBuff[nIndex:%d] Buffer:%p ",
-        __FUNCTION__,nIndex,pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer);
-
-#if ORIGINAL_CODE
-pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer = (OMX_U8*)
-BKNI_Malloc(nSizeBytes);
-#endif
-
-if (!pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer)
-OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
-
-LoadBufferHeader(pMyData->sOutBufList, pMyData->sOutBufList.pBufHdr[nIndex],
-pAppPrivate, nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);
-         ****************************************************************/
+        BKNI_Sleep(10);
     }
 
 OMX_CONF_CMD_BAIL:
@@ -1517,7 +1449,8 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_FreeBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
 
         if(pBufferHdr->pBuffer)
         {
-            BKNI_Free(pBufferHdr->pBuffer);
+            if(!pMyData->bUseNoDataCopy)
+                BKNI_Free(pBufferHdr->pBuffer);
             pBufferHdr->pBuffer=NULL;
         }
 
@@ -1561,6 +1494,40 @@ OMX_CONF_CMD_BAIL:
     return eError;
 }
 
+
+/*
+ * Right now this is just a simple indirection
+ * Later, for secure playback when we want to
+ * we wil just have to return the data ptr from
+ * meta data struct. The Size Will Also Be From Metadata Struct.
+ */
+
+static unsigned char *GetSecureDataPtrForDMAXfer(OMX_BUFFERHEADERTYPE* pBufferHdr,
+                                                 unsigned int *SzOut)
+{
+    *SzOut = pBufferHdr->nFilledLen;
+    return pBufferHdr->pBuffer;
+}
+
+/*
+ * Simple function to Save Us Indirection Everywhere in code
+ */
+static unsigned char *GetInDataPtr(BCM_OMX_CONTEXT *pBcmContext,
+                                   OMX_BUFFERHEADERTYPE* pBufferHdr)
+{
+    //Since the CODEC Config Data Is always in clear...
+    if (pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)
+        return pBufferHdr->pBuffer;
+
+    //If it is not codec config data and we are using zero copy...
+    // return null.
+    if(pBcmContext->bUseNoDataCopy)
+        return NULL;
+
+    //if we are not using zero copy
+    return pBufferHdr->pBuffer;
+}
+
 extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
         OMX_IN  OMX_BUFFERHEADERTYPE* pBufferHdr)
 {
@@ -1570,11 +1537,14 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
     OMX_ERRORTYPE eError = OMX_ErrorNone;
     size_t SzValidPESData = 0;
     uint64_t nTimestamp;
-
+    unsigned char * pDataBuffer=NULL;
     pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
 
     PNEXUS_INPUT_CONTEXT pNxInputCnxt =
         (PNEXUS_INPUT_CONTEXT)pBufferHdr->pInputPortPrivate;
+
+    pNxInputCnxt->pSecureData=NULL;
+    pNxInputCnxt->SzSecureData=0;
 
     OMX_CONF_CHECK_CMD(pMyData, pBufferHdr, 1);
     OMX_CONF_CHK_VERSION(pBufferHdr, OMX_BUFFERHEADERTYPE, eError);
@@ -1661,6 +1631,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
             __FUNCTION__, pBufferHdr->nFilledLen, pBufferHdr->nTimeStamp);
     }
 
+    pDataBuffer = GetInDataPtr(pMyData, pBufferHdr);
     if (pBufferHdr->nFilledLen)
     {
         bool SendConfigDataToHw=false;
@@ -1696,163 +1667,161 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
             }
         }
 
-        switch (OMX_COMPRESSION_FORMAT) {
+        switch (OMX_COMPRESSION_FORMAT)
+        {
             case OMX_VIDEO_CodingVP8:
 #ifdef OMX_EXTEND_CODECS_SUPPORT
             case OMX_VIDEO_CodingSPARK:
 #endif
+            {
+                uint8_t es_header[10]= {'B', 'C', 'M', 'V', 0, 0, 0, 0, 0, 0};
+                uint32_t es_header_size = 10;
+
+                B_MEDIA_SAVE_UINT32_BE(&es_header[4], pBufferHdr->nFilledLen);
+                if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG))
                 {
-                    uint8_t es_header[10]= {'B', 'C', 'M', 'V', 0, 0, 0, 0, 0, 0};
-                    uint32_t es_header_size = 10;
-
-                    B_MEDIA_SAVE_UINT32_BE(&es_header[4], pBufferHdr->nFilledLen);
-
-                    if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG))
-                    {
-                        SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
-                                es_header,
-                                es_header_size,
-                                pBufferHdr->pBuffer,
-                                pBufferHdr->nFilledLen,
-                                pNxInputCnxt->PESData,
-                                pNxInputCnxt->SzPESBuffer);
-                    }
-                    break;
+                    SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
+                            es_header,
+                            es_header_size,
+                            pDataBuffer,
+                            pBufferHdr->nFilledLen,
+                            pNxInputCnxt->PESData,
+                            pNxInputCnxt->SzPESBuffer);
                 }
+                break;
+            }
 
 #ifdef OMX_EXTEND_CODECS_SUPPORT
             case OMX_VIDEO_CodingVC1:
-                {
-                    uint8_t es_header[4]= {0x00, 0x00, 0x01, 0x0D};
-                    uint32_t es_header_size = 4;
+            {
+                uint8_t es_header[4]= {0x00, 0x00, 0x01, 0x0D};
+                uint32_t es_header_size = 4;
 
-                    if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG))
-                    {
-                        SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
-                                es_header,
-                                es_header_size,
-                                pBufferHdr->pBuffer,
-                                pBufferHdr->nFilledLen,
-                                pNxInputCnxt->PESData,
-                                pNxInputCnxt->SzPESBuffer);
-                    }
-                    break;
+                if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG))
+                {
+                    SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
+                            es_header,
+                            es_header_size,
+                            pDataBuffer,
+                            pBufferHdr->nFilledLen,
+                            pNxInputCnxt->PESData,
+                            pNxInputCnxt->SzPESBuffer);
                 }
+                break;
+            }
             case OMX_VIDEO_CodingWMV:
+            {
+                uint8_t payload_header[4]= {0x00, 0x00, 0x01, 0x0D};
+                uint32_t payload_header_size = 4;
+
+                if (pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)
                 {
-                    uint8_t payload_header[4]= {0x00, 0x00, 0x01, 0x0D};
-                    uint32_t payload_header_size = 4;
+                    uint8_t *config_header, *hdr;
+                    size_t config_header_length;
 
-                    if (pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)
+                    config_header_length = 8 /*Header Size*/ + pBufferHdr->nFilledLen /*Codec Data */+ 7 /* Zero Pad */;
+                    config_header = hdr = (uint8_t*)malloc(config_header_length);
+
+                    *hdr++ = 0x00;
+                    *hdr++ = 0x00;
+                    *hdr++ = 0x01;
+                    *hdr++ = 0x0F;
+                    *hdr++ = (pMyData->sOutPortDef.format.video.nFrameWidth >> 8)&0xFF;
+                    *hdr++ = (pMyData->sOutPortDef.format.video.nFrameWidth)&0xFF;
+                    *hdr++ = (pMyData->sOutPortDef.format.video.nFrameHeight >> 8)&0xFF;
+                    *hdr++ = (pMyData->sOutPortDef.format.video.nFrameHeight)&0xFF;
+
+                    memcpy(hdr, pDataBuffer, pBufferHdr->nFilledLen);
+                    hdr += pBufferHdr->nFilledLen;
+                    memset(hdr, 0, 7);
+
+                    // Save Codec Config Data will pes convert internally. And will issue the config data to
+                    // hardware on every flush.
+                    if(false == pMyData->pPESFeeder->SaveCodecConfigData(config_header, config_header_length))
                     {
-                        uint8_t *config_header, *hdr;
-                        size_t config_header_length;
-
-                        config_header_length = 8 /*Header Size*/ + pBufferHdr->nFilledLen /*Codec Data */+ 7 /* Zero Pad */;
-                        config_header = hdr = (uint8_t*)malloc(config_header_length);
-
-                        *hdr++ = 0x00;
-                        *hdr++ = 0x00;
-                        *hdr++ = 0x01;
-                        *hdr++ = 0x0F;
-                        *hdr++ = (pMyData->sOutPortDef.format.video.nFrameWidth >> 8)&0xFF;
-                        *hdr++ = (pMyData->sOutPortDef.format.video.nFrameWidth)&0xFF;
-                        *hdr++ = (pMyData->sOutPortDef.format.video.nFrameHeight >> 8)&0xFF;
-                        *hdr++ = (pMyData->sOutPortDef.format.video.nFrameHeight)&0xFF;
-
-                        memcpy(hdr, pBufferHdr->pBuffer, pBufferHdr->nFilledLen);
-                        hdr += pBufferHdr->nFilledLen;
-                        memset(hdr, 0, 7);
-
-                        // Save Codec Config Data will pes convert internally. And will issue the config data to
-                        // hardware on every flush.
-                        if(false == pMyData->pPESFeeder->SaveCodecConfigData(config_header, config_header_length))
-                        {
-                            ALOGE("%s: ==ERROR== Failed To Save The Config Data, Flush May Not work",__FUNCTION__);
-                        }
-
-                        SzValidPESData = pMyData->pPESFeeder->ProcessESData(-1,
-                                           config_header,
-                                           config_header_length,
-                                           pNxInputCnxt->PESData,
-                                           pNxInputCnxt->SzPESBuffer);
-
-                        SendConfigDataToHw=true;
-
-                        free(config_header);
+                        ALOGE("%s: ==ERROR== Failed To Save The Config Data, Flush May Not work",__FUNCTION__);
                     }
-                    else
-                    {
+
+                    SzValidPESData = pMyData->pPESFeeder->ProcessESData(-1,
+                                       config_header,
+                                       config_header_length,
+                                       pNxInputCnxt->PESData,
+                                       pNxInputCnxt->SzPESBuffer);
+
+                    SendConfigDataToHw=true;
+                    free(config_header);
+                }
+                else
+                {
                         SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
                                 payload_header,
                                 payload_header_size,
-                                pBufferHdr->pBuffer,
+                                pDataBuffer,
                                 pBufferHdr->nFilledLen,
                                 pNxInputCnxt->PESData,
                                 pNxInputCnxt->SzPESBuffer);
-                    }
-                    break;
                 }
+            break;
+            }
 
             case OMX_VIDEO_CodingDIVX311:
+            {
+                uint8_t payload_header[4]= {0x00, 0x00, 0x01, 0xB6};
+                uint32_t payload_header_size = 4;
+
+                if (pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)
                 {
-                    uint8_t payload_header[4]= {0x00, 0x00, 0x01, 0xB6};
-                    uint32_t payload_header_size = 4;
+                    uint8_t sequence_header[30+14] = {0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x20, 0x08, 0xC8, 0x0D, 0x40, 0x00, 0x53, 0x88, 0x40,
+                        0x0C, 0x40, 0x01, 0x90, 0x00, 0x97, 0x53, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x30, 0x7F,
+                        /*sequence_user_data*/ 0x00, 0x00, 0x01, 0xB2, 0x44, 0x69, 0x76, 0x58, 0x33, 0x31, 0x31, 0x41, 0x4E, 0x44};
+                    uint32_t sequence_header_size = 30+14;
+                    //uint8_t  sequence_user_data[14] = {0x00, 0x00, 0x01, 0xB2, 0x44, 0x69, 0x76, 0x58, 0x33, 0x31, 0x31, 0x41, 0x4E, 0x44};
 
-                    if (pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)
+                    sequence_header[24] = (pMyData->sOutPortDef.format.video.nFrameWidth >> 4)&0xFF;
+                    sequence_header[25] = (((pMyData->sOutPortDef.format.video.nFrameWidth)&0xF)<<4) | 0x08 /* '10'<<2 */ |
+                    ((pMyData->sOutPortDef.format.video.nFrameHeight >> 10) & 0x3);
+                    sequence_header[26] = (pMyData->sOutPortDef.format.video.nFrameHeight >> 2)&0xFF;
+                    sequence_header[27] = (((pMyData->sOutPortDef.format.video.nFrameHeight)&0x3) << 6)| 0x20 /*'100000'*/;
+
+                    // Save Codec Config Data will pes convert internally. And will issue the config data to
+                    // hardware on every flush.
+                    if(false == pMyData->pPESFeeder->SaveCodecConfigData(sequence_header, sequence_header_size))
                     {
-                        uint8_t sequence_header[30+14] = {0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x20, 0x08, 0xC8, 0x0D, 0x40, 0x00, 0x53, 0x88, 0x40,
-                            0x0C, 0x40, 0x01, 0x90, 0x00, 0x97, 0x53, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x30, 0x7F,
-                            /*sequence_user_data*/ 0x00, 0x00, 0x01, 0xB2, 0x44, 0x69, 0x76, 0x58, 0x33, 0x31, 0x31, 0x41, 0x4E, 0x44};
-                        uint32_t sequence_header_size = 30+14;
-                        //uint8_t  sequence_user_data[14] = {0x00, 0x00, 0x01, 0xB2, 0x44, 0x69, 0x76, 0x58, 0x33, 0x31, 0x31, 0x41, 0x4E, 0x44};
-
-                        sequence_header[24] = (pMyData->sOutPortDef.format.video.nFrameWidth >> 4)&0xFF;
-                        sequence_header[25] = (((pMyData->sOutPortDef.format.video.nFrameWidth)&0xF)<<4) | 0x08 /* '10'<<2 */ | ((pMyData->sOutPortDef.format.video.nFrameHeight >> 10) & 0x3);
-                        sequence_header[26] = (pMyData->sOutPortDef.format.video.nFrameHeight >> 2)&0xFF;
-                        sequence_header[27] = (((pMyData->sOutPortDef.format.video.nFrameHeight)&0x3) << 6)| 0x20 /*'100000'*/;
-
-                        // Save Codec Config Data will pes convert internally. And will issue the config data to
-                        // hardware on every flush.
-                        if(false == pMyData->pPESFeeder->SaveCodecConfigData(sequence_header, sequence_header_size))
-                        {
-                            ALOGE("%s: ==ERROR== Failed To Save The Config Data, Flush May Not work",__FUNCTION__);
-                        }
-
-                        SzValidPESData = pMyData->pPESFeeder->ProcessESData(-1,
-                                sequence_header,
-                                sequence_header_size,
-                                pNxInputCnxt->PESData,
-                                pNxInputCnxt->SzPESBuffer);
-
-                        SendConfigDataToHw=true;
-                    }
-                    else
-                    {
-                        SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
-                                payload_header,
-                                payload_header_size,
-                                pBufferHdr->pBuffer,
-                                pBufferHdr->nFilledLen,
-                                pNxInputCnxt->PESData,
-                                pNxInputCnxt->SzPESBuffer);
+                        ALOGE("%s: ==ERROR== Failed To Save The Config Data, Flush May Not work",__FUNCTION__);
                     }
 
-                    break;
+                    SzValidPESData = pMyData->pPESFeeder->ProcessESData(-1,
+                            sequence_header,
+                            sequence_header_size,
+                            pNxInputCnxt->PESData,
+                            pNxInputCnxt->SzPESBuffer);
+
+                    SendConfigDataToHw=true;
+            }else{
+                    SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
+                            payload_header,
+                            payload_header_size,
+                            pDataBuffer,
+                            pBufferHdr->nFilledLen,
+                            pNxInputCnxt->PESData,
+                            pNxInputCnxt->SzPESBuffer);
                 }
+
+                break;
+            }
 #endif
 
             default:
+            {
+                if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG))
                 {
-                    if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG))
-                    {
-                        SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
-                                pBufferHdr->pBuffer,
-                                pBufferHdr->nFilledLen,
-                                pNxInputCnxt->PESData,
-                                pNxInputCnxt->SzPESBuffer);
-                    }
+                    SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
+                                                                        pDataBuffer,
+                                                                        pBufferHdr->nFilledLen,
+                                                                        pNxInputCnxt->PESData,
+                                                                        pNxInputCnxt->SzPESBuffer);
                 }
+            }
         }
 
         // This is valid data size need to transfer to hardware
@@ -1867,6 +1836,17 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
                 pBufferHdr->nFilledLen = 0;
             }
         }
+        else if(pMyData->bUseNoDataCopy)
+        {
+            // If we are using secure copy, for non codec config data,
+            // pDataBuffer Has To Be NUll
+            BCMOMX_DBG_ASSERT(NULL==pDataBuffer);
+            unsigned int SizeOfSecureData=0;
+            pDataBuffer = GetSecureDataPtrForDMAXfer(pBufferHdr, &SizeOfSecureData);
+            BCMOMX_DBG_ASSERT(pDataBuffer && SizeOfSecureData);
+            pNxInputCnxt->pSecureData = pDataBuffer;
+            pNxInputCnxt->SzSecureData = SizeOfSecureData;
+        }
     }
 
     // Put the command and data in the pipe
@@ -1876,7 +1856,6 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
 OMX_CONF_CMD_BAIL:
     return eError;
 }
-
 
 extern "C" OMX_ERRORTYPE OMX_VDEC_FillThisBuffer(OMX_HANDLETYPE hComponent, OMX_BUFFERHEADERTYPE * pBufferHdr)
 {
@@ -1970,13 +1949,12 @@ static bool portSettingChanged(BCM_OMX_CONTEXT* pMyData)
     NEXUS_Error nxErr = NEXUS_SUCCESS;
     NEXUS_VideoDecoderStatus vdecStatus;
     trace t(__FUNCTION__);
+
     if(false == pMyData->pOMXNxDecoder->GetDecoSts(&vdecStatus))
     {
         //Get the last error here to find out more.
         return false;
     }
-
-    //    nxErr = NEXUS_SimpleVideoDecoder_GetStatus(mvideoDecoderhandle, &vdecStatus);
 
     LOGD("%s: Nexus Returned W :%d HEIGHT:%d",__FUNCTION__, vdecStatus.display.width,vdecStatus.display.height);
 
@@ -1985,23 +1963,6 @@ static bool portSettingChanged(BCM_OMX_CONTEXT* pMyData)
         LOGD("%s: Nexus Returned ZERO W :%d HEIGHT:%d",__FUNCTION__, vdecStatus.display.width,vdecStatus.display.height);
         return false;
     }
-
-    //      OMX_PARAM_PORTDEFINITIONTYPE *def = &editPortInfo(0)->mDef;
-    //      def->format.video.nFrameWidth = mWidth;
-    //      def->format.video.nFrameHeight = mHeight;
-    //      def->format.video.nStride = def->format.video.nFrameWidth;
-    //      def->format.video.nSliceHeight = def->format.video.nFrameHeight;
-    //
-    //      def = &editPortInfo(1)->mDef;
-    //      def->format.video.nFrameWidth = mWidth;
-    //      def->format.video.nFrameHeight = mHeight;
-    //      def->format.video.nStride = def->format.video.nFrameWidth;
-    //      def->format.video.nSliceHeight = def->format.video.nFrameHeight;
-    //
-    //      def->nBufferSize =
-    //          (((def->format.video.nFrameWidth + 15) & -16)
-    //          * ((def->format.video.nFrameHeight + 15) & -16) * 3) / 2;
-
 
     if( (pMyData->sOutPortDef.format.video.nFrameWidth != vdecStatus.display.width) ||
             (pMyData->sOutPortDef.format.video.nFrameHeight != vdecStatus.display.height))
@@ -2034,9 +1995,7 @@ static bool portSettingChanged(BCM_OMX_CONTEXT* pMyData)
     return false;
 }
 
-
-    static bool
-FlushInput(BCM_OMX_CONTEXT *pBcmContext)
+static bool FlushInput(BCM_OMX_CONTEXT *pBcmContext)
 {
     // On Flush, We will start from a different
     // Location, Need to set the start up time
@@ -2055,8 +2014,7 @@ FlushInput(BCM_OMX_CONTEXT *pBcmContext)
     return true;
 }
 
-    static void
-CleanUpOutputBuffer(OMX_BUFFERHEADERTYPE *pOMXBuffhdr)
+static void CleanUpOutputBuffer(OMX_BUFFERHEADERTYPE *pOMXBuffhdr)
 {
     void *pBuffer=NULL;
     bool unLockBuffer=false;
@@ -2097,8 +2055,7 @@ CleanUpOutputBuffer(OMX_BUFFERHEADERTYPE *pOMXBuffhdr)
     return;
 }
 
-static bool
-FlushOutput(BCM_OMX_CONTEXT *pBcmContext)
+static bool FlushOutput(BCM_OMX_CONTEXT *pBcmContext)
 {
     OMX_PARAM_PORTDEFINITIONTYPE *pPortDef;
     pPortDef = &pBcmContext->sOutPortDef;
@@ -2107,10 +2064,10 @@ FlushOutput(BCM_OMX_CONTEXT *pBcmContext)
         if(pBcmContext->bHwNeedsFlush)
         {
             pBcmContext->bHwNeedsFlush=false;
-        	if (false == pBcmContext->pOMXNxDecoder->Flush())
-        	{
-            	ALOGE("==FLUSH FAILED ON OUTPUT PORT==");
-            	return false;
+            if (false == pBcmContext->pOMXNxDecoder->Flush())
+            {
+                ALOGE("==FLUSH FAILED ON OUTPUT PORT==");
+                return false;
             }
         }
     }
@@ -2125,13 +2082,10 @@ FlushOutput(BCM_OMX_CONTEXT *pBcmContext)
 static void* ComponentThread(void* pThreadData)
 {
     trace t(__FUNCTION__);
-
-
     int i, fd1;
     fd_set rfds;
     OMX_U32 cmddata;
     ThrCmdType cmd;
-
 
     OMX_BUFFERHEADERTYPE *pInBufHdr = NULL;
     OMX_BUFFERHEADERTYPE *pOutBufHdr = NULL;
@@ -2158,7 +2112,6 @@ static void* ComponentThread(void* pThreadData)
 
         // Check for new command
         i = select(pMyData->cmdpipe[0]+1, &rfds, NULL, NULL, NULL);
-
         if (FD_ISSET(pMyData->cmdpipe[0], &rfds))
         {
             // retrieve command and data from pipe
@@ -2357,7 +2310,6 @@ static void* ComponentThread(void* pThreadData)
                         default :
                             ALOGE("%s %d: State Transition Event: ==INVALID STATE ==",
                                     __FUNCTION__,__LINE__);
-
                     }
                 }
             }
@@ -2749,8 +2701,7 @@ bcmOmxTimestampTable::~bcmOmxTimestampTable()
     free(pTimestamps);
 }
 
-uint32_t
-bcmOmxTimestampTable::store(uint64_t orig_ts)
+uint32_t bcmOmxTimestampTable::store(uint64_t orig_ts)
 {
     unsigned int i;
 
@@ -2781,8 +2732,7 @@ bcmOmxTimestampTable::store(uint64_t orig_ts)
     return CONVERT_USEC_45KHZ(orig_ts);
 }
 
-uint64_t
-bcmOmxTimestampTable::retrieve(uint32_t conv_ts)
+uint64_t bcmOmxTimestampTable::retrieve(uint32_t conv_ts)
 {
     unsigned int i;
     uint64_t orig_ts;
@@ -2808,24 +2758,16 @@ bcmOmxTimestampTable::retrieve(uint32_t conv_ts)
 
 }
 
-void
-bcmOmxTimestampTable::flush()
+void bcmOmxTimestampTable::flush()
 {
     memset(pTimestamps, 0, size * sizeof(bcmOmxTimestampEntry));
     usage_count = 0;
 }
 
-bool
-bcmOmxTimestampTable::isFull()
+bool bcmOmxTimestampTable::isFull()
 {
     ALOGD("%s: usage_count = %d",__FUNCTION__, usage_count);
     return (usage_count==size) ? true : false;
 }
 
-
 ////// END OF FILE
-
-
-
-
-

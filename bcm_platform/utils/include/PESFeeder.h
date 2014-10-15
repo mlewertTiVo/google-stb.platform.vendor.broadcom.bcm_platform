@@ -69,7 +69,10 @@ using namespace android;
 #endif
 
 #define CODEC_CONFIG_BUFFER_SIZE    1024
-#define PES_BUFFER_SIZE(_BuffSz_)   (PES_HEADER_SIZE + _BuffSz_ + (4 * 1024) + CODEC_CONFIG_BUFFER_SIZE)
+#define PADDING_SIZE                (4 * 1024)
+
+#define PES_BUFFER_SIZE(_BuffSz_)   (PES_HEADER_SIZE + CODEC_CONFIG_BUFFER_SIZE + PADDING_SIZE + _BuffSz_)
+#define GET_DATA_START_PTR(_ptr_)   ((unsigned char *)(_ptr_) + PES_HEADER_SIZE + CODEC_CONFIG_BUFFER_SIZE + PADDING_SIZE)
 
 typedef void (*BUFFER_DONE_CALLBACK) (unsigned int, unsigned int,unsigned int);
 
@@ -90,9 +93,12 @@ typedef struct _NEXUS_INPUT_CONTEXT_
     unsigned char   *PESData;
     size_t          SzPESBuffer;        // Total Size Of the PES Buffer We Allocated
     size_t          SzValidPESData;     // Size Of Valid Data In PES Buffer.
+    unsigned char   *pSecureData;
+    size_t          SzSecureData;
     unsigned long long FramePTS;	// The PTS That we Just Sent To Hardware
-    NEXUS_PlaypumpScatterGatherDescriptor NxDesc[1];
+    NEXUS_PlaypumpScatterGatherDescriptor NxDesc[NUM_IN_DESCRIPTORS_PER_IO];
     DONE_CONTEXT    DoneContext;
+    unsigned int    NumDescFired;
     LIST_ENTRY      ListEntry;
 }NEXUS_INPUT_CONTEXT, *PNEXUS_INPUT_CONTEXT;
 
@@ -145,7 +151,6 @@ public :
                           unsigned char *pOutData,
                           size_t SzOutData);
 
-    size_t CopyPESData(void *pBuffer, size_t bufferSz);
     bool SendPESDataToHardware(PNEXUS_INPUT_CONTEXT);
     void XFerDoneCallBack();
 
@@ -219,6 +224,7 @@ private :
     unsigned long long				LastInputTimeStamp;
 private :
 
+    size_t CopyPESData(void *pBuffer, size_t bufferSz);
     size_t InitiatePESHeader(unsigned int PtsUs,
                            size_t SzDataBuff,
                            unsigned char *pHeaderBuff,
@@ -346,8 +352,6 @@ private:
     ConfigDataMgrFactory(){return;};
 };
 
-static
-CfgMgr*
-CreateCfgDataMgr(NEXUS_VideoCodec vidCodec, DataSender& Sender);
+static CfgMgr* CreateCfgDataMgr(NEXUS_VideoCodec vidCodec, DataSender& Sender);
 
 #endif

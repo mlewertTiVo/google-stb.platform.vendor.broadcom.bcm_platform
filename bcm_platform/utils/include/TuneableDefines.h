@@ -69,7 +69,8 @@
 #define NUM_OUT_BUFFERS         4                // Output Buffers
 #define MAX_NUM_OUT_BUFFERS     32               // Max of output buffers
 
-#define NUM_IN_DESCRIPTORS      (NUM_IN_BUFFERS * 2)
+#define NUM_IN_DESCRIPTORS_PER_IO 2
+#define NUM_IN_DESCRIPTORS      (NUM_IN_BUFFERS * NUM_IN_DESCRIPTORS_PER_IO * 2)
 #define PES_VIDEO_PID           0xE0
 #define MAX_NUM_TIMESTAMPS      32              // Max number of entries in timestamp lookup
 
@@ -97,4 +98,3 @@
 #define VIDEO_ENCODER_DEFAULT_FRAMERATE         983040          // 15 Frames/sec in Q16 format
 
 #endif
-

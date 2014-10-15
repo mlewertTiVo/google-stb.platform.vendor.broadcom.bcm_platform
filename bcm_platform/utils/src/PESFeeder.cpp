@@ -48,6 +48,9 @@
 #define LOG_CREATE_DESTROY      ALOGD
 #define LOG_CONFIG_MSGS         ALOGD
 
+//Fast Path Messages
+#define LOG_CMD_COMPLETE
+#define LOG_CMD_SEND
 #define LOG_INFO
 #define LOG_ERROR               ALOGD
 #define LOG_WARNING             ALOGD
@@ -102,8 +105,7 @@ static void FormBppPacket(unsigned char *pBuffer, uint32_t opcode)
 }
 #endif
 
-bool
-PESFeeder::IsPlayPumpStarted()
+bool PESFeeder::IsPlayPumpStarted()
 {
     NEXUS_Error rc = 0;
     NEXUS_PlaypumpStatus NxPlayPumpStatus;
@@ -113,8 +115,7 @@ PESFeeder::IsPlayPumpStarted()
     return NxPlayPumpStatus.started;
 }
 
-void
-PESFeeder::StopPlayPump()
+void PESFeeder::StopPlayPump()
 {
     if (IsPlayPumpStarted())
     {
@@ -127,10 +128,9 @@ PESFeeder::StopPlayPump()
     }
 }
 
-void
-PESFeeder::StartPlayPump()
+void PESFeeder::StartPlayPump()
 {
-    if (false == IsPlayPumpStarted())
+    if (!IsPlayPumpStarted())
     {
         LOG_START_STOP_DBG("[%s]%s: Starting The PlayPump !!", ClientIDString, __FUNCTION__);
         if( NEXUS_SUCCESS != NEXUS_Playpump_Start(NxPlayPumpHandle))
@@ -169,11 +169,8 @@ PESFeeder::PESFeeder(char const *ClientName,
     InitializeListHead(&ActiveQ);
 
     NEXUS_Playpump_GetDefaultOpenSettings(&PlayPumpOpenSettings);
-
-
     PlayPumpOpenSettings.numDescriptors = NumDescriptors;
     PlayPumpOpenSettings.fifoSize =0; //We are not using playpump in FIFIO mode
-
     NxPlayPumpHandle = NEXUS_Playpump_Open(NEXUS_ANY_ID,&PlayPumpOpenSettings);
     if (NxPlayPumpHandle == NULL)
     {
@@ -182,18 +179,19 @@ PESFeeder::PESFeeder(char const *ClientName,
     }
 
     NEXUS_Playpump_GetDefaultSettings(&PlayPumpSettings);
-
     if (NxTransType == NEXUS_TransportType_eAsf)
     {
         PlayPumpSettings.transportType = NEXUS_TransportType_eMpeg2Pes;
         PlayPumpSettings.originalTransportType  = NxTransType;
-    }else{
+    }
+    else
+    {
         PlayPumpSettings.transportType = NxTransType;
     }
+
     PlayPumpSettings.dataCallback.callback = DescDoneCallBack;
     PlayPumpSettings.dataCallback.context = this;
     PlayPumpSettings.dataCallback.param = 0; /* unused */
-    //PlayPumpSettings.dataNotCpuAccessible = true;
     NEXUS_Playpump_SetSettings(NxPlayPumpHandle, &PlayPumpSettings);
 
     NxVidPidChHandle = NEXUS_Playpump_OpenPidChannel(NxPlayPumpHandle,
@@ -229,13 +227,13 @@ PESFeeder::PESFeeder(char const *ClientName,
         return;
     }
 
-    //NEXUS_Memory_Allocate(PES_EOS_BUFFER_SIZE,NULL,(void **) &pPESEosBuffer);
     pPESEosBuffer = (unsigned char *) AllocatePESBuffer(PES_EOS_BUFFER_SIZE);
     NEXUS_Memory_Allocate(sizeof(NEXUS_INPUT_CONTEXT),NULL,(void **) &pInterNotifyCnxt);
 
-    //
+    pInterNotifyCnxt->pSecureData=NULL;
+    pInterNotifyCnxt->SzSecureData=0;
+
     // Prepare the EOS Data Once And Use It For EOS
-    //
     PrepareEOSData();
 
     pCfgDataMgr = CreateCfgDataMgr(vidCodec,*this);
@@ -279,8 +277,13 @@ PESFeeder::~PESFeeder()
     while (!IsListEmpty(&ActiveQ))
     {
         PLIST_ENTRY pDoneEntry = RemoveTailList(&ActiveQ);
-        FiredCnt--;
+
+        PNEXUS_INPUT_CONTEXT pDoneCnxt =
+            CONTAINING_RECORD(pDoneEntry,NEXUS_INPUT_CONTEXT,ListEntry);
+
+        FiredCnt-=pDoneCnxt->NumDescFired;
     }
+
     if(FiredCnt)
     {
         LOG_ERROR("[%s]%s: Destroying Object But There Are Commands That are Fire To Hardware!! \n ++ASSERTING++",ClientIDString,__FUNCTION__);
@@ -325,8 +328,7 @@ PESFeeder::~PESFeeder()
     LOG_CREATE_DESTROY("[%s]%s: EXIT", ClientIDString,__FUNCTION__);
 }
 
-void *
-PESFeeder::AllocatePESBuffer(size_t SzPESBuffer)
+void *PESFeeder::AllocatePESBuffer(size_t SzPESBuffer)
 {
     void * retMem=NULL;
     NEXUS_Error errCode=NEXUS_SUCCESS;
@@ -340,28 +342,24 @@ PESFeeder::AllocatePESBuffer(size_t SzPESBuffer)
             &memSetting,
             &retMem);
 
-
     BCMOMX_DBG_ASSERT( (errCode==NEXUS_SUCCESS) || retMem);
     if ( (errCode != NEXUS_SUCCESS)  || (!retMem))
     {
         LOG_ERROR("[%s]%s: Nexus Memory Allocation Failure Requested:%d",
                 ClientIDString,__FUNCTION__,SzPESBuffer);
-
         return NULL;
     }
 
     return retMem;
 }
 
-void
-PESFeeder::FreePESBuffer(void *pMem)
+void PESFeeder::FreePESBuffer(void *pMem)
 {
     NEXUS_Memory_Free(pMem);
 }
 
 
-bool
-PESFeeder::RegisterFeederEventsListener(FeederEventsListener *pInEvtLisnr)
+bool PESFeeder::RegisterFeederEventsListener(FeederEventsListener *pInEvtLisnr)
 {
     if (!pInEvtLisnr)
     {
@@ -379,8 +377,7 @@ PESFeeder::RegisterFeederEventsListener(FeederEventsListener *pInEvtLisnr)
     return true;
 }
 
-bool
-PESFeeder::StartDecoder(StartDecoderIFace *pStartDecoIface)
+bool PESFeeder::StartDecoder(StartDecoderIFace *pStartDecoIface)
 {
     if (!pStartDecoIface)
     {
@@ -391,8 +388,7 @@ PESFeeder::StartDecoder(StartDecoderIFace *pStartDecoIface)
     return pStartDecoIface->StartDecoder((unsigned int)NxVidPidChHandle);
 }
 
-size_t
-PESFeeder::InitiatePESHeader(unsigned int pts45KHz,
+size_t PESFeeder::InitiatePESHeader(unsigned int pts45KHz,
         size_t SzDataBuff,
         unsigned char *pHeaderBuff,
         size_t SzHdrBuff)
@@ -435,12 +431,9 @@ PESFeeder::InitiatePESHeader(unsigned int pts45KHz,
     return SzPESHeader;
 }
 
-//
 // Prepare the Data And Copy it to the output
 // Buffer.
-//
-size_t
-PESFeeder::ProcessESData(
+size_t PESFeeder::ProcessESData(
         unsigned int    pts,
         unsigned char   *pDataBuffer,
         size_t          SzDataBuff,
@@ -452,7 +445,7 @@ PESFeeder::ProcessESData(
     unsigned char PESHeader[PES_HEADER_SIZE];
     size_t SzCfgData=0;
 
-    if( (!pDataBuffer) || (!pOutData) || (!SzDataBuff) || (!SzOutData))
+    if((!pOutData) || (!SzDataBuff) || (!SzOutData))
     {
         LOG_ERROR("[%s]%s: Invalid Parameters",ClientIDString,__FUNCTION__);
         return 0;
@@ -462,7 +455,6 @@ PESFeeder::ProcessESData(
     SzCfgData = pCfgDataMgr->GetConfigDataSz();
 
     BCMOMX_DBG_ASSERT(!(SendCfgDataOnNextInput && 0==SzCfgData));
-
     if (SendCfgDataOnNextInput)
     {
         SzTotalInData = SzDataBuff + SzCfgData;
@@ -486,8 +478,11 @@ PESFeeder::ProcessESData(
         SendCfgDataOnNextInput=false;
     }
 
-    //Add the Range For actual Data
-    batom_accum_add_range(AccumulatorObject, pDataBuffer, SzDataBuff);
+    if (pDataBuffer)
+    {
+        //Add the Range For actual Data
+        batom_accum_add_range(AccumulatorObject, pDataBuffer, SzDataBuff);
+    }
 
     //Get The Cursor
     batom_cursor_from_accum(&CursorToAccum, AccumulatorObject);
@@ -495,22 +490,29 @@ PESFeeder::ProcessESData(
     //Get the size of the cursor
     SzTotalPESData = batom_cursor_size(&CursorToAccum);
 
-    if ( (SzTotalPESData > SzOutData)  ||
-            (SzTotalPESData < (SzPESHeader + SzDataBuff)) )
+    if (pDataBuffer)
     {
-        LOG_ERROR("[%s]%s: Failed to Initiate the PES header",ClientIDString,__FUNCTION__);
-        return 0;
+        if ((SzTotalPESData > SzOutData)  ||
+                    (SzTotalPESData < (SzPESHeader + SzDataBuff)))
+        {
+                LOG_ERROR("[%s]%s: Failed to Initiate the PES header",ClientIDString,__FUNCTION__);
+                return 0;
+        }
+        else if ( (SzTotalPESData > SzOutData)  ||
+             (SzTotalPESData < SzPESHeader) )
+        {
+                LOG_ERROR("[%s]%s: Failed to Initiate the PES header",ClientIDString,__FUNCTION__);
+                return 0;
+        }
     }
 
     size_t returnSz =  CopyPESData(pOutData, SzOutData);
-
     BCMOMX_DBG_ASSERT(returnSz == SzTotalPESData);
     //Copy the PES data to the ouput buffer...
     return returnSz;
 }
 
-size_t
-PESFeeder::ProcessESData(unsigned int pts,
+size_t PESFeeder::ProcessESData(unsigned int pts,
         unsigned char *pHeaderToInsert,
         size_t SzHdrBuff,
         unsigned char *pDataBuffer,
@@ -523,18 +525,18 @@ PESFeeder::ProcessESData(unsigned int pts,
     unsigned char PESHeader[PES_HEADER_SIZE];
     size_t SzCfgData=0;
 
-    if ( (!pHeaderToInsert) || (!SzHdrBuff) || (!pDataBuffer) || (!SzDataBuff) || (!pOutData) ||  (!SzOutData) )
+    if ( (!pHeaderToInsert) || (!SzHdrBuff) ||
+         (!SzDataBuff) || (!pOutData) ||
+         (!SzOutData) )
     {
         LOG_ERROR("%s[%d] Invalid Input Parameters",__FUNCTION__,__LINE__);
         return 0;
     }
 
     SzTotalInData = SzDataBuff + SzHdrBuff;
-
     SzCfgData = pCfgDataMgr->GetConfigDataSz();
 
     BCMOMX_DBG_ASSERT(!(SendCfgDataOnNextInput && 0==SzCfgData));
-
     if (SendCfgDataOnNextInput)
     {
         SzTotalInData += SzCfgData; //Add The Config Data Size....
@@ -561,8 +563,11 @@ PESFeeder::ProcessESData(unsigned int pts,
         SendCfgDataOnNextInput=false;
     }
 
-    //Add the Range For actual Data
-    batom_accum_add_range(AccumulatorObject, pDataBuffer, SzDataBuff);
+    if (pDataBuffer)
+    {
+        //Add the Range For actual Data
+        batom_accum_add_range(AccumulatorObject, pDataBuffer, SzDataBuff);
+    }
 
     //Get The Cursor
     batom_cursor_from_accum(&CursorToAccum, AccumulatorObject);
@@ -570,11 +575,20 @@ PESFeeder::ProcessESData(unsigned int pts,
     //Get the size of the cursor
     SzTotalPESData = batom_cursor_size(&CursorToAccum);
 
-    if ( (SzTotalPESData > SzOutData)  ||
-            (SzTotalPESData < (SzPESHeader + SzDataBuff + SzHdrBuff)) )
+    if (pDataBuffer)
     {
-        LOG_ERROR("[%s]%s: Failed to Initiate the PES header",ClientIDString,__FUNCTION__);
-        return 0;
+        if ((SzTotalPESData > SzOutData)  ||
+                (SzTotalPESData < (SzPESHeader + SzDataBuff + SzHdrBuff)) )
+        {
+            LOG_ERROR("[%s]%s: Failed to Initiate the PES header",ClientIDString,__FUNCTION__);
+            return 0;
+        }
+        else if ( (SzTotalPESData > SzOutData)  ||
+                (SzTotalPESData < (SzPESHeader + SzHdrBuff)) )
+        {
+            LOG_ERROR("[%s]%s: Failed to Initiate the PES header",ClientIDString,__FUNCTION__);
+            return 0;
+        }
     }
 
     size_t returnSz =  CopyPESData(pOutData, SzOutData);
@@ -596,9 +610,9 @@ PESFeeder::ProcessESData(unsigned int pts,
 size_t
 PESFeeder::CopyPESData(void *pBuffer, size_t bufferSz)
 {
-    size_t copiedSz=0;
+    size_t copiedSz = 0;
 
-    if( (!pBuffer) || (!bufferSz))
+    if( !pBuffer || !bufferSz)
     {
         LOG_ERROR("[%s]%s: Invalid Parameters",ClientIDString,__FUNCTION__);
         return 0;
@@ -608,8 +622,7 @@ PESFeeder::CopyPESData(void *pBuffer, size_t bufferSz)
     return copiedSz;
 }
 
-bool
-PESFeeder::Flush()
+bool PESFeeder::Flush()
 {
     NEXUS_PlaypumpStatus NxPlayPumpStatus;
 
@@ -645,7 +658,7 @@ PESFeeder::Flush()
                     pDoneCnxt->DoneContext.Param3);
         }
 
-        FiredCnt--;
+        FiredCnt -= pDoneCnxt->NumDescFired;
     }
 
     if (FiredCnt)
@@ -661,25 +674,21 @@ PESFeeder::Flush()
     return true;
 }
 
-void
-PESFeeder::FlushStarted()
+void PESFeeder::FlushStarted()
 {
     LOG_FLUSH_MSGS("[%s]%s: Decoder Flush Started",
             ClientIDString,__FUNCTION__);
 
     StopPlayPump();
-    return;
 }
 
-void
-PESFeeder::FlushDone()
+void PESFeeder::FlushDone()
 {
     size_t SzCfgData;
     LOG_FLUSH_MSGS("[%s]%s: Decoder Flush Done Notified--Config Data Will Be Sent On Next IO",
             ClientIDString,__FUNCTION__);
 
     StartPlayPump();
-
     SzCfgData = pCfgDataMgr->GetConfigDataSz();
 
     //Send Configuration if there is anything to send
@@ -690,21 +699,16 @@ PESFeeder::FlushDone()
     }
 }
 
-void
-PESFeeder::EOSDelivered()
+void PESFeeder::EOSDelivered()
 {
     /*
      * The Decoder has actually sent the last frame Marked with EOS
      * The Playback Will stop Now. Invalidate the Config Data.
      */
     LOG_EOS_DBG("[%s]%s: EOS Delivered To Output", ClientIDString,__FUNCTION__);
-
-    /* need the config data while looping playback */
-    //DiscardConfigData();
 }
 
-void
-PESFeeder::XFerDoneCallBack()
+void PESFeeder::XFerDoneCallBack()
 {
     unsigned int DescDoneCnt=0;
     NEXUS_PlaypumpStatus NxPlayPumpStatus;
@@ -734,37 +738,102 @@ PESFeeder::XFerDoneCallBack()
 
     DescDoneCnt = FiredCnt -  NxPlayPumpStatus.descFifoDepth;
 
-    LOG_INFO("[%s]%s: DescDoneCnt:%d = [%d-%d]",
+    LOG_CMD_COMPLETE("[%s]%s: DescDoneCnt:%d = [%d-%d]",
             ClientIDString,__FUNCTION__,
             DescDoneCnt,
             FiredCnt,
             NxPlayPumpStatus.descFifoDepth);
 
-    for (unsigned int i=0; i < DescDoneCnt; i++)
+    if (!DescDoneCnt)
+    {
+        LOG_WARNING("%s: Spurious Callback- No Descriptors Completed",__FUNCTION__);
+        return;
+    }
+
+
+    LOG_CMD_COMPLETE("%s: No. Of Done Descriptors:%d FiredCnt:%d",
+                     __PRETTY_FUNCTION__,
+                     DescDoneCnt,
+                     FiredCnt);
+
+    while (DescDoneCnt)
     {
         BCMOMX_DBG_ASSERT(!IsListEmpty(&ActiveQ));
         PLIST_ENTRY pDoneEntry = RemoveTailList(&ActiveQ);
         BCMOMX_DBG_ASSERT(pDoneEntry);
         PNEXUS_INPUT_CONTEXT pDoneCnxt = CONTAINING_RECORD(pDoneEntry,NEXUS_INPUT_CONTEXT,ListEntry);
+        BCMOMX_DBG_ASSERT(pDoneCnxt->NumDescFired);
 
-        if (pDoneCnxt->DoneContext.pFnDoneCallBack)
+        LOG_CMD_COMPLETE("%s: Processing %p: NumFired:%d DescDoneCnt:%d",
+                         __FUNCTION__, pDoneCnxt, pDoneCnxt->NumDescFired,DescDoneCnt);
+
+        while (DescDoneCnt && pDoneCnxt->NumDescFired)
         {
-            //Fire The Call Back
-            pDoneCnxt->DoneContext.pFnDoneCallBack(pDoneCnxt->DoneContext.Param1,
-                    pDoneCnxt->DoneContext.Param2,
-                    pDoneCnxt->DoneContext.Param3);
+            pDoneCnxt->NumDescFired--;
+            FiredCnt--;
+            DescDoneCnt--;
+            LOG_CMD_COMPLETE("%s: After Decrement %p: NumFired:%d DescDoneCnt:%d FiredCnt:%d",
+                             __FUNCTION__, pDoneCnxt,
+                             pDoneCnxt->NumDescFired,
+                             DescDoneCnt,FiredCnt);
         }
 
-        FiredCnt--;
+        if ( (pDoneCnxt->NumDescFired) && (DescDoneCnt) )
+        {
+            LOG_ERROR("%s: ===ERROR ASSERTING== : If There Are More Desc Competed, You should be "
+                      "Able to Complete This (or More) Commands"
+                      "pDoneCnxt->NumDescFired: %d DescDoneCnt:%d====",
+                      __FUNCTION__, pDoneCnxt->NumDescFired, DescDoneCnt);
+
+            BCMOMX_DBG_ASSERT(false);
+        }
+
+
+        if (0 == pDoneCnxt->NumDescFired)
+        {
+            LOG_CMD_COMPLETE("%s: Completing %p: NumFired:%d Remaing DescDoneDnt:%d",
+                             __FUNCTION__, pDoneCnxt, pDoneCnxt->NumDescFired,DescDoneCnt);
+
+            //Command Completed
+            if (pDoneCnxt->DoneContext.pFnDoneCallBack)
+            {
+                LOG_CMD_COMPLETE("%s: Firing Callback DescDoneCnt:%d",__FUNCTION__,DescDoneCnt);
+
+                //Fire The Call Back
+                pDoneCnxt->DoneContext.pFnDoneCallBack(pDoneCnxt->DoneContext.Param1,
+                        pDoneCnxt->DoneContext.Param2,
+                        pDoneCnxt->DoneContext.Param3);
+
+                LOG_CMD_COMPLETE("%s: Callback Done DescDoneCnt:%d",__FUNCTION__,DescDoneCnt);
+            }else{
+                LOG_ERROR("%s: No Call Back DescDontCnt:%d",__FUNCTION__,DescDoneCnt);
+                BCMOMX_DBG_ASSERT(false);
+            }
+
+        }
+        else
+        {
+            //Command Did not Complete...put it back in the Active List From Tail
+            LOG_CMD_COMPLETE("%s: Partial Cmd Completion %p: NumFired:%d Remaing DescDoneDnt:%d",
+                             __FUNCTION__, pDoneCnxt, pDoneCnxt->NumDescFired, DescDoneCnt);
+
+            // You should never have a partial complete with DescDoneCount Set.
+            // If there were more descriptors completed, then the command should have
+            // completed fully, not partially.
+            BCMOMX_DBG_ASSERT(0==DescDoneCnt);
+            InsertTailList(&ActiveQ,pDoneEntry);
+        }
     }
 
-    return;
+    //You should not Come Out of this function with something in DescDoneCnt!=0
+    // We have to make sure That All the Descriptors are processed.
+    LOG_CMD_COMPLETE("%s: Completion Done DescDoneCnt:%d \n\n", __FUNCTION__, DescDoneCnt);
+    BCMOMX_DBG_ASSERT(0==DescDoneCnt);
 }
 
-bool
-PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
+bool PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
 {
-    size_t NumConsumed=0;
+    size_t NumFired=0,NumConsumed=0;
     NEXUS_Error errCode;
 
     if (!pNxInCnxt || !pNxInCnxt->SzValidPESData)
@@ -777,7 +846,17 @@ PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
         return false;
     }
 
+    if (((pNxInCnxt->pSecureData) && (!pNxInCnxt->SzSecureData)) ||
+        ((NULL == pNxInCnxt->pSecureData) && (pNxInCnxt->SzSecureData)))
+    {
+        LOG_ERROR("[%s]%s: Invalid Parameters pSecureData=%p Sz:%d",
+                ClientIDString,__FUNCTION__,
+                pNxInCnxt->pSecureData,
+                pNxInCnxt->SzSecureData);
+        return false;
+    }
     Mutex::Autolock lock(mListLock);
+    pNxInCnxt->NumDescFired=0;
     InitializeListHead(&pNxInCnxt->ListEntry);
     if (FiredCnt > CntDesc)
     {
@@ -788,6 +867,16 @@ PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
 
     pNxInCnxt->NxDesc[0].addr       = pNxInCnxt->PESData;
     pNxInCnxt->NxDesc[0].length     = pNxInCnxt->SzValidPESData;
+    pNxInCnxt->NumDescFired++;
+
+    if (pNxInCnxt->pSecureData)
+    {
+        pNxInCnxt->NxDesc[1].addr   = pNxInCnxt->pSecureData;
+        pNxInCnxt->NxDesc[1].length = pNxInCnxt->SzSecureData;
+        pNxInCnxt->NumDescFired++;
+    }
+
+    NumFired = pNxInCnxt->NumDescFired;
 
     // The Last Time Stamp That We sent To Hardware...
     if(pNxInCnxt->FramePTS)
@@ -797,17 +886,24 @@ PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
     }
 
 #ifdef DEBUG_PES_DATA
-    if (!FlushCnt) {
+    if (!FlushCnt)
         DataBeforFlush->WriteData(pNxInCnxt->PESData,pNxInCnxt->SzValidPESData);
-    }else if(1==FlushCnt){
+    else if(1==FlushCnt)
         DataAfterFlush->WriteData(pNxInCnxt->PESData,pNxInCnxt->SzValidPESData);
-    }
 #endif
 
+    LOG_CMD_SEND("%s: Firing Descriptors pNxInCnxt:%p Addr[0]:%p len[0]:%d addr[1]:%p length[1]:%d NumFired:%d",
+                 __FUNCTION__,pNxInCnxt,
+                 pNxInCnxt->NxDesc[0].addr,
+                 pNxInCnxt->NxDesc[0].length,
+                 pNxInCnxt->NxDesc[1].addr,
+                 pNxInCnxt->NxDesc[1].length,
+                 NumFired);
+
     errCode = NEXUS_Playpump_SubmitScatterGatherDescriptor(NxPlayPumpHandle,
-            pNxInCnxt->NxDesc,
-            1,
-            &NumConsumed);
+                                                           pNxInCnxt->NxDesc,
+                                                           NumFired,
+                                                           &NumConsumed);
 
     if (NEXUS_SUCCESS != errCode)
     {
@@ -815,16 +911,16 @@ PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
         return false;
     }
 
-    if (1 != NumConsumed)
+    if (NumFired != NumConsumed)
     {
-        LOG_ERROR("[%s]%s: Number Of Descriptor Consumed[%d] != 1 ",
+        LOG_ERROR("[%s]%s: Number Of Descriptor Consumed[%d] != NumFired [%d] ",
                 ClientIDString,
                 __FUNCTION__,
-                NumConsumed);
+                NumConsumed, NumFired);
         return false;
     }
 
-    FiredCnt++;
+    FiredCnt+=NumFired;
 
     //INSERT THE CONTEXT IN THE ACTIVEQ
     InsertHeadList(&ActiveQ,&pNxInCnxt->ListEntry);
@@ -832,8 +928,7 @@ PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
 }
 
 #ifndef GENERATE_DUMMY_EOS
-bool
-PESFeeder::PrepareEOSData()
+bool PESFeeder::PrepareEOSData()
 {
     FormBppPacket(pPESEosBuffer, 0xa); /* Inline flush / TPD */
     FormBppPacket(pPESEosBuffer+184, 0x82); /* LAST */
@@ -842,8 +937,7 @@ PESFeeder::PrepareEOSData()
     return true;
 }
 #else
-bool
-PESFeeder::PrepareEOSData()
+bool PESFeeder::PrepareEOSData()
 {
     unsigned char PESHeader[PES_HEADER_SIZE];
     size_t seqEndCodeSize;
@@ -868,15 +962,12 @@ PESFeeder::PrepareEOSData()
         0x00, 0x00, 0x01, 0x4A, 0x01
     };
 
-
-
-
     switch(vidCodec)
     {
         case NEXUS_VideoCodec_eH263:
-        pSeqEndCode = b_eos_h263;
-        seqEndCodeSize = sizeof(b_eos_h263);
-        break;
+            pSeqEndCode = b_eos_h263;
+            seqEndCodeSize = sizeof(b_eos_h263);
+            break;
         case NEXUS_VideoCodec_eMpeg4Part2:
             pSeqEndCode = b_eos_Mpeg4Part2;
             seqEndCodeSize = sizeof(b_eos_Mpeg4Part2);
@@ -917,12 +1008,13 @@ PESFeeder::PrepareEOSData()
 // This Will Work Only if memory allocated for EOS is
 // from heap[1]. Use AllocatePESBuffer function for allocating this memory.
 //
-bool
-PESFeeder::NotifyEOS(unsigned int ClientFlags, unsigned long long EOSFrameKey)
+bool PESFeeder::NotifyEOS(unsigned int ClientFlags, unsigned long long EOSFrameKey)
 {
     LOG_EOS_DBG("[%s]%s: Notifying EOS To Hardware",ClientIDString,__FUNCTION__);
 
     ////Setup the internal Transfer Struct
+    pInterNotifyCnxt->pSecureData=NULL;
+    pInterNotifyCnxt->SzSecureData=0;
     pInterNotifyCnxt->SzPESBuffer =  PES_EOS_BUFFER_SIZE;
     pInterNotifyCnxt->SzValidPESData = PES_EOS_BUFFER_SIZE;
     pInterNotifyCnxt->PESData = pPESEosBuffer;
@@ -948,19 +1040,17 @@ PESFeeder::NotifyEOS(unsigned int ClientFlags, unsigned long long EOSFrameKey)
     return true;
 }
 
-void
-PESFeeder::DiscardConfigData()
+void PESFeeder::DiscardConfigData()
 {
     LOG_FLUSH_MSGS("[%s]%s: Discarding Coddec Config Sz:%d",
             ClientIDString,__FUNCTION__,
             pCfgDataMgr->GetConfigDataSz() );
 
     pCfgDataMgr->DiscardConfigData();
-    SendCfgDataOnNextInput=false;
+    SendCfgDataOnNextInput = false;
 }
 
-bool
-PESFeeder::SaveCodecConfigData(void *pData,size_t SzData)
+bool PESFeeder::SaveCodecConfigData(void *pData,size_t SzData)
 {
     unsigned char *pDstBuff;
     size_t  SzSavedConfigData=0;
@@ -990,7 +1080,7 @@ PESFeeder::SaveCodecConfigData(void *pData,size_t SzData)
     }
 
     SzSavedConfigData = pCfgDataMgr->GetConfigDataSz();
-    SendCfgDataOnNextInput=true;
+    SendCfgDataOnNextInput = true;
     LOG_CONFIG_MSGS("[%s]%s: Config Data Saved MAXSZ:%d RequestedSz:%d CurrSz:%d",
           ClientIDString,__FUNCTION__,
           CODEC_CONFIG_BUFFER_SIZE,
@@ -1007,7 +1097,7 @@ PESFeeder::Pauser::Pauser(NEXUS_PlaypumpHandle NxPlayPumpHandle)
 
     NEXUS_Playpump_GetStatus(NxPlayPumpHandle, &NxPlayPumpStatus);
 
-    if(false == NxPlayPumpStatus.started)
+    if(!NxPlayPumpStatus.started)
     {
         LOG_ERROR("%s: WTF?? Playpump Not Started !!",__FUNCTION__);
         NxPPHandle = NULL;
@@ -1075,8 +1165,7 @@ ConfigDataMgr::~ConfigDataMgr()
     }
 }
 
-bool
-ConfigDataMgr::SaveConfigData(void *pData, size_t SzData)
+bool ConfigDataMgr::SaveConfigData(void *pData, size_t SzData)
 {
     unsigned char *pDstBuff;
     if (!pData || !SzData)
@@ -1110,8 +1199,7 @@ ConfigDataMgr::SaveConfigData(void *pData, size_t SzData)
     return true;
 }
 
-bool
-ConfigDataMgr::AccumulateConfigData(batom_accum_t Accumulator)
+bool ConfigDataMgr::AccumulateConfigData(batom_accum_t Accumulator)
 {
     if (!Accumulator)
     {
@@ -1129,18 +1217,15 @@ ConfigDataMgr::AccumulateConfigData(batom_accum_t Accumulator)
     return true;
 }
 
-size_t
-ConfigDataMgr::GetConfigDataSz()
+size_t ConfigDataMgr::GetConfigDataSz()
 {
     return SzCodecConfigData;
 }
 
-void
-ConfigDataMgr::DiscardConfigData()
+void ConfigDataMgr::DiscardConfigData()
 {
     SzCodecConfigData=0;
 }
-
 
 /*********************************************************************************/
 //Configuration Data Manager With Send Class
@@ -1189,8 +1274,7 @@ ConfigDataMgrWithSend::~ConfigDataMgrWithSend()
     }
 }
 
-bool
-ConfigDataMgrWithSend::SaveConfigData(void *pData,size_t SzData)
+bool ConfigDataMgrWithSend::SaveConfigData(void *pData,size_t SzData)
 {
     unsigned char *pDstBuff;
 
@@ -1233,13 +1317,14 @@ ConfigDataMgrWithSend::SaveConfigData(void *pData,size_t SzData)
     return true;
 }
 
-void
-ConfigDataMgrWithSend::SendConfigDataToHW()
+void ConfigDataMgrWithSend::SendConfigDataToHW()
 {
     //Should never come here with Zero Size
     BCMOMX_DBG_ASSERT(SzPESCodecConfigData);
 
     BKNI_ResetEvent(XferDoneEvt);
+    XferContext.pSecureData = NULL;
+    XferContext.SzSecureData=0;
     XferContext.SzPESBuffer =  allocedSzPESBuffer;
     XferContext.SzValidPESData = SzPESCodecConfigData;
     XferContext.PESData = pPESCodecConfigData;
@@ -1247,6 +1332,7 @@ ConfigDataMgrWithSend::SendConfigDataToHW()
     XferContext.DoneContext.Param2 = 0;
     XferContext.DoneContext.Param3 = 0;
     XferContext.DoneContext.pFnDoneCallBack = ConfigDataSentAsPES;
+
     LOG_CONFIG_MSGS("[%s]: -Calling Send Data To Hardware",__PRETTY_FUNCTION__);
     Sender.SendPESDataToHardware(&XferContext);
 
@@ -1262,11 +1348,9 @@ ConfigDataMgrWithSend::SendConfigDataToHW()
     }
 
     LOG_CONFIG_MSGS("[%s]: CFG Data Xfered To HW",__PRETTY_FUNCTION__);
-    return;
 }
 
-void
-ConfigDataMgrWithSend::XferDoneNotification()
+void ConfigDataMgrWithSend::XferDoneNotification()
 {
     LOG_CONFIG_MSGS("[%s]: -Setting XferDoneEvt Now",
                     __PRETTY_FUNCTION__);
@@ -1274,29 +1358,24 @@ ConfigDataMgrWithSend::XferDoneNotification()
     BKNI_SetEvent(XferDoneEvt);
 }
 
-size_t
-ConfigDataMgrWithSend::GetConfigDataSz()
+size_t ConfigDataMgrWithSend::GetConfigDataSz()
 {
     return SzCodecConfigData;
 }
 
-void
-ConfigDataMgrWithSend::DiscardConfigData()
+void ConfigDataMgrWithSend::DiscardConfigData()
 {
     SzCodecConfigData=0;
     SzPESCodecConfigData=0;
 }
 
-static
-void
-ConfigDataSentAsPES(unsigned int Param1,
+static void ConfigDataSentAsPES(unsigned int Param1,
                      unsigned int Param2 UNUSED,
                      unsigned int Param3 UNUSED)
 {
     LOG_CONFIG_MSGS("[%s]: Config Data Callback Called",__PRETTY_FUNCTION__);
     ConfigDataMgrWithSend *thisPtr = (ConfigDataMgrWithSend *) Param1;
     thisPtr->XferDoneNotification();
-    return;
 }
 
 
@@ -1304,8 +1383,7 @@ ConfigDataSentAsPES(unsigned int Param1,
 /********************************/
 // Factory class for ConfigData
 
-CfgMgr*
-ConfigDataMgrFactory::CreateConfigDataMgr(NEXUS_VideoCodec vidCodec,
+CfgMgr* ConfigDataMgrFactory::CreateConfigDataMgr(NEXUS_VideoCodec vidCodec,
                                           DataSender& Sender)
 {
     CfgMgr* retObj=NULL;
@@ -1350,9 +1428,7 @@ ConfigDataMgrFactory::CreateConfigDataMgr(NEXUS_VideoCodec vidCodec,
     return retObj;
 }
 
-static
-CfgMgr*
-CreateCfgDataMgr(NEXUS_VideoCodec vidCodec, DataSender& Sender)
+static CfgMgr* CreateCfgDataMgr(NEXUS_VideoCodec vidCodec, DataSender& Sender)
 {
     return ConfigDataMgrFactory::CreateConfigDataMgr(vidCodec,Sender);
 }
