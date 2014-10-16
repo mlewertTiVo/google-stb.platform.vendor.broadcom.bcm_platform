@@ -48,10 +48,9 @@
  *
  *****************************************************************************/
 
-#include "brcm_audio.h"
-
-#undef LOG_TAG
 #define LOG_TAG "BrcmAudioNexus"
+
+#include "brcm_audio.h"
 
 #define NEXUS_OUT_DEFAULT_SAMPLE_RATE   44100
 #define NEXUS_OUT_DEFAULT_CHANNELS      AUDIO_CHANNEL_OUT_STEREO

@@ -48,10 +48,9 @@
  *
  *****************************************************************************/
 
-#include "brcm_audio.h"
-
-#undef LOG_TAG
 #define LOG_TAG "BrcmAudio"
+
+#include "brcm_audio.h"
 
 /*
  * Utility Functions

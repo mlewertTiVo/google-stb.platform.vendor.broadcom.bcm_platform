@@ -75,9 +75,6 @@ extern "C" {
 #include <hardware/audio.h>
 #include <hardware/hardware.h>
 
-/* unset Android default LOG_TAG */
-#undef LOG_TAG
-
 /* Nexus headers */
 #include "bstd.h"
 #include "berr.h"

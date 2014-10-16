@@ -127,7 +127,7 @@ void NexusService::CecServiceManager::CecRxMessageHandler::getDeviceType(unsigne
             case NEXUS_CecDeviceType_eAudioSystem: content[0] = 5; break;
             case NEXUS_CecDeviceType_ePureCecSwitch: content[0] = 6; break;
             case NEXUS_CecDeviceType_eVideoProcessor: content[0] = 7; break;
-            default: BDBG_WRN(("Unknown Device Type!!!")); break;
+            default: ALOGW("Unknown Device Type!!!\n"); break;
         }
         *outLength = 1;
     }
@@ -141,7 +141,7 @@ void NexusService::CecServiceManager::CecRxMessageHandler::getCecVersion(unsigne
     b_cecStatus status;
 
     if (mCecServiceManager->getCecStatus(&status) == true) {
-        BDBG_WRN(("CEC Version Requested -> Version: %#x", status.cecVersion));
+        ALOGW("CEC Version Requested -> Version: %#x\n", status.cecVersion);
         content[0] = status.cecVersion;
         *outLength = 1;
     }
