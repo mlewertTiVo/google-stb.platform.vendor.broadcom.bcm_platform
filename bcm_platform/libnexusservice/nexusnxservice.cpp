@@ -787,6 +787,7 @@ bool NexusNxService::connectClientResources(NexusClientContext * client, b_refsw
     for (i = 0; i < NXCLIENT_MAX_IDS && i < CLIENT_MAX_IDS && pConnectSettings->simpleEncoder[i].id != 0; i++) {
         connectSettings.simpleEncoder[i].id                         = pConnectSettings->simpleEncoder[i].id;
         connectSettings.simpleEncoder[i].display                    = pConnectSettings->simpleEncoder[i].display;
+        connectSettings.simpleEncoder[i].nonRealTime                = pConnectSettings->simpleEncoder[i].nonRealTime;
         connectSettings.simpleEncoder[i].audio.cpuAccessible        = pConnectSettings->simpleEncoder[i].audio.cpuAccessible;
         connectSettings.simpleEncoder[i].video.cpuAccessible        = pConnectSettings->simpleEncoder[i].video.cpuAccessible;
     }

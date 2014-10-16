@@ -214,14 +214,24 @@ StopEncoder(BCM_OMX_CONTEXT *pBcmContext)
 static bool
 FlushInput(BCM_OMX_CONTEXT *pBcmContext)
 {
-    // Hardware flush is handled in FlashOutput
+    if (false==pBcmContext->pOMXNxVidEnc->FlushInput())
+    {
+        ALOGE("==FLUSH FAILED ON INPUT PORT==");
+        return false;
+    }
+    ListFlushEntries(pBcmContext->sInBufList, pBcmContext);
     return true;
 }
 
 static bool
 FlushOutput(BCM_OMX_CONTEXT *pBcmContext)
 {
-    pBcmContext->pOMXNxVidEnc->Flush();
+    if (false==pBcmContext->pOMXNxVidEnc->FlushOutput())
+    {
+        ALOGE("==FLUSH FAILED ON OUTPUT PORT==");
+        return false;
+    }
+    ListFlushEntries(pBcmContext->sOutBufList, pBcmContext);
     return true;
 }
 
@@ -355,8 +365,18 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
         LOGE("Error in allocating mem for pMyData->sInBufList.pBufHdr\n");
         eError = OMX_ErrorInsufficientResources;
         goto EXIT;
-
     }
+
+    pMyData->pInBufHdrRes = (OMX_BUFFERHEADERTYPE**)
+        BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * NUM_IN_BUFFERS);
+
+    if(pMyData->pInBufHdrRes == NULL)
+    {
+        LOGE("Error in allocating mem for pMyData->pInBufHdrRes\n");
+        eError = OMX_ErrorInsufficientResources;
+        goto EXIT;
+    }
+
     for (nIndex = 0; nIndex < pMyData->sInPortDef.nBufferCountActual; nIndex++)
     {
         pMyData->sInBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
@@ -376,16 +396,21 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sOutBufList.pBufHdr = (OMX_BUFFERHEADERTYPE**)
     BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * MAX_NUM_OUT_BUFFERS);
 
-    pMyData->pOutBufHdrRes= (OMX_BUFFERHEADERTYPE**)
-    BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * MAX_NUM_OUT_BUFFERS);
-
-
     if(pMyData->sOutBufList.pBufHdr == NULL)
     {
         LOGE("Error in allocating mem for pMyData->sOutBufList.pBufHdr\n");
         eError = OMX_ErrorInsufficientResources;
         goto EXIT;
+    }
 
+    pMyData->pOutBufHdrRes= (OMX_BUFFERHEADERTYPE**)
+    BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * MAX_NUM_OUT_BUFFERS);
+
+    if(pMyData->pOutBufHdrRes == NULL)
+    {
+        LOGE("Error in allocating mem for pMyData->pOutBufHdrRes\n");
+        eError = OMX_ErrorInsufficientResources;
+        goto EXIT;
     }
 
     for (nIndex = 0; nIndex < MAX_NUM_OUT_BUFFERS; nIndex++)
@@ -436,6 +461,8 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
 
     pMyData->pOMXNxVidEnc = new OMXNexusVideoEncoder(LOG_TAG, VIDEO_ENCODER_NUM_IN_BUFFERS);
 
+    pMyData->pTstable = new bcmOmxTimestampTable(MAX_NUM_TIMESTAMPS);
+
 #if 0
     if (false == pMyData->pOMXNxVidEnc->StartEncoder())
     {
@@ -453,59 +480,71 @@ EXIT:
 
 extern "C" OMX_ERRORTYPE OMX_VENC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
 {
-	BCM_OMX_CONTEXT *pMyData;
-	OMX_ERRORTYPE eError = OMX_ErrorNone;
-	ThrCmdType eCmd = Stop;
-	OMX_U32 nIndex = 0;
-	NEXUS_PlaypumpStatus playpumpStatus;
+    BCM_OMX_CONTEXT *pMyData;
+    OMX_ERRORTYPE eError = OMX_ErrorNone;
+    ThrCmdType eCmd = Stop;
+    OMX_U32 nIndex = 0;
+    NEXUS_PlaypumpStatus playpumpStatus;
 
-	trace t(__FUNCTION__);
+    trace t(__FUNCTION__);
 
-	ALOGD("%s %d: Component Handle :%p BUILD-DATE:%s BUILD-TIME:%s",
-	      __FUNCTION__,__LINE__,hComponent,__DATE__,__TIME__);
+    ALOGD("%s %d: Component Handle :%p BUILD-DATE:%s BUILD-TIME:%s",
+          __FUNCTION__,__LINE__,hComponent,__DATE__,__TIME__);
 
-	pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
+    pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
 
-	// In case the client crashes, check for nAllocSize parameter.
-	// If this is greater than zero, there are elements in the list that are not free'd.
-	// In that case, free the elements.
+    // In case the client crashes, check for nAllocSize parameter.
+    // If this is greater than zero, there are elements in the list that are not free'd.
+    // In that case, free the elements.
 
-	if (pMyData != NULL)
-	{
-	    if (pMyData->sInBufList.nAllocSize > 0)
-	        ListFreeAllBuffers(pMyData->sInBufList, nIndex)
+    if (pMyData != NULL)
+    {
+        if (pMyData->sInBufList.nAllocSize > 0)
+            ListFreeAllBuffers(pMyData->sInBufList, nIndex)
 
-	    if (pMyData->sOutBufList.nAllocSize > 0)
-	        ListFreeAllBuffers(pMyData->sOutBufList, nIndex)
+        if (pMyData->sOutBufList.nAllocSize > 0)
+            ListFreeAllBuffers(pMyData->sOutBufList, nIndex)
 
-	    // Put the command and data in the pipe
-	    if(0!= pMyData->cmdpipe[1])
-	        write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
+        // Put the command and data in the pipe
+        if(0!= pMyData->cmdpipe[1])
+            write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
 
-	    if(0!= pMyData->cmddatapipe[1])
-	        write(pMyData->cmddatapipe[1], &eCmd, sizeof(eCmd));
+        if(0!= pMyData->cmddatapipe[1])
+            write(pMyData->cmddatapipe[1], &eCmd, sizeof(eCmd));
 
-	    // Wait for thread to exit so we can get the status into "error"
-	    if(0 != pMyData->thread_id)
-	        pthread_join(pMyData->thread_id, (void**)&eError);
+        // Wait for thread to exit so we can get the status into "error"
+        if(0 != pMyData->thread_id)
+            pthread_join(pMyData->thread_id, (void**)&eError);
 
-	    // close the pipe handles
-	    if(pMyData->cmdpipe[0])
-	        close(pMyData->cmdpipe[0]);
+        // close the pipe handles
+        if(pMyData->cmdpipe[0])
+            close(pMyData->cmdpipe[0]);
 
-	    if(pMyData->cmdpipe[1])
-	        close(pMyData->cmdpipe[1]);
+        if(pMyData->cmdpipe[1])
+            close(pMyData->cmdpipe[1]);
 
-	    if(pMyData->cmddatapipe[0])
-	        close(pMyData->cmddatapipe[0]);
+        if(pMyData->cmddatapipe[0])
+            close(pMyData->cmddatapipe[0]);
 
-	    if(pMyData->cmddatapipe[1])
-	        close(pMyData->cmddatapipe[1]);
+        if(pMyData->cmddatapipe[1])
+            close(pMyData->cmddatapipe[1]);
 
-	    BKNI_Free(pMyData);
+        if(pMyData->pTstable)
+        {
+            delete pMyData->pTstable;
+            pMyData->pTstable = NULL;
+        }
 
-	    ((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate=NULL;
-	}
+        if(pMyData->pOMXNxVidEnc)
+        {
+            delete pMyData->pOMXNxVidEnc;
+            pMyData->pOMXNxVidEnc = NULL;
+        }
+
+        BKNI_Free(pMyData);
+
+        ((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate=NULL;
+    }
 
 return eError;
 }
@@ -917,6 +956,7 @@ extern "C" OMX_ERRORTYPE OMX_VENC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
     BCM_OMX_CONTEXT *pMyData;
     ThrCmdType eCmd = EmptyBuf;
     OMX_ERRORTYPE eError = OMX_ErrorNone;
+    uint64_t nTimestamp;
 
     pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
 
@@ -998,9 +1038,10 @@ extern "C" OMX_ERRORTYPE OMX_VENC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
         ALOGE("%s: OMX_BUFFERFLAG_EOS FLAG SET FOR INPUT :%d ",__FUNCTION__,pBufferHdr->nFlags);
     }
 
-    pNxInputCnxt->uSecTS = pBufferHdr->nTimeStamp;
-
-    // Put the command and data in the pipe
+    nTimestamp = pMyData->pTstable->store(pBufferHdr->nTimeStamp);
+    ALOGD("%s:IN PTS = %lld",__FUNCTION__, pBufferHdr->nTimeStamp);
+    pNxInputCnxt->uSecTS = nTimestamp;
+    // Put the command and data in the pipe 
         write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
         write(pMyData->cmddatapipe[1], &pBufferHdr, sizeof(OMX_BUFFERHEADERTYPE*));
 
@@ -1137,13 +1178,13 @@ extern "C" OMX_ERRORTYPE OMX_VENC_FreeBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
         {
             pPortDef = &pMyData->sInPortDef;
 
+#if 0
             if(pBufferHdr->pBuffer)
             {
                 BKNI_Free(pBufferHdr->pBuffer);
                 pBufferHdr->pBuffer=NULL;
             }
 
-#if 0
             if(pBufferHdr->pInputPortPrivate)
             {
                 PNEXUS_INPUT_CONTEXT pInNxCnxt =
@@ -1162,14 +1203,19 @@ extern "C" OMX_ERRORTYPE OMX_VENC_FreeBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
             ListFreeBuffer(pMyData->sInBufList, pBufferHdr, pPortDef)
 
         } else if (nPortIndex == pMyData->sOutPortDef.nPortIndex) {
+
+#if 0
             if(pBufferHdr->pBuffer)
             {
                 BKNI_Free(pBufferHdr->pBuffer);
                 pBufferHdr->pBuffer=NULL;
             }
+#endif
 
             pPortDef = &pMyData->sOutPortDef;
+            unsigned int prevSize = pMyData->sOutBufList.nAllocSize;
             ListFreeBuffer(pMyData->sOutBufList, pBufferHdr, pPortDef)
+            ListFreeBufferExt(pMyData->sOutBufList, pBufferHdr, pPortDef,prevSize,pMyData->pOutBufHdrRes)
         } else{
 
             OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter);
@@ -1711,11 +1757,7 @@ static void* ComponentThread(void* pThreadData)
                 // Check for EOS flag
             if (pInBufHdr)
             {
-                OMX_U32 nFlags=0;
-                unsigned long long EOSTimeStamp=0;
-                // TODO: Mark Buffers and EOS
-
-                if(pInBufHdr->nFilledLen)
+                if((pInBufHdr->nFilledLen)||(pInBufHdr->nFlags & OMX_BUFFERFLAG_EOS))
                 {
                     PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pNxInputCnxt =
                         (PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT)pInBufHdr->pInputPortPrivate;
@@ -1726,6 +1768,7 @@ static void* ComponentThread(void* pThreadData)
                     pNxInputCnxt->bufPtr = pInBufHdr->pBuffer;
                     pNxInputCnxt->bufSize = pInBufHdr->nFilledLen;
                     pNxInputCnxt->colorFormat = pMyData->sInPortDef.format.video.eColorFormat;
+                    pNxInputCnxt->flags = pInBufHdr->nFlags;
                     pNxInputCnxt->height = pMyData->sInPortDef.format.video.nFrameHeight;
                     pNxInputCnxt->width = pMyData->sInPortDef.format.video.nFrameWidth;
                     pNxInputCnxt->DoneContext.Param1 = (unsigned int) pMyData->hSelf;
@@ -1740,8 +1783,9 @@ static void* ComponentThread(void* pThreadData)
                     if(false == pMyData->pOMXNxVidEnc->EncodeFrame(pNxInputCnxt))
                     {
                         LOGE("%s: Sending The Data To The Hardware Failed",__FUNCTION__);
-                        LOGE("%s: Call back Will Not Be Fired, Encode May Stop",__FUNCTION__);
-                        BCMOMX_DBG_ASSERT(false);
+                        ListSetEntry(pMyData->sInBufList, pInBufHdr);
+                        //LOGE("%s: Call back Will Not Be Fired, Encode May Stop",__FUNCTION__);
+                        //BCMOMX_DBG_ASSERT(false);
                     }
 
                 }else{
@@ -1772,10 +1816,16 @@ static void* ComponentThread(void* pThreadData)
 
                 if (pMyData->pOMXNxVidEnc->GetEncodedFrame(&DeliverFr))
                 {
+                    uint32_t nTimeStamp;
                     //pOutBufHdr->nFilledLen = sizeof(DELIVER_ENCODED_FRAME);
                     pOutBufHdr->nFilledLen = DeliverFr.SzFilled;
-                    pOutBufHdr->nTimeStamp= DeliverFr.usTimeStamp;
+                    nTimeStamp = DeliverFr.usTimeStamp;
+                    if (!(DeliverFr.OutFlags & OMX_BUFFERFLAG_CODECCONFIG))
+                        pOutBufHdr->nTimeStamp= pMyData->pTstable->retrieve(nTimeStamp);
+                    ALOGD("%s:OUT PTS = %lld",__FUNCTION__, pOutBufHdr->nTimeStamp);
                     pOutBufHdr->nFlags |= DeliverFr.OutFlags;
+                    if (DeliverFr.OutFlags & OMX_BUFFERFLAG_EOS) 
+                        ALOGD("EOS MARKED ON THE OUTPUT FRAME:%d",DeliverFr.OutFlags);
                 }else{
                     if (DeliverFr.OutFlags & OMX_BUFFERFLAG_EOS)
                     {
@@ -1812,4 +1862,98 @@ EXIT:
 
     return (void*)OMX_ErrorNone;
 }
+
+
+bcmOmxTimestampTable::bcmOmxTimestampTable(unsigned int n_size)
+    :size(n_size), usage_count(0)
+{
+    pTimestamps = (bcmOmxTimestampEntry *) malloc(n_size * sizeof(bcmOmxTimestampEntry));
+    memset(pTimestamps, 0, n_size * sizeof(bcmOmxTimestampEntry));
+}
+
+bcmOmxTimestampTable::~bcmOmxTimestampTable()
+{
+    free(pTimestamps);
+}
+
+uint32_t
+bcmOmxTimestampTable::store(uint64_t orig_ts)
+{
+    unsigned int i;
+
+    if (usage_count==size)
+    {
+        bcmOmxTimestampEntry *temp;
+        ALOGD("%s: Increasing timestamp table size from %d to %d",__FUNCTION__, size, size + 32);
+        temp = (bcmOmxTimestampEntry *) malloc((size + 32) * sizeof(bcmOmxTimestampEntry));
+        memset(temp, 0, (size + 32) * sizeof(bcmOmxTimestampEntry));
+        memcpy(temp, pTimestamps, size * sizeof(bcmOmxTimestampEntry));
+        free(pTimestamps);
+        pTimestamps = temp;
+        size += 32;
+    }
+
+    for (i = 0; i < size; i++)
+    {
+        if(pTimestamps[i].entryUsed==false)
+        {
+            pTimestamps[i].entryUsed = true;
+            pTimestamps[i].originalTimestamp = orig_ts;
+            pTimestamps[i].convertedTimestamp = CONVERT_USEC_45KHZ(orig_ts);
+            usage_count++;
+            break;
+        }
+    }
+
+    return CONVERT_USEC_45KHZ(orig_ts);
+}
+
+uint64_t
+bcmOmxTimestampTable::retrieve(uint32_t conv_ts)
+{
+    unsigned int i;
+    uint64_t orig_ts;
+
+    for (i = 0; i < size; i++)
+    {
+        if (pTimestamps[i].convertedTimestamp==conv_ts)
+        {
+            pTimestamps[i].entryUsed = false;
+            orig_ts = pTimestamps[i].originalTimestamp;
+            usage_count--;
+            break;
+        }
+    }
+
+    if (i==size)
+    {
+        orig_ts = CONVERT_45KHZ_USEC(conv_ts);
+        ALOGD("%s: Couldn't get original timestamp for %d",__FUNCTION__,conv_ts);
+    }
+
+    return orig_ts;
+
+}
+
+void
+bcmOmxTimestampTable::flush()
+{
+    memset(pTimestamps, 0, size * sizeof(bcmOmxTimestampEntry));
+    usage_count = 0;
+}
+
+bool
+bcmOmxTimestampTable::isFull()
+{
+    ALOGD("%s: usage_count = %d",__FUNCTION__, usage_count);
+    return (usage_count==size) ? true : false;
+}
+
+
+////// END OF FILE
+
+
+
+
+
 

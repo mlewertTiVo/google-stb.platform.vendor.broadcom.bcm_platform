@@ -115,6 +115,7 @@ typedef struct _NEXUS_VIDEO_ENCODER_INPUT_CONTEXT_
     unsigned char                   *bufPtr;   // Pointer to uncompressed input data buffer
     unsigned int                    bufSize;   // Size of uncompressed input data buffer
     OMX_COLOR_FORMATTYPE            colorFormat;
+    OMX_U32                         flags;
     unsigned int                    width;
     unsigned int                    height;
     PNEXUS_SURFACE                  pNxSurface;
@@ -138,22 +139,24 @@ class OMXNexusVideoEncoder
 {
 
 public:
-
+    
     OMXNexusVideoEncoder (const char *callerName, int numInBuf);
-
+    
     ~OMXNexusVideoEncoder ();
     bool StartEncoder(PVIDEO_ENCODER_START_PARAMS startParams);
+    bool StartInput(PVIDEO_ENCODER_START_PARAMS startParams);
+    bool StartOutput(PVIDEO_ENCODER_START_PARAMS startParams);
     void StopEncoder();
-    bool Flush();
+    void StopInput();
+    void StopOutput();
+    bool FlushInput();
+    bool FlushOutput();
     bool EncodeFrame(PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pNxInputContext);
     bool GetEncodedFrame(PDELIVER_ENCODED_FRAME);
 
 
     ErrorStatus GetLastError();
 
-    // FeederEventsListener Interface Function To Get the Notification
-    // For EOS
-    void InputEOSReceived(unsigned int );
     void imageBufferCallback();
 
 private:

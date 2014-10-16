@@ -54,10 +54,10 @@
 //Path independent Debug Messages
 #define LOG_WARNING             ALOGD
 #define LOG_ERROR               ALOGD
-#define LOG_INFO                ALOGD
+#define LOG_INFO
 
 #ifndef UNUSED
-#define UNUSED(x)               (void)(x)
+#define UNUSED(x) (void)(x)
 #endif
 
 #define NAL_UNIT_TYPE_SPS       7
@@ -195,7 +195,8 @@ OMXNexusVideoEncoder::OMXNexusVideoEncoder(const char *callerName, int numInBuf)
     SurfaceAvailListLen(0),
     LastErr(ErrStsSuccess),
     EncoderStarted(false),
-    CaptureFrames(true)
+    CaptureFrames(true),
+    pdumpES(NULL)
 {
     LOG_CREATE_DESTROY("%s: ENTER ===",__FUNCTION__);
     InitializeListHead(&EmptyFrList);
@@ -250,6 +251,7 @@ OMXNexusVideoEncoder::OMXNexusVideoEncoder(const char *callerName, int numInBuf)
     connectSettings.simpleEncoder[0].display = false;
     connectSettings.simpleVideoDecoder[0].id = client_info.videoDecoderId;
     connectSettings.simpleVideoDecoder[0].windowCaps.encoder = true;
+    connectSettings.simpleEncoder[0].nonRealTime = true;
 #endif
 
     if (true != NxIPCClient->connectClientResources(NxClientCntxt, &connectSettings))
@@ -360,6 +362,20 @@ OMXNexusVideoEncoder::~OMXNexusVideoEncoder()
         EncoderHandle=NULL;
     }
 
+    if (DecoderHandle)
+    {
+        LOG_CREATE_DESTROY("%s: Releasing Video Decoder",__FUNCTION__);
+        NEXUS_SimpleVideoDecoder_Release(DecoderHandle);
+        DecoderHandle = NULL;
+    }
+
+    if (StcChannel)
+    {
+        LOG_CREATE_DESTROY("%s: Destroying STC channel",__FUNCTION__);
+        NEXUS_SimpleStcChannel_Destroy(StcChannel);
+        StcChannel = NULL;
+    }
+
     if (NxClientCntxt)
     {
         LOG_CREATE_DESTROY("%s: Destroying Client Context",__FUNCTION__);
@@ -402,71 +418,21 @@ OMXNexusVideoEncoder::~OMXNexusVideoEncoder()
 
 
 bool
-OMXNexusVideoEncoder::StartEncoder(PVIDEO_ENCODER_START_PARAMS pStartParams)
+OMXNexusVideoEncoder::StartInput(PVIDEO_ENCODER_START_PARAMS pStartParams)
 {
     NEXUS_Error errCode;
-    NEXUS_SimpleEncoderStartSettings EncoderStartSettings;
     NEXUS_VideoImageInputSettings imageInputSetting;
-    NEXUS_SimpleEncoderSettings encoderSettings;
     NEXUS_SurfaceCreateSettings surfaceCfg;
     NEXUS_ClientConfiguration clientConfig;
-    int i;
     NEXUS_VideoImageInputStatus imageInputStatus;
+    NEXUS_SimpleVideoDecoderStartSettings DecoderStartSettings;
 
-    if (EncoderStarted)
-    {
-        LOG_START_STOP_DBG("%s[%d]: Encoder Already Started",
-                           __FUNCTION__, __LINE__);
+    // TODO: Error Handling
+    LOG_INFO("%s: Using NRT mode...",__FUNCTION__);
+    NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&DecoderStartSettings);
+    DecoderStartSettings.lowDelayImageInput = false;    /* Low delay mode bypasses xdm display management */
 
-        LastErr = ErrStsStartEncoFailed;
-        return false;
-    }
-
-    NEXUS_SimpleEncoder_GetSettings(EncoderHandle, &encoderSettings);
-    encoderSettings.video.width = pStartParams->width;
-    encoderSettings.video.height = pStartParams->height;
-    encoderSettings.videoEncoder.frameRate = pStartParams->frameRate;
-    NEXUS_SimpleEncoder_SetSettings(EncoderHandle, &encoderSettings);
-    ALOGD("Encoder setup done");
-
-    NEXUS_SimpleEncoder_GetDefaultStartSettings(&EncoderStartSettings);
-#ifdef ENCODE_DISPLAY
-    EncoderStartSettings.input.display = true;
-#else
-    EncoderStartSettings.input.video = DecoderHandle;
-#endif
-    EncoderStartSettings.output.video.settings.codec = NEXUS_VideoCodec_eH264;
-    EncoderStartSettings.output.transport.type = NEXUS_TransportType_eEs;
-    EncoderStartSettings.output.video.settings.profile = convertOMXProfileTypetoNexus(pStartParams->avcParams.eProfile);
-    EncoderStartSettings.output.video.settings.level = convertOMXLevelTypetoNexus(pStartParams->avcParams.eLevel);
-
-    ALOGE("%s: Profile = %d, Level = %d, width = %d, height = %d",__FUNCTION__, EncoderStartSettings.output.video.settings.profile, EncoderStartSettings.output.video.settings.level, pStartParams->width, pStartParams->height);
-//TODO: Revisit
-#if 0
-    startSettings.output.video.settings.bounds.inputDimension.max.width  = width;
-    startSettings.output.video.settings.bounds.inputDimension.max.height = height;
-    /* higher frame rate has lower delay; TODO: may set encode input min if display refresh rate > encode framerate to reduce latency */
-    startSettings.output.video.settings.bounds.inputFrameRate.min        = encoderSettings.videoEncoder.frameRate;
-    startSettings.output.video.settings.bounds.outputFrameRate.min       = encoderSettings.videoEncoder.frameRate;
-    startSettings.output.video.settings.bounds.streamStructure.max.framesB = 0;
-#endif
-
-
-    errCode = NEXUS_SimpleEncoder_Start(EncoderHandle, &EncoderStartSettings);
-
-    if (NEXUS_SUCCESS != errCode)
-    {
-        LOG_ERROR("%s[%d]: NEXUS_SimpleEncoder_Start Failed [Err:%d]!!",
-            __FUNCTION__, __LINE__, errCode);
-
-        LastErr = ErrStsStartEncoFailed;
-        return false;
-    }else{
-        LOG_START_STOP_DBG("%s[%d]: SimpleEncoder Started Successfully [Err:%d]!!",
-            __FUNCTION__, __LINE__, errCode);
-    }
-
-    ImageInput = NEXUS_SimpleVideoDecoder_StartImageInput(DecoderHandle, NULL);
+    ImageInput = NEXUS_SimpleVideoDecoder_StartImageInput(DecoderHandle, &DecoderStartSettings);
     if (!ImageInput)
     {
         LOG_ERROR("%s[%d]: NEXUS_SimpleVideoDecoder_StartImageInput Failed !!",
@@ -485,17 +451,17 @@ OMXNexusVideoEncoder::StartEncoder(PVIDEO_ENCODER_START_PARAMS pStartParams)
     NEXUS_Surface_GetDefaultCreateSettings(&surfaceCfg);
 
     NEXUS_Platform_GetClientConfiguration(&clientConfig);
-    for (i=0;i<NEXUS_MAX_HEAPS;i++) {
+    for (int i=0;i<NEXUS_MAX_HEAPS;i++) {
         NEXUS_MemoryStatus s;
         if (!clientConfig.heap[i] || NEXUS_Heap_GetStatus(clientConfig.heap[i], &s)) continue;
         if (s.memcIndex == imageInputStatus.memcIndex && (s.memoryType & NEXUS_MemoryType_eApplication) && s.largestFreeBlock >= 960*1080*2) {
             surfaceCfg.heap = clientConfig.heap[i];
-            ALOGW("found heap[%d] on MEMC%d for VideoImageInput", i, s.memcIndex);
+            LOG_INFO("found heap[%d] on MEMC%d for VideoImageInput", i, s.memcIndex);
             break;
         }
     }
     if (!surfaceCfg.heap) {
-        ALOGE("no heap found. RTS failure likely.");
+        LOG_ERROR("no heap found. RTS failure likely.");
     }
     //TODO: Remove width/height hardcoding
     surfaceCfg.width  = pStartParams->width;
@@ -519,18 +485,105 @@ OMXNexusVideoEncoder::StartEncoder(PVIDEO_ENCODER_START_PARAMS pStartParams)
             LastErr = ErrStsNexusSurfaceFailed;
             return false;
         }
-        InsertHeadList(&SurfaceAvailList, &(pSurface[i]->ListEntry));
+        InsertHeadList(&SurfaceAvailList, &pSurface[i]->ListEntry);
         SurfaceAvailListLen++;
     }
-    LOG_CREATE_DESTROY("%s: Nexus surfaces created",__FUNCTION__);
+    LOG_CREATE_DESTROY("%s: Nexus surfaces created ***",__FUNCTION__);
 
     NEXUS_VideoImageInput_GetSettings(ImageInput, &imageInputSetting);
     imageInputSetting.imageCallback.callback = imageBufferCallbackDispatcher;
     imageInputSetting.imageCallback.context  = static_cast <void *>(this);
     NEXUS_VideoImageInput_SetSettings(ImageInput, &imageInputSetting);
 
+    LastErr = ErrStsSuccess;
+    return true;
+}
+
+bool
+OMXNexusVideoEncoder::StartOutput(PVIDEO_ENCODER_START_PARAMS pStartParams)
+{
+    NEXUS_Error errCode;
+    NEXUS_SimpleEncoderStartSettings EncoderStartSettings;
+    NEXUS_SimpleEncoderSettings encoderSettings;
+
+    // TODO: Error Handling
+    NEXUS_SimpleEncoder_GetSettings(EncoderHandle, &encoderSettings);
+    encoderSettings.video.width = pStartParams->width;
+    encoderSettings.video.height = pStartParams->height;
+    //TODO: Remove hardcoding for refresh rate
+    encoderSettings.video.refreshRate=60000;
+    encoderSettings.videoEncoder.frameRate = pStartParams->frameRate;
+    LOG_INFO("%s: Frame Rate = %d",__FUNCTION__, pStartParams->frameRate);
+    NEXUS_SimpleEncoder_SetSettings(EncoderHandle, &encoderSettings);
+    LOG_INFO("Encoder setup done");
+
+    NEXUS_SimpleEncoder_GetDefaultStartSettings(&EncoderStartSettings);
+#ifdef ENCODE_DISPLAY
+    EncoderStartSettings.input.display = true;
+#else
+    EncoderStartSettings.input.video = DecoderHandle;
+#endif
+    EncoderStartSettings.output.video.settings.codec = NEXUS_VideoCodec_eH264;
+    EncoderStartSettings.output.transport.type = NEXUS_TransportType_eEs;
+    EncoderStartSettings.output.video.settings.profile = convertOMXProfileTypetoNexus(pStartParams->avcParams.eProfile);
+    EncoderStartSettings.output.video.settings.level = convertOMXLevelTypetoNexus(pStartParams->avcParams.eLevel);
+    EncoderStartSettings.output.video.settings.nonRealTime = true;
+    EncoderStartSettings.output.video.settings.interlaced = false;
+
+    LOG_INFO("%s: Profile = %d, Level = %d, width = %d, height = %d",__FUNCTION__, EncoderStartSettings.output.video.settings.profile, EncoderStartSettings.output.video.settings.level, pStartParams->width, pStartParams->height);
+//TODO: Revisit
+#if 0
+    startSettings.output.video.settings.bounds.inputDimension.max.width  = width;
+    startSettings.output.video.settings.bounds.inputDimension.max.height = height;
+    /* higher frame rate has lower delay; TODO: may set encode input min if display refresh rate > encode framerate to reduce latency */
+    startSettings.output.video.settings.bounds.inputFrameRate.min        = encoderSettings.videoEncoder.frameRate;
+    startSettings.output.video.settings.bounds.outputFrameRate.min       = encoderSettings.videoEncoder.frameRate;
+    startSettings.output.video.settings.bounds.streamStructure.max.framesB = 0;
+#endif
+
+
+    errCode = NEXUS_SimpleEncoder_Start(EncoderHandle, &EncoderStartSettings);
+    if (NEXUS_SUCCESS != errCode) 
+    {
+        LOG_ERROR("%s[%d]: NEXUS_SimpleEncoder_Start Failed [Err:%d]!!",
+            __FUNCTION__, __LINE__, errCode);
+
+        LastErr = ErrStsStartEncoFailed;
+        return false;
+    }else{
+        LOG_START_STOP_DBG("%s[%d]: SimpleEncoder Started Successfully [Err:%d]!!",
+            __FUNCTION__, __LINE__, errCode);
+    }
+
     //Reset codec config done flag.
     CodecConfigDone = false;
+
+    LastErr = ErrStsSuccess;
+    return true;
+}
+
+bool
+OMXNexusVideoEncoder::StartEncoder(PVIDEO_ENCODER_START_PARAMS pStartParams)
+{
+    Mutex::Autolock lock(mListLock);
+    bool ret = true;
+
+    if (EncoderStarted) 
+    {
+        LOG_START_STOP_DBG("%s[%d]: Encoder Already Started",
+                           __FUNCTION__, __LINE__);
+
+        LastErr = ErrStsStartEncoFailed;
+        return false;
+    }
+
+    ret = StartOutput(pStartParams);
+    if (ret==false)
+        return ret;
+
+    ret = StartInput(pStartParams);
+    if (ret==false)
+        return ret;
 
     LastErr = ErrStsSuccess;
     EncoderStartParams = *pStartParams;
@@ -538,45 +591,58 @@ OMXNexusVideoEncoder::StartEncoder(PVIDEO_ENCODER_START_PARAMS pStartParams)
     return true;
 }
 
-void
+void 
+OMXNexusVideoEncoder::StopInput()
+{
+    NEXUS_SimpleVideoDecoder_StopImageInput(DecoderHandle);
+    while(!IsListEmpty(&SurfaceAvailList))
+    {
+        PNEXUS_SURFACE pSurf = NULL;
+        PLIST_ENTRY ThisEntry =  RemoveTailList(&SurfaceAvailList);
+        SurfaceAvailListLen--;
+        BCMOMX_DBG_ASSERT(ThisEntry);
+        pSurf = CONTAINING_RECORD(ThisEntry,NEXUS_SURFACE,ListEntry);
+        BCMOMX_DBG_ASSERT(pSurf);
+    }
+        BCMOMX_DBG_ASSERT(SurfaceAvailListLen==0);
+    
+    for (unsigned int i = 0; i < NumNxSurfaces; i++)
+    {
+        if (pSurface[i]->handle)
+        {
+            NEXUS_Surface_Destroy(pSurface[i]->handle);
+            pSurface[i]->handle = NULL;
+        }
+    
+        if (pSurface[i])
+        {
+            free(pSurface[i]);
+            pSurface[i] = NULL;
+        }
+    }
+    
+    if (pSurface)
+    {
+        free(pSurface);
+        pSurface = NULL;
+    }
+}
+
+void 
+OMXNexusVideoEncoder::StopOutput()
+{
+    NEXUS_SimpleEncoder_Stop(EncoderHandle);
+}
+
+void 
 OMXNexusVideoEncoder::StopEncoder()
 {
-    if (EncoderStarted)
+    Mutex::Autolock lock(mListLock);
+    if (EncoderStarted) 
     {
-        NEXUS_SimpleVideoDecoder_StopImageInput(DecoderHandle);
-        NEXUS_SimpleEncoder_Stop(EncoderHandle);
 
-        while(!IsListEmpty(&SurfaceAvailList))
-        {
-            PNEXUS_SURFACE pSurf = NULL;
-            PLIST_ENTRY ThisEntry =  RemoveTailList(&SurfaceAvailList);
-            SurfaceAvailListLen--;
-            BCMOMX_DBG_ASSERT(ThisEntry);
-            pSurf = CONTAINING_RECORD(ThisEntry,NEXUS_SURFACE,ListEntry);
-            BCMOMX_DBG_ASSERT(pSurf);
-        }
-            BCMOMX_DBG_ASSERT(SurfaceAvailListLen==0);
-
-        for (unsigned int i = 0; i < NumNxSurfaces; i++)
-        {
-            if (pSurface[i]->handle)
-            {
-                NEXUS_Surface_Destroy(pSurface[i]->handle);
-                pSurface[i]->handle = NULL;
-            }
-
-            if (pSurface[i])
-            {
-                free(pSurface[i]);
-                pSurface[i] = NULL;
-            }
-        }
-
-        if (pSurface)
-        {
-            free(pSurface);
-            pSurface = NULL;
-        }
+        StopInput();
+        StopOutput();
 
         LOG_START_STOP_DBG("%s[%d]: Video Encoder Stopped!!",
                            __FUNCTION__, __LINE__);
@@ -619,10 +685,41 @@ OMXNexusVideoEncoder::PrintVideoEncoderStatus()
              );
 
 }
+bool
+OMXNexusVideoEncoder::FlushInput()
+{
+    Mutex::Autolock lock(mListLock);
+    bool ret = true;
+    StopInput();
+    while(!IsListEmpty(&InputContextList))
+    {
+        PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT  pContext = NULL;
+        PLIST_ENTRY ThisEntry =  RemoveTailList(&InputContextList);
+        BCMOMX_DBG_ASSERT(ThisEntry);
+        pContext = CONTAINING_RECORD(ThisEntry,NEXUS_VIDEO_ENCODER_INPUT_CONTEXT,ListEntry);
+        BCMOMX_DBG_ASSERT(pContext);
+
+        if (pContext->DoneContext.pFnDoneCallBack)
+        {
+            //Fire The Call Back
+            pContext->DoneContext.pFnDoneCallBack(pContext->DoneContext.Param1,
+                    pContext->DoneContext.Param2,
+                    pContext->DoneContext.Param3);
+
+            pContext->DoneContext.pFnDoneCallBack = NULL;
+        }
+    }
+
+    ret = StartInput(&EncoderStartParams);
+    return ret;
+}
 
 bool
-OMXNexusVideoEncoder::Flush()
+OMXNexusVideoEncoder::FlushOutput()
 {
+    Mutex::Autolock lock(mListLock);
+    bool ret = true;
+    StopOutput();
     while(!IsListEmpty(&EncodedFrList))
     {
         PNEXUS_ENCODED_VIDEO_FRAME  pEncFrame = NULL;
@@ -637,18 +734,8 @@ OMXNexusVideoEncoder::Flush()
     BCMOMX_DBG_ASSERT(EncodedFrListLen==0);
     BCMOMX_DBG_ASSERT(EmptyFrListLen==VIDEO_ENCODE_DEPTH);
 
-    while(!IsListEmpty(&InputContextList))
-    {
-        PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT  pContext = NULL;
-        PLIST_ENTRY ThisEntry =  RemoveTailList(&InputContextList);
-        BCMOMX_DBG_ASSERT(ThisEntry);
-        pContext = CONTAINING_RECORD(ThisEntry,NEXUS_VIDEO_ENCODER_INPUT_CONTEXT,ListEntry);
-        BCMOMX_DBG_ASSERT(pContext);
-    }
-
-    StopEncoder();
-    StartEncoder(&EncoderStartParams);
-    return true;
+    ret = StartOutput(&EncoderStartParams);
+    return ret;
 }
 
 bool
@@ -668,14 +755,49 @@ OMXNexusVideoEncoder::EncodeFrame(PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pNxInputCon
     pNxInputContext->pNxSurface = pNxSurface;
     // Maybe SurfaceBusyList is redundant? Enable if needed.
     //InsertHeadList(&SurfaceBusyList, &pNxSurface->ListEntry);
+
     NEXUS_Surface_GetMemory(pNxInputContext->pNxSurface->handle, &mem);
     BCMOMX_DBG_ASSERT(mem.buffer);
     convertOMXPixelFormatToCrYCbY((uint8_t *)mem.buffer, (uint8_t *)pNxInputContext->bufPtr, pNxInputContext->width, pNxInputContext->height, pNxInputContext->colorFormat);
     NEXUS_Surface_Flush(pNxInputContext->pNxSurface->handle);
 
     NEXUS_VideoImageInput_GetDefaultSurfaceSettings(&surfSettings);
-    surfSettings.pts = CONVERT_USEC_45KHZ(pNxInputContext->uSecTS);
-    NEXUS_VideoImageInput_PushSurface(ImageInput, pNxInputContext->pNxSurface->handle, &surfSettings);
+    if (pNxInputContext->flags & OMX_BUFFERFLAG_EOS)
+    {
+        NEXUS_Error err;
+        surfSettings.endOfStream = true;
+        err = NEXUS_VideoImageInput_PushSurface(ImageInput, NULL, &surfSettings);
+        if (err)
+        {
+            LOG_ERROR("%s: Error sending EOS to HW. err = %d",__FUNCTION__, err);
+            BCMOMX_DBG_ASSERT(!IsListEmpty(&InputContextList));
+            PLIST_ENTRY pDoneEntry = RemoveTailList(&InputContextList);
+            BCMOMX_DBG_ASSERT(pDoneEntry);
+            InsertHeadList(&SurfaceAvailList, &pNxSurface->ListEntry);
+            SurfaceAvailListLen++;
+            return false;
+            }
+        }
+    else
+    {
+        NEXUS_Error err;
+        surfSettings.pts = pNxInputContext->uSecTS;
+        LOG_ERROR("%s:PTS = %d",__FUNCTION__, pNxInputContext->uSecTS);
+        surfSettings.ptsValid = true;
+        // TODO: Remove frame rate hardcoding.
+        surfSettings.frameRate = NEXUS_VideoFrameRate_e15;
+        err = NEXUS_VideoImageInput_PushSurface(ImageInput, pNxInputContext->pNxSurface->handle, &surfSettings);
+        if (err)
+        {
+            LOG_ERROR("%s: Error Push Surface. err = %d", err);
+            BCMOMX_DBG_ASSERT(!IsListEmpty(&InputContextList));
+            PLIST_ENTRY pDoneEntry = RemoveTailList(&InputContextList);
+            BCMOMX_DBG_ASSERT(pDoneEntry);
+            InsertHeadList(&SurfaceAvailList, &pNxSurface->ListEntry);
+            SurfaceAvailListLen++;
+            return false;
+        }
+    }
 
     StartCaptureFrames();
 
@@ -797,6 +919,7 @@ OMXNexusVideoEncoder::GetEncodedFrame(PDELIVER_ENCODED_FRAME pDeliverFr)
 
         pDeliverFr->OutFlags = pNxVidEncFr->ClientFlags;
         pDeliverFr->usTimeStamp = pNxVidEncFr->usTimeStampOriginal;
+        LOG_INFO("%s:OUT PTS = %d",__FUNCTION__, pDeliverFr->usTimeStamp);
 
         pDeliverFr->SzFilled = SizeToCopy;
         ReturnEncodedFrameSynchronized(pNxVidEncFr);
@@ -904,6 +1027,10 @@ OMXNexusVideoEncoder::GetFrameStart( NEXUS_VideoEncoderDescriptor *pVidEncDescr,
     {
         for (unsigned int Index=0; Index < CntElements; Index++)
         {
+            if(pVidEncDescr->flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_EOS)
+            {
+                LOG_INFO("%s: Found EOS on output.",__FUNCTION__);
+            }
             if (pVidEncDescr->flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_FRAME_START)
             {
                 *OutIndex=Index;
@@ -987,6 +1114,7 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
     bool frameStartSeen = false, SPSSent = false;
     bool codecConfigNotDelivered = false;
     Encode_Frame_Type frametype;
+    bool frameComplete = false;
 
     //Mutex::Autolock lock(mListLock);
     if (!IsEncoderStarted())
@@ -1040,7 +1168,7 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
 
     if ( (NxErrCode != NEXUS_SUCCESS) || (0 == SzFr1 + SzFr2) || (0 == SzFr1))
     {
-        LOG_ERROR("%s[%d]: No Encoded Frames From Encoder Sts:%d Sz1:%d Sz2:%d",
+        LOG_INFO("%s[%d]: No Encoded Frames From Encoder Sts:%d Sz1:%d Sz2:%d",
                     __FUNCTION__,__LINE__,
                   NxErrCode,SzFr1,SzFr2);
 
@@ -1091,7 +1219,14 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
     while (NumToProcess)
     {
         LOG_RETRIVE_FRAME("%s: pCurrVidEncDescr[0].flags=%x, pCurrVidEncDescr[0].videoFlags = %x, pCurrVidEncDescr[0].length = %d, pCurrVidEncDescr[0].dataUnitType = %d",__FUNCTION__, pCurrVidEncDescr[0].flags, pCurrVidEncDescr[0].videoFlags, pCurrVidEncDescr[0].length, pCurrVidEncDescr[0].dataUnitType);
+        if(pCurrVidEncDescr[0].flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_EOS)
+        {
+            LOG_INFO("%s: Received EOS on output. Flags = %x",__FUNCTION__, pCurrVidEncDescr[0].flags);
+        }
+//        LOG_ERROR("%s: Flags = %x",__FUNCTION__, pCurrVidEncDescr[0].flags);
 
+//        if (((pCurrVidEncDescr[0].flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_FRAME_START) && (frameStartSeen==false))||
+//            (pCurrVidEncDescr[0].flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_EOS))
         if ((pCurrVidEncDescr[0].flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_FRAME_START) && (frameStartSeen==false))
         {
             //
@@ -1119,14 +1254,11 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
 
         if (pEmptyFr)
         {
-            if ( pCurrVidEncDescr[0].flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_ORIGINALPTS_VALID )
-            {
-                pEmptyFr->usTimeStampOriginal = (pCurrVidEncDescr[0].originalPts/45) * 1000;
-            }
 
-            if ( pCurrVidEncDescr[0].flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_PTS_VALID )
+            if(pCurrVidEncDescr[0].flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_EOS)
             {
-                pEmptyFr->usTimeStampIntepolated = (pCurrVidEncDescr[0].pts/90) * 1000;
+                LOG_INFO("%s: Received EOS on output.",__FUNCTION__);
+                pEmptyFr->ClientFlags |= OMX_BUFFERFLAG_EOS;
             }
 
             if (CodecConfigDone==false)
@@ -1207,8 +1339,25 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
                 pEmptyFr->CombinedSz += pCurrVidEncDescr[0].length;
                 pEmptyFr->BaseAddr = (unsigned int) EncSts.video.pBufferBase;
                 pEmptyFr->FrameData->add((NEXUS_VideoEncoderDescriptor *) pCurrVidEncDescr);
+                if ( pCurrVidEncDescr[0].flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_ORIGINALPTS_VALID )
+                {
+                    pEmptyFr->usTimeStampOriginal = pCurrVidEncDescr[0].originalPts;
+                }
+                
+                if ( pCurrVidEncDescr[0].flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_PTS_VALID )
+                {
+                    pEmptyFr->usTimeStampIntepolated = pCurrVidEncDescr[0].pts;
+                }
             }
             else if (CodecConfigDone==true)
+            {
+                frameComplete = true;
+            }
+            if (pCurrVidEncDescr[0].flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_EOS)
+            {
+                frameComplete = true;
+            }
+            if (frameComplete)
             {
                 // TODO: Enable below check
 //                if ((false == ShouldDiscardFrame(pEmptyFr))||(pEmptyFr->ClientFlags & OMX_BUFFERFLAG_CODECCONFIG))
@@ -1246,6 +1395,7 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
                     // TODO: revisit
                     //if (false == CaptureFrameEnabled()) break;
                 }
+                frameComplete = false;
             }
         }
 
@@ -1278,12 +1428,13 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
 void
 OMXNexusVideoEncoder::imageBufferCallback()
 {
-    ALOGD("%s",__FUNCTION__);
+    //ALOGD("%s",__FUNCTION__);
+    Mutex::Autolock lock(mListLock);
 
     NEXUS_SurfaceHandle freeSurface=NULL;
     unsigned num_entries = 0;
     NEXUS_VideoImageInput_RecycleSurface(ImageInput, &freeSurface , 1, &num_entries);
-    ALOGE("%s: num_entries = %d",__FUNCTION__, num_entries);
+    //ALOGE("%s: num_entries = %d",__FUNCTION__, num_entries);
     if (!num_entries)
         return;
 
@@ -1302,22 +1453,14 @@ OMXNexusVideoEncoder::imageBufferCallback()
         pDoneCnxt->DoneContext.pFnDoneCallBack(pDoneCnxt->DoneContext.Param1,
                 pDoneCnxt->DoneContext.Param2,
                 pDoneCnxt->DoneContext.Param3);
+
+        pDoneCnxt->DoneContext.pFnDoneCallBack = NULL;
     }
 
     InsertHeadList(&SurfaceAvailList, &pDoneCnxt->pNxSurface->ListEntry);
     SurfaceAvailListLen++;
 }
 
-
-void
-OMXNexusVideoEncoder::InputEOSReceived(unsigned int InputFlags)
-{
-    UNUSED(InputFlags);
-
-    LOG_EOS_DBG("%s %d: EOS Received On The Input Side",__FUNCTION__,__LINE__);
-    BCMOMX_DBG_ASSERT(false);
-    return;
-}
 
 ErrorStatus
 OMXNexusVideoEncoder::GetLastError()

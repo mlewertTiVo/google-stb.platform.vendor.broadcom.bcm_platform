@@ -240,7 +240,7 @@ typedef struct b_refsw_client_connect_resource_settings {
     struct {
         unsigned id; /* id used to acquire SimpleEncoder. 0 is no request. */
         bool display; /* Encode the display and audio for this session. Not for file transcoding. */
-        
+        bool nonRealTime;
         struct {
             bool cpuAccessible; /* alloc encoder buffers in a client heap so that functions like NEXUS_SimpleEncoder_GetVideoBuffer
                                        and NEXUS_SimpleEncoder_GetAudioBuffer work. */
