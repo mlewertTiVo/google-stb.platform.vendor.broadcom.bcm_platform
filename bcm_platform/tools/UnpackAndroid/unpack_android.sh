@@ -64,10 +64,10 @@ then
   mount /dev/${4}1 $3
 fi
 
-cp $1/kernel $3
-
 cd $2
 $tools_dir/tools/split_boot $1/boot.img
+mv boot/boot.img-kernel kernel
+cp kernel $3
 $tools_dir/tools/simg2img $1/system.img ./boot/system.raw.img
 $tools_dir/tools/simg2img $1/userdata.img ./boot/userdata.raw.img
 mount -t ext4 -o loop ./boot/system.raw.img ./boot/ramdisk/system
@@ -79,6 +79,7 @@ rsync -av ./boot/ramdisk/* $2
 umount ./boot/ramdisk/system
 umount ./boot/ramdisk/data
 rm -rf ./boot
+cd /
 umount $2
 umount $3
 rm -rf $2

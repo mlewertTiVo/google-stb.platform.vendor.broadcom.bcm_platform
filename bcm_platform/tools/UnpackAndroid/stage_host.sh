@@ -18,12 +18,12 @@ echo "1) Cleaning up staging dir: $2"
 echo "   ... removing the boot folder"
 rm -rf $2/boot
 
-echo "2) Copying kernel"
-cp $1/kernel $2
-
-echo "3) Unpacking ramdisk"
+echo "2) Unpacking ramdisk and copy kernel"
 cd $2
 $tools_dir/tools/split_boot $1/boot.img
+mv boot/boot.img-kernel kernel
+
+echo "3) Unsparse ext4's"
 $tools_dir/tools/simg2img $1/system.img ./boot/system.raw.img
 $tools_dir/tools/simg2img $1/userdata.img ./boot/userdata.raw.img
 

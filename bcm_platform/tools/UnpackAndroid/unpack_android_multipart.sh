@@ -87,6 +87,8 @@ umount ./boot/data
 rm -rf ./boot
 
 ./tools/split_boot $1/boot.img
+mv boot/boot.img-kernel kernel
+cp kernel $6
 ./tools/simg2img $1/system.img ./boot/system.raw.img
 ./tools/simg2img $1/userdata.img ./boot/userdata.raw.img
 
@@ -98,12 +100,12 @@ mount -t ext4 -o loop ./boot/userdata.raw.img ./boot/data
 rsync -av ./boot/ramdisk/* $2
 rsync -av ./boot/system/* $3
 rsync -av ./boot/data/* $4
-cp $1/kernel $6
 
 # Cleanup
 umount ./boot/system
 umount ./boot/data
 rm -rf ./boot
+cd /
 umount $2
 umount $3
 umount $4
