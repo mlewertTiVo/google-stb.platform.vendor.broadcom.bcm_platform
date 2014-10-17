@@ -1,5 +1,5 @@
-# make file for new hardware  from
-#
+
+ifeq ($(PRODUCT_MANUFACTURER),BROADCOM)
 
 LOCAL_PATH := $(call my-dir)
 
@@ -129,8 +129,5 @@ include vendor/broadcom/bcm_platform/libtv_input/Android.mk
 include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 endif
 
-#
-#include $(CLEAR_VARS)
-#
-# include more board specific stuff here? Such as Audio parameters.
-#
+endif
+
