@@ -36,7 +36,12 @@ static void power_init(struct power_module *module)
     LOGD("%s: ",__FUNCTION__);
 }
 
-static int power_set_state(NexusPowerState state)
+static void power_set_shutdown()
+{
+    property_set("sys.powerctl", "shutdown");
+}
+
+static int power_set_pmlibservice_state(NexusPowerState state)
 {
     int rc = 0;
     pmlib_state_t pmlib_state;
@@ -173,6 +178,33 @@ static int power_set_state(NexusPowerState state)
     return service->setState(&pmlib_state);
 }
     
+static int power_set_state(NexusPowerState toState, NexusPowerState fromState)
+{
+    int rc = 0;
+    switch (toState)
+    {
+        case eNexusPowerState_S0: {
+            if (fromState == eNexusPowerState_S1) {
+                rc = power_set_pmlibservice_state(toState);
+            }
+        } break;
+
+        case eNexusPowerState_S1: {
+            if (fromState == eNexusPowerState_S0) {
+                rc = power_set_pmlibservice_state(toState);
+            }
+        } break;
+
+        case eNexusPowerState_S5: {
+            power_set_shutdown();
+        } break;
+
+        default: {
+        } break;
+    }
+    return rc;
+}
+
 static void power_set_interactive(struct power_module *module, int on)
 {
     NEXUS_Error rc;
@@ -193,13 +225,15 @@ static void power_set_interactive(struct power_module *module, int on)
         nexusPowerOffState = eNexusPowerState_S3;
         offStateString[1] = '3';
     }
+    else if (strcasecmp(value, "5") == 0 || strcasecmp(value, "s5") == 0) {
+        nexusPowerOffState = eNexusPowerState_S5;
+        offStateString[1] = '5';
+    }
 
     if (on) {
-        if (nexusPowerOffState == eNexusPowerState_S1) {
-            if (power_set_state(eNexusPowerState_S0) != 0) {
-                LOGE("%s: Could not set power state to S%d!!!", __FUNCTION__, eNexusPowerState_S0);
-                return;
-            }
+        if (power_set_state(eNexusPowerState_S0, nexusPowerOffState) != 0) {
+            LOGE("%s: Could not set power state to S%d!!!", __FUNCTION__, eNexusPowerState_S0);
+            return;
         }
         rc = NexusPower_SetPowerState(eNexusPowerState_S0);
     }
@@ -207,8 +241,8 @@ static void power_set_interactive(struct power_module *module, int on)
         /* Must wait to allow "ScreenOff" Intent to be Broadcasted and acted upon */
         usleep(1.5 * 1000 * 1000);
         rc = NexusPower_SetPowerState(nexusPowerOffState);
-        if (rc==NEXUS_SUCCESS && nexusPowerOffState == eNexusPowerState_S1) {
-            if (power_set_state(eNexusPowerState_S1) != 0) {
+        if (rc==NEXUS_SUCCESS) {
+            if (power_set_state(nexusPowerOffState, eNexusPowerState_S0) != 0) {
                 LOGE("%s: Could not set power state to S%d!!!", __FUNCTION__, eNexusPowerState_S1);
                 return;
             }

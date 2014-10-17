@@ -82,6 +82,10 @@ static b_powerState NexusPowerStateToPowerState(NexusPowerState pmState)
             state = ePowerState_S3;
             break;
 
+        case eNexusPowerState_S5:
+            state = ePowerState_S5;
+            break;
+
         default:
             state = ePowerState_S0;
             LOGW("%s: invalid Nexus Power State %d!", __FUNCTION__, pmState);
@@ -110,6 +114,10 @@ static NexusPowerState PowerStateToNexusPowerState(b_powerState state)
     
         case ePowerState_S3:
             pmState = eNexusPowerState_S3;
+            break;
+
+        case ePowerState_S5:
+            pmState = eNexusPowerState_S5;
             break;
 
         default:

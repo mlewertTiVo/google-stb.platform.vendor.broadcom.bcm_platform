@@ -128,6 +128,7 @@ typedef enum b_powerState {
     ePowerState_S2, // Standby S2
     ePowerState_S3, // Standby S3 (deep sleep - aka suspend to ram)
     ePowerState_S4, // Suspend to disk (not implemented on our kernels)
+    ePowerState_S5, // Poweroff (aka S3 cold boot)
     ePowerState_Max
 } b_powerState;
 

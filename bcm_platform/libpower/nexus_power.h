@@ -56,6 +56,8 @@ typedef enum NexusPowerState {
     eNexusPowerState_S1,
     eNexusPowerState_S2,
     eNexusPowerState_S3,
+    eNexusPowerState_S4,
+    eNexusPowerState_S5,
 } NexusPowerState;
 
 extern NEXUS_Error NexusPower_SetPowerState(NexusPowerState pmState);

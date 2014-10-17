@@ -2079,8 +2079,9 @@ bool NexusService::setPowerState(b_powerState pmState)
             }
 
             case ePowerState_S3:
+            case ePowerState_S5:
             {
-                LOGD("%s: About to set power state S3...", __PRETTY_FUNCTION__);
+                LOGD("%s: About to set power state S%d...", __PRETTY_FUNCTION__, pmState-ePowerState_S0);
                 setDisplayState(0);
                 setVideoState(0);
                 setAudioState(0);
