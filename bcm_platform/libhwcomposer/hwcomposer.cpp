@@ -102,6 +102,7 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
     PSHARED_DATA pSharedData;
     android::List<hwc_layer_1_t *> hwcList;
     android::List<hwc_layer_1_t *>::iterator it;
+    bool bSideBand = false;
 
     if (displays && (displays[0]->flags & HWC_GEOMETRY_CHANGED)) {
 
@@ -114,14 +115,43 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
         for (i = 0; i < displays[0]->numHwLayers; i++) {
             layer = &displays[0]->hwLayers[i];
 
-            layer->compositionType = HWC_FRAMEBUFFER;
-
             if(!layer->handle) {
+                ALOGE("%s: Unable to find layer handle!!", __FUNCTION__);
                 continue;
             }
 
             // Cast the handle to get the extra bits from Broadcom/Gralloc
             bcmBuffer = (private_handle_t *)layer->handle;
+
+            if (layer->compositionType == HWC_SIDEBAND)
+            {
+                ALOGE("%s: Found a HWC_SIDEBAND layer!!", __FUNCTION__);
+
+                // Set the flag & retrieve the Nexus context
+                bSideBand = true;
+
+                // Add this layer to the list
+                hwcList.push_back(layer);
+
+                continue;
+            }
+
+            // As of now, for TIF, the TV app puts up a black surface completely opaque. Without,
+            // discarding this, video can't be seen (even after setting up with the video window)
+            else if (bSideBand)
+            {
+                ALOGE("%s: Forcing other layers to HWC_OVERLAY (since we have a HWC_SIDEBAND layer in the list)", __FUNCTION__);
+
+                // Ask for another hole
+                layer->compositionType = HWC_OVERLAY;
+                layer->hints = HWC_HINT_CLEAR_FB;
+
+                // Reset the flag since we need to this only for the
+                // immediate layer following the sideband layer
+                bSideBand = false;
+            }
+            else
+                layer->compositionType = HWC_FRAMEBUFFER;
 
             // Get shared data from Gralloc
             pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedDataPhyAddr);
@@ -160,25 +190,36 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
             // Cast the handle to get the extra bits from Broadcom/Gralloc
             bcmBuffer = (private_handle_t *)layer->handle;
 
-            // We'll handle this with a videowindow (HWC_OVERLAY), so we'll need a hole in the FB (HWC_HINT_CLEAR_FB)
-            layer->compositionType = HWC_OVERLAY;
-            layer->hints = HWC_HINT_CLEAR_FB;
+            if (layer->compositionType == HWC_SIDEBAND)
+            {
+                iWindowIndex = 0;
+                video_window_visible[iWindowIndex] = 1;
 
-            // Get shared data from Gralloc
-            pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedDataPhyAddr);
+                client_context = (NexusClientContext*)bcmBuffer->data[1];
+            }
 
-            iWindowIndex   = android_atomic_acquire_load(&pSharedData->videoWindow.windowIdPlusOne) - 1;
-            timestamp      = pSharedData->videoWindow.timestamp;
-            client_context = reinterpret_cast<NexusClientContext *>(pSharedData->videoWindow.nexusClientContext);
-            video_window_visible[iWindowIndex] = pSharedData->videoWindow.windowVisible;
+            else
+            {
+                // We'll handle this with a videowindow (HWC_OVERLAY), so we'll need a hole in the FB (HWC_HINT_CLEAR_FB)
+                layer->compositionType = HWC_OVERLAY;
+                layer->hints = HWC_HINT_CLEAR_FB;
 
-            // Indicate that this is indeed a video window on a layer
-            android_atomic_release_store(video_window_zorder+1, &pSharedData->videoWindow.layerIdPlusOne);
+                // Get shared data from Gralloc
+                pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedDataPhyAddr);
+
+                iWindowIndex   = android_atomic_acquire_load(&pSharedData->videoWindow.windowIdPlusOne) - 1;
+                timestamp      = pSharedData->videoWindow.timestamp;
+                client_context = reinterpret_cast<NexusClientContext *>(pSharedData->videoWindow.nexusClientContext);
+                video_window_visible[iWindowIndex] = pSharedData->videoWindow.windowVisible;
+
+                // Indicate that this is indeed a video window on a layer
+                android_atomic_release_store(video_window_zorder+1, &pSharedData->videoWindow.layerIdPlusOne);
+
+                ALOGV("%s: window id=%d, layer=%d, visible=%d, client_context=%p sharedDataPhyAddr=0x%08x timestamp=%lldns", __FUNCTION__,
+                        iWindowIndex, video_window_zorder, video_window_visible[iWindowIndex], (void *)client_context, bcmBuffer->sharedDataPhyAddr, timestamp);
+            }
 
             ctx->last_video_window_visible[iWindowIndex].nexusClient = client_context;
-
-            ALOGV("%s: window id=%d, layer=%d, visible=%d, client_context=%p sharedDataPhyAddr=0x%08x timestamp=%lldns", __FUNCTION__,
-                    iWindowIndex, video_window_zorder, video_window_visible[iWindowIndex], (void *)client_context, bcmBuffer->sharedDataPhyAddr, timestamp);
 
             // if the video display rectangle is changed by app, set video window according to parameters
             if ((ctx->last_displayFrame[iWindowIndex].left   != layer->displayFrame.left)   ||
@@ -216,7 +257,7 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
                 }
                 ctx->last_video_window_visible[iWindowIndex].visible = video_window_visible[iWindowIndex];
 
-                if (window_settings.visible == false) {
+                if ((window_settings.visible == false) && (layer->compositionType != HWC_SIDEBAND)) {
                     ALOGV("%s: About to signal to sharedDataPhyAddr=0x%08x that window %d has been made invisible...", __FUNCTION__,
                             bcmBuffer->sharedDataPhyAddr, iWindowIndex);
                     android_atomic_release_store(0, &pSharedData->videoWindow.windowIdPlusOne);
