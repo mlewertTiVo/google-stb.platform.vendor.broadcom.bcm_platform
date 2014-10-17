@@ -427,7 +427,7 @@ OMXNexusVideoEncoder::StartEncoder(PVIDEO_ENCODER_START_PARAMS pStartParams)
     encoderSettings.video.height = pStartParams->height;
     encoderSettings.videoEncoder.frameRate = pStartParams->frameRate;
     NEXUS_SimpleEncoder_SetSettings(EncoderHandle, &encoderSettings);
-    BDBG_MSG(("Encoder setup done"));
+    ALOGD("Encoder setup done");
 
     NEXUS_SimpleEncoder_GetDefaultStartSettings(&EncoderStartSettings);
 #ifdef ENCODE_DISPLAY
@@ -490,12 +490,12 @@ OMXNexusVideoEncoder::StartEncoder(PVIDEO_ENCODER_START_PARAMS pStartParams)
         if (!clientConfig.heap[i] || NEXUS_Heap_GetStatus(clientConfig.heap[i], &s)) continue;
         if (s.memcIndex == imageInputStatus.memcIndex && (s.memoryType & NEXUS_MemoryType_eApplication) && s.largestFreeBlock >= 960*1080*2) {
             surfaceCfg.heap = clientConfig.heap[i];
-            BDBG_WRN(("found heap[%d] on MEMC%d for VideoImageInput", i, s.memcIndex));
+            ALOGW("found heap[%d] on MEMC%d for VideoImageInput", i, s.memcIndex);
             break;
         }
     }
     if (!surfaceCfg.heap) {
-        BDBG_ERR(("no heap found. RTS failure likely."));
+        ALOGE("no heap found. RTS failure likely.");
     }
     //TODO: Remove width/height hardcoding
     surfaceCfg.width  = pStartParams->width;
