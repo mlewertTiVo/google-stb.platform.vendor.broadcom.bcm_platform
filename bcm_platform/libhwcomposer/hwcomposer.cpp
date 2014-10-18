@@ -220,6 +220,15 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
             }
 
             ctx->last_video_window_visible[iWindowIndex].nexusClient = client_context;
+			//reset the perviously stored visible flag
+            for (i = 0; i < MAX_NEXUS_PLAYER; i++) {
+                if (ctx->last_video_window_visible[i].nexusClient ) {
+                    pIpcClient->getVideoWindowSettings(ctx->last_video_window_visible[i].nexusClient, i, &window_settings);
+                    if(!window_settings.visible && ctx->last_video_window_visible[iWindowIndex].visible) {
+                        ctx->last_video_window_visible[iWindowIndex].visible = false;
+                    }
+                }
+            }
 
             // if the video display rectangle is changed by app, set video window according to parameters
             if ((ctx->last_displayFrame[iWindowIndex].left   != layer->displayFrame.left)   ||
