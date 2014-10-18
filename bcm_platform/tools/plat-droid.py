@@ -121,7 +121,6 @@ if verbose:
 	print run_toolchain
 lines = check_output(run_toolchain,shell=True).splitlines()
 kerneltoolchain="${ANDROID}/prebuilts/gcc/linux-x86/arm/stb/%s/bin" % lines[0].rstrip()
-kerneltoolchain_legacy="/opt/toolchains/%s/bin" % lines[0].rstrip()
 
 # run the refsw plat tool to get the generated versions of the config.
 run_plat='bash -c "source ./vendor/broadcom/refsw/BSEAV/tools/build/plat %s %s %s"' % (chip, revision, boardtype)
@@ -183,7 +182,7 @@ if target_option == "AOSP" or target_option == "CTSAOSP":
 	os.write(s, "include device/broadcom/common/settings_aosp.mk")
 os.write(s, "\n\nPRODUCT_NAME := bcm_%s\n" % androiddevice)
 os.write(s, "\n# exporting toolchains path for kernel image+modules\n")
-os.write(s, "export PATH := %s:%s:${PATH}\n" % (kerneltoolchain, kerneltoolchain_legacy))
+os.write(s, "export PATH := %s:${PATH}\n" % kerneltoolchain)
 
 os.close(s);
 
