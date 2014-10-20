@@ -159,6 +159,7 @@ BERR_Code nexusinit_ir()
 {
     char module_arg[16];
     char value[PROPERTY_VALUE_MAX];
+    char value2[2*PROPERTY_VALUE_MAX];
 
     strncpy(module_arg, "", sizeof(module_arg));
 
@@ -174,7 +175,15 @@ BERR_Code nexusinit_ir()
     }
 
     /* Add the nx_ashmem module which is required for gralloc to function */
-    if (nexusinit_insmod(NX_ASHMEM_DRIVER_FILENAME, "") != BERR_SUCCESS) {
+    memset(value2, 0, sizeof(value2));
+    property_get("ro.nexus.ashmem.devname", value, NULL);
+    if (strlen(value) > 0) {
+        strcpy(value2, "devname=\"");
+        strcat(value2, value);
+        strcat(value2, "\"");
+        LOGD("nexusinit: ro.nexus.ashmem.devname=%s", value);
+    }
+    if (nexusinit_insmod(NX_ASHMEM_DRIVER_FILENAME, value2) != BERR_SUCCESS) {
         LOGE("nexusinit: insmod failed on %s!", NX_ASHMEM_DRIVER_FILENAME);
         return BERR_UNKNOWN;
     }
