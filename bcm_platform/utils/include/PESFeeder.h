@@ -352,6 +352,8 @@ private:
     ConfigDataMgrFactory(){return;};
 };
 
-static CfgMgr* CreateCfgDataMgr(NEXUS_VideoCodec vidCodec, DataSender& Sender);
+static
+CfgMgr*
+CreateCfgDataMgr(NEXUS_VideoCodec vidCodec, DataSender& Sender);
 
 #endif

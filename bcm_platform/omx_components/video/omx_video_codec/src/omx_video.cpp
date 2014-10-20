@@ -547,7 +547,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
 
     BCM_OMX_CONTEXT *pMyData;
     OMX_ERRORTYPE eError = OMX_ErrorNone;
-    void *ret;
+    void *pError = (void*)&eError;
     ThrCmdType eCmd = Stop;
     OMX_U32 nIndex = 0;
     NEXUS_PlaypumpStatus playpumpStatus;
@@ -581,8 +581,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
         // Wait for thread to exit so we can get the status into "error"
         if(0 != pMyData->thread_id)
         {
-            pthread_join(pMyData->thread_id, &ret);
-            eError = (OMX_ERRORTYPE) (uintptr_t) ret;
+            pthread_join(pMyData->thread_id, &pError);
         }
 
         // close the pipe handles
@@ -673,7 +672,8 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SendCommand(OMX_IN OMX_HANDLETYPE hComponent,
                 OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadPortIndex);
             break;
         default:
-            eCmd1 = (ThrCmdType)eCmd; // or return OMX_ErrorBadParameter?
+            ALOGE("%s: Unhandled Command: %d\n",__FUNCTION__,eCmd);
+            OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter); 
             break;
     }
 
@@ -818,13 +818,13 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
             {
                 BKNI_Memcpy(pParamStruct, &pMyData->sInPortDef, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
 
-            }
-            else if (((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sOutPortDef.nPortIndex)
-            {
+            }else if (((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sOutPortDef.nPortIndex) {
+                //PrintPortDefInfo(&pMyData->sOutPortDef);
                BKNI_Memcpy(pParamStruct, &pMyData->sOutPortDef, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
 
-            } else
+            } else {
                 eError = OMX_ErrorBadPortIndex;
+            }
 
             break;
 
@@ -957,9 +957,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
             {
                 BKNI_Memcpy(&pMyData->sInPortDef, pParamStruct, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
 
-            }
-            else if ( ( (OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sOutPortDef.nPortIndex)
-            {
+            }else if ( ( (OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sOutPortDef.nPortIndex) {
                 //
                 // You cannot blindly copy the data You will need to raise a event here
                 // Saying port setting changed if the parameters are not same
@@ -987,9 +985,9 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
                         pMyData->sOutPortDef.format.video.nFrameWidth,
                         pMyData->sOutPortDef.format.video.nFrameHeight,
                         pMyData->sOutPortDef.nBufferSize);
-            }
-            else
+            }else {
                 eError = OMX_ErrorBadPortIndex;
+            }
 
             break;
         }
@@ -1041,6 +1039,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
 
                 BKNI_Memcpy(&pMyData->sInPortFormat,pFormatParams,sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE));
             }else{
+                ALOGE("%s: Returning UnDefined",__FUNCTION__);
                 return OMX_ErrorUndefined;
             }
 
@@ -1323,8 +1322,9 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
         pPortDef = &pMyData->sInPortDef;
     }else if (nPortIndex == pMyData->sOutPortDef.nPortIndex){
         pPortDef = &pMyData->sOutPortDef;
-    }else
+    }else{
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter);
+    }
 
     if (!pPortDef->bEnabled)
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
@@ -1391,9 +1391,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
             BCMOMX_DBG_ASSERT(BufferStart > (uintptr_t)pInNxCnxt->PESData);
             BCMOMX_DBG_ASSERT((BufferEnd - BufferStart) == nSizeBytes);
             pMyData->sInBufList.pBufHdr[nIndex]->pBuffer = (unsigned char *)BufferStart;
-        }
-        else
-        {
+        }else{
             ALOGE("%s : Input Memory Allocation Using Malloc:%p",
                   __FUNCTION__,pMyData->sInBufList.pBufHdr[nIndex]->pBuffer);
             pMyData->sInBufList.pBufHdr[nIndex]->pBuffer = (OMX_U8*) BKNI_Malloc(nSizeBytes);
@@ -1409,16 +1407,15 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
                 nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);
 
         CopyBufferHeaderList(pMyData->sInBufList, pPortDef, pMyData->pInBufHdrRes);
-    }
-    else
-    while (1)
-    {
-        ALOGE("%s: Allocating Memory On Output Port--- ERROR WE ARE NOT ADVERTISING THIS QUIRK !!",
-                __FUNCTION__);
+    }else{
+        while (1)
+        {
+            ALOGE("%s: Allocating Memory On Output Port--- ERROR WE ARE NOT ADVERTISING THIS QUIRK !!",
+                    __FUNCTION__);
 
-        BKNI_Sleep(10);
+            BKNI_Sleep(10);
+        }
     }
-
 OMX_CONF_CMD_BAIL:
     return eError;
 }
@@ -1449,8 +1446,10 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_FreeBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
 
         if(pBufferHdr->pBuffer)
         {
-            if(!pMyData->bUseNoDataCopy)
+            if(false == pMyData->bUseNoDataCopy)
+            {
                 BKNI_Free(pBufferHdr->pBuffer);
+            }
             pBufferHdr->pBuffer=NULL;
         }
 
@@ -1502,8 +1501,9 @@ OMX_CONF_CMD_BAIL:
  * meta data struct. The Size Will Also Be From Metadata Struct.
  */
 
-static unsigned char *GetSecureDataPtrForDMAXfer(OMX_BUFFERHEADERTYPE* pBufferHdr,
-                                                 unsigned int *SzOut)
+static 
+unsigned char *
+GetSecureDataPtrForDMAXfer(OMX_BUFFERHEADERTYPE* pBufferHdr, unsigned int *SzOut)
 {
     *SzOut = pBufferHdr->nFilledLen;
     return pBufferHdr->pBuffer;
@@ -1512,8 +1512,9 @@ static unsigned char *GetSecureDataPtrForDMAXfer(OMX_BUFFERHEADERTYPE* pBufferHd
 /*
  * Simple function to Save Us Indirection Everywhere in code
  */
-static unsigned char *GetInDataPtr(BCM_OMX_CONTEXT *pBcmContext,
-                                   OMX_BUFFERHEADERTYPE* pBufferHdr)
+static 
+unsigned char *
+GetInDataPtr(BCM_OMX_CONTEXT *pBcmContext, OMX_BUFFERHEADERTYPE* pBufferHdr)
 {
     //Since the CODEC Config Data Is always in clear...
     if (pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)
@@ -1647,7 +1648,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
         {
             if (pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)
             {
-                if(false == pMyData->pPESFeeder->SaveCodecConfigData(pBufferHdr->pBuffer,pBufferHdr->nFilledLen))
+                if(false == pMyData->pPESFeeder->SaveCodecConfigData(pDataBuffer,pBufferHdr->nFilledLen))
                 {
                     ALOGE("%s: ==ERROR== Failed To Save The Config Data, Flush May Not work",__FUNCTION__);
                 }
@@ -1750,9 +1751,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
 
                     SendConfigDataToHw=true;
                     free(config_header);
-                }
-                else
-                {
+            } else {
                         SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
                                 payload_header,
                                 payload_header_size,
@@ -2701,7 +2700,8 @@ bcmOmxTimestampTable::~bcmOmxTimestampTable()
     free(pTimestamps);
 }
 
-uint32_t bcmOmxTimestampTable::store(uint64_t orig_ts)
+uint32_t
+bcmOmxTimestampTable::store(uint64_t orig_ts)
 {
     unsigned int i;
 
@@ -2732,7 +2732,8 @@ uint32_t bcmOmxTimestampTable::store(uint64_t orig_ts)
     return CONVERT_USEC_45KHZ(orig_ts);
 }
 
-uint64_t bcmOmxTimestampTable::retrieve(uint32_t conv_ts)
+uint64_t
+bcmOmxTimestampTable::retrieve(uint32_t conv_ts)
 {
     unsigned int i;
     uint64_t orig_ts;
@@ -2758,13 +2759,15 @@ uint64_t bcmOmxTimestampTable::retrieve(uint32_t conv_ts)
 
 }
 
-void bcmOmxTimestampTable::flush()
+void
+bcmOmxTimestampTable::flush()
 {
     memset(pTimestamps, 0, size * sizeof(bcmOmxTimestampEntry));
     usage_count = 0;
 }
 
-bool bcmOmxTimestampTable::isFull()
+bool
+bcmOmxTimestampTable::isFull()
 {
     ALOGD("%s: usage_count = %d",__FUNCTION__, usage_count);
     return (usage_count==size) ? true : false;
