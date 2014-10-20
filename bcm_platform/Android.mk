@@ -12,11 +12,7 @@ include vendor/broadcom/bcm_platform/libnexusipc/Android.mk
 include vendor/broadcom/bcm_platform/libGLES_nexus/Android.mk
 include vendor/broadcom/bcm_platform/brcm_memtrack/Android.mk
 
-ifneq ($(GOOGLE_TREE_BUILD),n)
-    BCM_APPS_PATH := vendor/broadcom/bcm_platform/app
-else
-    BCM_APPS_PATH:=$(LOCAL_PATH)/../../../../../../../../opensource/android/src/broadcom/app
-endif
+BCM_APPS_PATH := vendor/broadcom/bcm_platform/app
 
 # Broadcom Test apps
 include ${BCM_APPS_PATH}/BcmChangeDisplayFormat/Android.mk
@@ -87,9 +83,7 @@ endif
 
 include vendor/broadcom/bcm_platform/ntfs3g/Android.mk
 
-ifneq ($(USE_CAMERA_STUB),true)
 include vendor/broadcom/bcm_platform/libcamera2/Android.mk
-endif
 
 ifeq ($(ANDROID_ENABLE_BTUSB),y)
 include vendor/broadcom/bcm_platform/brcm_btusb/Android.mk

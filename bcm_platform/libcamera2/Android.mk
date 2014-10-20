@@ -1,5 +1,3 @@
-ifeq ($(USE_CAMERA_STUB),false)
-
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
@@ -7,7 +5,8 @@ LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 LOCAL_CFLAGS := -fno-short-enums -DHAVE_CONFIG_H
 
 LOCAL_C_INCLUDES := \
-	external/jpeg
+	external/jpeg \
+        system/media/camera/include
 
 LOCAL_SRC_FILES := \
 	CameraFactory.cpp \
@@ -28,8 +27,6 @@ LOCAL_SHARED_LIBRARIES := \
 	libutils \
 
 LOCAL_MODULE := camera.bcm_platform
-LOCAL_MODULE_TAGS := eng
+LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_SHARED_LIBRARY)
-
-endif
