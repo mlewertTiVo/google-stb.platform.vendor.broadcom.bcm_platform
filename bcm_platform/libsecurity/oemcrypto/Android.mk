@@ -31,9 +31,13 @@ ifeq ($(SAGE_SUPPORT), y)
 # liboemcrypto.so for Modular DRM
 #---------------
 include $(CLEAR_VARS)
-LOCAL_PREBUILT_LIBS := ${DRM_BUILD_MODE}/liboemcrypto.so
+LOCAL_SRC_FILES := ${DRM_BUILD_MODE}/liboemcrypto.so
+LOCAL_MODULE := liboemcrypto
+LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR_SHARED_LIBRARIES)
 LOCAL_MODULE_TAGS := optional
-include $(BUILD_MULTI_PREBUILT)
+LOCAL_MODULE_SUFFIX := .so
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+include $(BUILD_PREBUILT)
 endif
 endif
 
