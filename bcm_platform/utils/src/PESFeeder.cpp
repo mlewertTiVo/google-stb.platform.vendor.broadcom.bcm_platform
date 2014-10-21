@@ -50,12 +50,16 @@
 
 //Fast Path Messages
 #define LOG_CMD_COMPLETE
-#define LOG_CMD_SEND
+#define LOG_CMD_SEND            ALOGD
 #define LOG_INFO
 #define LOG_ERROR               ALOGD
 #define LOG_WARNING             ALOGD
 
 #define UNUSED __attribute__((unused))
+
+#ifdef SECURE_BUFFERS
+#include "nexus_security.h"
+#endif
 
 static void DescDoneCallBack(void *context, int param UNUSED)
 {
@@ -150,7 +154,8 @@ PESFeeder::PESFeeder(char const *ClientName,
         unsigned int InputPID,
         unsigned int NumDescriptors,
         NEXUS_TransportType NxTransType,
-        NEXUS_VideoCodec vidCdc) :
+        NEXUS_VideoCodec vidCdc,
+        bool bSecure) :
         FdrEvtLsnr(NULL), NexusPID(InputPID),
         SendCfgDataOnNextInput(false),
         pCfgDataMgr(NULL), vidCodec(vidCdc),pInterNotifyCnxt(NULL),
@@ -160,7 +165,8 @@ PESFeeder::PESFeeder(char const *ClientName,
         DataBeforFlush(new DumpData("DataBeforFlush")),
         DataAfterFlush(new DumpData("DataAfterFlush")),
 #endif
-        LastHighestInputTS(0)
+        LastHighestInputTS(0),
+        bSecureDecoding(bSecure)
 {
     strcpy((char *)ClientIDString,ClientName);
     LOG_CREATE_DESTROY("[%s]%s: Enter",ClientIDString,__FUNCTION__);
@@ -174,6 +180,10 @@ PESFeeder::PESFeeder(char const *ClientName,
     NEXUS_Playpump_GetDefaultOpenSettings(&PlayPumpOpenSettings);
     PlayPumpOpenSettings.numDescriptors = NumDescriptors;
     PlayPumpOpenSettings.fifoSize =0; //We are not using playpump in FIFIO mode
+#ifdef SECURE_BUFFERS
+    if (bSecureDecoding)
+        PlayPumpOpenSettings.dataNotCpuAccessible = true;
+#endif
     NxPlayPumpHandle = NEXUS_Playpump_Open(NEXUS_ANY_ID,&PlayPumpOpenSettings);
     if (NxPlayPumpHandle == NULL)
     {
@@ -198,6 +208,24 @@ PESFeeder::PESFeeder(char const *ClientName,
     NxVidPidChHandle = NEXUS_Playpump_OpenPidChannel(NxPlayPumpHandle,
             NexusPID,
             NULL);
+#ifdef SECURE_BUFFERS
+    if (bSecureDecoding)
+        NEXUS_SetPidChannelBypassKeyslot(NxVidPidChHandle, NEXUS_BypassKeySlot_eGR2R);
+
+#ifdef PES_IN_SECURE_BUFFER
+    if (bSecureDecoding)
+    {
+        CommonCryptoSettings  cmnCryptoSettings;
+        CommonCrypto_GetDefaultSettings(&cmnCryptoSettings);
+
+        m_CommonCryptoHandle = CommonCrypto_Open(&cmnCryptoSettings);
+        if (m_CommonCryptoHandle == NULL) {
+            ALOGE("%s: failed to open CommonCrypto", __FUNCTION__);
+        }
+    }
+#endif
+
+#endif
 
     if(NxVidPidChHandle == NULL)
     {
@@ -326,6 +354,13 @@ PESFeeder::~PESFeeder()
     delete DataAfterFlush;
 #endif
 
+#ifdef PES_IN_SECURE_BUFFER
+    if(bSecureDecoding && m_CommonCryptoHandle) {
+        CommonCrypto_Close(m_CommonCryptoHandle);
+        m_CommonCryptoHandle = NULL;
+    }
+#endif
+
     LOG_CREATE_DESTROY("[%s]%s: EXIT", ClientIDString,__FUNCTION__);
 }
 
@@ -413,8 +448,8 @@ PESFeeder::InitiatePESHeader(unsigned int pts45KHz,
 
     if(pts45KHz == (unsigned int)-1)  /* VC1 simple and main profile will use it for config data special handling */
     {
-        pes_info.pts_valid = true;
-        pes_info.pts = (uint32_t)0xFFFFFFFFF;
+        pes_info.pts_valid = false;
+        pes_info.pts = 0;
     }
     else
     {
@@ -884,6 +919,34 @@ PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
     pNxInCnxt->NxDesc[0].length     = pNxInCnxt->SzValidPESData;
     pNxInCnxt->NumDescFired++;
 
+    // copy the PES header to a segment of the secure buffer
+#ifdef PES_IN_SECURE_BUFFER
+    if (bSecureDecoding)
+    {
+        int nbBlks = 0;
+        uint8_t *dest = pNxInCnxt->pSecureData;
+        dest = (uint8_t*)(((uint32_t)dest + pNxInCnxt->SzSecureData + 4096) & ~(4096 - 1));
+        NEXUS_DmaJobBlockSettings blkSettings[1];
+        NEXUS_DmaJob_GetDefaultBlockSettings(&blkSettings[nbBlks]);
+        blkSettings[nbBlks].pSrcAddr = pNxInCnxt->PESData;
+        blkSettings[nbBlks].pDestAddr = dest;
+        blkSettings[nbBlks].blockSize = pNxInCnxt->SzValidPESData;
+        blkSettings[nbBlks].resetCrypto = true;
+        blkSettings[nbBlks].scatterGatherCryptoStart = true;
+        blkSettings[nbBlks].scatterGatherCryptoEnd = true;
+        blkSettings[nbBlks].cached = true;
+        nbBlks++;
+
+        // Do the DMA Xfer
+        CommonCryptoJobSettings cryptoJobSettings;
+        CommonCrypto_GetDefaultJobSettings(&cryptoJobSettings);
+        NEXUS_Error err = CommonCrypto_DmaXfer(m_CommonCryptoHandle,
+                                               &cryptoJobSettings, blkSettings, nbBlks);
+        ALOGD("CommonCrypto_DmaXfer returned:%d", err);
+        pNxInCnxt->NxDesc[0].addr  = dest;
+    }
+#endif
+
     if (pNxInCnxt->pSecureData)
     {
         pNxInCnxt->NxDesc[1].addr   = pNxInCnxt->pSecureData;
@@ -894,7 +957,7 @@ PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
     NumFired = pNxInCnxt->NumDescFired;
 
     // The Last Time Stamp That We sent To Hardware...
-    if(pNxInCnxt->FramePTS)
+    if(pNxInCnxt->FramePTS && !pNxInCnxt->IsConfig)
     {
         LOG_INFO("%s: Updating LastTimeStamp: %lld", __FUNCTION__, LastHighestInputTS);
         if (pNxInCnxt->FramePTS > LastHighestInputTS)
