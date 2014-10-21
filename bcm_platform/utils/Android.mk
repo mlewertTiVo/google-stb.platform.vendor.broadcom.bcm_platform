@@ -37,7 +37,8 @@ LOCAL_C_INCLUDES += \
     $(TOP)/vendor/broadcom/bcm_platform/brcm_nexus/bin/include \
     $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
     $(TOP)/vendor/broadcom/bcm_platform/libnexusipc \
-    $(TOP)/frameworks/native/include/media/openmax
+    $(TOP)/frameworks/native/include/media/openmax \
+    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_crypto/include \
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 
@@ -61,6 +62,9 @@ LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 LOCAL_CFLAGS += -Werror
 ifeq ($(BCM_OMX_SUPPORT_ENCODER),y)
 LOCAL_CFLAGS += -DBCM_OMX_SUPPORT_ENCODER
+endif
+ifeq ($(SAGE_SUPPORT), y)
+LOCAL_CFLAGS += -DENABLE_SECURE_DECODERS
 endif
 
 LOCAL_MODULE:= libbcm_utils

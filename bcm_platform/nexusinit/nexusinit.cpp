@@ -199,6 +199,10 @@ void startNxServer(void)
 #ifndef BCM_OMX_SUPPORT_ENCODER
     strcat(cmdRunNxServer, "-transcode off ");
 #endif
+    strcat(cmdRunNxServer, "-frontend off ");
+    // No need to use a macro here, secure decoders will be enabled by default.
+    strcat(cmdRunNxServer, "-svp ");
+
     strcat(cmdRunNxServer, "&");
     ALOGI("NXSERVER CMD: %s",cmdRunNxServer);
     system(cmdRunNxServer);

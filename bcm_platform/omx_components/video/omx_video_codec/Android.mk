@@ -27,7 +27,8 @@ COMMON_INCLUDE_FILES =  $(TOP)/frameworks/native/include/media/openmax \
                         $(TOP)/vendor/broadcom/bcm_platform/brcm_nexus/bin/include \
                         $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
                         $(TOP)/vendor/broadcom/bcm_platform/libnexusipc \
-                        $(TOP)/vendor/broadcom/bcm_platform/libgralloc
+                        $(TOP)/vendor/broadcom/bcm_platform/libgralloc \
+                        $(REFSW_BASE_DIR)/BSEAV/lib/security/common_crypto/include \
 
 COMMON_INCLUDE_FILES += ${NXCLIENT_INCLUDES}
 
@@ -91,9 +92,13 @@ ifeq ($(ANDROID_ENABLE_SECURE_DECODERS),y)
 #
 include $(CLEAR_VARS)
 LOCAL_C_INCLUDES+=$(COMMON_INCLUDE_FILES)
+LOCAL_C_INCLUDES+=$(REFSW_BASE_DIR)/BSEAV/lib/security/sage/srai/include
+LOCAL_C_INCLUDES+=$(REFSW_BASE_DIR)/magnum/syslib/sagelib/include
 LOCAL_SHARED_LIBRARIES:=$(COMMON_SHARED_LIBRARIES)
+LOCAL_SHARED_LIBRARIES+=libsrai
 LOCAL_CFLAGS := $(COMMON_C_FLAGS)
 LOCAL_CFLAGS += -DOMX_COMPRESSION_FORMAT=OMX_VIDEO_CodingAVC -DENABLE_SECURE_DECODERS
+#LOCAL_CFLAGS += -DOMX_COMPRESSION_FORMAT=OMX_VIDEO_CodingAVC
 LOCAL_MODULE_TAGS:= optional
 LOCAL_SRC_FILES:= $(COMMON_SOURCE_FILE)
 LOCAL_MODULE:=libOMX.BCM.h264.decoder.secure

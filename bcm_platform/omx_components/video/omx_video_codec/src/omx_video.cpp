@@ -51,6 +51,10 @@
 #include "gralloc.h"
 #include "GraphicBuffer.h"
 
+#ifdef ENABLE_SECURE_DECODERS
+#include "sage_srai.h"
+#endif
+
 #include <utils/Log.h>
 #include <utils/List.h>
 #include <cutils/properties.h>
@@ -241,6 +245,63 @@ GetMimeFromOmxCodingType(OMX_VIDEO_CODINGTYPE OMXCodingType)
     return CodecToMIME[OMXCodingType].Mime;
 }
 
+#ifdef ENABLE_SECURE_DECODERS
+static int Sage_Platform_Init(SRAI_PlatformHandle& sage_platformHandle,
+                                  BSAGElib_InOutContainer*& container)
+{
+    BSAGElib_State sage_platform_status;
+    BERR_Code sage_rc = BERR_SUCCESS;
+
+    ALOGD("%s", __FUNCTION__);
+    sage_rc = SRAI_Platform_Open(BSAGE_PLATFORM_ID_COMMONDRM, &sage_platform_status,
+                                 &sage_platformHandle);
+    if (sage_rc != BERR_SUCCESS)
+    {
+        ALOGE("%s - Error calling platform_open, ret:%d", __FUNCTION__, sage_rc);
+        sage_platformHandle = 0;
+        return -1;
+    }
+
+    if(sage_platform_status == BSAGElib_State_eUninit)
+    {
+        container = SRAI_Container_Allocate();
+        if(container == NULL)
+        {
+            ALOGE("%s - Error fetching container", __FUNCTION__);
+            return -1;
+        }
+
+        sage_rc = SRAI_Platform_Init(sage_platformHandle, container);
+        if (sage_rc != BERR_SUCCESS)
+        {
+            ALOGE("%s - Error calling platform init, ret:%d", __FUNCTION__,
+                   sage_rc);
+            SRAI_Container_Free(container);
+            container = NULL;
+            sage_platformHandle = 0;
+            return -1;
+        }
+    }
+
+    ALOGD("%s, successful", __FUNCTION__);
+    return 0;
+}
+
+static void Sage_Platform_Close(SRAI_PlatformHandle& sage_platformHandle,
+                                  BSAGElib_InOutContainer*& container)
+{
+    ALOGD("%s", __FUNCTION__);
+    if (sage_platformHandle) {
+        SRAI_Platform_Close(sage_platformHandle);
+        sage_platformHandle = NULL;
+    }
+    if (container != NULL) {
+        SRAI_Container_Free(container);
+        container = NULL;
+    }
+}
+#endif
+
 extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
 {
     trace t(__FUNCTION__);
@@ -250,6 +311,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     BCM_OMX_CONTEXT *pMyData;
     OMX_U32 err;
     uint nIndex;
+    bool isSecure = false;
 
     pComp = (OMX_COMPONENTTYPE *) hComponent;
 
@@ -271,9 +333,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->hSelf = hComponent;
     pMyData->bSetStartUpTimeDone=false;
     pMyData->bHwNeedsFlush = false;
-
     pMyData->bUseNoDataCopy = true;
-
     ALOGD("%s %d: Component Handle :%p BUILD-DATE:%s BUILD-TIME:%s pMyData->bUseNoDataCopy:%d",
             __FUNCTION__,__LINE__,hComponent,__DATE__,__TIME__,pMyData->bUseNoDataCopy);
 
@@ -283,6 +343,13 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
 #else
             ,"disabled");
 #endif
+
+    // Attempt to enable sage immediately
+#ifdef ENABLE_SECURE_DECODERS
+    isSecure = true;
+#endif
+
+
 
     pComp->SetParameter         = OMX_VDEC_SetParameter;
     pComp->GetParameter         = OMX_VDEC_GetParameter;
@@ -511,14 +578,14 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
 
     pMyData->pTstable = new bcmOmxTimestampTable(MAX_NUM_TIMESTAMPS);
 
-
     if (OMX_COMPRESSION_FORMAT == OMX_VIDEO_CodingWMV)
     {
         pMyData->pPESFeeder = new PESFeeder(LOG_TAG,
                             PES_VIDEO_PID,
                             NUM_IN_DESCRIPTORS,
                             NEXUS_TransportType_eAsf,
-                            MapOMXVideoCodecToNexus(OMX_COMPRESSION_FORMAT));
+                            MapOMXVideoCodecToNexus(OMX_COMPRESSION_FORMAT),
+                            isSecure);
     }
     else
     {
@@ -526,7 +593,8 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
                             PES_VIDEO_PID,
                             NUM_IN_DESCRIPTORS,
                             NEXUS_TransportType_eMpeg2Pes,
-                            MapOMXVideoCodecToNexus(OMX_COMPRESSION_FORMAT));
+                            MapOMXVideoCodecToNexus(OMX_COMPRESSION_FORMAT),
+                            isSecure);
     }
 
 
@@ -649,6 +717,11 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
             delete pMyData->pTstable;
             pMyData->pTstable = NULL;
         }
+
+#ifdef ENABLE_SECURE_DECODERS
+        if (pMyData->sage_platformHandle != NULL)
+            Sage_Platform_Close(pMyData->sage_platformHandle, pMyData->container);
+#endif
 
         BKNI_Free(pMyData);
 
@@ -842,7 +915,6 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
             break;
 
         case OMX_IndexParamPortDefinition:
-
             if (((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sInPortDef.nPortIndex)
             {
                 BKNI_Memcpy(pParamStruct, &pMyData->sInPortDef, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
@@ -1376,7 +1448,6 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
     pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
     OMX_CONF_CHECK_CMD(pMyData, ppBufferHdr, 1);
 
-
     if (nPortIndex == pMyData->sInPortDef.nPortIndex)
     {
         pPortDef = &pMyData->sInPortDef;
@@ -1436,6 +1507,10 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
         // Allocate a PES buffer that will be consumed by the
         // transport block.
         pInNxCnxt->SzPESBuffer = PES_BUFFER_SIZE(nSizeBytes);
+#ifdef ENABLE_SECURE_DECODERS
+        // for secure decoding, we don't need nSizeBytes of host memory
+        pInNxCnxt->SzPESBuffer -= nSizeBytes;
+#endif
         pInNxCnxt->PESData = (OMX_U8 *)
             pMyData->pPESFeeder->AllocatePESBuffer(pInNxCnxt->SzPESBuffer);
 
@@ -1445,17 +1520,41 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
             OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
         }
 
+#ifdef ENABLE_SECURE_DECODERS
+        // Init Sage Platform if it hasn't been done yet
+        if ((pMyData->sage_platformHandle == NULL) &&
+            (Sage_Platform_Init(pMyData->sage_platformHandle, pMyData->container) != 0))
+        {
+            ALOGE("%s: Error initializing sage platform", __FUNCTION__);
+            pMyData->sage_platformHandle = NULL;
+            OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorUndefined);
+        }
+
+        // Allocate secure buffer
+        uint8_t *sec_ptr = SRAI_Memory_Allocate(nSizeBytes, SRAI_MemoryType_SagePrivate);
+        if (!sec_ptr)
+        {
+            ALOGE("%s: Failed to allocate secure buffer", __FUNCTION__);
+            OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
+        }
+#endif
+
         if (pMyData->bUseNoDataCopy)
         {
+#ifndef ENABLE_SECURE_DECODERS
             uintptr_t BufferStart=0, BufferEnd=0;
             BufferStart = (uintptr_t) GET_DATA_START_PTR(pInNxCnxt->PESData);
             BufferEnd =   (uintptr_t) pInNxCnxt->PESData + PES_BUFFER_SIZE(nSizeBytes);
 
-            ALOGE("%s [Zero Copy]: Input Memory Allocation Info BufferStart:%p BufferEnd:%p nSizeBytes:%d TotalSz:%d AllocedAt:%p",
+            ALOGD("%s [Zero Copy]: Input Memory Allocation Info BufferStart:%p BufferEnd:%p nSizeBytes:%d TotalSz:%d AllocedAt:%p",
                   __FUNCTION__,BufferStart,BufferEnd,nSizeBytes,PES_BUFFER_SIZE(nSizeBytes),pInNxCnxt->PESData);
             BCMOMX_DBG_ASSERT(BufferStart > (uintptr_t)pInNxCnxt->PESData);
             BCMOMX_DBG_ASSERT((BufferEnd - BufferStart) == nSizeBytes);
             pMyData->sInBufList.pBufHdr[nIndex]->pBuffer = (unsigned char *)BufferStart;
+#else
+            pMyData->sInBufList.pBufHdr[nIndex]->pBuffer = sec_ptr;
+            ALOGD("%s: secure buffer allocation, pBuffer:%p",__FUNCTION__, sec_ptr);
+#endif
         }else{
             ALOGE("%s : Input Memory Allocation Using Malloc:%p",
                   __FUNCTION__,pMyData->sInBufList.pBufHdr[nIndex]->pBuffer);
@@ -1511,6 +1610,9 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_FreeBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
 
         if(pBufferHdr->pBuffer)
         {
+#ifdef ENABLE_SECURE_DECODERS
+            SRAI_Memory_Free(pBufferHdr->pBuffer);
+#endif
             if(false == pMyData->bUseNoDataCopy)
             {
                 BKNI_Free(pBufferHdr->pBuffer);
@@ -1577,7 +1679,8 @@ GetSecureDataPtrForDMAXfer(OMX_BUFFERHEADERTYPE* pBufferHdr, unsigned int *SzOut
 /*
  * Simple function to Save Us Indirection Everywhere in code
  */
-static
+#ifndef ENABLE_SECURE_DECODERS
+static 
 unsigned char *
 GetInDataPtr(BCM_OMX_CONTEXT *pBcmContext, OMX_BUFFERHEADERTYPE* pBufferHdr)
 {
@@ -1593,6 +1696,15 @@ GetInDataPtr(BCM_OMX_CONTEXT *pBcmContext, OMX_BUFFERHEADERTYPE* pBufferHdr)
     //if we are not using zero copy
     return pBufferHdr->pBuffer;
 }
+#else
+static
+unsigned char *
+GetInDataPtr(BCM_OMX_CONTEXT *, OMX_BUFFERHEADERTYPE* )
+{
+    return NULL;
+}
+
+#endif
 
 extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
         OMX_IN  OMX_BUFFERHEADERTYPE* pBufferHdr)
@@ -1602,7 +1714,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
     ThrCmdType eCmd = EmptyBuf;
     OMX_ERRORTYPE eError = OMX_ErrorNone;
     size_t SzValidPESData = 0;
-    uint64_t nTimestamp;
+    uint64_t nTimestamp = 0;
     unsigned char * pDataBuffer=NULL;
     pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
 
@@ -1611,6 +1723,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
 
     pNxInputCnxt->pSecureData=NULL;
     pNxInputCnxt->SzSecureData=0;
+    pNxInputCnxt->IsConfig = (pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG) ? true: false;
 
     OMX_CONF_CHECK_CMD(pMyData, pBufferHdr, 1);
     OMX_CONF_CHK_VERSION(pBufferHdr, OMX_BUFFERHEADERTYPE, eError);
@@ -1711,6 +1824,8 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
 #endif
             ))
         {
+// For secure decoding, send the codec config as a regular frame
+#ifndef ENABLE_SECURE_DECODERS
             if (pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)
             {
                 if(false == pMyData->pPESFeeder->SaveCodecConfigData(pDataBuffer,pBufferHdr->nFilledLen))
@@ -1718,9 +1833,11 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
                     ALOGE("%s: ==ERROR== Failed To Save The Config Data, Flush May Not work",__FUNCTION__);
                 }
             }
+#endif
         }
 
-        nTimestamp = pMyData->pTstable->store(pBufferHdr->nTimeStamp);
+        if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG))
+            nTimestamp = pMyData->pTstable->store(pBufferHdr->nTimeStamp);
         if(false == pMyData->bSetStartUpTimeDone)
         {
             if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG))
@@ -1877,6 +1994,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
 
             default:
             {
+#ifndef ENABLE_SECURE_DECODERS
                 if (!(pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG))
                 {
                     SzValidPESData = pMyData->pPESFeeder->ProcessESData(nTimestamp,
@@ -1885,12 +2003,22 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
                                                                         pNxInputCnxt->PESData,
                                                                         pNxInputCnxt->SzPESBuffer);
                 }
+#else
+            // Don't confuse the decoder when sending codec config data
+                uint32_t tmpts = (pNxInputCnxt->IsConfig) ? (uint32_t)-1 : (uint32_t)nTimestamp;
+                SzValidPESData = pMyData->pPESFeeder->ProcessESData(tmpts,
+                                                                    pDataBuffer,
+                                                                    pBufferHdr->nFilledLen,
+                                                                    pNxInputCnxt->PESData,
+                                                                    pNxInputCnxt->SzPESBuffer);
+#endif
             }
         }
 
         // This is valid data size need to transfer to hardware
         pNxInputCnxt->SzValidPESData = SzValidPESData;
         pNxInputCnxt->FramePTS=nTimestamp;
+#ifndef ENABLE_SECURE_DECODERS
         if (pBufferHdr->nFlags & OMX_BUFFERFLAG_CODECCONFIG)
         {
             //We do not want to send the config data alone
@@ -1899,8 +2027,10 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
             {
                 pBufferHdr->nFilledLen = 0;
             }
-        }
-        else if(pMyData->bUseNoDataCopy)
+        } else
+#endif
+
+        if(pMyData->bUseNoDataCopy)
         {
             // If we are using secure copy, for non codec config data,
             // pDataBuffer Has To Be NUll
@@ -1910,6 +2040,8 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
             BCMOMX_DBG_ASSERT(pDataBuffer && SizeOfSecureData);
             pNxInputCnxt->pSecureData = pDataBuffer;
             pNxInputCnxt->SzSecureData = SizeOfSecureData;
+            ALOGD("%s: sending to HW, ptr:%p, size:%d",
+                  __FUNCTION__, pDataBuffer, SizeOfSecureData);
         }
     }
 
@@ -1943,7 +2075,6 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_FillThisBuffer(OMX_HANDLETYPE hComponent, OMX_
 
     if (pMyData->state != OMX_StateExecuting && pMyData->state != OMX_StatePause)
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
-
 
     if(pMyData->sNativeBufParam.enable == true)
     {
