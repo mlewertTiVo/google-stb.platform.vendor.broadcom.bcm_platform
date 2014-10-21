@@ -214,6 +214,7 @@ public class TunerService extends TvInputService {
             values.put(TvContract.Channels.COLUMN_ORIGINAL_NETWORK_ID, channel.mOriginalNetworkId);
             values.put(TvContract.Channels.COLUMN_TRANSPORT_STREAM_ID, channel.mTransportStreamId);
             values.put(TvContract.Channels.COLUMN_SERVICE_ID, channel.mServiceId);
+            values.put(TvContract.Channels.COLUMN_BROWSABLE, 1);
 
             values.put(TvContract.Channels.COLUMN_VIDEO_FORMAT, TvContract.Channels.VIDEO_FORMAT_480P);
 
