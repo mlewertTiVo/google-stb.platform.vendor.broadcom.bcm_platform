@@ -156,9 +156,14 @@ void NexusSurface::init(void)
    surfacePitch = createSettings.width * NEXUS_GRALLOC_BYTES_PER_PIXEL;
    surfaceSize = createSettings.height * surfacePitch; // size for single frame buffer
 
-   fd = open("/dev/nx_ashmem", O_RDWR, 0);
+   char value2[PROPERTY_VALUE_MAX];
+   property_get("ro.nexus.ashmem.devname", value, "nx_ashmem");
+   strcpy(value2, "/dev/");
+   strcat(value2, value);
+
+   fd = open(value2, O_RDWR, 0);
    if ((fd == -1) || (!fd)) {
-      LOGE("Open to /dev/nx_ashmem failed 0x%x\n", fd);
+      LOGE("Open to %s failed 0x%x\n", value2, fd);
       goto err_graphics;
    }
 

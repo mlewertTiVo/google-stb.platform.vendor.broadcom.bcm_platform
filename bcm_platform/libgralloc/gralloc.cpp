@@ -45,6 +45,7 @@
 
 #include "NexusSurface.h"
 
+#include "cutils/properties.h"
 #include "nx_ashmem.h"
 
 void __attribute__ ((constructor)) gralloc_explicit_load(void);
@@ -278,9 +279,15 @@ static int gralloc_alloc_framebuffer_locked(alloc_device_t* dev,
    // it so that the code can be same for frame-buffer or
    // off-screen surfaces.
    //
-   int fd2 = open("/dev/nx_ashmem", O_RDWR, 0);
+   char value[PROPERTY_VALUE_MAX];
+   char value2[PROPERTY_VALUE_MAX];
+   property_get("ro.nexus.ashmem.devname", value, "nx_ashmem");
+   strcpy(value2, "/dev/");
+   strcat(value2, value);
+
+   int fd2 = open(value2, O_RDWR, 0);
    if ((fd2 == -1) || (!fd2)) {
-      LOGE("%s %d: Open to /dev/nx_ashmem failed 0x%x\n", __FUNCTION__, __LINE__, fd2);
+      LOGE("%s %d: Open to %s failed 0x%x\n", __FUNCTION__, __LINE__, value2, fd2);
       return -ENOMEM;
    }
 
@@ -417,15 +424,21 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       return -EINVAL;
    }
 
-   fd = open("/dev/nx_ashmem",O_RDWR,0);
+   char value[PROPERTY_VALUE_MAX];
+   char value2[PROPERTY_VALUE_MAX];
+   property_get("ro.nexus.ashmem.devname", value, "nx_ashmem");
+   strcpy(value2, "/dev/");
+   strcat(value2, value);
+
+   fd = open(value2,O_RDWR,0);
    if ((fd == -1) || (!fd)) {
-      LOGE("Open to /dev/nx_ashmem failed 0x%x\n",fd);
+      LOGE("Open to %s failed 0x%x\n", value2, fd);
       return -EINVAL;
    }
 
-   fd2 = open("/dev/nx_ashmem", O_RDWR, 0);
+   fd2 = open(value2, O_RDWR, 0);
    if ((fd2 == -1) || (!fd2)) {
-      LOGE("Open to /dev/nx_ashmem failed 0x%x\n", fd2);
+      LOGE("Open to %s failed 0x%x\n", value2, fd2);
       return -EINVAL;
    }
 
