@@ -213,7 +213,8 @@ int gralloc_register_buffer(gralloc_module_t const* module,
       LOGE("%s:: Register buffer from same process :%d", __FUNCTION__, getpid());
    }
 
-   createHwBacking(hnd);
+   if (createHwBacking(hnd) != 0)
+      return -ENOMEM;
 
    // Set timestamp at which the buffer was registered...
    pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedDataPhyAddr);
@@ -271,7 +272,8 @@ int gralloc_lock(gralloc_module_t const* module,
       // Chrome browser.  In this instance, the 'register' didnt get called, so no backing exists
       // for the raster version.  Create the stuff here.  It will need to be destroyed in free
       if (hnd->lockTmp == NULL)
-         createHwBacking(hnd);
+         if (createHwBacking(hnd) != 0)
+            return -ENOMEM;
 
       stride = (hnd->width * hnd->bpp + (align - 1)) & ~(align - 1);
 
