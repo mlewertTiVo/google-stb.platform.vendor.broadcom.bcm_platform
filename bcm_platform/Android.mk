@@ -118,10 +118,8 @@ include vendor/broadcom/bcm_platform/omx_core/Android.mk
 include vendor/broadcom/bcm_platform/utils/Android.mk
 endif
 
-ifeq ($(ANDROID_SUPPORTS_TIF),y)
 include vendor/broadcom/bcm_platform/libtv_input/Android.mk
 include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
-endif
 
 endif
 
