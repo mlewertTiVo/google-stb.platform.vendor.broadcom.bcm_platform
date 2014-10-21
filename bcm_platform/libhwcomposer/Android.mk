@@ -12,42 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-REFSW_PATH :=vendor/broadcom/bcm_platform/brcm_nexus
-
 LOCAL_PATH := $(call my-dir)
-
-ifeq ($(NEXUS_MODE),proxy)
-NEXUS_LIB=libnexus
-else
-ifeq ($(NEXUS_WEBCPU),core1_server)
-NEXUS_LIB=libnexus_webcpu
-else
-NEXUS_LIB=libnexus_client
-endif
-endif
-
-# HAL module implemenation, not prelinked and stored in
-# hw/<OVERLAY_HARDWARE_MODULE_ID>.<ro.product.board>.so
 include $(CLEAR_VARS)
 
-# Nexus multi-process, client-server related CFLAGS
-MP_CFLAGS = -DANDROID_CLIENT_SECURITY_MODE=$(ANDROID_CLIENT_SECURITY_MODE)
+include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
-LOCAL_SHARED_LIBRARIES := liblog libEGL libcutils libdl libbinder libutils libnexusipcclient $(NEXUS_LIB)
+LOCAL_SHARED_LIBRARIES := liblog libcutils libdl libbinder libutils libnexusipcclient libnexus libnxclient
 
-# Make sure gralloc is built first
-LOCAL_ADDITIONAL_DEPENDENCIES := $(TARGET_OUT_SHARED_LIBRARIES)/hw/gralloc.bcm_platform.so
-LOCAL_LDFLAGS := -l:gralloc.bcm_platform.so -Lout/target/product/bcm_platform/system/lib/hw
-LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
-					$(REFSW_PATH)/../libnexusservice
-LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc
-LOCAL_C_INCLUDES += $(REFSW_PATH)/../libgralloc
-					
-LOCAL_CFLAGS += $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID -DLOG_TAG=\"hwcomposer\" $(MP_CFLAGS)
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
+                    $(TOP)/vendor/broadcom/bcm_platform/libnexusipc \
+                    $(TOP)/vendor/broadcom/bcm_platform/libgralloc \
+                    $(NXCLIENT_INCLUDES)
+		
+FILTER_OUT_NEXUS_CFLAGS := -march=armv7-a
+LOCAL_CFLAGS += $(filter-out $(FILTER_OUT_NEXUS_CFLAGS), $(NEXUS_CFLAGS))			
+LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
+LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
+LOCAL_CFLAGS += -DLOG_TAG=\"bcm-hwc\"
 LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
+LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 
 LOCAL_SRC_FILES := hwcomposer.cpp
 LOCAL_MODULE_TAGS := optional

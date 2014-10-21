@@ -43,6 +43,8 @@
 #define _RETURN_BUFFER_HEADER_
 
 #include "gralloc_priv.h"
+#include "nexus_base_mmap.h"
+
 
 static
 PDISPLAY_FRAME

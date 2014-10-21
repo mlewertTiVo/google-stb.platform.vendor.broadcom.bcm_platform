@@ -97,11 +97,11 @@ void tfconvert_hw(
       tlbStoreFmt = 0;
       tlbType = (pf == ABGR_8888 || pf == XBGR_8888) ? 1 : 2;
    }
-   else if (pf == RGB_565 || pf == RGBA_5551 || pf == RGBA_4444 || pf == RGB_565_LT || pf == RGBA_5551_LT || pf == RGBA_4444_LT)
+   else if (pf == RGB_565 || pf == RGB_565_LT)
    {
       tlbFmt = 2;
       tlbStoreFmt = 2;
-      tlbType = (pf == RGB_565 || pf == RGBA_5551 || pf == RGBA_4444) ? 1 : 2;
+      tlbType = (pf == RGB_565) ? 1 : 2;
    }
    else
    {
@@ -694,8 +694,6 @@ static bool khrn_fast_copy_to_tf(
          break;
 
       case RGB_565:
-      case RGBA_5551:
-      case RGBA_4444:
          /* all the 16bit formats are covered with this function */
          khrn_copy_rgb565_to_tf16(dst, dst_width, dst_x, dst_y, width, height, src, src_x, src_y, src_stride);
          break;
@@ -822,9 +820,7 @@ static void copy_scissor_regions_to_tf(
    case ABGR_8888_LT :
    case XBGR_8888_LT :
    case BGR_888_LT   :
-   case RGB_565_LT   :
-   case RGBA_5551_LT :
-   case RGBA_4444_LT : isLinearTile = 1; break;
+   case RGB_565_LT   : isLinearTile = 1; break;
    default           : isLinearTile = 0; break;
    }
 
@@ -855,11 +851,7 @@ static void copy_scissor_regions_to_tf(
    switch (pf)
    {
    case RGB_565:
-   case RGBA_5551:
-   case RGBA_4444:
    case RGB_565_LT:
-   case RGBA_5551_LT:
-   case RGBA_4444_LT:
       {
          uint32_t ut_w;
          const uint32_t log2_utile_height = 2;
@@ -995,9 +987,7 @@ static void copy_scissor_regions_to_rso(
    case ABGR_8888_LT :
    case XBGR_8888_LT :
    case BGR_888_LT   :
-   case RGB_565_LT   :
-   case RGBA_5551_LT :
-   case RGBA_4444_LT : isLinearTile = 1; break;
+   case RGB_565_LT   : isLinearTile = 1; break;
    default           : isLinearTile = 0; break;
    }
 
@@ -1028,11 +1018,7 @@ static void copy_scissor_regions_to_rso(
    switch (pf)
    {
    case RGB_565:
-   case RGBA_5551:
-   case RGBA_4444:
    case RGB_565_LT:
-   case RGBA_5551_LT:
-   case RGBA_4444_LT:
       {
          uint32_t ut_w;
          const uint32_t log2_utile_height = 2;

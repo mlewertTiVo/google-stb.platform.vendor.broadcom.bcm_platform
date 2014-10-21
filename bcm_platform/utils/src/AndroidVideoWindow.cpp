@@ -40,6 +40,8 @@
 ******************************************************************************/
 
 #include "AndroidVideoWindow.h"
+#include "nexus_base_mmap.h"
+
 
 AndroidVideoWindow::AndroidVideoWindow()
     : PlayerID (0xffffffff), pANW (NULL), pNxClientContext(NULL),

@@ -71,14 +71,10 @@ typedef enum PIX_FORMAT_E
    XBGR_8888,
    BGR_888,
    RGB_565,
-   RGBA_5551,
-   RGBA_4444,
    ABGR_8888_LT,
    XBGR_8888_LT,
    BGR_888_LT,
    RGB_565_LT,
-   RGBA_5551_LT,
-   RGBA_4444_LT
 } pix_format_e;
 
 void tfconvert(

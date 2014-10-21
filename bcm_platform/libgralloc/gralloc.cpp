@@ -36,17 +36,16 @@
 #include <hardware/gralloc.h>
 
 #include "gralloc_priv.h"
-
 #include "nexus_base_mmap.h"
 
 // default platform layer to render to nexus
 #include "EGL/egl.h"
 #include "converter.h"
 
-#include "NexusSurface.h"
-
 #include "cutils/properties.h"
 #include "nx_ashmem.h"
+
+#include "NexusSurface.h"
 
 void __attribute__ ((constructor)) gralloc_explicit_load(void);
 void __attribute__ ((destructor)) gralloc_explicit_unload(void);
@@ -199,10 +198,6 @@ NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt,
       case HAL_PIXEL_FORMAT_RGBX_8888:    b = 4;   pf = NEXUS_PixelFormat_eX8_R8_G8_B8;   break;
       case HAL_PIXEL_FORMAT_RGB_888:      b = 4;   pf = NEXUS_PixelFormat_eX8_R8_G8_B8;   break;
       case HAL_PIXEL_FORMAT_RGB_565:      b = 2;   pf = NEXUS_PixelFormat_eR5_G6_B5;      break;
-#if 0
-      case HAL_PIXEL_FORMAT_RGBA_5551:    b = 2;   pf = NEXUS_PixelFormat_eR5_G5_B5_A1;   break;
-      case HAL_PIXEL_FORMAT_RGBA_4444:    b = 2;   pf = NEXUS_PixelFormat_eR4_G4_B4_A4;   break;
-#endif
       default:
          {
                b = 0;   pf = NEXUS_PixelFormat_eUnknown;
@@ -333,7 +328,7 @@ static int gralloc_alloc_framebuffer(alloc_device_t* dev,
 
 static
 unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
-                                   int width, 
+                                   int width,
                                    int height,
                                    int format)
 {
@@ -352,15 +347,12 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
    // WARNING! GL only has three renderable surfaces, premote 888 to X888
    switch (format)
    {
-   case HAL_PIXEL_FORMAT_RGBA_8888:  bufferRequirements.format = BEGL_BufferFormat_eA8B8G8R8_TFormat;     break;
-   case HAL_PIXEL_FORMAT_RGBX_8888:  bufferRequirements.format = BEGL_BufferFormat_eX8B8G8R8_TFormat;     break;
-   case HAL_PIXEL_FORMAT_RGB_888:    bufferRequirements.format = BEGL_BufferFormat_eX8B8G8R8_TFormat;     break;
-   case HAL_PIXEL_FORMAT_RGB_565:    bufferRequirements.format = BEGL_BufferFormat_eR5G6B5_TFormat;       break;
-#if 0
-   case HAL_PIXEL_FORMAT_RGBA_5551:  bufferRequirements.format = BEGL_BufferFormat_eR5G5B5A1_TFormat;     break;
-   case HAL_PIXEL_FORMAT_RGBA_4444:  bufferRequirements.format = BEGL_BufferFormat_eR4G4B4A4_TFormat;     break;
-#endif
-   default:                          bufferRequirements.format = BEGL_BufferFormat_INVALID;               break;
+   case HAL_PIXEL_FORMAT_RGBA_8888:  bufferRequirements.format = BEGL_BufferFormat_eA8B8G8R8;     break;
+   case HAL_PIXEL_FORMAT_RGBX_8888:  bufferRequirements.format = BEGL_BufferFormat_eX8B8G8R8;     break;
+   case HAL_PIXEL_FORMAT_RGB_888:    bufferRequirements.format = BEGL_BufferFormat_eX8B8G8R8;     break;
+   case HAL_PIXEL_FORMAT_RGB_565:    bufferRequirements.format = BEGL_BufferFormat_eR5G6B5;       break;
+
+   default:                          bufferRequirements.format = BEGL_BufferFormat_INVALID;       break;
    }
 
    //
@@ -461,7 +453,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
    grallocPrivateHandle->sharedDataPhyAddr = (NEXUS_Addr)ioctl(fd2, NX_ASHMEM_GETMEM);
    if (grallocPrivateHandle->sharedDataPhyAddr == 0) {
-      LOGE("%s %d: hnd->sharedDataPhyAddr == 0\n", __FUNCTION__, __LINE__);
+      LOGE("%s %d: hnd->sharedDataPhyAddr == 0", __FUNCTION__, __LINE__);
       return -ENOMEM;
    }
 
@@ -483,10 +475,6 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    return 0;
 }
 
-// function is implemented in mapper.c.  It would ordinarily called on register/unregister
-// Chrome, however, uses it for it's internal composition.
-void destroyHwBacking(private_handle_t* hnd);
-
 static int
 grallocFreeHandle(private_handle_t *handleToFree)
 {
@@ -495,11 +483,10 @@ grallocFreeHandle(private_handle_t *handleToFree)
       return -1;
    }
 
-   if (handleToFree->lockTmp)
-      destroyHwBacking(handleToFree);
-
-   close(handleToFree->fd);
-   close(handleToFree->fd2);
+   if (handleToFree->fd > 0)
+      close(handleToFree->fd);
+   if (handleToFree->fd2 > 0)
+      close(handleToFree->fd2);
    delete handleToFree;
    return 0;
 }
@@ -524,8 +511,13 @@ static int gralloc_alloc(alloc_device_t* dev,
    }
 
    int err;
-   if (usage & GRALLOC_USAGE_HW_FB)
+   if (usage & GRALLOC_USAGE_HW_FB) {
+      // we do not use the framebuffer device, but we do need a framebuffer
+      // target still as it is being used for composition by SF in the case
+      // of animations/transitions.
+      //
       err = gralloc_alloc_framebuffer(dev, w, h, format, usage, pHandle, pStride);
+   }
    else
       err = gralloc_alloc_buffer(dev, w, h, format, usage, pHandle, pStride);
 
@@ -549,7 +541,6 @@ static int gralloc_free(alloc_device_t* dev,
    private_handle_t const* hnd = reinterpret_cast<private_handle_t const*>(handle);
 
    if (hnd->flags & PRIV_FLAGS_FRAMEBUFFER) {
-      // free this buffer
       private_module_t* m = reinterpret_cast<private_module_t*>(
                dev->common.module);
       NexusSurface *nexSurf = reinterpret_cast<NexusSurface *>(m->nexSurf);
@@ -623,10 +614,6 @@ int gralloc_device_open(const hw_module_t* module, const char* name,
       *device = &dev->device.common;
       status = 0;
    } else {
-//
-// The Framebuffer device is opened only once when the system starts up.
-// We will be able init the nexus surface class here.
-//
       status = fb_device_open(module, name, device);
    }
 

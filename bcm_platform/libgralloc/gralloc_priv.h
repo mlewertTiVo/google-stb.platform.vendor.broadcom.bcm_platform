@@ -31,8 +31,13 @@ extern "C" {
 #include <unistd.h>
 #include <cutils/native_handle.h>
 #include <linux/fb.h>
-#include "nexus_base_mmap.h"
+
 #include "DisplayFrame.h"
+
+#define BCM_DEBUG_MSG
+#define BCM_DEBUG_TRACEMSG      LOGD
+#define BCM_DEBUG_ERRMSG        LOGD
+
 
 /*****************************************************************************/
 
@@ -49,12 +54,12 @@ struct private_module_t {
    void *nexSurf;
 };
 
+#define PRIV_FLAGS_FRAMEBUFFER 0x00000001
+
 /*****************************************************************************/
 /*
  * This shared data is for deferred allocation scheme
  * */
-
-#define PRIV_FLAGS_FRAMEBUFFER 0x00000001
 
 typedef struct __SHARED_DATA_ {
    struct {
@@ -125,7 +130,7 @@ struct private_handle_t {
         magic = 0;
     }
 
-    static int validate(const native_handle* h) 
+    static int validate(const native_handle* h)
     {
         const private_handle_t* hnd = (const private_handle_t*)h;
         if (!h || h->version != sizeof(native_handle) ||
