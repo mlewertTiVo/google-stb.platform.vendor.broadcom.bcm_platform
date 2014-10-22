@@ -85,10 +85,6 @@ include vendor/broadcom/bcm_platform/ntfs3g/Android.mk
 
 include vendor/broadcom/bcm_platform/libcamera2/Android.mk
 
-ifeq ($(ANDROID_ENABLE_BTUSB),y)
-include vendor/broadcom/bcm_platform/brcm_btusb/Android.mk
-endif
-
 ifeq ($(ANDROID_ENABLE_DHD),y)
 include vendor/broadcom/bcm_platform/brcm_dhd/Android.mk
 endif
