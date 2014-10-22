@@ -341,6 +341,7 @@ static ssize_t bout_write(struct audio_stream_out *aout,
         if (ret) {
             LOGE("%s: at %d, start failed\n",
                  __FUNCTION__, __LINE__);
+            pthread_mutex_unlock(&bout->lock); // have to unlock, otherwise deadlock
             return ret;
         }
         bout->started = true;
@@ -372,13 +373,42 @@ static int bout_get_next_write_timestamp(const struct audio_stream_out *aout,
                                          int64_t *timestamp)
 {
     UNUSED(aout);
-    UNUSED(timestamp);
 
-    LOGV("%s: at %d, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)aout);
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    *timestamp = ts.tv_sec * 1000000000ll + ts.tv_nsec;
 
-    return -EINVAL;
+    LOGV("%s: at %d, stream  =  0x%X, Next timestamp..(%lld)\n",
+         __FUNCTION__, __LINE__, (uint32_t)aout, *timestamp);
+
+    return 0;
 }
+
+static int bout_get_presentation_position(const struct audio_stream_out *aout,
+                                         uint64_t *frames, struct timespec *timestamp)
+{
+    struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
+    int ret = 0;
+
+    pthread_mutex_lock(&bout->lock);
+    ret = bout->ops.do_bout_get_presentation_position(bout, frames);
+    if (ret) {
+        LOGE("%s: at %d, get position failed\n",
+             __FUNCTION__, __LINE__);
+        pthread_mutex_unlock(&bout->lock);
+        return ret;
+    }
+
+    pthread_mutex_unlock(&bout->lock);
+
+    clock_gettime(CLOCK_MONOTONIC, timestamp);
+    LOGV("%s: timestamp(%lld)\n",__FUNCTION__,
+                                (timestamp->tv_sec* 1000000000ll) + timestamp->tv_nsec);
+
+    return ret;
+}
+
+
 
 /*
  * Stream In Functions
@@ -841,6 +871,7 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     bout->aout.write = bout_write;
     bout->aout.get_render_position = bout_get_render_position;
     bout->aout.get_next_write_timestamp = bout_get_next_write_timestamp;
+    bout->aout.get_presentation_position = bout_get_presentation_position;
 
     bdevices = get_brcm_devices_out(devices);
     switch (bdevices) {

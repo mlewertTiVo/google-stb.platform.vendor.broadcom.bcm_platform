@@ -143,6 +143,9 @@ struct brcm_stream_out_ops {
     int (*do_bout_set_volume)(struct brcm_stream_out *bout,
                               float left, float right);
 
+    int (*do_bout_get_presentation_position)(struct brcm_stream_out *bout,
+                              uint64_t *frames);
+
     /* optional */
     int (*do_bout_dump)(struct brcm_stream_out *bout, int fd);
 };

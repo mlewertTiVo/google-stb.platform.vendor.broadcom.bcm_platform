@@ -93,6 +93,19 @@ static int nexus_bout_set_volume(struct brcm_stream_out *bout,
     return 0;
 }
 
+static int nexus_bout_get_presentation_position(struct brcm_stream_out *bout, uint64_t *frames)
+{
+    NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.simple_playback;
+    NEXUS_SimpleAudioPlaybackStatus status;
+
+    NEXUS_SimpleAudioPlayback_GetStatus(simple_playback, &status);
+
+    /* use playedBytes as preseatation position */
+    *frames = (uint64_t)status.playedBytes;
+
+    return 0;
+}
+
 static int nexus_bout_start(struct brcm_stream_out *bout)
 {
     NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.simple_playback;
@@ -357,5 +370,6 @@ struct brcm_stream_out_ops nexus_bout_ops = {
     .do_bout_stop = nexus_bout_stop,
     .do_bout_write = nexus_bout_write,
     .do_bout_set_volume = nexus_bout_set_volume,
+    .do_bout_get_presentation_position = nexus_bout_get_presentation_position,
     .do_bout_dump = NULL
 };
