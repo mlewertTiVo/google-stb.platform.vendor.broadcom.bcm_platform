@@ -26,3 +26,13 @@ LOCAL_SRC_FILES := $(LOCAL_MODULE)
 include $(BUILD_PREBUILT)
 endif
 
+ifeq ($(BROADCOM_WIFI_CHIPSET),43570a2)
+include $(CLEAR_VARS)
+LOCAL_MODULE := firmware/BCM43569A2_001.003.004.0013.0000_Generic_USB_40MHz_fcbga_BU_WakeOn_BLE_generic_based_RRAM.hcd
+LOCAL_MODULE_TAGS := optional debug
+LOCAL_MODULE_CLASS := ETC
+LOCAL_MODULE_PATH := $(TARGET_OUT)/vendor/broadcom/btusb
+LOCAL_SRC_FILES := $(LOCAL_MODULE)
+include $(BUILD_PREBUILT)
+endif
+
