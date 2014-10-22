@@ -159,7 +159,6 @@ BERR_Code nexusinit_ir()
 {
     char module_arg[16];
     char value[PROPERTY_VALUE_MAX];
-    char value2[2*PROPERTY_VALUE_MAX];
 
     strncpy(module_arg, "", sizeof(module_arg));
 
@@ -174,7 +173,14 @@ BERR_Code nexusinit_ir()
         }
     }
 
-    /* Add the nx_ashmem module which is required for gralloc to function */
+    return BERR_SUCCESS;
+}
+
+BERR_Code nexusinit_ashmem()
+{
+    char value[PROPERTY_VALUE_MAX];
+    char value2[2*PROPERTY_VALUE_MAX];
+
     memset(value2, 0, sizeof(value2));
     property_get("ro.nexus.ashmem.devname", value, NULL);
     if (strlen(value) > 0) {
@@ -310,6 +316,13 @@ int main(void)
             LOGE("nexusinit: FATAL: Could not initialise IR!");
             _exit(1);
         }
+
+        /* Add the nx_ashmem module which is required for gralloc to function */
+        if (nexusinit_ashmem() != BERR_SUCCESS) {
+            LOGE("nexusinit: FATAL: Could not initialise ashmem!");
+            _exit(1);
+        }
+
     }
     else
     {
