@@ -527,6 +527,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     if(false == pMyData->pPESFeeder->StartDecoder(pMyData->pOMXNxDecoder))
     {
         ALOGE("%s: Failed To Start The Decoder",__FUNCTION__);
+        eError = OMX_ErrorInsufficientResources;
         goto EXIT;
     }else{
         ALOGI("%s: Decoder[%d]: Started Successfully",
