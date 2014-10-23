@@ -411,7 +411,11 @@ OMXNexusVideoEncoder::~OMXNexusVideoEncoder()
     if (pdumpES)
         delete(pdumpES);
 
-    BCMOMX_DBG_ASSERT(NumEntriesFreed==VIDEO_ENCODE_DEPTH);
+    if (NumEntriesFreed != VIDEO_ENCODE_DEPTH)
+    {
+        ALOGW("%s: Freeing only %u frames in shutdown", __FUNCTION__, NumEntriesFreed);
+    }
+
     LOG_CREATE_DESTROY("%s: Deleting The NxIPCClient",__FUNCTION__);
     delete NxIPCClient;
 }
@@ -543,7 +547,7 @@ OMXNexusVideoEncoder::StartOutput(PVIDEO_ENCODER_START_PARAMS pStartParams)
 
 
     errCode = NEXUS_SimpleEncoder_Start(EncoderHandle, &EncoderStartSettings);
-    if (NEXUS_SUCCESS != errCode) 
+    if (NEXUS_SUCCESS != errCode)
     {
         LOG_ERROR("%s[%d]: NEXUS_SimpleEncoder_Start Failed [Err:%d]!!",
             __FUNCTION__, __LINE__, errCode);
@@ -568,7 +572,7 @@ OMXNexusVideoEncoder::StartEncoder(PVIDEO_ENCODER_START_PARAMS pStartParams)
     Mutex::Autolock lock(mListLock);
     bool ret = true;
 
-    if (EncoderStarted) 
+    if (EncoderStarted)
     {
         LOG_START_STOP_DBG("%s[%d]: Encoder Already Started",
                            __FUNCTION__, __LINE__);
@@ -591,7 +595,7 @@ OMXNexusVideoEncoder::StartEncoder(PVIDEO_ENCODER_START_PARAMS pStartParams)
     return true;
 }
 
-void 
+void
 OMXNexusVideoEncoder::StopInput()
 {
     NEXUS_SimpleVideoDecoder_StopImageInput(DecoderHandle);
@@ -605,7 +609,7 @@ OMXNexusVideoEncoder::StopInput()
         BCMOMX_DBG_ASSERT(pSurf);
     }
         BCMOMX_DBG_ASSERT(SurfaceAvailListLen==0);
-    
+
     for (unsigned int i = 0; i < NumNxSurfaces; i++)
     {
         if (pSurface[i]->handle)
@@ -613,14 +617,14 @@ OMXNexusVideoEncoder::StopInput()
             NEXUS_Surface_Destroy(pSurface[i]->handle);
             pSurface[i]->handle = NULL;
         }
-    
+
         if (pSurface[i])
         {
             free(pSurface[i]);
             pSurface[i] = NULL;
         }
     }
-    
+
     if (pSurface)
     {
         free(pSurface);
@@ -628,17 +632,17 @@ OMXNexusVideoEncoder::StopInput()
     }
 }
 
-void 
+void
 OMXNexusVideoEncoder::StopOutput()
 {
     NEXUS_SimpleEncoder_Stop(EncoderHandle);
 }
 
-void 
+void
 OMXNexusVideoEncoder::StopEncoder()
 {
     Mutex::Autolock lock(mListLock);
-    if (EncoderStarted) 
+    if (EncoderStarted)
     {
 
         StopInput();
@@ -1343,7 +1347,7 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
                 {
                     pEmptyFr->usTimeStampOriginal = pCurrVidEncDescr[0].originalPts;
                 }
-                
+
                 if ( pCurrVidEncDescr[0].flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_PTS_VALID )
                 {
                     pEmptyFr->usTimeStampIntepolated = pCurrVidEncDescr[0].pts;

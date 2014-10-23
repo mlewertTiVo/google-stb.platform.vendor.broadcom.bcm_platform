@@ -52,6 +52,35 @@
 //Move below inclusion to OMXNexusEncoder.h
 #include "BcmDebug.h"
 
+
+typedef struct _OMX_PROFILE_LEVEL_
+{
+    OMX_U32 mProfile;
+    OMX_U32 mLevel;
+} OMX_PROFILE_LEVEL, *POMX_PROFILE_LEVEL;
+
+static const OMX_PROFILE_LEVEL ProfileLevels[] =
+{
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel1  },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel1b },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel11 },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel12 },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel13 },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel2  },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel21 },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel22 },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel3  },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel31 },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel32 },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel4  },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel41 },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel42 },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel5  },
+    { OMX_VIDEO_AVCProfileBaseline, OMX_VIDEO_AVCLevel51 },
+    { OMX_VIDEO_AVCProfileHigh, OMX_VIDEO_AVCLevel31 },
+    { OMX_VIDEO_AVCProfileHigh, OMX_VIDEO_AVCLevel4 }
+};
+
 typedef struct _CODEC_TO_MIME_MAP_
 {
     OMX_VIDEO_CODINGTYPE    CodingType;
@@ -241,7 +270,8 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     OMX_COMPONENTTYPE *pComp = NULL;
     BCM_OMX_CONTEXT *pMyData;
     OMX_U32 err;
-	uint nIndex;
+    uint nIndex;
+    ErrorStatus eStatus;
 
     trace t(__FUNCTION__);
 
@@ -460,6 +490,12 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     }
 
     pMyData->pOMXNxVidEnc = new OMXNexusVideoEncoder(LOG_TAG, VIDEO_ENCODER_NUM_IN_BUFFERS);
+    eStatus = pMyData->pOMXNxVidEnc->GetLastError();
+    if (eStatus != ErrStsSuccess)
+    {
+        eError = OMX_ErrorInsufficientResources;
+        goto EXIT;
+    }
 
     pMyData->pTstable = new bcmOmxTimestampTable(MAX_NUM_TIMESTAMPS);
 
@@ -673,83 +709,101 @@ extern "C" OMX_ERRORTYPE OMX_VENC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
     OMX_CONF_CHECK_CMD(pMyData, pParamStruct, 1);
 
     if (pMyData->state == OMX_StateInvalid)
-       OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
+    {
+        OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
+    }
 
     switch (nParamIndex)
     {
         case OMX_IndexParamVideoInit:
+        {
             CONFIG_LOG_MSG("%s: OMX_IndexParamVideoInit",__FUNCTION__);
             BKNI_Memcpy(pParamStruct, &pMyData->sPortParam, sizeof(OMX_PORT_PARAM_TYPE));
-            break;
+        }
+        break;
 
         case OMX_IndexParamPortDefinition:
-
+        {
             if (((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sInPortDef.nPortIndex)
             {
                 CONFIG_LOG_MSG("%s: OMX_IndexParamPortDefinition: Input Port",__FUNCTION__);
                 PrintPortDefInfo(&pMyData->sInPortDef);
                 BKNI_Memcpy(pParamStruct, &pMyData->sInPortDef, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
-
-            }else if (((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sOutPortDef.nPortIndex) {
+            }
+            else if (((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sOutPortDef.nPortIndex)
+            {
                 CONFIG_LOG_MSG("%s: OMX_IndexParamPortDefinition: Output Port",__FUNCTION__);
                 PrintPortDefInfo(&pMyData->sOutPortDef);
-               BKNI_Memcpy(pParamStruct, &pMyData->sOutPortDef, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
-
-            } else {
+                BKNI_Memcpy(pParamStruct, &pMyData->sOutPortDef, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
+            }
+            else
+            {
                 eError = OMX_ErrorBadPortIndex;
             }
-
-           break;
+        }
+        break;
 
         case OMX_IndexParamPriorityMgmt:
+        {
            CONFIG_LOG_MSG("%s: OMX_IndexParamPriorityMgmt",__FUNCTION__);
            BKNI_Memcpy(pParamStruct, &pMyData->sPriorityMgmt, sizeof(OMX_PRIORITYMGMTTYPE));
-           break;
+        }
+        break;
 
         case OMX_IndexParamVideoMpeg2:
+        {
             CONFIG_LOG_MSG("%s: OMX_IndexParamVideoMpeg2",__FUNCTION__);
             if (((OMX_VIDEO_PARAM_MPEG2TYPE *)(pParamStruct))->nPortIndex == pMyData->sMpeg2.nPortIndex)
+            {
                 BKNI_Memcpy(pParamStruct, &pMyData->sMpeg2, sizeof(OMX_VIDEO_PARAM_MPEG2TYPE));
+            }
             else
+            {
                 eError = OMX_ErrorBadPortIndex;
-            break;
+            }
+        }
+        break;
 
-#if 0
         case OMX_IndexParamVideoProfileLevelQuerySupported:
         {
+            CONFIG_LOG_MSG("%s: OMX_IndexParamVideoProfileLevelQuerySupported",__FUNCTION__);
 
-            ALOGD("%s: OMX_IndexParamVideoProfileLevelQuerySupported",__FUNCTION__);
             OMX_VIDEO_PARAM_PROFILELEVELTYPE *profileLevel =
                     (OMX_VIDEO_PARAM_PROFILELEVELTYPE *) pParamStruct;
 
-            if (profileLevel->nPortIndex != pMyData->sInPortDef.nPortIndex)
+            if (profileLevel->nPortIndex != pMyData->sOutPortDef.nPortIndex)
             {
                 ALOGE("Invalid port index: %ld", profileLevel->nPortIndex);
-                return OMX_ErrorUnsupportedIndex;
+                eError = OMX_ErrorUnsupportedIndex;
+                break;
             }
 
             size_t index = profileLevel->nProfileIndex;
             size_t nProfileLevels =
-                    sizeof(kProfileLevels) / sizeof(kProfileLevels[0]);
+                    sizeof(ProfileLevels) / sizeof(ProfileLevels[0]);
             if (index >= nProfileLevels)
             {
-                return OMX_ErrorNoMore;
+                eError = OMX_ErrorNoMore;
+                break;
             }
-            profileLevel->eProfile = kProfileLevels[index].mProfile;
-            profileLevel->eLevel = kProfileLevels[index].mLevel;
-            return OMX_ErrorNone;
+            profileLevel->eProfile = ProfileLevels[index].mProfile;
+            profileLevel->eLevel = ProfileLevels[index].mLevel;
         }
-#endif
+        break;
+
         case OMX_IndexParamVideoPortFormat:
         {
             CONFIG_LOG_MSG("%s: OMX_IndexParamVideoPortFormat",__FUNCTION__);
-             OMX_VIDEO_PARAM_PORTFORMATTYPE *pFormatParams=
+            OMX_VIDEO_PARAM_PORTFORMATTYPE *pFormatParams=
                 (OMX_VIDEO_PARAM_PORTFORMATTYPE *)pParamStruct;
 
             if (pFormatParams->nPortIndex == pMyData->sInPortDef.nPortIndex)
             {
                 if (pFormatParams->nIndex > 0)
-                    return OMX_ErrorUnsupportedSetting;
+                {
+                    eError = OMX_ErrorUnsupportedSetting;
+                    break;
+                }
                 BKNI_Memcpy(pFormatParams,&pMyData->sInPortFormat,sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE));
                 ALOGD("%s: OMX_IndexParamVideoPortFormat InputPort Returning CompFmt:%d ColFmt:%d Index:%d PortIndex:%d xFrameRate:%d",
                     __FUNCTION__,
@@ -758,11 +812,15 @@ extern "C" OMX_ERRORTYPE OMX_VENC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
                     pFormatParams->nIndex,
                     pFormatParams->nPortIndex,
                     pFormatParams->xFramerate);
-
-            }else{
+            }
+            else
+            {
                 /* Support only one color format (nIndex = 0). Return error on subsequent color format queries (nIndex > 0). */
                 if (pFormatParams->nIndex > 0)
-                    return OMX_ErrorUnsupportedSetting;
+                {
+                    eError = OMX_ErrorUnsupportedSetting;
+                    break;
+                }
 
                 BKNI_Memcpy(pFormatParams,&pMyData->sOutPortFormat,sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE));
                 ALOGD("%s: OMX_IndexParamVideoPortFormat OutPort Returning CompFmt:%d ColFmt:%d Index:%d PortIndex:%d xFrameRate:%d",
@@ -773,9 +831,9 @@ extern "C" OMX_ERRORTYPE OMX_VENC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
                     pFormatParams->nPortIndex,
                     pFormatParams->xFramerate);
             }
-            return OMX_ErrorNone;
         }
         break;
+
         case OMX_IndexParamVideoAvc:
         {
             CONFIG_LOG_MSG("%s: OMX_IndexParamVideoAvc",__FUNCTION__);
@@ -788,10 +846,11 @@ extern "C" OMX_ERRORTYPE OMX_VENC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
             }
             else
             {
-                return OMX_ErrorUnsupportedSetting;
+                eError = OMX_ErrorUnsupportedSetting;
             }
         }
         break;
+
         case OMX_IndexParamVideoBitrate:
         {
             //TODO: Implement this case.
@@ -799,10 +858,13 @@ extern "C" OMX_ERRORTYPE OMX_VENC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
 
         }
         break;
+
         default:
+        {
             ALOGD("%s:  UNHANDLED PARAMETER INDEX %d",__FUNCTION__, nParamIndex);
             eError = OMX_ErrorUnsupportedIndex;
-            break;
+        }
+        break;
     }
 
 OMX_CONF_CMD_BAIL:
@@ -1041,7 +1103,7 @@ extern "C" OMX_ERRORTYPE OMX_VENC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
     nTimestamp = pMyData->pTstable->store(pBufferHdr->nTimeStamp);
     ALOGD("%s:IN PTS = %lld",__FUNCTION__, pBufferHdr->nTimeStamp);
     pNxInputCnxt->uSecTS = nTimestamp;
-    // Put the command and data in the pipe 
+    // Put the command and data in the pipe
         write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
         write(pMyData->cmddatapipe[1], &pBufferHdr, sizeof(OMX_BUFFERHEADERTYPE*));
 
@@ -1824,7 +1886,7 @@ static void* ComponentThread(void* pThreadData)
                         pOutBufHdr->nTimeStamp= pMyData->pTstable->retrieve(nTimeStamp);
                     ALOGD("%s:OUT PTS = %lld",__FUNCTION__, pOutBufHdr->nTimeStamp);
                     pOutBufHdr->nFlags |= DeliverFr.OutFlags;
-                    if (DeliverFr.OutFlags & OMX_BUFFERFLAG_EOS) 
+                    if (DeliverFr.OutFlags & OMX_BUFFERFLAG_EOS)
                         ALOGD("EOS MARKED ON THE OUTPUT FRAME:%d",DeliverFr.OutFlags);
                 }else{
                     if (DeliverFr.OutFlags & OMX_BUFFERFLAG_EOS)
