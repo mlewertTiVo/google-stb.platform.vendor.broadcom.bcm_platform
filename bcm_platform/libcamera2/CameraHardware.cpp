@@ -913,13 +913,11 @@ void CameraHardware::initDefaultParameters()
     p.set(CameraParameters::KEY_SUPPORTED_FOCUS_MODES,"fixed");
     p.set(CameraParameters::KEY_FOCUS_MODE,"fixed");
 
-#if 0
     p.set(CameraParameters::KEY_JPEG_THUMBNAIL_HEIGHT,0);
     p.set(CameraParameters::KEY_JPEG_THUMBNAIL_QUALITY,75);
     p.set(CameraParameters::KEY_SUPPORTED_JPEG_THUMBNAIL_SIZES,"0x0");
     p.set("jpeg-thumbnail-size","0x0");
     p.set(CameraParameters::KEY_JPEG_THUMBNAIL_WIDTH,0);
-#endif
 
     // Picture - Only JPEG supported
     p.set(CameraParameters::KEY_SUPPORTED_PICTURE_FORMATS,CameraParameters::PIXEL_FORMAT_JPEG); // ONLY jpeg
@@ -973,6 +971,13 @@ void CameraHardware::initDefaultParameters()
     p.set(CameraParameters::KEY_MAX_ZOOM, "100");
     p.set(CameraParameters::KEY_ZOOM_RATIOS, "100");
     p.set(CameraParameters::KEY_ZOOM_SUPPORTED, "false");
+
+    // Focal length
+    p.set(CameraParameters::KEY_FOCAL_LENGTH, "1.0");
+
+    // View angles
+    p.set(CameraParameters::KEY_HORIZONTAL_VIEW_ANGLE, "51.2");
+    p.set(CameraParameters::KEY_VERTICAL_VIEW_ANGLE, "39.4");
 
     if (setParameters(p.flatten()) != NO_ERROR) {
         ALOGE("CameraHardware::initDefaultParameters: Failed to set default parameters.");
