@@ -1,27 +1,118 @@
-# TODO: Put Broadcom copyright header
-
+#############################################################################
+#    (c)2010-2011 Broadcom Corporation
+#
+# This program is the proprietary software of Broadcom Corporation and/or its licensors,
+# and may only be used, duplicated, modified or distributed pursuant to the terms and
+# conditions of a separate, written license agreement executed between you and Broadcom
+# (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
+# no license (express or implied), right to use, or waiver of any kind with respect to the
+# Software, and Broadcom expressly reserves all rights in and to the Software and all
+# intellectual property rights therein.  IF YOU HAVE NO AUTHORIZED LICENSE, THEN YOU
+# HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY WAY, AND SHOULD IMMEDIATELY
+# NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.
+#
+# Except as expressly set forth in the Authorized License,
+#
+# 1.     This program, including its structure, sequence and organization, constitutes the valuable trade
+# secrets of Broadcom, and you shall use all reasonable efforts to protect the confidentiality thereof,
+# and to use this information only in connection with your use of Broadcom integrated circuit products.
+#
+# 2.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS"
+# AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR
+# WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT TO
+# THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED WARRANTIES
+# OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A PARTICULAR PURPOSE,
+# LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET ENJOYMENT, QUIET POSSESSION
+# OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME THE ENTIRE RISK ARISING OUT OF
+# USE OR PERFORMANCE OF THE SOFTWARE.
+#
+# 3.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS
+# LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT, OR
+# EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO YOUR
+# USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN ADVISED OF
+# THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS OF THE AMOUNT
+# ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE
+# LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
+# ANY LIMITED REMEDY.
+#
+# $brcm_Workfile: Makefile $
+# $brcm_Revision: 9 $
+# $brcm_Date: 1/12/11 6:08p $
+#
+# Module Description:
+#
+# Revision History:
+#
+# $brcm_Log: /AppLibs/opensource/android/build/Makefile $
+# 
+#
+#############################################################################
 LOCAL_PATH := $(call my-dir)
+REFSW_PATH :=${LOCAL_PATH}/../brcm_nexus
+NEXUS_TOP ?= $(LOCAL_PATH)/../../refsw/nexus
+
+# Nexus multi-process, client-server related CFLAGS
+MP_CFLAGS = -DANDROID_CLIENT_SECURITY_MODE=$(ANDROID_CLIENT_SECURITY_MODE)
+
+ifeq ($(NEXUS_MODE),proxy)
+NEXUS_LIB=libnexus
+else
+ifeq ($(NEXUS_WEBCPU),core1_server)
+NEXUS_LIB=libnexus_webcpu
+else
+NEXUS_LIB=libnexus_client
+endif
+endif
+
 include $(CLEAR_VARS)
 
+# Core component framework
 LOCAL_SRC_FILES := \
-    BcmOMXPlugin.cpp
+    bomx_android_plugin.cpp \
+    bomx_buffer.cpp \
+    bomx_component.cpp \
+    bomx_core.cpp \
+    bomx_port.cpp \
+    bomx_utils.cpp
 
-LOCAL_CFLAGS := -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
-LOCAL_CFLAGS += -Werror
+# Component instances
+LOCAL_SRC_FILES += bomx_video_decoder.cpp
 
-LOCAL_C_INCLUDES:= \
+# Audio is not ready yet
+#LOCAL_SRC_FILES += bomx_audio_decoder.cpp
+
+LOCAL_C_INCLUDES := \
         $(TOP)/frameworks/native/include/media/hardware \
-        $(TOP)/frameworks/native/include/media/openmax
+        $(TOP)/frameworks/native/include/media/openmax \
+        $(TOP)/frameworks/native/include/utils \
+        $(TOP)/frameworks/native/include/ui  \
+        $(TOP)/hardware/libhardware/include/hardware \
+        $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
+        $(TOP)/vendor/broadcom/bcm_platform/libnexusipc \
+        $(TOP)/vendor/broadcom/bcm_platform/libgralloc
+
+include $(BSEAV)/lib/utils/batom.inc
+include $(BSEAV)/lib/media/bmedia.inc
+
+LOCAL_CFLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS) $(addprefix -I,$(BMEDIA_INCLUDES) $(BFILE_MEDIA_INCLUDES))
+# Required for nexusipcclient using LOGX in a header file
+LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
+
+LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include $(REFSW_PATH)/../libnexusservice
+LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc
+LOCAL_C_INCLUDES += $(NEXUS_TOP)/lib/os/include $(NEXUS_TOP)/lib/os/include/linuxuser
 
 LOCAL_SHARED_LIBRARIES :=       \
+        $(NEXUS_LIB) \
+        libb_os \
         libbinder               \
         libutils                \
         libcutils               \
         libdl                   \
         libui                   \
-		libstagefright_foundation 
+        libnexusipcclient \
+		libstagefright_foundation \
 		
 LOCAL_MODULE := libstagefrighthw
 
 include $(BUILD_SHARED_LIBRARY)
-

@@ -47,12 +47,14 @@ endif
 
 // this is needed because we cannot build a pure AOSP image with current OMX integration.  todo: remove.
 ifeq ($(ANDROID_ENABLE_BCM_OMX_PROTOTYPE),y)
-include vendor/broadcom/bcm_platform/libstagefrighthw/Android.mk
+include vendor/broadcom/bcm_platform/libstagefrighthw_legacy/Android.mk
 include vendor/broadcom/bcm_platform/omx_components/audio/omx_audio_dec/Android.mk
 include vendor/broadcom/bcm_platform/omx_components/video/omx_video_codec/Android.mk
 include vendor/broadcom/bcm_platform/omx_components/video/omx_video_encoder/Android.mk
 include vendor/broadcom/bcm_platform/omx_core/Android.mk
 include vendor/broadcom/bcm_platform/utils/Android.mk
+else
+include vendor/broadcom/bcm_platform/libstagefrighthw/Android.mk
 endif
 
 
