@@ -66,6 +66,12 @@ endif
 
 MP_CFLAGS += -DANDROID_USES_TRELLIS_WM=0
 
+ifeq ($(ANDROID_ENABLE_HDMI_HDCP),y)
+MP_CFLAGS += -DANDROID_ENABLE_HDMI_HDCP=1
+else
+MP_CFLAGS += -DANDROID_ENABLE_HDMI_HDCP=0
+endif
+
 include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false
 LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusipceventlistener $(NEXUS_LIB) libstagefright_foundation

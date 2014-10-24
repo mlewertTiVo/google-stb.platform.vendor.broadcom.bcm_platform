@@ -107,6 +107,7 @@ private:
     int platformInitHdmiOutputs(void);
     void platformUninitHdmiOutputs();
     static void hotplugCallback(void *context, int param);
+    static void hdcpCallback(void *context, int param);
 
     NEXUS_SurfaceCompositorClientId     graphicSurfaceClientId;
 };
