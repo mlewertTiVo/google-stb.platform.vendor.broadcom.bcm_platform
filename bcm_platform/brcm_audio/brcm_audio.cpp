@@ -243,12 +243,24 @@ static int bout_set_parameters(struct audio_stream *stream,
     struct str_parms *parms;
     int ret = 0;
 
-    LOGV("%s: at %d, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream);
+    LOGV("%s: at %d, stream = 0x%X, kvpairs=\"%s\"\n",
+         __FUNCTION__, __LINE__, (uint32_t)stream, kvpairs);
 
     parms = str_parms_create_str(kvpairs);
 
     /* Set parameters here !!! */
+    char value[8];
+    const char STANDBY_KEY[] = "screen_state";
+
+    if (str_parms_has_key(parms, STANDBY_KEY)) {
+        ret = str_parms_get_str(parms, STANDBY_KEY, value, sizeof(value)/sizeof(value[0]));
+        if (ret > 0) {
+            if (strcmp(value, "off") == 0) {
+                ALOGV("%s: Need to enter power saving mode...", __FUNCTION__);
+                ret = bout_standby(stream);
+            }
+        }
+    }
 
     str_parms_destroy(parms);
     return ret;
