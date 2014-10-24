@@ -160,7 +160,7 @@ PESFeeder::PESFeeder(char const *ClientName,
         DataBeforFlush(new DumpData("DataBeforFlush")),
         DataAfterFlush(new DumpData("DataAfterFlush")),
 #endif
-        LastInputTimeStamp(0)
+        LastHighestInputTS(0)
 {
     strcpy((char *)ClientIDString,ClientName);
     LOG_CREATE_DESTROY("[%s]%s: Enter",ClientIDString,__FUNCTION__);
@@ -641,9 +641,10 @@ PESFeeder::Flush()
 
     Pauser PausePlayPump(NxPlayPumpHandle);
 
-    LOG_FLUSH_MSGS("[%s]%s: Fired %d Descriptors, Flushing Them",
-            ClientIDString,__FUNCTION__,FiredCnt);
+    LOG_FLUSH_MSGS("[%s]%s: Fired %d Descriptors, Flushing Them. Reset LastInputTimeStamp From:%d to Zero",
+            ClientIDString,__FUNCTION__,FiredCnt,LastHighestInputTS);
 
+    LastHighestInputTS = 0;
     if(NxPlayPumpStatus.started)
     {
         //Discard All The Data In The Play Pump
@@ -895,8 +896,11 @@ PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
     // The Last Time Stamp That We sent To Hardware...
     if(pNxInCnxt->FramePTS)
     {
-        LOG_INFO("%s: Updating LastTimeStamp: %lld", __FUNCTION__, LastInputTimeStamp);
-        LastInputTimeStamp = pNxInCnxt->FramePTS;
+        LOG_INFO("%s: Updating LastTimeStamp: %lld", __FUNCTION__, LastHighestInputTS);
+        if (pNxInCnxt->FramePTS > LastHighestInputTS)
+        {
+            LastHighestInputTS = pNxInCnxt->FramePTS; 
+        }
     }
 
 #ifdef DEBUG_PES_DATA
@@ -1047,8 +1051,8 @@ PESFeeder::NotifyEOS(unsigned int ClientFlags, unsigned long long EOSFrameKey)
         if(!EOSFrameKey)
         {
             ALOGD("%s: EOS Buffer Has TimeStamp Of Zero.Using Last Buffer's Time Stamp:%lld",
-                    __PRETTY_FUNCTION__,LastInputTimeStamp);
-            EOSFrameKey = LastInputTimeStamp;
+                    __PRETTY_FUNCTION__,LastHighestInputTS);
+            EOSFrameKey = LastHighestInputTS;
         }
 
         FdrEvtLsnr->InputEOSReceived(ClientFlags,EOSFrameKey);
@@ -1191,6 +1195,7 @@ ConfigDataMgr::SaveConfigData(void *pData, size_t SzData)
     unsigned char *pDstBuff;
     LOG_CONFIG_MSGS("%s: Buffer:%p Size:%d ",
                     __PRETTY_FUNCTION__,pData,SzData);
+
     if (!pData || !SzData)
     {
         LOG_ERROR("%s: %p %d Invalid Parameters",

@@ -160,7 +160,7 @@ public :
 
     bool StartDecoder(StartDecoderIFace *pStartDecoIface);
     bool RegisterFeederEventsListener(FeederEventsListener *pInEvtLisnr);
-    bool NotifyEOS(unsigned int,unsigned long long);
+    bool NotifyEOS(unsigned int,unsigned long long EOSFrameKey=0);
 
     bool Flush();
 
@@ -221,7 +221,7 @@ private :
     DumpData                        *DataBeforFlush;
     DumpData                        *DataAfterFlush;
 #endif
-    unsigned long long				LastInputTimeStamp;
+    unsigned long long              LastHighestInputTS;
 private :
 
     size_t CopyPESData(void *pBuffer, size_t bufferSz);
