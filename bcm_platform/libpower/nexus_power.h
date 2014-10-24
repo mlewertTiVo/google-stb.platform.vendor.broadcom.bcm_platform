@@ -52,7 +52,7 @@
 #include "nexus_types.h"
 
 typedef enum NexusPowerState {
-    eNexusPowerState_S0,
+    eNexusPowerState_S0 = 0,
     eNexusPowerState_S1,
     eNexusPowerState_S2,
     eNexusPowerState_S3,

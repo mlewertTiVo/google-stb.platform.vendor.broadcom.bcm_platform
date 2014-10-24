@@ -173,6 +173,8 @@ protected:
 
 private:
     android::sp<NexusNxClient::StandbyMonitorThread> mStandbyMonitorThread;
+    b_refsw_client_standby_monitor_callback mStandbyMonitorCallback;
+    b_refsw_client_standby_monitor_context  mStandbyMonitorContext;
     b_refsw_client_client_info info;
 };
 

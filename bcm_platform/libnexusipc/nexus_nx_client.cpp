@@ -124,11 +124,20 @@ bool NexusNxClient::StandbyMonitorThread::threadLoop()
     while (isRunning()) {
         rc = NxClient_GetStandbyStatus(&standbyStatus);
     
-        if(standbyStatus.settings.mode != prevStatus.settings.mode) {
-            LOGD("%s: Acknowledge state %d\n", getName(), standbyStatus.settings.mode);
-            NxClient_AcknowledgeStandby(true);
+        if (standbyStatus.settings.mode != prevStatus.settings.mode) {
+            bool ack = true;
+
+            if (standbyStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn) {
+                if (mNexusNxClient->mStandbyMonitorCallback != NULL) {
+                    ack =  mNexusNxClient->mStandbyMonitorCallback(mNexusNxClient->mStandbyMonitorContext);
+                }
+            }
+            if (ack) {
+                LOGD("%s: Acknowledge state %d\n", getName(), standbyStatus.settings.mode);
+                NxClient_AcknowledgeStandby(true);
+                prevStatus = standbyStatus;
+            }
         }
-        prevStatus = standbyStatus;
         BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
     }
     LOGD("%s: Exiting for client \"%s\"", __PRETTY_FUNCTION__, getName());
@@ -276,6 +285,8 @@ NexusClientContext * NexusNxClient::createClientContext(const b_refsw_client_cli
         // Stash info away for use later
         getClientInfo(client, &this->info);
 
+        mStandbyMonitorCallback = config->standbyMonitorCallback;
+        mStandbyMonitorContext  = config->standbyMonitorContext;
         mStandbyMonitorThread = new NexusNxClient::StandbyMonitorThread(this);
         mStandbyMonitorThread->run(&config->name.string[0], ANDROID_PRIORITY_NORMAL);
     }

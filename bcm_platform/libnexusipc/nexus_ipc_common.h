@@ -84,6 +84,9 @@ typedef struct b_refsw_client_client_name  {
     char string[CLIENT_MAX_NAME];
 } b_refsw_client_client_name;
 
+typedef bool (*b_refsw_client_standby_monitor_callback)(void *context);
+typedef void * b_refsw_client_standby_monitor_context;
+
 typedef struct b_refsw_client_client_configuration {
     b_refsw_client_client_name name; /* name of the client application */
     unsigned pid;
@@ -98,6 +101,8 @@ typedef struct b_refsw_client_client_configuration {
         bool hdmiInput;
         bool encoder;
     } resources;
+    b_refsw_client_standby_monitor_callback standbyMonitorCallback;
+    b_refsw_client_standby_monitor_context  standbyMonitorContext;
 } b_refsw_client_client_configuration;
 
 typedef struct b_refsw_client_client_info {

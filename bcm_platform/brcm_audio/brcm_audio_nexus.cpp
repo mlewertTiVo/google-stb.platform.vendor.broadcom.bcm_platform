@@ -232,6 +232,17 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
     return bytes_written;
 }
 
+// returns true if nexus audio can enter standby
+static bool nexus_bout_standby_monitor(void *context)
+{
+    bool standby;
+    struct brcm_stream_out *bout = (struct brcm_stream_out *)context;
+
+    standby = (bout == NULL) || (bout->started == false);
+    ALOGV("%s: standby=%d", __FUNCTION__, standby);
+    return standby;
+}
+
 static int nexus_bout_open(struct brcm_stream_out *bout)
 {
     struct audio_config *config = &bout->config;
@@ -275,6 +286,8 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     strncpy(client_config.name.string, "AudioStreamOut",
             sizeof(client_config.name.string));
     client_config.resources.audioPlayback = true;
+    client_config.standbyMonitorCallback = nexus_bout_standby_monitor;
+    client_config.standbyMonitorContext  = bout;
 
     nexus_client = ipc_client->createClientContext(&client_config);
     if (!nexus_client) {

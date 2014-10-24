@@ -43,8 +43,11 @@ typedef struct hwc_video_window_context_t {
 struct hwc_context_t {
     hwc_composer_device_1_t device;
     /* our private state goes below here */
+    NexusIPCClientBase *pIpcClient;
+    NexusClientContext *pNexusClientContext;
     hwc_procs_t const* procs;
     bool vsync_callback_enabled;
+    int powerMode;  // Same mode as HWC_POWER_MODE_*
     pthread_t vsync_callback_thread;
     hwc_rect_t last_displayFrame[MAX_NEXUS_PLAYER];
     hwc_video_window_context_t last_video_window_visible[MAX_NEXUS_PLAYER];
@@ -91,7 +94,7 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
     struct hwc_context_t *ctx = (hwc_context_t*)dev;
     unsigned int iWindowIndex;
     int64_t timestamp;
-    NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("hwc");
+    NexusIPCClientBase *pIpcClient = ctx->pIpcClient;
     b_video_window_settings window_settings;
     hwc_layer_1_t *layer;
     private_handle_t *bcmBuffer;
@@ -293,7 +296,6 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
         }
         ALOGV("%s: exit", __FUNCTION__);
     }
-    delete pIpcClient;
     return 0;
 }
 
@@ -333,7 +335,13 @@ static int hwc_set(hwc_composer_device_1_t *dev,
 static int hwc_device_close(struct hw_device_t *dev)
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
-    if (ctx) {
+    if (ctx != NULL) {
+        if (ctx->pIpcClient != NULL) {
+            if (ctx->pNexusClientContext != NULL) {
+                ctx->pIpcClient->destroyClientContext(ctx->pNexusClientContext);
+            }
+            delete ctx->pIpcClient;
+        }
         free(ctx);
     }
     return 0;
@@ -341,7 +349,11 @@ static int hwc_device_close(struct hw_device_t *dev)
 
 static int hwc_device_blank(hwc_composer_device_1* dev, int disp, int blank)
 {
+    struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
+
     // enables and disables screen blanking
+    ALOGV("hwc_device_blank: disp=%d, blank=%d", disp, blank);
+    ctx->powerMode = (blank) ? HWC_POWER_MODE_OFF : HWC_POWER_MODE_NORMAL;
     return 0;
 }
 
@@ -355,8 +367,9 @@ static int hwc_device_eventControl(hwc_composer_device_1* dev, int disp, int eve
         status = 0;
         ALOGV("HWC HWC_EVENT_VSYNC (%s)", enabled ? "enabled":"disabled");
     }
-    else
+    else {
         ALOGE("HWC unknown event control requested %d:%d", event, enabled);
+    }
 
     return status;
 }
@@ -419,6 +432,17 @@ static void * hwc_vsync_task(void *argv)
     return NULL;
 }
 
+// Returns true if the HWC is ready to blank the screen or enter power
+static bool hwc_standby_monitor(void *dev)
+{
+    bool standby;
+    struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
+
+    standby = (ctx == NULL) || (ctx->powerMode == HWC_POWER_MODE_OFF);
+    ALOGV("%s: standby=%d", __FUNCTION__, standby);
+    return standby;
+}
+
 static int hwc_device_open(const struct hw_module_t* module, const char* name,
         struct hw_device_t** device)
 {
@@ -443,13 +467,34 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         dev->device.eventControl = hwc_device_eventControl;
         dev->device.registerProcs = hwc_registerProcs;
 
+        dev->powerMode = HWC_POWER_MODE_NORMAL;
+
         pthread_attr_init(&attr);
         if (pthread_create(&dev->vsync_callback_thread, &attr, hwc_vsync_task, (void *)dev) != 0) {
             return status;
         }
 
-        *device = &dev->device.common;
-        status = 0;
+        dev->pIpcClient = NexusIPCClientFactory::getClient("hwc");
+        if (dev->pIpcClient == NULL) {
+            ALOGE("%s: Could not instantiate Nexus IPC Client!!!", __FUNCTION__);
+        }
+        else {
+            b_refsw_client_client_configuration clientConfig;
+
+            memset(&clientConfig, 0, sizeof(clientConfig));
+            strncpy(clientConfig.name.string, "hwc", sizeof(clientConfig.name.string));
+            clientConfig.standbyMonitorCallback = hwc_standby_monitor;
+            clientConfig.standbyMonitorContext  = dev;
+
+            dev->pNexusClientContext = dev->pIpcClient->createClientContext(&clientConfig);
+            if (dev->pNexusClientContext == NULL) {
+                ALOGE("%s: Could not create Nexus Client Context!!!", __FUNCTION__); 
+            }
+            else {
+                *device = &dev->device.common;
+                status = 0;
+            }
+        }
     }
     return status;
 }

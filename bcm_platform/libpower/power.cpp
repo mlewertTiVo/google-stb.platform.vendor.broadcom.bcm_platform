@@ -13,13 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+// Verbose messages removed
+//#define LOG_NDEBUG 0
+#define LOG_TAG "Brcmstb PowerHAL"
+
 #include <errno.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define LOG_TAG "Brcmstb PowerHAL"
 #include <utils/Log.h>
 
 #include <cutils/properties.h>
@@ -30,6 +33,37 @@
 #include "nexus_power.h"
 
 using namespace android;
+
+static const char *nexus_power_state_string[] = {
+    "S0",
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "S5"
+};
+
+static NexusPowerState get_nexus_power_state()
+{
+    NexusPowerState nexusPowerOffState = eNexusPowerState_S3;
+    char value[PROPERTY_VALUE_MAX] = "";
+
+    property_get("ro.pm.offstate", value, "s3");
+
+    if (strcasecmp(value, "1") == 0 || strcasecmp(value, "s1") == 0) {
+        nexusPowerOffState = eNexusPowerState_S1;
+    }
+    else if (strcasecmp(value, "2") == 0 || strcasecmp(value, "s2") == 0) {
+        nexusPowerOffState = eNexusPowerState_S2;
+    }
+    else if (strcasecmp(value, "3") == 0 || strcasecmp(value, "s3") == 0) {
+        nexusPowerOffState = eNexusPowerState_S3;
+    }
+    else if (strcasecmp(value, "5") == 0 || strcasecmp(value, "s5") == 0) {
+        nexusPowerOffState = eNexusPowerState_S5;
+    }
+    return nexusPowerOffState;
+}
 
 static void power_init(struct power_module *module)
 {
@@ -207,55 +241,45 @@ static int power_set_state(NexusPowerState toState, NexusPowerState fromState)
 
 static void power_set_interactive(struct power_module *module, int on)
 {
-    NEXUS_Error rc;
-    NexusPowerState nexusPowerOffState = eNexusPowerState_S3;
-    char offStateString[3] = "S3";
-    char value[PROPERTY_VALUE_MAX] = "";
+    int ret;
+    NexusPowerState nexusPowerOffState = get_nexus_power_state();
 
-    property_get("ro.pm.offstate", value, NULL);
-    if (strcasecmp(value, "1") == 0 || strcasecmp(value, "s1") == 0) {
-        nexusPowerOffState = eNexusPowerState_S1;
-        offStateString[1] = '1';
-    }
-    else if (strcasecmp(value, "2") == 0 || strcasecmp(value, "s2") == 0) {
-        nexusPowerOffState = eNexusPowerState_S2;
-        offStateString[1] = '2';
-    }
-    else if (strcasecmp(value, "3") == 0 || strcasecmp(value, "s3") == 0) {
-        nexusPowerOffState = eNexusPowerState_S3;
-        offStateString[1] = '3';
-    }
-    else if (strcasecmp(value, "5") == 0 || strcasecmp(value, "s5") == 0) {
-        nexusPowerOffState = eNexusPowerState_S5;
-        offStateString[1] = '5';
-    }
+    ALOGV("%s: %s", __FUNCTION__, on ? "ON" : "OFF");
 
     if (on) {
-        if (power_set_state(eNexusPowerState_S0, nexusPowerOffState) != 0) {
-            LOGE("%s: Could not set power state to S%d!!!", __FUNCTION__, eNexusPowerState_S0);
-            return;
+        ret = power_set_state(eNexusPowerState_S0, nexusPowerOffState);
+        if (ret == 0) {
+            ret = NexusPower_SetPowerState(eNexusPowerState_S0);
         }
-        rc = NexusPower_SetPowerState(eNexusPowerState_S0);
     }
     else {
-        /* Must wait to allow "ScreenOff" Intent to be Broadcasted and acted upon */
-        usleep(1.5 * 1000 * 1000);
-        rc = NexusPower_SetPowerState(nexusPowerOffState);
-        if (rc==NEXUS_SUCCESS) {
-            if (power_set_state(nexusPowerOffState, eNexusPowerState_S0) != 0) {
-                LOGE("%s: Could not set power state to S%d!!!", __FUNCTION__, eNexusPowerState_S1);
-                return;
-            }
+        ret = NexusPower_SetPowerState(nexusPowerOffState);
+        if (ret == NEXUS_SUCCESS) {
+            ret = power_set_state(nexusPowerOffState, eNexusPowerState_S0);
         }
     }
-    LOGI("%s: %s set Nexus power state %s", __FUNCTION__, rc==NEXUS_SUCCESS ? "Successfully" : "Could not",on ? "S0" : offStateString );
+    LOGI("%s: %s set Nexus power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", on ? "S0" : nexus_power_state_string[nexusPowerOffState]);
 }
 
-static void power_hint(struct power_module *module, power_hint_t hint,
-                       void *data) {
+static void power_hint(struct power_module *module, power_hint_t hint, void *data) {
     switch (hint) {
-    default:
-        break;
+        case POWER_HINT_VSYNC:
+            ALOGV("%s: POWER_HINT_VSYNC received", __FUNCTION__);
+            break;
+        case POWER_HINT_INTERACTION:
+            ALOGV("%s: POWER_HINT_INTERACTION received", __FUNCTION__);
+            break;
+        case POWER_HINT_VIDEO_ENCODE:
+            ALOGV("%s: POWER_HINT_VIDEO_ENCODE received", __FUNCTION__);
+            break;
+        case POWER_HINT_VIDEO_DECODE:
+            ALOGV("%s: POWER_HINT_VIDEO_DECODE received", __FUNCTION__);
+            break;
+        case POWER_HINT_LOW_POWER:
+            ALOGV("%s: POWER_HINT_LOW_POWER received", __FUNCTION__);
+            break;
+        default:
+            break;
     }
 }
 
@@ -275,5 +299,5 @@ struct power_module HAL_MODULE_INFO_SYM = {
     },
     init: power_init,
     setInteractive: power_set_interactive,
-    powerHint: NULL
+    powerHint: power_hint
 };
