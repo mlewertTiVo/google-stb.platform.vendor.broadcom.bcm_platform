@@ -4,10 +4,6 @@ import /init.brcm_wl.rc
 import /init.brcm_bt.rc
 import /init.nfs.rc
 
-on early-init
-   # Needed by NxServer
-   mkdir /tmp 0775 root system
-
 on init
    mkdir /mnt/media_rw/sdcard 0700 media_rw media_rw
 
