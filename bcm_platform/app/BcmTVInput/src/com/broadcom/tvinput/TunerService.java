@@ -87,10 +87,19 @@ public class TunerService extends TvInputService {
     private ResolveInfo mResolveInfo;
     private static List<ChannelInfo> sSampleChannels = null;
 
-    private static final String CHANNEL_1_NUMBER = "1-1";
-    private static final String CHANNEL_1_NAME = "Tuner_Channel";
-    private static final String PROGRAM_1_TITLE = "Sample";
-    private static final String PROGRAM_1_DESC = "Sample Video";
+    private static final String CHANNEL_1_NUMBER = "1";
+    private static final String CHANNEL_1_NAME = "Channel-1";
+    private static final String PROGRAM_1_TITLE = "Sample-1";
+    private static final String PROGRAM_1_DESC = "SampleVideo-1";
+    private static final int    CHANNEL_1_TSID = 11;
+    private static final int    CHANNEL_1_SVCID = 100;
+
+    private static final String CHANNEL_2_NUMBER = "2";
+    private static final String CHANNEL_2_NAME = "Channel-2";
+    private static final String PROGRAM_2_TITLE = "Sample-2";
+    private static final String PROGRAM_2_DESC = "SampleVideo-2";
+    private static final int    CHANNEL_2_TSID = 22;
+    private static final int    CHANNEL_2_SVCID = 200;
 
     @Override
     public void onCreate() {
@@ -149,11 +158,11 @@ public class TunerService extends TvInputService {
         // Save mapping between inputId and deviceId
         mDeviceIdMap.put(info.getId(), deviceId);
 
-        if (DEBUG) 
-			Log.d(TAG, "onHardwareAdded returns " + info);
-
         // Create some sample channels
         createSampleChannels(info.getId());
+
+        if (DEBUG)
+			Log.d(TAG, "onHardwareAdded returns " + info);
 
         return info;
     }
@@ -164,11 +173,11 @@ public class TunerService extends TvInputService {
         Class clazz = TunerService.class;
 
         sSampleChannels = new ArrayList<ChannelInfo>();
-        sSampleChannels.add(
-                new ChannelInfo(CHANNEL_1_NUMBER, CHANNEL_1_NAME, null, 0, 0, 1, 640, 480, 2,
-                        false,
-                new ProgramInfo(PROGRAM_1_TITLE, null, PROGRAM_1_DESC, 0, 3600,
-                        null, null, 0)));
+        sSampleChannels.add(new ChannelInfo(CHANNEL_1_NUMBER, CHANNEL_1_NAME, null, 0, CHANNEL_1_TSID, CHANNEL_1_SVCID, 1920, 1080, 1, false,
+                            new ProgramInfo(PROGRAM_1_TITLE, null, PROGRAM_1_DESC, 0, 100, null, null, 1)));
+
+        sSampleChannels.add(new ChannelInfo(CHANNEL_2_NUMBER, CHANNEL_2_NAME, null, 0, CHANNEL_2_TSID, CHANNEL_2_SVCID, 1920, 1080, 2, false,
+                            new ProgramInfo(PROGRAM_2_TITLE, null, PROGRAM_2_DESC, 0, 200, null, null, 2)));
 
         Uri uri = TvContract.buildChannelsUriForInput(inputId);
         String[] projection = { TvContract.Channels._ID };
@@ -203,48 +212,33 @@ public class TunerService extends TvInputService {
 
     public static void populateChannels(Context context, String inputId, List<ChannelInfo> channels) 
     {
-        ContentValues values = new ContentValues();
-        values.put(TvContract.Channels.COLUMN_INPUT_ID, inputId);
-        Map<Uri, String> logos = new HashMap<Uri, String>();
+        ContentValues channel_values = new ContentValues();
+        ContentValues prog_values = new ContentValues();
 
-        for (ChannelInfo channel : channels) 
+        channel_values.put(TvContract.Channels.COLUMN_INPUT_ID, inputId);
+
+        for (ChannelInfo channel : channels)
         {
-            values.put(TvContract.Channels.COLUMN_DISPLAY_NUMBER, channel.mNumber);
-            values.put(TvContract.Channels.COLUMN_DISPLAY_NAME, channel.mName);
-            values.put(TvContract.Channels.COLUMN_ORIGINAL_NETWORK_ID, channel.mOriginalNetworkId);
-            values.put(TvContract.Channels.COLUMN_TRANSPORT_STREAM_ID, channel.mTransportStreamId);
-            values.put(TvContract.Channels.COLUMN_SERVICE_ID, channel.mServiceId);
-            values.put(TvContract.Channels.COLUMN_BROWSABLE, 1);
+            // Initialize the Channels class
+            channel_values.put(TvContract.Channels.COLUMN_DISPLAY_NUMBER, channel.mNumber);
+            channel_values.put(TvContract.Channels.COLUMN_DISPLAY_NAME, channel.mName);
+            channel_values.put(TvContract.Channels.COLUMN_ORIGINAL_NETWORK_ID, channel.mOriginalNetworkId);
+            channel_values.put(TvContract.Channels.COLUMN_TRANSPORT_STREAM_ID, channel.mTransportStreamId);
+            channel_values.put(TvContract.Channels.COLUMN_SERVICE_ID, channel.mServiceId);
+            channel_values.put(TvContract.Channels.COLUMN_BROWSABLE, 1);
+            channel_values.put(TvContract.Channels.COLUMN_VIDEO_FORMAT, TvContract.Channels.VIDEO_FORMAT_1080P);
 
-            values.put(TvContract.Channels.COLUMN_VIDEO_FORMAT, TvContract.Channels.VIDEO_FORMAT_480P);
+            Uri uri = context.getContentResolver().insert(TvContract.Channels.CONTENT_URI, channel_values);
 
-            Uri uri = context.getContentResolver().insert(TvContract.Channels.CONTENT_URI, values);
-/*
-            if (!TextUtils.isEmpty(channel.mLogoUrl)) 
-            {
-                logos.put(TvContract.buildChannelLogoUri(uri), channel.mLogoUrl);
-            }
-*/
+            long channelId = ContentUris.parseId(uri);
+
+            // Initialize the Programs class
+            prog_values.put(TvContract.Programs.COLUMN_CHANNEL_ID, channelId);
+            prog_values.put(TvContract.Programs.COLUMN_TITLE, channel.mProgram.mTitle);
+            prog_values.put(TvContract.Programs.COLUMN_SHORT_DESCRIPTION, channel.mProgram.mDescription);
+
+            Uri rowUri = context.getContentResolver().insert(TvContract.Programs.CONTENT_URI, prog_values);
         }
-/*
-        if (!logos.isEmpty()) 
-        {
-            new InsertLogosTask(context).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, logos);
-        }
-*/
-    }
-
-    private static ContentValues createDummyChannelValues(String inputId) {
-        ContentValues values = new ContentValues();
-        values.put(TvContract.Channels.COLUMN_INPUT_ID, inputId);
-        values.put(TvContract.Channels.COLUMN_TYPE, TvContract.Channels.TYPE_OTHER);
-        values.put(TvContract.Channels.COLUMN_SERVICE_TYPE, TvContract.Channels.SERVICE_TYPE_AUDIO_VIDEO);
-        values.put(TvContract.Channels.COLUMN_DISPLAY_NUMBER, "1");
-        values.put(TvContract.Channels.COLUMN_VIDEO_FORMAT, TvContract.Channels.VIDEO_FORMAT_480P);
-        values.put(TvContract.Channels.COLUMN_DISPLAY_NAME, "One dash one");
-        values.put(TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA, "Broadcom-Tuner".getBytes());
-
-        return values;
     }
 
     @Override

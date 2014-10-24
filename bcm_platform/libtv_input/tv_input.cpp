@@ -132,22 +132,28 @@ static int tv_input_initialize(struct tv_input_device* dev, const tv_input_callb
 
 static int tv_input_get_stream_configurations(const struct tv_input_device *dev, int dev_id, int *numConfigs, const tv_stream_config_t **s_out)
 {
-    tv_stream_config_t *s_cfg;
+    tv_stream_config_t *s_cfg[2];
 
 	ALOGE("%s: Enter", __FUNCTION__);
 
-    *numConfigs = 1;
+    *numConfigs = 2;
 
-    s_cfg = (tv_stream_config_t *) malloc(sizeof (tv_stream_config_t));
+    s_cfg[0] = (tv_stream_config_t *) malloc(sizeof (tv_stream_config_t));
+    s_cfg[1] = (tv_stream_config_t *) malloc(sizeof (tv_stream_config_t));
 
-    s_cfg->stream_id = 1001;
-    s_cfg->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
-    s_cfg->max_video_width = 1920;
-    s_cfg->max_video_height = 1080;
+    s_cfg[0]->stream_id = 100;
+    s_cfg[0]->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
+    s_cfg[0]->max_video_width = 1920;
+    s_cfg[0]->max_video_height = 1080;
 
-    *s_out = s_cfg;
+    s_cfg[1]->stream_id = 200;
+    s_cfg[1]->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
+    s_cfg[1]->max_video_width = 1920;
+    s_cfg[1]->max_video_height = 1080;
 
-    return -0;
+    *s_out = s_cfg[0];
+
+    return 0;
 }
 
 static int tv_input_open_stream(struct tv_input_device *dev, int dev_id, tv_stream_t *pTVStream)
@@ -315,7 +321,7 @@ static int tv_input_tuner_start(tv_input_private_t *priv)
     NEXUS_Error rc;
 
     // Enable the tuner
-    ALOGE("%s: Tuning on freqency %d...", __FUNCTION__, FREQ);
+    ALOGE("%s: Tuning on frequency %d...", __FUNCTION__, FREQ);
 
     NEXUS_Frontend_GetDefaultOfdmSettings(&ofdmSettings);
     ofdmSettings.frequency = FREQ * 1000000;
