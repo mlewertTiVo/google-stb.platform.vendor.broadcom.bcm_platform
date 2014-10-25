@@ -1,8 +1,5 @@
 
-on init
+on post-fs
 
 # Load the BT USB driver
-    chown root root /system/vendor/broadcom/btusb/driver/btusb.ko
-    chmod 0744 /system/vendor/broadcom/btusb/driver/btusb.ko
     insmod /system/vendor/broadcom/btusb/driver/btusb.ko
-    chmod 0666 /dev/btusb0
