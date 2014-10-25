@@ -42,6 +42,8 @@ on post-fs
    # Prevent Nexus file from being created in /tmp by default
    export nexus_ipc_dir /dev
 
+   export SAGEBIN_PATH /system/bin
+
    # Eliminate writable file in /sys to pass android.permission CTS
    chmod 0664 /sys/kernel/wakeup_reasons/last_resume_reason
 

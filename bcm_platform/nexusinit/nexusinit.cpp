@@ -75,7 +75,6 @@
 #define NX_ASHMEM_DRIVER_FILENAME      "nx_ashmem.ko"
 
 #define NXSERVER_FILENAME              "/system/bin/nxserver"
-#define NEXUS_SAGEBIN_PATH             "/system/bin"
 
 extern "C" long int init_module(void *, unsigned long, const char*);
 extern "C" long int delete_module(const char *, unsigned long, unsigned long, unsigned long);
@@ -207,9 +206,6 @@ void startNxServer(void)
     LOGI("nexusinit: Launching NxServer with clients in unprotected mode (runs in the background so that we get control back");
     /* Turn off transcode for stand-alone Android to enable MVC/SVC playback and disable
        IR if we are not wanting to run NxClient apps... */
-
-    /* Set up path of SAGE binaries */
-    setenv("SAGEBIN_PATH", NEXUS_SAGEBIN_PATH, 1);
 
     strcpy(cmdRunNxServer, NXSERVER_FILENAME);
     strcat(cmdRunNxServer, " ");
