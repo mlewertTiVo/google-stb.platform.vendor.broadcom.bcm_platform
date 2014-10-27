@@ -78,6 +78,7 @@
 #if NEXUS_HAS_HDMI_INPUT
 #include "nexus_hdmi_input.h"
 #endif
+#include "nexusirmap.h"
 
 #include "nexus_ipc_priv.h"
 #include "nxclient.h"
@@ -313,6 +314,109 @@ void NexusNxService::platformUninitHdmiOutputs()
 #endif
 }
 
+static bool parseNexusIrMode(const char *name, NEXUS_IrInputMode *mode)
+{
+    struct irmode {
+        const char * name;
+        NEXUS_IrInputMode value;
+    };
+
+    #define DEFINE_IRINPUTMODE(mode) { #mode, NEXUS_IrInputMode_e##mode }
+    static const struct irmode ir_modes[] = {
+        DEFINE_IRINPUTMODE(TwirpKbd),            /* TWIRP */
+        DEFINE_IRINPUTMODE(Sejin38KhzKbd),       /* Sejin IR keyboard (38.4KHz) */
+        DEFINE_IRINPUTMODE(Sejin56KhzKbd),       /* Sejin IR keyboard (56.0KHz) */
+        DEFINE_IRINPUTMODE(RemoteA),             /* remote A */
+        DEFINE_IRINPUTMODE(RemoteB),             /* remote B */
+        DEFINE_IRINPUTMODE(CirGI),               /* Consumer GI */
+        DEFINE_IRINPUTMODE(CirSaE2050),          /* Consumer SA E2050 */
+        DEFINE_IRINPUTMODE(CirTwirp),            /* Consumer Twirp */
+        DEFINE_IRINPUTMODE(CirSony),             /* Consumer Sony */
+        DEFINE_IRINPUTMODE(CirRecs80),           /* Consumer Rec580 */
+        DEFINE_IRINPUTMODE(CirRc5),              /* Consumer Rc5 */
+        DEFINE_IRINPUTMODE(CirUei),              /* Consumer UEI */
+        DEFINE_IRINPUTMODE(CirRfUei),            /* Consumer RF UEI */
+        DEFINE_IRINPUTMODE(CirEchoStar),         /* Consumer EchoRemote */
+        DEFINE_IRINPUTMODE(SonySejin),           /* Sony Sejin keyboard using UART D */
+        DEFINE_IRINPUTMODE(CirNec),              /* Consumer NEC */
+        DEFINE_IRINPUTMODE(CirRC6),              /* Consumer RC6 */
+        DEFINE_IRINPUTMODE(CirGISat),            /* Consumer GI Satellite */
+        DEFINE_IRINPUTMODE(Custom),              /* Customer specific type. See NEXUS_IrInput_SetCustomSettings. */
+        DEFINE_IRINPUTMODE(CirDirectvUhfr),      /* DIRECTV uhfr (In IR mode) */
+        DEFINE_IRINPUTMODE(CirEchostarUhfr),     /* Echostar uhfr (In IR mode) */
+        DEFINE_IRINPUTMODE(CirRcmmRcu),          /* RCMM Remote Control Unit */
+        DEFINE_IRINPUTMODE(CirRstep),            /* R-step Remote Control Unit */
+        DEFINE_IRINPUTMODE(CirXmp),              /* XMP-2 */
+        DEFINE_IRINPUTMODE(CirXmp2Ack),          /* XMP-2 Ack/Nak */
+        DEFINE_IRINPUTMODE(CirRC6Mode0),         /* Consumer RC6 Mode 0 */
+        DEFINE_IRINPUTMODE(CirRca),              /* Consumer RCA */
+        DEFINE_IRINPUTMODE(CirToshibaTC9012),    /* Consumer Toshiba */
+        DEFINE_IRINPUTMODE(CirXip),              /* Consumer Tech4home XIP protocol */
+
+        /* end of table marker */
+        { NULL, NEXUS_IrInputMode_eMax }
+    };
+    #undef DEFINE_IRINPUTMODE
+
+    const struct irmode *ptr = ir_modes;
+    while(ptr->name) {
+        if (strcmp(ptr->name, name) == 0) {
+            *mode = ptr->value;
+            return true;
+        }
+        ptr++;
+    }
+    return false; /* not found */
+}
+
+bool NexusNxService::platformInitIR()
+{
+    static const char * ir_map_path = "/system/usr/irkeymap";
+    static const char * ir_map_ext = ".ikm";
+
+    /* default values */
+    static const NEXUS_IrInputMode ir_mode_default_enum = NEXUS_IrInputMode_eCirNec;
+    static const char * ir_mode_default = "CirNec";
+    static const char * ir_map_default = "broadcom_silver";
+
+    char ir_mode_property[PROPERTY_VALUE_MAX];
+    char ir_map_property[PROPERTY_VALUE_MAX];
+
+    NEXUS_IrInputMode mode;
+    android::sp<NexusIrMap> map;
+
+    memset(ir_mode_property, 0, sizeof(ir_mode_property));
+    property_get("ro.ir_remote.mode", ir_mode_property, ir_mode_default);
+    if (parseNexusIrMode(ir_mode_property, &mode)) {
+        LOGI("Nexus IR remote mode: %s", ir_mode_property);
+    } else {
+        LOGW("Unknown IR remote mode: '%s', falling back to default '%s'",
+                ir_mode_property, ir_mode_default);
+        mode = ir_mode_default_enum;
+    }
+
+    memset(ir_map_property, 0, sizeof(ir_map_property));
+    property_get("ro.ir_remote.map", ir_map_property, ir_map_default);
+    android::String8 map_path(ir_map_path);
+    map_path += "/";
+    map_path += ir_map_property;
+    map_path += ir_map_ext;
+    LOGI("Nexus IR remote map: %s (%s)", ir_map_property, map_path.string());
+    status_t status = NexusIrMap::load(map_path, &map);
+    if (status)
+    {
+        LOGE("Nexus IR map load failed: %s", map_path.string());
+        return false;
+    }
+
+    return irHandler.start(mode, map);
+}
+
+void NexusNxService::platformUninitIR()
+{
+    irHandler.stop();
+}
+
 void NexusNxService::platformInit()
 {
     NEXUS_Error rc;
@@ -378,10 +482,12 @@ void NexusNxService::platformInit()
     }
 #endif
     platformInitHdmiOutputs();
+    platformInitIR();
 }
 
 void NexusNxService::platformUninit()
 {
+    platformUninitIR();
     platformUninitHdmiOutputs();
 
 #if NEXUS_HAS_CEC

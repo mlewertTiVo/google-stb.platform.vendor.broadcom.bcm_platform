@@ -71,7 +71,6 @@
 
 #define WAKEUP_DRIVER_FILENAME         "wakeup_drv.ko"
 #define NEXUS_DRIVER_FILENAME          "nexus.ko"
-#define NEXUS_IR_INPUT_DRIVER_FILENAME "nexus_ir_input_event.ko"
 #define NX_ASHMEM_DRIVER_FILENAME      "nx_ashmem.ko"
 
 #define NXSERVER_FILENAME              "/system/bin/nxserver"
@@ -155,27 +154,6 @@ BERR_Code nexusinit_insmod(const char *filename, const char *args)
     return BERR_SUCCESS;
 }
 
-BERR_Code nexusinit_ir()
-{
-    char module_arg[16];
-    char value[PROPERTY_VALUE_MAX];
-
-    strncpy(module_arg, "", sizeof(module_arg));
-
-    /* Runtime check for remote type, default to silver remote */
-    property_get("ro.ir_remote", value, NULL);
-    if (strcmp(value, "nxclient") != 0)
-    {
-        /* After the platform init, insmod the ir event driver */
-        if (nexusinit_insmod(NEXUS_IR_INPUT_DRIVER_FILENAME, (strcmp(value,"remote_a")==0) ? "remote_a=1" : "") != BERR_SUCCESS) {
-            LOGE("nexusinit: insmod failed on %s!",NEXUS_IR_INPUT_DRIVER_FILENAME);
-            return BERR_UNKNOWN;
-        }
-    }
-
-    return BERR_SUCCESS;
-}
-
 BERR_Code nexusinit_ashmem()
 {
     char value[PROPERTY_VALUE_MAX];
@@ -209,11 +187,8 @@ void startNxServer(void)
 
     strcpy(cmdRunNxServer, NXSERVER_FILENAME);
     strcat(cmdRunNxServer, " ");
+    strcat(cmdRunNxServer, "-ir none ");
 
-    property_get("ro.ir_remote", value, NULL);
-    if (strcmp(value, "nxclient") != 0) {
-        strcat(cmdRunNxServer, "-ir none ");
-    }
     /* If the HD output resolution is set to 1080p, then we can use the HDMI preferred output format
        (typically 1080p also) and not ignore the HDMI EDID information from the connected TV. */
     if (property_get("ro.hd_output_format", value, NULL)) {
@@ -312,10 +287,6 @@ int main(void)
 
         property_set("hw.nexus.platforminit", "on");
 
-        if (nexusinit_ir() != BERR_SUCCESS) {
-            LOGE("nexusinit: FATAL: Could not initialise IR!");
-            _exit(1);
-        }
 
         /* Add the nx_ashmem module which is required for gralloc to function */
         if (nexusinit_ashmem() != BERR_SUCCESS) {

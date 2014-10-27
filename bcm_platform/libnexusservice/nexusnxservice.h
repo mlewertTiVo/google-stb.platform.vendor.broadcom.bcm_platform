@@ -50,6 +50,7 @@
 #define _NEXUSNXSERVICE_H_
 
 #include "nexusservice.h"
+#include "nexusirhandler.h"
 
 class NexusNxService : public NexusService
 {
@@ -109,7 +110,11 @@ private:
     static void hotplugCallback(void *context, int param);
     static void hdcpCallback(void *context, int param);
 
+    bool platformInitIR();
+    void platformUninitIR();
+
     NEXUS_SurfaceCompositorClientId     graphicSurfaceClientId;
+    NexusIrHandler irHandler;
 };
 
 #endif // _NEXUSNXSERVICE_H_
