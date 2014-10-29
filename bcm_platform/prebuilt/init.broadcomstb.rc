@@ -43,6 +43,8 @@ on boot
 on post-fs
    # nexus ipc socket, use a device from the exception list.
    export nxclient_ipc_node /dev/ump
+   # TODO: remove this.  keeping it for backward compatibility.
+   export nexus_ipc_dir /dev
 
    export SAGEBIN_PATH /system/bin
 
