@@ -75,7 +75,8 @@ typedef enum ThrCmdType
     Stop,
     FillBuf,
     EmptyBuf,
-    SendFillBuffDoneNtf
+    SendFillBuffDoneNtf,
+    Undefined
 } ThrCmdType;
 
 #define SIZEOF_BCMADTS_HEADER   7
@@ -163,6 +164,8 @@ typedef struct _BCM_OMX_CONTEXT_
 #ifdef BCM_OMX_SUPPORT_ENCODER
     OMXNexusVideoEncoder            *pOMXNxVidEnc;
     OMX_VIDEO_PARAM_AVCTYPE         sAvcVideoParams;
+    OMX_VIDEO_PARAM_BITRATETYPE     sRateParams;
+    bool                            bMetaDataInBuffer;
 #endif
 } BCM_OMX_CONTEXT;
 

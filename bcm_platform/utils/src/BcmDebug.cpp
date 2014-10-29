@@ -45,26 +45,36 @@ DumpData::DumpData(const char * FileName)
             :NumberOfWrites(0)
 {
     char FileNameString[256];
-    sprintf(FileNameString,"/mnt/sdcard1/%s",FileName);
+    sprintf(FileNameString,"/sdcard/%s",FileName);
     ALOGD("Opening File %s",FileNameString);
     OpenFile = fopen(FileNameString,"wb");
     if (!OpenFile)
     {
-        ALOGD("Opening File %s Failed",FileNameString);
+        ALOGE("Opening File %s Failed",FileNameString);
     }
 }
 
 DumpData::~DumpData()
 {
     ALOGD("Close File Now");
-    fclose(OpenFile);
+    if (OpenFile)
+    {
+        fclose(OpenFile);
+    }
 }
 
 unsigned int
 DumpData::WriteData(void * StartAddr, size_t Sz)
 {
     size_t WrittenSz=0;
-    ALOGD("Write: File:%p Addr:%p Size:%d",OpenFile,StartAddr,Sz);
+
+    if (!OpenFile)
+    {
+        ALOGE("File not opened yet");
+        return 0;
+    }
+
+    ALOGD("Write: File:%p Addr:%p Size:%lu",OpenFile,StartAddr,Sz);
     WrittenSz = fwrite(StartAddr,1,Sz,OpenFile);
     if (WrittenSz != Sz)
     {

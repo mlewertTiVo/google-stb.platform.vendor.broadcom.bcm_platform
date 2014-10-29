@@ -98,9 +98,10 @@ struct private_handle_t {
 /*15.*/       unsigned    oglFormat;
 /*16.*/       unsigned    oglSize;
 /*17.*/       unsigned    sharedDataPhyAddr;  // physical address of shared Data.
+/*18.*/       int         usage;
 
 #ifdef __cplusplus
-    static const int sNumInts = 17;
+    static const int sNumInts = 18;
     static const int sNumFds = 2;
     static const int sMagic = 0x3141592;
 
@@ -108,7 +109,8 @@ struct private_handle_t {
         fd(fd), fd2(fd2), nxSurfacePhysicalAddress(0),
         magic(sMagic), flags(flags), size(size),
         pid(getpid()), lockTmp(0), lockHnd(0), lockEvent(0), lockHWCLE(0),
-        oglStride(0), oglFormat(0), oglSize(0)
+        oglStride(0), oglFormat(0), oglSize(0), sharedDataPhyAddr(0),
+        usage(0)
     {
         version = sizeof(native_handle);
         numInts = sNumInts;

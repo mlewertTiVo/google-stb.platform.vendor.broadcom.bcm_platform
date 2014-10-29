@@ -48,6 +48,7 @@ LOCAL_SHARED_LIBRARIES := \
     libcutils \
     $(NEXUS_LIB) \
     libnexusipcclient \
+    libhardware \
     libui
 
 REMOVE_NEXUS_CFLAGS := -Wstrict-prototypes -march=armv7-a

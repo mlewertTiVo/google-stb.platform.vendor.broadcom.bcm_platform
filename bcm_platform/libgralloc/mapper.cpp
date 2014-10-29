@@ -315,6 +315,10 @@ int gralloc_lock(gralloc_module_t const* module,
          BKNI_WaitForEvent((BKNI_EventHandle)(hnd->lockEvent), BKNI_INFINITE);
       }
 
+      /* Only update SW read/write usage flags */
+      hnd->usage &= ~(GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK);
+      hnd->usage |= usage & (GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK);
+
       LOGV("%s : successfully locked", __FUNCTION__);
       *vaddr = hnd->lockTmp;
    }
@@ -355,8 +359,8 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       return -EINVAL;
    }
 
-   // only for offscreen surfaces
-   if (!(hnd->flags & PRIV_FLAGS_FRAMEBUFFER))
+   // only for offscreen surfaces and only if the buffer has been updated
+   if ((hnd->usage & GRALLOC_USAGE_SW_WRITE_MASK) && !(hnd->flags & PRIV_FLAGS_FRAMEBUFFER))
    {
       pix_format_e converterFormat, ltConverterFormat;
       int align = 16;

@@ -132,6 +132,7 @@ typedef struct _VIDEO_ENCODER_START_PARAMS_
     unsigned int                    height;
     NEXUS_VideoFrameRate            frameRate;
     OMX_VIDEO_PARAM_AVCTYPE         avcParams;
+    OMX_VIDEO_PARAM_BITRATETYPE     bitRateParams;
 } VIDEO_ENCODER_START_PARAMS,
 *PVIDEO_ENCODER_START_PARAMS;
 
@@ -204,8 +205,14 @@ private:
     // The input is not there. We need to keep track when to capture
     // and when Stop The Capture.
     bool                                CaptureFrames;
-    DumpData                            *pdumpES;
+    DumpData                            *pdumpESsrc;
+    DumpData                            *pdumpESdst;
     VIDEO_ENCODER_START_PARAMS          EncoderStartParams;
+
+    hw_module_t                         *mpGrallocFd;
+    NEXUS_SurfaceHandle                 mhSrcSurface;
+    NEXUS_Graphics2DHandle              mhGfx;
+
 private:
     unsigned int    RetriveFrameFromHardware();
     void            StartCaptureFrames();
@@ -223,6 +230,11 @@ private:
 //    void            PrintFrame(const PNEXUS_DECODED_AUDIO_FRAME);
     void            PrintVideoEncoderStatus();
 
+    NEXUS_VideoCodecLevel convertOMXLevelTypetoNexus(OMX_VIDEO_AVCLEVELTYPE level);
+    NEXUS_VideoCodecProfile convertOMXProfileTypetoNexus(OMX_VIDEO_AVCPROFILETYPE profile);
+
+    bool            convertOMXPixelFormatToCrYCbY(PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pNxInputContext);
+    void            convertYuvToCrYCbY(const uint8_t *pSrcBuf, uint8_t *pDstBuf, unsigned int width, unsigned height);
 };
 
 #endif

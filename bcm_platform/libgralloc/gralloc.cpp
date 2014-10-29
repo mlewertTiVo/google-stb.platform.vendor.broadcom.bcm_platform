@@ -263,7 +263,7 @@ static int gralloc_alloc_framebuffer_locked(alloc_device_t* dev,
    unsigned vaddr = m->framebuffer->nxSurfacePhysicalAddress;
 
    // find a free slot
-   for (int i = 0 ; i < numBuffers; i++)
+   for (unsigned int i = 0 ; i < numBuffers; i++)
    {
       if ((bufferMask & (1LU<<i)) == 0)
       {
@@ -307,6 +307,7 @@ static int gralloc_alloc_framebuffer_locked(alloc_device_t* dev,
    memset(sharedData, 0, sizeof(SHARED_DATA));
 
    hnd->nxSurfacePhysicalAddress = vaddr;
+   hnd->usage = usage;
 
    *pHandle = hnd;
    return 0;
@@ -447,6 +448,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    grallocPrivateHandle->height = h;
    grallocPrivateHandle->bpp = bpp;
    grallocPrivateHandle->format = format;
+   grallocPrivateHandle->usage = usage;
    grallocPrivateHandle->nxSurfacePhysicalAddress =
       allocGLSuitableBuffer(grallocPrivateHandle, w, h, format);
 

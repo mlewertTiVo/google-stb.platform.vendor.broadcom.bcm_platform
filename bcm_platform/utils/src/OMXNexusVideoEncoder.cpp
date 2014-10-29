@@ -40,6 +40,7 @@
 ******************************************************************************/
 
 #include "OMXNexusVideoEncoder.h"
+#include <hardware/gralloc.h>
 
 #undef LOG_TAG
 #define LOG_TAG "BCM_OMX_VIDEO_ENC"
@@ -49,7 +50,9 @@
 #define LOG_EOS_DBG             ALOGD
 #define LOG_FLUSH_MSGS          ALOGD
 #define LOG_CREATE_DESTROY      ALOGD
+#define LOG_CONVERT
 #define LOG_RETRIVE_FRAME
+#define LOG_DUMP_DBG
 
 //Path independent Debug Messages
 #define LOG_WARNING             ALOGD
@@ -77,21 +80,331 @@ static void imageBufferCallbackDispatcher(void *context, int param)
 // Set enable_es_dump to "true" to dump encoded ES frames.
 static bool enable_es_dump = false;
 
-// Set dump_once to 0 to dump first pair of input/output frames from frame conversion.
-static bool dump_once = 1;
-static void convertOMXPixelFormatToCrYCbY(uint8_t *dst, uint8_t *src, unsigned int width, unsigned int height, OMX_COLOR_FORMATTYPE colorFormat)
+// Set dump_once to 'false' to dump first pair of input/output frames from frame conversion.
+static bool dump_once = true;
+bool OMXNexusVideoEncoder::convertOMXPixelFormatToCrYCbY(PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pNxInputContext)
 {
-    //Currently we support only one format
-    BCMOMX_DBG_ASSERT(colorFormat==OMX_COLOR_FormatYUV420Planar);
+    NEXUS_SurfaceHandle hDst = pNxInputContext->pNxSurface->handle;
+    uint8_t *pSrc = (uint8_t *)pNxInputContext->bufPtr;
+    unsigned int width = pNxInputContext->width;
+    unsigned int height = pNxInputContext->height;
+    OMX_COLOR_FORMATTYPE colorFormat = pNxInputContext->colorFormat;
+    bool bMetaData = (colorFormat == OMX_COLOR_FormatAndroidOpaque);
 
+    bool bRet = true;
+    bool bSwapAlpha = false;
+    uint8_t *pSrcBuf = NULL;
+    uint8_t *pDstBuf = NULL;
+    NEXUS_SurfaceMemory mem;
+    gralloc_module_t *pGralloc = NULL;
+    buffer_handle_t hBuffer = NULL;
+    private_handle_t *pBuffer = NULL;
+    int res;
+
+    const char *pDumpSrcName = NULL, *pDumpDstName = NULL;
+    const uint8_t *pDumpSrcBuf = NULL, *pDumpDstBuf = NULL;
+    int32_t dumpSrcSize = 0, dumpDstSize = 0;
+
+    /* Currently we support only the following color formats */
+    BCMOMX_DBG_ASSERT(colorFormat == OMX_COLOR_FormatYUV420Planar ||
+                      colorFormat == OMX_COLOR_FormatAndroidOpaque);
+
+    if (bMetaData)
+    {
+        unsigned int expectedBufSize = sizeof(buffer_handle_t) + 4;
+        if (pNxInputContext->bufSize < expectedBufSize)
+        {
+            ALOGE("%s: Invalid metadata - bufSize=%u expected=%d",
+                  __FUNCTION__,
+                  pNxInputContext->bufSize,
+                  expectedBufSize);
+            bRet = false;
+            goto EXIT;
+        }
+
+        if (mpGrallocFd == NULL &&
+            hw_get_module(GRALLOC_HARDWARE_MODULE_ID, (const hw_module_t **)&mpGrallocFd))
+        {
+            ALOGE("%s: Error opening gralloc module", __FUNCTION__);
+            bRet = false;
+            goto EXIT;
+        }
+        BCMOMX_DBG_ASSERT(mpGrallocFd != NULL);
+
+        pGralloc = (gralloc_module_t *)mpGrallocFd;
+        hBuffer = *(buffer_handle_t *)(pSrc + 4);
+        pBuffer = (private_handle_t *)hBuffer;
+
+        res = pGralloc->lock(pGralloc,
+                             hBuffer,
+                             GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_NEVER,
+                             0,
+                             0,
+                             width,
+                             height,
+                             (void **)&pSrcBuf);
+        if (res != 0)
+        {
+            ALOGE("%s: Error locking gralloc buffer - err=%d", __FUNCTION__, res);
+            bRet = false;
+            goto EXIT;
+        }
+
+        LOG_CONVERT("%s: Surface - color format = %d height=%d width=%d",
+                    __FUNCTION__,
+                    pBuffer->format,
+                    height,
+                    width);
+        switch (pBuffer->format)
+        {
+            case HAL_PIXEL_FORMAT_RGBA_8888:
+            case HAL_PIXEL_FORMAT_RGBX_8888:
+            {
+                colorFormat = OMX_COLOR_Format32bitARGB8888;
+                bSwapAlpha = true;
+            }
+            break;
+            case HAL_PIXEL_FORMAT_YV12:
+            {
+                colorFormat = OMX_COLOR_FormatYUV420Planar;
+            }
+            break;
+            default:
+            {
+                ALOGE("%s: Unsupported android opaque format %d", __FUNCTION__, pBuffer->format);
+                bRet = false;
+                goto EXIT;
+            }
+            break;
+        }
+
+    }
+    else
+    {
+        pSrcBuf = pSrc;
+    }
+
+    NEXUS_Surface_GetMemory(hDst, &mem);
+    BCMOMX_DBG_ASSERT(mem.buffer);
+    pDstBuf = (uint8_t *)mem.buffer;
+
+    if (enable_es_dump || !dump_once)
+    {
+        pDumpSrcBuf = pSrcBuf;
+    }
+
+    switch (colorFormat)
+    {
+        case OMX_COLOR_FormatYUV420Planar:
+        {
+            int32_t totalPix = width * height;
+
+            convertYuvToCrYCbY(pSrcBuf, pDstBuf, width, height);
+
+            if (!dump_once)
+            {
+                pDumpSrcName = "yuv420.dat";
+                pDumpDstName = "yuv420_crycby.dat";
+                pDumpDstBuf = pDstBuf;
+                dumpSrcSize = totalPix + totalPix / 2;
+                dumpDstSize = totalPix << 1;
+            }
+
+            if (enable_es_dump)
+            {
+                dumpSrcSize = totalPix + totalPix / 2;
+            }
+        }
+        break;
+
+        case OMX_COLOR_Format32bitARGB8888:
+        {
+#if 0 /* TODO: Enable HW conversion later */
+            int32_t nSrcBufSize = (width * height) * 4;
+            int32_t nDstBufSize = nSrcBufSize / 2;
+            NEXUS_Error rc;
+
+            /* Create source surface for conversion (if needed)  */
+            if (mhSrcSurface == NULL)
+            {
+                NEXUS_SurfaceCreateSettings surfaceCfg;
+                NEXUS_Surface_GetDefaultCreateSettings(&surfaceCfg);
+                surfaceCfg.pixelFormat = bSwapAlpha ? NEXUS_PixelFormat_eR8_G8_B8_X8 : NEXUS_PixelFormat_eX8_R8_G8_B8;
+                surfaceCfg.width = width;
+                surfaceCfg.height = height;
+                mhSrcSurface = NEXUS_Surface_Create(&surfaceCfg);
+                BCMOMX_DBG_ASSERT(mhSrcSurface);
+            }
+
+            /* Open graphics2d module (if needed) */
+            if (mhGfx == NULL)
+            {
+                NEXUS_Graphics2DSettings gfxSettings;
+                mhGfx = NEXUS_Graphics2D_Open(0, NULL);
+                BCMOMX_DBG_ASSERT(mhGfx);
+
+                NEXUS_Graphics2D_GetSettings(mhGfx, &gfxSettings);
+                gfxSettings.pollingCheckpoint = true;
+                rc = NEXUS_Graphics2D_SetSettings(mhGfx, &gfxSettings);
+                BCMOMX_DBG_ASSERT(!rc);
+            }
+
+            /* Fill source surface with gralloc buffer */
+            NEXUS_Surface_GetMemory(mhSrcSurface, &mem);
+            BCMOMX_DBG_ASSERT(mem.buffer);
+            uint8_t *pSrcSurface = (uint8_t *)mem.buffer;
+
+            memcpy(pSrcSurface, pSrcBuf, nSrcBufSize);
+            NEXUS_Surface_Flush(mhSrcSurface);
+
+            /* Start conversion */
+            NEXUS_Graphics2DBlitSettings blitSettings;
+            NEXUS_Graphics2D_GetDefaultBlitSettings(&blitSettings);
+            blitSettings.source.surface = mhSrcSurface;
+            blitSettings.output.surface = hDst;
+            blitSettings.colorOp = NEXUS_BlitColorOp_eCopySource;
+            blitSettings.alphaOp = NEXUS_BlitAlphaOp_eCopySource;
+            rc = NEXUS_Graphics2D_Blit(mhGfx, &blitSettings);
+            BDBG_ASSERT(!rc);
+
+            if (!dump_once)
+            {
+                NEXUS_Surface_GetMemory(hDst, &mem);
+                BCMOMX_DBG_ASSERT(mem.buffer);
+
+                pDumpSrcName = "rgba8888.dat";
+                pDumpDstName = "crycby.dat";
+                pDumpDstBuf = (uint8_t *)mem.buffer;
+                dumpSrcSize = (height * width) * 4;
+                dumpDstSize = (height * width) * 2;
+            }
+
+            if (enable_es_dump)
+            {
+                dumpSrcSize = height * width * 4;
+            }
+#endif
+            /* Convert to YUV420 first using BT.601 */
+            int32_t totalPix = width * height;
+            uint8_t *pYuvBuf = (uint8_t *)malloc(totalPix + totalPix / 2);
+            BCMOMX_DBG_ASSERT(pYuvBuf);
+            memset(pYuvBuf, 0, totalPix + totalPix / 2);
+
+            uint8_t *dstY = pYuvBuf;
+            uint8_t *dstU = dstY + totalPix;
+            uint8_t *dstV = dstU + (width >> 1) * (height >> 1);
+            uint8_t *srcRGB = pSrcBuf;
+
+            const size_t redOffset   = bSwapAlpha ? 0 : 1;
+            const size_t greenOffset = bSwapAlpha ? 1 : 2;
+            const size_t blueOffset  = bSwapAlpha ? 2 : 3;
+
+            for (size_t y = 0; y < height; ++y)
+            {
+                for (size_t x = 0; x < width; ++x)
+                {
+                    unsigned red = srcRGB[redOffset];
+                    unsigned green = srcRGB[greenOffset];
+                    unsigned blue = srcRGB[blueOffset];
+
+                    unsigned luma = ((red * 66 + green * 129 + blue * 25) >> 8) + 16;
+                    dstY[x] = luma;
+
+                    if ((x & 1) == 0 && (y & 1) == 0)
+                    {
+                        unsigned U = ((-red * 38 - green * 74 + blue * 112) >> 8) + 128;
+                        unsigned V = ((red * 112 - green * 94 - blue * 18) >> 8) + 128;
+
+                        dstU[x >> 1] = U;
+                        dstV[x >> 1] = V;
+                    }
+                    srcRGB += 4;
+                }
+
+                if ((y & 1) == 0)
+                {
+                    dstU += width >> 1;
+                    dstV += width >> 1;
+                }
+
+                //srcRGB += width - 4 * width;
+                dstY += width;
+            }
+
+            convertYuvToCrYCbY(pYuvBuf, pDstBuf, width, height);
+
+            free(pYuvBuf);
+
+            if (!dump_once)
+            {
+                pDumpSrcName = "rgb32.dat";
+                pDumpDstName = "rgb32_crycby.dat";
+                pDumpDstBuf = pDstBuf;
+                dumpSrcSize = totalPix << 2;
+                dumpDstSize = totalPix << 1;
+            }
+
+            if (enable_es_dump)
+            {
+                dumpSrcSize = totalPix << 2;
+            }
+        }
+        break;
+
+        default:
+        {
+            ALOGE("%s: Unsupported color format %d", __FUNCTION__, colorFormat);
+            bRet = false;
+            goto EXIT;
+        }
+        break;
+    }
+
+EXIT:
+    if (bMetaData)
+    {
+        if (pGralloc && hBuffer && pSrcBuf)
+        {
+            res = pGralloc->unlock(pGralloc, hBuffer);
+            if (res != 0)
+            {
+                ALOGE("%s: Failed to unlock gralloc buffer %d", __FUNCTION__, res);
+                bRet = false;
+            }
+        }
+    }
+
+    NEXUS_Surface_Flush(hDst);
+
+    if (!dump_once && pDumpSrcName && pDumpDstName && pDumpSrcBuf && pDumpDstBuf && dumpSrcSize && dumpDstSize)
+    {
+        DumpData d0(pDumpSrcName);
+        d0.WriteData((void *)pDumpSrcBuf, dumpSrcSize);
+
+        DumpData d1(pDumpDstName);
+        d1.WriteData((void *)pDumpDstBuf, dumpDstSize);
+        dump_once = true;
+    }
+
+    if (enable_es_dump && pdumpESsrc)
+    {
+        LOG_DUMP_DBG("%s:Dumping ES raw data. Buffer Address = %p, Buffer Size = %d",
+                     __FUNCTION__,
+                     pDumpSrcBuf,
+                     dumpSrcSize);
+
+        pdumpESsrc->WriteData((void *)pDumpSrcBuf , dumpSrcSize);
+    }
+
+    return bRet;
+}
+
+void OMXNexusVideoEncoder::convertYuvToCrYCbY(const uint8_t *pSrcBuf, uint8_t *pDstBuf, unsigned int width, unsigned height)
+{
     int32_t inYsize = width * height;
-    uint8_t *iny = src;
-    uint8_t *incb = src + inYsize;
-    uint8_t *incr = src + inYsize + (inYsize >> 2);
-    uint8_t *temp;
-
-    if (dump_once==0)
-        temp = dst;
+    const uint8_t *iny = pSrcBuf;
+    const uint8_t *incb = pSrcBuf + inYsize;
+    const uint8_t *incr = pSrcBuf + inYsize + (inYsize >> 2);
 
     for (uint32_t i = 0; i < height/2; i++)
     {
@@ -104,26 +417,15 @@ static void convertOMXPixelFormatToCrYCbY(uint8_t *dst, uint8_t *src, unsigned i
             y1 = *(iny + 2 * i * width + 2*j + 1);
             cr = *(incr + i * width/2 + j);
 
-            *((uint32_t *)dst + 2 * i * width/2 + j) = cr << 24 | y1 << 16 | cb << 8 | y0;
+            *((uint32_t *)pDstBuf + 2 * i * width/2 + j) = cr << 24 | y1 << 16 | cb << 8 | y0;
 
             y0 = *(iny + (2*i+1) * width + 2*j);
             cb = *(incb + i * width/2 + j);
             y1 = *(iny + (2*i+1) * width + 2*j + 1);
             cr = *(incr + i * width/2 + j);
 
-            *((uint32_t *)dst + (2*i+1)* width/2 + j) = cr << 24 | y1 << 16 | cb << 8 | y0;
-
+            *((uint32_t *)pDstBuf + (2*i+1)* width/2 + j) = cr << 24 | y1 << 16 | cb << 8 | y0;
         }
-    }
-
-    if (dump_once==0)
-    {
-        DumpData d0("yuv420.dat");
-        d0.WriteData((void *)src,inYsize + inYsize/2);
-
-        DumpData d1("crycby.dat");
-        d1.WriteData((void *)temp, inYsize * 4);
-        dump_once = 1;
     }
 }
 
@@ -166,7 +468,7 @@ static const OMX_TO_NEXUS_LEVEL_TYPE LevelMapTable[] =
     {OMX_VIDEO_AVCLevel51,               NEXUS_VideoCodecLevel_e51},
 };
 
-static NEXUS_VideoCodecProfile convertOMXProfileTypetoNexus(OMX_VIDEO_AVCPROFILETYPE profile)
+NEXUS_VideoCodecProfile OMXNexusVideoEncoder::convertOMXProfileTypetoNexus(OMX_VIDEO_AVCPROFILETYPE profile)
 {
     for (unsigned int i = 0; i < sizeof(ProfileMapTable)/sizeof(ProfileMapTable[0]); i++)
     {
@@ -177,7 +479,7 @@ static NEXUS_VideoCodecProfile convertOMXProfileTypetoNexus(OMX_VIDEO_AVCPROFILE
     return NEXUS_VideoCodecProfile_eBaseline;
 }
 
-static NEXUS_VideoCodecLevel convertOMXLevelTypetoNexus(OMX_VIDEO_AVCLEVELTYPE level)
+NEXUS_VideoCodecLevel OMXNexusVideoEncoder::convertOMXLevelTypetoNexus(OMX_VIDEO_AVCLEVELTYPE level)
 {
     for(unsigned int i = 0; i < sizeof(LevelMapTable)/sizeof(LevelMapTable[0]); i++)
     {
@@ -195,8 +497,11 @@ OMXNexusVideoEncoder::OMXNexusVideoEncoder(const char *callerName, int numInBuf)
     SurfaceAvailListLen(0),
     LastErr(ErrStsSuccess),
     EncoderStarted(false),
-    CaptureFrames(true),
-    pdumpES(NULL)
+    pdumpESsrc(NULL),
+    pdumpESdst(NULL),
+    mpGrallocFd(NULL),
+    mhSrcSurface(NULL),
+    mhGfx(NULL)
 {
     LOG_CREATE_DESTROY("%s: ENTER ===",__FUNCTION__);
     InitializeListHead(&EmptyFrList);
@@ -209,7 +514,6 @@ OMXNexusVideoEncoder::OMXNexusVideoEncoder(const char *callerName, int numInBuf)
     b_refsw_client_client_info                  client_info;
     b_refsw_client_connect_resource_settings    connectSettings;
     NxIPCClient = NexusIPCClientFactory::getClient(callerName);
-    NEXUS_SurfaceCreateSettings surfaceCfg;
 
     BKNI_Memset(&config, 0, sizeof(config));
     BKNI_Snprintf(config.name.string,sizeof(config.name.string),callerName);
@@ -336,7 +640,10 @@ OMXNexusVideoEncoder::OMXNexusVideoEncoder(const char *callerName, int numInBuf)
     }
 
     if (enable_es_dump)
-        pdumpES = new DumpData("videnc_es.dat");
+    {
+        pdumpESsrc = new DumpData("videnc_es_src.dat");
+        pdumpESdst = new DumpData("videnc_es_dst.dat");
+    }
 
     LastErr = ErrStsSuccess;
     LOG_CREATE_DESTROY("%s: OMXNexusVideoEncoder Created!!",__FUNCTION__);
@@ -376,6 +683,18 @@ OMXNexusVideoEncoder::~OMXNexusVideoEncoder()
         StcChannel = NULL;
     }
 
+    if (mhSrcSurface)
+    {
+        NEXUS_Surface_Destroy(mhSrcSurface);
+        mhSrcSurface = NULL;
+    }
+
+    if (mhGfx)
+    {
+        NEXUS_Graphics2D_Close(mhGfx);
+        mhGfx = NULL;
+    }
+
     if (NxClientCntxt)
     {
         LOG_CREATE_DESTROY("%s: Destroying Client Context",__FUNCTION__);
@@ -408,8 +727,15 @@ OMXNexusVideoEncoder::~OMXNexusVideoEncoder()
         free(pEncoFr);
     }
 
-    if (pdumpES)
-        delete(pdumpES);
+    if (pdumpESsrc)
+    {
+        delete(pdumpESsrc);
+    }
+
+    if (pdumpESdst)
+    {
+        delete(pdumpESdst);
+    }
 
     if (NumEntriesFreed != VIDEO_ENCODE_DEPTH)
     {
@@ -516,8 +842,57 @@ OMXNexusVideoEncoder::StartOutput(PVIDEO_ENCODER_START_PARAMS pStartParams)
     encoderSettings.video.height = pStartParams->height;
     //TODO: Remove hardcoding for refresh rate
     encoderSettings.video.refreshRate=60000;
+
     encoderSettings.videoEncoder.frameRate = pStartParams->frameRate;
-    LOG_INFO("%s: Frame Rate = %d",__FUNCTION__, pStartParams->frameRate);
+#if 0 /* TODO: VBR does not work. Only CBR with a bit rate of 2.5Mbps works. */
+    encoderSettings.videoEncoder.bitrateMax = pStartParams->bitRateParams.nTargetBitrate;
+    switch (pStartParams->bitRateParams.eControlRate)
+    {
+        case OMX_Video_ControlRateVariable:
+        {
+            encoderSettings.videoEncoder.bitrateTarget = pStartParams->bitRateParams.nTargetBitrate;
+            encoderSettings.videoEncoder.variableFrameRate = false;
+        }
+        break;
+
+        case OMX_Video_ControlRateConstant:
+        {
+            encoderSettings.videoEncoder.bitrateTarget = 0;
+            encoderSettings.videoEncoder.variableFrameRate = false;
+        }
+        break;
+
+        case OMX_Video_ControlRateVariableSkipFrames:
+        {
+            encoderSettings.videoEncoder.bitrateTarget = pStartParams->bitRateParams.nTargetBitrate;
+            encoderSettings.videoEncoder.variableFrameRate = true;
+        }
+        break;
+
+        case OMX_Video_ControlRateConstantSkipFrames:
+        {
+            encoderSettings.videoEncoder.bitrateTarget = 0;
+            encoderSettings.videoEncoder.variableFrameRate = true;
+        }
+        break;
+
+        case OMX_Video_ControlRateDisable:
+        default:
+        {
+            LOG_WARNING("%s: No rate control", __FUNCTION__);
+            encoderSettings.videoEncoder.bitrateTarget = 0;
+            encoderSettings.videoEncoder.variableFrameRate = false;
+        }
+        break;
+    }
+#endif
+    LOG_WARNING("%s: FrameRate=%d BitRateMax=%d BitRateTarget=%d bVarFrameRate=%d",
+                __FUNCTION__,
+                encoderSettings.videoEncoder.frameRate,
+                encoderSettings.videoEncoder.bitrateMax,
+                encoderSettings.videoEncoder.bitrateTarget,
+                encoderSettings.videoEncoder.variableFrameRate);
+
     NEXUS_SimpleEncoder_SetSettings(EncoderHandle, &encoderSettings);
     LOG_INFO("Encoder setup done");
 
@@ -534,7 +909,13 @@ OMXNexusVideoEncoder::StartOutput(PVIDEO_ENCODER_START_PARAMS pStartParams)
     EncoderStartSettings.output.video.settings.nonRealTime = true;
     EncoderStartSettings.output.video.settings.interlaced = false;
 
-    LOG_INFO("%s: Profile = %d, Level = %d, width = %d, height = %d",__FUNCTION__, EncoderStartSettings.output.video.settings.profile, EncoderStartSettings.output.video.settings.level, pStartParams->width, pStartParams->height);
+    LOG_WARNING("%s: Profile = %d, Level = %d, width = %d, height = %d",
+                __FUNCTION__,
+                EncoderStartSettings.output.video.settings.profile,
+                EncoderStartSettings.output.video.settings.level,
+                pStartParams->width,
+                pStartParams->height);
+
 //TODO: Revisit
 #if 0
     startSettings.output.video.settings.bounds.inputDimension.max.width  = width;
@@ -545,7 +926,6 @@ OMXNexusVideoEncoder::StartOutput(PVIDEO_ENCODER_START_PARAMS pStartParams)
     startSettings.output.video.settings.bounds.streamStructure.max.framesB = 0;
 #endif
 
-
     errCode = NEXUS_SimpleEncoder_Start(EncoderHandle, &EncoderStartSettings);
     if (NEXUS_SUCCESS != errCode)
     {
@@ -554,7 +934,9 @@ OMXNexusVideoEncoder::StartOutput(PVIDEO_ENCODER_START_PARAMS pStartParams)
 
         LastErr = ErrStsStartEncoFailed;
         return false;
-    }else{
+    }
+    else
+    {
         LOG_START_STOP_DBG("%s[%d]: SimpleEncoder Started Successfully [Err:%d]!!",
             __FUNCTION__, __LINE__, errCode);
     }
@@ -745,9 +1127,10 @@ OMXNexusVideoEncoder::FlushOutput()
 bool
 OMXNexusVideoEncoder::EncodeFrame(PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pNxInputContext)
 {
-    NEXUS_SurfaceMemory mem;
+    bool bRet = true;
     NEXUS_VideoImageInputSurfaceSettings surfSettings;
     Mutex::Autolock lock(mListLock);
+
     InsertHeadList(&InputContextList,&pNxInputContext->ListEntry);
 
     // Assign a nexus surface
@@ -760,10 +1143,6 @@ OMXNexusVideoEncoder::EncodeFrame(PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pNxInputCon
     // Maybe SurfaceBusyList is redundant? Enable if needed.
     //InsertHeadList(&SurfaceBusyList, &pNxSurface->ListEntry);
 
-    NEXUS_Surface_GetMemory(pNxInputContext->pNxSurface->handle, &mem);
-    BCMOMX_DBG_ASSERT(mem.buffer);
-    convertOMXPixelFormatToCrYCbY((uint8_t *)mem.buffer, (uint8_t *)pNxInputContext->bufPtr, pNxInputContext->width, pNxInputContext->height, pNxInputContext->colorFormat);
-    NEXUS_Surface_Flush(pNxInputContext->pNxSurface->handle);
 
     NEXUS_VideoImageInput_GetDefaultSurfaceSettings(&surfSettings);
     if (pNxInputContext->flags & OMX_BUFFERFLAG_EOS)
@@ -779,11 +1158,18 @@ OMXNexusVideoEncoder::EncodeFrame(PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pNxInputCon
             BCMOMX_DBG_ASSERT(pDoneEntry);
             InsertHeadList(&SurfaceAvailList, &pNxSurface->ListEntry);
             SurfaceAvailListLen++;
-            return false;
-            }
+            bRet = false;
         }
+    }
     else
     {
+        bRet = convertOMXPixelFormatToCrYCbY(pNxInputContext);
+        if (!bRet)
+        {
+            LOG_ERROR("%s: Error converting color format", __FUNCTION__);
+
+        }
+
         NEXUS_Error err;
         surfSettings.pts = pNxInputContext->uSecTS;
         LOG_ERROR("%s:PTS = %d",__FUNCTION__, pNxInputContext->uSecTS);
@@ -799,13 +1185,11 @@ OMXNexusVideoEncoder::EncodeFrame(PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT pNxInputCon
             BCMOMX_DBG_ASSERT(pDoneEntry);
             InsertHeadList(&SurfaceAvailList, &pNxSurface->ListEntry);
             SurfaceAvailListLen++;
-            return false;
+            bRet = false;
         }
     }
 
-    StartCaptureFrames();
-
-    return true;
+    return bRet;
 }
 
 bool
@@ -928,10 +1312,14 @@ OMXNexusVideoEncoder::GetEncodedFrame(PDELIVER_ENCODED_FRAME pDeliverFr)
         pDeliverFr->SzFilled = SizeToCopy;
         ReturnEncodedFrameSynchronized(pNxVidEncFr);
 
-        if ((enable_es_dump) && CaptureFrameEnabled())
+        if (enable_es_dump)
         {
-            ALOGD("%s:Dumping ES data. Buffer Address = %p, Buffer Size = %d",__FUNCTION__, pDeliverFr->pVideoDataBuff, pDeliverFr->SzVidDataBuff);
-            pdumpES->WriteData((void *) pDeliverFr->pVideoDataBuff,pDeliverFr->SzVidDataBuff);
+            LOG_DUMP_DBG("%s:Dumping ES data. Buffer Address = %p, Buffer Size = %d",
+                         __FUNCTION__,
+                         pDeliverFr->pVideoDataBuff,
+                         pDeliverFr->SzVidDataBuff);
+
+            pdumpESdst->WriteData((void *) pDeliverFr->pVideoDataBuff, pDeliverFr->SzVidDataBuff);
         }
 
         LastErr = ErrStsSuccess;
@@ -1125,13 +1513,6 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
     {
         LOG_ERROR("%s[%d]: Encoder Is Not Started",__FUNCTION__,__LINE__);
         LastErr= ErrStsEncoNotStarted;
-        return 0;
-    }
-
-    if (false == CaptureFrameEnabled())
-    {
-        LOG_ERROR("%s[%d]: Capture Frame Not Enabled",__FUNCTION__,__LINE__);
-        LastErr= ErrStsRetFramesNoFrProcessed;
         return 0;
     }
 
@@ -1471,22 +1852,3 @@ OMXNexusVideoEncoder::GetLastError()
 {
     return LastErr;
 }
-
-void
-OMXNexusVideoEncoder::StartCaptureFrames()
-{
-    CaptureFrames=true;
-}
-
-void
-OMXNexusVideoEncoder::StopCaptureFrames()
-{
-    CaptureFrames=false;
-}
-
-bool
-OMXNexusVideoEncoder::CaptureFrameEnabled()
-{
-    return CaptureFrames;
-}
-
