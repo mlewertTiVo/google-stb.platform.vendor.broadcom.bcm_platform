@@ -41,8 +41,8 @@ on boot
    ifup eth0
 
 on post-fs
-   # Prevent Nexus file from being created in /tmp by default
-   export nexus_ipc_dir /dev
+   # nexus ipc socket, use a device from the exception list.
+   export nxclient_ipc_node /dev/ump
 
    export SAGEBIN_PATH /system/bin
 
