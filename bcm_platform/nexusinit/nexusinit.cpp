@@ -205,6 +205,47 @@ void startNxServer(void)
     system(cmdRunNxServer);
 }
 
+#include <stdlib.h>
+static void
+b_parse_env(char *env)
+{
+    char *s;
+    const char *name;
+    const char *value;
+    /* traverse  string, and split it to name/value pairs */
+    for(s=env, name=env, value=NULL;;s++) {
+        switch(*s) {
+        case '\0':
+            goto done;
+        case '=':
+            *s = '\0';
+            value = s+1;
+            break;
+        case ' ':
+        case ':':
+        case ';':
+            *s = '\0';
+            if (value==NULL) {
+                value=s;
+            }
+            setenv(name, value, 1);
+            name = s+1;
+            value = NULL;
+            break;
+        default:
+            break;
+        }
+    }
+done:
+    if(*name) {
+        if (value==NULL) {
+            value=s;
+        }
+        setenv(name, value, 1);
+    }
+    return;
+}
+
 int main(void)
 {
     char value[PROPERTY_VALUE_MAX];
@@ -245,6 +286,8 @@ int main(void)
         strcat(value2, "config=");
         strcat(value2, value);
         LOGD("nexusinit: ro.nexus_config = %s", value);
+        /* Setup environment variables for nxserver to inherit as well */
+        b_parse_env(value);
     }
 
     property_get("ro.nexus.devname", value, NULL);
