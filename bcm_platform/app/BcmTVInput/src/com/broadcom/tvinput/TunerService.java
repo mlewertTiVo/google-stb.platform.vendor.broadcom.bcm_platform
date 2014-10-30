@@ -87,19 +87,20 @@ public class TunerService extends TvInputService {
     private ResolveInfo mResolveInfo;
     private static List<ChannelInfo> sSampleChannels = null;
 
+    // Some place holders for now
     private static final String CHANNEL_1_NUMBER = "1";
     private static final String CHANNEL_1_NAME = "Channel-1";
     private static final String PROGRAM_1_TITLE = "Sample-1";
     private static final String PROGRAM_1_DESC = "SampleVideo-1";
     private static final int    CHANNEL_1_TSID = 11;
-    private static final int    CHANNEL_1_SVCID = 100;
+    private static final int    CHANNEL_1_SVCID = 1111;
 
     private static final String CHANNEL_2_NUMBER = "2";
     private static final String CHANNEL_2_NAME = "Channel-2";
     private static final String PROGRAM_2_TITLE = "Sample-2";
     private static final String PROGRAM_2_DESC = "SampleVideo-2";
     private static final int    CHANNEL_2_TSID = 22;
-    private static final int    CHANNEL_2_SVCID = 200;
+    private static final int    CHANNEL_2_SVCID = 2222;
 
     @Override
     public void onCreate() {
@@ -119,6 +120,10 @@ public class TunerService extends TvInputService {
     public Session onCreateSession(String inputId) {
         if (DEBUG) 
 			Log.d(TAG, "TunerService::onCreateSession(), inputId = " +inputId);
+
+        Log.e(TAG, "Calling Broadcast_JNI.initialize!!");
+        TunerHAL.initialize(0);
+        TunerHAL.tune(0);
 
         // Lookup TvInputInfo from inputId
         TvInputInfo info = mInputMap.get(inputId);
@@ -161,10 +166,28 @@ public class TunerService extends TvInputService {
         // Create some sample channels
         createSampleChannels(info.getId());
 
-        if (DEBUG)
+        if (DEBUG) 
 			Log.d(TAG, "onHardwareAdded returns " + info);
 
         return info;
+    }
+
+    @Override
+    public String onHardwareRemoved(TvInputHardwareInfo hardwareInfo) {
+        if (DEBUG) 
+			Log.d(TAG, "TunerService::onHardwareRemoved()");
+
+        int deviceId = hardwareInfo.getDeviceId();
+        String inputId = mInputIdMap.get(deviceId);
+
+        mInputIdMap.remove(deviceId);
+        mDeviceIdMap.remove(inputId);
+        mInputMap.remove(inputId);
+
+        if (DEBUG) 
+			Log.d(TAG, "onHardwareRemoved returns " + deviceId);
+        
+        return inputId;
     }
 
     private void createSampleChannels(String inputId) 
@@ -173,11 +196,11 @@ public class TunerService extends TvInputService {
         Class clazz = TunerService.class;
 
         sSampleChannels = new ArrayList<ChannelInfo>();
-        sSampleChannels.add(new ChannelInfo(CHANNEL_1_NUMBER, CHANNEL_1_NAME, null, 0, CHANNEL_1_TSID, CHANNEL_1_SVCID, 1920, 1080, 1, false,
-                            new ProgramInfo(PROGRAM_1_TITLE, null, PROGRAM_1_DESC, 0, 100, null, null, 1)));
+        sSampleChannels.add(new ChannelInfo(CHANNEL_1_NUMBER, CHANNEL_1_NAME, null, 0, CHANNEL_1_TSID, CHANNEL_1_SVCID, 1920, 1080, 1001, false,
+                            new ProgramInfo(PROGRAM_1_TITLE, null, PROGRAM_1_DESC, 0, 100, null, null, 0)));
 
-        sSampleChannels.add(new ChannelInfo(CHANNEL_2_NUMBER, CHANNEL_2_NAME, null, 0, CHANNEL_2_TSID, CHANNEL_2_SVCID, 1920, 1080, 2, false,
-                            new ProgramInfo(PROGRAM_2_TITLE, null, PROGRAM_2_DESC, 0, 200, null, null, 2)));
+        sSampleChannels.add(new ChannelInfo(CHANNEL_2_NUMBER, CHANNEL_2_NAME, null, 0, CHANNEL_2_TSID, CHANNEL_2_SVCID, 1920, 1080, 2002, false,
+                            new ProgramInfo(PROGRAM_2_TITLE, null, PROGRAM_2_DESC, 0, 200, null, null, 0)));
 
         Uri uri = TvContract.buildChannelsUriForInput(inputId);
         String[] projection = { TvContract.Channels._ID };
@@ -217,7 +240,7 @@ public class TunerService extends TvInputService {
 
         channel_values.put(TvContract.Channels.COLUMN_INPUT_ID, inputId);
 
-        for (ChannelInfo channel : channels)
+        for (ChannelInfo channel : channels) 
         {
             // Initialize the Channels class
             channel_values.put(TvContract.Channels.COLUMN_DISPLAY_NUMBER, channel.mNumber);
@@ -228,38 +251,24 @@ public class TunerService extends TvInputService {
             channel_values.put(TvContract.Channels.COLUMN_BROWSABLE, 1);
             channel_values.put(TvContract.Channels.COLUMN_VIDEO_FORMAT, TvContract.Channels.VIDEO_FORMAT_1080P);
 
-            Uri uri = context.getContentResolver().insert(TvContract.Channels.CONTENT_URI, channel_values);
+            Uri channelUri = context.getContentResolver().insert(TvContract.Channels.CONTENT_URI, channel_values);
+			Log.d(TAG, "channelUri = " +channelUri);
 
-            long channelId = ContentUris.parseId(uri);
+            long channelId = ContentUris.parseId(channelUri);
+            Log.d(TAG, "channelId = " +channelId);
 
             // Initialize the Programs class
             prog_values.put(TvContract.Programs.COLUMN_CHANNEL_ID, channelId);
             prog_values.put(TvContract.Programs.COLUMN_TITLE, channel.mProgram.mTitle);
             prog_values.put(TvContract.Programs.COLUMN_SHORT_DESCRIPTION, channel.mProgram.mDescription);
-
+            
             Uri rowUri = context.getContentResolver().insert(TvContract.Programs.CONTENT_URI, prog_values);
+			Log.d(TAG, "rowUri = " +rowUri);
         }
     }
 
-    @Override
-    public String onHardwareRemoved(TvInputHardwareInfo hardwareInfo) {
-        if (DEBUG) 
-			Log.d(TAG, "TunerService::onHardwareRemoved()");
-
-        int deviceId = hardwareInfo.getDeviceId();
-        String inputId = mInputIdMap.get(deviceId);
-
-        mInputIdMap.remove(deviceId);
-        mDeviceIdMap.remove(inputId);
-        mInputMap.remove(inputId);
-
-        if (DEBUG) 
-			Log.d(TAG, "onHardwareRemoved returns " + deviceId);
-
-        return inputId;
-    }
-
-  public static final class ChannelInfo {
+    public static final class ChannelInfo 
+    {
         public final String mNumber;
         public final String mName;
         public final String mLogoUrl;
@@ -289,7 +298,8 @@ public class TunerService extends TvInputService {
         }
     }
 
-    public static final class ProgramInfo {
+    public static final class ProgramInfo 
+    {
         public final String mTitle;
         public final String mPosterArtUri;
         public final String mDescription;
@@ -312,14 +322,17 @@ public class TunerService extends TvInputService {
         }
     }
 
-    private class TunerTvInputSessionImpl extends Session {
+    private class TunerTvInputSessionImpl extends Session 
+    {
         protected final TvInputInfo mInfo;
         protected final int mDeviceId;
         protected Surface mSurface = null;
+        protected int mCurrentChannelId = -1;
         private TvInputManager.Hardware mHardware;
         private TvStreamConfig[] mStreamConfigs = EMPTY_STREAM_CONFIGS;
 
-        TunerTvInputSessionImpl(Context context, TvInputInfo info) {
+        TunerTvInputSessionImpl(Context context, TvInputInfo info) 
+        {
             super(context);
 
             mInfo = info;
@@ -329,21 +342,36 @@ public class TunerService extends TvInputService {
             acquireHardware();
         }
 
-        private void acquireHardware() {
-            if (mHardware != null) {
+        private void acquireHardware() 
+        {
+            if (mHardware != null) 
+            {
                 return;
             }
-            TvInputManager.HardwareCallback callback = new TvInputManager.HardwareCallback() {
+
+            TvInputManager.HardwareCallback callback = new TvInputManager.HardwareCallback() 
+            {
                 @Override
-                public void onReleased() {
+                public void onReleased() 
+                {
                     mHardware = null;
                 }
 
                 @Override
-                public void onStreamConfigChanged(TvStreamConfig[] configs) {
+                public void onStreamConfigChanged(TvStreamConfig[] configs) 
+                {
+                    for (TvStreamConfig x: configs)
+                    {
+                        Log.d(TAG, "onStreamConfigChanged,  stream_id = " +x.getStreamId());
+                        Log.d(TAG, "onStreamConfigChanged,  width = " +x.getMaxWidth());
+                        Log.d(TAG, "onStreamConfigChanged,  height = " +x.getMaxHeight());
+                        Log.d(TAG, "onStreamConfigChanged,  type = " +x.getType());
+                    }
+
                     mStreamConfigs = configs;
                 }
             };
+
             mHardware = mManager.acquireTvInputHardware(mDeviceId, callback, mInfo);
         }
 
@@ -358,30 +386,51 @@ public class TunerService extends TvInputService {
 
         // Passes surface object to the corresponding hardware for rendering of the content
         // to be visible.
-        protected boolean setSurface(Surface surface) {
+        protected boolean setSurface(Surface surface) 
+        {
 			Log.d(TAG, "setSurface (local),  Enter...");
+
+            // Inform that we don't have the video yet
+            notifyVideoUnavailable(TvInputManager.VIDEO_UNAVAILABLE_REASON_TUNING);
 
             if (surface == null) {
                 mStreamConfigs = EMPTY_STREAM_CONFIGS;
+                Log.d(TAG, "setSurface (local): surface is null");
             }
+
             if (mHardware == null) {
                 acquireHardware();
                 if (mHardware == null) {
+                    Log.d(TAG, "setSurface (local): mHardware is null");
                     return false;
                 }
             }
+
             TvStreamConfig config = null;
             if (surface != null) {
                 config = getStreamConfig();
                 if (config == null) {
+                    Log.d(TAG, "setSurface (local): config is null");
                     return false;
                 }
+
+                // Save the surface
+                mSurface = surface;
             }
+
+            // Inform that we've got video running
+            notifyVideoAvailable();
+
+            // Save the current id
+            mCurrentChannelId = config.getStreamId();
+
+            Log.d(TAG, "setSurface (local): Calling mHardware.setSurface, mStreamId = " +mCurrentChannelId);
             return mHardware.setSurface(surface, config);
         }
 
         @Override
-        public boolean onSetSurface(Surface surface) {
+        public boolean onSetSurface(Surface surface) 
+        {
             if (DEBUG) 
 				Log.d(TAG, "onSetSurface surface:" + surface);
 
@@ -389,26 +438,61 @@ public class TunerService extends TvInputService {
         }
 
         @Override
-        public void onRelease() {
-            if (DEBUG) Log.d(TAG, "onRelease()");
-            if (mHardware != null) {
+        public void onRelease() 
+        {
+            if (DEBUG) 
+                Log.d(TAG, "onRelease()");
+
+            if (mHardware != null) 
+            {
                 mManager.releaseTvInputHardware(mDeviceId, mHardware);
                 mHardware = null;
             }
         }
 
         @Override
-        public void onSetStreamVolume(float volume) {
+        public void onSetStreamVolume(float volume) 
+        {
+			Log.d(TAG, "onSetStreamVolume,  Enter...");
             // No-op
         }
 
         @Override
-        public boolean onTune(Uri channelUri) {
+        public boolean onTune(Uri channelUri) 
+        {
+            long id = ContentUris.parseId(channelUri);
+
+            // The incoming URI is typically like this:
+            // D/TunerService( 3910): onTune,  channelUri = content://android.media.tv/channel/1
+            // D/TunerService( 3910): onTune,  channelUri = content://android.media.tv/channel/2
+
+			Log.d(TAG, "onTune,  channelUri = "+channelUri);
+            Log.d(TAG, "id = " +id);
+
+            if (mCurrentChannelId == id)
+            {
+                Log.d(TAG, "onTune: We're already on this channel, not re-tuning...");
+                return false;
+            }
+
+            else
+            {
+                // Inform that we don't have the video yet
+                notifyVideoUnavailable(TvInputManager.VIDEO_UNAVAILABLE_REASON_TUNING);
+
+                // Call our DVB-kit to tune on this new channel
+
+                // Flag that we're now ready to tune
+                notifyVideoAvailable();
+            }
+                        
             return true;
         }
 
         @Override
-        public void onSetCaptionEnabled(boolean enabled) {
+        public void onSetCaptionEnabled(boolean enabled) 
+        {
+			Log.d(TAG, "onSetCaptionEnabled,  Enter...");
             // No-op
         }
     }

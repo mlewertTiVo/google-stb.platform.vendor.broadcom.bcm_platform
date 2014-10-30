@@ -18,6 +18,7 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := $(call all-java-files-under, src)
+LOCAL_JNI_SHARED_LIBRARIES := libjni_tuner
 
 LOCAL_PACKAGE_NAME := BcmTVInput
 
@@ -31,6 +32,8 @@ include $(BUILD_PACKAGE)
 
 ifeq ($(PRODUCT_IS_ATV),true)
   ifneq ($(PRODUCT_IS_ATV_SDK),true)
-    $(call dist-for-goals,dist_files,$(LOCAL_BUILT_MODULE):FakeHardwareTvInput.apk)
+    $(call dist-for-goals,dist_files,$(LOCAL_BUILT_MODULE):BcmTVInput.apk)
   endif
 endif
+
+include $(LOCAL_PATH)/jni/Android.mk
