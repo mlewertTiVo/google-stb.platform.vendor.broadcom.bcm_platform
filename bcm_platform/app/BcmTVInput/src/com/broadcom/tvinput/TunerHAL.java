@@ -16,4 +16,5 @@ public class TunerHAL
 
     static native int initialize(int freq);
     static native int tune(int channel);
+    static native int stop();
 }

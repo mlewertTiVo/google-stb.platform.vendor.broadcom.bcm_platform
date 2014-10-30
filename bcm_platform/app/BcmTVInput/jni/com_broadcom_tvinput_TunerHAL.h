@@ -23,6 +23,14 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune
   (JNIEnv *, jclass, jint);
 
+/*
+ * Class:     com_broadcom_tvinput_TunerHAL
+ * Method:    stop
+ * Signature: ()I
+ */
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop
+  (JNIEnv *, jclass);
+
 #ifdef __cplusplus
 }
 #endif

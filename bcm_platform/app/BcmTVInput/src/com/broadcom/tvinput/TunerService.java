@@ -121,9 +121,8 @@ public class TunerService extends TvInputService {
         if (DEBUG) 
 			Log.d(TAG, "TunerService::onCreateSession(), inputId = " +inputId);
 
-        Log.e(TAG, "Calling Broadcast_JNI.initialize!!");
-        TunerHAL.initialize(0);
-        TunerHAL.tune(0);
+        Log.e(TAG, "Calling TunerHAL.initialize!!");
+        TunerHAL.initialize(577);
 
         // Lookup TvInputInfo from inputId
         TvInputInfo info = mInputMap.get(inputId);
@@ -421,10 +420,7 @@ public class TunerService extends TvInputService {
             // Inform that we've got video running
             notifyVideoAvailable();
 
-            // Save the current id
-            mCurrentChannelId = config.getStreamId();
-
-            Log.d(TAG, "setSurface (local): Calling mHardware.setSurface, mStreamId = " +mCurrentChannelId);
+            Log.d(TAG, "setSurface (local): Calling mHardware.setSurface");
             return mHardware.setSurface(surface, config);
         }
 
@@ -460,14 +456,13 @@ public class TunerService extends TvInputService {
         @Override
         public boolean onTune(Uri channelUri) 
         {
-            long id = ContentUris.parseId(channelUri);
+            int id = (int) ContentUris.parseId(channelUri);
 
             // The incoming URI is typically like this:
             // D/TunerService( 3910): onTune,  channelUri = content://android.media.tv/channel/1
             // D/TunerService( 3910): onTune,  channelUri = content://android.media.tv/channel/2
 
-			Log.d(TAG, "onTune,  channelUri = "+channelUri);
-            Log.d(TAG, "id = " +id);
+			Log.d(TAG, "onTune,  channelUri = "+channelUri + ", id = " +id);
 
             if (mCurrentChannelId == id)
             {
@@ -477,13 +472,21 @@ public class TunerService extends TvInputService {
 
             else
             {
+                // Stop the current playback
+                TunerHAL.stop();
+
                 // Inform that we don't have the video yet
                 notifyVideoUnavailable(TvInputManager.VIDEO_UNAVAILABLE_REASON_TUNING);
 
-                // Call our DVB-kit to tune on this new channel
+                // Call our TunerHAL to tune on this new channel
+                Log.e(TAG, "Calling TunerHAL.tune!!");
+                TunerHAL.tune(id);
 
                 // Flag that we're now ready to tune
                 notifyVideoAvailable();
+
+                // Update the current id
+                mCurrentChannelId = id;
             }
                         
             return true;
