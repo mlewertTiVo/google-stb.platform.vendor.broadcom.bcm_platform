@@ -2,7 +2,7 @@
 
 if [ $# -lt 6 ]
 then
-  echo "Usage: sudo ./unpack_android.sh <image_dir> <rootfs_dir> <system_dir> <data_dir> <cache_dir> <kernel_dir> [sd<b-z>]"
+  echo "Usage: sudo ./unpack_android_multipart.sh <image_dir> <rootfs_dir> <system_dir> <data_dir> <cache_dir> <kernel_dir> [sd<b-z>]"
   echo "       image_dir  : directory containing boot.img, system.img and userdata.img."
   echo "                    Ex. out/target/product/bcm_platform"
   echo "       rootfs_dir : EMPTY output directory for root partition. Ex. /media/rootfs"

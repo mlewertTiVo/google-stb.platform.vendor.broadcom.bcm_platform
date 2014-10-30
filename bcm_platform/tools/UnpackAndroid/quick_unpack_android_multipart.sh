@@ -2,7 +2,7 @@
 
 if [ $# -lt 1 ]
 then
-  echo "Usage: sudo ./quick_unpack.sh <workspace_dir> [sd<b-z>]"
+  echo "Usage: sudo ./quick_unpack_android_multipart.sh <workspace_dir> [sd<b-z>]"
   echo "       workspace_dir : Top level of Android compilation workspace (ie, parent directory"
   echo "                       of kernel and out)"
   echo "       sd<b-z>       : Any letter from b to z, corresponding to your usb drive."
