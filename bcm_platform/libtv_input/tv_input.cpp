@@ -60,17 +60,6 @@ public:
     {
     }
 
-    void api_over_binder(api_data *cmd)
-    {
-        Parcel data, reply;
-        data.writeInterfaceToken(android::String16(TUNER_INTERFACE_NAME));
-        data.write(cmd, sizeof(api_data));
-        ALOGE("api_over_binder: cmd->api = 0x%x", cmd->api);
-
-        remote()->transact(API_OVER_BINDER, data, &reply);
-        reply.read(&cmd->param, sizeof(cmd->param));
-    }
-
     IBinder* get_remote()
     {
         return remote();
@@ -203,11 +192,10 @@ static int tv_input_open_stream(struct tv_input_device *dev, int dev_id, tv_stre
     ALOGE("%s: TV-HAL acquired TunerService...", __FUNCTION__);
     priv->mNTC = interface_cast<INexusTunerClient>(binder);
 
-    api_data cmd;
-//    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_get_client_context;
-    priv->mNTC->api_over_binder(&cmd);
-    priv->nexus_client = cmd.param.clientContext.out.nexus_client;
+    Parcel data, reply;
+    data.writeInterfaceToken(android::String16(TUNER_INTERFACE_NAME));
+    priv->mNTC->get_remote()->transact(GET_TUNER_CONTEXT, data, &reply);
+    priv->nexus_client = (NexusClientContext *)reply.readInt32();
     ALOGE("%s: nexus_client = %p", __FUNCTION__, priv->nexus_client);
 
     // Create a native handle
@@ -215,7 +203,7 @@ static int tv_input_open_stream(struct tv_input_device *dev, int dev_id, tv_stre
 
     // Setup the native handle data
     pTVStream->sideband_stream_source_handle->data[0] = 1;
-//    pTVStream->sideband_stream_source_handle->data[1] = (int)(priv->nexus_client);
+    pTVStream->sideband_stream_source_handle->data[1] = (int)(priv->nexus_client);
     pTVStream->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
 
     return 0;

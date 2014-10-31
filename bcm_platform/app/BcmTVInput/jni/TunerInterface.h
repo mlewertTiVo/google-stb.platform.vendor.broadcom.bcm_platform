@@ -1,34 +1,7 @@
 #ifndef _TUNER_INTERFACE_H_
 #define _TUNER_INTERFACE_H_
 
-// api's supported over ipc (binder)
-enum api_name{
-    api_get_client_context = 0,
-};
-
-typedef union api_param
-{
-    struct
-    {
-        struct 
-        {
-            int val;
-        } in;
-    
-        struct 
-        {
-            NexusClientContext *nexus_client;
-        } out;
-    } clientContext;
-} api_param;
-
-// api data that is actually transferred over ipc (binder)
-typedef struct api_data {
-    api_name api;
-    api_param param;
-} api_data;
-
-#define API_OVER_BINDER         0x100
+#define GET_TUNER_CONTEXT       0x1112
 #define TUNER_INTERFACE_NAME    "com.broadcom.tunerhal.TunerInterface"
 
 #define android_DECLARE_META_INTERFACE(INTERFACE)                               \
@@ -59,7 +32,6 @@ class INexusTunerClient: public android::IInterface {
 public:
     android_DECLARE_META_INTERFACE(NexusTunerClient)
 
-    virtual void api_over_binder(api_data *cmd) = 0;
     virtual android::IBinder* get_remote() = 0;
 };
 #endif

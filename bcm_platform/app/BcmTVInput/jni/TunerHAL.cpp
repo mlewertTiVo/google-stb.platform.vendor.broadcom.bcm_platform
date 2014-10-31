@@ -100,38 +100,10 @@ status_t NexusTunerService::onTransact(uint32_t code, const Parcel &data, Parcel
     ALOGE("NexusTunerService::onTransact, code = 0x%x", code);
     switch (code)
     {
-        case API_OVER_BINDER:
+        case GET_TUNER_CONTEXT:
         {
-            int rc = -1;
-            api_data cmd;
-            data.read(&cmd, sizeof(api_data));
-            ALOGE("NexusTunerService::onTransact, cmd.api = 0x%x", cmd.api);
-
-            switch (cmd.api)
-            {
-                case api_get_client_context:
-                    ALOGE("NexusTunerService::onTransact, case api_get_client_context");
-                    cmd.param.clientContext.out.nexus_client = g_pTD->nexus_client;
-                    rc = 0;
-                break;
-
-                default:
-                    ALOGE("NexusTunerService::onTransact, invalid api!!");
-                break;
-            }
-
-            if (!rc)
-            {
-                ALOGE("NexusTunerService::onTransact, Writing the output for api-code = 0x%x", code);
-                reply->write(&cmd.param, sizeof(cmd.param));
-                return NO_ERROR;
-            }
-
-            else
-            {
-                ALOGE("NexusTunerService::onTransact, FAILED_TRANSACTION for api-code = 0x%x", code);
-                return FAILED_TRANSACTION;
-            }
+            ALOGE("NexusTunerService::onTransact, sending back nexus_client");
+            reply->writeInt32((int32_t)g_pTD->nexus_client);
         }
         break;
 
