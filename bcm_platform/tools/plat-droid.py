@@ -16,7 +16,7 @@
 # should be always the case.
 #
 import re, sys, os
-from subprocess import call,check_output
+from subprocess import call,check_output,STDOUT
 from stat import *
 
 # debug this script.
@@ -128,7 +128,7 @@ if verbose:
 	print run_plat
 refsw_configuration='export PLATFORM=%s' % chip
 refsw_configuration_selected=''
-lines = check_output(run_plat,shell=True).splitlines()
+lines = check_output(run_plat,stderr=STDOUT,shell=True).splitlines()
 for line in lines:
 	line = line.rstrip()
 	if parse_and_select(line):
