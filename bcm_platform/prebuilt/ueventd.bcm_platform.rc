@@ -1,5 +1,5 @@
 # access for camera.
-/dev/video0               0660   root       root
+/dev/video0               0660   system     camera
 
 # huh??
 /dev/mem                  0770   root       root
