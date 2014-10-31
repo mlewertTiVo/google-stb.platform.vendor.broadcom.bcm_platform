@@ -13,15 +13,34 @@
 #include "bstd.h"
 #include "bkni.h"
 #include "bkni_multi.h"
+
+#include <binder/IInterface.h>
+#include <binder/Parcel.h>
+#include <binder/IServiceManager.h>
+#include <binder/IPCThreadState.h>
+#include <binder/ProcessState.h>
+
+#include <utils/KeyedVector.h>
+#include <utils/RefBase.h>
+#include <utils/String16.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+
+using namespace android;
 
 static int Broadcast_Initialize();
 static int Broadcast_Tune(int);
 static int Broadcast_Stop();
 
-typedef struct _tuner_data 
+// Just wrap the nexus context
+typedef union _tuner_context
+{
+    NexusClientContext *nexus_client;
+}Tuner_Context;
+
+typedef struct _tuner_data
 {
     int freq;
     NexusIPCClientBase *ipcclient;
@@ -32,6 +51,25 @@ typedef struct _tuner_data
     NEXUS_SimpleVideoDecoderHandle videoDecoder;
     NEXUS_PidChannelHandle pidChannel;
 }Tuner_Data, *PTuner_Data;
+
+class INexusTunerService: public IInterface 
+{
+public:
+    android_DECLARE_META_INTERFACE(NexusTunerService);
+};
+
+class BnNexusTunerService : public BnInterface<INexusTunerService>
+{
+};
+
+class NexusTunerService : public BnNexusTunerService
+{
+public:
+    NexusTunerService();
+    virtual ~NexusTunerService();
+    static void instantiate();
+    status_t onTransact(uint32_t code, const Parcel &data, Parcel *reply, uint32_t flags);
+};
 
 // Some tuner values
 #define VIDEO_PID_1     0x100

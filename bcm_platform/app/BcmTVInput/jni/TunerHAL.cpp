@@ -44,8 +44,7 @@
 // use them as is & do not modify this header file
 #include "com_broadcom_tvinput_TunerHAL.h"
 #include "TunerHAL.h"
-
-using namespace android;
+#include "TunerInterface.h"
 
 // Enable this for debug prints
 #define DEBUG_JNI
@@ -68,6 +67,82 @@ static JNINativeMethod gMethods[] =
 	{"tune",        "(I)I",     (void *)Java_com_broadcom_tvinput_TunerHAL_tune},
     {"stop",        "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stop},    
 };
+
+const String16 INexusTunerService::descriptor(TUNER_INTERFACE_NAME);
+
+String16 INexusTunerService::getInterfaceDescriptor() 
+{
+    return INexusTunerService::descriptor;
+}
+
+NexusTunerService::NexusTunerService()
+{
+    ALOGE("NexusTunerService created");
+}
+
+void NexusTunerService::instantiate() 
+{
+    NexusTunerService *pNTS = new NexusTunerService();
+
+    ALOGE("NexusTunerService::instantiate, creating the service");
+    defaultServiceManager()->addService(NexusTunerService::descriptor, pNTS);
+}
+
+NexusTunerService::~NexusTunerService()
+{
+    ALOGE("NexusTunerService destroyed");
+}
+
+status_t NexusTunerService::onTransact(uint32_t code, const Parcel &data, Parcel *reply, uint32_t flags)
+{
+//    CHECK_INTERFACE(INexusTunerService, data, reply);
+
+    ALOGE("NexusTunerService::onTransact, code = 0x%x", code);
+    switch (code)
+    {
+        case API_OVER_BINDER:
+        {
+            int rc = -1;
+            api_data cmd;
+            data.read(&cmd, sizeof(api_data));
+            ALOGE("NexusTunerService::onTransact, cmd.api = 0x%x", cmd.api);
+
+            switch (cmd.api)
+            {
+                case api_get_client_context:
+                    ALOGE("NexusTunerService::onTransact, case api_get_client_context");
+                    cmd.param.clientContext.out.nexus_client = g_pTD->nexus_client;
+                    rc = 0;
+                break;
+
+                default:
+                    ALOGE("NexusTunerService::onTransact, invalid api!!");
+                break;
+            }
+
+            if (!rc)
+            {
+                ALOGE("NexusTunerService::onTransact, Writing the output for api-code = 0x%x", code);
+                reply->write(&cmd.param, sizeof(cmd.param));
+                return NO_ERROR;
+            }
+
+            else
+            {
+                ALOGE("NexusTunerService::onTransact, FAILED_TRANSACTION for api-code = 0x%x", code);
+                return FAILED_TRANSACTION;
+            }
+        }
+        break;
+
+        default:
+            ALOGE("NexusTunerService::onTransact, Error!! No such transaction(%d)", code);
+            return BBinder::onTransact(code, data, reply, flags);
+        break;
+    }
+
+    return NO_ERROR;
+}
 
 static int registerNativeMethods(JNIEnv* env, const char* className, JNINativeMethod* pMethods, int numMethods)
 {
@@ -121,8 +196,10 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
     // Allocate memory for the global pointer
     g_pTD = (PTuner_Data) malloc(sizeof(Tuner_Data));
 
-	// Initiate a channel scan
-	TV_LOG("%s: Initiating a channel scan!!", __FUNCTION__);
+	// Launch the binder service
+    NexusTunerService::instantiate();
+    ALOGE("%s: NexusTunerService is now ready", __FUNCTION__);
+//    IPCThreadState::self()->joinThreadPool();
 
     return result;
 }
@@ -136,7 +213,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env
     g_pTD->freq = freq;
     rc = Broadcast_Initialize();
 
-    return 0;
+    return rc;
 }
 
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jclass thiz, jint channel_id)
@@ -178,8 +255,11 @@ static int Broadcast_Initialize()
     config.resources.videoDecoder = true;
 
     g_pTD->nexus_client = g_pTD->ipcclient->createClientContext(&config);
+
     if (g_pTD->nexus_client == NULL)
         ALOGE("%s: createClientContext failed", __FUNCTION__);
+
+    ALOGE("%s: nexus_client = %p", __FUNCTION__, g_pTD->nexus_client);
 
     g_pTD->videoDecoder = g_pTD->ipcclient->acquireVideoDecoderHandle();
 

@@ -24,13 +24,14 @@ LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusipc
 LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusservice
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/app/BcmTVInput/jni
 
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_CFLAGS += $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
 LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 
 LOCAL_SHARED_LIBRARIES := libcutils liblog libutils $(NEXUS_LIB)
-LOCAL_SHARED_LIBRARIES += libnxclient libnexusipcclient
+LOCAL_SHARED_LIBRARIES += libnxclient libnexusipcclient libbinder
 
 LOCAL_SRC_FILES := tv_input.cpp
 LOCAL_MODULE := tv_input.bcm_platform

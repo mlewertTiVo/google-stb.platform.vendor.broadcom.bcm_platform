@@ -38,6 +38,46 @@
 #include <stdio.h>
 #include <string.h>
 
+// Binder related headers
+#include <binder/IInterface.h>
+#include <binder/Parcel.h>
+#include <binder/IServiceManager.h>
+#include <binder/IPCThreadState.h>
+#include <binder/ProcessState.h>
+#include <utils/KeyedVector.h>
+#include <utils/RefBase.h>
+#include <utils/String16.h>
+#include <TunerInterface.h>
+
+using namespace android;
+
+// Binder class for interaction with Tuner-HAL
+class BpNexusTunerClient: public BpInterface<INexusTunerClient>
+{
+public:
+    BpNexusTunerClient(const sp<IBinder>& impl)
+        : BpInterface<INexusTunerClient>(impl)
+    {
+    }
+
+    void api_over_binder(api_data *cmd)
+    {
+        Parcel data, reply;
+        data.writeInterfaceToken(android::String16(TUNER_INTERFACE_NAME));
+        data.write(cmd, sizeof(api_data));
+        ALOGE("api_over_binder: cmd->api = 0x%x", cmd->api);
+
+        remote()->transact(API_OVER_BINDER, data, &reply);
+        reply.read(&cmd->param, sizeof(cmd->param));
+    }
+
+    IBinder* get_remote()
+    {
+        return remote();
+    }
+};
+android_IMPLEMENT_META_INTERFACE(NexusTunerClient, TUNER_INTERFACE_NAME)
+
 /*****************************************************************************/
 typedef struct tv_input_private {
     tv_input_device_t device;
@@ -49,6 +89,7 @@ typedef struct tv_input_private {
     int iNumConfigs;
     tv_stream_config_t *s_config;
 
+    sp<INexusTunerClient> mNTC;
     NexusClientContext *nexus_client;
 } tv_input_private_t;
 
@@ -147,7 +188,27 @@ static int tv_input_open_stream(struct tv_input_device *dev, int dev_id, tv_stre
 {
     tv_input_private_t* priv = (tv_input_private_t*)dev;
 
-//    ALOGE("%s: nexus_client = %p", __FUNCTION__, priv->nexus_client);
+    sp<IServiceManager> sm = defaultServiceManager();
+    sp<IBinder> binder;
+    do {
+        binder = sm->getService(String16(TUNER_INTERFACE_NAME));
+        if (binder != 0) {
+            break;
+        }
+
+        ALOGE("%s: TV-HAL is waiting for TunerService...", __FUNCTION__);
+        usleep(500000);
+    } while(true);
+
+    ALOGE("%s: TV-HAL acquired TunerService...", __FUNCTION__);
+    priv->mNTC = interface_cast<INexusTunerClient>(binder);
+
+    api_data cmd;
+//    BKNI_Memset(&cmd, 0, sizeof(cmd));
+    cmd.api = api_get_client_context;
+    priv->mNTC->api_over_binder(&cmd);
+    priv->nexus_client = cmd.param.clientContext.out.nexus_client;
+    ALOGE("%s: nexus_client = %p", __FUNCTION__, priv->nexus_client);
 
     // Create a native handle
     pTVStream->sideband_stream_source_handle = native_handle_create(NUM_FD, NUM_INT);
