@@ -23,6 +23,9 @@ on init
    export NEXUS_DEVICE_NODE /dev/mali
    export NEXUS_WAKE_DEVICE_NODE /dev/mali0
 
+   # Do not let SYSTEMPORT get an IPv6 address (when using gphy)
+   write /proc/sys/net/ipv6/conf/eth0/disable_ipv6 1
+
 on fs
    mount_all /fstab.bcm_platform
    setprop ro.crypto.fuse_sdcard true
