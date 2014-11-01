@@ -15,8 +15,6 @@ NEXUS_LIB=libnexus_client
 endif
 endif
 
-$(warning NX-BUILD: CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
-
 #
 # libOMX.BCM.AUDIO.DECODER
 #

@@ -2,6 +2,7 @@
 ifeq ($(PRODUCT_MANUFACTURER),BROADCOM)
 
 include vendor/broadcom/bcm_platform/brcm_audio/Android.mk
+include vendor/broadcom/bcm_platform/brcm_dhd/Android.mk
 include vendor/broadcom/bcm_platform/brcm_memtrack/Android.mk
 include vendor/broadcom/bcm_platform/brcm_nexus/Android.mk
 include vendor/broadcom/bcm_platform/cmds/cec/Android.mk
@@ -32,11 +33,6 @@ include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
 ifeq ($(ANDROID_SUPPORTS_PM),y)
 include vendor/broadcom/bcm_platform/pmlibservice/Android.mk
 include vendor/broadcom/bcm_platform/libpower/Android.mk
-endif
-
-// why do we need a ifeq?  todo: remove.
-ifeq ($(ANDROID_ENABLE_DHD),y)
-include vendor/broadcom/bcm_platform/brcm_dhd/Android.mk
 endif
 
 // why do we need a ifeq?  todo: remove.

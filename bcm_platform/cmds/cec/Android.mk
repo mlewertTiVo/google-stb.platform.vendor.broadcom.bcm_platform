@@ -6,8 +6,6 @@ LOCAL_PATH := $(call my-dir)
 #
 include $(CLEAR_VARS)
 
-$(warning NX-BUILD: CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
-
 LOCAL_SRC_FILES := \
     send_cec.cpp
 
@@ -46,8 +44,6 @@ ifeq ($(ANDROID_KK_OR_OLDER),y)
 # Executable get_cec
 #
 include $(CLEAR_VARS)
-
-$(warning NX-BUILD: CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
 
 LOCAL_SRC_FILES := \
     get_cec.cpp

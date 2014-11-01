@@ -17,7 +17,6 @@ endif
 endif
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
-$(warning NX-BUILD: CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
 
 include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false

@@ -28,8 +28,6 @@ endif
 GLOB_PATH  := $(BSEAV_TOP)/lib/glob
 POWER_PATH := $(BSEAV_TOP)/lib/power_standby
 
-$(warning NX-BUILD: CFLAGS ${NEXUS_CFLAGS}, CLI-CFLAGS: ${NXCLIENT_CFLAGS}, CLI-INC: ${NXCLIENT_INCLUDES})
-
 # Linux 3.3 supports the /sys/devices/platform/brcmstb sysfs layout.
 PMLIB_SUPPORTS_BRCMSTB_SYSFS := $(shell test "${LINUXVER}" \< "3.8.0" && echo "y")
 
