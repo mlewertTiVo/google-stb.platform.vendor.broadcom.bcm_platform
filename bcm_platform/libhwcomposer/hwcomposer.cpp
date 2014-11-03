@@ -105,7 +105,6 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
     PSHARED_DATA pSharedData;
     android::List<hwc_layer_1_t *> hwcList;
     android::List<hwc_layer_1_t *>::iterator it;
-    bool bSideBand = false;
 
     if (displays && (displays[0]->flags & HWC_GEOMETRY_CHANGED)) {
 
@@ -130,28 +129,10 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
             {
                 ALOGE("%s: Found a HWC_SIDEBAND layer!!", __FUNCTION__);
 
-                // Set the flag & retrieve the Nexus context
-                bSideBand = true;
-
                 // Add this layer to the list
                 hwcList.push_back(layer);
 
                 continue;
-            }
-
-            // As of now, for TIF, the TV app puts up a black surface completely opaque. Without,
-            // discarding this, video can't be seen (even after setting up with the video window)
-            else if (bSideBand)
-            {
-                ALOGE("%s: Forcing other layers to HWC_OVERLAY (since we have a HWC_SIDEBAND layer in the list)", __FUNCTION__);
-
-                // Ask for another hole
-                layer->compositionType = HWC_OVERLAY;
-                layer->hints = HWC_HINT_CLEAR_FB;
-
-                // Reset the flag since we need to this only for the
-                // immediate layer following the sideband layer
-                bSideBand = false;
             }
             else
                 layer->compositionType = HWC_FRAMEBUFFER;
