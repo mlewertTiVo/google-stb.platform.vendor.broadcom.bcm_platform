@@ -1,6 +1,6 @@
 /******************************************************************************
  *    (c)2010-2013 Broadcom Corporation
- * 
+ *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
@@ -9,33 +9,33 @@
  * Software, and Broadcom expressly reserves all rights in and to the Software and all
  * intellectual property rights therein.  IF YOU HAVE NO AUTHORIZED LICENSE, THEN YOU
  * HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY WAY, AND SHOULD IMMEDIATELY
- * NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.  
- *  
+ * NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.
+ *
  * Except as expressly set forth in the Authorized License,
- *  
+ *
  * 1.     This program, including its structure, sequence and organization, constitutes the valuable trade
  * secrets of Broadcom, and you shall use all reasonable efforts to protect the confidentiality thereof,
  * and to use this information only in connection with your use of Broadcom integrated circuit products.
- *  
- * 2.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS" 
- * AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR 
- * WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT TO 
- * THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED WARRANTIES 
- * OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A PARTICULAR PURPOSE, 
- * LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET ENJOYMENT, QUIET POSSESSION 
- * OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME THE ENTIRE RISK ARISING OUT OF 
+ *
+ * 2.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS"
+ * AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR
+ * WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT TO
+ * THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED WARRANTIES
+ * OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A PARTICULAR PURPOSE,
+ * LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET ENJOYMENT, QUIET POSSESSION
+ * OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME THE ENTIRE RISK ARISING OUT OF
  * USE OR PERFORMANCE OF THE SOFTWARE.
- * 
- * 3.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS 
- * LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT, OR 
- * EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO YOUR 
- * USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN ADVISED OF 
- * THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS OF THE AMOUNT 
- * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE 
- * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
+ *
+ * 3.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS
+ * LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT, OR
+ * EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO YOUR
+ * USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN ADVISED OF
+ * THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS OF THE AMOUNT
+ * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE
+ * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY. */
 
- 
+
 #include <dlfcn.h>      /* For dynamic loading */
 #include <stdio.h>
 #include <string.h>
@@ -65,7 +65,7 @@ static void *pModules[MAXCOMP] = { 0 };
 static void *pComponents[COUNTOF(pModules)] = { 0 };
 
 ComponentTable componentTable[] = {
- {"OMX.BCM.aac.decoder", 1, {"1"} }, // roles to be populated 
+ {"OMX.BCM.aac.decoder", 1, {"1"} }, // roles to be populated
  {"OMX.BCM.mpeg2.decoder", 1, {"1"} },
  {"OMX.BCM.h264.decoder", 1, {"1"} },
  {"OMX.BCM.h265.decoder", 1, {"1"} },
@@ -80,16 +80,16 @@ ComponentTable componentTable[] = {
  {"OMX.BCM.vc1.decoder", 1, {"1"} },
  {"OMX.BCM.spark.decoder", 1, {"1"} },
  //{"OMX.BCM.rv.decoder", 1, {"1"} },
- {"OMX.BCM.divx.decoder", 1, {"1"} }, 
+ {"OMX.BCM.divx.decoder", 1, {"1"} },
 // {"OMX.BCM.mjpeg.decoder", 1, {"1"} },
 #endif
 #ifdef BCM_OMX_SUPPORT_ENCODER
  {"OMX.BCM.h264.encoder", 1, {"1"} },
 #endif
 #ifdef BCM_OMX_SUPPORT_AC3_CODEC
- {"OMX.BCM.ac3.decoder", 1, {"1"} }, // roles to be populated 
+ {"OMX.BCM.ac3.decoder", 1, {"1"} }, // roles to be populated
  #endif
-}; 
+};
 
 OMX_U32 tableCount = sizeof(componentTable)/sizeof(componentTable[0]);
 
@@ -146,7 +146,7 @@ OMX_ERRORTYPE OMX_GetHandle(OMX_HANDLETYPE * pHandle,
     OMX_CALLBACKTYPE * pCallBacks)
 {
     ALOGD("[%s][%s][%d]: Enter: component name = %s",
-      __FILE__, 
+      __FILE__,
       __FUNCTION__,
       __LINE__,
 	  cComponentName);
@@ -167,7 +167,7 @@ OMX_ERRORTYPE OMX_GetHandle(OMX_HANDLETYPE * pHandle,
 
     /* Locate the first empty slot for a component.  If no slots
         are available, error out */
-        
+
     for (i = 0; i < COUNTOF(pModules); i++)
     {
         if (pModules[i] == NULL)
@@ -180,11 +180,11 @@ OMX_ERRORTYPE OMX_GetHandle(OMX_HANDLETYPE * pHandle,
         eError = OMX_ErrorComponentNotFound;
     return eError;
   }
-   
+
     strcpy(buf, prefix);    /* the lengths are defined herein or have been */
     strcat(buf, cComponentName);    /* checked already, so strcpy and strcat are  */
     strcat(buf, postfix);   /* are safe to use in this context. */
-    
+
     pModules[i] = dlopen(buf,  RTLD_LAZY | RTLD_GLOBAL);
     if (pModules[i] == NULL)
     {
@@ -201,7 +201,7 @@ OMX_ERRORTYPE OMX_GetHandle(OMX_HANDLETYPE * pHandle,
     {
         LOGE ("pComponentInit == NULL\n");
         goto EXIT;
-    }   
+    }
 
     /* We now can access the dll.  So, we need to call the "OMX_ComponentInit"
      * method to load up the "handle" (which is just a list of functions to
@@ -215,9 +215,9 @@ OMX_ERRORTYPE OMX_GetHandle(OMX_HANDLETYPE * pHandle,
     componentType->nVersion.s.nVersionMinor = 1;
     componentType->nVersion.s.nRevision = 0;
     componentType->nVersion.s.nStep = 0;
-    
+
     eError = (*pComponentInit) (*pHandle);
-    
+
     if (OMX_ErrorNone == eError)
     {
         eError =  (componentType->SetCallbacks) (*pHandle, pCallBacks, pAppData);
@@ -259,15 +259,15 @@ OMX_ERRORTYPE OMX_GetHandle(OMX_HANDLETYPE * pHandle,
 OMX_ERRORTYPE OMX_FreeHandle(OMX_HANDLETYPE hComponent)
 {
     ALOGD("[%s][%s][%d]: Enter",
-          __FILE__, 
+          __FILE__,
           __FUNCTION__,
           __LINE__);
-    
+
     OMX_ERRORTYPE eError = OMX_ErrorUndefined;
     OMX_COMPONENTTYPE *pHandle = (OMX_COMPONENTTYPE *) hComponent;
     unsigned int i;
 
-    
+
     /* Locate the component handle in the array of handles */
     for (i = 0; i < COUNTOF(pModules); i++)
     {
@@ -287,7 +287,7 @@ OMX_ERRORTYPE OMX_FreeHandle(OMX_HANDLETYPE hComponent)
     {
         LOGE("Error From ComponentDeInit..");
     }
-    
+
     /* release the component and the component handle */
     dlclose(pModules[i]);
     pModules[i] = NULL;
@@ -314,7 +314,7 @@ OMX_ERRORTYPE OMX_FreeHandle(OMX_HANDLETYPE hComponent)
 OMX_ERRORTYPE OMX_Deinit()
 {
     ALOGD("[%s][%s][%d]: Enter-Returning OMX_ErrorNone",
-          __FILE__, 
+          __FILE__,
           __FUNCTION__,
           __LINE__);
 
@@ -346,7 +346,7 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_SetupTunnel(
     OMX_IN OMX_U32 nPortInput UNUSED)
 {
     ALOGD("[%s][%s][%d]: Enter-Returning OMX_ErrorNone",
-          __FILE__, 
+          __FILE__,
           __FUNCTION__,
           __LINE__);
 
@@ -373,7 +373,7 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_ComponentNameEnum(OMX_OUT OMX_STRING
     cComponentName, OMX_IN OMX_U32 nNameLength, OMX_IN OMX_U32 nIndex)
 {
     ALOGD("[%s][%s][%d]: nIndex:%d nNameLength:%d \n",
-          __FILE__, 
+          __FILE__,
           __FUNCTION__,
           __LINE__,
           nIndex,
@@ -421,7 +421,7 @@ OMX_API OMX_ERRORTYPE OMX_GetRolesOfComponent(
     OMX_OUT OMX_U8 ** roles UNUSED)
 {
     ALOGD("[%s][%s][%d]: Enter- Returning None",
-          __FILE__, 
+          __FILE__,
           __FUNCTION__,
           __LINE__);
 
@@ -450,7 +450,7 @@ OMX_API OMX_ERRORTYPE OMX_GetComponentsOfRole(
     OMX_INOUT OMX_U8 ** compNames UNUSED)
 {
     ALOGD("[%s][%s][%d]: Enter-Returning None",
-      __FILE__, 
+      __FILE__,
       __FUNCTION__,
       __LINE__);
 
@@ -466,12 +466,12 @@ PRINT TABLE FOR DEBUGGING PURPOSES ONLY
 OMX_API OMX_ERRORTYPE OMX_PrintComponentTable()
 {
     ALOGD("[%s][%s][%d]: Enter-Returning None",
-          __FILE__, 
+          __FILE__,
           __FUNCTION__,
           __LINE__);
 
     OMX_ERRORTYPE eError = OMX_ErrorNone;
-    
+
     return eError;
 
 }
@@ -480,7 +480,7 @@ OMX_API OMX_ERRORTYPE OMX_PrintComponentTable()
 OMX_ERRORTYPE OMX_BuildComponentTable()
 {
     ALOGD("[%s][%s][%d]: Enter-Returning None",
-          __FILE__, 
+          __FILE__,
           __FUNCTION__,
           __LINE__);
 
@@ -497,7 +497,7 @@ OMX_ERRORTYPE ComponentTable_EventHandler(
     OMX_IN OMX_PTR pEventData UNUSED)
 {
     ALOGD("[%s][%s][%d]: Enter-Returning OMX_ErrorNotImplemented",
-          __FILE__, 
+          __FILE__,
           __FUNCTION__,
           __LINE__);
 
@@ -510,7 +510,7 @@ OMX_ERRORTYPE ComponentTable_EmptyBufferDone(
     OMX_OUT OMX_BUFFERHEADERTYPE * pBuffer UNUSED)
 {
     ALOGD("[%s][%s][%d]: Enter-Returning OMX_ErrorNotImplemented",
-          __FILE__, 
+          __FILE__,
           __FUNCTION__,
           __LINE__);
 
@@ -523,7 +523,7 @@ OMX_ERRORTYPE ComponentTable_FillBufferDone(
     OMX_OUT OMX_BUFFERHEADERTYPE * pBuffer UNUSED)
 {
     ALOGD("[%s][%s][%d]: Enter-Returning OMX_ErrorNotImplemented",
-          __FILE__, 
+          __FILE__,
           __FUNCTION__,
           __LINE__);
 

@@ -1,15 +1,56 @@
+/******************************************************************************
+ * (c) 2014 Broadcom Corporation
+ *
+ * This program is the proprietary software of Broadcom Corporation and/or its
+ * licensors, and may only be used, duplicated, modified or distributed pursuant
+ * to the terms and conditions of a separate, written license agreement executed
+ * between you and Broadcom (an "Authorized License").  Except as set forth in
+ * an Authorized License, Broadcom grants no license (express or implied), right
+ * to use, or waiver of any kind with respect to the Software, and Broadcom
+ * expressly reserves all rights in and to the Software and all intellectual
+ * property rights therein.  IF YOU HAVE NO AUTHORIZED LICENSE, THEN YOU
+ * HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY WAY, AND SHOULD IMMEDIATELY
+ * NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.
+ *
+ * Except as expressly set forth in the Authorized License,
+ *
+ * 1. This program, including its structure, sequence and organization,
+ *    constitutes the valuable trade secrets of Broadcom, and you shall use all
+ *    reasonable efforts to protect the confidentiality thereof, and to use
+ *    this information only in connection with your use of Broadcom integrated
+ *    circuit products.
+ *
+ * 2. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS"
+ *    AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR
+ *    WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT
+ *    TO THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED
+ *    WARRANTIES OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A
+ *    PARTICULAR PURPOSE, LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET
+ *    ENJOYMENT, QUIET POSSESSION OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME
+ *    THE ENTIRE RISK ARISING OUT OF USE OR PERFORMANCE OF THE SOFTWARE.
+ *
+ * 3. TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS
+ *    LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT,
+ *    OR EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO
+ *    YOUR USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN
+ *    ADVISED OF THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS
+ *    OF THE AMOUNT ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER
+ *    IS GREATER. THESE LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF
+ *    ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
+ ******************************************************************************/
+
 #include <pthread.h>        /*for POSIX calls */
 
 #include "TuneableDefines.h"
 
 #ifdef ENABLE_BCM_OMX_PROTOTYPE
 #include "OMXNexusDecoder.h"
-#include "OMXNexusAudioDecoder.h"    
+#include "OMXNexusAudioDecoder.h"
 #include "PESFeeder.h"
 #include "AndroidVideoWindow.h"
 #include "HardwareAPI.h"
 #ifdef BCM_OMX_SUPPORT_ENCODER
-#include "OMXNexusVideoEncoder.h"    
+#include "OMXNexusVideoEncoder.h"
 #endif
 #endif
 
@@ -24,21 +65,21 @@ typedef struct _BufferList BufferList;
 /*
  * The main structure for buffer management.
  *
- *   pBufHdr     - An array of pointers to buffer headers. 
+ *   pBufHdr     - An array of pointers to buffer headers.
  *                 The size of the array is set dynamically using the nBufferCountActual value
  *                   send by the client.
- *   nListEnd    - Marker to the boundary of the array. This points to the last index of the 
+ *   nListEnd    - Marker to the boundary of the array. This points to the last index of the
  *                   pBufHdr array.
- *   nSizeOfList - Count of valid data in the list. 
- *   nAllocSize  - Size of the allocated list. This is equal to (nListEnd + 1) in most of 
- *                   the times. When the list is freed this is decremented and at that 
+ *   nSizeOfList - Count of valid data in the list.
+ *   nAllocSize  - Size of the allocated list. This is equal to (nListEnd + 1) in most of
+ *                   the times. When the list is freed this is decremented and at that
  *                   time the value is not equal to (nListEnd + 1). This is because
- *                   the list is not freed from the end and hence we cannot decrement   
+ *                   the list is not freed from the end and hence we cannot decrement
  *                   nListEnd each time we free an element in the list. When nAllocSize is zero,
- *                   the list is completely freed and the other paramaters of the list are  
- *                   initialized.  
- *                 If the client crashes before freeing up the buffers, this parameter is 
- *                   checked (for nonzero value) to see if there are still elements on the list.  
+ *                   the list is completely freed and the other paramaters of the list are
+ *                   initialized.
+ *                 If the client crashes before freeing up the buffers, this parameter is
+ *                   checked (for nonzero value) to see if there are still elements on the list.
  *                   If yes, then the remaining elements are freed.
  *    nWritePos  - The position where the next buffer would be written. The value is incremented
  *                   after the write. It is wrapped around when it is greater than nListEnd.
@@ -49,8 +90,8 @@ typedef struct _BufferList BufferList;
  *                           OMX_DirOutput  =  Output Buffer List
  */
 struct _BufferList{
-   OMX_BUFFERHEADERTYPE **pBufHdr;             
-   OMX_U32 nListEnd;   
+   OMX_BUFFERHEADERTYPE **pBufHdr;
+   OMX_U32 nListEnd;
    OMX_U32 nSizeOfList;
    OMX_U32 nAllocSize;
    OMX_U32 nWritePos;
@@ -125,7 +166,7 @@ private:
  *   and the BufferList structure for storing input and output buffers.
  */
 
-typedef struct _BCM_OMX_CONTEXT_ 
+typedef struct _BCM_OMX_CONTEXT_
 {
     OMX_STATETYPE                   state;
     OMX_CALLBACKTYPE                *pCallbacks;
@@ -143,14 +184,14 @@ typedef struct _BCM_OMX_CONTEXT_
     struct EnableAndroidNativeBuffersParams sNativeBufParam;
     pthread_t                       thread_id;
     OMX_U32                         datapipe[2];
-    OMX_U32                         cmdpipe[2]; 
+    OMX_U32                         cmdpipe[2];
     OMX_U32                         cmddatapipe[2];
     ThrCmdType                      eTCmd;
     BufferList                      sInBufList;
     BufferList                      sOutBufList;
     OMX_BUFFERHEADERTYPE            **pOutBufHdrRes;
     OMX_BUFFERHEADERTYPE            **pInBufHdrRes;
-#ifdef ENABLE_BCM_OMX_PROTOTYPE 
+#ifdef ENABLE_BCM_OMX_PROTOTYPE
     BCM_AAC_PARAMETERS              BCMAacParams;
     OMXNexusDecoder                 *pOMXNxDecoder;
     OMXNexusAudioDecoder            *pOMXNxAudioDec;
@@ -176,9 +217,9 @@ typedef struct _BCM_OMX_CONTEXT_
 
 
 
-/* 
+/*
  * Initializes a data structure using a pointer to the structure.
- * The initialization of OMX structures always sets up the nSize and nVersion fields 
+ * The initialization of OMX structures always sets up the nSize and nVersion fields
  *   of the structure.
  */
 #define OMX_CONF_INIT_STRUCT_PTR(_s_, _name_)   \
@@ -202,16 +243,16 @@ typedef struct _BCM_OMX_CONTEXT_
        ((_s_)->nVersion.s.nVersionMinor != 0x0)||           \
        ((_s_)->nVersion.s.nRevision != 0x0)||               \
        ((_s_)->nVersion.s.nStep != 0x0)) _e_ = OMX_ErrorVersionMismatch;\
-    if(_e_ != OMX_ErrorNone) goto OMX_CONF_CMD_BAIL;            
+    if(_e_ != OMX_ErrorNone) goto OMX_CONF_CMD_BAIL;
 
 
 
 /*
  * Checking paramaters for non-NULL values.
- * The macro takes three parameters because inside the code the highest 
+ * The macro takes three parameters because inside the code the highest
  *   number of parameters passed for checking in a single instance is three.
- * In case one or two parameters are passed, the ramaining parameters 
- *   are set to 1 (or a nonzero value). 
+ * In case one or two parameters are passed, the ramaining parameters
+ *   are set to 1 (or a nonzero value).
  */
 #define OMX_CONF_CHECK_CMD(_ptr1, _ptr2, _ptr3) \
 {                       \
@@ -247,7 +288,7 @@ typedef struct _BCM_OMX_CONTEXT_
 
 
 
-/* 
+/*
  * Allocates a new entry in a BufferList.
  * Finds the position where memory has to be allocated.
  * Actual allocation happens in the caller function.
@@ -261,14 +302,14 @@ typedef struct _BCM_OMX_CONTEXT_
    _pH.nListEnd++;                              \
    _pH.nAllocSize++;                            \
    _nIndex = _pH.nListEnd
-     
 
 
 
-/* 
+
+/*
  * Sets an entry in the BufferList.
  * The entry set is a BufferHeader.
- * The nWritePos value is incremented after the write. 
+ * The nWritePos value is incremented after the write.
  * It is wrapped around when it is greater than nListEnd.
  */
 #define ListSetEntry(_pH, _pB)                  \
@@ -284,10 +325,10 @@ typedef struct _BCM_OMX_CONTEXT_
 
 
 
-/* 
+/*
  * Gets an entry from the BufferList
  * The entry is a BufferHeader
- * The nReadPos value is incremented after the read. 
+ * The nReadPos value is incremented after the read.
  * It is wrapped around when it is greater than nListEnd.
  */
 #define ListGetEntry(_pH, _pB)                  \
@@ -304,7 +345,7 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
 /*
  * Flushes all entries from the BufferList structure.
  * The nSizeOfList gives the number of valid entries in the list.
- * The nReadPos value is incremented after the read. 
+ * The nReadPos value is incremented after the read.
  * It is wrapped around when it is greater than nListEnd.
  * CleanUpFunc is always called before the buffer is returned                                                             .
  * To give a chance to the client to cleanup.                                                                                                                        .
@@ -330,11 +371,11 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
           _pH.nReadPos = 0;                                                                         \
        }                                                                                            \
     }                                                                                               \
-}                                                                                           
+}
 /*
  * Flushes all entries from the BufferList structure.
  * The nSizeOfList gives the number of valid entries in the list.
- * The nReadPos value is incremented after the read. 
+ * The nReadPos value is incremented after the read.
  * It is wrapped around when it is greater than nListEnd.
  */
 #define ListFlushEntries(_pH, _pC)                                                                  \
@@ -351,15 +392,15 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
        {                                                                                            \
           _pH.nReadPos = 0;                                                                         \
        }                                                                                            \
-    }                                                                                       
+    }
 
-             
+
 /*
- * Frees the memory allocated for BufferList entries 
+ * Frees the memory allocated for BufferList entries
  *   by comparing with client supplied buffer header.
- * The nAllocSize value gives the number of allocated (i.e. not free'd) entries in the list. 
+ * The nAllocSize value gives the number of allocated (i.e. not free'd) entries in the list.
  * When nAllocSize is zero, the list is completely freed
- *   and the other paramaters of the list are initialized.   
+ *   and the other paramaters of the list are initialized.
  */
 #define ListFreeBuffer(_pH, _pB, _pP)                                   \
     for (unsigned int _nIndex = 0; _nIndex <= _pH.nListEnd; _nIndex++)  \
@@ -414,14 +455,14 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
             break;                                                      \
         }                                                               \
     }
-                                    
+
 
 /*
  * Frees the memory allocated for BufferList entries.
- * This is called in case the client crashes suddenly before freeing all the component buffers. 
- * The nAllocSize parameter is 
- *   checked (for nonzero value) to see if there are still elements on the list.  
- * If yes, then the remaining elements are freed. 
+ * This is called in case the client crashes suddenly before freeing all the component buffers.
+ * The nAllocSize parameter is
+ *   checked (for nonzero value) to see if there are still elements on the list.
+ * If yes, then the remaining elements are freed.
  */
 #define ListFreeAllBuffers(_pH, _nIndex)                             \
     for (_nIndex = 0; _nIndex <= _pH.nListEnd; _nIndex++){           \
@@ -446,7 +487,7 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
 /*
  * Loads the parameters of the buffer header.
  * When the list has nBufferCountActual elements allocated
- * then the bPopulated value of port definition is set to true. 
+ * then the bPopulated value of port definition is set to true.
  */
 #define LoadBufferHeader(_pList, _pBufHdr, _pAppPrivate, _nSizeBytes, _nPortIndex,    \
                                                             _ppBufHdr, _pPortDef)     \
@@ -462,7 +503,7 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
        }                                                                              \
     _ppBufHdr = _pBufHdr;                                                             \
     if (_pList.nListEnd == (_pPortDef->nBufferCountActual - 1))                       \
-       _pPortDef->bPopulated = OMX_TRUE                                  
+       _pPortDef->bPopulated = OMX_TRUE
 
 #define CopyBufferHeaderList(_pList, _pPortDef, _pBufHdr)                               \
     if (_pPortDef->bPopulated == OMX_TRUE) {                                            \
