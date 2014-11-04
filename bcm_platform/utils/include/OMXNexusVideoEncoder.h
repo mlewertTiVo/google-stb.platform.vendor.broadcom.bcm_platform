@@ -140,9 +140,9 @@ class OMXNexusVideoEncoder
 {
 
 public:
-    
+
     OMXNexusVideoEncoder (const char *callerName, int numInBuf);
-    
+
     ~OMXNexusVideoEncoder ();
     bool StartEncoder(PVIDEO_ENCODER_START_PARAMS startParams);
     bool StartInput(PVIDEO_ENCODER_START_PARAMS startParams);
@@ -214,15 +214,17 @@ private:
     NEXUS_Graphics2DHandle              mhGfx;
 
 private:
-    unsigned int    RetriveFrameFromHardware();
+    unsigned int    RetrieveFrameFromHardware_l();
     void            StartCaptureFrames();
     void            StopCaptureFrames();
     bool            CaptureFrameEnabled();
+    bool            StartInput_l(PVIDEO_ENCODER_START_PARAMS startParams);
+    void            StopInput_l();
 
     bool            ShouldDiscardFrame(PNEXUS_ENCODED_VIDEO_FRAME pCheckFr);
     bool            GetFrameStart(NEXUS_VideoEncoderDescriptor *,size_t, Encode_Frame_Type, unsigned int *);
 
-    bool            ReturnEncodedFrameSynchronized(PNEXUS_ENCODED_VIDEO_FRAME);
+    bool            ReturnEncodedFrameSynchronized_l(PNEXUS_ENCODED_VIDEO_FRAME);
     bool            IsEncoderStarted();
 //    bool            DetectEOS();
 //    bool            FlushDecoder();

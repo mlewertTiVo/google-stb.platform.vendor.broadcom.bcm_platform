@@ -654,6 +654,9 @@ OMXNexusVideoEncoder::~OMXNexusVideoEncoder()
 {
     LOG_CREATE_DESTROY("%s: ",__FUNCTION__);
     unsigned int NumEntriesFreed=0;
+
+    Mutex::Autolock lock(mListLock);
+
     if(IsEncoderStarted())
     {
         LOG_CREATE_DESTROY("%s: Stopping Encoder",__FUNCTION__);
@@ -747,8 +750,14 @@ OMXNexusVideoEncoder::~OMXNexusVideoEncoder()
 }
 
 
-bool
-OMXNexusVideoEncoder::StartInput(PVIDEO_ENCODER_START_PARAMS pStartParams)
+bool OMXNexusVideoEncoder::StartInput(PVIDEO_ENCODER_START_PARAMS pStartParams)
+{
+    Mutex::Autolock lock(mListLock);
+
+    return StartInput_l(pStartParams);
+}
+
+bool OMXNexusVideoEncoder::StartInput_l(PVIDEO_ENCODER_START_PARAMS pStartParams)
 {
     NEXUS_Error errCode;
     NEXUS_VideoImageInputSettings imageInputSetting;
@@ -967,7 +976,7 @@ OMXNexusVideoEncoder::StartEncoder(PVIDEO_ENCODER_START_PARAMS pStartParams)
     if (ret==false)
         return ret;
 
-    ret = StartInput(pStartParams);
+    ret = StartInput_l(pStartParams);
     if (ret==false)
         return ret;
 
@@ -977,8 +986,13 @@ OMXNexusVideoEncoder::StartEncoder(PVIDEO_ENCODER_START_PARAMS pStartParams)
     return true;
 }
 
-void
-OMXNexusVideoEncoder::StopInput()
+void OMXNexusVideoEncoder::StopInput()
+{
+    Mutex::Autolock lock(mListLock);
+    StopInput_l();
+}
+
+void OMXNexusVideoEncoder::StopInput_l()
 {
     NEXUS_SimpleVideoDecoder_StopImageInput(DecoderHandle);
     while(!IsListEmpty(&SurfaceAvailList))
@@ -1027,7 +1041,7 @@ OMXNexusVideoEncoder::StopEncoder()
     if (EncoderStarted)
     {
 
-        StopInput();
+        StopInput_l();
         StopOutput();
 
         LOG_START_STOP_DBG("%s[%d]: Video Encoder Stopped!!",
@@ -1076,7 +1090,7 @@ OMXNexusVideoEncoder::FlushInput()
 {
     Mutex::Autolock lock(mListLock);
     bool ret = true;
-    StopInput();
+    StopInput_l();
     while(!IsListEmpty(&InputContextList))
     {
         PNEXUS_VIDEO_ENCODER_INPUT_CONTEXT  pContext = NULL;
@@ -1096,7 +1110,7 @@ OMXNexusVideoEncoder::FlushInput()
         }
     }
 
-    ret = StartInput(&EncoderStartParams);
+    ret = StartInput_l(&EncoderStartParams);
     return ret;
 }
 
@@ -1198,7 +1212,7 @@ OMXNexusVideoEncoder::GetEncodedFrame(PDELIVER_ENCODED_FRAME pDeliverFr)
     Mutex::Autolock lock(mListLock);
 
     PrintVideoEncoderStatus();
-    RetriveFrameFromHardware();
+    RetrieveFrameFromHardware_l();
 
     if (!IsEncoderStarted())
     {
@@ -1255,7 +1269,7 @@ OMXNexusVideoEncoder::GetEncodedFrame(PDELIVER_ENCODED_FRAME pDeliverFr)
         {
             LOG_ERROR("%s: Provided Buffer Too Small To Hold The Encoded Video Data",__FUNCTION__);
             BCMOMX_DBG_ASSERT( pDeliverFr->SzVidDataBuff <= pNxVidEncFr->CombinedSz );
-            ReturnEncodedFrameSynchronized(pNxVidEncFr);
+            ReturnEncodedFrameSynchronized_l(pNxVidEncFr);
             LastErr = ErrStsOutOfResource;
             return false;
         }
@@ -1285,7 +1299,7 @@ OMXNexusVideoEncoder::GetEncodedFrame(PDELIVER_ENCODED_FRAME pDeliverFr)
                   __FUNCTION__,pDeliverFr->SzVidDataBuff,SizeToCopy);
 
             BCMOMX_DBG_ASSERT(SizeToCopy <= pDeliverFr->SzVidDataBuff);
-            ReturnEncodedFrameSynchronized(pNxVidEncFr);
+            ReturnEncodedFrameSynchronized_l(pNxVidEncFr);
             LastErr = ErrStsOutOfResource;
             return false;
         }
@@ -1300,7 +1314,7 @@ OMXNexusVideoEncoder::GetEncodedFrame(PDELIVER_ENCODED_FRAME pDeliverFr)
                   __FUNCTION__,SizeToCopy,CopiedSz);
 
             BCMOMX_DBG_ASSERT(CopiedSz == SizeToCopy);
-            ReturnEncodedFrameSynchronized(pNxVidEncFr);
+            ReturnEncodedFrameSynchronized_l(pNxVidEncFr);
             LastErr = ErrStsNexusReturnedErr;
             return false;
         }
@@ -1310,7 +1324,7 @@ OMXNexusVideoEncoder::GetEncodedFrame(PDELIVER_ENCODED_FRAME pDeliverFr)
         LOG_INFO("%s:OUT PTS = %d",__FUNCTION__, pDeliverFr->usTimeStamp);
 
         pDeliverFr->SzFilled = SizeToCopy;
-        ReturnEncodedFrameSynchronized(pNxVidEncFr);
+        ReturnEncodedFrameSynchronized_l(pNxVidEncFr);
 
         if (enable_es_dump)
         {
@@ -1329,8 +1343,7 @@ OMXNexusVideoEncoder::GetEncodedFrame(PDELIVER_ENCODED_FRAME pDeliverFr)
     return false;
 }
 
-bool
-OMXNexusVideoEncoder::ReturnEncodedFrameSynchronized(PNEXUS_ENCODED_VIDEO_FRAME pReturnFr)
+bool OMXNexusVideoEncoder::ReturnEncodedFrameSynchronized_l(PNEXUS_ENCODED_VIDEO_FRAME pReturnFr)
 {
     if (!pReturnFr)
     {
@@ -1494,8 +1507,7 @@ OMXNexusVideoEncoder::ShouldDiscardFrame(PNEXUS_ENCODED_VIDEO_FRAME pCheckFr)
     return false;
 }
 
-unsigned int
-OMXNexusVideoEncoder::RetriveFrameFromHardware()
+unsigned int OMXNexusVideoEncoder::RetrieveFrameFromHardware_l()
 {
     NEXUS_SimpleEncoderStatus EncSts;
     const NEXUS_VideoEncoderDescriptor *pFrames1=NULL, *pFrames2=NULL;
@@ -1508,7 +1520,6 @@ OMXNexusVideoEncoder::RetriveFrameFromHardware()
     Encode_Frame_Type frametype;
     bool frameComplete = false;
 
-    //Mutex::Autolock lock(mListLock);
     if (!IsEncoderStarted())
     {
         LOG_ERROR("%s[%d]: Encoder Is Not Started",__FUNCTION__,__LINE__);
