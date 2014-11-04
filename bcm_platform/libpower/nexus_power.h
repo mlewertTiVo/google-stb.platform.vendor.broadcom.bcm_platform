@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2013 Broadcom Corporation
+ *    (c)2011-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -49,19 +49,78 @@
 #ifndef _NEXUS_POWER_H_
 #define _NEXUS_POWER_H_
 
+// Verbose messages removed
+//#define LOG_NDEBUG 0
+#define LOG_TAG "Brcmstb PowerHAL"
+
+#include <utils/Log.h>
+#include <utils/PropertyMap.h>
+#include <utils/RefBase.h>
+
 #include "nexus_types.h"
+#include "nexus_platform_features.h"
+#include "nexus_gpio.h"
+#include "nexus_ipc_client_factory.h"
 
-typedef enum NexusPowerState {
-    eNexusPowerState_S0 = 0,
-    eNexusPowerState_S1,
-    eNexusPowerState_S2,
-    eNexusPowerState_S3,
-    eNexusPowerState_S4,
-    eNexusPowerState_S5,
-} NexusPowerState;
+using namespace android;
 
-extern NEXUS_Error NexusPower_SetPowerState(NexusPowerState pmState);
-extern NEXUS_Error NexusPower_GetPowerState(NexusPowerState *pPmState);
+class NexusPower : public android::RefBase {
+
+    public:
+    static sp<NexusPower> instantiate();
+    status_t setPowerState(b_powerState state);
+    status_t getPowerState(b_powerState *pState);
+    status_t initialiseGpios();
+    void uninitialiseGpios();
+    ~NexusPower();
+
+    class NexusGpio : public android::RefBase {
+        public:
+        static int const MAX_INSTANCES = 4;
+        static unsigned mInstances;
+
+        static sp<NexusGpio> instantiate(NexusPower *pNexusPower, unsigned pin, unsigned pinType, NEXUS_GpioInterrupt interruptMode);
+        static String8 getConfigurationFilePath();
+        static status_t loadConfigurationFile(String8 path, PropertyMap **configuration);
+
+        unsigned getPinType() { return mPinType; }
+        unsigned getPin() { return mPin; }
+        NEXUS_GpioInterrupt getInterruptMode() { return mInterruptMode; }
+        void setHandle(NEXUS_GpioHandle handle) { mHandle = handle; }
+        NEXUS_GpioHandle getHandle() { return mHandle; }
+        unsigned getInstance() { return mInstance; }
+        static unsigned getInstances() { return mInstances; }
+        static NEXUS_GpioInterrupt parseGpioInterruptMode(String8& modeString);
+        ~NexusGpio();
+
+        private:
+        sp<NexusPower> mNexusPower;
+        unsigned mInstance;
+        unsigned mPin;
+        unsigned mPinType;
+        NEXUS_GpioInterrupt mInterruptMode;
+        NEXUS_GpioHandle mHandle;
+
+        static void gpioCallback(void *context, int param);
+
+        // Disallow constructor and copy constructor...
+        NexusGpio();
+        NexusGpio(NexusPower *pNexusPower, unsigned pin, unsigned pinType, NEXUS_GpioInterrupt interruptMode);
+        NexusGpio &operator=(const NexusGpio &);
+    };
+
+    private:
+    NexusIPCClientBase *mIpcClient;
+    NexusClientContext *mClientContext;
+    sp<NexusGpio> gpios[NexusGpio::MAX_INSTANCES];
+
+    // Disallow constructor and copy constructor...
+    NexusPower();
+    NexusPower(NexusIPCClientBase *pIpcClient, NexusClientContext *pClientContext);
+    NexusPower &operator=(const NexusPower &);
+
+    int getDeviceType();
+};
 
 #endif /* _NEXUS_POWER_H_ */
 

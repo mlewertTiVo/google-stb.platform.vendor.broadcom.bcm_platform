@@ -13,17 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Verbose messages removed
-//#define LOG_NDEBUG 0
-#define LOG_TAG "Brcmstb PowerHAL"
-
 #include <errno.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#include <utils/Log.h>
 
 #include <cutils/properties.h>
 #include <hardware/hardware.h>
@@ -34,7 +29,9 @@
 
 using namespace android;
 
-static const char *nexus_power_state_string[] = {
+static sp<NexusPower> gNexusPower;
+
+static const char *power_to_string[] = {
     "S0",
     "S1",
     "S2",
@@ -43,31 +40,37 @@ static const char *nexus_power_state_string[] = {
     "S5"
 };
 
-static NexusPowerState get_nexus_power_state()
+static b_powerState power_get_offstate_from_property()
 {
-    NexusPowerState nexusPowerOffState = eNexusPowerState_S3;
+    b_powerState powerOffState = ePowerState_S3;
     char value[PROPERTY_VALUE_MAX] = "";
 
     property_get("ro.pm.offstate", value, "s3");
 
     if (strcasecmp(value, "1") == 0 || strcasecmp(value, "s1") == 0) {
-        nexusPowerOffState = eNexusPowerState_S1;
+        powerOffState = ePowerState_S1;
     }
     else if (strcasecmp(value, "2") == 0 || strcasecmp(value, "s2") == 0) {
-        nexusPowerOffState = eNexusPowerState_S2;
+        powerOffState = ePowerState_S2;
     }
     else if (strcasecmp(value, "3") == 0 || strcasecmp(value, "s3") == 0) {
-        nexusPowerOffState = eNexusPowerState_S3;
+        powerOffState = ePowerState_S3;
     }
     else if (strcasecmp(value, "5") == 0 || strcasecmp(value, "s5") == 0) {
-        nexusPowerOffState = eNexusPowerState_S5;
+        powerOffState = ePowerState_S5;
     }
-    return nexusPowerOffState;
+    return powerOffState;
 }
 
-static void power_init(struct power_module *module)
+static void power_init(struct power_module *module __unused)
 {
-    LOGD("%s: ",__FUNCTION__);
+    gNexusPower = NexusPower::instantiate();
+    if (gNexusPower == NULL) {
+        ALOGE("%s: failed!!!", __FUNCTION__);
+    }
+    else {
+        ALOGI("%s: Succeeded.", __FUNCTION__);
+    }
 }
 
 static void power_set_shutdown()
@@ -75,7 +78,7 @@ static void power_set_shutdown()
     property_set("sys.powerctl", "shutdown");
 }
 
-static int power_set_pmlibservice_state(NexusPowerState state)
+static int power_set_pmlibservice_state(b_powerState state)
 {
     int rc = 0;
     pmlib_state_t pmlib_state;
@@ -93,7 +96,7 @@ static int power_set_pmlibservice_state(NexusPowerState state)
         return rc;
     }
 
-    if (state == eNexusPowerState_S1) {
+    if (state == ePowerState_S1) {
         char value[PROPERTY_VALUE_MAX] = "";
         bool usboff   = true;
         bool ethoff   = true;
@@ -197,7 +200,7 @@ static int power_set_pmlibservice_state(NexusPowerState state)
         pmlib_state.ddr   = ddroff;
         pmlib_state.memc1 = memc1off;
     }
-    else if (state == eNexusPowerState_S0) {
+    else if (state == ePowerState_S0) {
         pmlib_state.usb   = true;
         pmlib_state.enet  = true;
         pmlib_state.moca  = true;
@@ -212,56 +215,75 @@ static int power_set_pmlibservice_state(NexusPowerState state)
     return service->setState(&pmlib_state);
 }
     
-static int power_set_state(NexusPowerState toState, NexusPowerState fromState)
+static int power_set_state(b_powerState toState, b_powerState fromState)
 {
     int rc = 0;
     switch (toState)
     {
-        case eNexusPowerState_S0: {
-            if (fromState == eNexusPowerState_S1) {
+        case ePowerState_S0: {
+            if (fromState == ePowerState_S1) {
+                rc = power_set_pmlibservice_state(toState);
+            }
+            if (rc == 0 && gNexusPower.get()) {
+                rc = gNexusPower->setPowerState(toState);
+            }
+        } break;
+
+        case ePowerState_S1: {
+            if (gNexusPower.get()) {
+                rc = gNexusPower->setPowerState(toState);
+            }
+            if (rc == 0) {
                 rc = power_set_pmlibservice_state(toState);
             }
         } break;
 
-        case eNexusPowerState_S1: {
-            if (fromState == eNexusPowerState_S0) {
-                rc = power_set_pmlibservice_state(toState);
+        case ePowerState_S2: {
+            if (gNexusPower.get()) {
+                rc = gNexusPower->setPowerState(toState);
             }
         } break;
 
-        case eNexusPowerState_S5: {
-            power_set_shutdown();
+        case ePowerState_S3: {
+            if (gNexusPower.get()) {
+                rc = gNexusPower->setPowerState(toState);
+            }
+        } break;
+
+        case ePowerState_S5: {
+            if (gNexusPower.get()) {
+                rc = gNexusPower->setPowerState(toState);
+            }
+            if (rc == 0) {
+                power_set_shutdown();
+            }
         } break;
 
         default: {
+            ALOGE("%s: Invalid Power State %s!!!", __FUNCTION__, power_to_string[toState]);
+            rc = BAD_VALUE;
         } break;
     }
     return rc;
 }
 
-static void power_set_interactive(struct power_module *module, int on)
+static void power_set_interactive(struct power_module *module __unused, int on)
 {
     int ret;
-    NexusPowerState nexusPowerOffState = get_nexus_power_state();
+    b_powerState powerOffState = power_get_offstate_from_property();
 
     ALOGV("%s: %s", __FUNCTION__, on ? "ON" : "OFF");
 
     if (on) {
-        ret = power_set_state(eNexusPowerState_S0, nexusPowerOffState);
-        if (ret == 0) {
-            ret = NexusPower_SetPowerState(eNexusPowerState_S0);
-        }
+        ret = power_set_state(ePowerState_S0, powerOffState);
     }
     else {
-        ret = NexusPower_SetPowerState(nexusPowerOffState);
-        if (ret == NEXUS_SUCCESS) {
-            ret = power_set_state(nexusPowerOffState, eNexusPowerState_S0);
-        }
+        ret = power_set_state(powerOffState, ePowerState_S0);
     }
-    LOGI("%s: %s set Nexus power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", on ? "S0" : nexus_power_state_string[nexusPowerOffState]);
+    LOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", on ? "S0" : power_to_string[powerOffState]);
 }
 
-static void power_hint(struct power_module *module, power_hint_t hint, void *data) {
+static void power_hint(struct power_module *module __unused, power_hint_t hint, void *data __unused) {
     switch (hint) {
         case POWER_HINT_VSYNC:
             ALOGV("%s: POWER_HINT_VSYNC received", __FUNCTION__);

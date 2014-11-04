@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2013 Broadcom Corporation
+ *    (c)2011-2014 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -51,86 +51,77 @@
 #undef LOG_TAG
 #endif
 
-#define LOG_TAG "nexus_power"
-
-#include <utils/Log.h>
 #include <string.h>
 #include <utils/Errors.h>
 
-#include "nexus_ipc_client_factory.h"
 #include "nexus_power.h"
 
-static b_powerState NexusPowerStateToPowerState(NexusPowerState pmState)
+unsigned NexusPower::NexusGpio::mInstances = 0;
+
+NexusPower::NexusPower() : mIpcClient(NULL), mClientContext(NULL)
 {
-    b_powerState state;
-
-    switch (pmState)
-    {
-        case eNexusPowerState_S0:
-            state = ePowerState_S0;
-            break;
-
-        case eNexusPowerState_S1:
-            state = ePowerState_S1;
-            break;
-            
-        case eNexusPowerState_S2:
-            state = ePowerState_S2;
-            break;
-    
-        case eNexusPowerState_S3:
-            state = ePowerState_S3;
-            break;
-
-        case eNexusPowerState_S5:
-            state = ePowerState_S5;
-            break;
-
-        default:
-            state = ePowerState_S0;
-            LOGW("%s: invalid Nexus Power State %d!", __FUNCTION__, pmState);
-            break;
-    }
-    return state;
+    ALOGV("%s: Called", __PRETTY_FUNCTION__);
 }
 
-static NexusPowerState PowerStateToNexusPowerState(b_powerState state)
+NexusPower::NexusPower(NexusIPCClientBase *pIpcClient, NexusClientContext *pClientContext) : mIpcClient(pIpcClient), mClientContext(pClientContext)
 {
-    NexusPowerState pmState;
+    ALOGV("%s: pIpcClient=%p, pClientContext=%p", __PRETTY_FUNCTION__, (void *)pIpcClient, (void *)pClientContext);
+}
 
-    switch (state)
-    {
-        case ePowerState_S0:
-            pmState = eNexusPowerState_S0;
-            break;
+NexusPower::~NexusPower()
+{
+    ALOGV("%s: Called", __PRETTY_FUNCTION__);
 
-        case ePowerState_S1:
-            pmState = eNexusPowerState_S1;
-            break;
-            
-        case ePowerState_S2:
-            pmState = eNexusPowerState_S2;
-            break;
-    
-        case ePowerState_S3:
-            pmState = eNexusPowerState_S3;
-            break;
-
-        case ePowerState_S5:
-            pmState = eNexusPowerState_S5;
-            break;
-
-        default:
-            pmState = eNexusPowerState_S0;
-            LOGW("%s: invalid Power State %d!", __FUNCTION__, state);
-            break;
+    if (mIpcClient != NULL) {
+        if (mClientContext != NULL) {
+            uninitialiseGpios();
+            mIpcClient->destroyClientContext(mClientContext);
+            mClientContext = NULL;
+        }
+        delete mIpcClient;
+        mIpcClient = NULL;
     }
-    return pmState;
+}
+
+sp<NexusPower> NexusPower::instantiate()
+{
+    NexusIPCClientBase *pIpcClient;
+    sp<NexusPower> np;
+
+    pIpcClient = NexusIPCClientFactory::getClient("Android-Power");
+
+    if (pIpcClient == NULL) {
+        ALOGE("%s: Could not create Nexux Client!!!", __FUNCTION__);
+    }
+    else {
+        NexusClientContext *pClientContext;
+        b_refsw_client_client_configuration clientConfig;
+
+        memset(&clientConfig, 0, sizeof(clientConfig));
+        strncpy(clientConfig.name.string, "Android-Power", sizeof(clientConfig.name.string));
+
+        pClientContext = pIpcClient->createClientContext(&clientConfig);
+        if (pClientContext == NULL) {
+            ALOGE("%s: Could not create Nexus Client Context!!!", __FUNCTION__); 
+            delete pIpcClient;
+        }
+        else {
+            np = new NexusPower(pIpcClient, pClientContext);
+            if (np != NULL) {
+                ALOGV("%s: Successfully instantiated NexusPower.", __FUNCTION__);
+
+                if (np->initialiseGpios() == NO_ERROR) {
+                    ALOGV("%s: Successfully initialised GPIOs", __FUNCTION__);
+                }
+            }
+        }
+    }
+    return np;
 }
 
 /* Android-L sets up a property to define the device type and hence
    the logical address of the device.  */
-int NexusPower_getDeviceType()
+int NexusPower::getDeviceType()
 {
     char value[PROPERTY_VALUE_MAX];
     int type = -1;
@@ -141,62 +132,262 @@ int NexusPower_getDeviceType()
     return type;
 }
 
-NEXUS_Error
-NexusPower_SetPowerState(NexusPowerState pmState)
+status_t NexusPower::setPowerState(b_powerState state)
 {
-    NEXUS_Error rc = NEXUS_SUCCESS;
-    NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("Android-Power");
-    b_powerState   state;
+    status_t ret = NO_ERROR;
     const uint32_t cecId = 0;   // Hardcoded CEC id to 0
-    int deviceType = NexusPower_getDeviceType();
-
-    state = NexusPowerStateToPowerState(pmState);
-
-    LOGD("%s: About to set power state %d...", __FUNCTION__, state);
+    int deviceType = getDeviceType();
 
     /* If powering out of standby, then ensure platform is brought up first before CEC,
        otherwise if powering down, then we must send CEC commands first. */
-    if (pmState == eNexusPowerState_S0) {
-        if (pIpcClient->setPowerState(state) != true) {
+    if (state == ePowerState_S0) {
+        if (mIpcClient->setPowerState(state) != true) {
             LOGE("%s: Could not set PowerState %d!", __FUNCTION__, state);
-            rc = NEXUS_UNKNOWN;
+            ret = INVALID_OPERATION;
         }
-        else if (deviceType == -1 && pIpcClient->isCecEnabled(cecId) && pIpcClient->setCecPowerState(cecId, state) != true) {
+        else if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && mIpcClient->setCecPowerState(cecId, state) != true) {
             LOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, cecId, state);
+            ret = INVALID_OPERATION;
         }
     }
     else {
-        if (deviceType == -1 && pIpcClient->isCecEnabled(cecId) && pIpcClient->setCecPowerState(cecId, state) != true) {
+        if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && mIpcClient->setCecPowerState(cecId, state) != true) {
             LOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, cecId, state);
+            ret = INVALID_OPERATION;
         }
 
-        if (pIpcClient->setPowerState(state) != true) {
+        if (mIpcClient->setPowerState(state) != true) {
             LOGE("%s: Could not set PowerState %d!", __FUNCTION__, state);
-            rc = NEXUS_UNKNOWN;
+            ret = INVALID_OPERATION;
         }
     }
-
-    delete pIpcClient;
-
-    return rc;
+    return ret;
 }
 
-NEXUS_Error
-NexusPower_GetPowerState(NexusPowerState *pPmState)
+status_t NexusPower::getPowerState(b_powerState *pState)
 {
-     b_powerState state;
+    if (pState == NULL) {
+        LOGE("%s: invalid parameter \"pState\"!", __FUNCTION__);
+        return BAD_VALUE;
+    }
 
-     if (pPmState == NULL) {
-         LOGE("%s: invalid parameter \"pPmState\"!", __FUNCTION__);
-         return NEXUS_INVALID_PARAMETER;
-     }
+    *pState = mIpcClient->getPowerState();
+    LOGD("%s: Power state = %d", __FUNCTION__, *pState);
+    return NO_ERROR;
+}
 
-    NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("Android-Power");
-    LOGD("%s: About to get power state...", __FUNCTION__);
-    state = pIpcClient->getPowerState();
-    LOGD("%s: Power state = %d", __FUNCTION__, state);
-    *pPmState = PowerStateToNexusPowerState(state);
-    delete pIpcClient;
+void NexusPower::NexusGpio::gpioCallback(void *context, int param)
+{
+    NexusPower::NexusGpio *pNexusGpio = reinterpret_cast<NexusPower::NexusGpio *>(context);
 
-    return NEXUS_SUCCESS;
+    if (pNexusGpio != NULL) {
+        NEXUS_GpioStatus gpioStatus;
+
+        if (NEXUS_Gpio_GetStatus(pNexusGpio->getHandle(), &gpioStatus) == NEXUS_SUCCESS) {
+            ALOGV("%s: AON_%s%02d interrupt %spending.", __FUNCTION__,
+                   (pNexusGpio->getPinType() == NEXUS_GpioType_eAonStandard) ? "GPIO" : "SGPIO", param,
+                   gpioStatus.interruptPending ? "" : "not ");
+
+            if (gpioStatus.interruptPending) {
+                NEXUS_Gpio_ClearInterrupt(pNexusGpio->getHandle());
+            }
+        }
+        else {
+            ALOGE("%s: Could NOT get AON_%s%02d interrupt status.", __FUNCTION__,
+                   (pNexusGpio->getPinType() == NEXUS_GpioType_eAonStandard) ? "GPIO" : "SGPIO", param);
+        }
+
+    }
+    else {
+        ALOGE("%s: Invalid context!!!", __FUNCTION__);
+    }
+}
+
+String8 NexusPower::NexusGpio::getConfigurationFilePath()
+{
+    String8 path;
+
+    path.setTo(getenv("ANDROID_ROOT"));
+    path.append("/vendor/power/aon_gpio.cfg");
+
+    if (!access(path.string(), R_OK)) {
+        ALOGV("%s: Found \"%s\".", __FUNCTION__, path.string());
+        return path;
+    }
+    else {
+        ALOGV("%s: Could not find \"%s\"!", __FUNCTION__, path.string());
+        return String8();
+    }
+}
+
+/* The aon_gpio.cfg file is made up of key/value pairs for the AON GPIO/SGPIO's.  This comprises
+   the name of the GPIO/SGPIO followed by an "=" and the interrupt mode (e.g. "FallingEdge").
+
+   Example1: AON_GPIO01 = FallingEdge
+   Example2: AON_SGPIO02 = Edge
+*/
+status_t NexusPower::NexusGpio::loadConfigurationFile(String8 path, PropertyMap **configuration)
+{
+    status_t status = NAME_NOT_FOUND;
+
+    if (!path.isEmpty()) {
+        status = PropertyMap::load(path, configuration);
+    }
+    return status;
+}
+
+NEXUS_GpioInterrupt NexusPower::NexusGpio::parseGpioInterruptMode(String8& modeString)
+{
+    String8 string(modeString);
+
+    string.toLower();
+
+    if (string == "disabled") {
+        return NEXUS_GpioInterrupt_eDisabled;
+    }
+    else if (string == "risingedge") {
+        return NEXUS_GpioInterrupt_eRisingEdge;
+    }
+    else if (string == "fallingedge") {
+        return NEXUS_GpioInterrupt_eFallingEdge;
+    }
+    else if (string == "edge") {
+        return NEXUS_GpioInterrupt_eEdge;
+    }
+    else if (string == "low") {
+        return NEXUS_GpioInterrupt_eLow;
+    }
+    else if (string == "high") {
+        return NEXUS_GpioInterrupt_eHigh;
+    }
+    else {
+        return NEXUS_GpioInterrupt_eMax;
+    }
+}
+
+NexusPower::NexusGpio::NexusGpio()
+{
+    ALOGV("%s: called", __PRETTY_FUNCTION__);
+}
+
+NexusPower::NexusGpio::NexusGpio(NexusPower *pNexusPower, unsigned pin, unsigned pinType, NEXUS_GpioInterrupt interruptMode) : mNexusPower(pNexusPower),
+                                                                                                                               mPin(pin),
+                                                                                                                               mPinType(pinType),
+                                                                                                                               mInterruptMode(interruptMode)
+{
+    mInstance = mInstances++;
+    ALOGV("%s: instance %d: pin=%d, type=%d", __PRETTY_FUNCTION__, mInstance, pin, pinType);
+}
+
+NexusPower::NexusGpio::~NexusGpio()
+{
+    ALOGV("%s: instance %d: pin=%d, type=%d", __PRETTY_FUNCTION__, mInstance, mPin, mPinType);
+    mInstances--;
+    NEXUS_Gpio_Close(mHandle);
+}
+
+sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(NexusPower *pNexusPower, unsigned pin, unsigned pinType, NEXUS_GpioInterrupt interruptMode)
+{
+    sp<NexusPower::NexusGpio> gpio = new NexusGpio(pNexusPower, pin, pinType, interruptMode);
+
+    if (NexusPower::NexusGpio::getInstances() < NexusGpio::MAX_INSTANCES) {
+        NEXUS_GpioSettings settings;
+        NEXUS_GpioHandle handle;
+
+        NEXUS_Gpio_GetDefaultSettings(pinType, &settings);
+        settings.mode = NEXUS_GpioMode_eInput;
+        settings.interruptMode = interruptMode;
+        settings.maskEdgeInterrupts = true;
+        settings.interrupt.callback = NexusPower::NexusGpio::gpioCallback;
+        settings.interrupt.context  = gpio.get();
+        settings.interrupt.param    = pin;
+
+        handle = NEXUS_Gpio_Open(pinType, pin, &settings);
+        if (handle != NULL) {
+            ALOGV("%s: Successfully opened AON_GPIO%02d", __FUNCTION__, pin);
+            gpio->setHandle(handle);
+        }
+        else {
+            ALOGE("%s: Could not open AON_%s%02d!!!", __FUNCTION__, (pinType == NEXUS_GpioType_eAonStandard) ? "GPIO" : "SGPIO", pin);
+            gpio = NULL;
+        }
+    }
+    return gpio;
+}
+
+status_t NexusPower::initialiseGpios()
+{
+    status_t status;
+    NEXUS_GpioInterrupt gpioMode;
+    int pin;
+    PropertyMap* config;
+    String8 path;
+
+    path = NexusGpio::getConfigurationFilePath();
+    if (path.isEmpty()) {
+        ALOGW("%s: Could not find configuration file, so not initialising AON GPIOs!", __FUNCTION__, path.string());
+        status = NAME_NOT_FOUND;
+    }
+    else {
+        status = NexusGpio::loadConfigurationFile(path, &config);
+        if (status == NO_ERROR) {
+            String8 gpioName;
+            String8 gpioValue;
+            sp<NexusGpio> gpio;
+
+            /* Setup AON_GPIO custom configuration */
+            for (pin = 0; pin < NEXUS_NUM_AON_GPIO_PINS && (status == NO_ERROR) && NexusGpio::getInstances() < NexusGpio::MAX_INSTANCES; pin++) {
+                gpioName.setTo("AON_GPIO");
+                gpioName.appendFormat("%02d", pin);
+
+                if (config->tryGetProperty(gpioName, gpioValue)) {
+                    gpioMode = NexusGpio::parseGpioInterruptMode(gpioValue);
+                    ALOGV("%s: %s=%s", __FUNCTION__, gpioName.string(), gpioValue.string());
+
+                    gpio = NexusGpio::instantiate(this, pin, NEXUS_GpioType_eAonStandard, gpioMode);
+                    if (gpio.get() == NULL) {
+                        ALOGE("%s: Could not instantiate Nexus AON_GPIO%02d!!!", __FUNCTION__, pin);
+                        status = NO_INIT;
+                    }
+                    else {
+                        gpios[gpio->getInstance()] = gpio;
+                    }
+                }
+            }
+
+            /* Setup AON_SGPIO custom configuration */
+            for (pin = 0; pin < NEXUS_NUM_AON_SGPIO_PINS && (status == NO_ERROR) && NexusGpio::getInstances() < NexusGpio::MAX_INSTANCES; pin++) {
+                gpioName.setTo("AON_SGPIO");
+                gpioName.appendFormat("%02d", pin);
+
+                if (config->tryGetProperty(gpioName, gpioValue)) {
+                    gpioMode = NexusGpio::parseGpioInterruptMode(gpioValue);
+                    ALOGV("%s: %s=%s", __FUNCTION__, gpioName.string(), gpioValue.string());
+
+                    gpio = NexusGpio::instantiate(this, pin, NEXUS_GpioType_eAonSpecial, gpioMode);
+                    if (gpio.get() == NULL) {
+                        ALOGE("%s: Could not instantiate Nexus AON_SGPIO%02d!!!", __FUNCTION__, pin);
+                        status = NO_INIT;
+                    }
+                    else {
+                        gpios[gpio->getInstance()] = gpio;
+                    }
+                }
+            }
+            delete config;
+        }
+        else {
+            ALOGE("%s: Could not load configuration file \"%s\" [ret=%d]!!!", __FUNCTION__, path.string(), status);
+        }
+    }
+    return status;
+}
+
+void NexusPower::uninitialiseGpios()
+{
+    for (unsigned gpio = 0; gpio < NexusGpio::MAX_INSTANCES; gpio++) {
+        if (gpios[gpio] != NULL) {
+            gpios[gpio] = NULL;
+        }
+    }
 }
