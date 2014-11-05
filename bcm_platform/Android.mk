@@ -52,5 +52,7 @@ include vendor/broadcom/bcm_platform/utils/Android.mk
 endif
 
 
+include vendor/broadcom/bcm_platform/tools/cmatest/Android.mk
+
 endif
 
