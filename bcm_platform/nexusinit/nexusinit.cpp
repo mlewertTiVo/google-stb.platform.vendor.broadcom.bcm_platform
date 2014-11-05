@@ -199,7 +199,6 @@ void startNxServer(void)
 #ifndef BCM_OMX_SUPPORT_ENCODER
     strcat(cmdRunNxServer, "-transcode off ");
 #endif
-    strcat(cmdRunNxServer, "-frontend off ");
     strcat(cmdRunNxServer, "&");
     ALOGI("NXSERVER CMD: %s",cmdRunNxServer);
     system(cmdRunNxServer);
