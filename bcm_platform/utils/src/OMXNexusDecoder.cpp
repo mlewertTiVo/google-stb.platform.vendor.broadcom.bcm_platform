@@ -43,9 +43,9 @@
 #include <utils/Log.h>
 #include <cutils/properties.h>
 
-// Property to control whether to ask for 4K decoder by default (no).
-#define BCM_OMX_NEXUS_DECODER_H265_ASK_4K "bcm.omx.nx.dec.h265.ask4k"
-#define BCM_OMX_NEXUS_DECODER_H265_ASK_4K_DEFAULT "0"
+// Property to control whether to disable 4K. It is enabled by default .
+#define BCM_OMX_H265_DISABLE_4K "bcm.omx.265.disable4k"
+#define BCM_OMX_H265_DISABLE_4K_DEFAULT "0"
 
 //Path level Debug Messages
 #define LOG_START_STOP_DBG
@@ -150,6 +150,18 @@ OMXNexusDecoder::OMXNexusDecoder(char const *CallerName, NEXUS_VideoCodec NxCode
     connectSettings.simpleVideoDecoder[0].id = client_info.videoDecoderId;
     connectSettings.simpleVideoDecoder[0].surfaceClientId = client_info.surfaceClientId;
     connectSettings.simpleVideoDecoder[0].windowId = DecoderID;
+
+    if(NxVideoCodec == NEXUS_VideoCodec_eH265) {
+        char value[PROPERTY_VALUE_MAX];
+        property_get(BCM_OMX_H265_DISABLE_4K, value, BCM_OMX_H265_DISABLE_4K_DEFAULT);
+        if (!strcmp(value, "1")) {
+            ALOGE("OMX 4k playback is disabled");
+        } else {
+            connectSettings.simpleVideoDecoder[0].decoderCaps.maxWidth = 3840;
+            connectSettings.simpleVideoDecoder[0].decoderCaps.maxHeight = 2160;
+            ALOGD("OMX 4k playback is enabled");
+        }
+    }
 
     connectSettings.simpleVideoDecoder[0].windowCaps.type =
         (DecoderID == 0) ? eVideoWindowType_eMain : eVideoWindowType_ePip;
@@ -335,13 +347,16 @@ OMXNexusDecoder::StartDecoder(NEXUS_PidChannelHandle videoPIDChannel)
     if (NEXUS_VideoCodec_eH265 == NxVideoCodec)
     {
         char value[PROPERTY_VALUE_MAX];
-        property_get(BCM_OMX_NEXUS_DECODER_H265_ASK_4K, value, BCM_OMX_NEXUS_DECODER_H265_ASK_4K_DEFAULT);
+        property_get(BCM_OMX_H265_DISABLE_4K, value, BCM_OMX_H265_DISABLE_4K_DEFAULT);
 
-        if (!strcmp(value, "1"))
-        {
-           videoProgram.maxWidth  = 3840;
-           videoProgram.maxHeight = 2160;
+        if (!strcmp(value, "1")) {
+            ALOGE("OMX 4k playback is disabled");
+        } else {
+            videoProgram.maxWidth  = 3840;
+            videoProgram.maxHeight = 2160;
+            ALOGD("OMX 4k playback is enabled");
         }
+
     }
 
     LOG_START_STOP_DBG("%s %d Decoder[%d]: Starting Decoder For PID:%p",

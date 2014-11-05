@@ -53,6 +53,11 @@
 
 #include <utils/Log.h>
 #include <utils/List.h>
+#include <cutils/properties.h>
+
+// Property to control whether to disable 4K. It is enabled by default .
+#define BCM_OMX_H265_DISABLE_4K "bcm.omx.265.disable4k"
+#define BCM_OMX_H265_DISABLE_4K_DEFAULT "0"
 
 #define USE_ANB_PRIVATE_DATA 1
 
@@ -1003,6 +1008,18 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SetParameter(OMX_IN OMX_HANDLETYPE hComponent,
                 BKNI_Memcpy(&pMyData->sOutPortDef, pParamStruct, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
                 // Frame width and height are used to setup ANtaiveWindow and allocate memory for those buffers.
                 // We need to keep the frame width and height constant.
+                // set lower width and height for 4k video to avoid memory alloc error for 4k graphics buffers.
+                if(pMyData->sOutPortDef.format.video.nFrameWidth > 1920) {
+                    char value[PROPERTY_VALUE_MAX];
+                    property_get(BCM_OMX_H265_DISABLE_4K, value, BCM_OMX_H265_DISABLE_4K_DEFAULT);
+                    if (!strcmp(value, "1")) {
+                        ALOGE("OMX 4k playback is disabled");
+                    } else {
+                        // set lower width and height for 4k video to avoid memory alloc error for 4k graphics buffers.
+                        pMyData->sOutPortDef.format.video.nFrameWidth = 640;
+                        pMyData->sOutPortDef.format.video.nFrameHeight = 360;
+                    }
+                }
 
                 ALOGV("%s:OutputPort Port : NumOutBuffs[Min]:%d NumOutBuffs[Actual]:%d Width:%d Height:%d BuffSz:%d",
                         __FUNCTION__,

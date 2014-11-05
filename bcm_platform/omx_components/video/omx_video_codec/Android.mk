@@ -34,6 +34,7 @@ COMMON_INCLUDE_FILES += ${NXCLIENT_INCLUDES}
 COMMON_SHARED_LIBRARIES=    libc \
                             libutils\
                             liblog \
+                            libcutils \
                             $(NEXUS_LIB) \
                             libnexusipcclient \
                             libbcm_utils \
