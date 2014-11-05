@@ -55,6 +55,25 @@
 #define TV_LOG
 #endif
 
+static struct {
+    int id;
+    char *number;
+    char *name;
+    int onid;
+    int tsid;
+    int sid;
+    int freqKHz;
+    int vpid;
+} lineup[] = {
+    { 0, "8", "8madrid", 0x22d4, 0x0027, 0x0f3d, 577000, 0x100 },
+    { 1, "13", "13tv Madrid", 0x22d4, 0x0027, 0x0f3e, 577000, 0x200 },
+    { 2, "800", "ASTROCANAL SHOP", 0x22d4, 0x0027, 0x0f43, 577000, 0x700 },
+    { 3, "801", "Kiss TV", 0x22d4, 0x0027, 0x0f40, 577000, 0x401 },
+    { 4, "802", "INTER TV", 0x22d4, 0x0027, 0x0f3f, 577000, 0x300 },
+    { 5, "803", "MGustaTV", 0x22d4, 0x0027, 0x1392, 577000, 0x1000 },
+    { -1 }
+};
+
 // All globals must be JNI primitives, any other data type 
 // will fail to hold its value across different JNI methods
 void *j_main;
@@ -63,9 +82,10 @@ PTuner_Data g_pTD;
 // The signature syntax is: Native-method-name, signature & fully-qualified-name
 static JNINativeMethod gMethods[] = 
 {
-	{"initialize",  "(I)I",     (void *)Java_com_broadcom_tvinput_TunerHAL_initialize},
-	{"tune",        "(I)I",     (void *)Java_com_broadcom_tvinput_TunerHAL_tune},
-    {"stop",        "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stop},    
+	{"initialize",     "()I",     (void *)Java_com_broadcom_tvinput_TunerHAL_initialize},
+	{"tune",           "(I)I",     (void *)Java_com_broadcom_tvinput_TunerHAL_tune},
+	{"getChannelList", "()[Lcom/broadcom/tvinput/ChannelInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getChannelList},
+    {"stop",           "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stop},  
 };
 
 const String16 INexusTunerService::descriptor(TUNER_INTERFACE_NAME);
@@ -176,13 +196,12 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
     return result;
 }
 
-JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env, jclass thiz, jint freq)
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env, jclass thiz)
 {
     int rc;
 
-    TV_LOG("%s: Initializing the Tuner stack on frequency %d!!", __FUNCTION__, freq);
+    TV_LOG("%s: Initializing the Tuner stack!!", __FUNCTION__);
 
-    g_pTD->freq = freq;
     rc = Broadcast_Initialize();
 
     return rc;
@@ -195,6 +214,66 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jcla
     Broadcast_Tune(channel_id);
 
     return 0;
+}
+
+JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList(JNIEnv *env, jclass thiz)
+{
+    TV_LOG("%s: Fetching channel list!!", __FUNCTION__);
+
+    Vector<ChannelInfo> civ;
+
+    civ = Broadcast_GetChannelList();
+
+    jclass cls = env->FindClass("com/broadcom/tvinput/ChannelInfo"); 
+    if (cls == 0) {
+        ALOGE("%s: could not find class", __FUNCTION__);
+        return 0;
+    }
+    jmethodID cID = env->GetMethodID(cls, "<init>", "()V");
+    if(cID == 0){
+        ALOGE("%s: could not get constructor ID", __FUNCTION__);
+    }
+    jfieldID idID = env->GetFieldID(cls, "id", "I");
+    if(idID == 0){
+        ALOGE("%s: could not get id ID", __FUNCTION__);
+    }
+    jfieldID nameID = env->GetFieldID(cls, "name", "Ljava/lang/String;");
+    if(nameID == 0){
+        ALOGE("%s: could not get name ID", __FUNCTION__);
+    }
+    jfieldID numberID = env->GetFieldID(cls, "number", "Ljava/lang/String;");
+    if(numberID == 0){
+        ALOGE("%s: could not get number ID", __FUNCTION__);
+    }
+    jfieldID onidID = env->GetFieldID(cls, "onid", "I");
+    if(onidID == 0){
+        ALOGE("%s: could not get onid ID", __FUNCTION__);
+    }
+    jfieldID tsidID = env->GetFieldID(cls, "tsid", "I");
+    if(tsidID == 0){
+        ALOGE("%s: could not get tsid ID", __FUNCTION__);
+    }
+    jfieldID sidID = env->GetFieldID(cls, "sid", "I");
+    if(sidID == 0){
+        ALOGE("%s: could not get sid ID", __FUNCTION__);
+    }
+    jobjectArray rv = env->NewObjectArray(civ.size(), cls, NULL);
+    if (rv == 0) {
+        ALOGE("%s: could not create array", __FUNCTION__);
+        return 0;
+    }
+    for (unsigned i = 0; i < civ.size(); i++) {
+        jobject o = env->NewObject(cls, cID); 
+        env->SetIntField(o, idID, civ[i].id);
+        env->SetIntField(o, onidID, civ[i].onid);
+        env->SetIntField(o, tsidID, civ[i].tsid);
+        env->SetIntField(o, sidID, civ[i].sid);
+        env->SetObjectField(o, nameID, env->NewStringUTF(civ[i].name.string()));
+        env->SetObjectField(o, numberID, env->NewStringUTF(civ[i].number.string()));
+        env->SetObjectArrayElement(rv, i, o);
+    }
+    ALOGE("%s: ok so far", __FUNCTION__);
+    return rv;
 }
 
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv *env, jclass thiz)
@@ -285,11 +364,23 @@ static int Broadcast_Tune(int channel_id)
     NEXUS_Error rc;
     int video_pid;
 
+    unsigned i;
+    for (i = 0; lineup[i].id >= 0; i++) {
+        if (lineup[i].id == channel_id) {
+            break;
+        }
+    }
+
+    if (lineup[i].id < 0) {
+        ALOGE("%s: channel_id %d invalid", __FUNCTION__, channel_id);
+        return -1;
+    }
+
     // Enable the tuner
-    ALOGE("%s: Tuning on frequency %d...", __FUNCTION__, g_pTD->freq);
+    ALOGE("%s: Tuning on frequency %d...", __FUNCTION__, lineup[i].freqKHz);
 
     NEXUS_Frontend_GetDefaultOfdmSettings(&ofdmSettings);
-    ofdmSettings.frequency = g_pTD->freq * 1000000;
+    ofdmSettings.frequency = lineup[i].freqKHz * 1000;
     ofdmSettings.acquisitionMode = NEXUS_FrontendOfdmAcquisitionMode_eAuto;
     ofdmSettings.terrestrial = true;
     ofdmSettings.spectrum = NEXUS_FrontendOfdmSpectrum_eAuto;
@@ -328,7 +419,7 @@ static int Broadcast_Tune(int channel_id)
     NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&videoProgram);
 
     // Set up the video PID
-    (channel_id == 1) ? (video_pid = VIDEO_PID_1) : (video_pid = VIDEO_PID_2);
+    video_pid = lineup[i].vpid;
 
     videoProgram.settings.pidChannel = NEXUS_PidChannel_Open(g_pTD->parserBand, video_pid, NULL);
     videoProgram.settings.codec = video_codec;
@@ -357,6 +448,23 @@ static int Broadcast_Tune(int channel_id)
 
     ALOGE("%s: Tuner has started streaming!!", __FUNCTION__);
     return 0;
+}
+
+static Vector<ChannelInfo> Broadcast_GetChannelList()
+{
+    Vector<ChannelInfo> civ;
+    ChannelInfo ci;
+    unsigned i;
+    for (i = 0; lineup[i].id >= 0; i++) {
+        ci.id = lineup[i].id; 
+        ci.name = lineup[i].name;
+        ci.number = lineup[i].number;
+        ci.onid = lineup[i].onid;
+        ci.tsid = lineup[i].tsid;
+        ci.sid = lineup[i].sid;
+        civ.push_back(ci);
+    }
+    return civ;
 }
 
 static int Broadcast_Stop()

@@ -21,8 +21,10 @@
 #include <binder/ProcessState.h>
 
 #include <utils/KeyedVector.h>
+#include <utils/Vector.h>
 #include <utils/RefBase.h>
 #include <utils/String16.h>
+#include <utils/String8.h>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -30,8 +32,19 @@
 
 using namespace android;
 
+class ChannelInfo {
+public:
+    String8 name;
+    String8 number;
+    int id;
+    int onid;
+    int tsid;
+    int sid;
+};
+
 static int Broadcast_Initialize();
 static int Broadcast_Tune(int);
+static Vector<ChannelInfo> Broadcast_GetChannelList();
 static int Broadcast_Stop();
 
 // Just wrap the nexus context
@@ -42,7 +55,6 @@ typedef union _tuner_context
 
 typedef struct _tuner_data
 {
-    int freq;
     NexusIPCClientBase *ipcclient;
     NexusClientContext *nexus_client;
     NEXUS_FrontendHandle frontend;
@@ -70,9 +82,5 @@ public:
     static void instantiate();
     status_t onTransact(uint32_t code, const Parcel &data, Parcel *reply, uint32_t flags);
 };
-
-// Some tuner values
-#define VIDEO_PID_1     0x100
-#define VIDEO_PID_2     0x200
 
 #endif

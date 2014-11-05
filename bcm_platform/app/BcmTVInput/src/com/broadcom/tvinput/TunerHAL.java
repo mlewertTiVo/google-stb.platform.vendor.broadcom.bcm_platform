@@ -1,6 +1,7 @@
 package com.broadcom.tvinput;
 
 import android.util.Log;
+import com.broadcom.tvinput.ChannelInfo;
 
 public class TunerHAL
 {
@@ -14,7 +15,8 @@ public class TunerHAL
         Log.e(TAG, "Loaded " + LIB_NAME +"...");
     }
 
-    static native int initialize(int freq);
+    static native int initialize();
     static native int tune(int channel);
+    static native ChannelInfo[] getChannelList();
     static native int stop();
 }

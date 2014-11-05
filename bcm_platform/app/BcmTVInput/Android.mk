@@ -28,6 +28,8 @@ LOCAL_MODULE_TAGS := optional
 
 LOCAL_SDK_VERSION := system_current
 
+LOCAL_PROGUARD_FLAG_FILES := proguard.cfg
+
 include $(BUILD_PACKAGE)
 
 ifeq ($(PRODUCT_IS_ATV),true)

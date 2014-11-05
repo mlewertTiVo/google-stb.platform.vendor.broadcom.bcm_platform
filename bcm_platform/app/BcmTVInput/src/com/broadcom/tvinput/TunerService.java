@@ -85,22 +85,6 @@ public class TunerService extends TvInputService {
 
     private TvInputManager mManager = null;
     private ResolveInfo mResolveInfo;
-    private static List<ChannelInfo> sSampleChannels = null;
-
-    // Some place holders for now
-    private static final String CHANNEL_1_NUMBER = "1";
-    private static final String CHANNEL_1_NAME = "Channel-1";
-    private static final String PROGRAM_1_TITLE = "Sample-1";
-    private static final String PROGRAM_1_DESC = "SampleVideo-1";
-    private static final int    CHANNEL_1_TSID = 11;
-    private static final int    CHANNEL_1_SVCID = 1111;
-
-    private static final String CHANNEL_2_NUMBER = "2";
-    private static final String CHANNEL_2_NAME = "Channel-2";
-    private static final String PROGRAM_2_TITLE = "Sample-2";
-    private static final String PROGRAM_2_DESC = "SampleVideo-2";
-    private static final int    CHANNEL_2_TSID = 22;
-    private static final int    CHANNEL_2_SVCID = 2222;
 
     @Override
     public void onCreate() {
@@ -122,7 +106,17 @@ public class TunerService extends TvInputService {
 			Log.d(TAG, "TunerService::onCreateSession(), inputId = " +inputId);
 
         Log.e(TAG, "Calling TunerHAL.initialize!!");
-        TunerHAL.initialize(577);
+        TunerHAL.initialize();
+        ChannelInfo[] civ = TunerHAL.getChannelList();
+
+        Log.e(TAG, "Got channels: " + civ.length);
+        {
+            List<ChannelInfo> cdal = new ArrayList<ChannelInfo>();
+            for (ChannelInfo d : civ) {
+                cdal.add(d);
+            }
+            updateChannels(this, inputId, cdal);
+        }
 
         // Lookup TvInputInfo from inputId
         TvInputInfo info = mInputMap.get(inputId);
@@ -191,45 +185,17 @@ public class TunerService extends TvInputService {
 
     private void createSampleChannels(String inputId) 
     {
-        List<ChannelInfo> channels = null;
+        List<ChannelInfo> sSampleChannels = new ArrayList<ChannelInfo>();
         Class clazz = TunerService.class;
-
-        sSampleChannels = new ArrayList<ChannelInfo>();
-        sSampleChannels.add(new ChannelInfo(CHANNEL_1_NUMBER, CHANNEL_1_NAME, null, 0, CHANNEL_1_TSID, CHANNEL_1_SVCID, 1920, 1080, 1001, false,
-                            new ProgramInfo(PROGRAM_1_TITLE, null, PROGRAM_1_DESC, 0, 100, null, null, 0)));
-
-        sSampleChannels.add(new ChannelInfo(CHANNEL_2_NUMBER, CHANNEL_2_NAME, null, 0, CHANNEL_2_TSID, CHANNEL_2_SVCID, 1920, 1080, 2002, false,
-                            new ProgramInfo(PROGRAM_2_TITLE, null, PROGRAM_2_DESC, 0, 200, null, null, 0)));
-
-        Uri uri = TvContract.buildChannelsUriForInput(inputId);
-        String[] projection = { TvContract.Channels._ID };
-
-        Cursor cursor = null;
-        try 
-        {
-            while (true) {
-                cursor = getContentResolver().query(uri, projection, null, null, null);
-                if (cursor != null && cursor.getCount() > 0) {
-                    return;
-                }
-                if (cursor != null) {
-                    cursor.close();
-                }
-                if (DEBUG) 
-                    Log.d(TAG, "Couldn't find the channel list. Inserting new channels...");
-
-                // Insert channels into the database. This needs to be done only for the first time.
-                populateChannels(this, inputId, sSampleChannels);
-            }
-        }
-        
-        finally 
-        {
-            if (cursor != null) 
-            {
-                cursor.close();
-            }
-        }
+        ChannelInfo d = new ChannelInfo();
+        d.name = "dummy";
+        d.number = "0";
+        d.id = 0;
+        d.onid = 0;
+        d.tsid = 0;
+        d.sid = 0;
+        sSampleChannels.add(d);
+        updateChannels(this, inputId, sSampleChannels);
     }
 
     public static void populateChannels(Context context, String inputId, List<ChannelInfo> channels) 
@@ -239,86 +205,43 @@ public class TunerService extends TvInputService {
 
         channel_values.put(TvContract.Channels.COLUMN_INPUT_ID, inputId);
 
+        Log.d(TAG, "populateChannels: start");
         for (ChannelInfo channel : channels) 
         {
             // Initialize the Channels class
-            channel_values.put(TvContract.Channels.COLUMN_DISPLAY_NUMBER, channel.mNumber);
-            channel_values.put(TvContract.Channels.COLUMN_DISPLAY_NAME, channel.mName);
-            channel_values.put(TvContract.Channels.COLUMN_ORIGINAL_NETWORK_ID, channel.mOriginalNetworkId);
-            channel_values.put(TvContract.Channels.COLUMN_TRANSPORT_STREAM_ID, channel.mTransportStreamId);
-            channel_values.put(TvContract.Channels.COLUMN_SERVICE_ID, channel.mServiceId);
+            channel_values.put(TvContract.Channels.COLUMN_DISPLAY_NUMBER, channel.number);
+            channel_values.put(TvContract.Channels.COLUMN_DISPLAY_NAME, channel.name);
+            channel_values.put(TvContract.Channels.COLUMN_ORIGINAL_NETWORK_ID, channel.onid);
+            channel_values.put(TvContract.Channels.COLUMN_TRANSPORT_STREAM_ID, channel.tsid);
+            channel_values.put(TvContract.Channels.COLUMN_SERVICE_ID, channel.sid);
             channel_values.put(TvContract.Channels.COLUMN_BROWSABLE, 1);
             channel_values.put(TvContract.Channels.COLUMN_VIDEO_FORMAT, TvContract.Channels.VIDEO_FORMAT_1080P);
+            byte[] dbid = new byte[1];
+            dbid[0] = (byte)channel.id;
+            channel_values.put(TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA, dbid);
 
             Uri channelUri = context.getContentResolver().insert(TvContract.Channels.CONTENT_URI, channel_values);
-			Log.d(TAG, "channelUri = " +channelUri);
+	    Log.d(TAG, "populateChannels: " + channel.number + " " + channel.name + " " + channelUri);
 
-            long channelId = ContentUris.parseId(channelUri);
-            Log.d(TAG, "channelId = " +channelId);
+            //long channelId = ContentUris.parseId(channelUri);
+            //Log.d(TAG, "channelId = " +channelId);
 
             // Initialize the Programs class
-            prog_values.put(TvContract.Programs.COLUMN_CHANNEL_ID, channelId);
-            prog_values.put(TvContract.Programs.COLUMN_TITLE, channel.mProgram.mTitle);
-            prog_values.put(TvContract.Programs.COLUMN_SHORT_DESCRIPTION, channel.mProgram.mDescription);
+            //prog_values.put(TvContract.Programs.COLUMN_CHANNEL_ID, channelId);
+            //prog_values.put(TvContract.Programs.COLUMN_TITLE, channel.mProgram.mTitle);
+            //prog_values.put(TvContract.Programs.COLUMN_SHORT_DESCRIPTION, channel.mProgram.mDescription);
             
-            Uri rowUri = context.getContentResolver().insert(TvContract.Programs.CONTENT_URI, prog_values);
-			Log.d(TAG, "rowUri = " +rowUri);
+            //Uri rowUri = context.getContentResolver().insert(TvContract.Programs.CONTENT_URI, prog_values);
+		//	Log.d(TAG, "rowUri = " +rowUri);
         }
+        Log.d(TAG, "populateChannels: finish");
     }
 
-    public static final class ChannelInfo 
-    {
-        public final String mNumber;
-        public final String mName;
-        public final String mLogoUrl;
-        public final int mOriginalNetworkId;
-        public final int mTransportStreamId;
-        public final int mServiceId;
-        public final int mVideoWidth;
-        public final int mVideoHeight;
-        public final int mAudioChannel;
-        public final boolean mHasClosedCaption;
-        public final ProgramInfo mProgram;
-
-        public ChannelInfo(String number, String name, String logoUrl, int originalNetworkId,
-                int transportStreamId, int serviceId, int videoWidth, int videoHeight,
-                int audioChannel, boolean hasClosedCaption, ProgramInfo program) {
-            mNumber = number;
-            mName = name;
-            mLogoUrl = logoUrl;
-            mOriginalNetworkId = originalNetworkId;
-            mTransportStreamId = transportStreamId;
-            mServiceId = serviceId;
-            mVideoWidth = videoWidth;
-            mVideoHeight = videoHeight;
-            mAudioChannel = audioChannel;
-            mHasClosedCaption = hasClosedCaption;
-            mProgram = program;
-        }
-    }
-
-    public static final class ProgramInfo 
-    {
-        public final String mTitle;
-        public final String mPosterArtUri;
-        public final String mDescription;
-        public final long mStartTimeSec;
-        public final long mDurationSec;
-        public final String mUrl;
-        public final int mResourceId;
-        public final TvContentRating[] mContentRatings;
-
-        public ProgramInfo(String title, String posterArtUri, String description, long startTimeSec,
-                long durationSec, TvContentRating[] contentRatings, String url, int resourceId) {
-            mTitle = title;
-            mPosterArtUri = posterArtUri;
-            mDescription = description;
-            mStartTimeSec = startTimeSec;
-            mDurationSec = durationSec;
-            mContentRatings = contentRatings;
-            mUrl = url;
-            mResourceId = resourceId;
-        }
+    private void updateChannels(Context context, String inputId, List<ChannelInfo> channels) {
+        Uri uri = TvContract.buildChannelsUriForInput(inputId);
+        getContentResolver().delete(uri, null, null);
+        getContentResolver().delete(TvContract.Programs.CONTENT_URI, null, null);
+        populateChannels(context, inputId, channels);
     }
 
     private class TunerTvInputSessionImpl extends Session 
@@ -456,13 +379,26 @@ public class TunerService extends TvInputService {
         @Override
         public boolean onTune(Uri channelUri) 
         {
-            int id = (int) ContentUris.parseId(channelUri);
 
-            // The incoming URI is typically like this:
-            // D/TunerService( 3910): onTune,  channelUri = content://android.media.tv/channel/1
-            // D/TunerService( 3910): onTune,  channelUri = content://android.media.tv/channel/2
+            String[] projection = { TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA };
+            if (channelUri == null) {
+                return false;
+            }
+            Cursor cursor = getContentResolver().query(
+                    channelUri, projection, null, null, null);
+            if (cursor == null) {
+                return false;
+            }
+            if (cursor.getCount() < 1) {
+                cursor.close();
+                return false;
+            }
+            cursor.moveToNext();
+            byte[] dbid = cursor.getBlob(0);
+            cursor.close();
+            int id = dbid[0];
 
-			Log.d(TAG, "onTune,  channelUri = "+channelUri + ", id = " +id);
+            Log.d(TAG, "onTune,  channelUri = " + channelUri + ", id = " + id);
 
             if (mCurrentChannelId == id)
             {
