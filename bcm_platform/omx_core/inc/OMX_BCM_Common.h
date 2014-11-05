@@ -88,15 +88,17 @@ typedef struct _BufferList BufferList;
  *    eDir       - Type of BufferList.
  *                            OMX_DirInput  =  Input  Buffer List
  *                           OMX_DirOutput  =  Output Buffer List
+ *    mutex      - Mutex used for BufferList synchronization.
  */
 struct _BufferList{
    OMX_BUFFERHEADERTYPE **pBufHdr;
-   OMX_U32 nListEnd;
-   OMX_U32 nSizeOfList;
-   OMX_U32 nAllocSize;
-   OMX_U32 nWritePos;
-   OMX_U32 nReadPos;
+   OMX_S32 nListEnd;
+   OMX_S32 nSizeOfList;
+   OMX_S32 nAllocSize;
+   OMX_S32 nWritePos;
+   OMX_S32 nReadPos;
    OMX_DIRTYPE eDir;
+   pthread_mutex_t mutex;
 };
 
 static void* ComponentThread(void* pThreadData);
@@ -286,22 +288,23 @@ typedef struct _BCM_OMX_CONTEXT_
 }
 
 
-
-
 /*
  * Allocates a new entry in a BufferList.
  * Finds the position where memory has to be allocated.
  * Actual allocation happens in the caller function.
  */
 #define ListAllocate(_pH, _nIndex)              \
-   if (_pH.nListEnd == (OMX_U32)-1){            \
+   pthread_mutex_lock(&_pH.mutex);              \
+   if (_pH.nListEnd == -1) {                    \
       _pH.nListEnd = 0;                         \
       _pH.nWritePos = 0;                        \
-      }                                         \
-   else                                         \
-   _pH.nListEnd++;                              \
+   }                                            \
+   else {                                       \
+      _pH.nListEnd++;                           \
+   }                                            \
    _pH.nAllocSize++;                            \
-   _nIndex = _pH.nListEnd
+   _nIndex = _pH.nListEnd;                      \
+   pthread_mutex_unlock(&_pH.mutex);
 
 
 
@@ -313,14 +316,16 @@ typedef struct _BCM_OMX_CONTEXT_
  * It is wrapped around when it is greater than nListEnd.
  */
 #define ListSetEntry(_pH, _pB)                  \
-   if (_pH.nSizeOfList < (_pH.nListEnd + 1)){   \
+   pthread_mutex_lock(&_pH.mutex);              \
+   if (_pH.nSizeOfList < (_pH.nListEnd + 1)) {  \
       _pH.nSizeOfList++;                        \
       _pH.pBufHdr[_pH.nWritePos++] = _pB;       \
-      if (_pH.nReadPos == (OMX_U32)-1)          \
+      if (_pH.nReadPos <= -1)                   \
          _pH.nReadPos = 0;                      \
       if (_pH.nWritePos > _pH.nListEnd)         \
          _pH.nWritePos = 0;                     \
-      }
+   }                                            \
+   pthread_mutex_unlock(&_pH.mutex);
 
 
 
@@ -332,12 +337,14 @@ typedef struct _BCM_OMX_CONTEXT_
  * It is wrapped around when it is greater than nListEnd.
  */
 #define ListGetEntry(_pH, _pB)                  \
+   pthread_mutex_lock(&_pH.mutex);              \
    if (_pH.nSizeOfList > 0){                    \
       _pH.nSizeOfList--;                        \
       _pB = _pH.pBufHdr[_pH.nReadPos++];        \
       if (_pH.nReadPos > _pH.nListEnd)          \
          _pH.nReadPos = 0;                      \
-      }
+      }                                         \
+   pthread_mutex_unlock(&_pH.mutex);
 
 
 typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
@@ -354,23 +361,29 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
 #define ListFlushEntriesWithCleanup(_pH, _pC, CleanUpFunc)                                          \
 {                                                                                                   \
     ALOGD("ListFlushEntriesWithCleanup: ListSizeToFlush:%d \n",_pH.nSizeOfList);                    \
+    pthread_mutex_lock(&_pH.mutex);                                                                 \
     while (_pH.nSizeOfList > 0)                                                                     \
     {                                                                                               \
-       _pH.nSizeOfList--;                                                                           \
-       if (_pH.eDir == OMX_DirInput)                                                                \
-       {                                                                                            \
-             CleanUpFunc(_pH.pBufHdr[_pH.nReadPos++]);                                              \
+        _pH.nSizeOfList--;                                                                          \
+        if (_pH.eDir == OMX_DirInput)                                                               \
+        {                                                                                           \
+            pthread_mutex_unlock(&_pH.mutex);                                                       \
+            CleanUpFunc(_pH.pBufHdr[_pH.nReadPos++]);                                               \
             _pC->pCallbacks->EmptyBufferDone(_pC->hSelf,_pC->pAppData,_pH.pBufHdr[_pH.nReadPos++]); \
-       } else if (_pH.eDir == OMX_DirOutput){                                                       \
+            pthread_mutex_lock(&_pH.mutex);                                                         \
+        } else if (_pH.eDir == OMX_DirOutput){                                                      \
+            pthread_mutex_unlock(&_pH.mutex);                                                       \
             CleanUpFunc(_pH.pBufHdr[_pH.nReadPos++]);                                               \
             _pC->pCallbacks->FillBufferDone(_pC->hSelf, _pC->pAppData, _pH.pBufHdr[_pH.nReadPos++]);\
-       }                                                                                            \
+            pthread_mutex_lock(&_pH.mutex);                                                         \
+        }                                                                                           \
                                                                                                     \
-       if (_pH.nReadPos > _pH.nListEnd)                                                             \
-       {                                                                                            \
-          _pH.nReadPos = 0;                                                                         \
-       }                                                                                            \
+        if (_pH.nReadPos > _pH.nListEnd)                                                            \
+        {                                                                                           \
+            _pH.nReadPos = 0;                                                                       \
+        }                                                                                           \
     }                                                                                               \
+    pthread_mutex_unlock(&_pH.mutex);                                                               \
 }
 /*
  * Flushes all entries from the BufferList structure.
@@ -379,20 +392,26 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
  * It is wrapped around when it is greater than nListEnd.
  */
 #define ListFlushEntries(_pH, _pC)                                                                  \
+    pthread_mutex_lock(&_pH.mutex);                                                                 \
     while (_pH.nSizeOfList > 0)                                                                     \
     {                                                                                               \
        _pH.nSizeOfList--;                                                                           \
        if (_pH.eDir == OMX_DirInput)                                                                \
        {                                                                                            \
-          _pC->pCallbacks->EmptyBufferDone(_pC->hSelf,_pC->pAppData,_pH.pBufHdr[_pH.nReadPos++]);   \
+           pthread_mutex_unlock(&_pH.mutex);                                                        \
+           _pC->pCallbacks->EmptyBufferDone(_pC->hSelf,_pC->pAppData,_pH.pBufHdr[_pH.nReadPos++]);  \
+           pthread_mutex_lock(&_pH.mutex);                                                          \
        } else if (_pH.eDir == OMX_DirOutput){                                                       \
-          _pC->pCallbacks->FillBufferDone(_pC->hSelf,_pC->pAppData,_pH.pBufHdr[_pH.nReadPos++]);    \
+           pthread_mutex_unlock(&_pH.mutex);                                                        \
+           _pC->pCallbacks->FillBufferDone(_pC->hSelf,_pC->pAppData,_pH.pBufHdr[_pH.nReadPos++]);   \
+           pthread_mutex_lock(&_pH.mutex);                                                          \
        }                                                                                            \
        if (_pH.nReadPos > _pH.nListEnd)                                                             \
        {                                                                                            \
           _pH.nReadPos = 0;                                                                         \
        }                                                                                            \
-    }
+    }                                                                                               \
+    pthread_mutex_unlock(&_pH.mutex);
 
 
 /*
@@ -403,7 +422,8 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
  *   and the other paramaters of the list are initialized.
  */
 #define ListFreeBuffer(_pH, _pB, _pP)                                   \
-    for (unsigned int _nIndex = 0; _nIndex <= _pH.nListEnd; _nIndex++)  \
+    pthread_mutex_lock(&_pH.mutex);                                     \
+    for (OMX_S32 _nIndex = 0; _nIndex <= _pH.nListEnd; _nIndex++)       \
     {                                                                   \
         if (_pH.pBufHdr[_nIndex] == _pB)                                \
         {                                                               \
@@ -418,20 +438,22 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
               _pH.pBufHdr[_nIndex] = NULL;                              \
            }                                                            \
                                                                         \
-           if (_pH.nAllocSize == 0)                                     \
+           if (_pH.nAllocSize <= 0)                                     \
            {                                                            \
-              _pH.nWritePos = (OMX_U32)-1;                              \
-              _pH.nReadPos = (OMX_U32)-1;                               \
-              _pH.nListEnd = (OMX_U32)-1;                               \
+              _pH.nWritePos = -1;                                       \
+              _pH.nReadPos = -1;                                        \
+              _pH.nListEnd = -1;                                        \
               _pH.nSizeOfList = 0;                                      \
               _pP->bPopulated = OMX_FALSE;                              \
            }                                                            \
            break;                                                       \
         }                                                               \
-    }
+    }                                                                   \
+    pthread_mutex_unlock(&_pH.mutex);
 
 #define ListFreeBufferExt(_pH, _pB, _pP, prevAllocSize, _pHB)           \
-    for (unsigned int _nIndex = 0; _nIndex <= _pH.nListEnd; _nIndex++)  \
+    pthread_mutex_lock(&_pH.mutex);                                     \
+    for (OMX_S32 _nIndex = 0; _nIndex <= _pH.nListEnd; _nIndex++)       \
     {                                                                   \
         if (_pHB[_nIndex] == _pB)                                       \
         {                                                               \
@@ -444,7 +466,7 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
                 }                                                       \
                 _pH.pBufHdr[_nIndex] = NULL;                            \
             }                                                           \
-            if (_pH.nAllocSize == 0)                                    \
+            if (_pH.nAllocSize <= 0)                                    \
             {                                                           \
                 _pH.nWritePos = (OMX_U32)-1;                            \
                 _pH.nReadPos = (OMX_U32)-1;                             \
@@ -454,8 +476,8 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
             }                                                           \
             break;                                                      \
         }                                                               \
-    }
-
+    }                                                                   \
+    pthread_mutex_unlock(&_pH.mutex);
 
 /*
  * Frees the memory allocated for BufferList entries.
@@ -465,6 +487,7 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
  * If yes, then the remaining elements are freed.
  */
 #define ListFreeAllBuffers(_pH, _nIndex)                             \
+    pthread_mutex_lock(&_pH.mutex);                                  \
     for (_nIndex = 0; _nIndex <= _pH.nListEnd; _nIndex++){           \
         if (_pH.pBufHdr[_nIndex]){                                   \
            _pH.nAllocSize--;                                         \
@@ -473,14 +496,15 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
            OMX_BUFFERHEADERTYPE *bufhdr = (OMX_BUFFERHEADERTYPE *)_pH.pBufHdr[_nIndex]; \
            free(bufhdr);                                             \
            _pH.pBufHdr[_nIndex] = NULL;                              \
-           if (_pH.nAllocSize == 0){                                 \
-              _pH.nWritePos = (OMX_U32)-1;                           \
-              _pH.nReadPos = (OMX_U32)-1;                            \
-              _pH.nListEnd = (OMX_U32)-1;                            \
+           if (_pH.nAllocSize <= 0){                                 \
+              _pH.nWritePos = -1;                                    \
+              _pH.nReadPos = -1;                                     \
+              _pH.nListEnd = -1;                                     \
               _pH.nSizeOfList = 0;                                   \
               }                                                      \
            }                                                         \
-        }
+        }                                                            \
+    pthread_mutex_unlock(&_pH.mutex);
 
 
 
@@ -491,6 +515,7 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
  */
 #define LoadBufferHeader(_pList, _pBufHdr, _pAppPrivate, _nSizeBytes, _nPortIndex,    \
                                                             _ppBufHdr, _pPortDef)     \
+    pthread_mutex_lock(&_pList.mutex);                                                \
     _pBufHdr->nAllocLen = _nSizeBytes;                                                \
     _pBufHdr->pAppPrivate = _pAppPrivate;                                             \
     if (_pList.eDir == OMX_DirInput){                                                 \
@@ -502,14 +527,17 @@ typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
        _pBufHdr->nOutputPortIndex = _nPortIndex;                                      \
        }                                                                              \
     _ppBufHdr = _pBufHdr;                                                             \
-    if (_pList.nListEnd == (_pPortDef->nBufferCountActual - 1))                       \
-       _pPortDef->bPopulated = OMX_TRUE
+    if (_pList.nListEnd == ((OMX_S32)(_pPortDef->nBufferCountActual) - 1))            \
+       _pPortDef->bPopulated = OMX_TRUE;                                              \
+    pthread_mutex_unlock(&_pList.mutex);
 
-#define CopyBufferHeaderList(_pList, _pPortDef, _pBufHdr)                               \
-    if (_pPortDef->bPopulated == OMX_TRUE) {                                            \
-        unsigned int i;                                                                 \
-        for (i = 0; i <= _pList.nListEnd; i++) {                                        \
-            _pBufHdr[i] = _pList.pBufHdr[i];                                            \
-        }                                                                               \
-    }
+#define CopyBufferHeaderList(_pList, _pPortDef, _pBufHdr)                            \
+    pthread_mutex_lock(&_pList.mutex);                                               \
+    if (_pPortDef->bPopulated == OMX_TRUE) {                                         \
+        OMX_S32 i;                                                                   \
+        for (i = 0; i <= _pList.nListEnd; i++) {                                     \
+            _pBufHdr[i] = _pList.pBufHdr[i];                                         \
+        }                                                                            \
+    }                                                                                \
+    pthread_mutex_unlock(&_pList.mutex);
 

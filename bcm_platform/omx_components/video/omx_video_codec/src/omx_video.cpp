@@ -40,6 +40,9 @@
 /******************************************************************
  *   INCLUDE FILES
  ******************************************************************/
+//#define LOG_NDEBUG 0
+#define LOG_TAG "BCM.VIDEO.DECODER"
+
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
@@ -48,14 +51,10 @@
 #include "gralloc.h"
 #include "GraphicBuffer.h"
 
-
 #include <utils/Log.h>
 #include <utils/List.h>
 
-#undef LOG_TAG
-#define LOG_TAG "BCM.VIDEO.DECODER"
 #define USE_ANB_PRIVATE_DATA 1
-//#define LOG_NDEBUG 0
 
 #define UNUSED __attribute__((unused))
 
@@ -424,15 +423,12 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sInBufList.nWritePos = -1;
     pMyData->sInBufList.nReadPos = -1;
     pMyData->sInBufList.eDir = OMX_DirInput;
+    pthread_mutex_init(&pMyData->sInBufList.mutex, NULL);
 
     // Initialize the output buffer list
     BKNI_Memset(&(pMyData->sOutBufList), 0x0, sizeof(BufferList));
     pMyData->sOutBufList.pBufHdr = (OMX_BUFFERHEADERTYPE**)
         BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * MAX_NUM_OUT_BUFFERS);
-
-    pMyData->pOutBufHdrRes= (OMX_BUFFERHEADERTYPE**)
-        BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * MAX_NUM_OUT_BUFFERS);
-
 
     if(pMyData->sOutBufList.pBufHdr == NULL)
     {
@@ -440,6 +436,16 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
         eError = OMX_ErrorInsufficientResources;
         goto EXIT;
 
+    }
+
+    pMyData->pOutBufHdrRes= (OMX_BUFFERHEADERTYPE**)
+        BKNI_Malloc (sizeof(OMX_BUFFERHEADERTYPE*) * MAX_NUM_OUT_BUFFERS);
+
+    if (pMyData->pOutBufHdrRes == NULL)
+    {
+        LOGE("Error in allocating mem for pMyData->pOutBufHdrRes");
+        eError = OMX_ErrorInsufficientResources;
+        goto EXIT;
     }
 
     for (nIndex = 0; nIndex < MAX_NUM_OUT_BUFFERS; nIndex++)
@@ -463,6 +469,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sOutBufList.nWritePos = -1;
     pMyData->sOutBufList.nReadPos = -1;
     pMyData->sOutBufList.eDir = OMX_DirOutput;
+    pthread_mutex_init(&pMyData->sOutBufList.mutex, NULL);
 
     // Create the pipe used to send commands to the thread
     err = pipe((int*)pMyData->cmdpipe);
@@ -550,7 +557,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
     OMX_ERRORTYPE eError = OMX_ErrorNone;
     void *pError = (void*)&eError;
     ThrCmdType eCmd = Stop;
-    OMX_U32 nIndex = 0;
+    OMX_S32 nIndex = 0;
     NEXUS_PlaypumpStatus playpumpStatus;
 
     trace t(__FUNCTION__);
@@ -566,37 +573,55 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
 
     if (pMyData != NULL)
     {
-        if (pMyData->sInBufList.nAllocSize > 0)
-            ListFreeAllBuffers(pMyData->sInBufList, nIndex)
+        // Put the command and data in the pipe
+        if (0 != pMyData->cmdpipe[1])
+        {
+            write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
+        }
 
-                if (pMyData->sOutBufList.nAllocSize > 0)
-                    ListFreeAllBuffers(pMyData->sOutBufList, nIndex)
-
-                        // Put the command and data in the pipe
-                        if(0!= pMyData->cmdpipe[1])
-                            write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
-
-        if(0!= pMyData->cmddatapipe[1])
+        if (0 != pMyData->cmddatapipe[1])
+        {
             write(pMyData->cmddatapipe[1], &eCmd, sizeof(eCmd));
+        }
 
         // Wait for thread to exit so we can get the status into "error"
-        if(0 != pMyData->thread_id)
+        if (0 != pMyData->thread_id)
         {
             pthread_join(pMyData->thread_id, &pError);
         }
 
         // close the pipe handles
-        if(pMyData->cmdpipe[0])
+        if (pMyData->cmdpipe[0])
+        {
             close(pMyData->cmdpipe[0]);
+        }
 
-        if(pMyData->cmdpipe[1])
+        if (pMyData->cmdpipe[1])
+        {
             close(pMyData->cmdpipe[1]);
+        }
 
         if(pMyData->cmddatapipe[0])
+        {
             close(pMyData->cmddatapipe[0]);
+        }
 
         if(pMyData->cmddatapipe[1])
+        {
             close(pMyData->cmddatapipe[1]);
+        }
+
+        if (pMyData->sInBufList.nAllocSize > 0)
+        {
+            ListFreeAllBuffers(pMyData->sInBufList, nIndex)
+        }
+        pthread_mutex_destroy(&pMyData->sInBufList.mutex);
+
+        if (pMyData->sOutBufList.nAllocSize > 0)
+        {
+            ListFreeAllBuffers(pMyData->sOutBufList, nIndex)
+        }
+        pthread_mutex_destroy(&pMyData->sOutBufList.mutex);
 
         if(pMyData->pAndVidWindow)
         {
@@ -674,7 +699,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_SendCommand(OMX_IN OMX_HANDLETYPE hComponent,
             break;
         default:
             ALOGE("%s: Unhandled Command: %d\n",__FUNCTION__,eCmd);
-            OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter); 
+            OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter);
             break;
     }
 
@@ -1120,7 +1145,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseBuffer(OMX_IN OMX_HANDLETYPE hComponent,
     BCM_OMX_CONTEXT *pMyData;
     OMX_ERRORTYPE eError = OMX_ErrorNone;
     OMX_PARAM_PORTDEFINITIONTYPE *pPortDef;
-    OMX_U32 nIndex = 0x0;
+    OMX_S32 nIndex = 0x0;
 
     pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
     OMX_CONF_CHECK_CMD(pMyData, ppBufferHdr, pBuffer);
@@ -1160,32 +1185,45 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseBuffer(OMX_IN OMX_HANDLETYPE hComponent,
     if (nPortIndex == pMyData->sInPortDef.nPortIndex)
     {
         ListAllocate(pMyData->sInBufList, nIndex);
+        pthread_mutex_lock(&pMyData->sInBufList.mutex);
         if (pMyData->sInBufList.pBufHdr[nIndex] == NULL)
         {
             pMyData->sInBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
                 malloc(sizeof(OMX_BUFFERHEADERTYPE)) ;
             if (!pMyData->sInBufList.pBufHdr[nIndex])
+            {
+                pthread_mutex_unlock(&pMyData->sInBufList.mutex);
                 OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
+            }
 
             OMX_CONF_INIT_STRUCT_PTR (pMyData->sInBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
         }
         pMyData->sInBufList.pBufHdr[nIndex]->pBuffer = pBuffer;
+        pthread_mutex_unlock(&pMyData->sInBufList.mutex);
+
         LoadBufferHeader(pMyData->sInBufList, pMyData->sInBufList.pBufHdr[nIndex], pAppPrivate,
                 nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);
     }
     else
     {
         ListAllocate(pMyData->sOutBufList,  nIndex);
+
+        pthread_mutex_lock(&pMyData->sOutBufList.mutex);
         if (pMyData->sOutBufList.pBufHdr[nIndex] == NULL)
         {
             pMyData->sOutBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
                 malloc(sizeof(OMX_BUFFERHEADERTYPE));
             if (!pMyData->sOutBufList.pBufHdr[nIndex])
+            {
+                pthread_mutex_unlock(&pMyData->sOutBufList.mutex);
                 OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
+            }
 
             OMX_CONF_INIT_STRUCT_PTR (pMyData->sOutBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
         }
         pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer = pBuffer;
+        pthread_mutex_unlock(&pMyData->sOutBufList.mutex);
+
         LoadBufferHeader(pMyData->sOutBufList, pMyData->sOutBufList.pBufHdr[nIndex],
                 pAppPrivate, nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);
         CopyBufferHeaderList(pMyData->sOutBufList, pPortDef, pMyData->pOutBufHdrRes);
@@ -1206,7 +1244,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
     BCM_OMX_CONTEXT *pMyData;
     OMX_ERRORTYPE eError = OMX_ErrorNone;
     OMX_PARAM_PORTDEFINITIONTYPE *pPortDef;
-    OMX_U32 nIndex = 0x0;
+    OMX_S32 nIndex = 0x0;
     GraphicBuffer *pGraphicBuffer;
     PDISPLAY_FRAME pDispFr;
 
@@ -1258,12 +1296,17 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
     // Use the buffer passed by the client to initialize the actual buffer
     // inside the buffer header.
     ListAllocate(pMyData->sOutBufList,  nIndex);
+
+    pthread_mutex_lock(&pMyData->sOutBufList.mutex);
     if (pMyData->sOutBufList.pBufHdr[nIndex] == NULL)
     {
         pMyData->sOutBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
             malloc(sizeof(OMX_BUFFERHEADERTYPE));
         if (!pMyData->sOutBufList.pBufHdr[nIndex])
+        {
+            pthread_mutex_unlock(&pMyData->sOutBufList.mutex);
             OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
+        }
 
         OMX_CONF_INIT_STRUCT_PTR (pMyData->sOutBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
     }
@@ -1292,6 +1335,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
 
     pMyData->sOutBufList.pBufHdr[nIndex]->pInputPortPrivate = (OMX_PTR) pGraphicBuffer;
     pMyData->sOutBufList.pBufHdr[nIndex]->pPlatformPrivate = (OMX_PTR) &nativeBuffer;
+    pthread_mutex_unlock(&pMyData->sOutBufList.mutex);
 
     LoadBufferHeader(pMyData->sOutBufList, pMyData->sOutBufList.pBufHdr[nIndex],
             pAppPrivate, nSizeBytes, nPortIndex, *bufferHeader, pPortDef);
@@ -1311,7 +1355,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
 
     BCM_OMX_CONTEXT *pMyData;
     OMX_ERRORTYPE eError = OMX_ErrorNone;
-    OMX_S8 nIndex = 0x0;
+    OMX_S32 nIndex = 0x0;
     OMX_PARAM_PORTDEFINITIONTYPE *pPortDef;
 
     pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
@@ -1341,16 +1385,21 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
         ListAllocate(pMyData->sInBufList,  nIndex);
 
         //First Allocate The Buffer Header
+        pthread_mutex_lock(&pMyData->sInBufList.mutex);
         if (pMyData->sInBufList.pBufHdr[nIndex] == NULL)
         {
             pMyData->sInBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
                 malloc(sizeof(OMX_BUFFERHEADERTYPE)) ;
 
             if (!pMyData->sInBufList.pBufHdr[nIndex])
+            {
+                pthread_mutex_unlock(&pMyData->sInBufList.mutex);
                 OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
+            }
 
             OMX_CONF_INIT_STRUCT_PTR (pMyData->sInBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
         }
+        pthread_mutex_unlock(&pMyData->sInBufList.mutex);
 
         // Along with this allocate the Memory for the input context that we maintain
         // for each buffer. We do not need nexus memory for this as well.
@@ -1469,16 +1518,16 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_FreeBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
             pBufferHdr->pInputPortPrivate = NULL;
         }
 
-        unsigned int prevSize = pMyData->sInBufList.nAllocSize;
+        OMX_S32 prevSize = pMyData->sInBufList.nAllocSize;
         ListFreeBuffer(pMyData->sInBufList, pBufferHdr, pPortDef)
         ListFreeBufferExt(pMyData->sInBufList, pBufferHdr, pPortDef,prevSize,pMyData->pInBufHdrRes)
 
     } else if (nPortIndex == pMyData->sOutPortDef.nPortIndex) {
 
         pPortDef = &pMyData->sOutPortDef;
-        unsigned int prevSize = pMyData->sOutBufList.nAllocSize;
+        OMX_S32 prevSize = pMyData->sOutBufList.nAllocSize;
         ListFreeBuffer(pMyData->sOutBufList, pBufferHdr, pPortDef)
-            ListFreeBufferExt(pMyData->sOutBufList, pBufferHdr, pPortDef,prevSize,pMyData->pOutBufHdrRes)
+        ListFreeBufferExt(pMyData->sOutBufList, pBufferHdr, pPortDef,prevSize,pMyData->pOutBufHdrRes)
     } else{
 
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter);
@@ -1502,7 +1551,7 @@ OMX_CONF_CMD_BAIL:
  * meta data struct. The Size Will Also Be From Metadata Struct.
  */
 
-static 
+static
 unsigned char *
 GetSecureDataPtrForDMAXfer(OMX_BUFFERHEADERTYPE* pBufferHdr, unsigned int *SzOut)
 {
@@ -1513,7 +1562,7 @@ GetSecureDataPtrForDMAXfer(OMX_BUFFERHEADERTYPE* pBufferHdr, unsigned int *SzOut
 /*
  * Simple function to Save Us Indirection Everywhere in code
  */
-static 
+static
 unsigned char *
 GetInDataPtr(BCM_OMX_CONTEXT *pBcmContext, OMX_BUFFERHEADERTYPE* pBufferHdr)
 {

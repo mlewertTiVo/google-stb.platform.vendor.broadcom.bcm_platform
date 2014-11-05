@@ -439,6 +439,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sInBufList.nWritePos = -1;
     pMyData->sInBufList.nReadPos = -1;
     pMyData->sInBufList.eDir = OMX_DirInput;
+    pthread_mutex_init(&pMyData->sInBufList.mutex, NULL);
 
     // Initialize the output buffer list
     BKNI_Memset(&(pMyData->sOutBufList), 0x0, sizeof(BufferList));
@@ -483,6 +484,7 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
     pMyData->sOutBufList.nWritePos = -1;
     pMyData->sOutBufList.nReadPos = -1;
     pMyData->sOutBufList.eDir = OMX_DirOutput;
+    pthread_mutex_init(&pMyData->sOutBufList.mutex, NULL);
 
     // Create the pipe used to send commands to the thread
     err = pipe((int*)pMyData->cmdpipe);
@@ -539,7 +541,7 @@ extern "C" OMX_ERRORTYPE OMX_VENC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
     OMX_ERRORTYPE eError = OMX_ErrorNone;
     void *pError = (void *)&eError;
     ThrCmdType eCmd = Stop;
-    OMX_U32 nIndex = 0;
+    OMX_S32 nIndex = 0;
     NEXUS_PlaypumpStatus playpumpStatus;
 
     trace t(__FUNCTION__);
@@ -555,16 +557,6 @@ extern "C" OMX_ERRORTYPE OMX_VENC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
 
     if (pMyData != NULL)
     {
-        if (pMyData->sInBufList.nAllocSize > 0)
-        {
-            ListFreeAllBuffers(pMyData->sInBufList, nIndex)
-        }
-
-        if (pMyData->sOutBufList.nAllocSize > 0)
-        {
-            ListFreeAllBuffers(pMyData->sOutBufList, nIndex)
-        }
-
         // Put the command and data in the pipe
         if (0!= pMyData->cmdpipe[1])
         {
@@ -603,6 +595,19 @@ extern "C" OMX_ERRORTYPE OMX_VENC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
             close(pMyData->cmddatapipe[1]);
         }
 
+        /* Free up all buffers */
+        if (pMyData->sInBufList.nAllocSize > 0)
+        {
+            ListFreeAllBuffers(pMyData->sInBufList, nIndex);
+        }
+        pthread_mutex_destroy(&pMyData->sInBufList.mutex);
+
+        if (pMyData->sOutBufList.nAllocSize > 0)
+        {
+            ListFreeAllBuffers(pMyData->sOutBufList, nIndex);
+        }
+        pthread_mutex_destroy(&pMyData->sOutBufList.mutex);
+
         if (pMyData->pTstable)
         {
             delete pMyData->pTstable;
@@ -617,7 +622,7 @@ extern "C" OMX_ERRORTYPE OMX_VENC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
 
         BKNI_Free(pMyData);
 
-        ((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate=NULL;
+        ((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate = NULL;
     }
 
     return eError;
@@ -1270,7 +1275,7 @@ extern "C" OMX_ERRORTYPE OMX_VENC_UseBuffer(OMX_IN OMX_HANDLETYPE hComponent,
     BCM_OMX_CONTEXT *pMyData;
     OMX_ERRORTYPE eError = OMX_ErrorNone;
     OMX_PARAM_PORTDEFINITIONTYPE *pPortDef;
-    OMX_U32 nIndex = 0x0;
+    OMX_S32 nIndex = 0x0;
 
     pMyData = (BCM_OMX_CONTEXT *)(((OMX_COMPONENTTYPE*)hComponent)->pComponentPrivate);
     OMX_CONF_CHECK_CMD(pMyData, ppBufferHdr, pBuffer);
@@ -1283,10 +1288,14 @@ extern "C" OMX_ERRORTYPE OMX_VENC_UseBuffer(OMX_IN OMX_HANDLETYPE hComponent,
         OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter);
 
     if (!pPortDef->bEnabled)
-       OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
+    {
+        OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorIncorrectStateOperation);
+    }
 
     if (nSizeBytes != pPortDef->nBufferSize || pPortDef->bPopulated)
-       OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter);
+    {
+        OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorBadParameter);
+    }
 
     // Find an empty position in the BufferList and allocate memory for the buffer header.
     // Use the buffer passed by the client to initialize the actual buffer
@@ -1294,12 +1303,17 @@ extern "C" OMX_ERRORTYPE OMX_VENC_UseBuffer(OMX_IN OMX_HANDLETYPE hComponent,
     if (nPortIndex == pMyData->sInPortDef.nPortIndex)
     {
         ListAllocate(pMyData->sInBufList, nIndex);
+
+        pthread_mutex_lock(&pMyData->sInBufList.mutex);
         if (pMyData->sInBufList.pBufHdr[nIndex] == NULL)
         {
             pMyData->sInBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
                                         malloc(sizeof(OMX_BUFFERHEADERTYPE));
             if (!pMyData->sInBufList.pBufHdr[nIndex])
-            OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
+            {
+                pthread_mutex_unlock(&pMyData->sInBufList.mutex);
+                OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
+            }
 
             OMX_CONF_INIT_STRUCT_PTR (pMyData->sInBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
         }
@@ -1307,25 +1321,37 @@ extern "C" OMX_ERRORTYPE OMX_VENC_UseBuffer(OMX_IN OMX_HANDLETYPE hComponent,
         pMyData->sInBufList.pBufHdr[nIndex]->pInputPortPrivate =
             (OMX_PTR) malloc(sizeof(NEXUS_VIDEO_ENCODER_INPUT_CONTEXT));
         if (!pMyData->sInBufList.pBufHdr[nIndex]->pInputPortPrivate)
-        OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
+        {
+            pthread_mutex_unlock(&pMyData->sInBufList.mutex);
+            OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
+        }
 
         pMyData->sInBufList.pBufHdr[nIndex]->pBuffer = pBuffer;
+        pthread_mutex_unlock(&pMyData->sInBufList.mutex);
+
         LoadBufferHeader(pMyData->sInBufList, pMyData->sInBufList.pBufHdr[nIndex], pAppPrivate,
                                             nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);
     }
     else
     {
         ListAllocate(pMyData->sOutBufList,  nIndex);
+
+        pthread_mutex_lock(&pMyData->sOutBufList.mutex);
         if (pMyData->sOutBufList.pBufHdr[nIndex] == NULL)
         {
             pMyData->sOutBufList.pBufHdr[nIndex] = (OMX_BUFFERHEADERTYPE*)
                                           malloc(sizeof(OMX_BUFFERHEADERTYPE));
             if (!pMyData->sOutBufList.pBufHdr[nIndex])
+            {
+                pthread_mutex_unlock(&pMyData->sOutBufList.mutex);
                 OMX_CONF_SET_ERROR_BAIL(eError, OMX_ErrorInsufficientResources);
+            }
 
             OMX_CONF_INIT_STRUCT_PTR (pMyData->sOutBufList.pBufHdr[nIndex], OMX_BUFFERHEADERTYPE);
         }
         pMyData->sOutBufList.pBufHdr[nIndex]->pBuffer = pBuffer;
+        pthread_mutex_unlock(&pMyData->sOutBufList.mutex);
+
         LoadBufferHeader(pMyData->sOutBufList, pMyData->sOutBufList.pBufHdr[nIndex],
                        pAppPrivate, nSizeBytes, nPortIndex, *ppBufferHdr, pPortDef);
         CopyBufferHeaderList(pMyData->sOutBufList, pPortDef, pMyData->pOutBufHdrRes);
@@ -1428,7 +1454,7 @@ extern "C" OMX_ERRORTYPE OMX_VENC_FreeBuffer(OMX_IN  OMX_HANDLETYPE hComponent,
 #endif
 
             pPortDef = &pMyData->sOutPortDef;
-            unsigned int prevSize = pMyData->sOutBufList.nAllocSize;
+            OMX_S32 prevSize = pMyData->sOutBufList.nAllocSize;
             ListFreeBuffer(pMyData->sOutBufList, pBufferHdr, pPortDef)
             ListFreeBufferExt(pMyData->sOutBufList, pBufferHdr, pPortDef,prevSize,pMyData->pOutBufHdrRes)
         } else{
