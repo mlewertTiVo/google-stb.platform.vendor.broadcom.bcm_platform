@@ -86,15 +86,15 @@
 
 using namespace android;
 
-static jint JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset(JNIEnv *env, jobject obj, jint xoff, jint yoff, jint width, jint height);
+static void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset(JNIEnv *env, jobject thisobj, jobject offset);
 
-static jint JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_getScreenOffset(JNIEnv *env, jobject obj, jint xoff, jint yoff, jint width, jint height);
+static void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_getScreenOffset(JNIEnv *env, jobject thisobj, jobject offset);
 
 static JNINativeMethod gMethods[] = {
 
-        {"setScreenOffset",   "(IIII)I", (void *)Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset}, 
+        {"setScreenOffset",   "(Landroid/graphics/Rect;)V", (void *)Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset},
 
-        {"getScreenOffset",   "(IIII)I", (void *)Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_getScreenOffset} 			
+        {"getScreenOffset",   "(Landroid/graphics/Rect;)V", (void *)Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_getScreenOffset}
 };
 
 
@@ -129,6 +129,8 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
     JNIEnv* env = NULL;
     jint result = -1;
 
+    BSTD_UNUSED(reserved);
+
     if (vm->GetEnv((void**) &env, JNI_VERSION_1_4) != JNI_OK) {
         LOGE("ERROR: GetEnv failed\n");
         return result;
@@ -149,9 +151,29 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
 }
 
 
-JNIEXPORT jint JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset
-  (JNIEnv *env, jobject obj, jint xoff, jint yoff, jint width, jint height)
+JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset
+  (JNIEnv *env, jobject thisobj, jobject offset)
 {
+    BSTD_UNUSED(thisobj);
+
+    jclass offset_class = env->GetObjectClass(offset);
+
+    jfieldID left_id = env->GetFieldID(offset_class, "left", "I");
+    if (left_id == NULL) return;
+    jint left = env->GetIntField(offset, left_id);
+
+    jfieldID right_id = env->GetFieldID(offset_class, "right", "I");
+    if (right_id == NULL) return;
+    jint right = env->GetIntField(offset, right_id);
+
+    jfieldID top_id = env->GetFieldID(offset_class, "top", "I");
+    if (top_id == NULL) return;
+    jint top = env->GetIntField(offset, top_id);
+
+    jfieldID bottom_id = env->GetFieldID(offset_class, "bottom", "I");
+    if (bottom_id == NULL) return;
+    jint bottom = env->GetIntField(offset, bottom_id);
+
 #ifdef ANDROID_SUPPORTS_NEXUS_IPC_CLIENT_FACTORY
     NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("adjustScreenOffset");
 #else
@@ -163,43 +185,58 @@ JNIEXPORT jint JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenO
 
     LOGE("Changing composition [x,y,w,h] = [%d, %d, %d, %d] ----> [%d, %d, %d, %d] \n",
         composition.position.x, composition.position.y,
-        composition.position.width, composition.position.height, 
-        xoff, yoff, width, height);	
+        composition.position.width, composition.position.height,
+        left, top, right - left, bottom - top);
 
-    composition.position.x = xoff;
-    composition.position.y = yoff;
-    composition.position.width = width;
-    composition.position.height = height;
+    composition.position.x = left;
+    composition.position.y = top;
+    composition.position.width = right - left;
+    composition.position.height = bottom - top;
 
     pIpcClient->setClientComposition(NULL, &composition);
 
     delete pIpcClient;
-    return 0;
 }
 
-JNIEXPORT jint JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_getScreenOffset
-  (JNIEnv *env, jobject obj, jint xoff, jint yoff, jint width, jint height)
+JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_getScreenOffset
+  (JNIEnv *env, jobject thisobj, jobject offset)
 {
+    BSTD_UNUSED(thisobj);
+
 #ifdef ANDROID_SUPPORTS_NEXUS_IPC_CLIENT_FACTORY
     NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("adjustScreenOffset");
 #else
     NexusIPCClient *pIpcClient = new NexusIPCClient;
 #endif
     NEXUS_SurfaceComposition composition;
-    int step = 10; 
-    int last_step = 4;
 
     pIpcClient->getClientComposition(NULL, &composition);
 
     LOGE("get [%d, %d, %d, %d]  \n",
         composition.position.x, composition.position.y,
-        composition.position.width, composition.position.height);	
-	
-    xoff = composition.position.x;
-    yoff = composition.position.y;
-    width = composition.position.width;
-    height = composition.position.height;
-	
+        composition.position.width, composition.position.height);
+
+    jint left = composition.position.x;
+    jint top = composition.position.y;
+    jint right = composition.position.x + composition.position.width;
+    jint bottom = composition.position.y + composition.position.height;
     delete pIpcClient;
-    return 0;
+
+    jclass offset_class = env->GetObjectClass(offset);
+
+    jfieldID left_id = env->GetFieldID(offset_class, "left", "I");
+    if (left_id == NULL) return;
+    env->SetIntField(offset, left_id, left);
+
+    jfieldID right_id = env->GetFieldID(offset_class, "right", "I");
+    if (right_id == NULL) return;
+    env->SetIntField(offset, right_id, right);
+
+    jfieldID top_id = env->GetFieldID(offset_class, "top", "I");
+    if (top_id == NULL) return;
+    env->SetIntField(offset, top_id, top);
+
+    jfieldID bottom_id = env->GetFieldID(offset_class, "bottom", "I");
+    if (bottom_id == NULL) return;
+    env->SetIntField(offset, bottom_id, bottom);
 }

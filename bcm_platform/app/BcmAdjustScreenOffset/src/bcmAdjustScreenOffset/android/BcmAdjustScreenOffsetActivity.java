@@ -12,15 +12,17 @@ import java.io.FileOutputStream;
 import java.io.FileNotFoundException;
 import java.lang.Runtime;
 import java.lang.Process;
+import android.graphics.Rect;
 
 public class BcmAdjustScreenOffsetActivity extends Activity {
     /** Called when the activity is first created. */
     private static final String TAG = "BcmAdjustScreenOffset";
     private Button button_x_inc, button_x_dec, button_y_inc, button_y_dec, button_fmt_1080i, button_fmt_720p;
-    private static int xoff = 0, yoff = 0, width = 1280, height = 720;
     private native_adjustScreenOffset nav;
-    
-    
+    private final static int step_x = 4;
+    private final static int step_y = 4;
+
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -38,10 +40,11 @@ public class BcmAdjustScreenOffsetActivity extends Activity {
 			public void onClick(View v)
 			{
                         Log.i(TAG,"click on button_x_inc");
-                        nav.getScreenOffset(xoff, yoff, width, height);
-                        xoff -= 4;
-                        width += 8;                        
-                        nav.setScreenOffset(xoff, yoff, width, height);
+                        Rect offset = new Rect();
+                        nav.getScreenOffset(offset);
+                        offset.left -= step_x;
+                        offset.right += step_x;
+                        nav.setScreenOffset(offset);
 			}
 		});
 		
@@ -50,10 +53,11 @@ public class BcmAdjustScreenOffsetActivity extends Activity {
 			public void onClick(View v)
 			{
                         Log.i(TAG,"click on button_x_dec");
-                        nav.getScreenOffset(xoff, yoff, width, height);
-                        xoff += 4;
-                        width -= 8;                        
-                        nav.setScreenOffset(xoff, yoff, width, height);
+                        Rect offset = new Rect();
+                        nav.getScreenOffset(offset);
+                        offset.left += step_x;
+                        offset.right -= step_x;
+                        nav.setScreenOffset(offset);
 			}
 		});
 		
@@ -62,10 +66,11 @@ public class BcmAdjustScreenOffsetActivity extends Activity {
 			public void onClick(View v)
 			{
                         Log.i(TAG,"click on button_y_inc");
-                        nav.getScreenOffset(xoff, yoff, width, height);
-                        yoff -= 4;
-                        height += 8;                        
-                        nav.setScreenOffset(xoff, yoff, width, height);
+                        Rect offset = new Rect();
+                        nav.getScreenOffset(offset);
+                        offset.top -= step_y;
+                        offset.bottom += step_y;
+                        nav.setScreenOffset(offset);
 			}
 		});
 		
@@ -74,10 +79,11 @@ public class BcmAdjustScreenOffsetActivity extends Activity {
 			public void onClick(View v)
 			{
                         Log.i(TAG,"click on button_y_dec");
-                        nav.getScreenOffset(xoff, yoff, width, height);
-                        yoff += 4;
-                        height -= 8;                        
-                        nav.setScreenOffset(xoff, yoff, width, height);
+                        Rect offset = new Rect();
+                        nav.getScreenOffset(offset);
+                        offset.top += step_y;
+                        offset.bottom -= step_y;
+                        nav.setScreenOffset(offset);
 
 			}
 		});     
