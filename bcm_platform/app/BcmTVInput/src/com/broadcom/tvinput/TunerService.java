@@ -105,19 +105,6 @@ public class TunerService extends TvInputService {
         if (DEBUG) 
 			Log.d(TAG, "TunerService::onCreateSession(), inputId = " +inputId);
 
-        Log.e(TAG, "Calling TunerHAL.initialize!!");
-        TunerHAL.initialize();
-        ChannelInfo[] civ = TunerHAL.getChannelList();
-
-        Log.e(TAG, "Got channels: " + civ.length);
-        {
-            List<ChannelInfo> cdal = new ArrayList<ChannelInfo>();
-            for (ChannelInfo d : civ) {
-                cdal.add(d);
-            }
-            updateChannels(this, inputId, cdal);
-        }
-
         // Lookup TvInputInfo from inputId
         TvInputInfo info = mInputMap.get(inputId);
 
@@ -156,8 +143,18 @@ public class TunerService extends TvInputService {
         // Save mapping between inputId and deviceId
         mDeviceIdMap.put(info.getId(), deviceId);
 
-        // Create some sample channels
-        createSampleChannels(info.getId());
+        Log.e(TAG, "Calling TunerHAL.initialize!!");
+        TunerHAL.initialize();
+        ChannelInfo[] civ = TunerHAL.getChannelList();
+
+        Log.e(TAG, "Got channels: " + civ.length);
+        {
+            List<ChannelInfo> cdal = new ArrayList<ChannelInfo>();
+            for (ChannelInfo d : civ) {
+                cdal.add(d);
+            }
+            updateChannels(this, info.getId(), cdal);
+        }
 
         if (DEBUG) 
 			Log.d(TAG, "onHardwareAdded returns " + info);
@@ -183,21 +180,6 @@ public class TunerService extends TvInputService {
         return inputId;
     }
 
-    private void createSampleChannels(String inputId) 
-    {
-        List<ChannelInfo> sSampleChannels = new ArrayList<ChannelInfo>();
-        Class clazz = TunerService.class;
-        ChannelInfo d = new ChannelInfo();
-        d.name = "dummy";
-        d.number = "0";
-        d.id = 0;
-        d.onid = 0;
-        d.tsid = 0;
-        d.sid = 0;
-        sSampleChannels.add(d);
-        updateChannels(this, inputId, sSampleChannels);
-    }
-
     public static void populateChannels(Context context, String inputId, List<ChannelInfo> channels) 
     {
         ContentValues channel_values = new ContentValues();
@@ -221,7 +203,7 @@ public class TunerService extends TvInputService {
             channel_values.put(TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA, dbid);
 
             Uri channelUri = context.getContentResolver().insert(TvContract.Channels.CONTENT_URI, channel_values);
-	    Log.d(TAG, "populateChannels: " + channel.number + " " + channel.name + " " + channelUri);
+	        Log.d(TAG, "populateChannels: " + channel.number + " " + channel.name + " " + channelUri);
 
             //long channelId = ContentUris.parseId(channelUri);
             //Log.d(TAG, "channelId = " +channelId);
