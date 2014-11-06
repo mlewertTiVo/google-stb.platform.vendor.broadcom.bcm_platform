@@ -30,7 +30,11 @@ ifeq ($(ANDROID_SUPPORTS_PLAYREADY), y)
 # libcmndrmprdy.so
 #-------------
 include $(CLEAR_VARS)
+ifeq ($(SAGE_SUPPORT), y)
 LOCAL_PREBUILT_LIBS := ${DRM_BUILD_MODE}/libcmndrmprdy.so
+else
+LOCAL_PREBUILT_LIBS := ${DRM_BUILD_MODE}/non_sage/libcmndrmprdy.so
+endif
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_MULTI_PREBUILT)
 endif
