@@ -888,7 +888,6 @@ OMXNexusDecoder::GetFramesFromHardware()
 
                 if(OutFrameStatus[FrCnt].serialNumber < NextExpectedFr)
                 {
-                    ALOGE("%s: error", __FUNCTION__);
                     continue;
                 }
 

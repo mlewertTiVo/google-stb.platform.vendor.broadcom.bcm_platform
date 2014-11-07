@@ -106,6 +106,12 @@ struct _BufferList{
 static void* ComponentThread(void* pThreadData);
 
 
+typedef struct _CMD_DATA_
+{
+    OMX_U32 Cmd;
+    OMX_U32 CmdData;
+}CMD_DATA,*PCMD_DATA;
+
 /*
  * Enumeration for the commands processed by the component
  */
@@ -187,7 +193,6 @@ typedef struct _BCM_OMX_CONTEXT_
     OMX_VIDEO_PARAM_MPEG2TYPE       sMpeg2;
     struct EnableAndroidNativeBuffersParams sNativeBufParam;
     pthread_t                       thread_id;
-    OMX_U32                         datapipe[2];
     OMX_U32                         cmdpipe[2];
     OMX_U32                         cmddatapipe[2];
     ThrCmdType                      eTCmd;

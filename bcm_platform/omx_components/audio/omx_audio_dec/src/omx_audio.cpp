@@ -420,13 +420,6 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
        goto EXIT;
     }
 
-    // Create the pipe used to send command data to the thread 
-    err = pipe((int*)pMyData->cmddatapipe);
-    if (err)
-    {
-       eError = OMX_ErrorInsufficientResources;
-       goto EXIT;
-    }
 
     // Create the component thread 
     err = pthread_create(&pMyData->thread_id, NULL, ComponentThread, pMyData);
@@ -502,12 +495,13 @@ extern "C" OMX_ERRORTYPE OMX_ADEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
     if (pMyData->sOutBufList.nAllocSize > 0)
         ListFreeAllBuffers(pMyData->sOutBufList, nIndex)   
 
-    // Put the command and data in the pipe 
-    if(0!= pMyData->cmdpipe[1])
-        write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
+    CMD_DATA CmdAndData;
+    CmdAndData.Cmd      = (OMX_U32)eCmd;
+    CmdAndData.CmdData  = (OMX_U32)eCmd;
 
-    if(0!= pMyData->cmddatapipe[1])
-        write(pMyData->cmddatapipe[1], &eCmd, sizeof(eCmd));
+    // Put the command and data in the pipe
+    if (0 != pMyData->cmdpipe[1])
+        write(pMyData->cmdpipe[1], &CmdAndData, sizeof(CmdAndData));
 
     // Wait for thread to exit so we can get the status into "error"
     if(0 != pMyData->thread_id)
@@ -520,13 +514,6 @@ extern "C" OMX_ERRORTYPE OMX_ADEC_DeInit(OMX_IN  OMX_HANDLETYPE hComponent)
 
     if(pMyData->cmdpipe[1])
         close(pMyData->cmdpipe[1]);
-
-    if(pMyData->cmddatapipe[0])
-        close(pMyData->cmddatapipe[0]);
-
-    if(pMyData->cmddatapipe[1])
-        close(pMyData->cmddatapipe[1]);
-
 
     if (pMyData->pPESFeeder) 
     {
@@ -594,14 +581,16 @@ extern "C" OMX_ERRORTYPE OMX_ADEC_SendCommand(OMX_IN OMX_HANDLETYPE hComponent,
               break;
        }
 
-    write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
 
-    // In case of MarkBuf, the pCmdData parameter is used to carry the data.
-    // In other cases, the nParam1 parameter carries the data.    
-    if(eCmd == MarkBuf)
-        write(pMyData->cmddatapipe[1], &pCmdData, sizeof(OMX_PTR));
-    else 
-        write(pMyData->cmddatapipe[1], &nParam, sizeof(nParam));
+    CMD_DATA CmdAndData;
+    CmdAndData.Cmd = (OMX_U32) eCmd1;
+    CmdAndData.CmdData = nParam;
+
+    // In the case of pCmdData has the mark data. 
+    if(eCmd1 == MarkBuf) 
+        CmdAndData.CmdData = (OMX_U32) pCmdData;
+
+    write(pMyData->cmdpipe[1], &CmdAndData, sizeof(CmdAndData));
     
 OMX_CONF_CMD_BAIL:
     return eError; 
@@ -1352,9 +1341,12 @@ extern "C" OMX_ERRORTYPE OMX_ADEC_EmptyThisBuffer(OMX_IN  OMX_HANDLETYPE hCompon
         pNxInputCnxt->SzValidPESData = SzValidPESData; 
     }
 
-    // Put the command and data in the pipe 
-    write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
-    write(pMyData->cmddatapipe[1], &pBufferHdr, sizeof(OMX_BUFFERHEADERTYPE*));
+    CMD_DATA CmdAndData;
+    CmdAndData.Cmd = (OMX_U32)eCmd;
+    CmdAndData.CmdData = (OMX_U32)pBufferHdr;
+
+    // Put the command and data in the pipe
+    write(pMyData->cmdpipe[1], &CmdAndData, sizeof(CmdAndData));
 
 OMX_CONF_CMD_BAIL:  
     return eError;
@@ -1394,9 +1386,12 @@ extern "C" OMX_ERRORTYPE OMX_ADEC_FillThisBuffer(OMX_HANDLETYPE hComponent, OMX_
     
    //pMyData->pOMXNxAudioDec->RetriveFrameFromHardware();
 
-    //Put the command and data in the pipe
-   write(pMyData->cmdpipe[1], &eCmd, sizeof(eCmd));
-   write(pMyData->cmddatapipe[1], &pBufferHdr, sizeof(OMX_BUFFERHEADERTYPE*));
+    CMD_DATA CmdAndData;
+    CmdAndData.Cmd = (OMX_U32)eCmd;
+    CmdAndData.CmdData = (OMX_U32)pBufferHdr;
+
+    // Put the command and data in the pipe
+    write(pMyData->cmdpipe[1], &CmdAndData, sizeof(CmdAndData));
 
 OMX_CONF_CMD_BAIL:  
     return eError;
@@ -1492,9 +1487,15 @@ static void* ComponentThread(void* pThreadData)
 
         if (FD_ISSET(pMyData->cmdpipe[0], &rfds))
         {
+            CMD_DATA CmdAndData;
+            CmdAndData.Cmd = 0;
+            CmdAndData.CmdData = 0;
+
             // retrieve command and data from pipe
-            read(pMyData->cmdpipe[0], &cmd, sizeof(cmd));
-            read(pMyData->cmddatapipe[0], &cmddata, sizeof(cmddata));
+            read(pMyData->cmdpipe[0], &CmdAndData, sizeof(CmdAndData));
+
+            cmd = (ThrCmdType) CmdAndData.Cmd;
+            cmddata = CmdAndData.CmdData;
 
           // State transition command
             if (cmd == SetState)

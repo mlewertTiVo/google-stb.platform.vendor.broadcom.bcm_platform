@@ -50,7 +50,7 @@
 
 //Fast Path Messages
 #define LOG_CMD_COMPLETE
-#define LOG_CMD_SEND            ALOGD
+#define LOG_CMD_SEND            
 #define LOG_INFO
 #define LOG_ERROR               ALOGD
 #define LOG_WARNING             ALOGD
