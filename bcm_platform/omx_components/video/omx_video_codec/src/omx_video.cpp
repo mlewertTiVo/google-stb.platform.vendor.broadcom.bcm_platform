@@ -112,8 +112,7 @@ static const CODEC_TO_MIME_MAP CodecToMIME[] =
 #ifdef OMX_EXTEND_CODECS_SUPPORT
     {OMX_VIDEO_CodingVC1,   (OMX_STRING)"video/wvc1"            },
     {OMX_VIDEO_CodingSPARK, (OMX_STRING)"video/spark"           },
-    {OMX_VIDEO_CodingDIVX311,(OMX_STRING)"video/divx"            },
-    {OMX_VIDEO_CodingH265,  (OMX_STRING)"video/hevc"            },
+    {OMX_VIDEO_CodingDIVX311,(OMX_STRING)"video/divx"           },
 #endif
 };
 
@@ -136,12 +135,11 @@ static const OMX_TO_NEXUS_MAP OMXToNexusTable[] = {
     { OMX_VIDEO_CodingMJPEG,        NEXUS_VideoCodec_eMotionJpeg},
     { OMX_VIDEO_CodingVP8,          NEXUS_VideoCodec_eVp8},
     { OMX_VIDEO_CodingVP9,          NEXUS_VideoCodec_eNone},
-	{OMX_VIDEO_CodingHEVC,          NEXUS_VideoCodec_eH265},
+    {OMX_VIDEO_CodingHEVC,          NEXUS_VideoCodec_eH265},
 #ifdef OMX_EXTEND_CODECS_SUPPORT
-	{ OMX_VIDEO_CodingVC1,          NEXUS_VideoCodec_eVc1},
+    { OMX_VIDEO_CodingVC1,          NEXUS_VideoCodec_eVc1},
     { OMX_VIDEO_CodingSPARK,        NEXUS_VideoCodec_eSpark},
     { OMX_VIDEO_CodingDIVX311,      NEXUS_VideoCodec_eDivx311},
-    { OMX_VIDEO_CodingH265,         NEXUS_VideoCodec_eH265},
 #endif
 };
 
