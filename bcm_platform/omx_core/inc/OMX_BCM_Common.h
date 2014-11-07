@@ -53,9 +53,7 @@
 #include "OMXNexusVideoEncoder.h"
 #endif
 #endif
-#ifdef ENABLE_SECURE_DECODERS
-#include "sage_srai.h"
-#endif
+
 
 /*
  *     D E F I N I T I O N S
@@ -211,10 +209,6 @@ typedef struct _BCM_OMX_CONTEXT_
     OMX_VIDEO_PARAM_AVCTYPE         sAvcVideoParams;
     OMX_VIDEO_PARAM_BITRATETYPE     sRateParams;
     bool                            bMetaDataInBuffer;
-#endif
-#ifdef ENABLE_SECURE_DECODERS
-    SRAI_PlatformHandle sage_platformHandle;
-    BSAGElib_InOutContainer *container;
 #endif
 } BCM_OMX_CONTEXT;
 

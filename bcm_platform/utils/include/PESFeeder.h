@@ -58,14 +58,6 @@
 #include <utils/threads.h> // Mutex Class operations
 #include "BcmDebug.h"
 
-#ifdef ENABLE_SECURE_DECODERS
-#define PES_IN_SECURE_BUFFER
-#endif
-
-#ifdef ENABLE_SECURE_DECODERS
-#include "common_crypto.h"
-#endif
-
 //#define DEBUG_PES_DATA
 
 using namespace android;
@@ -101,14 +93,13 @@ typedef struct _NEXUS_INPUT_CONTEXT_
     unsigned char   *PESData;
     size_t          SzPESBuffer;        // Total Size Of the PES Buffer We Allocated
     size_t          SzValidPESData;     // Size Of Valid Data In PES Buffer.
-    uint8_t         *pSecureData;
+    unsigned char   *pSecureData;
     size_t          SzSecureData;
     unsigned long long FramePTS;	// The PTS That we Just Sent To Hardware
     NEXUS_PlaypumpScatterGatherDescriptor NxDesc[NUM_IN_DESCRIPTORS_PER_IO];
     DONE_CONTEXT    DoneContext;
     unsigned int    NumDescFired;
     LIST_ENTRY      ListEntry;
-    bool            IsConfig;
 }NEXUS_INPUT_CONTEXT, *PNEXUS_INPUT_CONTEXT;
 
 class DataSender
@@ -142,8 +133,7 @@ public :
               unsigned int vPID,
               unsigned int NumDescriptors,
               NEXUS_TransportType NxTransType,
-              NEXUS_VideoCodec vidCdc=NEXUS_VideoCodec_eNone,
-              bool bSecure = false);
+              NEXUS_VideoCodec vidCdc=NEXUS_VideoCodec_eNone);
 
     ~PESFeeder();
 
@@ -232,10 +222,6 @@ private :
     DumpData                        *DataAfterFlush;
 #endif
     unsigned long long              LastHighestInputTS;
-    bool                            bSecureDecoding;
-#ifdef ENABLE_SECURE_DECODERS
-    CommonCryptoHandle m_CommonCryptoHandle;
-#endif
 private :
 
     size_t CopyPESData(void *pBuffer, size_t bufferSz);

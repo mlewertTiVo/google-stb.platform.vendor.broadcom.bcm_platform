@@ -48,7 +48,7 @@
 #define BCM_OMX_H265_DISABLE_4K_DEFAULT "0"
 
 //Path level Debug Messages
-#define LOG_START_STOP_DBG      ALOGD
+#define LOG_START_STOP_DBG
 #define LOG_EOS_DBG             ALOGD
 #define LOG_FLUSH_MSGS          ALOGD
 #define LOG_CREATE_DESTROY      ALOGD
@@ -64,8 +64,8 @@
 #define LOG_OUTPUT_TS
 
 //Enable logging of the decoder state
-#define LOG_DECODER_STATE       ALOGD
-#define DECODER_STATE_FREQ     50      //Print decoder state after every XX output frames.
+#define LOG_DECODER_STATE
+#define DECODER_STATE_FREQ     30      //Print decoder state after every XX output frames.
 List<OMXNexusDecoder *> OMXNexusDecoder::DecoderInstanceList;
 Mutex   OMXNexusDecoder::mDecoderIniLock;
 
@@ -869,7 +869,6 @@ OMXNexusDecoder::GetFramesFromHardware()
                     " Not pulling anymore frames!!", __FUNCTION__,DecoderID);
         return false;
     }
-
     if (NumFramesToFetch)
     {
         unsigned int NumFramesOut;
@@ -888,7 +887,6 @@ OMXNexusDecoder::GetFramesFromHardware()
 
                 if(OutFrameStatus[FrCnt].serialNumber < NextExpectedFr)
                 {
-                    ALOGE("%s: error", __FUNCTION__);
                     continue;
                 }
 
@@ -989,6 +987,7 @@ OMXNexusDecoder::GetFramesFromHardware()
                               pFreeFr->FrStatus.pts,
                               pFreeFr->MilliSecTS,
                               pFreeFr->ClientFlags);
+
                 DebugCounter = (DebugCounter + 1) % DECODER_STATE_FREQ;
                 if(!DebugCounter) PrintDecoStats();
             }
