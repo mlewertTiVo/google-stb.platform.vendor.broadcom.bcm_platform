@@ -148,13 +148,7 @@ public class TunerService extends TvInputService {
         ChannelInfo[] civ = TunerHAL.getChannelList();
 
         Log.e(TAG, "Got channels: " + civ.length);
-        {
-            List<ChannelInfo> cdal = new ArrayList<ChannelInfo>();
-            for (ChannelInfo d : civ) {
-                cdal.add(d);
-            }
-            updateChannels(this, info.getId(), cdal);
-        }
+        updateChannels(this, info.getId(), civ);
 
         if (DEBUG) 
 			Log.d(TAG, "onHardwareAdded returns " + info);
@@ -180,7 +174,7 @@ public class TunerService extends TvInputService {
         return inputId;
     }
 
-    public static void populateChannels(Context context, String inputId, List<ChannelInfo> channels) 
+    public static void populateChannels(Context context, String inputId, ChannelInfo channels[]) 
     {
         ContentValues channel_values = new ContentValues();
         ContentValues prog_values = new ContentValues();
@@ -219,7 +213,7 @@ public class TunerService extends TvInputService {
         Log.d(TAG, "populateChannels: finish");
     }
 
-    private void updateChannels(Context context, String inputId, List<ChannelInfo> channels) {
+    private void updateChannels(Context context, String inputId, ChannelInfo channels[]) {
         Uri uri = TvContract.buildChannelsUriForInput(inputId);
         getContentResolver().delete(uri, null, null);
         getContentResolver().delete(TvContract.Programs.CONTENT_URI, null, null);
