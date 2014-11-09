@@ -164,6 +164,7 @@ public:
     bool isFull();
 
 private:
+    Mutex mMutex;
     bcmOmxTimestampEntry *pTimestamps;
     unsigned int size;
     unsigned int usage_count;
@@ -194,7 +195,6 @@ typedef struct _BCM_OMX_CONTEXT_
     struct EnableAndroidNativeBuffersParams sNativeBufParam;
     pthread_t                       thread_id;
     OMX_U32                         cmdpipe[2];
-    OMX_U32                         cmddatapipe[2];
     ThrCmdType                      eTCmd;
     BufferList                      sInBufList;
     BufferList                      sOutBufList;
