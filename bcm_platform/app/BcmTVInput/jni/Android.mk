@@ -32,7 +32,7 @@ LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 LOCAL_SHARED_LIBRARIES := libcutils liblog libutils $(NEXUS_LIB)
 LOCAL_SHARED_LIBRARIES += libnxclient libnexusipcclient libbinder
 
-LOCAL_SRC_FILES := TunerHAL.cpp
+LOCAL_SRC_FILES := TunerHAL.cpp BroadcastDemo.cpp
 LOCAL_MODULE := libjni_tuner
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)

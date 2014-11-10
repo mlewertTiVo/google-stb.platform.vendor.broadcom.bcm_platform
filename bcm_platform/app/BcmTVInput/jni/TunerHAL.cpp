@@ -45,6 +45,7 @@
 #include "com_broadcom_tvinput_TunerHAL.h"
 #include "TunerHAL.h"
 #include "TunerInterface.h"
+#include "BroadcastDemo.h"
 
 // Enable this for debug prints
 #define DEBUG_JNI
@@ -55,29 +56,10 @@
 #define TV_LOG
 #endif
 
-static struct {
-    int id;
-    const char *number;
-    const char *name;
-    int onid;
-    int tsid;
-    int sid;
-    int freqKHz;
-    int vpid;
-} lineup[] = {
-    { 0, "8", "8madrid", 0x22d4, 0x0027, 0x0f3d, 577000, 0x100 },
-    { 1, "13", "13tv Madrid", 0x22d4, 0x0027, 0x0f3e, 577000, 0x200 },
-    { 2, "800", "ASTROCANAL SHOP", 0x22d4, 0x0027, 0x0f43, 577000, 0x700 },
-    { 3, "801", "Kiss TV", 0x22d4, 0x0027, 0x0f40, 577000, 0x401 },
-    { 4, "802", "INTER TV", 0x22d4, 0x0027, 0x0f3f, 577000, 0x300 },
-    { 5, "803", "MGustaTV", 0x22d4, 0x0027, 0x1392, 577000, 0x1000 },
-    { -1, "", "", 0, 0, 0, 0, 0 }
-};
-
 // All globals must be JNI primitives, any other data type 
 // will fail to hold its value across different JNI methods
 void *j_main;
-PTuner_Data g_pTD;
+Tuner_Data *g_pTD;
 
 // The signature syntax is: Native-method-name, signature & fully-qualified-name
 static JNINativeMethod gMethods[] = 
@@ -186,7 +168,7 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
     result = JNI_VERSION_1_4;
 
     // Allocate memory for the global pointer
-    g_pTD = (PTuner_Data) malloc(sizeof(Tuner_Data));
+    g_pTD = (Tuner_Data *) malloc(sizeof(Tuner_Data));
 
 	// Launch the binder service
     NexusTunerService::instantiate();
@@ -202,9 +184,28 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env
 
     TV_LOG("%s: Initializing the Tuner stack!!", __FUNCTION__);
 
-    rc = Broadcast_Initialize();
+    b_refsw_client_client_configuration  config;
 
-    return rc;
+    g_pTD->ipcclient = NexusIPCClientFactory::getClient("TunerHAL");
+
+    BKNI_Memset(&config, 0, sizeof(config));
+    BKNI_Snprintf(config.name.string,sizeof(config.name.string), "TunerHAL");
+
+    config.resources.screen.required = true;
+    config.resources.audioDecoder = false;
+    config.resources.audioPlayback = false;
+    config.resources.videoDecoder = true;
+
+    g_pTD->nexus_client = g_pTD->ipcclient->createClientContext(&config);
+
+    if (g_pTD->nexus_client == NULL) {
+        ALOGE("%s: createClientContext failed", __FUNCTION__);
+        return -1;
+    }
+
+    ALOGE("%s: nexus_client = %p", __FUNCTION__, g_pTD->nexus_client);
+
+    return Broadcast_Initialize(g_pTD);
 }
 
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jclass thiz, jstring id)
@@ -212,7 +213,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jcla
     const char *s8id = env->GetStringUTFChars(id, NULL);
     TV_LOG("%s: Tuning to a new channel (%s)!!", __FUNCTION__, s8id);
 
-    Broadcast_Tune(String8(s8id));
+    (*g_pTD->Tune)(g_pTD, String8(s8id));
 
     env->ReleaseStringUTFChars(id, s8id);   
     return 0;
@@ -224,7 +225,7 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
 
     Vector<ChannelInfo> civ;
 
-    civ = Broadcast_GetChannelList();
+    civ = (*g_pTD->GetChannelList)(g_pTD);
 
     jclass cls = env->FindClass("com/broadcom/tvinput/ChannelInfo"); 
     if (cls == 0) {
@@ -282,201 +283,8 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv *env, jcla
 {
     TV_LOG("%s: Stopping the current channel!!", __FUNCTION__);
 
-    Broadcast_Stop();
+    (*g_pTD->Stop)(g_pTD);
 
     return 0;
 }
 
-static int Broadcast_Initialize()
-{
-    NEXUS_FrontendAcquireSettings frontendAcquireSettings;
-
-    ALOGE("%s: Enter", __FUNCTION__);
-
-    b_refsw_client_client_configuration         config;
-    b_refsw_client_client_info                  client_info;
-    b_refsw_client_connect_resource_settings    connectSettings;
-
-    g_pTD->ipcclient= NexusIPCClientFactory::getClient("TunerHAL");
-
-    BKNI_Memset(&config, 0, sizeof(config));
-    BKNI_Snprintf(config.name.string,sizeof(config.name.string), "TunerHAL");
-
-    config.resources.screen.required = true;
-    config.resources.audioDecoder = false;
-    config.resources.audioPlayback = false;
-    config.resources.videoDecoder = true;
-
-    g_pTD->nexus_client = g_pTD->ipcclient->createClientContext(&config);
-
-    if (g_pTD->nexus_client == NULL)
-        ALOGE("%s: createClientContext failed", __FUNCTION__);
-
-    ALOGE("%s: nexus_client = %p", __FUNCTION__, g_pTD->nexus_client);
-
-    g_pTD->videoDecoder = g_pTD->ipcclient->acquireVideoDecoderHandle();
-
-    g_pTD->ipcclient->getClientInfo(g_pTD->nexus_client, &client_info);
-
-    // Now connect the client resources
-    g_pTD->ipcclient->getDefaultConnectClientSettings(&connectSettings);
-
-    connectSettings.simpleVideoDecoder[0].id = client_info.videoDecoderId;
-    connectSettings.simpleVideoDecoder[0].surfaceClientId = client_info.surfaceClientId;
-    connectSettings.simpleVideoDecoder[0].windowId = 0;
-
-    connectSettings.simpleVideoDecoder[0].windowCaps.type = eVideoWindowType_eMain;
-
-    if (true != g_pTD->ipcclient->connectClientResources(g_pTD->nexus_client, &connectSettings))
-        ALOGE("%s: connectClientResources failed", __FUNCTION__);
-
-    b_video_window_settings window_settings;
-    g_pTD->ipcclient->getVideoWindowSettings(g_pTD->nexus_client, 0, &window_settings);
-    window_settings.visible = true;
-    g_pTD->ipcclient->setVideoWindowSettings(g_pTD->nexus_client, 0, &window_settings);
-
-    g_pTD->stcChannel = NEXUS_SimpleStcChannel_Create(NULL);
-    g_pTD->parserBand = NEXUS_ParserBand_Open(NEXUS_ANY_ID);
-    if (!g_pTD->stcChannel || !g_pTD->parserBand)
-    {
-        ALOGE("%s: Unable to create stcChannel or parserBand", __FUNCTION__);
-        return -1;
-    }
-
-    NEXUS_Frontend_GetDefaultAcquireSettings(&frontendAcquireSettings);
-    frontendAcquireSettings.capabilities.ofdm = true;
-    g_pTD->frontend = NEXUS_Frontend_Acquire(&frontendAcquireSettings);
-    if (!g_pTD->frontend)
-    {
-        ALOGE("%s: Unable to find OFDM-capable frontend", __FUNCTION__);
-        return -1;
-    }
-
-    ALOGE("%s: Exit", __FUNCTION__);
-    return 0;
-}
-
-static int Broadcast_Tune(String8 s8id)
-{
-    NEXUS_SimpleVideoDecoderStartSettings videoProgram;
-    NEXUS_FrontendOfdmSettings ofdmSettings;
-    NEXUS_FrontendUserParameters userParams;
-    NEXUS_ParserBandSettings parserBandSettings;
-    NEXUS_VideoCodec video_codec = NEXUS_VideoCodec_eMpeg2;
-    NEXUS_Error rc;
-    int video_pid;
-
-    int channel_id = strtoul(s8id.string(), 0, 0);
-    unsigned i;
-    for (i = 0; lineup[i].id >= 0; i++) {
-        if (lineup[i].id == channel_id) {
-            break;
-        }
-    }
-
-    if (lineup[i].id < 0) {
-        ALOGE("%s: channel_id %d invalid", __FUNCTION__, channel_id);
-        return -1;
-    }
-
-    // Enable the tuner
-    ALOGE("%s: Tuning on frequency %d...", __FUNCTION__, lineup[i].freqKHz);
-
-    NEXUS_Frontend_GetDefaultOfdmSettings(&ofdmSettings);
-    ofdmSettings.frequency = lineup[i].freqKHz * 1000;
-    ofdmSettings.acquisitionMode = NEXUS_FrontendOfdmAcquisitionMode_eAuto;
-    ofdmSettings.terrestrial = true;
-    ofdmSettings.spectrum = NEXUS_FrontendOfdmSpectrum_eAuto;
-    ofdmSettings.mode = NEXUS_FrontendOfdmMode_eDvbt;
-    NEXUS_Frontend_GetUserParameters(g_pTD->frontend, &userParams);
-    NEXUS_ParserBand_GetSettings(g_pTD->parserBand, &parserBandSettings);
-
-    if (userParams.isMtsif)
-    {
-        parserBandSettings.sourceType = NEXUS_ParserBandSourceType_eMtsif;
-        parserBandSettings.sourceTypeSettings.mtsif = NEXUS_Frontend_GetConnector(g_pTD->frontend); /* NEXUS_Frontend_TuneXyz() will connect this frontend to this parser band */
-    }
-
-    else
-    {
-        parserBandSettings.sourceType = NEXUS_ParserBandSourceType_eInputBand;
-        parserBandSettings.sourceTypeSettings.inputBand = userParams.param1;  /* Platform initializes this to input band */
-    }
-
-    parserBandSettings.transportType = NEXUS_TransportType_eTs;
-    rc = NEXUS_ParserBand_SetSettings(g_pTD->parserBand, &parserBandSettings);
-
-    if (rc)
-    {
-        ALOGE("%s: ParserBand Setting failed", __FUNCTION__);
-        return -1;
-    }
-
-    rc = NEXUS_Frontend_TuneOfdm(g_pTD->frontend, &ofdmSettings);
-    if (rc)
-    {
-        ALOGE("%s: Frontend TuneOfdm failed", __FUNCTION__);
-        return -1;
-    }
-
-    NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&videoProgram);
-
-    // Set up the video PID
-    video_pid = lineup[i].vpid;
-
-    videoProgram.settings.pidChannel = NEXUS_PidChannel_Open(g_pTD->parserBand, video_pid, NULL);
-    videoProgram.settings.codec = video_codec;
-
-    if (videoProgram.settings.pidChannel)
-    {
-        rc = NEXUS_SimpleVideoDecoder_SetStcChannel(g_pTD->videoDecoder, g_pTD->stcChannel);
-        if (rc)
-        {
-            ALOGE("%s: SetStcChannel failed", __FUNCTION__);
-            return -1;
-        }
-    }
-
-    if (videoProgram.settings.pidChannel)
-    {
-        g_pTD->pidChannel = videoProgram.settings.pidChannel;
-
-        rc = NEXUS_SimpleVideoDecoder_Start(g_pTD->videoDecoder, &videoProgram);
-        if (rc)
-        {
-            ALOGE("%s: VideoDecoderStart failed", __FUNCTION__);
-            return -1;
-        }
-    }
-
-    ALOGE("%s: Tuner has started streaming!!", __FUNCTION__);
-    return 0;
-}
-
-static Vector<ChannelInfo> Broadcast_GetChannelList()
-{
-    Vector<ChannelInfo> civ;
-    ChannelInfo ci;
-    unsigned i;
-    for (i = 0; lineup[i].id >= 0; i++) {
-        ci.id = String8::format("%u", lineup[i].id); 
-        ci.name = lineup[i].name;
-        ci.number = lineup[i].number;
-        ci.onid = lineup[i].onid;
-        ci.tsid = lineup[i].tsid;
-        ci.sid = lineup[i].sid;
-        civ.push_back(ci);
-    }
-    return civ;
-}
-
-static int Broadcast_Stop()
-{
-    // Stop the video decoder
-    NEXUS_SimpleVideoDecoder_Stop(g_pTD->videoDecoder);
-
-    // Close the PID channel
-    NEXUS_PidChannel_Close(g_pTD->pidChannel);
-
-    return 0;
-}

@@ -32,6 +32,14 @@
 
 using namespace android;
 
+typedef union _tuner_context
+{
+    NexusClientContext *nexus_client;
+}Tuner_Context;
+
+#include <utils/Vector.h>
+#include <utils/String8.h>
+
 class ChannelInfo {
 public:
     String8 name;
@@ -42,27 +50,16 @@ public:
     int sid;
 };
 
-static int Broadcast_Initialize();
-static int Broadcast_Tune(String8);
-static Vector<ChannelInfo> Broadcast_GetChannelList();
-static int Broadcast_Stop();
-
-// Just wrap the nexus context
-typedef union _tuner_context
+class Tuner_Data
 {
-    NexusClientContext *nexus_client;
-}Tuner_Context;
-
-typedef struct _tuner_data
-{
+public:
     NexusIPCClientBase *ipcclient;
     NexusClientContext *nexus_client;
-    NEXUS_FrontendHandle frontend;
-    NEXUS_ParserBand parserBand;
-    NEXUS_SimpleStcChannelHandle stcChannel;
-    NEXUS_SimpleVideoDecoderHandle videoDecoder;
-    NEXUS_PidChannelHandle pidChannel;
-}Tuner_Data, *PTuner_Data;
+    void *context;
+    int (*Tune)(Tuner_Data *pTD, String8);
+    Vector<ChannelInfo> (*GetChannelList)(Tuner_Data *pTD);
+    int (*Stop)(Tuner_Data *pTD);
+};
 
 class INexusTunerService: public IInterface 
 {
