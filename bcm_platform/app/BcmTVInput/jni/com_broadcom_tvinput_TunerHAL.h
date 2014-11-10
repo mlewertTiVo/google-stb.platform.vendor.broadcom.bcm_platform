@@ -18,15 +18,15 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize
 /*
  * Class:     com_broadcom_tvinput_TunerHAL
  * Method:    tune
- * Signature: (I)I
+ * Signature: (Ljava/lang/String;)I
  */
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune
-  (JNIEnv *, jclass, jint);
+  (JNIEnv *, jclass, jstring);
 
 /*
  * Class:     com_broadcom_tvinput_TunerHAL
  * Method:    getChannelList
- * Signature: ()[Lcom/broadcom/tvinput/TunerHAL/ChannelInfo;
+ * Signature: ()[Lcom/broadcom/tvinput/ChannelInfo;
  */
 JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
   (JNIEnv *, jclass);
@@ -39,17 +39,6 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop
   (JNIEnv *, jclass);
 
-#ifdef __cplusplus
-}
-#endif
-#endif
-/* Header for class com_broadcom_tvinput_TunerHAL_ChannelInfo */
-
-#ifndef _Included_com_broadcom_tvinput_TunerHAL_ChannelInfo
-#define _Included_com_broadcom_tvinput_TunerHAL_ChannelInfo
-#ifdef __cplusplus
-extern "C" {
-#endif
 #ifdef __cplusplus
 }
 #endif

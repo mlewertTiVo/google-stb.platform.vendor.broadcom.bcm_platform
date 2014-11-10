@@ -192,9 +192,7 @@ public class TunerService extends TvInputService {
             channel_values.put(TvContract.Channels.COLUMN_SERVICE_ID, channel.sid);
             channel_values.put(TvContract.Channels.COLUMN_BROWSABLE, 1);
             channel_values.put(TvContract.Channels.COLUMN_VIDEO_FORMAT, TvContract.Channels.VIDEO_FORMAT_1080P);
-            byte[] dbid = new byte[1];
-            dbid[0] = (byte)channel.id;
-            channel_values.put(TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA, dbid);
+            channel_values.put(TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA, channel.id.getBytes());
 
             Uri channelUri = context.getContentResolver().insert(TvContract.Channels.CONTENT_URI, channel_values);
 	        Log.d(TAG, "populateChannels: " + channel.number + " " + channel.name + " " + channelUri);
@@ -225,7 +223,7 @@ public class TunerService extends TvInputService {
         protected final TvInputInfo mInfo;
         protected final int mDeviceId;
         protected Surface mSurface = null;
-        protected int mCurrentChannelId = -1;
+        protected String mCurrentChannelId = "";
         private TvInputManager.Hardware mHardware;
         private TvStreamConfig[] mStreamConfigs = EMPTY_STREAM_CONFIGS;
 
@@ -370,9 +368,8 @@ public class TunerService extends TvInputService {
                 return false;
             }
             cursor.moveToNext();
-            byte[] dbid = cursor.getBlob(0);
+            String id = new String(cursor.getBlob(0));
             cursor.close();
-            int id = dbid[0];
 
             Log.d(TAG, "onTune,  channelUri = " + channelUri + ", id = " + id);
 

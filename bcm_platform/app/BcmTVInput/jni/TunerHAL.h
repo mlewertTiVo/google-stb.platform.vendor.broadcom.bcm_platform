@@ -36,14 +36,14 @@ class ChannelInfo {
 public:
     String8 name;
     String8 number;
-    int id;
+    String8 id;
     int onid;
     int tsid;
     int sid;
 };
 
 static int Broadcast_Initialize();
-static int Broadcast_Tune(int);
+static int Broadcast_Tune(String8);
 static Vector<ChannelInfo> Broadcast_GetChannelList();
 static int Broadcast_Stop();
 
