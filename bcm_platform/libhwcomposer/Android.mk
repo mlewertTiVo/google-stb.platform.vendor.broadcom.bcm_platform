@@ -13,20 +13,81 @@
 # limitations under the License.
 
 LOCAL_PATH := $(call my-dir)
+FILTER_OUT_NEXUS_CFLAGS := -march=armv7-a
+
+# build the binder helper.
+#
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES:= \
+   blib/IHwc.cpp \
+   blib/Hwc.cpp \
+   blib/IHwcListener.cpp \
+   blib/HwcListener.cpp \
+   blib/HwcSvc.cpp
+
+LOCAL_PRELINK_MODULE := false
+
+LOCAL_SHARED_LIBRARIES += libbinder
+LOCAL_SHARED_LIBRARIES += libcutils
+LOCAL_SHARED_LIBRARIES += liblog
+LOCAL_SHARED_LIBRARIES += libnativehelper
+LOCAL_SHARED_LIBRARIES += libutils
+
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/blib
+
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE := libhwcbinder
+
+include $(BUILD_SHARED_LIBRARY)
+
+# build the hwcbinder service
+#
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES:= \
+   bexe/main.cpp
+
+LOCAL_PRELINK_MODULE := false
+
+LOCAL_SHARED_LIBRARIES += libbinder
+LOCAL_SHARED_LIBRARIES += libcutils
+LOCAL_SHARED_LIBRARIES += libhwcbinder
+LOCAL_SHARED_LIBRARIES += liblog
+LOCAL_SHARED_LIBRARIES += libutils
+
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/blib
+
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE := hwcbinder
+
+include $(BUILD_EXECUTABLE)
+
+# build the hwcomposer for the device.
+#
 include $(CLEAR_VARS)
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
-LOCAL_SHARED_LIBRARIES := liblog libcutils libdl libbinder libutils libnexusipcclient libnexus libnxclient
+
+LOCAL_SHARED_LIBRARIES += libbinder
+LOCAL_SHARED_LIBRARIES += libcutils
+LOCAL_SHARED_LIBRARIES += libdl
+LOCAL_SHARED_LIBRARIES += libhwcbinder
+LOCAL_SHARED_LIBRARIES += liblog
+LOCAL_SHARED_LIBRARIES += libnexus
+LOCAL_SHARED_LIBRARIES += libnexusipcclient
+LOCAL_SHARED_LIBRARIES += libnxclient
+LOCAL_SHARED_LIBRARIES += libutils
 
 LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
                     $(TOP)/vendor/broadcom/bcm_platform/libnexusipc \
                     $(TOP)/vendor/broadcom/bcm_platform/libgralloc \
-                    $(NXCLIENT_INCLUDES)
+                    $(NXCLIENT_INCLUDES) \
+                    $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/blib
 		
-FILTER_OUT_NEXUS_CFLAGS := -march=armv7-a
 LOCAL_CFLAGS += $(filter-out $(FILTER_OUT_NEXUS_CFLAGS), $(NEXUS_CFLAGS))			
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))

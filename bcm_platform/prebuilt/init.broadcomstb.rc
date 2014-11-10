@@ -70,6 +70,8 @@ on post-fs-data
    chown system system /sys/class/android_usb/android0/f_rndis/ethaddr
    chmod 0660 /sys/class/android_usb/android0/f_rndis/ethaddr
 
+   class_start pre_core
+
 on property:hw.nexus.platforminit=on
    class_start main
 
@@ -115,3 +117,9 @@ service pmlibservice /system/bin/pmlibserver
     group root
     critical
 
+service hwcbinder /system/bin/hwcbinder
+   class pre_core
+   user root
+   group system media
+   critical
+   oneshot

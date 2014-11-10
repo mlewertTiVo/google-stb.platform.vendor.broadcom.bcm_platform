@@ -40,6 +40,13 @@
 #include <binder/IServiceManager.h>
 #include <binder/IPCThreadState.h>
 #include <binder/ProcessState.h>
+#include "Hwc.h"
+
+#include "HwcListener.h"
+#include "IHwc.h"
+#include "HwcSvc.h"
+
+using namespace android;
 
 /*****************************************************************************/
 #define HWC_DBG_NX_LAYERS            0
@@ -139,6 +146,109 @@ typedef struct {
 
 } VSYNC_CLIENT_INFO;
 
+typedef void (* HWC_BINDER_NTFY_CB)(int, int, int, int);
+
+class HwcBinder : public HwcListener
+{
+public:
+
+    HwcBinder() : cb(NULL), cb_data(0) {};
+    virtual ~HwcBinder() {};
+
+    virtual void notify( int msg, int param1, int param2 );
+
+    inline void listen() {
+       if (get_hwc(false) != NULL)
+           get_hwc(false)->registerListener(this, HWC_BINDER_HWC);
+       else
+           ALOGE("%s: failed to associate %p with HwcBinder service.", __FUNCTION__, this);
+    };
+
+    inline void hangup() {
+       if (get_hwc(false) != NULL)
+           get_hwc(false)->unregisterListener(this);
+       else
+           ALOGE("%s: failed to dissociate %p from HwcBinder service.", __FUNCTION__, this);
+    };
+
+    inline void setvideo(int index, int value) {
+       if (get_hwc(false) != NULL) {
+           get_hwc(false)->setVideoSurfaceId(this, index, value);
+       }
+    };
+
+    inline void setframe(int surface, int frame) {
+       if (get_hwc(false) != NULL) {
+           get_hwc(false)->setDisplayFrameId(this, surface, frame);
+       }
+    };
+
+    void register_notify(HWC_BINDER_NTFY_CB callback, int data) {
+       cb = callback;
+       cb_data = data;
+    }
+
+private:
+    HWC_BINDER_NTFY_CB cb;
+    int cb_data;
+};
+
+class HwcBinder_wrap
+{
+private:
+
+   sp<HwcBinder> ihwc;
+   bool iconnected;
+
+public:
+   HwcBinder_wrap(void) {
+      ALOGD("%s: allocated %p", __FUNCTION__, this);
+      ihwc = new HwcBinder;
+      iconnected = false;
+   };
+
+   virtual ~HwcBinder_wrap(void) {
+      ALOGD("%s: cleared %p", __FUNCTION__, this);
+      ihwc.get()->hangup();
+      ihwc.clear();
+   };
+
+   void connected(bool status) {
+      iconnected = status;
+   }
+
+   void connect(void) {
+      if (!iconnected) {
+         ihwc.get()->listen();
+      }
+   }
+
+   void setvideo(int index, int value) {
+      if (iconnected) {
+         ihwc.get()->setvideo(index, value);
+      }
+   }
+
+   void setframe(int surface, int frame) {
+      if (iconnected) {
+         ihwc.get()->setframe(surface, frame);
+      }
+   }
+
+   HwcBinder *get(void) {
+      return ihwc.get();
+   }
+};
+
+void HwcBinder::notify( int msg, int param1, int param2 )
+{
+   ALOGD( "%s: notify received: msg=%u, param1=0x%x, param2=0x%x",
+          __FUNCTION__, msg, param1, param2 );
+
+   if (cb)
+      cb(cb_data, msg, param1, param2);
+}
+
 struct hwc_context_t {
     hwc_composer_device_1_t device;
 
@@ -162,12 +272,15 @@ struct hwc_context_t {
     BKNI_MutexHandle nx_client_mutex;
     VSYNC_CLIENT_INFO nx_vsync_client;
     bool fb_target_needed;
+    bool nsc_video_changed;
 
     int display_width;
     int display_height;
 
     BKNI_MutexHandle nx_power_mutex;
     int power_mode;
+
+    HwcBinder_wrap *hwc_binder;
 };
 
 static void hwc_device_cleanup(hwc_context_t* ctx);
@@ -184,6 +297,7 @@ static void nx_client_hide_unused_gpx_layer(hwc_context_t* dev, int index);
 static void nx_client_hide_unused_gpx_layers(hwc_context_t* dev, int nx_layer_count);
 static void nx_vsync_client_recycled_cb(void *context, int param);
 static void nx_client_hide_unused_mm_layers(hwc_context_t* dev);
+static void nx_client_advertise_video_surface(hwc_context_t* dev);
 
 hwc_module_t HAL_MODULE_INFO_SYM = {
     common: {
@@ -450,6 +564,28 @@ out:
     return;
 }
 
+static void hwc_binder_notify(int dev, int msg, int param1, int param2)
+{
+    struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
+
+    (void)param1;
+    (void)param2;
+
+    if (ctx) {
+       switch (msg) {
+       case HWC_BINDER_NTFY_CONNECTED:
+           ctx->hwc_binder->connected(true);
+       break;
+       case HWC_BINDER_NTFY_DISCONNECTED:
+           ctx->hwc_binder->connected(false);
+       break;
+
+       default:
+       break;
+       }
+   }
+}
+
 static bool is_video_layer(hwc_layer_1_t *layer, int layer_id)
 {
     bool rc = false;
@@ -583,6 +719,11 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     // blocking wait here...
     BKNI_WaitForEvent(ctx->prepare_event, 1000);
 
+    if (ctx->hwc_binder) {
+       ctx->hwc_binder->connect();
+       nx_client_advertise_video_surface(ctx);
+    }
+
     // setup the layer composition classification.
     primary_composition_setup(dev, list);
 
@@ -674,7 +815,9 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
             private_handle_t *bcmBuffer = (private_handle_t *)list->hwLayers[i].handle;
             PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedDataPhyAddr);
             pSharedData->DisplayFrame.display = true;
-            ALOGD("%s: put frame %u", __FUNCTION__, pSharedData->DisplayFrame.frameStatus.serialNumber);
+            if (ctx->hwc_binder)
+                // TODO: currently only one video window exposed.
+                ctx->hwc_binder->setframe(ctx->nx_mm_client[0].root.ncci.sccid, pSharedData->DisplayFrame.frameStatus.serialNumber);
         }
         //
         // gpx layer: use the 'cached' visibility that was assigned during 'prepare'.
@@ -777,6 +920,9 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         BKNI_DestroyMutex(ctx->nx_client_mutex);
         BKNI_DestroyMutex(ctx->nx_power_mutex);
         BKNI_DestroyMutex(ctx->dev_mutex);
+
+        if (ctx->hwc_binder)
+           delete ctx->hwc_binder;
     }
 }
 
@@ -1167,6 +1313,8 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                    char value[PROP_VALUE_MAX];
                    snprintf(value, sizeof(value), "%d", dev->nx_mm_client[i].root.ncci.sccid);
                    property_set("ro.nexus.video_surf", value);
+
+                   dev->nsc_video_changed = true;
                 }
                 //    H  H AAAA CCCC K  K        H  H AAAA CCCC K  K
                 //    H  H A  A C    K K         H  H A  A C    K K
@@ -1279,6 +1427,14 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             goto clean_up;
         }
         pthread_attr_destroy(&attr);
+
+        dev->hwc_binder = new HwcBinder_wrap;
+        if (dev->hwc_binder == NULL) {
+           ALOGE("%s: failed to create hwcbinder, some services will not run!", __FUNCTION__);
+        } else {
+           dev->hwc_binder->get()->register_notify(&hwc_binder_notify, (int)dev);
+           ALOGE("%s: created hwcbinder (%p)", __FUNCTION__, dev->hwc_binder);
+        }
 
         *device = &dev->device.common;
         status = 0;
@@ -1706,4 +1862,22 @@ static void nx_client_hide_unused_mm_layers(hwc_context_t* ctx)
     {
        nx_client_hide_unused_mm_layer(ctx, i);
     }
+}
+
+static void nx_client_advertise_video_surface(hwc_context_t* ctx)
+{
+    if (BKNI_AcquireMutex(ctx->nx_client_mutex) != BERR_SUCCESS) {
+        goto out;
+    }
+
+    // TODO: for the time being, only advertize one.
+    if (ctx->nsc_video_changed && ctx->hwc_binder) {
+       ctx->hwc_binder->setvideo(0, ctx->nx_mm_client[0].root.ncci.sccid);
+       ctx->nsc_video_changed = false;
+    }
+
+    BKNI_ReleaseMutex(ctx->nx_client_mutex);
+
+out:
+    return;
 }
