@@ -11,6 +11,7 @@ include vendor/broadcom/bcm_platform/libcamera2/Android.mk
 include vendor/broadcom/bcm_platform/libGLES_nexus/Android.mk
 include vendor/broadcom/bcm_platform/libgralloc/Android.mk
 include vendor/broadcom/bcm_platform/libhwcomposer/Android.mk
+include vendor/broadcom/bcm_platform/liblights/Android.mk
 include vendor/broadcom/bcm_platform/libnexusipc/Android.mk
 include vendor/broadcom/bcm_platform/libnexusir/Android.mk
 include vendor/broadcom/bcm_platform/libnexusservice/Android.mk
