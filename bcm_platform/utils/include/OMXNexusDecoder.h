@@ -105,8 +105,9 @@ public:
     bool RegisterDecoderEventListener(DecoderEventsListener *);
     bool Flush();
 
-// Implement DecoderEventsIFace
+// Implement StartDecoderIFace
     bool StartDecoder(unsigned int);
+    void StopDecoder();
 
 //Implement InputEOSListener
     void InputEOSReceived(unsigned int,unsigned long long);
@@ -239,7 +240,7 @@ private:
 #ifndef GENERATE_DUMMY_EOS
     void OnEOSMoveAllDecodedToDeliveredList();
 #endif
-    void StopDecoder();
+
     bool StartDecoder(NEXUS_PidChannelHandle videoPIDChannel);
     bool PauseDecoder();
     bool UnPauseDecoder();

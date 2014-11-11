@@ -589,21 +589,10 @@ extern "C" OMX_ERRORTYPE OMX_ComponentInit(OMX_HANDLETYPE hComponent)
                             isSecure);
     }
 
-
     pMyData->pOMXNxDecoder->RegisterDecoderEventListener(pMyData->pPESFeeder);
     pMyData->pPESFeeder->RegisterFeederEventsListener(pMyData->pOMXNxDecoder);
 
 
-    if(false == pMyData->pPESFeeder->StartDecoder(pMyData->pOMXNxDecoder))
-    {
-        ALOGE("%s: Failed To Start The Decoder",__FUNCTION__);
-        eError = OMX_ErrorInsufficientResources;
-        goto EXIT;
-    }else{
-        ALOGI("%s: Decoder[%d]: Started Successfully",
-              __FUNCTION__,
-              GET_DECODER_ID(pMyData->pOMXNxDecoder));
-    }
 
     /*****************************************************************************/
     return eError;
@@ -2257,6 +2246,38 @@ static bool FlushOutput(BCM_OMX_CONTEXT *pBcmContext)
     return true;
 }
 
+static
+bool
+OnLoadedToIdle(BCM_OMX_CONTEXT *pBcmContext)
+{
+    ALOGD("%s: Enter ",__FUNCTION__);
+    if(false == pBcmContext->pPESFeeder->StartDecoder(pBcmContext->pOMXNxDecoder))
+    {
+        ALOGE("%s: Failed To Start The Decoder",__FUNCTION__);
+        return false;
+    }
+
+    ALOGD("%s: Decoder[%d]: Started Successfully",
+          __FUNCTION__,
+          GET_DECODER_ID(pBcmContext->pOMXNxDecoder));
+
+    return true;
+}
+
+static 
+bool
+OnIdleToLoaded(BCM_OMX_CONTEXT *pBcmContext)
+{
+    ALOGD("%s: Enter ",__FUNCTION__);
+    if(false == pBcmContext->pPESFeeder->StopDecoder(pBcmContext->pOMXNxDecoder))
+    {
+        ALOGE("%s: Failed To Stop The Decoder",__FUNCTION__);
+        return false;
+    }
+
+    ALOGD("%s: Exit-Success [Decoder Stopped]",__FUNCTION__);
+    return true;
+}
 
 static void* ComponentThread(void* pThreadData)
 {
@@ -2344,6 +2365,10 @@ static void* ComponentThread(void* pThreadData)
                                             ALOGV("%s %d: State Transition Event: [To: State_Loaded] [Completed] [Timeouts:%d]",
                                                     __FUNCTION__,__LINE__,nTimeout);
 
+                                            if (pMyData->state == OMX_StateIdle) {
+                                                OnIdleToLoaded(pMyData); 
+                                            }
+
                                             pMyData->state = OMX_StateLoaded;
                                             pMyData->pCallbacks->EventHandler(pMyData->hSelf,
                                                     pMyData->pAppData, OMX_EventCmdComplete,
@@ -2395,6 +2420,7 @@ static void* ComponentThread(void* pThreadData)
                                         FlushInput(pMyData);
                                         FlushOutput(pMyData);
                                     }
+
                                     nTimeout = 0x0;
                                     while (1)
                                     {
@@ -2402,19 +2428,46 @@ static void* ComponentThread(void* pThreadData)
                                         if ((!pMyData->sInPortDef.bEnabled && !pMyData->sOutPortDef.bEnabled)||
                                                 (pMyData->sInPortDef.bPopulated && pMyData->sOutPortDef.bPopulated))
                                         {
-                                            pMyData->state = OMX_StateIdle;
-                                            ALOGV("%s %d: State Transition Event: [To: OMX_StateIdle] [Completed]",
-                                                    __FUNCTION__,__LINE__);
+                                            if(pMyData->state == OMX_StateLoaded)
+                                            {
+                                                 if(false == OnLoadedToIdle(pMyData))
+                                                 {
+                                                     ALOGE("%s %d: State Transition Event: From: Loaded To: OMX_StateIdle FAILED",
+                                                             __FUNCTION__,__LINE__);
 
+                                                       pMyData->pCallbacks->EventHandler(pMyData->hSelf,pMyData->pAppData,
+                                                                                         OMX_EventError, 
+                                                                                         OMX_ErrorInsufficientResources, 
+                                                                                         0 , NULL); 
+                                                       break;
+                                                 }
+                                            }
+
+                                            ALOGD("%s %d: State Transition Event: From:%d [To: OMX_StateIdle] [Completed]",
+                                                    __FUNCTION__,__LINE__,pMyData->state);
+
+                                            pMyData->state = OMX_StateIdle;
                                             pMyData->pCallbacks->EventHandler(pMyData->hSelf,
                                                     pMyData->pAppData, OMX_EventCmdComplete,
                                                     OMX_CommandStateSet, pMyData->state, NULL);
 
                                             break;
+                                        } else if (nTimeout++ > OMX_MAX_TIMEOUTS) {
+
+                                            ALOGE("%s %d: State Transition Event: [To: OMX_StateIdle] [ERROR] [Timeouts:%d]",
+                                                    __FUNCTION__,__LINE__,nTimeout);
+
+                                            pMyData->pCallbacks->EventHandler(
+                                                    pMyData->hSelf,pMyData->pAppData, OMX_EventError,
+                                                    OMX_ErrorInsufficientResources, 0 , NULL);
+
+                                            break;
+                                        }else if (nTimeout < OMX_MAX_TIMEOUTS) {
+                                            ALOGD("%s %d: State Transition Event: [To: OMX_StateIdle] [Waiting]",
+                                                    __FUNCTION__,__LINE__);
+
+                                            BKNI_Sleep(5);
                                         }
-                                        ALOGD("%s %d: State Transition Event: [To: OMX_StateIdle] [Waiting(2)]",
-                                                __FUNCTION__,__LINE__);
-                                        BKNI_Sleep(2);
                                     }
                                 }
                                 break;
@@ -2889,6 +2942,7 @@ bcmOmxTimestampTable::~bcmOmxTimestampTable()
 uint32_t
 bcmOmxTimestampTable::store(uint64_t orig_ts)
 {
+    Mutex::Autolock lock(mMutex);
     unsigned int i;
 
     if (usage_count==size)
@@ -2921,6 +2975,7 @@ bcmOmxTimestampTable::store(uint64_t orig_ts)
 uint64_t
 bcmOmxTimestampTable::retrieve(uint32_t conv_ts)
 {
+    Mutex::Autolock lock(mMutex);
     unsigned int i;
     uint64_t orig_ts;
 
@@ -2948,6 +3003,7 @@ bcmOmxTimestampTable::retrieve(uint32_t conv_ts)
 void
 bcmOmxTimestampTable::flush()
 {
+    Mutex::Autolock lock(mMutex);
     memset(pTimestamps, 0, size * sizeof(bcmOmxTimestampEntry));
     usage_count = 0;
 }
@@ -2955,6 +3011,7 @@ bcmOmxTimestampTable::flush()
 bool
 bcmOmxTimestampTable::isFull()
 {
+    Mutex::Autolock lock(mMutex);
     ALOGD("%s: usage_count = %d",__FUNCTION__, usage_count);
     return (usage_count==size) ? true : false;
 }

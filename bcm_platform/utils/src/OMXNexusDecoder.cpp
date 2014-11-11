@@ -47,6 +47,10 @@
 #define BCM_OMX_H265_DISABLE_4K "bcm.omx.265.disable4k"
 #define BCM_OMX_H265_DISABLE_4K_DEFAULT "0"
 
+//Property To Enable connectSettings.decoderCaps.avc51Enabled = true;
+//Disabled by default
+#define BCM_OMX_H264_ENABLE_AVC51 "bcm.omx.264.enableAVC51"
+
 //Path level Debug Messages
 #define LOG_START_STOP_DBG      ALOGD
 #define LOG_EOS_DBG             ALOGD
@@ -64,7 +68,7 @@
 #define LOG_OUTPUT_TS
 
 //Enable logging of the decoder state
-#define LOG_DECODER_STATE       ALOGD
+#define LOG_DECODER_STATE       
 #define DECODER_STATE_FREQ     50      //Print decoder state after every XX output frames.
 List<OMXNexusDecoder *> OMXNexusDecoder::DecoderInstanceList;
 Mutex   OMXNexusDecoder::mDecoderIniLock;
@@ -151,10 +155,31 @@ OMXNexusDecoder::OMXNexusDecoder(char const *CallerName, NEXUS_VideoCodec NxCode
     connectSettings.simpleVideoDecoder[0].surfaceClientId = client_info.surfaceClientId;
     connectSettings.simpleVideoDecoder[0].windowId = DecoderID;
 
-    if(NxVideoCodec == NEXUS_VideoCodec_eH265) {
+    connectSettings.simpleVideoDecoder[0].decoderCaps.supportedCodecs[NxVideoCodec]=true;
+    
+    if (NxVideoCodec == NEXUS_VideoCodec_eH264)
+    {
+        /* connectSettings.decoderCaps.avc51Enabled                                                            *
+         * We do not overwrite the default value, so that default Nexus*
+         * Behaiour is not modified. We only force to true if the property
+         * is set.*/
+        char value[PROPERTY_VALUE_MAX];
+        if(property_get(BCM_OMX_H264_ENABLE_AVC51, value, NULL))
+        {
+            if (!strcmp(value, "1")) 
+            {
+                connectSettings.simpleVideoDecoder[0].decoderCaps.avc51Enabled = true;
+            }
+        }
+        ALOGD("%s: avc51Enabled = %s", __FUNCTION__,(connectSettings.simpleVideoDecoder[0].decoderCaps.avc51Enabled) ? "True":"False" );
+    }
+
+    if (NxVideoCodec == NEXUS_VideoCodec_eH265) 
+    {
         char value[PROPERTY_VALUE_MAX];
         property_get(BCM_OMX_H265_DISABLE_4K, value, BCM_OMX_H265_DISABLE_4K_DEFAULT);
-        if (!strcmp(value, "1")) {
+        if (!strcmp(value, "1")) 
+        {
             ALOGE("OMX 4k playback is disabled");
         } else {
             connectSettings.simpleVideoDecoder[0].decoderCaps.maxWidth = 3840;
@@ -189,7 +214,6 @@ OMXNexusDecoder::OMXNexusDecoder(char const *CallerName, NEXUS_VideoCodec NxCode
 #ifndef GENERATE_DUMMY_EOS
     NEXUS_VideoDecoderSettings vidDecSettings;
     NEXUS_Error errCode;
-
     NEXUS_SimpleVideoDecoder_GetSettings(decoHandle, &vidDecSettings);
     vidDecSettings.sourceChanged.callback = SourceChangedCallbackDispatcher;
     vidDecSettings.sourceChanged.context = static_cast <void *>(this);

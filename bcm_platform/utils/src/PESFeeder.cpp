@@ -234,7 +234,6 @@ PESFeeder::PESFeeder(char const *ClientName,
         return;
     }
 
-    StartPlayPump();
     AtomFactory = batom_factory_create(bkni_alloc, 128);
     if (!AtomFactory)
     {
@@ -361,7 +360,7 @@ PESFeeder::~PESFeeder()
     }
 #endif
 
-    LOG_CREATE_DESTROY("[%s]%s: EXIT", ClientIDString,__FUNCTION__);
+    LOG_CREATE_DESTROY("[%s]%s: Destroyed...", ClientIDString,__FUNCTION__);
 }
 
 void * 
@@ -419,6 +418,7 @@ PESFeeder::RegisterFeederEventsListener(FeederEventsListener *pInEvtLisnr)
 bool
 PESFeeder::StartDecoder(StartDecoderIFace *pStartDecoIface)
 {
+    StartPlayPump();
     if (!pStartDecoIface)
     {
         LOG_ERROR("[%s]%s: Failed To Start The Decoder",ClientIDString,__FUNCTION__);
@@ -426,6 +426,20 @@ PESFeeder::StartDecoder(StartDecoderIFace *pStartDecoIface)
     }
 
     return pStartDecoIface->StartDecoder((unsigned int)NxVidPidChHandle);
+}
+
+bool 
+PESFeeder::StopDecoder(StartDecoderIFace *pStartDecoIface)
+{
+    StopPlayPump();
+    if (!pStartDecoIface)
+    {
+        LOG_ERROR("[%s]%s: Failed To Start The Decoder",ClientIDString,__FUNCTION__);
+        return false;
+    }
+
+    pStartDecoIface->StopDecoder();
+    return true;
 }
 
 size_t 
@@ -749,6 +763,8 @@ PESFeeder::FlushDone()
         SendCfgDataOnNextInput=true;
         pCfgDataMgr->SendConfigDataToHW();
     }
+
+    pCfgDataMgr->FlushDoneNotification();
 }
 
 void 
@@ -800,7 +816,7 @@ PESFeeder::XFerDoneCallBack()
 
     if (!DescDoneCnt)
     {
-        LOG_WARNING("%s: Spurious Callback- No Descriptors Completed",__FUNCTION__);
+        LOG_INFO("%s: Spurious Callback- No Descriptors Completed",__FUNCTION__);
         return;
     }
 
@@ -1006,7 +1022,7 @@ PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
 
     //INSERT THE CONTEXT IN THE ACTIVEQ
     InsertHeadList(&ActiveQ,&pNxInCnxt->ListEntry);
-    return true;
+    return true; 
 }
 
 #ifndef GENERATE_DUMMY_EOS
@@ -1149,7 +1165,7 @@ PESFeeder::SaveCodecConfigData(void *pData,size_t SzData)
       return false;
     }
 
-    SzSavedConfigData = pCfgDataMgr->GetConfigDataSz();
+    SzSavedConfigData = pCfgDataMgr->GetConfigDataSz(); 
     if ((SzData + SzSavedConfigData) > CODEC_CONFIG_BUFFER_SIZE)
     {
         LOG_ERROR(" [%s]%s: No Buffer To Save More Config Data. ReqSz:[(%d)+(%d)=(%d)] MaxSz:%d",
@@ -1232,7 +1248,9 @@ PESFeeder::Pauser::~Pauser()
 
 //Default Configuration Data Manager Class
 ConfigDataMgr::ConfigDataMgr()
-    :SzCodecConfigData(0),pCodecConfigData(NULL)
+    :SzCodecConfigData(0),
+    pCodecConfigData(NULL),
+    bOverWriteOnNextSave(false)
 {
     LOG_ERROR("%s:  ConfigDataMgr Created",__PRETTY_FUNCTION__); 
 
@@ -1267,7 +1285,14 @@ ConfigDataMgr::SaveConfigData(void *pData, size_t SzData)
         return false;
     }
 
-    if ((SzData + SzCodecConfigData) > CODEC_CONFIG_BUFFER_SIZE)
+    if (bOverWriteOnNextSave) 
+    {
+        ALOGI("%s: OverWriting Config Data",__PRETTY_FUNCTION__);
+        DiscardConfigData();
+        bOverWriteOnNextSave=false;
+    }
+
+    if ((SzData + SzCodecConfigData) > CODEC_CONFIG_BUFFER_SIZE) 
     {
         LOG_ERROR(" %s: Can't Save The Codec Config Data. ReqSz:[(%d)+(%d)=(%d)] MaxSz:%d",
                 __PRETTY_FUNCTION__,SzData,SzCodecConfigData,
@@ -1304,6 +1329,7 @@ ConfigDataMgr::AccumulateConfigData(batom_accum_t Accumulator)
         return false;
     }
 
+    bOverWriteOnNextSave=true;
     batom_accum_add_range(Accumulator, pCodecConfigData, SzCodecConfigData);
     return true;
 }
@@ -1320,16 +1346,29 @@ ConfigDataMgr::DiscardConfigData()
     SzCodecConfigData=0;
 }
 
+void
+ConfigDataMgr::FlushDoneNotification()
+{
+    if (!bOverWriteOnNextSave) 
+        bOverWriteOnNextSave=true;
+}
+
+
 /*********************************************************************************/
 //Configuration Data Manager With Send Class
 /*********************************************************************************/
 
 ConfigDataMgrWithSend::ConfigDataMgrWithSend(DataSender& SenderObj,
                                              unsigned int ptsToUse)
-    : SzCodecConfigData(0),pCodecConfigData(NULL),
+    : SzCodecConfigData(0),
+      pCodecConfigData(NULL),
+      bOverWriteOnNextSave(false),
       allocedSzPESBuffer(PES_BUFFER_SIZE(CODEC_CONFIG_BUFFER_SIZE)),
-      SzPESCodecConfigData(0),pPESCodecConfigData(NULL),
-      Sender(SenderObj), ptsToUseForPES(ptsToUse)
+      SzPESCodecConfigData(0),
+      pPESCodecConfigData(NULL),
+      Sender(SenderObj), 
+      ptsToUseForPES(ptsToUse)
+      
 {
     LOG_INFO("%s: ConfigDataMgrWithSend Created",__PRETTY_FUNCTION__); 
 
@@ -1379,6 +1418,13 @@ ConfigDataMgrWithSend::SaveConfigData(void *pData,size_t SzData)
     {
         LOG_ERROR("%s: %p %d Invalid Parameters",__FUNCTION__,pData,SzData);
         return false;
+    }
+
+    if (bOverWriteOnNextSave) 
+    {
+        ALOGI("%s: OverWriting Config Data",__PRETTY_FUNCTION__);
+        DiscardConfigData();
+        bOverWriteOnNextSave=false;
     }
 
     if ((SzData + SzCodecConfigData) > CODEC_CONFIG_BUFFER_SIZE)
@@ -1441,7 +1487,7 @@ ConfigDataMgrWithSend::SendConfigDataToHW()
         BCMOMX_DBG_ASSERT(BERR_SUCCESS == WaitErr);
         return;
     }
-
+    bOverWriteOnNextSave=true;
     LOG_CONFIG_MSGS("[%s]: CFG Data Xfered To HW",__PRETTY_FUNCTION__);
     return;
 }
@@ -1466,6 +1512,13 @@ ConfigDataMgrWithSend::DiscardConfigData()
 {
     SzCodecConfigData=0;
     SzPESCodecConfigData=0;
+}
+
+void
+ConfigDataMgrWithSend::FlushDoneNotification()
+{
+    if (!bOverWriteOnNextSave) 
+        bOverWriteOnNextSave=true;
 }
 
 static

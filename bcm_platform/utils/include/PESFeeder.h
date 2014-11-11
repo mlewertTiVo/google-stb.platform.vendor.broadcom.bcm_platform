@@ -169,6 +169,8 @@ public :
     void FreePESBuffer(void *);
 
     bool StartDecoder(StartDecoderIFace *pStartDecoIface);
+    bool StopDecoder(StartDecoderIFace *pStartDecoIface);
+
     bool RegisterFeederEventsListener(FeederEventsListener *pInEvtLisnr);
     bool NotifyEOS(unsigned int,unsigned long long EOSFrameKey=0);
 
@@ -268,7 +270,7 @@ public:
         ALOGD("%s: Ignored ",__PRETTY_FUNCTION__);
         return;
     };
-
+    virtual void FlushDoneNotification()=0;
     virtual bool SaveConfigData(void *pData, size_t szData)=0;
     virtual void SendConfigDataToHW()
     {
@@ -299,12 +301,13 @@ public:
     bool AccumulateConfigData(batom_accum_t);
     size_t GetConfigDataSz();
     void DiscardConfigData();
+    void FlushDoneNotification();
 
 private:
     //Size of Valid Codec Config Data. MAX is CODEC_CONFIG_BUFFER_SIZE
     size_t          SzCodecConfigData;
     unsigned char   *pCodecConfigData;
-
+    bool            bOverWriteOnNextSave;
 private:
     /*Operations Hidden from outside world*/
     ConfigDataMgr (CfgMgr& CpyFromMe);
@@ -325,11 +328,12 @@ public:
     void SendConfigDataToHW();
     void DiscardConfigData();
     size_t GetConfigDataSz();
-
+    void FlushDoneNotification();
 private:
     //Size of Valid Codec Config Data. MAX is CODEC_CONFIG_BUFFER_SIZE
     size_t          SzCodecConfigData;
     unsigned char   *pCodecConfigData;
+    bool            bOverWriteOnNextSave;
 
     //PES converted Codec Config Data
     const unsigned int    allocedSzPESBuffer;

@@ -80,6 +80,7 @@ class StartDecoderIFace
 {
 public:
     virtual bool StartDecoder(unsigned int)=0;
+    virtual void StopDecoder()=0;
     virtual ~StartDecoderIFace(){return;}
 };
 
