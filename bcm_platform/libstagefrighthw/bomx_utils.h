@@ -94,6 +94,8 @@ int BOMX_FormPesHeader(
     void *pBuffer,
     size_t bufferSize,
     unsigned streamId,
+    const void *pCodecHeader,
+    size_t codecHeaderLength,
     size_t *pHeaderLength
     );
 

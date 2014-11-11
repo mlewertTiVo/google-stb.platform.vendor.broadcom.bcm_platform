@@ -179,6 +179,8 @@ int BOMX_FormPesHeader(
     void *pBuffer,
     size_t bufferSize,
     unsigned streamId,
+    const void *pCodecHeader,
+    size_t codecHeaderLength,
     size_t *pHeaderLength
     )
 {
@@ -191,13 +193,16 @@ int BOMX_FormPesHeader(
     BOMX_ASSERT(NULL != pFrame);
     BOMX_ASSERT(NULL != pBuffer);
     BOMX_ASSERT(NULL != pHeaderLength);
+    if ( codecHeaderLength > 0 )
+    {
+        BOMX_ASSERT(NULL != pCodecHeader);
+    }
 
     pHeaderBuf = (uint8_t *)pBuffer;
 
     length=14; /* PES header size, 3 byte syncword + 1 byte stream ID + 2 bytes length + 3 byte optional header + 5 byte PTS */
-    payloadLength = pFrame->nFilledLen - pFrame->nOffset;
+    payloadLength = pFrame->nFilledLen - pFrame->nOffset + codecHeaderLength;
     payloadLength += length - 6; /* Payload length doesn't count the 6-byte header */
-
     if ( length > bufferSize )
     {
         BOMX_ERR(("Buffer not large enough for PES header"));
@@ -224,7 +229,7 @@ int BOMX_FormPesHeader(
     else
     {
         pHeaderBuf[4] = payloadLength >> 8;
-        pHeaderBuf[5] = payloadLength & 0xff;        
+        pHeaderBuf[5] = payloadLength & 0xff;
     }
     pHeaderBuf[6] = 0x81;                   /* Indicate header with 0x10 in the upper bits, original material */
     pHeaderBuf[7] = 0x80;
@@ -243,7 +248,12 @@ int BOMX_FormPesHeader(
         B_SET_BIT("PTS[0]", 0, 1) |
         B_SET_BIT(marker_bit, 1, 0);
 
-    *pHeaderLength = length;
+    if ( codecHeaderLength > 0 )
+    {
+        BKNI_Memcpy(pHeaderBuf+14, pCodecHeader, codecHeaderLength);
+    }
+
+    *pHeaderLength = length + codecHeaderLength;
     return 0;
 }
 

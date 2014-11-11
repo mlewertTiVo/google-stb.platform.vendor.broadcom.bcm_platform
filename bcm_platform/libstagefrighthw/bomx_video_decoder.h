@@ -221,12 +221,13 @@ protected:
     char m_inputMimeType[OMX_MAX_STRINGNAME_SIZE];
     char m_outputMimeType[OMX_MAX_STRINGNAME_SIZE];
 
-    OMX_VIDEO_WMVFORMATTYPE m_wmvFormat;
-
     #define BOMX_VIDEO_EOS_LEN (184*3) /* BPP TPD+LAST+TPD */
     void *m_pEosBuffer;
     bool m_eosPending;
     bool m_formatChangePending;
+
+    #define BOMX_BCMV_HEADER_SIZE (10)
+    uint8_t m_pBcmvHeader[BOMX_BCMV_HEADER_SIZE];
 
     #define BOMX_VIDEO_CODEC_CONFIG_HEADER_SIZE (9)
     #define BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE (1024+BOMX_VIDEO_CODEC_CONFIG_HEADER_SIZE)

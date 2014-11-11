@@ -46,7 +46,7 @@
  * $brcm_Log: $
  *
  *****************************************************************************/
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_decoder"
 
@@ -60,7 +60,7 @@
 
 #define BOMX_INPUT_MSG(x) (void)(x)
 
-#define B_HEADER_BUFFER_SIZE (32)
+#define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE (65536)
 #define B_NUM_BUFFERS ((3*1024*1024)/B_DATA_BUFFER_SIZE)
 #define B_STREAM_ID 0xe0
@@ -76,9 +76,9 @@
 #define OMX_IndexParamDescribeColorFormat                    0x7F000006
 #define OMX_IndexParamConfigureVideoTunnelMode               0x7F000007
 
-static const char *g_roles[] = {"video_decoder.mpeg2", "video_decoder.h263", "video_decoder.avc", "video_decoder.mpeg4", "video_decoder.wmv", "video_decoder.vc1", "video_decoder.vp8"};
+static const char *g_roles[] = {"video_decoder.mpeg2", "video_decoder.h263", "video_decoder.avc", "video_decoder.mpeg4", "video_decoder.hevc", "video_decoder.vp8"};
 static const unsigned int g_numRoles = sizeof(g_roles)/sizeof(const char *);
-static int g_roleCodec[] = {OMX_VIDEO_CodingMPEG2, OMX_VIDEO_CodingH263, OMX_VIDEO_CodingAVC, OMX_VIDEO_CodingMPEG4, OMX_VIDEO_CodingWMV, OMX_VIDEO_CodingWMV, OMX_VIDEO_CodingVP8};
+static int g_roleCodec[] = {OMX_VIDEO_CodingMPEG2, OMX_VIDEO_CodingH263, OMX_VIDEO_CodingAVC, OMX_VIDEO_CodingMPEG4, OMX_VIDEO_CodingHEVC, OMX_VIDEO_CodingVP8};
 
 // Uncomment this to enable output logging to a file
 #define DEBUG_FILE_OUTPUT 1
@@ -203,17 +203,17 @@ static OMX_ERRORTYPE BOMX_VideoDecoder_InitMimeType(OMX_VIDEO_CODINGTYPE eCompre
     case OMX_VIDEO_CodingMPEG4:
         pMimeTypeStr = "video/mp4v-es";
         break;
-    case OMX_VIDEO_CodingWMV:
-        pMimeTypeStr = "video/vc1";
-        break;
-    case OMX_VIDEO_CodingRV:
-        pMimeTypeStr = "video/vnd.rn-realvideo";
+    case OMX_VIDEO_CodingHEVC:
+        pMimeTypeStr = "video/hevc";
         break;
     case OMX_VIDEO_CodingAVC:
         pMimeTypeStr = "video/avc";
         break;
     case OMX_VIDEO_CodingVP8:
         pMimeTypeStr = "video/x-vnd.on2.vp8";
+        break;
+    case OMX_VIDEO_CodingVP9:
+        pMimeTypeStr = "video/x-vnd.on2.vp9";
         break;
     default:
         BOMX_WRN(("Unable to find MIME type for eCompressionFormat %u", eCompressionFormat));
@@ -337,6 +337,34 @@ static OMX_VIDEO_AVCLEVELTYPE BOMX_AvcLevelFromNexus(NEXUS_VideoProtocolLevel ne
     }
 }
 
+static OMX_VIDEO_HEVCPROFILETYPE BOMX_HevcProfileFromNexus(NEXUS_VideoProtocolProfile nexusProfile)
+{
+    switch ( nexusProfile )
+    {
+    default:
+    case NEXUS_VideoProtocolProfile_eMain:     return OMX_VIDEO_HEVCProfileMain;
+    }
+}
+
+static OMX_VIDEO_HEVCLEVELTYPE BOMX_HevcLevelFromNexus(NEXUS_VideoProtocolLevel nexusLevel)
+{
+    switch ( nexusLevel )
+    {
+    default: return OMX_VIDEO_HEVCLevelUnknown;
+    case NEXUS_VideoProtocolLevel_e10: return OMX_VIDEO_HEVCMainTierLevel1;
+    case NEXUS_VideoProtocolLevel_e20: return OMX_VIDEO_HEVCMainTierLevel2;
+    case NEXUS_VideoProtocolLevel_e21: return OMX_VIDEO_HEVCMainTierLevel21;
+    case NEXUS_VideoProtocolLevel_e30: return OMX_VIDEO_HEVCMainTierLevel3;
+    case NEXUS_VideoProtocolLevel_e31: return OMX_VIDEO_HEVCMainTierLevel31;
+    case NEXUS_VideoProtocolLevel_e40: return OMX_VIDEO_HEVCMainTierLevel4;
+    case NEXUS_VideoProtocolLevel_e41: return OMX_VIDEO_HEVCMainTierLevel41;
+    case NEXUS_VideoProtocolLevel_e50: return OMX_VIDEO_HEVCMainTierLevel5;
+    case NEXUS_VideoProtocolLevel_e51: return OMX_VIDEO_HEVCMainTierLevel51;
+    case NEXUS_VideoProtocolLevel_e60: return OMX_VIDEO_HEVCMainTierLevel6;
+    case NEXUS_VideoProtocolLevel_e62: return OMX_VIDEO_HEVCMainTierLevel62;
+    }
+}
+
 static OMX_VIDEO_VP8PROFILETYPE BOMX_VP8ProfileFromNexus(NEXUS_VideoProtocolProfile nexusProfile)
 {
     switch ( nexusProfile )
@@ -392,7 +420,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
     const OMX_PTR pAppData,
-    const OMX_CALLBACKTYPE *pCallbacks) : 
+    const OMX_CALLBACKTYPE *pCallbacks) :
     BOMX_Component(pComponentType, pName, pAppData, pCallbacks, BOMX_VideoDecoder_GetRole),
     m_hSimpleVideoDecoder(NULL),
     m_hPlaypump(NULL),
@@ -407,7 +435,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_submittedDescriptors(0),
     m_pIpcClient(NULL),
     m_pNexusClient(NULL),
-    m_wmvFormat(OMX_VIDEO_WMVFormat9),
     m_pEosBuffer(NULL),
     m_eosPending(false),
     m_formatChangePending(false),
@@ -418,7 +445,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
 {
     unsigned i;
     NEXUS_Error errCode;
-    #define MAX_PORT_FORMATS (7)
+    #define MAX_PORT_FORMATS (6)
     #define MAX_OUTPUT_PORT_FORMATS (1)
 
     BDBG_CASSERT(MAX_OUTPUT_PORT_FORMATS <= MAX_PORT_FORMATS);
@@ -446,15 +473,13 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         case 1:
             portFormats[i].eCompressionFormat = OMX_VIDEO_CodingH263; break;
         case 2:
-            portFormats[i].eCompressionFormat = OMX_VIDEO_CodingMPEG4; break;
-        case 3:
-            portFormats[i].eCompressionFormat = OMX_VIDEO_CodingWMV; break;
-        case 4:
-            portFormats[i].eCompressionFormat = OMX_VIDEO_CodingRV; break;
-        case 5:
             portFormats[i].eCompressionFormat = OMX_VIDEO_CodingAVC; break;
-        case 6:
-            portFormats[i].eCompressionFormat = (OMX_VIDEO_CODINGTYPE)((int)OMX_VIDEO_CodingVP8); break;
+        case 3:
+            portFormats[i].eCompressionFormat = OMX_VIDEO_CodingMPEG4; break;
+        case 4:
+            portFormats[i].eCompressionFormat = (OMX_VIDEO_CODINGTYPE)OMX_VIDEO_CodingHEVC; break;
+        case 5:
+            portFormats[i].eCompressionFormat = (OMX_VIDEO_CODINGTYPE)OMX_VIDEO_CodingVP8; break;
         }
     }
 
@@ -622,6 +647,13 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         pBuffer->state = BOMX_VideoDecoderFrameBufferState_eInvalid;
         BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pBuffer, node);
     }
+
+    // Init BCMV header for VP8 & other codecs
+    BKNI_Memset(m_pBcmvHeader, 0, sizeof(m_pBcmvHeader));
+    m_pBcmvHeader[0] = 'B';
+    m_pBcmvHeader[1] = 'C';
+    m_pBcmvHeader[2] = 'M';
+    m_pBcmvHeader[3] = 'V';
 }
 
 BOMX_VideoDecoder::~BOMX_VideoDecoder()
@@ -658,7 +690,7 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         {
             delete m_pVideoPorts[i];
         }
-    }    
+    }
     if ( m_pEosBuffer )
     {
         NEXUS_Memory_Free(m_pEosBuffer);
@@ -686,7 +718,7 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
 OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
         OMX_IN  OMX_INDEXTYPE nParamIndex,
         OMX_INOUT OMX_PTR pComponentParameterStructure)
-{ 
+{
     switch ( (int)nParamIndex )
     {
     case OMX_IndexParamVideoH263:
@@ -767,16 +799,39 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
             }
             return OMX_ErrorNone;
         }
-    case OMX_IndexParamVideoWmv:
+    case OMX_IndexParamVideoVp8:
         {
-            OMX_VIDEO_PARAM_WMVTYPE *pWmv = (OMX_VIDEO_PARAM_WMVTYPE *)pComponentParameterStructure;
-            BOMX_MSG(("GetParameter OMX_IndexParamVideoWmv"));
-            BOMX_STRUCT_VALIDATE(pWmv);
-            if ( pWmv->nPortIndex != m_videoPortBase )
+            OMX_VIDEO_PARAM_VP8TYPE *pVp8 = (OMX_VIDEO_PARAM_VP8TYPE *)pComponentParameterStructure;
+            BOMX_MSG(("GetParameter OMX_IndexParamVideoVp8"));
+            memset(pVp8, 0, sizeof(*pVp8));
+            BOMX_STRUCT_INIT(pVp8);
+            pVp8->nPortIndex = m_videoPortBase;
+            pVp8->eProfile = OMX_VIDEO_VP8ProfileUnknown;
+            pVp8->eLevel = OMX_VIDEO_VP8LevelUnknown;
+            if ( m_hSimpleVideoDecoder )
             {
-                return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+                NEXUS_VideoDecoderStatus vdecStatus;
+                NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &vdecStatus);
+                pVp8->eProfile = BOMX_VP8ProfileFromNexus(vdecStatus.protocolProfile);
+                pVp8->eLevel = BOMX_VP8LevelFromNexus(vdecStatus.protocolLevel);
             }
-            pWmv->eFormat = m_wmvFormat;
+            return OMX_ErrorNone;
+        }
+    case OMX_IndexParamVideoHevc:
+        {
+            OMX_VIDEO_PARAM_HEVCTYPE *pHevc = (OMX_VIDEO_PARAM_HEVCTYPE *)pComponentParameterStructure;
+            BOMX_MSG(("GetParameter OMX_IndexParamVideoHevc"));
+            BOMX_STRUCT_INIT(pHevc);
+            pHevc->nPortIndex = m_videoPortBase;
+            pHevc->eProfile = OMX_VIDEO_HEVCProfileUnknown;
+            pHevc->eLevel = OMX_VIDEO_HEVCLevelUnknown;
+            if ( m_hSimpleVideoDecoder )
+            {
+                NEXUS_VideoDecoderStatus vdecStatus;
+                NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &vdecStatus);
+                pHevc->eProfile = BOMX_HevcProfileFromNexus(vdecStatus.protocolProfile);
+                pHevc->eLevel = BOMX_HevcLevelFromNexus(vdecStatus.protocolLevel);
+            }
             return OMX_ErrorNone;
         }
     case OMX_IndexParamVideoProfileLevelQuerySupported:
@@ -855,6 +910,13 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_VP8ProfileMain;
                 pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_VP8Level_Version3;   // ?
                 break;
+            case OMX_VIDEO_CodingHEVC:
+                if ( pProfileLevel->nProfileIndex > 0 )
+                {
+                    return OMX_ErrorNoMore;
+                }
+                pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_HEVCProfileMain;
+                pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_HEVCMainTierLevel51;
             }
             return OMX_ErrorNone;
         }
@@ -898,6 +960,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 case OMX_VIDEO_CodingVP8:
                     pProfileLevel->eProfile = (OMX_U32)BOMX_VP8ProfileFromNexus(vdecStatus.protocolProfile);
                     pProfileLevel->eLevel = (OMX_U32)BOMX_VP8LevelFromNexus(vdecStatus.protocolLevel);
+                case OMX_VIDEO_CodingHEVC:
+                    pProfileLevel->eProfile = (OMX_U32)BOMX_HevcProfileFromNexus(vdecStatus.protocolProfile);
+                    pProfileLevel->eLevel = (OMX_U32)BOMX_HevcLevelFromNexus(vdecStatus.protocolLevel);
                     break;
                 }
             }
@@ -910,7 +975,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
         BOMX_MSG(("GetParameter OMX_IndexParamGetAndroidNativeBufferUsage"));
         if ( pUsage->nPortIndex != m_videoPortBase+1 )
         {
-            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);            
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         // TODO: Revice this, SW_READ/SW_WRITE should not be set
         pUsage->nUsage = GRALLOC_USAGE_EXTERNAL_DISP | GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN;
@@ -928,7 +993,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
         pColorFormat->nStride = pPortDef->format.video.nStride;
         pColorFormat->nSliceHeight = pPortDef->format.video.nSliceHeight;
         /* This is only supported for 4:2:0 planar formats - return unknown */
-        pColorFormat->sMediaImage.mType = MediaImage::MEDIA_IMAGE_TYPE_UNKNOWN;            
+        pColorFormat->sMediaImage.mType = MediaImage::MEDIA_IMAGE_TYPE_UNKNOWN;
         return OMX_ErrorNone;
     }
 
@@ -946,27 +1011,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
 
     switch ( (int)nIndex )
     {
-    case OMX_IndexParamVideoWmv:
-        {
-            OMX_VIDEO_PARAM_WMVTYPE *pWmv = (OMX_VIDEO_PARAM_WMVTYPE *)pComponentParameterStructure;
-            BOMX_MSG(("SetParameter OMX_IndexParamVideoWmv"));
-            BOMX_STRUCT_VALIDATE(pWmv);
-            if ( pWmv->nPortIndex != m_videoPortBase )
-            {
-                return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
-            }
-            switch ( pWmv->eFormat )
-            {
-                // Leaving this in case we add support for other formats later
-            case OMX_VIDEO_WMVFormat9:
-                m_wmvFormat = pWmv->eFormat;
-                break;
-            default:
-                BOMX_ERR(("Only WMV 9 is supported"));
-                return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-            }
-            return OMX_ErrorNone;
-        }
     case OMX_IndexParamStandardComponentRole:
         {
             OMX_PARAM_COMPONENTROLETYPE *pRole = (OMX_PARAM_COMPONENTROLETYPE *)pComponentParameterStructure;
@@ -1010,7 +1054,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             }
             if ( pPort->GetDir() == OMX_DirInput )
             {
-                BOMX_MSG(("Set Input Port Compression Format to %u (#%x)", pFormat->eCompressionFormat, pFormat->eCompressionFormat));
+                BOMX_MSG(("Set Input Port Compression Format to %u (%#x)", pFormat->eCompressionFormat, pFormat->eCompressionFormat));
                 err = BOMX_VideoDecoder_InitMimeType(pFormat->eCompressionFormat, m_inputMimeType);
                 if ( err )
                 {
@@ -1030,7 +1074,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             }
             else
             {
-                BOMX_MSG(("Set Output Port Color Format to %u (#%x)", pFormat->eColorFormat, pFormat->eColorFormat));
+                BOMX_MSG(("Set Output Port Color Format to %u (%#x)", pFormat->eColorFormat, pFormat->eColorFormat));
                 // Per the OMX spec you are supposed to initialize the port defs to defaults when changing format
                 // Leave buffer size parameters alone and update color format/framerate.
                 OMX_VIDEO_PORTDEFINITIONTYPE portDefs;
@@ -1041,7 +1085,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
                 if ( err )
                 {
                     return BOMX_ERR_TRACE(err);
-                }                
+                }
             }
             return OMX_ErrorNone;
         }
@@ -1069,7 +1113,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         {
             BOMX_ERR(("Video compression format cannot be changed in the port defintion.  Change Port Format instead."));
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-        }        
+        }
         // Handle remainder in base class
         return BOMX_ERR_TRACE(BOMX_Component::SetParameter(nIndex, (OMX_PTR)pDef));
     }
@@ -1099,7 +1143,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         BOMX_MSG(("SetParameter OMX_IndexParamUseAndroidNativeBuffer"));
         if ( pBufferParams->nPortIndex != m_videoPortBase+1 )
         {
-            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);            
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         sp <ANativeWindowBuffer> nativeBuffer = pBufferParams->nativeBuffer;
         private_handle_t *handle = (private_handle_t *)nativeBuffer->handle;
@@ -1132,15 +1176,16 @@ NEXUS_VideoCodec BOMX_VideoDecoder::GetNexusCodec()
         return NEXUS_VideoCodec_eH263;
     case OMX_VIDEO_CodingMPEG4:
         return NEXUS_VideoCodec_eMpeg4Part2;
-    case OMX_VIDEO_CodingWMV:
-        return NEXUS_VideoCodec_eVc1SimpleMain; // WMV9 is SimpleMain.  Older formats are not supported.
-    case OMX_VIDEO_CodingRV:
-        return NEXUS_VideoCodec_eRv40;
     case OMX_VIDEO_CodingAVC:
         return NEXUS_VideoCodec_eH264;
     case OMX_VIDEO_CodingVP8:
         return NEXUS_VideoCodec_eVp8;
+    case OMX_VIDEO_CodingVP9:
+        return NEXUS_VideoCodec_eVp9;
+    case OMX_VIDEO_CodingHEVC:
+        return NEXUS_VideoCodec_eH265;
     default:
+        BOMX_WRN(("Unknown video codec %u (%#x)", GetCodec(), GetCodec()));
         return NEXUS_VideoCodec_eNone;
     }
 }
@@ -1214,7 +1259,13 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             }
             connectSettings.simpleVideoDecoder[0].windowId = 0; /* TODO: Hardcode to main for now */
             connectSettings.simpleVideoDecoder[0].windowCaps.type = eVideoWindowType_eMain;
-            /* TODO: Add 4k request here for hevc when ready */
+            if ( (int)GetCodec() == OMX_VIDEO_CodingHEVC || (int)GetCodec() == OMX_VIDEO_CodingVP9 )
+            {
+                // Request 4k decoder for HEVC/VP9 only
+                connectSettings.simpleVideoDecoder[0].decoderCaps.maxWidth = 3840;
+                connectSettings.simpleVideoDecoder[0].decoderCaps.maxHeight = 2160;
+                BOMX_WRN(("Requesting 4k decoder from nexus"));
+            }
             if ( ! m_pIpcClient->connectClientResources(m_pNexusClient, &connectSettings) )
             {
                 m_pIpcClient->disconnectClientResources(m_pNexusClient);
@@ -1322,18 +1373,17 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 vdecStartSettings.settings.pidChannel = m_hPidChannel;
                 vdecStartSettings.settings.codec = GetNexusCodec();
                 BOMX_MSG(("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec));
-                /* TODO: Add 4k here for hevc when ready */
+                if ( vdecStartSettings.settings.codec == NEXUS_VideoCodec_eH265 || vdecStartSettings.settings.codec == NEXUS_VideoCodec_eVp9 )
+                {
+                    // Request 4k decoder for HEVC/VP9 only
+                    vdecStartSettings.maxWidth = 3840;
+                    vdecStartSettings.maxHeight = 2160;
+                }
                 errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
                 if ( errCode )
                 {
                     return BOMX_BERR_TRACE(errCode);
                 }
-
-                // TODO: HACK
-                b_video_window_settings window_settings;
-                m_pIpcClient->getVideoWindowSettings(m_pNexusClient, 0, &window_settings);
-                window_settings.visible = false;
-                m_pIpcClient->setVideoWindowSettings(m_pNexusClient, 0, &window_settings);
 
                 m_submittedDescriptors = 0;
                 errCode = NEXUS_Playpump_Start(m_hPlaypump);
@@ -1928,7 +1978,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     case BOMX_VideoDecoderOutputBufferType_eStandard:
         {
             NEXUS_SurfaceCreateSettings surfaceSettings;
-            NEXUS_SurfaceMemory surfaceMem;            
+            NEXUS_SurfaceMemory surfaceMem;
             const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef;
 
             /* Check buffer size */
@@ -1941,7 +1991,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             }
             /* Create Surface (Android has limited 422 support so use this for now) */
             NEXUS_Surface_GetDefaultCreateSettings(&surfaceSettings);
-            surfaceSettings.pixelFormat = NEXUS_PixelFormat_eR5_G6_B5;            
+            surfaceSettings.pixelFormat = NEXUS_PixelFormat_eR5_G6_B5;
             surfaceSettings.width = pPortDef->format.video.nFrameWidth;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight;
             surfaceSettings.pitch = pPortDef->format.video.nStride;
@@ -1968,7 +2018,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
         break;
     default:
         BOMX_ERR(("Unsupported buffer type"));
-        return BOMX_ERR_TRACE(OMX_ErrorBadParameter);        
+        return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
 
     err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, nSizeBytes, pBuffer, pInfo, componentAllocated);
@@ -2008,7 +2058,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eNative )
     {
         return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
-    }    
+    }
 
     pPort = FindPortByIndex(nPortIndex);
     if ( NULL == pPort || pPort->GetDir() != OMX_DirOutput )
@@ -2096,7 +2146,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
             }
             break;
         case BOMX_VideoDecoderOutputBufferType_eNative:
-            {                
+            {
                 BOMX_MSG(("useBuffer w/private_handle_t %#x (useAndroidNativeBuffer2)", pBuffer));
                 err = AddOutputPortBuffer(ppBufferHdr, nPortIndex, pAppPrivate, (private_handle_t *)pBuffer);
                 if ( err != OMX_ErrorNone )
@@ -2262,7 +2312,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
             pInfo->pFrameBuffer = NULL;
         }
 
-        delete pInfo;        
+        delete pInfo;
     }
     PortStatusChanged();
 
@@ -2280,6 +2330,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     NEXUS_PlaypumpScatterGatherDescriptor desc[2];
     NEXUS_Error errCode;
     size_t numConsumed, numRequested;
+    uint8_t *pCodecHeader = NULL;
+    size_t codecHeaderLength = 0;
 
     if ( NULL == pBufferHeader )
     {
@@ -2333,8 +2385,32 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         m_configRequired = false;
     }
 
+    // Add codec-specific header if required
+    switch ( (int)GetCodec() )
+    {
+    case OMX_VIDEO_CodingVP8:
+    case OMX_VIDEO_CodingVP9:
+    /* Also true for spark and possibly other codecs */
+    {
+        uint32_t packetLen = pBufferHeader->nFilledLen - pBufferHeader->nOffset;
+        if ( packetLen > 0 )
+        {
+            pCodecHeader = m_pBcmvHeader;
+            codecHeaderLength = BOMX_BCMV_HEADER_SIZE;
+            packetLen += codecHeaderLength;   // BCMV packet length must include BCMV header
+            pCodecHeader[4] = (packetLen>>24)&0xff;
+            pCodecHeader[5] = (packetLen>>16)&0xff;
+            pCodecHeader[6] = (packetLen>>8)&0xff;
+            pCodecHeader[7] = (packetLen>>0)&0xff;
+        }
+        break;
+    }
+    default:
+        break;
+    }
+
     // Form PES Header
-    if ( BOMX_FormPesHeader(pBufferHeader, pInfo->pHeader, B_HEADER_BUFFER_SIZE, B_STREAM_ID, &headerLen) )
+    if ( BOMX_FormPesHeader(pBufferHeader, pInfo->pHeader, B_HEADER_BUFFER_SIZE, B_STREAM_ID, pCodecHeader, codecHeaderLength, &headerLen) )
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
@@ -2358,7 +2434,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     NEXUS_FlushCache(pPayload, payloadLen);
 
     // Give buffers to transport
-    #if 1
     numRequested=1;
     desc[0].addr = pInfo->pHeader;
     desc[0].length = headerLen;
@@ -2371,13 +2446,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     else
     {
         BOMX_WRN(("Discarding empty payload"));
-        numRequested = 1;
     }
-    #else
-    numRequested=1;
-    desc[0].addr = pPayload;
-    desc[0].length = payloadLen;
-    #endif
     errCode = NEXUS_Playpump_SubmitScatterGatherDescriptor(m_hPlaypump, desc, numRequested, &numConsumed);
     if ( errCode )
     {
@@ -2428,7 +2497,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
-    BOMX_MSG(("Fill Buffer ts %u us serial %u pInfo %#x HDR %#x", (unsigned int)pBufferHeader->nTimeStamp, pInfo->pFrameBuffer ? pInfo->pFrameBuffer->frameStatus.serialNumber : -1, pInfo, pBufferHeader));    
+    BOMX_MSG(("Fill Buffer ts %u us serial %u pInfo %#x HDR %#x", (unsigned int)pBufferHeader->nTimeStamp, pInfo->pFrameBuffer ? pInfo->pFrameBuffer->frameStatus.serialNumber : -1, pInfo, pBufferHeader));
     // Determine what to do with the buffer
     if ( pInfo->pFrameBuffer )
     {
@@ -2582,7 +2651,7 @@ void BOMX_VideoDecoder::SourceChangedEvent()
                 portDef.format.video.nFrameWidth = vdecStatus.display.width;
                 portDef.format.video.nFrameHeight = vdecStatus.display.height;
                 formatChanged=true;
-            }            
+            }
             portDef.format.video.xFramerate = xFramerate;
             pPort->SetDefinition(&portDef);
             if ( formatChanged )
@@ -2601,14 +2670,14 @@ void BOMX_VideoDecoder::SourceChangedEvent()
 
 void BOMX_VideoDecoder::OutputFrameEvent()
 {
-    // Cancel pending timer 
+    // Cancel pending timer
     if ( NULL != m_outputFrameTimerId )
     {
         CancelTimer(m_outputFrameTimerId);
         m_outputFrameTimerId = NULL;
     }
     // Check for new frames - will arm timer if required
-    PollDecodedFrames();    
+    PollDecodedFrames();
 }
 
 void BOMX_VideoDecoder::OutputFrameTimer()
@@ -2616,7 +2685,7 @@ void BOMX_VideoDecoder::OutputFrameTimer()
     // Invalidate timer id
     m_outputFrameTimerId = NULL;
     // Check for new frames - will arm timer if required
-    PollDecodedFrames();    
+    PollDecodedFrames();
 }
 
 static const struct {
@@ -2767,7 +2836,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                   NULL != pBuffer && pBuffer->state == BOMX_VideoDecoderFrameBufferState_eInvalid;
                   pBuffer = BLST_Q_NEXT(pBuffer, node) );
 
-            // Skip frames already in alloc list 
+            // Skip frames already in alloc list
             pFrameStatus = frameStatus;
             for ( ;
                   NULL != pBuffer && numFrames > 0;
@@ -2939,7 +3008,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
     if ( m_pVideoPorts[1]->QueueDepth() > 0 )
     {
         BOMX_MSG(("%u output buffers pending, restart timer", m_pVideoPorts[1]->QueueDepth()));
-        m_outputFrameTimerId = StartTimer(B_FRAME_TIMER_INTERVAL, BOMX_VideoDecoder_OutputFrameTimer, static_cast<void *>(this));        
+        m_outputFrameTimerId = StartTimer(B_FRAME_TIMER_INTERVAL, BOMX_VideoDecoder_OutputFrameTimer, static_cast<void *>(this));
     }
     else
     {
@@ -2952,7 +3021,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
     NEXUS_VideoDecoderReturnFrameSettings returnSettings[B_MAX_DECODED_FRAMES];
     unsigned numFrames=0;
     BOMX_VideoDecoderFrameBuffer *pBuffer, *pStart, *pEnd;
-    
+
     // Skip pending invalidated frames
     for ( pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
           NULL != pBuffer && pBuffer->state == BOMX_VideoDecoderFrameBufferState_eInvalid;
@@ -3033,7 +3102,7 @@ void BOMX_VideoDecoder::GraphicsCheckpoint()
     NEXUS_Error errCode;
 
     errCode = NEXUS_Graphics2D_Checkpoint(m_hGraphics2d, NULL);
-    if ( errCode == NEXUS_GRAPHICS2D_QUEUED ) 
+    if ( errCode == NEXUS_GRAPHICS2D_QUEUED )
     {
         errCode = B_Event_Wait(m_hCheckpointEvent, 1000);
         if ( errCode )
