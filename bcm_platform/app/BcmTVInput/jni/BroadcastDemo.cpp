@@ -4,9 +4,11 @@ class BroadcastDemo_Context {
 public:
     NEXUS_FrontendHandle frontend;
     NEXUS_ParserBand parserBand;
+#ifdef DECODE
     NEXUS_SimpleStcChannelHandle stcChannel;
     NEXUS_SimpleVideoDecoderHandle videoDecoder;
     NEXUS_PidChannelHandle pidChannel;
+#endif
 };
 
 static struct {
@@ -30,7 +32,9 @@ static struct {
 
 static int BroadcastDemo_Tune(Tuner_Data *pTD, String8 s8id)
 {
+#ifdef DECODE
     NEXUS_SimpleVideoDecoderStartSettings videoProgram;
+#endif
     NEXUS_FrontendOfdmSettings ofdmSettings;
     NEXUS_FrontendUserParameters userParams;
     NEXUS_ParserBandSettings parserBandSettings;
@@ -93,6 +97,7 @@ static int BroadcastDemo_Tune(Tuner_Data *pTD, String8 s8id)
         return -1;
     }
 
+#ifdef DECODE
     NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&videoProgram);
 
     // Set up the video PID
@@ -122,6 +127,7 @@ static int BroadcastDemo_Tune(Tuner_Data *pTD, String8 s8id)
             return -1;
         }
     }
+#endif
 
     ALOGE("%s: Tuner has started streaming!!", __FUNCTION__);
     return 0;
@@ -153,11 +159,13 @@ static int BroadcastDemo_Stop(Tuner_Data *pTD)
 {
     BroadcastDemo_Context *context = (BroadcastDemo_Context *)pTD->context;
 
+#ifdef DECODE
     // Stop the video decoder
     NEXUS_SimpleVideoDecoder_Stop(context->videoDecoder);
 
     // Close the PID channel
     NEXUS_PidChannel_Close(context->pidChannel);
+#endif
 
     return 0;
 }
@@ -174,6 +182,8 @@ Broadcast_Initialize(Tuner_Data *pTD)
     b_refsw_client_connect_resource_settings    connectSettings;
 
     context = new BroadcastDemo_Context;
+
+#ifdef DECODE
     context->videoDecoder = pTD->ipcclient->acquireVideoDecoderHandle();
 
     pTD->ipcclient->getClientInfo(pTD->nexus_client, &client_info);
@@ -202,6 +212,7 @@ Broadcast_Initialize(Tuner_Data *pTD)
         ALOGE("%s: Unable to create stcChannel or parserBand", __FUNCTION__);
         return -1;
     }
+#endif
 
     NEXUS_Frontend_GetDefaultAcquireSettings(&frontendAcquireSettings);
     frontendAcquireSettings.capabilities.ofdm = true;
