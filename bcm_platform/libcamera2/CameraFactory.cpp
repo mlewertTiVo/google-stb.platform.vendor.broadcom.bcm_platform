@@ -20,8 +20,7 @@
  */
 
 #define LOG_NDEBUG 0
-#define DEFAULT_DEVICE_FRONT "/dev/video1"
-#define DEFAULT_DEVICE_BACK  "/dev/video0"
+#define DEFAULT_DEVICE "/dev/video0"
 #define CONFIG_FILE "/etc/camera.cfg"
 #define LOG_TAG "Camera_Factory"
 
@@ -121,9 +120,15 @@ void CameraFactory::parseConfig(const char* configFile)
 
             sscanf(line, "%s %s", arg1, arg2);
 
-            if (strcmp(arg1, "front")) {
+            // Check that the device exists
+            if (access(arg2, F_OK) == -1) {
+                ALOGD("CameraFactory::parseConfig: Device not found %s", arg2);
+                continue;
+            }
+
+            if (!strcmp(arg1, "front")) {
                 newCameraConfig(CAMERA_FACING_FRONT, arg2);
-            } else if (strcmp(arg1, "back")) {
+            } else if (!strcmp(arg1, "back")) {
                 newCameraConfig(CAMERA_FACING_BACK, arg2);
             } else {
                 ALOGD("CameraFactory::parseConfig: Unrecognized config line '%s'", line);
@@ -131,13 +136,10 @@ void CameraFactory::parseConfig(const char* configFile)
         }
     } else {
         ALOGD("%s not found, using camera configuration defaults", CONFIG_FILE);
-        if (access(DEFAULT_DEVICE_BACK, F_OK) != -1){
-            ALOGD("Found device %s", DEFAULT_DEVICE_BACK);
-            newCameraConfig(CAMERA_FACING_BACK, DEFAULT_DEVICE_BACK);
-        }
-        if (access(DEFAULT_DEVICE_FRONT, F_OK) != -1){
-            ALOGD("Found device %s", DEFAULT_DEVICE_FRONT);
-            newCameraConfig(CAMERA_FACING_FRONT, DEFAULT_DEVICE_FRONT);
+        if (access(DEFAULT_DEVICE, F_OK) != -1){
+            ALOGD("Found device %s", DEFAULT_DEVICE);
+            // Treat discovered camera as a front one
+            newCameraConfig(CAMERA_FACING_FRONT, DEFAULT_DEVICE);
         }
     }
 }
