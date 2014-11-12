@@ -189,11 +189,15 @@ void startNxServer(void)
     strcat(cmdRunNxServer, " ");
     strcat(cmdRunNxServer, "-ir none ");
 
-    /* If the HD output resolution is set to 1080p, then we can use the HDMI preferred output format
-       (typically 1080p also) and not ignore the HDMI EDID information from the connected TV. */
     if (property_get("ro.hd_output_format", value, NULL)) {
+        /* If the HD output resolution is set to 1080p, then we can use the HDMI preferred output format
+           (typically 1080p also) and not ignore the HDMI EDID information from the connected TV. */
         if (strncmp((char *) value, "1080p", 5) != 0) {
             strcat(cmdRunNxServer, "-ignore_edid ");
+        }
+        /* ensure we setup the surface compositor to 1080p. */
+        else {
+            strcat(cmdRunNxServer, "-fbsize 1920,1080 ");
         }
     }
 #ifndef BCM_OMX_SUPPORT_ENCODER
