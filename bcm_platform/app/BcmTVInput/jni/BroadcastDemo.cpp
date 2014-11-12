@@ -2,13 +2,22 @@
 
 class BroadcastDemo_Context {
 public:
+    BroadcastDemo_Context() {
+        frontend = NULL;
+        parserBand = NEXUS_ParserBand_eInvalid;
+        videoDecoder = NULL;
+        stcChannel = NULL;
+        connected = false;
+        pidChannel = NULL;
+        decoding = false;
+    };
     NEXUS_FrontendHandle frontend;
     NEXUS_ParserBand parserBand;
-#ifdef DECODE
-    NEXUS_SimpleStcChannelHandle stcChannel;
     NEXUS_SimpleVideoDecoderHandle videoDecoder;
+    NEXUS_SimpleStcChannelHandle stcChannel;
+    bool connected;
     NEXUS_PidChannelHandle pidChannel;
-#endif
+    bool decoding;
 };
 
 static struct {
@@ -30,11 +39,109 @@ static struct {
     { -1, "", "", 0, 0, 0, 0, 0 }
 };
 
+static void
+FreeContext(Tuner_Data *pTD, BroadcastDemo_Context *context)
+{
+    if (context) {
+        if (context->parserBand != NEXUS_ParserBand_eInvalid) {
+            NEXUS_ParserBand_Close(context->parserBand);
+            context->parserBand = NEXUS_ParserBand_eInvalid;
+        }
+        if (context->frontend) {
+            NEXUS_Frontend_Release(context->frontend);
+            context->frontend = NULL;
+        }
+        if (context->videoDecoder) {
+            pTD->ipcclient->releaseVideoDecoderHandle(context->videoDecoder);
+            context->videoDecoder = NULL;
+        }
+        if (context->stcChannel) {
+            NEXUS_SimpleStcChannel_Destroy(context->stcChannel);
+            context->stcChannel = NULL;
+        }
+        delete context; 
+    }
+}
+
+static int
+Connect(Tuner_Data *pTD)
+{
+    BroadcastDemo_Context *context = (BroadcastDemo_Context *)pTD->context;
+
+    if (!context->connected) {
+        b_refsw_client_client_info client_info;
+        b_refsw_client_connect_resource_settings connectSettings;
+
+        ALOGE("%s: connecting", __FUNCTION__);
+
+        pTD->ipcclient->getClientInfo(pTD->nexus_client, &client_info);
+
+        // Now connect the client resources
+        pTD->ipcclient->getDefaultConnectClientSettings(&connectSettings);
+
+        connectSettings.simpleVideoDecoder[0].id = client_info.videoDecoderId;
+        connectSettings.simpleVideoDecoder[0].surfaceClientId = client_info.surfaceClientId;
+        connectSettings.simpleVideoDecoder[0].windowId = 0;
+
+        connectSettings.simpleVideoDecoder[0].windowCaps.type = eVideoWindowType_eMain;
+
+        if (true != pTD->ipcclient->connectClientResources(pTD->nexus_client, &connectSettings)) {
+            ALOGE("%s: connectClientResources failed", __FUNCTION__);
+            return -1;
+        }
+
+        b_video_window_settings window_settings;
+        pTD->ipcclient->getVideoWindowSettings(pTD->nexus_client, 0, &window_settings);
+        window_settings.visible = true;
+        pTD->ipcclient->setVideoWindowSettings(pTD->nexus_client, 0, &window_settings);
+        context->connected = true;
+
+        ALOGE("%s: connected", __FUNCTION__);
+    }
+    return 0;
+}
+
+static void
+Disconnect(Tuner_Data *pTD)
+{
+    BroadcastDemo_Context *context = (BroadcastDemo_Context *)pTD->context;
+
+    if (context->connected) {
+        ALOGE("%s: disconnecting", __FUNCTION__);
+
+        pTD->ipcclient->disconnectClientResources(pTD->nexus_client);
+        context->connected = false;
+
+        ALOGE("%s: disconnected", __FUNCTION__);
+    }
+}
+
+static int BroadcastDemo_Stop(Tuner_Data *pTD)
+{
+    BroadcastDemo_Context *context = (BroadcastDemo_Context *)pTD->context;
+
+    ALOGE("%s: Enter", __FUNCTION__);
+
+    // Stop the video decoder
+    if (context->decoding) {
+        NEXUS_SimpleVideoDecoder_Stop(context->videoDecoder);
+        context->decoding = false;
+    }
+
+    // Close the PID channel
+    if (context->pidChannel) {
+        NEXUS_PidChannel_Close(context->pidChannel);
+        context->pidChannel = 0;
+    }
+
+    ALOGE("%s: Exit", __FUNCTION__);
+
+    return 0;
+}
+
 static int BroadcastDemo_Tune(Tuner_Data *pTD, String8 s8id)
 {
-#ifdef DECODE
     NEXUS_SimpleVideoDecoderStartSettings videoProgram;
-#endif
     NEXUS_FrontendOfdmSettings ofdmSettings;
     NEXUS_FrontendUserParameters userParams;
     NEXUS_ParserBandSettings parserBandSettings;
@@ -55,6 +162,10 @@ static int BroadcastDemo_Tune(Tuner_Data *pTD, String8 s8id)
     if (lineup[i].id < 0) {
         ALOGE("%s: channel_id %d invalid", __FUNCTION__, channel_id);
         return -1;
+    }
+
+    if (context->decoding) {
+        BroadcastDemo_Stop(pTD);
     }
 
     // Enable the tuner
@@ -97,37 +208,39 @@ static int BroadcastDemo_Tune(Tuner_Data *pTD, String8 s8id)
         return -1;
     }
 
-#ifdef DECODE
-    NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&videoProgram);
+    if (Connect(pTD) < 0) {
+        ALOGE("%s: Failed to connect", __FUNCTION__);
+        return -1;
+    }
+
+    rc = NEXUS_SimpleVideoDecoder_SetStcChannel(context->videoDecoder, context->stcChannel);
+    if (rc)
+    {
+        ALOGE("%s: SetStcChannel failed", __FUNCTION__);
+        return -1;
+    }
 
     // Set up the video PID
     video_pid = lineup[i].vpid;
+    context->pidChannel = NEXUS_PidChannel_Open(context->parserBand, video_pid, NULL);
+    if (context->pidChannel == NULL) {
+        ALOGE("%s: Failed to open pidchannel", __FUNCTION__);
+        return -1;
+    }
 
-    videoProgram.settings.pidChannel = NEXUS_PidChannel_Open(context->parserBand, video_pid, NULL);
+    NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&videoProgram); 
+    videoProgram.settings.pidChannel = context->pidChannel;
     videoProgram.settings.codec = video_codec;
-
-    if (videoProgram.settings.pidChannel)
+    rc = NEXUS_SimpleVideoDecoder_Start(context->videoDecoder, &videoProgram);
+    if (rc)
     {
-        rc = NEXUS_SimpleVideoDecoder_SetStcChannel(context->videoDecoder, context->stcChannel);
-        if (rc)
-        {
-            ALOGE("%s: SetStcChannel failed", __FUNCTION__);
-            return -1;
-        }
+        ALOGE("%s: VideoDecoderStart failed", __FUNCTION__);
+        NEXUS_PidChannel_Close(context->pidChannel);
+        context->pidChannel = 0;
+        return -1;
     }
 
-    if (videoProgram.settings.pidChannel)
-    {
-        context->pidChannel = videoProgram.settings.pidChannel;
-
-        rc = NEXUS_SimpleVideoDecoder_Start(context->videoDecoder, &videoProgram);
-        if (rc)
-        {
-            ALOGE("%s: VideoDecoderStart failed", __FUNCTION__);
-            return -1;
-        }
-    }
-#endif
+    context->decoding = true;
 
     ALOGE("%s: Tuner has started streaming!!", __FUNCTION__);
     return 0;
@@ -155,17 +268,18 @@ static Vector<ChannelInfo> BroadcastDemo_GetChannelList(Tuner_Data *pTD)
     return civ;
 }
 
-static int BroadcastDemo_Stop(Tuner_Data *pTD)
+static int BroadcastDemo_Release(Tuner_Data *pTD)
 {
     BroadcastDemo_Context *context = (BroadcastDemo_Context *)pTD->context;
 
-#ifdef DECODE
-    // Stop the video decoder
-    NEXUS_SimpleVideoDecoder_Stop(context->videoDecoder);
+    ALOGE("%s: Enter", __FUNCTION__);
 
-    // Close the PID channel
-    NEXUS_PidChannel_Close(context->pidChannel);
-#endif
+    BroadcastDemo_Stop(pTD);
+    Disconnect(pTD);
+    FreeContext(pTD, context);
+    pTD->context = 0;
+
+    ALOGE("%s: Exit", __FUNCTION__);
 
     return 0;
 }
@@ -173,46 +287,12 @@ static int BroadcastDemo_Stop(Tuner_Data *pTD)
 int
 Broadcast_Initialize(Tuner_Data *pTD)
 {
-    BroadcastDemo_Context *context;
+    BroadcastDemo_Context *context = 0;
     NEXUS_FrontendAcquireSettings frontendAcquireSettings;
 
     ALOGE("%s: Enter", __FUNCTION__);
 
-    b_refsw_client_client_info                  client_info;
-    b_refsw_client_connect_resource_settings    connectSettings;
-
     context = new BroadcastDemo_Context;
-
-#ifdef DECODE
-    context->videoDecoder = pTD->ipcclient->acquireVideoDecoderHandle();
-
-    pTD->ipcclient->getClientInfo(pTD->nexus_client, &client_info);
-
-    // Now connect the client resources
-    pTD->ipcclient->getDefaultConnectClientSettings(&connectSettings);
-
-    connectSettings.simpleVideoDecoder[0].id = client_info.videoDecoderId;
-    connectSettings.simpleVideoDecoder[0].surfaceClientId = client_info.surfaceClientId;
-    connectSettings.simpleVideoDecoder[0].windowId = 0;
-
-    connectSettings.simpleVideoDecoder[0].windowCaps.type = eVideoWindowType_eMain;
-
-    if (true != pTD->ipcclient->connectClientResources(pTD->nexus_client, &connectSettings))
-        ALOGE("%s: connectClientResources failed", __FUNCTION__);
-
-    b_video_window_settings window_settings;
-    pTD->ipcclient->getVideoWindowSettings(pTD->nexus_client, 0, &window_settings);
-    window_settings.visible = true;
-    pTD->ipcclient->setVideoWindowSettings(pTD->nexus_client, 0, &window_settings);
-
-    context->stcChannel = NEXUS_SimpleStcChannel_Create(NULL);
-    context->parserBand = NEXUS_ParserBand_Open(NEXUS_ANY_ID);
-    if (!context->stcChannel || !context->parserBand)
-    {
-        ALOGE("%s: Unable to create stcChannel or parserBand", __FUNCTION__);
-        return -1;
-    }
-#endif
 
 #if 0
     {
@@ -221,19 +301,52 @@ Broadcast_Initialize(Tuner_Data *pTD)
     }
 #endif
 
+    int rv = 0;
+
     NEXUS_Frontend_GetDefaultAcquireSettings(&frontendAcquireSettings);
     frontendAcquireSettings.capabilities.ofdm = true;
     context->frontend = NEXUS_Frontend_Acquire(&frontendAcquireSettings);
     if (!context->frontend)
     {
         ALOGE("%s: Unable to find OFDM-capable frontend", __FUNCTION__);
-        return -1;
+        rv = -1;
+    }
+
+    if (rv == 0) {
+        context->parserBand = NEXUS_ParserBand_Open(NEXUS_ANY_ID);
+        if (context->parserBand == NEXUS_ParserBand_eInvalid) {
+            ALOGE("%s: Unable to open parserBand", __FUNCTION__);
+            rv = -1;
+        }
+    }
+
+    if (rv == 0) {
+        context->videoDecoder = pTD->ipcclient->acquireVideoDecoderHandle();
+        if (context->videoDecoder == NULL) {
+            ALOGE("%s: Unable to acquire videoDecoder", __FUNCTION__);
+            rv = -1;
+        }
+    }
+
+    if (rv == 0) {
+        context->stcChannel = NEXUS_SimpleStcChannel_Create(NULL);
+        if (!context->stcChannel)
+        {
+            ALOGE("%s: Unable to create stcChannel", __FUNCTION__);
+            rv = -1;
+        }
+    }
+
+    if (rv < 0) {
+        FreeContext(NULL, context);
+        return rv;
     }
 
     pTD->context = context;
     pTD->GetChannelList = BroadcastDemo_GetChannelList;
     pTD->Tune = BroadcastDemo_Tune;
     pTD->Stop = BroadcastDemo_Stop;
+    pTD->Release = BroadcastDemo_Release;
     ALOGE("%s: Exit", __FUNCTION__);
     return 0;
 }

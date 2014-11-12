@@ -68,6 +68,7 @@ static JNINativeMethod gMethods[] =
 	{"tune",           "(Ljava/lang/String;)I",     (void *)Java_com_broadcom_tvinput_TunerHAL_tune},
 	{"getChannelList", "()[Lcom/broadcom/tvinput/ChannelInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getChannelList},
     {"stop",           "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stop},  
+    {"release",        "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_release},  
 };
 
 const String16 INexusTunerService::descriptor(TUNER_INTERFACE_NAME);
@@ -304,6 +305,22 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv *env, jcla
         rv = (*g_pTD->Stop)(g_pTD);
     }
 
-    return -1;
+    return rv;
+}
+
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_release(JNIEnv *env, jclass thiz)
+{
+    jint rv = -1;
+
+    TV_LOG("%s: Releasing!!", __FUNCTION__);
+
+    if (g_pTD->Release == 0) {
+        TV_LOG("%s: Release call is null", __FUNCTION__);
+    }
+    else {
+        rv = (*g_pTD->Release)(g_pTD);
+    }
+
+    return rv;
 }
 

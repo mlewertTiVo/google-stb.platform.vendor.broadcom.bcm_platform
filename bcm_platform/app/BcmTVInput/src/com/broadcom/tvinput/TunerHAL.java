@@ -19,4 +19,5 @@ public class TunerHAL
     static native int tune(String id); // from ChannelInfo
     static native ChannelInfo[] getChannelList();
     static native int stop();
+    static native int release();
 }

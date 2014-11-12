@@ -59,6 +59,7 @@ public:
     int (*Tune)(Tuner_Data *pTD, String8);
     Vector<ChannelInfo> (*GetChannelList)(Tuner_Data *pTD);
     int (*Stop)(Tuner_Data *pTD);
+    int (*Release)(Tuner_Data *pTD);
 };
 
 class INexusTunerService: public IInterface 

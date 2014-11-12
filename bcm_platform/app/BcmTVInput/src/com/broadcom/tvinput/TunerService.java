@@ -344,7 +344,7 @@ public class TunerService extends TvInputService {
         {
             if (DEBUG) 
                 Log.d(TAG, "onRelease()");
-
+            TunerHAL.release();
             if (mHardware != null) 
             {
                 mManager.releaseTvInputHardware(mDeviceId, mHardware);

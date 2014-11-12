@@ -39,6 +39,14 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop
   (JNIEnv *, jclass);
 
+/*
+ * Class:     com_broadcom_tvinput_TunerHAL
+ * Method:    release
+ * Signature: ()I
+ */
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_release
+  (JNIEnv *, jclass);
+
 #ifdef __cplusplus
 }
 #endif
