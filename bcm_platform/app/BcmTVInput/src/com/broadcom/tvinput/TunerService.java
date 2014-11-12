@@ -126,6 +126,11 @@ public class TunerService extends TvInputService {
         int deviceId = hardwareInfo.getDeviceId();
 		Log.d(TAG, "TunerService::onHardwareAdded(), deviceId = " +deviceId);
 
+        if (mInputIdMap.indexOfKey(deviceId) >= 0) {
+            Log.e(TAG, "Already created TvInputInfo for deviceId=" + deviceId);
+            return null;
+        }
+
         TvInputInfo info = null;
         try {
             info = TvInputInfo.createTvInputInfo(this, mResolveInfo, hardwareInfo, "STB-TUNER " + deviceId, null);
