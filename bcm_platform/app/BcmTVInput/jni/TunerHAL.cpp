@@ -168,7 +168,7 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
     result = JNI_VERSION_1_4;
 
     // Allocate memory for the global pointer
-    g_pTD = (Tuner_Data *) malloc(sizeof(Tuner_Data));
+    g_pTD = (Tuner_Data *) calloc(1, sizeof(Tuner_Data));
 
 	// Launch the binder service
     NexusTunerService::instantiate();
@@ -211,12 +211,19 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jclass thiz, jstring id)
 {
     const char *s8id = env->GetStringUTFChars(id, NULL);
+    jint rv = -1;
+
     TV_LOG("%s: Tuning to a new channel (%s)!!", __FUNCTION__, s8id);
 
-    (*g_pTD->Tune)(g_pTD, String8(s8id));
+    if (g_pTD->Tune == 0) {
+        TV_LOG("%s: Tune call is null", __FUNCTION__);
+    }
+    else {
+        rv = (*g_pTD->Tune)(g_pTD, String8(s8id)); 
+    }
 
     env->ReleaseStringUTFChars(id, s8id);   
-    return 0;
+    return rv;
 }
 
 JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList(JNIEnv *env, jclass thiz)
@@ -225,7 +232,12 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
 
     Vector<ChannelInfo> civ;
 
-    civ = (*g_pTD->GetChannelList)(g_pTD);
+    if (g_pTD->GetChannelList == 0) {
+        TV_LOG("%s: GetChannelList call is null", __FUNCTION__);
+        return 0;
+    }
+
+    civ = (*g_pTD->GetChannelList)(g_pTD); 
 
     jclass cls = env->FindClass("com/broadcom/tvinput/ChannelInfo"); 
     if (cls == 0) {
@@ -281,10 +293,17 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
 
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv *env, jclass thiz)
 {
+    jint rv = -1;
+
     TV_LOG("%s: Stopping the current channel!!", __FUNCTION__);
 
-    (*g_pTD->Stop)(g_pTD);
+    if (g_pTD->Tune == 0) {
+        TV_LOG("%s: Stop call is null", __FUNCTION__);
+    }
+    else {
+        rv = (*g_pTD->Stop)(g_pTD);
+    }
 
-    return 0;
+    return -1;
 }
 

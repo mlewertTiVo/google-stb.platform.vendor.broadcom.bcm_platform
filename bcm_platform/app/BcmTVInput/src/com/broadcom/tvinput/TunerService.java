@@ -131,6 +131,12 @@ public class TunerService extends TvInputService {
             return null;
         }
 
+        Log.e(TAG, "Calling TunerHAL.initialize!!");
+        if (TunerHAL.initialize() < 0) {
+            Log.e(TAG, "TunerHAL.initialize failed!!");
+            return null;
+        }
+
         TvInputInfo info = null;
         try {
             info = TvInputInfo.createTvInputInfo(this, mResolveInfo, hardwareInfo, "STB-TUNER " + deviceId, null);
@@ -148,8 +154,6 @@ public class TunerService extends TvInputService {
         // Save mapping between inputId and deviceId
         mDeviceIdMap.put(info.getId(), deviceId);
 
-        Log.e(TAG, "Calling TunerHAL.initialize!!");
-        TunerHAL.initialize();
         ChannelInfo[] civ = TunerHAL.getChannelList();
 
         Log.e(TAG, "Got channels: " + civ.length);

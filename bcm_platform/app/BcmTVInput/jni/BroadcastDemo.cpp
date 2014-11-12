@@ -214,6 +214,13 @@ Broadcast_Initialize(Tuner_Data *pTD)
     }
 #endif
 
+#if 0
+    {
+        ALOGE("%s: Faking unable to find OFDM-capable frontend", __FUNCTION__);
+        return -1;
+    }
+#endif
+
     NEXUS_Frontend_GetDefaultAcquireSettings(&frontendAcquireSettings);
     frontendAcquireSettings.capabilities.ofdm = true;
     context->frontend = NEXUS_Frontend_Acquire(&frontendAcquireSettings);
