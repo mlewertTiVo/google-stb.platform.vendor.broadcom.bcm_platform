@@ -433,10 +433,12 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_hCheckpointEvent(NULL),
     m_hGraphics2d(NULL),
     m_submittedDescriptors(0),
+    m_pBufferTracker(NULL),
     m_pIpcClient(NULL),
     m_pNexusClient(NULL),
     m_pEosBuffer(NULL),
     m_eosPending(false),
+    m_eosDelivered(false),
     m_formatChangePending(false),
     m_pConfigBuffer(NULL),
     m_configRequired(false),
@@ -546,6 +548,14 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_outputFrameEventId )
     {
         BOMX_ERR(("Unable to register output frame event"));
+        this->Invalidate();
+        return;
+    }
+
+    m_pBufferTracker = new BOMX_BufferTracker();
+    if ( NULL == m_pBufferTracker || !m_pBufferTracker->Valid() )
+    {
+        BOMX_ERR(("Unable to create buffer tracker"));
         this->Invalidate();
         return;
     }
@@ -702,6 +712,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     if ( m_pIpcClient && m_pNexusClient )
     {
         m_pIpcClient->destroyClientContext(m_pNexusClient);
+    }
+    if ( m_pBufferTracker )
+    {
+        delete m_pBufferTracker;
     }
     while ( (pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList)) )
     {
@@ -1212,6 +1226,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
 
             m_submittedDescriptors = 0;
             m_eosPending = false;
+            m_eosDelivered = false;
+            m_pBufferTracker->Flush();
             m_pIpcClient->disconnectClientResources(m_pNexusClient);
             m_pIpcClient->releaseVideoDecoderHandle(m_hSimpleVideoDecoder);
             m_hSimpleVideoDecoder = NULL;
@@ -1347,6 +1363,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 NEXUS_Playpump_Stop(m_hPlaypump);
                 NEXUS_SimpleVideoDecoder_Stop(m_hSimpleVideoDecoder);
                 m_eosPending = false;
+                m_eosDelivered = false;
+                m_pBufferTracker->Flush();
                 ReturnPortBuffers(m_pVideoPorts[0]);
                 m_submittedDescriptors = 0;
             }
@@ -1391,6 +1409,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 {
                     NEXUS_SimpleVideoDecoder_Stop(m_hSimpleVideoDecoder);
                     m_eosPending = false;
+                    m_eosDelivered = false;
                     return BOMX_BERR_TRACE(errCode);
                 }
 
@@ -2332,6 +2351,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     size_t numConsumed, numRequested;
     uint8_t *pCodecHeader = NULL;
     size_t codecHeaderLength = 0;
+    uint32_t pts=0, *pPts = NULL;
 
     if ( NULL == pBufferHeader )
     {
@@ -2383,6 +2403,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         BOMX_ASSERT(numConsumed == numRequested);
         pInfo->numDescriptors += numRequested;
         m_configRequired = false;
+        if ( NULL != g_pDebugFile )
+        {
+            fwrite(m_pConfigBuffer, 1, m_configBufferSize, g_pDebugFile);
+        }
     }
 
     // Add codec-specific header if required
@@ -2409,8 +2433,17 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         break;
     }
 
+    if ( m_pBufferTracker->Add(pBufferHeader, &pts) )
+    {
+        pPts = &pts;
+    }
+    else
+    {
+        BOMX_WRN(("Unable to track buffer"));
+    }
+
     // Form PES Header
-    if ( BOMX_FormPesHeader(pBufferHeader, pInfo->pHeader, B_HEADER_BUFFER_SIZE, B_STREAM_ID, pCodecHeader, codecHeaderLength, &headerLen) )
+    if ( BOMX_FormPesHeader(pBufferHeader, pPts, pInfo->pHeader, B_HEADER_BUFFER_SIZE, B_STREAM_ID, pCodecHeader, codecHeaderLength, &headerLen) )
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
@@ -2471,6 +2504,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         BOMX_ASSERT(numConsumed == numRequested);
         pInfo->numDescriptors += numRequested;
         m_eosPending = true;
+        if ( NULL != g_pDebugFile )
+        {
+            fwrite(m_pEosBuffer, 1, BOMX_VIDEO_EOS_LEN, g_pDebugFile);
+        }
     }
 
     return OMX_ErrorNone;
@@ -2875,7 +2912,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
     }
 
     // Check if we have client buffers ready to be delivered
-    if ( m_pVideoPorts[1]->QueueDepth() > 1 && !m_formatChangePending )
+    if ( m_pVideoPorts[1]->QueueDepth() > 1 && !m_formatChangePending && !m_eosDelivered )
     {
         // Skip all frames already delivered
         for ( pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
@@ -2893,18 +2930,23 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             {
                 BOMX_VideoDecoderOutputBufferInfo *pInfo;
                 OMX_BUFFERHEADERTYPE *pHeader = pOmxBuffer->GetHeader();
-                pHeader->nFlags = 0;
                 pHeader->nOffset = 0;
-                BOMX_PtsToTick(pBuffer->frameStatus.pts, &pHeader->nTimeStamp);
+                if ( !m_pBufferTracker->Remove(pBuffer->frameStatus.pts, pHeader) )
+                {
+                    BOMX_WRN(("Unable to find tracker entry for pts %#x", pBuffer->frameStatus.pts));
+                    pHeader->nFlags = 0;
+                    BOMX_PtsToTick(pBuffer->frameStatus.pts, &pHeader->nTimeStamp);
+                }
                 pInfo = (BOMX_VideoDecoderOutputBufferInfo *)pOmxBuffer->GetComponentPrivate();
                 BDBG_ASSERT(NULL == pInfo->pFrameBuffer);
-                if ( pBuffer->frameStatus.lastPicture )
+                if ( pBuffer->frameStatus.lastPicture || (pHeader->nFlags & OMX_BUFFERFLAG_EOS) )
                 {
                     BOMX_MSG(("EOS picture received"));
                     if ( m_eosPending )
                     {
                         pHeader->nFlags |= OMX_BUFFERFLAG_EOS;
                         m_eosPending = false;
+                        m_eosDelivered = true;
                     }
                     else
                     {
@@ -3005,14 +3047,21 @@ void BOMX_VideoDecoder::PollDecodedFrames()
     }
 
     // If there are still buffers ready for data, set a timer to check again later
-    if ( m_pVideoPorts[1]->QueueDepth() > 0 )
+    if ( m_pVideoPorts[1]->QueueDepth() > 0 && !m_eosDelivered )
     {
         BOMX_MSG(("%u output buffers pending, restart timer", m_pVideoPorts[1]->QueueDepth()));
         m_outputFrameTimerId = StartTimer(B_FRAME_TIMER_INTERVAL, BOMX_VideoDecoder_OutputFrameTimer, static_cast<void *>(this));
     }
     else
     {
-        BOMX_MSG(("No buffers queued at output port.  Ignore timer."));
+        if ( m_eosDelivered )
+        {
+            BOMX_MSG(("EOS already delivered.  Not checking for more frames."));
+        }
+        else
+        {
+            BOMX_MSG(("No buffers queued at output port.  Ignore timer."));
+        }
     }
 }
 

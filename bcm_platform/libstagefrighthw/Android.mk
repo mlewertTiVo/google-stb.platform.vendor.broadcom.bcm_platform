@@ -70,6 +70,7 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := \
     bomx_android_plugin.cpp \
     bomx_buffer.cpp \
+    bomx_buffer_tracker.cpp \
     bomx_component.cpp \
     bomx_core.cpp \
     bomx_port.cpp \
@@ -112,7 +113,7 @@ LOCAL_SHARED_LIBRARIES :=       \
         libui                   \
         libnexusipcclient \
 		libstagefright_foundation \
-		
+
 LOCAL_MODULE := libstagefrighthw
 
 include $(BUILD_SHARED_LIBRARY)

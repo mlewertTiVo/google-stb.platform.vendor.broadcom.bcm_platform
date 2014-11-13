@@ -176,6 +176,7 @@ int32_t BOMX_TickDiffMs(
 
 int BOMX_FormPesHeader(
     const OMX_BUFFERHEADERTYPE *pFrame,
+    const uint32_t *pPts,
     void *pBuffer,
     size_t bufferSize,
     unsigned streamId,
@@ -214,7 +215,14 @@ int BOMX_FormPesHeader(
         unbounded=true;
     }
 
-    pts = BOMX_TickToPts(&pFrame->nTimeStamp);
+    if ( pPts )
+    {
+        pts = *pPts;
+    }
+    else
+    {
+        pts = BOMX_TickToPts(&pFrame->nTimeStamp);
+    }
 
     /* Write PES Header */
     pHeaderBuf[0] = 0x00;

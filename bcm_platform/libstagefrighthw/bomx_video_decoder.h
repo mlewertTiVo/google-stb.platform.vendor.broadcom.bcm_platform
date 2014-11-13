@@ -50,6 +50,7 @@
 #define BOMX_VIDEO_DECODER_H__
 
 #include "bomx_component.h"
+#include "bomx_buffer_tracker.h"
 #include "nexus_simple_video_decoder.h"
 #include "nexus_playpump.h"
 #include "OMX_Video.h"
@@ -215,6 +216,8 @@ protected:
     NEXUS_Graphics2DHandle m_hGraphics2d;
     unsigned m_submittedDescriptors;
 
+    BOMX_BufferTracker *m_pBufferTracker;
+
     NexusIPCClientBase              *m_pIpcClient;
     NexusClientContext              *m_pNexusClient;
 
@@ -224,6 +227,7 @@ protected:
     #define BOMX_VIDEO_EOS_LEN (184*3) /* BPP TPD+LAST+TPD */
     void *m_pEosBuffer;
     bool m_eosPending;
+    bool m_eosDelivered;
     bool m_formatChangePending;
 
     #define BOMX_BCMV_HEADER_SIZE (10)

@@ -46,63 +46,41 @@
  * $brcm_Log: $
  *
  *****************************************************************************/
-#ifndef BOMX_UTILS_H__
-#define BOMX_UTILS_H__
+#ifndef BOMX_BUFFER_TRACKER_H__
+#define BOMX_BUFFER_TRACKER_H__
 
 #include "bstd.h"
 #include "bdbg.h"
 #include "bkni.h"
 #include "OMX_Core.h"
 #include "OMX_Types.h"
-#include "biobits.h"
+#include "blst_queue.h"
 
-#include <cutils/log.h>
+struct BOMX_BufferTrackerNode
+{
+    BLST_Q_ENTRY(BOMX_BufferTrackerNode) node;
+    OMX_TICKS ticks;
+    OMX_U32 flags;
+    uint32_t pts;
+};
 
-extern "C" {
+class BOMX_BufferTracker
+{
+public:
+    BOMX_BufferTracker(unsigned minEntries=1024);
+    ~BOMX_BufferTracker();
 
-#define BOMX_STRUCT_INIT(pStructure) do { (pStructure)->nSize = sizeof(*(pStructure)); (pStructure)->nVersion.s.nVersionMajor =1; (pStructure)->nVersion.s.nVersionMinor =0; (pStructure)->nVersion.s.nRevision =0; (pStructure)->nVersion.s.nStep =0; } while (0)
-#define BOMX_STRUCT_VALIDATE(pStructure) do { if ( NULL == (pStructure) || (pStructure)->nSize != sizeof(*(pStructure)) ) return BOMX_ERR_TRACE(OMX_ErrorBadParameter);  if ( (pStructure)->nVersion.s.nVersionMajor !=1 || (pStructure)->nVersion.s.nVersionMinor !=0 || (pStructure)->nVersion.s.nRevision != 0 || (pStructure)->nVersion.s.nStep != 0 ) return BOMX_ERR_TRACE(OMX_ErrorVersionMismatch); } while (0)
+    bool Add(const OMX_BUFFERHEADERTYPE *pHeader, uint32_t *pPts /* [out] */);
+    bool Remove(uint32_t pts, OMX_BUFFERHEADERTYPE *pHeader /* [out] - sets flags and ticks value */);
+    void Flush();
+    bool Valid() const { return m_valid; }
 
-#define BOMX_BERR_TRACE(berr) (((berr) == BERR_SUCCESS)?BERR_SUCCESS:BOMX_PrintBError(LOG_TAG, __FILE__,__LINE__,(berr)))
-#define BOMX_ERR_TRACE(omxerr) (((omxerr) == OMX_ErrorNone)?OMX_ErrorNone:BOMX_PrintError(LOG_TAG, __FILE__,__LINE__,(omxerr)))
-#define BOMX_GET_NXCLIENT_SLOT(arr,slot) {for ( (slot)=0; (slot)<NXCLIENT_MAX_IDS && (arr)[(slot)].id != 0; (slot)++ );}
+protected:
+    BLST_Q_HEAD(AllocList, BOMX_BufferTrackerNode) m_allocList;
+    BLST_Q_HEAD(FreeList, BOMX_BufferTrackerNode) m_freeList;
+    unsigned m_minAllocated;
+    unsigned m_maxAllocated;
+    bool m_valid;
+};
 
-#define BOMX_ERR(x) ALOGE x
-#define BOMX_WRN(x) ALOGW x
-#define BOMX_MSG(x) ALOGV x
-#define BOMX_ASSERT(cond) ALOG_ASSERT(cond, "%s:%u", __FILE__, __LINE__);
-
-BERR_Code BOMX_PrintBError(const char *pLogTag, const char *pFile, unsigned lineno, BERR_Code berr);
-OMX_ERRORTYPE BOMX_PrintError(const char *pLogTag, const char *pFile, unsigned lineno, OMX_ERRORTYPE omxerr);
-
-uint32_t BOMX_TickToPts(
-    const OMX_TICKS *pTicks
-    );
-
-void BOMX_PtsToTick(
-    uint32_t pts,
-    OMX_TICKS *pTicks   /* [out] */
-    );
-
-int32_t BOMX_TickDiffMs(
-    const OMX_TICKS *pTime1,
-    const OMX_TICKS *pTime2
-    );
-
-int BOMX_FormPesHeader(
-    const OMX_BUFFERHEADERTYPE *pFrame,
-    const uint32_t *pPts,
-    void *pBuffer,
-    size_t bufferSize,
-    unsigned streamId,
-    const void *pCodecHeader,
-    size_t codecHeaderLength,
-    size_t *pHeaderLength
-    );
-
-const char * BOMX_StateName(OMX_STATETYPE state);
-
-}
-
-
-#endif /* #ifndef BOMX_UTILS_H__*/
+#endif /* #ifndef BOMX_BUFFER_TRACKER_H__*/
