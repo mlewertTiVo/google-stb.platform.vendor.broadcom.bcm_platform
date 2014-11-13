@@ -80,7 +80,7 @@ status_t Hwc::dump(int fd, const Vector<String16>& args)
         for ( size_t i = 0; i < mNotificationListeners.size(); i++) {
             const hwc_listener_t& client = mNotificationListeners[i];
             result.appendFormat("registrant: binder 0x%x, kind %s\n",
-               client.listener, registrant_name[client.kind]);
+               client.listener, registrant_name[client.kind-1]);
         }
 
         result.appendFormat("maximum video-surface: %d\n", HWC_BINDER_VIDEO_SURFACE_SIZE);
