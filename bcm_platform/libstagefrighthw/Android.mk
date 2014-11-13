@@ -90,7 +90,8 @@ LOCAL_C_INCLUDES := \
         $(TOP)/hardware/libhardware/include/hardware \
         $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
         $(TOP)/vendor/broadcom/bcm_platform/libnexusipc \
-        $(TOP)/vendor/broadcom/bcm_platform/libgralloc
+        $(TOP)/vendor/broadcom/bcm_platform/libgralloc \
+        $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/blib
 
 include $(BSEAV)/lib/utils/batom.inc
 include $(BSEAV)/lib/media/bmedia.inc
@@ -112,7 +113,8 @@ LOCAL_SHARED_LIBRARIES :=       \
         libdl                   \
         libui                   \
         libnexusipcclient \
-		libstagefright_foundation \
+        libstagefright_foundation \
+        libhwcbinder
 
 LOCAL_MODULE := libstagefrighthw
 

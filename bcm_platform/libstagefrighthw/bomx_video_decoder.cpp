@@ -76,6 +76,8 @@
 #define OMX_IndexParamDescribeColorFormat                    0x7F000006
 #define OMX_IndexParamConfigureVideoTunnelMode               0x7F000007
 
+using namespace android;
+
 static const char *g_roles[] = {"video_decoder.mpeg2", "video_decoder.h263", "video_decoder.avc", "video_decoder.mpeg4", "video_decoder.hevc", "video_decoder.vp8"};
 static const unsigned int g_numRoles = sizeof(g_roles)/sizeof(const char *);
 static int g_roleCodec[] = {OMX_VIDEO_CodingMPEG2, OMX_VIDEO_CodingH263, OMX_VIDEO_CodingAVC, OMX_VIDEO_CodingMPEG4, OMX_VIDEO_CodingHEVC, OMX_VIDEO_CodingVP8};
@@ -416,6 +418,36 @@ static void BOMX_VideoDecoder_FormBppPacket(char *pBuffer, uint32_t opcode)
     pBuffer[33] = (opcode>>0) & 0xff;
 }
 
+void OmxBinder::notify( int msg, int param1, int param2 )
+{
+   ALOGD( "%s: notify received: msg=%u, param1=0x%x, param2=0x%x",
+          __FUNCTION__, msg, param1, param2 );
+
+   if (cb)
+      cb(cb_data, msg, param1, param2);
+}
+
+static void BOMX_OmxBinderNotify(int cb_data, int msg, int param1, int param2)
+{
+    BOMX_VideoDecoder *component = (BOMX_VideoDecoder *)cb_data;
+
+    (void)param1;
+    (void)param2;
+
+    if (component) {
+       switch (msg) {
+
+       case HWC_BINDER_NTFY_DISPLAY:
+          ALOGD( "%s: display frame %d on surface %d",
+                 __FUNCTION__, param1, param2 );
+       break;
+
+       default:
+       break;
+       }
+   }
+}
+
 BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
@@ -664,6 +696,17 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pBcmvHeader[1] = 'C';
     m_pBcmvHeader[2] = 'M';
     m_pBcmvHeader[3] = 'V';
+
+    // connect to the HWC binder.
+    m_omxHwcBinder = new OmxBinder_wrap;
+    if ( NULL == m_omxHwcBinder )
+    {
+        BOMX_ERR(("Unable to connect to HwcBinder"));
+        this->Invalidate();
+        return;
+    }
+    m_omxHwcBinder->get()->register_notify(&BOMX_OmxBinderNotify, (int)this);
+    m_omxHwcBinder->getvideo(0, m_surfaceClientId);
 }
 
 BOMX_VideoDecoder::~BOMX_VideoDecoder()
@@ -727,6 +770,9 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         BLST_Q_REMOVE_HEAD(&m_frameBufferFreeList, node);
         delete pBuffer;
     }
+
+    if (m_omxHwcBinder)
+        delete m_omxHwcBinder;
 }
 
 OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
@@ -1265,14 +1311,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_pIpcClient->getClientInfo(m_pNexusClient, &clientInfo);
             m_pIpcClient->getDefaultConnectClientSettings(&connectSettings);
             connectSettings.simpleVideoDecoder[0].id = clientInfo.videoDecoderId;
-            {
-                // TODO: Remove this when we have a better way to exchagne the id
-                unsigned long surfaceClientId;
-                char propertyValue[PROPERTY_VALUE_MAX];
-                property_get("ro.nexus.video_surf", propertyValue, "0");
-                surfaceClientId = strtoul(propertyValue, NULL, 0);
-                connectSettings.simpleVideoDecoder[0].surfaceClientId = surfaceClientId;
-            }
+            connectSettings.simpleVideoDecoder[0].surfaceClientId = m_surfaceClientId;
             connectSettings.simpleVideoDecoder[0].windowId = 0; /* TODO: Hardcode to main for now */
             connectSettings.simpleVideoDecoder[0].windowCaps.type = eVideoWindowType_eMain;
             if ( (int)GetCodec() == OMX_VIDEO_CodingHEVC || (int)GetCodec() == OMX_VIDEO_CodingVP9 )

@@ -1304,25 +1304,10 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                     goto clean_up;
                 }
 
-                //    H  H AAAA CCCC K  K        H  H AAAA CCCC K  K
-                //    H  H A  A C    K K         H  H A  A C    K K
-                //    HHHH AAAA C    KK    ****  HHHH AAAA C    KK
-                //    H  H A  A C    K K         H  H A  A C    K K
-                //    H  H A  A CCCC K  K        H  H A  A CCCC K  K
+                // TODO: add support for more than one video at the time.
                 if (i == 0) {
-                   char value[PROP_VALUE_MAX];
-                   snprintf(value, sizeof(value), "%d", dev->nx_mm_client[i].root.ncci.sccid);
-                   property_set("ro.nexus.video_surf", value);
-
                    dev->nsc_video_changed = true;
                 }
-                //    H  H AAAA CCCC K  K        H  H AAAA CCCC K  K
-                //    H  H A  A C    K K         H  H A  A C    K K
-                //    HHHH AAAA C    KK    ****  HHHH AAAA C    KK
-                //    H  H A  A C    K K         H  H A  A C    K K
-                //    H  H A  A CCCC K  K        H  H A  A CCCC K  K
-                //
-                // TODO: remove THE hack.
             }
 
             BKNI_CreateEvent(&dev->prepare_event);

@@ -59,6 +59,7 @@
 #include <ui/GraphicBuffer.h>
 #include "gralloc_priv.h"
 #include "blst_queue.h"
+#include "bomx_hwcbinder.h"
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex);
@@ -243,6 +244,9 @@ protected:
 
     BLST_Q_HEAD(FrameBufferFreeList, BOMX_VideoDecoderFrameBuffer) m_frameBufferFreeList;
     BLST_Q_HEAD(FrameBufferAllocList, BOMX_VideoDecoderFrameBuffer) m_frameBufferAllocList;
+
+    OmxBinder_wrap *m_omxHwcBinder;
+    int m_surfaceClientId;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
