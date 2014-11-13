@@ -46,7 +46,7 @@
  * $brcm_Log: $
  *
  *****************************************************************************/
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_decoder"
 
@@ -58,7 +58,7 @@
 #include "OMX_VideoExt.h"
 #include "nexus_base_mmap.h"
 
-#define BOMX_INPUT_MSG(x) (void)(x)
+#define BOMX_INPUT_MSG(x)
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE (65536)
@@ -1193,7 +1193,13 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
     {
         StoreMetaDataInBuffersParams *pMetadata = (StoreMetaDataInBuffersParams *)pComponentParameterStructure;
         BOMX_STRUCT_VALIDATE(pMetadata);
-        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+        BOMX_MSG(("SetParameter OMX_IndexParamStoreMetaDataInBuffers %u", pMetadata->bStoreMetaData));
+        if ( pMetadata->nPortIndex != m_videoPortBase+1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+        m_outputMode = pMetadata->bStoreMetaData ? BOMX_VideoDecoderOutputBufferType_eMetadata : BOMX_VideoDecoderOutputBufferType_eStandard;
+        return OMX_ErrorNone;
     }
     case OMX_IndexParamUseAndroidNativeBuffer:
     case OMX_IndexParamUseAndroidNativeBuffer2:
@@ -2168,6 +2174,64 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     return OMX_ErrorNone;
 }
 
+OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
+        OMX_INOUT OMX_BUFFERHEADERTYPE** ppBufferHdr,
+        OMX_IN OMX_U32 nPortIndex,
+        OMX_IN OMX_PTR pAppPrivate,
+        VideoDecoderOutputMetaData *pMetadata)
+{
+    BOMX_Port *pPort;
+    BOMX_VideoDecoderOutputBufferInfo *pInfo;
+    OMX_ERRORTYPE err;
+
+   if ( NULL == ppBufferHdr || NULL == pMetadata )
+    {
+        return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+    }
+    if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata )
+    {
+        return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
+    }
+
+    pPort = FindPortByIndex(nPortIndex);
+    if ( NULL == pPort || pPort->GetDir() != OMX_DirOutput )
+    {
+        return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+    }
+
+    if ( pPort->IsTunneled() )
+    {
+        BOMX_ERR(("Cannot add buffers to a tunneled port"));
+        return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+    }
+
+    if ( pPort->IsEnabled() && StateGet() != OMX_StateLoaded )
+    {
+        BOMX_ERR(("Can only add buffers to an enabled port while transitioning from loaded->idle (state=%u)", StateGet()));
+        return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
+    }
+
+    pInfo = new BOMX_VideoDecoderOutputBufferInfo;
+    if ( NULL == pInfo )
+    {
+        return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
+    }
+
+    pInfo->pFrameBuffer = NULL;
+    pInfo->type = BOMX_VideoDecoderOutputBufferType_eMetadata;
+    pInfo->typeInfo.metadata.pMetadata = pMetadata;
+
+     err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, sizeof(VideoDecoderOutputMetaData), (OMX_U8 *)pMetadata, pInfo, false);
+    if ( OMX_ErrorNone != err )
+    {
+        delete pInfo;
+        return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
+    }
+
+    PortStatusChanged();
+
+    return OMX_ErrorNone;
+}
 
 OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
     OMX_INOUT OMX_BUFFERHEADERTYPE** ppBufferHdr,
@@ -2213,7 +2277,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
                 }
             }
             break;
-#if 0
         case BOMX_VideoDecoderOutputBufferType_eMetadata:
             {
                 BOMX_MSG(("useBuffer w/metadata %#x", pBuffer));
@@ -2223,7 +2286,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
                     return BOMX_ERR_TRACE(err);
                 }
             }
-#endif
         default:
             // TODO: Handle metadata
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
@@ -2251,12 +2313,18 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AllocateBuffer(
 
     if ( nPortIndex == m_videoPortBase )
     {
-        errCode = NEXUS_Memory_Allocate(nSizeBytes, NULL, &pBuffer);
+        NEXUS_ClientConfiguration               clientConfig;
+        NEXUS_MemoryAllocationSettings          memorySettings;
+
+        NEXUS_Platform_GetClientConfiguration(&clientConfig);
+        NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
+        memorySettings.heap = clientConfig.heap[1];
+        errCode = NEXUS_Memory_Allocate(nSizeBytes, &memorySettings, &pBuffer);
         if ( errCode )
         {
             return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
         }
-        err = AddInputPortBuffer(ppBuffer, nPortIndex, pAppPrivate, nSizeBytes, (OMX_U8 *)pBuffer, false);
+        err = AddInputPortBuffer(ppBuffer, nPortIndex, pAppPrivate, nSizeBytes, (OMX_U8 *)pBuffer, true);
         if ( err != OMX_ErrorNone )
         {
             NEXUS_Memory_Free(pBuffer);
@@ -2318,13 +2386,20 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
         NEXUS_Memory_Free(pInfo->pHeader);
         if ( pInfo->pPayload )
         {
+            // UseBuffer
             NEXUS_Memory_Free(pInfo->pPayload);
+        }
+        else
+        {
+            // AllocateBuffer
+            NEXUS_Memory_Free(pBufferHeader->pBuffer);
         }
         delete pInfo;
     }
     else
     {
         BOMX_VideoDecoderOutputBufferInfo *pInfo;
+        BOMX_VideoDecoderFrameBuffer *pFrameBuffer=NULL;
         pInfo = (BOMX_VideoDecoderOutputBufferInfo *)pBuffer->GetComponentPrivate();
         if ( NULL == pInfo )
         {
@@ -2338,15 +2413,20 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
         switch ( pInfo->type )
         {
         case BOMX_VideoDecoderOutputBufferType_eStandard:
+            pFrameBuffer = pInfo->pFrameBuffer;
             NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurface);
             break;
         case BOMX_VideoDecoderOutputBufferType_eNative:
-            // Nothing to delete
+            pFrameBuffer = pInfo->pFrameBuffer;
+            break;
+        case BOMX_VideoDecoderOutputBufferType_eMetadata:
+            pFrameBuffer = FindFrameBuffer((private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle);
             break;
         default:
             break;
         }
-        if ( pInfo->pFrameBuffer )
+        pInfo->pFrameBuffer = NULL;
+        if ( pFrameBuffer )
         {
             bool active=false;
             if ( m_hSimpleVideoDecoder )
@@ -2358,16 +2438,16 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
             if ( active )
             {
                 // Drop the buffer in the decoder
-                pInfo->pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDropReady;
+                pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDropReady;
                 ReturnDecodedFrames();
             }
             else
             {
                 // Free up the buffer (decoder is already stopped)
-                BLST_Q_REMOVE(&m_frameBufferAllocList, pInfo->pFrameBuffer, node);
-                BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pInfo->pFrameBuffer, node);
+                BLST_Q_REMOVE(&m_frameBufferAllocList, pFrameBuffer, node);
+                BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pFrameBuffer, node);
             }
-            pInfo->pFrameBuffer = NULL;
+            pFrameBuffer = NULL;
         }
 
         delete pInfo;
@@ -2557,6 +2637,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
 {
     BOMX_Buffer *pBuffer;
     BOMX_VideoDecoderOutputBufferInfo *pInfo;
+    BOMX_VideoDecoderFrameBuffer *pFrameBuffer;
     OMX_ERRORTYPE err;
 
     if ( NULL == pBufferHeader )
@@ -2573,30 +2654,44 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
-    BOMX_MSG(("Fill Buffer ts %u us serial %u pInfo %#x HDR %#x", (unsigned int)pBufferHeader->nTimeStamp, pInfo->pFrameBuffer ? pInfo->pFrameBuffer->frameStatus.serialNumber : -1, pInfo, pBufferHeader));
-    // Determine what to do with the buffer
-    if ( pInfo->pFrameBuffer )
+    if ( pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata )
     {
-        if ( pInfo->pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eInvalid )
+        pFrameBuffer = FindFrameBuffer((private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle);
+        if ( pInfo->typeInfo.metadata.pMetadata->eType != kMetadataBufferTypeGrallocSource )
+        {
+            BOMX_ERR(("Only kMetadataBufferTypeGrallocSource buffers are supported in metadata mode."));
+            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
+    }
+    else
+    {
+        pFrameBuffer = pInfo->pFrameBuffer;
+    }
+    pInfo->pFrameBuffer = NULL;
+    BOMX_MSG(("Fill Buffer ts %u us serial %u pInfo %#x HDR %#x", (unsigned int)pBufferHeader->nTimeStamp, pFrameBuffer ? pFrameBuffer->frameStatus.serialNumber : -1, pInfo, pBufferHeader));
+    // Determine what to do with the buffer
+    if ( pFrameBuffer )
+    {
+        if ( pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eInvalid )
         {
             // The frame has been flushed while the app owned it.  Move it back to the free list silently.
             BOMX_MSG(("Invalid FrameBuffer - Return to free list"));
-            BLST_Q_REMOVE(&m_frameBufferAllocList, pInfo->pFrameBuffer, node);
-            BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pInfo->pFrameBuffer, node);
+            BLST_Q_REMOVE(&m_frameBufferAllocList, pFrameBuffer, node);
+            BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pFrameBuffer, node);
         }
         else
         {
             // Any state other than delivered and we've done something horribly wrong.
-            BOMX_ASSERT(pInfo->pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered);
+            BOMX_ASSERT(pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered);
             switch ( pInfo->type )
             {
             case BOMX_VideoDecoderOutputBufferType_eStandard:
                 BOMX_MSG(("Standard Buffer - Drop"));
-                pInfo->pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDropReady;    // Doesn't matter we're not displaying anything
+                pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDropReady;    // Doesn't matter we're not displaying anything
                 break;
             case BOMX_VideoDecoderOutputBufferType_eNative:
                 BOMX_MSG(("Native Buffer %u %s", pInfo->typeInfo.native.pSharedData->DisplayFrame.frameStatus.serialNumber, pInfo->typeInfo.native.pSharedData->DisplayFrame.display ? "display":"drop"));
-                pInfo->pFrameBuffer->state = pInfo->typeInfo.native.pSharedData->DisplayFrame.display ? BOMX_VideoDecoderFrameBufferState_eDisplayReady : BOMX_VideoDecoderFrameBufferState_eDropReady;
+                pFrameBuffer->state = pInfo->typeInfo.native.pSharedData->DisplayFrame.display ? BOMX_VideoDecoderFrameBufferState_eDisplayReady : BOMX_VideoDecoderFrameBufferState_eDropReady;
                 break;
             // TODO: Handle metadata
             default:
@@ -2608,7 +2703,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     {
         BOMX_MSG(("FrameBuffer not set"));
     }
-    pInfo->pFrameBuffer = NULL;
     pBuffer->Reset();
     err = m_pVideoPorts[1]->QueueBuffer(pBufferHeader);
     BOMX_ASSERT(err == OMX_ErrorNone);
@@ -2774,8 +2868,8 @@ static const struct {
     {"OMX.google.android.index.useAndroidNativeBuffer", (int)OMX_IndexParamUseAndroidNativeBuffer},
     {"OMX.google.android.index.useAndroidNativeBuffer2", (int)OMX_IndexParamUseAndroidNativeBuffer2},
     {"OMX.google.android.index.describeColorFormat", (int)OMX_IndexParamDescribeColorFormat},
+    {"OMX.google.android.index.storeMetaDataInBuffers", (int)OMX_IndexParamStoreMetaDataInBuffers},
 #if 0 /* Not yet supported */
-    {"OMX.google.android.index.storeMetaDataInBuffers", (int)OMX_IndexParamStoreMetaDataInBuffers},         // TODO: Need to figure out allocation/management of buffer_handle_t
     {"OMX.google.android.index.configureVideoTunnelMode", (int)OMX_IndexParamConfigureVideoTunnelMode},     // TODO: Requires audio HW acceleration
 #endif
     {NULL, 0}
@@ -2791,6 +2885,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetExtensionIndex(
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
+
+    ALOGV("Looking for extension %s", cParameterName);
 
     for ( i = 0; g_extensions[i].pName != NULL; i++ )
     {
@@ -3062,6 +3158,26 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             pInfo->typeInfo.native.pSharedData->DisplayFrame.display = false;
                         }
                         break;
+                    case BOMX_VideoDecoderOutputBufferType_eMetadata:
+                        {
+                            SHARED_DATA *pSharedData;
+                            pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
+                            pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pBuffer->pPrivateHandle->sharedDataPhyAddr);
+                            if ( NULL == pInfo->typeInfo.native.pSharedData )
+                            {
+                                (void)BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+                            }
+                            else
+                            {
+                                // Setup window parameters for display and provide buffer status
+                                pSharedData->videoWindow.nexusClientContext = m_pNexusClient;
+                                pSharedData->videoWindow.windowVisible = 1;
+                                android_atomic_release_store(1, &pSharedData->videoWindow.windowIdPlusOne);
+                                pSharedData->DisplayFrame.frameStatus = pBuffer->frameStatus;
+                                pSharedData->DisplayFrame.display = false;
+                            }
+                        }
+                        break;
                     default:
                         break;
                     }
@@ -3243,4 +3359,17 @@ OMX_ERRORTYPE BOMX_VideoDecoder::ConfigBufferAppend(const void *pBuffer, size_t 
     m_configBufferSize += length;
     NEXUS_FlushCache(m_pConfigBuffer, m_configBufferSize);
     return OMX_ErrorNone;
+}
+
+BOMX_VideoDecoderFrameBuffer *BOMX_VideoDecoder::FindFrameBuffer(private_handle_t *pPrivateHandle)
+{
+    BOMX_VideoDecoderFrameBuffer *pFrameBuffer;
+    BOMX_ASSERT(NULL != pPrivateHandle);
+
+    // Scan allocated frame list for matching private handle
+    for ( pFrameBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
+          NULL != pFrameBuffer && pFrameBuffer->pPrivateHandle != pPrivateHandle;
+          pFrameBuffer = BLST_Q_NEXT(pFrameBuffer, node) );
+
+    return pFrameBuffer;
 }

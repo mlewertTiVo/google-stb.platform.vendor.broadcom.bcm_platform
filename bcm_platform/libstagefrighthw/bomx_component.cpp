@@ -190,7 +190,9 @@ static void BOMX_ComponentThread(void *pParam)
 {
     BOMX_Component *pComponent = static_cast <BOMX_Component *> (pParam);
 
+    ALOGV("%s: Scheduler Thread Start", pComponent->GetName());
     pComponent->RunScheduler();
+    ALOGV("%s: Scheduler Exited", pComponent->GetName());
 }
 
 static void BOMX_Component_EosEvent(void *pParam)
@@ -356,14 +358,15 @@ BOMX_Component::BOMX_Component(
 
 BOMX_Component::~BOMX_Component()
 {
-    if ( m_hCommandQueue )
-    {
-        B_MessageQueue_Destroy(m_hCommandQueue);
-    }
+    ALOGV("Destroying component %s", GetName());
     if ( m_hThread )
     {
         B_Scheduler_Stop(m_hScheduler);
         B_Thread_Destroy(m_hThread);
+    }
+    if ( m_hCommandQueue )
+    {
+        B_MessageQueue_Destroy(m_hCommandQueue);
     }
     if ( m_eosEventId )
     {
@@ -851,7 +854,9 @@ static void BOMX_Component_CommandEvent(void *pParam)
 {
     BOMX_Component *pComponent = (BOMX_Component *)pParam;
 
+//    ALOGV("%s: CommandEvent Awake", pComponent->GetName());
     pComponent->CommandEventHandler();
+//    ALOGV("%s: CommandEvent Yield", pComponent->GetName());
 }
 
 void BOMX_Component::PortFormatChanged(BOMX_Port *pPort)
@@ -859,7 +864,9 @@ void BOMX_Component::PortFormatChanged(BOMX_Port *pPort)
     if ( m_callbacks.EventHandler )
     {
         unsigned portIndex = pPort->GetIndex();
+        ALOGV("%s: OMX_EventPortSettingsChanged Begin", GetName());
         (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventPortSettingsChanged, portIndex, OMX_IndexParamPortDefinition, NULL);
+        ALOGV("%s: OMX_EventPortSettingsChanged End", GetName());
     }
 }
 
@@ -881,6 +888,7 @@ void BOMX_Component::CommandEventHandler()
         case OMX_CommandStateSet:
             {
                 OMX_STATETYPE newState = (OMX_STATETYPE)msg.nParam1;
+                ALOGV("%s: OMX_CommandStateSet begin", GetName());
                 err = StateChangeStart(newState);
                 if ( OMX_ErrorNone == err )
                 {
@@ -895,9 +903,11 @@ void BOMX_Component::CommandEventHandler()
                     // Unwind back to previous state.  Error will be sent below
                     m_targetState = m_currentState;
                 }
+                ALOGV("%s: OMX_CommandStateSet end %#x", GetName(), err);
             }
             break;
         case OMX_CommandFlush:
+            ALOGV("%s: OMX_CommandFlush begin", GetName());
             if ( OMX_ALL == msg.nParam1 )
             {
                 reply=false;
@@ -970,8 +980,10 @@ void BOMX_Component::CommandEventHandler()
             {
                 err = CommandFlush(msg.nParam1);
             }
+            ALOGV("%s: OMX_CommandFlush end", GetName());
             break;
         case OMX_CommandPortEnable:
+            ALOGV("%s: OMX_CommandPortEnable begin", GetName());
             if ( OMX_ALL == msg.nParam1 )
             {
                 reply=false;
@@ -1044,8 +1056,10 @@ void BOMX_Component::CommandEventHandler()
             {
                 err = CommandPortEnable(msg.nParam1);
             }
+            ALOGV("%s: OMX_CommandPortEnable end", GetName());
             break;
         case OMX_CommandPortDisable:
+            ALOGV("%s: OMX_CommandPortDisable begin", GetName());
             if ( OMX_ALL == msg.nParam1 )
             {
                 reply=false;
@@ -1118,9 +1132,12 @@ void BOMX_Component::CommandEventHandler()
             {
                 err = CommandPortDisable(msg.nParam1);
             }
+            ALOGV("%s: OMX_CommandPortDisable end", GetName());
             break;
         case OMX_CommandMarkBuffer:
+            ALOGV("%s: OMX_CommandMarkBuffer begin", GetName());
             err = CommandMarkBuffer(msg.nParam1, &msg.data.markType);
+            ALOGV("%s: OMX_CommandMarkBuffer end", GetName());
             break;
         default:
             err = BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
@@ -1132,13 +1149,17 @@ void BOMX_Component::CommandEventHandler()
         {
             if ( err == OMX_ErrorNone && reply )
             {
+                ALOGV("%s: OMX_EventCmdComplete begin", GetName());
                 (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate,
                                                OMX_EventCmdComplete, msg.command, msg.nParam1, (msg.command == OMX_CommandMarkBuffer)?(OMX_PTR)&msg.data.markType:NULL);
+                ALOGV("%s: OMX_EventCmdComplete end", GetName());
             }
             else if ( err != OMX_ErrorNone || error )
             {
+                ALOGV("%s: OMX_EventError begin", GetName());
                 (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate,
                                                OMX_EventError, (OMX_U32)err, (OMX_U32)msg.command, (msg.command == OMX_CommandMarkBuffer)?(OMX_PTR)&msg.data.markType:NULL);
+                ALOGV("%s: OMX_EventError end", GetName());
             }
         }
     }
@@ -1155,9 +1176,11 @@ static OMX_ERRORTYPE BOMX_Component_GetComponentVersion(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: GetComponentVersion begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->GetComponentVersion(pComponentName, pComponentVersion, pSpecVersion, pComponentUUID);
     pComponent->Unlock();
+    ALOGV("%s: GetComponentVersion end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1181,6 +1204,7 @@ static OMX_ERRORTYPE BOMX_Component_SendCommand(
         memcpy((void *)&msg.data.markType, pCmdData, sizeof(OMX_MARKTYPE));
     }
 
+    ALOGV("%s: SendCommand %u", pComponent->GetName(), Cmd);
     return pComponent->QueueCommand(&msg);
 }
 
@@ -1193,9 +1217,11 @@ static OMX_ERRORTYPE BOMX_Component_GetParameter(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: GetParameter begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->GetParameter(nParamIndex, pComponentParameterStructure);
     pComponent->Unlock();
+    ALOGV("%s: GetParameter end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1209,9 +1235,11 @@ static OMX_ERRORTYPE BOMX_Component_SetParameter(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: SetParameter begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->SetParameter(nIndex, pComponentParameterStructure);
     pComponent->Unlock();
+    ALOGV("%s: SetParameter end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1225,9 +1253,11 @@ static OMX_ERRORTYPE BOMX_Component_GetConfig(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: GetConfig begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->GetConfig(nIndex, pComponentConfigStructure);
     pComponent->Unlock();
+    ALOGV("%s: GetConfig end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1241,9 +1271,11 @@ static OMX_ERRORTYPE BOMX_Component_SetConfig(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: SetConfig begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->SetConfig(nIndex, pComponentConfigStructure);
     pComponent->Unlock();
+    ALOGV("%s: SetConfig end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1257,9 +1289,11 @@ static OMX_ERRORTYPE BOMX_Component_GetExtensionIndex(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: GetExtensionIndex begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->GetExtensionIndex(cParameterName, pIndexType);
     pComponent->Unlock();
+    ALOGV("%s: GetExtensionIndex end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1272,9 +1306,11 @@ static OMX_ERRORTYPE BOMX_Component_GetState(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: GetState begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->GetState(pState);
     pComponent->Unlock();
+    ALOGV("%s: GetState end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1290,9 +1326,11 @@ static OMX_ERRORTYPE BOMX_Component_ComponentTunnelRequest(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: ComponentTunnelRequest begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->ComponentTunnelRequest(nPort, hTunneledComp, nTunneledPort, pTunnelSetup);
     pComponent->Unlock();
+    ALOGV("%s: ComponentTunnelRequest end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1309,9 +1347,11 @@ static OMX_ERRORTYPE BOMX_Component_UseBuffer(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: UseBuffer begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->UseBuffer(ppBufferHdr, nPortIndex, pAppPrivate, nSizeBytes, pBuffer);
     pComponent->Unlock();
+    ALOGV("%s: UseBuffer end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1327,9 +1367,11 @@ static OMX_ERRORTYPE BOMX_Component_AllocateBuffer(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: AllocateBuffer begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->AllocateBuffer(ppBuffer, nPortIndex, pAppPrivate, nSizeBytes);
     pComponent->Unlock();
+    ALOGV("%s: AllocateBuffer end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1343,9 +1385,11 @@ static OMX_ERRORTYPE BOMX_Component_FreeBuffer(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: FreeBuffer begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->FreeBuffer(nPortIndex, pBuffer);
     pComponent->Unlock();
+    ALOGV("%s: FreeBuffer end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1358,9 +1402,11 @@ static OMX_ERRORTYPE BOMX_Component_EmptyThisBuffer(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: EmptyThisBuffer begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->EmptyThisBuffer(pBuffer);
     pComponent->Unlock();
+    ALOGV("%s: EmptyThisBuffer end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1373,9 +1419,11 @@ static OMX_ERRORTYPE BOMX_Component_FillThisBuffer(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: FillThisBuffer begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->FillThisBuffer(pBuffer);
     pComponent->Unlock();
+    ALOGV("%s: FillThisBuffer end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1390,9 +1438,11 @@ static OMX_ERRORTYPE BOMX_Component_SetCallbacks(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: SetCallbacks begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->SetCallbacks(pCallbacks, pAppData);
     pComponent->Unlock();
+    ALOGV("%s: SetCallbacks end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1420,9 +1470,11 @@ static OMX_ERRORTYPE BOMX_Component_UseEGLImage(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: UseEGLImage begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->UseEGLImage(ppBufferHdr, nPortIndex, pAppPrivate, eglImage);
     pComponent->Unlock();
+    ALOGV("%s: UseEGLImage end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }
@@ -1436,9 +1488,11 @@ static OMX_ERRORTYPE BOMX_Component_ComponentRoleEnum(
     OMX_COMPONENTTYPE *pComponentType = (OMX_COMPONENTTYPE *)hComponent;
     BOMX_Component *pComponent = (BOMX_Component *)pComponentType->pComponentPrivate;
 
+    ALOGV("%s: ComponentRoleEnum begin", pComponent->GetName());
     pComponent->Lock();
     errorType = pComponent->ComponentRoleEnum(cRole, nIndex);
     pComponent->Unlock();
+    ALOGV("%s: ComponentRoleEnum end %#x", pComponent->GetName(), errorType);
 
     return errorType;
 }

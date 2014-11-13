@@ -86,6 +86,7 @@ struct BOMX_VideoDecoderFrameBuffer
     BLST_Q_ENTRY(BOMX_VideoDecoderFrameBuffer) node;
     BOMX_VideoDecoderFrameBufferState state;
     NEXUS_VideoDecoderFrameStatus frameStatus;
+    private_handle_t *pPrivateHandle;
 };
 
 enum BOMX_VideoDecoderOutputBufferType
@@ -276,6 +277,12 @@ protected:
             OMX_IN OMX_PTR pAppPrivate,
             private_handle_t *pPrivateHandle);
 
+    OMX_ERRORTYPE AddOutputPortBuffer(
+            OMX_INOUT OMX_BUFFERHEADERTYPE** ppBufferHdr,
+            OMX_IN OMX_U32 nPortIndex,
+            OMX_IN OMX_PTR pAppPrivate,
+            VideoDecoderOutputMetaData *pMetadata);
+
     void InvalidateDecodedFrames();
     void PollDecodedFrames();
     void ReturnDecodedFrames();
@@ -283,6 +290,8 @@ protected:
     void CopySurfaceToClient(const BOMX_VideoDecoderOutputBufferInfo *pInfo);
     void ConfigBufferInit();
     OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
+
+    BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(private_handle_t *pPrivateHandle);
 private:
 };
 
