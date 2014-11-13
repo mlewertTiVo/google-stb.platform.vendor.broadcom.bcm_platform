@@ -42,8 +42,10 @@ static const char *registrant_name [] = {
 };
 
 Hwc::Hwc() : BnHwc() {
-   for (int i = 0; i < HWC_BINDER_VIDEO_SURFACE_SIZE; i++)
-      mVideoSurfaceId[i] = -1;
+   for (int i = 0; i < HWC_BINDER_VIDEO_SURFACE_SIZE; i++) {
+      mVideoSurface[i].surface = -1;
+      mVideoSurface[i].listener = 0;
+   }
 }
 
 Hwc::~Hwc() {
@@ -79,15 +81,15 @@ status_t Hwc::dump(int fd, const Vector<String16>& args)
 
         for ( size_t i = 0; i < mNotificationListeners.size(); i++) {
             const hwc_listener_t& client = mNotificationListeners[i];
-            result.appendFormat("registrant: binder 0x%x, kind %s\n",
-               client.listener, registrant_name[client.kind-1]);
+            result.appendFormat("registrant: binder 0x%p, kind %s\n",
+               client.binder.get(), registrant_name[client.kind-1]);
         }
 
         result.appendFormat("maximum video-surface: %d\n", HWC_BINDER_VIDEO_SURFACE_SIZE);
         for ( int i = 0; i < HWC_BINDER_VIDEO_SURFACE_SIZE; i++) {
-            if (mVideoSurfaceId[i] != -1) {
-               result.appendFormat("\tvideo-surface: %d maps to %d\n",
-                  i, mVideoSurfaceId[i]);
+            if (mVideoSurface[i].surface != -1) {
+               result.appendFormat("\tvideo-surface: %d maps to %d (used by 0x%x)\n",
+                  i, mVideoSurface[i].surface, mVideoSurface[i].listener);
             }
         }
 
@@ -111,7 +113,7 @@ void Hwc::registerListener(const sp<IHwcListener>& listener, int kind)
     bool found = false;
     for ( size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
-        if ( client.listener == (int) listener->asBinder().get() ) {
+        if (client.binder.get() == listener->asBinder().get()) {
            found = true;
            break;
         }
@@ -121,7 +123,7 @@ void Hwc::registerListener(const sp<IHwcListener>& listener, int kind)
        sp<IBinder> binder = listener->asBinder();
        binder->linkToDeath(this);
 
-       mNotificationListeners.add( hwc_listener_t((int)binder.get(), kind));
+       mNotificationListeners.add(hwc_listener_t(binder, kind));
 
        if (kind == HWC_BINDER_HWC) {
           sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
@@ -141,7 +143,7 @@ void Hwc::unregisterListener(const sp<IHwcListener>& listener)
     size_t N = mNotificationListeners.size();
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
-        if ( client.listener == (int) listener->asBinder().get() ) {
+        if (client.binder.get() == listener->asBinder().get()) {
            mNotificationListeners.removeAt(i);
            break;
         }
@@ -158,9 +160,10 @@ void Hwc::setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int val
     size_t N = mNotificationListeners.size();
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
-        if ((client.listener == (int) listener->asBinder().get()) &&
+        if ((client.binder.get() == listener->asBinder().get()) &&
             (client.kind == HWC_BINDER_HWC)) {
-           mVideoSurfaceId[index] = value;
+           mVideoSurface[index].surface = value;
+           mVideoSurface[index].listener = 0;
            break;
         }
     }
@@ -170,22 +173,50 @@ void Hwc::getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &va
 {
     Mutex::Autolock _l(mLock);
 
-    value = mVideoSurfaceId[index];
-
-    ALOGD("%s: %p, index %d, value %d", __FUNCTION__,
-          listener->asBinder().get(), index, value);
+    if (index > HWC_BINDER_VIDEO_SURFACE_SIZE) {
+       ALOGE("%s: %p, index %d - invalid, ignored", __FUNCTION__,
+              listener->asBinder().get(), index);
+       value = -1;
+    } else {
+       // remember who asked for it last, this is who we will
+       // notify of changes.  we are not responsible for managing
+       // contention, we are just a pass through service.
+       mVideoSurface[index].listener = (int)listener->asBinder().get();
+       value = mVideoSurface[index].surface;
+       ALOGD("%s: %p, index %d, value %d", __FUNCTION__,
+             listener->asBinder().get(), index, value);
+   }
 }
 
 void Hwc::setDisplayFrameId(const sp<IHwcListener>& listener, int surface, int frame)
 {
-    ALOGD("%s: %p, index %d, value %d", __FUNCTION__,
+    ALOGV("%s: %p, index %d, value %d", __FUNCTION__,
           listener->asBinder().get(), surface, frame);
 
+    int index = -1;
     Mutex::Autolock _l(mLock);
 
-    size_t N = mNotificationListeners.size();
-    for (size_t i = 0; i < N; i++) {
-       // TODO
+    for (int i = 0; i < HWC_BINDER_VIDEO_SURFACE_SIZE; i++) {
+       if (mVideoSurface[i].surface == surface) {
+          index = i;
+          break;
+       }
+    }
+
+    if ((index == -1) || !mVideoSurface[index].listener) {
+       ALOGE("%s: %p, surface %d, frame %d - not registered, ignored", __FUNCTION__,
+              listener->asBinder().get(), surface, frame);
+    } else {
+       size_t N = mNotificationListeners.size();
+       for (size_t i = 0; i < N; i++) {
+           const hwc_listener_t& client = mNotificationListeners[i];
+           if ((int)client.binder.get() == mVideoSurface[index].listener) {
+              sp<IBinder> binder = client.binder;
+              sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
+              client->notify(HWC_BINDER_NTFY_DISPLAY, surface, frame);
+              break;
+           }
+       }
     }
 }
 
@@ -198,7 +229,7 @@ void Hwc::binderDied(const wp<IBinder>& who) {
         size_t N = mNotificationListeners.size();
         for (size_t i = 0; i < N; i++) {
             const hwc_listener_t& client = mNotificationListeners[i];
-            if ( client.listener == (int) binder ) {
+            if ( client.binder == binder ) {
                mNotificationListeners.removeAt(i);
                break;
             }

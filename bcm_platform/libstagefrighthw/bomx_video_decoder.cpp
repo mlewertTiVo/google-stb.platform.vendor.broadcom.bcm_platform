@@ -439,7 +439,7 @@ static void BOMX_OmxBinderNotify(int cb_data, int msg, int param1, int param2)
 
        case HWC_BINDER_NTFY_DISPLAY:
           ALOGD( "%s: display frame %d on surface %d",
-                 __FUNCTION__, param1, param2 );
+                 __FUNCTION__, param2, param1 );
        break;
 
        default:

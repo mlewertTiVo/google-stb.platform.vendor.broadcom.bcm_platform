@@ -35,11 +35,17 @@ using namespace android;
 
 struct hwc_listener_t
 {
-   inline hwc_listener_t() : listener(0), kind(HWC_BINDER_UNDEF) {}
-   inline hwc_listener_t(int l, int k) : listener(l), kind(k) {}
+   inline hwc_listener_t() : binder(NULL), kind(HWC_BINDER_UNDEF) {}
+   inline hwc_listener_t(sp<IBinder> b, int k) : binder(b), kind(k) {}
 
-   int listener;
+   sp<IBinder> binder;
    int kind;
+};
+
+struct hwc_disp_notifier_t
+{
+   int listener;
+   int surface;
 };
 
 class Hwc : public BnHwc, public IBinder::DeathRecipient
@@ -71,7 +77,7 @@ private:
     mutable Mutex mLock;
 
     Vector< hwc_listener_t > mNotificationListeners;
-    int mVideoSurfaceId[HWC_BINDER_VIDEO_SURFACE_SIZE];
+    hwc_disp_notifier_t mVideoSurface[HWC_BINDER_VIDEO_SURFACE_SIZE];
 };
 
 #endif // __HWC__H__INCLUDED__
