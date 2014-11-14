@@ -33,6 +33,7 @@
 
 #include "nexus_base_mmap.h"
 #include "nexus_surface_client.h"
+#include "nexus_surface_cursor.h"
 #include "nxclient.h"
 
 #include <binder/IInterface.h>
@@ -41,16 +42,19 @@
 #include <binder/IPCThreadState.h>
 #include <binder/ProcessState.h>
 #include "Hwc.h"
-
 #include "HwcListener.h"
 #include "IHwc.h"
 #include "HwcSvc.h"
 
 using namespace android;
 
-/*****************************************************************************/
-#define HWC_DBG_NX_LAYERS            0
-#define HWC_SURFACE_LIFECYCLE        0
+// cursor surface is behaving slightly differently than
+// other gpx (or mm) ones and may lead to a lot of false
+// alarm logs.
+#define HWC_CURSOR_SURFACE_VERBOSE   0
+#define HWC_CURSOR_SURFACE_SUPPORTED 0
+
+#define HWC_DUMP_LAYER_ON_ERROR      1
 
 #define NSC_GPX_CLIENTS_NUMBER       5 /* graphics client layers; typically no
                                         * more than 3 are needed at any time. */
@@ -72,6 +76,7 @@ using namespace android;
 #define MM_CLIENT_ZORDER             (GPX_CLIENT_ZORDER+1)
 
 #define GPX_SURFACE_STACK            2
+#define DUMP_BUFFER_SIZE             1024
 
 /* note: matching other parts of the integration, we
  *       want to default product resolution to 1080p.
@@ -109,8 +114,9 @@ typedef struct {
 } COMMON_CLIENT_INFO;
 
 typedef struct {
-    NEXUS_SurfaceHandle shdl;
     GPX_CLIENT_SURFACE_OWNER owner;
+    NEXUS_SurfaceHandle shdl;
+    NEXUS_SurfaceCursorHandle schdl;
 
 } GPX_CLIENT_SURFACE_INFO;
 
@@ -267,17 +273,20 @@ struct hwc_context_t {
 
     BKNI_EventHandle prepare_event;
 
-    GPX_CLIENT_INFO nx_gpx_client[NSC_GPX_CLIENTS_NUMBER];
-    MM_CLIENT_INFO nx_mm_client[NSC_MM_CLIENTS_NUMBER];
-    BKNI_MutexHandle nx_client_mutex;
-    VSYNC_CLIENT_INFO nx_vsync_client;
+    GPX_CLIENT_INFO gpx_cli[NSC_GPX_CLIENTS_NUMBER];
+    MM_CLIENT_INFO mm_cli[NSC_MM_CLIENTS_NUMBER];
+    BKNI_MutexHandle mutex;
+    VSYNC_CLIENT_INFO syn_cli;
     bool fb_target_needed;
     bool nsc_video_changed;
 
     int display_width;
     int display_height;
 
-    BKNI_MutexHandle nx_power_mutex;
+    int cursor_layer_id;
+    GPX_CLIENT_SURFACE_INFO cursor_cache;
+
+    BKNI_MutexHandle power_mutex;
     int power_mode;
 
     HwcBinder_wrap *hwc_binder;
@@ -291,13 +300,16 @@ static struct hw_module_methods_t hwc_module_methods = {
     open: hwc_device_open
 };
 
-static void nx_client_recycled_cb(void *context, int param);
-static void nx_client_prepare_layer(hwc_context_t* dev, hwc_layer_1_t *layer, unsigned int layer_id);
-static void nx_client_hide_unused_gpx_layer(hwc_context_t* dev, int index);
-static void nx_client_hide_unused_gpx_layers(hwc_context_t* dev, int nx_layer_count);
-static void nx_vsync_client_recycled_cb(void *context, int param);
-static void nx_client_hide_unused_mm_layers(hwc_context_t* dev);
-static void nx_client_advertise_video_surface(hwc_context_t* dev);
+static void hwc_nsc_recycled_cb(void *context, int param);
+static void hwc_sync_recycled_cb(void *context, int param);
+
+static void hwc_hide_unused_gpx_layer(hwc_context_t* dev, int index);
+static void hwc_hide_unused_gpx_layers(hwc_context_t* dev, int nx_layer_count);
+static void hwc_hide_unused_mm_layers(hwc_context_t* dev);
+
+static void hwc_nsc_prepare_layer(hwc_context_t* dev, hwc_layer_1_t *layer, int layer_id);
+
+static void hwc_binder_advertise_video_surface(hwc_context_t* dev);
 
 hwc_module_t HAL_MODULE_INFO_SYM = {
     common: {
@@ -315,14 +327,14 @@ hwc_module_t HAL_MODULE_INFO_SYM = {
 
 /*****************************************************************************/
 
-static const char *nx_client_type[] =
+static const char *nsc_cli_type[] =
 {
    "GPX", // NEXUS_CLIENT_GPX
    "MUL", // NEXUS_CLIENT_MM
    "SNC", // NEXUS_CLIENT_VSYNC
 };
 
-static const char *nx_hwc_power_mode[] =
+static const char *hwc_power_mode[] =
 {
    "OFF",  // HWC_POWER_MODE_OFF
    "DOZE", // HWC_POWER_MODE_DOZE
@@ -331,7 +343,7 @@ static const char *nx_hwc_power_mode[] =
 };
 
 // this matches the overlay specified by HWC API.
-static const char *nx_layer_type[] =
+static const char *hwc_layer_type[] =
 {
    "FB", // HWC_FRAMEBUFFER
    "OV", // HWC_OVERLAY
@@ -342,7 +354,7 @@ static const char *nx_layer_type[] =
 };
 
 // this matches the corresponding nexus integration.
-static const char *nx_layer_subtype[] =
+static const char *nsc_layer_type[] =
 {
    "SC", // NEXUS_SURFACE_COMPOSITOR
    "CU", // NEXUS_CURSOR
@@ -351,7 +363,7 @@ static const char *nx_layer_subtype[] =
    "SY", // NEXUS_SYNC
 };
 
-static const char *nx_layer_surface_owner[] =
+static const char *nsc_surface_owner[] =
 {
    "FRE", // SURF_OWNER_NO_OWNER
    "HWC", // SURF_OWNER_HWC
@@ -359,7 +371,104 @@ static const char *nx_layer_surface_owner[] =
    "NSC", // SURF_OWNER_NSC
 };
 
-static int nx_client_gpx_get_next_surface_locked(GPX_CLIENT_INFO *client)
+static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_INFO *client)
+{
+    int write = -1;
+    int total_write = 0;
+    int local_capacity = capacity;
+    int offset = 0;
+
+    write = snprintf(start, local_capacity,
+        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::sz:{%d,%d}::cp:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::sfc:%p::scc:%d\n",
+        client->composition.visible ? "LIVE" : "HIDE",
+        nsc_cli_type[client->ncci.type],
+        client->layer_id,
+        index,
+        hwc_layer_type[client->layer_type],
+        nsc_layer_type[client->layer_subtype],
+        client->layer_flags,
+        client->composition.zorder,
+        client->width,
+        client->height,
+        client->composition.position.x,
+        client->composition.position.y,
+        client->composition.position.width,
+        client->composition.position.height,
+        client->composition.virtualDisplay.width,
+        client->composition.virtualDisplay.height,
+        client->blending_type,
+        client->ncci.schdl,
+        client->ncci.sccid);
+
+    if (write > 0) {
+        local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
+        offset += write;
+        total_write += write;
+    }
+
+    for (int j = 0; j < GPX_SURFACE_STACK; j++) {
+        write = snprintf(start + offset, local_capacity,
+            "\t\t[%d:%d]:[%d]:[%s]::shdl:%p::schdl:%p\n",
+            client->layer_id,
+            index,
+            j,
+            nsc_surface_owner[client->slist[j].owner],
+            client->slist[j].shdl,
+            client->slist[j].schdl);
+
+        if (write > 0) {
+            local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
+            offset += write;
+            total_write += write;
+        }
+    }
+
+    return total_write;
+}
+
+static int dump_mm_layer_data(char *start, int capacity, int index, MM_CLIENT_INFO *client)
+{
+    int write = -1;
+
+    write = snprintf(start, capacity,
+        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::z:%d::pcp:{%d,%d,%d,%d}::pcv:{%d,%d}::cm:%d::cp:{%d,%d,%d,%d}::cv:{%d,%d}::svc:%p::sfc:%p::scc:%d\n",
+        client->root.composition.visible ? "LIVE" : "HIDE",
+        nsc_cli_type[client->root.ncci.type],
+        client->root.layer_id,
+        index,
+        hwc_layer_type[client->root.layer_type],
+        nsc_layer_type[client->root.layer_subtype],
+        client->root.composition.zorder,
+        client->root.composition.position.x,
+        client->root.composition.position.y,
+        client->root.composition.position.width,
+        client->root.composition.position.height,
+        client->root.composition.virtualDisplay.width,
+        client->root.composition.virtualDisplay.height,
+        client->settings.composition.contentMode,
+        client->settings.composition.position.x,
+        client->settings.composition.position.y,
+        client->settings.composition.position.width,
+        client->settings.composition.position.height,
+        client->settings.composition.virtualDisplay.width,
+        client->settings.composition.virtualDisplay.height,
+        client->svchdl,
+        client->root.ncci.schdl,
+        client->root.ncci.sccid);
+
+    return write;
+}
+
+static void dump_layer_on_error(GPX_CLIENT_INFO *client)
+{
+    if (HWC_DUMP_LAYER_ON_ERROR) {
+       char dump_buffer[DUMP_BUFFER_SIZE];
+       dump_gpx_layer_data(dump_buffer, DUMP_BUFFER_SIZE, client->layer_id, client);
+       ALOGE("%s", dump_buffer);
+    }
+}
+
+static int hwc_gpx_get_next_surface_locked(GPX_CLIENT_INFO *client)
 {
     for (int i = 0; i < GPX_SURFACE_STACK; i++) {
        if (client->slist[i].owner == SURF_OWNER_NO_OWNER) {
@@ -367,11 +476,16 @@ static int nx_client_gpx_get_next_surface_locked(GPX_CLIENT_INFO *client)
           return i;
        }
     }
-    ALOGE("%s: failed for client %d.", __FUNCTION__, client->layer_id);
+
+    if ((client->layer_subtype != NEXUS_CURSOR) || HWC_CURSOR_SURFACE_VERBOSE) {
+       ALOGE("%s: failed client %d", __FUNCTION__, client->layer_id);
+       dump_layer_on_error(client);
+    }
+
     return -1;
 }
 
-static int nx_client_gpx_push_surface_locked(GPX_CLIENT_INFO *client)
+static int hwc_gpx_push_surface_locked(GPX_CLIENT_INFO *client)
 {
     for (int i = 0; i < GPX_SURFACE_STACK; i++) {
        if (client->slist[i].owner == SURF_OWNER_HWC_PUSH) {
@@ -379,11 +493,16 @@ static int nx_client_gpx_push_surface_locked(GPX_CLIENT_INFO *client)
           return i;
        }
     }
-    ALOGE("%s: failed for client %d.", __FUNCTION__, client->layer_id);
+
+    if ((client->layer_subtype != NEXUS_CURSOR) || HWC_CURSOR_SURFACE_VERBOSE) {
+       ALOGE("%s: failed client %d", __FUNCTION__, client->layer_id);
+       dump_layer_on_error(client);
+    }
+
     return -1;
 }
 
-static int nx_client_gpx_get_recycle_surface_locked(GPX_CLIENT_INFO *client, NEXUS_SurfaceHandle shdl)
+static int hwc_gpx_get_recycle_surface_locked(GPX_CLIENT_INFO *client, NEXUS_SurfaceHandle shdl)
 {
     for (int i = 0; i < GPX_SURFACE_STACK; i++) {
        if ((client->slist[i].owner == SURF_OWNER_NSC) &&
@@ -391,8 +510,33 @@ static int nx_client_gpx_get_recycle_surface_locked(GPX_CLIENT_INFO *client, NEX
           return i;
        }
     }
-    ALOGE("%s: failed for client %d.", __FUNCTION__, client->layer_id);
+
+    if ((client->layer_subtype != NEXUS_CURSOR) || HWC_CURSOR_SURFACE_VERBOSE) {
+       ALOGE("%s: failed client %d", __FUNCTION__, client->layer_id);
+       dump_layer_on_error(client);
+    }
+
     return -1;
+}
+
+static NEXUS_SurfaceCursorHandle hwc_gpx_update_cursor_surface_locked(struct hwc_composer_device_1* dev)
+{
+    struct hwc_context_t *ctx = (hwc_context_t*)dev;
+
+    for (int i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++) {
+       if (ctx->gpx_cli[i].layer_subtype == NEXUS_CURSOR) {
+          for (int j = 0; j < GPX_SURFACE_STACK; j++) {
+             // valid handle and surface has been returned.
+             if (ctx->gpx_cli[i].slist[j].schdl &&
+                 (ctx->gpx_cli[i].slist[j].owner == SURF_OWNER_HWC)) {
+                ctx->gpx_cli[i].slist[j].owner = SURF_OWNER_HWC_PUSH;
+                return ctx->gpx_cli[i].slist[j].schdl;
+             }
+          }
+       }
+    }
+
+    return NULL;
 }
 
 static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int buff_len)
@@ -412,7 +556,7 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
     capacity = buff_len;
     index = 0;
 
-    if (BKNI_AcquireMutex(ctx->nx_client_mutex) != BERR_SUCCESS) {
+    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
         goto out;
     }
 
@@ -432,7 +576,7 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            ctx->fb_target_needed ? "yup" : "non",
            ctx->display_width,
            ctx->display_height,
-           nx_hwc_power_mode[ctx->power_mode]);
+           hwc_power_mode[ctx->power_mode]);
        if (write > 0) {
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
@@ -451,47 +595,16 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
     for (int i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++)
     {
         write = 0;
-        NxClient_GetSurfaceClientComposition(ctx->nx_gpx_client[i].ncci.sccid, &composition);
+        NxClient_GetSurfaceClientComposition(ctx->gpx_cli[i].ncci.sccid, &composition);
 
         if (composition.visible && capacity) {
-           write = snprintf(buff + index, capacity,
-               "\t[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::sz:{%d,%d}::cp:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::sfc:%p::scc:%d\n",
-               nx_client_type[ctx->nx_gpx_client[i].ncci.type],
-               ctx->nx_gpx_client[i].layer_id,
-               i,
-               nx_layer_type[ctx->nx_gpx_client[i].layer_type],
-               nx_layer_subtype[ctx->nx_gpx_client[i].layer_subtype],
-               ctx->nx_gpx_client[i].layer_flags,
-               ctx->nx_gpx_client[i].composition.zorder,
-               ctx->nx_gpx_client[i].width,
-               ctx->nx_gpx_client[i].height,
-               ctx->nx_gpx_client[i].composition.position.x,
-               ctx->nx_gpx_client[i].composition.position.y,
-               ctx->nx_gpx_client[i].composition.position.width,
-               ctx->nx_gpx_client[i].composition.position.height,
-               ctx->nx_gpx_client[i].composition.virtualDisplay.width,
-               ctx->nx_gpx_client[i].composition.virtualDisplay.height,
-               ctx->nx_gpx_client[i].blending_type,
-               ctx->nx_gpx_client[i].ncci.schdl,
-               ctx->nx_gpx_client[i].ncci.sccid);
+           write = dump_gpx_layer_data(buff + index, capacity, i, &ctx->gpx_cli[i]);
            if (write > 0) {
-               capacity = (capacity > write) ? (capacity - write) : 0;
-               index += write;
-           }
-           for (int j = 0; j < GPX_SURFACE_STACK; j++) {
-               write = snprintf(buff + index, capacity,
-                   "\t\t[%d:%d]:[%d]:[%s]::shdl:%p\n",
-                   ctx->nx_gpx_client[i].layer_id,
-                   i,
-                   j,
-                   nx_layer_surface_owner[ctx->nx_gpx_client[i].slist[j].owner],
-                   ctx->nx_gpx_client[i].slist[j].shdl);
-               if (write > 0) {
-                   capacity = (capacity > write) ? (capacity - write) : 0;
-                   index += write;
-               }
+              capacity = (capacity > write) ? (capacity - write) : 0;
+              index += write;
            }
         }
+
         if (!capacity) {
            break;
         }
@@ -500,38 +613,16 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
     for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++)
     {
         write = 0;
-        NxClient_GetSurfaceClientComposition(ctx->nx_mm_client[i].root.ncci.sccid, &composition);
+        NxClient_GetSurfaceClientComposition(ctx->mm_cli[i].root.ncci.sccid, &composition);
 
         if (composition.visible && capacity) {
-           write = snprintf(buff + index, capacity,
-               "\t[%s]:[%d:%d]:[%s]:[%s]::z:%d::pcp:{%d,%d,%d,%d}::pcv:{%d,%d}::cm:%d::cp:{%d,%d,%d,%d}::cv:{%d,%d}::svc:%p::sfc:%p::scc:%d\n",
-               nx_client_type[ctx->nx_mm_client[i].root.ncci.type],
-               ctx->nx_mm_client[i].root.layer_id,
-               i,
-	       nx_layer_type[ctx->nx_mm_client[i].root.layer_type],
-               nx_layer_subtype[ctx->nx_mm_client[i].root.layer_subtype],
-               ctx->nx_mm_client[i].root.composition.zorder,
-               ctx->nx_mm_client[i].root.composition.position.x,
-               ctx->nx_mm_client[i].root.composition.position.y,
-               ctx->nx_mm_client[i].root.composition.position.width,
-               ctx->nx_mm_client[i].root.composition.position.height,
-               ctx->nx_mm_client[i].root.composition.virtualDisplay.width,
-               ctx->nx_mm_client[i].root.composition.virtualDisplay.height,
-               ctx->nx_mm_client[i].settings.composition.contentMode,
-               ctx->nx_mm_client[i].settings.composition.position.x,
-               ctx->nx_mm_client[i].settings.composition.position.y,
-               ctx->nx_mm_client[i].settings.composition.position.width,
-               ctx->nx_mm_client[i].settings.composition.position.height,
-               ctx->nx_mm_client[i].settings.composition.virtualDisplay.width,
-               ctx->nx_mm_client[i].settings.composition.virtualDisplay.height,
-               ctx->nx_mm_client[i].svchdl,
-               ctx->nx_mm_client[i].root.ncci.schdl,
-               ctx->nx_mm_client[i].root.ncci.sccid);
+           write = dump_mm_layer_data(buff + index, capacity, i, &ctx->mm_cli[i]);
            if (write > 0) {
-               capacity = (capacity > write) ? (capacity - write) : 0;
-               index += write;
+              capacity = (capacity > write) ? (capacity - write) : 0;
+              index += write;
            }
         }
+
         if (!capacity) {
            break;
         }
@@ -541,13 +632,13 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
     if (capacity) {
        /** layer-id:type:subtype:surf-handle:surf:surf-client **/
        write = snprintf(buff + index, capacity, "\t[%s]:[%d:0]:[%s]:[%s]::sfc:%p::sf:%p::scc:%d\n",
-           nx_client_type[ctx->nx_vsync_client.ncci.type],
+           nsc_cli_type[ctx->syn_cli.ncci.type],
            VSYNC_CLIENT_LAYER_ID,
-           nx_layer_type[ctx->nx_vsync_client.layer_type],
-           nx_layer_subtype[ctx->nx_vsync_client.layer_subtype],
-           ctx->nx_vsync_client.ncci.schdl,
-           ctx->nx_vsync_client.shdl,
-           ctx->nx_vsync_client.ncci.sccid);
+           hwc_layer_type[ctx->syn_cli.layer_type],
+           nsc_layer_type[ctx->syn_cli.layer_subtype],
+           ctx->syn_cli.ncci.schdl,
+           ctx->syn_cli.shdl,
+           ctx->syn_cli.ncci.sccid);
        if (write > 0) {
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
@@ -558,7 +649,7 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
        write = snprintf(buff + index, capacity, "\n");
     }
 
-    BKNI_ReleaseMutex(ctx->nx_client_mutex);
+    BKNI_ReleaseMutex(ctx->mutex);
 
 out:
     return;
@@ -698,9 +789,8 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
               continue;
            if (layer->handle && !(layer->flags & HWC_SKIP_LAYER))
               layer->compositionType = HWC_OVERLAY;
-           // TODO: cursor overlay integration.
-           //if (layer->handle && (layer->flags & HWC_IS_CURSOR_LAYER))
-           //   layer->compositionType = HWC_CURSOR_OVERLAY;
+           if (layer->handle && (layer->flags & HWC_IS_CURSOR_LAYER) && HWC_CURSOR_SURFACE_SUPPORTED)
+              layer->compositionType = HWC_CURSOR_OVERLAY;
         }
     }
 
@@ -721,26 +811,26 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
 
     if (ctx->hwc_binder) {
        ctx->hwc_binder->connect();
-       nx_client_advertise_video_surface(ctx);
+       hwc_binder_advertise_video_surface(ctx);
     }
 
     // setup the layer composition classification.
     primary_composition_setup(dev, list);
 
     // remove all video layers first.
-    nx_client_hide_unused_mm_layers(ctx);
+    hwc_hide_unused_mm_layers(ctx);
 
     // allocate the NSC layer, if need be change the geometry, etc...
     for (i = 0; i < list->numHwLayers; i++) {
         layer = &list->hwLayers[i];
         if (primary_need_nx_layer(dev, layer) == true) {
-            nx_client_prepare_layer(ctx, layer, i);
+            hwc_nsc_prepare_layer(ctx, layer, (int)i);
             nx_layer_count++;
         }
     }
 
     // remove all remaining gpx layers from the stack that are not needed.
-    nx_client_hide_unused_gpx_layers(ctx, nx_layer_count);
+    hwc_hide_unused_gpx_layers(ctx, nx_layer_count);
 
     return 0;
 }
@@ -794,7 +884,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     if (!list)
        return -EINVAL;
 
-    if (BKNI_AcquireMutex(ctx->nx_client_mutex) != BERR_SUCCESS) {
+    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
         goto out;
     }
 
@@ -817,28 +907,33 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
             pSharedData->DisplayFrame.display = true;
             if (ctx->hwc_binder)
                 // TODO: currently only one video window exposed.
-                ctx->hwc_binder->setframe(ctx->nx_mm_client[0].root.ncci.sccid, pSharedData->DisplayFrame.frameStatus.serialNumber);
+                ctx->hwc_binder->setframe(ctx->mm_cli[0].root.ncci.sccid, pSharedData->DisplayFrame.frameStatus.serialNumber);
         }
         //
         // gpx layer: use the 'cached' visibility that was assigned during 'prepare'.
         //
-        else if (ctx->nx_gpx_client[i].composition.visible) {
-            int six = nx_client_gpx_push_surface_locked(&ctx->nx_gpx_client[i]);
+        else if (ctx->gpx_cli[i].composition.visible) {
+            int six = hwc_gpx_push_surface_locked(&ctx->gpx_cli[i]);
             if (six != -1) {
-               rc = NEXUS_SurfaceClient_PushSurface(ctx->nx_gpx_client[i].ncci.schdl, ctx->nx_gpx_client[i].slist[six].shdl, NULL, false);
+               rc = NEXUS_SurfaceClient_PushSurface(ctx->gpx_cli[i].ncci.schdl, ctx->gpx_cli[i].slist[six].shdl, NULL, false);
                if (rc) {
-                   ctx->nx_gpx_client[i].slist[six].owner = SURF_OWNER_NO_OWNER;
-                   if (ctx->nx_gpx_client[i].slist[six].shdl) {
-                      NEXUS_Surface_Destroy(ctx->nx_gpx_client[i].slist[six].shdl);
-                      ctx->nx_gpx_client[i].slist[six].shdl = NULL;
+                   ctx->gpx_cli[i].slist[six].owner = SURF_OWNER_NO_OWNER;
+                   if ((ctx->gpx_cli[i].layer_subtype == NEXUS_CURSOR) &&
+                       ctx->gpx_cli[i].slist[six].schdl) {
+                       NEXUS_SurfaceCursor_Destroy(ctx->gpx_cli[i].slist[six].schdl);
+                       ctx->gpx_cli[i].slist[six].schdl = NULL;
                    }
-                   ALOGE("%s: push surface %p failed on layer %d, rc=%d\n", __FUNCTION__, ctx->nx_gpx_client[i].slist[six].shdl, i, rc);
+                   if (ctx->gpx_cli[i].slist[six].shdl) {
+                      NEXUS_Surface_Destroy(ctx->gpx_cli[i].slist[six].shdl);
+                      ctx->gpx_cli[i].slist[six].shdl = NULL;
+                   }
+                   ALOGE("%s: push surface %p failed on layer %d, rc=%d\n", __FUNCTION__, ctx->gpx_cli[i].slist[six].shdl, i, rc);
                }
             }
         }
     }
 
-    BKNI_ReleaseMutex(ctx->nx_client_mutex);
+    BKNI_ReleaseMutex(ctx->mutex);
 
 out:
     return 0;
@@ -897,28 +992,30 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
 
         for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++)
         {
-           NEXUS_SurfaceClient_ReleaseVideoWindow(ctx->nx_mm_client[i].svchdl);
-           NEXUS_SurfaceClient_Release(ctx->nx_mm_client[i].root.ncci.schdl);
+           NEXUS_SurfaceClient_ReleaseVideoWindow(ctx->mm_cli[i].svchdl);
+           NEXUS_SurfaceClient_Release(ctx->mm_cli[i].root.ncci.schdl);
         }
 
         for (int i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++)
         {
            for (int j = 0; j < GPX_SURFACE_STACK; j++) {
-              if (ctx->nx_gpx_client[i].slist[j].shdl)
-                 NEXUS_Surface_Destroy(ctx->nx_gpx_client[i].slist[j].shdl);
+              if (ctx->gpx_cli[i].slist[j].schdl)
+                 NEXUS_SurfaceCursor_Destroy(ctx->gpx_cli[i].slist[j].schdl);
+              if (ctx->gpx_cli[i].slist[j].shdl)
+                 NEXUS_Surface_Destroy(ctx->gpx_cli[i].slist[j].shdl);
            }
-           NEXUS_SurfaceClient_Release(ctx->nx_gpx_client[i].ncci.schdl);
+           NEXUS_SurfaceClient_Release(ctx->gpx_cli[i].ncci.schdl);
         }
 
-        if (ctx->nx_vsync_client.shdl)
-           NEXUS_Surface_Destroy(ctx->nx_vsync_client.shdl);
-        NEXUS_SurfaceClient_Release(ctx->nx_vsync_client.ncci.schdl);
+        if (ctx->syn_cli.shdl)
+           NEXUS_Surface_Destroy(ctx->syn_cli.shdl);
+        NEXUS_SurfaceClient_Release(ctx->syn_cli.ncci.schdl);
 
         NxClient_Free(&ctx->nxAllocResults);
 
         BKNI_DestroyMutex(ctx->vsync_callback_enabled_mutex);
-        BKNI_DestroyMutex(ctx->nx_client_mutex);
-        BKNI_DestroyMutex(ctx->nx_power_mutex);
+        BKNI_DestroyMutex(ctx->mutex);
+        BKNI_DestroyMutex(ctx->power_mutex);
         BKNI_DestroyMutex(ctx->dev_mutex);
 
         if (ctx->hwc_binder)
@@ -945,7 +1042,7 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
 
     if (disp == HWC_DISPLAY_PRIMARY) {
        ALOGI("%s: %s->%s", __FUNCTION__,
-           nx_hwc_power_mode[ctx->power_mode], nx_hwc_power_mode[mode]);
+           hwc_power_mode[ctx->power_mode], hwc_power_mode[mode]);
 
        switch (mode) {
          case HWC_POWER_MODE_OFF:
@@ -958,11 +1055,11 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
             goto out;
        }
 
-       if (BKNI_AcquireMutex(ctx->nx_power_mutex) != BERR_SUCCESS) {
+       if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
            goto out;
        }
        ctx->power_mode = mode;
-       BKNI_ReleaseMutex(ctx->nx_power_mutex);
+       BKNI_ReleaseMutex(ctx->power_mutex);
        rc = 0;
     }
 
@@ -986,7 +1083,7 @@ static int hwc_device_query(struct hwc_composer_device_1* dev, int what, int* va
            if (BKNI_AcquireMutex(ctx->dev_mutex) != BERR_SUCCESS) {
                return -EINVAL;
            }
-           *value = (int) ctx->nx_vsync_client.refresh;
+           *value = (int) ctx->syn_cli.refresh;
            BKNI_ReleaseMutex(ctx->dev_mutex);
        break;
 
@@ -1070,7 +1167,7 @@ static int hwc_device_getDisplayAttributes(struct hwc_composer_device_1* dev, in
             while (attributes[i] != HWC_DISPLAY_NO_ATTRIBUTE) {
                switch (attributes[i]) {
                    case HWC_DISPLAY_VSYNC_PERIOD:
-                      values[i] = (int32_t)ctx->nx_vsync_client.refresh;
+                      values[i] = (int32_t)ctx->syn_cli.refresh;
                    break;
                    case HWC_DISPLAY_WIDTH:
                       values[i] = ctx->display_width;
@@ -1136,17 +1233,25 @@ static int hwc_device_setCursorPositionAsync(struct hwc_composer_device_1 *dev, 
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
 
-    if (BKNI_AcquireMutex(ctx->dev_mutex) != BERR_SUCCESS) {
+    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
        return -EINVAL;
     }
 
-    (void) disp;
-    (void) x_pos;
-    (void) y_pos;
+    if (disp == HWC_DISPLAY_PRIMARY) {
+       NEXUS_SurfaceCursorHandle cursor = hwc_gpx_update_cursor_surface_locked(dev);
+       if (cursor != NULL) {
+          NEXUS_SurfaceCursorSettings config;
+          NEXUS_SurfaceCursor_GetSettings(cursor, &config);
+          config.composition.position.x = x_pos;
+          config.composition.position.y = y_pos;
+          NEXUS_SurfaceCursor_SetSettings(cursor, &config);
+          // TODO: push right away?  or wait for next hwc_set?
+       } else {
+          //ALOGE("%s: failed cursor update (display %d, pos {%d,%d})", __FUNCTION__, disp, x_pos, y_pos);
+       }
+    }
 
-    ALOGE("%s: NOT IMPLEMENTED", __FUNCTION__);
-
-    BKNI_ReleaseMutex(ctx->dev_mutex);
+    BKNI_ReleaseMutex(ctx->mutex);
     return 0;
 }
 
@@ -1168,9 +1273,9 @@ static void * hwc_vsync_task(void *argv)
     ALOGI("HWC Starting VSYNC thread");
     do
     {
-        if (ctx->nx_vsync_client.shdl) {
-            NEXUS_SurfaceClient_PushSurface(ctx->nx_vsync_client.ncci.schdl, ctx->nx_vsync_client.shdl, NULL, false);
-            BKNI_WaitForEvent(ctx->nx_vsync_client.vsync_event, 1000);
+        if (ctx->syn_cli.shdl) {
+            NEXUS_SurfaceClient_PushSurface(ctx->syn_cli.ncci.schdl, ctx->syn_cli.shdl, NULL, false);
+            BKNI_WaitForEvent(ctx->syn_cli.vsync_event, 1000);
             BKNI_SetEvent(ctx->prepare_event);
         }
 
@@ -1191,12 +1296,12 @@ static bool hwc_standby_monitor(void *dev)
     bool standby = false;
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
 
-    if (BKNI_AcquireMutex(ctx->nx_power_mutex) == BERR_SUCCESS) {
+    if (BKNI_AcquireMutex(ctx->power_mutex) == BERR_SUCCESS) {
        goto out;
     }
     standby = (ctx == NULL) || (ctx->power_mode == HWC_POWER_MODE_OFF);
     ALOGV("%s: standby=%d", __FUNCTION__, standby);
-    BKNI_ReleaseMutex(ctx->nx_power_mutex);
+    BKNI_ReleaseMutex(ctx->power_mutex);
 
 out:
     return standby;
@@ -1226,6 +1331,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
               dev->display_height = 1080;
            }
         }
+        dev->cursor_layer_id = -1;
 
         {
             NEXUS_Error rc = NEXUS_SUCCESS;
@@ -1248,58 +1354,58 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             /* create layers nx gpx clients */
             for (int i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++)
             {
-                dev->nx_gpx_client[i].parent = (void *)dev;
-                dev->nx_gpx_client[i].layer_id = i;
-                dev->nx_gpx_client[i].ncci.type = NEXUS_CLIENT_GPX;
-                dev->nx_gpx_client[i].ncci.sccid = dev->nxAllocResults.surfaceClient[i].id;
-                dev->nx_gpx_client[i].ncci.schdl = NEXUS_SurfaceClient_Acquire(dev->nx_gpx_client[i].ncci.sccid);
-                if (!dev->nx_gpx_client[i].ncci.schdl)
+                dev->gpx_cli[i].parent = (void *)dev;
+                dev->gpx_cli[i].layer_id = i;
+                dev->gpx_cli[i].ncci.type = NEXUS_CLIENT_GPX;
+                dev->gpx_cli[i].ncci.sccid = dev->nxAllocResults.surfaceClient[i].id;
+                dev->gpx_cli[i].ncci.schdl = NEXUS_SurfaceClient_Acquire(dev->gpx_cli[i].ncci.sccid);
+                if (!dev->gpx_cli[i].ncci.schdl)
                 {
                     ALOGE("%s:gpx: NEXUS_SurfaceClient_Acquire lid=%d cid=%x sc=%x failed", __FUNCTION__,
-                        i, dev->nx_gpx_client[i].ncci.sccid, dev->nx_gpx_client[i].ncci.schdl);
+                        i, dev->gpx_cli[i].ncci.sccid, dev->gpx_cli[i].ncci.schdl);
                     goto clean_up;
                 }
 
-                NEXUS_SurfaceClient_GetSettings(dev->nx_gpx_client[i].ncci.schdl, &client_settings);
-                client_settings.recycled.callback = nx_client_recycled_cb;
-                client_settings.recycled.context = (void *)&dev->nx_gpx_client[i];
-                rc = NEXUS_SurfaceClient_SetSettings(dev->nx_gpx_client[i].ncci.schdl, &client_settings);
+                NEXUS_SurfaceClient_GetSettings(dev->gpx_cli[i].ncci.schdl, &client_settings);
+                client_settings.recycled.callback = hwc_nsc_recycled_cb;
+                client_settings.recycled.context = (void *)&dev->gpx_cli[i];
+                rc = NEXUS_SurfaceClient_SetSettings(dev->gpx_cli[i].ncci.schdl, &client_settings);
                 if (rc) {
                     ALOGE("%s:gpx: NEXUS_SurfaceClient_SetSettings %d failed", __FUNCTION__, i);
                     goto clean_up;
                 }
 
-                memset(&dev->nx_gpx_client[i].composition, 0, sizeof(NEXUS_SurfaceComposition));
+                memset(&dev->gpx_cli[i].composition, 0, sizeof(NEXUS_SurfaceComposition));
             }
 
             /* create layers nx mm clients */
             for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++)
             {
-                dev->nx_mm_client[i].root.parent = (void *)dev;
-                dev->nx_mm_client[i].root.layer_id = i;
-                dev->nx_mm_client[i].root.ncci.type = NEXUS_CLIENT_MM;
-                dev->nx_mm_client[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[i+NSC_GPX_CLIENTS_NUMBER].id;
-                dev->nx_mm_client[i].root.ncci.schdl = NEXUS_SurfaceClient_Acquire(dev->nx_mm_client[i].root.ncci.sccid);
-                if (!dev->nx_mm_client[i].root.ncci.schdl)
+                dev->mm_cli[i].root.parent = (void *)dev;
+                dev->mm_cli[i].root.layer_id = i;
+                dev->mm_cli[i].root.ncci.type = NEXUS_CLIENT_MM;
+                dev->mm_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[i+NSC_GPX_CLIENTS_NUMBER].id;
+                dev->mm_cli[i].root.ncci.schdl = NEXUS_SurfaceClient_Acquire(dev->mm_cli[i].root.ncci.sccid);
+                if (!dev->mm_cli[i].root.ncci.schdl)
                 {
                     ALOGE("%s:mm: NEXUS_SurfaceClient_Acquire lid=%d cid=%x sc=%x failed", __FUNCTION__,
-                         i, dev->nx_mm_client[i].root.ncci.sccid, dev->nx_mm_client[i].root.ncci.schdl);
+                         i, dev->mm_cli[i].root.ncci.sccid, dev->mm_cli[i].root.ncci.schdl);
                     goto clean_up;
                 }
 
-                NEXUS_SurfaceClient_GetSettings(dev->nx_mm_client[i].root.ncci.schdl, &client_settings);
-                client_settings.recycled.callback = nx_client_recycled_cb;
-                client_settings.recycled.context = (void *)&dev->nx_mm_client[i];
-                rc = NEXUS_SurfaceClient_SetSettings(dev->nx_mm_client[i].root.ncci.schdl, &client_settings);
+                NEXUS_SurfaceClient_GetSettings(dev->mm_cli[i].root.ncci.schdl, &client_settings);
+                client_settings.recycled.callback = hwc_nsc_recycled_cb;
+                client_settings.recycled.context = (void *)&dev->mm_cli[i];
+                rc = NEXUS_SurfaceClient_SetSettings(dev->mm_cli[i].root.ncci.schdl, &client_settings);
                 if (rc) {
                     ALOGE("%s:mm: NEXUS_SurfaceClient_SetSettings %d failed", __FUNCTION__, i);
                     goto clean_up;
                 }
 
-                memset(&dev->nx_mm_client[i].root.composition, 0, sizeof(NEXUS_SurfaceComposition));
+                memset(&dev->mm_cli[i].root.composition, 0, sizeof(NEXUS_SurfaceComposition));
 
-                dev->nx_mm_client[i].svchdl = NEXUS_SurfaceClient_AcquireVideoWindow(dev->nx_mm_client[i].root.ncci.schdl, 0 /* always 0 */);
-                if (dev->nx_mm_client[i].svchdl == NULL) {
+                dev->mm_cli[i].svchdl = NEXUS_SurfaceClient_AcquireVideoWindow(dev->mm_cli[i].root.ncci.schdl, 0 /* always 0 */);
+                if (dev->mm_cli[i].svchdl == NULL) {
                     ALOGE("%s:mm: NEXUS_SurfaceClient_AcquireVideoWindow %d failed", __FUNCTION__, i);
                     goto clean_up;
                 }
@@ -1313,23 +1419,23 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             BKNI_CreateEvent(&dev->prepare_event);
 
             /* create vsync nx clients */
-            dev->nx_vsync_client.layer_type    = HWC_OVERLAY;
-            dev->nx_vsync_client.layer_subtype = NEXUS_SYNC;
-            dev->nx_vsync_client.refresh       = VSYNC_CLIENT_REFRESH;
-            dev->nx_vsync_client.ncci.type     = NEXUS_CLIENT_VSYNC;
-            dev->nx_vsync_client.ncci.sccid    = dev->nxAllocResults.surfaceClient[VSYNC_CLIENT_LAYER_ID].id;
-            dev->nx_vsync_client.ncci.schdl    = NEXUS_SurfaceClient_Acquire(dev->nx_vsync_client.ncci.sccid);
-            if (!dev->nx_vsync_client.ncci.schdl)
+            dev->syn_cli.layer_type    = HWC_OVERLAY;
+            dev->syn_cli.layer_subtype = NEXUS_SYNC;
+            dev->syn_cli.refresh       = VSYNC_CLIENT_REFRESH;
+            dev->syn_cli.ncci.type     = NEXUS_CLIENT_VSYNC;
+            dev->syn_cli.ncci.sccid    = dev->nxAllocResults.surfaceClient[VSYNC_CLIENT_LAYER_ID].id;
+            dev->syn_cli.ncci.schdl    = NEXUS_SurfaceClient_Acquire(dev->syn_cli.ncci.sccid);
+            if (!dev->syn_cli.ncci.schdl)
             {
                 ALOGE("%s: NEXUS_SurfaceClient_Acquire vsync client failed", __FUNCTION__);
                 goto clean_up;
             }
-            BKNI_CreateEvent(&dev->nx_vsync_client.vsync_event);
+            BKNI_CreateEvent(&dev->syn_cli.vsync_event);
 
-            NEXUS_SurfaceClient_GetSettings(dev->nx_vsync_client.ncci.schdl, &client_settings);
-            client_settings.recycled.callback = nx_vsync_client_recycled_cb;
-            client_settings.recycled.context = (void *)&dev->nx_vsync_client;
-            rc = NEXUS_SurfaceClient_SetSettings(dev->nx_vsync_client.ncci.schdl, &client_settings);
+            NEXUS_SurfaceClient_GetSettings(dev->syn_cli.ncci.schdl, &client_settings);
+            client_settings.recycled.callback = hwc_sync_recycled_cb;
+            client_settings.recycled.context = (void *)&dev->syn_cli;
+            rc = NEXUS_SurfaceClient_SetSettings(dev->syn_cli.ncci.schdl, &client_settings);
             if (rc) {
                 ALOGE("%s: NEXUS_SurfaceClient_SetSettings vsync client failed", __FUNCTION__);
                 goto clean_up;
@@ -1340,23 +1446,23 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             surface_create_settings.width       = VSYNC_CLIENT_WIDTH;
             surface_create_settings.height      = VSYNC_CLIENT_HEIGHT;
             surface_create_settings.pitch       = VSYNC_CLIENT_STRIDE;
-            dev->nx_vsync_client.shdl           = NEXUS_Surface_Create(&surface_create_settings);
-            if (dev->nx_vsync_client.shdl == NULL)
+            dev->syn_cli.shdl           = NEXUS_Surface_Create(&surface_create_settings);
+            if (dev->syn_cli.shdl == NULL)
             {
                 ALOGE("%s: NEXUS_Surface_Create vsync client failed", __FUNCTION__);
                 goto clean_up;
             }
 
-            NEXUS_Surface_GetMemory(dev->nx_vsync_client.shdl, &vsync_surface_memory);
+            NEXUS_Surface_GetMemory(dev->syn_cli.shdl, &vsync_surface_memory);
             memset(vsync_surface_memory.buffer, 0, vsync_surface_memory.bufferSize);
 
-            NxClient_GetSurfaceClientComposition(dev->nx_vsync_client.ncci.sccid, &vsync_composition);
+            NxClient_GetSurfaceClientComposition(dev->syn_cli.ncci.sccid, &vsync_composition);
             vsync_composition.position              = vsync_disp_position;
             vsync_composition.virtualDisplay.width  = dev->display_width;
             vsync_composition.virtualDisplay.height = dev->display_height;
             vsync_composition.visible               = true;
             vsync_composition.zorder                = VSYNC_CLIENT_ZORDER;
-            NxClient_SetSurfaceClientComposition(dev->nx_vsync_client.ncci.sccid, &vsync_composition);
+            NxClient_SetSurfaceClientComposition(dev->syn_cli.ncci.sccid, &vsync_composition);
         }
 
         dev->device.common.tag                     = HARDWARE_DEVICE_TAG;
@@ -1379,9 +1485,9 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
 
         if (BKNI_CreateMutex(&dev->vsync_callback_enabled_mutex) == BERR_OS_ERROR)
            goto clean_up;
-        if (BKNI_CreateMutex(&dev->nx_client_mutex) == BERR_OS_ERROR)
+        if (BKNI_CreateMutex(&dev->mutex) == BERR_OS_ERROR)
            goto clean_up;
-        if (BKNI_CreateMutex(&dev->nx_power_mutex) == BERR_OS_ERROR)
+        if (BKNI_CreateMutex(&dev->power_mutex) == BERR_OS_ERROR)
            goto clean_up;
         if (BKNI_CreateMutex(&dev->dev_mutex) == BERR_OS_ERROR)
            goto clean_up;
@@ -1432,7 +1538,7 @@ out:
     return status;
 }
 
-static void nx_vsync_client_recycled_cb(void *context, int param)
+static void hwc_sync_recycled_cb(void *context, int param)
 {
     NEXUS_Error rc;
     VSYNC_CLIENT_INFO *ci = (VSYNC_CLIENT_INFO *)context;
@@ -1452,7 +1558,7 @@ static void nx_vsync_client_recycled_cb(void *context, int param)
     BKNI_SetEvent(ci->vsync_event);
 }
 
-static void nx_client_recycled_cb(void *context, int param)
+static void hwc_nsc_recycled_cb(void *context, int param)
 {
     NEXUS_Error rc;
     GPX_CLIENT_INFO *ci = (GPX_CLIENT_INFO *)context;
@@ -1463,7 +1569,7 @@ static void nx_client_recycled_cb(void *context, int param)
 
     (void) param;
 
-    if (BKNI_AcquireMutex(ctx->nx_client_mutex) != BERR_SUCCESS) {
+    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
         goto out;
     }
     do {
@@ -1473,18 +1579,23 @@ static void nx_client_recycled_cb(void *context, int param)
               break;
           }
           if ((n > 0) && (recycledSurface != NULL)) {
-              if (HWC_SURFACE_LIFECYCLE)
-                  ALOGI("%s: surf-cycle: %d -> %p: recycled\n", __FUNCTION__, ci->layer_id, recycledSurface);
-              six = nx_client_gpx_get_recycle_surface_locked(ci, recycledSurface);
+              six = hwc_gpx_get_recycle_surface_locked(ci, recycledSurface);
               if (six != -1) {
-                 ci->slist[six].owner = SURF_OWNER_NO_OWNER;
-                 ci->slist[six].shdl = NULL;
+                 // do not recycle the cursor surface, it is being re-used.
+                 if (ci->layer_subtype == NEXUS_CURSOR) {
+                    ci->slist[six].owner = SURF_OWNER_HWC;
+                    recycledSurface = NULL;
+                 } else {
+                    ci->slist[six].owner = SURF_OWNER_NO_OWNER;
+                    ci->slist[six].shdl = NULL;
+                 }
               }
-              NEXUS_Surface_Destroy(recycledSurface);
+              if (recycledSurface)
+                 NEXUS_Surface_Destroy(recycledSurface);
           }
     }
     while (n > 0);
-    BKNI_ReleaseMutex(ctx->nx_client_mutex);
+    BKNI_ReleaseMutex(ctx->mutex);
 
 out:
     return;
@@ -1557,10 +1668,10 @@ const NEXUS_BlendEquation alphaBlendingEquation[BLENDIND_TYPE_LAST] = {
     },
 };
 
-static void nx_client_prepare_gpx_layer(
+static void hwc_prepare_gpx_layer(
     hwc_context_t* ctx,
     hwc_layer_1_t *layer,
-    unsigned int layer_id)
+    int layer_id)
 {
     NEXUS_Error rc;
     private_handle_t *bcmBuffer = NULL;
@@ -1604,56 +1715,74 @@ static void nx_client_prepare_gpx_layer(
         break;
     }
 
-    if (BKNI_AcquireMutex(ctx->nx_client_mutex) != BERR_SUCCESS) {
+    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
         goto out;
     }
 
-    ctx->nx_gpx_client[layer_id].layer_type = layer->compositionType;
-    ctx->nx_gpx_client[layer_id].layer_subtype = NEXUS_SURFACE_COMPOSITOR;
-    if (ctx->nx_gpx_client[layer_id].layer_type == HWC_CURSOR_OVERLAY)
-       ctx->nx_gpx_client[layer_id].layer_subtype = NEXUS_CURSOR;
-    ctx->nx_gpx_client[layer_id].layer_flags = layer->flags;
+    ctx->gpx_cli[layer_id].layer_type = layer->compositionType;
+    ctx->gpx_cli[layer_id].layer_subtype = NEXUS_SURFACE_COMPOSITOR;
+    if (ctx->gpx_cli[layer_id].layer_type == HWC_CURSOR_OVERLAY)
+       ctx->gpx_cli[layer_id].layer_subtype = NEXUS_CURSOR;
+    ctx->gpx_cli[layer_id].layer_flags = layer->flags;
+
+    if (ctx->cursor_layer_id != -1) {
+       if (ctx->cursor_layer_id == layer_id) {
+          // we are done here, the cursor position is updated via the async callback instead and the
+          // surface it uses is reused after recycling from nsc.
+          goto out_unlock;
+       } else {
+          // clean out the previous cursor surface.
+          ctx->cursor_layer_id = layer_id;
+          if (ctx->cursor_cache.schdl) {
+             NEXUS_SurfaceCursor_Destroy(ctx->cursor_cache.schdl);
+             ctx->cursor_cache.schdl = NULL;
+          }
+          if (ctx->cursor_cache.shdl) {
+             NEXUS_Surface_Destroy(ctx->cursor_cache.shdl);
+             ctx->cursor_cache.shdl = NULL;
+          }
+       }
+    }
 
     // deal with any change in the geometry/visibility of the layer.
-    if ((memcmp((void *)&disp_position, (void *)&ctx->nx_gpx_client[layer_id].composition.position, sizeof(NEXUS_Rect)) != 0) ||
-        (cur_width != ctx->nx_gpx_client[layer_id].width) ||
-        (cur_height != ctx->nx_gpx_client[layer_id].height) ||
-        (!ctx->nx_gpx_client[layer_id].composition.visible) ||
-        (cur_blending_type != ctx->nx_gpx_client[layer_id].blending_type)) {
+    if ((memcmp((void *)&disp_position, (void *)&ctx->gpx_cli[layer_id].composition.position, sizeof(NEXUS_Rect)) != 0) ||
+        (cur_width != ctx->gpx_cli[layer_id].width) ||
+        (cur_height != ctx->gpx_cli[layer_id].height) ||
+        (!ctx->gpx_cli[layer_id].composition.visible) ||
+        (cur_blending_type != ctx->gpx_cli[layer_id].blending_type)) {
 
-        NxClient_GetSurfaceClientComposition(ctx->nx_gpx_client[layer_id].ncci.sccid, &ctx->nx_gpx_client[layer_id].composition);
-        ctx->nx_gpx_client[layer_id].composition.zorder                = GPX_CLIENT_ZORDER;
-        ctx->nx_gpx_client[layer_id].composition.position.x            = disp_position.x;
-        ctx->nx_gpx_client[layer_id].composition.position.y            = disp_position.y;
-        ctx->nx_gpx_client[layer_id].composition.position.width        = disp_position.width;
-        ctx->nx_gpx_client[layer_id].composition.position.height       = disp_position.height;
-        ctx->nx_gpx_client[layer_id].composition.virtualDisplay.width  = ctx->display_width;
-        ctx->nx_gpx_client[layer_id].composition.virtualDisplay.height = ctx->display_height;
-        ctx->nx_gpx_client[layer_id].blending_type                     = cur_blending_type;
-        ctx->nx_gpx_client[layer_id].composition.colorBlend            = colorBlendingEquation[cur_blending_type];
-        ctx->nx_gpx_client[layer_id].composition.alphaBlend            = alphaBlendingEquation[cur_blending_type];
-        ctx->nx_gpx_client[layer_id].width                             = cur_width;
-        ctx->nx_gpx_client[layer_id].height                            = cur_height;
-        ctx->nx_gpx_client[layer_id].composition.visible               = true;
-        rc = NxClient_SetSurfaceClientComposition(ctx->nx_gpx_client[layer_id].ncci.sccid, &ctx->nx_gpx_client[layer_id].composition);
+        NxClient_GetSurfaceClientComposition(ctx->gpx_cli[layer_id].ncci.sccid, &ctx->gpx_cli[layer_id].composition);
+        ctx->gpx_cli[layer_id].composition.zorder                = GPX_CLIENT_ZORDER;
+        ctx->gpx_cli[layer_id].composition.position.x            = disp_position.x;
+        ctx->gpx_cli[layer_id].composition.position.y            = disp_position.y;
+        ctx->gpx_cli[layer_id].composition.position.width        = disp_position.width;
+        ctx->gpx_cli[layer_id].composition.position.height       = disp_position.height;
+        ctx->gpx_cli[layer_id].composition.virtualDisplay.width  = ctx->display_width;
+        ctx->gpx_cli[layer_id].composition.virtualDisplay.height = ctx->display_height;
+        ctx->gpx_cli[layer_id].blending_type                     = cur_blending_type;
+        ctx->gpx_cli[layer_id].composition.colorBlend            = colorBlendingEquation[cur_blending_type];
+        ctx->gpx_cli[layer_id].composition.alphaBlend            = alphaBlendingEquation[cur_blending_type];
+        ctx->gpx_cli[layer_id].width                             = cur_width;
+        ctx->gpx_cli[layer_id].height                            = cur_height;
+        ctx->gpx_cli[layer_id].composition.visible               = true;
+        rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[layer_id].ncci.sccid, &ctx->gpx_cli[layer_id].composition);
         if (rc != NEXUS_SUCCESS) {
             ALOGE("%s: geometry failed on layer %d, err=%d", __FUNCTION__, layer_id, rc);
         }
     }
 
     // (re)create surface to render this layer.
-    if (ctx->nx_gpx_client[layer_id].composition.visible) {
+    if (ctx->gpx_cli[layer_id].composition.visible) {
         uint8_t *layerCachedAddress = (uint8_t *)NEXUS_OffsetToCachedAddr(bcmBuffer->nxSurfacePhysicalAddress);
         layerCachedAddress         += (layer->sourceCrop.left*4)+(layer->sourceCrop.top*stride);
         if (layerCachedAddress == NULL) {
             ALOGE("%s: layer cache address NULL: %d\n", __FUNCTION__, layer_id);
-            BKNI_ReleaseMutex(ctx->nx_client_mutex);
+            BKNI_ReleaseMutex(ctx->mutex);
             goto out;
         }
-        int six = nx_client_gpx_get_next_surface_locked(&ctx->nx_gpx_client[layer_id]);
+        int six = hwc_gpx_get_next_surface_locked(&ctx->gpx_cli[layer_id]);
         if (six == -1) {
-            ALOGE("%s: failed to get a free surface: %d\n", __FUNCTION__, layer_id);
-            BKNI_ReleaseMutex(ctx->nx_client_mutex);
+            BKNI_ReleaseMutex(ctx->mutex);
             goto out;
         }
         NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
@@ -1662,26 +1791,46 @@ static void nx_client_prepare_gpx_layer(
         createSettings.height      = disp_position.height;
         createSettings.pitch       = stride;
         createSettings.pMemory     = layerCachedAddress;
-        ctx->nx_gpx_client[layer_id].slist[six].shdl = NEXUS_Surface_Create(&createSettings);
-        if (ctx->nx_gpx_client[layer_id].slist[six].shdl == NULL) {
-            ctx->nx_gpx_client[layer_id].slist[six].owner = SURF_OWNER_NO_OWNER;
+        ctx->gpx_cli[layer_id].slist[six].shdl = NEXUS_Surface_Create(&createSettings);
+        if (ctx->gpx_cli[layer_id].slist[six].shdl == NULL) {
+            ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_NO_OWNER;
             ALOGE("%s: NEXUS_Surface_Create failed: %d, %p, %dx%d, %d\n", __FUNCTION__, layer_id,
                layerCachedAddress, disp_position.width, disp_position.height, stride);
         } else {
-            ctx->nx_gpx_client[layer_id].slist[six].owner = SURF_OWNER_HWC_PUSH;
-            if (HWC_SURFACE_LIFECYCLE)
-               ALOGI("%s: surf-cycle: %d (%p) -> %p: alive\n", __FUNCTION__,
-                  layer_id, layerCachedAddress, ctx->nx_gpx_client[layer_id].slist[six].shdl);
+            ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_HWC_PUSH;
+            if (ctx->gpx_cli[layer_id].layer_subtype == NEXUS_CURSOR) {
+                NEXUS_SurfaceCursorCreateSettings cursorSettings;
+                NEXUS_SurfaceCursorSettings config;
+
+                NEXUS_SurfaceCursor_GetDefaultCreateSettings(&cursorSettings);
+                cursorSettings.surface = ctx->gpx_cli[layer_id].slist[six].shdl;
+                //ctx->gpx_cli[layer_id].slist[six].schdl = NEXUS_SurfaceCursor_Create(??, &cursorSettings);
+                ctx->gpx_cli[layer_id].slist[six].schdl = NULL;
+                if (ctx->gpx_cli[layer_id].slist[six].schdl) {
+                    NEXUS_SurfaceCursor_GetSettings(ctx->gpx_cli[layer_id].slist[six].schdl, &config);
+                    config.composition.visible               = true;
+                    config.composition.virtualDisplay.width  = ctx->display_width;
+                    config.composition.virtualDisplay.height = ctx->display_height;
+                    config.composition.position.x            = disp_position.x;
+                    config.composition.position.y            = disp_position.y;
+                    config.composition.position.width        = disp_position.width;
+                    config.composition.position.height       = disp_position.height;
+                    NEXUS_SurfaceCursor_SetSettings(ctx->gpx_cli[layer_id].slist[six].schdl, &config);
+                }
+
+                ctx->cursor_cache.shdl = ctx->gpx_cli[layer_id].slist[six].shdl;
+                ctx->cursor_cache.schdl = ctx->gpx_cli[layer_id].slist[six].schdl;
+            }
         }
     }
 
-    BKNI_ReleaseMutex(ctx->nx_client_mutex);
-
+out_unlock:
+    BKNI_ReleaseMutex(ctx->mutex);
 out:
     return;
 }
 
-static void nx_client_prepare_mm_layer(
+static void hwc_prepare_mm_layer(
     hwc_context_t* ctx,
     hwc_layer_1_t *layer,
     unsigned int gpx_layer_id,
@@ -1699,80 +1848,80 @@ static void nx_client_prepare_mm_layer(
     unsigned int cur_blending_type;
     bool layer_updated = true;
 
-    if (BKNI_AcquireMutex(ctx->nx_client_mutex) != BERR_SUCCESS) {
+    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
         goto out;
     }
 
     // make the gpx corresponding layer non-visible in the layer stack.
-    NxClient_GetSurfaceClientComposition(ctx->nx_gpx_client[gpx_layer_id].ncci.sccid, &ctx->nx_gpx_client[gpx_layer_id].composition);
-    if (ctx->nx_gpx_client[gpx_layer_id].composition.visible) {
-       ctx->nx_gpx_client[gpx_layer_id].composition.visible = false;
-       rc = NxClient_SetSurfaceClientComposition(ctx->nx_gpx_client[gpx_layer_id].ncci.sccid, &ctx->nx_gpx_client[gpx_layer_id].composition);
+    NxClient_GetSurfaceClientComposition(ctx->gpx_cli[gpx_layer_id].ncci.sccid, &ctx->gpx_cli[gpx_layer_id].composition);
+    if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
+       ctx->gpx_cli[gpx_layer_id].composition.visible = false;
+       rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[gpx_layer_id].ncci.sccid, &ctx->gpx_cli[gpx_layer_id].composition);
        if (rc != NEXUS_SUCCESS) {
            ALOGE("%s: failed hidding gpx layer %d for video layer %d, err=%d", __FUNCTION__, gpx_layer_id, vid_layer_id, rc);
        }
     }
 
-    ctx->nx_mm_client[vid_layer_id].root.layer_type = layer->compositionType;
-    if (ctx->nx_mm_client[vid_layer_id].root.layer_type == HWC_SIDEBAND)
-       ctx->nx_mm_client[vid_layer_id].root.layer_subtype = NEXUS_VIDEO_SIDEBAND;
+    ctx->mm_cli[vid_layer_id].root.layer_type = layer->compositionType;
+    if (ctx->mm_cli[vid_layer_id].root.layer_type == HWC_SIDEBAND)
+       ctx->mm_cli[vid_layer_id].root.layer_subtype = NEXUS_VIDEO_SIDEBAND;
     else
-       ctx->nx_mm_client[vid_layer_id].root.layer_subtype = NEXUS_VIDEO_WINDOW;
-    ctx->nx_mm_client[vid_layer_id].root.layer_flags = layer->flags;
+       ctx->mm_cli[vid_layer_id].root.layer_subtype = NEXUS_VIDEO_WINDOW;
+    ctx->mm_cli[vid_layer_id].root.layer_flags = layer->flags;
 
     // deal with any change in the geometry/visibility of the layer.
-    NxClient_GetSurfaceClientComposition(ctx->nx_mm_client[vid_layer_id].root.ncci.sccid, &ctx->nx_mm_client[vid_layer_id].root.composition);
-    if (!ctx->nx_mm_client[vid_layer_id].root.composition.visible) {
-       ctx->nx_mm_client[vid_layer_id].root.composition.visible = true;
+    NxClient_GetSurfaceClientComposition(ctx->mm_cli[vid_layer_id].root.ncci.sccid, &ctx->mm_cli[vid_layer_id].root.composition);
+    if (!ctx->mm_cli[vid_layer_id].root.composition.visible) {
+       ctx->mm_cli[vid_layer_id].root.composition.visible = true;
        layer_updated = true;
     }
-    if (memcmp((void *)&disp_position, (void *)&ctx->nx_mm_client[vid_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) {
+    if (memcmp((void *)&disp_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) {
 
         layer_updated = true;
-        ctx->nx_mm_client[vid_layer_id].root.composition.zorder                = MM_CLIENT_ZORDER;
-        ctx->nx_mm_client[vid_layer_id].root.composition.position.x            = disp_position.x;
-        ctx->nx_mm_client[vid_layer_id].root.composition.position.y            = disp_position.y;
-        ctx->nx_mm_client[vid_layer_id].root.composition.position.width        = disp_position.width;
-        ctx->nx_mm_client[vid_layer_id].root.composition.position.height       = disp_position.height;
-        ctx->nx_mm_client[vid_layer_id].root.composition.virtualDisplay.width  = ctx->display_width;
-        ctx->nx_mm_client[vid_layer_id].root.composition.virtualDisplay.height = ctx->display_height;
+        ctx->mm_cli[vid_layer_id].root.composition.zorder                = MM_CLIENT_ZORDER;
+        ctx->mm_cli[vid_layer_id].root.composition.position.x            = disp_position.x;
+        ctx->mm_cli[vid_layer_id].root.composition.position.y            = disp_position.y;
+        ctx->mm_cli[vid_layer_id].root.composition.position.width        = disp_position.width;
+        ctx->mm_cli[vid_layer_id].root.composition.position.height       = disp_position.height;
+        ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.width  = ctx->display_width;
+        ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.height = ctx->display_height;
 
-        NEXUS_SurfaceClient_GetSettings(ctx->nx_mm_client[vid_layer_id].svchdl, &ctx->nx_mm_client[vid_layer_id].settings);
-        ctx->nx_mm_client[vid_layer_id].settings.composition.contentMode           = NEXUS_VideoWindowContentMode_eFull;
-        ctx->nx_mm_client[vid_layer_id].settings.composition.virtualDisplay.width  = ctx->display_width;
-        ctx->nx_mm_client[vid_layer_id].settings.composition.virtualDisplay.height = ctx->display_height;
-        ctx->nx_mm_client[vid_layer_id].settings.composition.position.x            = disp_position.x;
-        ctx->nx_mm_client[vid_layer_id].settings.composition.position.y            = disp_position.y;
-        ctx->nx_mm_client[vid_layer_id].settings.composition.position.width        = disp_position.width;
-        ctx->nx_mm_client[vid_layer_id].settings.composition.position.height       = disp_position.height;
-        rc = NEXUS_SurfaceClient_SetSettings(ctx->nx_mm_client[vid_layer_id].svchdl, &ctx->nx_mm_client[vid_layer_id].settings);
+        NEXUS_SurfaceClient_GetSettings(ctx->mm_cli[vid_layer_id].svchdl, &ctx->mm_cli[vid_layer_id].settings);
+        ctx->mm_cli[vid_layer_id].settings.composition.contentMode           = NEXUS_VideoWindowContentMode_eFull;
+        ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.width  = ctx->display_width;
+        ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.height = ctx->display_height;
+        ctx->mm_cli[vid_layer_id].settings.composition.position.x            = disp_position.x;
+        ctx->mm_cli[vid_layer_id].settings.composition.position.y            = disp_position.y;
+        ctx->mm_cli[vid_layer_id].settings.composition.position.width        = disp_position.width;
+        ctx->mm_cli[vid_layer_id].settings.composition.position.height       = disp_position.height;
+        rc = NEXUS_SurfaceClient_SetSettings(ctx->mm_cli[vid_layer_id].svchdl, &ctx->mm_cli[vid_layer_id].settings);
         if (rc != NEXUS_SUCCESS) {
             ALOGE("%s: geometry failed on video layer %d, err=%d", __FUNCTION__, vid_layer_id, rc);
         }
     }
     if (layer_updated) {
-       rc = NxClient_SetSurfaceClientComposition(ctx->nx_mm_client[vid_layer_id].root.ncci.sccid, &ctx->nx_mm_client[vid_layer_id].root.composition);
+       rc = NxClient_SetSurfaceClientComposition(ctx->mm_cli[vid_layer_id].root.ncci.sccid, &ctx->mm_cli[vid_layer_id].root.composition);
        if (rc != NEXUS_SUCCESS) {
            ALOGE("%s: geometry failed on layer %d, err=%d", __FUNCTION__, vid_layer_id, rc);
        }
     }
 
-    BKNI_ReleaseMutex(ctx->nx_client_mutex);
+    BKNI_ReleaseMutex(ctx->mutex);
 
 out:
     return;
 }
 
-static void nx_client_prepare_layer(
+static void hwc_nsc_prepare_layer(
     hwc_context_t* ctx,
     hwc_layer_1_t *layer,
-    unsigned int layer_id)
+    int layer_id)
 {
     unsigned int video_layer_id = 0;
 
     if (is_video_layer(layer, layer_id)) {
         if (video_layer_id < NSC_MM_CLIENTS_NUMBER) {
-            nx_client_prepare_mm_layer(ctx, layer, layer_id, video_layer_id);
+            hwc_prepare_mm_layer(ctx, layer, layer_id, video_layer_id);
             video_layer_id++;
         } else {
             // huh? shouldn't happen really, unless the system is not tuned
@@ -1781,29 +1930,29 @@ static void nx_client_prepare_layer(
                video_layer_id, NSC_MM_CLIENTS_NUMBER);
         }
     } else {
-        nx_client_prepare_gpx_layer(ctx, layer, layer_id);
+        hwc_prepare_gpx_layer(ctx, layer, layer_id);
     }
 }
 
-static void nx_client_hide_unused_gpx_layer(hwc_context_t* ctx, int index)
+static void hwc_hide_unused_gpx_layer(hwc_context_t* ctx, int index)
 {
     NEXUS_SurfaceComposition composition;
     NEXUS_Error rc;
 
-    if (BKNI_AcquireMutex(ctx->nx_client_mutex) != BERR_SUCCESS) {
+    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
         goto out;
     }
 
-    NxClient_GetSurfaceClientComposition(ctx->nx_gpx_client[index].ncci.sccid, &composition);
+    NxClient_GetSurfaceClientComposition(ctx->gpx_cli[index].ncci.sccid, &composition);
     if (composition.visible) {
        composition.visible = false;
-       rc = NxClient_SetSurfaceClientComposition(ctx->nx_gpx_client[index].ncci.sccid, &composition);
+       rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[index].ncci.sccid, &composition);
        if (rc != NEXUS_SUCCESS) {
            ALOGE("%s: failed hiding layer %d, err=%d", __FUNCTION__, index, rc);
        }
     }
 
-    BKNI_ReleaseMutex(ctx->nx_client_mutex);
+    BKNI_ReleaseMutex(ctx->mutex);
 
 out:
     return;
@@ -1814,34 +1963,34 @@ static void nx_client_hide_unused_mm_layer(hwc_context_t* ctx, int index)
     NEXUS_SurfaceComposition composition;
     NEXUS_Error rc;
 
-    if (BKNI_AcquireMutex(ctx->nx_client_mutex) != BERR_SUCCESS) {
+    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
         goto out;
     }
 
-    NxClient_GetSurfaceClientComposition(ctx->nx_mm_client[index].root.ncci.sccid, &composition);
+    NxClient_GetSurfaceClientComposition(ctx->mm_cli[index].root.ncci.sccid, &composition);
     if (composition.visible) {
        composition.visible = false;
-       rc = NxClient_SetSurfaceClientComposition(ctx->nx_mm_client[index].root.ncci.sccid, &composition);
+       rc = NxClient_SetSurfaceClientComposition(ctx->mm_cli[index].root.ncci.sccid, &composition);
        if (rc != NEXUS_SUCCESS) {
            ALOGE("%s: failed hiding layer %d, err=%d", __FUNCTION__, index, rc);
        }
     }
 
-    BKNI_ReleaseMutex(ctx->nx_client_mutex);
+    BKNI_ReleaseMutex(ctx->mutex);
 
 out:
     return;
 }
 
-static void nx_client_hide_unused_gpx_layers(hwc_context_t* ctx, int nx_layer_count)
+static void hwc_hide_unused_gpx_layers(hwc_context_t* ctx, int nx_layer_count)
 {
     for (int i = nx_layer_count; i < NSC_GPX_CLIENTS_NUMBER; i++)
     {
-       nx_client_hide_unused_gpx_layer(ctx, i);
+       hwc_hide_unused_gpx_layer(ctx, i);
     }
 }
 
-static void nx_client_hide_unused_mm_layers(hwc_context_t* ctx)
+static void hwc_hide_unused_mm_layers(hwc_context_t* ctx)
 {
     for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++)
     {
@@ -1849,19 +1998,19 @@ static void nx_client_hide_unused_mm_layers(hwc_context_t* ctx)
     }
 }
 
-static void nx_client_advertise_video_surface(hwc_context_t* ctx)
+static void hwc_binder_advertise_video_surface(hwc_context_t* ctx)
 {
-    if (BKNI_AcquireMutex(ctx->nx_client_mutex) != BERR_SUCCESS) {
+    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
         goto out;
     }
 
     // TODO: for the time being, only advertize one.
     if (ctx->nsc_video_changed && ctx->hwc_binder) {
-       ctx->hwc_binder->setvideo(0, ctx->nx_mm_client[0].root.ncci.sccid);
+       ctx->hwc_binder->setvideo(0, ctx->mm_cli[0].root.ncci.sccid);
        ctx->nsc_video_changed = false;
     }
 
-    BKNI_ReleaseMutex(ctx->nx_client_mutex);
+    BKNI_ReleaseMutex(ctx->mutex);
 
 out:
     return;
