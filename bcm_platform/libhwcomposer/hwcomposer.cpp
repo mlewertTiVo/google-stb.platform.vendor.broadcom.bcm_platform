@@ -805,6 +805,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     hwc_layer_1_t *layer;
     size_t i;
     int nx_layer_count = 0;
+    int skiped_layer = 0;
 
     // blocking wait here...
     BKNI_WaitForEvent(ctx->prepare_event, 1000);
@@ -824,8 +825,13 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     for (i = 0; i < list->numHwLayers; i++) {
         layer = &list->hwLayers[i];
         if (primary_need_nx_layer(dev, layer) == true) {
+            if (skiped_layer)
+               // mostly for debug for now.
+               ALOGE("%s: skipped %d layers before %d", __FUNCTION__, skiped_layer, i);
             hwc_nsc_prepare_layer(ctx, layer, (int)i);
             nx_layer_count++;
+        } else {
+            skiped_layer++;
         }
     }
 
