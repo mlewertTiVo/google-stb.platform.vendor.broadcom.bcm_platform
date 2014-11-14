@@ -917,6 +917,7 @@ OMXNexusVideoEncoder::StartOutput(PVIDEO_ENCODER_START_PARAMS pStartParams)
     EncoderStartSettings.output.video.settings.level = convertOMXLevelTypetoNexus(pStartParams->avcParams.eLevel);
     EncoderStartSettings.output.video.settings.nonRealTime = true;
     EncoderStartSettings.output.video.settings.interlaced = false;
+    EncoderStartSettings.output.video.settings.bypassVideoProcessing = true;
 
     LOG_WARNING("%s: Profile = %d, Level = %d, width = %d, height = %d",
                 __FUNCTION__,
