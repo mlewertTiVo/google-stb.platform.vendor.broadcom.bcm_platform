@@ -185,6 +185,18 @@ void Hwc::getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &va
        value = mVideoSurface[index].surface;
        ALOGD("%s: %p, index %d, value %d", __FUNCTION__,
              listener->asBinder().get(), index, value);
+
+       // notify back the hwc so it can reset the frame counter for this
+       // session.  session equals surface scope owner claimed.
+       size_t N = mNotificationListeners.size();
+       for (size_t i = 0; i < N; i++) {
+           const hwc_listener_t& client = mNotificationListeners[i];
+           if (client.kind == HWC_BINDER_HWC) {
+              sp<IBinder> binder = client.binder;
+              sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
+              client->notify(HWC_BINDER_NTFY_VIDEO_SURFACE_ACQUIRED, value, 0);
+           }
+       }
    }
 }
 

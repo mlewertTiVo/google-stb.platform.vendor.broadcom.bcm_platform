@@ -77,6 +77,7 @@ using namespace android;
 
 #define GPX_SURFACE_STACK            2
 #define DUMP_BUFFER_SIZE             1024
+#define LAST_PING_FRAME_ID_INVALID   0xBAADCAFE
 
 /* note: matching other parts of the integration, we
  *       want to default product resolution to 1080p.
@@ -139,6 +140,7 @@ typedef struct {
     GPX_CLIENT_INFO root;
     NEXUS_SurfaceClientHandle svchdl;
     NEXUS_SurfaceClientSettings settings;
+    long long unsigned last_ping_frame_id;
 
 } MM_CLIENT_INFO;
 
@@ -670,6 +672,17 @@ static void hwc_binder_notify(int dev, int msg, int param1, int param2)
        case HWC_BINDER_NTFY_DISCONNECTED:
            ctx->hwc_binder->connected(false);
        break;
+       case HWC_BINDER_NTFY_VIDEO_SURFACE_ACQUIRED:
+       {
+           for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
+               // reset the 'drop duplicate frame notifier' count.
+               if (ctx->mm_cli[i].root.ncci.sccid == (NEXUS_SurfaceCompositorClientId)param1) {
+                  ctx->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_INVALID;
+                  break;
+               }
+           }
+       }
+       break;
 
        default:
        break;
@@ -903,14 +916,18 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
             break;
         }
         //
-        // video layer: mark the buffer to be displayed.
+        // video layer: signal the buffer to be displayed, drop duplicates.
         //
         if (is_video_layer(&list->hwLayers[i], -1 /*not used*/)) {
             private_handle_t *bcmBuffer = (private_handle_t *)list->hwLayers[i].handle;
             PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedDataPhyAddr);
-            if (ctx->hwc_binder)
+            if (ctx->hwc_binder) {
                 // TODO: currently only one video window exposed.
-                ctx->hwc_binder->setframe(ctx->mm_cli[0].root.ncci.sccid, pSharedData->DisplayFrame.frameStatus.serialNumber);
+                if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->DisplayFrame.frameStatus.serialNumber) {
+                    ctx->mm_cli[0].last_ping_frame_id = pSharedData->DisplayFrame.frameStatus.serialNumber;
+                    ctx->hwc_binder->setframe(ctx->mm_cli[0].root.ncci.sccid, ctx->mm_cli[0].last_ping_frame_id);
+                }
+            }
         }
         //
         // gpx layer: use the 'cached' visibility that was assigned during 'prepare'.
@@ -1412,6 +1429,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                     ALOGE("%s:mm: NEXUS_SurfaceClient_AcquireVideoWindow %d failed", __FUNCTION__, i);
                     goto clean_up;
                 }
+                dev->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_INVALID;
 
                 // TODO: add support for more than one video at the time.
                 if (i == 0) {
