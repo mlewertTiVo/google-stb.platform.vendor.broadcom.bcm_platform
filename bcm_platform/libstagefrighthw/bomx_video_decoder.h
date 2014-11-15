@@ -67,6 +67,7 @@ extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex);
 struct BOMX_VideoDecoderInputBufferInfo
 {
     void *pHeader;              // Header buffer in NEXUS_Memory space
+    size_t headerLen;
     void *pPayload;             // Optional payload buffer in NEXUS_Memory space (set for useBuffer not allocateBuffer)
     unsigned numDescriptors;    // Number of descriptors in use for this buffer
 };
@@ -238,6 +239,7 @@ protected:
     bool m_formatChangePending;
     bool m_nativeGraphicsEnabled;
     bool m_metadataEnabled;
+    bool m_secureDecoder;
 
     #define BOMX_BCMV_HEADER_SIZE (10)
     uint8_t m_pBcmvHeader[BOMX_BCMV_HEADER_SIZE];
@@ -295,13 +297,22 @@ protected:
     void ReturnDecodedFrames();
     void GraphicsCheckpoint();
     void CopySurfaceToClient(const BOMX_VideoDecoderOutputBufferInfo *pInfo);
-    void ConfigBufferInit();
-    OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
-
     BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(private_handle_t *pPrivateHandle);
     BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(unsigned serialNumber);
+    OMX_ERRORTYPE SendDataBuffertoHw(BOMX_VideoDecoderInputBufferInfo *pInfo,
+                                            OMX_BUFFERHEADERTYPE* pBufferHeader);
 
     void DisplayFrame_locked(unsigned serialNumber);
+    void InitPESHeader(void *pHeaderBuffer);
+
+    // The functions below allow derived classes to override them
+    virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
+    virtual void FreeInputBuffer(void*& pBuffer);
+    virtual OMX_ERRORTYPE ConfigBufferInit();
+    virtual OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
+    virtual NEXUS_Error ExtraTransportConfig() {return 0;};
+    virtual OMX_ERRORTYPE SendConfigBuffertoHw(BOMX_VideoDecoderInputBufferInfo *pInfo);
+
 private:
 };
 

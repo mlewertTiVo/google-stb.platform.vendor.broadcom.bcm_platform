@@ -91,7 +91,7 @@ LOCAL_C_INCLUDES := \
         $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
         $(TOP)/vendor/broadcom/bcm_platform/libnexusipc \
         $(TOP)/vendor/broadcom/bcm_platform/libgralloc \
-        $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/blib
+        $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/blib \
 
 include $(BSEAV)/lib/utils/batom.inc
 include $(BSEAV)/lib/media/bmedia.inc
@@ -115,6 +115,16 @@ LOCAL_SHARED_LIBRARIES :=       \
         libnexusipcclient \
         libstagefright_foundation \
         libhwcbinder
+
+# Secure decoder has dependencies on Sage
+ifeq ($(SAGE_SUPPORT),y)
+LOCAL_SRC_FILES += bomx_video_decoder_secure.cpp
+LOCAL_C_INCLUDES+=$(REFSW_BASE_DIR)/BSEAV/lib/security/sage/srai/include
+LOCAL_C_INCLUDES+=$(REFSW_BASE_DIR)/magnum/syslib/sagelib/include
+LOCAL_C_INCLUDES+=$(REFSW_BASE_DIR)/BSEAV/lib/security/common_crypto/include
+LOCAL_SHARED_LIBRARIES+=libsrai
+LOCAL_CFLAGS += -DSECURE_DECODER_ON
+endif
 
 LOCAL_MODULE := libstagefrighthw
 

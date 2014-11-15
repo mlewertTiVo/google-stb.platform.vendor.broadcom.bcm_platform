@@ -28,6 +28,9 @@
 #include "bomx_component.h"
 #include "bomx_video_decoder.h"
 #include "bomx_audio_decoder.h"
+#ifdef SECURE_DECODER_ON
+#include "bomx_video_decoder_secure.h"
+#endif
 
 // Table of known components, constructors, and roles
 static const struct ComponentEntry
@@ -40,7 +43,12 @@ static const struct ComponentEntry
     {"OMX.broadcom.video_decoder", BOMX_VideoDecoder_Create, BOMX_VideoDecoder_GetRole},
 #if 0 /* Enable when audio is ready */    
     {"OMX.broadcom.audio_decoder", BOMX_AudioDecoder_Create, BOMX_AudioDecoder_GetRole},
-#endif    
+#endif
+// Use a macro for now. Need to find a better way to avoid using macros in cpp code
+#ifdef SECURE_DECODER_ON
+    {"OMX.broadcom.video_decoder.secure", BOMX_VideoDecoder_Secure_Create, BOMX_VideoDecoder_Secure_GetRole},
+#endif
+
 };
 
 // Max number of components available
