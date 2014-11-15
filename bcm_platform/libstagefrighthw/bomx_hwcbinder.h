@@ -105,13 +105,13 @@ private:
 
 public:
    OmxBinder_wrap(void) {
-      ALOGD("%s: allocated %p", __FUNCTION__, this);
+      ALOGV("%s: allocated %p", __FUNCTION__, this);
       ihwc = new OmxBinder;
       ihwc.get()->listen();
    };
 
    virtual ~OmxBinder_wrap(void) {
-      ALOGD("%s: cleared %p", __FUNCTION__, this);
+      ALOGV("%s: cleared %p", __FUNCTION__, this);
       ihwc.get()->hangup();
       ihwc.clear();
    };

@@ -12,7 +12,6 @@ typedef struct _DISPLAY_FRAME_
     void *                                  DisplayCnxt;
     unsigned int                            OutFlags;
     NEXUS_VideoDecoderFrameStatus frameStatus;
-    bool display;    
 }DISPLAY_FRAME,
 *PDISPLAY_FRAME;
 

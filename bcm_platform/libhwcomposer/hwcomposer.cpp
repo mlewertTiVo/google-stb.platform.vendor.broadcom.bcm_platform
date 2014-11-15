@@ -905,12 +905,9 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         //
         // video layer: mark the buffer to be displayed.
         //
-        // TODO: signal omx through ipc instead.
-        //
         if (is_video_layer(&list->hwLayers[i], -1 /*not used*/)) {
             private_handle_t *bcmBuffer = (private_handle_t *)list->hwLayers[i].handle;
             PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedDataPhyAddr);
-            pSharedData->DisplayFrame.display = true;
             if (ctx->hwc_binder)
                 // TODO: currently only one video window exposed.
                 ctx->hwc_binder->setframe(ctx->mm_cli[0].root.ncci.sccid, pSharedData->DisplayFrame.frameStatus.serialNumber);

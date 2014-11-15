@@ -81,14 +81,6 @@ enum BOMX_VideoDecoderFrameBufferState
     BOMX_VideoDecoderFrameBufferState_eMax
 };
 
-struct BOMX_VideoDecoderFrameBuffer
-{
-    BLST_Q_ENTRY(BOMX_VideoDecoderFrameBuffer) node;
-    BOMX_VideoDecoderFrameBufferState state;
-    NEXUS_VideoDecoderFrameStatus frameStatus;
-    private_handle_t *pPrivateHandle;
-};
-
 enum BOMX_VideoDecoderOutputBufferType
 {
     BOMX_VideoDecoderOutputBufferType_eStandard,
@@ -96,6 +88,8 @@ enum BOMX_VideoDecoderOutputBufferType
     BOMX_VideoDecoderOutputBufferType_eMetadata,
     BOMX_VideoDecoderOutputBufferType_eMax
 };
+
+struct BOMX_VideoDecoderFrameBuffer;
 
 struct BOMX_VideoDecoderOutputBufferInfo
 {
@@ -119,6 +113,15 @@ struct BOMX_VideoDecoderOutputBufferInfo
             VideoDecoderOutputMetaData *pMetadata;
         } metadata;
     } typeInfo;
+};
+
+struct BOMX_VideoDecoderFrameBuffer
+{
+    BLST_Q_ENTRY(BOMX_VideoDecoderFrameBuffer) node;
+    BOMX_VideoDecoderFrameBufferState state;
+    NEXUS_VideoDecoderFrameStatus frameStatus;
+    private_handle_t *pPrivateHandle;
+    BOMX_VideoDecoderOutputBufferInfo *pBufferInfo;
 };
 
 class BOMX_VideoDecoder : public BOMX_Component
@@ -204,6 +207,8 @@ public:
     void PlaypumpEvent();
     void OutputFrameEvent();
     void OutputFrameTimer();
+
+    void DisplayFrame(unsigned serialNumber);
 
 protected:
     NEXUS_SimpleVideoDecoderHandle m_hSimpleVideoDecoder;
@@ -292,6 +297,9 @@ protected:
     OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
 
     BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(private_handle_t *pPrivateHandle);
+    BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(unsigned serialNumber);
+
+    void DisplayFrame_locked(unsigned serialNumber);
 private:
 };
 

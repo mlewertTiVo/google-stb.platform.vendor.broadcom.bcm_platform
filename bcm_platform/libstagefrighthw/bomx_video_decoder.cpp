@@ -420,7 +420,7 @@ static void BOMX_VideoDecoder_FormBppPacket(char *pBuffer, uint32_t opcode)
 
 void OmxBinder::notify( int msg, int param1, int param2 )
 {
-   ALOGD( "%s: notify received: msg=%u, param1=0x%x, param2=0x%x",
+   ALOGV( "%s: notify received: msg=%u, param1=0x%x, param2=0x%x",
           __FUNCTION__, msg, param1, param2 );
 
    if (cb)
@@ -429,23 +429,19 @@ void OmxBinder::notify( int msg, int param1, int param2 )
 
 static void BOMX_OmxBinderNotify(int cb_data, int msg, int param1, int param2)
 {
-    BOMX_VideoDecoder *component = (BOMX_VideoDecoder *)cb_data;
+    BOMX_VideoDecoder *pComponent = (BOMX_VideoDecoder *)cb_data;
 
-    (void)param1;
-    (void)param2;
+    BSTD_UNUSED(param1);
+    BOMX_ASSERT(NULL != pComponent);
 
-    if (component) {
-       switch (msg) {
-
-       case HWC_BINDER_NTFY_DISPLAY:
-          ALOGD( "%s: display frame %d on surface %d",
-                 __FUNCTION__, param2, param1 );
-       break;
-
-       default:
-       break;
-       }
-   }
+    switch (msg)
+    {
+    case HWC_BINDER_NTFY_DISPLAY:
+        pComponent->DisplayFrame((unsigned)param2);
+        break;
+    default:
+        break;
+    }
 }
 
 BOMX_VideoDecoder::BOMX_VideoDecoder(
@@ -2429,6 +2425,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
         if ( pFrameBuffer )
         {
             bool active=false;
+            pFrameBuffer->pBufferInfo = NULL;
             if ( m_hSimpleVideoDecoder )
             {
                 NEXUS_VideoDecoderStatus vdecStatus;
@@ -2672,6 +2669,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     // Determine what to do with the buffer
     if ( pFrameBuffer )
     {
+        pFrameBuffer->pBufferInfo = NULL;
         if ( pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eInvalid )
         {
             // The frame has been flushed while the app owned it.  Move it back to the free list silently.
@@ -2683,17 +2681,18 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         {
             // Any state other than delivered and we've done something horribly wrong.
             BOMX_ASSERT(pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered);
+            pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDropReady;
             switch ( pInfo->type )
             {
             case BOMX_VideoDecoderOutputBufferType_eStandard:
                 BOMX_MSG(("Standard Buffer - Drop"));
-                pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDropReady;    // Doesn't matter we're not displaying anything
                 break;
             case BOMX_VideoDecoderOutputBufferType_eNative:
-                BOMX_MSG(("Native Buffer %u %s", pInfo->typeInfo.native.pSharedData->DisplayFrame.frameStatus.serialNumber, pInfo->typeInfo.native.pSharedData->DisplayFrame.display ? "display":"drop"));
-                pFrameBuffer->state = pInfo->typeInfo.native.pSharedData->DisplayFrame.display ? BOMX_VideoDecoderFrameBufferState_eDisplayReady : BOMX_VideoDecoderFrameBufferState_eDropReady;
+                BOMX_MSG(("Native Buffer %u - Drop", pInfo->typeInfo.native.pSharedData->DisplayFrame.frameStatus.serialNumber));
                 break;
-            // TODO: Handle metadata
+            case BOMX_VideoDecoderOutputBufferType_eMetadata:
+                BOMX_MSG(("Metadata Buffer %u - Drop", pFrameBuffer->frameStatus.serialNumber));
+                break;
             default:
                 break;
             }
@@ -3155,7 +3154,6 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         {
                             pHeader->nFilledLen = 2*m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth*m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight;
                             pInfo->typeInfo.native.pSharedData->DisplayFrame.frameStatus = pBuffer->frameStatus;
-                            pInfo->typeInfo.native.pSharedData->DisplayFrame.display = false;
                         }
                         break;
                     case BOMX_VideoDecoderOutputBufferType_eMetadata:
@@ -3174,7 +3172,6 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 pSharedData->videoWindow.windowVisible = 1;
                                 android_atomic_release_store(1, &pSharedData->videoWindow.windowIdPlusOne);
                                 pSharedData->DisplayFrame.frameStatus = pBuffer->frameStatus;
-                                pSharedData->DisplayFrame.display = false;
                             }
                         }
                         break;
@@ -3185,6 +3182,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 // Mark buffer as delivered and return to client
                 pBuffer->state = BOMX_VideoDecoderFrameBufferState_eDelivered;
                 pInfo->pFrameBuffer = pBuffer;
+                pBuffer->pBufferInfo = pInfo;
                 BOMX_MSG(("Returning Port Buffer ts %u us serial %u pInfo %#x FB %#x HDR %#x", (unsigned int)pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader));
                 {
                     unsigned queueDepthBefore = m_pVideoPorts[1]->QueueDepth();
@@ -3372,4 +3370,49 @@ BOMX_VideoDecoderFrameBuffer *BOMX_VideoDecoder::FindFrameBuffer(private_handle_
           pFrameBuffer = BLST_Q_NEXT(pFrameBuffer, node) );
 
     return pFrameBuffer;
+}
+
+BOMX_VideoDecoderFrameBuffer *BOMX_VideoDecoder::FindFrameBuffer(unsigned serialNumber)
+{
+    BOMX_VideoDecoderFrameBuffer *pFrameBuffer;
+    BOMX_ASSERT(NULL != pPrivateHandle);
+
+    // Scan allocated frame list for matching private handle
+    for ( pFrameBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
+          NULL != pFrameBuffer && pFrameBuffer->frameStatus.serialNumber != serialNumber;
+          pFrameBuffer = BLST_Q_NEXT(pFrameBuffer, node) );
+
+    return pFrameBuffer;
+}
+
+void BOMX_VideoDecoder::DisplayFrame(unsigned serialNumber)
+{
+    // This function is only callable by the binder thread and cannot be called internally
+    ALOGV("DisplayFrame(%d)", serialNumber);
+    Lock();
+    DisplayFrame_locked(serialNumber);
+    Unlock();
+}
+
+void BOMX_VideoDecoder::DisplayFrame_locked(unsigned serialNumber)
+{
+    BOMX_VideoDecoderFrameBuffer *pFrameBuffer;
+
+    pFrameBuffer = FindFrameBuffer(serialNumber);
+    if ( pFrameBuffer )
+    {
+        // Mark buffer as ready to display
+        pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDisplayReady;
+        // Break linkage between omx output buffer and frame buffer
+        pFrameBuffer->pBufferInfo->pFrameBuffer = NULL;
+        pFrameBuffer->pBufferInfo = NULL;
+        // Return frames to nexus decoder
+        ReturnDecodedFrames();
+        // We just returned something to nexus, kick off the output frame thread
+        B_Event_Set(m_hOutputFrameEvent);
+    }
+    else
+    {
+        ALOGV("Request to display buffer %u not found in list (duplicate?)", serialNumber);
+    }
 }
