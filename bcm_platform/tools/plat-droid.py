@@ -78,11 +78,10 @@ def plat_droid_usage():
 	print '\t<platform>    - the BCM platform number to build for, eg: 97252, 97445, ...'
 	print '\t<chip-rev>    - the BCM chip revision of interest, eg: A0, B0, C1, ...'
 	print '\t<board-type>  - the target board type, eg: SV, C'
-	print '\t[redux|aosp|cts|ctsaosp] (note: mutually exclusive)'
+	print '\t[redux|aosp|nfs] (note: mutually exclusive)'
 	print '\t              - redux: redux platform support image (minimal android)'
         print '\t              - aosp: AOSP feature set and integration exclusively'
-        print '\t              - cts: CTS ready image (multi-partition boot, proper permissions)'
-        print '\t              - ctsaosp: CTS image with AOSP exclusive support (best of both worlds)'
+        print '\t              - nfs: booting using nfs exclusively - no formal support, at your own risks'
 	print '\n'
 	sys.exit(0)
 
@@ -101,7 +100,7 @@ boardtype=str(sys.argv[3]).upper()
 
 # create android cruft.
 androiddevice='%s%s%s' % (chip, revision, boardtype)
-if target_option == "AOSP" or target_option == "REDUX" or target_option == "CTS" or target_option == "CTSAOSP":
+if target_option == "AOSP" or target_option == "REDUX" or target_option == "NFS":
 	androiddevice='%s_%s' % (androiddevice, target_option)
 devicedirectory='./device/broadcom/bcm_%s/' % (androiddevice)
 if verbose:
@@ -170,16 +169,13 @@ os.write(s, "# end of refsw gathered config...\n")
 if target_option == "REDUX":
 	os.write(s, "\n\n# REDUX target set...\n")
 	os.write(s, "include device/broadcom/common/target_redux.mk")
-if target_option == "CTS" or target_option == "CTSAOSP":
-        os.write(s, "\n\n# CTS target set...\n")
-        os.write(s, "include device/broadcom/common/target_cts.mk")
 os.write(s, "\n\ninclude device/broadcom/bcm_platform/bcm_platform.mk")
-if target_option == "CTS" or target_option == "CTSAOSP":
-        os.write(s, "\n\n# CTS setting tweaks...\n")
-        os.write(s, "include device/broadcom/common/settings_cts.mk")
-if target_option == "AOSP" or target_option == "CTSAOSP":
+if target_option == "AOSP":
 	os.write(s, "\n\n# AOSP setting tweaks...\n")
 	os.write(s, "include device/broadcom/common/settings_aosp.mk")
+if target_option == "NFS":
+	os.write(s, "\n\n# NFS setting tweaks...\n")
+	os.write(s, "include device/broadcom/common/settings_nfs.mk")
 os.write(s, "\n\nPRODUCT_NAME := bcm_%s\n" % androiddevice)
 os.write(s, "\n# exporting toolchains path for kernel image+modules\n")
 os.write(s, "export PATH := %s:${PATH}\n" % kerneltoolchain)
