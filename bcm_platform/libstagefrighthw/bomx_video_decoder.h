@@ -236,6 +236,8 @@ protected:
     bool m_eosPending;
     bool m_eosDelivered;
     bool m_formatChangePending;
+    bool m_nativeGraphicsEnabled;
+    bool m_metadataEnabled;
 
     #define BOMX_BCMV_HEADER_SIZE (10)
     uint8_t m_pBcmvHeader[BOMX_BCMV_HEADER_SIZE];

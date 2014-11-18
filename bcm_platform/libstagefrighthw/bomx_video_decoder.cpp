@@ -46,7 +46,7 @@
  * $brcm_Log: $
  *
  *****************************************************************************/
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0 // Intentionally left enabled for CTS at the moment.
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_decoder"
 
@@ -468,6 +468,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_eosPending(false),
     m_eosDelivered(false),
     m_formatChangePending(false),
+    m_nativeGraphicsEnabled(false),
+    m_metadataEnabled(false),
     m_pConfigBuffer(NULL),
     m_configRequired(false),
     m_configBufferSize(0),
@@ -476,7 +478,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     unsigned i;
     NEXUS_Error errCode;
     #define MAX_PORT_FORMATS (6)
-    #define MAX_OUTPUT_PORT_FORMATS (1)
+    #define MAX_OUTPUT_PORT_FORMATS (2)
 
     BDBG_CASSERT(MAX_OUTPUT_PORT_FORMATS <= MAX_PORT_FORMATS);
 
@@ -525,7 +527,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_numVideoPorts = 1;
     memset(&portDefs, 0, sizeof(portDefs));
     portDefs.eCompressionFormat = OMX_VIDEO_CodingUnused;
-    portDefs.eColorFormat = (OMX_COLOR_FORMATTYPE)((int)PIXEL_FORMAT_RGB_565); //OMX_COLOR_Format16bitRGB565; For some bizarre reason these get passed directly into gralloc 4=HAL_PIXEL_FORMAT_565
+    portDefs.eColorFormat = OMX_COLOR_Format16bitRGB565;
     strcpy(m_outputMimeType, "video/x-raw");
     portDefs.cMIMEType = m_outputMimeType;
     portDefs.nFrameWidth = 1920;
@@ -542,7 +544,10 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         switch ( i )
         {
         default:
-        case 0:
+        case 0: // OMX buffer format
+            portFormats[i].eColorFormat = OMX_COLOR_Format16bitRGB565;
+            break;
+        case 1: // Native grpahics format
             portFormats[i].eColorFormat = (OMX_COLOR_FORMATTYPE)((int)PIXEL_FORMAT_RGB_565);
             break;
         }
@@ -1024,6 +1029,30 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
             }
             return OMX_ErrorNone;
         }
+    case OMX_IndexParamEnableAndroidNativeGraphicsBuffer:
+    {
+        EnableAndroidNativeBuffersParams *pEnableParams = (EnableAndroidNativeBuffersParams *)pComponentParameterStructure;
+        BOMX_STRUCT_VALIDATE(pEnableParams);
+        BOMX_MSG(("GetParameter OMX_IndexParamEnableAndroidNativeGraphicsBuffer %u", pEnableParams->enable));
+        if ( pEnableParams->nPortIndex != m_videoPortBase+1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+        pEnableParams->enable = m_nativeGraphicsEnabled == true ? OMX_TRUE : OMX_FALSE;
+        return OMX_ErrorNone;
+    }
+    case OMX_IndexParamStoreMetaDataInBuffers:
+    {
+        StoreMetaDataInBuffersParams *pMetadata = (StoreMetaDataInBuffersParams *)pComponentParameterStructure;
+        BOMX_STRUCT_VALIDATE(pMetadata);
+        BOMX_MSG(("GetParameter OMX_IndexParamStoreMetaDataInBuffers %u", pMetadata->bStoreMetaData));
+        if ( pMetadata->nPortIndex != m_videoPortBase+1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+        pMetadata->bStoreMetaData = m_metadataEnabled == true ? OMX_TRUE : OMX_FALSE;
+        return OMX_ErrorNone;
+    }
     case OMX_IndexParamGetAndroidNativeBufferUsage:
     {
         GetAndroidNativeBufferUsageParams *pUsage = (GetAndroidNativeBufferUsageParams *)pComponentParameterStructure;
@@ -1033,7 +1062,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
-        // TODO: Revice this, SW_READ/SW_WRITE should not be set
+        // TODO: Revise this to use a vendor private flag w/gralloc.  SW_READ/SW_WRITE should not be used here.
         pUsage->nUsage = GRALLOC_USAGE_EXTERNAL_DISP | GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN;
         return OMX_ErrorNone;
     }
@@ -1137,6 +1166,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
                 portDefs = pPort->GetDefinition()->format.video;
                 portDefs.eCompressionFormat = pFormat->eCompressionFormat;
                 portDefs.xFramerate = pFormat->xFramerate;
+                portDefs.eColorFormat = pFormat->eColorFormat;
+                /// TODO: Fix this to update entire port definition.
                 err = m_pVideoPorts[1]->SetPortFormat(pFormat, &portDefs);
                 if ( err )
                 {
@@ -1176,13 +1207,42 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
     case OMX_IndexParamEnableAndroidNativeGraphicsBuffer:
     {
         EnableAndroidNativeBuffersParams *pEnableParams = (EnableAndroidNativeBuffersParams *)pComponentParameterStructure;
+        bool oldValue;
         BOMX_STRUCT_VALIDATE(pEnableParams);
         BOMX_MSG(("SetParameter OMX_IndexParamEnableAndroidNativeGraphicsBuffer %u", pEnableParams->enable));
         if ( pEnableParams->nPortIndex != m_videoPortBase+1 )
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
-        m_outputMode = pEnableParams->enable ? BOMX_VideoDecoderOutputBufferType_eNative : BOMX_VideoDecoderOutputBufferType_eStandard;
+        oldValue = m_nativeGraphicsEnabled;
+        m_nativeGraphicsEnabled = pEnableParams->enable == OMX_TRUE ? true : false;
+        if ( oldValue != m_nativeGraphicsEnabled )
+        {
+            // Mode has changed.  Set appropriate output color format.
+            OMX_VIDEO_PARAM_PORTFORMATTYPE portFormat;
+            BOMX_STRUCT_INIT(&portFormat);
+            portFormat.nPortIndex = m_videoPortBase+1;
+            portFormat.eCompressionFormat = OMX_VIDEO_CodingUnused;
+            if ( m_nativeGraphicsEnabled )
+            {
+                // In this mode, the output color format should be an android HAL format.  Our gralloc only supports RGB888/565 variants.  Use 565 to save memory and bandwidth.
+                portFormat.nIndex = 1;  // The second port format is the native format
+                portFormat.eColorFormat = (OMX_COLOR_FORMATTYPE)((int)PIXEL_FORMAT_RGB_565);
+            }
+            else
+            {
+                // In this mode, use an OMX color format
+                portFormat.nIndex = 0;  // The first port format is the traditional omx buffer format
+                portFormat.eColorFormat = OMX_COLOR_Format16bitRGB565;
+            }
+            // Update port format to appropriate value for native vs. non-native output.
+            err = SetParameter(OMX_IndexParamVideoPortFormat, &portFormat);
+            if ( OMX_ErrorNone != err )
+            {
+                m_nativeGraphicsEnabled = oldValue;
+                return BOMX_ERR_TRACE(err);
+            }
+        }
         return OMX_ErrorNone;
     }
     case OMX_IndexParamStoreMetaDataInBuffers:
@@ -1194,7 +1254,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
-        m_outputMode = pMetadata->bStoreMetaData ? BOMX_VideoDecoderOutputBufferType_eMetadata : BOMX_VideoDecoderOutputBufferType_eStandard;
+        m_metadataEnabled = pMetadata->bStoreMetaData == OMX_TRUE ? true : false;
         return OMX_ErrorNone;
     }
     case OMX_IndexParamUseAndroidNativeBuffer:
@@ -1509,6 +1569,22 @@ NEXUS_Error BOMX_VideoDecoder::SetOutputPortState(OMX_STATETYPE newState)
         // For any other state change, kick off the frame check if the decoder is running
         if ( newState == OMX_StateIdle )
         {
+            // Figure out output buffer mode from SetParameter calls
+            if ( m_metadataEnabled )
+            {
+                BOMX_MSG(("Selecting metadata output mode"));
+                m_outputMode = BOMX_VideoDecoderOutputBufferType_eMetadata;
+            }
+            else if ( m_nativeGraphicsEnabled )
+            {
+                BOMX_MSG(("Selecting native graphics output mode"));
+                m_outputMode = BOMX_VideoDecoderOutputBufferType_eNative;
+            }
+            else
+            {
+                BOMX_MSG(("Selecting standard buffer output mode"));
+                m_outputMode = BOMX_VideoDecoderOutputBufferType_eStandard;
+            }
             // Return all pending buffers to the client
             ReturnPortBuffers(m_pVideoPorts[1]);
         }
@@ -1577,6 +1653,25 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
         // Transitioning from Loaded->Idle requires us to allocate all required resources
         if ( oldState == OMX_StateLoaded )
         {
+            if ( m_pVideoPorts[1]->IsEnabled() )
+            {
+                // Figure out output buffer mode from SetParameter calls
+                if ( m_metadataEnabled )
+                {
+                    BOMX_MSG(("Selecting metadata output mode"));
+                    m_outputMode = BOMX_VideoDecoderOutputBufferType_eMetadata;
+                }
+                else if ( m_nativeGraphicsEnabled )
+                {
+                    BOMX_MSG(("Selecting native graphics output mode"));
+                    m_outputMode = BOMX_VideoDecoderOutputBufferType_eNative;
+                }
+                else
+                {
+                    BOMX_MSG(("Selecting standard buffer output mode"));
+                    m_outputMode = BOMX_VideoDecoderOutputBufferType_eStandard;
+                }
+            }
             BOMX_MSG(("Waiting for port population..."));
             PortWaitBegin();
             // Now we need to wait for all enabled ports to become populated
@@ -2217,7 +2312,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     pInfo->type = BOMX_VideoDecoderOutputBufferType_eMetadata;
     pInfo->typeInfo.metadata.pMetadata = pMetadata;
 
-     err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, sizeof(VideoDecoderOutputMetaData), (OMX_U8 *)pMetadata, pInfo, false);
+    err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, sizeof(VideoDecoderOutputMetaData), (OMX_U8 *)pMetadata, pInfo, false);
     if ( OMX_ErrorNone != err )
     {
         delete pInfo;
@@ -2282,6 +2377,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
                     return BOMX_ERR_TRACE(err);
                 }
             }
+            break;
         default:
             // TODO: Handle metadata
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
@@ -2416,7 +2512,14 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
             pFrameBuffer = pInfo->pFrameBuffer;
             break;
         case BOMX_VideoDecoderOutputBufferType_eMetadata:
-            pFrameBuffer = FindFrameBuffer((private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle);
+            if ( pInfo->typeInfo.metadata.pMetadata->pHandle )
+            {
+                pFrameBuffer = FindFrameBuffer((private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle);
+            }
+            else
+            {
+                pFrameBuffer = NULL;
+            }
             break;
         default:
             break;
@@ -2426,6 +2529,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
         {
             bool active=false;
             pFrameBuffer->pBufferInfo = NULL;
+            pFrameBuffer->pPrivateHandle = NULL;
             if ( m_hSimpleVideoDecoder )
             {
                 NEXUS_VideoDecoderStatus vdecStatus;
@@ -2653,11 +2757,28 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     }
     if ( pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata )
     {
-        pFrameBuffer = FindFrameBuffer((private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle);
         if ( pInfo->typeInfo.metadata.pMetadata->eType != kMetadataBufferTypeGrallocSource )
         {
             BOMX_ERR(("Only kMetadataBufferTypeGrallocSource buffers are supported in metadata mode."));
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
+
+        SHARED_DATA *pSharedData;
+        private_handle_t *pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
+        pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pPrivateHandle->sharedDataPhyAddr);
+        if ( NULL == pSharedData )
+        {
+            BOMX_ERR(("Invalid gralloc buffer %#x - sharedDataPhyAddr %#x is invalid", pPrivateHandle, pPrivateHandle->sharedDataPhyAddr));
+            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
+        BOMX_ASSERT((pInfo->typeInfo.metadata.pMetadata == (void *)pBufferHeader->pBuffer));
+        if ( NULL != pInfo->typeInfo.metadata.pMetadata->pHandle )
+        {
+            pFrameBuffer = FindFrameBuffer((private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle);
+        }
+        else
+        {
+            pFrameBuffer = NULL;
         }
     }
     else
@@ -2670,6 +2791,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     if ( pFrameBuffer )
     {
         pFrameBuffer->pBufferInfo = NULL;
+        pFrameBuffer->pPrivateHandle = NULL;
         if ( pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eInvalid )
         {
             // The frame has been flushed while the app owned it.  Move it back to the free list silently.
@@ -3161,8 +3283,9 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             SHARED_DATA *pSharedData;
                             pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
                             pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pBuffer->pPrivateHandle->sharedDataPhyAddr);
-                            if ( NULL == pInfo->typeInfo.native.pSharedData )
+                            if ( NULL == pSharedData )
                             {
+                                BOMX_ERR(("Unable to convert SHARED_DATA physical address %#x", pBuffer->pPrivateHandle->sharedDataPhyAddr));
                                 (void)BOMX_ERR_TRACE(OMX_ErrorBadParameter);
                             }
                             else
@@ -3173,6 +3296,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 android_atomic_release_store(1, &pSharedData->videoWindow.windowIdPlusOne);
                                 pSharedData->DisplayFrame.frameStatus = pBuffer->frameStatus;
                             }
+                            pHeader->nFilledLen = sizeof(VideoDecoderOutputMetaData);
                         }
                         break;
                     default:
@@ -3277,6 +3401,8 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 {
                     returnSettings[numFrames].display = false;
                 }
+                pBuffer->pPrivateHandle = NULL;
+                pBuffer->pBufferInfo = NULL;
                 BLST_Q_REMOVE(&m_frameBufferAllocList, pBuffer, node);
                 BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pBuffer, node);
             }
@@ -3375,7 +3501,6 @@ BOMX_VideoDecoderFrameBuffer *BOMX_VideoDecoder::FindFrameBuffer(private_handle_
 BOMX_VideoDecoderFrameBuffer *BOMX_VideoDecoder::FindFrameBuffer(unsigned serialNumber)
 {
     BOMX_VideoDecoderFrameBuffer *pFrameBuffer;
-    BOMX_ASSERT(NULL != pPrivateHandle);
 
     // Scan allocated frame list for matching private handle
     for ( pFrameBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
@@ -3404,6 +3529,7 @@ void BOMX_VideoDecoder::DisplayFrame_locked(unsigned serialNumber)
         // Mark buffer as ready to display
         pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDisplayReady;
         // Break linkage between omx output buffer and frame buffer
+        pFrameBuffer->pPrivateHandle = NULL;
         pFrameBuffer->pBufferInfo->pFrameBuffer = NULL;
         pFrameBuffer->pBufferInfo = NULL;
         // Return frames to nexus decoder
@@ -3413,6 +3539,6 @@ void BOMX_VideoDecoder::DisplayFrame_locked(unsigned serialNumber)
     }
     else
     {
-        ALOGV("Request to display buffer %u not found in list (duplicate?)", serialNumber);
+        ALOGW("Request to display buffer %u not found in list (duplicate?)", serialNumber);
     }
 }
