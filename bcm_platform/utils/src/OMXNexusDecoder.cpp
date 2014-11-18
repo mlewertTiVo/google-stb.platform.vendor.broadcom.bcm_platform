@@ -62,10 +62,10 @@
 #define LOG_ERROR               ALOGD
 #define LOG_INFO
 
-#define LOG_EVERY_DELIVERY
+#define LOG_EVERY_DELIVERY      
 
 //Enable logging for output time stamps on every frame.8
-#define LOG_OUTPUT_TS
+#define LOG_OUTPUT_TS           
 
 //Enable logging of the decoder state
 #define LOG_DECODER_STATE       
@@ -1005,13 +1005,14 @@ OMXNexusDecoder::GetFramesFromHardware()
                 BCMOMX_DBG_ASSERT(DecodedFrListLen <= DECODE_DEPTH);
 
                 LastErr = ErrStsSuccess;
-
-                LOG_OUTPUT_TS("%s Decoder[%d]: Accepted FRAME SeqNo:%d NxTimeStamp:%d Ts[Ms]:%lld ClientFlags:%d!!",
+                LOG_OUTPUT_TS("%s Decoder[%d]: Accepted FRAME SeqNo:%d NxTimeStamp:%d Ts[Ms]:%lld ClientFlags:%d DLL:%d!!",
                               __FUNCTION__, DecoderID,
                               pFreeFr->FrStatus.serialNumber,
                               pFreeFr->FrStatus.pts,
                               pFreeFr->MilliSecTS,
-                              pFreeFr->ClientFlags);
+                              pFreeFr->ClientFlags,
+                              DecodedFrListLen);
+
                 DebugCounter = (DebugCounter + 1) % DECODER_STATE_FREQ;
                 if(!DebugCounter) PrintDecoStats();
             }
@@ -1020,6 +1021,8 @@ OMXNexusDecoder::GetFramesFromHardware()
             LastErr = ErrStsNexusReturnedErr;
             return false;
         }
+    }else{
+        ALOGD("%s Decoder[%d]: Cannot Accept Anymore Frames-Did Not Attempt a Fetching- ",__FUNCTION__,DecoderID);
     }
 
     return true;
@@ -1077,12 +1080,13 @@ OMXNexusDecoder::GetDecodedFrame(PDISPLAY_FRAME pOutFrame)
                 pOutFrame->DecodedFr = pDecoFr;
                 pOutFrame->pDisplayFn = DisplayBuffer;
                 InsertHeadList(&DeliveredFrList, &pDecoFr->ListEntry);
-                LOG_EVERY_DELIVERY("%s Decoder[%d]: Delivered FRAME SeqNo:%d TimeStamp:%d pOutFrame->OutFlags:%d StartupTime:%d!!",
+                LOG_EVERY_DELIVERY("%s Decoder[%d]: Delivered FRAME SeqNo:%d TimeStamp:%d pOutFrame->OutFlags:%d StartupTime:%d DLL:%d!!",
                                    __FUNCTION__, DecoderID,
                                    pDecoFr->FrStatus.serialNumber,
                                    pDecoFr->FrStatus.pts,
                                    pOutFrame->OutFlags,
-                                   StartupTime);
+                                   StartupTime,
+                                   DecodedFrListLen);
                 retVal = true;
             } else {
                 LOG_EVERY_DELIVERY("%s  Decoder[%d]: lastPicture Set, Not Delivering To Client Frame FRAME SeqNo:%d!!",
@@ -1126,6 +1130,19 @@ OMXNexusDecoder::GetDecodedFrame(PDISPLAY_FRAME pOutFrame)
 
     LastErr = ErrStsNexusGetDecodedFrFail;
     return false;
+}
+
+bool
+OMXNexusDecoder::HaveDecodedFrames()
+{
+    Mutex::Autolock lock(mListLock);
+
+    if(IsListEmpty(&DecodedFrList))
+    {
+        return false;
+    }
+
+    return true;
 }
 
 unsigned int
@@ -1325,6 +1342,7 @@ OMXNexusDecoder::GetDecoderID()
 {
     return DecoderID;
 }
+
 void
 OMXNexusDecoder::AddDecoderToList()
 {
@@ -1344,6 +1362,7 @@ OMXNexusDecoder::AddDecoderToList()
     DecoderInstanceList.push_back(this);
     return;
 }
+
 void
 OMXNexusDecoder::RemoveDecoderFromList()
 {

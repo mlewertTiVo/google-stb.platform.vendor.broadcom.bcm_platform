@@ -43,9 +43,13 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "BCM.VIDEO.DECODER"
 
+#include <cutils/properties.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <utils/Log.h>
+#include <utils/List.h>
+
 #include "OMX_Component.h"
 #include "OMX_BCM_Common.h"
 #include "gralloc.h"
@@ -55,10 +59,6 @@
 #include "sage_srai.h"
 #endif
 
-#include <utils/Log.h>
-#include <utils/List.h>
-#include <cutils/properties.h>
-
 // Property to control whether to disable 4K. It is enabled by default .
 #define BCM_OMX_H265_DISABLE_4K "bcm.omx.265.disable4k"
 #define BCM_OMX_H265_DISABLE_4K_DEFAULT "0"
@@ -66,6 +66,8 @@
 #define USE_ANB_PRIVATE_DATA 1
 
 #define UNUSED __attribute__((unused))
+
+using namespace android; 
 
 struct CodecProfileLevel {
     OMX_U32 mProfile;
@@ -887,9 +889,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_GetParameter(OMX_IN OMX_HANDLETYPE hComponent,
             if (((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sInPortDef.nPortIndex)
             {
                 BKNI_Memcpy(pParamStruct, &pMyData->sInPortDef, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
-
             }else if (((OMX_PARAM_PORTDEFINITIONTYPE *)(pParamStruct))->nPortIndex == pMyData->sOutPortDef.nPortIndex) {
-                //PrintPortDefInfo(&pMyData->sOutPortDef);
                BKNI_Memcpy(pParamStruct, &pMyData->sOutPortDef, sizeof(OMX_PARAM_PORTDEFINITIONTYPE));
 
             } else {
@@ -1323,6 +1323,7 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_UseANativeWindowBuffer(OMX_IN OMX_HANDLETYPE h
         ALOGE("ERROR at %s line %d",__FUNCTION__,__LINE__);
         return OMX_ErrorBadParameter;
     }
+
     ALOGV("%s Decoder[%d]: nPortIndex = %lu, nSizeBytes = %lu Format:%d NativeBuffer->Width:%d NativeBuffer->Height:%d NativeWindowBufferHandle:%p",
             __FUNCTION__,GET_DECODER_ID(pMyData->pOMXNxDecoder),
           nPortIndex, nSizeBytes, nativeBuffer->format,
@@ -1515,14 +1516,14 @@ extern "C" OMX_ERRORTYPE OMX_VDEC_AllocateBuffer(OMX_IN OMX_HANDLETYPE hComponen
             BufferStart = (uintptr_t) GET_DATA_START_PTR(pInNxCnxt->PESData);
             BufferEnd =   (uintptr_t) pInNxCnxt->PESData + PES_BUFFER_SIZE(nSizeBytes);
 
-            ALOGD("%s [Zero Copy]: Input Memory Allocation Info BufferStart:%p BufferEnd:%p nSizeBytes:%d TotalSz:%d AllocedAt:%p",
+            ALOGV("%s [Zero Copy]: Input Memory Allocation Info BufferStart:%p BufferEnd:%p nSizeBytes:%d TotalSz:%d AllocedAt:%p",
                   __FUNCTION__,BufferStart,BufferEnd,nSizeBytes,PES_BUFFER_SIZE(nSizeBytes),pInNxCnxt->PESData);
             BCMOMX_DBG_ASSERT(BufferStart > (uintptr_t)pInNxCnxt->PESData);
             BCMOMX_DBG_ASSERT((BufferEnd - BufferStart) == nSizeBytes);
             pMyData->sInBufList.pBufHdr[nIndex]->pBuffer = (unsigned char *)BufferStart;
 #else
             pMyData->sInBufList.pBufHdr[nIndex]->pBuffer = sec_ptr;
-            ALOGD("%s: secure buffer allocation, pBuffer:%p",__FUNCTION__, sec_ptr);
+            ALOGV("%s: secure buffer allocation, pBuffer:%p",__FUNCTION__, sec_ptr);
 #endif
         }else{
             ALOGE("%s : Input Memory Allocation Using Malloc:%p",
@@ -2223,10 +2224,13 @@ static void CleanUpOutputBuffer(OMX_BUFFERHEADERTYPE *pOMXBuffhdr)
     return;
 }
 
-static bool FlushOutput(BCM_OMX_CONTEXT *pBcmContext)
+static bool FlushOutput(BCM_OMX_CONTEXT *pBcmContext,
+                        List <OMX_BUFFERHEADERTYPE *> &OutBufHdrList)
 {
+    OMX_BUFFERHEADERTYPE *pBufHdr=NULL;
     OMX_PARAM_PORTDEFINITIONTYPE *pPortDef;
     pPortDef = &pBcmContext->sOutPortDef;
+    ALOGD("%s: Enter",__FUNCTION__);
     if (pBcmContext->pOMXNxDecoder)
     {
         if(pBcmContext->bHwNeedsFlush)
@@ -2240,9 +2244,19 @@ static bool FlushOutput(BCM_OMX_CONTEXT *pBcmContext)
         }
     }
 
-    ListFlushEntriesWithCleanup(pBcmContext->sOutBufList, pBcmContext,CleanUpOutputBuffer);
+    List<OMX_BUFFERHEADERTYPE *>::iterator it = OutBufHdrList.begin();
+    while (it != OutBufHdrList.end())
+    {
+        pBufHdr = *it;
+        CleanUpOutputBuffer(pBufHdr);
+        ALOGD("%s: Flushing %p",__FUNCTION__,pBufHdr);
+        pBcmContext->pCallbacks->FillBufferDone(pBcmContext->hSelf, pBcmContext->pAppData, pBufHdr);
+        it++;
+    }
+    OutBufHdrList.clear();
     //ListFlushEntries(pBcmContext->sOutBufList, pBcmContext);
     pBcmContext->pTstable->flush();
+    ALOGD("%s: Exit",__FUNCTION__);
     return true;
 }
 
@@ -2279,6 +2293,162 @@ OnIdleToLoaded(BCM_OMX_CONTEXT *pBcmContext)
     return true;
 }
 
+
+/* ===========================================================* 
+ * Process The Output Buffer List.
+ * Function should only be called from the ComponentThread
+ * Return value of false means
+ *  - Either There Was nothing To Complete sOutBufList was Empty
+ *  - Or There was no Frame From Hardware.
+ *============================================================*/
+static 
+bool
+ProcessOutputBufferList(BCM_OMX_CONTEXT *pMyData, 
+                        List <OMX_BUFFERHEADERTYPE *> &OutBufHdrList)
+{
+    OMX_BUFFERHEADERTYPE *pOutBufHdr = NULL;
+    bool            CompleteWithZeroSz=false;
+    unsigned int    CompleteCnt=0;
+
+    if ( (pMyData->state == OMX_StateExecuting)  &&  
+         (pMyData->sOutPortDef.bEnabled))
+    {
+        while (false == OutBufHdrList.empty()) 
+        {
+            pMyData->pOMXNxDecoder->GetFramesFromHardware();
+            if (false == pMyData->pOMXNxDecoder->HaveDecodedFrames()) 
+            {
+                if (false == CompleteWithZeroSz) 
+                {
+                    //We have to hold the remaining Output Buffers In Queue
+                    ALOGV("%s %d: Holding %d  BuffersIn Q, Total Output Buffers:%d ",
+                          __FUNCTION__,
+                          __LINE__,
+                          OutBufHdrList.size(),
+                          pMyData->sOutPortDef.nBufferCountMin);
+
+                    // If all the buffers are held with the component, then we
+                    // have to issue a process list command or else you might run
+                    // in to issue where you will never complete the FillThisBuffer 
+                    // call.
+                    if( (!CompleteCnt) && 
+                        (OutBufHdrList.size() == (size_t)pMyData->sOutPortDef.nBufferCountMin))
+                    {
+                        BKNI_Sleep(5);
+                        CMD_DATA CmdAndData;
+                        CmdAndData.Cmd = (OMX_U32)ProcessLists;
+                        CmdAndData.CmdData = (OMX_U32)0;
+                        // Put the command and data in the pipe
+                        write(pMyData->cmdpipe[1], &CmdAndData, sizeof(CmdAndData));
+                    }
+                    break; 
+                }
+            }
+
+            pOutBufHdr = NULL; 
+            List<OMX_BUFFERHEADERTYPE *>::iterator it = OutBufHdrList.begin(); 
+
+            //the list cannot be empty here!!
+            BCMOMX_DBG_ASSERT(it != OutBufHdrList.end());
+            pOutBufHdr = *it; 
+            OutBufHdrList.erase(it);
+            BCMOMX_DBG_ASSERT(pOutBufHdr);
+
+            //ListGetEntry(pMyData->sOutBufList, pOutBufHdr)
+            if(pOutBufHdr)
+            {
+                unsigned int EOSMarkerFlags=0;
+                void *pBuffer=NULL;
+                bool unLockBuffer=false;
+                GraphicBuffer *pGraphicBuffer=NULL;
+                if(pMyData->sNativeBufParam.enable == true)
+                {
+                    pGraphicBuffer = (GraphicBuffer *) pOutBufHdr->pInputPortPrivate;
+                    BCMOMX_DBG_ASSERT(pGraphicBuffer);
+
+#ifdef USE_ANB_PRIVATE_DATA
+                    pBuffer = GetDisplayFrameFromANB(pGraphicBuffer->getNativeBuffer());
+                    BCMOMX_DBG_ASSERT(pBuffer == pOutBufHdr->pBuffer);
+#else
+                    pGraphicBuffer->lock(GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_SW_READ_OFTEN, (void**)&pBuffer);
+                    unLockBuffer = true;
+#endif
+                }else{
+                    //This is the case of Non-ANativeWindowBuffer....
+                    pBuffer = pOutBufHdr->pBuffer;
+                }
+
+                BCMOMX_DBG_ASSERT(pBuffer);
+                PDISPLAY_FRAME pNxDecoFr = (PDISPLAY_FRAME) pBuffer;
+
+                if (pMyData->pOMXNxDecoder->GetDecodedFrame(pNxDecoFr))
+                {
+                    uint32_t nTimeStamp;
+                    pOutBufHdr->nFilledLen = sizeof(DISPLAY_FRAME);
+                    nTimeStamp = pMyData->pOMXNxDecoder->GetFrameTimeStampMs(pNxDecoFr);
+                    pOutBufHdr->nTimeStamp= pMyData->pTstable->retrieve(nTimeStamp);
+
+                }else{
+                    ALOGE("%s: Failed To Get Frame From Hardware!!",__FUNCTION__);
+                    // This may be a frame with NULL data
+                    pOutBufHdr->nFilledLen = 0;
+                }
+
+                if (pNxDecoFr->OutFlags & OMX_BUFFERFLAG_EOS)
+                {
+                    ALOGD("EOS MARKED ON THE OUTPUT FRAME:%d",
+                            pNxDecoFr->OutFlags);
+
+                    pOutBufHdr->nFlags |= OMX_BUFFERFLAG_EOS;
+                    EOSMarkerFlags = pNxDecoFr->OutFlags;
+                }
+
+                if(unLockBuffer)
+                {
+                    BCMOMX_DBG_ASSERT(pGraphicBuffer);
+                    pGraphicBuffer->unlock();
+                }
+                
+                if(pOutBufHdr->pPlatformPrivate)
+                {
+                    //We Store the pointer to the anb in pPlatformPrivate
+                    // We cannot use that pointer here becuase the pointer
+                    // changes after the allocation. We get a new ANB from
+                    // The Graphic buffer itself.
+                    ANativeWindowBuffer *anb=NULL;
+                    anb = pGraphicBuffer->getNativeBuffer();
+                    BCMOMX_DBG_ASSERT(anb);
+                    pMyData->pAndVidWindow->SetPrivData(anb, pMyData->pOMXNxDecoder->GetDecoderID());
+                    pOutBufHdr->pPlatformPrivate=NULL;
+                }
+
+                ALOGV("%s: Calling FillBufferDone With FilledLen:%d!!",
+                      __FUNCTION__,
+                      pOutBufHdr->nFilledLen);
+
+                pMyData->pCallbacks->FillBufferDone(pMyData->hSelf,
+                        pMyData->pAppData,
+                        pOutBufHdr);
+
+                pOutBufHdr = NULL;
+                CompleteCnt++;
+                if(EOSMarkerFlags)
+                {
+                    ALOGD("%s %d: EOS Event: [Emitted] Flags:0x%x",
+                            __FUNCTION__,__LINE__,EOSMarkerFlags);
+
+                    pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData,
+                                                        OMX_EventBufferFlag, 0x1,
+                                                        EOSMarkerFlags, NULL);
+                    EOSMarkerFlags=0;
+                }
+            }//if (pOutBufHdr)
+        }//while-loop
+    }////Output Buffer Processing...
+
+    return ((CompleteCnt) ? true:false) ;
+}
+
 static void* ComponentThread(void* pThreadData)
 {
     trace t(__FUNCTION__);
@@ -2296,10 +2466,14 @@ static void* ComponentThread(void* pThreadData)
     size_t buffer_size;
     NEXUS_Error errCode;
 
+    List <OMX_BUFFERHEADERTYPE *> OutBufHdrList;
+
     // Variables related to decoder timeouts
     OMX_HANDLETYPE hTimeout;
     OMX_BOOL bTimeout;
     OMX_U32 nTimeout;
+
+    OutBufHdrList.clear();
 
     // Recover the pointer to my component specific data
     BCM_OMX_CONTEXT* pMyData = (BCM_OMX_CONTEXT*)pThreadData;
@@ -2418,7 +2592,7 @@ static void* ComponentThread(void* pThreadData)
                                         ALOGD("%s %d: Flush On State Transition From %d To Idle",
                                               __FUNCTION__,__LINE__,pMyData->state);
                                         FlushInput(pMyData);
-                                        FlushOutput(pMyData);
+                                        FlushOutput(pMyData,OutBufHdrList);
                                     }
 
                                     nTimeout = 0x0;
@@ -2483,7 +2657,7 @@ static void* ComponentThread(void* pThreadData)
                                         ALOGD("%s %d: Flush On State Transition From %d To Executing",
                                               __FUNCTION__,__LINE__,pMyData->state);
                                         FlushInput(pMyData);
-                                        FlushOutput(pMyData);
+                                        FlushOutput(pMyData,OutBufHdrList);
                                     }
 
                                     ALOGV("%s %d: State Transition Event: [To: OMX_StateExecuting] [Completed]",
@@ -2570,7 +2744,7 @@ static void* ComponentThread(void* pThreadData)
                 if (cmddata == 0x1 || cmddata == (OMX_U32)-1)
                 {
                     // Return all output buffers
-                    FlushOutput(pMyData);
+                    FlushOutput(pMyData,OutBufHdrList);
 
                     // Disable port
                     pMyData->sOutPortDef.bEnabled = OMX_FALSE;
@@ -2694,8 +2868,8 @@ static void* ComponentThread(void* pThreadData)
 
                 if (cmddata == 0x1 || cmddata == (OMX_U32)-1)
                 {
-                    //                  // Return all output buffers and send cmdcomplete
-                    FlushOutput(pMyData);
+                    // Return all output buffers and send cmdcomplete
+                    FlushOutput(pMyData,OutBufHdrList);
                     pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData,
                             OMX_EventCmdComplete, OMX_CommandFlush, 0x1, NULL);
                 }
@@ -2709,8 +2883,8 @@ static void* ComponentThread(void* pThreadData)
             else if (cmd == FillBuf)
             {
                 // Fill buffer
-
-                ListSetEntry(pMyData->sOutBufList, ((OMX_BUFFERHEADERTYPE*) cmddata))
+                //ListSetEntry(pMyData->sOutBufList, ((OMX_BUFFERHEADERTYPE*) cmddata))
+                OutBufHdrList.push_back(((OMX_BUFFERHEADERTYPE*) cmddata));
             }
             else if (cmd == EmptyBuf)
             {
@@ -2731,7 +2905,7 @@ static void* ComponentThread(void* pThreadData)
                 ALOGD("%s: MARK DATA COMMAND", __FUNCTION__);
                 if (!pMarkBuf)
                     pMarkBuf = (OMX_MARKTYPE *)(cmddata);
-            }
+            } 
         }
 
         // Input Buffer processing
@@ -2740,8 +2914,7 @@ static void* ComponentThread(void* pThreadData)
                 (pMyData->sInBufList.nSizeOfList > 0))
         {
             ListGetEntry(pMyData->sInBufList, pInBufHdr)
-                // If there is no output buffer, get one from list
-                // Check for EOS flag
+
             if (pInBufHdr)
             {
                 OMX_U32 nFlags=0;
@@ -2828,97 +3001,15 @@ static void* ComponentThread(void* pThreadData)
             }
         }
 
-        //Output Buffer Processing...
-        if (pMyData->state == OMX_StateExecuting  &&  pMyData->sOutPortDef.bEnabled &&
-                ((pMyData->sOutBufList.nSizeOfList > 0) || pOutBufHdr))
+        if ( (pMyData->state == OMX_StateExecuting)  &&  
+             (pMyData->sOutPortDef.bEnabled) &&
+             (false == OutBufHdrList.empty()) )
         {
-            if (!pOutBufHdr)
-                ListGetEntry(pMyData->sOutBufList, pOutBufHdr)
-
-            if(pOutBufHdr)
-            {
-                unsigned int EOSMarkerFlags=0;
-                void *pBuffer=NULL;
-                bool unLockBuffer=false;
-                GraphicBuffer *pGraphicBuffer=NULL;
-                if(pMyData->sNativeBufParam.enable == true)
-                {
-                    pGraphicBuffer = (GraphicBuffer *) pOutBufHdr->pInputPortPrivate;
-                    BCMOMX_DBG_ASSERT(pGraphicBuffer);
-
-#ifdef USE_ANB_PRIVATE_DATA
-                    pBuffer = GetDisplayFrameFromANB(pGraphicBuffer->getNativeBuffer());
-                    BCMOMX_DBG_ASSERT(pBuffer == pOutBufHdr->pBuffer);
-#else
-                    pGraphicBuffer->lock(GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_SW_READ_OFTEN, (void**)&pBuffer);
-                    unLockBuffer = true;
-#endif
-                }else{
-                    //This is the case of Non-ANativeWindowBuffer....
-                    pBuffer = pOutBufHdr->pBuffer;
-                }
-
-                BCMOMX_DBG_ASSERT(pBuffer);
-                PDISPLAY_FRAME pNxDecoFr = (PDISPLAY_FRAME) pBuffer;
-
-                if (pMyData->pOMXNxDecoder->GetDecodedFrame(pNxDecoFr))
-                {
-                    uint32_t nTimeStamp;
-                    pOutBufHdr->nFilledLen = sizeof(DISPLAY_FRAME);
-                    nTimeStamp = pMyData->pOMXNxDecoder->GetFrameTimeStampMs(pNxDecoFr);
-                    pOutBufHdr->nTimeStamp= pMyData->pTstable->retrieve(nTimeStamp);
-                }else{
-
-                    // This may be a frame with NULL data
-                    pOutBufHdr->nFilledLen = 0;
-                }
-
-                if (pNxDecoFr->OutFlags & OMX_BUFFERFLAG_EOS)
-                {
-                    ALOGD("EOS MARKED ON THE OUTPUT FRAME:%d",
-                            pNxDecoFr->OutFlags);
-
-                    pOutBufHdr->nFlags |= OMX_BUFFERFLAG_EOS;
-                    EOSMarkerFlags = pNxDecoFr->OutFlags;
-                }
-
-                if(unLockBuffer)
-                {
-                    BCMOMX_DBG_ASSERT(pGraphicBuffer);
-                    pGraphicBuffer->unlock();
-                }
-
-                if(pOutBufHdr->pPlatformPrivate)
-                {
-                    //We Store the pointer to the anb in pPlatformPrivate
-                    // We cannot use that pointer here becuase the pointer
-                    // changes after the allocation. We get a new ANB from
-                    // The Graphic buffer itself.
-                    ANativeWindowBuffer *anb=NULL;
-                    anb = pGraphicBuffer->getNativeBuffer();
-                    BCMOMX_DBG_ASSERT(anb);
-                    pMyData->pAndVidWindow->SetPrivData(anb, pMyData->pOMXNxDecoder->GetDecoderID());
-                    pOutBufHdr->pPlatformPrivate=NULL;
-                }
-
-                pMyData->pCallbacks->FillBufferDone(pMyData->hSelf,
-                        pMyData->pAppData,
-                        pOutBufHdr);
-
-                pOutBufHdr = NULL;
-
-                if(EOSMarkerFlags)
-                {
-                    ALOGD("%s %d: EOS Event: [Emitted] Flags:0x%x",
-                            __FUNCTION__,__LINE__,EOSMarkerFlags);
-
-                    pMyData->pCallbacks->EventHandler(pMyData->hSelf, pMyData->pAppData,
-                                                        OMX_EventBufferFlag, 0x1,
-                                                        EOSMarkerFlags, NULL);
-                    EOSMarkerFlags=0;
-                }
-            }//if (pOutBufHdr)
-        }////Output Buffer Processing...
+            //pOutBufHdr Should always be NULL here becuase we 
+            // Process It From The List....
+            BCMOMX_DBG_ASSERT(pOutBufHdr==NULL);
+            ProcessOutputBufferList(pMyData,OutBufHdrList);
+        }
     }//while (1)
 
 EXIT:

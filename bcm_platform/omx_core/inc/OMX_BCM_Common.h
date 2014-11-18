@@ -116,6 +116,9 @@ typedef struct _CMD_DATA_
  * Enumeration for the commands processed by the component
  */
 
+// ProcessLists: Command is a NO-OP command to wake up the thread so that the 
+// output lists can be processed deferred...
+
 typedef enum ThrCmdType
 {
     SetState,
@@ -127,6 +130,7 @@ typedef enum ThrCmdType
     FillBuf,
     EmptyBuf,
     SendFillBuffDoneNtf,
+    ProcessLists,  
     Undefined
 } ThrCmdType;
 
@@ -318,8 +322,6 @@ typedef struct _BCM_OMX_CONTEXT_
    pthread_mutex_unlock(&_pH.mutex);
 
 
-
-
 /*
  * Sets an entry in the BufferList.
  * The entry set is a BufferHeader.
@@ -327,6 +329,7 @@ typedef struct _BCM_OMX_CONTEXT_
  * It is wrapped around when it is greater than nListEnd.
  */
 #define ListSetEntry(_pH, _pB)                  \
+{                                               \
    pthread_mutex_lock(&_pH.mutex);              \
    if (_pH.nSizeOfList < (_pH.nListEnd + 1)) {  \
       _pH.nSizeOfList++;                        \
@@ -336,7 +339,8 @@ typedef struct _BCM_OMX_CONTEXT_
       if (_pH.nWritePos > _pH.nListEnd)         \
          _pH.nWritePos = 0;                     \
    }                                            \
-   pthread_mutex_unlock(&_pH.mutex);
+   pthread_mutex_unlock(&_pH.mutex);            \
+}
 
 
 
@@ -348,6 +352,7 @@ typedef struct _BCM_OMX_CONTEXT_
  * It is wrapped around when it is greater than nListEnd.
  */
 #define ListGetEntry(_pH, _pB)                  \
+{                                               \
    pthread_mutex_lock(&_pH.mutex);              \
    if (_pH.nSizeOfList > 0){                    \
       _pH.nSizeOfList--;                        \
@@ -355,8 +360,8 @@ typedef struct _BCM_OMX_CONTEXT_
       if (_pH.nReadPos > _pH.nListEnd)          \
          _pH.nReadPos = 0;                      \
       }                                         \
-   pthread_mutex_unlock(&_pH.mutex);
-
+   pthread_mutex_unlock(&_pH.mutex);            \
+}               
 
 typedef void (*CleanUpFunc)(OMX_BUFFERHEADERTYPE *);
 

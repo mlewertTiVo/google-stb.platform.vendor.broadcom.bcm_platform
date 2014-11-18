@@ -97,6 +97,7 @@ public:
 
     void CheckAndClearBufferState(PDISPLAY_FRAME);
     bool DisplayFrame(PDISPLAY_FRAME);
+    bool HaveDecodedFrames();
     bool GetFramesFromHardware();
     bool GetDecodedFrame(PDISPLAY_FRAME);
     unsigned GetFrameTimeStampMs(PDISPLAY_FRAME);
