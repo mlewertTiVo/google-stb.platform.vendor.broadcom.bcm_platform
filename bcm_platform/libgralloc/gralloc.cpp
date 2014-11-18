@@ -296,7 +296,7 @@ static int gralloc_alloc_framebuffer_locked(alloc_device_t* dev,
    int ret = ioctl(fd2, NX_ASHMEM_SET_SIZE, sizeof(SHARED_DATA));
    if (ret < 0) {
       return -ENOMEM;
-   };
+   }
 
    hnd->sharedDataPhyAddr = (NEXUS_Addr)ioctl(fd2, NX_ASHMEM_GETMEM);
    if (hnd->sharedDataPhyAddr == 0) {
@@ -307,6 +307,8 @@ static int gralloc_alloc_framebuffer_locked(alloc_device_t* dev,
    memset(sharedData, 0, sizeof(SHARED_DATA));
 
    hnd->nxSurfacePhysicalAddress = vaddr;
+   hnd->oglStride = bpr;   /* GL driver wants it in bytes per row */
+   hnd->oglFormat = BEGL_BufferFormat_eA8B8G8R8;
    hnd->usage = usage;
 
    *pHandle = hnd;
