@@ -35,6 +35,12 @@
 #include <bcmutils.h>
 #include <bcmendian.h>
 
+#ifdef ANDROID
+#include <unistd.h>
+#include <log/log.h>
+#include <cutils/properties.h>
+#endif
+
 #define DECOMP_SIZE_MAX		(2 * 1024 * 1024)
 #define UNCMP_LEN_MAX		0x70000 /* 0x5d000 -> to support 43236 fulldongle */
 
@@ -80,13 +86,13 @@ static char *progname;
 static int check_file(unsigned char *headers);
 
 static int verbose;
-	
+
 static void
 print_nvram_vars(char *varbuf)
 {
 	char *p1= varbuf; // points at start of word
 	char *p2= p1;
-	
+
 	printf("NVRAM variables:\n");
 	while (p1 != p2 || p1[0] != 0) {
 		p2++;
@@ -95,7 +101,7 @@ print_nvram_vars(char *varbuf)
 			p2++;
 			p1 = p2;
 		}
-	}	
+	}
 }
 
 static int
@@ -565,7 +571,22 @@ start:
 	printf("elapsed download time %f\n", elapsed);
 
 	if (status < 0)
+#ifdef ANDROID
+	{
+		property_set("wlan.driver.status", "failed");
 		goto err;
+	} else {
+		/*
+		 * Wait 2 seconds for FW to setup. It will put
+		 * the dongle in un-recoverable state if try to
+		 * connect to the wlan interface too soon.
+		 */
+		usleep(2 * 1000 * 1000);
+		property_set("wlan.driver.status", "ok");
+	}
+#else
+		goto err;
+#endif
 
 done:
 	usbdev_deinit(info);

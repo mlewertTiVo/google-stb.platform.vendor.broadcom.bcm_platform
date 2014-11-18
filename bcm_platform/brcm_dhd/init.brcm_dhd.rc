@@ -1,15 +1,3 @@
-on init
-
-# WiFi
-    chown root root /system/vendor/broadcom/dhd/driver/bcmdhd.ko
-    chmod 0744 /system/vendor/broadcom/dhd/driver/bcmdhd.ko
-    insmod /system/vendor/broadcom/dhd/driver/bcmdhd.ko
-
-# Bring up wifi first before wpa supplicant
-service dhd_fwload /system/bin/bcmdl -n /system/vendor/broadcom/dhd/nvrams/nvm.txt /system/vendor/broadcom/dhd/firmware/fw.bin.trx
-    class core
-    oneshot
-
 on post-fs-data
 # give system access to wpa_supplicant.conf for backup and restore
     mkdir /system/etc/wifi 0777 wifi wifi 
@@ -41,6 +29,11 @@ on post-fs-data
 
     setprop wifi.interface wlan0
     setprop wlan.driver.status "ok" 
+
+service dhd_fwload /system/bin/bcmdl -n /system/vendor/broadcom/dhd/nvrams/nvm.txt /system/vendor/broadcom/dhd/firmware/fw.bin.trx
+    class core
+    disabled
+    oneshot
 
 
 on boot
