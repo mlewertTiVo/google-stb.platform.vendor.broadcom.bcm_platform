@@ -3168,7 +3168,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
     }
 
     // Check if we have client buffers ready to be delivered
-    if ( m_pVideoPorts[1]->QueueDepth() > 1 && !m_formatChangePending && !m_eosDelivered )
+    if ( m_pVideoPorts[1]->QueueDepth() > 0 && !m_formatChangePending && !m_eosDelivered )
     {
         // Skip all frames already delivered
         for ( pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
