@@ -1,6 +1,17 @@
 #!/bin/bash
 set -e
 
+function usage {
+   echo "stage_host_multipart.sh [[k] [r] [s] [d] [c]]"
+   echo "list partitions to update. partitions in:"
+   echo "     'k': kernel image"
+   echo "     'r': ramdisk image (ie rootfs)"
+   echo "     's': system image"
+   echo "     'd': userdata image"
+   echo "     'c': cache image"
+   echo "defaults to: 'k r s d c'"
+}
+
 update_kernel_img=1
 update_ramdisk=1
 update_system=1
@@ -38,7 +49,8 @@ while [[ $# > 0 ]]
 	update_cache=1
 	;;
 	*)
-	echo -e "ignoring unknown tag: $tag"
+	usage
+	exit 1
 	;;
 esac
 done
