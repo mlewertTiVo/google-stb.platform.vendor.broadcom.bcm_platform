@@ -12,8 +12,6 @@ NEXUS_LIB=libnexus_client
 endif
 endif    
 
-include ${REFSW_BASE_DIR}/nexus/lib/playback_ip/b_playback_ip_lib.inc
-
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
