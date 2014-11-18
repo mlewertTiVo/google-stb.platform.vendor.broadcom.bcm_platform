@@ -19,14 +19,14 @@ LOCAL_PATH := $(call my-dir)
 
 ifeq ($(shell test -d vendor/broadcom/refsw/BSEAV && echo "y"),y)
 BSEAV_INC_PATH := vendor/broadcom/refsw/BSEAV
-BSEAV_TOP := ../../refsw/BSEAV
+LOCAL_BSEAV_TOP := ../../refsw/BSEAV
 else
 BSEAV_INC_PATH := $(LOCAL_PATH)
-BSEAV_TOP  ?= ../../../../../../../../../BSEAV
+LOCAL_BSEAV_TOP  ?= ../../../../../../../../../BSEAV
 endif
 
-GLOB_PATH  := $(BSEAV_TOP)/lib/glob
-POWER_PATH := $(BSEAV_TOP)/lib/power_standby
+GLOB_PATH  := $(LOCAL_BSEAV_TOP)/lib/glob
+POWER_PATH := $(LOCAL_BSEAV_TOP)/lib/power_standby
 
 # Linux 3.3 supports the /sys/devices/platform/brcmstb sysfs layout.
 PMLIB_SUPPORTS_BRCMSTB_SYSFS := $(shell test "${LINUXVER}" \< "3.8.0" && echo "y")
