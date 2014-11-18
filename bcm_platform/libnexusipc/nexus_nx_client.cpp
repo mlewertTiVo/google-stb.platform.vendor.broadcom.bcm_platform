@@ -210,12 +210,12 @@ NexusNxClient::~NexusNxClient()
 
 NEXUS_Error standby_check(NEXUS_PlatformStandbyMode mode)
 {
-    NEXUS_PlatformStandbySettings standbySettings;
+    NxClient_StandbyStatus standbyStatus;
     int count = 0;
 
     while (count < NXCLIENT_PM_TIMEOUT_COUNT) {
-        NEXUS_Platform_GetStandbySettings( &standbySettings );
-        if (standbySettings.mode == mode) {
+        NxClient_GetStandbyStatus(&standbyStatus);
+        if (standbyStatus.settings.mode == mode) {
             LOGD("%s: Entered S%d", __PRETTY_FUNCTION__, mode);
             break;
         }
