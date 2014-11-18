@@ -118,6 +118,7 @@ typedef struct {
     GPX_CLIENT_SURFACE_OWNER owner;
     NEXUS_SurfaceHandle shdl;
     NEXUS_SurfaceCursorHandle schdl;
+    buffer_handle_t grhdl;
 
 } GPX_CLIENT_SURFACE_INFO;
 
@@ -133,6 +134,7 @@ typedef struct {
     int layer_flags;
     int layer_id;
     void *parent;
+    bool skip_set;
 
 } GPX_CLIENT_INFO;
 
@@ -309,7 +311,8 @@ static void hwc_hide_unused_gpx_layer(hwc_context_t* dev, int index);
 static void hwc_hide_unused_gpx_layers(hwc_context_t* dev, int nx_layer_count);
 static void hwc_hide_unused_mm_layers(hwc_context_t* dev);
 
-static void hwc_nsc_prepare_layer(hwc_context_t* dev, hwc_layer_1_t *layer, int layer_id);
+static void hwc_nsc_prepare_layer(hwc_context_t* dev, hwc_layer_1_t *layer,
+   int layer_id, bool geometry_changed);
 
 static void hwc_binder_advertise_video_surface(hwc_context_t* dev);
 
@@ -410,13 +413,14 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
 
     for (int j = 0; j < GPX_SURFACE_STACK; j++) {
         write = snprintf(start + offset, local_capacity,
-            "\t\t[%d:%d]:[%d]:[%s]::shdl:%p::schdl:%p\n",
+            "\t\t[%d:%d]:[%d]:[%s]::shdl:%p::schdl:%p::grhdl:%p\n",
             client->layer_id,
             index,
             j,
             nsc_surface_owner[client->slist[j].owner],
             client->slist[j].shdl,
-            client->slist[j].schdl);
+            client->slist[j].schdl,
+            client->slist[j].grhdl);
 
         if (write > 0) {
             local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
@@ -520,6 +524,19 @@ static int hwc_gpx_get_recycle_surface_locked(GPX_CLIENT_INFO *client, NEXUS_Sur
 
     return -1;
 }
+
+static int hwc_gpx_get_current_surface_locked(GPX_CLIENT_INFO *client)
+{
+    for (int i = 0; i < GPX_SURFACE_STACK; i++) {
+       if ((client->slist[i].owner == SURF_OWNER_NSC) ||
+           (client->slist[i].owner == SURF_OWNER_HWC_PUSH)) {
+          return i;
+       }
+    }
+
+    return -1;
+}
+
 
 static NEXUS_SurfaceCursorHandle hwc_gpx_update_cursor_surface_locked(struct hwc_composer_device_1* dev)
 {
@@ -841,7 +858,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
             if (skiped_layer)
                // mostly for debug for now.
                ALOGE("%s: skipped %d layers before %d", __FUNCTION__, skiped_layer, i);
-            hwc_nsc_prepare_layer(ctx, layer, (int)i);
+            hwc_nsc_prepare_layer(ctx, layer, (int)i, (bool)(list->flags & HWC_GEOMETRY_CHANGED));
             nx_layer_count++;
         } else {
             skiped_layer++;
@@ -932,7 +949,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         //
         // gpx layer: use the 'cached' visibility that was assigned during 'prepare'.
         //
-        else if (ctx->gpx_cli[i].composition.visible) {
+        else if (ctx->gpx_cli[i].composition.visible && !ctx->gpx_cli[i].skip_set) {
             int six = hwc_gpx_push_surface_locked(&ctx->gpx_cli[i]);
             if (six != -1) {
                rc = NEXUS_SurfaceClient_PushSurface(ctx->gpx_cli[i].ncci.schdl, ctx->gpx_cli[i].slist[six].shdl, NULL, false);
@@ -1609,6 +1626,7 @@ static void hwc_nsc_recycled_cb(void *context, int param)
                  } else {
                     ci->slist[six].owner = SURF_OWNER_NO_OWNER;
                     ci->slist[six].shdl = NULL;
+                    ci->slist[six].grhdl = NULL;
                  }
               }
               if (recycledSurface)
@@ -1692,7 +1710,8 @@ const NEXUS_BlendEquation alphaBlendingEquation[BLENDIND_TYPE_LAST] = {
 static void hwc_prepare_gpx_layer(
     hwc_context_t* ctx,
     hwc_layer_1_t *layer,
-    int layer_id)
+    int layer_id,
+    bool geometry_changed)
 {
     NEXUS_Error rc;
     private_handle_t *bcmBuffer = NULL;
@@ -1770,7 +1789,8 @@ static void hwc_prepare_gpx_layer(
         (cur_width != ctx->gpx_cli[layer_id].width) ||
         (cur_height != ctx->gpx_cli[layer_id].height) ||
         (!ctx->gpx_cli[layer_id].composition.visible) ||
-        (cur_blending_type != ctx->gpx_cli[layer_id].blending_type)) {
+        (cur_blending_type != ctx->gpx_cli[layer_id].blending_type) ||
+        geometry_changed) {
 
         NxClient_GetSurfaceClientComposition(ctx->gpx_cli[layer_id].ncci.sccid, &ctx->gpx_cli[layer_id].composition);
         ctx->gpx_cli[layer_id].composition.zorder                = GPX_CLIENT_ZORDER;
@@ -1794,17 +1814,22 @@ static void hwc_prepare_gpx_layer(
 
     // (re)create surface to render this layer.
     if (ctx->gpx_cli[layer_id].composition.visible) {
+        int six = hwc_gpx_get_current_surface_locked(&ctx->gpx_cli[layer_id]);
+        ctx->gpx_cli[layer_id].skip_set = false;
+        if (six != -1 && !geometry_changed && (ctx->gpx_cli[layer_id].slist[six].grhdl == layer->handle)) {
+            ALOGV("%s: skip no change on layer: %d\n", __FUNCTION__, layer_id);
+            ctx->gpx_cli[layer_id].skip_set = true;
+            goto out_unlock;
+        }
         uint8_t *layerCachedAddress = (uint8_t *)NEXUS_OffsetToCachedAddr(bcmBuffer->nxSurfacePhysicalAddress);
         layerCachedAddress         += (layer->sourceCrop.left*4)+(layer->sourceCrop.top*stride);
         if (layerCachedAddress == NULL) {
             ALOGE("%s: layer cache address NULL: %d\n", __FUNCTION__, layer_id);
-            BKNI_ReleaseMutex(ctx->mutex);
-            goto out;
+            goto out_unlock;
         }
-        int six = hwc_gpx_get_next_surface_locked(&ctx->gpx_cli[layer_id]);
+        six = hwc_gpx_get_next_surface_locked(&ctx->gpx_cli[layer_id]);
         if (six == -1) {
-            BKNI_ReleaseMutex(ctx->mutex);
-            goto out;
+            goto out_unlock;
         }
         NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
         createSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
@@ -1819,6 +1844,7 @@ static void hwc_prepare_gpx_layer(
                layerCachedAddress, disp_position.width, disp_position.height, stride);
         } else {
             ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_HWC_PUSH;
+            ctx->gpx_cli[layer_id].slist[six].grhdl = layer->handle;
             if (ctx->gpx_cli[layer_id].layer_subtype == NEXUS_CURSOR) {
                 NEXUS_SurfaceCursorCreateSettings cursorSettings;
                 NEXUS_SurfaceCursorSettings config;
@@ -1936,7 +1962,8 @@ out:
 static void hwc_nsc_prepare_layer(
     hwc_context_t* ctx,
     hwc_layer_1_t *layer,
-    int layer_id)
+    int layer_id,
+    bool geometry_changed)
 {
     unsigned int video_layer_id = 0;
 
@@ -1951,7 +1978,7 @@ static void hwc_nsc_prepare_layer(
                video_layer_id, NSC_MM_CLIENTS_NUMBER);
         }
     } else {
-        hwc_prepare_gpx_layer(ctx, layer, layer_id);
+        hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed);
     }
 }
 
