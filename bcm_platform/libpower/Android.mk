@@ -40,6 +40,10 @@ LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 LOCAL_SHARED_LIBRARIES := liblog libcutils libdl libbinder libutils libbinder libnexusipcclient libpmlibservice $(NEXUS_LIB)
 
+ifneq ($(findstring NEXUS_HAS_GPIO, $(NEXUS_APP_DEFINES)),)
+LOCAL_C_INCLUDES += $(NEXUS_GPIO_PUBLIC_INCLUDES)
+endif
+
 LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
                     $(REFSW_PATH)/../libnexusservice \
                     $(REFSW_PATH)/../libnexusipc \
@@ -50,6 +54,10 @@ LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 
 LOCAL_SRC_FILES := power.cpp \
                    nexus_power.cpp
+
+ifeq ($(findstring NEXUS_HAS_GPIO, $(NEXUS_APP_DEFINES)),)
+LOCAL_SRC_FILES += nexus_gpio_stubs.cpp
+endif
 
 LOCAL_MODULE_TAGS := optional debug
 

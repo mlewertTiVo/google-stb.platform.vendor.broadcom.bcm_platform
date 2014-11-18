@@ -160,6 +160,11 @@ status_t NexusPower::setPowerState(b_powerState state)
             LOGE("%s: Could not set PowerState %d!", __FUNCTION__, state);
             ret = INVALID_OPERATION;
         }
+
+        if (ret == NO_ERROR) {
+            // Finally clear any pending Gpio interrupts to avoid being accidentally woken up again when suspended
+            ret = clearGpios();
+        }
     }
     return ret;
 }
@@ -176,7 +181,7 @@ status_t NexusPower::getPowerState(b_powerState *pState)
     return NO_ERROR;
 }
 
-void NexusPower::NexusGpio::gpioCallback(void *context, int param)
+void NexusPower::NexusGpio::gpioCallback(void *context __unused, int param __unused)
 {
     NexusPower::NexusGpio *pNexusGpio = reinterpret_cast<NexusPower::NexusGpio *>(context);
 
@@ -391,3 +396,23 @@ void NexusPower::uninitialiseGpios()
         }
     }
 }
+
+status_t NexusPower::clearGpios()
+{
+    status_t status = NO_ERROR;
+    NEXUS_Error rc;
+    sp<NexusGpio> pNexusGpio;
+
+    for (unsigned gpio = 0; gpio < NexusGpio::MAX_INSTANCES; gpio++) {
+        pNexusGpio = gpios[gpio];
+        if (pNexusGpio.get() != NULL) {
+            rc = NEXUS_Gpio_ClearInterrupt(pNexusGpio->getHandle());
+            if (rc != NEXUS_SUCCESS) {
+                ALOGE("%s: Could not clear AON_%s%d [rc=%d]!!!", __FUNCTION__, (pNexusGpio->getPinType() == NEXUS_GpioType_eAonStandard) ? "GPIO" : "SGPIO", gpio, rc);
+                status = INVALID_OPERATION;
+            }
+        }
+    }
+    return status;
+}
+

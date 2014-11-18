@@ -59,8 +59,8 @@
 
 #include "nexus_types.h"
 #include "nexus_platform_features.h"
-#include "nexus_gpio.h"
 #include "nexus_ipc_client_factory.h"
+#include <nexus_gpio.h>
 
 using namespace android;
 
@@ -72,6 +72,7 @@ class NexusPower : public android::RefBase {
     status_t getPowerState(b_powerState *pState);
     status_t initialiseGpios();
     void uninitialiseGpios();
+    status_t clearGpios();
     ~NexusPower();
 
     class NexusGpio : public android::RefBase {
