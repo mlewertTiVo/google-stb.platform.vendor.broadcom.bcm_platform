@@ -70,7 +70,7 @@ extern "C" {
 #define BOMX_ERR(x) ALOGE x
 #define BOMX_WRN(x) ALOGW x
 #define BOMX_MSG(x) ALOGV x
-#define BOMX_ASSERT(cond) ALOG_ASSERT(cond, "%s:%u", __FILE__, __LINE__);
+#define BOMX_ASSERT(cond) ALOG_ASSERT(cond, "ASSERT %s failed at %s:%u", #cond, __FILE__, __LINE__);
 
 BERR_Code BOMX_PrintBError(const char *pLogTag, const char *pFile, unsigned lineno, BERR_Code berr);
 OMX_ERRORTYPE BOMX_PrintError(const char *pLogTag, const char *pFile, unsigned lineno, OMX_ERRORTYPE omxerr);

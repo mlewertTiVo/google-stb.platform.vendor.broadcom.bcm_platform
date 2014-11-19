@@ -753,9 +753,13 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         NEXUS_Memory_Free(m_pConfigBuffer);
     }
-    if ( m_pIpcClient && m_pNexusClient )
+    if ( m_pIpcClient )
     {
-        m_pIpcClient->destroyClientContext(m_pNexusClient);
+        if ( m_pNexusClient )
+        {
+            m_pIpcClient->destroyClientContext(m_pNexusClient);
+        }
+        delete m_pIpcClient;
     }
     if ( m_pBufferTracker )
     {
@@ -3359,6 +3363,21 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
     NEXUS_VideoDecoderReturnFrameSettings returnSettings[B_MAX_DECODED_FRAMES];
     unsigned numFrames=0;
     BOMX_VideoDecoderFrameBuffer *pBuffer, *pStart, *pEnd;
+
+    // Make sure decoder is available and running
+    if ( NULL == m_hSimpleVideoDecoder )
+    {
+        return;
+    }
+    else
+    {
+        NEXUS_VideoDecoderStatus status;
+        NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &status);
+        if ( !status.started )
+        {
+            return;
+        }
+    }
 
     // Skip pending invalidated frames
     for ( pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
