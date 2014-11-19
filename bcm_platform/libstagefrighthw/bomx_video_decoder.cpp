@@ -2622,6 +2622,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         }
         BOMX_ASSERT(numConsumed == numRequested);
         pInfo->numDescriptors += numRequested;
+        m_submittedDescriptors += numConsumed;
         m_configRequired = false;
         if ( NULL != g_pDebugFile )
         {
@@ -2723,6 +2724,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         }
         BOMX_ASSERT(numConsumed == numRequested);
         pInfo->numDescriptors += numRequested;
+        m_submittedDescriptors += numConsumed;
         m_eosPending = true;
         if ( NULL != g_pDebugFile )
         {
@@ -2841,6 +2843,13 @@ void BOMX_VideoDecoder::PlaypumpEvent()
 {
     NEXUS_PlaypumpStatus playpumpStatus;
     unsigned numComplete;
+
+    if ( NULL == m_hPlaypump )
+    {
+        // This can happen with rapid startup/shutdown sequences such as random action tests
+        BOMX_WRN(("Playpump event received, but playpump has been closed."));
+        return;
+    }
 
     NEXUS_Playpump_GetStatus(m_hPlaypump, &playpumpStatus);
     if ( playpumpStatus.started )
