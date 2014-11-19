@@ -1615,6 +1615,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
     {
         // If we are returning to loaded, we need to first flush all enabled ports and return their buffers
         bool inputPortEnabled, outputPortEnabled;
+        BOMX_VideoDecoderFrameBuffer *pFrameBuffer;
 
         // Save port state
         inputPortEnabled = m_pVideoPorts[0]->IsEnabled();
@@ -1637,8 +1638,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
             (void)m_pVideoPorts[1]->Enable();
         }
 
-        // Make sure the output buffer list is cleared.  Otherwise our state machine got screwed up somewhere
-        BOMX_ASSERT(NULL == BLST_Q_FIRST(&m_frameBufferAllocList));
+        // Make sure the output buffer list is cleared.  In Metadata mode, not all buffers will be freed automatically.
+        while ( NULL != (pFrameBuffer = BLST_Q_FIRST(&m_frameBufferAllocList)) )
+        {
+            BLST_Q_REMOVE_HEAD(&m_frameBufferAllocList, node);
+            BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pFrameBuffer, node);
+        }
 
         BOMX_MSG(("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState)));
         return OMX_ErrorNone;
