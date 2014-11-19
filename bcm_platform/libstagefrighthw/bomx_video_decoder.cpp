@@ -1302,8 +1302,6 @@ NEXUS_VideoCodec BOMX_VideoDecoder::GetNexusCodec()
         return NEXUS_VideoCodec_eH264;
     case OMX_VIDEO_CodingVP8:
         return NEXUS_VideoCodec_eVp8;
-    case OMX_VIDEO_CodingVP9:
-        return NEXUS_VideoCodec_eVp9;
     case OMX_VIDEO_CodingHEVC:
         return NEXUS_VideoCodec_eH265;
     default:
@@ -1492,7 +1490,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 vdecStartSettings.settings.pidChannel = m_hPidChannel;
                 vdecStartSettings.settings.codec = GetNexusCodec();
                 BOMX_MSG(("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec));
-                if ( vdecStartSettings.settings.codec == NEXUS_VideoCodec_eH265 || vdecStartSettings.settings.codec == NEXUS_VideoCodec_eVp9 )
+                if ( vdecStartSettings.settings.codec == NEXUS_VideoCodec_eH265 )
                 {
                     // Request 4k decoder for HEVC/VP9 only
                     vdecStartSettings.maxWidth = 3840;
