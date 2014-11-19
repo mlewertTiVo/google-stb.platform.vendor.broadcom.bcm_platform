@@ -61,6 +61,9 @@ static const ComponentEntry *GetComponentByName(const char *pName)
     return NULL;
 }
 
+static pthread_mutex_t g_initMutex = PTHREAD_MUTEX_INITIALIZER;
+static unsigned g_refCount=0;
+
 OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_Init(void)
 {
     BERR_Code errCode;
@@ -69,6 +72,14 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_Init(void)
     OMX_ERRORTYPE err;
 
     BOMX_WRN(("OMX_Init"));
+
+    pthread_mutex_lock(&g_initMutex);
+    if ( ++g_refCount > 1 )
+    {  
+        BOMX_MSG(("Nested call to OMX_Init.  Refcount is now %u", g_refCount));
+        pthread_mutex_unlock(&g_initMutex);
+        return OMX_ErrorNone;
+    }
 
     berr = B_Os_Init();
     if ( berr )
@@ -82,18 +93,33 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_Init(void)
         goto err_resources;
     }
 
+    pthread_mutex_unlock(&g_initMutex);
     return OMX_ErrorNone;
 
 err_resources:
     B_Os_Uninit();
 err_oslib:
+    g_refCount=0;
+    pthread_mutex_unlock(&g_initMutex);
     return BOMX_ERR_TRACE(OMX_ErrorUndefined);
 }
 
 OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_Deinit(void)
 {
-    BOMX_UninitComponentResourceList();
-    B_Os_Uninit();
+    BOMX_WRN(("OMX_Deinit"));
+    pthread_mutex_lock(&g_initMutex);
+    if ( g_refCount == 1 )
+    {
+        BOMX_UninitComponentResourceList();
+        B_Os_Uninit();
+        g_refCount=0;
+    }
+    else
+    {
+        g_refCount--;
+        BOMX_MSG(("Nested call to OMX_Deinit.  Refcount is now %u", g_refCount));
+    }
+    pthread_mutex_unlock(&g_initMutex);
     return OMX_ErrorNone;
 }
 
