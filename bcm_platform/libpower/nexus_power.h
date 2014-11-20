@@ -49,7 +49,7 @@
 #ifndef _NEXUS_POWER_H_
 #define _NEXUS_POWER_H_
 
-// Verbose messages removed
+// Uncomment the line below to enable Verbose messages
 //#define LOG_NDEBUG 0
 #define LOG_TAG "Brcmstb PowerHAL"
 

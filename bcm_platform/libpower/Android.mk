@@ -38,7 +38,7 @@ MP_CFLAGS = -DANDROID_CLIENT_SECURITY_MODE=$(ANDROID_CLIENT_SECURITY_MODE)
 
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
-LOCAL_SHARED_LIBRARIES := liblog libcutils libdl libbinder libutils libbinder libnexusipcclient libpmlibservice $(NEXUS_LIB)
+LOCAL_SHARED_LIBRARIES := liblog libcutils libdl libbinder libutils libbinder libnexusipcclient libpmlibservice libpower $(NEXUS_LIB)
 
 ifneq ($(findstring NEXUS_HAS_GPIO, $(NEXUS_APP_DEFINES)),)
 LOCAL_C_INCLUDES += $(NEXUS_GPIO_PUBLIC_INCLUDES)

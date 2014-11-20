@@ -13,23 +13,67 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#include "nexus_power.h"
+
 #include <errno.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
-
 #include <cutils/properties.h>
+#include <utils/Timers.h>
 #include <hardware/hardware.h>
 #include <hardware/power.h>
+#include <hardware_legacy/power.h>
 #include "PmLibService.h"
-
-#include "nexus_power.h"
 
 using namespace android;
 
+// Keep the CPU alive wakelock
+static const char *WAKE_LOCK_ID = "PowerHAL";
+
+// Property definitions (max length 32)...
+static const char *PROPERTY_SYS_POWER_DOZE_TIMEOUT  = "persist.sys.power.doze.timeout";
+static const char *PROPERTY_PM_DOZESTATE            = "ro.pm.dozestate";
+static const char *PROPERTY_PM_OFFSTATE             = "ro.pm.offstate";
+static const char *PROPERTY_PM_INTERACTIVE_TIMEOUT  = "ro.pm.interactive.timeout";
+static const char *PROPERTY_PM_USBOFF               = "ro.pm.usboff";
+static const char *PROPERTY_PM_ETHOFF               = "ro.pm.ethoff";
+static const char *PROPERTY_PM_MOCAOFF              = "ro.pm.mocaoff";
+static const char *PROPERTY_PM_SATAOFF              = "ro.pm.sataoff";
+static const char *PROPERTY_PM_TP1OFF               = "ro.pm.tp1off";
+static const char *PROPERTY_PM_TP2OFF               = "ro.pm.tp2off";
+static const char *PROPERTY_PM_TP3OFF               = "ro.pm.tp3off";
+static const char *PROPERTY_PM_DDROFF               = "ro.pm.ddroff";
+static const char *PROPERTY_PM_MEMC1OFF             = "ro.pm.memc1off";
+
+// This is the default interactive timeout in seconds, which is the time we have to
+// wait for the framework to finish broadcasting its ACTION_SCREEN_OFF intent before
+// we actually start to power down the platform.
+static const int DEFAULT_INTERACTIVE_TIMEOUT = 5;
+
+// This is the default doze timeout in seconds.  The doze time specifies how long
+// the Power HAL must wait in the "doze" state prior to entering the off state.
+// If the doze timeout is 0, then the system will not enter the doze state but will
+// transition to the off state when a no interactivity event is received.
+static const int DEFAULT_DOZE_TIMEOUT = 0;
+
+// The interactive timer will be used to delay bringing down the platform
+// when the interactivity has stopped.
+static timer_t gInteractiveTimer = NULL;
+
+// The doze timer will be used only if the platform has be configured to
+// enter an intermediate "doze" mode, prior to entering the off state.
+static timer_t gDozeTimer = NULL;
+
+// Global instance of the NexusPower class.
 static sp<NexusPower> gNexusPower;
+
+// Prototype declarations...
+static int power_set_state(b_powerState toState, b_powerState fromState);
+static void power_finish_set_interactive(int on);
 
 static const char *power_to_string[] = {
     "S0",
@@ -40,12 +84,9 @@ static const char *power_to_string[] = {
     "S5"
 };
 
-static b_powerState power_get_offstate_from_property()
+static b_powerState power_get_state_from_string(char *value)
 {
-    b_powerState powerOffState = ePowerState_S3;
-    char value[PROPERTY_VALUE_MAX] = "";
-
-    property_get("ro.pm.offstate", value, "s3");
+    b_powerState powerOffState = ePowerState_Max;
 
     if (strcasecmp(value, "1") == 0 || strcasecmp(value, "s1") == 0) {
         powerOffState = ePowerState_S1;
@@ -62,14 +103,107 @@ static b_powerState power_get_offstate_from_property()
     return powerOffState;
 }
 
+static b_powerState power_get_property_off_state()
+{
+    char value[PROPERTY_VALUE_MAX] = "";
+
+    property_get(PROPERTY_PM_OFFSTATE, value, "s3");
+    return power_get_state_from_string(value);
+}
+
+static b_powerState power_get_property_doze_state()
+{
+    char value[PROPERTY_VALUE_MAX] = "";
+
+    property_get(PROPERTY_PM_DOZESTATE, value, "s1");
+    return power_get_state_from_string(value);
+}
+
+// The interactive timeout is the time we have to wait for the framework to finish broadcasting
+// its ACTION_SCREEN_OFF intent before we actually start to power down the platform.
+static int power_get_property_interactive_timeout()
+{
+    int interactiveTimeout = DEFAULT_INTERACTIVE_TIMEOUT;
+    char value[PROPERTY_VALUE_MAX] = "";
+
+    property_get(PROPERTY_PM_INTERACTIVE_TIMEOUT, value, NULL);
+
+    if (value[0]) {
+        char *endptr;
+        interactiveTimeout = strtol(value, &endptr, 10);
+        if (*endptr) {
+            ALOGE("%s: invalid value \"%s\" for property \"%s\"!!!", __FUNCTION__, value, PROPERTY_PM_INTERACTIVE_TIMEOUT);
+        }
+    }
+    return interactiveTimeout;
+}
+
+// Read back the doze timeout (if it exists) and if it is > 0, then it means we need to enter the
+// doze state (S1 or S2) and stay there until either:
+//     a) Power button is pressed to exit doze and return to active full power-on state.
+//     b) No power button is pressed and the timeout expires, then enter power-off state.
+static int power_get_property_doze_timeout()
+{
+    int dozeTimeout = DEFAULT_DOZE_TIMEOUT;
+    char value[PROPERTY_VALUE_MAX] = "";
+
+    property_get(PROPERTY_SYS_POWER_DOZE_TIMEOUT, value, NULL);
+    if (value[0]) {
+        char *endptr;
+        dozeTimeout = strtol(value, &endptr, 10);
+        if (*endptr) {
+            ALOGE("%s: invalid value \"%s\" for property \"persist.sys.power.doze.timeout\"!!!", __FUNCTION__, value);
+        }
+    }
+    return dozeTimeout;
+}
+
+static void interactiveTimerCallback(union sigval val __unused)
+{
+    ALOGV("%s: enter", __FUNCTION__);
+    power_finish_set_interactive(false);
+}
+
+static void dozeTimerCallback(union sigval val __unused)
+{
+    int ret;
+
+    b_powerState powerOffState = power_get_property_off_state();
+    b_powerState dozeState = power_get_property_doze_state();
+
+    ret = power_set_state(powerOffState, dozeState);
+    LOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", power_to_string[powerOffState]);
+}
+
 static void power_init(struct power_module *module __unused)
 {
     gNexusPower = NexusPower::instantiate();
+
     if (gNexusPower == NULL) {
         ALOGE("%s: failed!!!", __FUNCTION__);
     }
     else {
-        ALOGI("%s: Succeeded.", __FUNCTION__);
+        struct sigevent se;
+
+        // Create the interactive timer...
+        se.sigev_notify = SIGEV_THREAD;
+        se.sigev_notify_function = interactiveTimerCallback;
+        se.sigev_notify_attributes = NULL;
+        if (timer_create(CLOCK_MONOTONIC, &se, &gInteractiveTimer) != 0) {
+            ALOGE("%s: Could not create interactive timer!!!", __FUNCTION__);
+            return;
+        }
+
+        // Create the doze timer...
+        se.sigev_notify = SIGEV_THREAD;
+        se.sigev_notify_function = dozeTimerCallback;
+        se.sigev_notify_attributes = NULL;
+        if (timer_create(CLOCK_MONOTONIC, &se, &gDozeTimer) != 0) {
+            ALOGE("%s: Could not create doze timer!!!", __FUNCTION__);
+        }
+        else {
+            ALOGI("%s: succeeded", __FUNCTION__);
+        }
     }
 }
 
@@ -109,7 +243,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         bool memc1off = false;
 
         /* usboff == true means leave USB ON during standby */
-        property_get("ro.pm.usboff", value, NULL);
+        property_get(PROPERTY_PM_USBOFF, value, NULL);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             usboff = false;
         }
@@ -118,7 +252,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* ethoff == true means leave ethernet ON during standby */
-        property_get("ro.pm.ethoff", value, NULL);
+        property_get(PROPERTY_PM_ETHOFF, value, NULL);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             ethoff = false;
         }
@@ -127,7 +261,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* mocaoff == true means leave MOCA ON during standby */
-        property_get("ro.pm.mocaoff", value, NULL);
+        property_get(PROPERTY_PM_MOCAOFF, value, NULL);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             mocaoff = false;
         }
@@ -136,7 +270,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* sataoff == true means leave SATA ON during standby */
-        property_get("ro.pm.sataoff", value, NULL);
+        property_get(PROPERTY_PM_SATAOFF, value, NULL);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             sataoff = false;
         }
@@ -145,7 +279,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* tp1off == true means leave CPU thread 1 ON during standby */
-        property_get("ro.pm.tp1off", value, NULL);
+        property_get(PROPERTY_PM_TP1OFF, value, NULL);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             tp1off = false;
         }
@@ -154,7 +288,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* tp2off == true means leave CPU thread 2 ON during standby */
-        property_get("ro.pm.tp2off", value, NULL);
+        property_get(PROPERTY_PM_TP2OFF, value, NULL);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             tp2off = false;
         }
@@ -163,7 +297,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* tp3off == true means leave CPU thread 3 ON during standby */
-        property_get("ro.pm.tp3off", value, NULL);
+        property_get(PROPERTY_PM_TP3OFF, value, NULL);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             tp3off = false;
         }
@@ -172,7 +306,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* ddroff == true means leave DDR timeout to default during standby */
-        property_get("ro.pm.ddroff", value, NULL);
+        property_get(PROPERTY_PM_DDROFF, value, NULL);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             ddroff = false;
         }
@@ -181,7 +315,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* memc1off == true means enable MEMC1 status during standby */
-        property_get("ro.pm.memc1off", value, NULL);
+        property_get(PROPERTY_PM_MEMC1OFF, value, NULL);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             memc1off = false;
         }
@@ -222,10 +356,16 @@ static int power_set_state(b_powerState toState, b_powerState fromState)
     {
         case ePowerState_S0: {
             if (fromState == ePowerState_S1) {
-                rc = power_set_pmlibservice_state(toState);
+                power_set_pmlibservice_state(toState);
             }
+
             if (rc == 0 && gNexusPower.get()) {
                 rc = gNexusPower->setPowerState(toState);
+            }
+
+            if (fromState != ePowerState_S3) {
+                // Release the CPU wakelock as the system should be back up now...
+                release_wake_lock(WAKE_LOCK_ID);
             }
         } break;
 
@@ -234,7 +374,7 @@ static int power_set_state(b_powerState toState, b_powerState fromState)
                 rc = gNexusPower->setPowerState(toState);
             }
             if (rc == 0) {
-                rc = power_set_pmlibservice_state(toState);
+                power_set_pmlibservice_state(toState);
             }
         } break;
 
@@ -248,6 +388,9 @@ static int power_set_state(b_powerState toState, b_powerState fromState)
             if (gNexusPower.get()) {
                 rc = gNexusPower->setPowerState(toState);
             }
+
+            // Release the CPU wakelock to allow the CPU to suspend...
+            release_wake_lock(WAKE_LOCK_ID);
         } break;
 
         case ePowerState_S5: {
@@ -267,20 +410,88 @@ static int power_set_state(b_powerState toState, b_powerState fromState)
     return rc;
 }
 
-static void power_set_interactive(struct power_module *module __unused, int on)
+static void power_finish_set_interactive(int on)
 {
     int ret;
-    b_powerState powerOffState = power_get_offstate_from_property();
+    struct itimerspec ts;
+    b_powerState fromState;
+    b_powerState toState;
+    b_powerState powerOffState = power_get_property_off_state();
+    b_powerState dozeState  = power_get_property_doze_state();
+    int dozeTimeout = power_get_property_doze_timeout();
 
     ALOGV("%s: %s", __FUNCTION__, on ? "ON" : "OFF");
 
     if (on) {
-        ret = power_set_state(ePowerState_S0, powerOffState);
+        toState = ePowerState_S0;
+        fromState = powerOffState;
+
+        if (gInteractiveTimer) {
+            // Disarm the interactive timer...
+            ts.it_value.tv_sec = 0;
+            ts.it_value.tv_nsec = 0;
+            ts.it_interval.tv_sec = 0;
+            ts.it_interval.tv_nsec = 0;
+            timer_settime(gInteractiveTimer, 0, &ts, NULL);
+        }
+
+        if (dozeTimeout > 0 && gDozeTimer) {
+            timer_gettime(gDozeTimer, &ts);
+
+            if (ts.it_value.tv_sec > 0 || ts.it_value.tv_nsec > 0) {
+                // Disarm the doze timer...
+                ts.it_value.tv_sec = 0;
+                ts.it_value.tv_nsec = 0;
+                ts.it_interval.tv_sec = 0;
+                ts.it_interval.tv_nsec = 0;
+                timer_settime(gDozeTimer, 0, &ts, NULL);
+                fromState = dozeState;
+            }
+        }
     }
     else {
-        ret = power_set_state(powerOffState, ePowerState_S0);
+        fromState = ePowerState_S0;
+        if (dozeTimeout > 0 && gDozeTimer) {
+            toState = dozeState;
+
+            // Arm the doze timer...
+            ALOGV("%s: Dozing in power state %s for %ss...", __FUNCTION__, power_to_string[toState], dozeTimeout);
+            ts.it_value.tv_sec = dozeTimeout;
+            ts.it_value.tv_nsec = 0;
+            ts.it_interval.tv_sec = 0;
+            ts.it_interval.tv_nsec = 0;
+            timer_settime(gDozeTimer, 0, &ts, NULL);
+        }
+        else {
+            toState = powerOffState;
+        }
     }
-    LOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", on ? "S0" : power_to_string[powerOffState]);
+    ret = power_set_state(toState, fromState);
+    LOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", power_to_string[toState]);
+}
+
+static void power_set_interactive(struct power_module *module __unused, int on)
+{
+    ALOGV("%s: %s", __FUNCTION__, on ? "ON" : "OFF");
+
+    if (on) {
+        power_finish_set_interactive(on);
+    }
+    else if (gInteractiveTimer) {
+        // Start interactive timer
+        struct itimerspec ts;
+        int interactiveTimeout = power_get_property_interactive_timeout();
+
+        ALOGV("%s: Waiting %ds before actually setting the power state...", __FUNCTION__, interactiveTimeout);
+        ts.it_value.tv_sec = interactiveTimeout;
+        ts.it_value.tv_nsec = 0;
+        ts.it_interval.tv_sec = 0;
+        ts.it_interval.tv_nsec = 0;
+        timer_settime(gInteractiveTimer, 0, &ts, NULL);
+
+        // Keep the CPU alive until we are ready to suspend it...
+        acquire_wake_lock(PARTIAL_WAKE_LOCK, WAKE_LOCK_ID);
+    }
 }
 
 static void power_hint(struct power_module *module __unused, power_hint_t hint, void *data __unused) {

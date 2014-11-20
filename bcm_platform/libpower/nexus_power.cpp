@@ -47,14 +47,10 @@
  * 
  * $brcm_Log: $
  *****************************************************************************/
-#ifdef LOG_TAG
-#undef LOG_TAG
-#endif
+#include "nexus_power.h"
 
 #include <string.h>
 #include <utils/Errors.h>
-
-#include "nexus_power.h"
 
 unsigned NexusPower::NexusGpio::mInstances = 0;
 
