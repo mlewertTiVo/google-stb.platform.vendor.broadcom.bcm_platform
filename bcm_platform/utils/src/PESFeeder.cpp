@@ -958,7 +958,8 @@ PESFeeder::SendPESDataToHardware(PNEXUS_INPUT_CONTEXT pNxInCnxt)
         CommonCrypto_GetDefaultJobSettings(&cryptoJobSettings);
         NEXUS_Error err = CommonCrypto_DmaXfer(m_CommonCryptoHandle,
                                                &cryptoJobSettings, blkSettings, nbBlks);
-        ALOGD("CommonCrypto_DmaXfer returned:%d", err);
+        if (err != NEXUS_SUCCESS)
+            ALOGE("CommonCrypto_DmaXfer returned:%d", err);
         pNxInCnxt->NxDesc[0].addr  = dest;
     }
 #endif
