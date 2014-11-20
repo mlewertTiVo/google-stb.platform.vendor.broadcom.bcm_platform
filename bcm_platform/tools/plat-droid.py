@@ -74,14 +74,15 @@ def write_header(s, d):
 
 # how you should use this.
 def plat_droid_usage():
-	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [redux|aosp|nfs]'
+	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [redux|aosp|nfs|profile <name>]'
 	print '\t<platform>    - the BCM platform number to build for, eg: 97252, 97445, ...'
 	print '\t<chip-rev>    - the BCM chip revision of interest, eg: A0, B0, C1, ...'
 	print '\t<board-type>  - the target board type, eg: SV, C'
-	print '\t[redux|aosp|nfs] (note: mutually exclusive)'
+	print '\t[redux|aosp|nfs|profile] (note: mutually exclusive)'
 	print '\t              - redux: redux platform support image (minimal android)'
         print '\t              - aosp: AOSP feature set and integration exclusively'
         print '\t              - nfs: booting using nfs exclusively - no formal support, at your own risks'
+        print '\t              - profile: device specific profile override, must pass a valid profile <name>'
 	print '\n'
 	sys.exit(0)
 
@@ -91,8 +92,13 @@ if input < 4 :
 	plat_droid_usage()
 if input > 4 :
 	target_option=str(sys.argv[4]).upper()
+	if target_option == "PROFILE" and input != 6:
+		plat_droid_usage()
+	else:
+		target_profile=str(sys.argv[5])
 else :
 	target_option='nope'
+	target_profile='nope'
 
 chip=str(sys.argv[1]).upper()
 revision=str(sys.argv[2]).upper()
@@ -102,6 +108,20 @@ boardtype=str(sys.argv[3]).upper()
 androiddevice='%s%s%s' % (chip, revision, boardtype)
 if target_option == "AOSP" or target_option == "REDUX" or target_option == "NFS":
 	androiddevice='%s_%s' % (androiddevice, target_option)
+if target_option == "PROFILE":
+	custom_target_settings="./device/broadcom/custom/%s/%s/settings.mk" %(androiddevice, target_profile)
+	if not os.access(custom_target_settings, os.F_OK):
+		print '\n*** your custom profile "%s/%s" does not appear to be a valid one.\n' %(androiddevice, target_profile)
+		plat_droid_usage()
+	else:
+		custom_target_settings="include device/broadcom/custom/%s/%s/settings.mk" %(androiddevice, target_profile)
+		custom_target_pre_settings="./device/broadcom/custom/%s/%s/pre_settings.mk" %(androiddevice, target_profile)
+		if not os.access(custom_target_pre_settings, os.F_OK):
+			custom_target_pre_settings='nope'
+		else:
+			custom_target_pre_settings="include device/broadcom/custom/%s/%s/pre_settings.mk" %(androiddevice, target_profile)
+		androiddevice='%s_%s' % (androiddevice, target_profile)
+
 devicedirectory='./device/broadcom/bcm_%s/' % (androiddevice)
 if verbose:
 	print 'creating android device: %s, in directory: %s' % (androiddevice, devicedirectory)
@@ -166,6 +186,12 @@ write_header(s, androiddevice)
 os.write(s, "# start of refsw gathered configuration\n\n")
 os.write(s, "%s\n\n" % refsw_configuration_selected)
 os.write(s, "# end of refsw gathered config...\n")
+if target_option == "NFS":
+	os.write(s, "\n\n# NFS 'pre' setting tweaks...\n")
+	os.write(s, "include device/broadcom/common/pre_settings_nfs.mk")
+if target_option == "PROFILE" and custom_target_pre_settings != 'nope':
+	os.write(s, "\n\n# CUSTOM 'pre' setting tweaks...\n")
+	os.write(s, custom_target_pre_settings)
 if target_option == "REDUX":
 	os.write(s, "\n\n# REDUX target set...\n")
 	os.write(s, "include device/broadcom/common/target_redux.mk")
@@ -176,6 +202,9 @@ if target_option == "AOSP":
 if target_option == "NFS":
 	os.write(s, "\n\n# NFS setting tweaks...\n")
 	os.write(s, "include device/broadcom/common/settings_nfs.mk")
+if target_option == "PROFILE":
+	os.write(s, "\n\n# CUSTOM setting tweaks...\n")
+	os.write(s, custom_target_settings)
 os.write(s, "\n\nPRODUCT_NAME := bcm_%s\n" % androiddevice)
 os.write(s, "\n# exporting toolchains path for kernel image+modules\n")
 os.write(s, "export PATH := %s:${PATH}\n" % kerneltoolchain)
@@ -194,4 +223,3 @@ print 'congratulations! device bcm_%s configured, you may proceed with android b
 print '\t1) source ./build/envsetup.sh'
 print '\t2) lunch bcm_%s-[eng|userdebug|user].' % androiddevice
 print '\n'
-
