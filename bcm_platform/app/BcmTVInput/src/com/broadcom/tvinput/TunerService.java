@@ -49,6 +49,7 @@ import android.util.Log;
 import android.util.SparseArray;
 import android.view.KeyEvent;
 import android.view.Surface;
+import android.os.AsyncTask;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -85,6 +86,22 @@ public class TunerService extends TvInputService {
 
     private TvInputManager mManager = null;
     private ResolveInfo mResolveInfo;
+
+    private class ChannelUploadTask extends AsyncTask<Object, Void, Void> {
+        @Override
+        protected Void doInBackground(Object... objs) {
+            Log.d(TAG, "ChannelUploadTask::doInBackground()");
+            Context context = (Context) objs[0];
+            String inputId = (String) objs[1];
+
+            ChannelInfo[] civ = TunerHAL.getChannelList();
+
+            Log.e(TAG, "Got channels: " + civ.length);
+            updateChannels(context, inputId, civ);
+
+            return null;
+        }
+    }
 
     @Override
     public void onCreate() {
@@ -154,14 +171,10 @@ public class TunerService extends TvInputService {
         // Save mapping between inputId and deviceId
         mDeviceIdMap.put(info.getId(), deviceId);
 
-        ChannelInfo[] civ = TunerHAL.getChannelList();
-
-        Log.e(TAG, "Got channels: " + civ.length);
-        updateChannels(this, info.getId(), civ);
-
         if (DEBUG) 
 			Log.d(TAG, "onHardwareAdded returns " + info);
-
+        Log.d(TAG, "kicking off upload");
+        new ChannelUploadTask().execute(this, info.getId());
         return info;
     }
 

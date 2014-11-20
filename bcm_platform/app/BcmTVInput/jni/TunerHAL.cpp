@@ -45,7 +45,7 @@
 #include "com_broadcom_tvinput_TunerHAL.h"
 #include "TunerHAL.h"
 #include "TunerInterface.h"
-#include "BroadcastDemo.h"
+#include "Broadcast.h"
 
 // Enable this for debug prints
 #define DEBUG_JNI

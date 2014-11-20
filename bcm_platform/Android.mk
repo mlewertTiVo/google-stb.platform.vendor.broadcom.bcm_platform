@@ -17,6 +17,9 @@ include vendor/broadcom/bcm_platform/libnexusir/Android.mk
 include vendor/broadcom/bcm_platform/libnexusservice/Android.mk
 include vendor/broadcom/bcm_platform/libtv_input/Android.mk
 include vendor/broadcom/bcm_platform/nexusinit/Android.mk
+ifeq ($(ANDROID_SUPPORTS_DTVKIT),y)
+include vendor/broadcom/bcm_platform/brcm_dtvkit/Android.mk
+endif
 
 
 BCM_APPS_PATH := vendor/broadcom/bcm_platform/app

@@ -32,7 +32,20 @@ LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 LOCAL_SHARED_LIBRARIES := libcutils liblog libutils $(NEXUS_LIB)
 LOCAL_SHARED_LIBRARIES += libnxclient libnexusipcclient libbinder
 
-LOCAL_SRC_FILES := TunerHAL.cpp BroadcastDemo.cpp
+LOCAL_SRC_FILES := TunerHAL.cpp
+
+ifeq ($(ANDROID_SUPPORTS_DTVKIT),y)
+LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/inc
+LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/dvb/inc
+LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/midware/stb/inc
+LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/platform/inc
+LOCAL_STATIC_LIBRARIES := libdtvkitdvbcore libdtvkitstb libdtvkitdvb_hw libdtvkitdvb_os libdtvkitdvb_version
+LOCAL_SHARED_LIBRARIES += libpng libjpeg
+LOCAL_SRC_FILES += BroadcastDTVKit.cpp
+else
+LOCAL_SRC_FILES += BroadcastDemo.cpp
+endif
+
 LOCAL_MODULE := libjni_tuner
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)

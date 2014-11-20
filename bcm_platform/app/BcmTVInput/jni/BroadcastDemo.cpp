@@ -1,4 +1,4 @@
-#include "BroadcastDemo.h"
+#include "Broadcast.h"
 
 class BroadcastDemo_Context {
 public:
@@ -347,6 +347,7 @@ Broadcast_Initialize(Tuner_Data *pTD)
     pTD->Tune = BroadcastDemo_Tune;
     pTD->Stop = BroadcastDemo_Stop;
     pTD->Release = BroadcastDemo_Release;
+
     ALOGE("%s: Exit", __FUNCTION__);
     return 0;
 }
