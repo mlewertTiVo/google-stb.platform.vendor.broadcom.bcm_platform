@@ -537,7 +537,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     for ( i = 0; i < MAX_OUTPUT_PORT_FORMATS; i++ )
     {
         memset(&portFormats[i], 0, sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE));
-        BOMX_STRUCT_INIT(&portFormats[0]);
+        BOMX_STRUCT_INIT(&portFormats[i]);
         portFormats[i].nIndex = i;
         portFormats[i].nPortIndex = m_videoPortBase+1;
         portFormats[i].eCompressionFormat = OMX_VIDEO_CodingUnused;
