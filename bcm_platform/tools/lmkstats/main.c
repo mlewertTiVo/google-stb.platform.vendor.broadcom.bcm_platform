@@ -85,8 +85,9 @@ static void updateOomLevels(int displayWidth, int displayHeight) {
    }
 
    printf("OOM scores: (reserve %d)\n", reserve);
+   printf("\tscore\tfreeAdj\tminFree\n");
    for (i=0; i<OOM_ENTRIES; i++) {
-      printf("\t%d\t%d\n", mOomAdj[i], (mOomMinFree[i]*1024)/PAGE_SIZE);
+      printf("\t%d\t%d\t%d\n", mOomAdj[i], (mOomMinFree[i]*1024)/PAGE_SIZE, mOomMinFree[i]);
    }
    printf("\n");
 }
