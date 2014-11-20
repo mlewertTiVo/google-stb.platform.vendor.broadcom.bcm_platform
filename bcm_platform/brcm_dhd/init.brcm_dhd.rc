@@ -1,40 +1,31 @@
 on post-fs-data
-# give system access to wpa_supplicant.conf for backup and restore
-    mkdir /system/etc/wifi 0777 wifi wifi 
-    chmod 0777 /system/etc/wifi 
-    chmod 0777 /system/etc/wifi/wpa_supplicant.conf 
-    chmod 0777 /system/etc/wifi/wpa_supplicant_overlay.conf 
-    chmod 0777 /system/etc/wifi/p2p_supplicant_overlay.conf 
-    chown wifi wifi /system/etc/wifi
-    chown wifi wifi /system/etc/wifi/wpa_supplicant.conf 
-    chown wifi wifi /system/etc/wifi/wpa_supplicant_overlay.conf 
-    chown wifi wifi /system/etc/wifi/p2p_supplicant_overlay.conf 
-    #wpa_supplicant control socket for android wifi.c (android private socket) 
-    mkdir /data/misc/wifi 0777 wifi wifi 
-    mkdir /data/misc/wifi/sockets 0777 wifi wifi 
-    chmod 0777 /data/misc/wifi/sockets
-    chown wifi wifi /data/misc/wifi/sockets
-    chmod 0777 /data/misc/wifi 
-    chmod 0777 /data/misc/wifi/wpa_supplicant.conf 
-    chown wifi wifi /data/misc/wifi 
-    chown wifi wifi /data/misc/wifi/wpa_supplicant.conf 
-    mkdir /data/misc/android 0770 wifi wifi
-    #mkdir /data/system/wpa_supplicant 0770 wifi wifi
-#prdp
-    #chmod 0777 /data/system/wpa_supplicant
-    #chown wifi wifi /data/system/wpa_supplicant
-    mkdir /data/misc/dhcp 0777 dhcp dhcp
+    # dhcp
+    mkdir /data/misc/dhcp 0770 dhcp dhcp
+    chmod 0770 /data/misc/dhcp
     chown dhcp dhcp /data/misc/dhcp
-    chmod 0777 /data/misc/dhcp
+
+    # wifi
+    mkdir /data/misc/wifi 0775 wifi wifi
+    chmod 0775 /data/misc/wifi
+    chown wifi wifi /data/misc/wifi
+    mkdir /data/misc/wifi/sockets 0775 wifi wifi
+    chmod 0775 /data/misc/wifi/sockets
+    chown wifi wifi /data/misc/wifi/sockets
+    chmod 0660 /data/misc/wifi/wpa_supplicant.conf
+    chown wifi wifi /data/misc/wifi/wpa_supplicant.conf
+
+    mkdir /data/misc/android 0770 wifi wifi
 
     setprop wifi.interface wlan0
-    setprop wlan.driver.status "ok" 
 
 service dhd_fwload /system/bin/bcmdl -n /system/vendor/broadcom/dhd/nvrams/nvm.txt /system/vendor/broadcom/dhd/firmware/fw.bin.trx
     class core
-    disabled
     oneshot
 
+on property:brcm.dhd.fwloaded=ok
+    insmod /system/vendor/broadcom/dhd/driver/bcmdhd.ko
+    setprop wifi.interface wlan0
+    setprop wlan.driver.status "ok"
 
 on boot
 service p2p_supplicant /system/bin/wpa_supplicant \

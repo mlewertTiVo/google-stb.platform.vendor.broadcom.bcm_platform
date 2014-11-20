@@ -573,7 +573,7 @@ start:
 	if (status < 0)
 #ifdef ANDROID
 	{
-		property_set("wlan.driver.status", "failed");
+		property_set("brcm.dhd.fwloaded", "failed");
 		goto err;
 	} else {
 		/*
@@ -582,7 +582,7 @@ start:
 		 * connect to the wlan interface too soon.
 		 */
 		usleep(2 * 1000 * 1000);
-		property_set("wlan.driver.status", "ok");
+		property_set("brcm.dhd.fwloaded", "ok");
 	}
 #else
 		goto err;
