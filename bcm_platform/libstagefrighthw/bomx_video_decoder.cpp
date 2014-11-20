@@ -2147,7 +2147,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             pPortDef = pPort->GetDefinition();
             if ( nSizeBytes < 2*pPortDef->format.video.nFrameWidth*pPortDef->format.video.nFrameHeight )
             {
-                BOMX_ERR(("Outbuffer size is not sufficient - must be at least %u bytes", 2*pPortDef->format.video.nFrameWidth*pPortDef->format.video.nFrameHeight));
+                BOMX_ERR(("Outbuffer size is not sufficient - must be at least %u bytes (2*%u*%u) got %u [eColorFormat %#x]", 2*pPortDef->format.video.nFrameWidth*pPortDef->format.video.nFrameHeight,
+                    pPortDef->format.video.nFrameWidth, pPortDef->format.video.nFrameHeight, nSizeBytes, pPortDef->format.video.eColorFormat));
                 delete pInfo;
                 return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
             }
@@ -2605,7 +2606,14 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
 
     if ( pBufferHeader->nFlags & OMX_BUFFERFLAG_CODECCONFIG )
     {
-        BOMX_INPUT_MSG(("Accumulating %u bytes of codec config data", pBufferHeader->nFilledLen - pBufferHeader->nOffset));
+        if ( m_configRequired )
+        {
+            // If the app re-sends config data after flush invalidate what we have already stored.
+            // Otherwise random actions may overflow the config buffer.
+            BOMX_MSG(("Invalidating cached config buffer - application is resending after flush."));
+            ConfigBufferInit();
+        }
+        BOMX_MSG(("Accumulating %u bytes of codec config data", pBufferHeader->nFilledLen - pBufferHeader->nOffset));
         err = ConfigBufferAppend(pBufferHeader->pBuffer + pBufferHeader->nOffset, pBufferHeader->nFilledLen - pBufferHeader->nOffset);
         if ( err != OMX_ErrorNone )
         {
