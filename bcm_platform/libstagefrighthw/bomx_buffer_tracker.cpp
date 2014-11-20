@@ -123,7 +123,7 @@ bool BOMX_BufferTracker::Add(
     pNode->ticks = pHeader->nTimeStamp;
     pNode->flags = pHeader->nFlags;
     pNode->pts = BOMX_TickToPts(&pHeader->nTimeStamp);
-    ALOGV("Adding PTS %#x for tick #%x #%x flags %#x", pNode->pts, (int)(pNode->ticks>>(OMX_TICKS)32), (int)pNode->ticks, pNode->flags);
+    ALOGV("Adding PTS %#x for tick %08x %08x flags %#x", pNode->pts, (int)(pNode->ticks>>(OMX_TICKS)32), (int)pNode->ticks, pNode->flags);
 
     // Add to list sorted in display order
     BOMX_BufferTrackerNode *pPrev = BLST_Q_LAST(&m_allocList);
@@ -187,7 +187,7 @@ bool BOMX_BufferTracker::Remove(
     }
     else
     {
-        ALOGV("Matched PTS %#x to tick #%x #%x flags %#x", pts, (int)(pNode->ticks>>(OMX_TICKS)32), (int)pNode->ticks, pNode->flags);
+        ALOGV("Matched PTS %#x to tick %08x %08x flags %#x", pts, (int)(pNode->ticks>>(OMX_TICKS)32), (int)pNode->ticks, pNode->flags);
         BLST_Q_REMOVE(&m_allocList, pNode, node);
         BLST_Q_INSERT_TAIL(&m_freeList, pNode, node);
         if ( NULL != pHeader )

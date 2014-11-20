@@ -3228,27 +3228,35 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         return;
                     }
                 }
+
+                #if 0 // Disable format change for now
+                // Check for format change
+                if ( (pBuffer->frameStatus.surfaceCreateSettings.imageWidth != m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth ||
+                      pBuffer->frameStatus.surfaceCreateSettings.imageHeight != m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight) )
+                {
+                    OMX_PARAM_PORTDEFINITIONTYPE portDefs;
+                    // TODO: Handle adaptive/metadata mode
+                    BOMX_WRN(("Video output format change %ux%u -> %ux%u", m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth, m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight,
+                        pBuffer->frameStatus.surfaceCreateSettings.imageWidth, pBuffer->frameStatus.surfaceCreateSettings.imageHeight));
+                    m_formatChangePending = true;
+                    m_pVideoPorts[1]->GetDefinition(&portDefs);
+                    portDefs.format.video.nFrameWidth = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
+                    portDefs.format.video.nFrameHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
+                    portDefs.nBufferSize = 2*pBuffer->frameStatus.surfaceCreateSettings.imageWidth*pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
+                    m_pVideoPorts[1]->SetDefinition(&portDefs);
+                    PortFormatChanged(m_pVideoPorts[1]);
+                    return;
+                }
+                #endif
+                // If this is a true EOS dummy picture from the decoder, return a 0-length frame.
+                // Otherwise there is a valid picture here and we need to handle the frame below as we would any other.
+                if ( pBuffer->frameStatus.lastPicture )
+                {
+                    BOMX_MSG(("EOS-only frame.  Returning length of 0."));
+                    pHeader->nFilledLen = 0;
+                }
                 else
                 {
-                    #if 0 // Disable format change for now
-                    // Check for format change
-                    if ( (pBuffer->frameStatus.surfaceCreateSettings.imageWidth != m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth ||
-                          pBuffer->frameStatus.surfaceCreateSettings.imageHeight != m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight) )
-                    {
-                        OMX_PARAM_PORTDEFINITIONTYPE portDefs;
-                        // TODO: Handle adaptive/metadata mode
-                        BOMX_WRN(("Video output format change %ux%u -> %ux%u", m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth, m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight,
-                            pBuffer->frameStatus.surfaceCreateSettings.imageWidth, pBuffer->frameStatus.surfaceCreateSettings.imageHeight));
-                        m_formatChangePending = true;
-                        m_pVideoPorts[1]->GetDefinition(&portDefs);
-                        portDefs.format.video.nFrameWidth = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
-                        portDefs.format.video.nFrameHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
-                        portDefs.nBufferSize = 2*pBuffer->frameStatus.surfaceCreateSettings.imageWidth*pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
-                        m_pVideoPorts[1]->SetDefinition(&portDefs);
-                        PortFormatChanged(m_pVideoPorts[1]);
-                        return;
-                    }
-                    #endif
                     BOMX_ASSERT(NULL != pInfo);
                     switch ( pInfo->type )
                     {
@@ -3319,11 +3327,12 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         break;
                     }
                 }
+
                 // Mark buffer as delivered and return to client
                 pBuffer->state = BOMX_VideoDecoderFrameBufferState_eDelivered;
                 pInfo->pFrameBuffer = pBuffer;
                 pBuffer->pBufferInfo = pInfo;
-                BOMX_MSG(("Returning Port Buffer ts %u us serial %u pInfo %#x FB %#x HDR %#x", (unsigned int)pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader));
+                BOMX_MSG(("Returning Port Buffer ts %u us serial %u pInfo %#x FB %#x HDR %#x flags %#x", (unsigned int)pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader, pHeader->nFlags));
                 {
                     unsigned queueDepthBefore = m_pVideoPorts[1]->QueueDepth();
                     ReturnPortBuffer(m_pVideoPorts[1], pOmxBuffer);
