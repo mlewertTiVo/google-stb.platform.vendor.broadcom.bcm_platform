@@ -112,7 +112,7 @@ int main(int argc, char *argv[]) {
    glob.totalMemMb = totalMemMb / (1024*1024);
 
    glob.lmkMinFreeKbytesAdjust = 0;
-   glob.lmkMinFreeKbytesAbsolute = -1; // 81920 fugu.
+   glob.lmkMinFreeKbytesAbsolute = 81920; // per fugu, otherwise -1
    glob.lmkExtraFreeKbytesAdjust = 0;
    glob.lmkExtraFreeKbytesAbsolute = -1;
 
