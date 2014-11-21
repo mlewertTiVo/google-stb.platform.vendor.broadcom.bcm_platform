@@ -84,6 +84,9 @@ static const char *power_to_string[] = {
     "S5"
 };
 
+static const char *power_sys_power_state = "/sys/power/state";
+static const char *power_standby_state   = "standby";
+
 static b_powerState power_get_state_from_string(char *value)
 {
     b_powerState powerOffState = ePowerState_Max;
@@ -207,9 +210,29 @@ static void power_init(struct power_module *module __unused)
     }
 }
 
-static void power_set_shutdown()
+static int power_set_state_s2()
 {
-    property_set("sys.powerctl", "shutdown");
+    int ret = 0;
+    int fd;
+    char buf[80];
+
+    fd = open(power_sys_power_state, O_RDWR);
+
+    if (fd < 0) {
+        strerror_r(errno, buf, sizeof(buf));
+        ALOGE("%s: Error opening %s [err=%s]!!!", __FUNCTION__, power_sys_power_state, buf);
+        ret = -1;
+    }
+    else {
+        ret = (write(fd, power_standby_state, strlen(power_standby_state)) > 0) ? 0 : -1;
+        close(fd);
+    }
+    return ret;
+}
+
+static int power_set_state_s5()
+{
+    return property_set("sys.powerctl", "shutdown");
 }
 
 static int power_set_pmlibservice_state(b_powerState state)
@@ -382,6 +405,11 @@ static int power_set_state(b_powerState toState, b_powerState fromState)
             if (gNexusPower.get()) {
                 rc = gNexusPower->setPowerState(toState);
             }
+            if (rc == 0) {
+                rc = power_set_state_s2();
+            }
+            // Release the CPU wakelock to allow the CPU to enter standby...
+            release_wake_lock(WAKE_LOCK_ID);
         } break;
 
         case ePowerState_S3: {
@@ -398,7 +426,7 @@ static int power_set_state(b_powerState toState, b_powerState fromState)
                 rc = gNexusPower->setPowerState(toState);
             }
             if (rc == 0) {
-                power_set_shutdown();
+                rc = power_set_state_s5();
             }
         } break;
 

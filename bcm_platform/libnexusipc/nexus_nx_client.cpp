@@ -215,7 +215,7 @@ NEXUS_Error standby_check(NEXUS_PlatformStandbyMode mode)
 
     while (count < NXCLIENT_PM_TIMEOUT_COUNT) {
         NxClient_GetStandbyStatus(&standbyStatus);
-        if (standbyStatus.settings.mode == mode) {
+        if (standbyStatus.settings.mode == mode && standbyStatus.standbyTransition) {
             LOGD("%s: Entered S%d", __PRETTY_FUNCTION__, mode);
             break;
         }
