@@ -92,10 +92,11 @@ if input < 4 :
 	plat_droid_usage()
 if input > 4 :
 	target_option=str(sys.argv[4]).upper()
-	if target_option == "PROFILE" and input != 6:
-		plat_droid_usage()
-	else:
-		target_profile=str(sys.argv[5])
+	if target_option == "PROFILE":
+		if input != 6:
+			plat_droid_usage()
+		else:
+			target_profile=str(sys.argv[5])
 else :
 	target_option='nope'
 	target_profile='nope'
