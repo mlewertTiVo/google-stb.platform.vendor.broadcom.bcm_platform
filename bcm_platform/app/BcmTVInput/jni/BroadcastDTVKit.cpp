@@ -197,8 +197,6 @@ static int BroadcastDTVKit_Release(Tuner_Data *pTD)
     ALOGE("%s: Enter", __FUNCTION__);
 
     BroadcastDTVKit_Stop(pTD);
-    FreeContext(pTD, context);
-    pTD->context = 0;
 
     ALOGE("%s: Exit", __FUNCTION__);
 

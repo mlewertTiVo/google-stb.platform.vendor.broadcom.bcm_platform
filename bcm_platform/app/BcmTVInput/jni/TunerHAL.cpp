@@ -298,7 +298,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv *env, jcla
 
     TV_LOG("%s: Stopping the current channel!!", __FUNCTION__);
 
-    if (g_pTD->Tune == 0) {
+    if (g_pTD->Stop == 0) {
         TV_LOG("%s: Stop call is null", __FUNCTION__);
     }
     else {
