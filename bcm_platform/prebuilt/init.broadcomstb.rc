@@ -26,6 +26,9 @@ on init
    # Do not let SYSTEMPORT get an IPv6 address (when using gphy)
    write /proc/sys/net/ipv6/conf/eth0/disable_ipv6 1
 
+   # Mount kernel debugfs
+   mount debugfs none /sys/kernel/debug
+
 on fs
    mount_all /fstab.bcm_platform
    setprop ro.crypto.fuse_sdcard true
