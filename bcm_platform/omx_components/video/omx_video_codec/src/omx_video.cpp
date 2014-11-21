@@ -2183,7 +2183,8 @@ static bool FlushInput(BCM_OMX_CONTEXT *pBcmContext)
     return true;
 }
 
-static void CleanUpOutputBuffer(OMX_BUFFERHEADERTYPE *pOMXBuffhdr)
+static void CleanUpOutputBuffer(BCM_OMX_CONTEXT *pBcmContext,
+                                OMX_BUFFERHEADERTYPE *pOMXBuffhdr)
 {
     void *pBuffer=NULL;
     bool unLockBuffer=false;
@@ -2194,11 +2195,13 @@ static void CleanUpOutputBuffer(OMX_BUFFERHEADERTYPE *pOMXBuffhdr)
         ALOGV("%s: EXIT-1 == \n\n ",__FUNCTION__);
         return;
     }
-
+    
     //Clear the Filled Len and
     pOMXBuffhdr->nFilledLen =0;
-    pGraphicBuffer = (GraphicBuffer *) pOMXBuffhdr->pInputPortPrivate;
-    BCMOMX_DBG_ASSERT(pGraphicBuffer);
+    if(pBcmContext->sNativeBufParam.enable == true)
+    {
+        pGraphicBuffer = (GraphicBuffer *) pOMXBuffhdr->pInputPortPrivate;
+        BCMOMX_DBG_ASSERT(pGraphicBuffer);
 
 #ifdef USE_ANB_PRIVATE_DATA
         pBuffer = GetDisplayFrameFromANB(pGraphicBuffer->getNativeBuffer());
@@ -2207,6 +2210,11 @@ static void CleanUpOutputBuffer(OMX_BUFFERHEADERTYPE *pOMXBuffhdr)
         pGraphicBuffer->lock(GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_SW_READ_OFTEN, (void**)&pBuffer);
         unLockBuffer = true;
 #endif
+    }else{
+
+        //This is the case of Non-ANativeWindowBuffer....
+        pBuffer = pOMXBuffhdr->pBuffer;
+    }
 
     // Now Clear the Buffer.
     PDISPLAY_FRAME pNxDecoFr = (PDISPLAY_FRAME) pBuffer;
@@ -2248,8 +2256,8 @@ static bool FlushOutput(BCM_OMX_CONTEXT *pBcmContext,
     while (it != OutBufHdrList.end())
     {
         pBufHdr = *it;
-        CleanUpOutputBuffer(pBufHdr);
         ALOGD("%s: Flushing %p",__FUNCTION__,pBufHdr);
+        CleanUpOutputBuffer(pBcmContext, pBufHdr);
         pBcmContext->pCallbacks->FillBufferDone(pBcmContext->hSelf, pBcmContext->pAppData, pBufHdr);
         it++;
     }
