@@ -376,6 +376,20 @@ static const char *nsc_surface_owner[] =
    "NSC", // SURF_OWNER_NSC
 };
 
+static NEXUS_PixelFormat gralloc_to_nexus_pixel_format(int format)
+{
+   switch (format) {
+      case HAL_PIXEL_FORMAT_RGBA_8888: return NEXUS_PixelFormat_eA8_B8_G8_R8;
+      case HAL_PIXEL_FORMAT_RGBX_8888: return NEXUS_PixelFormat_eX8_B8_G8_R8;
+      case HAL_PIXEL_FORMAT_RGB_888:   return NEXUS_PixelFormat_eX8_B8_G8_R8;
+      case HAL_PIXEL_FORMAT_RGB_565:   return NEXUS_PixelFormat_eR5_G6_B5;
+      default:                         break;
+   }
+
+   ALOGE("%s: unsupported format %d", __FUNCTION__, format);
+   return NEXUS_PixelFormat_eUnknown;
+}
+
 static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_INFO *client)
 {
     int write = -1;
@@ -384,7 +398,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
     int offset = 0;
 
     write = snprintf(start, local_capacity,
-        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::sz:{%d,%d}::cp:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::sfc:%p::scc:%d\n",
+        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::sz:{%d,%d}::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::sfc:%p::scc:%d\n",
         client->composition.visible ? "LIVE" : "HIDE",
         nsc_cli_type[client->ncci.type],
         client->layer_id,
@@ -399,6 +413,10 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
         client->composition.position.y,
         client->composition.position.width,
         client->composition.position.height,
+        client->composition.clipRect.x,
+        client->composition.clipRect.y,
+        client->composition.clipRect.width,
+        client->composition.clipRect.height,
         client->composition.virtualDisplay.width,
         client->composition.virtualDisplay.height,
         client->blending_type,
@@ -437,7 +455,7 @@ static int dump_mm_layer_data(char *start, int capacity, int index, MM_CLIENT_IN
     int write = -1;
 
     write = snprintf(start, capacity,
-        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::z:%d::pcp:{%d,%d,%d,%d}::pcv:{%d,%d}::cm:%d::cp:{%d,%d,%d,%d}::cv:{%d,%d}::svc:%p::sfc:%p::scc:%d\n",
+        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::z:%d::pcp:{%d,%d,%d,%d}::pcv:{%d,%d}::cm:%d::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::svc:%p::sfc:%p::scc:%d\n",
         client->root.composition.visible ? "LIVE" : "HIDE",
         nsc_cli_type[client->root.ncci.type],
         client->root.layer_id,
@@ -456,6 +474,10 @@ static int dump_mm_layer_data(char *start, int capacity, int index, MM_CLIENT_IN
         client->settings.composition.position.y,
         client->settings.composition.position.width,
         client->settings.composition.position.height,
+        client->settings.composition.clipRect.x,
+        client->settings.composition.clipRect.y,
+        client->settings.composition.clipRect.width,
+        client->settings.composition.clipRect.height,
         client->settings.composition.virtualDisplay.width,
         client->settings.composition.virtualDisplay.height,
         client->svchdl,
@@ -1484,7 +1506,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             surface_create_settings.width       = VSYNC_CLIENT_WIDTH;
             surface_create_settings.height      = VSYNC_CLIENT_HEIGHT;
             surface_create_settings.pitch       = VSYNC_CLIENT_STRIDE;
-            dev->syn_cli.shdl           = NEXUS_Surface_Create(&surface_create_settings);
+            dev->syn_cli.shdl                   = NEXUS_Surface_Create(&surface_create_settings);
             if (dev->syn_cli.shdl == NULL)
             {
                 ALOGE("%s: NEXUS_Surface_Create vsync client failed", __FUNCTION__);
@@ -1720,9 +1742,13 @@ static void hwc_prepare_gpx_layer(
                                 (int16_t)layer->displayFrame.top,
                                 (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
                                 (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
-
+    NEXUS_Rect clip_position = {(int16_t)layer->sourceCrop.left,
+                                (int16_t)layer->sourceCrop.top,
+                                (uint16_t)(layer->sourceCrop.right - layer->sourceCrop.left),
+                                (uint16_t)(layer->sourceCrop.bottom - layer->sourceCrop.top)};
     int cur_width;
     int cur_height;
+    int format;
     unsigned int stride;
     unsigned int cur_blending_type;
 
@@ -1739,6 +1765,7 @@ static void hwc_prepare_gpx_layer(
     bcmBuffer = (private_handle_t *)layer->handle;
     cur_width = bcmBuffer->width;
     cur_height = bcmBuffer->height;
+    format = bcmBuffer->format;
     stride = (bcmBuffer->width*bcmBuffer->bpp + (SURFACE_ALIGNMENT - 1)) & ~(SURFACE_ALIGNMENT - 1);
 
     switch (layer->blending) {
@@ -1798,6 +1825,10 @@ static void hwc_prepare_gpx_layer(
         ctx->gpx_cli[layer_id].composition.position.y            = disp_position.y;
         ctx->gpx_cli[layer_id].composition.position.width        = disp_position.width;
         ctx->gpx_cli[layer_id].composition.position.height       = disp_position.height;
+        ctx->gpx_cli[layer_id].composition.clipRect.x            = clip_position.x;
+        ctx->gpx_cli[layer_id].composition.clipRect.y            = clip_position.y;
+        ctx->gpx_cli[layer_id].composition.clipRect.width        = clip_position.width;
+        ctx->gpx_cli[layer_id].composition.clipRect.height       = clip_position.height;
         ctx->gpx_cli[layer_id].composition.virtualDisplay.width  = ctx->display_width;
         ctx->gpx_cli[layer_id].composition.virtualDisplay.height = ctx->display_height;
         ctx->gpx_cli[layer_id].blending_type                     = cur_blending_type;
@@ -1822,7 +1853,6 @@ static void hwc_prepare_gpx_layer(
             goto out_unlock;
         }
         uint8_t *layerCachedAddress = (uint8_t *)NEXUS_OffsetToCachedAddr(bcmBuffer->nxSurfacePhysicalAddress);
-        layerCachedAddress         += (layer->sourceCrop.left*4)+(layer->sourceCrop.top*stride);
         if (layerCachedAddress == NULL) {
             ALOGE("%s: layer cache address NULL: %d\n", __FUNCTION__, layer_id);
             goto out_unlock;
@@ -1832,9 +1862,9 @@ static void hwc_prepare_gpx_layer(
             goto out_unlock;
         }
         NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
-        createSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
-        createSettings.width       = disp_position.width;
-        createSettings.height      = disp_position.height;
+        createSettings.pixelFormat = gralloc_to_nexus_pixel_format(format);
+        createSettings.width       = bcmBuffer->width;
+        createSettings.height      = bcmBuffer->height;
         createSettings.pitch       = stride;
         createSettings.pMemory     = layerCachedAddress;
         ctx->gpx_cli[layer_id].slist[six].shdl = NEXUS_Surface_Create(&createSettings);
@@ -1888,6 +1918,10 @@ static void hwc_prepare_mm_layer(
                                 (int16_t)layer->displayFrame.top,
                                 (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
                                 (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
+    NEXUS_Rect clip_position = {(int16_t)layer->sourceCrop.left,
+                                (int16_t)layer->sourceCrop.top,
+                                (uint16_t)(layer->sourceCrop.right - layer->sourceCrop.left),
+                                (uint16_t)(layer->sourceCrop.bottom - layer->sourceCrop.top)};
 
     int cur_width;
     int cur_height;
@@ -1930,6 +1964,10 @@ static void hwc_prepare_mm_layer(
         ctx->mm_cli[vid_layer_id].root.composition.position.y            = disp_position.y;
         ctx->mm_cli[vid_layer_id].root.composition.position.width        = disp_position.width;
         ctx->mm_cli[vid_layer_id].root.composition.position.height       = disp_position.height;
+        ctx->mm_cli[vid_layer_id].root.composition.clipRect.x            = clip_position.x;
+        ctx->mm_cli[vid_layer_id].root.composition.clipRect.y            = clip_position.y;
+        ctx->mm_cli[vid_layer_id].root.composition.clipRect.width        = clip_position.width;
+        ctx->mm_cli[vid_layer_id].root.composition.clipRect.height       = clip_position.height;
         ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.width  = ctx->display_width;
         ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.height = ctx->display_height;
 
@@ -1941,6 +1979,10 @@ static void hwc_prepare_mm_layer(
         ctx->mm_cli[vid_layer_id].settings.composition.position.y            = disp_position.y;
         ctx->mm_cli[vid_layer_id].settings.composition.position.width        = disp_position.width;
         ctx->mm_cli[vid_layer_id].settings.composition.position.height       = disp_position.height;
+        ctx->mm_cli[vid_layer_id].settings.composition.clipRect.x            = clip_position.x;
+        ctx->mm_cli[vid_layer_id].settings.composition.clipRect.y            = clip_position.y;
+        ctx->mm_cli[vid_layer_id].settings.composition.clipRect.width        = clip_position.width;
+        ctx->mm_cli[vid_layer_id].settings.composition.clipRect.height       = clip_position.height;
         rc = NEXUS_SurfaceClient_SetSettings(ctx->mm_cli[vid_layer_id].svchdl, &ctx->mm_cli[vid_layer_id].settings);
         if (rc != NEXUS_SUCCESS) {
             ALOGE("%s: geometry failed on video layer %d, err=%d", __FUNCTION__, vid_layer_id, rc);
