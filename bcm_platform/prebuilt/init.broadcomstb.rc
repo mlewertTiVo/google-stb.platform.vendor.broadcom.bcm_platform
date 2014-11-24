@@ -3,6 +3,7 @@ import /init.brcm_dhd.rc
 import /init.brcm_wl.rc
 import /init.brcm_bt.rc
 import /init.nfs.rc
+import /init.blockdev.rc
 
 on init
    mkdir /mnt/shell/emulated 0700 shell shell
