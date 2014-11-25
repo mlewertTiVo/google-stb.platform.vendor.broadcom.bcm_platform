@@ -372,13 +372,10 @@ static ssize_t bout_write(struct audio_stream_out *aout,
 static int bout_get_render_position(const struct audio_stream_out *aout,
                                     uint32_t *dsp_frames)
 {
-    UNUSED(aout);
-    UNUSED(dsp_frames);
-
-    LOGV("%s: at %d, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)aout);
-
-    return -EINVAL;
+    struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
+    int ret = bout->ops.do_bout_get_render_position(bout, dsp_frames);
+    LOGV("%s: stream:%p, frames:%u",__FUNCTION__, aout, *dsp_frames);
+    return ret;
 }
 
 static int bout_get_next_write_timestamp(const struct audio_stream_out *aout,
@@ -388,9 +385,9 @@ static int bout_get_next_write_timestamp(const struct audio_stream_out *aout,
 
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    *timestamp = ts.tv_sec * 1000000000ll + ts.tv_nsec;
+    *timestamp = ts.tv_sec * 1000000ll + (ts.tv_nsec)/1000ll;
 
-    LOGV("%s: at %d, stream  =  0x%X, Next timestamp..(%lld)\n",
+    LOGV("%s: at %d, stream  =  0x%X, Next timestamp..(%lld)",
          __FUNCTION__, __LINE__, (uint32_t)aout, *timestamp);
 
     return 0;
@@ -405,7 +402,7 @@ static int bout_get_presentation_position(const struct audio_stream_out *aout,
     pthread_mutex_lock(&bout->lock);
     ret = bout->ops.do_bout_get_presentation_position(bout, frames);
     if (ret) {
-        LOGE("%s: at %d, get position failed\n",
+        LOGE("%s: at %d, get position failed",
              __FUNCTION__, __LINE__);
         pthread_mutex_unlock(&bout->lock);
         return ret;
@@ -414,8 +411,8 @@ static int bout_get_presentation_position(const struct audio_stream_out *aout,
     pthread_mutex_unlock(&bout->lock);
 
     clock_gettime(CLOCK_MONOTONIC, timestamp);
-    LOGV("%s: timestamp(%lld)\n",__FUNCTION__,
-                                (timestamp->tv_sec* 1000000000ll) + timestamp->tv_nsec);
+    LOGV("%s: frames:%lld, timestamp(%lld)",__FUNCTION__, *frames,
+                                (timestamp->tv_sec* 1000000ll) + (timestamp->tv_nsec)/1000ll);
 
     return ret;
 }

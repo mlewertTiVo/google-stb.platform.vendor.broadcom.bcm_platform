@@ -62,7 +62,7 @@
 extern "C" {
 #endif
 /* LOG_NDEBUG = 0 allows debug logs */
-#define LOG_NDEBUG 1
+//#define LOG_NDEBUG 0
 
 /* Android headers with "C" linkage */
 #include <cutils/log.h>
@@ -74,6 +74,8 @@ extern "C" {
 
 #include <hardware/audio.h>
 #include <hardware/hardware.h>
+#include <utils/threads.h>
+#include <utils/Errors.h>
 
 /* Nexus headers */
 #include "bstd.h"
@@ -85,8 +87,8 @@ extern "C" {
 #include "nexus_audio_dac.h"
 #include "nexus_audio_output.h"
 #include "nexus_audio_input.h"
+#include "nxclient.h"
 #include "nexus_simple_audio_playback.h"
-#include "nexus_ipc_client_factory.h"
 
 /* VERY_VERBOSE = 1 allows additional debug logs */
 #define VERY_VERBOSE 0
@@ -128,6 +130,8 @@ struct brcm_device {
     struct brcm_stream_in *bins[BRCM_DEVICE_IN_MAX];
 };
 
+struct StandbyMonitorThread;
+
 struct brcm_stream_out_ops {
     int (*do_bout_open)(struct brcm_stream_out *bout);
 
@@ -143,6 +147,9 @@ struct brcm_stream_out_ops {
     int (*do_bout_set_volume)(struct brcm_stream_out *bout,
                               float left, float right);
 
+    int (*do_bout_get_render_position)(struct brcm_stream_out *bout,
+                                        uint32_t *dsp_frames);
+
     int (*do_bout_get_presentation_position)(struct brcm_stream_out *bout,
                               uint64_t *frames);
 
@@ -157,15 +164,18 @@ struct brcm_stream_out {
     pthread_mutex_t lock;
     audio_devices_t devices;
     struct audio_config config;
+    uint32_t frameSize;
+    uint32_t framesPlayed;
     size_t buffer_size;
     bool started;
     bool suspended;
+    struct StandbyMonitorThread *standbyThread;
 
     union {
         /* nexus specific */
         struct {
-            NexusIPCClientBase *ipc_client;
-            NexusClientContext *nexus_client;
+            uint32_t connectId;
+            NxClient_AllocResults allocResults;
             NEXUS_SimpleAudioPlaybackHandle simple_playback;
             BKNI_EventHandle event;
         } nexus;
@@ -240,5 +250,24 @@ extern struct brcm_stream_in_ops builtin_bin_ops;
 #if DUMMY_AUDIO_IN
 extern struct brcm_stream_in_ops dummy_bin_ops;
 #endif
+
+/* Thread to monitor standby */
+typedef bool (*b_standby_monitor_callback)(void *context);
+struct StandbyMonitorThread : public android::Thread {
+public:
+    StandbyMonitorThread(b_standby_monitor_callback callback, void *context)
+    :mCallback(callback),
+     mContext(context){}
+    ~StandbyMonitorThread() {};
+
+private:
+    bool threadLoop();
+    b_standby_monitor_callback mCallback;
+    void *mContext;
+
+    /* Disallow copy constructor and copy operator... */
+    StandbyMonitorThread(const StandbyMonitorThread &);
+    StandbyMonitorThread &operator=(const StandbyMonitorThread &);
+};
 
 #endif // BRCM_AUDIO_H

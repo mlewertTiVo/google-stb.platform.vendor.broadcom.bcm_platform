@@ -16,6 +16,8 @@ NEXUS_LIB=libnexus_client
 endif
 endif
 
+include $(NEXUS_TOP)/nxclient/include/nxclient.inc
+
 # Audio module
 include $(CLEAR_VARS)
 
@@ -29,8 +31,7 @@ LOCAL_SHARED_LIBRARIES := \
     libutils \
     libcutils \
     libmedia \
-    libbinder \
-    libnexusipcclient
+    libnxclient
 
 LOCAL_STATIC_LIBRARIES := \
     libmedia_helper
@@ -52,7 +53,6 @@ LOCAL_SRC_FILES += \
 LOCAL_CFLAGS := -DLOG_TAG=\"BrcmAudio\" $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
 LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 
-LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include $(REFSW_PATH)/../libnexusservice
-LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc
+LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/nexus/nxclient/include
 
 include $(BUILD_SHARED_LIBRARY)
