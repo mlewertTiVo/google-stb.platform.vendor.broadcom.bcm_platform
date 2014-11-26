@@ -54,7 +54,8 @@ using namespace android;
 #define HWC_CURSOR_SURFACE_VERBOSE   0
 #define HWC_CURSOR_SURFACE_SUPPORTED 0
 
-#define HWC_DUMP_LAYER_ON_ERROR      1
+#define HWC_SURFACE_LIFE_CYCLE_ERROR 0
+#define HWC_DUMP_LAYER_ON_ERROR      0
 
 #define NSC_GPX_CLIENTS_NUMBER       5 /* graphics client layers; typically no
                                         * more than 3 are needed at any time. */
@@ -506,7 +507,7 @@ static int hwc_gpx_get_next_surface_locked(GPX_CLIENT_INFO *client)
     }
 
     if ((client->layer_subtype != NEXUS_CURSOR) || HWC_CURSOR_SURFACE_VERBOSE) {
-       ALOGE("%s: failed client %d", __FUNCTION__, client->layer_id);
+       if (HWC_SURFACE_LIFE_CYCLE_ERROR) ALOGE("%s: failed client %d", __FUNCTION__, client->layer_id);
        dump_layer_on_error(client);
     }
 
@@ -523,7 +524,7 @@ static int hwc_gpx_push_surface_locked(GPX_CLIENT_INFO *client)
     }
 
     if ((client->layer_subtype != NEXUS_CURSOR) || HWC_CURSOR_SURFACE_VERBOSE) {
-       ALOGE("%s: failed client %d", __FUNCTION__, client->layer_id);
+       if (HWC_SURFACE_LIFE_CYCLE_ERROR) ALOGE("%s: failed client %d", __FUNCTION__, client->layer_id);
        dump_layer_on_error(client);
     }
 
@@ -540,7 +541,7 @@ static int hwc_gpx_get_recycle_surface_locked(GPX_CLIENT_INFO *client, NEXUS_Sur
     }
 
     if ((client->layer_subtype != NEXUS_CURSOR) || HWC_CURSOR_SURFACE_VERBOSE) {
-       ALOGE("%s: failed client %d", __FUNCTION__, client->layer_id);
+       if (HWC_SURFACE_LIFE_CYCLE_ERROR) ALOGE("%s: failed client %d", __FUNCTION__, client->layer_id);
        dump_layer_on_error(client);
     }
 
@@ -879,7 +880,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
         if (primary_need_nx_layer(dev, layer) == true) {
             if (skiped_layer)
                // mostly for debug for now.
-               ALOGE("%s: skipped %d layers before %d", __FUNCTION__, skiped_layer, i);
+               if (HWC_SURFACE_LIFE_CYCLE_ERROR) ALOGE("%s: skipped %d layers before %d", __FUNCTION__, skiped_layer, i);
             hwc_nsc_prepare_layer(ctx, layer, (int)i, (bool)(list->flags & HWC_GEOMETRY_CHANGED));
             nx_layer_count++;
         } else {
@@ -1157,7 +1158,7 @@ static int hwc_device_query(struct hwc_composer_device_1* dev, int what, int* va
 static void hwc_registerProcs(struct hwc_composer_device_1* dev, hwc_procs_t const* procs)
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
-    ALOGV("HWC hwc_register_procs (%p)", procs);
+    ALOGI("HWC hwc_register_procs (%p)", procs);
     ctx->procs = (hwc_procs_t *)procs;
 }
 
@@ -1848,7 +1849,7 @@ static void hwc_prepare_gpx_layer(
         int six = hwc_gpx_get_current_surface_locked(&ctx->gpx_cli[layer_id]);
         ctx->gpx_cli[layer_id].skip_set = false;
         if (six != -1 && !geometry_changed && (ctx->gpx_cli[layer_id].slist[six].grhdl == layer->handle)) {
-            ALOGV("%s: skip no change on layer: %d\n", __FUNCTION__, layer_id);
+            if (HWC_SURFACE_LIFE_CYCLE_ERROR) ALOGV("%s: skip no change on layer: %d\n", __FUNCTION__, layer_id);
             ctx->gpx_cli[layer_id].skip_set = true;
             goto out_unlock;
         }
