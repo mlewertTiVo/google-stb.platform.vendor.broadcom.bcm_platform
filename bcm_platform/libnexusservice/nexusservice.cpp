@@ -737,7 +737,6 @@ int NexusService::platformInitVideo(void)
             return NEXUS_UNKNOWN;
         }
 
-#ifndef ENABLE_BCM_OMX_PROTOTYPE
         //
         // by default give video_window to the simplevideodecoder
         // Note: simplevideodecoder_start will connect videodecoder to the videowindow
@@ -750,7 +749,6 @@ int NexusService::platformInitVideo(void)
             settings.window[j] = displayState[j].video_window[i >= MAX_VIDEO_WINDOWS_PER_DISPLAY ? MAX_VIDEO_WINDOWS_PER_DISPLAY-1 : i];
         }
         NEXUS_SimpleVideoDecoder_SetServerSettings(simpleVideoDecoder[i], &settings);
-#endif
     }
 
 #if ANDROID_ENABLE_HDMI_HDCP
@@ -770,14 +768,6 @@ int NexusService::platformInitVideo(void)
     }
 #endif
 
-#ifdef ENABLE_BCM_OMX_PROTOTYPE
-    /* 
-     * Tell Display module to connect to the VideoDecoder module and supply the
-     * L1 INT id's from BVDC_Display_GetInterrupt. Display will not register for the data ready ISR callback. 
-     * This is just to implement the getFrame API.
-     */
-    NEXUS_Display_ConnectVideoInput(displayState[0].display, NEXUS_VideoDecoder_GetConnector(videoDecoder[0]));
-#endif
     return rc;
 }
 

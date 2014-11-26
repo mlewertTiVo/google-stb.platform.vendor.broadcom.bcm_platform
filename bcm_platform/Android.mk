@@ -15,6 +15,7 @@ include vendor/broadcom/bcm_platform/liblights/Android.mk
 include vendor/broadcom/bcm_platform/libnexusipc/Android.mk
 include vendor/broadcom/bcm_platform/libnexusir/Android.mk
 include vendor/broadcom/bcm_platform/libnexusservice/Android.mk
+include vendor/broadcom/bcm_platform/libstagefrighthw/Android.mk
 include vendor/broadcom/bcm_platform/libtv_input/Android.mk
 include vendor/broadcom/bcm_platform/nexusinit/Android.mk
 ifeq ($(ANDROID_SUPPORTS_DTVKIT),y)
@@ -44,19 +45,6 @@ endif
 ifneq ($(filter $(ANDROID_SUPPORTS_WIDEVINE) $(ANDROID_SUPPORTS_PLAYREADY),y),)
 include vendor/broadcom/bcm_platform/libsecurity/Android.mk
 endif
-
-// this is needed because we cannot build a pure AOSP image with current OMX integration.  todo: remove.
-ifeq ($(ANDROID_ENABLE_BCM_OMX_PROTOTYPE),y)
-include vendor/broadcom/bcm_platform/libstagefrighthw_legacy/Android.mk
-include vendor/broadcom/bcm_platform/omx_components/audio/omx_audio_dec/Android.mk
-include vendor/broadcom/bcm_platform/omx_components/video/omx_video_codec/Android.mk
-include vendor/broadcom/bcm_platform/omx_components/video/omx_video_encoder/Android.mk
-include vendor/broadcom/bcm_platform/omx_core/Android.mk
-include vendor/broadcom/bcm_platform/utils/Android.mk
-else
-include vendor/broadcom/bcm_platform/libstagefrighthw/Android.mk
-endif
-
 
 include vendor/broadcom/bcm_platform/tools/cmatest/Android.mk
 include vendor/broadcom/bcm_platform/tools/lmkstats/Android.mk
