@@ -1,0 +1,10 @@
+usr/lib/libdrmrootfs.so=libsecurity/drmrootfs/linuxuser/libdrmrootfs.so
+usr/lib/libbcrypt.so=libsecurity/bcrypt/linuxuser/libbcrypt.so
+usr/lib/libsrai.so=libsecurity/srai/linuxuser/libsrai.so
+usr/lib/libplayreadypk_host.so=libsecurity/playreadypk/linuxuser/libplayreadypk_host.so
+usr/lib/libplayreadypk.so=libsecurity/playreadypk/linuxuser/libplayreadypk.so
+usr/lib/libcmndrm.so=libsecurity/common_drm/linuxuser/libcmndrm.so
+usr/lib/libcmndrm_tl.so=libsecurity/common_drm/linuxuser/libcmndrm_tl.so
+usr/lib/libcmndrmprdy.so=libsecurity/common_drm/linuxuser/libcmndrmprdy.so
+usr/lib/liboemcrypto.so=libsecurity/oemcrypto/linuxuser/liboemcrypto.so
+usr/lib/libnexus_security_android.a=libsecurity/nexus_security/Zeus42/linuxkernel/MARKER/libnexus_security_android.a
