@@ -46,7 +46,7 @@
  * $brcm_Log: $
  *
  *****************************************************************************/
-#define LOG_NDEBUG 0 // Intentionally left enabled for CTS at the moment.
+//#define LOG_NDEBUG 0
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_decoder"
 
