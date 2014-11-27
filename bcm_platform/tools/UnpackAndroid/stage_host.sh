@@ -22,13 +22,15 @@ echo "2) Unpacking ramdisk and copy kernel"
 cd $2
 $tools_dir/tools/split_boot $1/boot.img
 mv boot/boot.img-kernel kernel
+cp $1/boot.img boot.img
 
 echo "3) Unsparse ext4's"
 $tools_dir/tools/simg2img $1/system.img ./boot/system.raw.img
 $tools_dir/tools/simg2img $1/userdata.img ./boot/userdata.raw.img
 
-echo "4) Copying stage_target.sh and stage_target_multipart.sh"
+echo "4) Copying stage_target* scripts."
 cp $tools_dir/stage_target.sh $2
 cp $tools_dir/stage_target_multipart.sh $2
+cp $tools_dir/stage_target_bootimg.sh $2
 
 echo "!!! Done staging !!!" 
