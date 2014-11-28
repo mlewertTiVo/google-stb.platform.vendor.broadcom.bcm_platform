@@ -542,7 +542,7 @@ public class TunerService extends TvInputService {
 
         // Passes surface object to the corresponding hardware for rendering of the content
         // to be visible.
-        protected boolean setSurface(Surface surface) 
+        protected boolean setSurfaceLocal(Surface surface)
         {
 			Log.d(TAG, "setSurface (local),  Enter...");
 
@@ -584,7 +584,7 @@ public class TunerService extends TvInputService {
             if (DEBUG) 
 				Log.d(TAG, "onSetSurface surface:" + surface);
 
-            return setSurface(surface);
+            return setSurfaceLocal(surface);
         }
 
         @Override
