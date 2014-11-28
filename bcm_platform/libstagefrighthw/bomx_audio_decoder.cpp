@@ -300,6 +300,11 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
 BOMX_AudioDecoder::~BOMX_AudioDecoder()
 {
     unsigned i;
+
+    Lock();
+
+    ShutdownScheduler();
+
     if ( m_sourceChangedEventId )
     {
         UnregisterEvent(m_sourceChangedEventId);
@@ -319,6 +324,8 @@ BOMX_AudioDecoder::~BOMX_AudioDecoder()
             delete m_pAudioPorts[i];
         }
     }
+
+    Unlock();
 }
 
 OMX_ERRORTYPE BOMX_AudioDecoder::GetParameter(

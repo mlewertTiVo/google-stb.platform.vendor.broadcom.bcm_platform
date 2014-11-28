@@ -242,6 +242,7 @@ public:
 protected:
     OMX_COMPONENTTYPE *m_pComponentType;
     OMX_CALLBACKTYPE m_callbacks;
+    bool m_schedulerStopped;
     uint32_t m_version;
     unsigned m_numAudioPorts, m_audioPortBase;
     unsigned m_numImagePorts, m_imagePortBase;
@@ -295,6 +296,9 @@ protected:
     void CancelTimer(
         B_SchedulerTimerId id
         ) { B_Scheduler_CancelTimer(m_hScheduler, id); }
+
+    // Shut down the sceduler - should be called in a destructor for a component class
+    void ShutdownScheduler();
 
     // Component Role
     void SetRole(const char *pNewRole) { strncpy(m_componentRole, pNewRole, OMX_MAX_STRINGNAME_SIZE); }

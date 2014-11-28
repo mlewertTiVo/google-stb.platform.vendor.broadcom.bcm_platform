@@ -206,6 +206,7 @@ void BOMX_Component::Eos()
 {
     unsigned i;
     BOMX_Component *pTunnelComp;
+
     // Send callback to application
     if ( m_callbacks.EventHandler )
     {
@@ -255,6 +256,7 @@ BOMX_Component::BOMX_Component(
         const OMX_CALLBACKTYPE *pCallbacks,
         const char *(*pGetRole)(unsigned roleIndex)) :
     m_pComponentType(NULL),
+    m_schedulerStopped(false),
     m_version(0),
     m_numAudioPorts(0),
     m_audioPortBase(0),
@@ -359,11 +361,17 @@ BOMX_Component::BOMX_Component(
 BOMX_Component::~BOMX_Component()
 {
     ALOGV("Destroying component %s", GetName());
+
     if ( m_hThread )
     {
-        B_Scheduler_Stop(m_hScheduler);
+        if ( !m_schedulerStopped )
+        {
+            B_Scheduler_Stop(m_hScheduler);
+            m_schedulerStopped = true;
+        }
         B_Thread_Destroy(m_hThread);
     }
+
     if ( m_hCommandQueue )
     {
         B_MessageQueue_Destroy(m_hCommandQueue);
@@ -1741,5 +1749,14 @@ void BOMX_Component::ReturnPortBuffer(BOMX_Port *pPort, BOMX_Buffer *pBuffer)
                 m_callbacks.FillBufferDone((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, pBuffer->GetHeader());
             }
         }
+    }
+}
+
+void BOMX_Component::ShutdownScheduler()
+{
+    if ( !m_schedulerStopped )
+    {
+        B_Scheduler_Stop(m_hScheduler);
+        m_schedulerStopped = true;
     }
 }

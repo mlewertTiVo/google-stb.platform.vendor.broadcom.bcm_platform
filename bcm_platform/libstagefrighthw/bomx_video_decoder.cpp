@@ -707,6 +707,11 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
 {
     unsigned i;
     BOMX_VideoDecoderFrameBuffer *pBuffer;
+
+    Lock();
+
+    ShutdownScheduler();
+
     if ( m_hPlaypumpEvent )
     {
         B_Event_Destroy(m_hPlaypumpEvent);
@@ -771,6 +776,8 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
 
     if (m_omxHwcBinder)
         delete m_omxHwcBinder;
+
+    Unlock();
 }
 
 OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
