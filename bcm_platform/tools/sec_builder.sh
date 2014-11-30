@@ -11,47 +11,67 @@ set -e
 #
 #	1)	the 'sec-filer' fully qualified path, which is the location where the
 #		security source code resides.
-#		as example, 'sec-filer' can be set to "/projects/bse_secure_dev/${USER}/<root>"
-#		where <root> is the top level repository where you have extracted the security
+#
+#		as example, 'sec-filer' can be set to "/projects/bse_secure_dev/${USER}/<some-path>"
+#		which would be the top level repository where you have extracted the security
 #		related content needed for the build. at the present time, it is expected that
-#		under <root> you will have extracted both the 'security.git' and
-#		the 'playready.git'.
+#		under this 'sec-filer' path, you will have extracted both the 'security.git' and
+#		the 'playready.git', such that you have:
+#
+#		    - "/projects/bse_secure_dev/${USER}/<some-path>/security"
+#		    - "/projects/bse_secure_dev/${USER}/<some-path>/playready".
 #
 # you MAY provide:
 #
 #	1)	the 'hsm-srcs-list' input file (fully qualified path, which is the list of
 #		all hsm modules that are needed for the hsm build which the script will
-#		decrypt.  the hsm file format is a single *.gpg file name per row which
-#		name starts at the root of the hsm code tree in the resfw view of the world.
-#		if none provided, the default one checked-in in the source tree will be used.
+#		decrypt.
+#
+#		the hsm file format is a single *.gpg file name per row which name starts at the
+#		root of the hsm code tree in the resfw view of the world.
+#
+#		if no 'hsm-srcs-list' option is provided, the default one checked-in in the
+#		source tree (alongside this script) will be used.
+#
 #
 #	2)	the 'keydir' fully qualified path, which is the location where you have
-#		stored the key file and perl script necessary for decrypting the hsm sources.
-#		if none provided, the default /home/${USER}/keydir is expected.
+#		stored your personal key file and perl script necessary for decrypting the hsm
+#		sources.
+#
+#		if no 'keydir' option is provided, the script will attempt to use a default
+#		location of '/home/${USER}/keydir'.
+#
 #
 #	3)	a bunch of tunable options listed on the 'usage'.
 #
-# the security related code will never leave the secure filer location specified when
-# running this script, the android view you are using may be located on a non secure
-# filer such as a local build machine.
 #
-# note: by default each time you run this script and so ask to build the security libraries,
-#	(unless you specified the --skip-build option), the libraries (but not the supporting
-#       android/refsw environment) will be rebuilt from clean.  use the --force-clean option
-#       to also clean out the supporting environment prior to rebuilding the security libraries.
+# when running this script, the security related code will never leave the secure filer location
+# (ie 'sec-filer' option) specified when, the companion android view you are using may be located on
+# a non secure filer such as a local build machine to speed up builds, the script will take care of
+# properly linking into the tree the secure components on the filer for the build purpose.
+#
+#
+# by default each time you run this script and so ask to build the security libraries, the libraries
+# will be rebuilt from clean. unless you specified the --skip-build option, in which case no build
+# will take place.
+#
+# the supporting android environment will not be rebuilt from clean however, unless you are explicitely
+# asking for it using one of the options: 'force-clean' or 'force-clean-refsw'.  the latter being a subset
+# of the former.
+#
 #
 # example usage:
 #
 #	first time:
-#		./sec_builder --sec-filer <path-to> --keydir <path-to> --hsm-srcs-list <path-to> --configure
 #
-#	subsequent rebuild, with same code:
-#		1) ./sec_builder --sec-filer <path-to> --keydir <path-to> --hsm-srcs-list <path-to> --configure --reset
-#		2) ./sec_builder --sec-filer <path-to> --keydir <path-to> --hsm-srcs-list <path-to>
-#		3) ./sec_builder --sec-filer <path-to> --keydir <path-to> --hsm-srcs-list <path-to> --force-clean
+#		./sec_builder --sec-filer <path-to> --configure
 #
-#	subsequent rebuild, with updated code:
-#		./sec_builder --sec-filer <path-to> --keydir <path-to> --hsm-srcs-list <path-to> --update
+#	subsequent rebuild, with same code, examples of what action can be asked:
+#
+#		[reset environment] ./sec_builder --sec-filer <path-to> --configure --reset
+#		[re-run the build ] ./sec_builder --sec-filer <path-to>
+#		[force refsw clean] ./sec_builder --sec-filer <path-to> --force-clean-refsw
+#		[update codebase  ] ./sec_builder --sec-filer <path-to> --update
 #
 
 oops="oops"
@@ -101,15 +121,16 @@ function usage {
 	echo "                                  file, containing the list (one per row) of mapped <as-built>=<in-android-tree>"
 	echo "                                  modules, where <as-built> is the library built by this script and <in-android-tree>"
 	echo "                                  is the final resting location of the same library in the android prebuilt tree."
+	echo "                                  this is used to compare the checked-in libraries vs the built one."
 	echo ""
 	echo "   --configure                  : whether to configure the source setup secure/non-secure before building,"
-	echo "                                  typically only needed once per code sync cycle, also determines if we need"
-	echo "                                  decrypt the hsm modules (no need to decrypt if nothing changed)."
+	echo "                                  typically only needed once per code sync cycle, also determines if there is a need"
+	echo "                                  to decrypt the hsm modules (no need to decrypt if nothing changed)."
 	echo ""
 	echo "   --reset                      : whether to force reset the source setup secure/non-secure prior to recreating,"
 	echo "                                  all links.  typically needed on a non-clean environment if using --configure."
 	echo ""
-	echo "   --update                     : whether to update the environment (git sync) before building."
+	echo "   --update                     : whether to update the environment (repo sync/git pull) before building."
 	echo ""
 	echo "   --force-clean                : whether to force clean the supporting android environment, this does not apply to"
 	echo "                                  the security libraries, since those are *always* clean."
