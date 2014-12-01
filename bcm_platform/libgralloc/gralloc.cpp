@@ -198,6 +198,8 @@ NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt,
       case HAL_PIXEL_FORMAT_RGBX_8888:    b = 4;   pf = NEXUS_PixelFormat_eX8_R8_G8_B8;   break;
       case HAL_PIXEL_FORMAT_RGB_888:      b = 4;   pf = NEXUS_PixelFormat_eX8_R8_G8_B8;   break;
       case HAL_PIXEL_FORMAT_RGB_565:      b = 2;   pf = NEXUS_PixelFormat_eR5_G6_B5;      break;
+      case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
+                                          b = 4;   pf = NEXUS_PixelFormat_eX8_R8_G8_B8;   break;
       default:
          {
                b = 0;   pf = NEXUS_PixelFormat_eUnknown;
@@ -350,6 +352,8 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
    case HAL_PIXEL_FORMAT_RGBA_8888:  bufferRequirements.format = BEGL_BufferFormat_eA8B8G8R8;     break;
    case HAL_PIXEL_FORMAT_RGBX_8888:  bufferRequirements.format = BEGL_BufferFormat_eX8B8G8R8;     break;
    case HAL_PIXEL_FORMAT_RGB_888:    bufferRequirements.format = BEGL_BufferFormat_eX8B8G8R8;     break;
+   case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
+                                     bufferRequirements.format = BEGL_BufferFormat_eX8B8G8R8;     break;
    case HAL_PIXEL_FORMAT_RGB_565:    bufferRequirements.format = BEGL_BufferFormat_eR5G6B5;       break;
 
    default:                          bufferRequirements.format = BEGL_BufferFormat_INVALID;       break;
