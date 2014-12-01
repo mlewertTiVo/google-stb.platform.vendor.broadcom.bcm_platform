@@ -142,6 +142,18 @@ if verbose:
 lines = check_output(run_toolchain,shell=True).splitlines()
 kerneltoolchain="${ANDROID}/prebuilts/gcc/linux-x86/arm/stb/%s/bin" % lines[0].rstrip()
 
+# get the toolchain expected for building BOLT and make sure it does not
+# diverge from kernel toolchain as we want only a single verion in Android
+# tree at any point in time
+run_toolchain='bash -c "cat ./bootable/bootloader/bolt/config/toolchain"'
+if verbose:
+	print run_toolchain
+boltlines = check_output(run_toolchain,shell=True).splitlines()
+
+if boltlines[0].rstrip() != lines[0].rstrip():
+	print '\nwarning: Expected BOLT toolchain (%s) is not the same as kernel toolchain (%s).' % (boltlines[0].rstrip(), lines[0].rstrip())
+	print 'You can still proceed with the build.  Contact Android BOLT maintainer to follow-up with diverging toolchain version.'
+
 # run the refsw plat tool to get the generated versions of the config.
 run_plat='bash -c "source ./vendor/broadcom/refsw/BSEAV/tools/build/plat %s %s %s"' % (chip, revision, boardtype)
 if verbose:
