@@ -79,6 +79,7 @@ using namespace android;
 #define GPX_SURFACE_STACK            2
 #define DUMP_BUFFER_SIZE             1024
 #define LAST_PING_FRAME_ID_INVALID   0xBAADCAFE
+#define NSC_VERTICAL_SCALE_FACTOR    15
 
 /* note: matching other parts of the integration, we
  *       want to default product resolution to 1080p.
@@ -730,10 +731,14 @@ static void hwc_binder_notify(int dev, int msg, int param1, int param2)
    }
 }
 
-static bool is_video_layer(hwc_layer_1_t *layer, int layer_id)
+static bool is_video_layer(hwc_layer_1_t *layer, int layer_id, bool *is_sideband)
 {
     bool rc = false;
     NexusClientContext *client_context;
+
+    if (is_sideband) {
+        *is_sideband = false;
+    }
 
     if (((layer->compositionType == HWC_OVERLAY && layer->handle) ||
         (layer->compositionType == HWC_SIDEBAND && layer->sidebandStream))
@@ -751,6 +756,9 @@ static bool is_video_layer(hwc_layer_1_t *layer, int layer_id)
             }
         } else if (layer->compositionType == HWC_SIDEBAND) {
             client_context = (NexusClientContext*)layer->sidebandStream->data[1];
+            if (is_sideband) {
+                *is_sideband = true;
+            }
         }
 
         if (client_context != NULL) {
@@ -763,6 +771,34 @@ static bool is_video_layer(hwc_layer_1_t *layer, int layer_id)
         ALOGV("%s: found on layer %d.", __FUNCTION__, layer_id);
     }
     return rc;
+}
+
+static bool can_handle_layer_scaling(
+    hwc_layer_1_t *layer)
+{
+    bool ret = true;
+
+    private_handle_t *bcmBuffer = (private_handle_t *)layer->handle;
+    NEXUS_Rect clip_position = {(int16_t)layer->sourceCrop.left,
+                                (int16_t)layer->sourceCrop.top,
+                                (uint16_t)(layer->sourceCrop.right - layer->sourceCrop.left),
+                                (uint16_t)(layer->sourceCrop.bottom - layer->sourceCrop.top)};
+
+    if (!layer->handle) {
+        goto out;
+    }
+
+    if (is_video_layer(layer, -1, NULL)) {
+        goto out;
+    }
+
+    if ((bcmBuffer->height / clip_position.height) >= NSC_VERTICAL_SCALE_FACTOR) {
+        ret = false;
+        goto out;
+    }
+
+out:
+    return ret;
 }
 
 static bool primary_need_nx_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *layer)
@@ -842,6 +878,8 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
               continue;
            if (layer->handle && !(layer->flags & HWC_SKIP_LAYER))
               layer->compositionType = HWC_OVERLAY;
+           if (!can_handle_layer_scaling(layer))
+              layer->compositionType = HWC_FRAMEBUFFER;
            if (layer->handle && (layer->flags & HWC_IS_CURSOR_LAYER) && HWC_CURSOR_SURFACE_SUPPORTED)
               layer->compositionType = HWC_CURSOR_OVERLAY;
         }
@@ -938,6 +976,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
 {
     size_t i;
     NEXUS_Error rc;
+    bool is_sideband = false;
 
     // should never happen as primary display should always be there.
     if (!list)
@@ -958,14 +997,16 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         //
         // video layer: signal the buffer to be displayed, drop duplicates.
         //
-        if (is_video_layer(&list->hwLayers[i], -1 /*not used*/)) {
-            private_handle_t *bcmBuffer = (private_handle_t *)list->hwLayers[i].handle;
-            PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedDataPhyAddr);
-            if (ctx->hwc_binder) {
-                // TODO: currently only one video window exposed.
-                if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->DisplayFrame.frameStatus.serialNumber) {
-                    ctx->mm_cli[0].last_ping_frame_id = pSharedData->DisplayFrame.frameStatus.serialNumber;
-                    ctx->hwc_binder->setframe(ctx->mm_cli[0].root.ncci.sccid, ctx->mm_cli[0].last_ping_frame_id);
+        if (is_video_layer(&list->hwLayers[i], -1 /*not used*/, &is_sideband)) {
+            if (!is_sideband) {
+                private_handle_t *bcmBuffer = (private_handle_t *)list->hwLayers[i].handle;
+                PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedDataPhyAddr);
+                if (ctx->hwc_binder) {
+                    // TODO: currently only one video window exposed.
+                    if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->DisplayFrame.frameStatus.serialNumber) {
+                        ctx->mm_cli[0].last_ping_frame_id = pSharedData->DisplayFrame.frameStatus.serialNumber;
+                        ctx->hwc_binder->setframe(ctx->mm_cli[0].root.ncci.sccid, ctx->mm_cli[0].last_ping_frame_id);
+                    }
                 }
             }
         }
@@ -2009,8 +2050,9 @@ static void hwc_nsc_prepare_layer(
     bool geometry_changed)
 {
     unsigned int video_layer_id = 0;
+    bool is_sideband = false;
 
-    if (is_video_layer(layer, layer_id)) {
+    if (is_video_layer(layer, layer_id, &is_sideband)) {
         if (video_layer_id < NSC_MM_CLIENTS_NUMBER) {
             hwc_prepare_mm_layer(ctx, layer, layer_id, video_layer_id);
             video_layer_id++;
