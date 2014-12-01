@@ -79,7 +79,7 @@ using namespace android;
 #define GPX_SURFACE_STACK            2
 #define DUMP_BUFFER_SIZE             1024
 #define LAST_PING_FRAME_ID_INVALID   0xBAADCAFE
-#define NSC_VERTICAL_SCALE_FACTOR    15
+#define NSC_MAXIMUM_SCALE_FACTOR     15
 
 /* note: matching other parts of the integration, we
  *       want to default product resolution to 1080p.
@@ -283,7 +283,6 @@ struct hwc_context_t {
     MM_CLIENT_INFO mm_cli[NSC_MM_CLIENTS_NUMBER];
     BKNI_MutexHandle mutex;
     VSYNC_CLIENT_INFO syn_cli;
-    bool fb_target_needed;
     bool nsc_video_changed;
 
     int display_width;
@@ -612,11 +611,10 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
        }
     }
     if (capacity) {
-       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%p::vscb:%s::fbt:%s::d:{%d,%d}::pm:%s\n",
+       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%p::vscb:%s::d:{%d,%d}::pm:%s\n",
            ctx->pIpcClient,
            ctx->pNexusClientContext,
            ctx->vsync_callback_enabled ? "enabled" : "disabled",
-           ctx->fb_target_needed ? "yup" : "non",
            ctx->display_width,
            ctx->display_height,
            hwc_power_mode[ctx->power_mode]);
@@ -779,10 +777,10 @@ static bool can_handle_layer_scaling(
     bool ret = true;
 
     private_handle_t *bcmBuffer = (private_handle_t *)layer->handle;
-    NEXUS_Rect clip_position = {(int16_t)layer->sourceCrop.left,
-                                (int16_t)layer->sourceCrop.top,
-                                (uint16_t)(layer->sourceCrop.right - layer->sourceCrop.left),
-                                (uint16_t)(layer->sourceCrop.bottom - layer->sourceCrop.top)};
+    NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
+                                (int16_t)(int)layer->sourceCropf.top,
+                                (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
+                                (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
 
     if (!layer->handle) {
         goto out;
@@ -792,7 +790,14 @@ static bool can_handle_layer_scaling(
         goto out;
     }
 
-    if ((bcmBuffer->height / clip_position.height) >= NSC_VERTICAL_SCALE_FACTOR) {
+    if (clip_position.width && ((bcmBuffer->width / clip_position.width) >= NSC_MAXIMUM_SCALE_FACTOR)) {
+        ALOGI("%s: width: %d -> %d - defer to gles", __FUNCTION__, bcmBuffer->width, clip_position.width);
+        ret = false;
+        goto out;
+    }
+
+    if (clip_position.height && ((bcmBuffer->height / clip_position.height) >= NSC_MAXIMUM_SCALE_FACTOR)) {
+        ALOGI("%s: height: %d -> %d - defer to gles", __FUNCTION__, bcmBuffer->height, clip_position.height);
         ret = false;
         goto out;
     }
@@ -831,9 +836,8 @@ static bool primary_need_nx_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *l
     }
 
     ++skip_layer;
-    if ((layer->compositionType == HWC_FRAMEBUFFER_TARGET) &&
-        !ctx->fb_target_needed) {
-        ALOGV("%s: framebuffer layer not needed.", __FUNCTION__);
+    if (layer->compositionType == HWC_FRAMEBUFFER) {
+        ALOGI("%s: gles target.", __FUNCTION__);
         goto out;
     }
 
@@ -852,9 +856,6 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
     size_t i;
     hwc_layer_1_t *layer;
     struct hwc_context_t *ctx = (hwc_context_t*)dev;
-    bool fb_target_present = false;
-
-    ctx->fb_target_needed = false;
 
     for (i = 0; i < list->numHwLayers; i++) {
         layer = &list->hwLayers[i];
@@ -866,9 +867,8 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
         if (layer->compositionType == HWC_SIDEBAND)
            continue;
         // framebuffer target layer stays such (SF composing via GL into it, eg: animation/transition).
-        if (layer->compositionType == HWC_FRAMEBUFFER_TARGET) {
-           fb_target_present = true;
-        }
+        if (layer->compositionType == HWC_FRAMEBUFFER_TARGET)
+           continue;
         // everything else should be an overlay unless we cannot handle it or not allowed to
         // handle it.
         if ((layer->compositionType == HWC_FRAMEBUFFER) ||
@@ -883,10 +883,6 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
            if (layer->handle && (layer->flags & HWC_IS_CURSOR_LAYER) && HWC_CURSOR_SURFACE_SUPPORTED)
               layer->compositionType = HWC_CURSOR_OVERLAY;
         }
-    }
-
-    if (fb_target_present) {
-       ctx->fb_target_needed = true;
     }
 }
 
@@ -1784,10 +1780,10 @@ static void hwc_prepare_gpx_layer(
                                 (int16_t)layer->displayFrame.top,
                                 (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
                                 (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
-    NEXUS_Rect clip_position = {(int16_t)layer->sourceCrop.left,
-                                (int16_t)layer->sourceCrop.top,
-                                (uint16_t)(layer->sourceCrop.right - layer->sourceCrop.left),
-                                (uint16_t)(layer->sourceCrop.bottom - layer->sourceCrop.top)};
+    NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
+                                (int16_t)(int)layer->sourceCropf.top,
+                                (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
+                                (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
     int cur_width;
     int cur_height;
     int format;
@@ -1960,11 +1956,10 @@ static void hwc_prepare_mm_layer(
                                 (int16_t)layer->displayFrame.top,
                                 (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
                                 (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
-    NEXUS_Rect clip_position = {(int16_t)layer->sourceCrop.left,
-                                (int16_t)layer->sourceCrop.top,
-                                (uint16_t)(layer->sourceCrop.right - layer->sourceCrop.left),
-                                (uint16_t)(layer->sourceCrop.bottom - layer->sourceCrop.top)};
-
+    NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
+                                (int16_t)(int)layer->sourceCropf.top,
+                                (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
+                                (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
     int cur_width;
     int cur_height;
     unsigned int stride;
