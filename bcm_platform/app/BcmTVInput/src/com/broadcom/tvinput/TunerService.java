@@ -16,30 +16,46 @@
 
 package com.broadcom.tvinput;
 
-import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
+import org.xmlpull.v1.XmlPullParserException;
+
 import android.content.ComponentName;
+import android.content.ContentResolver;
+import android.content.ContentUris;
+import android.content.ContentUris;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
-import android.content.ContentUris;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.hardware.hdmi.HdmiDeviceInfo;
+import android.media.AudioManager;
 import android.media.tv.TvContentRating;
+import android.media.tv.TvContract;
 import android.media.tv.TvInputHardwareInfo;
 import android.media.tv.TvInputInfo;
 import android.media.tv.TvInputManager;
 import android.media.tv.TvInputService;
 import android.media.tv.TvStreamConfig;
-import android.media.tv.TvContract;
-import android.content.ContentResolver;
-import android.content.ContentUris;
-import android.content.ContentValues;
-import android.database.Cursor;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.IBinder;
@@ -49,21 +65,6 @@ import android.util.Log;
 import android.util.SparseArray;
 import android.view.KeyEvent;
 import android.view.Surface;
-import android.os.AsyncTask;
-
-import java.io.File;
-import java.io.FileInputStream;
-import java.util.Collections;
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-
-import android.media.AudioManager;
-
-import org.xmlpull.v1.XmlPullParserException;
 
 /**
  * TV-Input service for Broadcom's Tuner
@@ -87,19 +88,226 @@ public class TunerService extends TvInputService {
     private TvInputManager mManager = null;
     private ResolveInfo mResolveInfo;
 
-    private class ChannelUploadTask extends AsyncTask<Object, Void, Void> {
-        @Override
-        protected Void doInBackground(Object... objs) {
-            Log.d(TAG, "ChannelUploadTask::doInBackground()");
-            Context context = (Context) objs[0];
-            String inputId = (String) objs[1];
+    private static ContentValues buildProgramValues(long channelId, ProgramInfo program, boolean insert) {
+        ContentValues prog_values = new ContentValues();
+        if (insert) {
+            prog_values.put(TvContract.Programs.COLUMN_CHANNEL_ID, channelId);
+            prog_values.put(TvContract.Programs.COLUMN_INTERNAL_PROVIDER_DATA, program.id.getBytes());
+        }
+        prog_values.put(TvContract.Programs.COLUMN_TITLE, program.title);
+        prog_values.put(TvContract.Programs.COLUMN_START_TIME_UTC_MILLIS, program.start_time_utc_millis);
+        prog_values.put(TvContract.Programs.COLUMN_END_TIME_UTC_MILLIS, program.end_time_utc_millis);
+        return prog_values;
+    }
 
-            ChannelInfo[] civ = TunerHAL.getChannelList();
+    private class AndroidProgramInfo extends ProgramInfo {
+        long programId;
+    };
 
-            Log.e(TAG, "Got channels: " + civ.length);
-            updateChannels(context, inputId, civ);
+    private static boolean differentInfo(AndroidProgramInfo api, ProgramInfo pi) {
+        if (!api.title.equals(pi.title)) {
+            Log.d(TAG, "DatabaseSyncTask: different title '" + api.title + "' '" + pi.title + "'");
+            return true;
+        }
+        if (api.start_time_utc_millis != pi.start_time_utc_millis) {
+            Log.d(TAG, "DatabaseSyncTask: different start " + api.start_time_utc_millis + " " + pi.start_time_utc_millis);
+            return true;
+        }
+        if (api.end_time_utc_millis != pi.end_time_utc_millis) {
+            Log.d(TAG, "DatabaseSyncTask: different end " + api.end_time_utc_millis + " " + pi.end_time_utc_millis);
+            return true;
+        }
+        return false;
+    }
 
-            return null;
+    private static void insertProgram(Context context, long channelId, ProgramInfo program) {
+        ContentValues prog_values = buildProgramValues(channelId, program, true);
+        context.getContentResolver().insert(TvContract.Programs.CONTENT_URI, prog_values);
+    }
+
+    private static void updateProgram(Context context, long programId, ProgramInfo program) {
+        ContentValues prog_values = buildProgramValues(0, program, false);
+        context.getContentResolver().update(TvContract.buildProgramUri(programId), prog_values, null, null);
+    }
+
+    private class DatabaseSync {
+        private Thread thread;
+        private DatabaseSyncTask task;
+
+        private final Lock lock = new ReentrantLock();
+        private final Condition syncRequired = lock.newCondition();
+        private boolean channelListChanged = false;
+        private boolean programListChanged = false;
+
+        public void setChannelListChanged() {
+            lock.lock();
+            try {
+                channelListChanged = true;
+                syncRequired.signal();
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        public void setProgramListChanged() {
+            lock.lock();
+            try {
+                programListChanged = true;
+                syncRequired.signal();
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        private class DatabaseSyncTask implements Runnable {
+
+            private final String inputId;
+
+            private void updateProgramsForChannel(long channelId, String id)
+            {
+                ProgramInfo newprograms[] = TunerHAL.getProgramList(id);
+
+                Uri uri = TvContract.buildProgramsUriForChannel(channelId);
+                String[] projection = {
+                    TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA,
+                    TvContract.Programs.COLUMN_TITLE,
+                    TvContract.Programs.COLUMN_START_TIME_UTC_MILLIS,
+                    TvContract.Programs.COLUMN_END_TIME_UTC_MILLIS,
+                    TvContract.Programs._ID,
+                };
+                Cursor cursor = getContentResolver().query(uri, projection, null, null, null);
+                if (cursor == null) {
+                    return;
+                }
+                AndroidProgramInfo oldprograms[] = new AndroidProgramInfo[cursor.getCount()];
+                if (cursor.getCount() > 0) {
+                    int op = 0;
+                    while (cursor.moveToNext()) {
+                        oldprograms[op] = new AndroidProgramInfo();
+                        oldprograms[op].id = new String(cursor.getBlob(0));
+                        oldprograms[op].title = cursor.getString(1);
+                        oldprograms[op].start_time_utc_millis = cursor.getLong(2);
+                        oldprograms[op].end_time_utc_millis = cursor.getLong(3);
+                        oldprograms[op].programId = cursor.getLong(4);
+                        op++;
+                    }
+                }
+                // Add new ids
+                for (ProgramInfo npi : newprograms) {
+                    boolean inoldlist = false;
+                    for (AndroidProgramInfo opi : oldprograms) {
+                        if (npi.id.equals(opi.id)) {
+                            inoldlist = true;
+                            break;
+                        }
+                    }
+                    if (!inoldlist) {
+                        Log.d(TAG, "DatabaseSyncTask.updateProgramsForChannel(" + id + "): + " + npi.id + " " + npi.title);
+                        TunerService.insertProgram(TunerService.this, channelId, npi);
+                    }
+                }
+                // Delete/update old ids
+                for (AndroidProgramInfo opi : oldprograms) {
+                    boolean innewlist = false;
+                    for (ProgramInfo npi : newprograms) {
+                        if (npi.id.equals(opi.id)) {
+                            innewlist = true;
+                            if (differentInfo(opi, npi)) {
+                                Log.d(TAG, "DatabaseSyncTask.updateProgramsForChannel(" + id + "): ! " + opi.id);
+                                TunerService.updateProgram(TunerService.this, opi.programId, npi);
+                            }
+                            break;
+                        }
+                    }
+                    if (!innewlist) {
+                        Log.d(TAG, "DatabaseSyncTask.updateProgramsForChannel(" + id + "): - " + opi.id);
+                        Uri puri = TvContract.buildProgramUri(opi.programId);
+                        getContentResolver().delete(puri, null, null);
+                    }
+                }
+                cursor.close(); 
+            }
+
+            private void updatePrograms()
+            {
+                // Get list of channelIds and bids
+                String[] channelprojection = { TvContract.Channels._ID, TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA };
+                Uri uri = TvContract.buildChannelsUriForInput(inputId);
+                Cursor channelcursor = getContentResolver().query(uri, channelprojection, null, null, null);
+                if (channelcursor == null) {
+                    return;
+                }
+                if (channelcursor.getCount() < 1) {
+                    channelcursor.close();
+                    return;
+                }
+
+                while (channelcursor.moveToNext()) {
+                    long channelId = channelcursor.getLong(0);
+                    String id = new String(channelcursor.getBlob(1));
+                    updateProgramsForChannel(channelId, id);
+                }
+                channelcursor.close();
+
+            }
+
+            @Override
+            public void run() {
+                lock.lock();
+                while (true) {
+                    if (channelListChanged) {
+                        //Context context = (Context) objs[0];
+                        channelListChanged = false;
+                        lock.unlock();
+                        ChannelInfo[] civ = TunerHAL.getChannelList();
+
+                        Log.e(TAG, "DatabaseSyncTask::Got channels " + civ.length);
+                        updateChannels(TunerService.this, inputId, civ);
+                        lock.lock();
+                    }
+                    else if (programListChanged) {
+                        //Context context = (Context) objs[0];
+                        programListChanged = false;
+                        lock.unlock();
+                        updatePrograms();
+                        lock.lock();
+                    }
+                    else {
+                        Log.d(TAG, "DatabaseSyncTask::waiting");
+                        try {
+                            syncRequired.await(); 
+                        } catch (InterruptedException e) {
+                            Log.d(TAG, "DatabaseSyncTask::exiting");
+                            return;
+                        }
+                    }
+                }
+            }
+
+            DatabaseSyncTask(String id) {
+                inputId = id;
+            }
+        }
+
+        DatabaseSync(String id) {
+            task = new DatabaseSyncTask(id);
+            thread = new Thread(task);
+            thread.start();
+        }
+    }
+
+    private DatabaseSync dbsync;
+
+    public static final int BROADCAST_EVENT_CHANNEL_LIST_CHANGED = 0;
+    public static final int BROADCAST_EVENT_PROGRAM_LIST_CHANGED = 1;
+
+    public void onBroadcastEvent(int e) {
+        Log.e(TAG, "Broadcast event: " + e);
+        if (e == BROADCAST_EVENT_CHANNEL_LIST_CHANGED) {
+            dbsync.setChannelListChanged();
+        }
+        else if (e == BROADCAST_EVENT_PROGRAM_LIST_CHANGED) {
+            dbsync.setProgramListChanged();
         }
     }
 
@@ -149,7 +357,7 @@ public class TunerService extends TvInputService {
         }
 
         Log.e(TAG, "Calling TunerHAL.initialize!!");
-        if (TunerHAL.initialize() < 0) {
+        if (TunerHAL.initialize(this) < 0) {
             Log.e(TAG, "TunerHAL.initialize failed!!");
             return null;
         }
@@ -173,8 +381,9 @@ public class TunerService extends TvInputService {
 
         if (DEBUG) 
 			Log.d(TAG, "onHardwareAdded returns " + info);
-        Log.d(TAG, "kicking off upload");
-        new ChannelUploadTask().execute(this, info.getId());
+        Log.d(TAG, "kicking off sync task");
+        dbsync = new DatabaseSync(info.getId());
+        dbsync.setChannelListChanged();
         return info;
     }
 
@@ -199,7 +408,6 @@ public class TunerService extends TvInputService {
     public static void populateChannels(Context context, String inputId, ChannelInfo channels[]) 
     {
         ContentValues channel_values = new ContentValues();
-        ContentValues prog_values = new ContentValues();
 
         channel_values.put(TvContract.Channels.COLUMN_INPUT_ID, inputId);
 
@@ -217,18 +425,18 @@ public class TunerService extends TvInputService {
             channel_values.put(TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA, channel.id.getBytes());
 
             Uri channelUri = context.getContentResolver().insert(TvContract.Channels.CONTENT_URI, channel_values);
-	        Log.d(TAG, "populateChannels: " + channel.number + " " + channel.name + " " + channelUri);
+	    Log.d(TAG, "populateChannels: " + channel.number + " " + channel.name + " " + channelUri);
 
-            //long channelId = ContentUris.parseId(channelUri);
-            //Log.d(TAG, "channelId = " +channelId);
+            long channelId = ContentUris.parseId(channelUri);
+            Log.d(TAG, "channelId = " +channelId);
 
             // Initialize the Programs class
-            //prog_values.put(TvContract.Programs.COLUMN_CHANNEL_ID, channelId);
-            //prog_values.put(TvContract.Programs.COLUMN_TITLE, channel.mProgram.mTitle);
-            //prog_values.put(TvContract.Programs.COLUMN_SHORT_DESCRIPTION, channel.mProgram.mDescription);
+            ProgramInfo programs[] = TunerHAL.getProgramList(channel.id);
+            for (ProgramInfo program : programs) 
+            {
+                insertProgram(context, channelId, program);
+            }
             
-            //Uri rowUri = context.getContentResolver().insert(TvContract.Programs.CONTENT_URI, prog_values);
-		//	Log.d(TAG, "rowUri = " +rowUri);
         }
         Log.d(TAG, "populateChannels: finish");
     }
@@ -236,6 +444,7 @@ public class TunerService extends TvInputService {
     private void updateChannels(Context context, String inputId, ChannelInfo channels[]) {
         Uri uri = TvContract.buildChannelsUriForInput(inputId);
         getContentResolver().delete(uri, null, null);
+        // TODO: Next deletes everyone's programs, not just per channel
         getContentResolver().delete(TvContract.Programs.CONTENT_URI, null, null);
         populateChannels(context, inputId, channels);
     }
@@ -414,6 +623,7 @@ public class TunerService extends TvInputService {
                 TunerHAL.tune(id);
 
                 // Flag that we're now ready to tune
+                // Should really come from underlying broadcast stack
                 notifyVideoAvailable();
 
                 // Update the current id

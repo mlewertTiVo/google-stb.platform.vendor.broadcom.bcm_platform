@@ -10,10 +10,10 @@ extern "C" {
 /*
  * Class:     com_broadcom_tvinput_TunerHAL
  * Method:    initialize
- * Signature: ()I
+ * Signature: (Ljava/lang/Object;)I
  */
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize
-  (JNIEnv *, jclass);
+  (JNIEnv *, jclass, jobject);
 
 /*
  * Class:     com_broadcom_tvinput_TunerHAL
@@ -30,6 +30,14 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune
  */
 JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
   (JNIEnv *, jclass);
+
+/*
+ * Class:     com_broadcom_tvinput_TunerHAL
+ * Method:    getProgramList
+ * Signature: (Ljava/lang/String;)[Lcom/broadcom/tvinput/ProgramInfo;
+ */
+JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getProgramList
+  (JNIEnv *, jclass, jstring);
 
 /*
  * Class:     com_broadcom_tvinput_TunerHAL

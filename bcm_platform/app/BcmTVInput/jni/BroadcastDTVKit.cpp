@@ -1,4 +1,6 @@
-#include "Broadcast.h"
+#include "TunerHAL.h"
+
+#include <stdlib.h>
 
 extern "C" {
 #include "techtype.h"
@@ -21,42 +23,31 @@ public:
     U8BIT path;
 };
 
-static Tuner_Data *pSelf;
+static BroadcastDTVKit_Context *pSelf;
 
-static void
-FreeContext(Tuner_Data *pTD, BroadcastDTVKit_Context *context)
+static int BroadcastDTVKit_Stop()
 {
-    if (context) {
-        delete context; 
-    }
-}
-
-static int BroadcastDTVKit_Stop(Tuner_Data *pTD)
-{
-    BroadcastDTVKit_Context *context = (BroadcastDTVKit_Context *)pTD->context;
-
     ALOGE("%s: Enter", __FUNCTION__);
-    if (context->path != INVALID_RES_ID) {
+    if (pSelf->path != INVALID_RES_ID) {
         ALOGE("%s: Stopping", __FUNCTION__); 
-        ACTL_DecodeOff(context->path);
-        context->path = INVALID_RES_ID;
+        ACTL_DecodeOff(pSelf->path);
+        pSelf->path = INVALID_RES_ID;
     }
     ALOGE("%s: Exit", __FUNCTION__);
 
     return -1;
 }
 
-static int BroadcastDTVKit_Tune(Tuner_Data *pTD, String8 s8id)
+static int BroadcastDTVKit_Tune(String8 s8id)
 {
-    BroadcastDTVKit_Context *context = (BroadcastDTVKit_Context *)pTD->context;
     int rv = -1;
 
     ALOGE("%s: Enter", __FUNCTION__);
     U16BIT lcn = strtoul(s8id.string(), 0, 0);
     void *s_ptr = ADB_FindServiceByLcn(ADB_SERVICE_LIST_TV | ADB_SERVICE_LIST_RADIO, lcn, TRUE);
     if (s_ptr) {
-        context->path = ACTL_TuneToService(INVALID_RES_ID, NULL, s_ptr, TRUE, TRUE);
-        if (context->path == INVALID_RES_ID) {
+        pSelf->path = ACTL_TuneToService(INVALID_RES_ID, NULL, s_ptr, TRUE, TRUE);
+        if (pSelf->path == INVALID_RES_ID) {
             ALOGE("%s: Invalid resource", __FUNCTION__);
         }
         else {
@@ -133,7 +124,7 @@ utf8tostringstrippingdvbcodes(U8BIT *p)
         p++; 
     }
     do {
-        int32_t code;
+        int32_t code = 0;
         len = utf8tocode(p, code);
         switch (code) {
         case 0xe086:
@@ -153,11 +144,9 @@ utf8tostringstrippingdvbcodes(U8BIT *p)
     return s;
 }
 
-static Vector<ChannelInfo> BroadcastDTVKit_GetChannelList(Tuner_Data *pTD)
+static Vector<BroadcastChannelInfo> BroadcastDTVKit_GetChannelList()
 {
-    Vector<ChannelInfo> civ;
-
-    BroadcastDTVKit_Context *context = (BroadcastDTVKit_Context *)pTD->context;
+    Vector<BroadcastChannelInfo> civ;
 
     ALOGE("%s: Enter", __FUNCTION__);
 
@@ -166,7 +155,7 @@ static Vector<ChannelInfo> BroadcastDTVKit_GetChannelList(Tuner_Data *pTD)
     ADB_GetServiceListIncludingHidden(ADB_SERVICE_LIST_TV | ADB_SERVICE_LIST_RADIO, &slist, &num_entries, true);
     if (slist) {
         for (unsigned i = 0; i < num_entries; i++) {
-            ChannelInfo ci; 
+            BroadcastChannelInfo ci; 
             ci.id = String8::format("%u", ADB_GetServiceLcn(slist[i]));
 
             U8BIT *name = ADB_GetServiceFullName(slist[i], FALSE);
@@ -190,13 +179,52 @@ static Vector<ChannelInfo> BroadcastDTVKit_GetChannelList(Tuner_Data *pTD)
     return civ;
 }
 
-static int BroadcastDTVKit_Release(Tuner_Data *pTD)
+static void
+pushprog(Vector<BroadcastProgramInfo> &rv, void *e_ptr, void *s_ptr)
 {
-    BroadcastDTVKit_Context *context = (BroadcastDTVKit_Context *)pTD->context;
+    BroadcastProgramInfo pi;
+    U8BIT *utf8;
+
+    if (e_ptr == 0)
+        return;
+
+    pi.id = String8::format("%u", ADB_GetEventId(e_ptr));
+    pi.channel_id = String8::format("%u", ADB_GetServiceLcn(s_ptr));
+
+    utf8 = ADB_GetEventName(e_ptr);
+    pi.title = utf8tostringstrippingdvbcodes(utf8);
+    STB_ReleaseUnicodeString(utf8);
+
+    pi.start_time_utc_millis = STB_GCConvertToTimestamp(ADB_GetEventStartDateTime(e_ptr)) * (jlong)1000;
+    pi.end_time_utc_millis = STB_GCConvertToTimestamp(ADB_GetEventEndDateTime(e_ptr)) * (jlong)1000;
+    rv.push_back(pi);
+}
+
+static Vector<BroadcastProgramInfo> BroadcastDTVKit_GetProgramList(String8 s8id)
+{
+    Vector<BroadcastProgramInfo> piv;
 
     ALOGE("%s: Enter", __FUNCTION__);
 
-    BroadcastDTVKit_Stop(pTD);
+    U16BIT lcn = strtoul(s8id.string(), 0, 0);
+    void *s_ptr = ADB_FindServiceByLcn(ADB_SERVICE_LIST_TV | ADB_SERVICE_LIST_RADIO, lcn, TRUE);
+    if (s_ptr) {
+        void *now_event;
+        void *next_event;
+        ADB_GetNowNextEvents(s_ptr, &now_event, &next_event);
+        pushprog(piv, now_event, s_ptr);
+        pushprog(piv, next_event, s_ptr);
+    }
+
+    ALOGE("%s: Exit", __FUNCTION__);
+    return piv;
+}
+
+static int BroadcastDTVKit_Release()
+{
+    ALOGE("%s: Enter", __FUNCTION__);
+
+    BroadcastDTVKit_Stop();
 
     ALOGE("%s: Exit", __FUNCTION__);
 
@@ -259,31 +287,32 @@ static void
 event_handler(U32BIT event, void *event_data, U32BIT data_size)
 {
     if (pSelf) {
-        BroadcastDTVKit_Context *context = (BroadcastDTVKit_Context *)pSelf->context;
-        ALOGE("%s: ev %s(%d)/%d", __FUNCTION__, evcname(EVENT_CLASS(event), EVENT_TYPE(event)), EVENT_CLASS(event), EVENT_TYPE(event));
-        if (event == EVENT_CODE(EV_CLASS_UI, EV_TYPE_UPDATE) && context->scanning) {
+        //ALOGE("%s: ev %s(%d)/%d", __FUNCTION__, evcname(EVENT_CLASS(event), EVENT_TYPE(event)), EVENT_CLASS(event), EVENT_TYPE(event));
+        if (event == EVENT_CODE(EV_CLASS_UI, EV_TYPE_UPDATE) && pSelf->scanning) {
             U8BIT progress = ACTL_GetSearchProgress();
             ALOGE("%s: progress %d%%", __FUNCTION__, progress);
             if (ACTL_IsSearchComplete()) {
-                context->scanning = false;
+                pSelf->scanning = false;
                 if (ACTL_IsTargetRegionRequired()) {
                     ALOGE("%s: target region required", __FUNCTION__);
                 }
                 ACTL_CompleteServiceSearch();
                 ALOGE("%s: scan complete", __FUNCTION__);
+                TunerHAL_onBroadcastEvent(0);
             }
+        }
+        else if (event == APP_EVENT_SERVICE_EIT_NOW_UPDATE && !pSelf->scanning) {
+            TunerHAL_onBroadcastEvent(1);
         }
     }
 }
 
 int
-Broadcast_Initialize(Tuner_Data *pTD)
+Broadcast_Initialize(BroadcastDriver *pD)
 {
-    BroadcastDTVKit_Context *context = 0;
-
     ALOGE("%s: Enter", __FUNCTION__);
 
-    context = new BroadcastDTVKit_Context;
+    pSelf = new BroadcastDTVKit_Context;
 
     APP_InitialiseDVB(event_handler);
 
@@ -291,7 +320,7 @@ Broadcast_Initialize(Tuner_Data *pTD)
     if (services == 0) {
         ACFG_SetCountry(COUNTRY_CODE_UK); 
         ADB_ResetDatabase();
-        context->scanning = true;
+        pSelf->scanning = true;
         ACTL_StartServiceSearch(SIGNAL_COFDM, ACTL_FREQ_SEARCH);
         ALOGE("%s: scan started", __FUNCTION__);
     }
@@ -299,12 +328,11 @@ Broadcast_Initialize(Tuner_Data *pTD)
         ALOGE("%s: scan omitted (%d services)", __FUNCTION__, services);
     }
 
-    pTD->context = context;
-    pTD->GetChannelList = BroadcastDTVKit_GetChannelList;
-    pTD->Tune = BroadcastDTVKit_Tune;
-    pTD->Stop = BroadcastDTVKit_Stop;
-    pTD->Release = BroadcastDTVKit_Release;
-    pSelf = pTD;
+    pD->GetChannelList = BroadcastDTVKit_GetChannelList;
+    pD->GetProgramList = BroadcastDTVKit_GetProgramList;
+    pD->Tune = BroadcastDTVKit_Tune;
+    pD->Stop = BroadcastDTVKit_Stop;
+    pD->Release = BroadcastDTVKit_Release;
     ALOGE("%s: Exit", __FUNCTION__);
     return 0;
 }

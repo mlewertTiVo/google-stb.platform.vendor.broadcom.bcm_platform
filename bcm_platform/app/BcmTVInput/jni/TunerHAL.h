@@ -30,37 +30,23 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "Broadcast.h"
+
 using namespace android;
-
-typedef union _tuner_context
-{
-    NexusClientContext *nexus_client;
-}Tuner_Context;
-
-#include <utils/Vector.h>
-#include <utils/String8.h>
-
-class ChannelInfo {
-public:
-    String8 name;
-    String8 number;
-    String8 id;
-    int onid;
-    int tsid;
-    int sid;
-};
 
 class Tuner_Data
 {
 public:
+    jobject o;
+    JavaVM *vm;
     NexusIPCClientBase *ipcclient;
     NexusClientContext *nexus_client;
-    void *context;
-    int (*Tune)(Tuner_Data *pTD, String8);
-    Vector<ChannelInfo> (*GetChannelList)(Tuner_Data *pTD);
-    int (*Stop)(Tuner_Data *pTD);
-    int (*Release)(Tuner_Data *pTD);
+    BroadcastDriver driver;
 };
+
+void TunerHAL_onBroadcastEvent(jint e);
+NexusIPCClientBase *TunerHAL_getIPCClient();
+NexusClientContext *TunerHAL_getClientContext();
 
 class INexusTunerService: public IInterface 
 {
