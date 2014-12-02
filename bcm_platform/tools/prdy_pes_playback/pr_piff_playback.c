@@ -85,12 +85,14 @@
 #include "nxclient.h"
 #include "nexus_surface_client.h"
 
-#define USE_SVP                 1
+#define USE_SECURE_VIDEO_PLAYBACK       1
+#define USE_SECURE_AUDIO_PLAYBACK       1
+#define USE_SECURE_PLAYBACK             (USE_SECURE_VIDEO_PLAYBACK || USE_SECURE_AUDIO_PLAYBACK)
 #define DEBUG_OUTPUT_CAPTURE    0
 
 #define ZORDER_TOP              10
 
-#if USE_SVP
+#if USE_SECURE_PLAYBACK
 #include <sage_srai.h>
 #endif
 
@@ -828,8 +830,10 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
                     DRM_Prdy_Handle_t drm_context,
                     char *piff_file)
 {
-#if USE_SVP
+#if USE_SECURE_VIDEO_PLAYBACK
     uint8_t *pSecureVideoHeapBuffer = NULL;
+#endif
+#if USE_SECURE_AUDIO_PLAYBACK
     uint8_t *pSecureAudioHeapBuffer = NULL;
 #endif
     NEXUS_ClientConfiguration clientConfig;
@@ -941,7 +945,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
     NEXUS_Playpump_GetDefaultOpenSettings(&videoplaypumpOpenSettings);
     videoplaypumpOpenSettings.fifoSize *= 7;
     videoplaypumpOpenSettings.numDescriptors *= 7;
-#if USE_SVP
+#if USE_SECURE_VIDEO_PLAYBACK
     videoplaypumpOpenSettings.dataNotCpuAccessible = true;
     pSecureVideoHeapBuffer = SRAI_Memory_Allocate(videoplaypumpOpenSettings.fifoSize,
             SRAI_MemoryType_SagePrivate);
@@ -962,7 +966,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
     }
     BDBG_ASSERT(videoPlaypump != NULL);
 
-#if USE_SVP
+#if USE_SECURE_AUDIO_PLAYBACK
     NEXUS_Playpump_GetDefaultOpenSettings(&audioplaypumpOpenSettings);
     audioplaypumpOpenSettings.dataNotCpuAccessible = true;
     pSecureAudioHeapBuffer = SRAI_Memory_Allocate(audioplaypumpOpenSettings.fifoSize,
@@ -1019,7 +1023,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
     video_pid_settings.pidType = NEXUS_PidType_eVideo;
 
     videoPidChannel = NEXUS_Playpump_OpenPidChannel(videoPlaypump, REPACK_VIDEO_PES_ID, &video_pid_settings);
-#if USE_SVP
+#if USE_SECURE_VIDEO_PLAYBACK
     NEXUS_SetPidChannelBypassKeyslot(videoPidChannel, NEXUS_BypassKeySlot_eGR2R);
 #endif
     if ( !videoPidChannel )
@@ -1028,7 +1032,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
       BDBG_WRN(("@@@ videoPidChannel OK"));
 
     audioPidChannel = NEXUS_Playpump_OpenPidChannel(audioPlaypump, REPACK_AUDIO_PES_ID, NULL);
-#if USE_SVP
+#if USE_SECURE_AUDIO_PLAYBACK
     NEXUS_SetPidChannelBypassKeyslot(audioPidChannel, NEXUS_BypassKeySlot_eGR2R);
 #endif
 
@@ -1140,8 +1144,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
     video_decode_hdr = 0;
 
     /* Start parsing the the file to look for MOOFs and MDATs */
-    while(!feof(app.fp_piff))
-    {
+    while(!feof(app.fp_piff)) {
         piff_parse_frag_info frag_info;
         void *decoder_data;
         size_t decoder_len;
@@ -1157,43 +1160,45 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
         }
         decoder_data = piff_parser_get_dec_data(piff_handle, &decoder_len, frag_info.trackId);
 
-#if USE_SVP
         if (frag_info.trackType == BMP4_SAMPLE_ENCRYPTED_VIDEO) {
+#if USE_SECURE_VIDEO_PLAYBACK
             secure_process_fragment(commonCryptoHandle, &app, &frag_info, (frag_info.mdat_size - BOX_HEADER_SIZE),
                     decoder_data, decoder_len, videoPlaypump, event);
-
-        } else if (frag_info.trackType == BMP4_SAMPLE_ENCRYPTED_AUDIO) {
-            secure_process_fragment(commonCryptoHandle, &app, &frag_info, (frag_info.mdat_size - BOX_HEADER_SIZE),
-                    decoder_data, decoder_len, audioPlaypump, event);
-        }
 #else
         if(process_fragment(commonCryptoHandle, &app, &frag_info, (frag_info.mdat_size - BOX_HEADER_SIZE),
                     decoder_data, decoder_len) == 0) {
-            if (frag_info.trackType == BMP4_SAMPLE_ENCRYPTED_VIDEO) {
 #if DEBUG_OUTPUT_CAPTURE
                 fwrite(app.pOutBuf, 1, app.outBufSize, fp_vid);
 #endif
                 send_fragment_data(commonCryptoHandle, app.pOutBuf, app.outBufSize,
                         videoPlaypump, event);
-
+            }
+#endif
             } else if (frag_info.trackType == BMP4_SAMPLE_ENCRYPTED_AUDIO) {
+#if USE_SECURE_AUDIO_PLAYBACK
+            secure_process_fragment(commonCryptoHandle, &app, &frag_info, (frag_info.mdat_size - BOX_HEADER_SIZE),
+                    decoder_data, decoder_len, audioPlaypump, event);
+#else
+            if(process_fragment(commonCryptoHandle, &app, &frag_info, (frag_info.mdat_size - BOX_HEADER_SIZE),
+                        decoder_data, decoder_len) == 0) {
 #if DEBUG_OUTPUT_CAPTURE
                 fwrite(app.pOutBuf, 1, app.outBufSize, fp_aud);
 #endif
                 send_fragment_data(commonCryptoHandle, app.pOutBuf, app.outBufSize,
                         audioPlaypump, event);
             }
+#endif
         }
-#endif /* USE_SVP */
-    } /* while */
-
+        }
     complete_play_fragments(audioDecoder, videoDecoder, videoPlaypump,
             audioPlaypump, display, audioPidChannel, videoPidChannel, NULL, event);
 
 clean_up:
     if(commonCryptoHandle) CommonCrypto_Close(commonCryptoHandle);
-#if USE_SVP
+#if USE_SECURE_VIDEO_PLAYBACK
     if(pSecureVideoHeapBuffer) SRAI_Memory_Free(pSecureVideoHeapBuffer);
+#endif
+#if USE_SECURE_AUDIO_PLAYBACK
     if(pSecureAudioHeapBuffer) SRAI_Memory_Free(pSecureAudioHeapBuffer);
 #endif
     if(app.decryptor.pDecrypt != NULL) DRM_Prdy_Reader_Close( &app.decryptor);
@@ -1371,7 +1376,6 @@ static int gui_init( NEXUS_SurfaceClientHandle surfaceClient )
 
     rc = NEXUS_SurfaceClient_SetSurface(surfaceClient, surface);
     BDBG_ASSERT(!rc);
-
 
     return 0;
 }
