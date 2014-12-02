@@ -15,8 +15,9 @@ then
 fi
 
 echo "1) Cleaning up staging dir: $2"
-echo "   ... removing the boot folder"
+echo "   ... removing the boot+bootloaders folder"
 rm -rf $2/boot
+rm -rf $2/loaders
 
 echo "2) Unpacking ramdisk and copy kernel"
 cd $2
@@ -32,5 +33,11 @@ echo "4) Copying stage_target* scripts."
 cp $tools_dir/stage_target.sh $2
 cp $tools_dir/stage_target_multipart.sh $2
 cp $tools_dir/stage_target_bootimg.sh $2
+
+echo "5) Copying bootloaders."
+mkdir -p $2/loaders
+cp $1/android_bsu.elf $2/loaders
+cp $1/bolt-ba.bin $2/loaders
+cp $1/bolt-bb.bin $2/loaders
 
 echo "!!! Done staging !!!" 
