@@ -1291,9 +1291,9 @@ int main(int argc, char* argv[])
         surfaceClient = NEXUS_SurfaceClient_Acquire(allocResults.surfaceClient[0].id);
         videoSurfaceClient = NEXUS_SurfaceClient_AcquireVideoWindow(surfaceClient, 0);
 
-        NxClient_GetSurfaceClientComposition(surfaceClient, &comp);
+        NxClient_GetSurfaceClientComposition(allocResults.surfaceClient[0].id, &comp);
         comp.zorder = ZORDER_TOP;   /* try to stay on top most */
-        NxClient_SetSurfaceClientComposition(surfaceClient, &comp);
+        NxClient_SetSurfaceClientComposition(allocResults.surfaceClient[0].id, &comp);
     }
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleVideoDecoder[0].id = allocResults.simpleVideoDecoder[0].id;
