@@ -63,11 +63,8 @@ struct private_module_t {
 
 typedef struct __SHARED_DATA_ {
    struct {
-      volatile int32_t layerIdPlusOne;
       volatile int32_t windowIdPlusOne;
-      bool             windowVisible;
       void *           nexusClientContext;
-      int64_t          timestamp;
    } videoWindow;
 
    //Metadata For Video Buffers
@@ -91,31 +88,26 @@ struct private_handle_t {
 /*3.*/        int         flags;
 /*4.*/        int         size;
 /*5.*/        int         pid;
-/*6.*/        void *      lockTmp; // used to allocate memory (per process) which is freed in unlock
-/*7.*/        void *      lockHnd; // used for HW converter so we can open one per process
-/*8.*/        void *      lockEvent; // used for HW converter to trigger completion
-/*9.*/        void *      lockHWCLE; // used for the CLE to populate the job
-/*10.*/       unsigned    width;
-/*11.*/       unsigned    height;
-/*12.*/       unsigned    format;
-/*13.*/       unsigned    bpp;
-/*14.*/       unsigned    oglStride;
-/*15.*/       unsigned    oglFormat;
-/*16.*/       unsigned    oglSize;
-/*17.*/       unsigned    sharedDataPhyAddr;  // physical address of shared Data.
-/*18.*/       int         usage;
+/*6.*/        unsigned    width;
+/*7.*/        unsigned    height;
+/*8.*/        unsigned    format;
+/*9.*/        unsigned    bpp;
+/*10.*/       unsigned    oglStride;
+/*11.*/       unsigned    oglFormat;
+/*12.*/       unsigned    oglSize;
+/*13.*/       unsigned    sharedDataPhyAddr;  // physical address of shared Data.
+/*14.*/       int         usage;
 
 #ifdef __cplusplus
-    static const int sNumInts = 18;
+    static const int sNumInts = 14;
     static const int sNumFds = 2;
     static const int sMagic = 0x3141592;
 
     private_handle_t(int fd, int fd2, int size, int flags) :
         fd(fd), fd2(fd2), nxSurfacePhysicalAddress(0),
         magic(sMagic), flags(flags), size(size),
-        pid(getpid()), lockTmp(0), lockHnd(0), lockEvent(0), lockHWCLE(0),
-        oglStride(0), oglFormat(0), oglSize(0), sharedDataPhyAddr(0),
-        usage(0)
+        pid(getpid()),oglStride(0), oglFormat(0), oglSize(0),
+        sharedDataPhyAddr(0), usage(0)
     {
         version = sizeof(native_handle);
         numInts = sNumInts;
@@ -135,7 +127,7 @@ struct private_handle_t {
         const private_handle_t* hnd = (const private_handle_t*)h;
         if (!h || h->version != sizeof(native_handle) ||
                 h->numInts != sNumInts || h->numFds != sNumFds ||
-                hnd->magic != sMagic) 
+                hnd->magic != sMagic)
         {
             return -EINVAL;
         }

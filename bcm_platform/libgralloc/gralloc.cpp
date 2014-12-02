@@ -40,7 +40,6 @@
 
 // default platform layer to render to nexus
 #include "EGL/egl.h"
-#include "converter.h"
 
 #include "cutils/properties.h"
 #include "nx_ashmem.h"

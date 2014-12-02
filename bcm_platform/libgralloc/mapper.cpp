@@ -37,38 +37,11 @@
 #include "nexus_platform.h"
 #include "bkni.h"
 
-// add the C code to convert to TFormat
-#include "EGL/egl.h"
-#include "converter.h"
-#include "converter_cr.c"
-
 extern
 NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt,
                                       int *bpp);
 
 #define NULL_LIST_SIZE 27
-
-static void JobCallbackHandler(void *context, int param)
-{
-   NEXUS_Graphicsv3dNotification nNot;
-   private_handle_t* hnd = (private_handle_t*)context;
-   NEXUS_Graphicsv3d_GetNotification((NEXUS_Graphicsv3dHandle)hnd->lockHnd, &nNot);
-   BKNI_SetEvent((BKNI_EventHandle)hnd->lockEvent);
-}
-
-static pix_format_e translateConversionFormat(unsigned int format, pix_format_e *ltConverterFormat)
-{
-   pix_format_e converterFormat;
-
-   switch (format) {
-      case BEGL_BufferFormat_eA8B8G8R8_TFormat:   converterFormat = ABGR_8888;   *ltConverterFormat = ABGR_8888_LT;  break;
-      case BEGL_BufferFormat_eX8B8G8R8_TFormat:   converterFormat = XBGR_8888;   *ltConverterFormat = XBGR_8888_LT;  break;
-      case BEGL_BufferFormat_eR5G6B5_TFormat:     converterFormat = RGB_565;     *ltConverterFormat = RGB_565_LT;  break;
-      default:                                    converterFormat = ABGR_8888;   *ltConverterFormat = ABGR_8888_LT;  break;
-   }
-
-   return converterFormat;
-}
 
 int gralloc_register_buffer(gralloc_module_t const* module,
    buffer_handle_t handle)
@@ -111,9 +84,7 @@ int gralloc_register_buffer(gralloc_module_t const* module,
       LOGE("%s:: Register buffer from same process :%d", __FUNCTION__, getpid());
    }
 
-   // Set timestamp at which the buffer was registered...
    pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedDataPhyAddr);
-   pSharedData->videoWindow.timestamp = systemTime();
 
    return 0;
 }

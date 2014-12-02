@@ -2238,7 +2238,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     }
     // Setup window parameters for display
     pInfo->typeInfo.native.pSharedData->videoWindow.nexusClientContext = m_pNexusClient;
-    pInfo->typeInfo.native.pSharedData->videoWindow.windowVisible = 1;
     android_atomic_release_store(1, &pInfo->typeInfo.native.pSharedData->videoWindow.windowIdPlusOne);
 
      err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, pPort->GetDefinition()->format.video.nFrameWidth*pPort->GetDefinition()->format.video.nFrameHeight*2, (OMX_U8 *)pPrivateHandle, pInfo, false);
@@ -3297,7 +3296,6 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             {
                                 // Setup window parameters for display and provide buffer status
                                 pSharedData->videoWindow.nexusClientContext = m_pNexusClient;
-                                pSharedData->videoWindow.windowVisible = 1;
                                 android_atomic_release_store(1, &pSharedData->videoWindow.windowIdPlusOne);
                                 pSharedData->DisplayFrame.frameStatus = pBuffer->frameStatus;
                             }
