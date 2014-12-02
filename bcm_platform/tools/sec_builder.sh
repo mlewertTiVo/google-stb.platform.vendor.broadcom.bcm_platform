@@ -79,6 +79,9 @@ security_root="security"
 playready_root="playready"
 show_tree_depth=3
 
+plat_target="97252 D0 C"
+lunch_target="97252D0C"
+
 verbose=
 update=
 sec_filer=
@@ -89,6 +92,7 @@ reset=
 force_clean=
 force_clean_refsw=
 skip_build=
+skip_verify=
 hsm_debug=
 show_tree=
 secliblist=
@@ -96,8 +100,8 @@ secliblist=
 function usage {
 	echo "sec_builder --sec-filer <path-to> [--keydir <path-to>] [--hsm-srcs-list <path-to>]"
 	echo "            [--update] [--configure] [--reset] [--force-clean|--force-clean-refsw]"
-	echo "            [--skip-build] [--hsm-debug] [--show-tree-only] [--show-tree-depth <depth>]"
-	echo "            [--verbose] [--help|-h]"
+	echo "            [--skip-build|--skip-verify] [--hsm-debug] [--show-tree-only]"
+        echo "            [--show-tree-depth <depth>] [--verbose] [--help|-h]"
 	echo ""
 	echo "mandatory parameter(s):"
 	echo ""
@@ -147,6 +151,8 @@ function usage {
 	echo "   --show-tree-only             : just shows the current state of the source tree and bail."
 	echo ""
 	echo "   --show-tree-depth            : the depth in terms of git log entries to dump from top of tree, defaults to 3."
+	echo ""
+	echo "   --skip-verify                : skip the verification step at the end."
 	echo ""
 }
 
@@ -275,12 +281,12 @@ function compiler {
 		#
 		# TODO: make the platform configured.
 		#
-		./vendor/broadcom/bcm_platform/tools/plat-droid.py 97252 D0 C profile secu
-		./vendor/broadcom/bcm_platform/tools/plat-droid.py 97252 D0 C profile seck
+		./vendor/broadcom/bcm_platform/tools/plat-droid.py ${plat_target} profile secu
+		./vendor/broadcom/bcm_platform/tools/plat-droid.py ${plat_target} profile seck
 		source ./build/envsetup.sh
 		# build the user side libraries, we need to build a system first to get
 		# the android objects setup and the refsw/nexus libs.
-		lunch bcm_97252D0C_secu-eng
+		lunch bcm_${lunch_target}_secu-eng
 		if [ "$force_clean" == "1" ]; then
 			make -j12 clean
 		else
@@ -297,7 +303,7 @@ function compiler {
 		make -j12 clean_security_user
 		make -j12 security_user
 		# build the kernel side libraries - note: allow notion of 'debug' vs 'retail' (is it really needed?)
-		lunch bcm_97252D0C_seck-eng
+		lunch bcm_${lunch_target}_seck-eng
 		if [ "$hsm_debug" == "1" ]; then
 			export B_REFSW_DEBUG=y
 		fi
@@ -318,7 +324,7 @@ function comparer {
 	# TODO: there is a debug/retail version of libcmndrmprdy.so which we do not seem to care for.  investigate...
 	#
 	while [ "$ix" -lt "$count" ]; do
-		IFS='=' var=(${seclib_mapping[$ix]});
+		OLDIFS=$IFS; IFS='=' var=(${seclib_mapping[$ix]}); IFS=$OLDIFS;
 		if [[ "${var[0]}" != "" &&  "${var[1]}" != "" ]]; then
 			built=$1/out/target/product/bcm_platform/sysroot/${var[0]}
 			temp=$1/vendor/broadcom/bcm_platform/${var[1]}
@@ -337,6 +343,11 @@ function comparer {
 					echo "unchanged: ${var[1]}"
 				else
 					echo "DIFFERS: ${var[0]}"
+					if [ ! "$skip_verify" == "1" ]; then
+						# copy the generated lib in the final resting location for the
+						# build verification step.
+						cp $built $original
+					fi
 				fi
 			else
 				echo "either original '$original', or built '$built', does not actually exists.  ignoring."
@@ -369,6 +380,20 @@ function montre_code {
 	cd $1
 }
 
+# $1 - android tree root.
+function verifier {
+	if [ "$skip_verify" == "1" ]; then
+		que_faites_vous "verification skipped on demand"
+	else
+		cd $1
+		./vendor/broadcom/bcm_platform/tools/plat-droid.py ${plat_target}
+		source ./build/envsetup.sh
+		lunch bcm_${lunch_target}-eng
+		make -j12 clean_refsw
+		make -j12
+	fi
+}
+
 # command line parsing.
 while [ "$1" != "" ]; do
 	case $1 in
@@ -397,6 +422,8 @@ while [ "$1" != "" ]; do
 		--force-clean-refsw)		force_clean_refsw=1
 						;;
 		--skip-build)			skip_build=1
+						;;
+		--skip-verify)			skip_verify=1
 						;;
 		--hsm-debug)			hsm_debug=1
 						;;
@@ -499,3 +526,8 @@ comparer $fqn_root $secliblist
 # show code built as reference.
 que_faites_vous "showing code tree for this build."
 montre_code $fqn_root $sec_filer
+
+# build a clean refsw based image from the reference board now to see if the
+# libraries generated do make sense.
+que_faites_vous "now running final verification build..."
+verifier $fqn_root
