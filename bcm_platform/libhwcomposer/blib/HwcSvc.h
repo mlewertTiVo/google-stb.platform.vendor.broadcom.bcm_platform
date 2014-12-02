@@ -30,6 +30,7 @@ enum {
    HWC_BINDER_UNDEF = 1,
    HWC_BINDER_HWC,
    HWC_BINDER_OMX,
+   HWC_BINDER_SDB,
 };
 
 using namespace android;

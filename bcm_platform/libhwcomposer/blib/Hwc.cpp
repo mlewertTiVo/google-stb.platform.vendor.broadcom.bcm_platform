@@ -39,6 +39,7 @@ static const char *registrant_name [] = {
    "NONE",
    "HWC",
    "OMX",
+   "SDB",
 };
 
 Hwc::Hwc() : BnHwc() {
