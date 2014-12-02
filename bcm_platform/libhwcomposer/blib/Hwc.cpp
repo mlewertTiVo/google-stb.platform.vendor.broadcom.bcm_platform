@@ -47,6 +47,11 @@ Hwc::Hwc() : BnHwc() {
       mVideoSurface[i].surface = -1;
       mVideoSurface[i].listener = 0;
    }
+
+   for (int i = 0; i < HWC_BINDER_SIDEBAND_SURFACE_SIZE; i++) {
+      mSidebandSurface[i].surface = -1;
+      mSidebandSurface[i].listener = 0;
+   }
 }
 
 Hwc::~Hwc() {
@@ -91,6 +96,14 @@ status_t Hwc::dump(int fd, const Vector<String16>& args)
             if (mVideoSurface[i].surface != -1) {
                result.appendFormat("\tvideo-surface: %d maps to %d (used by 0x%x)\n",
                   i, mVideoSurface[i].surface, mVideoSurface[i].listener);
+            }
+        }
+
+        result.appendFormat("maximum sideband-surface: %d\n", HWC_BINDER_SIDEBAND_SURFACE_SIZE);
+        for ( int i = 0; i < HWC_BINDER_SIDEBAND_SURFACE_SIZE; i++) {
+            if (mSidebandSurface[i].surface != -1) {
+               result.appendFormat("\tsideband-surface: %d maps to %d (used by 0x%x)\n",
+                  i, mSidebandSurface[i].surface, mSidebandSurface[i].listener);
             }
         }
 
@@ -146,6 +159,19 @@ void Hwc::unregisterListener(const sp<IHwcListener>& listener)
         const hwc_listener_t& client = mNotificationListeners[i];
         if (client.binder.get() == listener->asBinder().get()) {
            mNotificationListeners.removeAt(i);
+
+           for ( int j = 0; j < HWC_BINDER_VIDEO_SURFACE_SIZE; j++) {
+               if (mVideoSurface[j].listener == (int)listener->asBinder().get()) {
+                   mVideoSurface[j].listener = 0;
+               }
+           }
+
+           for ( int j = 0; j < HWC_BINDER_SIDEBAND_SURFACE_SIZE; j++) {
+               if (mSidebandSurface[j].listener == (int)listener->asBinder().get()) {
+                   mSidebandSurface[j].listener = 0;
+               }
+           }
+
            break;
         }
     }
@@ -231,6 +257,56 @@ void Hwc::setDisplayFrameId(const sp<IHwcListener>& listener, int surface, int f
            }
        }
     }
+}
+
+void Hwc::setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value)
+{
+    ALOGD("%s: %p, index %d, value %d", __FUNCTION__,
+          listener->asBinder().get(), index, value);
+
+    Mutex::Autolock _l(mLock);
+
+    size_t N = mNotificationListeners.size();
+    for (size_t i = 0; i < N; i++) {
+        const hwc_listener_t& client = mNotificationListeners[i];
+        if ((client.binder.get() == listener->asBinder().get()) &&
+            (client.kind == HWC_BINDER_HWC)) {
+           mSidebandSurface[index].surface = value;
+           mSidebandSurface[index].listener = 0;
+           break;
+        }
+    }
+}
+
+void Hwc::getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int &value)
+{
+    Mutex::Autolock _l(mLock);
+
+    if (index > HWC_BINDER_SIDEBAND_SURFACE_SIZE) {
+       ALOGE("%s: %p, index %d - invalid, ignored", __FUNCTION__,
+              listener->asBinder().get(), index);
+       value = -1;
+    } else {
+       // remember who asked for it last, this is who we will
+       // notify of changes.  we are not responsible for managing
+       // contention, we are just a pass through service.
+       mSidebandSurface[index].listener = (int)listener->asBinder().get();
+       value = mSidebandSurface[index].surface;
+       ALOGD("%s: %p, index %d, value %d", __FUNCTION__,
+             listener->asBinder().get(), index, value);
+
+       // notify back the hwc so it can reset the frame counter for this
+       // session.  session equals surface scope owner claimed.
+       size_t N = mNotificationListeners.size();
+       for (size_t i = 0; i < N; i++) {
+           const hwc_listener_t& client = mNotificationListeners[i];
+           if (client.kind == HWC_BINDER_HWC) {
+              sp<IBinder> binder = client.binder;
+              sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
+              client->notify(HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED, value, 0);
+           }
+       }
+   }
 }
 
 void Hwc::binderDied(const wp<IBinder>& who) {

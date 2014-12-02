@@ -29,6 +29,8 @@ enum {
     SET_VIDEO_SURF_CLIENT_ID,
     GET_VIDEO_SURF_CLIENT_ID,
     SET_DISPLAY_FRAME_ID,
+    SET_SIDEBAND_SURF_CLIENT_ID,
+    GET_SIDEBAND_SURF_CLIENT_ID,
 };
 
 class BpHwc : public BpInterface<IHwc>
@@ -78,6 +80,24 @@ public:
         data.writeInt32(surface);
         data.writeInt32(frame);
         remote()->transact(SET_DISPLAY_FRAME_ID, data, &reply);
+    }
+
+    void setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value) {
+        Parcel data, reply;
+        data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
+        data.writeStrongBinder(listener->asBinder());
+        data.writeInt32(index);
+        data.writeInt32(value);
+        remote()->transact(SET_SIDEBAND_SURF_CLIENT_ID, data, &reply);
+    }
+
+    void getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int &value) {
+        Parcel data, reply;
+        data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
+        data.writeStrongBinder(listener->asBinder());
+        data.writeInt32(index);
+        remote()->transact(GET_SIDEBAND_SURF_CLIENT_ID, data, &reply);
+        value = reply.readInt32();
     }
 };
 
@@ -136,6 +156,29 @@ status_t BnHwc::onTransact(
          int surface = data.readInt32();
          int frame = data.readInt32();
          setDisplayFrameId(listener, surface, frame);
+         return NO_ERROR;
+      }
+      break;
+
+      case SET_SIDEBAND_SURF_CLIENT_ID:
+      {
+         CHECK_INTERFACE(IHwc, data, reply);
+         sp<IHwcListener> listener = interface_cast<IHwcListener>(data.readStrongBinder());
+         int index = data.readInt32();
+         int value = data.readInt32();
+         setSidebandSurfaceId(listener, index, value);
+         return NO_ERROR;
+      }
+      break;
+
+      case GET_SIDEBAND_SURF_CLIENT_ID:
+      {
+         CHECK_INTERFACE(IHwc, data, reply);
+         int value = -1;
+         sp<IHwcListener> listener = interface_cast<IHwcListener>(data.readStrongBinder());
+         int index = data.readInt32();
+         getSidebandSurfaceId(listener, index, value);
+         reply->writeInt32(value);
          return NO_ERROR;
       }
       break;

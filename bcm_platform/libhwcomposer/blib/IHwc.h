@@ -36,6 +36,9 @@ public:
     virtual void getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &value) = 0;
 
     virtual void setDisplayFrameId(const sp<IHwcListener>& listener, int surface, int frame) = 0;
+
+    virtual void setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value) = 0;
+    virtual void getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int &value) = 0;
 };
 
 class BnHwc : public BnInterface<IHwc>

@@ -30,6 +30,7 @@
 #include "HwcSvc.h"
 
 #define HWC_BINDER_VIDEO_SURFACE_SIZE 3
+#define HWC_BINDER_SIDEBAND_SURFACE_SIZE 2
 
 using namespace android;
 
@@ -63,6 +64,9 @@ public:
 
     virtual void setDisplayFrameId(const sp<IHwcListener>& listener, int surface, int frame);
 
+    virtual void setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value);
+    virtual void getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int &value);
+
     virtual status_t onTransact(uint32_t code,
                                 const Parcel& data,
                                 Parcel* reply,
@@ -78,6 +82,7 @@ private:
 
     Vector< hwc_listener_t > mNotificationListeners;
     hwc_disp_notifier_t mVideoSurface[HWC_BINDER_VIDEO_SURFACE_SIZE];
+    hwc_disp_notifier_t mSidebandSurface[HWC_BINDER_SIDEBAND_SURFACE_SIZE];
 };
 
 #endif // __HWC__H__INCLUDED__

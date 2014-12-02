@@ -61,9 +61,11 @@ using namespace android;
                                         * more than 3 are needed at any time. */
 #define NSC_MM_CLIENTS_NUMBER        3 /* multimedia client layers; typically no
                                         * more than 2 are needed at any time. */
+#define NSC_SB_CLIENTS_NUMBER        2 /* sideband client layers; typically no
+                                        * more than 1 are needed at any time. */
 
-#define NSC_CLIENTS_NUMBER           (NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+1) /* gpx, mm and vsync layer count */
-#define VSYNC_CLIENT_LAYER_ID        (NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER)   /* last layer, always */
+#define NSC_CLIENTS_NUMBER           (NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+NSC_SB_CLIENTS_NUMBER+1) /* gpx, mm, sb and vsync layer count */
+#define VSYNC_CLIENT_LAYER_ID        (NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+NSC_SB_CLIENTS_NUMBER)   /* last layer, always */
 
 #define VSYNC_CLIENT_WIDTH           16
 #define VSYNC_CLIENT_HEIGHT          16
@@ -75,6 +77,7 @@ using namespace android;
 #define VSYNC_CLIENT_ZORDER          0
 #define GPX_CLIENT_ZORDER            (VSYNC_CLIENT_ZORDER+1)
 #define MM_CLIENT_ZORDER             (GPX_CLIENT_ZORDER+1)
+#define SB_CLIENT_ZORDER             (GPX_CLIENT_ZORDER+1)
 
 #define GPX_SURFACE_STACK            2
 #define DUMP_BUFFER_SIZE             1024
@@ -98,6 +101,7 @@ enum {
 enum {
     NEXUS_CLIENT_GPX = 0,
     NEXUS_CLIENT_MM,
+    NEXUS_CLIENT_SB,
     NEXUS_CLIENT_VSYNC,
 };
 
@@ -149,6 +153,12 @@ typedef struct {
 } MM_CLIENT_INFO;
 
 typedef struct {
+    GPX_CLIENT_INFO root;
+    NEXUS_SurfaceClientSettings settings;
+
+} SB_CLIENT_INFO;
+
+typedef struct {
     COMMON_CLIENT_INFO ncci;
     NEXUS_SurfaceHandle shdl;
     BKNI_EventHandle vsync_event;
@@ -186,6 +196,12 @@ public:
     inline void setvideo(int index, int value) {
        if (get_hwc(false) != NULL) {
            get_hwc(false)->setVideoSurfaceId(this, index, value);
+       }
+    };
+
+    inline void setsideband(int index, int value) {
+       if (get_hwc(false) != NULL) {
+           get_hwc(false)->setSidebandSurfaceId(this, index, value);
        }
     };
 
@@ -241,6 +257,12 @@ public:
       }
    }
 
+   void setsideband(int index, int value) {
+      if (iconnected) {
+         ihwc.get()->setsideband(index, value);
+      }
+   }
+
    void setframe(int surface, int frame) {
       if (iconnected) {
          ihwc.get()->setframe(surface, frame);
@@ -281,9 +303,11 @@ struct hwc_context_t {
 
     GPX_CLIENT_INFO gpx_cli[NSC_GPX_CLIENTS_NUMBER];
     MM_CLIENT_INFO mm_cli[NSC_MM_CLIENTS_NUMBER];
+    SB_CLIENT_INFO sb_cli[NSC_SB_CLIENTS_NUMBER];
     BKNI_MutexHandle mutex;
     VSYNC_CLIENT_INFO syn_cli;
     bool nsc_video_changed;
+    bool nsc_sideband_changed;
 
     int display_width;
     int display_height;
@@ -311,6 +335,7 @@ static void hwc_sync_recycled_cb(void *context, int param);
 static void hwc_hide_unused_gpx_layer(hwc_context_t* dev, int index);
 static void hwc_hide_unused_gpx_layers(hwc_context_t* dev, int nx_layer_count);
 static void hwc_hide_unused_mm_layers(hwc_context_t* dev);
+static void hwc_hide_unused_sb_layers(hwc_context_t* dev);
 
 static void hwc_nsc_prepare_layer(hwc_context_t* dev, hwc_layer_1_t *layer,
    int layer_id, bool geometry_changed);
@@ -337,6 +362,7 @@ static const char *nsc_cli_type[] =
 {
    "GPX", // NEXUS_CLIENT_GPX
    "MUL", // NEXUS_CLIENT_MM
+   "SDB", // NEXUS_CLIENT_SB
    "SNC", // NEXUS_CLIENT_VSYNC
 };
 
@@ -483,6 +509,41 @@ static int dump_mm_layer_data(char *start, int capacity, int index, MM_CLIENT_IN
         client->settings.composition.virtualDisplay.height,
         client->svchdl,
         client->root.ncci.schdl,
+        client->root.ncci.sccid);
+
+    return write;
+}
+
+static int dump_sb_layer_data(char *start, int capacity, int index, SB_CLIENT_INFO *client)
+{
+    int write = -1;
+
+    write = snprintf(start, capacity,
+        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::z:%d::pcp:{%d,%d,%d,%d}::pcv:{%d,%d}::cm:%d::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::scc:%d\n",
+        client->root.composition.visible ? "LIVE" : "HIDE",
+        nsc_cli_type[client->root.ncci.type],
+        client->root.layer_id,
+        index,
+        hwc_layer_type[client->root.layer_type],
+        nsc_layer_type[client->root.layer_subtype],
+        client->root.composition.zorder,
+        client->root.composition.position.x,
+        client->root.composition.position.y,
+        client->root.composition.position.width,
+        client->root.composition.position.height,
+        client->root.composition.virtualDisplay.width,
+        client->root.composition.virtualDisplay.height,
+        client->settings.composition.contentMode,
+        client->settings.composition.position.x,
+        client->settings.composition.position.y,
+        client->settings.composition.position.width,
+        client->settings.composition.position.height,
+        client->settings.composition.clipRect.x,
+        client->settings.composition.clipRect.y,
+        client->settings.composition.clipRect.width,
+        client->settings.composition.clipRect.height,
+        client->settings.composition.virtualDisplay.width,
+        client->settings.composition.virtualDisplay.height,
         client->root.ncci.sccid);
 
     return write;
@@ -669,6 +730,24 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
         }
     }
 
+    for (int i = 0; i < NSC_SB_CLIENTS_NUMBER; i++)
+    {
+        write = 0;
+        NxClient_GetSurfaceClientComposition(ctx->sb_cli[i].root.ncci.sccid, &composition);
+
+        if (composition.visible && capacity) {
+           write = dump_sb_layer_data(buff + index, capacity, i, &ctx->sb_cli[i]);
+           if (write > 0) {
+              capacity = (capacity > write) ? (capacity - write) : 0;
+              index += write;
+           }
+        }
+
+        if (!capacity) {
+           break;
+        }
+    }
+
     // extra layer for vsync.
     if (capacity) {
        /** layer-id:type:subtype:surf-handle:surf:surf-client **/
@@ -722,7 +801,7 @@ static void hwc_binder_notify(int dev, int msg, int param1, int param2)
            }
        }
        break;
-
+       case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
        default:
        break;
        }
@@ -905,8 +984,9 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     // setup the layer composition classification.
     primary_composition_setup(dev, list);
 
-    // remove all video layers first.
+    // remove all video/sideband layers first.
     hwc_hide_unused_mm_layers(ctx);
+    hwc_hide_unused_sb_layers(ctx);
 
     // allocate the NSC layer, if need be change the geometry, etc...
     for (i = 0; i < list->numHwLayers; i++) {
@@ -1085,6 +1165,11 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
                 ctx->pIpcClient->destroyClientContext(ctx->pNexusClientContext);
             }
             delete ctx->pIpcClient;
+        }
+
+        for (int i = 0; i < NSC_SB_CLIENTS_NUMBER; i++)
+        {
+           /* nothing to do since we do not acquire the surfaces explicitely. */
         }
 
         for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++)
@@ -1511,6 +1596,23 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                 // TODO: add support for more than one video at the time.
                 if (i == 0) {
                    dev->nsc_video_changed = true;
+                }
+            }
+
+            /* create layers nx sb clients */
+            for (int i = 0; i < NSC_SB_CLIENTS_NUMBER; i++)
+            {
+                dev->sb_cli[i].root.parent = (void *)dev;
+                dev->sb_cli[i].root.layer_id = i;
+                dev->sb_cli[i].root.ncci.type = NEXUS_CLIENT_SB;
+                dev->sb_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[i+NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER].id;
+                /* do not acquire surface client nor video window to allow the user of this to own it instead. */
+
+                memset(&dev->mm_cli[i].root.composition, 0, sizeof(NEXUS_SurfaceComposition));
+
+                // TODO: add support for more than one sideband at the time.
+                if (i == 0) {
+                   dev->nsc_sideband_changed = true;
                 }
             }
 
@@ -1981,10 +2083,11 @@ static void hwc_prepare_mm_layer(
     }
 
     ctx->mm_cli[vid_layer_id].root.layer_type = layer->compositionType;
-    if (ctx->mm_cli[vid_layer_id].root.layer_type == HWC_SIDEBAND)
-       ctx->mm_cli[vid_layer_id].root.layer_subtype = NEXUS_VIDEO_SIDEBAND;
-    else
-       ctx->mm_cli[vid_layer_id].root.layer_subtype = NEXUS_VIDEO_WINDOW;
+    ctx->mm_cli[vid_layer_id].root.layer_subtype = NEXUS_VIDEO_WINDOW;
+    if (ctx->mm_cli[vid_layer_id].root.layer_type == HWC_SIDEBAND) {
+       ALOGE("%s: miscategorized sideband layer as video layer %d!", __FUNCTION__, vid_layer_id);
+       goto out_unlock;
+    }
     ctx->mm_cli[vid_layer_id].root.layer_flags = layer->flags;
 
     // deal with any change in the geometry/visibility of the layer.
@@ -2032,8 +2135,85 @@ static void hwc_prepare_mm_layer(
        }
     }
 
+out_unlock:
     BKNI_ReleaseMutex(ctx->mutex);
+out:
+    return;
+}
 
+static void hwc_prepare_sb_layer(
+    hwc_context_t* ctx,
+    hwc_layer_1_t *layer,
+    unsigned int gpx_layer_id,
+    unsigned int sb_layer_id)
+{
+    NEXUS_Error rc;
+    NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
+                                (int16_t)layer->displayFrame.top,
+                                (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
+                                (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
+    NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
+                                (int16_t)(int)layer->sourceCropf.top,
+                                (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
+                                (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
+    int cur_width;
+    int cur_height;
+    unsigned int stride;
+    unsigned int cur_blending_type;
+    bool layer_updated = true;
+
+    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+        goto out;
+    }
+
+    // make the gpx corresponding layer non-visible in the layer stack.
+    NxClient_GetSurfaceClientComposition(ctx->gpx_cli[gpx_layer_id].ncci.sccid, &ctx->gpx_cli[gpx_layer_id].composition);
+    if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
+       ctx->gpx_cli[gpx_layer_id].composition.visible = false;
+       rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[gpx_layer_id].ncci.sccid, &ctx->gpx_cli[gpx_layer_id].composition);
+       if (rc != NEXUS_SUCCESS) {
+           ALOGE("%s: failed hidding gpx layer %d for video layer %d, err=%d", __FUNCTION__, gpx_layer_id, sb_layer_id, rc);
+       }
+    }
+
+    ctx->sb_cli[sb_layer_id].root.layer_type = layer->compositionType;
+    ctx->sb_cli[sb_layer_id].root.layer_subtype = NEXUS_VIDEO_SIDEBAND;
+    if (ctx->sb_cli[sb_layer_id].root.layer_type == HWC_OVERLAY) {
+       ALOGE("%s: miscategorized video layer as sideband layer %d!", __FUNCTION__, sb_layer_id);
+       goto out_unlock;
+    }
+    ctx->sb_cli[sb_layer_id].root.layer_flags = layer->flags;
+
+    // deal with any change in the geometry/visibility of the layer.
+    NxClient_GetSurfaceClientComposition(ctx->mm_cli[sb_layer_id].root.ncci.sccid, &ctx->sb_cli[sb_layer_id].root.composition);
+    if (!ctx->sb_cli[sb_layer_id].root.composition.visible) {
+       ctx->sb_cli[sb_layer_id].root.composition.visible = true;
+       layer_updated = true;
+    }
+    if (memcmp((void *)&disp_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) {
+
+        layer_updated = true;
+        ctx->sb_cli[sb_layer_id].root.composition.zorder                = SB_CLIENT_ZORDER;
+        ctx->sb_cli[sb_layer_id].root.composition.position.x            = disp_position.x;
+        ctx->sb_cli[sb_layer_id].root.composition.position.y            = disp_position.y;
+        ctx->sb_cli[sb_layer_id].root.composition.position.width        = disp_position.width;
+        ctx->sb_cli[sb_layer_id].root.composition.position.height       = disp_position.height;
+        ctx->sb_cli[sb_layer_id].root.composition.clipRect.x            = clip_position.x;
+        ctx->sb_cli[sb_layer_id].root.composition.clipRect.y            = clip_position.y;
+        ctx->sb_cli[sb_layer_id].root.composition.clipRect.width        = clip_position.width;
+        ctx->sb_cli[sb_layer_id].root.composition.clipRect.height       = clip_position.height;
+        ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.width  = ctx->display_width;
+        ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.height = ctx->display_height;
+    }
+    if (layer_updated) {
+       rc = NxClient_SetSurfaceClientComposition(ctx->sb_cli[sb_layer_id].root.ncci.sccid, &ctx->sb_cli[sb_layer_id].root.composition);
+       if (rc != NEXUS_SUCCESS) {
+           ALOGE("%s: geometry failed on layer %d, err=%d", __FUNCTION__, sb_layer_id, rc);
+       }
+    }
+
+out_unlock:
+    BKNI_ReleaseMutex(ctx->mutex);
 out:
     return;
 }
@@ -2045,17 +2225,30 @@ static void hwc_nsc_prepare_layer(
     bool geometry_changed)
 {
     unsigned int video_layer_id = 0;
+    unsigned int sideband_layer_id = 0;
     bool is_sideband = false;
 
     if (is_video_layer(layer, layer_id, &is_sideband)) {
-        if (video_layer_id < NSC_MM_CLIENTS_NUMBER) {
-            hwc_prepare_mm_layer(ctx, layer, layer_id, video_layer_id);
-            video_layer_id++;
-        } else {
-            // huh? shouldn't happen really, unless the system is not tuned
-            // properly for the use case, if such, do tune it.
-            ALOGE("%s: droping video layer %d - out of resources (max %d)!\n", __FUNCTION__,
-               video_layer_id, NSC_MM_CLIENTS_NUMBER);
+        if (!is_sideband) {
+            if (video_layer_id < NSC_MM_CLIENTS_NUMBER) {
+                hwc_prepare_mm_layer(ctx, layer, layer_id, video_layer_id);
+                video_layer_id++;
+            } else {
+                // huh? shouldn't happen really, unless the system is not tuned
+                // properly for the use case, if such, do tune it.
+                ALOGE("%s: droping video layer %d - out of resources (max %d)!\n", __FUNCTION__,
+                   video_layer_id, NSC_MM_CLIENTS_NUMBER);
+            }
+        } else if (is_sideband) {
+            if (sideband_layer_id < NSC_SB_CLIENTS_NUMBER) {
+                hwc_prepare_sb_layer(ctx, layer, layer_id, sideband_layer_id);
+                sideband_layer_id++;
+            } else {
+                // huh? shouldn't happen really, unless the system is not tuned
+                // properly for the use case, if such, do tune it.
+                ALOGE("%s: droping sideband layer %d - out of resources (max %d)!\n", __FUNCTION__,
+                   sideband_layer_id, NSC_SB_CLIENTS_NUMBER);
+            }
         }
     } else {
         hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed);
@@ -2110,6 +2303,30 @@ out:
     return;
 }
 
+static void nx_client_hide_unused_sb_layer(hwc_context_t* ctx, int index)
+{
+    NEXUS_SurfaceComposition composition;
+    NEXUS_Error rc;
+
+    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+        goto out;
+    }
+
+    NxClient_GetSurfaceClientComposition(ctx->sb_cli[index].root.ncci.sccid, &composition);
+    if (composition.visible) {
+       composition.visible = false;
+       rc = NxClient_SetSurfaceClientComposition(ctx->sb_cli[index].root.ncci.sccid, &composition);
+       if (rc != NEXUS_SUCCESS) {
+           ALOGE("%s: failed hiding layer %d, err=%d", __FUNCTION__, index, rc);
+       }
+    }
+
+    BKNI_ReleaseMutex(ctx->mutex);
+
+out:
+    return;
+}
+
 static void hwc_hide_unused_gpx_layers(hwc_context_t* ctx, int nx_layer_count)
 {
     for (int i = nx_layer_count; i < NSC_GPX_CLIENTS_NUMBER; i++)
@@ -2126,6 +2343,14 @@ static void hwc_hide_unused_mm_layers(hwc_context_t* ctx)
     }
 }
 
+static void hwc_hide_unused_sb_layers(hwc_context_t* ctx)
+{
+    for (int i = 0; i < NSC_SB_CLIENTS_NUMBER; i++)
+    {
+       nx_client_hide_unused_sb_layer(ctx, i);
+    }
+}
+
 static void hwc_binder_advertise_video_surface(hwc_context_t* ctx)
 {
     if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
@@ -2136,6 +2361,11 @@ static void hwc_binder_advertise_video_surface(hwc_context_t* ctx)
     if (ctx->nsc_video_changed && ctx->hwc_binder) {
        ctx->hwc_binder->setvideo(0, ctx->mm_cli[0].root.ncci.sccid);
        ctx->nsc_video_changed = false;
+    }
+
+    if (ctx->nsc_sideband_changed && ctx->hwc_binder) {
+       ctx->hwc_binder->setsideband(0, ctx->sb_cli[0].root.ncci.sccid);
+       ctx->nsc_sideband_changed = false;
     }
 
     BKNI_ReleaseMutex(ctx->mutex);
