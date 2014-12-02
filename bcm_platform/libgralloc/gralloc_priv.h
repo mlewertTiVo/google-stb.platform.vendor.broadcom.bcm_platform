@@ -38,6 +38,10 @@ extern "C" {
 #define BCM_DEBUG_TRACEMSG      LOGD
 #define BCM_DEBUG_ERRMSG        LOGD
 
+#define MAX_NUM_INSTANCES       2
+
+#define DEFAULT_PLANE           0
+#define EXTRA_PLANE             1
 
 /*****************************************************************************/
 
@@ -69,6 +73,15 @@ typedef struct __SHARED_DATA_ {
 
    //Metadata For Video Buffers
    DISPLAY_FRAME    DisplayFrame;
+
+   struct {
+      unsigned format;
+      unsigned bpp;
+      unsigned width;
+      unsigned height;
+      unsigned physAddr;
+  } planes[MAX_NUM_INSTANCES];
+
 } SHARED_DATA, *PSHARED_DATA;
 
 #ifdef __cplusplus
@@ -79,35 +92,33 @@ struct private_handle_t {
 #endif
 
 // file-descriptors
-/*1.*/        int         fd;
+/*1.*/        int         fd;    // default data plane
 /*2.*/        int         fd2;   // used for the small shared data block (SHARED_DATA)
+/*3.*/        int         fd3;   // extra data plane
 
 /*Ints Counter*/
-/*1.*/        unsigned    nxSurfacePhysicalAddress;
-/*2.*/        int         magic;
-/*3.*/        int         flags;
-/*4.*/        int         size;
-/*5.*/        int         pid;
-/*6.*/        unsigned    width;
-/*7.*/        unsigned    height;
-/*8.*/        unsigned    format;
-/*9.*/        unsigned    bpp;
-/*10.*/       unsigned    oglStride;
-/*11.*/       unsigned    oglFormat;
-/*12.*/       unsigned    oglSize;
-/*13.*/       unsigned    sharedDataPhyAddr;  // physical address of shared Data.
-/*14.*/       int         usage;
+/*1.*/        int         magic;
+/*2.*/        int         flags;
+/*3.*/        int         size;
+/*4.*/        int         pid;
+/*5.*/        unsigned    oglStride;
+/*6.*/        unsigned    oglFormat;
+/*7.*/        unsigned    oglSize;
+/*8.*/        unsigned    sharedData;
+/*9.*/        int         usage;
+
+// do not use, only for backward compatibility.
+/*10.*/       unsigned    nxSurfacePhysicalAddress;
 
 #ifdef __cplusplus
-    static const int sNumInts = 14;
-    static const int sNumFds = 2;
+    static const int sNumInts = 10;
+    static const int sNumFds = 3;
     static const int sMagic = 0x3141592;
 
-    private_handle_t(int fd, int fd2, int size, int flags) :
-        fd(fd), fd2(fd2), nxSurfacePhysicalAddress(0),
-        magic(sMagic), flags(flags), size(size),
+    private_handle_t(int fd, int fd2, int fd3, int size, int flags) :
+        fd(fd), fd2(fd2), fd3(fd3), magic(sMagic), flags(flags), size(size),
         pid(getpid()),oglStride(0), oglFormat(0), oglSize(0),
-        sharedDataPhyAddr(0), usage(0)
+        sharedData(0), usage(0)
     {
         version = sizeof(native_handle);
         numInts = sNumInts;

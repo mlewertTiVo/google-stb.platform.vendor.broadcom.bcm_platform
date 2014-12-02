@@ -833,7 +833,7 @@ static bool is_video_layer(hwc_layer_1_t *layer, int layer_id, bool *is_sideband
         if (layer->compositionType == HWC_OVERLAY) {
             int index = -1;
             private_handle_t *bcmBuffer = (private_handle_t *)layer->handle;
-            PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedDataPhyAddr);
+            PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedData);
             index = android_atomic_acquire_load(&pSharedData->videoWindow.windowIdPlusOne);
             if (index > 0) {
                 client_context = reinterpret_cast<NexusClientContext *>(pSharedData->videoWindow.nexusClientContext);
@@ -863,6 +863,8 @@ static bool can_handle_layer_scaling(
     bool ret = true;
 
     private_handle_t *bcmBuffer = (private_handle_t *)layer->handle;
+    PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedData);
+
     NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
                                 (int16_t)(int)layer->sourceCropf.top,
                                 (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
@@ -876,14 +878,14 @@ static bool can_handle_layer_scaling(
         goto out;
     }
 
-    if (clip_position.width && ((bcmBuffer->width / clip_position.width) >= NSC_MAXIMUM_SCALE_FACTOR)) {
-        ALOGI("%s: width: %d -> %d - defer to gles", __FUNCTION__, bcmBuffer->width, clip_position.width);
+    if (clip_position.width && ((pSharedData->planes[DEFAULT_PLANE].width / clip_position.width) >= NSC_MAXIMUM_SCALE_FACTOR)) {
+        ALOGI("%s: width: %d -> %d - defer to gles", __FUNCTION__, pSharedData->planes[DEFAULT_PLANE].width, clip_position.width);
         ret = false;
         goto out;
     }
 
-    if (clip_position.height && ((bcmBuffer->height / clip_position.height) >= NSC_MAXIMUM_SCALE_FACTOR)) {
-        ALOGI("%s: height: %d -> %d - defer to gles", __FUNCTION__, bcmBuffer->height, clip_position.height);
+    if (clip_position.height && ((pSharedData->planes[DEFAULT_PLANE].height / clip_position.height) >= NSC_MAXIMUM_SCALE_FACTOR)) {
+        ALOGI("%s: height: %d -> %d - defer to gles", __FUNCTION__, pSharedData->planes[DEFAULT_PLANE].height, clip_position.height);
         ret = false;
         goto out;
     }
@@ -1083,7 +1085,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         if (is_video_layer(&list->hwLayers[i], -1 /*not used*/, &is_sideband)) {
             if (!is_sideband) {
                 private_handle_t *bcmBuffer = (private_handle_t *)list->hwLayers[i].handle;
-                PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedDataPhyAddr);
+                PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedData);
                 if (ctx->hwc_binder) {
                     // TODO: currently only one video window exposed.
                     if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->DisplayFrame.frameStatus.serialNumber) {
@@ -1914,10 +1916,11 @@ static void hwc_prepare_gpx_layer(
     }
 
     bcmBuffer = (private_handle_t *)layer->handle;
-    cur_width = bcmBuffer->width;
-    cur_height = bcmBuffer->height;
-    format = bcmBuffer->format;
-    stride = (bcmBuffer->width*bcmBuffer->bpp + (SURFACE_ALIGNMENT - 1)) & ~(SURFACE_ALIGNMENT - 1);
+    PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedData);
+    cur_width = pSharedData->planes[DEFAULT_PLANE].width;
+    cur_height = pSharedData->planes[DEFAULT_PLANE].height;
+    format = pSharedData->planes[DEFAULT_PLANE].format;
+    stride = (pSharedData->planes[DEFAULT_PLANE].width*pSharedData->planes[DEFAULT_PLANE].bpp + (SURFACE_ALIGNMENT - 1)) & ~(SURFACE_ALIGNMENT - 1);
 
     switch (layer->blending) {
         case HWC_BLENDING_PREMULT:
@@ -2003,7 +2006,7 @@ static void hwc_prepare_gpx_layer(
             ctx->gpx_cli[layer_id].skip_set = true;
             goto out_unlock;
         }
-        uint8_t *layerCachedAddress = (uint8_t *)NEXUS_OffsetToCachedAddr(bcmBuffer->nxSurfacePhysicalAddress);
+        uint8_t *layerCachedAddress = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[0].physAddr);
         if (layerCachedAddress == NULL) {
             ALOGE("%s: layer cache address NULL: %d\n", __FUNCTION__, layer_id);
             goto out_unlock;
@@ -2014,8 +2017,8 @@ static void hwc_prepare_gpx_layer(
         }
         NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
         createSettings.pixelFormat = gralloc_to_nexus_pixel_format(format);
-        createSettings.width       = bcmBuffer->width;
-        createSettings.height      = bcmBuffer->height;
+        createSettings.width       = pSharedData->planes[DEFAULT_PLANE].width;
+        createSettings.height      = pSharedData->planes[DEFAULT_PLANE].height;
         createSettings.pitch       = stride;
         createSettings.pMemory     = layerCachedAddress;
         ctx->gpx_cli[layer_id].slist[six].shdl = NEXUS_Surface_Create(&createSettings);

@@ -84,7 +84,7 @@ int gralloc_register_buffer(gralloc_module_t const* module,
       LOGE("%s:: Register buffer from same process :%d", __FUNCTION__, getpid());
    }
 
-   pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedDataPhyAddr);
+   pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
 
    return 0;
 }
@@ -129,7 +129,8 @@ int gralloc_lock(gralloc_module_t const* module,
       private_handle_t* hnd = (private_handle_t*)handle;
 
       LOGV("%s : successfully locked", __FUNCTION__);
-      *vaddr = NEXUS_OffsetToCachedAddr(hnd->nxSurfacePhysicalAddress);
+      PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
+      *vaddr = NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
    }
 
    return err;
@@ -139,7 +140,6 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
 {
    // we're done with a software buffer. nothing to do in this
    // implementation. typically this is used to flush the data cache.
-   PSHARED_DATA pSharedData;
 
    private_handle_t *hnd = (private_handle_t *) handle;
 
@@ -149,13 +149,15 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       return -EINVAL;
    }
 
-   if (!hnd->nxSurfacePhysicalAddress)
+   PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
+
+   if (!pSharedData->planes[DEFAULT_PLANE].physAddr)
    {
       LOGE("%s: !!!FATAL ERROR NULL NEXUS SURFACE HANDLE!!!", __FUNCTION__);
       return -EINVAL;
    }
 
-   NEXUS_FlushCache(NEXUS_OffsetToCachedAddr(hnd->nxSurfacePhysicalAddress), hnd->oglSize);
+   NEXUS_FlushCache(NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr), hnd->oglSize);
 
    return 0;
 }

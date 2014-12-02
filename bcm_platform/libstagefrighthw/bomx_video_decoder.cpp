@@ -2235,7 +2235,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     pInfo->pFrameBuffer = NULL;
     pInfo->type = BOMX_VideoDecoderOutputBufferType_eNative;
     pInfo->typeInfo.native.pPrivateHandle = pPrivateHandle;
-    pInfo->typeInfo.native.pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pPrivateHandle->sharedDataPhyAddr);
+    pInfo->typeInfo.native.pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pPrivateHandle->sharedData);
     if ( NULL == pInfo->typeInfo.native.pSharedData )
     {
         delete pInfo;
@@ -2759,10 +2759,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
 
         SHARED_DATA *pSharedData;
         private_handle_t *pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
-        pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pPrivateHandle->sharedDataPhyAddr);
+        pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pPrivateHandle->sharedData);
         if ( NULL == pSharedData )
         {
-            BOMX_ERR(("Invalid gralloc buffer %#x - sharedDataPhyAddr %#x is invalid", pPrivateHandle, pPrivateHandle->sharedDataPhyAddr));
+            BOMX_ERR(("Invalid gralloc buffer %#x - sharedDataPhyAddr %#x is invalid", pPrivateHandle, pPrivateHandle->sharedData));
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
         BOMX_ASSERT((pInfo->typeInfo.metadata.pMetadata == (void *)pBufferHeader->pBuffer));
@@ -3291,10 +3291,10 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         {
                             SHARED_DATA *pSharedData;
                             pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
-                            pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pBuffer->pPrivateHandle->sharedDataPhyAddr);
+                            pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pBuffer->pPrivateHandle->sharedData);
                             if ( NULL == pSharedData )
                             {
-                                BOMX_ERR(("Unable to convert SHARED_DATA physical address %#x", pBuffer->pPrivateHandle->sharedDataPhyAddr));
+                                BOMX_ERR(("Unable to convert SHARED_DATA physical address %#x", pBuffer->pPrivateHandle->sharedData));
                                 (void)BOMX_ERR_TRACE(OMX_ErrorBadParameter);
                             }
                             else
