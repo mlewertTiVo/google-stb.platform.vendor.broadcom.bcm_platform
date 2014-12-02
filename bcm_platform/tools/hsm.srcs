@@ -26,3 +26,8 @@ src/region_verify/aegis/Zeus40/bsp_s_mem_auth.h.gpg
 src/region_verify/aegis/Zeus41/bsp_s_mem_auth.h.gpg
 src/region_verify/bhsm_verify_reg.c.gpg
 src/user_misc_cmd/bhsm_misc_enc.c.gpg
+src/secure_access/bhsm_secure_access.c.gpg
+src/secure_access/aegis/bsp_s_otp_ds_key.h.gpg
+src/secure_rsa/bhsm_secure_rsa.c.gpg
+src/secure_rsa/aegis/bsp_s_secure_rsa.h.gpg
+
