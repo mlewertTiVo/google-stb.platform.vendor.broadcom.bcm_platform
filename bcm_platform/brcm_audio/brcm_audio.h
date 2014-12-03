@@ -251,6 +251,11 @@ extern struct brcm_stream_in_ops builtin_bin_ops;
 extern struct brcm_stream_in_ops dummy_bin_ops;
 #endif
 
+extern void set_mute_state(bool mute);
+extern bool get_mute_state(void);
+extern void set_master_volume(float volume);
+extern float get_master_volume(void);
+
 /* Thread to monitor standby */
 typedef bool (*b_standby_monitor_callback)(void *context);
 struct StandbyMonitorThread : public android::Thread {

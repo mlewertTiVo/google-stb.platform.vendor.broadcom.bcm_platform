@@ -677,12 +677,13 @@ static int bdev_set_master_volume(struct audio_hw_device *adev,
                                   float volume)
 {
     UNUSED(adev);
-    UNUSED(volume);
 
     LOGV("%s: at %d, dev = 0x%X\n",
          __FUNCTION__, __LINE__, (uint32_t)adev);
 
-    return -ENOSYS;
+    set_master_volume(volume);
+
+    return 0;
 }
 
 static int bdev_get_master_volume(struct audio_hw_device *adev,
@@ -694,31 +695,35 @@ static int bdev_get_master_volume(struct audio_hw_device *adev,
     LOGV("%s: at %d, dev = 0x%X\n",
          __FUNCTION__, __LINE__, (uint32_t)adev);
 
-    return -ENOSYS;
+    *volume = get_master_volume();
+
+    return 0;
 }
 
 static int bdev_set_master_mute(struct audio_hw_device *adev,
                                 bool muted)
 {
     UNUSED(adev);
-    UNUSED(muted);
 
     LOGV("%s: at %d, dev = 0x%X\n",
          __FUNCTION__, __LINE__, (uint32_t)adev);
 
-    return -ENOSYS;
+    set_mute_state(muted);
+
+    return 0;
 }
 
 static int bdev_get_master_mute(struct audio_hw_device *adev,
                                 bool *muted)
 {
     UNUSED(adev);
-    UNUSED(muted);
 
     LOGV("%s: at %d, dev = 0x%X\n",
          __FUNCTION__, __LINE__, (uint32_t)adev);
 
-    return -ENOSYS;
+    *muted = get_mute_state();
+
+    return 0;
 }
 
 static int bdev_set_mode(struct audio_hw_device *adev,
