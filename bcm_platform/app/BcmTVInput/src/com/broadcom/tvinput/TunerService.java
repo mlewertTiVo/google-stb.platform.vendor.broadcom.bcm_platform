@@ -16,15 +16,9 @@
 
 package com.broadcom.tvinput;
 
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -33,25 +27,13 @@ import java.lang.reflect.InvocationTargetException;
 
 import org.xmlpull.v1.XmlPullParserException;
 
-import android.content.ComponentName;
-import android.content.ContentResolver;
-import android.content.ContentUris;
 import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
-import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.database.Cursor;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.Paint;
-import android.hardware.hdmi.HdmiDeviceInfo;
-import android.media.AudioManager;
-import android.media.tv.TvContentRating;
 import android.media.tv.TvContract;
 import android.media.tv.TvInputHardwareInfo;
 import android.media.tv.TvInputInfo;
@@ -67,7 +49,6 @@ import android.os.Parcelable;
 import android.os.RemoteException;
 import android.util.Log;
 import android.util.SparseArray;
-import android.view.KeyEvent;
 import android.view.Surface;
 
 /**
@@ -502,7 +483,6 @@ public class TunerService extends TvInputService {
     {
         protected final TvInputInfo mInfo;
         protected final int mDeviceId;
-        protected Surface mSurface = null;
         protected String mCurrentChannelId = "";
         private TvInputManager.Hardware mHardware;
         private TvStreamConfig[] mStreamConfigs = EMPTY_STREAM_CONFIGS;
@@ -589,9 +569,6 @@ public class TunerService extends TvInputService {
                     Log.d(TAG, "setSurface (local): config is null");
                     return false;
                 }
-
-                // Save the surface
-                mSurface = surface;
             }
 
             // Inform that we've got video running

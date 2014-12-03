@@ -35,12 +35,6 @@ import android.widget.ProgressBar;
 import android.widget.LinearLayout;
 import android.util.Log;
 
-import android.media.tv.TvContract;
-import android.media.tv.TvContract.Channels;
-import android.content.ContentResolver;
-import android.content.ContentUris;
-import android.content.ContentValues;
-import android.net.Uri;
 
 /**
  * TV-Input activity for Broadcom's Tuner
@@ -48,7 +42,7 @@ import android.net.Uri;
  */
 public class TunerSettings extends Activity {
     private final Handler mHandler = new Handler();
-
+    
     private static final String TAG = TunerSettings.class.getSimpleName();
 
     private TvInputManager mTvInputManager;
