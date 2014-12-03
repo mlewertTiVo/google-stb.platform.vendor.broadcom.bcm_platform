@@ -46,7 +46,8 @@
 
 NexusIrInput::NexusIrInput() :
         m_handle(0),
-        m_observer(0)
+        m_observer(0),
+        m_power_key(NEXUSIRINPUT_NO_POWER_KEY)
 {
 }
 
@@ -56,11 +57,12 @@ NexusIrInput::~NexusIrInput()
 }
 
 bool NexusIrInput::start(NEXUS_IrInputMode mode,
-        NexusIrInput::Observer &observer)
+        NexusIrInput::Observer &observer, uint32_t power_key)
 {
     LOGI("NexusIrInput start");
 
     m_observer = &observer;
+    m_power_key = power_key;
 
     NEXUS_IrInputSettings irSettings;
     NEXUS_IrInput_GetDefaultSettings(&irSettings);
@@ -84,6 +86,21 @@ void NexusIrInput::stop()
         m_handle = 0;
     }
     m_observer = 0;
+}
+
+void NexusIrInput::enterStandby()
+{
+    NEXUS_IrInputDataFilter irPattern;
+    NEXUS_IrInput_GetDefaultDataFilter(&irPattern);
+    irPattern.filterWord[0].patternWord = m_power_key;
+    irPattern.filterWord[0].enabled =
+        (m_power_key != NEXUSIRINPUT_NO_POWER_KEY);
+    NEXUS_IrInput_EnableDataFilter(m_handle, &irPattern);
+}
+
+void NexusIrInput::exitStandby()
+{
+    NEXUS_IrInput_DisableDataFilter(m_handle);
 }
 
 /*static*/ void NexusIrInput::dataReady(void *context, int param)

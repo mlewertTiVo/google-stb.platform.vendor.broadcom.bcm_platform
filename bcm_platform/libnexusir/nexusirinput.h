@@ -45,6 +45,8 @@
 
 #include <stdint.h>
 
+#define NEXUSIRINPUT_NO_POWER_KEY 0xDEADC0DE
+
 /**
  * @brief Nexus IR input wrapper.
  */
@@ -72,7 +74,8 @@ public:
      * @param Observer An instance of the Observer to receive key events.
      * @return true on success, otherwise false.
      */
-    bool start(NEXUS_IrInputMode mode, Observer &Observer);
+    bool start(NEXUS_IrInputMode mode, Observer &Observer,
+            uint32_t power_key = NEXUSIRINPUT_NO_POWER_KEY);
 
     /**
      * @brief Stop receiving IR events and close Nexus IR input.
@@ -80,6 +83,16 @@ public:
      * Stopping an instance that's not started is a no-op.
      */
     void stop();
+
+    /**
+     * @brief perform standby operations such as enabling the IR filter mask
+     */
+    void enterStandby();
+
+    /**
+     * @brief perform exit standby operations such as disabling the IR filter mask
+     */
+    void exitStandby();
 
 private:
     /* Disallow copy constructor and assignment operator... */
@@ -91,6 +104,7 @@ private:
 
     NEXUS_IrInputHandle m_handle;
     Observer *m_observer;
+    uint32_t m_power_key;
 };
 
 #endif /* _NEXUS_IR_INPUT_H_ */

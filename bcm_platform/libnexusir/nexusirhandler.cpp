@@ -38,6 +38,7 @@
  *****************************************************************************/
 
 #include "nexusirhandler.h"
+#include "nexusirinput.h"
 #include "nexusirmap.h"
 
 //#define LOG_NDEBUG 0
@@ -74,14 +75,18 @@ bool NexusIrHandler::start(NEXUS_IrInputMode mode,
         m_uinput.register_event(EV_KEY);
 
     size_t size = m_map->size();
+    uint32_t power_key = NEXUSIRINPUT_NO_POWER_KEY;
     for (size_t i = 0; success && (i < size); ++i)
     {
+        if (m_map->linuxKeyAt(i) == KEY_POWER) {
+            power_key = m_map->nexusIrCodeAt(i);
+        }
         success = success && m_uinput.register_key(m_map->linuxKeyAt(i));
         //Note: success == false breaks the loop
     }
     success = success
             && m_uinput.start("NexusIrHandler", id)
-            && m_ir.start(m_mode, *this);
+            && m_ir.start(m_mode, *this, power_key);
 
     if (!success)
     {
@@ -100,6 +105,16 @@ void NexusIrHandler::stop()
     m_uinput.stop();
     m_uinput.close();
     m_map = 0;
+}
+
+void NexusIrHandler::enterStandby()
+{
+    m_ir.enterStandby();
+}
+
+void NexusIrHandler::exitStandby()
+{
+    m_ir.exitStandby();
 }
 
 /*virtual*/ void NexusIrHandler::onIrInput(uint32_t nexus_key, bool repeat)
