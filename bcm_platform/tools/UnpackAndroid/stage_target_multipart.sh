@@ -76,7 +76,7 @@ echo ""
 
 echo ""
 echo "******** IMPORTANT ********"
-echo "  This script assumes that the USB drive was formatted by format_android_usb_multipart_8GB.sh"
+echo "  This script assumes that the USB drive was formatted by format_android_usb_multipart_16GB.sh"
 echo ""
 sleep 2
 

@@ -2,12 +2,12 @@
 
 if [ $# -lt 1 ]
 then
-  echo "Usage: sudo ./format_android_usb_multipart_8GB.sh sd<b-z>"
+  echo "Usage: sudo ./format_android_usb_multipart_16GB.sh sd<b-z>"
   echo "       <b-z>: Any letter from b to z, corresponding to your usb drive."
   echo "              'a' is not permitted because it is probably your main hard drive,"
   echo "              and this script first deletes existing partitions."
-  echo "Example: sudo ./format_android_usb_multipart_8GB.sh sdf"
-  echo "Note: Partition table requires a USB drive of 8GB or larger."
+  echo "Example: sudo ./format_android_usb_multipart_16GB.sh sdf"
+  echo "Note: Partition table requires a USB drive of 16GB or larger."
   exit
 fi
 

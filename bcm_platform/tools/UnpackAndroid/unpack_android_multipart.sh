@@ -13,13 +13,13 @@ then
   echo "       sd<b-z>    : Any letter from b to z, corresponding to your usb drive."
   echo "                    'a' is not permitted because it is probably your main hard drive,"
   echo "                    and this script first deletes existing partitions."
-  echo "       NOTE: This script assumes that the USB drive was formatted by format_android_usb_multipart_8GB.sh"
+  echo "       NOTE: This script assumes that the USB drive was formatted by format_android_usb_multipart_16GB.sh"
   exit
 fi
 
 echo ""
 echo "******** IMPORTANT ********" 
-echo "  This script assumes that the USB drive was formatted by format_android_usb_multipart_8GB.sh"
+echo "  This script assumes that the USB drive was formatted by format_android_usb_multipart_16GB.sh"
 echo ""
 sleep 2
 
