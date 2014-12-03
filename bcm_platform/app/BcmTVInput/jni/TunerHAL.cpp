@@ -66,6 +66,7 @@ static jclass gTunerServiceClass;
 static JNINativeMethod gMethods[] = 
 {
 	{"initialize",     "(Ljava/lang/Object;)I",     (void *)Java_com_broadcom_tvinput_TunerHAL_initialize},
+    {"scan",           "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_scan},  
 	{"tune",           "(Ljava/lang/String;)I",     (void *)Java_com_broadcom_tvinput_TunerHAL_tune},
 	{"getChannelList", "()[Lcom/broadcom/tvinput/ChannelInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getChannelList},
 	{"getProgramList", "(Ljava/lang/String;)[Lcom/broadcom/tvinput/ProgramInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getProgramList},
@@ -368,6 +369,20 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv *env, jcla
     }
     else {
         rv = (*g_pTD->driver.Stop)();
+    }
+
+    return rv;
+}
+
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_scan(JNIEnv *env, jclass thiz)
+{
+    jint rv = -1;
+
+    if (g_pTD->driver.Scan == 0) {
+        TV_LOG("%s: Scan call is null", __FUNCTION__);
+    }
+    else {
+        rv = (*g_pTD->driver.Scan)();
     }
 
     return rv;

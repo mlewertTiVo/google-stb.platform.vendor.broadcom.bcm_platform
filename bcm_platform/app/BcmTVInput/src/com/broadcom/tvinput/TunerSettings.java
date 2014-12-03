@@ -17,11 +17,16 @@
 package com.broadcom.tvinput;
 
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.pm.ServiceInfo;
+
 import android.database.Cursor;
 import android.media.tv.TvInputInfo;
 import android.media.tv.TvInputManager;
 import android.os.Bundle;
+import android.os.Handler;
+
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
@@ -40,17 +45,48 @@ import android.net.Uri;
  * 
  */
 public class TunerSettings extends Activity {
-    
+    private final Handler mHandler = new Handler();
+
     private static final String TAG = TunerSettings.class.getSimpleName();
+
+    private TvInputManager mTvInputManager;
+
+    private String getInputIdFromComponentName(Context context, ComponentName name) {
+        for (TvInputInfo info : mTvInputManager.getTvInputList()) {
+            ServiceInfo si = info.getServiceInfo();
+            if (new ComponentName(si.packageName, si.name).equals(name)) {
+                return info.getId();
+            }
+        }
+        return null;
+    }
+
+    private TvInputManager.Session mSession = null;
+
+    private class MySessionCallback extends TvInputManager.SessionCallback {
+        @Override
+        public void onSessionCreated(TvInputManager.Session session) {
+            mSession = session;
+        }
+    }
+
+    private MySessionCallback mSessionCallback;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 		Log.e(TAG, "onCreate - Enter...");
 
-		// This is NOT working
-//		mInputId = getIntent().getStringExtra(TvInputInfo.EXTRA_INPUT_ID);
-//		Log.e(TAG, "onCreate - mInputId = " +mInputId);
+        String inputId;
+
+        mTvInputManager = (TvInputManager) this.getSystemService(Context.TV_INPUT_SERVICE);
+
+        inputId = getInputIdFromComponentName(this,
+                new ComponentName(this, TunerService.class));
+        Log.e(TAG, "onCreate - mInputId = " + inputId);
+
+        mSessionCallback = new MySessionCallback();
+        mTvInputManager.createSession(inputId, mSessionCallback, mHandler);
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
@@ -61,6 +97,7 @@ public class TunerSettings extends Activity {
         btn.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
+                mSession.sendAppPrivateCommand("scan", null);
                 setResult(Activity.RESULT_OK);
                 finish();
             }
@@ -68,4 +105,5 @@ public class TunerSettings extends Activity {
 
         layout.addView(btn);
     }
+
 }

@@ -17,6 +17,14 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize
 
 /*
  * Class:     com_broadcom_tvinput_TunerHAL
+ * Method:    scan
+ * Signature: ()I
+ */
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_scan
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     com_broadcom_tvinput_TunerHAL
  * Method:    tune
  * Signature: (Ljava/lang/String;)I
  */

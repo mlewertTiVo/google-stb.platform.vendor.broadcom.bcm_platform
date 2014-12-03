@@ -141,6 +141,13 @@ static int BroadcastDemo_Stop()
     return 0;
 }
 
+static int BroadcastDemo_Scan()
+{
+    ALOGE("%s: Enter", __FUNCTION__);
+    ALOGE("%s: Exit", __FUNCTION__);
+    return 0;
+}
+
 static int BroadcastDemo_Tune(String8 s8id)
 {
     NEXUS_SimpleVideoDecoderStartSettings videoProgram;
@@ -347,6 +354,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->GetChannelList = BroadcastDemo_GetChannelList;
     pD->GetProgramList = BroadcastDemo_GetProgramList;
     pD->Tune = BroadcastDemo_Tune;
+    pD->Scan = BroadcastDemo_Scan;
     pD->Stop = BroadcastDemo_Stop;
     pD->Release = BroadcastDemo_Release;
 

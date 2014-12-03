@@ -17,6 +17,7 @@ public class TunerHAL
     }
 
     static native int initialize(Object o);
+    static native int scan();
     static native int tune(String id); // from ChannelInfo
     static native ChannelInfo[] getChannelList();
     static native ProgramInfo[] getProgramList(String internalid);

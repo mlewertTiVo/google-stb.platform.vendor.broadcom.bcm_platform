@@ -58,6 +58,7 @@ import android.media.tv.TvInputService;
 import android.media.tv.TvStreamConfig;
 import android.net.Uri;
 import android.os.Handler;
+import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Parcel;
 import android.os.RemoteException;
@@ -638,6 +639,15 @@ public class TunerService extends TvInputService {
         {
 			Log.d(TAG, "onSetCaptionEnabled,  Enter...");
             // No-op
+        }
+
+        @Override
+        public void onAppPrivateCommand(String action, Bundle data) 
+        {
+            Log.d(TAG, "onAppPrivateCommand: " + action);
+            if (action.equals("scan")) {
+                TunerHAL.scan();
+            }
         }
     }
 }

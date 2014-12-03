@@ -31,11 +31,28 @@ static int BroadcastDTVKit_Stop()
     if (pSelf->path != INVALID_RES_ID) {
         ALOGE("%s: Stopping", __FUNCTION__); 
         ACTL_DecodeOff(pSelf->path);
-        pSelf->path = INVALID_RES_ID;
     }
     ALOGE("%s: Exit", __FUNCTION__);
 
     return -1;
+}
+
+static int BroadcastDTVKit_Scan()
+{
+    ALOGE("%s: Enter", __FUNCTION__); 
+    if (!pSelf->scanning) {
+        ACFG_SetCountry(COUNTRY_CODE_UK); 
+        ADB_ResetDatabase();
+        if (ACTL_StartServiceSearch(SIGNAL_COFDM, ACTL_FREQ_SEARCH)) {
+            ALOGE("%s: scan start ok", __FUNCTION__);
+            pSelf->scanning = true;
+        }
+        else {
+            ALOGE("%s: scan start failed", __FUNCTION__);
+        }
+    }
+    ALOGE("%s: Exit", __FUNCTION__);
+    return 0;
 }
 
 static int BroadcastDTVKit_Tune(String8 s8id)
@@ -46,7 +63,7 @@ static int BroadcastDTVKit_Tune(String8 s8id)
     U16BIT lcn = strtoul(s8id.string(), 0, 0);
     void *s_ptr = ADB_FindServiceByLcn(ADB_SERVICE_LIST_TV | ADB_SERVICE_LIST_RADIO, lcn, TRUE);
     if (s_ptr) {
-        pSelf->path = ACTL_TuneToService(INVALID_RES_ID, NULL, s_ptr, TRUE, TRUE);
+        pSelf->path = ACTL_TuneToService(pSelf->path, NULL, s_ptr, TRUE, TRUE);
         if (pSelf->path == INVALID_RES_ID) {
             ALOGE("%s: Invalid resource", __FUNCTION__);
         }
@@ -224,10 +241,13 @@ static int BroadcastDTVKit_Release()
 {
     ALOGE("%s: Enter", __FUNCTION__);
 
-    BroadcastDTVKit_Stop();
+    if (pSelf->path != INVALID_RES_ID) {
+        BroadcastDTVKit_Stop();
+        STB_DPReleasePath(pSelf->path, RES_OWNER_NONE);
+        pSelf->path = INVALID_RES_ID;
+    }
 
     ALOGE("%s: Exit", __FUNCTION__);
-
     return 0;
 }
 
@@ -290,7 +310,7 @@ event_handler(U32BIT event, void *event_data, U32BIT data_size)
         //ALOGE("%s: ev %s(%d)/%d", __FUNCTION__, evcname(EVENT_CLASS(event), EVENT_TYPE(event)), EVENT_CLASS(event), EVENT_TYPE(event));
         if (event == EVENT_CODE(EV_CLASS_UI, EV_TYPE_UPDATE) && pSelf->scanning) {
             U8BIT progress = ACTL_GetSearchProgress();
-            ALOGE("%s: progress %d%%", __FUNCTION__, progress);
+            ALOGE("%s:# progress %d%%", __FUNCTION__, progress);
             if (ACTL_IsSearchComplete()) {
                 pSelf->scanning = false;
                 if (ACTL_IsTargetRegionRequired()) {
@@ -319,18 +339,12 @@ Broadcast_Initialize(BroadcastDriver *pD)
     U16BIT services = ADB_GetNumServicesInList(ADB_SERVICE_LIST_ALL, true);
     if (services == 0) {
         ACFG_SetCountry(COUNTRY_CODE_UK); 
-        ADB_ResetDatabase();
-        pSelf->scanning = true;
-        ACTL_StartServiceSearch(SIGNAL_COFDM, ACTL_FREQ_SEARCH);
-        ALOGE("%s: scan started", __FUNCTION__);
-    }
-    else {
-        ALOGE("%s: scan omitted (%d services)", __FUNCTION__, services);
     }
 
     pD->GetChannelList = BroadcastDTVKit_GetChannelList;
     pD->GetProgramList = BroadcastDTVKit_GetProgramList;
     pD->Tune = BroadcastDTVKit_Tune;
+    pD->Scan = BroadcastDTVKit_Scan;
     pD->Stop = BroadcastDTVKit_Stop;
     pD->Release = BroadcastDTVKit_Release;
     ALOGE("%s: Exit", __FUNCTION__);
