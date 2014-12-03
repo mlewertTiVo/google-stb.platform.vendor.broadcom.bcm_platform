@@ -559,16 +559,53 @@ b_powerState NexusIPCClient::getPowerState()
     return cmd.param.getPowerState.out.pmState;
 }
 
+bool NexusIPCClient::setCecEnabled(uint32_t cecId __unused, bool enabled)
+{
+    bool success = true;
+    char value[PROPERTY_VALUE_MAX];
+
+    snprintf(value, PROPERTY_VALUE_MAX, "%d", enabled);
+
+    if (property_set(PROPERTY_HDMI_ENABLE_CEC, value) != 0) {
+        success = false;
+    }
+    return success;
+}
+
 bool NexusIPCClient::isCecEnabled(uint32_t cecId __unused)
 {
     bool enabled = false;
 #if NEXUS_HAS_CEC
     char value[PROPERTY_VALUE_MAX];
 
-    if (property_get("ro.enable_cec", value, NULL) && strcmp(value,"1")==0) {
+    if (property_get(PROPERTY_HDMI_ENABLE_CEC, value, NULL) && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
         enabled = true;
     }
 #endif
+    return enabled;
+}
+
+bool NexusIPCClient::setCecAutoWakeupEnabled(uint32_t cecId, bool enabled)
+{
+    bool success = true;
+    char value[PROPERTY_VALUE_MAX];
+
+    snprintf(value, PROPERTY_VALUE_MAX, "%d", enabled);
+
+    if (property_set(PROPERTY_HDMI_AUTO_WAKEUP_CEC, value) != 0) {
+        success = false;
+    }
+    return success;
+}
+
+bool NexusIPCClient::isCecAutoWakeupEnabled(uint32_t cecId __unused)
+{
+    bool enabled = false;
+    char value[PROPERTY_VALUE_MAX];
+
+    if (property_get(PROPERTY_HDMI_AUTO_WAKEUP_CEC, value, "1") && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
+        enabled = true;
+    }
     return enabled;
 }
 

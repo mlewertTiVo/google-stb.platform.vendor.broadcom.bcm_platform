@@ -161,6 +161,23 @@ typedef struct b_cecStatus {
     unsigned cecVersion;        /* Cec Protocol version the platform is running */
 } b_cecStatus;
 
+/*** Properties must be less than 32 characters in length! ***/
+
+// Enable HDMI CEC functionality by ensuring this property is set to 1...
+#define PROPERTY_HDMI_ENABLE_CEC      "persist.sys.hdmi.enable_cec"
+
+// Enable STB auto wakeup on CEC by ensuring this property is set to 1...
+#define PROPERTY_HDMI_AUTO_WAKEUP_CEC "persist.sys.hdmi.auto_wake_cec"
+
+// Enable sending CEC standby message to TV on entry to standby by ensuring
+// that this property is set to 1...
+#define PROPERTY_HDMI_TX_STANDBY_CEC    "persist.sys.hdmi.tx_standby_cec"
+
+// Enable sending CEC image view on message to TV on exit from standby by
+// ensuring that this property is set to 1...
+#define PROPERTY_HDMI_TX_VIEW_ON_CEC    "persist.sys.hdmi.tx_view_on_cec"
+
+
 typedef struct b_hdmiOutputStatus
 {
     bool connected;             /* True if Rx device is connected; device may be ON or OFF */
@@ -294,7 +311,10 @@ public:
     virtual bool getCecPowerStatus(uint32_t cecId, uint8_t *pPowerStatus)=0;
     virtual bool getCecStatus(uint32_t cecId, b_cecStatus *pCecStatus)=0;
     virtual bool sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage)=0;
+    virtual bool setCecEnabled(uint32_t cecId, bool enabled)=0;
     virtual bool isCecEnabled(uint32_t cecId)=0;
+    virtual bool setCecAutoWakeupEnabled(uint32_t cecId, bool enabled)=0;
+    virtual bool isCecAutoWakeupEnabled(uint32_t cecId)=0;
     virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr)=0;
     virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus)=0;
 };

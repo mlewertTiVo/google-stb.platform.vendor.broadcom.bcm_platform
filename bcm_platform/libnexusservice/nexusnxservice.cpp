@@ -214,7 +214,7 @@ bool NexusServerContext::StandbyMonitorThread::threadLoop()
     return false;
 }
 
-void NexusNxService::hotplugCallback(void *context __unused, int param __unused)
+void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param __unused)
 {
 #if NEXUS_HAS_HDMI_OUTPUT
     int rc;
@@ -229,14 +229,15 @@ void NexusNxService::hotplugCallback(void *context __unused, int param __unused)
         return;
     }
 
-    LOGD("%s: HDMI%d hotplug %s",
+    LOGD("%s: HDMI%d hotplug %s (receive device %s powered)",
          __func__, param,
-         status.hdmi.status.connected ? "connected" : "disconnected");
+         status.hdmi.status.connected ? "connected" : "disconnected", status.hdmi.status.rxPowered ? "is" : "isn't");
 
-    sp<INexusHdmiHotplugEventListener> pHdmiHotplugEventListener =
-        pNexusNxService->server->mHdmiHotplugEventListener[param];
+    sp<INexusHdmiHotplugEventListener> pHdmiHotplugEventListener = pNexusNxService->server->mHdmiHotplugEventListener[param];
     if (pHdmiHotplugEventListener != NULL) {
-        pHdmiHotplugEventListener->onHdmiHotplugEventReceived(param, status.hdmi.status.connected);
+        LOGV("%s: Firing off HDMI%d hotplug %s event...", __PRETTY_FUNCTION__, param,
+            (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? "connected" : "disconnected");
+        pHdmiHotplugEventListener->onHdmiHotplugEventReceived(param, status.hdmi.status.connected && status.hdmi.status.rxPowered);
     }
 
 #if ANDROID_ENABLE_HDMI_HDCP
@@ -258,7 +259,7 @@ void NexusNxService::hotplugCallback(void *context __unused, int param __unused)
 #endif
 }
 
-void NexusNxService::hdcpCallback(void *context __unused, int param __unused)
+void NexusNxService::hdmiOutputHdcpStateChangedCallback(void *context __unused, int param __unused)
 {
 #if ANDROID_ENABLE_HDMI_HDCP
     int rc;
@@ -291,11 +292,11 @@ int NexusNxService::platformInitHdmiOutputs()
     NxClient_CallbackThreadSettings settings;
 
     NxClient_GetDefaultCallbackThreadSettings(&settings);
-    settings.hdmiOutputHotplug.callback = hotplugCallback;
+    settings.hdmiOutputHotplug.callback = hdmiOutputHotplugCallback;
     settings.hdmiOutputHotplug.context = this;
     settings.hdmiOutputHotplug.param = 0;
 #if ANDROID_ENABLE_HDMI_HDCP
-    settings.hdmiOutputHdcpChanged.callback = hdcpCallback;
+    settings.hdmiOutputHdcpChanged.callback = hdmiOutputHdcpStateChangedCallback;
     settings.hdmiOutputHdcpChanged.context = this;
     settings.hdmiOutputHdcpChanged.param = 0;
 #endif
@@ -306,9 +307,9 @@ int NexusNxService::platformInitHdmiOutputs()
     }
 
     /* Self-trigger the first callback */
-    hotplugCallback(this, 0);
+    hdmiOutputHotplugCallback(this, 0);
 #if ANDROID_ENABLE_HDMI_HDCP
-    hdcpCallback(this, 0);
+    hdmiOutputHdcpStateChangedCallback(this, 0);
 #endif
 #endif
     return rc;
@@ -1026,11 +1027,11 @@ bool NexusNxService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pH
 
         
         for (loops = 0; loops < 4; loops++) {
-            LOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
             rc = NxClient_GetDisplayStatus(&status);
             if ((rc == NEXUS_SUCCESS) && status.hdmi.status.connected) {
                 break;
             }
+            LOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
             usleep(250 * 1000);
         }
         

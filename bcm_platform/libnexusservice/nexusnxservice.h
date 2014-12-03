@@ -107,8 +107,8 @@ protected:
 private:
     int platformInitHdmiOutputs(void);
     void platformUninitHdmiOutputs();
-    static void hotplugCallback(void *context, int param);
-    static void hdcpCallback(void *context, int param);
+    static void hdmiOutputHotplugCallback(void *context, int param);
+    static void hdmiOutputHdcpStateChangedCallback(void *pContext, int param);
 
     bool platformInitIR();
     void platformUninitIR();

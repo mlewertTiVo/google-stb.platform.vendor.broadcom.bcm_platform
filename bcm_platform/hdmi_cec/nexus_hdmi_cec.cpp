@@ -80,8 +80,6 @@ status_t NexusHdmiCecDevice::HdmiCecMessageEventListener::onHdmiCecMessageReceiv
 {
     hdmi_event_t hdmiCecEvent;
 
-    HDMI_CEC_TRACE_ENTER;
-
     hdmiCecEvent.type = HDMI_EVENT_CEC_MESSAGE;
     hdmiCecEvent.dev = mNexusHdmiCecDevice->mHdmiCecDevice;
     hdmiCecEvent.cec.initiator = (cec_logical_address_t)message->initiator;
@@ -89,9 +87,10 @@ status_t NexusHdmiCecDevice::HdmiCecMessageEventListener::onHdmiCecMessageReceiv
     hdmiCecEvent.cec.length = message->length;
     memcpy(hdmiCecEvent.cec.body, message->body, message->length);
 
-    ALOGV("%s: portId=%d, initiator=%d, destination=%d, length=%d, opcode=0x%02x", __FUNCTION__, portId,
+    ALOGV("%s: portId=%d, initiator=%d, destination=%d, length=%d, opcode=0x%02x", __PRETTY_FUNCTION__, portId,
             hdmiCecEvent.cec.initiator, hdmiCecEvent.cec.destination,hdmiCecEvent.cec.length, hdmiCecEvent.cec.body[0]);
-    if (mNexusHdmiCecDevice->mCallback != NULL) {
+
+    if (mNexusHdmiCecDevice->mCallback != NULL && mNexusHdmiCecDevice->mCecEnable == true) {
         ALOGV("%s: About to call port %d CEC MESSAGE callback function %p...", __PRETTY_FUNCTION__, portId, mNexusHdmiCecDevice->mCallback);
         (*mNexusHdmiCecDevice->mCallback)(&hdmiCecEvent, mNexusHdmiCecDevice->mCallbackArg);
     }
@@ -127,8 +126,9 @@ status_t NexusHdmiCecDevice::HdmiHotplugEventListener::onHdmiHotplugEventReceive
     return NO_ERROR;
 }
 
-NexusHdmiCecDevice::NexusHdmiCecDevice(uint32_t cecId) : mCecId(cecId), mCecEnable(true), pIpcClient(NULL), mCallback(NULL),
-                                                         mHdmiCecDevice(NULL), mHdmiCecMessageEventListener(NULL), mHdmiHotplugEventListener(NULL)
+NexusHdmiCecDevice::NexusHdmiCecDevice(uint32_t cecId) : mCecId(cecId), mCecLogicalAddr(0xFF), mCecEnable(true), mCecViewOnCmdPending(false),
+                                                         pIpcClient(NULL), mCallback(NULL), mHdmiCecDevice(NULL),
+                                                         mHdmiCecMessageEventListener(NULL), mHdmiHotplugEventListener(NULL)
 {
     HDMI_CEC_TRACE_ENTER;
 }
@@ -243,17 +243,110 @@ status_t NexusHdmiCecDevice::setCecLogicalAddress(uint8_t addr)
         return UNKNOWN_ERROR;
     }
 
+    mCecLogicalAddr = addr;
+
+    // If the View On Cec command is pending and we have a valid logical address,
+    // then we can issue the command to wakeup the connected TV...
+    if (mCecLogicalAddr != 0xFF && mCecViewOnCmdPending) {
+        if (pIpcClient == NULL) {
+            ALOGE("%s: NexusIPCClient has been instantiated!!!", __PRETTY_FUNCTION__);
+        }
+        else if (pIpcClient->setCecPowerState(mCecId, ePowerState_S0) != true) {
+            ALOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, mCecId, ePowerState_S0);
+        }
+        else {
+            mCecViewOnCmdPending = false;
+        }
+    }
+
     return NO_ERROR;
 }
 
-void NexusHdmiCecDevice::setState(bool enable)
+bool NexusHdmiCecDevice::getCecTransmitStandby()
 {
-    HDMI_CEC_TRACE_ENTER;
+    char value[PROPERTY_VALUE_MAX];
+    bool tx=false;
 
-    mCecEnable = enable;
+    if (property_get(PROPERTY_HDMI_TX_STANDBY_CEC, value, NULL)) {
+        tx = (strncmp(value, "1", PROPERTY_VALUE_MAX) == 0);
+    }
+    return tx;
 }
 
-bool NexusHdmiCecDevice::getState()
+bool NexusHdmiCecDevice::getCecTransmitViewOn()
+{
+    char value[PROPERTY_VALUE_MAX];
+    bool tx=false;
+
+    if (property_get(PROPERTY_HDMI_TX_VIEW_ON_CEC, value, NULL)) {
+        tx = (strncmp(value, "1", PROPERTY_VALUE_MAX) == 0);
+    }
+    return tx;
+}
+
+void NexusHdmiCecDevice::setEnableState(bool enable)
+{
+    ALOGV("%s: enable=%d", __PRETTY_FUNCTION__, enable);
+
+    mCecEnable = enable;
+
+    if (pIpcClient == NULL) {
+        ALOGE("%s: NexusIPCClient has been instantiated!!!", __PRETTY_FUNCTION__);
+    }
+    else {
+        pIpcClient->setCecEnabled(mCecId, enable);
+    }
+}
+
+void NexusHdmiCecDevice::setAutoWakeupState(bool enable)
+{
+    ALOGV("%s: enable=%d", __PRETTY_FUNCTION__, enable);
+
+    if (pIpcClient == NULL) {
+        ALOGE("%s: NexusIPCClient has been instantiated!!!", __PRETTY_FUNCTION__);
+    }
+    else {
+        pIpcClient->setCecAutoWakeupEnabled(mCecId, enable);
+    }
+}
+
+void NexusHdmiCecDevice::setControlState(bool enable)
+{
+    ALOGV("%s: enable=%d", __PRETTY_FUNCTION__, enable);
+
+    mCecEnable = enable;
+
+    if (pIpcClient == NULL) {
+        ALOGE("%s: NexusIPCClient has been instantiated!!!", __PRETTY_FUNCTION__);
+    }
+    else {
+        bool tx;
+        b_powerState state;
+
+        if (enable) {
+            state = ePowerState_S0;
+            tx = getCecTransmitViewOn();
+
+            // If the logical address of the STB has not been setup, then we must delay
+            // sending the View On Cec command...
+            if (tx && mCecLogicalAddr == 0xFF) {
+                mCecViewOnCmdPending = true;
+                tx = false;
+            }
+        }
+        else {
+            mCecViewOnCmdPending = false;
+            state = ePowerState_S3;
+            tx = getCecTransmitStandby();
+        }
+
+        if (tx && pIpcClient->setCecPowerState(mCecId, state) != true) {
+            ALOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, mCecId, state);
+        }
+    }
+}
+
+bool NexusHdmiCecDevice::getConnectedState()
 {
     if (pIpcClient == NULL) {
         ALOGE("%s: NexusIPCClient has been instantiated!!!", __PRETTY_FUNCTION__);
@@ -306,8 +399,10 @@ status_t NexusHdmiCecDevice::getCecVersion(int* version)
     }
 
     b_cecStatus cecStatus;
+    bool cecEnabled;
 
-    if (pIpcClient->getCecStatus(mCecId, &cecStatus) != true) {
+    cecEnabled = pIpcClient->isCecEnabled(mCecId) && (mCecEnable == true);
+    if (!cecEnabled || pIpcClient->getCecStatus(mCecId, &cecStatus) != true) {
         ALOGE("%s: cannot get CEC status!!!", __PRETTY_FUNCTION__);
         return UNKNOWN_ERROR;
     }
@@ -364,7 +459,7 @@ status_t NexusHdmiCecDevice::getCecPortInfo(struct hdmi_port_info* list[], int* 
         return NO_INIT;
     }
 
-    cecEnabled = pIpcClient->isCecEnabled(mCecId);
+    cecEnabled = pIpcClient->isCecEnabled(mCecId) && (mCecEnable == true);
 
     mPortInfo[0].type = HDMI_OUTPUT;
     mPortInfo[0].port_id = mCecId + 1;

@@ -111,6 +111,7 @@ class NexusPower : public android::RefBase {
     };
 
     private:
+    int deviceType;
     NexusIPCClientBase *mIpcClient;
     NexusClientContext *mClientContext;
     sp<NexusGpio> gpios[NexusGpio::MAX_INSTANCES];
@@ -121,6 +122,8 @@ class NexusPower : public android::RefBase {
     NexusPower &operator=(const NexusPower &);
 
     int getDeviceType();
+    bool getCecTransmitStandby();
+    bool getCecTransmitViewOn();
 };
 
 #endif /* _NEXUS_POWER_H_ */

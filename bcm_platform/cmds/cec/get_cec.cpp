@@ -113,13 +113,20 @@ int parseArgs(int argc, char *argv[], uint8_t *pCecId, bool *pGetPowerStatus)
 bool getCecPowerStatus(uint8_t cecId, uint8_t *pPowerStatus)
 {
     bool success;
+    bool enableCec;
     NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("get_cec");
 
-    success = pIpcClient->getCecPowerStatus(cecId, pPowerStatus);
+    enableCec = pIpcClient->isCecEnabled(cecId);
+    if (enableCec) {
+        success = pIpcClient->getCecPowerStatus(cecId, pPowerStatus);
+    }
+    else {
+        fprintf(stderr, "HDMI CEC functionality disabled!\n");
+        success = false;
+    }
     delete pIpcClient;
 
     return success;
-
 }
 
 static const char *powerStatusStrings[4] =
@@ -132,31 +139,21 @@ static const char *powerStatusStrings[4] =
 
 int main(int argc, char** argv)
 {
-    char value[PROPERTY_VALUE_MAX];
     uint8_t cecId;
-    int enableCec;
     uint8_t powerStatus;
     bool getPowerStatus;
 
-    property_get("ro.enable_cec", value, "0");
-    enableCec = atoi(value);
-
-    if (enableCec) {
-        if (parseArgs(argc, argv, &cecId, &getPowerStatus) != 0) {
+    if (parseArgs(argc, argv, &cecId, &getPowerStatus) != 0) {
+        return -1;
+    }
+    else if (getPowerStatus == true) {
+        if (getCecPowerStatus(cecId, &powerStatus) == false) {
+            fprintf(stderr, "ERROR: Cannot get CEC%d TV power state!\n", cecId);
             return -1;
         }
-        else if (getPowerStatus == true) {
-            if (getCecPowerStatus(cecId, &powerStatus) == false) {
-                fprintf(stderr, "ERROR: Cannot get CEC%d TV power state!\n", cecId);
-                return -1;
-            }
-            else {
-                printf("Successfully got CEC%d TV power state=%d [%s]\n", cecId, powerStatus, powerStatusStrings[powerStatus]);
-            }
+        else {
+            printf("Successfully got CEC%d TV power state=%d [%s]\n", cecId, powerStatus, powerStatusStrings[powerStatus]);
         }
-    }
-    else {
-        fprintf(stderr, "HDMI CEC functionality disabled!\n");
     }
     return 0;
 }

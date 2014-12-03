@@ -202,35 +202,39 @@ bool sendCecMessage(uint8_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t len
     return success;
 }
 
+bool isCecEnabled(uint8_t cecId)
+{
+    bool cecEnabled;
+    NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("send_cec");
+
+    cecEnabled = pIpcClient->isCecEnabled(cecId);
+    delete pIpcClient;
+
+    return cecEnabled;
+}
+
 int main(int argc, char** argv)
 {
-    char value[PROPERTY_VALUE_MAX];
     uint8_t message[MAX_MESSAGE_LEN];
     uint8_t cecId;
     uint8_t srcAddr;
     uint8_t destAddr;
     size_t length;
-    int enableCec;
 
-    property_get("ro.enable_cec", value, "0");
-    enableCec = atoi(value);
-
-    if (enableCec) {
-        if (parseArgs(argc, argv, &cecId, &srcAddr, &destAddr, &length, message) != 0) {
+    if (parseArgs(argc, argv, &cecId, &srcAddr, &destAddr, &length, message) != 0) {
+        return -1;
+    }
+    else if (isCecEnabled(cecId)) {
+        if (length == 0 || length > MAX_MESSAGE_LEN) {
+            fprintf(stderr, "ERROR: Invalid message length %d!\n", length);
+            return -1;
+        }
+        if (sendCecMessage(cecId, srcAddr, destAddr, length, message) == false) {
+            fprintf(stderr, "ERROR: Cannot send CEC%d message with optcode 0x%02X!\n", cecId, message[0]);
             return -1;
         }
         else {
-            if (length == 0 || length > MAX_MESSAGE_LEN) {
-                fprintf(stderr, "ERROR: Invalid message length %d!\n", length);
-                return -1;
-            }
-            if (sendCecMessage(cecId, srcAddr, destAddr, length, message) == false) {
-                fprintf(stderr, "ERROR: Cannot send CEC%d message with optcode 0x%02X!\n", cecId, message[0]);
-                return -1;
-            }
-            else {
-                printf("Successfully sent CEC%d message with opcode 0x%02X\n", cecId, message[0]);
-            }
+            printf("Successfully sent CEC%d message with opcode 0x%02X\n", cecId, message[0]);
         }
     }
     else {

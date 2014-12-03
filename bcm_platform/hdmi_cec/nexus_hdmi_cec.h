@@ -69,8 +69,12 @@ class NexusHdmiCecDevice : public RefBase
         ~NexusHdmiCecDevice();
 
         void registerEventCallback(const struct hdmi_cec_device* dev, event_callback_t callback, void *arg);
-        void setState(bool enable);
-        bool getState();
+        void setEnableState(bool enable);
+        void setAutoWakeupState(bool enable);
+        void setControlState(bool enable);
+        bool getConnectedState();
+        bool getCecTransmitStandby();
+        bool getCecTransmitViewOn();
 
         status_t initialise();
         status_t uninitialise();
@@ -102,7 +106,9 @@ class NexusHdmiCecDevice : public RefBase
 
     private:
         uint32_t                        mCecId;
+        uint8_t                         mCecLogicalAddr;
         bool                            mCecEnable;
+        bool                            mCecViewOnCmdPending;
         NexusIPCClientBase*             pIpcClient;
         hdmi_port_info                  mPortInfo[NEXUS_NUM_CEC];
         event_callback_t                mCallback;

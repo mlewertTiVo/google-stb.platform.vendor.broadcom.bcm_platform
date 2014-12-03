@@ -232,15 +232,17 @@ static void hdmi_cec_set_option(const struct hdmi_cec_device* dev, int flag, int
     switch (flag) {
         case HDMI_OPTION_ENABLE_CEC: {
             ALOGV("%s: HDMI_OPTION_ENABLE_CEC=%d", __PRETTY_FUNCTION__, value);
-            device->setState(!!value);
+            device->setEnableState(!!value);
         } break;
 
         case HDMI_OPTION_WAKEUP: {
             ALOGV("%s: HDMI_OPTION_WAKEUP=%d", __PRETTY_FUNCTION__, value);
+            device->setAutoWakeupState(!!value);
         } break;
 
         case HDMI_OPTION_SYSTEM_CEC_CONTROL: {
             ALOGV("%s: HDMI_OPTION_SYSTEM_CEC_CONTROL=%d", __PRETTY_FUNCTION__, value);
+            device->setControlState(!!value);
         } break;
 
         default: {
@@ -275,7 +277,7 @@ static int hdmi_cec_is_connected(const struct hdmi_cec_device* dev, int port_id)
 
     // TODO support multiple HDMI CEC ports
     if (port_id == 1) {
-        if (device->getState() == true) {
+        if (device->getConnectedState() == true) {
             connected = HDMI_CONNECTED;
         }
     }

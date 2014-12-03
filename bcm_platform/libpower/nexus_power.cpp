@@ -54,7 +54,7 @@
 
 unsigned NexusPower::NexusGpio::mInstances = 0;
 
-NexusPower::NexusPower() : mIpcClient(NULL), mClientContext(NULL)
+NexusPower::NexusPower() : deviceType(-1), mIpcClient(NULL), mClientContext(NULL)
 {
     ALOGV("%s: Called", __PRETTY_FUNCTION__);
 }
@@ -62,6 +62,7 @@ NexusPower::NexusPower() : mIpcClient(NULL), mClientContext(NULL)
 NexusPower::NexusPower(NexusIPCClientBase *pIpcClient, NexusClientContext *pClientContext) : mIpcClient(pIpcClient), mClientContext(pClientContext)
 {
     ALOGV("%s: pIpcClient=%p, pClientContext=%p", __PRETTY_FUNCTION__, (void *)pIpcClient, (void *)pClientContext);
+    deviceType = getDeviceType();
 }
 
 NexusPower::~NexusPower()
@@ -128,11 +129,32 @@ int NexusPower::getDeviceType()
     return type;
 }
 
+bool NexusPower::getCecTransmitStandby()
+{
+    char value[PROPERTY_VALUE_MAX];
+    bool tx=false;
+
+    if (property_get(PROPERTY_HDMI_TX_STANDBY_CEC, value, NULL)) {
+        tx = (strncmp(value, "1", PROPERTY_VALUE_MAX) == 0);
+    }
+    return tx;
+}
+
+bool NexusPower::getCecTransmitViewOn()
+{
+    char value[PROPERTY_VALUE_MAX];
+    bool tx=false;
+
+    if (property_get(PROPERTY_HDMI_TX_VIEW_ON_CEC, value, NULL)) {
+        tx = (strncmp(value, "1", PROPERTY_VALUE_MAX) == 0);
+    }
+    return tx;
+}
+
 status_t NexusPower::setPowerState(b_powerState state)
 {
     status_t ret = NO_ERROR;
     const uint32_t cecId = 0;   // Hardcoded CEC id to 0
-    int deviceType = getDeviceType();
 
     /* If powering out of standby, then ensure platform is brought up first before CEC,
        otherwise if powering down, then we must send CEC commands first. */
@@ -141,13 +163,13 @@ status_t NexusPower::setPowerState(b_powerState state)
             LOGE("%s: Could not set PowerState %d!", __FUNCTION__, state);
             ret = INVALID_OPERATION;
         }
-        else if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && mIpcClient->setCecPowerState(cecId, state) != true) {
+        else if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && getCecTransmitViewOn() == true && mIpcClient->setCecPowerState(cecId, state) != true) {
             LOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, cecId, state);
             ret = INVALID_OPERATION;
         }
     }
     else {
-        if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && mIpcClient->setCecPowerState(cecId, state) != true) {
+        if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && getCecTransmitStandby() == true && mIpcClient->setCecPowerState(cecId, state) != true) {
             LOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, cecId, state);
             ret = INVALID_OPERATION;
         }

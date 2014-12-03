@@ -545,11 +545,7 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
                 standbySettings.settings.wakeupSettings.ir = 1;
                 standbySettings.settings.wakeupSettings.uhf = 1;
                 standbySettings.settings.wakeupSettings.transport = 1;
-#if NEXUS_HAS_CEC
-                if (isCecEnabled(0)) {
-                    standbySettings.settings.wakeupSettings.cec = 1;
-                }
-#endif
+                standbySettings.settings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
                 standbySettings.settings.wakeupSettings.gpio = 1;
                 standbySettings.settings.wakeupSettings.timeout = 0;
                 rc = NxClient_SetStandbySettings(&standbySettings);
@@ -563,11 +559,7 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
                 standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eDeepSleep;
                 standbySettings.settings.wakeupSettings.ir = 1;
                 standbySettings.settings.wakeupSettings.uhf = 1;
-#if NEXUS_HAS_CEC
-                if (isCecEnabled(0)) {
-                    standbySettings.settings.wakeupSettings.cec = 1;
-                }
-#endif
+                standbySettings.settings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
                 standbySettings.settings.wakeupSettings.gpio = 1;
                 standbySettings.settings.wakeupSettings.timeout = 0;
                 rc = NxClient_SetStandbySettings(&standbySettings);
@@ -905,11 +897,11 @@ bool NexusNxClient::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHd
         memset(pHdmiOutputStatus, 0, sizeof(*pHdmiOutputStatus));
         
         for (loops = 0; loops < 4; loops++) {
-            LOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
             rc = NxClient_GetDisplayStatus(&status);
             if ((rc == NEXUS_SUCCESS) && status.hdmi.status.connected) {
                 break;
             }
+            LOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
             usleep(250 * 1000);
         }
         

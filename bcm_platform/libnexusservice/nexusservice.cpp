@@ -584,8 +584,8 @@ void NexusService::hotplugCallback(void *context __unused, int param __unused)
         b_hdmiOutputStatus status;
 
         if (pNexusService->getHdmiOutputStatus(param, &status) == true) {
-            LOGV("%s: Firing off HDMI%d hotplug %s event...", __PRETTY_FUNCTION__, param, status.connected ? "connected" : "disconnected");
-            pNexusService->server->mHdmiHotplugEventListener[param]->onHdmiHotplugEventReceived(param, status.connected);
+            LOGV("%s: Firing off HDMI%d hotplug %s event...", __PRETTY_FUNCTION__, param, (status.connected && status.rxPowered) ? "connected" : "disconnected");
+            pNexusService->server->mHdmiHotplugEventListener[param]->onHdmiHotplugEventReceived(param, status.connected && status.rxPowered);
         }
     }
 #endif
@@ -2136,16 +2136,53 @@ bool NexusService::disconnectHdmiInput(NexusClientContext * client __unused)
     return (rc == NEXUS_SUCCESS);
 }
 
+bool NexusService::setCecEnabled(uint32_t cecId __unused, bool enabled)
+{
+    bool success = true;
+    char value[PROPERTY_VALUE_MAX];
+
+    snprintf(value, PROPERTY_VALUE_MAX, "%d", enabled);
+
+    if (property_set(PROPERTY_HDMI_ENABLE_CEC, value) != 0) {
+        success = false;
+    }
+    return success;
+}
+
 bool NexusService::isCecEnabled(uint32_t cecId __unused)
 {
     bool enabled = false;
 #if NEXUS_HAS_CEC
     char value[PROPERTY_VALUE_MAX];
 
-    if (property_get("ro.enable_cec", value, NULL) && strcmp(value,"1")==0) {
+    if (property_get(PROPERTY_HDMI_ENABLE_CEC, value, NULL) && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
         enabled = true;
     }
 #endif
+    return enabled;
+}
+
+bool NexusService::setCecAutoWakeupEnabled(uint32_t cecId, bool enabled)
+{
+    bool success = true;
+    char value[PROPERTY_VALUE_MAX];
+
+    snprintf(value, PROPERTY_VALUE_MAX, "%d", enabled);
+
+    if (property_set(PROPERTY_HDMI_AUTO_WAKEUP_CEC, value) != 0) {
+        success = false;
+    }
+    return success;
+}
+
+bool NexusService::isCecAutoWakeupEnabled(uint32_t cecId __unused)
+{
+    bool enabled = false;
+    char value[PROPERTY_VALUE_MAX];
+
+    if (property_get(PROPERTY_HDMI_AUTO_WAKEUP_CEC, value, "1") && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
+        enabled = true;
+    }
     return enabled;
 }
 
@@ -2222,11 +2259,11 @@ bool NexusService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdm
 
         if (hdmiOutput != NULL) {
             for (loops = 0; loops < 4; loops++) {
-                LOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
                 rc = NEXUS_HdmiOutput_GetStatus(hdmiOutput, &status);
                 if ((rc == NEXUS_SUCCESS) && status.connected) {
                     break;
                 }
+                LOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
                 usleep(250 * 1000);
             }
         }
@@ -2318,11 +2355,7 @@ bool NexusService::setPowerState(b_powerState pmState)
                 nexusStandbySettings.wakeupSettings.ir = 1;
                 nexusStandbySettings.wakeupSettings.uhf = 1;
                 nexusStandbySettings.wakeupSettings.transport = 1;
-#if NEXUS_HAS_CEC
-                if (isCecEnabled(0)) {
-                    nexusStandbySettings.wakeupSettings.cec = 1;
-                }
-#endif
+                nexusStandbySettings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
                 nexusStandbySettings.wakeupSettings.gpio = 1;
                 nexusStandbySettings.wakeupSettings.timeout = 0;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
@@ -2339,11 +2372,7 @@ bool NexusService::setPowerState(b_powerState pmState)
                 nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eDeepSleep;  
                 nexusStandbySettings.wakeupSettings.ir = 1;
                 nexusStandbySettings.wakeupSettings.uhf = 1;
-#if NEXUS_HAS_CEC
-                if (isCecEnabled(0)) {
-                    nexusStandbySettings.wakeupSettings.cec = 1;
-                }
-#endif
+                nexusStandbySettings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
                 nexusStandbySettings.wakeupSettings.gpio = 1;
                 nexusStandbySettings.wakeupSettings.timeout = 0;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
