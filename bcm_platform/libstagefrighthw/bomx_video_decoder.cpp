@@ -708,6 +708,14 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     unsigned i;
     BOMX_VideoDecoderFrameBuffer *pBuffer;
 
+    // Stop listening to HWC. Note that HWC binder does need to be protected given
+    // it's not updated during the decoder's lifetime.
+    if (m_omxHwcBinder)
+    {
+        delete m_omxHwcBinder;
+        m_omxHwcBinder = NULL;
+    }
+
     Lock();
 
     ShutdownScheduler();
@@ -773,9 +781,6 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         BLST_Q_REMOVE_HEAD(&m_frameBufferFreeList, node);
         delete pBuffer;
     }
-
-    if (m_omxHwcBinder)
-        delete m_omxHwcBinder;
 
     Unlock();
 }
