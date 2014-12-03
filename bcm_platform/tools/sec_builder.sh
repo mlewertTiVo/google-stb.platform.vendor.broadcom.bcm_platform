@@ -93,14 +93,14 @@ force_clean=
 force_clean_refsw=
 skip_build=
 skip_verify=
-hsm_debug=
+debug=
 show_tree=
 secliblist=
 
 function usage {
 	echo "sec_builder --sec-filer <path-to> [--keydir <path-to>] [--hsm-srcs-list <path-to>]"
 	echo "            [--update] [--configure] [--reset] [--force-clean|--force-clean-refsw]"
-	echo "            [--skip-build|--skip-verify] [--hsm-debug] [--show-tree-only]"
+	echo "            [--skip-build|--skip-verify] [--debug] [--show-tree-only]"
         echo "            [--show-tree-depth <depth>] [--verbose] [--help|-h]"
 	echo ""
 	echo "mandatory parameter(s):"
@@ -146,7 +146,7 @@ function usage {
 	echo ""
 	echo "   --skip-build                 : do not actually run the builds, just skip them."
 	echo ""
-	echo "   --hsm-debug                  : run the hsm build in debug mode (default: retail)."
+	echo "   --debug                      : run the security libraries build in debug mode (default: retail)."
 	echo ""
 	echo "   --show-tree-only             : just shows the current state of the source tree and bail."
 	echo ""
@@ -300,12 +300,19 @@ function compiler {
 		mkdir -p out/target/product/bcm_platform/sysroot/usr/lib
 		cp -faR out/target/product/bcm_platform/obj/lib/* out/target/product/bcm_platform/sysroot/usr/lib/
 		# now do the real security build as an incremental build.
+		if [ "$debug" == "1" ]; then
+			export B_REFSW_DEBUG=y
+		else
+			export B_REFSW_DEBUG=n
+		fi
 		make -j12 clean_security_user
 		make -j12 security_user
 		# build the kernel side libraries - note: allow notion of 'debug' vs 'retail' (is it really needed?)
 		lunch bcm_${lunch_target}_seck-eng
-		if [ "$hsm_debug" == "1" ]; then
+		if [ "$debug" == "1" ]; then
 			export B_REFSW_DEBUG=y
+		else
+			export B_REFSW_DEBUG=n
 		fi
 		make -j12 clean_security_kernel
 		make -j12 security_kernel
@@ -332,7 +339,7 @@ function comparer {
 			original=$(echo $temp | sed -e 's/\n//g')
 			# optionally strip the MARKER (used for debug vs retail).
 			temp=$original
-			if [ "$hsm_debug" == "1" ]; then
+			if [ "$debug" == "1" ]; then
 				original=$(echo $temp | sed -e 's/MARKER/retail/g')
 			else
 				original=$(echo $temp | sed -e 's/MARKER/debug/g')
@@ -425,7 +432,7 @@ while [ "$1" != "" ]; do
 						;;
 		--skip-verify)			skip_verify=1
 						;;
-		--hsm-debug)			hsm_debug=1
+		--debug)			debug=1
 						;;
 		--show-tree-only)		show_tree=1
 						;;
