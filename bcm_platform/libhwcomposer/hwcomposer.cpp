@@ -1071,6 +1071,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         goto out;
     }
 
+    NEXUS_SurfaceCompositor_SetPause(NULL, true);
+
     for (i = 0; i < list->numHwLayers; i++) {
         // video layers have a no-op 'hidden' gpx layer association, so this check is valid
         // for all since gpx layers > mm layers.
@@ -1121,6 +1123,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
             }
         }
     }
+
+    NEXUS_SurfaceCompositor_SetPause(NULL, false);
 
     BKNI_ReleaseMutex(ctx->mutex);
 
