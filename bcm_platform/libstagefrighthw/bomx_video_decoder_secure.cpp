@@ -168,44 +168,6 @@ void BOMX_VideoDecoder_Secure::Sage_Platform_Close()
 #endif
 }
 
-OMX_ERRORTYPE BOMX_VideoDecoder_Secure::ConfigBufferInit()
-{
-    ALOGV("%s, m_configBufferSize:%d", __FUNCTION__, m_configBufferSize);
-    if (m_pConfigBuffer == NULL)
-    {
-        // Add the PES header to config buffer
-        // We need to allocate Nexus Memory first
-        void *pesHeader;
-        if (AllocateNexusMemory(BOMX_VIDEO_CODEC_CONFIG_HEADER_SIZE, pesHeader))
-            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
-
-        // Initialize header
-        InitPESHeader(pesHeader);
-
-        // Allocate m_pConfigBuffer
-        NEXUS_Error errCode = AllocateInputBuffer(BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE, m_pConfigBuffer);
-        if ( errCode )
-        {
-            BOMX_ERR(("Unable to allocate codec config buffer"));
-            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
-        }
-
-        // Make DMA transfer to secure config buffer
-        errCode = SecureCopy(m_pConfigBuffer, pesHeader, BOMX_VIDEO_CODEC_CONFIG_HEADER_SIZE);
-        NEXUS_Memory_Free(pesHeader);
-        if (errCode)
-        {
-            ALOGE("%s: Failed to do secure copy, err:%d", __FUNCTION__, errCode);
-            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
-        }
-
-        m_configRequired = false;
-    }
-
-    m_configBufferSize = BOMX_VIDEO_CODEC_CONFIG_HEADER_SIZE;
-    return OMX_ErrorNone;
-}
-
 OMX_ERRORTYPE BOMX_VideoDecoder_Secure::ConfigBufferAppend(const void *pBuffer, size_t length)
 {
     NEXUS_Error err;

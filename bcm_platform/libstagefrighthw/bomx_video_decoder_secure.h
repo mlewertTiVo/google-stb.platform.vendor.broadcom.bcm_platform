@@ -72,7 +72,6 @@ public:
 protected:
     virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
     virtual void FreeInputBuffer(void*& pBuffer);
-    virtual OMX_ERRORTYPE ConfigBufferInit();
     virtual NEXUS_Error ExtraTransportConfig();
     virtual OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
 

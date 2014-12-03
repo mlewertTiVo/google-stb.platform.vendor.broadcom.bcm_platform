@@ -70,7 +70,8 @@ extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex);
 struct BOMX_VideoDecoderInputBufferInfo
 {
     void *pHeader;              // Header buffer in NEXUS_Memory space
-    size_t headerLen;
+    size_t maxHeaderLen;        // Allocated header buffer size in bytes
+    size_t headerLen;           // Filled header buffer size in bytes
     void *pPayload;             // Optional payload buffer in NEXUS_Memory space (set for useBuffer not allocateBuffer)
     unsigned numDescriptors;    // Number of descriptors in use for this buffer
 };
@@ -266,10 +267,10 @@ protected:
     #define BOMX_BCMV_HEADER_SIZE (10)
     uint8_t m_pBcmvHeader[BOMX_BCMV_HEADER_SIZE];
 
-    #define BOMX_VIDEO_CODEC_CONFIG_HEADER_SIZE (9)
-    #define BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE (1024+BOMX_VIDEO_CODEC_CONFIG_HEADER_SIZE)
+    #define BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE (1024)
     void *m_pConfigBuffer;
     bool m_configRequired;
+    bool m_configPending;
     size_t m_configBufferSize;
 
     BOMX_VideoDecoderOutputBufferType m_outputMode;
@@ -325,7 +326,16 @@ protected:
 
     void DisplayFrame_locked(unsigned serialNumber);
     void SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned zorder, bool visible);
-    void InitPESHeader(void *pHeaderBuffer);
+
+    OMX_ERRORTYPE BuildInputFrame(
+        OMX_BUFFERHEADERTYPE *pBufferHeader,
+        uint32_t pts,
+        void *pCodecHeader,
+        size_t codecHeaderLength,
+        NEXUS_PlaypumpScatterGatherDescriptor *pDescriptors,
+        unsigned maxDescriptors,
+        unsigned *pNumDescriptors
+        );
 
     // The functions below allow derived classes to override them
     virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
@@ -333,7 +343,6 @@ protected:
     virtual OMX_ERRORTYPE ConfigBufferInit();
     virtual OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
     virtual NEXUS_Error ExtraTransportConfig() {return 0;};
-    virtual OMX_ERRORTYPE SendConfigBuffertoHw(BOMX_VideoDecoderInputBufferInfo *pInfo);
 
 private:
 };
