@@ -67,6 +67,11 @@
 #include "nxclient.h"
 #include "nexusnxservice.h"
 
+#ifdef LOG_TAG
+#undef LOG_TAG
+#endif
+#define LOG_TAG "NexusInit"
+
 #define VENDOR_DRIVER_PATH             "system/vendor/drivers"
 
 #define WAKEUP_DRIVER_FILENAME         "wakeup_drv.ko"
@@ -207,6 +212,12 @@ void startNxServer(void)
     strcat(cmdRunNxServer, "-svp ");
     // disable the composition to SD, not needed.
     strcat(cmdRunNxServer, "-sd off ");
+
+    // binary files of HDCP keys
+    property_get("ro.nexus.nxserver.hdcp1x_keys", value, NULL);
+    snprintf(cmdRunNxServer, sizeof(cmdRunNxServer), "%s -hdcp1x_keys %s ", cmdRunNxServer, value);
+    property_get("ro.nexus.nxserver.hdcp2x_keys", value, NULL);
+    snprintf(cmdRunNxServer, sizeof(cmdRunNxServer), "%s -hdcp2x_keys %s ", cmdRunNxServer, value);
 
     strcat(cmdRunNxServer, "&");
     ALOGI("NXSERVER CMD: %s",cmdRunNxServer);

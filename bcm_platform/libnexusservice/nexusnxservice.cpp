@@ -274,7 +274,7 @@ void NexusNxService::hdmiOutputHdcpStateChangedCallback(void *context __unused, 
         return;
     }
 
-    LOGV("%s: HDMI%d HDCP state=%d error=%d repeater=%d hdcp1.1=%d hdcp2.2=%d\n",
+    LOGD("%s: HDMI%d HDCP state=%d error=%d repeater=%d hdcp1.1=%d hdcp2.2=%d\n",
          __func__, param,
          status.hdmi.hdcp.hdcpState,
          status.hdmi.hdcp.hdcpError,

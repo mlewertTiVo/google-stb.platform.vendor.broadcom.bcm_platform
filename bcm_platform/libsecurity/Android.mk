@@ -29,6 +29,7 @@ endif
 
 include $(call all-makefiles-under,$(LOCAL_PATH))
 
+ifeq ($(ANDROID_SUPPORTS_WIDEVINE),y)
 ifneq ($(WIDEVINE_CLASSIC),n)
 ifeq ($(BRCM_ANDROID_VERSION), l)
 $(error "Widevine Classic should not be turned on for L!!!!!!")
@@ -81,4 +82,4 @@ LOCAL_STATIC_LIBRARIES := liboemcrypto
 LOCAL_SHARED_LIBRARIES += $(NEXUS_LIB) libcmndrm libcrypto libcutils
 include $(BUILD_SHARED_LIBRARY)
 endif
-
+endif

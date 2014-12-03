@@ -58,6 +58,9 @@ on post-fs
 
    export SAGEBIN_PATH /system/bin
 
+   setprop ro.nexus.nxserver.hdcp1x_keys /system/bin/drm_hdcp1x.bin
+   setprop ro.nexus.nxserver.hdcp2x_keys /system/bin/drm_hdcp2x.bin
+
    # Eliminate writable file in /sys to pass android.permission CTS
    chmod 0664 /sys/kernel/wakeup_reasons/last_resume_reason
 

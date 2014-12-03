@@ -18,11 +18,12 @@ include vendor/broadcom/bcm_platform/libnexusir/Android.mk
 include vendor/broadcom/bcm_platform/libnexusservice/Android.mk
 include vendor/broadcom/bcm_platform/libstagefrighthw/Android.mk
 include vendor/broadcom/bcm_platform/libtv_input/Android.mk
+include vendor/broadcom/bcm_platform/libsecurity/Android.mk
 include vendor/broadcom/bcm_platform/nexusinit/Android.mk
+
 ifeq ($(ANDROID_SUPPORTS_DTVKIT),y)
 include vendor/broadcom/bcm_platform/brcm_dtvkit/Android.mk
 endif
-
 
 BCM_APPS_PATH := vendor/broadcom/bcm_platform/app
 
@@ -37,16 +38,10 @@ include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
 include ${BCM_APPS_PATH}/Bouncer/Android.mk
 include ${BCM_APPS_PATH}/ExoPlayerDemo/Android.mk
 
-
 // why do we need a ifeq?  todo: remove.
 ifeq ($(ANDROID_SUPPORTS_PM),y)
 include vendor/broadcom/bcm_platform/pmlibservice/Android.mk
 include vendor/broadcom/bcm_platform/libpower/Android.mk
-endif
-
-// why do we need a ifeq?  todo: remove.
-ifneq ($(filter $(ANDROID_SUPPORTS_WIDEVINE) $(ANDROID_SUPPORTS_PLAYREADY),y),)
-include vendor/broadcom/bcm_platform/libsecurity/Android.mk
 endif
 
 include vendor/broadcom/bcm_platform/tools/cmatest/Android.mk
