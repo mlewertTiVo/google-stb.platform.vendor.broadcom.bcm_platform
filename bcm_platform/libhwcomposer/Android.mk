@@ -63,6 +63,67 @@ LOCAL_MODULE := hwcbinder
 
 include $(BUILD_EXECUTABLE)
 
+# build the hwcutils helper
+#
+include $(CLEAR_VARS)
+
+include $(NEXUS_TOP)/nxclient/include/nxclient.inc
+
+LOCAL_SRC_FILES:= \
+   utils/hwcutils.cpp
+
+LOCAL_PRELINK_MODULE := false
+
+LOCAL_SHARED_LIBRARIES += libcutils
+LOCAL_SHARED_LIBRARIES += liblog
+LOCAL_SHARED_LIBRARIES += libutils
+LOCAL_SHARED_LIBRARIES += libnexus
+LOCAL_SHARED_LIBRARIES += libnxclient
+
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/utils \
+                    $(NXCLIENT_INCLUDES)
+
+LOCAL_CFLAGS += $(filter-out $(FILTER_OUT_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
+LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
+LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
+
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE := libhwcutils
+
+include $(BUILD_SHARED_LIBRARY)
+
+# build the converter helper.
+#
+include $(CLEAR_VARS)
+
+include $(NEXUS_TOP)/nxclient/include/nxclient.inc
+
+LOCAL_SRC_FILES:= \
+   conv/yv12to422p.cpp
+
+LOCAL_PRELINK_MODULE := false
+
+LOCAL_SHARED_LIBRARIES += libcutils
+LOCAL_SHARED_LIBRARIES += libhwcutils
+LOCAL_SHARED_LIBRARIES += liblog
+LOCAL_SHARED_LIBRARIES += libutils
+LOCAL_SHARED_LIBRARIES += libnexus
+LOCAL_SHARED_LIBRARIES += libnxclient
+
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/conv \
+                    $(TOP)/vendor/broadcom/bcm_platform/libgralloc \
+                    $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/utils \
+                    $(NXCLIENT_INCLUDES)
+
+LOCAL_CFLAGS += $(filter-out $(FILTER_OUT_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
+LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
+LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
+
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE := libhwcconv
+
+include $(BUILD_SHARED_LIBRARY)
+
 # build the hwcomposer for the device.
 #
 include $(CLEAR_VARS)
@@ -76,19 +137,23 @@ LOCAL_SHARED_LIBRARIES += libbinder
 LOCAL_SHARED_LIBRARIES += libcutils
 LOCAL_SHARED_LIBRARIES += libdl
 LOCAL_SHARED_LIBRARIES += libhwcbinder
+LOCAL_SHARED_LIBRARIES += libhwcutils
 LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnexusipcclient
 LOCAL_SHARED_LIBRARIES += libnxclient
 LOCAL_SHARED_LIBRARIES += libutils
+LOCAL_SHARED_LIBRARIES += libhwcconv
 
 LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
                     $(TOP)/vendor/broadcom/bcm_platform/libnexusipc \
                     $(TOP)/vendor/broadcom/bcm_platform/libgralloc \
                     $(NXCLIENT_INCLUDES) \
-                    $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/blib
-		
-LOCAL_CFLAGS += $(filter-out $(FILTER_OUT_NEXUS_CFLAGS), $(NEXUS_CFLAGS))			
+                    $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/blib \
+                    $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/conv \
+                    $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/utils
+
+LOCAL_CFLAGS += $(filter-out $(FILTER_OUT_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-hwc\"

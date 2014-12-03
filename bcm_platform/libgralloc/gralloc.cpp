@@ -538,7 +538,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       pSharedData->planes[EXTRA_PLANE].width = w;
       pSharedData->planes[EXTRA_PLANE].height = h;
       pSharedData->planes[EXTRA_PLANE].bpp = bpp;
-      pSharedData->planes[EXTRA_PLANE].format = nxFormat;
+      pSharedData->planes[EXTRA_PLANE].format = (int)nxFormat;
       ret = ioctl(fd3, NX_ASHMEM_SET_SIZE, extra_size);
       if (ret >= 0) {
          pSharedData->planes[EXTRA_PLANE].physAddr =

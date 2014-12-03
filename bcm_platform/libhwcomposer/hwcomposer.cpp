@@ -46,6 +46,9 @@
 #include "IHwc.h"
 #include "HwcSvc.h"
 
+#include "hwcconv.h"
+#include "hwcutils.h"
+
 using namespace android;
 
 #define INVALID_HANDLE               0xBAADCAFE
@@ -323,6 +326,8 @@ struct hwc_context_t {
     int power_mode;
 
     HwcBinder_wrap *hwc_binder;
+
+    NEXUS_Graphics2DHandle hwc_2dg;
 };
 
 static void hwc_device_cleanup(hwc_context_t* ctx);
@@ -1218,6 +1223,9 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
 
         if (ctx->hwc_binder)
            delete ctx->hwc_binder;
+
+        if (ctx->hwc_2dg)
+           NEXUS_Graphics2D_Close(ctx->hwc_2dg);
     }
 }
 
@@ -1669,15 +1677,11 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                 goto clean_up;
             }
 
-            NEXUS_Surface_GetDefaultCreateSettings(&surface_create_settings);
-            surface_create_settings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
-            surface_create_settings.width       = VSYNC_CLIENT_WIDTH;
-            surface_create_settings.height      = VSYNC_CLIENT_HEIGHT;
-            surface_create_settings.pitch       = VSYNC_CLIENT_STRIDE;
-            dev->syn_cli.shdl                   = NEXUS_Surface_Create(&surface_create_settings);
+            dev->syn_cli.shdl = hwc_to_nsc_surface(VSYNC_CLIENT_WIDTH, VSYNC_CLIENT_HEIGHT, VSYNC_CLIENT_STRIDE,
+                                                   NEXUS_PixelFormat_eA8_B8_G8_R8, NULL);
             if (dev->syn_cli.shdl == NULL)
             {
-                ALOGE("%s: NEXUS_Surface_Create vsync client failed", __FUNCTION__);
+                ALOGE("%s: hwc_to_nsc_surface vsync client failed", __FUNCTION__);
                 goto clean_up;
             }
 
@@ -1753,6 +1757,11 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         } else {
            dev->hwc_binder->get()->register_notify(&hwc_binder_notify, (int)dev);
            ALOGE("%s: created hwcbinder (%p)", __FUNCTION__, dev->hwc_binder);
+        }
+
+        dev->hwc_2dg = NEXUS_Graphics2D_Open(0, NULL);
+        if (dev->hwc_2dg == NULL) {
+           ALOGE("%s: failed to create hwc_2dg, conversion services will not work!", __FUNCTION__);
         }
 
         *device = &dev->device.common;
@@ -2021,52 +2030,91 @@ static void hwc_prepare_gpx_layer(
             ctx->gpx_cli[layer_id].skip_set = true;
             goto out_unlock;
         }
-        uint8_t *layerCachedAddress = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[0].physAddr);
-        if (layerCachedAddress == NULL) {
-            ALOGE("%s: layer cache address NULL: %d\n", __FUNCTION__, layer_id);
-            goto out_unlock;
-        }
         six = hwc_gpx_get_next_surface_locked(&ctx->gpx_cli[layer_id]);
         if (six == -1) {
             goto out_unlock;
         }
-        NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
-        createSettings.pixelFormat = gralloc_to_nexus_pixel_format(format);
-        createSettings.width       = pSharedData->planes[DEFAULT_PLANE].width;
-        createSettings.height      = pSharedData->planes[DEFAULT_PLANE].height;
-        createSettings.pitch       = stride;
-        createSettings.pMemory     = layerCachedAddress;
-        ctx->gpx_cli[layer_id].slist[six].shdl = NEXUS_Surface_Create(&createSettings);
-        if (ctx->gpx_cli[layer_id].slist[six].shdl == NULL) {
-            ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_NO_OWNER;
-            ALOGE("%s: NEXUS_Surface_Create failed: %d, %p, %dx%d, %d\n", __FUNCTION__, layer_id,
-               layerCachedAddress, disp_position.width, disp_position.height, stride);
-        } else {
-            ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_HWC_PUSH;
-            ctx->gpx_cli[layer_id].slist[six].grhdl = layer->handle;
-            if (ctx->gpx_cli[layer_id].layer_subtype == NEXUS_CURSOR) {
-                NEXUS_SurfaceCursorCreateSettings cursorSettings;
-                NEXUS_SurfaceCursorSettings config;
-
-                NEXUS_SurfaceCursor_GetDefaultCreateSettings(&cursorSettings);
-                cursorSettings.surface = ctx->gpx_cli[layer_id].slist[six].shdl;
-                //ctx->gpx_cli[layer_id].slist[six].schdl = NEXUS_SurfaceCursor_Create(??, &cursorSettings);
-                ctx->gpx_cli[layer_id].slist[six].schdl = NULL;
-                if (ctx->gpx_cli[layer_id].slist[six].schdl) {
-                    NEXUS_SurfaceCursor_GetSettings(ctx->gpx_cli[layer_id].slist[six].schdl, &config);
-                    config.composition.visible               = true;
-                    config.composition.virtualDisplay.width  = ctx->display_width;
-                    config.composition.virtualDisplay.height = ctx->display_height;
-                    config.composition.position.x            = disp_position.x;
-                    config.composition.position.y            = disp_position.y;
-                    config.composition.position.width        = disp_position.width;
-                    config.composition.position.height       = disp_position.height;
-                    NEXUS_SurfaceCursor_SetSettings(ctx->gpx_cli[layer_id].slist[six].schdl, &config);
+        uint8_t *addr;
+        switch (pSharedData->planes[DEFAULT_PLANE].format) {
+            case HAL_PIXEL_FORMAT_YV12:
+                addr  = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[EXTRA_PLANE].physAddr);
+                if (addr == NULL) {
+                    ALOGE("%s: extra buffer address NULL: %d\n", __FUNCTION__, layer_id);
+                    goto out_unlock;
                 }
+                stride = pSharedData->planes[EXTRA_PLANE].width * pSharedData->planes[EXTRA_PLANE].bpp;
+                ctx->gpx_cli[layer_id].slist[six].shdl = hwc_to_nsc_surface(pSharedData->planes[EXTRA_PLANE].width,
+                                                                            pSharedData->planes[EXTRA_PLANE].height,
+                                                                            stride,
+                                                                            (NEXUS_PixelFormat)pSharedData->planes[EXTRA_PLANE].format,
+                                                                            addr);
 
-                ctx->cursor_cache.shdl = ctx->gpx_cli[layer_id].slist[six].shdl;
-                ctx->cursor_cache.schdl = ctx->gpx_cli[layer_id].slist[six].schdl;
+                NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
+                createSettings.pixelFormat = (NEXUS_PixelFormat)pSharedData->planes[EXTRA_PLANE].format;
+                createSettings.width       = pSharedData->planes[EXTRA_PLANE].width;
+                createSettings.height      = pSharedData->planes[EXTRA_PLANE].height;
+                createSettings.pitch       = stride;
+                createSettings.pMemory     = addr;
+                ctx->gpx_cli[layer_id].slist[six].shdl = NEXUS_Surface_Create(&createSettings);
+
+                if (ctx->gpx_cli[layer_id].slist[six].shdl == NULL) {
+                    ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_NO_OWNER;
+                    ALOGE("%s: standard surface creation failed: %d, %p, %dx%d, %d\n", __FUNCTION__, layer_id,
+                          addr, disp_position.width, disp_position.height, stride);
+                    goto out_unlock;
+                }
+                rc = yv12_to_422planar(bcmBuffer, ctx->gpx_cli[layer_id].slist[six].shdl, ctx->hwc_2dg);
+                if (rc != NEXUS_SUCCESS) {
+                    ALOGE("%s: conversion failed: %d\n", __FUNCTION__, layer_id);
+                    goto out_unlock;
+                }
+            break;
+
+            default:
+                addr  = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
+                if (addr == NULL) {
+                    ALOGE("%s: buffer address NULL: %d\n", __FUNCTION__, layer_id);
+                    goto out_unlock;
+                }
+                ctx->gpx_cli[layer_id].slist[six].shdl = hwc_to_nsc_surface(pSharedData->planes[DEFAULT_PLANE].width,
+                                                                            pSharedData->planes[DEFAULT_PLANE].height,
+                                                                            stride,
+                                                                            gralloc_to_nexus_pixel_format(format),
+                                                                            addr);
+                if (ctx->gpx_cli[layer_id].slist[six].shdl == NULL) {
+                    ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_NO_OWNER;
+                    ALOGE("%s: standard surface creation failed: %d, %p, %dx%d, %d\n", __FUNCTION__, layer_id,
+                          addr, disp_position.width, disp_position.height, stride);
+                    goto out_unlock;
+                }
+            break;
+        }
+
+        // surface creation succeeded if we are here.
+        ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_HWC_PUSH;
+        ctx->gpx_cli[layer_id].slist[six].grhdl = layer->handle;
+        if (ctx->gpx_cli[layer_id].layer_subtype == NEXUS_CURSOR) {
+            NEXUS_SurfaceCursorCreateSettings cursorSettings;
+            NEXUS_SurfaceCursorSettings config;
+
+            NEXUS_SurfaceCursor_GetDefaultCreateSettings(&cursorSettings);
+            cursorSettings.surface = ctx->gpx_cli[layer_id].slist[six].shdl;
+            //ctx->gpx_cli[layer_id].slist[six].schdl = NEXUS_SurfaceCursor_Create(??, &cursorSettings);
+            ctx->gpx_cli[layer_id].slist[six].schdl = NULL;
+            if (ctx->gpx_cli[layer_id].slist[six].schdl) {
+                NEXUS_SurfaceCursor_GetSettings(ctx->gpx_cli[layer_id].slist[six].schdl, &config);
+                config.composition.visible               = true;
+                config.composition.virtualDisplay.width  = ctx->display_width;
+                config.composition.virtualDisplay.height = ctx->display_height;
+                config.composition.position.x            = disp_position.x;
+                config.composition.position.y            = disp_position.y;
+                config.composition.position.width        = disp_position.width;
+                config.composition.position.height       = disp_position.height;
+                NEXUS_SurfaceCursor_SetSettings(ctx->gpx_cli[layer_id].slist[six].schdl, &config);
             }
+
+            ctx->cursor_cache.shdl = ctx->gpx_cli[layer_id].slist[six].shdl;
+            ctx->cursor_cache.schdl = ctx->gpx_cli[layer_id].slist[six].schdl;
         }
     }
 
