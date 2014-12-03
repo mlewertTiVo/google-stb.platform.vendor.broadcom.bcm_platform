@@ -205,6 +205,8 @@ void startNxServer(void)
 #endif
     // No need to use a macro here, secure decoders will be enabled by default.
     strcat(cmdRunNxServer, "-svp ");
+    // disable the composition to SD, not needed.
+    strcat(cmdRunNxServer, "-sd off ");
 
     strcat(cmdRunNxServer, "&");
     ALOGI("NXSERVER CMD: %s",cmdRunNxServer);
