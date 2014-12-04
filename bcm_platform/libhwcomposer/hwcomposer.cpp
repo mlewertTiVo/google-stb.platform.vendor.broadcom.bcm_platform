@@ -1101,19 +1101,22 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         else if (ctx->gpx_cli[i].composition.visible && !ctx->gpx_cli[i].skip_set) {
             int six = hwc_gpx_push_surface_locked(&ctx->gpx_cli[i]);
             if (six != -1) {
-               rc = NEXUS_SurfaceClient_PushSurface(ctx->gpx_cli[i].ncci.schdl, ctx->gpx_cli[i].slist[six].shdl, NULL, false);
-               if (rc) {
-                   ctx->gpx_cli[i].slist[six].owner = SURF_OWNER_NO_OWNER;
-                   if ((ctx->gpx_cli[i].layer_subtype == NEXUS_CURSOR) &&
-                       ctx->gpx_cli[i].slist[six].schdl) {
-                       NEXUS_SurfaceCursor_Destroy(ctx->gpx_cli[i].slist[six].schdl);
-                       ctx->gpx_cli[i].slist[six].schdl = NULL;
+               // Don't push surfaces to NSC if we are powering off...
+               if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
+                   rc = NEXUS_SurfaceClient_PushSurface(ctx->gpx_cli[i].ncci.schdl, ctx->gpx_cli[i].slist[six].shdl, NULL, false);
+                   if (rc) {
+                       ctx->gpx_cli[i].slist[six].owner = SURF_OWNER_NO_OWNER;
+                       if ((ctx->gpx_cli[i].layer_subtype == NEXUS_CURSOR) &&
+                           ctx->gpx_cli[i].slist[six].schdl) {
+                           NEXUS_SurfaceCursor_Destroy(ctx->gpx_cli[i].slist[six].schdl);
+                           ctx->gpx_cli[i].slist[six].schdl = NULL;
+                       }
+                       if (ctx->gpx_cli[i].slist[six].shdl) {
+                          NEXUS_Surface_Destroy(ctx->gpx_cli[i].slist[six].shdl);
+                          ctx->gpx_cli[i].slist[six].shdl = NULL;
+                       }
+                       ALOGE("%s: push surface %p failed on layer %d, rc=%d\n", __FUNCTION__, ctx->gpx_cli[i].slist[six].shdl, i, rc);
                    }
-                   if (ctx->gpx_cli[i].slist[six].shdl) {
-                      NEXUS_Surface_Destroy(ctx->gpx_cli[i].slist[six].shdl);
-                      ctx->gpx_cli[i].slist[six].shdl = NULL;
-                   }
-                   ALOGE("%s: push surface %p failed on layer %d, rc=%d\n", __FUNCTION__, ctx->gpx_cli[i].slist[six].shdl, i, rc);
                }
             }
         }
@@ -1238,10 +1241,12 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
        switch (mode) {
          case HWC_POWER_MODE_OFF:
          case HWC_POWER_MODE_DOZE:
-         case HWC_POWER_MODE_NORMAL:
          case HWC_POWER_MODE_DOZE_SUSPEND:
-         break;
-
+             break;
+         case HWC_POWER_MODE_NORMAL:
+             // Forcing a push allows the next next hwc_vsync_task NEXUS_SurfaceClient_PushSurface to trigger a recycled callback.
+             NEXUS_SurfaceClient_PushSurface(ctx->syn_cli.ncci.schdl, ctx->syn_cli.shdl, NULL, false);
+             break;
          default:
             goto out;
        }
@@ -1465,8 +1470,14 @@ static void * hwc_vsync_task(void *argv)
     do
     {
         if (ctx->syn_cli.shdl) {
-            NEXUS_SurfaceClient_PushSurface(ctx->syn_cli.ncci.schdl, ctx->syn_cli.shdl, NULL, false);
-            BKNI_WaitForEvent(ctx->syn_cli.vsync_event, 1000);
+            // Don't push surfaces to NSC if we are powering off...
+            if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
+                NEXUS_SurfaceClient_PushSurface(ctx->syn_cli.ncci.schdl, ctx->syn_cli.shdl, NULL, false);
+                BKNI_WaitForEvent(ctx->syn_cli.vsync_event, 1000);
+            }
+            else {
+                BKNI_Sleep(16);
+            }
             BKNI_SetEvent(ctx->prepare_event);
         }
 
@@ -1487,7 +1498,7 @@ static bool hwc_standby_monitor(void *dev)
     bool standby = false;
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
 
-    if (BKNI_AcquireMutex(ctx->power_mutex) == BERR_SUCCESS) {
+    if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
        goto out;
     }
     standby = (ctx == NULL) || (ctx->power_mode == HWC_POWER_MODE_OFF);
