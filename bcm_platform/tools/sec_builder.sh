@@ -96,11 +96,14 @@ skip_verify=
 debug=
 show_tree=
 secliblist=
+only_build_secu=
+only_build_seck=
 
 function usage {
 	echo "sec_builder --sec-filer <path-to> [--keydir <path-to>] [--hsm-srcs-list <path-to>]"
 	echo "            [--update] [--configure] [--reset] [--force-clean|--force-clean-refsw]"
 	echo "            [--skip-build|--skip-verify] [--debug] [--show-tree-only]"
+	echo "            [--only-build-secu] [--only-build-seck]"
         echo "            [--show-tree-depth <depth>] [--verbose] [--help|-h]"
 	echo ""
 	echo "mandatory parameter(s):"
@@ -294,28 +297,34 @@ function compiler {
 				make -j12 clean_refsw
 			fi
 		fi
-		make -j12
+		if [[ "$only_build_secu" != "1" && "$only_build_seck" != "1" ]]; then
+			make -j12
+		fi
 		# setup a 'fake' NDK equivalent to allow the security build to find out the
 		# native libs it links against.
 		mkdir -p out/target/product/bcm_platform/sysroot/usr/lib
 		cp -faR out/target/product/bcm_platform/obj/lib/* out/target/product/bcm_platform/sysroot/usr/lib/
 		# now do the real security build as an incremental build.
-		if [ "$debug" == "1" ]; then
-			export B_REFSW_DEBUG=y
-		else
-			export B_REFSW_DEBUG=n
+		if [ "$only_build_seck" != "1" ]; then
+			if [ "$debug" == "1" ]; then
+				export B_REFSW_DEBUG=y
+			else
+				export B_REFSW_DEBUG=n
+			fi
+			make -j12 clean_security_user
+			make -j12 security_user
 		fi
-		make -j12 clean_security_user
-		make -j12 security_user
 		# build the kernel side libraries - note: allow notion of 'debug' vs 'retail' (is it really needed?)
-		lunch bcm_${lunch_target}_seck-eng
-		if [ "$debug" == "1" ]; then
-			export B_REFSW_DEBUG=y
-		else
-			export B_REFSW_DEBUG=n
+		if [ "$only_build_secu" != "1" ]; then
+			lunch bcm_${lunch_target}_seck-eng
+			if [ "$debug" == "1" ]; then
+				export B_REFSW_DEBUG=y
+			else
+				export B_REFSW_DEBUG=n
+			fi
+			make -j12 clean_security_kernel
+			make -j12 security_kernel
 		fi
-		make -j12 clean_security_kernel
-		make -j12 security_kernel
 	fi
 }
 
@@ -438,6 +447,10 @@ while [ "$1" != "" ]; do
 						;;
 		--show-tree-depth)		shift
 						show_tree_depth=$1
+						;;
+		--only-build-secu)		only_build_secu=1
+						;;
+		--only-build-seck)		only_build_seck=1
 						;;
 		-h | --help)			usage
 						exit
