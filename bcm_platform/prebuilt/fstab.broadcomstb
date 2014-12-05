@@ -1,4 +1,4 @@
-*/block/sda* auto vfat defaults voldmanaged=sdcard:auto,noemulatedsd
+*/block/sda* auto vfat defaults voldmanaged=sdcard1:auto
 /dev/block/by-name/system       /system         ext4    ro,barrier=1                                                    wait
 /dev/block/by-name/data         /data           ext4    noatime,nosuid,nodev,barrier=1,data=ordered,nomblk_io_submit,noauto_da_alloc,errors=panic wait,check
 /dev/block/by-name/cache        /cache          ext4    noatime,nosuid,nodev,barrier=1,data=ordered,nomblk_io_submit,noauto_da_alloc,errors=panic wait,check
