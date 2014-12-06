@@ -87,6 +87,13 @@ public:
        }
     };
 
+    inline void getvideogeometry(int index, struct hwc_position &frame, struct hwc_position &clipped,
+                                 int &zorder, int &visible) {
+       if (get_hwc(false) != NULL) {
+           get_hwc(false)->getVideoGeometry(this, index, frame, clipped, zorder, visible);
+       }
+    };
+
     void register_notify(OMX_BINDER_NTFY_CB callback, int data) {
        cb = callback;
        cb_data = data;
@@ -118,6 +125,11 @@ public:
 
    void getvideo(int index, int &value) {
       ihwc.get()->getvideo(index, value);
+   }
+
+   void getvideogeometry(int index, struct hwc_position &frame, struct hwc_position &clipped,
+                         int &zorder, int &visible) {
+      ihwc.get()->getvideogeometry(index, frame, clipped, zorder, visible);
    }
 
    OmxBinder *get(void) {

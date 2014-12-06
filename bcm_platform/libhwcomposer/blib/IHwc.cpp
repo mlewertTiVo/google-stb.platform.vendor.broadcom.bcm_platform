@@ -31,6 +31,8 @@ enum {
     SET_DISPLAY_FRAME_ID,
     SET_SIDEBAND_SURF_CLIENT_ID,
     GET_SIDEBAND_SURF_CLIENT_ID,
+    SET_VIDEO_GEOMETRY_CLIENT_ID,
+    GET_VIDEO_GEOMETRY_CLIENT_ID,
 };
 
 class BpHwc : public BpInterface<IHwc>
@@ -99,6 +101,47 @@ public:
         remote()->transact(GET_SIDEBAND_SURF_CLIENT_ID, data, &reply);
         value = reply.readInt32();
     }
+
+    void setVideoGeometry(const sp<IHwcListener>& listener, int index,
+                          struct hwc_position &frame, struct hwc_position &clipped,
+                          int zorder, int visible) {
+        Parcel data, reply;
+        data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
+        data.writeStrongBinder(listener->asBinder());
+        data.writeInt32(index);
+        data.writeInt32(frame.x);
+        data.writeInt32(frame.y);
+        data.writeInt32(frame.h);
+        data.writeInt32(frame.w);
+        data.writeInt32(clipped.x);
+        data.writeInt32(clipped.y);
+        data.writeInt32(clipped.h);
+        data.writeInt32(clipped.w);
+        data.writeInt32(zorder);
+        data.writeInt32(visible);
+        remote()->transact(SET_VIDEO_GEOMETRY_CLIENT_ID, data, &reply);
+    }
+
+    void getVideoGeometry(const sp<IHwcListener>& listener, int index,
+                          struct hwc_position &frame, struct hwc_position &clipped,
+                          int &zorder, int &visible) {
+        Parcel data, reply;
+        data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
+        data.writeStrongBinder(listener->asBinder());
+        data.writeInt32(index);
+        remote()->transact(GET_VIDEO_GEOMETRY_CLIENT_ID, data, &reply);
+        frame.x = reply.readInt32();
+        frame.y = reply.readInt32();
+        frame.h = reply.readInt32();
+        frame.w = reply.readInt32();
+        clipped.x = reply.readInt32();
+        clipped.y = reply.readInt32();
+        clipped.h = reply.readInt32();
+        clipped.w = reply.readInt32();
+        zorder = reply.readInt32();
+        visible = reply.readInt32();
+    }
+
 };
 
 IMPLEMENT_META_INTERFACE(Hwc, "broadcom.hwc");
@@ -179,6 +222,50 @@ status_t BnHwc::onTransact(
          int index = data.readInt32();
          getSidebandSurfaceId(listener, index, value);
          reply->writeInt32(value);
+         return NO_ERROR;
+      }
+      break;
+
+      case SET_VIDEO_GEOMETRY_CLIENT_ID:
+      {
+         CHECK_INTERFACE(IHwc, data, reply);
+         sp<IHwcListener> listener = interface_cast<IHwcListener>(data.readStrongBinder());
+         int index = data.readInt32();
+         struct hwc_position frame, clipped;
+         int zorder, visible;
+         frame.x = data.readInt32();
+         frame.y = data.readInt32();
+         frame.h = data.readInt32();
+         frame.w = data.readInt32();
+         clipped.x = data.readInt32();
+         clipped.y = data.readInt32();
+         clipped.h = data.readInt32();
+         clipped.w = data.readInt32();
+         zorder = data.readInt32();
+         visible = data.readInt32();
+         setVideoGeometry(listener, index, frame, clipped, zorder, visible);
+         return NO_ERROR;
+      }
+      break;
+
+      case GET_VIDEO_GEOMETRY_CLIENT_ID:
+      {
+         CHECK_INTERFACE(IHwc, data, reply);
+         sp<IHwcListener> listener = interface_cast<IHwcListener>(data.readStrongBinder());
+         int index = data.readInt32();
+         struct hwc_position frame, clipped;
+         int zorder, visible;
+         getVideoGeometry(listener, index, frame, clipped, zorder, visible);
+         reply->writeInt32(frame.x);
+         reply->writeInt32(frame.y);
+         reply->writeInt32(frame.h);
+         reply->writeInt32(frame.w);
+         reply->writeInt32(clipped.x);
+         reply->writeInt32(clipped.y);
+         reply->writeInt32(clipped.h);
+         reply->writeInt32(clipped.w);
+         reply->writeInt32(zorder);
+         reply->writeInt32(visible);
          return NO_ERROR;
       }
       break;

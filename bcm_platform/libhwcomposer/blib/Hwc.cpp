@@ -31,6 +31,9 @@
 #include "Hwc.h"
 #include "IHwc.h"
 
+#define INVALID_HANDLE 0xDEADF00D
+
+
 using namespace android;
 
 const String16 sDump("android.permission.DUMP");
@@ -44,13 +47,21 @@ static const char *registrant_name [] = {
 
 Hwc::Hwc() : BnHwc() {
    for (int i = 0; i < HWC_BINDER_VIDEO_SURFACE_SIZE; i++) {
-      mVideoSurface[i].surface = -1;
+      mVideoSurface[i].surface = (int)INVALID_HANDLE;
       mVideoSurface[i].listener = 0;
+      memset(&mVideoSurface[i].frame, 0, sizeof(struct hwc_position));
+      memset(&mVideoSurface[i].clipped, 0, sizeof(struct hwc_position));
+      mVideoSurface[i].zorder = -1;
+      mVideoSurface[i].visible = 0;
    }
 
    for (int i = 0; i < HWC_BINDER_SIDEBAND_SURFACE_SIZE; i++) {
-      mSidebandSurface[i].surface = -1;
+      mSidebandSurface[i].surface = (int)INVALID_HANDLE;
       mSidebandSurface[i].listener = 0;
+      memset(&mSidebandSurface[i].frame, 0, sizeof(struct hwc_position));
+      memset(&mSidebandSurface[i].clipped, 0, sizeof(struct hwc_position));
+      mSidebandSurface[i].zorder = -1;
+      mSidebandSurface[i].visible = 0;
    }
 }
 
@@ -93,17 +104,23 @@ status_t Hwc::dump(int fd, const Vector<String16>& args)
 
         result.appendFormat("maximum video-surface: %d\n", HWC_BINDER_VIDEO_SURFACE_SIZE);
         for ( int i = 0; i < HWC_BINDER_VIDEO_SURFACE_SIZE; i++) {
-            if (mVideoSurface[i].surface != -1) {
-               result.appendFormat("\tvideo-surface: %d maps to %d (used by 0x%x)\n",
-                  i, mVideoSurface[i].surface, mVideoSurface[i].listener);
+            if (mVideoSurface[i].surface != (int)INVALID_HANDLE) {
+               result.appendFormat("\tvideo-surface: %d maps to 0x%x (used by 0x%x), frame: {%d,%d,%d,%d}, clipped: {%d,%d,%d,%d}, zorder:%d, visible: %s\n",
+                  i, mVideoSurface[i].surface, mVideoSurface[i].listener,
+                  mVideoSurface[i].frame.x, mVideoSurface[i].frame.y, mVideoSurface[i].frame.w, mVideoSurface[i].frame.h,
+                  mVideoSurface[i].clipped.x, mVideoSurface[i].clipped.y, mVideoSurface[i].clipped.w, mVideoSurface[i].clipped.h,
+                  mVideoSurface[i].zorder, mVideoSurface[i].visible?"oui":"non");
             }
         }
 
         result.appendFormat("maximum sideband-surface: %d\n", HWC_BINDER_SIDEBAND_SURFACE_SIZE);
         for ( int i = 0; i < HWC_BINDER_SIDEBAND_SURFACE_SIZE; i++) {
-            if (mSidebandSurface[i].surface != -1) {
-               result.appendFormat("\tsideband-surface: %d maps to %d (used by 0x%x)\n",
-                  i, mSidebandSurface[i].surface, mSidebandSurface[i].listener);
+            if (mSidebandSurface[i].surface != (int)INVALID_HANDLE) {
+               result.appendFormat("\tsideband-surface: %d maps to 0x%x (used by 0x%x), frame: {%d,%d,%d,%d}, clipped: {%d,%d,%d,%d}, zorder:%d, visible: %s\n",
+                  i, mSidebandSurface[i].surface, mSidebandSurface[i].listener,
+                  mSidebandSurface[i].frame.x, mSidebandSurface[i].frame.y, mSidebandSurface[i].frame.w, mSidebandSurface[i].frame.h,
+                  mSidebandSurface[i].clipped.x, mSidebandSurface[i].clipped.y, mSidebandSurface[i].clipped.w, mSidebandSurface[i].clipped.h,
+                  mSidebandSurface[i].zorder, mSidebandSurface[i].visible?"oui":"non");
             }
         }
 
@@ -227,24 +244,85 @@ void Hwc::getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &va
    }
 }
 
-void Hwc::setDisplayFrameId(const sp<IHwcListener>& listener, int surface, int frame)
+void Hwc::setVideoGeometry(const sp<IHwcListener>& listener, int index,
+                           struct hwc_position &frame, struct hwc_position &clipped,
+                           int zorder, int visible)
+{
+    ALOGD("%s: %p, index %d", __FUNCTION__,
+          listener->asBinder().get(), index);
+
+    Mutex::Autolock _l(mLock);
+
+    size_t N = mNotificationListeners.size();
+    for (size_t i = 0; i < N; i++) {
+        const hwc_listener_t& client = mNotificationListeners[i];
+        if ((client.binder.get() == listener->asBinder().get()) &&
+            (client.kind == HWC_BINDER_HWC)) {
+           if (memcmp(&frame, &mVideoSurface[index].frame, sizeof(struct hwc_position)) ||
+               memcmp(&clipped, &mVideoSurface[index].clipped, sizeof(struct hwc_position))) {
+              memcpy(&mVideoSurface[index].frame, &frame, sizeof(struct hwc_position));
+              memcpy(&mVideoSurface[index].clipped, &clipped, sizeof(struct hwc_position));
+              mVideoSurface[index].zorder = zorder;
+              mVideoSurface[index].visible = visible;
+              if (mVideoSurface[index].listener) {
+                 for (size_t j = 0; j < N; j++) {
+                     const hwc_listener_t& notify = mNotificationListeners[i];
+                     if ((int)notify.binder.get() == mVideoSurface[index].listener) {
+                        sp<IBinder> binder = notify.binder;
+                        sp<IHwcListener> target = interface_cast<IHwcListener> (binder);
+                        target->notify(HWC_BINDER_NTFY_VIDEO_SURFACE_GEOMETRY_UPDATE, index, 0);
+                        break;
+                     }
+                 }
+              }
+           }
+           break;
+        }
+    }
+}
+
+void Hwc::getVideoGeometry(const sp<IHwcListener>& listener, int index,
+                           struct hwc_position &frame, struct hwc_position &clipped,
+                           int &zorder, int &visible)
+{
+    Mutex::Autolock _l(mLock);
+
+    if (index > HWC_BINDER_VIDEO_SURFACE_SIZE) {
+       ALOGE("%s: %p, index %d - invalid, ignored", __FUNCTION__,
+              listener->asBinder().get(), index);
+       memset(&frame, 0, sizeof(struct hwc_position));
+       memset(&clipped, 0, sizeof(struct hwc_position));
+       zorder = -1;
+       visible = 0;
+    } else {
+       memcpy(&frame, &mVideoSurface[index].frame, sizeof(struct hwc_position));
+       memcpy(&clipped, &mVideoSurface[index].clipped, sizeof(struct hwc_position));
+       zorder = mVideoSurface[index].zorder;
+       visible = mVideoSurface[index].visible;
+       ALOGD("%s: %p, index %d, {%d,%d,%d,%d} {%d,%d,%d,%d} z:%d, visible: %s", __FUNCTION__,
+             listener->asBinder().get(), index, frame.x, frame.y, frame.w, frame.h,
+             clipped.x, clipped.y, clipped.w, clipped.h, zorder, visible?"oui":"non");
+   }
+}
+
+void Hwc::setDisplayFrameId(const sp<IHwcListener>& listener, int handle, int frame)
 {
     ALOGV("%s: %p, index %d, value %d", __FUNCTION__,
-          listener->asBinder().get(), surface, frame);
+          listener->asBinder().get(), handle, frame);
 
     int index = -1;
     Mutex::Autolock _l(mLock);
 
     for (int i = 0; i < HWC_BINDER_VIDEO_SURFACE_SIZE; i++) {
-       if (mVideoSurface[i].surface == surface) {
+       if (mVideoSurface[i].surface == handle) {
           index = i;
           break;
        }
     }
 
     if ((index == -1) || !mVideoSurface[index].listener) {
-       ALOGE("%s: %p, surface %d, frame %d - not registered, ignored", __FUNCTION__,
-              listener->asBinder().get(), surface, frame);
+       ALOGE("%s: %p, handle %x, frame %d - not registered, ignored", __FUNCTION__,
+              listener->asBinder().get(), handle, frame);
     } else {
        size_t N = mNotificationListeners.size();
        for (size_t i = 0; i < N; i++) {
@@ -252,7 +330,7 @@ void Hwc::setDisplayFrameId(const sp<IHwcListener>& listener, int surface, int f
            if ((int)client.binder.get() == mVideoSurface[index].listener) {
               sp<IBinder> binder = client.binder;
               sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
-              client->notify(HWC_BINDER_NTFY_DISPLAY, surface, frame);
+              client->notify(HWC_BINDER_NTFY_DISPLAY, handle, frame);
               break;
            }
        }

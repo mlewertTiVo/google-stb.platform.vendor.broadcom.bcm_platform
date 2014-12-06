@@ -439,6 +439,13 @@ static void BOMX_OmxBinderNotify(int cb_data, int msg, int param1, int param2)
     case HWC_BINDER_NTFY_DISPLAY:
         pComponent->DisplayFrame((unsigned)param2);
         break;
+    case HWC_BINDER_NTFY_VIDEO_SURFACE_GEOMETRY_UPDATE:
+    {
+        struct hwc_position frame, clipped;
+        int zorder, visible;
+        pComponent->omxHwcBinder()->getvideogeometry(0, frame, clipped, zorder, visible);
+        break;
+    }
     default:
         break;
     }

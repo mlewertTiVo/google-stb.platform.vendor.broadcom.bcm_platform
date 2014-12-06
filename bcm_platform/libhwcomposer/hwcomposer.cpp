@@ -63,6 +63,7 @@ using namespace android;
 #define HWC_DUMP_LAYER_ON_ERROR      0
 
 #define HWC_SB_NO_ALLOC_SURF_CLI     1
+#define HWC_MM_NO_ALLOC_SURF_CLI     1
 
 #define NSC_GPX_CLIENTS_NUMBER       5 /* graphics client layers; typically no
                                         * more than 3 are needed at any time. */
@@ -206,6 +207,13 @@ public:
        }
     };
 
+    inline void setvideogeometry(int index, struct hwc_position &frame, struct hwc_position &clipped,
+                                 int zorder, int visible) {
+       if (get_hwc(false) != NULL) {
+           get_hwc(false)->setVideoGeometry(this, index, frame, clipped, zorder, visible);
+       }
+    }
+
     inline void setsideband(int index, int value) {
        if (get_hwc(false) != NULL) {
            get_hwc(false)->setSidebandSurfaceId(this, index, value);
@@ -261,6 +269,13 @@ public:
    void setvideo(int index, int value) {
       if (iconnected) {
          ihwc.get()->setvideo(index, value);
+      }
+   }
+
+   void setvideogeometry(int index, struct hwc_position &frame, struct hwc_position &clipped,
+                         int zorder, int visible) {
+      if (iconnected) {
+         ihwc.get()->setvideogeometry(index, frame, clipped, zorder, visible);
       }
    }
 
@@ -347,7 +362,8 @@ static void hwc_hide_unused_mm_layers(hwc_context_t* dev);
 static void hwc_hide_unused_sb_layers(hwc_context_t* dev);
 
 static void hwc_nsc_prepare_layer(hwc_context_t* dev, hwc_layer_1_t *layer,
-   int layer_id, bool geometry_changed);
+   int layer_id, bool geometry_changed,
+   unsigned int *video_layer_id, unsigned int *sideband_layer_id);
 
 static void hwc_binder_advertise_video_surface(hwc_context_t* dev);
 
@@ -724,8 +740,11 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
     for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++)
     {
         write = 0;
-        NxClient_GetSurfaceClientComposition(ctx->mm_cli[i].root.ncci.sccid, &composition);
-
+        if (ctx->mm_cli[i].root.ncci.sccid < INVALID_HANDLE) {
+           NxClient_GetSurfaceClientComposition(ctx->mm_cli[i].root.ncci.sccid, &composition);
+        } else {
+           memcpy(&composition, &ctx->mm_cli[i].root.composition, sizeof(composition));
+        }
         if (composition.visible && capacity) {
            write = dump_mm_layer_data(buff + index, capacity, i, &ctx->mm_cli[i]);
            if (write > 0) {
@@ -742,7 +761,7 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
     for (int i = 0; i < NSC_SB_CLIENTS_NUMBER; i++)
     {
         write = 0;
-        if (ctx->sb_cli[i].root.ncci.sccid != INVALID_HANDLE) {
+        if (ctx->sb_cli[i].root.ncci.sccid < INVALID_HANDLE) {
            NxClient_GetSurfaceClientComposition(ctx->sb_cli[i].root.ncci.sccid, &composition);
         } else {
            memcpy(&composition, &ctx->sb_cli[i].root.composition, sizeof(composition));
@@ -986,6 +1005,8 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     size_t i;
     int nx_layer_count = 0;
     int skiped_layer = 0;
+    unsigned int video_layer_id = 0;
+    unsigned int sideband_layer_id = 0;
 
     // blocking wait here...
     BKNI_WaitForEvent(ctx->prepare_event, 1000);
@@ -997,6 +1018,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     }
     if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
         BKNI_ReleaseMutex(ctx->power_mutex);
+
         if (ctx->hwc_binder) {
            ctx->hwc_binder->connect();
            hwc_binder_advertise_video_surface(ctx);
@@ -1016,7 +1038,8 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
                 if (skiped_layer)
                    // mostly for debug for now.
                    if (HWC_SURFACE_LIFE_CYCLE_ERROR) ALOGE("%s: skipped %d layers before %d", __FUNCTION__, skiped_layer, i);
-                hwc_nsc_prepare_layer(ctx, layer, (int)i, (bool)(list->flags & HWC_GEOMETRY_CHANGED));
+                hwc_nsc_prepare_layer(ctx, layer, (int)i,
+                                      (bool)(list->flags & HWC_GEOMETRY_CHANGED), &video_layer_id, &sideband_layer_id);
                 nx_layer_count++;
             } else {
                 skiped_layer++;
@@ -1627,31 +1650,34 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                 dev->mm_cli[i].root.parent = (void *)dev;
                 dev->mm_cli[i].root.layer_id = i;
                 dev->mm_cli[i].root.ncci.type = NEXUS_CLIENT_MM;
-                dev->mm_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[i+NSC_GPX_CLIENTS_NUMBER].id;
-                dev->mm_cli[i].root.ncci.schdl = NEXUS_SurfaceClient_Acquire(dev->mm_cli[i].root.ncci.sccid);
-                if (!dev->mm_cli[i].root.ncci.schdl)
-                {
-                    ALOGE("%s:mm: NEXUS_SurfaceClient_Acquire lid=%d cid=%x sc=%x failed", __FUNCTION__,
-                         i, dev->mm_cli[i].root.ncci.sccid, dev->mm_cli[i].root.ncci.schdl);
-                    goto clean_up;
-                }
+                if (!HWC_MM_NO_ALLOC_SURF_CLI) {
+                    dev->mm_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[i+NSC_GPX_CLIENTS_NUMBER].id;
+                    dev->mm_cli[i].root.ncci.schdl = NEXUS_SurfaceClient_Acquire(dev->mm_cli[i].root.ncci.sccid);
+                    if (!dev->mm_cli[i].root.ncci.schdl)
+                    {
+                        ALOGE("%s:mm: NEXUS_SurfaceClient_Acquire lid=%d cid=%x sc=%x failed", __FUNCTION__,
+                             i, dev->mm_cli[i].root.ncci.sccid, dev->mm_cli[i].root.ncci.schdl);
+                        goto clean_up;
+                    }
 
-                NEXUS_SurfaceClient_GetSettings(dev->mm_cli[i].root.ncci.schdl, &client_settings);
-                client_settings.recycled.callback = hwc_nsc_recycled_cb;
-                client_settings.recycled.context = (void *)&dev->mm_cli[i];
-                rc = NEXUS_SurfaceClient_SetSettings(dev->mm_cli[i].root.ncci.schdl, &client_settings);
-                if (rc) {
-                    ALOGE("%s:mm: NEXUS_SurfaceClient_SetSettings %d failed", __FUNCTION__, i);
-                    goto clean_up;
+                    NEXUS_SurfaceClient_GetSettings(dev->mm_cli[i].root.ncci.schdl, &client_settings);
+                    client_settings.recycled.callback = hwc_nsc_recycled_cb;
+                    client_settings.recycled.context = (void *)&dev->mm_cli[i];
+                    rc = NEXUS_SurfaceClient_SetSettings(dev->mm_cli[i].root.ncci.schdl, &client_settings);
+                    if (rc) {
+                        ALOGE("%s:mm: NEXUS_SurfaceClient_SetSettings %d failed", __FUNCTION__, i);
+                        goto clean_up;
+                    }
+                    dev->mm_cli[i].svchdl = NEXUS_SurfaceClient_AcquireVideoWindow(dev->mm_cli[i].root.ncci.schdl, 0 /* always 0 */);
+                    if (dev->mm_cli[i].svchdl == NULL) {
+                        ALOGE("%s:mm: NEXUS_SurfaceClient_AcquireVideoWindow %d failed", __FUNCTION__, i);
+                        goto clean_up;
+                    }
+                } else {
+                    dev->mm_cli[i].root.ncci.sccid = INVALID_HANDLE + i;
                 }
 
                 memset(&dev->mm_cli[i].root.composition, 0, sizeof(NEXUS_SurfaceComposition));
-
-                dev->mm_cli[i].svchdl = NEXUS_SurfaceClient_AcquireVideoWindow(dev->mm_cli[i].root.ncci.schdl, 0 /* always 0 */);
-                if (dev->mm_cli[i].svchdl == NULL) {
-                    ALOGE("%s:mm: NEXUS_SurfaceClient_AcquireVideoWindow %d failed", __FUNCTION__, i);
-                    goto clean_up;
-                }
                 dev->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_INVALID;
 
                 // TODO: add support for more than one video at the time.
@@ -1668,15 +1694,15 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                 dev->sb_cli[i].root.ncci.type = NEXUS_CLIENT_SB;
                 if (!HWC_SB_NO_ALLOC_SURF_CLI) {
                     dev->sb_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[i+NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER].id;
+                    /* do not acquire surface client nor video window to allow the user of this to own it instead. */
                 } else {
-                    dev->sb_cli[i].root.ncci.sccid = INVALID_HANDLE;
+                    dev->sb_cli[i].root.ncci.sccid = INVALID_HANDLE + i;
                 }
-                /* do not acquire surface client nor video window to allow the user of this to own it instead. */
 
                 memset(&dev->mm_cli[i].root.composition, 0, sizeof(NEXUS_SurfaceComposition));
 
                 // TODO: add support for more than one sideband at the time.
-                if (!HWC_SB_NO_ALLOC_SURF_CLI && i == 0) {
+                if (i == 0) {
                    dev->nsc_sideband_changed = true;
                 }
             }
@@ -2197,47 +2223,79 @@ static void hwc_prepare_mm_layer(
     ctx->mm_cli[vid_layer_id].root.layer_flags = layer->flags;
 
     // deal with any change in the geometry/visibility of the layer.
-    NxClient_GetSurfaceClientComposition(ctx->mm_cli[vid_layer_id].root.ncci.sccid, &ctx->mm_cli[vid_layer_id].root.composition);
-    if (!ctx->mm_cli[vid_layer_id].root.composition.visible) {
-       ctx->mm_cli[vid_layer_id].root.composition.visible = true;
-       layer_updated = true;
-    }
-    if (memcmp((void *)&disp_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) {
+    if (ctx->mm_cli[vid_layer_id].root.ncci.sccid < INVALID_HANDLE) {
+       NxClient_GetSurfaceClientComposition(ctx->mm_cli[vid_layer_id].root.ncci.sccid, &ctx->mm_cli[vid_layer_id].root.composition);
+       if (!ctx->mm_cli[vid_layer_id].root.composition.visible) {
+          ctx->mm_cli[vid_layer_id].root.composition.visible = true;
+          layer_updated = true;
+       }
+       if (memcmp((void *)&disp_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) {
 
-        layer_updated = true;
-        ctx->mm_cli[vid_layer_id].root.composition.zorder                = MM_CLIENT_ZORDER;
-        ctx->mm_cli[vid_layer_id].root.composition.position.x            = disp_position.x;
-        ctx->mm_cli[vid_layer_id].root.composition.position.y            = disp_position.y;
-        ctx->mm_cli[vid_layer_id].root.composition.position.width        = disp_position.width;
-        ctx->mm_cli[vid_layer_id].root.composition.position.height       = disp_position.height;
-        ctx->mm_cli[vid_layer_id].root.composition.clipRect.x            = clip_position.x;
-        ctx->mm_cli[vid_layer_id].root.composition.clipRect.y            = clip_position.y;
-        ctx->mm_cli[vid_layer_id].root.composition.clipRect.width        = clip_position.width;
-        ctx->mm_cli[vid_layer_id].root.composition.clipRect.height       = clip_position.height;
-        ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.width  = ctx->display_width;
-        ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.height = ctx->display_height;
+           layer_updated = true;
+           ctx->mm_cli[vid_layer_id].root.composition.zorder                = MM_CLIENT_ZORDER;
+           ctx->mm_cli[vid_layer_id].root.composition.position.x            = disp_position.x;
+           ctx->mm_cli[vid_layer_id].root.composition.position.y            = disp_position.y;
+           ctx->mm_cli[vid_layer_id].root.composition.position.width        = disp_position.width;
+           ctx->mm_cli[vid_layer_id].root.composition.position.height       = disp_position.height;
+           ctx->mm_cli[vid_layer_id].root.composition.clipRect.x            = clip_position.x;
+           ctx->mm_cli[vid_layer_id].root.composition.clipRect.y            = clip_position.y;
+           ctx->mm_cli[vid_layer_id].root.composition.clipRect.width        = clip_position.width;
+           ctx->mm_cli[vid_layer_id].root.composition.clipRect.height       = clip_position.height;
+           ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.width  = ctx->display_width;
+           ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.height = ctx->display_height;
 
-        NEXUS_SurfaceClient_GetSettings(ctx->mm_cli[vid_layer_id].svchdl, &ctx->mm_cli[vid_layer_id].settings);
-        ctx->mm_cli[vid_layer_id].settings.composition.contentMode           = NEXUS_VideoWindowContentMode_eFull;
-        ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.width  = ctx->display_width;
-        ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.height = ctx->display_height;
-        ctx->mm_cli[vid_layer_id].settings.composition.position.x            = disp_position.x;
-        ctx->mm_cli[vid_layer_id].settings.composition.position.y            = disp_position.y;
-        ctx->mm_cli[vid_layer_id].settings.composition.position.width        = disp_position.width;
-        ctx->mm_cli[vid_layer_id].settings.composition.position.height       = disp_position.height;
-        ctx->mm_cli[vid_layer_id].settings.composition.clipRect.x            = clip_position.x;
-        ctx->mm_cli[vid_layer_id].settings.composition.clipRect.y            = clip_position.y;
-        ctx->mm_cli[vid_layer_id].settings.composition.clipRect.width        = clip_position.width;
-        ctx->mm_cli[vid_layer_id].settings.composition.clipRect.height       = clip_position.height;
-        rc = NEXUS_SurfaceClient_SetSettings(ctx->mm_cli[vid_layer_id].svchdl, &ctx->mm_cli[vid_layer_id].settings);
-        if (rc != NEXUS_SUCCESS) {
-            ALOGE("%s: geometry failed on video layer %d, err=%d", __FUNCTION__, vid_layer_id, rc);
-        }
-    }
-    if (layer_updated) {
-       rc = NxClient_SetSurfaceClientComposition(ctx->mm_cli[vid_layer_id].root.ncci.sccid, &ctx->mm_cli[vid_layer_id].root.composition);
-       if (rc != NEXUS_SUCCESS) {
-           ALOGE("%s: geometry failed on layer %d, err=%d", __FUNCTION__, vid_layer_id, rc);
+           NEXUS_SurfaceClient_GetSettings(ctx->mm_cli[vid_layer_id].svchdl, &ctx->mm_cli[vid_layer_id].settings);
+           ctx->mm_cli[vid_layer_id].settings.composition.contentMode           = NEXUS_VideoWindowContentMode_eFull;
+           ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.width  = ctx->display_width;
+           ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.height = ctx->display_height;
+           ctx->mm_cli[vid_layer_id].settings.composition.position.x            = disp_position.x;
+           ctx->mm_cli[vid_layer_id].settings.composition.position.y            = disp_position.y;
+           ctx->mm_cli[vid_layer_id].settings.composition.position.width        = disp_position.width;
+           ctx->mm_cli[vid_layer_id].settings.composition.position.height       = disp_position.height;
+           ctx->mm_cli[vid_layer_id].settings.composition.clipRect.x            = clip_position.x;
+           ctx->mm_cli[vid_layer_id].settings.composition.clipRect.y            = clip_position.y;
+           ctx->mm_cli[vid_layer_id].settings.composition.clipRect.width        = clip_position.width;
+           ctx->mm_cli[vid_layer_id].settings.composition.clipRect.height       = clip_position.height;
+           rc = NEXUS_SurfaceClient_SetSettings(ctx->mm_cli[vid_layer_id].svchdl, &ctx->mm_cli[vid_layer_id].settings);
+           if (rc != NEXUS_SUCCESS) {
+               ALOGE("%s: geometry failed on video layer %d, err=%d", __FUNCTION__, vid_layer_id, rc);
+           }
+       }
+       if (layer_updated) {
+          rc = NxClient_SetSurfaceClientComposition(ctx->mm_cli[vid_layer_id].root.ncci.sccid, &ctx->mm_cli[vid_layer_id].root.composition);
+          if (rc != NEXUS_SUCCESS) {
+              ALOGE("%s: geometry failed on layer %d, err=%d", __FUNCTION__, vid_layer_id, rc);
+          }
+       }
+    } else {
+       if (memcmp((void *)&disp_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) {
+
+          ctx->mm_cli[vid_layer_id].root.composition.zorder                = MM_CLIENT_ZORDER;
+          ctx->mm_cli[vid_layer_id].root.composition.position.x            = disp_position.x;
+          ctx->mm_cli[vid_layer_id].root.composition.position.y            = disp_position.y;
+          ctx->mm_cli[vid_layer_id].root.composition.position.width        = disp_position.width;
+          ctx->mm_cli[vid_layer_id].root.composition.position.height       = disp_position.height;
+          ctx->mm_cli[vid_layer_id].root.composition.clipRect.x            = clip_position.x;
+          ctx->mm_cli[vid_layer_id].root.composition.clipRect.y            = clip_position.y;
+          ctx->mm_cli[vid_layer_id].root.composition.clipRect.width        = clip_position.width;
+          ctx->mm_cli[vid_layer_id].root.composition.clipRect.height       = clip_position.height;
+          ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.width  = ctx->display_width;
+          ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.height = ctx->display_height;
+
+          if (ctx->hwc_binder) {
+             struct hwc_position frame, clipped;
+
+             frame.x = disp_position.x;
+             frame.y = disp_position.y;
+             frame.w = disp_position.width;
+             frame.h = disp_position.height;
+             clipped.x = clip_position.x;
+             clipped.y = clip_position.y;
+             clipped.w = clip_position.width;
+             clipped.h = clip_position.height;
+
+             ctx->hwc_binder->setvideogeometry(0, frame, clipped, MM_CLIENT_ZORDER, 1);
+          }
        }
     }
 
@@ -2291,8 +2349,8 @@ static void hwc_prepare_sb_layer(
     ctx->sb_cli[sb_layer_id].root.layer_flags = layer->flags;
 
     // deal with any change in the geometry/visibility of the layer.
-    if (ctx->mm_cli[sb_layer_id].root.ncci.sccid != INVALID_HANDLE) {
-       NxClient_GetSurfaceClientComposition(ctx->mm_cli[sb_layer_id].root.ncci.sccid, &ctx->sb_cli[sb_layer_id].root.composition);
+    if (ctx->sb_cli[sb_layer_id].root.ncci.sccid < INVALID_HANDLE) {
+       NxClient_GetSurfaceClientComposition(ctx->sb_cli[sb_layer_id].root.ncci.sccid, &ctx->sb_cli[sb_layer_id].root.composition);
        if (!ctx->sb_cli[sb_layer_id].root.composition.visible) {
           ctx->sb_cli[sb_layer_id].root.composition.visible = true;
           layer_updated = true;
@@ -2344,32 +2402,32 @@ static void hwc_nsc_prepare_layer(
     hwc_context_t* ctx,
     hwc_layer_1_t *layer,
     int layer_id,
-    bool geometry_changed)
+    bool geometry_changed,
+    unsigned int *video_layer_id,
+    unsigned int *sideband_layer_id)
 {
-    unsigned int video_layer_id = 0;
-    unsigned int sideband_layer_id = 0;
     bool is_sideband = false;
 
     if (is_video_layer(layer, layer_id, &is_sideband)) {
         if (!is_sideband) {
-            if (video_layer_id < NSC_MM_CLIENTS_NUMBER) {
-                hwc_prepare_mm_layer(ctx, layer, layer_id, video_layer_id);
-                video_layer_id++;
+            if (*video_layer_id < NSC_MM_CLIENTS_NUMBER) {
+                hwc_prepare_mm_layer(ctx, layer, layer_id, *video_layer_id);
+                (*video_layer_id)++;
             } else {
                 // huh? shouldn't happen really, unless the system is not tuned
                 // properly for the use case, if such, do tune it.
                 ALOGE("%s: droping video layer %d - out of resources (max %d)!\n", __FUNCTION__,
-                   video_layer_id, NSC_MM_CLIENTS_NUMBER);
+                   *video_layer_id, NSC_MM_CLIENTS_NUMBER);
             }
         } else if (is_sideband) {
-            if (sideband_layer_id < NSC_SB_CLIENTS_NUMBER) {
-                hwc_prepare_sb_layer(ctx, layer, layer_id, sideband_layer_id);
-                sideband_layer_id++;
+            if (*sideband_layer_id < NSC_SB_CLIENTS_NUMBER) {
+                hwc_prepare_sb_layer(ctx, layer, layer_id, *sideband_layer_id);
+                (*sideband_layer_id)++;
             } else {
                 // huh? shouldn't happen really, unless the system is not tuned
                 // properly for the use case, if such, do tune it.
                 ALOGE("%s: droping sideband layer %d - out of resources (max %d)!\n", __FUNCTION__,
-                   sideband_layer_id, NSC_SB_CLIENTS_NUMBER);
+                   *sideband_layer_id, NSC_SB_CLIENTS_NUMBER);
             }
         }
     } else {
@@ -2410,13 +2468,23 @@ static void nx_client_hide_unused_mm_layer(hwc_context_t* ctx, int index)
         goto out;
     }
 
-    NxClient_GetSurfaceClientComposition(ctx->mm_cli[index].root.ncci.sccid, &composition);
-    if (composition.visible) {
-       composition.visible = false;
-       rc = NxClient_SetSurfaceClientComposition(ctx->mm_cli[index].root.ncci.sccid, &composition);
-       if (rc != NEXUS_SUCCESS) {
-           ALOGE("%s: failed hiding layer %d, err=%d", __FUNCTION__, index, rc);
+    if (ctx->mm_cli[index].root.ncci.sccid < INVALID_HANDLE) {
+       NxClient_GetSurfaceClientComposition(ctx->mm_cli[index].root.ncci.sccid, &composition);
+       if (composition.visible) {
+          composition.visible = false;
+          rc = NxClient_SetSurfaceClientComposition(ctx->mm_cli[index].root.ncci.sccid, &composition);
+          if (rc != NEXUS_SUCCESS) {
+              ALOGE("%s: failed hiding layer %d, err=%d", __FUNCTION__, index, rc);
+          }
        }
+    } else {
+       ctx->mm_cli[index].root.composition.visible = false;
+       if (ctx->hwc_binder) {
+          struct hwc_position frame, clipped;
+          memset(&frame, 0, sizeof(hwc_position));
+          memset(&clipped, 0, sizeof(hwc_position));
+          ctx->hwc_binder->setvideogeometry(0, frame, clipped, MM_CLIENT_ZORDER, 0);
+      }
     }
 
     BKNI_ReleaseMutex(ctx->mutex);
@@ -2434,7 +2502,7 @@ static void nx_client_hide_unused_sb_layer(hwc_context_t* ctx, int index)
         goto out;
     }
 
-    if (ctx->sb_cli[index].root.ncci.sccid != INVALID_HANDLE) {
+    if (ctx->sb_cli[index].root.ncci.sccid < INVALID_HANDLE) {
        NxClient_GetSurfaceClientComposition(ctx->sb_cli[index].root.ncci.sccid, &composition);
        if (composition.visible) {
           composition.visible = false;

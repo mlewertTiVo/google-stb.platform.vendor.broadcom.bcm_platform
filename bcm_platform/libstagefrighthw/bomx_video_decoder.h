@@ -211,6 +211,8 @@ public:
 
     void DisplayFrame(unsigned serialNumber);
 
+    inline OmxBinder_wrap *omxHwcBinder(void) { return m_omxHwcBinder; };
+
 protected:
     NEXUS_SimpleVideoDecoderHandle m_hSimpleVideoDecoder;
     NEXUS_PlaypumpHandle m_hPlaypump;

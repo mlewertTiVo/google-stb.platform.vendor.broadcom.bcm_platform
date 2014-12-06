@@ -24,6 +24,13 @@
 
 using namespace android;
 
+struct hwc_position {
+    int x;
+    int y;
+    int w;
+    int h;
+};
+
 class IHwc : public IInterface
 {
 public:
@@ -39,6 +46,13 @@ public:
 
     virtual void setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value) = 0;
     virtual void getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int &value) = 0;
+
+    virtual void setVideoGeometry(const sp<IHwcListener>& listener, int index,
+                                  struct hwc_position &frame, struct hwc_position &clipped,
+                                  int zorder, int visible) = 0;
+    virtual void getVideoGeometry(const sp<IHwcListener>& listener, int index,
+                                  struct hwc_position &frame, struct hwc_position &clipped,
+                                  int &zorder, int &visible) = 0;
 };
 
 class BnHwc : public BnInterface<IHwc>
