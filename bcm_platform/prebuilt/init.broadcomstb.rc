@@ -96,7 +96,7 @@ service dhcpcd_gphy /system/bin/dhcpcd -dABKL
    disabled
    oneshot
 
-service bcm-setup /system/bin/nexusinit
+service bcmsetup /system/bin/nexusinit
    class core
    user root
    group system
