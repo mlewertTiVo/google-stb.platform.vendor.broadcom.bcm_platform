@@ -40,5 +40,8 @@
 
 #include <hardware/memtrack.h>
 
+#include "nxclient.h"
+#include "nxclient_config.h"
+
 #endif
 

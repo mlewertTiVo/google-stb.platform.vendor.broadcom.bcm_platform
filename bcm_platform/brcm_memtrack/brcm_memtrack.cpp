@@ -36,15 +36,27 @@
  * ANY LIMITED REMEDY.
   *****************************************************************************/
 #include <errno.h>
+#include <cutils/log.h>
+#include "cutils/properties.h"
 #include "brcm_memtrack.h"
+#include "nexus_ipc_client_factory.h"
 
-/* max number of record supported, which today corresponds
- * to the max number of 'heap per type' supported.
- */
+/* only ever report a single record per process.
+*/
 #define MEMTRACK_HAL_NUM_RECORDS_MAX 1
+
+#define MEMTRACK_HAL_NUM_NX_OBJS 128
+#define MEMTRACK_HAL_MAX_NX_OBJS 2048
+#define NEXUS_TRUSTED_DATA_PATH "/data/misc/nexus"
+
+NexusIPCClientBase *memtrackIpcClient;
 
 int brcm_memtrack_init(const struct memtrack_module *module)
 {
+    if (!module) {
+       return -ENOMEM;
+    }
+
     return 0;
 }
 
@@ -55,34 +67,149 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
                                 size_t *num_records)
 {
    int rc = 0;
-   int i;
+   NEXUS_Error nrc;
+   NEXUS_ClientHandle client;
+   NEXUS_PlatformObjectInstance *objects = NULL;
+   NEXUS_InterfaceName interfaceName;
+   size_t num = MEMTRACK_HAL_NUM_NX_OBJS, i;
+   size_t queried;
+   unsigned total = 0;
+   FILE *key = NULL;
+   char value[PROPERTY_VALUE_MAX];
+   NxClient_JoinSettings joinSettings;
 
-   if (!*num_records) {
-       *num_records = MEMTRACK_HAL_NUM_RECORDS_MAX;
+   if (!module) {
+       ALOGE("%s: invalid module.", __FUNCTION__);
        goto exit;
    }
 
+   NxClient_GetDefaultJoinSettings(&joinSettings);
+   strncpy(joinSettings.name, "memtrack", NXCLIENT_MAX_NAME);
+
+   sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
+   key = fopen(value, "r");
+   joinSettings.mode = NEXUS_ClientMode_eUntrusted;
+   if (key == NULL) {
+      ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, value, errno, strerror(errno));
+   } else {
+      memset(value, 0, sizeof(value));
+      fread(value, PROPERTY_VALUE_MAX, 1, key);
+      if (strstr(value, "trusted:") == value) {
+         const char *password = &value[8];
+         joinSettings.mode = NEXUS_ClientMode_eVerified;
+         joinSettings.certificate.length = strlen(password);
+         memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
+      }
+      fclose(key);
+   }
+   nrc = NxClient_Join(&joinSettings);
+   if (nrc != NEXUS_SUCCESS) {
+       rc = -EBUSY;
+       goto exit;
+   }
+
+   client = NxClient_Config_LookupClient(pid);
+   if (client == NULL) {
+      ALOGE("%s: failed getting nexus client for pid %d", __FUNCTION__, pid);
+      rc = -EINVAL;
+      goto exit_clean;
+   }
+
+   if (!*num_records) {
+       *num_records = MEMTRACK_HAL_NUM_RECORDS_MAX;
+       ALOGD("%s: querying record size: %d.", __FUNCTION__, MEMTRACK_HAL_NUM_RECORDS_MAX);
+       goto exit_clean;
+   }
+
    switch(type) {
-       case MEMTRACK_TYPE_GL:
        case MEMTRACK_TYPE_GRAPHICS:
+       {
+           ALOGD("%s: pid %d, queries NEXUS_Surface.", __FUNCTION__, pid);
+           strcpy(interfaceName.name, "NEXUS_Surface");
+           num = MEMTRACK_HAL_NUM_NX_OBJS;
+           do {
+              queried = num;
+              if (objects != NULL) {
+                 BKNI_Free(objects);
+                 objects = NULL;
+              }
+              objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
+              if (objects == NULL) {
+                 num = 0;
+                 nrc = NEXUS_SUCCESS;
+              }
+              nrc = NEXUS_Platform_GetClientObjects(client, &interfaceName, objects, num, &num);
+              if (nrc == NEXUS_PLATFORM_ERR_OVERFLOW) {
+                 num = 2 * queried;
+                 if (num > MEMTRACK_HAL_MAX_NX_OBJS) {
+                    num = 0;
+                    nrc = NEXUS_SUCCESS;
+                 }
+              }
+           } while (nrc == NEXUS_PLATFORM_ERR_OVERFLOW);
+           for (i = 0; i < num; i++) {
+               NEXUS_SurfaceCreateSettings createSettings;
+               NEXUS_SurfaceStatus status;
+               NEXUS_Surface_GetCreateSettings((NEXUS_SurfaceHandle)objects[i].object, &createSettings);
+               NEXUS_Surface_GetStatus((NEXUS_SurfaceHandle)objects[i].object, &status);
+               total += status.height * status.pitch;
+           }
+           if (objects != NULL) {
+              BKNI_Free(objects);
+              objects = NULL;
+           }
+           ALOGD("%s: pid %d, queries NEXUS_MemoryBlock.", __FUNCTION__, pid);
+           strcpy(interfaceName.name, "NEXUS_MemoryBlock");
+           num = MEMTRACK_HAL_NUM_NX_OBJS;
+           do {
+              queried = num;
+              if (objects != NULL) {
+                 BKNI_Free(objects);
+                 objects = NULL;
+              }
+              objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
+              if (objects == NULL) {
+                 num = 0;
+                 nrc = NEXUS_SUCCESS;
+              }
+              nrc = NEXUS_Platform_GetClientObjects(client, &interfaceName, objects, num, &num);
+              if (nrc == NEXUS_PLATFORM_ERR_OVERFLOW) {
+                 num = 2 * queried;
+                 if (num > MEMTRACK_HAL_MAX_NX_OBJS) {
+                    num = 0;
+                    nrc = NEXUS_SUCCESS;
+                 }
+              }
+           } while (nrc == NEXUS_PLATFORM_ERR_OVERFLOW);
+           for (i = 0; i < num; i++) {
+               NEXUS_MemoryBlockProperties prop;
+               NEXUS_MemoryBlock_GetProperties((NEXUS_MemoryBlockHandle)objects[i].object, &prop);
+               total += prop.size;
+           }
+           if (objects != NULL) {
+              BKNI_Free(objects);
+              objects = NULL;
+           }
+           ALOGD("%s: pid %d, reports %d bytes of gpx.", __FUNCTION__, pid, total);
+       }
+       break;
+
+       case MEMTRACK_TYPE_GL:
        case MEMTRACK_TYPE_CAMERA:
        case MEMTRACK_TYPE_MULTIMEDIA:
        case MEMTRACK_TYPE_OTHER:
-       break;
-
        default:
           rc = -EINVAL;
-          goto exit;
+          goto exit_clean;
    }
 
+   records[0].size_in_bytes = total;
+   records[0].flags = MEMTRACK_FLAG_SHARED | MEMTRACK_FLAG_DEDICATED | MEMTRACK_FLAG_NONSECURE;
 
-   for (i = 0; i < *num_records; i++) {
-      records[i].size_in_bytes = 0;
-      records[i].flags = MEMTRACK_FLAG_SHARED | MEMTRACK_FLAG_DEDICATED | MEMTRACK_FLAG_NONSECURE;
-   }
-
+exit_clean:
+   NxClient_Uninit();
 exit:
-    return rc;
+   return rc;
 }
 
 static struct hw_module_methods_t memtrack_module_methods = {
@@ -95,9 +222,11 @@ struct memtrack_module HAL_MODULE_INFO_SYM = {
         module_api_version: MEMTRACK_MODULE_API_VERSION_0_1,
         hal_api_version: HARDWARE_HAL_API_VERSION,
         id: MEMTRACK_HARDWARE_MODULE_ID,
-        name: "Memory Tracker HAL",
-        author: "Broadcom Corp",
+        name: "Memory Tracker HAL for BCM STB",
+        author: "Broadcom Canada Ltd.",
         methods: &memtrack_module_methods,
+        dso: 0,
+        reserved: {0}
     },
 
     init: brcm_memtrack_init,
