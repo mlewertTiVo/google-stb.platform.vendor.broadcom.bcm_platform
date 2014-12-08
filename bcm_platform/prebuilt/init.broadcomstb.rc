@@ -109,12 +109,6 @@ service disable-sleep /system/bin/logwrapper /system/bin/svc power stayon true
    group system
    oneshot
 
-# SWLINUX-2786, only for 7251 platform, and only need to be enabled when linux
-# version is 3.8 or earlier.
-service drop-cache /system/etc/cache.sh
-   class main
-   oneshot
-
 service pmlibservice /system/bin/pmlibserver
     class core
     user root
