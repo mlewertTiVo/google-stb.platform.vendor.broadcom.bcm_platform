@@ -11,15 +11,24 @@ extern "C" {
 #include "ap_cntrl.h"
 #include "stberc.h"
 #include "stbuni.h"
+#include "stbhwos.h"
+#include "stbheap.h"
 };
 
 class BroadcastDTVKit_Context {
 public:
     BroadcastDTVKit_Context() {
-        scanning = false;
+        scanner.active = false;
+        scanner.infoValid = false;
+        scanner.mutex = STB_OSCreateMutex();
         path = INVALID_RES_ID;
     };
-    bool scanning;
+    struct {
+        void *mutex;
+        bool active;
+        bool infoValid;
+        jchar progress;
+    } scanner;
     U8BIT path;
 };
 
@@ -37,22 +46,124 @@ static int BroadcastDTVKit_Stop()
     return -1;
 }
 
+/*
+    U8BIT progress = ACTL_GetSearchProgress();
+    ALOGE("%s:# progress %d%%", __FUNCTION__, progress);
+    if (ACTL_IsSearchComplete()) {
+        pSelf->scanning = false;
+        if (ACTL_IsTargetRegionRequired()) {
+            ALOGE("%s: target region required", __FUNCTION__);
+        }
+        ACTL_CompleteServiceSearch();
+        ALOGE("%s: scan complete", __FUNCTION__);
+        TunerHAL_onBroadcastEvent(0);
+        TunerHAL_onBroadcastEvent(200);
+    }
+    else {
+        TunerHAL_onBroadcastEvent(100 + ACTL_GetSearchProgress());
+    }
+*/
+
+static void
+onScanProgress(jshort progress)
+{
+    TunerHAL_onBroadcastEvent(100 + progress);
+}
+
+static void
+onScanComplete()
+{
+    TunerHAL_onBroadcastEvent(201);
+    TunerHAL_onBroadcastEvent(0);
+}
+
+static void
+onScanStart()
+{
+    TunerHAL_onBroadcastEvent(99);
+}
+
+static bool
+scannerUpdateUnderLock(bool stop)
+{
+    if (!pSelf->scanner.active) {
+        return false;
+    }
+
+    jbyte lastNotifiedProgress = pSelf->scanner.infoValid ? pSelf->scanner.progress : 101;
+
+    pSelf->scanner.progress = ACTL_GetSearchProgress();
+    pSelf->scanner.infoValid = true;
+
+    if (!stop && pSelf->scanner.progress != lastNotifiedProgress) {
+        onScanProgress(pSelf->scanner.progress);
+    }
+
+    if (ACTL_IsSearchComplete()) {
+        pSelf->scanner.active = false;
+        if (ACTL_IsTargetRegionRequired()) {
+            printf("target region required\n");
+        }
+        ACTL_CompleteServiceSearch();
+        //pSelf->tuningParams.biList.clear();
+        onScanComplete();
+    }
+
+    if (stop && pSelf->scanner.active) {
+        pSelf->scanner.active =  false;
+        ACTL_StopServiceSearch();
+        //pSelf->tuningParams.biList.clear();
+        onScanComplete();
+    }
+
+    return true;
+}
+
+static bool
+scannerStopUnderLock()
+{
+    scannerUpdateUnderLock(true);
+    return true;
+}
+
+static bool
+scannerInitUnderLock()
+{
+    scannerStopUnderLock();
+    return true;
+}
+
+static bool
+startBlindScan()
+{
+    STB_OSMutexLock(pSelf->scanner.mutex);
+    if (!scannerInitUnderLock()) {
+        STB_OSMutexUnlock(pSelf->scanner.mutex);
+        return false;
+    }
+
+    // manual scan with network
+    pSelf->scanner.infoValid = false;
+    ADB_ResetDatabase();
+    if (!ACTL_StartServiceSearch(SIGNAL_COFDM, ACTL_FREQ_SEARCH)) {
+        STB_OSMutexUnlock(pSelf->scanner.mutex);
+        return false;
+    }
+    pSelf->scanner.active = true;
+    STB_OSMutexUnlock(pSelf->scanner.mutex);
+    onScanStart();
+    return true;
+}
+
 static int BroadcastDTVKit_Scan()
 {
+    int rv = -1;
     ALOGE("%s: Enter", __FUNCTION__); 
-    if (!pSelf->scanning) {
-        ACFG_SetCountry(COUNTRY_CODE_UK); 
-        ADB_ResetDatabase();
-        if (ACTL_StartServiceSearch(SIGNAL_COFDM, ACTL_FREQ_SEARCH)) {
-            ALOGE("%s: scan start ok", __FUNCTION__);
-            pSelf->scanning = true;
-        }
-        else {
-            ALOGE("%s: scan start failed", __FUNCTION__);
-        }
+    if (startBlindScan()) {
+        rv = 0;
     }
     ALOGE("%s: Exit", __FUNCTION__);
-    return 0;
+    return rv;
 }
 
 static int BroadcastDTVKit_Tune(String8 s8id)
@@ -303,28 +414,112 @@ evcname(unsigned c, unsigned t)
     return "?";
 }
 
+static bool
+scannerUpdate()
+{
+    STB_OSMutexLock(pSelf->scanner.mutex);
+    scannerUpdateUnderLock(false);
+    STB_OSMutexUnlock(pSelf->scanner.mutex);
+    return true;
+}
+
 static void
 event_handler(U32BIT event, void *event_data, U32BIT data_size)
 {
     if (pSelf) {
         //ALOGE("%s: ev %s(%d)/%d", __FUNCTION__, evcname(EVENT_CLASS(event), EVENT_TYPE(event)), EVENT_CLASS(event), EVENT_TYPE(event));
-        if (event == EVENT_CODE(EV_CLASS_UI, EV_TYPE_UPDATE) && pSelf->scanning) {
-            U8BIT progress = ACTL_GetSearchProgress();
-            ALOGE("%s:# progress %d%%", __FUNCTION__, progress);
-            if (ACTL_IsSearchComplete()) {
-                pSelf->scanning = false;
-                if (ACTL_IsTargetRegionRequired()) {
-                    ALOGE("%s: target region required", __FUNCTION__);
-                }
-                ACTL_CompleteServiceSearch();
-                ALOGE("%s: scan complete", __FUNCTION__);
-                TunerHAL_onBroadcastEvent(0);
-            }
+        if (event == EVENT_CODE(EV_CLASS_UI, EV_TYPE_UPDATE)) {
+            scannerUpdate();
         }
-        else if (event == APP_EVENT_SERVICE_EIT_NOW_UPDATE && !pSelf->scanning) {
+        else if (event == APP_EVENT_SERVICE_EIT_NOW_UPDATE && !pSelf->scanner.active) {
             TunerHAL_onBroadcastEvent(1);
         }
     }
+}
+
+BroadcastScanInfo
+BroadcastDTVKit_GetScanInfo()
+{
+    BroadcastScanInfo scanInfo;
+    memset(&scanInfo, 0, sizeof(scanInfo));
+    STB_OSMutexLock(pSelf->scanner.mutex);
+
+    if (pSelf->scanner.active) {
+        pSelf->scanner.progress = ACTL_GetSearchProgress();
+        pSelf->scanner.infoValid = true;
+    }
+    
+    if (pSelf->scanner.infoValid) {
+        scanInfo.busy = pSelf->scanner.active;
+        scanInfo.valid = true;
+        scanInfo.progress = pSelf->scanner.progress;
+        {
+            void **slist = 0;
+            U16BIT ns;
+            unsigned newCount = 0;
+            unsigned newTV = 0;
+            unsigned newRadio = 0;
+            unsigned newData = 0;
+            ADB_GetServiceListIncludingHidden(ADB_SERVICE_LIST_TV | ADB_SERVICE_LIST_RADIO, &slist, &ns, true);
+            if (slist) {
+                U32BIT *newFlag = ADB_GetServiceListNewFlag(slist, ns);
+                unsigned i;
+                for (i = 0; i < ns; i++) {
+                    if (newFlag[i]) {
+                        newCount++;
+                        switch (ADB_GetServiceType(slist[i])) {
+                        case ADB_SERVICE_TYPE_TV:
+                        case ADB_SERVICE_TYPE_MPEG2_HD:
+                        case ADB_SERVICE_TYPE_AVC_SD_TV:
+                        case ADB_SERVICE_TYPE_HD_TV:
+                        case ADB_SERVICE_TYPE_UHD_TV:
+                            newTV++;
+                            break;
+                        case ADB_SERVICE_TYPE_RADIO:
+                        case ADB_SERVICE_TYPE_AVC_RADIO:
+                            newRadio++;
+                            break;
+                        case ADB_SERVICE_TYPE_DATA:
+                            newData++;
+                            break;
+                        default:
+                            break;
+                        }
+                    }
+                }
+                STB_AppFreeMemory(newFlag);
+                ADB_ReleaseServiceList(slist, ns);
+            }
+            scanInfo.channels = newCount;
+            scanInfo.TVChannels = newTV;
+            scanInfo.radioChannels = newRadio;
+            scanInfo.dataChannels = newData;
+        }
+        {
+            U8BIT path = STB_DPGetLivePath();
+            if (path != INVALID_RES_ID)
+            {
+                U8BIT tuner_path = STB_DPGetPathTuner(path);
+                if (tuner_path != INVALID_RES_ID)
+                {
+                    scanInfo.signalStrengthPercent = STB_TuneGetSignalStrength(tuner_path);
+                    scanInfo.signalQualityPercent = STB_TuneGetDataIntegrity(tuner_path);
+                }
+            }
+        }
+#if 0
+        scanInfo.setSatelliteId(pSelf->scanner.artemisInfo.Satellite);
+        scanInfo.setSatellites(pSelf->scanner.artemisInfo.NoOfSatellites);
+        scanInfo.setScannedSatellites(pSelf->scanner.artemisInfo.NoOfScannedSatellites);
+        scanInfo.setTransponders(pSelf->scanner.artemisInfo.NoOfTransponders);
+        scanInfo.setScannedTransponders(pSelf->scanner.artemisInfo.NoOfScannedTransponders);
+#endif
+    } else {
+        scanInfo.valid = false;
+    }
+    
+    STB_OSMutexUnlock(pSelf->scanner.mutex);
+    return scanInfo;
 }
 
 int
@@ -343,6 +538,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
 
     pD->GetChannelList = BroadcastDTVKit_GetChannelList;
     pD->GetProgramList = BroadcastDTVKit_GetProgramList;
+    pD->GetScanInfo = BroadcastDTVKit_GetScanInfo;
     pD->Tune = BroadcastDTVKit_Tune;
     pD->Scan = BroadcastDTVKit_Scan;
     pD->Stop = BroadcastDTVKit_Stop;

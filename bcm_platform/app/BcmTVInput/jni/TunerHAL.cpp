@@ -70,6 +70,7 @@ static JNINativeMethod gMethods[] =
 	{"tune",           "(Ljava/lang/String;)I",     (void *)Java_com_broadcom_tvinput_TunerHAL_tune},
 	{"getChannelList", "()[Lcom/broadcom/tvinput/ChannelInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getChannelList},
 	{"getProgramList", "(Ljava/lang/String;)[Lcom/broadcom/tvinput/ProgramInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getProgramList},
+	{"getScanInfo",    "()Lcom/broadcom/tvinput/ScanInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getScanInfo},
     {"stop",           "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stop},  
     {"release",        "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_release},  
 };
@@ -235,6 +236,16 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jcla
     return rv;
 }
 
+#define simpleField(name, sig) \
+    jfieldID name##ID = env->GetFieldID(cls, #name, #sig); \
+    if(name##ID == 0){ \
+        ALOGE("%s: could not get %s ID", __FUNCTION__, #name); \
+    }
+
+#define booleanField(name) simpleField(name, Z)
+#define shortField(name) simpleField(name, S)
+#define stringField(name) simpleField(name, Ljava/lang/String;)
+
 JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList(JNIEnv *env, jclass thiz)
 {
     TV_LOG("%s: Fetching channel list!!", __FUNCTION__);
@@ -356,6 +367,58 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramList(JNIEnv *env, jclass thiz, jstr
     }
     ALOGE("%s: ok so far", __FUNCTION__);
     return rv;
+}
+
+JNIEXPORT jobject JNICALL
+Java_com_broadcom_tvinput_TunerHAL_getScanInfo(JNIEnv *env, jclass thiz)
+{
+
+    TV_LOG("%s: Fetching scan info!!", __FUNCTION__);
+
+    BroadcastScanInfo si;
+
+    if (g_pTD->driver.GetScanInfo == 0) {
+        TV_LOG("%s: GetScanInfo call is null", __FUNCTION__);
+        si.valid = false;
+    }
+    else {
+        si = (*g_pTD->driver.GetScanInfo)();
+    }
+     
+    jclass cls = env->FindClass("com/broadcom/tvinput/ScanInfo"); 
+    if (cls == 0) {
+        ALOGE("%s: could not find class", __FUNCTION__);
+        return 0;
+    }
+    jmethodID cID = env->GetMethodID(cls, "<init>", "()V");
+    if(cID == 0){
+        ALOGE("%s: could not get constructor ID", __FUNCTION__);
+    }
+
+    booleanField(busy)
+    booleanField(valid)
+    shortField(channels)
+    shortField(progress)
+    shortField(TVChannels)
+    shortField(dataChannels)
+    shortField(radioChannels)
+    shortField(signalStrengthPercent)
+    shortField(signalQualityPercent)
+
+    jobject o = env->NewObject(cls, cID); 
+    env->SetBooleanField(o, busyID, si.busy);
+    env->SetBooleanField(o, validID, si.valid);
+    if (si.valid) {
+        env->SetShortField(o, progressID, si.progress); 
+        env->SetShortField(o, channelsID, si.channels);
+        env->SetShortField(o, TVChannelsID, si.TVChannels);
+        env->SetShortField(o, dataChannelsID, si.dataChannels);
+        env->SetShortField(o, radioChannelsID, si.radioChannels);
+        env->SetShortField(o, signalStrengthPercentID, si.signalStrengthPercent);
+        env->SetShortField(o, signalQualityPercentID, si.signalQualityPercent);
+    }
+    ALOGE("%s: ok so far", __FUNCTION__);
+    return o;
 }
 
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv *env, jclass thiz)

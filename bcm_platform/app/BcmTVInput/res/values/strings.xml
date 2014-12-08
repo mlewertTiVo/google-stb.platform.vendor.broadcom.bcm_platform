@@ -15,7 +15,7 @@
 -->
 
 <resources>
-    <string name="app_name" translatable="false">Tuner-TVInput</string>
+    <string name="app_name" translatable="false">BcmTVInput Settings</string>
     <string name="tuner_service_label" translatable="false">Tuner service</string>
-    <string name="settings_button_label" translatable="false">Tuner-Settings</string>
+    <string name="scan_button_label" translatable="false">Scan</string>
 </resources>

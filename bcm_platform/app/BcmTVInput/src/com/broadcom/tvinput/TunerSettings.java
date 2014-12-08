@@ -30,6 +30,8 @@ import android.os.Handler;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
+import android.widget.TextView;
+import android.widget.ProgressBar;
 import android.widget.LinearLayout;
 import android.util.Log;
 
@@ -50,6 +52,8 @@ public class TunerSettings extends Activity {
     private static final String TAG = TunerSettings.class.getSimpleName();
 
     private TvInputManager mTvInputManager;
+    private TextView mTv;
+    private ProgressBar mProgress;
 
     private String getInputIdFromComponentName(Context context, ComponentName name) {
         for (TvInputInfo info : mTvInputManager.getTvInputList()) {
@@ -67,6 +71,40 @@ public class TunerSettings extends Activity {
         @Override
         public void onSessionCreated(TvInputManager.Session session) {
             mSession = session;
+            mSession.sendAppPrivateCommand("scanstatus", null);
+        }
+        @Override
+        public void onSessionEvent(TvInputManager.Session session, String eventType, Bundle eventArgs) {
+            if (eventType.equals("scanstatus")) {
+                eventArgs.setClassLoader(ScanInfo.class.getClassLoader());
+                ScanInfo si = eventArgs.getParcelable("scaninfo");
+                if (si.busy) {
+                    if (si.valid) {
+                        mTv.setText("Scanning: "
+                                    + si.progress
+                                    + "% "
+                                    + si.channels
+                                    + " found ("
+                                    + si.TVChannels
+                                    + "/"
+                                    + si.radioChannels
+                                    + "/"
+                                    + si.dataChannels
+                                    + ") qual "
+                                    + si.signalQualityPercent
+                                    + "% snr "
+                                    + si.signalStrengthPercent
+                                    + "%"); 
+                    }
+                    else {
+                        mTv.setText("Scanning"); 
+                    }
+                }
+                else {
+                    mTv.setText("No scan in progress");
+                }
+                mProgress.setProgress(si.valid ? si.progress : 0);
+            }
         }
     }
 
@@ -93,16 +131,21 @@ public class TunerSettings extends Activity {
         setContentView(layout);
 
         Button btn = new Button(this);
-        btn.setText(R.string.settings_button_label);
+        btn.setText(R.string.scan_button_label);
         btn.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
                 mSession.sendAppPrivateCommand("scan", null);
                 setResult(Activity.RESULT_OK);
-                finish();
             }
         });
 
+        mTv = new TextView(this);
+        mTv.setTextAlignment(TextView.TEXT_ALIGNMENT_CENTER);
+        mProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        mProgress.setIndeterminate(false);
+        layout.addView(mTv);
+        layout.addView(mProgress);
         layout.addView(btn);
     }
 

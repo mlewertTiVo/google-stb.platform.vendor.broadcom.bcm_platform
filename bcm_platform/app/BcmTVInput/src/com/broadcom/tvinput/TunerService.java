@@ -28,6 +28,8 @@ import java.util.Random;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.lang.reflect.Method;
+import java.lang.reflect.InvocationTargetException;
 
 import org.xmlpull.v1.XmlPullParserException;
 
@@ -61,6 +63,7 @@ import android.os.Handler;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Parcel;
+import android.os.Parcelable;
 import android.os.RemoteException;
 import android.util.Log;
 import android.util.SparseArray;
@@ -298,9 +301,50 @@ public class TunerService extends TvInputService {
     }
 
     private DatabaseSync dbsync;
+    private TunerTvInputSessionImpl mCurrentSession = null;
+
+    private static void reflectedNotifySessionEvent(TunerTvInputSessionImpl s, String event, Bundle args)
+    {
+        Class c;
+        try {
+            c = Class.forName("com.broadcom.tvinput.TunerService$TunerTvInputSessionImpl");
+        } catch (ClassNotFoundException e) {
+            Log.d(TAG, "reflectedNotifySessionEvent: did not find class");
+            return;
+        }
+        Method m;
+        try {
+            m = c.getMethod("notifySessionEvent", new Class[] { String.class, Bundle.class }); 
+        } catch (NoSuchMethodException e) {
+            Log.d(TAG, "reflectedNotifySessionEvent: did not find method");
+            return;
+        }
+        try {
+            m.invoke(s, new Object[] { event, args }); 
+        } catch (IllegalAccessException e) {
+            Log.d(TAG, "reflectedNotifySessionEvent: IllegalAccessException");
+        } catch (InvocationTargetException e) {
+            Log.d(TAG, "reflectedNotifySessionEvent: InvocationTargetException");
+        }
+    }
 
     public static final int BROADCAST_EVENT_CHANNEL_LIST_CHANGED = 0;
     public static final int BROADCAST_EVENT_PROGRAM_LIST_CHANGED = 1;
+    public static final int BROADCAST_EVENT_SCANNING_START = 99;
+    public static final int BROADCAST_EVENT_SCANNING_PROGRESS = 100; // 100 - 0% progress 200 100%
+    public static final int BROADCAST_EVENT_SCANNING_COMPLETE = 201;
+
+    private void sendScanStatusToCurrentSessionIfAny()
+    {
+        if (mCurrentSession != null) {
+            Bundle b = new Bundle();
+            ScanInfo si = TunerHAL.getScanInfo();
+            b.setClassLoader(ScanInfo.class.getClassLoader());
+            b.putParcelable("scaninfo", si);
+            //mCurrentSession.notifySessionEvent("scanstate", b);
+            reflectedNotifySessionEvent(mCurrentSession, "scanstatus", b);
+        }
+    }
 
     public void onBroadcastEvent(int e) {
         Log.e(TAG, "Broadcast event: " + e);
@@ -309,6 +353,9 @@ public class TunerService extends TvInputService {
         }
         else if (e == BROADCAST_EVENT_PROGRAM_LIST_CHANGED) {
             dbsync.setProgramListChanged();
+        }
+        else if (e >= BROADCAST_EVENT_SCANNING_PROGRESS && e <= BROADCAST_EVENT_SCANNING_COMPLETE) {
+            sendScanStatusToCurrentSessionIfAny();
         }
     }
 
@@ -334,7 +381,8 @@ public class TunerService extends TvInputService {
         // Lookup TvInputInfo from inputId
         TvInputInfo info = mInputMap.get(inputId);
 
-        return new TunerTvInputSessionImpl(this, info);
+        mCurrentSession = new TunerTvInputSessionImpl(this, info);
+        return mCurrentSession;
     }
 
     @Override
@@ -572,6 +620,7 @@ public class TunerService extends TvInputService {
             {
                 mManager.releaseTvInputHardware(mDeviceId, mHardware);
                 mHardware = null;
+                mCurrentSession = null;
             }
         }
 
@@ -647,6 +696,9 @@ public class TunerService extends TvInputService {
             Log.d(TAG, "onAppPrivateCommand: " + action);
             if (action.equals("scan")) {
                 TunerHAL.scan();
+            }
+            else if (action.equals("scanstatus")) {
+                sendScanStatusToCurrentSessionIfAny(); 
             }
         }
     }

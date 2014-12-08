@@ -27,12 +27,26 @@ public:
     jlong end_time_utc_millis;
 };
 
+class BroadcastScanInfo {
+public:
+    jboolean busy;
+    jboolean valid;
+    jshort progress;
+    jshort channels;
+    jshort TVChannels;
+    jshort dataChannels;
+    jshort radioChannels;
+    jshort signalStrengthPercent;
+    jshort signalQualityPercent;
+};
+
 class BroadcastDriver {
 public:
     int (*Scan)();
     int (*Tune)(String8);
     Vector<BroadcastChannelInfo> (*GetChannelList)();
     Vector<BroadcastProgramInfo> (*GetProgramList)(String8);
+    BroadcastScanInfo (*GetScanInfo)();
     int (*Stop)();
     int (*Release)();
 };

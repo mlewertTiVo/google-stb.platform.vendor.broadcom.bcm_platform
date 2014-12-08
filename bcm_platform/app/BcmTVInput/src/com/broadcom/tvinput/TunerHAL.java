@@ -3,6 +3,7 @@ package com.broadcom.tvinput;
 import android.util.Log;
 import com.broadcom.tvinput.ChannelInfo;
 import com.broadcom.tvinput.ProgramInfo;
+import com.broadcom.tvinput.ScanInfo;
 
 public class TunerHAL
 {
@@ -21,6 +22,7 @@ public class TunerHAL
     static native int tune(String id); // from ChannelInfo
     static native ChannelInfo[] getChannelList();
     static native ProgramInfo[] getProgramList(String internalid);
+    static native ScanInfo getScanInfo();
     static native int stop();
     static native int release();
 }

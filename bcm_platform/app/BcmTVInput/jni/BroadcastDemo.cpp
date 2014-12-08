@@ -353,6 +353,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
 
     pD->GetChannelList = BroadcastDemo_GetChannelList;
     pD->GetProgramList = BroadcastDemo_GetProgramList;
+    pD->GetScanInfo = 0;
     pD->Tune = BroadcastDemo_Tune;
     pD->Scan = BroadcastDemo_Scan;
     pD->Stop = BroadcastDemo_Stop;
