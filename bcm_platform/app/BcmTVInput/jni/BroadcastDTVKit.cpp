@@ -13,6 +13,7 @@ extern "C" {
 #include "stbuni.h"
 #include "stbhwos.h"
 #include "stbheap.h"
+#include "dtvkit_platform.h"
 };
 
 class BroadcastDTVKit_Context {
@@ -529,6 +530,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
 
     pSelf = new BroadcastDTVKit_Context;
 
+    DTVKitPlatform_SetNVMBasePath("/data/data/com.broadcom.tvinput");
     APP_InitialiseDVB(event_handler);
 
     U16BIT services = ADB_GetNumServicesInList(ADB_SERVICE_LIST_ALL, true);

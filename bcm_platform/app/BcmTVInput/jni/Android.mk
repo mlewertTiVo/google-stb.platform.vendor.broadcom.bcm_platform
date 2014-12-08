@@ -35,6 +35,7 @@ LOCAL_SHARED_LIBRARIES += libnxclient libnexusipcclient libbinder
 LOCAL_SRC_FILES := TunerHAL.cpp
 
 ifeq ($(ANDROID_SUPPORTS_DTVKIT),y)
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/DTVKitPlatform/inc
 LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/inc
 LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/dvb/inc
 LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/midware/stb/inc
