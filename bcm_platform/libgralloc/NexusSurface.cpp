@@ -114,7 +114,6 @@ void NexusSurface::init(void)
    unsigned int                    surfaceSize;
    void                           *vAddr;
    unsigned int                    phyAddr;
-   NEXUS_PlatformConfiguration     platformConfig;
 
    int ret;
    int enable_offset,xoff,yoff,width,height;
@@ -133,8 +132,6 @@ void NexusSurface::init(void)
 
    BCM_DEBUG_MSG("NexusSurface::::: process's UID=%d AND GID=%d ProcessID:%x \n", getuid(), getgid(),getpid());
    BCM_DEBUG_ERRMSG("NexusSurface Constructor called [INTEGRATED-VERSION]\n");
-
-   NEXUS_Platform_GetConfiguration(&platformConfig);
 
    // Init Surface
    NEXUS_Surface_GetDefaultCreateSettings(&createSettings);

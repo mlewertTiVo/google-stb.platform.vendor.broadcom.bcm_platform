@@ -183,45 +183,14 @@ static const NEXUS_HdmiOutputHdcpKsv RevokedKsvs[NUM_REVOKED_KSVS] =
     {{0x65, 0x65, 0x1e, 0xd5, 0x64}}
 } ;
 
-static void hotplugCallback(void *pParam, int iParam)
-{
-    NEXUS_HdmiOutputStatus status;
-    NEXUS_HdmiOutputHandle hdmi = (NEXUS_HdmiOutputHandle)pParam;
-    NEXUS_DisplayHandle display = (NEXUS_DisplayHandle)iParam;
-    NEXUS_DisplaySettings displaySettings;
-    NEXUS_HdmiOutputSettings hdmiSettings;
-
-    NEXUS_HdmiOutput_GetStatus(hdmi, &status);
-    /* the app can choose to switch to the preferred format, but it's not required. */
-    if ( !status.connected ) {
-        LOGE("No RxDevice Connected") ;
-        return ;
-    }
-
-    NEXUS_Display_GetSettings(display, &displaySettings);
-    if ( !status.videoFormatSupported[displaySettings.format] ) {
-        LOGE("Current format not supported by attached monitor. Switching to preferred format %d", status.preferredVideoFormat) ;
-        displaySettings.format = status.preferredVideoFormat;
-    }
-    NEXUS_Display_SetSettings(display, &displaySettings);
-
-    /* force HDMI updates after a hotplug */
-    NEXUS_HdmiOutput_GetSettings(hdmi, &hdmiSettings) ;
-    NEXUS_HdmiOutput_SetSettings(hdmi, &hdmiSettings) ;
-
-    /* restart HDCP if it was previously enabled */
-    NEXUS_HdmiOutput_StartHdcpAuthentication(hdmi);
-}
-
-static void hdmiOutputHdcpStateChanged(void *pContext, int param)
+void NexusService::hdmiOutputHdcpStateChangedCallback(void *pContext, int param __unused)
 {
     bool success = false ;
     NEXUS_HdmiOutputHandle handle = (NEXUS_HdmiOutputHandle)pContext;
     NEXUS_HdmiOutputHdcpStatus hdcpStatus;
 
-    BSTD_UNUSED(param) ;
-
     NEXUS_HdmiOutput_GetHdcpStatus(handle, &hdcpStatus);
+
     switch (hdcpStatus.hdcpError) {
     case NEXUS_HdmiOutputHdcpError_eSuccess :
         LOGE("HDCP Authentication Successful\n");
@@ -295,34 +264,7 @@ static void hdmiOutputHdcpStateChanged(void *pContext, int param)
         NEXUS_HdmiOutput_StartHdcpAuthentication(handle);
     }
 }
-
-static void initializeHdmiOutputHdcpSettings(int index)
-{
-    NEXUS_HdmiOutputHdcpSettings hdmiOutputHdcpSettings;
-
-    NEXUS_PlatformConfiguration platformConfig;
-
-    NEXUS_Platform_GetConfiguration(&platformConfig);
-    NEXUS_HdmiOutput_GetHdcpSettings(platformConfig.outputs.hdmi[index], &hdmiOutputHdcpSettings);
-
-    /* copy the encrypted key set and its Aksv here */
-    BKNI_Memcpy(hdmiOutputHdcpSettings.encryptedKeySet, encryptedTxKeySet, NEXUS_HDMI_OUTPUT_HDCP_NUM_KEYS * sizeof(NEXUS_HdmiOutputHdcpKey)) ;
-    BKNI_Memcpy(&hdmiOutputHdcpSettings.aksv, &hdcpTxAksv, NEXUS_HDMI_OUTPUT_HDCP_KSV_LENGTH) ;
-
-    /* install HDCP success callback */
-    hdmiOutputHdcpSettings.successCallback.callback = hdmiOutputHdcpStateChanged ;
-    hdmiOutputHdcpSettings.successCallback.context = platformConfig.outputs.hdmi[index];
-
-    /* install HDCP failure callback */
-    hdmiOutputHdcpSettings.failureCallback.callback = hdmiOutputHdcpStateChanged ;
-    hdmiOutputHdcpSettings.failureCallback.context = platformConfig.outputs.hdmi[index];
-
-    NEXUS_HdmiOutput_SetHdcpSettings(platformConfig.outputs.hdmi[index], &hdmiOutputHdcpSettings);
-
-    /* install list of revoked KSVs from SRMs (System Renewability Message) if available */
-    NEXUS_HdmiOutput_SetHdcpRevokedKsvs(platformConfig.outputs.hdmi[index], RevokedKsvs, NumRevokedKsvs) ;
-}
-#endif
+#endif // ANDROID_ENABLE_HDMI_HDCP
 
 typedef struct NexusClientContext {
     BDBG_OBJECT(NexusClientContext)
@@ -425,13 +367,18 @@ int NexusService::platformInitAudio(void)
 {
     int i;
     int rc = 0;
-    NEXUS_PlatformConfiguration             platformConfig;
+    NEXUS_PlatformConfiguration            *pPlatformConfig;
     NEXUS_AudioPlaybackOpenSettings         simpleAudioDecoderOpenSettings;
     NEXUS_SimpleAudioDecoderServerSettings  simpleAudioDecoderSettings;
     NEXUS_SimpleAudioPlaybackServerSettings simpleAudioPlaybackSettings;
     NEXUS_AudioDecoderOpenSettings          audioDecoderOpenSettings;
 
-    NEXUS_Platform_GetConfiguration(&platformConfig);
+    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+    if (pPlatformConfig == NULL) {
+        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+        return NEXUS_OUT_OF_SYSTEM_MEMORY;
+    }
+    NEXUS_Platform_GetConfiguration(pPlatformConfig);
 
     /* create audio decoders */
     for (i=0; i<MAX_AUDIO_DECODERS; i++) {
@@ -441,6 +388,7 @@ int NexusService::platformInitAudio(void)
         audioDecoder[i] = NEXUS_AudioDecoder_Open(i, &audioDecoderOpenSettings);
         if (audioDecoder[i] == NULL) {
             LOGE("%s: Could not open audio decoder %d!!!", __PRETTY_FUNCTION__, i);
+            BKNI_Free(pPlatformConfig);
             return NEXUS_UNKNOWN;
         }
     }
@@ -449,17 +397,19 @@ int NexusService::platformInitAudio(void)
     mixer = NEXUS_AudioMixer_Open(NULL);
     if (mixer == NULL) {
         LOGE("%s: Could not open audio mixer!!!", __PRETTY_FUNCTION__);
+        BKNI_Free(pPlatformConfig);
         return NEXUS_UNKNOWN;
     }
 
     NEXUS_AudioPlayback_GetDefaultOpenSettings(&simpleAudioDecoderOpenSettings);
-    simpleAudioDecoderOpenSettings.heap = platformConfig.heap[NEXUS_MAIN_HEAP_IDX]; /* eFull mapping */
+    simpleAudioDecoderOpenSettings.heap = pPlatformConfig->heap[NEXUS_MAIN_HEAP_IDX]; /* eFull mapping */
 
     /* open the audio playback */
     for (i=0; i<MAX_AUDIO_PLAYBACKS; i++) {
         audioPlayback[i] = NEXUS_AudioPlayback_Open(i, &simpleAudioDecoderOpenSettings);
         if (audioPlayback[i] == NULL) {
             LOGE("%s: Could not open audio playback %d!!!", __PRETTY_FUNCTION__, i);
+            BKNI_Free(pPlatformConfig);
             return NEXUS_UNKNOWN;
         }
     }
@@ -469,12 +419,14 @@ int NexusService::platformInitAudio(void)
         rc = NEXUS_AudioMixer_AddInput(mixer, NEXUS_AudioDecoder_GetConnector(audioDecoder[0], NEXUS_AudioDecoderConnectorType_eStereo));
         if (rc) {
             LOGE("%s: Could not add audio decoder 0 to audio mixer!!!", __PRETTY_FUNCTION__);
+            BKNI_Free(pPlatformConfig);
             return NEXUS_UNKNOWN;
         }
         if (MAX_AUDIO_DECODERS > 1) {
             rc = NEXUS_AudioMixer_AddInput(mixer, NEXUS_AudioDecoder_GetConnector(audioDecoder[1], NEXUS_AudioDecoderConnectorType_eStereo));
             if (rc) {
                 LOGE("%s: Could not add audio decoder 1 to audio mixer!!!", __PRETTY_FUNCTION__);
+                BKNI_Free(pPlatformConfig);
                 return NEXUS_UNKNOWN;
             }
         }
@@ -484,35 +436,40 @@ int NexusService::platformInitAudio(void)
         rc = NEXUS_AudioMixer_AddInput(mixer, NEXUS_AudioPlayback_GetConnector(audioPlayback[0]));
         if (rc) {
             LOGE("%s: Could not add audio playback 0 to audio mixer!!!", __PRETTY_FUNCTION__);
+            BKNI_Free(pPlatformConfig);
             return NEXUS_UNKNOWN;
         }
         if (MAX_AUDIO_PLAYBACKS > 1) {
             rc = NEXUS_AudioMixer_AddInput(mixer, NEXUS_AudioPlayback_GetConnector(audioPlayback[1]));
             if (rc) {
                 LOGE("%s: Could not add audio playback 1 to audio mixer!!!", __PRETTY_FUNCTION__);
+                BKNI_Free(pPlatformConfig);
                 return NEXUS_UNKNOWN;
             }
         }
     }
 
 #if NEXUS_NUM_AUDIO_DACS
-    rc = NEXUS_AudioOutput_AddInput(NEXUS_AudioDac_GetConnector(platformConfig.outputs.audioDacs[0]), NEXUS_AudioMixer_GetConnector(mixer));
+    rc = NEXUS_AudioOutput_AddInput(NEXUS_AudioDac_GetConnector(pPlatformConfig->outputs.audioDacs[0]), NEXUS_AudioMixer_GetConnector(mixer));
     if (rc) {
         LOGE("%s: Could not add audio mixer to dacs 0 output!!!", __PRETTY_FUNCTION__);
+        BKNI_Free(pPlatformConfig);
         return NEXUS_UNKNOWN;
     }
 #endif
 #if NEXUS_HAS_HDMI_OUTPUT && NEXUS_NUM_HDMI_OUTPUTS
-    rc = NEXUS_AudioOutput_AddInput(NEXUS_HdmiOutput_GetAudioConnector(platformConfig.outputs.hdmi[0]), NEXUS_AudioMixer_GetConnector(mixer));
+    rc = NEXUS_AudioOutput_AddInput(NEXUS_HdmiOutput_GetAudioConnector(pPlatformConfig->outputs.hdmi[0]), NEXUS_AudioMixer_GetConnector(mixer));
     if (rc) {
         LOGE("%s: Could not add audio mixer to HDMI 0 output!!!", __PRETTY_FUNCTION__);
+        BKNI_Free(pPlatformConfig);
         return NEXUS_UNKNOWN;
     }
 #endif
 #if NEXUS_NUM_SPDIF_OUTPUTS 
-    rc = NEXUS_AudioOutput_AddInput(NEXUS_SpdifOutput_GetConnector(platformConfig.outputs.spdif[0]), NEXUS_AudioMixer_GetConnector(mixer));
+    rc = NEXUS_AudioOutput_AddInput(NEXUS_SpdifOutput_GetConnector(pPlatformConfig->outputs.spdif[0]), NEXUS_AudioMixer_GetConnector(mixer));
     if (rc) {
         LOGE("%s: Could not add audio mixer to SPDIF 0 output!!!", __PRETTY_FUNCTION__);
+        BKNI_Free(pPlatformConfig);
         return NEXUS_UNKNOWN;
     }
 #endif
@@ -522,12 +479,13 @@ int NexusService::platformInitAudio(void)
         NEXUS_SimpleAudioDecoder_GetDefaultServerSettings(&simpleAudioDecoderSettings);
         simpleAudioDecoderSettings.primary = audioDecoder[i];
 #if NEXUS_HAS_HDMI_OUTPUT && NEXUS_NUM_HDMI_OUTPUTS
-        simpleAudioDecoderSettings.hdmi.outputs[0] = platformConfig.outputs.hdmi[0];
+        simpleAudioDecoderSettings.hdmi.outputs[0] = pPlatformConfig->outputs.hdmi[0];
 #endif
         simpleAudioDecoderSettings.stcIndex = i;  /* Must set this to be able to do STC trick modes! */
         simpleAudioDecoder[i] = NEXUS_SimpleAudioDecoder_Create(i, &simpleAudioDecoderSettings);
         if (simpleAudioDecoder[i] == NULL) {
             LOGE("%s: Could not open simple audio decoder %d!!!", __PRETTY_FUNCTION__, i);
+            BKNI_Free(pPlatformConfig);
             return NEXUS_UNKNOWN;
         }
     }
@@ -540,9 +498,11 @@ int NexusService::platformInitAudio(void)
         simpleAudioPlayback[i] = NEXUS_SimpleAudioPlayback_Create(i, &simpleAudioPlaybackSettings);
         if (simpleAudioPlayback[i] == NULL) {
             LOGE("%s: Could not open simple audio playback %d!!!", __PRETTY_FUNCTION__, i);
+            BKNI_Free(pPlatformConfig);
             return NEXUS_UNKNOWN;
         }
     }
+    BKNI_Free(pPlatformConfig);
     return rc;
 }
 
@@ -573,17 +533,37 @@ void NexusService::setAudioState(bool enable)
     }
 }
 
-void NexusService::hotplugCallback(void *context __unused, int param __unused)
+void NexusService::hdmiOutputHotplugCallback(void *context __unused, int param __unused)
 {
 #if NEXUS_HAS_HDMI_OUTPUT
-    NexusService *pNexusService = reinterpret_cast<NexusService *>(context);
+    NEXUS_HdmiOutputStatus       status;
+    NEXUS_PlatformConfiguration *pPlatformConfig;
+    NEXUS_HdmiOutputHandle       hdmiOutput;
+    NEXUS_HdmiOutputSettings     hdmiSettings;
+    NexusService *               pNexusService;
 
-    LOGV("%s: HDMI %d hotplug called!", __PRETTY_FUNCTION__, param);
+    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+    if (pPlatformConfig == NULL) {
+        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+    }
+    else {
+        NEXUS_Platform_GetConfiguration(pPlatformConfig);
+        hdmiOutput = pPlatformConfig->outputs.hdmi[param];
+        BKNI_Free(pPlatformConfig);
 
-    if (pNexusService->server->mHdmiHotplugEventListener[param] != NULL) {
-        b_hdmiOutputStatus status;
+        NEXUS_HdmiOutput_GetStatus(hdmiOutput, &status);
 
-        if (pNexusService->getHdmiOutputStatus(param, &status) == true) {
+        LOGD("%s: HDMI%d hotplug %s (receive device %s powered)", __func__, param, status.connected ? "connected" : "disconnected", status.rxPowered ? "is" : "isn't");
+
+        /* force HDMI updates after a hotplug */
+        NEXUS_HdmiOutput_GetSettings(hdmiOutput, &hdmiSettings) ;
+        NEXUS_HdmiOutput_SetSettings(hdmiOutput, &hdmiSettings) ;
+
+        /* restart HDCP if it was previously enabled */
+        NEXUS_HdmiOutput_StartHdcpAuthentication(hdmiOutput);
+
+        pNexusService = reinterpret_cast<NexusService *>(context);
+        if (pNexusService->server->mHdmiHotplugEventListener[param] != NULL) {
             LOGV("%s: Firing off HDMI%d hotplug %s event...", __PRETTY_FUNCTION__, param, (status.connected && status.rxPowered) ? "connected" : "disconnected");
             pNexusService->server->mHdmiHotplugEventListener[param]->onHdmiHotplugEventReceived(param, status.connected && status.rxPowered);
         }
@@ -595,22 +575,55 @@ int NexusService::platformInitHdmiOutputs()
 {
     int rc = 0;
 #if NEXUS_HAS_HDMI_OUTPUT
-    for (int index = 0; index < NEXUS_NUM_HDMI_OUTPUTS; index++) {
-        NEXUS_PlatformConfiguration platformConfig;
-        NEXUS_HdmiOutputHandle      hdmiOutput;
-        NEXUS_HdmiOutputSettings    hdmiSettings;
+    NEXUS_PlatformConfiguration *pPlatformConfig;
 
-        NEXUS_Platform_GetConfiguration(&platformConfig);
-        hdmiOutput = platformConfig.outputs.hdmi[index];
+    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+    if (pPlatformConfig == NULL) {
+        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+        return NEXUS_OUT_OF_SYSTEM_MEMORY;
+    }
+
+    NEXUS_Platform_GetConfiguration(pPlatformConfig);
+
+    for (int index = 0; index < NEXUS_NUM_HDMI_OUTPUTS; index++) {
+        NEXUS_HdmiOutputHandle       hdmiOutput;
+        NEXUS_HdmiOutputSettings     hdmiSettings;
+
+        hdmiOutput = pPlatformConfig->outputs.hdmi[index];
         NEXUS_HdmiOutput_GetSettings(hdmiOutput, &hdmiSettings);
-        hdmiSettings.hotplugCallback.callback = hotplugCallback;
+        hdmiSettings.hotplugCallback.callback = hdmiOutputHotplugCallback;
         hdmiSettings.hotplugCallback.context = this;
         hdmiSettings.hotplugCallback.param = index;
         rc = NEXUS_HdmiOutput_SetSettings(hdmiOutput, &hdmiSettings);
         if (rc) {
             ALOGE("%s: Could not set HDMI%d output settings!!!", __PRETTY_FUNCTION__, index);
         }
+#if ANDROID_ENABLE_HDMI_HDCP
+        /* initalize HDCP settings, keys, etc. */
+        NEXUS_HdmiOutputHdcpSettings hdmiOutputHdcpSettings;
+
+        NEXUS_HdmiOutput_GetHdcpSettings(hdmiOutput, &hdmiOutputHdcpSettings);
+
+        /* copy the encrypted key set and its Aksv here */
+        BKNI_Memcpy(hdmiOutputHdcpSettings.encryptedKeySet, encryptedTxKeySet, NEXUS_HDMI_OUTPUT_HDCP_NUM_KEYS * sizeof(NEXUS_HdmiOutputHdcpKey));
+        BKNI_Memcpy(&hdmiOutputHdcpSettings.aksv, &hdcpTxAksv, NEXUS_HDMI_OUTPUT_HDCP_KSV_LENGTH);
+
+        /* install HDCP success callback */
+        hdmiOutputHdcpSettings.successCallback.callback = hdmiOutputHdcpStateChangedCallback;
+        hdmiOutputHdcpSettings.successCallback.context = hdmiOutput;
+
+        /* install HDCP failure callback */
+        hdmiOutputHdcpSettings.failureCallback.callback = hdmiOutputHdcpStateChangedCallback;
+        hdmiOutputHdcpSettings.failureCallback.context = hdmiOutput;
+
+        NEXUS_HdmiOutput_SetHdcpSettings(hdmiOutput, &hdmiOutputHdcpSettings);
+
+        /* install list of revoked KSVs from SRMs (System Renewability Message) if available */
+        NEXUS_HdmiOutput_SetHdcpRevokedKsvs(hdmiOutput, RevokedKsvs, NumRevokedKsvs) ;
+        NEXUS_HdmiOutput_StartHdcpAuthentication(hdmiOutput);
+#endif
     }
+    BKNI_Free(pPlatformConfig);
 #endif
     return rc;
 }
@@ -618,13 +631,34 @@ int NexusService::platformInitHdmiOutputs()
 void NexusService::platformUninitHdmiOutputs()
 {
 #if NEXUS_HAS_HDMI_OUTPUT
+    NEXUS_PlatformConfiguration *pPlatformConfig;
+
+    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+    if (pPlatformConfig == NULL) {
+        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+        return;
+    }
+
+    NEXUS_Platform_GetConfiguration(pPlatformConfig);
+
     for (int index = 0; index < NEXUS_NUM_HDMI_OUTPUTS; index++) {
-        NEXUS_PlatformConfiguration platformConfig;
         NEXUS_HdmiOutputHandle      hdmiOutput;
         NEXUS_HdmiOutputSettings    hdmiSettings;
 
-        NEXUS_Platform_GetConfiguration(&platformConfig);
-        hdmiOutput = platformConfig.outputs.hdmi[index];
+        hdmiOutput = pPlatformConfig->outputs.hdmi[index];
+
+#if ANDROID_ENABLE_HDMI_HDCP
+        NEXUS_HdmiOutputHdcpSettings hdmiOutputHdcpSettings;
+
+        NEXUS_HdmiOutput_DisableHdcpAuthentication(hdmiOutput);
+
+        NEXUS_HdmiOutput_GetHdcpSettings(hdmiOutput, &hdmiOutputHdcpSettings);
+        hdmiOutputHdcpSettings.successCallback.callback = NULL;
+        hdmiOutputHdcpSettings.successCallback.context = NULL;
+        hdmiOutputHdcpSettings.failureCallback.callback = NULL;
+        hdmiOutputHdcpSettings.failureCallback.context = NULL;
+        NEXUS_HdmiOutput_SetHdcpSettings(hdmiOutput, &hdmiOutputHdcpSettings);
+#endif
         NEXUS_HdmiOutput_GetSettings(hdmiOutput, &hdmiSettings);
         hdmiSettings.hotplugCallback.callback = NULL;
         hdmiSettings.hotplugCallback.context = NULL;
@@ -633,17 +667,23 @@ void NexusService::platformUninitHdmiOutputs()
             ALOGE("%s: Could not set HDMI%d output settings!!!", __PRETTY_FUNCTION__, index);
         }
     }
+    BKNI_Free(pPlatformConfig);
 #endif
 }
 
 int NexusService::platformInitVideo(void)
 {
-    NEXUS_DisplaySettings           displaySettings;        
-    NEXUS_PlatformConfiguration     platformConfig;
-    NEXUS_VideoDecoderOpenSettings  videoDecoderOpenSettings;
+    NEXUS_DisplaySettings          displaySettings;
+    NEXUS_PlatformConfiguration   *pPlatformConfig;
+    NEXUS_VideoDecoderOpenSettings videoDecoderOpenSettings;
     int rc = 0;
     
-    NEXUS_Platform_GetConfiguration(&platformConfig);
+    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+    if (pPlatformConfig == NULL) {
+        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+        return NEXUS_OUT_OF_SYSTEM_MEMORY;
+    }
+    NEXUS_Platform_GetConfiguration(pPlatformConfig);
     
     /* Init displays */
     for(int j=0; j<MAX_NUM_DISPLAYS; j++) {
@@ -653,6 +693,7 @@ int NexusService::platformInitVideo(void)
         displayState[j].display = NEXUS_Display_Open(j, &displaySettings);
         if (!displayState[j].display) {
             LOGE("%s: NEXUS_Display_Open(%d) failed!!", __PRETTY_FUNCTION__, j);
+            BKNI_Free(pPlatformConfig);
             return NEXUS_UNKNOWN;
         }
         displayState[j].hNexusDisplay = reinterpret_cast<int>(displayState[j].display);
@@ -660,18 +701,20 @@ int NexusService::platformInitVideo(void)
     
 #if NEXUS_NUM_COMPONENT_OUTPUTS
     /* Add Component Output to the HD-Display */
-    rc = NEXUS_Display_AddOutput(displayState[HD_DISPLAY].display, NEXUS_ComponentOutput_GetConnector(platformConfig.outputs.component[0]));
+    rc = NEXUS_Display_AddOutput(displayState[HD_DISPLAY].display, NEXUS_ComponentOutput_GetConnector(pPlatformConfig->outputs.component[0]));
     if (rc!=NEXUS_SUCCESS) {
         LOGE("%s: NEXUS_Display_AddOutput(component) failed!!", __PRETTY_FUNCTION__);
+        BKNI_Free(pPlatformConfig);
         return rc;
     }
 #endif
 
 #if NEXUS_HAS_HDMI_OUTPUT && NEXUS_NUM_HDMI_OUTPUTS
     /* Add HDMI Output to the HD-Display */
-    rc = NEXUS_Display_AddOutput(displayState[HD_DISPLAY].display, NEXUS_HdmiOutput_GetVideoConnector(platformConfig.outputs.hdmi[0]));
+    rc = NEXUS_Display_AddOutput(displayState[HD_DISPLAY].display, NEXUS_HdmiOutput_GetVideoConnector(pPlatformConfig->outputs.hdmi[0]));
     if (rc!=NEXUS_SUCCESS) {
         LOGE("%s: NEXUS_Display_AddOutput(hdmi) failed!!", __PRETTY_FUNCTION__);
+        BKNI_Free(pPlatformConfig);
         return rc;
     }
 #endif
@@ -679,9 +722,10 @@ int NexusService::platformInitVideo(void)
 #if NEXUS_NUM_COMPOSITE_OUTPUTS
     if (MAX_NUM_DISPLAYS > 1) {
         /* Add Composite Output to the SD-Display */
-        rc = NEXUS_Display_AddOutput(displayState[SD_DISPLAY].display, NEXUS_CompositeOutput_GetConnector(platformConfig.outputs.composite[0]));
+        rc = NEXUS_Display_AddOutput(displayState[SD_DISPLAY].display, NEXUS_CompositeOutput_GetConnector(pPlatformConfig->outputs.composite[0]));
         if (rc!=NEXUS_SUCCESS) {
             LOGE("%s: NEXUS_Display_AddOutput(composite) failed!!", __PRETTY_FUNCTION__);
+            BKNI_Free(pPlatformConfig);
             return rc;
         }
     }
@@ -693,6 +737,7 @@ int NexusService::platformInitVideo(void)
             displayState[j].video_window[i] = NEXUS_VideoWindow_Open(displayState[j].display, i);
             if (!displayState[j].video_window[i]) {
                 LOGE("%s: NEXUS_VideoWindow_Open(%d) failed!!", __PRETTY_FUNCTION__, i);
+                BKNI_Free(pPlatformConfig);
                 return NEXUS_UNKNOWN;
             }
             displayState[j].hNexusVideoWindow[i] = reinterpret_cast<int>(displayState[j].video_window[i]);
@@ -712,6 +757,7 @@ int NexusService::platformInitVideo(void)
         videoDecoder[i] = NEXUS_VideoDecoder_Open(i, &videoDecoderOpenSettings); 
         if (!videoDecoder[i]) {
             LOGE("%s: NEXUS_VideoDecoder_Open(%d) failed!!", __PRETTY_FUNCTION__, i);
+            BKNI_Free(pPlatformConfig);
             return NEXUS_UNKNOWN;
         }
 
@@ -734,6 +780,7 @@ int NexusService::platformInitVideo(void)
         simpleVideoDecoder[i] = NEXUS_SimpleVideoDecoder_Create(i, &settings);
         if (!simpleVideoDecoder[i]) {
             LOGE("%s: NEXUS_SimpleVideoDecoder_Open(%d) failed!!", __PRETTY_FUNCTION__, i);
+            BKNI_Free(pPlatformConfig);
             return NEXUS_UNKNOWN;
         }
 
@@ -750,24 +797,7 @@ int NexusService::platformInitVideo(void)
         }
         NEXUS_SimpleVideoDecoder_SetServerSettings(simpleVideoDecoder[i], &settings);
     }
-
-#if ANDROID_ENABLE_HDMI_HDCP
-    for (int i=0; i < NEXUS_NUM_HDMI_OUTPUTS; i++) {
-        /* Install hotplug callback -- video only for now */
-        NEXUS_HdmiOutputSettings hdmiSettings;
-
-        NEXUS_HdmiOutput_GetSettings(platformConfig.outputs.hdmi[i], &hdmiSettings);
-        hdmiSettings.hotplugCallback.callback = hotplugCallback;
-        hdmiSettings.hotplugCallback.context = platformConfig.outputs.hdmi[i];
-        hdmiSettings.hotplugCallback.param = i;
-        NEXUS_HdmiOutput_SetSettings(platformConfig.outputs.hdmi[i], &hdmiSettings);
-
-        /* initalize HDCP settings, keys, etc. */
-        initializeHdmiOutputHdcpSettings(i) ;
-        NEXUS_HdmiOutput_StartHdcpAuthentication(platformConfig.outputs.hdmi[i]);
-    }
-#endif
-
+    BKNI_Free(pPlatformConfig);
     return rc;
 }
 
@@ -816,13 +846,14 @@ int NexusService::platformInitSurfaceCompositor(void)
     p_surface_compositor_settings = (NEXUS_SurfaceCompositorSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorSettings));
     if (NULL == p_surface_compositor_settings) {
         LOGE("%s:%d BKNI_Malloc failed",__PRETTY_FUNCTION__,__LINE__);
-        return NEXUS_OUT_OF_DEVICE_MEMORY;
+        return NEXUS_OUT_OF_SYSTEM_MEMORY;
     }
 
     /* create surface compositor server */    
     surface_compositor = NEXUS_SurfaceCompositor_Create(0);
     if (surface_compositor == NULL) {
         LOGE("%s: Could not create Surface Compositor 0!!!", __PRETTY_FUNCTION__);
+        BKNI_Free(p_surface_compositor_settings);
         return NEXUS_UNKNOWN;
     }
     NEXUS_SurfaceCompositor_GetSettings(surface_compositor, p_surface_compositor_settings);
@@ -877,23 +908,18 @@ int NexusService::platformInitSurfaceCompositor(void)
     if (rc) {
         LOGE("%s:%d NSC_SetSettings failed",__PRETTY_FUNCTION__,__LINE__);
     }
-    else {
-        if (p_surface_compositor_settings)
-            BKNI_Free(p_surface_compositor_settings);
-    }
+    BKNI_Free(p_surface_compositor_settings);
     return rc;
 }
 
 void NexusService::platformInit()
 {
-    NEXUS_Error rc;
-    int i=0;
-    char value[PROPERTY_VALUE_MAX];
-    NEXUS_Graphics2DSettings        gfxSettings;
-    NEXUS_PlatformConfiguration platformConfig;
-    NEXUS_PlatformStartServerSettings serverSettings;
+    NEXUS_Error                        rc;
+    int                                i=0;
+    char                               value[PROPERTY_VALUE_MAX];
+    NEXUS_Graphics2DSettings           gfxSettings;
+    NEXUS_PlatformStartServerSettings  serverSettings;
 
-    NEXUS_Platform_GetConfiguration(&platformConfig);
     NEXUS_Platform_GetDefaultStartServerSettings(&serverSettings);
 
     LOGI("***************************\n\tStarting server in mode %d \n***************************", ANDROID_CLIENT_SECURITY_MODE);
@@ -1006,22 +1032,6 @@ void NexusService::platformUninit()
     }
 #endif
 
-#if ANDROID_ENABLE_HDMI_HDCP
-    NEXUS_PlatformConfiguration platformConfig;
-
-    NEXUS_Platform_GetConfiguration(&platformConfig);
-
-    for (int i=0; i < NEXUS_NUM_HDMI_OUTPUTS; i++) {
-        NEXUS_HdmiOutputSettings hdmiSettings;
-
-        NEXUS_HdmiOutput_GetSettings(platformConfig.outputs.hdmi[i], &hdmiSettings);
-        hdmiSettings.hotplugCallback.callback = NULL;
-        hdmiSettings.hotplugCallback.context = NULL;
-        hdmiSettings.hotplugCallback.param = 0;
-        NEXUS_HdmiOutput_SetSettings(platformConfig.outputs.hdmi[i], &hdmiSettings);
-    }
-#endif
-
     if (gfx2D) {
         NEXUS_Graphics2D_Close(gfx2D);
         gfx2D = NULL;
@@ -1084,35 +1094,43 @@ NEXUS_ClientHandle NexusService::clientJoin(const b_refsw_client_client_name *pC
             (void)BERR_TRACE(BERR_NOT_SUPPORTED);
         }
         else {
-            NEXUS_PlatformConfiguration platformConfig;
-            NEXUS_ClientSettings        clientSettings;
+            NEXUS_PlatformConfiguration *pPlatformConfig;
+            NEXUS_ClientSettings         clientSettings;
 
-            LOGI("client %s registering as '%s'", pClientName->string, (char *)pClientAuthenticationSettings->certificate.data);
-
-            NEXUS_Platform_GetDefaultClientSettings(&clientSettings);
-            clientSettings.authentication.certificate = pClientAuthenticationSettings->certificate;
-            NEXUS_Platform_GetConfiguration(&platformConfig);
-            clientSettings.configuration.heap[0] = NEXUS_Platform_GetFramebufferHeap(NEXUS_OFFSCREEN_SURFACE);
-            clientSettings.configuration.heap[1] = platformConfig.heap[NEXUS_MAIN_HEAP_IDX];
-#ifdef NEXUS_VIDEO_SECURE_HEAP
-            clientSettings.configuration.heap[2] = platformConfig.heap[NEXUS_VIDEO_SECURE_HEAP];
-#endif
-#ifdef NEXUS_SECONDARY_OFFSCREEN_SURFACE
-            clientSettings.configuration.heap[3] = NEXUS_Platform_GetFramebufferHeap(NEXUS_SECONDARY_OFFSCREEN_SURFACE);
-            if (clientSettings.configuration.heap[3] == clientSettings.configuration.heap[0]) {
-                clientSettings.configuration.heap[3] = NULL;
-            }
-#endif
-            clientSettings.configuration.mode = (NEXUS_ClientMode)ANDROID_CLIENT_SECURITY_MODE;
-            nexusClient = NEXUS_Platform_RegisterClient(&clientSettings);
-            if (nexusClient) {
-                LOGI("%s: Successfully registered client \"%s\".", __PRETTY_FUNCTION__, pClientName->string);
-                server->lastId.client++;
-                server->mJoinRefCount++;
+            pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+            if (pPlatformConfig == NULL) {
+                ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+                (void)BERR_TRACE(BERR_OUT_OF_SYSTEM_MEMORY);
             }
             else {
-                LOGE("%s: Could not register client \"%s\"!!!", __PRETTY_FUNCTION__, pClientName->string);
-                (void)BERR_TRACE(BERR_NOT_SUPPORTED);
+                LOGI("client %s registering as '%s'", pClientName->string, (char *)pClientAuthenticationSettings->certificate.data);
+
+                NEXUS_Platform_GetDefaultClientSettings(&clientSettings);
+                clientSettings.authentication.certificate = pClientAuthenticationSettings->certificate;
+                NEXUS_Platform_GetConfiguration(pPlatformConfig);
+                clientSettings.configuration.heap[0] = NEXUS_Platform_GetFramebufferHeap(NEXUS_OFFSCREEN_SURFACE);
+                clientSettings.configuration.heap[1] = pPlatformConfig->heap[NEXUS_MAIN_HEAP_IDX];
+#ifdef NEXUS_VIDEO_SECURE_HEAP
+                clientSettings.configuration.heap[2] = pPlatformConfig->heap[NEXUS_VIDEO_SECURE_HEAP];
+#endif
+#ifdef NEXUS_SECONDARY_OFFSCREEN_SURFACE
+                clientSettings.configuration.heap[3] = NEXUS_Platform_GetFramebufferHeap(NEXUS_SECONDARY_OFFSCREEN_SURFACE);
+                if (clientSettings.configuration.heap[3] == clientSettings.configuration.heap[0]) {
+                    clientSettings.configuration.heap[3] = NULL;
+                }
+#endif
+                clientSettings.configuration.mode = (NEXUS_ClientMode)ANDROID_CLIENT_SECURITY_MODE;
+                nexusClient = NEXUS_Platform_RegisterClient(&clientSettings);
+                if (nexusClient) {
+                    LOGI("%s: Successfully registered client \"%s\".", __PRETTY_FUNCTION__, pClientName->string);
+                    server->lastId.client++;
+                    server->mJoinRefCount++;
+                }
+                else {
+                    LOGE("%s: Could not register client \"%s\"!!!", __PRETTY_FUNCTION__, pClientName->string);
+                    (void)BERR_TRACE(BERR_NOT_SUPPORTED);
+                }
+                BKNI_Free(pPlatformConfig);
             }
         }
     }
@@ -1157,8 +1175,6 @@ NexusClientContext * NexusService::createClientContext(const b_refsw_client_clie
     NexusClientContext * client;
     NEXUS_ClientSettings clientSettings;
     NEXUS_Error rc;
-
-    NEXUS_PlatformConfiguration platformConfig;
 
     client = (NexusClientContext *)BKNI_Malloc(sizeof(NexusClientContext));
     if (client==NULL) {
@@ -1652,87 +1668,101 @@ void NexusService::setGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsC
 
 void NexusService::setDisplayOutputs(int display)
 {
-    NEXUS_PlatformConfiguration platformConfig;
-        
-    NEXUS_Platform_GetConfiguration(&platformConfig);
-    LOGI("NexusService::setDisplayOutputs %d",display);
-    
-    if (display) {
+    NEXUS_PlatformConfiguration *pPlatformConfig;
+
+    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+    if (pPlatformConfig == NULL) {
+        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+    }
+    else {
+        NEXUS_Platform_GetConfiguration(pPlatformConfig);
+        LOGI("NexusService::setDisplayOutputs %d",display);
+
+        if (display) {
 #if NEXUS_NUM_COMPONENT_OUTPUTS
-        NEXUS_Display_AddOutput(displayState[HD_DISPLAY].display, NEXUS_ComponentOutput_GetConnector(platformConfig.outputs.component[0]));
+            NEXUS_Display_AddOutput(displayState[HD_DISPLAY].display, NEXUS_ComponentOutput_GetConnector(pPlatformConfig->outputs.component[0]));
 #endif
 
 #if NEXUS_HAS_HDMI_OUTPUT && NEXUS_NUM_HDMI_OUTPUTS
-        /* Add HDMI Output to the HD-Display */
-        NEXUS_Display_AddOutput(displayState[HD_DISPLAY].display, NEXUS_HdmiOutput_GetVideoConnector(platformConfig.outputs.hdmi[0]));
+            /* Add HDMI Output to the HD-Display */
+            NEXUS_Display_AddOutput(displayState[HD_DISPLAY].display, NEXUS_HdmiOutput_GetVideoConnector(pPlatformConfig->outputs.hdmi[0]));
 #endif
 
 #if NEXUS_NUM_COMPOSITE_OUTPUTS
-        if (MAX_NUM_DISPLAYS > 1) {
-            /* Add Composite Output to the SD-Display */
-            NEXUS_Display_AddOutput(displayState[SD_DISPLAY].display, NEXUS_CompositeOutput_GetConnector(platformConfig.outputs.composite[0]));        
-        }
+            if (MAX_NUM_DISPLAYS > 1) {
+                /* Add Composite Output to the SD-Display */
+                NEXUS_Display_AddOutput(displayState[SD_DISPLAY].display, NEXUS_CompositeOutput_GetConnector(pPlatformConfig->outputs.composite[0]));
+            }
 #endif
-    } 
-    else {
-        NEXUS_Display_RemoveAllOutputs(displayState[HD_DISPLAY].display); 
-        
-        if (MAX_NUM_DISPLAYS > 1) {
-            /* Add Composite Output to the SD-Display */
-            NEXUS_Display_RemoveAllOutputs(displayState[SD_DISPLAY].display);        
-        }      
-    } 
+        }
+        else {
+            NEXUS_Display_RemoveAllOutputs(displayState[HD_DISPLAY].display);
+
+            if (MAX_NUM_DISPLAYS > 1) {
+                /* Add Composite Output to the SD-Display */
+                NEXUS_Display_RemoveAllOutputs(displayState[SD_DISPLAY].display);
+            }
+        }
+        BKNI_Free(pPlatformConfig);
+    }
     return;
 }
 
 void NexusService::setAudioMute(int mute)
 {
-    NEXUS_PlatformConfiguration platformConfig;
+    NEXUS_PlatformConfiguration *pPlatformConfig;
     NEXUS_AudioOutputSettings settings;
     NEXUS_AudioOutput output;
     NEXUS_Error aud_err;
     int32_t leftVolume;
     int32_t rightVolume;
 
-    NEXUS_Platform_GetConfiguration(&platformConfig);
+    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+    if (pPlatformConfig == NULL) {
+        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+    }
+    else {
+        NEXUS_Platform_GetConfiguration(pPlatformConfig);
 
 #if NEXUS_NUM_AUDIO_DACS
-    /* DAC out params config */
-    output = NEXUS_AudioDac_GetConnector(platformConfig.outputs.audioDacs[0]);
-    NEXUS_AudioOutput_GetSettings(output, &settings);
-    settings.muted = mute;
-    
-    /* Set Dac Volume */
-    aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
-    BDBG_ASSERT(aud_err==BERR_SUCCESS);
+        /* DAC out params config */
+        output = NEXUS_AudioDac_GetConnector(pPlatformConfig->outputs.audioDacs[0]);
+        NEXUS_AudioOutput_GetSettings(output, &settings);
+        settings.muted = mute;
+
+        /* Set Dac Volume */
+        aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
+        BDBG_ASSERT(aud_err==BERR_SUCCESS);
 #endif
 
-    /* Spdif out params config */
+        /* Spdif out params config */
 #if NEXUS_NUM_SPDIF_OUTPUTS 
-    output = NEXUS_SpdifOutput_GetConnector(platformConfig.outputs.spdif[0]);
-    NEXUS_AudioOutput_GetSettings(output, &settings);
-    settings.muted = mute;
-    
-    /* Set Spdif Volume */
-    aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
-    BDBG_ASSERT(aud_err==BERR_SUCCESS);
+        output = NEXUS_SpdifOutput_GetConnector(pPlatformConfig->outputs.spdif[0]);
+        NEXUS_AudioOutput_GetSettings(output, &settings);
+        settings.muted = mute;
+
+        /* Set Spdif Volume */
+        aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
+        BDBG_ASSERT(aud_err==BERR_SUCCESS);
 #endif
 
-    /* Set HDMI volume */
+        /* Set HDMI volume */
 #if NEXUS_HAS_HDMI_OUTPUT && NEXUS_NUM_HDMI_OUTPUTS
-    output = NEXUS_HdmiOutput_GetAudioConnector(platformConfig.outputs.hdmi[0]);
-    NEXUS_AudioOutput_GetSettings(output, &settings);
-    settings.muted = false;
-    aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
-    BDBG_ASSERT(aud_err==BERR_SUCCESS);
+        output = NEXUS_HdmiOutput_GetAudioConnector(pPlatformConfig->outputs.hdmi[0]);
+        NEXUS_AudioOutput_GetSettings(output, &settings);
+        settings.muted = false;
+        aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
+        BDBG_ASSERT(aud_err==BERR_SUCCESS);
 #endif
+        BKNI_Free(pPlatformConfig);
+    }
 }
 
 #define AUDIO_VOLUME_SETTING_MIN (0)
 #define AUDIO_VOLUME_SETTING_MAX (99)
 
 /****************************************************
-* Volume Table in dB, Mapping as linear attenuation *
+
 ****************************************************/
 static uint32_t Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX+1] =
 {
@@ -1777,53 +1807,60 @@ void NexusService::setAudioVolume(float left, float right)
     if (rightVolume < AUDIO_VOLUME_SETTING_MIN)
         rightVolume = AUDIO_VOLUME_SETTING_MIN;
 
-    NEXUS_PlatformConfiguration platformConfig;
+    NEXUS_PlatformConfiguration *pPlatformConfig;
     NEXUS_AudioOutputSettings settings;
     NEXUS_AudioOutput output;
     NEXUS_Error aud_err;
 
-    NEXUS_Platform_GetConfiguration(&platformConfig);
+    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+    if (pPlatformConfig == NULL) {
+        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+    }
+    else {
+        NEXUS_Platform_GetConfiguration(pPlatformConfig);
 
 #if NEXUS_NUM_AUDIO_DACS
-    /* DAC out params config */
-    output = NEXUS_AudioDac_GetConnector(platformConfig.outputs.audioDacs[0]);
-    NEXUS_AudioOutput_GetSettings(output, &settings);
-    settings.volumeType = NEXUS_AudioVolumeType_eDecibel;
-    settings.muted = false;
-    settings.leftVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-leftVolume];
-    settings.rightVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-rightVolume];
+        /* DAC out params config */
+        output = NEXUS_AudioDac_GetConnector(pPlatformConfig->outputs.audioDacs[0]);
+        NEXUS_AudioOutput_GetSettings(output, &settings);
+        settings.volumeType = NEXUS_AudioVolumeType_eDecibel;
+        settings.muted = false;
+        settings.leftVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-leftVolume];
+        settings.rightVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-rightVolume];
 
-    /* Set Dac Volume */
-    aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
-    BDBG_ASSERT(aud_err==BERR_SUCCESS);
+        /* Set Dac Volume */
+        aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
+        BDBG_ASSERT(aud_err==BERR_SUCCESS);
 #endif
 
-    /* Spdif out params config */
+        /* Spdif out params config */
 #if NEXUS_NUM_SPDIF_OUTPUTS 
-    output = NEXUS_SpdifOutput_GetConnector(platformConfig.outputs.spdif[0]);
-    NEXUS_AudioOutput_GetSettings(output, &settings);
-    settings.volumeType = NEXUS_AudioVolumeType_eDecibel;
-    settings.muted = false;
-    settings.leftVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-leftVolume];
-    settings.rightVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-rightVolume];
+        output = NEXUS_SpdifOutput_GetConnector(pPlatformConfig->outputs.spdif[0]);
+        NEXUS_AudioOutput_GetSettings(output, &settings);
+        settings.volumeType = NEXUS_AudioVolumeType_eDecibel;
+        settings.muted = false;
+        settings.leftVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-leftVolume];
+        settings.rightVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-rightVolume];
 
-    /* Set Spdif Volume */
-    aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
-    BDBG_ASSERT(aud_err==BERR_SUCCESS);
+        /* Set Spdif Volume */
+        aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
+        BDBG_ASSERT(aud_err==BERR_SUCCESS);
 #endif
 
-    /* Set HDMI volume */
+        /* Set HDMI volume */
 #if NEXUS_HAS_HDMI_OUTPUT && NEXUS_NUM_HDMI_OUTPUTS
-    output = NEXUS_HdmiOutput_GetAudioConnector(platformConfig.outputs.hdmi[0]);
-    NEXUS_AudioOutput_GetSettings(output, &settings);
-    settings.volumeType = NEXUS_AudioVolumeType_eDecibel;
-    settings.muted = false;
-    settings.leftVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-leftVolume];
-    settings.rightVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-rightVolume];
-    
-    aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
-    BDBG_ASSERT(aud_err==BERR_SUCCESS);
+        output = NEXUS_HdmiOutput_GetAudioConnector(pPlatformConfig->outputs.hdmi[0]);
+        NEXUS_AudioOutput_GetSettings(output, &settings);
+        settings.volumeType = NEXUS_AudioVolumeType_eDecibel;
+        settings.muted = false;
+        settings.leftVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-leftVolume];
+        settings.rightVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-rightVolume];
+
+        aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
+        BDBG_ASSERT(aud_err==BERR_SUCCESS);
 #endif
+        BKNI_Free(pPlatformConfig);
+    }
 }
 
 
@@ -1884,7 +1921,7 @@ bool NexusService::connectHdmiInput(NexusClientContext * client __unused, b_refs
     unsigned timeout = 4;
     unsigned hdmiInputIndex = 0;
 
-    NEXUS_PlatformConfiguration platformConfig;
+    NEXUS_PlatformConfiguration *pPlatformConfig;
     NEXUS_HdmiInputSettings hdmiInputSettings;
     NEXUS_HdmiOutputStatus hdmiOutputStatus;
     NEXUS_HdmiOutputHandle hdmiOutput;
@@ -1910,9 +1947,15 @@ bool NexusService::connectHdmiInput(NexusClientContext * client __unused, b_refs
     /* all HDMI Tx/Rx combo chips have EDID RAM */
     hdmiInputSettings.useInternalEdid = true ;
 
-    NEXUS_Platform_GetConfiguration(&platformConfig);
+    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+    if (pPlatformConfig == NULL) {
+        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+        return false;
+    }
+    NEXUS_Platform_GetConfiguration(pPlatformConfig);
 
-    hdmiOutput = platformConfig.outputs.hdmi[0];
+    hdmiOutput = pPlatformConfig->outputs.hdmi[0];
+    BKNI_Free(pPlatformConfig);
 
     do {
         /* check for connected downstream device */
@@ -2068,7 +2111,7 @@ bool NexusService::disconnectHdmiInput(NexusClientContext * client __unused)
     NEXUS_Error rc = NEXUS_SUCCESS;
 #if NEXUS_HAS_HDMI_INPUT && NEXUS_HAS_HDMI_OUTPUT && ANDROID_SUPPORTS_HDMI_LEGACY
 #if NEXUS_NUM_AUDIO_INPUT_CAPTURES
-    NEXUS_PlatformConfiguration platformConfig;
+    NEXUS_PlatformConfiguration *pPlatformConfig;
     NEXUS_AudioOutput           hdmiAudioOutput;
 #endif
 
@@ -2080,8 +2123,14 @@ bool NexusService::disconnectHdmiInput(NexusClientContext * client __unused)
             NEXUS_AudioInputCapture_Stop(client->resources.hdmiInput.captureInput);
         }
 
-        NEXUS_Platform_GetConfiguration(&platformConfig);
-        hdmiAudioOutput = NEXUS_HdmiOutput_GetAudioConnector(platformConfig.outputs.hdmi[0]);
+        pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+        if (pPlatformConfig == NULL) {
+            ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+            return false;
+        }
+        NEXUS_Platform_GetConfiguration(pPlatformConfig);
+        hdmiAudioOutput = NEXUS_HdmiOutput_GetAudioConnector(pPlatformConfig->outputs.hdmi[0]);
+        BKNI_Free(pPlatformConfig);
 
         rc = NEXUS_AudioOutput_RemoveAllInputs(hdmiAudioOutput);
         if (rc != NEXUS_SUCCESS) {
@@ -2162,7 +2211,7 @@ bool NexusService::isCecEnabled(uint32_t cecId __unused)
     return enabled;
 }
 
-bool NexusService::setCecAutoWakeupEnabled(uint32_t cecId, bool enabled)
+bool NexusService::setCecAutoWakeupEnabled(uint32_t cecId __unused, bool enabled)
 {
     bool success = true;
     char value[PROPERTY_VALUE_MAX];
@@ -2249,13 +2298,19 @@ bool NexusService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdm
     if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
         unsigned loops;
         NEXUS_HdmiOutputHandle hdmiOutput;
-        NEXUS_PlatformConfiguration platformConfig;
+        NEXUS_PlatformConfiguration *pPlatformConfig;
         NEXUS_HdmiOutputStatus status;
 
         memset(pHdmiOutputStatus, 0, sizeof(*pHdmiOutputStatus));
 
-        NEXUS_Platform_GetConfiguration(&platformConfig);
-        hdmiOutput = platformConfig.outputs.hdmi[portId];
+        pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+        if (pPlatformConfig == NULL) {
+            ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+            return false;
+        }
+        NEXUS_Platform_GetConfiguration(pPlatformConfig);
+        hdmiOutput = pPlatformConfig->outputs.hdmi[portId];
+        BKNI_Free(pPlatformConfig);
 
         if (hdmiOutput != NULL) {
             for (loops = 0; loops < 4; loops++) {

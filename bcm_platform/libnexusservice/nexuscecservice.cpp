@@ -839,14 +839,20 @@ status_t NexusService::CecServiceManager::platformInit()
 {
     status_t status = OK;
     NEXUS_Error rc;
-    NEXUS_PlatformConfiguration platformConfig;
+    NEXUS_PlatformConfiguration *pPlatformConfig;
     NEXUS_CecSettings cecSettings;
     b_cecStatus cecStatus;
     b_hdmiOutputStatus hdmiOutputStatus;
     unsigned loops;
 
-    NEXUS_Platform_GetConfiguration(&platformConfig);
-    cecHandle  = platformConfig.outputs.cec[cecId];
+    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+    if (pPlatformConfig == NULL) {
+        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+        return NO_MEMORY;
+    }
+    NEXUS_Platform_GetConfiguration(pPlatformConfig);
+    cecHandle  = pPlatformConfig->outputs.cec[cecId];
+    BKNI_Free(pPlatformConfig);
 
     if (cecHandle == NULL) {
         ALOGV("%s: CEC%d not opened at platform init time - opening now...", __PRETTY_FUNCTION__, cecId);
@@ -977,7 +983,7 @@ bool NexusService::CecServiceManager::isPlatformInitialised()
 
 void NexusService::CecServiceManager::platformUninit()
 {
-    NEXUS_PlatformConfiguration platformConfig;
+    NEXUS_PlatformConfiguration *pPlatformConfig;
     int deviceType = getDeviceType();
 
     if (deviceType == -1 && mEventListener != NULL) {
@@ -997,10 +1003,17 @@ void NexusService::CecServiceManager::platformUninit()
         mCecRxMessageLooper = NULL;
     }
 
-    NEXUS_Platform_GetConfiguration(&platformConfig);
-    if (platformConfig.outputs.cec[cecId] == NULL && cecHandle != NULL) {
-        NEXUS_Cec_Close(cecHandle);
-        cecHandle = NULL;
+    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+    if (pPlatformConfig == NULL) {
+        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+    }
+    else {
+        NEXUS_Platform_GetConfiguration(pPlatformConfig);
+        if (pPlatformConfig->outputs.cec[cecId] == NULL && cecHandle != NULL) {
+            NEXUS_Cec_Close(cecHandle);
+            cecHandle = NULL;
+        }
+        BKNI_Free(pPlatformConfig);
     }
 }
 

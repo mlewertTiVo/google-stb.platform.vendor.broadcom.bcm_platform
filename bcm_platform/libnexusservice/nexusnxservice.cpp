@@ -562,8 +562,6 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
     NEXUS_ClientSettings clientSettings;
     NEXUS_Error rc;
 
-    NEXUS_PlatformConfiguration platformConfig;
-
     client = (NexusClientContext *)BKNI_Malloc(sizeof(NexusClientContext));
     if (client==NULL) {
         (void)BERR_TRACE(BERR_OUT_OF_SYSTEM_MEMORY);

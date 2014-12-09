@@ -217,7 +217,8 @@ private:
     int platformInitAudio(void);    
     int platformInitHdmiOutputs(void);
     void platformUninitHdmiOutputs();
-    static void hotplugCallback(void *context, int param);
+    static void hdmiOutputHotplugCallback(void *context, int param);
+    static void hdmiOutputHdcpStateChangedCallback(void *pContext, int param);
     void setDisplayState(bool enable);
     void setVideoState(bool enable);
     void setAudioState(bool enable);

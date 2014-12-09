@@ -270,9 +270,6 @@ int main(void)
     char value[PROPERTY_VALUE_MAX];
     char value2[2 * PROPERTY_VALUE_MAX] = { 0 };
     NEXUS_Error rc;
-    NEXUS_PlatformSettings platformSettings;
-    NEXUS_PlatformStartServerSettings serverSettings;
-    NEXUS_PlatformConfiguration platformConfig;
     NxClient_JoinSettings joinSettings;
 
     if (daemon(0, 0) < 0) {
