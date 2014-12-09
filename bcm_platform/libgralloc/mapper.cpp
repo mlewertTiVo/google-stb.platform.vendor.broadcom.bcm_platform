@@ -56,7 +56,7 @@ int gralloc_register_buffer(gralloc_module_t const* module,
       return -EINVAL;
    }
 
-   LOGE("%s : HandlePID:%d procssPID;%d", __FUNCTION__, hnd->pid, getpid());
+   LOGI("%s : HandlePID:%d procssPID;%d", __FUNCTION__, hnd->pid, getpid());
 
    if (hnd->pid != getpid())
    {
@@ -100,7 +100,7 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
       return -EINVAL;
    }
 
-   LOGE("%s : HandlePID:%d procssPID:%d", __FUNCTION__, hnd->pid, getpid());
+   LOGI("%s : HandlePID:%d procssPID:%d", __FUNCTION__, hnd->pid, getpid());
 
    return 0;
 }
