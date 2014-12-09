@@ -56,3 +56,29 @@ LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/nexus/nxclient/include
 
 include $(BUILD_SHARED_LIBRARY)
+
+# Audio Policy Manager
+ifeq ($(USE_CUSTOM_AUDIO_POLICY), 1)
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES := \
+    BrcmAudioPolicyManager.cpp
+
+LOCAL_SHARED_LIBRARIES := \
+    libcutils \
+    liblog \
+    libutils \
+    libmedia \
+    libbinder \
+    libaudiopolicymanagerdefault
+
+LOCAL_C_INCLUDES := \
+    external/tinyalsa/include \
+    frameworks/av/services/audiopolicy
+
+LOCAL_MODULE := libaudiopolicymanager
+LOCAL_MODULE_TAGS := optional
+
+include $(BUILD_SHARED_LIBRARY)
+endif
+
