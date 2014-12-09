@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "bcm-yv12-422p-conv"
+#define LOG_TAG "bcm-yv12-422p"
 
 #include <cutils/log.h>
 #include "gralloc_priv.h"
@@ -26,6 +26,8 @@
 #include "bkni.h"
 
 #include "hwcutils.h"
+
+#define CONVERSION_IS_VERBOSE 0
 
 static void complete(void *data, int unused)
 {
@@ -76,9 +78,11 @@ extern "C" NEXUS_Error yv12_to_422planar(private_handle_t *handle, NEXUS_Surface
     cr_addr = (uint8_t *)(y_addr + (stride * pSharedData->planes[DEFAULT_PLANE].height));
     cb_addr = (uint8_t *)(cr_addr + ((pSharedData->planes[DEFAULT_PLANE].height/2) * ((stride/2 + (align-1)) & ~(align-1))));
 
-    ALOGD("%s: yv12 (%d,%d):%d: y:%p, cr:%p, cb:%p\n", __FUNCTION__,
-       pSharedData->planes[DEFAULT_PLANE].width, pSharedData->planes[DEFAULT_PLANE].height,
-       stride, y_addr, cr_addr, cb_addr);
+    if (CONVERSION_IS_VERBOSE) {
+       ALOGD("%s: yv12 (%d,%d):%d: y:%p, cr:%p, cb:%p\n", __FUNCTION__,
+          pSharedData->planes[DEFAULT_PLANE].width, pSharedData->planes[DEFAULT_PLANE].height,
+          stride, y_addr, cr_addr, cb_addr);
+    }
 
     srcY = hwc_to_nsc_surface(pSharedData->planes[DEFAULT_PLANE].width,
                               pSharedData->planes[DEFAULT_PLANE].height,
@@ -98,7 +102,9 @@ extern "C" NEXUS_Error yv12_to_422planar(private_handle_t *handle, NEXUS_Surface
                                NEXUS_PixelFormat_eCb8,
                                cb_addr);
 
-    ALOGD("%s: intermediate surfaces: y:%p, cr:%p, cb:%p\n", __FUNCTION__, srcY, srcCr, srcCb);
+    if (CONVERSION_IS_VERBOSE) {
+       ALOGD("%s: intermediate surfaces: y:%p, cr:%p, cb:%p\n", __FUNCTION__, srcY, srcCr, srcCb);
+    }
     if (srcY == NULL || srcCr == NULL || srcCb == NULL) {
        ALOGE("%s: at least one null input surface: y:%p, cr:%p, cb:%p\n", __FUNCTION__, srcY, srcCr, srcCb);
        rc = NEXUS_INVALID_PARAMETER;
@@ -109,6 +115,7 @@ extern "C" NEXUS_Error yv12_to_422planar(private_handle_t *handle, NEXUS_Surface
     BKNI_CreateEvent(&spaceAvailableEvent);
 
     NEXUS_Graphics2D_GetSettings(gfx, &gfxSettings);
+    gfxSettings.pollingCheckpoint             = false;
     gfxSettings.checkpointCallback.callback   = complete;
     gfxSettings.checkpointCallback.context    = checkpointEvent;
     gfxSettings.packetSpaceAvailable.callback = complete;
@@ -116,7 +123,8 @@ extern "C" NEXUS_Error yv12_to_422planar(private_handle_t *handle, NEXUS_Surface
     NEXUS_Graphics2D_SetSettings(gfx, &gfxSettings);
     rc = NEXUS_Graphics2D_GetPacketBuffer(gfx, &buffer, &size, 1024);
     if ((rc != NEXUS_SUCCESS) || !size) {
-       ALOGE("%s: failed getting packet buffer from g2d\n", __FUNCTION__);
+       ALOGE("%s: failed getting packet buffer from g2d: (num:%d, id:0x%x)\n", __FUNCTION__,
+             NEXUS_GET_ERR_NUM(rc), NEXUS_GET_ERR_ID(rc));
        goto out_cleanup;
     }
 
@@ -179,19 +187,18 @@ extern "C" NEXUS_Error yv12_to_422planar(private_handle_t *handle, NEXUS_Surface
 
     rc = NEXUS_Graphics2D_PacketWriteComplete(gfx, (uint8_t*)next - (uint8_t*)buffer);
     if (rc != NEXUS_SUCCESS) {
-       ALOGE("%s: failed writting packet buffer\n", __FUNCTION__);
+       ALOGE("%s: failed writting packet buffer: (num:%d, id:0x%x)\n", __FUNCTION__,
+             NEXUS_GET_ERR_NUM(rc), NEXUS_GET_ERR_ID(rc));
        goto out_cleanup;
     }
     rc = NEXUS_Graphics2D_Checkpoint(gfx, NULL);
-    if (rc != NEXUS_SUCCESS) {
-       ALOGE("%s: failed g2d checkpoint\n", __FUNCTION__);
-       goto out_cleanup;
-    }
+    /* always expect to be told checkpoint is queued, then block wait for
+       the conversion to finish. */
     if (rc == NEXUS_GRAPHICS2D_QUEUED) {
-        /* blocking wait for conversion to finish. */
-        rc = BKNI_WaitForEvent(checkpointEvent, 5000);
+        rc = BKNI_WaitForEvent(checkpointEvent, 2000);
     } else {
-       ALOGE("%s: failed conversion\n", __FUNCTION__);
+       ALOGE("%s: failed conversion: (num:%d, id:0x%x)\n", __FUNCTION__,
+             NEXUS_GET_ERR_NUM(rc), NEXUS_GET_ERR_ID(rc));
        goto out_cleanup;
     }
 
