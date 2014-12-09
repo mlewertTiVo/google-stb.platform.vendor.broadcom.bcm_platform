@@ -990,35 +990,47 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     // blocking wait here...
     BKNI_WaitForEvent(ctx->prepare_event, 1000);
 
-    if (ctx->hwc_binder) {
-       ctx->hwc_binder->connect();
-       hwc_binder_advertise_video_surface(ctx);
+    // Don't prepare the primary if we are powering or powered off...
+    if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+        ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
+        goto out;
     }
-
-    // setup the layer composition classification.
-    primary_composition_setup(dev, list);
-
-    // remove all video/sideband layers first.
-    hwc_hide_unused_mm_layers(ctx);
-    hwc_hide_unused_sb_layers(ctx);
-
-    // allocate the NSC layer, if need be change the geometry, etc...
-    for (i = 0; i < list->numHwLayers; i++) {
-        layer = &list->hwLayers[i];
-        if (primary_need_nx_layer(dev, layer) == true) {
-            if (skiped_layer)
-               // mostly for debug for now.
-               if (HWC_SURFACE_LIFE_CYCLE_ERROR) ALOGE("%s: skipped %d layers before %d", __FUNCTION__, skiped_layer, i);
-            hwc_nsc_prepare_layer(ctx, layer, (int)i, (bool)(list->flags & HWC_GEOMETRY_CHANGED));
-            nx_layer_count++;
-        } else {
-            skiped_layer++;
+    if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
+        BKNI_ReleaseMutex(ctx->power_mutex);
+        if (ctx->hwc_binder) {
+           ctx->hwc_binder->connect();
+           hwc_binder_advertise_video_surface(ctx);
         }
+
+        // setup the layer composition classification.
+        primary_composition_setup(dev, list);
+
+        // remove all video/sideband layers first.
+        hwc_hide_unused_mm_layers(ctx);
+        hwc_hide_unused_sb_layers(ctx);
+
+        // allocate the NSC layer, if need be change the geometry, etc...
+        for (i = 0; i < list->numHwLayers; i++) {
+            layer = &list->hwLayers[i];
+            if (primary_need_nx_layer(dev, layer) == true) {
+                if (skiped_layer)
+                   // mostly for debug for now.
+                   if (HWC_SURFACE_LIFE_CYCLE_ERROR) ALOGE("%s: skipped %d layers before %d", __FUNCTION__, skiped_layer, i);
+                hwc_nsc_prepare_layer(ctx, layer, (int)i, (bool)(list->flags & HWC_GEOMETRY_CHANGED));
+                nx_layer_count++;
+            } else {
+                skiped_layer++;
+            }
+        }
+
+        // remove all remaining gpx layers from the stack that are not needed.
+        hwc_hide_unused_gpx_layers(ctx, nx_layer_count);
+    }
+    else {
+        BKNI_ReleaseMutex(ctx->power_mutex);
     }
 
-    // remove all remaining gpx layers from the stack that are not needed.
-    hwc_hide_unused_gpx_layers(ctx, nx_layer_count);
-
+out:
     return 0;
 }
 
@@ -1076,40 +1088,45 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         goto out;
     }
 
-    NEXUS_SurfaceCompositor_SetPause(NULL, true);
+    // Don't set the primary display if we are powering or powered off...
+    if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+        ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
+        goto out;
+    }
+    if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
+        BKNI_ReleaseMutex(ctx->power_mutex);
+        NEXUS_SurfaceCompositor_SetPause(NULL, true);
 
-    for (i = 0; i < list->numHwLayers; i++) {
-        // video layers have a no-op 'hidden' gpx layer association, so this check is valid
-        // for all since gpx layers > mm layers.
-        //
-        if (i > NSC_GPX_CLIENTS_NUMBER) {
-            ALOGE("Exceedeed max number of accounted layers\n");
-            break;
-        }
-        //
-        // video layer: signal the buffer to be displayed, drop duplicates.
-        //
-        if (is_video_layer(&list->hwLayers[i], -1 /*not used*/, &is_sideband)) {
-            if (!is_sideband) {
-                private_handle_t *bcmBuffer = (private_handle_t *)list->hwLayers[i].handle;
-                PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedData);
-                if (ctx->hwc_binder) {
-                    // TODO: currently only one video window exposed.
-                    if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->DisplayFrame.frameStatus.serialNumber) {
-                        ctx->mm_cli[0].last_ping_frame_id = pSharedData->DisplayFrame.frameStatus.serialNumber;
-                        ctx->hwc_binder->setframe(ctx->mm_cli[0].root.ncci.sccid, ctx->mm_cli[0].last_ping_frame_id);
+        for (i = 0; i < list->numHwLayers; i++) {
+            // video layers have a no-op 'hidden' gpx layer association, so this check is valid
+            // for all since gpx layers > mm layers.
+            //
+            if (i > NSC_GPX_CLIENTS_NUMBER) {
+                ALOGE("Exceedeed max number of accounted layers\n");
+                break;
+            }
+            //
+            // video layer: signal the buffer to be displayed, drop duplicates.
+            //
+            if (is_video_layer(&list->hwLayers[i], -1 /*not used*/, &is_sideband)) {
+                if (!is_sideband) {
+                    private_handle_t *bcmBuffer = (private_handle_t *)list->hwLayers[i].handle;
+                    PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedData);
+                    if (ctx->hwc_binder) {
+                        // TODO: currently only one video window exposed.
+                        if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->DisplayFrame.frameStatus.serialNumber) {
+                            ctx->mm_cli[0].last_ping_frame_id = pSharedData->DisplayFrame.frameStatus.serialNumber;
+                            ctx->hwc_binder->setframe(ctx->mm_cli[0].root.ncci.sccid, ctx->mm_cli[0].last_ping_frame_id);
+                        }
                     }
                 }
             }
-        }
-        //
-        // gpx layer: use the 'cached' visibility that was assigned during 'prepare'.
-        //
-        else if (ctx->gpx_cli[i].composition.visible && !ctx->gpx_cli[i].skip_set) {
-            int six = hwc_gpx_push_surface_locked(&ctx->gpx_cli[i]);
-            if (six != -1) {
-               // Don't push surfaces to NSC if we are powering off...
-               if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
+            //
+            // gpx layer: use the 'cached' visibility that was assigned during 'prepare'.
+            //
+            else if (ctx->gpx_cli[i].composition.visible && !ctx->gpx_cli[i].skip_set) {
+                int six = hwc_gpx_push_surface_locked(&ctx->gpx_cli[i]);
+                if (six != -1) {
                    rc = NEXUS_SurfaceClient_PushSurface(ctx->gpx_cli[i].ncci.schdl, ctx->gpx_cli[i].slist[six].shdl, NULL, false);
                    if (rc) {
                        ctx->gpx_cli[i].slist[six].owner = SURF_OWNER_NO_OWNER;
@@ -1127,9 +1144,12 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                }
             }
         }
-    }
 
-    NEXUS_SurfaceCompositor_SetPause(NULL, false);
+        NEXUS_SurfaceCompositor_SetPause(NULL, false);
+    }
+    else {
+        BKNI_ReleaseMutex(ctx->power_mutex);
+    }
 
     BKNI_ReleaseMutex(ctx->mutex);
 
@@ -1264,6 +1284,7 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
        }
 
        if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+           ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
            goto out;
        }
        ctx->power_mode = mode;
@@ -1483,11 +1504,17 @@ static void * hwc_vsync_task(void *argv)
     {
         if (ctx->syn_cli.shdl) {
             // Don't push surfaces to NSC if we are powering off...
+            if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+                ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
+                goto out;
+            }
             if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
+                BKNI_ReleaseMutex(ctx->power_mutex);
                 NEXUS_SurfaceClient_PushSurface(ctx->syn_cli.ncci.schdl, ctx->syn_cli.shdl, NULL, false);
                 BKNI_WaitForEvent(ctx->syn_cli.vsync_event, 1000);
             }
             else {
+                BKNI_ReleaseMutex(ctx->power_mutex);
                 BKNI_Sleep(16);
             }
             BKNI_SetEvent(ctx->prepare_event);
@@ -1502,6 +1529,7 @@ static void * hwc_vsync_task(void *argv)
 
     } while(ctx->vsync_thread_run);
 
+out:
     return NULL;
 }
 
@@ -1511,6 +1539,7 @@ static bool hwc_standby_monitor(void *dev)
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
 
     if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+       ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
        goto out;
     }
     standby = (ctx == NULL) || (ctx->power_mode == HWC_POWER_MODE_OFF);
