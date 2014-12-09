@@ -200,6 +200,10 @@ write_header(s, androiddevice)
 os.write(s, "# start of refsw gathered configuration\n\n")
 os.write(s, "%s\n\n" % refsw_configuration_selected)
 os.write(s, "# end of refsw gathered config...\n")
+root_pre_settings="./device/broadcom/custom/%s/root/pre_settings.mk" %(androidrootdevice)
+if os.access(root_pre_settings, os.F_OK):
+	root_pre_settings="\ninclude device/broadcom/custom/%s/root/pre_settings.mk" %(androidrootdevice)
+	os.write(s, root_pre_settings)
 if target_option == "NFS":
 	os.write(s, "\n\n# NFS 'pre' setting tweaks...\n")
 	os.write(s, "include device/broadcom/common/pre_settings_nfs.mk")
@@ -228,10 +232,6 @@ os.close(s);
 f='%s%s' % (devicedirectory, boardconfig)
 s=os.open(f, os.O_WRONLY|os.O_CREAT)
 write_header(s, androiddevice)
-root_board_config="./device/broadcom/custom/%s/root/BoardConfig.mk" %(androidrootdevice)
-if os.access(root_board_config, os.F_OK):
-	root_board_config="\n\ninclude device/broadcom/custom/%s/root/BoardConfig.mk" %(androidrootdevice)
-	os.write(s, root_board_config)
 os.write(s, "\n\ninclude device/broadcom/bcm_platform/BoardConfig.mk\n")
 os.close(s);
 
