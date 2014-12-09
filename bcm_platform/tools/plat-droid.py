@@ -107,6 +107,7 @@ boardtype=str(sys.argv[3]).upper()
 
 # create android cruft.
 androiddevice='%s%s%s' % (chip, revision, boardtype)
+androidrootdevice='%s%s%s' % (chip, revision, boardtype)
 if target_option == "AOSP" or target_option == "REDUX" or target_option == "NFS":
 	androiddevice='%s_%s' % (androiddevice, target_option)
 if target_option == "PROFILE":
@@ -227,7 +228,11 @@ os.close(s);
 f='%s%s' % (devicedirectory, boardconfig)
 s=os.open(f, os.O_WRONLY|os.O_CREAT)
 write_header(s, androiddevice)
-os.write(s, "include device/broadcom/bcm_platform/BoardConfig.mk\n")
+root_board_config="./device/broadcom/custom/%s/root/BoardConfig.mk" %(androidrootdevice)
+if os.access(root_board_config, os.F_OK):
+	root_board_config="\n\ninclude device/broadcom/custom/%s/root/BoardConfig.mk" %(androidrootdevice)
+	os.write(s, root_board_config)
+os.write(s, "\n\ninclude device/broadcom/bcm_platform/BoardConfig.mk\n")
 os.close(s);
 
 # yeah! happy...
