@@ -226,13 +226,6 @@ if target_option == "PROFILE":
 os.write(s, "\n\nPRODUCT_NAME := bcm_%s\n" % androiddevice)
 os.write(s, "\n# exporting toolchains path for kernel image+modules\n")
 os.write(s, "export PATH := %s:${PATH}\n" % kerneltoolchain)
-
-os.close(s);
-
-f='%s%s' % (devicedirectory, boardconfig)
-s=os.open(f, os.O_WRONLY|os.O_CREAT)
-write_header(s, androiddevice)
-os.write(s, "\n\ninclude device/broadcom/bcm_platform/BoardConfig.mk\n")
 os.close(s);
 
 # yeah! happy...
