@@ -79,10 +79,6 @@ on post-fs-data
 on property:hw.nexus.platforminit=on
    class_start main
 
-# When boot has completed we can start any relevant services
-on property:sys.boot_completed=1
-   class_start boot_complete
-
 service sdcard /system/bin/sdcard -u 1023 -g 1023 -l /data/media /mnt/shell/emulated
    class late_start
 
@@ -101,12 +97,6 @@ service bcmsetup /system/bin/nexusinit
    user root
    group system
    critical
-   oneshot
-
-service disable-sleep /system/bin/logwrapper /system/bin/svc power stayon true
-   class boot_complete
-   user system
-   group system
    oneshot
 
 service pmlibservice /system/bin/pmlibserver
