@@ -903,13 +903,13 @@ static bool can_handle_layer_scaling(
     }
 
     if (clip_position.width && ((pSharedData->planes[DEFAULT_PLANE].width / clip_position.width) >= NSC_MAXIMUM_SCALE_FACTOR)) {
-        ALOGI("%s: width: %d -> %d - defer to gles", __FUNCTION__, pSharedData->planes[DEFAULT_PLANE].width, clip_position.width);
+        ALOGV("%s: width: %d -> %d - defer to gles", __FUNCTION__, pSharedData->planes[DEFAULT_PLANE].width, clip_position.width);
         ret = false;
         goto out;
     }
 
     if (clip_position.height && ((pSharedData->planes[DEFAULT_PLANE].height / clip_position.height) >= NSC_MAXIMUM_SCALE_FACTOR)) {
-        ALOGI("%s: height: %d -> %d - defer to gles", __FUNCTION__, pSharedData->planes[DEFAULT_PLANE].height, clip_position.height);
+        ALOGV("%s: height: %d -> %d - defer to gles", __FUNCTION__, pSharedData->planes[DEFAULT_PLANE].height, clip_position.height);
         ret = false;
         goto out;
     }
@@ -924,7 +924,7 @@ static bool primary_need_nx_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *l
     struct hwc_context_t *ctx = (hwc_context_t*)dev;
     int skip_layer = -1;
 
-    ++skip_layer;
+    ++skip_layer; /* 0 */
     if (!layer->handle &&
         ((layer->compositionType == HWC_FRAMEBUFFER) ||
          (layer->compositionType == HWC_OVERLAY) ||
@@ -934,22 +934,22 @@ static bool primary_need_nx_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *l
         goto out;
     }
 
-    ++skip_layer;
+    ++skip_layer; /* 1 */
     if (layer->flags & HWC_SKIP_LAYER) {
         ALOGI("%s: skip this layer.", __FUNCTION__);
         goto out;
     }
 
-    ++skip_layer;
+    ++skip_layer; /* 2 */
     if ((layer->compositionType == HWC_SIDEBAND) &&
         (layer->sidebandStream == NULL)) {
         ALOGI("%s: null sideband.", __FUNCTION__);
         goto out;
     }
 
-    ++skip_layer;
+    ++skip_layer; /* 3 */
     if (layer->compositionType == HWC_FRAMEBUFFER) {
-        ALOGI("%s: gles target.", __FUNCTION__);
+        ALOGV("%s: gles target.", __FUNCTION__);
         goto out;
     }
 
@@ -957,9 +957,12 @@ static bool primary_need_nx_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *l
     goto out;
 
 out:
-    if (!rc && skip_layer)
-       /* ignore the FB special skip as it is too common and brings no value. */
-       ALOGI("%s: skipped index %d.", __FUNCTION__, skip_layer);
+    if (!rc && (skip_layer > 0 && skip_layer < 3)) {
+       /* ignore the 'FB special' and 'gles composition' as those can be too common
+        * and bring no value.
+        */
+       ALOGV("%s: skipped index %d.", __FUNCTION__, skip_layer);
+    }
     return rc;
 }
 
