@@ -182,7 +182,8 @@ BERR_Code nexusinit_ashmem()
 
 void startNxServer(void)
 {
-    char cmdRunNxServer[256];
+    char cmdRunNxServer[512];
+
     char value[PROPERTY_VALUE_MAX];
     /* Start the NxServer after loading the driver. Make sure
        to let the server know that we're handling the IR driver */
@@ -215,9 +216,13 @@ void startNxServer(void)
 
     // binary files of HDCP keys
     property_get("ro.nexus.nxserver.hdcp1x_keys", value, NULL);
-    snprintf(cmdRunNxServer, sizeof(cmdRunNxServer), "%s -hdcp1x_keys %s ", cmdRunNxServer, value);
+    if (strlen(value)) {
+       snprintf(cmdRunNxServer, sizeof(cmdRunNxServer), "%s -hdcp1x_keys %s ", cmdRunNxServer, value);
+    }
     property_get("ro.nexus.nxserver.hdcp2x_keys", value, NULL);
-    snprintf(cmdRunNxServer, sizeof(cmdRunNxServer), "%s -hdcp2x_keys %s ", cmdRunNxServer, value);
+    if (strlen(value)) {
+       snprintf(cmdRunNxServer, sizeof(cmdRunNxServer), "%s -hdcp2x_keys %s ", cmdRunNxServer, value);
+    }
 
     strcat(cmdRunNxServer, "&");
     ALOGI("NXSERVER CMD: %s",cmdRunNxServer);
