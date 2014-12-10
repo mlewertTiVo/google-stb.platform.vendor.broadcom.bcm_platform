@@ -55,10 +55,7 @@ struct private_module_t {
    uint32_t numBuffers;
    uint32_t bufferMask;
    pthread_mutex_t lock;
-   void *nexSurf;
 };
-
-#define PRIV_FLAGS_FRAMEBUFFER 0x00000001
 
 /*****************************************************************************/
 /*

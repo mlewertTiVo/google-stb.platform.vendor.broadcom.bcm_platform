@@ -37,14 +37,13 @@
 
 #include "gralloc_priv.h"
 #include "nexus_base_mmap.h"
+#include "nexus_platform.h"
 
 // default platform layer to render to nexus
 #include "EGL/egl.h"
 
 #include "cutils/properties.h"
 #include "nx_ashmem.h"
-
-#include "NexusSurface.h"
 
 void __attribute__ ((constructor)) gralloc_explicit_load(void);
 void __attribute__ ((destructor)) gralloc_explicit_unload(void);
@@ -181,7 +180,6 @@ struct private_module_t HAL_MODULE_INFO_SYM = {
    numBuffers: 0,
    bufferMask: 0,
    lock: PTHREAD_MUTEX_INITIALIZER,
-   nexSurf: NULL
 };
 
 /*****************************************************************************/
@@ -213,123 +211,6 @@ NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt,
 
    *bpp = b;
    return pf;
-}
-
-static int gralloc_alloc_framebuffer_locked(alloc_device_t* dev,
-                                            int w, int h,
-                                            int format,
-                                            int usage,
-                                            buffer_handle_t* pHandle,
-                                            int *pStride)
-{
-   private_module_t* m = reinterpret_cast<private_module_t*>(
-         dev->common.module);
-
-   if (m->framebuffer == NULL)
-   {
-      //
-      // If we hit this condition nothing would work for us anyway
-      // because nexus initialization did not happen.
-      //
-      BCM_DEBUG_ERRMSG("gralloc_alloc_framebuffer_locked failed\n");
-      return -1;
-   }
-
-   int size;
-   int align = 4;
-   int bpp = 0;
-
-   getNexusPixelFormat(format, &bpp);
-
-   size_t bpr = (w*bpp + (align-1)) & ~(align-1);
-   size = bpr * h;
-   *pStride = bpr / bpp;
-
-   NexusSurface *nexSurf = reinterpret_cast<NexusSurface *>(m->nexSurf);
-
-   const uint32_t bufferMask = m->bufferMask;
-   const uint32_t numBuffers = m->numBuffers;
-   const size_t bufferSize = nexSurf->lineLen * nexSurf->Yres;
-
-   if (bufferMask >= ((1LU<<numBuffers)-1))
-   {
-      // We ran out of buffers.
-      LOGE("We ran out of buffers \n");
-      return -ENOMEM;
-   }
-
-   // create a "fake" handles for it
-   PSHARED_DATA pSharedFbData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(m->framebuffer->sharedData);
-   unsigned vaddr = pSharedFbData->planes[DEFAULT_PLANE].physAddr;
-
-   // find a free slot
-   for (unsigned int i = 0 ; i < numBuffers; i++)
-   {
-      if ((bufferMask & (1LU<<i)) == 0)
-      {
-         m->bufferMask |= (1LU<<i);
-         break;
-      }
-      vaddr += bufferSize;
-   }
-
-   //
-   // We are not using the shared data for FRAMEBUFFERS
-   // But only for the off-screen surfaces. We only allocate
-   // it so that the code can be same for frame-buffer or
-   // off-screen surfaces.
-   //
-   char value[PROPERTY_VALUE_MAX];
-   char value2[PROPERTY_VALUE_MAX];
-   property_get("ro.nexus.ashmem.devname", value, "nx_ashmem");
-   strcpy(value2, "/dev/");
-   strcat(value2, value);
-
-   int fd2 = open(value2, O_RDWR, 0);
-   if ((fd2 == -1) || (!fd2)) {
-      LOGE("%s %d: Open to %s failed 0x%x\n", __FUNCTION__, __LINE__, value2, fd2);
-      return -ENOMEM;
-   }
-
-   private_handle_t* hnd = new private_handle_t(dup((int)nexSurf->fd), fd2, -1, size, PRIV_FLAGS_FRAMEBUFFER);
-
-   int ret = ioctl(fd2, NX_ASHMEM_SET_SIZE, sizeof(SHARED_DATA));
-   if (ret < 0) {
-      return -ENOMEM;
-   }
-
-   hnd->sharedData = (NEXUS_Addr)ioctl(fd2, NX_ASHMEM_GETMEM);
-   if (hnd->sharedData == 0) {
-      LOGE("%s %d: hnd->sharedData == 0\n", __FUNCTION__, __LINE__);
-      return -ENOMEM;
-   }
-   PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
-   memset(pSharedData, 0, sizeof(SHARED_DATA));
-
-   pSharedData->planes[DEFAULT_PLANE].physAddr = vaddr;
-   hnd->nxSurfacePhysicalAddress = pSharedData->planes[DEFAULT_PLANE].physAddr;
-   hnd->oglStride = bpr;   /* GL driver wants it in bytes per row */
-   hnd->oglFormat = BEGL_BufferFormat_eA8B8G8R8;
-   hnd->usage = usage;
-
-   *pHandle = hnd;
-   return 0;
-}
-
-static int gralloc_alloc_framebuffer(alloc_device_t* dev,
-                                     int w, int h,
-                                     int format,
-                                     int usage,
-                                     buffer_handle_t* pHandle,
-                                     int *pStride)
-{
-   private_module_t* m = reinterpret_cast<private_module_t*>(dev->common.module);
-
-   pthread_mutex_lock(&m->lock);
-   int err = gralloc_alloc_framebuffer_locked(dev, w, h, format, usage, pHandle, pStride);
-   pthread_mutex_unlock(&m->lock);
-
-   return err;
 }
 
 static
@@ -612,15 +493,11 @@ static int gralloc_alloc(alloc_device_t* dev,
    }
 
    int err;
+   err = gralloc_alloc_buffer(dev, w, h, format, usage, pHandle, pStride);
+
    if (usage & GRALLOC_USAGE_HW_FB) {
-      // we do not use the framebuffer device, but we do need a framebuffer
-      // target still as it is being used for composition by SF in the case
-      // of animations/transitions.
-      //
-      err = gralloc_alloc_framebuffer(dev, w, h, format, usage, pHandle, pStride);
+      LOGI("%s : allocated framebuffer w=%d, h=%d, format=%d, usage=0x%08x, %p", __FUNCTION__, w, h, format, usage, pHandle);
    }
-   else
-      err = gralloc_alloc_buffer(dev, w, h, format, usage, pHandle, pStride);
 
    if (err < 0) {
       LOGE("%s : w=%d, h=%d, format=%d, usage=0x%08x", __FUNCTION__, w, h, format, usage);
@@ -640,28 +517,7 @@ static int gralloc_free(alloc_device_t* dev,
    }
 
    private_handle_t const* hnd = reinterpret_cast<private_handle_t const*>(handle);
-
-   if (hnd->flags & PRIV_FLAGS_FRAMEBUFFER) {
-      private_module_t* m = reinterpret_cast<private_module_t*>(
-               dev->common.module);
-      NexusSurface *nexSurf = reinterpret_cast<NexusSurface *>(m->nexSurf);
-      const size_t bufferSize = nexSurf->lineLen * nexSurf->Yres;
-      PSHARED_DATA pSharedFbData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(m->framebuffer->sharedData);
-      PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
-      int index = (pSharedData->planes[DEFAULT_PLANE].physAddr - pSharedFbData->planes[DEFAULT_PLANE].physAddr) / bufferSize;
-      m->bufferMask &= ~(1<<index);
-      delete hnd;
-   } else {
-      //
-      // Even if the refCnt is not decremented to 0 we will need
-      // to close the FD and delete the private_handle_t. These
-      // two are not going to be used by this process anymore and
-      // this process has freed the surface. NexusMemory and surface
-      // will be freed in the context where the refernece count is
-      // going to zero.
-      //
-      gralloc_free_buffer(dev,const_cast<private_handle_t*>(hnd));
-   }
+   gralloc_free_buffer(dev,const_cast<private_handle_t*>(hnd));
 
    return 0;
 }
