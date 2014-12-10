@@ -61,6 +61,7 @@
 #include <utils/Errors.h>
 #include <binder/IServiceManager.h>
 #include <utils/String16.h>
+#include <utils/Vector.h>
 #include "cutils/properties.h"
 
 #include "nexusnxservice.h"
@@ -121,8 +122,9 @@ typedef struct NexusServerContext {
     BKNI_MutexHandle lock;
     nxserver_t nxserver;
 #endif
+    Mutex mLock;
 #if NEXUS_HAS_HDMI_OUTPUT
-    sp<INexusHdmiHotplugEventListener> mHdmiHotplugEventListener[NEXUS_NUM_HDMI_OUTPUTS];
+    Vector<sp<INexusHdmiHotplugEventListener> > mHdmiHotplugEventListenerList[NEXUS_NUM_HDMI_OUTPUTS];
 #endif
     struct StandbyMonitorThread : public android::Thread {
 
@@ -233,11 +235,14 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
          __func__, param,
          status.hdmi.status.connected ? "connected" : "disconnected", status.hdmi.status.rxPowered ? "is" : "isn't");
 
-    sp<INexusHdmiHotplugEventListener> pHdmiHotplugEventListener = pNexusNxService->server->mHdmiHotplugEventListener[param];
-    if (pHdmiHotplugEventListener != NULL) {
-        LOGV("%s: Firing off HDMI%d hotplug %s event...", __PRETTY_FUNCTION__, param,
-            (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? "connected" : "disconnected");
-        pHdmiHotplugEventListener->onHdmiHotplugEventReceived(param, status.hdmi.status.connected && status.hdmi.status.rxPowered);
+    Vector<sp<INexusHdmiHotplugEventListener> >::const_iterator it;
+
+    Mutex::Autolock autoLock(pNexusNxService->server->mLock);
+
+    for (it = pNexusNxService->server->mHdmiHotplugEventListenerList[param].begin(); it != pNexusNxService->server->mHdmiHotplugEventListenerList[param].end(); ++it) {
+        LOGV("%s: Firing off HDMI%d hotplug %s event for listener %p...", __PRETTY_FUNCTION__, param,
+             (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? "connected" : "disconnected", (*it).get());
+        (*it)->onHdmiHotplugEventReceived(param, status.hdmi.status.connected && status.hdmi.status.rxPowered);
     }
 
 #if ANDROID_ENABLE_HDMI_HDCP
@@ -535,14 +540,13 @@ void NexusNxService::instantiate()
 
 NexusNxService::NexusNxService()
 {
-    server = (NexusServerContext *)malloc(sizeof(NexusServerContext));
+    server = new NexusServerContext();
 
     if (server == NULL) {
-        LOGE("%s: FATAL: Could not allocate memory for NexusServerContext!", __PRETTY_FUNCTION__);
+        LOGE("%s: FATAL: Could not instantiate NexusServerContext!", __PRETTY_FUNCTION__);
         BDBG_ASSERT(server != NULL);
     }
     LOGI("NexusNxService Created");
-    memset(server, 0, sizeof(NexusServerContext));
 }
 
 NexusNxService::~NexusNxService()
@@ -551,8 +555,7 @@ NexusNxService::~NexusNxService()
 
     platformUninit();
 
-    free(server);
-
+    delete server;
     server = NULL;
 }
 
@@ -994,20 +997,79 @@ bool NexusNxService::disconnectClientResources(NexusClientContext * client)
     return ok;
 }
 
-status_t NexusNxService::setHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener)
+status_t NexusNxService::addHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener>& listener)
 {
     status_t status = OK;
-    ALOGV("%s: HDMI%d hotplug event listener=%p", __PRETTY_FUNCTION__, portId, listener.get());
+
+    if (listener == 0) {
+        ALOGE("%s: HDMI%d hotplug event listener is NULL!!!", __PRETTY_FUNCTION__, portId);
+        status = BAD_VALUE;
+    }
+    else {
+        ALOGV("%s: HDMI%d hotplug event listener %p", __PRETTY_FUNCTION__, portId, listener.get());
 
 #if NEXUS_HAS_HDMI_OUTPUT
-    if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
-        server->mHdmiHotplugEventListener[portId] = listener;
-    }
-    else
+        if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
+            Vector<sp<INexusHdmiHotplugEventListener> >::iterator it;
+
+            Mutex::Autolock autoLock(server->mLock);
+
+            for (it = server->mHdmiHotplugEventListenerList[portId].begin(); it != server->mHdmiHotplugEventListenerList[portId].end(); ++it) {
+                if ((*it)->asBinder() == listener->asBinder()) {
+                    ALOGE("%s: Already added HDMI%d hotplug event listener %p!!!", __PRETTY_FUNCTION__, portId, listener.get());
+                    status = ALREADY_EXISTS;
+                    break;
+                }
+            }
+
+            if (status == OK) {
+                server->mHdmiHotplugEventListenerList[portId].push_back(listener);
+            }
+        }
+        else
 #endif
-    {
-        LOGE("%s: No HDMI%d output on this device!!!", __PRETTY_FUNCTION__, portId);
-        status = INVALID_OPERATION;
+        {
+            ALOGE("%s: No HDMI%d output on this device!!!", __PRETTY_FUNCTION__, portId);
+            status = INVALID_OPERATION;
+        }
+    }
+    return status;
+}
+
+status_t NexusNxService::removeHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener>& listener)
+{
+    status_t status = BAD_VALUE;
+
+    if (listener == 0) {
+        ALOGE("%s: HDMI%d hotplug event listener is NULL!!!", __PRETTY_FUNCTION__, portId);
+    }
+    else {
+        ALOGV("%s: HDMI%d hotplug event listener %p", __PRETTY_FUNCTION__, portId, listener.get());
+
+#if NEXUS_HAS_HDMI_OUTPUT
+        if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
+            Vector<sp<INexusHdmiHotplugEventListener> >::iterator it;
+
+            Mutex::Autolock autoLock(server->mLock);
+
+            for (it = server->mHdmiHotplugEventListenerList[portId].begin(); it != server->mHdmiHotplugEventListenerList[portId].end(); ++it) {
+                if ((*it)->asBinder() == listener->asBinder()) {
+                    server->mHdmiHotplugEventListenerList[portId].erase(it);
+                    status = OK;
+                    break;
+                }
+            }
+
+            if (status == BAD_VALUE) {
+                ALOGW("%s: Could NOT find HDMI%d hotplug event listener %p!!!", __PRETTY_FUNCTION__, portId, listener.get());
+            }
+        }
+        else
+#endif
+        {
+            ALOGE("%s: No HDMI%d output on this device!!!", __PRETTY_FUNCTION__, portId);
+            status = INVALID_OPERATION;
+        }
     }
     return status;
 }

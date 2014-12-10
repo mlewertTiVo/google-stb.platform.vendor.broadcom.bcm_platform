@@ -78,7 +78,8 @@
 typedef enum {
         API_OVER_BINDER,
         SET_HDMI_CEC_MESSAGE_EVENT_LISTENER,
-        SET_HDMI_HOTPLUG_EVENT_LISTENER
+        ADD_HDMI_HOTPLUG_EVENT_LISTENER,
+        REMOVE_HDMI_HOTPLUG_EVENT_LISTENER
 } NEXUS_TRANSACT_ID;
 
 class INexusClient: public android::IInterface {

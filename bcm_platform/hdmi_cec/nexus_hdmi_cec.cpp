@@ -160,7 +160,7 @@ status_t NexusHdmiCecDevice::initialise()
         }
         else {
             // Attempt to register the HDMI Hotplug Event Listener with NexusService
-            ret = pIpcClient->setHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
+            ret = pIpcClient->addHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
             if (ret != NO_ERROR) {
                 ALOGE("%s: could not register HDMI hotplug event listener (rc=%d)!!!", __PRETTY_FUNCTION__, ret);
                 mHdmiHotplugEventListener = NULL;
@@ -171,6 +171,7 @@ status_t NexusHdmiCecDevice::initialise()
                 if (pIpcClient->isCecEnabled(mCecId) == true) {
                     if (pIpcClient->getCecStatus(mCecId, &cecStatus) != true) {
                         ALOGE("%s: cannot get CEC status!!!", __PRETTY_FUNCTION__);
+                        pIpcClient->removeHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
                         mHdmiHotplugEventListener = NULL;
                         delete pIpcClient;
                         pIpcClient = NULL;
@@ -181,6 +182,7 @@ status_t NexusHdmiCecDevice::initialise()
 
                         if (mHdmiCecMessageEventListener == NULL) {
                             ALOGE("%s: cannot create HDMI CEC message event listener!!!", __PRETTY_FUNCTION__);
+                            pIpcClient->removeHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
                             mHdmiHotplugEventListener = NULL;
                             delete pIpcClient;
                             pIpcClient = NULL;
@@ -192,6 +194,7 @@ status_t NexusHdmiCecDevice::initialise()
                             if (ret != NO_ERROR) {
                                 ALOGE("%s: could not register HDMI CEC message event listener (rc=%d)!!!", __PRETTY_FUNCTION__, ret);
                                 mHdmiCecMessageEventListener = NULL;
+                                pIpcClient->removeHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
                                 mHdmiHotplugEventListener = NULL;
                                 delete pIpcClient;
                                 pIpcClient = NULL;
@@ -200,6 +203,7 @@ status_t NexusHdmiCecDevice::initialise()
                     }
                     else {
                         ALOGE("%s: CEC%d not ready!!!", __PRETTY_FUNCTION__, mCecId);
+                        pIpcClient->removeHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
                         mHdmiHotplugEventListener = NULL;
                         delete pIpcClient;
                         pIpcClient = NULL;
@@ -218,7 +222,7 @@ status_t NexusHdmiCecDevice::uninitialise()
 
     if (pIpcClient != NULL) {
         if (mHdmiHotplugEventListener != NULL) {
-            ret = pIpcClient->setHdmiHotplugEventListener(mCecId, NULL);
+            ret = pIpcClient->removeHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
             mHdmiHotplugEventListener = NULL;
         }
 
