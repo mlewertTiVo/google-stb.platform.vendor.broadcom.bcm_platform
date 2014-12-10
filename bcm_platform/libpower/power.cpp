@@ -57,7 +57,9 @@ static const int DEFAULT_INTERACTIVE_TIMEOUT = 5;
 // This is the default doze timeout in seconds.  The doze time specifies how long
 // the Power HAL must wait in the "doze" state prior to entering the off state.
 // If the doze timeout is 0, then the system will not enter the doze state but will
-// transition to the off state when a no interactivity event is received.
+// transition to the off state when a no interactivity event is received. If the
+// doze time is a negative value, then the system will remain in the doze state
+// and will not transition to the off state.
 static const int DEFAULT_DOZE_TIMEOUT = 0;
 
 // The interactive timer will be used to delay bringing down the platform
@@ -174,6 +176,7 @@ static void dozeTimerCallback(union sigval val __unused)
     b_powerState powerOffState = power_get_property_off_state();
     b_powerState dozeState = power_get_property_doze_state();
 
+    ALOGV("%s: Entering power off state %s...", __FUNCTION__, power_to_string[powerOffState]);
     ret = power_set_state(powerOffState, dozeState);
     LOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", power_to_string[powerOffState]);
 }
@@ -386,8 +389,9 @@ static int power_set_state(b_powerState toState, b_powerState fromState)
                 rc = gNexusPower->setPowerState(toState);
             }
 
-            if (fromState != ePowerState_S3) {
+            if ((fromState != ePowerState_S3) && (fromState != ePowerState_S5)) {
                 // Release the CPU wakelock as the system should be back up now...
+                ALOGV("%s: Releasing \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
                 release_wake_lock(WAKE_LOCK_ID);
             }
         } break;
@@ -408,8 +412,6 @@ static int power_set_state(b_powerState toState, b_powerState fromState)
             if (rc == 0) {
                 rc = power_set_state_s2();
             }
-            // Release the CPU wakelock to allow the CPU to enter standby...
-            release_wake_lock(WAKE_LOCK_ID);
         } break;
 
         case ePowerState_S3: {
@@ -418,6 +420,7 @@ static int power_set_state(b_powerState toState, b_powerState fromState)
             }
 
             // Release the CPU wakelock to allow the CPU to suspend...
+            ALOGV("%s: Releasing \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
             release_wake_lock(WAKE_LOCK_ID);
         } break;
 
@@ -445,15 +448,12 @@ static void power_finish_set_interactive(int on)
     b_powerState fromState;
     b_powerState toState;
     b_powerState powerOffState = power_get_property_off_state();
-    b_powerState dozeState  = power_get_property_doze_state();
+    b_powerState dozeState = power_get_property_doze_state();
     int dozeTimeout = power_get_property_doze_timeout();
 
     ALOGV("%s: %s", __FUNCTION__, on ? "ON" : "OFF");
 
     if (on) {
-        toState = ePowerState_S0;
-        fromState = powerOffState;
-
         if (gInteractiveTimer) {
             // Disarm the interactive timer...
             ts.it_value.tv_sec = 0;
@@ -463,7 +463,13 @@ static void power_finish_set_interactive(int on)
             timer_settime(gInteractiveTimer, 0, &ts, NULL);
         }
 
-        if (dozeTimeout > 0 && gDozeTimer) {
+        toState = ePowerState_S0;
+        fromState = powerOffState;
+
+        if (dozeTimeout < 0) {
+            fromState = dozeState;
+        }
+        else if (dozeTimeout > 0 && gDozeTimer) {
             timer_gettime(gDozeTimer, &ts);
 
             if (ts.it_value.tv_sec > 0 || ts.it_value.tv_nsec > 0) {
@@ -479,16 +485,21 @@ static void power_finish_set_interactive(int on)
     }
     else {
         fromState = ePowerState_S0;
-        if (dozeTimeout > 0 && gDozeTimer) {
+        if (dozeTimeout != 0) {
             toState = dozeState;
 
-            // Arm the doze timer...
-            ALOGV("%s: Dozing in power state %s for %ss...", __FUNCTION__, power_to_string[toState], dozeTimeout);
-            ts.it_value.tv_sec = dozeTimeout;
-            ts.it_value.tv_nsec = 0;
-            ts.it_interval.tv_sec = 0;
-            ts.it_interval.tv_nsec = 0;
-            timer_settime(gDozeTimer, 0, &ts, NULL);
+            if (dozeTimeout < 0) {
+                ALOGV("%s: Dozing in power state %s indefinitely...", __FUNCTION__, power_to_string[toState]);
+            }
+            else if (gDozeTimer) {
+                // Arm the doze timer...
+                ALOGV("%s: Dozing in power state %s for %ds...", __FUNCTION__, power_to_string[toState], dozeTimeout);
+                ts.it_value.tv_sec = dozeTimeout;
+                ts.it_value.tv_nsec = 0;
+                ts.it_interval.tv_sec = 0;
+                ts.it_interval.tv_nsec = 0;
+                timer_settime(gDozeTimer, 0, &ts, NULL);
+            }
         }
         else {
             toState = powerOffState;
@@ -518,6 +529,7 @@ static void power_set_interactive(struct power_module *module __unused, int on)
         timer_settime(gInteractiveTimer, 0, &ts, NULL);
 
         // Keep the CPU alive until we are ready to suspend it...
+        ALOGV("%s: Acquire \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
         acquire_wake_lock(PARTIAL_WAKE_LOCK, WAKE_LOCK_ID);
     }
 }
