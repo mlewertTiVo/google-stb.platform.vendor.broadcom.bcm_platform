@@ -42,11 +42,13 @@ public:
 
 class BroadcastDriver {
 public:
-    int (*Scan)();
+    int (*StartBlindScan)();
+    int (*StopScan)();
     int (*Tune)(String8);
     Vector<BroadcastChannelInfo> (*GetChannelList)();
     Vector<BroadcastProgramInfo> (*GetProgramList)(String8);
     BroadcastScanInfo (*GetScanInfo)();
+    jlong (*GetUtcTime)();
     int (*Stop)();
     int (*Release)();
 };

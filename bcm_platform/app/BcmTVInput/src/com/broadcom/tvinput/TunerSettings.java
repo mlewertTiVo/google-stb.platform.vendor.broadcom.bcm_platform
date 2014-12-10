@@ -65,7 +65,7 @@ public class TunerSettings extends Activity {
         @Override
         public void onSessionCreated(TvInputManager.Session session) {
             mSession = session;
-            mSession.sendAppPrivateCommand("scanstatus", null);
+            mSession.sendAppPrivateCommand("scanStatus", null);
         }
         @Override
         public void onSessionEvent(TvInputManager.Session session, String eventType, Bundle eventArgs) {
@@ -129,7 +129,27 @@ public class TunerSettings extends Activity {
         btn.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                mSession.sendAppPrivateCommand("scan", null);
+                mSession.sendAppPrivateCommand("startBlindScan", null);
+                setResult(Activity.RESULT_OK);
+            }
+        });
+
+        Button btnStop = new Button(this);
+        btnStop.setText("Stop");
+        btnStop.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mSession.sendAppPrivateCommand("stopScan", null);
+                setResult(Activity.RESULT_OK);
+            }
+        });
+
+        Button btnStreamerMode = new Button(this);
+        btnStreamerMode.setText("Streamer Mode");
+        btnStreamerMode.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mSession.sendAppPrivateCommand("setStreamerMode", null);
                 setResult(Activity.RESULT_OK);
             }
         });
@@ -141,6 +161,8 @@ public class TunerSettings extends Activity {
         layout.addView(mTv);
         layout.addView(mProgress);
         layout.addView(btn);
+        layout.addView(btnStop);
+        layout.addView(btnStreamerMode);
     }
 
 }

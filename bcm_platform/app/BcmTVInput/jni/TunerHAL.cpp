@@ -66,11 +66,13 @@ static jclass gTunerServiceClass;
 static JNINativeMethod gMethods[] = 
 {
 	{"initialize",     "(Ljava/lang/Object;)I",     (void *)Java_com_broadcom_tvinput_TunerHAL_initialize},
-    {"scan",           "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_scan},  
+    {"startBlindScan", "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_startBlindScan},  
+    {"stopScan",       "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stopScan},  
 	{"tune",           "(Ljava/lang/String;)I",     (void *)Java_com_broadcom_tvinput_TunerHAL_tune},
 	{"getChannelList", "()[Lcom/broadcom/tvinput/ChannelInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getChannelList},
 	{"getProgramList", "(Ljava/lang/String;)[Lcom/broadcom/tvinput/ProgramInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getProgramList},
 	{"getScanInfo",    "()Lcom/broadcom/tvinput/ScanInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getScanInfo},
+    {"getUtcTime",     "()J",      (void *)Java_com_broadcom_tvinput_TunerHAL_getUtcTime},  
     {"stop",           "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stop},  
     {"release",        "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_release},  
 };
@@ -421,6 +423,17 @@ Java_com_broadcom_tvinput_TunerHAL_getScanInfo(JNIEnv *env, jclass thiz)
     return o;
 }
 
+JNIEXPORT jlong JNICALL Java_com_broadcom_tvinput_TunerHAL_getUtcTime(JNIEnv *env, jclass thiz)
+{
+    if (g_pTD->driver.GetUtcTime == 0) {
+        TV_LOG("%s: GetUtcTime call is null", __FUNCTION__);
+        return 0;
+    }
+    else {
+        return (*g_pTD->driver.GetUtcTime)();
+    }
+}
+
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv *env, jclass thiz)
 {
     jint rv = -1;
@@ -437,15 +450,29 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv *env, jcla
     return rv;
 }
 
-JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_scan(JNIEnv *env, jclass thiz)
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startBlindScan(JNIEnv *env, jclass thiz)
 {
     jint rv = -1;
 
-    if (g_pTD->driver.Scan == 0) {
-        TV_LOG("%s: Scan call is null", __FUNCTION__);
+    if (g_pTD->driver.StartBlindScan == 0) {
+        TV_LOG("%s: StartBlindScan call is null", __FUNCTION__);
     }
     else {
-        rv = (*g_pTD->driver.Scan)();
+        rv = (*g_pTD->driver.StartBlindScan)();
+    }
+
+    return rv;
+}
+
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stopScan(JNIEnv *env, jclass thiz)
+{
+    jint rv = -1;
+
+    if (g_pTD->driver.StopScan == 0) {
+        TV_LOG("%s: StopScan call is null", __FUNCTION__);
+    }
+    else {
+        rv = (*g_pTD->driver.StopScan)();
     }
 
     return rv;

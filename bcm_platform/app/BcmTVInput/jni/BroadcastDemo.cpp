@@ -141,11 +141,18 @@ static int BroadcastDemo_Stop()
     return 0;
 }
 
-static int BroadcastDemo_Scan()
+static int BroadcastDemo_StartBlindScan()
 {
     ALOGE("%s: Enter", __FUNCTION__);
     ALOGE("%s: Exit", __FUNCTION__);
-    return 0;
+    return -1;
+}
+
+static int BroadcastDemo_StopScan()
+{
+    ALOGE("%s: Enter", __FUNCTION__);
+    ALOGE("%s: Exit", __FUNCTION__);
+    return -1;
 }
 
 static int BroadcastDemo_Tune(String8 s8id)
@@ -354,8 +361,10 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->GetChannelList = BroadcastDemo_GetChannelList;
     pD->GetProgramList = BroadcastDemo_GetProgramList;
     pD->GetScanInfo = 0;
+    pD->GetUtcTime = 0;
     pD->Tune = BroadcastDemo_Tune;
-    pD->Scan = BroadcastDemo_Scan;
+    pD->StartBlindScan = BroadcastDemo_StartBlindScan;
+    pD->StopScan = BroadcastDemo_StopScan;
     pD->Stop = BroadcastDemo_Stop;
     pD->Release = BroadcastDemo_Release;
 

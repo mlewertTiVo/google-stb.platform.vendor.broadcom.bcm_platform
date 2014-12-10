@@ -20,7 +20,15 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize
  * Method:    scan
  * Signature: ()I
  */
-JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_scan
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startBlindScan
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     com_broadcom_tvinput_TunerHAL
+ * Method:    scan
+ * Signature: ()I
+ */
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stopScan
   (JNIEnv *, jclass);
 
 /*
@@ -53,6 +61,14 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getProgramList
  * Signature: ()Lcom/broadcom/tvinput/ScanInfo;
  */
 JNIEXPORT jobject JNICALL Java_com_broadcom_tvinput_TunerHAL_getScanInfo
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     com_broadcom_tvinput_TunerHAL
+ * Method:    getUtcTime
+ * Signature: ()J
+ */
+JNIEXPORT jlong JNICALL Java_com_broadcom_tvinput_TunerHAL_getUtcTime
   (JNIEnv *, jclass);
 
 /*

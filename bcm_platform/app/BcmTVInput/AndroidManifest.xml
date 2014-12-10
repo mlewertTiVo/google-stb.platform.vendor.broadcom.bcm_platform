@@ -20,6 +20,7 @@
     <uses-permission android:name="android.permission.BIND_TV_INPUT" />
     <uses-permission android:name="android.permission.TV_INPUT_HARDWARE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.SET_TIME" />
     <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
     <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
     <uses-permission android:name="com.android.tv.permission.RECEIVE_INPUT_EVENT" />

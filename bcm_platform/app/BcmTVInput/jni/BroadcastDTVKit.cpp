@@ -100,20 +100,24 @@ scannerUpdateUnderLock(bool stop)
         onScanProgress(pSelf->scanner.progress);
     }
 
+    bool justCompleted = false;
     if (ACTL_IsSearchComplete()) {
         pSelf->scanner.active = false;
+        justCompleted = true;
+    }
+
+    if (stop && pSelf->scanner.active) {
+        pSelf->scanner.active = false;
+        ACTL_StopServiceSearch();
+        justCompleted = true;
+    }
+
+    if (justCompleted) {
+        //pSelf->tuningParams.biList.clear();
         if (ACTL_IsTargetRegionRequired()) {
             printf("target region required\n");
         }
         ACTL_CompleteServiceSearch();
-        //pSelf->tuningParams.biList.clear();
-        onScanComplete();
-    }
-
-    if (stop && pSelf->scanner.active) {
-        pSelf->scanner.active =  false;
-        ACTL_StopServiceSearch();
-        //pSelf->tuningParams.biList.clear();
         onScanComplete();
     }
 
@@ -156,13 +160,29 @@ startBlindScan()
     return true;
 }
 
-static int BroadcastDTVKit_Scan()
+static int BroadcastDTVKit_StartBlindScan()
 {
     int rv = -1;
     ALOGE("%s: Enter", __FUNCTION__); 
     if (startBlindScan()) {
         rv = 0;
     }
+    ALOGE("%s: Exit", __FUNCTION__);
+    return rv;
+}
+
+static int BroadcastDTVKit_StopScan()
+{
+    int rv = -1;
+    ALOGE("%s: Enter", __FUNCTION__); 
+
+    STB_OSMutexLock(pSelf->scanner.mutex);
+
+    if (scannerStopUnderLock()) {
+        rv = 0;
+    }
+
+    STB_OSMutexUnlock(pSelf->scanner.mutex);
     ALOGE("%s: Exit", __FUNCTION__);
     return rv;
 }
@@ -523,6 +543,15 @@ BroadcastDTVKit_GetScanInfo()
     return scanInfo;
 }
 
+jlong
+BroadcastDTVKit_GetUtcTime()
+{
+    U32BIT now;
+    now = STB_GCConvertToTimestamp(STB_GCNowDHMSGmt());
+    ALOGE("%s: %d", __FUNCTION__, now);
+    return (jlong)now;
+}
+
 int
 Broadcast_Initialize(BroadcastDriver *pD)
 {
@@ -541,8 +570,10 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->GetChannelList = BroadcastDTVKit_GetChannelList;
     pD->GetProgramList = BroadcastDTVKit_GetProgramList;
     pD->GetScanInfo = BroadcastDTVKit_GetScanInfo;
+    pD->GetUtcTime = BroadcastDTVKit_GetUtcTime;
     pD->Tune = BroadcastDTVKit_Tune;
-    pD->Scan = BroadcastDTVKit_Scan;
+    pD->StartBlindScan = BroadcastDTVKit_StartBlindScan;
+    pD->StopScan = BroadcastDTVKit_StopScan;
     pD->Stop = BroadcastDTVKit_Stop;
     pD->Release = BroadcastDTVKit_Release;
     ALOGE("%s: Exit", __FUNCTION__);

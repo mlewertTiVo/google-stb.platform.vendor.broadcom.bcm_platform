@@ -50,6 +50,7 @@ import android.os.RemoteException;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.Surface;
+import android.app.AlarmManager;
 
 /**
  * TV-Input service for Broadcom's Tuner
@@ -60,6 +61,7 @@ public class TunerService extends TvInputService {
     private static final boolean DEBUG = true;
     private static final String TAG = TunerService.class.getSimpleName();
     private static final TvStreamConfig[] EMPTY_STREAM_CONFIGS = {};
+    private static boolean streamerMode = false;
 
     // inputId -> deviceId
     private final Map<String, Integer> mDeviceIdMap = new HashMap<>();
@@ -113,6 +115,21 @@ public class TunerService extends TvInputService {
     private static void updateProgram(Context context, long programId, ProgramInfo program) {
         ContentValues prog_values = buildProgramValues(0, program, false);
         context.getContentResolver().update(TvContract.buildProgramUri(programId), prog_values, null, null);
+    }
+
+    private void forgeTime() {
+        if (streamerMode && mCurrentSession != null && !mCurrentSession.mCurrentChannelId.equals("")) {
+            long t = TunerHAL.getUtcTime();
+            if (t != 0) {
+                Log.e(TAG, "DatabaseSyncTask::Got time " + t);
+                t *= 1000;
+                if (Math.abs(t - System.currentTimeMillis()) >= 10000) {
+                    Log.e(TAG, "DatabaseSyncTask::Calling setTime with " + t); 
+                    AlarmManager am = (AlarmManager)TunerService.this.getSystemService(Context.ALARM_SERVICE); 
+                    am.setTime(t);
+                }
+            }
+        }
     }
 
     private class DatabaseSync {
@@ -210,7 +227,7 @@ public class TunerService extends TvInputService {
                         getContentResolver().delete(puri, null, null);
                     }
                 }
-                cursor.close(); 
+                cursor.close();
             }
 
             private void updatePrograms()
@@ -233,7 +250,7 @@ public class TunerService extends TvInputService {
                     updateProgramsForChannel(channelId, id);
                 }
                 channelcursor.close();
-
+                forgeTime();
             }
 
             @Override
@@ -655,6 +672,7 @@ public class TunerService extends TvInputService {
 
                 // Update the current id
                 mCurrentChannelId = id;
+                forgeTime();
             }
                         
             return true;
@@ -671,12 +689,20 @@ public class TunerService extends TvInputService {
         public void onAppPrivateCommand(String action, Bundle data) 
         {
             Log.d(TAG, "onAppPrivateCommand: " + action);
-            if (action.equals("scan")) {
-                TunerHAL.scan();
+            if (action.equals("startBlindScan")) {
+                TunerHAL.startBlindScan();
             }
-            else if (action.equals("scanstatus")) {
+            else if (action.equals("scanStatus")) {
                 sendScanStatusToCurrentSessionIfAny(); 
             }
+            else if (action.equals("stopScan")) {
+                TunerHAL.stopScan();
+            }
+            else if (action.equals("setStreamerMode")) {
+                streamerMode = true;
+                forgeTime();
+            }
+
         }
     }
 }
