@@ -60,6 +60,9 @@
 #include "gralloc_priv.h"
 #include "blst_queue.h"
 #include "bomx_hwcbinder.h"
+#include "nexus_types.h"
+#include "nxclient.h"
+#include "nexus_surface_compositor.h"
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex);
@@ -124,6 +127,8 @@ struct BOMX_VideoDecoderFrameBuffer
     private_handle_t *pPrivateHandle;
     BOMX_VideoDecoderOutputBufferInfo *pBufferInfo;
 };
+
+#define NXCLIENT_INVALID_ID (0xffffffff)
 
 class BOMX_VideoDecoder : public BOMX_Component
 {
@@ -210,6 +215,7 @@ public:
     void OutputFrameTimer();
 
     void DisplayFrame(unsigned serialNumber);
+    void SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned zorder, bool visible);
 
     inline OmxBinder_wrap *omxHwcBinder(void) { return m_omxHwcBinder; };
 
@@ -230,6 +236,12 @@ protected:
 
     NexusIPCClientBase              *m_pIpcClient;
     NexusClientContext              *m_pNexusClient;
+    NxClient_AllocResults            m_allocResults;
+    unsigned                         m_nxClientId;
+    NEXUS_SurfaceClientHandle        m_hSurfaceClient;
+    NEXUS_SurfaceClientHandle        m_hVideoClient;
+    NEXUS_SurfaceHandle              m_hAlphaSurface;
+    bool                             m_setSurface;
 
     char m_inputMimeType[OMX_MAX_STRINGNAME_SIZE];
     char m_outputMimeType[OMX_MAX_STRINGNAME_SIZE];
@@ -258,7 +270,6 @@ protected:
     BLST_Q_HEAD(FrameBufferAllocList, BOMX_VideoDecoderFrameBuffer) m_frameBufferAllocList;
 
     OmxBinder_wrap *m_omxHwcBinder;
-    int m_surfaceClientId;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
@@ -305,6 +316,7 @@ protected:
                                             OMX_BUFFERHEADERTYPE* pBufferHeader);
 
     void DisplayFrame_locked(unsigned serialNumber);
+    void SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned zorder, bool visible);
     void InitPESHeader(void *pHeaderBuffer);
 
     // The functions below allow derived classes to override them

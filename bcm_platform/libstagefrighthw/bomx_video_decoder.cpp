@@ -443,7 +443,17 @@ static void BOMX_OmxBinderNotify(int cb_data, int msg, int param1, int param2)
     {
         struct hwc_position frame, clipped;
         int zorder, visible;
+        NEXUS_Rect position, clip;
         pComponent->omxHwcBinder()->getvideogeometry(0, frame, clipped, zorder, visible);
+        position.x = frame.x;
+        position.y = frame.y;
+        position.width = frame.w;
+        position.height = frame.h;
+        clip.x = clipped.x;
+        clip.y = clipped.y;
+        clip.width = clipped.w;
+        clip.height = clipped.h;
+        pComponent->SetVideoGeometry(&position, &clip, zorder, visible ? true : false);
         break;
     }
     default:
@@ -471,6 +481,11 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pBufferTracker(NULL),
     m_pIpcClient(NULL),
     m_pNexusClient(NULL),
+    m_nxClientId(NXCLIENT_INVALID_ID),
+    m_hSurfaceClient(NULL),
+    m_hVideoClient(NULL),
+    m_hAlphaSurface(NULL),
+    m_setSurface(false),
     m_pEosBuffer(NULL),
     m_eosPending(false),
     m_eosDelivered(false),
@@ -610,19 +625,65 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
 
     b_refsw_client_client_configuration         config;
-
     BKNI_Memset(&config, 0, sizeof(config));
     BKNI_Snprintf(config.name.string, sizeof(config.name.string), pName);
-    config.resources.screen.required = true;
-    config.resources.videoDecoder = true;
     m_pNexusClient = m_pIpcClient->createClientContext(&config);
-
     if (m_pNexusClient == NULL)
     {
         BOMX_ERR(("Unable to create nexus client context"));
         this->Invalidate();
         return;
     }
+
+    NxClient_AllocSettings nxAllocSettings;
+    NxClient_GetDefaultAllocSettings(&nxAllocSettings);
+    nxAllocSettings.simpleVideoDecoder = 1;
+    nxAllocSettings.surfaceClient = 1;
+    errCode = NxClient_Alloc(&nxAllocSettings, &m_allocResults);
+    if ( errCode )
+    {
+        BOMX_ERR(("NxClient_Alloc failed"));
+        this->Invalidate();
+        return;
+    }
+    m_hSurfaceClient = NEXUS_SurfaceClient_Acquire(m_allocResults.surfaceClient[0].id);
+    if ( NULL == m_hSurfaceClient )
+    {
+        BOMX_ERR(("Unable to acquire surface client"));
+        NxClient_Free(&m_allocResults);
+        this->Invalidate();
+        return;
+    }
+    m_hVideoClient = NEXUS_SurfaceClient_AcquireVideoWindow(m_hSurfaceClient, 0);
+    if ( NULL == m_hVideoClient )
+    {
+        BOMX_ERR(("Unable to acquire video client"));
+        this->Invalidate();
+        return;
+    }
+
+    NEXUS_SurfaceCreateSettings surfaceCreateSettings;
+    NEXUS_Surface_GetDefaultCreateSettings(&surfaceCreateSettings);
+    surfaceCreateSettings.height = surfaceCreateSettings.width = 10;
+    surfaceCreateSettings.pixelFormat = NEXUS_PixelFormat_eA8;
+    m_hAlphaSurface = NEXUS_Surface_Create(&surfaceCreateSettings);
+    if ( NULL == m_hAlphaSurface )
+    {
+        BOMX_ERR(("Unable to create alpha surface"));
+        this->Invalidate();
+        return;
+    }
+
+    NEXUS_SurfaceMemory surfaceMemory;
+    errCode = NEXUS_Surface_GetMemory(m_hAlphaSurface, &surfaceMemory);
+    if ( errCode )
+    {
+        BOMX_ERR(("Unable to fill surface"));
+        this->Invalidate();
+        return;
+    }
+    BKNI_Memset(surfaceMemory.buffer, 0, surfaceCreateSettings.height * surfaceMemory.pitch);
+    NEXUS_Surface_Flush(m_hAlphaSurface);
 
     NEXUS_ClientConfiguration               clientConfig;
     NEXUS_MemoryAllocationSettings          memorySettings;
@@ -707,7 +768,11 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
     m_omxHwcBinder->get()->register_notify(&BOMX_OmxBinderNotify, (int)this);
-    m_omxHwcBinder->getvideo(0, m_surfaceClientId);
+    // TODO: This still seems to be required or we stop getting notifications - just discard the value for now.
+    {
+        int surfaceClientId;
+        m_omxHwcBinder->getvideo(0, surfaceClientId);
+    }
 }
 
 BOMX_VideoDecoder::~BOMX_VideoDecoder()
@@ -727,6 +792,28 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
 
     ShutdownScheduler();
 
+    if ( m_hSimpleVideoDecoder )
+    {
+        NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
+        NxClient_Disconnect(m_nxClientId);
+    }
+    if ( m_hPlaypump )
+    {
+        NEXUS_Playpump_Close(m_hPlaypump);
+    }
+    if ( m_hVideoClient )
+    {
+        NEXUS_SurfaceClient_ReleaseVideoWindow(m_hVideoClient);
+    }
+    if ( m_hSurfaceClient )
+    {
+        NEXUS_SurfaceClient_Release(m_hSurfaceClient);
+        NxClient_Free(&m_allocResults);
+    }
+    if ( m_hAlphaSurface )
+    {
+        NEXUS_Surface_Destroy(m_hAlphaSurface);
+    }
     if ( m_hPlaypumpEvent )
     {
         B_Event_Destroy(m_hPlaypumpEvent);
@@ -1348,9 +1435,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_eosPending = false;
             m_eosDelivered = false;
             m_pBufferTracker->Flush();
-            m_pIpcClient->disconnectClientResources(m_pNexusClient);
-            m_pIpcClient->releaseVideoDecoderHandle(m_hSimpleVideoDecoder);
+            NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
             m_hSimpleVideoDecoder = NULL;
+            NxClient_Disconnect(m_nxClientId);
+            m_nxClientId = NXCLIENT_INVALID_ID;
 
             NEXUS_Playpump_ClosePidChannel(m_hPlaypump, m_hPidChannel);
             NEXUS_Playpump_Close(m_hPlaypump);
@@ -1372,34 +1460,32 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             NEXUS_VideoDecoderSettings vdecSettings;
             NEXUS_PlaypumpOpenSettings playpumpOpenSettings;
             NEXUS_PlaypumpSettings playpumpSettings;
-            b_refsw_client_connect_resource_settings    connectSettings;
-            b_refsw_client_client_info                  clientInfo;
+            NxClient_ConnectSettings connectSettings;
             NEXUS_Error errCode;
 
-            m_hSimpleVideoDecoder = m_pIpcClient->acquireVideoDecoderHandle();
-            if ( NULL == m_hSimpleVideoDecoder )
-            {
-                return BOMX_BERR_TRACE(BERR_UNKNOWN);
-            }
-
-            m_pIpcClient->getClientInfo(m_pNexusClient, &clientInfo);
-            m_pIpcClient->getDefaultConnectClientSettings(&connectSettings);
-            connectSettings.simpleVideoDecoder[0].id = clientInfo.videoDecoderId;
-            connectSettings.simpleVideoDecoder[0].surfaceClientId = m_surfaceClientId;
-            connectSettings.simpleVideoDecoder[0].windowId = 0; /* TODO: Hardcode to main for now */
-            connectSettings.simpleVideoDecoder[0].windowCaps.type = eVideoWindowType_eMain;
+            NxClient_GetDefaultConnectSettings(&connectSettings);
+            connectSettings.simpleVideoDecoder[0].id = m_allocResults.simpleVideoDecoder[0].id;
+            connectSettings.simpleVideoDecoder[0].surfaceClientId = m_allocResults.surfaceClient[0].id;
+            connectSettings.simpleVideoDecoder[0].windowId = 0;
+            connectSettings.simpleVideoDecoder[0].windowCapabilities.type = NxClient_VideoWindowType_eMain; // TODO: Support Main/Pip
+            connectSettings.simpleVideoDecoder[0].decoderCapabilities.supportedCodecs[GetNexusCodec()] = true;
             if ( (int)GetCodec() == OMX_VIDEO_CodingHEVC || (int)GetCodec() == OMX_VIDEO_CodingVP9 )
             {
                 // Request 4k decoder for HEVC/VP9 only
-                connectSettings.simpleVideoDecoder[0].decoderCaps.maxWidth = 3840;
-                connectSettings.simpleVideoDecoder[0].decoderCaps.maxHeight = 2160;
+                connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = 3840;
+                connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = 2160;
                 BOMX_WRN(("Requesting 4k decoder from nexus"));
             }
-            if ( ! m_pIpcClient->connectClientResources(m_pNexusClient, &connectSettings) )
+            errCode = NxClient_Connect(&connectSettings, &m_nxClientId);
+            if ( errCode )
             {
-                m_pIpcClient->disconnectClientResources(m_pNexusClient);
-                m_pIpcClient->releaseVideoDecoderHandle(m_hSimpleVideoDecoder);
-                m_hSimpleVideoDecoder = NULL;
+                return BOMX_BERR_TRACE(errCode);
+            }
+            m_hSimpleVideoDecoder = NEXUS_SimpleVideoDecoder_Acquire(m_allocResults.simpleVideoDecoder[0].id);
+            if ( NULL == m_hSimpleVideoDecoder )
+            {
+                NxClient_Disconnect(m_nxClientId);
+                m_nxClientId = NXCLIENT_INVALID_ID;
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
             }
 
@@ -1410,9 +1496,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_hPlaypump = NEXUS_Playpump_Open(NEXUS_ANY_ID, &playpumpOpenSettings);
             if ( NULL == m_hPlaypump )
             {
-                m_pIpcClient->disconnectClientResources(m_pNexusClient);
-                m_pIpcClient->releaseVideoDecoderHandle(m_hSimpleVideoDecoder);
+                NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
                 m_hSimpleVideoDecoder = NULL;
+                NxClient_Disconnect(m_nxClientId);
+                m_nxClientId = NXCLIENT_INVALID_ID;
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
             }
             NEXUS_Playpump_GetSettings(m_hPlaypump, &playpumpSettings);
@@ -1425,9 +1512,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             {
                 NEXUS_Playpump_Close(m_hPlaypump);
                 m_hPlaypump = NULL;
-                m_pIpcClient->disconnectClientResources(m_pNexusClient);
-                m_pIpcClient->releaseVideoDecoderHandle(m_hSimpleVideoDecoder);
+                NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
                 m_hSimpleVideoDecoder = NULL;
+                NxClient_Disconnect(m_nxClientId);
+                m_nxClientId = NXCLIENT_INVALID_ID;
                 return BOMX_BERR_TRACE(errCode);
             }
 
@@ -1439,9 +1527,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             {
                 NEXUS_Playpump_Close(m_hPlaypump);
                 m_hPlaypump = NULL;
-                m_pIpcClient->disconnectClientResources(m_pNexusClient);
-                m_pIpcClient->releaseVideoDecoderHandle(m_hSimpleVideoDecoder);
+                NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
                 m_hSimpleVideoDecoder = NULL;
+                NxClient_Disconnect(m_nxClientId);
+                m_nxClientId = NXCLIENT_INVALID_ID;
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
             }
             m_playpumpEventId = RegisterEvent(m_hPlaypumpEvent, BOMX_VideoDecoder_PlaypumpEvent, static_cast <void *> (this));
@@ -1452,9 +1541,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_hPidChannel = NULL;
                 NEXUS_Playpump_Close(m_hPlaypump);
                 m_hPlaypump = NULL;
-                m_pIpcClient->disconnectClientResources(m_pNexusClient);
-                m_pIpcClient->releaseVideoDecoderHandle(m_hSimpleVideoDecoder);
+                NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
                 m_hSimpleVideoDecoder = NULL;
+                NxClient_Disconnect(m_nxClientId);
+                m_nxClientId = NXCLIENT_INVALID_ID;
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
             }
 
@@ -1467,9 +1557,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_hPidChannel = NULL;
                 NEXUS_Playpump_Close(m_hPlaypump);
                 m_hPlaypump = NULL;
-                m_pIpcClient->disconnectClientResources(m_pNexusClient);
-                m_pIpcClient->releaseVideoDecoderHandle(m_hSimpleVideoDecoder);
+                NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
                 m_hSimpleVideoDecoder = NULL;
+                NxClient_Disconnect(m_nxClientId);
+                m_nxClientId = NXCLIENT_INVALID_ID;
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
             }
         }
@@ -1658,6 +1749,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
             BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pFrameBuffer, node);
         }
 
+        // TODO: Hide video window?
+
         BOMX_MSG(("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState)));
         return OMX_ErrorNone;
     }
@@ -1681,9 +1774,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
                 {
                     BOMX_ERR(("Timeout waiting for ports to be populated"));
                     PortWaitEnd();
-                    m_pIpcClient->disconnectClientResources(m_pNexusClient);
-                    m_pIpcClient->releaseVideoDecoderHandle(m_hSimpleVideoDecoder);
-                    m_hSimpleVideoDecoder = NULL;
                     return BOMX_ERR_TRACE(OMX_ErrorTimeout);
                 }
             }
@@ -3569,6 +3659,16 @@ void BOMX_VideoDecoder::DisplayFrame(unsigned serialNumber)
     Unlock();
 }
 
+void BOMX_VideoDecoder::SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned zorder, bool visible)
+{
+    ALOGI("SetVideoGeometry: %u,%u %ux%u - clip %u,%u %ux%u",
+        pPosition->x, pPosition->y, pPosition->width, pPosition->height,
+        pClipRect->x, pClipRect->y, pClipRect->width, pClipRect->height);
+    Lock();
+    SetVideoGeometry_locked(pPosition, pClipRect, zorder, visible);
+    Unlock();
+}
+
 void BOMX_VideoDecoder::DisplayFrame_locked(unsigned serialNumber)
 {
     BOMX_VideoDecoderFrameBuffer *pFrameBuffer;
@@ -3597,6 +3697,51 @@ void BOMX_VideoDecoder::DisplayFrame_locked(unsigned serialNumber)
     else
     {
         ALOGW("Request to display buffer %u not found in list (duplicate?)", serialNumber);
+    }
+}
+
+void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned zorder, bool visible)
+{
+    if ( m_hSurfaceClient )
+    {
+        NEXUS_SurfaceComposition composition;
+        NEXUS_SurfaceClientSettings settings;
+        NEXUS_Error errCode;
+
+        NxClient_GetSurfaceClientComposition(m_allocResults.surfaceClient[0].id, &composition);
+        composition.virtualDisplay.width = pPosition->width;
+        composition.virtualDisplay.height = pPosition->height;
+        composition.position = *pPosition;
+        composition.zorder = zorder;
+        composition.visible = visible;
+        composition.contentMode = NEXUS_VideoWindowContentMode_eBox;
+        errCode = NxClient_SetSurfaceClientComposition(m_allocResults.surfaceClient[0].id, &composition);
+        if ( errCode )
+        {
+            (void)BOMX_BERR_TRACE(errCode);
+            return;
+        }
+
+        NEXUS_SurfaceClient_GetSettings(m_hVideoClient, &settings);
+        settings.composition = composition;
+        settings.composition.clipRect = *pClipRect; // Add in video source clipping
+        errCode = NEXUS_SurfaceClient_SetSettings(m_hVideoClient, &settings);
+        if ( errCode )
+        {
+            (void)BOMX_BERR_TRACE(errCode);
+            return;
+        }
+
+        if ( !m_setSurface )
+        {
+            errCode = NEXUS_SurfaceClient_SetSurface(m_hSurfaceClient, m_hAlphaSurface);
+            if ( errCode )
+            {
+                (void)BOMX_BERR_TRACE(errCode);
+                return;
+            }
+            m_setSurface = true;
+        }
     }
 }
 
