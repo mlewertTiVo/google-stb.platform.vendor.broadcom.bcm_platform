@@ -65,7 +65,7 @@ using namespace android;
 #define HWC_SB_NO_ALLOC_SURF_CLI     1
 #define HWC_MM_NO_ALLOC_SURF_CLI     1
 
-#define NSC_GPX_CLIENTS_NUMBER       5 /* graphics client layers; typically no
+#define NSC_GPX_CLIENTS_NUMBER       6 /* graphics client layers; typically no
                                         * more than 3 are needed at any time. */
 #define NSC_MM_CLIENTS_NUMBER        3 /* multimedia client layers; typically no
                                         * more than 2 are needed at any time. */
@@ -87,7 +87,7 @@ using namespace android;
 #define MM_CLIENT_ZORDER             (GPX_CLIENT_ZORDER+1)
 #define SB_CLIENT_ZORDER             (GPX_CLIENT_ZORDER+1)
 
-#define GPX_SURFACE_STACK            2
+#define GPX_SURFACE_STACK            3
 #define DUMP_BUFFER_SIZE             1024
 #define LAST_PING_FRAME_ID_INVALID   0xBAADCAFE
 #define NSC_MAXIMUM_SCALE_FACTOR     15
