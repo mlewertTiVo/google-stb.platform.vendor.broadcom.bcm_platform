@@ -95,6 +95,8 @@ enum BOMX_VideoDecoderOutputBufferType
 
 struct BOMX_VideoDecoderFrameBuffer;
 
+#define BOMX_VIDEO_DECODER_DESTRIPE_PLANAR (0)
+
 struct BOMX_VideoDecoderOutputBufferInfo
 {
     BOMX_VideoDecoderFrameBuffer *pFrameBuffer;
@@ -103,8 +105,13 @@ struct BOMX_VideoDecoderOutputBufferInfo
     {
         struct
         {
-            NEXUS_SurfaceHandle hSurface;
-            void *pSurfaceMemory;   // Returned from NEXUS_Surface_GetMemory
+#if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
+            NEXUS_SurfaceHandle hSurfaceY;
+            NEXUS_SurfaceHandle hSurfaceCb;
+            NEXUS_SurfaceHandle hSurfaceCr;
+#else
+            NEXUS_SurfaceHandle hDestripeSurface;
+#endif
             void *pClientMemory;    // Client memory provided in OMX_UseBuffer (NULL for OMX_AllocateBuffer)
         } standard;
         struct
@@ -124,6 +131,7 @@ struct BOMX_VideoDecoderFrameBuffer
     BLST_Q_ENTRY(BOMX_VideoDecoderFrameBuffer) node;
     BOMX_VideoDecoderFrameBufferState state;
     NEXUS_VideoDecoderFrameStatus frameStatus;
+    NEXUS_StripedSurfaceHandle hStripedSurface;
     private_handle_t *pPrivateHandle;
     BOMX_VideoDecoderOutputBufferInfo *pBufferInfo;
 };

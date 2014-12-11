@@ -31,8 +31,8 @@ extern "C" {
 #include <unistd.h>
 #include <cutils/native_handle.h>
 #include <linux/fb.h>
-
-#include "DisplayFrame.h"
+#include "nexus_video_decoder_types.h"
+#include "nexus_striped_surface.h"
 
 #define BCM_DEBUG_MSG
 #define BCM_DEBUG_TRACEMSG      LOGD
@@ -69,7 +69,10 @@ typedef struct __SHARED_DATA_ {
    } videoWindow;
 
    //Metadata For Video Buffers
-   DISPLAY_FRAME    DisplayFrame;
+   struct {
+      NEXUS_VideoDecoderFrameStatus status;
+      NEXUS_StripedSurfaceHandle hStripedSurface;
+   } videoFrame;
 
    struct {
       unsigned format;

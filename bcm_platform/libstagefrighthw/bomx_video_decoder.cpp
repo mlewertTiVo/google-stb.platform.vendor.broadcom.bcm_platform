@@ -46,7 +46,7 @@
  * $brcm_Log: $
  *
  *****************************************************************************/
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_decoder"
 
@@ -183,7 +183,7 @@ static void BOMX_VideoDecoder_CheckpointComplete(void *pParam, int unused)
     B_EventHandle hEvent = static_cast<B_EventHandle>(pParam);
     BSTD_UNUSED(unused);
 
-    BOMX_MSG(("Checkpoint Event"));
+    BOMX_WRN(("Checkpoint Event"));
 
     B_Event_Set(hEvent);
 }
@@ -461,6 +461,11 @@ static void BOMX_OmxBinderNotify(int cb_data, int msg, int param1, int param2)
     }
 }
 
+static size_t ComputeBufferSize(unsigned stride, unsigned height)
+{
+    return (stride * height * 3) / 2;
+}
+
 BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
@@ -550,12 +555,12 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_numVideoPorts = 1;
     memset(&portDefs, 0, sizeof(portDefs));
     portDefs.eCompressionFormat = OMX_VIDEO_CodingUnused;
-    portDefs.eColorFormat = OMX_COLOR_Format16bitRGB565;
+    portDefs.eColorFormat = OMX_COLOR_FormatYUV420Planar;
     strcpy(m_outputMimeType, "video/x-raw");
     portDefs.cMIMEType = m_outputMimeType;
     portDefs.nFrameWidth = 1920;
     portDefs.nFrameHeight = 1080;
-    portDefs.nStride = 2*portDefs.nFrameWidth;
+    portDefs.nStride = portDefs.nFrameWidth;
     portDefs.nSliceHeight = portDefs.nFrameHeight;
     for ( i = 0; i < MAX_OUTPUT_PORT_FORMATS; i++ )
     {
@@ -568,14 +573,14 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         {
         default:
         case 0: // OMX buffer format
-            portFormats[i].eColorFormat = OMX_COLOR_Format16bitRGB565;
+            portFormats[i].eColorFormat = OMX_COLOR_FormatYUV420Planar;
             break;
         case 1: // Native grpahics format
-            portFormats[i].eColorFormat = (OMX_COLOR_FORMATTYPE)((int)PIXEL_FORMAT_RGB_565);
+            portFormats[i].eColorFormat = (OMX_COLOR_FORMATTYPE)((int)HAL_PIXEL_FORMAT_YV12);
             break;
         }
     }
-    m_pVideoPorts[1] = new BOMX_VideoPort(m_videoPortBase+1, OMX_DirOutput, B_MAX_FRAMES, portDefs.nFrameWidth*portDefs.nFrameHeight*2, false, 0, &portDefs, portFormats, MAX_OUTPUT_PORT_FORMATS);
+    m_pVideoPorts[1] = new BOMX_VideoPort(m_videoPortBase+1, OMX_DirOutput, B_MAX_FRAMES, ComputeBufferSize(portDefs.nStride, portDefs.nSliceHeight), false, 0, &portDefs, portFormats, MAX_OUTPUT_PORT_FORMATS);
     if ( NULL == m_pVideoPorts[1] )
     {
         BOMX_ERR(("Unable to create video output port"));
@@ -1165,8 +1170,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
-        // TODO: Revise this to use a vendor private flag w/gralloc.  SW_READ/SW_WRITE should not be used here.
-        pUsage->nUsage = GRALLOC_USAGE_EXTERNAL_DISP | GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN;
+        // Flag this as a HW video decoder allocation to gralloc
+        pUsage->nUsage = 0;//GRALLOC_USAGE_PRIVATE_0; -- TODO: This causes Dequeue buffer to fail and playback stops.
         return OMX_ErrorNone;
     }
     case OMX_IndexParamDescribeColorFormat:
@@ -1180,8 +1185,23 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
         pColorFormat->nFrameHeight = pPortDef->format.video.nFrameHeight;
         pColorFormat->nStride = pPortDef->format.video.nStride;
         pColorFormat->nSliceHeight = pPortDef->format.video.nSliceHeight;
-        /* This is only supported for 4:2:0 planar formats - return unknown */
-        pColorFormat->sMediaImage.mType = MediaImage::MEDIA_IMAGE_TYPE_UNKNOWN;
+        pColorFormat->sMediaImage.mType = MediaImage::MEDIA_IMAGE_TYPE_YUV;
+        pColorFormat->sMediaImage.mNumPlanes = 3;
+        pColorFormat->sMediaImage.mWidth = pColorFormat->nFrameWidth;
+        pColorFormat->sMediaImage.mHeight = pColorFormat->nFrameHeight;
+        pColorFormat->sMediaImage.mBitDepth = 8;
+        pColorFormat->sMediaImage.mPlane[MediaImage::Y].mOffset = 0;
+        pColorFormat->sMediaImage.mPlane[MediaImage::Y].mColInc = 1;
+        pColorFormat->sMediaImage.mPlane[MediaImage::Y].mHorizSubsampling = 1;
+        pColorFormat->sMediaImage.mPlane[MediaImage::Y].mVertSubsampling = 1;
+        pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset = pColorFormat->nStride*pColorFormat->nSliceHeight;
+        pColorFormat->sMediaImage.mPlane[MediaImage::U].mColInc = 1;
+        pColorFormat->sMediaImage.mPlane[MediaImage::U].mHorizSubsampling = 2;
+        pColorFormat->sMediaImage.mPlane[MediaImage::U].mVertSubsampling = 2;
+        pColorFormat->sMediaImage.mPlane[MediaImage::V].mOffset = pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset + (pColorFormat->nStride*pColorFormat->nSliceHeight)/4;
+        pColorFormat->sMediaImage.mPlane[MediaImage::V].mColInc = 1;
+        pColorFormat->sMediaImage.mPlane[MediaImage::V].mHorizSubsampling = 2;
+        pColorFormat->sMediaImage.mPlane[MediaImage::V].mVertSubsampling = 2;
         return OMX_ErrorNone;
     }
 
@@ -1304,8 +1324,27 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             BOMX_ERR(("Video compression format cannot be changed in the port defintion.  Change Port Format instead."));
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
-        // Handle remainder in base class
-        return BOMX_ERR_TRACE(BOMX_Component::SetParameter(nIndex, (OMX_PTR)pDef));
+        // Handle update in base class
+        err = BOMX_Component::SetParameter(nIndex, (OMX_PTR)pDef);
+        if ( err != OMX_ErrorNone )
+        {
+            return BOMX_ERR_TRACE(err);
+        }
+        else if ( pDef->nPortIndex == (m_videoPortBase+1) )
+        {
+            OMX_PARAM_PORTDEFINITIONTYPE portDef;
+            // Ensure slice height and stride match frame width/height and update buffer size
+            m_pVideoPorts[1]->GetDefinition(&portDef);
+            portDef.format.video.nSliceHeight = portDef.format.video.nFrameHeight;
+            portDef.format.video.nStride = portDef.format.video.nFrameWidth;
+            portDef.nBufferSize = ComputeBufferSize(portDef.format.video.nStride, portDef.format.video.nSliceHeight);
+            err = m_pVideoPorts[1]->SetDefinition(&portDef);
+            if ( err )
+            {
+                return BOMX_ERR_TRACE(err);
+            }
+        }
+        return OMX_ErrorNone;
     }
     case OMX_IndexParamEnableAndroidNativeGraphicsBuffer:
     {
@@ -1329,13 +1368,13 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         {
             // In this mode, the output color format should be an android HAL format.  Our gralloc only supports RGB888/565 variants.  Use 565 to save memory and bandwidth.
             portFormat.nIndex = 1;  // The second port format is the native format
-            portFormat.eColorFormat = (OMX_COLOR_FORMATTYPE)((int)PIXEL_FORMAT_RGB_565);
+            portFormat.eColorFormat = (OMX_COLOR_FORMATTYPE)((int)HAL_PIXEL_FORMAT_YV12);
         }
         else
         {
             // In this mode, use an OMX color format
             portFormat.nIndex = 0;  // The first port format is the traditional omx buffer format
-            portFormat.eColorFormat = OMX_COLOR_Format16bitRGB565;
+            portFormat.eColorFormat = OMX_COLOR_FormatYUV420Planar;
         }
         // Update port format to appropriate value for native vs. non-native output.
         err = SetParameter(OMX_IndexParamVideoPortFormat, &portFormat);
@@ -2224,41 +2263,86 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             NEXUS_SurfaceCreateSettings surfaceSettings;
             NEXUS_SurfaceMemory surfaceMem;
             const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef;
+            void *pMemory;
 
             /* Check buffer size */
             pPortDef = pPort->GetDefinition();
-            if ( nSizeBytes < 2*pPortDef->format.video.nFrameWidth*pPortDef->format.video.nFrameHeight )
+            if ( nSizeBytes < ComputeBufferSize(pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight) )
             {
-                BOMX_ERR(("Outbuffer size is not sufficient - must be at least %u bytes (2*%u*%u) got %u [eColorFormat %#x]", 2*pPortDef->format.video.nFrameWidth*pPortDef->format.video.nFrameHeight,
-                    pPortDef->format.video.nFrameWidth, pPortDef->format.video.nFrameHeight, nSizeBytes, pPortDef->format.video.eColorFormat));
+                BOMX_ERR(("Outbuffer size is not sufficient - must be at least %u bytes ((3*%u*%u)/2) got %u [eColorFormat %#x]", (unsigned int)ComputeBufferSize(pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight),
+                    pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight, nSizeBytes, pPortDef->format.video.eColorFormat));
                 delete pInfo;
                 return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
             }
-            /* Create Surface (Android has limited 422 support so use this for now) */
-            NEXUS_Surface_GetDefaultCreateSettings(&surfaceSettings);
-            surfaceSettings.pixelFormat = NEXUS_PixelFormat_eR5_G6_B5;
-            surfaceSettings.width = pPortDef->format.video.nFrameWidth;
-            surfaceSettings.height = pPortDef->format.video.nFrameHeight;
-            surfaceSettings.pitch = pPortDef->format.video.nStride;
-            pInfo->typeInfo.standard.hSurface = NEXUS_Surface_Create(&surfaceSettings);
-            if ( NULL == pInfo->typeInfo.standard.hSurface )
+            else
             {
-                delete pInfo;
-                return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
+                BOMX_WRN(("Output buffer size %u expected %u", nSizeBytes, (unsigned int)ComputeBufferSize(pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight)));
             }
-            NEXUS_Surface_GetMemory(pInfo->typeInfo.standard.hSurface, &surfaceMem);
-            pInfo->typeInfo.standard.pSurfaceMemory = surfaceMem.buffer;
             if ( componentAllocated )
             {
-                // Client will directly get a pointer to the nexus surface memory
-                pInfo->typeInfo.standard.pClientMemory = NULL;
-                pBuffer = (OMX_U8 *)surfaceMem.buffer;
+                // Not supported for now.  Will add if required.
+                delete pInfo;
+                return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
             }
             else
             {
                 // Client has its own buffer we must CPU-copy into
                 pInfo->typeInfo.standard.pClientMemory = pBuffer;
+                BKNI_Memset(pBuffer, 0xff, nSizeBytes);
             }
+
+            /* Create output surfaces */
+#if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
+            NEXUS_Surface_GetDefaultCreateSettings(&surfaceSettings);
+            surfaceSettings.pixelFormat = NEXUS_PixelFormat_eY8;
+            surfaceSettings.width = pPortDef->format.video.nFrameWidth;
+            surfaceSettings.height = pPortDef->format.video.nFrameHeight;
+            surfaceSettings.pitch = pPortDef->format.video.nStride;
+            pInfo->typeInfo.standard.hSurfaceY = NEXUS_Surface_Create(&surfaceSettings);
+            if ( NULL == pInfo->typeInfo.standard.hSurfaceY )
+            {
+                delete pInfo;
+                return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
+            }
+            NEXUS_Surface_Lock(pInfo->typeInfo.standard.hSurfaceY, &pMemory);    // Pin the surface in memory so we can flush at the correct time without extra locks
+
+            NEXUS_Surface_GetDefaultCreateSettings(&surfaceSettings);
+            surfaceSettings.pixelFormat = NEXUS_PixelFormat_eCb8;
+            surfaceSettings.width = pPortDef->format.video.nFrameWidth/2;
+            surfaceSettings.height = pPortDef->format.video.nFrameHeight/2;
+            surfaceSettings.pitch = pPortDef->format.video.nStride/2;
+            pInfo->typeInfo.standard.hSurfaceCb = NEXUS_Surface_Create(&surfaceSettings);
+            if ( NULL == pInfo->typeInfo.standard.hSurfaceCb )
+            {
+                NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceY);
+                delete pInfo;
+                return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
+            }
+            NEXUS_Surface_Lock(pInfo->typeInfo.standard.hSurfaceCb, &pMemory);    // Pin the surface in memory so we can flush at the correct time without extra locks
+            surfaceSettings.pixelFormat = NEXUS_PixelFormat_eCr8;
+            pInfo->typeInfo.standard.hSurfaceCr = NEXUS_Surface_Create(&surfaceSettings);
+            if ( NULL == pInfo->typeInfo.standard.hSurfaceCr )
+            {
+                NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceCb);
+                NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceY);
+                delete pInfo;
+                return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
+            }
+            NEXUS_Surface_Lock(pInfo->typeInfo.standard.hSurfaceCr, &pMemory);    // Pin the surface in memory so we can flush at the correct time without extra locks
+#else
+            NEXUS_Surface_GetDefaultCreateSettings(&surfaceSettings);
+            surfaceSettings.pixelFormat = NEXUS_PixelFormat_eCr8_Y18_Cb8_Y08;
+            surfaceSettings.width = pPortDef->format.video.nFrameWidth;
+            surfaceSettings.height = pPortDef->format.video.nFrameHeight;
+            surfaceSettings.pitch = 2*surfaceSettings.width;
+            pInfo->typeInfo.standard.hDestripeSurface = NEXUS_Surface_Create(&surfaceSettings);
+            if ( NULL == pInfo->typeInfo.standard.hDestripeSurface )
+            {
+                delete pInfo;
+                return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
+            }
+            NEXUS_Surface_Lock(pInfo->typeInfo.standard.hDestripeSurface, &pMemory);    // Pin the surface in memory so we can flush at the correct time without extra locks
+#endif
         }
         break;
     default:
@@ -2272,7 +2356,13 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
         switch ( pInfo->type )
         {
         case BOMX_VideoDecoderOutputBufferType_eStandard:
-            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurface);
+#if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
+            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceCr);
+            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceCb);
+            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceY);
+#else
+            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hDestripeSurface);
+#endif
             break;
         default:
             break;
@@ -2342,7 +2432,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     pInfo->typeInfo.native.pSharedData->videoWindow.nexusClientContext = m_pNexusClient;
     android_atomic_release_store(1, &pInfo->typeInfo.native.pSharedData->videoWindow.windowIdPlusOne);
 
-     err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, pPort->GetDefinition()->format.video.nFrameWidth*pPort->GetDefinition()->format.video.nFrameHeight*2, (OMX_U8 *)pPrivateHandle, pInfo, false);
+     err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, ComputeBufferSize(pPort->GetDefinition()->format.video.nStride, pPort->GetDefinition()->format.video.nSliceHeight), (OMX_U8 *)pPrivateHandle, pInfo, false);
     if ( OMX_ErrorNone != err )
     {
         delete pInfo;
@@ -2528,34 +2618,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AllocateBuffer(
     }
     else
     {
-        if ( m_metadataEnabled )
-        {
-            BOMX_MSG(("Selecting metadata output mode for output buffer %#x", ppBuffer));
-            m_outputMode = BOMX_VideoDecoderOutputBufferType_eMetadata;
-        }
-        else if ( m_nativeGraphicsEnabled )
-        {
-            BOMX_MSG(("Selecting native graphics output mode for output buffer %#x", ppBuffer));
-            m_outputMode = BOMX_VideoDecoderOutputBufferType_eNative;
-        }
-        else
-        {
-            BOMX_MSG(("Selecting standard buffer output mode for output buffer %#x", ppBuffer));
-            m_outputMode = BOMX_VideoDecoderOutputBufferType_eStandard;
-        }
-
-        if ( m_outputMode == BOMX_VideoDecoderOutputBufferType_eStandard )
-        {
-            err = AddOutputPortBuffer(ppBuffer, nPortIndex, pAppPrivate, nSizeBytes, (OMX_U8 *)NULL, true);
-            if ( err != OMX_ErrorNone )
-            {
-                return BOMX_ERR_TRACE(err);
-            }
-        }
-        else
-        {
-            BOMX_ERR(("AllocateBuffer is not supported for native or metadata buffer modes"));
-        }
+        // TODO: Implement if required
+        BOMX_ERR(("AllocateBuffer is not supported for output ports"));
     }
 
     return OMX_ErrorNone;
@@ -2628,7 +2692,13 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
         {
         case BOMX_VideoDecoderOutputBufferType_eStandard:
             pFrameBuffer = pInfo->pFrameBuffer;
-            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurface);
+#if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
+            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceCr);
+            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceCb);
+            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceY);
+#else
+            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hDestripeSurface);
+#endif
             break;
         case BOMX_VideoDecoderOutputBufferType_eNative:
             pFrameBuffer = pInfo->pFrameBuffer;
@@ -2901,7 +2971,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
                 BOMX_MSG(("Standard Buffer - Drop"));
                 break;
             case BOMX_VideoDecoderOutputBufferType_eNative:
-                BOMX_MSG(("Native Buffer %u - Drop", pInfo->typeInfo.native.pSharedData->DisplayFrame.frameStatus.serialNumber));
+                BOMX_MSG(("Native Buffer %u - Drop", pInfo->typeInfo.native.pSharedData->videoFrame.status.serialNumber));
                 break;
             case BOMX_VideoDecoderOutputBufferType_eMetadata:
                 BOMX_MSG(("Metadata Buffer %u - Drop", pFrameBuffer->frameStatus.serialNumber));
@@ -3252,6 +3322,11 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     // Move frame to allocated list.  Will be delivered to client afterward if there is a buffer ready.
                     BLST_Q_REMOVE_HEAD(&m_frameBufferFreeList, node);
                     pBuffer->frameStatus = *pFrameStatus;
+                    pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&pFrameStatus->surfaceCreateSettings);
+                    if ( NULL == pBuffer->hStripedSurface )
+                    {
+                        (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
+                    }
                     pBuffer->state = BOMX_VideoDecoderFrameBufferState_eReady;
                     BLST_Q_INSERT_TAIL(&m_frameBufferAllocList, pBuffer, node);
                     pFrameStatus++;
@@ -3324,7 +3399,9 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     m_pVideoPorts[1]->GetDefinition(&portDefs);
                     portDefs.format.video.nFrameWidth = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
                     portDefs.format.video.nFrameHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
-                    portDefs.nBufferSize = 2*pBuffer->frameStatus.surfaceCreateSettings.imageWidth*pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
+                    portDefs.format.video.nStride = portDefs.format.video.nFrameWidth;
+                    portDefs.format.video.nSliceHeight = portDefs.format.video.nFrameHeight;
+                    portDefs.nBufferSize = ComputeBufferSize(portDefs.format.video.nStride, portDefs.format.video.nSliceHeight);
                     m_pVideoPorts[1]->SetDefinition(&portDefs);
                     PortFormatChanged(m_pVideoPorts[1]);
                     return;
@@ -3345,33 +3422,39 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     case BOMX_VideoDecoderOutputBufferType_eStandard:
                         {
                             NEXUS_Error errCode;
-                            NEXUS_StripedSurfaceHandle hStripedSurface;
-                            hStripedSurface = NEXUS_StripedSurface_Create(&pBuffer->frameStatus.surfaceCreateSettings);
-                            if ( NULL == hStripedSurface )
+                            if ( pBuffer->hStripedSurface )
                             {
-                                (void)BOMX_BERR_TRACE(BERR_OUT_OF_SYSTEM_MEMORY);
-                                // This is not working now because of a nexus bug.  Keep going and return junk...
-                                //return;
-                            }
-                            // Flush the surface in case CPU had read the data
-                            NEXUS_Surface_Flush(pInfo->typeInfo.standard.hSurface);
-                            if ( hStripedSurface )
-                            {
-                                errCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, hStripedSurface, pInfo->typeInfo.standard.hSurface, NULL);
+#if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
+                                NEXUS_Surface_Flush(pInfo->typeInfo.standard.hSurfaceY);
+                                errCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, pBuffer->hStripedSurface, pInfo->typeInfo.standard.hSurfaceY, NULL);
                                 if ( errCode )
                                 {
                                     (void)BOMX_BERR_TRACE(errCode);
-                                    // Try again later?!?
-                                    return;
                                 }
+                                NEXUS_Surface_Flush(pInfo->typeInfo.standard.hSurfaceCb);
+                                errCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, pBuffer->hStripedSurface, pInfo->typeInfo.standard.hSurfaceCb, NULL);
+                                if ( errCode )
+                                {
+                                    (void)BOMX_BERR_TRACE(errCode);
+                                }
+                                NEXUS_Surface_Flush(pInfo->typeInfo.standard.hSurfaceCr);
+                                errCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, pBuffer->hStripedSurface, pInfo->typeInfo.standard.hSurfaceCr, NULL);
+                                if ( errCode )
+                                {
+                                    (void)BOMX_BERR_TRACE(errCode);
+                                }
+#else
+                                NEXUS_Surface_Flush(pInfo->typeInfo.standard.hDestripeSurface);
+                                errCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, pBuffer->hStripedSurface, pInfo->typeInfo.standard.hDestripeSurface, NULL);
+                                if ( errCode )
+                                {
+                                    (void)BOMX_BERR_TRACE(errCode);
+                                }
+#endif
                             }
-                            pHeader->nFilledLen = 2*m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth*m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight;
+                            pHeader->nFilledLen = ComputeBufferSize(m_pVideoPorts[1]->GetDefinition()->format.video.nStride, m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight);
                             // Wait for the blit to complete before delivering in case CPU will access it quickly
                             GraphicsCheckpoint();
-                            if ( hStripedSurface )
-                            {
-                                NEXUS_StripedSurface_Destroy(hStripedSurface);
-                            }
                             if ( pInfo->typeInfo.standard.pClientMemory )
                             {
                                 CopySurfaceToClient(pInfo);
@@ -3380,8 +3463,19 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         break;
                     case BOMX_VideoDecoderOutputBufferType_eNative:
                         {
-                            pHeader->nFilledLen = 2*m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth*m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight;
-                            pInfo->typeInfo.native.pSharedData->DisplayFrame.frameStatus = pBuffer->frameStatus;
+                            pHeader->nFilledLen = ComputeBufferSize(m_pVideoPorts[1]->GetDefinition()->format.video.nStride, m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight);
+                            pInfo->typeInfo.native.pSharedData->videoFrame.status = pBuffer->frameStatus;
+                            pBuffer->pPrivateHandle = pInfo->typeInfo.native.pPrivateHandle;
+                            errCode = NEXUS_Platform_SetSharedHandle(pBuffer->hStripedSurface, true);       // Unlock the handle so that gralloc_lock() can use this in a different process.
+                            if ( NEXUS_SUCCESS == errCode )
+                            {
+                                pInfo->typeInfo.native.pSharedData->videoFrame.hStripedSurface = pBuffer->hStripedSurface;
+                            }
+                            else
+                            {
+                                (void)BOMX_BERR_TRACE(errCode);
+                                pInfo->typeInfo.native.pSharedData->videoFrame.hStripedSurface = NULL;
+                            }
                         }
                         break;
                     case BOMX_VideoDecoderOutputBufferType_eMetadata:
@@ -3399,7 +3493,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 // Setup window parameters for display and provide buffer status
                                 pSharedData->videoWindow.nexusClientContext = m_pNexusClient;
                                 android_atomic_release_store(1, &pSharedData->videoWindow.windowIdPlusOne);
-                                pSharedData->DisplayFrame.frameStatus = pBuffer->frameStatus;
+                                pSharedData->videoFrame.status = pBuffer->frameStatus;
+                                pSharedData->videoFrame.hStripedSurface = NULL; // Don't allow gralloc_lock in metadata mode.  We won't know when it's safe to destroy the striped surface.
                             }
                             pHeader->nFilledLen = sizeof(VideoDecoderOutputMetaData);
                         }
@@ -3514,6 +3609,8 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             }
             else
             {
+                SHARED_DATA *pSharedData;
+                // Display only the last frame we're returning if the app is falling behind.
                 if ( pNext == pEnd )
                 {
                     returnSettings[numFrames].display = (pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDisplayReady) ? true : false;
@@ -3521,6 +3618,15 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 else
                 {
                     returnSettings[numFrames].display = false;
+                }
+                if ( pBuffer->pPrivateHandle )
+                {
+                    pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pBuffer->pPrivateHandle->sharedData);
+                    if ( pSharedData && pSharedData->videoFrame.hStripedSurface )
+                    {
+                        NEXUS_StripedSurface_Destroy(pSharedData->videoFrame.hStripedSurface);
+                        pSharedData->videoFrame.hStripedSurface = NULL;
+                    }
                 }
                 pBuffer->pPrivateHandle = NULL;
                 pBuffer->pBufferInfo = NULL;
@@ -3567,12 +3673,103 @@ void BOMX_VideoDecoder::CopySurfaceToClient(const BOMX_VideoDecoderOutputBufferI
          pInfo->type == BOMX_VideoDecoderOutputBufferType_eStandard &&
          pInfo->typeInfo.standard.pClientMemory )
     {
+#if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
         size_t numBytes;
+        NEXUS_Error errCode;
         NEXUS_SurfaceStatus surfaceStatus;
+        uint8_t *pClientMemory;
+        void *pSurfaceMemory;
+        size_t cbOffset = m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight * m_pVideoPorts[1]->GetDefinition()->format.video.nStride;
 
-        NEXUS_Surface_GetStatus(pInfo->typeInfo.standard.hSurface, &surfaceStatus);
-        numBytes = surfaceStatus.height * surfaceStatus.pitch;  // HW graphics will always scale this to the full buffer size
-        BKNI_Memcpy(pInfo->typeInfo.standard.pClientMemory, pInfo->typeInfo.standard.pSurfaceMemory, numBytes);
+        // Luma Plane
+        pClientMemory = (uint8_t *)pInfo->typeInfo.standard.pClientMemory;
+        NEXUS_Surface_GetStatus(pInfo->typeInfo.standard.hSurfaceY, &surfaceStatus);
+        numBytes = surfaceStatus.height * surfaceStatus.pitch;
+        errCode = NEXUS_Surface_Lock(pInfo->typeInfo.standard.hSurfaceY, &pSurfaceMemory);
+        if ( errCode )
+        {
+            // Fill with black
+            BKNI_Memset(pClientMemory, 0, numBytes);
+        }
+        else
+        {
+            BKNI_Memcpy(pClientMemory, pSurfaceMemory, numBytes);
+            NEXUS_Surface_Unlock(pInfo->typeInfo.standard.hSurfaceY);
+        }
+        // Cb Plane
+        pClientMemory += cbOffset;
+        NEXUS_Surface_GetStatus(pInfo->typeInfo.standard.hSurfaceCb, &surfaceStatus);
+        numBytes = surfaceStatus.height * surfaceStatus.pitch;
+        errCode = NEXUS_Surface_Lock(pInfo->typeInfo.standard.hSurfaceCb, &pSurfaceMemory);
+        if ( errCode )
+        {
+            // Fill with black
+            BKNI_Memset(pClientMemory, 0x80, numBytes);
+        }
+        else
+        {
+            BKNI_Memcpy(pClientMemory, pSurfaceMemory, numBytes);
+            NEXUS_Surface_Unlock(pInfo->typeInfo.standard.hSurfaceCb);
+        }
+        // Cr Plane
+        pClientMemory += cbOffset/4;    // 4:2:0 Cb plane size is 1/4 Y plane size
+        NEXUS_Surface_GetStatus(pInfo->typeInfo.standard.hSurfaceCr, &surfaceStatus);
+        numBytes = surfaceStatus.height * surfaceStatus.pitch;
+        errCode = NEXUS_Surface_Lock(pInfo->typeInfo.standard.hSurfaceCr, &pSurfaceMemory);
+        if ( errCode )
+        {
+            // Fill with black
+            BKNI_Memset(pClientMemory, 0x80, numBytes);
+        }
+        else
+        {
+            BKNI_Memcpy(pClientMemory, pSurfaceMemory, numBytes);
+            NEXUS_Surface_Unlock(pInfo->typeInfo.standard.hSurfaceCr);
+        }
+#else
+        /* For now, we destripe to 422 and convert to 420 with the CPU.  This is less memory efficent and more complex than 420, but planar
+           destriping does not seem to work properly */
+        unsigned x, y;
+        uint8_t *pClientY, *pClientCb, *pClientCr;
+        uint8_t *pPackedData;
+        void *pSurfaceMemory;
+        NEXUS_Error errCode;
+        pClientY = (uint8_t *)pInfo->typeInfo.standard.pClientMemory;
+        pClientCb = pClientY + (m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight * m_pVideoPorts[1]->GetDefinition()->format.video.nStride);
+        pClientCr = pClientCb + ((m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight * m_pVideoPorts[1]->GetDefinition()->format.video.nStride)/4);
+        BOMX_WRN(("Y base %#x Cb base %#x Cr base %#x", pClientY, pClientCb, pClientCr));
+        errCode = NEXUS_Surface_Lock(pInfo->typeInfo.standard.hDestripeSurface, &pSurfaceMemory);
+        if ( NEXUS_SUCCESS == errCode )
+        {
+            pPackedData = (uint8_t *)pSurfaceMemory;
+            // Convert 422 YCbCr to 420 Planar
+            for ( y = 0; y < m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight; ++y )
+            {
+                for ( x = 0; x < m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth; x+=2 )
+                {
+                    uint8_t y0, cb, y1, cr;
+                    y0 = *pPackedData++;
+                    cb = *pPackedData++;
+                    y1 = *pPackedData++;
+                    cr = *pPackedData++;
+
+                    *pClientY++ = y0;
+                    *pClientY++ = y1;
+
+                    if ( (y & 1) == 0 )
+                    {
+                        *pClientCb++ = cb;
+                        *pClientCr++ = cr;
+                    }
+                }
+            }
+            NEXUS_Surface_Unlock(pInfo->typeInfo.standard.hDestripeSurface);
+        }
+        else
+        {
+            BOMX_BERR_TRACE(errCode);
+        }
+#endif
     }
 }
 
@@ -3829,7 +4026,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SendDataBuffertoHw(BOMX_VideoDecoderInputBuffer
 
     ALOGV("%s, header:%p, headerLen:%d, payload:%p, payloadLen:%d, numDesc:%u",
           __FUNCTION__, pInfo->pHeader, pInfo->headerLen, pPayload, payloadLen,
-          pInfo->numDescriptors);
+          pInfo->numDescriptors + numRequested);
     errCode = NEXUS_Playpump_SubmitScatterGatherDescriptor(m_hPlaypump, desc, numRequested, &numConsumed);
     if ( errCode )
     {
