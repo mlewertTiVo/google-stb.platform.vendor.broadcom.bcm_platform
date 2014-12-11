@@ -212,7 +212,7 @@ void startNxServer(void)
     // No need to use a macro here, secure decoders will be enabled by default.
     strcat(cmdRunNxServer, "-svp ");
     // disable the composition to SD, not needed.
-    strcat(cmdRunNxServer, "-sd off ");
+    strcat(cmdRunNxServer, "-sd off -memconfig display,capture=off -memconfig display,5060=off -memconfig display,hddvi=off ");
 
     // binary files of HDCP keys
     property_get("ro.nexus.nxserver.hdcp1x_keys", value, NULL);
