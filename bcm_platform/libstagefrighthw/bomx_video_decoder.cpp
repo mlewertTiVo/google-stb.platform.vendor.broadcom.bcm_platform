@@ -46,7 +46,7 @@
  * $brcm_Log: $
  *
  *****************************************************************************/
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_decoder"
 
@@ -183,7 +183,7 @@ static void BOMX_VideoDecoder_CheckpointComplete(void *pParam, int unused)
     B_EventHandle hEvent = static_cast<B_EventHandle>(pParam);
     BSTD_UNUSED(unused);
 
-    BOMX_WRN(("Checkpoint Event"));
+    BOMX_MSG(("Checkpoint Event"));
 
     B_Event_Set(hEvent);
 }
@@ -1192,16 +1192,29 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
         pColorFormat->sMediaImage.mBitDepth = 8;
         pColorFormat->sMediaImage.mPlane[MediaImage::Y].mOffset = 0;
         pColorFormat->sMediaImage.mPlane[MediaImage::Y].mColInc = 1;
+        pColorFormat->sMediaImage.mPlane[MediaImage::Y].mRowInc = pColorFormat->nStride;
         pColorFormat->sMediaImage.mPlane[MediaImage::Y].mHorizSubsampling = 1;
         pColorFormat->sMediaImage.mPlane[MediaImage::Y].mVertSubsampling = 1;
-        pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset = pColorFormat->nStride*pColorFormat->nSliceHeight;
         pColorFormat->sMediaImage.mPlane[MediaImage::U].mColInc = 1;
+        pColorFormat->sMediaImage.mPlane[MediaImage::U].mRowInc = pColorFormat->nStride/2;
         pColorFormat->sMediaImage.mPlane[MediaImage::U].mHorizSubsampling = 2;
         pColorFormat->sMediaImage.mPlane[MediaImage::U].mVertSubsampling = 2;
-        pColorFormat->sMediaImage.mPlane[MediaImage::V].mOffset = pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset + (pColorFormat->nStride*pColorFormat->nSliceHeight)/4;
         pColorFormat->sMediaImage.mPlane[MediaImage::V].mColInc = 1;
+        pColorFormat->sMediaImage.mPlane[MediaImage::V].mRowInc = pColorFormat->nStride/2;
         pColorFormat->sMediaImage.mPlane[MediaImage::V].mHorizSubsampling = 2;
         pColorFormat->sMediaImage.mPlane[MediaImage::V].mVertSubsampling = 2;
+        if ( m_nativeGraphicsEnabled )
+        {
+            // YV12 is Y/Cr/Cb
+            pColorFormat->sMediaImage.mPlane[MediaImage::V].mOffset = pColorFormat->nStride*pColorFormat->nSliceHeight;
+            pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset = pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset + (pColorFormat->nStride*pColorFormat->nSliceHeight)/4;
+        }
+        else
+        {
+            // 420Planar is Y/Cb/Cr
+            pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset = pColorFormat->nStride*pColorFormat->nSliceHeight;
+            pColorFormat->sMediaImage.mPlane[MediaImage::V].mOffset = pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset + (pColorFormat->nStride*pColorFormat->nSliceHeight)/4;
+        }
         return OMX_ErrorNone;
     }
 
@@ -1366,7 +1379,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         portFormat.eCompressionFormat = OMX_VIDEO_CodingUnused;
         if ( m_nativeGraphicsEnabled )
         {
-            // In this mode, the output color format should be an android HAL format.  Our gralloc only supports RGB888/565 variants.  Use 565 to save memory and bandwidth.
+            // In this mode, the output color format should be an android HAL format.
             portFormat.nIndex = 1;  // The second port format is the native format
             portFormat.eColorFormat = (OMX_COLOR_FORMATTYPE)((int)HAL_PIXEL_FORMAT_YV12);
         }
@@ -2273,10 +2286,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
                     pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight, nSizeBytes, pPortDef->format.video.eColorFormat));
                 delete pInfo;
                 return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-            }
-            else
-            {
-                BOMX_WRN(("Output buffer size %u expected %u", nSizeBytes, (unsigned int)ComputeBufferSize(pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight)));
             }
             if ( componentAllocated )
             {
@@ -3737,7 +3746,6 @@ void BOMX_VideoDecoder::CopySurfaceToClient(const BOMX_VideoDecoderOutputBufferI
         pClientY = (uint8_t *)pInfo->typeInfo.standard.pClientMemory;
         pClientCb = pClientY + (m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight * m_pVideoPorts[1]->GetDefinition()->format.video.nStride);
         pClientCr = pClientCb + ((m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight * m_pVideoPorts[1]->GetDefinition()->format.video.nStride)/4);
-        BOMX_WRN(("Y base %#x Cb base %#x Cr base %#x", pClientY, pClientCb, pClientCr));
         errCode = NEXUS_Surface_Lock(pInfo->typeInfo.standard.hDestripeSurface, &pSurfaceMemory);
         if ( NEXUS_SUCCESS == errCode )
         {
