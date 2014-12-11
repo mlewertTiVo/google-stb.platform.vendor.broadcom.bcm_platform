@@ -344,6 +344,10 @@ pushprog(Vector<BroadcastProgramInfo> &rv, void *e_ptr, void *s_ptr)
     pi.title = utf8tostringstrippingdvbcodes(utf8);
     STB_ReleaseUnicodeString(utf8);
 
+    utf8 = ADB_GetEventDescription(e_ptr);
+    pi.short_description = utf8tostringstrippingdvbcodes(utf8);
+    STB_ReleaseUnicodeString(utf8);
+
     pi.start_time_utc_millis = STB_GCConvertToTimestamp(ADB_GetEventStartDateTime(e_ptr)) * (jlong)1000;
     pi.end_time_utc_millis = STB_GCConvertToTimestamp(ADB_GetEventEndDateTime(e_ptr)) * (jlong)1000;
     rv.push_back(pi);
@@ -517,7 +521,7 @@ BroadcastDTVKit_GetScanInfo()
             scanInfo.dataChannels = newData;
         }
         {
-            U8BIT path = STB_DPGetLivePath();
+            U8BIT path = ACTL_GetServiceSearchPath();
             if (path != INVALID_RES_ID)
             {
                 U8BIT tuner_path = STB_DPGetPathTuner(path);

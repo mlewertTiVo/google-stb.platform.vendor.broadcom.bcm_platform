@@ -23,6 +23,7 @@ public:
     String8 id;
     String8 channel_id;
     String8 title;
+    String8 short_description;
     jlong start_time_utc_millis;
     jlong end_time_utc_millis;
 };

@@ -349,6 +349,10 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramList(JNIEnv *env, jclass thiz, jstr
     if(titleID == 0){
         ALOGE("%s: could not get title ID", __FUNCTION__);
     }
+    jfieldID descID = env->GetFieldID(cls, "short_description", "Ljava/lang/String;");
+    if(descID == 0){
+        ALOGE("%s: could not get short_description ID", __FUNCTION__);
+    }
     jfieldID startID = env->GetFieldID(cls, "start_time_utc_millis", "J");
     if(startID == 0){
         ALOGE("%s: could not get start ID", __FUNCTION__);
@@ -363,6 +367,7 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramList(JNIEnv *env, jclass thiz, jstr
         env->SetObjectField(o, idID, env->NewStringUTF(piv[i].id.string()));
         env->SetObjectField(o, channelIdID, env->NewStringUTF(piv[i].channel_id.string()));
         env->SetObjectField(o, titleID, env->NewStringUTF(piv[i].title.string()));
+        env->SetObjectField(o, descID, env->NewStringUTF(piv[i].short_description.string()));
         env->SetLongField(o, startID, piv[i].start_time_utc_millis);
         env->SetLongField(o, endID, piv[i].end_time_utc_millis);
         env->SetObjectArrayElement(rv, i, o);

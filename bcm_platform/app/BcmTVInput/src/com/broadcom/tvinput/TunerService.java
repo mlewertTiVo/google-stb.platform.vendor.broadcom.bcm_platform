@@ -84,6 +84,7 @@ public class TunerService extends TvInputService {
         prog_values.put(TvContract.Programs.COLUMN_TITLE, program.title);
         prog_values.put(TvContract.Programs.COLUMN_START_TIME_UTC_MILLIS, program.start_time_utc_millis);
         prog_values.put(TvContract.Programs.COLUMN_END_TIME_UTC_MILLIS, program.end_time_utc_millis);
+        prog_values.put(TvContract.Programs.COLUMN_SHORT_DESCRIPTION, program.short_description);
         return prog_values;
     }
 
@@ -94,6 +95,10 @@ public class TunerService extends TvInputService {
     private static boolean differentInfo(AndroidProgramInfo api, ProgramInfo pi) {
         if (!api.title.equals(pi.title)) {
             Log.d(TAG, "DatabaseSyncTask: different title '" + api.title + "' '" + pi.title + "'");
+            return true;
+        }
+        if (!api.short_description.equals(pi.short_description)) {
+            Log.d(TAG, "DatabaseSyncTask: different short_description '" + api.short_description + "' '" + pi.short_description + "'");
             return true;
         }
         if (api.start_time_utc_millis != pi.start_time_utc_millis) {
@@ -176,6 +181,7 @@ public class TunerService extends TvInputService {
                     TvContract.Programs.COLUMN_START_TIME_UTC_MILLIS,
                     TvContract.Programs.COLUMN_END_TIME_UTC_MILLIS,
                     TvContract.Programs._ID,
+                    TvContract.Programs.COLUMN_SHORT_DESCRIPTION,
                 };
                 Cursor cursor = getContentResolver().query(uri, projection, null, null, null);
                 if (cursor == null) {
@@ -191,6 +197,7 @@ public class TunerService extends TvInputService {
                         oldprograms[op].start_time_utc_millis = cursor.getLong(2);
                         oldprograms[op].end_time_utc_millis = cursor.getLong(3);
                         oldprograms[op].programId = cursor.getLong(4);
+                        oldprograms[op].short_description = cursor.getString(5);
                         op++;
                     }
                 }
