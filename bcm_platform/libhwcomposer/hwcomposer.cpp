@@ -2093,6 +2093,7 @@ static void hwc_prepare_gpx_layer(
             goto out_unlock;
         }
         uint8_t *addr;
+        void *slock;
         switch (pSharedData->planes[DEFAULT_PLANE].format) {
             case HAL_PIXEL_FORMAT_YV12:
                 addr  = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[EXTRA_PLANE].physAddr);
@@ -2107,27 +2108,24 @@ static void hwc_prepare_gpx_layer(
                                                                             (NEXUS_PixelFormat)pSharedData->planes[EXTRA_PLANE].format,
                                                                             addr);
 
-                NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
-                createSettings.pixelFormat = (NEXUS_PixelFormat)pSharedData->planes[EXTRA_PLANE].format;
-                createSettings.width       = pSharedData->planes[EXTRA_PLANE].width;
-                createSettings.height      = pSharedData->planes[EXTRA_PLANE].height;
-                createSettings.pitch       = stride;
-                createSettings.pMemory     = addr;
-                ctx->gpx_cli[layer_id].slist[six].shdl = NEXUS_Surface_Create(&createSettings);
-
                 if (ctx->gpx_cli[layer_id].slist[six].shdl == NULL) {
                     ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_NO_OWNER;
                     ALOGE("%s: standard surface creation failed: %d, %p, %dx%d, %d\n", __FUNCTION__, layer_id,
                           addr, disp_position.width, disp_position.height, stride);
                     goto out_unlock;
                 }
-                rc = yv12_to_422planar(bcmBuffer, ctx->gpx_cli[layer_id].slist[six].shdl,
+                NEXUS_Surface_Lock(ctx->gpx_cli[layer_id].slist[six].shdl, &slock);
+                NEXUS_Surface_Flush(ctx->gpx_cli[layer_id].slist[six].shdl);
+                rc = yv12_to_422planar(bcmBuffer,
+                                       ctx->gpx_cli[layer_id].slist[six].shdl,
                                        ctx->hwc_2dg);
                 if (rc != NEXUS_SUCCESS) {
                     ALOGE("%s: conversion failed: %d\n", __FUNCTION__, layer_id);
+                    NEXUS_Surface_Destroy(ctx->gpx_cli[layer_id].slist[six].shdl);
+                    ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_NO_OWNER;
+                    ctx->gpx_cli[layer_id].slist[six].shdl = NULL;
                     goto out_unlock;
                 }
-                NEXUS_FlushCache(addr, pSharedData->planes[EXTRA_PLANE].size);
             break;
 
             default:

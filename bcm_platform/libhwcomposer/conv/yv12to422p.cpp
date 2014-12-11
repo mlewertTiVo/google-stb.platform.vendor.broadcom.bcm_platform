@@ -39,7 +39,7 @@ extern "C" NEXUS_Error yv12_to_422planar(private_handle_t *handle, NEXUS_Surface
     NEXUS_SurfaceHandle srcCb, srcCr, srcY;
     NEXUS_Graphics2DSettings gfxSettings;
     BM2MC_PACKET_Plane planeY, planeCb, planeCr, planeYCbCr;
-    void *buffer, *next;
+    void *buffer, *next, *slock;
     size_t size;
 
     BM2MC_PACKET_Blend combColor = {BM2MC_PACKET_BlendFactor_eSourceColor,
@@ -82,18 +82,24 @@ extern "C" NEXUS_Error yv12_to_422planar(private_handle_t *handle, NEXUS_Surface
                               stride,
                               NEXUS_PixelFormat_eY8,
                               y_addr);
+    NEXUS_Surface_Lock(srcY, &slock);
+    NEXUS_Surface_Flush(srcY);
 
     srcCr = hwc_to_nsc_surface(pSharedData->planes[DEFAULT_PLANE].width/2,
                                pSharedData->planes[DEFAULT_PLANE].height/2,
                                (stride/2 + (align-1)) & ~(align-1),
                                NEXUS_PixelFormat_eCr8,
                                cr_addr);
+    NEXUS_Surface_Lock(srcCr, &slock);
+    NEXUS_Surface_Flush(srcCr);
 
     srcCb = hwc_to_nsc_surface(pSharedData->planes[DEFAULT_PLANE].width/2,
                                pSharedData->planes[DEFAULT_PLANE].height/2,
                                (stride/2 + (align-1)) & ~(align-1),
                                NEXUS_PixelFormat_eCb8,
                                cb_addr);
+    NEXUS_Surface_Lock(srcCb, &slock);
+    NEXUS_Surface_Flush(srcCb);
 
     if (CONVERSION_IS_VERBOSE) {
        ALOGD("%s: intermediate surfaces: y:%p, cr:%p, cb:%p\n", __FUNCTION__, srcY, srcCr, srcCb);
