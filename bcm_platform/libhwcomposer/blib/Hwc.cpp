@@ -248,7 +248,7 @@ void Hwc::setVideoGeometry(const sp<IHwcListener>& listener, int index,
                            struct hwc_position &frame, struct hwc_position &clipped,
                            int zorder, int visible)
 {
-    ALOGD("%s: %p, index %d", __FUNCTION__,
+    ALOGV("%s: %p, index %d", __FUNCTION__,
           listener->asBinder().get(), index);
 
     Mutex::Autolock _l(mLock);
