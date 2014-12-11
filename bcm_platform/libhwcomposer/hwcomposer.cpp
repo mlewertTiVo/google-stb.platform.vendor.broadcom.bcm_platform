@@ -308,6 +308,11 @@ void HwcBinder::notify( int msg, int param1, int param2 )
 struct hwc_context_t {
     hwc_composer_device_1_t device;
 
+    unsigned int prepare_call;
+    unsigned int prepare_skipped;
+    unsigned int set_call;
+    unsigned int set_skipped;
+
     /* our private state goes below here */
     NexusIPCClientBase *pIpcClient;
     NexusClientContext *pNexusClientContext;
@@ -697,6 +702,15 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
        }
     }
     if (capacity) {
+       write = snprintf(buff + index, capacity, "\tprepare:{%u,%u}::set:{%u,%u}\n",
+           ctx->prepare_call,
+           ctx->prepare_skipped,
+           ctx->set_call,
+           ctx->set_skipped);
+       if (write > 0) {
+           capacity = (capacity > write) ? (capacity - write) : 0;
+           index += write;
+       }
        write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%p::vscb:%s::d:{%d,%d}::pm:%s\n",
            ctx->pIpcClient,
            ctx->pNexusClientContext,
@@ -1014,9 +1028,12 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     // blocking wait here...
     BKNI_WaitForEvent(ctx->prepare_event, 1000);
 
+    ctx->prepare_call++;
+
     // Don't prepare the primary if we are powering or powered off...
     if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
         ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
+        ctx->prepare_skipped++;
         goto out;
     }
     if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
@@ -1110,13 +1127,17 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     if (!list)
        return -EINVAL;
 
+    ctx->set_call++;
+
     if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+        ctx->set_skipped++;
         goto out;
     }
 
     // Don't set the primary display if we are powering or powered off...
     if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
         ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
+        ctx->set_skipped++;
         goto out;
     }
     if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
@@ -1150,24 +1171,28 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
             //
             // gpx layer: use the 'cached' visibility that was assigned during 'prepare'.
             //
-            else if (ctx->gpx_cli[i].composition.visible && !ctx->gpx_cli[i].skip_set) {
-                int six = hwc_gpx_push_surface_locked(&ctx->gpx_cli[i]);
-                if (six != -1) {
-                   rc = NEXUS_SurfaceClient_PushSurface(ctx->gpx_cli[i].ncci.schdl, ctx->gpx_cli[i].slist[six].shdl, NULL, false);
-                   if (rc) {
-                       ctx->gpx_cli[i].slist[six].owner = SURF_OWNER_NO_OWNER;
-                       if ((ctx->gpx_cli[i].layer_subtype == NEXUS_CURSOR) &&
-                           ctx->gpx_cli[i].slist[six].schdl) {
-                           NEXUS_SurfaceCursor_Destroy(ctx->gpx_cli[i].slist[six].schdl);
-                           ctx->gpx_cli[i].slist[six].schdl = NULL;
-                       }
-                       if (ctx->gpx_cli[i].slist[six].shdl) {
-                          NEXUS_Surface_Destroy(ctx->gpx_cli[i].slist[six].shdl);
-                          ctx->gpx_cli[i].slist[six].shdl = NULL;
-                       }
-                       ALOGE("%s: push surface %p failed on layer %d, rc=%d\n", __FUNCTION__, ctx->gpx_cli[i].slist[six].shdl, i, rc);
+            else if (ctx->gpx_cli[i].composition.visible) {
+                if (!ctx->gpx_cli[i].skip_set) {
+                   int six = hwc_gpx_push_surface_locked(&ctx->gpx_cli[i]);
+                   if (six != -1) {
+                      rc = NEXUS_SurfaceClient_PushSurface(ctx->gpx_cli[i].ncci.schdl, ctx->gpx_cli[i].slist[six].shdl, NULL, false);
+                      if (rc) {
+                          ctx->gpx_cli[i].slist[six].owner = SURF_OWNER_NO_OWNER;
+                          if ((ctx->gpx_cli[i].layer_subtype == NEXUS_CURSOR) &&
+                              ctx->gpx_cli[i].slist[six].schdl) {
+                              NEXUS_SurfaceCursor_Destroy(ctx->gpx_cli[i].slist[six].schdl);
+                              ctx->gpx_cli[i].slist[six].schdl = NULL;
+                          }
+                          if (ctx->gpx_cli[i].slist[six].shdl) {
+                             NEXUS_Surface_Destroy(ctx->gpx_cli[i].slist[six].shdl);
+                             ctx->gpx_cli[i].slist[six].shdl = NULL;
+                          }
+                          ALOGE("%s: push surface %p failed on layer %d, rc=%d\n", __FUNCTION__, ctx->gpx_cli[i].slist[six].shdl, i, rc);
+                      }
                    }
-               }
+                } else {
+                   ctx->gpx_cli[i].skip_set = false;
+                }
             }
         }
 
