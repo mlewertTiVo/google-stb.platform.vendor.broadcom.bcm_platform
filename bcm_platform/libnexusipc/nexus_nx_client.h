@@ -79,7 +79,8 @@ public:
             STATE_RUNNING
         };
 
-        StandbyMonitorThread(NexusNxClient *nc) : state(STATE_STOPPED), mNexusNxClient(nc), name(NULL) {
+        StandbyMonitorThread(b_refsw_client_standby_monitor_callback callback, b_refsw_client_standby_monitor_context context) :
+            state(STATE_STOPPED), mCallback(callback), mContext(context), name(NULL) {
             ALOGD("%s: called", __PRETTY_FUNCTION__);
         }
 
@@ -97,7 +98,8 @@ public:
 
     private:
         ThreadState state;
-        NexusNxClient *mNexusNxClient;
+        b_refsw_client_standby_monitor_callback mCallback;
+        b_refsw_client_standby_monitor_context  mContext;
         char *name;
         bool threadLoop();
 
@@ -174,8 +176,6 @@ protected:
 
 private:
     android::sp<NexusNxClient::StandbyMonitorThread> mStandbyMonitorThread;
-    b_refsw_client_standby_monitor_callback mStandbyMonitorCallback;
-    b_refsw_client_standby_monitor_context  mStandbyMonitorContext;
     b_refsw_client_client_info info;
 };
 

@@ -128,8 +128,8 @@ bool NexusNxClient::StandbyMonitorThread::threadLoop()
             bool ack = true;
 
             if (standbyStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn) {
-                if (mNexusNxClient->mStandbyMonitorCallback != NULL) {
-                    ack =  mNexusNxClient->mStandbyMonitorCallback(mNexusNxClient->mStandbyMonitorContext);
+                if (mCallback != NULL) {
+                    ack =  mCallback(mContext);
                 }
             }
             if (ack) {
@@ -285,9 +285,7 @@ NexusClientContext * NexusNxClient::createClientContext(const b_refsw_client_cli
         // Stash info away for use later
         getClientInfo(client, &this->info);
 
-        mStandbyMonitorCallback = config->standbyMonitorCallback;
-        mStandbyMonitorContext  = config->standbyMonitorContext;
-        mStandbyMonitorThread = new NexusNxClient::StandbyMonitorThread(this);
+        mStandbyMonitorThread = new NexusNxClient::StandbyMonitorThread(config->standbyMonitorCallback, config->standbyMonitorContext);
         mStandbyMonitorThread->run(&config->name.string[0], ANDROID_PRIORITY_NORMAL);
     }
     return client;
