@@ -1179,12 +1179,33 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
         DescribeColorFormatParams *pColorFormat = (DescribeColorFormatParams *)pComponentParameterStructure;
         BOMX_STRUCT_VALIDATE(pColorFormat);
         BOMX_MSG(("GetParameter OMX_IndexParamDescribeColorFormat"));
-        const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[1]->GetDefinition();
-        pColorFormat->eColorFormat = pPortDef->format.video.eColorFormat;
-        pColorFormat->nFrameWidth = pPortDef->format.video.nFrameWidth;
-        pColorFormat->nFrameHeight = pPortDef->format.video.nFrameHeight;
-        pColorFormat->nStride = pPortDef->format.video.nStride;
-        pColorFormat->nSliceHeight = pPortDef->format.video.nSliceHeight;
+        switch ( pColorFormat->eColorFormat )
+        {
+            case ((OMX_COLOR_FORMATTYPE)((int)HAL_PIXEL_FORMAT_YV12)):
+            {
+                // YV12 is Y/Cr/Cb
+                pColorFormat->sMediaImage.mPlane[MediaImage::V].mOffset = pColorFormat->nStride*pColorFormat->nSliceHeight;
+                pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset =
+                                        pColorFormat->sMediaImage.mPlane[MediaImage::V].mOffset +
+                                        (pColorFormat->nStride*pColorFormat->nSliceHeight)/4;
+            }
+            break;
+            case OMX_COLOR_FormatYUV420Planar:
+            {
+                // 420Planar is Y/Cb/Cr
+                pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset = pColorFormat->nStride*pColorFormat->nSliceHeight;
+                pColorFormat->sMediaImage.mPlane[MediaImage::V].mOffset =
+                                        pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset +
+                                        (pColorFormat->nStride*pColorFormat->nSliceHeight)/4;
+            }
+            break;
+            default:
+            {
+                BOMX_ERR(("Unknown color format 0x%x", pColorFormat->eColorFormat));
+                return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+            }
+            break;
+        }
         pColorFormat->sMediaImage.mType = MediaImage::MEDIA_IMAGE_TYPE_YUV;
         pColorFormat->sMediaImage.mNumPlanes = 3;
         pColorFormat->sMediaImage.mWidth = pColorFormat->nFrameWidth;
@@ -1203,18 +1224,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
         pColorFormat->sMediaImage.mPlane[MediaImage::V].mRowInc = pColorFormat->nStride/2;
         pColorFormat->sMediaImage.mPlane[MediaImage::V].mHorizSubsampling = 2;
         pColorFormat->sMediaImage.mPlane[MediaImage::V].mVertSubsampling = 2;
-        if ( m_nativeGraphicsEnabled )
-        {
-            // YV12 is Y/Cr/Cb
-            pColorFormat->sMediaImage.mPlane[MediaImage::V].mOffset = pColorFormat->nStride*pColorFormat->nSliceHeight;
-            pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset = pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset + (pColorFormat->nStride*pColorFormat->nSliceHeight)/4;
-        }
-        else
-        {
-            // 420Planar is Y/Cb/Cr
-            pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset = pColorFormat->nStride*pColorFormat->nSliceHeight;
-            pColorFormat->sMediaImage.mPlane[MediaImage::V].mOffset = pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset + (pColorFormat->nStride*pColorFormat->nSliceHeight)/4;
-        }
+
         return OMX_ErrorNone;
     }
 
