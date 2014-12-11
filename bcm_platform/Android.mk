@@ -7,7 +7,6 @@ include vendor/broadcom/bcm_platform/brcm_memtrack/Android.mk
 include vendor/broadcom/bcm_platform/brcm_nexus/Android.mk
 include vendor/broadcom/bcm_platform/cmds/cec/Android.mk
 include vendor/broadcom/bcm_platform/hdmi_cec/Android.mk
-include vendor/broadcom/bcm_platform/libbcmsideband/Android.mk
 include vendor/broadcom/bcm_platform/libcamera2/Android.mk
 include vendor/broadcom/bcm_platform/libGLES_nexus/Android.mk
 include vendor/broadcom/bcm_platform/libgralloc/Android.mk
@@ -35,7 +34,6 @@ include ${BCM_APPS_PATH}/BcmGeneralSTBFunctions/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiInPlayer/Android.mk
 include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
-include ${BCM_APPS_PATH}/Bouncer/Android.mk
 include ${BCM_APPS_PATH}/ExoPlayerDemo/Android.mk
 
 // why do we need a ifeq?  todo: remove.
@@ -47,6 +45,11 @@ endif
 include vendor/broadcom/bcm_platform/tools/cmatool/Android.mk
 include vendor/broadcom/bcm_platform/tools/lmkstats/Android.mk
 include vendor/broadcom/bcm_platform/tools/prdy_pes_playback/Android.mk
+
+ifneq ($(wildcard vendor/broadcom/bcm_platform/not_for_release/README.txt),)
+include vendor/broadcom/bcm_platform/not_for_release/libbcmsideband/Android.mk
+include vendor/broadcom/bcm_platform/not_for_release/Bouncer/Android.mk
+endif
 
 endif
 
