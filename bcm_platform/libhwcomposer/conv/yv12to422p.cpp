@@ -29,22 +29,15 @@
 
 #define CONVERSION_IS_VERBOSE 0
 
-static void complete(void *data, int unused)
-{
-    (void) unused;
-    BKNI_SetEvent((BKNI_EventHandle)data);
-}
-
-extern "C" NEXUS_Error yv12_to_422planar(private_handle_t *handle, NEXUS_SurfaceHandle out, NEXUS_Graphics2DHandle gfx)
+extern "C" NEXUS_Error yv12_to_422planar(private_handle_t *handle, NEXUS_SurfaceHandle out,
+                                         NEXUS_Graphics2DHandle gfx)
 {
     NEXUS_Error rc;
 
     int align, stride;
     uint8_t *yv12, *y_addr, *cr_addr, *cb_addr;
     NEXUS_SurfaceHandle srcCb, srcCr, srcY;
-    NEXUS_GraphicsSettings graphicsSettings;
     NEXUS_Graphics2DSettings gfxSettings;
-    BKNI_EventHandle spaceAvailableEvent, checkpointEvent;
     BM2MC_PACKET_Plane planeY, planeCb, planeCr, planeYCbCr;
     void *buffer, *next;
     size_t size;
@@ -111,15 +104,8 @@ extern "C" NEXUS_Error yv12_to_422planar(private_handle_t *handle, NEXUS_Surface
        goto out_cleanup;
     }
 
-    BKNI_CreateEvent(&checkpointEvent);
-    BKNI_CreateEvent(&spaceAvailableEvent);
-
     NEXUS_Graphics2D_GetSettings(gfx, &gfxSettings);
-    gfxSettings.pollingCheckpoint             = false;
-    gfxSettings.checkpointCallback.callback   = complete;
-    gfxSettings.checkpointCallback.context    = checkpointEvent;
-    gfxSettings.packetSpaceAvailable.callback = complete;
-    gfxSettings.packetSpaceAvailable.context  = spaceAvailableEvent;
+    gfxSettings.pollingCheckpoint = false;
     NEXUS_Graphics2D_SetSettings(gfx, &gfxSettings);
     rc = NEXUS_Graphics2D_GetPacketBuffer(gfx, &buffer, &size, 1024);
     if ((rc != NEXUS_SUCCESS) || !size) {
@@ -191,23 +177,11 @@ extern "C" NEXUS_Error yv12_to_422planar(private_handle_t *handle, NEXUS_Surface
              NEXUS_GET_ERR_NUM(rc), NEXUS_GET_ERR_ID(rc));
        goto out_cleanup;
     }
-    rc = NEXUS_Graphics2D_Checkpoint(gfx, NULL);
-    /* always expect to be told checkpoint is queued, then block wait for
-       the conversion to finish. */
-    if (rc == NEXUS_GRAPHICS2D_QUEUED) {
-        rc = BKNI_WaitForEvent(checkpointEvent, 2000);
-    } else {
-       ALOGE("%s: failed conversion: (num:%d, id:0x%x)\n", __FUNCTION__,
-             NEXUS_GET_ERR_NUM(rc), NEXUS_GET_ERR_ID(rc));
-       goto out_cleanup;
-    }
 
 out_cleanup:
     NEXUS_Surface_Destroy(srcCb);
     NEXUS_Surface_Destroy(srcCr);
     NEXUS_Surface_Destroy(srcY);
-    BKNI_DestroyEvent(spaceAvailableEvent);
-    BKNI_DestroyEvent(checkpointEvent);
 out:
    return rc;
 }

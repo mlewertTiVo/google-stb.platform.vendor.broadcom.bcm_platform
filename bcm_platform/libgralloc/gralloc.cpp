@@ -365,7 +365,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       return -EINVAL;
    }
 
-   private_handle_t *grallocPrivateHandle = new private_handle_t(fd, fd2, fd3, size, 0);
+   private_handle_t *grallocPrivateHandle = new private_handle_t(fd, fd2, fd3, 0);
 
    int ret = ioctl(fd2, NX_ASHMEM_SET_SIZE, sizeof(SHARED_DATA));
    if (ret < 0) {
@@ -389,6 +389,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    pSharedData->planes[DEFAULT_PLANE].height = h;
    pSharedData->planes[DEFAULT_PLANE].bpp = bpp;
    pSharedData->planes[DEFAULT_PLANE].format = format;
+   pSharedData->planes[DEFAULT_PLANE].size = size;
 
    if (format != HAL_PIXEL_FORMAT_YV12) {
       // standard graphic buffer.
@@ -420,6 +421,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       pSharedData->planes[EXTRA_PLANE].height = h;
       pSharedData->planes[EXTRA_PLANE].bpp = bpp;
       pSharedData->planes[EXTRA_PLANE].format = (int)nxFormat;
+      pSharedData->planes[EXTRA_PLANE].size = extra_size;
       ret = ioctl(fd3, NX_ASHMEM_SET_SIZE, extra_size);
       if (ret >= 0) {
          pSharedData->planes[EXTRA_PLANE].physAddr =

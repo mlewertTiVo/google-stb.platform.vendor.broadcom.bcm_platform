@@ -80,6 +80,7 @@ typedef struct __SHARED_DATA_ {
       unsigned width;
       unsigned height;
       unsigned physAddr;
+      unsigned size;
   } planes[MAX_NUM_INSTANCES];
 
 } SHARED_DATA, *PSHARED_DATA;
@@ -99,25 +100,24 @@ struct private_handle_t {
 /*Ints Counter*/
 /*1.*/        int         magic;
 /*2.*/        int         flags;
-/*3.*/        int         size;
-/*4.*/        int         pid;
-/*5.*/        unsigned    oglStride;
-/*6.*/        unsigned    oglFormat;
-/*7.*/        unsigned    oglSize;
-/*8.*/        unsigned    sharedData;
-/*9.*/        int         usage;
+/*3.*/        int         pid;
+/*4.*/        unsigned    oglStride;
+/*5.*/        unsigned    oglFormat;
+/*6.*/        unsigned    oglSize;
+/*7.*/        unsigned    sharedData;
+/*8.*/        int         usage;
 
 // do not use, only for backward compatibility.
-/*10.*/       unsigned    nxSurfacePhysicalAddress;
+/*9.*/        unsigned    nxSurfacePhysicalAddress;
 
 #ifdef __cplusplus
-    static const int sNumInts = 10;
+    static const int sNumInts = 9;
     static const int sNumFds = 3;
     static const int sMagic = 0x3141592;
 
-    private_handle_t(int fd, int fd2, int fd3, int size, int flags) :
-        fd(fd), fd2(fd2), fd3(fd3), magic(sMagic), flags(flags), size(size),
-        pid(getpid()),oglStride(0), oglFormat(0), oglSize(0),
+    private_handle_t(int fd, int fd2, int fd3, int flags) :
+        fd(fd), fd2(fd2), fd3(fd3), magic(sMagic), flags(flags),
+        pid(getpid()), oglStride(0), oglFormat(0), oglSize(0),
         sharedData(0), usage(0)
     {
         version = sizeof(native_handle);

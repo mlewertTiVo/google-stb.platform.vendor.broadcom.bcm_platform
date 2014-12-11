@@ -47,7 +47,6 @@ int gralloc_register_buffer(gralloc_module_t const* module,
    buffer_handle_t handle)
 {
    PSHARED_DATA pSharedData;
-
    private_handle_t* hnd = (private_handle_t*)handle;
 
    if (private_handle_t::validate(handle) < 0)
@@ -55,8 +54,6 @@ int gralloc_register_buffer(gralloc_module_t const* module,
       LOGE("%s : INVALID HANDLE !!", __FUNCTION__);
       return -EINVAL;
    }
-
-   LOGI("%s : HandlePID:%d procssPID;%d", __FUNCTION__, hnd->pid, getpid());
 
    if (hnd->pid != getpid())
    {
@@ -85,6 +82,8 @@ int gralloc_register_buffer(gralloc_module_t const* module,
    }
 
    pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
+   LOGI("%s: parent:%d, registrant:%d, addr:0x%x", __FUNCTION__,
+        hnd->pid, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr);
 
    return 0;
 }
@@ -92,6 +91,7 @@ int gralloc_register_buffer(gralloc_module_t const* module,
 int gralloc_unregister_buffer(gralloc_module_t const* module,
    buffer_handle_t handle)
 {
+   PSHARED_DATA pSharedData;
    private_handle_t* hnd = (private_handle_t*)handle;
 
    if (private_handle_t::validate(handle) < 0)
@@ -100,7 +100,9 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
       return -EINVAL;
    }
 
-   LOGI("%s : HandlePID:%d procssPID:%d", __FUNCTION__, hnd->pid, getpid());
+   pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
+   LOGI("%s: parent:%d, registrant:%d, addr:0x%x", __FUNCTION__,
+        hnd->pid, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr);
 
    return 0;
 }
@@ -150,7 +152,6 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
    }
 
    PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
-
    if (!pSharedData->planes[DEFAULT_PLANE].physAddr)
    {
       LOGE("%s: !!!FATAL ERROR NULL NEXUS SURFACE HANDLE!!!", __FUNCTION__);

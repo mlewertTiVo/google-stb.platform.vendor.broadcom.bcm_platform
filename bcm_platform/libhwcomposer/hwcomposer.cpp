@@ -2121,11 +2121,13 @@ static void hwc_prepare_gpx_layer(
                           addr, disp_position.width, disp_position.height, stride);
                     goto out_unlock;
                 }
-                rc = yv12_to_422planar(bcmBuffer, ctx->gpx_cli[layer_id].slist[six].shdl, ctx->hwc_2dg);
+                rc = yv12_to_422planar(bcmBuffer, ctx->gpx_cli[layer_id].slist[six].shdl,
+                                       ctx->hwc_2dg);
                 if (rc != NEXUS_SUCCESS) {
                     ALOGE("%s: conversion failed: %d\n", __FUNCTION__, layer_id);
                     goto out_unlock;
                 }
+                NEXUS_FlushCache(addr, pSharedData->planes[EXTRA_PLANE].size);
             break;
 
             default:
