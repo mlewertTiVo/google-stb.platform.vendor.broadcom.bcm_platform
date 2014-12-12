@@ -72,8 +72,8 @@ using namespace android;
 #define NSC_SB_CLIENTS_NUMBER        2 /* sideband client layers; typically no
                                         * more than 1 are needed at any time. */
 
+#define VSYNC_CLIENT_LAYER_ID        0 /* first layer. */
 #define NSC_CLIENTS_NUMBER           (NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+NSC_SB_CLIENTS_NUMBER+1) /* gpx, mm, sb and vsync layer count */
-#define VSYNC_CLIENT_LAYER_ID        (NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+NSC_SB_CLIENTS_NUMBER)   /* last layer, always */
 
 #define VSYNC_CLIENT_WIDTH           16
 #define VSYNC_CLIENT_HEIGHT          16
@@ -91,6 +91,7 @@ using namespace android;
 #define DUMP_BUFFER_SIZE             1024
 #define LAST_PING_FRAME_ID_INVALID   0xBAADCAFE
 #define NSC_MAXIMUM_SCALE_FACTOR     15
+#define FALL_BACK_GLES_ON_SKIP       1
 
 /* note: matching other parts of the integration, we
  *       want to default product resolution to 1080p.
@@ -351,6 +352,8 @@ struct hwc_context_t {
 
     NEXUS_Graphics2DHandle hwc_2dg;
     BKNI_EventHandle checkpoint_event;
+
+    bool needs_fb_target;
 };
 
 static void hwc_device_cleanup(hwc_context_t* ctx);
@@ -365,7 +368,6 @@ static void hwc_nsc_recycled_cb(void *context, int param);
 static void hwc_sync_recycled_cb(void *context, int param);
 
 static void hwc_hide_unused_gpx_layer(hwc_context_t* dev, int index);
-static void hwc_hide_unused_gpx_layers(hwc_context_t* dev, int nx_layer_count);
 static void hwc_hide_unused_mm_layers(hwc_context_t* dev);
 static void hwc_hide_unused_sb_layers(hwc_context_t* dev);
 
@@ -992,51 +994,42 @@ out:
     return ret;
 }
 
-static bool primary_need_nx_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *layer)
+static bool primary_need_nsc_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *layer)
 {
     bool rc = false;
     struct hwc_context_t *ctx = (hwc_context_t*)dev;
     int skip_layer = -1;
 
     ++skip_layer; /* 0 */
-    if (!layer->handle &&
-        ((layer->compositionType == HWC_FRAMEBUFFER) ||
-         (layer->compositionType == HWC_OVERLAY) ||
-         (layer->compositionType == HWC_FRAMEBUFFER_TARGET))) {
-        ALOGV("%s: null handle.", __FUNCTION__);
-        /* FB special, pass a null handle from SF. */
+    if ((layer->handle == NULL) &&
+        (layer->compositionType != HWC_SIDEBAND)) {
         goto out;
     }
 
     ++skip_layer; /* 1 */
-    if (layer->flags & HWC_SKIP_LAYER) {
-        ALOGI("%s: skip this layer.", __FUNCTION__);
+    if ((layer->compositionType == HWC_SIDEBAND) &&
+        (layer->sidebandStream == NULL)) {
         goto out;
     }
 
     ++skip_layer; /* 2 */
-    if ((layer->compositionType == HWC_SIDEBAND) &&
-        (layer->sidebandStream == NULL)) {
-        ALOGI("%s: null sideband.", __FUNCTION__);
+    if (layer->flags & HWC_SKIP_LAYER) {
         goto out;
     }
 
     ++skip_layer; /* 3 */
     if (layer->compositionType == HWC_FRAMEBUFFER) {
-        ALOGV("%s: gles target.", __FUNCTION__);
+        goto out;
+    }
+
+    ++skip_layer; /* 4 */
+    if ((layer->compositionType == HWC_FRAMEBUFFER_TARGET) &&
+        (ctx->needs_fb_target == false)) {
         goto out;
     }
 
     rc = true;
-    goto out;
-
 out:
-    if (!rc && (skip_layer > 0 && skip_layer < 3)) {
-       /* ignore the 'FB special' and 'gles composition' as those can be too common
-        * and bring no value.
-        */
-       ALOGV("%s: skipped index %d.", __FUNCTION__, skip_layer);
-    }
     return rc;
 }
 
@@ -1045,13 +1038,14 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
     size_t i;
     hwc_layer_1_t *layer;
     struct hwc_context_t *ctx = (hwc_context_t*)dev;
+    int skip_layer_index = -1;
 
+    ctx->needs_fb_target = false;
     for (i = 0; i < list->numHwLayers; i++) {
         layer = &list->hwLayers[i];
         // we do not handle background layer at this time, we report such to SF.
-        if (layer->compositionType == HWC_BACKGROUND) {
+        if (layer->compositionType == HWC_BACKGROUND)
            layer->compositionType = HWC_FRAMEBUFFER;
-        }
         // sideband layer stays a sideband layer.
         if (layer->compositionType == HWC_SIDEBAND)
            continue;
@@ -1063,15 +1057,39 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
         if ((layer->compositionType == HWC_FRAMEBUFFER) ||
             (layer->compositionType == HWC_OVERLAY)) {
            layer->compositionType = HWC_FRAMEBUFFER;
-           if (!layer->handle)
-              continue;
-           if (layer->handle && !(layer->flags & HWC_SKIP_LAYER))
-              layer->compositionType = HWC_OVERLAY;
-           if (!can_handle_layer_scaling(layer))
-              layer->compositionType = HWC_FRAMEBUFFER;
-           if (layer->handle && (layer->flags & HWC_IS_CURSOR_LAYER) && HWC_CURSOR_SURFACE_SUPPORTED)
-              layer->compositionType = HWC_CURSOR_OVERLAY;
+           if (layer->flags & HWC_SKIP_LAYER) {
+              skip_layer_index = i;
+           } else {
+              if (layer->handle) {
+                 if (can_handle_layer_scaling(layer)) {
+                    if ((layer->flags & HWC_IS_CURSOR_LAYER) && HWC_CURSOR_SURFACE_SUPPORTED) {
+                       layer->compositionType = HWC_CURSOR_OVERLAY;
+                    } else {
+                       layer->compositionType = HWC_OVERLAY;
+                       //layer->hints = HWC_HINT_TRIPLE_BUFFER;
+                    }
+                 }
+              }
+           }
         }
+    }
+
+    if (skip_layer_index != -1) {
+       for (i = 0; i < (FALL_BACK_GLES_ON_SKIP ? list->numHwLayers : (size_t)skip_layer_index); i++) {
+          layer = &list->hwLayers[i];
+          if (layer->compositionType == HWC_OVERLAY) {
+             layer->compositionType = HWC_FRAMEBUFFER;
+             layer->hints = 0;
+          }
+       }
+    }
+
+    for (i = 0; i < list->numHwLayers; i++) {
+        layer = &list->hwLayers[i];
+         if (layer->compositionType == HWC_FRAMEBUFFER) {
+            ctx->needs_fb_target = true;
+            break;
+         }
     }
 }
 
@@ -1114,20 +1132,20 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
         // allocate the NSC layer, if need be change the geometry, etc...
         for (i = 0; i < list->numHwLayers; i++) {
             layer = &list->hwLayers[i];
-            if (primary_need_nx_layer(dev, layer) == true) {
-                if (skiped_layer)
-                   // mostly for debug for now.
-                   if (HWC_SURFACE_LIFE_CYCLE_ERROR) ALOGE("%s: skipped %d layers before %d", __FUNCTION__, skiped_layer, i);
+            if (primary_need_nsc_layer(dev, layer)) {
                 hwc_nsc_prepare_layer(ctx, layer, (int)i,
-                                      (bool)(list->flags & HWC_GEOMETRY_CHANGED), &video_layer_id, &sideband_layer_id);
-                nx_layer_count++;
+                                      (bool)(list->flags & HWC_GEOMETRY_CHANGED),
+                                      &video_layer_id,
+                                      &sideband_layer_id);
             } else {
-                skiped_layer++;
+                hwc_hide_unused_gpx_layer(ctx, i);
             }
         }
 
         // remove all remaining gpx layers from the stack that are not needed.
-        hwc_hide_unused_gpx_layers(ctx, nx_layer_count);
+        for ( i = list->numHwLayers; i < NSC_GPX_CLIENTS_NUMBER; i++) {
+           hwc_hide_unused_gpx_layer(ctx, i);
+        }
     }
     else {
         BKNI_ReleaseMutex(ctx->power_mutex);
@@ -1702,7 +1720,11 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             NEXUS_SurfaceComposition vsync_composition;
 
             NxClient_GetDefaultAllocSettings(&nxAllocSettings);
-            nxAllocSettings.surfaceClient = NSC_CLIENTS_NUMBER;
+            nxAllocSettings.surfaceClient = NSC_GPX_CLIENTS_NUMBER + 1;
+            if (!HWC_MM_NO_ALLOC_SURF_CLI)
+               nxAllocSettings.surfaceClient += NSC_MM_CLIENTS_NUMBER;
+            if (!HWC_SB_NO_ALLOC_SURF_CLI)
+               nxAllocSettings.surfaceClient += NSC_SB_CLIENTS_NUMBER;
             rc = NxClient_Alloc(&nxAllocSettings, &dev->nxAllocResults);
             if (rc)
             {
@@ -1710,13 +1732,58 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                 goto out;
             }
 
+            /* create vsync nx client */
+            dev->syn_cli.layer_type    = HWC_OVERLAY;
+            dev->syn_cli.layer_subtype = NEXUS_SYNC;
+            dev->syn_cli.refresh       = VSYNC_CLIENT_REFRESH;
+            dev->syn_cli.ncci.type     = NEXUS_CLIENT_VSYNC;
+            dev->syn_cli.ncci.sccid    = dev->nxAllocResults.surfaceClient[VSYNC_CLIENT_LAYER_ID].id;
+            dev->syn_cli.ncci.schdl    = NEXUS_SurfaceClient_Acquire(dev->syn_cli.ncci.sccid);
+            if (!dev->syn_cli.ncci.schdl)
+            {
+                ALOGE("%s: NEXUS_SurfaceClient_Acquire vsync client failed", __FUNCTION__);
+                goto clean_up;
+            }
+            BKNI_CreateEvent(&dev->syn_cli.vsync_event);
+
+            NEXUS_SurfaceClient_GetSettings(dev->syn_cli.ncci.schdl, &client_settings);
+            client_settings.recycled.callback = hwc_sync_recycled_cb;
+            client_settings.recycled.context = (void *)&dev->syn_cli;
+            rc = NEXUS_SurfaceClient_SetSettings(dev->syn_cli.ncci.schdl, &client_settings);
+            if (rc) {
+                ALOGE("%s: NEXUS_SurfaceClient_SetSettings vsync client failed", __FUNCTION__);
+                goto clean_up;
+            }
+
+            dev->syn_cli.shdl = hwc_to_nsc_surface(VSYNC_CLIENT_WIDTH,
+                                                   VSYNC_CLIENT_HEIGHT,
+                                                   VSYNC_CLIENT_STRIDE,
+                                                   NEXUS_PixelFormat_eA8_B8_G8_R8,
+                                                   NULL);
+            if (dev->syn_cli.shdl == NULL)
+            {
+                ALOGE("%s: hwc_to_nsc_surface vsync client failed", __FUNCTION__);
+                goto clean_up;
+            }
+
+            NEXUS_Surface_GetMemory(dev->syn_cli.shdl, &vsync_surface_memory);
+            memset(vsync_surface_memory.buffer, 0, vsync_surface_memory.bufferSize);
+
+            NxClient_GetSurfaceClientComposition(dev->syn_cli.ncci.sccid, &vsync_composition);
+            vsync_composition.position              = vsync_disp_position;
+            vsync_composition.virtualDisplay.width  = dev->display_width;
+            vsync_composition.virtualDisplay.height = dev->display_height;
+            vsync_composition.visible               = true;
+            vsync_composition.zorder                = VSYNC_CLIENT_ZORDER;
+            NxClient_SetSurfaceClientComposition(dev->syn_cli.ncci.sccid, &vsync_composition);
+
             /* create layers nx gpx clients */
             for (int i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++)
             {
                 dev->gpx_cli[i].parent = (void *)dev;
                 dev->gpx_cli[i].layer_id = i;
                 dev->gpx_cli[i].ncci.type = NEXUS_CLIENT_GPX;
-                dev->gpx_cli[i].ncci.sccid = dev->nxAllocResults.surfaceClient[i].id;
+                dev->gpx_cli[i].ncci.sccid = dev->nxAllocResults.surfaceClient[1+i].id;
                 dev->gpx_cli[i].ncci.schdl = NEXUS_SurfaceClient_Acquire(dev->gpx_cli[i].ncci.sccid);
                 if (!dev->gpx_cli[i].ncci.schdl)
                 {
@@ -1744,7 +1811,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                 dev->mm_cli[i].root.layer_id = i;
                 dev->mm_cli[i].root.ncci.type = NEXUS_CLIENT_MM;
                 if (!HWC_MM_NO_ALLOC_SURF_CLI) {
-                    dev->mm_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[i+NSC_GPX_CLIENTS_NUMBER].id;
+                    dev->mm_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[1+NSC_GPX_CLIENTS_NUMBER+i].id;
                     dev->mm_cli[i].root.ncci.schdl = NEXUS_SurfaceClient_Acquire(dev->mm_cli[i].root.ncci.sccid);
                     if (!dev->mm_cli[i].root.ncci.schdl)
                     {
@@ -1786,7 +1853,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                 dev->sb_cli[i].root.layer_id = i;
                 dev->sb_cli[i].root.ncci.type = NEXUS_CLIENT_SB;
                 if (!HWC_SB_NO_ALLOC_SURF_CLI) {
-                    dev->sb_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[i+NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER].id;
+                    dev->sb_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[1+NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+i].id;
                     /* do not acquire surface client nor video window to allow the user of this to own it instead. */
                 } else {
                     dev->sb_cli[i].root.ncci.sccid = INVALID_HANDLE + i;
@@ -1801,48 +1868,6 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             }
 
             BKNI_CreateEvent(&dev->prepare_event);
-
-            /* create vsync nx clients */
-            dev->syn_cli.layer_type    = HWC_OVERLAY;
-            dev->syn_cli.layer_subtype = NEXUS_SYNC;
-            dev->syn_cli.refresh       = VSYNC_CLIENT_REFRESH;
-            dev->syn_cli.ncci.type     = NEXUS_CLIENT_VSYNC;
-            dev->syn_cli.ncci.sccid    = dev->nxAllocResults.surfaceClient[VSYNC_CLIENT_LAYER_ID].id;
-            dev->syn_cli.ncci.schdl    = NEXUS_SurfaceClient_Acquire(dev->syn_cli.ncci.sccid);
-            if (!dev->syn_cli.ncci.schdl)
-            {
-                ALOGE("%s: NEXUS_SurfaceClient_Acquire vsync client failed", __FUNCTION__);
-                goto clean_up;
-            }
-            BKNI_CreateEvent(&dev->syn_cli.vsync_event);
-
-            NEXUS_SurfaceClient_GetSettings(dev->syn_cli.ncci.schdl, &client_settings);
-            client_settings.recycled.callback = hwc_sync_recycled_cb;
-            client_settings.recycled.context = (void *)&dev->syn_cli;
-            rc = NEXUS_SurfaceClient_SetSettings(dev->syn_cli.ncci.schdl, &client_settings);
-            if (rc) {
-                ALOGE("%s: NEXUS_SurfaceClient_SetSettings vsync client failed", __FUNCTION__);
-                goto clean_up;
-            }
-
-            dev->syn_cli.shdl = hwc_to_nsc_surface(VSYNC_CLIENT_WIDTH, VSYNC_CLIENT_HEIGHT, VSYNC_CLIENT_STRIDE,
-                                                   NEXUS_PixelFormat_eA8_B8_G8_R8, NULL);
-            if (dev->syn_cli.shdl == NULL)
-            {
-                ALOGE("%s: hwc_to_nsc_surface vsync client failed", __FUNCTION__);
-                goto clean_up;
-            }
-
-            NEXUS_Surface_GetMemory(dev->syn_cli.shdl, &vsync_surface_memory);
-            memset(vsync_surface_memory.buffer, 0, vsync_surface_memory.bufferSize);
-
-            NxClient_GetSurfaceClientComposition(dev->syn_cli.ncci.sccid, &vsync_composition);
-            vsync_composition.position              = vsync_disp_position;
-            vsync_composition.virtualDisplay.width  = dev->display_width;
-            vsync_composition.virtualDisplay.height = dev->display_height;
-            vsync_composition.visible               = true;
-            vsync_composition.zorder                = VSYNC_CLIENT_ZORDER;
-            NxClient_SetSurfaceClientComposition(dev->syn_cli.ncci.sccid, &vsync_composition);
         }
 
         dev->device.common.tag                     = HARDWARE_DEVICE_TAG;
@@ -2628,14 +2653,6 @@ static void nx_client_hide_unused_sb_layer(hwc_context_t* ctx, int index)
 
 out:
     return;
-}
-
-static void hwc_hide_unused_gpx_layers(hwc_context_t* ctx, int nx_layer_count)
-{
-    for (int i = nx_layer_count; i < NSC_GPX_CLIENTS_NUMBER; i++)
-    {
-       hwc_hide_unused_gpx_layer(ctx, i);
-    }
 }
 
 static void hwc_hide_unused_mm_layers(hwc_context_t* ctx)
