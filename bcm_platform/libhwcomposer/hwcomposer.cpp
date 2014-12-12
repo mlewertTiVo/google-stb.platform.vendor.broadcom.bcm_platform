@@ -1237,6 +1237,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                    if (six != -1) {
                       rc = NEXUS_SurfaceClient_PushSurface(ctx->gpx_cli[i].ncci.schdl, ctx->gpx_cli[i].slist[six].shdl, NULL, false);
                       if (rc) {
+                          hwc_unlock_surface((private_handle_t *)ctx->gpx_cli[i].slist[six].grhdl);
+                          ctx->gpx_cli[i].slist[six].grhdl = NULL;
                           ctx->gpx_cli[i].slist[six].owner = SURF_OWNER_NO_OWNER;
                           if ((ctx->gpx_cli[i].layer_subtype == NEXUS_CURSOR) &&
                               ctx->gpx_cli[i].slist[six].schdl) {
