@@ -36,6 +36,7 @@
 #include "nexus_types.h"
 #include "nexus_platform.h"
 #include "bkni.h"
+#include "gralloc_destripe.h"
 
 extern
 NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt,
@@ -125,7 +126,7 @@ int gralloc_lock(gralloc_module_t const* module,
 {
    int err = 0;
 
-   (void)module;
+   private_module_t* pModule = (private_module_t *)module;
    (void)l;
    (void)t;
    (void)w;
@@ -140,7 +141,6 @@ int gralloc_lock(gralloc_module_t const* module,
    {
       private_handle_t* hnd = (private_handle_t*)handle;
 
-      LOGV("%s : successfully locked", __FUNCTION__);
       PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
       *vaddr = NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
 
@@ -148,6 +148,53 @@ int gralloc_lock(gralloc_module_t const* module,
       {
          ALOGE("Locking gralloc buffer %#x inuse by HWC!  HWC Layer %d NEXUS_SurfaceHandle %#x", hnd->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
       }
+
+      // See if we're most likely dealing with video data
+      if ( pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12 )
+      {
+         // Serialize for graphics checkpoint
+         pthread_mutex_lock(&pModule->lock);
+         // Lock video frame data
+         err = private_handle_t::lock_video_frame(hnd, 250);
+         if ( err )
+         {
+            ALOGE("Unable to lock video frame data (timeout)");
+            pthread_mutex_unlock(&pModule->lock);
+            return err;
+         }
+         // Is there a HW decoded frame present?
+         if ( pSharedData->videoFrame.hStripedSurface )
+         {
+            // SW cannot write this data
+            if ( usage & GRALLOC_USAGE_SW_WRITE_MASK )
+            {
+               ALOGE("Cannot lock HW video decoder buffers for SW_WRITE");
+               private_handle_t::unlock_video_frame(hnd);
+               pthread_mutex_unlock(&pModule->lock);
+               return -EINVAL;
+            }
+            // If SW wants to read we may need to destripe first
+            if ( usage & GRALLOC_USAGE_SW_READ_MASK )
+            {
+               if ( !pSharedData->videoFrame.destripeComplete )
+               {
+                  err = gralloc_destripe_yv12(pModule, hnd, pSharedData->videoFrame.hStripedSurface);
+                  if ( err )
+                  {
+                     private_handle_t::unlock_video_frame(hnd);
+                     pthread_mutex_unlock(&pModule->lock);
+                     return err;
+                  }
+                  pSharedData->videoFrame.destripeComplete = true;
+                  LOGV("%s: Destripe Complete", __FUNCTION__);
+               }
+            }
+         }
+         private_handle_t::unlock_video_frame(hnd);
+         pthread_mutex_unlock(&pModule->lock);
+      }
+
+      LOGV("%s : successfully locked", __FUNCTION__);
    }
 
    return err;
@@ -179,4 +226,3 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
 
    return 0;
 }
-

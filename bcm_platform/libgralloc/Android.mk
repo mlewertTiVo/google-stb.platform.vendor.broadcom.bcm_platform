@@ -45,7 +45,8 @@ LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 LOCAL_SRC_FILES := \
         gralloc.cpp \
         framebuffer.cpp \
-        mapper.cpp
+        mapper.cpp \
+        gralloc_destripe.cpp
 
 LOCAL_MODULE := gralloc.bcm_platform
 LOCAL_MODULE_TAGS := optional

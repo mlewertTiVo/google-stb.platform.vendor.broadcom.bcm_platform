@@ -3772,7 +3772,17 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             errCode = NEXUS_Platform_SetSharedHandle(pBuffer->hStripedSurface, true);       // Unlock the handle so that gralloc_lock() can use this in a different process.
                             if ( NEXUS_SUCCESS == errCode )
                             {
-                                pInfo->typeInfo.native.pSharedData->videoFrame.hStripedSurface = pBuffer->hStripedSurface;
+                                int rc = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 100);
+                                if ( 0 == rc )
+                                {
+                                    pInfo->typeInfo.native.pSharedData->videoFrame.hStripedSurface = pBuffer->hStripedSurface;
+                                    pInfo->typeInfo.native.pSharedData->videoFrame.destripeComplete = 0;
+                                    private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
+                                }
+                                else
+                                {
+                                    BOMX_WRN(("Timeout locking video frame"));
+                                }
                             }
                             else
                             {
@@ -3927,8 +3937,20 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                     pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pBuffer->pPrivateHandle->sharedData);
                     if ( pSharedData && pSharedData->videoFrame.hStripedSurface )
                     {
-                        NEXUS_StripedSurface_Destroy(pSharedData->videoFrame.hStripedSurface);
+                        NEXUS_StripedSurfaceHandle hStripedSurface;
+                        int rc;
+
+                        // Lock the video frame to try and avoid problems with gralloc still using this handle.
+                        // If we timeout, we still have to return the frame to nexus so too bad...
+
+                        rc = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 250);
+                        hStripedSurface = pSharedData->videoFrame.hStripedSurface;
                         pSharedData->videoFrame.hStripedSurface = NULL;
+                        NEXUS_StripedSurface_Destroy(hStripedSurface);
+                        if ( 0 == rc )
+                        {
+                            private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
+                        }
                     }
                 }
                 pBuffer->pPrivateHandle = NULL;

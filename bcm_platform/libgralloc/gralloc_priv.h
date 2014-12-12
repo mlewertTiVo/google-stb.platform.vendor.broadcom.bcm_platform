@@ -31,9 +31,18 @@ extern "C" {
 #include <unistd.h>
 #include <cutils/native_handle.h>
 #include <linux/fb.h>
+#include "nexus_base_mmap.h"
 #include "nexus_video_decoder_types.h"
 #include "nexus_striped_surface.h"
 #include "nexus_surface.h"
+#include "nexus_graphics2d.h"
+#include "bstd_defs.h"
+#include "berr.h"
+#include "bkni.h"
+#include <time.h>
+#include <linux/time.h>
+#include <assert.h>
+#include <cutils/atomic.h>
 
 #define BCM_DEBUG_MSG
 #define BCM_DEBUG_TRACEMSG      LOGD
@@ -56,6 +65,8 @@ struct private_module_t {
    uint32_t numBuffers;
    uint32_t bufferMask;
    pthread_mutex_t lock;
+   NEXUS_Graphics2DHandle hGraphics;
+   BKNI_EventHandle hCheckpointEvent;
 };
 
 /*****************************************************************************/
@@ -71,6 +82,8 @@ typedef struct __SHARED_DATA_ {
 
    //Metadata For Video Buffers
    struct {
+      int32_t locked;
+      bool  destripeComplete;
       NEXUS_VideoDecoderFrameStatus status;
       NEXUS_StripedSurfaceHandle hStripedSurface;
    } videoFrame;
@@ -149,6 +162,54 @@ struct private_handle_t {
             return -EINVAL;
         }
         return 0;
+    }
+
+    static int lock_video_frame(private_handle_t *pHandle, int timeoutMs)
+    {
+        SHARED_DATA *pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pHandle->sharedData);
+        struct timespec ts_end, ts_now;
+        if ( NULL == pSharedData )
+        {
+          return -EINVAL;
+        }
+        // Compute timeout
+        clock_gettime(CLOCK_MONOTONIC, &ts_end);
+        ts_end.tv_sec += timeoutMs/1000;
+        ts_end.tv_nsec += (timeoutMs%1000)*1000000;
+        if ( ts_end.tv_nsec >= 1000000000 )
+        {
+            ts_end.tv_sec++;
+            ts_end.tv_nsec -= 1000000000;
+        }
+        // Lock "semaphore" with timeout
+        while ( android_atomic_acquire_cas(0, 1, &pSharedData->videoFrame.locked) )
+        {
+            BKNI_Sleep(1);
+            clock_gettime(CLOCK_MONOTONIC, &ts_now);
+            /* equivalent to if ( timespec_compare(&ts_now, &ts_end) >= 0 ) return -EBUSY; */
+            if ( ts_now.tv_sec < ts_end.tv_sec )
+            {
+                continue;
+            }
+            if ( ts_now.tv_sec > ts_end.tv_sec || ts_now.tv_nsec > ts_end.tv_nsec )
+            {
+                return -EBUSY;
+            }
+        }
+        // Success
+        return 0;
+    }
+
+    static void unlock_video_frame(private_handle_t *pHandle)
+    {
+        SHARED_DATA *pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pHandle->sharedData);
+        int rc;
+        if ( NULL == pSharedData )
+        {
+          return;
+        }
+        rc = android_atomic_release_cas(1, 0, &pSharedData->videoFrame.locked);
+        assert(rc);
     }
 
 #endif

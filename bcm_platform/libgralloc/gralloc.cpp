@@ -79,7 +79,7 @@ static void gralloc_load_lib(void)
    LOAD_FN(gl_dyn_lib, EGL_nexus_unjoin);
 
    if (dyn_EGL_nexus_join) {
-      nexus_client = dyn_EGL_nexus_join(NEXUS_JOIN_CLIENT_PROCESS);
+      nexus_client = dyn_EGL_nexus_join((char *)NEXUS_JOIN_CLIENT_PROCESS);
       if (nexus_client == NULL) {
          LOGE("%s: failed joining nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
       } else {
@@ -180,6 +180,8 @@ struct private_module_t HAL_MODULE_INFO_SYM = {
    numBuffers: 0,
    bufferMask: 0,
    lock: PTHREAD_MUTEX_INITIALIZER,
+   hGraphics: NULL,
+   hCheckpointEvent: NULL,
 };
 
 /*****************************************************************************/
@@ -334,6 +336,8 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    int size, extra_size;
    NEXUS_PixelFormat nxFormat = getNexusPixelFormat(format,&bpp);
 
+   (void)dev;
+
    getBufferDataFromFormat(w, h, bpp, format, pStride, &size, &extra_size);
 
    if (nxFormat == NEXUS_PixelFormat_eUnknown) {
@@ -487,6 +491,7 @@ grallocFreeHandle(private_handle_t *handleToFree)
 static int
 gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
 {
+   (void)dev;
    grallocFreeHandle(hnd);
    return 0;
 }
@@ -544,16 +549,34 @@ static int gralloc_close(struct hw_device_t *dev)
 
    gralloc_context_t* ctx = reinterpret_cast<gralloc_context_t*>(dev);
    if (ctx) {
+      private_module_t* m = reinterpret_cast<private_module_t*>(ctx->device.common.module);
+      if ( m )
+      {
+          if ( m->hGraphics )
+          {
+              NEXUS_Graphics2D_Close(m->hGraphics);
+          }
+          if ( m->hCheckpointEvent )
+          {
+              BKNI_DestroyEvent(m->hCheckpointEvent);
+          }
+      }
       free(ctx);
    }
    return 0;
+}
+
+static void gralloc_checkpoint_callback(void *pParam, int param)
+{
+    private_module_t *pModule = (private_module_t *)pParam;
+    (void)param;
+    BKNI_SetEvent(pModule->hCheckpointEvent);
 }
 
 int gralloc_device_open(const hw_module_t* module, const char* name,
         hw_device_t** device)
 {
    NEXUS_Error     rc;
-   NEXUS_PlatformStatus        pStatus;
    int status = -EINVAL;
 
    LOGD("%s[%d]: Vector Graphics Allocator [L] Build Date[%s Time:%s]\n",
@@ -565,6 +588,7 @@ int gralloc_device_open(const hw_module_t* module, const char* name,
    {
       LOGI("Using Hardware GPU type device\n");
       void *alloced=NULL;
+
       gralloc_context_t *dev;
       dev = (gralloc_context_t*)malloc(sizeof(*dev));
       /* initialize our state here */
@@ -581,7 +605,38 @@ int gralloc_device_open(const hw_module_t* module, const char* name,
 
       private_module_t* m = reinterpret_cast<private_module_t*>(dev->device.common.module);
 
+      rc = BKNI_CreateEvent(&m->hCheckpointEvent);
+      if ( rc )
+      {
+         LOGE("Unable to create checkpoint event");
+         m->hCheckpointEvent = NULL;
+         m->hGraphics = NULL;
+      }
+      else
+      {
+         m->hGraphics = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, NULL);
+         if ( NULL == m->hGraphics )
+         {
+            LOGW("Unable to open Graphics2D.  HW video decoder frames will not be accessible for SW read.");
+         }
+         else
+         {
+            NEXUS_Graphics2DSettings gfxSettings;
+            NEXUS_Graphics2D_GetSettings(m->hGraphics, &gfxSettings);
+            gfxSettings.pollingCheckpoint = false;
+            gfxSettings.checkpointCallback.callback = gralloc_checkpoint_callback;
+            gfxSettings.checkpointCallback.context = (void *)m;
+            rc = NEXUS_Graphics2D_SetSettings(m->hGraphics, &gfxSettings);
+            if ( rc )
+            {
+               LOGW("Unable to set Graphics2D Settings");
+               NEXUS_Graphics2D_Close(m->hGraphics);
+               m->hGraphics = NULL;
+            }
+         }
+      }
       *device = &dev->device.common;
+
       status = 0;
    } else {
       status = fb_device_open(module, name, device);
