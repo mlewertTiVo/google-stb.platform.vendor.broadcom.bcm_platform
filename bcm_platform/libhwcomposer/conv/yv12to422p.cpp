@@ -111,9 +111,6 @@ extern "C" NEXUS_Error yv12_to_422planar(private_handle_t *handle, NEXUS_Surface
        goto out_cleanup;
     }
 
-    NEXUS_Graphics2D_GetSettings(gfx, &gfxSettings);
-    gfxSettings.pollingCheckpoint = true;
-    NEXUS_Graphics2D_SetSettings(gfx, &gfxSettings);
     rc = NEXUS_Graphics2D_GetPacketBuffer(gfx, &buffer, &size, 1024);
     if ((rc != NEXUS_SUCCESS) || !size) {
        ALOGE("%s: failed getting packet buffer from g2d: (num:%d, id:0x%x)\n", __FUNCTION__,
@@ -183,19 +180,6 @@ extern "C" NEXUS_Error yv12_to_422planar(private_handle_t *handle, NEXUS_Surface
        ALOGE("%s: failed writting packet buffer: (num:%d, id:0x%x)\n", __FUNCTION__,
              NEXUS_GET_ERR_NUM(rc), NEXUS_GET_ERR_ID(rc));
        goto out_cleanup;
-    }
-
-    // Wait for blits to complete
-    {
-      int timeout = 10;
-      while ( timeout-- > 0 && NEXUS_GRAPHICS2D_BUSY == NEXUS_Graphics2D_Checkpoint(gfx, NULL) )
-      {
-        BKNI_Sleep(1);
-      }
-      if ( timeout <= 0 )
-      {
-        ALOGW("422 Conversion timeout");
-      }
     }
 
 out_cleanup:

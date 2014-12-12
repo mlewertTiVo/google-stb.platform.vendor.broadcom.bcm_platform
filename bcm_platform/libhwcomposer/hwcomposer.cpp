@@ -98,6 +98,8 @@ using namespace android;
 #define DISPLAY_DEFAULT_HD_RES       "1080p"
 #define DISPLAY_HD_RES_PROP          "ro.hd_output_format"
 
+#define HWC_CHECKPOINT_TIMEOUT       (100)
+
 enum {
     NEXUS_SURFACE_COMPOSITOR = 0,
     NEXUS_CURSOR,
@@ -348,6 +350,7 @@ struct hwc_context_t {
     HwcBinder_wrap *hwc_binder;
 
     NEXUS_Graphics2DHandle hwc_2dg;
+    BKNI_EventHandle checkpoint_event;
 };
 
 static void hwc_device_cleanup(hwc_context_t* ctx);
@@ -371,6 +374,9 @@ static void hwc_nsc_prepare_layer(hwc_context_t* dev, hwc_layer_1_t *layer,
    unsigned int *video_layer_id, unsigned int *sideband_layer_id);
 
 static void hwc_binder_advertise_video_surface(hwc_context_t* dev);
+
+static void hwc_checkpoint_callback(void *pParam, int param2);
+static int hwc_checkpoint(hwc_context_t *dev);
 
 hwc_module_t HAL_MODULE_INFO_SYM = {
     common: {
@@ -1351,6 +1357,8 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
 
         if (ctx->hwc_2dg)
            NEXUS_Graphics2D_Close(ctx->hwc_2dg);
+         if (ctx->checkpoint_event)
+           BKNI_DestroyEvent(ctx->checkpoint_event);
     }
 }
 
@@ -1663,6 +1671,8 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
     struct hwc_context_t *dev = NULL;
 
     if (!strcmp(name, HWC_HARDWARE_COMPOSER)) {
+        NEXUS_Error rc = NEXUS_SUCCESS;
+        NEXUS_Graphics2DSettings gfxSettings;
         pthread_attr_t attr;
         dev = (hwc_context_t*)calloc(1, sizeof(*dev));
 
@@ -1682,7 +1692,6 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         dev->cursor_layer_id = -1;
 
         {
-            NEXUS_Error rc = NEXUS_SUCCESS;
             NxClient_AllocSettings nxAllocSettings;
             NEXUS_SurfaceClientSettings client_settings;
             NEXUS_SurfaceCreateSettings surface_create_settings;
@@ -1896,9 +1905,23 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            ALOGE("%s: created hwcbinder (%p)", __FUNCTION__, dev->hwc_binder);
         }
 
-        dev->hwc_2dg = NEXUS_Graphics2D_Open(0, NULL);
+        rc = BKNI_CreateEvent(&dev->checkpoint_event);
+        if ( rc ) {
+          ALOGE(("Unable to create checkpoint event"));
+          goto clean_up;
+        }
+
+        dev->hwc_2dg = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, NULL);
         if (dev->hwc_2dg == NULL) {
            ALOGE("%s: failed to create hwc_2dg, conversion services will not work!", __FUNCTION__);
+        }
+        NEXUS_Graphics2D_GetSettings(dev->hwc_2dg, &gfxSettings);
+        gfxSettings.pollingCheckpoint = false;
+        gfxSettings.checkpointCallback.callback = hwc_checkpoint_callback;
+        gfxSettings.checkpointCallback.context = (void *)dev;
+        rc = NEXUS_Graphics2D_SetSettings(dev->hwc_2dg, &gfxSettings);
+        if (rc) {
+           ALOGE("%s: failed to setup hwc_2dg checkpoint, conversion services will not work!", __FUNCTION__);
         }
 
         *device = &dev->device.common;
@@ -2199,7 +2222,7 @@ static void hwc_prepare_gpx_layer(
                 rc = yv12_to_422planar(bcmBuffer,
                                        ctx->gpx_cli[layer_id].slist[six].shdl,
                                        ctx->hwc_2dg);
-                if (rc != NEXUS_SUCCESS) {
+                if (rc != NEXUS_SUCCESS || 0 != hwc_checkpoint(ctx) ) {
                     ALOGE("%s: conversion failed: %d\n", __FUNCTION__, layer_id);
                     NEXUS_Surface_Destroy(ctx->gpx_cli[layer_id].slist[six].shdl);
                     ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_NO_OWNER;
@@ -2650,4 +2673,38 @@ static void hwc_binder_advertise_video_surface(hwc_context_t* ctx)
 
 out:
     return;
+}
+
+static void hwc_checkpoint_callback(void *pParam, int param2)
+{
+    hwc_context_t *dev = (hwc_context_t *)pParam;
+    (void)param2;
+//    ALOGW("Checkpoint Callback");
+    BKNI_SetEvent(dev->checkpoint_event);
+}
+
+static int hwc_checkpoint(hwc_context_t *dev)
+{
+    NEXUS_Error rc;
+
+//    ALOGW("Checkpoint");
+    rc = NEXUS_Graphics2D_Checkpoint(dev->hwc_2dg, NULL);
+    switch ( rc )
+    {
+    case NEXUS_SUCCESS:
+      break;
+    case NEXUS_GRAPHICS2D_QUEUED:
+      rc = BKNI_WaitForEvent(dev->checkpoint_event, HWC_CHECKPOINT_TIMEOUT);
+      if ( rc )
+      {
+          ALOGW("Checkpoint Timeout");
+          return -1;
+      }
+      break;
+    default:
+      ALOGE("Checkpoint Error");
+      return -1;
+    }
+
+    return 0;
 }
