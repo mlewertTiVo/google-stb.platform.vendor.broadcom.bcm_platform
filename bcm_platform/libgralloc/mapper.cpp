@@ -49,6 +49,8 @@ int gralloc_register_buffer(gralloc_module_t const* module,
    PSHARED_DATA pSharedData;
    private_handle_t* hnd = (private_handle_t*)handle;
 
+   (void)module;
+
    if (private_handle_t::validate(handle) < 0)
    {
       LOGE("%s : INVALID HANDLE !!", __FUNCTION__);
@@ -94,6 +96,8 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
    PSHARED_DATA pSharedData;
    private_handle_t* hnd = (private_handle_t*)handle;
 
+   (void)module;
+
    if (private_handle_t::validate(handle) < 0)
    {
       LOGE("%s : INVALID HANDLE !!", __FUNCTION__);
@@ -121,6 +125,12 @@ int gralloc_lock(gralloc_module_t const* module,
 {
    int err = 0;
 
+   (void)module;
+   (void)l;
+   (void)t;
+   (void)w;
+   (void)h;
+
    if (private_handle_t::validate(handle) < 0)
    {
       LOGE("%s : returning EINVAL", __FUNCTION__);
@@ -133,6 +143,11 @@ int gralloc_lock(gralloc_module_t const* module,
       LOGV("%s : successfully locked", __FUNCTION__);
       PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
       *vaddr = NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
+
+      if ( android_atomic_acquire_load(&pSharedData->hwc.active) && (usage & GRALLOC_USAGE_SW_WRITE_MASK) )
+      {
+         ALOGE("Locking gralloc buffer %#x inuse by HWC!  HWC Layer %d NEXUS_SurfaceHandle %#x", hnd->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
+      }
    }
 
    return err;
@@ -144,6 +159,8 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
    // implementation. typically this is used to flush the data cache.
 
    private_handle_t *hnd = (private_handle_t *) handle;
+
+   (void)module;
 
    if (private_handle_t::validate(handle) < 0)
    {

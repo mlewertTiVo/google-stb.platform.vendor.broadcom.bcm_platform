@@ -465,6 +465,15 @@ grallocFreeHandle(private_handle_t *handleToFree)
       return -1;
    }
 
+   PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(handleToFree->sharedData);
+   if ( pSharedData )
+   {
+     if ( android_atomic_acquire_load(&pSharedData->hwc.active) )
+     {
+       ALOGE("Freeing gralloc buffer %#x used by HWC!  layer %d surface %#x", handleToFree->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
+     }
+   }
+
    if (handleToFree->fd >= 0)
       close(handleToFree->fd);
    if (handleToFree->fd2 >= 0)

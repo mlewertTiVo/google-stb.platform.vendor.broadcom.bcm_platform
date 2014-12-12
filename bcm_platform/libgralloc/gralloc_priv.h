@@ -33,6 +33,7 @@ extern "C" {
 #include <linux/fb.h>
 #include "nexus_video_decoder_types.h"
 #include "nexus_striped_surface.h"
+#include "nexus_surface.h"
 
 #define BCM_DEBUG_MSG
 #define BCM_DEBUG_TRACEMSG      LOGD
@@ -83,6 +84,11 @@ typedef struct __SHARED_DATA_ {
       unsigned size;
   } planes[MAX_NUM_INSTANCES];
 
+  struct {
+    int32_t active;
+    int layer;
+    NEXUS_SurfaceHandle surface;
+  } hwc;
 } SHARED_DATA, *PSHARED_DATA;
 
 #ifdef __cplusplus

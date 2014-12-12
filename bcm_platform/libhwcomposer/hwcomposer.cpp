@@ -433,6 +433,60 @@ static const char *nsc_surface_owner[] =
    "NSC", // SURF_OWNER_NSC
 };
 
+static void hwc_unlock_surface(private_handle_t *pPrivateHandle)
+{
+  SHARED_DATA *pSharedData;
+
+  if ( NULL == pPrivateHandle )
+  {
+    ALOGE("%s: Invalid Gralloc Buffer", __FUNCTION__);
+    return;
+  }
+  pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pPrivateHandle->sharedData);
+  if ( NULL == pSharedData )
+  {
+    ALOGE("%s: Invalid Gralloc Buffer Memory", __FUNCTION__);
+    return;
+  }
+  if ( 0 == android_atomic_acquire_load(&pSharedData->hwc.active) )
+  {
+    ALOGE("Unlocking surface %#x that is not marked active!  Layer says %d surface %#x", pPrivateHandle->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
+  }
+  else
+  {
+    pSharedData->hwc.layer = -1;
+    pSharedData->hwc.surface = NULL;
+    android_atomic_acquire_store(0, &pSharedData->hwc.active);
+  }
+}
+
+static void hwc_lock_surface(private_handle_t *pPrivateHandle, int layer, NEXUS_SurfaceHandle surface)
+{
+  SHARED_DATA *pSharedData;
+
+  if ( NULL == pPrivateHandle )
+  {
+    ALOGE("%s: Invalid Gralloc Buffer", __FUNCTION__);
+    return;
+  }
+  pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pPrivateHandle->sharedData);
+  if ( NULL == pSharedData )
+  {
+    ALOGE("%s: Invalid Gralloc Buffer Memory", __FUNCTION__);
+    return;
+  }
+  if ( android_atomic_acquire_load(&pSharedData->hwc.active) )
+  {
+    ALOGE("Locking surface %#x that is marked active! Marked Layer %d Surface %#x New Layer %d Surface %#x", pPrivateHandle->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface, layer, surface);
+  }
+  else
+  {
+    pSharedData->hwc.layer = layer;
+    pSharedData->hwc.surface = surface;
+    android_atomic_acquire_store(1, &pSharedData->hwc.active);
+  }
+}
+
 static NEXUS_PixelFormat gralloc_to_nexus_pixel_format(int format)
 {
    switch (format) {
@@ -1906,6 +1960,7 @@ static void hwc_nsc_recycled_cb(void *context, int param)
                     ci->slist[six].owner = SURF_OWNER_HWC;
                     recycledSurface = NULL;
                  } else {
+                    hwc_unlock_surface((private_handle_t *)ci->slist[six].grhdl);
                     ci->slist[six].owner = SURF_OWNER_NO_OWNER;
                     ci->slist[six].shdl = NULL;
                     ci->slist[six].grhdl = NULL;
@@ -2176,6 +2231,7 @@ static void hwc_prepare_gpx_layer(
         // surface creation succeeded if we are here.
         ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_HWC_PUSH;
         ctx->gpx_cli[layer_id].slist[six].grhdl = layer->handle;
+        hwc_lock_surface((private_handle_t *)layer->handle, layer_id, ctx->gpx_cli[layer_id].slist[six].shdl);
         if (ctx->gpx_cli[layer_id].layer_subtype == NEXUS_CURSOR) {
             NEXUS_SurfaceCursorCreateSettings cursorSettings;
             NEXUS_SurfaceCursorSettings config;
