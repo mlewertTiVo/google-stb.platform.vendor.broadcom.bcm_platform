@@ -34,7 +34,6 @@ include ${BCM_APPS_PATH}/BcmGeneralSTBFunctions/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiInPlayer/Android.mk
 include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
-include ${BCM_APPS_PATH}/ExoPlayerDemo/Android.mk
 
 // why do we need a ifeq?  todo: remove.
 ifeq ($(ANDROID_SUPPORTS_PM),y)
@@ -49,6 +48,7 @@ include vendor/broadcom/bcm_platform/tools/prdy_pes_playback/Android.mk
 ifneq ($(wildcard vendor/broadcom/bcm_platform/not_for_release/README.txt),)
 include vendor/broadcom/bcm_platform/not_for_release/libbcmsideband/Android.mk
 include vendor/broadcom/bcm_platform/not_for_release/Bouncer/Android.mk
+include vendor/broadcom/bcm_platform/not_for_release/ExoPlayerDemo/Android.mk
 endif
 
 endif

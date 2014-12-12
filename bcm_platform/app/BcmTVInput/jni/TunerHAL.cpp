@@ -199,7 +199,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env
     BKNI_Memset(&config, 0, sizeof(config));
     BKNI_Snprintf(config.name.string,sizeof(config.name.string), "TunerHAL");
 
-    config.resources.screen.required = true;
+    config.resources.screen.required = false;
     config.resources.audioDecoder = false;
     config.resources.audioPlayback = false;
     config.resources.videoDecoder = true;
