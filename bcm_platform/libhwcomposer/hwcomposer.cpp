@@ -1066,7 +1066,7 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
                        layer->compositionType = HWC_CURSOR_OVERLAY;
                     } else {
                        layer->compositionType = HWC_OVERLAY;
-                       //layer->hints = HWC_HINT_TRIPLE_BUFFER;
+                       layer->hints = HWC_HINT_TRIPLE_BUFFER;
                     }
                  }
               }
