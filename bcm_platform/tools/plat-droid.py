@@ -184,6 +184,7 @@ write_header(s, androiddevice)
 # note: additional combo can be added if need be (ie: -user)
 os.write(s, "add_lunch_combo bcm_%s-eng\n" % androiddevice)
 os.write(s, "add_lunch_combo bcm_%s-userdebug\n" % androiddevice)
+os.write(s, "add_lunch_combo bcm_%s-user\n" % androiddevice)
 os.close(s);
 
 f='%s%s' % (devicedirectory, androidproduct)
