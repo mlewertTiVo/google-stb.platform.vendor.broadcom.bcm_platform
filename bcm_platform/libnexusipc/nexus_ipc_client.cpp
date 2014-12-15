@@ -706,42 +706,46 @@ bool NexusIPCClient::disconnectClientResources(NexusClientContext * client)
    For standalone Android, these are simple wrapper functions. */
 NEXUS_SimpleVideoDecoderHandle NexusIPCClient::acquireVideoDecoderHandle()
 {
-    return NEXUS_SimpleVideoDecoder_Acquire(NEXUS_ANY_ID);
+    LOGE("%s: use derived class instead! returning NULL handle", __FUNCTION__);
+    return NULL;
 }
 
 void NexusIPCClient::releaseVideoDecoderHandle(NEXUS_SimpleVideoDecoderHandle handle)
 {
-    NEXUS_SimpleVideoDecoder_Release(handle);
+    LOGE("%s: use derived class instead! no-op", __FUNCTION__);
 }
 
 NEXUS_SimpleAudioDecoderHandle NexusIPCClient::acquireAudioDecoderHandle()
 {
-    return NEXUS_SimpleAudioDecoder_Acquire(NEXUS_ANY_ID);
+    LOGE("%s: use derived class instead! returning NULL handle", __FUNCTION__);
+    return NULL;
 }
 
 void NexusIPCClient::releaseAudioDecoderHandle(NEXUS_SimpleAudioDecoderHandle handle)
 {
-    NEXUS_SimpleAudioDecoder_Release(handle);
+    LOGE("%s: use derived class instead! no-op", __FUNCTION__);
 }
 
 NEXUS_SimpleAudioPlaybackHandle NexusIPCClient::acquireAudioPlaybackHandle()
 {
-    return NEXUS_SimpleAudioPlayback_Acquire(NEXUS_ANY_ID);
+    LOGE("%s: use derived class instead! returning NULL handle", __FUNCTION__);
+    return NULL;
 }
 
 void NexusIPCClient::releaseAudioPlaybackHandle(NEXUS_SimpleAudioPlaybackHandle handle)
 {
-    NEXUS_SimpleAudioPlayback_Release(handle);
+    LOGE("%s: use derived class instead! no-op", __FUNCTION__);
 }
 
 NEXUS_SimpleEncoderHandle NexusIPCClient::acquireSimpleEncoderHandle()
 {
-    return NEXUS_SimpleEncoder_Acquire(NEXUS_ANY_ID);
+    LOGE("%s: use derived class instead! returning NULL handle", __FUNCTION__);
+    return NULL;
 }
 
 void NexusIPCClient::releaseSimpleEncoderHandle(NEXUS_SimpleEncoderHandle handle)
 {
-    NEXUS_SimpleEncoder_Release(handle);
+    LOGE("%s: use derived class instead! no-op", __FUNCTION__);
 }
 
 status_t NexusIPCClient::setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener)
