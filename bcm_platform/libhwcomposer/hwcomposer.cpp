@@ -86,6 +86,7 @@ using namespace android;
 #define GPX_CLIENT_ZORDER            (VSYNC_CLIENT_ZORDER+1)
 #define MM_CLIENT_ZORDER             (GPX_CLIENT_ZORDER+1)
 #define SB_CLIENT_ZORDER             (GPX_CLIENT_ZORDER+1)
+#define CURSOR_CLIENT_ZORDER         (GPX_CLIENT_ZORDER+2)
 
 #define GPX_SURFACE_STACK            3
 #define DUMP_BUFFER_SIZE             1024
@@ -2186,7 +2187,7 @@ static void hwc_prepare_gpx_layer(
         geometry_changed) {
 
         NxClient_GetSurfaceClientComposition(ctx->gpx_cli[layer_id].ncci.sccid, &ctx->gpx_cli[layer_id].composition);
-        ctx->gpx_cli[layer_id].composition.zorder                = GPX_CLIENT_ZORDER;
+        ctx->gpx_cli[layer_id].composition.zorder                = (ctx->gpx_cli[layer_id].layer_flags & HWC_IS_CURSOR_LAYER) ? CURSOR_CLIENT_ZORDER : GPX_CLIENT_ZORDER;
         ctx->gpx_cli[layer_id].composition.position.x            = disp_position.x;
         ctx->gpx_cli[layer_id].composition.position.y            = disp_position.y;
         ctx->gpx_cli[layer_id].composition.position.width        = disp_position.width;
