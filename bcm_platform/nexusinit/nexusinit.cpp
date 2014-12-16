@@ -229,7 +229,7 @@ void startNxServer(void)
     strcat(cmdRunNxServer, "-transcode off ");
 #endif
     strcat(cmdRunNxServer, "-svp ");
-    strcat(cmdRunNxServer, "-sd off -memconfig display,capture=off -memconfig display,5060=off -memconfig display,hddvi=off ");
+    strcat(cmdRunNxServer, "-sd off -memconfig display,hddvi=off ");
 
     memset(value, 0, sizeof(value));
     property_get("ro.nexus.nxserver.hdcp1x_keys", value, NULL);
