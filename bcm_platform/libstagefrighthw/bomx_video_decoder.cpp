@@ -69,7 +69,7 @@
 #define B_FRAME_TIMER_INTERVAL (32)
 
 #define B_MAX_PES_PACKET_LENGTH (65535)     // PES packets have a 16-bit length field.  0 indicates unbounded.
-#define B_PES_HEADER_START_BYTES (6)        // 00 00 01 [Stream ID] [Length 0] [Lenght 1] are not reported in the packet length field.
+#define B_PES_HEADER_START_BYTES (6)        // 00 00 01 [Stream ID] [Length 0] [Length 1] are not reported in the packet length field.
 #define B_PES_HEADER_LENGTH_WITH_PTS (14)
 #define B_PES_HEADER_LENGTH_WITHOUT_PTS (9)
 
@@ -514,8 +514,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_metadataEnabled(false),
     m_secureDecoder(false),
     m_pConfigBuffer(NULL),
-    m_configRequired(false),
-    m_configPending(false),
+    m_configSubmitted(false),
     m_configBufferSize(0),
     m_outputMode(BOMX_VideoDecoderOutputBufferType_eStandard)
 {
@@ -1967,7 +1966,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
             {
                 (void)SetInputPortState(OMX_StateIdle);
                 (void)SetInputPortState(StateGet());
-                m_configRequired = true;
+                m_configSubmitted = false;
             }
         }
         else
@@ -2866,6 +2865,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     size_t chunkBytesAvailable;
     uint8_t *pPesHeader;
     uint8_t *pPayload;
+    bool configSubmitted=false;
 
     /********************************************************************************************************************
     * This is what we are constructing here.  Not all codecs can support unbounded PES input, so we need to write
@@ -2921,7 +2921,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     numDescriptors = 1;
 
     // Add codec config if required
-    if ( m_configRequired || m_configPending )
+    if ( !m_configSubmitted )
     {
         BOMX_ASSERT(chunkBytesAvailable >= m_configBufferSize); // This should always be true, the config buffer is very small.
         if ( m_configBufferSize > 0 )
@@ -2931,8 +2931,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
             chunkBytesAvailable -= m_configBufferSize;
             numDescriptors++;
         }
-        m_configRequired = false;
-        m_configPending = false;
+        m_configSubmitted = true;
+        configSubmitted = true;
     }
 
     // Add codec header if required
@@ -2974,13 +2974,19 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     {
         size_t pesHeaderLength;
 
-        if ( maxDescriptors - numDescriptors < 2 ) { ALOGE("Insufficient descriptors available"); return BOMX_ERR_TRACE(OMX_ErrorBadParameter); }
+        if ( maxDescriptors - numDescriptors < 2 )
+        {
+            ALOGE("Insufficient descriptors available");
+            if ( configSubmitted ) { m_configSubmitted = false; }
+            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
 
         // PES Header
         pPesHeader = (uint8_t *)pInfo->pHeader + pInfo->headerLen;
         pesHeaderLength = InitPesHeader(pPesHeader, pInfo->maxHeaderLen-pInfo->headerLen, B_STREAM_ID, false, 0);
         if ( 0 == pesHeaderLength )
         {
+            if ( configSubmitted ) { m_configSubmitted = false; }
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
         pInfo->headerLen += pesHeaderLength;
@@ -3058,11 +3064,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     ALOGV("%s, comp:%s, buff:%p", __FUNCTION__, GetName(), pBufferHeader->pBuffer);
     if ( pBufferHeader->nFlags & OMX_BUFFERFLAG_CODECCONFIG )
     {
-        if ( m_configRequired )
+        if ( m_configSubmitted )
         {
-            // If the app re-sends config data after flush invalidate what we have already stored.
-            // Otherwise random actions may overflow the config buffer.
-            BOMX_MSG(("Invalidating cached config buffer - application is resending after flush."));
+            // If the app re-sends config data after we have delivered it to the decoder we
+            // may be receiving a dynamic resolution change.  Overwrite old config data with
+            // the new data
+            BOMX_MSG(("Invalidating cached config buffer "));
             ConfigBufferInit();
         }
 
@@ -3073,9 +3080,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         {
             return BOMX_ERR_TRACE(err);
         }
-
-        // Mark config has been updated
-        m_configPending = true;
 
         // Config buffers aren't sent individually, they are just appended above and sent with the next frame.  Queue this buffer with no descriptors so it will be returned immediately.
         err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
@@ -4067,10 +4071,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::ConfigBufferInit()
             BOMX_ERR(("Unable to allocate codec config buffer"));
             return BOMX_ERR_TRACE(OMX_ErrorUndefined);
         }
-
-        m_configRequired = false;
     }
 
+    m_configSubmitted = false;
     m_configBufferSize = 0;
     return OMX_ErrorNone;
 }

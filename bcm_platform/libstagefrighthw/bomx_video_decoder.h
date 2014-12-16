@@ -269,8 +269,7 @@ protected:
 
     #define BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE (1024)
     void *m_pConfigBuffer;
-    bool m_configRequired;
-    bool m_configPending;
+    bool m_configSubmitted;
     size_t m_configBufferSize;
 
     BOMX_VideoDecoderOutputBufferType m_outputMode;
