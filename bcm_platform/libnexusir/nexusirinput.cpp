@@ -47,7 +47,7 @@
 NexusIrInput::NexusIrInput() :
         m_handle(0),
         m_observer(0),
-        m_power_key(NEXUSIRINPUT_NO_POWER_KEY)
+        m_power_key(NEXUSIRINPUT_NO_KEY)
 {
 }
 
@@ -88,13 +88,25 @@ void NexusIrInput::stop()
     m_observer = 0;
 }
 
+unsigned NexusIrInput::repeatTimeout()
+{
+    NEXUS_IrInputSettings irSettings;
+    NEXUS_IrInput_GetSettings(m_handle, &irSettings);
+
+    if (!irSettings.customSettings.repeatTimeout) {
+        NEXUS_IrInput_GetCustomSettingsForMode(irSettings.mode,
+                &irSettings.customSettings);
+    }
+    return irSettings.customSettings.repeatTimeout;
+}
+
 void NexusIrInput::enterStandby()
 {
     NEXUS_IrInputDataFilter irPattern;
     NEXUS_IrInput_GetDefaultDataFilter(&irPattern);
     irPattern.filterWord[0].patternWord = m_power_key;
     irPattern.filterWord[0].enabled =
-        (m_power_key != NEXUSIRINPUT_NO_POWER_KEY);
+        (m_power_key != NEXUSIRINPUT_NO_KEY);
     NEXUS_IrInput_EnableDataFilter(m_handle, &irPattern);
 }
 
@@ -122,9 +134,12 @@ void NexusIrInput::dataReady()
                 &overflow);
         if (numEvents)
         {
-            LOGV("Nexus IR callback: rc: %d, code: %08x, repeat: %s\n",
-               rc, irEvent.code, irEvent.repeat ? "true" : "false");
-            m_observer->onIrInput(irEvent.code, irEvent.repeat);
+            LOGV("Nexus IR callback: rc: %d, code: %08x, repeat: %s, interval: %d",
+               rc, irEvent.code,
+               irEvent.repeat ? "true" : "false",
+               irEvent.interval);
+            m_observer->onIrInput(irEvent.code, irEvent.repeat,
+                    irEvent.interval);
         }
     }
 }

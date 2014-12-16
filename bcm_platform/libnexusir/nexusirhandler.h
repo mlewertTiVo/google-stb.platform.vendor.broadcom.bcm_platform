@@ -44,6 +44,8 @@
 #include "linuxuinput.h"
 #include "nexusirmap.h"
 
+#include <utils/threads.h>
+#include <utils/Condition.h>
 #include <stdint.h>
 
 class NexusIrMap;
@@ -89,7 +91,7 @@ public:
 
 private:
     /** As per NexusIrInput::Observer */
-    virtual void onIrInput(uint32_t key, bool repeat);
+    virtual void onIrInput(uint32_t key, bool repeat, unsigned interval);
 
 private:
     /* Disallow copy constructor and assignment operator... */
@@ -97,9 +99,36 @@ private:
     NexusIrHandler & operator=(const NexusIrHandler &other); //not implemented
 
     NEXUS_IrInputMode m_mode;
-    android::sp<NexusIrMap> m_map;
     NexusIrInput m_ir;
     LinuxUInput m_uinput;
+
+    class KeyThread: public android::Thread
+    {
+    public:
+        KeyThread(LinuxUInput &uinput);
+        virtual ~KeyThread();
+
+        void setMap(android::sp<NexusIrMap> map);
+        void setTimeout(unsigned timeout); //in milliseconds
+        void signal(uint32_t nexus_key, bool repeat, unsigned interval);
+
+        /** As per android::Thread */
+        virtual bool threadLoop();
+
+    private:
+        android::sp<NexusIrMap> m_map;
+        LinuxUInput &m_uinput;
+
+        android::Mutex m_mutex;
+        android::Condition m_cond;
+        __u16 m_old_key; //previous key - needed to emit key release event
+        __u16 m_key; //current key - needed to emit key press event
+        bool m_repeat;
+        unsigned m_interval;
+        nsecs_t m_timeout;
+    };
+
+    KeyThread m_key_thread;
 };
 
 #endif /* _NEXUSIRHANDLER_H_ */

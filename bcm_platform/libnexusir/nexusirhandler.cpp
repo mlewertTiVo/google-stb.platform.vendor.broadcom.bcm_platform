@@ -46,8 +46,15 @@
 #define LOG_TAG "NexusIR"
 #include <cutils/log.h>
 
+#define MS_TO_NS(t) (nsecs_t(t) * 1000 * 1000)
+#define NS_TO_MS(t) (nsecs_t(t) / (1000 * 1000))
+#define DEFAULT_TIMEOUT MS_TO_NS(250)
+
 NexusIrHandler::NexusIrHandler() :
-        m_mode(NEXUS_IrInputMode_eRemoteA), m_map(0), m_ir(), m_uinput()
+        m_mode(NEXUS_IrInputMode_eRemoteA),
+        m_ir(),
+        m_uinput(),
+        m_key_thread(m_uinput)
 {
 }
 
@@ -70,23 +77,27 @@ bool NexusIrHandler::start(NEXUS_IrInputMode mode,
     LOGI("NexusIrHandler start");
 
     m_mode = mode;
-    m_map = map;
-    bool success = m_map.get() && m_uinput.open() &&
-        m_uinput.register_event(EV_KEY);
+    bool success = map.get() && m_uinput.open() &&
+    m_uinput.register_event(EV_KEY);
 
-    size_t size = m_map->size();
-    uint32_t power_key = NEXUSIRINPUT_NO_POWER_KEY;
+    size_t size = map->size();
+    uint32_t power_key = NEXUSIRINPUT_NO_KEY;
     for (size_t i = 0; success && (i < size); ++i)
     {
-        if (m_map->linuxKeyAt(i) == KEY_POWER) {
-            power_key = m_map->nexusIrCodeAt(i);
+        if (map->linuxKeyAt(i) == KEY_POWER) {
+            power_key = map->nexusIrCodeAt(i);
         }
-        success = success && m_uinput.register_key(m_map->linuxKeyAt(i));
+        success = success && m_uinput.register_key(map->linuxKeyAt(i));
         //Note: success == false breaks the loop
     }
     success = success
             && m_uinput.start("NexusIrHandler", id)
             && m_ir.start(m_mode, *this, power_key);
+
+    m_key_thread.setMap(map);
+    m_key_thread.setTimeout(m_ir.repeatTimeout());
+    success = success
+            && (m_key_thread.run() == android::NO_ERROR);
 
     if (!success)
     {
@@ -101,10 +112,15 @@ bool NexusIrHandler::start(NEXUS_IrInputMode mode,
 void NexusIrHandler::stop()
 {
     LOGI("NexusIrHandler::stop\n");
+
+    m_key_thread.requestExit();
+    m_key_thread.signal(NEXUSIRINPUT_NO_KEY, false, 0);
+    m_key_thread.join();
+    m_key_thread.setMap(0);
+
     m_ir.stop();
     m_uinput.stop();
     m_uinput.close();
-    m_map = 0;
 }
 
 void NexusIrHandler::enterStandby()
@@ -117,19 +133,119 @@ void NexusIrHandler::exitStandby()
     m_ir.exitStandby();
 }
 
-/*virtual*/ void NexusIrHandler::onIrInput(uint32_t nexus_key, bool repeat)
+/*virtual*/ void NexusIrHandler::onIrInput(uint32_t nexus_key, bool repeat,
+        unsigned interval)
 {
-    LOGV("NexusIrHandler: got Nexus key %u%s\n", (unsigned)nexus_key,
-            repeat ? " (repeat)" : "");
-    if (repeat)
-        return; //ignore repeat keys
+    LOGV("NexusIrHandler: got Nexus key 0x%08x%s, interval: %u",
+            (unsigned)nexus_key, repeat ? " (repeat)" : "", interval);
 
-    __u16 linux_key = m_map->get(nexus_key);
-    if (linux_key != KEY_RESERVED) {
-        LOGV("NexusIrHandler: emit Linux key event %d\n", (int)linux_key);
-        m_uinput.emit_key(linux_key);
-    } else {
-        LOGW("No Linux key mapping for Nexus IR code %u\n", (unsigned)nexus_key);
-    }
+    m_key_thread.signal(nexus_key, repeat, interval);
 }
 
+NexusIrHandler::KeyThread::KeyThread(LinuxUInput &uinput) :
+        m_map(0),
+        m_uinput(uinput),
+        m_mutex("NexusIrHandler::KeyThread::m_mutex"),
+        m_cond(android::Condition::WAKE_UP_ONE),
+        m_old_key(KEY_RESERVED),
+        m_key(KEY_RESERVED),
+        m_repeat(false),
+        m_interval(0),
+        m_timeout(DEFAULT_TIMEOUT)
+{
+}
+
+NexusIrHandler::KeyThread::~KeyThread()
+{
+}
+
+void NexusIrHandler::KeyThread::setMap(android::sp<NexusIrMap> map)
+{
+    m_map = map;
+}
+
+void NexusIrHandler::KeyThread::setTimeout(unsigned timeout)
+{
+    m_timeout = timeout ? MS_TO_NS(timeout) : DEFAULT_TIMEOUT;
+}
+
+void NexusIrHandler::KeyThread::signal(uint32_t nexus_key, bool repeat,
+        unsigned interval)
+{
+    android::Mutex::Autolock _l(m_mutex);
+
+    m_key = repeat ? m_old_key : m_map->get(nexus_key);
+
+    if (m_key == KEY_RESERVED) {
+        LOGW("No Linux key mapping for Nexus IR code 0x%08x",
+                (unsigned)nexus_key);
+    }
+    else {
+        LOGV("Linux key mapping for Nexus IR code 0x%08x = %d",
+                (unsigned)nexus_key, (int)m_key);
+    }
+
+    m_repeat = repeat;
+    m_interval = interval;
+    m_cond.signal();
+}
+
+/*virtual*/ bool NexusIrHandler::KeyThread::threadLoop()
+{
+    LOGI("KeyThread start");
+
+    while (isRunning())
+    {
+        android::Mutex::Autolock _l(m_mutex);
+
+        //enable timeout only if we saw a key
+        android::status_t res;
+        if (m_key != KEY_RESERVED) {
+            LOGI("waiting for key repeat, timeout: %u ms",
+                    (unsigned)NS_TO_MS(m_timeout));
+            res = m_cond.waitRelative(m_mutex, m_timeout);
+        } else {
+            LOGI("waiting for key, no timeout");
+            res = m_cond.wait(m_mutex);
+        }
+
+        if (res == android::OK) {
+            LOGI("got key: %d, old key: %d, interval %u ms",
+                    (int)m_key, (int)m_old_key, m_interval);
+        } else if (res == android::TIMED_OUT) {
+           LOGI("repeat time out for key: %d, old key: %d",
+                   (int)m_key, (int)m_old_key);
+
+            //simulate key release
+            m_key = KEY_RESERVED;
+            m_repeat = false;
+            m_interval = 0;
+        } else {
+            LOGE("wait error %d", (int)res);
+        }
+
+        // We've got something to handle either if a new key was pressed
+        // or if we stopped seeing repeats. Repeated keys, wait errors
+        // or exit requests don't generate key events.
+        bool key_event =
+            ((res == android::OK) || (res == android::TIMED_OUT))
+            && !m_repeat
+            && !exitPending();
+
+        if (key_event) {
+            if (m_old_key != KEY_RESERVED) {
+                LOGI("emit key release: %d", (int)m_old_key);
+                m_uinput.emit_key_state(m_old_key, false) && m_uinput.emit_syn();
+            }
+            if (m_key != KEY_RESERVED) {
+                LOGI("emit key press: %d", (int)m_key);
+                m_uinput.emit_key_state(m_key, true) && m_uinput.emit_syn();
+            }
+
+            m_old_key = m_key;
+        }
+    }
+
+    LOGI("KeyThread end");
+    return false;
+}
