@@ -84,7 +84,6 @@ private:
 private:
     SRAI_PlatformHandle m_Sage_PlatformHandle;
     BSAGElib_InOutContainer *m_Sagelib_Container;
-    CommonCryptoHandle m_CommonCryptoHandle;
 };
 
 #endif //BOMX_VIDEO_DECODER_SECURE_H__

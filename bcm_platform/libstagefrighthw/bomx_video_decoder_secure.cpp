@@ -95,7 +95,6 @@ BOMX_VideoDecoder_Secure::BOMX_VideoDecoder_Secure(
     const OMX_CALLBACKTYPE *pCallbacks)
     :BOMX_VideoDecoder(pComponentType, pName, pAppData, pCallbacks)
     ,m_Sage_PlatformHandle(NULL)
-    ,m_CommonCryptoHandle(NULL)
 {
     m_secureDecoder = true;
     ALOGV("%s", __FUNCTION__);
@@ -104,10 +103,6 @@ BOMX_VideoDecoder_Secure::BOMX_VideoDecoder_Secure(
 BOMX_VideoDecoder_Secure::~BOMX_VideoDecoder_Secure()
 {
     ALOGV("%s", __FUNCTION__);
-    if(m_CommonCryptoHandle) {
-        CommonCrypto_Close(m_CommonCryptoHandle);
-    }
-
     Sage_Platform_Close();
 }
 
@@ -173,8 +168,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure::ConfigBufferAppend(const void *pBuffer, 
     NEXUS_Error err;
 
     BOMX_ASSERT(NULL != pBuffer);
-    BOMX_ASSERT(m_configBufferSize >= BOMX_VIDEO_CODEC_CONFIG_HEADER_SIZE);
-
     ALOGV("%s, buffer:%p, length:%d", __FUNCTION__, pBuffer, length);
     if ( m_configBufferSize + length > BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE )
         return BOMX_ERR_TRACE(OMX_ErrorOverflow);
@@ -194,7 +187,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure::ConfigBufferAppend(const void *pBuffer, 
 NEXUS_Error BOMX_VideoDecoder_Secure::ExtraTransportConfig()
 {
     NEXUS_SetPidChannelBypassKeyslot(m_hPidChannel, NEXUS_BypassKeySlot_eGR2R);
-    return 0;
+    return NEXUS_SUCCESS;
 }
 
 NEXUS_Error BOMX_VideoDecoder_Secure::AllocateInputBuffer(uint32_t nSize, void*& pBuffer)
@@ -204,7 +197,7 @@ NEXUS_Error BOMX_VideoDecoder_Secure::AllocateInputBuffer(uint32_t nSize, void*&
     {
         ALOGE("%s: Error initializing sage platform", __FUNCTION__);
         m_Sage_PlatformHandle = NULL;
-        return -1; // TODO: check this error code
+        return NEXUS_UNKNOWN;
     }
 
     // Allocate secure buffer
@@ -212,12 +205,12 @@ NEXUS_Error BOMX_VideoDecoder_Secure::AllocateInputBuffer(uint32_t nSize, void*&
     if (!sec_ptr)
     {
         ALOGE("%s: Failed to allocate secure buffer", __FUNCTION__);
-        return -1;
+        return NEXUS_UNKNOWN;
     }
 
     ALOGV("%s, buff:%p, size:%u", __FUNCTION__, sec_ptr, nSize);
     pBuffer = sec_ptr;
-    return 0; // TODO:error code ?
+    return NEXUS_SUCCESS;
 }
 
 void BOMX_VideoDecoder_Secure::FreeInputBuffer(void*& pBuffer)
@@ -243,43 +236,57 @@ NEXUS_Error BOMX_VideoDecoder_Secure::AllocateNexusMemory(size_t nSize, void *& 
         return errCode;
     }
 
-    return 0;
+    return NEXUS_SUCCESS;
 }
+
+static void complete(void *context, int param)
+{
+    BSTD_UNUSED(param);
+    BKNI_SetEvent((BKNI_EventHandle)context);
+}
+
 
 NEXUS_Error BOMX_VideoDecoder_Secure::SecureCopy(void *pDest, const void *pSrc, size_t nSize)
 {
-    int nbBlks = 0;
-    NEXUS_DmaJobBlockSettings blkSettings[1];
+    NEXUS_DmaHandle dma;
+    NEXUS_DmaJobHandle job;
+    NEXUS_DmaJobSettings jobSettings;
+    BKNI_EventHandle event;
+    NEXUS_Error rc;
 
-    ALOGV("%s, dest:%p, src:%p, size:%d", __FUNCTION__, pDest, pSrc, nSize);
-    NEXUS_DmaJob_GetDefaultBlockSettings(&blkSettings[nbBlks]);
-    blkSettings[nbBlks].pSrcAddr = pSrc;
-    blkSettings[nbBlks].pDestAddr = pDest;
-    blkSettings[nbBlks].blockSize = nSize;
-    blkSettings[nbBlks].resetCrypto = true;
-    blkSettings[nbBlks].scatterGatherCryptoStart = true;
-    blkSettings[nbBlks].scatterGatherCryptoEnd = true;
-    blkSettings[nbBlks].cached = true;
-    nbBlks++;
+    ALOGV("%s_, dest:%p, src:%p, size:%d", __FUNCTION__, pDest, pSrc, nSize);
+    BKNI_CreateEvent(&event);
+    dma = NEXUS_Dma_Open(NEXUS_ANY_ID, NULL);
+    BDBG_ASSERT(dma);
 
-    // Do the DMA Xfer
-    if (m_CommonCryptoHandle == NULL)
-    {
-        CommonCryptoSettings  cmnCryptoSettings;
-        CommonCrypto_GetDefaultSettings(&cmnCryptoSettings);
-        m_CommonCryptoHandle = CommonCrypto_Open(&cmnCryptoSettings);
-        if (m_CommonCryptoHandle == NULL) {
-            ALOGE("%s: failed to open CommonCrypto", __FUNCTION__);
-            return -1;
-        }
+    NEXUS_DmaJob_GetDefaultSettings(&jobSettings);
+    jobSettings.completionCallback.callback = complete;
+    jobSettings.completionCallback.context = event;
+    jobSettings.bypassKeySlot = NEXUS_BypassKeySlot_eGR2R;
+    job = NEXUS_DmaJob_Create(dma, &jobSettings);
+    BDBG_ASSERT(job);
+
+    NEXUS_DmaJobBlockSettings blockSettings;
+    NEXUS_DmaJob_GetDefaultBlockSettings(&blockSettings);
+    blockSettings.pSrcAddr = pSrc;
+    blockSettings.pDestAddr = pDest;
+    blockSettings.blockSize = nSize;
+    blockSettings.cached = false;
+    rc = NEXUS_DmaJob_ProcessBlocks(job, &blockSettings, 1);
+    if (rc == NEXUS_DMA_QUEUED) {
+        NEXUS_DmaJobStatus status;
+        rc = BKNI_WaitForEvent(event, BKNI_INFINITE);
+        BDBG_ASSERT(!rc);
+        rc = NEXUS_DmaJob_GetStatus(job, &status);
+        BDBG_ASSERT(!rc && (status.currentState == NEXUS_DmaJobState_eComplete));
+    }
+    else {
+        ALOGE("%s: error in dma transfer, err:%d", __FUNCTION__, rc);
+        return rc;
     }
 
-    CommonCryptoJobSettings cryptoJobSettings;
-    CommonCrypto_GetDefaultJobSettings(&cryptoJobSettings);
-    NEXUS_Error err = CommonCrypto_DmaXfer(m_CommonCryptoHandle,
-                                            &cryptoJobSettings, blkSettings, nbBlks);
-    if (err)
-        ALOGE("CommonCrypto_DmaXfer returned:%d", err);
-
-    return err;
+    NEXUS_DmaJob_Destroy(job);
+    NEXUS_Dma_Close(dma);
+    BKNI_DestroyEvent(event);
+    return NEXUS_SUCCESS;
 }
