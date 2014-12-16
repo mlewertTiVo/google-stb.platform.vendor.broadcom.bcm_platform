@@ -110,6 +110,11 @@ audio_devices_t BrcmAudioPolicyManager::getDeviceForInputSource(audio_source_t i
         }
     }
 
+    // Fall back to default policy if no device is found
+    if (device == AUDIO_DEVICE_NONE) {
+        device = AudioPolicyManager::getDeviceForInputSource(inputSource);
+    }
+
     ALOGV("getDeviceForInputSource() input source %d, device %08x", inputSource, device);
     return device;
 }
