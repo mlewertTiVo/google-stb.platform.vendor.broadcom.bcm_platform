@@ -4,7 +4,7 @@ BSEAV_TOP  ?= ../../../../../../../../../BSEAV
 include $(CLEAR_VARS)
 LOCAL_MODULE := libnexus
 LOCAL_SRC_FILES := bin/libnexus.so
-LOCAL_MODULE_TAGS := optional debug
+LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_STRIP_MODULE := true

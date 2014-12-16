@@ -52,7 +52,6 @@ LOCAL_SRC_FILES := \
     nexusirinput.cpp \
     nexusirmap.cpp
 
-LOCAL_MODULE_TAGS := optional debug
+LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_SHARED_LIBRARY)
-

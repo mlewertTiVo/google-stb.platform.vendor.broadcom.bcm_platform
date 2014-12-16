@@ -55,7 +55,7 @@ LOCAL_SRC_FILES := IPmLibService.cpp \
                    $(GLOB_PATH)/glob.c \
                    $(POWER_PATH)/pmlib-263x.c
 
-LOCAL_MODULE_TAGS := optional debug
+LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_SHARED_LIBRARY)
 
@@ -76,7 +76,7 @@ LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include
 
 LOCAL_CFLAGS:= $(NEXUS_CFLAGS) -DANDROID
 
-LOCAL_MODULE_TAGS := optional debug
+LOCAL_MODULE_TAGS := optional
 
 LOCAL_MODULE:= pmlibserver
 

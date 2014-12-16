@@ -59,6 +59,6 @@ ifeq ($(findstring NEXUS_HAS_GPIO, $(NEXUS_APP_DEFINES)),)
 LOCAL_SRC_FILES += nexus_gpio_stubs.cpp
 endif
 
-LOCAL_MODULE_TAGS := optional debug
+LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_SHARED_LIBRARY)

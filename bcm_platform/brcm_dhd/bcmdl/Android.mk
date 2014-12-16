@@ -12,7 +12,7 @@ LOCAL_SHARED_LIBRARIES := liblog libcutils
 LOCAL_SHARED_LIBRARIES += libusb2 libusb-compat libz
 
 LOCAL_MODULE := bcmdl
-LOCAL_MODULE_TAGS := optional debug
+LOCAL_MODULE_TAGS := optional
 
 LOCAL_CFLAGS := -DBCMTRXV2
 
