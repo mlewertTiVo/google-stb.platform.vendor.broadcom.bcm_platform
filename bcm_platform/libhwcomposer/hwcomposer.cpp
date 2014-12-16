@@ -91,7 +91,6 @@ using namespace android;
 #define GPX_SURFACE_STACK            3
 #define DUMP_BUFFER_SIZE             1024
 #define LAST_PING_FRAME_ID_INVALID   0xBAADCAFE
-#define NSC_MAXIMUM_SCALE_FACTOR     15
 #define FALL_BACK_GLES_ON_SKIP       1
 
 /* note: matching other parts of the integration, we
@@ -352,6 +351,7 @@ struct hwc_context_t {
     HwcBinder_wrap *hwc_binder;
 
     NEXUS_Graphics2DHandle hwc_2dg;
+    NEXUS_Graphics2DCapabilities gfxCaps;
     BKNI_EventHandle checkpoint_event;
 
     bool needs_fb_target;
@@ -958,7 +958,8 @@ static bool is_video_layer(hwc_layer_1_t *layer, int layer_id, bool *is_sideband
     return rc;
 }
 
-static bool can_handle_layer_scaling(
+static bool split_layer_scaling(
+    struct hwc_context_t *ctx,
     hwc_layer_1_t *layer)
 {
     bool ret = true;
@@ -979,14 +980,16 @@ static bool can_handle_layer_scaling(
         goto out;
     }
 
-    if (clip_position.width && ((pSharedData->planes[DEFAULT_PLANE].width / clip_position.width) >= NSC_MAXIMUM_SCALE_FACTOR)) {
-        ALOGV("%s: width: %d -> %d - defer to gles", __FUNCTION__, pSharedData->planes[DEFAULT_PLANE].width, clip_position.width);
+    if (clip_position.width && ((pSharedData->planes[DEFAULT_PLANE].width / clip_position.width) >= ctx->gfxCaps.maxHorizontalDownScale)) {
+        ALOGV("%s: width: %d -> %d (>%d)", __FUNCTION__, pSharedData->planes[DEFAULT_PLANE].width, clip_position.width,
+              ctx->gfxCaps.maxHorizontalDownScale);
         ret = false;
         goto out;
     }
 
-    if (clip_position.height && ((pSharedData->planes[DEFAULT_PLANE].height / clip_position.height) >= NSC_MAXIMUM_SCALE_FACTOR)) {
-        ALOGV("%s: height: %d -> %d - defer to gles", __FUNCTION__, pSharedData->planes[DEFAULT_PLANE].height, clip_position.height);
+    if (clip_position.height && ((pSharedData->planes[DEFAULT_PLANE].height / clip_position.height) >= ctx->gfxCaps.maxVerticalDownScale)) {
+        ALOGV("%s: height: %d -> %d (>%d)", __FUNCTION__, pSharedData->planes[DEFAULT_PLANE].height, clip_position.height,
+              ctx->gfxCaps.maxVerticalDownScale);
         ret = false;
         goto out;
     }
@@ -1062,13 +1065,12 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
               skip_layer_index = i;
            } else {
               if (layer->handle) {
-                 if (can_handle_layer_scaling(layer)) {
-                    if ((layer->flags & HWC_IS_CURSOR_LAYER) && HWC_CURSOR_SURFACE_SUPPORTED) {
-                       layer->compositionType = HWC_CURSOR_OVERLAY;
-                    } else {
-                       layer->compositionType = HWC_OVERLAY;
-                       layer->hints = HWC_HINT_TRIPLE_BUFFER;
-                    }
+                 split_layer_scaling(ctx, layer);
+                 if ((layer->flags & HWC_IS_CURSOR_LAYER) && HWC_CURSOR_SURFACE_SUPPORTED) {
+                    layer->compositionType = HWC_CURSOR_OVERLAY;
+                 } else {
+                    layer->compositionType = HWC_OVERLAY;
+                    layer->hints = HWC_HINT_TRIPLE_BUFFER;
                  }
               }
            }
@@ -1952,6 +1954,10 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         if (rc) {
            ALOGE("%s: failed to setup hwc_2dg checkpoint, conversion services will not work!", __FUNCTION__);
         }
+
+        NEXUS_Graphics2D_GetCapabilities(dev->hwc_2dg, &dev->gfxCaps);
+        ALOGI("%s: gfx caps: h-down-scale: %d, v-down-scale: %d", __FUNCTION__,
+              dev->gfxCaps.maxHorizontalDownScale, dev->gfxCaps.maxVerticalDownScale);
 
         *device = &dev->device.common;
         status = 0;
