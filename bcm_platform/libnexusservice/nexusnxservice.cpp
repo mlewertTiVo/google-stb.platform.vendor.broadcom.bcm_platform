@@ -218,47 +218,59 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
 {
 #if NEXUS_HAS_HDMI_OUTPUT
     int rc;
+    NxClient_StandbyStatus standbyStatus;
     NexusNxService *pNexusNxService = reinterpret_cast<NexusNxService *>(context);
 
-    LOGV("%s: Received HDMI%d hotplug event", __func__, param);
-
-    NxClient_DisplayStatus status;
-    rc = NxClient_GetDisplayStatus(&status);
-    if (rc) {
-        LOGE("%s: Could not get display status!!!", __PRETTY_FUNCTION__);
+    rc = NxClient_GetStandbyStatus(&standbyStatus);
+    if (rc != NEXUS_SUCCESS) {
+        LOGE("%s: Could not get standby status!!!", __PRETTY_FUNCTION__);
         return;
     }
 
-    LOGD("%s: HDMI%d hotplug %s (receive device %s powered)",
-         __func__, param,
-         status.hdmi.status.connected ? "connected" : "disconnected", status.hdmi.status.rxPowered ? "is" : "isn't");
+    if (standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
+        LOGV("%s: Received HDMI%d hotplug event", __func__, param);
 
-    Vector<sp<INexusHdmiHotplugEventListener> >::const_iterator it;
+        NxClient_DisplayStatus status;
+        rc = NxClient_GetDisplayStatus(&status);
+        if (rc) {
+            LOGE("%s: Could not get display status!!!", __PRETTY_FUNCTION__);
+            return;
+        }
 
-    Mutex::Autolock autoLock(pNexusNxService->server->mLock);
+        LOGD("%s: HDMI%d hotplug %s (receive device %s powered)",
+             __func__, param,
+             status.hdmi.status.connected ? "connected" : "disconnected", status.hdmi.status.rxPowered ? "is" : "isn't");
 
-    for (it = pNexusNxService->server->mHdmiHotplugEventListenerList[param].begin(); it != pNexusNxService->server->mHdmiHotplugEventListenerList[param].end(); ++it) {
-        LOGV("%s: Firing off HDMI%d hotplug %s event for listener %p...", __PRETTY_FUNCTION__, param,
-             (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? "connected" : "disconnected", (*it).get());
-        (*it)->onHdmiHotplugEventReceived(param, status.hdmi.status.connected && status.hdmi.status.rxPowered);
-    }
+        Vector<sp<INexusHdmiHotplugEventListener> >::const_iterator it;
+
+        Mutex::Autolock autoLock(pNexusNxService->server->mLock);
+
+        for (it = pNexusNxService->server->mHdmiHotplugEventListenerList[param].begin(); it != pNexusNxService->server->mHdmiHotplugEventListenerList[param].end(); ++it) {
+            LOGV("%s: Firing off HDMI%d hotplug %s event for listener %p...", __PRETTY_FUNCTION__, param,
+                 (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? "connected" : "disconnected", (*it).get());
+            (*it)->onHdmiHotplugEventReceived(param, status.hdmi.status.connected && status.hdmi.status.rxPowered);
+        }
 
 #if ANDROID_ENABLE_HDMI_HDCP
-    NxClient_DisplaySettings settings;
-    NxClient_GetDisplaySettings(&settings);
+        NxClient_DisplaySettings settings;
+        NxClient_GetDisplaySettings(&settings);
 
-    /* enable hdcp authentication if hdmi connected and powered */
-    settings.hdmiPreferences.hdcp =
-        (status.hdmi.status.connected && status.hdmi.status.rxPowered) ?
-        NxClient_HdcpLevel_eMandatory :
-        NxClient_HdcpLevel_eNone;
+        /* enable hdcp authentication if hdmi connected and powered */
+        settings.hdmiPreferences.hdcp =
+            (status.hdmi.status.connected && status.hdmi.status.rxPowered) ?
+            NxClient_HdcpLevel_eMandatory :
+            NxClient_HdcpLevel_eNone;
 
-    rc = NxClient_SetDisplaySettings(&settings);
-    if (rc) {
-        LOGE("%s: Could not set display settings!!!", __PRETTY_FUNCTION__);
-        return;
-    }
+        rc = NxClient_SetDisplaySettings(&settings);
+        if (rc) {
+            LOGE("%s: Could not set display settings!!!", __PRETTY_FUNCTION__);
+            return;
+        }
 #endif
+    }
+    else {
+        LOGW("%s: Ignoring HDMI%d hotplug as we are in standby!", __PRETTY_FUNCTION__, param);
+    }
 #endif
 }
 
@@ -266,24 +278,36 @@ void NexusNxService::hdmiOutputHdcpStateChangedCallback(void *context __unused, 
 {
 #if ANDROID_ENABLE_HDMI_HDCP
     int rc;
+    NxClient_StandbyStatus standbyStatus;
     NexusNxService *pNexusNxService = reinterpret_cast<NexusNxService *>(context);
 
-    LOGV("%s: Received HDMI%d hdcp event", __func__, param);
-
-    NxClient_DisplayStatus status;
-    rc = NxClient_GetDisplayStatus(&status);
-    if (rc) {
-        LOGE("%s: Could not get display status!!!", __PRETTY_FUNCTION__);
+    rc = NxClient_GetStandbyStatus(&standbyStatus);
+    if (rc != NEXUS_SUCCESS) {
+        LOGE("%s: Could not get standby status!!!", __PRETTY_FUNCTION__);
         return;
     }
 
-    LOGD("%s: HDMI%d HDCP state=%d error=%d repeater=%d hdcp1.1=%d hdcp2.2=%d\n",
-         __func__, param,
-         status.hdmi.hdcp.hdcpState,
-         status.hdmi.hdcp.hdcpError,
-         status.hdmi.hdcp.isHdcpRepeater, 
-         status.hdmi.hdcp.hdcp1_1Features, 
-         status.hdmi.hdcp.hdcp2_2Features);
+    if (standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
+        LOGV("%s: Received HDMI%d hdcp event", __func__, param);
+
+        NxClient_DisplayStatus status;
+        rc = NxClient_GetDisplayStatus(&status);
+        if (rc) {
+            LOGE("%s: Could not get display status!!!", __PRETTY_FUNCTION__);
+            return;
+        }
+
+        LOGD("%s: HDMI%d HDCP state=%d error=%d repeater=%d hdcp1.1=%d hdcp2.2=%d\n",
+             __func__, param,
+             status.hdmi.hdcp.hdcpState,
+             status.hdmi.hdcp.hdcpError,
+             status.hdmi.hdcp.isHdcpRepeater, 
+             status.hdmi.hdcp.hdcp1_1Features, 
+             status.hdmi.hdcp.hdcp2_2Features);
+    }
+    else {
+        LOGW("%s: Ignoring HDMI%d HDCP event as we are in standby!", __PRETTY_FUNCTION__, param);
+    }
 #endif
 }
 
@@ -1091,12 +1115,17 @@ bool NexusNxService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pH
     if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
         unsigned loops;
         NxClient_DisplayStatus status;
-
         
         for (loops = 0; loops < 4; loops++) {
-            rc = NxClient_GetDisplayStatus(&status);
-            if ((rc == NEXUS_SUCCESS) && status.hdmi.status.connected) {
-                break;
+            NEXUS_Error rc2;
+            NxClient_StandbyStatus standbyStatus;
+
+            rc2 = NxClient_GetStandbyStatus(&standbyStatus);
+            if (rc2 == NEXUS_SUCCESS && standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
+                rc = NxClient_GetDisplayStatus(&status);
+                if ((rc == NEXUS_SUCCESS) && status.hdmi.status.connected) {
+                    break;
+                }
             }
             LOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
             usleep(250 * 1000);
