@@ -75,6 +75,7 @@
 #include "nexus_core_utils.h"
 #include "bkni.h"
 #include "bkni_multi.h"
+#include "blst_list.h"
 #include "nexus_video_decoder.h"
 #include "nexus_audio_decoder.h"
 #include "nexus_audio_input.h"
@@ -139,6 +140,24 @@ typedef struct DisplayState
     int hNexusDisplay;
     int hNexusVideoWindow[MAX_VIDEO_WINDOWS_PER_DISPLAY];
 } DisplayState;
+
+typedef struct NexusServerContext
+{
+    NexusServerContext();
+    ~NexusServerContext() { LOGV("%s: called", __PRETTY_FUNCTION__); }
+
+    Mutex mLock;
+    unsigned mJoinRefCount;
+    BLST_D_HEAD(b_refsw_client_list, NexusClientContext) clients;
+#if NEXUS_HAS_HDMI_OUTPUT
+    Vector<sp<INexusHdmiHotplugEventListener> > mHdmiHotplugEventListenerList[NEXUS_NUM_HDMI_OUTPUTS];
+#endif
+
+    struct {
+        unsigned client;
+        NEXUS_SurfaceCompositorClientId surfaceClientId;
+    } lastId;
+} NexusServerContext;
 
 class NexusService : public NexusServiceBase, public BnNexusService
 {

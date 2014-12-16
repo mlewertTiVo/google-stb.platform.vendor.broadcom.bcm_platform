@@ -78,7 +78,6 @@ using namespace android;
 /* API parameters */
 // adopted these from Trellis
 typedef struct NexusClientContext NexusClientContext;
-typedef struct NexusServerContext NexusServerContext;
 
 typedef struct b_refsw_client_client_name  {
     char string[CLIENT_MAX_NAME];

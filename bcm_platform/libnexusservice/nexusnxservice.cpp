@@ -116,15 +116,13 @@ typedef struct NexusClientContext {
 
 BDBG_OBJECT_ID(NexusClientContext);
 
-typedef struct NexusServerContext {
-    BLST_D_HEAD(b_refsw_client_list, NexusClientContext) clients;
+typedef struct NexusNxServerContext : public NexusServerContext {
+    NexusNxServerContext()  { LOGV("%s: called", __PRETTY_FUNCTION__); }
+    ~NexusNxServerContext() { LOGV("%s: called", __PRETTY_FUNCTION__); }
+
 #if ANDROID_SUPPORTS_EMBEDDED_NXSERVER
     BKNI_MutexHandle lock;
     nxserver_t nxserver;
-#endif
-    Mutex mLock;
-#if NEXUS_HAS_HDMI_OUTPUT
-    Vector<sp<INexusHdmiHotplugEventListener> > mHdmiHotplugEventListenerList[NEXUS_NUM_HDMI_OUTPUTS];
 #endif
     struct StandbyMonitorThread : public android::Thread {
 
@@ -160,10 +158,10 @@ typedef struct NexusServerContext {
         StandbyMonitorThread(const StandbyMonitorThread &);
         StandbyMonitorThread &operator=(const StandbyMonitorThread &);
     };
-    android::sp<NexusServerContext::StandbyMonitorThread> mStandbyMonitorThread;
-} NexusServerContext;
+    android::sp<NexusNxServerContext::StandbyMonitorThread> mStandbyMonitorThread;
+} NexusNxServerContext;
 
-NexusServerContext::StandbyMonitorThread::~StandbyMonitorThread()
+NexusNxServerContext::StandbyMonitorThread::~StandbyMonitorThread()
 {
     ALOGD("%s: called", __PRETTY_FUNCTION__); 
 
@@ -173,7 +171,7 @@ NexusServerContext::StandbyMonitorThread::~StandbyMonitorThread()
     }
 }
 
-android::status_t NexusServerContext::StandbyMonitorThread::run(const char* name, int32_t priority, size_t stack)
+android::status_t NexusNxServerContext::StandbyMonitorThread::run(const char* name, int32_t priority, size_t stack)
 {
     android::status_t status;
     
@@ -186,7 +184,7 @@ android::status_t NexusServerContext::StandbyMonitorThread::run(const char* name
     return android::OK;
 }
 
-bool NexusServerContext::StandbyMonitorThread::threadLoop()
+bool NexusNxServerContext::StandbyMonitorThread::threadLoop()
 {
     NEXUS_Error rc;
     NxClient_StandbyStatus standbyStatus, prevStatus;
@@ -470,8 +468,9 @@ void NexusNxService::platformInit()
         }
     } while (rc != NEXUS_SUCCESS);
 
-    server->mStandbyMonitorThread = new NexusServerContext::StandbyMonitorThread(irHandler);
-    server->mStandbyMonitorThread->run(&joinSettings.name[0], ANDROID_PRIORITY_NORMAL);
+    NexusNxServerContext *nxServer = static_cast<NexusNxServerContext *>(server);
+    nxServer->mStandbyMonitorThread = new NexusNxServerContext::StandbyMonitorThread(irHandler);
+    nxServer->mStandbyMonitorThread->run(&joinSettings.name[0], ANDROID_PRIORITY_NORMAL);
 
 #endif // ANDROID_SUPPORTS_EMBEDDED_NXSERVER
 
@@ -518,11 +517,12 @@ void NexusNxService::platformUninit()
     nxserverlib_uninit(server->nxserver);
     BKNI_DestroyMutex(server->lock);
 #else
+    NexusNxServerContext *nxServer = static_cast<NexusNxServerContext *>(server);
     /* Cancel the standby monitor thread... */
-    if (server->mStandbyMonitorThread != NULL && server->mStandbyMonitorThread->isRunning()) {
-        server->mStandbyMonitorThread->stop();
-        server->mStandbyMonitorThread->join();
-        server->mStandbyMonitorThread = NULL;
+    if (nxServer->mStandbyMonitorThread != NULL && nxServer->mStandbyMonitorThread->isRunning()) {
+        nxServer->mStandbyMonitorThread->stop();
+        nxServer->mStandbyMonitorThread->join();
+        nxServer->mStandbyMonitorThread = NULL;
     }
     NxClient_Uninit();
 #endif // ANDROID_SUPPORTS_EMBEDDED_NXSERVER
@@ -530,22 +530,29 @@ void NexusNxService::platformUninit()
 
 void NexusNxService::instantiate()
 {
+    NexusNxServerContext *server = new NexusNxServerContext();
+
+    if (server == NULL) {
+        LOGE("%s: FATAL: Could not instantiate NexusNxServerContext!!!", __PRETTY_FUNCTION__);
+        BDBG_ASSERT(server != NULL);
+    }
+
     NexusNxService *nexusservice = new NexusNxService();
+    if (nexusservice != NULL) {
+        nexusservice->server = server;
 
-    nexusservice->platformInit();
+        nexusservice->platformInit();
 
-    android::defaultServiceManager()->addService(
-                INexusService::descriptor, nexusservice);
+        android::defaultServiceManager()->addService(
+                    INexusService::descriptor, nexusservice);
+    }
+    else {
+        LOGE("%s: Could not instantiate NexusNxService!!!", __PRETTY_FUNCTION__);
+    }
 }
 
 NexusNxService::NexusNxService()
 {
-    server = new NexusServerContext();
-
-    if (server == NULL) {
-        LOGE("%s: FATAL: Could not instantiate NexusServerContext!", __PRETTY_FUNCTION__);
-        BDBG_ASSERT(server != NULL);
-    }
     LOGI("NexusNxService Created");
 }
 

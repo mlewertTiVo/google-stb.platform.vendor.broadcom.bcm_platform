@@ -61,7 +61,6 @@
 #include "nexuscecservice.h"
 #endif
 
-#include "blst_list.h"
 #include "nexus_audio_mixer.h"
 #include "nexus_audio_decoder.h"
 #include "nexus_audio_playback.h"
@@ -292,25 +291,9 @@ typedef struct NexusClientContext {
     b_refsw_client_client_configuration createConfig;
 } NexusClientContext;
 
-typedef struct NexusServerContext {
-    NexusServerContext();
-    ~NexusServerContext() {};
-
-    Mutex mLock;
-    unsigned mJoinRefCount;
-    BLST_D_HEAD(b_refsw_client_list, NexusClientContext) clients;
-#if NEXUS_HAS_HDMI_OUTPUT
-    Vector<sp<INexusHdmiHotplugEventListener> > mHdmiHotplugEventListenerList[NEXUS_NUM_HDMI_OUTPUTS];
-#endif
-
-    struct {
-        unsigned client;
-        NEXUS_SurfaceCompositorClientId surfaceClientId;
-    } lastId;
-} NexusServerContext;
-
 NexusServerContext::NexusServerContext() : mLock(Mutex::SHARED), mJoinRefCount(0)
 {
+    LOGV("%s: called", __PRETTY_FUNCTION__);
     BLST_D_INIT(&clients);
     lastId.client = 0;
     lastId.surfaceClientId = 0;
@@ -1045,22 +1028,29 @@ void NexusService::platformUninit()
 }
 
 void NexusService::instantiate() {
-    NexusService *nexusservice = new NexusService();
-
-    nexusservice->platformInit();
-
-    defaultServiceManager()->addService(
-                INexusService::descriptor, nexusservice);
-}
-
-NexusService::NexusService() : powerState(ePowerState_S0)
-{
-    server = new NexusServerContext();
+    NexusServerContext *server = new NexusServerContext();
 
     if (server == NULL) {
         LOGE("%s: FATAL: Could not allocate memory for NexusServerContext!", __PRETTY_FUNCTION__);
         BDBG_ASSERT(server != NULL);
     }
+
+    NexusService *nexusservice = new NexusService();
+
+    if (nexusservice != NULL) {
+        nexusservice->platformInit();
+        nexusservice->server = server;
+
+        defaultServiceManager()->addService(
+                    INexusService::descriptor, nexusservice);
+    }
+    else {
+        LOGE("%s: Could not instantiate NexusService!!!", __PRETTY_FUNCTION__);
+    }
+}
+
+NexusService::NexusService() : powerState(ePowerState_S0)
+{
     LOGI("NexusService Created");
     surface_compositor = NULL;
     surfaceclient = NULL;

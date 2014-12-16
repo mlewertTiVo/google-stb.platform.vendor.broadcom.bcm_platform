@@ -124,7 +124,7 @@ bool NexusNxClient::StandbyMonitorThread::threadLoop()
     while (isRunning()) {
         rc = NxClient_GetStandbyStatus(&standbyStatus);
     
-        if (standbyStatus.settings.mode != prevStatus.settings.mode) {
+        if (rc == NEXUS_SUCCESS && standbyStatus.settings.mode != prevStatus.settings.mode) {
             bool ack = true;
 
             if (standbyStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn) {
@@ -934,6 +934,5 @@ bool NexusNxClient::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHd
     rc = NEXUS_SUCCESS;
 #endif
     return (rc == NEXUS_SUCCESS);
-
 }
 
