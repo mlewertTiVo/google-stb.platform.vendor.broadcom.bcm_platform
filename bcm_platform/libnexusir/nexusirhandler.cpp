@@ -64,7 +64,7 @@ NexusIrHandler::~NexusIrHandler()
 }
 
 bool NexusIrHandler::start(NEXUS_IrInputMode mode,
-        android::sp<NexusIrMap> map)
+        android::sp<NexusIrMap> map, uint64_t mask)
 {
     static const struct input_id id =
     {
@@ -92,7 +92,7 @@ bool NexusIrHandler::start(NEXUS_IrInputMode mode,
     }
     success = success
             && m_uinput.start("NexusIrHandler", id)
-            && m_ir.start(m_mode, *this, power_key);
+            && m_ir.start(m_mode, *this, power_key, mask);
 
     m_key_thread.setMap(map);
     m_key_thread.setTimeout(m_ir.repeatTimeout());

@@ -413,12 +413,15 @@ bool NexusNxService::platformInitIR()
     static const NEXUS_IrInputMode ir_mode_default_enum = NEXUS_IrInputMode_eCirNec;
     static const char * ir_mode_default = "CirNec";
     static const char * ir_map_default = "broadcom_silver";
+    static const char * ir_mask_default = "0";
 
     char ir_mode_property[PROPERTY_VALUE_MAX];
     char ir_map_property[PROPERTY_VALUE_MAX];
+    char ir_mask_property[PROPERTY_VALUE_MAX];
 
     NEXUS_IrInputMode mode;
     android::sp<NexusIrMap> map;
+    uint64_t mask;
 
     memset(ir_mode_property, 0, sizeof(ir_mode_property));
     property_get("ro.ir_remote.mode", ir_mode_property, ir_mode_default);
@@ -444,7 +447,13 @@ bool NexusNxService::platformInitIR()
         return false;
     }
 
-    return irHandler.start(mode, map);
+    memset(ir_mask_property, 0, sizeof(ir_mask_property));
+    property_get("ro.ir_remote.mask", ir_mask_property, ir_mask_default);
+    mask = strtoull(ir_mask_property, NULL, 0);
+    LOGI("Nexus IR remote mask: %s (0x%llx)", ir_mask_property,
+            (unsigned long long)mask);
+
+    return irHandler.start(mode, map, mask);
 }
 
 void NexusNxService::platformUninitIR()

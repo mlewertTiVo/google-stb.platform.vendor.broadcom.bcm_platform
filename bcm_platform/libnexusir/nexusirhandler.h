@@ -72,7 +72,8 @@ public:
      * @param map Key map.
      * @return true on success, flase othewise.
      */
-    bool start(NEXUS_IrInputMode mode, android::sp<NexusIrMap> map);
+    bool start(NEXUS_IrInputMode mode, android::sp<NexusIrMap> map,
+            uint64_t mask = 0);
 
     /**
      * @brief Stop IR handler.

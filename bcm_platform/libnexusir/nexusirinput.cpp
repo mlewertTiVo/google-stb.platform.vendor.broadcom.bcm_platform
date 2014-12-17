@@ -47,7 +47,8 @@
 NexusIrInput::NexusIrInput() :
         m_handle(0),
         m_observer(0),
-        m_power_key(NEXUSIRINPUT_NO_KEY)
+        m_power_key(NEXUSIRINPUT_NO_KEY),
+        m_mask(0)
 {
 }
 
@@ -57,12 +58,13 @@ NexusIrInput::~NexusIrInput()
 }
 
 bool NexusIrInput::start(NEXUS_IrInputMode mode,
-        NexusIrInput::Observer &observer, uint32_t power_key)
+        NexusIrInput::Observer &observer, uint32_t power_key, uint64_t mask)
 {
     LOGI("NexusIrInput start");
 
     m_observer = &observer;
     m_power_key = power_key;
+    m_mask = mask;
 
     NEXUS_IrInputSettings irSettings;
     NEXUS_IrInput_GetDefaultSettings(&irSettings);
@@ -105,6 +107,7 @@ void NexusIrInput::enterStandby()
     NEXUS_IrInputDataFilter irPattern;
     NEXUS_IrInput_GetDefaultDataFilter(&irPattern);
     irPattern.filterWord[0].patternWord = m_power_key;
+    irPattern.filterWord[0].mask = m_mask;
     irPattern.filterWord[0].enabled =
         (m_power_key != NEXUSIRINPUT_NO_KEY);
     NEXUS_IrInput_EnableDataFilter(m_handle, &irPattern);
@@ -134,11 +137,11 @@ void NexusIrInput::dataReady()
                 &overflow);
         if (numEvents)
         {
-            LOGV("Nexus IR callback: rc: %d, code: %08x, repeat: %s, interval: %d",
-               rc, irEvent.code,
+            LOGV("Nexus IR callback: rc: %d, code: %08x, mask: %llx, repeat: %s, interval: %u",
+               (int)rc, (unsigned) irEvent.code, (unsigned long long)m_mask,
                irEvent.repeat ? "true" : "false",
                irEvent.interval);
-            m_observer->onIrInput(irEvent.code, irEvent.repeat,
+            m_observer->onIrInput(irEvent.code & ~m_mask, irEvent.repeat,
                     irEvent.interval);
         }
     }

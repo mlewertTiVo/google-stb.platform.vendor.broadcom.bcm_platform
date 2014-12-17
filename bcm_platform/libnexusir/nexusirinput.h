@@ -73,10 +73,15 @@ public:
      *
      * @param mode Remote mode.
      * @param Observer An instance of the Observer to receive key events.
+     * @param mask A mask to be applied to all received remote codes.
+     * Each bit set in the mask ignores a corresponding bit in the IR code
+     * (i.e. result = ir_code & ~mask). This is useful for remote protocols
+     * that send variable codes, for example RC6.
+     *
      * @return true on success, otherwise false.
      */
     bool start(NEXUS_IrInputMode mode, Observer &Observer,
-            uint32_t power_key = NEXUSIRINPUT_NO_KEY);
+            uint32_t power_key = NEXUSIRINPUT_NO_KEY, uint64_t mask = 0);
 
     /**
      * @brief Stop receiving IR events and close Nexus IR input.
@@ -112,6 +117,7 @@ private:
     NEXUS_IrInputHandle m_handle;
     Observer *m_observer;
     uint32_t m_power_key;
+    uint64_t m_mask;
 };
 
 #endif /* _NEXUS_IR_INPUT_H_ */
