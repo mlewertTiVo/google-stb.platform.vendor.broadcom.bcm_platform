@@ -2,22 +2,24 @@
 set -e
 
 function usage {
-   echo "stage_host_multipart.sh [[k] [r] [s] [d] [c]]"
+   echo "stage_host_multipart.sh [[k] [r] [s] [d] [c] [z]]"
    echo "list partitions to update. partitions in:"
    echo "     'k': kernel image"
    echo "     'r': ramdisk image (ie rootfs)"
    echo "     's': system image"
    echo "     'd': userdata image"
    echo "     'c': cache image"
-   echo "defaults to: 'k r s d c'"
+   echo "     'z': recovery image"
+   echo "defaults to: 'k r s d'"
 }
 
 update_kernel_img=1
 update_ramdisk=1
 update_system=1
 update_data=1
-# 'cache' is not hooked up fully...
+# not needed by default...
 update_cache=0
+update_recovery=0
 if [ $# -gt 0 ]; then
 	echo "reset arguments, reading from command line..."
 	update_kernel_img=0
@@ -25,6 +27,7 @@ if [ $# -gt 0 ]; then
 	update_system=0
 	update_data=0
 	update_cache=0
+	update_recovery=0
 fi
 
 while [[ $# > 0 ]]
@@ -47,6 +50,9 @@ while [[ $# > 0 ]]
 	;;
 	c)
 	update_cache=1
+	;;
+	z)
+	update_recovery=1
 	;;
 	*)
 	usage
@@ -72,6 +78,9 @@ fi
 if [ $update_cache -gt 0 ]; then
 echo "     cache"
 fi
+if [ $update_recovery -gt 0 ]; then
+echo "     recovery"
+fi
 echo ""
 
 echo ""
@@ -95,8 +104,11 @@ fi
 if [ $update_cache -gt 0 ]; then
 mkdir -p /mnt/cache
 fi
+if [ $update_recovery -gt 0 ]; then
+mkdir -p /mnt/recovery
+fi
 
-echo "Mounting all paritions in the USB stick to target system"
+echo "Mounting all partitions in the USB stick to target system"
 if [ $update_kernel_img -gt 0 ]; then
 mount /dev/sda1 /mnt/kernel
 fi
@@ -112,8 +124,11 @@ fi
 if [ $update_cache -gt 0 ]; then
 mount /dev/sda5 /mnt/cache
 fi
+if [ $update_recovery -gt 0 ]; then
+mount /dev/sda6 /mnt/recovery
+fi
 
-echo "Cleaning up all paritions (except for the kernel parition)"
+echo "Cleaning up all partitions (except for the kernel/recovery partitions)"
 if [ $update_ramdisk -gt 0 ]; then
 rm -rf /mnt/rootfs/*
 fi
@@ -135,12 +150,12 @@ cp ./kernel /mnt/kernel/
 fi
 
 if [ $update_ramdisk -gt 0 ]; then
-echo "Copying rootfs over..."
+echo "Copying (exploded) rootfs..."
 cp -a ./boot/ramdisk/* /mnt/rootfs/
 fi
 
 if [ $update_system -gt 0 ]; then
-echo "Copying system partition over..."
+echo "Copying system partition..."
 mkdir -p ./boot/system
 mount -t ext4 -o loop ./boot/system.raw.img ./boot/system
 cp -a ./boot/system/* /mnt/system/
@@ -148,11 +163,24 @@ umount ./boot/system
 fi
 
 if [ $update_data -gt 0 ]; then
-echo "Copying data partition over..."
+echo "Copying data partition..."
 mkdir -p ./boot/data
 mount -t ext4 -o loop ./boot/userdata.raw.img ./boot/data
 cp -a ./boot/data/* /mnt/data/
 umount ./boot/data
+fi
+
+if [ $update_cache -gt 0 ]; then
+echo "Copying cache partition..."
+mkdir -p ./boot/cache
+mount -t ext4 -o loop ./boot/cache.raw.img ./boot/cache
+cp -a ./boot/cache/* /mnt/cache/
+umount ./boot/cache
+fi
+
+if [ $update_recovery -gt 0 ]; then
+echo "Copying recovery image..."
+cp ./recovery.img /mnt/recovery/
 fi
 
 echo "Cleaning up..."
@@ -170,6 +198,9 @@ umount /mnt/data
 fi
 if [ $update_cache -gt 0 ]; then
 umount /mnt/cache
+fi
+if [ $update_recovery -gt 0 ]; then
+umount /mnt/recovery
 fi
 
 echo "Done!!!"

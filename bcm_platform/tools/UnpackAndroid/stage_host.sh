@@ -23,15 +23,17 @@ echo "   ... removing the boot+bootloaders folder"
 rm -rf $staging_dir/boot
 rm -rf $staging_dir/loaders
 
-echo "2) Unpacking ramdisk and copy kernel"
+echo "2) Copying: boot.img, recovery.img; Unpacking ramdisk..."
 cd $staging_dir
 $tools_dir/tools/split_boot $image_dir/boot.img
 mv boot/boot.img-kernel kernel
 cp $image_dir/boot.img boot.img
+cp $image_dir/recovery.img recovery.img
 
 echo "3) Unsparse ext4's"
 $tools_dir/tools/simg2img $image_dir/system.img ./boot/system.raw.img
 $tools_dir/tools/simg2img $image_dir/userdata.img ./boot/userdata.raw.img
+$tools_dir/tools/simg2img $image_dir/cache.img ./boot/cache.raw.img
 
 echo "4) Copying stage_target* scripts."
 cp $tools_dir/stage_target.sh $staging_dir
@@ -44,4 +46,4 @@ cp $image_dir/android_bsu.elf $staging_dir/loaders
 cp $image_dir/bolt-ba.bin $staging_dir/loaders
 cp $image_dir/bolt-bb.bin $staging_dir/loaders
 
-echo "!!! Done staging !!!" 
+echo "!!! Done staging !!!"
