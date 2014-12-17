@@ -139,6 +139,7 @@ typedef struct {
     NEXUS_SurfaceHandle shdl;
     NEXUS_SurfaceCursorHandle schdl;
     buffer_handle_t grhdl;
+    unsigned nx_mem;
     unsigned int use_order;
 
 } GPX_CLIENT_SURFACE_INFO;
@@ -557,7 +558,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
 
     for (int j = 0; j < GPX_SURFACE_STACK; j++) {
         write = snprintf(start + offset, local_capacity,
-            "\t\t[%d:%d]:[%d]:[%s]::shdl:%p::schdl:%p::grhdl:%p::order:%x\n",
+            "\t\t[%d:%d]:[%d]:[%s]::shdl:%p::schdl:%p::grhdl:%p::paddr:0x%X::order:%x\n",
             client->layer_id,
             index,
             j,
@@ -565,6 +566,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
             client->slist[j].shdl,
             client->slist[j].schdl,
             client->slist[j].grhdl,
+            client->slist[j].nx_mem,
             client->slist[j].use_order);
 
         if (write > 0) {
@@ -2048,6 +2050,7 @@ static void hwc_nsc_recycled_cb(void *context, int param)
                     ci->slist[six].owner = SURF_OWNER_NO_OWNER;
                     ci->slist[six].shdl = NULL;
                     ci->slist[six].grhdl = NULL;
+                    ci->slist[six].nx_mem = 0;
                  }
               }
               if (recycledSurface)
@@ -2290,6 +2293,7 @@ static void hwc_prepare_gpx_layer(
                     ctx->gpx_cli[layer_id].slist[six].shdl = NULL;
                     goto out_unlock;
                 }
+                ctx->gpx_cli[layer_id].slist[six].nx_mem = pSharedData->planes[EXTRA_PLANE].physAddr;
             break;
 
             default:
@@ -2309,6 +2313,7 @@ static void hwc_prepare_gpx_layer(
                           addr, disp_position.width, disp_position.height, stride);
                     goto out_unlock;
                 }
+                ctx->gpx_cli[layer_id].slist[six].nx_mem = pSharedData->planes[DEFAULT_PLANE].physAddr;
             break;
         }
 
