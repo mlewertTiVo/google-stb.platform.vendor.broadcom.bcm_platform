@@ -139,6 +139,7 @@ typedef struct {
     NEXUS_SurfaceHandle shdl;
     NEXUS_SurfaceCursorHandle schdl;
     buffer_handle_t grhdl;
+    unsigned int use_order;
 
 } GPX_CLIENT_SURFACE_INFO;
 
@@ -155,6 +156,7 @@ typedef struct {
     int layer_id;
     void *parent;
     bool skip_set;
+    unsigned int use_order;
 
 } GPX_CLIENT_INFO;
 
@@ -521,7 +523,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
     int offset = 0;
 
     write = snprintf(start, local_capacity,
-        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::sz:{%d,%d}::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::sfc:%p::scc:%d\n",
+        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::sz:{%d,%d}::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::sfc:%p::scc:%d::order:%x\n",
         client->composition.visible ? "LIVE" : "HIDE",
         nsc_cli_type[client->ncci.type],
         client->layer_id,
@@ -544,7 +546,8 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
         client->composition.virtualDisplay.height,
         client->blending_type,
         client->ncci.schdl,
-        client->ncci.sccid);
+        client->ncci.sccid,
+        client->use_order);
 
     if (write > 0) {
         local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
@@ -554,14 +557,15 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
 
     for (int j = 0; j < GPX_SURFACE_STACK; j++) {
         write = snprintf(start + offset, local_capacity,
-            "\t\t[%d:%d]:[%d]:[%s]::shdl:%p::schdl:%p::grhdl:%p\n",
+            "\t\t[%d:%d]:[%d]:[%s]::shdl:%p::schdl:%p::grhdl:%p::order:%x\n",
             client->layer_id,
             index,
             j,
             nsc_surface_owner[client->slist[j].owner],
             client->slist[j].shdl,
             client->slist[j].schdl,
-            client->slist[j].grhdl);
+            client->slist[j].grhdl,
+            client->slist[j].use_order);
 
         if (write > 0) {
             local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
@@ -645,6 +649,17 @@ static int dump_sb_layer_data(char *start, int capacity, int index, SB_CLIENT_IN
     return write;
 }
 
+static unsigned int hwc_inc_or_wrap_use_order(GPX_CLIENT_INFO *client)
+{
+    if ((client->use_order + 1) > INVALID_HANDLE) {
+       client->use_order = 0;
+    } else {
+       ++client->use_order;
+    }
+
+    return client->use_order;
+}
+
 static void dump_layer_on_error(GPX_CLIENT_INFO *client)
 {
     if (HWC_DUMP_LAYER_ON_ERROR) {
@@ -659,6 +674,7 @@ static int hwc_gpx_get_next_surface_locked(GPX_CLIENT_INFO *client)
     for (int i = 0; i < GPX_SURFACE_STACK; i++) {
        if (client->slist[i].owner == SURF_OWNER_NO_OWNER) {
           client->slist[i].owner = SURF_OWNER_HWC;
+          client->slist[i].use_order = hwc_inc_or_wrap_use_order(client);
           return i;
        }
     }
@@ -707,14 +723,21 @@ static int hwc_gpx_get_recycle_surface_locked(GPX_CLIENT_INFO *client, NEXUS_Sur
 
 static int hwc_gpx_get_current_surface_locked(GPX_CLIENT_INFO *client)
 {
+    int selected = -1;
+
     for (int i = 0; i < GPX_SURFACE_STACK; i++) {
        if ((client->slist[i].owner == SURF_OWNER_NSC) ||
            (client->slist[i].owner == SURF_OWNER_HWC_PUSH)) {
-          return i;
+          if ((selected != -1) &&
+              (client->slist[i].use_order > client->slist[selected].use_order)) {
+             selected = i;
+          } else if (selected == -1) {
+             selected = i;
+          }
        }
     }
 
-    return -1;
+    return selected;
 }
 
 
