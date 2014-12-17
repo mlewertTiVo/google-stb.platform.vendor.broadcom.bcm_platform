@@ -209,3 +209,17 @@ void BOMX_BufferTracker::Flush()
         BLST_Q_INSERT_TAIL(&m_freeList, pNode, node);
     }
 }
+
+bool BOMX_BufferTracker::Last(OMX_TICKS ticks)
+{
+    BOMX_BufferTrackerNode *pNode;
+    for ( pNode = BLST_Q_FIRST(&m_allocList);
+          NULL != pNode;
+          pNode = BLST_Q_NEXT(pNode, node) )
+    {
+        if ( pNode->ticks > ticks )
+            break;
+    }
+
+    return ( NULL == pNode );
+}

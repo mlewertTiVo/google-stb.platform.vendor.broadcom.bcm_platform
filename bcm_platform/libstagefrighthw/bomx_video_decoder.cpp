@@ -509,6 +509,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pEosBuffer(NULL),
     m_eosPending(false),
     m_eosDelivered(false),
+    m_eosReceived(false),
     m_formatChangePending(false),
     m_nativeGraphicsEnabled(false),
     m_metadataEnabled(false),
@@ -1511,6 +1512,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_submittedDescriptors = 0;
             m_eosPending = false;
             m_eosDelivered = false;
+            m_eosReceived = false;
             m_pBufferTracker->Flush();
             NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
             m_hSimpleVideoDecoder = NULL;
@@ -1660,6 +1662,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 NEXUS_SimpleVideoDecoder_Stop(m_hSimpleVideoDecoder);
                 m_eosPending = false;
                 m_eosDelivered = false;
+                m_eosReceived = false;
                 m_pBufferTracker->Flush();
                 ReturnPortBuffers(m_pVideoPorts[0]);
                 m_submittedDescriptors = 0;
@@ -1706,6 +1709,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                     NEXUS_SimpleVideoDecoder_Stop(m_hSimpleVideoDecoder);
                     m_eosPending = false;
                     m_eosDelivered = false;
+                    m_eosReceived = false;
                     return BOMX_BERR_TRACE(errCode);
                 }
 
@@ -3653,6 +3657,18 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     pHeader->nFlags = 0;
                     BOMX_PtsToTick(pBuffer->frameStatus.pts, &pHeader->nTimeStamp);
                 }
+                if ( (pHeader->nFlags & OMX_BUFFERFLAG_EOS) && !m_pBufferTracker->Last(pHeader->nTimeStamp) )
+                {
+                    // Defer EOS until the last output frame (with the latest timestamp) is returned
+                    m_eosReceived = true;
+                    pHeader->nFlags &= ~OMX_BUFFERFLAG_EOS;
+                }
+                else if ( m_eosReceived && m_pBufferTracker->Last(pHeader->nTimeStamp) )
+                {
+                    m_eosReceived = false;
+                    pHeader->nFlags |= OMX_BUFFERFLAG_EOS;
+                }
+
                 pInfo = (BOMX_VideoDecoderOutputBufferInfo *)pOmxBuffer->GetComponentPrivate();
                 BDBG_ASSERT(NULL == pInfo->pFrameBuffer);
                 if ( pBuffer->frameStatus.lastPicture || (pHeader->nFlags & OMX_BUFFERFLAG_EOS) )

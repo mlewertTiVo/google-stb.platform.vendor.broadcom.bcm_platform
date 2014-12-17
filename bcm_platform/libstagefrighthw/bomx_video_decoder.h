@@ -259,6 +259,7 @@ protected:
     void *m_pEosBuffer;
     bool m_eosPending;
     bool m_eosDelivered;
+    bool m_eosReceived;
     bool m_formatChangePending;
     bool m_nativeGraphicsEnabled;
     bool m_metadataEnabled;

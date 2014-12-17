@@ -73,6 +73,7 @@ public:
     bool Add(const OMX_BUFFERHEADERTYPE *pHeader, uint32_t *pPts /* [out] */);
     bool Remove(uint32_t pts, OMX_BUFFERHEADERTYPE *pHeader /* [out] - sets flags and ticks value */);
     void Flush();
+    bool Last(OMX_TICKS ticks);
     bool Valid() const { return m_valid; }
 
 protected:
