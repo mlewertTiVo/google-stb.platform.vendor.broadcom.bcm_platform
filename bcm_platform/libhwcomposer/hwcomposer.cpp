@@ -65,12 +65,15 @@ using namespace android;
 #define HWC_SB_NO_ALLOC_SURF_CLI     1
 #define HWC_MM_NO_ALLOC_SURF_CLI     1
 
-#define NSC_GPX_CLIENTS_NUMBER       6 /* graphics client layers; typically no
-                                        * more than 3 are needed at any time. */
-#define NSC_MM_CLIENTS_NUMBER        3 /* multimedia client layers; typically no
-                                        * more than 2 are needed at any time. */
-#define NSC_SB_CLIENTS_NUMBER        2 /* sideband client layers; typically no
-                                        * more than 1 are needed at any time. */
+#define NSC_GPX_CLIENTS_NUMBER       11 /* graphics client layers; typically no
+                                         * more than 3 are needed at any time, though
+                                         * it has been seen up to 7 in some scenario,
+                                         * so maximum is 10+1 (1 for the floating
+                                         * HWC_FRAMEBUFFER_TARGET). */
+#define NSC_MM_CLIENTS_NUMBER        3  /* multimedia client layers; typically no
+                                         * more than 2 are needed at any time. */
+#define NSC_SB_CLIENTS_NUMBER        2  /* sideband client layers; typically no
+                                         * more than 1 are needed at any time. */
 
 #define VSYNC_CLIENT_LAYER_ID        0 /* first layer. */
 #define NSC_CLIENTS_NUMBER           (NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+NSC_SB_CLIENTS_NUMBER+1) /* gpx, mm, sb and vsync layer count */
