@@ -80,6 +80,11 @@ echo "  This script assumes that the USB drive was formatted by format_android_u
 echo ""
 sleep 2
 
+if [ $update_recovery -gt 0 ]; then
+	# cheat-sheet: make sure kernel is mounted as well...
+	update_boot_img=1
+fi
+
 if [ $update_boot_img -gt 0 ]; then
 mkdir -p /mnt/kernel
 fi
@@ -156,8 +161,9 @@ umount ./boot/cache
 fi
 
 if [ $update_recovery -gt 0 ]; then
-echo "Copying recovery.img..."
+echo "Copying recovery.img (in recovery partition and kernel partition)..."
 cp ./recovery.img /mnt/recovery/
+cp ./recovery.img /mnt/kernel/
 fi
 
 echo "Cleaning up..."
