@@ -30,10 +30,9 @@ endif
 include $(call all-makefiles-under,$(LOCAL_PATH))
 
 ifeq ($(ANDROID_SUPPORTS_WIDEVINE),y)
-ifneq ($(WIDEVINE_CLASSIC),n)
-ifeq ($(BRCM_ANDROID_VERSION), l)
-$(error "Widevine Classic should not be turned on for L!!!!!!")
-endif
+ifeq ($(BUILD_WIDEVINE_CLASSIC_FROM_SOURCE),y)
+# this requires widevine classic plugin source be placed under
+# vendor/widevine/proprietary
 #-------------------
 # libdrmwvmplugin.so
 #-------------------
@@ -57,8 +56,6 @@ include $(WV_LOCAL_PATH)/../../../widevine/proprietary/wvm/wvm-core.mk
 LOCAL_MODULE := libwvm
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_TAGS := optional
-LOCAL_STATIC_LIBRARIES := liboemcrypto
-LOCAL_SHARED_LIBRARIES += $(NEXUS_LIB) libcmndrm
 LOCAL_PRELINK_MODULE := false
 include $(BUILD_SHARED_LIBRARY)
 
@@ -78,8 +75,7 @@ LOCAL_SHARED_LIBRARIES := \
 
 LOCAL_MODULE := libdrmdecrypt
 LOCAL_MODULE_TAGS := optional
-LOCAL_STATIC_LIBRARIES := liboemcrypto
-LOCAL_SHARED_LIBRARIES += $(NEXUS_LIB) libcmndrm libcrypto libcutils
+LOCAL_SHARED_LIBRARIES += libcrypto libcutils
 include $(BUILD_SHARED_LIBRARY)
-endif
-endif
+endif # end of BUILD_WIDEVINE_CLASSIC_FROM_SOURCE=y
+endif # end of ANDROID_SUPPORTS_WIDEVINE=y
