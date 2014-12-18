@@ -158,6 +158,7 @@ typedef struct {
     void *parent;
     bool skip_set;
     unsigned int use_order;
+    int plane_alpha;
 
 } GPX_CLIENT_INFO;
 
@@ -524,7 +525,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
     int offset = 0;
 
     write = snprintf(start, local_capacity,
-        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::sz:{%d,%d}::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::sfc:%p::scc:%d::order:%x\n",
+        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::sz:{%d,%d}::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::pa:%d::sfc:%p::scc:%d::order:%x\n",
         client->composition.visible ? "LIVE" : "HIDE",
         nsc_cli_type[client->ncci.type],
         client->layer_id,
@@ -546,6 +547,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
         client->composition.virtualDisplay.width,
         client->composition.virtualDisplay.height,
         client->blending_type,
+        client->plane_alpha,
         client->ncci.schdl,
         client->ncci.sccid,
         client->use_order);
@@ -2194,6 +2196,7 @@ static void hwc_prepare_gpx_layer(
     if (ctx->gpx_cli[layer_id].layer_type == HWC_CURSOR_OVERLAY)
        ctx->gpx_cli[layer_id].layer_subtype = NEXUS_CURSOR;
     ctx->gpx_cli[layer_id].layer_flags = layer->flags;
+    ctx->gpx_cli[layer_id].plane_alpha = layer->planeAlpha;
 
     if (ctx->cursor_layer_id != -1) {
        if (ctx->cursor_layer_id == layer_id) {
