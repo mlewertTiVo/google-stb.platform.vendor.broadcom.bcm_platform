@@ -49,6 +49,7 @@ ifneq ($(wildcard vendor/broadcom/bcm_platform/not_for_release/README.txt),)
 include vendor/broadcom/bcm_platform/not_for_release/libbcmsideband/Android.mk
 include vendor/broadcom/bcm_platform/not_for_release/Bouncer/Android.mk
 include vendor/broadcom/bcm_platform/not_for_release/ExoPlayerDemo/Android.mk
+include vendor/broadcom/bcm_platform/not_for_release/WidevineSamplePlayer/Android.mk
 endif
 
 endif
