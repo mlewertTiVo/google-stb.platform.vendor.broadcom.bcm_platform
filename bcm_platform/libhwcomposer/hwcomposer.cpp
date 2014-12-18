@@ -139,7 +139,6 @@ typedef struct {
     NEXUS_SurfaceHandle shdl;
     NEXUS_SurfaceCursorHandle schdl;
     buffer_handle_t grhdl;
-    unsigned nx_mem;
     unsigned int use_order;
 
 } GPX_CLIENT_SURFACE_INFO;
@@ -560,7 +559,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
 
     for (int j = 0; j < GPX_SURFACE_STACK; j++) {
         write = snprintf(start + offset, local_capacity,
-            "\t\t[%d:%d]:[%d]:[%s]::shdl:%p::schdl:%p::grhdl:%p::paddr:0x%X::order:%x\n",
+            "\t\t[%d:%d]:[%d]:[%s]::shdl:%p::schdl:%p::grhdl:%p::order:%x\n",
             client->layer_id,
             index,
             j,
@@ -568,13 +567,65 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
             client->slist[j].shdl,
             client->slist[j].schdl,
             client->slist[j].grhdl,
-            client->slist[j].nx_mem,
             client->slist[j].use_order);
 
         if (write > 0) {
             local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
             offset += write;
             total_write += write;
+        }
+
+        if (client->slist[j].grhdl) {
+           private_handle_t *bcmBuffer = (private_handle_t *)client->slist[j].grhdl;
+           PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedData);
+
+           write = snprintf(start + offset, local_capacity,
+               "\t\t\t[%p]::flg:0x%x::pid:%d::ogl:{s:%d,f:%d,sz:%d}::use:0x%x\n",
+               client->slist[j].grhdl,
+               bcmBuffer->flags,
+               bcmBuffer->pid,
+               bcmBuffer->oglStride,
+               bcmBuffer->oglFormat,
+               bcmBuffer->oglSize,
+               bcmBuffer->usage);
+
+           if (write > 0) {
+               local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
+               offset += write;
+               total_write += write;
+           }
+
+           write = snprintf(start + offset, local_capacity,
+               "\t\t\t[%p]::default:{f:0x%x,bpp:%d,{%d,%d},0x%x,sz:%d}\n",
+               client->slist[j].grhdl,
+               pSharedData->planes[DEFAULT_PLANE].format,
+               pSharedData->planes[DEFAULT_PLANE].bpp,
+               pSharedData->planes[DEFAULT_PLANE].width,
+               pSharedData->planes[DEFAULT_PLANE].height,
+               pSharedData->planes[DEFAULT_PLANE].physAddr,
+               pSharedData->planes[DEFAULT_PLANE].size);
+
+           if (write > 0) {
+               local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
+               offset += write;
+               total_write += write;
+           }
+
+           write = snprintf(start + offset, local_capacity,
+               "\t\t\t[%p]::extra:{f:0x%x,bpp:%d,{%d,%d},0x%x,sz:%d}\n",
+               client->slist[j].grhdl,
+               pSharedData->planes[EXTRA_PLANE].format,
+               pSharedData->planes[EXTRA_PLANE].bpp,
+               pSharedData->planes[EXTRA_PLANE].width,
+               pSharedData->planes[EXTRA_PLANE].height,
+               pSharedData->planes[EXTRA_PLANE].physAddr,
+               pSharedData->planes[EXTRA_PLANE].size);
+
+           if (write > 0) {
+               local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
+               offset += write;
+               total_write += write;
+           }
         }
     }
 
@@ -2052,7 +2103,6 @@ static void hwc_nsc_recycled_cb(void *context, int param)
                     ci->slist[six].owner = SURF_OWNER_NO_OWNER;
                     ci->slist[six].shdl = NULL;
                     ci->slist[six].grhdl = NULL;
-                    ci->slist[six].nx_mem = 0;
                  }
               }
               if (recycledSurface)
@@ -2296,7 +2346,6 @@ static void hwc_prepare_gpx_layer(
                     ctx->gpx_cli[layer_id].slist[six].shdl = NULL;
                     goto out_unlock;
                 }
-                ctx->gpx_cli[layer_id].slist[six].nx_mem = pSharedData->planes[EXTRA_PLANE].physAddr;
             break;
 
             default:
@@ -2316,7 +2365,6 @@ static void hwc_prepare_gpx_layer(
                           addr, disp_position.width, disp_position.height, stride);
                     goto out_unlock;
                 }
-                ctx->gpx_cli[layer_id].slist[six].nx_mem = pSharedData->planes[DEFAULT_PLANE].physAddr;
             break;
         }
 
