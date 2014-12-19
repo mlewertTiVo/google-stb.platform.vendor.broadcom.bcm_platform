@@ -74,6 +74,7 @@ struct BOMX_VideoDecoderInputBufferInfo
     size_t headerLen;           // Filled header buffer size in bytes
     void *pPayload;             // Optional payload buffer in NEXUS_Memory space (set for useBuffer not allocateBuffer)
     unsigned numDescriptors;    // Number of descriptors in use for this buffer
+    uint32_t pts;               // PTS for this input buffer
 };
 
 enum BOMX_VideoDecoderFrameBufferState
@@ -220,6 +221,7 @@ public:
 
     // Local Event Handlers
     void PlaypumpEvent();
+    void PlaypumpTimer();
     void OutputFrameEvent();
     void OutputFrameTimer();
 
@@ -234,6 +236,7 @@ protected:
     NEXUS_PidChannelHandle m_hPidChannel;
     B_EventHandle m_hPlaypumpEvent;
     B_SchedulerEventId m_playpumpEventId;
+    B_SchedulerTimerId m_playpumpTimerId;
     B_EventHandle m_hOutputFrameEvent;
     B_SchedulerEventId m_outputFrameEventId;
     B_SchedulerTimerId m_outputFrameTimerId;

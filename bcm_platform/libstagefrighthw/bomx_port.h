@@ -63,6 +63,10 @@ struct BOMX_BufferNode
 
 class BOMX_Component;
 
+// Prototype for a buffer comparison function.  Returns true
+// if the comparison matches and false otherwise.
+typedef bool (*BOMX_BufferCompareFunction)(BOMX_Buffer *pBuffer, void *pData);
+
 class BOMX_Port
 {
 public:
@@ -105,6 +109,8 @@ public:
     OMX_ERRORTYPE QueueBuffer(OMX_BUFFERHEADERTYPE* pBufferHdr);
     BOMX_Buffer *GetBuffer();
     void BufferComplete(BOMX_Buffer *pBuffer);
+    // Search through queued buffers for a match using the provided function
+    BOMX_Buffer *FindBuffer(BOMX_BufferCompareFunction pCompareFunc, void *pData);
 
     unsigned QueueDepth() { return m_queueDepth; }
 

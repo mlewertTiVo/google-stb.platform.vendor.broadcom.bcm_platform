@@ -61,10 +61,10 @@
 #define BOMX_INPUT_MSG(x)
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
-#define B_DATA_BUFFER_SIZE (1024*1024)
-#define B_NUM_BUFFERS ((6*1024*1024)/B_DATA_BUFFER_SIZE)
+#define B_DATA_BUFFER_SIZE (1024*1024)  // Taken from soft HEVC decoder (worst case)
+#define B_NUM_BUFFERS (8)               // Taken from soft HEVC decoder (worst case)
 #define B_STREAM_ID 0xe0
-#define B_MAX_FRAMES (4)
+#define B_MAX_FRAMES (8)                // Taken from soft HEVC decoder (worst case)
 #define B_MAX_DECODED_FRAMES (16)
 #define B_FRAME_TIMER_INTERVAL (32)
 
@@ -492,6 +492,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_hPidChannel(NULL),
     m_hPlaypumpEvent(NULL),
     m_playpumpEventId(NULL),
+    m_playpumpTimerId(NULL),
     m_hOutputFrameEvent(NULL),
     m_outputFrameEventId(NULL),
     m_outputFrameTimerId(NULL),
@@ -1524,6 +1525,11 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             UnregisterEvent(m_playpumpEventId);
             m_playpumpEventId = NULL;
             m_hPlaypump = NULL;
+            if ( m_playpumpTimerId )
+            {
+                CancelTimer(m_playpumpTimerId);
+                m_playpumpTimerId = NULL;
+            }
         }
     }
     else
@@ -3038,7 +3044,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     size_t numConsumed, numRequested;
     uint8_t *pCodecHeader = NULL;
     size_t codecHeaderLength = 0;
-    uint32_t pts;
 
     if ( NULL == pBufferHeader )
     {
@@ -3121,14 +3126,14 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     }
 
     // Track the buffer
-    if ( !m_pBufferTracker->Add(pBufferHeader, &pts) )
+    if ( !m_pBufferTracker->Add(pBufferHeader, &pInfo->pts) )
     {
         BOMX_WRN(("Unable to track buffer"));
-        pts = BOMX_TickToPts(&pBufferHeader->nTimeStamp);
+        pInfo->pts = BOMX_TickToPts(&pBufferHeader->nTimeStamp);
     }
 
     // Build up descriptor list
-    err = BuildInputFrame(pBufferHeader, pts, pCodecHeader, codecHeaderLength, desc, B_MAX_DESCRIPTORS_PER_BUFFER, &numRequested);
+    err = BuildInputFrame(pBufferHeader, pInfo->pts, pCodecHeader, codecHeaderLength, desc, B_MAX_DESCRIPTORS_PER_BUFFER, &numRequested);
     if ( err != OMX_ErrorNone )
     {
         return BOMX_ERR_TRACE(err);
@@ -3180,6 +3185,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         {
             fwrite(m_pEosBuffer, 1, BOMX_VIDEO_EOS_LEN, g_pDebugFile);
         }
+    }
+
+    if ( m_pVideoPorts[1]->QueueDepth() > 0 )
+    {
+        // Force a check for new output frames each time a new input frame arrives if we have output buffers ready to fill
+        B_Event_Set(m_hOutputFrameEvent);
     }
 
     return OMX_ErrorNone;
@@ -3290,10 +3301,30 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     return OMX_ErrorNone;
 }
 
+static bool FindBufferFromPts(BOMX_Buffer *pBuffer, void *pData)
+{
+    BOMX_VideoDecoderInputBufferInfo *pInfo;
+    uint32_t *pPts = (uint32_t *)pData;
+
+    BOMX_ASSERT(NULL != pBuffer);
+    BOMX_ASSERT(NULL != pPts);
+
+    pInfo = (BOMX_VideoDecoderInputBufferInfo *)pBuffer->GetComponentPrivate();
+    BOMX_ASSERT(NULL != pInfo);
+
+    return (pInfo->pts == *pPts) ? true : false;
+}
+
 void BOMX_VideoDecoder::PlaypumpEvent()
 {
     NEXUS_PlaypumpStatus playpumpStatus;
     unsigned numComplete;
+
+    if ( m_playpumpTimerId )
+    {
+        CancelTimer(m_playpumpTimerId);
+        m_playpumpTimerId = NULL;
+    }
 
     if ( NULL == m_hPlaypump )
     {
@@ -3305,11 +3336,21 @@ void BOMX_VideoDecoder::PlaypumpEvent()
     NEXUS_Playpump_GetStatus(m_hPlaypump, &playpumpStatus);
     if ( playpumpStatus.started )
     {
-        BOMX_Buffer *pBuffer;
+        BOMX_Buffer *pBuffer, *pFifoHead=NULL;
+
+        if ( m_hSimpleVideoDecoder )
+        {
+            NEXUS_VideoDecoderFifoStatus fifoStatus;
+            NEXUS_Error errCode = NEXUS_SimpleVideoDecoder_GetFifoStatus(m_hSimpleVideoDecoder, &fifoStatus);
+            if ( NEXUS_SUCCESS == errCode && fifoStatus.pts.valid )
+            {
+                pFifoHead = m_pVideoPorts[0]->FindBuffer(FindBufferFromPts, (void *)&fifoStatus.pts.leastRecent);
+            }
+        }
 
         numComplete = m_submittedDescriptors - playpumpStatus.descFifoDepth;
 
-        while ( NULL != (pBuffer = m_pVideoPorts[0]->GetBuffer()) )
+        while ( NULL != (pBuffer = m_pVideoPorts[0]->GetBuffer()) && pBuffer != pFifoHead )
         {
             BOMX_VideoDecoderInputBufferInfo *pInfo;
 
@@ -3328,6 +3369,13 @@ void BOMX_VideoDecoder::PlaypumpEvent()
                 // Some descriptors are still pending for this buffer
                 break;
             }
+        }
+
+        // If there are still input buffers waiting in rave, set the timer to try again later.
+        if ( pFifoHead )
+        {
+            BOMX_INPUT_MSG(("Data still pending in RAVE.  Starting Timer."));
+            m_playpumpTimerId = StartTimer(B_FRAME_TIMER_INTERVAL, BOMX_VideoDecoder_PlaypumpEvent, static_cast<void *>(this));
         }
     }
 }

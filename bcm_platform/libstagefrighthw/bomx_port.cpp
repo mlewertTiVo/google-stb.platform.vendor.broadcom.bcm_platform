@@ -348,7 +348,6 @@ OMX_ERRORTYPE BOMX_Port::SetDefinition(const OMX_PARAM_PORTDEFINITIONTYPE *pConf
     BOMX_STRUCT_VALIDATE(pConfig);
     if ( pConfig->nPortIndex != m_definition.nPortIndex ||
          pConfig->eDir != m_definition.eDir ||
-         pConfig->nBufferCountMin != m_definition.nBufferCountMin ||
          pConfig->bEnabled != m_definition.bEnabled ||
          pConfig->bPopulated != m_definition.bPopulated ||
          pConfig->eDomain != m_definition.eDomain ||
@@ -358,7 +357,6 @@ OMX_ERRORTYPE BOMX_Port::SetDefinition(const OMX_PARAM_PORTDEFINITIONTYPE *pConf
         BOMX_ERR(("Attempting to change read-only port configuration member"));
         BOMX_ERR(("nPortIndex %u->%u", m_definition.nPortIndex, pConfig->nPortIndex));
         BOMX_ERR(("eDir %u->%u", m_definition.eDir, pConfig->eDir));
-        BOMX_ERR(("nBufferCountMin %u->%u", m_definition.nBufferCountMin, pConfig->nBufferCountMin));
         BOMX_ERR(("bEnabled %u->%u", m_definition.bEnabled, pConfig->bEnabled));
         BOMX_ERR(("bPopulated %u->%u", m_definition.bPopulated, pConfig->bPopulated));
         BOMX_ERR(("eDomain %u->%u", m_definition.eDomain, pConfig->eDomain));
@@ -605,6 +603,26 @@ void BOMX_Port::BufferComplete(BOMX_Buffer *pBuffer)
     BOMX_ASSERT(m_queueDepth > 0);
     m_queueDepth--;
     delete pNode;
+}
+
+BOMX_Buffer *BOMX_Port::FindBuffer(BOMX_BufferCompareFunction pCompareFunc, void *pData)
+{
+    if ( pCompareFunc )
+    {
+        BOMX_BufferNode *pNode;
+
+        for ( pNode = BLST_Q_FIRST(&m_bufferList);
+              NULL != pNode;
+              pNode = BLST_Q_NEXT(pNode, node) )
+        {
+            if ( pCompareFunc(pNode->pBuffer, pData) )
+            {
+                return pNode->pBuffer;
+            }
+        }
+    }
+
+    return NULL;
 }
 
 OMX_ERRORTYPE BOMX_Port::SetTunnel(BOMX_Component *pComp, BOMX_Port *pPort)
