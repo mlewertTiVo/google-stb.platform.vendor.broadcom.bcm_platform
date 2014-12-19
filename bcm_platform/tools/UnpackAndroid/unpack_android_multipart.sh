@@ -42,7 +42,6 @@ then
     mkdir -p $2
   fi
   mount /dev/${7}2 $2
-  rm -rf $2/*
 # mount /media/system
   if [ -e $3 ]
   then
@@ -51,7 +50,6 @@ then
     mkdir -p $3
   fi
   mount /dev/${7}3 $3
-  rm -rf $3/*
 # mount /media/data
   if [ -e $4 ]
   then
@@ -60,7 +58,6 @@ then
     mkdir -p $4
   fi
   mount /dev/${7}4 $4
-  rm -rf $4/*
 # mount /media/cache
   if [ -e $5 ]
   then
@@ -97,9 +94,9 @@ mkdir ./boot/data
 mount -t ext4 -o loop ./boot/system.raw.img ./boot/system
 mount -t ext4 -o loop ./boot/userdata.raw.img ./boot/data
 
-rsync -av ./boot/ramdisk/* $2
-rsync -av ./boot/system/* $3
-rsync -av ./boot/data/* $4
+rsync -av --delete ./boot/ramdisk/* $2
+rsync -av --delete ./boot/system/* $3
+rsync -av --delete ./boot/data/* $4
 
 # Cleanup
 umount ./boot/system

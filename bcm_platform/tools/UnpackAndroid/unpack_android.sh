@@ -53,7 +53,6 @@ then
     mkdir -p $2
   fi
   mount /dev/${4}2 $2
-  rm -rf $2/*
 # mount /media/kernel
   if [ -e $3 ]
   then
@@ -73,7 +72,7 @@ $tools_dir/tools/simg2img $1/userdata.img ./boot/userdata.raw.img
 mount -t ext4 -o loop ./boot/system.raw.img ./boot/ramdisk/system
 mount -t ext4 -o loop ./boot/userdata.raw.img ./boot/ramdisk/data
 
-rsync -av ./boot/ramdisk/* $2
+rsync -av --delete ./boot/ramdisk/* $2
 
 # Cleanup
 umount ./boot/ramdisk/system
