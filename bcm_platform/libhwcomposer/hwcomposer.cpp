@@ -102,7 +102,7 @@ using namespace android;
 #define DISPLAY_DEFAULT_HD_RES       "1080p"
 #define DISPLAY_HD_RES_PROP          "ro.hd_output_format"
 
-#define HWC_CHECKPOINT_TIMEOUT       (5000)
+#define HWC_CHECKPOINT_TIMEOUT       (100)
 
 enum {
     NEXUS_SURFACE_COMPOSITOR = 0,
@@ -2788,7 +2788,7 @@ static void hwc_checkpoint_callback(void *pParam, int param2)
 {
     hwc_context_t *dev = (hwc_context_t *)pParam;
     (void)param2;
-
+//    ALOGW("Checkpoint Callback");
     BKNI_SetEvent(dev->checkpoint_event);
 }
 
@@ -2796,6 +2796,7 @@ static int hwc_checkpoint(hwc_context_t *dev)
 {
     NEXUS_Error rc;
 
+//    ALOGW("Checkpoint");
     rc = NEXUS_Graphics2D_Checkpoint(dev->hwc_2dg, NULL);
     switch ( rc )
     {
