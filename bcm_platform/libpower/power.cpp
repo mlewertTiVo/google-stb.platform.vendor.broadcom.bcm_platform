@@ -228,6 +228,9 @@ static int power_set_state_s2()
     }
     else {
         ret = (write(fd, power_standby_state, strlen(power_standby_state)) > 0) ? 0 : -1;
+        if (ret) {
+            ALOGE("%s: Error writing \"%s\" to %s!!!", __FUNCTION__, power_standby_state, power_sys_power_state);
+        }
         close(fd);
     }
     return ret;

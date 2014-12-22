@@ -51,7 +51,7 @@
 
 // Uncomment the line below to enable Verbose messages
 //#define LOG_NDEBUG 0
-#define LOG_TAG "Brcmstb PowerHAL"
+#define LOG_TAG "Brcmstb-PowerHAL"
 
 #include <utils/Log.h>
 #include <utils/PropertyMap.h>
@@ -72,41 +72,60 @@ class NexusPower : public android::RefBase {
     status_t getPowerState(b_powerState *pState);
     status_t initialiseGpios();
     void uninitialiseGpios();
+    status_t setGpios(b_powerState state);
     status_t clearGpios();
     ~NexusPower();
 
     class NexusGpio : public android::RefBase {
         public:
-        static int const MAX_INSTANCES = 4;
+        static int const MAX_INSTANCES = 8;
+        static int const MAX_POWER_STATES = 6;  // S0 through to S5
+        static int const NUM_INP_PARAMETERS = 2; // gpio mode + interrupt mode
+        static int const NUM_OUT_PARAMETERS = MAX_POWER_STATES + 1; // gpio mode + S0 through to S5 output values
+        static int const MIN_PARAMETERS = NUM_INP_PARAMETERS;
+        static int const MAX_PARAMETERS = NUM_OUT_PARAMETERS;
         static unsigned mInstances;
 
-        static sp<NexusGpio> instantiate(NexusPower *pNexusPower, unsigned pin, unsigned pinType, NEXUS_GpioInterrupt interruptMode);
-        static String8 getConfigurationFilePath();
+        // Public methods...
+        static sp<NexusGpio> initialise(String8& gpioName, String8& gpioValue, int pin, unsigned pinType);
+        static String8  getConfigurationFilePath();
         static status_t loadConfigurationFile(String8 path, PropertyMap **configuration);
-
-        unsigned getPinType() { return mPinType; }
-        unsigned getPin() { return mPin; }
-        NEXUS_GpioInterrupt getInterruptMode() { return mInterruptMode; }
-        void setHandle(NEXUS_GpioHandle handle) { mHandle = handle; }
-        NEXUS_GpioHandle getHandle() { return mHandle; }
-        unsigned getInstance() { return mInstance; }
         static unsigned getInstances() { return mInstances; }
-        static NEXUS_GpioInterrupt parseGpioInterruptMode(String8& modeString);
+
+        String8& getPinName() { return mPinName; }
+        unsigned getPin() { return mPin; }
+        unsigned getPinType() { return mPinType; }
+        unsigned getInstance() { return mInstance; }
+        NEXUS_GpioMode getPinMode() { return mPinMode; }
+        NEXUS_GpioInterrupt getPinInterruptMode() { return mPinInterruptMode; }
+        NEXUS_GpioValue getPinOutputValue(b_powerState state) { return mPinOutputValues[state]; }
+        NEXUS_GpioHandle getHandle() { return mHandle; }
+        void setHandle(NEXUS_GpioHandle handle) { mHandle = handle; }
         ~NexusGpio();
 
         private:
-        sp<NexusPower> mNexusPower;
+        String8 mPinName;
         unsigned mInstance;
         unsigned mPin;
         unsigned mPinType;
-        NEXUS_GpioInterrupt mInterruptMode;
+        NEXUS_GpioMode mPinMode;
+        NEXUS_GpioInterrupt mPinInterruptMode;
+        NEXUS_GpioValue mPinOutputValues[MAX_POWER_STATES];
         NEXUS_GpioHandle mHandle;
 
+        // Private methods...
+        static sp<NexusGpio> instantiate(String8& pinName, unsigned pin, unsigned pinType, NEXUS_GpioMode pinMode,  NEXUS_GpioInterrupt interruptMode);
+        static sp<NexusGpio> instantiate(String8& pinName, unsigned pin, unsigned pinType, NEXUS_GpioMode pinMode, NEXUS_GpioValue *pOutputValues);
+        static status_t parseGpioMode(String8& modeString, NEXUS_GpioMode *pMode);
+        static status_t parseGpioInterruptMode(String8& interruptModeString, NEXUS_GpioInterrupt *pInterruptMode);
+        static status_t parseGpioOutputValue(String8& outputValueString, NEXUS_GpioValue *pOutputValue);
+        static status_t parseGpioParameters(String8& inString, size_t *pNumParameters, String8 parameters[]);
         static void gpioCallback(void *context, int param);
 
         // Disallow constructor and copy constructor...
         NexusGpio();
-        NexusGpio(NexusPower *pNexusPower, unsigned pin, unsigned pinType, NEXUS_GpioInterrupt interruptMode);
+        NexusGpio(String8& pinName, unsigned pin, unsigned pinType, NEXUS_GpioMode mode, NEXUS_GpioInterrupt interruptMode);
+        NexusGpio(String8& pinName, unsigned pin, unsigned pinType, NEXUS_GpioMode mode, NEXUS_GpioValue *pOutputValues);
         NexusGpio &operator=(const NexusGpio &);
     };
 
@@ -116,14 +135,15 @@ class NexusPower : public android::RefBase {
     NexusClientContext *mClientContext;
     sp<NexusGpio> gpios[NexusGpio::MAX_INSTANCES];
 
+    // Private methods...
+    int getDeviceType();
+    bool getCecTransmitStandby();
+    bool getCecTransmitViewOn();
+
     // Disallow constructor and copy constructor...
     NexusPower();
     NexusPower(NexusIPCClientBase *pIpcClient, NexusClientContext *pClientContext);
     NexusPower &operator=(const NexusPower &);
-
-    int getDeviceType();
-    bool getCecTransmitStandby();
-    bool getCecTransmitViewOn();
 };
 
 #endif /* _NEXUS_POWER_H_ */

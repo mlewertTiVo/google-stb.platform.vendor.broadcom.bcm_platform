@@ -159,29 +159,45 @@ status_t NexusPower::setPowerState(b_powerState state)
     /* If powering out of standby, then ensure platform is brought up first before CEC,
        otherwise if powering down, then we must send CEC commands first. */
     if (state == ePowerState_S0) {
-        if (mIpcClient->setPowerState(state) != true) {
-            LOGE("%s: Could not set PowerState %d!", __FUNCTION__, state);
+        // Setup the GPIO output values depending on the power state...
+        ret = setGpios(state);
+
+        if (ret != NO_ERROR) {
+            ALOGE("%s: Could not set GPIO's for PowerState %d!!!", __FUNCTION__, state);
+        }
+        else if (mIpcClient->setPowerState(state) != true) {
+            ALOGE("%s: Could not set PowerState %d!", __FUNCTION__, state);
             ret = INVALID_OPERATION;
         }
         else if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && getCecTransmitViewOn() == true && mIpcClient->setCecPowerState(cecId, state) != true) {
-            LOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, cecId, state);
+            ALOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, cecId, state);
             ret = INVALID_OPERATION;
         }
     }
     else {
         if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && getCecTransmitStandby() == true && mIpcClient->setCecPowerState(cecId, state) != true) {
-            LOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, cecId, state);
+            ALOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, cecId, state);
             ret = INVALID_OPERATION;
         }
 
         if (mIpcClient->setPowerState(state) != true) {
-            LOGE("%s: Could not set PowerState %d!", __FUNCTION__, state);
+            ALOGE("%s: Could not set PowerState %d!", __FUNCTION__, state);
             ret = INVALID_OPERATION;
         }
+        else {
+            // Setup the GPIO output values depending on the power state...
+            ret = setGpios(state);
 
-        if (ret == NO_ERROR) {
-            // Finally clear any pending Gpio interrupts to avoid being accidentally woken up again when suspended
-            ret = clearGpios();
+            if (ret != NO_ERROR) {
+                ALOGE("%s: Could not set GPIO's for PowerState %d!!!", __FUNCTION__, state);
+            }
+            else {
+                // Finally clear any pending Gpio interrupts to avoid being accidentally woken up again when suspended
+                ret = clearGpios();
+                if (ret != NO_ERROR) {
+                    ALOGE("%s: Could not clear GPIO's for PowerState %d!!!", __FUNCTION__, state);
+                }
+            }
         }
     }
     return ret;
@@ -190,16 +206,16 @@ status_t NexusPower::setPowerState(b_powerState state)
 status_t NexusPower::getPowerState(b_powerState *pState)
 {
     if (pState == NULL) {
-        LOGE("%s: invalid parameter \"pState\"!", __FUNCTION__);
+        ALOGE("%s: invalid parameter \"pState\"!", __FUNCTION__);
         return BAD_VALUE;
     }
 
     *pState = mIpcClient->getPowerState();
-    LOGD("%s: Power state = %d", __FUNCTION__, *pState);
+    ALOGD("%s: Power state = %d", __FUNCTION__, *pState);
     return NO_ERROR;
 }
 
-void NexusPower::NexusGpio::gpioCallback(void *context __unused, int param __unused)
+void NexusPower::NexusGpio::gpioCallback(void *context, int param __unused)
 {
     NexusPower::NexusGpio *pNexusGpio = reinterpret_cast<NexusPower::NexusGpio *>(context);
 
@@ -207,19 +223,15 @@ void NexusPower::NexusGpio::gpioCallback(void *context __unused, int param __unu
         NEXUS_GpioStatus gpioStatus;
 
         if (NEXUS_Gpio_GetStatus(pNexusGpio->getHandle(), &gpioStatus) == NEXUS_SUCCESS) {
-            ALOGV("%s: AON_%s%02d interrupt %spending.", __FUNCTION__,
-                   (pNexusGpio->getPinType() == NEXUS_GpioType_eAonStandard) ? "GPIO" : "SGPIO", param,
-                   gpioStatus.interruptPending ? "" : "not ");
+            ALOGV("%s: %s interrupt %spending.", __FUNCTION__, pNexusGpio->getPinName().string(), gpioStatus.interruptPending ? "" : "not ");
 
             if (gpioStatus.interruptPending) {
                 NEXUS_Gpio_ClearInterrupt(pNexusGpio->getHandle());
             }
         }
         else {
-            ALOGE("%s: Could NOT get AON_%s%02d interrupt status.", __FUNCTION__,
-                   (pNexusGpio->getPinType() == NEXUS_GpioType_eAonStandard) ? "GPIO" : "SGPIO", param);
+            ALOGE("%s: Could NOT get %s interrupt status.", __FUNCTION__, pNexusGpio->getPinName().string());
         }
-
     }
     else {
         ALOGE("%s: Invalid context!!!", __FUNCTION__);
@@ -243,11 +255,54 @@ String8 NexusPower::NexusGpio::getConfigurationFilePath()
     }
 }
 
-/* The aon_gpio.cfg file is made up of key/value pairs for the AON GPIO/SGPIO's.  This comprises
-   the name of the GPIO/SGPIO followed by an "=" and the interrupt mode (e.g. "FallingEdge").
+/* The aon_gpio.cfg file is made up of key/value pairs for the GPIO/AON_GPIO/AON_SGPIO's.
+   This comprises the name of the GPIO/SGPIO followed by an "=" and additional parameters
+   separated by comma(s) and no whitespace within square brackets.  The parameters are
+   used to inform the software how to configure the GPIO.  The first parameter is the
+   "GPIO mode" of the pin.  The valid values are:
 
-   Example1: AON_GPIO01 = FallingEdge
-   Example2: AON_SGPIO02 = Edge
+   1) "Input"     --> an input pin
+   2) "PushPull"  --> a totem-pole output
+   3) "OpenDrain" --> an open-drain output
+
+   The second parameter depends on whether the GPIO is configurred as an "input" or "output".
+
+   If the pin is configured as an input, then the second parameter is used to indicate the type
+   of "interrupt mode".  The valid value are:
+
+   1) Disabled    --> no interrupt will be generated.
+   2) RisingEdge  --> an interrupt will be generated on a rising edge  (i.e. low-->high).
+   3) FallingEdge --> an interrupt will be generated on a falling edge (i.e. high-->low).
+   4) Edge        --> an interrupt will be generated on either a rising or falling edge.
+   5) High        --> an interrupt will be generated on a high level.
+   6) Low         --> an interrupt will be generated on a low level.
+
+   If the pin is configurred as an output, then the following 6 parameters are used to indicate
+   the polarity of the output signal in power states S0 through to S5 (note S4 is not used at
+   this current time).  The valid values are:
+
+   1) High
+   2) Low
+
+   Below are some examples of both input and output GPIO configurations.
+
+   Example1: GPIO101 = [PushPull,High,High,Low,Low,Low,High]
+             So this configures GPIO_101 as a totem-pole output which is driven HIGH during S0,
+             LOW during states S1 to S4 and HIGH again for state S5
+
+   Example2: AON_GPIO01 = [Input,FallingEdge]
+             This configures AON_GPIO_01 as a negative edge triggered input
+
+   Example3: AON_SGPIO02 = [Input,Edge]
+             this configures AON_SGPIO_02 as any edge triggered input
+
+   Example4: AON_GPIO00 = [PushPull,High,High,Low,Low,Low,Low]
+             So this configures AON_GPIO_00 as a totem-pole output which is driven HIGH during S0
+             and S1 states and LOW in the other standby states S2 to S5.
+
+   Example5: AON_GPIO03 = [OpenDrain,Low,High,High,High,High,High]
+             So this configures AON_GPIO_03 as an open-drain output which is driven LOW during S0
+             and HIGH in all other standby states S1 to S5.
 */
 status_t NexusPower::NexusGpio::loadConfigurationFile(String8 path, PropertyMap **configuration)
 {
@@ -259,67 +314,187 @@ status_t NexusPower::NexusGpio::loadConfigurationFile(String8 path, PropertyMap 
     return status;
 }
 
-NEXUS_GpioInterrupt NexusPower::NexusGpio::parseGpioInterruptMode(String8& modeString)
+status_t NexusPower::NexusGpio::parseGpioMode(String8& pinModeString, NEXUS_GpioMode *pPinMode)
 {
-    String8 string(modeString);
+    status_t status = NO_ERROR;
+    String8 string(pinModeString);
+
+    string.toLower();
+
+    if (string == "input") {
+        *pPinMode = NEXUS_GpioMode_eInput;
+    }
+    else if (string == "pushpull") {
+        *pPinMode = NEXUS_GpioMode_eOutputPushPull;
+    }
+    else if (string == "opendrain") {
+        *pPinMode = NEXUS_GpioMode_eOutputOpenDrain;
+    }
+    else {
+        *pPinMode = NEXUS_GpioMode_eMax;
+        status = BAD_VALUE;
+    }
+    return status;
+}
+
+status_t NexusPower::NexusGpio::parseGpioInterruptMode(String8& interruptModeString, NEXUS_GpioInterrupt *pPinInterruptMode)
+{
+    status_t status = NO_ERROR;
+    String8 string(interruptModeString);
 
     string.toLower();
 
     if (string == "disabled") {
-        return NEXUS_GpioInterrupt_eDisabled;
+        *pPinInterruptMode = NEXUS_GpioInterrupt_eDisabled;
     }
     else if (string == "risingedge") {
-        return NEXUS_GpioInterrupt_eRisingEdge;
+        *pPinInterruptMode = NEXUS_GpioInterrupt_eRisingEdge;
     }
     else if (string == "fallingedge") {
-        return NEXUS_GpioInterrupt_eFallingEdge;
+        *pPinInterruptMode = NEXUS_GpioInterrupt_eFallingEdge;
     }
     else if (string == "edge") {
-        return NEXUS_GpioInterrupt_eEdge;
+        *pPinInterruptMode = NEXUS_GpioInterrupt_eEdge;
     }
     else if (string == "low") {
-        return NEXUS_GpioInterrupt_eLow;
+        *pPinInterruptMode = NEXUS_GpioInterrupt_eLow;
     }
     else if (string == "high") {
-        return NEXUS_GpioInterrupt_eHigh;
+        *pPinInterruptMode = NEXUS_GpioInterrupt_eHigh;
     }
     else {
-        return NEXUS_GpioInterrupt_eMax;
+        *pPinInterruptMode = NEXUS_GpioInterrupt_eMax;
+        status = BAD_VALUE;
     }
+    return status;
+}
+
+status_t NexusPower::NexusGpio::parseGpioOutputValue(String8& outputValueString, NEXUS_GpioValue *pPinOutputValue)
+{
+    status_t status = NO_ERROR;
+    String8 string(outputValueString);
+
+    string.toLower();
+
+    if (string == "high") {
+        *pPinOutputValue = NEXUS_GpioValue_eHigh;
+    }
+    else if (string == "low") {
+        *pPinOutputValue = NEXUS_GpioValue_eLow;
+    }
+    else {
+        *pPinOutputValue = NEXUS_GpioValue_eMax;
+        status = BAD_VALUE;
+    }
+    return status;
+}
+
+status_t NexusPower::NexusGpio::parseGpioParameters(String8& inString, size_t *pNumParameters, String8 parameters[])
+{
+    String8 string(inString);
+    const char *charString = string.string();
+    ssize_t length = string.length();
+    size_t numPars;
+    ssize_t absStartPos;
+    ssize_t absEndBracketPos;
+    ssize_t relCommaPos;
+
+    if (length < 5) {   // "[a,b]" is minimum length
+        ALOGW("%s: GPIO parameter section length=%d is invalid!", __FUNCTION__, length);
+        return BAD_VALUE;
+    }
+
+    // Check for initial "[" square bracket...
+    if (string.find("[") != 0) {
+        ALOGW("%s: No \"[\" found at the beginning of the GPIO parameter section!", __FUNCTION__);
+        return BAD_VALUE;
+    }
+
+    // Check for the final "]" square bracket...
+    absEndBracketPos = string.find("]");
+    if (absEndBracketPos != length-1) {
+        ALOGW("%s: No \"]\" found at the end of the GPIO parameter section!", __FUNCTION__);
+        return BAD_VALUE;
+    }
+
+    absStartPos = 1;    // Start off by skipping the initial "[" square bracket
+
+    for (numPars = 0; numPars < NexusGpio::MAX_PARAMETERS, absStartPos < absEndBracketPos; numPars++) {
+        string.setTo(&charString[absStartPos], length-absStartPos);
+
+        // Check for a ","...
+        relCommaPos = string.find(",");
+        if (relCommaPos < 0) {
+            parameters[numPars] = String8(&charString[absStartPos], absEndBracketPos-absStartPos);
+            absStartPos = absEndBracketPos;
+        }
+        else {
+            parameters[numPars] = String8(&charString[absStartPos], relCommaPos);
+            absStartPos += relCommaPos + 1;
+        }
+    }
+
+    if (numPars <= 1) {
+        ALOGW("%s: Invalid number of parameters [%d] provided in the GPIO parameter section!", __FUNCTION__, numPars);
+        return BAD_VALUE;
+    }
+    *pNumParameters = numPars;
+    return NO_ERROR;
 }
 
 NexusPower::NexusGpio::NexusGpio()
 {
-    ALOGV("%s: called", __PRETTY_FUNCTION__);
+    ALOGV("%s: called", __FUNCTION__);
 }
 
-NexusPower::NexusGpio::NexusGpio(NexusPower *pNexusPower, unsigned pin, unsigned pinType, NEXUS_GpioInterrupt interruptMode) : mNexusPower(pNexusPower),
-                                                                                                                               mPin(pin),
-                                                                                                                               mPinType(pinType),
-                                                                                                                               mInterruptMode(interruptMode)
+// Constructor for a GPIO input...
+NexusPower::NexusGpio::NexusGpio(String8& pinName, unsigned pin, unsigned pinType, NEXUS_GpioMode pinMode, NEXUS_GpioInterrupt pinInterruptMode) :
+                                                                                        mPinName(pinName),
+                                                                                        mPin(pin),
+                                                                                        mPinType(pinType),
+                                                                                        mPinMode(pinMode),
+                                                                                        mPinInterruptMode(pinInterruptMode)
 {
     mInstance = mInstances++;
-    ALOGV("%s: instance %d: pin=%d, type=%d", __PRETTY_FUNCTION__, mInstance, pin, pinType);
+    ALOGV("%s: instance %d: pin=%d, type=%d, pin mode=%d, interrupt mode=%d", __PRETTY_FUNCTION__, mInstance, pin, pinType, pinMode, pinInterruptMode);
 }
 
+// Constructor for a GPIO output...
+NexusPower::NexusGpio::NexusGpio(String8& pinName, unsigned pin, unsigned pinType, NEXUS_GpioMode pinMode, NEXUS_GpioValue *pPinOutputValues) :
+                                                                                        mPinName(pinName),
+                                                                                        mPin(pin),
+                                                                                        mPinType(pinType),
+                                                                                        mPinMode(pinMode),
+                                                                                        mPinInterruptMode(NEXUS_GpioInterrupt_eDisabled)
+{
+    mInstance = mInstances++;
+    ALOGV("%s: instance %d: pin=%d, type=%d, pin mode=%d", __PRETTY_FUNCTION__, mInstance, pin, pinType, pinMode);
+    for (int cnt = 0; cnt < NexusGpio::MAX_POWER_STATES; cnt++) {
+        mPinOutputValues[cnt] = *pPinOutputValues++;
+    }
+}
+
+// Common destructor for both input and output GPIOs...
 NexusPower::NexusGpio::~NexusGpio()
 {
-    ALOGV("%s: instance %d: pin=%d, type=%d", __PRETTY_FUNCTION__, mInstance, mPin, mPinType);
+    ALOGV("%s: instance %d: pin=%d, type=%d, pin mode=%d", __PRETTY_FUNCTION__, mInstance, mPin, mPinType, mPinMode);
     mInstances--;
     NEXUS_Gpio_Close(mHandle);
 }
 
-sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(NexusPower *pNexusPower, unsigned pin, unsigned pinType, NEXUS_GpioInterrupt interruptMode)
+// Factory method for instantiating an input GPIO...
+sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(String8& pinName,  unsigned pin, unsigned pinType,
+                                                             NEXUS_GpioMode pinMode, NEXUS_GpioInterrupt pinInterruptMode)
 {
-    sp<NexusPower::NexusGpio> gpio = new NexusGpio(pNexusPower, pin, pinType, interruptMode);
+    sp<NexusPower::NexusGpio> gpio = new NexusGpio(pinName, pin, pinType, pinMode, pinInterruptMode);
 
-    if (NexusPower::NexusGpio::getInstances() < NexusGpio::MAX_INSTANCES) {
+    if (gpio.get() != NULL) {
         NEXUS_GpioSettings settings;
         NEXUS_GpioHandle handle;
 
         NEXUS_Gpio_GetDefaultSettings(pinType, &settings);
-        settings.mode = NEXUS_GpioMode_eInput;
-        settings.interruptMode = interruptMode;
+        settings.mode = pinMode;
+        settings.interruptMode = pinInterruptMode;
         settings.maskEdgeInterrupts = true;
         settings.interrupt.callback = NexusPower::NexusGpio::gpioCallback;
         settings.interrupt.context  = gpio.get();
@@ -327,12 +502,117 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(NexusPower *pNexusP
 
         handle = NEXUS_Gpio_Open(pinType, pin, &settings);
         if (handle != NULL) {
-            ALOGV("%s: Successfully opened AON_GPIO%02d", __FUNCTION__, pin);
+            ALOGV("%s: Successfully opened %s as an input", __FUNCTION__, pinName.string());
             gpio->setHandle(handle);
         }
         else {
-            ALOGE("%s: Could not open AON_%s%02d!!!", __FUNCTION__, (pinType == NEXUS_GpioType_eAonStandard) ? "GPIO" : "SGPIO", pin);
+            ALOGE("%s: Could not open %s as an input!!!", __FUNCTION__, pinName.string());
             gpio = NULL;
+        }
+    }
+    return gpio;
+}
+
+// Factory method for instantiating an output GPIO...
+sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(String8& pinName, unsigned pin, unsigned pinType, NEXUS_GpioMode pinMode, NEXUS_GpioValue *pPinOutputValues)
+{
+    sp<NexusPower::NexusGpio> gpio = new NexusGpio(pinName, pin, pinType, pinMode, pPinOutputValues);
+
+    if (gpio.get() != NULL) {
+        NEXUS_GpioSettings settings;
+        NEXUS_GpioHandle handle;
+
+        NEXUS_Gpio_GetDefaultSettings(pinType, &settings);
+        settings.mode = pinMode;
+        settings.value = pPinOutputValues[0];
+
+        handle = NEXUS_Gpio_Open(pinType, pin, &settings);
+        if (handle != NULL) {
+            ALOGV("%s: Successfully opened %s as an output", __FUNCTION__, pinName.string());
+            gpio->setHandle(handle);
+        }
+        else {
+            ALOGE("%s: Could not open %s as an output!!!", __FUNCTION__, pinName.string());
+            gpio = NULL;
+        }
+    }
+    return gpio;
+}
+
+sp<NexusPower::NexusGpio> NexusPower::NexusGpio::initialise(String8& gpioName, String8& gpioValue, int pin, unsigned pinType)
+{
+    status_t status;
+    sp<NexusGpio> gpio;
+    size_t numGpioParameters;
+    String8 gpioParameters[NexusGpio::MAX_PARAMETERS];
+
+    ALOGV("%s: %s=%s", __FUNCTION__, gpioName.string(), gpioValue.string());
+
+    status = NexusGpio::parseGpioParameters(gpioValue, &numGpioParameters, gpioParameters);
+    if (status != NO_ERROR) {
+        ALOGE("%s: Could not parse %s parameters!!!", __FUNCTION__, gpioName.string());
+    }
+    else if (numGpioParameters < NexusGpio::MIN_PARAMETERS || numGpioParameters > NexusGpio::MAX_PARAMETERS) {
+        ALOGE("%s: Invalid number of parameters %d for %s!!!", __FUNCTION__, gpioName.string(), numGpioParameters);
+        status = BAD_VALUE;
+    }
+    else {
+        NEXUS_GpioMode gpioMode;
+        status = NexusGpio::parseGpioMode(gpioParameters[0], &gpioMode);
+        if (status != NO_ERROR) {
+            ALOGE("%s: Could not parse %s pin mode!!!", __FUNCTION__, gpioName.string());
+        }
+        else if (gpioMode == NEXUS_GpioMode_eInput) {
+            if (numGpioParameters != NexusGpio::NUM_INP_PARAMETERS) {
+                ALOGE("%s: Invalid number of input parameters for %s (must be %d)!!!", __FUNCTION__, gpioName.string(), NexusGpio::NUM_INP_PARAMETERS);
+                status = BAD_VALUE;
+            }
+            else {
+                NEXUS_GpioInterrupt gpioInterruptMode;
+                status = NexusGpio::parseGpioInterruptMode(gpioParameters[1], &gpioInterruptMode);
+                if (status != NO_ERROR) {
+                    ALOGE("%s: Could not parse %s interrupt mode!!!", __FUNCTION__, gpioName.string());
+                }
+                else {
+                    gpio = NexusGpio::instantiate(gpioName, pin, pinType, gpioMode, gpioInterruptMode);
+                    if (gpio.get() == NULL) {
+                        ALOGE("%s: Could not instantiate %s!!!", __FUNCTION__, gpioName.string());
+                        status = NO_INIT;
+                    }
+                    else {
+                        ALOGV("%s: Instantiated %s :)", __FUNCTION__, gpioName.string());
+                    }
+                }
+            }
+        }
+        else {  // Pin is either an open-drain or push-pull output...
+            if (numGpioParameters != NexusGpio::NUM_OUT_PARAMETERS) {
+                ALOGE("%s: Invalid number of output parameters for %s (must be %d)!!!", __FUNCTION__, gpioName.string(), NexusGpio::NUM_OUT_PARAMETERS);
+                status = BAD_VALUE;
+            }
+            else {
+                NEXUS_GpioValue gpioOutputValues[NexusGpio::MAX_POWER_STATES];
+                for (unsigned cnt = 0; cnt < sizeof(gpioOutputValues)/sizeof(gpioOutputValues[0]); cnt++) {
+                    status = NexusGpio::parseGpioOutputValue(gpioParameters[cnt+1], &gpioOutputValues[cnt]);
+                    if (status != NO_ERROR) {
+                        break;
+                    }
+                }
+
+                if (status != NO_ERROR) {
+                    ALOGE("%s: Could not parse output values for %s!!!", __FUNCTION__, gpioName.string());
+                }
+                else {
+                    gpio = NexusGpio::instantiate(gpioName, pin, pinType, gpioMode, gpioOutputValues);
+                    if (gpio.get() == NULL) {
+                        ALOGE("%s: Could not instantiate %s!!!", __FUNCTION__, gpioName.string());
+                        status = NO_INIT;
+                    }
+                    else {
+                        ALOGV("%s: Instantiated %s :)", __FUNCTION__, gpioName.string());
+                    }
+                }
+            }
         }
     }
     return gpio;
@@ -341,39 +621,67 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(NexusPower *pNexusP
 status_t NexusPower::initialiseGpios()
 {
     status_t status;
-    NEXUS_GpioInterrupt gpioMode;
-    int pin;
-    PropertyMap* config;
     String8 path;
 
     path = NexusGpio::getConfigurationFilePath();
     if (path.isEmpty()) {
-        ALOGW("%s: Could not find configuration file, so not initialising AON GPIOs!", __FUNCTION__, path.string());
+        ALOGW("%s: Could not find configuration file, so not initialising GPIOs!", __FUNCTION__, path.string());
         status = NAME_NOT_FOUND;
     }
     else {
+        PropertyMap* config;
         status = NexusGpio::loadConfigurationFile(path, &config);
         if (status == NO_ERROR) {
+            int pin;
             String8 gpioName;
             String8 gpioValue;
             sp<NexusGpio> gpio;
+
+            /* Setup standard GPIO custom configuration */
+            for (pin = 0; pin < NEXUS_NUM_GPIO_PINS && (status == NO_ERROR) && NexusGpio::getInstances() < NexusGpio::MAX_INSTANCES; pin++) {
+                gpioName.setTo("GPIO");
+                gpioName.appendFormat("%02d", pin);
+                if (config->tryGetProperty(gpioName, gpioValue)) {
+                    gpio = NexusGpio::initialise(gpioName, gpioValue, pin, NEXUS_GpioType_eStandard);
+
+                    if (gpio.get() != NULL) {
+                        gpios[gpio->getInstance()] = gpio;
+                    }
+                    else {
+                        ALOGE("%s: Could not initialise %s!!!", __FUNCTION__, gpioName.string());
+                        status = NO_INIT;
+                    }
+                }
+                else {
+                    gpioName.setTo("GPIO");
+                    gpioName.appendFormat("%03d", pin);
+                    if (config->tryGetProperty(gpioName, gpioValue)) {
+                        gpio = NexusGpio::initialise(gpioName, gpioValue, pin, NEXUS_GpioType_eStandard);
+
+                        if (gpio.get() != NULL) {
+                            gpios[gpio->getInstance()] = gpio;
+                        }
+                        else {
+                            ALOGE("%s: Could not initialise %s!!!", __FUNCTION__, gpioName.string());
+                            status = NO_INIT;
+                        }
+                    }
+                }
+            }
 
             /* Setup AON_GPIO custom configuration */
             for (pin = 0; pin < NEXUS_NUM_AON_GPIO_PINS && (status == NO_ERROR) && NexusGpio::getInstances() < NexusGpio::MAX_INSTANCES; pin++) {
                 gpioName.setTo("AON_GPIO");
                 gpioName.appendFormat("%02d", pin);
-
                 if (config->tryGetProperty(gpioName, gpioValue)) {
-                    gpioMode = NexusGpio::parseGpioInterruptMode(gpioValue);
-                    ALOGV("%s: %s=%s", __FUNCTION__, gpioName.string(), gpioValue.string());
+                    gpio = NexusGpio::initialise(gpioName, gpioValue, pin, NEXUS_GpioType_eAonStandard);
 
-                    gpio = NexusGpio::instantiate(this, pin, NEXUS_GpioType_eAonStandard, gpioMode);
-                    if (gpio.get() == NULL) {
-                        ALOGE("%s: Could not instantiate Nexus AON_GPIO%02d!!!", __FUNCTION__, pin);
-                        status = NO_INIT;
+                    if (gpio.get() != NULL) {
+                        gpios[gpio->getInstance()] = gpio;
                     }
                     else {
-                        gpios[gpio->getInstance()] = gpio;
+                        ALOGE("%s: Could not initialise %s!!!", __FUNCTION__, gpioName.string());
+                        status = NO_INIT;
                     }
                 }
             }
@@ -382,18 +690,15 @@ status_t NexusPower::initialiseGpios()
             for (pin = 0; pin < NEXUS_NUM_AON_SGPIO_PINS && (status == NO_ERROR) && NexusGpio::getInstances() < NexusGpio::MAX_INSTANCES; pin++) {
                 gpioName.setTo("AON_SGPIO");
                 gpioName.appendFormat("%02d", pin);
-
                 if (config->tryGetProperty(gpioName, gpioValue)) {
-                    gpioMode = NexusGpio::parseGpioInterruptMode(gpioValue);
-                    ALOGV("%s: %s=%s", __FUNCTION__, gpioName.string(), gpioValue.string());
+                    gpio = NexusGpio::initialise(gpioName, gpioValue, pin, NEXUS_GpioType_eAonSpecial);
 
-                    gpio = NexusGpio::instantiate(this, pin, NEXUS_GpioType_eAonSpecial, gpioMode);
-                    if (gpio.get() == NULL) {
-                        ALOGE("%s: Could not instantiate Nexus AON_SGPIO%02d!!!", __FUNCTION__, pin);
-                        status = NO_INIT;
+                    if (gpio.get() != NULL) {
+                        gpios[gpio->getInstance()] = gpio;
                     }
                     else {
-                        gpios[gpio->getInstance()] = gpio;
+                        ALOGE("%s: Could not initialise %s!!!", __FUNCTION__, gpioName.string());
+                        status = NO_INIT;
                     }
                 }
             }
@@ -415,6 +720,33 @@ void NexusPower::uninitialiseGpios()
     }
 }
 
+status_t NexusPower::setGpios(b_powerState state)
+{
+    status_t status = NO_ERROR;
+    NEXUS_Error rc;
+    sp<NexusGpio> pNexusGpio;
+
+    for (unsigned gpio = 0; gpio < NexusGpio::MAX_INSTANCES; gpio++) {
+        pNexusGpio = gpios[gpio];
+        if (pNexusGpio.get() != NULL && pNexusGpio->getPinMode() != NEXUS_GpioMode_eInput) {
+            NEXUS_GpioSettings gpioSettings;
+
+            NEXUS_Gpio_GetSettings(pNexusGpio->getHandle(), &gpioSettings);
+            gpioSettings.value = pNexusGpio->getPinOutputValue(state);
+            rc = NEXUS_Gpio_SetSettings(pNexusGpio->getHandle(), &gpioSettings);
+            if (rc != NEXUS_SUCCESS) {
+                ALOGE("%s: Could not set %s [rc=%d]!!!", __FUNCTION__, pNexusGpio->getPinName().string(), rc);
+                status = INVALID_OPERATION;
+            }
+            else {
+                ALOGV("%s: Successfully set %s to %s", __FUNCTION__, pNexusGpio->getPinName().string(),
+                      (gpioSettings.value == NEXUS_GpioValue_eLow) ? "LOW" : "HIGH");
+            }
+        }
+    }
+    return status;
+}
+
 status_t NexusPower::clearGpios()
 {
     status_t status = NO_ERROR;
@@ -423,11 +755,16 @@ status_t NexusPower::clearGpios()
 
     for (unsigned gpio = 0; gpio < NexusGpio::MAX_INSTANCES; gpio++) {
         pNexusGpio = gpios[gpio];
-        if (pNexusGpio.get() != NULL) {
+        if (pNexusGpio.get() != NULL && pNexusGpio->getPinMode() == NEXUS_GpioMode_eInput) {
+            NEXUS_GpioStatus gpioStatus;
+
             rc = NEXUS_Gpio_ClearInterrupt(pNexusGpio->getHandle());
             if (rc != NEXUS_SUCCESS) {
-                ALOGE("%s: Could not clear AON_%s%d [rc=%d]!!!", __FUNCTION__, (pNexusGpio->getPinType() == NEXUS_GpioType_eAonStandard) ? "GPIO" : "SGPIO", gpio, rc);
+                ALOGE("%s: Could not clear %s [rc=%d]!!!", __FUNCTION__, pNexusGpio->getPinName().string(), rc);
                 status = INVALID_OPERATION;
+            }
+            else {
+                ALOGV("%s: Successfully cleared %s", __FUNCTION__, pNexusGpio->getPinName().string());
             }
         }
     }
