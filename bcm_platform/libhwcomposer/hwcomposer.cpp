@@ -95,6 +95,7 @@ using namespace android;
 #define DUMP_BUFFER_SIZE             1024
 #define LAST_PING_FRAME_ID_INVALID   0xBAADCAFE
 #define FALL_BACK_GLES_ON_SKIP       1
+#define HWC_DO_YV12_CONV             0
 
 /* note: matching other parts of the integration, we
  *       want to default product resolution to 1080p.
@@ -2026,19 +2027,23 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         dev->hwc_2dg = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, NULL);
         if (dev->hwc_2dg == NULL) {
            ALOGE("%s: failed to create hwc_2dg, conversion services will not work!", __FUNCTION__);
+        } else {
+           NEXUS_Graphics2D_GetSettings(dev->hwc_2dg, &gfxSettings);
+           gfxSettings.pollingCheckpoint = false;
+           gfxSettings.checkpointCallback.callback = hwc_checkpoint_callback;
+           gfxSettings.checkpointCallback.context = (void *)dev;
+           rc = NEXUS_Graphics2D_SetSettings(dev->hwc_2dg, &gfxSettings);
+           if (rc) {
+              ALOGE("%s: failed to setup hwc_2dg checkpoint, conversion services will not work!", __FUNCTION__);
+           }
+           NEXUS_Graphics2D_GetCapabilities(dev->hwc_2dg, &dev->gfxCaps);
+           ALOGI("%s: gfx caps: h-down-scale: %d, v-down-scale: %d", __FUNCTION__,
+                 dev->gfxCaps.maxHorizontalDownScale, dev->gfxCaps.maxVerticalDownScale);
         }
-        NEXUS_Graphics2D_GetSettings(dev->hwc_2dg, &gfxSettings);
-        gfxSettings.pollingCheckpoint = false;
-        gfxSettings.checkpointCallback.callback = hwc_checkpoint_callback;
-        gfxSettings.checkpointCallback.context = (void *)dev;
-        rc = NEXUS_Graphics2D_SetSettings(dev->hwc_2dg, &gfxSettings);
-        if (rc) {
-           ALOGE("%s: failed to setup hwc_2dg checkpoint, conversion services will not work!", __FUNCTION__);
+        if ((dev->hwc_2dg != NULL) && !HWC_DO_YV12_CONV) {
+           NEXUS_Graphics2D_Close(dev->hwc_2dg);
+           dev->hwc_2dg = NULL;
         }
-
-        NEXUS_Graphics2D_GetCapabilities(dev->hwc_2dg, &dev->gfxCaps);
-        ALOGI("%s: gfx caps: h-down-scale: %d, v-down-scale: %d", __FUNCTION__,
-              dev->gfxCaps.maxHorizontalDownScale, dev->gfxCaps.maxVerticalDownScale);
 
         *device = &dev->device.common;
         status = 0;
@@ -2334,17 +2339,20 @@ static void hwc_prepare_gpx_layer(
                           addr, disp_position.width, disp_position.height, stride);
                     goto out_unlock;
                 }
-                NEXUS_Surface_Lock(ctx->gpx_cli[layer_id].slist[six].shdl, &slock);
-                NEXUS_Surface_Flush(ctx->gpx_cli[layer_id].slist[six].shdl);
-                rc = yv12_to_422planar(bcmBuffer,
-                                       ctx->gpx_cli[layer_id].slist[six].shdl,
-                                       ctx->hwc_2dg);
-                if (rc != NEXUS_SUCCESS || 0 != hwc_checkpoint(ctx) ) {
-                    ALOGE("%s: conversion failed: %d\n", __FUNCTION__, layer_id);
-                    NEXUS_Surface_Destroy(ctx->gpx_cli[layer_id].slist[six].shdl);
-                    ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_NO_OWNER;
-                    ctx->gpx_cli[layer_id].slist[six].shdl = NULL;
-                    goto out_unlock;
+
+                if (HWC_DO_YV12_CONV) {
+                   NEXUS_Surface_Lock(ctx->gpx_cli[layer_id].slist[six].shdl, &slock);
+                   NEXUS_Surface_Flush(ctx->gpx_cli[layer_id].slist[six].shdl);
+                   rc = yv12_to_422planar(bcmBuffer,
+                                          ctx->gpx_cli[layer_id].slist[six].shdl,
+                                          ctx->hwc_2dg);
+                   if ((rc != NEXUS_SUCCESS) || (0 != hwc_checkpoint(ctx))) {
+                       ALOGE("%s: conversion failed: %d\n", __FUNCTION__, layer_id);
+                       NEXUS_Surface_Destroy(ctx->gpx_cli[layer_id].slist[six].shdl);
+                       ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_NO_OWNER;
+                       ctx->gpx_cli[layer_id].slist[six].shdl = NULL;
+                       goto out_unlock;
+                   }
                 }
             break;
 

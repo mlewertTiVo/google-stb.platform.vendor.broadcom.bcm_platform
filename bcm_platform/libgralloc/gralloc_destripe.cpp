@@ -40,10 +40,7 @@
 #include "gralloc_destripe.h"
 #include <cutils/log.h>
 
-#define CHECKPOINT_TIMEOUT (5000)
-
 int gralloc_destripe_yv12(
-    private_module_t *pModule,
     private_handle_t *pHandle,
     NEXUS_StripedSurfaceHandle hStripedSurface)
 {
@@ -56,7 +53,7 @@ int gralloc_destripe_yv12(
     int x, y, stride, align=16, height, width;
     int rc=-EINVAL;
 
-    if ( NULL == pModule->hGraphics )
+    if ( NULL == gralloc_g2d_hdl() )
     {
         LOGE("Graphics2D Not available.  Cannot access HW decoder data.");
         goto err_gfx2d;
@@ -93,7 +90,7 @@ int gralloc_destripe_yv12(
     NEXUS_Surface_Flush(hSurface422);
 
     // Issue destripe request
-    errCode = NEXUS_Graphics2D_DestripeToSurface(pModule->hGraphics, hStripedSurface, hSurface422, NULL);
+    errCode = NEXUS_Graphics2D_DestripeToSurface(gralloc_g2d_hdl(), hStripedSurface, hSurface422, NULL);
     if ( errCode )
     {
         LOGE("Unable to destripe surface");
@@ -101,13 +98,13 @@ int gralloc_destripe_yv12(
     }
 
     // Wait for completion
-    errCode = NEXUS_Graphics2D_Checkpoint(pModule->hGraphics, NULL);
+    errCode = NEXUS_Graphics2D_Checkpoint(gralloc_g2d_hdl(), NULL);
     switch ( errCode )
     {
     case NEXUS_SUCCESS:
       break;
     case NEXUS_GRAPHICS2D_QUEUED:
-      errCode = BKNI_WaitForEvent(pModule->hCheckpointEvent, CHECKPOINT_TIMEOUT);
+      errCode = BKNI_WaitForEvent(gralloc_g2d_evt(), CHECKPOINT_TIMEOUT);
       if ( errCode )
       {
           LOGW("Checkpoint Timeout");

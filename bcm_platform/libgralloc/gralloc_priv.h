@@ -60,13 +60,6 @@ struct private_handle_t;
 
 struct private_module_t {
    gralloc_module_t base;
-
-   struct private_handle_t* framebuffer;
-   uint32_t numBuffers;
-   uint32_t bufferMask;
-   pthread_mutex_t lock;
-   NEXUS_Graphics2DHandle hGraphics;
-   BKNI_EventHandle hCheckpointEvent;
 };
 
 /*****************************************************************************/

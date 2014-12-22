@@ -59,6 +59,10 @@ else \
 static void *gl_dyn_lib;
 static void *nexus_client = NULL;
 
+static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
+static NEXUS_Graphics2DHandle hGraphics = NULL;
+static BKNI_EventHandle hCheckpointEvent = NULL;
+
 #define NEXUS_JOIN_CLIENT_PROCESS "gralloc"
 static void gralloc_load_lib(void)
 {
@@ -92,9 +96,41 @@ static void gralloc_load_lib(void)
 
 #undef LOAD_FN
 
+static void gralloc_checkpoint_callback(void *pParam, int param)
+{
+    (void)param;
+    BKNI_SetEvent((BKNI_EventHandle)pParam);
+}
+
 void gralloc_explicit_load(void)
 {
+   NEXUS_Error     rc;
+
    gralloc_load_lib();
+
+   rc = BKNI_CreateEvent(&hCheckpointEvent);
+   if (rc) {
+      LOGE("Unable to create checkpoint event");
+      hCheckpointEvent = NULL;
+      hGraphics = NULL;
+   } else {
+      hGraphics = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, NULL);
+      if (!hGraphics) {
+         LOGW("Unable to open Graphics2D.  HW/SW access format conversions will fail...");
+      } else {
+         NEXUS_Graphics2DSettings gfxSettings;
+         NEXUS_Graphics2D_GetSettings(hGraphics, &gfxSettings);
+         gfxSettings.pollingCheckpoint = false;
+         gfxSettings.checkpointCallback.callback = gralloc_checkpoint_callback;
+         gfxSettings.checkpointCallback.context = (void *)hCheckpointEvent;
+         rc = NEXUS_Graphics2D_SetSettings(hGraphics, &gfxSettings);
+         if ( rc ) {
+            LOGW("Unable to set Graphics2D Settings");
+            NEXUS_Graphics2D_Close(hGraphics);
+            hGraphics = NULL;
+         }
+      }
+   }
 }
 
 void gralloc_explicit_unload(void)
@@ -105,11 +141,36 @@ void gralloc_explicit_unload(void)
    }
 
    dlclose(gl_dyn_lib);
+
+   if (hGraphics) {
+      NEXUS_Graphics2D_Close(hGraphics);
+      hGraphics = NULL;
+   }
+
+   if (hCheckpointEvent) {
+      BKNI_DestroyEvent(hCheckpointEvent);
+      hCheckpointEvent = NULL;
+   }
 }
 
 void * gralloc_v3d_get_nexus_client_context(void)
 {
    return nexus_client;
+}
+
+pthread_mutex_t *gralloc_g2d_lock(void)
+{
+   return &moduleLock;
+}
+
+NEXUS_Graphics2DHandle gralloc_g2d_hdl(void)
+{
+   return hGraphics;
+}
+
+BKNI_EventHandle gralloc_g2d_evt(void)
+{
+   return hCheckpointEvent;
 }
 
 /*****************************************************************************/
@@ -176,12 +237,6 @@ struct private_module_t HAL_MODULE_INFO_SYM = {
       lockAsync_ycbcr: NULL,
       reserved_proc: {0, 0, 0}
    },
-   framebuffer: 0,
-   numBuffers: 0,
-   bufferMask: 0,
-   lock: PTHREAD_MUTEX_INITIALIZER,
-   hGraphics: NULL,
-   hCheckpointEvent: NULL,
 };
 
 /*****************************************************************************/
@@ -549,34 +604,14 @@ static int gralloc_close(struct hw_device_t *dev)
 
    gralloc_context_t* ctx = reinterpret_cast<gralloc_context_t*>(dev);
    if (ctx) {
-      private_module_t* m = reinterpret_cast<private_module_t*>(ctx->device.common.module);
-      if ( m )
-      {
-          if ( m->hGraphics )
-          {
-              NEXUS_Graphics2D_Close(m->hGraphics);
-          }
-          if ( m->hCheckpointEvent )
-          {
-              BKNI_DestroyEvent(m->hCheckpointEvent);
-          }
-      }
       free(ctx);
    }
    return 0;
 }
 
-static void gralloc_checkpoint_callback(void *pParam, int param)
-{
-    private_module_t *pModule = (private_module_t *)pParam;
-    (void)param;
-    BKNI_SetEvent(pModule->hCheckpointEvent);
-}
-
 int gralloc_device_open(const hw_module_t* module, const char* name,
         hw_device_t** device)
 {
-   NEXUS_Error     rc;
    int status = -EINVAL;
 
    LOGD("%s[%d]: Vector Graphics Allocator [L] Build Date[%s Time:%s]\n",
@@ -605,38 +640,7 @@ int gralloc_device_open(const hw_module_t* module, const char* name,
 
       private_module_t* m = reinterpret_cast<private_module_t*>(dev->device.common.module);
 
-      rc = BKNI_CreateEvent(&m->hCheckpointEvent);
-      if ( rc )
-      {
-         LOGE("Unable to create checkpoint event");
-         m->hCheckpointEvent = NULL;
-         m->hGraphics = NULL;
-      }
-      else
-      {
-         m->hGraphics = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, NULL);
-         if ( NULL == m->hGraphics )
-         {
-            LOGW("Unable to open Graphics2D.  HW video decoder frames will not be accessible for SW read.");
-         }
-         else
-         {
-            NEXUS_Graphics2DSettings gfxSettings;
-            NEXUS_Graphics2D_GetSettings(m->hGraphics, &gfxSettings);
-            gfxSettings.pollingCheckpoint = false;
-            gfxSettings.checkpointCallback.callback = gralloc_checkpoint_callback;
-            gfxSettings.checkpointCallback.context = (void *)m;
-            rc = NEXUS_Graphics2D_SetSettings(m->hGraphics, &gfxSettings);
-            if ( rc )
-            {
-               LOGW("Unable to set Graphics2D Settings");
-               NEXUS_Graphics2D_Close(m->hGraphics);
-               m->hGraphics = NULL;
-            }
-         }
-      }
       *device = &dev->device.common;
-
       status = 0;
    } else {
       status = fb_device_open(module, name, device);

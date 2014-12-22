@@ -153,13 +153,13 @@ int gralloc_lock(gralloc_module_t const* module,
       if ( pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12 )
       {
          // Serialize for graphics checkpoint
-         pthread_mutex_lock(&pModule->lock);
+         pthread_mutex_lock(gralloc_g2d_lock());
          // Lock video frame data
          err = private_handle_t::lock_video_frame(hnd, 250);
          if ( err )
          {
             ALOGE("Unable to lock video frame data (timeout)");
-            pthread_mutex_unlock(&pModule->lock);
+            pthread_mutex_unlock(gralloc_g2d_lock());
             return err;
          }
          // Is there a HW decoded frame present?
@@ -170,7 +170,7 @@ int gralloc_lock(gralloc_module_t const* module,
             {
                ALOGE("Cannot lock HW video decoder buffers for SW_WRITE");
                private_handle_t::unlock_video_frame(hnd);
-               pthread_mutex_unlock(&pModule->lock);
+               pthread_mutex_unlock(gralloc_g2d_lock());
                return -EINVAL;
             }
             // If SW wants to read we may need to destripe first
@@ -178,11 +178,11 @@ int gralloc_lock(gralloc_module_t const* module,
             {
                if ( !pSharedData->videoFrame.destripeComplete )
                {
-                  err = gralloc_destripe_yv12(pModule, hnd, pSharedData->videoFrame.hStripedSurface);
+                  err = gralloc_destripe_yv12(hnd, pSharedData->videoFrame.hStripedSurface);
                   if ( err )
                   {
                      private_handle_t::unlock_video_frame(hnd);
-                     pthread_mutex_unlock(&pModule->lock);
+                     pthread_mutex_unlock(gralloc_g2d_lock());
                      return err;
                   }
                   pSharedData->videoFrame.destripeComplete = true;
@@ -191,7 +191,7 @@ int gralloc_lock(gralloc_module_t const* module,
             }
          }
          private_handle_t::unlock_video_frame(hnd);
-         pthread_mutex_unlock(&pModule->lock);
+         pthread_mutex_unlock(gralloc_g2d_lock());
       }
 
       LOGV("%s : successfully locked", __FUNCTION__);
@@ -202,12 +202,10 @@ int gralloc_lock(gralloc_module_t const* module,
 
 int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
 {
-   // we're done with a software buffer. nothing to do in this
-   // implementation. typically this is used to flush the data cache.
+   NEXUS_Error rc;
 
    private_handle_t *hnd = (private_handle_t *) handle;
-
-   (void)module;
+   private_module_t* pModule = (private_module_t *)module;
 
    if (private_handle_t::validate(handle) < 0)
    {
@@ -222,7 +220,19 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       return -EINVAL;
    }
 
-   NEXUS_FlushCache(NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr), hnd->oglSize);
+   /* produce a packed version of the buffer that will be used for composition.
+    */
+   if ((hnd->usage & GRALLOC_USAGE_SW_WRITE_MASK) && (pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12)) {
+      pthread_mutex_lock(gralloc_g2d_lock());
+      rc = gralloc_yv12to422p(hnd);
+      if (rc) {
+         /* marked as invalid so we drop it.
+          */
+      }
+      pthread_mutex_unlock(gralloc_g2d_lock());
+   } else {
+      NEXUS_FlushCache(NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr), hnd->oglSize);
+   }
 
    return 0;
 }
