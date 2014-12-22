@@ -516,7 +516,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_metadataEnabled(false),
     m_secureDecoder(false),
     m_pConfigBuffer(NULL),
-    m_configSubmitted(false),
+    m_configBufferState(ConfigBufferState_eAccumulating),
     m_configBufferSize(0),
     m_outputMode(BOMX_VideoDecoderOutputBufferType_eStandard)
 {
@@ -1976,7 +1976,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
             {
                 (void)SetInputPortState(OMX_StateIdle);
                 (void)SetInputPortState(StateGet());
-                m_configSubmitted = false;
+                m_configBufferState = ConfigBufferState_eFlushed;
             }
         }
         else
@@ -2931,7 +2931,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     numDescriptors = 1;
 
     // Add codec config if required
-    if ( !m_configSubmitted )
+    if ( m_configBufferState != ConfigBufferState_eSubmitted )
     {
         BOMX_ASSERT(chunkBytesAvailable >= m_configBufferSize); // This should always be true, the config buffer is very small.
         if ( m_configBufferSize > 0 )
@@ -2941,7 +2941,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
             chunkBytesAvailable -= m_configBufferSize;
             numDescriptors++;
         }
-        m_configSubmitted = true;
+        m_configBufferState = ConfigBufferState_eSubmitted;
         configSubmitted = true;
     }
 
@@ -2987,7 +2987,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
         if ( maxDescriptors - numDescriptors < 2 )
         {
             ALOGE("Insufficient descriptors available");
-            if ( configSubmitted ) { m_configSubmitted = false; }
+            if ( configSubmitted ) { m_configBufferState = ConfigBufferState_eAccumulating; }
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
 
@@ -2996,7 +2996,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
         pesHeaderLength = InitPesHeader(pPesHeader, pInfo->maxHeaderLen-pInfo->headerLen, B_STREAM_ID, false, 0);
         if ( 0 == pesHeaderLength )
         {
-            if ( configSubmitted ) { m_configSubmitted = false; }
+            if ( configSubmitted ) { m_configBufferState = ConfigBufferState_eAccumulating; }
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
         pInfo->headerLen += pesHeaderLength;
@@ -3073,16 +3073,16 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     ALOGV("%s, comp:%s, buff:%p", __FUNCTION__, GetName(), pBufferHeader->pBuffer);
     if ( pBufferHeader->nFlags & OMX_BUFFERFLAG_CODECCONFIG )
     {
-        if ( m_configSubmitted )
+        if ( m_configBufferState != ConfigBufferState_eAccumulating )
         {
             // If the app re-sends config data after we have delivered it to the decoder we
             // may be receiving a dynamic resolution change.  Overwrite old config data with
             // the new data
-            BOMX_MSG(("Invalidating cached config buffer "));
+            ALOGV("Invalidating cached config buffer ");
             ConfigBufferInit();
         }
 
-        BOMX_MSG(("Accumulating %u bytes of codec config data", pBufferHeader->nFilledLen - pBufferHeader->nOffset));
+        ALOGV("Accumulating %u bytes of codec config data", pBufferHeader->nFilledLen - pBufferHeader->nOffset);
 
         err = ConfigBufferAppend(pBufferHeader->pBuffer + pBufferHeader->nOffset, pBufferHeader->nFilledLen - pBufferHeader->nOffset);
         if ( err != OMX_ErrorNone )
@@ -4159,7 +4159,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::ConfigBufferInit()
         }
     }
 
-    m_configSubmitted = false;
+    m_configBufferState = ConfigBufferState_eAccumulating;
     m_configBufferSize = 0;
     return OMX_ErrorNone;
 }

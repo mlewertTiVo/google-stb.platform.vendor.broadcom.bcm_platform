@@ -231,6 +231,15 @@ public:
     inline OmxBinder_wrap *omxHwcBinder(void) { return m_omxHwcBinder; };
 
 protected:
+
+    enum ConfigBufferState
+    {
+        ConfigBufferState_eAccumulating,        // Config buffer has not yet been submitted to playpump
+        ConfigBufferState_eFlushed,             // Input port has been flushed with the existing config buffer
+        ConfigBufferState_eSubmitted,           // Config buffer has been submited to playpump
+        ConfigBufferState_eMax
+    };
+
     NEXUS_SimpleVideoDecoderHandle m_hSimpleVideoDecoder;
     NEXUS_PlaypumpHandle m_hPlaypump;
     NEXUS_PidChannelHandle m_hPidChannel;
@@ -273,7 +282,7 @@ protected:
 
     #define BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE (1024)
     void *m_pConfigBuffer;
-    bool m_configSubmitted;
+    ConfigBufferState m_configBufferState;
     size_t m_configBufferSize;
 
     BOMX_VideoDecoderOutputBufferType m_outputMode;
