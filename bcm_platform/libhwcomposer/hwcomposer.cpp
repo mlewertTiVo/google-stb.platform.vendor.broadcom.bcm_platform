@@ -1210,7 +1210,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
         // setup the layer composition classification.
         primary_composition_setup(dev, list);
 
-        // remove all video/sideband layers first.
+        // reset all video/sideband layers first.
         hwc_hide_unused_mm_layers(ctx);
         hwc_hide_unused_sb_layers(ctx);
 
@@ -2500,8 +2500,14 @@ static void hwc_prepare_mm_layer(
           }
        }
     } else {
+       if (!ctx->mm_cli[vid_layer_id].root.composition.visible) {
+          ctx->mm_cli[vid_layer_id].root.composition.visible = true;
+          layer_updated = true;
+       }
+
        if (memcmp((void *)&disp_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) {
 
+          layer_updated = true;
           ctx->mm_cli[vid_layer_id].root.composition.zorder                = MM_CLIENT_ZORDER;
           ctx->mm_cli[vid_layer_id].root.composition.position.x            = disp_position.x;
           ctx->mm_cli[vid_layer_id].root.composition.position.y            = disp_position.y;
@@ -2513,21 +2519,21 @@ static void hwc_prepare_mm_layer(
           ctx->mm_cli[vid_layer_id].root.composition.clipRect.height       = clip_position.height;
           ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.width  = ctx->display_width;
           ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.height = ctx->display_height;
+       }
 
-          if (ctx->hwc_binder) {
-             struct hwc_position frame, clipped;
+       if (layer_updated && ctx->hwc_binder) {
+          struct hwc_position frame, clipped;
 
-             frame.x = disp_position.x;
-             frame.y = disp_position.y;
-             frame.w = disp_position.width;
-             frame.h = disp_position.height;
-             clipped.x = clip_position.x;
-             clipped.y = clip_position.y;
-             clipped.w = clip_position.width;
-             clipped.h = clip_position.height;
+          frame.x = disp_position.x;
+          frame.y = disp_position.y;
+          frame.w = disp_position.width;
+          frame.h = disp_position.height;
+          clipped.x = clip_position.x;
+          clipped.y = clip_position.y;
+          clipped.w = clip_position.width;
+          clipped.h = clip_position.height;
 
-             ctx->hwc_binder->setvideogeometry(0, frame, clipped, MM_CLIENT_ZORDER, 1);
-          }
+          ctx->hwc_binder->setvideogeometry(0, frame, clipped, MM_CLIENT_ZORDER, 1);
        }
     }
 
@@ -2709,18 +2715,9 @@ static void nx_client_hide_unused_mm_layer(hwc_context_t* ctx, int index)
               ALOGE("%s: failed hiding layer %d, err=%d", __FUNCTION__, index, rc);
           }
        }
-    } else {
-       ctx->mm_cli[index].root.composition.visible = false;
-       if (ctx->hwc_binder) {
-          struct hwc_position frame, clipped;
-          memset(&frame, 0, sizeof(hwc_position));
-          memset(&clipped, 0, sizeof(hwc_position));
-          ctx->hwc_binder->setvideogeometry(0, frame, clipped, MM_CLIENT_ZORDER, 0);
-      }
     }
 
     BKNI_ReleaseMutex(ctx->mutex);
-
 out:
     return;
 }

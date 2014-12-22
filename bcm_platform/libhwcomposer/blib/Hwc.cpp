@@ -266,7 +266,7 @@ void Hwc::setVideoGeometry(const sp<IHwcListener>& listener, int index,
               mVideoSurface[index].visible = visible;
               if (mVideoSurface[index].listener) {
                  for (size_t j = 0; j < N; j++) {
-                     const hwc_listener_t& notify = mNotificationListeners[i];
+                     const hwc_listener_t& notify = mNotificationListeners[j];
                      if ((int)notify.binder.get() == mVideoSurface[index].listener) {
                         sp<IBinder> binder = notify.binder;
                         sp<IHwcListener> target = interface_cast<IHwcListener> (binder);
@@ -285,8 +285,6 @@ void Hwc::getVideoGeometry(const sp<IHwcListener>& listener, int index,
                            struct hwc_position &frame, struct hwc_position &clipped,
                            int &zorder, int &visible)
 {
-    Mutex::Autolock _l(mLock);
-
     if (index > HWC_BINDER_VIDEO_SURFACE_SIZE) {
        ALOGE("%s: %p, index %d - invalid, ignored", __FUNCTION__,
               listener->asBinder().get(), index);
