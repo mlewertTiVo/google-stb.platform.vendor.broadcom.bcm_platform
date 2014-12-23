@@ -1,11 +1,19 @@
-#include "TunerHAL.h"
+#include <stdlib.h>
+#include "Broadcast.h"
+#include "nexus_frontend.h"
+#include "nexus_simple_video_decoder.h"
+#include "nexus_simple_stc_channel.h"
+#include "nexus_pid_channel.h"
+#include "nexus_parser_band.h"
+#include "nxclient.h"
+#include "nexus_surface_client.h"
 
 class BroadcastDemo_Context {
 public:
     BroadcastDemo_Context() {
         frontend = NULL;
         parserBand = NEXUS_ParserBand_eInvalid;
-        videoDecoder = NULL;
+        m_hSimpleVideoDecoder = NULL;
         stcChannel = NULL;
         connected = false;
         pidChannel = NULL;
@@ -13,11 +21,16 @@ public:
     };
     NEXUS_FrontendHandle frontend;
     NEXUS_ParserBand parserBand;
-    NEXUS_SimpleVideoDecoderHandle videoDecoder;
+    NEXUS_SimpleVideoDecoderHandle m_hSimpleVideoDecoder;
     NEXUS_SimpleStcChannelHandle stcChannel;
     bool connected;
     NEXUS_PidChannelHandle pidChannel;
     bool decoding;
+    /**/
+    NxClient_AllocResults            m_allocResults;
+    unsigned                         m_nxClientId;
+    NEXUS_SurfaceClientHandle        m_hSurfaceClient;
+    NEXUS_SurfaceClientHandle        m_hVideoClient;
 };
 
 BroadcastDemo_Context *pSelf;
@@ -53,10 +66,6 @@ FreeContext()
             NEXUS_Frontend_Release(pSelf->frontend);
             pSelf->frontend = NULL;
         }
-        if (pSelf->videoDecoder) {
-            TunerHAL_getIPCClient()->releaseVideoDecoderHandle(pSelf->videoDecoder);
-            pSelf->videoDecoder = NULL;
-        }
         if (pSelf->stcChannel) {
             NEXUS_SimpleStcChannel_Destroy(pSelf->stcChannel);
             pSelf->stcChannel = NULL;
@@ -66,40 +75,93 @@ FreeContext()
     }
 }
 
+
+static void
+SetGeometry()
+{
+    if ( pSelf && pSelf->m_hSurfaceClient ) {
+        NEXUS_SurfaceComposition composition;
+        NEXUS_SurfaceClientSettings settings;
+        NEXUS_Error errCode;
+
+        NxClient_GetSurfaceClientComposition(pSelf->m_allocResults.surfaceClient[0].id, &composition);
+        //composition.virtualDisplay.width = pPosition->width;
+        //composition.virtualDisplay.height = pPosition->height;
+        //composition.position = *pPosition;
+        //composition.zorder = zorder;
+        //composition.visible = visible;
+        composition.visible = true;
+        composition.position.x = 0;
+        composition.position.y = 0;
+        composition.position.width = composition.virtualDisplay.width;
+        composition.position.height = composition.virtualDisplay.height;
+        //composition.contentMode = NEXUS_VideoWindowContentMode_eBox;
+        errCode = NxClient_SetSurfaceClientComposition(pSelf->m_allocResults.surfaceClient[0].id, &composition);
+        if ( errCode )
+        {
+            ALOGE("%s: NxClient_SetSurfaceClientComposition failed (%d)", __FUNCTION__, errCode);
+            return;
+        }
+
+        NEXUS_SurfaceClient_GetSettings(pSelf->m_hVideoClient, &settings);
+        settings.composition = composition;
+        //settings.composition.clipRect = *pClipRect; // Add in video source clipping
+        errCode = NEXUS_SurfaceClient_SetSettings(pSelf->m_hVideoClient, &settings);
+        if ( errCode )
+        {
+            ALOGE("%s: NEXUS_SurfaceClient_SetSettings failed(%d)", __FUNCTION__, errCode);
+            return;
+        }
+
+#if 0
+        if ( !m_setSurface )
+        {
+            errCode = NEXUS_SurfaceClient_SetSurface(m_hSurfaceClient, m_hAlphaSurface);
+            if ( errCode )
+            {
+                (void)BOMX_BERR_TRACE(errCode);
+                return;
+            }
+            m_setSurface = true;
+        }
+#endif
+
+    }
+}
+
 static int
 Connect()
 {
 
     if (!pSelf->connected) {
-        b_refsw_client_client_info client_info;
-        b_refsw_client_connect_resource_settings connectSettings;
-
         ALOGE("%s: connecting", __FUNCTION__);
 
-        TunerHAL_getIPCClient()->getClientInfo(TunerHAL_getClientContext(), &client_info);
+        NxClient_ConnectSettings connectSettings;
+        NEXUS_Error errCode;
 
-        // Now connect the client resources
-        TunerHAL_getIPCClient()->getDefaultConnectClientSettings(&connectSettings);
-
-        connectSettings.simpleVideoDecoder[0].id = client_info.videoDecoderId;
-        connectSettings.simpleVideoDecoder[0].surfaceClientId = client_info.surfaceClientId;
+        NxClient_GetDefaultConnectSettings(&connectSettings);
+        connectSettings.simpleVideoDecoder[0].id = pSelf->m_allocResults.simpleVideoDecoder[0].id;
+        connectSettings.simpleVideoDecoder[0].surfaceClientId = pSelf->m_allocResults.surfaceClient[0].id;
         connectSettings.simpleVideoDecoder[0].windowId = 0;
-
-        connectSettings.simpleVideoDecoder[0].windowCaps.type = eVideoWindowType_eMain;
-
-        if (true != TunerHAL_getIPCClient()->connectClientResources(TunerHAL_getClientContext(), &connectSettings)) {
-            ALOGE("%s: connectClientResources failed", __FUNCTION__);
+        connectSettings.simpleVideoDecoder[0].windowCapabilities.type = NxClient_VideoWindowType_eMain; // TODO: Support Main/Pip
+        connectSettings.simpleVideoDecoder[0].decoderCapabilities.supportedCodecs[NEXUS_VideoCodec_eMpeg2] = true;
+        errCode = NxClient_Connect(&connectSettings, &pSelf->m_nxClientId);
+        if ( errCode )
+        {
+            ALOGE("%s: connect failed (%d)", __FUNCTION__, errCode);
             return -1;
         }
 
-        b_video_window_settings window_settings;
-        TunerHAL_getIPCClient()->getVideoWindowSettings(TunerHAL_getClientContext(), 0, &window_settings);
-        window_settings.visible = true;
-        window_settings.position.x = 0;
-        window_settings.position.y = 0;
-        window_settings.position.width = window_settings.virtualDisplay.width;
-        window_settings.position.height = window_settings.virtualDisplay.height;
-        TunerHAL_getIPCClient()->setVideoWindowSettings(TunerHAL_getClientContext(), 0, &window_settings);
+        pSelf->m_hSimpleVideoDecoder = NEXUS_SimpleVideoDecoder_Acquire(pSelf->m_allocResults.simpleVideoDecoder[0].id);
+        if ( NULL == pSelf->m_hSimpleVideoDecoder )
+        {
+            NxClient_Disconnect(pSelf->m_nxClientId);
+            ALOGE("%s: SimpleVideoDecoder_Acquire failed", __FUNCTION__);
+            return -1;
+        }
+
+        SetGeometry();
+
         pSelf->connected = true;
 
         ALOGE("%s: connected", __FUNCTION__);
@@ -113,7 +175,13 @@ Disconnect()
     if (pSelf->connected) {
         ALOGE("%s: disconnecting", __FUNCTION__);
 
-        TunerHAL_getIPCClient()->disconnectClientResources(TunerHAL_getClientContext());
+        if (pSelf->m_hSimpleVideoDecoder) {
+            NEXUS_SimpleVideoDecoder_Release(pSelf->m_hSimpleVideoDecoder);
+            pSelf->m_hSimpleVideoDecoder = NULL;
+        }
+
+        NxClient_Disconnect(pSelf->m_nxClientId);
+
         pSelf->connected = false;
 
         ALOGE("%s: disconnected", __FUNCTION__);
@@ -126,7 +194,7 @@ static int BroadcastDemo_Stop()
 
     // Stop the video decoder
     if (pSelf->decoding) {
-        NEXUS_SimpleVideoDecoder_Stop(pSelf->videoDecoder);
+        NEXUS_SimpleVideoDecoder_Stop(pSelf->m_hSimpleVideoDecoder);
         pSelf->decoding = false;
     }
 
@@ -227,7 +295,7 @@ static int BroadcastDemo_Tune(String8 s8id)
         return -1;
     }
 
-    rc = NEXUS_SimpleVideoDecoder_SetStcChannel(pSelf->videoDecoder, pSelf->stcChannel);
+    rc = NEXUS_SimpleVideoDecoder_SetStcChannel(pSelf->m_hSimpleVideoDecoder, pSelf->stcChannel);
     if (rc)
     {
         ALOGE("%s: SetStcChannel failed", __FUNCTION__);
@@ -245,7 +313,7 @@ static int BroadcastDemo_Tune(String8 s8id)
     NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&videoProgram); 
     videoProgram.settings.pidChannel = pSelf->pidChannel;
     videoProgram.settings.codec = video_codec;
-    rc = NEXUS_SimpleVideoDecoder_Start(pSelf->videoDecoder, &videoProgram);
+    rc = NEXUS_SimpleVideoDecoder_Start(pSelf->m_hSimpleVideoDecoder, &videoProgram);
     if (rc)
     {
         ALOGE("%s: VideoDecoderStart failed", __FUNCTION__);
@@ -337,10 +405,36 @@ Broadcast_Initialize(BroadcastDriver *pD)
     }
 
     if (rv == 0) {
-        pSelf->videoDecoder = TunerHAL_getIPCClient()->acquireVideoDecoderHandle();
-        if (pSelf->videoDecoder == NULL) {
-            ALOGE("%s: Unable to acquire videoDecoder", __FUNCTION__);
+        NxClient_AllocSettings nxAllocSettings;
+        NEXUS_Error errCode;
+        NxClient_GetDefaultAllocSettings(&nxAllocSettings);
+        nxAllocSettings.simpleVideoDecoder = 1;
+        nxAllocSettings.surfaceClient = 1;
+        errCode = NxClient_Alloc(&nxAllocSettings, &pSelf->m_allocResults);
+        if ( errCode )
+        {
+            ALOGE("%s: NxClient_Alloc failed (%d)", __FUNCTION__, errCode);
             rv = -1;
+        }
+        if (rv == 0) {
+            pSelf->m_hSurfaceClient = NEXUS_SurfaceClient_Acquire(pSelf->m_allocResults.surfaceClient[0].id);
+            if ( NULL == pSelf->m_hSurfaceClient )
+            {
+                ALOGE("%s: Unable to acquire surface client", __FUNCTION__);
+                NxClient_Free(&pSelf->m_allocResults);
+                rv = -1;
+            }
+        }
+        if (rv == 0) {
+            pSelf->m_hVideoClient = NEXUS_SurfaceClient_AcquireVideoWindow(pSelf->m_hSurfaceClient, 0);
+            if ( NULL == pSelf->m_hVideoClient )
+            {
+                ALOGE("%s: Unable to acquire video client", __FUNCTION__);
+                NEXUS_SurfaceClient_Release(pSelf->m_hSurfaceClient);
+                pSelf->m_hSurfaceClient = 0;
+                NxClient_Free(&pSelf->m_allocResults);
+                rv = -1;
+            }
         }
     }
 
