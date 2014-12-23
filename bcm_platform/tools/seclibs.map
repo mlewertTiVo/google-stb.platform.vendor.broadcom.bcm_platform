@@ -7,5 +7,6 @@ usr/lib/libcmndrm.so=libsecurity/common_drm/linuxkernel/libcmndrm.so
 usr/lib/libcmndrm_tl.so=libsecurity/common_drm/linuxkernel/libcmndrm_tl.so
 usr/lib/libcmndrmprdy.so=libsecurity/common_drm/linuxkernel/libcmndrmprdy.so
 usr/lib/liboemcrypto.so=libsecurity/oemcrypto/linuxkernel/liboemcrypto.so
+usr/lib/liboemcrypto.a=libsecurity/oemcrypto/linuxkernel/liboemcrypto.a
 usr/lib/libnexus_security_android.a=libsecurity/nexus_security/Zeus42/linuxkernel/MARKER/libnexus_security_android.a
 usr/lib/libcmndrmprdy.so=libsecurity/common_drm/linuxkernel/libcmndrmprdy.so
