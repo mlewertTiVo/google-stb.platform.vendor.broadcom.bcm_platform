@@ -450,9 +450,6 @@ static void BOMX_OmxBinderNotify(int cb_data, int msg, struct hwc_notification_i
     switch (msg)
     {
     case HWC_BINDER_NTFY_DISPLAY:
-        pComponent->DisplayFrame((unsigned)ntfy.frame_id);
-        break;
-    case HWC_BINDER_NTFY_VIDEO_SURFACE_GEOMETRY_UPDATE:
     {
         NEXUS_Rect position, clip;
         position.x = ntfy.frame.x;
@@ -464,6 +461,7 @@ static void BOMX_OmxBinderNotify(int cb_data, int msg, struct hwc_notification_i
         clip.width = ntfy.clipped.w;
         clip.height = ntfy.clipped.h;
         pComponent->SetVideoGeometry(&position, &clip, ntfy.zorder, true);
+        pComponent->DisplayFrame((unsigned)ntfy.frame_id);
         break;
     }
     default:
