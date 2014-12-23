@@ -64,6 +64,8 @@ Hwc::Hwc() : BnHwc() {
       memset(&mSidebandSurface[i].clipped, 0, sizeof(struct hwc_position));
       mSidebandSurface[i].zorder = -1;
       mSidebandSurface[i].visible = 0;
+      mSidebandSurface[i].disp_w = 0;
+      mSidebandSurface[i].disp_h = 0;
    }
 }
 
@@ -118,8 +120,8 @@ status_t Hwc::dump(int fd, const Vector<String16>& args)
         result.appendFormat("maximum sideband-surface: %d\n", HWC_BINDER_SIDEBAND_SURFACE_SIZE);
         for ( int i = 0; i < HWC_BINDER_SIDEBAND_SURFACE_SIZE; i++) {
             if (mSidebandSurface[i].surface != (int)INVALID_HANDLE) {
-               result.appendFormat("\tsideband-surface: %d -> 0x%x (in-use 0x%x), frame: {%d,%d,%d,%d}, clipped: {%d,%d,%d,%d}, zorder:%d, visible: %s\n",
-                  i, mSidebandSurface[i].surface, mSidebandSurface[i].listener,
+               result.appendFormat("\tsideband-surface: %d -> 0x%x, display: {%d,%d} (in-use 0x%x), frame: {%d,%d,%d,%d}, clipped: {%d,%d,%d,%d}, zorder:%d, visible: %s\n",
+                  i, mSidebandSurface[i].surface, mSidebandSurface[i].disp_w, mSidebandSurface[i].disp_h, mSidebandSurface[i].listener,
                   mSidebandSurface[i].frame.x, mSidebandSurface[i].frame.y, mSidebandSurface[i].frame.w, mSidebandSurface[i].frame.h,
                   mSidebandSurface[i].clipped.x, mSidebandSurface[i].clipped.y, mSidebandSurface[i].clipped.w, mSidebandSurface[i].clipped.h,
                   mSidebandSurface[i].zorder, mSidebandSurface[i].visible?"oui":"non");
@@ -253,12 +255,13 @@ void Hwc::getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &va
    }
 }
 
-void Hwc::setVideoGeometry(const sp<IHwcListener>& listener, int index,
-                           struct hwc_position &frame, struct hwc_position &clipped,
-                           int zorder, int visible)
+void Hwc::setGeometry(const sp<IHwcListener>& listener, int type, int index,
+                      struct hwc_position &frame, struct hwc_position &clipped,
+                      int zorder, int visible)
 {
     ALOGV("%s: %p, index %d", __FUNCTION__,
           listener->asBinder().get(), index);
+    bool updated = false;
 
     Mutex::Autolock _l(mLock);
 
@@ -267,38 +270,87 @@ void Hwc::setVideoGeometry(const sp<IHwcListener>& listener, int index,
         const hwc_listener_t& client = mNotificationListeners[i];
         if ((client.binder.get() == listener->asBinder().get()) &&
             (client.kind == HWC_BINDER_HWC)) {
-           if (memcmp(&frame, &mVideoSurface[index].frame, sizeof(struct hwc_position)) ||
-               memcmp(&clipped, &mVideoSurface[index].clipped, sizeof(struct hwc_position))) {
-              memcpy(&mVideoSurface[index].frame, &frame, sizeof(struct hwc_position));
-              memcpy(&mVideoSurface[index].clipped, &clipped, sizeof(struct hwc_position));
-              mVideoSurface[index].zorder = zorder;
-              mVideoSurface[index].visible = visible;
+           if ((type == HWC_BINDER_OMX) && (index < HWC_BINDER_VIDEO_SURFACE_SIZE)) {
+              if (memcmp(&frame, &mVideoSurface[index].frame, sizeof(struct hwc_position)) ||
+                  memcmp(&clipped, &mVideoSurface[index].clipped, sizeof(struct hwc_position)) ||
+                  (mVideoSurface[index].zorder != zorder) ||
+                  (mVideoSurface[index].visible != visible)) {
+                 memcpy(&mVideoSurface[index].frame, &frame, sizeof(struct hwc_position));
+                 memcpy(&mVideoSurface[index].clipped, &clipped, sizeof(struct hwc_position));
+                 mVideoSurface[index].zorder = zorder;
+                 mVideoSurface[index].visible = visible;
+                 updated = true;
+              }
+           } else if ((type == HWC_BINDER_SDB) && (index < HWC_BINDER_SIDEBAND_SURFACE_SIZE)) {
+              if (memcmp(&frame, &mSidebandSurface[index].frame, sizeof(struct hwc_position)) ||
+                  memcmp(&clipped, &mSidebandSurface[index].clipped, sizeof(struct hwc_position)) ||
+                  (mSidebandSurface[index].zorder != zorder) ||
+                  (mSidebandSurface[index].visible != visible)) {
+                 memcpy(&mSidebandSurface[index].frame, &frame, sizeof(struct hwc_position));
+                 memcpy(&mSidebandSurface[index].clipped, &clipped, sizeof(struct hwc_position));
+                 mSidebandSurface[index].zorder = zorder;
+                 mSidebandSurface[index].visible = visible;
+                 updated = true;
+              }
            }
            break;
         }
     }
+
+    // for sideband surfaces, inform of the geometry update.  for video surface, the
+    // geometry information is collapsed within the frame display notification.
+    //
+    if (updated && (type == HWC_BINDER_SDB) && (mSidebandSurface[index].listener)) {
+       for (size_t j = 0; j < N; j++) {
+          const hwc_listener_t& notify = mNotificationListeners[j];
+          if ((int)notify.binder.get() == mSidebandSurface[index].listener) {
+             sp<IBinder> binder = notify.binder;
+             sp<IHwcListener> target = interface_cast<IHwcListener> (binder);
+             struct hwc_notification_info ntfy;
+             memset(&ntfy, 0, sizeof(struct hwc_notification_info));
+             ntfy.surface_hdl = mSidebandSurface[index].surface;
+             ntfy.display_width = mSidebandSurface[index].disp_w;
+             ntfy.display_height = mSidebandSurface[index].disp_h;
+             memcpy(&ntfy.frame, &mSidebandSurface[index].frame, sizeof(struct hwc_position));
+             memcpy(&ntfy.clipped, &mSidebandSurface[index].clipped, sizeof(struct hwc_position));
+             ntfy.zorder = mSidebandSurface[index].zorder;
+             target->notify(HWC_BINDER_NTFY_SIDEBAND_SURFACE_GEOMETRY_UPDATE, ntfy);
+             break;
+          }
+       }
+    }
 }
 
-void Hwc::getVideoGeometry(const sp<IHwcListener>& listener, int index,
-                           struct hwc_position &frame, struct hwc_position &clipped,
-                           int &zorder, int &visible)
+void Hwc::getGeometry(const sp<IHwcListener>& listener, int type, int index,
+                      struct hwc_position &frame, struct hwc_position &clipped,
+                      int &zorder, int &visible)
 {
-    if (index > HWC_BINDER_VIDEO_SURFACE_SIZE) {
-       ALOGE("%s: %p, index %d - invalid, ignored", __FUNCTION__,
-              listener->asBinder().get(), index);
-       memset(&frame, 0, sizeof(struct hwc_position));
-       memset(&clipped, 0, sizeof(struct hwc_position));
-       zorder = -1;
-       visible = 0;
-    } else {
+    memset(&frame, 0, sizeof(struct hwc_position));
+    memset(&clipped, 0, sizeof(struct hwc_position));
+    zorder = -1;
+    visible = 0;
+
+    if (((type == HWC_BINDER_OMX) && (index > HWC_BINDER_VIDEO_SURFACE_SIZE)) ||
+        ((type == HWC_BINDER_SDB) && (index > HWC_BINDER_SIDEBAND_SURFACE_SIZE))) {
+       ALOGE("%s: %p, type %d, index %d - invalid, ignored", __FUNCTION__,
+              listener->asBinder().get(), type, index);
+    } else if (type == HWC_BINDER_OMX) {
        memcpy(&frame, &mVideoSurface[index].frame, sizeof(struct hwc_position));
        memcpy(&clipped, &mVideoSurface[index].clipped, sizeof(struct hwc_position));
        zorder = mVideoSurface[index].zorder;
        visible = mVideoSurface[index].visible;
-       ALOGD("%s: %p, index %d, {%d,%d,%d,%d} {%d,%d,%d,%d} z:%d, visible: %s", __FUNCTION__,
+       ALOGD("%s:video: %p, index %d, {%d,%d,%d,%d} {%d,%d,%d,%d} z:%d, visible: %s", __FUNCTION__,
              listener->asBinder().get(), index, frame.x, frame.y, frame.w, frame.h,
              clipped.x, clipped.y, clipped.w, clipped.h, zorder, visible?"oui":"non");
-   }
+    } else if (type == HWC_BINDER_SDB) {
+       memcpy(&frame, &mSidebandSurface[index].frame, sizeof(struct hwc_position));
+       memcpy(&clipped, &mSidebandSurface[index].clipped, sizeof(struct hwc_position));
+       zorder = mSidebandSurface[index].zorder;
+       visible = mSidebandSurface[index].visible;
+       ALOGD("%s:sideband: %p, index %d, {%d,%d,%d,%d} {%d,%d,%d,%d} z:%d, visible: %s", __FUNCTION__,
+             listener->asBinder().get(), index, frame.x, frame.y, frame.w, frame.h,
+             clipped.x, clipped.y, clipped.w, clipped.h, zorder, visible?"oui":"non");
+    }
 }
 
 void Hwc::setDisplayFrameId(const sp<IHwcListener>& listener, int handle, int frame)
@@ -342,7 +394,7 @@ void Hwc::setDisplayFrameId(const sp<IHwcListener>& listener, int handle, int fr
     }
 }
 
-void Hwc::setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value)
+void Hwc::setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value, int disp_w, int disp_h)
 {
     ALOGD("%s: %p, index %d, value %x", __FUNCTION__,
           listener->asBinder().get(), index, value);
@@ -356,6 +408,8 @@ void Hwc::setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int 
             (client.kind == HWC_BINDER_HWC)) {
            mSidebandSurface[index].surface = value;
            mSidebandSurface[index].listener = 0;
+           mSidebandSurface[index].disp_w = disp_w;
+           mSidebandSurface[index].disp_h = disp_h;
            break;
         }
     }

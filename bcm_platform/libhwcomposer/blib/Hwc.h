@@ -70,15 +70,15 @@ public:
 
     virtual void setDisplayFrameId(const sp<IHwcListener>& listener, int handle, int frame);
 
-    virtual void setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value);
+    virtual void setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value, int disp_w, int disp_h);
     virtual void getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int &value);
 
-    virtual void setVideoGeometry(const sp<IHwcListener>& listener, int index,
-                                  struct hwc_position &frame, struct hwc_position &clipped,
-                                  int zorder, int visible);
-    virtual void getVideoGeometry(const sp<IHwcListener>& listener, int index,
-                                  struct hwc_position &frame, struct hwc_position &clipped,
-                                  int &zorder, int &visible);
+    virtual void setGeometry(const sp<IHwcListener>& listener, int type, int index,
+                             struct hwc_position &frame, struct hwc_position &clipped,
+                             int zorder, int visible);
+    virtual void getGeometry(const sp<IHwcListener>& listener, int type, int index,
+                             struct hwc_position &frame, struct hwc_position &clipped,
+                             int &zorder, int &visible);
 
     virtual status_t onTransact(uint32_t code,
                                 const Parcel& data,

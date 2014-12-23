@@ -218,16 +218,17 @@ public:
        }
     };
 
-    inline void setvideogeometry(int index, struct hwc_position &frame, struct hwc_position &clipped,
-                                 int zorder, int visible) {
+    inline void setgeometry(int type, int index,
+                            struct hwc_position &frame, struct hwc_position &clipped,
+                            int zorder, int visible) {
        if (get_hwc(false) != NULL) {
-           get_hwc(false)->setVideoGeometry(this, index, frame, clipped, zorder, visible);
+           get_hwc(false)->setGeometry(this, type, index, frame, clipped, zorder, visible);
        }
     }
 
-    inline void setsideband(int index, int value) {
+    inline void setsideband(int index, int value, int display_w, int display_h) {
        if (get_hwc(false) != NULL) {
-           get_hwc(false)->setSidebandSurfaceId(this, index, value);
+           get_hwc(false)->setSidebandSurfaceId(this, index, value, display_w, display_h);
        }
     };
 
@@ -283,16 +284,17 @@ public:
       }
    }
 
-   void setvideogeometry(int index, struct hwc_position &frame, struct hwc_position &clipped,
-                         int zorder, int visible) {
+   void setgeometry(int type, int index,
+                    struct hwc_position &frame, struct hwc_position &clipped,
+                    int zorder, int visible) {
       if (iconnected) {
-         ihwc.get()->setvideogeometry(index, frame, clipped, zorder, visible);
+         ihwc.get()->setgeometry(type, index, frame, clipped, zorder, visible);
       }
    }
 
-   void setsideband(int index, int value) {
+   void setsideband(int index, int value, int display_w, int display_h) {
       if (iconnected) {
-         ihwc.get()->setsideband(index, value);
+         ihwc.get()->setsideband(index, value, display_w, display_h);
       }
    }
 
@@ -2531,7 +2533,7 @@ static void hwc_prepare_mm_layer(
           clipped.w = clip_position.width;
           clipped.h = clip_position.height;
 
-          ctx->hwc_binder->setvideogeometry(0, frame, clipped, MM_CLIENT_ZORDER, 1);
+          ctx->hwc_binder->setgeometry(HWC_BINDER_OMX, 0, frame, clipped, MM_CLIENT_ZORDER, 1);
        }
     }
 
@@ -2613,19 +2615,43 @@ static void hwc_prepare_sb_layer(
           }
        }
     } else {
-       // we do not really change anything, but we want to keep things 'visible' for debug.
-       ctx->sb_cli[sb_layer_id].root.composition.visible               = true;
-       ctx->sb_cli[sb_layer_id].root.composition.zorder                = SB_CLIENT_ZORDER;
-       ctx->sb_cli[sb_layer_id].root.composition.position.x            = disp_position.x;
-       ctx->sb_cli[sb_layer_id].root.composition.position.y            = disp_position.y;
-       ctx->sb_cli[sb_layer_id].root.composition.position.width        = disp_position.width;
-       ctx->sb_cli[sb_layer_id].root.composition.position.height       = disp_position.height;
-       ctx->sb_cli[sb_layer_id].root.composition.clipRect.x            = clip_position.x;
-       ctx->sb_cli[sb_layer_id].root.composition.clipRect.y            = clip_position.y;
-       ctx->sb_cli[sb_layer_id].root.composition.clipRect.width        = clip_position.width;
-       ctx->sb_cli[sb_layer_id].root.composition.clipRect.height       = clip_position.height;
-       ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.width  = ctx->display_width;
-       ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.height = ctx->display_height;
+
+       if (!ctx->sb_cli[sb_layer_id].root.composition.visible) {
+          ctx->sb_cli[sb_layer_id].root.composition.visible = true;
+          layer_updated = true;
+       }
+
+       if (memcmp((void *)&disp_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) {
+
+          layer_updated = true;
+          ctx->sb_cli[sb_layer_id].root.composition.visible               = true;
+          ctx->sb_cli[sb_layer_id].root.composition.zorder                = SB_CLIENT_ZORDER;
+          ctx->sb_cli[sb_layer_id].root.composition.position.x            = disp_position.x;
+          ctx->sb_cli[sb_layer_id].root.composition.position.y            = disp_position.y;
+          ctx->sb_cli[sb_layer_id].root.composition.position.width        = disp_position.width;
+          ctx->sb_cli[sb_layer_id].root.composition.position.height       = disp_position.height;
+          ctx->sb_cli[sb_layer_id].root.composition.clipRect.x            = clip_position.x;
+          ctx->sb_cli[sb_layer_id].root.composition.clipRect.y            = clip_position.y;
+          ctx->sb_cli[sb_layer_id].root.composition.clipRect.width        = clip_position.width;
+          ctx->sb_cli[sb_layer_id].root.composition.clipRect.height       = clip_position.height;
+          ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.width  = ctx->display_width;
+          ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.height = ctx->display_height;
+       }
+
+       if (layer_updated && ctx->hwc_binder) {
+          struct hwc_position frame, clipped;
+
+          frame.x = disp_position.x;
+          frame.y = disp_position.y;
+          frame.w = disp_position.width;
+          frame.h = disp_position.height;
+          clipped.x = clip_position.x;
+          clipped.y = clip_position.y;
+          clipped.w = clip_position.width;
+          clipped.h = clip_position.height;
+
+          ctx->hwc_binder->setgeometry(HWC_BINDER_SDB, 0, frame, clipped, SB_CLIENT_ZORDER, 1);
+       }
     }
 
 out_unlock:
@@ -2778,7 +2804,8 @@ static void hwc_binder_advertise_video_surface(hwc_context_t* ctx)
     }
 
     if (ctx->nsc_sideband_changed && ctx->hwc_binder) {
-       ctx->hwc_binder->setsideband(0, ctx->sb_cli[0].root.ncci.sccid);
+       ctx->hwc_binder->setsideband(0, ctx->sb_cli[0].root.ncci.sccid,
+                                    ctx->display_width, ctx->display_height);
        ctx->nsc_sideband_changed = false;
     }
 

@@ -38,15 +38,15 @@ public:
 
     virtual void setDisplayFrameId(const sp<IHwcListener>& listener, int surface, int frame) = 0;
 
-    virtual void setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value) = 0;
+    virtual void setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value, int display_w, int display_h) = 0;
     virtual void getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int &value) = 0;
 
-    virtual void setVideoGeometry(const sp<IHwcListener>& listener, int index,
-                                  struct hwc_position &frame, struct hwc_position &clipped,
-                                  int zorder, int visible) = 0;
-    virtual void getVideoGeometry(const sp<IHwcListener>& listener, int index,
-                                  struct hwc_position &frame, struct hwc_position &clipped,
-                                  int &zorder, int &visible) = 0;
+    virtual void setGeometry(const sp<IHwcListener>& listener, int type, int index,
+                             struct hwc_position &frame, struct hwc_position &clipped,
+                             int zorder, int visible) = 0;
+    virtual void getGeometry(const sp<IHwcListener>& listener, int type, int index,
+                             struct hwc_position &frame, struct hwc_position &clipped,
+                             int &zorder, int &visible) = 0;
 };
 
 class BnHwc : public BnInterface<IHwc>

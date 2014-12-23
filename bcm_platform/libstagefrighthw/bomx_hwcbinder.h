@@ -91,7 +91,7 @@ public:
     inline void getvideogeometry(int index, struct hwc_position &frame, struct hwc_position &clipped,
                                  int &zorder, int &visible) {
        if (get_hwc(false) != NULL) {
-           get_hwc(false)->getVideoGeometry(this, index, frame, clipped, zorder, visible);
+           get_hwc(false)->getGeometry(this, HWC_BINDER_OMX, index, frame, clipped, zorder, visible);
        }
     };
 

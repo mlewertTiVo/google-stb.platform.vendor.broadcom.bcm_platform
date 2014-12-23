@@ -86,12 +86,14 @@ public:
         remote()->transact(SET_DISPLAY_FRAME_ID, data, &reply);
     }
 
-    void setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value) {
+    void setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value, int disp_w, int disp_h) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
         data.writeStrongBinder(listener->asBinder());
         data.writeInt32(index);
         data.writeInt32(value);
+        data.writeInt32(disp_w);
+        data.writeInt32(disp_h);
         remote()->transact(SET_SIDEBAND_SURF_CLIENT_ID, data, &reply);
     }
 
@@ -104,12 +106,13 @@ public:
         value = reply.readInt32();
     }
 
-    void setVideoGeometry(const sp<IHwcListener>& listener, int index,
-                          struct hwc_position &frame, struct hwc_position &clipped,
-                          int zorder, int visible) {
+    void setGeometry(const sp<IHwcListener>& listener, int type, int index,
+                     struct hwc_position &frame, struct hwc_position &clipped,
+                     int zorder, int visible) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
         data.writeStrongBinder(listener->asBinder());
+        data.writeInt32(type);
         data.writeInt32(index);
         data.writeInt32(frame.x);
         data.writeInt32(frame.y);
@@ -124,12 +127,13 @@ public:
         remote()->transact(SET_VIDEO_GEOMETRY_CLIENT_ID, data, &reply);
     }
 
-    void getVideoGeometry(const sp<IHwcListener>& listener, int index,
-                          struct hwc_position &frame, struct hwc_position &clipped,
-                          int &zorder, int &visible) {
+    void getGeometry(const sp<IHwcListener>& listener, int type, int index,
+                     struct hwc_position &frame, struct hwc_position &clipped,
+                     int &zorder, int &visible) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
         data.writeStrongBinder(listener->asBinder());
+        data.writeInt32(type);
         data.writeInt32(index);
         remote()->transact(GET_VIDEO_GEOMETRY_CLIENT_ID, data, &reply);
         frame.x = reply.readInt32();
@@ -211,9 +215,11 @@ status_t BnHwc::onTransact(
       {
          CHECK_INTERFACE(IHwc, data, reply);
          sp<IHwcListener> listener = interface_cast<IHwcListener>(data.readStrongBinder());
-         int index = data.readInt32();
-         int value = data.readInt32();
-         setSidebandSurfaceId(listener, index, value);
+         int index  = data.readInt32();
+         int value  = data.readInt32();
+         int disp_w = data.readInt32();
+         int disp_h = data.readInt32();
+         setSidebandSurfaceId(listener, index, value, disp_w, disp_h);
          return NO_ERROR;
       }
       break;
@@ -234,6 +240,7 @@ status_t BnHwc::onTransact(
       {
          CHECK_INTERFACE(IHwc, data, reply);
          sp<IHwcListener> listener = interface_cast<IHwcListener>(data.readStrongBinder());
+         int type = data.readInt32();
          int index = data.readInt32();
          struct hwc_position frame, clipped;
          int zorder, visible;
@@ -247,7 +254,7 @@ status_t BnHwc::onTransact(
          clipped.w = data.readInt32();
          zorder = data.readInt32();
          visible = data.readInt32();
-         setVideoGeometry(listener, index, frame, clipped, zorder, visible);
+         setGeometry(listener, type, index, frame, clipped, zorder, visible);
          return NO_ERROR;
       }
       break;
@@ -256,10 +263,11 @@ status_t BnHwc::onTransact(
       {
          CHECK_INTERFACE(IHwc, data, reply);
          sp<IHwcListener> listener = interface_cast<IHwcListener>(data.readStrongBinder());
+         int type = data.readInt32();
          int index = data.readInt32();
          struct hwc_position frame, clipped;
          int zorder, visible;
-         getVideoGeometry(listener, index, frame, clipped, zorder, visible);
+         getGeometry(listener, type, index, frame, clipped, zorder, visible);
          reply->writeInt32(frame.x);
          reply->writeInt32(frame.y);
          reply->writeInt32(frame.h);
