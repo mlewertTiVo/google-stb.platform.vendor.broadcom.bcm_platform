@@ -10,19 +10,18 @@ that is not included as part of refsw release, so need to run this prior to
 packing.
 
 3. Run pack_release.sh from the root of tree, e.g.:
-./vendor/broadcom/bcm_platform/tools/release/pack_release.sh 14.4_release.tgz
+./vendor/broadcom/bcm_platform/tools/release/pack_release.sh android5.0_14.4take1.tgz 
 
 How to use unpack_release.sh
 ----------------------------
 
-1. Check out a vanilla Android L aosp tree.  Run the "repo init" command, but
-do not run "repo sync" yet as the release would apply a local manifest.
+1. Check out a vanilla Android L aosp tree.  Run the "repo init" command.
 
-2. Run unpack_release.sh by specifying the aosp tree location and the release
+2. "repo sync -j8" to fetch the aosp tree.
+
+3. Run unpack_release.sh by specifying the aosp tree location and the release
 tarball name, e.g.:
-unpack_release.sh 14.4_release.tgz ~/projects/l-aosp
-
-3. "repo sync -j8" to fetch the rest of tree.
+unpack_release.sh android5.0_14.4take1.tgz ~/projects/l-aosp
 
 4. "lunch" and select build target.
 

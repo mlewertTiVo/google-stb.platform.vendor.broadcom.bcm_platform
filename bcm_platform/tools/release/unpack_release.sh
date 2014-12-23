@@ -14,21 +14,31 @@ if [ ! -f $1 ]; then
   exit 0
 fi
 
-# Create direction if not already
+# Destination directory should exist by now
 if [ ! -d $2 ]; then
-  mkdir -p $2
+  echo "Destination $2 does not exist, exiting..."
+  exit 0
 fi
 
 DST_DIR="$(cd $2 && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REFSW_TARBALL="refsw_rel_src.tgz"
-REFSW_DIR_FILE=".rel.refsw_dir.txt"
+TMP_DIR=".rel_tmp"
+
+REFSW_TARBALL="$TMP_DIR/refsw_rel_src.tgz"
+REFSW_DIR_FILE="$TMP_DIR/refsw_dir.txt"
+AOSP_LIST="$TMP_DIR/aosp_patches.txt"
 REFSW_DIR="vendor/broadcom/refsw"
-LOCAL_MANIFESTS_DIR=".repo/local_manifests"
-OVERRIDES="overrides.xml"
 
 # Untar release
 tar -xvf $1 --directory $DST_DIR
+
+# Apply aosp patches
+cd $DST_DIR
+while read line; do
+  cd $line
+  git am $DST_DIR/$TMP_DIR/$line/*
+  cd $DST_DIR
+done < $DST_DIR/$AOSP_LIST
 
 if [ -f $DST_DIR/$REFSW_DIR_FILE ]; then
   # Override refsw directory if there is one
@@ -41,21 +51,12 @@ if [ ! -d $DST_DIR/$REFSW_DIR ]; then
 fi
 tar -xvf $DST_DIR/$REFSW_TARBALL --directory $DST_DIR/$REFSW_DIR
 
-# Move overrides to the intended location
-if [ ! -d $DST_DIR/$LOCAL_MANIFESTS_DIR ]; then
-  mkdir -p $DST_DIR/$LOCAL_MANIFESTS_DIR
-fi
-mv $DST_DIR/$OVERRIDES $DST_DIR/$LOCAL_MANIFESTS_DIR/
-
 echo "Release tarball unpacked to $DST_DIR"
 
 # Remove temporary files
 echo "Cleaning up..."
-if [ -f $DST_DIR/$REFSW_TARBALL ]; then
-  rm $DST_DIR/$REFSW_TARBALL
-fi
-if [ -f $DST_DIR/$REFSW_DIR_FILE ]; then
-  rm $DST_DIR/$REFSW_DIR_FILE
+if [ -d $DST_DIR/$TMP_DIR ]; then
+  rm -rf $DST_DIR/$TMP_DIR
 fi
 
 echo "Done!"
