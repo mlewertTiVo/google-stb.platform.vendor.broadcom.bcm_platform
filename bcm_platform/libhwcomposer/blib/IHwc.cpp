@@ -57,12 +57,14 @@ public:
         remote()->transact(UNREGISTER_LISTENER, data, &reply);
     }
 
-    void setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int value) {
+    void setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int value, int disp_w, int disp_h) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
         data.writeStrongBinder(listener->asBinder());
         data.writeInt32(index);
         data.writeInt32(value);
+        data.writeInt32(disp_w);
+        data.writeInt32(disp_h);
         remote()->transact(SET_VIDEO_SURF_CLIENT_ID, data, &reply);
     }
 
@@ -173,9 +175,11 @@ status_t BnHwc::onTransact(
       {
          CHECK_INTERFACE(IHwc, data, reply);
          sp<IHwcListener> listener = interface_cast<IHwcListener>(data.readStrongBinder());
-         int index = data.readInt32();
-         int value = data.readInt32();
-         setVideoSurfaceId(listener, index, value);
+         int index  = data.readInt32();
+         int value  = data.readInt32();
+         int disp_w = data.readInt32();
+         int disp_h = data.readInt32();
+         setVideoSurfaceId(listener, index, value, disp_w, disp_h);
          return NO_ERROR;
       }
       break;

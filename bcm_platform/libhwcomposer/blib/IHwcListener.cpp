@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <binder/Parcel.h>
 #include "IHwcListener.h"
+#include "HwcCommon.h"
 
 using namespace android;
 
@@ -35,12 +36,23 @@ public:
         : BpInterface<IHwcListener>(impl) {
     }
 
-    void notify(int msg, int param1, int param2) {
+    void notify(int msg, struct hwc_notification_info &ntfy) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwcListener::getInterfaceDescriptor());
         data.writeInt32(msg);
-        data.writeInt32(param1);
-        data.writeInt32(param2);
+        data.writeInt32(ntfy.surface_hdl);
+        data.writeInt32(ntfy.display_width);
+        data.writeInt32(ntfy.display_height);
+        data.writeInt32(ntfy.frame_id);
+        data.writeInt32(ntfy.frame.x);
+        data.writeInt32(ntfy.frame.y);
+        data.writeInt32(ntfy.frame.w);
+        data.writeInt32(ntfy.frame.h);
+        data.writeInt32(ntfy.clipped.x);
+        data.writeInt32(ntfy.clipped.y);
+        data.writeInt32(ntfy.clipped.w);
+        data.writeInt32(ntfy.clipped.h);
+        data.writeInt32(ntfy.zorder);
         remote()->transact(NOTIFY_EVENT, data, &reply);
     }
 };
@@ -53,10 +65,22 @@ status_t BnHwcListener::onTransact( uint32_t code, const Parcel& data, Parcel* r
         case NOTIFY_EVENT:
         {
             CHECK_INTERFACE(IHwcListener, data, reply);
+            struct hwc_notification_info ntfy;
             int msg = data.readInt32();
-            int param1 = data.readInt32();
-            int param2 = data.readInt32();
-            notify( msg, param1, param2 );
+            ntfy.surface_hdl = data.readInt32();
+            ntfy.display_width = data.readInt32();
+            ntfy.display_height = data.readInt32();
+            ntfy.frame_id = data.readInt32();
+            ntfy.frame.x = data.readInt32();
+            ntfy.frame.y = data.readInt32();
+            ntfy.frame.w = data.readInt32();
+            ntfy.frame.h = data.readInt32();
+            ntfy.clipped.x = data.readInt32();
+            ntfy.clipped.y = data.readInt32();
+            ntfy.clipped.w = data.readInt32();
+            ntfy.clipped.h = data.readInt32();
+            ntfy.zorder = data.readInt32();
+            notify( msg, ntfy );
             return NO_ERROR;
         }
         break;

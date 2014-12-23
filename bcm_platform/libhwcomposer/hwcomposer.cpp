@@ -41,6 +41,7 @@
 #include <binder/IServiceManager.h>
 #include <binder/IPCThreadState.h>
 #include <binder/ProcessState.h>
+#include "HwcCommon.h"
 #include "Hwc.h"
 #include "HwcListener.h"
 #include "IHwc.h"
@@ -186,7 +187,7 @@ typedef struct {
 
 } VSYNC_CLIENT_INFO;
 
-typedef void (* HWC_BINDER_NTFY_CB)(int, int, int, int);
+typedef void (* HWC_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
 
 class HwcBinder : public HwcListener
 {
@@ -195,7 +196,7 @@ public:
     HwcBinder() : cb(NULL), cb_data(0) {};
     virtual ~HwcBinder() {};
 
-    virtual void notify( int msg, int param1, int param2 );
+    virtual void notify(int msg, struct hwc_notification_info &ntfy);
 
     inline void listen() {
        if (get_hwc(false) != NULL)
@@ -211,9 +212,9 @@ public:
            ALOGE("%s: failed to dissociate %p from HwcBinder service.", __FUNCTION__, this);
     };
 
-    inline void setvideo(int index, int value) {
+    inline void setvideo(int index, int value, int display_w, int display_h) {
        if (get_hwc(false) != NULL) {
-           get_hwc(false)->setVideoSurfaceId(this, index, value);
+           get_hwc(false)->setVideoSurfaceId(this, index, value, display_w, display_h);
        }
     };
 
@@ -276,9 +277,9 @@ public:
       }
    }
 
-   void setvideo(int index, int value) {
+   void setvideo(int index, int value, int display_w, int display_h) {
       if (iconnected) {
-         ihwc.get()->setvideo(index, value);
+         ihwc.get()->setvideo(index, value, display_w, display_h);
       }
    }
 
@@ -306,13 +307,12 @@ public:
    }
 };
 
-void HwcBinder::notify( int msg, int param1, int param2 )
+void HwcBinder::notify(int msg, struct hwc_notification_info &ntfy)
 {
-   ALOGD( "%s: notify received: msg=%u, param1=0x%x, param2=0x%x",
-          __FUNCTION__, msg, param1, param2 );
+   ALOGD( "%s: notify received: msg=%u", __FUNCTION__, msg);
 
    if (cb)
-      cb(cb_data, msg, param1, param2);
+      cb(cb_data, msg, ntfy);
 }
 
 struct hwc_context_t {
@@ -965,12 +965,9 @@ out:
     return;
 }
 
-static void hwc_binder_notify(int dev, int msg, int param1, int param2)
+static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &ntfy)
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
-
-    (void)param1;
-    (void)param2;
 
     if (ctx) {
        switch (msg) {
@@ -984,7 +981,8 @@ static void hwc_binder_notify(int dev, int msg, int param1, int param2)
        {
            for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
                // reset the 'drop duplicate frame notifier' count.
-               if (ctx->mm_cli[i].root.ncci.sccid == (NEXUS_SurfaceCompositorClientId)param1) {
+               if (ctx->mm_cli[i].root.ncci.sccid == (NEXUS_SurfaceCompositorClientId)ntfy.surface_hdl) {
+                  ALOGD("%s: rest drop-dup-count on sfid %x, sccid %p", __FUNCTION__, ntfy.surface_hdl, ctx->mm_cli[i].root.ncci.sccid);
                   ctx->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_INVALID;
                   break;
                }
@@ -2774,7 +2772,8 @@ static void hwc_binder_advertise_video_surface(hwc_context_t* ctx)
 
     // TODO: for the time being, only advertize one.
     if (ctx->nsc_video_changed && ctx->hwc_binder) {
-       ctx->hwc_binder->setvideo(0, ctx->mm_cli[0].root.ncci.sccid);
+       ctx->hwc_binder->setvideo(0, ctx->mm_cli[0].root.ncci.sccid,
+                                 ctx->display_width, ctx->display_height);
        ctx->nsc_video_changed = false;
     }
 

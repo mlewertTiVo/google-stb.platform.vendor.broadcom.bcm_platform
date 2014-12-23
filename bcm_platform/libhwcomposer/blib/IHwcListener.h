@@ -20,6 +20,7 @@
 #include <utils/RefBase.h>
 #include <binder/IInterface.h>
 #include <binder/Parcel.h>
+#include "HwcCommon.h"
 
 using namespace android;
 
@@ -28,7 +29,7 @@ class IHwcListener: public IInterface
 public:
     DECLARE_META_INTERFACE(HwcListener);
 
-    virtual void notify(int msg, int param1, int param2) = 0;
+    virtual void notify(int msg, struct hwc_notification_info &ntfy) = 0;
 };
 
 class BnHwcListener: public BnInterface<IHwcListener>

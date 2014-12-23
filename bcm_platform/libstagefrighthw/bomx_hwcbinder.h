@@ -49,6 +49,7 @@
 #include <binder/IServiceManager.h>
 #include <binder/IPCThreadState.h>
 #include <binder/ProcessState.h>
+#include "HwcCommon.h"
 #include "Hwc.h"
 #include "HwcListener.h"
 #include "IHwc.h"
@@ -56,7 +57,7 @@
 
 using namespace android;
 
-typedef void (* OMX_BINDER_NTFY_CB)(int, int, int, int);
+typedef void (* OMX_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
 
 class OmxBinder : public HwcListener
 {
@@ -65,7 +66,7 @@ public:
     OmxBinder() : cb(NULL), cb_data(0) {};
     virtual ~OmxBinder() {};
 
-    virtual void notify( int msg, int param1, int param2 );
+    virtual void notify(int msg, struct hwc_notification_info &ntfy);
 
     inline void listen() {
        if (get_hwc(false) != NULL)

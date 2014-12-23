@@ -29,6 +29,6 @@ void HwcListener::binderDied(const wp<IBinder>& who) {
    (void)who;
 }
 
-void HwcListener::notify(int msg, int param1, int param2) {
-   (void)msg; (void)param1; (void)param2;
+void HwcListener::notify(int msg, struct hwc_notification_info &ntfy) {
+   (void)msg; (void)ntfy;
 }

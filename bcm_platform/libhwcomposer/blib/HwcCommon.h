@@ -14,22 +14,25 @@
  * limitations under the License.
  */
 
-#ifndef __HWCLISTENER__H__INCLUDED__
-#define __HWCLISTENER__H__INCLUDED__
+#ifndef __HWC_COMMON__H__INCLUDED__
+#define __HWC_COMMON__H__INCLUDED__
 
-#include "IHwcListener.h"
-#include <binder/Binder.h>
-
-using namespace android;
-
-class HwcListener: public IBinder::DeathRecipient, public BnHwcListener
-{
-public:
-      HwcListener();
-      ~HwcListener();
-
-     virtual void binderDied(const wp<IBinder>& who);
-     virtual void notify(int msg, struct hwc_notification_info &ntfy);
+struct hwc_position {
+    int x;
+    int y;
+    int w;
+    int h;
 };
 
-#endif // __HWCLISTENER__H__INCLUDED__
+struct hwc_notification_info {
+   int surface_hdl;
+   int display_width;
+   int display_height;
+   /* following is only relevant for HWC_BINDER_NTFY_DISPLAY */
+   int frame_id;
+   struct hwc_position frame;
+   struct hwc_position clipped;
+   int zorder;
+};
+
+#endif // __HWC_COMMON__H__INCLUDED__

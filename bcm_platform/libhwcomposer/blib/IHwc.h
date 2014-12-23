@@ -21,15 +21,9 @@
 #include <utils/Errors.h>
 #include <binder/IInterface.h>
 #include <IHwcListener.h>
+#include "HwcCommon.h"
 
 using namespace android;
-
-struct hwc_position {
-    int x;
-    int y;
-    int w;
-    int h;
-};
 
 class IHwc : public IInterface
 {
@@ -39,7 +33,7 @@ public:
     virtual void registerListener(const sp<IHwcListener>& listener, int kind) = 0;
     virtual void unregisterListener(const sp<IHwcListener>& listener) = 0;
 
-    virtual void setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int value) = 0;
+    virtual void setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int value, int display_w, int display_h) = 0;
     virtual void getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &value) = 0;
 
     virtual void setDisplayFrameId(const sp<IHwcListener>& listener, int surface, int frame) = 0;

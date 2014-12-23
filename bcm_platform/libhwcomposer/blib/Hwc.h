@@ -51,6 +51,8 @@ struct hwc_disp_notifier_t
    struct hwc_position clipped;
    int zorder;
    int visible;
+   int disp_w;
+   int disp_h;
 };
 
 class Hwc : public BnHwc, public IBinder::DeathRecipient
@@ -63,7 +65,7 @@ public:
     virtual void registerListener(const sp<IHwcListener>& listener, int kind);
     virtual void unregisterListener(const sp<IHwcListener>& listener);
 
-    virtual void setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int value);
+    virtual void setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int value, int disp_w, int disp_h);
     virtual void getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &value);
 
     virtual void setDisplayFrameId(const sp<IHwcListener>& listener, int handle, int frame);

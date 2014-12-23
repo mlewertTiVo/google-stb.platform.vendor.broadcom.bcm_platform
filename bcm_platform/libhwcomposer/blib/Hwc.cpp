@@ -53,6 +53,8 @@ Hwc::Hwc() : BnHwc() {
       memset(&mVideoSurface[i].clipped, 0, sizeof(struct hwc_position));
       mVideoSurface[i].zorder = -1;
       mVideoSurface[i].visible = 0;
+      mVideoSurface[i].disp_w = 0;
+      mVideoSurface[i].disp_h = 0;
    }
 
    for (int i = 0; i < HWC_BINDER_SIDEBAND_SURFACE_SIZE; i++) {
@@ -105,8 +107,8 @@ status_t Hwc::dump(int fd, const Vector<String16>& args)
         result.appendFormat("maximum video-surface: %d\n", HWC_BINDER_VIDEO_SURFACE_SIZE);
         for ( int i = 0; i < HWC_BINDER_VIDEO_SURFACE_SIZE; i++) {
             if (mVideoSurface[i].surface != (int)INVALID_HANDLE) {
-               result.appendFormat("\tvideo-surface: %d maps to 0x%x (used by 0x%x), frame: {%d,%d,%d,%d}, clipped: {%d,%d,%d,%d}, zorder:%d, visible: %s\n",
-                  i, mVideoSurface[i].surface, mVideoSurface[i].listener,
+               result.appendFormat("\tvideo-surface: %d -> 0x%x, display: {%d,%d} (in-use 0x%x), frame: {%d,%d,%d,%d}, clipped: {%d,%d,%d,%d}, zorder:%d, visible: %s\n",
+                  i, mVideoSurface[i].surface, mVideoSurface[i].disp_w, mVideoSurface[i].disp_h, mVideoSurface[i].listener,
                   mVideoSurface[i].frame.x, mVideoSurface[i].frame.y, mVideoSurface[i].frame.w, mVideoSurface[i].frame.h,
                   mVideoSurface[i].clipped.x, mVideoSurface[i].clipped.y, mVideoSurface[i].clipped.w, mVideoSurface[i].clipped.h,
                   mVideoSurface[i].zorder, mVideoSurface[i].visible?"oui":"non");
@@ -116,7 +118,7 @@ status_t Hwc::dump(int fd, const Vector<String16>& args)
         result.appendFormat("maximum sideband-surface: %d\n", HWC_BINDER_SIDEBAND_SURFACE_SIZE);
         for ( int i = 0; i < HWC_BINDER_SIDEBAND_SURFACE_SIZE; i++) {
             if (mSidebandSurface[i].surface != (int)INVALID_HANDLE) {
-               result.appendFormat("\tsideband-surface: %d maps to 0x%x (used by 0x%x), frame: {%d,%d,%d,%d}, clipped: {%d,%d,%d,%d}, zorder:%d, visible: %s\n",
+               result.appendFormat("\tsideband-surface: %d -> 0x%x (in-use 0x%x), frame: {%d,%d,%d,%d}, clipped: {%d,%d,%d,%d}, zorder:%d, visible: %s\n",
                   i, mSidebandSurface[i].surface, mSidebandSurface[i].listener,
                   mSidebandSurface[i].frame.x, mSidebandSurface[i].frame.y, mSidebandSurface[i].frame.w, mSidebandSurface[i].frame.h,
                   mSidebandSurface[i].clipped.x, mSidebandSurface[i].clipped.y, mSidebandSurface[i].clipped.w, mSidebandSurface[i].clipped.h,
@@ -158,7 +160,9 @@ void Hwc::registerListener(const sp<IHwcListener>& listener, int kind)
 
        if (kind == HWC_BINDER_HWC) {
           sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
-          client->notify(HWC_BINDER_NTFY_CONNECTED, 0, 0);
+          struct hwc_notification_info ntfy;
+          memset(&ntfy, 0, sizeof(struct hwc_notification_info));
+          client->notify(HWC_BINDER_NTFY_CONNECTED, ntfy);
        }
     }
 }
@@ -194,10 +198,10 @@ void Hwc::unregisterListener(const sp<IHwcListener>& listener)
     }
 }
 
-void Hwc::setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int value)
+void Hwc::setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int value, int disp_w, int disp_h)
 {
-    ALOGD("%s: %p, index %d, value %d", __FUNCTION__,
-          listener->asBinder().get(), index, value);
+    ALOGD("%s: %p, index %d, value %d, display {%d,%d}", __FUNCTION__,
+          listener->asBinder().get(), index, value, disp_w, disp_h);
 
     Mutex::Autolock _l(mLock);
 
@@ -208,6 +212,8 @@ void Hwc::setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int val
             (client.kind == HWC_BINDER_HWC)) {
            mVideoSurface[index].surface = value;
            mVideoSurface[index].listener = 0;
+           mVideoSurface[index].disp_w = disp_w;
+           mVideoSurface[index].disp_h = disp_h;
            break;
         }
     }
@@ -227,7 +233,7 @@ void Hwc::getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &va
        // contention, we are just a pass through service.
        mVideoSurface[index].listener = (int)listener->asBinder().get();
        value = mVideoSurface[index].surface;
-       ALOGD("%s: %p, index %d, value %d", __FUNCTION__,
+       ALOGD("%s: %p, index %d, value %x", __FUNCTION__,
              listener->asBinder().get(), index, value);
 
        // notify back the hwc so it can reset the frame counter for this
@@ -238,7 +244,10 @@ void Hwc::getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &va
            if (client.kind == HWC_BINDER_HWC) {
               sp<IBinder> binder = client.binder;
               sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
-              client->notify(HWC_BINDER_NTFY_VIDEO_SURFACE_ACQUIRED, value, 0);
+              struct hwc_notification_info ntfy;
+              memset(&ntfy, 0, sizeof(struct hwc_notification_info));
+              ntfy.surface_hdl = value;
+              client->notify(HWC_BINDER_NTFY_VIDEO_SURFACE_ACQUIRED, ntfy);
            }
        }
    }
@@ -264,17 +273,6 @@ void Hwc::setVideoGeometry(const sp<IHwcListener>& listener, int index,
               memcpy(&mVideoSurface[index].clipped, &clipped, sizeof(struct hwc_position));
               mVideoSurface[index].zorder = zorder;
               mVideoSurface[index].visible = visible;
-              if (mVideoSurface[index].listener) {
-                 for (size_t j = 0; j < N; j++) {
-                     const hwc_listener_t& notify = mNotificationListeners[j];
-                     if ((int)notify.binder.get() == mVideoSurface[index].listener) {
-                        sp<IBinder> binder = notify.binder;
-                        sp<IHwcListener> target = interface_cast<IHwcListener> (binder);
-                        target->notify(HWC_BINDER_NTFY_VIDEO_SURFACE_GEOMETRY_UPDATE, index, 0);
-                        break;
-                     }
-                 }
-              }
            }
            break;
         }
@@ -328,7 +326,16 @@ void Hwc::setDisplayFrameId(const sp<IHwcListener>& listener, int handle, int fr
            if ((int)client.binder.get() == mVideoSurface[index].listener) {
               sp<IBinder> binder = client.binder;
               sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
-              client->notify(HWC_BINDER_NTFY_DISPLAY, handle, frame);
+              struct hwc_notification_info ntfy;
+              memset(&ntfy, 0, sizeof(struct hwc_notification_info));
+              ntfy.surface_hdl = handle;
+              ntfy.display_width = mVideoSurface[index].disp_w;
+              ntfy.display_height = mVideoSurface[index].disp_h;
+              ntfy.frame_id = frame;
+              memcpy(&ntfy.frame, &mVideoSurface[index].frame, sizeof(struct hwc_position));
+              memcpy(&ntfy.clipped, &mVideoSurface[index].clipped, sizeof(struct hwc_position));
+              ntfy.zorder = mVideoSurface[index].zorder;
+              client->notify(HWC_BINDER_NTFY_DISPLAY, ntfy);
               break;
            }
        }
@@ -337,7 +344,7 @@ void Hwc::setDisplayFrameId(const sp<IHwcListener>& listener, int handle, int fr
 
 void Hwc::setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value)
 {
-    ALOGD("%s: %p, index %d, value %d", __FUNCTION__,
+    ALOGD("%s: %p, index %d, value %x", __FUNCTION__,
           listener->asBinder().get(), index, value);
 
     Mutex::Autolock _l(mLock);
@@ -368,7 +375,7 @@ void Hwc::getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int 
        // contention, we are just a pass through service.
        mSidebandSurface[index].listener = (int)listener->asBinder().get();
        value = mSidebandSurface[index].surface;
-       ALOGD("%s: %p, index %d, value %d", __FUNCTION__,
+       ALOGD("%s: %p, index %d, value %x", __FUNCTION__,
              listener->asBinder().get(), index, value);
 
        // notify back the hwc so it can reset the frame counter for this
@@ -379,7 +386,10 @@ void Hwc::getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int 
            if (client.kind == HWC_BINDER_HWC) {
               sp<IBinder> binder = client.binder;
               sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
-              client->notify(HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED, value, 0);
+              struct hwc_notification_info ntfy;
+              memset(&ntfy, 0, sizeof(struct hwc_notification_info));
+              ntfy.surface_hdl = value;
+              client->notify(HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED, ntfy);
            }
        }
    }

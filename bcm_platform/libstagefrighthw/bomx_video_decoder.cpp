@@ -433,42 +433,37 @@ static void BOMX_VideoDecoder_FormBppPacket(char *pBuffer, uint32_t opcode)
     pBuffer[33] = (opcode>>0) & 0xff;
 }
 
-void OmxBinder::notify( int msg, int param1, int param2 )
+void OmxBinder::notify(int msg, struct hwc_notification_info &ntfy)
 {
-   ALOGV( "%s: notify received: msg=%u, param1=0x%x, param2=0x%x",
-          __FUNCTION__, msg, param1, param2 );
+   ALOGV( "%s: notify received: msg=%u", __FUNCTION__, msg);
 
    if (cb)
-      cb(cb_data, msg, param1, param2);
+      cb(cb_data, msg, ntfy);
 }
 
-static void BOMX_OmxBinderNotify(int cb_data, int msg, int param1, int param2)
+static void BOMX_OmxBinderNotify(int cb_data, int msg, struct hwc_notification_info &ntfy)
 {
     BOMX_VideoDecoder *pComponent = (BOMX_VideoDecoder *)cb_data;
 
-    BSTD_UNUSED(param1);
     BOMX_ASSERT(NULL != pComponent);
 
     switch (msg)
     {
     case HWC_BINDER_NTFY_DISPLAY:
-        pComponent->DisplayFrame((unsigned)param2);
+        pComponent->DisplayFrame((unsigned)ntfy.frame_id);
         break;
     case HWC_BINDER_NTFY_VIDEO_SURFACE_GEOMETRY_UPDATE:
     {
-        struct hwc_position frame, clipped;
-        int zorder, visible;
         NEXUS_Rect position, clip;
-        pComponent->omxHwcBinder()->getvideogeometry(0, frame, clipped, zorder, visible);
-        position.x = frame.x;
-        position.y = frame.y;
-        position.width = frame.w;
-        position.height = frame.h;
-        clip.x = clipped.x;
-        clip.y = clipped.y;
-        clip.width = clipped.w;
-        clip.height = clipped.h;
-        pComponent->SetVideoGeometry(&position, &clip, zorder, visible ? true : false);
+        position.x = ntfy.frame.x;
+        position.y = ntfy.frame.y;
+        position.width = ntfy.frame.w;
+        position.height = ntfy.frame.h;
+        clip.x = ntfy.clipped.x;
+        clip.y = ntfy.clipped.y;
+        clip.width = ntfy.clipped.w;
+        clip.height = ntfy.clipped.h;
+        pComponent->SetVideoGeometry(&position, &clip, ntfy.zorder, true);
         break;
     }
     default:
