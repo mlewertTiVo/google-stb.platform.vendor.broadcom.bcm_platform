@@ -226,7 +226,7 @@ public:
     void OutputFrameTimer();
 
     void DisplayFrame(unsigned serialNumber);
-    void SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned zorder, bool visible);
+    void SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned serialNumber, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible);
 
     inline OmxBinder_wrap *omxHwcBinder(void) { return m_omxHwcBinder; };
 
@@ -337,7 +337,7 @@ protected:
                                             OMX_BUFFERHEADERTYPE* pBufferHeader);
 
     void DisplayFrame_locked(unsigned serialNumber);
-    void SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned zorder, bool visible);
+    void SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned serialNumber, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible);
 
     OMX_ERRORTYPE BuildInputFrame(
         OMX_BUFFERHEADERTYPE *pBufferHeader,

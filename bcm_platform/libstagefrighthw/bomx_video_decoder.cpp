@@ -460,7 +460,7 @@ static void BOMX_OmxBinderNotify(int cb_data, int msg, struct hwc_notification_i
         clip.y = ntfy.clipped.y;
         clip.width = ntfy.clipped.w;
         clip.height = ntfy.clipped.h;
-        pComponent->SetVideoGeometry(&position, &clip, ntfy.zorder, true);
+        pComponent->SetVideoGeometry(&position, &clip, ntfy.frame_id, ntfy.display_width, ntfy.display_height, ntfy.zorder, true);
         pComponent->DisplayFrame((unsigned)ntfy.frame_id);
         break;
     }
@@ -4204,13 +4204,13 @@ void BOMX_VideoDecoder::DisplayFrame(unsigned serialNumber)
     Unlock();
 }
 
-void BOMX_VideoDecoder::SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned zorder, bool visible)
+void BOMX_VideoDecoder::SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned serialNumber, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible)
 {
     ALOGI("SetVideoGeometry: %u,%u %ux%u - clip %u,%u %ux%u",
         pPosition->x, pPosition->y, pPosition->width, pPosition->height,
         pClipRect->x, pClipRect->y, pClipRect->width, pClipRect->height);
     Lock();
-    SetVideoGeometry_locked(pPosition, pClipRect, zorder, visible);
+    SetVideoGeometry_locked(pPosition, pClipRect, serialNumber, gfxWidth, gfxHeight, zorder, visible);
     Unlock();
 }
 
@@ -4245,7 +4245,9 @@ void BOMX_VideoDecoder::DisplayFrame_locked(unsigned serialNumber)
     }
 }
 
-void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned zorder, bool visible)
+#define NEXUS_RECT_IS_EQUAL(r1,r2) (((r1)->x == (r2)->x) && ((r1)->y == (r2)->y) && ((r1)->width == (r2)->width) && ((r1)->height == (r2)->height))
+
+void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned serialNumber, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible)
 {
     if ( m_hSurfaceClient )
     {
@@ -4254,27 +4256,51 @@ void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rec
         NEXUS_Error errCode;
 
         NxClient_GetSurfaceClientComposition(m_allocResults.surfaceClient[0].id, &composition);
-        composition.virtualDisplay.width = pPosition->width;
-        composition.virtualDisplay.height = pPosition->height;
-        composition.position = *pPosition;
-        composition.zorder = zorder;
-        composition.visible = visible;
-        composition.contentMode = NEXUS_VideoWindowContentMode_eBox;
-        errCode = NxClient_SetSurfaceClientComposition(m_allocResults.surfaceClient[0].id, &composition);
-        if ( errCode )
+        if ( composition.virtualDisplay.width != gfxWidth ||
+             composition.virtualDisplay.height != gfxHeight ||
+             !NEXUS_RECT_IS_EQUAL(&composition.position, pPosition) ||
+             composition.zorder != zorder ||
+             composition.visible != visible ||
+             composition.contentMode != NEXUS_VideoWindowContentMode_eFull )
         {
-            (void)BOMX_BERR_TRACE(errCode);
-            return;
+            composition.virtualDisplay.width = gfxWidth;
+            composition.virtualDisplay.height = gfxHeight;
+            composition.position = *pPosition;
+            composition.zorder = zorder;
+            composition.visible = visible;
+            composition.contentMode = NEXUS_VideoWindowContentMode_eFull;
+            errCode = NxClient_SetSurfaceClientComposition(m_allocResults.surfaceClient[0].id, &composition);
+            if ( errCode )
+            {
+                (void)BOMX_BERR_TRACE(errCode);
+                return;
+            }
         }
 
-        NEXUS_SurfaceClient_GetSettings(m_hVideoClient, &settings);
-        settings.composition = composition;
-        settings.composition.clipRect = *pClipRect; // Add in video source clipping
-        errCode = NEXUS_SurfaceClient_SetSettings(m_hVideoClient, &settings);
-        if ( errCode )
+        BOMX_VideoDecoderFrameBuffer *pFrameBuffer = FindFrameBuffer(serialNumber);
+        if ( pFrameBuffer )
         {
-            (void)BOMX_BERR_TRACE(errCode);
-            return;
+            NEXUS_Rect videoPosition;
+            videoPosition.x = videoPosition.y = 0;
+            videoPosition.width = pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth;
+            videoPosition.height = pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight;
+            NEXUS_SurfaceClient_GetSettings(m_hVideoClient, &settings);
+            if ( settings.composition.virtualDisplay.width != pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth ||
+                 settings.composition.virtualDisplay.height != pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight ||
+                 !NEXUS_RECT_IS_EQUAL(&settings.composition.position, &videoPosition) ||
+                 !NEXUS_RECT_IS_EQUAL(&settings.composition.clipRect, pClipRect) )
+            {
+                settings.composition.virtualDisplay.width = pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth;
+                settings.composition.virtualDisplay.height = pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight;
+                settings.composition.position = videoPosition;
+                settings.composition.clipRect = *pClipRect;
+                errCode = NEXUS_SurfaceClient_SetSettings(m_hVideoClient, &settings);
+                if ( errCode )
+                {
+                    (void)BOMX_BERR_TRACE(errCode);
+                    return;
+                }
+            }
         }
 
         if ( !m_setSurface )
