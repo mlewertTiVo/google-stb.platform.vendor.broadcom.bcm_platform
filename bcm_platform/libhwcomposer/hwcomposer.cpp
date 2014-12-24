@@ -640,7 +640,7 @@ static int dump_mm_layer_data(char *start, int capacity, int index, MM_CLIENT_IN
     int write = -1;
 
     write = snprintf(start, capacity,
-        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::z:%d::pcp:{%d,%d,%d,%d}::pcv:{%d,%d}::cm:%d::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::svc:%p::sfc:%p::scc:%d\n",
+        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::z:%d::pcp:{%d,%d,%d,%d}::pcv:{%d,%d}::cm:%d::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::svc:%p::sfc:%p::scc:%x\n",
         client->root.composition.visible ? "LIVE" : "HIDE",
         nsc_cli_type[client->root.ncci.type],
         client->root.layer_id,
@@ -2519,6 +2519,18 @@ static void hwc_prepare_mm_layer(
           ctx->mm_cli[vid_layer_id].root.composition.clipRect.height       = clip_position.height;
           ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.width  = ctx->display_width;
           ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.height = ctx->display_height;
+
+          ctx->mm_cli[vid_layer_id].settings.composition.contentMode           = NEXUS_VideoWindowContentMode_eFull;
+          ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.width  = ctx->display_width;
+          ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.height = ctx->display_height;
+          ctx->mm_cli[vid_layer_id].settings.composition.position.x            = disp_position.x;
+          ctx->mm_cli[vid_layer_id].settings.composition.position.y            = disp_position.y;
+          ctx->mm_cli[vid_layer_id].settings.composition.position.width        = disp_position.width;
+          ctx->mm_cli[vid_layer_id].settings.composition.position.height       = disp_position.height;
+          ctx->mm_cli[vid_layer_id].settings.composition.clipRect.x            = clip_position.x;
+          ctx->mm_cli[vid_layer_id].settings.composition.clipRect.y            = clip_position.y;
+          ctx->mm_cli[vid_layer_id].settings.composition.clipRect.width        = clip_position.width;
+          ctx->mm_cli[vid_layer_id].settings.composition.clipRect.height       = clip_position.height;
        }
 
        if (layer_updated && ctx->hwc_binder) {
