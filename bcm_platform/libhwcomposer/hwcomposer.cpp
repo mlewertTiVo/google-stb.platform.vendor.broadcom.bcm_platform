@@ -87,10 +87,10 @@ using namespace android;
 #define SURFACE_ALIGNMENT            16
 
 #define VSYNC_CLIENT_ZORDER          0
-#define GPX_CLIENT_ZORDER            (VSYNC_CLIENT_ZORDER+1)
-#define MM_CLIENT_ZORDER             (GPX_CLIENT_ZORDER+1)
-#define SB_CLIENT_ZORDER             (GPX_CLIENT_ZORDER+1)
-#define CURSOR_CLIENT_ZORDER         (GPX_CLIENT_ZORDER+2)
+#define MM_CLIENT_ZORDER             (VSYNC_CLIENT_ZORDER+1)
+#define SB_CLIENT_ZORDER             (VSYNC_CLIENT_ZORDER+1)
+#define GPX_CLIENT_ZORDER            (MM_CLIENT_ZORDER+1)
+#define CURSOR_CLIENT_ZORDER         (GPX_CLIENT_ZORDER+1)
 
 #define GPX_SURFACE_STACK            3
 #define DUMP_BUFFER_SIZE             1024
