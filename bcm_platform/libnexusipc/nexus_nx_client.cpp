@@ -144,35 +144,49 @@ bool NexusNxClient::StandbyMonitorThread::threadLoop()
     return false;
 }
 
+#define NEXUS_TRUSTED_DATA_PATH "/data/misc/nexus"
 NEXUS_Error NexusNxClient::clientJoin()
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
     NxClient_JoinSettings joinSettings;
     NEXUS_PlatformStatus status;
+    char value[PROPERTY_VALUE_MAX];
+    FILE *key = NULL;
 
     android::Mutex::Autolock autoLock(mLock);
 
     if (mJoinRefCount == 0) {
-        LOGI("++++ %s: \"%s\" ++++", __PRETTY_FUNCTION__, getClientName());
-
         NxClient_GetDefaultJoinSettings(&joinSettings);
         BKNI_Snprintf(&joinSettings.name[0], NXCLIENT_MAX_NAME, "%s", getClientName());
+
+        sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
+        key = fopen(value, "r");
+        if (key == NULL) {
+           ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, value, errno, strerror(errno));
+           joinSettings.mode = NEXUS_ClientMode_eUntrusted;
+        } else {
+           memset(value, 0, sizeof(value));
+           fread(value, PROPERTY_VALUE_MAX, 1, key);
+           joinSettings.mode = NEXUS_ClientMode_eProtected;
+           joinSettings.certificate.length = strlen(value);
+           memcpy(joinSettings.certificate.data, value, joinSettings.certificate.length);
+           fclose(key);
+        }
+
+        LOGI("%s: \"%s\"; joins %s mode", __FUNCTION__, joinSettings.name,
+             (joinSettings.mode == NEXUS_ClientMode_eProtected) ? "PROTECTED" : "UNTRUSTED");
 
         do {
             rc = NxClient_Join(&joinSettings);
             if (rc != NEXUS_SUCCESS) {
-                LOGW("%s: NxServer is not ready, waiting...", __PRETTY_FUNCTION__);
+                LOGW("%s: NxServer is not ready, waiting...", __FUNCTION__);
                 usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
-            }
-            else {
-                LOGD("%s: NxClient_Join succeeded for client \"%s\".", __PRETTY_FUNCTION__, getClientName());
             }
         } while (rc != NEXUS_SUCCESS);
     }
 
     if (rc == NEXUS_SUCCESS) {
         mJoinRefCount++;
-        LOGV("*** %s: incrementing join count to %d for client \"%s\". ***", __PRETTY_FUNCTION__, mJoinRefCount, getClientName());
     }
     return rc;
 }
