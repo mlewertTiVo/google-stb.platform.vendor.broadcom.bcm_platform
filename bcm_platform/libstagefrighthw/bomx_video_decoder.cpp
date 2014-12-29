@@ -508,6 +508,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_nativeGraphicsEnabled(false),
     m_metadataEnabled(false),
     m_secureDecoder(false),
+    m_outputWidth(1920),
+    m_outputHeight(1080),
     m_pConfigBuffer(NULL),
     m_configBufferState(ConfigBufferState_eAccumulating),
     m_configBufferSize(0),
@@ -568,8 +570,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     portDefs.eColorFormat = OMX_COLOR_FormatYUV420Planar;
     strcpy(m_outputMimeType, "video/x-raw");
     portDefs.cMIMEType = m_outputMimeType;
-    portDefs.nFrameWidth = 1920;
-    portDefs.nFrameHeight = 1080;
+    portDefs.nFrameWidth = m_outputWidth;
+    portDefs.nFrameHeight = m_outputHeight;
     portDefs.nStride = portDefs.nFrameWidth;
     portDefs.nSliceHeight = portDefs.nFrameHeight;
     for ( i = 0; i < MAX_OUTPUT_PORT_FORMATS; i++ )
@@ -673,6 +675,24 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_hVideoClient )
     {
         BOMX_ERR(("Unable to acquire video client"));
+        this->Invalidate();
+        return;
+    }
+    // Initialize video window to full screen
+    NEXUS_SurfaceClientSettings videoClientSettings;
+    NEXUS_SurfaceClient_GetSettings(m_hVideoClient, &videoClientSettings);
+    videoClientSettings.composition.virtualDisplay.width = m_outputWidth;
+    videoClientSettings.composition.virtualDisplay.height = m_outputHeight;
+    videoClientSettings.composition.position.x = 0;
+    videoClientSettings.composition.position.y = 0;
+    videoClientSettings.composition.position.width = m_outputWidth;
+    videoClientSettings.composition.position.height = m_outputHeight;
+    videoClientSettings.composition.clipRect = videoClientSettings.composition.position;    // No clipping
+    videoClientSettings.composition.contentMode = NEXUS_VideoWindowContentMode_eFull;
+    errCode = NEXUS_SurfaceClient_SetSettings(m_hVideoClient, &videoClientSettings);
+    if ( errCode )
+    {
+        BOMX_ERR(("Unable to setup video initial size"));
         this->Invalidate();
         return;
     }
@@ -1366,8 +1386,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         else if ( pDef->nPortIndex == (m_videoPortBase+1) )
         {
             OMX_PARAM_PORTDEFINITIONTYPE portDef;
-            // Ensure slice height and stride match frame width/height and update buffer size
             m_pVideoPorts[1]->GetDefinition(&portDef);
+            // Ensure crop reports buffer width/height
+            m_outputWidth = portDef.format.video.nFrameWidth;
+            m_outputHeight = portDef.format.video.nFrameHeight;
+            // Ensure slice height and stride match frame width/height and update buffer size
             portDef.format.video.nSliceHeight = portDef.format.video.nFrameHeight;
             portDef.format.video.nStride = portDef.format.video.nFrameWidth;
             portDef.nBufferSize = ComputeBufferSize(portDef.format.video.nStride, portDef.format.video.nSliceHeight);
@@ -1758,9 +1781,9 @@ NEXUS_Error BOMX_VideoDecoder::SetOutputPortState(OMX_STATETYPE newState)
             CancelTimer(m_outputFrameTimerId);
             m_outputFrameTimerId = NULL;
         }
-        // Invalidate queue of decoded frames
-        InvalidateDecodedFrames();
         m_formatChangePending = false;
+        // Return all pending buffers to the client
+        ReturnPortBuffers(m_pVideoPorts[1]);
     }
     else
     {
@@ -2203,12 +2226,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddInputPortBuffer(
         return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
     }
 
-    if ( pPort->IsEnabled() && StateGet() != OMX_StateLoaded )
-    {
-        BOMX_ERR(("Can only add buffers to an enabled port while transitioning from loaded->idle (state=%u)", StateGet()));
-        return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
-    }
-
     pInfo = new BOMX_VideoDecoderInputBufferInfo;
     if ( NULL == pInfo )
     {
@@ -2296,12 +2313,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     {
         BOMX_ERR(("Cannot add buffers to a tunneled port"));
         return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
-    }
-
-    if ( pPort->IsEnabled() && StateGet() != OMX_StateLoaded )
-    {
-        BOMX_ERR(("Can only add buffers to an enabled port while transitioning from loaded->idle (state=%u)", StateGet()));
-        return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
     }
 
     pInfo = new BOMX_VideoDecoderOutputBufferInfo;
@@ -2459,12 +2470,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
         return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
     }
 
-    if ( pPort->IsEnabled() && StateGet() != OMX_StateLoaded )
-    {
-        BOMX_ERR(("Can only add buffers to an enabled port while transitioning from loaded->idle (state=%u)", StateGet()));
-        return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
-    }
-
     pInfo = new BOMX_VideoDecoderOutputBufferInfo;
     if ( NULL == pInfo )
     {
@@ -2525,12 +2530,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     {
         BOMX_ERR(("Cannot add buffers to a tunneled port"));
         return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
-    }
-
-    if ( pPort->IsEnabled() && StateGet() != OMX_StateLoaded )
-    {
-        BOMX_ERR(("Can only add buffers to an enabled port while transitioning from loaded->idle (state=%u)", StateGet()));
-        return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
     }
 
     pInfo = new BOMX_VideoDecoderOutputBufferInfo;
@@ -3542,8 +3541,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
         // buffers around as metadata
         pRect->nLeft = 0;
         pRect->nTop = 0;
-        pRect->nWidth = m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth;
-        pRect->nHeight = m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight;
+        pRect->nWidth = m_outputWidth;
+        pRect->nHeight = m_outputHeight;
+        BOMX_MSG(("Returning crop %ux%u @ %u,%u", pRect->nWidth, pRect->nHeight, pRect->nLeft, pRect->nTop));
         return OMX_ErrorNone;
     }
     default:
@@ -3654,10 +3654,14 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     // Move frame to allocated list.  Will be delivered to client afterward if there is a buffer ready.
                     BLST_Q_REMOVE_HEAD(&m_frameBufferFreeList, node);
                     pBuffer->frameStatus = *pFrameStatus;
-                    pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&pFrameStatus->surfaceCreateSettings);
-                    if ( NULL == pBuffer->hStripedSurface )
+                    // Don't try and create a striped surface for the EOS picture.
+                    if ( !pFrameStatus->lastPicture )
                     {
-                        (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
+                        pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&pFrameStatus->surfaceCreateSettings);
+                        if ( NULL == pBuffer->hStripedSurface )
+                        {
+                            (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
+                        }
                     }
                     pBuffer->state = BOMX_VideoDecoderFrameBufferState_eReady;
                     BLST_Q_INSERT_TAIL(&m_frameBufferAllocList, pBuffer, node);
@@ -3730,27 +3734,6 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     }
                 }
 
-                #if 0 // Disable format change for now
-                // Check for format change
-                if ( (pBuffer->frameStatus.surfaceCreateSettings.imageWidth != m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth ||
-                      pBuffer->frameStatus.surfaceCreateSettings.imageHeight != m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight) )
-                {
-                    OMX_PARAM_PORTDEFINITIONTYPE portDefs;
-                    // TODO: Handle adaptive/metadata mode
-                    BOMX_WRN(("Video output format change %ux%u -> %ux%u", m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth, m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight,
-                        pBuffer->frameStatus.surfaceCreateSettings.imageWidth, pBuffer->frameStatus.surfaceCreateSettings.imageHeight));
-                    m_formatChangePending = true;
-                    m_pVideoPorts[1]->GetDefinition(&portDefs);
-                    portDefs.format.video.nFrameWidth = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
-                    portDefs.format.video.nFrameHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
-                    portDefs.format.video.nStride = portDefs.format.video.nFrameWidth;
-                    portDefs.format.video.nSliceHeight = portDefs.format.video.nFrameHeight;
-                    portDefs.nBufferSize = ComputeBufferSize(portDefs.format.video.nStride, portDefs.format.video.nSliceHeight);
-                    m_pVideoPorts[1]->SetDefinition(&portDefs);
-                    PortFormatChanged(m_pVideoPorts[1]);
-                    return;
-                }
-                #endif
                 // If this is a true EOS dummy picture from the decoder, return a 0-length frame.
                 // Otherwise there is a valid picture here and we need to handle the frame below as we would any other.
                 if ( pBuffer->frameStatus.lastPicture )
@@ -3760,6 +3743,62 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 }
                 else
                 {
+                    // Check for format change
+                    if ( pBuffer->frameStatus.surfaceCreateSettings.imageWidth != m_outputWidth || pBuffer->frameStatus.surfaceCreateSettings.imageHeight != m_outputHeight )
+                    {
+                        OMX_PARAM_PORTDEFINITIONTYPE portDefs;
+
+                        ALOGI("Video output format change %ux%u -> %ux%u [max %ux%u]", m_outputWidth, m_outputHeight,
+                            pBuffer->frameStatus.surfaceCreateSettings.imageWidth, pBuffer->frameStatus.surfaceCreateSettings.imageHeight,
+                            m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth, m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight);
+
+                        // For metadata output, treat port width/height as max values.  Crop can never be > port values.
+                        if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata ||
+                             pBuffer->frameStatus.surfaceCreateSettings.imageWidth > m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth ||
+                             pBuffer->frameStatus.surfaceCreateSettings.imageWidth > m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight )
+                        {
+                            ALOGI("Output port will reset");
+                            // Push this entry back into the PTS tracker
+                            uint32_t temp;
+                            m_pBufferTracker->Add(pHeader, &temp);
+
+                            // Send port format change and stop processing frames until reset
+                            m_formatChangePending = true;
+                            m_pVideoPorts[1]->GetDefinition(&portDefs);
+                            portDefs.format.video.nFrameWidth = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
+                            portDefs.format.video.nFrameHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
+                            portDefs.format.video.nStride = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
+                            portDefs.format.video.nSliceHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
+                            portDefs.nBufferSize = ComputeBufferSize(portDefs.format.video.nStride, portDefs.format.video.nSliceHeight);
+                            m_pVideoPorts[1]->SetDefinition(&portDefs);
+                            PortFormatChanged(m_pVideoPorts[1]);
+                            return;
+                        }
+                        else
+                        {
+                            ALOGI("Output port will not reset");
+
+                            // Only update crop and last output format if we're not resetting.  It will reset automatically
+                            // on restart, and because ACodec queries the port format first and then crop to check crop <= port
+                            // format you can get a race condition assertion if you update both here.  ACodec queries old port
+                            // format, we update here, then they query new crop and fail erroneously.
+                            m_outputWidth = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
+                            m_outputHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
+
+                            // Send crop update and continue without reset
+                            OMX_CONFIG_RECTTYPE cropRect;
+                            BOMX_STRUCT_INIT(&cropRect);
+                            cropRect.nLeft = 0;
+                            cropRect.nTop = 0;
+                            cropRect.nWidth = m_outputWidth;
+                            cropRect.nHeight = m_outputHeight;
+                            if ( m_callbacks.EventHandler )
+                            {
+                                (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventPortSettingsChanged, m_videoPortBase+1, OMX_IndexConfigCommonOutputCrop, &cropRect);
+                            }
+                        }
+                    }
+
                     BOMX_ASSERT(NULL != pInfo);
                     switch ( pInfo->type )
                     {
@@ -4266,7 +4305,7 @@ void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rec
             composition.zorder = zorder;
             composition.visible = visible;
             composition.contentMode = NEXUS_VideoWindowContentMode_eFull;
-            ALOGI("Updated video window to %ux%u @ %u,%u zorder %u visible %s", composition.position.width, composition.position.height, composition.position.x, composition.position.y, zorder, visible?"yes":"no");
+             ALOGI("Alpha hole position change to %ux%u @ %u,%u [fb %ux%u] zorder %u visible %u", pPosition->width, pPosition->height, pPosition->x, pPosition->y, gfxWidth, gfxHeight, zorder, (unsigned)visible);
             errCode = NxClient_SetSurfaceClientComposition(m_allocResults.surfaceClient[0].id, &composition);
             if ( errCode )
             {
@@ -4281,19 +4320,40 @@ void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rec
             // Disable for now until the clip rect is properly relayed.  Video will fill the window by default.
 #if 0
             NEXUS_Rect videoPosition;
+            unsigned aspectOld, aspectNew;
+            unsigned oldW, newW, oldH, newH;
+            unsigned oldX, newX, oldY, newY;
+
+            // Adjusting the video window parameters can cause a black flash while the BVN reconfigures.
+            // Because the hardware and nexus are intended to isolate applications from source format changes and
+            // per-frame interaction, we configure clipping in relative values (virtualDisplay vs. clipRect).
+            // So, to avoid black flashes we need to convert the physical values given from hwc into relative values
+            // and then only update if the effective values are changing (e.g. aspect ratio changes or relative clipping changes).
+
             videoPosition.x = videoPosition.y = 0;
             videoPosition.width = pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth;
             videoPosition.height = pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight;
             NEXUS_SurfaceClient_GetSettings(m_hVideoClient, &settings);
-            if ( settings.composition.virtualDisplay.width != pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth ||
-                 settings.composition.virtualDisplay.height != pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight ||
-                 !NEXUS_RECT_IS_EQUAL(&settings.composition.position, &videoPosition) ||
-                 !NEXUS_RECT_IS_EQUAL(&settings.composition.clipRect, pClipRect) )
+
+            aspectOld = (4096*settings.composition.virtualDisplay.width) / settings.composition.virtualDisplay.height;
+            aspectNew = (4096*videoPosition.width) / videoPosition.height;
+            oldW = (4096*settings.composition.clipRect.width) / settings.composition.virtualDisplay.width;
+            oldH = (4096*settings.composition.clipRect.height) / settings.composition.virtualDisplay.height;
+            newW = (4096*pClipRect->width) / videoPosition.width;
+            newH = (4096*pClipRect->height) / videoPosition.height;
+            oldX = (4096*settings.composition.clipRect.x) / settings.composition.virtualDisplay.width;
+            oldY = (4096*settings.composition.clipRect.y) / settings.composition.virtualDisplay.height;
+            newX = (4096*pClipRect->x) / videoPosition.width;
+            newY = (4096*pClipRect->y) / videoPosition.height;
+
+            if ( aspectOld != aspectNew || oldW != newW || oldH != newH || oldX != newX || oldY != newY )
             {
-                settings.composition.virtualDisplay.width = pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth;
-                settings.composition.virtualDisplay.height = pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight;
+                settings.composition.virtualDisplay.width = videoPosition.width;
+                settings.composition.virtualDisplay.height = videoPosition.height;
                 settings.composition.position = videoPosition;
                 settings.composition.clipRect = *pClipRect;
+                settings.composition.contentMode = NEXUS_VideoWindowContentMode_eFull;
+                ALOGI("Video clipping change to %ux%u @ %u,%u [source %ux%u]", pClipRect->width, pClipRect->height, pClipRect->x, pClipRect->y, settings.composition.virtualDisplay.width, settings.composition.virtualDisplay.height);
                 errCode = NEXUS_SurfaceClient_SetSettings(m_hVideoClient, &settings);
                 if ( errCode )
                 {

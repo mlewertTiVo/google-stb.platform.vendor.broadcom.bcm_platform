@@ -72,7 +72,7 @@ BOMX_AudioPort::BOMX_AudioPort(
         OMX_AUDIO_PARAM_PORTFORMATTYPE *pPortFormatCopy;
         pPortFormatCopy = new OMX_AUDIO_PARAM_PORTFORMATTYPE[numPortFormats];
         BOMX_ASSERT(NULL != pPortFormatCopy);
-        memcpy(pPortFormatCopy, pPortFormats, sizeof(OMX_AUDIO_PARAM_PORTFORMATTYPE)*numPortFormats);        
+        memcpy(pPortFormatCopy, pPortFormats, sizeof(OMX_AUDIO_PARAM_PORTFORMATTYPE)*numPortFormats);
         m_pPortFormats = pPortFormatCopy;
     }
     else
@@ -346,25 +346,26 @@ OMX_ERRORTYPE BOMX_Port::SetDefinition(const OMX_PARAM_PORTDEFINITIONTYPE *pConf
 {
     BOMX_ASSERT(NULL != pConfig);
     BOMX_STRUCT_VALIDATE(pConfig);
-    if ( pConfig->nPortIndex != m_definition.nPortIndex ||
-         pConfig->eDir != m_definition.eDir ||
-         pConfig->bEnabled != m_definition.bEnabled ||
-         pConfig->bPopulated != m_definition.bPopulated ||
-         pConfig->eDomain != m_definition.eDomain ||
-         pConfig->bBuffersContiguous != m_definition.bBuffersContiguous ||
-         pConfig->nBufferAlignment != m_definition.nBufferAlignment )
-    {
-        BOMX_ERR(("Attempting to change read-only port configuration member"));
-        BOMX_ERR(("nPortIndex %u->%u", m_definition.nPortIndex, pConfig->nPortIndex));
-        BOMX_ERR(("eDir %u->%u", m_definition.eDir, pConfig->eDir));
-        BOMX_ERR(("bEnabled %u->%u", m_definition.bEnabled, pConfig->bEnabled));
-        BOMX_ERR(("bPopulated %u->%u", m_definition.bPopulated, pConfig->bPopulated));
-        BOMX_ERR(("eDomain %u->%u", m_definition.eDomain, pConfig->eDomain));
-        BOMX_ERR(("bBuffersContiguous %u->%u", m_definition.bBuffersContiguous, pConfig->bBuffersContiguous));
-        BOMX_ERR(("nBufferAlignment %u->%u", m_definition.nBufferAlignment, pConfig->nBufferAlignment));
-        return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-    }
-    m_definition = *pConfig;
+
+    OMX_PARAM_PORTDEFINITIONTYPE newConfig = *pConfig;
+
+    /**************************************************************************************
+     * Don't allow changes to read-only parameters
+     * Because of the threaded component model, calls to GetParameter()/SetParameter have
+     * an inherent race condition with the component thread during a port enable/disable
+     * sequence.  Values such as populated and enabled may change during that transition
+     * and cause issues.  Just silently drop the changes and carry on.
+     *************************************************************************************/
+
+    newConfig.nPortIndex = m_definition.nPortIndex;
+    newConfig.eDir = m_definition.eDir;
+    newConfig.bEnabled = m_definition.bEnabled;
+    newConfig.bPopulated = m_definition.bPopulated;
+    newConfig.eDomain = m_definition.eDomain;
+    newConfig.bBuffersContiguous = m_definition.bBuffersContiguous;
+    newConfig.nBufferAlignment = m_definition.nBufferAlignment;
+
+    m_definition = newConfig;
     return OMX_ErrorNone;
 }
 
@@ -419,11 +420,6 @@ OMX_ERRORTYPE BOMX_Port::AddBuffer(
     {
         BOMX_ERR(("You must exclusively use OMX_AllocateBuffer OR OMX_UseBuffer on any port"));
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-    }
-    if ( IsDisabled() )
-    {
-        BOMX_ERR(("Cannot add buffers to a disabled port"));
-        return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
     }
     if ( IsPopulated() )
     {

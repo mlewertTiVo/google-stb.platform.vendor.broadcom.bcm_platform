@@ -276,6 +276,8 @@ protected:
     bool m_nativeGraphicsEnabled;
     bool m_metadataEnabled;
     bool m_secureDecoder;
+    unsigned m_outputWidth;
+    unsigned m_outputHeight;
 
     #define BOMX_BCMV_HEADER_SIZE (10)
     uint8_t m_pBcmvHeader[BOMX_BCMV_HEADER_SIZE];
