@@ -73,6 +73,7 @@
 #define LOG_TAG "NexusInit"
 
 #define VENDOR_DRIVER_PATH             "system/vendor/drivers"
+#define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 
 #define WAKEUP_DRIVER_FILENAME         "wakeup_drv.ko"
 #define NEXUS_DRIVER_FILENAME          "nexus.ko"
@@ -183,18 +184,33 @@ BERR_Code nexusinit_ashmem()
 void startNxServer(void)
 {
     char cmdRunNxServer[512];
-
     char value[PROPERTY_VALUE_MAX];
-    /* Start the NxServer after loading the driver. Make sure
-       to let the server know that we're handling the IR driver */
-    LOGI("nexusinit: Launching NxServer with clients in unprotected mode (runs in the background so that we get control back");
-    /* Turn off transcode for stand-alone Android to enable MVC/SVC playback and disable
-       IR if we are not wanting to run NxClient apps... */
+    char nx_key[PROPERTY_VALUE_MAX];
+    FILE *key = NULL;
 
+    sprintf(cmdRunNxServer, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
+    key = fopen(cmdRunNxServer, "w");
+    if (key == NULL) {
+       ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, cmdRunNxServer, errno, strerror(errno));
+    } else {
+       chmod(cmdRunNxServer, 0644 );
+       memset(nx_key, 0, sizeof(nx_key));
+       // TODO: provide something more 'random', use nexus_random_number.h which is built into the android security library,
+       //       but not exposed to user space at this time (sigh).
+       //
+       snprintf(nx_key, PROPERTY_VALUE_MAX, "nx-test-password");
+       //
+       // TODO.
+       fwrite(nx_key, PROPERTY_VALUE_MAX, 1, key);
+    }
+
+    memset(cmdRunNxServer, 0, sizeof(cmdRunNxServer));
     strcpy(cmdRunNxServer, NXSERVER_FILENAME);
     strcat(cmdRunNxServer, " ");
+
     strcat(cmdRunNxServer, "-ir none ");
 
+    memset(value, 0, sizeof(value));
     if (property_get("ro.hd_output_format", value, NULL)) {
         /* If the HD output resolution is set to 1080p, then we can use the HDMI preferred output format
            (typically 1080p also) and not ignore the HDMI EDID information from the connected TV. */
@@ -209,23 +225,29 @@ void startNxServer(void)
 #ifndef BCM_OMX_SUPPORT_ENCODER
     strcat(cmdRunNxServer, "-transcode off ");
 #endif
-    // No need to use a macro here, secure decoders will be enabled by default.
     strcat(cmdRunNxServer, "-svp ");
-    // disable the composition to SD, not needed.
     strcat(cmdRunNxServer, "-sd off -memconfig display,capture=off -memconfig display,5060=off -memconfig display,hddvi=off ");
 
-    // binary files of HDCP keys
+    memset(value, 0, sizeof(value));
     property_get("ro.nexus.nxserver.hdcp1x_keys", value, NULL);
     if (strlen(value)) {
-       snprintf(cmdRunNxServer, sizeof(cmdRunNxServer), "%s -hdcp1x_keys %s ", cmdRunNxServer, value);
+       snprintf(cmdRunNxServer, sizeof(cmdRunNxServer), "%s-hdcp1x_keys %s ", cmdRunNxServer, value);
     }
+    memset(value, 0, sizeof(value));
     property_get("ro.nexus.nxserver.hdcp2x_keys", value, NULL);
     if (strlen(value)) {
-       snprintf(cmdRunNxServer, sizeof(cmdRunNxServer), "%s -hdcp2x_keys %s ", cmdRunNxServer, value);
+       snprintf(cmdRunNxServer, sizeof(cmdRunNxServer), "%s-hdcp2x_keys %s ", cmdRunNxServer, value);
+    }
+
+    if (key) {
+       ALOGI("NXSERVER CMD (%d): %s -trusted ****", strlen(cmdRunNxServer), cmdRunNxServer);
+       snprintf(cmdRunNxServer, sizeof(cmdRunNxServer), "%s-trusted %s ", cmdRunNxServer, nx_key);
+       fclose(key);
+    } else {
+       ALOGI("NXSERVER CMD (%d): %s", strlen(cmdRunNxServer), cmdRunNxServer);
     }
 
     strcat(cmdRunNxServer, "&");
-    ALOGI("NXSERVER CMD: %s",cmdRunNxServer);
     system(cmdRunNxServer);
 }
 
@@ -275,6 +297,7 @@ int main(void)
     char value[PROPERTY_VALUE_MAX];
     char value2[2 * PROPERTY_VALUE_MAX] = { 0 };
     NEXUS_Error rc;
+    FILE *key = NULL;
     NxClient_JoinSettings joinSettings;
 
     if (daemon(0, 0) < 0) {
@@ -337,9 +360,26 @@ int main(void)
     {
         startNxServer();
 
+        sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
+        key = fopen(value, "r");
+        if (key == NULL) {
+           ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, value, errno, strerror(errno));
+        } else {
+           memset(value2, 0, sizeof(value2));
+           fread(value, PROPERTY_VALUE_MAX, 1, key);
+           fclose(key);
+        }
+
         NxClient_GetDefaultJoinSettings(&joinSettings);
         snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "nexusinit");
         joinSettings.timeout = 10;
+
+        if (strlen(value2)) {
+           joinSettings.mode = NEXUS_ClientMode_eProtected;
+           joinSettings.certificate.length = strlen(value2);
+           memcpy(joinSettings.certificate.data, value2, joinSettings.certificate.length);
+        }
+
         /* ... wait for server to be ready. */
         if (NxClient_Join(&joinSettings) != NEXUS_SUCCESS)
         {
@@ -350,7 +390,6 @@ int main(void)
         NxClient_Uninit();
 
         property_set("hw.nexus.platforminit", "on");
-
 
         /* Add the nx_ashmem module which is required for gralloc to function */
         if (nexusinit_ashmem() != BERR_SUCCESS) {

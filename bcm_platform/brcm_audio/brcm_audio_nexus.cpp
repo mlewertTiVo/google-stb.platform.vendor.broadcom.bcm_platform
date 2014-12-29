@@ -146,14 +146,30 @@ static void nexus_bout_data_callback(void *param1, int param2)
     BKNI_SetEvent((BKNI_EventHandle)param2);
 }
 
+#define NEXUS_TRUSTED_DATA_PATH "/data/misc/nexus"
 static NEXUS_Error clientJoin(const char *name)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
     NxClient_JoinSettings joinSettings;
     NEXUS_PlatformStatus status;
+    FILE *key = NULL;
+    char value[PROPERTY_VALUE_MAX];
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
     BKNI_Snprintf(&joinSettings.name[0], NXCLIENT_MAX_NAME, "%s", name);
+
+    sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
+    key = fopen(value, "r");
+    if (key == NULL) {
+       ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, value, errno, strerror(errno));
+    } else {
+       memset(value, 0, sizeof(value));
+       fread(value, PROPERTY_VALUE_MAX, 1, key);
+       joinSettings.mode = NEXUS_ClientMode_eProtected;
+       joinSettings.certificate.length = strlen(value);
+       memcpy(joinSettings.certificate.data, value, joinSettings.certificate.length);
+       fclose(key);
+    }
 
     do {
         rc = NxClient_Join(&joinSettings);
