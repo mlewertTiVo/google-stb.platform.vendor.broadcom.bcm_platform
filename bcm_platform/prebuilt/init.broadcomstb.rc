@@ -64,6 +64,8 @@ on post-fs
 
    # Eliminate writable file in /sys to pass android.permission CTS
    chmod 0664 /sys/kernel/wakeup_reasons/last_resume_reason
+   # Allow Launcher wallpaper picker to use landscape mode
+   setprop log.tag.launcher_force_rotate VERBOSE
 
 on post-fs-data
    mkdir /data/media 0770 media_rw media_rw
