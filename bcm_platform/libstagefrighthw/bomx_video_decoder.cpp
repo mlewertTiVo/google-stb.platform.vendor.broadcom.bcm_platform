@@ -4206,9 +4206,6 @@ void BOMX_VideoDecoder::DisplayFrame(unsigned serialNumber)
 
 void BOMX_VideoDecoder::SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned serialNumber, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible)
 {
-    ALOGI("SetVideoGeometry: %u,%u %ux%u - clip %u,%u %ux%u",
-        pPosition->x, pPosition->y, pPosition->width, pPosition->height,
-        pClipRect->x, pClipRect->y, pClipRect->width, pClipRect->height);
     Lock();
     SetVideoGeometry_locked(pPosition, pClipRect, serialNumber, gfxWidth, gfxHeight, zorder, visible);
     Unlock();
@@ -4269,6 +4266,7 @@ void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rec
             composition.zorder = zorder;
             composition.visible = visible;
             composition.contentMode = NEXUS_VideoWindowContentMode_eFull;
+            ALOGI("Updated video window to %ux%u @ %u,%u zorder %u visible %s", composition.position.width, composition.position.height, composition.position.x, composition.position.y, zorder, visible?"yes":"no");
             errCode = NxClient_SetSurfaceClientComposition(m_allocResults.surfaceClient[0].id, &composition);
             if ( errCode )
             {
@@ -4280,6 +4278,8 @@ void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rec
         BOMX_VideoDecoderFrameBuffer *pFrameBuffer = FindFrameBuffer(serialNumber);
         if ( pFrameBuffer )
         {
+            // Disable for now until the clip rect is properly relayed.  Video will fill the window by default.
+#if 0
             NEXUS_Rect videoPosition;
             videoPosition.x = videoPosition.y = 0;
             videoPosition.width = pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth;
@@ -4301,6 +4301,7 @@ void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rec
                     return;
                 }
             }
+#endif            
         }
 
         if ( !m_setSurface )
