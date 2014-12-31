@@ -51,8 +51,49 @@
 
 #include <string.h>
 #include <utils/Errors.h>
+#include <hardware_legacy/power.h>
 
 unsigned NexusPower::NexusGpio::mInstances = 0;
+
+sp<NexusPower::LinuxUInputRef> NexusPower::LinuxUInputRef::instantiate()
+{
+    sp<NexusPower::LinuxUInputRef> uInput = NULL;
+
+    static const struct input_id id =
+    {
+        BUS_HOST, /* bustype */
+        0, /* vendor */
+        0, /* product */
+        1  /* version */
+    };
+
+    uInput = new NexusPower::LinuxUInputRef();
+
+    if (uInput != NULL)
+    {
+        if (!uInput->open() ||
+            !uInput->register_event(EV_KEY) ||
+            !uInput->register_key(KEY_POWER) ||
+            !uInput->start("NexusPower", id))
+        {
+            ALOGE("Failed to initialise LinuxUInputRef");
+            uInput = NULL;
+        }
+    }
+
+    return uInput;
+}
+
+NexusPower::LinuxUInputRef::LinuxUInputRef()
+{
+    ALOGV("%s: Called", __PRETTY_FUNCTION__);
+}
+
+NexusPower::LinuxUInputRef::~LinuxUInputRef()
+{
+    stop();
+    close();
+}
 
 NexusPower::NexusPower() : deviceType(-1), mIpcClient(NULL), mClientContext(NULL)
 {
@@ -63,6 +104,8 @@ NexusPower::NexusPower(NexusIPCClientBase *pIpcClient, NexusClientContext *pClie
 {
     ALOGV("%s: pIpcClient=%p, pClientContext=%p", __PRETTY_FUNCTION__, (void *)pIpcClient, (void *)pClientContext);
     deviceType = getDeviceType();
+
+    mUInput = NexusPower::LinuxUInputRef::instantiate();
 }
 
 NexusPower::~NexusPower()
@@ -78,6 +121,8 @@ NexusPower::~NexusPower()
         delete mIpcClient;
         mIpcClient = NULL;
     }
+
+    mUInput = NULL;
 }
 
 sp<NexusPower> NexusPower::instantiate()
@@ -227,6 +272,18 @@ void NexusPower::NexusGpio::gpioCallback(void *context, int param __unused)
 
             if (gpioStatus.interruptPending) {
                 NEXUS_Gpio_ClearInterrupt(pNexusGpio->getHandle());
+            }
+
+            // toggle the power key
+            if (pNexusGpio->mUInput != NULL)
+            {
+                // release->press->release will guarantee that the press event takes place
+                pNexusGpio->mUInput->emit_key_state(KEY_POWER, false);
+                pNexusGpio->mUInput->emit_syn();
+                pNexusGpio->mUInput->emit_key_state(KEY_POWER, true);
+                pNexusGpio->mUInput->emit_syn();
+                pNexusGpio->mUInput->emit_key_state(KEY_POWER, false);
+                pNexusGpio->mUInput->emit_syn();
             }
         }
         else {
@@ -448,12 +505,13 @@ NexusPower::NexusGpio::NexusGpio()
 }
 
 // Constructor for a GPIO input...
-NexusPower::NexusGpio::NexusGpio(String8& pinName, unsigned pin, unsigned pinType, NEXUS_GpioMode pinMode, NEXUS_GpioInterrupt pinInterruptMode) :
+NexusPower::NexusGpio::NexusGpio(String8& pinName, unsigned pin, unsigned pinType, NEXUS_GpioMode pinMode, NEXUS_GpioInterrupt pinInterruptMode, sp<LinuxUInputRef> uInput) :
                                                                                         mPinName(pinName),
                                                                                         mPin(pin),
                                                                                         mPinType(pinType),
                                                                                         mPinMode(pinMode),
-                                                                                        mPinInterruptMode(pinInterruptMode)
+                                                                                        mPinInterruptMode(pinInterruptMode),
+                                                                                        mUInput(uInput)
 {
     mInstance = mInstances++;
     ALOGV("%s: instance %d: pin=%d, type=%d, pin mode=%d, interrupt mode=%d", __PRETTY_FUNCTION__, mInstance, pin, pinType, pinMode, pinInterruptMode);
@@ -480,13 +538,15 @@ NexusPower::NexusGpio::~NexusGpio()
     ALOGV("%s: instance %d: pin=%d, type=%d, pin mode=%d", __PRETTY_FUNCTION__, mInstance, mPin, mPinType, mPinMode);
     mInstances--;
     NEXUS_Gpio_Close(mHandle);
+
+    mUInput = NULL;
 }
 
 // Factory method for instantiating an input GPIO...
 sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(String8& pinName,  unsigned pin, unsigned pinType,
-                                                             NEXUS_GpioMode pinMode, NEXUS_GpioInterrupt pinInterruptMode)
+                                                             NEXUS_GpioMode pinMode, NEXUS_GpioInterrupt pinInterruptMode, sp<LinuxUInputRef> uInput)
 {
-    sp<NexusPower::NexusGpio> gpio = new NexusGpio(pinName, pin, pinType, pinMode, pinInterruptMode);
+    sp<NexusPower::NexusGpio> gpio = new NexusGpio(pinName, pin, pinType, pinMode, pinInterruptMode, uInput);
 
     if (gpio.get() != NULL) {
         NEXUS_GpioSettings settings;
@@ -539,7 +599,7 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(String8& pinName, u
     return gpio;
 }
 
-sp<NexusPower::NexusGpio> NexusPower::NexusGpio::initialise(String8& gpioName, String8& gpioValue, int pin, unsigned pinType)
+sp<NexusPower::NexusGpio> NexusPower::NexusGpio::initialise(String8& gpioName, String8& gpioValue, int pin, unsigned pinType, sp<LinuxUInputRef> uInput)
 {
     status_t status;
     sp<NexusGpio> gpio;
@@ -574,7 +634,7 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::initialise(String8& gpioName, S
                     ALOGE("%s: Could not parse %s interrupt mode!!!", __FUNCTION__, gpioName.string());
                 }
                 else {
-                    gpio = NexusGpio::instantiate(gpioName, pin, pinType, gpioMode, gpioInterruptMode);
+                    gpio = NexusGpio::instantiate(gpioName, pin, pinType, gpioMode, gpioInterruptMode, uInput);
                     if (gpio.get() == NULL) {
                         ALOGE("%s: Could not instantiate %s!!!", __FUNCTION__, gpioName.string());
                         status = NO_INIT;
@@ -642,7 +702,7 @@ status_t NexusPower::initialiseGpios()
                 gpioName.setTo("GPIO");
                 gpioName.appendFormat("%02d", pin);
                 if (config->tryGetProperty(gpioName, gpioValue)) {
-                    gpio = NexusGpio::initialise(gpioName, gpioValue, pin, NEXUS_GpioType_eStandard);
+                    gpio = NexusGpio::initialise(gpioName, gpioValue, pin, NEXUS_GpioType_eStandard, mUInput);
 
                     if (gpio.get() != NULL) {
                         gpios[gpio->getInstance()] = gpio;
@@ -656,7 +716,7 @@ status_t NexusPower::initialiseGpios()
                     gpioName.setTo("GPIO");
                     gpioName.appendFormat("%03d", pin);
                     if (config->tryGetProperty(gpioName, gpioValue)) {
-                        gpio = NexusGpio::initialise(gpioName, gpioValue, pin, NEXUS_GpioType_eStandard);
+                        gpio = NexusGpio::initialise(gpioName, gpioValue, pin, NEXUS_GpioType_eStandard, mUInput);
 
                         if (gpio.get() != NULL) {
                             gpios[gpio->getInstance()] = gpio;
@@ -674,7 +734,7 @@ status_t NexusPower::initialiseGpios()
                 gpioName.setTo("AON_GPIO");
                 gpioName.appendFormat("%02d", pin);
                 if (config->tryGetProperty(gpioName, gpioValue)) {
-                    gpio = NexusGpio::initialise(gpioName, gpioValue, pin, NEXUS_GpioType_eAonStandard);
+                    gpio = NexusGpio::initialise(gpioName, gpioValue, pin, NEXUS_GpioType_eAonStandard, mUInput);
 
                     if (gpio.get() != NULL) {
                         gpios[gpio->getInstance()] = gpio;
@@ -691,7 +751,7 @@ status_t NexusPower::initialiseGpios()
                 gpioName.setTo("AON_SGPIO");
                 gpioName.appendFormat("%02d", pin);
                 if (config->tryGetProperty(gpioName, gpioValue)) {
-                    gpio = NexusGpio::initialise(gpioName, gpioValue, pin, NEXUS_GpioType_eAonSpecial);
+                    gpio = NexusGpio::initialise(gpioName, gpioValue, pin, NEXUS_GpioType_eAonSpecial, mUInput);
 
                     if (gpio.get() != NULL) {
                         gpios[gpio->getInstance()] = gpio;
@@ -708,6 +768,7 @@ status_t NexusPower::initialiseGpios()
             ALOGE("%s: Could not load configuration file \"%s\" [ret=%d]!!!", __FUNCTION__, path.string(), status);
         }
     }
+
     return status;
 }
 
