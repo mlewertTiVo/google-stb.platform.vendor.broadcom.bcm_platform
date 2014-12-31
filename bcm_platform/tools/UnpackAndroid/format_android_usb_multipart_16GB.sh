@@ -29,12 +29,29 @@ umount /media/recovery
 
 gdisk -l /dev/$1
 sgdisk -g -o /dev/$1
-sgdisk -a 1 -n 1:34:8388642 -t 1:0700        -c 1:"kernel"   /dev/$1
-sgdisk -a 1 -n 2:8388643:8798243             -c 2:"rootfs"   /dev/$1
-sgdisk -a 1 -n 3:8798244:10895396            -c 3:"system"   /dev/$1
-sgdisk -a 1 -n 4:10895397:19284005           -c 4:"data"     /dev/$1
-sgdisk -a 1 -n 5:19284006:21381158           -c 5:"cache"    /dev/$1
-sgdisk -a 1 -n 6:21381159:23478311 -t 1:0700 -c 6:"recovery" /dev/$1
+bs=512
+gpt_size=$((            1024*1024/bs)) # 1MB alignment
+kernel_size=$((  4*1024*1024*1024/bs)) # Enough space to fit kernel + sdcard
+rootfs_size=$((     200*1024*1024/bs)) # This will be replaced by boot.img
+system_size=$((    1024*1024*1024/bs)) # As per BoardConfig.mk
+data_size=$((    4*1024*1024*1024/bs)) # As per BoardConfig.mk
+cache_size=$((      256*1024*1024/bs)) # As per BoardConfig.mk
+recovery_size=$((   128*1024*1024/bs)) # As per BoardConfig.mk
+
+gpt_first=0; gpt_last=$((gpt_first+gpt_size-1))
+kernel_first=$((gpt_last+1)); kernel_last=$((kernel_first+kernel_size-1))
+rootfs_first=$((kernel_last+1)); rootfs_last=$((rootfs_first+rootfs_size-1))
+system_first=$((rootfs_last+1)); system_last=$((system_first+system_size-1))
+data_first=$((system_last+1)); data_last=$((data_first+data_size-1))
+cache_first=$((data_last+1)); cache_last=$((cache_first+cache_size-1))
+recovery_first=$((cache_last+1)); recovery_last=$((recovery_first+recovery_size-1))
+
+sgdisk -n 1:$kernel_first:$kernel_last -t 1:0700 -c 1:"kernel"   /dev/$1
+sgdisk -n 2:$rootfs_first:$rootfs_last           -c 2:"rootfs"   /dev/$1
+sgdisk -n 3:$system_first:$system_last           -c 3:"system"   /dev/$1
+sgdisk -n 4:$data_first:$data_last               -c 4:"data"     /dev/$1
+sgdisk -n 5:$cache_first:$cache_last             -c 5:"cache"    /dev/$1
+sgdisk -n 6:$recovery_first:$recovery_last       -c 6:"recovery" /dev/$1
 
 mkfs.vfat -F 32 -n kernel   /dev/${1}1
 mkfs.ext4 -L       rootfs   /dev/${1}2
