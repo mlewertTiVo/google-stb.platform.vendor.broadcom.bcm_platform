@@ -144,14 +144,11 @@ bool NexusNxClient::StandbyMonitorThread::threadLoop()
     return false;
 }
 
-#define NEXUS_TRUSTED_DATA_PATH "/data/misc/nexus"
 NEXUS_Error NexusNxClient::clientJoin()
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
     NxClient_JoinSettings joinSettings;
     NEXUS_PlatformStatus status;
-    char value[PROPERTY_VALUE_MAX];
-    FILE *key = NULL;
 
     android::Mutex::Autolock autoLock(mLock);
 
@@ -160,19 +157,6 @@ NEXUS_Error NexusNxClient::clientJoin()
 
         NxClient_GetDefaultJoinSettings(&joinSettings);
         BKNI_Snprintf(&joinSettings.name[0], NXCLIENT_MAX_NAME, "%s", getClientName());
-
-        sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
-        key = fopen(value, "r");
-        if (key == NULL) {
-           ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, value, errno, strerror(errno));
-        } else {
-           memset(value, 0, sizeof(value));
-           fread(value, PROPERTY_VALUE_MAX, 1, key);
-           joinSettings.mode = NEXUS_ClientMode_eProtected;
-           joinSettings.certificate.length = strlen(value);
-           memcpy(joinSettings.certificate.data, value, joinSettings.certificate.length);
-           fclose(key);
-        }
 
         do {
             rc = NxClient_Join(&joinSettings);

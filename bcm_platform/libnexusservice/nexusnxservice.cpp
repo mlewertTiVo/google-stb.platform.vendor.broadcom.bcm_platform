@@ -461,7 +461,6 @@ void NexusNxService::platformUninitIR()
     irHandler.stop();
 }
 
-#define NEXUS_TRUSTED_DATA_PATH "/data/misc/nexus"
 void NexusNxService::platformInit()
 {
     NEXUS_Error rc;
@@ -486,26 +485,10 @@ void NexusNxService::platformInit()
 
     nxclient_local_init(server->nxserver, server->lock);
 #else
-    FILE *key = NULL;
-    char value[PROPERTY_VALUE_MAX];
     NxClient_JoinSettings joinSettings;
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
     strncpy(joinSettings.name, "config", NXCLIENT_MAX_NAME);
-
-    sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
-    key = fopen(value, "r");
-    if (key == NULL) {
-       ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, value, errno, strerror(errno));
-    } else {
-       memset(value, 0, sizeof(value));
-       fread(value, PROPERTY_VALUE_MAX, 1, key);
-       joinSettings.mode = NEXUS_ClientMode_eProtected;
-       joinSettings.certificate.length = strlen(value);
-       memcpy(joinSettings.certificate.data, value, joinSettings.certificate.length);
-       fclose(key);
-    }
-
     do {
         rc = NxClient_Join(&joinSettings);
 
