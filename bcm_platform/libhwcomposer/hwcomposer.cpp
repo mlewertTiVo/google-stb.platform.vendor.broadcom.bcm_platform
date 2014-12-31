@@ -1994,7 +1994,6 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     }
     if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
         BKNI_ReleaseMutex(ctx->power_mutex);
-        NEXUS_SurfaceCompositor_SetPause(NULL, true);
 
         if (ctx->sync_timeline != INVALID_FENCE) {
            snprintf(fence.name, sizeof(fence.name), "hwc_prim_%d", ctx->stats[0].set_call);
@@ -2113,8 +2112,6 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                 }
             }
         }
-
-        NEXUS_SurfaceCompositor_SetPause(NULL, false);
 
         if (layer_composed == 0) {
            if (list->retireFenceFd != INVALID_FENCE) {
