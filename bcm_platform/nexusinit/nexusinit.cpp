@@ -54,6 +54,7 @@
 #include <cutils/log.h>
 #include <cutils/properties.h>
 #include <errno.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
@@ -186,6 +187,7 @@ void startNxServer(void)
     char cmdRunNxServer[512];
     char value[PROPERTY_VALUE_MAX];
     char nx_key[PROPERTY_VALUE_MAX];
+    struct timeval t;
     FILE *key = NULL;
 
     sprintf(cmdRunNxServer, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
@@ -198,7 +200,8 @@ void startNxServer(void)
        // TODO: provide something more 'random', use nexus_random_number.h which is built into the android security library,
        //       but not exposed to user space at this time (sigh).
        //
-       snprintf(nx_key, PROPERTY_VALUE_MAX, "nx-test-password");
+       gettimeofday(&t, NULL);
+       snprintf(nx_key, PROPERTY_VALUE_MAX, "%llu", t.tv_sec + (1.e-6) * t.tv_usec);
        //
        // TODO.
        fwrite(nx_key, PROPERTY_VALUE_MAX, 1, key);
