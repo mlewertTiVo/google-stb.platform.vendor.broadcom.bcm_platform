@@ -238,7 +238,7 @@ static int power_set_state_s2()
 
 static int power_set_state_s5()
 {
-    return property_set("sys.powerctl", "shutdown");
+    return system("/system/bin/svc power shutdown");
 }
 
 static int power_set_pmlibservice_state(b_powerState state)
