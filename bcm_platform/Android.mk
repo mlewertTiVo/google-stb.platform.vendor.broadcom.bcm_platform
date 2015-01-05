@@ -1,6 +1,4 @@
 
-ifeq ($(PRODUCT_MANUFACTURER),BROADCOM)
-
 include vendor/broadcom/bcm_platform/brcm_audio/Android.mk
 include vendor/broadcom/bcm_platform/brcm_dhd/Android.mk
 include vendor/broadcom/bcm_platform/brcm_memtrack/Android.mk
@@ -50,7 +48,5 @@ include vendor/broadcom/bcm_platform/not_for_release/libbcmsideband/Android.mk
 include vendor/broadcom/bcm_platform/not_for_release/Bouncer/Android.mk
 include vendor/broadcom/bcm_platform/not_for_release/ExoPlayerDemo/Android.mk
 include vendor/broadcom/bcm_platform/not_for_release/WidevineSamplePlayer/Android.mk
-endif
-
 endif
 
