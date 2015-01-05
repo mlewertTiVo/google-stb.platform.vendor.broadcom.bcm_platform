@@ -41,6 +41,14 @@ public:
     jshort signalQualityPercent;
 };
 
+class BroadcastRect {
+public:
+    jshort x;
+    jshort y;
+    jshort w;
+    jshort h;
+};
+
 class BroadcastDriver {
 public:
     int (*StartBlindScan)();
@@ -52,6 +60,7 @@ public:
     jlong (*GetUtcTime)();
     int (*Stop)();
     int (*Release)();
+    int (*SetGeometry)(BroadcastRect position, BroadcastRect clipRect, jshort gfxWidth, jshort gfxHeight, jshort zorder, jboolean visible);
 };
 
 int Broadcast_Initialize(BroadcastDriver *pDriver);

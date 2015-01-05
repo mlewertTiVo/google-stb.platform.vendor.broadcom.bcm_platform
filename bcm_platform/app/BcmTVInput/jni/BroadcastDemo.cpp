@@ -75,58 +75,47 @@ FreeContext()
     }
 }
 
+#define NEXUS_RECT_IS_EQUAL(r1,r2) (((r1)->x == (r2)->x) && ((r1)->y == (r2)->y) && ((r1)->width == (r2)->width) && ((r1)->height == (r2)->height))
+
+static void
+SetGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible)
+{
+    if (pSelf && pSelf->m_hVideoClient) {
+        NEXUS_SurfaceClientSettings settings;
+        NEXUS_SurfaceClient_GetSettings(pSelf->m_hVideoClient, &settings);
+        settings.composition.position = *pPosition;
+        settings.composition.virtualDisplay.width = gfxWidth;
+        settings.composition.virtualDisplay.height = gfxHeight;
+
+        ALOGE("%s: composition v[%d,%d] p[%d,%d,%d,%d] c[%d,%d,%d,%d])",
+                  __FUNCTION__,
+                  settings.composition.virtualDisplay.width, settings.composition.virtualDisplay.height,
+                  settings.composition.position.x, settings.composition.position.y, settings.composition.position.width, settings.composition.position.height,
+                  settings.composition.clipRect.x, settings.composition.clipRect.y, settings.composition.clipRect.width, settings.composition.clipRect.height
+                  );
+        NEXUS_SurfaceClient_SetSettings(pSelf->m_hVideoClient, &settings);
+    }
+}
 
 static void
 SetGeometry()
 {
-    if ( pSelf && pSelf->m_hSurfaceClient ) {
-        NEXUS_SurfaceComposition composition;
-        NEXUS_SurfaceClientSettings settings;
-        NEXUS_Error errCode;
+}
 
-        NxClient_GetSurfaceClientComposition(pSelf->m_allocResults.surfaceClient[0].id, &composition);
-        //composition.virtualDisplay.width = pPosition->width;
-        //composition.virtualDisplay.height = pPosition->height;
-        //composition.position = *pPosition;
-        //composition.zorder = zorder;
-        //composition.visible = visible;
-        composition.visible = true;
-        composition.position.x = 0;
-        composition.position.y = 0;
-        composition.position.width = composition.virtualDisplay.width;
-        composition.position.height = composition.virtualDisplay.height;
-        //composition.contentMode = NEXUS_VideoWindowContentMode_eBox;
-        errCode = NxClient_SetSurfaceClientComposition(pSelf->m_allocResults.surfaceClient[0].id, &composition);
-        if ( errCode )
-        {
-            ALOGE("%s: NxClient_SetSurfaceClientComposition failed (%d)", __FUNCTION__, errCode);
-            return;
-        }
-
-        NEXUS_SurfaceClient_GetSettings(pSelf->m_hVideoClient, &settings);
-        settings.composition = composition;
-        //settings.composition.clipRect = *pClipRect; // Add in video source clipping
-        errCode = NEXUS_SurfaceClient_SetSettings(pSelf->m_hVideoClient, &settings);
-        if ( errCode )
-        {
-            ALOGE("%s: NEXUS_SurfaceClient_SetSettings failed(%d)", __FUNCTION__, errCode);
-            return;
-        }
-
-#if 0
-        if ( !m_setSurface )
-        {
-            errCode = NEXUS_SurfaceClient_SetSurface(m_hSurfaceClient, m_hAlphaSurface);
-            if ( errCode )
-            {
-                (void)BOMX_BERR_TRACE(errCode);
-                return;
-            }
-            m_setSurface = true;
-        }
-#endif
-
-    }
+static int
+BroadcastDemo_SetGeometry(BroadcastRect position, BroadcastRect clipRect, jshort gfxWidth, jshort gfxHeight, jshort zorder, jboolean visible)
+{
+    NEXUS_Rect pos, clip;
+    pos.x = position.x;
+    pos.y = position.y;
+    pos.width = position.w;
+    pos.height = position.h;
+    clip.x = clipRect.x;
+    clip.y = clipRect.y;
+    clip.width = clipRect.w;
+    clip.height = clipRect.h;
+    SetGeometry_locked(&pos, &clip, gfxWidth, gfxHeight, zorder, visible);
+    return 0;
 }
 
 static int
@@ -417,6 +406,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
             rv = -1;
         }
         if (rv == 0) {
+            ALOGE("%s: SDB ID %d", __FUNCTION__, pSelf->m_allocResults.surfaceClient[0].id);
             pSelf->m_hSurfaceClient = NEXUS_SurfaceClient_Acquire(pSelf->m_allocResults.surfaceClient[0].id);
             if ( NULL == pSelf->m_hSurfaceClient )
             {
@@ -436,6 +426,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
                 rv = -1;
             }
         }
+
     }
 
     if (rv == 0) {
@@ -461,6 +452,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->StopScan = BroadcastDemo_StopScan;
     pD->Stop = BroadcastDemo_Stop;
     pD->Release = BroadcastDemo_Release;
+    pD->SetGeometry = BroadcastDemo_SetGeometry;
 
     ALOGE("%s: Exit", __FUNCTION__);
     return 0;

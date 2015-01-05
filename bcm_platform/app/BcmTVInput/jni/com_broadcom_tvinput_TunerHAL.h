@@ -87,6 +87,14 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_release
   (JNIEnv *, jclass);
 
+/*
+ * Class:     com_broadcom_tvinput_TunerHAL
+ * Method:    stop
+ * Signature: ()I
+ */
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_setSurface
+  (JNIEnv *, jclass);
+
 #ifdef __cplusplus
 }
 #endif

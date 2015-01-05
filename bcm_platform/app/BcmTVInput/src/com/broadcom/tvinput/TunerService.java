@@ -595,6 +595,9 @@ public class TunerService extends TvInputService {
                 }
             }
 
+            // Allow HAL to talk to HWC
+            TunerHAL.setSurface();
+
             // Inform that we've got video running
             notifyVideoAvailable();
 

@@ -75,6 +75,7 @@ static JNINativeMethod gMethods[] =
     {"getUtcTime",     "()J",      (void *)Java_com_broadcom_tvinput_TunerHAL_getUtcTime},  
     {"stop",           "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stop},  
     {"release",        "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_release},  
+    {"setSurface",     "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_setSurface},  
 };
 
 const String16 INexusTunerService::descriptor(TUNER_INTERFACE_NAME);
@@ -186,6 +187,161 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
     return result;
 }
 
+#include "Hwc.h"
+#include "HwcListener.h"
+#include "IHwc.h"
+#include "HwcSvc.h"
+
+typedef void (* BCMSIDEBAND_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
+
+class BcmSidebandBinder : public HwcListener
+{
+public:
+
+    BcmSidebandBinder() : cb(NULL), cb_data(0) {};
+    virtual ~BcmSidebandBinder() {};
+
+    virtual void notify(int msg, struct hwc_notification_info &ntfy);
+
+    inline void listen() {
+       if (get_hwc(false) != NULL)
+           get_hwc(false)->registerListener(this, HWC_BINDER_SDB);
+       else
+           ALOGE("%s: failed to associate %p with BcmSidebandBinder service.", __FUNCTION__, this);
+    };
+
+    inline void hangup() {
+       if (get_hwc(false) != NULL)
+           get_hwc(false)->unregisterListener(this);
+       else
+           ALOGE("%s: failed to dissociate %p from BcmSidebandBinder service.", __FUNCTION__, this);
+    };
+
+    inline void getvideo(int index, int &value) {
+       if (get_hwc(false) != NULL) {
+           get_hwc(false)->getVideoSurfaceId(this, index, value);
+       }
+    };
+
+    inline void getsideband(int index, int &value) {
+       if (get_hwc(false) != NULL) {
+           get_hwc(false)->getSidebandSurfaceId(this, index, value);
+       }
+    };
+
+    inline void getgeometry(int type, int index,
+                            struct hwc_position &frame, struct hwc_position &clipped,
+                            int &zorder, int &visible) {
+       if (get_hwc(false) != NULL) {
+           get_hwc(false)->getGeometry(this, type, index, frame, clipped, zorder, visible);
+       }
+    };
+
+    void register_notify(BCMSIDEBAND_BINDER_NTFY_CB callback, int data) {
+       cb = callback;
+       cb_data = data;
+    }
+
+private:
+    BCMSIDEBAND_BINDER_NTFY_CB cb;
+    int cb_data;
+};
+
+class BcmSidebandBinder_wrap
+{
+private:
+
+   sp<BcmSidebandBinder> ihwc;
+
+public:
+   BcmSidebandBinder_wrap(void) {
+      ALOGV("%s: allocated %p", __FUNCTION__, this);
+      ihwc = new BcmSidebandBinder;
+      ihwc.get()->listen();
+   };
+
+   virtual ~BcmSidebandBinder_wrap(void) {
+      ALOGV("%s: cleared %p", __FUNCTION__, this);
+      ihwc.get()->hangup();
+      ihwc.clear();
+   };
+
+   void getvideo(int index, int &value) {
+      ihwc.get()->getvideo(index, value);
+   }
+
+   void getsideband(int index, int &value) {
+      ihwc.get()->getsideband(index, value);
+   }
+
+   void getgeometry(int type, int index,
+                    struct hwc_position &frame, struct hwc_position &clipped,
+                    int &zorder, int &visible) {
+      ihwc.get()->getgeometry(type, index, frame, clipped, zorder, visible);
+   }
+
+   BcmSidebandBinder *get(void) {
+      return ihwc.get();
+   }
+};
+
+static BcmSidebandBinder_wrap *m_hwcBinder;
+
+void BcmSidebandBinder::notify(int msg, struct hwc_notification_info &ntfy)
+{
+   ALOGE( "%s: notify received: msg=%u", __FUNCTION__, msg);
+
+   if (cb)
+      cb(cb_data, msg, ntfy);
+}
+
+static void TunerHALSidebandBinderNotify(int cb_data, int msg, struct hwc_notification_info &ntfy)
+{
+    struct bcmsideband_ctx *ctx = (struct bcmsideband_ctx *)cb_data;
+
+    switch (msg)
+    {
+    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_GEOMETRY_UPDATE:
+    {
+       BroadcastRect position, clip;
+       position.x = ntfy.frame.x;
+       position.y = ntfy.frame.y;
+       position.w = ntfy.frame.w;
+       position.h = ntfy.frame.h;
+       clip.x = ntfy.clipped.x;
+       clip.y = ntfy.clipped.y;
+       clip.w = ntfy.clipped.w;
+       clip.h = ntfy.clipped.h;
+       ALOGE("%s: frame:{%d,%d,%d,%d}, clipped:{%d,%d,%d,%d}, display:{%d,%d}, zorder:%d", __FUNCTION__,
+             position.x, position.y, position.w, position.h,
+             clip.x, clip.y, clip.w, clip.h,
+             ntfy.display_width, ntfy.display_height, ntfy.zorder);
+
+       if (g_pTD->driver.SetGeometry) {
+           g_pTD->driver.SetGeometry(position, clip, ntfy.display_width, ntfy.display_height, ntfy.zorder, true);
+       }
+    }
+    break;
+
+    default:
+        break;
+    }
+}
+
+static void
+HwcBinderConnect()
+{
+    // connect to the HWC binder.
+    m_hwcBinder = new BcmSidebandBinder_wrap;
+    if ( NULL == m_hwcBinder )
+    {
+        ALOGE("%s: Unable to connect to HwcBinder", __FUNCTION__);
+        return;
+    }
+    m_hwcBinder->get()->register_notify(&TunerHALSidebandBinderNotify, (int)m_hwcBinder);
+    ALOGE("%s: Connected to HwcBinder", __FUNCTION__);
+}
+
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env, jclass thiz, jobject o)
 {
     int rc;
@@ -212,6 +368,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env
     TV_LOG("%s: Found class (%p)!!", __FUNCTION__, cls);
     gTunerServiceClass = reinterpret_cast<jclass>(env->NewGlobalRef(cls));
     g_pTD->o = env->NewGlobalRef(o);
+
+    HwcBinderConnect();
+
     return Broadcast_Initialize(&g_pTD->driver);
 }
 
@@ -489,6 +648,21 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_release(JNIEnv *env, j
     }
     else {
         rv = (*g_pTD->driver.Release)();
+    }
+
+    return rv;
+}
+
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_setSurface(JNIEnv *env, jclass thiz)
+{
+    jint rv = -1;
+
+    TV_LOG("%s: Setting surface!!", __FUNCTION__);
+
+    if (m_hwcBinder) {
+        int sbsi;
+        m_hwcBinder->getsideband(0, sbsi);
+        rv = 0;
     }
 
     return rv;

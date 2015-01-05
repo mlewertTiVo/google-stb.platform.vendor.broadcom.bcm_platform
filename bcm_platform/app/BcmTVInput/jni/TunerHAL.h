@@ -42,6 +42,7 @@ public:
     NexusIPCClientBase *ipcclient;
     NexusClientContext *nexus_client;
     BroadcastDriver driver;
+    int surfaceClientId;
 };
 
 void TunerHAL_onBroadcastEvent(jint e);

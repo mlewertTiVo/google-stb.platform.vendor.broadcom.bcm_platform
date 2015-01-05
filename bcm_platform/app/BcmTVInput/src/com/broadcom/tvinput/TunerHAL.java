@@ -27,4 +27,5 @@ public class TunerHAL
     static native long getUtcTime();
     static native int stop();
     static native int release();
+    static native int setSurface();
 }
