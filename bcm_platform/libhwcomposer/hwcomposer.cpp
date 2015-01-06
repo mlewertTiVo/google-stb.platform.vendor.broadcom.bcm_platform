@@ -2286,10 +2286,6 @@ static void hwc_prepare_gpx_layer(
         ctx->gpx_cli[layer_id].composition.position.y            = disp_position.y;
         ctx->gpx_cli[layer_id].composition.position.width        = disp_position.width;
         ctx->gpx_cli[layer_id].composition.position.height       = disp_position.height;
-        ctx->gpx_cli[layer_id].composition.clipRect.x            = clip_position.x;
-        ctx->gpx_cli[layer_id].composition.clipRect.y            = clip_position.y;
-        ctx->gpx_cli[layer_id].composition.clipRect.width        = clip_position.width;
-        ctx->gpx_cli[layer_id].composition.clipRect.height       = clip_position.height;
         ctx->gpx_cli[layer_id].composition.virtualDisplay.width  = ctx->display_width;
         ctx->gpx_cli[layer_id].composition.virtualDisplay.height = ctx->display_height;
         ctx->gpx_cli[layer_id].blending_type                     = cur_blending_type;
@@ -2298,6 +2294,17 @@ static void hwc_prepare_gpx_layer(
         ctx->gpx_cli[layer_id].width                             = cur_width;
         ctx->gpx_cli[layer_id].height                            = cur_height;
         ctx->gpx_cli[layer_id].composition.visible               = true;
+
+        if (cur_height && cur_width) {
+           int16_t x = ctx->display_width * (cur_width - clip_position.width) / cur_width;
+           int16_t y = ctx->display_height * (cur_height - clip_position.height) / cur_height;
+
+           ctx->gpx_cli[layer_id].composition.clipRect.x         = x;
+           ctx->gpx_cli[layer_id].composition.clipRect.y         = y;
+           ctx->gpx_cli[layer_id].composition.clipRect.width     = ctx->display_width - x;
+           ctx->gpx_cli[layer_id].composition.clipRect.height    = ctx->display_height - y;
+        }
+
         rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[layer_id].ncci.sccid, &ctx->gpx_cli[layer_id].composition);
         if (rc != NEXUS_SUCCESS) {
             ALOGE("%s: geometry failed on layer %d, err=%d", __FUNCTION__, layer_id, rc);
