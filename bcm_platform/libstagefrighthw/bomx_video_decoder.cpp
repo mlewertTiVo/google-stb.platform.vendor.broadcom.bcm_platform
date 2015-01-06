@@ -1508,7 +1508,7 @@ NEXUS_VideoCodec BOMX_VideoDecoder::GetNexusCodec()
 
 NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
 {
-    BOMX_MSG(("Setting Input Port State to %s", BOMX_StateName(newState)));
+    ALOGV("Setting Input Port State to %s", BOMX_StateName(newState));
     // Loaded means stop and release all resources
     if ( newState == OMX_StateLoaded )
     {
@@ -1773,7 +1773,7 @@ NEXUS_Error BOMX_VideoDecoder::SetOutputPortState(OMX_STATETYPE newState)
     // Queue.  For format changes, we need to be able to control this logical
     // output port independently and leave the input port active during any
     // Resolution Change.
-    BOMX_MSG(("Setting Output Port State to %s", BOMX_StateName(newState)));
+    ALOGV("Setting Output Port State to %s", BOMX_StateName(newState));
     if ( newState == OMX_StateLoaded )
     {
         if ( m_outputFrameTimerId )
@@ -1814,7 +1814,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
     OMX_ERRORTYPE err;
     NEXUS_Error errCode;
 
-    BOMX_MSG(("Begin State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState)));
+    ALOGV("Begin State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
 
     switch ( newState )
     {
@@ -2779,19 +2779,25 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
                 NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &vdecStatus);
                 active = vdecStatus.started;
             }
-            if ( active )
+            if ( active && pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered )
             {
                 // Drop the buffer in the decoder
+                ALOGV("Dropping frame %u on FreeBuffer", pFrameBuffer->frameStatus.serialNumber);
                 pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDropReady;
                 ReturnDecodedFrames();
             }
-            else
+            else if ( pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered ||
+                      pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eInvalid )
             {
                 // Free up the buffer (decoder is already stopped)
+                ALOGV("Discarding frame %u on FreeBuffer (%s)", pFrameBuffer->frameStatus.serialNumber, active?"invalid":"stopped");
                 BLST_Q_REMOVE(&m_frameBufferAllocList, pFrameBuffer, node);
                 BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pFrameBuffer, node);
             }
-            pFrameBuffer = NULL;
+            else
+            {
+                ALOGV("Not discarding frame %u, state is already %u", pFrameBuffer->state);
+            }
         }
 
         delete pInfo;
@@ -3251,7 +3257,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         if ( pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eInvalid )
         {
             // The frame has been flushed while the app owned it.  Move it back to the free list silently.
-            BOMX_MSG(("Invalid FrameBuffer - Return to free list"));
+            ALOGV("Invalid FrameBuffer (%u) - Return to free list", pFrameBuffer->frameStatus.serialNumber);
             BLST_Q_REMOVE(&m_frameBufferAllocList, pFrameBuffer, node);
             BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pFrameBuffer, node);
         }
@@ -3580,6 +3586,8 @@ void BOMX_VideoDecoder::InvalidateDecodedFrames()
     */
     BOMX_VideoDecoderFrameBuffer *pBuffer, *pNext=NULL;
 
+    ALOGV("Invalidating decoded frame list");
+
     for ( pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
           NULL != pBuffer;
           pBuffer = pNext )
@@ -3695,6 +3703,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             {
                 BOMX_VideoDecoderOutputBufferInfo *pInfo;
                 OMX_BUFFERHEADERTYPE *pHeader = pOmxBuffer->GetHeader();
+                bool prevEosPending = m_eosPending;
+                bool prevEosDelivered = m_eosDelivered;
                 pHeader->nOffset = 0;
                 if ( !m_pBufferTracker->Remove(pBuffer->frameStatus.pts, pHeader) )
                 {
@@ -3748,19 +3758,22 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     {
                         OMX_PARAM_PORTDEFINITIONTYPE portDefs;
 
-                        ALOGI("Video output format change %ux%u -> %ux%u [max %ux%u]", m_outputWidth, m_outputHeight,
+                        ALOGI("Video output format change %ux%u -> %ux%u [max %ux%u] on frame %u", m_outputWidth, m_outputHeight,
                             pBuffer->frameStatus.surfaceCreateSettings.imageWidth, pBuffer->frameStatus.surfaceCreateSettings.imageHeight,
-                            m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth, m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight);
+                            m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth, m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight,
+                            pBuffer->frameStatus.serialNumber);
 
                         // For metadata output, treat port width/height as max values.  Crop can never be > port values.
                         if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata ||
                              pBuffer->frameStatus.surfaceCreateSettings.imageWidth > m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth ||
-                             pBuffer->frameStatus.surfaceCreateSettings.imageWidth > m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight )
+                             pBuffer->frameStatus.surfaceCreateSettings.imageHeight > m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight )
                         {
                             ALOGI("Output port will reset");
-                            // Push this entry back into the PTS tracker
+                            // Push this entry back into the PTS tracker and reset any changes to EOS state
                             uint32_t temp;
                             m_pBufferTracker->Add(pHeader, &temp);
+                            m_eosPending = prevEosPending;
+                            m_eosDelivered = prevEosDelivered;
 
                             // Send port format change and stop processing frames until reset
                             m_formatChangePending = true;
@@ -3776,8 +3789,6 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         }
                         else
                         {
-                            ALOGI("Output port will not reset");
-
                             // Only update crop and last output format if we're not resetting.  It will reset automatically
                             // on restart, and because ACodec queries the port format first and then crop to check crop <= port
                             // format you can get a race condition assertion if you update both here.  ACodec queries old port
@@ -3901,7 +3912,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 pBuffer->state = BOMX_VideoDecoderFrameBufferState_eDelivered;
                 pInfo->pFrameBuffer = pBuffer;
                 pBuffer->pBufferInfo = pInfo;
-                BOMX_MSG(("Returning Port Buffer ts %u us serial %u pInfo %#x FB %#x HDR %#x flags %#x", (unsigned int)pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader, pHeader->nFlags));
+                ALOGV("Returning Port Buffer ts %u us serial %u pInfo %#x FB %#x HDR %#x flags %#x", (unsigned int)pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader, pHeader->nFlags);
                 {
                     unsigned queueDepthBefore = m_pVideoPorts[1]->QueueDepth();
                     ReturnPortBuffer(m_pVideoPorts[1], pOmxBuffer);
@@ -3940,7 +3951,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
 {
     NEXUS_VideoDecoderReturnFrameSettings returnSettings[B_MAX_DECODED_FRAMES];
     unsigned numFrames=0;
-    BOMX_VideoDecoderFrameBuffer *pBuffer, *pStart, *pEnd;
+    BOMX_VideoDecoderFrameBuffer *pBuffer, *pStart, *pEnd, *pLast;
 
     // Make sure decoder is available and running
     if ( NULL == m_hSimpleVideoDecoder )
@@ -3988,6 +3999,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
     if ( NULL != pEnd )
     {
         // Do what was requested
+        pLast = pEnd;
         pEnd = BLST_Q_NEXT(pEnd, node);
         pBuffer = pStart;
         while ( pBuffer != pEnd && numFrames < B_MAX_DECODED_FRAMES )
@@ -3996,7 +4008,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             //NEXUS_VideoDecoder_GetDefaultReturnFrameSettings(&returnSettings[numFrames]); Intentionally skipped - there is only one field to set anyway
             if ( pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered )
             {
-                BOMX_WRN(("Dropping outstanding frame %u still owned by client - a later frame was returned already", pBuffer->frameStatus.serialNumber));
+                BOMX_WRN(("Dropping outstanding frame %u still owned by client - a later frame (%u) was returned already", pBuffer->frameStatus.serialNumber, pLast->frameStatus.serialNumber));
                 pBuffer->state = BOMX_VideoDecoderFrameBufferState_eInvalid;
                 returnSettings[numFrames].display = false;
             }
@@ -4044,7 +4056,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
 
         if ( numFrames > 0 )
         {
-            BOMX_MSG(("Returning %u frames to nexus last=%s", numFrames, returnSettings[numFrames-1].display?"display":"drop"));
+            ALOGV("Returning %u frames to nexus last=%u - %s", numFrames, pLast->frameStatus.serialNumber, returnSettings[numFrames-1].display?"display":"drop");
             NEXUS_Error errCode = NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(m_hSimpleVideoDecoder, returnSettings, numFrames);
             if ( errCode )
             {
@@ -4305,7 +4317,7 @@ void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rec
             composition.zorder = zorder;
             composition.visible = visible;
             composition.contentMode = NEXUS_VideoWindowContentMode_eFull;
-             ALOGI("Alpha hole position change to %ux%u @ %u,%u [fb %ux%u] zorder %u visible %u", pPosition->width, pPosition->height, pPosition->x, pPosition->y, gfxWidth, gfxHeight, zorder, (unsigned)visible);
+            ALOGI("Alpha hole position change to %ux%u @ %u,%u [fb %ux%u] zorder %u visible %u", pPosition->width, pPosition->height, pPosition->x, pPosition->y, gfxWidth, gfxHeight, zorder, (unsigned)visible);
             errCode = NxClient_SetSurfaceClientComposition(m_allocResults.surfaceClient[0].id, &composition);
             if ( errCode )
             {
@@ -4317,51 +4329,59 @@ void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rec
         BOMX_VideoDecoderFrameBuffer *pFrameBuffer = FindFrameBuffer(serialNumber);
         if ( pFrameBuffer )
         {
-            // Disable for now until the clip rect is properly relayed.  Video will fill the window by default.
-#if 0
             NEXUS_Rect videoPosition;
             unsigned aspectOld, aspectNew;
             unsigned oldW, newW, oldH, newH;
             unsigned oldX, newX, oldY, newY;
 
-            // Adjusting the video window parameters can cause a black flash while the BVN reconfigures.
-            // Because the hardware and nexus are intended to isolate applications from source format changes and
-            // per-frame interaction, we configure clipping in relative values (virtualDisplay vs. clipRect).
-            // So, to avoid black flashes we need to convert the physical values given from hwc into relative values
-            // and then only update if the effective values are changing (e.g. aspect ratio changes or relative clipping changes).
-
-            videoPosition.x = videoPosition.y = 0;
-            videoPosition.width = pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth;
-            videoPosition.height = pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight;
-            NEXUS_SurfaceClient_GetSettings(m_hVideoClient, &settings);
-
-            aspectOld = (4096*settings.composition.virtualDisplay.width) / settings.composition.virtualDisplay.height;
-            aspectNew = (4096*videoPosition.width) / videoPosition.height;
-            oldW = (4096*settings.composition.clipRect.width) / settings.composition.virtualDisplay.width;
-            oldH = (4096*settings.composition.clipRect.height) / settings.composition.virtualDisplay.height;
-            newW = (4096*pClipRect->width) / videoPosition.width;
-            newH = (4096*pClipRect->height) / videoPosition.height;
-            oldX = (4096*settings.composition.clipRect.x) / settings.composition.virtualDisplay.width;
-            oldY = (4096*settings.composition.clipRect.y) / settings.composition.virtualDisplay.height;
-            newX = (4096*pClipRect->x) / videoPosition.width;
-            newY = (4096*pClipRect->y) / videoPosition.height;
-
-            if ( aspectOld != aspectNew || oldW != newW || oldH != newH || oldX != newX || oldY != newY )
+            // Sanity check.  Video clipping can not be larger than the video surface (e.g. zoom out), but on format changes the display
+            // requests can get out of sync briefly with the clip rectangle change relayed to HWC.
+            if ( (pClipRect->x + pClipRect->width) > pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth ||
+                 (pClipRect->y + pClipRect->height) > pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight )
             {
-                settings.composition.virtualDisplay.width = videoPosition.width;
-                settings.composition.virtualDisplay.height = videoPosition.height;
-                settings.composition.position = videoPosition;
-                settings.composition.clipRect = *pClipRect;
-                settings.composition.contentMode = NEXUS_VideoWindowContentMode_eFull;
-                ALOGI("Video clipping change to %ux%u @ %u,%u [source %ux%u]", pClipRect->width, pClipRect->height, pClipRect->x, pClipRect->y, settings.composition.virtualDisplay.width, settings.composition.virtualDisplay.height);
-                errCode = NEXUS_SurfaceClient_SetSettings(m_hVideoClient, &settings);
-                if ( errCode )
+                ALOGW("Invalid clip region %ux%u @ %u,%u - Buffer is %ux%u", pClipRect->width, pClipRect->height, pClipRect->x, pClipRect->y,
+                    pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth, pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight);
+            }
+            else
+            {
+                // Adjusting the video window parameters can cause a black flash while the BVN reconfigures.
+                // Because the hardware and nexus are intended to isolate applications from source format changes and
+                // per-frame interaction, we configure clipping in relative values (virtualDisplay vs. clipRect).
+                // So, to avoid black flashes we need to convert the physical values given from hwc into relative values
+                // and then only update if the effective values are changing (e.g. aspect ratio changes or relative clipping changes).
+
+                videoPosition.x = videoPosition.y = 0;
+                videoPosition.width = pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth;
+                videoPosition.height = pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight;
+                NEXUS_SurfaceClient_GetSettings(m_hVideoClient, &settings);
+
+                aspectOld = (4096*settings.composition.virtualDisplay.width) / settings.composition.virtualDisplay.height;
+                aspectNew = (4096*videoPosition.width) / videoPosition.height;
+                oldW = (4096*settings.composition.clipRect.width) / settings.composition.virtualDisplay.width;
+                oldH = (4096*settings.composition.clipRect.height) / settings.composition.virtualDisplay.height;
+                newW = (4096*pClipRect->width) / videoPosition.width;
+                newH = (4096*pClipRect->height) / videoPosition.height;
+                oldX = (4096*settings.composition.clipRect.x) / settings.composition.virtualDisplay.width;
+                oldY = (4096*settings.composition.clipRect.y) / settings.composition.virtualDisplay.height;
+                newX = (4096*pClipRect->x) / videoPosition.width;
+                newY = (4096*pClipRect->y) / videoPosition.height;
+
+                if ( aspectOld != aspectNew || oldW != newW || oldH != newH || oldX != newX || oldY != newY )
                 {
-                    (void)BOMX_BERR_TRACE(errCode);
-                    return;
+                    settings.composition.virtualDisplay.width = videoPosition.width;
+                    settings.composition.virtualDisplay.height = videoPosition.height;
+                    settings.composition.position = videoPosition;
+                    settings.composition.clipRect = *pClipRect;
+                    settings.composition.contentMode = NEXUS_VideoWindowContentMode_eFull;
+                    ALOGI("Video clipping change to %ux%u @ %u,%u [source %ux%u]", pClipRect->width, pClipRect->height, pClipRect->x, pClipRect->y, settings.composition.virtualDisplay.width, settings.composition.virtualDisplay.height);
+                    errCode = NEXUS_SurfaceClient_SetSettings(m_hVideoClient, &settings);
+                    if ( errCode )
+                    {
+                        (void)BOMX_BERR_TRACE(errCode);
+                        return;
+                    }
                 }
             }
-#endif            
         }
 
         if ( !m_setSurface )
