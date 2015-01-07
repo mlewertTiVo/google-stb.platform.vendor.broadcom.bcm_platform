@@ -375,7 +375,7 @@ int main(void)
 
         NxClient_GetDefaultJoinSettings(&joinSettings);
         snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "nexusinit");
-        joinSettings.timeout = 10;
+        joinSettings.timeout = 60;
 
         if (strlen(value)) {
            joinSettings.mode = NEXUS_ClientMode_eProtected;
