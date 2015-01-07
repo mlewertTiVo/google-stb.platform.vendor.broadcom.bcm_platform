@@ -74,7 +74,7 @@ def write_header(s, d):
 
 # how you should use this.
 def plat_droid_usage():
-	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [redux|aosp|nfs|profile <name>]'
+	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [redux|aosp|nfs|profile <name>] [spoof <cust-device> <cust-variant>]'
 	print '\t<platform>    - the BCM platform number to build for, eg: 97252, 97445, ...'
 	print '\t<chip-rev>    - the BCM chip revision of interest, eg: A0, B0, C1, ...'
 	print '\t<board-type>  - the target board type, eg: SV, C'
@@ -83,6 +83,11 @@ def plat_droid_usage():
         print '\t              - aosp: AOSP feature set and integration exclusively'
         print '\t              - nfs: booting using nfs exclusively - no formal support, at your own risks'
         print '\t              - profile: device specific profile override, must pass a valid profile <name>'
+	print '\t[spoof]'
+	print '\t              - when set, both a cust-device corresponding to the customer android device and a cust-variant'
+	print '\t                corresponding to the customer android variant must be present and valid.'
+	print '\t              - cust-device: the customer device we are spoofing.'
+        print '\t              - cust-variant: the customer device variant we are spoofing'
 	print '\n'
 	sys.exit(0)
 
@@ -93,13 +98,26 @@ if input < 4 :
 if input > 4 :
 	target_option=str(sys.argv[4]).upper()
 	if target_option == "PROFILE":
-		if input != 6:
+		if input < 6:
 			plat_droid_usage()
 		else:
 			target_profile=str(sys.argv[5])
-else :
+		if input > 6:
+			spoof_device=str(sys.argv[6])
+			spoof_variant=str(sys.argv[7])
+		else:
+			spoof_device='nope'
+	if target_option == "SPOOF":
+		if input < 6:
+			plat_droid_usage()
+		else:
+			spoof_device=str(sys.argv[5])
+			spoof_variant=str(sys.argv[6])
+else:
 	target_option='nope'
 	target_profile='nope'
+	spoof_device='nope'
+	spoof_variant='nope'
 
 chip=str(sys.argv[1]).upper()
 revision=str(sys.argv[2]).upper()
@@ -124,13 +142,20 @@ if target_option == "PROFILE":
 			custom_target_pre_settings="include device/broadcom/custom/%s/%s/pre_settings.mk" %(androiddevice, target_profile)
 		androiddevice='%s_%s' % (androiddevice, target_profile)
 
-devicedirectory='./device/broadcom/bcm_%s/' % (androiddevice)
+if spoof_device == 'nope':
+	devicedirectory='./device/broadcom/bcm_%s/' % (androiddevice)
+else:
+	androiddevice='%s' % (spoof_variant)
+	devicedirectory='./device/%s/%s/' % (spoof_device, androiddevice)
 if verbose:
 	print 'creating android device: %s, in directory: %s' % (androiddevice, devicedirectory)
 # minimum modules for android device build created by this script.
 vendorsetup="vendorsetup.sh"
 androidproduct="AndroidProducts.mk"
-target="bcm_%s.mk" % (androiddevice)
+if spoof_device == 'nope':
+	target="bcm_%s.mk" % (androiddevice)
+else:
+	target="full_%s.mk" % (androiddevice)
 boardconfig="BoardConfig.mk"
 # clean old config, do this here so even if we fail later on we do not
 # keep around some old stuff.
@@ -182,16 +207,29 @@ f='%s%s' % (devicedirectory, vendorsetup)
 s=os.open(f, os.O_WRONLY|os.O_CREAT)
 write_header(s, androiddevice)
 # note: additional combo can be added if need be (ie: -user)
-os.write(s, "add_lunch_combo bcm_%s-eng\n" % androiddevice)
-os.write(s, "add_lunch_combo bcm_%s-userdebug\n" % androiddevice)
-os.write(s, "add_lunch_combo bcm_%s-user\n" % androiddevice)
+if spoof_device == 'nope':
+	os.write(s, "add_lunch_combo bcm_%s-eng\n" % androiddevice)
+	os.write(s, "add_lunch_combo bcm_%s-userdebug\n" % androiddevice)
+	os.write(s, "add_lunch_combo bcm_%s-user\n" % androiddevice)
+else:
+	os.write(s, "add_lunch_combo full_%s-eng\n" % androiddevice)
 os.close(s);
 
 f='%s%s' % (devicedirectory, androidproduct)
 s=os.open(f, os.O_WRONLY|os.O_CREAT)
 write_header(s, androiddevice)
-os.write(s, "PRODUCT_MAKEFILES := $(LOCAL_DIR)/bcm_%s.mk\n" % androiddevice)
+if spoof_device == 'nope':
+	os.write(s, "PRODUCT_MAKEFILES := $(LOCAL_DIR)/bcm_%s.mk\n" % androiddevice)
+else:
+	os.write(s, "PRODUCT_MAKEFILES := $(LOCAL_DIR)/full_%s.mk\n" % androiddevice)
 os.close(s);
+
+if spoof_device != 'nope':
+	f='%s%s' % (devicedirectory, boardconfig)
+	s=os.open(f, os.O_WRONLY|os.O_CREAT)
+	write_header(s, androiddevice)
+	os.write(s, "include device/broadcom/bcm_platform/BoardConfig.mk\n")
+	os.close(s);
 
 f='%s%s' % (devicedirectory, target)
 s=os.open(f, os.O_WRONLY|os.O_CREAT)
@@ -224,14 +262,21 @@ if target_option == "NFS":
 if target_option == "PROFILE":
 	os.write(s, "\n\n# CUSTOM setting tweaks...\n")
 	os.write(s, custom_target_settings)
-os.write(s, "\n\nPRODUCT_NAME := bcm_%s\n" % androiddevice)
-os.write(s, "\n# exporting toolchains path for kernel image+modules\n")
+if spoof_device != "nope":
+	spoof_settings="./device/%s/config/settings.mk" %(spoof_device)
+	if os.access(spoof_settings, os.F_OK):
+		spoof_settings="include device/%s/config/settings.mk" %(spoof_device)
+		os.write(s, "\n\n# SPOOF setting tweaks...\n")
+		os.write(s, spoof_settings)
+else:
+	os.write(s, "\n\nPRODUCT_NAME := bcm_%s\n" % androiddevice)
+os.write(s, "\n\n# exporting toolchains path for kernel image+modules\n")
 os.write(s, "export PATH := %s:${PATH}\n" % kerneltoolchain)
 os.close(s);
 
 # yeah! happy...
 print '\n'
-print 'congratulations! device bcm_%s configured, you may proceed with android build...' % androiddevice
+print 'congratulations! device [bcm_]%s configured, you may proceed with android build...' % androiddevice
 print '\t1) source ./build/envsetup.sh'
-print '\t2) lunch bcm_%s-[eng|userdebug|user].' % androiddevice
+print '\t2) lunch [bcm_]%s-[eng|userdebug|user].' % androiddevice
 print '\n'
