@@ -103,8 +103,8 @@ if input > 4 :
 		else:
 			target_profile=str(sys.argv[5])
 		if input > 6:
-			spoof_device=str(sys.argv[6])
-			spoof_variant=str(sys.argv[7])
+			spoof_device=str(sys.argv[7])
+			spoof_variant=str(sys.argv[8])
 		else:
 			spoof_device='nope'
 	if target_option == "SPOOF":
