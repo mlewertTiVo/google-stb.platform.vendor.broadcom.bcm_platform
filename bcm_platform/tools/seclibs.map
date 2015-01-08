@@ -1,6 +1,4 @@
-usr/lib/libdrmrootfs.so=libsecurity/drmrootfs/linuxkernel/libdrmrootfs.so
 usr/lib/libbcrypt.so=libsecurity/bcrypt/linuxkernel/libbcrypt.so
-usr/lib/libsrai.so=libsecurity/srai/linuxkernel/libsrai.so
 usr/lib/libplayreadypk_host.so=libsecurity/playreadypk/linuxkernel/libplayreadypk_host.so
 usr/lib/libplayreadypk.so=libsecurity/playreadypk/linuxkernel/libplayreadypk.so
 usr/lib/libcmndrm.so=libsecurity/common_drm/linuxkernel/libcmndrm.so
