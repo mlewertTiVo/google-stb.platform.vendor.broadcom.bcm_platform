@@ -15,10 +15,20 @@
 #----------------
 # libdrmrootfs.so
 #----------------
-LOCAL_PATH := $(call my-dir)
+LOCAL_PATH := $(call my-dir)/../../../refsw/BSEAV/lib/drmrootfs
 
 include $(CLEAR_VARS)
-LOCAL_PREBUILT_LIBS := ${DRM_BUILD_MODE}/libdrmrootfs.so
-LOCAL_MODULE_TAGS := optional
-include $(BUILD_MULTI_PREBUILT)
+
+LOCAL_MODULE := libdrmrootfs
+LOCAL_SRC_FILES := drm_data.c
+
+LOCAL_C_INCLUDES := ${NEXUS_APP_INCLUDE_PATHS}
+
+LOCAL_CFLAGS += -DPIC -fpic -fshort-wchar -DANDROID
+LOCAL_CFLAGS += $(NEXUS_CFLAGS)
+LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
+
+LOCAL_LDFLAGS := -Wl,--no-fatal-warnings
+
+include $(BUILD_SHARED_LIBRARY)
 

@@ -15,9 +15,42 @@
 #-------------
 # libsrai.so
 #-------------
-LOCAL_PATH := $(call my-dir)
+LOCAL_PATH := $(call my-dir)/../../../refsw/
 
 include $(CLEAR_VARS)
-LOCAL_PREBUILT_LIBS := ${DRM_BUILD_MODE}/libsrai.so
-LOCAL_MODULE_TAGS := optional
-include $(BUILD_MULTI_PREBUILT)
+
+# add SAGElib related includes
+include $(LOCAL_PATH)/magnum/syslib/sagelib/bsagelib_public.inc
+
+ifeq ($(NEXUS_MODE),proxy)
+NEXUS_LIB=libnexus
+else
+ifeq ($(NEXUS_WEBCPU),core1_server)
+NEXUS_LIB=libnexus_webcpu
+else
+NEXUS_LIB=libnexus_client
+endif
+endif
+
+LOCAL_SRC_FILES := \
+    BSEAV/lib/security/sage/srai/src/sage_srai.c \
+    BSEAV/lib/security/sage/srai/src/sage_srai_global_lock.c \
+    magnum/syslib/sagelib/src/bsagelib_tools.c
+
+LOCAL_C_INCLUDES := \
+    vendor/broadcom/refsw/BSEAV/lib/security/sage/srai/include \
+    vendor/broadcom/refsw/BSEAV/lib/security/sage/include \
+    vendor/broadcom/refsw/BSEAV/lib/security/sage/include/private \
+    ${BSAGELIB_INCLUDES} \
+    ${NEXUS_APP_INCLUDE_PATHS}
+
+LOCAL_CFLAGS += -DPIC -fpic -DANDROID
+LOCAL_CFLAGS += $(NEXUS_CFLAGS)
+LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
+
+LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB)
+
+LOCAL_MODULE := libsrai
+
+include $(BUILD_SHARED_LIBRARY)
+
