@@ -663,10 +663,34 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         this->Invalidate();
         return;
     }
+
+    NxClient_ConnectSettings connectSettings;
+    NxClient_GetDefaultConnectSettings(&connectSettings);
+    connectSettings.simpleVideoDecoder[0].id = m_allocResults.simpleVideoDecoder[0].id;
+    connectSettings.simpleVideoDecoder[0].surfaceClientId = m_allocResults.surfaceClient[0].id;
+    connectSettings.simpleVideoDecoder[0].windowId = 0;
+    connectSettings.simpleVideoDecoder[0].windowCapabilities.type = NxClient_VideoWindowType_eMain; // TODO: Support Main/Pip
+    for ( i = 0; i < g_numRoles; i++ )
+    {
+        connectSettings.simpleVideoDecoder[0].decoderCapabilities.supportedCodecs[GetNexusCodec((OMX_VIDEO_CODINGTYPE)g_roleCodec[i])] = true;
+    }
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = 3840;  // Always request 4k decoder
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = 2160;
+    errCode = NxClient_Connect(&connectSettings, &m_nxClientId);
+    if ( errCode )
+    {
+        BOMX_ERR(("NxClient_Connect failed.  Resources may be exhausted."));
+        (void)BOMX_BERR_TRACE(errCode);
+        NxClient_Free(&m_allocResults);
+        this->Invalidate();
+        return;
+    }
+
     m_hSurfaceClient = NEXUS_SurfaceClient_Acquire(m_allocResults.surfaceClient[0].id);
     if ( NULL == m_hSurfaceClient )
     {
         BOMX_ERR(("Unable to acquire surface client"));
+        NxClient_Disconnect(m_nxClientId);
         NxClient_Free(&m_allocResults);
         this->Invalidate();
         return;
@@ -830,7 +854,6 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     if ( m_hSimpleVideoDecoder )
     {
         NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
-        NxClient_Disconnect(m_nxClientId);
     }
     if ( m_hPlaypump )
     {
@@ -843,6 +866,7 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     if ( m_hSurfaceClient )
     {
         NEXUS_SurfaceClient_Release(m_hSurfaceClient);
+        NxClient_Disconnect(m_nxClientId);
         NxClient_Free(&m_allocResults);
     }
     if ( m_hAlphaSurface )
@@ -1486,7 +1510,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
 
 NEXUS_VideoCodec BOMX_VideoDecoder::GetNexusCodec()
 {
-    switch ( (int)GetCodec() )
+    return GetNexusCodec((OMX_VIDEO_CODINGTYPE)GetCodec());
+}
+
+NEXUS_VideoCodec BOMX_VideoDecoder::GetNexusCodec(OMX_VIDEO_CODINGTYPE omxType)
+{
+    switch ( (int)omxType )
     {
     case OMX_VIDEO_CodingMPEG2:
         return NEXUS_VideoCodec_eMpeg2;
@@ -1533,8 +1562,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_pBufferTracker->Flush();
             NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
             m_hSimpleVideoDecoder = NULL;
-            NxClient_Disconnect(m_nxClientId);
-            m_nxClientId = NXCLIENT_INVALID_ID;
 
             NEXUS_Playpump_ClosePidChannel(m_hPlaypump, m_hPidChannel);
             NEXUS_Playpump_Close(m_hPlaypump);
@@ -1561,32 +1588,11 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             NEXUS_VideoDecoderSettings vdecSettings;
             NEXUS_PlaypumpOpenSettings playpumpOpenSettings;
             NEXUS_PlaypumpSettings playpumpSettings;
-            NxClient_ConnectSettings connectSettings;
             NEXUS_Error errCode;
 
-            NxClient_GetDefaultConnectSettings(&connectSettings);
-            connectSettings.simpleVideoDecoder[0].id = m_allocResults.simpleVideoDecoder[0].id;
-            connectSettings.simpleVideoDecoder[0].surfaceClientId = m_allocResults.surfaceClient[0].id;
-            connectSettings.simpleVideoDecoder[0].windowId = 0;
-            connectSettings.simpleVideoDecoder[0].windowCapabilities.type = NxClient_VideoWindowType_eMain; // TODO: Support Main/Pip
-            connectSettings.simpleVideoDecoder[0].decoderCapabilities.supportedCodecs[GetNexusCodec()] = true;
-            if ( (int)GetCodec() == OMX_VIDEO_CodingHEVC || (int)GetCodec() == OMX_VIDEO_CodingVP9 )
-            {
-                // Request 4k decoder for HEVC/VP9 only
-                connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = 3840;
-                connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = 2160;
-                BOMX_WRN(("Requesting 4k decoder from nexus"));
-            }
-            errCode = NxClient_Connect(&connectSettings, &m_nxClientId);
-            if ( errCode )
-            {
-                return BOMX_BERR_TRACE(errCode);
-            }
             m_hSimpleVideoDecoder = NEXUS_SimpleVideoDecoder_Acquire(m_allocResults.simpleVideoDecoder[0].id);
             if ( NULL == m_hSimpleVideoDecoder )
             {
-                NxClient_Disconnect(m_nxClientId);
-                m_nxClientId = NXCLIENT_INVALID_ID;
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
             }
 
@@ -1599,8 +1605,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             {
                 NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
                 m_hSimpleVideoDecoder = NULL;
-                NxClient_Disconnect(m_nxClientId);
-                m_nxClientId = NXCLIENT_INVALID_ID;
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
             }
             NEXUS_Playpump_GetSettings(m_hPlaypump, &playpumpSettings);
@@ -1615,8 +1619,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_hPlaypump = NULL;
                 NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
                 m_hSimpleVideoDecoder = NULL;
-                NxClient_Disconnect(m_nxClientId);
-                m_nxClientId = NXCLIENT_INVALID_ID;
                 return BOMX_BERR_TRACE(errCode);
             }
 
@@ -1630,8 +1632,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_hPlaypump = NULL;
                 NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
                 m_hSimpleVideoDecoder = NULL;
-                NxClient_Disconnect(m_nxClientId);
-                m_nxClientId = NXCLIENT_INVALID_ID;
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
             }
             m_playpumpEventId = RegisterEvent(m_hPlaypumpEvent, BOMX_VideoDecoder_PlaypumpEvent, static_cast <void *> (this));
@@ -1644,8 +1644,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_hPlaypump = NULL;
                 NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
                 m_hSimpleVideoDecoder = NULL;
-                NxClient_Disconnect(m_nxClientId);
-                m_nxClientId = NXCLIENT_INVALID_ID;
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
             }
 
@@ -1660,8 +1658,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_hPlaypump = NULL;
                 NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
                 m_hSimpleVideoDecoder = NULL;
-                NxClient_Disconnect(m_nxClientId);
-                m_nxClientId = NXCLIENT_INVALID_ID;
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
             }
         }
@@ -4336,8 +4332,8 @@ void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rec
 
             // Sanity check.  Video clipping can not be larger than the video surface (e.g. zoom out), but on format changes the display
             // requests can get out of sync briefly with the clip rectangle change relayed to HWC.
-            if ( (pClipRect->x + pClipRect->width) > pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth ||
-                 (pClipRect->y + pClipRect->height) > pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight )
+            if ( (pClipRect->x + pClipRect->width) > (int)pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth ||
+                 (pClipRect->y + pClipRect->height) > (int)pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight )
             {
                 ALOGW("Invalid clip region %ux%u @ %u,%u - Buffer is %ux%u", pClipRect->width, pClipRect->height, pClipRect->x, pClipRect->y,
                     pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth, pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight);

@@ -296,6 +296,7 @@ protected:
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
+    NEXUS_VideoCodec GetNexusCodec(OMX_VIDEO_CODINGTYPE omxType);
 
     NEXUS_Error SetInputPortState(OMX_STATETYPE newState);
     NEXUS_Error SetOutputPortState(OMX_STATETYPE newState);

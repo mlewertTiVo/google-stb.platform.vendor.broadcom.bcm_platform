@@ -229,6 +229,7 @@ void startNxServer(void)
     strcat(cmdRunNxServer, "-transcode off ");
 #endif
     strcat(cmdRunNxServer, "-svp ");
+    strcat(cmdRunNxServer, "-grab off ");
     strcat(cmdRunNxServer, "-sd off -memconfig display,hddvi=off ");
 
     memset(value, 0, sizeof(value));
