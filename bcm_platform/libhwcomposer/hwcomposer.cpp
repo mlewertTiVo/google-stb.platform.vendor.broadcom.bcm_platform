@@ -88,7 +88,7 @@ using namespace android;
 #define NSC_SB_CLIENTS_NUMBER        2  /* sideband client layers; typically no
                                          * more than 1 are needed at any time. */
 
-#define VSYNC_USES_NSC_SURF          0
+#define VSYNC_USES_NSC_SURF          1
 
 #define NSC_CLIENTS_NUMBER           (NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+NSC_SB_CLIENTS_NUMBER+VSYNC_USES_NSC_SURF)
 #define HWC_VD_CLIENTS_NUMBER        NSC_GPX_CLIENTS_NUMBER
@@ -2348,7 +2348,7 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
                 NEXUS_CallbackDesc desc;
                 desc.callback = hw_vsync_cb;
                 desc.context = (void *)&ctx->syn_cli;
-                NEXUS_Display_SetVsyncCallback(1, &desc);
+                //NEXUS_Display_SetVsyncCallback(1, &desc);
              }
              break;
          default:
