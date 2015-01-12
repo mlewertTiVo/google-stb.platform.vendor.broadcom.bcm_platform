@@ -255,12 +255,10 @@ static void hdmi_cec_set_option(const struct hdmi_cec_device* dev, int flag, int
  * (*set_audio_return_channel)() configures ARC circuit in the hardware logic
  * to start or stop the feature. Flag can be either 1 to start the feature
  * or 0 to stop it.
- *
- * Returns 0 on success or -errno on error.
  */
-static void hdmi_cec_set_audio_return_channel(const struct hdmi_cec_device* dev __unused, int flag __unused)
+static void hdmi_cec_set_audio_return_channel(const struct hdmi_cec_device* dev __unused, int port_id __unused, int flag __unused)
 {
-    ALOGV("%s: flag=0x%08x", __PRETTY_FUNCTION__, flag);
+    ALOGV("%s: port_id=%d, flag=0x%08x", __PRETTY_FUNCTION__, port_id, flag);
 }
 
 /*
