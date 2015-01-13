@@ -10,7 +10,7 @@ that is not included as part of refsw release, so need to run this prior to
 packing.
 
 3. Run pack_release.sh from the root of tree, e.g.:
-./vendor/broadcom/bcm_platform/tools/release/pack_release.sh android5.0_14.4take1.tgz 
+./vendor/broadcom/bcm_platform/tools/release/pack_release.sh android5.0_14.4take1.tgz bcghost/lollipop-release 
 
 How to use unpack_release.sh
 ----------------------------
@@ -23,6 +23,6 @@ How to use unpack_release.sh
 tarball name, e.g.:
 unpack_release.sh android5.0_14.4take1.tgz ~/projects/l-aosp
 
-4. "lunch" and select build target.
+4. "lunch" and select a build target.
 
-5. "make -j8" per usual.
+5. "make -jN" per usual.
