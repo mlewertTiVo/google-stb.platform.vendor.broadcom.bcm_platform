@@ -137,13 +137,14 @@ LOCAL_SHARED_LIBRARIES += libbinder
 LOCAL_SHARED_LIBRARIES += libcutils
 LOCAL_SHARED_LIBRARIES += libdl
 LOCAL_SHARED_LIBRARIES += libhwcbinder
+LOCAL_SHARED_LIBRARIES += libhwcconv
 LOCAL_SHARED_LIBRARIES += libhwcutils
 LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnexusipcclient
 LOCAL_SHARED_LIBRARIES += libnxclient
 LOCAL_SHARED_LIBRARIES += libutils
-LOCAL_SHARED_LIBRARIES += libhwcconv
+LOCAL_SHARED_LIBRARIES += libsync
 
 LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
                     $(TOP)/vendor/broadcom/bcm_platform/libnexusipc \
@@ -151,7 +152,9 @@ LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
                     $(NXCLIENT_INCLUDES) \
                     $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/blib \
                     $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/conv \
-                    $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/utils
+                    $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/utils \
+                    $(TOP)/system/core/libsync \
+                    $(TOP)/system/core/libsync/include
 
 LOCAL_CFLAGS += $(filter-out $(FILTER_OUT_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))

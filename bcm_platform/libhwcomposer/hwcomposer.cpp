@@ -50,15 +50,23 @@
 #include "hwcconv.h"
 #include "hwcutils.h"
 
+#include "sync/sync.h"
+// deliberate use of sw_sync as we do not have other sync
+// primitive at this point.  just be careful when using those.
+#include "sw_sync.h"
+
 using namespace android;
 
 #define INVALID_HANDLE               0xBAADCAFE
+#define INVALID_FENCE                -1
 
 // cursor surface is behaving slightly differently than
 // other gpx (or mm) ones and may lead to a lot of false
 // alarm logs.
 #define HWC_CURSOR_SURFACE_VERBOSE   0
 #define HWC_CURSOR_SURFACE_SUPPORTED 0
+
+#define HWC_DISPLAY_FENCE_VERBOSE    0
 
 #define HWC_SURFACE_LIFE_CYCLE_ERROR 0
 #define HWC_DUMP_LAYER_ON_ERROR      0
@@ -108,6 +116,9 @@ using namespace android;
 #define HWC_DEFAULT_GLES_FALLBACK    "1"
 #define HWC_GLES_FALLBACK_PROP       "ro.hwc.gles.fallback"
 
+#define HWC_DEFAULT_SW_SYNC          "1"
+#define HWC_SW_SYNC_PROP             "ro.hwc.sw_sync"
+
 #define HWC_CHECKPOINT_TIMEOUT       (100)
 
 enum {
@@ -137,6 +148,7 @@ typedef struct {
     NEXUS_SurfaceClientHandle schdl;
     NEXUS_SurfaceCompositorClientId sccid;
     int type;
+    void *parent;
 
 } COMMON_CLIENT_INFO;
 
@@ -146,6 +158,7 @@ typedef struct {
     NEXUS_SurfaceCursorHandle schdl;
     buffer_handle_t grhdl;
     unsigned int use_order;
+    int comp_ix;
 
 } GPX_CLIENT_SURFACE_INFO;
 
@@ -160,7 +173,6 @@ typedef struct {
     int layer_subtype;
     int layer_flags;
     int layer_id;
-    void *parent;
     bool skip_set;
     unsigned int use_order;
     int plane_alpha;
@@ -369,6 +381,8 @@ struct hwc_context_t {
     NEXUS_Graphics2DHandle hwc_2dg;
     NEXUS_Graphics2DCapabilities gfxCaps;
     BKNI_EventHandle checkpoint_event;
+
+    int sync_timeline;
 };
 
 static void hwc_device_cleanup(hwc_context_t* ctx);
@@ -569,7 +583,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
 
     for (int j = 0; j < GPX_SURFACE_STACK; j++) {
         write = snprintf(start + offset, local_capacity,
-            "\t\t[%d:%d]:[%d]:[%s]::shdl:%p::schdl:%p::grhdl:%p::order:%x\n",
+            "\t\t[%d:%d]:[%d]:[%s]::shdl:%p::schdl:%p::grhdl:%p::order:%x::comp:%d\n",
             client->layer_id,
             index,
             j,
@@ -577,7 +591,8 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
             client->slist[j].shdl,
             client->slist[j].schdl,
             client->slist[j].grhdl,
-            client->slist[j].use_order);
+            client->slist[j].use_order,
+            client->slist[j].comp_ix);
 
         if (write > 0) {
             local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
@@ -856,12 +871,13 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
        }
     }
     if (capacity) {
-       write = snprintf(buff + index, capacity, "\tprepare:{%u,%u}::set:{%u,%u}::gles-fbk:%s\n",
+       write = snprintf(buff + index, capacity, "\tprepare:{%u,%u}::set:{%u,%u}::gles-fbk:%s::sync:%d\n",
            ctx->prepare_call,
            ctx->prepare_skipped,
            ctx->set_call,
            ctx->set_skipped,
-           ctx->display_gles_fallback ? "enabled" : "disabled");
+           ctx->display_gles_fallback ? "enabled" : "disabled",
+           ctx->sync_timeline);
        if (write > 0) {
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
@@ -1306,6 +1322,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     bool is_sideband = false;
     int overlay_seen = 0;
     int fb_target_seen = 0;
+    int fence_id = INVALID_FENCE;
+    struct sync_fence_info_data fence;
 
     // should never happen as primary display should always be there.
     if (!list)
@@ -1328,7 +1346,20 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         BKNI_ReleaseMutex(ctx->power_mutex);
         NEXUS_SurfaceCompositor_SetPause(NULL, true);
 
+        if (ctx->sync_timeline != INVALID_FENCE) {
+           snprintf(fence.name, sizeof(fence.name), "hwc_prim_%d", ctx->set_call);
+           fence_id = sw_sync_fence_create(ctx->sync_timeline, fence.name, ctx->set_call);
+           if (fence_id < 0) {
+              ALOGW("%s: failed composition sync fence: %s", __FUNCTION__, fence.name);
+           } else if (HWC_DISPLAY_FENCE_VERBOSE) {
+              ALOGI("%s: composition sync fence: %s, fence: %d", __FUNCTION__, fence.name, fence_id);
+           }
+        }
+        list->retireFenceFd = fence_id;
+
         for (i = 0; i < list->numHwLayers; i++) {
+            list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
+            //
             // video layers have a no-op 'hidden' gpx layer association, so this check is valid
             // for all since gpx layers > mm layers.
             //
@@ -1362,11 +1393,32 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                    } else if (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET) {
                       fb_target_seen++;
                    }
+                   // assign a fence for each layer we have marked as 'overlay'/'framebuffer_target' that are
+                   // purely gpx composition through nsc.
+                   if ((list->hwLayers[i].compositionType == HWC_OVERLAY) ||
+                       (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET)) {
+                      fence_id = INVALID_FENCE;
+                      if (ctx->sync_timeline != INVALID_FENCE) {
+                         snprintf(fence.name, sizeof(fence.name), "hwc_prim_%d_%d", ctx->set_call, i);
+                         fence_id = sw_sync_fence_create(ctx->sync_timeline, fence.name, ctx->set_call);
+                         if (fence_id < 0) {
+                            ALOGW("%s: failed layer sync fence: %s", __FUNCTION__, fence.name);
+                         } else if (HWC_DISPLAY_FENCE_VERBOSE) {
+                            ALOGI("%s: layer sync fence: %s, fence: %d", __FUNCTION__, fence.name, fence_id);
+                         }
+                      }
+                      list->hwLayers[i].releaseFenceFd = fence_id;
+                   }
                    int six = hwc_gpx_push_surface_locked(&ctx->gpx_cli[i]);
                    if (six != -1) {
+                      ctx->gpx_cli[i].slist[six].comp_ix = ctx->set_call;
                       rc = NEXUS_SurfaceClient_PushSurface(ctx->gpx_cli[i].ncci.schdl, ctx->gpx_cli[i].slist[six].shdl, NULL, false);
                       if (rc) {
+                          if (list->hwLayers[i].releaseFenceFd != INVALID_FENCE) {
+                             close(list->hwLayers[i].releaseFenceFd);
+                          }
                           hwc_unlock_surface((private_handle_t *)ctx->gpx_cli[i].slist[six].grhdl);
+                          ctx->gpx_cli[i].slist[six].comp_ix = -1;
                           ctx->gpx_cli[i].slist[six].grhdl = NULL;
                           ctx->gpx_cli[i].slist[six].owner = SURF_OWNER_NO_OWNER;
                           if ((ctx->gpx_cli[i].layer_subtype == NEXUS_CURSOR) &&
@@ -1491,8 +1543,11 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
 
         if (ctx->hwc_2dg)
            NEXUS_Graphics2D_Close(ctx->hwc_2dg);
-         if (ctx->checkpoint_event)
+        if (ctx->checkpoint_event)
            BKNI_DestroyEvent(ctx->checkpoint_event);
+
+        if (ctx->sync_timeline != INVALID_FENCE)
+           close(ctx->sync_timeline);
     }
 }
 
@@ -1865,6 +1920,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             dev->syn_cli.layer_subtype = NEXUS_SYNC;
             dev->syn_cli.refresh       = VSYNC_CLIENT_REFRESH;
             dev->syn_cli.ncci.type     = NEXUS_CLIENT_VSYNC;
+            dev->syn_cli.ncci.parent   = (void *)dev;
 
             /* create vsync nx client */
             if (VSYNC_USES_NSC_SURF) {
@@ -1907,7 +1963,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             /* create layers nx gpx clients */
             for (int i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++)
             {
-                dev->gpx_cli[i].parent = (void *)dev;
+                dev->gpx_cli[i].ncci.parent = (void *)dev;
                 dev->gpx_cli[i].layer_id = i;
                 dev->gpx_cli[i].ncci.type = NEXUS_CLIENT_GPX;
                 dev->gpx_cli[i].ncci.sccid = dev->nxAllocResults.surfaceClient[VSYNC_USES_NSC_SURF+i].id;
@@ -1934,7 +1990,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             /* create layers nx mm clients */
             for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++)
             {
-                dev->mm_cli[i].root.parent = (void *)dev;
+                dev->mm_cli[i].root.ncci.parent = (void *)dev;
                 dev->mm_cli[i].root.layer_id = i;
                 dev->mm_cli[i].root.ncci.type = NEXUS_CLIENT_MM;
                 if (!HWC_MM_NO_ALLOC_SURF_CLI) {
@@ -1976,7 +2032,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             /* create layers nx sb clients */
             for (int i = 0; i < NSC_SB_CLIENTS_NUMBER; i++)
             {
-                dev->sb_cli[i].root.parent = (void *)dev;
+                dev->sb_cli[i].root.ncci.parent = (void *)dev;
                 dev->sb_cli[i].root.layer_id = i;
                 dev->sb_cli[i].root.ncci.type = NEXUS_CLIENT_SB;
                 if (!HWC_SB_NO_ALLOC_SURF_CLI) {
@@ -2086,6 +2142,19 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            dev->hwc_2dg = NULL;
         }
 
+        if (property_get(HWC_SW_SYNC_PROP, value, HWC_DEFAULT_SW_SYNC)) {
+           if (strtoul(value, NULL, 10) == 0) {
+              ALOGI("%s: sync timeline disabled", __FUNCTION__);
+              dev->sync_timeline = INVALID_FENCE;
+           } else {
+              dev->sync_timeline = sw_sync_timeline_create();
+              if (dev->sync_timeline < 0) {
+                 ALOGW("%s: failed to create sync timeline, not using fences", __FUNCTION__);
+                 dev->sync_timeline = INVALID_FENCE;
+              }
+           }
+        }
+
         *device = &dev->device.common;
         status = 0;
         goto out;
@@ -2123,6 +2192,7 @@ static void hwc_sync_recycled_cb(void *context, int param)
 static void hw_vsync_cb(void *context, int param)
 {
     VSYNC_CLIENT_INFO *ci = (VSYNC_CLIENT_INFO *)context;
+    struct hwc_context_t* ctx = (struct hwc_context_t*)ci->ncci.parent;
     BSTD_UNUSED(param);
 
     if (VSYNC_USES_NSC_SURF) {
@@ -2136,15 +2206,17 @@ static void hwc_nsc_recycled_cb(void *context, int param)
 {
     NEXUS_Error rc;
     GPX_CLIENT_INFO *ci = (GPX_CLIENT_INFO *)context;
-    struct hwc_context_t* ctx = (struct hwc_context_t*)ci->parent;
+    struct hwc_context_t* ctx = (struct hwc_context_t*)ci->ncci.parent;
     NEXUS_SurfaceHandle recycledSurface;
     size_t n = 0;
     int six = -1;
+    int composition_done;
     BSTD_UNUSED(param);
 
     if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
         goto out;
     }
+    composition_done = -1;
     do {
           recycledSurface = NULL;
           rc = NEXUS_SurfaceClient_RecycleSurface(ci->ncci.schdl, &recycledSurface, 1, &n);
@@ -2154,22 +2226,43 @@ static void hwc_nsc_recycled_cb(void *context, int param)
           if ((n > 0) && (recycledSurface != NULL)) {
               six = hwc_gpx_get_recycle_surface_locked(ci, recycledSurface);
               if (six != -1) {
+                 if (composition_done == -1) {
+                    composition_done = ci->slist[six].comp_ix;
+                 }
+                 if ((ci->slist[six].comp_ix != INVALID_FENCE) &&
+                     (composition_done > ci->slist[six].comp_ix)) {
+                    composition_done = ci->slist[six].comp_ix;
+                 }
                  // do not recycle the cursor surface, it is being re-used.
                  if (ci->layer_subtype == NEXUS_CURSOR) {
                     ci->slist[six].owner = SURF_OWNER_HWC;
                     recycledSurface = NULL;
+                    ci->slist[six].comp_ix = -1;
                  } else {
                     hwc_unlock_surface((private_handle_t *)ci->slist[six].grhdl);
                     ci->slist[six].owner = SURF_OWNER_NO_OWNER;
                     ci->slist[six].shdl = NULL;
                     ci->slist[six].grhdl = NULL;
+                    ci->slist[six].comp_ix = -1;
                  }
               }
               if (recycledSurface)
                  NEXUS_Surface_Destroy(recycledSurface);
           }
+
+          if (ctx && (ctx->sync_timeline != INVALID_FENCE)) {
+             int sync_increment = ((composition_done == -1) ? 1 : (ctx->set_call - composition_done));
+             for (six = 0 ; six < sync_increment ; six++) {
+                sw_sync_timeline_inc(ctx->sync_timeline, 1);
+             }
+             if (HWC_DISPLAY_FENCE_VERBOSE) {
+                ALOGI("%s: increment sync timeline: %d, current: %d, comp: %d", __FUNCTION__,
+                   sync_increment, ctx->set_call, composition_done);
+             }
+         }
     }
     while (n > 0);
+
     BKNI_ReleaseMutex(ctx->mutex);
 
 out:
@@ -2894,7 +2987,6 @@ static void hwc_checkpoint_callback(void *pParam, int param2)
 {
     hwc_context_t *dev = (hwc_context_t *)pParam;
     (void)param2;
-//    ALOGW("Checkpoint Callback");
     BKNI_SetEvent(dev->checkpoint_event);
 }
 
@@ -2902,7 +2994,6 @@ static int hwc_checkpoint(hwc_context_t *dev)
 {
     NEXUS_Error rc;
 
-//    ALOGW("Checkpoint");
     rc = NEXUS_Graphics2D_Checkpoint(dev->hwc_2dg, NULL);
     switch ( rc )
     {
