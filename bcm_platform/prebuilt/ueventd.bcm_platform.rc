@@ -7,6 +7,8 @@
 # BT USB device nodes
 /dev/btusb0               0660   bluetooth  bluetooth
 
+/dev/sw_sync              0666   system     system
+
 # nexus in disguise...
 /dev/mali                 0666   root       root
 /dev/mali0                0666   root       root
