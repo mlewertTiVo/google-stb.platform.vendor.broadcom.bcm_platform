@@ -90,7 +90,7 @@ size_t get_brcm_audio_buffer_size(unsigned int sample_rate,
     else if (sample_rate < 32000) {
         size = 768;
     }
-    else if (sample_rate < 48000) {
+    else if (sample_rate < 44100) {
         size = 1024;
     }
     else if (sample_rate < 96000) {
