@@ -45,7 +45,7 @@ public:
     int surfaceClientId;
 };
 
-void TunerHAL_onBroadcastEvent(jint e);
+void TunerHAL_onBroadcastEvent(jint e, jint param, String8 s);
 NexusIPCClientBase *TunerHAL_getIPCClient();
 NexusClientContext *TunerHAL_getClientContext();
 

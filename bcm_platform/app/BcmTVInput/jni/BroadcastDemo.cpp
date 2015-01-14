@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include "TunerHAL.h"
 #include "Broadcast.h"
 #include "nexus_frontend.h"
 #include "nexus_simple_video_decoder.h"
@@ -7,6 +8,7 @@
 #include "nexus_parser_band.h"
 #include "nxclient.h"
 #include "nexus_surface_client.h"
+#include "nexus_video_types.h"
 
 class BroadcastDemo_Context {
 public:
@@ -31,6 +33,7 @@ public:
     unsigned                         m_nxClientId;
     NEXUS_SurfaceClientHandle        m_hSurfaceClient;
     NEXUS_SurfaceClientHandle        m_hVideoClient;
+    Vector<BroadcastVideoTrackInfo> videoTrackInfoList;
 };
 
 BroadcastDemo_Context *pSelf;
@@ -81,19 +84,48 @@ static void
 SetGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible)
 {
     if (pSelf && pSelf->m_hVideoClient) {
+        NEXUS_SurfaceComposition *pComposition;
+        NEXUS_Error errCode;
+#define SCGS
+#ifdef SCGS
         NEXUS_SurfaceClientSettings settings;
         NEXUS_SurfaceClient_GetSettings(pSelf->m_hVideoClient, &settings);
-        settings.composition.position = *pPosition;
-        settings.composition.virtualDisplay.width = gfxWidth;
-        settings.composition.virtualDisplay.height = gfxHeight;
-
-        ALOGE("%s: composition v[%d,%d] p[%d,%d,%d,%d] c[%d,%d,%d,%d])",
-                  __FUNCTION__,
-                  settings.composition.virtualDisplay.width, settings.composition.virtualDisplay.height,
-                  settings.composition.position.x, settings.composition.position.y, settings.composition.position.width, settings.composition.position.height,
-                  settings.composition.clipRect.x, settings.composition.clipRect.y, settings.composition.clipRect.width, settings.composition.clipRect.height
-                  );
-        NEXUS_SurfaceClient_SetSettings(pSelf->m_hVideoClient, &settings);
+        pComposition = &settings.composition;
+#else
+        NEXUS_SurfaceComposition composition;
+        NxClient_GetSurfaceClientComposition(pSelf->m_allocResults.surfaceClient[0].id, &composition);
+        pComposition = &composition;
+#endif
+        if ( pComposition->virtualDisplay.width != gfxWidth ||
+             pComposition->virtualDisplay.height != gfxHeight ||
+             !NEXUS_RECT_IS_EQUAL(&pComposition->position, pPosition) ||
+             pComposition->zorder != zorder ||
+             pComposition->visible != visible ||
+             pComposition->contentMode != NEXUS_VideoWindowContentMode_eFull )
+        {
+            pComposition->virtualDisplay.width = gfxWidth;
+            pComposition->virtualDisplay.height = gfxHeight;
+            pComposition->position = *pPosition;
+            //pComposition->position.width -= pComposition->position.x;
+            pComposition->zorder = zorder; 
+            pComposition->visible = visible;
+            pComposition->contentMode = NEXUS_VideoWindowContentMode_eFull;
+            ALOGE("%s: clientcomposition vd[%d,%d] p[%d,%d,%d,%d] c[%d,%d,%d,%d] z%d v%d cm%d",
+                      __FUNCTION__,
+                      pComposition->virtualDisplay.width, pComposition->virtualDisplay.height,
+                      pComposition->position.x, pComposition->position.y, pComposition->position.width, pComposition->position.height,
+                      pComposition->clipRect.x, pComposition->clipRect.y, pComposition->clipRect.width, pComposition->clipRect.height,
+                      pComposition->zorder, pComposition->visible, pComposition->contentMode
+                      );
+#ifdef SCGS
+            errCode = NEXUS_SurfaceClient_SetSettings(pSelf->m_hVideoClient, &settings);
+#else
+            errCode = NxClient_SetSurfaceClientComposition(pSelf->m_allocResults.surfaceClient[0].id, &composition);
+#endif
+            if (errCode != NEXUS_SUCCESS) {
+                ALOGE("%s: clientcomposition failed", __FUNCTION__);
+            }
+        }
     }
 }
 
@@ -184,6 +216,7 @@ static int BroadcastDemo_Stop()
     // Stop the video decoder
     if (pSelf->decoding) {
         NEXUS_SimpleVideoDecoder_Stop(pSelf->m_hSimpleVideoDecoder);
+        TunerHAL_onBroadcastEvent(4, 0, String8());
         pSelf->decoding = false;
     }
 
@@ -212,8 +245,80 @@ static int BroadcastDemo_StopScan()
     return -1;
 }
 
+static void
+CacheVideoTrackInfoList()
+{
+    Vector<BroadcastVideoTrackInfo> v;
+    NEXUS_VideoDecoderStatus status;
+    if (NEXUS_SimpleVideoDecoder_GetStatus(pSelf->m_hSimpleVideoDecoder, &status) == NEXUS_SUCCESS && status.source.height > 0) {
+        BroadcastVideoTrackInfo info;
+        info.id = "0";
+        info.squarePixelHeight = status.source.height; 
+        switch (status.aspectRatio) {
+        case NEXUS_AspectRatio_e4x3:
+            info.squarePixelWidth = (info.squarePixelHeight * 4) / 3;
+            break;
+        case NEXUS_AspectRatio_e16x9:
+            info.squarePixelWidth = (info.squarePixelHeight * 16) / 9;
+            break;
+        default:
+            info.squarePixelWidth = status.source.width;
+            break;
+        }
+        switch (status.frameRate) {
+        case NEXUS_VideoFrameRate_e23_976:  info.frameRate = 23.976; break;
+        case NEXUS_VideoFrameRate_e24:      info.frameRate = 24; break;
+        case NEXUS_VideoFrameRate_e25:      info.frameRate = 25; break;
+        case NEXUS_VideoFrameRate_e29_97:   info.frameRate = 29.97; break;
+        case NEXUS_VideoFrameRate_e30:      info.frameRate = 30; break;
+        case NEXUS_VideoFrameRate_e50:      info.frameRate = 50; break;
+        case NEXUS_VideoFrameRate_e59_94:   info.frameRate = 59.94; break;
+        case NEXUS_VideoFrameRate_e60:      info.frameRate = 60; break;
+        case NEXUS_VideoFrameRate_e14_985:  info.frameRate = 14.985; break;
+        case NEXUS_VideoFrameRate_e7_493:   info.frameRate = 7.493; break;
+        case NEXUS_VideoFrameRate_e10:      info.frameRate = 10; break;
+        case NEXUS_VideoFrameRate_e15:      info.frameRate = 15; break;
+        case NEXUS_VideoFrameRate_e20:      info.frameRate = 20; break;
+        case NEXUS_VideoFrameRate_e12_5:    info.frameRate = 12.5; break;
+        default:                            info.frameRate = 0; break;
+        }
+
+        ALOGE("%s: %dx%d (%dx%d) fr %f", __FUNCTION__, status.source.width, status.source.height, info.squarePixelWidth, info.squarePixelHeight, info.frameRate);
+        v.push_back(info);
+    }
+    pSelf->videoTrackInfoList = v;
+}
+
+static void sourceChangeCallback(void *context, int param)
+{
+    CacheVideoTrackInfoList();
+    TunerHAL_onBroadcastEvent(2, 0, String8());
+    if (pSelf->videoTrackInfoList.size()) {
+        TunerHAL_onBroadcastEvent(4, 1, String8());
+        TunerHAL_onBroadcastEvent(3, 1, pSelf->videoTrackInfoList[0].id);
+    }
+}
+
+static Vector<BroadcastVideoTrackInfo>
+BroadcastDemo_GetVideoTrackInfoList()
+{
+    if (pSelf->videoTrackInfoList.size() == 0) {
+        ALOGE("%s: no video info", __FUNCTION__); 
+    }
+    else {
+        ALOGE("%s: %s %dx%d fr %f", __FUNCTION__,
+              pSelf->videoTrackInfoList[0].id.string(),
+              pSelf->videoTrackInfoList[0].squarePixelWidth,
+              pSelf->videoTrackInfoList[0].squarePixelHeight,
+              pSelf->videoTrackInfoList[0].frameRate
+              ); 
+    }
+    return pSelf->videoTrackInfoList;
+}
+
 static int BroadcastDemo_Tune(String8 s8id)
 {
+    NEXUS_VideoDecoderSettings settings;
     NEXUS_SimpleVideoDecoderStartSettings videoProgram;
     NEXUS_FrontendOfdmSettings ofdmSettings;
     NEXUS_FrontendUserParameters userParams;
@@ -281,6 +386,19 @@ static int BroadcastDemo_Tune(String8 s8id)
 
     if (Connect() < 0) {
         ALOGE("%s: Failed to connect", __FUNCTION__);
+        return -1;
+    }
+
+    NEXUS_SimpleVideoDecoder_GetSettings(pSelf->m_hSimpleVideoDecoder, &settings);
+
+    settings.sourceChanged.callback = sourceChangeCallback;
+    settings.sourceChanged.context = pSelf;
+    settings.sourceChanged.param = 0;
+
+    rc = NEXUS_SimpleVideoDecoder_SetSettings(pSelf->m_hSimpleVideoDecoder, &settings);
+    if (rc)
+    {
+        ALOGE("%s: SetSettings failed", __FUNCTION__);
         return -1;
     }
 
@@ -453,6 +571,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->Stop = BroadcastDemo_Stop;
     pD->Release = BroadcastDemo_Release;
     pD->SetGeometry = BroadcastDemo_SetGeometry;
+    pD->GetVideoTrackInfoList = BroadcastDemo_GetVideoTrackInfoList;
 
     ALOGE("%s: Exit", __FUNCTION__);
     return 0;

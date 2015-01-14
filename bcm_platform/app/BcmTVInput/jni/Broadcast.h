@@ -49,6 +49,14 @@ public:
     jshort h;
 };
 
+class BroadcastVideoTrackInfo {
+public:
+    String8 id;
+    jshort squarePixelWidth;
+    jshort squarePixelHeight;
+    jfloat frameRate;
+};
+
 class BroadcastDriver {
 public:
     int (*StartBlindScan)();
@@ -61,6 +69,7 @@ public:
     int (*Stop)();
     int (*Release)();
     int (*SetGeometry)(BroadcastRect position, BroadcastRect clipRect, jshort gfxWidth, jshort gfxHeight, jshort zorder, jboolean visible);
+    Vector<BroadcastVideoTrackInfo> (*GetVideoTrackInfoList)();
 };
 
 int Broadcast_Initialize(BroadcastDriver *pDriver);

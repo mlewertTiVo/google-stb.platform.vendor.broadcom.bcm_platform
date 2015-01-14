@@ -17,16 +17,19 @@
 package com.broadcom.tvinput;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.lang.reflect.Method;
-import java.lang.reflect.InvocationTargetException;
+import java.util.List;
+import java.util.ArrayList;
 
 import org.xmlpull.v1.XmlPullParserException;
 
+import android.app.AlarmManager;
 import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
@@ -40,9 +43,10 @@ import android.media.tv.TvInputInfo;
 import android.media.tv.TvInputManager;
 import android.media.tv.TvInputService;
 import android.media.tv.TvStreamConfig;
+import android.media.tv.TvTrackInfo;
 import android.net.Uri;
-import android.os.Handler;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -50,7 +54,6 @@ import android.os.RemoteException;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.Surface;
-import android.app.AlarmManager;
 
 /**
  * TV-Input service for Broadcom's Tuner
@@ -74,6 +77,7 @@ public class TunerService extends TvInputService {
 
     private TvInputManager mManager = null;
     private ResolveInfo mResolveInfo;
+    private Handler mMainLoopHandler;
 
     private static ContentValues buildProgramValues(long channelId, ProgramInfo program, boolean insert) {
         ContentValues prog_values = new ContentValues();
@@ -335,6 +339,9 @@ public class TunerService extends TvInputService {
 
     public static final int BROADCAST_EVENT_CHANNEL_LIST_CHANGED = 0;
     public static final int BROADCAST_EVENT_PROGRAM_LIST_CHANGED = 1;
+    public static final int BROADCAST_EVENT_VIDEO_TRACK_LIST_CHANGED = 2;
+    public static final int BROADCAST_EVENT_TRACK_SELECTED = 3;
+    public static final int BROADCAST_EVENT_VIDEO_AVAILABLE = 4;
     public static final int BROADCAST_EVENT_SCANNING_START = 99;
     public static final int BROADCAST_EVENT_SCANNING_PROGRESS = 100; // 100 - 0% progress 200 100%
     public static final int BROADCAST_EVENT_SCANNING_COMPLETE = 201;
@@ -351,16 +358,81 @@ public class TunerService extends TvInputService {
         }
     }
 
-    public void onBroadcastEvent(int e) {
-        Log.e(TAG, "Broadcast event: " + e);
+    private void sendTrackInfoToCurrentSessionIfAny()
+    {
+        VideoTrackInfo vtia[] = TunerHAL.getVideoTrackInfoList();
+        if (vtia.length > 0) {
+            List<TvTrackInfo> tracks = new ArrayList<>(); 
+            for (VideoTrackInfo vti : vtia) {
+                TvTrackInfo info;
+                info = new TvTrackInfo.Builder(
+                    TvTrackInfo.TYPE_VIDEO, vti.id)
+                    .setVideoWidth(vti.squarePixelWidth)
+                    .setVideoHeight(vti.squarePixelHeight)
+                    .setVideoFrameRate(vti.frameRate)
+                    .build();
+                tracks.add(info);
+            }
+
+            if (mCurrentSession != null) {
+                mCurrentSession.notifyTracksChanged(tracks);
+            }
+        }
+    }
+
+    private void sendTrackSelectedToCurrentSessionIfAny(int type, String trackId)
+    {
+        if (mCurrentSession != null) {
+            mCurrentSession.notifyTrackSelected(type, trackId);
+        }
+    }
+
+    private void sendVideoAvailabilityToCurrentSessionIfAny(int param)
+    {
+        if (mCurrentSession != null) {
+            if (param != 0) {
+                mCurrentSession.notifyVideoAvailable();
+            }
+            else {
+                mCurrentSession.notifyVideoUnavailable(TvInputManager.VIDEO_UNAVAILABLE_REASON_TUNING);
+            }
+        }
+    }
+
+    public void onBroadcastEvent(int e, final int param, final String s) {
+        Log.e(TAG, "Broadcast event: " + e + " " + param + " " + s);
         if (e == BROADCAST_EVENT_CHANNEL_LIST_CHANGED) {
             dbsync.setChannelListChanged();
         }
         else if (e == BROADCAST_EVENT_PROGRAM_LIST_CHANGED) {
             dbsync.setProgramListChanged();
         }
-        else if (e >= BROADCAST_EVENT_SCANNING_PROGRESS && e <= BROADCAST_EVENT_SCANNING_COMPLETE) {
+        else if (e == BROADCAST_EVENT_SCANNING_PROGRESS || e == BROADCAST_EVENT_SCANNING_COMPLETE) {
             sendScanStatusToCurrentSessionIfAny();
+        }
+        else if (e == BROADCAST_EVENT_VIDEO_TRACK_LIST_CHANGED) {
+            mMainLoopHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    sendTrackInfoToCurrentSessionIfAny();
+                }
+            });
+        }
+        else if (e == BROADCAST_EVENT_TRACK_SELECTED) {
+            mMainLoopHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    sendTrackSelectedToCurrentSessionIfAny(param, s);
+                }
+            });
+        }
+        else if (e == BROADCAST_EVENT_VIDEO_AVAILABLE) {
+            mMainLoopHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    sendVideoAvailabilityToCurrentSessionIfAny(param);
+                }
+            });
         }
     }
 
@@ -376,6 +448,7 @@ public class TunerService extends TvInputService {
                 PackageManager.GET_SERVICES | PackageManager.GET_META_DATA);
 
         mManager = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
+        mMainLoopHandler = new Handler(getMainLooper());
     }
 
     @Override
@@ -599,7 +672,7 @@ public class TunerService extends TvInputService {
             TunerHAL.setSurface();
 
             // Inform that we've got video running
-            notifyVideoAvailable();
+            //notifyVideoAvailable();
 
             Log.d(TAG, "setSurface (local): Calling mHardware.setSurface");
             return mHardware.setSurface(surface, config);
@@ -678,7 +751,7 @@ public class TunerService extends TvInputService {
 
                 // Flag that we're now ready to tune
                 // Should really come from underlying broadcast stack
-                notifyVideoAvailable();
+                //notifyVideoAvailable();
 
                 // Update the current id
                 mCurrentChannelId = id;
