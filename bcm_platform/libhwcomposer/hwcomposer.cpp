@@ -113,9 +113,22 @@ using namespace android;
 #define DISPLAY_DEFAULT_HD_RES       "1080p"
 #define DISPLAY_HD_RES_PROP          "ro.hd_output_format"
 
-#define HWC_DEFAULT_GLES_FALLBACK    "1"
-#define HWC_GLES_FALLBACK_PROP       "ro.hwc.gles.fallback"
+/* gles mode: 'always' is to always force gles composition over
+ *            nsc one.
+ *            'fallback' is to allow gles fallback when special layers
+ *            stack cannot be handled, such as when a dim-layer is there.
+ *            'never' (or any other value for that matter) just disables
+ *            any gles path.  visual artifact will be seen.
+ */
+#define HWC_GLES_MODE_FALLBACK       "fallback"
+#define HWC_GLES_MODE_ALWAYS         "always"
+#define HWC_GLES_MODE_NEVER          "never"
+#define HWC_DEFAULT_GLES_MODE        HWC_GLES_MODE_FALLBACK
+#define HWC_GLES_MODE_PROP           "ro.hwc.gles.mode"
 
+/* sw-sync: 1 to enable, 0 otherwise.  note: if using 'always' gles mode,
+ *          ensure the sw-sync are DISABLED (0).
+ */
 #define HWC_DEFAULT_SW_SYNC          "1"
 #define HWC_SW_SYNC_PROP             "ro.hwc.sw_sync"
 
@@ -368,6 +381,7 @@ struct hwc_context_t {
     int display_height;
 
     bool display_gles_fallback;
+    bool display_gles_always;
     bool needs_fb_target;
 
     int cursor_layer_id;
@@ -871,12 +885,13 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
        }
     }
     if (capacity) {
-       write = snprintf(buff + index, capacity, "\tprepare:{%u,%u}::set:{%u,%u}::gles-fbk:%s::sync:%d\n",
+       write = snprintf(buff + index, capacity, "\tprepare:{%u,%u}::set:{%u,%u}::gles-fbk:%s::gles-alw:%s::sync:%d\n",
            ctx->prepare_call,
            ctx->prepare_skipped,
            ctx->set_call,
            ctx->set_skipped,
            ctx->display_gles_fallback ? "enabled" : "disabled",
+           ctx->display_gles_always ? "enabled" : "disabled",
            ctx->sync_timeline);
        if (write > 0) {
            capacity = (capacity > write) ? (capacity - write) : 0;
@@ -1133,10 +1148,13 @@ static bool primary_need_nsc_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *
     }
 
     ++skip_layer; /* 4 */
-    if ((layer->compositionType == HWC_FRAMEBUFFER_TARGET) &&
-        (!ctx->display_gles_fallback ||
-         (ctx->display_gles_fallback && !ctx->needs_fb_target))) {
-        goto out;
+    if (layer->compositionType == HWC_FRAMEBUFFER_TARGET) {
+        if (!ctx->display_gles_always && !ctx->display_gles_fallback) {
+           goto out;
+        }
+        if (ctx->display_gles_fallback && !ctx->needs_fb_target) {
+           goto out;
+        }
     }
 
     rc = true;
@@ -1162,7 +1180,9 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
            continue;
         // framebuffer target layer stays such (SF composing via GL into it, eg: animation/transition).
         if (layer->compositionType == HWC_FRAMEBUFFER_TARGET) {
-           // note: to enable triple buffer on the FB target, set the BoardConfig property.
+           // note: to enable triple buffer on the FB target, set 'NUM_FRAMEBUFFER_SURFACE_BUFFERS := 3'
+           //       in the BoardConfig.mk.
+           //
            // layer->hints |= HWC_HINT_TRIPLE_BUFFER;
            continue;
         }
@@ -1191,7 +1211,8 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
         }
     }
 
-    if (skip_layer_index != -1) {
+    if ((ctx->display_gles_fallback && skip_layer_index != -1) ||
+        ctx->display_gles_always) {
        for (i = 0; i < list->numHwLayers; i++) {
           layer = &list->hwLayers[i];
           if (layer->compositionType == HWC_OVERLAY) {
@@ -1201,8 +1222,7 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
        }
     }
 
-    // no fallback allowed, do not expect to deal with the framebuffer_target.
-    if (ctx->display_gles_fallback) {
+    if (ctx->display_gles_fallback || ctx->display_gles_always) {
        for (i = 0; i < list->numHwLayers; i++) {
            layer = &list->hwLayers[i];
            if (layer->compositionType == HWC_FRAMEBUFFER) {
@@ -1888,8 +1908,11 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         }
         dev->cursor_layer_id = -1;
 
-        if (property_get(HWC_GLES_FALLBACK_PROP, value, HWC_DEFAULT_GLES_FALLBACK)) {
-           dev->display_gles_fallback = (strtoul(value, NULL, 10) == 0) ? false : true;
+        if (property_get(HWC_GLES_MODE_PROP, value, HWC_DEFAULT_GLES_MODE)) {
+           dev->display_gles_fallback =
+              (strncmp(value, HWC_GLES_MODE_FALLBACK, strlen(HWC_GLES_MODE_FALLBACK)) == 0) ? true : false;
+           dev->display_gles_always =
+              (strncmp(value, HWC_GLES_MODE_ALWAYS, strlen(HWC_GLES_MODE_ALWAYS)) == 0) ? true : false;
         }
 
         {
