@@ -13,6 +13,7 @@ extern "C" {
 #include "stbuni.h"
 #include "stbhwos.h"
 #include "stbheap.h"
+#include "stbvtc.h"
 #include "dtvkit_platform.h"
 };
 
@@ -68,20 +69,20 @@ static int BroadcastDTVKit_Stop()
 static void
 onScanProgress(jshort progress)
 {
-    TunerHAL_onBroadcastEvent(100 + progress);
+    TunerHAL_onBroadcastEvent(100, progress, String8());
 }
 
 static void
 onScanComplete()
 {
-    TunerHAL_onBroadcastEvent(201);
-    TunerHAL_onBroadcastEvent(0);
+    TunerHAL_onBroadcastEvent(201, 0, String8());
+    TunerHAL_onBroadcastEvent(0, 0, String8());
 }
 
 static void
 onScanStart()
 {
-    TunerHAL_onBroadcastEvent(99);
+    TunerHAL_onBroadcastEvent(99, 0, String8());
 }
 
 static bool
@@ -200,7 +201,9 @@ static int BroadcastDTVKit_Tune(String8 s8id)
             ALOGE("%s: Invalid resource", __FUNCTION__);
         }
         else {
-            ALOGE("%s: Tuning", __FUNCTION__); 
+            ALOGE("%s: Tuning", __FUNCTION__);
+            //BROADCAST_EVENT_VIDEO_AVAILABLE 0
+            TunerHAL_onBroadcastEvent(4, 0, String8());
             rv = 0;
         }
     }
@@ -457,7 +460,15 @@ event_handler(U32BIT event, void *event_data, U32BIT data_size)
             scannerUpdate();
         }
         else if (event == APP_EVENT_SERVICE_EIT_NOW_UPDATE && !pSelf->scanner.active) {
-            TunerHAL_onBroadcastEvent(1);
+            TunerHAL_onBroadcastEvent(1, 0, String8());
+        }
+        else if (event == STB_EVENT_VIDEO_DECODE_STARTED) {
+            //BROADCAST_EVENT_VIDEO_TRACK_LIST_CHANGED
+            TunerHAL_onBroadcastEvent(2, 0, String8());
+            //BROADCAST_EVENT_VIDEO_AVAILABLE 1
+            TunerHAL_onBroadcastEvent(4, 1, String8());
+            //BROADCAST_EVENT_TRACK_SELECTED
+            TunerHAL_onBroadcastEvent(3, 1, String8("0"));
         }
     }
 }
@@ -520,6 +531,7 @@ BroadcastDTVKit_GetScanInfo()
             scanInfo.radioChannels = newRadio;
             scanInfo.dataChannels = newData;
         }
+#if 0
         {
             U8BIT path = ACTL_GetServiceSearchPath();
             if (path != INVALID_RES_ID)
@@ -532,6 +544,7 @@ BroadcastDTVKit_GetScanInfo()
                 }
             }
         }
+#endif
 #if 0
         scanInfo.setSatelliteId(pSelf->scanner.artemisInfo.Satellite);
         scanInfo.setSatellites(pSelf->scanner.artemisInfo.NoOfSatellites);
@@ -554,6 +567,62 @@ BroadcastDTVKit_GetUtcTime()
     now = STB_GCConvertToTimestamp(STB_GCNowDHMSGmt());
     ALOGE("%s: %d", __FUNCTION__, now);
     return (jlong)now;
+}
+
+int
+BroadcastDTVKit_SetGeometry(BroadcastRect position, BroadcastRect clipRect, jshort gfxWidth, jshort gfxHeight, jshort zorder, jboolean visible)
+{
+    ACTL_SetVideoWindow(position.x, position.y, position.w, position.h);
+    return 0;
+}
+
+Vector<BroadcastVideoTrackInfo>
+BroadcastDTVKit_GetVideoTrackInfoList()
+{
+    Vector<BroadcastVideoTrackInfo> v;
+    U16BIT w, h;
+    E_ASPECT_RATIO ar;
+
+    STB_VTGetVideoResolution(&w, &h);
+    ar = STB_VTGetVideoAspectRatio();
+
+    if (h > 0) {
+        BroadcastVideoTrackInfo info;
+        info.id = "0";
+        info.squarePixelHeight = h; 
+        switch (ar) {
+        case ASPECT_RATIO_4_3:
+            info.squarePixelWidth = (info.squarePixelHeight * 4) / 3;
+            break;
+        case ASPECT_RATIO_16_9:
+            info.squarePixelWidth = (info.squarePixelHeight * 16) / 9;
+            break;
+        default:
+            info.squarePixelWidth = w;
+            break;
+        }
+        switch (0) {
+        case NEXUS_VideoFrameRate_e23_976:  info.frameRate = 23.976; break;
+        case NEXUS_VideoFrameRate_e24:      info.frameRate = 24; break;
+        case NEXUS_VideoFrameRate_e25:      info.frameRate = 25; break;
+        case NEXUS_VideoFrameRate_e29_97:   info.frameRate = 29.97; break;
+        case NEXUS_VideoFrameRate_e30:      info.frameRate = 30; break;
+        case NEXUS_VideoFrameRate_e50:      info.frameRate = 50; break;
+        case NEXUS_VideoFrameRate_e59_94:   info.frameRate = 59.94; break;
+        case NEXUS_VideoFrameRate_e60:      info.frameRate = 60; break;
+        case NEXUS_VideoFrameRate_e14_985:  info.frameRate = 14.985; break;
+        case NEXUS_VideoFrameRate_e7_493:   info.frameRate = 7.493; break;
+        case NEXUS_VideoFrameRate_e10:      info.frameRate = 10; break;
+        case NEXUS_VideoFrameRate_e15:      info.frameRate = 15; break;
+        case NEXUS_VideoFrameRate_e20:      info.frameRate = 20; break;
+        case NEXUS_VideoFrameRate_e12_5:    info.frameRate = 12.5; break;
+        default:                            info.frameRate = 0; break;
+        }
+
+        ALOGE("%s: %dx%d (%dx%d) fr %f", __FUNCTION__, w, h, info.squarePixelWidth, info.squarePixelHeight, info.frameRate);
+        v.push_back(info);
+    }
+    return v;
 }
 
 int
@@ -580,6 +649,8 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->StopScan = BroadcastDTVKit_StopScan;
     pD->Stop = BroadcastDTVKit_Stop;
     pD->Release = BroadcastDTVKit_Release;
+    pD->SetGeometry = BroadcastDTVKit_SetGeometry;
+    pD->GetVideoTrackInfoList = BroadcastDTVKit_GetVideoTrackInfoList;
     ALOGE("%s: Exit", __FUNCTION__);
     return 0;
 }

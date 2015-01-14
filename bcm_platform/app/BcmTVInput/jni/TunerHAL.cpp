@@ -319,7 +319,9 @@ static void TunerHALSidebandBinderNotify(int cb_data, int msg, struct hwc_notifi
              ntfy.display_width, ntfy.display_height, ntfy.zorder);
 
        if (g_pTD->driver.SetGeometry) {
+           BKNI_AcquireMutex(g_pTD->mutex);
            g_pTD->driver.SetGeometry(position, clip, ntfy.display_width, ntfy.display_height, ntfy.zorder, true);
+           BKNI_ReleaseMutex(g_pTD->mutex);
        }
     }
     break;
@@ -371,7 +373,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env
     g_pTD->o = env->NewGlobalRef(o);
 
     HwcBinderConnect();
-
+    BKNI_CreateMutex(&g_pTD->mutex);
     return Broadcast_Initialize(&g_pTD->driver);
 }
 
@@ -386,7 +388,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jcla
         TV_LOG("%s: Tune call is null", __FUNCTION__);
     }
     else {
+        BKNI_AcquireMutex(g_pTD->mutex);
         rv = (*g_pTD->driver.Tune)(String8(s8id)); 
+        BKNI_ReleaseMutex(g_pTD->mutex);
     }
 
     env->ReleaseStringUTFChars(id, s8id);   
@@ -415,7 +419,10 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
         return 0;
     }
 
+    BKNI_AcquireMutex(g_pTD->mutex);
     civ = (*g_pTD->driver.GetChannelList)(); 
+    BKNI_ReleaseMutex(g_pTD->mutex);
+
     jclass cls = env->FindClass("com/broadcom/tvinput/ChannelInfo"); 
     if (cls == 0) {
         ALOGE("%s: could not find class", __FUNCTION__);
@@ -481,7 +488,11 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramList(JNIEnv *env, jclass thiz, jstr
     }
 
     const char *s8id = env->GetStringUTFChars(id, NULL);
+
+    BKNI_AcquireMutex(g_pTD->mutex);
     piv = (*g_pTD->driver.GetProgramList)(String8(s8id));
+    BKNI_ReleaseMutex(g_pTD->mutex);
+
     env->ReleaseStringUTFChars(id, s8id);
      
     jclass cls = env->FindClass("com/broadcom/tvinput/ProgramInfo"); 
@@ -545,7 +556,9 @@ Java_com_broadcom_tvinput_TunerHAL_getScanInfo(JNIEnv *env, jclass thiz)
         si.valid = false;
     }
     else {
+        BKNI_AcquireMutex(g_pTD->mutex);
         si = (*g_pTD->driver.GetScanInfo)();
+        BKNI_ReleaseMutex(g_pTD->mutex);
     }
      
     jclass cls = env->FindClass("com/broadcom/tvinput/ScanInfo"); 
@@ -591,7 +604,11 @@ JNIEXPORT jlong JNICALL Java_com_broadcom_tvinput_TunerHAL_getUtcTime(JNIEnv *en
         return 0;
     }
     else {
-        return (*g_pTD->driver.GetUtcTime)();
+        jlong t;
+        BKNI_AcquireMutex(g_pTD->mutex);
+        t = (*g_pTD->driver.GetUtcTime)();
+        BKNI_ReleaseMutex(g_pTD->mutex);
+        return t;
     }
 }
 
@@ -605,7 +622,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv *env, jcla
         TV_LOG("%s: Stop call is null", __FUNCTION__);
     }
     else {
+        BKNI_AcquireMutex(g_pTD->mutex);
         rv = (*g_pTD->driver.Stop)();
+        BKNI_ReleaseMutex(g_pTD->mutex);
     }
 
     return rv;
@@ -619,7 +638,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startBlindScan(JNIEnv 
         TV_LOG("%s: StartBlindScan call is null", __FUNCTION__);
     }
     else {
+        BKNI_AcquireMutex(g_pTD->mutex);
         rv = (*g_pTD->driver.StartBlindScan)();
+        BKNI_ReleaseMutex(g_pTD->mutex);
     }
 
     return rv;
@@ -633,7 +654,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stopScan(JNIEnv *env, 
         TV_LOG("%s: StopScan call is null", __FUNCTION__);
     }
     else {
+        BKNI_AcquireMutex(g_pTD->mutex);
         rv = (*g_pTD->driver.StopScan)();
+        BKNI_ReleaseMutex(g_pTD->mutex);
     }
 
     return rv;
@@ -649,7 +672,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_release(JNIEnv *env, j
         TV_LOG("%s: Release call is null", __FUNCTION__);
     }
     else {
+        BKNI_AcquireMutex(g_pTD->mutex);
         rv = (*g_pTD->driver.Release)();
+        BKNI_ReleaseMutex(g_pTD->mutex);
     }
 
     return rv;
@@ -681,7 +706,10 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getVideoTrackI
         return 0;
     }
 
+    BKNI_AcquireMutex(g_pTD->mutex);
     vtiv = (*g_pTD->driver.GetVideoTrackInfoList)(); 
+    BKNI_ReleaseMutex(g_pTD->mutex);
+
     jclass cls = env->FindClass("com/broadcom/tvinput/VideoTrackInfo"); 
     if (cls == 0) {
         ALOGE("%s: could not find class", __FUNCTION__);

@@ -43,6 +43,7 @@ public:
     NexusClientContext *nexus_client;
     BroadcastDriver driver;
     int surfaceClientId;
+    BKNI_MutexHandle mutex;
 };
 
 void TunerHAL_onBroadcastEvent(jint e, jint param, String8 s);
