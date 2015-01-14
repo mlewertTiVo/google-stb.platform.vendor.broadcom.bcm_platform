@@ -132,7 +132,7 @@ int gralloc_destripe_yv12(
         uint8_t y0, y1, cb, cr;
         if ( y & 1 )
         {
-            for ( x = 0; x < height; x += 2 )
+            for ( x = 0; x < width; x += 2 )
             {
                 y0 = *pPackedData;
                 pPackedData+=2;
@@ -144,7 +144,7 @@ int gralloc_destripe_yv12(
         }
         else
         {
-            for ( x = 0; x < height; x += 2 )
+            for ( x = 0; x < width; x += 2 )
             {
                 y0 = *pPackedData++;
                 cb = *pPackedData++;
