@@ -97,7 +97,6 @@ using namespace android;
 #define GPX_SURFACE_STACK            3
 #define DUMP_BUFFER_SIZE             1024
 #define LAST_PING_FRAME_ID_INVALID   0xBAADCAFE
-#define FALL_BACK_GLES_ON_SKIP       1
 #define HWC_DO_YV12_CONV             0
 
 /* note: matching other parts of the integration, we
@@ -105,6 +104,9 @@ using namespace android;
  */
 #define DISPLAY_DEFAULT_HD_RES       "1080p"
 #define DISPLAY_HD_RES_PROP          "ro.hd_output_format"
+
+#define HWC_DEFAULT_GLES_FALLBACK    "1"
+#define HWC_GLES_FALLBACK_PROP       "ro.hwc.gles.fallback"
 
 #define HWC_CHECKPOINT_TIMEOUT       (100)
 
@@ -353,6 +355,9 @@ struct hwc_context_t {
     int display_width;
     int display_height;
 
+    bool display_gles_fallback;
+    bool needs_fb_target;
+
     int cursor_layer_id;
     GPX_CLIENT_SURFACE_INFO cursor_cache;
 
@@ -364,8 +369,6 @@ struct hwc_context_t {
     NEXUS_Graphics2DHandle hwc_2dg;
     NEXUS_Graphics2DCapabilities gfxCaps;
     BKNI_EventHandle checkpoint_event;
-
-    bool needs_fb_target;
 };
 
 static void hwc_device_cleanup(hwc_context_t* ctx);
@@ -853,11 +856,12 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
        }
     }
     if (capacity) {
-       write = snprintf(buff + index, capacity, "\tprepare:{%u,%u}::set:{%u,%u}\n",
+       write = snprintf(buff + index, capacity, "\tprepare:{%u,%u}::set:{%u,%u}::gles-fbk:%s\n",
            ctx->prepare_call,
            ctx->prepare_skipped,
            ctx->set_call,
-           ctx->set_skipped);
+           ctx->set_skipped,
+           ctx->display_gles_fallback ? "enabled" : "disabled");
        if (write > 0) {
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
@@ -1114,7 +1118,8 @@ static bool primary_need_nsc_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *
 
     ++skip_layer; /* 4 */
     if ((layer->compositionType == HWC_FRAMEBUFFER_TARGET) &&
-        (ctx->needs_fb_target == false)) {
+        (!ctx->display_gles_fallback ||
+         (ctx->display_gles_fallback && !ctx->needs_fb_target))) {
         goto out;
     }
 
@@ -1141,6 +1146,7 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
            continue;
         // framebuffer target layer stays such (SF composing via GL into it, eg: animation/transition).
         if (layer->compositionType == HWC_FRAMEBUFFER_TARGET) {
+           // note: to enable triple buffer on the FB target, set the BoardConfig property.
            // layer->hints |= HWC_HINT_TRIPLE_BUFFER;
            continue;
         }
@@ -1150,10 +1156,14 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
             (layer->compositionType == HWC_OVERLAY)) {
            layer->compositionType = HWC_FRAMEBUFFER;
            if (layer->flags & HWC_SKIP_LAYER) {
-              skip_layer_index = i;
+              if (ctx->display_gles_fallback) {
+                 skip_layer_index = i;
+              }
            } else {
               if (layer->handle) {
-                 split_layer_scaling(ctx, layer);
+                 if (ctx->display_gles_fallback && !split_layer_scaling(ctx, layer)) {
+                    continue;
+                 }
                  if ((layer->flags & HWC_IS_CURSOR_LAYER) && HWC_CURSOR_SURFACE_SUPPORTED) {
                     layer->compositionType = HWC_CURSOR_OVERLAY;
                  } else {
@@ -1166,7 +1176,7 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
     }
 
     if (skip_layer_index != -1) {
-       for (i = 0; i < (FALL_BACK_GLES_ON_SKIP ? list->numHwLayers : (size_t)skip_layer_index); i++) {
+       for (i = 0; i < list->numHwLayers; i++) {
           layer = &list->hwLayers[i];
           if (layer->compositionType == HWC_OVERLAY) {
              layer->compositionType = HWC_FRAMEBUFFER;
@@ -1175,12 +1185,15 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
        }
     }
 
-    for (i = 0; i < list->numHwLayers; i++) {
-        layer = &list->hwLayers[i];
-         if (layer->compositionType == HWC_FRAMEBUFFER) {
-            ctx->needs_fb_target = true;
-            break;
-         }
+    // no fallback allowed, do not expect to deal with the framebuffer_target.
+    if (ctx->display_gles_fallback) {
+       for (i = 0; i < list->numHwLayers; i++) {
+           layer = &list->hwLayers[i];
+           if (layer->compositionType == HWC_FRAMEBUFFER) {
+               ctx->needs_fb_target = true;
+               break;
+           }
+       }
     }
 }
 
@@ -1291,6 +1304,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     size_t i;
     NEXUS_Error rc;
     bool is_sideband = false;
+    int overlay_seen = 0;
+    int fb_target_seen = 0;
 
     // should never happen as primary display should always be there.
     if (!list)
@@ -1342,6 +1357,11 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
             //
             else if (ctx->gpx_cli[i].composition.visible) {
                 if (!ctx->gpx_cli[i].skip_set) {
+                   if (list->hwLayers[i].compositionType == HWC_OVERLAY) {
+                      overlay_seen++;
+                   } else if (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET) {
+                      fb_target_seen++;
+                   }
                    int six = hwc_gpx_push_surface_locked(&ctx->gpx_cli[i]);
                    if (six != -1) {
                       rc = NEXUS_SurfaceClient_PushSurface(ctx->gpx_cli[i].ncci.schdl, ctx->gpx_cli[i].slist[six].shdl, NULL, false);
@@ -1372,6 +1392,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     else {
         BKNI_ReleaseMutex(ctx->power_mutex);
     }
+
+    ALOGV("%s: composition %d: overlay %d, fb_target:%d\n", __FUNCTION__, ctx->set_call, overlay_seen, fb_target_seen);
 
 out_mutex:
     BKNI_ReleaseMutex(ctx->mutex);
@@ -1810,6 +1832,10 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            }
         }
         dev->cursor_layer_id = -1;
+
+        if (property_get(HWC_GLES_FALLBACK_PROP, value, HWC_DEFAULT_GLES_FALLBACK)) {
+           dev->display_gles_fallback = (strtoul(value, NULL, 10) == 0) ? false : true;
+        }
 
         {
             NxClient_AllocSettings nxAllocSettings;
@@ -2758,6 +2784,7 @@ static void hwc_hide_unused_gpx_layer(hwc_context_t* ctx, int index)
     if (composition.visible) {
        composition.visible = false;
        rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[index].ncci.sccid, &composition);
+       ctx->gpx_cli[index].composition.visible = false;
        if (rc != NEXUS_SUCCESS) {
            ALOGE("%s: failed hiding layer %d, err=%d", __FUNCTION__, index, rc);
        }
