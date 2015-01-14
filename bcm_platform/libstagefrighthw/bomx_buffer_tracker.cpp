@@ -223,3 +223,23 @@ bool BOMX_BufferTracker::Last(OMX_TICKS ticks)
 
     return ( NULL == pNode );
 }
+
+void BOMX_BufferTracker::MarkLastEos()
+{
+    BOMX_BufferTrackerNode *pNode, *pLast=BLST_Q_FIRST(&m_allocList);
+
+    if ( pLast )
+    {
+        for ( pNode = BLST_Q_NEXT(pLast, node);
+              NULL != pNode;
+              pNode = BLST_Q_NEXT(pNode, node) )
+        {
+            if ( pNode->ticks > pLast->ticks )
+            {
+                pLast = pNode;
+            }
+        }
+
+        pLast->flags |= OMX_BUFFERFLAG_EOS;
+    }
+}

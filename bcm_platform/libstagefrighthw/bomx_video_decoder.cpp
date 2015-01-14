@@ -839,6 +839,8 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     unsigned i;
     BOMX_VideoDecoderFrameBuffer *pBuffer;
 
+    ALOGI("~BOMX_VideoDecoder");
+
     // Stop listening to HWC. Note that HWC binder does need to be protected given
     // it's not updated during the decoder's lifetime.
     if (m_omxHwcBinder)
@@ -850,6 +852,12 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     Lock();
 
     ShutdownScheduler();
+
+    if ( g_pDebugFile )
+    {
+        fclose(g_pDebugFile);
+        g_pDebugFile = NULL;
+    }
 
     if ( m_hSimpleVideoDecoder )
     {
@@ -1595,6 +1603,11 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             {
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
             }
+            NEXUS_VideoDecoderExtendedSettings extSettings;
+            NEXUS_SimpleVideoDecoder_GetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
+            extSettings.earlyPictureDeliveryMode = true;
+            errCode = NEXUS_SimpleVideoDecoder_SetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
+            if ( errCode ) { (void)BOMX_BERR_TRACE(errCode); }
 
             NEXUS_Playpump_GetDefaultOpenSettings(&playpumpOpenSettings);
             playpumpOpenSettings.fifoSize = 0;
@@ -1778,6 +1791,8 @@ NEXUS_Error BOMX_VideoDecoder::SetOutputPortState(OMX_STATETYPE newState)
             m_outputFrameTimerId = NULL;
         }
         m_formatChangePending = false;
+        m_outputWidth = m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth;
+        m_outputHeight = m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight;
         // Return all pending buffers to the client
         ReturnPortBuffers(m_pVideoPorts[1]);
     }
@@ -3064,7 +3079,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     }
     pInfo->numDescriptors = 0;
 
-    ALOGV("%s, comp:%s, buff:%p", __FUNCTION__, GetName(), pBufferHeader->pBuffer);
+    ALOGV("%s, comp:%s, buff:%p ts: %d ms", __FUNCTION__, GetName(), pBufferHeader->pBuffer, (int)(pBufferHeader->nTimeStamp/1000LL));
     if ( pBufferHeader->nFlags & OMX_BUFFERFLAG_CODECCONFIG )
     {
         if ( m_configBufferState != ConfigBufferState_eAccumulating )
@@ -3093,76 +3108,88 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         return OMX_ErrorNone;
     }
 
-    // If we get here, we have an actual frame to send.
-
-    // Create codec-specific header if required
-    switch ( (int)GetCodec() )
+    if ( pBufferHeader->nFilledLen > 0 )
     {
-    case OMX_VIDEO_CodingVP8:
-    case OMX_VIDEO_CodingVP9:
-    /* Also true for spark and possibly other codecs */
-    {
-        uint32_t packetLen = pBufferHeader->nFilledLen - pBufferHeader->nOffset;
-        if ( packetLen > 0 )
+        // Create codec-specific header if required
+        switch ( (int)GetCodec() )
         {
-            pCodecHeader = m_pBcmvHeader;
-            codecHeaderLength = BOMX_BCMV_HEADER_SIZE;
-            packetLen += codecHeaderLength;   // BCMV packet length must include BCMV header
-            pCodecHeader[4] = (packetLen>>24)&0xff;
-            pCodecHeader[5] = (packetLen>>16)&0xff;
-            pCodecHeader[6] = (packetLen>>8)&0xff;
-            pCodecHeader[7] = (packetLen>>0)&0xff;
-        }
-        break;
-    }
-    default:
-        break;
-    }
-
-    // Track the buffer
-    if ( !m_pBufferTracker->Add(pBufferHeader, &pInfo->pts) )
-    {
-        BOMX_WRN(("Unable to track buffer"));
-        pInfo->pts = BOMX_TickToPts(&pBufferHeader->nTimeStamp);
-    }
-
-    // Build up descriptor list
-    err = BuildInputFrame(pBufferHeader, pInfo->pts, pCodecHeader, codecHeaderLength, desc, B_MAX_DESCRIPTORS_PER_BUFFER, &numRequested);
-    if ( err != OMX_ErrorNone )
-    {
-        return BOMX_ERR_TRACE(err);
-    }
-
-    if ( numRequested > 0 )
-    {
-        // Log data to file if requested
-        if ( NULL != g_pDebugFile )
+        case OMX_VIDEO_CodingVP8:
+        case OMX_VIDEO_CodingVP9:
+        /* Also true for spark and possibly other codecs */
         {
-            unsigned i;
-            for ( i = 0; i < numRequested; i++ )
+            uint32_t packetLen = pBufferHeader->nFilledLen - pBufferHeader->nOffset;
+            if ( packetLen > 0 )
             {
-                fwrite(desc[i].addr, 1, desc[i].length, g_pDebugFile);
+                pCodecHeader = m_pBcmvHeader;
+                codecHeaderLength = BOMX_BCMV_HEADER_SIZE;
+                packetLen += codecHeaderLength;   // BCMV packet length must include BCMV header
+                pCodecHeader[4] = (packetLen>>24)&0xff;
+                pCodecHeader[5] = (packetLen>>16)&0xff;
+                pCodecHeader[6] = (packetLen>>8)&0xff;
+                pCodecHeader[7] = (packetLen>>0)&0xff;
             }
+            break;
+        }
+        default:
+            break;
         }
 
-        // Submit to playpump
-        errCode = NEXUS_Playpump_SubmitScatterGatherDescriptor(m_hPlaypump, desc, numRequested, &numConsumed);
-        if ( errCode )
+        // Track the buffer
+        if ( !m_pBufferTracker->Add(pBufferHeader, &pInfo->pts) )
         {
-            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+            BOMX_WRN(("Unable to track buffer"));
+            pInfo->pts = BOMX_TickToPts(&pBufferHeader->nTimeStamp);
         }
-        BOMX_ASSERT(numConsumed == numRequested);
-        pInfo->numDescriptors += numRequested;
-        m_submittedDescriptors += numConsumed;
-        err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
-        if ( err )
+
+        // Build up descriptor list
+        err = BuildInputFrame(pBufferHeader, pInfo->pts, pCodecHeader, codecHeaderLength, desc, B_MAX_DESCRIPTORS_PER_BUFFER, &numRequested);
+        if ( err != OMX_ErrorNone )
         {
             return BOMX_ERR_TRACE(err);
+        }
+
+        if ( numRequested > 0 )
+        {
+            // Log data to file if requested
+            if ( NULL != g_pDebugFile )
+            {
+                unsigned i;
+                for ( i = 0; i < numRequested; i++ )
+                {
+                    fwrite(desc[i].addr, 1, desc[i].length, g_pDebugFile);
+                }
+            }
+
+            // Submit to playpump
+            errCode = NEXUS_Playpump_SubmitScatterGatherDescriptor(m_hPlaypump, desc, numRequested, &numConsumed);
+            if ( errCode )
+            {
+                return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+            }
+            BOMX_ASSERT(numConsumed == numRequested);
+            pInfo->numDescriptors += numRequested;
+            m_submittedDescriptors += numConsumed;
+            err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
+            if ( err )
+            {
+                return BOMX_ERR_TRACE(err);
+            }
         }
     }
 
     if ( pBufferHeader->nFlags & OMX_BUFFERFLAG_EOS )
     {
+        if ( pBufferHeader->nFilledLen == 0 )
+        {
+            // This is a dummy last frame with only EOS.  Mark the last valid frame as EOS.
+            m_pBufferTracker->MarkLastEos();
+            pInfo->numDescriptors = 0;
+            err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
+            if ( err )
+            {
+                return BOMX_ERR_TRACE(err);
+            }
+        }
         numRequested = 1;
         desc[0].addr = m_pEosBuffer;
         desc[0].length = BOMX_VIDEO_EOS_LEN;

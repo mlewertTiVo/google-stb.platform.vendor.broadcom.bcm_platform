@@ -75,6 +75,7 @@ public:
     void Flush();
     bool Last(OMX_TICKS ticks);
     bool Valid() const { return m_valid; }
+    void MarkLastEos();
 
 protected:
     BLST_Q_HEAD(AllocList, BOMX_BufferTrackerNode) m_allocList;
