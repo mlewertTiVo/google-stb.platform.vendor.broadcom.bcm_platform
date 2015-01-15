@@ -26,6 +26,8 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Set;
+import java.util.HashSet;
 
 import org.xmlpull.v1.XmlPullParserException;
 
@@ -126,8 +128,17 @@ public class TunerService extends TvInputService {
         context.getContentResolver().update(TvContract.buildProgramUri(programId), prog_values, null, null);
     }
 
+    private boolean isAtleastOneSessionTuned() {
+        for(TunerTvInputSessionImpl session : sessionSet) {
+            if (!session.mCurrentChannelId.equals("")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void forgeTime() {
-        if (streamerMode && mCurrentSession != null && !mCurrentSession.mCurrentChannelId.equals("")) {
+        if (streamerMode && isAtleastOneSessionTuned()) {
             long t = TunerHAL.getUtcTime();
             if (t != 0) {
                 Log.e(TAG, "DatabaseSyncTask::Got time " + t);
@@ -310,7 +321,7 @@ public class TunerService extends TvInputService {
     }
 
     private DatabaseSync dbsync;
-    private TunerTvInputSessionImpl mCurrentSession = null;
+    private Set<TunerTvInputSessionImpl> sessionSet = new HashSet<TunerTvInputSessionImpl>();
 
     private static void reflectedNotifySessionEvent(TunerTvInputSessionImpl s, String event, Bundle args)
     {
@@ -346,19 +357,19 @@ public class TunerService extends TvInputService {
     public static final int BROADCAST_EVENT_SCANNING_PROGRESS = 100; // 100 - 0% progress 200 100%
     public static final int BROADCAST_EVENT_SCANNING_COMPLETE = 201;
 
-    private void sendScanStatusToCurrentSessionIfAny()
+    private void sendScanStatusToAllSessions()
     {
-        if (mCurrentSession != null) {
+        for(TunerTvInputSessionImpl session : sessionSet) {
             Bundle b = new Bundle();
             ScanInfo si = TunerHAL.getScanInfo();
             b.setClassLoader(ScanInfo.class.getClassLoader());
             b.putParcelable("scaninfo", si);
             //mCurrentSession.notifySessionEvent("scanstate", b);
-            reflectedNotifySessionEvent(mCurrentSession, "scanstatus", b);
+            reflectedNotifySessionEvent(session, "scanstatus", b);
         }
     }
 
-    private void sendTrackInfoToCurrentSessionIfAny()
+    private void sendTrackInfoToAllSessions()
     {
         VideoTrackInfo vtia[] = TunerHAL.getVideoTrackInfoList();
         if (vtia.length > 0) {
@@ -374,27 +385,27 @@ public class TunerService extends TvInputService {
                 tracks.add(info);
             }
 
-            if (mCurrentSession != null) {
-                mCurrentSession.notifyTracksChanged(tracks);
+            for(TunerTvInputSessionImpl session : sessionSet) {
+                session.notifyTracksChanged(tracks);
             }
         }
     }
 
-    private void sendTrackSelectedToCurrentSessionIfAny(int type, String trackId)
+    private void sendTrackSelectedToAllSessions(int type, String trackId)
     {
-        if (mCurrentSession != null) {
-            mCurrentSession.notifyTrackSelected(type, trackId);
+        for(TunerTvInputSessionImpl session : sessionSet) {
+            session.notifyTrackSelected(type, trackId);
         }
     }
 
-    private void sendVideoAvailabilityToCurrentSessionIfAny(int param)
+    private void sendVideoAvailabilityToAllSessions(int param)
     {
-        if (mCurrentSession != null) {
+        for(TunerTvInputSessionImpl session : sessionSet) {
             if (param != 0) {
-                mCurrentSession.notifyVideoAvailable();
+                session.notifyVideoAvailable();
             }
             else {
-                mCurrentSession.notifyVideoUnavailable(TvInputManager.VIDEO_UNAVAILABLE_REASON_TUNING);
+                session.notifyVideoUnavailable(TvInputManager.VIDEO_UNAVAILABLE_REASON_TUNING);
             }
         }
     }
@@ -408,13 +419,13 @@ public class TunerService extends TvInputService {
             dbsync.setProgramListChanged();
         }
         else if (e == BROADCAST_EVENT_SCANNING_PROGRESS || e == BROADCAST_EVENT_SCANNING_COMPLETE) {
-            sendScanStatusToCurrentSessionIfAny();
+            sendScanStatusToAllSessions();
         }
         else if (e == BROADCAST_EVENT_VIDEO_TRACK_LIST_CHANGED) {
             mMainLoopHandler.post(new Runnable() {
                 @Override
                 public void run() {
-                    sendTrackInfoToCurrentSessionIfAny();
+                    sendTrackInfoToAllSessions();
                 }
             });
         }
@@ -422,7 +433,7 @@ public class TunerService extends TvInputService {
             mMainLoopHandler.post(new Runnable() {
                 @Override
                 public void run() {
-                    sendTrackSelectedToCurrentSessionIfAny(param, s);
+                    sendTrackSelectedToAllSessions(param, s);
                 }
             });
         }
@@ -430,7 +441,7 @@ public class TunerService extends TvInputService {
             mMainLoopHandler.post(new Runnable() {
                 @Override
                 public void run() {
-                    sendVideoAvailabilityToCurrentSessionIfAny(param);
+                    sendVideoAvailabilityToAllSessions(param);
                 }
             });
         }
@@ -459,8 +470,13 @@ public class TunerService extends TvInputService {
         // Lookup TvInputInfo from inputId
         TvInputInfo info = mInputMap.get(inputId);
 
-        mCurrentSession = new TunerTvInputSessionImpl(this, info);
-        return mCurrentSession;
+        TunerTvInputSessionImpl newSession = new TunerTvInputSessionImpl(this, info);
+        if (newSession != null) {
+            sessionSet.add(newSession);
+            if (DEBUG) 
+                Log.d(TAG, "TunerService::onCreateSession(), sessions = " + sessionSet.size());
+        }
+        return newSession;
     }
 
     @Override
@@ -697,8 +713,11 @@ public class TunerService extends TvInputService {
             {
                 mManager.releaseTvInputHardware(mDeviceId, mHardware);
                 mHardware = null;
-                mCurrentSession = null;
             }
+            sessionSet.remove(this);
+
+            if (DEBUG) 
+                Log.d(TAG, "onRelease(), sessions = " + sessionSet.size());
         }
 
         @Override
@@ -776,7 +795,7 @@ public class TunerService extends TvInputService {
                 TunerHAL.startBlindScan();
             }
             else if (action.equals("scanStatus")) {
-                sendScanStatusToCurrentSessionIfAny(); 
+                sendScanStatusToAllSessions(); 
             }
             else if (action.equals("stopScan")) {
                 TunerHAL.stopScan();

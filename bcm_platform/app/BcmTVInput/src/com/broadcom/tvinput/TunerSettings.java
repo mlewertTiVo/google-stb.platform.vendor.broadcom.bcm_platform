@@ -165,4 +165,11 @@ public class TunerSettings extends Activity {
         layout.addView(btnStreamerMode);
     }
 
+    @Override
+    public void onDestroy() {
+        if (mSession != null) {
+            mSession.release(); 
+        }
+        super.onDestroy();
+    }
 }
