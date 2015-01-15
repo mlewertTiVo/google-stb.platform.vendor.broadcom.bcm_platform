@@ -71,6 +71,8 @@ using namespace android;
 #define HWC_SURFACE_LIFE_CYCLE_ERROR 0
 #define HWC_DUMP_LAYER_ON_ERROR      0
 
+#define HWC_DUMP_LAYER_CLASS         0
+
 #define HWC_SB_NO_ALLOC_SURF_CLI     1
 #define HWC_MM_NO_ALLOC_SURF_CLI     1
 
@@ -1273,11 +1275,17 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
         for (i = 0; i < list->numHwLayers; i++) {
             layer = &list->hwLayers[i];
             if (primary_need_nsc_layer(dev, layer)) {
+                if (HWC_DUMP_LAYER_CLASS) {
+                   ALOGI("COMP: %d - SHOW - SF:%d (%d) -> NSC:%d", ctx->prepare_call, i, layer->compositionType, i);
+                }
                 hwc_nsc_prepare_layer(ctx, layer, (int)i,
                                       (bool)(list->flags & HWC_GEOMETRY_CHANGED),
                                       &video_layer_id,
                                       &sideband_layer_id);
             } else {
+                if (HWC_DUMP_LAYER_CLASS) {
+                   ALOGI("COMP: %d - HIDE - SF:%d (%d) -> NSC:%d", ctx->prepare_call, i, layer->compositionType, i);
+                }
                 hwc_hide_unused_gpx_layer(ctx, i);
             }
         }
