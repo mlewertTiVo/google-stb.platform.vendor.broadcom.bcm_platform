@@ -1039,13 +1039,16 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
    }
 }
 
-static bool is_video_layer(hwc_layer_1_t *layer, int layer_id, bool *is_sideband)
+static bool is_video_layer(hwc_layer_1_t *layer, int layer_id, bool *is_sideband, bool *is_yuv)
 {
     bool rc = false;
-    NexusClientContext *client_context;
+    NexusClientContext *client_context = NULL;
 
     if (is_sideband) {
         *is_sideband = false;
+    }
+    if (is_yuv) {
+        *is_yuv = false;
     }
 
     if (((layer->compositionType == HWC_OVERLAY && layer->handle) ||
@@ -1061,22 +1064,30 @@ static bool is_video_layer(hwc_layer_1_t *layer, int layer_id, bool *is_sideband
             index = android_atomic_acquire_load(&pSharedData->videoWindow.windowIdPlusOne);
             if (index > 0) {
                 client_context = reinterpret_cast<NexusClientContext *>(pSharedData->videoWindow.nexusClientContext);
+                if (client_context != NULL) {
+                   rc = true;
+                }
+            } else if ((pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12) &&
+                       (pSharedData->planes[EXTRA_PLANE].format == NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8)) {
+                if (is_yuv) {
+                   *is_yuv = true;
+                }
+                rc = true;
             }
         } else if (layer->compositionType == HWC_SIDEBAND) {
             client_context = (NexusClientContext*)layer->sidebandStream->data[1];
-            if (is_sideband) {
-                *is_sideband = true;
+            if (client_context != NULL) {
+               rc = true;
             }
-        }
-
-        if (client_context != NULL) {
-            layer->hints |= HWC_HINT_CLEAR_FB;
-            rc = true;
+            if (is_sideband) {
+               *is_sideband = true;
+            }
         }
     }
 
     if (rc) {
-        ALOGV("%s: found on layer %d.", __FUNCTION__, layer_id);
+       layer->hints |= HWC_HINT_CLEAR_FB;
+       ALOGV("%s: found on layer %d.", __FUNCTION__, layer_id);
     }
     return rc;
 }
@@ -1099,7 +1110,7 @@ static bool split_layer_scaling(
         goto out;
     }
 
-    if (is_video_layer(layer, -1, NULL)) {
+    if (is_video_layer(layer, -1, NULL, NULL)) {
         goto out;
     }
 
@@ -1219,7 +1230,7 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
 
     for (i = 0; i < list->numHwLayers; i++) {
        layer = &list->hwLayers[i];
-       if (is_video_layer(layer, -1, NULL)) {
+       if (is_video_layer(layer, -1, NULL, NULL)) {
           has_video = true;
           break;
        }
@@ -1230,7 +1241,7 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
        for (i = 0; i < list->numHwLayers; i++) {
           layer = &list->hwLayers[i];
           if (layer->compositionType == HWC_OVERLAY &&
-              !is_video_layer(layer, -1, NULL)) {
+              !is_video_layer(layer, -1, NULL, NULL)) {
              layer->compositionType = HWC_FRAMEBUFFER;
              layer->hints = 0;
           }
@@ -1362,6 +1373,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     size_t i;
     NEXUS_Error rc;
     bool is_sideband = false;
+    bool is_yuv = false;
+    bool is_video = false;
     int overlay_seen = 0;
     int fb_target_seen = 0;
     int fence_id = INVALID_FENCE;
@@ -1412,7 +1425,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
             //
             // video layer: signal the buffer to be displayed, drop duplicates.
             //
-            if (is_video_layer(&list->hwLayers[i], -1 /*not used*/, &is_sideband)) {
+            is_video = is_video_layer(&list->hwLayers[i], -1, &is_sideband, &is_yuv);
+            if (is_video && !is_yuv) {
                 if (!is_sideband) {
                     private_handle_t *bcmBuffer = (private_handle_t *)list->hwLayers[i].handle;
                     PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedData);
@@ -2881,17 +2895,23 @@ static void hwc_nsc_prepare_layer(
     unsigned int *sideband_layer_id)
 {
     bool is_sideband = false;
+    bool is_yuv = false;
 
-    if (is_video_layer(layer, layer_id, &is_sideband)) {
+    if (is_video_layer(layer, layer_id, &is_sideband, &is_yuv)) {
         if (!is_sideband) {
-            if (*video_layer_id < NSC_MM_CLIENTS_NUMBER) {
-                hwc_prepare_mm_layer(ctx, layer, layer_id, *video_layer_id);
-                (*video_layer_id)++;
-            } else {
-                // huh? shouldn't happen really, unless the system is not tuned
-                // properly for the use case, if such, do tune it.
-                ALOGE("%s: droping video layer %d - out of resources (max %d)!\n", __FUNCTION__,
-                   *video_layer_id, NSC_MM_CLIENTS_NUMBER);
+            if (is_yuv) {
+               hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed);
+            }
+            else {
+               if (*video_layer_id < NSC_MM_CLIENTS_NUMBER) {
+                  hwc_prepare_mm_layer(ctx, layer, layer_id, *video_layer_id);
+                  (*video_layer_id)++;
+               } else {
+                  // huh? shouldn't happen really, unless the system is not tuned
+                  // properly for the use case, if such, do tune it.
+                  ALOGE("%s: droping video layer %d - out of resources (max %d)!\n", __FUNCTION__,
+                     *video_layer_id, NSC_MM_CLIENTS_NUMBER);
+               }
             }
         } else if (is_sideband) {
             if (*sideband_layer_id < NSC_SB_CLIENTS_NUMBER) {
