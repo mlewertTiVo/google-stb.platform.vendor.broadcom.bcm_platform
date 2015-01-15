@@ -1049,7 +1049,7 @@ static bool is_video_layer(hwc_layer_1_t *layer, int layer_id, bool *is_sideband
     }
 
     if (((layer->compositionType == HWC_OVERLAY && layer->handle) ||
-        (layer->compositionType == HWC_SIDEBAND && layer->sidebandStream))
+         (layer->compositionType == HWC_SIDEBAND && layer->sidebandStream))
         && !(layer->flags & HWC_SKIP_LAYER)) {
 
         client_context = NULL;
@@ -1199,14 +1199,14 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
               }
            } else {
               if (layer->handle) {
-                 if (ctx->display_gles_fallback && !split_layer_scaling(ctx, layer)) {
-                    continue;
-                 }
                  if ((layer->flags & HWC_IS_CURSOR_LAYER) && HWC_CURSOR_SURFACE_SUPPORTED) {
                     layer->compositionType = HWC_CURSOR_OVERLAY;
                  } else {
                     layer->compositionType = HWC_OVERLAY;
                     layer->hints |= HWC_HINT_TRIPLE_BUFFER;
+                 }
+                 if (ctx->display_gles_fallback && !split_layer_scaling(ctx, layer)) {
+                    layer->compositionType = HWC_FRAMEBUFFER;
                  }
               }
            }
@@ -1217,7 +1217,8 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
         ctx->display_gles_always) {
        for (i = 0; i < list->numHwLayers; i++) {
           layer = &list->hwLayers[i];
-          if (layer->compositionType == HWC_OVERLAY) {
+          if (layer->compositionType == HWC_OVERLAY &&
+              !is_video_layer(layer, -1, NULL)) {
              layer->compositionType = HWC_FRAMEBUFFER;
              layer->hints = 0;
           }
