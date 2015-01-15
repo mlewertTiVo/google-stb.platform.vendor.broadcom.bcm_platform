@@ -820,6 +820,7 @@ static int hwc_gpx_get_recycle_surface_locked(GPX_CLIENT_INFO *client, NEXUS_Sur
 static int hwc_gpx_get_current_surface_locked(GPX_CLIENT_INFO *client)
 {
     int selected = -1;
+    int selected_use_order = -1;
 
     for (int i = 0; i < GPX_SURFACE_STACK; i++) {
        if ((client->slist[i].owner == SURF_OWNER_NSC) ||
@@ -1379,6 +1380,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     int fb_target_seen = 0;
     int fence_id = INVALID_FENCE;
     struct sync_fence_info_data fence;
+    int layer_composed = 0;
 
     // should never happen as primary display should always be there.
     if (!list)
@@ -1472,6 +1474,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                       if (rc) {
                           if (list->hwLayers[i].releaseFenceFd != INVALID_FENCE) {
                              close(list->hwLayers[i].releaseFenceFd);
+                             list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
                           }
                           hwc_unlock_surface((private_handle_t *)ctx->gpx_cli[i].slist[six].grhdl);
                           ctx->gpx_cli[i].slist[six].comp_ix = -1;
@@ -1487,6 +1490,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                              ctx->gpx_cli[i].slist[six].shdl = NULL;
                           }
                           ALOGE("%s: push surface %p failed on layer %d, rc=%d\n", __FUNCTION__, ctx->gpx_cli[i].slist[six].shdl, i, rc);
+                      } else {
+                          layer_composed++;
                       }
                    }
                 } else {
@@ -1496,12 +1501,20 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         }
 
         NEXUS_SurfaceCompositor_SetPause(NULL, false);
+
+        if (layer_composed == 0) {
+           if (list->retireFenceFd != INVALID_FENCE) {
+              sw_sync_timeline_inc(ctx->sync_timeline, 1);
+              close(list->retireFenceFd);
+              list->retireFenceFd = INVALID_FENCE;
+           }
+        }
     }
     else {
         BKNI_ReleaseMutex(ctx->power_mutex);
     }
 
-    ALOGV("%s: composition %d: overlay %d, fb_target:%d\n", __FUNCTION__, ctx->set_call, overlay_seen, fb_target_seen);
+    ALOGV("%s: composition %d: overlay %d, fb_target:%d, composed: %d\n", __FUNCTION__, ctx->set_call, overlay_seen, fb_target_seen, layer_composed);
 
 out_mutex:
     BKNI_ReleaseMutex(ctx->mutex);
@@ -2522,7 +2535,9 @@ static void hwc_prepare_gpx_layer(
     if (ctx->gpx_cli[layer_id].composition.visible) {
         int six = hwc_gpx_get_current_surface_locked(&ctx->gpx_cli[layer_id]);
         ctx->gpx_cli[layer_id].skip_set = false;
-        if (six != -1 && !geometry_changed && (ctx->gpx_cli[layer_id].slist[six].grhdl == layer->handle)) {
+        if (six != -1 &&
+            !geometry_changed &&
+            (ctx->gpx_cli[layer_id].slist[six].grhdl == layer->handle)) {
             if (HWC_SURFACE_LIFE_CYCLE_ERROR) ALOGV("%s: skip no change on layer: %d\n", __FUNCTION__, layer_id);
             ctx->gpx_cli[layer_id].skip_set = true;
             goto out_unlock;
