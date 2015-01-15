@@ -1157,6 +1157,9 @@ static bool primary_need_nsc_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *
         if (ctx->display_gles_fallback && !ctx->needs_fb_target) {
            goto out;
         }
+        if (ctx->display_gles_always && !ctx->needs_fb_target) {
+           goto out;
+        }
     }
 
     rc = true;
@@ -1234,7 +1237,8 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
        }
     }
 
-    if (ctx->display_gles_fallback || ctx->display_gles_always) {
+    if (ctx->display_gles_fallback ||
+        (ctx->display_gles_always && has_video == false)) {
        for (i = 0; i < list->numHwLayers; i++) {
            layer = &list->hwLayers[i];
            if (layer->compositionType == HWC_FRAMEBUFFER) {
