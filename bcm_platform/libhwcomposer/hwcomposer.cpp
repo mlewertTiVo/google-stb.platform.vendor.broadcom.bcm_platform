@@ -1170,6 +1170,7 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
     hwc_layer_1_t *layer;
     struct hwc_context_t *ctx = (hwc_context_t*)dev;
     int skip_layer_index = -1;
+    bool has_video = false;
 
     ctx->needs_fb_target = false;
     for (i = 0; i < list->numHwLayers; i++) {
@@ -1213,8 +1214,16 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
         }
     }
 
+    for (i = 0; i < list->numHwLayers; i++) {
+       layer = &list->hwLayers[i];
+       if (is_video_layer(layer, -1, NULL)) {
+          has_video = true;
+          break;
+       }
+    }
+
     if ((ctx->display_gles_fallback && skip_layer_index != -1) ||
-        ctx->display_gles_always) {
+        (ctx->display_gles_always && has_video == false)) {
        for (i = 0; i < list->numHwLayers; i++) {
           layer = &list->hwLayers[i];
           if (layer->compositionType == HWC_OVERLAY &&
