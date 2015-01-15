@@ -71,8 +71,6 @@ using namespace android;
 #define HWC_SURFACE_LIFE_CYCLE_ERROR 0
 #define HWC_DUMP_LAYER_ON_ERROR      0
 
-#define HWC_DUMP_LAYER_CLASS         0
-
 #define HWC_SB_NO_ALLOC_SURF_CLI     1
 #define HWC_MM_NO_ALLOC_SURF_CLI     1
 
@@ -133,6 +131,9 @@ using namespace android;
  */
 #define HWC_DEFAULT_SW_SYNC          "1"
 #define HWC_SW_SYNC_PROP             "ro.hwc.sw_sync"
+
+#define HWC_DEFAULT_DUMP_LAYER       "0"
+#define HWC_DUMP_LAYER_PROP          "ro.hwc.dump_layer"
 
 #define HWC_CHECKPOINT_TIMEOUT       (100)
 
@@ -399,6 +400,8 @@ struct hwc_context_t {
     BKNI_EventHandle checkpoint_event;
 
     int sync_timeline;
+
+    bool display_dump_layer;
 };
 
 static void hwc_device_cleanup(hwc_context_t* ctx);
@@ -1133,7 +1136,7 @@ out:
     return ret;
 }
 
-static bool primary_need_nsc_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *layer)
+static bool primary_need_nsc_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *layer, size_t total_layers)
 {
     bool rc = false;
     struct hwc_context_t *ctx = (hwc_context_t*)dev;
@@ -1176,6 +1179,10 @@ static bool primary_need_nsc_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *
 
     rc = true;
 out:
+
+    if (!rc && (total_layers == 1) && ctx->display_dump_layer) {
+       ALOGI("comp: %d - skip-single - reason %d", ctx->prepare_call, skip_layer);
+    }
     return rc;
 }
 
@@ -1186,6 +1193,10 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
     struct hwc_context_t *ctx = (hwc_context_t*)dev;
     int skip_layer_index = -1;
     bool has_video = false;
+
+    if (ctx->display_dump_layer) {
+       ALOGI("comp: %d - classifying %d layers", ctx->prepare_call, list->numHwLayers);
+    }
 
     ctx->needs_fb_target = false;
     for (i = 0; i < list->numHwLayers; i++) {
@@ -1252,11 +1263,11 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
     if (ctx->display_gles_fallback ||
         (ctx->display_gles_always && has_video == false)) {
        for (i = 0; i < list->numHwLayers; i++) {
-           layer = &list->hwLayers[i];
-           if (layer->compositionType == HWC_FRAMEBUFFER) {
-               ctx->needs_fb_target = true;
-               break;
-           }
+          layer = &list->hwLayers[i];
+          if (layer->compositionType == HWC_FRAMEBUFFER) {
+              ctx->needs_fb_target = true;
+              break;
+          }
        }
     }
 }
@@ -1300,17 +1311,17 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
         // allocate the NSC layer, if need be change the geometry, etc...
         for (i = 0; i < list->numHwLayers; i++) {
             layer = &list->hwLayers[i];
-            if (primary_need_nsc_layer(dev, layer)) {
-                if (HWC_DUMP_LAYER_CLASS) {
-                   ALOGI("COMP: %d - SHOW - SF:%d (%d) -> NSC:%d", ctx->prepare_call, i, layer->compositionType, i);
+            if (primary_need_nsc_layer(dev, layer, list->numHwLayers)) {
+                if (ctx->display_dump_layer) {
+                   ALOGI("comp: %d - show - sf:%d (%d) -> nsc:%d", ctx->prepare_call, i, layer->compositionType, i);
                 }
                 hwc_nsc_prepare_layer(ctx, layer, (int)i,
                                       (bool)(list->flags & HWC_GEOMETRY_CHANGED),
                                       &video_layer_id,
                                       &sideband_layer_id);
             } else {
-                if (HWC_DUMP_LAYER_CLASS) {
-                   ALOGI("COMP: %d - HIDE - SF:%d (%d) -> NSC:%d", ctx->prepare_call, i, layer->compositionType, i);
+                if (ctx->display_dump_layer) {
+                   ALOGI("comp: %d - hiding - sf:%d (%d) -> nsc:%d", ctx->prepare_call, i, layer->compositionType, i);
                 }
                 hwc_hide_unused_gpx_layer(ctx, i);
             }
@@ -1489,7 +1500,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                              NEXUS_Surface_Destroy(ctx->gpx_cli[i].slist[six].shdl);
                              ctx->gpx_cli[i].slist[six].shdl = NULL;
                           }
-                          ALOGE("%s: push surface %p failed on layer %d, rc=%d\n", __FUNCTION__, ctx->gpx_cli[i].slist[six].shdl, i, rc);
+                          ALOGE("comp: %d (%d) - push surface %p failed on layer %d, rc=%d\n",
+                                ctx->set_call, ctx->prepare_call, ctx->gpx_cli[i].slist[six].shdl, i, rc);
                       } else {
                           layer_composed++;
                       }
@@ -1504,6 +1516,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
 
         if (layer_composed == 0) {
            if (list->retireFenceFd != INVALID_FENCE) {
+              // cancel the fence, increment timeline to keep sync on other fences.
               sw_sync_timeline_inc(ctx->sync_timeline, 1);
               close(list->retireFenceFd);
               list->retireFenceFd = INVALID_FENCE;
@@ -1514,7 +1527,11 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         BKNI_ReleaseMutex(ctx->power_mutex);
     }
 
-    ALOGV("%s: composition %d: overlay %d, fb_target:%d, composed: %d\n", __FUNCTION__, ctx->set_call, overlay_seen, fb_target_seen, layer_composed);
+    if (ctx->display_dump_layer) {
+       ALOGI("comp: %d (%d): ov:%d, fb:%d, composed:%d\n",
+             ctx->set_call, ctx->prepare_call, overlay_seen,
+             fb_target_seen, layer_composed);
+    }
 
 out_mutex:
     BKNI_ReleaseMutex(ctx->mutex);
@@ -1962,6 +1979,10 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
               (strncmp(value, HWC_GLES_MODE_FALLBACK, strlen(HWC_GLES_MODE_FALLBACK)) == 0) ? true : false;
            dev->display_gles_always =
               (strncmp(value, HWC_GLES_MODE_ALWAYS, strlen(HWC_GLES_MODE_ALWAYS)) == 0) ? true : false;
+        }
+
+        if (property_get(HWC_DUMP_LAYER_PROP, value, HWC_DEFAULT_DUMP_LAYER)) {
+           dev->display_dump_layer = (strtoul(value, NULL, 10) == 0) ? false : true;
         }
 
         {
