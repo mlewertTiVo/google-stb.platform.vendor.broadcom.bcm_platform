@@ -531,6 +531,12 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
         getPowerState();
 
         NxClient_GetDefaultStandbySettings(&standbySettings);
+        standbySettings.settings.wakeupSettings.ir = 1;
+        standbySettings.settings.wakeupSettings.uhf = 1;
+        standbySettings.settings.wakeupSettings.transport = 1;
+        standbySettings.settings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
+        standbySettings.settings.wakeupSettings.gpio = 1;
+        standbySettings.settings.wakeupSettings.timeout = 0;
 
         switch (pmState)
         {
@@ -538,7 +544,6 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
             {
                 LOGD("%s: About to set power state S0...", __PRETTY_FUNCTION__);
                 standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eOn;
-                rc = NxClient_SetStandbySettings(&standbySettings);
                 break;
             }
 
@@ -546,7 +551,6 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
             {
                 LOGD("%s: About to set power state S1...", __PRETTY_FUNCTION__);
                 standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eActive;
-                rc = NxClient_SetStandbySettings(&standbySettings);
                 break;
             }
 
@@ -554,13 +558,6 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
             {
                 LOGD("%s: About to set power state S2...", __PRETTY_FUNCTION__);
                 standbySettings.settings.mode = NEXUS_PlatformStandbyMode_ePassive;
-                standbySettings.settings.wakeupSettings.ir = 1;
-                standbySettings.settings.wakeupSettings.uhf = 1;
-                standbySettings.settings.wakeupSettings.transport = 1;
-                standbySettings.settings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
-                standbySettings.settings.wakeupSettings.gpio = 1;
-                standbySettings.settings.wakeupSettings.timeout = 0;
-                rc = NxClient_SetStandbySettings(&standbySettings);
                 break;
             }
 
@@ -569,15 +566,6 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
             {
                 LOGD("%s: About to set power state S%d...", __PRETTY_FUNCTION__, pmState-ePowerState_S0);
                 standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eDeepSleep;
-                standbySettings.settings.wakeupSettings.ir = 1;
-                standbySettings.settings.wakeupSettings.uhf = 1;
-                standbySettings.settings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
-                standbySettings.settings.wakeupSettings.gpio = 1;
-                standbySettings.settings.wakeupSettings.timeout = 0;
-                rc = NxClient_SetStandbySettings(&standbySettings);
-                if (rc != NEXUS_SUCCESS) {
-                    LOGE("%s: NxClient_SetStandbySettings failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
-                }
                 break;
             }
 
@@ -586,6 +574,13 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
                 LOGE("%s: invalid power state %d!", __PRETTY_FUNCTION__, pmState);
                 rc = NEXUS_INVALID_PARAMETER;
                 break;
+            }
+        }
+
+        if (rc == NEXUS_SUCCESS) {
+            rc = NxClient_SetStandbySettings(&standbySettings);
+            if (rc != NEXUS_SUCCESS) {
+                LOGE("%s: NxClient_SetStandbySettings failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
             }
         }
 

@@ -2369,6 +2369,12 @@ bool NexusService::setPowerState(b_powerState pmState)
 
     if (pmState != powerState) {
         NEXUS_Platform_GetStandbySettings(&nexusStandbySettings);
+        nexusStandbySettings.wakeupSettings.ir = 1;
+        nexusStandbySettings.wakeupSettings.uhf = 1;
+        nexusStandbySettings.wakeupSettings.transport = 1;
+        nexusStandbySettings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
+        nexusStandbySettings.wakeupSettings.gpio = 1;
+        nexusStandbySettings.wakeupSettings.timeout = 0;
 
         switch (pmState)
         {
@@ -2403,12 +2409,6 @@ bool NexusService::setPowerState(b_powerState pmState)
                 setVideoState(0);
                 setAudioState(0);
                 nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_ePassive;
-                nexusStandbySettings.wakeupSettings.ir = 1;
-                nexusStandbySettings.wakeupSettings.uhf = 1;
-                nexusStandbySettings.wakeupSettings.transport = 1;
-                nexusStandbySettings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
-                nexusStandbySettings.wakeupSettings.gpio = 1;
-                nexusStandbySettings.wakeupSettings.timeout = 0;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 break;
             }
@@ -2421,11 +2421,6 @@ bool NexusService::setPowerState(b_powerState pmState)
                 setVideoState(0);
                 setAudioState(0);
                 nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eDeepSleep;  
-                nexusStandbySettings.wakeupSettings.ir = 1;
-                nexusStandbySettings.wakeupSettings.uhf = 1;
-                nexusStandbySettings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
-                nexusStandbySettings.wakeupSettings.gpio = 1;
-                nexusStandbySettings.wakeupSettings.timeout = 0;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 break;
             }
