@@ -135,6 +135,9 @@ using namespace android;
 #define HWC_DEFAULT_DUMP_LAYER       "0"
 #define HWC_DUMP_LAYER_PROP          "ro.hwc.dump_layer"
 
+#define HWC_DEFAULT_NSC_COPY         "0"
+#define HWC_NSC_COPY_PROP            "ro.hwc.nsc.copy"
+
 #define HWC_CHECKPOINT_TIMEOUT       (100)
 
 enum {
@@ -402,6 +405,7 @@ struct hwc_context_t {
     int sync_timeline;
 
     bool display_dump_layer;
+    bool nsc_copy;
 };
 
 static void hwc_device_cleanup(hwc_context_t* ctx);
@@ -903,13 +907,14 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
        }
-       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%p::vscb:%s::d:{%d,%d}::pm:%s\n",
+       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%p::vscb:%s::d:{%d,%d}::pm:%s::nsc-copy:%s\n",
            ctx->pIpcClient,
            ctx->pNexusClientContext,
            ctx->vsync_callback_enabled ? "enabled" : "disabled",
            ctx->display_width,
            ctx->display_height,
-           hwc_power_mode[ctx->power_mode]);
+           hwc_power_mode[ctx->power_mode],
+           ctx->nsc_copy ? "oui" : "non");
        if (write > 0) {
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
@@ -1985,10 +1990,13 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            dev->display_dump_layer = (strtoul(value, NULL, 10) == 0) ? false : true;
         }
 
+        if (property_get(HWC_NSC_COPY_PROP, value, HWC_DEFAULT_NSC_COPY)) {
+           dev->nsc_copy = (strtoul(value, NULL, 10) == 0) ? false : true;
+        }
+
         {
             NxClient_AllocSettings nxAllocSettings;
             NEXUS_SurfaceClientSettings client_settings;
-            NEXUS_SurfaceCreateSettings surface_create_settings;
             NEXUS_SurfaceMemory vsync_surface_memory;
             NEXUS_Rect vsync_disp_position = {0,0,VSYNC_CLIENT_WIDTH,VSYNC_CLIENT_HEIGHT};
             NEXUS_SurfaceComposition vsync_composition;
@@ -2616,12 +2624,20 @@ static void hwc_prepare_gpx_layer(
                                                                             pSharedData->planes[DEFAULT_PLANE].height,
                                                                             stride,
                                                                             gralloc_to_nexus_pixel_format(format),
-                                                                            addr);
+                                                                            ctx->nsc_copy ? NULL : addr);
                 if (ctx->gpx_cli[layer_id].slist[six].shdl == NULL) {
                     ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_NO_OWNER;
                     ALOGE("%s: standard surface creation failed: %d, %p, %dx%d, %d\n", __FUNCTION__, layer_id,
                           addr, disp_position.width, disp_position.height, stride);
                     goto out_unlock;
+                } else if (ctx->nsc_copy) {
+                    NEXUS_SurfaceMemory nsc_copy_memory;
+                    void *slock;
+
+                    NEXUS_Surface_GetMemory(ctx->gpx_cli[layer_id].slist[six].shdl, &nsc_copy_memory);
+                    BKNI_Memcpy((uint8_t *)nsc_copy_memory.buffer, addr, nsc_copy_memory.bufferSize);
+                    NEXUS_Surface_Lock(ctx->gpx_cli[layer_id].slist[six].shdl, &slock);
+                    NEXUS_Surface_Flush(ctx->gpx_cli[layer_id].slist[six].shdl);
                 }
             break;
         }
