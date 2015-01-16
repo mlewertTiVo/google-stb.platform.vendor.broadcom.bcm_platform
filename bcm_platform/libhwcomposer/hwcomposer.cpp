@@ -74,6 +74,8 @@ using namespace android;
 #define HWC_SB_NO_ALLOC_SURF_CLI     1
 #define HWC_MM_NO_ALLOC_SURF_CLI     1
 
+#define HWC_REFRESH_HACK             1
+
 #define NSC_GPX_CLIENTS_NUMBER       11 /* graphics client layers; typically no
                                          * more than 3 are needed at any time, though
                                          * it has been seen up to 7 in some scenario,
@@ -1933,10 +1935,14 @@ static int64_t VsyncSystemTime(void)
     return (int64_t)(t.tv_sec) * 1000000000LL + t.tv_nsec;
 }
 
+#define VSYNC_HACK_REFRESH_COUNT 10
 static void * hwc_vsync_task(void *argv)
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)argv;
     int64_t vsync_system_time;
+    unsigned int vsync_hack_count = 0;
+    unsigned int vsync_hack_count_last_tick = 0;
+    unsigned int vsync_hack_count_expected_tick = 0;
 
     do
     {
@@ -1952,6 +1958,25 @@ static void * hwc_vsync_task(void *argv)
                 }
                 BKNI_WaitForEvent(ctx->syn_cli.vsync_event, BKNI_INFINITE);
                 vsync_system_time = VsyncSystemTime();
+
+                if (HWC_REFRESH_HACK) {
+                   vsync_hack_count++;
+                   if (vsync_hack_count == VSYNC_HACK_REFRESH_COUNT/2) {
+                      vsync_hack_count_last_tick = ctx->set_call;
+                      if (vsync_hack_count_expected_tick == vsync_hack_count_last_tick) {
+                         vsync_hack_count = 0; /* reset */
+                      }
+                   } else if (vsync_hack_count == VSYNC_HACK_REFRESH_COUNT) {
+                      vsync_hack_count = 0;
+                      if (vsync_hack_count_last_tick == ctx->set_call) {
+                         vsync_hack_count_expected_tick = ctx->set_call + 1;
+                         ALOGV("hack-refresh: tick %d", vsync_hack_count_expected_tick);
+                         if (ctx->procs->invalidate != NULL) {
+                            ctx->procs->invalidate(const_cast<hwc_procs_t *>(ctx->procs));
+                         }
+                      }
+                   }
+                }
             }
             else {
                 BKNI_ReleaseMutex(ctx->power_mutex);
