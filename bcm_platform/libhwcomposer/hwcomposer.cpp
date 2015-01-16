@@ -138,6 +138,9 @@ using namespace android;
 #define HWC_DEFAULT_DUMP_PUSH        "0"
 #define HWC_DUMP_PUSH_PROP           "ro.hwc.dump.push"
 
+#define HWC_DEFAULT_DUMP_VSYNC       "0"
+#define HWC_DUMP_VSYNC_PROP          "ro.hwc.dump.vsync"
+
 #define HWC_DEFAULT_NSC_COPY         "0"
 #define HWC_NSC_COPY_PROP            "ro.hwc.nsc.copy"
 
@@ -376,6 +379,7 @@ struct hwc_context_t {
     pthread_t vsync_callback_thread;
     int vsync_thread_run;
 
+    bool wait_prepare_event;
     BKNI_EventHandle prepare_event;
 
     GPX_CLIENT_INFO gpx_cli[NSC_GPX_CLIENTS_NUMBER];
@@ -409,6 +413,7 @@ struct hwc_context_t {
 
     bool display_dump_layer;
     bool display_dump_push;
+    bool display_dump_vsync;
     bool nsc_copy;
 };
 
@@ -1291,17 +1296,18 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     unsigned int video_layer_id = 0;
     unsigned int sideband_layer_id = 0;
 
-    // blocking wait here...
-    BKNI_WaitForEvent(ctx->prepare_event, 1000);
+    if (ctx->wait_prepare_event) {
+       BKNI_WaitForEvent(ctx->prepare_event, 1000);
+    }
 
     ctx->prepare_call++;
 
-    // Don't prepare the primary if we are powering or powered off...
     if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
         ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
         ctx->prepare_skipped++;
         goto out;
     }
+
     if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
         BKNI_ReleaseMutex(ctx->power_mutex);
 
@@ -1342,6 +1348,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
         }
     }
     else {
+        ctx->prepare_skipped++;
         BKNI_ReleaseMutex(ctx->power_mutex);
     }
 
@@ -1367,8 +1374,10 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
 {
     int rc = 0;
 
-    if (!numDisplays)
-        return -EINVAL;
+    if (!numDisplays) {
+        rc = -EINVAL;
+        goto out;
+    }
 
     for (int32_t i = numDisplays - 1; i >= 0; i--) {
         hwc_display_contents_1_t *list = displays[i];
@@ -1386,6 +1395,10 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
         }
     }
 
+out:
+    if (rc) {
+       ALOGE("%s: failure %d", __FUNCTION__, rc);
+    }
     return rc;
 }
 
@@ -1492,8 +1505,16 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                       if (ctx->display_dump_push) {
                          private_handle_t *bcmBuffer = (private_handle_t *)list->hwLayers[i].handle;
                          PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedData);
-                         ALOGI("render:2push:%d:%d::nsc:%d::%p:%p::sid:%p::chk:%p", ctx->set_call, six,
-                               i, list->hwLayers[i].handle, pSharedData, ctx->gpx_cli[i].slist[six].shdl, ctx->gpx_cli[i].slist[six].grhdl);
+                         bcmBuffer = (private_handle_t *)ctx->gpx_cli[i].slist[six].grhdl;
+                         PSHARED_DATA pPreparedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedData);
+                         /* note: if the layer has received a new buffer between prepare and set, the new value
+                          *       will be in the list, we do not use it, but log it.  this is true for framebuffer
+                          *       target as example.  the next composition cycle (prepare+set) will use the new
+                          *       data.
+                          */
+                         ALOGI("render:push:%d:%d::nsc:%d::%p:%p::sid:%p::chk:%p:%p", ctx->set_call, six,
+                               i, ctx->gpx_cli[i].slist[six].grhdl, pPreparedData,
+                               ctx->gpx_cli[i].slist[six].shdl, list->hwLayers[i].handle, pSharedData);
                       }
                       ctx->gpx_cli[i].slist[six].comp_ix = ctx->set_call;
                       rc = NEXUS_SurfaceClient_PushSurface(ctx->gpx_cli[i].ncci.schdl, ctx->gpx_cli[i].slist[six].shdl, NULL, false);
@@ -1539,6 +1560,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         }
     }
     else {
+        ctx->set_skipped++;
         BKNI_ReleaseMutex(ctx->power_mutex);
     }
 
@@ -1571,8 +1593,10 @@ static int hwc_set(hwc_composer_device_1_t *dev,
     uint32_t i;
     int rc = 0;
 
-    if (!numDisplays)
-        return -EINVAL;
+    if (!numDisplays) {
+        rc = -EINVAL;
+        goto out;
+    }
 
     for (i = 0; i < numDisplays; i++) {
         hwc_display_contents_1_t* list = displays[i];
@@ -1590,6 +1614,10 @@ static int hwc_set(hwc_composer_device_1_t *dev,
         }
     }
 
+out:
+    if (rc) {
+       ALOGE("%s: failure %d", __FUNCTION__, rc);
+    }
     return rc;
 }
 
@@ -1908,8 +1936,8 @@ static int64_t VsyncSystemTime(void)
 static void * hwc_vsync_task(void *argv)
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)argv;
+    int64_t vsync_system_time;
 
-    ALOGI("HWC Starting VSYNC thread");
     do
     {
         if ((VSYNC_USES_NSC_SURF && ctx->syn_cli.shdl) || !VSYNC_USES_NSC_SURF) {
@@ -1923,17 +1951,26 @@ static void * hwc_vsync_task(void *argv)
                    NEXUS_SurfaceClient_PushSurface(ctx->syn_cli.ncci.schdl, ctx->syn_cli.shdl, NULL, false);
                 }
                 BKNI_WaitForEvent(ctx->syn_cli.vsync_event, BKNI_INFINITE);
+                vsync_system_time = VsyncSystemTime();
             }
             else {
                 BKNI_ReleaseMutex(ctx->power_mutex);
                 BKNI_Sleep(16);
             }
-            BKNI_SetEvent(ctx->prepare_event);
+
+            if (ctx->wait_prepare_event) {
+               BKNI_SetEvent(ctx->prepare_event);
+            }
         }
 
         if (BKNI_AcquireMutex(ctx->vsync_callback_enabled_mutex) == BERR_SUCCESS) {
-            if (ctx->vsync_callback_enabled && ctx->procs->vsync !=NULL) {
-                ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, VsyncSystemTime());
+            if (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) {
+                ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, vsync_system_time);
+            }
+            if (ctx->display_dump_vsync) {
+               ALOGI("vsync-%s: @ %lld",
+                     (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) ? "pushed" : "ticked",
+                     vsync_system_time);
             }
         }
         BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
@@ -2004,6 +2041,10 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            dev->display_dump_push = (strtoul(value, NULL, 10) == 0) ? false : true;
         }
 
+        if (property_get(HWC_DUMP_VSYNC_PROP, value, HWC_DEFAULT_DUMP_VSYNC)) {
+           dev->display_dump_vsync = (strtoul(value, NULL, 10) == 0) ? false : true;
+        }
+
         if (property_get(HWC_NSC_COPY_PROP, value, HWC_DEFAULT_NSC_COPY)) {
            dev->nsc_copy = (strtoul(value, NULL, 10) == 0) ? false : true;
         }
@@ -2038,7 +2079,9 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             dev->syn_cli.ncci.parent   = (void *)dev;
 
             /* create vsync nx client */
+            dev->wait_prepare_event    = false;
             if (VSYNC_USES_NSC_SURF) {
+               dev->wait_prepare_event    = true;
                dev->syn_cli.ncci.sccid    = dev->nxAllocResults.surfaceClient[VSYNC_CLIENT_LAYER_ID].id;
                dev->syn_cli.ncci.schdl    = NEXUS_SurfaceClient_Acquire(dev->syn_cli.ncci.sccid);
                if (!dev->syn_cli.ncci.schdl) {
@@ -2585,7 +2628,7 @@ static void hwc_prepare_gpx_layer(
         if (six != -1 &&
             (ctx->gpx_cli[layer_id].slist[six].grhdl == layer->handle)) {
             if (ctx->display_dump_push) {
-               ALOGI("render:2skip:%d:%d::nsc:%d::%p:%p::sid:%p::geom:%d:%d", ctx->prepare_call, six,
+               ALOGI("render:skip:%d:%d::nsc:%d::%p:%p::sid:%p::geom:%d:%d", ctx->prepare_call, six,
                      layer_id, ctx->gpx_cli[layer_id].slist[six].grhdl,
                      pSharedData, ctx->gpx_cli[layer_id].slist[six].shdl, geometry_changed, layer_changed);
             }
@@ -2593,6 +2636,7 @@ static void hwc_prepare_gpx_layer(
                ctx->gpx_cli[layer_id].skip_set = true;
                goto out_unlock;
             } else if (geometry_changed && !layer_changed && (layer->compositionType == HWC_FRAMEBUFFER_TARGET)) {
+               /* things did not really change, ignore this duplication. */
                ctx->gpx_cli[layer_id].skip_set = true;
                goto out_unlock;
             }
@@ -2672,7 +2716,7 @@ static void hwc_prepare_gpx_layer(
         ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_HWC_PUSH;
         ctx->gpx_cli[layer_id].slist[six].grhdl = layer->handle;
         if (ctx->display_dump_push) {
-          ALOGI("render:setup:%d:%d::nsc:%d::%p:%p::sid:%p", ctx->prepare_call, six,
+          ALOGI("render:init:%d:%d::nsc:%d::%p:%p::sid:%p", ctx->prepare_call, six,
                 layer_id, layer->handle, pSharedData, ctx->gpx_cli[layer_id].slist[six].shdl);
         }
         hwc_lock_surface((private_handle_t *)layer->handle, layer_id, ctx->gpx_cli[layer_id].slist[six].shdl);
