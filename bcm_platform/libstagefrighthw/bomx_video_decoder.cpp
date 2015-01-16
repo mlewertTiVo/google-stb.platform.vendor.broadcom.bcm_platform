@@ -2324,7 +2324,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     case BOMX_VideoDecoderOutputBufferType_eStandard:
         {
             NEXUS_SurfaceCreateSettings surfaceSettings;
-            NEXUS_SurfaceMemory surfaceMem;
             const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef;
             void *pMemory;
 
@@ -3895,6 +3894,29 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 android_atomic_release_store(1, &pSharedData->videoWindow.windowIdPlusOne);
                                 pSharedData->videoFrame.status = pBuffer->frameStatus;
                                 pSharedData->videoFrame.hStripedSurface = NULL; // Don't allow gralloc_lock in metadata mode.  We won't know when it's safe to destroy the striped surface.
+
+                                /* Destripe the decoded frame immediately and store it on the RGB-GL plane */
+                                if ( (pBuffer->pPrivateHandle->usage & GRALLOC_USAGE_HW_TEXTURE) &&
+                                     pBuffer->hStripedSurface &&
+                                     pSharedData->planes[GL_PLANE].physAddr )
+                                {
+                                    int err = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 100);
+                                    if ( err )
+                                    {
+                                        ALOGW("Timeout locking video frame in metadata mode - %d", err);
+                                    }
+                                    else
+                                    {
+                                        OMX_ERRORTYPE res = DestripeToRGB(pSharedData, pBuffer->hStripedSurface);
+                                        if ( res != OMX_ErrorNone )
+                                        {
+                                            ALOGE("Unable to destripe to RGB - %d", res);
+                                            (void)BOMX_ERR_TRACE(res);
+                                        }
+
+                                        private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
+                                    }
+                                }
                             }
                             pHeader->nFilledLen = sizeof(VideoDecoderOutputMetaData);
                         }
@@ -4072,10 +4094,10 @@ void BOMX_VideoDecoder::GraphicsCheckpoint()
     errCode = NEXUS_Graphics2D_Checkpoint(m_hGraphics2d, NULL);
     if ( errCode == NEXUS_GRAPHICS2D_QUEUED )
     {
-        errCode = B_Event_Wait(m_hCheckpointEvent, 1000);
+        errCode = B_Event_Wait(m_hCheckpointEvent, 5000);
         if ( errCode )
         {
-            BOMX_ERR(("Timeout waiting for graphics checkpoint!"));
+            BOMX_ERR(("!!! ERROR: Timeout waiting for graphics checkpoint !!!"));
         }
     }
 }
@@ -4408,4 +4430,65 @@ void BOMX_VideoDecoder::FreeInputBuffer(void*& pBuffer)
 {
     NEXUS_Memory_Free(pBuffer);
     pBuffer = NULL;
+}
+
+OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToRGB(SHARED_DATA *pSharedData, NEXUS_StripedSurfaceHandle hStripedSurface)
+{
+    NEXUS_Error errCode;
+    NEXUS_SurfaceHandle hTargetSurface;
+    NEXUS_SurfaceCreateSettings surfaceSettings;
+    void *pAddr;
+    uint8_t *pRgb;
+    OMX_ERRORTYPE rc = OMX_ErrorUndefined;
+
+    pRgb = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[GL_PLANE].physAddr);
+    if ( NULL == pRgb )
+    {
+        LOGE("Unable to access RGB pixels");
+        rc = OMX_ErrorInsufficientResources;
+        goto err_rgb;
+    }
+
+    NEXUS_Surface_GetDefaultCreateSettings(&surfaceSettings);
+    surfaceSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
+    surfaceSettings.width = pSharedData->planes[GL_PLANE].width;
+    surfaceSettings.height = pSharedData->planes[GL_PLANE].height;
+    surfaceSettings.pitch = 4 * pSharedData->planes[GL_PLANE].width;
+    surfaceSettings.pMemory = pRgb;
+    hTargetSurface = NEXUS_Surface_Create(&surfaceSettings);
+    if ( NULL == hTargetSurface )
+    {
+        ALOGE("Unable to allocate destripe surface");
+        rc = OMX_ErrorInsufficientResources;
+        goto err_surface;
+    }
+    errCode = NEXUS_Surface_Lock(hTargetSurface, &pAddr);
+    if ( errCode )
+    {
+        ALOGE("Error locking destripe surface - %d", errCode);
+        goto err_surface_lock;
+    }
+    NEXUS_Surface_Flush(hTargetSurface);
+
+    // Issue destripe request
+    errCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, hStripedSurface, hTargetSurface, NULL);
+    if ( errCode )
+    {
+        ALOGE("Unable to destripe surface - %d", errCode);
+        rc = OMX_ErrorInsufficientResources;
+        goto err_destripe;
+    }
+
+    // Wait for completion
+    GraphicsCheckpoint();
+
+    // Success
+    rc = OMX_ErrorNone;
+
+err_destripe:
+err_surface_lock:
+    NEXUS_Surface_Destroy(hTargetSurface);
+err_surface:
+err_rgb:
+    return rc;
 }

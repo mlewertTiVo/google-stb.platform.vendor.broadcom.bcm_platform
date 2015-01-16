@@ -222,16 +222,32 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
 
    /* produce a packed version of the buffer that will be used for composition.
     */
-   if ((hnd->usage & GRALLOC_USAGE_SW_WRITE_MASK) && (pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12)) {
-      pthread_mutex_lock(gralloc_g2d_lock());
-      rc = gralloc_yv12to422p(hnd);
-      if (rc) {
-         /* marked as invalid so we drop it.
-          */
+   if (hnd->usage & GRALLOC_USAGE_SW_WRITE_MASK)
+   {
+      if (pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12)
+      {
+         pthread_mutex_lock(gralloc_g2d_lock());
+         rc = gralloc_yv12to422p(hnd);
+         if (rc)
+         {
+            /* marked as invalid so we drop it */
+         }
+
+         if (!rc && (hnd->usage & GRALLOC_USAGE_HW_TEXTURE) && pSharedData->planes[GL_PLANE].physAddr)
+         {
+            rc = gralloc_plane_copy(hnd, EXTRA_PLANE, GL_PLANE);
+            if (rc)
+            {
+               LOGE("%s: Error converting from 422p to RGB - %d", __FUNCTION__, rc);
+            }
+         }
+         pthread_mutex_unlock(gralloc_g2d_lock());
       }
-      pthread_mutex_unlock(gralloc_g2d_lock());
-   } else {
-      NEXUS_FlushCache(NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr), hnd->oglSize);
+      else
+      {
+         NEXUS_FlushCache(NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr),
+                          pSharedData->planes[DEFAULT_PLANE].allocSize);
+      }
    }
 
    return 0;

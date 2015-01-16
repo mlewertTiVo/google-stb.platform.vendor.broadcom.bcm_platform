@@ -48,10 +48,11 @@ extern "C" {
 #define BCM_DEBUG_TRACEMSG      LOGD
 #define BCM_DEBUG_ERRMSG        LOGD
 
-#define MAX_NUM_INSTANCES       2
+#define MAX_NUM_INSTANCES       3
 
 #define DEFAULT_PLANE           0
 #define EXTRA_PLANE             1
+#define GL_PLANE                2
 
 /*****************************************************************************/
 
@@ -88,6 +89,8 @@ typedef struct __SHARED_DATA_ {
       unsigned height;
       unsigned physAddr;
       unsigned size;
+      unsigned allocSize;
+      unsigned stride;
   } planes[MAX_NUM_INSTANCES];
 
   struct {
@@ -108,6 +111,7 @@ struct private_handle_t {
 /*1.*/        int         fd;    // default data plane
 /*2.*/        int         fd2;   // used for the small shared data block (SHARED_DATA)
 /*3.*/        int         fd3;   // extra data plane
+/*4.*/        int         fd4;   // data plane for egl
 
 /*Ints Counter*/
 /*1.*/        int         magic;
@@ -124,13 +128,13 @@ struct private_handle_t {
 
 #ifdef __cplusplus
     static const int sNumInts = 9;
-    static const int sNumFds = 3;
+    static const int sNumFds = 4;
     static const int sMagic = 0x3141592;
 
-    private_handle_t(int fd, int fd2, int fd3, int flags) :
-        fd(fd), fd2(fd2), fd3(fd3), magic(sMagic), flags(flags),
+    private_handle_t(int fd, int fd2, int fd3, int fd4, int flags) :
+        fd(fd), fd2(fd2), fd3(fd3), fd4(fd4), magic(sMagic), flags(flags),
         pid(getpid()), oglStride(0), oglFormat(0), oglSize(0),
-        sharedData(0), usage(0)
+        sharedData(0), usage(0), nxSurfacePhysicalAddress(0)
     {
         version = sizeof(native_handle);
         numInts = sNumInts;

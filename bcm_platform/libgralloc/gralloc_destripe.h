@@ -45,6 +45,7 @@
 
 extern int gralloc_destripe_yv12(private_handle_t *pHandle, NEXUS_StripedSurfaceHandle hStripedSurface);
 extern int gralloc_yv12to422p(private_handle_t *pHandle);
+extern int gralloc_plane_copy(private_handle_t *pHandle, unsigned src, unsigned dst);
 
 extern NEXUS_Graphics2DHandle gralloc_g2d_hdl(void);
 extern BKNI_EventHandle gralloc_g2d_evt(void);

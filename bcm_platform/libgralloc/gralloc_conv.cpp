@@ -135,6 +135,8 @@ int gralloc_yv12to422p(private_handle_t *handle)
                             stride,
                             (NEXUS_PixelFormat)pSharedData->planes[EXTRA_PLANE].format,
                             ycrcb422);
+    NEXUS_Surface_Lock(dst422, &slock);
+    NEXUS_Surface_Flush(dst422);
 
     if (CONVERSION_IS_VERBOSE) {
        ALOGD("%s: intermediate surfaces: y:%p, cr:%p, cb:%p\n", __FUNCTION__, srcY, srcCr, srcCb);
@@ -244,4 +246,129 @@ out_cleanup:
     NEXUS_Surface_Destroy(dst422);
 out:
    return (int)rc;
+}
+
+int gralloc_plane_copy(private_handle_t *handle, unsigned src, unsigned dst)
+{
+   NEXUS_Error errCode;
+   NEXUS_SurfaceHandle hSurfaceSrc, hSurfaceDst;
+   NEXUS_Graphics2DBlitSettings blitSettings;
+   SHARED_DATA *pSharedData;
+   unsigned height, width, strideSrc, strideDst;
+   uint8_t *pSrc, *pDst;
+   void *slock;
+   int rc = -EINVAL;
+
+   if ( src == dst )
+   {
+      goto out;
+   }
+
+   if ( src >= MAX_NUM_INSTANCES || dst >= MAX_NUM_INSTANCES )
+   {
+      LOGE("Unknown planes src=%u dst=%u", src, dst);
+      rc = NEXUS_INVALID_PARAMETER;
+      goto err_plane;
+   }
+
+   if ( NULL == gralloc_g2d_hdl() )
+   {
+      LOGE("Graphics2D Not available.  Cannot access HW decoder data.");
+      goto err_gfx2d;
+   }
+
+   pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(handle->sharedData);
+   if ( NULL == pSharedData )
+   {
+      LOGE("Unable to access shared data");
+      goto err_shared_data;
+   }
+
+   pSrc = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[src].physAddr);
+   if ( NULL == pSrc )
+   {
+      ALOGE("%s: Input address NULL\n", __FUNCTION__);
+      rc = NEXUS_INVALID_PARAMETER;
+      goto err_src;
+   }
+
+   pDst = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[dst].physAddr);
+   if ( NULL == pDst )
+   {
+      ALOGE("%s: Output address NULL\n", __FUNCTION__);
+      rc = NEXUS_INVALID_PARAMETER;
+      goto err_dst;
+   }
+
+   height = pSharedData->planes[src].height;
+   width = pSharedData->planes[src].width;
+   strideSrc = pSharedData->planes[src].stride;
+   strideDst = pSharedData->planes[dst].stride;
+
+   hSurfaceSrc =
+         to_nsc_surface(width, height, strideSrc, (NEXUS_PixelFormat)pSharedData->planes[src].format, pSrc);
+   if ( NULL == hSurfaceSrc )
+   {
+      LOGE("Unable to allocate input surface");
+      goto err_src_surface;
+   }
+   NEXUS_Surface_Lock(hSurfaceSrc, &slock);
+   NEXUS_Surface_Flush(hSurfaceSrc);
+
+   hSurfaceDst =
+         to_nsc_surface(width, height, strideDst, (NEXUS_PixelFormat)pSharedData->planes[dst].format, pDst);
+   if ( NULL == hSurfaceDst )
+   {
+      LOGE("Unable to allocate output surface");
+      goto err_dst_surface;
+   }
+   NEXUS_Surface_Lock(hSurfaceDst, &slock);
+   NEXUS_Surface_Flush(hSurfaceDst);
+
+   NEXUS_Graphics2D_GetDefaultBlitSettings(&blitSettings);
+   blitSettings.source.surface = hSurfaceSrc;
+   blitSettings.output.surface = hSurfaceDst;
+   errCode = NEXUS_Graphics2D_Blit(gralloc_g2d_hdl(), &blitSettings);
+   if ( errCode )
+   {
+      LOGE("Unable to copy planes - %d", errCode);
+      rc = NEXUS_UNKNOWN;
+      goto err_blit;
+   }
+
+   // Wait for completion
+   errCode = NEXUS_Graphics2D_Checkpoint(gralloc_g2d_hdl(), NULL);
+   switch ( errCode )
+   {
+   case NEXUS_SUCCESS:
+      break;
+   case NEXUS_GRAPHICS2D_QUEUED:
+      errCode = BKNI_WaitForEvent(gralloc_g2d_evt(), CHECKPOINT_TIMEOUT);
+      if ( errCode )
+      {
+         LOGW("Checkpoint Timeout");
+         goto err_checkpoint;
+      }
+      break;
+   default:
+      LOGE("Checkpoint Error");
+      goto err_checkpoint;
+   }
+
+   // Success
+   rc = 0;
+
+err_checkpoint:
+err_blit:
+   NEXUS_Surface_Destroy(hSurfaceDst);
+err_dst_surface:
+   NEXUS_Surface_Destroy(hSurfaceSrc);
+err_src_surface:
+err_dst:
+err_src:
+err_shared_data:
+err_gfx2d:
+err_plane:
+out:
+   return rc;
 }

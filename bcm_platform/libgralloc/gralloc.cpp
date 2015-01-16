@@ -272,6 +272,7 @@ NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt,
 
 static
 unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
+                                   int fd,
                                    int width,
                                    int height,
                                    int format)
@@ -316,14 +317,14 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
 
       // nx_ashmem always aligns to 4k.  Add an additional 4k block at the start for shared memory.
       // This needs reference counting in the same way as the regular blocks
-      ret = ioctl(allocContext->fd, NX_ASHMEM_SET_SIZE, bufferConstrainedRequirements.totalByteSize);
+      ret = ioctl(fd, NX_ASHMEM_SET_SIZE, bufferConstrainedRequirements.totalByteSize);
       if (ret < 0) {
          return 0;
       };
 
       // This is similar to the mmap call in ashmem, but nexus doesnt work in this way, so tunnel
       // via IOCTL
-      phyAddr = (NEXUS_Addr)ioctl(allocContext->fd, NX_ASHMEM_GETMEM);
+      phyAddr = (NEXUS_Addr)ioctl(fd, NX_ASHMEM_GETMEM);
 
       allocContext->oglStride = bufferConstrainedRequirements.pitchBytes;
       allocContext->oglFormat = bufferConstrainedRequirements.format;
@@ -387,9 +388,9 @@ gralloc_alloc_buffer(alloc_device_t* dev,
                     buffer_handle_t* pHandle,
                     int *pStride)
 {
-   int bpp = 0, fd = -1, fd2 = -1, fd3 = -1;
+   int bpp = 0, fd = -1, fd2 = -1, fd3 = -1, fd4 = -1;
    int size, extra_size;
-   NEXUS_PixelFormat nxFormat = getNexusPixelFormat(format,&bpp);
+   NEXUS_PixelFormat nxFormat = getNexusPixelFormat(format, &bpp);
 
    (void)dev;
 
@@ -424,7 +425,13 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       return -EINVAL;
    }
 
-   private_handle_t *grallocPrivateHandle = new private_handle_t(fd, fd2, fd3, 0);
+   fd4 = open(value2, O_RDWR, 0);
+   if ((fd4 == -1) || (!fd4)) {
+      LOGE("gl-plane: open %s failed 0x%x\n", value2, fd4);
+      return -EINVAL;
+   }
+
+   private_handle_t *grallocPrivateHandle = new private_handle_t(fd, fd2, fd3, fd4, 0);
 
    int ret = ioctl(fd2, NX_ASHMEM_SET_SIZE, sizeof(SHARED_DATA));
    if (ret < 0) {
@@ -442,6 +449,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
    bool needs_yv12 = false;
    bool needs_ycrcb = false;
+   bool needs_rgb = false;
 
    grallocPrivateHandle->usage = usage;
    pSharedData->planes[DEFAULT_PLANE].width = w;
@@ -449,13 +457,17 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    pSharedData->planes[DEFAULT_PLANE].bpp = bpp;
    pSharedData->planes[DEFAULT_PLANE].format = format;
    pSharedData->planes[DEFAULT_PLANE].size = size;
+   pSharedData->planes[DEFAULT_PLANE].allocSize = size;
+   pSharedData->planes[DEFAULT_PLANE].stride = *pStride;
 
    if (format != HAL_PIXEL_FORMAT_YV12) {
       // standard graphic buffer.
       pSharedData->planes[DEFAULT_PLANE].physAddr =
-         allocGLSuitableBuffer(grallocPrivateHandle, w, h, format);
-      grallocPrivateHandle->nxSurfacePhysicalAddress =
-         pSharedData->planes[DEFAULT_PLANE].physAddr;
+         allocGLSuitableBuffer(grallocPrivateHandle, grallocPrivateHandle->fd, w, h, format);
+      pSharedData->planes[DEFAULT_PLANE].allocSize = grallocPrivateHandle->oglSize;
+      pSharedData->planes[DEFAULT_PLANE].stride = grallocPrivateHandle->oglStride;
+
+      grallocPrivateHandle->nxSurfacePhysicalAddress = pSharedData->planes[DEFAULT_PLANE].physAddr;
    } else if ((format == HAL_PIXEL_FORMAT_YV12) && !(usage & GRALLOC_USAGE_PRIVATE_0)) {
       // standard yv12 buffer for multimedia, need also a secondary buffer for
       // planar to packed conversion when going through the hwc/nsc.
@@ -472,6 +484,11 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       if (ret >= 0) {
          pSharedData->planes[DEFAULT_PLANE].physAddr =
              (NEXUS_Addr)ioctl(fd, NX_ASHMEM_GETMEM);
+
+      }
+
+      if (usage & GRALLOC_USAGE_HW_TEXTURE) {
+         needs_rgb = true;
       }
    }
 
@@ -481,11 +498,28 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       pSharedData->planes[EXTRA_PLANE].bpp = bpp;
       pSharedData->planes[EXTRA_PLANE].format = (int)nxFormat;
       pSharedData->planes[EXTRA_PLANE].size = extra_size;
+      pSharedData->planes[EXTRA_PLANE].allocSize = extra_size;
+      pSharedData->planes[EXTRA_PLANE].stride = bpp * *pStride;
       ret = ioctl(fd3, NX_ASHMEM_SET_SIZE, extra_size);
       if (ret >= 0) {
          pSharedData->planes[EXTRA_PLANE].physAddr =
              (NEXUS_Addr)ioctl(fd3, NX_ASHMEM_GETMEM);
       }
+   }
+
+   if (needs_rgb) {
+      // Create a RGB plane for GL texture as Khronos does not support YUV texturing.
+      pSharedData->planes[GL_PLANE].physAddr =
+         allocGLSuitableBuffer(grallocPrivateHandle, grallocPrivateHandle->fd4, w, h, HAL_PIXEL_FORMAT_RGBA_8888);
+      pSharedData->planes[GL_PLANE].width = w;
+      pSharedData->planes[GL_PLANE].height = h;
+      pSharedData->planes[GL_PLANE].bpp = 4;
+      pSharedData->planes[GL_PLANE].format = (int)NEXUS_PixelFormat_eA8_B8_G8_R8;
+      pSharedData->planes[GL_PLANE].size = size;
+      pSharedData->planes[GL_PLANE].allocSize = grallocPrivateHandle->oglSize;
+      pSharedData->planes[GL_PLANE].stride = grallocPrivateHandle->oglStride;
+
+      grallocPrivateHandle->nxSurfacePhysicalAddress = pSharedData->planes[GL_PLANE].physAddr;
    }
 
    bool alloc_failed = false;
@@ -501,6 +535,10 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       LOGE("%s: failed to allocate standard plane (%d,%d), size %d", __FUNCTION__, w, h, extra_size);
       alloc_failed = true;
    }
+   if (needs_rgb && (pSharedData->planes[GL_PLANE].physAddr == 0)) {
+      LOGE("%s: failed to allocate gl plane (%d,%d), size %d", __FUNCTION__, w, h, size);
+      alloc_failed = true;
+   }
 
    if (alloc_failed) {
       *pHandle = NULL;
@@ -508,6 +546,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       close(fd);
       close(fd2);
       close(fd3);
+      close(fd4);
       return -EINVAL;
    }
 
@@ -539,6 +578,8 @@ grallocFreeHandle(private_handle_t *handleToFree)
       close(handleToFree->fd2);
    if (handleToFree->fd3 >= 0)
       close(handleToFree->fd3);
+   if (handleToFree->fd4 >= 0)
+      close(handleToFree->fd4);
    delete handleToFree;
    return 0;
 }

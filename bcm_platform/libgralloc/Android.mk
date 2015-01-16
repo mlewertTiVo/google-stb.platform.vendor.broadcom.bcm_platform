@@ -47,7 +47,7 @@ LOCAL_SRC_FILES := \
         framebuffer.cpp \
         mapper.cpp \
         gralloc_destripe.cpp \
-        gralloc_yv12to422p.cpp
+        gralloc_conv.cpp \
 
 LOCAL_MODULE := gralloc.bcm_platform
 LOCAL_MODULE_TAGS := optional
