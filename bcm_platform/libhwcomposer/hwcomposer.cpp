@@ -133,7 +133,10 @@ using namespace android;
 #define HWC_SW_SYNC_PROP             "ro.hwc.sw_sync"
 
 #define HWC_DEFAULT_DUMP_LAYER       "0"
-#define HWC_DUMP_LAYER_PROP          "ro.hwc.dump_layer"
+#define HWC_DUMP_LAYER_PROP          "ro.hwc.dump.layer"
+
+#define HWC_DEFAULT_DUMP_PUSH        "0"
+#define HWC_DUMP_PUSH_PROP           "ro.hwc.dump.push"
 
 #define HWC_DEFAULT_NSC_COPY         "0"
 #define HWC_NSC_COPY_PROP            "ro.hwc.nsc.copy"
@@ -405,6 +408,7 @@ struct hwc_context_t {
     int sync_timeline;
 
     bool display_dump_layer;
+    bool display_dump_push;
     bool nsc_copy;
 };
 
@@ -1485,6 +1489,12 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                    }
                    int six = hwc_gpx_push_surface_locked(&ctx->gpx_cli[i]);
                    if (six != -1) {
+                      if (ctx->display_dump_push) {
+                         private_handle_t *bcmBuffer = (private_handle_t *)list->hwLayers[i].handle;
+                         PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(bcmBuffer->sharedData);
+                         ALOGI("render:2push:%d:%d::nsc:%d::%p:%p::sid:%p::chk:%p", ctx->set_call, six,
+                               i, list->hwLayers[i].handle, pSharedData, ctx->gpx_cli[i].slist[six].shdl, ctx->gpx_cli[i].slist[six].grhdl);
+                      }
                       ctx->gpx_cli[i].slist[six].comp_ix = ctx->set_call;
                       rc = NEXUS_SurfaceClient_PushSurface(ctx->gpx_cli[i].ncci.schdl, ctx->gpx_cli[i].slist[six].shdl, NULL, false);
                       if (rc) {
@@ -1990,6 +2000,10 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            dev->display_dump_layer = (strtoul(value, NULL, 10) == 0) ? false : true;
         }
 
+        if (property_get(HWC_DUMP_PUSH_PROP, value, HWC_DEFAULT_DUMP_PUSH)) {
+           dev->display_dump_push = (strtoul(value, NULL, 10) == 0) ? false : true;
+        }
+
         if (property_get(HWC_NSC_COPY_PROP, value, HWC_DEFAULT_NSC_COPY)) {
            dev->nsc_copy = (strtoul(value, NULL, 10) == 0) ? false : true;
         }
@@ -2459,6 +2473,7 @@ static void hwc_prepare_gpx_layer(
     int format;
     unsigned int stride;
     unsigned int cur_blending_type;
+    bool layer_changed = false;
 
     // sideband layer is handled through the video window directly.
     if (layer->compositionType == HWC_SIDEBAND)
@@ -2521,12 +2536,15 @@ static void hwc_prepare_gpx_layer(
        }
     }
 
-    // deal with any change in the geometry/visibility of the layer.
     if ((memcmp((void *)&disp_position, (void *)&ctx->gpx_cli[layer_id].composition.position, sizeof(NEXUS_Rect)) != 0) ||
         (cur_width != ctx->gpx_cli[layer_id].width) ||
         (cur_height != ctx->gpx_cli[layer_id].height) ||
+        (cur_blending_type != ctx->gpx_cli[layer_id].blending_type)) {
+       layer_changed = true;
+    }
+
+    if (layer_changed ||
         (!ctx->gpx_cli[layer_id].composition.visible) ||
-        (cur_blending_type != ctx->gpx_cli[layer_id].blending_type) ||
         geometry_changed) {
 
         NxClient_GetSurfaceClientComposition(ctx->gpx_cli[layer_id].ncci.sccid, &ctx->gpx_cli[layer_id].composition);
@@ -2565,11 +2583,19 @@ static void hwc_prepare_gpx_layer(
         int six = hwc_gpx_get_current_surface_locked(&ctx->gpx_cli[layer_id]);
         ctx->gpx_cli[layer_id].skip_set = false;
         if (six != -1 &&
-            !geometry_changed &&
             (ctx->gpx_cli[layer_id].slist[six].grhdl == layer->handle)) {
-            if (HWC_SURFACE_LIFE_CYCLE_ERROR) ALOGV("%s: skip no change on layer: %d\n", __FUNCTION__, layer_id);
-            ctx->gpx_cli[layer_id].skip_set = true;
-            goto out_unlock;
+            if (ctx->display_dump_push) {
+               ALOGI("render:2skip:%d:%d::nsc:%d::%p:%p::sid:%p::geom:%d:%d", ctx->prepare_call, six,
+                     layer_id, ctx->gpx_cli[layer_id].slist[six].grhdl,
+                     pSharedData, ctx->gpx_cli[layer_id].slist[six].shdl, geometry_changed, layer_changed);
+            }
+            if (!geometry_changed) {
+               ctx->gpx_cli[layer_id].skip_set = true;
+               goto out_unlock;
+            } else if (geometry_changed && !layer_changed && (layer->compositionType == HWC_FRAMEBUFFER_TARGET)) {
+               ctx->gpx_cli[layer_id].skip_set = true;
+               goto out_unlock;
+            }
         }
         six = hwc_gpx_get_next_surface_locked(&ctx->gpx_cli[layer_id]);
         if (six == -1) {
@@ -2645,6 +2671,10 @@ static void hwc_prepare_gpx_layer(
         // surface creation succeeded if we are here.
         ctx->gpx_cli[layer_id].slist[six].owner = SURF_OWNER_HWC_PUSH;
         ctx->gpx_cli[layer_id].slist[six].grhdl = layer->handle;
+        if (ctx->display_dump_push) {
+          ALOGI("render:setup:%d:%d::nsc:%d::%p:%p::sid:%p", ctx->prepare_call, six,
+                layer_id, layer->handle, pSharedData, ctx->gpx_cli[layer_id].slist[six].shdl);
+        }
         hwc_lock_surface((private_handle_t *)layer->handle, layer_id, ctx->gpx_cli[layer_id].slist[six].shdl);
         if (ctx->gpx_cli[layer_id].layer_subtype == NEXUS_CURSOR) {
             NEXUS_SurfaceCursorCreateSettings cursorSettings;
