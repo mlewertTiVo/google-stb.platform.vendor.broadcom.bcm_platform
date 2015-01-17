@@ -108,6 +108,7 @@ public:
 
     OMX_ERRORTYPE QueueBuffer(OMX_BUFFERHEADERTYPE* pBufferHdr);
     BOMX_Buffer *GetBuffer();
+    BOMX_Buffer *GetNextBuffer(BOMX_Buffer *pBuffer);
     void BufferComplete(BOMX_Buffer *pBuffer);
     // Search through queued buffers for a match using the provided function
     BOMX_Buffer *FindBuffer(BOMX_BufferCompareFunction pCompareFunc, void *pData);

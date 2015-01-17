@@ -587,6 +587,23 @@ BOMX_Buffer *BOMX_Port::GetBuffer()
     return (pNode == NULL)?NULL:pNode->pBuffer;
 }
 
+BOMX_Buffer *BOMX_Port::GetNextBuffer(BOMX_Buffer *pBuffer)
+{
+    BOMX_BufferNode *pNode;
+    for ( pNode = BLST_Q_FIRST(&m_bufferQueue);
+          NULL != pNode;
+          pNode = BLST_Q_NEXT(pNode, node) )
+    {
+        if (pNode->pBuffer == pBuffer)
+        {
+            pNode = BLST_Q_NEXT(pNode, node);
+            break;
+        }
+    }
+
+    return (pNode != NULL) ? pNode->pBuffer : NULL;
+}
+
 void BOMX_Port::BufferComplete(BOMX_Buffer *pBuffer)
 {
     BOMX_BufferNode *pNode;

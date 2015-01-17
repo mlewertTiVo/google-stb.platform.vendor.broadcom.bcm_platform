@@ -75,6 +75,7 @@ struct BOMX_VideoDecoderInputBufferInfo
     void *pPayload;             // Optional payload buffer in NEXUS_Memory space (set for useBuffer not allocateBuffer)
     unsigned numDescriptors;    // Number of descriptors in use for this buffer
     uint32_t pts;               // PTS for this input buffer
+    bool complete;              // True if buffer has already been processed by the playpump.
 };
 
 enum BOMX_VideoDecoderFrameBufferState
@@ -229,6 +230,7 @@ public:
     void SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned serialNumber, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible);
 
     inline OmxBinder_wrap *omxHwcBinder(void) { return m_omxHwcBinder; };
+    void InputBufferTimeoutCallback();
 
 protected:
 
@@ -249,11 +251,13 @@ protected:
     B_EventHandle m_hOutputFrameEvent;
     B_SchedulerEventId m_outputFrameEventId;
     B_SchedulerTimerId m_outputFrameTimerId;
+    B_SchedulerTimerId m_inputBuffersTimerId;
     B_EventHandle m_hCheckpointEvent;
     NEXUS_Graphics2DHandle m_hGraphics2d;
     unsigned m_submittedDescriptors;
 
     BOMX_BufferTracker *m_pBufferTracker;
+    unsigned m_AvailInputBuffers;
 
     NexusIPCClientBase              *m_pIpcClient;
     NexusClientContext              *m_pNexusClient;
@@ -350,6 +354,14 @@ protected:
         unsigned maxDescriptors,
         unsigned *pNumDescriptors
         );
+
+    void CancelTimerId(B_SchedulerTimerId& timerId);
+
+    // These functions are used to pace the input buffers rate
+    void InputBufferNew();
+    void InputBufferReturned();
+    void InputBufferCounterReset();
+    void ReturnInputBuffers(bool causedByTimeout = false);
 
     // The functions below allow derived classes to override them
     virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
