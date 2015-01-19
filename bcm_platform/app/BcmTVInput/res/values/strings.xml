@@ -18,4 +18,6 @@
     <string name="app_name" translatable="false">BcmTVInput Settings</string>
     <string name="tuner_service_label" translatable="false">Tuner service</string>
     <string name="scan_button_label" translatable="false">Scan</string>
+    <string name="stop_button_label" translatable="false">Stop</string>
+    <string name="streamer_mode_button_label" translatable="false">Streamer Mode</string>
 </resources>

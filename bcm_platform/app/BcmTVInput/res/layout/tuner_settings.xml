@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical" >
+
+    <TextView
+        android:id="@+id/textview_tv"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAlignment="center" />
+
+    <ProgressBar
+        android:id="@+id/progressbar_scan"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:indeterminate="false" />
+
+    <Button
+        android:id="@+id/button_scan"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:onClick="startBlindScan"
+        android:text="@string/scan_button_label" />
+
+    <Button
+        android:id="@+id/button_stop"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:onClick="stopScan"
+        android:text="@string/stop_button_label" />
+
+    <Button
+        android:id="@+id/button_streamer_mode"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:onClick="setStreamerMode"
+        android:text="@string/streamer_mode_button_label" />
+
+</LinearLayout>
