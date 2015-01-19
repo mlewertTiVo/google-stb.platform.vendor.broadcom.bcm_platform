@@ -17,6 +17,8 @@ extern "C" {
 #include "dtvkit_platform.h"
 };
 
+//#define DEBUG_EVENTS
+
 class BroadcastDTVKit_Context {
 public:
     BroadcastDTVKit_Context() {
@@ -533,6 +535,7 @@ static int BroadcastDTVKit_Release()
     return 0;
 }
 
+#ifdef DEBUG_EVENTS
 static const char *
 evcname(unsigned c, unsigned t)
 {
@@ -548,6 +551,7 @@ evcname(unsigned c, unsigned t)
         case EV_TYPE_SIGNAL_DATA_OK: return "STB_EVENT_TUNE_SIGNAL_DATA_OK";
         default: return "EV_CLASS_TUNE";
         }
+        break;
     case EV_CLASS_DECODE:
         switch (t) {
         case EV_TYPE_AD_STARTED: return "STB_EVENT_AD_DECODE_STARTED";
@@ -563,6 +567,7 @@ evcname(unsigned c, unsigned t)
         case EV_TYPE_LOCKED: return "STB_EVENT_DECODE_LOCKED";
         return "EV_CLASS_DECODE";
         }
+        break;
     case EV_CLASS_SEARCH: return "EV_CLASS_SEARCH";
     case EV_CLASS_LNB: return "EV_CLASS_LNB";
     case EV_CLASS_SKEW: return "EV_CLASS_SKEW";
@@ -584,6 +589,7 @@ evcname(unsigned c, unsigned t)
     }
     return "?";
 }
+#endif
 
 static bool
 scannerUpdate()
@@ -595,10 +601,12 @@ scannerUpdate()
 }
 
 static void
-event_handler(U32BIT event, void *event_data, U32BIT data_size)
+event_handler(U32BIT event, void */*event_data*/, U32BIT /*data_size*/)
 {
     if (pSelf) {
-        //ALOGE("%s: ev %s(%d)/%d", __FUNCTION__, evcname(EVENT_CLASS(event), EVENT_TYPE(event)), EVENT_CLASS(event), EVENT_TYPE(event));
+#ifdef DEBUG_EVENTS
+        ALOGE("%s: ev %s(%d)/%d", __FUNCTION__, evcname(EVENT_CLASS(event), EVENT_TYPE(event)), EVENT_CLASS(event), EVENT_TYPE(event));
+#endif
         if (event == EVENT_CODE(EV_CLASS_UI, EV_TYPE_UPDATE)) {
             scannerUpdate();
         }
@@ -711,7 +719,9 @@ BroadcastDTVKit_GetUtcTime()
 }
 
 int
-BroadcastDTVKit_SetGeometry(BroadcastRect position, BroadcastRect clipRect, jshort gfxWidth, jshort gfxHeight, jshort zorder, jboolean visible)
+BroadcastDTVKit_SetGeometry(BroadcastRect position, BroadcastRect /*clipRect*/,
+        jshort gfxWidth, jshort gfxHeight, jshort /*zorder*/,
+        jboolean /*visible*/)
 {
     if ((position.y == 0 && position.h == gfxHeight) || (position.x == 0 && position.w == gfxWidth)) {
         // fullscreen - let DTVKit choose the window - hopefully it gets the same answer

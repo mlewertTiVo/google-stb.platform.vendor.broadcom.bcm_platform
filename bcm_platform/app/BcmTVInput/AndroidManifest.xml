@@ -15,7 +15,7 @@
 -->
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.broadcom.tvinput">
+    package="com.broadcom.tvinput" android:versionCode="1" android:versionName="1.0">
 
     <uses-permission android:name="android.permission.BIND_TV_INPUT" />
     <uses-permission android:name="android.permission.TV_INPUT_HARDWARE" />
@@ -25,8 +25,11 @@
     <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
     <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
     <uses-permission android:name="com.android.tv.permission.RECEIVE_INPUT_EVENT" />
+    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="21"/>
 
-    <application android:icon="@drawable/icon" android:label="@string/app_name">
+    <application android:icon="@drawable/icon" android:label="@string/app_name"
+        android:allowBackup="true"
+        android:supportsRtl="true">
         <activity android:name="com.broadcom.tvinput.TunerSettings">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

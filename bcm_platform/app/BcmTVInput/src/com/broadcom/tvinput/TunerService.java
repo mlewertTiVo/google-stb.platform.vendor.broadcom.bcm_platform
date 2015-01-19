@@ -16,31 +16,6 @@
 
 package com.broadcom.tvinput;
 
-import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.List;
-import java.util.ArrayList;
-import java.util.Set;
-import java.util.HashSet;
-import java.util.Queue;
-import java.util.LinkedList;
-
-import java.net.URL;
-import java.net.URLConnection;
-import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
-
-import java.io.InputStream;
-import java.io.OutputStream;
-
-import org.xmlpull.v1.XmlPullParserException;
-
 import android.app.AlarmManager;
 import android.content.ContentUris;
 import android.content.ContentValues;
@@ -59,14 +34,31 @@ import android.media.tv.TvTrackInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.IBinder;
-import android.os.Parcel;
-import android.os.Parcelable;
-import android.os.RemoteException;
 import android.os.SystemClock;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.Surface;
+
+import org.xmlpull.v1.XmlPullParserException;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Queue;
+import java.util.Set;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * TV-Input service for Broadcom's Tuner
@@ -197,6 +189,7 @@ public class TunerService extends TvInputService {
             }
         }
 
+        /*
         public void reset() {
             lock.lock();
             try {
@@ -206,6 +199,7 @@ public class TunerService extends TvInputService {
                 lock.unlock();
             }
         }
+        */
 
         private class LogoLoaderTask implements Runnable {
 
@@ -450,7 +444,7 @@ public class TunerService extends TvInputService {
 
     private static void reflectedNotifySessionEvent(TunerTvInputSessionImpl s, String event, Bundle args)
     {
-        Class c;
+        Class<?> c;
         try {
             c = Class.forName("com.broadcom.tvinput.TunerService$TunerTvInputSessionImpl");
         } catch (ClassNotFoundException e) {

@@ -154,7 +154,7 @@ static int registerNativeMethods(JNIEnv* env, const char* className, JNINativeMe
     return JNI_TRUE;
 }
 
-jint JNI_OnLoad(JavaVM* vm, void* reserved)
+jint JNI_OnLoad(JavaVM* vm, void* /*reserved*/)
 {
     JNIEnv* env = NULL;
     jint result = -1;
@@ -360,7 +360,7 @@ HwcBinderConnect()
     ALOGE("%s: Connected to HwcBinder", __FUNCTION__);
 }
 
-JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env, jclass thiz, jobject o)
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env, jclass /*thiz*/, jobject o)
 {
     int rc;
 
@@ -392,7 +392,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env
     return Broadcast_Initialize(&g_pTD->driver);
 }
 
-JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jclass thiz, jstring id)
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jclass /*thiz*/, jstring id)
 {
     const char *s8id = env->GetStringUTFChars(id, NULL);
     jint rv = -1;
@@ -431,7 +431,7 @@ setStringField(JNIEnv *env, jobject o, jfieldID id, const String8 &s8)
     env->DeleteLocalRef(js);
 }
 
-JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList(JNIEnv *env, jclass thiz)
+JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList(JNIEnv *env, jclass /*thiz*/)
 {
     TV_LOG("%s: Fetching channel list!!", __FUNCTION__);
 
@@ -508,7 +508,7 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_com_broadcom_tvinput_TunerHAL_getProgramList(JNIEnv *env, jclass thiz, jstring id)
+Java_com_broadcom_tvinput_TunerHAL_getProgramList(JNIEnv *env, jclass /*thiz*/, jstring id)
 {
     TV_LOG("%s: Fetching program list!!", __FUNCTION__);
 
@@ -577,7 +577,7 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramList(JNIEnv *env, jclass thiz, jstr
 }
 
 JNIEXPORT jobject JNICALL
-Java_com_broadcom_tvinput_TunerHAL_getScanInfo(JNIEnv *env, jclass thiz)
+Java_com_broadcom_tvinput_TunerHAL_getScanInfo(JNIEnv *env, jclass /*thiz*/)
 {
 
     TV_LOG("%s: Fetching scan info!!", __FUNCTION__);
@@ -630,7 +630,7 @@ Java_com_broadcom_tvinput_TunerHAL_getScanInfo(JNIEnv *env, jclass thiz)
     return o;
 }
 
-JNIEXPORT jlong JNICALL Java_com_broadcom_tvinput_TunerHAL_getUtcTime(JNIEnv *env, jclass thiz)
+JNIEXPORT jlong JNICALL Java_com_broadcom_tvinput_TunerHAL_getUtcTime(JNIEnv */*env*/, jclass /*thiz*/)
 {
     if (g_pTD->driver.GetUtcTime == 0) {
         TV_LOG("%s: GetUtcTime call is null", __FUNCTION__);
@@ -645,7 +645,7 @@ JNIEXPORT jlong JNICALL Java_com_broadcom_tvinput_TunerHAL_getUtcTime(JNIEnv *en
     }
 }
 
-JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv *env, jclass thiz)
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv */*env*/, jclass /*thiz*/)
 {
     jint rv = -1;
 
@@ -663,7 +663,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv *env, jcla
     return rv;
 }
 
-JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startBlindScan(JNIEnv *env, jclass thiz)
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startBlindScan(JNIEnv */*env*/, jclass /*thiz*/)
 {
     jint rv = -1;
 
@@ -679,7 +679,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startBlindScan(JNIEnv 
     return rv;
 }
 
-JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stopScan(JNIEnv *env, jclass thiz)
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stopScan(JNIEnv */*env*/, jclass /*thiz*/)
 {
     jint rv = -1;
 
@@ -695,7 +695,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stopScan(JNIEnv *env, 
     return rv;
 }
 
-JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_release(JNIEnv *env, jclass thiz)
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_release(JNIEnv */*env*/, jclass /*thiz*/)
 {
     jint rv = -1;
 
@@ -713,7 +713,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_release(JNIEnv *env, j
     return rv;
 }
 
-JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_setSurface(JNIEnv *env, jclass thiz)
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_setSurface(JNIEnv */*env*/, jclass /*thiz*/)
 {
     jint rv = -1;
 
@@ -728,7 +728,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_setSurface(JNIEnv *env
     return rv;
 }
 
-JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getVideoTrackInfoList(JNIEnv *env, jclass thiz)
+JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getVideoTrackInfoList(JNIEnv *env, jclass /*thiz*/)
 {
     TV_LOG("%s: Fetching video track info list!!", __FUNCTION__);
 

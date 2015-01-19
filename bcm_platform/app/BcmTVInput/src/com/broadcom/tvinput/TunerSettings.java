@@ -20,20 +20,17 @@ import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.pm.ServiceInfo;
-
-import android.database.Cursor;
 import android.media.tv.TvInputInfo;
 import android.media.tv.TvInputManager;
 import android.os.Bundle;
 import android.os.Handler;
-
+import android.util.Log;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
-import android.widget.TextView;
-import android.widget.ProgressBar;
 import android.widget.LinearLayout;
-import android.util.Log;
+import android.widget.ProgressBar;
+import android.widget.TextView;
 
 
 /**

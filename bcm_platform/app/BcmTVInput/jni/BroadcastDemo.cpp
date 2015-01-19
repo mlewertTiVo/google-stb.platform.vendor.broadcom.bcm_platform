@@ -20,6 +20,10 @@ public:
         connected = false;
         pidChannel = NULL;
         decoding = false;
+        memset(&m_allocResults, 0, sizeof(m_allocResults));
+        m_nxClientId = 0;
+        m_hSurfaceClient = NULL;
+        m_hVideoClient = NULL;
     };
     NEXUS_FrontendHandle frontend;
     NEXUS_ParserBand parserBand;
