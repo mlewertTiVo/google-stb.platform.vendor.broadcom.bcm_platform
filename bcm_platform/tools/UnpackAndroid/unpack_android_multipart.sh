@@ -94,9 +94,9 @@ mkdir ./boot/data
 mount -t ext4 -o loop ./boot/system.raw.img ./boot/system
 mount -t ext4 -o loop ./boot/userdata.raw.img ./boot/data
 
-rsync -av --delete ./boot/ramdisk/* $2
-rsync -av --delete ./boot/system/* $3
-rsync -av --delete ./boot/data/* $4
+rsync -av --delete ./boot/ramdisk/ $2
+rsync -av --delete ./boot/system/ $3
+rsync -av --delete ./boot/data/ $4
 
 # Cleanup
 umount ./boot/system
