@@ -856,6 +856,13 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         m_omxHwcBinder = NULL;
     }
 
+    if ( g_pDebugFile )
+    {
+        fclose(g_pDebugFile);
+        g_pDebugFile = NULL;
+    }
+
+
     Lock();
 
     ShutdownScheduler();
@@ -1779,7 +1786,14 @@ NEXUS_Error BOMX_VideoDecoder::SetOutputPortState(OMX_STATETYPE newState)
     {
         CancelTimerId(m_outputFrameTimerId);
         CancelTimerId(m_inputBuffersTimerId);
-        m_formatChangePending = false;
+
+        // Update output port format on a port re-enable.
+        if ( m_formatChangePending )
+        {
+            m_outputWidth = m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth;
+            m_outputHeight = m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight;
+            m_formatChangePending = false;
+        }
         // Return all pending buffers to the client
         ReturnPortBuffers(m_pVideoPorts[1]);
     }
@@ -3065,8 +3079,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     pInfo->numDescriptors = 0;
     pInfo->complete = false;
 
-    ALOGV("%s, comp:%s, ts:%u, buff:%p", __FUNCTION__, GetName(),
-                                        (uint32_t)(pBufferHeader->nTimeStamp/1000), pBufferHeader->pBuffer);
+    ALOGV("%s, comp:%s, buff:%p len:%d ts:%d flags:0x%x", __FUNCTION__, GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, (int)pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
     if ( pBufferHeader->nFlags & OMX_BUFFERFLAG_CODECCONFIG )
     {
         if ( m_configBufferState != ConfigBufferState_eAccumulating )
@@ -3122,41 +3135,54 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         break;
     }
 
-    // Track the buffer
-    if ( !m_pBufferTracker->Add(pBufferHeader, &pInfo->pts) )
+    if ( pBufferHeader->nFilledLen > 0 )
     {
-        BOMX_WRN(("Unable to track buffer"));
-        pInfo->pts = BOMX_TickToPts(&pBufferHeader->nTimeStamp);
-    }
-
-    // Build up descriptor list
-    err = BuildInputFrame(pBufferHeader, pInfo->pts, pCodecHeader, codecHeaderLength, desc, B_MAX_DESCRIPTORS_PER_BUFFER, &numRequested);
-    if ( err != OMX_ErrorNone )
-    {
-        return BOMX_ERR_TRACE(err);
-    }
-
-    if ( numRequested > 0 )
-    {
-        // Log data to file if requested
-        if ( NULL != g_pDebugFile )
+        // Track the buffer
+        if ( !m_pBufferTracker->Add(pBufferHeader, &pInfo->pts) )
         {
-            unsigned i;
-            for ( i = 0; i < numRequested; i++ )
+            BOMX_WRN(("Unable to track buffer"));
+            pInfo->pts = BOMX_TickToPts(&pBufferHeader->nTimeStamp);
+        }
+
+        // Build up descriptor list
+        err = BuildInputFrame(pBufferHeader, pInfo->pts, pCodecHeader, codecHeaderLength, desc, B_MAX_DESCRIPTORS_PER_BUFFER, &numRequested);
+        if ( err != OMX_ErrorNone )
+        {
+            return BOMX_ERR_TRACE(err);
+        }
+
+        if ( numRequested > 0 )
+        {
+            // Log data to file if requested
+            if ( NULL != g_pDebugFile )
             {
-                fwrite(desc[i].addr, 1, desc[i].length, g_pDebugFile);
+                unsigned i;
+                for ( i = 0; i < numRequested; i++ )
+                {
+                    fwrite(desc[i].addr, 1, desc[i].length, g_pDebugFile);
+                }
+            }
+
+            // Submit to playpump
+            errCode = NEXUS_Playpump_SubmitScatterGatherDescriptor(m_hPlaypump, desc, numRequested, &numConsumed);
+            if ( errCode )
+            {
+                return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+            }
+            BOMX_ASSERT(numConsumed == numRequested);
+            pInfo->numDescriptors += numRequested;
+            m_submittedDescriptors += numConsumed;
+            InputBufferNew();
+            err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
+            if ( err )
+            {
+                return BOMX_ERR_TRACE(err);
             }
         }
-
-        // Submit to playpump
-        errCode = NEXUS_Playpump_SubmitScatterGatherDescriptor(m_hPlaypump, desc, numRequested, &numConsumed);
-        if ( errCode )
-        {
-            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
-        }
-        BOMX_ASSERT(numConsumed == numRequested);
-        pInfo->numDescriptors += numRequested;
-        m_submittedDescriptors += numConsumed;
+    }
+    else
+    {
+        // Mark the empty frame as queued.
         InputBufferNew();
         err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
         if ( err )

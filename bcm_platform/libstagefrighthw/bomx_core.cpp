@@ -13,7 +13,7 @@
  *
  *************************************************************************/
 #undef LOG_TAG
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #define LOG_TAG "bomx_core"
 #include <cutils/log.h>
 
@@ -79,12 +79,12 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_Init(void)
     NEXUS_Error nerr;
     OMX_ERRORTYPE err;
 
-    BOMX_WRN(("OMX_Init"));
+    ALOGI("OMX_Init");
 
     pthread_mutex_lock(&g_initMutex);
     if ( ++g_refCount > 1 )
     {  
-        BOMX_MSG(("Nested call to OMX_Init.  Refcount is now %u", g_refCount));
+        ALOGI("Nested call to OMX_Init.  Refcount is now %u", g_refCount);
         pthread_mutex_unlock(&g_initMutex);
         return OMX_ErrorNone;
     }
@@ -105,16 +105,19 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_Init(void)
     return OMX_ErrorNone;
 
 err_resources:
-    B_Os_Uninit();
+    if ( 1 == g_refCount )
+    {
+        B_Os_Uninit();
+    }
 err_oslib:
-    g_refCount=0;
+    --g_refCount;
     pthread_mutex_unlock(&g_initMutex);
     return BOMX_ERR_TRACE(OMX_ErrorUndefined);
 }
 
 OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_Deinit(void)
 {
-    BOMX_WRN(("OMX_Deinit"));
+    ALOGI("OMX_Deinit");
     pthread_mutex_lock(&g_initMutex);
     if ( g_refCount == 1 )
     {
@@ -125,9 +128,10 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_Deinit(void)
     else
     {
         g_refCount--;
-        BOMX_MSG(("Nested call to OMX_Deinit.  Refcount is now %u", g_refCount));
+        ALOGI("Nested call to OMX_Deinit.  Refcount is now %u", g_refCount);
     }
     pthread_mutex_unlock(&g_initMutex);
+    ALOGI("OMX_Deinit  Complete");
     return OMX_ErrorNone;
 }
 
