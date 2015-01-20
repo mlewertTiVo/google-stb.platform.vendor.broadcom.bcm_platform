@@ -1,5 +1,10 @@
 #!/bin/bash
 
+if [ "$(id -u)" != "0" ]; then
+  echo "Script must be run with sudo."
+  exit
+fi
+
 if [ $# -lt 1 ]
 then
   echo "Usage: sudo ./format_android_usb_multipart_16GB.sh sd<b-z>"

@@ -2,9 +2,14 @@
 
 tools_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+if [ "$(id -u)" != "0" ]; then
+  echo "Script must be run with sudo."
+  exit
+fi
+
 if [ $# -lt 3 ]
 then
-  echo "Usage: unpack_android.sh <image_dir> <rootfs_dir> <kernel_dir> [sd<b-z>]"
+  echo "Usage: sudo unpack_android.sh <image_dir> <rootfs_dir> <kernel_dir> [sd<b-z>]"
   echo "       image_dir  : Absolute path to the directory containing boot.img, system.img and userdata.img."
   echo "                    Ex. <workspace>/out/target/product/bcm_platform"
   echo "       rootfs_dir : Absolute path to an EMPTY output directory where the rootfs will be unpacked to."

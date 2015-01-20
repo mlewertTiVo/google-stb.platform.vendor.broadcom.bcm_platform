@@ -1,5 +1,10 @@
 #!/bin/bash
 
+if [ "$(id -u)" != "0" ]; then
+  echo "Script must be run with sudo."
+  exit
+fi
+
 if [ $# -lt 6 ]
 then
   echo "Usage: sudo ./unpack_android_multipart.sh <image_dir> <rootfs_dir> <system_dir> <data_dir> <cache_dir> <kernel_dir> [sd<b-z>]"
