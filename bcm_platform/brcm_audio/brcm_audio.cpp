@@ -52,6 +52,8 @@
 
 #include "brcm_audio.h"
 
+#define BRCM_BUFFER_SIZE_MS 40
+
 /*
  * Utility Functions
  */
@@ -81,24 +83,8 @@ size_t get_brcm_audio_buffer_size(unsigned int sample_rate,
         return 0;
     }
 
-    if (sample_rate < 12000) {
-        size = 256;
-    }
-    else if (sample_rate < 24000) {
-        size = 512;
-    }
-    else if (sample_rate < 32000) {
-        size = 768;
-    }
-    else if (sample_rate < 44100) {
-        size = 1024;
-    }
-    else if (sample_rate < 96000) {
-        size = 4096;
-    }
-    else {
-        size = 8192;
-    }
+    size = (sample_rate * BRCM_BUFFER_SIZE_MS + 999) / 1000;
+
     return size * channel_count * audio_bytes_per_sample(format);
 }
 
