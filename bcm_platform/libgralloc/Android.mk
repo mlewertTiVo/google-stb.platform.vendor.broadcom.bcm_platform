@@ -36,7 +36,7 @@ LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc
 LOCAL_C_INCLUDES += $(REFSW_PATH)/../../drivers/nx_ashmem
 LOCAL_C_INCLUDES += $(REFSW_PATH)/../../refsw/rockford/middleware/v3d/interface/khronos/include
 
-REMOVE_NEXUS_CFLAGS := -Wstrict-prototypes -march=armv7-a
+REMOVE_NEXUS_CFLAGS := -Wstrict-prototypes
 MANGLED_NEXUS_CFLAGS := $(filter-out $(REMOVE_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
 
 LOCAL_CFLAGS := -DLOG_TAG=\"gralloc\" $(MANGLED_NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)

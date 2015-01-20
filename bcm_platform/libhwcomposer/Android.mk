@@ -13,7 +13,6 @@
 # limitations under the License.
 
 LOCAL_PATH := $(call my-dir)
-FILTER_OUT_NEXUS_CFLAGS := -march=armv7-a
 
 # build the binder helper.
 #
@@ -83,7 +82,7 @@ LOCAL_SHARED_LIBRARIES += libnxclient
 LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/utils \
                     $(NXCLIENT_INCLUDES)
 
-LOCAL_CFLAGS += $(filter-out $(FILTER_OUT_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
+LOCAL_CFLAGS += $(NEXUS_CFLAGS)
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
 
@@ -115,7 +114,7 @@ LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/conv \
                     $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/utils \
                     $(NXCLIENT_INCLUDES)
 
-LOCAL_CFLAGS += $(filter-out $(FILTER_OUT_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
+LOCAL_CFLAGS += $(NEXUS_CFLAGS)
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
 
@@ -156,7 +155,7 @@ LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
                     $(TOP)/system/core/libsync \
                     $(TOP)/system/core/libsync/include
 
-LOCAL_CFLAGS += $(filter-out $(FILTER_OUT_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
+LOCAL_CFLAGS += $(NEXUS_CFLAGS)
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-hwc\"
