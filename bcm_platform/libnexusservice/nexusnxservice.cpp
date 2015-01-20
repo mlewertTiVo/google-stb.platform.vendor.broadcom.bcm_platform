@@ -728,7 +728,8 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
         }
     }
 
-    client->ipc.nexusClient = getNexusClient(client);
+    client->ipc.nexusClient = getNexusClient(client->createConfig.pid,
+        client->createConfig.name.string);
 
     LOGI("%s: Exiting with client=%p", __PRETTY_FUNCTION__, (void *)client);
     return client;

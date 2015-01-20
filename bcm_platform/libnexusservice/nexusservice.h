@@ -220,7 +220,7 @@ protected:
     NexusService();
     virtual void platformInit();
     virtual void platformUninit();
-    virtual NEXUS_ClientHandle getNexusClient(NexusClientContext * client);
+    virtual NEXUS_ClientHandle getNexusClient(unsigned pid, const char * name);
 
     NexusServerContext                  *server;
     b_powerState                        powerState;

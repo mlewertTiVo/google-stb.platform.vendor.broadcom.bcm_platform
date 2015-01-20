@@ -305,7 +305,7 @@ String16 INexusService::getInterfaceDescriptor() {
         return INexusService::descriptor;
 }
 
-NEXUS_ClientHandle NexusService::getNexusClient(NexusClientContext * client)
+NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid, const char * name)
 {
     NEXUS_ClientHandle nexusClient = NULL;
     NEXUS_InterfaceName interfaceName;
@@ -313,10 +313,6 @@ NEXUS_ClientHandle NexusService::getNexusClient(NexusClientContext * client)
     unsigned i;
     int rc;
 
-    if (client == NULL) {
-        LOGE("%s: client context is NULL!!!", __PRETTY_FUNCTION__);
-    }
-    else {
         NEXUS_Platform_GetDefaultInterfaceName(&interfaceName);
         strcpy(interfaceName.name, "NEXUS_Client");
 #ifndef MAX_OBJECTS
@@ -336,14 +332,13 @@ NEXUS_ClientHandle NexusService::getNexusClient(NexusClientContext * client)
             rc = NEXUS_Platform_GetClientStatus(reinterpret_cast<NEXUS_ClientHandle>(objects[i].object), &status);
             if (rc) continue;
 
-            if (status.pid == client->createConfig.pid) {
+            if (status.pid == pid) {
                 nexusClient = reinterpret_cast<NEXUS_ClientHandle>(objects[i].object);
                 LOGV("%s: Found client \"%s\" with PID %d nexus_client %p.", __PRETTY_FUNCTION__,
-                    client->createConfig.name.string, client->createConfig.pid, (void *)nexusClient);
+                    name ? name : "[unnamed]", pid, (void *)nexusClient);
                 break;
             }
         }
-    }
     return nexusClient;
 }
 
@@ -1185,7 +1180,8 @@ NexusClientContext * NexusService::createClientContext(const b_refsw_client_clie
 
     BLST_D_INSERT_HEAD(&server->clients, client, link);
 
-    client->ipc.nexusClient = getNexusClient(client);
+    client->ipc.nexusClient = getNexusClient(client->createConfig.pid,
+        client->createConfig.name.string);
 
     // This is used to indicate whether client has requested HDMI input or not...
     if (config->resources.hdmiInput > 0) {
