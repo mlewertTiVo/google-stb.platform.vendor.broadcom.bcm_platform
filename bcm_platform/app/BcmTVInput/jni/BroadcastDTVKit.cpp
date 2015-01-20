@@ -296,6 +296,139 @@ utf8tostringstrippingdvbcodes(U8BIT *p)
     return s;
 }
 
+static struct {
+    const char *display_name;
+    const char *url;
+} freeviewLogoMap[] = {
+{ "BBC ONE West", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_one.png" },
+{ "BBC TWO", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_two_uk.png" },
+{ "ITV", "http://www.lyngsat-logo.com/logo/tv/ii/itv_uk.png" },
+{ "Channel 4", "http://www.lyngsat-logo.com/logo/tv/cc/channel4_uk.png" },
+{ "Channel 5", "http://www.lyngsat-logo.com/logo/tv/cc/channel5_uk.png" },
+{ "ITV2", "http://www.lyngsat-logo.com/logo/tv/ii/itv2.png" },
+{ "BBC THREE", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_three.png" },
+{ "Made In Bristol", "http://www.lyngsat-logo.com/logo/tv/mm/made_tv_uk_bristol.png" },
+{ "BBC FOUR", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_four_uk.png" },
+{ "ITV3", "http://www.lyngsat-logo.com/logo/tv/ii/itv3.png" },
+{ "Pick", "http://www.lyngsat-logo.com/logo/tv/pp/pick_tv_uk.png" },
+{ "Dave", "http://www.lyngsat-logo.com/logo/tv/dd/dave_uktv.png" },
+{ "Channel 4+1", "http://www.lyngsat-logo.com/logo/tv/cc/channel4_uk_plus1.png" },
+{ "More 4", "http://www.lyngsat-logo.com/logo/tv/cc/channel4_more4_uk.png" },
+{ "Film4", "http://www.lyngsat-logo.com/logo/tv/ff/film4.png" },
+{ "QVC", "http://www.lyngsat-logo.com/logo/tv/qq/qvc_uk.png" },
+{ "Really", "http://www.lyngsat-logo.com/logo/tv/rr/really_uktv.png" },
+{ "4Music", "http://www.lyngsat-logo.com/logo/tv/cc/channel4_music.png" },
+{ "Yesterday", "http://www.lyngsat-logo.com/logo/tv/yy/yesterday_uktv.png" },
+{ "Drama", "http://www.lyngsat-logo.com/logo/tv/dd/drama_uktv.png" },
+{ "VIVA", "http://www.lyngsat-logo.com/logo/tv/vv/viva_uk.png" },
+{ "Ideal World", "http://www.lyngsat-logo.com/logo/tv/ii/ideal_world.png" },
+{ "ITV4", "http://www.lyngsat-logo.com/logo/tv/ii/itv4.png" },
+{ "Dave ja vu", "http://www.lyngsat-logo.com/logo/tv/dd/dave_ja_vu.png" },
+{ "ITVBe", "http://www.lyngsat-logo.com/logo/tv/ii/itv_uk_be.png" },
+{ "ITV2 +1", "http://www.lyngsat-logo.com/logo/tv/ii/itv2_plus1.png" },
+{ "E4", "http://www.lyngsat-logo.com/logo/tv/ee/e4_uk.png" },
+{ "E4+1", "http://www.lyngsat-logo.com/logo/tv/ee/e4_uk_plus1.png" },
+{ "5*", "http://www.lyngsat-logo.com/logo/tv/cc/channel5_star.png" },
+{ "5 USA", "http://www.lyngsat-logo.com/logo/tv/cc/channel5_usa.png" },
+{ "Movie Mix", 0 },
+{ "ITV +1", "http://www.lyngsat-logo.com/logo/tv/ii/itv_uk.png" },
+{ "ITV3+1", "http://www.lyngsat-logo.com/logo/tv/ii/itv3_plus1.png" },
+{ "QVC Beauty", "http://www.lyngsat-logo.com/logo/tv/qq/qvc_beauty_uk.png" },
+{ "Create & Craft", "http://www.lyngsat-logo.com/logo/tv/cc/create_and_craft.png" },
+{ "QUEST", "http://www.lyngsat-logo.com/logo/tv/qq/quest.png" },
+{ "QUEST+1", "http://www.lyngsat-logo.com/logo/tv/qq/quest_plus1.png" },
+{ "The Store", 0 },
+{ "Rocks & Co 1", "http://www.lyngsat-logo.com/logo/tv/rr/rocks_and_co.png" },
+{ "Food Network", "http://www.lyngsat-logo.com/logo/tv/ff/food_network_uk.png" },
+{ "Travel Channel", "http://www.lyngsat-logo.com/logo/tv/tt/travel_channel_uk.png" },
+{ "Gems TV", "http://www.lyngsat-logo.com/logo/tv/gg/gems_tv.png" },
+{ "Channel 5+1", 0 },
+{ "Film4+1", "http://www.lyngsat-logo.com/logo/tv/ff/film4_plus1.png" },
+{ "Challenge", "http://www.lyngsat-logo.com/logo/tv/cc/challenge_tv_uk.png" },
+{ "4seven", "http://www.lyngsat-logo.com/logo/tv/cc/channel4_seven_uk.png" },
+{ "movies4men", "http://www.lyngsat-logo.com/logo/tv/mm/movies_4_men.png" },
+{ "Jewellery Ch.", 0 },
+{ "Channel 5+24", "http://www.lyngsat-logo.com/logo/tv/cc/channel5_uk_plus24.png" },
+{ "QVC EXTRA", "http://www.lyngsat-logo.com/logo/tv/qq/qvc_extra_uk.png" },
+{ "BT Sport 1", "http://www.lyngsat-logo.com/logo/tv/bb/bt_sport_1.png" },
+{ "BT Sport 2", "http://www.lyngsat-logo.com/logo/tv/bb/bt_sport_2.png" },
+{ "True Entertainment", "http://www.lyngsat-logo.com/logo/tv/tt/true_entertainment.png" },
+{ "ITV4+1", "http://www.lyngsat-logo.com/logo/tv/ii/itv4_plus1.png" },
+{ "Community", "http://www.lyngsat-logo.com/logo/tv/cc/community_channel.png" },
+{ "TBN UK", 0 },
+{ "CBS Reality", "http://www.lyngsat-logo.com/logo/tv/cc/cbs_reality_uk.png" },
+{ "truTV", "http://www.lyngsat-logo.com/logo/tv/tt/tru_tv_uk.png" },
+{ "truTV+1", 0 },
+{ "CBS Action", "http://www.lyngsat-logo.com/logo/tv/cc/cbs_action_uk.png" },
+{ "Motors TV", "http://www.lyngsat-logo.com/logo/tv/mm/motors_tv_uk.png" },
+{ "DAYSTAR", 0 },
+{ "BBC ONE HD", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_one_hd.png" },
+{ "BBC TWO HD", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_two_uk_hd.png" },
+{ "ITV HD", "http://www.lyngsat-logo.com/logo/tv/ii/itv_uk_hd.png" },
+{ "Channel 4 HD", "http://www.lyngsat-logo.com/logo/tv/cc/channel4_hd.png" },
+{ "BBC THREE HD", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_three_hd.png" },
+{ "BBC FOUR HD", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_four_uk_hd.png" },
+{ "BBC NEWS HD", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_news_hd.png" },
+{ "Al Jazeera Eng HD", 0 },
+{ "Community HD", 0 },
+{ "Channel 4+1 HD", 0 },
+{ "4seven HD", 0 },
+{ "CBBC", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_cbbc.png" },
+{ "CBeebies", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_cbeebies_uk.png" },
+{ "CITV", "http://www.lyngsat-logo.com/logo/tv/cc/citv_uk.png" },
+{ "CBBC HD", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_cbbc_hd.png" },
+{ "CBeebies HD", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_cbeebies_uk_hd.png" },
+{ "POP", "http://www.lyngsat-logo.com/logo/tv/pp/pop_uk.png" },
+{ "Tiny Pop", "http://www.lyngsat-logo.com/logo/tv/tt/tiny_pop.png" },
+{ "BBC NEWS", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_news.png" },
+{ "BBC Parliament", "http://www.lyngsat-logo.com/logo/tv/bb/bbc_parliament.png" },
+{ "Sky News", "http://www.lyngsat-logo.com/logo/tv/ss/sky_uk_news.png" },
+{ "Al Jazeera Eng", "http://www.lyngsat-logo.com/logo/tv/aa/al_jazeera_english.png" },
+{ "Al Jazeera Arabic", 0 },
+{ "RT", 0 },
+{ "ARISE News", "http://www.lyngsat-logo.com/logo/tv/aa/arise_news.png" },
+{ "ADULT Section", 0 },
+{ "Television X", 0 },
+{ "ADULT smileTV2", 0 },
+{ "ADULT smileTV3", 0 },
+{ "ADULT Babestn", 0 },
+{ "ADULT PARTY", 0 },
+{ "ADULT Blue", 0 },
+{ "ADULT Babestn2", 0 },
+{ "ADULT Xpanded TV", 0 },
+{ "ADULT Section", 0 },
+{ "BBC Red Button", 0 },
+{ "BBC RB 1", 0 },
+{ "BBC Radio 1", 0 },
+{ "BBC R1X", 0 },
+{ "BBC Radio 2", 0 },
+{ "BBC Radio 3", 0 },
+{ "BBC Radio 4", 0 },
+{ "BBC R5L", 0 },
+{ "BBC R5SX", 0 },
+{ "BBC 6 Music", 0 },
+{ "BBC Radio 4 Ex", 0 },
+{ "BBC Asian Net.", 0 },
+{ "BBC World Sv.", 0 },
+{ "The Hits Radio", 0 },
+{ "KISS FRESH", 0 },
+{ "Kiss", 0 },
+{ "KISSTORY", 0 },
+{ "Magic", 0 },
+{ "heat", 0 },
+{ "Kerrang!", 0 },
+{ "SMOOTH RADIO", 0 },
+{ "BBC Bristol", 0 },
+{ "talkSPORT", 0 },
+{ "Capital FM", 0 },
+{ "Premier Radio", 0 },
+{ "Absolute Radio", 0 },
+{ "Heart", 0 },
+{ "Insight Radio", 0 },
+{ "Community", 0 },
+{ 0, 0 }
+};
+
 static Vector<BroadcastChannelInfo> BroadcastDTVKit_GetChannelList()
 {
     Vector<BroadcastChannelInfo> civ;
@@ -321,6 +454,18 @@ static Vector<BroadcastChannelInfo> BroadcastDTVKit_GetChannelList()
             ci.onid = onid;
             ci.tsid = tsid;
             ci.sid = sid;
+            ci.logoUrl = "";
+            if (ci.onid == 9018) {
+                for (int li = 0; freeviewLogoMap[li].display_name != 0; li++) {
+                    if (ci.name == freeviewLogoMap[li].display_name) {
+                        if (freeviewLogoMap[li].url != 0) {
+                            ALOGE("%s: %s matches %d %s", __FUNCTION__, ci.name.string(), li, freeviewLogoMap[li].url);
+                            ci.logoUrl = freeviewLogoMap[li].url; 
+                        }
+                        break;
+                    }
+                }
+            }
 
             civ.push_back(ci);
         }

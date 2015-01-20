@@ -16,6 +16,7 @@ public:
     int onid;
     int tsid;
     int sid;
+    String8 logoUrl;
 };
 
 class BroadcastProgramInfo {

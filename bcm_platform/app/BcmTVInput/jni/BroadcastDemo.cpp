@@ -47,14 +47,15 @@ static struct {
     int sid;
     int freqKHz;
     int vpid;
+    const char *logoUrl;
 } lineup[] = {
-    { 0, "8", "8madrid", 0x22d4, 0x0027, 0x0f3d, 618000, 0x100 },
-    { 1, "13", "13tv Madrid", 0x22d4, 0x0027, 0x0f3e, 618000, 0x200 },
-    { 2, "800", "ASTROCANAL SHOP", 0x22d4, 0x0027, 0x0f43, 577000, 0x700 },
-    { 3, "801", "Kiss TV", 0x22d4, 0x0027, 0x0f40, 618000, 0x401 },
-    { 4, "802", "INTER TV", 0x22d4, 0x0027, 0x0f3f, 618000, 0x300 },
-    { 5, "803", "MGustaTV", 0x22d4, 0x0027, 0x1392, 618000, 0x1000 },
-    { -1, "", "", 0, 0, 0, 0, 0 }
+    { 0, "8", "8madrid", 0x22d4, 0x0027, 0x0f3d, 618000, 0x100, "http://static.programacion-tdt.com/imgAPP/8madrid.min.png" },
+    { 1, "13", "13tv Madrid", 0x22d4, 0x0027, 0x0f3e, 618000, 0x200, "http://static.programacion-tdt.com/imgAPP/13_TV.min.png" },
+    { 2, "800", "ASTROCANAL SHOP", 0x22d4, 0x0027, 0x0f43, 577000, 0x700, "" },
+    { 3, "801", "Kiss TV", 0x22d4, 0x0027, 0x0f40, 618000, 0x401, "http://www.ranklogos.com/wp-content/uploads/2012/04/kiss-tv-logo-1.jpg" },
+    { 4, "802", "INTER TV", 0x22d4, 0x0027, 0x0f3f, 618000, 0x300, "" },
+    { 5, "803", "MGustaTV", 0x22d4, 0x0027, 0x1392, 618000, 0x1000, "" },
+    { -1, "", "", 0, 0, 0, 0, 0, "" }
 };
 
 static void
@@ -450,6 +451,7 @@ BroadcastDemo_GetChannelList()
         ci.onid = lineup[i].onid;
         ci.tsid = lineup[i].tsid;
         ci.sid = lineup[i].sid;
+        ci.logoUrl = lineup[i].logoUrl;
         civ.push_back(ci);
     }
     ALOGE("%s: Exit", __FUNCTION__);

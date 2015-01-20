@@ -28,6 +28,16 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.Queue;
+import java.util.LinkedList;
+
+import java.net.URL;
+import java.net.URLConnection;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+
+import java.io.InputStream;
+import java.io.OutputStream;
 
 import org.xmlpull.v1.XmlPullParserException;
 
@@ -53,6 +63,7 @@ import android.os.IBinder;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.Surface;
@@ -151,6 +162,120 @@ public class TunerService extends TvInputService {
             }
         }
     }
+
+    private class LogoJob {
+        public String urlString;
+        public Uri contentUri;
+        public LogoJob(String s, Uri u) {
+            urlString = s;
+            contentUri = u;
+        }
+    }
+
+    private class LogoLoader {
+        private Thread thread;
+        private LogoLoaderTask task;
+
+        private final Lock lock = new ReentrantLock();
+        private final Condition syncRequired = lock.newCondition();
+
+        private Queue<LogoJob> queue=new LinkedList<LogoJob>();
+
+        private void start() {
+            if (task == null) {
+            }
+        }
+
+        public void add(LogoJob j) {
+            lock.lock();
+            try {
+                queue.offer(j);
+                start();
+                syncRequired.signal();
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        public void reset() {
+            lock.lock();
+            try {
+                queue.clear();
+                syncRequired.signal();
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        private class LogoLoaderTask implements Runnable {
+
+            void insertStream(Uri contentUri, InputStream is) {
+                if (DEBUG) {
+                    Log.d(TAG, "Inserting to " + contentUri);
+                }
+                try (OutputStream os = getContentResolver().openOutputStream(contentUri)) {
+                    copy(is, os);
+                } catch (IOException ioe) {
+                    Log.e(TAG, "Failed to write to " + contentUri, ioe);
+                }
+            }
+
+            void copy(InputStream is, OutputStream os) throws IOException {
+                byte[] buffer = new byte[1024];
+                int len;
+                while ((len = is.read(buffer)) != -1) {
+                    os.write(buffer, 0, len);
+                }
+            }
+
+            private void download(LogoJob job) {
+                try {
+                    URL url = new URL(job.urlString); 
+                    HttpURLConnection urlConnection = (HttpURLConnection)url.openConnection(); 
+                    insertStream(job.contentUri, urlConnection.getInputStream());
+                }
+                catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            @Override
+            public void run() {
+                SystemClock.sleep(30000);
+                lock.lock(); 
+                while (true) {
+                    LogoJob job = queue.poll();
+                    if (job != null) {
+                        lock.unlock();
+                        // process download
+                        Log.d(TAG, "LogoLoaderTask::processing " + job.urlString + " to " + job.contentUri.toString());
+                        download(job); 
+                        lock.lock();
+                    }
+                    else {
+                        Log.d(TAG, "LogoLoaderTask::waiting");
+                        try {
+                            syncRequired.await(); 
+                        } catch (InterruptedException e) {
+                            Log.d(TAG, "LogoLoaderTask::exiting");
+                            return;
+                        }
+                    }
+                }
+            }
+
+            LogoLoaderTask() {
+            }
+        }
+
+        LogoLoader() {
+            task = new LogoLoaderTask();
+            thread = new Thread(task);
+            thread.start();
+        }
+    }
+
+    private LogoLoader logoLoader;
 
     private class DatabaseSync {
         private Thread thread;
@@ -527,6 +652,7 @@ public class TunerService extends TvInputService {
         Log.d(TAG, "kicking off sync task");
         dbsync = new DatabaseSync(info.getId());
         dbsync.setChannelListChanged();
+        logoLoader = new LogoLoader();
         return info;
     }
 
@@ -548,7 +674,7 @@ public class TunerService extends TvInputService {
         return inputId;
     }
 
-    public static void populateChannels(Context context, String inputId, ChannelInfo channels[]) 
+    public void populateChannels(Context context, String inputId, ChannelInfo channels[]) 
     {
         ContentValues channel_values = new ContentValues();
 
@@ -569,6 +695,10 @@ public class TunerService extends TvInputService {
 
             Uri channelUri = context.getContentResolver().insert(TvContract.Channels.CONTENT_URI, channel_values);
 	    Log.d(TAG, "populateChannels: " + channel.number + " " + channel.name + " " + channelUri);
+
+            if (!channel.logoUrl.equals("")) {
+                logoLoader.add(new LogoJob(channel.logoUrl, TvContract.buildChannelLogoUri(channelUri)));
+            }
 
             long channelId = ContentUris.parseId(channelUri);
             Log.d(TAG, "channelId = " +channelId);

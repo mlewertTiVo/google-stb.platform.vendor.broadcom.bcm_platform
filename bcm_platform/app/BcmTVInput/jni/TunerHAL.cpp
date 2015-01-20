@@ -296,6 +296,17 @@ void BcmSidebandBinder::notify(int msg, struct hwc_notification_info &ntfy)
       cb(cb_data, msg, ntfy);
 }
 
+#define LOCKHAL() { \
+ALOGE("%s: LOCKHAL", __FUNCTION__); \
+BKNI_AcquireMutex(g_pTD->mutex); \
+}
+
+#define UNLOCKHAL() { \
+ALOGE("%s: UNLOCKHAL", __FUNCTION__); \
+BKNI_ReleaseMutex(g_pTD->mutex); \
+}
+
+
 static void TunerHALSidebandBinderNotify(int cb_data, int msg, struct hwc_notification_info &ntfy)
 {
     struct bcmsideband_ctx *ctx = (struct bcmsideband_ctx *)cb_data;
@@ -318,10 +329,14 @@ static void TunerHALSidebandBinderNotify(int cb_data, int msg, struct hwc_notifi
              clip.x, clip.y, clip.w, clip.h,
              ntfy.display_width, ntfy.display_height, ntfy.zorder);
 
+       if (position.x > 0 && position.y == 0 && position.x + position.w == ntfy.display_width) {
+           ALOGE("%s: applying workaround", __FUNCTION__);
+           position.w -= position.x;
+       }
        if (g_pTD->driver.SetGeometry) {
-           BKNI_AcquireMutex(g_pTD->mutex);
-           g_pTD->driver.SetGeometry(position, clip, ntfy.display_width, ntfy.display_height, ntfy.zorder, true);
-           BKNI_ReleaseMutex(g_pTD->mutex);
+           LOCKHAL();
+           g_pTD->driver.SetGeometry(position, clip, ntfy.display_width, ntfy.display_height, ntfy.zorder, true); 
+           UNLOCKHAL();
        }
     }
     break;
@@ -388,9 +403,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jcla
         TV_LOG("%s: Tune call is null", __FUNCTION__);
     }
     else {
-        BKNI_AcquireMutex(g_pTD->mutex);
+        LOCKHAL();
         rv = (*g_pTD->driver.Tune)(String8(s8id)); 
-        BKNI_ReleaseMutex(g_pTD->mutex);
+        UNLOCKHAL();
     }
 
     env->ReleaseStringUTFChars(id, s8id);   
@@ -408,6 +423,14 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jcla
 #define floatField(name) simpleField(name, F)
 #define stringField(name) simpleField(name, Ljava/lang/String;)
 
+static void
+setStringField(JNIEnv *env, jobject o, jfieldID id, const String8 &s8)
+{
+    jstring js = env->NewStringUTF(s8.string());
+    env->SetObjectField(o, id, js);
+    env->DeleteLocalRef(js);
+}
+
 JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList(JNIEnv *env, jclass thiz)
 {
     TV_LOG("%s: Fetching channel list!!", __FUNCTION__);
@@ -419,9 +442,9 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
         return 0;
     }
 
-    BKNI_AcquireMutex(g_pTD->mutex);
+    LOCKHAL();
     civ = (*g_pTD->driver.GetChannelList)(); 
-    BKNI_ReleaseMutex(g_pTD->mutex);
+    UNLOCKHAL();
 
     jclass cls = env->FindClass("com/broadcom/tvinput/ChannelInfo"); 
     if (cls == 0) {
@@ -456,20 +479,29 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
     if(sidID == 0){
         ALOGE("%s: could not get sid ID", __FUNCTION__);
     }
+
+    stringField(logoUrl)
+
     jobjectArray rv = env->NewObjectArray(civ.size(), cls, NULL);
     if (rv == 0) {
         ALOGE("%s: could not create array", __FUNCTION__);
         return 0;
     }
     for (unsigned i = 0; i < civ.size(); i++) {
-        jobject o = env->NewObject(cls, cID); 
-        env->SetObjectField(o, idID, env->NewStringUTF(civ[i].id.string()));
+        jobject o = env->NewObject(cls, cID);
+
+        setStringField(env, o, idID, civ[i].id);
+
         env->SetIntField(o, onidID, civ[i].onid);
         env->SetIntField(o, tsidID, civ[i].tsid);
         env->SetIntField(o, sidID, civ[i].sid);
-        env->SetObjectField(o, nameID, env->NewStringUTF(civ[i].name.string()));
-        env->SetObjectField(o, numberID, env->NewStringUTF(civ[i].number.string()));
+
+        setStringField(env, o, nameID, civ[i].name);
+        setStringField(env, o, numberID, civ[i].number);
+        setStringField(env, o, logoUrlID, civ[i].logoUrl);
+
         env->SetObjectArrayElement(rv, i, o);
+        env->DeleteLocalRef(o);
     }
     ALOGE("%s: ok so far", __FUNCTION__);
     return rv;
@@ -489,9 +521,9 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramList(JNIEnv *env, jclass thiz, jstr
 
     const char *s8id = env->GetStringUTFChars(id, NULL);
 
-    BKNI_AcquireMutex(g_pTD->mutex);
+    LOCKHAL();
     piv = (*g_pTD->driver.GetProgramList)(String8(s8id));
-    BKNI_ReleaseMutex(g_pTD->mutex);
+    UNLOCKHAL();
 
     env->ReleaseStringUTFChars(id, s8id);
      
@@ -531,13 +563,14 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramList(JNIEnv *env, jclass thiz, jstr
     jobjectArray rv = env->NewObjectArray(piv.size(), cls, NULL);
     for (unsigned i = 0; i < piv.size(); i++) {
         jobject o = env->NewObject(cls, cID); 
-        env->SetObjectField(o, idID, env->NewStringUTF(piv[i].id.string()));
-        env->SetObjectField(o, channelIdID, env->NewStringUTF(piv[i].channel_id.string()));
-        env->SetObjectField(o, titleID, env->NewStringUTF(piv[i].title.string()));
-        env->SetObjectField(o, descID, env->NewStringUTF(piv[i].short_description.string()));
+        setStringField(env, o, idID, piv[i].id);
+        setStringField(env, o, channelIdID, piv[i].channel_id);
+        setStringField(env, o, titleID, piv[i].title);
+        setStringField(env, o, descID, piv[i].short_description);
         env->SetLongField(o, startID, piv[i].start_time_utc_millis);
         env->SetLongField(o, endID, piv[i].end_time_utc_millis);
         env->SetObjectArrayElement(rv, i, o);
+        env->DeleteLocalRef(o);
     }
     ALOGE("%s: ok so far", __FUNCTION__);
     return rv;
@@ -556,9 +589,9 @@ Java_com_broadcom_tvinput_TunerHAL_getScanInfo(JNIEnv *env, jclass thiz)
         si.valid = false;
     }
     else {
-        BKNI_AcquireMutex(g_pTD->mutex);
+        LOCKHAL();
         si = (*g_pTD->driver.GetScanInfo)();
-        BKNI_ReleaseMutex(g_pTD->mutex);
+        UNLOCKHAL();
     }
      
     jclass cls = env->FindClass("com/broadcom/tvinput/ScanInfo"); 
@@ -605,9 +638,9 @@ JNIEXPORT jlong JNICALL Java_com_broadcom_tvinput_TunerHAL_getUtcTime(JNIEnv *en
     }
     else {
         jlong t;
-        BKNI_AcquireMutex(g_pTD->mutex);
+        LOCKHAL();
         t = (*g_pTD->driver.GetUtcTime)();
-        BKNI_ReleaseMutex(g_pTD->mutex);
+        UNLOCKHAL();
         return t;
     }
 }
@@ -622,9 +655,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv *env, jcla
         TV_LOG("%s: Stop call is null", __FUNCTION__);
     }
     else {
-        BKNI_AcquireMutex(g_pTD->mutex);
+        LOCKHAL();
         rv = (*g_pTD->driver.Stop)();
-        BKNI_ReleaseMutex(g_pTD->mutex);
+        UNLOCKHAL();
     }
 
     return rv;
@@ -638,9 +671,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startBlindScan(JNIEnv 
         TV_LOG("%s: StartBlindScan call is null", __FUNCTION__);
     }
     else {
-        BKNI_AcquireMutex(g_pTD->mutex);
+        LOCKHAL();
         rv = (*g_pTD->driver.StartBlindScan)();
-        BKNI_ReleaseMutex(g_pTD->mutex);
+        UNLOCKHAL();
     }
 
     return rv;
@@ -654,9 +687,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stopScan(JNIEnv *env, 
         TV_LOG("%s: StopScan call is null", __FUNCTION__);
     }
     else {
-        BKNI_AcquireMutex(g_pTD->mutex);
+        LOCKHAL();
         rv = (*g_pTD->driver.StopScan)();
-        BKNI_ReleaseMutex(g_pTD->mutex);
+        UNLOCKHAL();
     }
 
     return rv;
@@ -672,9 +705,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_release(JNIEnv *env, j
         TV_LOG("%s: Release call is null", __FUNCTION__);
     }
     else {
-        BKNI_AcquireMutex(g_pTD->mutex);
+        LOCKHAL();
         rv = (*g_pTD->driver.Release)();
-        BKNI_ReleaseMutex(g_pTD->mutex);
+        UNLOCKHAL();
     }
 
     return rv;
@@ -706,9 +739,9 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getVideoTrackI
         return 0;
     }
 
-    BKNI_AcquireMutex(g_pTD->mutex);
+    LOCKHAL();
     vtiv = (*g_pTD->driver.GetVideoTrackInfoList)(); 
-    BKNI_ReleaseMutex(g_pTD->mutex);
+    UNLOCKHAL();
 
     jclass cls = env->FindClass("com/broadcom/tvinput/VideoTrackInfo"); 
     if (cls == 0) {
@@ -728,11 +761,12 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getVideoTrackI
     jobjectArray rv = env->NewObjectArray(vtiv.size(), cls, NULL);
     for (unsigned i = 0; i < vtiv.size(); i++) {
         jobject o = env->NewObject(cls, cID); 
-        env->SetObjectField(o, idID, env->NewStringUTF(vtiv[i].id.string()));
+        setStringField(env, o, idID, vtiv[i].id);
         env->SetShortField(o, squarePixelWidthID, vtiv[i].squarePixelWidth);
         env->SetShortField(o, squarePixelHeightID, vtiv[i].squarePixelHeight);
         env->SetFloatField(o, frameRateID, vtiv[i].frameRate);
         env->SetObjectArrayElement(rv, i, o);
+        env->DeleteLocalRef(o);
     }
     ALOGE("%s: ok so far", __FUNCTION__);
     return rv;
