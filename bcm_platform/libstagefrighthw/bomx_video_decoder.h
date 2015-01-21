@@ -332,7 +332,7 @@ protected:
     void InvalidateDecodedFrames();
     void PollDecodedFrames();
     void ReturnDecodedFrames();
-    void GraphicsCheckpoint();
+    bool GraphicsCheckpoint();
     void CopySurfaceToClient(const BOMX_VideoDecoderOutputBufferInfo *pInfo);
     BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(private_handle_t *pPrivateHandle);
     BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(unsigned serialNumber);

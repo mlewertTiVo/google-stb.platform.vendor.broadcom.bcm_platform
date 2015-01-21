@@ -3700,6 +3700,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 OMX_BUFFERHEADERTYPE *pHeader = pOmxBuffer->GetHeader();
                 bool prevEosPending = m_eosPending;
                 bool prevEosDelivered = m_eosDelivered;
+                bool destripedSuccess = true;
                 pHeader->nOffset = 0;
                 if ( !m_pBufferTracker->Remove(pBuffer->frameStatus.pts, pHeader) )
                 {
@@ -3838,15 +3839,26 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 if ( errCode )
                                 {
                                     (void)BOMX_BERR_TRACE(errCode);
+                                    destripedSuccess = false;
                                 }
 #endif
                             }
                             pHeader->nFilledLen = ComputeBufferSize(m_pVideoPorts[1]->GetDefinition()->format.video.nStride, m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight);
                             // Wait for the blit to complete before delivering in case CPU will access it quickly
-                            GraphicsCheckpoint();
-                            if ( pInfo->typeInfo.standard.pClientMemory )
+                            if ( destripedSuccess )
                             {
-                                CopySurfaceToClient(pInfo);
+                                if ( GraphicsCheckpoint() )
+                                {
+                                    if ( pInfo->typeInfo.standard.pClientMemory )
+                                    {
+                                        CopySurfaceToClient(pInfo);
+                                    }
+                                }
+                                else
+                                {
+                                    ALOGE("Error destriping to buffer");
+                                    destripedSuccess = false;
+                                }
                             }
                         }
                         break;
@@ -3912,6 +3924,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                         {
                                             ALOGE("Unable to destripe to RGB - %d", res);
                                             (void)BOMX_ERR_TRACE(res);
+                                            destripedSuccess = false;
                                         }
 
                                         private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
@@ -3936,8 +3949,17 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     ReturnPortBuffer(m_pVideoPorts[1], pOmxBuffer);
                     BOMX_ASSERT(queueDepthBefore == (m_pVideoPorts[1]->QueueDepth()+1));
                 }
-                // Advance to next frame
-                pBuffer = BLST_Q_NEXT(pBuffer, node);
+                if ( destripedSuccess )
+                {
+                    // Advance to next frame
+                    pBuffer = BLST_Q_NEXT(pBuffer, node);
+                }
+                else
+                {
+                    // Bail out early to let the decoded frame to be returned and try destriping
+                    // the rest of the frames again on the next timer
+                    pBuffer = NULL;
+                }
             }
             else
             {
@@ -4087,19 +4109,23 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
     // Do not try to check for more frames here, that will be done by the component thread based on the event or timer
 }
 
-void BOMX_VideoDecoder::GraphicsCheckpoint()
+bool BOMX_VideoDecoder::GraphicsCheckpoint()
 {
     NEXUS_Error errCode;
+    bool ret = true;
 
     errCode = NEXUS_Graphics2D_Checkpoint(m_hGraphics2d, NULL);
     if ( errCode == NEXUS_GRAPHICS2D_QUEUED )
     {
-        errCode = B_Event_Wait(m_hCheckpointEvent, 1000);
+        errCode = B_Event_Wait(m_hCheckpointEvent, 700);
         if ( errCode )
         {
             BOMX_ERR(("!!! ERROR: Timeout waiting for graphics checkpoint !!!"));
+            ret = false;
         }
     }
+
+    return ret;
 }
 
 void BOMX_VideoDecoder::CopySurfaceToClient(const BOMX_VideoDecoderOutputBufferInfo *pInfo)
@@ -4480,11 +4506,17 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToRGB(SHARED_DATA *pSharedData, NEXUS_S
     }
 
     // Wait for completion
-    GraphicsCheckpoint();
+    if ( !GraphicsCheckpoint() )
+    {
+        ALOGE("Error destriping surface to RGB");
+        rc = OMX_ErrorUndefined;
+        goto err_gfx;
+    }
 
     // Success
     rc = OMX_ErrorNone;
 
+err_gfx:
 err_destripe:
 err_surface_lock:
     NEXUS_Surface_Destroy(hTargetSurface);
