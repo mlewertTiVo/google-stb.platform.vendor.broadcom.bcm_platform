@@ -39,8 +39,9 @@ include vendor/broadcom/bcm_platform/pmlibservice/Android.mk
 include vendor/broadcom/bcm_platform/libpower/Android.mk
 endif
 
-include vendor/broadcom/bcm_platform/tools/cmatool/Android.mk
 include vendor/broadcom/bcm_platform/tools/calcfb/Android.mk
+include vendor/broadcom/bcm_platform/tools/clipping/Android.mk
+include vendor/broadcom/bcm_platform/tools/cmatool/Android.mk
 include vendor/broadcom/bcm_platform/tools/lmkstats/Android.mk
 include vendor/broadcom/bcm_platform/tools/prdy_pes_playback/Android.mk
 
