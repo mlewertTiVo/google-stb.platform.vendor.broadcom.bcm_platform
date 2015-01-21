@@ -73,6 +73,14 @@ on post-fs-data
    mkdir /data/nexus 0775 root system
    mkdir /data/misc/nexus 0755 root system
 
+   # *** sample only.
+   #
+   #    seed the nx_key with some password to allow
+   #    server/client authentication, note the syntax
+   #    of the key-file content: 'trusted:<some-password>'
+   #
+   write /data/misc/nexus/nx_key trusted:test-passwd
+
    class_start pre_core
 
 on property:hw.nexus.platforminit=on
@@ -110,3 +118,4 @@ service hwcbinder /system/bin/hwcbinder
    group system media
    critical
    oneshot
+

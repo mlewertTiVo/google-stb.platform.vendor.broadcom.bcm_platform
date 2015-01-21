@@ -161,20 +161,20 @@ NEXUS_Error NexusNxClient::clientJoin()
 
         sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
         key = fopen(value, "r");
+        joinSettings.mode = NEXUS_ClientMode_eUntrusted;
         if (key == NULL) {
            ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, value, errno, strerror(errno));
-           joinSettings.mode = NEXUS_ClientMode_eUntrusted;
         } else {
            memset(value, 0, sizeof(value));
            fread(value, PROPERTY_VALUE_MAX, 1, key);
-           joinSettings.mode = NEXUS_ClientMode_eProtected;
-           joinSettings.certificate.length = strlen(value);
-           memcpy(joinSettings.certificate.data, value, joinSettings.certificate.length);
+           if (strstr(value, "trusted:") == value) {
+              const char *password = &value[8];
+              joinSettings.mode = NEXUS_ClientMode_eProtected;
+              joinSettings.certificate.length = strlen(password);
+              memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
+           }
            fclose(key);
         }
-
-        LOGI("%s: \"%s\"; joins %s mode", __FUNCTION__, joinSettings.name,
-             (joinSettings.mode == NEXUS_ClientMode_eProtected) ? "PROTECTED" : "UNTRUSTED");
 
         do {
             rc = NxClient_Join(&joinSettings);
@@ -183,6 +183,10 @@ NEXUS_Error NexusNxClient::clientJoin()
                 usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
             }
         } while (rc != NEXUS_SUCCESS);
+
+        LOGI("%s: \"%s\"; joins %s mode", __FUNCTION__, joinSettings.name,
+             (joinSettings.mode == NEXUS_ClientMode_eProtected) ? "PROTECTED" : "UNTRUSTED");
+
     }
 
     if (rc == NEXUS_SUCCESS) {

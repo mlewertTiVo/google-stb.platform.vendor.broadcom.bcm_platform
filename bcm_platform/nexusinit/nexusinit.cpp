@@ -190,21 +190,10 @@ void startNxServer(void)
     struct timeval t;
     FILE *key = NULL;
 
-    sprintf(cmdRunNxServer, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
-    key = fopen(cmdRunNxServer, "w");
+    sprintf(nx_key, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
+    key = fopen(nx_key, "r");
     if (key == NULL) {
-       ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, cmdRunNxServer, errno, strerror(errno));
-    } else {
-       chmod(cmdRunNxServer, 0644 );
-       memset(nx_key, 0, sizeof(nx_key));
-       // TODO: provide something more 'random', use nexus_random_number.h which is built into the android security library,
-       //       but not exposed to user space at this time (sigh).
-       //
-       gettimeofday(&t, NULL);
-       snprintf(nx_key, PROPERTY_VALUE_MAX, "%llu", t.tv_sec + (1.e-6) * t.tv_usec);
-       //
-       // TODO.
-       fwrite(nx_key, PROPERTY_VALUE_MAX, 1, key);
+       ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, nx_key, errno, strerror(errno));
     }
 
     memset(cmdRunNxServer, 0, sizeof(cmdRunNxServer));
@@ -244,13 +233,11 @@ void startNxServer(void)
     }
 
     if (key) {
-       ALOGI("NXSERVER CMD (%d): %s -trusted ****", strlen(cmdRunNxServer), cmdRunNxServer);
-       snprintf(cmdRunNxServer, sizeof(cmdRunNxServer), "%s-trusted %s ", cmdRunNxServer, nx_key);
+       snprintf(cmdRunNxServer, sizeof(cmdRunNxServer), "%s-password %s ", cmdRunNxServer, nx_key);
        fclose(key);
-    } else {
-       ALOGI("NXSERVER CMD (%d): %s", strlen(cmdRunNxServer), cmdRunNxServer);
     }
 
+    ALOGI("NXSERVER CMD (%d): %s", strlen(cmdRunNxServer), cmdRunNxServer);
     strcat(cmdRunNxServer, "&");
     system(cmdRunNxServer);
 }
@@ -366,6 +353,7 @@ int main(void)
 
         sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
         key = fopen(value, "r");
+
         if (key == NULL) {
            ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, value, errno, strerror(errno));
         } else {
@@ -378,16 +366,15 @@ int main(void)
         snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "nexusinit");
         joinSettings.timeout = 60;
 
+        joinSettings.mode = NEXUS_ClientMode_eUntrusted;
         if (strlen(value)) {
-           joinSettings.mode = NEXUS_ClientMode_eProtected;
-           joinSettings.certificate.length = strlen(value);
-           memcpy(joinSettings.certificate.data, value, joinSettings.certificate.length);
-        } else {
-           joinSettings.mode = NEXUS_ClientMode_eUntrusted;
+           if (strstr(value, "trusted:") == value) {
+              const char *password = &value[8];
+              joinSettings.mode = NEXUS_ClientMode_eProtected;
+              joinSettings.certificate.length = strlen(password);
+              memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
+           }
         }
-
-        LOGI("%s: \"%s\"; joins %s mode", __FUNCTION__, joinSettings.name,
-             (joinSettings.mode == NEXUS_ClientMode_eProtected) ? "PROTECTED" : "UNTRUSTED");
 
         /* ... wait for server to be ready. */
         if (NxClient_Join(&joinSettings) != NEXUS_SUCCESS)
@@ -395,6 +382,8 @@ int main(void)
             LOGE("nexusinit: FATAL: join failed, is server running?");
             _exit(1);
         }
+        LOGI("%s: \"%s\"; joins %s mode", __FUNCTION__, joinSettings.name,
+             (joinSettings.mode == NEXUS_ClientMode_eProtected) ? "PROTECTED" : "UNTRUSTED");
         /* okay, we are ready... */
         NxClient_Uninit();
 

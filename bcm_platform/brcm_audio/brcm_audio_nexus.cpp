@@ -160,14 +160,18 @@ static NEXUS_Error clientJoin(const char *name)
 
     sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
     key = fopen(value, "r");
+    joinSettings.mode = NEXUS_ClientMode_eUntrusted;
     if (key == NULL) {
        ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, value, errno, strerror(errno));
     } else {
        memset(value, 0, sizeof(value));
        fread(value, PROPERTY_VALUE_MAX, 1, key);
-       joinSettings.mode = NEXUS_ClientMode_eProtected;
-       joinSettings.certificate.length = strlen(value);
-       memcpy(joinSettings.certificate.data, value, joinSettings.certificate.length);
+       if (strstr(value, "trusted:") == value) {
+          const char *password = &value[8];
+          joinSettings.mode = NEXUS_ClientMode_eProtected;
+          joinSettings.certificate.length = strlen(password);
+          memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
+       }
        fclose(key);
     }
 
