@@ -5,7 +5,7 @@
 /dev/mem                  0770   root       root
 
 # BT USB device nodes
-/dev/btusb0               0660   bluetooth  bluetooth
+/dev/btusb0               0660   bluetooth  net_bt_stack
 
 /dev/sw_sync              0660   system     system
 
