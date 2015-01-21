@@ -2629,16 +2629,12 @@ static void hwc_prepare_gpx_layer(
         ctx->gpx_cli[layer_id].width                             = cur_width;
         ctx->gpx_cli[layer_id].height                            = cur_height;
         ctx->gpx_cli[layer_id].composition.visible               = true;
-
-        if (cur_height && cur_width) {
-           int16_t x = ctx->display_width * (cur_width - clip_position.width) / cur_width;
-           int16_t y = ctx->display_height * (cur_height - clip_position.height) / cur_height;
-
-           ctx->gpx_cli[layer_id].composition.clipRect.x         = x;
-           ctx->gpx_cli[layer_id].composition.clipRect.y         = y;
-           ctx->gpx_cli[layer_id].composition.clipRect.width     = ctx->display_width - x;
-           ctx->gpx_cli[layer_id].composition.clipRect.height    = ctx->display_height - y;
-        }
+        ctx->gpx_cli[layer_id].composition.clipRect.x            = clip_position.x;
+        ctx->gpx_cli[layer_id].composition.clipRect.y            = clip_position.y;
+        ctx->gpx_cli[layer_id].composition.clipRect.width        = clip_position.width;
+        ctx->gpx_cli[layer_id].composition.clipRect.height       = clip_position.height;
+        ctx->gpx_cli[layer_id].composition.clipBase.width        = cur_width;
+        ctx->gpx_cli[layer_id].composition.clipBase.height       = cur_height;
 
         rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[layer_id].ncci.sccid, &ctx->gpx_cli[layer_id].composition);
         if (rc != NEXUS_SUCCESS) {
