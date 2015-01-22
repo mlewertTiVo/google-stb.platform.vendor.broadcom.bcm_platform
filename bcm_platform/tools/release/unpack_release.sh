@@ -40,11 +40,13 @@ tar -xvf $1 --directory $DST_DIR
 # Apply aosp patches, use 'git am' if possible to retain history
 cd $DST_DIR
 while read line; do
-  if [ -d $line/.git ]; then
-    git -C $line am $DST_DIR/$TMP_DIR/$line/*
+  cd $line
+  if [ -d .git ]; then
+    git am $DST_DIR/$TMP_DIR/$line/*
   else
-    git -C $line apply $DST_DIR/$TMP_DIR/$line/*
+    git apply $DST_DIR/$TMP_DIR/$line/*
   fi
+  cd $DST_DIR
 done < $DST_DIR/$AOSP_LIST
 
 # Copy version file

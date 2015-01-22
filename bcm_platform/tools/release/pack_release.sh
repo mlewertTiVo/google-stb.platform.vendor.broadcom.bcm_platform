@@ -50,7 +50,10 @@ extract_patches_from_aosp()
   AOSP_PATH=$(extract_path_from_xml name $1)
   echo $AOSP_PATH >> $AOSP_LIST
   mkdir -p $TOP_DIR/$TMP_DIR/$AOSP_PATH
-  git -C $AOSP_PATH format-patch $2 -o $TOP_DIR/$TMP_DIR/$AOSP_PATH
+  CURR_DIR=$(pwd)
+  cd $AOSP_PATH
+  git format-patch $2 -o $TOP_DIR/$TMP_DIR/$AOSP_PATH
+  cd $CURR_DIR
 }
 
 if [ -d $TMP_DIR ]; then
@@ -69,7 +72,9 @@ if [ -f $TOP_DIR/$BCG_XML ]; then
   # bolt, save its version for unpack
   extract_path_from_xml groups bolt >> $BOLT_DIR
   cat $BOLT_DIR >> $WHITE_LIST
-  echo -n "$(git -C $(cat $BOLT_DIR) describe --dirty || git -C $(cat $BOLT_DIR) rev-parse --short HEAD)" >> $BOLT_VER
+  cd $(cat $BOLT_DIR)
+  echo -n "$(git describe --dirty || git rev-parse --short HEAD)" >> $TOP_DIR/$BOLT_VER
+  cd $TOP_DIR
 
   # kernel
   extract_path_from_xml groups kernel >> $WHITE_LIST
