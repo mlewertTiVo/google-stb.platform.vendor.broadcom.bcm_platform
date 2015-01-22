@@ -4117,7 +4117,7 @@ bool BOMX_VideoDecoder::GraphicsCheckpoint()
     errCode = NEXUS_Graphics2D_Checkpoint(m_hGraphics2d, NULL);
     if ( errCode == NEXUS_GRAPHICS2D_QUEUED )
     {
-        errCode = B_Event_Wait(m_hCheckpointEvent, 700);
+        errCode = B_Event_Wait(m_hCheckpointEvent, 150);
         if ( errCode )
         {
             BOMX_ERR(("!!! ERROR: Timeout waiting for graphics checkpoint !!!"));
