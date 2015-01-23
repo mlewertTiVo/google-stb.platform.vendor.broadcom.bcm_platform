@@ -278,6 +278,7 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
                                    int fd,
                                    int width,
                                    int height,
+                                   int bpp,
                                    int format)
 {
    BEGL_PixmapInfo bufferRequirements;
@@ -316,7 +317,16 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
       if (gralloc_v3d_get_nexus_client_context() == NULL) {
          LOGE("%s: no valid client context...", __FUNCTION__);
       }
-      dyn_BEGLint_BufferGetRequirements(&bufferRequirements, &bufferConstrainedRequirements);
+
+      // VC4 requires memory with a set stride etc
+      if (dyn_BEGLint_BufferGetRequirements)
+         dyn_BEGLint_BufferGetRequirements(&bufferRequirements, &bufferConstrainedRequirements);
+      else {
+         // VC5, can use any stride, so just calculate the values (dont need to call the function)
+         // push into VC4 return header to simplify the build/code paths
+         bufferConstrainedRequirements.pitchBytes = width * bpp;
+         bufferConstrainedRequirements.totalByteSize = height * bufferConstrainedRequirements.pitchBytes;
+      }
 
       // nx_ashmem always aligns to 4k.  Add an additional 4k block at the start for shared memory.
       // This needs reference counting in the same way as the regular blocks
@@ -466,7 +476,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    if (format != HAL_PIXEL_FORMAT_YV12) {
       // standard graphic buffer.
       pSharedData->planes[DEFAULT_PLANE].physAddr =
-         allocGLSuitableBuffer(grallocPrivateHandle, grallocPrivateHandle->fd, w, h, format);
+         allocGLSuitableBuffer(grallocPrivateHandle, grallocPrivateHandle->fd, w, h, bpp, format);
       pSharedData->planes[DEFAULT_PLANE].allocSize = grallocPrivateHandle->oglSize;
       pSharedData->planes[DEFAULT_PLANE].stride = grallocPrivateHandle->oglStride;
 
@@ -493,7 +503,6 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       if (ret >= 0) {
          pSharedData->planes[DEFAULT_PLANE].physAddr =
              (NEXUS_Addr)ioctl(fd, NX_ASHMEM_GETMEM);
-
       }
 
       // V3D does not support 4K.
@@ -522,7 +531,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    if (needs_rgb) {
       // Create a RGB plane for GL texture as Khronos does not support YUV texturing.
       pSharedData->planes[GL_PLANE].physAddr =
-         allocGLSuitableBuffer(grallocPrivateHandle, grallocPrivateHandle->fd4, w, h, HAL_PIXEL_FORMAT_RGBA_8888);
+         allocGLSuitableBuffer(grallocPrivateHandle, grallocPrivateHandle->fd4, w, h, 4, HAL_PIXEL_FORMAT_RGBA_8888);
       pSharedData->planes[GL_PLANE].width = w;
       pSharedData->planes[GL_PLANE].height = h;
       pSharedData->planes[GL_PLANE].bpp = 4;
