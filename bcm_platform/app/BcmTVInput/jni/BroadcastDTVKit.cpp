@@ -717,7 +717,13 @@ BroadcastDTVKit_GetUtcTime()
 int
 BroadcastDTVKit_SetGeometry(BroadcastRect position, BroadcastRect clipRect, jshort gfxWidth, jshort gfxHeight, jshort zorder, jboolean visible)
 {
-    ACTL_SetVideoWindow(position.x, position.y, position.w, position.h);
+    if ((position.y == 0 && position.h == gfxHeight) || (position.x == 0 && position.w == gfxWidth)) {
+        // fullscreen - let DTVKit choose the window - hopefully it gets the same answer
+        ACTL_SetVideoWindow(0, 0, 0, 0); 
+    }
+    else {
+        ACTL_SetVideoWindow(position.x, position.y, position.w, position.h);
+    }
     return 0;
 }
 
