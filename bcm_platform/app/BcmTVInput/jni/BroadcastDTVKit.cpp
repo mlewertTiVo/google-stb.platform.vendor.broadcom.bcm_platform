@@ -92,12 +92,10 @@ scannerUpdateUnderLock(bool stop)
         return false;
     }
 
-    jbyte lastNotifiedProgress = pSelf->scanner.infoValid ? pSelf->scanner.progress : 101;
-
     pSelf->scanner.progress = ACTL_GetSearchProgress();
     pSelf->scanner.infoValid = true;
 
-    if (!stop && pSelf->scanner.progress != lastNotifiedProgress) {
+    if (!stop) {
         onScanProgress(pSelf->scanner.progress);
     }
 
@@ -676,7 +674,6 @@ BroadcastDTVKit_GetScanInfo()
             scanInfo.radioChannels = newRadio;
             scanInfo.dataChannels = newData;
         }
-#if 0
         {
             U8BIT path = ACTL_GetServiceSearchPath();
             if (path != INVALID_RES_ID)
@@ -689,7 +686,6 @@ BroadcastDTVKit_GetScanInfo()
                 }
             }
         }
-#endif
 #if 0
         scanInfo.setSatelliteId(pSelf->scanner.artemisInfo.Satellite);
         scanInfo.setSatellites(pSelf->scanner.artemisInfo.NoOfSatellites);
