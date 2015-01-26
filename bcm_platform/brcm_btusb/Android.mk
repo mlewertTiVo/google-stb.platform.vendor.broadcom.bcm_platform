@@ -28,7 +28,7 @@ endif
 
 ifeq ($(BROADCOM_WIFI_CHIPSET),43570a2)
 include $(CLEAR_VARS)
-LOCAL_MODULE := firmware/BCM43569A2_001.003.004.0024.0000_Generic_USB_40MHz_fcbga_BU_WakeOn_BLE_dis_lowpwr_Freebox.hcd
+LOCAL_MODULE := firmware/BCM43569A2_001.003.004.0026.0000_Generic_USB_40MHz_fcbga_BU_WakeOn_BLE_dis_lowpwr_Freebox.hcd
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_CLASS := ETC
 LOCAL_MODULE_PATH := $(TARGET_OUT)/vendor/broadcom/btusb
