@@ -79,13 +79,6 @@
 #define UINT32_C(x)  (x ## U)
 #endif
 
-/* We don't need to perform client reference counting for URSR14.1 or later */
-#if defined(NEXUS_PLATFORM_VERSION_NUMBER) && defined(NEXUS_PLATFORM_VERSION) && (NEXUS_PLATFORM_VERSION_NUMBER < NEXUS_PLATFORM_VERSION(14,1)) || \
-   !defined(NEXUS_PLATFORM_VERSION_NUMBER) || !defined(NEXUS_PLATFORM_VERSION)
-#define MAX_CLIENTS 32
-#define MAX_OBJECTS MAX_CLIENTS
-#endif
-
 /* The main heap normally has full access */
 #ifdef NEXUS_PLATFORM_DEFAULT_HEAP
 #define NEXUS_MAIN_HEAP_IDX NEXUS_PLATFORM_DEFAULT_HEAP
@@ -307,38 +300,46 @@ String16 INexusService::getInterfaceDescriptor() {
 
 NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid, const char * name)
 {
+    NEXUS_PlatformObjectInstance *objects = NULL;
     NEXUS_ClientHandle nexusClient = NULL;
     NEXUS_InterfaceName interfaceName;
     unsigned num;
     unsigned i;
     int rc;
 
-        NEXUS_Platform_GetDefaultInterfaceName(&interfaceName);
-        strcpy(interfaceName.name, "NEXUS_Client");
-#ifndef MAX_OBJECTS
+    NEXUS_Platform_GetDefaultInterfaceName(&interfaceName);
+    strcpy(interfaceName.name, "NEXUS_Client");
+    do {
         rc = NEXUS_Platform_GetObjects(&interfaceName, NULL, 0, &num);
         BDBG_ASSERT(!rc);
-        NEXUS_PlatformObjectInstance objects[num];
-#else
-        NEXUS_PlatformObjectInstance objects[MAX_OBJECTS];
-        num = MAX_OBJECTS;
-#endif
-        rc = NEXUS_Platform_GetObjects(&interfaceName, objects, num, &num);
-        BDBG_ASSERT(!rc);
-
-        for (i=0; i < num; i++) {
-            NEXUS_ClientStatus status;
-            unsigned j;
-            rc = NEXUS_Platform_GetClientStatus(reinterpret_cast<NEXUS_ClientHandle>(objects[i].object), &status);
-            if (rc) continue;
-
-            if (status.pid == pid) {
-                nexusClient = reinterpret_cast<NEXUS_ClientHandle>(objects[i].object);
-                LOGV("%s: Found client \"%s\" with PID %d nexus_client %p.", __PRETTY_FUNCTION__,
-                    name ? name : "[unnamed]", pid, (void *)nexusClient);
-                break;
-            }
+        objects = (NEXUS_PlatformObjectInstance *)realloc(objects, num*sizeof(NEXUS_PlatformObjectInstance));
+        if (objects == NULL) {
+            LOGE("%s: FATAL: Could not allocate memory to hold %d Nexus platform objects!!!", __FUNCTION__, num);
+            BDBG_ASSERT(false);
         }
+        rc = NEXUS_Platform_GetObjects(&interfaceName, objects, num, &num);
+        LOGV("%s: NEXUS_Platform_GetObjects returned %d objects [rc=%d]", __FUNCTION__, num, rc);
+        if (rc == NEXUS_PLATFORM_ERR_OVERFLOW) {
+            LOGW("%s: NEXUS_Platform_GetObjects overflowed - retrying...", __FUNCTION__);
+        }
+    } while (rc == NEXUS_PLATFORM_ERR_OVERFLOW);
+    BDBG_ASSERT(!rc);
+
+    for (i=0; i < num; i++) {
+        NEXUS_ClientStatus status;
+        unsigned j;
+        rc = NEXUS_Platform_GetClientStatus(reinterpret_cast<NEXUS_ClientHandle>(objects[i].object), &status);
+        if (rc) continue;
+
+        if (status.pid == pid) {
+            nexusClient = reinterpret_cast<NEXUS_ClientHandle>(objects[i].object);
+            LOGV("%s: Found client \"%s\" with PID %d nexus_client %p.", __PRETTY_FUNCTION__,
+                name ? name : "[unnamed]", pid, (void *)nexusClient);
+            break;
+        }
+    }
+    free(objects);
+
     return nexusClient;
 }
 
@@ -1070,63 +1071,54 @@ NEXUS_ClientHandle NexusService::clientJoin(const b_refsw_client_client_name *pC
 
     nexusClient = NULL;
 
-#ifdef MAX_CLIENTS
-    if (server->mJoinRefCount < MAX_CLIENTS) {
-#else
-    if (true) {
-#endif
-        pClientAuthenticationSettings->certificate.length =
-            BKNI_Snprintf((char *)pClientAuthenticationSettings->certificate.data,
-                          sizeof(pClientAuthenticationSettings->certificate.data),
-                          "%u,%#x%#x,%s", server->lastId.client, lrand48(), lrand48(), pClientName->string);
+    pClientAuthenticationSettings->certificate.length =
+        BKNI_Snprintf((char *)pClientAuthenticationSettings->certificate.data,
+                      sizeof(pClientAuthenticationSettings->certificate.data),
+                      "%u,%#x%#x,%s", server->lastId.client, lrand48(), lrand48(), pClientName->string);
 
-        if (pClientAuthenticationSettings->certificate.length >= sizeof(pClientAuthenticationSettings->certificate.data)-1) {
-            LOGE("%s: Invalid certificate length %d for client \"%s\"!!!", __PRETTY_FUNCTION__, pClientAuthenticationSettings->certificate.length, pClientName->string);
-            (void)BERR_TRACE(BERR_NOT_SUPPORTED);
-        }
-        else {
-            NEXUS_PlatformConfiguration *pPlatformConfig;
-            NEXUS_ClientSettings         clientSettings;
-
-            pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
-            if (pPlatformConfig == NULL) {
-                ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
-                (void)BERR_TRACE(BERR_OUT_OF_SYSTEM_MEMORY);
-            }
-            else {
-                LOGI("client %s registering as '%s'", pClientName->string, (char *)pClientAuthenticationSettings->certificate.data);
-
-                NEXUS_Platform_GetDefaultClientSettings(&clientSettings);
-                clientSettings.authentication.certificate = pClientAuthenticationSettings->certificate;
-                NEXUS_Platform_GetConfiguration(pPlatformConfig);
-                clientSettings.configuration.heap[0] = NEXUS_Platform_GetFramebufferHeap(NEXUS_OFFSCREEN_SURFACE);
-                clientSettings.configuration.heap[1] = pPlatformConfig->heap[NEXUS_MAIN_HEAP_IDX];
-#ifdef NEXUS_VIDEO_SECURE_HEAP
-                clientSettings.configuration.heap[2] = pPlatformConfig->heap[NEXUS_VIDEO_SECURE_HEAP];
-#endif
-#ifdef NEXUS_SECONDARY_OFFSCREEN_SURFACE
-                clientSettings.configuration.heap[3] = NEXUS_Platform_GetFramebufferHeap(NEXUS_SECONDARY_OFFSCREEN_SURFACE);
-                if (clientSettings.configuration.heap[3] == clientSettings.configuration.heap[0]) {
-                    clientSettings.configuration.heap[3] = NULL;
-                }
-#endif
-                clientSettings.configuration.mode = (NEXUS_ClientMode)ANDROID_CLIENT_SECURITY_MODE;
-                nexusClient = NEXUS_Platform_RegisterClient(&clientSettings);
-                if (nexusClient) {
-                    LOGI("%s: Successfully registered client \"%s\".", __PRETTY_FUNCTION__, pClientName->string);
-                    server->lastId.client++;
-                    server->mJoinRefCount++;
-                }
-                else {
-                    LOGE("%s: Could not register client \"%s\"!!!", __PRETTY_FUNCTION__, pClientName->string);
-                    (void)BERR_TRACE(BERR_NOT_SUPPORTED);
-                }
-                BKNI_Free(pPlatformConfig);
-            }
-        }
+    if (pClientAuthenticationSettings->certificate.length >= sizeof(pClientAuthenticationSettings->certificate.data)-1) {
+        LOGE("%s: Invalid certificate length %d for client \"%s\"!!!", __PRETTY_FUNCTION__, pClientAuthenticationSettings->certificate.length, pClientName->string);
+        (void)BERR_TRACE(BERR_NOT_SUPPORTED);
     }
     else {
-        LOGE("%s: FATAL: too many clients already joined!!!", __PRETTY_FUNCTION__);
+        NEXUS_PlatformConfiguration *pPlatformConfig;
+        NEXUS_ClientSettings         clientSettings;
+
+        pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
+        if (pPlatformConfig == NULL) {
+            ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
+            (void)BERR_TRACE(BERR_OUT_OF_SYSTEM_MEMORY);
+        }
+        else {
+            LOGI("client %s registering as '%s'", pClientName->string, (char *)pClientAuthenticationSettings->certificate.data);
+
+            NEXUS_Platform_GetDefaultClientSettings(&clientSettings);
+            clientSettings.authentication.certificate = pClientAuthenticationSettings->certificate;
+            NEXUS_Platform_GetConfiguration(pPlatformConfig);
+            clientSettings.configuration.heap[0] = NEXUS_Platform_GetFramebufferHeap(NEXUS_OFFSCREEN_SURFACE);
+            clientSettings.configuration.heap[1] = pPlatformConfig->heap[NEXUS_MAIN_HEAP_IDX];
+#ifdef NEXUS_VIDEO_SECURE_HEAP
+            clientSettings.configuration.heap[2] = pPlatformConfig->heap[NEXUS_VIDEO_SECURE_HEAP];
+#endif
+#ifdef NEXUS_SECONDARY_OFFSCREEN_SURFACE
+            clientSettings.configuration.heap[3] = NEXUS_Platform_GetFramebufferHeap(NEXUS_SECONDARY_OFFSCREEN_SURFACE);
+            if (clientSettings.configuration.heap[3] == clientSettings.configuration.heap[0]) {
+                clientSettings.configuration.heap[3] = NULL;
+            }
+#endif
+            clientSettings.configuration.mode = (NEXUS_ClientMode)ANDROID_CLIENT_SECURITY_MODE;
+            nexusClient = NEXUS_Platform_RegisterClient(&clientSettings);
+            if (nexusClient) {
+                LOGI("%s: Successfully registered client \"%s\".", __PRETTY_FUNCTION__, pClientName->string);
+                server->lastId.client++;
+                server->mJoinRefCount++;
+            }
+            else {
+                LOGE("%s: Could not register client \"%s\"!!!", __PRETTY_FUNCTION__, pClientName->string);
+                (void)BERR_TRACE(BERR_NOT_SUPPORTED);
+            }
+            BKNI_Free(pPlatformConfig);
+        }
     }
     return nexusClient;
 }
@@ -1137,27 +1129,16 @@ NEXUS_Error NexusService::clientUninit(NEXUS_ClientHandle nexusClient)
 
     Mutex::Autolock autoLock(server->mLock);
 
-#ifdef MAX_CLIENTS
-    if (server->mJoinRefCount > 0) {
-#else
-    if (true) {
-#endif
-        server->mJoinRefCount--;
+    server->mJoinRefCount--;
 
-        if (nexusClient == NULL) {
-            LOGE("%s: Nexus client handle is NULL!!!", __PRETTY_FUNCTION__);
-            rc = NEXUS_INVALID_PARAMETER;
-        }
-        else {
-            NEXUS_Platform_UnregisterClient(nexusClient);
-            rc = NEXUS_SUCCESS;
-        }
+    if (nexusClient == NULL) {
+        LOGE("%s: Nexus client handle is NULL!!!", __PRETTY_FUNCTION__);
+        rc = NEXUS_INVALID_PARAMETER;
     }
     else {
-        LOGE("%s: No clients have joined the service!", __PRETTY_FUNCTION__);
-        rc = NEXUS_NOT_INITIALIZED;
+        NEXUS_Platform_UnregisterClient(nexusClient);
+        rc = NEXUS_SUCCESS;
     }
-
     return rc;
 }
 
@@ -1166,6 +1147,8 @@ NexusClientContext * NexusService::createClientContext(const b_refsw_client_clie
     NexusClientContext * client;
     NEXUS_ClientSettings clientSettings;
     NEXUS_Error rc;
+
+    Mutex::Autolock autoLock(server->mLock);
 
     client = (NexusClientContext *)BKNI_Malloc(sizeof(NexusClientContext));
     if (client==NULL) {
@@ -1213,6 +1196,8 @@ err_client:
 
 void NexusService::destroyClientContext(NexusClientContext * client)
 {
+    Mutex::Autolock autoLock(server->mLock);
+
     BDBG_OBJECT_ASSERT(client, NexusClientContext);
     if(client->resources.videoSurface) {
         NEXUS_SurfaceCompositor_DestroyClient(client->resources.videoSurface);

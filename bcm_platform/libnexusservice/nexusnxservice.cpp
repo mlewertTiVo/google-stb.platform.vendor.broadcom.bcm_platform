@@ -626,6 +626,8 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
     NEXUS_ClientSettings clientSettings;
     NEXUS_Error rc;
 
+    Mutex::Autolock autoLock(server->mLock);
+
     client = (NexusClientContext *)BKNI_Malloc(sizeof(NexusClientContext));
     if (client==NULL) {
         (void)BERR_TRACE(BERR_OUT_OF_SYSTEM_MEMORY);
@@ -747,6 +749,8 @@ void NexusNxService::destroyClientContext(NexusClientContext * client)
     BDBG_OBJECT_ASSERT(client, NexusClientContext);
     NxClient_AllocResults resources;
     void *res;
+
+    Mutex::Autolock autoLock(server->mLock);
 
     LOGI("%s: client=\"%s\"", __PRETTY_FUNCTION__, client->createConfig.name.string);
 
