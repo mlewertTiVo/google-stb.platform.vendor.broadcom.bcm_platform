@@ -17,7 +17,14 @@
 <resources>
     <string name="app_name" translatable="false">BcmTVInput Settings</string>
     <string name="tuner_service_label" translatable="false">Tuner service</string>
-    <string name="scan_button_label" translatable="false">Scan</string>
-    <string name="stop_button_label" translatable="false">Stop</string>
+    <string name="scan_button_label" translatable="false">Start scan</string>
+    <string name="stop_button_label" translatable="false">Stop scan</string>
     <string name="streamer_mode_button_label" translatable="false">Streamer Mode</string>
+    <string name="scan_progress_label">Scan progress</string>
+    <string name="signal_strength_label">Signal strength</string>
+    <string name="signal_quality_label">Signal quality</string>
+    <string name="channels_found_label">Channels found</string>
+    <string name="tv_channels_label">TV: </string>
+    <string name="radio_channels_label">Radio: </string>
+    <string name="data_channels_label">Data: </string>
 </resources>

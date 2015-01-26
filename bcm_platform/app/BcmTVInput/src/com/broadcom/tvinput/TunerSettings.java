@@ -27,7 +27,9 @@ import android.os.Handler;
 import android.util.Log;
 import android.view.View;
 import android.widget.ProgressBar;
+import android.widget.RatingBar;
 import android.widget.TextView;
+import android.widget.ToggleButton;
 
 
 /**
@@ -64,34 +66,31 @@ public class TunerSettings extends Activity {
             if (eventType.equals("scanstatus")) {
                 eventArgs.setClassLoader(ScanInfo.class.getClassLoader());
                 ScanInfo si = eventArgs.getParcelable("scaninfo");
-                TextView tv = (TextView) findViewById(R.id.textview_tv);
+                ToggleButton start_stop = (ToggleButton) findViewById(R.id.toggle_scan);
+                ProgressBar progress = (ProgressBar) findViewById(R.id.progressbar_scan);
+                RatingBar strength = (RatingBar) findViewById(R.id.rating_strength);
+                RatingBar quality = (RatingBar) findViewById(R.id.rating_quality);
+                TextView all = (TextView) findViewById(R.id.text_all_channels);
+                TextView tv = (TextView) findViewById(R.id.text_tv_channels);
+                TextView radio = (TextView) findViewById(R.id.text_radio_channels);
+                TextView data = (TextView) findViewById(R.id.text_data_channels);
                 if (si.busy) {
                     if (si.valid) {
-                        tv.setText("Scanning: "
-                                    + si.progress
-                                    + "% "
-                                    + si.channels
-                                    + " found ("
-                                    + si.TVChannels
-                                    + "/"
-                                    + si.radioChannels
-                                    + "/"
-                                    + si.dataChannels
-                                    + ") qual "
-                                    + si.signalQualityPercent
-                                    + "% snr "
-                                    + si.signalStrengthPercent
-                                    + "%"); 
-                    }
-                    else {
-                        tv.setText("Scanning");
+                        progress.setProgress(si.progress);
+                        strength.setProgress(si.signalStrengthPercent);
+                        quality.setProgress(si.signalStrengthPercent);
+                        all.setText(String.valueOf(si.channels));
+                        tv.setText(String.valueOf(si.TVChannels));
+                        radio.setText(String.valueOf(si.radioChannels));
+                        data.setText(String.valueOf(si.dataChannels));
                     }
                 }
                 else {
-                    tv.setText("No scan in progress");
+                    start_stop.setChecked(false);
+                    progress.setProgress(0);
+                    strength.setProgress(0);
+                    quality.setProgress(0);
                 }
-                ProgressBar progress = (ProgressBar) findViewById(R.id.progressbar_scan);
-                progress.setProgress(si.valid ? si.progress : 0);
             }
         }
     }
@@ -116,12 +115,14 @@ public class TunerSettings extends Activity {
         mTvInputManager.createSession(inputId, mSessionCallback, mHandler);
     }
 
-    public void startBlindScan(View v) {
-        mSession.sendAppPrivateCommand("startBlindScan", null);
-    }
-
-    public void stopScan(View v) {
-        mSession.sendAppPrivateCommand("stopScan", null);
+    public void startStopBlindScan(View v) {
+        ToggleButton start_stop = (ToggleButton)v;
+        if (start_stop.isChecked()) {
+            mSession.sendAppPrivateCommand("startBlindScan", null);
+        }
+        else {
+            mSession.sendAppPrivateCommand("stopScan", null);
+        }
     }
 
     public void setStreamerMode(View v) {
