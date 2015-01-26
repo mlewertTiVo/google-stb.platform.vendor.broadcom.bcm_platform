@@ -538,7 +538,12 @@ public class TunerService extends TvInputService {
             dbsync.setProgramListChanged();
         }
         else if (e == BROADCAST_EVENT_SCANNING_PROGRESS || e == BROADCAST_EVENT_SCANNING_COMPLETE) {
-            sendScanStatusToAllSessions();
+            mMainLoopHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    sendScanStatusToAllSessions();
+                }
+            });
         }
         else if (e == BROADCAST_EVENT_VIDEO_TRACK_LIST_CHANGED) {
             mMainLoopHandler.post(new Runnable() {
