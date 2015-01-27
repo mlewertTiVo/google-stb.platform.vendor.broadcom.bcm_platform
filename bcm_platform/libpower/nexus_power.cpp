@@ -268,11 +268,9 @@ void NexusPower::NexusGpio::gpioCallback(void *context, int param __unused)
         NEXUS_GpioStatus gpioStatus;
 
         if (NEXUS_Gpio_GetStatus(pNexusGpio->getHandle(), &gpioStatus) == NEXUS_SUCCESS) {
-            ALOGV("%s: %s interrupt %spending.", __FUNCTION__, pNexusGpio->getPinName().string(), gpioStatus.interruptPending ? "" : "not ");
+            ALOGV("%s: %s interrupt.", __FUNCTION__, pNexusGpio->getPinName().string());
 
-            if (gpioStatus.interruptPending) {
-                NEXUS_Gpio_ClearInterrupt(pNexusGpio->getHandle());
-            }
+            NEXUS_Gpio_ClearInterrupt(pNexusGpio->getHandle());
 
             // toggle the power key
             if (pNexusGpio->mUInput != NULL)
