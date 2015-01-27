@@ -76,6 +76,15 @@ bool NexusIrInput::start(NEXUS_IrInputMode mode,
     if (!m_handle) {
         LOGE("NexusIrInput start failed!");
     }
+    else {
+        NEXUS_IrInputDataFilter irPattern;
+
+        NEXUS_IrInput_GetDefaultDataFilter(&irPattern );
+        irPattern.filterWord[0].patternWord = m_power_key;
+        irPattern.filterWord[0].mask = m_mask;
+        irPattern.filterWord[0].enabled = (m_power_key != NEXUSIRINPUT_NO_KEY);
+        NEXUS_IrInput_SetDataFilter(m_handle, &irPattern);
+    }
     return m_handle != 0;
 }
 
@@ -100,22 +109,6 @@ unsigned NexusIrInput::repeatTimeout()
                 &irSettings.customSettings);
     }
     return irSettings.customSettings.repeatTimeout;
-}
-
-void NexusIrInput::enterStandby()
-{
-    NEXUS_IrInputDataFilter irPattern;
-    NEXUS_IrInput_GetDefaultDataFilter(&irPattern);
-    irPattern.filterWord[0].patternWord = m_power_key;
-    irPattern.filterWord[0].mask = m_mask;
-    irPattern.filterWord[0].enabled =
-        (m_power_key != NEXUSIRINPUT_NO_KEY);
-    NEXUS_IrInput_EnableDataFilter(m_handle, &irPattern);
-}
-
-void NexusIrInput::exitStandby()
-{
-    NEXUS_IrInput_DisableDataFilter(m_handle);
 }
 
 /*static*/ void NexusIrInput::dataReady(void *context, int param)

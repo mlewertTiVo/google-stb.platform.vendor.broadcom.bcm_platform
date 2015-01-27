@@ -96,16 +96,6 @@ public:
      */
     unsigned repeatTimeout();
 
-    /**
-     * @brief perform standby operations such as enabling the IR filter mask
-     */
-    void enterStandby();
-
-    /**
-     * @brief perform exit standby operations such as disabling the IR filter mask
-     */
-    void exitStandby();
-
 private:
     /* Disallow copy constructor and assignment operator... */
     NexusIrInput(const NexusIrInput &other); //not implemented

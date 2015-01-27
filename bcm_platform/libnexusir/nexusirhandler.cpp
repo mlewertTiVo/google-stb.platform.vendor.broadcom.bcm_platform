@@ -123,16 +123,6 @@ void NexusIrHandler::stop()
     m_uinput.close();
 }
 
-void NexusIrHandler::enterStandby()
-{
-    m_ir.enterStandby();
-}
-
-void NexusIrHandler::exitStandby()
-{
-    m_ir.exitStandby();
-}
-
 /*virtual*/ void NexusIrHandler::onIrInput(uint32_t nexus_key, bool repeat,
         unsigned interval)
 {

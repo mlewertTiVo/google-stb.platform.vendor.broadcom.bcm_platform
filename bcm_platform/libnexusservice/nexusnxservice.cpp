@@ -132,7 +132,7 @@ typedef struct NexusNxServerContext : public NexusServerContext {
             STATE_RUNNING
         };
 
-        StandbyMonitorThread(NexusIrHandler& irHandler) : mIrHandler(irHandler), state(STATE_STOPPED), name(NULL) {
+        StandbyMonitorThread() : state(STATE_STOPPED), name(NULL) {
             ALOGD("%s: called", __PRETTY_FUNCTION__);
         }
 
@@ -149,7 +149,6 @@ typedef struct NexusNxServerContext : public NexusServerContext {
         const char *getName() { return name; }
 
     private:
-        NexusIrHandler& mIrHandler;
         ThreadState state;
         char *name;
         bool threadLoop();
@@ -198,12 +197,6 @@ bool NexusNxServerContext::StandbyMonitorThread::threadLoop()
         rc = NxClient_GetStandbyStatus(&standbyStatus);
     
         if(standbyStatus.settings.mode != prevStatus.settings.mode) {
-            if (standbyStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn) {
-                mIrHandler.enterStandby();
-            }
-            else {
-                mIrHandler.exitStandby();
-            }
             LOGD("%s: Acknowledge state %d\n", getName(), standbyStatus.settings.mode);
             NxClient_AcknowledgeStandby(true);
         }
@@ -523,7 +516,7 @@ void NexusNxService::platformInit()
          (joinSettings.mode == NEXUS_ClientMode_eProtected) ? "PROTECTED" : "UNTRUSTED");
 
     NexusNxServerContext *nxServer = static_cast<NexusNxServerContext *>(server);
-    nxServer->mStandbyMonitorThread = new NexusNxServerContext::StandbyMonitorThread(irHandler);
+    nxServer->mStandbyMonitorThread = new NexusNxServerContext::StandbyMonitorThread();
     nxServer->mStandbyMonitorThread->run(&joinSettings.name[0], ANDROID_PRIORITY_NORMAL);
 
 #endif // ANDROID_SUPPORTS_EMBEDDED_NXSERVER
