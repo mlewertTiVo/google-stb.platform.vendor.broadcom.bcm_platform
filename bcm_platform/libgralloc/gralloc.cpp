@@ -63,6 +63,9 @@ static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
 static NEXUS_Graphics2DHandle hGraphics = NULL;
 static BKNI_EventHandle hCheckpointEvent = NULL;
 
+#define DATA_PLANE_MAX_WIDTH    1920
+#define DATA_PLANE_MAX_HEIGHT   1200
+
 #define NEXUS_JOIN_CLIENT_PROCESS "gralloc"
 static void gralloc_load_lib(void)
 {
@@ -472,7 +475,13 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       // standard yv12 buffer for multimedia, need also a secondary buffer for
       // planar to packed conversion when going through the hwc/nsc.
       needs_yv12 = true;
-      needs_ycrcb = true;
+      if ((usage & GRALLOC_USAGE_HW_COMPOSER) &&
+          (usage & GRALLOC_USAGE_SW_WRITE_MASK) &&
+          w <= DATA_PLANE_MAX_WIDTH &&
+          h <= DATA_PLANE_MAX_HEIGHT)
+      {
+         needs_ycrcb = true;
+      }
    } else if ((format == HAL_PIXEL_FORMAT_YV12) && (usage & GRALLOC_USAGE_PRIVATE_0) & (usage & GRALLOC_USAGE_SW_READ_OFTEN)) {
       // private multimedia buffer, we only need a yv12 plane in case cpu is intending to read
       // the content, eg decode->encode type of scenario; yv12 data is produced during lock.
@@ -487,7 +496,10 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
       }
 
-      if (usage & GRALLOC_USAGE_HW_TEXTURE) {
+      // V3D does not support 4K.
+      if ((usage & GRALLOC_USAGE_HW_TEXTURE) &&
+          w <= DATA_PLANE_MAX_WIDTH &&
+          h <= DATA_PLANE_MAX_HEIGHT) {
          needs_rgb = true;
       }
    }

@@ -213,37 +213,47 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       return -EINVAL;
    }
 
-   PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
-   if (!pSharedData->planes[DEFAULT_PLANE].physAddr)
-   {
-      LOGE("%s: !!!FATAL ERROR NULL NEXUS SURFACE HANDLE!!!", __FUNCTION__);
-      return -EINVAL;
-   }
-
    /* produce a packed version of the buffer that will be used for composition.
     */
    if (hnd->usage & GRALLOC_USAGE_SW_WRITE_MASK)
    {
+      bool flushed = false;
+      PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
+      if (!pSharedData->planes[DEFAULT_PLANE].physAddr)
+      {
+         LOGE("%s: !!!FATAL ERROR NULL NEXUS SURFACE HANDLE!!!", __FUNCTION__);
+         return -EINVAL;
+      }
+
       if (pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12)
       {
-         pthread_mutex_lock(gralloc_g2d_lock());
-         rc = gralloc_yv12to422p(hnd);
-         if (rc)
+         if (pSharedData->planes[EXTRA_PLANE].physAddr != 0)
          {
-            /* marked as invalid so we drop it */
-         }
-
-         if (!rc && (hnd->usage & GRALLOC_USAGE_HW_TEXTURE) && pSharedData->planes[GL_PLANE].physAddr)
-         {
-            rc = gralloc_plane_copy(hnd, EXTRA_PLANE, GL_PLANE);
+            pthread_mutex_lock(gralloc_g2d_lock());
+            rc = gralloc_yv12to422p(hnd);
             if (rc)
             {
-               LOGE("%s: Error converting from 422p to RGB - %d", __FUNCTION__, rc);
+               /* TODO: marked as invalid so we drop it */
             }
+            else
+            {
+               flushed = true;
+            }
+
+            /* TODO: YV12->RBA conversion */
+            if (!rc && pSharedData->planes[GL_PLANE].physAddr != 0)
+            {
+               rc = gralloc_plane_copy(hnd, EXTRA_PLANE, GL_PLANE);
+               if (rc)
+               {
+                  LOGE("%s: Error converting from 422p to RGB - %d", __FUNCTION__, rc);
+               }
+            }
+            pthread_mutex_unlock(gralloc_g2d_lock());
          }
-         pthread_mutex_unlock(gralloc_g2d_lock());
       }
-      else
+
+      if (!flushed)
       {
          NEXUS_FlushCache(NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr),
                           pSharedData->planes[DEFAULT_PLANE].allocSize);
