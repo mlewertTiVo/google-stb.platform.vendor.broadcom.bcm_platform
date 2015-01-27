@@ -303,16 +303,17 @@ NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid, const char * name)
     NEXUS_PlatformObjectInstance *objects = NULL;
     NEXUS_ClientHandle nexusClient = NULL;
     NEXUS_InterfaceName interfaceName;
-    unsigned num;
+    unsigned num = 16; /* starting size. */
     unsigned i;
     int rc;
 
     NEXUS_Platform_GetDefaultInterfaceName(&interfaceName);
     strcpy(interfaceName.name, "NEXUS_Client");
     do {
-        rc = NEXUS_Platform_GetObjects(&interfaceName, NULL, 0, &num);
-        BDBG_ASSERT(!rc);
-        objects = (NEXUS_PlatformObjectInstance *)realloc(objects, num*sizeof(NEXUS_PlatformObjectInstance));
+        if (objects != NULL) {
+           BKNI_Free(objects);
+        }
+        objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
         if (objects == NULL) {
             LOGE("%s: FATAL: Could not allocate memory to hold %d Nexus platform objects!!!", __FUNCTION__, num);
             BDBG_ASSERT(false);
@@ -338,8 +339,10 @@ NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid, const char * name)
             break;
         }
     }
-    free(objects);
 
+    if (objects != NULL) {
+       BKNI_Free(objects);
+    }
     return nexusClient;
 }
 
