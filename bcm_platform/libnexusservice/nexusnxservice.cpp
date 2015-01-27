@@ -496,7 +496,7 @@ void NexusNxService::platformInit()
        fread(value, PROPERTY_VALUE_MAX, 1, key);
        if (strstr(value, "trusted:") == value) {
           const char *password = &value[8];
-          joinSettings.mode = NEXUS_ClientMode_eProtected;
+          joinSettings.mode = NEXUS_ClientMode_eVerified;
           joinSettings.certificate.length = strlen(password);
           memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
        }
@@ -512,8 +512,9 @@ void NexusNxService::platformInit()
         }
     } while (rc != NEXUS_SUCCESS);
 
-    LOGI("%s: \"%s\"; joins %s mode", __FUNCTION__, joinSettings.name,
-         (joinSettings.mode == NEXUS_ClientMode_eProtected) ? "PROTECTED" : "UNTRUSTED");
+    LOGI("%s: \"%s\"; joins %s mode (%d)", __FUNCTION__, joinSettings.name,
+         (joinSettings.mode == NEXUS_ClientMode_eVerified) ? "VERIFIED" : "UNTRUSTED",
+         joinSettings.mode);
 
     NexusNxServerContext *nxServer = static_cast<NexusNxServerContext *>(server);
     nxServer->mStandbyMonitorThread = new NexusNxServerContext::StandbyMonitorThread();

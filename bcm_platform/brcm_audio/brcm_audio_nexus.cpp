@@ -168,7 +168,7 @@ static NEXUS_Error clientJoin(const char *name)
        fread(value, PROPERTY_VALUE_MAX, 1, key);
        if (strstr(value, "trusted:") == value) {
           const char *password = &value[8];
-          joinSettings.mode = NEXUS_ClientMode_eProtected;
+          joinSettings.mode = NEXUS_ClientMode_eVerified;
           joinSettings.certificate.length = strlen(password);
           memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
        }
