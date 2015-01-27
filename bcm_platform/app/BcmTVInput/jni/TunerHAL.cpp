@@ -296,13 +296,19 @@ void BcmSidebandBinder::notify(int msg, struct hwc_notification_info &ntfy)
       cb(cb_data, msg, ntfy);
 }
 
-#define LOCKHAL() { \
+#define LOCKHAL { \
 ALOGE("%s: LOCKHAL", __FUNCTION__); \
 BKNI_AcquireMutex(g_pTD->mutex); \
-}
+struct timespec startts, endts; \
+clock_gettime(CLOCK_MONOTONIC, &startts);
 
-#define UNLOCKHAL() { \
-ALOGE("%s: UNLOCKHAL", __FUNCTION__); \
+
+#define UNLOCKHAL \
+clock_gettime(CLOCK_MONOTONIC, &endts); \
+if (endts.tv_sec > startts.tv_sec) { \
+    endts.tv_nsec += 1000000000 * (endts.tv_sec - startts.tv_sec); \
+} \
+ALOGE("%s: UNLOCKHAL %d", __FUNCTION__, (endts.tv_nsec - startts.tv_nsec) / 1000000); \
 BKNI_ReleaseMutex(g_pTD->mutex); \
 }
 
@@ -334,9 +340,9 @@ static void TunerHALSidebandBinderNotify(int cb_data, int msg, struct hwc_notifi
            position.w -= position.x;
        }
        if (g_pTD->driver.SetGeometry) {
-           LOCKHAL();
+           LOCKHAL
            g_pTD->driver.SetGeometry(position, clip, ntfy.display_width, ntfy.display_height, ntfy.zorder, true); 
-           UNLOCKHAL();
+           UNLOCKHAL
        }
     }
     break;
@@ -403,9 +409,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jcla
         TV_LOG("%s: Tune call is null", __FUNCTION__);
     }
     else {
-        LOCKHAL();
+        LOCKHAL
         rv = (*g_pTD->driver.Tune)(String8(s8id)); 
-        UNLOCKHAL();
+        UNLOCKHAL
     }
 
     env->ReleaseStringUTFChars(id, s8id);   
@@ -442,9 +448,9 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
         return 0;
     }
 
-    LOCKHAL();
+    LOCKHAL
     civ = (*g_pTD->driver.GetChannelList)(); 
-    UNLOCKHAL();
+    UNLOCKHAL
 
     jclass cls = env->FindClass("com/broadcom/tvinput/ChannelInfo"); 
     if (cls == 0) {
@@ -480,6 +486,7 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
         ALOGE("%s: could not get sid ID", __FUNCTION__);
     }
 
+    stringField(type)
     stringField(logoUrl)
 
     jobjectArray rv = env->NewObjectArray(civ.size(), cls, NULL);
@@ -498,6 +505,34 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
 
         setStringField(env, o, nameID, civ[i].name);
         setStringField(env, o, numberID, civ[i].number);
+
+        const char *ts;
+        switch (civ[i].type) {
+        default:
+        case BroadcastChannelInfo::TYPE_OTHER:    ts = "TYPE_OTHER"; break;
+        case BroadcastChannelInfo::TYPE_DVB_T:    ts = "TYPE_DVB_T"; break;
+        case BroadcastChannelInfo::TYPE_DVB_T2:   ts = "TYPE_DVB_T2"; break;
+        case BroadcastChannelInfo::TYPE_DVB_S:    ts = "TYPE_DVB_S"; break;
+        case BroadcastChannelInfo::TYPE_DVB_S2:   ts = "TYPE_DVB_S2"; break;
+        case BroadcastChannelInfo::TYPE_DVB_C:    ts = "TYPE_DVB_C"; break;
+        case BroadcastChannelInfo::TYPE_DVB_C2:   ts = "TYPE_DVB_C2"; break;
+        case BroadcastChannelInfo::TYPE_DVB_H:    ts = "TYPE_DVB_H"; break;
+        case BroadcastChannelInfo::TYPE_DVB_SH:   ts = "TYPE_DVB_SH"; break;
+        case BroadcastChannelInfo::TYPE_ATSC_T:   ts = "TYPE_ATSC_T"; break;
+        case BroadcastChannelInfo::TYPE_ATSC_C:   ts = "TYPE_ATSC_C"; break;
+        case BroadcastChannelInfo::TYPE_ATSC_M_H: ts = "TYPE_ATSC_M_H"; break;
+        case BroadcastChannelInfo::TYPE_ISDB_T:   ts = "TYPE_ISDB_T"; break;
+        case BroadcastChannelInfo::TYPE_ISDB_TB:  ts = "TYPE_ISDB_TB"; break;
+        case BroadcastChannelInfo::TYPE_ISDB_S:   ts = "TYPE_ISDB_S"; break;
+        case BroadcastChannelInfo::TYPE_ISDB_C:   ts = "TYPE_ISDB_C"; break;
+        case BroadcastChannelInfo::TYPE_1SEG:     ts = "TYPE_1SEG"; break;
+        case BroadcastChannelInfo::TYPE_DTMB:     ts = "TYPE_DTMB"; break;
+        case BroadcastChannelInfo::TYPE_CMMB:     ts = "TYPE_CMMB"; break;
+        case BroadcastChannelInfo::TYPE_T_DMB:    ts = "TYPE_T_DMB"; break;
+        case BroadcastChannelInfo::TYPE_S_DMB:    ts = "TYPE_S_DMB"; break;
+        }
+        setStringField(env, o, typeID, String8(ts));
+
         setStringField(env, o, logoUrlID, civ[i].logoUrl);
 
         env->SetObjectArrayElement(rv, i, o);
@@ -521,9 +556,9 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramList(JNIEnv *env, jclass /*thiz*/, 
 
     const char *s8id = env->GetStringUTFChars(id, NULL);
 
-    LOCKHAL();
+    LOCKHAL
     piv = (*g_pTD->driver.GetProgramList)(String8(s8id));
-    UNLOCKHAL();
+    UNLOCKHAL
 
     env->ReleaseStringUTFChars(id, s8id);
      
@@ -589,9 +624,9 @@ Java_com_broadcom_tvinput_TunerHAL_getScanInfo(JNIEnv *env, jclass /*thiz*/)
         si.valid = false;
     }
     else {
-        LOCKHAL();
+        LOCKHAL
         si = (*g_pTD->driver.GetScanInfo)();
-        UNLOCKHAL();
+        UNLOCKHAL
     }
      
     jclass cls = env->FindClass("com/broadcom/tvinput/ScanInfo"); 
@@ -638,9 +673,9 @@ JNIEXPORT jlong JNICALL Java_com_broadcom_tvinput_TunerHAL_getUtcTime(JNIEnv */*
     }
     else {
         jlong t;
-        LOCKHAL();
+        LOCKHAL
         t = (*g_pTD->driver.GetUtcTime)();
-        UNLOCKHAL();
+        UNLOCKHAL
         return t;
     }
 }
@@ -655,9 +690,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv */*env*/, 
         TV_LOG("%s: Stop call is null", __FUNCTION__);
     }
     else {
-        LOCKHAL();
+        LOCKHAL
         rv = (*g_pTD->driver.Stop)();
-        UNLOCKHAL();
+        UNLOCKHAL
     }
 
     return rv;
@@ -671,9 +706,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startBlindScan(JNIEnv 
         TV_LOG("%s: StartBlindScan call is null", __FUNCTION__);
     }
     else {
-        LOCKHAL();
+        LOCKHAL
         rv = (*g_pTD->driver.StartBlindScan)();
-        UNLOCKHAL();
+        UNLOCKHAL
     }
 
     return rv;
@@ -687,9 +722,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stopScan(JNIEnv */*env
         TV_LOG("%s: StopScan call is null", __FUNCTION__);
     }
     else {
-        LOCKHAL();
+        LOCKHAL
         rv = (*g_pTD->driver.StopScan)();
-        UNLOCKHAL();
+        UNLOCKHAL
     }
 
     return rv;
@@ -705,9 +740,9 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_release(JNIEnv */*env*
         TV_LOG("%s: Release call is null", __FUNCTION__);
     }
     else {
-        LOCKHAL();
+        LOCKHAL
         rv = (*g_pTD->driver.Release)();
-        UNLOCKHAL();
+        UNLOCKHAL
     }
 
     return rv;
@@ -739,9 +774,9 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getVideoTrackI
         return 0;
     }
 
-    LOCKHAL();
+    LOCKHAL
     vtiv = (*g_pTD->driver.GetVideoTrackInfoList)(); 
-    UNLOCKHAL();
+    UNLOCKHAL
 
     jclass cls = env->FindClass("com/broadcom/tvinput/VideoTrackInfo"); 
     if (cls == 0) {

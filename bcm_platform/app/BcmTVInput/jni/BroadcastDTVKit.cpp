@@ -440,7 +440,9 @@ static Vector<BroadcastChannelInfo> BroadcastDTVKit_GetChannelList()
     ADB_GetServiceListIncludingHidden(ADB_SERVICE_LIST_TV | ADB_SERVICE_LIST_RADIO, &slist, &num_entries, true);
     if (slist) {
         for (unsigned i = 0; i < num_entries; i++) {
-            BroadcastChannelInfo ci; 
+            BroadcastChannelInfo ci;
+            void *t_ptr;
+             
             ci.id = String8::format("%u", ADB_GetServiceLcn(slist[i]));
 
             U8BIT *name = ADB_GetServiceFullName(slist[i], FALSE);
@@ -454,7 +456,30 @@ static Vector<BroadcastChannelInfo> BroadcastDTVKit_GetChannelList()
             ci.onid = onid;
             ci.tsid = tsid;
             ci.sid = sid;
-            ci.logoUrl = "";
+            ci.type = BroadcastChannelInfo::TYPE_OTHER;
+            t_ptr = ADB_GetServiceTransportPtr(slist[i]);
+            if (t_ptr) {
+                switch (ADB_GetTransportSignalType(t_ptr)) {
+                case SIGNAL_COFDM: {
+                    E_STB_DP_TTYPE terr_type;
+                    U32BIT freq_hz;
+                    E_STB_DP_TMODE mode;
+                    E_STB_DP_TBWIDTH bwidth;
+                    U8BIT plp_id;
+                    ADB_GetTransportTerrestrialTuningParams(t_ptr, &terr_type, &freq_hz, &mode, &bwidth, &plp_id);
+                    switch (terr_type) {
+                    case TERR_TYPE_DVBT: ci.type = BroadcastChannelInfo::TYPE_DVB_T; break;
+                    case TERR_TYPE_DVBT2: ci.type = BroadcastChannelInfo::TYPE_DVB_T2; break;
+                    default:
+                        break;
+                    }
+                    break;
+                }
+                default:
+                    break;
+                }
+            }
+            ci.logoUrl = ""; 
             if (ci.onid == 9018) {
                 for (int li = 0; freeviewLogoMap[li].display_name != 0; li++) {
                     if (ci.name == freeviewLogoMap[li].display_name) {
@@ -725,9 +750,11 @@ BroadcastDTVKit_SetGeometry(BroadcastRect position, BroadcastRect /*clipRect*/,
 {
     if ((position.y == 0 && position.h == gfxHeight) || (position.x == 0 && position.w == gfxWidth)) {
         // fullscreen - let DTVKit choose the window - hopefully it gets the same answer
+        ALOGE("%s: fullscreen", __FUNCTION__);
         ACTL_SetVideoWindow(0, 0, 0, 0); 
     }
     else {
+        ALOGE("%s: app scaling", __FUNCTION__);
         ACTL_SetVideoWindow(position.x, position.y, position.w, position.h);
     }
     return 0;
@@ -808,6 +835,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->Release = BroadcastDTVKit_Release;
     pD->SetGeometry = BroadcastDTVKit_SetGeometry;
     pD->GetVideoTrackInfoList = BroadcastDTVKit_GetVideoTrackInfoList;
+    BDBG_SetModuleLevel("stbhwav", BDBG_eMsg);
     ALOGE("%s: Exit", __FUNCTION__);
     return 0;
 }

@@ -10,9 +10,18 @@ using namespace android;
 
 class BroadcastChannelInfo {
 public:
+    enum Type {
+         TYPE_OTHER, TYPE_DVB_T, TYPE_DVB_T2, TYPE_DVB_S,
+         TYPE_DVB_S2, TYPE_DVB_C, TYPE_DVB_C2, TYPE_DVB_H,
+         TYPE_DVB_SH, TYPE_ATSC_T, TYPE_ATSC_C,
+         TYPE_ATSC_M_H, TYPE_ISDB_T, TYPE_ISDB_TB,
+         TYPE_ISDB_S, TYPE_ISDB_C, TYPE_1SEG, TYPE_DTMB,
+         TYPE_CMMB, TYPE_T_DMB, TYPE_S_DMB
+    };
     String8 name;
     String8 number;
     String8 id;
+    Type type;
     int onid;
     int tsid;
     int sid;

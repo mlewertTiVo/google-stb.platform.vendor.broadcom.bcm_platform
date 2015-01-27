@@ -691,6 +691,7 @@ public class TunerService extends TvInputService {
             channel_values.put(TvContract.Channels.COLUMN_BROWSABLE, 1);
             channel_values.put(TvContract.Channels.COLUMN_VIDEO_FORMAT, TvContract.Channels.VIDEO_FORMAT_1080P);
             channel_values.put(TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA, channel.id.getBytes());
+            channel_values.put(TvContract.Channels.COLUMN_TYPE, channel.type);
 
             Uri channelUri = context.getContentResolver().insert(TvContract.Channels.CONTENT_URI, channel_values);
 	    Log.d(TAG, "populateChannels: " + channel.number + " " + channel.name + " " + channelUri);
