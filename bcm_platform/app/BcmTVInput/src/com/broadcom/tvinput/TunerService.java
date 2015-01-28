@@ -46,6 +46,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.Long;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
@@ -673,53 +674,138 @@ public class TunerService extends TvInputService {
         return inputId;
     }
 
-    public void populateChannels(Context context, String inputId, ChannelInfo channels[]) 
+    public void addChannel(Context context, String inputId, ChannelInfo channel) 
     {
         ContentValues channel_values = new ContentValues();
 
         channel_values.put(TvContract.Channels.COLUMN_INPUT_ID, inputId);
 
-        Log.d(TAG, "populateChannels: start");
-        for (ChannelInfo channel : channels) 
-        {
-            // Initialize the Channels class
-            channel_values.put(TvContract.Channels.COLUMN_DISPLAY_NUMBER, channel.number);
-            channel_values.put(TvContract.Channels.COLUMN_DISPLAY_NAME, channel.name);
-            channel_values.put(TvContract.Channels.COLUMN_ORIGINAL_NETWORK_ID, channel.onid);
-            channel_values.put(TvContract.Channels.COLUMN_TRANSPORT_STREAM_ID, channel.tsid);
-            channel_values.put(TvContract.Channels.COLUMN_SERVICE_ID, channel.sid);
-            channel_values.put(TvContract.Channels.COLUMN_BROWSABLE, 1);
-            channel_values.put(TvContract.Channels.COLUMN_VIDEO_FORMAT, TvContract.Channels.VIDEO_FORMAT_1080P);
-            channel_values.put(TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA, channel.id.getBytes());
-            channel_values.put(TvContract.Channels.COLUMN_TYPE, channel.type);
+        // Initialize the Channels class
+        channel_values.put(TvContract.Channels.COLUMN_DISPLAY_NUMBER, channel.number);
+        channel_values.put(TvContract.Channels.COLUMN_DISPLAY_NAME, channel.name);
+        channel_values.put(TvContract.Channels.COLUMN_ORIGINAL_NETWORK_ID, channel.onid);
+        channel_values.put(TvContract.Channels.COLUMN_TRANSPORT_STREAM_ID, channel.tsid);
+        channel_values.put(TvContract.Channels.COLUMN_SERVICE_ID, channel.sid);
+        channel_values.put(TvContract.Channels.COLUMN_BROWSABLE, 1);
+        channel_values.put(TvContract.Channels.COLUMN_VIDEO_FORMAT, TvContract.Channels.VIDEO_FORMAT_1080P);
+        channel_values.put(TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA, channel.id.getBytes());
+        channel_values.put(TvContract.Channels.COLUMN_TYPE, channel.type);
 
-            Uri channelUri = context.getContentResolver().insert(TvContract.Channels.CONTENT_URI, channel_values);
-	    Log.d(TAG, "populateChannels: " + channel.number + " " + channel.name + " " + channelUri);
+        Uri channelUri = context.getContentResolver().insert(TvContract.Channels.CONTENT_URI, channel_values);
+        Log.d(TAG, "addChannel: " + channel.number + " " + channel.name + " " + channelUri);
 
-            if (!channel.logoUrl.equals("")) {
-                logoLoader.add(new LogoJob(channel.logoUrl, TvContract.buildChannelLogoUri(channelUri)));
-            }
-
-            long channelId = ContentUris.parseId(channelUri);
-            Log.d(TAG, "channelId = " +channelId);
-
-            // Initialize the Programs class
-            ProgramInfo programs[] = TunerHAL.getProgramList(channel.id);
-            for (ProgramInfo program : programs) 
-            {
-                insertProgram(context, channelId, program);
-            }
-            
+        if (!channel.logoUrl.equals("")) {
+            logoLoader.add(new LogoJob(channel.logoUrl, TvContract.buildChannelLogoUri(channelUri)));
         }
-        Log.d(TAG, "populateChannels: finish");
+
+        long channelId = ContentUris.parseId(channelUri);
+        Log.d(TAG, "channelId = " +channelId);
+
+        // Initialize the Programs class
+        ProgramInfo programs[] = TunerHAL.getProgramList(channel.id);
+        for (ProgramInfo program : programs) 
+        {
+            insertProgram(context, channelId, program);
+        }
+    }
+
+    public boolean sameChannelInfo(ChannelInfo a, ChannelInfo b) 
+    {
+        if (!a.id.equals(b.id)) {
+            return false;
+        }
+        if (!a.name.equals(b.name)) {
+            return false;
+        }
+        if (!a.number.equals(b.number)) {
+            return false;
+        }
+        if (a.onid != b.onid) {
+            return false;
+        }
+        if (a.tsid != b.tsid) {
+            return false;
+        }
+        if (a.sid != b.sid) {
+            return false;
+        }
+        return true; 
     }
 
     private void updateChannels(Context context, String inputId, ChannelInfo channels[]) {
         Uri uri = TvContract.buildChannelsUriForInput(inputId);
-        getContentResolver().delete(uri, null, null);
+        // Get list of channelIds and bids
+        String[] channelprojection = {
+            TvContract.Channels._ID,
+            TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA,
+            TvContract.Channels.COLUMN_DISPLAY_NAME,
+            TvContract.Channels.COLUMN_DISPLAY_NUMBER,
+            TvContract.Channels.COLUMN_ORIGINAL_NETWORK_ID,
+            TvContract.Channels.COLUMN_TRANSPORT_STREAM_ID,
+            TvContract.Channels.COLUMN_SERVICE_ID
+        };
+
+        List<String> skipList = new ArrayList<>();
+
+        if (channels.length > 0) {
+            Cursor channelcursor = getContentResolver().query(uri, channelprojection, null, null, null); 
+            if (channelcursor != null) {
+                List<Long> zapList = new ArrayList<>();
+                boolean databaseEmpty = true;
+
+                if (channelcursor.getCount() >= 1) {
+                    databaseEmpty = false;
+                    ChannelInfo dbci = new ChannelInfo();
+                    while (channelcursor.moveToNext()) {
+                        long channelId = channelcursor.getLong(0);
+                        int i;
+                        dbci.id = new String(channelcursor.getBlob(1));
+                        dbci.name = channelcursor.getString(2);
+                        dbci.number = channelcursor.getString(3);
+                        dbci.onid = channelcursor.getInt(4);
+                        dbci.tsid = channelcursor.getInt(5);
+                        dbci.sid = channelcursor.getInt(6);
+                        for (i = 0; i < channels.length; i++) {
+                            if (sameChannelInfo(dbci, channels[i])) {
+                                break;
+                            }
+                        }
+                        if (i < channels.length) {
+                            skipList.add(dbci.id);
+                        }
+                        else {
+                            zapList.add(new Long(channelId));
+                        }
+                    }
+                }
+                channelcursor.close();
+                if (skipList.size() == 0) {
+                    if (!databaseEmpty) {
+                        getContentResolver().delete(uri, null, null);
+                    }
+                }
+                else {
+                    for (Long channelIdWrapper : zapList) {
+                        long channelId = channelIdWrapper.longValue();
+                        Log.d(TAG, "updateChannels: deleting channelId " + channelId);
+                        getContentResolver().delete(TvContract.buildChannelUri(channelId), null, null); 
+                    }
+                }
+            }
+        }
         // TODO: Next deletes everyone's programs, not just per channel
         getContentResolver().delete(TvContract.Programs.CONTENT_URI, null, null);
-        populateChannels(context, inputId, channels);
+
+        for (ChannelInfo channel : channels) 
+        {
+            if (!skipList.contains(channel.id)) {
+                Log.d(TAG, "updateChannels: adding " + channel.id + " (" + channel.name + ")");
+                addChannel(context, inputId, channel); 
+            }
+            else {
+                Log.d(TAG, "updateChannels: preserving " + channel.id + " (" + channel.name + ")");
+            }
+        }
     }
 
     private class TunerTvInputSessionImpl extends Session 
