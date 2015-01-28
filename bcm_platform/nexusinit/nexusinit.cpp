@@ -290,6 +290,7 @@ int main(void)
     NEXUS_Error rc;
     FILE *key = NULL;
     NxClient_JoinSettings joinSettings;
+    struct stat sbuf;
 
     if (daemon(0, 0) < 0) {
         LOGE("nexusinit: FATAL: Daemonise Failed!");
@@ -344,6 +345,19 @@ int main(void)
     }
     else {
         LOGI("nexusinit: insmod %s succeeded", NEXUS_DRIVER_FILENAME);
+    }
+
+    const char *devName = getenv("NEXUS_DEVICE_NODE");
+    if (!devName)
+    {
+        devName = "/dev/nexus";
+    }
+
+    /* Delay until nexus device is present and writable */
+    while (stat(devName, &sbuf) == -1 || !(sbuf.st_mode & S_IWOTH))
+    {
+        ALOGW("Waiting for %s device...\n", devName);
+        sleep(1);
     }
 
     struct stat buffer;
