@@ -19,7 +19,9 @@
             android:checked="false"
             android:onClick="startStopBlindScan"
             android:textOff="@string/scan_button_label"
-            android:textOn="@string/stop_button_label" />
+            android:textOn="@string/stop_button_label">
+            <requestFocus/>
+        </ToggleButton>
 
         <TableLayout
             android:layout_width="match_parent"
