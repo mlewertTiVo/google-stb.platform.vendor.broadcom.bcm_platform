@@ -272,8 +272,8 @@ void NexusPower::NexusGpio::gpioCallback(void *context, int param __unused)
 
             NEXUS_Gpio_ClearInterrupt(pNexusGpio->getHandle());
 
-            // toggle the power key
-            if (pNexusGpio->mUInput != NULL)
+            // toggle the power key only when needed
+            if (pNexusGpio->mUInput != NULL && pNexusGpio->mPowerKeyEvent)
             {
                 // release->press->release will guarantee that the press event takes place
                 pNexusGpio->mUInput->emit_key_state(KEY_POWER, false);
@@ -830,3 +830,19 @@ status_t NexusPower::clearGpios()
     return status;
 }
 
+status_t NexusPower::setGpioPowerKeyEvent(bool enable)
+{
+    status_t status = NO_ERROR;
+    NEXUS_Error rc;
+    sp<NexusGpio> pNexusGpio;
+
+    for (unsigned gpio = 0; gpio < NexusGpio::MAX_INSTANCES; gpio++) {
+        pNexusGpio = gpios[gpio];
+        if (pNexusGpio.get() != NULL && pNexusGpio->getPinMode() == NEXUS_GpioMode_eInput &&
+                pNexusGpio->getPinInterruptMode() != NEXUS_GpioInterrupt_eDisabled) {
+
+            pNexusGpio->setPowerKeyEvent(enable);
+        }
+    }
+    return status;
+}

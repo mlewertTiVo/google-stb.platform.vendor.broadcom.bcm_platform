@@ -75,6 +75,7 @@ class NexusPower : public android::RefBase {
     void uninitialiseGpios();
     status_t setGpios(b_powerState state);
     status_t clearGpios();
+    status_t setGpioPowerKeyEvent(bool enable);
     ~NexusPower();
 
     // LinuxUInput class with refcount
@@ -112,6 +113,7 @@ class NexusPower : public android::RefBase {
         NEXUS_GpioValue getPinOutputValue(b_powerState state) { return mPinOutputValues[state]; }
         NEXUS_GpioHandle getHandle() { return mHandle; }
         void setHandle(NEXUS_GpioHandle handle) { mHandle = handle; }
+        void setPowerKeyEvent(bool enable) { mPowerKeyEvent = enable; }
         ~NexusGpio();
 
         private:
@@ -124,6 +126,7 @@ class NexusPower : public android::RefBase {
         NEXUS_GpioValue mPinOutputValues[MAX_POWER_STATES];
         NEXUS_GpioHandle mHandle;
         sp<LinuxUInputRef> mUInput;
+        bool mPowerKeyEvent;
 
         // Private methods...
         static sp<NexusGpio> instantiate(String8& pinName, unsigned pin, unsigned pinType, NEXUS_GpioMode pinMode,  NEXUS_GpioInterrupt interruptMode, sp<LinuxUInputRef> uInput);

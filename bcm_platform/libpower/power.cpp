@@ -517,6 +517,10 @@ static void power_set_interactive(struct power_module *module __unused, int on)
     ALOGV("%s: %s", __FUNCTION__, on ? "ON" : "OFF");
 
     if (on) {
+        if (gNexusPower.get()) {
+            // disable Power key event toggling from gpios
+            gNexusPower->setGpioPowerKeyEvent(false);
+        }
         power_finish_set_interactive(on);
     }
     else if (gInteractiveTimer) {
@@ -534,6 +538,11 @@ static void power_set_interactive(struct power_module *module __unused, int on)
         // Keep the CPU alive until we are ready to suspend it...
         ALOGV("%s: Acquire \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
         acquire_wake_lock(PARTIAL_WAKE_LOCK, WAKE_LOCK_ID);
+
+        if (gNexusPower.get()) {
+            // enable Power key event toggling from gpios
+            gNexusPower->setGpioPowerKeyEvent(true);
+        }
     }
 }
 
