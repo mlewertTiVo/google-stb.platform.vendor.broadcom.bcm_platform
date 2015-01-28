@@ -63,6 +63,7 @@
 #include "nexus_types.h"
 #include "nxclient.h"
 #include "nexus_surface_compositor.h"
+#include "bomx_video_decoder_stats.h"
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex);
@@ -372,6 +373,7 @@ protected:
     virtual void ClosePidChannel();
 
 private:
+    BOMX_VIDEO_STATS_DEC;
 };
 
 #endif //BOMX_VIDEO_DECODER_H__

@@ -955,6 +955,7 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         delete pBuffer;
     }
 
+    BOMX_VIDEO_STATS_RESET;
     Unlock();
 }
 
@@ -1586,6 +1587,9 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_playpumpEventId = NULL;
             m_hPlaypump = NULL;
             CancelTimerId(m_playpumpTimerId);
+            BOMX_VIDEO_STATS_PRINT_BASIC;
+            BOMX_VIDEO_STATS_PRINT_DETAILED;
+            BOMX_VIDEO_STATS_RESET;
         }
     }
     else
@@ -2783,6 +2787,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
             {
                 // Free up the buffer (decoder is already stopped)
                 ALOGV("Discarding frame %u on FreeBuffer (%s)", pFrameBuffer->frameStatus.serialNumber, active?"invalid":"stopped");
+                BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, 0, pFrameBuffer->frameStatus.serialNumber);
                 BLST_Q_REMOVE(&m_frameBufferAllocList, pFrameBuffer, node);
                 BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pFrameBuffer, node);
             }
@@ -3062,6 +3067,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     pInfo->complete = false;
 
     ALOGV("%s, comp:%s, buff:%p len:%d ts:%d flags:0x%x", __FUNCTION__, GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, (int)pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
+    BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::INPUT_FRAME, pBufferHeader->nTimeStamp, pBufferHeader->nFlags,
+                          pBufferHeader->nFilledLen - pBufferHeader->nOffset);
     if ( pBufferHeader->nFlags & OMX_BUFFERFLAG_CODECCONFIG )
     {
         if ( m_configBufferState != ConfigBufferState_eAccumulating )
@@ -3266,6 +3273,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         {
             // The frame has been flushed while the app owned it.  Move it back to the free list silently.
             ALOGV("Invalid FrameBuffer (%u) - Return to free list", pFrameBuffer->frameStatus.serialNumber);
+            BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, 0, pFrameBuffer->frameStatus.serialNumber);
             BLST_Q_REMOVE(&m_frameBufferAllocList, pFrameBuffer, node);
             BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pFrameBuffer, node);
         }
@@ -4038,6 +4046,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 ALOGV("Returning Port Buffer ts %u us serial %u pInfo %#x FB %#x HDR %#x flags %#x", (unsigned int)pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader, pHeader->nFlags);
                 {
                     unsigned queueDepthBefore = m_pVideoPorts[1]->QueueDepth();
+                    BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::OUTPUT_FRAME, pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber);
                     ReturnPortBuffer(m_pVideoPorts[1], pOmxBuffer);
                     // Try to return processed input buffers
                     ReturnInputBuffers();
@@ -4181,6 +4190,8 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 }
                 pBuffer->pPrivateHandle = NULL;
                 pBuffer->pBufferInfo = NULL;
+                BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, returnSettings[numFrames].display ? 1: 0,
+                                      pBuffer->frameStatus.serialNumber);
                 BLST_Q_REMOVE(&m_frameBufferAllocList, pBuffer, node);
                 BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pBuffer, node);
             }
