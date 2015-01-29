@@ -578,7 +578,7 @@ bool NexusIPCClient::isCecEnabled(uint32_t cecId __unused)
 #if NEXUS_HAS_CEC
     char value[PROPERTY_VALUE_MAX];
 
-    if (property_get(PROPERTY_HDMI_ENABLE_CEC, value, NULL) && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
+    if (property_get(PROPERTY_HDMI_ENABLE_CEC, value, DEFAULT_PROPERTY_HDMI_ENABLE_CEC) && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
         enabled = true;
     }
 #endif
@@ -603,7 +603,7 @@ bool NexusIPCClient::isCecAutoWakeupEnabled(uint32_t cecId __unused)
     bool enabled = false;
     char value[PROPERTY_VALUE_MAX];
 
-    if (property_get(PROPERTY_HDMI_AUTO_WAKEUP_CEC, value, "1") && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
+    if (property_get(PROPERTY_HDMI_AUTO_WAKEUP_CEC, value, DEFAULT_PROPERTY_HDMI_AUTO_WAKEUP_CEC) && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
         enabled = true;
     }
     return enabled;

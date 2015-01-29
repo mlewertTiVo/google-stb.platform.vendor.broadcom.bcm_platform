@@ -179,7 +179,7 @@ bool NexusPower::getCecTransmitStandby()
     char value[PROPERTY_VALUE_MAX];
     bool tx=false;
 
-    if (property_get(PROPERTY_HDMI_TX_STANDBY_CEC, value, NULL)) {
+    if (property_get(PROPERTY_HDMI_TX_STANDBY_CEC, value, DEFAULT_PROPERTY_HDMI_TX_STANDBY_CEC)) {
         tx = (strncmp(value, "1", PROPERTY_VALUE_MAX) == 0);
     }
     return tx;
@@ -190,7 +190,7 @@ bool NexusPower::getCecTransmitViewOn()
     char value[PROPERTY_VALUE_MAX];
     bool tx=false;
 
-    if (property_get(PROPERTY_HDMI_TX_VIEW_ON_CEC, value, NULL)) {
+    if (property_get(PROPERTY_HDMI_TX_VIEW_ON_CEC, value, DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC)) {
         tx = (strncmp(value, "1", PROPERTY_VALUE_MAX) == 0);
     }
     return tx;
@@ -214,13 +214,15 @@ status_t NexusPower::setPowerState(b_powerState state)
             ALOGE("%s: Could not set PowerState %d!", __FUNCTION__, state);
             ret = INVALID_OPERATION;
         }
-        else if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && getCecTransmitViewOn() == true && mIpcClient->setCecPowerState(cecId, state) != true) {
+        else if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && getCecTransmitViewOn() == true &&
+                                     mIpcClient->setCecPowerState(cecId, state) != true) {
             ALOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, cecId, state);
             ret = INVALID_OPERATION;
         }
     }
     else {
-        if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && getCecTransmitStandby() == true && mIpcClient->setCecPowerState(cecId, state) != true) {
+        if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && getCecTransmitStandby() == true &&
+                                mIpcClient->setCecPowerState(cecId, state) != true) {
             ALOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, cecId, state);
             ret = INVALID_OPERATION;
         }

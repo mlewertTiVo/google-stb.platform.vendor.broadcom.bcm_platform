@@ -13,10 +13,13 @@ include vendor/broadcom/bcm_platform/liblights/Android.mk
 include vendor/broadcom/bcm_platform/libnexusipc/Android.mk
 include vendor/broadcom/bcm_platform/libnexusir/Android.mk
 include vendor/broadcom/bcm_platform/libnexusservice/Android.mk
+include vendor/broadcom/bcm_platform/libpower/Android.mk
 include vendor/broadcom/bcm_platform/libstagefrighthw/Android.mk
 include vendor/broadcom/bcm_platform/libtv_input/Android.mk
 include vendor/broadcom/bcm_platform/libsecurity/Android.mk
 include vendor/broadcom/bcm_platform/nexusinit/Android.mk
+include vendor/broadcom/bcm_platform/pmlibservice/Android.mk
+
 
 ifeq ($(ANDROID_SUPPORTS_DTVKIT),y)
 include vendor/broadcom/bcm_platform/brcm_dtvkit/Android.mk
@@ -32,12 +35,6 @@ include ${BCM_APPS_PATH}/BcmGeneralSTBFunctions/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiInPlayer/Android.mk
 include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
-
-// why do we need a ifeq?  todo: remove.
-ifeq ($(ANDROID_SUPPORTS_PM),y)
-include vendor/broadcom/bcm_platform/pmlibservice/Android.mk
-include vendor/broadcom/bcm_platform/libpower/Android.mk
-endif
 
 include vendor/broadcom/bcm_platform/tools/calcfb/Android.mk
 include vendor/broadcom/bcm_platform/tools/clipping/Android.mk

@@ -49,6 +49,19 @@ static const char *PROPERTY_PM_TP3OFF               = "ro.pm.tp3off";
 static const char *PROPERTY_PM_DDROFF               = "ro.pm.ddroff";
 static const char *PROPERTY_PM_MEMC1OFF             = "ro.pm.memc1off";
 
+// Property defaults
+static const char *DEFAULT_PROPERTY_PM_DOZESTATE    = "S1";
+static const char *DEFAULT_PROPERTY_PM_OFFSTATE     = "S5";
+static const char *DEFAULT_PROPERTY_PM_USBOFF       = "1";
+static const char *DEFAULT_PROPERTY_PM_ETHOFF       = "1";
+static const char *DEFAULT_PROPERTY_PM_MOCAOFF      = "1";
+static const char *DEFAULT_PROPERTY_PM_SATAOFF      = "0";
+static const char *DEFAULT_PROPERTY_PM_TP1OFF       = "0";
+static const char *DEFAULT_PROPERTY_PM_TP2OFF       = "0";
+static const char *DEFAULT_PROPERTY_PM_TP3OFF       = "0";
+static const char *DEFAULT_PROPERTY_PM_DDROFF       = "0";
+static const char *DEFAULT_PROPERTY_PM_MEMC1OFF     = "0";
+
 // This is the default interactive timeout in seconds, which is the time we have to
 // wait for the framework to finish broadcasting its ACTION_SCREEN_OFF intent before
 // we actually start to power down the platform.
@@ -112,7 +125,7 @@ static b_powerState power_get_property_off_state()
 {
     char value[PROPERTY_VALUE_MAX] = "";
 
-    property_get(PROPERTY_PM_OFFSTATE, value, "s3");
+    property_get(PROPERTY_PM_OFFSTATE, value, DEFAULT_PROPERTY_PM_OFFSTATE);
     return power_get_state_from_string(value);
 }
 
@@ -120,7 +133,7 @@ static b_powerState power_get_property_doze_state()
 {
     char value[PROPERTY_VALUE_MAX] = "";
 
-    property_get(PROPERTY_PM_DOZESTATE, value, "s1");
+    property_get(PROPERTY_PM_DOZESTATE, value, DEFAULT_PROPERTY_PM_DOZESTATE);
     return power_get_state_from_string(value);
 }
 
@@ -272,7 +285,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         bool memc1off = false;
 
         /* usboff == true means leave USB ON during standby */
-        property_get(PROPERTY_PM_USBOFF, value, NULL);
+        property_get(PROPERTY_PM_USBOFF, value, DEFAULT_PROPERTY_PM_USBOFF);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             usboff = false;
         }
@@ -281,7 +294,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* ethoff == true means leave ethernet ON during standby */
-        property_get(PROPERTY_PM_ETHOFF, value, NULL);
+        property_get(PROPERTY_PM_ETHOFF, value, DEFAULT_PROPERTY_PM_ETHOFF);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             ethoff = false;
         }
@@ -290,7 +303,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* mocaoff == true means leave MOCA ON during standby */
-        property_get(PROPERTY_PM_MOCAOFF, value, NULL);
+        property_get(PROPERTY_PM_MOCAOFF, value, DEFAULT_PROPERTY_PM_MOCAOFF);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             mocaoff = false;
         }
@@ -299,7 +312,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* sataoff == true means leave SATA ON during standby */
-        property_get(PROPERTY_PM_SATAOFF, value, NULL);
+        property_get(PROPERTY_PM_SATAOFF, value, DEFAULT_PROPERTY_PM_SATAOFF);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             sataoff = false;
         }
@@ -308,7 +321,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* tp1off == true means leave CPU thread 1 ON during standby */
-        property_get(PROPERTY_PM_TP1OFF, value, NULL);
+        property_get(PROPERTY_PM_TP1OFF, value, DEFAULT_PROPERTY_PM_TP1OFF);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             tp1off = false;
         }
@@ -317,7 +330,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* tp2off == true means leave CPU thread 2 ON during standby */
-        property_get(PROPERTY_PM_TP2OFF, value, NULL);
+        property_get(PROPERTY_PM_TP2OFF, value, DEFAULT_PROPERTY_PM_TP2OFF);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             tp2off = false;
         }
@@ -326,7 +339,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* tp3off == true means leave CPU thread 3 ON during standby */
-        property_get(PROPERTY_PM_TP3OFF, value, NULL);
+        property_get(PROPERTY_PM_TP3OFF, value, DEFAULT_PROPERTY_PM_TP3OFF);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             tp3off = false;
         }
@@ -335,7 +348,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* ddroff == true means leave DDR timeout to default during standby */
-        property_get(PROPERTY_PM_DDROFF, value, NULL);
+        property_get(PROPERTY_PM_DDROFF, value, DEFAULT_PROPERTY_PM_DDROFF);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             ddroff = false;
         }
@@ -344,7 +357,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         }
 
         /* memc1off == true means enable MEMC1 status during standby */
-        property_get(PROPERTY_PM_MEMC1OFF, value, NULL);
+        property_get(PROPERTY_PM_MEMC1OFF, value, DEFAULT_PROPERTY_PM_MEMC1OFF);
         if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
             memc1off = false;
         }

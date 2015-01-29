@@ -163,18 +163,22 @@ typedef struct b_cecStatus {
 /*** Properties must be less than 32 characters in length! ***/
 
 // Enable HDMI CEC functionality by ensuring this property is set to 1...
-#define PROPERTY_HDMI_ENABLE_CEC      "persist.sys.hdmi.enable_cec"
+#define PROPERTY_HDMI_ENABLE_CEC                "persist.sys.hdmi.enable_cec"
+#define DEFAULT_PROPERTY_HDMI_ENABLE_CEC        "1"
 
 // Enable STB auto wakeup on CEC by ensuring this property is set to 1...
-#define PROPERTY_HDMI_AUTO_WAKEUP_CEC "persist.sys.hdmi.auto_wake_cec"
+#define PROPERTY_HDMI_AUTO_WAKEUP_CEC           "persist.sys.hdmi.auto_wake_cec"
+#define DEFAULT_PROPERTY_HDMI_AUTO_WAKEUP_CEC   "1"
 
-// Enable sending CEC standby message to TV on entry to standby by ensuring
-// that this property is set to 1...
-#define PROPERTY_HDMI_TX_STANDBY_CEC    "persist.sys.hdmi.tx_standby_cec"
+// Disable sending CEC standby message to TV on entry to standby by ensuring
+// that this property is set to 0...
+#define PROPERTY_HDMI_TX_STANDBY_CEC            "persist.sys.hdmi.tx_standby_cec"
+#define DEFAULT_PROPERTY_HDMI_TX_STANDBY_CEC    "0"
 
-// Enable sending CEC image view on message to TV on exit from standby by
-// ensuring that this property is set to 1...
-#define PROPERTY_HDMI_TX_VIEW_ON_CEC    "persist.sys.hdmi.tx_view_on_cec"
+// Disable sending CEC image view on message to TV on exit from standby by
+// ensuring that this property is set to 0...
+#define PROPERTY_HDMI_TX_VIEW_ON_CEC            "persist.sys.hdmi.tx_view_on_cec"
+#define DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC    "0"
 
 
 typedef struct b_hdmiOutputStatus

@@ -21,7 +21,7 @@
 #undef LOG_TAG
 #endif
 
-#define LOG_TAG "Brcmstb HDMI CEC"
+#define LOG_TAG "Brcmstb-HDMI-CEC"
 #include <utils/Log.h>
 
 #include <hardware/hardware.h>

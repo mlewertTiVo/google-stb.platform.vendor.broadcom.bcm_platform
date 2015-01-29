@@ -49,7 +49,7 @@
 // Verbose messages removed
 //#define LOG_NDEBUG 0
 
-#define LOG_TAG "nexus_hdmi_cec"
+#define LOG_TAG "Brcmstb-HDMI-CEC"
 
 #include <errno.h>
 #include <utils/Log.h>
@@ -271,7 +271,7 @@ bool NexusHdmiCecDevice::getCecTransmitStandby()
     char value[PROPERTY_VALUE_MAX];
     bool tx=false;
 
-    if (property_get(PROPERTY_HDMI_TX_STANDBY_CEC, value, NULL)) {
+    if (property_get(PROPERTY_HDMI_TX_STANDBY_CEC, value, DEFAULT_PROPERTY_HDMI_TX_STANDBY_CEC)) {
         tx = (strncmp(value, "1", PROPERTY_VALUE_MAX) == 0);
     }
     return tx;
@@ -282,7 +282,7 @@ bool NexusHdmiCecDevice::getCecTransmitViewOn()
     char value[PROPERTY_VALUE_MAX];
     bool tx=false;
 
-    if (property_get(PROPERTY_HDMI_TX_VIEW_ON_CEC, value, NULL)) {
+    if (property_get(PROPERTY_HDMI_TX_VIEW_ON_CEC, value, DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC)) {
         tx = (strncmp(value, "1", PROPERTY_VALUE_MAX) == 0);
     }
     return tx;
