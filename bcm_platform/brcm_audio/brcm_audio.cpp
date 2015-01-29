@@ -52,7 +52,7 @@
 
 #include "brcm_audio.h"
 
-#define BRCM_BUFFER_SIZE_MS 40
+#define BRCM_BUFFER_SIZE_MS 10
 
 /*
  * Utility Functions
