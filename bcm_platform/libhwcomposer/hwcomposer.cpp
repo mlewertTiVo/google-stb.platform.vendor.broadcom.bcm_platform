@@ -2498,6 +2498,7 @@ static void hwc_nsc_recycled_cb(void *context, int param)
     size_t n = 0;
     int six = -1;
     int composition_done;
+    bool sync_timeline_inc_on_recycle;
     BSTD_UNUSED(param);
 
     if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
@@ -2505,12 +2506,14 @@ static void hwc_nsc_recycled_cb(void *context, int param)
     }
     composition_done = -1;
     do {
+          sync_timeline_inc_on_recycle = false;
           recycledSurface = NULL;
           rc = NEXUS_SurfaceClient_RecycleSurface(ci->ncci.schdl, &recycledSurface, 1, &n);
           if (rc) {
               break;
           }
           if ((n > 0) && (recycledSurface != NULL)) {
+              sync_timeline_inc_on_recycle = true;
               six = hwc_gpx_get_recycle_surface_locked(ci, recycledSurface);
               if (six != -1) {
                  if (composition_done == -1) {
@@ -2537,7 +2540,7 @@ static void hwc_nsc_recycled_cb(void *context, int param)
                  NEXUS_Surface_Destroy(recycledSurface);
           }
 
-          if (ctx && (ctx->sync_timeline != INVALID_FENCE)) {
+          if (ctx && (ctx->sync_timeline != INVALID_FENCE) && sync_timeline_inc_on_recycle) {
              int sync_increment = ((composition_done == -1) ? 1 : (ctx->set_call - composition_done));
              for (six = 0 ; six < sync_increment ; six++) {
                 sw_sync_timeline_inc(ctx->sync_timeline, 1);
