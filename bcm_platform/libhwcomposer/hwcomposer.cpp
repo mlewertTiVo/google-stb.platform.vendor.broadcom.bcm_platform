@@ -880,7 +880,6 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
 {
     /* surface flinger gives us a single page equivalent (4096 bytes). */
 
-    NEXUS_SurfaceComposition composition;
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
     int capacity, write, index;
     int i;
@@ -944,9 +943,7 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
     for (int i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++)
     {
         write = 0;
-        NxClient_GetSurfaceClientComposition(ctx->gpx_cli[i].ncci.sccid, &composition);
-
-        if (composition.visible && capacity) {
+        if (ctx->gpx_cli[i].composition.visible && capacity) {
            write = dump_gpx_layer_data(buff + index, capacity, i, &ctx->gpx_cli[i]);
            if (write > 0) {
               capacity = (capacity > write) ? (capacity - write) : 0;
@@ -962,12 +959,7 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
     for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++)
     {
         write = 0;
-        if (ctx->mm_cli[i].root.ncci.sccid < INVALID_HANDLE) {
-           NxClient_GetSurfaceClientComposition(ctx->mm_cli[i].root.ncci.sccid, &composition);
-        } else {
-           memcpy(&composition, &ctx->mm_cli[i].root.composition, sizeof(composition));
-        }
-        if (composition.visible && capacity) {
+        if (ctx->mm_cli[i].root.composition.visible && capacity) {
            write = dump_mm_layer_data(buff + index, capacity, i, &ctx->mm_cli[i]);
            if (write > 0) {
               capacity = (capacity > write) ? (capacity - write) : 0;
@@ -983,12 +975,7 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
     for (int i = 0; i < NSC_SB_CLIENTS_NUMBER; i++)
     {
         write = 0;
-        if (ctx->sb_cli[i].root.ncci.sccid < INVALID_HANDLE) {
-           NxClient_GetSurfaceClientComposition(ctx->sb_cli[i].root.ncci.sccid, &composition);
-        } else {
-           memcpy(&composition, &ctx->sb_cli[i].root.composition, sizeof(composition));
-        }
-        if (composition.visible && capacity) {
+        if (ctx->sb_cli[i].root.composition.visible && capacity) {
            write = dump_sb_layer_data(buff + index, capacity, i, &ctx->sb_cli[i]);
            if (write > 0) {
               capacity = (capacity > write) ? (capacity - write) : 0;
@@ -2126,8 +2113,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                                                       VSYNC_CLIENT_STRIDE,
                                                       NEXUS_PixelFormat_eA8_B8_G8_R8,
                                                       NULL);
-               if (dev->syn_cli.shdl == NULL) {
-                   ALOGE("%s: hwc_to_nsc_surface vsync client failed", __FUNCTION__);
+               if (dev->syn_cli.shdl == NULL) {                   ALOGE("%s: hwc_to_nsc_surface vsync client failed", __FUNCTION__);
                    goto clean_up;
                }
 
@@ -2166,8 +2152,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                     ALOGE("%s:gpx: NEXUS_SurfaceClient_SetSettings %d failed", __FUNCTION__, i);
                     goto clean_up;
                 }
-
-                memset(&dev->gpx_cli[i].composition, 0, sizeof(NEXUS_SurfaceComposition));
+                NxClient_GetSurfaceClientComposition(dev->gpx_cli[i].ncci.sccid, &dev->gpx_cli[i].composition);
             }
 
             /* create layers nx mm clients */
@@ -2199,11 +2184,12 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                         ALOGE("%s:mm: NEXUS_SurfaceClient_AcquireVideoWindow %d failed", __FUNCTION__, i);
                         goto clean_up;
                     }
+                    NxClient_GetSurfaceClientComposition(dev->mm_cli[i].root.ncci.sccid, &dev->mm_cli[i].root.composition);
                 } else {
                     dev->mm_cli[i].root.ncci.sccid = INVALID_HANDLE + i;
+                    memset(&dev->mm_cli[i].root.composition, 0, sizeof(dev->mm_cli[i].root.composition));
                 }
 
-                memset(&dev->mm_cli[i].root.composition, 0, sizeof(NEXUS_SurfaceComposition));
                 dev->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_INVALID;
 
                 // TODO: add support for more than one video at the time.
@@ -2221,11 +2207,11 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                 if (!HWC_SB_NO_ALLOC_SURF_CLI) {
                     dev->sb_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[VSYNC_USES_NSC_SURF+NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+i].id;
                     /* do not acquire surface client nor video window to allow the user of this to own it instead. */
+                    NxClient_GetSurfaceClientComposition(dev->sb_cli[i].root.ncci.sccid, &dev->sb_cli[i].root.composition);
                 } else {
                     dev->sb_cli[i].root.ncci.sccid = INVALID_HANDLE + i;
+                    memset(&dev->sb_cli[i].root.composition, 0, sizeof(dev->sb_cli[i].root.composition));
                 }
-
-                memset(&dev->mm_cli[i].root.composition, 0, sizeof(NEXUS_SurfaceComposition));
 
                 // TODO: add support for more than one sideband at the time.
                 if (i == 0) {
@@ -2605,6 +2591,7 @@ static void hwc_prepare_gpx_layer(
     }
 
     if ((memcmp((void *)&disp_position, (void *)&ctx->gpx_cli[layer_id].composition.position, sizeof(NEXUS_Rect)) != 0) ||
+        (memcmp((void *)&clip_position, (void *)&ctx->gpx_cli[layer_id].composition.clipRect, sizeof(NEXUS_Rect)) != 0) ||
         (cur_width != ctx->gpx_cli[layer_id].width) ||
         (cur_height != ctx->gpx_cli[layer_id].height) ||
         (cur_blending_type != ctx->gpx_cli[layer_id].blending_type)) {
@@ -2615,7 +2602,6 @@ static void hwc_prepare_gpx_layer(
         (!ctx->gpx_cli[layer_id].composition.visible) ||
         geometry_changed) {
 
-        NxClient_GetSurfaceClientComposition(ctx->gpx_cli[layer_id].ncci.sccid, &ctx->gpx_cli[layer_id].composition);
         ctx->gpx_cli[layer_id].composition.zorder                = (ctx->gpx_cli[layer_id].layer_flags & HWC_IS_CURSOR_LAYER) ? CURSOR_CLIENT_ZORDER : GPX_CLIENT_ZORDER;
         ctx->gpx_cli[layer_id].composition.position.x            = disp_position.x;
         ctx->gpx_cli[layer_id].composition.position.y            = disp_position.y;
@@ -2798,7 +2784,6 @@ static void hwc_prepare_mm_layer(
     }
 
     // make the gpx corresponding layer non-visible in the layer stack.
-    NxClient_GetSurfaceClientComposition(ctx->gpx_cli[gpx_layer_id].ncci.sccid, &ctx->gpx_cli[gpx_layer_id].composition);
     if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
        ctx->gpx_cli[gpx_layer_id].composition.visible = false;
        rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[gpx_layer_id].ncci.sccid, &ctx->gpx_cli[gpx_layer_id].composition);
@@ -2817,13 +2802,12 @@ static void hwc_prepare_mm_layer(
 
     // deal with any change in the geometry/visibility of the layer.
     if (ctx->mm_cli[vid_layer_id].root.ncci.sccid < INVALID_HANDLE) {
-       NxClient_GetSurfaceClientComposition(ctx->mm_cli[vid_layer_id].root.ncci.sccid, &ctx->mm_cli[vid_layer_id].root.composition);
        if (!ctx->mm_cli[vid_layer_id].root.composition.visible) {
           ctx->mm_cli[vid_layer_id].root.composition.visible = true;
           layer_updated = true;
        }
-       if (memcmp((void *)&disp_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) {
-
+       if ((memcmp((void *)&disp_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) ||
+           (memcmp((void *)&clip_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.clipRect, sizeof(NEXUS_Rect)) != 0)) {
            layer_updated = true;
            ctx->mm_cli[vid_layer_id].root.composition.zorder                = MM_CLIENT_ZORDER;
            ctx->mm_cli[vid_layer_id].root.composition.position.x            = disp_position.x;
@@ -2866,8 +2850,8 @@ static void hwc_prepare_mm_layer(
           layer_updated = true;
        }
 
-       if (memcmp((void *)&disp_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) {
-
+       if ((memcmp((void *)&disp_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) ||
+           (memcmp((void *)&clip_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.clipRect, sizeof(NEXUS_Rect)) != 0)) {
           layer_updated = true;
           ctx->mm_cli[vid_layer_id].root.composition.zorder                = MM_CLIENT_ZORDER;
           ctx->mm_cli[vid_layer_id].root.composition.position.x            = disp_position.x;
@@ -2942,7 +2926,6 @@ static void hwc_prepare_sb_layer(
     }
 
     // make the gpx corresponding layer non-visible in the layer stack.
-    NxClient_GetSurfaceClientComposition(ctx->gpx_cli[gpx_layer_id].ncci.sccid, &ctx->gpx_cli[gpx_layer_id].composition);
     if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
        ctx->gpx_cli[gpx_layer_id].composition.visible = false;
        rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[gpx_layer_id].ncci.sccid, &ctx->gpx_cli[gpx_layer_id].composition);
@@ -2961,13 +2944,12 @@ static void hwc_prepare_sb_layer(
 
     // deal with any change in the geometry/visibility of the layer.
     if (ctx->sb_cli[sb_layer_id].root.ncci.sccid < INVALID_HANDLE) {
-       NxClient_GetSurfaceClientComposition(ctx->sb_cli[sb_layer_id].root.ncci.sccid, &ctx->sb_cli[sb_layer_id].root.composition);
        if (!ctx->sb_cli[sb_layer_id].root.composition.visible) {
           ctx->sb_cli[sb_layer_id].root.composition.visible = true;
           layer_updated = true;
        }
-       if (memcmp((void *)&disp_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) {
-
+       if ((memcmp((void *)&disp_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) ||
+           (memcmp((void *)&clip_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.clipRect, sizeof(NEXUS_Rect)) != 0)) {
            layer_updated = true;
            ctx->sb_cli[sb_layer_id].root.composition.zorder                = SB_CLIENT_ZORDER;
            ctx->sb_cli[sb_layer_id].root.composition.position.x            = disp_position.x;
@@ -2994,8 +2976,8 @@ static void hwc_prepare_sb_layer(
           layer_updated = true;
        }
 
-       if (memcmp((void *)&disp_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) {
-
+       if ((memcmp((void *)&disp_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) ||
+           (memcmp((void *)&clip_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.clipRect, sizeof(NEXUS_Rect)) != 0)) {
           layer_updated = true;
           ctx->sb_cli[sb_layer_id].root.composition.visible               = true;
           ctx->sb_cli[sb_layer_id].root.composition.zorder                = SB_CLIENT_ZORDER;
@@ -3078,18 +3060,15 @@ static void hwc_nsc_prepare_layer(
 
 static void hwc_hide_unused_gpx_layer(hwc_context_t* ctx, int index)
 {
-    NEXUS_SurfaceComposition composition;
     NEXUS_Error rc;
 
     if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
         goto out;
     }
 
-    NxClient_GetSurfaceClientComposition(ctx->gpx_cli[index].ncci.sccid, &composition);
-    if (composition.visible) {
-       composition.visible = false;
-       rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[index].ncci.sccid, &composition);
+    if (ctx->gpx_cli[index].composition.visible) {
        ctx->gpx_cli[index].composition.visible = false;
+       rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[index].ncci.sccid, &ctx->gpx_cli[index].composition);
        if (rc != NEXUS_SUCCESS) {
            ALOGE("%s: failed hiding layer %d, err=%d", __FUNCTION__, index, rc);
        }
@@ -3110,11 +3089,10 @@ static void nx_client_hide_unused_mm_layer(hwc_context_t* ctx, int index)
         goto out;
     }
 
-    if (ctx->mm_cli[index].root.ncci.sccid < INVALID_HANDLE) {
-       NxClient_GetSurfaceClientComposition(ctx->mm_cli[index].root.ncci.sccid, &composition);
-       if (composition.visible) {
-          composition.visible = false;
-          rc = NxClient_SetSurfaceClientComposition(ctx->mm_cli[index].root.ncci.sccid, &composition);
+    if (ctx->mm_cli[index].root.composition.visible) {
+       ctx->mm_cli[index].root.composition.visible = false;
+       if (ctx->mm_cli[index].root.ncci.sccid < INVALID_HANDLE) {
+          rc = NxClient_SetSurfaceClientComposition(ctx->mm_cli[index].root.ncci.sccid, &ctx->mm_cli[index].root.composition);
           if (rc != NEXUS_SUCCESS) {
               ALOGE("%s: failed hiding layer %d, err=%d", __FUNCTION__, index, rc);
           }
@@ -3135,17 +3113,14 @@ static void nx_client_hide_unused_sb_layer(hwc_context_t* ctx, int index)
         goto out;
     }
 
-    if (ctx->sb_cli[index].root.ncci.sccid < INVALID_HANDLE) {
-       NxClient_GetSurfaceClientComposition(ctx->sb_cli[index].root.ncci.sccid, &composition);
-       if (composition.visible) {
-          composition.visible = false;
-          rc = NxClient_SetSurfaceClientComposition(ctx->sb_cli[index].root.ncci.sccid, &composition);
+    if (ctx->sb_cli[index].root.composition.visible) {
+       ctx->sb_cli[index].root.composition.visible = false;
+       if (ctx->sb_cli[index].root.ncci.sccid < INVALID_HANDLE) {
+          rc = NxClient_SetSurfaceClientComposition(ctx->sb_cli[index].root.ncci.sccid, &ctx->sb_cli[index].root.composition);
           if (rc != NEXUS_SUCCESS) {
               ALOGE("%s: failed hiding layer %d, err=%d", __FUNCTION__, index, rc);
           }
        }
-    } else {
-       ctx->sb_cli[index].root.composition.visible = false;
     }
 
     BKNI_ReleaseMutex(ctx->mutex);
