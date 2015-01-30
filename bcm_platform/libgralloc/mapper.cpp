@@ -58,32 +58,6 @@ int gralloc_register_buffer(gralloc_module_t const* module,
       return -EINVAL;
    }
 
-   if (hnd->pid != getpid())
-   {
-      NEXUS_PlatformStatus  pstatus;
-      NEXUS_Error rc = NEXUS_SUCCESS;
-
-      rc = NEXUS_Platform_GetStatus(&pstatus);
-      if (rc != NEXUS_SUCCESS)
-      {
-         BCM_DEBUG_MSG("BRCM-GRALLOC:: Trying To Join:%d\n",getpid());
-         rc = NEXUS_Platform_Join();
-         if (rc == NEXUS_SUCCESS)
-         {
-            BCM_DEBUG_MSG("BRCM-GRALLOC:: Regr buff process %d joined nexus\n",getpid());
-         }
-         else
-         {
-            BCM_DEBUG_MSG("BRCM-GRALLOC:: Unable to proceed, nexus join has failed\n");
-            return -EINVAL;
-         }
-      }
-   }
-   else
-   {
-      LOGE("%s:: Register buffer from same process :%d", __FUNCTION__, getpid());
-   }
-
    pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
    LOGI("%s: parent:%d, registrant:%d, addr:0x%x", __FUNCTION__,
         hnd->pid, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr);
