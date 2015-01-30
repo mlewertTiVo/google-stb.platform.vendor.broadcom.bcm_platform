@@ -441,12 +441,7 @@ static int power_set_state(b_powerState toState, b_powerState fromState)
         } break;
 
         case ePowerState_S5: {
-            if (gNexusPower.get()) {
-                rc = gNexusPower->setPowerState(toState);
-            }
-            if (rc == 0) {
-                rc = power_set_state_s5();
-            }
+            rc = power_set_state_s5();
         } break;
 
         default: {
@@ -539,11 +534,21 @@ static void power_set_interactive(struct power_module *module __unused, int on)
     else if (gInteractiveTimer) {
         // Start interactive timer
         struct itimerspec ts;
-        int interactiveTimeout = power_get_property_interactive_timeout();
+        int interactiveTimeout;
+        b_powerState offState = power_get_property_off_state();
 
+        // If we want to enter S5 (aka cold boot), then we can enter immediately as
+        // the system will begin its slow shutdown process...
+        if (offState == ePowerState_S5) {
+            interactiveTimeout = 0;
+            ts.it_value.tv_nsec = 1;
+        }
+        else {
+            interactiveTimeout = power_get_property_interactive_timeout();
+            ts.it_value.tv_nsec = 0;
+        }
         ALOGV("%s: Waiting %ds before actually setting the power state...", __FUNCTION__, interactiveTimeout);
         ts.it_value.tv_sec = interactiveTimeout;
-        ts.it_value.tv_nsec = 0;
         ts.it_interval.tv_sec = 0;
         ts.it_interval.tv_nsec = 0;
         timer_settime(gInteractiveTimer, 0, &ts, NULL);
