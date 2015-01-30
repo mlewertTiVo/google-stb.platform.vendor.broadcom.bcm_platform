@@ -11,15 +11,6 @@ LOCAL_STRIP_MODULE := true
 include $(BUILD_PREBUILT)
 
 include $(CLEAR_VARS)
-LOCAL_MODULE := libb_os
-LOCAL_SRC_FILES := bin/libb_os.so
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_SUFFIX := .so
-LOCAL_MODULE_CLASS := SHARED_LIBRARIES
-LOCAL_STRIP_MODULE := true
-include $(BUILD_PREBUILT)
-
-include $(CLEAR_VARS)
 LOCAL_MODULE := libnxclient
 LOCAL_SRC_FILES := bin/libnxclient.so
 LOCAL_MODULE_TAGS := optional

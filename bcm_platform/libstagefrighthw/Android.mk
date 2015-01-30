@@ -97,7 +97,10 @@ include $(BSEAV)/lib/utils/batom.inc
 include $(BSEAV)/lib/media/bmedia.inc
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
-LOCAL_CFLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS) $(addprefix -I,$(BMEDIA_INCLUDES) $(BFILE_MEDIA_INCLUDES))
+REMOVE_NEXUS_CFLAGS := -Wstrict-prototypes
+MANGLED_NEXUS_CFLAGS := $(filter-out $(REMOVE_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
+
+LOCAL_CFLAGS := $(MANGLED_NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS) $(addprefix -I,$(BMEDIA_INCLUDES) $(BFILE_MEDIA_INCLUDES))
 # Required for nexusipcclient using LOGX in a header file
 LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 
@@ -106,9 +109,15 @@ LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/lib/os/include $(NEXUS_TOP)/lib/os/include/linuxuser
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 
+B_LIB_TOP := $(NEXUS_TOP)/lib
+B_REFSW_OS ?= linuxuser
+include $(NEXUS_TOP)/lib/os/b_os_lib.inc
+LOCAL_SRC_FILES += $(subst $(B_LIB_TOP),../../refsw/nexus/lib,$(B_OS_LIB_SOURCES))
+LOCAL_C_INCLUDES += $(subst $(B_LIB_TOP),$(TOP)/vendor/broadcom/refsw/nexus/lib,$(B_OS_LIB_PUBLIC_INCLUDES) $(B_OS_LIB_PRIVATE_INCLUDES))
+LOCAL_CFLAGS += $(addprefix -D,$(B_OS_LIB_DEFINES))
+
 LOCAL_SHARED_LIBRARIES :=       \
         $(NEXUS_LIB) \
-        libb_os \
         libbinder               \
         libutils                \
         libcutils               \
