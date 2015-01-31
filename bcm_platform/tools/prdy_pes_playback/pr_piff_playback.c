@@ -85,6 +85,12 @@
 #include "nxclient.h"
 #include "nexus_surface_client.h"
 
+#define NEED_TO_BE_TRUSTED_APP
+#ifdef NEED_TO_BE_TRUSTED_APP
+#include <cutils/properties.h>
+#define NEXUS_TRUSTED_DATA_PATH "/data/misc/nexus"
+#endif
+
 #define USE_SECURE_VIDEO_PLAYBACK       1
 #define USE_SECURE_AUDIO_PLAYBACK       1
 #define USE_SECURE_PLAYBACK             (USE_SECURE_VIDEO_PLAYBACK || USE_SECURE_AUDIO_PLAYBACK)
@@ -1248,8 +1254,37 @@ int main(int argc, char* argv[])
 
     BDBG_MSG(("@@@ MSG Check Point Start vc1_stream %d--", vc1_stream));
 
+#ifdef NEED_TO_BE_TRUSTED_APP
+	char nx_key[PROPERTY_VALUE_MAX];
+	FILE *key = NULL;
+
+        sprintf(nx_key, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
+        key = fopen(nx_key, "r");
+
+        if (key == NULL) {
+           fprintf(stderr, "%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, nx_key, errno, strerror(errno));
+        } else {
+           memset(nx_key, 0, sizeof(nx_key));
+           fread(nx_key, PROPERTY_VALUE_MAX, 1, key);
+           fclose(key);
+        }
+#endif
+
     NxClient_GetDefaultJoinSettings(&joinSettings);
     snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "pr_piff_playback");
+
+#ifdef NEED_TO_BE_TRUSTED_APP
+        joinSettings.mode = NEXUS_ClientMode_eUntrusted;
+        if (strlen(nx_key)) {
+           if (strstr(nx_key, "trusted:") == nx_key) {
+              const char *password = &nx_key[8];
+              joinSettings.mode = NEXUS_ClientMode_eProtected;
+              joinSettings.certificate.length = strlen(password);
+              memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
+           }
+        }
+#endif
+
     rc = NxClient_Join(&joinSettings);
     if (rc)
         return -1;
