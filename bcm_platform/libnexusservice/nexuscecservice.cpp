@@ -372,9 +372,13 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
         }
     }
 
-    // Is this a polling message?
+    // Is this a logical address determination polling message?
     if (srcaddr == destaddr) {
-        maxLoops = 2;
+        // No need to loop excessively if we are using the HDMI Control Service...
+        if (mCecServiceManager->mCecDeviceType != -1)
+            maxLoops = 1;
+        else
+            maxLoops = 2;
     } else {
         maxLoops = 5;
     }
@@ -457,6 +461,15 @@ NexusService::CecServiceManager::CecTxMessageHandler::~CecTxMessageHandler()
 {
     ALOGV("%s: for CEC%d called", __PRETTY_FUNCTION__, cecId);
 }
+
+NexusService::CecServiceManager::CecServiceManager(NexusService *ns, uint32_t cecId) :  mNexusService(ns), cecId(cecId), cecHandle(NULL),
+                                                                                            mLogicalAddress(0xFF), mCecRxMessageHandler(NULL),
+                                                                                            mCecTxMessageHandler(NULL)
+{
+    ALOGV("%s: called for CEC%d", __PRETTY_FUNCTION__, cecId);
+    mCecDeviceType = getPropertyDeviceType();
+}
+
 
 /******************************************************************************
   EventListener methods
@@ -845,7 +858,7 @@ bool NexusService::CecServiceManager::setLogicalAddress(uint8_t addr)
 
 /* Android-L sets up a property to define the device type and hence
    the logical address of the device.  */
-int NexusService::CecServiceManager::getDeviceType()
+int NexusService::CecServiceManager::getPropertyDeviceType()
 {
     char value[PROPERTY_VALUE_MAX];
     int type = -1;
@@ -886,8 +899,6 @@ status_t NexusService::CecServiceManager::platformInit()
     }
 
     if (status == OK && mNexusService->getHdmiOutputStatus(cecId, &hdmiOutputStatus)) {
-        int deviceType = getDeviceType();
-
         NEXUS_Cec_GetSettings(cecHandle, &cecSettings);
         cecSettings.enabled = false;
         cecSettings.messageReceivedCallback.callback = msgReceived_callback;
@@ -905,7 +916,7 @@ status_t NexusService::CecServiceManager::platformInit()
         cecSettings.physicalAddress[0] = hdmiOutputStatus.physicalAddress[0];
         cecSettings.physicalAddress[1] = hdmiOutputStatus.physicalAddress[1];
 
-        if (deviceType != -1) {
+        if (mCecDeviceType != -1) {
             cecSettings.disableLogicalAddressPolling = true;
             cecSettings.logicalAddress = 0xff;
             ALOGV("%s: setting CEC%d logical address to 0xFF", __PRETTY_FUNCTION__, cecId);
@@ -927,7 +938,7 @@ status_t NexusService::CecServiceManager::platformInit()
                 status = UNKNOWN_ERROR;
             }
             else {
-                if (deviceType == -1) {
+                if (mCecDeviceType == -1) {
                     for (loops = 0; loops < 5; loops++) {
                         ALOGV("%s: Waiting for CEC%d logical address...", __PRETTY_FUNCTION__, cecId);
                         mCecDeviceReadyLock.lock();
@@ -946,7 +957,7 @@ status_t NexusService::CecServiceManager::platformInit()
                             cecStatus.messageTxPending ? "" : "Not "
                             );
 
-                    if (deviceType == -1 && cecStatus.logicalAddress == 0xFF) {
+                    if (mCecDeviceType == -1 && cecStatus.logicalAddress == 0xFF) {
                         ALOGE("%s: No Cec capable device found on HDMI output %d!", __PRETTY_FUNCTION__, cecId);
                         status = NO_INIT;
                     }
@@ -977,7 +988,7 @@ status_t NexusService::CecServiceManager::platformInit()
                         mCecTxMessageLooper->registerHandler(mCecTxMessageHandler);
 
                         // Create HDMI CEC Message Event Listener only for non Android-L builds
-                        if (deviceType == -1) {
+                        if (mCecDeviceType == -1) {
                             sp<INexusHdmiCecMessageEventListener> eventListener = new NexusService::CecServiceManager::EventListener(this);
                             status = setEventListener(eventListener);
                         }
@@ -1005,9 +1016,8 @@ bool NexusService::CecServiceManager::isPlatformInitialised()
 void NexusService::CecServiceManager::platformUninit()
 {
     NEXUS_PlatformConfiguration *pPlatformConfig;
-    int deviceType = getDeviceType();
 
-    if (deviceType == -1 && mEventListener != NULL) {
+    if (mCecDeviceType == -1 && mEventListener != NULL) {
         setEventListener(NULL);
     }
 

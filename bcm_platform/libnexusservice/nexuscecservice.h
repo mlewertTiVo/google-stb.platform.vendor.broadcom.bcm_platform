@@ -72,14 +72,12 @@ protected:
 
     // Protected constructor prevents a client from creating an instance of this
     // class directly, but allows a sub-class to call it through inheritence.
-    CecServiceManager(NexusService *ns, uint32_t cecId = 0) :
-        mNexusService(ns), cecId(cecId), cecHandle(NULL), mLogicalAddress(0xFF), mCecRxMessageHandler(NULL), mCecTxMessageHandler(NULL) {
-        ALOGV("%s: called for CEC%d", __PRETTY_FUNCTION__, cecId);
-    }
+    CecServiceManager(NexusService *ns, uint32_t cecId = 0);
 
     static sp<CecServiceManager> instantiate(NexusService *ns, uint32_t cecId) { return new CecServiceManager(ns, cecId); }
 
 private:
+    int                                     mCecDeviceType;
     uint8_t                                 mCecPowerStatus;
     Mutex                                   mCecDeviceReadyLock;
     Condition                               mCecDeviceReadyCondition;
@@ -99,7 +97,7 @@ private:
     static void msgTransmitted_callback(void *context, int param);
 
     /* Helper functions... */
-    int getDeviceType();
+    int getPropertyDeviceType();
 
     /* Disallow copy constructor and copy operator... */
     CecServiceManager(const CecServiceManager &);
