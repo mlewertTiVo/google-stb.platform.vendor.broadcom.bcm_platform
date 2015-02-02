@@ -80,7 +80,7 @@ on post-fs-data
    #    of the key-file content: 'trusted:<some-password>'
    #
    write /data/misc/nexus/nx_key trusted:test-passwd
-   chmod 0664 /data/misc/nexus/nx_key
+   chmod 0644 /data/misc/nexus/nx_key
 
    class_start pre_core
 
