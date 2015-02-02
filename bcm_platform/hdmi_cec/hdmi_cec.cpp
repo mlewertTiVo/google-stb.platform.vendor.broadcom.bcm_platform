@@ -277,8 +277,8 @@ static int hdmi_cec_is_connected(const struct hdmi_cec_device* dev, int port_id)
 
     // TODO support multiple HDMI CEC ports
     if (port_id == 1) {
-        if (device->getConnectedState() == true) {
-            connected = HDMI_CONNECTED;
+        if (device->getConnectedState(&connected) != NO_ERROR) {
+            ALOGE("%s: Could not get HDMI%d connected state!!!", __PRETTY_FUNCTION__, port_id);
         }
     }
     ALOGV("%s: HDMI%d is %s", __PRETTY_FUNCTION__, port_id, (connected == HDMI_CONNECTED) ? "connected" : "disconnected");

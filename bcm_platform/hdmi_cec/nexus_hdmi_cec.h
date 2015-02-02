@@ -60,6 +60,12 @@
 
 using namespace android;
 
+enum cec_ui_command_type {
+    CEC_UI_COMMAND_POWER = 0x40,
+    CEC_UI_COMMAND_POWER_TOGGLE = 0x6B,
+    CEC_UI_COMMAND_POWER_ON = 0x6D
+};
+
 // ----------------------------------------------------------------------------
 
 class NexusHdmiCecDevice : public RefBase
@@ -72,12 +78,13 @@ class NexusHdmiCecDevice : public RefBase
         void setEnableState(bool enable);
         void setAutoWakeupState(bool enable);
         void setControlState(bool enable);
-        bool getConnectedState();
         bool getCecTransmitStandby();
         bool getCecTransmitViewOn();
+        static bool standbyMonitor(void *ctx);
 
         status_t initialise();
         status_t uninitialise();
+        status_t getConnectedState(int *pIsConnected);
         status_t setCecLogicalAddress(uint8_t addr);
         status_t getCecPhysicalAddress(uint16_t* addr);
         status_t getCecVersion(int* version);
@@ -92,6 +99,7 @@ class NexusHdmiCecDevice : public RefBase
                 ~HdmiCecMessageEventListener();
                 virtual status_t onHdmiCecMessageReceived(int32_t portId, android::INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message);
             private:
+                bool isValidWakeupCecMessage(android::INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message);
                 sp<NexusHdmiCecDevice> mNexusHdmiCecDevice;
         };
 
@@ -107,15 +115,23 @@ class NexusHdmiCecDevice : public RefBase
     private:
         uint32_t                        mCecId;
         uint8_t                         mCecLogicalAddr;
+        uint16_t                        mCecPhysicalAddr;
         bool                            mCecEnable;
+        bool                            mCecSystemControlEnable;
         bool                            mCecViewOnCmdPending;
+        bool                            mStandby;
+        Mutex                           mLock;
         NexusIPCClientBase*             pIpcClient;
+        NexusClientContext*             pNexusClientContext;
         hdmi_port_info                  mPortInfo[NEXUS_NUM_CEC];
         event_callback_t                mCallback;
         void*                           mCallbackArg;
         struct hdmi_cec_device*         mHdmiCecDevice;
         sp<HdmiCecMessageEventListener> mHdmiCecMessageEventListener;
         sp<HdmiHotplugEventListener>    mHdmiHotplugEventListener;
+
+        static const uint32_t UNDEFINED_PHYSICAL_ADDRESS = 0xFFFF;
+        static const uint32_t UNDEFINED_LOGICAL_ADDRESS = 0xFF;
 };
 
 #endif  // _NEXUS_HDMI_CEC_H_
