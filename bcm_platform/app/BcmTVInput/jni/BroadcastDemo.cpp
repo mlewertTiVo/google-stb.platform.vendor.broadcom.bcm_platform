@@ -37,7 +37,7 @@ public:
     unsigned                         m_nxClientId;
     NEXUS_SurfaceClientHandle        m_hSurfaceClient;
     NEXUS_SurfaceClientHandle        m_hVideoClient;
-    Vector<BroadcastVideoTrackInfo> videoTrackInfoList;
+    Vector<BroadcastTrackInfo>       trackInfoList;
 };
 
 BroadcastDemo_Context *pSelf;
@@ -252,12 +252,13 @@ static int BroadcastDemo_StopScan()
 }
 
 static void
-CacheVideoTrackInfoList()
+CacheTrackInfoList()
 {
-    Vector<BroadcastVideoTrackInfo> v;
+    Vector<BroadcastTrackInfo> v;
     NEXUS_VideoDecoderStatus status;
     if (NEXUS_SimpleVideoDecoder_GetStatus(pSelf->m_hSimpleVideoDecoder, &status) == NEXUS_SUCCESS && status.source.height > 0) {
-        BroadcastVideoTrackInfo info;
+        BroadcastTrackInfo info;
+        info.type = 1;
         info.id = "0";
         info.squarePixelHeight = status.source.height; 
         switch (status.aspectRatio) {
@@ -292,34 +293,40 @@ CacheVideoTrackInfoList()
         ALOGE("%s: %dx%d (%dx%d) fr %f", __FUNCTION__, status.source.width, status.source.height, info.squarePixelWidth, info.squarePixelHeight, info.frameRate);
         v.push_back(info);
     }
-    pSelf->videoTrackInfoList = v;
+    pSelf->trackInfoList = v;
 }
 
 static void sourceChangeCallback(void *context, int param)
 {
-    CacheVideoTrackInfoList();
+    CacheTrackInfoList();
     TunerHAL_onBroadcastEvent(2, 0, String8());
-    if (pSelf->videoTrackInfoList.size()) {
+    if (pSelf->trackInfoList.size()) {
         TunerHAL_onBroadcastEvent(4, 1, String8());
-        TunerHAL_onBroadcastEvent(3, 1, pSelf->videoTrackInfoList[0].id);
+        TunerHAL_onBroadcastEvent(3, 1, pSelf->trackInfoList[0].id);
     }
 }
 
-static Vector<BroadcastVideoTrackInfo>
-BroadcastDemo_GetVideoTrackInfoList()
+static Vector<BroadcastTrackInfo>
+BroadcastDemo_GetTrackInfoList()
 {
-    if (pSelf->videoTrackInfoList.size() == 0) {
+    if (pSelf->trackInfoList.size() == 0) {
         ALOGE("%s: no video info", __FUNCTION__); 
     }
     else {
         ALOGE("%s: %s %dx%d fr %f", __FUNCTION__,
-              pSelf->videoTrackInfoList[0].id.string(),
-              pSelf->videoTrackInfoList[0].squarePixelWidth,
-              pSelf->videoTrackInfoList[0].squarePixelHeight,
-              pSelf->videoTrackInfoList[0].frameRate
+              pSelf->trackInfoList[0].id.string(),
+              pSelf->trackInfoList[0].squarePixelWidth,
+              pSelf->trackInfoList[0].squarePixelHeight,
+              pSelf->trackInfoList[0].frameRate
               ); 
     }
-    return pSelf->videoTrackInfoList;
+    return pSelf->trackInfoList;
+}
+
+static int
+BroadcastDemo_SelectTrack(int type, String8 id)
+{
+    return -1;
 }
 
 static int BroadcastDemo_Tune(String8 s8id)
@@ -579,7 +586,8 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->Stop = BroadcastDemo_Stop;
     pD->Release = BroadcastDemo_Release;
     pD->SetGeometry = BroadcastDemo_SetGeometry;
-    pD->GetVideoTrackInfoList = BroadcastDemo_GetVideoTrackInfoList;
+    pD->GetTrackInfoList = BroadcastDemo_GetTrackInfoList;
+    pD->SelectTrack = BroadcastDemo_SelectTrack;
 
     ALOGE("%s: Exit", __FUNCTION__);
     return 0;

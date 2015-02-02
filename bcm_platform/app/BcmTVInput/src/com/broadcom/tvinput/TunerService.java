@@ -491,18 +491,29 @@ public class TunerService extends TvInputService {
 
     private void sendTrackInfoToAllSessions()
     {
-        VideoTrackInfo vtia[] = TunerHAL.getVideoTrackInfoList();
+        TrackInfo vtia[] = TunerHAL.getTrackInfoList();
         if (vtia.length > 0) {
             List<TvTrackInfo> tracks = new ArrayList<>(); 
-            for (VideoTrackInfo vti : vtia) {
+            for (TrackInfo vti : vtia) {
                 TvTrackInfo info;
-                info = new TvTrackInfo.Builder(
-                    TvTrackInfo.TYPE_VIDEO, vti.id)
-                    .setVideoWidth(vti.squarePixelWidth)
-                    .setVideoHeight(vti.squarePixelHeight)
-                    .setVideoFrameRate(vti.frameRate)
-                    .build();
-                tracks.add(info);
+                if (vti.type == TvTrackInfo.TYPE_VIDEO) {
+                    info = new TvTrackInfo.Builder(
+                        TvTrackInfo.TYPE_VIDEO, vti.id)
+                        .setVideoWidth(vti.squarePixelWidth)
+                        .setVideoHeight(vti.squarePixelHeight)
+                        .setVideoFrameRate(vti.frameRate)
+                        .build();
+                    tracks.add(info);
+                }
+                else if (vti.type == TvTrackInfo.TYPE_AUDIO) {
+                    info = new TvTrackInfo.Builder(
+                        TvTrackInfo.TYPE_AUDIO, vti.id)
+                        .setLanguage(vti.lang)
+                        .setAudioChannelCount(vti.channels)
+                        .setAudioSampleRate(vti.sampleRate)
+                        .build();
+                    tracks.add(info);
+                }
             }
 
             for(TunerTvInputSessionImpl session : sessionSet) {
@@ -1022,5 +1033,12 @@ public class TunerService extends TvInputService {
             }
 
         }
+
+        @Override
+        public boolean onSelectTrack(int type, String trackId) {
+            Log.d(TAG, "onSelectTrack: " + type + " " + trackId);
+            return TunerHAL.selectTrack(type, trackId) == 0;
+        }
+
     }
 }

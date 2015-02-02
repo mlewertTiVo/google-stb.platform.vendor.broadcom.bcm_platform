@@ -76,7 +76,8 @@ static JNINativeMethod gMethods[] =
     {"stop",           "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stop},  
     {"release",        "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_release},  
     {"setSurface",     "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_setSurface},  
-    {"getVideoTrackInfoList", "()[Lcom/broadcom/tvinput/VideoTrackInfo;", (void *)Java_com_broadcom_tvinput_TunerHAL_getVideoTrackInfoList},  
+    {"getTrackInfoList", "()[Lcom/broadcom/tvinput/TrackInfo;", (void *)Java_com_broadcom_tvinput_TunerHAL_getTrackInfoList},  
+    {"selectTrack",    "(ILjava/lang/String;)I", (void *)Java_com_broadcom_tvinput_TunerHAL_selectTrack},  
 };
 
 const String16 INexusTunerService::descriptor(TUNER_INTERFACE_NAME);
@@ -426,6 +427,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jcla
 
 #define booleanField(name) simpleField(name, Z)
 #define shortField(name) simpleField(name, S)
+#define intField(name) simpleField(name, I)
 #define floatField(name) simpleField(name, F)
 #define stringField(name) simpleField(name, Ljava/lang/String;)
 
@@ -763,22 +765,22 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_setSurface(JNIEnv */*e
     return rv;
 }
 
-JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getVideoTrackInfoList(JNIEnv *env, jclass /*thiz*/)
+JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getTrackInfoList(JNIEnv *env, jclass /*thiz*/)
 {
     TV_LOG("%s: Fetching video track info list!!", __FUNCTION__);
 
-    Vector<BroadcastVideoTrackInfo> vtiv;
+    Vector<BroadcastTrackInfo> vtiv;
 
-    if (g_pTD->driver.GetVideoTrackInfoList == 0) {
-        TV_LOG("%s: GetVideoTrackInfoList call is null", __FUNCTION__);
+    if (g_pTD->driver.GetTrackInfoList == 0) {
+        TV_LOG("%s: GetTrackInfoList call is null", __FUNCTION__);
         return 0;
     }
 
     LOCKHAL
-    vtiv = (*g_pTD->driver.GetVideoTrackInfoList)(); 
+    vtiv = (*g_pTD->driver.GetTrackInfoList)(); 
     UNLOCKHAL
 
-    jclass cls = env->FindClass("com/broadcom/tvinput/VideoTrackInfo"); 
+    jclass cls = env->FindClass("com/broadcom/tvinput/TrackInfo"); 
     if (cls == 0) {
         ALOGE("%s: could not find class", __FUNCTION__);
         return 0;
@@ -788,22 +790,48 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getVideoTrackI
         ALOGE("%s: could not get constructor ID", __FUNCTION__);
     }
 
+    shortField(type)
     stringField(id)
+    stringField(lang)
     shortField(squarePixelWidth)
     shortField(squarePixelHeight)
     floatField(frameRate)
+    shortField(channels)
+    intField(sampleRate)
 
     jobjectArray rv = env->NewObjectArray(vtiv.size(), cls, NULL);
     for (unsigned i = 0; i < vtiv.size(); i++) {
-        jobject o = env->NewObject(cls, cID); 
+        jobject o = env->NewObject(cls, cID);
+        env->SetShortField(o, typeID, vtiv[i].type); 
         setStringField(env, o, idID, vtiv[i].id);
+        setStringField(env, o, langID, vtiv[i].lang);
         env->SetShortField(o, squarePixelWidthID, vtiv[i].squarePixelWidth);
         env->SetShortField(o, squarePixelHeightID, vtiv[i].squarePixelHeight);
         env->SetFloatField(o, frameRateID, vtiv[i].frameRate);
+        env->SetShortField(o, channelsID, vtiv[i].channels);
+        env->SetIntField(o, sampleRateID, vtiv[i].sampleRate);
         env->SetObjectArrayElement(rv, i, o);
         env->DeleteLocalRef(o);
     }
     ALOGE("%s: ok so far", __FUNCTION__);
+    return rv;
+}
+
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_selectTrack(JNIEnv *env, jclass /*thiz*/, jint type, jstring id)
+{
+    const char *s8id = env->GetStringUTFChars(id, NULL);
+    jint rv = -1;
+
+    if (g_pTD->driver.SelectTrack == 0) {
+        TV_LOG("%s: SelectTrack call is null", __FUNCTION__);
+    }
+    else {
+        LOCKHAL
+        rv = (*g_pTD->driver.SelectTrack)(type, String8(s8id)); 
+        UNLOCKHAL
+    }
+
+    env->ReleaseStringUTFChars(id, s8id);   
     return rv;
 }
 

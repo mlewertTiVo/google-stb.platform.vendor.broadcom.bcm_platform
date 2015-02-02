@@ -28,5 +28,6 @@ public class TunerHAL
     static native int stop();
     static native int release();
     static native int setSurface();
-    static native VideoTrackInfo[] getVideoTrackInfoList();
+    static native TrackInfo[] getTrackInfoList();
+    static native int selectTrack(int type, String id);
 }

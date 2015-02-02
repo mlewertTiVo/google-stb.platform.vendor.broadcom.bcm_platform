@@ -34,6 +34,13 @@ public:
         jchar progress;
     } scanner;
     U8BIT path;
+    void *s_ptr;
+    U16BIT vpid;
+    U16BIT apid;
+    int decoding;
+    U16BIT w;
+    U16BIT h;
+    Vector<BroadcastTrackInfo> batil;
 };
 
 static BroadcastDTVKit_Context *pSelf;
@@ -42,7 +49,8 @@ static int BroadcastDTVKit_Stop()
 {
     ALOGE("%s: Enter", __FUNCTION__);
     if (pSelf->path != INVALID_RES_ID) {
-        ALOGE("%s: Stopping", __FUNCTION__); 
+        ALOGE("%s: Stopping", __FUNCTION__);
+        pSelf->s_ptr = 0;
         ACTL_DecodeOff(pSelf->path);
     }
     ALOGE("%s: Exit", __FUNCTION__);
@@ -188,6 +196,17 @@ static int BroadcastDTVKit_StopScan()
     return rv;
 }
 
+static void
+resetDecodeState(void)
+{
+    pSelf->vpid = 0;
+    pSelf->apid = 0;
+    pSelf->decoding = 0;
+    pSelf->w = 0;
+    pSelf->h = 0;
+    pSelf->batil.clear();
+}
+
 static int BroadcastDTVKit_Tune(String8 s8id)
 {
     int rv = -1;
@@ -195,6 +214,8 @@ static int BroadcastDTVKit_Tune(String8 s8id)
     ALOGE("%s: Enter", __FUNCTION__);
     U16BIT lcn = strtoul(s8id.string(), 0, 0);
     void *s_ptr = ADB_FindServiceByLcn(ADB_SERVICE_LIST_TV | ADB_SERVICE_LIST_RADIO, lcn, TRUE);
+    pSelf->s_ptr = s_ptr;
+    resetDecodeState();
     if (s_ptr) {
         pSelf->path = ACTL_TuneToService(pSelf->path, NULL, s_ptr, TRUE, TRUE);
         if (pSelf->path == INVALID_RES_ID) {
@@ -560,6 +581,7 @@ static int BroadcastDTVKit_Release()
     return 0;
 }
 
+//#define DEBUG_EVENTS
 #ifdef DEBUG_EVENTS
 static const char *
 evcname(unsigned c, unsigned t)
@@ -626,9 +648,199 @@ scannerUpdate()
 }
 
 static void
+checkVideoDecodeState(int videoStarted, int *tlchanged, int *tchanged, int *achanged)
+{
+    if (pSelf->s_ptr) {
+        U16BIT vpid = ADB_GetServiceVideoPid(pSelf->s_ptr);
+        if (pSelf->vpid != vpid) {
+            pSelf->vpid = vpid;
+            *tchanged = 1;
+        }
+        if (pSelf->vpid && videoStarted) {
+            U16BIT w;
+            U16BIT h;
+            E_ASPECT_RATIO ar = STB_VTGetVideoAspectRatio();
+            int decoding;
+
+            STB_VTGetVideoResolution(&w, &h);
+            switch (ar) {
+            case ASPECT_RATIO_4_3:
+                w = (h * 4) / 3;
+                break;
+            case ASPECT_RATIO_16_9:
+                w = (h * 16) / 9;
+                break;
+            default:
+                break;
+            }
+
+            decoding = w != 0 && h != 0;
+            if (pSelf->decoding != decoding) {
+                pSelf->decoding = decoding;
+                *tlchanged = 1;
+                *achanged = 1;
+            }
+            if (w != pSelf->w || h != pSelf->w) {
+                pSelf->w = w;
+                pSelf->h = h;
+                *tlchanged = 1;
+            }
+        }
+    }
+}
+
+static String8
+dtvkitThreeLetterCodeToString8(U32BIT dtvkitCode)
+{
+    return String8::format("%c%c%c", (int)((dtvkitCode >> 16) & 0x7f), (int)((dtvkitCode >> 8) & 0x7f), (int)((dtvkitCode >> 0) & 0x7f));
+}
+
+static Vector<BroadcastTrackInfo>
+buildBroadcastAudioTrackInfoListFromStreamList(void **streamlist, U16BIT len)
+{
+    Vector<BroadcastTrackInfo> batil;
+    for (unsigned i = 0; i < len; i++) {
+        BroadcastTrackInfo bati;
+        U16BIT pid = ADB_GetStreamPID(streamlist[i]);
+        if (pid == 0) {
+            continue;
+        }
+        bati.type = 0;
+        bati.id = String8::format("%u", pid);
+        bati.lang = dtvkitThreeLetterCodeToString8(ADB_GetAudioStreamLangCode(streamlist[i]));
+        bati.channels = 2;
+        bati.sampleRate = 44100;
+        batil.push_back(bati);
+    }
+    return batil;
+}
+
+static bool
+sameTrackInfo(const BroadcastTrackInfo &a, const BroadcastTrackInfo &b)
+{
+    if (a.type != b.type) {
+        return false;
+    }
+    if (a.id != b.id) {
+        return false;
+    }
+    switch (a.type) {
+    case 0:
+    case 2:
+        // Audio + Subt
+        if (a.lang != b.lang) {
+            return false;
+        }
+        break;
+    default:
+        break;
+    }
+    switch (a.type) {
+    case 1:
+        // Video
+        if ((a.squarePixelWidth != b.squarePixelWidth) || (a.squarePixelHeight != b.squarePixelHeight) || (a.frameRate != b.frameRate)) {
+            return false;
+        }
+        break;
+    default:
+        break;
+    }
+    switch (a.type) {
+    case 0:
+        // Audio
+        if ((a.channels != b.channels) || (a.sampleRate != b.sampleRate)) {
+            return false;
+        }
+        break;
+    default:
+        break;
+    }
+    return true;
+}
+
+static bool
+sameTrackInfoList(const Vector<BroadcastTrackInfo> &a, const Vector<BroadcastTrackInfo> &b)
+{
+    if (a.size() != b.size()) {
+        return 0;
+    }
+    for (unsigned i = 0; i < a.size(); i++) {
+        if (!sameTrackInfo(a[i], b[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void
+checkAudioDecodeState(int *tlchanged, int *tchanged)
+{
+    if (pSelf->s_ptr) {
+        Vector<BroadcastTrackInfo> batil;
+        void **slist;
+        U16BIT num_entries;
+        ADB_GetStreamList(pSelf->s_ptr, ADB_AUDIO_LIST_STREAM, &slist, &num_entries);
+        if (num_entries) {
+            batil = buildBroadcastAudioTrackInfoListFromStreamList(slist, num_entries);
+        }
+        ADB_ReleaseStreamList(slist, num_entries);
+        if (!sameTrackInfoList(batil, pSelf->batil)) {
+            ALOGD("%s: new audio track list", __FUNCTION__);
+            for (unsigned i = 0; i < batil.size(); i++) {
+                ALOGD("%s: bati %s %s %d %d", __FUNCTION__, batil[i].id.string(), batil[i].lang.string(), batil[i].channels, batil[i].sampleRate);
+            }
+            pSelf->batil = batil;
+            *tlchanged = 1;
+        }
+        U16BIT apid = ADB_GetServiceAudioPid(pSelf->s_ptr);
+        if (apid != pSelf->apid) {
+            ALOGD("%s: new audio track %d", __FUNCTION__, apid);
+            pSelf->apid = apid;
+            *tchanged = 1;
+        }
+    }
+}
+
+static void
+updateTrackList(int videoStarted)
+{
+    int tlchanged = 0;
+    int vachanged = 0;
+    int atchanged = 0;
+    int vtchanged = 0;
+
+    checkVideoDecodeState(videoStarted, &tlchanged, &vtchanged, &vachanged);
+    checkAudioDecodeState(&tlchanged, &atchanged);
+
+    if (tlchanged) {
+        //BROADCAST_EVENT_TRACK_LIST_CHANGED
+        TunerHAL_onBroadcastEvent(2, 0, String8());
+    }
+    if ((tlchanged || vachanged) && pSelf->decoding) {
+        //BROADCAST_EVENT_VIDEO_AVAILABLE 1
+        TunerHAL_onBroadcastEvent(4, 1, String8());
+    }
+    if (tlchanged || vtchanged) {
+        if (pSelf->vpid) {
+            //BROADCAST_EVENT_TRACK_SELECTED VIDEO vpid
+            TunerHAL_onBroadcastEvent(3, 1, String8::format("%u", pSelf->vpid));
+        }
+    }
+    if (tlchanged || atchanged) {
+        if (pSelf->apid) {
+            //BROADCAST_EVENT_TRACK_SELECTED AUDIO apid
+            TunerHAL_onBroadcastEvent(3, 0, String8::format("%u", pSelf->apid));
+        }
+    }
+
+}
+
+static void
 event_handler(U32BIT event, void */*event_data*/, U32BIT /*data_size*/)
 {
     if (pSelf) {
+        int videoStarted = 0;
+        int update = 0;
 #ifdef DEBUG_EVENTS
         ALOGE("%s: ev %s(%d)/%d", __FUNCTION__, evcname(EVENT_CLASS(event), EVENT_TYPE(event)), EVENT_CLASS(event), EVENT_TYPE(event));
 #endif
@@ -639,12 +851,17 @@ event_handler(U32BIT event, void */*event_data*/, U32BIT /*data_size*/)
             TunerHAL_onBroadcastEvent(1, 0, String8());
         }
         else if (event == STB_EVENT_VIDEO_DECODE_STARTED) {
-            //BROADCAST_EVENT_VIDEO_TRACK_LIST_CHANGED
-            TunerHAL_onBroadcastEvent(2, 0, String8());
-            //BROADCAST_EVENT_VIDEO_AVAILABLE 1
-            TunerHAL_onBroadcastEvent(4, 1, String8());
-            //BROADCAST_EVENT_TRACK_SELECTED
-            TunerHAL_onBroadcastEvent(3, 1, String8("0"));
+            videoStarted = 1;
+            update = 1;
+        }
+        else if (event == STB_EVENT_AUDIO_DECODE_STARTED) {
+            update = 1;
+        }
+        else if (event == APP_EVENT_SERVICE_STREAMS_CHANGED) {
+            update = 1;
+        }
+        if (update) {
+            updateTrackList(videoStarted);
         }
     }
 }
@@ -760,31 +977,17 @@ BroadcastDTVKit_SetGeometry(BroadcastRect position, BroadcastRect /*clipRect*/,
     return 0;
 }
 
-Vector<BroadcastVideoTrackInfo>
-BroadcastDTVKit_GetVideoTrackInfoList()
+Vector<BroadcastTrackInfo>
+BroadcastDTVKit_GetTrackInfoList()
 {
-    Vector<BroadcastVideoTrackInfo> v;
-    U16BIT w, h;
-    E_ASPECT_RATIO ar;
+    Vector<BroadcastTrackInfo> v;
 
-    STB_VTGetVideoResolution(&w, &h);
-    ar = STB_VTGetVideoAspectRatio();
-
-    if (h > 0) {
-        BroadcastVideoTrackInfo info;
-        info.id = "0";
-        info.squarePixelHeight = h; 
-        switch (ar) {
-        case ASPECT_RATIO_4_3:
-            info.squarePixelWidth = (info.squarePixelHeight * 4) / 3;
-            break;
-        case ASPECT_RATIO_16_9:
-            info.squarePixelWidth = (info.squarePixelHeight * 16) / 9;
-            break;
-        default:
-            info.squarePixelWidth = w;
-            break;
-        }
+    if (pSelf->h > 0) {
+        BroadcastTrackInfo info;
+        info.type = 1;
+        info.id = String8::format("%u", pSelf->vpid);
+        info.squarePixelHeight = pSelf->h; 
+        info.squarePixelWidth = pSelf->w;
         switch (0) {
         case NEXUS_VideoFrameRate_e23_976:  info.frameRate = 23.976; break;
         case NEXUS_VideoFrameRate_e24:      info.frameRate = 24; break;
@@ -803,10 +1006,47 @@ BroadcastDTVKit_GetVideoTrackInfoList()
         default:                            info.frameRate = 0; break;
         }
 
-        ALOGE("%s: %dx%d (%dx%d) fr %f", __FUNCTION__, w, h, info.squarePixelWidth, info.squarePixelHeight, info.frameRate);
+        ALOGE("%s: (%dx%d)", __FUNCTION__, info.squarePixelWidth, info.squarePixelHeight);
         v.push_back(info);
     }
-    return v;
+    v.appendVector(pSelf->batil);
+    return v; 
+}
+
+int
+BroadcastDTVKit_SelectTrack(int type, String8 id)
+{
+    ALOGD("%s: %d %s", __FUNCTION__, type, id.string());
+    if (type != 0 || pSelf->s_ptr == 0) {
+        return -1;
+    }
+    int uid = strtol(id.string(), 0, 0);
+    if (uid < 0) {
+        ADB_SetReqdAudioStreamSettings(pSelf->s_ptr, FALSE, 0, ADB_AUDIO_TYPE_UNDEFINED, ADB_AUDIO_STREAM);
+    }
+    else {
+        void **streamlist;
+        U16BIT num_entries;
+        unsigned i;
+        ADB_GetStreamList(pSelf->s_ptr, ADB_AUDIO_LIST_STREAM, &streamlist, &num_entries);
+        for (i = 0; i < num_entries; i++) {
+            if (ADB_GetStreamPID(streamlist[i]) == uid) {
+                break;
+            }
+        }
+        if (i < num_entries) {
+            ADB_SetReqdAudioStreamSettings(pSelf->s_ptr, TRUE,
+                ADB_GetAudioStreamLangCode(streamlist[i]),
+                ADB_GetAudioStreamType(streamlist[i]),
+                ADB_GetStreamType(streamlist[i]));
+        }
+        else {
+            ADB_SetReqdAudioStreamSettings(pSelf->s_ptr, FALSE, 0, ADB_AUDIO_TYPE_UNDEFINED, ADB_AUDIO_STREAM);
+        }
+        ADB_ReleaseStreamList(streamlist, num_entries);
+    }
+    ACTL_ReTuneAudio();
+    return 0;
 }
 
 int
@@ -834,7 +1074,8 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->Stop = BroadcastDTVKit_Stop;
     pD->Release = BroadcastDTVKit_Release;
     pD->SetGeometry = BroadcastDTVKit_SetGeometry;
-    pD->GetVideoTrackInfoList = BroadcastDTVKit_GetVideoTrackInfoList;
+    pD->GetTrackInfoList = BroadcastDTVKit_GetTrackInfoList;
+    pD->SelectTrack = BroadcastDTVKit_SelectTrack;
     BDBG_SetModuleLevel("stbhwav", BDBG_eMsg);
     ALOGE("%s: Exit", __FUNCTION__);
     return 0;

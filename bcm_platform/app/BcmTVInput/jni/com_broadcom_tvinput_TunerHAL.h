@@ -65,11 +65,19 @@ JNIEXPORT jobject JNICALL Java_com_broadcom_tvinput_TunerHAL_getScanInfo
 
 /*
  * Class:     com_broadcom_tvinput_TunerHAL
- * Method:    getVideoTrackInfoList
- * Signature: ()[Lcom/broadcom/tvinput/VideoTrackInfo;
+ * Method:    getTrackInfoList
+ * Signature: ()[Lcom/broadcom/tvinput/TrackInfo;
  */
-JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getVideoTrackInfoList
+JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getTrackInfoList
   (JNIEnv *, jclass);
+
+/*
+ * Class:     com_broadcom_tvinput_TunerHAL
+ * Method:    selectTrack
+ * Signature: (ILjava/lang/String;)I
+ */
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_selectTrack
+  (JNIEnv *, jclass, jint, jstring);
 
 /*
  * Class:     com_broadcom_tvinput_TunerHAL
