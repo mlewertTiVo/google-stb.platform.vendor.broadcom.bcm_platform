@@ -80,6 +80,11 @@ public:
                              struct hwc_position &frame, struct hwc_position &clipped,
                              int &zorder, int &visible);
 
+    virtual void setOverscanAdjust(const sp<IHwcListener>& listener,
+                             struct hwc_position &position);
+    virtual void getOverscanAdjust(const sp<IHwcListener>& listener,
+                             struct hwc_position &position);
+
     virtual status_t onTransact(uint32_t code,
                                 const Parcel& data,
                                 Parcel* reply,
@@ -96,6 +101,7 @@ private:
     Vector< hwc_listener_t > mNotificationListeners;
     hwc_disp_notifier_t mVideoSurface[HWC_BINDER_VIDEO_SURFACE_SIZE];
     hwc_disp_notifier_t mSidebandSurface[HWC_BINDER_SIDEBAND_SURFACE_SIZE];
+    struct hwc_position overscan_position;
 };
 
 #endif // __HWC__H__INCLUDED__

@@ -1,6 +1,6 @@
 /******************************************************************************
- *    (c)2012 Broadcom Corporation
- * 
+ *    (c)2012, 2015 Broadcom Corporation
+ *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
@@ -9,45 +9,31 @@
  * Software, and Broadcom expressly reserves all rights in and to the Software and all
  * intellectual property rights therein.  IF YOU HAVE NO AUTHORIZED LICENSE, THEN YOU
  * HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY WAY, AND SHOULD IMMEDIATELY
- * NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.  
- *  
+ * NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.
+ *
  * Except as expressly set forth in the Authorized License,
- *  
+ *
  * 1.     This program, including its structure, sequence and organization, constitutes the valuable trade
  * secrets of Broadcom, and you shall use all reasonable efforts to protect the confidentiality thereof,
  * and to use this information only in connection with your use of Broadcom integrated circuit products.
- *  
- * 2.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS" 
- * AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR 
- * WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT TO 
- * THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED WARRANTIES 
- * OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A PARTICULAR PURPOSE, 
- * LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET ENJOYMENT, QUIET POSSESSION 
- * OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME THE ENTIRE RISK ARISING OUT OF 
- * USE OR PERFORMANCE OF THE SOFTWARE.
- * 
- * 3.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS 
- * LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT, OR 
- * EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO YOUR 
- * USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN ADVISED OF 
- * THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS OF THE AMOUNT 
- * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE 
- * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
- * ANY LIMITED REMEDY.
  *
- * $brcm_Workfile: jni_adjustScreenOffset.cpp $
- * $brcm_Revision: 2 $
- * $brcm_Date: 12/3/12 3:19p $
- * 
- * Module Description:
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/app/BcmAdjustScreenOffset/jni/jni_adjustScreenOffset.cpp $
- * 
- * 2   12/3/12 3:19p saranya
- * SWANDROID-266: Removed Non-IPC Standalone Mode
- * 
+ * 2.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS"
+ * AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR
+ * WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT TO
+ * THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED WARRANTIES
+ * OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A PARTICULAR PURPOSE,
+ * LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET ENJOYMENT, QUIET POSSESSION
+ * OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME THE ENTIRE RISK ARISING OUT OF
+ * USE OR PERFORMANCE OF THE SOFTWARE.
+ *
+ * 3.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS
+ * LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT, OR
+ * EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO YOUR
+ * USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN ADVISED OF
+ * THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS OF THE AMOUNT
+ * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE
+ * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
+ * ANY LIMITED REMEDY.
  *****************************************************************************/
 #include <jni.h>
 
@@ -55,36 +41,107 @@
 #include <cutils/properties.h>
 
 #include <utils/Log.h>
-/*
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <dirent.h>
-#include <unistd.h>
-
-#include <string.h>
-#include <cutils/atomic.h>
-*/
 #include  <stdlib.h>
 #include  <stdio.h>
 
-#include "nexus_platform.h"
-#include "nexus_display.h"
-
+#include <binder/IInterface.h>
+#include <binder/Parcel.h>
+#include <binder/IServiceManager.h>
 #include <binder/IPCThreadState.h>
 #include <binder/ProcessState.h>
-#include <binder/IServiceManager.h>
+#include "HwcCommon.h"
+#include "Hwc.h"
+#include "HwcListener.h"
+#include "IHwc.h"
+#include "HwcSvc.h"
 
-#include "nexus_interface.h"
-#include "nexusservice.h"
-
-#include "nexus_surface_client.h"
-#ifdef ANDROID_SUPPORTS_NEXUS_IPC_CLIENT_FACTORY
-#include "nexus_ipc_client_factory.h"
-#else
-#include "nexus_ipc_client.h"
-#endif
+#define LOG_TAG "bcm-overscan"
 
 using namespace android;
+
+typedef void (* HWC_APP_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
+
+class HwcAppBinder : public HwcListener
+{
+public:
+
+    HwcAppBinder() : cb(NULL), cb_data(0) {};
+    virtual ~HwcAppBinder() {};
+
+    virtual void notify(int msg, struct hwc_notification_info &ntfy);
+
+    inline void listen() {
+       if (get_hwc(false) != NULL)
+           get_hwc(false)->registerListener(this, HWC_BINDER_COM);
+       else
+           ALOGE("%s: failed to associate %p with HwcAppBinder service.", __FUNCTION__, this);
+    };
+
+    inline void hangup() {
+       if (get_hwc(false) != NULL)
+           get_hwc(false)->unregisterListener(this);
+       else
+           ALOGE("%s: failed to dissociate %p from HwcAppBinder service.", __FUNCTION__, this);
+    };
+
+    inline void getoverscan(struct hwc_position &position) {
+       if (get_hwc(false) != NULL) {
+           get_hwc(false)->getOverscanAdjust(this, position);
+       }
+    };
+
+    inline void setoverscan(struct hwc_position &position) {
+       if (get_hwc(false) != NULL) {
+           get_hwc(false)->setOverscanAdjust(this, position);
+       }
+    };
+
+private:
+    HWC_APP_BINDER_NTFY_CB cb;
+    int cb_data;
+};
+
+class HwcAppBinder_wrap
+{
+private:
+
+   sp<HwcAppBinder> ihwc;
+
+public:
+   HwcAppBinder_wrap(void) {
+      ALOGV("%s: allocated %p", __FUNCTION__, this);
+      ihwc = new HwcAppBinder;
+      ihwc.get()->listen();
+   };
+
+   virtual ~HwcAppBinder_wrap(void) {
+      ALOGV("%s: cleared %p", __FUNCTION__, this);
+      ihwc.get()->hangup();
+      ihwc.clear();
+   };
+
+   void getoverscan(struct hwc_position &position) {
+      ihwc.get()->getoverscan(position);
+   }
+
+   void setoverscan(struct hwc_position &position) {
+      ihwc.get()->setoverscan(position);
+   }
+
+   HwcAppBinder *get(void) {
+      return ihwc.get();
+   }
+};
+
+void HwcAppBinder::notify(int msg, struct hwc_notification_info &ntfy)
+{
+   ALOGV( "%s: notify received: msg=%u", __FUNCTION__, msg);
+
+   if (cb)
+      cb(cb_data, msg, ntfy);
+}
+
+HwcAppBinder_wrap *m_appHwcBinder;
 
 static void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset(JNIEnv *env, jobject thisobj, jobject offset);
 
@@ -105,11 +162,11 @@ static int registerNativeMethods(JNIEnv* env, const char* className,
 
     clazz = env->FindClass(className);
     if (clazz == NULL) {
-        LOGE("Native registration unable to find class '%s'", className);
+        ALOGE("Native registration unable to find class '%s'", className);
         return JNI_FALSE;
     }
     if (env->RegisterNatives(clazz, gMethods, numMethods) < 0) {
-        LOGE("RegisterNatives failed for '%s'", className);
+        ALOGE("RegisterNatives failed for '%s'", className);
         return JNI_FALSE;
     }
 
@@ -129,10 +186,10 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
     JNIEnv* env = NULL;
     jint result = -1;
 
-    BSTD_UNUSED(reserved);
+    (void)reserved;
 
     if (vm->GetEnv((void**) &env, JNI_VERSION_1_4) != JNI_OK) {
-        LOGE("ERROR: GetEnv failed\n");
+        ALOGE("ERROR: GetEnv failed\n");
         return result;
     }
     assert(env != NULL);
@@ -140,8 +197,15 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
 
     if (register_adjustScreenOffset_jni(env) < 0)
     {
-        LOGE("ERROR: register adjustScreenOffset interface error failed\n");
+        ALOGE("ERROR: register adjustScreenOffset interface error failed\n");
         return result;
+    }
+
+    // connect to the HWC binder.
+    m_appHwcBinder = new HwcAppBinder_wrap;
+    if ( NULL == m_appHwcBinder )
+    {
+        ALOGE("Unable to connect to HwcBinder");
     }
 
 
@@ -154,7 +218,9 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
 JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset
   (JNIEnv *env, jobject thisobj, jobject offset)
 {
-    BSTD_UNUSED(thisobj);
+    (void)thisobj;
+
+    struct hwc_position position;
 
     jclass offset_class = env->GetObjectClass(offset);
 
@@ -174,53 +240,36 @@ JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenO
     if (bottom_id == NULL) return;
     jint bottom = env->GetIntField(offset, bottom_id);
 
-#ifdef ANDROID_SUPPORTS_NEXUS_IPC_CLIENT_FACTORY
-    NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("adjustScreenOffset");
-#else
-    NexusIPCClient *pIpcClient = new NexusIPCClient;
-#endif
-    NEXUS_SurfaceComposition composition;
+    m_appHwcBinder->getoverscan(position);
 
-    pIpcClient->getClientComposition(NULL, &composition);
-
-    LOGE("Changing composition [x,y,w,h] = [%d, %d, %d, %d] ----> [%d, %d, %d, %d] \n",
-        composition.position.x, composition.position.y,
-        composition.position.width, composition.position.height,
+    ALOGI("Changing composition [x,y,w,h] = [%d, %d, %d, %d] ----> [%d, %d, %d, %d] \n",
+        position.x, position.y, position.w, position.h,
         left, top, right - left, bottom - top);
 
-    composition.position.x = left;
-    composition.position.y = top;
-    composition.position.width = right - left;
-    composition.position.height = bottom - top;
+    position.x = left;
+    position.y = top;
+    position.w = right - left;
+    position.h = bottom - top;
 
-    pIpcClient->setClientComposition(NULL, &composition);
-
-    delete pIpcClient;
+    m_appHwcBinder->setoverscan(position);
 }
 
 JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_getScreenOffset
   (JNIEnv *env, jobject thisobj, jobject offset)
 {
-    BSTD_UNUSED(thisobj);
+    (void)thisobj;
 
-#ifdef ANDROID_SUPPORTS_NEXUS_IPC_CLIENT_FACTORY
-    NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("adjustScreenOffset");
-#else
-    NexusIPCClient *pIpcClient = new NexusIPCClient;
-#endif
-    NEXUS_SurfaceComposition composition;
+    struct hwc_position position;
 
-    pIpcClient->getClientComposition(NULL, &composition);
+    m_appHwcBinder->getoverscan(position);
 
-    LOGE("get [%d, %d, %d, %d]  \n",
-        composition.position.x, composition.position.y,
-        composition.position.width, composition.position.height);
+    ALOGI("get [%d, %d, %d, %d]  \n",
+        position.x, position.y, position.w, position.h);
 
-    jint left = composition.position.x;
-    jint top = composition.position.y;
-    jint right = composition.position.x + composition.position.width;
-    jint bottom = composition.position.y + composition.position.height;
-    delete pIpcClient;
+    jint left = position.x;
+    jint top = position.y;
+    jint right = position.x + position.w;
+    jint bottom = position.y + position.h;
 
     jclass offset_class = env->GetObjectClass(offset);
 

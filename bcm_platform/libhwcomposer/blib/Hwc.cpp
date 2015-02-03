@@ -43,6 +43,7 @@ static const char *registrant_name [] = {
    "HWC",
    "OMX",
    "SDB",
+   "COM",
 };
 
 Hwc::Hwc() : BnHwc() {
@@ -67,6 +68,12 @@ Hwc::Hwc() : BnHwc() {
       mSidebandSurface[i].disp_w = 0;
       mSidebandSurface[i].disp_h = 0;
    }
+
+   // TODO: get from backed up properties.
+   overscan_position.x = 0;
+   overscan_position.y = 0;
+   overscan_position.w = 0;
+   overscan_position.h = 0;
 }
 
 Hwc::~Hwc() {
@@ -447,6 +454,52 @@ void Hwc::getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int 
            }
        }
    }
+}
+
+void Hwc::setOverscanAdjust(const sp<IHwcListener>& listener,
+                      struct hwc_position &position)
+{
+    (void)listener;
+
+    Mutex::Autolock _l(mLock);
+
+    // note: it is not the purpose to protect against
+    //       stupid settings.
+    overscan_position.x = position.x;
+    overscan_position.y = position.y;
+    overscan_position.w = position.w;
+    overscan_position.h = position.h;
+
+    // notify back the hwc so it can reset the frame counter for this
+    // session.  session equals surface scope owner claimed.
+    size_t N = mNotificationListeners.size();
+    for (size_t i = 0; i < N; i++) {
+        const hwc_listener_t& client = mNotificationListeners[i];
+        if (client.kind == HWC_BINDER_HWC) {
+           sp<IBinder> binder = client.binder;
+           sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
+           struct hwc_notification_info ntfy;
+           memset(&ntfy, 0, sizeof(struct hwc_notification_info));
+           ntfy.frame.x = overscan_position.x;
+           ntfy.frame.y = overscan_position.y;
+           ntfy.frame.w = overscan_position.w;
+           ntfy.frame.h = overscan_position.h;
+           client->notify(HWC_BINDER_NTFY_OVERSCAN, ntfy);
+        }
+    }
+}
+
+void Hwc::getOverscanAdjust(const sp<IHwcListener>& listener,
+                      struct hwc_position &position)
+{
+    (void)listener;
+
+    Mutex::Autolock _l(mLock);
+
+    position.x = overscan_position.x;
+    position.y = overscan_position.y;
+    position.w = overscan_position.w;
+    position.h = overscan_position.h;
 }
 
 void Hwc::binderDied(const wp<IBinder>& who) {

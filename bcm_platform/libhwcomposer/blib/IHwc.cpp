@@ -33,6 +33,8 @@ enum {
     GET_SIDEBAND_SURF_CLIENT_ID,
     SET_VIDEO_GEOMETRY_CLIENT_ID,
     GET_VIDEO_GEOMETRY_CLIENT_ID,
+    SET_OVERSCAN_ADJUST,
+    GET_OVERSCAN_ADJUST,
 };
 
 class BpHwc : public BpInterface<IHwc>
@@ -148,6 +150,29 @@ public:
         visible = reply.readInt32();
     }
 
+    void setOverscanAdjust(const sp<IHwcListener>& listener,
+                     struct hwc_position &position) {
+        Parcel data, reply;
+        data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
+        data.writeStrongBinder(listener->asBinder());
+        data.writeInt32(position.x);
+        data.writeInt32(position.y);
+        data.writeInt32(position.h);
+        data.writeInt32(position.w);
+        remote()->transact(SET_OVERSCAN_ADJUST, data, &reply);
+    }
+
+    void getOverscanAdjust(const sp<IHwcListener>& listener,
+                     struct hwc_position &position) {
+        Parcel data, reply;
+        data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
+        data.writeStrongBinder(listener->asBinder());
+        remote()->transact(GET_OVERSCAN_ADJUST, data, &reply);
+        position.x = reply.readInt32();
+        position.y = reply.readInt32();
+        position.h = reply.readInt32();
+        position.w = reply.readInt32();
+    }
 };
 
 IMPLEMENT_META_INTERFACE(Hwc, "broadcom.hwc");
@@ -278,6 +303,34 @@ status_t BnHwc::onTransact(
          reply->writeInt32(clipped.w);
          reply->writeInt32(zorder);
          reply->writeInt32(visible);
+         return NO_ERROR;
+      }
+      break;
+
+      case SET_OVERSCAN_ADJUST:
+      {
+         CHECK_INTERFACE(IHwc, data, reply);
+         sp<IHwcListener> listener = interface_cast<IHwcListener>(data.readStrongBinder());
+         struct hwc_position position;
+         position.x = data.readInt32();
+         position.y = data.readInt32();
+         position.h = data.readInt32();
+         position.w = data.readInt32();
+         setOverscanAdjust(listener, position);
+         return NO_ERROR;
+      }
+      break;
+
+      case GET_OVERSCAN_ADJUST:
+      {
+         CHECK_INTERFACE(IHwc, data, reply);
+         sp<IHwcListener> listener = interface_cast<IHwcListener>(data.readStrongBinder());
+         struct hwc_position position;
+         getOverscanAdjust(listener, position);
+         reply->writeInt32(position.x);
+         reply->writeInt32(position.y);
+         reply->writeInt32(position.h);
+         reply->writeInt32(position.w);
          return NO_ERROR;
       }
       break;

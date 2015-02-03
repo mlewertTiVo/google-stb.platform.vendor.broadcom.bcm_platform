@@ -398,6 +398,8 @@ struct hwc_context_t {
     int display_width;
     int display_height;
 
+    struct hwc_position overscan_position;
+
     bool display_gles_fallback;
     bool display_gles_always;
     bool needs_fb_target;
@@ -920,14 +922,18 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
        }
-       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%p::vscb:%s::d:{%d,%d}::pm:%s::nsc-copy:%s\n",
+       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%p::vscb:%s::d:{%d,%d}::pm:%s::nsc-copy:%s::oscan:{%d,%d:%d,%d}\n",
            ctx->pIpcClient,
            ctx->pNexusClientContext,
            ctx->vsync_callback_enabled ? "enabled" : "disabled",
            ctx->display_width,
            ctx->display_height,
            hwc_power_mode[ctx->power_mode],
-           ctx->nsc_copy ? "oui" : "non");
+           ctx->nsc_copy ? "oui" : "non",
+           ctx->overscan_position.x,
+           ctx->overscan_position.y,
+           ctx->overscan_position.w,
+           ctx->overscan_position.h);
        if (write > 0) {
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
@@ -1041,6 +1047,9 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
                }
            }
        }
+       break;
+       case HWC_BINDER_NTFY_OVERSCAN:
+           memcpy(&ctx->overscan_position, &ntfy.frame, sizeof(ctx->overscan_position));
        break;
        case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
        default:
@@ -2734,10 +2743,10 @@ static void hwc_prepare_gpx_layer(
         geometry_changed) {
 
         ctx->gpx_cli[layer_id].composition.zorder                = (ctx->gpx_cli[layer_id].layer_flags & HWC_IS_CURSOR_LAYER) ? CURSOR_CLIENT_ZORDER : GPX_CLIENT_ZORDER;
-        ctx->gpx_cli[layer_id].composition.position.x            = disp_position.x;
-        ctx->gpx_cli[layer_id].composition.position.y            = disp_position.y;
-        ctx->gpx_cli[layer_id].composition.position.width        = disp_position.width;
-        ctx->gpx_cli[layer_id].composition.position.height       = disp_position.height;
+        ctx->gpx_cli[layer_id].composition.position.x            = disp_position.x + ctx->overscan_position.x;
+        ctx->gpx_cli[layer_id].composition.position.y            = disp_position.y + ctx->overscan_position.y;
+        ctx->gpx_cli[layer_id].composition.position.width        = disp_position.width + ctx->overscan_position.w;
+        ctx->gpx_cli[layer_id].composition.position.height       = disp_position.height + ctx->overscan_position.h;
         ctx->gpx_cli[layer_id].composition.virtualDisplay.width  = ctx->display_width;
         ctx->gpx_cli[layer_id].composition.virtualDisplay.height = ctx->display_height;
         ctx->gpx_cli[layer_id].blending_type                     = cur_blending_type;

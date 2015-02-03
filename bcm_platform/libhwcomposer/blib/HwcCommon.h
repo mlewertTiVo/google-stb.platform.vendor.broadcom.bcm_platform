@@ -28,7 +28,7 @@ struct hwc_notification_info {
    int surface_hdl;
    int display_width;
    int display_height;
-   /* following is only relevant for HWC_BINDER_NTFY_DISPLAY */
+   /* following is only relevant for HWC_BINDER_NTFY_DISPLAY | HWC_BINDER_NTFY_OVERSCAN */
    int frame_id;
    struct hwc_position frame;
    struct hwc_position clipped;

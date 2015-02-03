@@ -47,6 +47,11 @@ public:
     virtual void getGeometry(const sp<IHwcListener>& listener, int type, int index,
                              struct hwc_position &frame, struct hwc_position &clipped,
                              int &zorder, int &visible) = 0;
+
+    virtual void setOverscanAdjust(const sp<IHwcListener>& listener,
+                             struct hwc_position &position) = 0;
+    virtual void getOverscanAdjust(const sp<IHwcListener>& listener,
+                             struct hwc_position &position) = 0;
 };
 
 class BnHwc : public BnInterface<IHwc>
