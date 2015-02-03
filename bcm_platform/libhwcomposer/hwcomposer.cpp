@@ -146,6 +146,9 @@ using namespace android;
 #define HWC_DEFAULT_NSC_COPY         "0"
 #define HWC_NSC_COPY_PROP            "ro.hwc.nsc.copy"
 
+#define HWC_DEFAULT_TRACK_BUFFER     "0"
+#define HWC_TRACK_BUFFER_PROP        "ro.hwc.track.buffer"
+
 #define HWC_CHECKPOINT_TIMEOUT       (100)
 
 enum {
@@ -417,6 +420,7 @@ struct hwc_context_t {
     bool display_dump_push;
     bool display_dump_vsync;
     bool nsc_copy;
+    bool track_buffer;
 };
 
 static void hwc_device_cleanup(hwc_context_t* ctx);
@@ -1224,7 +1228,9 @@ void hwc_gpx_prepare_next_surface_locked(
       ALOGI("render:init:%d:%d::nsc:%d::%p:%p::sid:%p", ctx->prepare_call, six,
             layer_id, gr_buffer, pSharedData, client->slist[six].shdl);
    }
-   hwc_lock_surface(gr_buffer, layer_id, client->slist[six].shdl);
+   if (ctx->track_buffer) {
+      hwc_lock_surface(gr_buffer, layer_id, client->slist[six].shdl);
+   }
    if (client->layer_subtype == NEXUS_CURSOR) {
       NEXUS_SurfaceCursorCreateSettings cursorSettings;
       NEXUS_SurfaceCursorSettings config;
@@ -1630,7 +1636,9 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                              close(list->hwLayers[i].releaseFenceFd);
                              list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
                           }
-                          hwc_unlock_surface((private_handle_t *)ctx->gpx_cli[i].slist[six].grhdl);
+                          if (ctx->track_buffer) {
+                             hwc_unlock_surface((private_handle_t *)ctx->gpx_cli[i].slist[six].grhdl);
+                          }
                           ctx->gpx_cli[i].slist[six].comp_ix = -1;
                           ctx->gpx_cli[i].slist[six].grhdl = NULL;
                           ctx->gpx_cli[i].slist[six].owner = SURF_OWNER_NO_OWNER;
@@ -2179,6 +2187,10 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            dev->nsc_copy = (strtoul(value, NULL, 10) == 0) ? false : true;
         }
 
+        if (property_get(HWC_TRACK_BUFFER_PROP, value, HWC_DEFAULT_TRACK_BUFFER)) {
+           dev->track_buffer = (strtoul(value, NULL, 10) == 0) ? false : true;
+        }
+
         {
             NxClient_AllocSettings nxAllocSettings;
             NEXUS_SurfaceClientSettings client_settings;
@@ -2529,7 +2541,9 @@ static void hwc_nsc_recycled_cb(void *context, int param)
                     recycledSurface = NULL;
                     ci->slist[six].comp_ix = -1;
                  } else {
-                    hwc_unlock_surface((private_handle_t *)ci->slist[six].grhdl);
+                    if (ctx->track_buffer) {
+                       hwc_unlock_surface((private_handle_t *)ci->slist[six].grhdl);
+                    }
                     ci->slist[six].owner = SURF_OWNER_NO_OWNER;
                     ci->slist[six].shdl = NULL;
                     ci->slist[six].grhdl = NULL;
