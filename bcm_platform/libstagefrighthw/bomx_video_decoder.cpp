@@ -1580,7 +1580,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
             m_hSimpleVideoDecoder = NULL;
 
-            NEXUS_Playpump_ClosePidChannel(m_hPlaypump, m_hPidChannel);
+            ClosePidChannel();
             NEXUS_Playpump_Close(m_hPlaypump);
             UnregisterEvent(m_playpumpEventId);
             m_playpumpEventId = NULL;
@@ -1635,11 +1635,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 return BOMX_BERR_TRACE(errCode);
             }
 
-            NEXUS_PlaypumpOpenPidChannelSettings pidSettings;
-            NEXUS_Playpump_GetDefaultOpenPidChannelSettings(&pidSettings);
-            pidSettings.pidType = NEXUS_PidType_eVideo;
-            m_hPidChannel = NEXUS_Playpump_OpenPidChannel(m_hPlaypump, B_STREAM_ID, &pidSettings);
-            if ( NULL == m_hPidChannel )
+            errCode = OpenPidChannel(B_STREAM_ID);
+            if ( errCode )
             {
                 NEXUS_Playpump_Close(m_hPlaypump);
                 m_hPlaypump = NULL;
@@ -1651,8 +1648,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             if ( NULL == m_playpumpEventId )
             {
                 BOMX_ERR(("Unable to register playpump event"));
-                NEXUS_Playpump_ClosePidChannel(m_hPlaypump, m_hPidChannel);
-                m_hPidChannel = NULL;
+                ClosePidChannel();
                 NEXUS_Playpump_Close(m_hPlaypump);
                 m_hPlaypump = NULL;
                 NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
@@ -1661,20 +1657,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             }
             // Safe to initialize here the number of input buffers available
             m_AvailInputBuffers = m_pVideoPorts[0]->GetDefinition()->nBufferCountActual;
-
-            // Intended for derived classes to use if additional settings for transport are
-            // required
-            errCode = ExtraTransportConfig();
-            if ( errCode )
-            {
-                NEXUS_Playpump_ClosePidChannel(m_hPlaypump, m_hPidChannel);
-                m_hPidChannel = NULL;
-                NEXUS_Playpump_Close(m_hPlaypump);
-                m_hPlaypump = NULL;
-                NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
-                m_hSimpleVideoDecoder = NULL;
-                return BOMX_BERR_TRACE(BERR_UNKNOWN);
-            }
         }
 
         (void)NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &vdecStatus);
@@ -4628,4 +4610,33 @@ err_surface_lock:
 err_surface:
 err_rgb:
     return rc;
+}
+
+NEXUS_Error BOMX_VideoDecoder::OpenPidChannel(uint32_t pid)
+{
+    if ( m_hPlaypump )
+    {
+        BOMX_ASSERT(NULL == m_hPidChannel);
+
+        NEXUS_PlaypumpOpenPidChannelSettings pidSettings;
+        NEXUS_Playpump_GetDefaultOpenPidChannelSettings(&pidSettings);
+        pidSettings.pidType = NEXUS_PidType_eVideo;
+        m_hPidChannel = NEXUS_Playpump_OpenPidChannel(m_hPlaypump, pid, &pidSettings);
+        if ( m_hPidChannel )
+        {
+            return NEXUS_SUCCESS;
+        }
+    }
+    return BOMX_BERR_TRACE(BERR_UNKNOWN);
+}
+
+void BOMX_VideoDecoder::ClosePidChannel()
+{
+    if ( m_hPidChannel )
+    {
+        BOMX_ASSERT(NULL != m_hPlaypump);
+        
+        NEXUS_Playpump_ClosePidChannel(m_hPlaypump, m_hPidChannel);
+        m_hPidChannel = NULL;
+    }
 }

@@ -184,12 +184,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure::ConfigBufferAppend(const void *pBuffer, 
     return OMX_ErrorNone;
 }
 
-NEXUS_Error BOMX_VideoDecoder_Secure::ExtraTransportConfig()
-{
-    NEXUS_SetPidChannelBypassKeyslot(m_hPidChannel, NEXUS_BypassKeySlot_eGR2R);
-    return NEXUS_SUCCESS;
-}
-
 NEXUS_Error BOMX_VideoDecoder_Secure::AllocateInputBuffer(uint32_t nSize, void*& pBuffer)
 {
     // Init Sage Platform if it hasn't been done yet
@@ -289,4 +283,31 @@ NEXUS_Error BOMX_VideoDecoder_Secure::SecureCopy(void *pDest, const void *pSrc, 
     NEXUS_Dma_Close(dma);
     BKNI_DestroyEvent(event);
     return NEXUS_SUCCESS;
+}
+
+NEXUS_Error BOMX_VideoDecoder_Secure::OpenPidChannel(uint32_t pid)
+{
+    NEXUS_Error rc = BOMX_VideoDecoder::OpenPidChannel(pid);
+    if ( NEXUS_SUCCESS == rc )
+    {
+        // Setup to read from restricted memory to save codec config data w/dma
+        rc = NEXUS_SetPidChannelBypassKeyslot(m_hPidChannel, NEXUS_BypassKeySlot_eGR2R);
+        if ( rc )
+        {
+            ALOGE("Unable to set bypass key slot");
+            ClosePidChannel();
+            return BOMX_BERR_TRACE(rc);
+        }
+    }
+    return rc;
+}
+
+void BOMX_VideoDecoder_Secure::ClosePidChannel()
+{
+    if ( m_hPidChannel )
+    {
+        // Set back to default (workaround for SW)
+        (void)NEXUS_SetPidChannelBypassKeyslot(m_hPidChannel, NEXUS_BypassKeySlot_eG2GR);
+        BOMX_VideoDecoder::ClosePidChannel();
+    }
 }

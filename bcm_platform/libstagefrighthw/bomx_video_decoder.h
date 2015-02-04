@@ -368,7 +368,8 @@ protected:
     virtual void FreeInputBuffer(void*& pBuffer);
     virtual OMX_ERRORTYPE ConfigBufferInit();
     virtual OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
-    virtual NEXUS_Error ExtraTransportConfig() {return 0;};
+    virtual NEXUS_Error OpenPidChannel(uint32_t pid);
+    virtual void ClosePidChannel();
 
 private:
 };

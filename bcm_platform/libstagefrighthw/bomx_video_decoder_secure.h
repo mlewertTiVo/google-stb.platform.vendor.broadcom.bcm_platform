@@ -72,8 +72,9 @@ public:
 protected:
     virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
     virtual void FreeInputBuffer(void*& pBuffer);
-    virtual NEXUS_Error ExtraTransportConfig();
     virtual OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
+    virtual NEXUS_Error OpenPidChannel(uint32_t pid);
+    virtual void ClosePidChannel();
 
 private:
     int Sage_Platform_Init();
