@@ -37,7 +37,8 @@ using namespace android;
 class Tuner_Data
 {
 public:
-    jobject o;
+    jobject tunerService;
+    jclass broadcastEvent;
     JavaVM *vm;
     NexusIPCClientBase *ipcclient;
     NexusClientContext *nexus_client;
@@ -46,7 +47,24 @@ public:
     BKNI_MutexHandle mutex;
 };
 
-void TunerHAL_onBroadcastEvent(jint e, jint param, String8 s);
+/* If you want to add a new event type:
+ * 1. Add a new BroadcastEvent enum in TunerService.java
+ * 2. Add an enum with an identical *name* below (the value doesn't matter)
+ * 3. Add a matching case in the eventName() function in TunerHAL.cpp
+ */
+enum BroadcastEvent {
+    CHANNEL_LIST_CHANGED,
+    PROGRAM_LIST_CHANGED,
+    TRACK_LIST_CHANGED,
+    TRACK_SELECTED,
+    VIDEO_AVAILABLE,
+    SCANNING_START,
+    SCANNING_PROGRESS,
+    SCANNING_COMPLETE,
+};
+
+void TunerHAL_onBroadcastEvent(BroadcastEvent e, jint param, String8 s);
+
 NexusIPCClientBase *TunerHAL_getIPCClient();
 NexusClientContext *TunerHAL_getClientContext();
 

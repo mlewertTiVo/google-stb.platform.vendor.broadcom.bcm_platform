@@ -468,14 +468,20 @@ public class TunerService extends TvInputService {
         }
     }
 
-    public static final int BROADCAST_EVENT_CHANNEL_LIST_CHANGED = 0;
-    public static final int BROADCAST_EVENT_PROGRAM_LIST_CHANGED = 1;
-    public static final int BROADCAST_EVENT_VIDEO_TRACK_LIST_CHANGED = 2;
-    public static final int BROADCAST_EVENT_TRACK_SELECTED = 3;
-    public static final int BROADCAST_EVENT_VIDEO_AVAILABLE = 4;
-    public static final int BROADCAST_EVENT_SCANNING_START = 99;
-    public static final int BROADCAST_EVENT_SCANNING_PROGRESS = 100; // 100 - 0% progress 200 100%
-    public static final int BROADCAST_EVENT_SCANNING_COMPLETE = 201;
+    /*
+     * Note: this enum is used in JNI code.
+     * Please update jni/TunerHAL.* if you make any modifications here.
+     */
+    public enum BroadcastEvent {
+        CHANNEL_LIST_CHANGED,
+        PROGRAM_LIST_CHANGED,
+        TRACK_LIST_CHANGED,
+        TRACK_SELECTED,
+        VIDEO_AVAILABLE,
+        SCANNING_START,
+        SCANNING_PROGRESS,
+        SCANNING_COMPLETE,
+    }
 
     private void sendScanStatusToAllSessions()
     {
@@ -541,45 +547,50 @@ public class TunerService extends TvInputService {
         }
     }
 
-    public void onBroadcastEvent(int e, final int param, final String s) {
+    public void onBroadcastEvent(BroadcastEvent e, final int param, final String s) {
         Log.e(TAG, "Broadcast event: " + e + " " + param + " " + s);
-        if (e == BROADCAST_EVENT_CHANNEL_LIST_CHANGED) {
+        switch (e) {
+            case CHANNEL_LIST_CHANGED:
             dbsync.setChannelListChanged();
-        }
-        else if (e == BROADCAST_EVENT_PROGRAM_LIST_CHANGED) {
+                break;
+            case PROGRAM_LIST_CHANGED:
             dbsync.setProgramListChanged();
-        }
-        else if (e == BROADCAST_EVENT_SCANNING_PROGRESS || e == BROADCAST_EVENT_SCANNING_COMPLETE) {
+                break;
+            case SCANNING_START:
+            case SCANNING_PROGRESS:
+            case SCANNING_COMPLETE:
             mMainLoopHandler.post(new Runnable() {
                 @Override
                 public void run() {
                     sendScanStatusToAllSessions();
                 }
             });
-        }
-        else if (e == BROADCAST_EVENT_VIDEO_TRACK_LIST_CHANGED) {
+                break;
+            case TRACK_LIST_CHANGED:
             mMainLoopHandler.post(new Runnable() {
                 @Override
                 public void run() {
                     sendTrackInfoToAllSessions();
                 }
             });
-        }
-        else if (e == BROADCAST_EVENT_TRACK_SELECTED) {
+                break;
+            case TRACK_SELECTED:
             mMainLoopHandler.post(new Runnable() {
                 @Override
                 public void run() {
                     sendTrackSelectedToAllSessions(param, s);
                 }
             });
-        }
-        else if (e == BROADCAST_EVENT_VIDEO_AVAILABLE) {
+                break;
+            case VIDEO_AVAILABLE:
             mMainLoopHandler.post(new Runnable() {
                 @Override
                 public void run() {
                     sendVideoAvailabilityToAllSessions(param);
                 }
             });
+                break;
+            //default: not added to catch missing case statements
         }
     }
 
@@ -785,7 +796,7 @@ public class TunerService extends TvInputService {
                             skipList.add(dbci.id);
                         }
                         else {
-                            zapList.add(new Long(channelId));
+                            zapList.add(Long.valueOf(channelId));
                         }
                     }
                 }

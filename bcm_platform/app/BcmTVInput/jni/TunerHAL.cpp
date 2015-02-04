@@ -56,11 +56,13 @@
 #define TV_LOG
 #endif
 
+#define BROADCAST_EVENT_CLASS  "com/broadcom/tvinput/TunerService$BroadcastEvent"
+#define BROADCAST_EVENT_SIG  "L" BROADCAST_EVENT_CLASS ";"
+
 // All globals must be JNI primitives, any other data type 
 // will fail to hold its value across different JNI methods
 void *j_main;
 static Tuner_Data *g_pTD;
-static jclass gTunerServiceClass;
 
 // The signature syntax is: Native-method-name, signature & fully-qualified-name
 static JNINativeMethod gMethods[] = 
@@ -389,10 +391,11 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env
 
     ALOGE("%s: nexus_client = %p", __FUNCTION__, g_pTD->nexus_client);
 
-    jclass cls = env->FindClass("com/broadcom/tvinput/TunerService");
-    TV_LOG("%s: Found class (%p)!!", __FUNCTION__, cls);
-    gTunerServiceClass = reinterpret_cast<jclass>(env->NewGlobalRef(cls));
-    g_pTD->o = env->NewGlobalRef(o);
+    g_pTD->tunerService = env->NewGlobalRef(o);
+
+    g_pTD->broadcastEvent = reinterpret_cast<jclass>(env->NewGlobalRef(
+            env->FindClass(BROADCAST_EVENT_CLASS)));
+    ALOGI("%s: BroadcastEvent class = %p", __FUNCTION__, g_pTD->broadcastEvent);
 
     HwcBinderConnect();
     BKNI_CreateMutex(&g_pTD->mutex);
@@ -835,16 +838,46 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_selectTrack(JNIEnv *en
     return rv;
 }
 
-void
-TunerHAL_onBroadcastEvent(jint e, jint param, String8 s)
+
+static const char * eventName(BroadcastEvent e)
 {
-    if (g_pTD && g_pTD->vm && g_pTD->o) {
+#define CASE_ENUM_NAME(e) case e: return #e
+    switch (e) {
+    CASE_ENUM_NAME(CHANNEL_LIST_CHANGED);
+    CASE_ENUM_NAME(PROGRAM_LIST_CHANGED);
+    CASE_ENUM_NAME(TRACK_LIST_CHANGED);
+    CASE_ENUM_NAME(TRACK_SELECTED);
+    CASE_ENUM_NAME(VIDEO_AVAILABLE);
+    CASE_ENUM_NAME(SCANNING_START);
+    CASE_ENUM_NAME(SCANNING_PROGRESS);
+    CASE_ENUM_NAME(SCANNING_COMPLETE);
+
+    // add a new BroadcastEvent enum here
+
+    //default: not added to catch missing case statements
+    }
+#undef CASE_ENUM_NAME
+    return 0; //unknown
+}
+
+void
+TunerHAL_onBroadcastEvent(BroadcastEvent e, jint param, String8 s)
+{
+    if (g_pTD && g_pTD->vm && g_pTD->tunerService && g_pTD->broadcastEvent) {
         JNIEnv *env;
         jstring js;
+
+        const char *event = eventName(e);
+        ALOGI("%s: %s", __FUNCTION__, event ? event : "<unknown>");
+
         g_pTD->vm->AttachCurrentThread(&env, NULL);
-        jmethodID obeID = env->GetMethodID(gTunerServiceClass, "onBroadcastEvent", "(IILjava/lang/String;)V");
+        jclass cls = env->GetObjectClass(g_pTD->tunerService);
+        jmethodID obeID = env->GetMethodID(cls, "onBroadcastEvent",
+                "(" BROADCAST_EVENT_SIG "ILjava/lang/String;)V");
+        jfieldID eventID = env->GetStaticFieldID(g_pTD->broadcastEvent, event, BROADCAST_EVENT_SIG);
+        jobject jevent = env->GetStaticObjectField(g_pTD->broadcastEvent, eventID);
         js = env->NewStringUTF(s.string());
-        env->CallVoidMethod(g_pTD->o, obeID, e, param, js);
+        env->CallVoidMethod(g_pTD->tunerService, obeID, jevent, param, js);
         env->DeleteLocalRef(js);
         //g_pTD->vm->DetachCurrentThread();
     }

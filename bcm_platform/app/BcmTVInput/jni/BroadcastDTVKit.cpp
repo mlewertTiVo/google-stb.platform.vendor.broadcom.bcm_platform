@@ -79,20 +79,20 @@ static int BroadcastDTVKit_Stop()
 static void
 onScanProgress(jshort progress)
 {
-    TunerHAL_onBroadcastEvent(100, progress, String8());
+    TunerHAL_onBroadcastEvent(SCANNING_PROGRESS, progress, String8());
 }
 
 static void
 onScanComplete()
 {
-    TunerHAL_onBroadcastEvent(201, 0, String8());
-    TunerHAL_onBroadcastEvent(0, 0, String8());
+    TunerHAL_onBroadcastEvent(SCANNING_COMPLETE, 0, String8());
+    TunerHAL_onBroadcastEvent(CHANNEL_LIST_CHANGED, 0, String8());
 }
 
 static void
 onScanStart()
 {
-    TunerHAL_onBroadcastEvent(99, 0, String8());
+    TunerHAL_onBroadcastEvent(SCANNING_START, 0, String8());
 }
 
 static bool
@@ -223,8 +223,7 @@ static int BroadcastDTVKit_Tune(String8 s8id)
         }
         else {
             ALOGE("%s: Tuning", __FUNCTION__);
-            //BROADCAST_EVENT_VIDEO_AVAILABLE 0
-            TunerHAL_onBroadcastEvent(4, 0, String8());
+            TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 0, String8());
             rv = 0;
         }
     }
@@ -813,23 +812,19 @@ updateTrackList(int videoStarted)
     checkAudioDecodeState(&tlchanged, &atchanged);
 
     if (tlchanged) {
-        //BROADCAST_EVENT_TRACK_LIST_CHANGED
-        TunerHAL_onBroadcastEvent(2, 0, String8());
+        TunerHAL_onBroadcastEvent(TRACK_LIST_CHANGED, 0, String8());
     }
     if ((tlchanged || vachanged) && pSelf->decoding) {
-        //BROADCAST_EVENT_VIDEO_AVAILABLE 1
-        TunerHAL_onBroadcastEvent(4, 1, String8());
+        TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 1, String8());
     }
     if (tlchanged || vtchanged) {
         if (pSelf->vpid) {
-            //BROADCAST_EVENT_TRACK_SELECTED VIDEO vpid
-            TunerHAL_onBroadcastEvent(3, 1, String8::format("%u", pSelf->vpid));
+            TunerHAL_onBroadcastEvent(TRACK_SELECTED, 1, String8::format("%u", pSelf->vpid));
         }
     }
     if (tlchanged || atchanged) {
         if (pSelf->apid) {
-            //BROADCAST_EVENT_TRACK_SELECTED AUDIO apid
-            TunerHAL_onBroadcastEvent(3, 0, String8::format("%u", pSelf->apid));
+            TunerHAL_onBroadcastEvent(TRACK_SELECTED, 0, String8::format("%u", pSelf->apid));
         }
     }
 
@@ -848,7 +843,7 @@ event_handler(U32BIT event, void */*event_data*/, U32BIT /*data_size*/)
             scannerUpdate();
         }
         else if (event == APP_EVENT_SERVICE_EIT_NOW_UPDATE && !pSelf->scanner.active) {
-            TunerHAL_onBroadcastEvent(1, 0, String8());
+            TunerHAL_onBroadcastEvent(PROGRAM_LIST_CHANGED, 0, String8());
         }
         else if (event == STB_EVENT_VIDEO_DECODE_STARTED) {
             videoStarted = 1;
