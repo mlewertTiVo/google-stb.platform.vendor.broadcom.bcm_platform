@@ -46,7 +46,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.lang.Long;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;

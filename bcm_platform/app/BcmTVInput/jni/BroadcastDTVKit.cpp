@@ -26,6 +26,12 @@ public:
         scanner.infoValid = false;
         scanner.mutex = STB_OSCreateMutex();
         path = INVALID_RES_ID;
+        s_ptr = NULL;
+        vpid = 0;
+        apid = 0;
+        decoding = 0;
+        w = 0;
+        h = 0;
     };
     struct {
         void *mutex;

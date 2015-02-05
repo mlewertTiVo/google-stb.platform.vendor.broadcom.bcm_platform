@@ -87,7 +87,7 @@ FreeContext()
 #define NEXUS_RECT_IS_EQUAL(r1,r2) (((r1)->x == (r2)->x) && ((r1)->y == (r2)->y) && ((r1)->width == (r2)->width) && ((r1)->height == (r2)->height))
 
 static void
-SetGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible)
+SetGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rect * /*pClipRect*/, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible)
 {
     if (pSelf && pSelf->m_hVideoClient) {
         NEXUS_SurfaceComposition *pComposition;
@@ -296,7 +296,7 @@ CacheTrackInfoList()
     pSelf->trackInfoList = v;
 }
 
-static void sourceChangeCallback(void *context, int param)
+static void sourceChangeCallback(void * /*context*/, int /*param*/)
 {
     CacheTrackInfoList();
     TunerHAL_onBroadcastEvent(TRACK_LIST_CHANGED, 0, String8());
@@ -324,7 +324,7 @@ BroadcastDemo_GetTrackInfoList()
 }
 
 static int
-BroadcastDemo_SelectTrack(int type, String8 id)
+BroadcastDemo_SelectTrack(int /*type*/, String8 /*id*/)
 {
     return -1;
 }

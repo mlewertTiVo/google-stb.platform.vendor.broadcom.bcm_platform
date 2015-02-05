@@ -43,7 +43,7 @@ public class TunerSettings extends Activity {
 
     private TvInputManager mTvInputManager;
 
-    private String getInputIdFromComponentName(Context context, ComponentName name) {
+    private String getInputIdFromComponentName(ComponentName name) {
         for (TvInputInfo info : mTvInputManager.getTvInputList()) {
             ServiceInfo si = info.getServiceInfo();
             if (new ComponentName(si.packageName, si.name).equals(name)) {
@@ -107,7 +107,7 @@ public class TunerSettings extends Activity {
 
         mTvInputManager = (TvInputManager) this.getSystemService(Context.TV_INPUT_SERVICE);
 
-        inputId = getInputIdFromComponentName(this,
+        inputId = getInputIdFromComponentName(
                 new ComponentName(this, TunerService.class));
         Log.e(TAG, "onCreate - mInputId = " + inputId);
 
