@@ -555,11 +555,21 @@ static Vector<BroadcastProgramInfo> BroadcastDTVKit_GetProgramList(String8 s8id)
     U16BIT lcn = strtoul(s8id.string(), 0, 0);
     void *s_ptr = ADB_FindServiceByLcn(ADB_SERVICE_LIST_TV | ADB_SERVICE_LIST_RADIO, lcn, TRUE);
     if (s_ptr) {
+#ifdef NOWNEXT
         void *now_event;
         void *next_event;
         ADB_GetNowNextEvents(s_ptr, &now_event, &next_event);
         pushprog(piv, now_event, s_ptr);
         pushprog(piv, next_event, s_ptr);
+#else
+        void **e_list;
+        U16BIT num_e_entries;
+        ADB_GetEventSchedule(FALSE, s_ptr, &e_list, &num_e_entries);
+        for (unsigned ei = 0; ei < num_e_entries; ei++) {
+            pushprog(piv, e_list[ei], s_ptr);
+        }
+        ADB_ReleaseEventList(e_list, num_e_entries);
+#endif
     }
 
     ALOGE("%s: Exit", __FUNCTION__);
@@ -842,9 +852,15 @@ event_handler(U32BIT event, void */*event_data*/, U32BIT /*data_size*/)
         if (event == EVENT_CODE(EV_CLASS_UI, EV_TYPE_UPDATE)) {
             scannerUpdate();
         }
+#ifdef NOWNEXT
         else if (event == APP_EVENT_SERVICE_EIT_NOW_UPDATE && !pSelf->scanner.active) {
             TunerHAL_onBroadcastEvent(PROGRAM_LIST_CHANGED, 0, String8());
         }
+#else
+        else if (event == APP_EVENT_SERVICE_EIT_SCHED_UPDATE && !pSelf->scanner.active) {
+            TunerHAL_onBroadcastEvent(PROGRAM_LIST_CHANGED, 0, String8());
+        }
+#endif
         else if (event == STB_EVENT_VIDEO_DECODE_STARTED) {
             videoStarted = 1;
             update = 1;
@@ -1053,6 +1069,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
 
     DTVKitPlatform_SetNVMBasePath("/data/data/com.broadcom.tvinput");
     APP_InitialiseDVB(event_handler);
+    ASI_SetEITScheduleLimit(24);
 
     U16BIT services = ADB_GetNumServicesInList(ADB_SERVICE_LIST_ALL, true);
     if (services == 0) {

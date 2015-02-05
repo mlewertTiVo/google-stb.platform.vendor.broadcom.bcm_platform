@@ -879,6 +879,8 @@ TunerHAL_onBroadcastEvent(BroadcastEvent e, jint param, String8 s)
         js = env->NewStringUTF(s.string());
         env->CallVoidMethod(g_pTD->tunerService, obeID, jevent, param, js);
         env->DeleteLocalRef(js);
+        env->DeleteLocalRef(jevent);
+        env->DeleteLocalRef(cls);
         //g_pTD->vm->DetachCurrentThread();
     }
 }
