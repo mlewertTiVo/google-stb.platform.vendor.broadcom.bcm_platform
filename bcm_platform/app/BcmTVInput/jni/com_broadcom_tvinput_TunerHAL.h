@@ -17,7 +17,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize
 
 /*
  * Class:     com_broadcom_tvinput_TunerHAL
- * Method:    scan
+ * Method:    startBlindScan
  * Signature: ()I
  */
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startBlindScan
@@ -25,7 +25,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startBlindScan
 
 /*
  * Class:     com_broadcom_tvinput_TunerHAL
- * Method:    scan
+ * Method:    stopScan
  * Signature: ()I
  */
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stopScan
@@ -65,22 +65,6 @@ JNIEXPORT jobject JNICALL Java_com_broadcom_tvinput_TunerHAL_getScanInfo
 
 /*
  * Class:     com_broadcom_tvinput_TunerHAL
- * Method:    getTrackInfoList
- * Signature: ()[Lcom/broadcom/tvinput/TrackInfo;
- */
-JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getTrackInfoList
-  (JNIEnv *, jclass);
-
-/*
- * Class:     com_broadcom_tvinput_TunerHAL
- * Method:    selectTrack
- * Signature: (ILjava/lang/String;)I
- */
-JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_selectTrack
-  (JNIEnv *, jclass, jint, jstring);
-
-/*
- * Class:     com_broadcom_tvinput_TunerHAL
  * Method:    getUtcTime
  * Signature: ()J
  */
@@ -105,11 +89,35 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_release
 
 /*
  * Class:     com_broadcom_tvinput_TunerHAL
- * Method:    stop
+ * Method:    setSurface
  * Signature: ()I
  */
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_setSurface
   (JNIEnv *, jclass);
+
+/*
+ * Class:     com_broadcom_tvinput_TunerHAL
+ * Method:    getTrackInfoList
+ * Signature: ()[Lcom/broadcom/tvinput/TrackInfo;
+ */
+JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getTrackInfoList
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     com_broadcom_tvinput_TunerHAL
+ * Method:    selectTrack
+ * Signature: (ILjava/lang/String;)I
+ */
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_selectTrack
+  (JNIEnv *, jclass, jint, jstring);
+
+/*
+ * Class:     com_broadcom_tvinput_TunerHAL
+ * Method:    setCaptionEnabled
+ * Signature: (Z)V
+ */
+JNIEXPORT void JNICALL Java_com_broadcom_tvinput_TunerHAL_setCaptionEnabled
+  (JNIEnv *, jclass, jboolean);
 
 #ifdef __cplusplus
 }

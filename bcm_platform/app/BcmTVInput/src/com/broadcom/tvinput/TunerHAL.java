@@ -30,4 +30,5 @@ public class TunerHAL
     static native int setSurface();
     static native TrackInfo[] getTrackInfoList();
     static native int selectTrack(int type, String id);
+    static native void setCaptionEnabled(boolean enabled);
 }

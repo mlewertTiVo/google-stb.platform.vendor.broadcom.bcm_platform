@@ -329,6 +329,13 @@ BroadcastDemo_SelectTrack(int /*type*/, String8 /*id*/)
     return -1;
 }
 
+static void
+BroadcastDemo_SetCaptionEnabled(bool enabled)
+{
+    ALOGI("%s: %s", __FUNCTION__, enabled ? "enabled" : "disabled");
+    //TODO: Write me!
+}
+
 static int BroadcastDemo_Tune(String8 s8id)
 {
     NEXUS_VideoDecoderSettings settings;
@@ -588,6 +595,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->SetGeometry = BroadcastDemo_SetGeometry;
     pD->GetTrackInfoList = BroadcastDemo_GetTrackInfoList;
     pD->SelectTrack = BroadcastDemo_SelectTrack;
+    pD->SetCaptionEnabled = BroadcastDemo_SetCaptionEnabled;
 
     ALOGE("%s: Exit", __FUNCTION__);
     return 0;

@@ -1020,8 +1020,8 @@ public class TunerService extends TvInputService {
         @Override
         public void onSetCaptionEnabled(boolean enabled) 
         {
-			Log.d(TAG, "onSetCaptionEnabled,  Enter...");
-            // No-op
+            Log.d(TAG, "onSetCaptionEnabled " + enabled);
+            TunerHAL.setCaptionEnabled(enabled);
         }
 
         @Override

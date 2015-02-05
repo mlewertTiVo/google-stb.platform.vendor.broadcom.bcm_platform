@@ -80,6 +80,7 @@ static JNINativeMethod gMethods[] =
     {"setSurface",     "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_setSurface},  
     {"getTrackInfoList", "()[Lcom/broadcom/tvinput/TrackInfo;", (void *)Java_com_broadcom_tvinput_TunerHAL_getTrackInfoList},  
     {"selectTrack",    "(ILjava/lang/String;)I", (void *)Java_com_broadcom_tvinput_TunerHAL_selectTrack},  
+    {"setCaptionEnabled", "(Z)V", (void *)Java_com_broadcom_tvinput_TunerHAL_setCaptionEnabled},
 };
 
 const String16 INexusTunerService::descriptor(TUNER_INTERFACE_NAME);
@@ -838,6 +839,17 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_selectTrack(JNIEnv *en
     return rv;
 }
 
+JNIEXPORT void JNICALL Java_com_broadcom_tvinput_TunerHAL_setCaptionEnabled (JNIEnv */*env*/, jclass, jboolean enabled)
+{
+    if (g_pTD->driver.SetCaptionEnabled == 0) {
+        TV_LOG("%s: SetCaptionEnabled call is null", __FUNCTION__);
+    }
+    else {
+        LOCKHAL
+        (*g_pTD->driver.SetCaptionEnabled)(enabled);
+        UNLOCKHAL
+    }
+}
 
 static const char * eventName(BroadcastEvent e)
 {

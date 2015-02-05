@@ -1066,6 +1066,13 @@ BroadcastDTVKit_SelectTrack(int type, String8 id)
     return 0;
 }
 
+void
+BroadcastDTVKit_SetCaptionEnabled(bool enabled)
+{
+    ALOGD("%s: %s", __FUNCTION__, enabled ? "enabled" : "disabled");
+    //TODO: Write me!
+}
+
 int
 Broadcast_Initialize(BroadcastDriver *pD)
 {
@@ -1094,6 +1101,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->SetGeometry = BroadcastDTVKit_SetGeometry;
     pD->GetTrackInfoList = BroadcastDTVKit_GetTrackInfoList;
     pD->SelectTrack = BroadcastDTVKit_SelectTrack;
+    pD->SetCaptionEnabled = BroadcastDTVKit_SetCaptionEnabled;
     BDBG_SetModuleLevel("stbhwav", BDBG_eMsg);
     ALOGE("%s: Exit", __FUNCTION__);
     return 0;

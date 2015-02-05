@@ -85,6 +85,7 @@ public:
     int (*SetGeometry)(BroadcastRect position, BroadcastRect clipRect, jshort gfxWidth, jshort gfxHeight, jshort zorder, jboolean visible);
     Vector<BroadcastTrackInfo> (*GetTrackInfoList)();
     int (*SelectTrack)(int, String8);
+    void (*SetCaptionEnabled)(bool enabled);
 };
 
 int Broadcast_Initialize(BroadcastDriver *pDriver);
