@@ -220,6 +220,9 @@ void startNxServer(void)
     strcat(cmdRunNxServer, "-svp ");
     strcat(cmdRunNxServer, "-grab off ");
     strcat(cmdRunNxServer, "-sd off -memconfig display,hddvi=off ");
+#ifdef USE_MMA
+    strcat(cmdRunNxServer, "-growHeapBlockSize 32m -heap gfx,32m ");
+#endif
 
     memset(value, 0, sizeof(value));
     property_get("ro.nexus.nxserver.hdcp1x_keys", value, NULL);
