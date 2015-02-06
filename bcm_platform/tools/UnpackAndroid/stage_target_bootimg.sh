@@ -2,30 +2,36 @@
 set -e
 
 function usage {
-   echo "stage_host_bootimg.sh [[b] [s] [d] [c] [z]] [S]"
+   echo "stage_host_bootimg.sh [-b] [-s] [-d] [-c] [-z] [-S] [-p <name>]"
    echo ""
    echo "list partitions to update. partitions in:"
-   echo "     'b': boot image"
-   echo "     's': system image"
-   echo "     'd': userdata image"
-   echo "     'c': cache image"
-   echo "     'z': recovery image"
-   echo "     'S': for usage with selinux enabled"
    echo ""
-   echo "to run with SELinux support, specify 'S'"
+   echo "     '-b': boot"
+   echo "     '-s': system"
+   echo "     '-d': userdata"
+   echo "     '-c': cache"
+   echo "     '-z': recovery"
+   echo ""
+   echo "'-S' - to run with SELinux support (incurs longer copy time)."
    echo ""
    echo "defaults to:"
-   echo "     if without [S]: 'b s d'"
-   echo "     if [S] alone, equivalent to: 'S b s d'"
+   echo ""
+   echo "     '-b -s -d' - if '-S' is not specified."
+   echo "     '-S -b -s -d' - if '-S' specified without explicit partitions."
+   echo ""
+   echo "'-p <name>' - to specify the root of the partition flashing"
+   echo "              eg: sda, mmcblk0p - defaults to 'sda'."
    echo ""
 }
 
-# those partition are coming from the format script.
+# those partition are coming from the format script (usb) and/or the gpt (emmc).
 partition_boot=1
 partition_system=3
 partition_data=4
 partition_cache=5
 partition_recovery=6
+
+partition_root=sda
 
 update_boot_img=1
 update_system=1
@@ -35,42 +41,53 @@ update_cache=0
 update_recovery=0
 selinux=0
 if [ $# -gt 0 ]; then
-	echo "reset arguments, reading from command line..."
 	update_boot_img=0
 	update_system=0
 	update_data=0
 fi
 
-while [[ $# > 0 ]]
-	do
-	tag="$1"
-	shift
-
+while getopts "hbsdczSp:" tag; do
 	case $tag in
 	b)
-	update_boot_img=1
-	;;
+		update_boot_img=1
+		;;
 	s)
-	update_system=1
-	;;
+		update_system=1
+		;;
 	d)
-	update_data=1
-	;;
+		update_data=1
+		;;
 	c)
-	update_cache=1
-	;;
+		update_cache=1
+		;;
 	z)
-	update_recovery=1
-	;;
+		update_recovery=1
+		;;
 	S)
-	selinux=1
-	;;
-	*)
-	usage
-	exit 1
-	;;
-esac
+		selinux=1
+		;;
+	p)
+		partition_root=$OPTARG
+		;;
+	h|*)
+		usage
+		exit 1
+		;;
+	esac
 done
+
+echo ""
+echo "******** WARNING ********"
+echo ""
+echo " expected partition layout is: "
+echo ""
+echo "   boot:     /dev/${partition_root}${partition_boot}"
+echo "   system:   /dev/${partition_root}${partition_system}"
+echo "   data:     /dev/${partition_root}${partition_data}"
+echo "   cache:    /dev/${partition_root}${partition_cache}"
+echo "   recovery: /dev/${partition_root}${partition_recovery}"
+echo ""
+echo "******** WARNING ********"
 
 # if only argument set was to ask for selinux, roll back default update.
 if [[ $selinux -gt 0 && $update_boot_img -eq 0 && $update_system -eq 0 && $update_data -eq 0 && $update_cache -eq 0 && $update_recovery -eq 0 ]]; then
@@ -102,16 +119,6 @@ echo "setting up for selinux usage..."
 echo ""
 fi
 
-echo ""
-echo "******** IMPORTANT ********"
-echo " expected partition layout numbering is: "
-echo ""
-echo "   boot:     ${partition_boot}"
-echo "   system:   ${partition_system}"
-echo "   data:     ${partition_data}"
-echo "   cache:    ${partition_cache}"
-echo "   recovery: ${partition_recovery}"
-echo ""
 sleep 2
 
 if [ $update_recovery -gt 0 ]; then
@@ -137,24 +144,23 @@ if [ $selinux -eq 0 ]; then
 	fi
 fi
 
-echo "Mounting needed partitions in the USB stick to target system"
+echo "mounting partitions /dev/${partition_root}X to target system"
 if [ $update_boot_img -gt 0 ]; then
-	mount /dev/sda${partition_boot} /mnt/kernel
+	mount /dev/${partition_root}${partition_boot} /mnt/kernel
 fi
 if [ $update_recovery -gt 0 ]; then
-	mount /dev/sda${partition_recovery} /mnt/recovery
+	mount /dev/${partition_root}${partition_recovery} /mnt/recovery
 fi
 if [ $selinux -eq 0 ]; then
 	if [ $update_system -gt 0 ]; then
-		mount /dev/sda${partition_system} /mnt/system
+		mount /dev/${partition_root}${partition_system} /mnt/system
 	fi
 	if [ $update_data -gt 0 ]; then
-		mount /dev/sda${partition_data} /mnt/data
+		mount /dev/${partition_root}${partition_data} /mnt/data
 	fi
 	if [ $update_cache -gt 0 ]; then
-		mount /dev/sda${partition_cache} /mnt/cache
+		mount /dev/${partition_root}${partition_cache} /mnt/cache
 	fi
-	echo "Cleaning up all partitions (except for the kernel/recovery partitions)"
 	if [ $update_system -gt 0 ]; then
 		rm -rf /mnt/system/*
 	fi
@@ -169,14 +175,14 @@ fi
 cd /mnt/work/
 
 if [ $update_boot_img -gt 0 ]; then
-echo "Copying boot.img..."
-cp ./boot.img /mnt/kernel/
+	echo "copying boot.img..."
+	cp ./boot.img /mnt/kernel/
 fi
 
 if [ $update_system -gt 0 ]; then
-	echo "Copying system partition..."
+	echo "copying system partition..."
 	if [ $selinux -gt 0 ]; then
-		dd if=./boot/system.raw.img of=/dev/sda${partition_system}
+		dd if=./boot/system.raw.img of=/dev/${partition_root}${partition_system}
 	else
 		mkdir -p ./boot/system
 		mount -t ext4 -o loop ./boot/system.raw.img ./boot/system
@@ -186,9 +192,9 @@ if [ $update_system -gt 0 ]; then
 fi
 
 if [ $update_data -gt 0 ]; then
-	echo "Copying data partition..."
+	echo "copying data partition..."
 	if [ $selinux -gt 0 ]; then
-		dd if=./boot/userdata.raw.img of=/dev/sda${partition_data}
+		dd if=./boot/userdata.raw.img of=/dev/${partition_root}${partition_data}
 	else
 		mkdir -p ./boot/data
 		mount -t ext4 -o loop ./boot/userdata.raw.img ./boot/data
@@ -198,9 +204,9 @@ if [ $update_data -gt 0 ]; then
 fi
 
 if [ $update_cache -gt 0 ]; then
-	echo "Copying cache partition..."
+	echo "copying cache partition..."
 	if [ $selinux -gt 0 ]; then
-		dd if=./boot/cache.raw.img of=/dev/sda${partition_cache}
+		dd if=./boot/cache.raw.img of=/dev/${partition_root}${partition_cache}
 	else
 		mkdir -p ./boot/cache
 		mount -t ext4 -o loop ./boot/cache.raw.img ./boot/cache
@@ -210,17 +216,17 @@ if [ $update_cache -gt 0 ]; then
 fi
 
 if [ $update_recovery -gt 0 ]; then
-echo "Copying recovery.img (in recovery partition and kernel partition)..."
-cp ./recovery.img /mnt/recovery/
-cp ./recovery.img /mnt/kernel/
+	echo "copying recovery.img (in recovery partition and kernel partition)..."
+	cp ./recovery.img /mnt/recovery/
+	cp ./recovery.img /mnt/kernel/
 fi
 
-echo "Cleaning up..."
+echo "clean up..."
 if [ $update_boot_img -gt 0 ]; then
-umount /mnt/kernel
+	umount /mnt/kernel
 fi
 if [ $update_recovery -gt 0 ]; then
-umount /mnt/recovery
+	umount /mnt/recovery
 fi
 if [ $selinux -eq 0 ]; then
 	if [ $update_system -gt 0 ]; then
@@ -234,5 +240,5 @@ if [ $selinux -eq 0 ]; then
 	fi
 fi
 
-echo "Done!!!"
+echo "done!!!"
 
