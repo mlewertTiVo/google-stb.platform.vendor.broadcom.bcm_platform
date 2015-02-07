@@ -356,6 +356,7 @@ int gralloc_plane_copy(private_handle_t *handle, unsigned src, unsigned dst)
    }
 
    // Success
+   NEXUS_Surface_Flush(hSurfaceDst);
    rc = 0;
 
 err_checkpoint:

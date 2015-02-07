@@ -127,6 +127,9 @@ int gralloc_destripe_yv12(
     pCr = (uint8_t *)(pY + (stride * pSharedData->planes[DEFAULT_PLANE].height));
     pCb = (uint8_t *)(pCr + ((pSharedData->planes[DEFAULT_PLANE].height/2) * ((stride/2 + (align-1)) & ~(align-1))));
     pPackedData = (uint8_t *)pAddr;
+
+    NEXUS_Surface_Flush(hSurface422);
+
     for ( y = 0; y < height; ++y )
     {
         uint8_t y0, y1, cb, cr;

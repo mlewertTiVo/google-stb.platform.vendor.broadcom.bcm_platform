@@ -99,6 +99,7 @@ int gralloc_lock(gralloc_module_t const* module,
    void** vaddr)
 {
    int err = 0;
+   bool hwConverted=false;
 
    private_module_t* pModule = (private_module_t *)module;
    (void)l;
@@ -160,6 +161,7 @@ int gralloc_lock(gralloc_module_t const* module,
                      return err;
                   }
                   pSharedData->videoFrame.destripeComplete = true;
+                  hwConverted = true;
                   LOGV("%s: Destripe Complete", __FUNCTION__);
                }
             }
@@ -169,6 +171,10 @@ int gralloc_lock(gralloc_module_t const* module,
       }
 
       LOGV("%s : successfully locked", __FUNCTION__);
+      if ( (usage & (GRALLOC_USAGE_SW_READ_MASK|GRALLOC_USAGE_SW_WRITE_MASK)) && !hwConverted )
+      {
+           NEXUS_FlushCache(NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr), pSharedData->planes[DEFAULT_PLANE].allocSize);
+      }
    }
 
    return err;

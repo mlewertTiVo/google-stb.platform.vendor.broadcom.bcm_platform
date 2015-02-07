@@ -3934,6 +3934,13 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             {
                                 if ( GraphicsCheckpoint() )
                                 {
+#if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
+                                    NEXUS_Surface_Flush(pInfo->typeInfo.standard.hSurfaceY);
+                                    NEXUS_Surface_Flush(pInfo->typeInfo.standard.hSurfaceCb);
+                                    NEXUS_Surface_Flush(pInfo->typeInfo.standard.hSurfaceCr);
+#else
+                                    NEXUS_Surface_Flush(pInfo->typeInfo.standard.hDestripeSurface);
+#endif
                                     if ( pInfo->typeInfo.standard.pClientMemory )
                                     {
                                         CopySurfaceToClient(pInfo);
