@@ -519,6 +519,13 @@ public class TunerService extends TvInputService {
                         .build();
                     tracks.add(info);
                 }
+                else if (vti.type == TvTrackInfo.TYPE_SUBTITLE) {
+                info = new TvTrackInfo.Builder(
+                        TvTrackInfo.TYPE_SUBTITLE, vti.id)
+                        .setLanguage(vti.lang)
+                        .build();
+                    tracks.add(info);
+                }
             }
 
             for(TunerTvInputSessionImpl session : sessionSet) {

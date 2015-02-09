@@ -23,6 +23,7 @@ public:
         memset(&m_allocResults, 0, sizeof(m_allocResults));
         m_nxClientId = 0;
         m_hSurfaceClient = NULL;
+        m_surface = NULL;
         m_hVideoClient = NULL;
     };
     NEXUS_FrontendHandle frontend;
@@ -36,11 +37,30 @@ public:
     NxClient_AllocResults            m_allocResults;
     unsigned                         m_nxClientId;
     NEXUS_SurfaceClientHandle        m_hSurfaceClient;
+    NEXUS_SurfaceHandle              m_surface;
     NEXUS_SurfaceClientHandle        m_hVideoClient;
-    Vector<BroadcastTrackInfo>       trackInfoList;
+
+    struct TrackInfoList {
+        Vector<BroadcastTrackInfo> video;
+        Vector<BroadcastTrackInfo> subtitle;
+    } trackInfoList;
 };
 
 BroadcastDemo_Context *pSelf;
+
+#define MAX_SUBTITLES 3
+
+struct subtitle {
+    const char *language;
+    uint32_t demo_color;
+};
+
+static const struct subtitle RED =    { "Red checker board",    0xffff0000 };
+static const struct subtitle GREEN =  { "Green checker board",  0xff00ff00 };
+static const struct subtitle BLUE =   { "Blue checker board",   0xff0000ff };
+static const struct subtitle YELLOW = { "Yellow checker board", 0xffffff00 };
+static const struct subtitle WHITE =  { "White checker board",  0xffffffff };
+static const uint32_t TRANSPARENT = 0x00000000U;
 
 static struct {
     int id;
@@ -52,15 +72,16 @@ static struct {
     int sid;
     int freqKHz;
     int vpid;
+    struct subtitle subtitle[MAX_SUBTITLES]; //language == NULL marks the end of the array
     const char *logoUrl;
 } lineup[] = {
-    { 0, BroadcastChannelInfo::TYPE_DVB_T, "8", "8madrid", 0x22d4, 0x0027, 0x0f3d, 618000, 0x100, "http://static.programacion-tdt.com/imgAPP/8madrid.min.png" },
-    { 1, BroadcastChannelInfo::TYPE_DVB_T, "13", "13tv Madrid", 0x22d4, 0x0027, 0x0f3e, 618000, 0x200, "http://static.programacion-tdt.com/imgAPP/13_TV.min.png" },
-    { 2, BroadcastChannelInfo::TYPE_DVB_T, "800", "ASTROCANAL SHOP", 0x22d4, 0x0027, 0x0f43, 577000, 0x700, "" },
-    { 3, BroadcastChannelInfo::TYPE_DVB_T, "801", "Kiss TV", 0x22d4, 0x0027, 0x0f40, 618000, 0x401, "http://www.ranklogos.com/wp-content/uploads/2012/04/kiss-tv-logo-1.jpg" },
-    { 4, BroadcastChannelInfo::TYPE_DVB_T, "802", "INTER TV", 0x22d4, 0x0027, 0x0f3f, 618000, 0x300, "" },
-    { 5, BroadcastChannelInfo::TYPE_DVB_T, "803", "MGustaTV", 0x22d4, 0x0027, 0x1392, 618000, 0x1000, "" },
-    { -1, BroadcastChannelInfo::TYPE_OTHER, "", "", 0, 0, 0, 0, 0, "" }
+    { 0, BroadcastChannelInfo::TYPE_DVB_T, "8", "8madrid", 0x22d4, 0x0027, 0x0f3d, 618000, 0x100, {RED}, "http://static.programacion-tdt.com/imgAPP/8madrid.min.png" },
+    { 1, BroadcastChannelInfo::TYPE_DVB_T, "13", "13tv Madrid", 0x22d4, 0x0027, 0x0f3e, 618000, 0x200, {GREEN, BLUE}, "http://static.programacion-tdt.com/imgAPP/13_TV.min.png" },
+    { 2, BroadcastChannelInfo::TYPE_DVB_T, "800", "ASTROCANAL SHOP", 0x22d4, 0x0027, 0x0f43, 577000, 0x700, {}, "" },
+    { 3, BroadcastChannelInfo::TYPE_DVB_T, "801", "Kiss TV", 0x22d4, 0x0027, 0x0f40, 618000, 0x401, {RED, GREEN, BLUE}, "http://www.ranklogos.com/wp-content/uploads/2012/04/kiss-tv-logo-1.jpg" },
+    { 4, BroadcastChannelInfo::TYPE_DVB_T, "802", "INTER TV", 0x22d4, 0x0027, 0x0f3f, 618000, 0x300, {YELLOW}, "" },
+    { 5, BroadcastChannelInfo::TYPE_DVB_T, "803", "MGustaTV", 0x22d4, 0x0027, 0x1392, 618000, 0x1000, {WHITE}, "" },
+    { -1, BroadcastChannelInfo::TYPE_OTHER, "", "", 0, 0, 0, 0, 0, {}, "" }
 };
 
 static void
@@ -215,9 +236,53 @@ Disconnect()
     }
 }
 
+static NEXUS_Error DrawSubtitleDemo(uint32_t argb)
+{
+    NEXUS_Error rc;
+    NEXUS_SurfaceCreateSettings createSettings;
+    NEXUS_SurfaceMemory mem;
+    unsigned x, y;
+
+    ALOGD("%s: argb = 0x%08x", __FUNCTION__, argb);
+
+    NEXUS_Surface_GetCreateSettings(pSelf->m_surface, &createSettings);
+    rc = NEXUS_Surface_GetMemory(pSelf->m_surface, &mem);
+    if (rc != NEXUS_SUCCESS) {
+        ALOGE("NEXUS_Surface_GetMemory failed: %d", rc);
+        return rc;
+    }
+
+    /* draw checker board */
+    for (y=0;y<createSettings.height;y++) {
+        uint32_t *ptr = (uint32_t *)(((uint8_t*)mem.buffer) + y * mem.pitch);
+        for (x=0;x<createSettings.width;x++) {
+            if ((argb == TRANSPARENT) ||
+                    (x < 2*(createSettings.width/10)) ||
+                    (x > 8*(createSettings.width/10)) ||
+                    (y < 7*(createSettings.height/10)) ||
+                    (y > 9*(createSettings.height/10))) {
+                ptr[x] = TRANSPARENT;
+            }
+            else if ((x/10)%2 != (y/10)%2) {
+                ptr[x] = 0x55AAAAAA;
+            }
+            else {
+                ptr[x] = argb;
+            }
+        }
+    }
+    NEXUS_Surface_Flush(pSelf->m_surface);
+
+    rc = NEXUS_SurfaceClient_SetSurface(pSelf->m_hSurfaceClient, pSelf->m_surface);
+    return rc;
+}
+
 static int BroadcastDemo_Stop()
 {
     ALOGE("%s: Enter", __FUNCTION__);
+
+    // clear subtitles
+    DrawSubtitleDemo(TRANSPARENT);
 
     // Stop the video decoder
     if (pSelf->decoding) {
@@ -251,8 +316,18 @@ static int BroadcastDemo_StopScan()
     return -1;
 }
 
+static int channelIndex(int channel_id)
+{
+    for (int i = 0; lineup[i].id >= 0; i++) {
+        if (lineup[i].id == channel_id) {
+            return i;
+        }
+    }
+    return -1; //not found
+}
+
 static void
-CacheTrackInfoList()
+CacheTrackInfoList(int channel_id)
 {
     Vector<BroadcastTrackInfo> v;
     NEXUS_VideoDecoderStatus status;
@@ -292,48 +367,95 @@ CacheTrackInfoList()
 
         ALOGE("%s: %dx%d (%dx%d) fr %f", __FUNCTION__, status.source.width, status.source.height, info.squarePixelWidth, info.squarePixelHeight, info.frameRate);
         v.push_back(info);
+        pSelf->trackInfoList.video = v;
+
+        v.clear();
+        int index = channelIndex(channel_id);
+        if (index >= 0) {
+            for (int i = 0; i < MAX_SUBTITLES; i++) {
+                struct subtitle *s = &lineup[index].subtitle[i];
+                if (!s->language) //end of list
+                    break;
+                ALOGE("%s: subtitle %d: 0x%08x  %s", __FUNCTION__, i,
+                        s->demo_color, s->language);
+                info.type = 2;
+                info.id = String8::format("0x%08x", s->demo_color);
+                info.lang = String8(s->language);
+                v.push_back(info);
+            }
+        }
+        else {
+            ALOGE("%s: invalid channel_id: %d", __FUNCTION__, channel_id);
+        }
+        pSelf->trackInfoList.subtitle = v;
     }
-    pSelf->trackInfoList = v;
 }
 
-static void sourceChangeCallback(void * /*context*/, int /*param*/)
+static void sourceChangeCallback(void * /*context*/, int param)
 {
-    CacheTrackInfoList();
+    CacheTrackInfoList(param);
     TunerHAL_onBroadcastEvent(TRACK_LIST_CHANGED, 0, 0);
-    if (pSelf->trackInfoList.size()) {
+    if (pSelf->trackInfoList.video.size()) {
         TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 1, 0);
-        TunerHAL_onBroadcastEvent(TRACK_SELECTED, 1, &pSelf->trackInfoList[0].id);
+        TunerHAL_onBroadcastEvent(TRACK_SELECTED, 1, &pSelf->trackInfoList.video[0].id);
+    }
+    if (pSelf->trackInfoList.subtitle.size()) {
+        TunerHAL_onBroadcastEvent(TRACK_SELECTED, 2, &pSelf->trackInfoList.subtitle[0].id);
     }
 }
 
 static Vector<BroadcastTrackInfo>
 BroadcastDemo_GetTrackInfoList()
 {
-    if (pSelf->trackInfoList.size() == 0) {
+    if (pSelf->trackInfoList.video.size() == 0) {
         ALOGE("%s: no video info", __FUNCTION__); 
     }
     else {
-        ALOGE("%s: %s %dx%d fr %f", __FUNCTION__,
-              pSelf->trackInfoList[0].id.string(),
-              pSelf->trackInfoList[0].squarePixelWidth,
-              pSelf->trackInfoList[0].squarePixelHeight,
-              pSelf->trackInfoList[0].frameRate
+        ALOGE("%s: video %s %dx%d fr %f", __FUNCTION__,
+              pSelf->trackInfoList.video[0].id.string(),
+              pSelf->trackInfoList.video[0].squarePixelWidth,
+              pSelf->trackInfoList.video[0].squarePixelHeight,
+              pSelf->trackInfoList.video[0].frameRate
               ); 
     }
-    return pSelf->trackInfoList;
+    if (pSelf->trackInfoList.subtitle.size() == 0) {
+        ALOGE("%s: no subtitle info", __FUNCTION__);
+    }
+    else {
+        for (size_t i = 0; i < pSelf->trackInfoList.subtitle.size(); i++) {
+            ALOGE("%s: subtitle %s %s", __FUNCTION__,
+                  pSelf->trackInfoList.subtitle[i].id.string(),
+                  pSelf->trackInfoList.subtitle[i].lang.string()
+                  );
+        }
+    }
+
+    Vector<BroadcastTrackInfo> all;
+    all.appendVector(pSelf->trackInfoList.video);
+    all.appendVector(pSelf->trackInfoList.subtitle);
+    return all;
 }
 
 static int
-BroadcastDemo_SelectTrack(int /*type*/, const String8 * /*id*/)
+BroadcastDemo_SelectTrack(int type, const String8 *id)
 {
-    return -1;
+    int result = -1;
+    if (type == 2) { //subtitle
+        ALOGI("%s: subtitle track %s", __FUNCTION__, id ? id->string() : "NULL");
+        uint32_t argb = id ? strtoul(id->string(), 0, 0) : TRANSPARENT;
+        DrawSubtitleDemo(argb);
+        TunerHAL_onBroadcastEvent(TRACK_SELECTED, 2, id);
+        result = 0;
+    }
+    return result;
 }
 
 static void
 BroadcastDemo_SetCaptionEnabled(bool enabled)
 {
     ALOGI("%s: %s", __FUNCTION__, enabled ? "enabled" : "disabled");
-    //TODO: Write me!
+    if (!enabled)
+        DrawSubtitleDemo(TRANSPARENT);
 }
 
 static int BroadcastDemo_Tune(String8 s8id)
@@ -347,15 +469,9 @@ static int BroadcastDemo_Tune(String8 s8id)
     NEXUS_Error rc;
     int video_pid;
 
-    int channel_id = strtoul(s8id.string(), 0, 0);
-    unsigned i;
-    for (i = 0; lineup[i].id >= 0; i++) {
-        if (lineup[i].id == channel_id) {
-            break;
-        }
-    }
-
-    if (lineup[i].id < 0) {
+    const int channel_id = strtoul(s8id.string(), 0, 0);
+    int i = channelIndex(channel_id);
+    if (i < 0) {
         ALOGE("%s: channel_id %d invalid", __FUNCTION__, channel_id);
         return -1;
     }
@@ -413,7 +529,7 @@ static int BroadcastDemo_Tune(String8 s8id)
 
     settings.sourceChanged.callback = sourceChangeCallback;
     settings.sourceChanged.context = pSelf;
-    settings.sourceChanged.param = 0;
+    settings.sourceChanged.param = channel_id;
 
     rc = NEXUS_SimpleVideoDecoder_SetSettings(pSelf->m_hSimpleVideoDecoder, &settings);
     if (rc)
@@ -567,6 +683,16 @@ Broadcast_Initialize(BroadcastDriver *pD)
             }
         }
 
+        if (rv == 0) {
+            NEXUS_SurfaceCreateSettings createSettings;
+
+            NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
+            createSettings.pixelFormat = NEXUS_PixelFormat_eA8_R8_G8_B8;
+            createSettings.width = 720;
+            createSettings.height = 480;
+            pSelf->m_surface = NEXUS_Surface_Create(&createSettings);
+            rv = DrawSubtitleDemo(TRANSPARENT);
+        }
     }
 
     if (rv == 0) {

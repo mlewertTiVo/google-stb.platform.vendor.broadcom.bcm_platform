@@ -14,6 +14,7 @@ extern "C" {
 #include "stbhwos.h"
 #include "stbheap.h"
 #include "stbvtc.h"
+#include "stbdsapi.h"
 #include "dtvkit_platform.h"
 };
 
@@ -33,6 +34,7 @@ public:
         s_ptr = NULL;
         vpid = 0;
         apid = 0;
+        spid = 0;
         decoding = 0;
         w = 0;
         h = 0;
@@ -47,10 +49,12 @@ public:
     void *s_ptr;
     U16BIT vpid;
     U16BIT apid;
+    U16BIT spid;
     int decoding;
     U16BIT w;
     U16BIT h;
     Vector<BroadcastTrackInfo> batil;
+    Vector<BroadcastTrackInfo> bstil;
 };
 
 static BroadcastDTVKit_Context *pSelf;
@@ -58,6 +62,14 @@ static BroadcastDTVKit_Context *pSelf;
 static int BroadcastDTVKit_Stop()
 {
     ALOGE("%s: Enter", __FUNCTION__);
+
+    /* Turn off subtitle display and processing */
+    if(ACTL_AreSubtitlesStarted())
+    {
+        ALOGE("%s: Stopping subtitles", __FUNCTION__);
+        ACTL_StopSubtitles();
+    }
+
     if (pSelf->path != INVALID_RES_ID) {
         ALOGE("%s: Stopping", __FUNCTION__);
         pSelf->s_ptr = 0;
@@ -211,10 +223,12 @@ resetDecodeState(void)
 {
     pSelf->vpid = 0;
     pSelf->apid = 0;
+    pSelf->spid = 0;
     pSelf->decoding = 0;
     pSelf->w = 0;
     pSelf->h = 0;
     pSelf->batil.clear();
+    pSelf->bstil.clear();
 }
 
 static int BroadcastDTVKit_Tune(String8 s8id)
@@ -235,6 +249,14 @@ static int BroadcastDTVKit_Tune(String8 s8id)
             ALOGE("%s: Tuning", __FUNCTION__);
             TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 0, 0);
             rv = 0;
+
+            /* Turn on subtitle display and processing */
+            ALOGD("%s: Starting subtitles", __FUNCTION__);
+            if (ACTL_StartSubtitles()) {
+                ALOGI("%s: Subtitles started", __FUNCTION__);
+            } else {
+                ALOGE("%s: Starting subtitles FAILED!", __FUNCTION__);
+            }
         }
     }
     else {
@@ -734,6 +756,24 @@ buildBroadcastAudioTrackInfoListFromStreamList(void **streamlist, U16BIT len)
     return batil;
 }
 
+static Vector<BroadcastTrackInfo>
+buildBroadcastSubtitleTrackInfoListFromStreamList(void **streamlist, U16BIT len)
+{
+    Vector<BroadcastTrackInfo> btil;
+    for (unsigned i = 0; i < len; i++) {
+        BroadcastTrackInfo bti;
+        U16BIT pid = ADB_GetStreamPID(streamlist[i]);
+        if (pid == 0) {
+            continue;
+        }
+        bti.type = 2;
+        bti.id = String8::format("%u", pid);
+        bti.lang = dtvkitThreeLetterCodeToString8(ADB_GetSubtitleStreamLangCode(streamlist[i]));
+        btil.push_back(bti);
+    }
+    return btil;
+}
+
 static bool
 sameTrackInfo(const BroadcastTrackInfo &a, const BroadcastTrackInfo &b)
 {
@@ -821,15 +861,59 @@ checkAudioDecodeState(int *tlchanged, int *tchanged)
 }
 
 static void
+checkSubtitleDecodeState(int *tlchanged, int *tchanged)
+{
+    if (pSelf->s_ptr) {
+        Vector<BroadcastTrackInfo> bstil;
+        void **slist;
+        U16BIT num_entries;
+        ADB_GetStreamList(pSelf->s_ptr, ADB_SUBTITLE_LIST_STREAM, &slist, &num_entries);
+        if (num_entries) {
+            bstil = buildBroadcastSubtitleTrackInfoListFromStreamList(slist, num_entries);
+        }
+        ADB_ReleaseStreamList(slist, num_entries);
+        if (!sameTrackInfoList(bstil, pSelf->bstil)) {
+            ALOGD("%s: new subtitle track list", __FUNCTION__);
+            for (unsigned i = 0; i < bstil.size(); i++) {
+                ALOGD("%s: bstil %s %s", __FUNCTION__, bstil[i].id.string(), bstil[i].lang.string());
+            }
+            pSelf->bstil = bstil;
+            *tlchanged = 1;
+        }
+
+        BOOLEAN running;
+        U16BIT spid;
+        U16BIT comp_id;
+        U16BIT anc_id;
+        BOOLEAN enabled;
+        STB_SUBReadSettings(&running, &spid, &comp_id, &anc_id, &enabled);
+
+        if (!enabled) {
+            spid = 0;
+        }
+
+        if (spid != pSelf->spid) {
+            ALOGD("%s: new subtitle track %d", __FUNCTION__, spid);
+            pSelf->spid = spid;
+            *tchanged = 1;
+        } else {
+            ALOGD("%s: subtitle track %d", __FUNCTION__, spid);
+        }
+    }
+}
+
+static void
 updateTrackList(int videoStarted)
 {
     int tlchanged = 0;
     int vachanged = 0;
     int atchanged = 0;
     int vtchanged = 0;
+    int stchanged = 0;
 
     checkVideoDecodeState(videoStarted, &tlchanged, &vtchanged, &vachanged);
     checkAudioDecodeState(&tlchanged, &atchanged);
+    checkSubtitleDecodeState(&tlchanged, &stchanged);
 
     if (tlchanged) {
         TunerHAL_onBroadcastEvent(TRACK_LIST_CHANGED, 0, 0);
@@ -846,6 +930,11 @@ updateTrackList(int videoStarted)
         String8 apid = String8::format("%u", pSelf->apid);
         TunerHAL_onBroadcastEvent(TRACK_SELECTED, 0,
                 pSelf->apid > 0 ? &apid : 0);
+    }
+    if (tlchanged || stchanged) {
+        String8 spid = String8::format("%u", pSelf->spid);
+        TunerHAL_onBroadcastEvent(TRACK_SELECTED, 2,
+                pSelf->spid > 0 ? &spid : 0);
     }
 }
 
@@ -1030,17 +1119,13 @@ BroadcastDTVKit_GetTrackInfoList()
         v.push_back(info);
     }
     v.appendVector(pSelf->batil);
+    v.appendVector(pSelf->bstil);
     return v; 
 }
 
-int
-BroadcastDTVKit_SelectTrack(int type, const String8 *id)
+static int
+BroadcastDTVKit_SelectAudioTrack(int uid)
 {
-    ALOGD("%s: %d %s", __FUNCTION__, type, id ? id->string() : "NULL");
-    if (type != 0 || pSelf->s_ptr == 0) {
-        return -1;
-    }
-    int uid = id ? strtol(id->string(), 0, 0) : -1;
     if (uid < 0) {
         ADB_SetReqdAudioStreamSettings(pSelf->s_ptr, FALSE, 0, ADB_AUDIO_TYPE_UNDEFINED, ADB_AUDIO_STREAM);
     }
@@ -1069,11 +1154,72 @@ BroadcastDTVKit_SelectTrack(int type, const String8 *id)
     return 0;
 }
 
+static int
+BroadcastDTVKit_SelectSubtitleTrack(int uid)
+{
+    ALOGE("%s: pid %d", __FUNCTION__, uid);
+    if (uid < 0) {
+        ADB_SetReqdSubtitleStreamSettings(pSelf->s_ptr, FALSE, 0, ADB_SUBTITLE_TYPE_DVB);
+        void ACTL_PauseSubtitles(void);
+    }
+    else {
+        void **streamlist;
+        U16BIT num_entries;
+        unsigned i;
+        ADB_GetStreamList(pSelf->s_ptr, ADB_SUBTITLE_LIST_STREAM, &streamlist, &num_entries);
+        for (i = 0; i < num_entries; i++) {
+            if (ADB_GetStreamPID(streamlist[i]) == uid) {
+                break;
+            }
+        }
+        if (i < num_entries) {
+            ALOGE("%s: pid %d found, selecting", __FUNCTION__, uid);
+            ADB_SetReqdSubtitleStreamSettings(pSelf->s_ptr, TRUE,
+                ADB_GetSubtitleStreamLangCode(streamlist[i]),
+                ADB_GetSubtitleStreamType(streamlist[i]));
+        }
+        else {
+            ADB_SetReqdSubtitleStreamSettings(pSelf->s_ptr, FALSE, 0, ADB_SUBTITLE_TYPE_DVB);
+        }
+        ADB_ReleaseStreamList(streamlist, num_entries);
+        void ACTL_ResumeSubtitles(void);
+        updateTrackList(0);
+    }
+    return 0;
+}
+
+int
+BroadcastDTVKit_SelectTrack(int type, const String8 *id)
+{
+    int result = -1;
+
+    ALOGD("%s: %d %s", __FUNCTION__, type, id ? id->string() : "NULL");
+    if (pSelf->s_ptr) {
+        int uid = id ? strtol(id->string(), 0, 0) : -1;
+        switch (type) {
+        case 0:
+            result = BroadcastDTVKit_SelectAudioTrack(uid);
+            break;
+        case 2:
+            result = BroadcastDTVKit_SelectSubtitleTrack(uid);
+            break;
+        case 1: //video track
+        default:
+            break;
+        }
+    }
+    return result;
+}
+
 void
 BroadcastDTVKit_SetCaptionEnabled(bool enabled)
 {
     ALOGD("%s: %s", __FUNCTION__, enabled ? "enabled" : "disabled");
-    //TODO: Write me!
+    if (enabled) {
+        ACTL_ResumeSubtitles();
+    } else {
+        ACTL_PauseSubtitles();
+    }
 }
 
 int
@@ -1106,6 +1252,8 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->SelectTrack = BroadcastDTVKit_SelectTrack;
     pD->SetCaptionEnabled = BroadcastDTVKit_SetCaptionEnabled;
     BDBG_SetModuleLevel("stbhwav", BDBG_eMsg);
+    //BDBG_SetModuleLevel("stbhwosd", BDBG_eMsg);
+    //BDBG_SetModuleLevel("stbhwosd_nsc", BDBG_eMsg);
     ALOGE("%s: Exit", __FUNCTION__);
     return 0;
 }
