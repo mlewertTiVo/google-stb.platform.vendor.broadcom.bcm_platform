@@ -17,6 +17,10 @@ extern "C" {
 #include "dtvkit_platform.h"
 };
 
+#undef LOG_TAG
+#define LOG_TAG "BroadcastDTVKit"
+#include <cutils/log.h>
+
 //#define DEBUG_EVENTS
 
 class BroadcastDTVKit_Context {
@@ -85,20 +89,20 @@ static int BroadcastDTVKit_Stop()
 static void
 onScanProgress(jshort progress)
 {
-    TunerHAL_onBroadcastEvent(SCANNING_PROGRESS, progress, String8());
+    TunerHAL_onBroadcastEvent(SCANNING_PROGRESS, progress, 0);
 }
 
 static void
 onScanComplete()
 {
-    TunerHAL_onBroadcastEvent(SCANNING_COMPLETE, 0, String8());
-    TunerHAL_onBroadcastEvent(CHANNEL_LIST_CHANGED, 0, String8());
+    TunerHAL_onBroadcastEvent(SCANNING_COMPLETE, 0, 0);
+    TunerHAL_onBroadcastEvent(CHANNEL_LIST_CHANGED, 0, 0);
 }
 
 static void
 onScanStart()
 {
-    TunerHAL_onBroadcastEvent(SCANNING_START, 0, String8());
+    TunerHAL_onBroadcastEvent(SCANNING_START, 0, 0);
 }
 
 static bool
@@ -229,7 +233,7 @@ static int BroadcastDTVKit_Tune(String8 s8id)
         }
         else {
             ALOGE("%s: Tuning", __FUNCTION__);
-            TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 0, String8());
+            TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 0, 0);
             rv = 0;
         }
     }
@@ -828,22 +832,21 @@ updateTrackList(int videoStarted)
     checkAudioDecodeState(&tlchanged, &atchanged);
 
     if (tlchanged) {
-        TunerHAL_onBroadcastEvent(TRACK_LIST_CHANGED, 0, String8());
+        TunerHAL_onBroadcastEvent(TRACK_LIST_CHANGED, 0, 0);
     }
     if ((tlchanged || vachanged) && pSelf->decoding) {
-        TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 1, String8());
+        TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 1, 0);
     }
     if (tlchanged || vtchanged) {
-        if (pSelf->vpid) {
-            TunerHAL_onBroadcastEvent(TRACK_SELECTED, 1, String8::format("%u", pSelf->vpid));
-        }
+        String8 vpid = String8::format("%u", pSelf->vpid);
+        TunerHAL_onBroadcastEvent(TRACK_SELECTED, 1,
+                pSelf->vpid > 0 ? &vpid : 0);
     }
     if (tlchanged || atchanged) {
-        if (pSelf->apid) {
-            TunerHAL_onBroadcastEvent(TRACK_SELECTED, 0, String8::format("%u", pSelf->apid));
-        }
+        String8 apid = String8::format("%u", pSelf->apid);
+        TunerHAL_onBroadcastEvent(TRACK_SELECTED, 0,
+                pSelf->apid > 0 ? &apid : 0);
     }
-
 }
 
 static void
@@ -864,7 +867,7 @@ event_handler(U32BIT event, void */*event_data*/, U32BIT /*data_size*/)
         }
 #else
         else if (event == APP_EVENT_SERVICE_EIT_SCHED_UPDATE && !pSelf->scanner.active) {
-            TunerHAL_onBroadcastEvent(PROGRAM_LIST_CHANGED, 0, String8());
+            TunerHAL_onBroadcastEvent(PROGRAM_LIST_CHANGED, 0, 0);
         }
 #endif
         else if (event == STB_EVENT_VIDEO_DECODE_STARTED) {
@@ -1031,13 +1034,13 @@ BroadcastDTVKit_GetTrackInfoList()
 }
 
 int
-BroadcastDTVKit_SelectTrack(int type, String8 id)
+BroadcastDTVKit_SelectTrack(int type, const String8 *id)
 {
-    ALOGD("%s: %d %s", __FUNCTION__, type, id.string());
+    ALOGD("%s: %d %s", __FUNCTION__, type, id ? id->string() : "NULL");
     if (type != 0 || pSelf->s_ptr == 0) {
         return -1;
     }
-    int uid = strtol(id.string(), 0, 0);
+    int uid = id ? strtol(id->string(), 0, 0) : -1;
     if (uid < 0) {
         ADB_SetReqdAudioStreamSettings(pSelf->s_ptr, FALSE, 0, ADB_AUDIO_TYPE_UNDEFINED, ADB_AUDIO_STREAM);
     }

@@ -63,7 +63,7 @@ enum BroadcastEvent {
     SCANNING_COMPLETE,
 };
 
-void TunerHAL_onBroadcastEvent(BroadcastEvent e, jint param, String8 s);
+void TunerHAL_onBroadcastEvent(BroadcastEvent e, jint param, const String8 *s);
 
 NexusIPCClientBase *TunerHAL_getIPCClient();
 NexusClientContext *TunerHAL_getClientContext();

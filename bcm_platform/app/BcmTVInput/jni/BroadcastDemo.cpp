@@ -222,7 +222,7 @@ static int BroadcastDemo_Stop()
     // Stop the video decoder
     if (pSelf->decoding) {
         NEXUS_SimpleVideoDecoder_Stop(pSelf->m_hSimpleVideoDecoder);
-        TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 0, String8());
+        TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 0, 0);
         pSelf->decoding = false;
     }
 
@@ -299,10 +299,10 @@ CacheTrackInfoList()
 static void sourceChangeCallback(void * /*context*/, int /*param*/)
 {
     CacheTrackInfoList();
-    TunerHAL_onBroadcastEvent(TRACK_LIST_CHANGED, 0, String8());
+    TunerHAL_onBroadcastEvent(TRACK_LIST_CHANGED, 0, 0);
     if (pSelf->trackInfoList.size()) {
-        TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 1, String8());
-        TunerHAL_onBroadcastEvent(TRACK_SELECTED, 1, pSelf->trackInfoList[0].id);
+        TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 1, 0);
+        TunerHAL_onBroadcastEvent(TRACK_SELECTED, 1, &pSelf->trackInfoList[0].id);
     }
 }
 
@@ -324,7 +324,7 @@ BroadcastDemo_GetTrackInfoList()
 }
 
 static int
-BroadcastDemo_SelectTrack(int /*type*/, String8 /*id*/)
+BroadcastDemo_SelectTrack(int /*type*/, const String8 * /*id*/)
 {
     return -1;
 }

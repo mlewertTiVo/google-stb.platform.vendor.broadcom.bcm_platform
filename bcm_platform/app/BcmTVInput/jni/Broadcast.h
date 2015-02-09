@@ -84,7 +84,7 @@ public:
     int (*Release)();
     int (*SetGeometry)(BroadcastRect position, BroadcastRect clipRect, jshort gfxWidth, jshort gfxHeight, jshort zorder, jboolean visible);
     Vector<BroadcastTrackInfo> (*GetTrackInfoList)();
-    int (*SelectTrack)(int, String8);
+    int (*SelectTrack)(int, const String8 *);
     void (*SetCaptionEnabled)(bool enabled);
 };
 

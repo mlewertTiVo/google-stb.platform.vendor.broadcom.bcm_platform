@@ -47,6 +47,10 @@
 #include "TunerInterface.h"
 #include "Broadcast.h"
 
+#undef LOG_TAG
+#define LOG_TAG "TunerHAL"
+#include <cutils/log.h>
+
 // Enable this for debug prints
 #define DEBUG_JNI
 
@@ -823,19 +827,27 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getTrackInfoLi
 
 JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_selectTrack(JNIEnv *env, jclass /*thiz*/, jint type, jstring id)
 {
-    const char *s8id = env->GetStringUTFChars(id, NULL);
     jint rv = -1;
 
     if (g_pTD->driver.SelectTrack == 0) {
         TV_LOG("%s: SelectTrack call is null", __FUNCTION__);
     }
-    else {
+    else if (id) {
+        const char *cid = env->GetStringUTFChars(id, NULL);
+        TV_LOG("%s: SelectTrack type %d: %s", __FUNCTION__, (int)type, cid);
+        const String8 s8id(cid);
         LOCKHAL
-        rv = (*g_pTD->driver.SelectTrack)(type, String8(s8id)); 
+        rv = (*g_pTD->driver.SelectTrack)(type, &s8id);
+        UNLOCKHAL
+        env->ReleaseStringUTFChars(id, cid);
+    }
+    else {
+        TV_LOG("%s: SelectTrack type %d: NULL", __FUNCTION__, (int)type);
+        LOCKHAL
+        rv = (*g_pTD->driver.SelectTrack)(type, NULL);
         UNLOCKHAL
     }
 
-    env->ReleaseStringUTFChars(id, s8id);   
     return rv;
 }
 
@@ -873,7 +885,7 @@ static const char * eventName(BroadcastEvent e)
 }
 
 void
-TunerHAL_onBroadcastEvent(BroadcastEvent e, jint param, String8 s)
+TunerHAL_onBroadcastEvent(BroadcastEvent e, jint param, const String8 *s)
 {
     if (g_pTD && g_pTD->vm && g_pTD->tunerService && g_pTD->broadcastEvent) {
         JNIEnv *env;
@@ -888,9 +900,11 @@ TunerHAL_onBroadcastEvent(BroadcastEvent e, jint param, String8 s)
                 "(" BROADCAST_EVENT_SIG "ILjava/lang/String;)V");
         jfieldID eventID = env->GetStaticFieldID(g_pTD->broadcastEvent, event, BROADCAST_EVENT_SIG);
         jobject jevent = env->GetStaticObjectField(g_pTD->broadcastEvent, eventID);
-        js = env->NewStringUTF(s.string());
+        js = s ? env->NewStringUTF(s->string()) : 0;
         env->CallVoidMethod(g_pTD->tunerService, obeID, jevent, param, js);
-        env->DeleteLocalRef(js);
+        if (js) {
+            env->DeleteLocalRef(js);
+        }
         env->DeleteLocalRef(jevent);
         env->DeleteLocalRef(cls);
         //g_pTD->vm->DetachCurrentThread();
