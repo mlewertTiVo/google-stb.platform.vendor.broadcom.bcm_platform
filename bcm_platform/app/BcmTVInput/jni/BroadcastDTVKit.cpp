@@ -24,6 +24,16 @@ extern "C" {
 
 //#define DEBUG_EVENTS
 
+//#define JOURNAL
+//#define NOWNEXT
+
+class UpdateRecord {
+public:
+    BroadcastProgramUpdateInfo::UpdateType type;
+    U16BIT lcn;
+    U16BIT event_id;
+};
+
 class BroadcastDTVKit_Context {
 public:
     BroadcastDTVKit_Context() {
@@ -38,6 +48,10 @@ public:
         decoding = 0;
         w = 0;
         h = 0;
+#ifdef JOURNAL
+        epg.mutex = STB_OSCreateMutex();
+        epg.backlog = 0;
+#endif
     };
     struct {
         void *mutex;
@@ -55,6 +69,13 @@ public:
     U16BIT h;
     Vector<BroadcastTrackInfo> batil;
     Vector<BroadcastTrackInfo> bstil;
+#ifdef JOURNAL
+    struct {
+        void *mutex;
+        List<UpdateRecord> queue;
+        int backlog;
+    } epg;
+#endif
 };
 
 static BroadcastDTVKit_Context *pSelf;
@@ -195,6 +216,7 @@ static int BroadcastDTVKit_StartBlindScan()
 {
     int rv = -1;
     ALOGE("%s: Enter", __FUNCTION__); 
+
     if (startBlindScan()) {
         rv = 0;
     }
@@ -554,13 +576,9 @@ static Vector<BroadcastChannelInfo> BroadcastDTVKit_GetChannelList()
 }
 
 static void
-pushprog(Vector<BroadcastProgramInfo> &rv, void *e_ptr, void *s_ptr)
+buildprog(BroadcastProgramInfo &pi, void *e_ptr, void *s_ptr)
 {
-    BroadcastProgramInfo pi;
     U8BIT *utf8;
-
-    if (e_ptr == 0)
-        return;
 
     pi.id = String8::format("%u", ADB_GetEventId(e_ptr));
     pi.channel_id = String8::format("%u", ADB_GetServiceLcn(s_ptr));
@@ -575,6 +593,18 @@ pushprog(Vector<BroadcastProgramInfo> &rv, void *e_ptr, void *s_ptr)
 
     pi.start_time_utc_millis = STB_GCConvertToTimestamp(ADB_GetEventStartDateTime(e_ptr)) * (jlong)1000;
     pi.end_time_utc_millis = STB_GCConvertToTimestamp(ADB_GetEventEndDateTime(e_ptr)) * (jlong)1000;
+}
+
+static void
+pushprog(Vector<BroadcastProgramInfo> &rv, void *e_ptr, void *s_ptr)
+{
+    BroadcastProgramInfo pi;
+    U8BIT *utf8;
+
+    if (e_ptr == 0)
+        return;
+
+    buildprog(pi, e_ptr, s_ptr);
     rv.push_back(pi);
 }
 
@@ -607,6 +637,109 @@ static Vector<BroadcastProgramInfo> BroadcastDTVKit_GetProgramList(String8 s8id)
     ALOGE("%s: Exit", __FUNCTION__);
     return piv;
 }
+
+#ifdef JOURNAL
+static Vector<BroadcastProgramUpdateInfo> BroadcastDTVKit_GetProgramUpdateList()
+{
+    Vector<BroadcastProgramUpdateInfo> puiv;
+
+    ALOGE("%s: Enter", __FUNCTION__);
+    BroadcastProgramUpdateInfo pui;
+    UpdateRecord ur;
+    bool valid;
+    bool empty;
+    int backlog = 0;
+    int found = 0;
+    int requested = 10;
+    do {
+        STB_OSMutexLock(pSelf->epg.mutex);
+        empty = pSelf->epg.queue.empty(); 
+        if (!empty) {
+            ur = *pSelf->epg.queue.begin();
+            pSelf->epg.queue.erase(pSelf->epg.queue.begin());
+            pSelf->epg.backlog--;
+            backlog = pSelf->epg.backlog;
+            valid = true;
+        }
+        else {
+            valid = false;
+        }
+        STB_OSMutexUnlock(pSelf->epg.mutex);
+        if (valid) {
+            ALOGE("%s: pop %d %d %d [%d]", __FUNCTION__, ur.type, ur.lcn, ur.event_id, backlog);
+            pui.type = ur.type;
+            switch (ur.type) {
+            case BroadcastProgramUpdateInfo::ClearAll:
+                break;
+            case BroadcastProgramUpdateInfo::ClearChannel:
+                pui.channel_id = String8::format("%u", ur.lcn);
+                break;
+            case BroadcastProgramUpdateInfo::Delete:
+            case BroadcastProgramUpdateInfo::Expire:
+                pui.channel_id = String8::format("%u", ur.lcn);
+                pui.id = String8::format("%u", ur.event_id);
+                break;
+            case BroadcastProgramUpdateInfo::Add:
+            case BroadcastProgramUpdateInfo::Update: {
+                void *s_ptr = ADB_FindServiceByLcn(ADB_SERVICE_LIST_TV | ADB_SERVICE_LIST_RADIO, ur.lcn, TRUE);
+                if (s_ptr) {
+                    void *e_ptr = ADB_GetEvent(s_ptr, ur.event_id);
+                    if (e_ptr) {
+                        buildprog(pui, e_ptr, s_ptr); 
+                    }
+                    else {
+                        valid = false;
+                    }
+                }
+                else {
+                    valid = false;
+                }
+                break;
+            }
+            default:
+                valid = false;
+                break;
+            }
+            if (valid) {
+                puiv.push_back(pui);
+                found++; 
+            }
+        }
+    } while (!empty && found < requested);
+    ALOGE("%s: Exit", __FUNCTION__);
+    return puiv;
+}
+
+void
+PushUpdate(E_APP_SI_EIT_JOURNAL_TYPE type, BOOLEAN isSchedule, U16BIT allocated_lcn, U16BIT /* onid */, U16BIT /* tsid */, U16BIT /* sid */, U16BIT event_id)
+{
+    if (isSchedule) {
+        UpdateRecord ur;
+        bool empty;
+        ur.lcn = allocated_lcn;
+        ur.event_id = event_id;
+        switch (type) {
+        case APP_SI_EIT_JOURNAL_TYPE_CLEAR_ALL: ur.type = BroadcastProgramUpdateInfo::ClearAll; break;
+        case APP_SI_EIT_JOURNAL_TYPE_CLEAR_SERVICE: ur.type = BroadcastProgramUpdateInfo::ClearChannel; break;
+        case APP_SI_EIT_JOURNAL_TYPE_DELETE: ur.type = BroadcastProgramUpdateInfo::Delete; break;
+        case APP_SI_EIT_JOURNAL_TYPE_ADD: ur.type = BroadcastProgramUpdateInfo::Add; break;
+        case APP_SI_EIT_JOURNAL_TYPE_UPDATE: ur.type = BroadcastProgramUpdateInfo::Update; break;
+        case APP_SI_EIT_JOURNAL_TYPE_EXPIRE: ur.type = BroadcastProgramUpdateInfo::Expire; break;
+        default:
+            return;
+        }
+        ALOGE("%s: %d %d %d", __FUNCTION__, ur.type, allocated_lcn, event_id);
+        STB_OSMutexLock(pSelf->epg.mutex);
+        empty = pSelf->epg.queue.empty();
+        pSelf->epg.queue.push_back(ur);
+        pSelf->epg.backlog++;
+        STB_OSMutexUnlock(pSelf->epg.mutex);
+        if (empty) {
+            TunerHAL_onBroadcastEvent(PROGRAM_UPDATE_LIST_CHANGED, 0, 0);
+        }
+    }
+}
+#endif
 
 static int BroadcastDTVKit_Release()
 {
@@ -950,14 +1083,16 @@ event_handler(U32BIT event, void */*event_data*/, U32BIT /*data_size*/)
         if (event == EVENT_CODE(EV_CLASS_UI, EV_TYPE_UPDATE)) {
             scannerUpdate();
         }
+#ifndef JOURNAL
 #ifdef NOWNEXT
         else if (event == APP_EVENT_SERVICE_EIT_NOW_UPDATE && !pSelf->scanner.active) {
-            TunerHAL_onBroadcastEvent(PROGRAM_LIST_CHANGED, 0, String8());
+            TunerHAL_onBroadcastEvent(PROGRAM_LIST_CHANGED, 0, 0);
         }
 #else
         else if (event == APP_EVENT_SERVICE_EIT_SCHED_UPDATE && !pSelf->scanner.active) {
             TunerHAL_onBroadcastEvent(PROGRAM_LIST_CHANGED, 0, 0);
         }
+#endif
 #endif
         else if (event == STB_EVENT_VIDEO_DECODE_STARTED) {
             videoStarted = 1;
@@ -1231,7 +1366,12 @@ Broadcast_Initialize(BroadcastDriver *pD)
 
     DTVKitPlatform_SetNVMBasePath("/data/data/com.broadcom.tvinput");
     APP_InitialiseDVB(event_handler);
-    ASI_SetEITScheduleLimit(24);
+#ifdef JOURNAL
+    ASI_SetEITScheduleLimit(2 * 24);
+    ASI_SetEitJournalFunction(PushUpdate);
+#else
+    ASI_SetEITScheduleLimit(1 * 24);
+#endif
 
     U16BIT services = ADB_GetNumServicesInList(ADB_SERVICE_LIST_ALL, true);
     if (services == 0) {
@@ -1240,6 +1380,11 @@ Broadcast_Initialize(BroadcastDriver *pD)
 
     pD->GetChannelList = BroadcastDTVKit_GetChannelList;
     pD->GetProgramList = BroadcastDTVKit_GetProgramList;
+#ifdef JOURNAL
+    pD->GetProgramUpdateList = BroadcastDTVKit_GetProgramUpdateList;
+#else
+    pD->GetProgramUpdateList = 0;
+#endif
     pD->GetScanInfo = BroadcastDTVKit_GetScanInfo;
     pD->GetUtcTime = BroadcastDTVKit_GetUtcTime;
     pD->Tune = BroadcastDTVKit_Tune;

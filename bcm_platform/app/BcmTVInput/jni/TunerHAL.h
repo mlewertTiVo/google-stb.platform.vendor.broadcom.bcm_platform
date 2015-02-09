@@ -25,6 +25,7 @@
 #include <utils/RefBase.h>
 #include <utils/String16.h>
 #include <utils/String8.h>
+#include <utils/List.h>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -39,6 +40,7 @@ class Tuner_Data
 public:
     jobject tunerService;
     jclass broadcastEvent;
+    jclass updateType;
     JavaVM *vm;
     NexusIPCClientBase *ipcclient;
     NexusClientContext *nexus_client;
@@ -54,6 +56,7 @@ public:
  */
 enum BroadcastEvent {
     CHANNEL_LIST_CHANGED,
+    PROGRAM_UPDATE_LIST_CHANGED,
     PROGRAM_LIST_CHANGED,
     TRACK_LIST_CHANGED,
     TRACK_SELECTED,

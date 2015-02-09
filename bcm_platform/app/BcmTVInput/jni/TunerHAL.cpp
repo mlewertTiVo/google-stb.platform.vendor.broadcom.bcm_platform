@@ -63,6 +63,9 @@
 #define BROADCAST_EVENT_CLASS  "com/broadcom/tvinput/TunerService$BroadcastEvent"
 #define BROADCAST_EVENT_SIG  "L" BROADCAST_EVENT_CLASS ";"
 
+#define PROGRAMUPDATEINFOUPDATETYPE_CLASS  "com/broadcom/tvinput/ProgramUpdateInfo$UpdateType"
+#define PROGRAMUPDATEINFOUPDATETYPE_SIG  "L" PROGRAMUPDATEINFOUPDATETYPE_CLASS ";"
+
 // All globals must be JNI primitives, any other data type 
 // will fail to hold its value across different JNI methods
 void *j_main;
@@ -77,6 +80,7 @@ static JNINativeMethod gMethods[] =
     {"tune",           "(Ljava/lang/String;)I",     (void *)Java_com_broadcom_tvinput_TunerHAL_tune},
     {"getChannelList", "()[Lcom/broadcom/tvinput/ChannelInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getChannelList},
     {"getProgramList", "(Ljava/lang/String;)[Lcom/broadcom/tvinput/ProgramInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getProgramList},
+    {"getProgramUpdateList", "()[Lcom/broadcom/tvinput/ProgramUpdateInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getProgramUpdateList},
     {"getScanInfo",    "()Lcom/broadcom/tvinput/ScanInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getScanInfo},
     {"getUtcTime",     "()J",      (void *)Java_com_broadcom_tvinput_TunerHAL_getUtcTime},  
     {"stop",           "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stop},  
@@ -402,6 +406,10 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env
             env->FindClass(BROADCAST_EVENT_CLASS)));
     ALOGI("%s: BroadcastEvent class = %p", __FUNCTION__, g_pTD->broadcastEvent);
 
+    g_pTD->updateType = reinterpret_cast<jclass>(env->NewGlobalRef(
+            env->FindClass(PROGRAMUPDATEINFOUPDATETYPE_CLASS)));
+    ALOGI("%s: %s class = %p", __FUNCTION__, PROGRAMUPDATEINFOUPDATETYPE_CLASS, g_pTD->updateType);
+
     HwcBinderConnect();
     BKNI_CreateMutex(&g_pTD->mutex);
     return Broadcast_Initialize(&g_pTD->driver);
@@ -438,6 +446,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jcla
 #define intField(name) simpleField(name, I)
 #define floatField(name) simpleField(name, F)
 #define stringField(name) simpleField(name, Ljava/lang/String;)
+#define enumField(name) simpleField(name, Ljava/lang/String;)
 
 static void
 setStringField(JNIEnv *env, jobject o, jfieldID id, const String8 &s8)
@@ -548,7 +557,7 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
         env->SetObjectArrayElement(rv, i, o);
         env->DeleteLocalRef(o);
     }
-    ALOGE("%s: ok so far", __FUNCTION__);
+    ALOGD("%s: complete", __FUNCTION__);
     return rv;
 }
 
@@ -617,7 +626,104 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramList(JNIEnv *env, jclass /*thiz*/, 
         env->SetObjectArrayElement(rv, i, o);
         env->DeleteLocalRef(o);
     }
-    ALOGE("%s: ok so far", __FUNCTION__);
+    ALOGD("%s: complete", __FUNCTION__);
+    return rv;
+}
+
+static const char * programUpdateInfoUpdateTypeName(BroadcastProgramUpdateInfo::UpdateType t)
+{
+#define CASE_ENUM_NAME(e, n) case e: return #n
+    switch (t) {
+    CASE_ENUM_NAME(BroadcastProgramUpdateInfo::ClearAll, CLEAR_ALL);
+    CASE_ENUM_NAME(BroadcastProgramUpdateInfo::ClearChannel, CLEAR_CHANNEL);
+    CASE_ENUM_NAME(BroadcastProgramUpdateInfo::Delete, DELETE);
+    CASE_ENUM_NAME(BroadcastProgramUpdateInfo::Add, ADD);
+    CASE_ENUM_NAME(BroadcastProgramUpdateInfo::Update, UPDATE);
+    CASE_ENUM_NAME(BroadcastProgramUpdateInfo::Expire, EXPIRE);
+
+    // add a new UpdateType enum here
+
+    //default: not added to catch missing case statements
+    }
+#undef CASE_ENUM_NAME
+    return 0; //unknown
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_broadcom_tvinput_TunerHAL_getProgramUpdateList(JNIEnv *env, jclass /*thiz*/)
+{
+    TV_LOG("%s: Fetching program update list!!", __FUNCTION__);
+
+    Vector<BroadcastProgramUpdateInfo> puiv;
+
+    if (g_pTD->driver.GetProgramUpdateList == 0) {
+        TV_LOG("%s: GetProgramUpdateList call is null", __FUNCTION__);
+        return 0;
+    }
+
+    LOCKHAL
+    puiv = (*g_pTD->driver.GetProgramUpdateList)();
+    UNLOCKHAL
+
+    jclass cls = env->FindClass("com/broadcom/tvinput/ProgramUpdateInfo"); 
+    if (cls == 0) {
+        ALOGE("%s: could not find class", __FUNCTION__);
+        return 0;
+    }
+    jmethodID cID = env->GetMethodID(cls, "<init>", "()V");
+    if(cID == 0){
+        ALOGE("%s: could not get constructor ID", __FUNCTION__);
+    }
+    jfieldID idID = env->GetFieldID(cls, "id", "Ljava/lang/String;");
+    if(idID == 0){
+        ALOGE("%s: could not get id ID", __FUNCTION__);
+    }
+    jfieldID channelIdID = env->GetFieldID(cls, "channel_id", "Ljava/lang/String;");
+    if(channelIdID == 0){
+        ALOGE("%s: could not get channel_id ID", __FUNCTION__);
+    }
+    jfieldID titleID = env->GetFieldID(cls, "title", "Ljava/lang/String;");
+    if(titleID == 0){
+        ALOGE("%s: could not get title ID", __FUNCTION__);
+
+    }
+    jfieldID descID = env->GetFieldID(cls, "short_description", "Ljava/lang/String;");
+    if(descID == 0){
+        ALOGE("%s: could not get short_description ID", __FUNCTION__);
+    }
+    jfieldID startID = env->GetFieldID(cls, "start_time_utc_millis", "J");
+    if(startID == 0){
+        ALOGE("%s: could not get start ID", __FUNCTION__);
+    }
+    jfieldID endID = env->GetFieldID(cls, "end_time_utc_millis", "J");
+    if(endID == 0){
+        ALOGE("%s: could not get end ID", __FUNCTION__);
+    }
+    jfieldID typeID = env->GetFieldID(cls, "type", PROGRAMUPDATEINFOUPDATETYPE_SIG);
+    if(typeID == 0){
+        ALOGE("%s: could not get type ID", __FUNCTION__);
+    }
+
+    jobjectArray rv = env->NewObjectArray(puiv.size(), cls, NULL);
+    for (unsigned i = 0; i < puiv.size(); i++) {
+        jobject o = env->NewObject(cls, cID); 
+        setStringField(env, o, idID, puiv[i].id);
+        setStringField(env, o, channelIdID, puiv[i].channel_id);
+        setStringField(env, o, titleID, puiv[i].title);
+        setStringField(env, o, descID, puiv[i].short_description);
+        env->SetLongField(o, startID, puiv[i].start_time_utc_millis);
+        env->SetLongField(o, endID, puiv[i].end_time_utc_millis);
+
+        const char *updateTypeName = programUpdateInfoUpdateTypeName(puiv[i].type);
+        jfieldID updateTypeID = env->GetStaticFieldID(g_pTD->updateType, updateTypeName, PROGRAMUPDATEINFOUPDATETYPE_SIG);
+        jobject updateTypeObject = env->GetStaticObjectField(g_pTD->updateType, updateTypeID);
+        env->SetObjectField(o, typeID, updateTypeObject);
+        env->DeleteLocalRef(updateTypeObject);
+
+        env->SetObjectArrayElement(rv, i, o);
+        env->DeleteLocalRef(o);
+    }
+    ALOGE("%s: complete", __FUNCTION__);
     return rv;
 }
 
@@ -671,7 +777,7 @@ Java_com_broadcom_tvinput_TunerHAL_getScanInfo(JNIEnv *env, jclass /*thiz*/)
         env->SetShortField(o, signalStrengthPercentID, si.signalStrengthPercent);
         env->SetShortField(o, signalQualityPercentID, si.signalQualityPercent);
     }
-    ALOGE("%s: ok so far", __FUNCTION__);
+    ALOGD("%s: complete", __FUNCTION__);
     return o;
 }
 
@@ -821,7 +927,7 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getTrackInfoLi
         env->SetObjectArrayElement(rv, i, o);
         env->DeleteLocalRef(o);
     }
-    ALOGE("%s: ok so far", __FUNCTION__);
+    ALOGD("%s: complete", __FUNCTION__);
     return rv;
 }
 
@@ -869,6 +975,7 @@ static const char * eventName(BroadcastEvent e)
     switch (e) {
     CASE_ENUM_NAME(CHANNEL_LIST_CHANGED);
     CASE_ENUM_NAME(PROGRAM_LIST_CHANGED);
+    CASE_ENUM_NAME(PROGRAM_UPDATE_LIST_CHANGED);
     CASE_ENUM_NAME(TRACK_LIST_CHANGED);
     CASE_ENUM_NAME(TRACK_SELECTED);
     CASE_ENUM_NAME(VIDEO_AVAILABLE);

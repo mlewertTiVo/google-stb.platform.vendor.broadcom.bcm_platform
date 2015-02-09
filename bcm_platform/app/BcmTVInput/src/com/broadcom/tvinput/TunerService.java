@@ -25,6 +25,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.database.Cursor;
 import android.media.tv.TvContract;
+import android.media.tv.TvContract.Programs;
 import android.media.tv.TvInputHardwareInfo;
 import android.media.tv.TvInputInfo;
 import android.media.tv.TvInputManager;
@@ -36,6 +37,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.SystemClock;
 import android.util.Log;
+import android.util.Pair;
 import android.util.SparseArray;
 import android.view.Surface;
 
@@ -46,6 +48,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.Long;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
@@ -69,7 +72,7 @@ public class TunerService extends TvInputService {
     private static final boolean DEBUG = true;
     private static final String TAG = TunerService.class.getSimpleName();
     private static final TvStreamConfig[] EMPTY_STREAM_CONFIGS = {};
-    private static boolean streamerMode = false;
+    private boolean streamerMode = false;
 
     // inputId -> deviceId
     private final Map<String, Integer> mDeviceIdMap = new HashMap<>();
@@ -80,11 +83,30 @@ public class TunerService extends TvInputService {
     // inputId -> TvInputInfo
     private final Map<String, TvInputInfo> mInputMap = new HashMap<>();
 
+    // broadcast channel_id -> channelId
+    private final Map<String, Long> mBroadcastChannelIdMap = new HashMap<>();
+
+    // broadcast channel_id,program_id -> programId
+    private final Map<Pair<String, String>, Long> mBroadcastProgramIdMap = new HashMap<>();
+
     private TvInputManager mManager = null;
     private ResolveInfo mResolveInfo;
     private Handler mMainLoopHandler;
 
     private static ContentValues buildProgramValues(long channelId, ProgramInfo program, boolean insert) {
+        ContentValues prog_values = new ContentValues();
+        if (insert) {
+            prog_values.put(TvContract.Programs.COLUMN_CHANNEL_ID, channelId);
+            prog_values.put(TvContract.Programs.COLUMN_INTERNAL_PROVIDER_DATA, program.id.getBytes());
+        }
+        prog_values.put(TvContract.Programs.COLUMN_TITLE, program.title);
+        prog_values.put(TvContract.Programs.COLUMN_START_TIME_UTC_MILLIS, program.start_time_utc_millis);
+        prog_values.put(TvContract.Programs.COLUMN_END_TIME_UTC_MILLIS, program.end_time_utc_millis);
+        prog_values.put(TvContract.Programs.COLUMN_SHORT_DESCRIPTION, program.short_description);
+        return prog_values;
+    }
+
+    private static ContentValues buildProgramValuesFromUpdate(long channelId, ProgramUpdateInfo program, boolean insert) {
         ContentValues prog_values = new ContentValues();
         if (insert) {
             prog_values.put(TvContract.Programs.COLUMN_CHANNEL_ID, channelId);
@@ -279,6 +301,7 @@ public class TunerService extends TvInputService {
         private final Condition syncRequired = lock.newCondition();
         private boolean channelListChanged = false;
         private boolean programListChanged = false;
+        private boolean programUpdateListChanged = false;
 
         public void setChannelListChanged() {
             lock.lock();
@@ -300,11 +323,31 @@ public class TunerService extends TvInputService {
             }
         }
 
+        public void setProgramUpdateListChanged() {
+            lock.lock();
+            try {
+                programUpdateListChanged = true;
+                syncRequired.signal();
+            } finally {
+                lock.unlock();
+            }
+        }
+
         private class DatabaseSyncTask implements Runnable {
 
             private final String inputId;
 
-            private void updateProgramsForChannel(long channelId, String id)
+            private void insertProgram(long channelId, ProgramInfo program) {
+                ContentValues prog_values = buildProgramValues(channelId, program, true);
+                getContentResolver().insert(TvContract.Programs.CONTENT_URI, prog_values);
+            }
+
+            private void updateProgram(long programId, ProgramInfo program) {
+                ContentValues prog_values = buildProgramValues(0, program, false);
+                getContentResolver().update(TvContract.buildProgramUri(programId), prog_values, null, null);
+            }
+
+            private void deprecatedUpdateProgramsForChannel(long channelId, String id)
             {
                 ProgramInfo newprograms[] = TunerHAL.getProgramList(id);
 
@@ -346,7 +389,7 @@ public class TunerService extends TvInputService {
                     }
                     if (!inoldlist) {
                         Log.d(TAG, "DatabaseSyncTask.updateProgramsForChannel(" + id + "): + " + npi.id + " " + npi.title);
-                        TunerService.insertProgram(TunerService.this, channelId, npi);
+                        insertProgram(channelId, npi);
                     }
                 }
                 // Delete/update old ids
@@ -357,7 +400,7 @@ public class TunerService extends TvInputService {
                             innewlist = true;
                             if (differentInfo(opi, npi)) {
                                 Log.d(TAG, "DatabaseSyncTask.updateProgramsForChannel(" + id + "): ! " + opi.id);
-                                TunerService.updateProgram(TunerService.this, opi.programId, npi);
+                                updateProgram(opi.programId, npi);
                             }
                             break;
                         }
@@ -371,7 +414,7 @@ public class TunerService extends TvInputService {
                 cursor.close();
             }
 
-            private void updatePrograms()
+            private void deprecatedUpdateAllPrograms()
             {
                 // Get list of channelIds and bids
                 String[] channelprojection = { TvContract.Channels._ID, TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA };
@@ -388,10 +431,81 @@ public class TunerService extends TvInputService {
                 while (channelcursor.moveToNext()) {
                     long channelId = channelcursor.getLong(0);
                     String id = new String(channelcursor.getBlob(1));
-                    updateProgramsForChannel(channelId, id);
+                    deprecatedUpdateProgramsForChannel(channelId, id);
                 }
                 channelcursor.close();
                 forgeTime();
+            }
+
+            private void deleteProgramUpdate(String channel_id, String id, boolean expire)
+            {
+                Pair<String, String> key = new Pair(channel_id, id);
+                int rows = 0;
+                if (mBroadcastProgramIdMap.containsKey(key)) {
+                    Long programId = mBroadcastProgramIdMap.get(key);
+                    Uri uri = TvContract.buildProgramUri(programId);
+                    rows = getContentResolver().delete(uri, null, null);
+                    mBroadcastProgramIdMap.remove(key);
+                    if (rows > 0) {
+                        Log.d(TAG, (expire ? "expire" : "delete") + "ProgramUpdate(" + channel_id + ", " + id + ") succeeded");
+                    }
+                    else {
+                        Log.d(TAG, (expire ? "expire" : "delete") + "ProgramUpdate(" + channel_id + ", " + id + ") failed: record not found");
+                    }
+                }
+                else {
+                    Log.d(TAG, (expire ? "expire" : "delete") + "ProgramUpdate(" + channel_id + ", " + id + ") failed: key not found");
+                }
+            }
+
+            private void insertProgramUpdate(ProgramUpdateInfo pui) {
+                if (mBroadcastChannelIdMap.containsKey(pui.channel_id)) {
+                    Long channelId = mBroadcastChannelIdMap.get(pui.channel_id);
+                    ContentValues prog_values = buildProgramValuesFromUpdate(channelId.longValue(), pui, true);
+                    Uri uri = getContentResolver().insert(TvContract.Programs.CONTENT_URI, prog_values);
+                    if (uri != null) {
+                        long programId = ContentUris.parseId(uri);
+                        mBroadcastProgramIdMap.put(new Pair(pui.channel_id, pui.id), new Long(programId));
+                        Log.d(TAG, "insertProgramUpdate(" + pui.channel_id + ", " + pui.id + ") succeeded: mapped to " + programId);
+                    }
+                }
+            }
+
+            private void updateProgramUpdate(ProgramUpdateInfo pui) {
+                Pair<String, String> key = new Pair(pui.channel_id, pui.id);
+                if (mBroadcastProgramIdMap.containsKey(key)) {
+                    Long programId = mBroadcastProgramIdMap.get(key);
+                    ContentValues prog_values = buildProgramValuesFromUpdate(0, pui, false);
+                    getContentResolver().update(TvContract.buildProgramUri(programId.longValue()), prog_values, null, null);
+                    Log.d(TAG, "updateProgramUpdate(" + pui.channel_id + ", " + pui.id + ") succeeded");
+                }
+                else {
+                    Log.d(TAG, "updateProgramUpdate(" + pui.channel_id + ", " + pui.id + ") failed: key not found");
+                }
+            }
+
+            private boolean updatePrograms()
+            {
+                ProgramUpdateInfo puiv[] = TunerHAL.getProgramUpdateList();
+                for (ProgramUpdateInfo pui : puiv) {
+                    Log.d(TAG, "DatabaseSyncTask::Got programUpdate " + pui.type + " " + pui.channel_id + " " + pui.id);
+                    switch (pui.type) {
+                    case ADD:
+                        insertProgramUpdate(pui);
+                        break;
+                    case DELETE:
+                        deleteProgramUpdate(pui.channel_id, pui.id, false);
+                        break;
+                    case EXPIRE:
+                        deleteProgramUpdate(pui.channel_id, pui.id, true);
+                        break;
+                    case UPDATE:
+                        updateProgramUpdate(pui);
+                        break;
+                    }
+                }
+
+                return puiv.length > 0;
             }
 
             @Override
@@ -412,8 +526,19 @@ public class TunerService extends TvInputService {
                         //Context context = (Context) objs[0];
                         programListChanged = false;
                         lock.unlock();
-                        updatePrograms();
+                        deprecatedUpdateAllPrograms();
                         lock.lock();
+                    }
+                    else if (programUpdateListChanged) {
+                        boolean more;
+                        programUpdateListChanged = false;
+                        //Context context = (Context) objs[0];
+                        lock.unlock();
+                        more = updatePrograms();
+                        lock.lock();
+                        if (more) {
+                            programUpdateListChanged = true;
+                        }
                     }
                     else {
                         Log.d(TAG, "DatabaseSyncTask::waiting");
@@ -474,6 +599,7 @@ public class TunerService extends TvInputService {
     public enum BroadcastEvent {
         CHANNEL_LIST_CHANGED,
         PROGRAM_LIST_CHANGED,
+        PROGRAM_UPDATE_LIST_CHANGED,
         TRACK_LIST_CHANGED,
         TRACK_SELECTED,
         VIDEO_AVAILABLE,
@@ -561,6 +687,9 @@ public class TunerService extends TvInputService {
                 break;
             case PROGRAM_LIST_CHANGED:
             dbsync.setProgramListChanged();
+                break;
+            case PROGRAM_UPDATE_LIST_CHANGED:
+                dbsync.setProgramUpdateListChanged();
                 break;
             case SCANNING_START:
             case SCANNING_PROGRESS:
@@ -728,13 +857,14 @@ public class TunerService extends TvInputService {
 
         long channelId = ContentUris.parseId(channelUri);
         Log.d(TAG, "channelId = " +channelId);
+        mBroadcastChannelIdMap.put(channel.id, new Long(channelId));
 
         // Initialize the Programs class
-        ProgramInfo programs[] = TunerHAL.getProgramList(channel.id);
-        for (ProgramInfo program : programs) 
-        {
-            insertProgram(context, channelId, program);
-        }
+        //ProgramInfo programs[] = TunerHAL.getProgramList(channel.id);
+        //for (ProgramInfo program : programs) 
+        //{
+        //    insertProgram(context, channelId, program);
+        //}
     }
 
     public boolean sameChannelInfo(ChannelInfo a, ChannelInfo b) 
@@ -775,10 +905,13 @@ public class TunerService extends TvInputService {
 
         List<String> skipList = new ArrayList<>();
 
+        // Cache clear
+        mBroadcastChannelIdMap.clear();
+
         if (channels.length > 0) {
             Cursor channelcursor = getContentResolver().query(uri, channelprojection, null, null, null); 
             if (channelcursor != null) {
-                List<Long> zapList = new ArrayList<>();
+                List<Pair<Long, String>> zapList = new ArrayList<>();
                 boolean databaseEmpty = true;
 
                 if (channelcursor.getCount() >= 1) {
@@ -799,36 +932,43 @@ public class TunerService extends TvInputService {
                             }
                         }
                         if (i < channels.length) {
+                            // Duplicate - don't re-add
                             skipList.add(dbci.id);
+                            // But add to cache
+                            mBroadcastChannelIdMap.put(dbci.id, new Long(channelId));
                         }
                         else {
-                            zapList.add(Long.valueOf(channelId));
+                            // Remove from TvContract
+                            // Already not in cache
+                            zapList.add(new Pair(new Long(channelId), dbci.id));
                         }
                     }
                 }
                 channelcursor.close();
                 if (skipList.size() == 0) {
                     if (!databaseEmpty) {
+                        Log.d(TAG, "updateChannels: deleting all channels");
                         getContentResolver().delete(uri, null, null);
                     }
                 }
                 else {
-                    for (Long channelIdWrapper : zapList) {
-                        long channelId = channelIdWrapper.longValue();
+                    for (Pair<Long, String> zap : zapList) {
+                        long channelId = zap.first.longValue();
                         Log.d(TAG, "updateChannels: deleting channelId " + channelId);
-                        getContentResolver().delete(TvContract.buildChannelUri(channelId), null, null); 
+                        getContentResolver().delete(TvContract.buildChannelUri(channelId), null, null);
                     }
                 }
             }
         }
-        // TODO: Next deletes everyone's programs, not just per channel
+
         getContentResolver().delete(TvContract.Programs.CONTENT_URI, null, null);
+        mBroadcastProgramIdMap.clear();
 
         for (ChannelInfo channel : channels) 
         {
             if (!skipList.contains(channel.id)) {
                 Log.d(TAG, "updateChannels: adding " + channel.id + " (" + channel.name + ")");
-                addChannel(context, inputId, channel); 
+                addChannel(context, inputId, channel); // Has side-effect of adding to cache
             }
             else {
                 Log.d(TAG, "updateChannels: preserving " + channel.id + " (" + channel.name + ")");

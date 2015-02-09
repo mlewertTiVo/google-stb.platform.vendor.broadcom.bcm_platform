@@ -57,6 +57,14 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getProgramList
 
 /*
  * Class:     com_broadcom_tvinput_TunerHAL
+ * Method:    getProgramUpdateList
+ * Signature: ()[Lcom/broadcom/tvinput/ProgramUpdateInfo;
+ */
+JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getProgramUpdateList
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     com_broadcom_tvinput_TunerHAL
  * Method:    getScanInfo
  * Signature: ()Lcom/broadcom/tvinput/ScanInfo;
  */

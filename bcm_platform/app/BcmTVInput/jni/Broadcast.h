@@ -38,6 +38,19 @@ public:
     jlong end_time_utc_millis;
 };
 
+class BroadcastProgramUpdateInfo: public BroadcastProgramInfo {
+public:
+    enum UpdateType {
+        ClearAll,       /* */
+        ClearChannel,   /* channel_id */
+        Delete,         /* channel_id, id */
+        Add,            /* all */
+        Update,         /* all */
+        Expire,         /* channel_id, id */
+    };
+    UpdateType type;
+};
+
 class BroadcastScanInfo {
 public:
     jboolean busy;
@@ -90,6 +103,7 @@ public:
     int (*Tune)(String8);
     Vector<BroadcastChannelInfo> (*GetChannelList)();
     Vector<BroadcastProgramInfo> (*GetProgramList)(String8);
+    Vector<BroadcastProgramUpdateInfo> (*GetProgramUpdateList)();
     BroadcastScanInfo (*GetScanInfo)();
     jlong (*GetUtcTime)();
     int (*Stop)();
