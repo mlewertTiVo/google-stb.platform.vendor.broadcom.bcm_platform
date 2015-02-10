@@ -188,6 +188,9 @@ void Hwc::unregisterListener(const sp<IHwcListener>& listener)
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
         if (client.binder.get() == listener->asBinder().get()) {
+           sp<IBinder> binder = listener->asBinder();
+           binder->unlinkToDeath(this);
+
            mNotificationListeners.removeAt(i);
 
            for ( int j = 0; j < HWC_BINDER_VIDEO_SURFACE_SIZE; j++) {
