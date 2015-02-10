@@ -70,7 +70,7 @@ mkfs.ext4 -L       system   /dev/${1}3
 mkfs.ext4 -L       data     /dev/${1}4
 mkfs.ext4 -L       cache    /dev/${1}5
 mkfs.vfat -F 32 -n recovery /dev/${1}6
-dd if=/dev/zero          of=/dev/${1}7 bs=$bs count=$hwcfg_size
+mkfs.cramfs     -n cramfs   /dev/${1}7
 dd if=/dev/zero          of=/dev/${1}8 bs=$bs count=$pst_size
 
 gdisk -l /dev/$1
