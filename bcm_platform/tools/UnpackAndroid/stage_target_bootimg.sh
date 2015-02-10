@@ -96,6 +96,15 @@ if [[ $selinux -gt 0 && $update_boot_img -eq 0 && $update_system -eq 0 && $updat
 	update_data=1
 fi
 
+# if nothing to do, warn and exit.
+if [[ $update_boot_img -eq 0 && $update_system -eq 0 && $update_data -eq 0 && $update_cache -eq 0 && $update_recovery -eq 0 ]]; then
+	echo ""
+	echo "nothing to do?"
+	echo ""
+	usage
+	exit 1
+fi
+
 echo ""
 echo "partitions updated in this run:"
 if [ $update_boot_img -gt 0 ]; then
