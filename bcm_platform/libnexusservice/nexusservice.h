@@ -159,7 +159,7 @@ typedef struct NexusServerContext
     } lastId;
 } NexusServerContext;
 
-class NexusService : public NexusServiceBase, public BnNexusService
+class NexusService : public NexusServiceBase, public BnNexusService, public IBinder::DeathRecipient
 {
 public:
     static void instantiate();
@@ -168,6 +168,8 @@ public:
                                  const Parcel &data,
                                  Parcel *reply,
                                  uint32_t flags);
+
+    virtual void binderDied(const wp<IBinder>& who);
 
     /* These API's require a Nexus Client Context as they handle per client resources.
        Each of these methods *MUST* be implemented for each class that derives from it

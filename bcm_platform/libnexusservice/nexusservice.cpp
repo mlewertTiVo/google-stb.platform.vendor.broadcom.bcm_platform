@@ -2582,11 +2582,12 @@ status_t NexusService::addHdmiHotplugEventListener(uint32_t portId, const sp<INe
 #if NEXUS_HAS_HDMI_OUTPUT
         if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
             Vector<sp<INexusHdmiHotplugEventListener> >::iterator it;
+            sp<IBinder> binder = listener->asBinder();
 
             Mutex::Autolock autoLock(server->mLock);
 
             for (it = server->mHdmiHotplugEventListenerList[portId].begin(); it != server->mHdmiHotplugEventListenerList[portId].end(); ++it) {
-                if ((*it)->asBinder() == listener->asBinder()) {
+                if ((*it)->asBinder() == binder) {
                     ALOGE("%s: Already added HDMI%d listener %p!!!", __PRETTY_FUNCTION__, portId, listener.get());
                     status = ALREADY_EXISTS;
                     break;
@@ -2595,6 +2596,7 @@ status_t NexusService::addHdmiHotplugEventListener(uint32_t portId, const sp<INe
 
             if (status == OK) {
                 server->mHdmiHotplugEventListenerList[portId].push_back(listener);
+                binder->linkToDeath(this);
             }
         }
         else
@@ -2620,11 +2622,13 @@ status_t NexusService::removeHdmiHotplugEventListener(uint32_t portId, const sp<
 #if NEXUS_HAS_HDMI_OUTPUT
         if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
             Vector<sp<INexusHdmiHotplugEventListener> >::iterator it;
+            sp<IBinder> binder = listener->asBinder();
 
             Mutex::Autolock autoLock(server->mLock);
 
             for (it = server->mHdmiHotplugEventListenerList[portId].begin(); it != server->mHdmiHotplugEventListenerList[portId].end(); ++it) {
-                if ((*it)->asBinder() == listener->asBinder()) {
+                if ((*it)->asBinder() == binder) {
+                    binder->unlinkToDeath(this);
                     server->mHdmiHotplugEventListenerList[portId].erase(it);
                     status = OK;
                     break;
@@ -2643,6 +2647,28 @@ status_t NexusService::removeHdmiHotplugEventListener(uint32_t portId, const sp<
         }
     }
     return status;
+}
+
+void NexusService::binderDied(const wp<IBinder>& who)
+{
+#if NEXUS_HAS_HDMI_OUTPUT
+    IBinder *binder = who.unsafe_get();
+    if (binder != NULL) {
+        Vector<sp<INexusHdmiHotplugEventListener> >::iterator it;
+
+        Mutex::Autolock autoLock(server->mLock);
+
+        for (unsigned portId = 0; portId < NEXUS_NUM_HDMI_OUTPUTS; portId++) {
+            for (it = server->mHdmiHotplugEventListenerList[portId].begin(); it != server->mHdmiHotplugEventListenerList[portId].end(); ++it) {
+                if ((*it)->asBinder() == binder) {
+                    ALOGD("%s: Removing HDMI%d hotplug event listener...", __PRETTY_FUNCTION__, portId);
+                    server->mHdmiHotplugEventListenerList[portId].erase(it);
+                    return;
+                }
+            }
+        }
+    }
+#endif
 }
 
 #undef CHECK_INTERFACE
