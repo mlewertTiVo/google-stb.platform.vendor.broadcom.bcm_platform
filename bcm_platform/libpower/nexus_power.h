@@ -69,13 +69,13 @@ class NexusPower : public android::RefBase {
 
     public:
     static sp<NexusPower> instantiate();
+    status_t preparePowerState(b_powerState state);
     status_t setPowerState(b_powerState state);
     status_t getPowerState(b_powerState *pState);
     status_t initialiseGpios();
     void uninitialiseGpios();
     status_t setGpios(b_powerState state);
     status_t clearGpios();
-    status_t setGpioPowerKeyEvent(bool enable);
     ~NexusPower();
 
     // LinuxUInput class with refcount

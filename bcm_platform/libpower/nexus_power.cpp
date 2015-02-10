@@ -196,6 +196,23 @@ bool NexusPower::getCecTransmitViewOn()
     return tx;
 }
 
+status_t NexusPower::preparePowerState(b_powerState state)
+{
+    status_t status = NO_ERROR;
+    sp<NexusGpio> pNexusGpio;
+
+        // Set GPIO Power key event...
+    for (unsigned gpio = 0; gpio < NexusGpio::MAX_INSTANCES; gpio++) {
+        pNexusGpio = gpios[gpio];
+        if (pNexusGpio.get() != NULL && pNexusGpio->getPinMode() == NEXUS_GpioMode_eInput &&
+                pNexusGpio->getPinInterruptMode() != NEXUS_GpioInterrupt_eDisabled) {
+
+            pNexusGpio->setPowerKeyEvent(state != ePowerState_S0);
+        }
+    }
+    return status;
+}
+
 status_t NexusPower::setPowerState(b_powerState state)
 {
     status_t ret = NO_ERROR;
@@ -208,27 +225,25 @@ status_t NexusPower::setPowerState(b_powerState state)
         ret = setGpios(state);
 
         if (ret != NO_ERROR) {
-            ALOGE("%s: Could not set GPIO's for PowerState %d!!!", __FUNCTION__, state);
+            ALOGE("%s: Could not set GPIO's for PowerState S%d!!!", __FUNCTION__, state);
         }
         else if (mIpcClient->setPowerState(state) != true) {
-            ALOGE("%s: Could not set PowerState %d!", __FUNCTION__, state);
+            ALOGE("%s: Could not set PowerState S%d!", __FUNCTION__, state);
             ret = INVALID_OPERATION;
         }
         else if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && getCecTransmitViewOn() == true &&
                                      mIpcClient->setCecPowerState(cecId, state) != true) {
-            ALOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, cecId, state);
-            ret = INVALID_OPERATION;
+            ALOGW("%s: Could not set CEC%d PowerState S%d!", __FUNCTION__, cecId, state);
         }
     }
     else {
         if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && getCecTransmitStandby() == true &&
                                 mIpcClient->setCecPowerState(cecId, state) != true) {
-            ALOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, cecId, state);
-            ret = INVALID_OPERATION;
+            ALOGW("%s: Could not set CEC%d PowerState S%d!", __FUNCTION__, cecId, state);
         }
 
         if (mIpcClient->setPowerState(state) != true) {
-            ALOGE("%s: Could not set PowerState %d!", __FUNCTION__, state);
+            ALOGE("%s: Could not set PowerState S%d!", __FUNCTION__, state);
             ret = INVALID_OPERATION;
         }
         else {
@@ -258,7 +273,7 @@ status_t NexusPower::getPowerState(b_powerState *pState)
     }
 
     *pState = mIpcClient->getPowerState();
-    ALOGD("%s: Power state = %d", __FUNCTION__, *pState);
+    ALOGD("%s: Power state = S%d", __FUNCTION__, *pState);
     return NO_ERROR;
 }
 
@@ -827,23 +842,6 @@ status_t NexusPower::clearGpios()
             else {
                 ALOGV("%s: Successfully cleared %s", __FUNCTION__, pNexusGpio->getPinName().string());
             }
-        }
-    }
-    return status;
-}
-
-status_t NexusPower::setGpioPowerKeyEvent(bool enable)
-{
-    status_t status = NO_ERROR;
-    NEXUS_Error rc;
-    sp<NexusGpio> pNexusGpio;
-
-    for (unsigned gpio = 0; gpio < NexusGpio::MAX_INSTANCES; gpio++) {
-        pNexusGpio = gpios[gpio];
-        if (pNexusGpio.get() != NULL && pNexusGpio->getPinMode() == NEXUS_GpioMode_eInput &&
-                pNexusGpio->getPinInterruptMode() != NEXUS_GpioInterrupt_eDisabled) {
-
-            pNexusGpio->setPowerKeyEvent(enable);
         }
     }
     return status;

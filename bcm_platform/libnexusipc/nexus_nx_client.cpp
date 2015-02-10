@@ -226,7 +226,7 @@ NexusNxClient::~NexusNxClient()
     LOGV("~~~~~~ %s: \"%s\" ~~~~~~", __PRETTY_FUNCTION__, getClientName());
 }
 
-NEXUS_Error standby_check(NEXUS_PlatformStandbyMode mode)
+NEXUS_Error NexusNxClient::standbyCheck(NEXUS_PlatformStandbyMode mode)
 {
     NxClient_StandbyStatus standbyStatus;
     int count = 0;
@@ -532,8 +532,6 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
     rc = clientJoin();
 
     if (rc == NEXUS_SUCCESS) {
-        getPowerState();
-
         NxClient_GetDefaultStandbySettings(&standbySettings);
         standbySettings.settings.wakeupSettings.ir = 1;
         standbySettings.settings.wakeupSettings.uhf = 1;
@@ -590,9 +588,9 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
 
         /* Now check whether Nexus Platform has entered the desired standby mode (excluding S0)... */
         if (rc == NEXUS_SUCCESS && pmState != ePowerState_S0) {
-            rc = standby_check(standbySettings.settings.mode);
+            rc = standbyCheck(standbySettings.settings.mode);
             if (rc != NEXUS_SUCCESS) {
-                LOGE("%s: standby_check failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
+                LOGE("%s: standbyCheck failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
             }
         }
 

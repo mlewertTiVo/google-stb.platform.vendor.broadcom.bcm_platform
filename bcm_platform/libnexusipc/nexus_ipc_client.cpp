@@ -585,7 +585,7 @@ bool NexusIPCClient::isCecEnabled(uint32_t cecId __unused)
     return enabled;
 }
 
-bool NexusIPCClient::setCecAutoWakeupEnabled(uint32_t cecId, bool enabled)
+bool NexusIPCClient::setCecAutoWakeupEnabled(uint32_t cecId __unused, bool enabled)
 {
     bool success = true;
     char value[PROPERTY_VALUE_MAX];
@@ -710,7 +710,7 @@ NEXUS_SimpleVideoDecoderHandle NexusIPCClient::acquireVideoDecoderHandle()
     return NULL;
 }
 
-void NexusIPCClient::releaseVideoDecoderHandle(NEXUS_SimpleVideoDecoderHandle handle)
+void NexusIPCClient::releaseVideoDecoderHandle(NEXUS_SimpleVideoDecoderHandle handle __unused)
 {
     LOGE("%s: use derived class instead! no-op", __FUNCTION__);
 }
@@ -721,7 +721,7 @@ NEXUS_SimpleAudioDecoderHandle NexusIPCClient::acquireAudioDecoderHandle()
     return NULL;
 }
 
-void NexusIPCClient::releaseAudioDecoderHandle(NEXUS_SimpleAudioDecoderHandle handle)
+void NexusIPCClient::releaseAudioDecoderHandle(NEXUS_SimpleAudioDecoderHandle handle __unused)
 {
     LOGE("%s: use derived class instead! no-op", __FUNCTION__);
 }
@@ -732,7 +732,7 @@ NEXUS_SimpleAudioPlaybackHandle NexusIPCClient::acquireAudioPlaybackHandle()
     return NULL;
 }
 
-void NexusIPCClient::releaseAudioPlaybackHandle(NEXUS_SimpleAudioPlaybackHandle handle)
+void NexusIPCClient::releaseAudioPlaybackHandle(NEXUS_SimpleAudioPlaybackHandle handle __unused)
 {
     LOGE("%s: use derived class instead! no-op", __FUNCTION__);
 }
@@ -743,7 +743,7 @@ NEXUS_SimpleEncoderHandle NexusIPCClient::acquireSimpleEncoderHandle()
     return NULL;
 }
 
-void NexusIPCClient::releaseSimpleEncoderHandle(NEXUS_SimpleEncoderHandle handle)
+void NexusIPCClient::releaseSimpleEncoderHandle(NEXUS_SimpleEncoderHandle handle __unused)
 {
     LOGE("%s: use derived class instead! no-op", __FUNCTION__);
 }

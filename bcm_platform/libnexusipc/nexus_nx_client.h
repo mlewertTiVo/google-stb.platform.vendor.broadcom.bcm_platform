@@ -175,6 +175,8 @@ protected:
     //virtual void unbindNexusService();
 
 private:
+    NEXUS_Error standbyCheck(NEXUS_PlatformStandbyMode mode);
+
     android::sp<NexusNxClient::StandbyMonitorThread> mStandbyMonitorThread;
     b_refsw_client_client_info info;
 };

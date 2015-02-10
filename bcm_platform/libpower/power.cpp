@@ -198,7 +198,7 @@ static void power_init(struct power_module *module __unused)
 {
     gNexusPower = NexusPower::instantiate();
 
-    if (gNexusPower == NULL) {
+    if (gNexusPower.get() == NULL) {
         ALOGE("%s: failed!!!", __FUNCTION__);
     }
     else {
@@ -526,41 +526,41 @@ static void power_set_interactive(struct power_module *module __unused, int on)
 
     if (on) {
         if (gNexusPower.get()) {
-            // disable Power key event toggling from gpios
-            gNexusPower->setGpioPowerKeyEvent(false);
+            gNexusPower->preparePowerState(ePowerState_S0);
         }
         power_finish_set_interactive(on);
     }
-    else if (gInteractiveTimer) {
-        // Start interactive timer
-        struct itimerspec ts;
-        int interactiveTimeout;
+    else {
         b_powerState offState = power_get_property_off_state();
 
-        // If we want to enter S5 (aka cold boot), then we can enter immediately as
-        // the system will begin its slow shutdown process...
-        if (offState == ePowerState_S5) {
-            interactiveTimeout = 0;
-            ts.it_value.tv_nsec = 1;
+        if (gNexusPower.get()) {
+            gNexusPower->preparePowerState(offState);
         }
-        else {
-            interactiveTimeout = power_get_property_interactive_timeout();
-            ts.it_value.tv_nsec = 0;
-        }
-        ALOGV("%s: Waiting %ds before actually setting the power state...", __FUNCTION__, interactiveTimeout);
-        ts.it_value.tv_sec = interactiveTimeout;
-        ts.it_interval.tv_sec = 0;
-        ts.it_interval.tv_nsec = 0;
-        timer_settime(gInteractiveTimer, 0, &ts, NULL);
 
+        if (gInteractiveTimer) {
+            // Start interactive timer
+            struct itimerspec ts;
+            int interactiveTimeout;
+
+            // If we want to enter S5 (aka cold boot), then we can enter immediately as
+            // the system will begin its slow shutdown process...
+            if (offState == ePowerState_S5) {
+                interactiveTimeout = 0;
+                ts.it_value.tv_nsec = 1;
+            }
+            else {
+                interactiveTimeout = power_get_property_interactive_timeout();
+                ts.it_value.tv_nsec = 0;
+            }
+            ALOGV("%s: Waiting %ds before actually setting the power state...", __FUNCTION__, interactiveTimeout);
+            ts.it_value.tv_sec = interactiveTimeout;
+            ts.it_interval.tv_sec = 0;
+            ts.it_interval.tv_nsec = 0;
+            timer_settime(gInteractiveTimer, 0, &ts, NULL);
+        }
         // Keep the CPU alive until we are ready to suspend it...
         ALOGV("%s: Acquire \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
         acquire_wake_lock(PARTIAL_WAKE_LOCK, WAKE_LOCK_ID);
-
-        if (gNexusPower.get()) {
-            // enable Power key event toggling from gpios
-            gNexusPower->setGpioPowerKeyEvent(true);
-        }
     }
 }
 
@@ -598,7 +598,9 @@ struct power_module HAL_MODULE_INFO_SYM = {
         id: POWER_HARDWARE_MODULE_ID,
         name: "Brcmstb Power HAL",
         author: "Broadcom Corp",
-        methods: &power_module_methods
+        methods: &power_module_methods,
+        dso: 0,
+        reserved: {0}
     },
     init: power_init,
     setInteractive: power_set_interactive,
