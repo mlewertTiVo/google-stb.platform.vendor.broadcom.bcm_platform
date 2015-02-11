@@ -70,8 +70,19 @@ mkfs.ext4 -L       system   /dev/${1}3
 mkfs.ext4 -L       data     /dev/${1}4
 mkfs.ext4 -L       cache    /dev/${1}5
 mkfs.vfat -F 32 -n recovery /dev/${1}6
-mkfs.cramfs     -n cramfs   /dev/${1}7
+
+# The old contents will still exist even though we re-created
+# the partition table. Wipe the partitions that will not get
+# overwritten by the Android image later.
+dd if=/dev/zero          of=/dev/${1}7 bs=$bs count=$hwcfg_size
 dd if=/dev/zero          of=/dev/${1}8 bs=$bs count=$pst_size
+
+# Instantiate the hwcfg partition for those that will not
+# be using it, otherwise it will fail to mount and also
+# cause the internal memory (emulated SD card) to not mount.
+mkdir cramfstmp
+mkfs.cramfs -n hwcfg cramfstmp /dev/${1}7
+rmdir cramfstmp
 
 gdisk -l /dev/$1
 
