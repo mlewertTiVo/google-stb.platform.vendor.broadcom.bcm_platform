@@ -371,6 +371,8 @@ hdmi_module_t HAL_MODULE_INFO_SYM = {
         name: "Broadcom HDMI CEC module",
         author: "The Android Open Source Project",
         methods: &hdmi_cec_module_methods,
+        dso: 0,
+        reserved: {0}
     }
 };
 
