@@ -34,6 +34,7 @@ include ${BCM_APPS_PATH}/BcmDemoPIP/Android.mk
 include ${BCM_APPS_PATH}/BcmGeneralSTBFunctions/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiInPlayer/Android.mk
 include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
+include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
 
 include vendor/broadcom/bcm_platform/tools/calcfb/Android.mk
