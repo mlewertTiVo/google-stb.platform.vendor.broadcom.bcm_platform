@@ -253,6 +253,10 @@ if target_option == "REDUX":
 	os.write(s, "\n\n# REDUX target set...\n")
 	os.write(s, "include device/broadcom/common/target_redux.mk")
 os.write(s, "\n\ninclude device/broadcom/bcm_platform/bcm_platform.mk")
+root_settings="./device/broadcom/custom/%s/root/settings.mk" %(androidrootdevice)
+if os.access(root_settings, os.F_OK):
+	root_settings="\ninclude device/broadcom/custom/%s/root/settings.mk" %(androidrootdevice)
+	os.write(s, root_settings)
 if target_option == "AOSP":
 	os.write(s, "\n\n# AOSP setting tweaks...\n")
 	os.write(s, "include device/broadcom/common/settings_aosp.mk")
