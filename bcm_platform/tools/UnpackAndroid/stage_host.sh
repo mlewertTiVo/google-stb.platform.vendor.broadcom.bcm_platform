@@ -43,7 +43,6 @@ cp $tools_dir/stage_target_bootimg.sh $staging_dir
 echo "5) Copying bootloaders."
 mkdir -p $staging_dir/loaders
 cp $image_dir/android_bsu.elf $staging_dir/loaders
-cp $image_dir/bolt-ba.bin $staging_dir/loaders
-cp $image_dir/bolt-bb.bin $staging_dir/loaders
+cp $image_dir/bolt-*.bin $staging_dir/loaders
 
 echo "!!! Done staging !!!"
