@@ -99,7 +99,6 @@ using namespace android;
 #define VSYNC_CLIENT_STRIDE          VSYNC_CLIENT_WIDTH*4
 #define VSYNC_CLIENT_REFRESH         16666667
 #define DISPLAY_CONFIG_DEFAULT       0
-#define SURFACE_ALIGNMENT            16
 
 #define VSYNC_CLIENT_ZORDER          0
 #define MM_CLIENT_ZORDER             (VSYNC_CLIENT_ZORDER+1)
@@ -1503,7 +1502,7 @@ void hwc_gpx_prepare_next_surface_locked(
       break;
 
       default:
-         stride = (pSharedData->planes[DEFAULT_PLANE].width*pSharedData->planes[DEFAULT_PLANE].bpp + (SURFACE_ALIGNMENT - 1)) & ~(SURFACE_ALIGNMENT - 1);
+         stride = gr_buffer->oglStride;
          addr  = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
          if (addr == NULL) {
             ALOGE("%s: buffer address NULL: %d\n", __FUNCTION__, layer_id);
@@ -1893,7 +1892,7 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
                  }
                  break;
                  default:
-                    stride = (pSharedData->planes[DEFAULT_PLANE].width*pSharedData->planes[DEFAULT_PLANE].bpp + (SURFACE_ALIGNMENT - 1)) & ~(SURFACE_ALIGNMENT - 1);
+                    stride = gr_buffer->oglStride;
                     addr  = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
                     if (addr != NULL) {
                        ctx->vd_cli[i].shdl = hwc_to_nsc_surface(pSharedData->planes[DEFAULT_PLANE].width,
@@ -2181,7 +2180,7 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
        {
           private_handle_t *gr_buffer = (private_handle_t *)list->outbuf;
           PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(gr_buffer->sharedData);
-          unsigned int stride = (pSharedData->planes[DEFAULT_PLANE].width*pSharedData->planes[DEFAULT_PLANE].bpp + (SURFACE_ALIGNMENT - 1)) & ~(SURFACE_ALIGNMENT - 1);
+          unsigned int stride = gr_buffer->oglStride;
           NEXUS_SurfaceHandle shdl = hwc_to_nsc_surface(pSharedData->planes[DEFAULT_PLANE].width,
                                                         pSharedData->planes[DEFAULT_PLANE].height,
                                                         stride,
