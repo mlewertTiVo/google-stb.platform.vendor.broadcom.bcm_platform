@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <strings.h>
 
+#define FIRST_PAGE 0x1000
+
 int main(int argc, char *argv[]) {
 
    FILE *proc_map = NULL;
@@ -10,11 +12,12 @@ int main(int argc, char *argv[]) {
    char line_entry[256];
    char *s, *p;
    unsigned long long blk_start, blk_end;
-   unsigned long long last_blk_end = 0;
+   unsigned long long last_blk_end = FIRST_PAGE; /* first available user vm */
    unsigned long long size;
    unsigned long long stop_address_32 = 0xc0000000;
    unsigned long long stop_address_64 = 0x7fffffffffff;
    int cnt;
+   unsigned long long total_open = 0;
 
    if (argc != 2) {
       printf("usage: calcfb <pid>\n");
@@ -38,14 +41,17 @@ int main(int argc, char *argv[]) {
            } 
            else {
                 /* Make sure not to include kernel reserved addresses starting at 0xc0000000 (ARM 32-bits) */
-               if(last_blk_end!=0 && blk_start!=last_blk_end && blk_start<stop_address_32) {
+               if(blk_start!=last_blk_end && blk_start<stop_address_32) {
                    size =  (blk_start-last_blk_end)/(1024*1024);
                    if(size>0) printf("open map at %llx, size=%lldMb\n",last_blk_end, size);
+                   total_open += (blk_start-last_blk_end);
                }
                last_blk_end = blk_end;
            }
        }
    } while (s==line_entry);
    fclose(proc_map);
+   printf("total open size=%lldMb\n", total_open/(1024*1024));
+   printf("total mapped size=%lldMb\n", (stop_address_32-FIRST_PAGE-total_open)/(1024*1024));
    return 0;
 }
