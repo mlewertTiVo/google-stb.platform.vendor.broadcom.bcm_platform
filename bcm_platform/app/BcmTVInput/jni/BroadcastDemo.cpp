@@ -61,11 +61,11 @@ struct subtitle {
     uint32_t demo_color;
 };
 
-static const struct subtitle RED =    { "Red checker board",    0xffff0000 };
-static const struct subtitle GREEN =  { "Green checker board",  0xff00ff00 };
-static const struct subtitle BLUE =   { "Blue checker board",   0xff0000ff };
-static const struct subtitle YELLOW = { "Yellow checker board", 0xffffff00 };
-static const struct subtitle WHITE =  { "White checker board",  0xffffffff };
+static const struct subtitle RED =    { "eng", 0xffff0000 };
+static const struct subtitle GREEN =  { "fra", 0xff00ff00 };
+static const struct subtitle BLUE =   { "spa", 0xff0000ff };
+static const struct subtitle YELLOW = { "ita", 0xffffff00 };
+static const struct subtitle WHITE =  { "deu", 0xffffffff };
 static const uint32_t TRANSPARENT = 0x00000000U;
 
 static struct {
@@ -424,9 +424,6 @@ static void sourceChangeCallback(void * /*context*/, int param)
     if (pSelf->trackInfoList.video.size()) {
         TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 1, 0);
         TunerHAL_onBroadcastEvent(TRACK_SELECTED, 1, &pSelf->trackInfoList.video[0].id);
-    }
-    if (pSelf->trackInfoList.subtitle.size()) {
-        TunerHAL_onBroadcastEvent(TRACK_SELECTED, 2, &pSelf->trackInfoList.subtitle[0].id);
     }
 }
 
