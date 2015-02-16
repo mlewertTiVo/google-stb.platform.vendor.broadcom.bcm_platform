@@ -14,11 +14,18 @@
 
 REFSW_PATH :=vendor/broadcom/bcm_platform/brcm_nexus
 LOCAL_PATH := $(call my-dir)
+
+# set to 'true' to avoid stripping symbols during build.
+GRALLOC_DEBUG_SYMBOLS := false
+
 include $(CLEAR_VARS)
 
 # HAL module implementation, not prelinked and stored in
 # hw/<OVERLAY_HARDWARE_MODULE_ID>.<ro.product.board>.so
 
+ifeq ($(GRALLOC_DEBUG_SYMBOLS),true)
+LOCAL_STRIP_MODULE := false
+endif
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 

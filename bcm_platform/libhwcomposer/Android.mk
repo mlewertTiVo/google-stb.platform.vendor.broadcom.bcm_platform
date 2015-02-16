@@ -14,6 +14,9 @@
 
 LOCAL_PATH := $(call my-dir)
 
+# set to 'true' to avoid stripping symbols during build.
+HWC_DEBUG_SYMBOLS := false
+
 # build the binder helper.
 #
 include $(CLEAR_VARS)
@@ -25,6 +28,9 @@ LOCAL_SRC_FILES:= \
    blib/HwcListener.cpp \
    blib/HwcSvc.cpp
 
+ifeq ($(HWC_DEBUG_SYMBOLS),true)
+LOCAL_STRIP_MODULE := false
+endif
 LOCAL_PRELINK_MODULE := false
 
 LOCAL_SHARED_LIBRARIES += libbinder
@@ -47,6 +53,9 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES:= \
    bexe/main.cpp
 
+ifeq ($(HWC_DEBUG_SYMBOLS),true)
+LOCAL_STRIP_MODULE := false
+endif
 LOCAL_PRELINK_MODULE := false
 
 LOCAL_SHARED_LIBRARIES += libbinder
@@ -71,6 +80,9 @@ include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 LOCAL_SRC_FILES:= \
    utils/hwcutils.cpp
 
+ifeq ($(HWC_DEBUG_SYMBOLS),true)
+LOCAL_STRIP_MODULE := false
+endif
 LOCAL_PRELINK_MODULE := false
 
 LOCAL_SHARED_LIBRARIES += libcutils
@@ -100,6 +112,9 @@ include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 LOCAL_SRC_FILES:= \
    conv/yv12to422p.cpp
 
+ifeq ($(HWC_DEBUG_SYMBOLS),true)
+LOCAL_STRIP_MODULE := false
+endif
 LOCAL_PRELINK_MODULE := false
 
 LOCAL_SHARED_LIBRARIES += libcutils
@@ -133,6 +148,9 @@ LOCAL_SRC_FILES:= \
    comp/hwc_comp.c \
    comp/hwc_comp_utils.c
 
+ifeq ($(HWC_DEBUG_SYMBOLS),true)
+LOCAL_STRIP_MODULE := false
+endif
 LOCAL_PRELINK_MODULE := false
 
 LOCAL_SHARED_LIBRARIES += libcutils
@@ -162,6 +180,9 @@ include $(CLEAR_VARS)
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
+ifeq ($(HWC_DEBUG_SYMBOLS),true)
+LOCAL_STRIP_MODULE := false
+endif
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 
