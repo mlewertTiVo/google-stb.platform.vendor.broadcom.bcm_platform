@@ -952,7 +952,11 @@ public class TunerService extends TvInputService {
         {
             if (DEBUG) 
                 Log.d(TAG, "onRelease()");
-            TunerHAL.release();
+
+            if (sessionSet.size() == 1) {
+                TunerHAL.release();
+            }
+
             if (mHardware != null) 
             {
                 mManager.releaseTvInputHardware(mDeviceId, mHardware);
