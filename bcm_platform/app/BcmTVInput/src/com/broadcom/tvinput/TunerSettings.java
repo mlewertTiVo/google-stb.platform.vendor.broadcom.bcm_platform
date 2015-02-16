@@ -74,22 +74,22 @@ public class TunerSettings extends Activity {
                 TextView tv = (TextView) findViewById(R.id.text_tv_channels);
                 TextView radio = (TextView) findViewById(R.id.text_radio_channels);
                 TextView data = (TextView) findViewById(R.id.text_data_channels);
-                if (si.busy) {
-                    if (si.valid) {
+                if (si.valid) {
+                    all.setText(String.valueOf(si.channels));
+                    tv.setText(String.valueOf(si.TVChannels));
+                    radio.setText(String.valueOf(si.radioChannels));
+                    data.setText(String.valueOf(si.dataChannels));
+                    if (si.busy) {
                         progress.setProgress(si.progress);
                         strength.setProgress(si.signalStrengthPercent);
                         quality.setProgress(si.signalStrengthPercent);
-                        all.setText(String.valueOf(si.channels));
-                        tv.setText(String.valueOf(si.TVChannels));
-                        radio.setText(String.valueOf(si.radioChannels));
-                        data.setText(String.valueOf(si.dataChannels));
                     }
-                }
-                else {
-                    start_stop.setChecked(false);
-                    progress.setProgress(0);
-                    strength.setProgress(0);
-                    quality.setProgress(0);
+                    else {
+                        start_stop.setChecked(false);
+                        progress.setProgress(0);
+                        strength.setProgress(0);
+                        quality.setProgress(0);
+                    }
                 }
             }
         }

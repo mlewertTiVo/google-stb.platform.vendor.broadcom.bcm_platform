@@ -49,6 +49,18 @@ public:
     jshort radioChannels;
     jshort signalStrengthPercent;
     jshort signalQualityPercent;
+
+    BroadcastScanInfo():
+        busy(false),
+        valid(false),
+        progress(0),
+        channels(0),
+        TVChannels(0),
+        dataChannels(0),
+        radioChannels(0),
+        signalStrengthPercent(0),
+        signalQualityPercent(0)
+    {}
 };
 
 class BroadcastRect {

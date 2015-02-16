@@ -10,6 +10,10 @@
 #include "nexus_surface_client.h"
 #include "nexus_video_types.h"
 
+#undef LOG_TAG
+#define LOG_TAG "BroadcastDemo"
+#include <cutils/log.h>
+
 class BroadcastDemo_Context {
 public:
     BroadcastDemo_Context() {
@@ -44,6 +48,8 @@ public:
         Vector<BroadcastTrackInfo> video;
         Vector<BroadcastTrackInfo> subtitle;
     } trackInfoList;
+
+    BroadcastScanInfo m_scanInfo;
 };
 
 BroadcastDemo_Context *pSelf;
@@ -83,6 +89,8 @@ static struct {
     { 5, BroadcastChannelInfo::TYPE_DVB_T, "803", "MGustaTV", 0x22d4, 0x0027, 0x1392, 618000, 0x1000, {WHITE}, "" },
     { -1, BroadcastChannelInfo::TYPE_OTHER, "", "", 0, 0, 0, 0, 0, {}, "" }
 };
+
+static const size_t lineup_size = sizeof(lineup) / sizeof(lineup[0]);
 
 static void
 FreeContext()
@@ -297,6 +305,9 @@ static int BroadcastDemo_Stop()
         pSelf->pidChannel = 0;
     }
 
+    pSelf->trackInfoList.video.clear();
+    pSelf->trackInfoList.subtitle.clear();
+
     ALOGE("%s: Exit", __FUNCTION__);
 
     return 0;
@@ -305,6 +316,19 @@ static int BroadcastDemo_Stop()
 static int BroadcastDemo_StartBlindScan()
 {
     ALOGE("%s: Enter", __FUNCTION__);
+
+    pSelf->m_scanInfo.valid = true;
+    pSelf->m_scanInfo.busy = false;
+    pSelf->m_scanInfo.progress = 100;
+    pSelf->m_scanInfo.channels = lineup_size - 1;
+    pSelf->m_scanInfo.TVChannels = lineup_size - 1;
+    pSelf->m_scanInfo.radioChannels = 0;
+    pSelf->m_scanInfo.dataChannels = 0;
+
+    TunerHAL_onBroadcastEvent(SCANNING_START, 0, 0);
+    TunerHAL_onBroadcastEvent(SCANNING_PROGRESS, 100, 0);
+    TunerHAL_onBroadcastEvent(SCANNING_COMPLETE, 0, 0);
+    TunerHAL_onBroadcastEvent(CHANNEL_LIST_CHANGED, 0, 0);
     ALOGE("%s: Exit", __FUNCTION__);
     return -1;
 }
@@ -312,6 +336,8 @@ static int BroadcastDemo_StartBlindScan()
 static int BroadcastDemo_StopScan()
 {
     ALOGE("%s: Enter", __FUNCTION__);
+    TunerHAL_onBroadcastEvent(SCANNING_COMPLETE, 0, 0);
+    TunerHAL_onBroadcastEvent(CHANNEL_LIST_CHANGED, 0, 0);
     ALOGE("%s: Exit", __FUNCTION__);
     return -1;
 }
@@ -589,6 +615,7 @@ BroadcastDemo_GetChannelList()
         ci.logoUrl = lineup[i].logoUrl;
         ci.type = lineup[i].type;
         civ.push_back(ci);
+        ALOGI("%s: %s %s", __FUNCTION__, ci.number.string(), ci.name.string());
     }
     ALOGE("%s: Exit", __FUNCTION__);
     return civ;
@@ -599,6 +626,14 @@ BroadcastDemo_GetProgramList(String8)
 {
     Vector<BroadcastProgramInfo> v;
     return v;
+}
+
+static BroadcastScanInfo
+BroadcastDemo_GetScanInfo()
+{
+    ALOGE("%s: Enter", __FUNCTION__);
+    ALOGE("%s: Exit", __FUNCTION__);
+    return pSelf->m_scanInfo;
 }
 
 static int
@@ -711,7 +746,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
 
     pD->GetChannelList = BroadcastDemo_GetChannelList;
     pD->GetProgramList = BroadcastDemo_GetProgramList;
-    pD->GetScanInfo = 0;
+    pD->GetScanInfo = BroadcastDemo_GetScanInfo;
     pD->GetUtcTime = 0;
     pD->Tune = BroadcastDemo_Tune;
     pD->StartBlindScan = BroadcastDemo_StartBlindScan;
