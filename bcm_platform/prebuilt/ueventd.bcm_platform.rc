@@ -14,5 +14,3 @@
 /dev/mali0                0666   root       root
 /dev/ion                  0666   root       root
 
-# Persistent data block
-/dev/block/platform/f0471000.xhci/by-name/pst 0600 system system
