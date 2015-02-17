@@ -35,6 +35,7 @@
 #include "nexus_surface_client.h"
 #include "nexus_surface_cursor.h"
 #include "nxclient.h"
+#include "nxclient_config.h"
 
 #include <binder/IInterface.h>
 #include <binder/Parcel.h>
@@ -88,7 +89,7 @@ using namespace android;
 #define NSC_SB_CLIENTS_NUMBER        2  /* sideband client layers; typically no
                                          * more than 1 are needed at any time. */
 
-#define VSYNC_USES_NSC_SURF          1
+#define VSYNC_USES_NSC_SURF          0
 
 #define NSC_CLIENTS_NUMBER           (NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+NSC_SB_CLIENTS_NUMBER+VSYNC_USES_NSC_SURF)
 #define HWC_VD_CLIENTS_NUMBER        NSC_GPX_CLIENTS_NUMBER
@@ -111,6 +112,7 @@ using namespace android;
 #define HWC_DO_YV12_CONV             0
 
 #define DISPLAY_SUPPORTED            2
+#define NEXUS_DISPLAY_OBJECTS        4
 
 /* note: matching other parts of the integration, we
  *       want to default product resolution to 1080p.
@@ -473,6 +475,7 @@ struct hwc_context_t {
     BKNI_MutexHandle vsync_callback_enabled_mutex;
     pthread_t vsync_callback_thread;
     int vsync_thread_run;
+    NEXUS_DisplayHandle display_handle;
 
     bool wait_prepare_event;
     BKNI_EventHandle prepare_event;
@@ -2347,7 +2350,7 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
                 NEXUS_CallbackDesc desc;
                 desc.callback = hw_vsync_cb;
                 desc.context = (void *)&ctx->syn_cli;
-                //NEXUS_Display_SetVsyncCallback(1, &desc);
+                NEXUS_Display_SetVsyncCallback(ctx->display_handle, &desc);
              }
              break;
          default:
@@ -2902,12 +2905,12 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            goto clean_up;
 
         dev->vsync_thread_run = 1;
+        dev->display_handle = NULL;
 
         dev->pIpcClient = NexusIPCClientFactory::getClient("hwc");
         if (dev->pIpcClient == NULL) {
             ALOGE("%s: Could not instantiate Nexus IPC Client!!!", __FUNCTION__);
-        }
-        else {
+        } else {
             b_refsw_client_client_configuration clientConfig;
 
             memset(&clientConfig, 0, sizeof(clientConfig));
@@ -2917,7 +2920,21 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
 
             dev->pNexusClientContext = dev->pIpcClient->createClientContext(&clientConfig);
             if (dev->pNexusClientContext == NULL) {
-                ALOGE("%s: Could not create Nexus Client Context!!!", __FUNCTION__);
+               ALOGE("%s: Could not create Nexus Client Context!!!", __FUNCTION__);
+            } else {
+               NEXUS_InterfaceName interfaceName;
+               NEXUS_PlatformObjectInstance objects[NEXUS_DISPLAY_OBJECTS]; /* won't overflow. */
+               size_t num = NEXUS_DISPLAY_OBJECTS;
+               NEXUS_Error nrc;
+               NEXUS_ClientHandle client = NxClient_Config_LookupClient(clientConfig.pid);
+               strcpy(interfaceName.name, "NEXUS_Display");
+               nrc = NEXUS_Platform_GetClientObjects(client, &interfaceName, &objects[0], num, &num);
+               if (nrc == NEXUS_SUCCESS) {
+                  ALOGD("%s: display handle is %p", __FUNCTION__, objects[0].object);
+                  dev->display_handle = (NEXUS_DisplayHandle)objects[0].object;
+               } else {
+                  ALOGE("%s: failed to get display handle, sync will not work.", __FUNCTION__);
+               }
             }
         }
 
