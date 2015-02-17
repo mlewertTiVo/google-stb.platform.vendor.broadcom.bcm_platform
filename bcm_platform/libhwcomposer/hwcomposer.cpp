@@ -36,6 +36,7 @@
 #include "nexus_surface_cursor.h"
 #include "nxclient.h"
 #include "nxclient_config.h"
+#include "bfifo.h"
 
 #include <binder/IInterface.h>
 #include <binder/Parcel.h>
@@ -78,6 +79,8 @@ using namespace android;
 #define HWC_MM_NO_ALLOC_SURF_CLI     1
 
 #define HWC_REFRESH_HACK             1
+
+#define HWC_NUM_DISP_BUFFERS         3
 
 #define NSC_GPX_CLIENTS_NUMBER       11 /* graphics client layers; typically no
                                          * more than 3 are needed at any time, though
@@ -131,7 +134,7 @@ using namespace android;
 #define HWC_DEFAULT_GLES_MODE        HWC_GLES_MODE_FALLBACK
 #define HWC_GLES_MODE_PROP           "ro.hwc.gles.mode"
 
-#define HWC_DEFAULT_SW_SYNC          "1"
+#define HWC_DEFAULT_SW_SYNC          "0"
 #define HWC_SW_SYNC_PROP             "ro.hwc.sw_sync"
 
 #define HWC_DEFAULT_DUMP_LAYER       "0"
@@ -245,8 +248,6 @@ const NEXUS_BlendEquation alphaBlendingEquation[BLENDIND_TYPE_LAST] = {
 };
 
 typedef struct {
-    NEXUS_SurfaceClientHandle schdl;
-    NEXUS_SurfaceCompositorClientId sccid;
     int type;
     void *parent;
 
@@ -276,6 +277,7 @@ typedef struct {
     bool skip_set;
     unsigned int use_order;
     int plane_alpha;
+    NEXUS_SurfaceHandle active_surface;
 
 } GPX_CLIENT_INFO;
 
@@ -284,13 +286,13 @@ typedef struct {
     NEXUS_SurfaceClientHandle svchdl;
     NEXUS_SurfaceClientSettings settings;
     long long unsigned last_ping_frame_id;
-
+    int id;
 } MM_CLIENT_INFO;
 
 typedef struct {
     GPX_CLIENT_INFO root;
     NEXUS_SurfaceClientSettings settings;
-
+    int id;
 } SB_CLIENT_INFO;
 
 typedef struct {
@@ -482,6 +484,12 @@ struct hwc_context_t {
     bool nsc_sideband_changed;
 
     VD_CLIENT_INFO vd_cli[HWC_VD_CLIENTS_NUMBER];
+
+    NEXUS_SurfaceClientHandle schdl;
+    NEXUS_SurfaceCompositorClientId sccid;
+    BFIFO_HEAD(DisplayFifo, NEXUS_SurfaceHandle) display_fifo;
+    NEXUS_SurfaceHandle display_buffers[HWC_NUM_DISP_BUFFERS];
+    BKNI_EventHandle recycle_event;
 
     struct hwc_position overscan_position;
 
@@ -816,7 +824,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
     int offset = 0;
 
     write = snprintf(start, local_capacity,
-        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::sz:{%d,%d}::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::pa:%d::sfc:%p::scc:%d::order:%x\n",
+        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::sz:{%d,%d}::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::pa:%d::::order:%x\n",
         client->composition.visible ? "LIVE" : "HIDE",
         nsc_cli_type[client->ncci.type],
         client->layer_id,
@@ -839,8 +847,6 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
         client->composition.virtualDisplay.height,
         client->blending_type,
         client->plane_alpha,
-        client->ncci.schdl,
-        client->ncci.sccid,
         client->use_order);
 
     if (write > 0) {
@@ -946,7 +952,7 @@ static int dump_mm_layer_data(char *start, int capacity, int index, MM_CLIENT_IN
     int write = -1;
 
     write = snprintf(start, capacity,
-        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::z:%d::pcp:{%d,%d,%d,%d}::pcv:{%d,%d}::cm:%d::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::svc:%p::sfc:%p::scc:%x\n",
+        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::z:%d::pcp:{%d,%d,%d,%d}::pcv:{%d,%d}::cm:%d::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::svc:%p\n",
         client->root.composition.visible ? "LIVE" : "HIDE",
         nsc_cli_type[client->root.ncci.type],
         client->root.layer_id,
@@ -971,9 +977,7 @@ static int dump_mm_layer_data(char *start, int capacity, int index, MM_CLIENT_IN
         client->settings.composition.clipRect.height,
         client->settings.composition.virtualDisplay.width,
         client->settings.composition.virtualDisplay.height,
-        client->svchdl,
-        client->root.ncci.schdl,
-        client->root.ncci.sccid);
+        client->svchdl);
 
     return write;
 }
@@ -983,7 +987,7 @@ static int dump_sb_layer_data(char *start, int capacity, int index, SB_CLIENT_IN
     int write = -1;
 
     write = snprintf(start, capacity,
-        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::z:%d::pcp:{%d,%d,%d,%d}::pcv:{%d,%d}::cm:%d::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::scc:%d\n",
+        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::z:%d::pcp:{%d,%d,%d,%d}::pcv:{%d,%d}::cm:%d::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}\n",
         client->root.composition.visible ? "LIVE" : "HIDE",
         nsc_cli_type[client->root.ncci.type],
         client->root.layer_id,
@@ -1007,8 +1011,7 @@ static int dump_sb_layer_data(char *start, int capacity, int index, SB_CLIENT_IN
         client->settings.composition.clipRect.width,
         client->settings.composition.clipRect.height,
         client->settings.composition.virtualDisplay.width,
-        client->settings.composition.virtualDisplay.height,
-        client->root.ncci.sccid);
+        client->settings.composition.virtualDisplay.height);
 
     return write;
 }
@@ -1303,8 +1306,8 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
        {
            for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
                // reset the 'drop duplicate frame notifier' count.
-               if (ctx->mm_cli[i].root.ncci.sccid == (NEXUS_SurfaceCompositorClientId)ntfy.surface_hdl) {
-                  ALOGD("%s: rest drop-dup-count on sfid %x, sccid %p", __FUNCTION__, ntfy.surface_hdl, ctx->mm_cli[i].root.ncci.sccid);
+               if (ctx->mm_cli[i].id == ntfy.surface_hdl) {
+                  ALOGD("%s: rest drop-dup-count on sfid %x, id %p", __FUNCTION__, ntfy.surface_hdl, ctx->mm_cli[i].id);
                   ctx->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_INVALID;
                   break;
                }
@@ -1414,132 +1417,89 @@ out:
     return ret;
 }
 
-void hwc_gpx_prepare_next_surface_locked(
+void hwc_compose_gralloc_buffer(
    hwc_context_t* ctx,
    GPX_CLIENT_INFO *client,
    int layer_id,
    PSHARED_DATA pSharedData,
-   private_handle_t *gr_buffer)
+   private_handle_t *gr_buffer,
+   NEXUS_SurfaceHandle display_surface)
 {
-   NEXUS_Error rc;
-   unsigned int stride;
-   uint8_t *addr;
-   void *slock;
+    NEXUS_Error rc;
+    int plane_select = -1;
+    unsigned int stride=0;
+    uint8_t *addr=NULL;
+    void *slock;
+    NEXUS_PixelFormat pixel_format = NEXUS_PixelFormat_eUnknown;
 
-   int six = hwc_gpx_get_next_surface_locked(client);
-   if (six == -1) {
-      goto out;
-   }
-
-   switch (pSharedData->planes[DEFAULT_PLANE].format) {
-      case HAL_PIXEL_FORMAT_YV12: {
-         int plane_select = -1;
-         NEXUS_PixelFormat pixel_format;
-         if (pSharedData->planes[EXTRA_PLANE].physAddr) {
+    if ( pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12 ) {
+        if (pSharedData->planes[EXTRA_PLANE].physAddr) {
             plane_select = EXTRA_PLANE;
             pixel_format = (NEXUS_PixelFormat)pSharedData->planes[plane_select].format;
-         } else if (pSharedData->planes[GL_PLANE].physAddr) {
+        } else if (pSharedData->planes[GL_PLANE].physAddr) {
             plane_select = GL_PLANE;
             pixel_format = (NEXUS_PixelFormat)pSharedData->planes[plane_select].format;
-         }
-         if (plane_select == -1) {
+        }
+        if (plane_select == -1) {
             ALOGE("%s: unable to select yv12 plane: %d\n", __FUNCTION__, layer_id);
             goto out;
-         }
-         stride = pSharedData->planes[plane_select].width*pSharedData->planes[plane_select].bpp;
-         addr  = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[plane_select].physAddr);
-         if (addr == NULL) {
-            ALOGE("%s: yv12 plane buffer address NULL: %d\n", __FUNCTION__, layer_id);
-            goto out;
-         }
-         client->slist[six].shdl = hwc_to_nsc_surface(pSharedData->planes[plane_select].width,
-                                                      pSharedData->planes[plane_select].height,
-                                                      stride,
-                                                      pixel_format,
-                                                      addr);
-         if (client->slist[six].shdl == NULL) {
-            client->slist[six].owner = SURF_OWNER_NO_OWNER;
-            ALOGE("%s: surface creation failed: %d, %p, %dx%d, %d\n", __FUNCTION__,
-                  layer_id, addr, pSharedData->planes[plane_select].width,
-                  pSharedData->planes[plane_select].height, stride);
-            goto out;
-         }
-         if (HWC_DO_YV12_CONV) {
-            NEXUS_Surface_Lock(client->slist[six].shdl, &slock);
-            NEXUS_Surface_Flush(client->slist[six].shdl);
-            rc = yv12_to_422planar(gr_buffer, client->slist[six].shdl, ctx->hwc_2dg);
-            if ((rc != NEXUS_SUCCESS) || (0 != hwc_checkpoint(ctx))) {
-               ALOGE("%s: conversion failed: %d\n", __FUNCTION__, layer_id);
-               NEXUS_Surface_Destroy(client->slist[six].shdl);
-               client->slist[six].owner = SURF_OWNER_NO_OWNER;
-               client->slist[six].shdl = NULL;
-               goto out;
+        }
+        stride = pSharedData->planes[plane_select].width*pSharedData->planes[plane_select].bpp;
+    }
+    else {
+        plane_select = DEFAULT_PLANE;
+        stride = gr_buffer->oglStride;
+        pixel_format = gralloc_to_nexus_pixel_format(pSharedData->planes[DEFAULT_PLANE].format);
+    }
+    addr  = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[plane_select].physAddr);
+    if (addr == NULL) {
+        ALOGE("%s: plane buffer address NULL: %d\n", __FUNCTION__, layer_id);
+        goto out;
+    }
+
+    ALOGV("compose layer %u vis %u pf %u %ux%u (%ux%u@%u,%u) to %ux%u@%u,%u", layer_id, (unsigned)client->composition.visible,
+        pixel_format, pSharedData->planes[plane_select].width, pSharedData->planes[plane_select].height,
+        client->composition.clipRect.width, client->composition.clipRect.height, client->composition.clipRect.x, client->composition.clipRect.y,
+        client->composition.position.width, client->composition.position.height, client->composition.position.x, client->composition.position.y);
+
+    client->active_surface = NULL;
+    if ( client->composition.visible ) {
+        client->active_surface = hwc_to_nsc_surface(pSharedData->planes[plane_select].width,
+                                                    pSharedData->planes[plane_select].height,
+                                                    stride,
+                                                    pixel_format,
+                                                    addr);
+
+        if ( NULL != client->active_surface ) {
+            NEXUS_Graphics2DBlitSettings blitSettings;
+            NEXUS_Graphics2D_GetDefaultBlitSettings(&blitSettings);
+
+            // TODO: May need handling for offsecreen clipping
+            blitSettings.source.surface = client->active_surface;
+            blitSettings.source.rect = client->composition.clipRect;
+            blitSettings.dest.surface = display_surface;
+            blitSettings.dest.rect = client->composition.position;
+            blitSettings.output.surface = display_surface;
+            blitSettings.output.rect = client->composition.position;
+            blitSettings.colorOp = NEXUS_BlitColorOp_eUseBlendEquation;
+            blitSettings.alphaOp = NEXUS_BlitAlphaOp_eUseBlendEquation;
+            blitSettings.colorBlend = client->composition.colorBlend;
+            blitSettings.alphaBlend = client->composition.alphaBlend;
+            rc = NEXUS_Graphics2D_Blit(ctx->hwc_2dg, &blitSettings);
+            if ( rc == NEXUS_GRAPHICS2D_QUEUE_FULL ) {
+                // Checkpoint to drain the queue
+                rc = hwc_checkpoint(ctx);
+                if ( rc )  {
+                    ALOGW("Checkpoint timeout composing layer %u", __FUNCTION__, layer_id);
+                }
+                // Blit again now that the queue is empty
+                rc = NEXUS_Graphics2D_Blit(ctx->hwc_2dg, &blitSettings);
             }
-         }
-      }
-      break;
-
-      default:
-         stride = gr_buffer->oglStride;
-         addr  = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
-         if (addr == NULL) {
-            ALOGE("%s: buffer address NULL: %d\n", __FUNCTION__, layer_id);
-            goto out;
-         }
-         client->slist[six].shdl = hwc_to_nsc_surface(pSharedData->planes[DEFAULT_PLANE].width,
-                                                      pSharedData->planes[DEFAULT_PLANE].height,
-                                                      stride,
-                                                      gralloc_to_nexus_pixel_format(pSharedData->planes[DEFAULT_PLANE].format),
-                                                      ctx->nsc_copy ? NULL : addr);
-         if (client->slist[six].shdl == NULL) {
-            client->slist[six].owner = SURF_OWNER_NO_OWNER;
-            ALOGE("%s: standard surface creation failed: %d, %p, %dx%d, %d\n", __FUNCTION__, layer_id,
-                  addr, pSharedData->planes[DEFAULT_PLANE].width, pSharedData->planes[DEFAULT_PLANE].height, stride);
-            goto out;
-         } else if (ctx->nsc_copy) {
-            NEXUS_SurfaceMemory nsc_copy_memory;
-            void *slock;
-
-            NEXUS_Surface_GetMemory(client->slist[six].shdl, &nsc_copy_memory);
-            BKNI_Memcpy((uint8_t *)nsc_copy_memory.buffer, addr, nsc_copy_memory.bufferSize);
-            NEXUS_Surface_Lock(client->slist[six].shdl, &slock);
-            NEXUS_Surface_Flush(client->slist[six].shdl);
-         }
-      break;
-   }
-
-   client->slist[six].owner = SURF_OWNER_HWC_PUSH;
-   client->slist[six].grhdl = gr_buffer;
-   if (ctx->display_dump_push) {
-      ALOGI("render:init:%d:%d::nsc:%d::%p:%p::sid:%p", ctx->stats[0].prepare_call, six,
-            layer_id, gr_buffer, pSharedData, client->slist[six].shdl);
-   }
-   if (ctx->track_buffer) {
-      hwc_lock_surface(gr_buffer, layer_id, client->slist[six].shdl);
-   }
-   if (client->layer_subtype == NEXUS_CURSOR) {
-      NEXUS_SurfaceCursorCreateSettings cursorSettings;
-      NEXUS_SurfaceCursorSettings config;
-
-      NEXUS_SurfaceCursor_GetDefaultCreateSettings(&cursorSettings);
-      cursorSettings.surface = client->slist[six].shdl;
-      //client->slist[six].schdl = NEXUS_SurfaceCursor_Create(??, &cursorSettings);
-      client->slist[six].schdl = NULL;
-      if (client->slist[six].schdl) {
-         NEXUS_SurfaceCursor_GetSettings(client->slist[six].schdl, &config);
-         config.composition.visible               = true;
-         config.composition.virtualDisplay.width  = ctx->cfg[0].width;
-         config.composition.virtualDisplay.height = ctx->cfg[0].height;
-         config.composition.position.x            = client->composition.position.x;
-         config.composition.position.y            = client->composition.position.y;
-         config.composition.position.width        = client->composition.position.width;
-         config.composition.position.height       = client->composition.position.height;
-         NEXUS_SurfaceCursor_SetSettings(client->slist[six].schdl, &config);
-      }
-
-      ctx->cursor_cache.shdl = client->slist[six].shdl;
-      ctx->cursor_cache.schdl = client->slist[six].schdl;
-   }
+            if ( rc ) {
+                ALOGE("%s: Unable to blit layer %u", __FUNCTION__, layer_id);
+            }
+        }
+    }
 
 out:
    return;
@@ -1935,6 +1895,61 @@ out:
     return rc;
 }
 
+static void hwc_put_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle surface)
+{
+    if ( surface ) {
+        NEXUS_SurfaceHandle *pSurface = BFIFO_WRITE(&ctx->display_fifo);
+        *pSurface = surface;
+        BFIFO_WRITE_COMMIT(&ctx->display_fifo, 1);
+    }
+}
+
+static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx)
+{
+    NEXUS_SurfaceHandle surfaces[HWC_NUM_DISP_BUFFERS];
+    size_t numSurfaces, i;
+    NEXUS_Error rc;
+    NEXUS_SurfaceHandle surface=NULL;
+
+    for ( ;; ) {
+        if ( BFIFO_READ_PEEK(&ctx->display_fifo) ) {
+            NEXUS_SurfaceHandle *pSurface = BFIFO_READ(&ctx->display_fifo);
+            BFIFO_READ_COMMIT(&ctx->display_fifo, 1);
+            surface = *pSurface;
+        }
+
+        if ( surface ) {
+            NEXUS_Graphics2DFillSettings fillSettings;
+            NEXUS_Graphics2D_GetDefaultFillSettings(&fillSettings);
+            fillSettings.surface = surface;
+            fillSettings.color = 0;
+            fillSettings.colorOp = NEXUS_FillOp_eCopy;
+            fillSettings.alphaOp = NEXUS_FillOp_eCopy;
+            NEXUS_Graphics2D_Fill(ctx->hwc_2dg, &fillSettings);
+            return surface;
+        }
+        else {
+            numSurfaces=0;
+            rc = NEXUS_SurfaceClient_RecycleSurface(ctx->schdl, surfaces, HWC_NUM_DISP_BUFFERS, &numSurfaces);
+            if ( rc ) {
+                ALOGW("%s: Recycle Surface Error %#x %d", __FUNCTION__, ctx->schdl, rc);
+            } else if ( numSurfaces > 0 ) {
+                for ( i = 0; i < numSurfaces; i++ ) {
+                    NEXUS_SurfaceHandle *pHandle = BFIFO_WRITE(&ctx->display_fifo);
+                    *pHandle = surfaces[i];
+                    BFIFO_WRITE_COMMIT(&ctx->display_fifo, 1);
+                }
+            }
+            if ( numSurfaces == 0 ) {
+                // Only wait for a recycle callback if we failed to find any
+                if ( BKNI_WaitForEvent(ctx->recycle_event, 150) ) {
+                    ALOGW("%s: warning no surface received in 150ms", __FUNCTION__);
+                }
+            }
+        }
+    }
+}
+
 static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* list)
 {
     size_t i;
@@ -1947,6 +1962,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     int fence_id = INVALID_FENCE;
     struct sync_fence_info_data fence;
     int layer_composed = 0;
+    NEXUS_SurfaceHandle display_surface=NULL;
 
     // should never happen as primary display should always be there.
     if (!list)
@@ -1957,6 +1973,13 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
         ctx->stats[0].set_skipped++;
         goto out;
+    }
+
+    display_surface = hwc_get_disp_surface(ctx);
+    if ( NULL == display_surface ) {
+        // Technically can't ever happen...
+        ALOGE("%s: No display surface available", __FUNCTION__);
+        goto out_mutex;
     }
 
     // Don't set the primary display if we are powering or powered off...
@@ -2001,7 +2024,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                         // TODO: currently only one video window exposed.
                         if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
                             ctx->mm_cli[0].last_ping_frame_id = pSharedData->videoFrame.status.serialNumber;
-                            ctx->hwc_binder->setframe(ctx->mm_cli[0].root.ncci.sccid, ctx->mm_cli[0].last_ping_frame_id);
+                            ctx->hwc_binder->setframe(ctx->mm_cli[0].id, ctx->mm_cli[0].last_ping_frame_id);
                         }
                     }
                 }
@@ -2035,50 +2058,11 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                       list->hwLayers[i].releaseFenceFd = fence_id;
                    }
 
-                   /* allocate surface to be pushed. */
-                   hwc_gpx_prepare_next_surface_locked(ctx, &ctx->gpx_cli[i], i, pSharedData, gr_buffer);
+                   hwc_compose_gralloc_buffer(ctx, &ctx->gpx_cli[i], i, pSharedData, gr_buffer, display_surface);
 
-                   int six = hwc_gpx_push_surface_locked(&ctx->gpx_cli[i]);
-                   if (six != -1) {
-                      if (ctx->display_dump_push) {
-                         gr_buffer = (private_handle_t *)ctx->gpx_cli[i].slist[six].grhdl;
-                         PSHARED_DATA pPreparedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(gr_buffer->sharedData);
-                         /* note: if the layer has received a new buffer between prepare and set, the new value
-                          *       will be in the list, we do not use it, but log it.  this is true for framebuffer
-                          *       target as example.  the next composition cycle (prepare+set) will use the new
-                          *       data.
-                          */
-                         ALOGI("render:push:%d:%d::nsc:%d::%p:%p::sid:%p::chk:%p:%p", ctx->stats[0].set_call, six,
-                               i, ctx->gpx_cli[i].slist[six].grhdl, pPreparedData,
-                               ctx->gpx_cli[i].slist[six].shdl, list->hwLayers[i].handle, pSharedData);
-                      }
-                      ctx->gpx_cli[i].slist[six].comp_ix = ctx->stats[0].set_call;
-                      rc = NEXUS_SurfaceClient_PushSurface(ctx->gpx_cli[i].ncci.schdl, ctx->gpx_cli[i].slist[six].shdl, NULL, false);
-                      if (rc) {
-                          if (list->hwLayers[i].releaseFenceFd != INVALID_FENCE) {
-                             close(list->hwLayers[i].releaseFenceFd);
-                             list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
-                          }
-                          if (ctx->track_buffer) {
-                             hwc_unlock_surface((private_handle_t *)ctx->gpx_cli[i].slist[six].grhdl);
-                          }
-                          ctx->gpx_cli[i].slist[six].comp_ix = -1;
-                          ctx->gpx_cli[i].slist[six].grhdl = NULL;
-                          ctx->gpx_cli[i].slist[six].owner = SURF_OWNER_NO_OWNER;
-                          if ((ctx->gpx_cli[i].layer_subtype == NEXUS_CURSOR) &&
-                              ctx->gpx_cli[i].slist[six].schdl) {
-                              NEXUS_SurfaceCursor_Destroy(ctx->gpx_cli[i].slist[six].schdl);
-                              ctx->gpx_cli[i].slist[six].schdl = NULL;
-                          }
-                          if (ctx->gpx_cli[i].slist[six].shdl) {
-                             NEXUS_Surface_Destroy(ctx->gpx_cli[i].slist[six].shdl);
-                             ctx->gpx_cli[i].slist[six].shdl = NULL;
-                          }
-                          ALOGE("comp: %d (%d) - push surface %p failed on layer %d, rc=%d\n",
-                                ctx->stats[0].set_call, ctx->stats[0].prepare_call, ctx->gpx_cli[i].slist[six].shdl, i, rc);
-                      } else {
-                          layer_composed++;
-                      }
+                   if (list->hwLayers[i].releaseFenceFd != INVALID_FENCE) {
+                        close(list->hwLayers[i].releaseFenceFd);
+                        list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
                    }
                 } else {
                    ctx->gpx_cli[i].skip_set = false;
@@ -2094,10 +2078,25 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
               list->retireFenceFd = INVALID_FENCE;
            }
         }
+        rc = hwc_checkpoint(ctx);
+        if ( rc )  {
+            ALOGW("%s: checkpoint timeout", __FUNCTION__);
+        }
+        rc = NEXUS_SurfaceClient_PushSurface(ctx->schdl, display_surface, NULL, false);
+        if ( rc ) {
+            ALOGW("%s: Unable to push surface to client (%d)", __FUNCTION__, rc);
+        }
+        for (i = 0; i < list->numHwLayers; i++) {
+            if ( ctx->gpx_cli[i].active_surface ) {
+                NEXUS_Surface_Destroy(ctx->gpx_cli[i].active_surface);
+                ctx->gpx_cli[i].active_surface = NULL;
+            }
+        }
     }
     else {
         ctx->stats[0].set_skipped++;
         BKNI_ReleaseMutex(ctx->power_mutex);
+        hwc_put_disp_surface(ctx, display_surface);
     }
 
     if (ctx->display_dump_layer) {
@@ -2243,8 +2242,7 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
 
         for (i = 0; i < NSC_MM_CLIENTS_NUMBER; i++)
         {
-           NEXUS_SurfaceClient_ReleaseVideoWindow(ctx->mm_cli[i].svchdl);
-           NEXUS_SurfaceClient_Release(ctx->mm_cli[i].root.ncci.schdl);
+           /* nothing to do since we do not acquire the surfaces explicitely. */
         }
 
         for (i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++)
@@ -2255,7 +2253,13 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
               if (ctx->gpx_cli[i].slist[j].shdl)
                  NEXUS_Surface_Destroy(ctx->gpx_cli[i].slist[j].shdl);
            }
-           NEXUS_SurfaceClient_Release(ctx->gpx_cli[i].ncci.schdl);
+        }
+
+        if ( ctx->schdl ) {
+            NEXUS_SurfaceClient_Release(ctx->schdl);
+        }
+        if ( ctx->recycle_event ) {
+            BKNI_DestroyEvent(ctx->recycle_event);
         }
 
         NxClient_Free(&ctx->nxAllocResults);
@@ -2380,8 +2384,8 @@ static int hwc_device_eventControl(struct hwc_composer_device_1* dev, int disp, 
         if (BKNI_AcquireMutex(ctx->vsync_callback_enabled_mutex) == BERR_SUCCESS) {
            ctx->vsync_callback_enabled = enabled;
            status = 0;
+           BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
         }
-        BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
         if (!status) ALOGV("HWC HWC_EVENT_VSYNC (%s)", enabled ? "enabled":"disabled");
     }
     else {
@@ -2674,20 +2678,64 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             NEXUS_SurfaceClientSettings client_settings;
             NEXUS_SurfaceMemory vsync_surface_memory;
             NEXUS_Rect vsync_disp_position = {0,0,VSYNC_CLIENT_WIDTH,VSYNC_CLIENT_HEIGHT};
-            NEXUS_SurfaceComposition vsync_composition;
+            NEXUS_SurfaceComposition composition;
 
             NxClient_GetDefaultAllocSettings(&nxAllocSettings);
-            nxAllocSettings.surfaceClient = NSC_GPX_CLIENTS_NUMBER;
-            if (!HWC_MM_NO_ALLOC_SURF_CLI)
-               nxAllocSettings.surfaceClient += NSC_MM_CLIENTS_NUMBER;
-            if (!HWC_SB_NO_ALLOC_SURF_CLI)
-               nxAllocSettings.surfaceClient += NSC_SB_CLIENTS_NUMBER;
+            nxAllocSettings.surfaceClient = 1;
             rc = NxClient_Alloc(&nxAllocSettings, &dev->nxAllocResults);
             if (rc)
             {
                 ALOGE("%s: Cannot allocate NxClient graphic window (rc=%d)!", __FUNCTION__, rc);
                 goto out;
             }
+
+            if ( BKNI_CreateEvent(&dev->recycle_event) ) {
+                goto out;
+            }
+            dev->sccid = dev->nxAllocResults.surfaceClient[0].id;
+            dev->schdl = NEXUS_SurfaceClient_Acquire(dev->sccid);
+            if ( NULL == dev->schdl ) {
+                ALOGE("%s: Unable to allocate surface client", __FUNCTION__);
+                goto out;
+            }
+            NEXUS_SurfaceClient_GetSettings(dev->schdl, &client_settings);
+            client_settings.recycled.callback = hwc_nsc_recycled_cb;
+            client_settings.recycled.context = dev;
+            rc = NEXUS_SurfaceClient_SetSettings(dev->schdl, &client_settings);
+            if ( rc ) {
+                ALOGE("%s: Unable to setup surface client", __FUNCTION__);
+                goto out;
+            }
+            NxClient_GetSurfaceClientComposition(dev->sccid, &composition);
+            composition.virtualDisplay.width = dev->cfg[0].width;
+            composition.virtualDisplay.height = dev->cfg[0].height;
+            composition.position.x = 0;
+            composition.position.y = 0;
+            composition.position.width = dev->cfg[0].width;
+            composition.position.height = dev->cfg[0].height;
+            composition.zorder = GPX_CLIENT_ZORDER;
+            composition.visible = true;
+            rc = NxClient_SetSurfaceClientComposition(dev->sccid, &composition);
+            if ( rc ) {
+                ALOGE("%s: Unable to set client composition %d", __FUNCTION__, rc);
+                goto out;
+            }
+            for ( int i = 0; i < HWC_NUM_DISP_BUFFERS; i++ )
+            {
+                NEXUS_SurfaceCreateSettings surfaceCreateSettings;
+                NEXUS_Surface_GetDefaultCreateSettings(&surfaceCreateSettings);
+                surfaceCreateSettings.width = dev->cfg[0].width;
+                surfaceCreateSettings.height = dev->cfg[0].height;
+                surfaceCreateSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
+                dev->display_buffers[i] = NEXUS_Surface_Create(&surfaceCreateSettings);
+                if ( NULL == dev->display_buffers[i] ) {
+                    ALOGE("%s: Unable to allocate display buffer %d", __FUNCTION__, i);
+                    goto out;
+                }
+            }
+            BFIFO_INIT(&dev->display_fifo, dev->display_buffers, HWC_NUM_DISP_BUFFERS);
+            // Start FIFO full
+            BFIFO_WRITE_COMMIT(&dev->display_fifo, HWC_NUM_DISP_BUFFERS);
 
             BKNI_CreateEvent(&dev->syn_cli.vsync_event);
             dev->syn_cli.refresh       = VSYNC_CLIENT_REFRESH;
@@ -2700,24 +2748,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                 dev->gpx_cli[i].ncci.parent = (void *)dev;
                 dev->gpx_cli[i].layer_id = i;
                 dev->gpx_cli[i].ncci.type = NEXUS_CLIENT_GPX;
-                dev->gpx_cli[i].ncci.sccid = dev->nxAllocResults.surfaceClient[i].id;
-                dev->gpx_cli[i].ncci.schdl = NEXUS_SurfaceClient_Acquire(dev->gpx_cli[i].ncci.sccid);
-                if (!dev->gpx_cli[i].ncci.schdl)
-                {
-                    ALOGE("%s:gpx: NEXUS_SurfaceClient_Acquire lid=%d cid=%x sc=%x failed", __FUNCTION__,
-                        i, dev->gpx_cli[i].ncci.sccid, dev->gpx_cli[i].ncci.schdl);
-                    goto clean_up;
-                }
-
-                NEXUS_SurfaceClient_GetSettings(dev->gpx_cli[i].ncci.schdl, &client_settings);
-                client_settings.recycled.callback = hwc_nsc_recycled_cb;
-                client_settings.recycled.context = (void *)&dev->gpx_cli[i];
-                rc = NEXUS_SurfaceClient_SetSettings(dev->gpx_cli[i].ncci.schdl, &client_settings);
-                if (rc) {
-                    ALOGE("%s:gpx: NEXUS_SurfaceClient_SetSettings %d failed", __FUNCTION__, i);
-                    goto clean_up;
-                }
-                NxClient_GetSurfaceClientComposition(dev->gpx_cli[i].ncci.sccid, &dev->gpx_cli[i].composition);
+                NxClient_GetSurfaceClientComposition(dev->sccid, &dev->gpx_cli[i].composition);
             }
 
             /* create layers nx mm clients */
@@ -2726,34 +2757,8 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                 dev->mm_cli[i].root.ncci.parent = (void *)dev;
                 dev->mm_cli[i].root.layer_id = i;
                 dev->mm_cli[i].root.ncci.type = NEXUS_CLIENT_MM;
-                if (!HWC_MM_NO_ALLOC_SURF_CLI) {
-                    dev->mm_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[NSC_GPX_CLIENTS_NUMBER+i].id;
-                    dev->mm_cli[i].root.ncci.schdl = NEXUS_SurfaceClient_Acquire(dev->mm_cli[i].root.ncci.sccid);
-                    if (!dev->mm_cli[i].root.ncci.schdl)
-                    {
-                        ALOGE("%s:mm: NEXUS_SurfaceClient_Acquire lid=%d cid=%x sc=%x failed", __FUNCTION__,
-                             i, dev->mm_cli[i].root.ncci.sccid, dev->mm_cli[i].root.ncci.schdl);
-                        goto clean_up;
-                    }
-
-                    NEXUS_SurfaceClient_GetSettings(dev->mm_cli[i].root.ncci.schdl, &client_settings);
-                    client_settings.recycled.callback = hwc_nsc_recycled_cb;
-                    client_settings.recycled.context = (void *)&dev->mm_cli[i];
-                    rc = NEXUS_SurfaceClient_SetSettings(dev->mm_cli[i].root.ncci.schdl, &client_settings);
-                    if (rc) {
-                        ALOGE("%s:mm: NEXUS_SurfaceClient_SetSettings %d failed", __FUNCTION__, i);
-                        goto clean_up;
-                    }
-                    dev->mm_cli[i].svchdl = NEXUS_SurfaceClient_AcquireVideoWindow(dev->mm_cli[i].root.ncci.schdl, 0 /* always 0 */);
-                    if (dev->mm_cli[i].svchdl == NULL) {
-                        ALOGE("%s:mm: NEXUS_SurfaceClient_AcquireVideoWindow %d failed", __FUNCTION__, i);
-                        goto clean_up;
-                    }
-                    NxClient_GetSurfaceClientComposition(dev->mm_cli[i].root.ncci.sccid, &dev->mm_cli[i].root.composition);
-                } else {
-                    dev->mm_cli[i].root.ncci.sccid = INVALID_HANDLE + i;
-                    memset(&dev->mm_cli[i].root.composition, 0, sizeof(dev->mm_cli[i].root.composition));
-                }
+                dev->mm_cli[i].id = INVALID_HANDLE + i;
+                memset(&dev->mm_cli[i].root.composition, 0, sizeof(dev->mm_cli[i].root.composition));
 
                 dev->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_INVALID;
 
@@ -2769,14 +2774,8 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                 dev->sb_cli[i].root.ncci.parent = (void *)dev;
                 dev->sb_cli[i].root.layer_id = i;
                 dev->sb_cli[i].root.ncci.type = NEXUS_CLIENT_SB;
-                if (!HWC_SB_NO_ALLOC_SURF_CLI) {
-                    dev->sb_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+i].id;
-                    /* do not acquire surface client nor video window to allow the user of this to own it instead. */
-                    NxClient_GetSurfaceClientComposition(dev->sb_cli[i].root.ncci.sccid, &dev->sb_cli[i].root.composition);
-                } else {
-                    dev->sb_cli[i].root.ncci.sccid = INVALID_HANDLE + i;
-                    memset(&dev->sb_cli[i].root.composition, 0, sizeof(dev->sb_cli[i].root.composition));
-                }
+                dev->sb_cli[i].id = INVALID_HANDLE + i;
+                memset(&dev->sb_cli[i].root.composition, 0, sizeof(dev->sb_cli[i].root.composition));
 
                 // TODO: add support for more than one sideband at the time.
                 if (i == 0) {
@@ -2867,6 +2866,9 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
           goto clean_up;
         }
 
+        NEXUS_Graphics2DOpenSettings g2dOpenSettings;
+        NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
+        g2dOpenSettings.packetFifoThreshold = 0;    // Minimize latency
         dev->hwc_2dg = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, NULL);
         if (dev->hwc_2dg == NULL) {
            ALOGE("%s: failed to create hwc_2dg, conversion services will not work!", __FUNCTION__);
@@ -2934,74 +2936,11 @@ static void hw_vsync_cb(void *context, int param)
 
 static void hwc_nsc_recycled_cb(void *context, int param)
 {
-    NEXUS_Error rc;
-    GPX_CLIENT_INFO *ci = (GPX_CLIENT_INFO *)context;
-    struct hwc_context_t* ctx = (struct hwc_context_t*)ci->ncci.parent;
-    NEXUS_SurfaceHandle recycledSurface;
-    size_t n = 0;
-    int six = -1;
-    int composition_done;
-    bool sync_timeline_inc_on_recycle;
+    hwc_context_t *ctx = (hwc_context_t *)context;
+
     BSTD_UNUSED(param);
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-        goto out;
-    }
-    composition_done = -1;
-    do {
-          sync_timeline_inc_on_recycle = false;
-          recycledSurface = NULL;
-          rc = NEXUS_SurfaceClient_RecycleSurface(ci->ncci.schdl, &recycledSurface, 1, &n);
-          if (rc) {
-              break;
-          }
-          if ((n > 0) && (recycledSurface != NULL)) {
-              sync_timeline_inc_on_recycle = true;
-              six = hwc_gpx_get_recycle_surface_locked(ci, recycledSurface);
-              if (six != -1) {
-                 if (composition_done == -1) {
-                    composition_done = ci->slist[six].comp_ix;
-                 }
-                 if ((ci->slist[six].comp_ix != INVALID_FENCE) &&
-                     (composition_done > ci->slist[six].comp_ix)) {
-                    composition_done = ci->slist[six].comp_ix;
-                 }
-                 // do not recycle the cursor surface, it is being re-used.
-                 if (ci->layer_subtype == NEXUS_CURSOR) {
-                    ci->slist[six].owner = SURF_OWNER_HWC;
-                    recycledSurface = NULL;
-                    ci->slist[six].comp_ix = -1;
-                 } else {
-                    if (ctx->track_buffer) {
-                       hwc_unlock_surface((private_handle_t *)ci->slist[six].grhdl);
-                    }
-                    ci->slist[six].owner = SURF_OWNER_NO_OWNER;
-                    ci->slist[six].shdl = NULL;
-                    ci->slist[six].grhdl = NULL;
-                    ci->slist[six].comp_ix = -1;
-                 }
-              }
-              if (recycledSurface)
-                 NEXUS_Surface_Destroy(recycledSurface);
-          }
-
-          if (ctx && (ctx->sync_timeline != INVALID_FENCE) && sync_timeline_inc_on_recycle) {
-             int sync_increment = ((composition_done == -1) ? 1 : (ctx->stats[0].set_call - composition_done));
-             for (six = 0 ; six < sync_increment ; six++) {
-                sw_sync_timeline_inc(ctx->sync_timeline, 1);
-             }
-             if (HWC_DISPLAY_FENCE_VERBOSE) {
-                ALOGI("%s: increment sync timeline: %d, current: %d, comp: %d", __FUNCTION__,
-                   sync_increment, ctx->stats[0].set_call, composition_done);
-             }
-         }
-    }
-    while (n > 0);
-
-    BKNI_ReleaseMutex(ctx->mutex);
-
-out:
-    return;
+    BKNI_SetEvent(ctx->recycle_event);
 }
 
 static void hwc_prepare_gpx_layer(
@@ -3101,11 +3040,6 @@ static void hwc_prepare_gpx_layer(
         ctx->gpx_cli[layer_id].composition.clipRect.height       = clip_position.height;
         ctx->gpx_cli[layer_id].composition.clipBase.width        = cur_width;
         ctx->gpx_cli[layer_id].composition.clipBase.height       = cur_height;
-
-        rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[layer_id].ncci.sccid, &ctx->gpx_cli[layer_id].composition);
-        if (rc != NEXUS_SUCCESS) {
-            ALOGE("%s: geometry failed on layer %d, err=%d", __FUNCTION__, layer_id, rc);
-        }
     }
 
     // (re)create surface to render this layer.
@@ -3164,10 +3098,6 @@ static void hwc_prepare_mm_layer(
     // make the gpx corresponding layer non-visible in the layer stack.
     if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
        ctx->gpx_cli[gpx_layer_id].composition.visible = false;
-       rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[gpx_layer_id].ncci.sccid, &ctx->gpx_cli[gpx_layer_id].composition);
-       if (rc != NEXUS_SUCCESS) {
-           ALOGE("%s: failed hidding gpx layer %d for video layer %d, err=%d", __FUNCTION__, gpx_layer_id, vid_layer_id, rc);
-       }
     }
 
     ctx->mm_cli[vid_layer_id].root.layer_type = layer->compositionType;
@@ -3179,98 +3109,53 @@ static void hwc_prepare_mm_layer(
     ctx->mm_cli[vid_layer_id].root.layer_flags = layer->flags;
 
     // deal with any change in the geometry/visibility of the layer.
-    if (ctx->mm_cli[vid_layer_id].root.ncci.sccid < INVALID_HANDLE) {
-       if (!ctx->mm_cli[vid_layer_id].root.composition.visible) {
-          ctx->mm_cli[vid_layer_id].root.composition.visible = true;
-          layer_updated = true;
-       }
-       if ((memcmp((void *)&disp_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) ||
-           (memcmp((void *)&clip_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.clipRect, sizeof(NEXUS_Rect)) != 0)) {
-           layer_updated = true;
-           ctx->mm_cli[vid_layer_id].root.composition.zorder                = MM_CLIENT_ZORDER;
-           ctx->mm_cli[vid_layer_id].root.composition.position.x            = disp_position.x;
-           ctx->mm_cli[vid_layer_id].root.composition.position.y            = disp_position.y;
-           ctx->mm_cli[vid_layer_id].root.composition.position.width        = disp_position.width;
-           ctx->mm_cli[vid_layer_id].root.composition.position.height       = disp_position.height;
-           ctx->mm_cli[vid_layer_id].root.composition.clipRect.x            = clip_position.x;
-           ctx->mm_cli[vid_layer_id].root.composition.clipRect.y            = clip_position.y;
-           ctx->mm_cli[vid_layer_id].root.composition.clipRect.width        = clip_position.width;
-           ctx->mm_cli[vid_layer_id].root.composition.clipRect.height       = clip_position.height;
-           ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.width  = ctx->cfg[0].width;
-           ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.height = ctx->cfg[0].height;
+   if (!ctx->mm_cli[vid_layer_id].root.composition.visible) {
+      ctx->mm_cli[vid_layer_id].root.composition.visible = true;
+      layer_updated = true;
+   }
 
-           NEXUS_SurfaceClient_GetSettings(ctx->mm_cli[vid_layer_id].svchdl, &ctx->mm_cli[vid_layer_id].settings);
-           ctx->mm_cli[vid_layer_id].settings.composition.contentMode           = NEXUS_VideoWindowContentMode_eFull;
-           ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.width  = ctx->cfg[0].width;
-           ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.height = ctx->cfg[0].height;
-           ctx->mm_cli[vid_layer_id].settings.composition.position.x            = disp_position.x;
-           ctx->mm_cli[vid_layer_id].settings.composition.position.y            = disp_position.y;
-           ctx->mm_cli[vid_layer_id].settings.composition.position.width        = disp_position.width;
-           ctx->mm_cli[vid_layer_id].settings.composition.position.height       = disp_position.height;
-           ctx->mm_cli[vid_layer_id].settings.composition.clipRect.x            = clip_position.x;
-           ctx->mm_cli[vid_layer_id].settings.composition.clipRect.y            = clip_position.y;
-           ctx->mm_cli[vid_layer_id].settings.composition.clipRect.width        = clip_position.width;
-           ctx->mm_cli[vid_layer_id].settings.composition.clipRect.height       = clip_position.height;
-           rc = NEXUS_SurfaceClient_SetSettings(ctx->mm_cli[vid_layer_id].svchdl, &ctx->mm_cli[vid_layer_id].settings);
-           if (rc != NEXUS_SUCCESS) {
-               ALOGE("%s: geometry failed on video layer %d, err=%d", __FUNCTION__, vid_layer_id, rc);
-           }
-       }
-       if (layer_updated) {
-          rc = NxClient_SetSurfaceClientComposition(ctx->mm_cli[vid_layer_id].root.ncci.sccid, &ctx->mm_cli[vid_layer_id].root.composition);
-          if (rc != NEXUS_SUCCESS) {
-              ALOGE("%s: geometry failed on layer %d, err=%d", __FUNCTION__, vid_layer_id, rc);
-          }
-       }
-    } else {
-       if (!ctx->mm_cli[vid_layer_id].root.composition.visible) {
-          ctx->mm_cli[vid_layer_id].root.composition.visible = true;
-          layer_updated = true;
-       }
+   if ((memcmp((void *)&disp_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) ||
+       (memcmp((void *)&clip_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.clipRect, sizeof(NEXUS_Rect)) != 0)) {
+      layer_updated = true;
+      ctx->mm_cli[vid_layer_id].root.composition.zorder                = MM_CLIENT_ZORDER;
+      ctx->mm_cli[vid_layer_id].root.composition.position.x            = disp_position.x;
+      ctx->mm_cli[vid_layer_id].root.composition.position.y            = disp_position.y;
+      ctx->mm_cli[vid_layer_id].root.composition.position.width        = disp_position.width;
+      ctx->mm_cli[vid_layer_id].root.composition.position.height       = disp_position.height;
+      ctx->mm_cli[vid_layer_id].root.composition.clipRect.x            = clip_position.x;
+      ctx->mm_cli[vid_layer_id].root.composition.clipRect.y            = clip_position.y;
+      ctx->mm_cli[vid_layer_id].root.composition.clipRect.width        = clip_position.width;
+      ctx->mm_cli[vid_layer_id].root.composition.clipRect.height       = clip_position.height;
+      ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.width  = ctx->cfg[0].width;
+      ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.height = ctx->cfg[0].height;
 
-       if ((memcmp((void *)&disp_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) ||
-           (memcmp((void *)&clip_position, (void *)&ctx->mm_cli[vid_layer_id].root.composition.clipRect, sizeof(NEXUS_Rect)) != 0)) {
-          layer_updated = true;
-          ctx->mm_cli[vid_layer_id].root.composition.zorder                = MM_CLIENT_ZORDER;
-          ctx->mm_cli[vid_layer_id].root.composition.position.x            = disp_position.x;
-          ctx->mm_cli[vid_layer_id].root.composition.position.y            = disp_position.y;
-          ctx->mm_cli[vid_layer_id].root.composition.position.width        = disp_position.width;
-          ctx->mm_cli[vid_layer_id].root.composition.position.height       = disp_position.height;
-          ctx->mm_cli[vid_layer_id].root.composition.clipRect.x            = clip_position.x;
-          ctx->mm_cli[vid_layer_id].root.composition.clipRect.y            = clip_position.y;
-          ctx->mm_cli[vid_layer_id].root.composition.clipRect.width        = clip_position.width;
-          ctx->mm_cli[vid_layer_id].root.composition.clipRect.height       = clip_position.height;
-          ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.width  = ctx->cfg[0].width;
-          ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.height = ctx->cfg[0].height;
+      ctx->mm_cli[vid_layer_id].settings.composition.contentMode           = NEXUS_VideoWindowContentMode_eFull;
+      ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.width  = ctx->cfg[0].width;
+      ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.height = ctx->cfg[0].height;
+      ctx->mm_cli[vid_layer_id].settings.composition.position.x            = disp_position.x;
+      ctx->mm_cli[vid_layer_id].settings.composition.position.y            = disp_position.y;
+      ctx->mm_cli[vid_layer_id].settings.composition.position.width        = disp_position.width;
+      ctx->mm_cli[vid_layer_id].settings.composition.position.height       = disp_position.height;
+      ctx->mm_cli[vid_layer_id].settings.composition.clipRect.x            = clip_position.x;
+      ctx->mm_cli[vid_layer_id].settings.composition.clipRect.y            = clip_position.y;
+      ctx->mm_cli[vid_layer_id].settings.composition.clipRect.width        = clip_position.width;
+      ctx->mm_cli[vid_layer_id].settings.composition.clipRect.height       = clip_position.height;
+   }
 
-          ctx->mm_cli[vid_layer_id].settings.composition.contentMode           = NEXUS_VideoWindowContentMode_eFull;
-          ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.width  = ctx->cfg[0].width;
-          ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.height = ctx->cfg[0].height;
-          ctx->mm_cli[vid_layer_id].settings.composition.position.x            = disp_position.x;
-          ctx->mm_cli[vid_layer_id].settings.composition.position.y            = disp_position.y;
-          ctx->mm_cli[vid_layer_id].settings.composition.position.width        = disp_position.width;
-          ctx->mm_cli[vid_layer_id].settings.composition.position.height       = disp_position.height;
-          ctx->mm_cli[vid_layer_id].settings.composition.clipRect.x            = clip_position.x;
-          ctx->mm_cli[vid_layer_id].settings.composition.clipRect.y            = clip_position.y;
-          ctx->mm_cli[vid_layer_id].settings.composition.clipRect.width        = clip_position.width;
-          ctx->mm_cli[vid_layer_id].settings.composition.clipRect.height       = clip_position.height;
-       }
+   if (layer_updated && ctx->hwc_binder) {
+      struct hwc_position frame, clipped;
 
-       if (layer_updated && ctx->hwc_binder) {
-          struct hwc_position frame, clipped;
+      frame.x = disp_position.x;
+      frame.y = disp_position.y;
+      frame.w = disp_position.width;
+      frame.h = disp_position.height;
+      clipped.x = clip_position.x;
+      clipped.y = clip_position.y;
+      clipped.w = clip_position.width;
+      clipped.h = clip_position.height;
 
-          frame.x = disp_position.x;
-          frame.y = disp_position.y;
-          frame.w = disp_position.width;
-          frame.h = disp_position.height;
-          clipped.x = clip_position.x;
-          clipped.y = clip_position.y;
-          clipped.w = clip_position.width;
-          clipped.h = clip_position.height;
-
-          ctx->hwc_binder->setgeometry(HWC_BINDER_OMX, 0, frame, clipped, MM_CLIENT_ZORDER, 1);
-       }
-    }
+      ctx->hwc_binder->setgeometry(HWC_BINDER_OMX, 0, frame, clipped, MM_CLIENT_ZORDER, 1);
+   }
 
 out_unlock:
     BKNI_ReleaseMutex(ctx->mutex);
@@ -3284,7 +3169,6 @@ static void hwc_prepare_sb_layer(
     unsigned int gpx_layer_id,
     unsigned int sb_layer_id)
 {
-    NEXUS_Error rc;
     NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
                                 (int16_t)layer->displayFrame.top,
                                 (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
@@ -3306,10 +3190,6 @@ static void hwc_prepare_sb_layer(
     // make the gpx corresponding layer non-visible in the layer stack.
     if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
        ctx->gpx_cli[gpx_layer_id].composition.visible = false;
-       rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[gpx_layer_id].ncci.sccid, &ctx->gpx_cli[gpx_layer_id].composition);
-       if (rc != NEXUS_SUCCESS) {
-           ALOGE("%s: failed hidding gpx layer %d for video layer %d, err=%d", __FUNCTION__, gpx_layer_id, sb_layer_id, rc);
-       }
     }
 
     ctx->sb_cli[sb_layer_id].root.layer_type = layer->compositionType;
@@ -3321,70 +3201,41 @@ static void hwc_prepare_sb_layer(
     ctx->sb_cli[sb_layer_id].root.layer_flags = layer->flags;
 
     // deal with any change in the geometry/visibility of the layer.
-    if (ctx->sb_cli[sb_layer_id].root.ncci.sccid < INVALID_HANDLE) {
-       if (!ctx->sb_cli[sb_layer_id].root.composition.visible) {
-          ctx->sb_cli[sb_layer_id].root.composition.visible = true;
-          layer_updated = true;
-       }
-       if ((memcmp((void *)&disp_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) ||
-           (memcmp((void *)&clip_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.clipRect, sizeof(NEXUS_Rect)) != 0)) {
-           layer_updated = true;
-           ctx->sb_cli[sb_layer_id].root.composition.zorder                = SB_CLIENT_ZORDER;
-           ctx->sb_cli[sb_layer_id].root.composition.position.x            = disp_position.x;
-           ctx->sb_cli[sb_layer_id].root.composition.position.y            = disp_position.y;
-           ctx->sb_cli[sb_layer_id].root.composition.position.width        = disp_position.width;
-           ctx->sb_cli[sb_layer_id].root.composition.position.height       = disp_position.height;
-           ctx->sb_cli[sb_layer_id].root.composition.clipRect.x            = clip_position.x;
-           ctx->sb_cli[sb_layer_id].root.composition.clipRect.y            = clip_position.y;
-           ctx->sb_cli[sb_layer_id].root.composition.clipRect.width        = clip_position.width;
-           ctx->sb_cli[sb_layer_id].root.composition.clipRect.height       = clip_position.height;
-           ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.width  = ctx->cfg[0].width;
-           ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.height = ctx->cfg[0].height;
-       }
-       if (layer_updated) {
-          rc = NxClient_SetSurfaceClientComposition(ctx->sb_cli[sb_layer_id].root.ncci.sccid, &ctx->sb_cli[sb_layer_id].root.composition);
-          if (rc != NEXUS_SUCCESS) {
-              ALOGE("%s: geometry failed on layer %d, err=%d", __FUNCTION__, sb_layer_id, rc);
-          }
-       }
-    } else {
+    if (!ctx->sb_cli[sb_layer_id].root.composition.visible) {
+        ctx->sb_cli[sb_layer_id].root.composition.visible = true;
+        layer_updated = true;
+    }
 
-       if (!ctx->sb_cli[sb_layer_id].root.composition.visible) {
-          ctx->sb_cli[sb_layer_id].root.composition.visible = true;
-          layer_updated = true;
-       }
+    if ((memcmp((void *)&disp_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) ||
+       (memcmp((void *)&clip_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.clipRect, sizeof(NEXUS_Rect)) != 0)) {
+        layer_updated = true;
+        ctx->sb_cli[sb_layer_id].root.composition.visible               = true;
+        ctx->sb_cli[sb_layer_id].root.composition.zorder                = SB_CLIENT_ZORDER;
+        ctx->sb_cli[sb_layer_id].root.composition.position.x            = disp_position.x;
+        ctx->sb_cli[sb_layer_id].root.composition.position.y            = disp_position.y;
+        ctx->sb_cli[sb_layer_id].root.composition.position.width        = disp_position.width;
+        ctx->sb_cli[sb_layer_id].root.composition.position.height       = disp_position.height;
+        ctx->sb_cli[sb_layer_id].root.composition.clipRect.x            = clip_position.x;
+        ctx->sb_cli[sb_layer_id].root.composition.clipRect.y            = clip_position.y;
+        ctx->sb_cli[sb_layer_id].root.composition.clipRect.width        = clip_position.width;
+        ctx->sb_cli[sb_layer_id].root.composition.clipRect.height       = clip_position.height;
+        ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.width  = ctx->cfg[0].width;
+        ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.height = ctx->cfg[0].height;
+    }
 
-       if ((memcmp((void *)&disp_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) ||
-           (memcmp((void *)&clip_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.clipRect, sizeof(NEXUS_Rect)) != 0)) {
-          layer_updated = true;
-          ctx->sb_cli[sb_layer_id].root.composition.visible               = true;
-          ctx->sb_cli[sb_layer_id].root.composition.zorder                = SB_CLIENT_ZORDER;
-          ctx->sb_cli[sb_layer_id].root.composition.position.x            = disp_position.x;
-          ctx->sb_cli[sb_layer_id].root.composition.position.y            = disp_position.y;
-          ctx->sb_cli[sb_layer_id].root.composition.position.width        = disp_position.width;
-          ctx->sb_cli[sb_layer_id].root.composition.position.height       = disp_position.height;
-          ctx->sb_cli[sb_layer_id].root.composition.clipRect.x            = clip_position.x;
-          ctx->sb_cli[sb_layer_id].root.composition.clipRect.y            = clip_position.y;
-          ctx->sb_cli[sb_layer_id].root.composition.clipRect.width        = clip_position.width;
-          ctx->sb_cli[sb_layer_id].root.composition.clipRect.height       = clip_position.height;
-          ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.width  = ctx->cfg[0].width;
-          ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.height = ctx->cfg[0].height;
-       }
+    if (layer_updated && ctx->hwc_binder) {
+        struct hwc_position frame, clipped;
 
-       if (layer_updated && ctx->hwc_binder) {
-          struct hwc_position frame, clipped;
+        frame.x = disp_position.x;
+        frame.y = disp_position.y;
+        frame.w = disp_position.width;
+        frame.h = disp_position.height;
+        clipped.x = clip_position.x;
+        clipped.y = clip_position.y;
+        clipped.w = clip_position.width;
+        clipped.h = clip_position.height;
 
-          frame.x = disp_position.x;
-          frame.y = disp_position.y;
-          frame.w = disp_position.width;
-          frame.h = disp_position.height;
-          clipped.x = clip_position.x;
-          clipped.y = clip_position.y;
-          clipped.w = clip_position.width;
-          clipped.h = clip_position.height;
-
-          ctx->hwc_binder->setgeometry(HWC_BINDER_SDB, 0, frame, clipped, SB_CLIENT_ZORDER, 1);
-       }
+        ctx->hwc_binder->setgeometry(HWC_BINDER_SDB, 0, frame, clipped, SB_CLIENT_ZORDER, 1);
     }
 
 out_unlock:
@@ -3446,10 +3297,6 @@ static void hwc_hide_unused_gpx_layer(hwc_context_t* ctx, int index)
 
     if (ctx->gpx_cli[index].composition.visible) {
        ctx->gpx_cli[index].composition.visible = false;
-       rc = NxClient_SetSurfaceClientComposition(ctx->gpx_cli[index].ncci.sccid, &ctx->gpx_cli[index].composition);
-       if (rc != NEXUS_SUCCESS) {
-           ALOGE("%s: failed hiding layer %d, err=%d", __FUNCTION__, index, rc);
-       }
     }
 
     BKNI_ReleaseMutex(ctx->mutex);
@@ -3469,12 +3316,6 @@ static void nx_client_hide_unused_mm_layer(hwc_context_t* ctx, int index)
 
     if (ctx->mm_cli[index].root.composition.visible) {
        ctx->mm_cli[index].root.composition.visible = false;
-       if (ctx->mm_cli[index].root.ncci.sccid < INVALID_HANDLE) {
-          rc = NxClient_SetSurfaceClientComposition(ctx->mm_cli[index].root.ncci.sccid, &ctx->mm_cli[index].root.composition);
-          if (rc != NEXUS_SUCCESS) {
-              ALOGE("%s: failed hiding layer %d, err=%d", __FUNCTION__, index, rc);
-          }
-       }
     }
 
     BKNI_ReleaseMutex(ctx->mutex);
@@ -3493,12 +3334,6 @@ static void nx_client_hide_unused_sb_layer(hwc_context_t* ctx, int index)
 
     if (ctx->sb_cli[index].root.composition.visible) {
        ctx->sb_cli[index].root.composition.visible = false;
-       if (ctx->sb_cli[index].root.ncci.sccid < INVALID_HANDLE) {
-          rc = NxClient_SetSurfaceClientComposition(ctx->sb_cli[index].root.ncci.sccid, &ctx->sb_cli[index].root.composition);
-          if (rc != NEXUS_SUCCESS) {
-              ALOGE("%s: failed hiding layer %d, err=%d", __FUNCTION__, index, rc);
-          }
-       }
     }
 
     BKNI_ReleaseMutex(ctx->mutex);
@@ -3531,13 +3366,13 @@ static void hwc_binder_advertise_video_surface(hwc_context_t* ctx)
 
     // TODO: for the time being, only advertize one.
     if (ctx->nsc_video_changed && ctx->hwc_binder) {
-       ctx->hwc_binder->setvideo(0, ctx->mm_cli[0].root.ncci.sccid,
+       ctx->hwc_binder->setvideo(0, ctx->mm_cli[0].id,
                                  ctx->cfg[0].width, ctx->cfg[0].height);
        ctx->nsc_video_changed = false;
     }
 
     if (ctx->nsc_sideband_changed && ctx->hwc_binder) {
-       ctx->hwc_binder->setsideband(0, ctx->sb_cli[0].root.ncci.sccid,
+       ctx->hwc_binder->setsideband(0, ctx->sb_cli[0].id,
                                     ctx->cfg[0].width, ctx->cfg[0].height);
        ctx->nsc_sideband_changed = false;
     }
