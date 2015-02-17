@@ -41,7 +41,7 @@ LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/inc
 LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/dvb/inc
 LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/midware/stb/inc
 LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/platform/inc
-LOCAL_STATIC_LIBRARIES := libdtvkitdvbcore libdtvkitstb libdtvkitdvb_hw libdtvkitdvb_os libdtvkitdvb_version
+LOCAL_STATIC_LIBRARIES := libdtvkitdvbcore libdtvkitdvb_hw libdtvkitdvb_os libdtvkitdvb_version
 LOCAL_SHARED_LIBRARIES += libpng libjpeg
 LOCAL_SRC_FILES += BroadcastDTVKit.cpp
 else
