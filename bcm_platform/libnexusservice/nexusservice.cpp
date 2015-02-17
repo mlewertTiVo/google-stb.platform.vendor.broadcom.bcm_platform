@@ -304,12 +304,14 @@ NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid, const char * name)
     NEXUS_ClientHandle nexusClient = NULL;
     NEXUS_InterfaceName interfaceName;
     unsigned num = 16; /* starting size. */
-    unsigned i;
+    unsigned max_num = 1024; /* some big value. */
+    unsigned i, cached_num;
     int rc;
 
     NEXUS_Platform_GetDefaultInterfaceName(&interfaceName);
     strcpy(interfaceName.name, "NEXUS_Client");
     do {
+        cached_num = num;
         if (objects != NULL) {
            BKNI_Free(objects);
         }
@@ -321,10 +323,16 @@ NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid, const char * name)
         rc = NEXUS_Platform_GetObjects(&interfaceName, objects, num, &num);
         LOGV("%s: NEXUS_Platform_GetObjects returned %d objects [rc=%d]", __FUNCTION__, num, rc);
         if (rc == NEXUS_PLATFORM_ERR_OVERFLOW) {
-            LOGW("%s: NEXUS_Platform_GetObjects overflowed - retrying...", __FUNCTION__);
+            if (num > max_num) {
+               rc = NEXUS_SUCCESS;
+               num = 0;
+               LOGW("%s: NEXUS_Platform_GetObjects overflowed - giving up...", __FUNCTION__);
+            } else if (num <= cached_num) {
+               num = 2 * cached_num;
+               LOGW("%s: NEXUS_Platform_GetObjects overflowed - retrying with %d (was %d)...", __FUNCTION__, num, cached_num);
+            }
         }
     } while (rc == NEXUS_PLATFORM_ERR_OVERFLOW);
-    BDBG_ASSERT(!rc);
 
     for (i=0; i < num; i++) {
         NEXUS_ClientStatus status;
