@@ -567,7 +567,7 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(String8& pinName,  
         NEXUS_GpioSettings settings;
         NEXUS_GpioHandle handle;
 
-        NEXUS_Gpio_GetDefaultSettings(pinType, &settings);
+        NEXUS_Gpio_GetDefaultSettings((NEXUS_GpioType)pinType, &settings);
         settings.mode = pinMode;
         settings.interruptMode = pinInterruptMode;
         settings.maskEdgeInterrupts = true;
@@ -597,7 +597,7 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(String8& pinName, u
         NEXUS_GpioSettings settings;
         NEXUS_GpioHandle handle;
 
-        NEXUS_Gpio_GetDefaultSettings(pinType, &settings);
+        NEXUS_Gpio_GetDefaultSettings((NEXUS_GpioType)pinType, &settings);
         settings.mode = pinMode;
         settings.value = pPinOutputValues[0];
 
