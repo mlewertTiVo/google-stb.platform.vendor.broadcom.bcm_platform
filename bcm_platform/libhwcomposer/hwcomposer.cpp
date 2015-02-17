@@ -89,9 +89,7 @@ using namespace android;
 #define NSC_SB_CLIENTS_NUMBER        2  /* sideband client layers; typically no
                                          * more than 1 are needed at any time. */
 
-#define VSYNC_USES_NSC_SURF          0
-
-#define NSC_CLIENTS_NUMBER           (NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+NSC_SB_CLIENTS_NUMBER+VSYNC_USES_NSC_SURF)
+#define NSC_CLIENTS_NUMBER           (NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+NSC_SB_CLIENTS_NUMBER)
 #define HWC_VD_CLIENTS_NUMBER        NSC_GPX_CLIENTS_NUMBER
 
 #define VSYNC_CLIENT_LAYER_ID        0 /* first layer. */
@@ -161,7 +159,6 @@ enum {
     NEXUS_CURSOR,
     NEXUS_VIDEO_WINDOW,
     NEXUS_VIDEO_SIDEBAND,
-    NEXUS_SYNC,
 };
 
 enum {
@@ -298,7 +295,6 @@ typedef struct {
 
 typedef struct {
     COMMON_CLIENT_INFO ncci;
-    NEXUS_SurfaceHandle shdl;
     BKNI_EventHandle vsync_event;
     int layer_type;
     int layer_subtype;
@@ -477,9 +473,6 @@ struct hwc_context_t {
     int vsync_thread_run;
     NEXUS_DisplayHandle display_handle;
 
-    bool wait_prepare_event;
-    BKNI_EventHandle prepare_event;
-
     GPX_CLIENT_INFO gpx_cli[NSC_GPX_CLIENTS_NUMBER];
     MM_CLIENT_INFO mm_cli[NSC_MM_CLIENTS_NUMBER];
     SB_CLIENT_INFO sb_cli[NSC_SB_CLIENTS_NUMBER];
@@ -529,7 +522,6 @@ static struct hw_module_methods_t hwc_module_methods = {
 };
 
 static void hwc_nsc_recycled_cb(void *context, int param);
-static void hwc_sync_recycled_cb(void *context, int param);
 
 static void hw_vsync_cb(void *context, int param);
 
@@ -597,7 +589,6 @@ static const char *nsc_layer_type[] =
    "CU", // NEXUS_CURSOR
    "VW", // NEXUS_VIDEO_WINDOW
    "VS", // NEXUS_VIDEO_SIDEBAND
-   "SY", // NEXUS_SYNC
 };
 
 static const char *nsc_surface_owner[] =
@@ -1267,22 +1258,6 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
         }
     }
 
-    // extra layer for vsync.
-    if (VSYNC_USES_NSC_SURF && capacity) {
-       write = snprintf(buff + index, capacity, "\t[%s]:[%d:0]:[%s]:[%s]::sfc:%p::sf:%p::scc:%d\n",
-           nsc_cli_type[ctx->syn_cli.ncci.type],
-           VSYNC_CLIENT_LAYER_ID,
-           hwc_layer_type[ctx->syn_cli.layer_type],
-           nsc_layer_type[ctx->syn_cli.layer_subtype],
-           ctx->syn_cli.ncci.schdl,
-           ctx->syn_cli.shdl,
-           ctx->syn_cli.ncci.sccid);
-       if (write > 0) {
-           capacity = (capacity > write) ? (capacity - write) : 0;
-           index += write;
-       }
-    }
-
     if (capacity) {
        write = snprintf(buff + index, capacity, "\n\n");
     }
@@ -1715,10 +1690,6 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     int skiped_layer = 0;
     unsigned int video_layer_id = 0;
     unsigned int sideband_layer_id = 0;
-
-    if (ctx->wait_prepare_event) {
-       BKNI_WaitForEvent(ctx->prepare_event, 1000);
-    }
 
     ctx->stats[0].prepare_call++;
 
@@ -2287,10 +2258,6 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
            NEXUS_SurfaceClient_Release(ctx->gpx_cli[i].ncci.schdl);
         }
 
-        if (ctx->syn_cli.shdl)
-           NEXUS_Surface_Destroy(ctx->syn_cli.shdl);
-        NEXUS_SurfaceClient_Release(ctx->syn_cli.ncci.schdl);
-
         NxClient_Free(&ctx->nxAllocResults);
 
         BKNI_DestroyMutex(ctx->vsync_callback_enabled_mutex);
@@ -2332,6 +2299,7 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
     int rc = -EINVAL;
+    NEXUS_CallbackDesc desc;
 
     if (disp == HWC_DISPLAY_PRIMARY) {
        ALOGI("%s: %s->%s", __FUNCTION__,
@@ -2343,15 +2311,10 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
          case HWC_POWER_MODE_DOZE_SUSPEND:
              break;
          case HWC_POWER_MODE_NORMAL:
-             if (VSYNC_USES_NSC_SURF) {
-                NEXUS_SurfaceClient_PushSurface(ctx->syn_cli.ncci.schdl, ctx->syn_cli.shdl, NULL, false);
-             } else {
-                /* note: needs restore after standby. */
-                NEXUS_CallbackDesc desc;
-                desc.callback = hw_vsync_cb;
-                desc.context = (void *)&ctx->syn_cli;
-                NEXUS_Display_SetVsyncCallback(ctx->display_handle, &desc);
-             }
+             /* note: needs restore after standby. */
+             desc.callback = hw_vsync_cb;
+             desc.context = (void *)&ctx->syn_cli;
+             NEXUS_Display_SetVsyncCallback(ctx->display_handle, &desc);
              break;
          default:
             goto out;
@@ -2580,61 +2543,51 @@ static void * hwc_vsync_task(void *argv)
 
     do
     {
-        if ((VSYNC_USES_NSC_SURF && ctx->syn_cli.shdl) || !VSYNC_USES_NSC_SURF) {
-            if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
-                ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
-                goto out;
-            }
-            if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
-                BKNI_ReleaseMutex(ctx->power_mutex);
-                if (VSYNC_USES_NSC_SURF) {
-                   NEXUS_SurfaceClient_PushSurface(ctx->syn_cli.ncci.schdl, ctx->syn_cli.shdl, NULL, false);
+       if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+          ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
+          goto out;
+       }
+       if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
+          BKNI_ReleaseMutex(ctx->power_mutex);
+          BKNI_WaitForEvent(ctx->syn_cli.vsync_event, BKNI_INFINITE);
+
+          if (HWC_REFRESH_HACK) {
+             vsync_hack_count++;
+             if (vsync_hack_count == VSYNC_HACK_REFRESH_COUNT/2) {
+                vsync_hack_count_last_tick = ctx->stats[0].set_call;
+                if (vsync_hack_count_expected_tick == vsync_hack_count_last_tick) {
+                   vsync_hack_count = 0; /* reset */
                 }
-                BKNI_WaitForEvent(ctx->syn_cli.vsync_event, BKNI_INFINITE);
+             } else if (vsync_hack_count == VSYNC_HACK_REFRESH_COUNT) {
+                 vsync_hack_count = 0;
+                 if (vsync_hack_count_last_tick == ctx->stats[0].set_call) {
+                    vsync_hack_count_expected_tick = ctx->stats[0].set_call + 1;
+                    ALOGV("hack-refresh: tick %d", vsync_hack_count_expected_tick);
+                    if (ctx->procs->invalidate != NULL) {
+                       ctx->procs->invalidate(const_cast<hwc_procs_t *>(ctx->procs));
+                    }
+                 }
+             }
+         }
+      } else {
+         BKNI_ReleaseMutex(ctx->power_mutex);
+         BKNI_Sleep(16);
+      }
 
-                if (HWC_REFRESH_HACK) {
-                   vsync_hack_count++;
-                   if (vsync_hack_count == VSYNC_HACK_REFRESH_COUNT/2) {
-                      vsync_hack_count_last_tick = ctx->stats[0].set_call;
-                      if (vsync_hack_count_expected_tick == vsync_hack_count_last_tick) {
-                         vsync_hack_count = 0; /* reset */
-                      }
-                   } else if (vsync_hack_count == VSYNC_HACK_REFRESH_COUNT) {
-                      vsync_hack_count = 0;
-                      if (vsync_hack_count_last_tick == ctx->stats[0].set_call) {
-                         vsync_hack_count_expected_tick = ctx->stats[0].set_call + 1;
-                         ALOGV("hack-refresh: tick %d", vsync_hack_count_expected_tick);
-                         if (ctx->procs->invalidate != NULL) {
-                            ctx->procs->invalidate(const_cast<hwc_procs_t *>(ctx->procs));
-                         }
-                      }
-                   }
-                }
-            }
-            else {
-                BKNI_ReleaseMutex(ctx->power_mutex);
-                BKNI_Sleep(16);
-            }
+      if (BKNI_AcquireMutex(ctx->vsync_callback_enabled_mutex) == BERR_SUCCESS) {
+         vsync_system_time = VsyncSystemTime();
+         if (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) {
+            ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, vsync_system_time);
+         }
+         if (ctx->display_dump_vsync) {
+            ALOGI("vsync-%s: @ %lld",
+                  (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) ? "pushed" : "ticked",
+                  vsync_system_time);
+         }
+         BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
+      }
 
-            if (ctx->wait_prepare_event) {
-               BKNI_SetEvent(ctx->prepare_event);
-            }
-        }
-
-        if (BKNI_AcquireMutex(ctx->vsync_callback_enabled_mutex) == BERR_SUCCESS) {
-            vsync_system_time = VsyncSystemTime();
-            if (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) {
-                ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, vsync_system_time);
-            }
-            if (ctx->display_dump_vsync) {
-               ALOGI("vsync-%s: @ %lld",
-                     (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) ? "pushed" : "ticked",
-                     vsync_system_time);
-            }
-        }
-        BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
-
-    } while(ctx->vsync_thread_run);
+   } while(ctx->vsync_thread_run);
 
 out:
     return NULL;
@@ -2725,8 +2678,6 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
 
             NxClient_GetDefaultAllocSettings(&nxAllocSettings);
             nxAllocSettings.surfaceClient = NSC_GPX_CLIENTS_NUMBER;
-            if (VSYNC_USES_NSC_SURF)
-               nxAllocSettings.surfaceClient += VSYNC_USES_NSC_SURF;
             if (!HWC_MM_NO_ALLOC_SURF_CLI)
                nxAllocSettings.surfaceClient += NSC_MM_CLIENTS_NUMBER;
             if (!HWC_SB_NO_ALLOC_SURF_CLI)
@@ -2739,50 +2690,9 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             }
 
             BKNI_CreateEvent(&dev->syn_cli.vsync_event);
-            dev->syn_cli.layer_type    = HWC_OVERLAY;
-            dev->syn_cli.layer_subtype = NEXUS_SYNC;
             dev->syn_cli.refresh       = VSYNC_CLIENT_REFRESH;
             dev->syn_cli.ncci.type     = NEXUS_CLIENT_VSYNC;
             dev->syn_cli.ncci.parent   = (void *)dev;
-
-            /* create vsync nx client */
-            dev->wait_prepare_event    = false;
-            if (VSYNC_USES_NSC_SURF) {
-               dev->wait_prepare_event    = true;
-               dev->syn_cli.ncci.sccid    = dev->nxAllocResults.surfaceClient[VSYNC_CLIENT_LAYER_ID].id;
-               dev->syn_cli.ncci.schdl    = NEXUS_SurfaceClient_Acquire(dev->syn_cli.ncci.sccid);
-               if (!dev->syn_cli.ncci.schdl) {
-                   ALOGE("%s: NEXUS_SurfaceClient_Acquire vsync client failed", __FUNCTION__);
-                   goto clean_up;
-               }
-               NEXUS_SurfaceClient_GetSettings(dev->syn_cli.ncci.schdl, &client_settings);
-               client_settings.recycled.callback = hwc_sync_recycled_cb;
-               client_settings.recycled.context = (void *)&dev->syn_cli;
-               rc = NEXUS_SurfaceClient_SetSettings(dev->syn_cli.ncci.schdl, &client_settings);
-               if (rc) {
-                   ALOGE("%s: NEXUS_SurfaceClient_SetSettings vsync client failed", __FUNCTION__);
-                   goto clean_up;
-               }
-               dev->syn_cli.shdl = hwc_to_nsc_surface(VSYNC_CLIENT_WIDTH,
-                                                      VSYNC_CLIENT_HEIGHT,
-                                                      VSYNC_CLIENT_STRIDE,
-                                                      NEXUS_PixelFormat_eA8_B8_G8_R8,
-                                                      NULL);
-               if (dev->syn_cli.shdl == NULL) {                   ALOGE("%s: hwc_to_nsc_surface vsync client failed", __FUNCTION__);
-                   goto clean_up;
-               }
-
-               NEXUS_Surface_GetMemory(dev->syn_cli.shdl, &vsync_surface_memory);
-               memset(vsync_surface_memory.buffer, 0, vsync_surface_memory.bufferSize);
-
-               NxClient_GetSurfaceClientComposition(dev->syn_cli.ncci.sccid, &vsync_composition);
-               vsync_composition.position              = vsync_disp_position;
-               vsync_composition.virtualDisplay.width  = dev->cfg[0].width;
-               vsync_composition.virtualDisplay.height = dev->cfg[0].height;
-               vsync_composition.visible               = true;
-               vsync_composition.zorder                = VSYNC_CLIENT_ZORDER;
-               NxClient_SetSurfaceClientComposition(dev->syn_cli.ncci.sccid, &vsync_composition);
-            }
 
             /* create layers nx gpx clients */
             for (int i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++)
@@ -2790,7 +2700,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                 dev->gpx_cli[i].ncci.parent = (void *)dev;
                 dev->gpx_cli[i].layer_id = i;
                 dev->gpx_cli[i].ncci.type = NEXUS_CLIENT_GPX;
-                dev->gpx_cli[i].ncci.sccid = dev->nxAllocResults.surfaceClient[VSYNC_USES_NSC_SURF+i].id;
+                dev->gpx_cli[i].ncci.sccid = dev->nxAllocResults.surfaceClient[i].id;
                 dev->gpx_cli[i].ncci.schdl = NEXUS_SurfaceClient_Acquire(dev->gpx_cli[i].ncci.sccid);
                 if (!dev->gpx_cli[i].ncci.schdl)
                 {
@@ -2817,7 +2727,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                 dev->mm_cli[i].root.layer_id = i;
                 dev->mm_cli[i].root.ncci.type = NEXUS_CLIENT_MM;
                 if (!HWC_MM_NO_ALLOC_SURF_CLI) {
-                    dev->mm_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[VSYNC_USES_NSC_SURF+NSC_GPX_CLIENTS_NUMBER+i].id;
+                    dev->mm_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[NSC_GPX_CLIENTS_NUMBER+i].id;
                     dev->mm_cli[i].root.ncci.schdl = NEXUS_SurfaceClient_Acquire(dev->mm_cli[i].root.ncci.sccid);
                     if (!dev->mm_cli[i].root.ncci.schdl)
                     {
@@ -2860,7 +2770,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                 dev->sb_cli[i].root.layer_id = i;
                 dev->sb_cli[i].root.ncci.type = NEXUS_CLIENT_SB;
                 if (!HWC_SB_NO_ALLOC_SURF_CLI) {
-                    dev->sb_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[VSYNC_USES_NSC_SURF+NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+i].id;
+                    dev->sb_cli[i].root.ncci.sccid = dev->nxAllocResults.surfaceClient[NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+i].id;
                     /* do not acquire surface client nor video window to allow the user of this to own it instead. */
                     NxClient_GetSurfaceClientComposition(dev->sb_cli[i].root.ncci.sccid, &dev->sb_cli[i].root.composition);
                 } else {
@@ -2873,8 +2783,6 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                    dev->nsc_sideband_changed = true;
                 }
             }
-
-            BKNI_CreateEvent(&dev->prepare_event);
         }
 
         dev->device.common.tag                     = HARDWARE_DEVICE_TAG;
@@ -3015,38 +2923,11 @@ out:
     return status;
 }
 
-static void hwc_sync_recycled_cb(void *context, int param)
-{
-    NEXUS_Error rc;
-    VSYNC_CLIENT_INFO *ci = (VSYNC_CLIENT_INFO *)context;
-    NEXUS_SurfaceHandle recycledSurface = NULL;
-    size_t n = 0;
-    BSTD_UNUSED(param);
-
-    if (!VSYNC_USES_NSC_SURF) {
-       ALOGE("%s: invalid vsync path, check client configuration!", __FUNCTION__);
-    }
-
-    do {
-          rc = NEXUS_SurfaceClient_RecycleSurface(ci->ncci.schdl, &recycledSurface, 1, &n);
-          if (rc) {
-              break;
-          }
-    }
-    while (n > 0);
-
-    BKNI_SetEvent(ci->vsync_event);
-}
-
 static void hw_vsync_cb(void *context, int param)
 {
     VSYNC_CLIENT_INFO *ci = (VSYNC_CLIENT_INFO *)context;
     struct hwc_context_t* ctx = (struct hwc_context_t*)ci->ncci.parent;
     BSTD_UNUSED(param);
-
-    if (VSYNC_USES_NSC_SURF) {
-       ALOGE("%s: invalid vsync path, check client configuration!", __FUNCTION__);
-    }
 
     BKNI_SetEvent(ci->vsync_event);
 }
