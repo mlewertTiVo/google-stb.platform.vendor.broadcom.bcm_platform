@@ -176,6 +176,62 @@ BKNI_EventHandle gralloc_g2d_evt(void)
    return hCheckpointEvent;
 }
 
+static void gralloc_bzero(NEXUS_Addr addr, size_t numBytes)
+{
+    NEXUS_Graphics2DHandle gfx = gralloc_g2d_hdl();
+    BKNI_EventHandle event = gralloc_g2d_evt();
+    pthread_mutex_t *pMutex = gralloc_g2d_lock();
+    bool done=false;
+    void *pMemory;
+
+    pMemory = NEXUS_OffsetToCachedAddr(addr);
+    if ( NULL == pMemory )
+    {
+        // Should never happen
+        return;
+    }
+
+    if ( gfx && event && pMutex )
+    {
+        NEXUS_Error errCode;
+        // Internally nx_ashmem ensures this.
+        size_t roundedSize = (numBytes + 0xFFF) & ~0xFFF;
+
+        // Purge any pending writes from the cache
+        NEXUS_FlushCache(pMemory, roundedSize);
+
+        pthread_mutex_lock(pMutex);
+        errCode = NEXUS_Graphics2D_Memset32(gfx, pMemory, 0, roundedSize/4);
+        if ( 0 == errCode )
+        {
+            errCode = NEXUS_Graphics2D_Checkpoint(gfx, NULL);
+            if ( errCode == NEXUS_GRAPHICS2D_QUEUED )
+            {
+                errCode = BKNI_WaitForEvent(event, 150);
+                if ( errCode )
+                {
+                    ALOGW("Timeout zeroing gralloc buffer");
+                }
+            }
+            if ( !errCode )
+            {
+                done=true;
+            }
+        }
+
+        pthread_mutex_unlock(pMutex);
+    }
+    if ( !done )
+    {
+        // Use the CPU
+        bzero(pMemory, numBytes);
+    }
+    else
+    {
+        NEXUS_FlushCache(pMemory, numBytes);
+    }
+}
+
 /*****************************************************************************/
 
 struct gralloc_context_t {
@@ -392,7 +448,6 @@ static void getBufferDataFromFormat(int w, int h, int bpp, int format, int *pStr
    }
 }
 
-
 static int
 gralloc_alloc_buffer(alloc_device_t* dev,
                     int w, int h,
@@ -569,7 +624,18 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       close(fd3);
       close(fd4);
       return -EINVAL;
+   } else {
+      if ( pSharedData->planes[DEFAULT_PLANE].physAddr ) {
+          gralloc_bzero(pSharedData->planes[DEFAULT_PLANE].physAddr, pSharedData->planes[DEFAULT_PLANE].allocSize);
+      }
+      if ( pSharedData->planes[EXTRA_PLANE].physAddr ) {
+          gralloc_bzero(pSharedData->planes[EXTRA_PLANE].physAddr, pSharedData->planes[EXTRA_PLANE].allocSize);
+      }
+      if ( pSharedData->planes[GL_PLANE].physAddr ) {
+          gralloc_bzero(pSharedData->planes[GL_PLANE].physAddr, pSharedData->planes[GL_PLANE].allocSize);
+      }
    }
+
 
    *pHandle = grallocPrivateHandle;
 
