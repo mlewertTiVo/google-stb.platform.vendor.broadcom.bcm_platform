@@ -46,6 +46,18 @@ on fs
    setprop ro.nexus.ashmem.devname ion
 
 on boot
+   # install wakeup.ko first, then nexus.ko.  any other drivers
+   # depending on nexus.ko need to be insmod'ed through the property
+   # hook up (see: on property:hw.nexus.platforminit) after the
+   # nxserver has started (since only then is a nexus platform valid).
+   #
+   # optional additional module parameters can be passed to nexus.ko
+   # insmod'ing command line. in particular: 'msg_modules=xxx,yyy,zzz'
+   # for debugging purposes.
+   #
+   insmod /system/vendor/drivers/wakeup_drv.ko devname="mali0"
+   insmod /system/vendor/drivers/nexus.ko devname="mali"
+
    # Subsytem Ramdump collection
    mkdir /data/tombstones 0777 system system
    mkdir /data/tombstones/ramdump 0777 system system
@@ -90,6 +102,8 @@ on post-fs-data
    class_start pre_core
 
 on property:hw.nexus.platforminit=on
+   # insmod nx_ashmem driver (gralloc memory support).
+   insmod /system/vendor/drivers/nx_ashmem.ko devname="ion"
    class_start main
 
 service sdcard /system/bin/sdcard -u 1023 -g 1023 -l /data/media /mnt/shell/emulated

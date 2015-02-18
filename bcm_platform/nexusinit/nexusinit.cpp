@@ -73,114 +73,11 @@
 #endif
 #define LOG_TAG "NexusInit"
 
-#define VENDOR_DRIVER_PATH             "system/vendor/drivers"
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
-
-#define WAKEUP_DRIVER_FILENAME         "wakeup_drv.ko"
-#define NEXUS_DRIVER_FILENAME          "nexus.ko"
-#define NX_ASHMEM_DRIVER_FILENAME      "nx_ashmem.ko"
-
 #define NXSERVER_FILENAME              "/system/bin/nxserver"
 
 extern "C" long int init_module(void *, unsigned long, const char*);
 extern "C" long int delete_module(const char *, unsigned long, unsigned long, unsigned long);
-
-void *nexusinit_grab_file(const char *filename, unsigned long *size)
-{
-    int fd;
-    ssize_t bytes2Read;
-    ssize_t bytesRead;
-    unsigned char *p, *buffer;
-    struct stat sbuf;
-
-    if (NULL == filename || NULL == size) return NULL;
-
-    fd = open(filename, O_RDONLY);
-    if (fd < 0) return NULL;
-
-    if (fstat(fd, &sbuf) < 0) {
-        close(fd);
-        return NULL;
-    }
-
-    /* 0 (zero) (or negative - off_t is signed long) size doesn't make sense */
-    if (0 >= sbuf.st_size) {
-        close(fd);
-        return NULL;
-    }
-    bytes2Read = (size_t) sbuf.st_size;
-
-    buffer = (unsigned char *) malloc(sbuf.st_size);
-    if (!buffer) {
-        close(fd);
-        return NULL;
-    }
-
-    p = buffer;
-    while ( 0 < (bytesRead = read(fd, p, bytes2Read)) ) {
-        p += bytesRead;
-        if (bytesRead > bytes2Read) break; /* should not happen */
-        bytes2Read -= bytesRead;
-    }
-    /* release resouce as soon as possible if it is not needed anymore */
-    close(fd);
-
-    /* 0: end-of-file, -1: error on read(), and bytes2Read should be 0 (zero) */
-    if (0 > bytesRead || 0 < bytes2Read) {
-        free(buffer);
-        return NULL;
-    }
-
-    *size = (unsigned long) sbuf.st_size;
-    return buffer;
-}
-
-BERR_Code nexusinit_insmod(const char *filename, const char *args)
-{
-    long int ret;
-    unsigned long len;
-    void *file;
-    char full_name[256];
-
-    memset(full_name, 0, sizeof(full_name));
-    snprintf(full_name, sizeof(full_name), "%s/%s", VENDOR_DRIVER_PATH, filename);
-
-    file = nexusinit_grab_file(full_name, &len);
-    if (!file) {
-        LOGE("nexusinit: nexusinit_grab_file(%s) returned NULL!", full_name);
-        return BERR_UNKNOWN;
-    }
-
-    ret = init_module(file, len, args);
-    free(file);
-    if (ret != 0) {
-         LOGE("nexusinit: init_module returned %ld!",ret);
-         return BERR_UNKNOWN;
-    }
-
-    return BERR_SUCCESS;
-}
-
-BERR_Code nexusinit_ashmem()
-{
-    char value[PROPERTY_VALUE_MAX];
-    char value2[2*PROPERTY_VALUE_MAX];
-
-    memset(value2, 0, sizeof(value2));
-    property_get("ro.nexus.ashmem.devname", value, NULL);
-    if (strlen(value) > 0) {
-        strcpy(value2, "devname=\"");
-        strcat(value2, value);
-        strcat(value2, "\"");
-        LOGD("nexusinit: ro.nexus.ashmem.devname=%s", value);
-    }
-    if (nexusinit_insmod(NX_ASHMEM_DRIVER_FILENAME, value2) != BERR_SUCCESS) {
-        LOGE("nexusinit: insmod failed on %s!", NX_ASHMEM_DRIVER_FILENAME);
-        return BERR_UNKNOWN;
-    }
-
-    return BERR_SUCCESS;
-}
 
 void startNxServer(void)
 {
@@ -245,51 +142,9 @@ void startNxServer(void)
     system(cmdRunNxServer);
 }
 
-#include <stdlib.h>
-static void
-b_parse_env(char *env)
-{
-    char *s;
-    const char *name;
-    const char *value;
-    /* traverse  string, and split it to name/value pairs */
-    for(s=env, name=env, value=NULL;;s++) {
-        switch(*s) {
-        case '\0':
-            goto done;
-        case '=':
-            *s = '\0';
-            value = s+1;
-            break;
-        case ' ':
-        case ':':
-        case ';':
-            *s = '\0';
-            if (value==NULL) {
-                value=s;
-            }
-            setenv(name, value, 1);
-            name = s+1;
-            value = NULL;
-            break;
-        default:
-            break;
-        }
-    }
-done:
-    if(*name) {
-        if (value==NULL) {
-            value=s;
-        }
-        setenv(name, value, 1);
-    }
-    return;
-}
-
 int main(void)
 {
     char value[PROPERTY_VALUE_MAX];
-    char value2[2 * PROPERTY_VALUE_MAX] = { 0 };
     NEXUS_Error rc;
     FILE *key = NULL;
     NxClient_JoinSettings joinSettings;
@@ -301,54 +156,6 @@ int main(void)
     }
 
     android::ProcessState::self()->startThreadPool();
-
-    property_get("ro.nexus.wake.devname", value, NULL);
-    if (strlen(value) > 0) {
-        strcpy(value2, "devname=\"");
-        strcat(value2, value);
-        strcat(value2, "\"");
-        LOGD("nexusinit: ro.nexus.wake.devname=%s", value);
-    }
-
-    /* insmod wakeup driver first */
-    if(nexusinit_insmod(WAKEUP_DRIVER_FILENAME, value2) != BERR_SUCCESS) {
-        LOGE("nexusinit: insmod failed on %s!", WAKEUP_DRIVER_FILENAME);
-        /* failure is non fatal. */
-    }
-    else {
-        LOGI("nexusinit: insmod %s succeeded", WAKEUP_DRIVER_FILENAME);
-    }
-
-    property_get("ro.nexus_config", value, NULL);
-    value2[0] = '\0';
-    if (strlen(value) > 0) {
-        strcat(value2, "config=");
-        strcat(value2, value);
-        LOGD("nexusinit: ro.nexus_config = %s", value);
-        /* Setup environment variables for nxserver to inherit as well */
-        b_parse_env(value);
-    }
-
-    property_get("ro.nexus.devname", value, NULL);
-    if (strlen(value) > 0) {
-        if (strlen(value2) > 0) {
-           strcat(value2, " ");
-        }
-        strcat(value2, "devname=\"");
-        strcat(value2, value);
-        strcat(value2, "\"");
-        LOGD("nexusinit: ro.nexus.devname=%s", value);
-    }
-
-    /* insmod nexus driver second */
-    if(nexusinit_insmod(NEXUS_DRIVER_FILENAME, value2) != BERR_SUCCESS) {
-        LOGE("nexusinit: FATAL: insmod failed on %s!", NEXUS_DRIVER_FILENAME);
-        /* failure is FATAL. */
-        _exit(1);
-    }
-    else {
-        LOGI("nexusinit: insmod %s succeeded", NEXUS_DRIVER_FILENAME);
-    }
 
     const char *devName = getenv("NEXUS_DEVICE_NODE");
     if (!devName)
@@ -381,7 +188,7 @@ int main(void)
 
         NxClient_GetDefaultJoinSettings(&joinSettings);
         snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "nexusinit");
-        joinSettings.timeout = 60;
+        joinSettings.timeout = 120;
 
         joinSettings.mode = NEXUS_ClientMode_eUntrusted;
         if (strlen(value)) {
@@ -405,14 +212,8 @@ int main(void)
         /* okay, we are ready... */
         NxClient_Uninit();
 
+        /* trigger waiter on nexus server initialization. */
         property_set("hw.nexus.platforminit", "on");
-
-        /* Add the nx_ashmem module which is required for gralloc to function */
-        if (nexusinit_ashmem() != BERR_SUCCESS) {
-            LOGE("nexusinit: FATAL: Could not initialise ashmem!");
-            _exit(1);
-        }
-
     }
     else
     {
