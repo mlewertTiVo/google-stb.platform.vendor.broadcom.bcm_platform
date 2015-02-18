@@ -11,6 +11,7 @@ bcm_platform/brcm_dhd/tools/dhd
 bcm_platform/brcm_dhd/tools/wl
 
 # separate repo.
+bcm_platform/DTVKitPlatform/
 drivers/bcmdhd/
 drivers/btusb/
 drivers/connectivity/
