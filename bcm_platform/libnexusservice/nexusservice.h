@@ -150,7 +150,6 @@ typedef struct NexusServerContext
 
     struct {
         unsigned client;
-        NEXUS_SurfaceCompositorClientId surfaceClientId;
     } lastId;
 } NexusServerContext;
 
@@ -171,29 +170,12 @@ public:
        because NexusClientContext cannot be referenced between implementations. */
     virtual NexusClientContext * createClientContext(const b_refsw_client_client_configuration *config);
     virtual void destroyClientContext(NexusClientContext * client);
-    virtual void getClientInfo(NexusClientContext * client, b_refsw_client_client_info *info);  
-    virtual void getClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *composition);
-    virtual void setClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *composition);
-    virtual bool addGraphicsWindow(NexusClientContext * client);
-    virtual bool getFrame(NexusClientContext * client, const uint32_t width, const uint32_t height, 
-        const uint32_t surfacePhyAddress, const NEXUS_PixelFormat surfaceFormat, const uint32_t decoderId);
-    virtual bool connectClientResources(NexusClientContext * client, b_refsw_client_connect_resource_settings *pConnectSettings);
-    virtual bool disconnectClientResources(NexusClientContext * client);
 
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/
     virtual status_t setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener);
     virtual status_t addHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener);
     virtual status_t removeHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener);
 
-    virtual void getPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings);
-    virtual void setPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings);
-    virtual void getGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings);
-    virtual void setGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings); 
-    virtual void getDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings *settings);
-    virtual void setDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings *settings);    
-    virtual void setDisplayOutputs(int display); 
-    virtual void setAudioVolume(float leftVol, float rightVol);
-    virtual void setAudioMute(int mute);  
     virtual bool setPowerState(b_powerState pmState);
     virtual b_powerState getPowerState();
     virtual bool setCecPowerState(uint32_t cecId, b_powerState pmState);
@@ -238,8 +220,6 @@ private:
     void setDisplayState(bool enable);
     void setVideoState(bool enable);
     void setAudioState(bool enable);
-    bool connectHdmiInput(NexusClientContext * client, b_refsw_client_connect_resource_settings *pConnectSettings);
-    bool disconnectHdmiInput(NexusClientContext * client);
 
     NEXUS_SurfaceCompositorHandle       surface_compositor;
     DisplayState                        displayState[MAX_NUM_DISPLAYS];

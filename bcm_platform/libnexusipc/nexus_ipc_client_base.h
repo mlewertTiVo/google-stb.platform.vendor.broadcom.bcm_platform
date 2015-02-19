@@ -64,22 +64,6 @@ class NexusIPCClientBase : public NexusIPCCommon
 public: 
     virtual ~NexusIPCClientBase() { }
 
-    virtual void getDefaultConnectClientSettings(b_refsw_client_connect_resource_settings *settings) = 0;
-
-    /* Trellis BPM server expects clients to acquire SimpleVideoDecoder, SimpleAudioDecoder and 
-       SimpleAudioPlayback through it. An attempt to directly acquire them may fail. Hence, 
-       below wrapper API's.
-       Note: Only for SBS, these API's go via RPC to Trellis BPM and return a handle. 
-       For standalone Android, these API's simply wraps the NEXUS_Simplexxx_Acquire() APIs. */
-    virtual NEXUS_SimpleVideoDecoderHandle acquireVideoDecoderHandle() = 0;
-    virtual void releaseVideoDecoderHandle(NEXUS_SimpleVideoDecoderHandle handle) = 0;
-    virtual NEXUS_SimpleAudioDecoderHandle acquireAudioDecoderHandle() = 0;
-    virtual void releaseAudioDecoderHandle(NEXUS_SimpleAudioDecoderHandle handle) = 0;
-    virtual NEXUS_SimpleAudioPlaybackHandle acquireAudioPlaybackHandle() = 0;
-    virtual void releaseAudioPlaybackHandle(NEXUS_SimpleAudioPlaybackHandle handle) = 0;
-    virtual NEXUS_SimpleEncoderHandle acquireSimpleEncoderHandle() = 0;
-    virtual void releaseSimpleEncoderHandle(NEXUS_SimpleEncoderHandle handle) = 0;
-
     const char *getClientName();
 
 protected:

@@ -61,35 +61,15 @@ public:
     friend class NexusIPCClientFactory;
     virtual      ~NexusIPCClient();
 
-    virtual void getDefaultConnectClientSettings(b_refsw_client_connect_resource_settings *settings);
-
     /* These API's require a Nexus Client Context as they handle per client resources... */
     virtual NexusClientContext * createClientContext(const b_refsw_client_client_configuration *config);
     virtual void destroyClientContext(NexusClientContext * client);
-    virtual void getClientInfo(NexusClientContext * client, b_refsw_client_client_info *info);  
-    virtual void getClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *composition);
-    virtual void setClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *composition);
-    virtual bool addGraphicsWindow(NexusClientContext * client);
-    virtual bool getFrame(NexusClientContext * client, const uint32_t width, const uint32_t height, 
-                            const uint32_t surfacePhyAddress, const NEXUS_PixelFormat surfaceFormat, 
-                            const uint32_t decoderId);
-    virtual bool connectClientResources(NexusClientContext * client, b_refsw_client_connect_resource_settings *pConnectSettings);
-    virtual bool disconnectClientResources(NexusClientContext * client);
 
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/
     virtual status_t setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener);
     virtual status_t addHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener);
     virtual status_t removeHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener);
 
-    virtual void getPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings);
-    virtual void setPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings);
-    virtual void getGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings);
-    virtual void setGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings);
-    virtual void getDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings *settings);
-    virtual void setDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings *settings);
-    virtual void setDisplayOutputs(int display);
-    virtual void setAudioVolume(float leftVol, float rightVol);
-    virtual void setAudioMute(int mute);
     virtual bool setPowerState(b_powerState pmState);
     virtual b_powerState getPowerState();
     virtual bool setCecPowerState(uint32_t cecId, b_powerState pmState);
@@ -103,20 +83,6 @@ public:
     virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr);
     virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus);
 
-    /* Trellis BPM server expects clients to acquire SimpleVideoDecoder, SimpleAudioDecoder and 
-       SimpleAudioPlayback through it. An attempt to directly acquire them may fail. Hence, 
-       below wrapper API's.
-       Note: Only for SBS, these API's go via RPC to Trellis BPM and return a handle. 
-       For standalone Android, these API's simply wraps the NEXUS_Simplexxx_Acquire() APIs. */
-    virtual NEXUS_SimpleVideoDecoderHandle acquireVideoDecoderHandle();
-    virtual void releaseVideoDecoderHandle(NEXUS_SimpleVideoDecoderHandle handle);
-    virtual NEXUS_SimpleAudioDecoderHandle acquireAudioDecoderHandle();
-    virtual void releaseAudioDecoderHandle(NEXUS_SimpleAudioDecoderHandle handle);
-    virtual NEXUS_SimpleAudioPlaybackHandle acquireAudioPlaybackHandle();
-    virtual void releaseAudioPlaybackHandle(NEXUS_SimpleAudioPlaybackHandle handle);
-    virtual NEXUS_SimpleEncoderHandle acquireSimpleEncoderHandle();
-    virtual void releaseSimpleEncoderHandle(NEXUS_SimpleEncoderHandle handle);
-    
 protected:
     // Protected constructor prevents a client from creating an instance of this
     // class directly, but allows a sub-class to call it through inheritence.

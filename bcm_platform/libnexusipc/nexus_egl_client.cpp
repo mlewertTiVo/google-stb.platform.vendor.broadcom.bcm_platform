@@ -92,25 +92,11 @@ void* nexus_egl_client::IEGL_nexus_join(char *client_process_name)
      b_refsw_client_client_configuration config;
      NexusClientContext *nexus_client=NULL;
      uint32_t w, h;
-     
+
      NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("Android-EGL");
 
      BKNI_Memset(&config, 0, sizeof(config));
      BKNI_Snprintf(config.name.string,sizeof(config.name.string),"%s_%d_",client_process_name,getpid());
-
-     /**
-      * By default we will not request the screen, only NexusSurface.cpp::init() function will request the
-      * Screen by calling addGraphicsWindow from the context of surfaceFlinger initilaization sequence
-      **/
-     config.resources.screen.required = false;
-     config.resources.screen.position.x = 0;
-     config.resources.screen.position.y = 0;
-     // pass w=0, h=0, so that server decides on the size of the surface as per the HD display format
-     config.resources.screen.position.width = 0;
-     config.resources.screen.position.height = 0;
-     config.resources.audioDecoder = false;
-     config.resources.audioPlayback = false;
-     config.resources.videoDecoder = false;
 
      /* Create the client context that will be used by Gralloc */
      nexus_client = pIpcClient->createClientContext(&config);
@@ -120,7 +106,7 @@ void* nexus_egl_client::IEGL_nexus_join(char *client_process_name)
      else {
         LOGE("%s: Client could NOT be created!", __FUNCTION__);
      }
-     
+ 
      delete pIpcClient;
      return (reinterpret_cast<void *>(nexus_client));
 }

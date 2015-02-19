@@ -86,10 +86,6 @@ typedef struct NexusClientContext {
         NEXUS_ClientHandle nexusClient;
         unsigned connectId;
     } ipc;
-    struct {
-        NEXUS_SurfaceClientHandle graphicsSurface;
-        NEXUS_SurfaceClientHandle videoSurface;
-    } resources;
     b_refsw_client_client_info info;
     b_refsw_client_client_configuration createConfig;
 } NexusClientContext;
@@ -582,80 +578,6 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
 
     BLST_D_INSERT_HEAD(&server->clients, client, link);
 
-    NxClient_AllocSettings allocSettings;
-    NxClient_AllocResults allocResults;
-    NEXUS_SurfaceComposition surfSettings;
-
-    NxClient_GetDefaultAllocSettings(&allocSettings);
-    if (config->resources.screen.required > 0) {
-        allocSettings.surfaceClient = 1;
-    }
-    if (config->resources.videoDecoder > 0) {
-        allocSettings.simpleVideoDecoder = 1;
-    }
-    if (config->resources.audioDecoder > 0) {
-        allocSettings.simpleAudioDecoder = 1;
-    }
-    if (config->resources.audioPlayback > 0) {
-        allocSettings.simpleAudioPlayback = 1;
-    }
-    if (config->resources.encoder > 0) {
-        allocSettings.simpleEncoder = 1;
-    }
-
-    bool needResources = config->resources.audioDecoder || config->resources.audioPlayback ||
-                         config->resources.videoDecoder || config->resources.encoder       ||
-                         config->resources.screen.required;
-
-    if (needResources)
-    {
-        rc = NxClient_Alloc(&allocSettings, &allocResults);
-        if (rc) {
-            LOGE("%s: Cannot allocate NxClient resources! (rc=%d)!", __PRETTY_FUNCTION__, rc);
-            goto err_client;
-        }
-        else {
-            if (config->resources.screen.required > 0) {
-                NEXUS_SurfaceClientHandle surfaceClient;
-                NEXUS_SurfaceClientHandle videoSc;
-
-                client->info.surfaceClientId = allocResults.surfaceClient[0].id;
-                surfaceClient = NEXUS_SurfaceClient_Acquire(allocResults.surfaceClient[0].id);
-                if (surfaceClient) {
-                    /* creating the video window is necessasy so that SurfaceCompositor can resize the video window */
-                    videoSc = NEXUS_SurfaceClient_AcquireVideoWindow(surfaceClient, 0);
-                    if (videoSc == NULL) {
-                        LOGE("%s: Could NOT acquire video window!", __PRETTY_FUNCTION__);
-                        NxClient_Free(&allocResults);
-                        goto err_client;
-                    }
-                }
-                else {
-                    LOGE("%s: Could NOT acquire top-level surface client!", __PRETTY_FUNCTION__);
-                    NxClient_Free(&allocResults);
-                    goto err_client;
-                }
-                client->resources.graphicsSurface = surfaceClient;
-                client->resources.videoSurface = videoSc;
-            }
-            if (config->resources.videoDecoder > 0) {
-                client->info.videoDecoderId = allocResults.simpleVideoDecoder[0].id;
-            }
-            if (config->resources.audioDecoder > 0) {
-                client->info.audioDecoderId = allocResults.simpleAudioDecoder.id;
-            }
-            if (config->resources.audioPlayback > 0) {
-                client->info.audioPlaybackId = allocResults.simpleAudioPlayback[0].id;
-            }
-            if (config->resources.hdmiInput > 0) {
-                client->info.hdmiInputId = 1;   // NxClient_Alloc does not actually handle hdmiInput, but we will retain consistent API behaviour
-            }
-            if (config->resources.encoder > 0) {
-                client->info.encoderId = allocResults.simpleEncoder[0].id;
-            }
-        }
-    }
-
     if (powerState != ePowerState_S0) {
         NxClient_StandbySettings standbySettings;
 
@@ -666,7 +588,6 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
 
         if (rc != NEXUS_SUCCESS) {
             LOGE("Oops we couldn't set Nexus Power State to S0!");
-            NxClient_Free(&allocResults);
             goto err_client;
         }
         else {
@@ -688,172 +609,15 @@ err_client:
 void NexusNxService::destroyClientContext(NexusClientContext * client)
 {
     BDBG_OBJECT_ASSERT(client, NexusClientContext);
-    NxClient_AllocResults resources;
     void *res;
 
     Mutex::Autolock autoLock(server->mLock);
 
     LOGI("%s: client=\"%s\"", __PRETTY_FUNCTION__, client->createConfig.name.string);
 
-    if (client->resources.videoSurface != NULL) {
-        NEXUS_SurfaceClient_ReleaseVideoWindow(client->resources.videoSurface);
-    }
-
-    if (client->resources.graphicsSurface != NULL) {
-        NEXUS_SurfaceClient_Release(client->resources.graphicsSurface);
-    }
-
-    /* Now free any resources acquired by the createClientContext call... */
-    memset(&resources, 0, sizeof(resources));
-    resources.surfaceClient[0].id       = client->info.surfaceClientId;
-    resources.simpleVideoDecoder[0].id  = client->info.videoDecoderId;
-    resources.simpleAudioDecoder.id     = client->info.audioDecoderId;
-    resources.simpleAudioPlayback[0].id = client->info.audioPlaybackId;
-    resources.simpleEncoder[0].id       = client->info.encoderId;
-
-    NxClient_Free(&resources);
-
     BLST_D_REMOVE(&server->clients, client, link);
     BDBG_OBJECT_DESTROY(client, NexusClientContext);
     BKNI_Free(client);
-}
-
-
-bool NexusNxService::addGraphicsWindow(NexusClientContext * client)
-{
-    char value[PROPERTY_VALUE_MAX];
-    bool enable_offset = false;
-    int rc;
-    int xoff=0, yoff=0;
-    unsigned width=0, height=0;
-    b_refsw_client_client_configuration *config = &client->createConfig;
-    NxClient_AllocSettings allocSettings;
-    NxClient_AllocResults allocResults;
-    NEXUS_SurfaceComposition surfSettings;
-
-    NxClient_GetDefaultAllocSettings(&allocSettings);
-    allocSettings.surfaceClient = 1;
-    rc = NxClient_Alloc(&allocSettings, &allocResults);
-    if (rc)
-    {
-        LOGE("%s: Cannot allocate NxClient graphic window (rc=%d)!", __PRETTY_FUNCTION__, rc);
-        goto err_screen;
-    }
-
-    graphicSurfaceClientId = client->info.surfaceClientId = allocResults.surfaceClient[0].id;
-
-    /* See if we need to tweak the graphics to fit on the screen */
-    if(property_get("ro.screenresize.x", value, NULL))
-    {
-        xoff = atoi(value);
-        if(property_get("ro.screenresize.y", value, NULL))
-        {
-            yoff = atoi(value);
-            if(property_get("ro.screenresize.w", value, NULL))
-            {
-                width = atoi(value);
-                if(property_get("ro.screenresize.h", value, NULL))
-                {
-                    height = atoi(value);
-                    enable_offset = true;
-                }
-            }
-        }
-    }
-
-    /* If user has not set gfx window size, read them from HD output's properties */
-    if((config->resources.screen.position.width == 0) && (config->resources.screen.position.height == 0))
-    {
-        NEXUS_VideoFormatInfo fmt_info;
-        NEXUS_VideoFormat hd_fmt, sd_fmt;
-
-        getInitialOutputFormats(&hd_fmt, NULL);
-        NEXUS_VideoFormat_GetInfo(hd_fmt, &fmt_info);
-
-        config->resources.screen.position.width = fmt_info.width;
-        config->resources.screen.position.height = fmt_info.height;
-    }
-
-    /* We *MUST* acquire the handle in order for the resources to be internally tracked */
-    client->resources.graphicsSurface = NEXUS_SurfaceClient_Acquire(graphicSurfaceClientId);
-    NxClient_GetSurfaceClientComposition(graphicSurfaceClientId, &surfSettings);
-    surfSettings.position = config->resources.screen.position;
-    surfSettings.virtualDisplay.width = config->resources.screen.position.width;
-    surfSettings.virtualDisplay.height = config->resources.screen.position.height;
-
-    LOGD("######### Surface composition %d %d %d %d ###############\n",
-            surfSettings.position.x, surfSettings.position.y, surfSettings.position.width, surfSettings.position.height);
-
-    if(enable_offset)
-    {
-        LOGD("######### REPOSITIONING REQUIRED %d %d %d %d ###############\n",xoff,yoff,width,height);
-
-        surfSettings.clipRect.width = surfSettings.virtualDisplay.width;
-        surfSettings.clipRect.height = surfSettings.virtualDisplay.height;
-        surfSettings.position.x = xoff;
-        surfSettings.position.y = yoff;
-        surfSettings.position.width = width;
-        surfSettings.position.height = height;
-    }
-
-    NxClient_SetSurfaceClientComposition(graphicSurfaceClientId, &surfSettings);
-    /* We *MUST* release the resource for the client of this function to subsequently acquire */
-    NEXUS_SurfaceClient_Release(client->resources.graphicsSurface);
-    return true;
-
-err_screen:
-    return false;
-}
-
-void NexusNxService::getClientInfo(NexusClientContext * client, b_refsw_client_client_info *info)
-{
-    BDBG_OBJECT_ASSERT(client, NexusClientContext);
-    *info = client->info;
-}
-
-
-void NexusNxService::getClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *pComposition)
-{
-    NEXUS_SurfaceCompositorClientId surfaceClientId;
-
-    if (pComposition == NULL) {
-        LOGE("%s: FATAL: pComposition is NULL!!!", __PRETTY_FUNCTION__);
-        return;
-    }
-
-    /* NULL client context means we want to get the default main graphics surface composition */
-    if (client == NULL) {
-        surfaceClientId = graphicSurfaceClientId;
-    }
-    else {
-        surfaceClientId = client->info.surfaceClientId;
-    }
-    NxClient_GetSurfaceClientComposition(surfaceClientId, pComposition);
-}
-
-void NexusNxService::setClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *pComposition)
-{
-    NEXUS_SurfaceCompositorClientId surfaceClientId;
-
-    if (pComposition == NULL) {
-        LOGE("%s: FATAL: pComposition is NULL!!!", __PRETTY_FUNCTION__);
-        return;
-    }
-
-    /* NULL client context means we want to set the default main graphics surface composition */
-    if (client == NULL) {
-        surfaceClientId = graphicSurfaceClientId;
-    }
-    else {
-        surfaceClientId = client->info.surfaceClientId;
-    }
-    LOGD("%s: position: %dx%d@%d,%d virtualDisplay: %dx%d", __func__,
-            pComposition->position.width, pComposition->position.height,
-            pComposition->position.x, pComposition->position.y,
-            pComposition->virtualDisplay.width, pComposition->virtualDisplay.height);
-
-    NxClient_SetSurfaceClientComposition(surfaceClientId, pComposition);
-    return;
 }
 
 static const NxClient_VideoWindowType videoWindowTypeConversion[] =
@@ -863,73 +627,6 @@ static const NxClient_VideoWindowType videoWindowTypeConversion[] =
     NxClient_VideoWindowType_eNone,  /* app will do video as graphics */
     NxClient_VideoWindowType_Max
 };
-
-bool NexusNxService::connectClientResources(NexusClientContext * client, b_refsw_client_connect_resource_settings *pConnectSettings)
-{
-    NEXUS_Error rc;
-    unsigned i;
-    struct NxClient_ConnectSettings connectSettings;
-
-    NxClient_GetDefaultConnectSettings(&connectSettings);
-
-    /* Connect simple video decoder resources... */
-    for (i = 0; i < NXCLIENT_MAX_IDS && i < CLIENT_MAX_IDS && pConnectSettings->simpleVideoDecoder[i].id != 0; i++) {
-        connectSettings.simpleVideoDecoder[i].id                                = pConnectSettings->simpleVideoDecoder[i].id;
-        connectSettings.simpleVideoDecoder[i].surfaceClientId                   = pConnectSettings->simpleVideoDecoder[i].surfaceClientId;
-        connectSettings.simpleVideoDecoder[i].windowId                          = pConnectSettings->simpleVideoDecoder[i].windowId;
-        connectSettings.simpleVideoDecoder[i].decoderCapabilities.fifoSize      = pConnectSettings->simpleVideoDecoder[i].decoderCaps.fifoSize;
-        connectSettings.simpleVideoDecoder[i].decoderCapabilities.maxWidth      = pConnectSettings->simpleVideoDecoder[i].decoderCaps.maxWidth;
-        connectSettings.simpleVideoDecoder[i].decoderCapabilities.maxHeight     = pConnectSettings->simpleVideoDecoder[i].decoderCaps.maxHeight;
-        BKNI_Memcpy(&connectSettings.simpleVideoDecoder[i].decoderCapabilities.supportedCodecs[0],
-                    &pConnectSettings->simpleVideoDecoder[i].decoderCaps.supportedCodecs[0],
-                    sizeof(pConnectSettings->simpleVideoDecoder[i].decoderCaps.supportedCodecs));
-        connectSettings.simpleVideoDecoder[i].decoderCapabilities.avc51Enabled  = pConnectSettings->simpleVideoDecoder[i].decoderCaps.avc51Enabled;
-        connectSettings.simpleVideoDecoder[i].windowCapabilities.maxWidth       = pConnectSettings->simpleVideoDecoder[i].windowCaps.maxWidth;
-        connectSettings.simpleVideoDecoder[i].windowCapabilities.maxHeight      = pConnectSettings->simpleVideoDecoder[i].windowCaps.maxHeight;
-        connectSettings.simpleVideoDecoder[i].windowCapabilities.encoder        = pConnectSettings->simpleVideoDecoder[i].windowCaps.encoder;
-        connectSettings.simpleVideoDecoder[i].windowCapabilities.deinterlaced   = pConnectSettings->simpleVideoDecoder[i].windowCaps.deinterlaced;
-        connectSettings.simpleVideoDecoder[i].windowCapabilities.type           =
-                    videoWindowTypeConversion[pConnectSettings->simpleVideoDecoder[i].windowCaps.type];
-    }
-
-    /* Connect simple audio decoder resource... */
-    connectSettings.simpleAudioDecoder.id                                       = pConnectSettings->simpleAudioDecoder.id;
-    connectSettings.simpleAudioDecoder.decoderCapabilities.encoder              = pConnectSettings->simpleAudioDecoder.decoderCaps.encoder;
-
-    /* Connect simple audio playback resources... */
-    for (i = 0; i < NXCLIENT_MAX_IDS && i < CLIENT_MAX_IDS && pConnectSettings->simpleAudioPlayback[i].id != 0; i++) {
-        connectSettings.simpleAudioPlayback[i].id = pConnectSettings->simpleAudioPlayback[i].id;
-    }
-
-    /* Connect Simple Encoder resources... */
-    for (i = 0; i < NXCLIENT_MAX_IDS && i < CLIENT_MAX_IDS && pConnectSettings->simpleEncoder[i].id != 0; i++) {
-        connectSettings.simpleEncoder[i].id                         = pConnectSettings->simpleEncoder[i].id;
-        connectSettings.simpleEncoder[i].display                    = pConnectSettings->simpleEncoder[i].display;
-        connectSettings.simpleEncoder[i].nonRealTime                = pConnectSettings->simpleEncoder[i].nonRealTime;
-        connectSettings.simpleEncoder[i].audio.cpuAccessible        = pConnectSettings->simpleEncoder[i].audio.cpuAccessible;
-        connectSettings.simpleEncoder[i].video.cpuAccessible        = pConnectSettings->simpleEncoder[i].video.cpuAccessible;
-    }
-
-    rc = NxClient_Connect(&connectSettings, &client->ipc.connectId);
-    if (rc)  {
-        LOGE("%s: Could NOT connect resources (rc=%d)!", __PRETTY_FUNCTION__, rc);
-    }
-    return (rc == 0);
-}
-
-bool NexusNxService::disconnectClientResources(NexusClientContext * client)
-{
-    bool ok = true;
-    if (client->ipc.connectId != 0) {
-        NxClient_Disconnect(client->ipc.connectId);
-        client->ipc.connectId = 0;
-    }
-    else {
-        LOGE("%s: No resources to disconnect!", __PRETTY_FUNCTION__);
-        ok = false;
-    }
-    return ok;
-}
 
 status_t NexusNxService::addHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener>& listener)
 {

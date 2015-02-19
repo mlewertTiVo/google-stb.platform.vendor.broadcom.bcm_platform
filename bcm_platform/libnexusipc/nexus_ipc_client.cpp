@@ -73,14 +73,6 @@
 #include <sys/select.h>
 #include <sys/types.h>
 
-#ifdef SBS_USES_TRELLIS_INPUT_EVENTS
-#include <linux/input.h>
-#include <fcntl.h>
-#include "trellis_keymap.h"
-
-static int fd;
-#endif
-
 class BpNexusClient: public android::BpInterface<INexusClient>
 {
 public:
@@ -255,31 +247,6 @@ NEXUS_Error NexusIPCClient::clientUninit()
     return rc;
 }
 
-bool NexusIPCClient::addGraphicsWindow(NexusClientContext * client)
-{
-    LOGE("%s: Enter...", __PRETTY_FUNCTION__);
-
-#ifdef SBS_USES_TRELLIS_INPUT_EVENTS
-    // Open event driver to write Trellis events
-    fd = open("/dev/event_write", O_RDWR);
-
-    if (fd < 0)
-        LOGE("ERROR: Couldn't open SBS event write device. Input devices will not work.");
-#endif
-
-    api_data cmd;
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_addGraphicsWindow;
-    cmd.param.addGraphicsWindow.in.client = client;
-    iNC->api_over_binder(&cmd);
-    return cmd.param.addGraphicsWindow.out.status;
-}
-
-void NexusIPCClient::getDefaultConnectClientSettings(b_refsw_client_connect_resource_settings *settings)
-{
-    BKNI_Memset(settings, 0, sizeof(*settings));
-}
-
 /* Client side implementation of the APIs that are transferred to the server process over binder */
 NexusClientContext * NexusIPCClient::createClientContext(const b_refsw_client_client_configuration *config)
 {
@@ -287,13 +254,6 @@ NexusClientContext * NexusIPCClient::createClientContext(const b_refsw_client_cl
     NexusClientContext *client = NULL;
     b_refsw_client_client_configuration inConfig;
     api_data cmd;
-
-    LOGV("%s: Client \"%s\" Num VDec=%d,ADec=%d,APlay=%d,Enc=%d,Surf=%d...", __PRETTY_FUNCTION__, getClientName(),
-            config->resources.videoDecoder,
-            config->resources.audioDecoder,
-            config->resources.audioPlayback,
-            config->resources.encoder,
-            config->resources.screen.required);
 
     rc = clientJoin();
 
@@ -327,88 +287,6 @@ void NexusIPCClient::destroyClientContext(NexusClientContext * client)
 
     clientUninit();
     return;
-}
-
-void NexusIPCClient::getClientInfo(NexusClientContext * client, b_refsw_client_client_info *info)
-{
-    api_data cmd;
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_getClientInfo;
-    cmd.param.getClientInfo.in.client = client;    
-    iNC->api_over_binder(&cmd);
-    *info = cmd.param.getClientInfo.out.info;
-    return;
-}
-
-void NexusIPCClient::getClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *composition)
-{
-    api_data cmd;
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_getClientComposition;
-    cmd.param.getClientComposition.in.client = client;    
-    iNC->api_over_binder(&cmd);
-    *composition = cmd.param.getClientComposition.out.composition;
-    return;
-}
-
-void NexusIPCClient::setClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *composition)
-{
-    api_data cmd;
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_setClientComposition;
-    cmd.param.setClientComposition.in.client = client;    
-    cmd.param.setClientComposition.in.composition = *composition;
-    iNC->api_over_binder(&cmd);
-    return;
-}
-
-void NexusIPCClient::getDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings *settings)
-{
-    api_data cmd;
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_getDisplaySettings;
-    cmd.param.getDisplaySettings.in.display_id = display_id;    
-    iNC->api_over_binder(&cmd);
-    *settings = cmd.param.getDisplaySettings.out.settings;
-    return;
-}
-
-void NexusIPCClient::setDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings *settings)
-{
-    api_data cmd;
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_setDisplaySettings;
-    cmd.param.setDisplaySettings.in.display_id = display_id;    
-    cmd.param.setDisplaySettings.in.settings = *settings;
-    iNC->api_over_binder(&cmd);
-    return;
-}
-
-void NexusIPCClient::setAudioVolume(float leftVol, float rightVol)
-{
-    api_data cmd;
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_setAudioVolume;
-    cmd.param.setAudioVolume.in.leftVolume = leftVol; 
-    cmd.param.setAudioVolume.in.rightVolume = rightVol; 
-    iNC->api_over_binder(&cmd);
-    return;
-}
-
-bool NexusIPCClient::getFrame(NexusClientContext * client, const uint32_t width, const uint32_t height, 
-    const uint32_t surfacePhyAddress, const NEXUS_PixelFormat surfaceFormat, const uint32_t decoderId)
-{
-    api_data cmd;
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_getFrame;
-    cmd.param.getFrame.in.client = client;    
-    cmd.param.getFrame.in.width = width;
-    cmd.param.getFrame.in.height = height;
-    cmd.param.getFrame.in.surfacePhyAddress = surfacePhyAddress;
-    cmd.param.getFrame.in.surfaceFormat = surfaceFormat;
-    cmd.param.getFrame.in.decoderId = decoderId;
-    iNC->api_over_binder(&cmd);
-    return cmd.param.getFrame.out.status;
 }
 
 bool NexusIPCClient::setPowerState(b_powerState pmState)
@@ -549,76 +427,6 @@ bool NexusIPCClient::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pH
     return cmd.param.getHdmiOutputStatus.out.status;
 }
 
-bool NexusIPCClient::connectClientResources(NexusClientContext * client, b_refsw_client_connect_resource_settings *pConnectSettings)
-{
-    api_data cmd;
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_connectClientResources;
-    cmd.param.connectClientResources.in.client = client;    
-    cmd.param.connectClientResources.in.connectSettings = *pConnectSettings;
-    iNC->api_over_binder(&cmd);
-    return cmd.param.connectClientResources.out.status;
-}
-
-bool NexusIPCClient::disconnectClientResources(NexusClientContext * client)
-{
-    api_data cmd;
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_disconnectClientResources;
-    cmd.param.disconnectClientResources.in.client = client;    
-    iNC->api_over_binder(&cmd);
-    return cmd.param.disconnectClientResources.out.status;
-}
-
-/* -----------------------------------------------------------------------------
-   Trellis BPM server expects clients to acquire SimpleVideoDecoder, SimpleAudioDecoder and 
-   SimpleAudioPlayback through it. An attempt to directly acquire them may fail. 
-   For SBS, these API's go via RPC to Trellis BPM and return a handle. 
-   For standalone Android, these are simple wrapper functions. */
-NEXUS_SimpleVideoDecoderHandle NexusIPCClient::acquireVideoDecoderHandle()
-{
-    LOGE("%s: use derived class instead! returning NULL handle", __FUNCTION__);
-    return NULL;
-}
-
-void NexusIPCClient::releaseVideoDecoderHandle(NEXUS_SimpleVideoDecoderHandle handle __unused)
-{
-    LOGE("%s: use derived class instead! no-op", __FUNCTION__);
-}
-
-NEXUS_SimpleAudioDecoderHandle NexusIPCClient::acquireAudioDecoderHandle()
-{
-    LOGE("%s: use derived class instead! returning NULL handle", __FUNCTION__);
-    return NULL;
-}
-
-void NexusIPCClient::releaseAudioDecoderHandle(NEXUS_SimpleAudioDecoderHandle handle __unused)
-{
-    LOGE("%s: use derived class instead! no-op", __FUNCTION__);
-}
-
-NEXUS_SimpleAudioPlaybackHandle NexusIPCClient::acquireAudioPlaybackHandle()
-{
-    LOGE("%s: use derived class instead! returning NULL handle", __FUNCTION__);
-    return NULL;
-}
-
-void NexusIPCClient::releaseAudioPlaybackHandle(NEXUS_SimpleAudioPlaybackHandle handle __unused)
-{
-    LOGE("%s: use derived class instead! no-op", __FUNCTION__);
-}
-
-NEXUS_SimpleEncoderHandle NexusIPCClient::acquireSimpleEncoderHandle()
-{
-    LOGE("%s: use derived class instead! returning NULL handle", __FUNCTION__);
-    return NULL;
-}
-
-void NexusIPCClient::releaseSimpleEncoderHandle(NEXUS_SimpleEncoderHandle handle __unused)
-{
-    LOGE("%s: use derived class instead! no-op", __FUNCTION__);
-}
-
 status_t NexusIPCClient::setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener)
 {
     android::Parcel data, reply;
@@ -647,70 +455,4 @@ status_t NexusIPCClient::removeHdmiHotplugEventListener(uint32_t portId, const s
     data.writeStrongBinder(listener->asBinder());
     iNC->get_remote()->transact(REMOVE_HDMI_HOTPLUG_EVENT_LISTENER, data, &reply);
     return reply.readInt32();
-}
-
-void NexusIPCClient::getPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings)
-{
-    api_data cmd;
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_getPictureCtrlCommonSettings;
-    cmd.param.getPictureCtrlCommonSettings.in.window_id = window_id;
-    iNC->api_over_binder(&cmd);
-    *settings = cmd.param.getPictureCtrlCommonSettings.out.settings;
-    return;
-}
-
-void NexusIPCClient::setPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings)
-{
-    api_data cmd;
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_setPictureCtrlCommonSettings;
-    cmd.param.setPictureCtrlCommonSettings.in.window_id = window_id;
-    cmd.param.setPictureCtrlCommonSettings.in.settings = *settings;
-    iNC->api_over_binder(&cmd);
-    return;
-}
-
-void NexusIPCClient::getGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings)
-{
-    api_data cmd;
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_getGraphicsColorSettings;
-    cmd.param.getGraphicsColorSettings.in.display_id = display_id;
-    iNC->api_over_binder(&cmd);
-    *settings = cmd.param.getGraphicsColorSettings.out.settings;
-    return;
-}
-
-void NexusIPCClient::setGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings)
-{
-    api_data cmd;
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_setGraphicsColorSettings;
-    cmd.param.setGraphicsColorSettings.in.display_id = display_id;
-    cmd.param.setGraphicsColorSettings.in.settings = *settings;
-    iNC->api_over_binder(&cmd);
-    return;
-}
-
-void NexusIPCClient::setDisplayOutputs(int display)
-{
-    api_data cmd;
-    LOGI("NexusIPCClient::setDisplayOutputs display %d",display);
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_setDisplayOutputs;
-    cmd.param.setDisplayOutputs.in.display = display;    
-    iNC->api_over_binder(&cmd);
-    return;
-}
-
-void NexusIPCClient::setAudioMute(int mute)
-{
-    api_data cmd;
-    LOGI("NexusIPCClient::setAudioMute mute %d",mute);
-    BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_setAudioMute;
-    cmd.param.setAudioMute.in.mute = mute;    
-    iNC->api_over_binder(&cmd);
-    return;
 }

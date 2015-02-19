@@ -271,20 +271,6 @@ typedef struct NexusClientContext {
         NEXUS_ClientHandle nexusClient;
         unsigned connectId;
     } ipc;
-    struct {
-        NEXUS_SurfaceClientHandle       graphicsSurface;
-        NEXUS_SurfaceClientHandle       videoSurface;
-        struct {
-            bool                            connected;
-#if NEXUS_HAS_HDMI_INPUT
-            NEXUS_HdmiInputHandle           handle;
-#endif
-#if NEXUS_NUM_AUDIO_INPUT_CAPTURES
-            NEXUS_AudioInputCaptureHandle   captureInput;
-#endif
-            unsigned                        windowId;
-        } hdmiInput;
-    } resources;
     b_refsw_client_client_info info;
     b_refsw_client_client_configuration createConfig;
 } NexusClientContext;
@@ -294,7 +280,6 @@ NexusServerContext::NexusServerContext() : mLock(Mutex::SHARED), mJoinRefCount(0
     LOGV("%s: called", __PRETTY_FUNCTION__);
     BLST_D_INIT(&clients);
     lastId.client = 0;
-    lastId.surfaceClientId = 0;
 }
 
 const String16 INexusService::descriptor(NEXUS_INTERFACE_NAME);
@@ -1174,11 +1159,6 @@ NexusClientContext * NexusService::createClientContext(const b_refsw_client_clie
     client->ipc.nexusClient = getNexusClient(client->createConfig.pid,
         client->createConfig.name.string);
 
-    // This is used to indicate whether client has requested HDMI input or not...
-    if (config->resources.hdmiInput > 0) {
-        client->info.hdmiInputId = 1;
-    }
-
     if (powerState != ePowerState_S0) {
         NEXUS_PlatformStandbySettings nexusStandbySettings;
 
@@ -1207,586 +1187,12 @@ void NexusService::destroyClientContext(NexusClientContext * client)
     Mutex::Autolock autoLock(server->mLock);
 
     BDBG_OBJECT_ASSERT(client, NexusClientContext);
-    if(client->resources.videoSurface) {
-        NEXUS_SurfaceCompositor_DestroyClient(client->resources.videoSurface);
-        client->resources.videoSurface = NULL;
-    }
-
-    if(client->resources.graphicsSurface) {
-        NEXUS_SurfaceCompositor_DestroyClient(client->resources.graphicsSurface);
-        client->resources.graphicsSurface = NULL;
-    }
     if(client->ipc.nexusClient) {
         client->ipc.nexusClient = NULL;
     }
     BLST_D_REMOVE(&server->clients, client, link);
     BDBG_OBJECT_DESTROY(client, NexusClientContext);
     BKNI_Free(client);
-}
-
-bool NexusService::addGraphicsWindow(NexusClientContext * client)
-{
-    char value[PROPERTY_VALUE_MAX];
-    bool enable_offset = false;
-    int rc;
-    int xoff=0, yoff=0;
-    unsigned width=0, height=0;
-    b_refsw_client_client_configuration *config = &client->createConfig;
-
-    NEXUS_SurfaceCompositorClientSettings *p_client_settings = NULL;
-
-    LOGD("%s[%d]: >>>>>>>>>>>>>>>>>>>>>>>>>> addGraphicsWindow Called Creating NSCClient[IPC] <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<",__PRETTY_FUNCTION__,__LINE__);
-    /* See if we need to tweak the graphics to fit on the screen */
-    if (property_get("ro.screenresize.x", value, NULL)) {
-        xoff = atoi(value);
-        if (property_get("ro.screenresize.y", value, NULL)) {
-            yoff = atoi(value);
-            if (property_get("ro.screenresize.w", value, NULL)) {
-                width = atoi(value);
-                if (property_get("ro.screenresize.h", value, NULL)) {
-                    height = atoi(value);
-                    enable_offset = true;
-                }
-            }
-        }
-    }
-
-    /* If user has not set gfx window size, read them from HD output's properties */
-    if ((config->resources.screen.position.width == 0) && (config->resources.screen.position.height == 0)) {
-        NEXUS_VideoFormatInfo fmt_info;
-        NEXUS_VideoFormat hd_fmt, sd_fmt;
-        
-        getInitialOutputFormats(&hd_fmt, NULL);
-        NEXUS_VideoFormat_GetInfo(hd_fmt, &fmt_info);
-
-        config->resources.screen.position.width = fmt_info.width;
-        config->resources.screen.position.height = fmt_info.height;
-    }
-
-    client->resources.graphicsSurface = NEXUS_SurfaceCompositor_CreateClient(surface_compositor, server->lastId.surfaceClientId);
-    if (!client->resources.graphicsSurface) {
-        (void)BERR_TRACE(BERR_NOT_SUPPORTED);
-        goto err_screen;
-    }
-    // save the surface compositor client
-    surfaceclient = client->resources.graphicsSurface;
-    
-    client->info.surfaceClientId = server->lastId.surfaceClientId;
-    p_client_settings = (NEXUS_SurfaceCompositorClientSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorClientSettings));
-    if (p_client_settings) {
-        NEXUS_SurfaceCompositor_GetClientSettings(surface_compositor, client->resources.graphicsSurface, p_client_settings);
-        p_client_settings->composition.position = config->resources.screen.position;
-        p_client_settings->composition.zorder = client->info.surfaceClientId;
-        p_client_settings->composition.virtualDisplay.width = config->resources.screen.position.width;
-        p_client_settings->composition.virtualDisplay.height = config->resources.screen.position.height;
-
-        if (enable_offset) {
-            LOGD("######### REPOSITIONING REQUIRED %d %d %d %d ###############\n",xoff,yoff,width,height);
-            p_client_settings->composition.clipRect.width = p_client_settings->composition.virtualDisplay.width;
-            p_client_settings->composition.clipRect.height = p_client_settings->composition.virtualDisplay.height;
-            p_client_settings->composition.position.x = xoff;
-            p_client_settings->composition.position.y = yoff;
-            p_client_settings->composition.position.width = width;
-            p_client_settings->composition.position.height = height;
-        }
-
-        rc = NEXUS_SurfaceCompositor_SetClientSettings(surface_compositor, client->resources.graphicsSurface, p_client_settings);
-        BKNI_Free(p_client_settings);
-        if (rc!=NEXUS_SUCCESS) {
-            (void)BERR_TRACE(BERR_NOT_SUPPORTED);
-            goto err_screen_settings;
-        }
-        server->lastId.surfaceClientId++;
-        return true;
-    }
-
-err_screen_settings:
-    NEXUS_SurfaceCompositor_DestroyClient(client->resources.graphicsSurface);
-err_screen:
-    return false;
-}
-
-void NexusService::getClientInfo(NexusClientContext * client, b_refsw_client_client_info *info)
-{
-    BDBG_OBJECT_ASSERT(client, NexusClientContext);
-    *info = client->info;
-}
-
-
-void NexusService::getClientComposition(NexusClientContext * client __unused, NEXUS_SurfaceComposition *pComposition)
-{
-    NEXUS_SurfaceCompositorClientSettings *p_client_settings = NULL;
-
-    p_client_settings = (NEXUS_SurfaceCompositorClientSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorClientSettings));
-    if (p_client_settings) {
-        NEXUS_SurfaceCompositor_GetClientSettings(surface_compositor, surfaceclient, p_client_settings);
-        *pComposition = p_client_settings->composition;
-        BKNI_Free(p_client_settings);
-    }
-}
-
-void NexusService::setClientComposition(NexusClientContext * client __unused, NEXUS_SurfaceComposition *pComposition)
-{
-    NEXUS_SurfaceCompositorClientSettings *p_client_settings = NULL;
-    NEXUS_Error rc;
-
-    p_client_settings = (NEXUS_SurfaceCompositorClientSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorClientSettings));
-    if (p_client_settings) {
-        NEXUS_SurfaceCompositor_GetClientSettings(surface_compositor, surfaceclient, p_client_settings);    
-        p_client_settings->composition = *pComposition;
-        LOGD("%s: setting client composition [%d,%d,%d,%d]",__PRETTY_FUNCTION__, pComposition->position.x,
-        pComposition->position.y, pComposition->position.width, pComposition->position.height);
-    
-        rc = NEXUS_SurfaceCompositor_SetClientSettings(surface_compositor, surfaceclient, p_client_settings);
-        if (rc != NEXUS_SUCCESS) {
-            LOGE("%s:%d NEXUS_SurfaceCompositor_SetClientSettings() returned error, rc=%d",__PRETTY_FUNCTION__,__LINE__,rc);
-        }
-
-        BKNI_Free(p_client_settings);
-    }
-    return;
-}
-
-void NexusService::getDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings *settings)
-{
-    if (display_id >= MAX_NUM_DISPLAYS) {
-        LOGE("display_id(%d) cannot be more than 1!",display_id);
-        return;
-    }
-    if (displayState[display_id].display) {
-        NEXUS_Display_GetSettings(displayState[display_id].display, settings);
-    }
-    else {
-        LOGE("displayHandle[%d] is NULL",display_id);
-    }
-    
-    return;
-}
-
-void NexusService::setDisplayState(bool enable)
-{
-    NEXUS_SurfaceCompositorSettings *p_surface_compositor_settings = NULL;
-    int rc;
-    
-    p_surface_compositor_settings = (NEXUS_SurfaceCompositorSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorSettings));
-    if (NULL == p_surface_compositor_settings) {
-        while(1) LOGE("%s:%d BKNI_Malloc failed",__PRETTY_FUNCTION__,__LINE__);
-        return;
-    }
-    
-    NEXUS_SurfaceCompositor_GetSettings(surface_compositor, p_surface_compositor_settings);
-
-    if (!enable) {
-        BKNI_ResetEvent(inactiveEvent);
-        
-        /* disable surface compositor */        
-        p_surface_compositor_settings->enabled = false;
-        NEXUS_SurfaceCompositor_SetSettings(surface_compositor, p_surface_compositor_settings);
-        
-        rc = BKNI_WaitForEvent(inactiveEvent, 5000);        
-        if (rc) {   
-            LOGE("Did not receive NSC inactive event!");
-            if(p_surface_compositor_settings) 
-                BKNI_Free(p_surface_compositor_settings);
-            return;
-        }
-    }
-    else {
-        /* reenable surface compositor, framebuffer size should be changed */
-        p_surface_compositor_settings->enabled = true;
-        NEXUS_SurfaceCompositor_SetSettings(surface_compositor, p_surface_compositor_settings);
-    }
-    
-    if (p_surface_compositor_settings) {
-        BKNI_Free(p_surface_compositor_settings);
-    }
-    return;
-}
-
-void NexusService::setDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings *settings)
-{
-    if (display_id >= MAX_NUM_DISPLAYS) {
-        LOGE("display_id(%d) cannot be more than 1!",display_id);
-        return;
-    }
-
-    if (displayState[display_id].display) {        
-        /* set display setting, now we only support format change. sd display format should be changed based on hd display format */        
-        NEXUS_SurfaceCompositorSettings *p_surface_compositor_settings = NULL;
-        NEXUS_DisplaySettings disp_settings;
-        NEXUS_VideoFormatInfo formatInfo;
-        int rc;
-        
-        NEXUS_Display_GetSettings(displayState[display_id].display, &disp_settings);
-        if (disp_settings.format == settings->format) {  
-            LOGE("display_id(%d) no format change ",display_id);
-            return;
-        }
-
-        p_surface_compositor_settings = (NEXUS_SurfaceCompositorSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorSettings));
-        if (NULL == p_surface_compositor_settings) {
-            while(1) LOGE("%s:%d BKNI_Malloc failed",__PRETTY_FUNCTION__,__LINE__);
-            return;
-        }
-
-        BKNI_ResetEvent(inactiveEvent);
-        
-        /* disable surface compositor */        
-        NEXUS_SurfaceCompositor_GetSettings(surface_compositor, p_surface_compositor_settings);
-        p_surface_compositor_settings->enabled = false;
-        NEXUS_SurfaceCompositor_SetSettings(surface_compositor, p_surface_compositor_settings);
-        
-        rc = BKNI_WaitForEvent(inactiveEvent, 5000);        
-        if (rc) {   
-            LOGE("Did not receive NSC inactive event - not changing the display resolution for display=%d",display_id);
-            if (p_surface_compositor_settings) {
-                BKNI_Free(p_surface_compositor_settings);
-            }
-            return;
-        }
-        
-        NEXUS_Display_SetSettings(displayState[display_id].display, settings);
-
-        NEXUS_VideoFormat_GetInfo(settings->format, &formatInfo);
-
-        LOGD("--- display_id(%d) setDisplaySettings %d, w %d, h %d",display_id, settings->format, formatInfo.width, formatInfo.height);
-        /* reenable surface compositor, framebuffer size should be changed */
-        NEXUS_SurfaceCompositor_GetSettings(surface_compositor, p_surface_compositor_settings);
-        p_surface_compositor_settings->enabled = true;
-        p_surface_compositor_settings->display[display_id].framebuffer.width = formatInfo.width;
-        p_surface_compositor_settings->display[display_id].framebuffer.height = formatInfo.height;
-
-        /* NSC settings when transitioning to/from 3D display format */
-        if (HD_DISPLAY == display_id) {    
-            if ((NEXUS_VideoFormat_e720p_3DOU_AS == settings->format) || (NEXUS_VideoFormat_e1080p24hz_3DOU_AS == settings->format)) {
-                // when transitioning to 3D display format, following are needed or else vertical display resolution will be half
-                p_surface_compositor_settings->display[HD_DISPLAY].display3DSettings.overrideOrientation = true;
-                p_surface_compositor_settings->display[HD_DISPLAY].display3DSettings.orientation = NEXUS_VideoOrientation_e2D;
-            }
-            else {
-                // when transitioning from 3D display format, disable overrideOrientation
-                p_surface_compositor_settings->display[HD_DISPLAY].display3DSettings.overrideOrientation = false;
-                p_surface_compositor_settings->display[HD_DISPLAY].display3DSettings.orientation = NEXUS_VideoOrientation_e2D;
-            }
-        }
-        NEXUS_SurfaceCompositor_SetSettings(surface_compositor, p_surface_compositor_settings);
-        if (p_surface_compositor_settings) {
-            BKNI_Free(p_surface_compositor_settings);
-        }
-    }
-    else {
-        LOGE("displayHandle[%d] is NULL",display_id);        
-    }
-    return;
-}
-
-void NexusService::getPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings)
-{
-    if (window_id >= MAX_VIDEO_WINDOWS_PER_DISPLAY) {
-        LOGE("%s: window_id(%d) cannot be >= %d!", __PRETTY_FUNCTION__, window_id, MAX_VIDEO_WINDOWS_PER_DISPLAY);
-        return;
-    }
-
-    // Always return settings for primary display (HD_DISPLAY) as client code works only on HD_DISPLAY
-    if (displayState[HD_DISPLAY].video_window[window_id]) {
-        NEXUS_PictureCtrl_GetCommonSettings(displayState[HD_DISPLAY].video_window[window_id],settings);
-    }
-    return;
-}
-
-void NexusService::setPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings)
-{
-    if (window_id >= MAX_VIDEO_WINDOWS_PER_DISPLAY) {
-        LOGE("%s: window_id(%d) cannot be >= %d!", __PRETTY_FUNCTION__, window_id, MAX_VIDEO_WINDOWS_PER_DISPLAY);
-        return;
-    }
-
-    for (int display_id = HD_DISPLAY; display_id < MAX_NUM_DISPLAYS; display_id++) {
-        if (displayState[display_id].video_window[window_id]) {
-            NEXUS_PictureCtrl_SetCommonSettings(displayState[display_id].video_window[window_id],settings);
-        }
-    }
-    return;
-}
-
-void NexusService::getGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings)
-{
-    if (display_id >= MAX_NUM_DISPLAYS) {
-        LOGE("%s: display_id(%d) cannot be >= %d!", __PRETTY_FUNCTION__, display_id, MAX_NUM_DISPLAYS);
-        return;
-    }
-
-    if (displayState[display_id].display) {
-        NEXUS_Display_GetGraphicsColorSettings(displayState[display_id].display, settings);
-    }
-    else {
-        LOGE("%s: displayHandle[%d] is NULL!", __PRETTY_FUNCTION__, display_id);        
-    }
-    return;
-}
-
-void NexusService::setGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings)
-{
-    if (display_id >= MAX_NUM_DISPLAYS) {
-        LOGE("%s: display_id(%d) cannot be >= %d!", __PRETTY_FUNCTION__, display_id, MAX_NUM_DISPLAYS);
-        return;
-    }
-
-    if (displayState[display_id].display) {        
-        NEXUS_Display_SetGraphicsColorSettings(displayState[display_id].display, settings);        
-    }
-    else {
-        LOGE("%s: displayHandle[%d] is NULL!", __PRETTY_FUNCTION__, display_id);        
-    }
-    return;
-}
-
-void NexusService::setDisplayOutputs(int display)
-{
-    NEXUS_PlatformConfiguration *pPlatformConfig;
-
-    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
-    if (pPlatformConfig == NULL) {
-        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
-    }
-    else {
-        NEXUS_Platform_GetConfiguration(pPlatformConfig);
-        LOGI("NexusService::setDisplayOutputs %d",display);
-
-        if (display) {
-#if NEXUS_NUM_COMPONENT_OUTPUTS
-            NEXUS_Display_AddOutput(displayState[HD_DISPLAY].display, NEXUS_ComponentOutput_GetConnector(pPlatformConfig->outputs.component[0]));
-#endif
-
-#if NEXUS_HAS_HDMI_OUTPUT && NEXUS_NUM_HDMI_OUTPUTS
-            /* Add HDMI Output to the HD-Display */
-            NEXUS_Display_AddOutput(displayState[HD_DISPLAY].display, NEXUS_HdmiOutput_GetVideoConnector(pPlatformConfig->outputs.hdmi[0]));
-#endif
-        }
-        else {
-            NEXUS_Display_RemoveAllOutputs(displayState[HD_DISPLAY].display);
-        }
-        BKNI_Free(pPlatformConfig);
-    }
-    return;
-}
-
-void NexusService::setAudioMute(int mute)
-{
-    NEXUS_PlatformConfiguration *pPlatformConfig;
-    NEXUS_AudioOutputSettings settings;
-    NEXUS_AudioOutput output;
-    NEXUS_Error aud_err;
-    int32_t leftVolume;
-    int32_t rightVolume;
-
-    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
-    if (pPlatformConfig == NULL) {
-        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
-    }
-    else {
-        NEXUS_Platform_GetConfiguration(pPlatformConfig);
-
-#if NEXUS_NUM_AUDIO_DACS
-        /* DAC out params config */
-        output = NEXUS_AudioDac_GetConnector(pPlatformConfig->outputs.audioDacs[0]);
-        NEXUS_AudioOutput_GetSettings(output, &settings);
-        settings.muted = mute;
-
-        /* Set Dac Volume */
-        aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
-        BDBG_ASSERT(aud_err==BERR_SUCCESS);
-#endif
-
-        /* Spdif out params config */
-#if NEXUS_NUM_SPDIF_OUTPUTS 
-        output = NEXUS_SpdifOutput_GetConnector(pPlatformConfig->outputs.spdif[0]);
-        NEXUS_AudioOutput_GetSettings(output, &settings);
-        settings.muted = mute;
-
-        /* Set Spdif Volume */
-        aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
-        BDBG_ASSERT(aud_err==BERR_SUCCESS);
-#endif
-
-        /* Set HDMI volume */
-#if NEXUS_HAS_HDMI_OUTPUT && NEXUS_NUM_HDMI_OUTPUTS
-        output = NEXUS_HdmiOutput_GetAudioConnector(pPlatformConfig->outputs.hdmi[0]);
-        NEXUS_AudioOutput_GetSettings(output, &settings);
-        settings.muted = false;
-        aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
-        BDBG_ASSERT(aud_err==BERR_SUCCESS);
-#endif
-        BKNI_Free(pPlatformConfig);
-    }
-}
-
-#define AUDIO_VOLUME_SETTING_MIN (0)
-#define AUDIO_VOLUME_SETTING_MAX (99)
-
-/****************************************************
-
-****************************************************/
-static uint32_t Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX+1] =
-{
-    0,      9,      17,     26,     35,     
-    45,     54,     63,     72,     82,
-    92,     101,    111,    121,    131,
-    141,    151,    162,    172,    183,
-    194,    205,    216,    227,    239,
-    250,    262,    273,    285,    297,
-    310,    322,    335,    348,    361,
-    374,    388,    401,    415,    429,
-    444,    458,    473,    488,    504,
-    519,    535,    551,    568,    585,
-    602,    620,    638,    656,    674,
-    694,    713,    733,    754,    774,
-    796,    818,    840,    864,    887,
-    912,    937,    963,    990,    1017,
-    1046,   1075,   1106,   1137,   1170,   
-    1204,   1240,   1277,   1315,   1356,
-    1398,   1442,   1489,   1539,   1592,   
-    1648,   1708,   1772,   1842,   1917,
-    2000,   2092,   2194,   2310,   2444,
-    2602,   2796,   3046,   3398,   9000    
-};
-
-void NexusService::setAudioVolume(float left, float right)
-{
-    int32_t leftVolume;
-    int32_t rightVolume;
-
-    LOGV("AudioStreamOutNEXUS %s: at %d left=%f right=%f\n",__PRETTY_FUNCTION__,__LINE__,left,right);
-    leftVolume = left*AUDIO_VOLUME_SETTING_MAX;
-    rightVolume = right*AUDIO_VOLUME_SETTING_MAX;
-
-    /* Check for boundary */ 
-    if (leftVolume > AUDIO_VOLUME_SETTING_MAX)
-        leftVolume = AUDIO_VOLUME_SETTING_MAX;
-    if (leftVolume < AUDIO_VOLUME_SETTING_MIN)
-        leftVolume = AUDIO_VOLUME_SETTING_MIN;
-    if (rightVolume > AUDIO_VOLUME_SETTING_MAX)
-        rightVolume = AUDIO_VOLUME_SETTING_MAX;
-    if (rightVolume < AUDIO_VOLUME_SETTING_MIN)
-        rightVolume = AUDIO_VOLUME_SETTING_MIN;
-
-    NEXUS_PlatformConfiguration *pPlatformConfig;
-    NEXUS_AudioOutputSettings settings;
-    NEXUS_AudioOutput output;
-    NEXUS_Error aud_err;
-
-    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
-    if (pPlatformConfig == NULL) {
-        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
-    }
-    else {
-        NEXUS_Platform_GetConfiguration(pPlatformConfig);
-
-#if NEXUS_NUM_AUDIO_DACS
-        /* DAC out params config */
-        output = NEXUS_AudioDac_GetConnector(pPlatformConfig->outputs.audioDacs[0]);
-        NEXUS_AudioOutput_GetSettings(output, &settings);
-        settings.volumeType = NEXUS_AudioVolumeType_eDecibel;
-        settings.muted = false;
-        settings.leftVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-leftVolume];
-        settings.rightVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-rightVolume];
-
-        /* Set Dac Volume */
-        aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
-        BDBG_ASSERT(aud_err==BERR_SUCCESS);
-#endif
-
-        /* Spdif out params config */
-#if NEXUS_NUM_SPDIF_OUTPUTS 
-        output = NEXUS_SpdifOutput_GetConnector(pPlatformConfig->outputs.spdif[0]);
-        NEXUS_AudioOutput_GetSettings(output, &settings);
-        settings.volumeType = NEXUS_AudioVolumeType_eDecibel;
-        settings.muted = false;
-        settings.leftVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-leftVolume];
-        settings.rightVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-rightVolume];
-
-        /* Set Spdif Volume */
-        aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
-        BDBG_ASSERT(aud_err==BERR_SUCCESS);
-#endif
-
-        /* Set HDMI volume */
-#if NEXUS_HAS_HDMI_OUTPUT && NEXUS_NUM_HDMI_OUTPUTS
-        output = NEXUS_HdmiOutput_GetAudioConnector(pPlatformConfig->outputs.hdmi[0]);
-        NEXUS_AudioOutput_GetSettings(output, &settings);
-        settings.volumeType = NEXUS_AudioVolumeType_eDecibel;
-        settings.muted = false;
-        settings.leftVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-leftVolume];
-        settings.rightVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-rightVolume];
-
-        aud_err = NEXUS_AudioOutput_SetSettings(output, &settings);
-        BDBG_ASSERT(aud_err==BERR_SUCCESS);
-#endif
-        BKNI_Free(pPlatformConfig);
-    }
-}
-
-
-#if NEXUS_HAS_HDMI_INPUT
-
-static uint8_t SampleEDID[] = 
-{
-    0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x08, 0x6D, 0x74, 0x22, 0x05, 0x01, 0x11, 0x20,
-    0x00, 0x14, 0x01, 0x03, 0x80, 0x00, 0x00, 0x78, 0x0A, 0xDA, 0xFF, 0xA3, 0x58, 0x4A, 0xA2, 0x29,
-    0x17, 0x49, 0x4B, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x3A, 0x80, 0x18, 0x71, 0x38, 0x2D, 0x40, 0x58, 0x2C,
-    0x45, 0x00, 0xBA, 0x88, 0x21, 0x00, 0x00, 0x1E, 0x01, 0x1D, 0x80, 0x18, 0x71, 0x1C, 0x16, 0x20,
-    0x58, 0x2C, 0x25, 0x00, 0xBA, 0x88, 0x21, 0x00, 0x00, 0x9E, 0x00, 0x00, 0x00, 0xFC, 0x00, 0x42,
-    0x43, 0x4D, 0x37, 0x34, 0x32, 0x32, 0x2F, 0x37, 0x34, 0x32, 0x35, 0x0A, 0x00, 0x00, 0x00, 0xFD,
-    0x00, 0x17, 0x3D, 0x0F, 0x44, 0x0F, 0x00, 0x0A, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x01, 0x89,
-
-    0x02, 0x03, 0x3C, 0x71, 0x7F, 0x03, 0x0C, 0x00, 0x40, 0x00, 0xB8, 0x2D, 0x2F, 0x80, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0xE3, 0x05, 0x1F, 0x01, 0x49, 0x90, 0x05, 0x20, 0x04, 0x03, 0x02, 0x07,
-    0x06, 0x01, 0x29, 0x09, 0x07, 0x01, 0x11, 0x07, 0x00, 0x15, 0x07, 0x00, 0x01, 0x1D, 0x00, 0x72,
-    0x51, 0xD0, 0x1E, 0x20, 0x6E, 0x28, 0x55, 0x00, 0xBA, 0x88, 0x21, 0x00, 0x00, 0x1E, 0x8C, 0x0A,
-    0xD0, 0x8A, 0x20, 0xE0, 0x2D, 0x10, 0x10, 0x3E, 0x96, 0x00, 0xBA, 0x88, 0x21, 0x00, 0x00, 0x18,
-    0x8C, 0x0A, 0xD0, 0x8A, 0x20, 0xE0, 0x2D, 0x10, 0x10, 0x3E, 0x96, 0x00, 0x0B, 0x88, 0x21, 0x00,
-    0x00, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x9D
-};
-
-static void source_changed(void *context, int param)
-{
-    BSTD_UNUSED(context);
-    BSTD_UNUSED(param);
-
-    LOGV("source changed\n");
-}
-
-static void avmute_changed(void *context, int param)
-{
-    NEXUS_HdmiInputHandle hdmiInput;
-    NEXUS_HdmiInputStatus hdmiInputStatus ;
-    BSTD_UNUSED(param);
-
-    hdmiInput = (NEXUS_HdmiInputHandle) context ;
-    NEXUS_HdmiInput_GetStatus(hdmiInput, &hdmiInputStatus) ;
-
-    if (!hdmiInputStatus.validHdmiStatus) {
-        LOGV("avmute_changed callback: Unable to get hdmiInput status\n") ;
-    }
-    else {
-        LOGV("avmute_changed callback: %s\n", 
-            hdmiInputStatus.avMute ? "Set_AvMute" : "Clear_AvMute") ;
-    }
-}
-#endif // NEXUS_HAS_HDMI_INPUT
-
-bool NexusService::connectHdmiInput(NexusClientContext * client __unused, b_refsw_client_connect_resource_settings *pConnectSettings __unused)
-{
-    NEXUS_Error rc = NEXUS_SUCCESS;
-    return (rc == NEXUS_SUCCESS);
-}
-
-bool NexusService::disconnectHdmiInput(NexusClientContext * client __unused)
-{
-    NEXUS_Error rc = NEXUS_SUCCESS;
-    return (rc == NEXUS_SUCCESS);
 }
 
 bool NexusService::setCecEnabled(uint32_t cecId __unused, bool enabled)
@@ -1970,6 +1376,44 @@ bool NexusService::sendCecMessage(unsigned cecId, uint8_t srcAddr, uint8_t destA
     return success;
 }
 
+void NexusService::setDisplayState(bool enable)
+{
+    NEXUS_SurfaceCompositorSettings *p_surface_compositor_settings = NULL;
+    int rc;
+
+    p_surface_compositor_settings = (NEXUS_SurfaceCompositorSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorSettings));
+    if (NULL == p_surface_compositor_settings) {
+        while(1) LOGE("%s:%d BKNI_Malloc failed",__PRETTY_FUNCTION__,__LINE__);
+        return;
+    }
+
+    NEXUS_SurfaceCompositor_GetSettings(surface_compositor, p_surface_compositor_settings);
+
+    if (!enable) {
+        BKNI_ResetEvent(inactiveEvent);
+
+        /* disable surface compositor */
+        p_surface_compositor_settings->enabled = false;
+        NEXUS_SurfaceCompositor_SetSettings(surface_compositor, p_surface_compositor_settings);
+        rc = BKNI_WaitForEvent(inactiveEvent, 5000);
+        if (rc) {
+            LOGE("Did not receive NSC inactive event!");
+            if(p_surface_compositor_settings)
+                BKNI_Free(p_surface_compositor_settings);
+            return;
+        }
+    }
+    else {
+        p_surface_compositor_settings->enabled = true;
+        NEXUS_SurfaceCompositor_SetSettings(surface_compositor, p_surface_compositor_settings);
+    }
+
+    if (p_surface_compositor_settings) {
+        BKNI_Free(p_surface_compositor_settings);
+    }
+    return;
+}
+
 bool NexusService::setPowerState(b_powerState pmState)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
@@ -2054,119 +1498,6 @@ bool NexusService::setPowerState(b_powerState pmState)
 b_powerState NexusService::getPowerState()
 {
     return powerState;
-}
-
-
-/************************************************/
-/* ADDED CODE TO CAPTURE THE FRAME              */
-/************************************************/
-
-
-
-
-//1 - success
-//0 - failure
-bool NexusService::getFrame(NexusClientContext * client __unused,
-                            const uint32_t width,
-                            const uint32_t height,
-                            const uint32_t surfacePhyAddress,
-                            const NEXUS_PixelFormat surfaceFormat,
-                            const uint32_t decoderId) 
-{
-        NEXUS_Error                     rc = NEXUS_SUCCESS;
-        NEXUS_SurfaceCreateSettings     createSettings;
-        NEXUS_StripedSurfaceHandle      stripedSurface=NULL; 
-        NEXUS_SurfaceHandle             dstSurface;
-        NEXUS_MemoryStatus              status;
-        uint32_t                        actualOffset;
-        NEXUS_VideoDecoderHandle        decoder; 
-
-        //ALOGD("%s %d"ENTER ************",__PRETTY_FUNCTION__,__LINE__);
-
-        decoder = videoDecoder[decoderId];
-        if (!decoder) {
-            LOGE("Failed TO Acquire Decoder Handle To Start Capture ....");
-        }
-        
-        //ALOGD("%s %d"************",__PRETTY_FUNCTION__,__LINE__);
-        void * pTemp = NEXUS_OffsetToCachedAddr(surfacePhyAddress);
-        memset(pTemp, 0, 100);
-        //ALOGD("%s %d"************",__PRETTY_FUNCTION__,__LINE__);
-
-        NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
-        createSettings.pixelFormat = surfaceFormat;
-        createSettings.width = width;
-        createSettings.height = height;
-        createSettings.pMemory = (void*) pTemp;   
-        dstSurface = NEXUS_Surface_Create(&createSettings);
-        if (!dstSurface) {
-            while(1) LOGE("Creating Surface Failed!!");
-        }
-
-        //ALOGD("%s %d"************",__PRETTY_FUNCTION__,__LINE__);
-        unsigned int reTryCnt=0;
-        do {
-            stripedSurface = NEXUS_VideoDecoder_CreateStripedSurface(decoder);
-            if (stripedSurface == NULL) {
-                BKNI_Sleep(12);
-                reTryCnt++;
-            }
-        } while((stripedSurface == NULL) && (reTryCnt <  10));
-
-        if ( stripedSurface == NULL ) {
-            LOGE("Creating Striped Surface Failed!!");
-            NEXUS_Surface_Destroy(dstSurface);
-            ALOGD("%s:%d EXITING",__PRETTY_FUNCTION__,__LINE__);
-            return false;
-        }
-
-        //ALOGD("%s %d"************",__PRETTY_FUNCTION__,__LINE__);
-        rc = NEXUS_Graphics2D_DestripeToSurface( gfx2D, stripedSurface, dstSurface, NULL );
-        if (rc) {
-            while(1) LOGE("%s:De-Stripe To surface Failed\n",__PRETTY_FUNCTION__);
-            NEXUS_Surface_Destroy(dstSurface);
-            NEXUS_VideoDecoder_DestroyStripedSurface(decoder,stripedSurface);
-            ALOGD("%s:%d EXITING",__PRETTY_FUNCTION__,__LINE__);
-            return false;
-        }
-
-        //ALOGD("%s %d"************",__PRETTY_FUNCTION__,__LINE__);
-        // Wait for the De-Stripe to finish....
-        //rc = NEXUS_Graphics2D_Checkpoint( gfx2D, NULL );
-
-        do {
-            rc = NEXUS_Graphics2D_Checkpoint(gfx2D, NULL);
-            if (rc == (NEXUS_Error) NEXUS_GRAPHICS2D_QUEUED) {
-                rc = BKNI_WaitForEvent(gfxDone, 1000);
-            }
-        } while (rc == (NEXUS_Error) NEXUS_GRAPHICS2D_QUEUE_FULL);
-
-        //ALOGD("%s %d"************",__PRETTY_FUNCTION__,__LINE__);
-        NEXUS_Surface_Destroy(dstSurface);
-        NEXUS_VideoDecoder_DestroyStripedSurface(decoder,stripedSurface);
-        //ALOGD("%s %d"EXITING",__PRETTY_FUNCTION__,__LINE__);
-        return true;
-}
-
-bool NexusService::connectClientResources(NexusClientContext * client, b_refsw_client_connect_resource_settings *pConnectSettings)
-{
-    bool ok = true;
-
-    if (pConnectSettings->hdmiInput.id != 0) {
-        ok = connectHdmiInput(client, pConnectSettings);
-    }
-    return ok;
-}
-
-bool NexusService::disconnectClientResources(NexusClientContext * client)
-{
-    bool ok = true;
-
-    if (client->resources.hdmiInput.connected) {
-        ok = disconnectHdmiInput(client);
-        client->resources.hdmiInput.connected = false;
-    }
-    return ok;
 }
 
 status_t NexusService::setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener)
@@ -2338,49 +1669,6 @@ status_t NexusService::onTransact(uint32_t code,
                 destroyClientContext(cmd.param.destroyClientContext.in.client);
                 break;
             }
-            case api_getClientInfo:
-            {
-                getClientInfo(cmd.param.getClientInfo.in.client, &cmd.param.getClientInfo.out.info);
-                break;
-            }
-            case api_getClientComposition:
-            {
-                getClientComposition(cmd.param.getClientComposition.in.client, &cmd.param.getClientComposition.out.composition);
-                break;
-            }
-            case api_setClientComposition:
-            {
-                setClientComposition(cmd.param.setClientComposition.in.client, &cmd.param.setClientComposition.in.composition);
-                break;
-            }
-            
-            case api_getDisplaySettings:
-            {
-                getDisplaySettings(cmd.param.getDisplaySettings.in.display_id, &cmd.param.getDisplaySettings.out.settings);
-                break;
-            }
-            case api_setDisplaySettings:            
-            {
-                setDisplaySettings(cmd.param.getDisplaySettings.in.display_id, &cmd.param.getDisplaySettings.out.settings);
-                break;
-            } 
-
-            case api_addGraphicsWindow:
-            {
-                cmd.param.addGraphicsWindow.out.status = addGraphicsWindow(cmd.param.addGraphicsWindow.in.client);
-                break;
-            }
-            case api_setAudioVolume:
-            {
-                setAudioVolume(cmd.param.setAudioVolume.in.leftVolume, cmd.param.setAudioVolume.in.rightVolume);
-                break;
-            }
-            case api_getFrame:
-            {
-                cmd.param.getFrame.out.status = getFrame(cmd.param.getFrame.in.client, cmd.param.getFrame.in.width, cmd.param.getFrame.in.height, 
-                    cmd.param.getFrame.in.surfacePhyAddress, cmd.param.getFrame.in.surfaceFormat, cmd.param.getFrame.in.decoderId);
-                break;
-            }
             case api_setPowerState:
             {
                 cmd.param.setPowerState.out.status = setPowerState(cmd.param.setPowerState.in.pmState);
@@ -2428,48 +1716,6 @@ status_t NexusService::onTransact(uint32_t code,
             {
                 cmd.param.getHdmiOutputStatus.out.status = getHdmiOutputStatus(cmd.param.getHdmiOutputStatus.in.portId,
                                                                               &cmd.param.getHdmiOutputStatus.out.hdmiOutputStatus);
-                break;
-            }
-            case api_connectClientResources:
-            {
-                cmd.param.connectClientResources.out.status = connectClientResources(cmd.param.connectClientResources.in.client,
-                                                                                     &cmd.param.connectClientResources.in.connectSettings);
-                break;
-            }
-            case api_disconnectClientResources:
-            {
-                cmd.param.disconnectClientResources.out.status = disconnectClientResources(cmd.param.disconnectClientResources.in.client);
-                break;
-            }
-            case api_getPictureCtrlCommonSettings:
-            {
-                getPictureCtrlCommonSettings(cmd.param.getPictureCtrlCommonSettings.in.window_id, &cmd.param.getPictureCtrlCommonSettings.out.settings);
-                break;
-            }
-            case api_setPictureCtrlCommonSettings:            
-            {
-                setPictureCtrlCommonSettings(cmd.param.setPictureCtrlCommonSettings.in.window_id, &cmd.param.setPictureCtrlCommonSettings.in.settings);
-                break;
-            } 
-            case api_getGraphicsColorSettings:
-            {
-                getGraphicsColorSettings(cmd.param.getGraphicsColorSettings.in.display_id, &cmd.param.getGraphicsColorSettings.out.settings);
-                break;
-            }
-            case api_setGraphicsColorSettings:            
-            {
-                setGraphicsColorSettings(cmd.param.setGraphicsColorSettings.in.display_id, &cmd.param.setGraphicsColorSettings.in.settings);
-                break;
-            } 
-            case api_setDisplayOutputs:            
-            {
-                LOGI("api_setDisplayOutputs: display=%d",cmd.param.setDisplayOutputs.in.display);
-                setDisplayOutputs(cmd.param.setDisplayOutputs.in.display);
-                break;
-            }
-            case api_setAudioMute:
-            {
-                setAudioMute(cmd.param.setAudioMute.in.mute);
                 break;
             }
             default:

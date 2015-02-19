@@ -51,13 +51,6 @@ enum api_name{
     api_clientUninit,
     api_createClientContext,
     api_destroyClientContext,
-    api_getClientInfo,
-    api_getClientComposition,
-    api_setClientComposition,
-    api_getDisplaySettings,
-    api_setDisplaySettings,    
-    api_addGraphicsWindow,
-    api_setAudioVolume,
     api_setPowerState,
     api_getPowerState,
     api_setCecPowerState,
@@ -66,15 +59,6 @@ enum api_name{
     api_sendCecMessage,
     api_setCecLogicalAddress,
     api_getHdmiOutputStatus,
-    api_getFrame,
-    api_connectClientResources,
-    api_disconnectClientResources,
-    api_getPictureCtrlCommonSettings,
-    api_setPictureCtrlCommonSettings,
-    api_getGraphicsColorSettings,
-    api_setGraphicsColorSettings,
-    api_setDisplayOutputs,
-    api_setAudioMute
 };
 
 // in and out parameters for each of these api's
@@ -119,91 +103,6 @@ typedef union api_param
         struct {
         } out;
     } destroyClientContext;
-
-    struct {
-        struct {
-            NexusClientContext *client;
-        } in;
-
-        struct {
-            b_refsw_client_client_info info;
-        } out;
-    } getClientInfo;
-
-    struct {
-        struct {
-            NexusClientContext *client;
-        } in;
-
-        struct {
-            NEXUS_SurfaceComposition composition;
-        } out;
-    } getClientComposition; 
-
-    struct {
-        struct {
-            NexusClientContext *client;
-            NEXUS_SurfaceComposition composition;
-        } in;
-
-        struct {
-        } out;
-    } setClientComposition; 
-
-    struct {
-        struct {
-            uint32_t display_id;
-        } in;
-
-        struct {
-            NEXUS_DisplaySettings settings;                
-        } out;
-    } getDisplaySettings;
-
-    struct {
-        struct {
-            uint32_t display_id;
-            NEXUS_DisplaySettings settings;       
-        } in;
-
-        struct {
-        } out;
-    } setDisplaySettings;
-
-    struct {
-        struct {
-            NexusClientContext *client;
-        } in;
-
-        struct {
-            bool status;
-        } out;
-    } addGraphicsWindow;
-
-    struct {
-        struct {
-            float leftVolume;
-            float rightVolume;
-        } in;        
-
-        struct {
-        } out;
-    } setAudioVolume;
-
-    struct {
-        struct {
-            NexusClientContext * client;
-            uint32_t width;
-            uint32_t height;
-            uint32_t surfacePhyAddress;
-            NEXUS_PixelFormat surfaceFormat; 
-            uint32_t decoderId;
-        } in;
-
-        struct {
-            bool status;
-        } out;
-    } getFrame;
 
     struct {
         struct {
@@ -289,85 +188,6 @@ typedef union api_param
             bool status;
         } out;
     } getHdmiOutputStatus;
-
-    struct {
-        struct {
-            NexusClientContext *client;
-            b_refsw_client_connect_resource_settings connectSettings;
-        } in;
-
-        struct {
-            bool status;
-        } out;
-    } connectClientResources;
-
-    struct {
-        struct {
-            NexusClientContext *client;
-        } in;
-
-        struct {
-            bool status;
-        } out;
-    } disconnectClientResources;
-
-    struct {
-        struct {
-            uint32_t window_id;
-        } in;
-
-        struct {
-            NEXUS_PictureCtrlCommonSettings settings;                
-        } out;
-    } getPictureCtrlCommonSettings;
-
-    struct {
-        struct {
-            uint32_t window_id;
-            NEXUS_PictureCtrlCommonSettings settings;       
-        } in;
-
-        struct {
-        } out;
-    } setPictureCtrlCommonSettings;
-
-    struct {
-        struct {
-            uint32_t display_id;
-        } in;
-
-        struct {
-            NEXUS_GraphicsColorSettings settings;                
-        } out;
-    } getGraphicsColorSettings;
-
-    struct {
-        struct {
-            uint32_t display_id;
-            NEXUS_GraphicsColorSettings settings;       
-        } in;
-
-        struct {
-        } out;
-    } setGraphicsColorSettings;
-
-    struct {
-        struct {
-            int display;            
-        } in;
-
-        struct {
-        } out;
-    } setDisplayOutputs;
-
-    struct {
-        struct {
-            int mute;             
-        } in;
-
-        struct {
-        } out;
-    } setAudioMute;
 
 } api_param;
 

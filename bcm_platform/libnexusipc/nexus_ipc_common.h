@@ -89,29 +89,12 @@ typedef void * b_refsw_client_standby_monitor_context;
 typedef struct b_refsw_client_client_configuration {
     b_refsw_client_client_name name; /* name of the client application */
     unsigned pid;
-    struct {
-        struct {
-            bool required;
-            NEXUS_Rect position;
-        } screen; /* graphics */
-        bool audioDecoder;
-        bool audioPlayback;
-        bool videoDecoder;
-        bool hdmiInput;
-        bool encoder;
-    } resources;
     b_refsw_client_standby_monitor_callback standbyMonitorCallback;
     b_refsw_client_standby_monitor_context  standbyMonitorContext;
 } b_refsw_client_client_configuration;
 
 typedef struct b_refsw_client_client_info {
     NEXUS_Certificate certificate;
-    NEXUS_SurfaceCompositorClientId surfaceClientId;
-    unsigned audioDecoderId;
-    unsigned videoDecoderId;
-    unsigned audioPlaybackId;
-    unsigned hdmiInputId;
-    unsigned encoderId;
 } b_refsw_client_client_info;
 
 /* Subset of NEXUS_VideoWindowSettings */
@@ -231,49 +214,6 @@ typedef struct b_video_window_caps
     bool deinterlaced; /* if true, deinterlacing is required. if false, not required. */
 } b_video_window_caps;
 
-typedef struct b_refsw_client_connect_resource_settings {
-
-    struct {
-        unsigned id; /* id used to acquire SimpleVideoDecoder. 0 is no request. */
-        unsigned surfaceClientId; /* id for top-level surface client */
-        unsigned windowId;
-        b_video_decoder_caps decoderCaps;
-        b_video_window_caps windowCaps;
-    } simpleVideoDecoder[CLIENT_MAX_IDS];
-
-    struct {
-        unsigned id;    /* id used to acquire SimpleAudioDecoder. 0 is no request. */
-        b_audio_decoder_caps decoderCaps;
-    } simpleAudioDecoder;
-
-    struct {
-        unsigned id; /* id used to acquire SimpleAudioPlayback. 0 is no request. */
-        struct {
-            bool enabled;
-            unsigned index;
-        } i2s;        
-    } simpleAudioPlayback[CLIENT_MAX_IDS];
-
-    struct {
-        unsigned id; /* one-based index of HdmiInput. 0 is no request */
-        unsigned surfaceClientId; /* id for top-level surface client */
-        unsigned windowId;
-        b_video_window_caps windowCaps;
-        bool hdDvi; /* if set, use hd-dvi interface instead of hdmiInput interface */
-    } hdmiInput;
-
-    struct {
-        unsigned id; /* id used to acquire SimpleEncoder. 0 is no request. */
-        bool display; /* Encode the display and audio for this session. Not for file transcoding. */
-        bool nonRealTime;
-        struct {
-            bool cpuAccessible; /* alloc encoder buffers in a client heap so that functions like NEXUS_SimpleEncoder_GetVideoBuffer
-                                       and NEXUS_SimpleEncoder_GetAudioBuffer work. */
-        } audio, video;
-    } simpleEncoder[CLIENT_MAX_IDS];
-
-} b_refsw_client_connect_resource_settings;
-
 #ifdef __cplusplus
 class NexusIPCCommon 
 {
@@ -284,29 +224,12 @@ public:
     /* These API's require a Nexus Client Context as they handle per client resources... */
     virtual NexusClientContext * createClientContext(const b_refsw_client_client_configuration *config) = 0;
     virtual void destroyClientContext(NexusClientContext * client) = 0;
-    virtual void getClientInfo(NexusClientContext * client, b_refsw_client_client_info *info) = 0;
-    virtual void getClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *composition) = 0;
-    virtual void setClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *composition) = 0;    
-    virtual bool addGraphicsWindow(NexusClientContext * client)=0;
-    virtual bool getFrame(NexusClientContext * client, const uint32_t width, const uint32_t height, 
-        const uint32_t surfacePhyAddress, const NEXUS_PixelFormat surfaceFormat, const uint32_t decoderId) = 0;
-    virtual bool connectClientResources(NexusClientContext * client, b_refsw_client_connect_resource_settings *pConnectSettings)=0;
-    virtual bool disconnectClientResources(NexusClientContext * client)=0;
 
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/
     virtual status_t setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener) = 0;
     virtual status_t addHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener) = 0;
     virtual status_t removeHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener) = 0;
 
-    virtual void getPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings) = 0;
-    virtual void setPictureCtrlCommonSettings(uint32_t window_id, NEXUS_PictureCtrlCommonSettings *settings) = 0;
-    virtual void getGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings) = 0;
-    virtual void setGraphicsColorSettings(uint32_t display_id, NEXUS_GraphicsColorSettings *settings) = 0;
-    virtual void getDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings *settings) = 0;
-    virtual void setDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings *settings) = 0;
-    virtual void setDisplayOutputs(int display) = 0;
-    virtual void setAudioVolume(float leftVol, float rightVol) = 0;
-    virtual void setAudioMute(int mute) = 0;
     virtual bool setPowerState(b_powerState pmState)=0;
     virtual b_powerState getPowerState()=0;
     virtual bool setCecPowerState(uint32_t cecId, b_powerState pmState)=0;

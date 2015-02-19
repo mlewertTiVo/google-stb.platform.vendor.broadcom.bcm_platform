@@ -42,11 +42,15 @@
 #include "nexus_types.h"
 #include "nexus_platform.h"
 #include "nexus_ipc_client_factory.h"
+#include "nxclient.h"
+#include "nxclient_config.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 #include <cutils/log.h>
+
+#define NEXUS_DISPLAY_OBJECTS 4
 
 static int lights_device_open(const struct hw_module_t *module,
         const char *name, struct hw_device_t **device);
@@ -73,10 +77,17 @@ static int lights_set_light_backlight(struct light_device_t *dev,
 {
     (void)dev;
 
+    b_refsw_client_client_configuration clientConfig;
+    NEXUS_DisplayHandle display_handle;
     NexusIPCClientBase *ipcclient =
-        NexusIPCClientFactory::getClient("generalSTBFunctions");
+        NexusIPCClientFactory::getClient("lights");
     if (!ipcclient || !state)
         return -EINVAL;
+
+
+    memset(&clientConfig, 0, sizeof(clientConfig));
+    strncpy(clientConfig.name.string, "lights", sizeof(clientConfig.name.string));
+    ipcclient->createClientContext(&clientConfig);
 
     LOGI("requested color: 0x%08x", state->color);
 
@@ -88,14 +99,22 @@ static int lights_set_light_backlight(struct light_device_t *dev,
     LOGV("relative luminance: %f", y);
 
     NEXUS_GraphicsColorSettings settings;
-    ipcclient->getGraphicsColorSettings(0, &settings);
+    NEXUS_InterfaceName interfaceName;
+    NEXUS_PlatformObjectInstance objects[NEXUS_DISPLAY_OBJECTS]; /* won't overflow. */
+    size_t num = NEXUS_DISPLAY_OBJECTS;
+    NEXUS_Error nrc;
+    NEXUS_ClientHandle client = NxClient_Config_LookupClient(clientConfig.pid);
+    strcpy(interfaceName.name, "NEXUS_Display");
+    nrc = NEXUS_Platform_GetClientObjects(client, &interfaceName, &objects[0], num, &num);
+
+    NEXUS_Display_GetGraphicsColorSettings((NEXUS_DisplayHandle)objects[0].object, &settings);
     LOGV("current brightness: %d", (int)settings.brightness);
 
     //scale to *half* of int16_t range for Nexus (full range is not usable)
     static const int full_range = 65535;
     settings.brightness = 0.5 * full_range * (y - 0.5);
     LOGV("new brightness: %d", (int)settings.brightness);
-    ipcclient->setGraphicsColorSettings(0, &settings);
+    NEXUS_Display_SetGraphicsColorSettings((NEXUS_DisplayHandle)objects[0].object, &settings);
 
     return 0;
 }
