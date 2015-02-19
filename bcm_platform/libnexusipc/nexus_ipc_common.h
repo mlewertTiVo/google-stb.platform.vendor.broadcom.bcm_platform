@@ -341,23 +341,23 @@ static void get_initial_output_formats_from_property(NEXUS_VideoFormat *hd_forma
     {
         if (strncmp((char *) value, "1080p",5)==0)
         {
-            LOGW("Set output format to e1080p");
+            ALOGW("Set output format to e1080p");
             fmt = NEXUS_VideoFormat_e1080p;
         }
         else if(strncmp((char *) value, "3d720p",6)==0)
         {
-            LOGW("Set output format to e720p_3DOU_AS...");
+            ALOGW("Set output format to e720p_3DOU_AS...");
             fmt = NEXUS_VideoFormat_e720p_3DOU_AS;
         }
         else
         {
-            LOGW("Set output format to e720p");
+            ALOGW("Set output format to e720p");
             fmt = NEXUS_VideoFormat_e720p;
         }
     }
     else
     {
-        LOGW("Set output format to default e720p");
+        ALOGW("Set output format to default e720p");
         fmt = NEXUS_VideoFormat_e720p;
     }
 
@@ -368,18 +368,18 @@ static void get_initial_output_formats_from_property(NEXUS_VideoFormat *hd_forma
     {
         if (strncmp((char *) value, "PAL",3)==0)
         {
-            LOGW("Set SD output format to PAL...");
+            ALOGW("Set SD output format to PAL...");
             fmt = NEXUS_VideoFormat_ePal;
         }
         else
         {
-            LOGW("Set SD output format to NTSC");
+            ALOGW("Set SD output format to NTSC");
             fmt = NEXUS_VideoFormat_eNtsc;
         }
     }
     else
     {
-        LOGW("Set SD output format to default Ntsc");
+        ALOGW("Set SD output format to default Ntsc");
         fmt = NEXUS_VideoFormat_eNtsc;
     }
     if(sd_format) *sd_format = fmt;

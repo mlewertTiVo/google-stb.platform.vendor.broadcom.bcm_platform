@@ -144,7 +144,7 @@ typedef struct DisplayState
 typedef struct NexusServerContext
 {
     NexusServerContext();
-    ~NexusServerContext() { LOGV("%s: called", __PRETTY_FUNCTION__); }
+    ~NexusServerContext() { ALOGV("%s: called", __PRETTY_FUNCTION__); }
 
     Mutex mLock;
     unsigned mJoinRefCount;

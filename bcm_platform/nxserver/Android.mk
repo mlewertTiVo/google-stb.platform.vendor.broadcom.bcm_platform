@@ -12,20 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-REFSW_PATH :=vendor/broadcom/bcm_platform/brcm_nexus
 LOCAL_PATH := $(call my-dir)
-NEXUS_TOP ?= $(LOCAL_PATH)/../../../../../../../../../nexus
-
 include $(CLEAR_VARS)
 
-# Nexus multi-process, client-server related CFLAGS
-MP_CFLAGS = -DANDROID_CLIENT_SECURITY_MODE=$(ANDROID_CLIENT_SECURITY_MODE)
-MP_CFLAGS += -DANDROID_SUPPORTS_NXCLIENT
-MP_CFLAGS += -DANDROID_UNDER_LXC=0
-MP_CFLAGS += -DANDROID_SUPPORTS_FRONTEND_SERVICE=0
-MP_CFLAGS += -DATP_BUILD=0
-
-include $(NEXUS_TOP)/nxclient/include/nxclient.inc
+include $(TOP)/vendor/broadcom/refsw/nexus/nxclient/include/nxclient.inc
 
 LOCAL_PRELINK_MODULE := false
 LOCAL_SHARED_LIBRARIES := liblog \
@@ -37,18 +27,15 @@ LOCAL_SHARED_LIBRARIES := liblog \
                           libnexus \
                           libnxclient
 
-LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusservice
-LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc
-LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusir
+LOCAL_STATIC_LIBRARIES := libnxserver
+
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusservice
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusipc
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusir
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/refsw/nexus/nxclient/server
 
-LOCAL_SRC_FILES := \
-                nexusinit.cpp
-
-LOCAL_MODULE := nexusinit
-LOCAL_MODULE_TAGS := optional
-LOCAL_CFLAGS += $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
-LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
+LOCAL_CFLAGS += $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES))
 ifeq ($(BCM_OMX_SUPPORT_ENCODER),y)
 LOCAL_CFLAGS += -DBCM_OMX_SUPPORT_ENCODER
 endif
@@ -56,4 +43,8 @@ ifeq ($(V3D_USES_MMA),y)
 LOCAL_CFLAGS += -DUSE_MMA
 endif
 
+LOCAL_SRC_FILES := nxserver.cpp
+
+LOCAL_MODULE := nxserver
+LOCAL_MODULE_TAGS := optional
 include $(BUILD_EXECUTABLE)
