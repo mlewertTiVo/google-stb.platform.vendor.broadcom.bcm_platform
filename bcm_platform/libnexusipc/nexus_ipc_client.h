@@ -137,28 +137,6 @@ protected:
 
 private:
     static NEXUS_ClientHandle clientHandle;
-
-
-#if ANDROID_USES_TRELLIS_WM
-public:
-    /* IAndroidBAMEventListener to talk to Trellis */
-    virtual void setVisibility(const std::string& uid, bool visibility); 
-    virtual void handleFocus(const std::string& uid, bool obtained);
-    virtual void terminate(const std::string& uid);
-    virtual std::string launch(const std::string& uid);
-    virtual bool handleEvent(const std::string& uid, Trellis::Application::IWindow::Event * event);
-
-    // BcmApp manager related
-    virtual void ConnectToServerSocket();
-    virtual int  CheckAB();
-    virtual void StartAB();
-    virtual void StopAB();
-    virtual void DesktopHide();
-    virtual void DesktopShow();
-    virtual void DesktopShowNoApp();
-    static  void TimerHandler(sigval_t);
-#endif
-
 };
 
 #endif /* __cplusplus */

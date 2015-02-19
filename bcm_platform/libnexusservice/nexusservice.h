@@ -93,11 +93,7 @@
 /*If the security mode is not eUntrusted then we do Join else we do Authenticated Join*/
 #define NEXUS_ABSTRACTED_JOIN(auth) NEXUS_Platform_AuthenticatedJoin(auth)
 
-#if (ANDROID_SUPPORTS_SD_DISPLAY && (NEXUS_NUM_DISPLAYS >= 2))
-#define MAX_NUM_DISPLAYS (2)
-#else
 #define MAX_NUM_DISPLAYS (1)
-#endif /* #if ANDROID_SUPPORTS_SD_DISPLAY */
 
 #if (NEXUS_NUM_VIDEO_WINDOWS >= 2)
 #define MAX_VIDEO_WINDOWS_PER_DISPLAY (2)
@@ -109,7 +105,6 @@
 #define NEXUS_NUM_VIDEO_ENCODERS 0
 #endif
 #define HD_DISPLAY (0)
-#define SD_DISPLAY (1)
 #define MAX_AUDIO_DECODERS  ((NEXUS_NUM_AUDIO_DECODERS  < 2) ? NEXUS_NUM_AUDIO_DECODERS  : 2)
 #define MAX_AUDIO_PLAYBACKS ((NEXUS_NUM_AUDIO_PLAYBACKS < 2) ? NEXUS_NUM_AUDIO_PLAYBACKS : 2)
 #define MAX_VIDEO_DECODERS  ((NEXUS_NUM_VIDEO_DECODERS  < 2) ? NEXUS_NUM_VIDEO_DECODERS  : 2)

@@ -33,9 +33,6 @@ include $(CLEAR_VARS)
 
 LOCAL_MODULE := power.bcm_platform
 
-# Nexus multi-process, client-server related CFLAGS
-MP_CFLAGS = -DANDROID_CLIENT_SECURITY_MODE=$(ANDROID_CLIENT_SECURITY_MODE)
-
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 LOCAL_SHARED_LIBRARIES := liblog libcutils libdl libbinder libutils libbinder libnexusipcclient libpmlibservice libpower libnexusir $(NEXUS_LIB)

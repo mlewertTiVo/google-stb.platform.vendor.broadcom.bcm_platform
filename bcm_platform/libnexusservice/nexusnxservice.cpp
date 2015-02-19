@@ -34,19 +34,9 @@
  * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE 
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
  * ANY LIMITED REMEDY.
- *
- * $brcm_Workfile: nexusnxservice.cpp $
- * $brcm_Revision: $
- * $brcm_Date: $
- * 
- * Module Description:
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/libnexusservice/nexusnxservice.cpp $
- * 
  *****************************************************************************/
 
+#define LOG_TAG "nxservice"
 //#define LOG_NDEBUG 0
 
 #include <utils/Log.h>
@@ -83,15 +73,6 @@
 
 #include "nexus_ipc_priv.h"
 #include "nxclient.h"
-#if ANDROID_SUPPORTS_EMBEDDED_NXSERVER
-#include "nxserverlib.h"
-#include "nxclient_local.h"
-#endif
-
-#ifdef LOG_TAG
-#undef LOG_TAG
-#endif
-#define LOG_TAG "NexusNxService"
 
 #ifdef UINT32_C
 #undef UINT32_C
@@ -120,10 +101,6 @@ typedef struct NexusNxServerContext : public NexusServerContext {
     NexusNxServerContext()  { LOGV("%s: called", __PRETTY_FUNCTION__); }
     ~NexusNxServerContext() { LOGV("%s: called", __PRETTY_FUNCTION__); }
 
-#if ANDROID_SUPPORTS_EMBEDDED_NXSERVER
-    BKNI_MutexHandle lock;
-    nxserver_t nxserver;
-#endif
     struct StandbyMonitorThread : public android::Thread {
 
         enum ThreadState {
@@ -162,7 +139,7 @@ typedef struct NexusNxServerContext : public NexusServerContext {
 
 NexusNxServerContext::StandbyMonitorThread::~StandbyMonitorThread()
 {
-    ALOGD("%s: called", __PRETTY_FUNCTION__); 
+    ALOGD("%s: called", __PRETTY_FUNCTION__);
 
     if (this->name != NULL) {
         free(name);
@@ -173,7 +150,7 @@ NexusNxServerContext::StandbyMonitorThread::~StandbyMonitorThread()
 android::status_t NexusNxServerContext::StandbyMonitorThread::run(const char* name, int32_t priority, size_t stack)
 {
     android::status_t status;
-    
+
     this->name = strdup(name);
 
     status = Thread::run(name, priority, stack);
@@ -195,7 +172,7 @@ bool NexusNxServerContext::StandbyMonitorThread::threadLoop()
 
     while (isRunning()) {
         rc = NxClient_GetStandbyStatus(&standbyStatus);
-    
+
         if(standbyStatus.settings.mode != prevStatus.settings.mode) {
             LOGD("%s: Acknowledge state %d\n", getName(), standbyStatus.settings.mode);
             NxClient_AcknowledgeStandby(true);
@@ -294,8 +271,8 @@ void NexusNxService::hdmiOutputHdcpStateChangedCallback(void *context __unused, 
              __func__, param,
              status.hdmi.hdcp.hdcpState,
              status.hdmi.hdcp.hdcpError,
-             status.hdmi.hdcp.isHdcpRepeater, 
-             status.hdmi.hdcp.hdcp1_1Features, 
+             status.hdmi.hdcp.isHdcpRepeater,
+             status.hdmi.hdcp.hdcp1_1Features,
              status.hdmi.hdcp.hdcp2_2Features);
     }
     else {
@@ -458,27 +435,6 @@ void NexusNxService::platformUninitIR()
 void NexusNxService::platformInit()
 {
     NEXUS_Error rc;
-#if ANDROID_SUPPORTS_EMBEDDED_NXSERVER
-    struct nxserver_settings settings;
-
-    nxserver_get_default_settings(&settings);
-
-    server->nxserver = nxserverlib_init(&settings);
-    if (!server->nxserver) {
-        LOGE("%s: FATAL: Cannot initialise nxserver library!", __PRETTY_FUNCTION__);
-        BDBG_ASSERT(server->nxserver);
-    }
-
-    BKNI_CreateMutex(&server->lock);
-
-    rc = nxserver_ipc_init(server->nxserver, server->lock);
-    if (rc != 0) {
-        LOGE("%s: FATAL: Cannot initialise nxserver ipc (rc=%d)!", __PRETTY_FUNCTION__, rc);
-        BDBG_ASSERT(rc == 0);
-    }
-
-    nxclient_local_init(server->nxserver, server->lock);
-#else
     FILE *key = NULL;
     char value[PROPERTY_VALUE_MAX];
     NxClient_JoinSettings joinSettings;
@@ -520,8 +476,6 @@ void NexusNxService::platformInit()
     nxServer->mStandbyMonitorThread = new NexusNxServerContext::StandbyMonitorThread();
     nxServer->mStandbyMonitorThread->run(&joinSettings.name[0], ANDROID_PRIORITY_NORMAL);
 
-#endif // ANDROID_SUPPORTS_EMBEDDED_NXSERVER
-
 #if NEXUS_HAS_CEC
     unsigned i = NEXUS_NUM_CEC;
     while (i--) {
@@ -559,12 +513,6 @@ void NexusNxService::platformUninit()
     }
 #endif
 
-#if ANDROID_SUPPORTS_EMBEDDED_NXSERVER
-    nxclient_local_uninit();
-    nxserver_ipc_uninit();
-    nxserverlib_uninit(server->nxserver);
-    BKNI_DestroyMutex(server->lock);
-#else
     NexusNxServerContext *nxServer = static_cast<NexusNxServerContext *>(server);
     /* Cancel the standby monitor thread... */
     if (nxServer->mStandbyMonitorThread != NULL && nxServer->mStandbyMonitorThread->isRunning()) {
@@ -573,7 +521,6 @@ void NexusNxService::platformUninit()
         nxServer->mStandbyMonitorThread = NULL;
     }
     NxClient_Uninit();
-#endif // ANDROID_SUPPORTS_EMBEDDED_NXSERVER
 }
 
 void NexusNxService::instantiate()
@@ -755,7 +702,7 @@ void NexusNxService::destroyClientContext(NexusClientContext * client)
     if (client->resources.graphicsSurface != NULL) {
         NEXUS_SurfaceClient_Release(client->resources.graphicsSurface);
     }
-   
+
     /* Now free any resources acquired by the createClientContext call... */
     memset(&resources, 0, sizeof(resources));
     resources.surfaceClient[0].id       = client->info.surfaceClientId;
@@ -794,7 +741,7 @@ bool NexusNxService::addGraphicsWindow(NexusClientContext * client)
     }
 
     graphicSurfaceClientId = client->info.surfaceClientId = allocResults.surfaceClient[0].id;
-        
+
     /* See if we need to tweak the graphics to fit on the screen */
     if(property_get("ro.screenresize.x", value, NULL))
     {
@@ -817,9 +764,9 @@ bool NexusNxService::addGraphicsWindow(NexusClientContext * client)
     /* If user has not set gfx window size, read them from HD output's properties */
     if((config->resources.screen.position.width == 0) && (config->resources.screen.position.height == 0))
     {
-        NEXUS_VideoFormatInfo fmt_info; 
+        NEXUS_VideoFormatInfo fmt_info;
         NEXUS_VideoFormat hd_fmt, sd_fmt;
-        
+
         get_initial_output_formats_from_property(&hd_fmt, NULL);
         NEXUS_VideoFormat_GetInfo(hd_fmt, &fmt_info);
 
@@ -848,11 +795,6 @@ bool NexusNxService::addGraphicsWindow(NexusClientContext * client)
         surfSettings.position.width = width;
         surfSettings.position.height = height;
     }
-
-#if (ANDROID_USES_TRELLIS_WM==1)
-    // Disable Android visibility by default in SBS mode
-    surfSettings.visible = 0;
-#endif
 
     NxClient_SetSurfaceClientComposition(graphicSurfaceClientId, &surfSettings);
     /* We *MUST* release the resource for the client of this function to subsequently acquire */
@@ -958,7 +900,6 @@ void NexusNxService::setVideoWindowSettings(NexusClientContext * client, uint32_
     return;
 }
 
-#ifdef ANDROID_SUPPORTS_NXCLIENT_VIDEO_WINDOW_TYPE
 static const NxClient_VideoWindowType videoWindowTypeConversion[] =
 {
     NxClient_VideoWindowType_eMain, /* full screen capable */
@@ -966,7 +907,6 @@ static const NxClient_VideoWindowType videoWindowTypeConversion[] =
     NxClient_VideoWindowType_eNone,  /* app will do video as graphics */
     NxClient_VideoWindowType_Max
 };
-#endif
 
 bool NexusNxService::connectClientResources(NexusClientContext * client, b_refsw_client_connect_resource_settings *pConnectSettings)
 {
@@ -992,10 +932,8 @@ bool NexusNxService::connectClientResources(NexusClientContext * client, b_refsw
         connectSettings.simpleVideoDecoder[i].windowCapabilities.maxHeight      = pConnectSettings->simpleVideoDecoder[i].windowCaps.maxHeight;
         connectSettings.simpleVideoDecoder[i].windowCapabilities.encoder        = pConnectSettings->simpleVideoDecoder[i].windowCaps.encoder;
         connectSettings.simpleVideoDecoder[i].windowCapabilities.deinterlaced   = pConnectSettings->simpleVideoDecoder[i].windowCaps.deinterlaced;
-#ifdef ANDROID_SUPPORTS_NXCLIENT_VIDEO_WINDOW_TYPE
         connectSettings.simpleVideoDecoder[i].windowCapabilities.type           =
                     videoWindowTypeConversion[pConnectSettings->simpleVideoDecoder[i].windowCaps.type];
-#endif
     }
 
     /* Connect simple audio decoder resource... */
@@ -1005,27 +943,7 @@ bool NexusNxService::connectClientResources(NexusClientContext * client, b_refsw
     /* Connect simple audio playback resources... */
     for (i = 0; i < NXCLIENT_MAX_IDS && i < CLIENT_MAX_IDS && pConnectSettings->simpleAudioPlayback[i].id != 0; i++) {
         connectSettings.simpleAudioPlayback[i].id = pConnectSettings->simpleAudioPlayback[i].id;
-#ifdef ANDROID_SUPPORTS_ANALOG_INPUT        
-        connectSettings.simpleAudioPlayback[i].i2s.enabled = pConnectSettings->simpleAudioPlayback[i].i2s.enabled;
-        connectSettings.simpleAudioPlayback[i].i2s.index = pConnectSettings->simpleAudioPlayback[i].i2s.index;        
-#endif
     }
-
-    /* Connect HDMI input resource if < URSR 14.2... */
-#if ANDROID_SUPPORTS_HDMI_LEGACY
-    if (pConnectSettings->hdmiInput.id != 0) {
-        connectSettings.hdmiInput.id                                = pConnectSettings->hdmiInput.id;
-        connectSettings.hdmiInput.surfaceClientId                   = pConnectSettings->hdmiInput.surfaceClientId;
-        connectSettings.hdmiInput.windowId                          = pConnectSettings->hdmiInput.windowId;
-        connectSettings.hdmiInput.windowCapabilities.maxWidth       = pConnectSettings->hdmiInput.windowCaps.maxWidth;
-        connectSettings.hdmiInput.windowCapabilities.maxHeight      = pConnectSettings->hdmiInput.windowCaps.maxHeight;
-        connectSettings.hdmiInput.windowCapabilities.encoder        = pConnectSettings->hdmiInput.windowCaps.encoder;
-        connectSettings.hdmiInput.windowCapabilities.deinterlaced   = pConnectSettings->hdmiInput.windowCaps.deinterlaced;
-#ifdef ANDROID_SUPPORTS_ANALOG_INPUT        
-        connectSettings.hdmiInput.hdDvi                             = pConnectSettings->hdmiInput.hdDvi;
-#endif
-    }
-#endif
 
     /* Connect Simple Encoder resources... */
     for (i = 0; i < NXCLIENT_MAX_IDS && i < CLIENT_MAX_IDS && pConnectSettings->simpleEncoder[i].id != 0; i++) {
@@ -1163,14 +1081,13 @@ void NexusNxService::binderDied(const wp<IBinder>& who)
 bool NexusNxService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus)
 {
     NEXUS_Error rc = NEXUS_NOT_SUPPORTED;
-#ifdef ANDROID_SUPPORTS_NXCLIENT_HDMI_STATUS
 #if NEXUS_HAS_HDMI_OUTPUT
     memset(pHdmiOutputStatus, 0, sizeof(*pHdmiOutputStatus));
 
     if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
         unsigned loops;
         NxClient_DisplayStatus status;
-        
+
         for (loops = 0; loops < 4; loops++) {
             NEXUS_Error rc2;
             NxClient_StandbyStatus standbyStatus;
@@ -1185,7 +1102,7 @@ bool NexusNxService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pH
             LOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
             usleep(250 * 1000);
         }
-        
+
         if (rc == NEXUS_SUCCESS) {
             if (status.hdmi.status.connected) {
                 pHdmiOutputStatus->connected            = status.hdmi.status.connected;
@@ -1212,10 +1129,5 @@ bool NexusNxService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pH
     {
         LOGE("%s: No HDMI%d output on this device!!!", __PRETTY_FUNCTION__, portId);
     }
-#else
-#warning Reference software does not support obtaining HDMI output status in NxClient mode
-    rc = NEXUS_SUCCESS;
-#endif
     return (rc == NEXUS_SUCCESS);
-
 }

@@ -12,100 +12,43 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-REFSW_PATH :=vendor/broadcom/bcm_platform/brcm_nexus
 LOCAL_PATH := $(call my-dir)
-NEXUS_TOP ?= $(LOCAL_PATH)/../../../../../../../../../nexus
-
-ifeq ($(NEXUS_MODE),proxy)
-NEXUS_LIB=libnexus
-else
-ifeq ($(NEXUS_WEBCPU),core1_server)
-NEXUS_LIB=libnexus_webcpu
-else
-NEXUS_LIB=libnexus_client
-endif
-endif
-
-include $(NEXUS_TOP)/nxclient/include/nxclient.inc
-
-# Nexus multi-process, client-server related CFLAGS
-MP_CFLAGS = -DANDROID_CLIENT_SECURITY_MODE=$(ANDROID_CLIENT_SECURITY_MODE)
-
-ifeq ($(ANDROID_SUPPORTS_SD_DISPLAY),y)
-MP_CFLAGS += -DANDROID_SUPPORTS_SD_DISPLAY=1
-else
-MP_CFLAGS += -DANDROID_SUPPORTS_SD_DISPLAY=0
-endif
-
-MP_CFLAGS += -DANDROID_SUPPORTS_NXCLIENT
-ifeq ($(ANDROID_SUPPORTS_EMBEDDED_NXSERVER),y)
-MP_CFLAGS += -DANDROID_SUPPORTS_EMBEDDED_NXSERVER=1
-else
-MP_CFLAGS += -DANDROID_SUPPORTS_EMBEDDED_NXSERVER=0
-endif
-
-ifeq ($(ANDROID_SUPPORTS_NXCLIENT_HDMI_STATUS),y)
-MP_CFLAGS += -DANDROID_SUPPORTS_NXCLIENT_HDMI_STATUS
-endif
-
-ifeq ($(ANDROID_SUPPORTS_NXCLIENT_VIDEO_WINDOW_TYPE),y)
-MP_CFLAGS += -DANDROID_SUPPORTS_NXCLIENT_VIDEO_WINDOW_TYPE
-endif
-
-ifeq ($(ANDROID_SUPPORTS_ANALOG_INPUT),y)
-MP_CFLAGS += -DANDROID_SUPPORTS_ANALOG_INPUT
-endif
-
-ifeq ($(ANDROID_ENABLE_HDMI_LEGACY),y)
-MP_CFLAGS += -DANDROID_SUPPORTS_HDMI_LEGACY=1
-else
-MP_CFLAGS += -DANDROID_SUPPORTS_HDMI_LEGACY=0
-endif
-
-MP_CFLAGS += -DANDROID_USES_TRELLIS_WM=0
-
-ifeq ($(ANDROID_ENABLE_HDMI_HDCP),y)
-MP_CFLAGS += -DANDROID_ENABLE_HDMI_HDCP=1
-else
-MP_CFLAGS += -DANDROID_ENABLE_HDMI_HDCP=0
-endif
-
 include $(CLEAR_VARS)
+
+include $(TOP)/vendor/broadcom/refsw/nexus/nxclient/include/nxclient.inc
+
 LOCAL_PRELINK_MODULE := false
-LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusipceventlistener libnexusir $(NEXUS_LIB) libstagefright_foundation
+LOCAL_SHARED_LIBRARIES := \
+   liblog \
+   libcutils \
+   libutils \
+   libbinder \
+   libnexusipceventlistener \
+   libnexusir \
+   libnexus \
+   libstagefright_foundation \
+   libnxclient
 
-ifeq ($(ANDROID_USES_TRELLIS_WM),y)
-LOCAL_SHARED_LIBRARIES += libstlport
-endif
-
-LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include
-LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc
-LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusir
-
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusipc
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusir
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
-LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
-ifeq ($(ANDROID_SUPPORTS_EMBEDDED_NXSERVER),y)
-LOCAL_SHARED_LIBRARIES += libnxserver libnxclient_local
-else
-LOCAL_SHARED_LIBRARIES += libnxclient
-endif
 
-LOCAL_SRC_FILES := \
-    nexusservice.cpp
-
+LOCAL_SRC_FILES := nexusservice.cpp
+LOCAL_SRC_FILES += nexusnxservice.cpp
 ifneq ($(findstring NEXUS_HAS_CEC,$(NEXUS_APP_DEFINES)),)
 LOCAL_SRC_FILES += \
     nexuscecservice.cpp \
     nexusnxcecservice.cpp
 endif
 
-LOCAL_SRC_FILES += nexusnxservice.cpp
+LOCAL_CFLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES))
+LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
+ifeq ($(ANDROID_ENABLE_HDMI_HDCP),y)
+LOCAL_CFLAGS += -DANDROID_ENABLE_HDMI_HDCP=1
+else
+LOCAL__CFLAGS += -DANDROID_ENABLE_HDMI_HDCP=0
+endif
 
 LOCAL_MODULE_TAGS := optional
-
 LOCAL_MODULE := libnexusservice
-LOCAL_CFLAGS:= $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
-LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
-
 include $(BUILD_SHARED_LIBRARY)

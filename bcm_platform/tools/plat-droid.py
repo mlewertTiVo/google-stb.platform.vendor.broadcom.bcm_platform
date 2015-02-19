@@ -243,9 +243,6 @@ root_pre_settings="./device/broadcom/custom/%s/root/pre_settings.mk" %(androidro
 if os.access(root_pre_settings, os.F_OK):
 	root_pre_settings="\ninclude device/broadcom/custom/%s/root/pre_settings.mk" %(androidrootdevice)
 	os.write(s, root_pre_settings)
-if target_option == "NFS":
-	os.write(s, "\n\n# NFS 'pre' setting tweaks...\n")
-	os.write(s, "include device/broadcom/common/pre_settings_nfs.mk")
 if target_option == "PROFILE" and custom_target_pre_settings != 'nope':
 	os.write(s, "\n\n# CUSTOM 'pre' setting tweaks...\n")
 	os.write(s, custom_target_pre_settings)

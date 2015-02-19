@@ -31,13 +31,7 @@ LOCAL_SRC_FILES := jni_changedisplayformat.cpp
 
 LOCAL_CFLAGS:= $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID
 
-# Test for version newer than ICS
-JB_OR_NEWER := $(shell test "${BRCM_ANDROID_VERSION}" \> "ics" && echo "y")
-
-ifeq ($(JB_OR_NEWER),y)
-LOCAL_CFLAGS += -DANDROID_SUPPORTS_NEXUS_IPC_CLIENT_FACTORY
 LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
-endif
 
 LOCAL_MODULE := libjni_changedisplayformat
 LOCAL_MODULE_TAGS := optional

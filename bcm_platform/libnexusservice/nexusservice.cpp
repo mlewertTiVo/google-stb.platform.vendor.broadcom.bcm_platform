@@ -715,19 +715,6 @@ int NexusService::platformInitVideo(void)
     }
 #endif
 
-#if NEXUS_NUM_COMPOSITE_OUTPUTS
-    if (MAX_NUM_DISPLAYS > 1) {
-        /* Add Composite Output to the SD-Display */
-        rc = NEXUS_Display_AddOutput(displayState[SD_DISPLAY].display, NEXUS_CompositeOutput_GetConnector(pPlatformConfig->outputs.composite[0]));
-        if (rc!=NEXUS_SUCCESS) {
-            LOGE("%s: NEXUS_Display_AddOutput(composite) failed!!", __PRETTY_FUNCTION__);
-            BKNI_Free(pPlatformConfig);
-            return rc;
-        }
-    }
-#endif
-    
-    // Both HD and SD displays have 2 video windows each 
     for (int j=0; j<MAX_NUM_DISPLAYS; j++) {
         for (int i=0; i<MAX_VIDEO_WINDOWS_PER_DISPLAY; i++) {
             displayState[j].video_window[i] = NEXUS_VideoWindow_Open(displayState[j].display, i);
@@ -739,7 +726,7 @@ int NexusService::platformInitVideo(void)
             displayState[j].hNexusVideoWindow[i] = reinterpret_cast<int>(displayState[j].video_window[i]);
         }
     }
-    
+
     for (int i=0; i<MAX_VIDEO_DECODERS; i++) {
         NEXUS_SimpleVideoDecoderServerSettings settings;
 
@@ -837,7 +824,7 @@ int NexusService::platformInitSurfaceCompositor(void)
     NEXUS_SurfaceCompositorSettings *p_surface_compositor_settings = NULL;
     NEXUS_VideoFormatInfo formatInfo;
     NEXUS_VideoFormat_GetInfo(initial_hd_format, &formatInfo);
-            
+
     BKNI_CreateEvent(&inactiveEvent);
     p_surface_compositor_settings = (NEXUS_SurfaceCompositorSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorSettings));
     if (NULL == p_surface_compositor_settings) {
@@ -845,7 +832,7 @@ int NexusService::platformInitSurfaceCompositor(void)
         return NEXUS_OUT_OF_SYSTEM_MEMORY;
     }
 
-    /* create surface compositor server */    
+    /* create surface compositor server */
     surface_compositor = NEXUS_SurfaceCompositor_Create(0);
     if (surface_compositor == NULL) {
         LOGE("%s: Could not create Surface Compositor 0!!!", __PRETTY_FUNCTION__);
@@ -863,38 +850,10 @@ int NexusService::platformInitSurfaceCompositor(void)
     p_surface_compositor_settings->display[HD_DISPLAY].framebuffer.height = formatInfo.height;
     p_surface_compositor_settings->display[HD_DISPLAY].framebuffer.backgroundColor = 0; /* black background */
     p_surface_compositor_settings->display[HD_DISPLAY].framebuffer.heap = NEXUS_Platform_GetFramebufferHeap(0);
-#if 0
-    // give HD video windows to NSC
-    for(i=0; i<MAX_VIDEO_WINDOWS_PER_DISPLAY; i++)
-    {
-        p_surface_compositor_settings->display[HD_DISPLAY].window[i].window = displayState[HD_DISPLAY].video_window[i];
-        if(displayState[HD_DISPLAY].video_window[i])
-            NEXUS_VideoWindow_GetSettings(displayState[HD_DISPLAY].video_window[i], &p_surface_compositor_settings->display[HD_DISPLAY].window[i].settings);
-    }
-#endif
 
     if((NEXUS_VideoFormat_e720p_3DOU_AS == initial_hd_format) || (NEXUS_VideoFormat_e1080p24hz_3DOU_AS == initial_hd_format)) {
         p_surface_compositor_settings->display[HD_DISPLAY].display3DSettings.overrideOrientation = true;
         p_surface_compositor_settings->display[HD_DISPLAY].display3DSettings.orientation = NEXUS_VideoOrientation_e2D;
-    }
-    if(MAX_NUM_DISPLAYS > 1) {
-        NEXUS_Display_GetGraphicsSettings(displayState[SD_DISPLAY].display, &p_surface_compositor_settings->display[SD_DISPLAY].graphicsSettings);
-        p_surface_compositor_settings->display[SD_DISPLAY].graphicsSettings.enabled = true;
-        p_surface_compositor_settings->display[SD_DISPLAY].display = displayState[SD_DISPLAY].display;
-        NEXUS_VideoFormat_GetInfo(initial_sd_format, &formatInfo);
-        p_surface_compositor_settings->display[SD_DISPLAY].framebuffer.width = formatInfo.width;
-        p_surface_compositor_settings->display[SD_DISPLAY].framebuffer.height = formatInfo.height;
-        p_surface_compositor_settings->display[SD_DISPLAY].framebuffer.backgroundColor = 0; /* black background */
-        p_surface_compositor_settings->display[SD_DISPLAY].framebuffer.heap = NEXUS_Platform_GetFramebufferHeap(1);
-#if 0
-        // give SD video windows to NSC
-        for(i=0; i<MAX_VIDEO_WINDOWS_PER_DISPLAY; i++)
-        {
-            p_surface_compositor_settings->display[SD_DISPLAY].window[i].window = displayState[SD_DISPLAY].video_window[i];
-            if(displayState[SD_DISPLAY].video_window[i])
-                NEXUS_VideoWindow_GetSettings(displayState[SD_DISPLAY].video_window[i], &p_surface_compositor_settings->display[SD_DISPLAY].window[i].settings);
-        }
-#endif
     }
     p_surface_compositor_settings->frameBufferCallback.callback = framebuffer_callback;
     p_surface_compositor_settings->frameBufferCallback.context = surface_compositor;
@@ -917,8 +876,6 @@ void NexusService::platformInit()
     NEXUS_PlatformStartServerSettings  serverSettings;
 
     NEXUS_Platform_GetDefaultStartServerSettings(&serverSettings);
-
-    LOGI("***************************\n\tStarting server in mode %d \n***************************", ANDROID_CLIENT_SECURITY_MODE);
 
     serverSettings.allowUnprotectedClientsToCrash = true;
     serverSettings.allowUnauthenticatedClients = false;
@@ -955,7 +912,7 @@ void NexusService::platformInit()
     get_initial_output_formats_from_property(&initial_hd_format, &initial_sd_format);
 
     gfx2D = NEXUS_Graphics2D_Open(NEXUS_ANY_ID,NULL);
-        
+
     BKNI_CreateEvent(&gfxDone);
     NEXUS_Graphics2D_GetSettings(gfx2D, &gfxSettings);
     gfxSettings.checkpointCallback.callback = complete;
@@ -1117,7 +1074,6 @@ NEXUS_ClientHandle NexusService::clientJoin(const b_refsw_client_client_name *pC
                 clientSettings.configuration.heap[3] = NULL;
             }
 #endif
-            clientSettings.configuration.mode = (NEXUS_ClientMode)ANDROID_CLIENT_SECURITY_MODE;
             nexusClient = NEXUS_Platform_RegisterClient(&clientSettings);
             if (nexusClient) {
                 LOGI("%s: Successfully registered client \"%s\".", __PRETTY_FUNCTION__, pClientName->string);
@@ -1576,13 +1532,7 @@ void NexusService::setDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings
                 p_surface_compositor_settings->display[HD_DISPLAY].display3DSettings.orientation = NEXUS_VideoOrientation_e2D;
             }
         }
-        
-        if (display_id == SD_DISPLAY) {/* no scaler in gfd1, we should use the whole sd framebuffer */
-            p_surface_compositor_settings->display[display_id].graphicsSettings.clip.width = 0;
-        }
-        
         NEXUS_SurfaceCompositor_SetSettings(surface_compositor, p_surface_compositor_settings);
-        
         if (p_surface_compositor_settings) {
             BKNI_Free(p_surface_compositor_settings);
         }
@@ -1675,21 +1625,9 @@ void NexusService::setDisplayOutputs(int display)
             /* Add HDMI Output to the HD-Display */
             NEXUS_Display_AddOutput(displayState[HD_DISPLAY].display, NEXUS_HdmiOutput_GetVideoConnector(pPlatformConfig->outputs.hdmi[0]));
 #endif
-
-#if NEXUS_NUM_COMPOSITE_OUTPUTS
-            if (MAX_NUM_DISPLAYS > 1) {
-                /* Add Composite Output to the SD-Display */
-                NEXUS_Display_AddOutput(displayState[SD_DISPLAY].display, NEXUS_CompositeOutput_GetConnector(pPlatformConfig->outputs.composite[0]));
-            }
-#endif
         }
         else {
             NEXUS_Display_RemoveAllOutputs(displayState[HD_DISPLAY].display);
-
-            if (MAX_NUM_DISPLAYS > 1) {
-                /* Add Composite Output to the SD-Display */
-                NEXUS_Display_RemoveAllOutputs(displayState[SD_DISPLAY].display);
-            }
         }
         BKNI_Free(pPlatformConfig);
     }
@@ -1905,271 +1843,12 @@ static void avmute_changed(void *context, int param)
 bool NexusService::connectHdmiInput(NexusClientContext * client __unused, b_refsw_client_connect_resource_settings *pConnectSettings __unused)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
-#if NEXUS_HAS_HDMI_INPUT && NEXUS_HAS_HDMI_OUTPUT && ANDROID_SUPPORTS_HDMI_LEGACY
-    unsigned timeout = 4;
-    unsigned hdmiInputIndex = 0;
-
-    NEXUS_PlatformConfiguration *pPlatformConfig;
-    NEXUS_HdmiInputSettings hdmiInputSettings;
-    NEXUS_HdmiOutputStatus hdmiOutputStatus;
-    NEXUS_HdmiOutputHandle hdmiOutput;
-    NEXUS_AudioOutput hdmiAudioOutput;
-
-    NEXUS_HdmiInput_GetDefaultSettings(&hdmiInputSettings);
-    hdmiInputSettings.timebase = NEXUS_Timebase_e0;
-    hdmiInputSettings.sourceChanged.callback = source_changed;
-    
-    /* set hpdDisconnected to true if a HDMI switch is in front of the Broadcom HDMI Rx.  
-         -- The NEXUS_HdmiInput_ConfigureAfterHotPlug should be called to inform the hw of 
-         -- the current state,  the Broadcom SV reference boards have no switch so 
-         -- the value should always be false 
-         */
-    hdmiInputSettings.frontend.hpdDisconnected = false ;
-    
-    /* use NEXUS_HdmiInput_OpenWithEdid ()
-          if EDID PROM (U1304 and U1305) is NOT installed; 
-            reference boards usually have the PROMs installed.
-            this example assumes Port1 EDID has been removed 
-        */
-
-    /* all HDMI Tx/Rx combo chips have EDID RAM */
-    hdmiInputSettings.useInternalEdid = true ;
-
-    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
-    if (pPlatformConfig == NULL) {
-        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
-        return false;
-    }
-    NEXUS_Platform_GetConfiguration(pPlatformConfig);
-
-    hdmiOutput = pPlatformConfig->outputs.hdmi[0];
-    BKNI_Free(pPlatformConfig);
-
-    do {
-        /* check for connected downstream device */
-        rc = NEXUS_HdmiOutput_GetStatus(hdmiOutput, &hdmiOutputStatus);
-        if (rc) BERR_TRACE(rc);
-        if ( !hdmiOutputStatus.connected ) {
-            LOGW("Waiting for HDMI Tx Device");
-            BKNI_Sleep(250);
-        }
-        else {
-            break;
-        }
-    } while (timeout--);
-
-    if (hdmiOutputStatus.connected) {
-        NEXUS_HdmiOutputBasicEdidData hdmiOutputBasicEdidData;
-        unsigned char *attachedRxEdid;
-        NEXUS_HdmiOutputEdidBlock edidBlock;
-        unsigned i, j;
-
-        /* Get EDID of attached receiver*/
-        NEXUS_HdmiOutput_GetBasicEdidData(hdmiOutput, &hdmiOutputBasicEdidData);
-
-        /* allocate space to hold the EDID blocks */
-        attachedRxEdid = (unsigned char*) BKNI_Malloc((hdmiOutputBasicEdidData.extensions+1)* sizeof(edidBlock.data));
-        for (i=0; i<= hdmiOutputBasicEdidData.extensions; i++) {
-            rc = NEXUS_HdmiOutput_GetEdidBlock(hdmiOutput, i, &edidBlock);
-            if (rc) {
-                LOGE("Error retrieve EDID from attached receiver");
-            }
-
-            for (j=0; j < sizeof(edidBlock.data); j++) {
-                attachedRxEdid[i*sizeof(edidBlock.data)+j] = edidBlock.data[j];
-            }
-        }
-        
-        /* Load hdmiInput EDID RAM with the EDID from the Rx attached to the hdmiOutput (Tx) . */
-        client->resources.hdmiInput.handle = NEXUS_HdmiInput_OpenWithEdid(hdmiInputIndex, &hdmiInputSettings, 
-            attachedRxEdid, (uint16_t) (sizeof(NEXUS_HdmiOutputEdidBlock) * (hdmiOutputBasicEdidData.extensions+1)));
-        LOGD("Use Edid from attached HDMI Rx device");
-
-        /* release memory resources */
-        BKNI_Free(attachedRxEdid);
-    }
-    else {
-        client->resources.hdmiInput.handle = NEXUS_HdmiInput_OpenWithEdid(hdmiInputIndex, &hdmiInputSettings, 
-            &SampleEDID[0], (uint16_t) sizeof(SampleEDID));
-        LOGD("Use Edid from hardcode BCM sample");
-    }
-
-    if (client->resources.hdmiInput.handle == NULL) {
-        LOGE("%s: Can't get hdmi input!", __PRETTY_FUNCTION__);
-        goto err_hdmi_input;
-    }
-    else {
-        client->resources.hdmiInput.connected = true;
-
-        NEXUS_HdmiInput_GetSettings(client->resources.hdmiInput.handle, &hdmiInputSettings) ;
-        hdmiInputSettings.avMuteChanged.callback = avmute_changed;
-        hdmiInputSettings.avMuteChanged.context = client->resources.hdmiInput.handle;
-        NEXUS_HdmiInput_SetSettings(client->resources.hdmiInput.handle, &hdmiInputSettings) ;
-        
-#if NEXUS_NUM_AUDIO_INPUT_CAPTURES
-        client->resources.hdmiInput.captureInput = NEXUS_AudioInputCapture_Open(0, NULL);
-        if (client->resources.hdmiInput.captureInput == NULL) {
-            LOGE("%s: Can't get audio input capture!", __PRETTY_FUNCTION__);
-            goto err_hdmi_input;
-        }
-        else {
-            NEXUS_AudioInputCaptureStartSettings captureInputStartSettings;
-
-            NEXUS_AudioInputCapture_GetDefaultStartSettings(&captureInputStartSettings);
-            captureInputStartSettings.input = NEXUS_HdmiInput_GetAudioConnector(client->resources.hdmiInput.handle);
-
-            NEXUS_AudioInputCapture_Start(client->resources.hdmiInput.captureInput, &captureInputStartSettings);
-
-            /* Shutdown audio decoders/playback channels as they are not required for HDMI audio playback
-               and result in issues when the Audio Mixer is re-connected to the HDMI output later on.
-             */
-            setAudioState(false);
-
-            hdmiAudioOutput = NEXUS_HdmiOutput_GetAudioConnector(hdmiOutput);
-
-            rc = NEXUS_AudioOutput_RemoveAllInputs(hdmiAudioOutput);
-            if (rc != NEXUS_SUCCESS) {
-                LOGE("%s: Could not remove all inputs from HDMI Audio output!", __PRETTY_FUNCTION__);
-                goto err_hdmi_input;
-            }
-            else {
-                rc = NEXUS_AudioOutput_AddInput(hdmiAudioOutput, NEXUS_AudioInputCapture_GetConnector(client->resources.hdmiInput.captureInput));
-                if (rc != NEXUS_SUCCESS) {
-                    LOGE("%s: Could not add audio input capture to HDMI audio output!", __PRETTY_FUNCTION__);
-                    goto err_hdmi_input;
-                }
-            }
-        }
-#endif
-        if (rc == NEXUS_SUCCESS) {
-            NEXUS_SimpleVideoDecoderServerSettings settings;
-            unsigned window_id = pConnectSettings->hdmiInput.windowId;
-
-            // Save window id for disconnectHdmiInput()
-            client->resources.hdmiInput.windowId = window_id;
-
-            // Remove video window from simpledecoder, so that we can add hdmiIn
-            // There is 1-1 mapping between simpleVideoDecoder and videoWindow
-            NEXUS_SimpleVideoDecoder_GetServerSettings(simpleVideoDecoder[window_id], &settings);
-            settings.window[window_id] = NULL;
-            rc = NEXUS_SimpleVideoDecoder_SetServerSettings(simpleVideoDecoder[window_id], &settings);
-            if (rc != NEXUS_SUCCESS) {
-                LOGE("%s: Could not set simple video decoder server settings for video window %d!", __PRETTY_FUNCTION__, window_id);
-                goto err_hdmi_input;
-            }
-            else {
-                // Add Hdmi-In to the video window        
-                for(int display_id = HD_DISPLAY; display_id < MAX_NUM_DISPLAYS; display_id++) {
-                    rc = NEXUS_VideoWindow_AddInput(displayState[display_id].video_window[window_id],
-                         NEXUS_HdmiInput_GetVideoConnector(client->resources.hdmiInput.handle));
-
-                    if (rc != NEXUS_SUCCESS) {
-                        LOGE("%s: Could not add HDMI input to video window %d of display %d!", __PRETTY_FUNCTION__, window_id, display_id);
-                        goto err_hdmi_input;
-                    }
-                }
-            }
-        }
-    }
-#endif
     return (rc == NEXUS_SUCCESS);
-
-#if NEXUS_HAS_HDMI_INPUT && NEXUS_HAS_HDMI_OUTPUT && ANDROID_SUPPORTS_HDMI_LEGACY
-err_hdmi_input:
-#if NEXUS_NUM_AUDIO_INPUT_CAPTURES
-    if (client->resources.hdmiInput.captureInput != NULL) {
-        NEXUS_AudioInput_Shutdown(NEXUS_AudioInputCapture_GetConnector(client->resources.hdmiInput.captureInput));
-        NEXUS_AudioInputCapture_Close(client->resources.hdmiInput.captureInput);
-        client->resources.hdmiInput.captureInput = NULL;
-    }
-#endif
-
-    if (client->resources.hdmiInput.handle != NULL) {
-        NEXUS_VideoInput_Shutdown(NEXUS_HdmiInput_GetVideoConnector(client->resources.hdmiInput.handle));
-        NEXUS_AudioInput_Shutdown(NEXUS_HdmiInput_GetAudioConnector(client->resources.hdmiInput.handle));
-        NEXUS_HdmiInput_Close(client->resources.hdmiInput.handle);  
-        client->resources.hdmiInput.handle = NULL;
-    }
-    return false;
-#endif
 }
 
 bool NexusService::disconnectHdmiInput(NexusClientContext * client __unused)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
-#if NEXUS_HAS_HDMI_INPUT && NEXUS_HAS_HDMI_OUTPUT && ANDROID_SUPPORTS_HDMI_LEGACY
-#if NEXUS_NUM_AUDIO_INPUT_CAPTURES
-    NEXUS_PlatformConfiguration *pPlatformConfig;
-    NEXUS_AudioOutput           hdmiAudioOutput;
-#endif
-
-    if (client->resources.hdmiInput.handle) {
-        NEXUS_StopCallbacks(client->resources.hdmiInput.handle);
-
-#if NEXUS_NUM_AUDIO_INPUT_CAPTURES
-        if (client->resources.hdmiInput.captureInput) {
-            NEXUS_AudioInputCapture_Stop(client->resources.hdmiInput.captureInput);
-        }
-
-        pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
-        if (pPlatformConfig == NULL) {
-            ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
-            return false;
-        }
-        NEXUS_Platform_GetConfiguration(pPlatformConfig);
-        hdmiAudioOutput = NEXUS_HdmiOutput_GetAudioConnector(pPlatformConfig->outputs.hdmi[0]);
-        BKNI_Free(pPlatformConfig);
-
-        rc = NEXUS_AudioOutput_RemoveAllInputs(hdmiAudioOutput);
-        if (rc != NEXUS_SUCCESS) {
-            LOGE("%s: Could not remove all audio inputs from HDMI audio output!", __PRETTY_FUNCTION__);
-        }
-        else {
-            rc = NEXUS_AudioOutput_AddInput(hdmiAudioOutput, NEXUS_AudioMixer_GetConnector(mixer));
-            if (rc != NEXUS_SUCCESS) {
-                LOGE("%s: Could not add audio mixer to HDMI output!", __PRETTY_FUNCTION__);
-            }
-            else {
-                /* Re-instate the Audio Decoders and playback channels */
-                setAudioState(true);
-            }
-        }
-#endif
-    }
-
-    if (rc == NEXUS_SUCCESS) {
-        NEXUS_SimpleVideoDecoderServerSettings settings;
-        unsigned window_id = client->resources.hdmiInput.windowId;
-
-        // Read video window from simpledecoder, so that we can add hdmiIn
-        NEXUS_SimpleVideoDecoder_GetServerSettings(simpleVideoDecoder[window_id], &settings);
-        
-        // Remove all video inputs (this will remove hdmi-input earlier added to the video window)
-        // There is 1-1 mapping between simpleVideoDecoder and videoWindow
-        for (int display_id = HD_DISPLAY; display_id < MAX_NUM_DISPLAYS; display_id++) {
-            NEXUS_VideoWindow_RemoveAllInputs(displayState[display_id].video_window[window_id]);
-            settings.window[display_id] = displayState[display_id].video_window[window_id];
-        }
-        rc = NEXUS_SimpleVideoDecoder_SetServerSettings(simpleVideoDecoder[window_id], &settings);
-        if (rc != NEXUS_SUCCESS) {
-            LOGE("%s: Could not set simple video decoder server settings for video window %d!", __PRETTY_FUNCTION__, window_id);
-        }
-    }
-    
-#if NEXUS_NUM_AUDIO_INPUT_CAPTURES
-    if (client->resources.hdmiInput.captureInput) {
-        NEXUS_AudioInput_Shutdown(NEXUS_AudioInputCapture_GetConnector(client->resources.hdmiInput.captureInput));
-        NEXUS_AudioInputCapture_Close(client->resources.hdmiInput.captureInput);
-        client->resources.hdmiInput.captureInput = NULL;
-    }
-#endif
-    if (client->resources.hdmiInput.handle) {
-        NEXUS_VideoInput_Shutdown(NEXUS_HdmiInput_GetVideoConnector(client->resources.hdmiInput.handle));
-        NEXUS_AudioInput_Shutdown(NEXUS_HdmiInput_GetAudioConnector(client->resources.hdmiInput.handle));
-        NEXUS_HdmiInput_Close(client->resources.hdmiInput.handle);  
-        client->resources.hdmiInput.handle = NULL;
-    }
-#endif
     return (rc == NEXUS_SUCCESS);
 }
 

@@ -49,13 +49,9 @@
  * the API into a command + param format and sends the command over binder to
  * the server side for actual execution or via Nexus bipc to nxserver.
  * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/libnexusipc/nexus_nx_client.cpp $
- * 
  *****************************************************************************/
-  
-#define LOG_TAG "NexusNxClient"
+
+#define LOG_TAG "nxclient"
 //#define LOG_NDEBUG 0
 
 #include <utils/Log.h>
@@ -246,7 +242,6 @@ NEXUS_Error NexusNxClient::standbyCheck(NEXUS_PlatformStandbyMode mode)
     return (count < NXCLIENT_PM_TIMEOUT_COUNT) ? NEXUS_SUCCESS : NEXUS_TIMEOUT;
 }
 
-#ifdef ANDROID_SUPPORTS_NXCLIENT_VIDEO_WINDOW_TYPE
 static const b_video_window_type videoWindowTypeConversion[] =
 {
     eVideoWindowType_eMain, /* full screen capable */
@@ -254,7 +249,6 @@ static const b_video_window_type videoWindowTypeConversion[] =
     eVideoWindowType_eNone,  /* app will do video as graphics */
     eVideoWindowType_Max
 };
-#endif
 
 void NexusNxClient::getDefaultConnectClientSettings(b_refsw_client_connect_resource_settings *settings)
 {
@@ -282,9 +276,7 @@ void NexusNxClient::getDefaultConnectClientSettings(b_refsw_client_connect_resou
         settings->simpleVideoDecoder[i].windowCaps.maxHeight     = connectSettings.simpleVideoDecoder[i].windowCapabilities.maxHeight;
         settings->simpleVideoDecoder[i].windowCaps.deinterlaced  = connectSettings.simpleVideoDecoder[i].windowCapabilities.deinterlaced;
         settings->simpleVideoDecoder[i].windowCaps.encoder       = connectSettings.simpleVideoDecoder[i].windowCapabilities.encoder;
-#ifdef ANDROID_SUPPORTS_NXCLIENT_VIDEO_WINDOW_TYPE
         settings->simpleVideoDecoder[i].windowCaps.type          = videoWindowTypeConversion[connectSettings.simpleVideoDecoder[i].windowCapabilities.type];
-#endif
     }
 
     // Setup simple audio decoder caps...
@@ -324,80 +316,6 @@ void NexusNxClient::destroyClientContext(NexusClientContext * client)
     return;
 }
 
-#ifdef ANDROID_SUPPORTS_NXCLIENT_CONFIG
-void NexusNxClient::getClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *composition)
-{
-    if (client == NULL) {
-        LOGE("%s: FATAL: Client context argument is NULL!!!", __PRETTY_FUNCTION__);
-    }
-    else if (composition == NULL) {
-        LOGE("%s: FATAL: Client composition argument is NULL!!!", __PRETTY_FUNCTION__);
-    }
-    else if (client->nexusClient == NULL) {
-        LOGE("%s: Invalid nexus client handle for client \"%s\"!!!", __PRETTY_FUNCTION__, client->createConfig.name.string);
-    }
-    else if (client->resources.videoSurface == NULL) {
-        LOGE("%s: Invalid surface client handle for client \"%s\"!!!", __PRETTY_FUNCTION__, client->createConfig.name.string);
-    }
-    else {
-        NxClient_Config_GetSurfaceClientComposition(client->nexusClient, client->resources.videoSurface, composition);
-        LOGD("%s: Nexus Client \"%s\" surfaceClientId=%d, %d,%d@%d,%d", __PRETTY_FUNCTION__, client->createConfig.name.string,
-            client->info.surfaceClientId, composition->position.width, composition->position.height, composition->position.x, composition->position.y);
-    }
-    return;
-}
-
-void NexusNxClient::setClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *composition)
-{
-    if (client == NULL) {
-        LOGE("%s: FATAL: Client context argument is NULL!!!", __PRETTY_FUNCTION__);
-        //BDBG_ASSERT(client != NULL);
-    }
-
-    if (composition == NULL) {
-        LOGE("%s: FATAL: Client composition argument is NULL!!!", __PRETTY_FUNCTION__);
-        //BDBG_ASSERT(composition != NULL);
-    }
-
-    if (client->nexusClient == NULL) {
-        LOGE("%s: Invalid nexus client handle for client \"%s\"!!!", __PRETTY_FUNCTION__, client->createConfig.name.string);
-    }
-    else {
-        if (client->resources.videoSurface == NULL) {
-            LOGE("%s: Invalid surface client handle for client \"%s\"!!!", __PRETTY_FUNCTION__, client->createConfig.name.string);
-        }
-        else {
-            NxClient_Config_SetSurfaceClientComposition(client->nexusClient, client->resources.videoSurface, composition);
-            LOGD("%s: Nexus Client \"%s\" surfaceClientId=%d, %d,%d@%d,%d", __PRETTY_FUNCTION__, client->createConfig.name.string,
-                client->info.surfaceClientId, composition->position.width, composition->position.height, composition->position.x, composition->position.y);
-        }
-    }
-}
-
-void NexusNxClient::getVideoWindowSettings(NexusClientContext * client, uint32_t window_id, b_video_window_settings *settings)
-{
-    if (client == NULL) {
-        LOGE("%s: FATAL: Client context argument is NULL!!!", __PRETTY_FUNCTION__);
-        //BDBG_ASSERT(client != NULL);
-    }
-
-    LOGD("%s: Client \"%s\" surfaceClientId=%d pid=%d", __PRETTY_FUNCTION__, client->createConfig.name.string, client->info.surfaceClientId, client->pid);
-    return;
-}
-
-void NexusNxClient::setVideoWindowSettings(NexusClientContext * client, uint32_t window_id, b_video_window_settings *settings)
-{
-    if (client == NULL) {
-        LOGE("%s: FATAL: Client context argument is NULL!!!", __PRETTY_FUNCTION__);
-        //BDBG_ASSERT(client != NULL);
-    }
-
-    LOGD("%s: Client \"%s\" surfaceClientId=%d pid=%d", __PRETTY_FUNCTION__, client->createConfig.name.string, client->info.surfaceClientId, client->pid);
-
-    return;
-}
-#endif // ANDROID_SUPPORTS_NXCLIENT_CONFIG
-
 void NexusNxClient::getDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings *settings)
 {
     NEXUS_Error rc;
@@ -419,7 +337,6 @@ void NexusNxClient::getDisplaySettings(uint32_t display_id, NEXUS_DisplaySetting
             LOGE("%s: Could not join client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
         }
     }
-    
     return;
 }
 
@@ -720,7 +637,6 @@ void NexusNxClient::getPictureCtrlCommonSettings(uint32_t window_id, NEXUS_Pictu
         rc = clientJoin();
 
         if (rc == NEXUS_SUCCESS) {
-#ifdef ANDROID_SUPPORTS_NXCLIENT_PICTURE_QUALITY_SETTINGS
             NEXUS_SimpleVideoDecoderHandle simpleVideoDecoder = acquireVideoDecoderHandle();
             if (simpleVideoDecoder != NULL) {
                 NEXUS_SimpleVideoDecoderPictureQualitySettings simpleVideoDecoderPictureQualitySettings;
@@ -732,7 +648,6 @@ void NexusNxClient::getPictureCtrlCommonSettings(uint32_t window_id, NEXUS_Pictu
             else {
                 LOGE("%s: Could not acquire video decoder handle for window %d!", __PRETTY_FUNCTION__, window_id);
             }
-#endif
             clientUninit();
         }
         else {
@@ -758,7 +673,6 @@ void NexusNxClient::setPictureCtrlCommonSettings(uint32_t window_id, NEXUS_Pictu
         rc = clientJoin();
 
         if (rc == NEXUS_SUCCESS) {
-#ifdef ANDROID_SUPPORTS_NXCLIENT_PICTURE_QUALITY_SETTINGS
             NEXUS_SimpleVideoDecoderHandle simpleVideoDecoder = acquireVideoDecoderHandle();
             if (simpleVideoDecoder != NULL) {
                 NEXUS_SimpleVideoDecoderPictureQualitySettings simpleVideoDecoderPictureQualitySettings;
@@ -771,7 +685,6 @@ void NexusNxClient::setPictureCtrlCommonSettings(uint32_t window_id, NEXUS_Pictu
             else {
                 LOGE("%s: Could not acquire video decoder handle for window %d!", __PRETTY_FUNCTION__, window_id);
             }
-#endif
             clientUninit();
         }
         else {
@@ -797,14 +710,12 @@ void NexusNxClient::getGraphicsColorSettings(uint32_t display_id, NEXUS_Graphics
         rc = clientJoin();
 
         if (rc == NEXUS_SUCCESS) {
-#ifdef ANDROID_SUPPORTS_NXCLIENT_PICTURE_QUALITY_SETTINGS
             NxClient_PictureQualitySettings pictureQualitySettings;
 
             NxClient_GetPictureQualitySettings( &pictureQualitySettings );
             *settings = pictureQualitySettings.graphicsColor;
 
             clientUninit();
-#endif
         }
         else {
             LOGE("%s: Could not join client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
@@ -830,13 +741,10 @@ void NexusNxClient::setGraphicsColorSettings(uint32_t display_id, NEXUS_Graphics
         rc = clientJoin();
 
         if (rc == NEXUS_SUCCESS) {
-#ifdef ANDROID_SUPPORTS_NXCLIENT_PICTURE_QUALITY_SETTINGS
             NxClient_PictureQualitySettings pictureQualitySettings;
-
             NxClient_GetPictureQualitySettings( &pictureQualitySettings );
             pictureQualitySettings.graphicsColor = *settings;
             NxClient_SetPictureQualitySettings( &pictureQualitySettings );
-#endif
             clientUninit();
         }
         else {
@@ -860,11 +768,9 @@ void NexusNxClient::setDisplayOutputs(int display)
     if (rc == NEXUS_SUCCESS) {
         do {
             NxClient_GetDisplaySettings(&nxSettings);
-#ifdef ANDROID_SUPPORTS_NXCLIENT_EXTENDED_DISPLAY_SETTINGS
             nxSettings.hdmiPreferences.enabled = display;
             nxSettings.componentPreferences.enabled = display;
             nxSettings.compositePreferences.enabled = display;
-#endif
             rc = NxClient_SetDisplaySettings(&nxSettings);
         } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
 
@@ -898,14 +804,13 @@ void NexusNxClient::setAudioMute(int mute)
 bool NexusNxClient::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus)
 {
     NEXUS_Error rc = NEXUS_NOT_SUPPORTED;
-#ifdef ANDROID_SUPPORTS_NXCLIENT_HDMI_STATUS
 #if NEXUS_HAS_HDMI_OUTPUT
     if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
         unsigned loops;
         NxClient_DisplayStatus status;
 
         memset(pHdmiOutputStatus, 0, sizeof(*pHdmiOutputStatus));
-        
+
         for (loops = 0; loops < 4; loops++) {
             rc = NxClient_GetDisplayStatus(&status);
             if ((rc == NEXUS_SUCCESS) && status.hdmi.status.connected) {
@@ -914,7 +819,7 @@ bool NexusNxClient::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHd
             LOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
             usleep(250 * 1000);
         }
-        
+
         if (rc == NEXUS_SUCCESS) {
             if (status.hdmi.status.connected) {
                 pHdmiOutputStatus->connected            = status.hdmi.status.connected;
@@ -941,10 +846,6 @@ bool NexusNxClient::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHd
     {
         LOGE("%s: No HDMI%d output on this device!!!", __PRETTY_FUNCTION__, portId);
     }
-#else
-#warning Reference software does not support obtaining HDMI output status in NxClient mode
-    rc = NEXUS_SUCCESS;
-#endif
     return (rc == NEXUS_SUCCESS);
 }
 

@@ -48,15 +48,9 @@
  *****************************************************************************/
 #include "nexus_ipc_client_factory.h"
 #include "nexus_ipc_client.h"
-#ifdef ANDROID_SUPPORTS_NXCLIENT
 #include "nexus_nx_client.h"
-#endif
 
 NexusIPCClientBase * NexusIPCClientFactory::getClient(const char *clientName)
 {
-#ifdef ANDROID_SUPPORTS_NXCLIENT
     return NexusNxClient::getClient(clientName);
-#else
-    return NexusIPCClient::getClient(clientName);
-#endif
 }

@@ -3,9 +3,6 @@ REFSW_PATH :=${LOCAL_PATH}/../brcm_nexus
 APPLIBS_TOP ?=$(LOCAL_PATH)/../../../../../../../..
 NEXUS_TOP ?= $(LOCAL_PATH)/../../../../../../../../../nexus
 
-# Nexus multi-process, client-server related CFLAGS
-MP_CFLAGS = -DANDROID_CLIENT_SECURITY_MODE=$(ANDROID_CLIENT_SECURITY_MODE)
-
 ifeq ($(NEXUS_MODE),proxy)
 NEXUS_LIB=libnexus
 else

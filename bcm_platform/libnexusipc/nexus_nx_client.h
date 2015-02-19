@@ -59,9 +59,6 @@
 #include <utils/Errors.h>
 #include "nexus_ipc_client.h"
 #include "nxclient.h"
-#ifdef ANDROID_SUPPORTS_NXCLIENT_CONFIG
-#include "nxclient_config.h"
-#endif
 
 class NexusIPCClientFactory;
 

@@ -59,15 +59,7 @@
 #include "nexus_simple_audio_playback.h"
 #include "nexus_simple_encoder.h"
 
-#if ANDROID_USES_TRELLIS_WM
-#include "IAndroidBAMEventListener.h"
-#endif 
-
-#if ANDROID_USES_TRELLIS_WM
-class NexusIPCClientBase : public NexusIPCCommon, public IAndroidBAMEventListener
-#else
 class NexusIPCClientBase : public NexusIPCCommon
-#endif 
 {
 public: 
     virtual ~NexusIPCClientBase() { }

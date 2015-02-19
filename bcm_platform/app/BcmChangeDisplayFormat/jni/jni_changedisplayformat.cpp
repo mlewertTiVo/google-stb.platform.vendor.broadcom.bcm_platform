@@ -34,20 +34,6 @@
  * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE 
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
  * ANY LIMITED REMEDY.
- *
- * $brcm_Workfile: jni_changedisplayformat.cpp $
- * $brcm_Revision: 2 $
- * $brcm_Date: 12/3/12 3:19p $
- * 
- * Module Description:
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/app/BcmChangeDisplayFormat/jni/jni_changedisplayformat.cpp $
- * 
- * 2   12/3/12 3:19p saranya
- * SWANDROID-266: Removed Non-IPC Standalone Mode
- * 
  *****************************************************************************/
 //#define LOG_NDEBUG 0
 #include <jni.h>
@@ -65,15 +51,9 @@
 #include "nexus_core_utils.h"
 #include "nexus_surface_client.h"
 
-#ifdef ANDROID_SUPPORTS_NEXUS_IPC_CLIENT_FACTORY
 #include "nexus_ipc_client_factory.h"
 #define GET_DISPLAY_SETTINGS(id, settings) getDisplaySettings((id), (settings))
 #define SET_DISPLAY_SETTINGS(id, settings) setDisplaySettings((id), (settings))
-#else
-#include "nexus_ipc_client.h"
-#define GET_DISPLAY_SETTINGS(id, settings) getDisplaySettings(NULL, (id), (settings))
-#define SET_DISPLAY_SETTINGS(id, settings) setDisplaySettings(NULL, (id), (settings))
-#endif
 
 using namespace android;
 
@@ -87,11 +67,7 @@ static JNINativeMethod gMethods[] = {
         {"getDisplayFormat",   "()I", (void *)Java_com_android_changedisplayformat_native_1changedisplayformat_getDisplayFormat}
 };
 
-#ifdef ANDROID_SUPPORTS_NEXUS_IPC_CLIENT_FACTORY
 static NexusIPCClientBase *gIpcClient=NULL;
-#else
-static NexusIPCClient     *gIpcClient=NULL;
-#endif
 
 static int registerNativeMethods(JNIEnv* env, const char* className,
     JNINativeMethod* gMethods, int numMethods)
@@ -134,11 +110,7 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
         return result;
     }
 
-#ifdef ANDROID_SUPPORTS_NEXUS_IPC_CLIENT_FACTORY
     gIpcClient = NexusIPCClientFactory::getClient("changeDisplayFormat");
-#else
-    gIpcClient = new NexusIPCClient;
-#endif
 
     result = JNI_VERSION_1_4;
 

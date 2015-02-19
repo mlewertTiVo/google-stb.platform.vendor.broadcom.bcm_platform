@@ -35,24 +35,10 @@
 # LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
 # ANY LIMITED REMEDY.
 #
-# $brcm_Workfile: Makefile $
-# $brcm_Revision: 9 $
-# $brcm_Date: 1/12/11 6:08p $
-#
-# Module Description:
-#
-# Revision History:
-#
-# $brcm_Log: /AppLibs/opensource/android/build/Makefile $
-# 
-#
 #############################################################################
 LOCAL_PATH := $(call my-dir)
 REFSW_PATH :=${LOCAL_PATH}/../brcm_nexus
 NEXUS_TOP ?= $(LOCAL_PATH)/../../refsw/nexus
-
-# Nexus multi-process, client-server related CFLAGS
-MP_CFLAGS = -DANDROID_CLIENT_SECURITY_MODE=$(ANDROID_CLIENT_SECURITY_MODE)
 
 ifeq ($(NEXUS_MODE),proxy)
 NEXUS_LIB=libnexus
