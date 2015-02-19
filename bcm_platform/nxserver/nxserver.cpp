@@ -152,7 +152,7 @@ static nxserver_t init_nxserver(void)
     if (property_get(NX_HD_OUT_FMT, value, NULL)) {
         if (strncmp((char *) value, DISPLAY_FORMAT_1080P, strlen(DISPLAY_FORMAT_1080P)) != 0) {
             /* -ignore_edid */
-            settings.session[0].edid_mode = nxserver_hdmi_edid_mode_ignore;
+            settings.display.hdmiPreferences.followPreferredFormat = false;
         } else {
             /* -fbsize 1920,1080 */
             settings.fbsize.width = 1920;
