@@ -73,7 +73,6 @@ using namespace android;
 #define HWC_DISPLAY_FENCE_VERBOSE    0
 
 #define HWC_SURFACE_LIFE_CYCLE_ERROR 0
-#define HWC_DUMP_LAYER_ON_ERROR      0
 
 #define HWC_SB_NO_ALLOC_SURF_CLI     1
 #define HWC_MM_NO_ALLOC_SURF_CLI     1
@@ -95,16 +94,11 @@ using namespace android;
 #define NSC_CLIENTS_NUMBER           (NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+NSC_SB_CLIENTS_NUMBER)
 #define HWC_VD_CLIENTS_NUMBER        NSC_GPX_CLIENTS_NUMBER
 
-#define VSYNC_CLIENT_LAYER_ID        0 /* first layer. */
-#define VSYNC_CLIENT_WIDTH           16
-#define VSYNC_CLIENT_HEIGHT          16
-#define VSYNC_CLIENT_STRIDE          VSYNC_CLIENT_WIDTH*4
 #define VSYNC_CLIENT_REFRESH         16666667
 #define DISPLAY_CONFIG_DEFAULT       0
 
-#define VSYNC_CLIENT_ZORDER          0
-#define MM_CLIENT_ZORDER             (VSYNC_CLIENT_ZORDER+1)
-#define SB_CLIENT_ZORDER             (VSYNC_CLIENT_ZORDER+1)
+#define MM_CLIENT_ZORDER             (1)
+#define SB_CLIENT_ZORDER             (1)
 #define GPX_CLIENT_ZORDER            (MM_CLIENT_ZORDER+1)
 #define CURSOR_CLIENT_ZORDER         (GPX_CLIENT_ZORDER+1)
 
@@ -171,14 +165,6 @@ enum {
     NEXUS_CLIENT_VSYNC,
     NEXUS_CLIENT_VD,
 };
-
-typedef enum {
-    SURF_OWNER_NO_OWNER = 0,
-    SURF_OWNER_HWC,
-    SURF_OWNER_HWC_PUSH,
-    SURF_OWNER_NSC,
-
-} GPX_CLIENT_SURFACE_OWNER;
 
 enum BLENDIND_TYPE {
     BLENDIND_TYPE_SRC,
@@ -254,11 +240,7 @@ typedef struct {
 } COMMON_CLIENT_INFO;
 
 typedef struct {
-    GPX_CLIENT_SURFACE_OWNER owner;
-    NEXUS_SurfaceHandle shdl;
-    NEXUS_SurfaceCursorHandle schdl;
     buffer_handle_t grhdl;
-    unsigned int use_order;
     int comp_ix;
 
 } GPX_CLIENT_SURFACE_INFO;
@@ -266,7 +248,7 @@ typedef struct {
 typedef struct {
     COMMON_CLIENT_INFO ncci;
     NEXUS_SurfaceComposition composition;
-    GPX_CLIENT_SURFACE_INFO slist[GPX_SURFACE_STACK];
+    GPX_CLIENT_SURFACE_INFO last;
     int width;
     int height;
     unsigned int blending_type;
@@ -274,8 +256,6 @@ typedef struct {
     int layer_subtype;
     int layer_flags;
     int layer_id;
-    bool skip_set;
-    unsigned int use_order;
     int plane_alpha;
     NEXUS_SurfaceHandle active_surface;
 
@@ -497,9 +477,6 @@ struct hwc_context_t {
     bool display_gles_always;
     bool needs_fb_target;
 
-    int cursor_layer_id;
-    GPX_CLIENT_SURFACE_INFO cursor_cache;
-
     BKNI_MutexHandle power_mutex;
     int power_mode;
 
@@ -599,14 +576,6 @@ static const char *nsc_layer_type[] =
    "VS", // NEXUS_VIDEO_SIDEBAND
 };
 
-static const char *nsc_surface_owner[] =
-{
-   "FRE", // SURF_OWNER_NO_OWNER
-   "HWC", // SURF_OWNER_HWC
-   "PUS", // SURF_OWNER_HWC_PUSH
-   "NSC", // SURF_OWNER_NSC
-};
-
 static unsigned int hwc_android_blend_to_nsc_blend(unsigned int android_blend)
 {
    switch (android_blend) {
@@ -641,60 +610,6 @@ static void hwc_get_buffer_sizes(PSHARED_DATA pSharedData, int *cur_width, int *
          *cur_height = pSharedData->planes[DEFAULT_PLANE].height;
       break;
    }
-}
-
-static void hwc_unlock_surface(private_handle_t *pPrivateHandle)
-{
-  SHARED_DATA *pSharedData;
-
-  if ( NULL == pPrivateHandle )
-  {
-    ALOGE("%s: Invalid Gralloc Buffer", __FUNCTION__);
-    return;
-  }
-  pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pPrivateHandle->sharedData);
-  if ( NULL == pSharedData )
-  {
-    ALOGE("%s: Invalid Gralloc Buffer Memory", __FUNCTION__);
-    return;
-  }
-  if ( 0 == android_atomic_acquire_load(&pSharedData->hwc.active) )
-  {
-    ALOGE("Unlocking surface %#x that is not marked active!  Layer says %d surface %#x", pPrivateHandle->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
-  }
-  else
-  {
-    pSharedData->hwc.layer = -1;
-    pSharedData->hwc.surface = NULL;
-    android_atomic_acquire_store(0, &pSharedData->hwc.active);
-  }
-}
-
-static void hwc_lock_surface(private_handle_t *pPrivateHandle, int layer, NEXUS_SurfaceHandle surface)
-{
-  SHARED_DATA *pSharedData;
-
-  if ( NULL == pPrivateHandle )
-  {
-    ALOGE("%s: Invalid Gralloc Buffer", __FUNCTION__);
-    return;
-  }
-  pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pPrivateHandle->sharedData);
-  if ( NULL == pSharedData )
-  {
-    ALOGE("%s: Invalid Gralloc Buffer Memory", __FUNCTION__);
-    return;
-  }
-  if ( android_atomic_acquire_load(&pSharedData->hwc.active) )
-  {
-    ALOGE("Locking surface %#x that is marked active! Marked Layer %d Surface %#x New Layer %d Surface %#x", pPrivateHandle->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface, layer, surface);
-  }
-  else
-  {
-    pSharedData->hwc.layer = layer;
-    pSharedData->hwc.surface = surface;
-    android_atomic_acquire_store(1, &pSharedData->hwc.active);
-  }
 }
 
 static NEXUS_PixelFormat gralloc_to_nexus_pixel_format(int format)
@@ -824,7 +739,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
     int offset = 0;
 
     write = snprintf(start, local_capacity,
-        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::sz:{%d,%d}::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::pa:%d::::order:%x\n",
+        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::sz:{%d,%d}::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::pa:%d\n",
         client->composition.visible ? "LIVE" : "HIDE",
         nsc_cli_type[client->ncci.type],
         client->layer_id,
@@ -846,8 +761,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
         client->composition.virtualDisplay.width,
         client->composition.virtualDisplay.height,
         client->blending_type,
-        client->plane_alpha,
-        client->use_order);
+        client->plane_alpha);
 
     if (write > 0) {
         local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
@@ -855,93 +769,86 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
         total_write += write;
     }
 
-    for (int j = 0; j < GPX_SURFACE_STACK; j++) {
-        write = snprintf(start + offset, local_capacity,
-            "\t\t[%d:%d]:[%d]:[%s]::shdl:%p::schdl:%p::grhdl:%p::order:%x::comp:%d\n",
-            client->layer_id,
-            index,
-            j,
-            nsc_surface_owner[client->slist[j].owner],
-            client->slist[j].shdl,
-            client->slist[j].schdl,
-            client->slist[j].grhdl,
-            client->slist[j].use_order,
-            client->slist[j].comp_ix);
+    write = snprintf(start + offset, local_capacity,
+        "\t\t[%d:%d]::grhdl:%p::comp:%d\n",
+        client->layer_id,
+        index,
+        client->last.grhdl,
+        client->last.comp_ix);
 
-        if (write > 0) {
-            local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
-            offset += write;
-            total_write += write;
-        }
+    if (write > 0) {
+        local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
+        offset += write;
+        total_write += write;
+    }
 
-        if (client->slist[j].grhdl) {
-           private_handle_t *gr_buffer = (private_handle_t *)client->slist[j].grhdl;
-           PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(gr_buffer->sharedData);
+    if (client->last.grhdl) {
+       private_handle_t *gr_buffer = (private_handle_t *)client->last.grhdl;
+       PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(gr_buffer->sharedData);
 
-           write = snprintf(start + offset, local_capacity,
-               "\t\t\t[%p]::flg:0x%x::pid:%d::ogl:{s:%d,f:%d,sz:%d}::use:0x%x\n",
-               client->slist[j].grhdl,
-               gr_buffer->flags,
-               gr_buffer->pid,
-               gr_buffer->oglStride,
-               gr_buffer->oglFormat,
-               gr_buffer->oglSize,
-               gr_buffer->usage);
+       write = snprintf(start + offset, local_capacity,
+           "\t\t\t[%p]::flg:0x%x::pid:%d::ogl:{s:%d,f:%d,sz:%d}::use:0x%x\n",
+           client->last.grhdl,
+           gr_buffer->flags,
+           gr_buffer->pid,
+           gr_buffer->oglStride,
+           gr_buffer->oglFormat,
+           gr_buffer->oglSize,
+           gr_buffer->usage);
 
-           if (write > 0) {
-               local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
-               offset += write;
-               total_write += write;
-           }
+       if (write > 0) {
+           local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
+           offset += write;
+           total_write += write;
+       }
 
-           write = snprintf(start + offset, local_capacity,
-               "\t\t\t[%p]::default:{f:0x%x,bpp:%d,{%d,%d},0x%x,sz:%d}\n",
-               client->slist[j].grhdl,
-               pSharedData->planes[DEFAULT_PLANE].format,
-               pSharedData->planes[DEFAULT_PLANE].bpp,
-               pSharedData->planes[DEFAULT_PLANE].width,
-               pSharedData->planes[DEFAULT_PLANE].height,
-               pSharedData->planes[DEFAULT_PLANE].physAddr,
-               pSharedData->planes[DEFAULT_PLANE].size);
+       write = snprintf(start + offset, local_capacity,
+           "\t\t\t[%p]::default:{f:0x%x,bpp:%d,{%d,%d},0x%x,sz:%d}\n",
+           client->last.grhdl,
+           pSharedData->planes[DEFAULT_PLANE].format,
+           pSharedData->planes[DEFAULT_PLANE].bpp,
+           pSharedData->planes[DEFAULT_PLANE].width,
+           pSharedData->planes[DEFAULT_PLANE].height,
+           pSharedData->planes[DEFAULT_PLANE].physAddr,
+           pSharedData->planes[DEFAULT_PLANE].size);
 
-           if (write > 0) {
-               local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
-               offset += write;
-               total_write += write;
-           }
+       if (write > 0) {
+           local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
+           offset += write;
+           total_write += write;
+       }
 
-           write = snprintf(start + offset, local_capacity,
-               "\t\t\t[%p]::extra:{f:0x%x,bpp:%d,{%d,%d},0x%x,sz:%d}\n",
-               client->slist[j].grhdl,
-               pSharedData->planes[EXTRA_PLANE].format,
-               pSharedData->planes[EXTRA_PLANE].bpp,
-               pSharedData->planes[EXTRA_PLANE].width,
-               pSharedData->planes[EXTRA_PLANE].height,
-               pSharedData->planes[EXTRA_PLANE].physAddr,
-               pSharedData->planes[EXTRA_PLANE].size);
+       write = snprintf(start + offset, local_capacity,
+           "\t\t\t[%p]::extra:{f:0x%x,bpp:%d,{%d,%d},0x%x,sz:%d}\n",
+           client->last.grhdl,
+           pSharedData->planes[EXTRA_PLANE].format,
+           pSharedData->planes[EXTRA_PLANE].bpp,
+           pSharedData->planes[EXTRA_PLANE].width,
+           pSharedData->planes[EXTRA_PLANE].height,
+           pSharedData->planes[EXTRA_PLANE].physAddr,
+           pSharedData->planes[EXTRA_PLANE].size);
 
-           if (write > 0) {
-               local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
-               offset += write;
-               total_write += write;
-           }
+       if (write > 0) {
+           local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
+           offset += write;
+           total_write += write;
+       }
 
-           write = snprintf(start + offset, local_capacity,
-               "\t\t\t[%p]::gl:{f:0x%x,bpp:%d,{%d,%d},0x%x,sz:%d}\n",
-               client->slist[j].grhdl,
-               pSharedData->planes[GL_PLANE].format,
-               pSharedData->planes[GL_PLANE].bpp,
-               pSharedData->planes[GL_PLANE].width,
-               pSharedData->planes[GL_PLANE].height,
-               pSharedData->planes[GL_PLANE].physAddr,
-               pSharedData->planes[GL_PLANE].size);
+       write = snprintf(start + offset, local_capacity,
+           "\t\t\t[%p]::gl:{f:0x%x,bpp:%d,{%d,%d},0x%x,sz:%d}\n",
+           client->last.grhdl,
+           pSharedData->planes[GL_PLANE].format,
+           pSharedData->planes[GL_PLANE].bpp,
+           pSharedData->planes[GL_PLANE].width,
+           pSharedData->planes[GL_PLANE].height,
+           pSharedData->planes[GL_PLANE].physAddr,
+           pSharedData->planes[GL_PLANE].size);
 
-           if (write > 0) {
-               local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
-               offset += write;
-               total_write += write;
-           }
-        }
+       if (write > 0) {
+           local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
+           offset += write;
+           total_write += write;
+       }
     }
 
     return total_write;
@@ -1014,118 +921,6 @@ static int dump_sb_layer_data(char *start, int capacity, int index, SB_CLIENT_IN
         client->settings.composition.virtualDisplay.height);
 
     return write;
-}
-
-static unsigned int hwc_inc_or_wrap_use_order(GPX_CLIENT_INFO *client)
-{
-    if ((client->use_order + 1) > INVALID_HANDLE) {
-       client->use_order = 0;
-    } else {
-       ++client->use_order;
-    }
-
-    return client->use_order;
-}
-
-static void dump_layer_on_error(GPX_CLIENT_INFO *client)
-{
-    if (HWC_DUMP_LAYER_ON_ERROR) {
-       char dump_buffer[DUMP_BUFFER_SIZE];
-       dump_gpx_layer_data(dump_buffer, DUMP_BUFFER_SIZE, client->layer_id, client);
-       ALOGE("%s", dump_buffer);
-    }
-}
-
-static int hwc_gpx_get_next_surface_locked(GPX_CLIENT_INFO *client)
-{
-    for (int i = 0; i < GPX_SURFACE_STACK; i++) {
-       if (client->slist[i].owner == SURF_OWNER_NO_OWNER) {
-          client->slist[i].owner = SURF_OWNER_HWC;
-          client->slist[i].use_order = hwc_inc_or_wrap_use_order(client);
-          return i;
-       }
-    }
-
-    if ((client->layer_subtype != NEXUS_CURSOR) || HWC_CURSOR_SURFACE_VERBOSE) {
-       if (HWC_SURFACE_LIFE_CYCLE_ERROR) ALOGE("%s: failed client %d", __FUNCTION__, client->layer_id);
-       dump_layer_on_error(client);
-    }
-
-    return -1;
-}
-
-static int hwc_gpx_push_surface_locked(GPX_CLIENT_INFO *client)
-{
-    for (int i = 0; i < GPX_SURFACE_STACK; i++) {
-       if (client->slist[i].owner == SURF_OWNER_HWC_PUSH) {
-          client->slist[i].owner = SURF_OWNER_NSC;
-          return i;
-       }
-    }
-
-    if ((client->layer_subtype != NEXUS_CURSOR) || HWC_CURSOR_SURFACE_VERBOSE) {
-       if (HWC_SURFACE_LIFE_CYCLE_ERROR) ALOGE("%s: failed client %d", __FUNCTION__, client->layer_id);
-       dump_layer_on_error(client);
-    }
-
-    return -1;
-}
-
-static int hwc_gpx_get_recycle_surface_locked(GPX_CLIENT_INFO *client, NEXUS_SurfaceHandle shdl)
-{
-    for (int i = 0; i < GPX_SURFACE_STACK; i++) {
-       if ((client->slist[i].owner == SURF_OWNER_NSC) &&
-           (client->slist[i].shdl == shdl)) {
-          return i;
-       }
-    }
-
-    if ((client->layer_subtype != NEXUS_CURSOR) || HWC_CURSOR_SURFACE_VERBOSE) {
-       if (HWC_SURFACE_LIFE_CYCLE_ERROR) ALOGE("%s: failed client %d", __FUNCTION__, client->layer_id);
-       dump_layer_on_error(client);
-    }
-
-    return -1;
-}
-
-static int hwc_gpx_get_current_surface_locked(GPX_CLIENT_INFO *client)
-{
-    int selected = -1;
-    int selected_use_order = -1;
-
-    for (int i = 0; i < GPX_SURFACE_STACK; i++) {
-       if ((client->slist[i].owner == SURF_OWNER_NSC) ||
-           (client->slist[i].owner == SURF_OWNER_HWC_PUSH)) {
-          if ((selected != -1) &&
-              (client->slist[i].use_order > client->slist[selected].use_order)) {
-             selected = i;
-          } else if (selected == -1) {
-             selected = i;
-          }
-       }
-    }
-
-    return selected;
-}
-
-static NEXUS_SurfaceCursorHandle hwc_gpx_update_cursor_surface_locked(struct hwc_composer_device_1* dev)
-{
-    struct hwc_context_t *ctx = (hwc_context_t*)dev;
-
-    for (int i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++) {
-       if (ctx->gpx_cli[i].layer_subtype == NEXUS_CURSOR) {
-          for (int j = 0; j < GPX_SURFACE_STACK; j++) {
-             // valid handle and surface has been returned.
-             if (ctx->gpx_cli[i].slist[j].schdl &&
-                 (ctx->gpx_cli[i].slist[j].owner == SURF_OWNER_HWC)) {
-                ctx->gpx_cli[i].slist[j].owner = SURF_OWNER_HWC_PUSH;
-                return ctx->gpx_cli[i].slist[j].schdl;
-             }
-          }
-       }
-    }
-
-    return NULL;
 }
 
 static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int buff_len)
@@ -1417,7 +1212,7 @@ out:
     return ret;
 }
 
-void hwc_compose_gralloc_buffer(
+bool hwc_compose_gralloc_buffer(
    hwc_context_t* ctx,
    GPX_CLIENT_INFO *client,
    int layer_id,
@@ -1425,6 +1220,7 @@ void hwc_compose_gralloc_buffer(
    private_handle_t *gr_buffer,
    NEXUS_SurfaceHandle display_surface)
 {
+    bool composed = false;
     NEXUS_Error rc;
     int plane_select = -1;
     unsigned int stride=0;
@@ -1486,23 +1282,23 @@ void hwc_compose_gralloc_buffer(
             blitSettings.colorBlend = client->composition.colorBlend;
             blitSettings.alphaBlend = client->composition.alphaBlend;
             rc = NEXUS_Graphics2D_Blit(ctx->hwc_2dg, &blitSettings);
-            if ( rc == NEXUS_GRAPHICS2D_QUEUE_FULL ) {
-                // Checkpoint to drain the queue
+            if (rc == NEXUS_GRAPHICS2D_QUEUE_FULL) {
                 rc = hwc_checkpoint(ctx);
-                if ( rc )  {
+                if (rc)  {
                     ALOGW("Checkpoint timeout composing layer %u", __FUNCTION__, layer_id);
                 }
-                // Blit again now that the queue is empty
                 rc = NEXUS_Graphics2D_Blit(ctx->hwc_2dg, &blitSettings);
             }
-            if ( rc ) {
+            if (rc) {
                 ALOGE("%s: Unable to blit layer %u", __FUNCTION__, layer_id);
+            } else {
+                composed = true;
             }
         }
     }
 
 out:
-   return;
+   return composed;
 }
 
 static bool primary_need_nsc_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *layer, size_t total_layers)
@@ -1964,7 +1760,6 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     int layer_composed = 0;
     NEXUS_SurfaceHandle display_surface=NULL;
 
-    // should never happen as primary display should always be there.
     if (!list)
        return -EINVAL;
 
@@ -1977,12 +1772,10 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
 
     display_surface = hwc_get_disp_surface(ctx);
     if ( NULL == display_surface ) {
-        // Technically can't ever happen...
         ALOGE("%s: No display surface available", __FUNCTION__);
         goto out_mutex;
     }
 
-    // Don't set the primary display if we are powering or powered off...
     if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
         ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
         ctx->stats[0].set_skipped++;
@@ -2035,44 +1828,41 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
             else if (ctx->gpx_cli[i].composition.visible) {
                 private_handle_t *gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
                 PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(gr_buffer->sharedData);
-                if (!ctx->gpx_cli[i].skip_set) {
-                   if (list->hwLayers[i].compositionType == HWC_OVERLAY) {
-                      overlay_seen++;
-                   } else if (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET) {
-                      fb_target_seen++;
-                   }
-                   // assign a fence for each layer we have marked as 'overlay'/'framebuffer_target' that are
-                   // purely gpx composition through nsc.
-                   if ((list->hwLayers[i].compositionType == HWC_OVERLAY) ||
-                       (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET)) {
-                      fence_id = INVALID_FENCE;
-                      if (ctx->sync_timeline != INVALID_FENCE) {
-                         snprintf(fence.name, sizeof(fence.name), "hwc_prim_%d_%d", ctx->stats[0].set_call, i);
-                         fence_id = sw_sync_fence_create(ctx->sync_timeline, fence.name, ctx->stats[0].set_call);
-                         if (fence_id < 0) {
-                            ALOGW("%s: failed layer sync fence: %s", __FUNCTION__, fence.name);
-                         } else if (HWC_DISPLAY_FENCE_VERBOSE) {
-                            ALOGI("%s: layer sync fence: %s, fence: %d", __FUNCTION__, fence.name, fence_id);
-                         }
+                if (list->hwLayers[i].compositionType == HWC_OVERLAY) {
+                   overlay_seen++;
+                } else if (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET) {
+                   fb_target_seen++;
+                }
+                if ((list->hwLayers[i].compositionType == HWC_OVERLAY) ||
+                    (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET)) {
+                   fence_id = INVALID_FENCE;
+                   if (ctx->sync_timeline != INVALID_FENCE) {
+                      snprintf(fence.name, sizeof(fence.name), "hwc_prim_%d_%d", ctx->stats[0].set_call, i);
+                      fence_id = sw_sync_fence_create(ctx->sync_timeline, fence.name, ctx->stats[0].set_call);
+                      if (fence_id < 0) {
+                         ALOGW("%s: failed layer sync fence: %s", __FUNCTION__, fence.name);
+                      } else if (HWC_DISPLAY_FENCE_VERBOSE) {
+                         ALOGI("%s: layer sync fence: %s, fence: %d", __FUNCTION__, fence.name, fence_id);
                       }
-                      list->hwLayers[i].releaseFenceFd = fence_id;
                    }
+                   list->hwLayers[i].releaseFenceFd = fence_id;
+                }
 
-                   hwc_compose_gralloc_buffer(ctx, &ctx->gpx_cli[i], i, pSharedData, gr_buffer, display_surface);
+                if (hwc_compose_gralloc_buffer(ctx, &ctx->gpx_cli[i], i, pSharedData, gr_buffer, display_surface)) {
+                   layer_composed++;
+                }
+                ctx->gpx_cli[i].last.grhdl = (buffer_handle_t)gr_buffer;
+                ctx->gpx_cli[i].last.comp_ix = ctx->stats[0].set_call;
 
-                   if (list->hwLayers[i].releaseFenceFd != INVALID_FENCE) {
-                        close(list->hwLayers[i].releaseFenceFd);
-                        list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
-                   }
-                } else {
-                   ctx->gpx_cli[i].skip_set = false;
+                if (list->hwLayers[i].releaseFenceFd != INVALID_FENCE) {
+                   close(list->hwLayers[i].releaseFenceFd);
+                   list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
                 }
             }
         }
 
         if (layer_composed == 0) {
            if (list->retireFenceFd != INVALID_FENCE) {
-              // cancel the fence, increment timeline to keep sync on other fences.
               sw_sync_timeline_inc(ctx->sync_timeline, 1);
               close(list->retireFenceFd);
               list->retireFenceFd = INVALID_FENCE;
@@ -2092,8 +1882,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                 ctx->gpx_cli[i].active_surface = NULL;
             }
         }
-    }
-    else {
+    } else {
         ctx->stats[0].set_skipped++;
         BKNI_ReleaseMutex(ctx->power_mutex);
         hwc_put_disp_surface(ctx, display_surface);
@@ -2243,16 +2032,6 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         for (i = 0; i < NSC_MM_CLIENTS_NUMBER; i++)
         {
            /* nothing to do since we do not acquire the surfaces explicitely. */
-        }
-
-        for (i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++)
-        {
-           for (j = 0; j < GPX_SURFACE_STACK; j++) {
-              if (ctx->gpx_cli[i].slist[j].schdl)
-                 NEXUS_SurfaceCursor_Destroy(ctx->gpx_cli[i].slist[j].schdl);
-              if (ctx->gpx_cli[i].slist[j].shdl)
-                 NEXUS_Surface_Destroy(ctx->gpx_cli[i].slist[j].shdl);
-           }
         }
 
         if ( ctx->schdl ) {
@@ -2508,7 +2287,7 @@ static int hwc_device_setCursorPositionAsync(struct hwc_composer_device_1 *dev, 
     }
 
     if (disp == HWC_DISPLAY_PRIMARY) {
-       NEXUS_SurfaceCursorHandle cursor = hwc_gpx_update_cursor_surface_locked(dev);
+       NEXUS_SurfaceCursorHandle cursor = NULL;
        if (cursor != NULL) {
           NEXUS_SurfaceCursorSettings config;
           NEXUS_SurfaceCursor_GetSettings(cursor, &config);
@@ -2640,7 +2419,6 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
               dev->cfg[0].height = 1080;
            }
         }
-        dev->cursor_layer_id = -1;
 
         if (property_get(HWC_GLES_MODE_PROP, value, HWC_DEFAULT_GLES_MODE)) {
            dev->display_gles_fallback =
@@ -2676,8 +2454,6 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         {
             NxClient_AllocSettings nxAllocSettings;
             NEXUS_SurfaceClientSettings client_settings;
-            NEXUS_SurfaceMemory vsync_surface_memory;
-            NEXUS_Rect vsync_disp_position = {0,0,VSYNC_CLIENT_WIDTH,VSYNC_CLIENT_HEIGHT};
             NEXUS_SurfaceComposition composition;
 
             NxClient_GetDefaultAllocSettings(&nxAllocSettings);
@@ -2990,25 +2766,6 @@ static void hwc_prepare_gpx_layer(
     ctx->gpx_cli[layer_id].layer_flags = layer->flags;
     ctx->gpx_cli[layer_id].plane_alpha = layer->planeAlpha;
 
-    if (ctx->cursor_layer_id != -1) {
-       if (ctx->cursor_layer_id == layer_id) {
-          // we are done here, the cursor position is updated via the async callback instead and the
-          // surface it uses is reused after recycling from nsc.
-          goto out_unlock;
-       } else {
-          // clean out the previous cursor surface.
-          ctx->cursor_layer_id = layer_id;
-          if (ctx->cursor_cache.schdl) {
-             NEXUS_SurfaceCursor_Destroy(ctx->cursor_cache.schdl);
-             ctx->cursor_cache.schdl = NULL;
-          }
-          if (ctx->cursor_cache.shdl) {
-             NEXUS_Surface_Destroy(ctx->cursor_cache.shdl);
-             ctx->cursor_cache.shdl = NULL;
-          }
-       }
-    }
-
     if ((memcmp((void *)&disp_position, (void *)&ctx->gpx_cli[layer_id].composition.position, sizeof(NEXUS_Rect)) != 0) ||
         (memcmp((void *)&clip_position, (void *)&ctx->gpx_cli[layer_id].composition.clipRect, sizeof(NEXUS_Rect)) != 0) ||
         (cur_width != ctx->gpx_cli[layer_id].width) ||
@@ -3040,28 +2797,6 @@ static void hwc_prepare_gpx_layer(
         ctx->gpx_cli[layer_id].composition.clipRect.height       = clip_position.height;
         ctx->gpx_cli[layer_id].composition.clipBase.width        = cur_width;
         ctx->gpx_cli[layer_id].composition.clipBase.height       = cur_height;
-    }
-
-    // (re)create surface to render this layer.
-    if (ctx->gpx_cli[layer_id].composition.visible) {
-        int six = hwc_gpx_get_current_surface_locked(&ctx->gpx_cli[layer_id]);
-        ctx->gpx_cli[layer_id].skip_set = false;
-        if (six != -1 &&
-            (ctx->gpx_cli[layer_id].slist[six].grhdl == layer->handle)) {
-            if (ctx->display_dump_push) {
-               ALOGI("render:skip:%d:%d::nsc:%d::%p:%p::sid:%p::geom:%d:%d", ctx->stats[0].prepare_call, six,
-                     layer_id, ctx->gpx_cli[layer_id].slist[six].grhdl,
-                     pSharedData, ctx->gpx_cli[layer_id].slist[six].shdl, geometry_changed, layer_changed);
-            }
-            if (!geometry_changed) {
-               ctx->gpx_cli[layer_id].skip_set = true;
-               goto out_unlock;
-            } else if (geometry_changed && !layer_changed && (layer->compositionType == HWC_FRAMEBUFFER_TARGET)) {
-               /* things did not really change, ignore this duplication. */
-               ctx->gpx_cli[layer_id].skip_set = true;
-               goto out_unlock;
-            }
-        }
     }
 
 out_unlock:
