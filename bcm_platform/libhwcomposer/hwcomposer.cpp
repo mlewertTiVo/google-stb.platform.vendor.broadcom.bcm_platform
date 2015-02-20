@@ -2493,6 +2493,8 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             composition.position.height = dev->cfg[0].height;
             composition.zorder = GPX_CLIENT_ZORDER;
             composition.visible = true;
+            composition.colorBlend = colorBlendingEquation[BLENDIND_TYPE_SRC_OVER];
+            composition.alphaBlend = alphaBlendingEquation[BLENDIND_TYPE_SRC_OVER];
             rc = NxClient_SetSurfaceClientComposition(dev->sccid, &composition);
             if ( rc ) {
                 ALOGE("%s: Unable to set client composition %d", __FUNCTION__, rc);
