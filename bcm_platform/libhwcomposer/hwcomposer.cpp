@@ -97,9 +97,11 @@ using namespace android;
 #define VSYNC_CLIENT_REFRESH         16666667
 #define DISPLAY_CONFIG_DEFAULT       0
 
-#define MM_CLIENT_ZORDER             (1)
-#define SB_CLIENT_ZORDER             (1)
-#define GPX_CLIENT_ZORDER            (MM_CLIENT_ZORDER+1)
+#define BOTTOM_CLIENT_ZORDER         0
+#define MM_CLIENT_ZORDER             (BOTTOM_CLIENT_ZORDER+1)
+#define SB_CLIENT_ZORDER             (MM_CLIENT_ZORDER)
+#define SUBTITLE_CLIENT_ZORDER       (MM_CLIENT_ZORDER+1)
+#define GPX_CLIENT_ZORDER            (SUBTITLE_CLIENT_ZORDER+1)
 #define CURSOR_CLIENT_ZORDER         (GPX_CLIENT_ZORDER+1)
 
 #define GPX_SURFACE_STACK            3
