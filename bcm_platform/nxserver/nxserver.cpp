@@ -217,7 +217,7 @@ static nxserver_t init_nxserver(void)
        remove it and make an api call instead.
     */
     platformSettings.openCec = false;
-    platformSettings.openFrontend = false;
+    platformSettings.openFrontend = true;
     platformSettings.audioModuleSettings.maxAudioDspTasks = 2;
     memConfigSettings.videoDecoder[0].avc51Supported = false;
     for (ix = 0 ; ix < NXCLIENT_MAX_SESSIONS ; ix++) {
