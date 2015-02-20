@@ -28,11 +28,7 @@ endif
 BCM_APPS_PATH := vendor/broadcom/bcm_platform/app
 
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
-include ${BCM_APPS_PATH}/BcmChangeDisplayFormat/Android.mk
 include ${BCM_APPS_PATH}/BcmCoverFlow/Android.mk
-include ${BCM_APPS_PATH}/BcmDemoPIP/Android.mk
-include ${BCM_APPS_PATH}/BcmGeneralSTBFunctions/Android.mk
-include ${BCM_APPS_PATH}/BcmHdmiInPlayer/Android.mk
 include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
