@@ -181,10 +181,10 @@
     </LinearLayout>
 
     <Button
-        android:id="@+id/button_streamer_mode"
+        android:id="@+id/button_set_clock_from_stream"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:onClick="setStreamerMode"
-        android:text="@string/streamer_mode_button_label" />
+        android:onClick="setClockFromStream"
+        android:text="@string/set_clock_from_stream_button_label" />
 
 </LinearLayout>

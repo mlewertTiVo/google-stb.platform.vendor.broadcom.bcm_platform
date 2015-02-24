@@ -19,7 +19,7 @@
     <string name="tuner_service_label" translatable="false">Tuner service</string>
     <string name="scan_button_label" translatable="false">Start scan</string>
     <string name="stop_button_label" translatable="false">Stop scan</string>
-    <string name="streamer_mode_button_label" translatable="false">Streamer Mode</string>
+    <string name="set_clock_from_stream_button_label" translatable="false">Set Clock From Stream</string>
     <string name="scan_progress_label">Scan progress</string>
     <string name="signal_strength_label">Signal strength</string>
     <string name="signal_quality_label">Signal quality</string>

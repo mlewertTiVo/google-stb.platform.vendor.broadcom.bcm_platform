@@ -48,6 +48,7 @@ public:
         decoding = 0;
         w = 0;
         h = 0;
+        time_valid = false;
 #ifdef JOURNAL
         epg.mutex = STB_OSCreateMutex();
         epg.backlog = 0;
@@ -67,6 +68,7 @@ public:
     int decoding;
     U16BIT w;
     U16BIT h;
+    bool time_valid;
     Vector<BroadcastTrackInfo> batil;
     Vector<BroadcastTrackInfo> bstil;
 #ifdef JOURNAL
@@ -170,6 +172,7 @@ scannerUpdateUnderLock(bool stop)
             printf("target region required\n");
         }
         ACTL_CompleteServiceSearch();
+        ACTL_StartTotSearch();
         onScanComplete();
     }
 
@@ -1104,6 +1107,9 @@ event_handler(U32BIT event, void */*event_data*/, U32BIT /*data_size*/)
         else if (event == APP_EVENT_SERVICE_STREAMS_CHANGED) {
             update = 1;
         }
+        else if (event == APP_EVENT_TIME_CHANGED) {
+            pSelf->time_valid = true;
+        }
         if (update) {
             updateTrackList(videoStarted);
         }
@@ -1199,6 +1205,9 @@ jlong
 BroadcastDTVKit_GetUtcTime()
 {
     U32BIT now;
+    if (!pSelf->time_valid) {
+        return 0;
+    }
     now = STB_GCConvertToTimestamp(STB_GCNowDHMSGmt());
     ALOGE("%s: %d", __FUNCTION__, now);
     return (jlong)now;
@@ -1376,6 +1385,9 @@ Broadcast_Initialize(BroadcastDriver *pD)
     U16BIT services = ADB_GetNumServicesInList(ADB_SERVICE_LIST_ALL, true);
     if (services == 0) {
         ACFG_SetCountry(COUNTRY_CODE_UK); 
+    }
+    else {
+        ACTL_StartTotSearch();
     }
 
     pD->GetChannelList = BroadcastDTVKit_GetChannelList;

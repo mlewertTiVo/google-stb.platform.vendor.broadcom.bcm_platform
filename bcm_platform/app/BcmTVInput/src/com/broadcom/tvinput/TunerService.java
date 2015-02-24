@@ -72,7 +72,6 @@ public class TunerService extends TvInputService {
     private static final boolean DEBUG = true;
     private static final String TAG = TunerService.class.getSimpleName();
     private static final TvStreamConfig[] EMPTY_STREAM_CONFIGS = {};
-    private boolean streamerMode = false;
 
     // inputId -> deviceId
     private final Map<String, Integer> mDeviceIdMap = new HashMap<>();
@@ -163,16 +162,14 @@ public class TunerService extends TvInputService {
     }
 
     private void forgeTime() {
-        if (streamerMode && isAtleastOneSessionTuned()) {
-            long t = TunerHAL.getUtcTime();
-            if (t != 0) {
-                Log.e(TAG, "DatabaseSyncTask::Got time " + t);
-                t *= 1000;
-                if (Math.abs(t - System.currentTimeMillis()) >= 10000) {
-                    Log.e(TAG, "DatabaseSyncTask::Calling setTime with " + t); 
-                    AlarmManager am = (AlarmManager)TunerService.this.getSystemService(Context.ALARM_SERVICE); 
-                    am.setTime(t);
-                }
+        long t = TunerHAL.getUtcTime();
+        if (t != 0) {
+            Log.e(TAG, "forgeTime::Got time " + t);
+            t *= 1000;
+            if (Math.abs(t - System.currentTimeMillis()) >= 10000) {
+                Log.e(TAG, "forgeTime::Calling setTime with " + t); 
+                AlarmManager am = (AlarmManager)TunerService.this.getSystemService(Context.ALARM_SERVICE); 
+                am.setTime(t);
             }
         }
     }
@@ -434,7 +431,6 @@ public class TunerService extends TvInputService {
                     deprecatedUpdateProgramsForChannel(channelId, id);
                 }
                 channelcursor.close();
-                forgeTime();
             }
 
             private void deleteProgramUpdate(String channel_id, String id, boolean expire)
@@ -1162,7 +1158,6 @@ public class TunerService extends TvInputService {
 
                 // Update the current id
                 mCurrentChannelId = id;
-                forgeTime();
             }
                         
             return true;
@@ -1188,8 +1183,7 @@ public class TunerService extends TvInputService {
             else if (action.equals("stopScan")) {
                 TunerHAL.stopScan();
             }
-            else if (action.equals("setStreamerMode")) {
-                streamerMode = true;
+            else if (action.equals("setClockFromStream")) {
                 forgeTime();
             }
 

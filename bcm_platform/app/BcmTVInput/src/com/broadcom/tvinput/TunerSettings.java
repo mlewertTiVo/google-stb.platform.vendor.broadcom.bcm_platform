@@ -125,8 +125,8 @@ public class TunerSettings extends Activity {
         }
     }
 
-    public void setStreamerMode(View v) {
-        mSession.sendAppPrivateCommand("setStreamerMode", null);
+    public void setClockFromStream(View v) {
+        mSession.sendAppPrivateCommand("setClockFromStream", null);
     }
 
     @Override
