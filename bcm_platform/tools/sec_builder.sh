@@ -23,26 +23,7 @@ set -e
 #
 # you MAY provide:
 #
-#	1)	the 'hsm-srcs-list' input file (fully qualified path, which is the list of
-#		all hsm modules that are needed for the hsm build which the script will
-#		decrypt.
-#
-#		the hsm file format is a single *.gpg file name per row which name starts at the
-#		root of the hsm code tree in the resfw view of the world.
-#
-#		if no 'hsm-srcs-list' option is provided, the default one checked-in in the
-#		source tree (alongside this script) will be used.
-#
-#
-#	2)	the 'keydir' fully qualified path, which is the location where you have
-#		stored your personal key file and perl script necessary for decrypting the hsm
-#		sources.
-#
-#		if no 'keydir' option is provided, the script will attempt to use a default
-#		location of '/home/${USER}/keydir'.
-#
-#
-#	3)	a bunch of tunable options listed on the 'usage'.
+#	1)	a bunch of tunable options listed on the 'usage'.
 #
 #
 # when running this script, the security related code will never leave the secure filer location
@@ -85,8 +66,6 @@ lunch_target="97252D0C"
 verbose=
 update=
 sec_filer=
-keydir=
-hsmsrcs=
 configure=
 reset=
 force_clean=
@@ -97,13 +76,12 @@ debug=
 show_tree=
 secliblist=
 only_build_secu=
-only_build_seck=
 
 function usage {
-	echo "sec_builder --sec-filer <path-to> [--keydir <path-to>] [--hsm-srcs-list <path-to>]"
+	echo "sec_builder --sec-filer <path-to>"
 	echo "            [--update] [--configure] [--reset] [--force-clean|--force-clean-refsw]"
 	echo "            [--skip-build|--skip-verify] [--debug] [--show-tree-only]"
-	echo "            [--only-build-secu] [--only-build-seck]"
+	echo "            [--only-build-secu]"
         echo "            [--show-tree-depth <depth>] [--verbose] [--help|-h]"
 	echo ""
 	echo "mandatory parameter(s):"
@@ -114,16 +92,6 @@ function usage {
 	echo ""
 	echo "options:"
 	echo ""
-	echo "   --keydir <path-to>           : <path-to> is the fully qualified path to your key directory"
-	echo "                                  containing the key to decruypt hsm code as well as the perl"
-	echo "                                  script to be used for decrypting. when not specified, defaults"
-	echo "                                  to '/home/${USER}/keydir'"
-	echo ""
-	echo "   --hsm-srcs-list <path-to>    : <path-to> is the fully qualified path to your hsm source list file"
-	echo "                                  containing the list (one per row) of all files you want to decrypt"
-	echo "                                  as part of the hsm build. when not specified, defaults to the version"
-	echo "                                  checked in on this code tree."
-	echo ""
 	echo "   --seclib-list <path-to>      : <path-to> is the fully qualified path to your security library mapping"
 	echo "                                  file, containing the list (one per row) of mapped <as-built>=<in-android-tree>"
 	echo "                                  modules, where <as-built> is the library built by this script and <in-android-tree>"
@@ -131,8 +99,7 @@ function usage {
 	echo "                                  this is used to compare the checked-in libraries vs the built one."
 	echo ""
 	echo "   --configure                  : whether to configure the source setup secure/non-secure before building,"
-	echo "                                  typically only needed once per code sync cycle, also determines if there is a need"
-	echo "                                  to decrypt the hsm modules (no need to decrypt if nothing changed)."
+	echo "                                  typically only needed once per code sync cycle."
 	echo ""
 	echo "   --reset                      : whether to force reset the source setup secure/non-secure prior to recreating,"
 	echo "                                  all links.  typically needed on a non-clean environment if using --configure."
@@ -203,17 +170,12 @@ function verifier_liens {
 	if [ -L "$1/vendor/broadcom/refsw/prsrcs" ]; then
 		liens=$(($liens + 1))
 	fi
-	if [ -L "$1/vendor/broadcom/refsw/magnum/portinginterface/hsm" ]; then
-		liens=$(($liens + 1))
-	fi
-	if [ "$liens" == "3" ]; then
+	if [ "$liens" == "2" ]; then
 		if [ "$reset" == "1" ]; then
-			# remove all existing links, reset the refsw code to grab the
-			# hsm again.
+			# remove all existing links, reset the refsw code
 			cd $1/vendor/broadcom/refsw
 			rm $1/vendor/broadcom/refsw/secsrcs
 			rm $1/vendor/broadcom/refsw/prsrcs
-			rm $1/vendor/broadcom/refsw/magnum/portinginterface/hsm
 			git checkout -f
 		else
 			rejouez "environment already setup; add --reset option with --configure, or drop --configure."
@@ -227,8 +189,6 @@ function verifier_liens {
 # $4 - 'playready' subtree on secure filer.
 function mettre_en_place {
 	# note: link the secure code into the non-secure tree, do not move the code out of the secure filer.
-	#       copy the 'hsm' code to be decrypted into the secure filer location and link that back to the
-	#       non secure tree.
 	cd $1/vendor/broadcom/refsw
 	if [ -L "secsrcs" ]; then
 		rm secsrcs
@@ -239,12 +199,6 @@ function mettre_en_place {
 	fi
 	ln -s $4 prsrcs
 	cd $1
-	if [ -d "$2/hsm" ]; then
-		rm -rf $2/hsm
-	fi
-	cp -faR $1/vendor/broadcom/refsw/magnum/portinginterface/hsm $2/hsm
-	rm -rf $1/vendor/broadcom/refsw/magnum/portinginterface/hsm
-	ln -s $2/hsm $1/vendor/broadcom/refsw/magnum/portinginterface/hsm
 }
 
 # $1 - android tree root.
@@ -261,19 +215,6 @@ function mettre_code_a_jour {
 	git pull --rebase
 }
 
-# $1 - security filer location.
-# $2 - keydir location.
-# $3 - hsm source file.
-function decrypter_hsm {
-	readarray hsm_a_decrypter < $3
-	count=${#hsm_a_decrypter[@]}
-	ix=0
-	while [ "$ix" -lt "$count" ]; do
-		perl $2/keygpg.pl $1/hsm/${hsm_a_decrypter[$ix]}
-		ix=$(($ix + 1))
-	done
-}
-
 # $1 - android tree root.
 function compiler {
 	if [ "$skip_build" == "1" ]; then
@@ -285,7 +226,6 @@ function compiler {
 		# TODO: make the platform configured.
 		#
 		./vendor/broadcom/bcm_platform/tools/plat-droid.py ${plat_target} profile secu
-		./vendor/broadcom/bcm_platform/tools/plat-droid.py ${plat_target} profile seck
 		source ./build/envsetup.sh
 		# build the user side libraries, we need to build a system first to get
 		# the android objects setup and the refsw/nexus libs.
@@ -297,7 +237,7 @@ function compiler {
 				make -j12 clean_refsw
 			fi
 		fi
-		if [[ "$only_build_secu" != "1" && "$only_build_seck" != "1" ]]; then
+		if [ "$only_build_secu" != "1" ]; then
 			make -j12
 		fi
 		# setup a 'fake' NDK equivalent to allow the security build to find out the
@@ -305,26 +245,13 @@ function compiler {
 		mkdir -p out/target/product/bcm_platform/sysroot/usr/lib
 		cp -faR out/target/product/bcm_platform/obj/lib/* out/target/product/bcm_platform/sysroot/usr/lib/
 		# now do the real security build as an incremental build.
-		if [ "$only_build_seck" != "1" ]; then
-			if [ "$debug" == "1" ]; then
-				export B_REFSW_DEBUG=y
-			else
-				export B_REFSW_DEBUG=n
-			fi
-			make -j12 clean_security_user
-			make -j12 security_user
+		if [ "$debug" == "1" ]; then
+			export B_REFSW_DEBUG=y
+		else
+			export B_REFSW_DEBUG=n
 		fi
-		# build the kernel side libraries - note: allow notion of 'debug' vs 'retail' (is it really needed?)
-		if [ "$only_build_secu" != "1" ]; then
-			lunch bcm_${lunch_target}_seck-eng
-			if [ "$debug" == "1" ]; then
-				export B_REFSW_DEBUG=y
-			else
-				export B_REFSW_DEBUG=n
-			fi
-			make -j12 clean_security_kernel
-			make -j12 security_kernel
-		fi
+		make -j12 clean_security_user
+		make -j12 security_user
 	fi
 }
 
@@ -416,12 +343,6 @@ while [ "$1" != "" ]; do
 		--sec-filer)			shift
 						sec_filer=$1
 						;;
-		--keydir)			shift
-						keydir=$1
-						;;
-		--hsm-srcs-list)		shift
-						hsmsrcs=$1
-						;;
 		--seclib-list)			shift
 						secliblist=$1
 						;;
@@ -449,8 +370,6 @@ while [ "$1" != "" ]; do
 						show_tree_depth=$1
 						;;
 		--only-build-secu)		only_build_secu=1
-						;;
-		--only-build-seck)		only_build_seck=1
 						;;
 		-h | --help)			usage
 						exit
@@ -480,13 +399,6 @@ fi
 if [ ! -d "$fqn_pr" ]; then
 	rejouez "$fqn_pr is missing"
 fi
-if [ ! -d "$keydir" ]; then
-	# attempt fallback to default expected location.
-	keydir=/home/${USER}/keydir
-	if [ ! -d "$keydir" ]; then
-		rejouez "$keydir is missing"
-	fi
-fi
 
 que_faites_vous "locating top-of-tree android extract."
 fqn_root=$(ou_suis_je)
@@ -494,14 +406,6 @@ if [ "$fqn_root" == "$oops" ]; then
 	rejouez "not appear to be running within a valid android tree."
 fi
 que_faites_vous "... located at $fqn_root."
-
-if [ "$hsmsrcs" == "" ]; then
-	# use defaut one for this code tree.
-	hsmsrcs=$fqn_root/vendor/broadcom/bcm_platform/tools/hsm.srcs
-fi
-if [ ! -f "$hsmsrcs" ]; then
-	rejouez "hsm source list '$hsmsrcs' does not exists"
-fi
 
 if [ "$secliblist" == "" ]; then
 	# use defaut one for this code tree.
@@ -531,8 +435,6 @@ if [ "$configure" == "1" ]; then
 	verifier_liens $fqn_root
 	que_faites_vous "linking in security code.  patience..."
 	mettre_en_place $fqn_root $sec_filer $fqn_sec $fqn_pr
-	que_faites_vous "decrypting hsm sources for the build.  more patience..."
-	decrypter_hsm $sec_filer $keydir $hsmsrcs
 fi
 
 # now build.
