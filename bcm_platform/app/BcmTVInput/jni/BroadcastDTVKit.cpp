@@ -49,6 +49,7 @@ public:
         w = 0;
         h = 0;
         time_valid = false;
+        tot_search_active = false;
 #ifdef JOURNAL
         epg.mutex = STB_OSCreateMutex();
         epg.backlog = 0;
@@ -69,6 +70,7 @@ public:
     U16BIT w;
     U16BIT h;
     bool time_valid;
+    bool tot_search_active;
     Vector<BroadcastTrackInfo> batil;
     Vector<BroadcastTrackInfo> bstil;
 #ifdef JOURNAL
@@ -172,7 +174,7 @@ scannerUpdateUnderLock(bool stop)
             printf("target region required\n");
         }
         ACTL_CompleteServiceSearch();
-        ACTL_StartTotSearch();
+        pSelf->tot_search_active = ACTL_StartTotSearch();
         onScanComplete();
     }
 
@@ -261,7 +263,13 @@ static int BroadcastDTVKit_Tune(String8 s8id)
     int rv = -1;
 
     ALOGE("%s: Enter", __FUNCTION__);
-    U16BIT lcn = strtoul(s8id.string(), 0, 0);
+
+    if (pSelf->tot_search_active) {
+        ACTL_StopTotSearch();
+        pSelf->tot_search_active = false;
+    }
+
+    U16BIT lcn = strtoul(s8id.string(), 0, 0); 
     void *s_ptr = ADB_FindServiceByLcn(ADB_SERVICE_LIST_TV | ADB_SERVICE_LIST_RADIO, lcn, TRUE);
     pSelf->s_ptr = s_ptr;
     resetDecodeState();
@@ -1387,7 +1395,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
         ACFG_SetCountry(COUNTRY_CODE_UK); 
     }
     else {
-        ACTL_StartTotSearch();
+        pSelf->tot_search_active = ACTL_StartTotSearch();
     }
 
     pD->GetChannelList = BroadcastDTVKit_GetChannelList;
