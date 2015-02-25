@@ -177,9 +177,20 @@ static nxserver_t init_nxserver(void)
     settings.growHeapBlockSize = 32 * MB;
     ix = memConfigSettings.memoryLayout.heapIndex.graphics[0];
     if (ix != (unsigned)-1) {
-       platformSettings.heap[ix].size = 128 * MB;
+       platformSettings.heap[ix].size = 256 * MB;
     }
 #endif
+    if (settings.growHeapBlockSize) {
+       unsigned index = memConfigSettings.memoryLayout.heapIndex.graphics[0];
+       if (index >= NEXUS_MAX_HEAPS) {
+           ALOGE("growHeapBlockSize: requires platform implement NEXUS_PLATFORM_P_GET_FRAMEBUFFER_HEAP_INDEX");
+           return NULL;
+       }
+       platformSettings.heap[NEXUS_MAX_HEAPS-2].memcIndex = platformSettings.heap[index].memcIndex;
+       platformSettings.heap[NEXUS_MAX_HEAPS-2].subIndex = platformSettings.heap[index].subIndex;
+       platformSettings.heap[NEXUS_MAX_HEAPS-2].size = 4096;
+       platformSettings.heap[NEXUS_MAX_HEAPS-2].memoryType = NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED;
+    }
     if (property_get(NX_HEAP_VIDEO_SECURE, value, NULL)) {
        if (strlen(value)) {
           /* -heap video_secure,XXm */
