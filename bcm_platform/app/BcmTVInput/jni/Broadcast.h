@@ -96,9 +96,71 @@ public:
     jint sampleRate; 
 };
 
+class BroadcastScanParams {
+public:
+    enum DeliverySystem {
+        DVB_T,
+        DVB_C,
+        DVB_S
+    };
+    enum ScanMode {
+        ScanMode_Blind,
+        ScanMode_Single,
+        ScanMode_Home
+    };
+    enum SatellitePolarity {
+        Horizontal,
+        Vertical
+    };
+    enum SatelliteMode {
+        SatelliteMode_QpskLdpc,
+        SatelliteMode_8pskLdpc,
+        SatelliteMode_Dvb
+    };
+    enum QamMode {
+        QamMode_16,
+        QamMode_32,
+        QamMode_64,
+        QamMode_128,
+        QamMode_256
+    };
+    enum OfdmTransmissionMode {
+        OfdmTransmissionMode_1k,
+        OfdmTransmissionMode_2k,
+        OfdmTransmissionMode_4k,
+        OfdmTransmissionMode_8k,
+        OfdmTransmissionMode_16k,
+        OfdmTransmissionMode_32k
+    };
+    enum OfdmMode {
+        OfdmMode_Dvbt,
+        OfdmMode_Dvbt2
+    };
+    /* All */
+    DeliverySystem deliverySystem;
+    ScanMode mode;
+    jint freqKHz;
+    /* DVB_S */
+    SatellitePolarity polarity;
+    struct {
+        jshort numerator;
+        jshort denominator;
+    } codeRate;
+    SatelliteMode satelliteMode;
+    /* DVB_C and DVB_S */
+    jint symK;
+    /* DVB_C */
+    QamMode qamMode;
+    /* DVB-T */
+    jint bandwidthKHz;
+    OfdmTransmissionMode ofdmTransmissionMode;
+    OfdmMode ofdmMode;
+    jshort plpId;
+};
+
 class BroadcastDriver {
 public:
-    int (*StartBlindScan)();
+    int (*StartScan)(BroadcastScanParams *pParams);
     int (*StopScan)();
     int (*Tune)(String8);
     Vector<BroadcastChannelInfo> (*GetChannelList)();

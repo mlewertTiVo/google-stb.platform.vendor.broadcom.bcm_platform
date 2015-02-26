@@ -115,7 +115,7 @@ public class TunerSettings extends Activity {
         mTvInputManager.createSession(inputId, mSessionCallback, mHandler);
     }
 
-    public void startStopBlindScan(View v) {
+    public void startStopScan(View v) {
         ToggleButton start_stop = (ToggleButton)v;
         if (start_stop.isChecked()) {
             mSession.sendAppPrivateCommand("startBlindScan", null);

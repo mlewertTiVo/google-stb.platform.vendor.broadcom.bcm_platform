@@ -1175,7 +1175,7 @@ public class TunerService extends TvInputService {
         {
             Log.d(TAG, "onAppPrivateCommand: " + action);
             if (action.equals("startBlindScan")) {
-                TunerHAL.startBlindScan();
+                TunerHAL.startScan();
             }
             else if (action.equals("scanStatus")) {
                 sendScanStatusToAllSessions(); 

@@ -313,7 +313,7 @@ static int BroadcastDemo_Stop()
     return 0;
 }
 
-static int BroadcastDemo_StartBlindScan()
+static int BroadcastDemo_StartScan(BroadcastScanParams *)
 {
     ALOGE("%s: Enter", __FUNCTION__);
 
@@ -746,7 +746,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->GetScanInfo = BroadcastDemo_GetScanInfo;
     pD->GetUtcTime = 0;
     pD->Tune = BroadcastDemo_Tune;
-    pD->StartBlindScan = BroadcastDemo_StartBlindScan;
+    pD->StartScan = BroadcastDemo_StartScan;
     pD->StopScan = BroadcastDemo_StopScan;
     pD->Stop = BroadcastDemo_Stop;
     pD->Release = BroadcastDemo_Release;

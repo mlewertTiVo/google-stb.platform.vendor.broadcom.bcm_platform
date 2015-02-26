@@ -19,7 +19,7 @@ public class TunerHAL
     }
 
     static native int initialize(Object o);
-    static native int startBlindScan();
+    static native int startScan();
     static native int stopScan();
     static native int tune(String id); // from ChannelInfo
     static native ChannelInfo[] getChannelList();

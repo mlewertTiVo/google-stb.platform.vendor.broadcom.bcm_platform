@@ -24,7 +24,7 @@ extern "C" {
 
 //#define DEBUG_EVENTS
 
-//#define JOURNAL
+#define JOURNAL
 //#define NOWNEXT
 
 class UpdateRecord {
@@ -198,6 +198,11 @@ scannerInitUnderLock()
 static bool
 startBlindScan()
 {
+    if (pSelf->tot_search_active) {
+        ACTL_StopTotSearch();
+        pSelf->tot_search_active = false;
+    }
+
     STB_OSMutexLock(pSelf->scanner.mutex);
     if (!scannerInitUnderLock()) {
         STB_OSMutexUnlock(pSelf->scanner.mutex);
@@ -217,15 +222,156 @@ startBlindScan()
     return true;
 }
 
-static int BroadcastDTVKit_StartBlindScan()
+static bool
+satelliteTuningParamsToDTVKit(BroadcastScanParams *pParams, S_MANUAL_TUNING_PARAMS &dtvkitParams)
+{
+    dtvkitParams.freq = pParams->freqKHz / 1000;
+    dtvkitParams.u.sat.satellite = 0;
+    dtvkitParams.u.sat.polarity = pParams->polarity == BroadcastScanParams::Horizontal ? POLARITY_HORIZONTAL : POLARITY_VERTICAL;
+    dtvkitParams.u.sat.symbol_rate = pParams->symK;
+    switch (pParams->codeRate.numerator * 100 + pParams->codeRate.denominator) {
+    case 000: dtvkitParams.u.sat.fec = FEC_AUTOMATIC; break;
+    case 102: dtvkitParams.u.sat.fec = FEC_1_2; break;
+    case 203: dtvkitParams.u.sat.fec = FEC_2_3; break;
+    case 304: dtvkitParams.u.sat.fec = FEC_3_4; break;
+    case 506: dtvkitParams.u.sat.fec = FEC_5_6; break;
+    case 708: dtvkitParams.u.sat.fec = FEC_7_8; break;
+        // Extra FEC modes for DVB-S2
+    case 104: dtvkitParams.u.sat.fec = FEC_1_4; break;
+    case 103: dtvkitParams.u.sat.fec = FEC_1_3; break;
+    case 205: dtvkitParams.u.sat.fec = FEC_2_5; break;
+    case 809: dtvkitParams.u.sat.fec = FEC_8_9; break;
+    case 910: dtvkitParams.u.sat.fec = FEC_9_10; break;
+    default:
+        return false;
+    }; 
+    switch (pParams->satelliteMode) {
+    case BroadcastScanParams::SatelliteMode_QpskLdpc: dtvkitParams.u.sat.dvb_s2 = true; dtvkitParams.u.sat.modulation = MOD_QPSK; break;
+    case BroadcastScanParams::SatelliteMode_8pskLdpc: dtvkitParams.u.sat.dvb_s2 = true; dtvkitParams.u.sat.modulation = MOD_8PSK; break;
+    case BroadcastScanParams::SatelliteMode_Dvb: dtvkitParams.u.sat.dvb_s2 = false; dtvkitParams.u.sat.modulation = MOD_QPSK; break;
+    default:
+        return false;
+    }
+    return true;
+}
+
+static bool
+qamTuningParamsToDTVKit(BroadcastScanParams *pParams, S_MANUAL_TUNING_PARAMS &dtvkitParams)
+{
+    dtvkitParams.freq = pParams->freqKHz;
+    switch (pParams->qamMode) {
+    case BroadcastScanParams::QamMode_16: dtvkitParams.u.cab.mode = MODE_QAM_16; break;
+    case BroadcastScanParams::QamMode_32: dtvkitParams.u.cab.mode = MODE_QAM_32; break;
+    case BroadcastScanParams::QamMode_64: dtvkitParams.u.cab.mode = MODE_QAM_64; break;
+    case BroadcastScanParams::QamMode_128: dtvkitParams.u.cab.mode = MODE_QAM_128; break;
+    case BroadcastScanParams::QamMode_256: dtvkitParams.u.cab.mode = MODE_QAM_256; break;
+    default: dtvkitParams.u.cab.mode = MODE_QAM_AUTO; break;
+    }
+    dtvkitParams.u.cab.symbol_rate = pParams->symK;
+    return true;
+}
+
+static bool
+ofdmTuningParamsToDTVKit(BroadcastScanParams *pParams, S_MANUAL_TUNING_PARAMS &dtvkitParams)
+{
+    dtvkitParams.freq = pParams->freqKHz;
+    switch (pParams->bandwidthKHz) {
+    case 8000: dtvkitParams.u.terr.bwidth = TBWIDTH_8MHZ; break;
+    case 7000: dtvkitParams.u.terr.bwidth = TBWIDTH_7MHZ; break;
+    case 6000: dtvkitParams.u.terr.bwidth = TBWIDTH_6MHZ; break;
+    case 5000: dtvkitParams.u.terr.bwidth = TBWIDTH_5MHZ; break;
+    case 10000: dtvkitParams.u.terr.bwidth = TBWIDTH_10MHZ; break;
+    default: return false;
+    }
+    switch (pParams->ofdmTransmissionMode) {
+    case BroadcastScanParams::OfdmTransmissionMode_1k: dtvkitParams.u.terr.mode = MODE_COFDM_1K; break;
+    case BroadcastScanParams::OfdmTransmissionMode_2k: dtvkitParams.u.terr.mode = MODE_COFDM_2K; break;
+    case BroadcastScanParams::OfdmTransmissionMode_4k: dtvkitParams.u.terr.mode = MODE_COFDM_4K; break;
+    case BroadcastScanParams::OfdmTransmissionMode_8k: dtvkitParams.u.terr.mode = MODE_COFDM_8K; break;
+    case BroadcastScanParams::OfdmTransmissionMode_16k: dtvkitParams.u.terr.mode = MODE_COFDM_16K; break;
+    case BroadcastScanParams::OfdmTransmissionMode_32k: dtvkitParams.u.terr.mode = MODE_COFDM_32K; break;
+    default: dtvkitParams.u.terr.mode = MODE_COFDM_UNDEFINED; break;
+    }
+    switch (pParams->ofdmMode) {
+    case BroadcastScanParams::OfdmMode_Dvbt: dtvkitParams.u.terr.type = TERR_TYPE_DVBT; break;
+    case BroadcastScanParams::OfdmMode_Dvbt2: dtvkitParams.u.terr.type = TERR_TYPE_DVBT2; break;
+    default: return false;
+    }
+    dtvkitParams.u.terr.plp_id = pParams->plpId;
+    return true;
+}
+
+static bool
+tuningParamsToDTVKit(BroadcastScanParams *pParams, E_STB_DP_SIGNAL_TYPE &tunerType, S_MANUAL_TUNING_PARAMS &dtvkitParams)
+{
+    switch (pParams->deliverySystem) {
+    case BroadcastScanParams::DVB_T:
+        tunerType = SIGNAL_COFDM;
+        return ofdmTuningParamsToDTVKit(pParams, dtvkitParams);
+    case BroadcastScanParams::DVB_S:
+        tunerType = SIGNAL_QPSK;
+        return satelliteTuningParamsToDTVKit(pParams, dtvkitParams);
+    case BroadcastScanParams::DVB_C:
+        tunerType = SIGNAL_QAM;
+        return qamTuningParamsToDTVKit(pParams, dtvkitParams);
+    }
+    return false;
+}
+
+static bool
+startManualScan(BroadcastScanParams *pParams)
+{
+    S_MANUAL_TUNING_PARAMS dtvkitParams;
+    E_STB_DP_SIGNAL_TYPE tunerType;
+
+    if (!tuningParamsToDTVKit(pParams, tunerType, dtvkitParams)) {
+        return false;
+    }
+
+    if (pSelf->tot_search_active) {
+        ACTL_StopTotSearch();
+        pSelf->tot_search_active = false;
+    }
+
+    STB_OSMutexLock(pSelf->scanner.mutex);
+
+    if (!scannerInitUnderLock()) {
+        STB_OSMutexUnlock(pSelf->scanner.mutex);
+        return false;
+    }
+
+    // manual scan with network
+    pSelf->scanner.infoValid = false;
+    if (!ACTL_StartManualSearch(tunerType, &dtvkitParams, pParams->mode == BroadcastScanParams::ScanMode_Home ? ACTL_NETWORK_SEARCH : ACTL_FREQ_SEARCH)) {
+        STB_OSMutexUnlock(pSelf->scanner.mutex);
+        return false;
+    }
+    pSelf->scanner.active = true;
+    STB_OSMutexUnlock(pSelf->scanner.mutex);
+    onScanStart();
+    return true;
+}
+
+static int BroadcastDTVKit_StartScan(BroadcastScanParams *pParams)
 {
     int rv = -1;
     ALOGE("%s: Enter", __FUNCTION__); 
 
-    if (startBlindScan()) {
+    if (pParams == 0 || (pParams->deliverySystem == BroadcastScanParams::DVB_T && pParams->mode == BroadcastScanParams::ScanMode_Blind)) {
+        /* DVB-T blind scan */
+        startBlindScan();
         rv = 0;
     }
-    ALOGE("%s: Exit", __FUNCTION__);
+    else if (pParams->mode == BroadcastScanParams::ScanMode_Blind) {
+        /* no other blind scan */
+        rv = -1;
+    }
+    else {
+        if (startManualScan(pParams)) {
+            rv = 0;
+        }
+    }
+    ALOGE("%s: Exit", __FUNCTION__); 
     return rv;
 }
 
@@ -1408,7 +1554,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->GetScanInfo = BroadcastDTVKit_GetScanInfo;
     pD->GetUtcTime = BroadcastDTVKit_GetUtcTime;
     pD->Tune = BroadcastDTVKit_Tune;
-    pD->StartBlindScan = BroadcastDTVKit_StartBlindScan;
+    pD->StartScan = BroadcastDTVKit_StartScan;
     pD->StopScan = BroadcastDTVKit_StopScan;
     pD->Stop = BroadcastDTVKit_Stop;
     pD->Release = BroadcastDTVKit_Release;

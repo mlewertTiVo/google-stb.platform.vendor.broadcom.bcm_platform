@@ -17,10 +17,10 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize
 
 /*
  * Class:     com_broadcom_tvinput_TunerHAL
- * Method:    startBlindScan
+ * Method:    startScan
  * Signature: ()I
  */
-JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startBlindScan
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startScan
   (JNIEnv *, jclass);
 
 /*
