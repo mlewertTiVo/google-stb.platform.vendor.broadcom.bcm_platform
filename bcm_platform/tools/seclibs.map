@@ -3,7 +3,6 @@ usr/lib/libplayreadypk_host.so=libsecurity/playreadypk/linuxkernel/libplayreadyp
 usr/lib/libplayreadypk.so=libsecurity/playreadypk/linuxkernel/libplayreadypk.so
 usr/lib/libcmndrm.so=libsecurity/common_drm/linuxkernel/libcmndrm.so
 usr/lib/libcmndrm_tl.so=libsecurity/common_drm/linuxkernel/libcmndrm_tl.so
-usr/lib/libcmndrmprdy.so=libsecurity/common_drm/linuxkernel/libcmndrmprdy.so
 usr/lib/liboemcrypto.so=libsecurity/oemcrypto/linuxkernel/liboemcrypto.so
 usr/lib/liboemcrypto.a=libsecurity/oemcrypto/linuxkernel/liboemcrypto.a
 usr/lib/libcmndrmprdy.so=libsecurity/common_drm/linuxkernel/libcmndrmprdy.so
