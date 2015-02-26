@@ -125,6 +125,8 @@ static nxserver_t init_nxserver(void)
     NEXUS_PlatformSettings platformSettings;
     NEXUS_MemoryConfigurationSettings memConfigSettings;
     struct nxserver_settings settings;
+    struct nxserver_cmdline_settings cmdline_settings;
+
     char value[PROPERTY_VALUE_MAX];
     char value2[PROPERTY_VALUE_MAX];
     unsigned ix;
@@ -138,6 +140,9 @@ static nxserver_t init_nxserver(void)
     if (g_app.server) {
         return NULL;
     }
+
+    memset(&cmdline_settings, 0, sizeof(cmdline_settings));
+    cmdline_settings.frontend = true;
 
     nxserver_get_default_settings(&settings);
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
@@ -232,23 +237,11 @@ static nxserver_t init_nxserver(void)
        settings.hdcp.hdcp2xBinFile = value2;
     }
 
-    /* TODO: some bit of 'post cmdline parsing' magic which nexus bundles up
-       with the cmdline, but which should really be independent, once nexus lib
-       provides a cleaned out support for this via a proper function call, we can
-       remove it and make an api call instead.
-    */
-    platformSettings.openCec = false;
-    platformSettings.openFrontend = true;
-    platformSettings.audioModuleSettings.maxAudioDspTasks = 2;
-    memConfigSettings.videoDecoder[0].avc51Supported = false;
-    for (ix = 0 ; ix < NXCLIENT_MAX_SESSIONS ; ix++) {
-        if (settings.session[ix].output.sd) break;
+    rc = nxserver_modify_platform_settings(&settings, &cmdline_settings, &platformSettings, &memConfigSettings);
+    if (rc) {
+       ALOGE("FATAL: failed nxserver_modify_platform_settings");
+       return NULL;
     }
-    if (ix == NXCLIENT_MAX_SESSIONS) {
-       memConfigSettings.display[1].maxFormat = NEXUS_VideoFormat_eUnknown;
-       memConfigSettings.display[0].window[0].precisionLipSync = false;
-    }
-    /* TODO - end. */
 
     rc = NEXUS_Platform_MemConfigInit(&platformSettings, &memConfigSettings);
     if (rc) {
