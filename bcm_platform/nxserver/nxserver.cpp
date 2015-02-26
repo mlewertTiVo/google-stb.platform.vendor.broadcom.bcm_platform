@@ -72,6 +72,12 @@
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 #define APP_MAX_CLIENTS 20
 #define MB (1024*1024)
+#define DISPLAY_FORMAT_1080P           "1080p"
+
+#define NX_HEAP_VIDEO_SECURE           "ro.nx.heap.video_secure"
+#define NX_HD_OUT_FMT                  "ro.hd_output_format"
+#define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
+#define NX_HDCP2X_KEY                  "ro.nexus.nxserver.hdcp2x_keys"
 
 static struct {
     BKNI_MutexHandle lock;
@@ -143,8 +149,8 @@ static nxserver_t init_nxserver(void)
     /* -ir none */
     settings.session[0].ir_input_mode = NEXUS_IrInputMode_eMax;
     memset(value, 0, sizeof(value));
-    if (property_get("ro.hd_output_format", value, NULL)) {
-        if (strncmp((char *) value, "1080p", 5) != 0) {
+    if (property_get(NX_HD_OUT_FMT, value, NULL)) {
+        if (strncmp((char *) value, DISPLAY_FORMAT_1080P, strlen(DISPLAY_FORMAT_1080P)) != 0) {
             /* -ignore_edid */
             settings.session[0].edid_mode = nxserver_hdmi_edid_mode_ignore;
         } else {
@@ -174,8 +180,12 @@ static nxserver_t init_nxserver(void)
        platformSettings.heap[ix].size = 128 * MB;
     }
 #endif
-    /* -heap video_secure,80m */
-    platformSettings.heap[NEXUS_VIDEO_SECURE_HEAP].size = 80 * MB;
+    if (property_get(NX_HEAP_VIDEO_SECURE, value, NULL)) {
+       if (strlen(value)) {
+          /* -heap video_secure,XXm */
+          platformSettings.heap[NEXUS_VIDEO_SECURE_HEAP].size = strtol(value, NULL, 10) * MB;
+       }
+    }
     /* -password file-path-name */
     sprintf(nx_key, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
     key = fopen(nx_key, "r");
@@ -200,13 +210,13 @@ static nxserver_t init_nxserver(void)
     }
     /* -hdcp1x_keys some-key-file  -- setup last. */
     memset(value, 0, sizeof(value));
-    property_get("ro.nexus.nxserver.hdcp1x_keys", value, NULL);
+    property_get(NX_HDCP1X_KEY, value, NULL);
     if (strlen(value)) {
        settings.hdcp.hdcp1xBinFile = value;
     }
     /* -hdcp2x_keys some-key-file  -- setup last. */
     memset(value2, 0, sizeof(value2));
-    property_get("ro.nexus.nxserver.hdcp2x_keys", value2, NULL);
+    property_get(NX_HDCP2X_KEY, value2, NULL);
     if (strlen(value2)) {
        settings.hdcp.hdcp2xBinFile = value2;
     }
