@@ -63,9 +63,9 @@ public class TunerSettings extends Activity {
         }
         @Override
         public void onSessionEvent(TvInputManager.Session session, String eventType, Bundle eventArgs) {
-            if (eventType.equals("scanstatus")) {
+            if (eventType.equals("scanStatus")) {
                 eventArgs.setClassLoader(ScanInfo.class.getClassLoader());
-                ScanInfo si = eventArgs.getParcelable("scaninfo");
+                ScanInfo si = eventArgs.getParcelable("scanInfo");
                 ToggleButton start_stop = (ToggleButton) findViewById(R.id.toggle_scan);
                 ProgressBar progress = (ProgressBar) findViewById(R.id.progressbar_scan);
                 RatingBar strength = (RatingBar) findViewById(R.id.rating_strength);
@@ -118,7 +118,13 @@ public class TunerSettings extends Activity {
     public void startStopScan(View v) {
         ToggleButton start_stop = (ToggleButton)v;
         if (start_stop.isChecked()) {
-            mSession.sendAppPrivateCommand("startBlindScan", null);
+            ScanParams sp = new ScanParams();
+            sp.deliverySystem = ScanParams.DeliverySystem.Dvbt;
+            sp.mode = ScanParams.ScanMode.Blind;
+            Bundle b = new Bundle();
+            b.setClassLoader(ScanParams.class.getClassLoader());
+            b.putParcelable("scanParams", sp);
+            mSession.sendAppPrivateCommand("startScan", b);
         }
         else {
             mSession.sendAppPrivateCommand("stopScan", null);

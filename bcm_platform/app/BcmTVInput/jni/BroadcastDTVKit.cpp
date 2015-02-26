@@ -24,7 +24,7 @@ extern "C" {
 
 //#define DEBUG_EVENTS
 
-#define JOURNAL
+//#define JOURNAL
 //#define NOWNEXT
 
 class UpdateRecord {

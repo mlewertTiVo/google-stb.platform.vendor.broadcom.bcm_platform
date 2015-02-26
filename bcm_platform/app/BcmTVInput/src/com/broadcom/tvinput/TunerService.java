@@ -610,9 +610,9 @@ public class TunerService extends TvInputService {
             Bundle b = new Bundle();
             ScanInfo si = TunerHAL.getScanInfo();
             b.setClassLoader(ScanInfo.class.getClassLoader());
-            b.putParcelable("scaninfo", si);
+            b.putParcelable("scanInfo", si);
             //mCurrentSession.notifySessionEvent("scanstate", b);
-            reflectedNotifySessionEvent(session, "scanstatus", b);
+            reflectedNotifySessionEvent(session, "scanStatus", b);
         }
     }
 
@@ -1174,8 +1174,13 @@ public class TunerService extends TvInputService {
         public void onAppPrivateCommand(String action, Bundle data) 
         {
             Log.d(TAG, "onAppPrivateCommand: " + action);
-            if (action.equals("startBlindScan")) {
-                TunerHAL.startScan();
+            if (action.equals("startScan")) {
+                ScanParams sp = null;
+                if (data != null) {
+                    data.setClassLoader(ScanParams.class.getClassLoader());
+                    sp = data.getParcelable("scanParams");
+                }
+                TunerHAL.startScan(sp);
             }
             else if (action.equals("scanStatus")) {
                 sendScanStatusToAllSessions(); 

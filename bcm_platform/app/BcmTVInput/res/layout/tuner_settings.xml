@@ -17,7 +17,7 @@
             android:layout_height="wrap_content"
             android:layout_marginEnd="20dp"
             android:checked="false"
-            android:onClick="startStopBlindScan"
+            android:onClick="startStopScan"
             android:textOff="@string/scan_button_label"
             android:textOn="@string/stop_button_label">
             <requestFocus/>

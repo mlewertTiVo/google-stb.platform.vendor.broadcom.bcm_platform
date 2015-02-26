@@ -1,10 +1,11 @@
 package com.broadcom.tvinput;
 
 import android.util.Log;
-import com.broadcom.tvinput.ChannelInfo;
-import com.broadcom.tvinput.ProgramInfo;
-import com.broadcom.tvinput.ProgramUpdateInfo;
-import com.broadcom.tvinput.ScanInfo;
+//import com.broadcom.tvinput.ChannelInfo;
+//import com.broadcom.tvinput.ProgramInfo;
+//import com.broadcom.tvinput.ProgramUpdateInfo;
+//import com.broadcom.tvinput.ScanInfo;
+//import com.broadcom.tvinput.ScanParams;
 
 public class TunerHAL
 {
@@ -19,7 +20,7 @@ public class TunerHAL
     }
 
     static native int initialize(Object o);
-    static native int startScan();
+    static native int startScan(ScanParams sp);
     static native int stopScan();
     static native int tune(String id); // from ChannelInfo
     static native ChannelInfo[] getChannelList();
