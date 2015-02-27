@@ -74,6 +74,8 @@
 #define MB (1024*1024)
 #define DISPLAY_FORMAT_1080P           "1080p"
 
+#define NX_HEAP_GFX                    "ro.nx.heap.gfx"
+#define NX_HEAP_GFX2                   "ro.nx.heap.gfx2"
 #define NX_HEAP_VIDEO_SECURE           "ro.nx.heap.video_secure"
 #define NX_HD_OUT_FMT                  "ro.hd_output_format"
 #define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
@@ -202,6 +204,21 @@ static nxserver_t init_nxserver(void)
           platformSettings.heap[NEXUS_VIDEO_SECURE_HEAP].size = strtol(value, NULL, 10) * MB;
        }
     }
+    if (property_get(NX_HEAP_GFX, value, NULL)) {
+       unsigned index = memConfigSettings.memoryLayout.heapIndex.graphics[0];
+       if (strlen(value) && (index != (unsigned)-1)) {
+          /* -heap gfx,XXm */
+          platformSettings.heap[index].size = strtol(value, NULL, 10) * MB;
+       }
+    }
+    if (property_get(NX_HEAP_GFX2, value, NULL)) {
+       unsigned index = memConfigSettings.memoryLayout.heapIndex.graphics[1];
+       if (strlen(value) && (index != (unsigned)-1)) {
+          /* -heap gfx2,XXm */
+          platformSettings.heap[index].size = strtol(value, NULL, 10) * MB;
+       }
+    }
+
     /* -password file-path-name */
     sprintf(nx_key, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
     key = fopen(nx_key, "r");
