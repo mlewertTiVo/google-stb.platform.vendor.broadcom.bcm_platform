@@ -66,6 +66,28 @@
 #define PROGRAMUPDATEINFOUPDATETYPE_CLASS  "com/broadcom/tvinput/ProgramUpdateInfo$UpdateType"
 #define PROGRAMUPDATEINFOUPDATETYPE_SIG  "L" PROGRAMUPDATEINFOUPDATETYPE_CLASS ";"
 
+#define SCANPARAMSDELIVERYSYSTEM_CLASS  "com/broadcom/tvinput/ScanParams$DeliverySystem"
+#define SCANPARAMSDELIVERYSYSTEM_SIG  "L" SCANPARAMSDELIVERYSYSTEM_CLASS ";"
+
+#define SCANPARAMSSCANMODE_CLASS  "com/broadcom/tvinput/ScanParams$ScanMode"
+#define SCANPARAMSSCANMODE_SIG  "L" SCANPARAMSSCANMODE_CLASS ";"
+
+#define SCANPARAMSSATELLITEPOLARITY_CLASS  "com/broadcom/tvinput/ScanParams$SatellitePolarity"
+#define SCANPARAMSSATELLITEPOLARITY_SIG  "L" SCANPARAMSSATELLITEPOLARITY_CLASS ";"
+
+#define SCANPARAMSSATELLITEMODE_CLASS  "com/broadcom/tvinput/ScanParams$SatelliteMode"
+#define SCANPARAMSSATELLITEMODE_SIG  "L" SCANPARAMSSATELLITEMODE_CLASS ";"
+
+#define SCANPARAMSQAMMODE_CLASS  "com/broadcom/tvinput/ScanParams$QamMode"
+#define SCANPARAMSQAMMODE_SIG  "L" SCANPARAMSQAMMODE_CLASS ";"
+
+#define SCANPARAMSOFDMTRANSMISSIONMODE_CLASS  "com/broadcom/tvinput/ScanParams$OfdmTransmissionMode"
+#define SCANPARAMSOFDMTRANSMISSIONMODE_SIG  "L" SCANPARAMSOFDMTRANSMISSIONMODE_CLASS ";"
+
+#define SCANPARAMSOFDMMODE_CLASS  "com/broadcom/tvinput/ScanParams$OfdmMode"
+#define SCANPARAMSOFDMMODE_SIG  "L" SCANPARAMSOFDMMODE_CLASS ";"
+
+
 // All globals must be JNI primitives, any other data type 
 // will fail to hold its value across different JNI methods
 void *j_main;
@@ -446,7 +468,6 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jcla
 #define intField(name) simpleField(name, I)
 #define floatField(name) simpleField(name, F)
 #define stringField(name) simpleField(name, Ljava/lang/String;)
-#define enumField(name) simpleField(name, Ljava/lang/String;)
 
 static void
 setStringField(JNIEnv *env, jobject o, jfieldID id, const String8 &s8)
@@ -814,16 +835,256 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_stop(JNIEnv */*env*/, 
     return rv;
 }
 
-JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startScan(JNIEnv */*env*/, jclass /*thiz*/, jobject /*scanParams*/)
+static String8
+String8fromjstring(JNIEnv *env, jstring js)
+{
+    String8 result;
+    long len = env->GetStringUTFLength(js);
+    char* p = (char*)malloc(len + 1);
+    memset(p, 0, len + 1);
+    if(len > 0)
+        env->GetStringUTFRegion(js, 0, len, p);
+    result = p;
+    free(p);
+    return result;
+}
+
+String8
+getEnumValAsString(JNIEnv *env, jobject o, jfieldID id)
+{
+    // Get enum class
+    jobject enumVal = env->GetObjectField(o, id);
+    if (enumVal != 0) {
+        jclass jclassEnum = env->GetObjectClass(enumVal);
+        if(jclassEnum != 0) {
+             //Get toString() method
+            jmethodID toString_ID = env->GetMethodID(jclassEnum, "toString", "()Ljava/lang/String;");
+            //Get enumVal name
+            jstring jstrEnum = (jstring)env->CallObjectMethod(enumVal, toString_ID);
+            String8 result = String8fromjstring(env, jstrEnum);
+            // Delete local references created
+            env->DeleteLocalRef(jstrEnum);
+            env->DeleteLocalRef(jclassEnum);
+            return result;
+        }
+        else {
+            // If jclassEnum == 0 clear Java Exception
+            env->ExceptionClear();
+        }
+        env->DeleteLocalRef(enumVal);
+    }
+    return String8();
+}
+
+struct MapEntry {
+    const char *name;
+    int value;
+
+};
+
+static int MapStringToInt(const MapEntry *p, const String8 &s)
+{
+    const MapEntry *q;
+    for (q = p; q->name; q++) {
+        if (s == q->name) {
+            return q->value;
+        }
+    }
+    return p->value;
+}
+
+#define MAP_ENTRY(in) { #in, BroadcastScanParams::DeliverySystem_##in }
+
+static const MapEntry BroadcastScanParamsDeliverySystemMap[] = {
+    MAP_ENTRY(Undefined),
+    MAP_ENTRY(Dvbt),
+    MAP_ENTRY(Dvbs),
+    MAP_ENTRY(Dvbc),
+    { 0, 0 }
+};
+
+#undef MAP_ENTRY
+
+#define MAP_ENTRY(in) { #in, BroadcastScanParams::ScanMode_##in }
+
+static const MapEntry BroadcastScanParamsScanModeMap[] = {
+    MAP_ENTRY(Undefined),
+    MAP_ENTRY(Blind),
+    MAP_ENTRY(Single),
+    MAP_ENTRY(Home),
+    { 0, 0 }
+};
+
+#undef MAP_ENTRY
+
+#define MAP_ENTRY(in) { #in, BroadcastScanParams::SatellitePolarity_##in }
+
+static const MapEntry BroadcastScanParamsSatellitePolarityMap[] = {
+    MAP_ENTRY(Undefined),
+    MAP_ENTRY(Horizontal),
+    MAP_ENTRY(Vertical),
+    { 0, 0 }
+};
+
+#undef MAP_ENTRY
+
+#define MAP_ENTRY(in) { #in, BroadcastScanParams::SatelliteMode_##in }
+
+static const MapEntry BroadcastScanParamsSatelliteModeMap[] = {
+    MAP_ENTRY(Undefined),
+    MAP_ENTRY(Auto),
+    MAP_ENTRY(SatQpskLdpc),
+    MAP_ENTRY(Sat8pskLdpc),
+    MAP_ENTRY(SatDvb),
+    { 0, 0 }
+};
+
+#undef MAP_ENTRY
+
+#define MAP_ENTRY(in) { #in, BroadcastScanParams::QamMode_##in }
+
+static const MapEntry BroadcastScanParamsQamModeMap[] = {
+    MAP_ENTRY(Undefined),
+    MAP_ENTRY(Auto),
+    MAP_ENTRY(Qam16),
+    MAP_ENTRY(Qam32),
+    MAP_ENTRY(Qam64),
+    MAP_ENTRY(Qam128),
+    MAP_ENTRY(Qam256),
+    { 0, 0 }
+};
+
+#undef MAP_ENTRY
+
+#define MAP_ENTRY(in) { #in, BroadcastScanParams::OfdmTransmissionMode_##in }
+
+static const MapEntry BroadcastScanParamsOfdmTransmissionModeMap[] = {
+    MAP_ENTRY(Undefined),
+    MAP_ENTRY(Auto),
+    MAP_ENTRY(Ofdm1k),
+    MAP_ENTRY(Ofdm2k),
+    MAP_ENTRY(Ofdm4k),
+    MAP_ENTRY(Ofdm8k),
+    MAP_ENTRY(Ofdm16k),
+    MAP_ENTRY(Ofdm32k),
+    { 0, 0 }
+};
+
+#undef MAP_ENTRY
+
+#define MAP_ENTRY(in) { #in, BroadcastScanParams::OfdmMode_##in }
+
+static const MapEntry BroadcastScanParamsOfdmModeMap[] = {
+    MAP_ENTRY(Undefined),
+    MAP_ENTRY(Auto),
+    MAP_ENTRY(OfdmDvbt),
+    MAP_ENTRY(OfdmDvbt2),
+    { 0, 0 }
+};
+
+#undef MAP_ENTRY
+
+JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startScan(JNIEnv *env, jclass /*thiz*/, jobject scanParams)
 {
     jint rv = -1;
 
     if (g_pTD->driver.StartScan == 0) {
         TV_LOG("%s: StartScan call is null", __FUNCTION__);
     }
-    else {
+    else if (scanParams == NULL) {
         LOCKHAL
         rv = (*g_pTD->driver.StartScan)(NULL);
+        UNLOCKHAL
+    }
+    else {
+        BroadcastScanParams bsp;
+        jclass cls = env->FindClass("com/broadcom/tvinput/ScanParams"); 
+        if (cls == 0) {
+            ALOGE("%s: could not find class", __FUNCTION__);
+            return -1;
+        }
+        jfieldID deliverySystemID = env->GetFieldID(cls, "deliverySystem", SCANPARAMSDELIVERYSYSTEM_SIG);
+        if(deliverySystemID == 0){
+            ALOGD("%s: could not get deliverySystem ID", __FUNCTION__);
+        }
+        String8 deliverySystemStr = getEnumValAsString(env, scanParams, deliverySystemID);
+        bsp.deliverySystem = (BroadcastScanParams::DeliverySystem)MapStringToInt(BroadcastScanParamsDeliverySystemMap, deliverySystemStr);
+        ALOGD("%s: deliverySystem %s (%d)", __FUNCTION__, deliverySystemStr.string(), bsp.deliverySystem);
+
+        jfieldID scanModeID = env->GetFieldID(cls, "scanMode", SCANPARAMSSCANMODE_SIG);
+        if(scanModeID == 0){
+            ALOGE("%s: could not get scanMode ID", __FUNCTION__);
+        }
+        String8 scanModeStr = getEnumValAsString(env, scanParams, scanModeID);
+        bsp.scanMode = (BroadcastScanParams::ScanMode)MapStringToInt(BroadcastScanParamsScanModeMap, scanModeStr);
+        ALOGD("%s: scanMode %s (%d)", __FUNCTION__, scanModeStr.string(), bsp.scanMode);
+
+        intField(freqKHz)
+        bsp.freqKHz = env->GetIntField(scanParams, freqKHzID);
+        ALOGD("%s: freqKHz %d", __FUNCTION__, bsp.freqKHz);
+
+        jfieldID satellitePolarityID = env->GetFieldID(cls, "satellitePolarity", SCANPARAMSSATELLITEPOLARITY_SIG);
+        if(satellitePolarityID == 0){
+            ALOGE("%s: could not get satellitePolarity ID", __FUNCTION__);
+        }
+        String8 satellitePolarityStr = getEnumValAsString(env, scanParams, satellitePolarityID);
+        bsp.satellitePolarity = (BroadcastScanParams::SatellitePolarity)MapStringToInt(BroadcastScanParamsSatellitePolarityMap, satellitePolarityStr);
+        ALOGD("%s: satellitePolarity %s (%d)", __FUNCTION__, satellitePolarityStr.string(), bsp.satellitePolarity);
+
+        shortField(codeRateNumerator)
+        bsp.codeRateNumerator = env->GetShortField(scanParams, codeRateNumeratorID);
+        ALOGD("%s: codeRateNumerator %d", __FUNCTION__, bsp.codeRateNumerator);
+
+        shortField(codeRateDenominator)
+        bsp.codeRateDenominator = env->GetShortField(scanParams, codeRateDenominatorID);
+        ALOGD("%s: codeRateDenominator %d", __FUNCTION__, bsp.codeRateDenominator);
+
+        jfieldID satelliteModeID = env->GetFieldID(cls, "satelliteMode", SCANPARAMSSATELLITEMODE_SIG);
+        if(satelliteModeID == 0){
+            ALOGE("%s: could not get satelliteMode ID", __FUNCTION__);
+        }
+        String8 satelliteModeStr = getEnumValAsString(env, scanParams, satelliteModeID);
+        bsp.satelliteMode = (BroadcastScanParams::SatelliteMode)MapStringToInt(BroadcastScanParamsSatelliteModeMap, satelliteModeStr);
+        ALOGD("%s: satelliteMode %s (%d)", __FUNCTION__, satelliteModeStr.string(), bsp.satelliteMode);
+
+        intField(symK)
+        bsp.symK = env->GetIntField(scanParams, symKID);
+        ALOGD("%s: symK %d", __FUNCTION__, bsp.symK);
+
+        jfieldID qamModeID = env->GetFieldID(cls, "qamMode", SCANPARAMSQAMMODE_SIG);
+        if(qamModeID == 0){
+            ALOGE("%s: could not get qamMode ID", __FUNCTION__);
+        }
+        String8 qamModeStr = getEnumValAsString(env, scanParams, qamModeID);
+        bsp.qamMode = (BroadcastScanParams::QamMode)MapStringToInt(BroadcastScanParamsQamModeMap, qamModeStr);
+        ALOGD("%s: qamMode %s (%d)", __FUNCTION__, qamModeStr.string(), bsp.qamMode);
+
+        intField(bandwidthKHz)
+        bsp.symK = env->GetIntField(scanParams, bandwidthKHzID);
+        ALOGD("%s: bandwidthKHz %d", __FUNCTION__, bsp.bandwidthKHz);
+
+        jfieldID ofdmTransmissionModeID = env->GetFieldID(cls, "ofdmTransmissionMode", SCANPARAMSOFDMTRANSMISSIONMODE_SIG);
+        if(ofdmTransmissionModeID == 0){
+            ALOGE("%s: could not get ofdmTransmissionMode ID", __FUNCTION__);
+        }
+        String8 ofdmTransmissionModeStr = getEnumValAsString(env, scanParams, ofdmTransmissionModeID);
+        bsp.ofdmTransmissionMode = (BroadcastScanParams::OfdmTransmissionMode)MapStringToInt(BroadcastScanParamsOfdmTransmissionModeMap, ofdmTransmissionModeStr);
+        ALOGD("%s: ofdmTransmissionMode %s (%d)", __FUNCTION__, ofdmTransmissionModeStr.string(), bsp.ofdmTransmissionMode);
+
+        jfieldID ofdmModeID = env->GetFieldID(cls, "ofdmMode", SCANPARAMSOFDMMODE_SIG);
+        if(ofdmModeID == 0){
+            ALOGE("%s: could not get ofdmMode ID", __FUNCTION__);
+        }
+        String8 ofdmModeStr = getEnumValAsString(env, scanParams, ofdmModeID);
+        bsp.ofdmMode = (BroadcastScanParams::OfdmMode)MapStringToInt(BroadcastScanParamsOfdmModeMap, ofdmModeStr);
+        ALOGD("%s: ofdmMode %s (%d)", __FUNCTION__, ofdmModeStr.string(), bsp.ofdmMode);
+
+        shortField(plpId)
+        bsp.plpId = env->GetShortField(scanParams, plpIdID);
+        ALOGD("%s: plpId %d", __FUNCTION__, bsp.plpId);
+
+        LOCKHAL
+        rv = (*g_pTD->driver.StartScan)(&bsp);
         UNLOCKHAL
     }
 

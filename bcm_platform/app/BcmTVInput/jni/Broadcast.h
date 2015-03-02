@@ -99,53 +99,62 @@ public:
 class BroadcastScanParams {
 public:
     enum DeliverySystem {
-        DVB_T,
-        DVB_C,
-        DVB_S
+        DeliverySystem_Undefined,
+        DeliverySystem_Dvbt,
+        DeliverySystem_Dvbs,
+        DeliverySystem_Dvbc
     };
     enum ScanMode {
+        ScanMode_Undefined,
         ScanMode_Blind,
         ScanMode_Single,
         ScanMode_Home
     };
     enum SatellitePolarity {
-        Horizontal,
-        Vertical
+        SatellitePolarity_Undefined,
+        SatellitePolarity_Horizontal,
+        SatellitePolarity_Vertical
     };
     enum SatelliteMode {
-        SatelliteMode_QpskLdpc,
-        SatelliteMode_8pskLdpc,
-        SatelliteMode_Dvb
+        SatelliteMode_Undefined,
+        SatelliteMode_Auto,
+        SatelliteMode_SatQpskLdpc,
+        SatelliteMode_Sat8pskLdpc,
+        SatelliteMode_SatDvb
     };
     enum QamMode {
-        QamMode_16,
-        QamMode_32,
-        QamMode_64,
-        QamMode_128,
-        QamMode_256
+        QamMode_Undefined,
+        QamMode_Auto,
+        QamMode_Qam16,
+        QamMode_Qam32,
+        QamMode_Qam64,
+        QamMode_Qam128,
+        QamMode_Qam256
     };
     enum OfdmTransmissionMode {
-        OfdmTransmissionMode_1k,
-        OfdmTransmissionMode_2k,
-        OfdmTransmissionMode_4k,
-        OfdmTransmissionMode_8k,
-        OfdmTransmissionMode_16k,
-        OfdmTransmissionMode_32k
+        OfdmTransmissionMode_Undefined,
+        OfdmTransmissionMode_Auto,
+        OfdmTransmissionMode_Ofdm1k,
+        OfdmTransmissionMode_Ofdm2k,
+        OfdmTransmissionMode_Ofdm4k,
+        OfdmTransmissionMode_Ofdm8k,
+        OfdmTransmissionMode_Ofdm16k,
+        OfdmTransmissionMode_Ofdm32k
     };
     enum OfdmMode {
-        OfdmMode_Dvbt,
-        OfdmMode_Dvbt2
+        OfdmMode_Undefined,
+        OfdmMode_Auto,
+        OfdmMode_OfdmDvbt,
+        OfdmMode_OfdmDvbt2
     };
     /* All */
     DeliverySystem deliverySystem;
-    ScanMode mode;
+    ScanMode scanMode;
     jint freqKHz;
     /* DVB_S */
-    SatellitePolarity polarity;
-    struct {
-        jshort numerator;
-        jshort denominator;
-    } codeRate;
+    SatellitePolarity satellitePolarity;
+    jshort codeRateNumerator;
+    jshort codeRateDenominator;
     SatelliteMode satelliteMode;
     /* DVB_C and DVB_S */
     jint symK;

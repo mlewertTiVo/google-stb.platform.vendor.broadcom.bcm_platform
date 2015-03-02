@@ -25,7 +25,7 @@ public class ScanParams implements Parcelable {
         Undefined,
         Auto,
         SatQpskLdpc,
-        Sat8pkLdpc,
+        Sat8pskLdpc,
         SatDvb
     };
     public enum QamMode {
@@ -40,30 +40,27 @@ public class ScanParams implements Parcelable {
     public enum OfdmTransmissionMode {
         Undefined,
         Auto,
-        Ofdm_1k,
-        Ofdm_2k,
-        Ofdm_4k,
-        Ofdm_8k,
-        Ofdm_16k,
-        Ofdm_32k
+        Ofdm1k,
+        Ofdm2k,
+        Ofdm4k,
+        Ofdm8k,
+        Ofdm16k,
+        Ofdm32k
     };
     public enum OfdmMode {
         Undefined,
         Auto,
-        Dvbt,
-        Dvbt2
-    };
-    public class CodeRate {
-        public short numerator;
-        public short denominator;
+        OfdmDvbt,
+        OfdmDvbt2
     };
     /* All */
     public DeliverySystem deliverySystem;
-    public ScanMode mode;
+    public ScanMode scanMode;
     public int freqKHz;
     /* DVB_S */
-    public SatellitePolarity polarity;
-    public CodeRate codeRate;
+    public SatellitePolarity satellitePolarity;
+    public short codeRateNumerator;
+    public short codeRateDenominator;
     public SatelliteMode satelliteMode;
     /* DVB_C and DVB_S */
     public int symK;
@@ -76,10 +73,11 @@ public class ScanParams implements Parcelable {
     public short plpId;
     public ScanParams() {
         deliverySystem = DeliverySystem.Undefined;
-        mode = ScanMode.Undefined;
+        scanMode = ScanMode.Undefined;
         freqKHz = 0;
-        polarity = SatellitePolarity.Undefined;
-        codeRate = new CodeRate(); codeRate.numerator = 0; codeRate.denominator = 0;
+        satellitePolarity = SatellitePolarity.Undefined;
+        codeRateNumerator = 0;
+        codeRateDenominator = 0;
         satelliteMode = SatelliteMode.Undefined;
         symK = 0;
         qamMode = QamMode.Undefined;
@@ -95,10 +93,11 @@ public class ScanParams implements Parcelable {
 
     public void writeToParcel(Parcel out, int flags) {
         out.writeSerializable(deliverySystem);
-        out.writeSerializable(mode);
+        out.writeSerializable(scanMode);
         out.writeInt(freqKHz);
-        out.writeSerializable(polarity);
-        out.writeInt(codeRate.numerator); out.writeInt(codeRate.denominator);
+        out.writeSerializable(satellitePolarity);
+        out.writeInt(codeRateNumerator);
+        out.writeInt(codeRateDenominator);
         out.writeSerializable(satelliteMode);
         out.writeInt(symK);
         out.writeSerializable(qamMode);
@@ -110,10 +109,11 @@ public class ScanParams implements Parcelable {
 
     private ScanParams(Parcel in) {
         deliverySystem = (DeliverySystem)in.readSerializable();
-        mode = (ScanMode)in.readSerializable();
+        scanMode = (ScanMode)in.readSerializable();
         freqKHz = in.readInt();
-        polarity = (SatellitePolarity)in.readSerializable();
-        codeRate = new CodeRate(); codeRate.numerator = (short)in.readInt(); codeRate.denominator = (short)in.readInt();
+        satellitePolarity = (SatellitePolarity)in.readSerializable();
+        codeRateNumerator = (short)in.readInt();
+        codeRateDenominator = (short)in.readInt();
         satelliteMode = (SatelliteMode)in.readSerializable();
         symK = in.readInt();
         qamMode = (QamMode)in.readSerializable();

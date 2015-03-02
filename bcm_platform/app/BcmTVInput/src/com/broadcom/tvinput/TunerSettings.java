@@ -120,7 +120,7 @@ public class TunerSettings extends Activity {
         if (start_stop.isChecked()) {
             ScanParams sp = new ScanParams();
             sp.deliverySystem = ScanParams.DeliverySystem.Dvbt;
-            sp.mode = ScanParams.ScanMode.Blind;
+            sp.scanMode = ScanParams.ScanMode.Blind;
             Bundle b = new Bundle();
             b.setClassLoader(ScanParams.class.getClassLoader());
             b.putParcelable("scanParams", sp);
