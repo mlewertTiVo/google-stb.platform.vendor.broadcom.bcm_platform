@@ -243,7 +243,7 @@ typedef struct {
 
 typedef struct {
     buffer_handle_t grhdl;
-    int comp_ix;
+    unsigned long long comp_ix;
 
 } GPX_CLIENT_SURFACE_INFO;
 
@@ -283,6 +283,11 @@ typedef struct {
     int layer_type;
     int layer_subtype;
     nsecs_t refresh;
+
+    double fps_max;
+    double fps_now;
+    unsigned long long last_set;
+    int64_t last_tick;
 
 } VSYNC_CLIENT_INFO;
 
@@ -426,10 +431,10 @@ void HwcBinder::notify(int msg, struct hwc_notification_info &ntfy)
 }
 
 struct hwc_display_stats {
-    unsigned int prepare_call;
-    unsigned int prepare_skipped;
-    unsigned int set_call;
-    unsigned int set_skipped;
+    unsigned long long prepare_call;
+    unsigned long long prepare_skipped;
+    unsigned long long set_call;
+    unsigned long long set_skipped;
 };
 
 struct hwc_display_cfg {
@@ -489,6 +494,7 @@ struct hwc_context_t {
     BKNI_EventHandle checkpoint_event;
 
     int sync_timeline;
+    unsigned int sync_timeline_inc;
 
     bool display_dump_layer;
     bool display_dump_push;
@@ -772,7 +778,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
     }
 
     write = snprintf(start + offset, local_capacity,
-        "\t\t[%d:%d]::grhdl:%p::comp:%d\n",
+        "\t\t[%d:%d]::grhdl:%p::comp:%llu\n",
         client->layer_id,
         index,
         client->last.grhdl,
@@ -954,7 +960,14 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
        }
     }
     if (capacity) {
-       write = snprintf(buff + index, capacity, "\tprepare:{%u,%u}::set:{%u,%u}::gles-fbk:%s::gles-alw:%s::sync:%d\n",
+       write = snprintf(buff + index, capacity, "\tfps::max:%.3f::now:%.3f\n",
+           ctx->syn_cli.fps_max,
+           ctx->syn_cli.fps_now);
+       if (write > 0) {
+           capacity = (capacity > write) ? (capacity - write) : 0;
+           index += write;
+       }
+       write = snprintf(buff + index, capacity, "\tprepare:{%llu,%llu}::set:{%llu,%llu}::gles-fbk:%s::gles-alw:%s::sync:%d\n",
            ctx->stats[0].prepare_call,
            ctx->stats[0].prepare_skipped,
            ctx->stats[0].set_call,
@@ -991,7 +1004,7 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
        }
     }
     if (capacity) {
-       write = snprintf(buff + index, capacity, "\tprepare:{%u,%u}::set:{%u,%u}::d:{%d,%d}\n",
+       write = snprintf(buff + index, capacity, "\tprepare:{%llu,%llu}::set:{%llu,%llu}::d:{%d,%d}\n",
            ctx->stats[1].prepare_call,
            ctx->stats[1].prepare_skipped,
            ctx->stats[1].set_call,
@@ -1787,8 +1800,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         BKNI_ReleaseMutex(ctx->power_mutex);
 
         if (ctx->sync_timeline != INVALID_FENCE) {
-           snprintf(fence.name, sizeof(fence.name), "hwc_prim_%d", ctx->stats[0].set_call);
-           fence_id = sw_sync_fence_create(ctx->sync_timeline, fence.name, ctx->stats[0].set_call);
+           snprintf(fence.name, sizeof(fence.name), "hwc_prim_%llu", ctx->stats[0].set_call);
+           fence_id = sw_sync_fence_create(ctx->sync_timeline, fence.name, ++ctx->sync_timeline_inc);
            if (fence_id < 0) {
               ALOGW("%s: failed composition sync fence: %s", __FUNCTION__, fence.name);
            } else if (HWC_DISPLAY_FENCE_VERBOSE) {
@@ -1839,8 +1852,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                     (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET)) {
                    fence_id = INVALID_FENCE;
                    if (ctx->sync_timeline != INVALID_FENCE) {
-                      snprintf(fence.name, sizeof(fence.name), "hwc_prim_%d_%d", ctx->stats[0].set_call, i);
-                      fence_id = sw_sync_fence_create(ctx->sync_timeline, fence.name, ctx->stats[0].set_call);
+                      snprintf(fence.name, sizeof(fence.name), "hwc_prim_%llu_%d", ctx->stats[0].set_call, i);
+                      fence_id = sw_sync_fence_create(ctx->sync_timeline, fence.name, ctx->sync_timeline_inc);
                       if (fence_id < 0) {
                          ALOGW("%s: failed layer sync fence: %s", __FUNCTION__, fence.name);
                       } else if (HWC_DISPLAY_FENCE_VERBOSE) {
@@ -1891,7 +1904,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     }
 
     if (ctx->display_dump_layer) {
-       ALOGI("comp: %d (%d): ov:%d, fb:%d, composed:%d\n",
+       ALOGI("comp: %llu (%llu): ov:%d, fb:%d, composed:%d\n",
              ctx->stats[0].set_call, ctx->stats[0].prepare_call, overlay_seen,
              fb_target_seen, layer_composed);
     }
@@ -2109,7 +2122,10 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
            ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
            goto out;
        }
-       ctx->power_mode = mode;
+       if (ctx->power_mode != mode) {
+          ctx->power_mode = mode;
+          ctx->syn_cli.last_tick = -1;
+       }
        BKNI_ReleaseMutex(ctx->power_mutex);
        rc = 0;
     }
@@ -2321,10 +2337,11 @@ static int64_t VsyncSystemTime(void)
 static void * hwc_vsync_task(void *argv)
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)argv;
+    const double nsec_to_msec = 1.0 / 1000000.0;
     int64_t vsync_system_time;
     unsigned int vsync_hack_count = 0;
-    unsigned int vsync_hack_count_last_tick = 0;
-    unsigned int vsync_hack_count_expected_tick = 0;
+    unsigned long long vsync_hack_count_last_tick = 0;
+    unsigned long long vsync_hack_count_expected_tick = 0;
 
     do
     {
@@ -2335,6 +2352,21 @@ static void * hwc_vsync_task(void *argv)
        if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
           BKNI_ReleaseMutex(ctx->power_mutex);
           BKNI_WaitForEvent(ctx->syn_cli.vsync_event, BKNI_INFINITE);
+
+          vsync_system_time = VsyncSystemTime();
+
+          if (ctx->syn_cli.last_tick != -1 && (ctx->stats[0].set_call != ctx->syn_cli.last_set)) {
+             ctx->syn_cli.fps_now = (float)(ctx->stats[0].set_call - ctx->syn_cli.last_set) /
+                                    (nsec_to_msec * (float)(vsync_system_time - ctx->syn_cli.last_tick));
+             ctx->syn_cli.fps_now *= 1000.0;
+             if (ctx->syn_cli.fps_now > ctx->syn_cli.fps_max) {
+                ctx->syn_cli.fps_max = ctx->syn_cli.fps_now;
+             }
+          }
+          if ((ctx->syn_cli.last_tick != -1) || (ctx->stats[0].set_call != ctx->syn_cli.last_set)) {
+             ctx->syn_cli.last_tick = vsync_system_time;
+             ctx->syn_cli.last_set = ctx->stats[0].set_call;
+          }
 
           if (HWC_REFRESH_HACK) {
              vsync_hack_count++;
@@ -2360,7 +2392,6 @@ static void * hwc_vsync_task(void *argv)
       }
 
       if (BKNI_AcquireMutex(ctx->vsync_callback_enabled_mutex) == BERR_SUCCESS) {
-         vsync_system_time = VsyncSystemTime();
          if (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) {
             ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, vsync_system_time);
          }
