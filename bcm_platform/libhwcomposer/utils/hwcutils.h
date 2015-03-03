@@ -27,6 +27,8 @@ NEXUS_SurfaceHandle hwc_to_nsc_surface(
    int height,
    int stride,
    NEXUS_PixelFormat format,
+   bool is_mma,
+   unsigned handle,
    uint8_t *data);
 
 #ifdef __cplusplus

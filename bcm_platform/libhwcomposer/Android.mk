@@ -103,77 +103,6 @@ LOCAL_MODULE := libhwcutils
 
 include $(BUILD_SHARED_LIBRARY)
 
-# build the converter helper.
-#
-include $(CLEAR_VARS)
-
-include $(NEXUS_TOP)/nxclient/include/nxclient.inc
-
-LOCAL_SRC_FILES:= \
-   conv/yv12to422p.cpp
-
-ifeq ($(HWC_DEBUG_SYMBOLS),true)
-LOCAL_STRIP_MODULE := false
-endif
-LOCAL_PRELINK_MODULE := false
-
-LOCAL_SHARED_LIBRARIES += libcutils
-LOCAL_SHARED_LIBRARIES += libhwcutils
-LOCAL_SHARED_LIBRARIES += liblog
-LOCAL_SHARED_LIBRARIES += libutils
-LOCAL_SHARED_LIBRARIES += libnexus
-LOCAL_SHARED_LIBRARIES += libnxclient
-
-LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/conv \
-                    $(TOP)/vendor/broadcom/bcm_platform/libgralloc \
-                    $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/utils \
-                    $(NXCLIENT_INCLUDES)
-
-LOCAL_CFLAGS += $(NEXUS_CFLAGS)
-LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
-LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE := libhwcconv
-
-include $(BUILD_SHARED_LIBRARY)
-
-# build the composer helper.
-#
-include $(CLEAR_VARS)
-
-include $(NEXUS_TOP)/nxclient/include/nxclient.inc
-
-LOCAL_SRC_FILES:= \
-   comp/hwc_comp.c \
-   comp/hwc_comp_utils.c
-
-ifeq ($(HWC_DEBUG_SYMBOLS),true)
-LOCAL_STRIP_MODULE := false
-endif
-LOCAL_PRELINK_MODULE := false
-
-LOCAL_SHARED_LIBRARIES += libcutils
-LOCAL_SHARED_LIBRARIES += libhwcutils
-LOCAL_SHARED_LIBRARIES += liblog
-LOCAL_SHARED_LIBRARIES += libutils
-LOCAL_SHARED_LIBRARIES += libnexus
-LOCAL_SHARED_LIBRARIES += libnxclient
-
-LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/comp \
-                    $(TOP)/vendor/broadcom/bcm_platform/libgralloc \
-                    $(NXCLIENT_INCLUDES)
-
-LOCAL_CFLAGS += $(filter-out $(FILTER_OUT_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
-LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
-LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DLOG_TAG=\"bcm-hwcomp\"
-
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE := libhwccomp
-
-include $(BUILD_SHARED_LIBRARY)
-
 # build the hwcomposer for the device.
 #
 include $(CLEAR_VARS)
@@ -190,8 +119,6 @@ LOCAL_SHARED_LIBRARIES += libbinder
 LOCAL_SHARED_LIBRARIES += libcutils
 LOCAL_SHARED_LIBRARIES += libdl
 LOCAL_SHARED_LIBRARIES += libhwcbinder
-LOCAL_SHARED_LIBRARIES += libhwccomp
-LOCAL_SHARED_LIBRARIES += libhwcconv
 LOCAL_SHARED_LIBRARIES += libhwcutils
 LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libnexus
@@ -205,11 +132,9 @@ LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
                     $(TOP)/vendor/broadcom/bcm_platform/libgralloc \
                     $(NXCLIENT_INCLUDES) \
                     $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/blib \
-                    $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/conv \
                     $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/utils \
                     $(TOP)/system/core/libsync \
-                    $(TOP)/system/core/libsync/include \
-                    $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/comp
+                    $(TOP)/system/core/libsync/include
 
 LOCAL_CFLAGS += $(NEXUS_CFLAGS)
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))

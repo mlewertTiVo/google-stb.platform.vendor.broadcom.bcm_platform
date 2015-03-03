@@ -49,9 +49,7 @@
 #include "IHwc.h"
 #include "HwcSvc.h"
 
-#include "hwcconv.h"
 #include "hwcutils.h"
-#include "hwc_comp.h"
 
 #include "sync/sync.h"
 // deliberate use of sw_sync as we do not have other sync
@@ -106,7 +104,6 @@ using namespace android;
 
 #define GPX_SURFACE_STACK            3
 #define DUMP_BUFFER_SIZE             1024
-#define HWC_DO_YV12_CONV             0
 
 #define DISPLAY_SUPPORTED            2
 #define NEXUS_DISPLAY_OBJECTS        4
@@ -118,7 +115,6 @@ using namespace android;
 #define GRAPHICS_RES_HEIGHT_DEFAULT 1080
 #define GRAPHICS_RES_WIDTH_PROP     "ro.graphics_resolution.width"
 #define GRAPHICS_RES_HEIGHT_PROP    "ro.graphics_resolution.height"
-
 
 /* gles mode: 'always' is to always force gles composition over
  *            nsc one.
@@ -153,6 +149,10 @@ using namespace android;
 
 #define HWC_DEFAULT_DUMP_VIRT        "0"
 #define HWC_DUMP_VIRT_PROP           "ro.hwc.dump.virt"
+
+#define HWC_DEFAULT_MMA              "0"
+#define HWC_USES_MMA_PROP            "ro.nx.mma"
+#define HWC_DUMP_MMA_OPS_PROP        "ro.hwc.dump.mma"
 
 #define HWC_CHECKPOINT_TIMEOUT       (100)
 
@@ -295,10 +295,8 @@ typedef struct {
 } VSYNC_CLIENT_INFO;
 
 typedef struct {
-    int type;
+    COMMON_CLIENT_INFO ncci;
     buffer_handle_t grhdl;
-    NEXUS_HwcClientHandle chdl;
-    NEXUS_SurfaceHandle shdl;
     NEXUS_SurfaceComposition composition;
 
 } VD_CLIENT_INFO;
@@ -506,7 +504,9 @@ struct hwc_context_t {
     bool track_buffer;
 
     bool display_dump_virt;
-    NEXUS_HwcComposerHandle hwc_comp;
+
+    int hwc_with_mma;
+    int dump_mma;
 };
 
 static void hwc_device_cleanup(hwc_context_t* ctx);
@@ -638,17 +638,48 @@ static NEXUS_PixelFormat gralloc_to_nexus_pixel_format(int format)
    return NEXUS_PixelFormat_eUnknown;
 }
 
+static int hwc_mem_lock(struct hwc_context_t *ctx, unsigned handle, void **addr, bool lock) {
+   if (ctx->hwc_with_mma) {
+      if (lock) {
+         NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
+         NEXUS_MemoryBlock_Lock(block_handle, addr);
+
+         if (ctx->dump_mma) {
+            LOGI("mma-lock: %p -> %p", handle, *addr);
+         }
+      }
+   } else {
+      *addr = NEXUS_OffsetToCachedAddr((NEXUS_Addr)handle);
+   }
+   return 0;
+}
+
+static int hwc_mem_unlock(struct hwc_context_t *ctx, unsigned handle, bool lock) {
+   if (handle && ctx->hwc_with_mma) {
+      if (lock) {
+         NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
+         NEXUS_MemoryBlock_Unlock(block_handle);
+
+         if (ctx->dump_mma) {
+            LOGI("mma-unlock: %p", handle);
+         }
+      }
+   }
+   return 0;
+}
+
 static int dump_vd_layer_data(char *start, int capacity, int index, VD_CLIENT_INFO *client)
 {
     int write = -1;
     int total_write = 0;
     int local_capacity = capacity;
     int offset = 0;
+    void *pAddr;
 
     write = snprintf(start, local_capacity,
-        "\t[%s]:[%s]:[%d]::z:%d::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::chd:%p::shd:%p\n",
+        "\t[%s]:[%s]:[%d]::z:%d::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}\n",
         client->composition.visible ? "LIVE" : "HIDE",
-        nsc_cli_type[client->type],
+        nsc_cli_type[client->ncci.type],
         index,
         client->composition.zorder,
         client->composition.position.x,
@@ -660,9 +691,7 @@ static int dump_vd_layer_data(char *start, int capacity, int index, VD_CLIENT_IN
         client->composition.clipRect.width,
         client->composition.clipRect.height,
         client->composition.virtualDisplay.width,
-        client->composition.virtualDisplay.height,
-        client->chdl,
-        client->shdl);
+        client->composition.virtualDisplay.height);
 
     if (write > 0) {
         local_capacity = (local_capacity > write) ? (local_capacity - write) : 0;
@@ -672,7 +701,8 @@ static int dump_vd_layer_data(char *start, int capacity, int index, VD_CLIENT_IN
 
     if (client->grhdl) {
        private_handle_t *gr_buffer = (private_handle_t *)client->grhdl;
-       PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(gr_buffer->sharedData);
+       hwc_mem_lock((struct hwc_context_t*)client->ncci.parent, (unsigned)gr_buffer->sharedData, &pAddr, true);
+       PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
 
        write = snprintf(start + offset, local_capacity,
           "\t\t\t[%p]::flg:0x%x::pid:%d::ogl:{s:%d,f:%d,sz:%d}::use:0x%x\n",
@@ -737,6 +767,8 @@ static int dump_vd_layer_data(char *start, int capacity, int index, VD_CLIENT_IN
            offset += write;
            total_write += write;
        }
+
+       hwc_mem_unlock((struct hwc_context_t*)client->ncci.parent, (unsigned)gr_buffer->sharedData, true);
     }
 
     return total_write;
@@ -748,6 +780,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
     int total_write = 0;
     int local_capacity = capacity;
     int offset = 0;
+    void *pAddr;
 
     write = snprintf(start, local_capacity,
         "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::sz:{%d,%d}::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::pa:%d\n",
@@ -795,7 +828,8 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
 
     if (client->last.grhdl) {
        private_handle_t *gr_buffer = (private_handle_t *)client->last.grhdl;
-       PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(gr_buffer->sharedData);
+       hwc_mem_lock((struct hwc_context_t*)client->ncci.parent, (unsigned)gr_buffer->sharedData, &pAddr, true);
+       PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
 
        write = snprintf(start + offset, local_capacity,
            "\t\t\t[%p]::flg:0x%x::pid:%d::ogl:{s:%d,f:%d,sz:%d}::use:0x%x\n",
@@ -860,6 +894,8 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
            offset += write;
            total_write += write;
        }
+
+       hwc_mem_unlock((struct hwc_context_t*)client->ncci.parent, (unsigned)gr_buffer->sharedData, true);
     }
 
     return total_write;
@@ -1156,10 +1192,11 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
    }
 }
 
-static bool is_video_layer(hwc_layer_1_t *layer, int layer_id, bool *is_sideband, bool *is_yuv)
+static bool is_video_layer(struct hwc_context_t *ctx, hwc_layer_1_t *layer, int layer_id, bool *is_sideband, bool *is_yuv)
 {
     bool rc = false;
     NexusClientContext *client_context = NULL;
+    void *pAddr;
 
     if (is_sideband) {
         *is_sideband = false;
@@ -1177,7 +1214,8 @@ static bool is_video_layer(hwc_layer_1_t *layer, int layer_id, bool *is_sideband
         if (layer->compositionType == HWC_OVERLAY) {
             int index = -1;
             private_handle_t *gr_buffer = (private_handle_t *)layer->handle;
-            PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(gr_buffer->sharedData);
+            hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+            PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
             index = android_atomic_acquire_load(&pSharedData->videoWindow.windowIdPlusOne);
             if (index > 0) {
                 client_context = reinterpret_cast<NexusClientContext *>(pSharedData->videoWindow.nexusClientContext);
@@ -1191,6 +1229,7 @@ static bool is_video_layer(hwc_layer_1_t *layer, int layer_id, bool *is_sideband
                 }
                 rc = true;
             }
+            hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
         } else if (layer->compositionType == HWC_SIDEBAND) {
             client_context = (NexusClientContext*)layer->sidebandStream->data[1];
             if (client_context != NULL) {
@@ -1209,14 +1248,14 @@ static bool is_video_layer(hwc_layer_1_t *layer, int layer_id, bool *is_sideband
     return rc;
 }
 
-static bool split_layer_scaling(
-    struct hwc_context_t *ctx,
-    hwc_layer_1_t *layer)
+static bool split_layer_scaling(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
 {
     bool ret = true;
+    void *pAddr;
 
     private_handle_t *gr_buffer = (private_handle_t *)layer->handle;
-    PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(gr_buffer->sharedData);
+    hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+    PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
 
     NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
                                 (int16_t)(int)layer->sourceCropf.top,
@@ -1227,7 +1266,7 @@ static bool split_layer_scaling(
         goto out;
     }
 
-    if (is_video_layer(layer, -1, NULL, NULL)) {
+    if (is_video_layer(ctx, layer, -1, NULL, NULL)) {
         goto out;
     }
 
@@ -1246,11 +1285,12 @@ static bool split_layer_scaling(
     }
 
 out:
+    hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
     return ret;
 }
 
 bool hwc_compose_gralloc_buffer(
-   hwc_context_t* ctx,
+   struct hwc_context_t* ctx,
    GPX_CLIENT_INFO *client,
    int layer_id,
    PSHARED_DATA pSharedData,
@@ -1260,8 +1300,8 @@ bool hwc_compose_gralloc_buffer(
     bool composed = false;
     NEXUS_Error rc;
     int plane_select = -1;
-    unsigned int stride=0;
-    uint8_t *addr=NULL;
+    unsigned int stride = 0;
+    void *pAddr;
     void *slock;
     NEXUS_PixelFormat pixel_format = NEXUS_PixelFormat_eUnknown;
     NEXUS_SurfaceCreateSettings displaySurfaceSettings;
@@ -1285,8 +1325,10 @@ bool hwc_compose_gralloc_buffer(
         stride = gr_buffer->oglStride;
         pixel_format = gralloc_to_nexus_pixel_format(pSharedData->planes[DEFAULT_PLANE].format);
     }
-    addr  = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[plane_select].physAddr);
-    if (addr == NULL) {
+
+    hwc_mem_lock(ctx, pSharedData->planes[plane_select].physAddr, &pAddr, false);
+    if ((ctx->hwc_with_mma && !pSharedData->planes[plane_select].physAddr) ||
+        (!ctx->hwc_with_mma && pAddr == NULL)) {
         ALOGE("%s: plane buffer address NULL: %d\n", __FUNCTION__, layer_id);
         goto out;
     }
@@ -1304,7 +1346,9 @@ bool hwc_compose_gralloc_buffer(
                                                     pSharedData->planes[plane_select].height,
                                                     stride,
                                                     pixel_format,
-                                                    addr);
+                                                    ctx->hwc_with_mma,
+                                                    pSharedData->planes[plane_select].physAddr,
+                                                    (uint8_t *)pAddr);
 
         if ( NULL != client->active_surface ) {
             NEXUS_Graphics2DBlitSettings blitSettings;
@@ -1367,6 +1411,8 @@ bool hwc_compose_gralloc_buffer(
             }
         }
     }
+
+    hwc_mem_unlock(ctx, (unsigned)pSharedData->planes[plane_select].physAddr, false);
 
 out:
    return composed;
@@ -1478,7 +1524,7 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
 
     for (i = 0; i < list->numHwLayers; i++) {
        layer = &list->hwLayers[i];
-       if (is_video_layer(layer, -1, NULL, NULL)) {
+       if (is_video_layer(ctx, layer, -1, NULL, NULL)) {
           has_video = true;
           break;
        }
@@ -1489,7 +1535,7 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
        for (i = 0; i < list->numHwLayers; i++) {
           layer = &list->hwLayers[i];
           if (layer->compositionType == HWC_OVERLAY &&
-              !is_video_layer(layer, -1, NULL, NULL)) {
+              !is_video_layer(ctx, layer, -1, NULL, NULL)) {
              layer->compositionType = HWC_FRAMEBUFFER;
              layer->hints = 0;
           }
@@ -1582,15 +1628,10 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
     size_t i;
     NEXUS_SurfaceComposition surf_comp;
     unsigned int stride;
-    uint8_t *addr;
+    void *pAddr;
 
     if (list) {
        ctx->stats[1].prepare_call++;
-
-       if (!ctx->hwc_comp) {
-           ctx->stats[1].prepare_skipped++;
-           goto out;
-       }
 
        if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
            ctx->stats[1].prepare_skipped++;
@@ -1603,123 +1644,6 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
 
        if (ctx->display_gles_always) {
           goto out_unlock;
-       }
-
-       for (i = 0; i < list->numHwLayers; i++) {
-           layer = &list->hwLayers[i];
-           if (layer->compositionType == HWC_FRAMEBUFFER_TARGET) {
-              NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
-                                          (int16_t)layer->displayFrame.top,
-                                          (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
-                                          (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
-
-              // find context of the virtual display dimensions.
-              ctx->cfg[1].width  = disp_position.width;
-              ctx->cfg[1].height = disp_position.height;
-              break;
-           }
-       }
-
-       for (i = 0; i < list->numHwLayers; i++) {
-           layer = &list->hwLayers[i];
-
-           NEXUS_HwcComposer_GetClientSettings(ctx->hwc_comp, ctx->vd_cli[i].chdl, &surf_comp);
-
-           if (layer->handle && ((layer->compositionType == HWC_FRAMEBUFFER) ||
-               (layer->compositionType == HWC_OVERLAY))) {
-
-              layer->compositionType = HWC_OVERLAY;
-
-              NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
-                                          (int16_t)layer->displayFrame.top,
-                                          (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
-                                          (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
-              NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
-                                          (int16_t)(int)layer->sourceCropf.top,
-                                          (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
-                                          (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
-              int cur_width = 0, cur_height = 0;
-              unsigned int cur_blending_type;
-
-              private_handle_t *gr_buffer = (private_handle_t *)layer->handle;
-              PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(gr_buffer->sharedData);
-              hwc_get_buffer_sizes(pSharedData, &cur_width, &cur_height);
-              cur_blending_type = hwc_android_blend_to_nsc_blend(layer->blending);
-
-              surf_comp.zorder                = GPX_CLIENT_ZORDER;
-              surf_comp.position.x            = disp_position.x;
-              surf_comp.position.y            = disp_position.y;
-              surf_comp.position.width        = disp_position.width;
-              surf_comp.position.height       = disp_position.height;
-              surf_comp.virtualDisplay.width  = ctx->cfg[1].width;
-              surf_comp.virtualDisplay.height = ctx->cfg[1].height;
-              surf_comp.colorBlend            = colorBlendingEquation[cur_blending_type];
-              surf_comp.alphaBlend            = alphaBlendingEquation[cur_blending_type];
-              surf_comp.visible               = true;
-              surf_comp.clipRect.x            = clip_position.x;
-              surf_comp.clipRect.y            = clip_position.y;
-              surf_comp.clipRect.width        = clip_position.width;
-              surf_comp.clipRect.height       = clip_position.height;
-              surf_comp.clipBase.width        = cur_width;
-              surf_comp.clipBase.height       = cur_height;
-
-              switch (pSharedData->planes[DEFAULT_PLANE].format) {
-                 case HAL_PIXEL_FORMAT_YV12: {
-                    int plane_select = -1;
-                    NEXUS_PixelFormat pixel_format;
-                    if (pSharedData->planes[EXTRA_PLANE].physAddr) {
-                       plane_select = EXTRA_PLANE;
-                       pixel_format = (NEXUS_PixelFormat)pSharedData->planes[plane_select].format;
-                    } else if (pSharedData->planes[GL_PLANE].physAddr) {
-                       plane_select = GL_PLANE;
-                       pixel_format = (NEXUS_PixelFormat)pSharedData->planes[plane_select].format;
-                    } else if (pSharedData->planes[DEFAULT_PLANE].physAddr) {
-                       plane_select = DEFAULT_PLANE;
-                       /* should have been destriped. */
-                       pixel_format = NEXUS_PixelFormat_eCr8_Y18_Cb8_Y08;
-                    }
-
-                    if (plane_select >= 0) {
-                       surf_comp.clipBase.width  = pSharedData->planes[plane_select].width;
-                       surf_comp.clipBase.height = pSharedData->planes[plane_select].height;
-                       stride = pSharedData->planes[plane_select].width * pSharedData->planes[plane_select].bpp;
-                       addr  = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[plane_select].physAddr);
-                       ctx->vd_cli[i].shdl = hwc_to_nsc_surface(pSharedData->planes[plane_select].width,
-                                                                pSharedData->planes[plane_select].height,
-                                                                stride,
-                                                                pixel_format,
-                                                                addr);
-                    }
-                 }
-                 break;
-                 default:
-                    stride = gr_buffer->oglStride;
-                    addr  = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
-                    if (addr != NULL) {
-                       ctx->vd_cli[i].shdl = hwc_to_nsc_surface(pSharedData->planes[DEFAULT_PLANE].width,
-                                                                pSharedData->planes[DEFAULT_PLANE].height,
-                                                                stride,
-                                                                gralloc_to_nexus_pixel_format(pSharedData->planes[DEFAULT_PLANE].format),
-                                                                addr);
-                    }
-                 break;
-              }
-
-              if (ctx->vd_cli[i].shdl == NULL) {
-                 ALOGE("%s: failed surface allocation for client %d (%p)", __FUNCTION__, i, ctx->vd_cli[i].chdl);
-                 surf_comp.visible = false;
-              } else if (ctx->display_dump_virt) {
-                 ALOGI("virt::prepare:%d::cli:%p::shdl:%p", i, ctx->vd_cli[i].chdl, ctx->vd_cli[i].shdl);
-              }
-              ctx->vd_cli[i].grhdl = layer->handle;
-           } else {
-              surf_comp.visible = false;
-              ctx->vd_cli[i].shdl = NULL;
-              ctx->vd_cli[i].grhdl = layer->handle;
-           }
-
-           memcpy(&ctx->vd_cli[i].composition, &surf_comp, sizeof(surf_comp));
-           NEXUS_HwcComposer_SetClientSettings(ctx->hwc_comp, ctx->vd_cli[i].chdl, &surf_comp);
        }
     }
 
@@ -1876,14 +1800,20 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                 ALOGE("Exceedeed max number of accounted layers\n");
                 break;
             }
+            void *pAddr;
+            private_handle_t *gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
+            if (gr_buffer == NULL) {
+               // invalid layer handle, just skip it.
+               continue;
+            }
             //
             // video layer: signal the buffer to be displayed, drop duplicates.
             //
-            is_video = is_video_layer(&list->hwLayers[i], -1, &is_sideband, &is_yuv);
+            hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+            PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
+            is_video = is_video_layer(ctx, &list->hwLayers[i], -1, &is_sideband, &is_yuv);
             if (is_video && !is_yuv) {
                 if (!is_sideband) {
-                    private_handle_t *gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
-                    PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(gr_buffer->sharedData);
                     if (ctx->hwc_binder) {
                         // TODO: currently only one video window exposed.
                         if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
@@ -1897,8 +1827,6 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
             // gpx layer: use the 'cached' visibility that was assigned during 'prepare'.
             //
             else if (ctx->gpx_cli[i].composition.visible) {
-                private_handle_t *gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
-                PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(gr_buffer->sharedData);
                 if (list->hwLayers[i].compositionType == HWC_OVERLAY) {
                    overlay_seen++;
                 } else if (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET) {
@@ -1930,6 +1858,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                    list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
                 }
             }
+
+            hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
         }
 
         if (layer_composed == 0) {
@@ -1982,11 +1912,6 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
 
        ctx->stats[1].set_call++;
 
-       if (!ctx->hwc_comp) {
-          ctx->stats[1].set_skipped++;
-          goto out;
-       }
-
        if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
           ctx->stats[1].set_skipped++;
           goto out;
@@ -1995,47 +1920,6 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
        if (ctx->display_gles_always) {
           list->retireFenceFd = list->outbufAcquireFenceFd;
           goto out_unlock;
-       }
-
-       for (i = 0; i < list->numHwLayers; i++) {
-          layer = &list->hwLayers[i];
-          if (ctx->vd_cli[i].composition.visible && (ctx->vd_cli[i].shdl != NULL)) {
-             layer_count++;
-             NEXUS_HwcClient_SetSurface(ctx->vd_cli[i].chdl, ctx->vd_cli[i].shdl);
-
-             if (ctx->display_dump_virt) {
-                ALOGI("virt::compose:%d::cli:%p::surf:%p", i, ctx->vd_cli[i].chdl, ctx->vd_cli[i].shdl);
-             }
-          }
-       }
-
-       if (layer_count)
-       {
-          private_handle_t *gr_buffer = (private_handle_t *)list->outbuf;
-          PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(gr_buffer->sharedData);
-          unsigned int stride = gr_buffer->oglStride;
-          NEXUS_SurfaceHandle shdl = hwc_to_nsc_surface(pSharedData->planes[DEFAULT_PLANE].width,
-                                                        pSharedData->planes[DEFAULT_PLANE].height,
-                                                        stride,
-                                                        gralloc_to_nexus_pixel_format(pSharedData->planes[DEFAULT_PLANE].format),
-                                                        (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr));
-
-          int rc = NEXUS_HwcComposer_Compose(ctx->hwc_comp, shdl);
-          if (ctx->display_dump_virt) {
-             ALOGI("virt::target::output:%p:{%d,%d}::surf:%p", list->outbuf, ctx->cfg[1].width, ctx->cfg[1].height, shdl);
-          }
-          if (rc) {
-             ALOGW("%s: composing %d layers to %p: FAILED (%d)", __FUNCTION__, layer_count, list->outbuf, rc);
-          }
-          NEXUS_Surface_Destroy(shdl);
-       }
-
-       for (i = 0; i < list->numHwLayers; i++) {
-          if (ctx->vd_cli[i].shdl) {
-             NEXUS_Surface_Destroy(ctx->vd_cli[i].shdl);
-             ctx->vd_cli[i].shdl = NULL;
-          }
-          /* ctx->vd_cli[i].grhdl = NULL; */ // keep track of last buffer used for dump.
        }
     }
 
@@ -2129,11 +2013,6 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
 
         if (ctx->sync_timeline != INVALID_FENCE)
            close(ctx->sync_timeline);
-
-        for (i = 0; i < HWC_VD_CLIENTS_NUMBER; i++)
-           NEXUS_HwcComposer_DestroyClient(ctx->vd_cli[i].chdl);
-        if (ctx->hwc_comp)
-           NEXUS_HwcComposer_Destroy(ctx->hwc_comp);
     }
 }
 
@@ -2536,6 +2415,14 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            dev->display_dump_virt = (strtoul(value, NULL, 10) == 0) ? false : true;
         }
 
+        if (property_get(HWC_USES_MMA_PROP, value, HWC_DEFAULT_MMA)) {
+           dev->hwc_with_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
+        }
+
+        if (property_get(HWC_DUMP_MMA_OPS_PROP, value, HWC_DEFAULT_MMA)) {
+           dev->dump_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
+        }
+
         {
             NxClient_AllocSettings nxAllocSettings;
             NEXUS_SurfaceClientSettings client_settings;
@@ -2760,19 +2647,9 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            }
         }
 
-        dev->hwc_comp = NEXUS_HwcComposer_Create();
-        if (dev->hwc_comp == NULL) {
-           /* note: currently the hwc_comp is only used during virtual display composition.
-            */
-           ALOGE("%s: failed to create hwc_comp, virtual display services will not work!", __FUNCTION__);
-        } else {
-           for (int i = 0; i < HWC_VD_CLIENTS_NUMBER; i++) {
-              dev->vd_cli[i].type = NEXUS_CLIENT_VD;
-              dev->vd_cli[i].chdl = NEXUS_HwcComposer_CreateClient(dev->hwc_comp);
-              if (dev->vd_cli[i].chdl == NULL) {
-                 ALOGE("%s: failed to create virtual composition client %d", __FUNCTION__, i);
-              }
-           }
+        for (int i = 0; i < HWC_VD_CLIENTS_NUMBER; i++) {
+           dev->vd_cli[i].ncci.parent = (void *)dev;
+           dev->vd_cli[i].ncci.type = NEXUS_CLIENT_VD;
         }
 
         *device = &dev->device.common;
@@ -2812,6 +2689,7 @@ static void hwc_prepare_gpx_layer(
 {
     NEXUS_Error rc;
     private_handle_t *gr_buffer = NULL;
+    void *pAddr;
     NEXUS_SurfaceCreateSettings createSettings;
     NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
                                 (int16_t)layer->displayFrame.top,
@@ -2836,7 +2714,8 @@ static void hwc_prepare_gpx_layer(
     }
 
     gr_buffer = (private_handle_t *)layer->handle;
-    PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(gr_buffer->sharedData);
+    hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+    PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
     hwc_get_buffer_sizes(pSharedData, &cur_width, &cur_height);
     cur_blending_type = hwc_android_blend_to_nsc_blend(layer->blending);
 
@@ -2887,6 +2766,7 @@ static void hwc_prepare_gpx_layer(
 out_unlock:
     BKNI_ReleaseMutex(ctx->mutex);
 out:
+    hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
     return;
 }
 
@@ -3095,7 +2975,7 @@ static void hwc_nsc_prepare_layer(
     bool is_sideband = false;
     bool is_yuv = false;
 
-    if (is_video_layer(layer, layer_id, &is_sideband, &is_yuv)) {
+    if (is_video_layer(ctx, layer, layer_id, &is_sideband, &is_yuv)) {
         if (!is_sideband) {
             if (is_yuv) {
                hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed);

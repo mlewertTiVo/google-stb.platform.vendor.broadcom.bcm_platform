@@ -80,6 +80,7 @@
 #define GRAPHICS_RES_WIDTH_PROP        "ro.graphics_resolution.width"
 #define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
 
+#define NX_MMA                         "ro.nx.mma"
 #define NX_HEAP_MAIN                   "ro.nx.heap.main"
 #define NX_HEAP_GFX                    "ro.nx.heap.gfx"
 #define NX_HEAP_GFX2                   "ro.nx.heap.gfx2"
@@ -200,7 +201,7 @@ static nxserver_t init_nxserver(void)
 
     char value[PROPERTY_VALUE_MAX];
     char value2[PROPERTY_VALUE_MAX];
-    int ix;
+    int ix, uses_mma = 0;
     char nx_key[PROPERTY_VALUE_MAX];
     FILE *key = NULL;
 
@@ -218,6 +219,11 @@ static nxserver_t init_nxserver(void)
     nxserver_get_default_settings(&settings);
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
     NEXUS_GetDefaultMemoryConfigurationSettings(&memConfigSettings);
+
+    memset(value, 0, sizeof(value));
+    if (property_get(NX_MMA, value, "0")) {
+       uses_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
+    }
 
     /* setup the configuration we want for the device.  right now, hardcoded for a generic
        android device, longer term, we want more flexibility. */
@@ -253,15 +259,16 @@ static nxserver_t init_nxserver(void)
     settings.session[0].output.hd = true;
     /* -memconfig display,hddvi=off */
     memConfigSettings.videoInputs.hdDvi = false;
-#ifdef USE_MMA
-    /* -growHeapBlockSize 32m -heap gfx,128m */
-    settings.growHeapBlockSize = 32 * MB;
-    ix = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
-    if (ix != -1) {
-       platformSettings.heap[ix].size = 256 * MB;
+    if (uses_mma) {
+       /* -growHeapBlockSize 32m -heap gfx,32m */
+       settings.growHeapBlockSize = 32 * MB;
+       ix = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
+       if (ix != -1) {
+          platformSettings.heap[ix].size = 32 * MB;
+       }
     }
-#endif
-    if (settings.growHeapBlockSize) {
+
+    if (uses_mma && settings.growHeapBlockSize) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
        if (index >= NEXUS_MAX_HEAPS) {
            ALOGE("growHeapBlockSize: requires platform implement NEXUS_PLATFORM_P_GET_FRAMEBUFFER_HEAP_INDEX");
@@ -286,18 +293,20 @@ static nxserver_t init_nxserver(void)
           platformSettings.heap[index].size = calc_heap_size(value);
        }
     }
-    if (property_get(NX_HEAP_GFX, value, NULL)) {
-       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
-       if (strlen(value) && (index != -1)) {
-          /* -heap gfx,XXm */
-          platformSettings.heap[index].size = calc_heap_size(value);
+    if (!uses_mma) {
+       if (property_get(NX_HEAP_GFX, value, NULL)) {
+          int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
+          if (strlen(value) && (index != -1)) {
+             /* -heap gfx,XXm */
+             platformSettings.heap[index].size = strtol(value, NULL, 10) * MB;
+          }
        }
-    }
-    if (property_get(NX_HEAP_GFX2, value, NULL)) {
-       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_SECONDARY_GRAPHICS);
-       if (strlen(value) && (index != -1)) {
-          /* -heap gfx2,XXm */
-          platformSettings.heap[index].size = calc_heap_size(value);
+       if (property_get(NX_HEAP_GFX2, value, NULL)) {
+          int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_SECONDARY_GRAPHICS);
+          if (strlen(value) && (index != -1)) {
+             /* -heap gfx2,XXm */
+             platformSettings.heap[index].size = strtol(value, NULL, 10) * MB;
+          }
        }
     }
 

@@ -83,7 +83,6 @@ int fb_device_open(hw_module_t const* module, const char* name,
 
    if (!strcmp(name, GRALLOC_HARDWARE_FB0)) {
       alloc_device_t* gralloc_device;
-      BCM_DEBUG_MSG("BRCM-GRALLOC: fb_device_open Calling Gralloc Open\n");
       status = gralloc_open(module, &gralloc_device);
       if (status < 0)
          return status;
@@ -102,8 +101,6 @@ int fb_device_open(hw_module_t const* module, const char* name,
       dev->device.setUpdateRect = 0;
 
       private_module_t* m = reinterpret_cast<private_module_t*>(dev->device.common.module);
-
-      BCM_DEBUG_MSG("BRCM-GRALLOC: fb_device_open Directly Calling MapFrameBuffer\n");
 
       if (status >= 0) {
          const_cast<uint32_t&>(dev->device.flags) = 0;

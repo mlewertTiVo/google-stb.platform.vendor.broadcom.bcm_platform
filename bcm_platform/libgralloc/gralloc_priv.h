@@ -44,10 +44,6 @@ extern "C" {
 #include <assert.h>
 #include <cutils/atomic.h>
 
-#define BCM_DEBUG_MSG
-#define BCM_DEBUG_TRACEMSG      LOGD
-#define BCM_DEBUG_ERRMSG        LOGD
-
 #define MAX_NUM_INSTANCES       3
 
 #define DEFAULT_PLANE           0
@@ -122,19 +118,20 @@ struct private_handle_t {
 /*6.*/        unsigned    oglSize;
 /*7.*/        unsigned    sharedData;
 /*8.*/        int         usage;
-
-// do not use, only for backward compatibility.
 /*9.*/        unsigned    nxSurfacePhysicalAddress;
+/*10.*/       unsigned    nxSurfaceAddress;
+/*11.*/       int         is_mma;
 
 #ifdef __cplusplus
-    static const int sNumInts = 9;
+    static const int sNumInts = 11;
     static const int sNumFds = 4;
     static const int sMagic = 0x3141592;
 
     private_handle_t(int fd, int fd2, int fd3, int fd4, int flags) :
         fd(fd), fd2(fd2), fd3(fd3), fd4(fd4), magic(sMagic), flags(flags),
         pid(getpid()), oglStride(0), oglFormat(0), oglSize(0),
-        sharedData(0), usage(0), nxSurfacePhysicalAddress(0)
+        sharedData(0), usage(0), nxSurfacePhysicalAddress(0),
+        nxSurfaceAddress(0), is_mma(0)
     {
         version = sizeof(native_handle);
         numInts = sNumInts;
@@ -163,50 +160,78 @@ struct private_handle_t {
 
     static int lock_video_frame(private_handle_t *pHandle, int timeoutMs)
     {
-        SHARED_DATA *pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pHandle->sharedData);
+        PSHARED_DATA pSharedData = NULL;
+        NEXUS_MemoryBlockHandle block_handle = NULL;
+        int rc = 0;
+
+        if (pHandle->is_mma) {
+           void *pMemory;
+           block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
+           NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+           pSharedData = (PSHARED_DATA) pMemory;
+        } else {
+           pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(pHandle->sharedData);
+        }
+
         struct timespec ts_end, ts_now;
-        if ( NULL == pSharedData )
-        {
-          return -EINVAL;
+        if (NULL == pSharedData) {
+          rc = -EINVAL;
+          goto out;
         }
         // Compute timeout
         clock_gettime(CLOCK_MONOTONIC, &ts_end);
         ts_end.tv_sec += timeoutMs/1000;
         ts_end.tv_nsec += (timeoutMs%1000)*1000000;
-        if ( ts_end.tv_nsec >= 1000000000 )
-        {
+        if (ts_end.tv_nsec >= 1000000000) {
             ts_end.tv_sec++;
             ts_end.tv_nsec -= 1000000000;
         }
         // Lock "semaphore" with timeout
-        while ( android_atomic_acquire_cas(0, 1, &pSharedData->videoFrame.locked) )
-        {
+        while (android_atomic_acquire_cas(0, 1, &pSharedData->videoFrame.locked)) {
             BKNI_Sleep(1);
             clock_gettime(CLOCK_MONOTONIC, &ts_now);
             /* equivalent to if ( timespec_compare(&ts_now, &ts_end) >= 0 ) return -EBUSY; */
-            if ( ts_now.tv_sec < ts_end.tv_sec )
-            {
+            if (ts_now.tv_sec < ts_end.tv_sec) {
                 continue;
             }
-            if ( ts_now.tv_sec > ts_end.tv_sec || ts_now.tv_nsec > ts_end.tv_nsec )
-            {
-                return -EBUSY;
+            if (ts_now.tv_sec > ts_end.tv_sec || ts_now.tv_nsec > ts_end.tv_nsec) {
+                rc = -EBUSY;
+                goto out;
             }
         }
-        // Success
-        return 0;
+
+out:
+        if (pHandle->is_mma && block_handle) {
+           NEXUS_MemoryBlock_Unlock(block_handle);
+        }
+        return rc;
     }
 
     static void unlock_video_frame(private_handle_t *pHandle)
     {
-        SHARED_DATA *pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pHandle->sharedData);
-        int rc;
-        if ( NULL == pSharedData )
-        {
-          return;
+        PSHARED_DATA pSharedData = NULL;
+        NEXUS_MemoryBlockHandle block_handle = NULL;
+        int rc = 0;
+
+        if (pHandle->is_mma) {
+           void *pMemory;
+           block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
+           NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+           pSharedData = (PSHARED_DATA) pMemory;
+        } else {
+           pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(pHandle->sharedData);
+        }
+
+        if (NULL == pSharedData) {
+          goto out;
         }
         rc = android_atomic_release_cas(1, 0, &pSharedData->videoFrame.locked);
         assert(rc);
+
+out:
+        if (pHandle->is_mma && block_handle) {
+           NEXUS_MemoryBlock_Unlock(block_handle);
+        }
     }
 
 #endif

@@ -21,7 +21,8 @@
 #include "nexus_surface_client.h"
 #include "nxclient.h"
 
-extern "C" NEXUS_SurfaceHandle hwc_to_nsc_surface(int width, int height, int stride, NEXUS_PixelFormat format, uint8_t *data)
+extern "C" NEXUS_SurfaceHandle hwc_to_nsc_surface(int width, int height, int stride, NEXUS_PixelFormat format,
+    bool is_mma, unsigned handle, uint8_t *data)
 {
     NEXUS_SurfaceHandle shdl = NULL;
     NEXUS_SurfaceCreateSettings createSettings;
@@ -31,12 +32,14 @@ extern "C" NEXUS_SurfaceHandle hwc_to_nsc_surface(int width, int height, int str
     createSettings.width       = width;
     createSettings.height      = height;
     createSettings.pitch       = stride;
-    if (data) {
+    if (!is_mma && data) {
         createSettings.pMemory = data;
+    } else if (is_mma && handle) {
+        createSettings.pixelMemory = (NEXUS_MemoryBlockHandle) handle;
     }
 
     shdl = NEXUS_Surface_Create(&createSettings);
 
-    ALOGV("%s: (%d,%d), s:%d, fmt:%d, p:%p -> %p", __FUNCTION__, width, height, stride, format, data, shdl);
+    ALOGV("%s: (%d,%d), s:%d, fmt:%d, p:%p, h:%p -> %p", __FUNCTION__, width, height, stride, format, data, handle, shdl);
     return shdl;
 }
