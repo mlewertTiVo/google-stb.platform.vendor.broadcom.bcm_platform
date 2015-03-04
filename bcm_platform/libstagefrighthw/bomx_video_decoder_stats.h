@@ -51,26 +51,22 @@
 
 #include <utils/Vector.h>
 #include <utils/Timers.h>
+#include <cutils/properties.h>
 
-#ifdef BOMX_ENABLE_VIDEO_STATS
 #define BOMX_VIDEO_STATS_DEC BOMX_VD_Stats m_stats
 #define BOMX_VIDEO_STATS_ADD_EVENT(...) m_stats.addEventEntry(__VA_ARGS__)
 #define BOMX_VIDEO_STATS_RESET m_stats.reset()
 #define BOMX_VIDEO_STATS_PRINT_BASIC m_stats.printBasicStats()
 #define BOMX_VIDEO_STATS_PRINT_DETAILED m_stats.printDetailedStats()
-#else
-#define BOMX_VIDEO_STATS_DEC
-#define BOMX_VIDEO_STATS_ADD_EVENT(...)
-#define BOMX_VIDEO_STATS_RESET
-#define BOMX_VIDEO_STATS_PRINT_BASIC
-#define BOMX_VIDEO_STATS_PRINT_DETAILED
-#endif
 
-
-#ifdef BOMX_ENABLE_VIDEO_STATS
+#define BOMX_VDEC_STATS_PROPERTY "media.brcm.vdec_stats.level"
 class BOMX_VD_Stats {
 public:
-    BOMX_VD_Stats(){}
+    BOMX_VD_Stats(): mStatsLevel(STATS_DISABLED) {
+        uint32_t level = (uint32_t)property_get_int32(BOMX_VDEC_STATS_PROPERTY, 0);
+        if (level < STATS_LIMIT)
+           mStatsLevel = (StatsLevel)level;
+    }
 
     ~BOMX_VD_Stats(){
         reset();
@@ -80,6 +76,13 @@ public:
         INPUT_FRAME = 0,
         OUTPUT_FRAME = 1,
         DISPLAY_FRAME = 2
+    };
+
+    enum StatsLevel {
+        STATS_DISABLED = 0,
+        STATS_BASIC = 1,
+        STATS_DETAILED = 2,
+        STATS_LIMIT = 3
     };
 
     typedef struct EventEntry {
@@ -92,6 +95,7 @@ public:
 
     void addEventEntry(EventType eventType, OMX_TICKS ts,
                       uint32_t data1 = 0, uint32_t data2 = 0) {
+        if (mStatsLevel == STATS_DISABLED) return;
         EventData &eventData = eventDataList[eventType];
         EventEntry *entry = eventData.getNew();
         entry->eventType = eventType;
@@ -122,6 +126,7 @@ public:
     }
 
     void reset() {
+        if (mStatsLevel == STATS_DISABLED) return;
         for (uint32_t i = 0; i < sizeof(eventDataList)/sizeof(eventDataList[0]); ++i){
             EventData &eventData = eventDataList[i];
             eventData.reset();
@@ -129,6 +134,7 @@ public:
     }
 
     void printBasicStats() {
+        if (mStatsLevel < STATS_BASIC) return;
         // Input data stats
         ALOGD("=== Input data ===");
         EventData *eventData = &eventDataList[INPUT_FRAME];
@@ -179,6 +185,7 @@ public:
         struct tm * timeinfo;
         char fname[100];
 
+        if (mStatsLevel < STATS_DETAILED) return;
         EventData *eventData = &eventDataList[INPUT_FRAME];
         if (eventData->count() == 0){
             ALOGE("%s: no data!", __FUNCTION__);
@@ -299,8 +306,7 @@ private:
         Vector<EventEntry*> list;
     };
     EventData eventDataList[3];
-
+    StatsLevel mStatsLevel;
 };
-#endif
 
 #endif //BOMX_VIDEO_DECODER_STATS_H__
