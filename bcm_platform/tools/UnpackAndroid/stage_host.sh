@@ -35,10 +35,11 @@ $tools_dir/tools/simg2img $image_dir/system.img ./unpack_android_boot/system.raw
 $tools_dir/tools/simg2img $image_dir/userdata.img ./unpack_android_boot/userdata.raw.img
 $tools_dir/tools/simg2img $image_dir/cache.img ./unpack_android_boot/cache.raw.img
 
-echo "4) Copying stage_target* scripts."
+echo "4) Copying stage_target* scripts, and tools."
 cp $tools_dir/stage_target.sh $staging_dir
 cp $tools_dir/stage_target_multipart.sh $staging_dir
 cp $tools_dir/stage_target_bootimg.sh $staging_dir
+cp $tools_dir/tools/fastboot_tcp $staging_dir
 
 echo "5) Copying bootloaders."
 mkdir -p $staging_dir/loaders

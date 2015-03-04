@@ -2,7 +2,7 @@
 set -e
 
 function usage {
-   echo "stage_host_bootimg.sh [-b] [-s] [-d] [-c] [-z] [-S] [-p <name>]"
+   echo "stage_host_bootimg.sh [-b] [-s] [-d] [-c] [-z] [-S] [-p <name>] [-F <ip-address>]"
    echo ""
    echo "list partitions to update. partitions in:"
    echo ""
@@ -14,10 +14,14 @@ function usage {
    echo ""
    echo "'-S' - to run with SELinux support (incurs longer copy time)."
    echo ""
+   echo "'-F' - to flash images through fastboot (run from host), if specified with '-S';"
+   echo "       '-S' is ignored since implicit with '-F'"
+   echo ""
    echo "defaults to:"
    echo ""
    echo "     '-b -s -d' - if '-S' is not specified."
    echo "     '-S -b -s -d' - if '-S' specified without explicit partitions."
+   echo "     '-F -b -s -d' - if '-F' specified without explicit partitions."
    echo ""
    echo "'-p <name>' - to specify the root of the partition flashing"
    echo "              eg: sda, mmcblk0p - defaults to 'sda'."
@@ -32,6 +36,7 @@ partition_cache=5
 partition_recovery=6
 
 partition_root=sda
+fastboot_target=0.0.0.0
 
 update_boot_img=1
 update_system=1
@@ -40,13 +45,14 @@ update_data=1
 update_cache=0
 update_recovery=0
 selinux=0
+fastboot=0
 if [ $# -gt 0 ]; then
 	update_boot_img=0
 	update_system=0
 	update_data=0
 fi
 
-while getopts "hbsdczSp:" tag; do
+while getopts "hbsdczSp:F:" tag; do
 	case $tag in
 	b)
 		update_boot_img=1
@@ -69,6 +75,10 @@ while getopts "hbsdczSp:" tag; do
 	p)
 		partition_root=$OPTARG
 		;;
+	F)
+		fastboot=1
+		fastboot_target=$OPTARG
+		;;
 	h|*)
 		usage
 		exit 1
@@ -89,7 +99,17 @@ echo "   recovery: /dev/${partition_root}${partition_recovery}"
 echo ""
 echo "******** WARNING ********"
 
-# if only argument set was to ask for selinux, roll back default update.
+# if both selinux and fastboot are together, nuke selinux since fastboot will actually achieve the same outcome.
+if [[ $selinux -gt 0 && $fastboot -gt 0 ]]; then
+	selinux=0
+fi
+
+# if only argument set was to ask for selinux/fastboot, roll back default update.
+if [[ $fastboot -gt 0 && $update_boot_img -eq 0 && $update_system -eq 0 && $update_data -eq 0 && $update_cache -eq 0 && $update_recovery -eq 0 ]]; then
+	update_boot_img=1
+	update_system=1
+	update_data=1
+fi
 if [[ $selinux -gt 0 && $update_boot_img -eq 0 && $update_system -eq 0 && $update_data -eq 0 && $update_cache -eq 0 && $update_recovery -eq 0 ]]; then
 	update_boot_img=1
 	update_system=1
@@ -108,33 +128,61 @@ fi
 echo ""
 echo "partitions updated in this run:"
 if [ $update_boot_img -gt 0 ]; then
-echo "     boot image"
+	echo "     boot image"
 fi
 if [ $update_system -gt 0 ]; then
-echo "     system"
+	echo "     system"
 fi
 if [ $update_data -gt 0 ]; then
-echo "     data (userdata)"
+	echo "     data (userdata)"
 fi
 if [ $update_cache -gt 0 ]; then
-echo "     cache"
+	echo "     cache"
 fi
 if [ $update_recovery -gt 0 ]; then
-echo "     recovery"
+	echo "     recovery"
 fi
 echo ""
 if [ $selinux -gt 0 ]; then
-echo "setting up for selinux usage..."
-echo ""
+	echo "setting up for selinux usage..."
+	echo ""
+fi
+if [ $fastboot -gt 0 ]; then
+	echo "using fastboot to target '$fastboot_target'..."
+	echo ""
 fi
 
 sleep 2
+
+# for fastboot, since we run from host, do the whole thing here, we do not need to
+# do anything more other than push the images.
+#
+if [ $fastboot -gt 0 ]; then
+	echo "running fastboot against $fastboot_target"
+	if [ $update_boot_img -gt 0 ]; then
+		./fastboot_tcp -t $fastboot_target flash boot ./boot.img
+	fi
+	if [ $update_recovery -gt 0 ]; then
+		./fastboot_tcp -t $fastboot_target flash recovery ./recovery.img
+	fi
+	if [ $update_system -gt 0 ]; then
+		./fastboot_tcp -t $fastboot_target flash system ./system.img
+	fi
+	if [ $update_data -gt 0 ]; then
+		./fastboot_tcp -t $fastboot_target flash data ./userdata.img
+	fi
+	if [ $update_cache -gt 0 ]; then
+		./fastboot_tcp -t $fastboot_target flash cache ./cache.img
+	fi
+	./fastboot_tcp -t $fastboot_target reboot
+	echo "done!!!"
+	exit 0
+fi
 
 if [ $update_recovery -gt 0 ]; then
 	# cheat-sheet: make sure kernel is mounted as well...
 	update_boot_img=1
 fi
-
 if [ $update_boot_img -gt 0 ]; then
 	mkdir -p /mnt/kernel
 fi
