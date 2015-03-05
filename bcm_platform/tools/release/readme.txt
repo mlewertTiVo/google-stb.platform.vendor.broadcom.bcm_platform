@@ -10,7 +10,7 @@ that is not included as part of refsw release, so need to run this prior to
 packing.
 
 3. Run pack_release.sh from the root of tree, e.g.:
-./vendor/broadcom/bcm_platform/tools/release/pack_release.sh android5.0_14.4take1.tgz bcghost/lollipop-release 
+./vendor/broadcom/bcm_platform/tools/release/pack_release.sh android5.0_14.4take1.tgz
 
 How to use unpack_release.sh
 ----------------------------

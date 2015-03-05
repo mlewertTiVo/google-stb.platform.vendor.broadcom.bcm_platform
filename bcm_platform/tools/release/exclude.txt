@@ -1,3 +1,2 @@
-vendor/broadcom/bcm_platform/release
 vendor/broadcom/bcm_platform/not_for_release
 vendor/broadcom/bcm_platform/libsecurity/sage/7445D0/sage_os_app.bin

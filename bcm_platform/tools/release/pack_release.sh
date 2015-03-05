@@ -12,7 +12,8 @@
 if [ $# -lt 1 ]; then
   echo "Usage: $(basename $0) <output> [<aosp_baseline>]"
   echo "      output: Output file name and location of the packed release, e.g. ./release.tgz"
-  echo "      aosp_baseline: aosp baseline tag where patches is generated from"
+  echo "      aosp_baseline: AOSP baseline tag where patches is generated from."
+  echo "                     If not specified, revision from default manifest will be used."
   exit 0
 fi
 
@@ -22,7 +23,8 @@ TOP_DIR=$(pwd)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR=tmp_bcmrel
 
-BCG_XML=".repo/manifests/bcg.xml"
+DFT_XML="$TOP_DIR/.repo/manifests/default.xml"
+BCG_XML="$TOP_DIR/.repo/manifests/bcg.xml"
 REFSW_DIR="$TMP_DIR/refsw_dir.txt"
 BOLT_DIR="$TMP_DIR/bolt_dir.txt"
 BOLT_VER="$TMP_DIR/bolt_version.txt"
@@ -33,26 +35,38 @@ AOSP_LIST="$TMP_DIR/aosp_patches.txt"
 WHITE_LIST="$TMP_DIR/white_list.txt"
 BLACK_LIST="$TMP_DIR/black_list.txt"
 
-AOSP_BASELINE="bcghost/lollipop-release"
 if [ $# -ge 2 ]; then
   AOSP_BASELINE=$2
 fi
 
-# Helper to extract path from xml based on the specified attribute name/value
+# Helper to extract a value from xml based on the specified attribute name/value
+extract_value_from_xml()
+{
+  echo "cat //project[@$1='$2']/@$4" | xmllint --shell $3 | grep $4= | cut -d \" -f 2
+}
+
+# Helper to extract path from bcg xml
 extract_path_from_xml()
 {
-  echo "cat //project[@$1='$2']/@path" | xmllint --shell $TOP_DIR/$BCG_XML | grep 'path=' | cut -d \" -f 2
+  extract_value_from_xml $1 $2 $BCG_XML path
 }
 
 # Helper to extract aosp patches per baseline
 extract_patches_from_aosp()
 {
-  AOSP_PATH=$(extract_path_from_xml name $1)
+  AOSP_PATH=$1
+
+  # Generate aosp patches based on revision in default xml unless user overrided
+  if [ -z $AOSP_BASELINE ]; then
+    BASELINE=$(extract_value_from_xml path $AOSP_PATH $DFT_XML revision)
+  else
+    BASELINE=$AOSP_BASELINE
+  fi
   echo $AOSP_PATH >> $AOSP_LIST
   mkdir -p $TOP_DIR/$TMP_DIR/$AOSP_PATH
   CURR_DIR=$(pwd)
   cd $AOSP_PATH
-  git format-patch $2 -o $TOP_DIR/$TMP_DIR/$AOSP_PATH
+  git format-patch $BASELINE -o $TOP_DIR/$TMP_DIR/$AOSP_PATH
   cd $CURR_DIR
 }
 
@@ -61,7 +75,7 @@ if [ -d $TMP_DIR ]; then
 fi
 mkdir -p $TMP_DIR
 
-if [ -f $TOP_DIR/$BCG_XML ]; then
+if [ -f $BCG_XML ]; then
   # refsw is packed separately, store its location for unpack
   extract_path_from_xml groups refsw >> $REFSW_DIR
   cat $REFSW_DIR >> $BLACK_LIST
@@ -80,12 +94,13 @@ if [ -f $TOP_DIR/$BCG_XML ]; then
   extract_path_from_xml groups kernel >> $WHITE_LIST
   extract_path_from_xml name android/kernel-toolchains >> $WHITE_LIST
 
-  # Android aosp overrides, generate patches from a given label
-  extract_patches_from_aosp android/platform/external/libusb $AOSP_BASELINE
-  extract_patches_from_aosp android/platform/external/libusb-compat $AOSP_BASELINE
-  extract_patches_from_aosp android/platform/external/bluetooth/bluedroid $AOSP_BASELINE
-  extract_patches_from_aosp android/packages/apps/Bluetooth $AOSP_BASELINE
-  extract_patches_from_aosp android/platform/hardware/libhardware $AOSP_BASELINE
+  # Android aosp overrides, generate patches from a given baseline
+  extract_patches_from_aosp external/libusb
+  extract_patches_from_aosp external/libusb-compat
+  extract_patches_from_aosp external/bluetooth/bluedroid
+  extract_patches_from_aosp packages/apps/Bluetooth
+  extract_patches_from_aosp hardware/libhardware
+  extract_patches_from_aosp build
 
   # Misc tools
   extract_path_from_xml name android/busybox >> $WHITE_LIST
