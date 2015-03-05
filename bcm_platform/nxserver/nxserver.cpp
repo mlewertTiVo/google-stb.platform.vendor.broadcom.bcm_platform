@@ -72,6 +72,12 @@
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 #define APP_MAX_CLIENTS 20
 #define MB (1024*1024)
+
+#define GRAPHICS_RES_WIDTH_DEFAULT     1920
+#define GRAPHICS_RES_HEIGHT_DEFAULT    1080
+#define GRAPHICS_RES_WIDTH_PROP        "ro.graphics_resolution.width"
+#define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
+
 #define DISPLAY_FORMAT_1080P           "1080p"
 
 #define NX_HEAP_GFX                    "ro.nx.heap.gfx"
@@ -155,15 +161,16 @@ static nxserver_t init_nxserver(void)
 
     /* -ir none */
     settings.session[0].ir_input_mode = NEXUS_IrInputMode_eMax;
+    /* -fbsize w,h */
+    settings.fbsize.width = property_get_int32(
+        GRAPHICS_RES_WIDTH_PROP, GRAPHICS_RES_WIDTH_DEFAULT);
+    settings.fbsize.height = property_get_int32(
+        GRAPHICS_RES_HEIGHT_PROP, GRAPHICS_RES_HEIGHT_DEFAULT);
     memset(value, 0, sizeof(value));
     if (property_get(NX_HD_OUT_FMT, value, NULL)) {
         if (strncmp((char *) value, DISPLAY_FORMAT_1080P, strlen(DISPLAY_FORMAT_1080P)) != 0) {
             /* -ignore_edid */
             settings.display.hdmiPreferences.followPreferredFormat = false;
-        } else {
-            /* -fbsize 1920,1080 */
-            settings.fbsize.width = 1920;
-            settings.fbsize.height = 1080;
         }
     }
 #ifndef BCM_OMX_SUPPORT_ENCODER

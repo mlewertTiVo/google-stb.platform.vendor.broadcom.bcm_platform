@@ -114,8 +114,11 @@ using namespace android;
 /* note: matching other parts of the integration, we
  *       want to default product resolution to 1080p.
  */
-#define DISPLAY_DEFAULT_HD_RES       "1080p"
-#define DISPLAY_HD_RES_PROP          "ro.hd_output_format"
+#define GRAPHICS_RES_WIDTH_DEFAULT  1920
+#define GRAPHICS_RES_HEIGHT_DEFAULT 1080
+#define GRAPHICS_RES_WIDTH_PROP     "ro.graphics_resolution.width"
+#define GRAPHICS_RES_HEIGHT_PROP    "ro.graphics_resolution.height"
+
 
 /* gles mode: 'always' is to always force gles composition over
  *            nsc one.
@@ -2475,14 +2478,10 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            goto out;
         }
 
-        dev->cfg[0].width = 1280;
-        dev->cfg[0].height = 720;
-        if (property_get(DISPLAY_HD_RES_PROP, value, DISPLAY_DEFAULT_HD_RES)) {
-           if (!strncmp((char *) value, DISPLAY_DEFAULT_HD_RES, 5)) {
-              dev->cfg[0].width = 1920;
-              dev->cfg[0].height = 1080;
-           }
-        }
+        dev->cfg[0].width = property_get_int32(
+                GRAPHICS_RES_WIDTH_PROP, GRAPHICS_RES_WIDTH_DEFAULT);
+        dev->cfg[0].height = property_get_int32(
+                GRAPHICS_RES_HEIGHT_PROP, GRAPHICS_RES_HEIGHT_DEFAULT);
 
         if (property_get(HWC_GLES_MODE_PROP, value, HWC_DEFAULT_GLES_MODE)) {
            dev->display_gles_fallback =

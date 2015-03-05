@@ -42,8 +42,10 @@ using android::Vector;
 /* note: matching other parts of the integration, we
  *       want to default product resolution to 1080p.
  */
-#define DISPLAY_DEFAULT_HD_RES       "1080p"
-#define DISPLAY_HD_RES_PROP          "ro.hd_output_format"
+#define GRAPHICS_RES_WIDTH_DEFAULT  1920
+#define GRAPHICS_RES_HEIGHT_DEFAULT 1080
+#define GRAPHICS_RES_WIDTH_PROP     "ro.graphics_resolution.width"
+#define GRAPHICS_RES_HEIGHT_PROP    "ro.graphics_resolution.height"
 
 struct fb_context_t {
    framebuffer_device_t device;
@@ -105,14 +107,10 @@ int fb_device_open(hw_module_t const* module, const char* name,
 
       if (status >= 0) {
          const_cast<uint32_t&>(dev->device.flags) = 0;
-         const_cast<uint32_t&>(dev->device.width) = 1280;
-         const_cast<uint32_t&>(dev->device.height) = 720;
-         if (property_get(DISPLAY_HD_RES_PROP, value, DISPLAY_DEFAULT_HD_RES)) {
-            if (!strncmp((char *) value, DISPLAY_DEFAULT_HD_RES, 5)) {
-               const_cast<uint32_t&>(dev->device.width) = 1920;
-               const_cast<uint32_t&>(dev->device.height) = 1080;
-            }
-         }
+         const_cast<uint32_t&>(dev->device.width) = property_get_int32(
+                 GRAPHICS_RES_WIDTH_PROP, GRAPHICS_RES_WIDTH_DEFAULT);
+         const_cast<uint32_t&>(dev->device.height) =  property_get_int32(
+                 GRAPHICS_RES_HEIGHT_PROP, GRAPHICS_RES_HEIGHT_DEFAULT);
          const_cast<int&>(dev->device.stride) = dev->device.width * 4;
 
          // those are hardcoded already.  note that dpi is overtaken by the ro.lcd_density anyways.
