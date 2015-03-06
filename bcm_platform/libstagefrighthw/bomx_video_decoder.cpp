@@ -4181,12 +4181,16 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                         rc = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 250);
                         hStripedSurface = pSharedData->videoFrame.hStripedSurface;
                         pSharedData->videoFrame.hStripedSurface = NULL;
-                        NEXUS_StripedSurface_Destroy(hStripedSurface);
                         if ( 0 == rc )
                         {
                             private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
                         }
                     }
+                }
+                if ( pBuffer->hStripedSurface )
+                {
+                    NEXUS_StripedSurface_Destroy(pBuffer->hStripedSurface);
+                    pBuffer->hStripedSurface = NULL;
                 }
                 pBuffer->pPrivateHandle = NULL;
                 pBuffer->pBufferInfo = NULL;
