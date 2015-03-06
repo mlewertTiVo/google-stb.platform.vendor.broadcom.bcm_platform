@@ -25,15 +25,33 @@ then
   exit
 fi
 
-umount /media/kernel
-umount /media/rootfs
-umount /media/system
-umount /media/data
-umount /media/cache
-umount /media/recovery
+red='\033[0;31m'
+no_colour='\033[0m' # No Color
 
-gdisk -l /dev/$1
-sgdisk -g -o /dev/$1
+function exit_msg {
+  if [ $# -ne 0 ]
+  then
+    echo -e "${red}!!!!!!!!!!!!!!!!!!!!!!! $1 !!!!!!!!!!!!!!!!!!!!!!!${no_colour}"
+  fi
+}
+
+USB_DEV_DIR=/dev/$1
+umount ${USB_DEV_DIR}1 &> /dev/null
+umount ${USB_DEV_DIR}2 &> /dev/null
+umount ${USB_DEV_DIR}3 &> /dev/null
+umount ${USB_DEV_DIR}4 &> /dev/null
+umount ${USB_DEV_DIR}5 &> /dev/null
+umount ${USB_DEV_DIR}6 &> /dev/null
+umount ${USB_DEV_DIR}7 &> /dev/null
+umount ${USB_DEV_DIR}8 &> /dev/null
+
+if [ ! -e $USB_DEV_DIR ]
+then
+  { exit_msg "$USB_DEV_DIR does not exist"; exit; }
+fi
+
+gdisk -l $USB_DEV_DIR
+sgdisk -g -o $USB_DEV_DIR || { exit_msg "sgdisk failed"; exit; }
 bs=512
 gpt_size=$((            1024*1024/bs)) # 1MB alignment
 kernel_size=$((  4*1024*1024*1024/bs)) # Enough space to fit kernel + sdcard
@@ -55,33 +73,48 @@ recovery_first=$((cache_last+1)); recovery_last=$((recovery_first+recovery_size-
 hwcfg_first=$((recovery_last+1)); hwcfg_last=$((hwcfg_first+hwcfg_size-1))
 boot_first=$((hwcfg_last+1)); boot_last=$((boot_first+boot_size-1))
 
-sgdisk -n 1:$kernel_first:$kernel_last -t 1:0700 -c 1:"kernel"   /dev/$1
-sgdisk -n 2:$rootfs_first:$rootfs_last           -c 2:"rootfs"   /dev/$1
-sgdisk -n 3:$system_first:$system_last           -c 3:"system"   /dev/$1
-sgdisk -n 4:$data_first:$data_last               -c 4:"data"     /dev/$1
-sgdisk -n 5:$cache_first:$cache_last             -c 5:"cache"    /dev/$1
-sgdisk -n 6:$recovery_first:$recovery_last       -c 6:"recovery" /dev/$1
-sgdisk -n 7:$hwcfg_first:$hwcfg_last             -c 7:"hwcfg"    /dev/$1
-sgdisk -n 8:$boot_first:$boot_last               -c 8:"boot"     /dev/$1
+sgdisk -n 1:$kernel_first:$kernel_last -t 1:0700 -c 1:"kernel"   $USB_DEV_DIR \
+  || { exit_msg "kernel sgdisk failed";   exit; }
+sgdisk -n 2:$rootfs_first:$rootfs_last           -c 2:"rootfs"   $USB_DEV_DIR \
+  || { exit_msg "rootfs sgdisk failed";   exit; }
+sgdisk -n 3:$system_first:$system_last           -c 3:"system"   $USB_DEV_DIR \
+  || { exit_msg "system sgdisk failed";   exit; }
+sgdisk -n 4:$data_first:$data_last               -c 4:"data"     $USB_DEV_DIR \
+  || { exit_msg "data sgdisk failed";     exit; }
+sgdisk -n 5:$cache_first:$cache_last             -c 5:"cache"    $USB_DEV_DIR \
+  || { exit_msg "cache sgdisk failed";    exit; }
+sgdisk -n 6:$recovery_first:$recovery_last       -c 6:"recovery" $USB_DEV_DIR \
+  || { exit_msg "recovery sgdisk failed"; exit; }
+sgdisk -n 7:$hwcfg_first:$hwcfg_last             -c 7:"hwcfg"    $USB_DEV_DIR \
+  || { exit_msg "hwcfg sgdisk failed";    exit; }
+sgdisk -n 8:$boot_first:$boot_last               -c 8:"boot"     $USB_DEV_DIR \
+  || { exit_msg "boot sgdisk failed";     exit; }
 
-mkfs.vfat -F 32 -n kernel   /dev/${1}1
-mkfs.ext4 -L       rootfs   /dev/${1}2
-mkfs.ext4 -L       system   /dev/${1}3
-mkfs.ext4 -L       data     /dev/${1}4
-mkfs.ext4 -L       cache    /dev/${1}5
-mkfs.vfat -F 32 -n recovery /dev/${1}6
+mkfs.vfat -F 32 -n kernel   ${USB_DEV_DIR}1 || { exit_msg "kernel mkfs failed";   exit; }
+mkfs.ext4 -L       rootfs   ${USB_DEV_DIR}2 || { exit_msg "rootfs mkfs failed";   exit; }
+mkfs.ext4 -L       system   ${USB_DEV_DIR}3 || { exit_msg "system mkfs failed";   exit; }
+mkfs.ext4 -L       data     ${USB_DEV_DIR}4 || { exit_msg "data mkfs failed";     exit; }
+mkfs.ext4 -L       cache    ${USB_DEV_DIR}5 || { exit_msg "cache mkfs failed";    exit; }
+mkfs.vfat -F 32 -n recovery ${USB_DEV_DIR}6 || { exit_msg "recovery mkfs failed"; exit; }
 
-# The old contents will still exist even though we re-created
-# the partition table. Wipe the partitions that will not get
-# overwritten by the Android image later.
-dd if=/dev/zero of=/dev/${1}7 bs=$bs count=$hwcfg_size
+# It is important to check if the partition exists, because "dd"
+# will create a file there if it does not, and create a persistent
+# problem for the user.
+if [ -e ${USB_DEV_DIR}7 ]
+then
+  # The old contents will still exist even though we re-created
+  # the partition table. Wipe the partitions that will not get
+  # overwritten by the Android image later.
+  dd if=/dev/zero of=${USB_DEV_DIR}7 bs=$bs count=$hwcfg_size
 
-# Instantiate the hwcfg partition for those that will not
-# be using it, otherwise it will fail to mount and also
-# cause the internal memory (emulated SD card) to not mount.
-mkdir cramfstmp
-mkfs.cramfs -n hwcfg cramfstmp /dev/${1}7
-rmdir cramfstmp
+  # Instantiate the hwcfg partition for those that will not
+  # be using it, otherwise it will fail to mount and also
+  # cause the internal memory (emulated SD card) to not mount.
+  mkdir cramfstmp
+  mkfs.cramfs -n hwcfg cramfstmp ${USB_DEV_DIR}7
+  rmdir cramfstmp
+else
+  { exit_msg "hwcfg mkfs failed"; exit; }
+fi
 
-gdisk -l /dev/$1
-
+gdisk -l $USB_DEV_DIR

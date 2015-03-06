@@ -25,6 +25,26 @@ then
   exit
 fi
 
+red='\033[0;31m'
+no_colour='\033[0m' # No Color
+
+function exit_msg {
+  if [ $# -ne 0 ]
+  then
+    echo -e "${red}!!!!!!!!!!!!!!!!!!!!!!! $1 !!!!!!!!!!!!!!!!!!!!!!!${no_colour}"
+  fi
+}
+
+USB_DEV_DIR=/dev/$1
+umount ${USB_DEV_DIR}1 &> /dev/null
+umount ${USB_DEV_DIR}2 &> /dev/null
+umount ${USB_DEV_DIR}3 &> /dev/null
+umount ${USB_DEV_DIR}4 &> /dev/null
+umount ${USB_DEV_DIR}5 &> /dev/null
+umount ${USB_DEV_DIR}6 &> /dev/null
+umount ${USB_DEV_DIR}7 &> /dev/null
+umount ${USB_DEV_DIR}8 &> /dev/null
+
 HWCFG_IMG=hwcfg.img
 
 if [ $2 ]
@@ -32,4 +52,12 @@ then
   HWCFG_IMG=$2
 fi
 
-dd if=$HWCFG_IMG of=/dev/${1}7
+# It is important to check if the partition exists, because "dd"
+# will create a file there if it does not, and create a persistent
+# problem for the user.
+if [ -e ${USB_DEV_DIR}7 ]
+then
+  dd if=$HWCFG_IMG of=${USB_DEV_DIR}7
+else
+  { exit_msg "hwcfg partition ${USB_DEV_DIR}7 does not exist"; exit; }
+fi
