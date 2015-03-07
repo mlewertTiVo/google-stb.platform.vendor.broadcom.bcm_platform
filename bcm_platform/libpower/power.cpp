@@ -51,7 +51,7 @@ static const char *PROPERTY_PM_MEMC1OFF             = "ro.pm.memc1off";
 
 // Property defaults
 static const char *DEFAULT_PROPERTY_PM_DOZESTATE    = "S1";
-static const char *DEFAULT_PROPERTY_PM_OFFSTATE     = "S5";
+static const char *DEFAULT_PROPERTY_PM_OFFSTATE     = "S2";
 static const char *DEFAULT_PROPERTY_PM_USBOFF       = "1";
 static const char *DEFAULT_PROPERTY_PM_ETHOFF       = "1";
 static const char *DEFAULT_PROPERTY_PM_MOCAOFF      = "1";
