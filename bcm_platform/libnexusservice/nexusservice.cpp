@@ -1306,110 +1306,6 @@ void NexusService::setClientComposition(NexusClientContext * client __unused, NE
     return;
 }
 
-void NexusService::getVideoWindowSettings(NexusClientContext * client __unused, uint32_t window_id, b_video_window_settings *settings)
-{
-    NEXUS_VideoWindowSettings nSettings;
-
-    if (window_id >= MAX_VIDEO_WINDOWS_PER_DISPLAY) {
-        LOGE("%s: window_id(%d) cannot be >= %d!", __PRETTY_FUNCTION__, window_id, MAX_VIDEO_WINDOWS_PER_DISPLAY);
-        return;
-    }
-
-    // Always return settings for primary display (HD_DISPLAY) as client code works only on HD_DISPLAY
-    if (displayState[HD_DISPLAY].video_window[window_id]) {
-        NEXUS_DisplaySettings disp_settings;
-        NEXUS_VideoFormatInfo fmt_info;
-        
-        /* Get actual display resolution to populate virtual display settings... */
-        NEXUS_Display_GetSettings(displayState[HD_DISPLAY].display, &disp_settings);
-        NEXUS_VideoFormat_GetInfo(disp_settings.format, &fmt_info);
-        settings->virtualDisplay.width  = fmt_info.width;
-        settings->virtualDisplay.height = fmt_info.height;
-
-        NEXUS_VideoWindow_GetSettings(displayState[HD_DISPLAY].video_window[window_id], &nSettings);
-        settings->position      = nSettings.position;
-        settings->clipRect      = nSettings.clipRect;
-        settings->visible       = nSettings.visible;
-        settings->contentMode   = nSettings.contentMode;
-        settings->autoMaster    = nSettings.autoMaster;
-        settings->zorder        = nSettings.zorder;
-    }
-    return;
-}
-
-void NexusService::setVideoWindowSettings(NexusClientContext * client __unused, uint32_t window_id, b_video_window_settings *settings)
-{
-    NEXUS_VideoWindowSettings nSettings;
-
-    if (window_id >= MAX_VIDEO_WINDOWS_PER_DISPLAY) {
-        LOGE("%s: window_id(%d) cannot be >= %d!", __PRETTY_FUNCTION__, window_id, MAX_VIDEO_WINDOWS_PER_DISPLAY);
-        return;
-    }
-
-    for (int display_id = HD_DISPLAY; display_id < MAX_NUM_DISPLAYS; display_id++) {
-        if (displayState[display_id].video_window[window_id]) {
-            NEXUS_VideoWindow_GetSettings(displayState[display_id].video_window[window_id], &nSettings);
-            if (display_id == HD_DISPLAY) {
-                /* NOTE: virtual display settings are ignored. */
-                nSettings.position        = settings->position;
-                nSettings.clipRect        = settings->clipRect;
-                nSettings.visible         = settings->visible;
-                nSettings.contentMode     = settings->contentMode;
-                nSettings.autoMaster      = settings->autoMaster;
-                nSettings.zorder          = settings->zorder;
-            }
-            else {                
-                // User has passed the settings for HD_DISPLAY, so do the necessary HD to SD translation (wherever applicable) before passing it to nexus
-                uint32_t sd_width, sd_height;
-                uint32_t hd_width, hd_height;
-                NEXUS_VideoWindowSettings hd_win_settings;
-
-                /* settings might be set based on the old output format, we should use current output format and window setting */
-                NEXUS_DisplaySettings disp_settings;
-                NEXUS_VideoFormatInfo fmt_info;
-                
-                /* get hd display setting and window settings first */
-                NEXUS_Display_GetSettings(displayState[HD_DISPLAY].display, &disp_settings);
-                NEXUS_VideoWindow_GetSettings(displayState[HD_DISPLAY].video_window[window_id], &hd_win_settings);
-                NEXUS_VideoFormat_GetInfo(disp_settings.format, &fmt_info);
-                hd_width = fmt_info.width;
-                hd_height = fmt_info.height;
-
-                /* then get sd display setting */
-                NEXUS_Display_GetSettings(displayState[display_id].display, &disp_settings);
-                NEXUS_VideoFormat_GetInfo(disp_settings.format, &fmt_info); 
-                sd_width = fmt_info.width;
-                sd_height = fmt_info.height;
-                
-                nSettings.position.x      = (hd_win_settings.position.x * sd_width) / hd_width;
-                nSettings.position.y      = (hd_win_settings.position.y * sd_height) / hd_height;
-                nSettings.position.width  = (hd_win_settings.position.width * sd_width) / hd_width;
-                nSettings.position.height = (hd_win_settings.position.height * sd_height) / hd_height;
-                nSettings.clipRect.x      = (hd_win_settings.clipRect.x * sd_width) / hd_width;
-                nSettings.clipRect.y      = (hd_win_settings.clipRect.y * sd_width) / hd_width;
-                nSettings.clipRect.width  = (hd_win_settings.clipRect.width * sd_width) / hd_width;
-                nSettings.clipRect.height = (hd_win_settings.clipRect.height * sd_width) / hd_width;
-
-                //Below are needed or else aspect ratio changes will not come into effect
-                nSettings.visible       = settings->visible;
-                nSettings.contentMode   = settings->contentMode;
-                nSettings.autoMaster    = settings->autoMaster;
-            }
-
-            LOGV ("position.width %d position.height %d %s %d", nSettings.position.width, nSettings.position.height, __PRETTY_FUNCTION__, __LINE__);
-            if ((nSettings.position.width < 2) || (nSettings.position.height < 1)) {
-              LOGE ("window width %d x height %d is too small", nSettings.position.width, nSettings.position.height);
-              // interlaced content min is 2x2
-              nSettings.position.width = 2;
-              nSettings.position.height = 2;
-            }
-
-            NEXUS_VideoWindow_SetSettings(displayState[display_id].video_window[window_id], &nSettings);            
-        }
-    }//for
-    return;
-}
-
 void NexusService::getDisplaySettings(uint32_t display_id, NEXUS_DisplaySettings *settings)
 {
     if (display_id >= MAX_NUM_DISPLAYS) {
@@ -2417,16 +2313,6 @@ status_t NexusService::onTransact(uint32_t code,
                 break;
             }
             
-            case api_getVideoWindowSettings:
-            {
-                getVideoWindowSettings(cmd.param.getVideoWindowSettings.in.client, cmd.param.getVideoWindowSettings.in.window_id, &cmd.param.getVideoWindowSettings.out.settings);
-                break;
-            }
-            case api_setVideoWindowSettings:
-            {
-                setVideoWindowSettings(cmd.param.setVideoWindowSettings.in.client, cmd.param.setVideoWindowSettings.in.window_id, &cmd.param.setVideoWindowSettings.in.settings);
-                break;
-            }
             case api_getDisplaySettings:
             {
                 getDisplaySettings(cmd.param.getDisplaySettings.in.display_id, &cmd.param.getDisplaySettings.out.settings);

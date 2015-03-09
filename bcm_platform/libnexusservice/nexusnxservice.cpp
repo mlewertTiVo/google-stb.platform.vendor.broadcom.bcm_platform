@@ -856,50 +856,6 @@ void NexusNxService::setClientComposition(NexusClientContext * client, NEXUS_Sur
     return;
 }
 
-void NexusNxService::getVideoWindowSettings(NexusClientContext * client, uint32_t window_id __unused, b_video_window_settings *settings)
-{
-    NEXUS_SurfaceComposition surfaceComposition;
-
-    getClientComposition(client, &surfaceComposition);
-    settings->virtualDisplay = surfaceComposition.virtualDisplay;
-    settings->position       = surfaceComposition.position;
-    settings->clipRect       = surfaceComposition.clipRect;
-    settings->visible        = surfaceComposition.visible;
-    settings->contentMode    = surfaceComposition.contentMode;
-    settings->autoMaster     = true;
-    settings->zorder         = surfaceComposition.zorder;
-    return;
-}
-
-void NexusNxService::setVideoWindowSettings(NexusClientContext * client, uint32_t window_id __unused, b_video_window_settings *settings)
-{
-    NEXUS_SurfaceComposition surfaceComposition;
-
-    getClientComposition(client, &surfaceComposition);
-
-    surfaceComposition.virtualDisplay = settings->virtualDisplay;
-    surfaceComposition.position       = settings->position;
-    surfaceComposition.clipRect       = settings->clipRect;
-    surfaceComposition.visible        = settings->visible;
-    surfaceComposition.contentMode    = settings->contentMode;
-    surfaceComposition.zorder         = settings->zorder;
-
-    LOGD ("%s: position:%dx%d@%d,%d virtual display=%dx%d", __func__,
-            surfaceComposition.position.width, surfaceComposition.position.height,
-            surfaceComposition.position.x, surfaceComposition.position.y, 
-            surfaceComposition.virtualDisplay.width, surfaceComposition.virtualDisplay.height);
-
-    if ((surfaceComposition.position.width < 2) || (surfaceComposition.position.height < 1))
-    {
-      LOGE ("window width %d x height %d is too small", surfaceComposition.position.width, surfaceComposition.position.height);
-      // interlaced content min is 2x2
-      surfaceComposition.position.width = 2;
-      surfaceComposition.position.height = 2;
-    }
-    setClientComposition(client, &surfaceComposition);
-    return;
-}
-
 static const NxClient_VideoWindowType videoWindowTypeConversion[] =
 {
     NxClient_VideoWindowType_eMain, /* full screen capable */

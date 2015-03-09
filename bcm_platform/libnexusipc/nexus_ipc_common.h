@@ -287,8 +287,6 @@ public:
     virtual void getClientInfo(NexusClientContext * client, b_refsw_client_client_info *info) = 0;
     virtual void getClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *composition) = 0;
     virtual void setClientComposition(NexusClientContext * client, NEXUS_SurfaceComposition *composition) = 0;    
-    virtual void getVideoWindowSettings(NexusClientContext * client, uint32_t window_id, b_video_window_settings *settings) = 0;
-    virtual void setVideoWindowSettings(NexusClientContext * client, uint32_t window_id, b_video_window_settings *settings) = 0;
     virtual bool addGraphicsWindow(NexusClientContext * client)=0;
     virtual bool getFrame(NexusClientContext * client, const uint32_t width, const uint32_t height, 
         const uint32_t surfacePhyAddress, const NEXUS_PixelFormat surfaceFormat, const uint32_t decoderId) = 0;

@@ -54,8 +54,6 @@ enum api_name{
     api_getClientInfo,
     api_getClientComposition,
     api_setClientComposition,
-    api_getVideoWindowSettings,
-    api_setVideoWindowSettings,    
     api_getDisplaySettings,
     api_setDisplaySettings,    
     api_addGraphicsWindow,
@@ -151,28 +149,6 @@ typedef union api_param
         struct {
         } out;
     } setClientComposition; 
-
-    struct {
-        struct {
-            NexusClientContext *client;
-            uint32_t window_id;
-        } in;
-
-        struct {
-            b_video_window_settings settings;
-        } out;
-    } getVideoWindowSettings;
-
-    struct {
-        struct {
-            NexusClientContext *client;
-            uint32_t window_id;
-            b_video_window_settings settings;
-        } in;
-
-        struct {
-        } out;
-    } setVideoWindowSettings;
 
     struct {
         struct {
