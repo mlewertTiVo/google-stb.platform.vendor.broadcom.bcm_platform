@@ -867,6 +867,66 @@ int NexusService::platformInitSurfaceCompositor(void)
     return rc;
 }
 
+/* This function reads ro.hd_output_format and ro.sd_output_format properties and
+   return respective enums for hd and sd formats. These HD and SD output formats
+   are the initial configuration with which Android boots up. */
+void NexusService::getInitialOutputFormats(
+        NEXUS_VideoFormat *hd_format, NEXUS_VideoFormat *sd_format)
+{
+    char value[PROPERTY_VALUE_MAX];
+    NEXUS_VideoFormat fmt;
+
+    // HD output format
+    if(property_get("ro.hd_output_format", value, NULL)) 
+    {
+        if (strncmp((char *) value, "1080p",5)==0)
+        {
+            ALOGW("Set output format to e1080p");
+            fmt = NEXUS_VideoFormat_e1080p;
+        }
+        else if(strncmp((char *) value, "3d720p",6)==0)
+        {
+            ALOGW("Set output format to e720p_3DOU_AS...");
+            fmt = NEXUS_VideoFormat_e720p_3DOU_AS;
+        }
+        else
+        {
+            ALOGW("Set output format to e720p");
+            fmt = NEXUS_VideoFormat_e720p;
+        }
+    }
+    else
+    {
+        ALOGW("Set output format to default e720p");
+        fmt = NEXUS_VideoFormat_e720p;
+    }
+
+    if(hd_format) *hd_format = fmt;
+
+    // SD output format
+    if(property_get("ro.sd_output_format", value, NULL))
+    {
+        if (strncmp((char *) value, "PAL",3)==0)
+        {
+            ALOGW("Set SD output format to PAL...");
+            fmt = NEXUS_VideoFormat_ePal;
+        }
+        else
+        {
+            ALOGW("Set SD output format to NTSC");
+            fmt = NEXUS_VideoFormat_eNtsc;
+        }
+    }
+    else
+    {
+        ALOGW("Set SD output format to default Ntsc");
+        fmt = NEXUS_VideoFormat_eNtsc;
+    }
+    if(sd_format) *sd_format = fmt;
+
+    return;
+}
+
 void NexusService::platformInit()
 {
     NEXUS_Error                        rc;
@@ -909,7 +969,7 @@ void NexusService::platformInit()
         simpleEncoder[i] = NULL;
     }
 
-    get_initial_output_formats_from_property(&initial_hd_format, &initial_sd_format);
+    getInitialOutputFormats(&initial_hd_format, &initial_sd_format);
 
     gfx2D = NEXUS_Graphics2D_Open(NEXUS_ANY_ID,NULL);
 
@@ -1215,7 +1275,7 @@ bool NexusService::addGraphicsWindow(NexusClientContext * client)
         NEXUS_VideoFormatInfo fmt_info;
         NEXUS_VideoFormat hd_fmt, sd_fmt;
         
-        get_initial_output_formats_from_property(&hd_fmt, NULL);
+        getInitialOutputFormats(&hd_fmt, NULL);
         NEXUS_VideoFormat_GetInfo(hd_fmt, &fmt_info);
 
         config->resources.screen.position.width = fmt_info.width;

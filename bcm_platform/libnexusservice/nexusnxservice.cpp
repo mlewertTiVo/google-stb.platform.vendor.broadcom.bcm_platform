@@ -767,7 +767,7 @@ bool NexusNxService::addGraphicsWindow(NexusClientContext * client)
         NEXUS_VideoFormatInfo fmt_info;
         NEXUS_VideoFormat hd_fmt, sd_fmt;
 
-        get_initial_output_formats_from_property(&hd_fmt, NULL);
+        getInitialOutputFormats(&hd_fmt, NULL);
         NEXUS_VideoFormat_GetInfo(hd_fmt, &fmt_info);
 
         config->resources.screen.position.width = fmt_info.width;

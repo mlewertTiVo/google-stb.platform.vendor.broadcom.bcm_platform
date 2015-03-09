@@ -216,6 +216,7 @@ protected:
     virtual void platformInit();
     virtual void platformUninit();
     virtual NEXUS_ClientHandle getNexusClient(unsigned pid, const char * name);
+    void getInitialOutputFormats(NEXUS_VideoFormat *hd_format, NEXUS_VideoFormat *sd_format);
 
     NexusServerContext                  *server;
     b_powerState                        powerState;
