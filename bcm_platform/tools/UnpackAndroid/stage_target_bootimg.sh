@@ -219,7 +219,7 @@ if [ $update_cache -gt 0 ]; then
 	else
 		mkdir -p ./boot/cache
 		mount -t ext4 -o loop ./boot/cache.raw.img ./boot/cache
-		cp -a --preserve=context ./boot/cache/* /mnt/cache/
+		cp -a -p ./boot/cache/* /mnt/cache/
 		umount ./boot/cache
 	fi
 fi
