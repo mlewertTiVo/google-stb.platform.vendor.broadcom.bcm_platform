@@ -68,6 +68,7 @@
 #include "nxclient.h"
 #include "nxserverlib.h"
 #include "nexusnxservice.h"
+#include "namevalue.h"
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 #define APP_MAX_CLIENTS 20
@@ -77,8 +78,6 @@
 #define GRAPHICS_RES_HEIGHT_DEFAULT    1080
 #define GRAPHICS_RES_WIDTH_PROP        "ro.graphics_resolution.width"
 #define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
-
-#define DISPLAY_FORMAT_1080P           "1080p"
 
 #define NX_HEAP_GFX                    "ro.nx.heap.gfx"
 #define NX_HEAP_GFX2                   "ro.nx.heap.gfx2"
@@ -167,8 +166,12 @@ static nxserver_t init_nxserver(void)
     settings.fbsize.height = property_get_int32(
         GRAPHICS_RES_HEIGHT_PROP, GRAPHICS_RES_HEIGHT_DEFAULT);
     memset(value, 0, sizeof(value));
-    if (property_get(NX_HD_OUT_FMT, value, NULL)) {
-        if (strncmp((char *) value, DISPLAY_FORMAT_1080P, strlen(DISPLAY_FORMAT_1080P)) != 0) {
+    if (property_get(NX_HD_OUT_FMT, value, "")) {
+        if (strlen(value)) {
+            /* -display_format XX */
+            settings.display.format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
+            ALOGI("%s: display format = %s", __FUNCTION__, lookup_name(
+                g_videoFormatStrs, settings.display.format));
             /* -ignore_edid */
             settings.display.hdmiPreferences.followPreferredFormat = false;
         }

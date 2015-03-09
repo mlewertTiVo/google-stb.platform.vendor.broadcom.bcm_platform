@@ -67,6 +67,11 @@
 #include "nexus_video_decoder_extra.h"
 #include "nexus_base_mmap.h"
 
+extern "C" {
+#include "namevalue.h"
+#include "namevalue.inc"
+}
+
 #include "nexus_ipc_priv.h"
 
 #ifdef LOG_TAG
@@ -879,21 +884,8 @@ void NexusService::getInitialOutputFormats(
     // HD output format
     if(property_get("ro.hd_output_format", value, NULL)) 
     {
-        if (strncmp((char *) value, "1080p",5)==0)
-        {
-            ALOGW("Set output format to e1080p");
-            fmt = NEXUS_VideoFormat_e1080p;
-        }
-        else if(strncmp((char *) value, "3d720p",6)==0)
-        {
-            ALOGW("Set output format to e720p_3DOU_AS...");
-            fmt = NEXUS_VideoFormat_e720p_3DOU_AS;
-        }
-        else
-        {
-            ALOGW("Set output format to e720p");
-            fmt = NEXUS_VideoFormat_e720p;
-        }
+        fmt = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
+        ALOGW("Set output format to %s", lookup_name(g_videoFormatStrs, fmt));
     }
     else
     {
@@ -1019,17 +1011,6 @@ void NexusService::platformInit()
         }
     }
 #endif
-
-    // special handling for 1080p HD display
-    if (property_get("ro.hd_output_format", value, NULL)) {
-        if (strncmp((char *) value, "1080p",5)==0) {
-            LOGW("Set HD output format to 1080p...");
-            NEXUS_DisplaySettings settings;
-            getDisplaySettings(HD_DISPLAY, &settings);
-            settings.format = NEXUS_VideoFormat_e1080p60hz;
-            setDisplaySettings(HD_DISPLAY, &settings);
-        }
-    }
 }
 
 void NexusService::platformUninit()

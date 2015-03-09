@@ -32,6 +32,7 @@ LOCAL_SHARED_LIBRARIES := \
 LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusipc
 LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusir
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
+LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
 
 LOCAL_SRC_FILES := nexusservice.cpp
 LOCAL_SRC_FILES += nexusnxservice.cpp
