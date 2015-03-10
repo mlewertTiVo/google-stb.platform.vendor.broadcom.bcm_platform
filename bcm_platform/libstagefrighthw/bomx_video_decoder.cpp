@@ -66,7 +66,7 @@
 #define B_STREAM_ID 0xe0
 #define B_MAX_FRAMES (8)                // Taken from soft HEVC decoder (worst case)
 #define B_MAX_DECODED_FRAMES (16)
-#define B_FRAME_TIMER_INTERVAL (32)
+#define B_FRAME_TIMER_INTERVAL (16)
 #define B_INPUT_BUFFERS_RETURN_INTERVAL (500)
 
 #define B_MAX_PES_PACKET_LENGTH (65535)     // PES packets have a 16-bit length field.  0 indicates unbounded.
