@@ -872,7 +872,7 @@ int NexusService::platformInitSurfaceCompositor(void)
     return rc;
 }
 
-/* This function reads ro.hd_output_format and ro.sd_output_format properties and
+/* This function reads persist.hd_output_format and persist.sd_output_format properties and
    return respective enums for hd and sd formats. These HD and SD output formats
    are the initial configuration with which Android boots up. */
 void NexusService::getInitialOutputFormats(
@@ -882,7 +882,7 @@ void NexusService::getInitialOutputFormats(
     NEXUS_VideoFormat fmt;
 
     // HD output format
-    if(property_get("ro.hd_output_format", value, NULL)) 
+    if(property_get("persist.hd_output_format", value, NULL))
     {
         fmt = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
         ALOGW("Set output format to %s", lookup_name(g_videoFormatStrs, fmt));
@@ -896,7 +896,7 @@ void NexusService::getInitialOutputFormats(
     if(hd_format) *hd_format = fmt;
 
     // SD output format
-    if(property_get("ro.sd_output_format", value, NULL))
+    if(property_get("persist.sd_output_format", value, NULL))
     {
         if (strncmp((char *) value, "PAL",3)==0)
         {

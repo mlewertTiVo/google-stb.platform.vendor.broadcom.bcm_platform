@@ -82,7 +82,7 @@
 #define NX_HEAP_GFX                    "ro.nx.heap.gfx"
 #define NX_HEAP_GFX2                   "ro.nx.heap.gfx2"
 #define NX_HEAP_VIDEO_SECURE           "ro.nx.heap.video_secure"
-#define NX_HD_OUT_FMT                  "ro.hd_output_format"
+#define NX_HD_OUT_FMT                  "persist.hd_output_format"
 #define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
 #define NX_HDCP2X_KEY                  "ro.nexus.nxserver.hdcp2x_keys"
 
