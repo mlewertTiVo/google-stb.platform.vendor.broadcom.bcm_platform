@@ -191,36 +191,36 @@ fi
 if [ $update_system -gt 0 ]; then
 	echo "copying system partition..."
 	if [ $selinux -gt 0 ]; then
-		dd if=./boot/system.raw.img of=/dev/${partition_root}${partition_system} bs=4M
+		dd if=./unpack_android_boot/system.raw.img of=/dev/${partition_root}${partition_system} bs=4M
 	else
-		mkdir -p ./boot/system
-		mount -t ext4 -o loop ./boot/system.raw.img ./boot/system
-		cp -a -p ./boot/system/* /mnt/system/
-		umount ./boot/system
+		mkdir -p ./unpack_android_boot/system
+		mount -t ext4 -o loop ./unpack_android_boot/system.raw.img ./unpack_android_boot/system
+		cp -a -p ./unpack_android_boot/system/* /mnt/system/
+		umount ./unpack_android_boot/system
 	fi
 fi
 
 if [ $update_data -gt 0 ]; then
 	echo "copying data partition..."
 	if [ $selinux -gt 0 ]; then
-		dd if=./boot/userdata.raw.img of=/dev/${partition_root}${partition_data} bs=4M
+		dd if=./unpack_android_boot/userdata.raw.img of=/dev/${partition_root}${partition_data} bs=4M
 	else
-		mkdir -p ./boot/data
-		mount -t ext4 -o loop ./boot/userdata.raw.img ./boot/data
-		cp -a -p ./boot/data/* /mnt/data/
-		umount ./boot/data
+		mkdir -p ./unpack_android_boot/data
+		mount -t ext4 -o loop ./unpack_android_boot/userdata.raw.img ./unpack_android_boot/data
+		cp -a -p ./unpack_android_boot/data/* /mnt/data/
+		umount ./unpack_android_boot/data
 	fi
 fi
 
 if [ $update_cache -gt 0 ]; then
 	echo "copying cache partition..."
 	if [ $selinux -gt 0 ]; then
-		dd if=./boot/cache.raw.img of=/dev/${partition_root}${partition_cache} bs=4M
+		dd if=./unpack_android_boot/cache.raw.img of=/dev/${partition_root}${partition_cache} bs=4M
 	else
-		mkdir -p ./boot/cache
-		mount -t ext4 -o loop ./boot/cache.raw.img ./boot/cache
-		cp -a -p ./boot/cache/* /mnt/cache/
-		umount ./boot/cache
+		mkdir -p ./unpack_android_boot/cache
+		mount -t ext4 -o loop ./unpack_android_boot/cache.raw.img ./unpack_android_boot/cache
+		cp -a -p ./unpack_android_boot/cache/* /mnt/cache/
+		umount ./unpack_android_boot/cache
 	fi
 fi
 

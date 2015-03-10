@@ -102,11 +102,11 @@ function cleanup {
   rm -rf $data_dir   &> /dev/null
   rm -rf $cache_dir  &> /dev/null
   rm -rf $recovery_dir &> /dev/null
-  umount ./raw_images/system &> /dev/null
-  umount ./raw_images/data   &> /dev/null
-  umount ./raw_images/cache  &> /dev/null
-  rm -rf ./raw_images
-  rm -rf ./boot
+  umount ./unpack_android_raw_images/system &> /dev/null
+  umount ./unpack_android_raw_images/data   &> /dev/null
+  umount ./unpack_android_raw_images/cache  &> /dev/null
+  rm -rf ./unpack_android_raw_images
+  rm -rf ./unpack_android_boot
 }
 
 if [ -z $usb_dev ]; then
@@ -203,42 +203,42 @@ fi
 mkdir -p $recovery_dir
 mount ${usb_dir}5 $recovery_dir || { cleanup "recovery mount failed";  exit; }
 
-mkdir ./raw_images
-./tools/simg2img $image_dir/system.img ./raw_images/system.raw.img
-./tools/simg2img $image_dir/userdata.img ./raw_images/userdata.raw.img
-./tools/simg2img $image_dir/cache.img ./raw_images/cache.raw.img
+mkdir ./unpack_android_raw_images
+./tools/simg2img $image_dir/system.img ./unpack_android_raw_images/system.raw.img
+./tools/simg2img $image_dir/userdata.img ./unpack_android_raw_images/userdata.raw.img
+./tools/simg2img $image_dir/cache.img ./unpack_android_raw_images/cache.raw.img
 
 if [ $selinux -eq 0 ]; then
   echo "Extracting boot.img"
   ./tools/split_boot $image_dir/boot.img
   echo "Copying kernel.img"
-  cp boot/boot.img-kernel $kernel_dir/kernel || { cleanup "kernel copy failed";  exit; }
+  cp unpack_android_boot/boot.img-kernel $kernel_dir/kernel || { cleanup "kernel copy failed";  exit; }
   echo "Copying recovery.img"
   cp $image_dir/recovery.img $recovery_dir || { cleanup "recovery.img copy failed";  exit; }
 
-  mkdir ./raw_images/system
-  mkdir ./raw_images/data
-  mkdir ./raw_images/cache
+  mkdir ./unpack_android_raw_images/system
+  mkdir ./unpack_android_raw_images/data
+  mkdir ./unpack_android_raw_images/cache
 
-  mount -t ext4 -o loop ./raw_images/system.raw.img ./raw_images/system || { cleanup "raw system mount failed";  exit; }
-  mount -t ext4 -o loop ./raw_images/userdata.raw.img ./raw_images/data || { cleanup "raw data mount failed";  exit; }
-  mount -t ext4 -o loop ./raw_images/cache.raw.img ./raw_images/cache || { cleanup "raw cache mount failed";  exit; }
+  mount -t ext4 -o loop ./unpack_android_raw_images/system.raw.img ./unpack_android_raw_images/system || { cleanup "raw system mount failed";  exit; }
+  mount -t ext4 -o loop ./unpack_android_raw_images/userdata.raw.img ./unpack_android_raw_images/data || { cleanup "raw data mount failed";  exit; }
+  mount -t ext4 -o loop ./unpack_android_raw_images/cache.raw.img ./unpack_android_raw_images/cache || { cleanup "raw cache mount failed";  exit; }
 
   echo "Copying rootfs"
-  rsync -av --delete ./boot/ramdisk/ $rootfs_dir
+  rsync -av --delete ./unpack_android_boot/ramdisk/ $rootfs_dir
   echo "Copying system"
-  rsync -av --delete ./raw_images/system/ $system_dir
+  rsync -av --delete ./unpack_android_raw_images/system/ $system_dir
   echo "Copying data"
-  rsync -av --delete ./raw_images/data/ $data_dir
+  rsync -av --delete ./unpack_android_raw_images/data/ $data_dir
   echo "Copying cache"
-  rsync -av --delete ./raw_images/cache/ $cache_dir
+  rsync -av --delete ./unpack_android_raw_images/cache/ $cache_dir
 
   # Cleanup
   echo "Cleaning up"
-  umount ./raw_images/system
-  umount ./raw_images/data
-  umount ./raw_images/cache
-  rm -rf ./boot
+  umount ./unpack_android_raw_images/system
+  umount ./unpack_android_raw_images/data
+  umount ./unpack_android_raw_images/cache
+  rm -rf ./unpack_android_boot
 else
   echo "Copying boot.img"
   cp $image_dir/boot.img $boot_dir || { cleanup "boot.img copy failed";  exit; }
@@ -247,21 +247,21 @@ else
 
   echo "Flashing system.img"
   if [ -e ${usb_dir}3 ]; then
-    dd if=./raw_images/system.raw.img of=${usb_dir}3 bs=4M
+    dd if=./unpack_android_raw_images/system.raw.img of=${usb_dir}3 bs=4M
   else
     { cleanup "system partition does not exist"; exit; }
   fi
 
   echo "Flashing userdata.img"
   if [ -e ${usb_dir}4 ]; then
-    dd if=./raw_images/userdata.raw.img of=${usb_dir}4 bs=4M
+    dd if=./unpack_android_raw_images/userdata.raw.img of=${usb_dir}4 bs=4M
   else
     { cleanup "data partition does not exist"; exit; }
   fi
 
   echo "Flashing cache.img"
   if [ -e ${usb_dir}5 ]; then
-    dd if=./raw_images/cache.raw.img of=${usb_dir}5 bs=4M
+    dd if=./unpack_android_raw_images/cache.raw.img of=${usb_dir}5 bs=4M
   else
     { cleanup "cache partition does not exist"; exit; }
   fi
@@ -270,6 +270,5 @@ else
 fi
 
 # Cleanup
-rm -rf ./raw_images
-cd /
+rm -rf ./unpack_android_raw_images
 cleanup

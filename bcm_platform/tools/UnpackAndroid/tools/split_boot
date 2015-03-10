@@ -93,7 +93,7 @@ my $r_offset = $k_offset + ($n * $PAGE_SIZE);
 my $s_offset = $r_offset + ($m * $PAGE_SIZE);
 
 (my $base = $IMAGE_FN) =~ s/.*\/(.*)$/$1/;
-(my $base2 = $base) =~ s/\.[^.]+$//;
+(my $base2 = "unpack_android_boot");
 
 my $k_file = $base2. "/" . $base . "-kernel";
 my $r_file = $base2. "/" . $base . "-ramdisk.cpio.gz";

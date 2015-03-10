@@ -151,31 +151,31 @@ fi
 
 if [ $update_ramdisk -gt 0 ]; then
 echo "Copying (exploded) rootfs..."
-cp -a ./boot/ramdisk/* /mnt/rootfs/
+cp -a ./unpack_android_boot/ramdisk/* /mnt/rootfs/
 fi
 
 if [ $update_system -gt 0 ]; then
 echo "Copying system partition..."
-mkdir -p ./boot/system
-mount -t ext4 -o loop ./boot/system.raw.img ./boot/system
-cp -a ./boot/system/* /mnt/system/
-umount ./boot/system
+mkdir -p ./unpack_android_boot/system
+mount -t ext4 -o loop ./unpack_android_boot/system.raw.img ./unpack_android_boot/system
+cp -a ./unpack_android_boot/system/* /mnt/system/
+umount ./unpack_android_boot/system
 fi
 
 if [ $update_data -gt 0 ]; then
 echo "Copying data partition..."
-mkdir -p ./boot/data
-mount -t ext4 -o loop ./boot/userdata.raw.img ./boot/data
-cp -a ./boot/data/* /mnt/data/
-umount ./boot/data
+mkdir -p ./unpack_android_boot/data
+mount -t ext4 -o loop ./unpack_android_boot/userdata.raw.img ./unpack_android_boot/data
+cp -a ./unpack_android_boot/data/* /mnt/data/
+umount ./unpack_android_boot/data
 fi
 
 if [ $update_cache -gt 0 ]; then
 echo "Copying cache partition..."
-mkdir -p ./boot/cache
-mount -t ext4 -o loop ./boot/cache.raw.img ./boot/cache
-cp -a ./boot/cache/* /mnt/cache/
-umount ./boot/cache
+mkdir -p ./unpack_android_boot/cache
+mount -t ext4 -o loop ./unpack_android_boot/cache.raw.img ./unpack_android_boot/cache
+cp -a ./unpack_android_boot/cache/* /mnt/cache/
+umount ./unpack_android_boot/cache
 fi
 
 if [ $update_recovery -gt 0 ]; then

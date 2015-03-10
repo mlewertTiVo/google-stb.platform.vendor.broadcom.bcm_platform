@@ -22,15 +22,15 @@ echo "Copying kernel..."
 cp ./kernel /mnt/kernel/
 
 echo "Preparing target's rootfs..."
-mount -t ext4 -o loop ./boot/system.raw.img ./boot/ramdisk/system
-mount -t ext4 -o loop ./boot/userdata.raw.img ./boot/ramdisk/data
+mount -t ext4 -o loop ./unpack_android_boot/system.raw.img ./unpack_android_boot/ramdisk/system
+mount -t ext4 -o loop ./unpack_android_boot/userdata.raw.img ./unpack_android_boot/ramdisk/data
 
 echo "Copying filesystem over..."
-cp -a ./boot/ramdisk/* /mnt/rootfs/
+cp -a ./unpack_android_boot/ramdisk/* /mnt/rootfs/
 
 echo "Cleaning up..."
-umount ./boot/ramdisk/system
-umount ./boot/ramdisk/data
+umount ./unpack_android_boot/ramdisk/system
+umount ./unpack_android_boot/ramdisk/data
 umount /mnt/kernel
 umount /mnt/rootfs
 
