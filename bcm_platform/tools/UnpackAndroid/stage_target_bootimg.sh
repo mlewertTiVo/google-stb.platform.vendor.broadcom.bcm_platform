@@ -166,13 +166,13 @@ if [ $fastboot -gt 0 ]; then
 		./fastboot_tcp -t $fastboot_target flash recovery ./recovery.img
 	fi
 	if [ $update_system -gt 0 ]; then
-		./fastboot_tcp -t $fastboot_target flash system ./system.img
+		./fastboot_tcp -t $fastboot_target flash system ./boot/system.img
 	fi
 	if [ $update_data -gt 0 ]; then
-		./fastboot_tcp -t $fastboot_target flash data ./userdata.img
+		./fastboot_tcp -t $fastboot_target flash data ./boot/userdata.img
 	fi
 	if [ $update_cache -gt 0 ]; then
-		./fastboot_tcp -t $fastboot_target flash cache ./cache.img
+		./fastboot_tcp -t $fastboot_target flash cache ./boot/cache.img
 	fi
 	./fastboot_tcp -t $fastboot_target reboot
 	echo "done!!!"

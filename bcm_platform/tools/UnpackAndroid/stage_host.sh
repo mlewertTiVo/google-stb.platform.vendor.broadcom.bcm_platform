@@ -30,10 +30,13 @@ mv unpack_android_boot/boot.img-kernel kernel
 cp $image_dir/boot.img boot.img
 cp $image_dir/recovery.img recovery.img
 
-echo "3) Unsparse ext4's"
+echo "3) Copying: system images; Unsparse ext4's"
 $tools_dir/tools/simg2img $image_dir/system.img ./unpack_android_boot/system.raw.img
+cp $image_dir/system.img ./unpack_android_boot/system.img
 $tools_dir/tools/simg2img $image_dir/userdata.img ./unpack_android_boot/userdata.raw.img
+cp $image_dir/userdata.img ./unpack_android_boot/userdata.img
 $tools_dir/tools/simg2img $image_dir/cache.img ./unpack_android_boot/cache.raw.img
+cp $image_dir/cache.img ./unpack_android_boot/cache.img
 
 echo "4) Copying stage_target* scripts, and tools."
 cp $tools_dir/stage_target.sh $staging_dir
