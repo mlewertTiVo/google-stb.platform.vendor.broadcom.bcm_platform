@@ -1283,31 +1283,62 @@ bool hwc_compose_gralloc_buffer(
 
         if ( NULL != client->active_surface ) {
             NEXUS_Graphics2DBlitSettings blitSettings;
+            int adj;
             NEXUS_Graphics2D_GetDefaultBlitSettings(&blitSettings);
 
-            // TODO: May need handling for offsecreen clipping
             blitSettings.source.surface = client->active_surface;
             blitSettings.source.rect = client->composition.clipRect;
             blitSettings.dest.surface = display_surface;
-            blitSettings.dest.rect = client->composition.position;
             blitSettings.output.surface = display_surface;
             blitSettings.output.rect = client->composition.position;
             blitSettings.colorOp = NEXUS_BlitColorOp_eUseBlendEquation;
             blitSettings.alphaOp = NEXUS_BlitAlphaOp_eUseBlendEquation;
             blitSettings.colorBlend = client->composition.colorBlend;
             blitSettings.alphaBlend = client->composition.alphaBlend;
-            rc = NEXUS_Graphics2D_Blit(ctx->hwc_2dg, &blitSettings);
-            if (rc == NEXUS_GRAPHICS2D_QUEUE_FULL) {
-                rc = hwc_checkpoint(ctx);
-                if (rc)  {
-                    ALOGW("Checkpoint timeout composing layer %u", __FUNCTION__, layer_id);
-                }
-                rc = NEXUS_Graphics2D_Blit(ctx->hwc_2dg, &blitSettings);
+
+            // Handle overscan adjustments that may cause out-of-bounds rectangles
+            if ( blitSettings.output.rect.x < 0 ) {
+                adj = -blitSettings.output.rect.x;
+                blitSettings.output.rect.x = 0;
+                blitSettings.output.rect.width = (adj <= blitSettings.output.rect.width) ? blitSettings.output.rect.width - adj : 0;
+                blitSettings.source.rect.x += adj;
+                blitSettings.source.rect.width = (adj <= blitSettings.source.rect.width) ? blitSettings.source.rect.width - adj : 0;
             }
-            if (rc) {
-                ALOGE("%s: Unable to blit layer %u", __FUNCTION__, layer_id);
-            } else {
-                composed = true;
+            if ( blitSettings.output.rect.y < 0 ) {
+                adj = -blitSettings.output.rect.y;
+                blitSettings.output.rect.y = 0;
+                blitSettings.output.rect.height = (adj <= blitSettings.output.rect.height) ? blitSettings.output.rect.height - adj : 0;
+                blitSettings.source.rect.y += adj;
+                blitSettings.source.rect.height = (adj <= blitSettings.source.rect.height) ? blitSettings.source.rect.height - adj : 0;
+            }
+            if ( blitSettings.output.rect.x + (int)blitSettings.output.rect.width > (int)pSharedData->planes[plane_select].width ) {
+                adj = (blitSettings.output.rect.x + blitSettings.output.rect.width) - pSharedData->planes[plane_select].width;
+                blitSettings.output.rect.width = (adj <= blitSettings.output.rect.width) ? blitSettings.output.rect.width - adj : 0;
+                blitSettings.source.rect.width = (adj <= blitSettings.source.rect.width) ? blitSettings.source.rect.width - adj : 0;
+            }
+            if ( blitSettings.output.rect.y + (int)blitSettings.output.rect.height > (int)pSharedData->planes[plane_select].height ) {
+                adj = (blitSettings.output.rect.y + blitSettings.output.rect.height) - pSharedData->planes[plane_select].height;
+                blitSettings.output.rect.height = (adj <= blitSettings.output.rect.height) ? blitSettings.output.rect.height - adj : 0;
+                blitSettings.source.rect.height = (adj <= blitSettings.source.rect.height) ? blitSettings.source.rect.height - adj : 0;
+            }
+
+            if ( blitSettings.output.rect.width > 0 && blitSettings.output.rect.height > 0 &&
+                 blitSettings.source.rect.width > 0 && blitSettings.source.rect.height  > 0 ) {
+
+                blitSettings.dest.rect = blitSettings.output.rect;
+                rc = NEXUS_Graphics2D_Blit(ctx->hwc_2dg, &blitSettings);
+                if (rc == NEXUS_GRAPHICS2D_QUEUE_FULL) {
+                    rc = hwc_checkpoint(ctx);
+                    if (rc)  {
+                        ALOGW("Checkpoint timeout composing layer %u", __FUNCTION__, layer_id);
+                    }
+                    rc = NEXUS_Graphics2D_Blit(ctx->hwc_2dg, &blitSettings);
+                }
+                if (rc) {
+                    ALOGE("%s: Unable to blit layer %u", __FUNCTION__, layer_id);
+                } else {
+                    composed = true;
+                }
             }
         }
     }
@@ -2338,7 +2369,7 @@ static void * hwc_vsync_task(void *argv)
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)argv;
     const double nsec_to_msec = 1.0 / 1000000.0;
-    int64_t vsync_system_time;
+    int64_t vsync_system_time = VsyncSystemTime();
     unsigned int vsync_hack_count = 0;
     unsigned long long vsync_hack_count_last_tick = 0;
     unsigned long long vsync_hack_count_expected_tick = 0;
