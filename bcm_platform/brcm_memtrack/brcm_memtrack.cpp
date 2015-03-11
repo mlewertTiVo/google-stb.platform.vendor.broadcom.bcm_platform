@@ -110,7 +110,7 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
 
    client = NxClient_Config_LookupClient(pid);
    if (client == NULL) {
-      ALOGE("%s: failed getting nexus client for pid %d", __FUNCTION__, pid);
+      ALOGV("%s: failed getting nexus client for pid %d", __FUNCTION__, pid);
       rc = -EINVAL;
       goto exit_clean;
    }
