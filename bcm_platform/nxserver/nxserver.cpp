@@ -126,6 +126,15 @@ static void client_disconnect(nxclient_t client, const NxClient_JoinSettings *pJ
     }
 }
 
+static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned heapType)
+{
+    unsigned i;
+    for (i=0;i<NEXUS_MAX_HEAPS;i++) {
+        if (pPlatformSettings->heap[i].size && pPlatformSettings->heap[i].heapType & heapType) return i;
+    }
+    return -1;
+}
+
 static nxserver_t init_nxserver(void)
 {
     NEXUS_Error rc;
@@ -136,7 +145,7 @@ static nxserver_t init_nxserver(void)
 
     char value[PROPERTY_VALUE_MAX];
     char value2[PROPERTY_VALUE_MAX];
-    unsigned ix;
+    int ix;
     char nx_key[PROPERTY_VALUE_MAX];
     FILE *key = NULL;
 
@@ -192,13 +201,13 @@ static nxserver_t init_nxserver(void)
 #ifdef USE_MMA
     /* -growHeapBlockSize 32m -heap gfx,128m */
     settings.growHeapBlockSize = 32 * MB;
-    ix = memConfigSettings.memoryLayout.heapIndex.graphics[0];
-    if (ix != (unsigned)-1) {
+    ix = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
+    if (ix != -1) {
        platformSettings.heap[ix].size = 256 * MB;
     }
 #endif
     if (settings.growHeapBlockSize) {
-       unsigned index = memConfigSettings.memoryLayout.heapIndex.graphics[0];
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
        if (index >= NEXUS_MAX_HEAPS) {
            ALOGE("growHeapBlockSize: requires platform implement NEXUS_PLATFORM_P_GET_FRAMEBUFFER_HEAP_INDEX");
            return NULL;
@@ -215,15 +224,15 @@ static nxserver_t init_nxserver(void)
        }
     }
     if (property_get(NX_HEAP_GFX, value, NULL)) {
-       unsigned index = memConfigSettings.memoryLayout.heapIndex.graphics[0];
-       if (strlen(value) && (index != (unsigned)-1)) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
+       if (strlen(value) && (index != -1)) {
           /* -heap gfx,XXm */
           platformSettings.heap[index].size = strtol(value, NULL, 10) * MB;
        }
     }
     if (property_get(NX_HEAP_GFX2, value, NULL)) {
-       unsigned index = memConfigSettings.memoryLayout.heapIndex.graphics[1];
-       if (strlen(value) && (index != (unsigned)-1)) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_SECONDARY_GRAPHICS);
+       if (strlen(value) && (index != -1)) {
           /* -heap gfx2,XXm */
           platformSettings.heap[index].size = strtol(value, NULL, 10) * MB;
        }
