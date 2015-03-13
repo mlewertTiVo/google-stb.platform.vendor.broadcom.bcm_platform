@@ -117,14 +117,14 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
 
    if (!*num_records) {
        *num_records = MEMTRACK_HAL_NUM_RECORDS_MAX;
-       ALOGD("%s: querying record size: %d.", __FUNCTION__, MEMTRACK_HAL_NUM_RECORDS_MAX);
+       ALOGV("%s: querying record size: %d.", __FUNCTION__, MEMTRACK_HAL_NUM_RECORDS_MAX);
        goto exit_clean;
    }
 
    switch(type) {
        case MEMTRACK_TYPE_GRAPHICS:
        {
-           ALOGD("%s: pid %d, queries NEXUS_Surface.", __FUNCTION__, pid);
+           ALOGV("%s: pid %d, queries NEXUS_Surface.", __FUNCTION__, pid);
            strcpy(interfaceName.name, "NEXUS_Surface");
            num = MEMTRACK_HAL_NUM_NX_OBJS;
            do {
@@ -158,7 +158,7 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
               BKNI_Free(objects);
               objects = NULL;
            }
-           ALOGD("%s: pid %d, queries NEXUS_MemoryBlock.", __FUNCTION__, pid);
+           ALOGV("%s: pid %d, queries NEXUS_MemoryBlock.", __FUNCTION__, pid);
            strcpy(interfaceName.name, "NEXUS_MemoryBlock");
            num = MEMTRACK_HAL_NUM_NX_OBJS;
            do {
@@ -190,7 +190,7 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
               BKNI_Free(objects);
               objects = NULL;
            }
-           ALOGD("%s: pid %d, reports %d bytes of gpx.", __FUNCTION__, pid, total);
+           ALOGI("%s: pid %d, reports %d bytes of gpx.", __FUNCTION__, pid, total);
        }
        break;
 
