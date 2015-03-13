@@ -273,10 +273,10 @@ static nxserver_t init_nxserver(void)
        platformSettings.heap[NEXUS_MAX_HEAPS-2].memoryType = NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED;
     }
     if (property_get(NX_HEAP_VIDEO_SECURE, value, NULL)) {
-       /* TODO: once nexus fixes this, use lookup type: NEXUS_HEAP_TYPE_COMPRESSED_RESTRICTED_REGION */
-       if (strlen(value)) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_COMPRESSED_RESTRICTED_REGION);
+       if (strlen(value) && (index != -1)) {
           /* -heap video_secure,XXm */
-          platformSettings.heap[NEXUS_VIDEO_SECURE_HEAP].size = calc_heap_size(value);
+          platformSettings.heap[index].size = calc_heap_size(value);
        }
     }
     if (property_get(NX_HEAP_MAIN, value, NULL)) {
@@ -358,7 +358,7 @@ static nxserver_t init_nxserver(void)
 
     BKNI_CreateMutex(&g_app.lock);
     settings.lock = g_app.lock;
-    nxserver_set_client_heaps(&settings, &memConfigSettings);
+    nxserver_set_client_heaps(&settings, &platformSettings);
     settings.client.connect = client_connect;
     settings.client.disconnect = client_disconnect;
     settings.memConfigSettings = memConfigSettings;
