@@ -73,18 +73,24 @@
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 #define APP_MAX_CLIENTS 20
 #define MB (1024*1024)
+#define KB (1024)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     1920
 #define GRAPHICS_RES_HEIGHT_DEFAULT    1080
 #define GRAPHICS_RES_WIDTH_PROP        "ro.graphics_resolution.width"
 #define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
 
+#define NX_HEAP_MAIN                   "ro.nx.heap.main"
 #define NX_HEAP_GFX                    "ro.nx.heap.gfx"
 #define NX_HEAP_GFX2                   "ro.nx.heap.gfx2"
 #define NX_HEAP_VIDEO_SECURE           "ro.nx.heap.video_secure"
 #define NX_HD_OUT_FMT                  "persist.hd_output_format"
 #define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
 #define NX_HDCP2X_KEY                  "ro.nexus.nxserver.hdcp2x_keys"
+
+#define NX_TRIM_VP9                    "ro.nx.trim.vp9"
+#define NX_TRIM_PIP                    "ro.nx.trim.pip"
+#define NX_TRIM_MOSAIC                 "ro.nx.trim.mosaic"
 
 static struct {
     BKNI_MutexHandle lock;
@@ -133,6 +139,55 @@ static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, uns
         if (pPlatformSettings->heap[i].size && pPlatformSettings->heap[i].heapType & heapType) return i;
     }
     return -1;
+}
+
+static unsigned calc_heap_size(const char *value)
+{
+   if (strchr(value, 'M') || strchr(value, 'm')) {
+     return atof(value)*MB;
+   } else if (strchr(value, 'K') || strchr(value, 'k')) {
+     return atof(value)*KB;
+   } else {
+     return strtoul(value, NULL, 0);
+   }
+}
+
+static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
+{
+   int i;
+   char value[PROPERTY_VALUE_MAX];
+
+   /* no SD display - this is hardcoded knowledge. */
+   pMemConfigSettings->display[1].window[0].used = false;
+   pMemConfigSettings->display[1].window[1].used = false;
+
+   /* need vp9? */
+   if (property_get(NX_TRIM_VP9, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         for (i = 0 ; i < NEXUS_NUM_VIDEO_DECODERS ; i++) {
+            pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
+         }
+         pMemConfigSettings->stillDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
+      }
+   }
+
+   /* need mosaic? */
+   if (property_get(NX_TRIM_MOSAIC, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         pMemConfigSettings->videoDecoder[0].mosaic.maxNumber = 0;
+         pMemConfigSettings->videoDecoder[0].mosaic.maxHeight = 0;
+         pMemConfigSettings->videoDecoder[0].mosaic.maxWidth = 0;
+
+      }
+   }
+
+   /* need pip? */
+   if (property_get(NX_TRIM_PIP, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         pMemConfigSettings->videoDecoder[1].used = false;
+         pMemConfigSettings->display[0].window[1].used = false;
+      }
+   }
 }
 
 static nxserver_t init_nxserver(void)
@@ -218,23 +273,31 @@ static nxserver_t init_nxserver(void)
        platformSettings.heap[NEXUS_MAX_HEAPS-2].memoryType = NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED;
     }
     if (property_get(NX_HEAP_VIDEO_SECURE, value, NULL)) {
+       /* TODO: once nexus fixes this, use lookup type: NEXUS_HEAP_TYPE_COMPRESSED_RESTRICTED_REGION */
        if (strlen(value)) {
           /* -heap video_secure,XXm */
-          platformSettings.heap[NEXUS_VIDEO_SECURE_HEAP].size = strtol(value, NULL, 10) * MB;
+          platformSettings.heap[NEXUS_VIDEO_SECURE_HEAP].size = calc_heap_size(value);
+       }
+    }
+    if (property_get(NX_HEAP_MAIN, value, NULL)) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_MAIN);
+       if (strlen(value) && (index != -1)) {
+          /* -heap main,XXm */
+          platformSettings.heap[index].size = calc_heap_size(value);
        }
     }
     if (property_get(NX_HEAP_GFX, value, NULL)) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
        if (strlen(value) && (index != -1)) {
           /* -heap gfx,XXm */
-          platformSettings.heap[index].size = strtol(value, NULL, 10) * MB;
+          platformSettings.heap[index].size = calc_heap_size(value);
        }
     }
     if (property_get(NX_HEAP_GFX2, value, NULL)) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_SECONDARY_GRAPHICS);
        if (strlen(value) && (index != -1)) {
           /* -heap gfx2,XXm */
-          platformSettings.heap[index].size = strtol(value, NULL, 10) * MB;
+          platformSettings.heap[index].size = calc_heap_size(value);
        }
     }
 
@@ -278,6 +341,14 @@ static nxserver_t init_nxserver(void)
        ALOGE("FATAL: failed nxserver_modify_platform_settings");
        return NULL;
     }
+
+    /* now, just before applying the configuration, try to reduce the memory footprint
+     * allocated by nexus for the platform needs.
+     *
+     * savings are essentially made through feature disablement. thus you have to be careful
+     * and aware of the feature targetted for the platform.
+     */
+    trim_mem_config(&memConfigSettings);
 
     rc = NEXUS_Platform_MemConfigInit(&platformSettings, &memConfigSettings);
     if (rc) {
