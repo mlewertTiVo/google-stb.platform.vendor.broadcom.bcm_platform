@@ -413,7 +413,9 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
 
 static void getBufferDataFromFormat(int w, int h, int bpp, int format, int *pStride, int *size, int *extra_size)
 {
-   int align = 16;
+   int align = 1;
+   if (dyn_BEGLint_BufferGetRequirements)   /* Only true for VC4 */
+      align = 16;
 
    switch (format) {
       case HAL_PIXEL_FORMAT_RGBA_8888:
