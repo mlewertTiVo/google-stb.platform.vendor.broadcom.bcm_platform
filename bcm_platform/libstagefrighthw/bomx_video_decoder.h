@@ -225,7 +225,6 @@ public:
     void PlaypumpEvent();
     void PlaypumpTimer();
     void OutputFrameEvent();
-    void OutputFrameTimer();
 
     void DisplayFrame(unsigned serialNumber);
     void SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned serialNumber, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible);
@@ -251,7 +250,6 @@ protected:
     B_SchedulerTimerId m_playpumpTimerId;
     B_EventHandle m_hOutputFrameEvent;
     B_SchedulerEventId m_outputFrameEventId;
-    B_SchedulerTimerId m_outputFrameTimerId;
     B_SchedulerTimerId m_inputBuffersTimerId;
     B_EventHandle m_hCheckpointEvent;
     NEXUS_Graphics2DHandle m_hGraphics2d;

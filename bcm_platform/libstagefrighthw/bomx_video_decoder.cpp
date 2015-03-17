@@ -66,7 +66,7 @@
 #define B_STREAM_ID 0xe0
 #define B_MAX_FRAMES (8)                // Taken from soft HEVC decoder (worst case)
 #define B_MAX_DECODED_FRAMES (16)
-#define B_FRAME_TIMER_INTERVAL (16)
+#define B_FRAME_TIMER_INTERVAL (32)
 #define B_INPUT_BUFFERS_RETURN_INTERVAL (500)
 
 #define B_MAX_PES_PACKET_LENGTH (65535)     // PES packets have a 16-bit length field.  0 indicates unbounded.
@@ -103,6 +103,14 @@ static int g_roleCodec[] = {OMX_VIDEO_CodingMPEG2, OMX_VIDEO_CodingH263, OMX_VID
 
 #include <stdio.h>
 static FILE *g_pDebugFile;
+
+enum BOMX_VideoDecoderEventType
+{
+    BOMX_VideoDecoderEventType_ePlaypump=0,
+    BOMX_VideoDecoderEventType_eDataReady,
+    BOMX_VideoDecoderEventType_eCheckpoint,
+    BOMX_VideoDecoderEventType_eMax
+};
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(
     OMX_COMPONENTTYPE *pComponentTpe,
@@ -147,16 +155,6 @@ extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex)
     }
 }
 
-static void BOMX_VideoDecoder_PlaypumpDataCallback(void *pParam, int param)
-{
-    B_EventHandle hEvent;
-    BSTD_UNUSED(param);
-    hEvent = static_cast <B_EventHandle> (pParam);
-    BOMX_ASSERT(NULL != hEvent);
-    B_Event_Set(hEvent);
-    BOMX_INPUT_MSG(("PlaypumpDataCallback"));
-}
-
 static void BOMX_VideoDecoder_PlaypumpEvent(void *pParam)
 {
     BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
@@ -166,14 +164,28 @@ static void BOMX_VideoDecoder_PlaypumpEvent(void *pParam)
     pDecoder->PlaypumpEvent();
 }
 
-static void BOMX_VideoDecoder_SourceChangedCallback(void *pParam, int param)
+static void BOMX_VideoDecoder_EventCallback(void *pParam, int param)
 {
     B_EventHandle hEvent;
-    BSTD_UNUSED(param);
+
+    static const char *pEventMsg[BOMX_VideoDecoderEventType_eMax] = {
+        "Playpump",
+        "Data Ready",
+        "Checkpoint"
+    };
+
     hEvent = static_cast <B_EventHandle> (pParam);
+    if ( param < BOMX_VideoDecoderEventType_eMax )
+    {
+        BOMX_MSG(("EventCallback - %s", pEventMsg[param]));
+    }
+    else
+    {
+        BOMX_WRN(("Unkonwn EventCallbackType %d", param));
+    }
+
     BOMX_ASSERT(NULL != hEvent);
     B_Event_Set(hEvent);
-    BOMX_MSG(("SourceChangedCallback"));
 }
 
 static void BOMX_VideoDecoder_OutputFrameEvent(void *pParam)
@@ -185,30 +197,11 @@ static void BOMX_VideoDecoder_OutputFrameEvent(void *pParam)
     pDecoder->OutputFrameEvent();
 }
 
-static void BOMX_VideoDecoder_OutputFrameTimer(void *pParam)
-{
-    BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
-
-    BOMX_MSG(("OutputFrameTimer"));
-
-    pDecoder->OutputFrameTimer();
-}
-
 static void BOMX_VideoDecoder_InputBuffersTimer(void *pParam)
 {
     BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
     BOMX_MSG(("%s", __FUNCTION__));
     pDecoder->InputBufferTimeoutCallback();
-}
-
-static void BOMX_VideoDecoder_CheckpointComplete(void *pParam, int unused)
-{
-    B_EventHandle hEvent = static_cast<B_EventHandle>(pParam);
-    BSTD_UNUSED(unused);
-
-    BOMX_MSG(("Checkpoint Event"));
-
-    B_Event_Set(hEvent);
 }
 
 static OMX_ERRORTYPE BOMX_VideoDecoder_InitMimeType(OMX_VIDEO_CODINGTYPE eCompressionFormat, char *pMimeType)
@@ -496,7 +489,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_playpumpTimerId(NULL),
     m_hOutputFrameEvent(NULL),
     m_outputFrameEventId(NULL),
-    m_outputFrameTimerId(NULL),
     m_inputBuffersTimerId(NULL),
     m_hCheckpointEvent(NULL),
     m_hGraphics2d(NULL),
@@ -791,8 +783,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     {
         NEXUS_Graphics2DSettings gfxSettings;
         NEXUS_Graphics2D_GetSettings(m_hGraphics2d, &gfxSettings);
-        gfxSettings.checkpointCallback.callback = BOMX_VideoDecoder_CheckpointComplete;
+        gfxSettings.checkpointCallback.callback = BOMX_VideoDecoder_EventCallback;
         gfxSettings.checkpointCallback.context = static_cast<void *>(m_hCheckpointEvent);
+        gfxSettings.checkpointCallback.param = (int)BOMX_VideoDecoderEventType_eCheckpoint;
         gfxSettings.pollingCheckpoint = false;
         errCode = NEXUS_Graphics2D_SetSettings(m_hGraphics2d, &gfxSettings);
         if ( errCode )
@@ -896,10 +889,6 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     if ( m_outputFrameEventId )
     {
         UnregisterEvent(m_outputFrameEventId);
-    }
-    if ( m_outputFrameTimerId )
-    {
-        CancelTimer(m_outputFrameTimerId);
     }
     if ( m_inputBuffersTimerId )
     {
@@ -1562,8 +1551,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
     // Loaded means stop and release all resources
     if ( newState == OMX_StateLoaded )
     {
-        // Decoder is shutting down, don't poll for more frames
-        CancelTimerId(m_outputFrameTimerId);
         // Invalidate queue of decoded frames
         InvalidateDecodedFrames();
         // Shutdown and free resources
@@ -1603,6 +1590,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
         if ( NULL == m_hSimpleVideoDecoder )
         {
             NEXUS_VideoDecoderSettings vdecSettings;
+            NEXUS_VideoDecoderExtendedSettings extSettings;
             NEXUS_PlaypumpOpenSettings playpumpOpenSettings;
             NEXUS_PlaypumpSettings playpumpSettings;
             NEXUS_Error errCode;
@@ -1611,6 +1599,18 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             if ( NULL == m_hSimpleVideoDecoder )
             {
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
+            }
+
+            NEXUS_SimpleVideoDecoder_GetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
+            extSettings.dataReadyCallback.callback = BOMX_VideoDecoder_EventCallback;
+            extSettings.dataReadyCallback.context = (void *)m_hOutputFrameEvent;
+            extSettings.dataReadyCallback.param = (int)BOMX_VideoDecoderEventType_eDataReady;
+            errCode = NEXUS_SimpleVideoDecoder_SetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
+            if ( errCode )
+            {
+                NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
+                m_hSimpleVideoDecoder = NULL;
+                return BOMX_BERR_TRACE(errCode);
             }
 
             NEXUS_Playpump_GetDefaultOpenSettings(&playpumpOpenSettings);
@@ -1627,8 +1627,9 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             NEXUS_Playpump_GetSettings(m_hPlaypump, &playpumpSettings);
             playpumpSettings.transportType = NEXUS_TransportType_eMpeg2Pes;
             playpumpSettings.dataNotCpuAccessible = true;
-            playpumpSettings.dataCallback.callback = BOMX_VideoDecoder_PlaypumpDataCallback;
+            playpumpSettings.dataCallback.callback = BOMX_VideoDecoder_EventCallback;
             playpumpSettings.dataCallback.context = static_cast <void *> (m_hPlaypumpEvent);
+            playpumpSettings.dataCallback.param = (int)BOMX_VideoDecoderEventType_ePlaypump;
             errCode = NEXUS_Playpump_SetSettings(m_hPlaypump, &playpumpSettings);
             if ( errCode )
             {
@@ -1670,7 +1671,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             if ( vdecStatus.started )
             {
                 // Executing/Paused -> Idle = Stop
-                CancelTimerId(m_outputFrameTimerId);
+
                 // Invalidate queue of decoded frames
                 InvalidateDecodedFrames();
                 NEXUS_Playpump_Stop(m_hPlaypump);
@@ -1770,7 +1771,6 @@ NEXUS_Error BOMX_VideoDecoder::SetOutputPortState(OMX_STATETYPE newState)
     ALOGV("Setting Output Port State to %s", BOMX_StateName(newState));
     if ( newState == OMX_StateLoaded )
     {
-        CancelTimerId(m_outputFrameTimerId);
         CancelTimerId(m_inputBuffersTimerId);
 
         // Update output port format on a port re-enable.
@@ -3558,17 +3558,7 @@ void BOMX_VideoDecoder::SourceChangedEvent()
 
 void BOMX_VideoDecoder::OutputFrameEvent()
 {
-    // Cancel pending timer
-    CancelTimerId(m_outputFrameTimerId);
-    // Check for new frames - will arm timer if required
-    PollDecodedFrames();
-}
-
-void BOMX_VideoDecoder::OutputFrameTimer()
-{
-    // Invalidate timer id
-    m_outputFrameTimerId = NULL;
-    // Check for new frames - will arm timer if required
+    // Check for new frames
     PollDecodedFrames();
 }
 
@@ -4068,24 +4058,6 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             {
                 break;
             }
-        }
-    }
-
-    // If there are still buffers ready for data, set a timer to check again later
-    if ( m_pVideoPorts[1]->QueueDepth() > 0 && !m_eosDelivered )
-    {
-        BOMX_MSG(("%u output buffers pending, restart timer", m_pVideoPorts[1]->QueueDepth()));
-        m_outputFrameTimerId = StartTimer(B_FRAME_TIMER_INTERVAL, BOMX_VideoDecoder_OutputFrameTimer, static_cast<void *>(this));
-    }
-    else
-    {
-        if ( m_eosDelivered )
-        {
-            BOMX_MSG(("EOS already delivered.  Not checking for more frames."));
-        }
-        else
-        {
-            BOMX_MSG(("No buffers queued at output port.  Ignore timer."));
         }
     }
 }
@@ -4657,7 +4629,7 @@ void BOMX_VideoDecoder::ClosePidChannel()
     if ( m_hPidChannel )
     {
         BOMX_ASSERT(NULL != m_hPlaypump);
-        
+
         NEXUS_Playpump_ClosePidChannel(m_hPlaypump, m_hPidChannel);
         m_hPidChannel = NULL;
     }
