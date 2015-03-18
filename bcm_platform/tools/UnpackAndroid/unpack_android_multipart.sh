@@ -7,6 +7,7 @@ fi
 
 function usage {
   echo "Usage: sudo ./unpack_android_multipart.sh [-S] [-i <image_dir>] [-b <boot_dir>] [-r <rootfs_dir>] [-k <kernel_dir>] [-s <system_dir>] [-d <data_dir>] [-c <cache_dir>] [-z <recovery_dir>] -p sd<b-z>"
+  echo "  '-S': Enable SELinux"
   echo "  '-i': Image directory containing boot.img, system.img and userdata.img."
   echo "        Ex. out/target/product/bcm_platform"
   echo "  '-b': boot.img output directory. Ex. /media/kernel)"
@@ -15,7 +16,7 @@ function usage {
   echo "  '-s': system.img output directory (ex. /media/system)"
   echo "  '-d': userdata.img output directory (ex. /media/data)"
   echo "  '-c': cache.img output directory (ex. /media/cache)"
-  echo "  '-r': recovery.img output directory (ex. /media/recovery)"
+  echo "  '-z': recovery.img output directory (ex. /media/recovery)"
   echo "  '-p': sd<b-z> corresponding to your usb drive."
   echo "        'a' is not permitted because it is probably your main hard drive,"
   echo "        and this script first deletes existing partitions."
@@ -33,7 +34,7 @@ function usage {
 
 selinux=0
 
-while getopts "hSi:p:b:s:d:c:k:r" tag; do
+while getopts "hSi:p:b:s:d:c:k:r:z:" tag; do
   case $tag in
     S)
       selinux=1
@@ -47,6 +48,9 @@ while getopts "hSi:p:b:s:d:c:k:r" tag; do
     b)
       boot_dir=$OPTARG
       ;;
+    r)
+      rootfs_dir=$OPTARG
+      ;;
     s)
       system_dir=$OPTARG
       ;;
@@ -59,7 +63,7 @@ while getopts "hSi:p:b:s:d:c:k:r" tag; do
     k)
       kernel_dir=$OPTARG
       ;;
-    r)
+    z)
       recovery_dir=$OPTARG
       ;;
     h|*)
