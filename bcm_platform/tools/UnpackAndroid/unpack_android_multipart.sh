@@ -1,35 +1,42 @@
 #!/bin/bash
 
+red='\033[0;31m'
+green='\033[0;32m'
+no_colour='\033[0m'
+
 if [ "$(id -u)" != "0" ]; then
-  echo "Script must be run with sudo."
+  echo -e "${red}Script must be run with sudo.${no_colour}"
   exit
 fi
 
 function usage {
   echo "Usage: sudo ./unpack_android_multipart.sh [-S] [-i <image_dir>] [-b <boot_dir>] [-r <rootfs_dir>] [-k <kernel_dir>] [-s <system_dir>] [-d <data_dir>] [-c <cache_dir>] [-z <recovery_dir>] -p sd<b-z>"
-  echo "  '-S': Enable SELinux"
-  echo "  '-i': Image directory containing boot.img, system.img and userdata.img."
-  echo "        Ex. out/target/product/bcm_platform"
-  echo "  '-b': boot.img output directory. Ex. /media/kernel)"
-  echo "  '-r': rootfs output directory (ex. /media/rootfs)"
-  echo "  '-k': kernel output directory (ex. /media/kernel)"
-  echo "  '-s': system.img output directory (ex. /media/system)"
-  echo "  '-d': userdata.img output directory (ex. /media/data)"
-  echo "  '-c': cache.img output directory (ex. /media/cache)"
-  echo "  '-z': recovery.img output directory (ex. /media/recovery)"
+  echo ""
+  echo -e "${green}SELinux Example:     sudo ./unpack_android_multipart.sh -S -p sdf"
+  echo -e "Non-SELinux Example: sudo ./unpack_android_multipart.sh -p sdf${no_colour}"
+  echo ""
+  echo "ESEENTIAL arguments:"
+  echo "  '-S': Preserves labeling for SELinux support (incurs longer copy time)"
   echo "  '-p': sd<b-z> corresponding to your usb drive."
-  echo "        'a' is not permitted because it is probably your main hard drive,"
-  echo "        and this script first deletes existing partitions."
+  echo "        'a' is not permitted because it is probably your main hard drive."
+  echo "  '-i': Optional. Directory containing your *.img files. Not needed if you"
+  echo "        are running script from your code workspace, as the script will look"
+  echo "        for your images in out/target/product/bcm_platform."
+  echo ""
+  echo "Power user arguments. You DO NOT need these. Only very special setups may need to override the defaults."
+  echo "  '-b': Optional. boot.img output directory. (ex. /media/kernel)"
+  echo "  '-r': Optional. rootfs output directory (ex. /media/rootfs)"
+  echo "  '-k': Optional. kernel output directory (ex. /media/kernel)"
+  echo "  '-s': Optional. system.img output directory (ex. /media/system)"
+  echo "  '-d': Optional. userdata.img output directory (ex. /media/data)"
+  echo "  '-c': Optional. cache.img output directory (ex. /media/cache)"
+  echo "  '-z': Optional. recovery.img output directory (ex. /media/recovery)"
   echo ""
   echo "defaults if only '-S' and '-p sd<a-z>' specified:"
   echo "  '-S -b /media/kernel -s /media/system -d /media/data -c /media/cache -z /media/recovery -p sd<b-z>'"
   echo ""
   echo "defaults if only '-p sd<a-z>' specified:"
   echo "  '-r /media/rootfs -k /media/kernel -s /media/system -d /media/data -c /media/cache -z /media/recovery -p sd<b-z>'"
-  echo ""
-  echo "SELinux Example:     sudo ./unpack_android_multipart.sh -S -p sdf"
-  echo "Non-SELinux Example: sudo ./unpack_android_multipart.sh -p sdf"
-  exit
 }
 
 selinux=0
@@ -51,6 +58,9 @@ while getopts "hSi:p:b:s:d:c:k:r:z:" tag; do
     r)
       rootfs_dir=$OPTARG
       ;;
+    k)
+      kernel_dir=$OPTARG
+      ;;
     s)
       system_dir=$OPTARG
       ;;
@@ -59,9 +69,6 @@ while getopts "hSi:p:b:s:d:c:k:r:z:" tag; do
       ;;
     c)
       cache_dir=$OPTARG
-      ;;
-    k)
-      kernel_dir=$OPTARG
       ;;
     z)
       recovery_dir=$OPTARG
@@ -114,7 +121,7 @@ function cleanup {
 }
 
 if [ -z $usb_dev ]; then
-  { cleanup "USB drive must be specified, ex '-p sdf'"; exit; }
+  { usage; cleanup "USB drive must be specified, ex '-p sdf'"; exit; }
   exit
 fi
 
@@ -122,12 +129,20 @@ if [ $selinux -eq 1 ]; then
   if [ -z "$boot_dir" ]; then
     boot_dir=/media/kernel
   fi
+
+  if [ ! -z "$rootfs_dir" ] || [ ! -z "$kernel_dir" ]; then
+    { usage; cleanup "If SELinux copy (-S) is enabled, rootfs (-r) and kernel (-k) directories are not needed"; exit; }
+  fi
 else
   if [ -z "$rootfs_dir" ]; then
     rootfs_dir=/media/rootfs
   fi
   if [ -z "$kernel_dir" ]; then
     kernel_dir=/media/kernel
+  fi
+
+  if [ ! -z "$boot_dir" ]; then
+    { usage; cleanup "If SELinux copy (-S) is NOT enabled, boot (-b) directory is not needed"; exit; }
   fi
 fi
 
