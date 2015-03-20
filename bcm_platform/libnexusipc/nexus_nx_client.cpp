@@ -125,7 +125,7 @@ bool NexusNxClient::StandbyMonitorThread::threadLoop()
 
             if (standbyStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn) {
                 if (mCallback != NULL) {
-                    ack =  mCallback(mContext);
+                    ack = mCallback(mContext);
                 }
             }
             if (ack) {
@@ -141,7 +141,7 @@ bool NexusNxClient::StandbyMonitorThread::threadLoop()
 }
 
 #define NEXUS_TRUSTED_DATA_PATH "/data/misc/nexus"
-NEXUS_Error NexusNxClient::clientJoin()
+NEXUS_Error NexusNxClient::clientJoin(const b_refsw_client_client_configuration *config)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
     NxClient_JoinSettings joinSettings;
@@ -170,6 +170,10 @@ NEXUS_Error NexusNxClient::clientJoin()
               memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
            }
            fclose(key);
+        }
+
+        if (config->standbyMonitorCallback == NULL) {
+            joinSettings.ignoreStandbyRequest = true;
         }
 
         do {
@@ -258,8 +262,7 @@ NexusClientContext * NexusNxClient::createClientContext(const b_refsw_client_cli
     /* Call parent class to do the Binder IPC work... */
     client = NexusIPCClient::createClientContext(config);
 
-    if (client != NULL) {
-
+    if (client != NULL && config->standbyMonitorCallback != NULL) {
         mStandbyMonitorThread = new NexusNxClient::StandbyMonitorThread(config->standbyMonitorCallback, config->standbyMonitorContext);
         mStandbyMonitorThread->run(&config->name.string[0], ANDROID_PRIORITY_NORMAL);
     }
@@ -287,75 +290,66 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
 
     LOGD("%s: pmState = %d",__PRETTY_FUNCTION__, pmState);
 
-    rc = clientJoin();
+    NxClient_GetDefaultStandbySettings(&standbySettings);
+    standbySettings.settings.wakeupSettings.ir = 1;
+    standbySettings.settings.wakeupSettings.uhf = 1;
+    standbySettings.settings.wakeupSettings.transport = 1;
+    standbySettings.settings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
+    standbySettings.settings.wakeupSettings.gpio = 1;
+    standbySettings.settings.wakeupSettings.timeout = 0;
+
+    switch (pmState)
+    {
+        case ePowerState_S0:
+        {
+            LOGD("%s: About to set power state S0...", __PRETTY_FUNCTION__);
+            standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eOn;
+            break;
+        }
+
+        case ePowerState_S1:
+        {
+            LOGD("%s: About to set power state S1...", __PRETTY_FUNCTION__);
+            standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eActive;
+            break;
+        }
+
+        case ePowerState_S2:
+        {
+            LOGD("%s: About to set power state S2...", __PRETTY_FUNCTION__);
+            standbySettings.settings.mode = NEXUS_PlatformStandbyMode_ePassive;
+            break;
+        }
+
+        case ePowerState_S3:
+        case ePowerState_S5:
+        {
+            LOGD("%s: About to set power state S%d...", __PRETTY_FUNCTION__, pmState-ePowerState_S0);
+            standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eDeepSleep;
+            break;
+        }
+
+        default:
+        {
+            LOGE("%s: invalid power state %d!", __PRETTY_FUNCTION__, pmState);
+            rc = NEXUS_INVALID_PARAMETER;
+            break;
+        }
+    }
 
     if (rc == NEXUS_SUCCESS) {
-        NxClient_GetDefaultStandbySettings(&standbySettings);
-        standbySettings.settings.wakeupSettings.ir = 1;
-        standbySettings.settings.wakeupSettings.uhf = 1;
-        standbySettings.settings.wakeupSettings.transport = 1;
-        standbySettings.settings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
-        standbySettings.settings.wakeupSettings.gpio = 1;
-        standbySettings.settings.wakeupSettings.timeout = 0;
-
-        switch (pmState)
-        {
-            case ePowerState_S0:
-            {
-                LOGD("%s: About to set power state S0...", __PRETTY_FUNCTION__);
-                standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eOn;
-                break;
-            }
-
-            case ePowerState_S1:
-            {
-                LOGD("%s: About to set power state S1...", __PRETTY_FUNCTION__);
-                standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eActive;
-                break;
-            }
-
-            case ePowerState_S2:
-            {
-                LOGD("%s: About to set power state S2...", __PRETTY_FUNCTION__);
-                standbySettings.settings.mode = NEXUS_PlatformStandbyMode_ePassive;
-                break;
-            }
-
-            case ePowerState_S3:
-            case ePowerState_S5:
-            {
-                LOGD("%s: About to set power state S%d...", __PRETTY_FUNCTION__, pmState-ePowerState_S0);
-                standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eDeepSleep;
-                break;
-            }
-
-            default:
-            {
-                LOGE("%s: invalid power state %d!", __PRETTY_FUNCTION__, pmState);
-                rc = NEXUS_INVALID_PARAMETER;
-                break;
-            }
+        rc = NxClient_SetStandbySettings(&standbySettings);
+        if (rc != NEXUS_SUCCESS) {
+            LOGE("%s: NxClient_SetStandbySettings failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
         }
-
-        if (rc == NEXUS_SUCCESS) {
-            rc = NxClient_SetStandbySettings(&standbySettings);
-            if (rc != NEXUS_SUCCESS) {
-                LOGE("%s: NxClient_SetStandbySettings failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
-            }
-        }
-
-        /* Now check whether Nexus Platform has entered the desired standby mode (excluding S0)... */
-        if (rc == NEXUS_SUCCESS && pmState != ePowerState_S0) {
-            rc = standbyCheck(standbySettings.settings.mode);
-            if (rc != NEXUS_SUCCESS) {
-                LOGE("%s: standbyCheck failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
-            }
-        }
-
-        clientUninit();
     }
-    else {
-        LOGE("%s: Could not join client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
+
+    /* Now check whether Nexus Platform has entered the desired standby mode (excluding S0)... */
+    if (rc == NEXUS_SUCCESS && pmState != ePowerState_S0) {
+        rc = standbyCheck(standbySettings.settings.mode);
+        if (rc != NEXUS_SUCCESS) {
+            LOGE("%s: standbyCheck failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
+        }
     }
 
     return (rc == NEXUS_SUCCESS) ? true : false;
@@ -367,53 +361,44 @@ b_powerState NexusNxClient::getPowerState()
     NxClient_StandbyStatus standbyStatus;
     b_powerState state = ePowerState_Max;
 
-    rc = clientJoin();
+    rc = NxClient_GetStandbyStatus(&standbyStatus);
 
     if (rc == NEXUS_SUCCESS) {
-        rc = NxClient_GetStandbyStatus(&standbyStatus);
-
-        if (rc == NEXUS_SUCCESS) {
-            switch (standbyStatus.settings.mode)
-            {
-                case NEXUS_PlatformStandbyMode_eOn:
-                    state = ePowerState_S0;
-                    break;
-                case NEXUS_PlatformStandbyMode_eActive:
-                    state = ePowerState_S1;
-                    break;
-                case NEXUS_PlatformStandbyMode_ePassive:
-                    state = ePowerState_S2;
-                    break;
-                case NEXUS_PlatformStandbyMode_eDeepSleep:
-                    state = ePowerState_S3;
-                    break;
-                default:
-                    state = ePowerState_Max;
-            }
-
-            if (state != ePowerState_Max) {
-                LOGD("%s: Standby Status : \n"
-                     "State   : S%d\n"
-                     "IR      : %d\n"
-                     "UHF     : %d\n"
-                     "XPT     : %d\n"
-                     "CEC     : %d\n"
-                     "GPIO    : %d\n"
-                     "Timeout : %d\n", __PRETTY_FUNCTION__,
-                     state,
-                     standbyStatus.status.wakeupStatus.ir, 
-                     standbyStatus.status.wakeupStatus.uhf,
-                     standbyStatus.status.wakeupStatus.transport,
-                     standbyStatus.status.wakeupStatus.cec,
-                     standbyStatus.status.wakeupStatus.gpio,
-                     standbyStatus.status.wakeupStatus.timeout);
-            }
+        switch (standbyStatus.settings.mode)
+        {
+            case NEXUS_PlatformStandbyMode_eOn:
+                state = ePowerState_S0;
+                break;
+            case NEXUS_PlatformStandbyMode_eActive:
+                state = ePowerState_S1;
+                break;
+            case NEXUS_PlatformStandbyMode_ePassive:
+                state = ePowerState_S2;
+                break;
+            case NEXUS_PlatformStandbyMode_eDeepSleep:
+                state = ePowerState_S3;
+                break;
+            default:
+                state = ePowerState_Max;
         }
 
-        clientUninit();
-    }
-    else {
-        LOGE("%s: Could not join client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
+        if (state != ePowerState_Max) {
+            LOGD("%s: Standby Status : \n"
+                 "State   : S%d\n"
+                 "IR      : %d\n"
+                 "UHF     : %d\n"
+                 "XPT     : %d\n"
+                 "CEC     : %d\n"
+                 "GPIO    : %d\n"
+                 "Timeout : %d\n", __PRETTY_FUNCTION__,
+                 state,
+                 standbyStatus.status.wakeupStatus.ir,
+                 standbyStatus.status.wakeupStatus.uhf,
+                 standbyStatus.status.wakeupStatus.transport,
+                 standbyStatus.status.wakeupStatus.cec,
+                 standbyStatus.status.wakeupStatus.gpio,
+                 standbyStatus.status.wakeupStatus.timeout);
+        }
     }
 
     return state;

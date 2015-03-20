@@ -68,7 +68,7 @@ public:
 
 protected:
             NexusIPCClientBase(const char *clientName = NULL);
-    virtual NEXUS_Error clientJoin() = 0;
+    virtual NEXUS_Error clientJoin(const b_refsw_client_client_configuration *config) = 0;
     virtual NEXUS_Error clientUninit() = 0;
 
     static android::Mutex mLock;

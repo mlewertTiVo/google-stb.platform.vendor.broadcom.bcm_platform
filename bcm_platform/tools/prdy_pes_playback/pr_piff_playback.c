@@ -1272,6 +1272,7 @@ int main(int argc, char* argv[])
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
     snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "pr_piff_playback");
+    joinSettings.ignoreStandbyRequest = true;
 
 #ifdef NEED_TO_BE_TRUSTED_APP
         joinSettings.mode = NEXUS_ClientMode_eUntrusted;

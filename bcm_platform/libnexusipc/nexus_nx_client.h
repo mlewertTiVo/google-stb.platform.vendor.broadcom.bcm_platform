@@ -119,7 +119,7 @@ protected:
                  NexusNxClient(const char *clientName = NULL);
     // This method is protected and can only be called by the NexusIPCClientFactory::getClient() abstract factory class
     static NexusIPCClientBase *getClient(const char *clientName=NULL) { return new NexusNxClient(clientName); }
-    virtual NEXUS_Error clientJoin();
+    virtual NEXUS_Error clientJoin(const b_refsw_client_client_configuration *config);
     virtual NEXUS_Error clientUninit();
 
 private:

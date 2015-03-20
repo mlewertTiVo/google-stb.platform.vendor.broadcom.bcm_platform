@@ -164,7 +164,7 @@ void NexusIPCClient::unbindNexusService()
     }
 }
 
-NEXUS_Error NexusIPCClient::clientJoin()
+NEXUS_Error NexusIPCClient::clientJoin(const b_refsw_client_client_configuration *config)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
 
@@ -255,7 +255,7 @@ NexusClientContext * NexusIPCClient::createClientContext(const b_refsw_client_cl
     b_refsw_client_client_configuration inConfig;
     api_data cmd;
 
-    rc = clientJoin();
+    rc = clientJoin(config);
 
     if (rc == NEXUS_SUCCESS) {
         BKNI_Memcpy(&inConfig, config, sizeof(*config));

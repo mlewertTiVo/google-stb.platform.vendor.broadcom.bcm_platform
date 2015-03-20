@@ -85,6 +85,7 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
 
    NxClient_GetDefaultJoinSettings(&joinSettings);
    strncpy(joinSettings.name, "memtrack", NXCLIENT_MAX_NAME);
+   joinSettings.ignoreStandbyRequest = true;
 
    sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
    key = fopen(value, "r");
