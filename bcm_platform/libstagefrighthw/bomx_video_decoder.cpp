@@ -67,7 +67,7 @@
 #define B_MAX_FRAMES (8)                // Taken from soft HEVC decoder (worst case)
 #define B_MAX_DECODED_FRAMES (16)
 #define B_FRAME_TIMER_INTERVAL (32)
-#define B_INPUT_BUFFERS_RETURN_INTERVAL (500)
+#define B_INPUT_BUFFERS_RETURN_INTERVAL (100)
 
 #define B_MAX_PES_PACKET_LENGTH (65535)     // PES packets have a 16-bit length field.  0 indicates unbounded.
 #define B_PES_HEADER_START_BYTES (6)        // 00 00 01 [Stream ID] [Length 0] [Length 1] are not reported in the packet length field.
@@ -494,6 +494,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_hGraphics2d(NULL),
     m_submittedDescriptors(0),
     m_pBufferTracker(NULL),
+    m_AvailInputBuffers(0),
     m_pIpcClient(NULL),
     m_pNexusClient(NULL),
     m_nxClientId(NXCLIENT_INVALID_ID),
@@ -3416,6 +3417,7 @@ void BOMX_VideoDecoder::InputBufferNew()
 void BOMX_VideoDecoder::InputBufferReturned()
 {
     unsigned totalBuffers = m_pVideoPorts[0]->GetDefinition()->nBufferCountActual;
+    CancelTimerId(m_inputBuffersTimerId);
     ++m_AvailInputBuffers;
     BOMX_ASSERT(m_AvailInputBuffers <= totalBuffers);
 }
@@ -3426,48 +3428,79 @@ void BOMX_VideoDecoder::InputBufferCounterReset()
     m_AvailInputBuffers = m_pVideoPorts[0]->GetDefinition()->nBufferCountActual;
 }
 
-void BOMX_VideoDecoder::ReturnInputBuffers(bool causedByTimeout)
+void BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTimeout)
 {
-    BOMX_Buffer *pBuffer;
-
-    // Return only one buffer except in the case when this function
-    // is called due to a timeout. In case of a timeout, return all
-    // input buffers only if there's none available.
-    uint32_t buffersToReturn = 1;
-    if (causedByTimeout && (m_AvailInputBuffers == 0))
-        buffersToReturn = m_pVideoPorts[0]->GetDefinition()->nBufferCountActual;
     uint32_t count = 0;
-    while ( (pBuffer = m_pVideoPorts[0]->GetBuffer()) != NULL )
+    BOMX_VideoDecoderInputBufferInfo *pInfo;
+    BOMX_Buffer *pNextBuffer, *pReturnBuffer = NULL, *pBuffer = m_pVideoPorts[0]->GetBuffer();
+    while ( pBuffer != NULL )
     {
-        BOMX_VideoDecoderInputBufferInfo *pInfo =
-            (BOMX_VideoDecoderInputBufferInfo *)pBuffer->GetComponentPrivate();
+        pInfo = (BOMX_VideoDecoderInputBufferInfo *)pBuffer->GetComponentPrivate();
         BOMX_ASSERT(NULL != pInfo);
-        if (!pInfo->complete) {
-            ALOGV("Buffer:%p not complete yet, %u buffers returned",
-                    pBuffer, count);
+        if ( !pInfo->complete )
+        {
+            ALOGV("Buffer:%p not completed yet", pBuffer);
             break;
         }
 
-        ReturnPortBuffer(m_pVideoPorts[0], pBuffer);
-        InputBufferReturned();
-        // If the buffer has codec config flags it shouldn't be added
-        // to count. These buffers don't have a corresponding output frame
-        // so it's ok to return them as soon as possible.
-        OMX_BUFFERHEADERTYPE *pHeader = pBuffer->GetHeader();
-        BOMX_ASSERT(pHeader != NULL);
-        if (!(pHeader->nFlags & OMX_BUFFERFLAG_CODECCONFIG ))
-            ++count;
-        if (count == buffersToReturn)
+        if ( causedByTimeout )
+        {
+            pReturnBuffer = pBuffer;
+        }
+        else if ( *pBuffer->GetTimestamp() == decodeTs )
+        {
+            pReturnBuffer = pBuffer;
             break;
+        }
+
+        pBuffer = m_pVideoPorts[0]->GetNextBuffer(pBuffer);
     }
 
-    ALOGV("%s: returned %u buffers, %u attempted", __FUNCTION__, count, buffersToReturn);
+    if ( pReturnBuffer != NULL )
+    {
+        pBuffer = m_pVideoPorts[0]->GetBuffer();
+        while ( pBuffer != pReturnBuffer )
+        {
+            pNextBuffer = m_pVideoPorts[0]->GetNextBuffer(pBuffer);
+
+            // If the buffer has codec config flags it shouldn't be added
+            // to count. These buffers don't have a corresponding output frame
+            // so it's ok to return them as soon as possible.
+            if ( ReturnInputPortBuffer(pBuffer) )
+            {
+                ++count;
+            }
+
+            pBuffer = pNextBuffer;
+        }
+
+        // The last returned buffer
+        if ( ReturnInputPortBuffer(pBuffer) )
+        {
+            ++count;
+        }
+    }
+
+    ALOGV("%s: returned %u buffers, %u available", __FUNCTION__, count, m_AvailInputBuffers);
+}
+
+bool BOMX_VideoDecoder::ReturnInputPortBuffer(BOMX_Buffer *pBuffer)
+{
+    ReturnPortBuffer(m_pVideoPorts[0], pBuffer);
+    InputBufferReturned();
+
+    // If the buffer has codec config flags it shouldn't be added
+    // to count. These buffers don't have a corresponding output frame
+    // so it's ok to return them as soon as possible.
+    OMX_BUFFERHEADERTYPE *pHeader = pBuffer->GetHeader();
+    BOMX_ASSERT(pHeader != NULL);
+    return (!(pHeader->nFlags & OMX_BUFFERFLAG_CODECCONFIG ));
 }
 
 void BOMX_VideoDecoder::InputBufferTimeoutCallback()
 {
     CancelTimerId(m_inputBuffersTimerId);
-    ReturnInputBuffers(true);
+    ReturnInputBuffers(0, true);
 }
 
 #if 0  /* Source Changed Event is not required in non-tunneled. */
@@ -4039,7 +4072,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::OUTPUT_FRAME, pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber);
                     ReturnPortBuffer(m_pVideoPorts[1], pOmxBuffer);
                     // Try to return processed input buffers
-                    ReturnInputBuffers();
+                    ReturnInputBuffers(pHeader->nTimeStamp, false);
                     BOMX_ASSERT(queueDepthBefore == (m_pVideoPorts[1]->QueueDepth()+1));
                 }
                 if ( destripedSuccess )

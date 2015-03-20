@@ -360,7 +360,8 @@ protected:
     void InputBufferNew();
     void InputBufferReturned();
     void InputBufferCounterReset();
-    void ReturnInputBuffers(bool causedByTimeout = false);
+    void ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTimeout);
+    bool ReturnInputPortBuffer(BOMX_Buffer *pBuffer);
 
     // The functions below allow derived classes to override them
     virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
