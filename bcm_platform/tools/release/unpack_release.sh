@@ -41,11 +41,7 @@ tar -xvf $1 --directory $DST_DIR
 cd $DST_DIR
 while read line; do
   cd $line
-  if [ -d .git ]; then
-    git am $DST_DIR/$TMP_DIR/$line/*
-  else
-    git apply $DST_DIR/$TMP_DIR/$line/*
-  fi
+  git am $DST_DIR/$TMP_DIR/$line/* > /dev/null 2>&1 || git apply $DST_DIR/$TMP_DIR/$line/*
   cd $DST_DIR
 done < $DST_DIR/$AOSP_LIST
 

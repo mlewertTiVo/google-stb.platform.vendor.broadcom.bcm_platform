@@ -42,31 +42,50 @@ fi
 # Helper to extract a value from xml based on the specified attribute name/value
 extract_value_from_xml()
 {
-  echo "cat //project[@$1='$2']/@$4" | xmllint --shell $3 | grep $4= | cut -d \" -f 2
+  echo "cat //$1[@$2='$3']/@$5" | xmllint --shell $4 | grep $5= | cut -d \" -f 2
 }
 
 # Helper to extract path from bcg xml
 extract_path_from_xml()
 {
-  extract_value_from_xml $1 $2 $BCG_XML path
+  extract_value_from_xml project $1 $2 $BCG_XML path
 }
 
 # Helper to extract aosp patches per baseline
 extract_patches_from_aosp()
 {
   AOSP_PATH=$1
-
-  # Generate aosp patches based on revision in default xml unless user overrided
-  if [ -z $AOSP_BASELINE ]; then
-    BASELINE=$(extract_value_from_xml path $AOSP_PATH $DFT_XML revision)
-  else
-    BASELINE=$AOSP_BASELINE
-  fi
   echo $AOSP_PATH >> $AOSP_LIST
   mkdir -p $TOP_DIR/$TMP_DIR/$AOSP_PATH
   CURR_DIR=$(pwd)
   cd $AOSP_PATH
-  git format-patch $BASELINE -o $TOP_DIR/$TMP_DIR/$AOSP_PATH
+
+  # Generate aosp patches based on revision in default xml unless user overrided
+  if [ -z $AOSP_BASELINE ]; then
+    # First find out the remote either from the line or from default.  Once
+    # the remote is found, then find out the fetch location of the baseline.
+    REMOTE=$(extract_value_from_xml project path $AOSP_PATH $DFT_XML remote)
+    if [ -z $REMOTE ]; then
+      REMOTE=$(echo "cat //default/@remote" | xmllint --shell $DFT_XML | grep remote= | cut -d \" -f 2)
+    fi
+    REMOTE_FETCH=$(extract_value_from_xml remote name $REMOTE $DFT_XML fetch)
+
+    # Finally get the aosp baseline
+    PROJ_NAME=$(extract_value_from_xml project path $AOSP_PATH $DFT_XML name)
+    BASELINE=$(extract_value_from_xml project path $AOSP_PATH $DFT_XML revision)
+    if [ -z $BASELINE ]; then
+      BASELINE=$(echo "cat //default/@revision" | xmllint --shell $DFT_XML | grep revision= | cut -d \" -f 2)
+    fi
+  else
+    REMOTE=$(extract_value_from_xml project path $AOSP_PATH $BCG_XML remote)
+    REMOTE_FETCH=$(extract_value_from_xml remote name $REMOTE $BCG_XML fetch)
+    PROJ_NAME=$(extract_value_from_xml project path $AOSP_PATH $BCG_XML name)
+    BASELINE=$AOSP_BASELINE
+  fi
+  # Strip the redundant '/', if any
+  REMOTE_FETCH="${REMOTE_FETCH%/}"
+  git fetch $REMOTE_FETCH/$PROJ_NAME $BASELINE
+  git format-patch FETCH_HEAD -o $TOP_DIR/$TMP_DIR/$AOSP_PATH
   cd $CURR_DIR
 }
 
