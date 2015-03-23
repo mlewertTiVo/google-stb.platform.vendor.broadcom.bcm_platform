@@ -139,7 +139,7 @@ void CameraFactory::parseConfig(const char* configFile)
         if (access(DEFAULT_DEVICE, F_OK) != -1){
             ALOGD("Found device %s", DEFAULT_DEVICE);
             // Treat discovered camera as a front one
-            newCameraConfig(CAMERA_FACING_FRONT, DEFAULT_DEVICE);
+            newCameraConfig(CAMERA_FACING_BACK, DEFAULT_DEVICE);
         }
     }
 }
