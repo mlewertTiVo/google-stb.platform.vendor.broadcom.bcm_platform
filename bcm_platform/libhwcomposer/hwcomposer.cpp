@@ -1245,6 +1245,7 @@ bool hwc_compose_gralloc_buffer(
     uint8_t *addr=NULL;
     void *slock;
     NEXUS_PixelFormat pixel_format = NEXUS_PixelFormat_eUnknown;
+    NEXUS_SurfaceCreateSettings displaySurfaceSettings;
 
     if ( pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12 ) {
         if (pSharedData->planes[EXTRA_PLANE].physAddr) {
@@ -1270,6 +1271,8 @@ bool hwc_compose_gralloc_buffer(
         ALOGE("%s: plane buffer address NULL: %d\n", __FUNCTION__, layer_id);
         goto out;
     }
+
+    NEXUS_Surface_GetCreateSettings(display_surface, &displaySurfaceSettings);
 
     ALOGV("compose layer %u vis %u pf %u %ux%u (%ux%u@%u,%u) to %ux%u@%u,%u", layer_id, (unsigned)client->composition.visible,
         pixel_format, pSharedData->planes[plane_select].width, pSharedData->planes[plane_select].height,
@@ -1314,13 +1317,13 @@ bool hwc_compose_gralloc_buffer(
                 blitSettings.source.rect.y += adj;
                 blitSettings.source.rect.height = (adj <= blitSettings.source.rect.height) ? blitSettings.source.rect.height - adj : 0;
             }
-            if ( blitSettings.output.rect.x + (int)blitSettings.output.rect.width > (int)pSharedData->planes[plane_select].width ) {
-                adj = (blitSettings.output.rect.x + blitSettings.output.rect.width) - pSharedData->planes[plane_select].width;
+            if ( blitSettings.output.rect.x + (int)blitSettings.output.rect.width > (int)displaySurfaceSettings.width ) {
+                adj = (blitSettings.output.rect.x + blitSettings.output.rect.width) - displaySurfaceSettings.width;
                 blitSettings.output.rect.width = (adj <= blitSettings.output.rect.width) ? blitSettings.output.rect.width - adj : 0;
                 blitSettings.source.rect.width = (adj <= blitSettings.source.rect.width) ? blitSettings.source.rect.width - adj : 0;
             }
-            if ( blitSettings.output.rect.y + (int)blitSettings.output.rect.height > (int)pSharedData->planes[plane_select].height ) {
-                adj = (blitSettings.output.rect.y + blitSettings.output.rect.height) - pSharedData->planes[plane_select].height;
+            if ( blitSettings.output.rect.y + (int)blitSettings.output.rect.height > (int)displaySurfaceSettings.height ) {
+                adj = (blitSettings.output.rect.y + blitSettings.output.rect.height) - displaySurfaceSettings.height;
                 blitSettings.output.rect.height = (adj <= blitSettings.output.rect.height) ? blitSettings.output.rect.height - adj : 0;
                 blitSettings.source.rect.height = (adj <= blitSettings.source.rect.height) ? blitSettings.source.rect.height - adj : 0;
             }
