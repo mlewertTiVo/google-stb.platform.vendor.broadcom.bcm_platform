@@ -16,13 +16,6 @@ on post-fs-data
 
     mkdir /data/misc/android 0770 wifi wifi
 
-    setprop wifi.interface wlan0
-
-service dhd_fwload /system/bin/bcmdl -n /system/vendor/broadcom/dhd/nvrams/nvm.txt /system/vendor/broadcom/dhd/firmware/fw.bin.trx
-    class core
-    oneshot
-
-on property:brcm.dhd.fwloaded=ok
     insmod /system/vendor/broadcom/dhd/driver/bcmdhd.ko
     setprop wifi.interface wlan0
     setprop wlan.driver.status "ok"
