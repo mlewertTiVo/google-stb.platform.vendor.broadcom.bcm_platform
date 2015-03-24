@@ -586,6 +586,11 @@ static void power_hint(struct power_module *module __unused, power_hint_t hint, 
     }
 }
 
+static void power_set_feature(struct power_module *module __unused, feature_t feature, int state)
+{
+    ALOGV("%s: feature=%d, state=%d", __FUNCTION__, feature, state);
+}
+
 static struct hw_module_methods_t power_module_methods = {
     open: NULL
 };
@@ -593,7 +598,7 @@ static struct hw_module_methods_t power_module_methods = {
 struct power_module HAL_MODULE_INFO_SYM = {
     common: {
         tag: HARDWARE_MODULE_TAG,
-        module_api_version: POWER_MODULE_API_VERSION_0_2,
+        module_api_version: POWER_MODULE_API_VERSION_0_3,
         hal_api_version: HARDWARE_HAL_API_VERSION,
         id: POWER_HARDWARE_MODULE_ID,
         name: "Brcmstb Power HAL",
@@ -604,5 +609,6 @@ struct power_module HAL_MODULE_INFO_SYM = {
     },
     init: power_init,
     setInteractive: power_set_interactive,
-    powerHint: power_hint
+    powerHint: power_hint,
+    setFeature: power_set_feature
 };
