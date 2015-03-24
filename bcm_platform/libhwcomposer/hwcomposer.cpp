@@ -1128,7 +1128,26 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
        }
        break;
        case HWC_BINDER_NTFY_OVERSCAN:
-           memcpy(&ctx->overscan_position, &ntfy.frame, sizeof(ctx->overscan_position));
+            memcpy(&ctx->overscan_position, &ntfy.frame, sizeof(ctx->overscan_position));
+            {
+                NEXUS_Error rc;
+                NEXUS_SurfaceComposition composition;
+                NxClient_GetSurfaceClientComposition(ctx->sccid, &composition);
+                composition.virtualDisplay.width = ctx->cfg[0].width;
+                composition.virtualDisplay.height = ctx->cfg[0].height;
+                composition.position.x = ctx->overscan_position.x;
+                composition.position.y = ctx->overscan_position.y;
+                composition.position.width = (int)ctx->cfg[0].width + ctx->overscan_position.w;
+                composition.position.height = (int)ctx->cfg[0].height + ctx->overscan_position.h;
+                composition.zorder = GPX_CLIENT_ZORDER;
+                composition.visible = true;
+                composition.colorBlend = colorBlendingEquation[BLENDIND_TYPE_SRC_OVER];
+                composition.alphaBlend = alphaBlendingEquation[BLENDIND_TYPE_SRC_OVER];
+                rc = NxClient_SetSurfaceClientComposition(ctx->sccid, &composition);
+                if ( rc ) {
+                    ALOGW("%s: Unable to set client composition for overscan adjustment %d", __FUNCTION__, rc);
+                }
+            }
        break;
        case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
        default:
@@ -2847,10 +2866,10 @@ static void hwc_prepare_gpx_layer(
         geometry_changed) {
 
         ctx->gpx_cli[layer_id].composition.zorder                = (ctx->gpx_cli[layer_id].layer_flags & HWC_IS_CURSOR_LAYER) ? CURSOR_CLIENT_ZORDER : GPX_CLIENT_ZORDER;
-        ctx->gpx_cli[layer_id].composition.position.x            = disp_position.x + ctx->overscan_position.x;
-        ctx->gpx_cli[layer_id].composition.position.y            = disp_position.y + ctx->overscan_position.y;
-        ctx->gpx_cli[layer_id].composition.position.width        = disp_position.width + ctx->overscan_position.w;
-        ctx->gpx_cli[layer_id].composition.position.height       = disp_position.height + ctx->overscan_position.h;
+        ctx->gpx_cli[layer_id].composition.position.x            = disp_position.x;
+        ctx->gpx_cli[layer_id].composition.position.y            = disp_position.y;
+        ctx->gpx_cli[layer_id].composition.position.width        = disp_position.width;
+        ctx->gpx_cli[layer_id].composition.position.height       = disp_position.height;
         ctx->gpx_cli[layer_id].composition.virtualDisplay.width  = ctx->cfg[0].width;
         ctx->gpx_cli[layer_id].composition.virtualDisplay.height = ctx->cfg[0].height;
         ctx->gpx_cli[layer_id].blending_type                     = cur_blending_type;
@@ -2897,6 +2916,16 @@ static void hwc_prepare_mm_layer(
     if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
         goto out;
     }
+
+    // Factor in overscan adjustments
+    disp_position.x += ctx->overscan_position.x;
+    disp_position.y += ctx->overscan_position.y;
+    disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[0].width);
+    disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[0].height);
+    clip_position.x += ctx->overscan_position.x;
+    clip_position.y += ctx->overscan_position.y;
+    clip_position.width = (int)clip_position.width + (((int)clip_position.width * (int)ctx->overscan_position.w)/ctx->cfg[0].width);
+    clip_position.height = (int)clip_position.height + (((int)clip_position.height * (int)ctx->overscan_position.h)/ctx->cfg[0].height);
 
     // make the gpx corresponding layer non-visible in the layer stack.
     if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
@@ -2989,6 +3018,16 @@ static void hwc_prepare_sb_layer(
     if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
         goto out;
     }
+
+    // Factor in overscan adjustments
+    disp_position.x += ctx->overscan_position.x;
+    disp_position.y += ctx->overscan_position.y;
+    disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[0].width);
+    disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[0].height);
+    clip_position.x += ctx->overscan_position.x;
+    clip_position.y += ctx->overscan_position.y;
+    clip_position.width = (int)clip_position.width + (((int)clip_position.width * (int)ctx->overscan_position.w)/ctx->cfg[0].width);
+    clip_position.height = (int)clip_position.height + (((int)clip_position.height * (int)ctx->overscan_position.h)/ctx->cfg[0].height);
 
     // make the gpx corresponding layer non-visible in the layer stack.
     if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
