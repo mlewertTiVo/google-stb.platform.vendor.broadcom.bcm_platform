@@ -13,7 +13,6 @@
 # limitations under the License.
 
 include vendor/broadcom/bcm_platform/brcm_audio/Android.mk
-include vendor/broadcom/bcm_platform/brcm_dhd/Android.mk
 include vendor/broadcom/bcm_platform/brcm_memtrack/Android.mk
 include vendor/broadcom/bcm_platform/brcm_nexus/Android.mk
 include vendor/broadcom/bcm_platform/hdmi_cec/Android.mk
