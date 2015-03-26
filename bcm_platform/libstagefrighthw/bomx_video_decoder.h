@@ -68,6 +68,9 @@
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex);
 
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" const char *BOMX_VideoDecoder_GetRoleVp9(unsigned roleIndex);
+
 struct BOMX_VideoDecoderInputBufferInfo
 {
     void *pHeader;              // Header buffer in NEXUS_Memory space
@@ -140,6 +143,12 @@ struct BOMX_VideoDecoderFrameBuffer
     BOMX_VideoDecoderOutputBufferInfo *pBufferInfo;
 };
 
+struct BOMX_VideoDecoderRole
+{
+    char name[OMX_MAX_STRINGNAME_SIZE];
+    int omxCodec;
+};
+
 #define NXCLIENT_INVALID_ID (0xffffffff)
 
 class BOMX_VideoDecoder : public BOMX_Component
@@ -149,7 +158,9 @@ public:
         OMX_COMPONENTTYPE *pComponentType,
         const OMX_STRING pName,
         const OMX_PTR pAppData,
-        const OMX_CALLBACKTYPE *pCallbacks);
+        const OMX_CALLBACKTYPE *pCallbacks,
+        unsigned numRoles=0,
+        const BOMX_VideoDecoderRole *pRoles=NULL);
 
     virtual ~BOMX_VideoDecoder();
 
@@ -281,6 +292,8 @@ protected:
     bool m_secureDecoder;
     unsigned m_outputWidth;
     unsigned m_outputHeight;
+    BOMX_VideoDecoderRole *m_pRoles;
+    unsigned m_numRoles;
 
     #define BOMX_BCMV_HEADER_SIZE (10)
     uint8_t m_pBcmvHeader[BOMX_BCMV_HEADER_SIZE];

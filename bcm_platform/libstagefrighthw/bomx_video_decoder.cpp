@@ -57,6 +57,7 @@
 #include "OMX_IndexExt.h"
 #include "OMX_VideoExt.h"
 #include "nexus_base_mmap.h"
+#include "nexus_video_decoder.h"
 
 #define BOMX_INPUT_MSG(x)
 
@@ -94,15 +95,19 @@
 
 using namespace android;
 
-static const char *g_roles[] = {"video_decoder.mpeg2", "video_decoder.h263", "video_decoder.avc", "video_decoder.mpeg4", "video_decoder.hevc", "video_decoder.vp8"};
-static const unsigned int g_numRoles = sizeof(g_roles)/sizeof(const char *);
-static int g_roleCodec[] = {OMX_VIDEO_CodingMPEG2, OMX_VIDEO_CodingH263, OMX_VIDEO_CodingAVC, OMX_VIDEO_CodingMPEG4, OMX_VIDEO_CodingHEVC, OMX_VIDEO_CodingVP8};
-
 // Uncomment this to enable output logging to a file
 //#define DEBUG_FILE_OUTPUT 1
 
 #include <stdio.h>
 static FILE *g_pDebugFile;
+
+static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
+                                                       {"video_decoder.h263", OMX_VIDEO_CodingH263},
+                                                       {"video_decoder.avc", OMX_VIDEO_CodingAVC},
+                                                       {"video_decoder.mpeg4", OMX_VIDEO_CodingMPEG4},
+                                                       {"video_decoder.hevc", OMX_VIDEO_CodingHEVC},
+                                                       {"video_decoder.vp8", OMX_VIDEO_CodingVP8}};
+static const unsigned g_numDefaultRoles = sizeof(g_defaultRoles)/sizeof(BOMX_VideoDecoderRole);
 
 enum BOMX_VideoDecoderEventType
 {
@@ -143,15 +148,88 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(
     }
 }
 
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    static const BOMX_VideoDecoderRole vp9Role = {"video_decoder.vp9", OMX_VIDEO_CodingVP9};
+    BOMX_VideoDecoder *pVideoDecoder;
+    unsigned i;
+    bool vp9Supported = false;
+    NEXUS_VideoDecoderCapabilities caps;
+
+    // Check if the platform supports VP9
+    NEXUS_GetVideoDecoderCapabilities(&caps);
+    for ( i = 0; i < caps.numVideoDecoders; i++ )
+    {
+        if ( caps.memory[i].supportedCodecs[NEXUS_VideoCodec_eVp9] )
+        {
+            vp9Supported = true;
+            break;
+        }
+    }
+
+    if ( !vp9Supported )
+    {
+        ALOGW("VP9 hardware support is not available");
+        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+    }
+
+    // VP9 can be disabled by this property
+    if ( property_get_int32("ro.nx.trim.vp9", 0) )
+    {
+        ALOGW("VP9 hardware support is available but disabled (ro.nx.trim.vp9=1)");
+        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+    }
+
+    pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, 1, &vp9Role);
+    if ( NULL == pVideoDecoder )
+    {
+        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+    }
+    else
+    {
+        if ( pVideoDecoder->IsValid() )
+        {
+            #ifdef DEBUG_FILE_OUTPUT
+            if ( NULL == g_pDebugFile )
+            {
+                g_pDebugFile = fopen("/data/media/video_decoder.debug.pes", "wb+");
+            }
+            #endif
+            return OMX_ErrorNone;
+        }
+        else
+        {
+            delete pVideoDecoder;
+            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+        }
+    }
+}
+
 extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex)
 {
-    if ( roleIndex >= g_numRoles )
+    if ( roleIndex >= g_numDefaultRoles )
     {
         return NULL;
     }
     else
     {
-        return g_roles[roleIndex];
+        return g_defaultRoles[roleIndex].name;
+    }
+}
+
+extern "C" const char *BOMX_VideoDecoder_GetRoleVp9(unsigned roleIndex)
+{
+    if ( roleIndex > 0 )
+    {
+        return NULL;
+    }
+    else
+    {
+        return "video_decoder.vp9";
     }
 }
 
@@ -479,7 +557,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
     const OMX_PTR pAppData,
-    const OMX_CALLBACKTYPE *pCallbacks) :
+    const OMX_CALLBACKTYPE *pCallbacks,
+    unsigned numRoles,
+    const BOMX_VideoDecoderRole *pRoles) :
     BOMX_Component(pComponentType, pName, pAppData, pCallbacks, BOMX_VideoDecoder_GetRole),
     m_hSimpleVideoDecoder(NULL),
     m_hPlaypump(NULL),
@@ -512,6 +592,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_secureDecoder(false),
     m_outputWidth(1920),
     m_outputHeight(1080),
+    m_pRoles(NULL),
+    m_numRoles(0),
     m_pConfigBuffer(NULL),
     m_configBufferState(ConfigBufferState_eAccumulating),
     m_configBufferSize(0),
@@ -529,37 +611,43 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
 
     m_videoPortBase = 0;    // Android seems to require this - was: BOMX_COMPONENT_PORT_BASE(BOMX_ComponentId_eVideoDecoder, OMX_PortDomainVideo);
 
+    if ( numRoles==0 || pRoles==NULL )
+    {
+        pRoles = g_defaultRoles;
+        numRoles = g_numDefaultRoles;
+    }
+    if ( numRoles > MAX_PORT_FORMATS )
+    {
+        ALOGW("Warning, exceeded max number of video decoder input port formats");
+        numRoles = MAX_PORT_FORMATS;
+    }
+
+    m_numRoles = numRoles;
+    m_pRoles = new BOMX_VideoDecoderRole[numRoles];
+    if ( NULL == m_pRoles )
+    {
+        ALOGE("Unable to allocate role memory");
+        this->Invalidate();
+        return;
+    }
+    BKNI_Memcpy(m_pRoles, pRoles, numRoles*sizeof(BOMX_VideoDecoderRole));
+
     memset(&portDefs, 0, sizeof(portDefs));
-    portDefs.eCompressionFormat = OMX_VIDEO_CodingMPEG2;
+    portDefs.eCompressionFormat = (OMX_VIDEO_CODINGTYPE)pRoles[0].omxCodec;
     portDefs.cMIMEType = m_inputMimeType;
     (void)BOMX_VideoDecoder_InitMimeType(portDefs.eCompressionFormat, m_inputMimeType);
-    for ( i = 0; i < MAX_PORT_FORMATS; i++ )
+    for ( i = 0; i < numRoles; i++ )
     {
         memset(&portFormats[i], 0, sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE));
         BOMX_STRUCT_INIT(&portFormats[i]);
         portFormats[i].nPortIndex = m_videoPortBase;
         portFormats[i].nIndex = i;
-        switch ( i )
-        {
-        default:
-        case 0:
-            portFormats[i].eCompressionFormat = OMX_VIDEO_CodingMPEG2; break;
-        case 1:
-            portFormats[i].eCompressionFormat = OMX_VIDEO_CodingH263; break;
-        case 2:
-            portFormats[i].eCompressionFormat = OMX_VIDEO_CodingAVC; break;
-        case 3:
-            portFormats[i].eCompressionFormat = OMX_VIDEO_CodingMPEG4; break;
-        case 4:
-            portFormats[i].eCompressionFormat = (OMX_VIDEO_CODINGTYPE)OMX_VIDEO_CodingHEVC; break;
-        case 5:
-            portFormats[i].eCompressionFormat = (OMX_VIDEO_CODINGTYPE)OMX_VIDEO_CodingVP8; break;
-        }
+        portFormats[i].eCompressionFormat = (OMX_VIDEO_CODINGTYPE)pRoles[i].omxCodec;
     }
 
-    SetRole(g_roles[0]);
+    SetRole(m_pRoles[0].name);
     m_numVideoPorts = 0;
-    m_pVideoPorts[0] = new BOMX_VideoPort(m_videoPortBase, OMX_DirInput, B_NUM_BUFFERS, B_DATA_BUFFER_SIZE, false, 0, &portDefs, portFormats, MAX_PORT_FORMATS);
+    m_pVideoPorts[0] = new BOMX_VideoPort(m_videoPortBase, OMX_DirInput, B_NUM_BUFFERS, B_DATA_BUFFER_SIZE, false, 0, &portDefs, portFormats, numRoles);
     if ( NULL == m_pVideoPorts[0] )
     {
         BOMX_ERR(("Unable to create video input port"));
@@ -672,9 +760,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     connectSettings.simpleVideoDecoder[0].surfaceClientId = m_allocResults.surfaceClient[0].id;
     connectSettings.simpleVideoDecoder[0].windowId = 0;
     connectSettings.simpleVideoDecoder[0].windowCapabilities.type = NxClient_VideoWindowType_eMain; // TODO: Support Main/Pip
-    for ( i = 0; i < g_numRoles; i++ )
+    for ( i = 0; i < m_numRoles; i++ )
     {
-        connectSettings.simpleVideoDecoder[0].decoderCapabilities.supportedCodecs[GetNexusCodec((OMX_VIDEO_CODINGTYPE)g_roleCodec[i])] = true;
+        connectSettings.simpleVideoDecoder[0].decoderCapabilities.supportedCodecs[GetNexusCodec((OMX_VIDEO_CODINGTYPE)m_pRoles[i].omxCodec)] = true;
     }
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = 3840;  // Always request 4k decoder
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = 2160;
@@ -944,6 +1032,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         BLST_Q_REMOVE_HEAD(&m_frameBufferFreeList, node);
         delete pBuffer;
     }
+    if ( m_pRoles )
+    {
+        delete m_pRoles;
+    }
 
     BOMX_VIDEO_STATS_RESET;
     Unlock();
@@ -1151,6 +1243,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 }
                 pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_HEVCProfileMain;
                 pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_HEVCMainTierLevel51;
+                break;
             }
             return OMX_ErrorNone;
         }
@@ -1194,6 +1287,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 case OMX_VIDEO_CodingVP8:
                     pProfileLevel->eProfile = (OMX_U32)BOMX_VP8ProfileFromNexus(vdecStatus.protocolProfile);
                     pProfileLevel->eLevel = (OMX_U32)BOMX_VP8LevelFromNexus(vdecStatus.protocolLevel);
+                    break;
                 case OMX_VIDEO_CodingHEVC:
                     pProfileLevel->eProfile = (OMX_U32)BOMX_HevcProfileFromNexus(vdecStatus.protocolProfile);
                     pProfileLevel->eLevel = (OMX_U32)BOMX_HevcLevelFromNexus(vdecStatus.protocolLevel);
@@ -1316,16 +1410,16 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             // The spec says this should reset the component to default setings for the role specified.
             // It is technically redundant for this component, changing the input codec has the same
             // effect - but this will also set the input codec accordingly.
-            for ( i = 0; i < g_numRoles; i++ )
+            for ( i = 0; i < m_numRoles; i++ )
             {
-                if ( !strcmp(g_roles[i], (const char *)pRole->cRole) )
+                if ( !strcmp(m_pRoles[i].name, (const char *)pRole->cRole) )
                 {
                     // Set input port to matching compression std.
                     OMX_VIDEO_PARAM_PORTFORMATTYPE format;
                     memset(&format, 0, sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE));
                     BOMX_STRUCT_INIT(&format);
                     format.nPortIndex = m_videoPortBase;
-                    format.eCompressionFormat = (OMX_VIDEO_CODINGTYPE)g_roleCodec[i];
+                    format.eCompressionFormat = (OMX_VIDEO_CODINGTYPE)m_pRoles[i].omxCodec;
                     err = SetParameter(OMX_IndexParamVideoPortFormat, &format);
                     if ( err != OMX_ErrorNone )
                     {
@@ -1538,6 +1632,8 @@ NEXUS_VideoCodec BOMX_VideoDecoder::GetNexusCodec(OMX_VIDEO_CODINGTYPE omxType)
         return NEXUS_VideoCodec_eH264;
     case OMX_VIDEO_CodingVP8:
         return NEXUS_VideoCodec_eVp8;
+    case OMX_VIDEO_CodingVP9:
+        return NEXUS_VideoCodec_eVp9;
     case OMX_VIDEO_CodingHEVC:
         return NEXUS_VideoCodec_eH265;
     default:
@@ -1708,7 +1804,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 vdecStartSettings.settings.pidChannel = m_hPidChannel;
                 vdecStartSettings.settings.codec = GetNexusCodec();
                 BOMX_MSG(("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec));
-                if ( vdecStartSettings.settings.codec == NEXUS_VideoCodec_eH265 )
+                if ( vdecStartSettings.settings.codec == NEXUS_VideoCodec_eH265 || vdecStartSettings.settings.codec == NEXUS_VideoCodec_eVp9 )
                 {
                     // Request 4k decoder for HEVC/VP9 only
                     vdecStartSettings.maxWidth = 3840;
