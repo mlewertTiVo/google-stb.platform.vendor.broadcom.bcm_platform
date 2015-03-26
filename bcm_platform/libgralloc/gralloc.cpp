@@ -198,7 +198,6 @@ static void gralloc_bzero(int is_mma, unsigned handle, size_t numBytes)
        block_handle = (NEXUS_MemoryBlockHandle) handle;
        NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
        NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-       ALOGE("bzero (lock): %p -> %p", block_handle, physAddr);
     } else {
        pMemory = NEXUS_OffsetToCachedAddr((NEXUS_Addr)handle);
     }
@@ -244,7 +243,6 @@ static void gralloc_bzero(int is_mma, unsigned handle, size_t numBytes)
     if (is_mma && block_handle) {
        NEXUS_MemoryBlock_UnlockOffset(block_handle);
        NEXUS_MemoryBlock_Unlock(block_handle);
-       ALOGE("bzero (unlock): %p", block_handle);
     }
 }
 
@@ -328,17 +326,11 @@ NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt,
       case HAL_PIXEL_FORMAT_RGB_565:      b = 2;   pf = NEXUS_PixelFormat_eR5_G6_B5;      break;
       case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
                                           b = 4;   pf = NEXUS_PixelFormat_eX8_R8_G8_B8;   break;
-
       // yv12 planar - nexus does not support this natively, instead we return the expected
       //               converted to packed format that eventually we would produce.
       case HAL_PIXEL_FORMAT_YV12:         b = 2;   pf = NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8; break;
-
-      default:
-         {
-               b = 0;   pf = NEXUS_PixelFormat_eUnknown;
-               LOGE("%s %d FORMAT [ %d ] NOT SUPPORTED ",__FUNCTION__,__LINE__,pixelFmt);
-               break;
-         }
+      default:                            b = 0;   pf = NEXUS_PixelFormat_eUnknown;
+                                          LOGE("%s %d FORMAT [ %d ] NOT SUPPORTED ",__FUNCTION__,__LINE__,pixelFmt); break;
    }
 
    *bpp = b;
@@ -471,43 +463,42 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    int bpp = 0, fd = -1, fd2 = -1, fd3 = -1, fd4 = -1;
    int size, extra_size;
    NEXUS_PixelFormat nxFormat = getNexusPixelFormat(format, &bpp);
+   PSHARED_DATA pSharedData = NULL;
+   NEXUS_MemoryBlockHandle block_handle = NULL;
+   char value[PROPERTY_VALUE_MAX];
+   char value2[PROPERTY_VALUE_MAX];
+   void *pMemory;
+   bool needs_yv12 = false;
+   bool needs_ycrcb = false;
+   bool needs_rgb = false;
 
    (void)dev;
 
    getBufferDataFromFormat(w, h, bpp, format, pStride, &size, &extra_size);
 
    if (nxFormat == NEXUS_PixelFormat_eUnknown) {
-      LOGE("%s %d : UnSupported Format In Gralloc",__FUNCTION__,__LINE__);
+      LOGE("%s: unsupported gr->nx format: %d", __FUNCTION__, format);
       return -EINVAL;
    }
 
-   char value[PROPERTY_VALUE_MAX];
-   char value2[PROPERTY_VALUE_MAX];
    property_get("ro.nexus.ashmem.devname", value, "nx_ashmem");
    strcpy(value2, "/dev/");
    strcat(value2, value);
 
    fd = open(value2, O_RDWR, 0);
    if ((fd == -1) || (!fd)) {
-      LOGE("default-plane: open %s failed 0x%x\n", value2, fd);
       return -EINVAL;
    }
-
    fd2 = open(value2, O_RDWR, 0);
    if ((fd2 == -1) || (!fd2)) {
-      LOGE("shared-data: open %s failed 0x%x\n", value2, fd2);
       return -EINVAL;
    }
-
    fd3 = open(value2, O_RDWR, 0);
    if ((fd3 == -1) || (!fd3)) {
-      LOGE("extra-plane: open %s failed 0x%x\n", value2, fd3);
       return -EINVAL;
    }
-
    fd4 = open(value2, O_RDWR, 0);
    if ((fd4 == -1) || (!fd4)) {
-      LOGE("gl-plane: open %s failed 0x%x\n", value2, fd4);
       return -EINVAL;
    }
 
@@ -522,35 +513,35 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
    grallocPrivateHandle->sharedData = (NEXUS_Addr)ioctl(fd2, NX_ASHMEM_GETMEM);
    if (grallocPrivateHandle->sharedData == 0) {
-      LOGE("%s %d: hnd->sharedData == 0", __FUNCTION__, __LINE__);
+      *pHandle = NULL;
+      delete grallocPrivateHandle;
       return -ENOMEM;
    }
 
-   PSHARED_DATA pSharedData = NULL;
-   NEXUS_MemoryBlockHandle block_handle = NULL;
-
    if (grallocPrivateHandle->is_mma) {
-      void *pMemory;
+      pMemory = NULL;
       block_handle = (NEXUS_MemoryBlockHandle)grallocPrivateHandle->sharedData;
       NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
       pSharedData = (PSHARED_DATA) pMemory;
-      LOGE("alloc-meta (lock): %p -> %p", block_handle, pMemory);
    } else {
       pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(grallocPrivateHandle->sharedData);
    }
 
+   if (pSharedData == NULL) {
+      /* that's pretty bad...  failed to map the allocated memory! */
+      *pHandle = NULL;
+      delete grallocPrivateHandle;
+      return -ENOMEM;
+   }
+
    memset(pSharedData, 0, sizeof(SHARED_DATA));
 
-   bool needs_yv12 = false;
-   bool needs_ycrcb = false;
-   bool needs_rgb = false;
-
    grallocPrivateHandle->usage = usage;
-   pSharedData->planes[DEFAULT_PLANE].width = w;
-   pSharedData->planes[DEFAULT_PLANE].height = h;
-   pSharedData->planes[DEFAULT_PLANE].bpp = bpp;
-   pSharedData->planes[DEFAULT_PLANE].format = format;
-   pSharedData->planes[DEFAULT_PLANE].size = size;
+   pSharedData->planes[DEFAULT_PLANE].width     = w;
+   pSharedData->planes[DEFAULT_PLANE].height    = h;
+   pSharedData->planes[DEFAULT_PLANE].bpp       = bpp;
+   pSharedData->planes[DEFAULT_PLANE].format    = format;
+   pSharedData->planes[DEFAULT_PLANE].size      = size;
    pSharedData->planes[DEFAULT_PLANE].allocSize = size;
    pSharedData->planes[DEFAULT_PLANE].stride = *pStride;
 
@@ -563,13 +554,19 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
       if (grallocPrivateHandle->is_mma) {
          NEXUS_Addr physAddr;
-         NEXUS_Error rc = NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr, &physAddr);
-         if (rc == NEXUS_SUCCESS) {
-            grallocPrivateHandle->nxSurfacePhysicalAddress = (unsigned)physAddr;
-         }
+         NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr, &physAddr);
+         grallocPrivateHandle->nxSurfacePhysicalAddress = (unsigned)physAddr;
+         pMemory = NULL;
+         NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr, &pMemory);
+         grallocPrivateHandle->nxSurfaceAddress = (unsigned)pMemory;
       } else {
          grallocPrivateHandle->nxSurfacePhysicalAddress = pSharedData->planes[DEFAULT_PLANE].physAddr;
+         grallocPrivateHandle->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
       }
+
+      LOGI("%s: owner:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
+           getpid(), grallocPrivateHandle->nxSurfacePhysicalAddress, grallocPrivateHandle->nxSurfaceAddress);
+
    } else if ((format == HAL_PIXEL_FORMAT_YV12) && !(usage & GRALLOC_USAGE_PRIVATE_0)) {
       // standard yv12 buffer for multimedia, need also a secondary buffer for
       // planar to packed conversion when going through the hwc/nsc.
@@ -593,11 +590,17 @@ gralloc_alloc_buffer(alloc_device_t* dev,
              (NEXUS_Addr)ioctl(fd, NX_ASHMEM_GETMEM);
       }
 
-      // V3D does not support 4K.
-      if ((usage & GRALLOC_USAGE_HW_TEXTURE) &&
-          w <= DATA_PLANE_MAX_WIDTH &&
-          h <= DATA_PLANE_MAX_HEIGHT) {
-         needs_rgb = true;
+      if ((usage & GRALLOC_USAGE_HW_TEXTURE)) {
+         // 1) vc5 suports 4k texture and does not require special
+         //    alignment considerations.
+         // 2) vc4 does only support 2k textures and does require
+         //    special alignmnent considerations.
+         if (!dyn_BEGLint_BufferGetRequirements ||
+             (dyn_BEGLint_BufferGetRequirements &&
+              w <= DATA_PLANE_MAX_WIDTH &&
+              h <= DATA_PLANE_MAX_HEIGHT)) {
+            needs_rgb = true;
+         }
       }
    }
 
@@ -630,13 +633,18 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
       if (grallocPrivateHandle->is_mma) {
          NEXUS_Addr physAddr;
-         NEXUS_Error rc = NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr, &physAddr);
-         if (rc == NEXUS_SUCCESS) {
-            grallocPrivateHandle->nxSurfacePhysicalAddress = (unsigned)physAddr;
-         }
+         NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr, &physAddr);
+         grallocPrivateHandle->nxSurfacePhysicalAddress = (unsigned)physAddr;
+         pMemory = NULL;
+         NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr, &pMemory);
+         grallocPrivateHandle->nxSurfaceAddress = (unsigned)pMemory;
       } else {
          grallocPrivateHandle->nxSurfacePhysicalAddress = pSharedData->planes[GL_PLANE].physAddr;
+         grallocPrivateHandle->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->planes[GL_PLANE].physAddr);
       }
+
+      LOGI("%s (overruled): owner:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
+           getpid(), grallocPrivateHandle->nxSurfacePhysicalAddress, grallocPrivateHandle->nxSurfaceAddress);
    }
 
    bool alloc_failed = false;
@@ -684,7 +692,6 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
    if (grallocPrivateHandle->is_mma && block_handle) {
       NEXUS_MemoryBlock_Unlock(block_handle);
-      LOGE("alloc-meta (unlock): %p", block_handle);
    }
 
    return 0;
@@ -694,8 +701,7 @@ static int
 grallocFreeHandle(private_handle_t *handleToFree)
 {
    if (!handleToFree) {
-      LOGE("%s:!!!! Invalid Arguments, Cannot Process Free!!", __FUNCTION__);
-      return -1;
+      return -EINVAL;
    }
 
    PSHARED_DATA pSharedData = NULL;
@@ -706,14 +712,14 @@ grallocFreeHandle(private_handle_t *handleToFree)
       block_handle = (NEXUS_MemoryBlockHandle)handleToFree->sharedData;
       NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
       pSharedData = (PSHARED_DATA) pMemory;
-      LOGE("free-meta (lock): %p -> %p", block_handle, pMemory);
    } else {
       pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(handleToFree->sharedData);
    }
 
    if (pSharedData) {
      if (android_atomic_acquire_load(&pSharedData->hwc.active)) {
-       ALOGE("Freeing gralloc buffer %#x used by HWC!  layer %d surface %#x", handleToFree->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
+       ALOGE("Freeing gralloc buffer %#x used by HWC!  layer %d surface %#x",
+             handleToFree->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
      }
    }
 
@@ -728,7 +734,6 @@ grallocFreeHandle(private_handle_t *handleToFree)
       }
       if (block_handle) {
          NEXUS_MemoryBlock_Unlock(block_handle);
-         LOGE("free-meta (unlock): %p", block_handle);
       }
    }
 

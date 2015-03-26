@@ -38,28 +38,26 @@
 #include "bkni.h"
 #include "gralloc_destripe.h"
 
-extern
-NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt,
-                                      int *bpp);
-
-#define NULL_LIST_SIZE 27
-
 int gralloc_register_buffer(gralloc_module_t const* module,
    buffer_handle_t handle)
 {
    PSHARED_DATA pSharedData;
    NEXUS_MemoryBlockHandle block_handle = NULL;
    private_handle_t* hnd = (private_handle_t*)handle;
+   /* by default, use the default plane holding the buffer used by the gl stack, this
+    * may be overwritten if a gl_plane exists which would mean we want to use that value
+    * instead. */
+   int plane = DEFAULT_PLANE;
+   void *pMemory;
 
    (void)module;
 
    if (private_handle_t::validate(handle) < 0) {
-      LOGE("%s : INVALID HANDLE !!", __FUNCTION__);
       return -EINVAL;
    }
 
    if (hnd->is_mma) {
-      void *pMemory;
+      pMemory = NULL;
       block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
       NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
       pSharedData = (PSHARED_DATA) pMemory;
@@ -68,29 +66,20 @@ int gralloc_register_buffer(gralloc_module_t const* module,
    }
 
    if (pSharedData != NULL) {
-      LOGI("%s: parent:%d, registrant:%d, addr:0x%x", __FUNCTION__,
-           hnd->pid, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr);
-   }
-
-   if (hnd->is_mma) {
-      if (pSharedData != NULL) {
-         void *pMemory = NULL;
-         if (pSharedData->planes[GL_PLANE].physAddr) {
-            NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr, &pMemory);
-         } else if (pSharedData->planes[DEFAULT_PLANE].physAddr) {
-            NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr, &pMemory);
-         }
-         hnd->nxSurfaceAddress = (unsigned)pMemory;
-      }
-      if (block_handle) {
-         NEXUS_MemoryBlock_Unlock(block_handle);
-      }
-   } else {
       if (pSharedData->planes[GL_PLANE].physAddr) {
-         hnd->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->planes[GL_PLANE].physAddr);
-      } else if (pSharedData->planes[DEFAULT_PLANE].physAddr) {
-         hnd->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
+         plane = GL_PLANE;
       }
+      if (hnd->is_mma) {
+         pMemory = NULL;
+         NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr, &pMemory);
+         hnd->nxSurfaceAddress = (unsigned)pMemory;
+         NEXUS_MemoryBlock_Unlock(block_handle);
+      } else {
+         hnd->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->planes[plane].physAddr);
+      }
+
+      LOGI("%s: owner:%d, registrant:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
+           hnd->pid, getpid(), pSharedData->planes[plane].physAddr, hnd->nxSurfaceAddress);
    }
 
    return 0;
@@ -102,16 +91,17 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
    PSHARED_DATA pSharedData;
    NEXUS_MemoryBlockHandle block_handle = NULL;
    private_handle_t* hnd = (private_handle_t*)handle;
+   int plane = DEFAULT_PLANE;
+   void *pMemory;
 
    (void)module;
 
    if (private_handle_t::validate(handle) < 0) {
-      LOGE("%s : INVALID HANDLE !!", __FUNCTION__);
       return -EINVAL;
    }
 
    if (hnd->is_mma) {
-      void *pMemory;
+      pMemory = NULL;
       block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
       NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
       pSharedData = (PSHARED_DATA) pMemory;
@@ -120,31 +110,21 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
    }
 
    if (pSharedData != NULL) {
-      LOGI("%s: parent:%d, registrant:%d, addr:0x%x", __FUNCTION__,
-           hnd->pid, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr);
-   }
-
-   if (hnd->is_mma) {
-      if (pSharedData != NULL) {
-         if (pSharedData->planes[GL_PLANE].physAddr) {
-            NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr);
-         } else if (pSharedData->planes[DEFAULT_PLANE].physAddr) {
-            NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr);
-         }
+      if (pSharedData->planes[GL_PLANE].physAddr) {
+         plane = GL_PLANE;
       }
-      if (block_handle) {
+      if (hnd->is_mma) {
+         NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr);
          NEXUS_MemoryBlock_Unlock(block_handle);
       }
+
+      LOGI("%s: owner:%d, registrant:%d, addr:0x%x", __FUNCTION__,
+           hnd->pid, getpid(), pSharedData->planes[plane].physAddr);
    }
 
    return 0;
 }
 
-/*
- * This implementation does not really change since when we
- * allocate the buffer we fill in the base pointer of the
- * private handle using the surface buffer that was created.
- */
 // TODO : lock actually takes width/height of the region you want to lock
 // optimize the case for a sub region (if it ever ocurrs)
 int gralloc_lock(gralloc_module_t const* module,
@@ -163,7 +143,6 @@ int gralloc_lock(gralloc_module_t const* module,
    (void)h;
 
    if (private_handle_t::validate(handle) < 0) {
-      LOGE("%s : returning EINVAL", __FUNCTION__);
       return -EINVAL;
    }
 
@@ -182,7 +161,8 @@ int gralloc_lock(gralloc_module_t const* module,
    }
 
    if (android_atomic_acquire_load(&pSharedData->hwc.active) && (usage & GRALLOC_USAGE_SW_WRITE_MASK)) {
-      ALOGE("Locking gralloc buffer %#x inuse by HWC!  HWC Layer %d NEXUS_SurfaceHandle %#x", hnd->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
+      ALOGE("Locking gralloc buffer %#x inuse by HWC!  HWC Layer %d NEXUS_SurfaceHandle %#x",
+            hnd->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
    }
 
    if (pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12) {
@@ -219,10 +199,12 @@ int gralloc_lock(gralloc_module_t const* module,
       pthread_mutex_unlock(gralloc_g2d_lock());
    }
 
-   LOGV("%s : successfully locked", __FUNCTION__);
    if ((usage & (GRALLOC_USAGE_SW_READ_MASK|GRALLOC_USAGE_SW_WRITE_MASK)) && !hwConverted) {
       NEXUS_FlushCache(*vaddr, pSharedData->planes[DEFAULT_PLANE].allocSize);
    }
+
+   LOGI("%s: owner:%d, locker:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
+        hnd->pid, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr, *vaddr);
 
 out:
    if (hnd->is_mma && shared_block_handle) {
@@ -240,7 +222,6 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
    private_module_t* pModule = (private_module_t *)module;
 
    if (private_handle_t::validate(handle) < 0) {
-      LOGE("%s : returning EINVAL", __FUNCTION__);
       return -EINVAL;
    }
 
@@ -255,8 +236,6 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
    }
 
-   /* produce a packed version of the buffer that will be used for composition.
-    */
    if (hnd->usage & GRALLOC_USAGE_SW_WRITE_MASK) {
       bool flushed = false;
 
@@ -302,6 +281,9 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
          NEXUS_MemoryBlock_Unlock(shared_block_handle);
       }
    }
+
+   LOGI("%s: owner:%d, locker:%d, addr:0x%x", __FUNCTION__,
+        hnd->pid, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr);
 
    return 0;
 }

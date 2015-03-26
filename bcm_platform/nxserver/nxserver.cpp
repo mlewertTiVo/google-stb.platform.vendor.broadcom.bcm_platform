@@ -85,6 +85,7 @@
 #define NX_HEAP_GFX                    "ro.nx.heap.gfx"
 #define NX_HEAP_GFX2                   "ro.nx.heap.gfx2"
 #define NX_HEAP_VIDEO_SECURE           "ro.nx.heap.video_secure"
+#define NX_HEAP_GROW                   "ro.nx.heap.grow"
 #define NX_HD_OUT_FMT                  "persist.hd_output_format"
 #define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
 #define NX_HDCP2X_KEY                  "ro.nexus.nxserver.hdcp2x_keys"
@@ -259,12 +260,47 @@ static nxserver_t init_nxserver(void)
     settings.session[0].output.hd = true;
     /* -memconfig display,hddvi=off */
     memConfigSettings.videoInputs.hdDvi = false;
+
+    if (property_get(NX_HEAP_VIDEO_SECURE, value, NULL)) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_COMPRESSED_RESTRICTED_REGION);
+       if (strlen(value) && (index != -1)) {
+          /* -heap video_secure,XXy */
+          platformSettings.heap[index].size = calc_heap_size(value);
+       }
+    }
+
+    if (property_get(NX_HEAP_MAIN, value, NULL)) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_MAIN);
+       if (strlen(value) && (index != -1)) {
+          /* -heap main,XXy */
+          platformSettings.heap[index].size = calc_heap_size(value);
+       }
+    }
+
+    if (property_get(NX_HEAP_GFX, value, NULL)) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
+       if (strlen(value) && (index != -1)) {
+          /* -heap gfx,XXy */
+          platformSettings.heap[index].size = calc_heap_size(value);
+       }
+    }
+
+    if (!uses_mma) {
+       if (property_get(NX_HEAP_GFX2, value, NULL)) {
+          int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_SECONDARY_GRAPHICS);
+          if (strlen(value) && (index != -1)) {
+             /* -heap gfx2,XXy */
+             platformSettings.heap[index].size = calc_heap_size(value);
+          }
+       }
+    }
+
     if (uses_mma) {
-       /* -growHeapBlockSize 32m -heap gfx,32m */
-       settings.growHeapBlockSize = 32 * MB;
-       ix = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
-       if (ix != -1) {
-          platformSettings.heap[ix].size = 32 * MB;
+       if (property_get(NX_HEAP_GROW, value, NULL)) {
+          if (strlen(value)) {
+             /* -growHeapBlockSize XXy */
+             settings.growHeapBlockSize = calc_heap_size(value);
+          }
        }
     }
 
@@ -278,36 +314,6 @@ static nxserver_t init_nxserver(void)
        platformSettings.heap[NEXUS_MAX_HEAPS-2].subIndex = platformSettings.heap[index].subIndex;
        platformSettings.heap[NEXUS_MAX_HEAPS-2].size = 4096;
        platformSettings.heap[NEXUS_MAX_HEAPS-2].memoryType = NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED;
-    }
-    if (property_get(NX_HEAP_VIDEO_SECURE, value, NULL)) {
-       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_COMPRESSED_RESTRICTED_REGION);
-       if (strlen(value) && (index != -1)) {
-          /* -heap video_secure,XXm */
-          platformSettings.heap[index].size = calc_heap_size(value);
-       }
-    }
-    if (property_get(NX_HEAP_MAIN, value, NULL)) {
-       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_MAIN);
-       if (strlen(value) && (index != -1)) {
-          /* -heap main,XXm */
-          platformSettings.heap[index].size = calc_heap_size(value);
-       }
-    }
-    if (!uses_mma) {
-       if (property_get(NX_HEAP_GFX, value, NULL)) {
-          int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
-          if (strlen(value) && (index != -1)) {
-             /* -heap gfx,XXm */
-             platformSettings.heap[index].size = strtol(value, NULL, 10) * MB;
-          }
-       }
-       if (property_get(NX_HEAP_GFX2, value, NULL)) {
-          int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_SECONDARY_GRAPHICS);
-          if (strlen(value) && (index != -1)) {
-             /* -heap gfx2,XXm */
-             platformSettings.heap[index].size = strtol(value, NULL, 10) * MB;
-          }
-       }
     }
 
     /* -password file-path-name */
