@@ -62,9 +62,9 @@
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE (1024*1024)  // Taken from soft HEVC decoder (worst case)
-#define B_NUM_BUFFERS (8)               // Taken from soft HEVC decoder (worst case)
+#define B_NUM_BUFFERS (12)
 #define B_STREAM_ID 0xe0
-#define B_MAX_FRAMES (8)                // Taken from soft HEVC decoder (worst case)
+#define B_MAX_FRAMES (12)
 #define B_MAX_DECODED_FRAMES (16)
 #define B_FRAME_TIMER_INTERVAL (32)
 #define B_INPUT_BUFFERS_RETURN_INTERVAL (100)
@@ -200,7 +200,7 @@ static void BOMX_VideoDecoder_OutputFrameEvent(void *pParam)
 static void BOMX_VideoDecoder_InputBuffersTimer(void *pParam)
 {
     BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
-    BOMX_MSG(("%s", __FUNCTION__));
+    ALOGW("%s: Run out of input buffers. Returning all completed buffers...", __FUNCTION__);
     pDecoder->InputBufferTimeoutCallback();
 }
 
