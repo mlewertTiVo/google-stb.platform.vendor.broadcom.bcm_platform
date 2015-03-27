@@ -122,6 +122,7 @@ else:
 chip=str(sys.argv[1]).upper()
 revision=str(sys.argv[2]).upper()
 boardtype=str(sys.argv[3]).upper()
+nexus_platform_selected='none'
 
 # create android cruft.
 androiddevice='%s%s%s' % (chip, revision, boardtype)
@@ -184,16 +185,23 @@ if boltlines[0].rstrip() != lines[0].rstrip():
 run_plat='bash -c "source ./vendor/broadcom/refsw/BSEAV/tools/build/plat %s %s %s"' % (chip, revision, boardtype)
 if verbose:
 	print run_plat
-refsw_configuration='export PLATFORM=%s' % chip
 refsw_configuration_selected=''
 lines = check_output(run_plat,stderr=STDOUT,shell=True).splitlines()
 for line in lines:
 	line = line.rstrip()
 	if parse_and_select(line):
 		refsw_configuration_selected='%s\nexport %s' % (refsw_configuration_selected, line)
+		nexus_platform = re.findall('NEXUS_PLATFORM', line)
+		if len(nexus_platform) > 0:
+			matching_groups = re.match(r"(\w+)\=(\w+)", line)
+			nexus_platform_selected = matching_groups.group(2)
+if len(nexus_platform_selected) > 0:
+	refsw_configuration='export PLATFORM=%s' % nexus_platform_selected
+else:
+	refsw_configuration=''
 
 # sanity.
-if len(refsw_configuration_selected) <= 0:
+if len(refsw_configuration_selected) <= 0 or len(refsw_configuration) <= 0:
 	print '\nerror: refsw configuration for %s turned out empty - no android configuration issued.\n' % androiddevice
 	rmdir_device_root(devicedirectory)
 	plat_droid_usage()
