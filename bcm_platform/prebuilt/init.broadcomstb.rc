@@ -1,7 +1,6 @@
 # import other bcm_platform specific init.
 import /init.bcm_platform.usb.rc
 import /init.brcm_dhd.rc
-import /init.brcm_wl.rc
 import /init.brcm_bt.rc
 import /init.brcm_hwmon.rc
 import /init.nfs.rc
