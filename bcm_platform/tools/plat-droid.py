@@ -122,7 +122,7 @@ else:
 chip=str(sys.argv[1]).upper()
 revision=str(sys.argv[2]).upper()
 boardtype=str(sys.argv[3]).upper()
-nexus_platform_selected='none'
+nexus_platform_selected=''
 
 # create android cruft.
 androiddevice='%s%s%s' % (chip, revision, boardtype)
