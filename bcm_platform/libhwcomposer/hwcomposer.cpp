@@ -298,8 +298,17 @@ typedef struct {
     COMMON_CLIENT_INFO ncci;
     buffer_handle_t grhdl;
     NEXUS_SurfaceComposition composition;
+    NEXUS_SurfaceHandle active_surface;
 
 } VD_CLIENT_INFO;
+
+typedef struct {
+    NEXUS_SurfaceClientHandle schdl;
+    NEXUS_SurfaceCompositorClientId sccid;
+    BFIFO_HEAD(DisplayFifo, NEXUS_SurfaceHandle) display_fifo;
+    NEXUS_SurfaceHandle display_buffers[HWC_NUM_DISP_BUFFERS];
+
+} DISPLAY_CLIENT_INFO;
 
 typedef void (* HWC_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
 
@@ -470,13 +479,8 @@ struct hwc_context_t {
     VSYNC_CLIENT_INFO syn_cli;
     bool nsc_video_changed;
     bool nsc_sideband_changed;
-
     VD_CLIENT_INFO vd_cli[HWC_VD_CLIENTS_NUMBER];
-
-    NEXUS_SurfaceClientHandle schdl;
-    NEXUS_SurfaceCompositorClientId sccid;
-    BFIFO_HEAD(DisplayFifo, NEXUS_SurfaceHandle) display_fifo;
-    NEXUS_SurfaceHandle display_buffers[HWC_NUM_DISP_BUFFERS];
+    DISPLAY_CLIENT_INFO disp_cli[DISPLAY_SUPPORTED];
     BKNI_EventHandle recycle_event;
 
     struct hwc_position overscan_position;
@@ -1168,7 +1172,7 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
             {
                 NEXUS_Error rc;
                 NEXUS_SurfaceComposition composition;
-                NxClient_GetSurfaceClientComposition(ctx->sccid, &composition);
+                NxClient_GetSurfaceClientComposition(ctx->disp_cli[0].sccid, &composition);
                 composition.virtualDisplay.width = ctx->cfg[0].width;
                 composition.virtualDisplay.height = ctx->cfg[0].height;
                 composition.position.x = ctx->overscan_position.x;
@@ -1179,7 +1183,7 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
                 composition.visible = true;
                 composition.colorBlend = colorBlendingEquation[BLENDIND_TYPE_SRC_OVER];
                 composition.alphaBlend = alphaBlendingEquation[BLENDIND_TYPE_SRC_OVER];
-                rc = NxClient_SetSurfaceClientComposition(ctx->sccid, &composition);
+                rc = NxClient_SetSurfaceClientComposition(ctx->disp_cli[0].sccid, &composition);
                 if ( rc ) {
                     ALOGW("%s: Unable to set client composition for overscan adjustment %d", __FUNCTION__, rc);
                 }
@@ -1645,6 +1649,10 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
        if (ctx->display_gles_always) {
           goto out_unlock;
        }
+
+       for (i = 0; i < list->numHwLayers; i++) {
+          // mark all layers as OVERLAY.
+       }
     }
 
 out_unlock:
@@ -1686,26 +1694,34 @@ out:
     return rc;
 }
 
-static void hwc_put_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle surface)
+static void hwc_put_disp_surface(struct hwc_context_t *ctx, int disp_ix, NEXUS_SurfaceHandle surface)
 {
-    if ( surface ) {
-        NEXUS_SurfaceHandle *pSurface = BFIFO_WRITE(&ctx->display_fifo);
+    if (disp_ix > (DISPLAY_SUPPORTED-1)) {
+       return;
+    }
+
+    if (surface) {
+        NEXUS_SurfaceHandle *pSurface = BFIFO_WRITE(&ctx->disp_cli[disp_ix].display_fifo);
         *pSurface = surface;
-        BFIFO_WRITE_COMMIT(&ctx->display_fifo, 1);
+        BFIFO_WRITE_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
     }
 }
 
-static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx)
+static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int disp_ix)
 {
     NEXUS_SurfaceHandle surfaces[HWC_NUM_DISP_BUFFERS];
     size_t numSurfaces, i;
     NEXUS_Error rc;
-    NEXUS_SurfaceHandle surface=NULL;
+    NEXUS_SurfaceHandle surface = NULL;
+
+    if (disp_ix > (DISPLAY_SUPPORTED-1)) {
+       return surface;
+    }
 
     for ( ;; ) {
-        if ( BFIFO_READ_PEEK(&ctx->display_fifo) ) {
-            NEXUS_SurfaceHandle *pSurface = BFIFO_READ(&ctx->display_fifo);
-            BFIFO_READ_COMMIT(&ctx->display_fifo, 1);
+        if ( BFIFO_READ_PEEK(&ctx->disp_cli[disp_ix].display_fifo) ) {
+            NEXUS_SurfaceHandle *pSurface = BFIFO_READ(&ctx->disp_cli[disp_ix].display_fifo);
+            BFIFO_READ_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
             surface = *pSurface;
         }
 
@@ -1721,19 +1737,18 @@ static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx)
         }
         else {
             numSurfaces=0;
-            rc = NEXUS_SurfaceClient_RecycleSurface(ctx->schdl, surfaces, HWC_NUM_DISP_BUFFERS, &numSurfaces);
+            rc = NEXUS_SurfaceClient_RecycleSurface(ctx->disp_cli[disp_ix].schdl, surfaces, HWC_NUM_DISP_BUFFERS, &numSurfaces);
             if ( rc ) {
-                ALOGW("%s: Recycle Surface Error %#x %d", __FUNCTION__, ctx->schdl, rc);
+                ALOGW("%s: Recycle Surface Error %#x %d", __FUNCTION__, ctx->disp_cli[disp_ix].schdl, rc);
             } else if ( numSurfaces > 0 ) {
                 for ( i = 0; i < numSurfaces; i++ ) {
-                    NEXUS_SurfaceHandle *pHandle = BFIFO_WRITE(&ctx->display_fifo);
+                    NEXUS_SurfaceHandle *pHandle = BFIFO_WRITE(&ctx->disp_cli[disp_ix].display_fifo);
                     *pHandle = surfaces[i];
-                    BFIFO_WRITE_COMMIT(&ctx->display_fifo, 1);
+                    BFIFO_WRITE_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
                 }
             }
-            if ( numSurfaces == 0 ) {
-                // Only wait for a recycle callback if we failed to find any
-                if ( BKNI_WaitForEvent(ctx->recycle_event, 150) ) {
+            if (numSurfaces == 0) {
+                if (BKNI_WaitForEvent(ctx->recycle_event, 150)) {
                     ALOGW("%s: warning no surface received in 150ms", __FUNCTION__);
                 }
             }
@@ -1765,7 +1780,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         goto out;
     }
 
-    display_surface = hwc_get_disp_surface(ctx);
+    display_surface = hwc_get_disp_surface(ctx, 0);
     if ( NULL == display_surface ) {
         ALOGE("%s: No display surface available", __FUNCTION__);
         goto out_mutex;
@@ -1873,7 +1888,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         if ( rc )  {
             ALOGW("%s: checkpoint timeout", __FUNCTION__);
         }
-        rc = NEXUS_SurfaceClient_PushSurface(ctx->schdl, display_surface, NULL, false);
+        rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[0].schdl, display_surface, NULL, false);
         if ( rc ) {
             ALOGW("%s: Unable to push surface to client (%d)", __FUNCTION__, rc);
         }
@@ -1886,7 +1901,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     } else {
         ctx->stats[0].set_skipped++;
         BKNI_ReleaseMutex(ctx->power_mutex);
-        hwc_put_disp_surface(ctx, display_surface);
+        hwc_put_disp_surface(ctx, 0, display_surface);
     }
 
     if (ctx->display_dump_layer) {
@@ -1920,6 +1935,10 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
        if (ctx->display_gles_always) {
           list->retireFenceFd = list->outbufAcquireFenceFd;
           goto out_unlock;
+       }
+
+       for (i = 0; i < list->numHwLayers; i++) {
+          // compose all OVERLAY layers into the buffer passed as outbuf.
        }
     }
 
@@ -1979,21 +1998,21 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
             delete ctx->pIpcClient;
         }
 
-        for (i = 0; i < NSC_SB_CLIENTS_NUMBER; i++)
-        {
+        for (i = 0; i < NSC_SB_CLIENTS_NUMBER; i++) {
            /* nothing to do since we do not acquire the surfaces explicitely. */
         }
 
-        for (i = 0; i < NSC_MM_CLIENTS_NUMBER; i++)
-        {
+        for (i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
            /* nothing to do since we do not acquire the surfaces explicitely. */
         }
 
-        if ( ctx->schdl ) {
-            NEXUS_SurfaceClient_Release(ctx->schdl);
+        for (i = 0; i < DISPLAY_SUPPORTED; i++) {
+           if (ctx->disp_cli[i].schdl) {
+              NEXUS_SurfaceClient_Release(ctx->disp_cli[i].schdl);
+           }
         }
-        if ( ctx->recycle_event ) {
-            BKNI_DestroyEvent(ctx->recycle_event);
+        if (ctx->recycle_event) {
+           BKNI_DestroyEvent(ctx->recycle_event);
         }
 
         NxClient_Free(&ctx->nxAllocResults);
@@ -2003,16 +2022,20 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         BKNI_DestroyMutex(ctx->power_mutex);
         BKNI_DestroyMutex(ctx->dev_mutex);
 
-        if (ctx->hwc_binder)
+        if (ctx->hwc_binder) {
            delete ctx->hwc_binder;
+        }
 
-        if (ctx->hwc_2dg)
+        if (ctx->hwc_2dg) {
            NEXUS_Graphics2D_Close(ctx->hwc_2dg);
-        if (ctx->checkpoint_event)
+        }
+        if (ctx->checkpoint_event) {
            BKNI_DestroyEvent(ctx->checkpoint_event);
+        }
 
-        if (ctx->sync_timeline != INVALID_FENCE)
+        if (ctx->sync_timeline != INVALID_FENCE) {
            close(ctx->sync_timeline);
+        }
     }
 }
 
@@ -2361,12 +2384,81 @@ out:
     return standby;
 }
 
+static void hwc_read_dev_props(struct hwc_context_t* dev)
+{
+   char value[PROPERTY_VALUE_MAX];
+
+   if (dev == NULL) {
+      return;
+   }
+
+   dev->cfg[0].width = property_get_int32(GRAPHICS_RES_WIDTH_PROP, GRAPHICS_RES_WIDTH_DEFAULT);
+   dev->cfg[0].height = property_get_int32(GRAPHICS_RES_HEIGHT_PROP, GRAPHICS_RES_HEIGHT_DEFAULT);
+
+   dev->cfg[1].width = dev->cfg[0].width;
+   dev->cfg[1].height = dev->cfg[0].height;
+
+   if (property_get(HWC_GLES_MODE_PROP, value, HWC_DEFAULT_GLES_MODE)) {
+      dev->display_gles_fallback =
+         (strncmp(value, HWC_GLES_MODE_FALLBACK, strlen(HWC_GLES_MODE_FALLBACK)) == 0) ? true : false;
+      dev->display_gles_always =
+         (strncmp(value, HWC_GLES_MODE_ALWAYS, strlen(HWC_GLES_MODE_ALWAYS)) == 0) ? true : false;
+   }
+
+   if (property_get(HWC_DUMP_LAYER_PROP, value, HWC_DEFAULT_DUMP_LAYER)) {
+      dev->display_dump_layer = (strtoul(value, NULL, 10) == 0) ? false : true;
+   }
+
+   if (property_get(HWC_DUMP_PUSH_PROP, value, HWC_DEFAULT_DUMP_PUSH)) {
+      dev->display_dump_push = (strtoul(value, NULL, 10) == 0) ? false : true;
+   }
+
+   if (property_get(HWC_DUMP_VSYNC_PROP, value, HWC_DEFAULT_DUMP_VSYNC)) {
+      dev->display_dump_vsync = (strtoul(value, NULL, 10) == 0) ? false : true;
+   }
+
+   if (property_get(HWC_NSC_COPY_PROP, value, HWC_DEFAULT_NSC_COPY)) {
+      dev->nsc_copy = (strtoul(value, NULL, 10) == 0) ? false : true;
+   }
+
+   if (property_get(HWC_TRACK_BUFFER_PROP, value, HWC_DEFAULT_TRACK_BUFFER)) {
+      dev->track_buffer = (strtoul(value, NULL, 10) == 0) ? false : true;
+   }
+
+   if (property_get(HWC_DUMP_VIRT_PROP, value, HWC_DEFAULT_DUMP_VIRT)) {
+      dev->display_dump_virt = (strtoul(value, NULL, 10) == 0) ? false : true;
+   }
+
+   if (property_get(HWC_USES_MMA_PROP, value, HWC_DEFAULT_MMA)) {
+      dev->hwc_with_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
+   }
+
+   if (property_get(HWC_DUMP_MMA_OPS_PROP, value, HWC_DEFAULT_MMA)) {
+      dev->dump_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
+   }
+
+   if (property_get(HWC_SW_SYNC_PROP, value, HWC_DEFAULT_SW_SYNC)) {
+      if (strtoul(value, NULL, 10) == 0) {
+         ALOGI("%s: sync timeline disabled", __FUNCTION__);
+         dev->sync_timeline = INVALID_FENCE;
+      } else {
+         dev->sync_timeline = sw_sync_timeline_create();
+         if (dev->sync_timeline < 0) {
+            ALOGW("%s: failed to create sync timeline, not using fences", __FUNCTION__);
+            dev->sync_timeline = INVALID_FENCE;
+         }
+      }
+   }
+}
+
 static int hwc_device_open(const struct hw_module_t* module, const char* name,
         struct hw_device_t** device)
 {
     int status = -EINVAL;
-    char value[PROPERTY_VALUE_MAX];
     struct hwc_context_t *dev = NULL;
+    NxClient_AllocSettings nxAllocSettings;
+    NEXUS_SurfaceClientSettings client_settings;
+    NEXUS_SurfaceComposition composition;
 
     if (!strcmp(name, HWC_HARDWARE_COMPOSER)) {
         NEXUS_Error rc = NEXUS_SUCCESS;
@@ -2379,84 +2471,39 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            goto out;
         }
 
-        dev->cfg[0].width = property_get_int32(
-                GRAPHICS_RES_WIDTH_PROP, GRAPHICS_RES_WIDTH_DEFAULT);
-        dev->cfg[0].height = property_get_int32(
-                GRAPHICS_RES_HEIGHT_PROP, GRAPHICS_RES_HEIGHT_DEFAULT);
+        hwc_read_dev_props(dev);
 
-        if (property_get(HWC_GLES_MODE_PROP, value, HWC_DEFAULT_GLES_MODE)) {
-           dev->display_gles_fallback =
-              (strncmp(value, HWC_GLES_MODE_FALLBACK, strlen(HWC_GLES_MODE_FALLBACK)) == 0) ? true : false;
-           dev->display_gles_always =
-              (strncmp(value, HWC_GLES_MODE_ALWAYS, strlen(HWC_GLES_MODE_ALWAYS)) == 0) ? true : false;
+        // TODO: only one callback installed for all nsc operations regarding of display, hmmm...
+        if ( BKNI_CreateEvent(&dev->recycle_event) ) {
+           goto out;
         }
 
-        if (property_get(HWC_DUMP_LAYER_PROP, value, HWC_DEFAULT_DUMP_LAYER)) {
-           dev->display_dump_layer = (strtoul(value, NULL, 10) == 0) ? false : true;
+        NxClient_GetDefaultAllocSettings(&nxAllocSettings);
+        nxAllocSettings.surfaceClient = DISPLAY_SUPPORTED;
+        rc = NxClient_Alloc(&nxAllocSettings, &dev->nxAllocResults);
+        if (rc) {
+           ALOGE("%s: failed NxClient_Alloc (rc=%d)!", __FUNCTION__, rc);
+           goto out;
         }
 
-        if (property_get(HWC_DUMP_PUSH_PROP, value, HWC_DEFAULT_DUMP_PUSH)) {
-           dev->display_dump_push = (strtoul(value, NULL, 10) == 0) ? false : true;
-        }
-
-        if (property_get(HWC_DUMP_VSYNC_PROP, value, HWC_DEFAULT_DUMP_VSYNC)) {
-           dev->display_dump_vsync = (strtoul(value, NULL, 10) == 0) ? false : true;
-        }
-
-        if (property_get(HWC_NSC_COPY_PROP, value, HWC_DEFAULT_NSC_COPY)) {
-           dev->nsc_copy = (strtoul(value, NULL, 10) == 0) ? false : true;
-        }
-
-        if (property_get(HWC_TRACK_BUFFER_PROP, value, HWC_DEFAULT_TRACK_BUFFER)) {
-           dev->track_buffer = (strtoul(value, NULL, 10) == 0) ? false : true;
-        }
-
-        if (property_get(HWC_DUMP_VIRT_PROP, value, HWC_DEFAULT_DUMP_VIRT)) {
-           dev->display_dump_virt = (strtoul(value, NULL, 10) == 0) ? false : true;
-        }
-
-        if (property_get(HWC_USES_MMA_PROP, value, HWC_DEFAULT_MMA)) {
-           dev->hwc_with_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
-        }
-
-        if (property_get(HWC_DUMP_MMA_OPS_PROP, value, HWC_DEFAULT_MMA)) {
-           dev->dump_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
-        }
-
-        {
-            NxClient_AllocSettings nxAllocSettings;
-            NEXUS_SurfaceClientSettings client_settings;
-            NEXUS_SurfaceComposition composition;
-
-            NxClient_GetDefaultAllocSettings(&nxAllocSettings);
-            nxAllocSettings.surfaceClient = 1;
-            rc = NxClient_Alloc(&nxAllocSettings, &dev->nxAllocResults);
-            if (rc)
-            {
-                ALOGE("%s: Cannot allocate NxClient graphic window (rc=%d)!", __FUNCTION__, rc);
-                goto out;
+        for (int i = 0; i < DISPLAY_SUPPORTED; i++) {
+            dev->disp_cli[i].sccid = dev->nxAllocResults.surfaceClient[i].id;
+            dev->disp_cli[i].schdl = NEXUS_SurfaceClient_Acquire(dev->disp_cli[i].sccid);
+            if (NULL == dev->disp_cli[i].schdl) {
+               ALOGE("%s: Unable to allocate surface client", __FUNCTION__);
+               goto out;
             }
-
-            if ( BKNI_CreateEvent(&dev->recycle_event) ) {
-                goto out;
-            }
-            dev->sccid = dev->nxAllocResults.surfaceClient[0].id;
-            dev->schdl = NEXUS_SurfaceClient_Acquire(dev->sccid);
-            if ( NULL == dev->schdl ) {
-                ALOGE("%s: Unable to allocate surface client", __FUNCTION__);
-                goto out;
-            }
-            NEXUS_SurfaceClient_GetSettings(dev->schdl, &client_settings);
+            NEXUS_SurfaceClient_GetSettings(dev->disp_cli[i].schdl, &client_settings);
             client_settings.recycled.callback = hwc_nsc_recycled_cb;
             client_settings.recycled.context = dev;
-            rc = NEXUS_SurfaceClient_SetSettings(dev->schdl, &client_settings);
-            if ( rc ) {
-                ALOGE("%s: Unable to setup surface client", __FUNCTION__);
-                goto out;
+            rc = NEXUS_SurfaceClient_SetSettings(dev->disp_cli[i].schdl, &client_settings);
+            if (rc) {
+               ALOGE("%s: Unable to setup surface client", __FUNCTION__);
+               goto out;
             }
-            NxClient_GetSurfaceClientComposition(dev->sccid, &composition);
-            composition.virtualDisplay.width = dev->cfg[0].width;
-            composition.virtualDisplay.height = dev->cfg[0].height;
+            NxClient_GetSurfaceClientComposition(dev->disp_cli[i].sccid, &composition);
+            composition.virtualDisplay.width = dev->cfg[i].width;
+            composition.virtualDisplay.height = dev->cfg[i].height;
             composition.position.x = 0;
             composition.position.y = 0;
             composition.position.width = dev->cfg[0].width;
@@ -2465,73 +2512,70 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             composition.visible = true;
             composition.colorBlend = colorBlendingEquation[BLENDIND_TYPE_SRC_OVER];
             composition.alphaBlend = alphaBlendingEquation[BLENDIND_TYPE_SRC_OVER];
-            rc = NxClient_SetSurfaceClientComposition(dev->sccid, &composition);
-            if ( rc ) {
-                ALOGE("%s: Unable to set client composition %d", __FUNCTION__, rc);
-                goto out;
+            rc = NxClient_SetSurfaceClientComposition(dev->disp_cli[i].sccid, &composition);
+            if (rc) {
+               ALOGE("%s: Unable to set client composition %d", __FUNCTION__, rc);
+               goto out;
             }
-            for ( int i = 0; i < HWC_NUM_DISP_BUFFERS; i++ )
-            {
-                NEXUS_SurfaceCreateSettings surfaceCreateSettings;
-                NEXUS_Surface_GetDefaultCreateSettings(&surfaceCreateSettings);
-                surfaceCreateSettings.width = dev->cfg[0].width;
-                surfaceCreateSettings.height = dev->cfg[0].height;
-                surfaceCreateSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
-                dev->display_buffers[i] = NEXUS_Surface_Create(&surfaceCreateSettings);
-                if ( NULL == dev->display_buffers[i] ) {
-                    ALOGE("%s: Unable to allocate display buffer %d", __FUNCTION__, i);
-                    goto out;
-                }
+            for ( int j = 0; j < HWC_NUM_DISP_BUFFERS; j++ ) {
+               NEXUS_SurfaceCreateSettings surfaceCreateSettings;
+               NEXUS_Surface_GetDefaultCreateSettings(&surfaceCreateSettings);
+               surfaceCreateSettings.width = dev->cfg[i].width;
+               surfaceCreateSettings.height = dev->cfg[i].height;
+               surfaceCreateSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
+               dev->disp_cli[i].display_buffers[j] = NEXUS_Surface_Create(&surfaceCreateSettings);
+               if (NULL == dev->disp_cli[i].display_buffers[j]) {
+                  ALOGE("%s: Unable to allocate display %d buffer %d", __FUNCTION__, i, j);
+                  goto out;
+               }
             }
-            BFIFO_INIT(&dev->display_fifo, dev->display_buffers, HWC_NUM_DISP_BUFFERS);
-            // Start FIFO full
-            BFIFO_WRITE_COMMIT(&dev->display_fifo, HWC_NUM_DISP_BUFFERS);
+            BFIFO_INIT(&dev->disp_cli[i].display_fifo, dev->disp_cli[i].display_buffers, HWC_NUM_DISP_BUFFERS);
+            BFIFO_WRITE_COMMIT(&dev->disp_cli[i].display_fifo, HWC_NUM_DISP_BUFFERS);
+        }
 
-            BKNI_CreateEvent(&dev->syn_cli.vsync_event);
-            dev->syn_cli.refresh       = VSYNC_CLIENT_REFRESH;
-            dev->syn_cli.ncci.type     = NEXUS_CLIENT_VSYNC;
-            dev->syn_cli.ncci.parent   = (void *)dev;
+        BKNI_CreateEvent(&dev->syn_cli.vsync_event);
+        dev->syn_cli.refresh       = VSYNC_CLIENT_REFRESH;
+        dev->syn_cli.ncci.type     = NEXUS_CLIENT_VSYNC;
+        dev->syn_cli.ncci.parent   = (void *)dev;
 
-            /* create layers nx gpx clients */
-            for (int i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++)
-            {
-                dev->gpx_cli[i].ncci.parent = (void *)dev;
-                dev->gpx_cli[i].layer_id = i;
-                dev->gpx_cli[i].ncci.type = NEXUS_CLIENT_GPX;
-                NxClient_GetSurfaceClientComposition(dev->sccid, &dev->gpx_cli[i].composition);
+        for (int i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++) {
+            dev->gpx_cli[i].ncci.parent = (void *)dev;
+            dev->gpx_cli[i].layer_id = i;
+            dev->gpx_cli[i].ncci.type = NEXUS_CLIENT_GPX;
+            NxClient_GetSurfaceClientComposition(dev->disp_cli[0].sccid, &dev->gpx_cli[i].composition);
+        }
+
+        for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
+            dev->mm_cli[i].root.ncci.parent = (void *)dev;
+            dev->mm_cli[i].root.layer_id = i;
+            dev->mm_cli[i].root.ncci.type = NEXUS_CLIENT_MM;
+            dev->mm_cli[i].id = INVALID_HANDLE + i;
+            memset(&dev->mm_cli[i].root.composition, 0, sizeof(dev->mm_cli[i].root.composition));
+            dev->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_INVALID;
+
+            // TODO: add support for more than one video at the time.
+            if (i == 0) {
+               dev->nsc_video_changed = true;
             }
+        }
 
-            /* create layers nx mm clients */
-            for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++)
-            {
-                dev->mm_cli[i].root.ncci.parent = (void *)dev;
-                dev->mm_cli[i].root.layer_id = i;
-                dev->mm_cli[i].root.ncci.type = NEXUS_CLIENT_MM;
-                dev->mm_cli[i].id = INVALID_HANDLE + i;
-                memset(&dev->mm_cli[i].root.composition, 0, sizeof(dev->mm_cli[i].root.composition));
+        for (int i = 0; i < NSC_SB_CLIENTS_NUMBER; i++) {
+            dev->sb_cli[i].root.ncci.parent = (void *)dev;
+            dev->sb_cli[i].root.layer_id = i;
+            dev->sb_cli[i].root.ncci.type = NEXUS_CLIENT_SB;
+            dev->sb_cli[i].id = INVALID_HANDLE + i;
+            memset(&dev->sb_cli[i].root.composition, 0, sizeof(dev->sb_cli[i].root.composition));
 
-                dev->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_INVALID;
-
-                // TODO: add support for more than one video at the time.
-                if (i == 0) {
-                   dev->nsc_video_changed = true;
-                }
+            // TODO: add support for more than one sideband at the time.
+            if (i == 0) {
+               dev->nsc_sideband_changed = true;
             }
+        }
 
-            /* create layers nx sb clients */
-            for (int i = 0; i < NSC_SB_CLIENTS_NUMBER; i++)
-            {
-                dev->sb_cli[i].root.ncci.parent = (void *)dev;
-                dev->sb_cli[i].root.layer_id = i;
-                dev->sb_cli[i].root.ncci.type = NEXUS_CLIENT_SB;
-                dev->sb_cli[i].id = INVALID_HANDLE + i;
-                memset(&dev->sb_cli[i].root.composition, 0, sizeof(dev->sb_cli[i].root.composition));
-
-                // TODO: add support for more than one sideband at the time.
-                if (i == 0) {
-                   dev->nsc_sideband_changed = true;
-                }
-            }
+        for (int i = 0; i < HWC_VD_CLIENTS_NUMBER; i++) {
+            dev->vd_cli[i].ncci.parent = (void *)dev;
+            dev->vd_cli[i].ncci.type = NEXUS_CLIENT_VD;
+            NxClient_GetSurfaceClientComposition(dev->disp_cli[1].sccid, &dev->vd_cli[i].composition);
         }
 
         dev->device.common.tag                     = HARDWARE_DEVICE_TAG;
@@ -2552,21 +2596,25 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         dev->device.setActiveConfig                = hwc_device_setActiveConfig;
         dev->device.setCursorPositionAsync         = hwc_device_setCursorPositionAsync;
 
-        if (BKNI_CreateMutex(&dev->vsync_callback_enabled_mutex) == BERR_OS_ERROR)
+        if (BKNI_CreateMutex(&dev->vsync_callback_enabled_mutex) == BERR_OS_ERROR) {
            goto clean_up;
-        if (BKNI_CreateMutex(&dev->mutex) == BERR_OS_ERROR)
+        }
+        if (BKNI_CreateMutex(&dev->mutex) == BERR_OS_ERROR) {
            goto clean_up;
-        if (BKNI_CreateMutex(&dev->power_mutex) == BERR_OS_ERROR)
+        }
+        if (BKNI_CreateMutex(&dev->power_mutex) == BERR_OS_ERROR) {
            goto clean_up;
-        if (BKNI_CreateMutex(&dev->dev_mutex) == BERR_OS_ERROR)
+        }
+        if (BKNI_CreateMutex(&dev->dev_mutex) == BERR_OS_ERROR) {
            goto clean_up;
+        }
 
         dev->vsync_thread_run = 1;
         dev->display_handle = NULL;
 
         dev->pIpcClient = NexusIPCClientFactory::getClient("hwc");
         if (dev->pIpcClient == NULL) {
-            ALOGE("%s: Could not instantiate Nexus IPC Client!!!", __FUNCTION__);
+            ALOGE("%s: failed NexusIPCClientFactory::getClient", __FUNCTION__);
         } else {
             b_refsw_client_client_configuration clientConfig;
 
@@ -2576,7 +2624,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
 
             dev->pNexusClientContext = dev->pIpcClient->createClientContext(&clientConfig);
             if (dev->pNexusClientContext == NULL) {
-               ALOGE("%s: Could not create Nexus Client Context!!!", __FUNCTION__);
+               ALOGE("%s: failed createClientContext", __FUNCTION__);
             } else {
                NEXUS_InterfaceName interfaceName;
                NEXUS_PlatformObjectInstance objects[NEXUS_DISPLAY_OBJECTS]; /* won't overflow. */
@@ -2594,7 +2642,6 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         }
 
         pthread_attr_init(&attr);
-        /* TODO: set schedpolicy to RR? */
         if (pthread_create(&dev->vsync_callback_thread, &attr, hwc_vsync_task, (void *)dev) != 0) {
             goto clean_up;
         }
@@ -2632,24 +2679,6 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            NEXUS_Graphics2D_GetCapabilities(dev->hwc_2dg, &dev->gfxCaps);
            ALOGI("%s: gfx caps: h-down-scale: %d, v-down-scale: %d", __FUNCTION__,
                  dev->gfxCaps.maxHorizontalDownScale, dev->gfxCaps.maxVerticalDownScale);
-        }
-
-        if (property_get(HWC_SW_SYNC_PROP, value, HWC_DEFAULT_SW_SYNC)) {
-           if (strtoul(value, NULL, 10) == 0) {
-              ALOGI("%s: sync timeline disabled", __FUNCTION__);
-              dev->sync_timeline = INVALID_FENCE;
-           } else {
-              dev->sync_timeline = sw_sync_timeline_create();
-              if (dev->sync_timeline < 0) {
-                 ALOGW("%s: failed to create sync timeline, not using fences", __FUNCTION__);
-                 dev->sync_timeline = INVALID_FENCE;
-              }
-           }
-        }
-
-        for (int i = 0; i < HWC_VD_CLIENTS_NUMBER; i++) {
-           dev->vd_cli[i].ncci.parent = (void *)dev;
-           dev->vd_cli[i].ncci.type = NEXUS_CLIENT_VD;
         }
 
         *device = &dev->device.common;
