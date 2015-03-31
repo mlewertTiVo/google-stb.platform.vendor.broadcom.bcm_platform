@@ -86,8 +86,9 @@ typedef struct NexusClientContext {
         NEXUS_ClientHandle nexusClient;
         unsigned connectId;
     } ipc;
+    b_refsw_client_client_name clientName;
+    unsigned                   clientPid;
     b_refsw_client_client_info info;
-    b_refsw_client_client_configuration createConfig;
 } NexusClientContext;
 
 
@@ -557,7 +558,7 @@ NexusNxService::~NexusNxService()
     server = NULL;
 }
 
-NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_client_configuration *config)
+NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_client_name *pClientName, unsigned clientPid)
 {
     NexusClientContext * client;
     NEXUS_ClientSettings clientSettings;
@@ -574,7 +575,8 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
     BKNI_Memset(client, 0, sizeof(*client));
     BDBG_OBJECT_SET(client, NexusClientContext);
 
-    client->createConfig = *config;
+    client->clientName = *pClientName;
+    client->clientPid = clientPid;
 
     BLST_D_INSERT_HEAD(&server->clients, client, link);
 
@@ -595,8 +597,7 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
         }
     }
 
-    client->ipc.nexusClient = getNexusClient(client->createConfig.pid,
-        client->createConfig.name.string);
+    client->ipc.nexusClient = getNexusClient(client->clientPid, client->clientName.string);
 
     LOGI("%s: Exiting with client=%p", __PRETTY_FUNCTION__, (void *)client);
     return client;
@@ -613,7 +614,7 @@ void NexusNxService::destroyClientContext(NexusClientContext * client)
 
     Mutex::Autolock autoLock(server->mLock);
 
-    LOGI("%s: client=\"%s\"", __PRETTY_FUNCTION__, client->createConfig.name.string);
+    LOGI("%s: client=\"%s\"", __PRETTY_FUNCTION__, client->clientName.string);
 
     BLST_D_REMOVE(&server->clients, client, link);
     BDBG_OBJECT_DESTROY(client, NexusClientContext);

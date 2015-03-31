@@ -87,7 +87,8 @@ typedef union api_param
 
     struct {
         struct {
-            b_refsw_client_client_configuration createClientConfig;
+            b_refsw_client_client_name clientName;
+            unsigned                   clientPid;
         } in;
 
         struct {

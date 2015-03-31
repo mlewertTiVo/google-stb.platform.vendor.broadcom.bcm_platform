@@ -2684,7 +2684,6 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             b_refsw_client_client_configuration clientConfig;
 
             memset(&clientConfig, 0, sizeof(clientConfig));
-            strncpy(clientConfig.name.string, "hwc", sizeof(clientConfig.name.string));
             clientConfig.standbyMonitorCallback = hwc_standby_monitor;
             clientConfig.standbyMonitorContext  = dev;
 
@@ -2696,9 +2695,8 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                NEXUS_PlatformObjectInstance objects[NEXUS_DISPLAY_OBJECTS]; /* won't overflow. */
                size_t num = NEXUS_DISPLAY_OBJECTS;
                NEXUS_Error nrc;
-               NEXUS_ClientHandle client = NxClient_Config_LookupClient(clientConfig.pid);
                strcpy(interfaceName.name, "NEXUS_Display");
-               nrc = NEXUS_Platform_GetClientObjects(client, &interfaceName, &objects[0], num, &num);
+               nrc = NEXUS_Platform_GetObjects(&interfaceName, &objects[0], num, &num);
                if (nrc == NEXUS_SUCCESS) {
                   ALOGD("%s: display handle is %p", __FUNCTION__, objects[0].object);
                   dev->display_handle = (NEXUS_DisplayHandle)objects[0].object;

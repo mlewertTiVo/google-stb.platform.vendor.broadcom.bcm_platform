@@ -87,8 +87,6 @@ typedef bool (*b_refsw_client_standby_monitor_callback)(void *context);
 typedef void * b_refsw_client_standby_monitor_context;
 
 typedef struct b_refsw_client_client_configuration {
-    b_refsw_client_client_name name; /* name of the client application */
-    unsigned pid;
     b_refsw_client_standby_monitor_callback standbyMonitorCallback;
     b_refsw_client_standby_monitor_context  standbyMonitorContext;
 } b_refsw_client_client_configuration;
@@ -222,7 +220,6 @@ public:
     virtual      ~NexusIPCCommon() { } // required to avoid build error "...has virtual functions and accessible non-virtual destructor"
 
     /* These API's require a Nexus Client Context as they handle per client resources... */
-    virtual NexusClientContext * createClientContext(const b_refsw_client_client_configuration *config) = 0;
     virtual void destroyClientContext(NexusClientContext * client) = 0;
 
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/

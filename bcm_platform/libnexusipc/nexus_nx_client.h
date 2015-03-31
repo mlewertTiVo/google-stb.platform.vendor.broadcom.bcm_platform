@@ -106,7 +106,7 @@ public:
     };
 
     /* These API's require a Nexus Client Context as they handle per client resources... */
-    virtual NexusClientContext * createClientContext(const b_refsw_client_client_configuration *config);
+    virtual NexusClientContext * createClientContext(const b_refsw_client_client_configuration *config = NULL);
     virtual void destroyClientContext(NexusClientContext * client);
 
     virtual bool setPowerState(b_powerState pmState);

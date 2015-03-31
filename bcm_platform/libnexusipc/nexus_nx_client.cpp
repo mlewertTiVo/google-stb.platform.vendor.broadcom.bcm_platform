@@ -151,48 +151,42 @@ NEXUS_Error NexusNxClient::clientJoin(const b_refsw_client_client_configuration 
 
     android::Mutex::Autolock autoLock(mLock);
 
-    if (mJoinRefCount == 0) {
-        NxClient_GetDefaultJoinSettings(&joinSettings);
-        BKNI_Snprintf(&joinSettings.name[0], NXCLIENT_MAX_NAME, "%s", getClientName());
+    NxClient_GetDefaultJoinSettings(&joinSettings);
+    BKNI_Snprintf(&joinSettings.name[0], NXCLIENT_MAX_NAME, "%s", getClientName());
 
-        sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
-        key = fopen(value, "r");
-        joinSettings.mode = NEXUS_ClientMode_eUntrusted;
-        if (key == NULL) {
-           ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, value, errno, strerror(errno));
-        } else {
-           memset(value, 0, sizeof(value));
-           fread(value, PROPERTY_VALUE_MAX, 1, key);
-           if (strstr(value, "trusted:") == value) {
-              const char *password = &value[8];
-              joinSettings.mode = NEXUS_ClientMode_eVerified;
-              joinSettings.certificate.length = strlen(password);
-              memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
-           }
-           fclose(key);
-        }
-
-        if (config->standbyMonitorCallback == NULL) {
-            joinSettings.ignoreStandbyRequest = true;
-        }
-
-        do {
-            rc = NxClient_Join(&joinSettings);
-            if (rc != NEXUS_SUCCESS) {
-                LOGW("%s: NxServer is not ready, waiting...", __FUNCTION__);
-                usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
-            }
-        } while (rc != NEXUS_SUCCESS);
-
-        LOGI("%s: \"%s\"; joins %s mode (%d)", __FUNCTION__, joinSettings.name,
-             (joinSettings.mode == NEXUS_ClientMode_eVerified) ? "VERIFIED" : "UNTRUSTED",
-             joinSettings.mode);
-
+    sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
+    key = fopen(value, "r");
+    joinSettings.mode = NEXUS_ClientMode_eUntrusted;
+    if (key == NULL) {
+       ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, value, errno, strerror(errno));
+    } else {
+       memset(value, 0, sizeof(value));
+       fread(value, PROPERTY_VALUE_MAX, 1, key);
+       if (strstr(value, "trusted:") == value) {
+          const char *password = &value[8];
+          joinSettings.mode = NEXUS_ClientMode_eVerified;
+          joinSettings.certificate.length = strlen(password);
+          memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
+       }
+       fclose(key);
     }
 
-    if (rc == NEXUS_SUCCESS) {
-        mJoinRefCount++;
+    if (config == NULL || config->standbyMonitorCallback == NULL) {
+        joinSettings.ignoreStandbyRequest = true;
     }
+
+    do {
+        rc = NxClient_Join(&joinSettings);
+        if (rc != NEXUS_SUCCESS) {
+            LOGW("%s: NxServer is not ready, waiting...", __FUNCTION__);
+            usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
+        }
+    } while (rc != NEXUS_SUCCESS);
+
+    LOGI("%s: \"%s\" joins %s mode (%d)", __FUNCTION__, joinSettings.name,
+         (joinSettings.mode == NEXUS_ClientMode_eVerified) ? "VERIFIED" : "UNTRUSTED",
+         joinSettings.mode);
+
     return rc;
 }
 
@@ -202,18 +196,8 @@ NEXUS_Error NexusNxClient::clientUninit()
     android::Mutex::Autolock autoLock(mLock);
     void *res;
 
-    if (mJoinRefCount > 0) {
-        mJoinRefCount--;
-        LOGV("*** %s: decrementing join count to %d for client \"%s\". ***", __PRETTY_FUNCTION__, mJoinRefCount, getClientName());
-
-        if (mJoinRefCount == 0) {
-            LOGI("---- %s: Calling NxClient_Uninit() for client \"%s\" ----", __PRETTY_FUNCTION__, getClientName());
-            NxClient_Uninit();
-        }
-    } else {
-        LOGE("%s: NEXUS is already uninitialised!", __PRETTY_FUNCTION__);
-        rc = NEXUS_NOT_INITIALIZED;
-    }
+    LOGI("---- %s: Calling NxClient_Uninit() for client \"%s\" ----", __PRETTY_FUNCTION__, getClientName());
+    NxClient_Uninit();
     return rc;
 }
 
@@ -262,9 +246,9 @@ NexusClientContext * NexusNxClient::createClientContext(const b_refsw_client_cli
     /* Call parent class to do the Binder IPC work... */
     client = NexusIPCClient::createClientContext(config);
 
-    if (client != NULL && config->standbyMonitorCallback != NULL) {
+    if (client != NULL && config != NULL && config->standbyMonitorCallback != NULL) {
         mStandbyMonitorThread = new NexusNxClient::StandbyMonitorThread(config->standbyMonitorCallback, config->standbyMonitorContext);
-        mStandbyMonitorThread->run(&config->name.string[0], ANDROID_PRIORITY_NORMAL);
+        mStandbyMonitorThread->run(getClientName(), ANDROID_PRIORITY_NORMAL);
     }
     return client;
 }

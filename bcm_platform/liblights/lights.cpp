@@ -77,17 +77,13 @@ static int lights_set_light_backlight(struct light_device_t *dev,
 {
     (void)dev;
 
-    b_refsw_client_client_configuration clientConfig;
     NEXUS_DisplayHandle display_handle;
     NexusIPCClientBase *ipcclient =
         NexusIPCClientFactory::getClient("lights");
     if (!ipcclient || !state)
         return -EINVAL;
 
-
-    memset(&clientConfig, 0, sizeof(clientConfig));
-    strncpy(clientConfig.name.string, "lights", sizeof(clientConfig.name.string));
-    ipcclient->createClientContext(&clientConfig);
+    ipcclient->createClientContext();
 
     LOGI("requested color: 0x%08x", state->color);
 
@@ -103,9 +99,8 @@ static int lights_set_light_backlight(struct light_device_t *dev,
     NEXUS_PlatformObjectInstance objects[NEXUS_DISPLAY_OBJECTS]; /* won't overflow. */
     size_t num = NEXUS_DISPLAY_OBJECTS;
     NEXUS_Error nrc;
-    NEXUS_ClientHandle client = NxClient_Config_LookupClient(clientConfig.pid);
     strcpy(interfaceName.name, "NEXUS_Display");
-    nrc = NEXUS_Platform_GetClientObjects(client, &interfaceName, &objects[0], num, &num);
+    nrc = NEXUS_Platform_GetObjects(&interfaceName, &objects[0], num, &num);
 
     NEXUS_Display_GetGraphicsColorSettings((NEXUS_DisplayHandle)objects[0].object, &settings);
     LOGV("current brightness: %d", (int)settings.brightness);

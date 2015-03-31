@@ -406,14 +406,8 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_initialize(JNIEnv *env
 
     TV_LOG("%s: Initializing the Tuner stack!!", __FUNCTION__);
 
-    b_refsw_client_client_configuration  config;
-
     g_pTD->ipcclient = NexusIPCClientFactory::getClient("TunerHAL");
-
-    BKNI_Memset(&config, 0, sizeof(config));
-    BKNI_Snprintf(config.name.string,sizeof(config.name.string), "TunerHAL");
-
-    g_pTD->nexus_client = g_pTD->ipcclient->createClientContext(&config);
+    g_pTD->nexus_client = g_pTD->ipcclient->createClientContext();
 
     if (g_pTD->nexus_client == NULL) {
         ALOGE("%s: createClientContext failed", __FUNCTION__);

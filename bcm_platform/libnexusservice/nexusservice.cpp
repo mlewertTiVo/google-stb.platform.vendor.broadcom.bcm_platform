@@ -271,8 +271,9 @@ typedef struct NexusClientContext {
         NEXUS_ClientHandle nexusClient;
         unsigned connectId;
     } ipc;
+    b_refsw_client_client_name clientName;
+    unsigned                   clientPid;
     b_refsw_client_client_info info;
-    b_refsw_client_client_configuration createConfig;
 } NexusClientContext;
 
 NexusServerContext::NexusServerContext() : mLock(Mutex::SHARED), mJoinRefCount(0)
@@ -1135,7 +1136,7 @@ NEXUS_Error NexusService::clientUninit(NEXUS_ClientHandle nexusClient)
     return rc;
 }
 
-NexusClientContext * NexusService::createClientContext(const b_refsw_client_client_configuration *config)
+NexusClientContext * NexusService::createClientContext(const b_refsw_client_client_name *pClientName, unsigned clientPid)
 {
     NexusClientContext * client;
     NEXUS_ClientSettings clientSettings;
@@ -1152,12 +1153,12 @@ NexusClientContext * NexusService::createClientContext(const b_refsw_client_clie
     BKNI_Memset(client, 0, sizeof(*client));
     BDBG_OBJECT_SET(client, NexusClientContext);
 
-    client->createConfig = *config;
+    client->clientName = *pClientName;
+    client->clientPid = clientPid;
 
     BLST_D_INSERT_HEAD(&server->clients, client, link);
 
-    client->ipc.nexusClient = getNexusClient(client->createConfig.pid,
-        client->createConfig.name.string);
+    client->ipc.nexusClient = getNexusClient(clientPid, pClientName->string);
 
     if (powerState != ePowerState_S0) {
         NEXUS_PlatformStandbySettings nexusStandbySettings;
@@ -1174,7 +1175,7 @@ NexusClientContext * NexusService::createClientContext(const b_refsw_client_clie
             LOGI("Successfully set Nexus Power State S0");
         }
     }
-    LOGI("%s: Exiting with client=%p", __PRETTY_FUNCTION__, (void *)client);
+    LOGI("%s: Exiting with client=%p, name=\"%s\"", __PRETTY_FUNCTION__, (void *)client, pClientName->string);
     return client;
 
 err_client:
@@ -1661,7 +1662,8 @@ status_t NexusService::onTransact(uint32_t code,
             }
             case api_createClientContext:
             {
-                cmd.param.createClientContext.out.client = createClientContext(&cmd.param.createClientContext.in.createClientConfig);
+                cmd.param.createClientContext.out.client = createClientContext(&cmd.param.createClientContext.in.clientName,
+                                                                                cmd.param.createClientContext.in.clientPid);
                 break;
             }
             case api_destroyClientContext:

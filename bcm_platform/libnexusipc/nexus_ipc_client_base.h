@@ -65,6 +65,8 @@ public:
     virtual ~NexusIPCClientBase() { }
 
     const char *getClientName();
+    unsigned getClientPid();
+    virtual NexusClientContext * createClientContext(const b_refsw_client_client_configuration *config = NULL) = 0;
 
 protected:
             NexusIPCClientBase(const char *clientName = NULL);
@@ -76,6 +78,7 @@ protected:
 
 private:
     b_refsw_client_client_name clientName;
+    unsigned                   clientPid;
 };
 
 #endif /* __cplusplus */

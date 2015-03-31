@@ -238,7 +238,6 @@ status_t NexusHdmiCecDevice::initialise()
         b_refsw_client_client_configuration clientConfig;
 
         memset(&clientConfig, 0, sizeof(clientConfig));
-        strncpy(clientConfig.name.string, "Android-HDMI-CEC", sizeof(clientConfig.name.string));
         clientConfig.standbyMonitorCallback = standbyMonitor;
         clientConfig.standbyMonitorContext  = this;
 

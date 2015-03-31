@@ -124,7 +124,7 @@ bool StandbyMonitorThread::threadLoop()
                 }
             }
             if (ack) {
-                LOGV("%s: Acknowledge state %d\n", __FUNCTION__, standbyStatus.settings.mode);
+                LOGD("%s: Acknowledge state %d\n", __FUNCTION__, standbyStatus.settings.mode);
                 NxClient_AcknowledgeStandby(true);
                 prevStatus = standbyStatus;
             }

@@ -168,7 +168,7 @@ public:
     /* These API's require a Nexus Client Context as they handle per client resources.
        Each of these methods *MUST* be implemented for each class that derives from it
        because NexusClientContext cannot be referenced between implementations. */
-    virtual NexusClientContext * createClientContext(const b_refsw_client_client_configuration *config);
+    virtual NexusClientContext * createClientContext(const b_refsw_client_client_name *pClientName, unsigned clientPid);
     virtual void destroyClientContext(NexusClientContext * client);
 
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/

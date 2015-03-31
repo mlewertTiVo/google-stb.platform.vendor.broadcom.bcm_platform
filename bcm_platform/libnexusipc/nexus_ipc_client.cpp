@@ -164,7 +164,7 @@ void NexusIPCClient::unbindNexusService()
     }
 }
 
-NEXUS_Error NexusIPCClient::clientJoin(const b_refsw_client_client_configuration *config)
+NEXUS_Error NexusIPCClient::clientJoin(const b_refsw_client_client_configuration *config __unused)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
 
@@ -252,17 +252,15 @@ NexusClientContext * NexusIPCClient::createClientContext(const b_refsw_client_cl
 {
     NEXUS_Error rc;
     NexusClientContext *client = NULL;
-    b_refsw_client_client_configuration inConfig;
     api_data cmd;
 
     rc = clientJoin(config);
 
     if (rc == NEXUS_SUCCESS) {
-        BKNI_Memcpy(&inConfig, config, sizeof(*config));
-        inConfig.pid = getpid();
         BKNI_Memset(&cmd, 0, sizeof(cmd));
         cmd.api = api_createClientContext;
-        cmd.param.createClientContext.in.createClientConfig = inConfig;
+        strncpy(cmd.param.createClientContext.in.clientName.string, getClientName(), CLIENT_MAX_NAME);
+        cmd.param.createClientContext.in.clientPid = getClientPid();
         iNC->api_over_binder(&cmd);
 
         client = cmd.param.createClientContext.out.client;
@@ -280,6 +278,8 @@ NexusClientContext * NexusIPCClient::createClientContext(const b_refsw_client_cl
 void NexusIPCClient::destroyClientContext(NexusClientContext * client)
 {
     api_data cmd;
+
+    LOGI("%s: \"%s\" client=%p", __PRETTY_FUNCTION__, getClientName(), client);
     BKNI_Memset(&cmd, 0, sizeof(cmd));
     cmd.api = api_destroyClientContext;
     cmd.param.destroyClientContext.in.client = client;

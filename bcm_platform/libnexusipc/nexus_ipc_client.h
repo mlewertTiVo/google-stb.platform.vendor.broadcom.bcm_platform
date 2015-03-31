@@ -62,7 +62,7 @@ public:
     virtual      ~NexusIPCClient();
 
     /* These API's require a Nexus Client Context as they handle per client resources... */
-    virtual NexusClientContext * createClientContext(const b_refsw_client_client_configuration *config);
+    virtual NexusClientContext * createClientContext(const b_refsw_client_client_configuration *config = NULL);
     virtual void destroyClientContext(NexusClientContext * client);
 
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/

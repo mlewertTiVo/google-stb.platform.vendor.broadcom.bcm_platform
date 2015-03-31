@@ -83,31 +83,31 @@
 class nexus_egl_client : public NexusIPCClientBase
 {
 public: 
-      static void* IEGL_nexus_join(char *client_process_name);
+      static void* IEGL_nexus_join();
       static void IEGL_nexus_unjoin(void *nexus_client);
 };
 
-void* nexus_egl_client::IEGL_nexus_join(char *client_process_name)
+void* nexus_egl_client::IEGL_nexus_join()
 {
-     b_refsw_client_client_configuration config;
      NexusClientContext *nexus_client=NULL;
      uint32_t w, h;
 
      NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("Android-EGL");
 
-     BKNI_Memset(&config, 0, sizeof(config));
-     BKNI_Snprintf(config.name.string,sizeof(config.name.string),"%s_%d_",client_process_name,getpid());
-
-     /* Create the client context that will be used by Gralloc */
-     nexus_client = pIpcClient->createClientContext(&config);
-     if (nexus_client != NULL) {
-         LOGI("%s: Client successfully created : client=%p", __FUNCTION__, (void *)nexus_client);
+     if (pIpcClient != NULL) {
+         /* Create the client context that will be used by Gralloc */
+         nexus_client = pIpcClient->createClientContext();
+         if (nexus_client != NULL) {
+             LOGI("%s: Client \"%s\" successfully created : client=%p", __FUNCTION__, pIpcClient->getClientName(), (void *)nexus_client);
+         }
+         else {
+            LOGE("%s: Client \"%s\" could NOT be created!", __FUNCTION__, pIpcClient->getClientName());
+         }
+         delete pIpcClient;
      }
      else {
-        LOGE("%s: Client could NOT be created!", __FUNCTION__);
+        LOGE("%s: FATAL: Could not create \"Android-EGL\" Nexus IPC Client!!!", __FUNCTION__);
      }
- 
-     delete pIpcClient;
      return (reinterpret_cast<void *>(nexus_client));
 }
 
@@ -116,6 +116,7 @@ void nexus_egl_client::IEGL_nexus_unjoin(void *nexus_client)
     NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("Android-EGL");
 
     /* Destroy the client context using IPC */
+    LOGV("%s: Destroying client \%s\"...", __FUNCTION__, pIpcClient->getClientName());
     pIpcClient->destroyClientContext((reinterpret_cast<NexusClientContext *>(nexus_client)));
     delete pIpcClient;
     return;
@@ -136,7 +137,7 @@ void* EGL_nexus_join(char *client_process_name)
  
     do
     {
-        nexus_client = nexus_egl_client::IEGL_nexus_join(client_process_name);
+        nexus_client = nexus_egl_client::IEGL_nexus_join();
         if (!nexus_client)
         {
             LOGE("IEGL_nexus_join Failed\n");

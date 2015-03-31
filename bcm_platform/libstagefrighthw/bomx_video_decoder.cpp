@@ -731,10 +731,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
 
-    b_refsw_client_client_configuration         config;
-    BKNI_Memset(&config, 0, sizeof(config));
-    BKNI_Snprintf(config.name.string, sizeof(config.name.string), pName);
-    m_pNexusClient = m_pIpcClient->createClientContext(&config);
+    m_pNexusClient = m_pIpcClient->createClientContext();
     if (m_pNexusClient == NULL)
     {
         BOMX_ERR(("Unable to create nexus client context"));

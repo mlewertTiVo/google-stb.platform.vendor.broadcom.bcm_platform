@@ -136,13 +136,8 @@ sp<NexusPower> NexusPower::instantiate()
         ALOGE("%s: Could not create Nexux Client!!!", __FUNCTION__);
     }
     else {
-        NexusClientContext *pClientContext;
-        b_refsw_client_client_configuration clientConfig;
+        NexusClientContext *pClientContext = pIpcClient->createClientContext();
 
-        memset(&clientConfig, 0, sizeof(clientConfig));
-        strncpy(clientConfig.name.string, "Android-Power", sizeof(clientConfig.name.string));
-
-        pClientContext = pIpcClient->createClientContext(&clientConfig);
         if (pClientContext == NULL) {
             ALOGE("%s: Could not create Nexus Client Context!!!", __FUNCTION__); 
             delete pIpcClient;

@@ -59,10 +59,12 @@ unsigned  NexusIPCClientBase::mJoinRefCount(0);
 
 NexusIPCClientBase::NexusIPCClientBase(const char *clientName)
 {
+    clientPid = getpid();
+
     BKNI_Memset(this->clientName.string, 0, sizeof(this->clientName));
 
     if (clientName == NULL) {
-        BKNI_Snprintf(this->clientName.string, CLIENT_MAX_NAME, "app_%d", getpid());
+        BKNI_Snprintf(this->clientName.string, CLIENT_MAX_NAME, "app_%d", clientPid);
     } else {
         BKNI_Snprintf(this->clientName.string, CLIENT_MAX_NAME, "%s", clientName);
     }
@@ -73,3 +75,7 @@ const char *NexusIPCClientBase::getClientName()
     return const_cast<const char *>(&clientName.string[0]);
 }
 
+unsigned NexusIPCClientBase::getClientPid()
+{
+    return clientPid;
+}
