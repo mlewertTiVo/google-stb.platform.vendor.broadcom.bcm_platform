@@ -37,13 +37,14 @@
  *
  *****************************************************************************/
 
+//#define LOG_NDEBUG 0
+#undef LOG_TAG
+#define LOG_TAG "NexusIR"
+
 #include "nexusirhandler.h"
 #include "nexusirinput.h"
 #include "nexusirmap.h"
 
-//#define LOG_NDEBUG 0
-#undef LOG_TAG
-#define LOG_TAG "NexusIR"
 #include <cutils/log.h>
 
 #define MS_TO_NS(t) (nsecs_t(t) * 1000 * 1000)
@@ -164,6 +165,12 @@ void NexusIrHandler::KeyThread::signal(uint32_t nexus_key, bool repeat,
 {
     android::Mutex::Autolock _l(m_mutex);
 
+    LOGV("%s: nexus_key=0x%08x repeat=%d interval=%u, m_old_key=%d", __PRETTY_FUNCTION__, nexus_key, repeat, interval, m_old_key);
+
+    // If we have received a repeat before we have had a chance to process it in "threadloop",
+    // then we need to behave as if a new key press has been made.  This typically occurs when
+    // holding down the POWER button on the R/C to exit standby.
+    repeat &= (m_old_key != KEY_RESERVED);
     m_key = repeat ? m_old_key : m_map->get(nexus_key);
 
     if (m_key == KEY_RESERVED) {

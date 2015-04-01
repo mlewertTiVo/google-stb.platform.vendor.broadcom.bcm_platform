@@ -37,13 +37,14 @@
  *
  *****************************************************************************/
 
+//#define LOG_NDEBUG 0
+#undef LOG_TAG
+#define LOG_TAG "NexusIR"
+
 #include "nexusirmap.h"
 #include <linux/input.h>
 #include <stdlib.h>
 
-//#define LOG_NDEBUG 0
-#undef LOG_TAG
-#define LOG_TAG "NexusIR"
 #include <cutils/log.h>
 
 static __u16 key(const char * name)
