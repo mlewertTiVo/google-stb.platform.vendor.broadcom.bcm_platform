@@ -1,5 +1,0 @@
-
-on post-fs
-
-# Load the BT USB driver
-    insmod /system/vendor/broadcom/btusb/driver/btusb.ko
