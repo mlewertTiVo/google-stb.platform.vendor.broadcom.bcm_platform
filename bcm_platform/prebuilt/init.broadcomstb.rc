@@ -56,7 +56,7 @@ on boot
    # 'config="msg_modules=xxx,yyy,zzz"'
    #
    insmod /system/vendor/drivers/wakeup_drv.ko devname="mali0"
-   insmod /system/vendor/drivers/nexus.ko devname="mali" config="msg_modules=nexus_platform_os,nexus_platform_settings"
+   insmod /system/vendor/drivers/nexus.ko devname="mali"
 
    # Subsytem Ramdump collection
    mkdir /data/tombstones 0777 system system

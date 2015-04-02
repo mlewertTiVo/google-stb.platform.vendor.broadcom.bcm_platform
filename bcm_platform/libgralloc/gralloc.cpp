@@ -743,7 +743,7 @@ grallocFreeHandle(private_handle_t *handleToFree)
 
    if (pSharedData) {
       if (gralloc_log_mapper()) {
-         ALOGI("free: owner:%d::s-blk:0x%x::p:%d::p-blk:0x%x::p-addr:0x%x::mapped:0x%x",
+         ALOGI(" free: owner:%d::s-blk:0x%x::p:%d::p-blk:0x%x::p-addr:0x%x::mapped:0x%x",
                handleToFree->pid,
                handleToFree->sharedData,
                pSharedData->planes[GL_PLANE].physAddr ? GL_PLANE : DEFAULT_PLANE,
@@ -759,12 +759,13 @@ grallocFreeHandle(private_handle_t *handleToFree)
    }
 
    if (handleToFree->is_mma) {
-      if (handleToFree->nxSurfacePhysicalAddress) {
+      if (pSharedData && handleToFree->nxSurfacePhysicalAddress) {
          if (pSharedData->planes[GL_PLANE].physAddr) {
             NEXUS_MemoryBlock_UnlockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr);
-         }
-         if (pSharedData->planes[DEFAULT_PLANE].physAddr) {
+            NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr);
+         } else if (pSharedData && pSharedData->planes[DEFAULT_PLANE].physAddr) {
             NEXUS_MemoryBlock_UnlockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr);
+            NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr);
          }
       }
       if (block_handle) {
