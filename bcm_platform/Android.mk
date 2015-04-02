@@ -50,6 +50,7 @@ include vendor/broadcom/bcm_platform/tools/clipping/Android.mk
 include vendor/broadcom/bcm_platform/tools/cmatool/Android.mk
 include vendor/broadcom/bcm_platform/tools/lmkstats/Android.mk
 include vendor/broadcom/bcm_platform/tools/nxcfg/Android.mk
+include vendor/broadcom/bcm_platform/tools/nxmem/Android.mk
 include vendor/broadcom/bcm_platform/tools/otpgetchipid/Android.mk
 include vendor/broadcom/bcm_platform/tools/prdy_pes_playback/Android.mk
 
