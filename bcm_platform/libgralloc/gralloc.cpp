@@ -576,8 +576,13 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       }
 
       if (gralloc_log_mapper()) {
-         ALOGI("%s: owner:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
-               getpid(), grallocPrivateHandle->nxSurfacePhysicalAddress, grallocPrivateHandle->nxSurfaceAddress);
+         ALOGI("alloc: owner:%d::s-blk:0x%x::p:%d::p-blk:0x%x::p-addr:0x%x::mapped:0x%x",
+               getpid(),
+               grallocPrivateHandle->sharedData,
+               DEFAULT_PLANE,
+               pSharedData->planes[DEFAULT_PLANE].physAddr,
+               grallocPrivateHandle->nxSurfacePhysicalAddress,
+               grallocPrivateHandle->nxSurfaceAddress);
       }
 
    } else if ((format == HAL_PIXEL_FORMAT_YV12) && !(usage & GRALLOC_USAGE_PRIVATE_0)) {
@@ -657,8 +662,13 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       }
 
       if (gralloc_log_mapper()) {
-         ALOGI("%s (overruled): owner:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
-              getpid(), grallocPrivateHandle->nxSurfacePhysicalAddress, grallocPrivateHandle->nxSurfaceAddress);
+         ALOGI("alloc (overruled): owner:%d::s-blk:0x%x::p:%d::p-blk:0x%x::p-addr:0x%x::mapped:0x%x",
+               getpid(),
+               grallocPrivateHandle->sharedData,
+               GL_PLANE,
+               pSharedData->planes[GL_PLANE].physAddr,
+               grallocPrivateHandle->nxSurfacePhysicalAddress,
+               grallocPrivateHandle->nxSurfaceAddress);
       }
    }
 
@@ -732,10 +742,20 @@ grallocFreeHandle(private_handle_t *handleToFree)
    }
 
    if (pSharedData) {
-     if (android_atomic_acquire_load(&pSharedData->hwc.active)) {
-       ALOGE("Freeing gralloc buffer %#x used by HWC!  layer %d surface %#x",
-             handleToFree->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
-     }
+      if (gralloc_log_mapper()) {
+         ALOGI("free: owner:%d::s-blk:0x%x::p:%d::p-blk:0x%x::p-addr:0x%x::mapped:0x%x",
+               handleToFree->pid,
+               handleToFree->sharedData,
+               pSharedData->planes[GL_PLANE].physAddr ? GL_PLANE : DEFAULT_PLANE,
+               pSharedData->planes[GL_PLANE].physAddr ? pSharedData->planes[GL_PLANE].physAddr : pSharedData->planes[DEFAULT_PLANE].physAddr,
+               handleToFree->nxSurfacePhysicalAddress,
+               handleToFree->nxSurfaceAddress);
+      }
+
+      if (android_atomic_acquire_load(&pSharedData->hwc.active)) {
+         ALOGE("Freeing gralloc buffer %#x used by HWC!  layer %d surface %#x",
+               handleToFree->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
+      }
    }
 
    if (handleToFree->is_mma) {
@@ -788,12 +808,11 @@ static int gralloc_alloc(alloc_device_t* dev,
    err = gralloc_alloc_buffer(dev, w, h, format, usage, pHandle, pStride);
 
    if (usage & GRALLOC_USAGE_HW_FB) {
-      ALOGI("%s : allocated framebuffer w=%d, h=%d, format=%d, usage=0x%08x, %p", __FUNCTION__, w, h, format, usage, pHandle);
+      ALOGI("alloc: fb::w:%d::h:%d::fmt:%d::usage:0x%08x::hdl:%p", w, h, format, usage, pHandle);
    }
 
    if (err < 0) {
-      ALOGE("%s : w=%d, h=%d, format=%d, usage=0x%08x", __FUNCTION__, w, h, format, usage);
-      ALOGE("%s : alloc returning error", __FUNCTION__);
+      ALOGE("alloc: FAILED::w:%d::h:%d::fmt:%d::usage:0x%08x", w, h, format, usage);
    }
 
    return err;
@@ -802,9 +821,7 @@ static int gralloc_alloc(alloc_device_t* dev,
 static int gralloc_free(alloc_device_t* dev,
         buffer_handle_t handle)
 {
-   if (private_handle_t::validate(handle) < 0)
-   {
-      ALOGE("gralloc_free Handle Validation Failed \n");
+   if (private_handle_t::validate(handle) < 0) {
       return -EINVAL;
    }
 

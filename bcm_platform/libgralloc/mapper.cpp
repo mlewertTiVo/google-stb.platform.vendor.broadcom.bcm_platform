@@ -80,8 +80,14 @@ int gralloc_register_buffer(gralloc_module_t const* module,
       }
 
       if (gralloc_log_mapper()) {
-         ALOGI("%s: owner:%d, plane:%d, registrant:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
-               hnd->pid, plane, getpid(), pSharedData->planes[plane].physAddr, hnd->nxSurfaceAddress);
+         ALOGI("  reg: owner:%d::s-blk:0x%x::p:%d::p-blk:0x%x::p-addr:0x%x::mapped:0x%x::act:%d",
+               hnd->pid,
+               hnd->sharedData,
+               plane,
+               pSharedData->planes[plane].physAddr,
+               hnd->nxSurfacePhysicalAddress,
+               hnd->nxSurfaceAddress,
+               getpid());
       }
 
       if (hnd->is_mma) {
@@ -122,8 +128,14 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
       }
 
       if (gralloc_log_mapper()) {
-         ALOGI("%s: owner:%d, plane:%d, registrant:%d, addr:0x%x", __FUNCTION__,
-               hnd->pid, plane, getpid(), pSharedData->planes[plane].physAddr);
+         ALOGI("unreg: owner:%d::s-blk:0x%x::p:%d::p-blk:0x%x::p-addr:0x%x::mapped:0x%x::act:%d",
+               hnd->pid,
+               hnd->sharedData,
+               plane,
+               pSharedData->planes[plane].physAddr,
+               hnd->nxSurfacePhysicalAddress,
+               hnd->nxSurfaceAddress,
+               getpid());
       }
 
       if (hnd->is_mma) {
@@ -214,8 +226,15 @@ int gralloc_lock(gralloc_module_t const* module,
    }
 
    if (gralloc_log_mapper()) {
-      ALOGI("%s: owner:%d, plane:%d, locker:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
-            hnd->pid, DEFAULT_PLANE, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr, *vaddr);
+      ALOGI(" lock: owner:%d::s-blk:0x%x::p:%d::p-blk:0x%x::p-addr:0x%x::mapped:0x%x::vaddr:0x%x::act:%d",
+            hnd->pid,
+            hnd->sharedData,
+            DEFAULT_PLANE,
+            pSharedData->planes[DEFAULT_PLANE].physAddr,
+            hnd->nxSurfacePhysicalAddress,
+            hnd->nxSurfaceAddress,
+            *vaddr,
+            getpid());
    }
 
 out:
@@ -286,8 +305,14 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
    }
 
    if (gralloc_log_mapper()) {
-      ALOGI("%s: owner:%d, plane:%d, locker:%d, addr:0x%x", __FUNCTION__,
-            hnd->pid, DEFAULT_PLANE, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr);
+      ALOGI("ulock: owner:%d::s-blk:0x%x::p:%d::p-blk:0x%x::p-addr:0x%x::mapped:0x%x::act:%d",
+            hnd->pid,
+            hnd->sharedData,
+            DEFAULT_PLANE,
+            pSharedData->planes[DEFAULT_PLANE].physAddr,
+            hnd->nxSurfacePhysicalAddress,
+            hnd->nxSurfaceAddress,
+            getpid());
    }
 
    if (hnd->is_mma) {
