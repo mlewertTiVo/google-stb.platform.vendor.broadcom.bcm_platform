@@ -55,14 +55,14 @@ int gralloc_destripe_yv12(
 
     if ( NULL == gralloc_g2d_hdl() )
     {
-        LOGE("Graphics2D Not available.  Cannot access HW decoder data.");
+        ALOGE("Graphics2D Not available.  Cannot access HW decoder data.");
         goto err_gfx2d;
     }
 
     pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pHandle->sharedData);
     if ( NULL == pSharedData )
     {
-        LOGE("Unable to access shared data");
+        ALOGE("Unable to access shared data");
         goto err_shared_data;
     }
     // HW destripe to 420 planar is not working.  We have to create an
@@ -78,13 +78,13 @@ int gralloc_destripe_yv12(
     hSurface422 = NEXUS_Surface_Create(&surfaceSettings);
     if ( NULL == hSurface422 )
     {
-        LOGE("Unable to allocate destripe surface");
+        ALOGE("Unable to allocate destripe surface");
         goto err_surface;
     }
     errCode = NEXUS_Surface_Lock(hSurface422, &pAddr);
     if ( errCode )
     {
-        LOGE("Error locking destripe surface");
+        ALOGE("Error locking destripe surface");
         goto err_surface_lock;
     }
     NEXUS_Surface_Flush(hSurface422);
@@ -93,7 +93,7 @@ int gralloc_destripe_yv12(
     errCode = NEXUS_Graphics2D_DestripeToSurface(gralloc_g2d_hdl(), hStripedSurface, hSurface422, NULL);
     if ( errCode )
     {
-        LOGE("Unable to destripe surface");
+        ALOGE("Unable to destripe surface");
         goto err_destripe;
     }
 
@@ -107,12 +107,12 @@ int gralloc_destripe_yv12(
       errCode = BKNI_WaitForEvent(gralloc_g2d_evt(), CHECKPOINT_TIMEOUT);
       if ( errCode )
       {
-          LOGW("Checkpoint Timeout");
+          ALOGE("Checkpoint Timeout");
           goto err_checkpoint;
       }
       break;
     default:
-      LOGE("Checkpoint Error");
+      ALOGE("Checkpoint Error");
       goto err_checkpoint;
     }
 
@@ -120,7 +120,7 @@ int gralloc_destripe_yv12(
     pY = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
     if ( NULL == pY )
     {
-        LOGE("Unable to access YV12 pixels");
+        ALOGE("Unable to access YV12 pixels");
         goto err_yv12;
     }
     stride = (pSharedData->planes[DEFAULT_PLANE].width + (align-1)) & ~(align-1);

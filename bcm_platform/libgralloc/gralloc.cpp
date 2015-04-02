@@ -53,12 +53,13 @@ static void * (* dyn_EGL_nexus_join)(char *client_process_name);
 static void (* dyn_EGL_nexus_unjoin)(void *nexus_client);
 #define LOAD_FN(lib, name) \
 if (!(dyn_ ## name = (typeof(dyn_ ## name)) dlsym(lib, #name))) \
-   LOGE("failed resolving '%s'", #name); \
+   ALOGE("failed resolving '%s'", #name); \
 else \
-   LOGI("resolved '%s' to %p", #name, dyn_ ## name);
+   ALOGI("resolved '%s' to %p", #name, dyn_ ## name);
 static void *gl_dyn_lib;
 static void *nexus_client = NULL;
 static int gralloc_with_mma = 0;
+static int gralloc_log_map = 0;
 
 static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
 static NEXUS_Graphics2DHandle hGraphics = NULL;
@@ -68,6 +69,7 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 #define DATA_PLANE_MAX_HEIGHT   1200
 
 #define NX_MMA                  "ro.nx.mma"
+#define NX_GR_LOG_MAP           "ro.gr.log.map"
 
 #define NEXUS_JOIN_CLIENT_PROCESS "gralloc"
 static void gralloc_load_lib(void)
@@ -80,7 +82,7 @@ static void gralloc_load_lib(void)
       const char *gl_dyn_lib_path = "/vendor/lib/egl/libGLES_nexus.so";
       gl_dyn_lib = dlopen(gl_dyn_lib_path, RTLD_LAZY | RTLD_LOCAL);
       if (!gl_dyn_lib) {
-         LOGE("failed loading essential GLES library '%s': <%s>!", gl_dyn_lib_path, dlerror());
+         ALOGE("failed loading essential GLES library '%s': <%s>!", gl_dyn_lib_path, dlerror());
       }
    }
 
@@ -92,16 +94,20 @@ static void gralloc_load_lib(void)
    if (dyn_EGL_nexus_join) {
       nexus_client = dyn_EGL_nexus_join((char *)NEXUS_JOIN_CLIENT_PROCESS);
       if (nexus_client == NULL) {
-         LOGE("%s: failed joining nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
+         ALOGE("%s: failed joining nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
       } else {
-         LOGI("%s: joined nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
+         ALOGI("%s: joined nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
       }
    } else {
-      LOGE("%s: dyn_EGL_nexus_join unavailable, something will break!", __FUNCTION__);
+      ALOGE("%s: dyn_EGL_nexus_join unavailable, something will break!", __FUNCTION__);
    }
 
    if (property_get(NX_MMA, value, "0")) {
       gralloc_with_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
+   }
+
+   if (property_get(NX_GR_LOG_MAP, value, "0")) {
+      gralloc_log_map = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 }
 
@@ -121,13 +127,13 @@ void gralloc_explicit_load(void)
 
    rc = BKNI_CreateEvent(&hCheckpointEvent);
    if (rc) {
-      LOGE("Unable to create checkpoint event");
+      ALOGE("Unable to create checkpoint event");
       hCheckpointEvent = NULL;
       hGraphics = NULL;
    } else {
       hGraphics = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, NULL);
       if (!hGraphics) {
-         LOGW("Unable to open Graphics2D.  HW/SW access format conversions will fail...");
+         ALOGW("Unable to open Graphics2D.  HW/SW access format conversions will fail...");
       } else {
          NEXUS_Graphics2DSettings gfxSettings;
          NEXUS_Graphics2D_GetSettings(hGraphics, &gfxSettings);
@@ -136,7 +142,7 @@ void gralloc_explicit_load(void)
          gfxSettings.checkpointCallback.context = (void *)hCheckpointEvent;
          rc = NEXUS_Graphics2D_SetSettings(hGraphics, &gfxSettings);
          if ( rc ) {
-            LOGW("Unable to set Graphics2D Settings");
+            ALOGW("Unable to set Graphics2D Settings");
             NEXUS_Graphics2D_Close(hGraphics);
             hGraphics = NULL;
          }
@@ -162,6 +168,11 @@ void gralloc_explicit_unload(void)
       BKNI_DestroyEvent(hCheckpointEvent);
       hCheckpointEvent = NULL;
    }
+}
+
+int gralloc_log_mapper(void)
+{
+   return gralloc_log_map;
 }
 
 void * gralloc_v3d_get_nexus_client_context(void)
@@ -330,7 +341,7 @@ NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt,
       //               converted to packed format that eventually we would produce.
       case HAL_PIXEL_FORMAT_YV12:         b = 2;   pf = NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8; break;
       default:                            b = 0;   pf = NEXUS_PixelFormat_eUnknown;
-                                          LOGE("%s %d FORMAT [ %d ] NOT SUPPORTED ",__FUNCTION__,__LINE__,pixelFmt); break;
+                                          ALOGE("%s %d FORMAT [ %d ] NOT SUPPORTED ",__FUNCTION__,__LINE__,pixelFmt); break;
    }
 
    *bpp = b;
@@ -378,7 +389,7 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
       // We need to call the V3D driver buffer get requirements function in order to
       // get the parameters of the shadow buffer that we are creating.
       if (gralloc_v3d_get_nexus_client_context() == NULL) {
-         LOGE("%s: no valid client context...", __FUNCTION__);
+         ALOGE("%s: no valid client context...", __FUNCTION__);
       }
 
       // VC4 requires memory with a set stride etc
@@ -477,7 +488,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    getBufferDataFromFormat(w, h, bpp, format, pStride, &size, &extra_size);
 
    if (nxFormat == NEXUS_PixelFormat_eUnknown) {
-      LOGE("%s: unsupported gr->nx format: %d", __FUNCTION__, format);
+      ALOGE("%s: unsupported gr->nx format: %d", __FUNCTION__, format);
       return -EINVAL;
    }
 
@@ -564,8 +575,10 @@ gralloc_alloc_buffer(alloc_device_t* dev,
          grallocPrivateHandle->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
       }
 
-      LOGI("%s: owner:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
-           getpid(), grallocPrivateHandle->nxSurfacePhysicalAddress, grallocPrivateHandle->nxSurfaceAddress);
+      if (gralloc_log_mapper()) {
+         ALOGI("%s: owner:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
+               getpid(), grallocPrivateHandle->nxSurfacePhysicalAddress, grallocPrivateHandle->nxSurfaceAddress);
+      }
 
    } else if ((format == HAL_PIXEL_FORMAT_YV12) && !(usage & GRALLOC_USAGE_PRIVATE_0)) {
       // standard yv12 buffer for multimedia, need also a secondary buffer for
@@ -643,27 +656,29 @@ gralloc_alloc_buffer(alloc_device_t* dev,
          grallocPrivateHandle->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->planes[GL_PLANE].physAddr);
       }
 
-      LOGI("%s (overruled): owner:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
-           getpid(), grallocPrivateHandle->nxSurfacePhysicalAddress, grallocPrivateHandle->nxSurfaceAddress);
+      if (gralloc_log_mapper()) {
+         ALOGI("%s (overruled): owner:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
+              getpid(), grallocPrivateHandle->nxSurfacePhysicalAddress, grallocPrivateHandle->nxSurfaceAddress);
+      }
    }
 
    bool alloc_failed = false;
    if (needs_yv12 && (pSharedData->planes[DEFAULT_PLANE].physAddr == 0)) {
-      LOGE("%s: failed to allocate default yv12 plane (%d,%d), size %d", __FUNCTION__, w, h, size);
+      ALOGE("%s: failed to allocate default yv12 plane (%d,%d), size %d", __FUNCTION__, w, h, size);
       alloc_failed = true;
    }
    if (needs_ycrcb && (pSharedData->planes[EXTRA_PLANE].physAddr == 0)) {
-      LOGE("%s: failed to allocate extra ycrcb plane (%d,%d), size %d", __FUNCTION__, w, h, size);
+      ALOGE("%s: failed to allocate extra ycrcb plane (%d,%d), size %d", __FUNCTION__, w, h, size);
       alloc_failed = true;
    }
    if (!needs_yv12 && ((!grallocPrivateHandle->is_mma && pSharedData->planes[DEFAULT_PLANE].physAddr == 0) ||
        (grallocPrivateHandle->is_mma && grallocPrivateHandle->nxSurfacePhysicalAddress == 0))) {
-      LOGE("%s: failed to allocate standard plane (%d,%d), size %d", __FUNCTION__, w, h, extra_size);
+      ALOGE("%s: failed to allocate standard plane (%d,%d), size %d", __FUNCTION__, w, h, extra_size);
       alloc_failed = true;
    }
    if (needs_rgb && ((!grallocPrivateHandle->is_mma && pSharedData->planes[GL_PLANE].physAddr == 0) ||
        (grallocPrivateHandle->is_mma && grallocPrivateHandle->nxSurfacePhysicalAddress == 0))) {
-      LOGE("%s: failed to allocate gl plane (%d,%d), size %d", __FUNCTION__, w, h, size);
+      ALOGE("%s: failed to allocate gl plane (%d,%d), size %d", __FUNCTION__, w, h, size);
       alloc_failed = true;
    }
 
@@ -765,7 +780,7 @@ static int gralloc_alloc(alloc_device_t* dev,
         buffer_handle_t* pHandle, int* pStride)
 {
    if (!pHandle || !pStride) {
-      LOGE("%s : condition check failed", __FUNCTION__);
+      ALOGE("%s : condition check failed", __FUNCTION__);
          return -EINVAL;
    }
 
@@ -773,12 +788,12 @@ static int gralloc_alloc(alloc_device_t* dev,
    err = gralloc_alloc_buffer(dev, w, h, format, usage, pHandle, pStride);
 
    if (usage & GRALLOC_USAGE_HW_FB) {
-      LOGI("%s : allocated framebuffer w=%d, h=%d, format=%d, usage=0x%08x, %p", __FUNCTION__, w, h, format, usage, pHandle);
+      ALOGI("%s : allocated framebuffer w=%d, h=%d, format=%d, usage=0x%08x, %p", __FUNCTION__, w, h, format, usage, pHandle);
    }
 
    if (err < 0) {
-      LOGE("%s : w=%d, h=%d, format=%d, usage=0x%08x", __FUNCTION__, w, h, format, usage);
-      LOGE("%s : alloc returning error", __FUNCTION__);
+      ALOGE("%s : w=%d, h=%d, format=%d, usage=0x%08x", __FUNCTION__, w, h, format, usage);
+      ALOGE("%s : alloc returning error", __FUNCTION__);
    }
 
    return err;
@@ -789,7 +804,7 @@ static int gralloc_free(alloc_device_t* dev,
 {
    if (private_handle_t::validate(handle) < 0)
    {
-      LOGE("gralloc_free Handle Validation Failed \n");
+      ALOGE("gralloc_free Handle Validation Failed \n");
       return -EINVAL;
    }
 
@@ -803,10 +818,10 @@ static int gralloc_free(alloc_device_t* dev,
 
 static int gralloc_close(struct hw_device_t *dev)
 {
-   LOGD("%s [%d]: Vector Graphics Allocator [L] Build Date[%s Time:%s]\n",
-               __FUNCTION__,__LINE__,
-               __DATE__,
-               __TIME__);
+   ALOGD("%s [%d]: Vector Graphics Allocator [L] Build Date[%s Time:%s]\n",
+          __FUNCTION__,__LINE__,
+          __DATE__,
+          __TIME__);
 
    gralloc_context_t* ctx = reinterpret_cast<gralloc_context_t*>(dev);
    if (ctx) {
@@ -820,14 +835,14 @@ int gralloc_device_open(const hw_module_t* module, const char* name,
 {
    int status = -EINVAL;
 
-   LOGD("%s[%d]: Vector Graphics Allocator [L] Build Date[%s Time:%s]\n",
-               __FUNCTION__,__LINE__,
-               __DATE__,
-               __TIME__);
+   ALOGD("%s[%d]: Vector Graphics Allocator [L] Build Date[%s Time:%s]\n",
+         __FUNCTION__,__LINE__,
+         __DATE__,
+         __TIME__);
 
    if (!strcmp(name, GRALLOC_HARDWARE_GPU0))
    {
-      LOGI("Using Hardware GPU type device\n");
+      ALOGI("Using Hardware GPU type device\n");
       void *alloced=NULL;
 
       gralloc_context_t *dev;

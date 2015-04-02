@@ -155,6 +155,7 @@ int gralloc_yv12to422p(private_handle_t *handle)
     rc = NEXUS_Graphics2D_GetPacketBuffer(gralloc_g2d_hdl(), &buffer, &size, 1024);
     if ((rc != NEXUS_SUCCESS) || !size) {
        ALOGE("%s: failed getting packet buffer from g2d: (num:%d, id:0x%x)\n", __FUNCTION__,
+
              NEXUS_GET_ERR_NUM(rc), NEXUS_GET_ERR_ID(rc));
        goto out_cleanup;
     }
@@ -266,21 +267,21 @@ int gralloc_plane_copy(private_handle_t *handle, unsigned src, unsigned dst)
 
    if ( src >= MAX_NUM_INSTANCES || dst >= MAX_NUM_INSTANCES )
    {
-      LOGE("Unknown planes src=%u dst=%u", src, dst);
+      ALOGE("Unknown planes src=%u dst=%u", src, dst);
       rc = NEXUS_INVALID_PARAMETER;
       goto err_plane;
    }
 
    if ( NULL == gralloc_g2d_hdl() )
    {
-      LOGE("Graphics2D Not available.  Cannot access HW decoder data.");
+      ALOGE("Graphics2D Not available.  Cannot access HW decoder data.");
       goto err_gfx2d;
    }
 
    pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(handle->sharedData);
    if ( NULL == pSharedData )
    {
-      LOGE("Unable to access shared data");
+      ALOGE("Unable to access shared data");
       goto err_shared_data;
    }
 
@@ -309,7 +310,7 @@ int gralloc_plane_copy(private_handle_t *handle, unsigned src, unsigned dst)
          to_nsc_surface(width, height, strideSrc, (NEXUS_PixelFormat)pSharedData->planes[src].format, pSrc);
    if ( NULL == hSurfaceSrc )
    {
-      LOGE("Unable to allocate input surface");
+      ALOGE("Unable to allocate input surface");
       goto err_src_surface;
    }
    NEXUS_Surface_Lock(hSurfaceSrc, &slock);
@@ -319,7 +320,7 @@ int gralloc_plane_copy(private_handle_t *handle, unsigned src, unsigned dst)
          to_nsc_surface(width, height, strideDst, (NEXUS_PixelFormat)pSharedData->planes[dst].format, pDst);
    if ( NULL == hSurfaceDst )
    {
-      LOGE("Unable to allocate output surface");
+      ALOGE("Unable to allocate output surface");
       goto err_dst_surface;
    }
    NEXUS_Surface_Lock(hSurfaceDst, &slock);
@@ -331,7 +332,7 @@ int gralloc_plane_copy(private_handle_t *handle, unsigned src, unsigned dst)
    errCode = NEXUS_Graphics2D_Blit(gralloc_g2d_hdl(), &blitSettings);
    if ( errCode )
    {
-      LOGE("Unable to copy planes - %d", errCode);
+      ALOGE("Unable to copy planes - %d", errCode);
       rc = NEXUS_UNKNOWN;
       goto err_blit;
    }
@@ -346,12 +347,12 @@ int gralloc_plane_copy(private_handle_t *handle, unsigned src, unsigned dst)
       errCode = BKNI_WaitForEvent(gralloc_g2d_evt(), CHECKPOINT_TIMEOUT);
       if ( errCode )
       {
-         LOGW("Checkpoint Timeout");
+         ALOGE("Checkpoint Timeout");
          goto err_checkpoint;
       }
       break;
    default:
-      LOGE("Checkpoint Error");
+      ALOGE("Checkpoint Error");
       goto err_checkpoint;
    }
 

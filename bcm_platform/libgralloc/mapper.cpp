@@ -38,6 +38,8 @@
 #include "bkni.h"
 #include "gralloc_destripe.h"
 
+extern int gralloc_log_mapper();
+
 int gralloc_register_buffer(gralloc_module_t const* module,
    buffer_handle_t handle)
 {
@@ -78,8 +80,10 @@ int gralloc_register_buffer(gralloc_module_t const* module,
          hnd->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->planes[plane].physAddr);
       }
 
-      LOGI("%s: owner:%d, registrant:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
-           hnd->pid, getpid(), pSharedData->planes[plane].physAddr, hnd->nxSurfaceAddress);
+      if (gralloc_log_mapper()) {
+         ALOGI("%s: owner:%d, registrant:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
+               hnd->pid, getpid(), pSharedData->planes[plane].physAddr, hnd->nxSurfaceAddress);
+      }
    }
 
    return 0;
@@ -118,8 +122,10 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
          NEXUS_MemoryBlock_Unlock(block_handle);
       }
 
-      LOGI("%s: owner:%d, registrant:%d, addr:0x%x", __FUNCTION__,
-           hnd->pid, getpid(), pSharedData->planes[plane].physAddr);
+      if (gralloc_log_mapper()) {
+         ALOGI("%s: owner:%d, registrant:%d, addr:0x%x", __FUNCTION__,
+               hnd->pid, getpid(), pSharedData->planes[plane].physAddr);
+      }
    }
 
    return 0;
@@ -191,7 +197,7 @@ int gralloc_lock(gralloc_module_t const* module,
                }
                pSharedData->videoFrame.destripeComplete = true;
                hwConverted = true;
-               LOGV("%s: Destripe Complete", __FUNCTION__);
+               ALOGV("%s: Destripe Complete", __FUNCTION__);
             }
          }
       }
@@ -203,8 +209,10 @@ int gralloc_lock(gralloc_module_t const* module,
       NEXUS_FlushCache(*vaddr, pSharedData->planes[DEFAULT_PLANE].allocSize);
    }
 
-   LOGI("%s: owner:%d, locker:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
-        hnd->pid, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr, *vaddr);
+   if (gralloc_log_mapper()) {
+      ALOGI("%s: owner:%d, locker:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
+            hnd->pid, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr, *vaddr);
+   }
 
 out:
    if (hnd->is_mma && shared_block_handle) {
@@ -255,7 +263,7 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
             if (!rc && pSharedData->planes[GL_PLANE].physAddr != 0) {
                rc = gralloc_plane_copy(hnd, EXTRA_PLANE, GL_PLANE);
                if (rc) {
-                  LOGE("%s: Error converting from 422p to RGB - %d", __FUNCTION__, rc);
+                  ALOGE("%s: Error converting from 422p to RGB - %d", __FUNCTION__, rc);
                }
             }
             pthread_mutex_unlock(gralloc_g2d_lock());
@@ -282,8 +290,10 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       }
    }
 
-   LOGI("%s: owner:%d, locker:%d, addr:0x%x", __FUNCTION__,
-        hnd->pid, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr);
+   if (gralloc_log_mapper()) {
+      ALOGI("%s: owner:%d, locker:%d, addr:0x%x", __FUNCTION__,
+            hnd->pid, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr);
+   }
 
    return 0;
 }
