@@ -75,7 +75,6 @@ int gralloc_register_buffer(gralloc_module_t const* module,
          pMemory = NULL;
          NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr, &pMemory);
          hnd->nxSurfaceAddress = (unsigned)pMemory;
-         NEXUS_MemoryBlock_Unlock(block_handle);
       } else {
          hnd->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->planes[plane].physAddr);
       }
@@ -83,6 +82,10 @@ int gralloc_register_buffer(gralloc_module_t const* module,
       if (gralloc_log_mapper()) {
          ALOGI("%s: owner:%d, registrant:%d, addr:0x%x, mapped:0x%x", __FUNCTION__,
                hnd->pid, getpid(), pSharedData->planes[plane].physAddr, hnd->nxSurfaceAddress);
+      }
+
+      if (hnd->is_mma) {
+         NEXUS_MemoryBlock_Unlock(block_handle);
       }
    }
 
@@ -117,14 +120,15 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
       if (pSharedData->planes[GL_PLANE].physAddr) {
          plane = GL_PLANE;
       }
-      if (hnd->is_mma) {
-         NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr);
-         NEXUS_MemoryBlock_Unlock(block_handle);
-      }
 
       if (gralloc_log_mapper()) {
          ALOGI("%s: owner:%d, registrant:%d, addr:0x%x", __FUNCTION__,
                hnd->pid, getpid(), pSharedData->planes[plane].physAddr);
+      }
+
+      if (hnd->is_mma) {
+         NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr);
+         NEXUS_MemoryBlock_Unlock(block_handle);
       }
    }
 
@@ -281,6 +285,11 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       }
    }
 
+   if (gralloc_log_mapper()) {
+      ALOGI("%s: owner:%d, locker:%d, addr:0x%x", __FUNCTION__,
+            hnd->pid, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr);
+   }
+
    if (hnd->is_mma) {
       if (block_handle) {
          NEXUS_MemoryBlock_Unlock(block_handle);
@@ -288,11 +297,6 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       if (shared_block_handle) {
          NEXUS_MemoryBlock_Unlock(shared_block_handle);
       }
-   }
-
-   if (gralloc_log_mapper()) {
-      ALOGI("%s: owner:%d, locker:%d, addr:0x%x", __FUNCTION__,
-            hnd->pid, getpid(), pSharedData->planes[DEFAULT_PLANE].physAddr);
    }
 
    return 0;
