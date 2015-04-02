@@ -513,7 +513,7 @@ struct hwc_context_t {
     int dump_mma;
 };
 
-static void hwc_device_cleanup(hwc_context_t* ctx);
+static void hwc_device_cleanup(struct hwc_context_t* ctx);
 static int hwc_device_open(const struct hw_module_t* module, const char* name,
         struct hw_device_t** device);
 
@@ -525,18 +525,18 @@ static void hwc_nsc_recycled_cb(void *context, int param);
 
 static void hw_vsync_cb(void *context, int param);
 
-static void hwc_hide_unused_gpx_layer(hwc_context_t* dev, int index);
-static void hwc_hide_unused_mm_layers(hwc_context_t* dev);
-static void hwc_hide_unused_sb_layers(hwc_context_t* dev);
+static void hwc_hide_unused_gpx_layer(struct hwc_context_t* dev, int index);
+static void hwc_hide_unused_mm_layers(struct hwc_context_t* dev);
+static void hwc_hide_unused_sb_layers(struct hwc_context_t* dev);
 
-static void hwc_nsc_prepare_layer(hwc_context_t* dev, hwc_layer_1_t *layer,
+static void hwc_nsc_prepare_layer(struct hwc_context_t* dev, hwc_layer_1_t *layer,
    int layer_id, bool geometry_changed,
    unsigned int *video_layer_id, unsigned int *sideband_layer_id);
 
-static void hwc_binder_advertise_video_surface(hwc_context_t* dev);
+static void hwc_binder_advertise_video_surface(struct hwc_context_t* dev);
 
 static void hwc_checkpoint_callback(void *pParam, int param2);
-static int hwc_checkpoint(hwc_context_t *dev);
+static int hwc_checkpoint(struct hwc_context_t *dev);
 
 hwc_module_t HAL_MODULE_INFO_SYM = {
     common: {
@@ -1422,10 +1422,9 @@ out:
    return composed;
 }
 
-static bool primary_need_nsc_layer(hwc_composer_device_1_t *dev, hwc_layer_1_t *layer, size_t total_layers)
+static bool primary_need_nsc_layer(struct hwc_context_t *ctx, hwc_layer_1_t *layer, size_t total_layers)
 {
     bool rc = false;
-    struct hwc_context_t *ctx = (hwc_context_t*)dev;
     int skip_layer = -1;
 
     ++skip_layer; /* 0 */
@@ -1472,11 +1471,10 @@ out:
     return rc;
 }
 
-static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_contents_1_t* list)
+static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_contents_1_t* list)
 {
     size_t i;
     hwc_layer_1_t *layer;
-    struct hwc_context_t *ctx = (hwc_context_t*)dev;
     int skip_layer_index = -1;
     bool has_video = false;
 
@@ -1560,7 +1558,7 @@ static void primary_composition_setup(hwc_composer_device_1_t *dev, hwc_display_
 
 static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_contents_1_t* list)
 {
-    struct hwc_context_t *ctx = (hwc_context_t*)dev;
+    struct hwc_context_t *ctx = (struct hwc_context_t*)dev;
     hwc_layer_1_t *layer;
     size_t i;
     int nx_layer_count = 0;
@@ -1585,7 +1583,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
         }
 
         // setup the layer composition classification.
-        primary_composition_setup(dev, list);
+        primary_composition_setup(ctx, list);
 
         // reset all video/sideband layers first.
         hwc_hide_unused_mm_layers(ctx);
@@ -1594,7 +1592,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
         // allocate the NSC layer, if need be change the geometry, etc...
         for (i = 0; i < list->numHwLayers; i++) {
             layer = &list->hwLayers[i];
-            if (primary_need_nsc_layer(dev, layer, list->numHwLayers)) {
+            if (primary_need_nsc_layer(ctx, layer, list->numHwLayers)) {
                 if (ctx->display_dump_layer) {
                    ALOGI("comp: %d - show - sf:%d (%d) -> nsc:%d", ctx->stats[0].prepare_call, i, layer->compositionType, i);
                 }
@@ -1626,7 +1624,7 @@ out:
 
 static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_contents_1_t* list)
 {
-    struct hwc_context_t *ctx = (hwc_context_t*)dev;
+    struct hwc_context_t *ctx = (struct hwc_context_t*)dev;
     int rc = 0;
     hwc_layer_1_t *layer;
     size_t i;
@@ -1951,7 +1949,7 @@ out:
 static int hwc_set(hwc_composer_device_1_t *dev,
         size_t numDisplays, hwc_display_contents_1_t** displays)
 {
-    struct hwc_context_t *ctx = (hwc_context_t*)dev;
+    struct hwc_context_t *ctx = (struct hwc_context_t*)dev;
     uint32_t i;
     int rc = 0;
 
@@ -2464,7 +2462,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         NEXUS_Error rc = NEXUS_SUCCESS;
         NEXUS_Graphics2DSettings gfxSettings;
         pthread_attr_t attr;
-        dev = (hwc_context_t*)calloc(1, sizeof(*dev));
+        dev = (struct hwc_context_t*)calloc(1, sizeof(*dev));
 
         if (dev == NULL) {
            ALOGE("Failed to create hwcomposer!");
@@ -2703,7 +2701,7 @@ static void hw_vsync_cb(void *context, int param)
 
 static void hwc_nsc_recycled_cb(void *context, int param)
 {
-    hwc_context_t *ctx = (hwc_context_t *)context;
+    struct hwc_context_t *ctx = (struct hwc_context_t *)context;
 
     BSTD_UNUSED(param);
 
@@ -2711,7 +2709,7 @@ static void hwc_nsc_recycled_cb(void *context, int param)
 }
 
 static void hwc_prepare_gpx_layer(
-    hwc_context_t* ctx,
+    struct hwc_context_t* ctx,
     hwc_layer_1_t *layer,
     int layer_id,
     bool geometry_changed)
@@ -2800,7 +2798,7 @@ out:
 }
 
 static void hwc_prepare_mm_layer(
-    hwc_context_t* ctx,
+    struct hwc_context_t* ctx,
     hwc_layer_1_t *layer,
     unsigned int gpx_layer_id,
     unsigned int vid_layer_id)
@@ -2903,7 +2901,7 @@ out:
 }
 
 static void hwc_prepare_sb_layer(
-    hwc_context_t* ctx,
+    struct hwc_context_t* ctx,
     hwc_layer_1_t *layer,
     unsigned int gpx_layer_id,
     unsigned int sb_layer_id)
@@ -2994,7 +2992,7 @@ out:
 }
 
 static void hwc_nsc_prepare_layer(
-    hwc_context_t* ctx,
+    struct hwc_context_t* ctx,
     hwc_layer_1_t *layer,
     int layer_id,
     bool geometry_changed,
@@ -3036,7 +3034,7 @@ static void hwc_nsc_prepare_layer(
     }
 }
 
-static void hwc_hide_unused_gpx_layer(hwc_context_t* ctx, int index)
+static void hwc_hide_unused_gpx_layer(struct hwc_context_t* ctx, int index)
 {
     NEXUS_Error rc;
 
@@ -3054,7 +3052,7 @@ out:
     return;
 }
 
-static void nx_client_hide_unused_mm_layer(hwc_context_t* ctx, int index)
+static void nx_client_hide_unused_mm_layer(struct hwc_context_t* ctx, int index)
 {
     NEXUS_SurfaceComposition composition;
     NEXUS_Error rc;
@@ -3072,7 +3070,7 @@ out:
     return;
 }
 
-static void nx_client_hide_unused_sb_layer(hwc_context_t* ctx, int index)
+static void nx_client_hide_unused_sb_layer(struct hwc_context_t* ctx, int index)
 {
     NEXUS_SurfaceComposition composition;
     NEXUS_Error rc;
@@ -3091,7 +3089,7 @@ out:
     return;
 }
 
-static void hwc_hide_unused_mm_layers(hwc_context_t* ctx)
+static void hwc_hide_unused_mm_layers(struct hwc_context_t* ctx)
 {
     for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++)
     {
@@ -3099,7 +3097,7 @@ static void hwc_hide_unused_mm_layers(hwc_context_t* ctx)
     }
 }
 
-static void hwc_hide_unused_sb_layers(hwc_context_t* ctx)
+static void hwc_hide_unused_sb_layers(struct hwc_context_t* ctx)
 {
     for (int i = 0; i < NSC_SB_CLIENTS_NUMBER; i++)
     {
@@ -3107,7 +3105,7 @@ static void hwc_hide_unused_sb_layers(hwc_context_t* ctx)
     }
 }
 
-static void hwc_binder_advertise_video_surface(hwc_context_t* ctx)
+static void hwc_binder_advertise_video_surface(struct hwc_context_t* ctx)
 {
     if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
         goto out;
@@ -3134,12 +3132,12 @@ out:
 
 static void hwc_checkpoint_callback(void *pParam, int param2)
 {
-    hwc_context_t *dev = (hwc_context_t *)pParam;
+    struct hwc_context_t *dev = (struct hwc_context_t *)pParam;
     (void)param2;
     BKNI_SetEvent(dev->checkpoint_event);
 }
 
-static int hwc_checkpoint(hwc_context_t *dev)
+static int hwc_checkpoint(struct hwc_context_t *dev)
 {
     NEXUS_Error rc;
 
