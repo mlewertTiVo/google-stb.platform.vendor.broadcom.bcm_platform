@@ -82,11 +82,6 @@ int fb_device_open(hw_module_t const* module, const char* name,
    char value[PROPERTY_VALUE_MAX];
 
    if (!strcmp(name, GRALLOC_HARDWARE_FB0)) {
-      alloc_device_t* gralloc_device;
-      status = gralloc_open(module, &gralloc_device);
-      if (status < 0)
-         return status;
-
       /* initialize our state here */
       fb_context_t *dev = (fb_context_t*)malloc(sizeof(*dev));
       memset(dev, 0, sizeof(*dev));
