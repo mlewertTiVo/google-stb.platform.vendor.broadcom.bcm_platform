@@ -55,7 +55,7 @@ static void (* dyn_EGL_nexus_unjoin)(void *nexus_client);
 if (!(dyn_ ## name = (typeof(dyn_ ## name)) dlsym(lib, #name))) \
    ALOGE("failed resolving '%s'", #name); \
 else \
-   ALOGI("resolved '%s' to %p", #name, dyn_ ## name);
+   ALOGV("resolved '%s' to %p", #name, dyn_ ## name);
 static void *gl_dyn_lib;
 static void *nexus_client = NULL;
 static int gralloc_with_mma = 0;
@@ -96,7 +96,7 @@ static void gralloc_load_lib(void)
       if (nexus_client == NULL) {
          ALOGE("%s: failed joining nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
       } else {
-         ALOGI("%s: joined nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
+         ALOGV("%s: joined nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
       }
    } else {
       ALOGE("%s: dyn_EGL_nexus_join unavailable, something will break!", __FUNCTION__);

@@ -1568,11 +1568,11 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     unsigned int video_layer_id = 0;
     unsigned int sideband_layer_id = 0;
 
-    ctx->stats[0].prepare_call++;
+    ctx->stats[0].prepare_call += 1;
 
     if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
         ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
-        ctx->stats[0].prepare_skipped++;
+        ctx->stats[0].prepare_skipped += 1;
         goto out;
     }
 
@@ -1616,7 +1616,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
         }
     }
     else {
-        ctx->stats[0].prepare_skipped++;
+        ctx->stats[0].prepare_skipped += 1;
         BKNI_ReleaseMutex(ctx->power_mutex);
     }
 
@@ -1635,10 +1635,10 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
     void *pAddr;
 
     if (list) {
-       ctx->stats[1].prepare_call++;
+       ctx->stats[1].prepare_call += 1;
 
        if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-           ctx->stats[1].prepare_skipped++;
+           ctx->stats[1].prepare_skipped += 1;
            goto out;
        }
 
@@ -1773,10 +1773,10 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     if (!list)
        return -EINVAL;
 
-    ctx->stats[0].set_call++;
+    ctx->stats[0].set_call += 1;
 
     if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-        ctx->stats[0].set_skipped++;
+        ctx->stats[0].set_skipped += 1;
         goto out;
     }
 
@@ -1788,7 +1788,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
 
     if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
         ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
-        ctx->stats[0].set_skipped++;
+        ctx->stats[0].set_skipped += 1;
         goto out_mutex;
     }
     if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
@@ -1899,7 +1899,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
             }
         }
     } else {
-        ctx->stats[0].set_skipped++;
+        ctx->stats[0].set_skipped += 1;
         BKNI_ReleaseMutex(ctx->power_mutex);
         hwc_put_disp_surface(ctx, 0, display_surface);
     }
@@ -1925,10 +1925,10 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
 
     if (list) {
 
-       ctx->stats[1].set_call++;
+       ctx->stats[1].set_call += 1;
 
        if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-          ctx->stats[1].set_skipped++;
+          ctx->stats[1].set_skipped += 1;
           goto out;
        }
 
@@ -2506,10 +2506,10 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             composition.virtualDisplay.height = dev->cfg[i].height;
             composition.position.x = 0;
             composition.position.y = 0;
-            composition.position.width = dev->cfg[0].width;
-            composition.position.height = dev->cfg[0].height;
+            composition.position.width = dev->cfg[i].width;
+            composition.position.height = dev->cfg[i].height;
             composition.zorder = GPX_CLIENT_ZORDER;
-            composition.visible = true;
+            composition.visible = (i == 0) ? true : false;
             composition.colorBlend = colorBlendingEquation[BLENDIND_TYPE_SRC_OVER];
             composition.alphaBlend = alphaBlendingEquation[BLENDIND_TYPE_SRC_OVER];
             rc = NxClient_SetSurfaceClientComposition(dev->disp_cli[i].sccid, &composition);
