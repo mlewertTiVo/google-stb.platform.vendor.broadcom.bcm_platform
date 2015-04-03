@@ -81,11 +81,14 @@
 #define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
 
 #define NX_MMA                         "ro.nx.mma"
+#define NX_TRANSCODE                   "ro.nx.transcode"
+
 #define NX_HEAP_MAIN                   "ro.nx.heap.main"
 #define NX_HEAP_GFX                    "ro.nx.heap.gfx"
 #define NX_HEAP_GFX2                   "ro.nx.heap.gfx2"
 #define NX_HEAP_VIDEO_SECURE           "ro.nx.heap.video_secure"
 #define NX_HEAP_GROW                   "ro.nx.heap.grow"
+
 #define NX_HD_OUT_FMT                  "persist.hd_output_format"
 #define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
 #define NX_HDCP2X_KEY                  "ro.nexus.nxserver.hdcp2x_keys"
@@ -247,10 +250,8 @@ static nxserver_t init_nxserver(void)
             settings.display.hdmiPreferences.followPreferredFormat = false;
         }
     }
-#ifndef BCM_OMX_SUPPORT_ENCODER
     /* -transcode off */
-    settings.transcode = false;
-#endif
+    settings.transcode = (property_get_int32(NX_TRANSCODE, 0) ? true : false);
     /* -svp */
     settings.svp = true;
     /* -grab off */
