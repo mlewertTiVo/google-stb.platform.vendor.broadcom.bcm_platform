@@ -57,7 +57,8 @@
 
 struct BOMX_BufferNode
 {
-    BLST_Q_ENTRY(BOMX_BufferNode) node;
+    BLST_Q_ENTRY(BOMX_BufferNode) allocNode;
+    BLST_Q_ENTRY(BOMX_BufferNode) queueNode;
     BOMX_Buffer *pBuffer;
 };
 

@@ -455,7 +455,7 @@ OMX_ERRORTYPE BOMX_Port::AddBuffer(
         pHeader->nOutputPortIndex = m_definition.nPortIndex;
     }
     pNode->pBuffer = pOmxBuffer;
-    BLST_Q_INSERT_TAIL(&m_bufferList, pNode, node);
+    BLST_Q_INSERT_TAIL(&m_bufferList, pNode, allocNode);
     m_numBuffers++;
     m_componentAllocated = componentAllocated;
 
@@ -475,7 +475,7 @@ BOMX_BufferNode *BOMX_Port::FindBufferNode(BOMX_Buffer *pBuffer)
 
     for ( pNode = BLST_Q_FIRST(&m_bufferList);
           NULL != pNode;
-          pNode = BLST_Q_NEXT(pNode, node) )
+          pNode = BLST_Q_NEXT(pNode, allocNode) )
     {
         if ( pNode->pBuffer == pBuffer )
         {
@@ -492,7 +492,7 @@ bool BOMX_Port::IsBufferQueued(BOMX_Buffer *pBuffer)
 
     for ( pNode = BLST_Q_FIRST(&m_bufferQueue);
           NULL != pNode;
-          pNode = BLST_Q_NEXT(pNode, node) )
+          pNode = BLST_Q_NEXT(pNode, queueNode) )
     {
         if ( pNode->pBuffer == pBuffer )
         {
@@ -529,7 +529,7 @@ OMX_ERRORTYPE BOMX_Port::RemoveBuffer(
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
     /* Remove node */
-    BLST_Q_REMOVE(&m_bufferList, pNode, node);
+    BLST_Q_REMOVE(&m_bufferList, pNode, allocNode);
     /* Destroy buffer and node  */
     delete pNode;
     delete pBuffer;
@@ -565,14 +565,7 @@ OMX_ERRORTYPE BOMX_Port::QueueBuffer(OMX_BUFFERHEADERTYPE* pBufferHeader)
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
 
-    pNode = new BOMX_BufferNode;
-    if ( NULL == pNode )
-    {
-        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
-    }
-
-    pNode->pBuffer = pBuffer;
-    BLST_Q_INSERT_TAIL(&m_bufferQueue, pNode, node);
+    BLST_Q_INSERT_TAIL(&m_bufferQueue, pNode, queueNode);
     m_queueDepth++;
 
     return OMX_ErrorNone;
@@ -592,11 +585,11 @@ BOMX_Buffer *BOMX_Port::GetNextBuffer(BOMX_Buffer *pBuffer)
     BOMX_BufferNode *pNode;
     for ( pNode = BLST_Q_FIRST(&m_bufferQueue);
           NULL != pNode;
-          pNode = BLST_Q_NEXT(pNode, node) )
+          pNode = BLST_Q_NEXT(pNode, queueNode) )
     {
         if (pNode->pBuffer == pBuffer)
         {
-            pNode = BLST_Q_NEXT(pNode, node);
+            pNode = BLST_Q_NEXT(pNode, queueNode);
             break;
         }
     }
@@ -612,10 +605,9 @@ void BOMX_Port::BufferComplete(BOMX_Buffer *pBuffer)
     BOMX_ASSERT(NULL != pNode);
     BOMX_ASSERT(pNode->pBuffer == pBuffer);
 
-    BLST_Q_REMOVE_HEAD(&m_bufferQueue, node);
+    BLST_Q_REMOVE_HEAD(&m_bufferQueue, queueNode);
     BOMX_ASSERT(m_queueDepth > 0);
     m_queueDepth--;
-    delete pNode;
 }
 
 BOMX_Buffer *BOMX_Port::FindBuffer(BOMX_BufferCompareFunction pCompareFunc, void *pData)
@@ -626,7 +618,7 @@ BOMX_Buffer *BOMX_Port::FindBuffer(BOMX_BufferCompareFunction pCompareFunc, void
 
         for ( pNode = BLST_Q_FIRST(&m_bufferList);
               NULL != pNode;
-              pNode = BLST_Q_NEXT(pNode, node) )
+              pNode = BLST_Q_NEXT(pNode, allocNode) )
         {
             if ( pCompareFunc(pNode->pBuffer, pData) )
             {
