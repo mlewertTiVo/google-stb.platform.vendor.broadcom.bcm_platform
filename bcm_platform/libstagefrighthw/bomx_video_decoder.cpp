@@ -2979,7 +2979,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     pInfo = (BOMX_VideoDecoderInputBufferInfo *)pBuffer->GetComponentPrivate();
     BOMX_ASSERT(NULL != pInfo);
 
-    bufferBytesRemaining = pBufferHeader->nFilledLen - pBufferHeader->nOffset;
+    bufferBytesRemaining = pBufferHeader->nFilledLen;
 
     if ( maxDescriptors < 4 )
     {
@@ -3143,7 +3143,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
-    if ( pBufferHeader->nFilledLen > pBufferHeader->nAllocLen || pBufferHeader->nOffset > pBufferHeader->nFilledLen )
+    if ( (pBufferHeader->nFilledLen + pBufferHeader->nOffset) > pBufferHeader->nAllocLen )
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
@@ -3161,8 +3161,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     pInfo->complete = false;
 
     ALOGV("%s, comp:%s, buff:%p len:%d ts:%d flags:0x%x", __FUNCTION__, GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, (int)pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
-    BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::INPUT_FRAME, pBufferHeader->nTimeStamp, pBufferHeader->nFlags,
-                          pBufferHeader->nFilledLen - pBufferHeader->nOffset);
+    BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::INPUT_FRAME, pBufferHeader->nTimeStamp, pBufferHeader->nFlags, pBufferHeader->nFilledLen);
     if ( pBufferHeader->nFlags & OMX_BUFFERFLAG_CODECCONFIG )
     {
         if ( m_configBufferState != ConfigBufferState_eAccumulating )
@@ -3174,9 +3173,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
             ConfigBufferInit();
         }
 
-        ALOGV("Accumulating %u bytes of codec config data", pBufferHeader->nFilledLen - pBufferHeader->nOffset);
+        ALOGV("Accumulating %u bytes of codec config data", pBufferHeader->nFilledLen);
 
-        err = ConfigBufferAppend(pBufferHeader->pBuffer + pBufferHeader->nOffset, pBufferHeader->nFilledLen - pBufferHeader->nOffset);
+        err = ConfigBufferAppend(pBufferHeader->pBuffer + pBufferHeader->nOffset, pBufferHeader->nFilledLen);
         if ( err != OMX_ErrorNone )
         {
             return BOMX_ERR_TRACE(err);
@@ -3201,7 +3200,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     case OMX_VIDEO_CodingVP9:
     /* Also true for spark and possibly other codecs */
     {
-        uint32_t packetLen = pBufferHeader->nFilledLen - pBufferHeader->nOffset;
+        uint32_t packetLen = pBufferHeader->nFilledLen;
         if ( packetLen > 0 )
         {
             pCodecHeader = m_pBcmvHeader;

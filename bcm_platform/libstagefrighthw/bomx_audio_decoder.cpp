@@ -1416,7 +1416,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
     }
     NEXUS_FlushCache(pInfo->pHeader, headerLen);
     pPayload = pBufferHeader->pBuffer + pBufferHeader->nOffset;
-    payloadLen = pBufferHeader->nFilledLen - pBufferHeader->nOffset;
+    payloadLen = pBufferHeader->nFilledLen;
     if ( NULL != pInfo->pPayload )
     {
         BKNI_Memcpy(pInfo->pPayload, (const void *)(pBufferHeader->pBuffer + pBufferHeader->nOffset), payloadLen);

@@ -202,7 +202,7 @@ int BOMX_FormPesHeader(
     pHeaderBuf = (uint8_t *)pBuffer;
 
     length=14; /* PES header size, 3 byte syncword + 1 byte stream ID + 2 bytes length + 3 byte optional header + 5 byte PTS */
-    payloadLength = pFrame->nFilledLen - pFrame->nOffset + codecHeaderLength;
+    payloadLength = pFrame->nFilledLen + codecHeaderLength;
     payloadLength += length - 6; /* Payload length doesn't count the 6-byte header */
     if ( length > bufferSize )
     {

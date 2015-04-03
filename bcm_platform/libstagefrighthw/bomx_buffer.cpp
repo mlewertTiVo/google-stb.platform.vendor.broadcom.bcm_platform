@@ -94,9 +94,9 @@ OMX_ERRORTYPE BOMX_InputBuffer::GetBuffer(void **pData, OMX_U32 *pLength)
     BOMX_ASSERT(NULL != pData);
     BOMX_ASSERT(NULL != pLength);
 
-    if ( m_header.nOffset < m_header.nFilledLen )
+    if ( (m_header.nOffset + m_header.nFilledLen) <= m_header.nAllocLen )
     {
-        length = m_header.nFilledLen - m_header.nOffset;
+        length = m_header.nFilledLen;
         pBuffer = m_header.pBuffer + m_header.nOffset;
     }
 
@@ -108,8 +108,9 @@ OMX_ERRORTYPE BOMX_InputBuffer::GetBuffer(void **pData, OMX_U32 *pLength)
 
 OMX_ERRORTYPE BOMX_InputBuffer::UpdateBuffer(OMX_U32 amountUsed)
 {
-    BOMX_ASSERT((m_header.nOffset+amountUsed) <= m_header.nFilledLen);
+    BOMX_ASSERT(amountUsed <= m_header.nFilledLen);
     m_header.nOffset += amountUsed;
+    m_header.nFilledLen -= amountUsed;
     return OMX_ErrorNone;
 }
 
@@ -148,10 +149,10 @@ OMX_ERRORTYPE BOMX_OutputBuffer::GetBuffer(void **pData, OMX_U32 *pLength)
     BOMX_ASSERT(NULL != pData);
     BOMX_ASSERT(NULL != pLength);
 
-    if ( m_header.nFilledLen < m_header.nAllocLen )
+    if ( (m_header.nFilledLen + m_header.nOffset) < m_header.nAllocLen )
     {
-        length = m_header.nAllocLen - m_header.nFilledLen;
-        pBuffer = m_header.pBuffer + m_header.nFilledLen;
+        length = m_header.nAllocLen - (m_header.nFilledLen + m_header.nOffset);
+        pBuffer = m_header.pBuffer + m_header.nFilledLen + m_header.nOffset;
     }
 
     *pData = static_cast <void *> (pBuffer);
@@ -162,7 +163,7 @@ OMX_ERRORTYPE BOMX_OutputBuffer::GetBuffer(void **pData, OMX_U32 *pLength)
 
 OMX_ERRORTYPE BOMX_OutputBuffer::UpdateBuffer(OMX_U32 amountUsed)
 {
-    BOMX_ASSERT((m_header.nFilledLen+amountUsed) <= m_header.nAllocLen);
+    BOMX_ASSERT((m_header.nFilledLen+amountUsed+m_header.nOffset) <= m_header.nAllocLen);
     m_header.nFilledLen += amountUsed;
     return OMX_ErrorNone;
 }
@@ -176,6 +177,6 @@ OMX_ERRORTYPE BOMX_OutputBuffer::Reset(OMX_U32 nOffset)
 {
     BOMX_ASSERT(nOffset <= m_header.nAllocLen);
     m_header.nOffset = nOffset;
-    m_header.nFilledLen = nOffset;
+    m_header.nFilledLen = 0;
     return OMX_ErrorNone;
 }
