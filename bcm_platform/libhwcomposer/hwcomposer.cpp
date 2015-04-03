@@ -129,30 +129,20 @@ using namespace android;
 #define HWC_DEFAULT_GLES_MODE        HWC_GLES_MODE_FALLBACK
 #define HWC_GLES_MODE_PROP           "ro.hwc.gles.mode"
 
-#define HWC_DEFAULT_SW_SYNC          "0"
+#define HWC_DEFAULT_DISABLED         "0"
+#define HWC_DEFAULT_ENABLED          "1"
+
+#define HWC_GLES_VIRTUAL_PROP        "ro.hwc.gles.virtual"
 #define HWC_SW_SYNC_PROP             "ro.hwc.sw_sync"
-
-#define HWC_DEFAULT_DUMP_LAYER       "0"
 #define HWC_DUMP_LAYER_PROP          "ro.hwc.dump.layer"
-
-#define HWC_DEFAULT_DUMP_PUSH        "0"
 #define HWC_DUMP_PUSH_PROP           "ro.hwc.dump.push"
-
-#define HWC_DEFAULT_DUMP_VSYNC       "0"
 #define HWC_DUMP_VSYNC_PROP          "ro.hwc.dump.vsync"
-
-#define HWC_DEFAULT_NSC_COPY         "0"
 #define HWC_NSC_COPY_PROP            "ro.hwc.nsc.copy"
-
-#define HWC_DEFAULT_TRACK_BUFFER     "0"
 #define HWC_TRACK_BUFFER_PROP        "ro.hwc.track.buffer"
-
-#define HWC_DEFAULT_DUMP_VIRT        "0"
 #define HWC_DUMP_VIRT_PROP           "ro.hwc.dump.virt"
-
-#define HWC_DEFAULT_MMA              "0"
-#define HWC_USES_MMA_PROP            "ro.nx.mma"
 #define HWC_DUMP_MMA_OPS_PROP        "ro.hwc.dump.mma"
+
+#define HWC_USES_MMA_PROP            "ro.nx.mma"
 
 #define HWC_CHECKPOINT_TIMEOUT       (100)
 
@@ -254,8 +244,6 @@ typedef struct {
     COMMON_CLIENT_INFO ncci;
     NEXUS_SurfaceComposition composition;
     GPX_CLIENT_SURFACE_INFO last;
-    int width;
-    int height;
     unsigned int blending_type;
     int layer_type;
     int layer_subtype;
@@ -487,6 +475,7 @@ struct hwc_context_t {
 
     bool display_gles_fallback;
     bool display_gles_always;
+    bool display_gles_virtual;
     bool needs_fb_target;
 
     BKNI_MutexHandle power_mutex;
@@ -787,7 +776,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
     void *pAddr;
 
     write = snprintf(start, local_capacity,
-        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::sz:{%d,%d}::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::pa:%d\n",
+        "\t[%s]:[%s]:[%d:%d]:[%s]:[%s]::f:%x::z:%d::cp:{%d,%d,%d,%d}::cl:{%d,%d,%d,%d}::cv:{%d,%d}::b:%d::pa:%d\n",
         client->composition.visible ? "LIVE" : "HIDE",
         nsc_cli_type[client->ncci.type],
         client->layer_id,
@@ -796,8 +785,6 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
         nsc_layer_type[client->layer_subtype],
         client->layer_flags,
         client->composition.zorder,
-        client->width,
-        client->height,
         client->composition.position.x,
         client->composition.position.y,
         client->composition.position.width,
@@ -1010,13 +997,14 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
        }
-       write = snprintf(buff + index, capacity, "\tprepare:{%llu,%llu}::set:{%llu,%llu}::gles-fbk:%s::gles-alw:%s::sync:%d\n",
+       write = snprintf(buff + index, capacity, "\tprepare:{%llu,%llu}::set:{%llu,%llu}::gles-fbk:%s::gles-alw:%s::gles-virt:%s::sync:%d\n",
            ctx->stats[0].prepare_call,
            ctx->stats[0].prepare_skipped,
            ctx->stats[0].set_call,
            ctx->stats[0].set_skipped,
            ctx->display_gles_fallback ? "enabled" : "disabled",
            ctx->display_gles_always ? "enabled" : "disabled",
+           ctx->display_gles_virtual ? "enabled" : "disabled",
            ctx->sync_timeline);
        if (write > 0) {
            capacity = (capacity > write) ? (capacity - write) : 0;
@@ -1471,6 +1459,100 @@ out:
     return rc;
 }
 
+static void hwc_prepare_gpx_layer(
+    struct hwc_context_t* ctx,
+    hwc_layer_1_t *layer,
+    int layer_id,
+    bool geometry_changed,
+    bool is_virtual)
+{
+    NEXUS_Error rc;
+    private_handle_t *gr_buffer = NULL;
+    void *pAddr;
+    NEXUS_SurfaceComposition *pComp;
+    NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
+                                (int16_t)layer->displayFrame.top,
+                                (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
+                                (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
+    NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
+                                (int16_t)(int)layer->sourceCropf.top,
+                                (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
+                                (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
+    int cur_width = 0, cur_height = 0;
+    unsigned int cur_blending_type;
+    bool layer_changed = false;
+
+    // sideband layer is handled through the video window directly.
+    if (layer->compositionType == HWC_SIDEBAND)
+        return;
+
+    // if we do not have a valid handle at this point, we have a problem.
+    if (!layer->handle) {
+        ALOGE("%s: invalid handle on layer_id %d", __FUNCTION__, layer_id);
+        return;
+    }
+
+    gr_buffer = (private_handle_t *)layer->handle;
+    hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+    PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
+    hwc_get_buffer_sizes(pSharedData, &cur_width, &cur_height);
+    cur_blending_type = hwc_android_blend_to_nsc_blend(layer->blending);
+
+    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+        goto out;
+    }
+
+    if (!is_virtual) {
+       ctx->gpx_cli[layer_id].layer_type = layer->compositionType;
+       ctx->gpx_cli[layer_id].layer_subtype = NEXUS_SURFACE_COMPOSITOR;
+       if (ctx->gpx_cli[layer_id].layer_type == HWC_CURSOR_OVERLAY)
+          ctx->gpx_cli[layer_id].layer_subtype = NEXUS_CURSOR;
+       ctx->gpx_cli[layer_id].layer_flags = layer->flags;
+       ctx->gpx_cli[layer_id].plane_alpha = layer->planeAlpha;
+
+       if ((memcmp((void *)&disp_position, (void *)&ctx->gpx_cli[layer_id].composition.position, sizeof(NEXUS_Rect)) != 0) ||
+           (memcmp((void *)&clip_position, (void *)&ctx->gpx_cli[layer_id].composition.clipRect, sizeof(NEXUS_Rect)) != 0) ||
+           (cur_width != ctx->gpx_cli[layer_id].composition.clipBase.width) ||
+           (cur_height != ctx->gpx_cli[layer_id].composition.clipBase.height) ||
+           (cur_blending_type != ctx->gpx_cli[layer_id].blending_type)) {
+          layer_changed = true;
+       }
+       pComp = &ctx->gpx_cli[layer_id].composition;
+    } else {
+       layer_changed = true;
+       pComp = &ctx->vd_cli[layer_id].composition;
+    }
+
+    if (layer_changed || !pComp->visible || geometry_changed) {
+        pComp->zorder                = (layer->flags & HWC_IS_CURSOR_LAYER) ? CURSOR_CLIENT_ZORDER : GPX_CLIENT_ZORDER;
+        pComp->position.x            = disp_position.x;
+        pComp->position.y            = disp_position.y;
+        pComp->position.width        = disp_position.width;
+        pComp->position.height       = disp_position.height;
+        pComp->virtualDisplay.width  = ctx->cfg[is_virtual?1:0].width;
+        pComp->virtualDisplay.height = ctx->cfg[is_virtual?1:0].height;
+        pComp->colorBlend            = colorBlendingEquation[cur_blending_type];
+        pComp->alphaBlend            = alphaBlendingEquation[cur_blending_type];
+        pComp->visible               = true;
+        pComp->clipRect.x            = clip_position.x;
+        pComp->clipRect.y            = clip_position.y;
+        pComp->clipRect.width        = clip_position.width;
+        pComp->clipRect.height       = clip_position.height;
+        pComp->clipBase.width        = cur_width;
+        pComp->clipBase.height       = cur_height;
+
+        if (!is_virtual) {
+           ctx->gpx_cli[layer_id].blending_type = cur_blending_type;
+        }
+    }
+
+out_unlock:
+    BKNI_ReleaseMutex(ctx->mutex);
+out:
+    hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+    return;
+}
+
 static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_contents_1_t* list)
 {
     size_t i;
@@ -1631,6 +1713,7 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
     NEXUS_SurfaceComposition surf_comp;
     unsigned int stride;
     void *pAddr;
+    int layer_id = 0;
 
     if (list) {
        ctx->stats[1].prepare_call += 1;
@@ -1644,12 +1727,17 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
            ctx->vd_cli[i].composition.visible = false;
        }
 
-       if (ctx->display_gles_always) {
+       if (ctx->display_gles_always || ctx->display_gles_virtual) {
           goto out_unlock;
        }
 
        for (i = 0; i < list->numHwLayers; i++) {
-          // mark all layers as OVERLAY.
+          layer = &list->hwLayers[i];
+          if (layer->compositionType == HWC_FRAMEBUFFER) {
+             hwc_prepare_gpx_layer(ctx, layer, layer_id, (bool)(list->flags & HWC_GEOMETRY_CHANGED), true);
+             layer_id++;
+             layer->compositionType = HWC_OVERLAY;
+          }
        }
     }
 
@@ -1930,7 +2018,7 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
           goto out;
        }
 
-       if (ctx->display_gles_always) {
+       if (ctx->display_gles_always || ctx->display_gles_virtual) {
           list->retireFenceFd = list->outbufAcquireFenceFd;
           goto out_unlock;
        }
@@ -2403,39 +2491,43 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
          (strncmp(value, HWC_GLES_MODE_ALWAYS, strlen(HWC_GLES_MODE_ALWAYS)) == 0) ? true : false;
    }
 
-   if (property_get(HWC_DUMP_LAYER_PROP, value, HWC_DEFAULT_DUMP_LAYER)) {
+   if (property_get(HWC_GLES_VIRTUAL_PROP, value, HWC_DEFAULT_ENABLED)) {
+      dev->display_gles_virtual = (strtoul(value, NULL, 10) == 0) ? false : true;
+   }
+
+   if (property_get(HWC_DUMP_LAYER_PROP, value, HWC_DEFAULT_DISABLED)) {
       dev->display_dump_layer = (strtoul(value, NULL, 10) == 0) ? false : true;
    }
 
-   if (property_get(HWC_DUMP_PUSH_PROP, value, HWC_DEFAULT_DUMP_PUSH)) {
+   if (property_get(HWC_DUMP_PUSH_PROP, value, HWC_DEFAULT_DISABLED)) {
       dev->display_dump_push = (strtoul(value, NULL, 10) == 0) ? false : true;
    }
 
-   if (property_get(HWC_DUMP_VSYNC_PROP, value, HWC_DEFAULT_DUMP_VSYNC)) {
+   if (property_get(HWC_DUMP_VSYNC_PROP, value, HWC_DEFAULT_DISABLED)) {
       dev->display_dump_vsync = (strtoul(value, NULL, 10) == 0) ? false : true;
    }
 
-   if (property_get(HWC_NSC_COPY_PROP, value, HWC_DEFAULT_NSC_COPY)) {
+   if (property_get(HWC_NSC_COPY_PROP, value, HWC_DEFAULT_DISABLED)) {
       dev->nsc_copy = (strtoul(value, NULL, 10) == 0) ? false : true;
    }
 
-   if (property_get(HWC_TRACK_BUFFER_PROP, value, HWC_DEFAULT_TRACK_BUFFER)) {
+   if (property_get(HWC_TRACK_BUFFER_PROP, value, HWC_DEFAULT_DISABLED)) {
       dev->track_buffer = (strtoul(value, NULL, 10) == 0) ? false : true;
    }
 
-   if (property_get(HWC_DUMP_VIRT_PROP, value, HWC_DEFAULT_DUMP_VIRT)) {
+   if (property_get(HWC_DUMP_VIRT_PROP, value, HWC_DEFAULT_DISABLED)) {
       dev->display_dump_virt = (strtoul(value, NULL, 10) == 0) ? false : true;
    }
 
-   if (property_get(HWC_USES_MMA_PROP, value, HWC_DEFAULT_MMA)) {
+   if (property_get(HWC_USES_MMA_PROP, value, HWC_DEFAULT_DISABLED)) {
       dev->hwc_with_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
-   if (property_get(HWC_DUMP_MMA_OPS_PROP, value, HWC_DEFAULT_MMA)) {
+   if (property_get(HWC_DUMP_MMA_OPS_PROP, value, HWC_DEFAULT_DISABLED)) {
       dev->dump_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
-   if (property_get(HWC_SW_SYNC_PROP, value, HWC_DEFAULT_SW_SYNC)) {
+   if (property_get(HWC_SW_SYNC_PROP, value, HWC_DEFAULT_DISABLED)) {
       if (strtoul(value, NULL, 10) == 0) {
          ALOGI("%s: sync timeline disabled", __FUNCTION__);
          dev->sync_timeline = INVALID_FENCE;
@@ -2708,95 +2800,6 @@ static void hwc_nsc_recycled_cb(void *context, int param)
     BKNI_SetEvent(ctx->recycle_event);
 }
 
-static void hwc_prepare_gpx_layer(
-    struct hwc_context_t* ctx,
-    hwc_layer_1_t *layer,
-    int layer_id,
-    bool geometry_changed)
-{
-    NEXUS_Error rc;
-    private_handle_t *gr_buffer = NULL;
-    void *pAddr;
-    NEXUS_SurfaceCreateSettings createSettings;
-    NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
-                                (int16_t)layer->displayFrame.top,
-                                (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
-                                (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
-    NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
-                                (int16_t)(int)layer->sourceCropf.top,
-                                (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
-                                (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
-    int cur_width = 0, cur_height = 0;
-    unsigned int cur_blending_type;
-    bool layer_changed = false;
-
-    // sideband layer is handled through the video window directly.
-    if (layer->compositionType == HWC_SIDEBAND)
-        return;
-
-    // if we do not have a valid handle at this point, we have a problem.
-    if (!layer->handle) {
-        ALOGE("%s: invalid handle on layer_id %d", __FUNCTION__, layer_id);
-        return;
-    }
-
-    gr_buffer = (private_handle_t *)layer->handle;
-    hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
-    PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
-    hwc_get_buffer_sizes(pSharedData, &cur_width, &cur_height);
-    cur_blending_type = hwc_android_blend_to_nsc_blend(layer->blending);
-
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-        goto out;
-    }
-
-    ctx->gpx_cli[layer_id].layer_type = layer->compositionType;
-    ctx->gpx_cli[layer_id].layer_subtype = NEXUS_SURFACE_COMPOSITOR;
-    if (ctx->gpx_cli[layer_id].layer_type == HWC_CURSOR_OVERLAY)
-       ctx->gpx_cli[layer_id].layer_subtype = NEXUS_CURSOR;
-    ctx->gpx_cli[layer_id].layer_flags = layer->flags;
-    ctx->gpx_cli[layer_id].plane_alpha = layer->planeAlpha;
-
-    if ((memcmp((void *)&disp_position, (void *)&ctx->gpx_cli[layer_id].composition.position, sizeof(NEXUS_Rect)) != 0) ||
-        (memcmp((void *)&clip_position, (void *)&ctx->gpx_cli[layer_id].composition.clipRect, sizeof(NEXUS_Rect)) != 0) ||
-        (cur_width != ctx->gpx_cli[layer_id].width) ||
-        (cur_height != ctx->gpx_cli[layer_id].height) ||
-        (cur_blending_type != ctx->gpx_cli[layer_id].blending_type)) {
-       layer_changed = true;
-    }
-
-    if (layer_changed ||
-        (!ctx->gpx_cli[layer_id].composition.visible) ||
-        geometry_changed) {
-
-        ctx->gpx_cli[layer_id].composition.zorder                = (ctx->gpx_cli[layer_id].layer_flags & HWC_IS_CURSOR_LAYER) ? CURSOR_CLIENT_ZORDER : GPX_CLIENT_ZORDER;
-        ctx->gpx_cli[layer_id].composition.position.x            = disp_position.x;
-        ctx->gpx_cli[layer_id].composition.position.y            = disp_position.y;
-        ctx->gpx_cli[layer_id].composition.position.width        = disp_position.width;
-        ctx->gpx_cli[layer_id].composition.position.height       = disp_position.height;
-        ctx->gpx_cli[layer_id].composition.virtualDisplay.width  = ctx->cfg[0].width;
-        ctx->gpx_cli[layer_id].composition.virtualDisplay.height = ctx->cfg[0].height;
-        ctx->gpx_cli[layer_id].blending_type                     = cur_blending_type;
-        ctx->gpx_cli[layer_id].composition.colorBlend            = colorBlendingEquation[cur_blending_type];
-        ctx->gpx_cli[layer_id].composition.alphaBlend            = alphaBlendingEquation[cur_blending_type];
-        ctx->gpx_cli[layer_id].width                             = cur_width;
-        ctx->gpx_cli[layer_id].height                            = cur_height;
-        ctx->gpx_cli[layer_id].composition.visible               = true;
-        ctx->gpx_cli[layer_id].composition.clipRect.x            = clip_position.x;
-        ctx->gpx_cli[layer_id].composition.clipRect.y            = clip_position.y;
-        ctx->gpx_cli[layer_id].composition.clipRect.width        = clip_position.width;
-        ctx->gpx_cli[layer_id].composition.clipRect.height       = clip_position.height;
-        ctx->gpx_cli[layer_id].composition.clipBase.width        = cur_width;
-        ctx->gpx_cli[layer_id].composition.clipBase.height       = cur_height;
-    }
-
-out_unlock:
-    BKNI_ReleaseMutex(ctx->mutex);
-out:
-    hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
-    return;
-}
-
 static void hwc_prepare_mm_layer(
     struct hwc_context_t* ctx,
     hwc_layer_1_t *layer,
@@ -3005,7 +3008,7 @@ static void hwc_nsc_prepare_layer(
     if (is_video_layer(ctx, layer, layer_id, &is_sideband, &is_yuv)) {
         if (!is_sideband) {
             if (is_yuv) {
-               hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed);
+               hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false);
             }
             else {
                if (*video_layer_id < NSC_MM_CLIENTS_NUMBER) {
@@ -3030,7 +3033,7 @@ static void hwc_nsc_prepare_layer(
             }
         }
     } else {
-        hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed);
+        hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false);
     }
 }
 
