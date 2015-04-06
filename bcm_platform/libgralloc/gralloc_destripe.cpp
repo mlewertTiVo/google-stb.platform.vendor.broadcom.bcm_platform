@@ -47,11 +47,12 @@ int gralloc_destripe_yv12(
     NEXUS_Error errCode;
     NEXUS_SurfaceHandle hSurface422;
     NEXUS_SurfaceCreateSettings surfaceSettings;
-    SHARED_DATA *pSharedData;
-    void *pAddr;
+    void *pAddr, *pMemory;
     uint8_t *pPackedData, *pY, *pCb, *pCr;
     int x, y, stride, height, width;
     int rc=-EINVAL;
+    NEXUS_MemoryBlockHandle block_handle = NULL;
+    PSHARED_DATA pSharedData;
 
     if ( NULL == gralloc_g2d_hdl() )
     {
@@ -59,7 +60,15 @@ int gralloc_destripe_yv12(
         goto err_gfx2d;
     }
 
-    pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pHandle->sharedData);
+    if (pHandle->is_mma) {
+       pMemory = NULL;
+       block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
+       NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+       pSharedData = (PSHARED_DATA) pMemory;
+    } else {
+       pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(pHandle->sharedData);
+    }
+
     if ( NULL == pSharedData )
     {
         ALOGE("Unable to access shared data");
@@ -117,7 +126,14 @@ int gralloc_destripe_yv12(
     }
 
     // Destripe done.  Now convert to planar for YV12
-    pY = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
+    if (pHandle->is_mma) {
+       pMemory = NULL;
+       NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr, &pMemory);
+       pY = (uint8_t *)pMemory;
+    } else {
+       pY = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
+    }
+
     if ( NULL == pY )
     {
         ALOGE("Unable to access YV12 pixels");
@@ -166,6 +182,10 @@ int gralloc_destripe_yv12(
     // Success
     rc = 0;
 
+    if (pHandle->is_mma) {
+       NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr);
+    }
+
 err_yv12:
 err_checkpoint:
 err_destripe:
@@ -173,6 +193,9 @@ err_surface_lock:
     NEXUS_Surface_Destroy(hSurface422);
 err_surface:
 err_shared_data:
+   if (pHandle->is_mma && block_handle) {
+      NEXUS_MemoryBlock_Unlock(block_handle);
+   }
 err_gfx2d:
     return rc;
 }

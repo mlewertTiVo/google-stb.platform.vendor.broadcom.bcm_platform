@@ -23,7 +23,8 @@
 
 #define CONVERSION_IS_VERBOSE 0
 
-static NEXUS_SurfaceHandle to_nsc_surface(int width, int height, int stride, NEXUS_PixelFormat format, uint8_t *data)
+static NEXUS_SurfaceHandle to_nsc_surface(int width, int height, int stride, NEXUS_PixelFormat format,
+                                          int is_mma, unsigned handle, unsigned offset, uint8_t *data)
 {
     NEXUS_SurfaceHandle shdl = NULL;
     NEXUS_SurfaceCreateSettings createSettings;
@@ -33,13 +34,17 @@ static NEXUS_SurfaceHandle to_nsc_surface(int width, int height, int stride, NEX
     createSettings.width       = width;
     createSettings.height      = height;
     createSettings.pitch       = stride;
-    if (data) {
+    if (!is_mma && data) {
         createSettings.pMemory = data;
+    } else if (is_mma && handle) {
+        createSettings.pixelMemory = (NEXUS_MemoryBlockHandle) handle;
+        createSettings.pixelMemoryOffset = offset;
     }
 
     shdl = NEXUS_Surface_Create(&createSettings);
 
-    ALOGV("%s: (%d,%d), s:%d, fmt:%d, p:%p -> %p", __FUNCTION__, width, height, stride, format, data, shdl);
+    ALOGV("%s: (%d,%d), s:%d, fmt:%d, p:%p, h:%p -> %p",
+          __FUNCTION__, width, height, stride, format, data, handle, shdl);
     return shdl;
 }
 
@@ -49,11 +54,14 @@ int gralloc_yv12to422p(private_handle_t *handle)
 
     int stride, cstride;
     uint8_t *yv12, *y_addr, *cr_addr, *cb_addr, *ycrcb422;
+    unsigned cr_offset, cb_offset;
     NEXUS_SurfaceHandle srcCb, srcCr, srcY, dst422;
     NEXUS_Graphics2DSettings gfxSettings;
     BM2MC_PACKET_Plane planeY, planeCb, planeCr, planeYCbCr;
-    void *buffer, *next, *slock;
+    void *buffer, *next, *slock, *pMemory;
     size_t size;
+    NEXUS_MemoryBlockHandle block_handle = NULL;
+    PSHARED_DATA pSharedData;
 
     BM2MC_PACKET_Blend combColor = {BM2MC_PACKET_BlendFactor_eSourceColor,
                                     BM2MC_PACKET_BlendFactor_eOne,
@@ -70,45 +78,70 @@ int gralloc_yv12to422p(private_handle_t *handle)
                                     false,
                                     BM2MC_PACKET_BlendFactor_eZero};
 
-    PSHARED_DATA pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(handle->sharedData);
+    if (handle->is_mma) {
+       pMemory = NULL;
+       block_handle = (NEXUS_MemoryBlockHandle)handle->sharedData;
+       NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+       pSharedData = (PSHARED_DATA) pMemory;
+    } else {
+       pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(handle->sharedData);
+    }
 
-    if (gralloc_g2d_hdl() == NULL)
-    {
+    if (pSharedData == NULL) {
+        ALOGE("%s: unable to locate shared data, abort conversion\n", __FUNCTION__);
+        rc = NEXUS_INVALID_PARAMETER;
+        goto out;
+    }
+
+    if (gralloc_g2d_hdl() == NULL) {
         ALOGE("%s: no support for conversion\n", __FUNCTION__);
         rc = NEXUS_INVALID_PARAMETER;
         goto out;
     }
 
-    yv12 = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
-    if (yv12 == NULL) {
-       ALOGE("%s: yv12 input address NULL\n", __FUNCTION__);
-       rc = NEXUS_INVALID_PARAMETER;
-       goto out;
-    }
-
-    ycrcb422 = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[EXTRA_PLANE].physAddr);
-    if (ycrcb422 == NULL) {
-       ALOGE("%s: ycrcb422 output address NULL\n", __FUNCTION__);
-       rc = NEXUS_INVALID_PARAMETER;
-       goto out;
-    }
-
     stride = (pSharedData->planes[DEFAULT_PLANE].width + (handle->alignment-1)) & ~(handle->alignment-1);
     cstride = (stride/2 + (handle->alignment-1)) & ~(handle->alignment-1),
-    y_addr = yv12;
-    cr_addr = (uint8_t *)(y_addr + (stride * pSharedData->planes[DEFAULT_PLANE].height));
-    cb_addr = (uint8_t *)(cr_addr + ((pSharedData->planes[DEFAULT_PLANE].height/2) * ((stride/2 + (handle->alignment-1)) & ~(handle->alignment-1))));
+    cr_offset = stride * pSharedData->planes[DEFAULT_PLANE].height;
+    cb_offset = (pSharedData->planes[DEFAULT_PLANE].height/2) * ((stride/2 + (handle->alignment-1)) & ~(handle->alignment-1));
+
+    if (handle->is_mma) {
+       yv12     = NULL;
+       ycrcb422 = NULL;
+       y_addr   = NULL;
+       cr_addr  = NULL;
+       cb_addr  = NULL;
+    } else {
+       yv12 = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
+       if (yv12 == NULL) {
+          ALOGE("%s: yv12 input address NULL\n", __FUNCTION__);
+          rc = NEXUS_INVALID_PARAMETER;
+          goto out;
+       }
+       ycrcb422 = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[EXTRA_PLANE].physAddr);
+       if (ycrcb422 == NULL) {
+          ALOGE("%s: ycrcb422 output address NULL\n", __FUNCTION__);
+          rc = NEXUS_INVALID_PARAMETER;
+          goto out;
+       }
+
+       y_addr  = yv12;
+       cr_addr = (uint8_t *)(y_addr + cr_offset);
+       cb_addr = (uint8_t *)(cr_addr + cb_offset);
+    }
 
     if (CONVERSION_IS_VERBOSE) {
-       ALOGD("%s: yv12 (%d,%d):%d: y:%p, cr:%p, cb:%p\n", __FUNCTION__,
+       ALOGD("%s: yv12 (%d,%d):%d: cr-off:%u, cb-off:%u\n", __FUNCTION__,
           pSharedData->planes[DEFAULT_PLANE].width, pSharedData->planes[DEFAULT_PLANE].height,
-          stride, y_addr, cr_addr, cb_addr);
+          stride, cr_offset, cb_offset);
     }
 
     srcY = to_nsc_surface(pSharedData->planes[DEFAULT_PLANE].width,
                           pSharedData->planes[DEFAULT_PLANE].height,
                           stride,
                           NEXUS_PixelFormat_eY8,
+                          handle->is_mma,
+                          pSharedData->planes[DEFAULT_PLANE].physAddr,
+                          0,
                           y_addr);
     NEXUS_Surface_Lock(srcY, &slock);
     NEXUS_Surface_Flush(srcY);
@@ -117,6 +150,9 @@ int gralloc_yv12to422p(private_handle_t *handle)
                            pSharedData->planes[DEFAULT_PLANE].height/2,
                            cstride,
                            NEXUS_PixelFormat_eCr8,
+                           handle->is_mma,
+                           pSharedData->planes[DEFAULT_PLANE].physAddr,
+                           cr_offset,
                            cr_addr);
     NEXUS_Surface_Lock(srcCr, &slock);
     NEXUS_Surface_Flush(srcCr);
@@ -125,6 +161,9 @@ int gralloc_yv12to422p(private_handle_t *handle)
                            pSharedData->planes[DEFAULT_PLANE].height/2,
                            cstride,
                            NEXUS_PixelFormat_eCb8,
+                           handle->is_mma,
+                           pSharedData->planes[DEFAULT_PLANE].physAddr,
+                           cb_offset,
                            cb_addr);
     NEXUS_Surface_Lock(srcCb, &slock);
     NEXUS_Surface_Flush(srcCb);
@@ -134,6 +173,9 @@ int gralloc_yv12to422p(private_handle_t *handle)
                             pSharedData->planes[EXTRA_PLANE].height,
                             stride,
                             (NEXUS_PixelFormat)pSharedData->planes[EXTRA_PLANE].format,
+                            handle->is_mma,
+                            pSharedData->planes[EXTRA_PLANE].physAddr,
+                            0,
                             ycrcb422);
     NEXUS_Surface_Lock(dst422, &slock);
     NEXUS_Surface_Flush(dst422);
@@ -246,6 +288,9 @@ out_cleanup:
     NEXUS_Surface_Destroy(srcY);
     NEXUS_Surface_Destroy(dst422);
 out:
+   if (handle->is_mma && block_handle) {
+      NEXUS_MemoryBlock_Unlock(block_handle);
+   }
    return (int)rc;
 }
 
@@ -254,51 +299,59 @@ int gralloc_plane_copy(private_handle_t *handle, unsigned src, unsigned dst)
    NEXUS_Error errCode;
    NEXUS_SurfaceHandle hSurfaceSrc, hSurfaceDst;
    NEXUS_Graphics2DBlitSettings blitSettings;
-   SHARED_DATA *pSharedData;
    unsigned height, width, strideSrc, strideDst;
    uint8_t *pSrc, *pDst;
-   void *slock;
+   void *slock, *pMemory;
    int rc = -EINVAL;
+   NEXUS_MemoryBlockHandle block_handle = NULL;
+   PSHARED_DATA pSharedData;
 
-   if ( src == dst )
-   {
+
+   if (src == dst) {
       goto out;
    }
 
-   if ( src >= MAX_NUM_INSTANCES || dst >= MAX_NUM_INSTANCES )
-   {
+   if (src >= MAX_NUM_INSTANCES || dst >= MAX_NUM_INSTANCES) {
       ALOGE("Unknown planes src=%u dst=%u", src, dst);
       rc = NEXUS_INVALID_PARAMETER;
       goto err_plane;
    }
 
-   if ( NULL == gralloc_g2d_hdl() )
-   {
+   if (NULL == gralloc_g2d_hdl()) {
       ALOGE("Graphics2D Not available.  Cannot access HW decoder data.");
       goto err_gfx2d;
    }
 
-   pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(handle->sharedData);
-   if ( NULL == pSharedData )
-   {
+   if (handle->is_mma) {
+      pMemory = NULL;
+      block_handle = (NEXUS_MemoryBlockHandle)handle->sharedData;
+      NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+      pSharedData = (PSHARED_DATA) pMemory;
+   } else {
+      pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(handle->sharedData);
+   }
+
+   if (NULL == pSharedData) {
       ALOGE("Unable to access shared data");
       goto err_shared_data;
    }
 
-   pSrc = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[src].physAddr);
-   if ( NULL == pSrc )
-   {
-      ALOGE("%s: Input address NULL\n", __FUNCTION__);
-      rc = NEXUS_INVALID_PARAMETER;
-      goto err_src;
-   }
+   if (handle->is_mma) {
+      pSrc = pDst = NULL;
+   } else {
+      pSrc = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[src].physAddr);
+      if ( NULL == pSrc ) {
+         ALOGE("%s: Input address NULL\n", __FUNCTION__);
+         rc = NEXUS_INVALID_PARAMETER;
+         goto err_src;
+      }
 
-   pDst = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[dst].physAddr);
-   if ( NULL == pDst )
-   {
-      ALOGE("%s: Output address NULL\n", __FUNCTION__);
-      rc = NEXUS_INVALID_PARAMETER;
-      goto err_dst;
+      pDst = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[dst].physAddr);
+      if ( NULL == pDst ) {
+         ALOGE("%s: Output address NULL\n", __FUNCTION__);
+         rc = NEXUS_INVALID_PARAMETER;
+         goto err_dst;
+      }
    }
 
    height = pSharedData->planes[src].height;
@@ -307,9 +360,9 @@ int gralloc_plane_copy(private_handle_t *handle, unsigned src, unsigned dst)
    strideDst = pSharedData->planes[dst].stride;
 
    hSurfaceSrc =
-         to_nsc_surface(width, height, strideSrc, (NEXUS_PixelFormat)pSharedData->planes[src].format, pSrc);
-   if ( NULL == hSurfaceSrc )
-   {
+         to_nsc_surface(width, height, strideSrc, (NEXUS_PixelFormat)pSharedData->planes[src].format,
+                        handle->is_mma, pSharedData->planes[src].physAddr, 0, pSrc);
+   if (NULL == hSurfaceSrc) {
       ALOGE("Unable to allocate input surface");
       goto err_src_surface;
    }
@@ -317,9 +370,9 @@ int gralloc_plane_copy(private_handle_t *handle, unsigned src, unsigned dst)
    NEXUS_Surface_Flush(hSurfaceSrc);
 
    hSurfaceDst =
-         to_nsc_surface(width, height, strideDst, (NEXUS_PixelFormat)pSharedData->planes[dst].format, pDst);
-   if ( NULL == hSurfaceDst )
-   {
+         to_nsc_surface(width, height, strideDst, (NEXUS_PixelFormat)pSharedData->planes[dst].format,
+                        handle->is_mma, pSharedData->planes[dst].physAddr, 0, pDst);
+   if (NULL == hSurfaceDst) {
       ALOGE("Unable to allocate output surface");
       goto err_dst_surface;
    }
@@ -369,6 +422,9 @@ err_src_surface:
 err_dst:
 err_src:
 err_shared_data:
+   if (handle->is_mma && block_handle) {
+      NEXUS_MemoryBlock_Unlock(block_handle);
+   }
 err_gfx2d:
 err_plane:
 out:
