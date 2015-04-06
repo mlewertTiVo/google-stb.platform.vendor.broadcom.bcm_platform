@@ -553,6 +553,25 @@ static size_t ComputeBufferSize(unsigned stride, unsigned height)
     return (stride * height * 3) / 2;
 }
 
+static void BOMX_VideoDecoder_MemLock(private_handle_t *pPrivateHandle, void **addr)
+{
+   *addr = NULL;
+   if (pPrivateHandle->is_mma) {
+      NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)pPrivateHandle->sharedData;
+      NEXUS_MemoryBlock_Lock(block_handle, addr);
+   } else {
+      *addr = NEXUS_OffsetToCachedAddr((NEXUS_Addr)pPrivateHandle->sharedData);
+   }
+}
+
+static void BOMX_VideoDecoder_MemUnlock(private_handle_t *pPrivateHandle)
+{
+   if (pPrivateHandle->is_mma) {
+      NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)pPrivateHandle->sharedData;
+      NEXUS_MemoryBlock_Unlock(block_handle);
+   }
+}
+
 BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
@@ -2538,8 +2557,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     BOMX_Port *pPort;
     BOMX_VideoDecoderOutputBufferInfo *pInfo;
     OMX_ERRORTYPE err;
+    void *pMemory;
 
-   if ( NULL == ppBufferHdr || NULL == pPrivateHandle )
+    if ( NULL == ppBufferHdr || NULL == pPrivateHandle )
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
@@ -2569,23 +2589,30 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     memset(pInfo, 0, sizeof(*pInfo));
     pInfo->type = BOMX_VideoDecoderOutputBufferType_eNative;
     pInfo->typeInfo.native.pPrivateHandle = pPrivateHandle;
-    pInfo->typeInfo.native.pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pPrivateHandle->sharedData);
-    if ( NULL == pInfo->typeInfo.native.pSharedData )
+    BOMX_VideoDecoder_MemLock(pPrivateHandle, &pMemory);
+    if ( NULL == pMemory )
     {
         delete pInfo;
+        BOMX_VideoDecoder_MemUnlock(pPrivateHandle);
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+    }
+    else
+    {
+       pInfo->typeInfo.native.pSharedData = (PSHARED_DATA)pMemory;
     }
     // Setup window parameters for display
     pInfo->typeInfo.native.pSharedData->videoWindow.nexusClientContext = m_pNexusClient;
     android_atomic_release_store(1, &pInfo->typeInfo.native.pSharedData->videoWindow.windowIdPlusOne);
 
-     err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, ComputeBufferSize(pPort->GetDefinition()->format.video.nStride, pPort->GetDefinition()->format.video.nSliceHeight), (OMX_U8 *)pPrivateHandle, pInfo, false);
+    err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, ComputeBufferSize(pPort->GetDefinition()->format.video.nStride, pPort->GetDefinition()->format.video.nSliceHeight), (OMX_U8 *)pPrivateHandle, pInfo, false);
     if ( OMX_ErrorNone != err )
     {
         delete pInfo;
+        BOMX_VideoDecoder_MemUnlock(pPrivateHandle);
         return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
     }
 
+    // BOMX_VideoDecoder_MemUnlock - happens in FreeBuffer to preserve mapping as long as possible.
     PortStatusChanged();
 
     return OMX_ErrorNone;
@@ -2843,6 +2870,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
             break;
         case BOMX_VideoDecoderOutputBufferType_eNative:
             pFrameBuffer = pInfo->pFrameBuffer;
+            BOMX_VideoDecoder_MemUnlock((private_handle_t *)pInfo->typeInfo.native.pPrivateHandle);
             break;
         case BOMX_VideoDecoderOutputBufferType_eMetadata:
             if ( pInfo->typeInfo.metadata.pMetadata->pHandle )
@@ -3333,13 +3361,19 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
 
-        SHARED_DATA *pSharedData;
+        void *pMemory;
+        PSHARED_DATA pSharedData;
         private_handle_t *pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
-        pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pPrivateHandle->sharedData);
-        if ( NULL == pSharedData )
+        BOMX_VideoDecoder_MemLock(pPrivateHandle, &pMemory);
+        if ( NULL == pMemory )
         {
             BOMX_ERR(("Invalid gralloc buffer %#x - sharedDataPhyAddr %#x is invalid", pPrivateHandle, pPrivateHandle->sharedData));
+            BOMX_VideoDecoder_MemUnlock(pPrivateHandle);
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
+        else
+        {
+            pSharedData = (PSHARED_DATA)pMemory;
         }
         BOMX_ASSERT((pInfo->typeInfo.metadata.pMetadata == (void *)pBufferHeader->pBuffer));
         if ( NULL != pInfo->typeInfo.metadata.pMetadata->pHandle )
@@ -3350,6 +3384,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         {
             pFrameBuffer = NULL;
         }
+        BOMX_VideoDecoder_MemUnlock(pPrivateHandle);
     }
     else
     {
@@ -4106,16 +4141,20 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         break;
                     case BOMX_VideoDecoderOutputBufferType_eMetadata:
                         {
-                            SHARED_DATA *pSharedData;
+                            void *pMemory;
+                            PSHARED_DATA pSharedData;
                             pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
-                            pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pBuffer->pPrivateHandle->sharedData);
-                            if ( NULL == pSharedData )
+                            BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
+                            if ( NULL == pMemory )
                             {
                                 BOMX_ERR(("Unable to convert SHARED_DATA physical address %#x", pBuffer->pPrivateHandle->sharedData));
+                                BOMX_VideoDecoder_MemUnlock(pBuffer->pPrivateHandle);
                                 (void)BOMX_ERR_TRACE(OMX_ErrorBadParameter);
                             }
                             else
                             {
+                                pSharedData = (PSHARED_DATA)pMemory;
+
                                 // Setup window parameters for display and provide buffer status
                                 pSharedData->videoWindow.nexusClientContext = m_pNexusClient;
                                 android_atomic_release_store(1, &pSharedData->videoWindow.windowIdPlusOne);
@@ -4134,7 +4173,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     }
                                     else
                                     {
-                                        OMX_ERRORTYPE res = DestripeToRGB(pSharedData, pBuffer->hStripedSurface);
+                                        OMX_ERRORTYPE res = DestripeToRGB(pBuffer->pPrivateHandle->is_mma, pSharedData, pBuffer->hStripedSurface);
                                         if ( res != OMX_ErrorNone )
                                         {
                                             ALOGE("Unable to destripe to RGB - %d", res);
@@ -4147,6 +4186,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 }
                             }
                             pHeader->nFilledLen = sizeof(VideoDecoderOutputMetaData);
+                            BOMX_VideoDecoder_MemUnlock(pBuffer->pPrivateHandle);
                         }
                         break;
                     default:
@@ -4254,7 +4294,8 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             }
             else
             {
-                SHARED_DATA *pSharedData;
+                PSHARED_DATA pSharedData = NULL;
+                void *pMemory;
                 // Display only the last frame we're returning if the app is falling behind.
                 if ( pNext == pEnd )
                 {
@@ -4266,7 +4307,11 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 }
                 if ( pBuffer->pPrivateHandle )
                 {
-                    pSharedData = (SHARED_DATA *)NEXUS_OffsetToCachedAddr(pBuffer->pPrivateHandle->sharedData);
+                    BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
+                    if ( pMemory )
+                    {
+                        pSharedData = (PSHARED_DATA)pMemory;
+                    }
                     if ( pSharedData && pSharedData->videoFrame.hStripedSurface )
                     {
                         NEXUS_StripedSurfaceHandle hStripedSurface;
@@ -4283,6 +4328,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                             private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
                         }
                     }
+                    BOMX_VideoDecoder_MemUnlock(pBuffer->pPrivateHandle);
                 }
                 if ( pBuffer->hStripedSurface )
                 {
@@ -4664,29 +4710,25 @@ void BOMX_VideoDecoder::FreeInputBuffer(void*& pBuffer)
     pBuffer = NULL;
 }
 
-OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToRGB(SHARED_DATA *pSharedData, NEXUS_StripedSurfaceHandle hStripedSurface)
+OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToRGB(int is_mma, SHARED_DATA *pSharedData, NEXUS_StripedSurfaceHandle hStripedSurface)
 {
     NEXUS_Error errCode;
     NEXUS_SurfaceHandle hTargetSurface;
     NEXUS_SurfaceCreateSettings surfaceSettings;
     void *pAddr;
-    uint8_t *pRgb;
     OMX_ERRORTYPE rc = OMX_ErrorUndefined;
-
-    pRgb = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[GL_PLANE].physAddr);
-    if ( NULL == pRgb )
-    {
-        LOGE("Unable to access RGB pixels");
-        rc = OMX_ErrorInsufficientResources;
-        goto err_rgb;
-    }
 
     NEXUS_Surface_GetDefaultCreateSettings(&surfaceSettings);
     surfaceSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
     surfaceSettings.width = pSharedData->planes[GL_PLANE].width;
     surfaceSettings.height = pSharedData->planes[GL_PLANE].height;
     surfaceSettings.pitch = 4 * pSharedData->planes[GL_PLANE].width;
-    surfaceSettings.pMemory = pRgb;
+    if (is_mma) {
+       surfaceSettings.pixelMemory = (NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr;
+    }
+    else {
+       surfaceSettings.pMemory = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[GL_PLANE].physAddr);
+    }
     hTargetSurface = NEXUS_Surface_Create(&surfaceSettings);
     if ( NULL == hTargetSurface )
     {

@@ -352,7 +352,7 @@ protected:
     void CopySurfaceToClient(const BOMX_VideoDecoderOutputBufferInfo *pInfo);
     BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(private_handle_t *pPrivateHandle);
     BOMX_VideoDecoderFrameBuffer *FindFrameBuffer(unsigned serialNumber);
-    OMX_ERRORTYPE DestripeToRGB(SHARED_DATA *pSharedData, NEXUS_StripedSurfaceHandle hStripedSurface);
+    OMX_ERRORTYPE DestripeToRGB(int is_mma, SHARED_DATA *pSharedData, NEXUS_StripedSurfaceHandle hStripedSurface);
 
     void DisplayFrame_locked(unsigned serialNumber);
     void SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned serialNumber, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible);
