@@ -121,9 +121,10 @@ struct private_handle_t {
 /*9.*/        unsigned    nxSurfacePhysicalAddress;
 /*10.*/       unsigned    nxSurfaceAddress;
 /*11.*/       int         is_mma;
+/*12.*/       int         alignment;
 
 #ifdef __cplusplus
-    static const int sNumInts = 11;
+    static const int sNumInts = 12;
     static const int sNumFds = 4;
     static const int sMagic = 0x3141592;
 
@@ -131,7 +132,7 @@ struct private_handle_t {
         fd(fd), fd2(fd2), fd3(fd3), fd4(fd4), magic(sMagic), flags(flags),
         pid(getpid()), oglStride(0), oglFormat(0), oglSize(0),
         sharedData(0), usage(0), nxSurfacePhysicalAddress(0),
-        nxSurfaceAddress(0), is_mma(0)
+        nxSurfaceAddress(0), is_mma(0), alignment(0)
     {
         version = sizeof(native_handle);
         numInts = sNumInts;

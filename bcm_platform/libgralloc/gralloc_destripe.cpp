@@ -50,7 +50,7 @@ int gralloc_destripe_yv12(
     SHARED_DATA *pSharedData;
     void *pAddr;
     uint8_t *pPackedData, *pY, *pCb, *pCr;
-    int x, y, stride, align=16, height, width;
+    int x, y, stride, height, width;
     int rc=-EINVAL;
 
     if ( NULL == gralloc_g2d_hdl() )
@@ -123,9 +123,9 @@ int gralloc_destripe_yv12(
         ALOGE("Unable to access YV12 pixels");
         goto err_yv12;
     }
-    stride = (pSharedData->planes[DEFAULT_PLANE].width + (align-1)) & ~(align-1);
+    stride = (pSharedData->planes[DEFAULT_PLANE].width + (pHandle->alignment-1)) & ~(pHandle->alignment-1);
     pCr = (uint8_t *)(pY + (stride * pSharedData->planes[DEFAULT_PLANE].height));
-    pCb = (uint8_t *)(pCr + ((pSharedData->planes[DEFAULT_PLANE].height/2) * ((stride/2 + (align-1)) & ~(align-1))));
+    pCb = (uint8_t *)(pCr + ((pSharedData->planes[DEFAULT_PLANE].height/2) * ((stride/2 + (pHandle->alignment-1)) & ~(pHandle->alignment-1))));
     pPackedData = (uint8_t *)pAddr;
 
     NEXUS_Surface_Flush(hSurface422);

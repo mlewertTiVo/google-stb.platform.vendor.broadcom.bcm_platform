@@ -392,7 +392,7 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
          ALOGE("%s: no valid client context...", __FUNCTION__);
       }
 
-      // VC4 requires memory with a set stride etc
+      // VC4 requires memory with a set stride.
       if (dyn_BEGLint_BufferGetRequirements)
          dyn_BEGLint_BufferGetRequirements(&bufferRequirements, &bufferConstrainedRequirements);
       else {
@@ -424,11 +424,11 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
    return phyAddr;
 }
 
-static void getBufferDataFromFormat(int w, int h, int bpp, int format, int *pStride, int *size, int *extra_size)
+static void getBufferDataFromFormat(int *alignment, int w, int h, int bpp, int format, int *pStride, int *size, int *extra_size)
 {
-   int align = 1;
-   if (dyn_BEGLint_BufferGetRequirements)   /* Only true for VC4 */
-      align = 16;
+   /* note: alignment - as 'input' provides an indication of what the platform expects,
+            may be changed as 'output' based on the format requirements.
+   */
 
    switch (format) {
       case HAL_PIXEL_FORMAT_RGBA_8888:
@@ -437,7 +437,7 @@ static void getBufferDataFromFormat(int w, int h, int bpp, int format, int *pStr
       case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
       case HAL_PIXEL_FORMAT_RGB_565:
       {
-          int bpr = (w*bpp + (align-1)) & ~(align-1);
+          int bpr = (w*bpp + (*alignment-1)) & ~(*alignment-1);
           *size = bpr * h;
           *pStride = bpr / bpp;
           *extra_size = 0;
@@ -446,10 +446,12 @@ static void getBufferDataFromFormat(int w, int h, int bpp, int format, int *pStr
 
       case HAL_PIXEL_FORMAT_YV12:
       {
+          // force alignment according to (android) format definition.
+          *alignment = 16;
           // use y-stride: ALIGN(w, 16)
-          *pStride = (w + (align-1)) & ~(align-1);
+          *pStride = (w + (*alignment-1)) & ~(*alignment-1);
           // size: y-stride * h + 2 * (c-stride * h/2), with c-stride: ALIGN(y-stride/2, 16)
-          *size = (*pStride * h) + 2 * ((h/2) * ((*pStride/2 + (align-1)) & ~(align-1)));
+          *size = (*pStride * h) + 2 * ((h/2) * ((*pStride/2 + (*alignment-1)) & ~(*alignment-1)));
           // extra_size: stride * height * bpp
           *extra_size = *pStride * bpp * h;
       }
@@ -472,7 +474,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
                     int *pStride)
 {
    int bpp = 0, fd = -1, fd2 = -1, fd3 = -1, fd4 = -1;
-   int size, extra_size;
+   int size, extra_size, fmt_align;
    NEXUS_PixelFormat nxFormat = getNexusPixelFormat(format, &bpp);
    PSHARED_DATA pSharedData = NULL;
    NEXUS_MemoryBlockHandle block_handle = NULL;
@@ -484,8 +486,6 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    bool needs_rgb = false;
 
    (void)dev;
-
-   getBufferDataFromFormat(w, h, bpp, format, pStride, &size, &extra_size);
 
    if (nxFormat == NEXUS_PixelFormat_eUnknown) {
       ALOGE("%s: unsupported gr->nx format: %d", __FUNCTION__, format);
@@ -514,8 +514,22 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    }
 
    private_handle_t *grallocPrivateHandle = new private_handle_t(fd, fd2, fd3, fd4, 0);
+   if (grallocPrivateHandle == NULL) {
+      *pHandle = NULL;
+      return -ENOMEM;
+   }
 
    grallocPrivateHandle->is_mma = gralloc_with_mma;
+   grallocPrivateHandle->alignment = 1;
+   if (dyn_BEGLint_BufferGetRequirements) {
+      grallocPrivateHandle->alignment = 16;
+   }
+
+   fmt_align = grallocPrivateHandle->alignment;
+   getBufferDataFromFormat(&fmt_align, w, h, bpp, format, pStride, &size, &extra_size);
+   if (fmt_align != grallocPrivateHandle->alignment) {
+      grallocPrivateHandle->alignment = fmt_align;
+   }
 
    int ret = ioctl(fd2, NX_ASHMEM_SET_SIZE, sizeof(SHARED_DATA));
    if (ret < 0) {

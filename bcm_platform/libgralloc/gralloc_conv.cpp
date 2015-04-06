@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Broadcom Canada Ltd.
+ * Copyright (C) 2014, 2015 Broadcom Canada Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@ int gralloc_yv12to422p(private_handle_t *handle)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
 
-    int align, stride;
+    int stride, cstride;
     uint8_t *yv12, *y_addr, *cr_addr, *cb_addr, *ycrcb422;
     NEXUS_SurfaceHandle srcCb, srcCr, srcY, dst422;
     NEXUS_Graphics2DSettings gfxSettings;
@@ -93,11 +93,11 @@ int gralloc_yv12to422p(private_handle_t *handle)
        goto out;
     }
 
-    align = 16;
-    stride = (pSharedData->planes[DEFAULT_PLANE].width + (align-1)) & ~(align-1);
+    stride = (pSharedData->planes[DEFAULT_PLANE].width + (handle->alignment-1)) & ~(handle->alignment-1);
+    cstride = (stride/2 + (handle->alignment-1)) & ~(handle->alignment-1),
     y_addr = yv12;
     cr_addr = (uint8_t *)(y_addr + (stride * pSharedData->planes[DEFAULT_PLANE].height));
-    cb_addr = (uint8_t *)(cr_addr + ((pSharedData->planes[DEFAULT_PLANE].height/2) * ((stride/2 + (align-1)) & ~(align-1))));
+    cb_addr = (uint8_t *)(cr_addr + ((pSharedData->planes[DEFAULT_PLANE].height/2) * ((stride/2 + (handle->alignment-1)) & ~(handle->alignment-1))));
 
     if (CONVERSION_IS_VERBOSE) {
        ALOGD("%s: yv12 (%d,%d):%d: y:%p, cr:%p, cb:%p\n", __FUNCTION__,
@@ -115,7 +115,7 @@ int gralloc_yv12to422p(private_handle_t *handle)
 
     srcCr = to_nsc_surface(pSharedData->planes[DEFAULT_PLANE].width/2,
                            pSharedData->planes[DEFAULT_PLANE].height/2,
-                           (stride/2 + (align-1)) & ~(align-1),
+                           cstride,
                            NEXUS_PixelFormat_eCr8,
                            cr_addr);
     NEXUS_Surface_Lock(srcCr, &slock);
@@ -123,7 +123,7 @@ int gralloc_yv12to422p(private_handle_t *handle)
 
     srcCb = to_nsc_surface(pSharedData->planes[DEFAULT_PLANE].width/2,
                            pSharedData->planes[DEFAULT_PLANE].height/2,
-                           (stride/2 + (align-1)) & ~(align-1),
+                           cstride,
                            NEXUS_PixelFormat_eCb8,
                            cb_addr);
     NEXUS_Surface_Lock(srcCb, &slock);
