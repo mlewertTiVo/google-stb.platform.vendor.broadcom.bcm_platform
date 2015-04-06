@@ -59,5 +59,6 @@ include vendor/broadcom/bcm_platform/not_for_release/libbcmsideband/Android.mk
 include vendor/broadcom/bcm_platform/not_for_release/Bouncer/Android.mk
 include vendor/broadcom/bcm_platform/not_for_release/ExoPlayerDemo/Android.mk
 include vendor/broadcom/bcm_platform/not_for_release/WidevineSamplePlayer/Android.mk
+include vendor/broadcom/bcm_platform/not_for_release/omx_conformance_test/Android.mk
 endif
 
