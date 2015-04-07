@@ -34,6 +34,7 @@ AOSP_LIST="$TMP_DIR/aosp_patches.txt"
 # TODO: Move these to a true temp directory but we can live this for now
 WHITE_LIST="$TMP_DIR/white_list.txt"
 BLACK_LIST="$TMP_DIR/black_list.txt"
+AOSP_NAME_LIST="$TMP_DIR/aosp_override_list.txt"
 
 if [ $# -ge 2 ]; then
   AOSP_BASELINE=$2
@@ -51,11 +52,19 @@ extract_path_from_xml()
   extract_value_from_xml project $1 $2 $BCG_XML path
 }
 
+# Helper to extract name of those "remove-projects" from bcg xml
+extract_remove_project_name_from_xml()
+{
+  echo "cat //remove-project/@name" | xmllint --shell $BCG_XML | grep name= | cut -d \" -f 2 > $AOSP_NAME_LIST
+  while read line; do
+    extract_value_from_xml project name $line $DFT_XML path >> $AOSP_LIST
+  done < $AOSP_NAME_LIST
+}
+
 # Helper to extract aosp patches per baseline
 extract_patches_from_aosp()
 {
   AOSP_PATH=$1
-  echo $AOSP_PATH >> $AOSP_LIST
   mkdir -p $TOP_DIR/$TMP_DIR/$AOSP_PATH
   CURR_DIR=$(pwd)
   cd $AOSP_PATH
@@ -89,6 +98,15 @@ extract_patches_from_aosp()
   cd $CURR_DIR
 }
 
+create_patches_for_all_aosp_overrides()
+{
+  extract_remove_project_name_from_xml
+  while read line; do
+    echo "Creating patches for $line..."
+    extract_patches_from_aosp $line
+  done < $AOSP_LIST
+}
+
 if [ -d $TMP_DIR ]; then
   rm -rf $TMP_DIR
 fi
@@ -114,12 +132,7 @@ if [ -f $BCG_XML ]; then
   extract_path_from_xml name android/kernel-toolchains >> $WHITE_LIST
 
   # Android aosp overrides, generate patches from a given baseline
-  extract_patches_from_aosp external/libusb
-  extract_patches_from_aosp external/libusb-compat
-  extract_patches_from_aosp external/bluetooth/bluedroid
-  extract_patches_from_aosp packages/apps/Bluetooth
-  extract_patches_from_aosp hardware/libhardware
-  extract_patches_from_aosp build
+  create_patches_for_all_aosp_overrides
 
   # Misc tools
   extract_path_from_xml name android/busybox >> $WHITE_LIST
@@ -150,7 +163,7 @@ echo $BLACK_LIST >> $BLACK_LIST
 tar --exclude=*.git* --exclude-from=$BLACK_LIST -cvzf $1 --files-from=$WHITE_LIST
 
 # Be verbose what we are not tar'ing
-echo "excludes..."
+echo "Excludes..."
 cat $BLACK_LIST
 
 echo "Release tarball ($1) generated"
