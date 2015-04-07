@@ -39,6 +39,42 @@
 #include "gralloc_destripe.h"
 
 extern int gralloc_log_mapper();
+extern int gralloc_timestamp_conversion();
+
+static int64_t gralloc_tick(void)
+{
+    struct timespec t;
+    t.tv_sec = t.tv_nsec = 0;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (int64_t)(t.tv_sec) * 1000000000LL + t.tv_nsec;
+}
+
+enum {
+   CONV_NONE = 0,
+   CONV_DESTRIPE,
+   CONV_YV12_TO_YUV422,
+   CONV_YUV422_TO_RGB,
+};
+
+static const char *conv_type[] =
+{
+   "invalid-conv",
+   "destripe-yuv",
+   "yv12--yuv422",
+   "yuv422---rgb",
+};
+
+static void gralloc_conv_print(int w, int h, int type, int64_t start, int64_t end)
+{
+   const double nsec_to_msec = 1.0 / 1000000.0;
+
+   ALOGI("conv: %s (%dx%d) -> %.3f msecs (%lld)",
+         conv_type[type],
+         w,
+         h,
+         nsec_to_msec * (end - start),
+         (end - start));
+}
 
 int gralloc_register_buffer(gralloc_module_t const* module,
    buffer_handle_t handle)
@@ -154,11 +190,13 @@ int gralloc_lock(gralloc_module_t const* module,
    int l, int t, int w, int h,
    void** vaddr)
 {
+   int64_t tick_start_conv, tick_end_conv;
    int err = 0;
    bool hwConverted=false;
    NEXUS_MemoryBlockHandle block_handle = NULL, shared_block_handle = NULL;
    PSHARED_DATA pSharedData = NULL;
    private_module_t* pModule = (private_module_t *)module;
+
    (void)l;
    (void)t;
    (void)w;
@@ -205,11 +243,17 @@ int gralloc_lock(gralloc_module_t const* module,
          }
          if (usage & GRALLOC_USAGE_SW_READ_MASK) {
             if (!pSharedData->videoFrame.destripeComplete) {
+               if (gralloc_timestamp_conversion()) {
+                  tick_start_conv = gralloc_tick();
+               }
                err = gralloc_destripe_yv12(hnd, pSharedData->videoFrame.hStripedSurface);
                if (err) {
                   private_handle_t::unlock_video_frame(hnd);
                   pthread_mutex_unlock(gralloc_g2d_lock());
                   goto out;
+               }
+               if (gralloc_timestamp_conversion()) {
+                  tick_end_conv = gralloc_tick();
                }
                pSharedData->videoFrame.destripeComplete = true;
                hwConverted = true;
@@ -237,6 +281,12 @@ int gralloc_lock(gralloc_module_t const* module,
             getpid());
    }
 
+   if (hwConverted && gralloc_timestamp_conversion()) {
+      gralloc_conv_print(pSharedData->planes[DEFAULT_PLANE].width,
+                         pSharedData->planes[DEFAULT_PLANE].height,
+                         CONV_DESTRIPE, tick_start_conv, tick_end_conv);
+   }
+
 out:
    if (hnd->is_mma && shared_block_handle) {
       NEXUS_MemoryBlock_Unlock(shared_block_handle);
@@ -246,8 +296,11 @@ out:
 
 int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
 {
+   int64_t tick_start_conv, tick_end_conv;
+   int64_t tick_start_conv_2, tick_end_conv_2;
+   bool yv12_to_yuv422 = false;
+   bool yuv422_to_rgb = false;
    NEXUS_Error rc;
-
    NEXUS_MemoryBlockHandle block_handle = NULL, shared_block_handle = NULL;
    private_handle_t *hnd = (private_handle_t *) handle;
    private_module_t* pModule = (private_module_t *)module;
@@ -277,16 +330,29 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       if (pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12) {
          if (pSharedData->planes[EXTRA_PLANE].physAddr != 0) {
             pthread_mutex_lock(gralloc_g2d_lock());
+            if (gralloc_timestamp_conversion()) {
+               tick_start_conv = gralloc_tick();
+            }
             rc = gralloc_yv12to422p(hnd);
             if (!rc) {
+               yv12_to_yuv422 = true;
                flushed = true;
+               if (gralloc_timestamp_conversion()) {
+                  tick_end_conv = gralloc_tick();
+               }
             }
 
             /* TODO: YV12->RBA conversion */
             if (!rc && pSharedData->planes[GL_PLANE].physAddr != 0) {
+               if (gralloc_timestamp_conversion()) {
+                  tick_start_conv_2 = gralloc_tick();
+               }
                rc = gralloc_plane_copy(hnd, EXTRA_PLANE, GL_PLANE);
                if (rc) {
                   ALOGE("%s: Error converting from 422p to RGB - %d", __FUNCTION__, rc);
+               } else if (gralloc_timestamp_conversion()) {
+                  yuv422_to_rgb = true;
+                  tick_end_conv_2 = gralloc_tick();
                }
             }
             pthread_mutex_unlock(gralloc_g2d_lock());
@@ -313,6 +379,19 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
             hnd->nxSurfacePhysicalAddress,
             hnd->nxSurfaceAddress,
             getpid());
+   }
+
+   if ((yv12_to_yuv422 || yuv422_to_rgb) && gralloc_timestamp_conversion()) {
+      if (yv12_to_yuv422) {
+         gralloc_conv_print(pSharedData->planes[DEFAULT_PLANE].width,
+                            pSharedData->planes[DEFAULT_PLANE].height,
+                            CONV_YV12_TO_YUV422, tick_start_conv, tick_end_conv);
+      }
+      if (yuv422_to_rgb) {
+         gralloc_conv_print(pSharedData->planes[DEFAULT_PLANE].width,
+                            pSharedData->planes[DEFAULT_PLANE].height,
+                            CONV_YUV422_TO_RGB, tick_start_conv_2, tick_end_conv_2);
+      }
    }
 
    if (hnd->is_mma) {

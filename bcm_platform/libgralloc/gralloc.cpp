@@ -53,13 +53,14 @@ static void * (* dyn_EGL_nexus_join)(char *client_process_name);
 static void (* dyn_EGL_nexus_unjoin)(void *nexus_client);
 #define LOAD_FN(lib, name) \
 if (!(dyn_ ## name = (typeof(dyn_ ## name)) dlsym(lib, #name))) \
-   ALOGE("failed resolving '%s'", #name); \
+   ALOGV("failed resolving '%s'", #name); \
 else \
    ALOGV("resolved '%s' to %p", #name, dyn_ ## name);
 static void *gl_dyn_lib;
 static void *nexus_client = NULL;
 static int gralloc_with_mma = 0;
 static int gralloc_log_map = 0;
+static int gralloc_conv_time = 0;
 
 static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
 static NEXUS_Graphics2DHandle hGraphics = NULL;
@@ -70,6 +71,7 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 
 #define NX_MMA                  "ro.nx.mma"
 #define NX_GR_LOG_MAP           "ro.gr.log.map"
+#define NX_GR_CONV_TIME         "ro.gr.conv.time"
 
 #define NEXUS_JOIN_CLIENT_PROCESS "gralloc"
 static void gralloc_load_lib(void)
@@ -108,6 +110,10 @@ static void gralloc_load_lib(void)
 
    if (property_get(NX_GR_LOG_MAP, value, "0")) {
       gralloc_log_map = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
+   }
+
+   if (property_get(NX_GR_CONV_TIME, value, "0")) {
+      gralloc_conv_time = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 }
 
@@ -173,6 +179,11 @@ void gralloc_explicit_unload(void)
 int gralloc_log_mapper(void)
 {
    return gralloc_log_map;
+}
+
+int gralloc_timestamp_conversion(void)
+{
+   return gralloc_conv_time;
 }
 
 void * gralloc_v3d_get_nexus_client_context(void)
@@ -850,11 +861,6 @@ static int gralloc_free(alloc_device_t* dev,
 
 static int gralloc_close(struct hw_device_t *dev)
 {
-   ALOGD("%s [%d]: Vector Graphics Allocator [L] Build Date[%s Time:%s]\n",
-          __FUNCTION__,__LINE__,
-          __DATE__,
-          __TIME__);
-
    gralloc_context_t* ctx = reinterpret_cast<gralloc_context_t*>(dev);
    if (ctx) {
       free(ctx);
@@ -867,16 +873,9 @@ int gralloc_device_open(const hw_module_t* module, const char* name,
 {
    int status = -EINVAL;
 
-   ALOGD("%s[%d]: Vector Graphics Allocator [L] Build Date[%s Time:%s]\n",
-         __FUNCTION__,__LINE__,
-         __DATE__,
-         __TIME__);
+   ALOGD("%s: %s", __FUNCTION__, name);
 
-   if (!strcmp(name, GRALLOC_HARDWARE_GPU0))
-   {
-      ALOGI("Using Hardware GPU type device\n");
-      void *alloced=NULL;
-
+   if (!strcmp(name, GRALLOC_HARDWARE_GPU0)) {
       gralloc_context_t *dev;
       dev = (gralloc_context_t*)malloc(sizeof(*dev));
       /* initialize our state here */
