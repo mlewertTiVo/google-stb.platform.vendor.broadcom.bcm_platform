@@ -1,0 +1,14 @@
+on boot
+   # install wakeup.ko first, then nexus.ko.  any other drivers
+   # depending on nexus.ko need to be insmod'ed through the property
+   # hook up (see: on property:hw.nexus.platforminit) after the
+   # nxserver has started (since only then is a nexus platform valid).
+   #
+   # optional additional module parameters can be passed to nexus.ko
+   # insmod'ing command line. in particular, for nexus logging purposes:
+   # 'config="msg_modules=xxx,yyy,zzz"'
+   #
+   insmod /system/vendor/drivers/wakeup_drv.ko devname="mali0"
+   insmod /system/vendor/drivers/nexus.ko devname="mali"
+
+
