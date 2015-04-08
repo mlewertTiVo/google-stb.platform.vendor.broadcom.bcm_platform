@@ -8,7 +8,11 @@ on boot
    # insmod'ing command line. in particular, for nexus logging purposes:
    # 'config="msg_modules=xxx,yyy,zzz"'
    #
+   # the config parameter has a maximum total length of 256 characters
+   # and accepts a set of <key>=<value> pairs separated by either of
+   # (whitespace, colon, semi-colon).
+   #
    insmod /system/vendor/drivers/wakeup_drv.ko devname="mali0"
-   insmod /system/vendor/drivers/nexus.ko devname="mali" config="auto_subindex=enabled"
+   insmod /system/vendor/drivers/nexus.ko devname="mali" config="auto_subindex=true"
 
 
