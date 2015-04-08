@@ -638,9 +638,9 @@ gralloc_alloc_buffer(alloc_device_t* dev,
          //    alignment considerations.
          // 2) vc4 does only support 2k textures and does require
          //    special alignmnent considerations.
-         if (!dyn_BEGLint_BufferGetRequirements ||
-             (dyn_BEGLint_BufferGetRequirements &&
-              w <= DATA_PLANE_MAX_WIDTH &&
+         if (/*!dyn_BEGLint_BufferGetRequirements ||
+             (dyn_BEGLint_BufferGetRequirements &&*/
+             (w <= DATA_PLANE_MAX_WIDTH &&
               h <= DATA_PLANE_MAX_HEIGHT)) {
             needs_rgb = true;
          }
