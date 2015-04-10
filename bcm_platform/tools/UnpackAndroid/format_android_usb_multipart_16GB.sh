@@ -44,6 +44,7 @@ umount ${USB_DEV_DIR}5 &> /dev/null
 umount ${USB_DEV_DIR}6 &> /dev/null
 umount ${USB_DEV_DIR}7 &> /dev/null
 umount ${USB_DEV_DIR}8 &> /dev/null
+umount ${USB_DEV_DIR}9 &> /dev/null
 
 if [ ! -e $USB_DEV_DIR ]
 then
@@ -62,6 +63,7 @@ cache_size=$((      256*1024*1024/bs)) # As per BoardConfig.mk
 recovery_size=$((   128*1024*1024/bs)) # As per BoardConfig.mk
 hwcfg_size=$((       20*1024*1024/bs)) # Config files, ex Playready drm.bin
 boot_size=$((        32*1024*1024/bs)) # Enough space to store boot.img
+misc_size=$((         1*1024*1024/bs)) # Small Misc Partition for recovery.img
 
 gpt_first=0; gpt_last=$((gpt_first+gpt_size-1))
 kernel_first=$((gpt_last+1)); kernel_last=$((kernel_first+kernel_size-1))
@@ -72,6 +74,7 @@ cache_first=$((data_last+1)); cache_last=$((cache_first+cache_size-1))
 recovery_first=$((cache_last+1)); recovery_last=$((recovery_first+recovery_size-1))
 hwcfg_first=$((recovery_last+1)); hwcfg_last=$((hwcfg_first+hwcfg_size-1))
 boot_first=$((hwcfg_last+1)); boot_last=$((boot_first+boot_size-1))
+misc_first=$((boot_last+1)); misc_last=$((misc_first+misc_size-1))
 
 sgdisk -n 1:$kernel_first:$kernel_last -t 1:0700 -c 1:"kernel"   $USB_DEV_DIR \
   || { exit_msg "kernel sgdisk failed";   exit; }
@@ -89,6 +92,8 @@ sgdisk -n 7:$hwcfg_first:$hwcfg_last             -c 7:"hwcfg"    $USB_DEV_DIR \
   || { exit_msg "hwcfg sgdisk failed";    exit; }
 sgdisk -n 8:$boot_first:$boot_last               -c 8:"boot"     $USB_DEV_DIR \
   || { exit_msg "boot sgdisk failed";     exit; }
+sgdisk -n 9:$misc_first:$misc_last               -c 9:"misc"     $USB_DEV_DIR \
+  || { exit_msg "misc sgdisk failed";     exit; }
 
 mkfs.vfat -F 32 -n kernel   ${USB_DEV_DIR}1 || { exit_msg "kernel mkfs failed";   exit; }
 mkfs.ext4 -L       rootfs   ${USB_DEV_DIR}2 || { exit_msg "rootfs mkfs failed";   exit; }
