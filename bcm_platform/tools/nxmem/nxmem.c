@@ -60,14 +60,49 @@ BDBG_MODULE(client);
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 
-int main(void)
+static void usage(void)
+{
+   ALOGI("nxmem [--heap <index>|--all|--status] [--verbose]");
+}
+
+int main(int argc, char **argv)
 {
     NEXUS_PlatformConfiguration platformConfig;
     NxClient_JoinSettings joinSettings;
     NEXUS_Error rc;
     char value[256];
     FILE *key = NULL;
-    int i;
+    int i = 1;
+    int heap_index = -1, chart_it = 0, status = 0, detail = 0;
+
+    while (i < argc) {
+       if (!strcmp(argv[i], "--heap")) {
+          if (i + 1 < argc) {
+             heap_index = strtol(argv[++i], NULL, 10);
+             ALOGI("selecting heap index %d.", heap_index);
+          } else {
+             usage();
+             return -EINVAL;
+          }
+       }
+       if (!strcmp(argv[i], "--all")) {
+          heap_index = NEXUS_MAX_HEAPS;
+       }
+       if (!strcmp(argv[i], "--chart")) {
+          chart_it = 1;
+       }
+       if (!strcmp(argv[i], "--status")) {
+          status = 1;
+       }
+       if (!strcmp(argv[i], "--verbose")) {
+          detail = 1;
+       }
+       if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
+          usage();
+          return 0;
+       }
+       i++;
+    };
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
     snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "nxmem");
@@ -89,13 +124,29 @@ int main(void)
        fclose(key);
     }
     rc = NxClient_Join(&joinSettings);
-    if (rc) return -1;
+    if (rc) {
+       ALOGE("failed to join nexus.  aborting.");
+       return -1;
+    }
 
     NEXUS_Platform_GetConfiguration(&platformConfig);
-    for (i=0;i<NEXUS_MAX_HEAPS;i++) {
-        if (platformConfig.heap[i]) {
-           NEXUS_Heap_Dump(platformConfig.heap[i]);
-        }
+    if (status) {
+       NEXUS_Memory_PrintStatus();
+    } else if (heap_index == NEXUS_MAX_HEAPS) {
+       NEXUS_Memory_PrintHeaps();
+       if (detail) {
+          for (i = 0 ; i < NEXUS_MAX_HEAPS ; i++) {
+             if (platformConfig.heap[i]) {
+                NEXUS_Heap_Dump(platformConfig.heap[i]);
+             }
+          }
+       }
+    } else if (heap_index >= 0 && heap_index < NEXUS_MAX_HEAPS) {
+       NEXUS_Heap_Dump(platformConfig.heap[heap_index]);
+    } else {
+       usage();
+       NxClient_Uninit();
+       return -EINVAL;
     }
 
     NxClient_Uninit();
