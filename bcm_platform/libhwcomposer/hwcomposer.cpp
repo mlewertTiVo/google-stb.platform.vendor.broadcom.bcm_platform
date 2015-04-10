@@ -638,7 +638,7 @@ static int hwc_mem_lock(struct hwc_context_t *ctx, unsigned handle, void **addr,
          NEXUS_MemoryBlock_Lock(block_handle, addr);
 
          if (ctx->dump_mma) {
-            LOGI("mma-lock: %p -> %p", handle, *addr);
+            ALOGI("mma-lock: %p -> %p", handle, *addr);
          }
       }
    } else {
@@ -654,7 +654,7 @@ static int hwc_mem_unlock(struct hwc_context_t *ctx, unsigned handle, bool lock)
          NEXUS_MemoryBlock_Unlock(block_handle);
 
          if (ctx->dump_mma) {
-            LOGI("mma-unlock: %p", handle);
+            ALOGI("mma-unlock: %p", handle);
          }
       }
    }

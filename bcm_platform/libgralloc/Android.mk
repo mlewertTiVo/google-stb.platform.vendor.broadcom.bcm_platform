@@ -46,7 +46,7 @@ LOCAL_C_INCLUDES += $(REFSW_PATH)/../../refsw/rockford/middleware/v3d/driver/int
 REMOVE_NEXUS_CFLAGS := -Wstrict-prototypes
 MANGLED_NEXUS_CFLAGS := $(filter-out $(REMOVE_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
 
-LOCAL_CFLAGS := -DLOG_TAG=\"gr-brcm\" $(MANGLED_NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
+LOCAL_CFLAGS := -DLOG_TAG=\"bcm-gr\" $(MANGLED_NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
 
 LOCAL_SRC_FILES := \
         gralloc.cpp \
