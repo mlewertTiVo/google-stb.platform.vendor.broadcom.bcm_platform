@@ -71,7 +71,7 @@ BOMX_AudioPort::BOMX_AudioPort(
     {
         OMX_AUDIO_PARAM_PORTFORMATTYPE *pPortFormatCopy;
         pPortFormatCopy = new OMX_AUDIO_PARAM_PORTFORMATTYPE[numPortFormats];
-        BOMX_ASSERT(NULL != pPortFormatCopy);
+        ALOG_ASSERT(NULL != pPortFormatCopy);
         memcpy(pPortFormatCopy, pPortFormats, sizeof(OMX_AUDIO_PARAM_PORTFORMATTYPE)*numPortFormats);
         m_pPortFormats = pPortFormatCopy;
     }
@@ -106,7 +106,7 @@ OMX_ERRORTYPE BOMX_AudioPort::SetPortFormat(
     }
     if ( i >= m_numPortFormats )
     {
-        BOMX_ERR(("Invalid port format"));
+        ALOGW("Invalid port format");
         return BOMX_ERR_TRACE(OMX_ErrorUnsupportedSetting);
     }
 
@@ -132,7 +132,7 @@ BOMX_VideoPort::BOMX_VideoPort(
     {
         OMX_VIDEO_PARAM_PORTFORMATTYPE *pPortFormatCopy;
         pPortFormatCopy = new OMX_VIDEO_PARAM_PORTFORMATTYPE[numPortFormats];
-        BOMX_ASSERT(NULL != pPortFormatCopy);
+        ALOG_ASSERT(NULL != pPortFormatCopy);
         memcpy(pPortFormatCopy, pPortFormats, sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE)*numPortFormats);
         m_pPortFormats = pPortFormatCopy;
     }
@@ -174,7 +174,7 @@ OMX_ERRORTYPE BOMX_VideoPort::SetPortFormat(
     }
     if ( i >= m_numPortFormats )
     {
-        BOMX_ERR(("Invalid port format"));
+        ALOGW("Invalid port format");
         return BOMX_ERR_TRACE(OMX_ErrorUnsupportedSetting);
     }
 
@@ -200,7 +200,7 @@ BOMX_ImagePort::BOMX_ImagePort(
     {
         OMX_IMAGE_PARAM_PORTFORMATTYPE *pPortFormatCopy;
         pPortFormatCopy = new OMX_IMAGE_PARAM_PORTFORMATTYPE[numPortFormats];
-        BOMX_ASSERT(NULL != pPortFormatCopy);
+        ALOG_ASSERT(NULL != pPortFormatCopy);
         memcpy(pPortFormatCopy, pPortFormats, sizeof(OMX_IMAGE_PARAM_PORTFORMATTYPE)*numPortFormats);
         m_pPortFormats = pPortFormatCopy;
     }
@@ -241,7 +241,7 @@ OMX_ERRORTYPE BOMX_ImagePort::SetPortFormat(
     }
     if ( i >= m_numPortFormats )
     {
-        BOMX_ERR(("Invalid port format"));
+        ALOGW("Invalid port format");
         return BOMX_ERR_TRACE(OMX_ErrorUnsupportedSetting);
     }
 
@@ -267,7 +267,7 @@ BOMX_OtherPort::BOMX_OtherPort(
     {
         OMX_OTHER_PARAM_PORTFORMATTYPE *pPortFormatCopy;
         pPortFormatCopy = new OMX_OTHER_PARAM_PORTFORMATTYPE[numPortFormats];
-        BOMX_ASSERT(NULL != pPortFormatCopy);
+        ALOG_ASSERT(NULL != pPortFormatCopy);
         memcpy(pPortFormatCopy, pPortFormats, sizeof(OMX_OTHER_PARAM_PORTFORMATTYPE)*numPortFormats);
         m_pPortFormats = pPortFormatCopy;
     }
@@ -302,7 +302,7 @@ OMX_ERRORTYPE BOMX_OtherPort::SetPortFormat(
     }
     if ( i >= m_numPortFormats )
     {
-        BOMX_ERR(("Invalid port format"));
+        ALOGW("Invalid port format");
         return BOMX_ERR_TRACE(OMX_ErrorUnsupportedSetting);
     }
 
@@ -344,7 +344,7 @@ BOMX_Port::~BOMX_Port()
 
 OMX_ERRORTYPE BOMX_Port::SetDefinition(const OMX_PARAM_PORTDEFINITIONTYPE *pConfig)
 {
-    BOMX_ASSERT(NULL != pConfig);
+    ALOG_ASSERT(NULL != pConfig);
     BOMX_STRUCT_VALIDATE(pConfig);
 
     OMX_PARAM_PORTDEFINITIONTYPE newConfig = *pConfig;
@@ -378,7 +378,7 @@ OMX_ERRORTYPE BOMX_Port::Enable()
     }
     else
     {
-        BOMX_ERR(("Port already enabled"));
+        ALOGW("Port already enabled");
         return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
     }
 }
@@ -393,7 +393,7 @@ OMX_ERRORTYPE BOMX_Port::Disable()
     }
     else
     {
-        BOMX_ERR(("Port already disabled"));
+        ALOGW("Port already disabled");
         return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
     }
 }
@@ -410,20 +410,20 @@ OMX_ERRORTYPE BOMX_Port::AddBuffer(
     BOMX_BufferNode *pNode;
     OMX_BUFFERHEADERTYPE *pHeader;
 
-    BOMX_ASSERT(NULL != ppBufferHdr);
-    BOMX_ASSERT(NULL != pBuffer);
+    ALOG_ASSERT(NULL != ppBufferHdr);
+    ALOG_ASSERT(NULL != pBuffer);
 
     *ppBufferHdr = (OMX_BUFFERHEADERTYPE *)NULL;
 
     if ( componentAllocated != m_componentAllocated &&
          m_numBuffers > 0 )
     {
-        BOMX_ERR(("You must exclusively use OMX_AllocateBuffer OR OMX_UseBuffer on any port"));
+        ALOGW("You must exclusively use OMX_AllocateBuffer OR OMX_UseBuffer on any port");
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
     if ( IsPopulated() )
     {
-        BOMX_ERR(("Port is already populated"));
+        ALOGW("Port is already populated");
         return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
     }
 
@@ -511,21 +511,21 @@ OMX_ERRORTYPE BOMX_Port::RemoveBuffer(
     BOMX_Buffer *pBuffer;
     BOMX_BufferNode *pNode;
 
-    BOMX_ASSERT(NULL != pBufferHeader);
+    ALOG_ASSERT(NULL != pBufferHeader);
 
     pBuffer = BOMX_BUFFERHEADER_TO_BUFFER(pBufferHeader);
-    BOMX_ASSERT(NULL != pBuffer);
+    ALOG_ASSERT(NULL != pBuffer);
 
     /* Make sure we allocated this buffer */
     pNode = FindBufferNode(pBuffer);
     if ( NULL == pNode )
     {
-        BOMX_ERR(("Buffer Header %p is not associated with this port", pBufferHeader));
+        ALOGW("Buffer Header %p is not associated with this port", pBufferHeader);
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
     if ( IsBufferQueued(pBuffer) )
     {
-        BOMX_ERR(("Buffer is still queued with this port"));
+        ALOGW("Buffer is still queued with this port");
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
     /* Remove node */
@@ -535,7 +535,7 @@ OMX_ERRORTYPE BOMX_Port::RemoveBuffer(
     delete pBuffer;
 
     m_definition.bPopulated = OMX_FALSE;
-    BOMX_ASSERT(m_numBuffers > 0);
+    ALOG_ASSERT(m_numBuffers > 0);
     m_numBuffers--;
 
     return OMX_ErrorNone;
@@ -546,22 +546,22 @@ OMX_ERRORTYPE BOMX_Port::QueueBuffer(OMX_BUFFERHEADERTYPE* pBufferHeader)
     BOMX_Buffer *pBuffer;
     BOMX_BufferNode *pNode;
 
-    BOMX_ASSERT(NULL != pBufferHeader);
+    ALOG_ASSERT(NULL != pBufferHeader);
 
     pBuffer = BOMX_BUFFERHEADER_TO_BUFFER(pBufferHeader);
-    BOMX_ASSERT(NULL != pBuffer);
+    ALOG_ASSERT(NULL != pBuffer);
 
     pNode = FindBufferNode(pBuffer);
     if ( NULL == pNode )
     {
-        BOMX_ERR(("Buffer Header %p is not associated with this port", pBufferHeader));
+        ALOGW("Buffer Header %p is not associated with this port", pBufferHeader);
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
 
     // Make sure buffer isn't already queued
     if ( IsBufferQueued(pBuffer) )
     {
-        BOMX_ERR(("Buffer Header %p is already queued", pBuffer));
+        ALOGW("Buffer Header %p is already queued", pBuffer);
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
 
@@ -602,11 +602,11 @@ void BOMX_Port::BufferComplete(BOMX_Buffer *pBuffer)
     BOMX_BufferNode *pNode;
 
     pNode = BLST_Q_FIRST(&m_bufferQueue);
-    BOMX_ASSERT(NULL != pNode);
-    BOMX_ASSERT(pNode->pBuffer == pBuffer);
+    ALOG_ASSERT(NULL != pNode);
+    ALOG_ASSERT(pNode->pBuffer == pBuffer);
 
     BLST_Q_REMOVE_HEAD(&m_bufferQueue, queueNode);
-    BOMX_ASSERT(m_queueDepth > 0);
+    ALOG_ASSERT(m_queueDepth > 0);
     m_queueDepth--;
 }
 
@@ -634,7 +634,7 @@ OMX_ERRORTYPE BOMX_Port::SetTunnel(BOMX_Component *pComp, BOMX_Port *pPort)
 {
     if ( m_numBuffers > 0 )
     {
-        BOMX_ERR(("Cannot change tunneling when buffers are assigned to a port"));
+        ALOGW("Cannot change tunneling when buffers are assigned to a port");
         return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
     }
 
@@ -646,12 +646,12 @@ OMX_ERRORTYPE BOMX_Port::SetTunnel(BOMX_Component *pComp, BOMX_Port *pPort)
         return OMX_ErrorNone;
     }
 
-    BOMX_ASSERT(NULL != pComp);
-    BOMX_ASSERT(NULL != pPort);
+    ALOG_ASSERT(NULL != pComp);
+    ALOG_ASSERT(NULL != pPort);
 
     if ( pPort->GetDomain() != this->GetDomain() )
     {
-        BOMX_ERR(("Cannot tunnel components of different domains"));
+        ALOGW("Cannot tunnel components of different domains");
         return BOMX_ERR_TRACE(OMX_ErrorPortsNotCompatible);
     }
 

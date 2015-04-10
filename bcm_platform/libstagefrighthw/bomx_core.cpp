@@ -166,7 +166,7 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_GetHandle(
     const ComponentEntry *pComponentEntry = GetComponentByName(cComponentName);
     if ( NULL == pComponentEntry )
     {
-        BOMX_ERR(("Unable to find component '%s'", cComponentName));
+        ALOGW("Unable to find component '%s'", cComponentName);
         return BOMX_ERR_TRACE(OMX_ErrorComponentNotFound);
     }
     if ( NULL == pComponentEntry->pConstructor )
@@ -203,8 +203,8 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_FreeHandle(
 {
     OMX_ERRORTYPE err = OMX_ErrorNone;
     OMX_COMPONENTTYPE *pComponent = (OMX_COMPONENTTYPE *)hComponent;
-    BOMX_ASSERT(NULL != pComponent);
-    BOMX_ASSERT(pComponent->nSize == sizeof(OMX_COMPONENTTYPE));
+    ALOG_ASSERT(NULL != pComponent);
+    ALOG_ASSERT(pComponent->nSize == sizeof(OMX_COMPONENTTYPE));
     if ( NULL != pComponent->ComponentDeInit )
     {
         err = pComponent->ComponentDeInit(hComponent);
@@ -228,7 +228,7 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_SetupTunnel(
     memset(&tunnelSetup, 0, sizeof(tunnelSetup));
     if ( NULL == hOutput && NULL == hInput )
     {
-        BOMX_ERR(("At least one component must be passed to OMX_SetupTunnel"));
+        ALOGW("At least one component must be passed to OMX_SetupTunnel");
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
     if ( hOutput && hInput )
@@ -236,24 +236,24 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_SetupTunnel(
         // Establishing tunnel
         if ( NULL == pOutputComponent->ComponentTunnelRequest )
         {
-            BOMX_ERR(("Output component does not support tunneling"));
+            ALOGW("Output component does not support tunneling");
             return BOMX_ERR_TRACE(OMX_ErrorTunnelingUnsupported);
         }
         if ( NULL == pInputComponent->ComponentTunnelRequest )
         {
-            BOMX_ERR(("Input component does not support tunneling"));
+            ALOGW("Input component does not support tunneling");
             return BOMX_ERR_TRACE(OMX_ErrorTunnelingUnsupported);
         }
         err = pOutputComponent->ComponentTunnelRequest(hOutput, nPortOutput, hInput, nPortInput, &tunnelSetup);
         if ( err )
         {
-            BOMX_ERR(("Output Tunnel Request Failed"));
+            ALOGW("Output Tunnel Request Failed");
             return err;
         }
         err = pInputComponent->ComponentTunnelRequest(hInput, nPortInput, hOutput, nPortOutput, &tunnelSetup);
         if ( err )
         {
-            BOMX_ERR(("Input Tunnel Request Failed"));
+            ALOGW("Input Tunnel Request Failed");
             memset(&tunnelSetup, 0, sizeof(tunnelSetup));
             (void)pOutputComponent->ComponentTunnelRequest(hOutput, nPortOutput, NULL, 0, &tunnelSetup);
             return err;
@@ -264,7 +264,7 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_SetupTunnel(
         // Tearing down tunnel from output port
         if ( NULL == pOutputComponent->ComponentTunnelRequest )
         {
-            BOMX_ERR(("Output component does not support tunneling"));
+            ALOGW("Output component does not support tunneling");
             return BOMX_ERR_TRACE(OMX_ErrorTunnelingUnsupported);
         }
         err = pOutputComponent->ComponentTunnelRequest(hOutput, nPortOutput, NULL, 0, &tunnelSetup);
@@ -274,7 +274,7 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_SetupTunnel(
         // Tearing down tunnel into input port
         if ( NULL == pInputComponent->ComponentTunnelRequest )
         {
-            BOMX_ERR(("Output component does not support tunneling"));
+            ALOGW("Output component does not support tunneling");
             return BOMX_ERR_TRACE(OMX_ErrorTunnelingUnsupported);
         }
         err = pInputComponent->ComponentTunnelRequest(hInput, nPortInput, NULL, 0, &tunnelSetup);
@@ -352,7 +352,7 @@ OMX_API OMX_ERRORTYPE OMX_GetRolesOfComponent (
     const ComponentEntry *pEntry = GetComponentByName(compName);
     if ( NULL == pEntry )
     {
-        BOMX_ERR(("Unable to find component '%s'", compName));
+        ALOGW("Unable to find component '%s'", compName);
         return BOMX_ERR_TRACE(OMX_ErrorComponentNotFound);
     }
     OMX_U32 maxRoles = *pNumRoles;

@@ -170,7 +170,7 @@ public:
             uint32_t droppedFrames = 0;
             for (uint32_t idx = 0; idx < eventData->count(); ++idx) {
                 EventEntry *entry = eventData->getByIndex(idx);
-                BOMX_ASSERT(entry);
+                ALOG_ASSERT(entry);
                 if (entry->data1 == 0) {
                     ++droppedFrames;
                     ALOGD("Dropped frame with serial no:%u", entry->data2);
@@ -267,7 +267,7 @@ private:
         EventEntry *getNew(){
             if ((index % KEntriesPerBlock) == 0) {
                 EventEntry *block = new EventEntry[KEntriesPerBlock];
-                BOMX_ASSERT(block);
+                ALOG_ASSERT(block);
                 list.push(block);
             }
             EventEntry *entry = list[list.size() - 1];

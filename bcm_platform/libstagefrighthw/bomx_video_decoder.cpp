@@ -255,14 +255,14 @@ static void BOMX_VideoDecoder_EventCallback(void *pParam, int param)
     hEvent = static_cast <B_EventHandle> (pParam);
     if ( param < BOMX_VideoDecoderEventType_eMax )
     {
-        BOMX_MSG(("EventCallback - %s", pEventMsg[param]));
+        ALOGV("EventCallback - %s", pEventMsg[param]);
     }
     else
     {
-        BOMX_WRN(("Unkonwn EventCallbackType %d", param));
+        ALOGW("Unkonwn EventCallbackType %d", param);
     }
 
-    BOMX_ASSERT(NULL != hEvent);
+    ALOG_ASSERT(NULL != hEvent);
     B_Event_Set(hEvent);
 }
 
@@ -270,7 +270,7 @@ static void BOMX_VideoDecoder_OutputFrameEvent(void *pParam)
 {
     BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
 
-    BOMX_MSG(("OutputFrameEvent"));
+    ALOGV("OutputFrameEvent");
 
     pDecoder->OutputFrameEvent();
 }
@@ -286,7 +286,7 @@ static OMX_ERRORTYPE BOMX_VideoDecoder_InitMimeType(OMX_VIDEO_CODINGTYPE eCompre
 {
     const char *pMimeTypeStr;
     OMX_ERRORTYPE err = OMX_ErrorNone;
-    BOMX_ASSERT(NULL != pMimeType);
+    ALOG_ASSERT(NULL != pMimeType);
 
     switch ( (int)eCompressionFormat ) // Typecasted to int to avoid warning about OMX_VIDEO_CodingVP8 not in enum
     {
@@ -312,7 +312,7 @@ static OMX_ERRORTYPE BOMX_VideoDecoder_InitMimeType(OMX_VIDEO_CODINGTYPE eCompre
         pMimeTypeStr = "video/x-vnd.on2.vp9";
         break;
     default:
-        BOMX_WRN(("Unable to find MIME type for eCompressionFormat %u", eCompressionFormat));
+        ALOGW("Unable to find MIME type for eCompressionFormat %u", eCompressionFormat);
         pMimeTypeStr = "unknown";
         err = OMX_ErrorBadParameter;
         break;
@@ -524,7 +524,7 @@ static void BOMX_OmxBinderNotify(int cb_data, int msg, struct hwc_notification_i
 {
     BOMX_VideoDecoder *pComponent = (BOMX_VideoDecoder *)cb_data;
 
-    BOMX_ASSERT(NULL != pComponent);
+    ALOG_ASSERT(NULL != pComponent);
 
     switch (msg)
     {
@@ -669,7 +669,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pVideoPorts[0] = new BOMX_VideoPort(m_videoPortBase, OMX_DirInput, B_NUM_BUFFERS, B_DATA_BUFFER_SIZE, false, 0, &portDefs, portFormats, numRoles);
     if ( NULL == m_pVideoPorts[0] )
     {
-        BOMX_ERR(("Unable to create video input port"));
+        ALOGW("Unable to create video input port");
         this->Invalidate();
         return;
     }
@@ -704,7 +704,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pVideoPorts[1] = new BOMX_VideoPort(m_videoPortBase+1, OMX_DirOutput, B_MAX_FRAMES, ComputeBufferSize(portDefs.nStride, portDefs.nSliceHeight), false, 0, &portDefs, portFormats, MAX_OUTPUT_PORT_FORMATS);
     if ( NULL == m_pVideoPorts[1] )
     {
-        BOMX_ERR(("Unable to create video output port"));
+        ALOGW("Unable to create video output port");
         this->Invalidate();
         return;
     }
@@ -713,7 +713,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_hPlaypumpEvent = B_Event_Create(NULL);
     if ( NULL == m_hPlaypumpEvent )
     {
-        BOMX_ERR(("Unable to create playpump event"));
+        ALOGW("Unable to create playpump event");
         this->Invalidate();
         return;
     }
@@ -721,7 +721,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_hOutputFrameEvent = B_Event_Create(NULL);
     if ( NULL == m_hOutputFrameEvent )
     {
-        BOMX_ERR(("Unable to create output frame event"));
+        ALOGW("Unable to create output frame event");
         this->Invalidate();
         return;
     }
@@ -729,7 +729,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_outputFrameEventId = this->RegisterEvent(m_hOutputFrameEvent, BOMX_VideoDecoder_OutputFrameEvent, static_cast <void *> (this));
     if ( NULL == m_outputFrameEventId )
     {
-        BOMX_ERR(("Unable to register output frame event"));
+        ALOGW("Unable to register output frame event");
         this->Invalidate();
         return;
     }
@@ -737,7 +737,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pBufferTracker = new BOMX_BufferTracker();
     if ( NULL == m_pBufferTracker || !m_pBufferTracker->Valid() )
     {
-        BOMX_ERR(("Unable to create buffer tracker"));
+        ALOGW("Unable to create buffer tracker");
         this->Invalidate();
         return;
     }
@@ -745,7 +745,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pIpcClient = NexusIPCClientFactory::getClient(pName);
     if ( NULL == m_pIpcClient )
     {
-        BOMX_ERR(("Unable to create client factory"));
+        ALOGW("Unable to create client factory");
         this->Invalidate();
         return;
     }
@@ -753,7 +753,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pNexusClient = m_pIpcClient->createClientContext();
     if (m_pNexusClient == NULL)
     {
-        BOMX_ERR(("Unable to create nexus client context"));
+        ALOGW("Unable to create nexus client context");
         this->Invalidate();
         return;
     }
@@ -765,7 +765,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     errCode = NxClient_Alloc(&nxAllocSettings, &m_allocResults);
     if ( errCode )
     {
-        BOMX_ERR(("NxClient_Alloc failed"));
+        ALOGW("NxClient_Alloc failed");
         this->Invalidate();
         return;
     }
@@ -785,7 +785,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     errCode = NxClient_Connect(&connectSettings, &m_nxClientId);
     if ( errCode )
     {
-        BOMX_ERR(("NxClient_Connect failed.  Resources may be exhausted."));
+        ALOGW("NxClient_Connect failed.  Resources may be exhausted.");
         (void)BOMX_BERR_TRACE(errCode);
         NxClient_Free(&m_allocResults);
         this->Invalidate();
@@ -795,7 +795,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_hSurfaceClient = NEXUS_SurfaceClient_Acquire(m_allocResults.surfaceClient[0].id);
     if ( NULL == m_hSurfaceClient )
     {
-        BOMX_ERR(("Unable to acquire surface client"));
+        ALOGW("Unable to acquire surface client");
         NxClient_Disconnect(m_nxClientId);
         NxClient_Free(&m_allocResults);
         this->Invalidate();
@@ -804,7 +804,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_hVideoClient = NEXUS_SurfaceClient_AcquireVideoWindow(m_hSurfaceClient, 0);
     if ( NULL == m_hVideoClient )
     {
-        BOMX_ERR(("Unable to acquire video client"));
+        ALOGW("Unable to acquire video client");
         this->Invalidate();
         return;
     }
@@ -822,7 +822,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     errCode = NEXUS_SurfaceClient_SetSettings(m_hVideoClient, &videoClientSettings);
     if ( errCode )
     {
-        BOMX_ERR(("Unable to setup video initial size"));
+        ALOGW("Unable to setup video initial size");
         this->Invalidate();
         return;
     }
@@ -834,7 +834,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_hAlphaSurface = NEXUS_Surface_Create(&surfaceCreateSettings);
     if ( NULL == m_hAlphaSurface )
     {
-        BOMX_ERR(("Unable to create alpha surface"));
+        ALOGW("Unable to create alpha surface");
         this->Invalidate();
         return;
     }
@@ -843,7 +843,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     errCode = NEXUS_Surface_GetMemory(m_hAlphaSurface, &surfaceMemory);
     if ( errCode )
     {
-        BOMX_ERR(("Unable to fill surface"));
+        ALOGW("Unable to fill surface");
         this->Invalidate();
         return;
     }
@@ -859,7 +859,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     errCode = NEXUS_Memory_Allocate(BOMX_VIDEO_EOS_LEN, &memorySettings, &m_pEosBuffer);
     if ( errCode )
     {
-        BOMX_ERR(("Unable to allocate EOS buffer"));
+        ALOGW("Unable to allocate EOS buffer");
         this->Invalidate();
         return;
     }
@@ -873,14 +873,14 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_hCheckpointEvent = B_Event_Create(NULL);
     if ( NULL == m_hCheckpointEvent )
     {
-        BOMX_ERR(("Unable to create checkpoint event"));
+        ALOGW("Unable to create checkpoint event");
         this->Invalidate();
         return;
     }
     m_hGraphics2d = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, NULL);
     if ( NULL == m_hGraphics2d )
     {
-        BOMX_ERR(("Unable to open graphics 2d"));
+        ALOGW("Unable to open graphics 2d");
         this->Invalidate();
         return;
     }
@@ -929,7 +929,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_omxHwcBinder = new OmxBinder_wrap;
     if ( NULL == m_omxHwcBinder )
     {
-        BOMX_ERR(("Unable to connect to HwcBinder"));
+        ALOGW("Unable to connect to HwcBinder");
         this->Invalidate();
         return;
     }
@@ -1066,7 +1066,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     case OMX_IndexParamVideoH263:
         {
             OMX_VIDEO_PARAM_H263TYPE *pH263 = (OMX_VIDEO_PARAM_H263TYPE *)pComponentParameterStructure;
-            BOMX_MSG(("GetParameter OMX_IndexParamVideoH263"));
+            ALOGV("GetParameter OMX_IndexParamVideoH263");
             BOMX_STRUCT_VALIDATE(pH263);
             if ( pH263->nPortIndex != m_videoPortBase )
             {
@@ -1093,7 +1093,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     case OMX_IndexParamVideoAvc:
         {
             OMX_VIDEO_PARAM_AVCTYPE *pAvc = (OMX_VIDEO_PARAM_AVCTYPE *)pComponentParameterStructure;
-            BOMX_MSG(("GetParameter OMX_IndexParamVideoAvc"));
+            ALOGV("GetParameter OMX_IndexParamVideoAvc");
             BOMX_STRUCT_VALIDATE(pAvc);
             if ( pAvc->nPortIndex != m_videoPortBase )
             {
@@ -1119,7 +1119,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     case OMX_IndexParamVideoMpeg4:
         {
             OMX_VIDEO_PARAM_MPEG4TYPE *pMpeg4 = (OMX_VIDEO_PARAM_MPEG4TYPE *)pComponentParameterStructure;
-            BOMX_MSG(("GetParameter OMX_IndexParamVideoMpeg4"));
+            ALOGV("GetParameter OMX_IndexParamVideoMpeg4");
             BOMX_STRUCT_VALIDATE(pMpeg4);
             if ( pMpeg4->nPortIndex != m_videoPortBase )
             {
@@ -1144,7 +1144,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     case OMX_IndexParamVideoVp8:
         {
             OMX_VIDEO_PARAM_VP8TYPE *pVp8 = (OMX_VIDEO_PARAM_VP8TYPE *)pComponentParameterStructure;
-            BOMX_MSG(("GetParameter OMX_IndexParamVideoVp8"));
+            ALOGV("GetParameter OMX_IndexParamVideoVp8");
             memset(pVp8, 0, sizeof(*pVp8));
             BOMX_STRUCT_INIT(pVp8);
             pVp8->nPortIndex = m_videoPortBase;
@@ -1162,7 +1162,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     case OMX_IndexParamVideoHevc:
         {
             OMX_VIDEO_PARAM_HEVCTYPE *pHevc = (OMX_VIDEO_PARAM_HEVCTYPE *)pComponentParameterStructure;
-            BOMX_MSG(("GetParameter OMX_IndexParamVideoHevc"));
+            ALOGV("GetParameter OMX_IndexParamVideoHevc");
             BOMX_STRUCT_INIT(pHevc);
             pHevc->nPortIndex = m_videoPortBase;
             pHevc->eProfile = OMX_VIDEO_HEVCProfileUnknown;
@@ -1179,7 +1179,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     case OMX_IndexParamVideoProfileLevelQuerySupported:
         {
             OMX_VIDEO_PARAM_PROFILELEVELTYPE *pProfileLevel = (OMX_VIDEO_PARAM_PROFILELEVELTYPE *)pComponentParameterStructure;
-            BOMX_MSG(("GetParameter OMX_IndexParamVideoProfileLevelQuerySupported"));
+            ALOGV("GetParameter OMX_IndexParamVideoProfileLevelQuerySupported");
             BOMX_STRUCT_VALIDATE(pProfileLevel);
             if ( pProfileLevel->nPortIndex != m_videoPortBase )
             {
@@ -1266,7 +1266,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     case OMX_IndexParamVideoProfileLevelCurrent:
         {
             OMX_VIDEO_PARAM_PROFILELEVELTYPE *pProfileLevel = (OMX_VIDEO_PARAM_PROFILELEVELTYPE *)pComponentParameterStructure;
-            BOMX_MSG(("GetParameter OMX_IndexParamVideoProfileLevelCurrent"));
+            ALOGV("GetParameter OMX_IndexParamVideoProfileLevelCurrent");
             BOMX_STRUCT_VALIDATE(pProfileLevel);
             if ( pProfileLevel->nPortIndex != m_videoPortBase )
             {
@@ -1316,7 +1316,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     {
         EnableAndroidNativeBuffersParams *pEnableParams = (EnableAndroidNativeBuffersParams *)pComponentParameterStructure;
         BOMX_STRUCT_VALIDATE(pEnableParams);
-        BOMX_MSG(("GetParameter OMX_IndexParamEnableAndroidNativeGraphicsBuffer %u", pEnableParams->enable));
+        ALOGV("GetParameter OMX_IndexParamEnableAndroidNativeGraphicsBuffer %u", pEnableParams->enable);
         if ( pEnableParams->nPortIndex != m_videoPortBase+1 )
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -1328,7 +1328,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     {
         StoreMetaDataInBuffersParams *pMetadata = (StoreMetaDataInBuffersParams *)pComponentParameterStructure;
         BOMX_STRUCT_VALIDATE(pMetadata);
-        BOMX_MSG(("GetParameter OMX_IndexParamStoreMetaDataInBuffers %u", pMetadata->bStoreMetaData));
+        ALOGV("GetParameter OMX_IndexParamStoreMetaDataInBuffers %u", pMetadata->bStoreMetaData);
         if ( pMetadata->nPortIndex != m_videoPortBase+1 )
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -1340,7 +1340,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     {
         GetAndroidNativeBufferUsageParams *pUsage = (GetAndroidNativeBufferUsageParams *)pComponentParameterStructure;
         BOMX_STRUCT_VALIDATE(pUsage);
-        BOMX_MSG(("GetParameter OMX_IndexParamGetAndroidNativeBufferUsage"));
+        ALOGV("GetParameter OMX_IndexParamGetAndroidNativeBufferUsage");
         if ( pUsage->nPortIndex != m_videoPortBase+1 )
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -1353,7 +1353,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     {
         DescribeColorFormatParams *pColorFormat = (DescribeColorFormatParams *)pComponentParameterStructure;
         BOMX_STRUCT_VALIDATE(pColorFormat);
-        BOMX_MSG(("GetParameter OMX_IndexParamDescribeColorFormat"));
+        ALOGV("GetParameter OMX_IndexParamDescribeColorFormat");
         switch ( (int)pColorFormat->eColorFormat )
         {
             case HAL_PIXEL_FORMAT_YV12:
@@ -1376,7 +1376,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
             break;
             default:
             {
-                BOMX_ERR(("Unknown color format 0x%x", pColorFormat->eColorFormat));
+                ALOGW("Unknown color format 0x%x", pColorFormat->eColorFormat);
                 return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
             }
             break;
@@ -1404,7 +1404,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     }
 
     default:
-        BOMX_MSG(("GetParameter %#x Deferring to base class", nParamIndex));
+        ALOGV("GetParameter %#x Deferring to base class", nParamIndex);
         return BOMX_ERR_TRACE(BOMX_Component::GetParameter(nParamIndex, pComponentParameterStructure));
     }
 }
@@ -1422,7 +1422,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             OMX_PARAM_COMPONENTROLETYPE *pRole = (OMX_PARAM_COMPONENTROLETYPE *)pComponentParameterStructure;
             unsigned i;
             BOMX_STRUCT_VALIDATE(pRole);
-            BOMX_MSG(("SetParameter OMX_IndexParamStandardComponentRole '%s'", pRole->cRole));
+            ALOGV("SetParameter OMX_IndexParamStandardComponentRole '%s'", pRole->cRole);
             // The spec says this should reset the component to default setings for the role specified.
             // It is technically redundant for this component, changing the input codec has the same
             // effect - but this will also set the input codec accordingly.
@@ -1451,7 +1451,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         {
             BOMX_Port *pPort;
             OMX_VIDEO_PARAM_PORTFORMATTYPE *pFormat = (OMX_VIDEO_PARAM_PORTFORMATTYPE *)pComponentParameterStructure;
-            BOMX_MSG(("SetParameter OMX_IndexParamVideoPortFormat"));
+            ALOGV("SetParameter OMX_IndexParamVideoPortFormat");
             BOMX_STRUCT_VALIDATE(pFormat);
             pPort = FindPortByIndex(pFormat->nPortIndex);
             if ( NULL == pPort )
@@ -1460,7 +1460,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             }
             if ( pPort->GetDir() == OMX_DirInput )
             {
-                BOMX_MSG(("Set Input Port Compression Format to %u (%#x)", pFormat->eCompressionFormat, pFormat->eCompressionFormat));
+                ALOGV("Set Input Port Compression Format to %u (%#x)", pFormat->eCompressionFormat, pFormat->eCompressionFormat);
                 err = BOMX_VideoDecoder_InitMimeType(pFormat->eCompressionFormat, m_inputMimeType);
                 if ( err )
                 {
@@ -1480,7 +1480,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             }
             else
             {
-                BOMX_MSG(("Set Output Port Color Format to %u (%#x)", pFormat->eColorFormat, pFormat->eColorFormat));
+                ALOGV("Set Output Port Color Format to %u (%#x)", pFormat->eColorFormat, pFormat->eColorFormat);
                 // Per the OMX spec you are supposed to initialize the port defs to defaults when changing format
                 // Leave buffer size parameters alone and update color format/framerate.
                 OMX_VIDEO_PORTDEFINITIONTYPE portDefs;
@@ -1500,16 +1500,16 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
     case OMX_IndexParamPortDefinition:
     {
         OMX_PARAM_PORTDEFINITIONTYPE *pDef = (OMX_PARAM_PORTDEFINITIONTYPE *)pComponentParameterStructure;
-        BOMX_MSG(("SetParameter OMX_IndexParamPortDefinition"));
+        ALOGV("SetParameter OMX_IndexParamPortDefinition");
         BOMX_STRUCT_VALIDATE(pDef);
         if ( pDef->nPortIndex == m_videoPortBase && pDef->format.video.cMIMEType != m_inputMimeType )
         {
-            BOMX_ERR(("Video input MIME type cannot be changed in the application"));
+            ALOGW("Video input MIME type cannot be changed in the application");
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
         else if ( pDef->nPortIndex == (m_videoPortBase+1) && pDef->format.video.cMIMEType != m_outputMimeType )
         {
-            BOMX_ERR(("Video output MIME type cannot be changed in the application"));
+            ALOGW("Video output MIME type cannot be changed in the application");
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
         BOMX_Port *pPort = FindPortByIndex(pDef->nPortIndex);
@@ -1519,7 +1519,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         }
         if ( pDef->nPortIndex == m_videoPortBase && pDef->format.video.eCompressionFormat != GetCodec() )
         {
-            BOMX_ERR(("Video compression format cannot be changed in the port defintion.  Change Port Format instead."));
+            ALOGW("Video compression format cannot be changed in the port defintion.  Change Port Format instead.");
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
         // Handle update in base class
@@ -1552,7 +1552,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         EnableAndroidNativeBuffersParams *pEnableParams = (EnableAndroidNativeBuffersParams *)pComponentParameterStructure;
         bool oldValue;
         BOMX_STRUCT_VALIDATE(pEnableParams);
-        BOMX_MSG(("SetParameter OMX_IndexParamEnableAndroidNativeGraphicsBuffer %u", pEnableParams->enable));
+        ALOGV("SetParameter OMX_IndexParamEnableAndroidNativeGraphicsBuffer %u", pEnableParams->enable);
         if ( pEnableParams->nPortIndex != m_videoPortBase+1 )
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -1590,7 +1590,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
     {
         StoreMetaDataInBuffersParams *pMetadata = (StoreMetaDataInBuffersParams *)pComponentParameterStructure;
         BOMX_STRUCT_VALIDATE(pMetadata);
-        BOMX_MSG(("SetParameter OMX_IndexParamStoreMetaDataInBuffers %u", pMetadata->bStoreMetaData));
+        ALOGV("SetParameter OMX_IndexParamStoreMetaDataInBuffers %u", pMetadata->bStoreMetaData);
         if ( pMetadata->nPortIndex != m_videoPortBase+1 )
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -1603,7 +1603,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
     {
         UseAndroidNativeBufferParams *pBufferParams = (UseAndroidNativeBufferParams *)pComponentParameterStructure;
         BOMX_STRUCT_VALIDATE(pBufferParams);
-        BOMX_MSG(("SetParameter OMX_IndexParamUseAndroidNativeBuffer"));
+        ALOGV("SetParameter OMX_IndexParamUseAndroidNativeBuffer");
         if ( pBufferParams->nPortIndex != m_videoPortBase+1 )
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -1624,7 +1624,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
     }
     default:
-        BOMX_MSG(("SetParameter %#x - Defer to base class", nIndex));
+        ALOGV("SetParameter %#x - Defer to base class", nIndex);
         return BOMX_ERR_TRACE(BOMX_Component::SetParameter(nIndex, pComponentParameterStructure));
     }
 }
@@ -1653,7 +1653,7 @@ NEXUS_VideoCodec BOMX_VideoDecoder::GetNexusCodec(OMX_VIDEO_CODINGTYPE omxType)
     case OMX_VIDEO_CodingHEVC:
         return NEXUS_VideoCodec_eH265;
     default:
-        BOMX_WRN(("Unknown video codec %u (%#x)", GetCodec(), GetCodec()));
+        ALOGW("Unknown video codec %u (%#x)", GetCodec(), GetCodec());
         return NEXUS_VideoCodec_eNone;
     }
 }
@@ -1765,7 +1765,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_playpumpEventId = RegisterEvent(m_hPlaypumpEvent, BOMX_VideoDecoder_PlaypumpEvent, static_cast <void *> (this));
             if ( NULL == m_playpumpEventId )
             {
-                BOMX_ERR(("Unable to register playpump event"));
+                ALOGW("Unable to register playpump event");
                 ClosePidChannel();
                 NEXUS_Playpump_Close(m_hPlaypump);
                 m_hPlaypump = NULL;
@@ -1819,7 +1819,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 vdecStartSettings.settings.stcChannel = NULL;
                 vdecStartSettings.settings.pidChannel = m_hPidChannel;
                 vdecStartSettings.settings.codec = GetNexusCodec();
-                BOMX_MSG(("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec));
+                ALOGV("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec);
                 if ( vdecStartSettings.settings.codec == NEXUS_VideoCodec_eH265 || vdecStartSettings.settings.codec == NEXUS_VideoCodec_eVp9 )
                 {
                     // Request 4k decoder for HEVC/VP9 only
@@ -1965,7 +1965,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
 
         // TODO: Hide video window?
 
-        BOMX_MSG(("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState)));
+        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     }
     case OMX_StateIdle:
@@ -1978,7 +1978,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
         // Transitioning from Loaded->Idle requires us to allocate all required resources
         if ( oldState == OMX_StateLoaded )
         {
-            BOMX_MSG(("Waiting for port population..."));
+            ALOGV("Waiting for port population...");
             PortWaitBegin();
             // Now we need to wait for all enabled ports to become populated
             while ( (m_pVideoPorts[0]->IsEnabled() && !m_pVideoPorts[0]->IsPopulated()) ||
@@ -1986,13 +1986,13 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
             {
                 if ( PortWait() != B_ERROR_SUCCESS )
                 {
-                    BOMX_ERR(("Timeout waiting for ports to be populated"));
+                    ALOGW("Timeout waiting for ports to be populated");
                     PortWaitEnd();
                     return BOMX_ERR_TRACE(OMX_ErrorTimeout);
                 }
             }
             PortWaitEnd();
-            BOMX_MSG(("Done waiting for port population"));
+            ALOGV("Done waiting for port population");
 
             bool inputEnabled = m_pVideoPorts[0]->IsEnabled();
             bool outputEnabled = m_pVideoPorts[1]->IsEnabled();
@@ -2031,7 +2031,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
                 (void)SetOutputPortState(OMX_StateIdle);
             }
         }
-        BOMX_MSG(("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState)));
+        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     }
     case OMX_StateExecuting:
@@ -2052,10 +2052,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
                 return BOMX_ERR_TRACE(OMX_ErrorUndefined);
             }
         }
-        BOMX_MSG(("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState)));
+        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     default:
-        BOMX_ERR(("Unsupported state %u", newState));
+        ALOGW("Unsupported state %u", newState);
         return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
     }
 }
@@ -2067,14 +2067,14 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
 
     if ( StateChangeInProgress() )
     {
-        BOMX_ERR(("Flush should not be called during a state change"));
+        ALOGW("Flush should not be called during a state change");
         return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
     }
 
     // Handle case for OMX_ALL by calling flush on each port
     if ( portIndex == OMX_ALL )
     {
-        BOMX_MSG(("Flushing all ports"));
+        ALOGV("Flushing all ports");
 
         err = CommandFlush(m_videoPortBase);
         if ( err )
@@ -2092,10 +2092,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
         BOMX_Port *pPort = FindPortByIndex(portIndex);
         if ( NULL == pPort )
         {
-            BOMX_ERR(("Invalid port %u", portIndex));
+            ALOGW("Invalid port %u", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
-        BOMX_MSG(("Flushing %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output"));
+        ALOGV("Flushing %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output");
         if ( portIndex == m_videoPortBase )
         {
             // Input port
@@ -2129,7 +2129,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandPortEnable(
     // Handle case for OMX_ALL by calling enable on each port
     if ( portIndex == OMX_ALL )
     {
-        BOMX_MSG(("Enabling all ports"));
+        ALOGV("Enabling all ports");
 
         // Enable output first
         if ( !m_pVideoPorts[1]->IsEnabled() )
@@ -2155,15 +2155,15 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandPortEnable(
         BOMX_Port *pPort = FindPortByIndex(portIndex);
         if ( NULL == pPort )
         {
-            BOMX_ERR(("Invalid port %u", portIndex));
+            ALOGW("Invalid port %u", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         if ( pPort->IsEnabled() )
         {
-            BOMX_ERR(("Port %u is already enabled", portIndex));
+            ALOGW("Port %u is already enabled", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
         }
-        BOMX_MSG(("Enabling %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output"));
+        ALOGV("Enabling %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output");
         err = pPort->Enable();
         if ( err )
         {
@@ -2172,21 +2172,21 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandPortEnable(
         if ( StateGet() != OMX_StateLoaded )
         {
             // Wait for port to become populated
-            BOMX_MSG(("Waiting for port to populate"));
+            ALOGV("Waiting for port to populate");
             PortWaitBegin();
             // Now we need to wait for all enabled ports to become populated
             while ( !pPort->IsPopulated() )
             {
                 if ( PortWait() != B_ERROR_SUCCESS )
                 {
-                    BOMX_ERR(("Timeout waiting for port %u to be populated", portIndex));
+                    ALOGW("Timeout waiting for port %u to be populated", portIndex);
                     PortWaitEnd();
                     (void)pPort->Disable();
                     return BOMX_ERR_TRACE(OMX_ErrorTimeout);
                 }
             }
             PortWaitEnd();
-            BOMX_MSG(("Done waiting for port to populate"));
+            ALOGV("Done waiting for port to populate");
 
             NEXUS_Error errCode;
             // Handle port specifics
@@ -2222,7 +2222,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandPortDisable(
     // Handle case for OMX_ALL by calling enable on each port
     if ( portIndex == OMX_ALL )
     {
-        BOMX_MSG(("Disabling all ports"));
+        ALOGV("Disabling all ports");
 
         if ( m_pVideoPorts[0]->IsEnabled() )
         {
@@ -2246,15 +2246,15 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandPortDisable(
         BOMX_Port *pPort = FindPortByIndex(portIndex);
         if ( NULL == pPort )
         {
-            BOMX_ERR(("Invalid port %u", portIndex));
+            ALOGW("Invalid port %u", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         if ( pPort->IsDisabled() )
         {
-            BOMX_ERR(("Port %u is already disabled", portIndex));
+            ALOGW("Port %u is already disabled", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
         }
-        BOMX_MSG(("Disabling %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output"));
+        ALOGV("Disabling %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output");
         err = pPort->Disable();
         if ( err )
         {
@@ -2267,33 +2267,33 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandPortDisable(
             if ( pPort->GetDir() == OMX_DirInput )
             {
                 errCode = SetInputPortState(OMX_StateLoaded);
-                BOMX_ASSERT(errCode == NEXUS_SUCCESS);
+                ALOG_ASSERT(errCode == NEXUS_SUCCESS);
             }
             else
             {
                 errCode = SetOutputPortState(OMX_StateLoaded);
-                BOMX_ASSERT(errCode == NEXUS_SUCCESS);
+                ALOG_ASSERT(errCode == NEXUS_SUCCESS);
             }
 
             // Return port buffers to client
             ReturnPortBuffers(pPort);
 
             // Wait for port to become de-populated
-            BOMX_MSG(("Waiting for port to de-populate"));
+            ALOGV("Waiting for port to de-populate");
             PortWaitBegin();
             // Now we need to wait for all enabled ports to become populated
             while ( !pPort->IsEmpty() )
             {
                 if ( PortWait() != B_ERROR_SUCCESS )
                 {
-                    BOMX_ERR(("Timeout waiting for port %u to be de-populated", portIndex));
+                    ALOGW("Timeout waiting for port %u to be de-populated", portIndex);
                     PortWaitEnd();
                     (void)pPort->Enable();
                     return BOMX_ERR_TRACE(OMX_ErrorTimeout);
                 }
             }
             PortWaitEnd();
-            BOMX_MSG(("Done waiting for port to de-populate"));
+            ALOGV("Done waiting for port to de-populate");
         }
     }
 
@@ -2333,7 +2333,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddInputPortBuffer(
 
     if ( pPort->IsTunneled() )
     {
-        BOMX_ERR(("Cannot add buffers to a tunneled port"));
+        ALOGW("Cannot add buffers to a tunneled port");
         return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
     }
 
@@ -2422,7 +2422,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
 
     if ( pPort->IsTunneled() )
     {
-        BOMX_ERR(("Cannot add buffers to a tunneled port"));
+        ALOGW("Cannot add buffers to a tunneled port");
         return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
     }
 
@@ -2445,8 +2445,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             pPortDef = pPort->GetDefinition();
             if ( nSizeBytes < ComputeBufferSize(pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight) )
             {
-                BOMX_ERR(("Outbuffer size is not sufficient - must be at least %u bytes ((3*%u*%u)/2) got %u [eColorFormat %#x]", (unsigned int)ComputeBufferSize(pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight),
-                    pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight, nSizeBytes, pPortDef->format.video.eColorFormat));
+                ALOGE("Outbuffer size is not sufficient - must be at least %u bytes ((3*%u*%u)/2) got %u [eColorFormat %#x]", (unsigned int)ComputeBufferSize(pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight),
+                    pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight, nSizeBytes, pPortDef->format.video.eColorFormat);
                 delete pInfo;
                 return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
             }
@@ -2518,7 +2518,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
         }
         break;
     default:
-        BOMX_ERR(("Unsupported buffer type"));
+        ALOGW("Unsupported buffer type");
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
 
@@ -2576,7 +2576,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
 
     if ( pPort->IsTunneled() )
     {
-        BOMX_ERR(("Cannot add buffers to a tunneled port"));
+        ALOGW("Cannot add buffers to a tunneled port");
         return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
     }
 
@@ -2645,7 +2645,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
 
     if ( pPort->IsTunneled() )
     {
-        BOMX_ERR(("Cannot add buffers to a tunneled port"));
+        ALOGW("Cannot add buffers to a tunneled port");
         return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
     }
 
@@ -2704,17 +2704,17 @@ OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
         // come first.  It's always safe to do it here.
         if ( m_metadataEnabled )
         {
-            BOMX_MSG(("Selecting metadata output mode for output buffer %#x", pBuffer));
+            ALOGV("Selecting metadata output mode for output buffer %#x", pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eMetadata;
         }
         else if ( m_nativeGraphicsEnabled )
         {
-            BOMX_MSG(("Selecting native graphics output mode for output buffer %#x", pBuffer));
+            ALOGV("Selecting native graphics output mode for output buffer %#x", pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eNative;
         }
         else
         {
-            BOMX_MSG(("Selecting standard buffer output mode for output buffer %#x", pBuffer));
+            ALOGV("Selecting standard buffer output mode for output buffer %#x", pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eStandard;
         }
         switch ( m_outputMode )
@@ -2787,7 +2787,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AllocateBuffer(
     else
     {
         // TODO: Implement if required
-        BOMX_ERR(("AllocateBuffer is not supported for output ports"));
+        ALOGW("AllocateBuffer is not supported for output ports");
     }
 
     return OMX_ErrorNone;
@@ -3003,9 +3003,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     *****************************************************************/
 
     pBuffer = BOMX_BUFFERHEADER_TO_BUFFER(pBufferHeader);
-    BOMX_ASSERT(NULL != pBuffer);
+    ALOG_ASSERT(NULL != pBuffer);
     pInfo = (BOMX_VideoDecoderInputBufferInfo *)pBuffer->GetComponentPrivate();
-    BOMX_ASSERT(NULL != pInfo);
+    ALOG_ASSERT(NULL != pInfo);
 
     bufferBytesRemaining = pBufferHeader->nFilledLen;
 
@@ -3050,7 +3050,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     // Add codec config if required
     if ( m_configBufferState != ConfigBufferState_eSubmitted )
     {
-        BOMX_ASSERT(chunkBytesAvailable >= m_configBufferSize); // This should always be true, the config buffer is very small.
+        ALOG_ASSERT(chunkBytesAvailable >= m_configBufferSize); // This should always be true, the config buffer is very small.
         if ( m_configBufferSize > 0 )
         {
             pDescriptors[numDescriptors].addr = m_pConfigBuffer;
@@ -3067,7 +3067,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     {
         pDescriptors[numDescriptors].addr = (void *)((uint8_t *)pInfo->pHeader + pInfo->headerLen);
         pDescriptors[numDescriptors].length = codecHeaderLength;
-        BOMX_ASSERT(chunkBytesAvailable >= codecHeaderLength);
+        ALOG_ASSERT(chunkBytesAvailable >= codecHeaderLength);
         chunkBytesAvailable -= codecHeaderLength;
         BKNI_Memcpy(pDescriptors[numDescriptors].addr, pCodecHeader, codecHeaderLength);
         pInfo->headerLen += codecHeaderLength;
@@ -3177,7 +3177,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     }
     if ( pBufferHeader->nInputPortIndex != m_videoPortBase )
     {
-        BOMX_ERR(("Invalid buffer"));
+        ALOGW("Invalid buffer");
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
     pInfo = (BOMX_VideoDecoderInputBufferInfo *)pBuffer->GetComponentPrivate();
@@ -3250,7 +3250,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         // Track the buffer
         if ( !m_pBufferTracker->Add(pBufferHeader, &pInfo->pts) )
         {
-            BOMX_WRN(("Unable to track buffer"));
+            ALOGW("Unable to track buffer");
             pInfo->pts = BOMX_TickToPts(&pBufferHeader->nTimeStamp);
         }
 
@@ -3279,7 +3279,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
             {
                 return BOMX_ERR_TRACE(OMX_ErrorUndefined);
             }
-            BOMX_ASSERT(numConsumed == numRequested);
+            ALOG_ASSERT(numConsumed == numRequested);
             pInfo->numDescriptors += numRequested;
             m_submittedDescriptors += numConsumed;
             InputBufferNew();
@@ -3311,7 +3311,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         {
             return BOMX_ERR_TRACE(OMX_ErrorUndefined);
         }
-        BOMX_ASSERT(numConsumed == numRequested);
+        ALOG_ASSERT(numConsumed == numRequested);
         pInfo->numDescriptors += numRequested;
         m_submittedDescriptors += numConsumed;
         m_eosPending = true;
@@ -3357,7 +3357,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     {
         if ( pInfo->typeInfo.metadata.pMetadata->eType != kMetadataBufferTypeGrallocSource )
         {
-            BOMX_ERR(("Only kMetadataBufferTypeGrallocSource buffers are supported in metadata mode."));
+            ALOGW("Only kMetadataBufferTypeGrallocSource buffers are supported in metadata mode.");
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
 
@@ -3367,7 +3367,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         BOMX_VideoDecoder_MemLock(pPrivateHandle, &pMemory);
         if ( NULL == pMemory )
         {
-            BOMX_ERR(("Invalid gralloc buffer %#x - sharedDataPhyAddr %#x is invalid", pPrivateHandle, pPrivateHandle->sharedData));
+            ALOGW("Invalid gralloc buffer %#x - sharedDataPhyAddr %#x is invalid", pPrivateHandle, pPrivateHandle->sharedData);
             BOMX_VideoDecoder_MemUnlock(pPrivateHandle);
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
@@ -3375,7 +3375,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         {
             pSharedData = (PSHARED_DATA)pMemory;
         }
-        BOMX_ASSERT((pInfo->typeInfo.metadata.pMetadata == (void *)pBufferHeader->pBuffer));
+        ALOG_ASSERT((pInfo->typeInfo.metadata.pMetadata == (void *)pBufferHeader->pBuffer));
         if ( NULL != pInfo->typeInfo.metadata.pMetadata->pHandle )
         {
             pFrameBuffer = FindFrameBuffer((private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle);
@@ -3391,7 +3391,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         pFrameBuffer = pInfo->pFrameBuffer;
     }
     pInfo->pFrameBuffer = NULL;
-    BOMX_MSG(("Fill Buffer, comp:%s ts %u us serial %u pInfo %#x HDR %#x", GetName(), (unsigned int)pBufferHeader->nTimeStamp, pFrameBuffer ? pFrameBuffer->frameStatus.serialNumber : -1, pInfo, pBufferHeader));
+    ALOGV("Fill Buffer, comp:%s ts %u us serial %u pInfo %#x HDR %#x", GetName(), (unsigned int)pBufferHeader->nTimeStamp, pFrameBuffer ? pFrameBuffer->frameStatus.serialNumber : -1, pInfo, pBufferHeader);
     // Determine what to do with the buffer
     if ( pFrameBuffer )
     {
@@ -3408,18 +3408,18 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         else
         {
             // Any state other than delivered and we've done something horribly wrong.
-            BOMX_ASSERT(pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered);
+            ALOG_ASSERT(pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered);
             pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDropReady;
             switch ( pInfo->type )
             {
             case BOMX_VideoDecoderOutputBufferType_eStandard:
-                BOMX_MSG(("Standard Buffer - Drop"));
+                ALOGV("Standard Buffer - Drop");
                 break;
             case BOMX_VideoDecoderOutputBufferType_eNative:
-                BOMX_MSG(("Native Buffer %u - Drop", pInfo->typeInfo.native.pSharedData->videoFrame.status.serialNumber));
+                ALOGV("Native Buffer %u - Drop", pInfo->typeInfo.native.pSharedData->videoFrame.status.serialNumber);
                 break;
             case BOMX_VideoDecoderOutputBufferType_eMetadata:
-                BOMX_MSG(("Metadata Buffer %u - Drop", pFrameBuffer->frameStatus.serialNumber));
+                ALOGV("Metadata Buffer %u - Drop", pFrameBuffer->frameStatus.serialNumber);
                 break;
             default:
                 break;
@@ -3428,11 +3428,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     }
     else
     {
-        BOMX_MSG(("FrameBuffer not set"));
+        ALOGV("FrameBuffer not set");
     }
     pBuffer->Reset();
     err = m_pVideoPorts[1]->QueueBuffer(pBufferHeader);
-    BOMX_ASSERT(err == OMX_ErrorNone);
+    ALOG_ASSERT(err == OMX_ErrorNone);
 
     // Return frames to nexus immediately if possible
     ReturnDecodedFrames();
@@ -3448,11 +3448,11 @@ static bool FindBufferFromPts(BOMX_Buffer *pBuffer, void *pData)
     BOMX_VideoDecoderInputBufferInfo *pInfo;
     uint32_t *pPts = (uint32_t *)pData;
 
-    BOMX_ASSERT(NULL != pBuffer);
-    BOMX_ASSERT(NULL != pPts);
+    ALOG_ASSERT(NULL != pBuffer);
+    ALOG_ASSERT(NULL != pPts);
 
     pInfo = (BOMX_VideoDecoderInputBufferInfo *)pBuffer->GetComponentPrivate();
-    BOMX_ASSERT(NULL != pInfo);
+    ALOG_ASSERT(NULL != pInfo);
 
     return (pInfo->pts == *pPts) ? true : false;
 }
@@ -3475,7 +3475,7 @@ void BOMX_VideoDecoder::PlaypumpEvent()
     if ( NULL == m_hPlaypump )
     {
         // This can happen with rapid startup/shutdown sequences such as random action tests
-        BOMX_WRN(("Playpump event received, but playpump has been closed."));
+        ALOGW("Playpump event received, but playpump has been closed.");
         return;
     }
 
@@ -3502,13 +3502,13 @@ void BOMX_VideoDecoder::PlaypumpEvent()
         {
             BOMX_VideoDecoderInputBufferInfo *pInfo =
             (BOMX_VideoDecoderInputBufferInfo *)pBuffer->GetComponentPrivate();
-            BOMX_ASSERT(NULL != pInfo);
+            ALOG_ASSERT(NULL != pInfo);
             if (pInfo->complete)
                 continue;
             if ( numComplete >= pInfo->numDescriptors )
             {
                 numComplete -= pInfo->numDescriptors;
-                BOMX_ASSERT(m_submittedDescriptors >= pInfo->numDescriptors);
+                ALOG_ASSERT(m_submittedDescriptors >= pInfo->numDescriptors);
                 m_submittedDescriptors -= pInfo->numDescriptors;
                 pInfo->complete = true;
             }
@@ -3530,7 +3530,7 @@ void BOMX_VideoDecoder::PlaypumpEvent()
 
 void BOMX_VideoDecoder::InputBufferNew()
 {
-    BOMX_ASSERT(m_AvailInputBuffers > 0);
+    ALOG_ASSERT(m_AvailInputBuffers > 0);
     --m_AvailInputBuffers;
     if (m_AvailInputBuffers == 0) {
         ALOGV("%s: reached zero input buffers, minputBuffersTimerId:%u",
@@ -3546,7 +3546,7 @@ void BOMX_VideoDecoder::InputBufferReturned()
     unsigned totalBuffers = m_pVideoPorts[0]->GetDefinition()->nBufferCountActual;
     CancelTimerId(m_inputBuffersTimerId);
     ++m_AvailInputBuffers;
-    BOMX_ASSERT(m_AvailInputBuffers <= totalBuffers);
+    ALOG_ASSERT(m_AvailInputBuffers <= totalBuffers);
 }
 
 void BOMX_VideoDecoder::InputBufferCounterReset()
@@ -3563,7 +3563,7 @@ void BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTime
     while ( pBuffer != NULL )
     {
         pInfo = (BOMX_VideoDecoderInputBufferInfo *)pBuffer->GetComponentPrivate();
-        BOMX_ASSERT(NULL != pInfo);
+        ALOG_ASSERT(NULL != pInfo);
         if ( !pInfo->complete )
         {
             ALOGV("Buffer:%p not completed yet", pBuffer);
@@ -3620,7 +3620,7 @@ bool BOMX_VideoDecoder::ReturnInputPortBuffer(BOMX_Buffer *pBuffer)
     // to count. These buffers don't have a corresponding output frame
     // so it's ok to return them as soon as possible.
     OMX_BUFFERHEADERTYPE *pHeader = pBuffer->GetHeader();
-    BOMX_ASSERT(pHeader != NULL);
+    ALOG_ASSERT(pHeader != NULL);
     return (!(pHeader->nFlags & OMX_BUFFERFLAG_CODECCONFIG ));
 }
 
@@ -3761,7 +3761,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetExtensionIndex(
         }
     }
 
-    BOMX_WRN(("Extension %s is not supported", cParameterName));
+    ALOGW("Extension %s is not supported", cParameterName);
     return OMX_ErrorUnsupportedIndex;
 }
 
@@ -3787,11 +3787,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
         pRect->nTop = 0;
         pRect->nWidth = m_outputWidth;
         pRect->nHeight = m_outputHeight;
-        BOMX_MSG(("Returning crop %ux%u @ %u,%u", pRect->nWidth, pRect->nHeight, pRect->nLeft, pRect->nTop));
+        ALOGV("Returning crop %ux%u @ %u,%u", pRect->nWidth, pRect->nHeight, pRect->nLeft, pRect->nTop);
         return OMX_ErrorNone;
     }
     default:
-        BOMX_ERR(("Config index %#x is not supported", nIndex));
+        ALOGW("Config index %#x is not supported", nIndex);
         return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
     }
 }
@@ -3804,7 +3804,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetConfig(
     switch ( (int)nIndex )
     {
     default:
-        BOMX_ERR(("Config index %#x is not supported", nIndex));
+        ALOGW("Config index %#x is not supported", nIndex);
         return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
     }
 }
@@ -3842,7 +3842,7 @@ void BOMX_VideoDecoder::InvalidateDecodedFrames()
             // Any other state means the buffer is owned by us.  Discard it by moving it back
             // to the free list
             pBuffer->state = BOMX_VideoDecoderFrameBufferState_eInvalid;
-            BOMX_MSG(("Invalidating frame buffer %#x (state %u)", pBuffer, pBuffer->state));
+            ALOGV("Invalidating frame buffer %#x (state %u)", pBuffer, pBuffer->state);
             BLST_Q_REMOVE(&m_frameBufferAllocList, pBuffer, node);
             BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pBuffer, node);
         }
@@ -3867,7 +3867,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
     {
         // Get as many frames as possible from nexus
         errCode = NEXUS_SimpleVideoDecoder_GetDecodedFrames(m_hSimpleVideoDecoder, frameStatus, B_MAX_DECODED_FRAMES, &numFrames);
-        BOMX_MSG(("GetDecodedFrames: comp:%s rc=%u numFrames=%u", GetName(), errCode, numFrames));
+        ALOGV("GetDecodedFrames: comp:%s rc=%u numFrames=%u", GetName(), errCode, numFrames);
         if ( NEXUS_SUCCESS == errCode && numFrames > 0 )
         {
             // Ignore invalidated frames in alloc list
@@ -3884,8 +3884,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 // Sanity Check
                 if ( pBuffer->frameStatus.serialNumber != pFrameStatus->serialNumber )
                 {
-                    BOMX_ERR(("Frame Mismatch - expecting %u got %u (state %u)", pFrameStatus->serialNumber, pBuffer->frameStatus.serialNumber, pBuffer->state));
-                    BOMX_ASSERT(pBuffer->frameStatus.serialNumber  == pFrameStatus->serialNumber);
+                    ALOGW("Frame Mismatch - expecting %u got %u (state %u)", pFrameStatus->serialNumber, pBuffer->frameStatus.serialNumber, pBuffer->state);
+                    ALOG_ASSERT(pBuffer->frameStatus.serialNumber  == pFrameStatus->serialNumber);
                 }
                 // Skip This one
                 numFrames--;
@@ -3930,7 +3930,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
               NULL != pBuffer && pBuffer->state != BOMX_VideoDecoderFrameBufferState_eReady;
               pBuffer = BLST_Q_NEXT(pBuffer, node) )
         {
-            //BOMX_MSG(("Skip buffer %u State %u", pBuffer->frameStatus.serialNumber, pBuffer->state));
+            //ALOGV("Skip buffer %u State %u", pBuffer->frameStatus.serialNumber, pBuffer->state);
         }
         // Loop through remaining buffers
         while ( NULL != pBuffer && !m_formatChangePending && !m_eosDelivered )
@@ -3947,7 +3947,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 pHeader->nOffset = 0;
                 if ( !m_pBufferTracker->Remove(pBuffer->frameStatus.pts, pHeader) )
                 {
-                    BOMX_WRN(("Unable to find tracker entry for pts %#x", pBuffer->frameStatus.pts));
+                    ALOGW("Unable to find tracker entry for pts %#x", pBuffer->frameStatus.pts);
                     pHeader->nFlags = 0;
                     BOMX_PtsToTick(pBuffer->frameStatus.pts, &pHeader->nTimeStamp);
                 }
@@ -3967,7 +3967,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 BDBG_ASSERT(NULL == pInfo->pFrameBuffer);
                 if ( pBuffer->frameStatus.lastPicture || (pHeader->nFlags & OMX_BUFFERFLAG_EOS) )
                 {
-                    BOMX_MSG(("EOS picture received"));
+                    ALOGV("EOS picture received");
                     if ( m_eosPending )
                     {
                         pHeader->nFlags |= OMX_BUFFERFLAG_EOS;
@@ -3977,8 +3977,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     else
                     {
                         // Fatal error - we did something wrong.
-                        BOMX_ERR(("Additional frames received after EOS"));
-                        BOMX_ASSERT(true == m_eosPending);
+                        ALOGW("Additional frames received after EOS");
+                        ALOG_ASSERT(true == m_eosPending);
                         return;
                     }
                 }
@@ -3987,7 +3987,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 // Otherwise there is a valid picture here and we need to handle the frame below as we would any other.
                 if ( pBuffer->frameStatus.lastPicture )
                 {
-                    BOMX_MSG(("EOS-only frame.  Returning length of 0."));
+                    ALOGV("EOS-only frame.  Returning length of 0.");
                     pHeader->nFilledLen = 0;
                 }
                 else
@@ -4049,7 +4049,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         }
                     }
 
-                    BOMX_ASSERT(NULL != pInfo);
+                    ALOG_ASSERT(NULL != pInfo);
                     switch ( pInfo->type )
                     {
                     case BOMX_VideoDecoderOutputBufferType_eStandard:
@@ -4129,7 +4129,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 }
                                 else
                                 {
-                                    BOMX_WRN(("Timeout locking video frame"));
+                                    ALOGW("Timeout locking video frame");
                                 }
                             }
                             else
@@ -4147,7 +4147,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
                             if ( NULL == pMemory )
                             {
-                                BOMX_ERR(("Unable to convert SHARED_DATA physical address %#x", pBuffer->pPrivateHandle->sharedData));
+                                ALOGW("Unable to convert SHARED_DATA physical address %#x", pBuffer->pPrivateHandle->sharedData);
                                 BOMX_VideoDecoder_MemUnlock(pBuffer->pPrivateHandle);
                                 (void)BOMX_ERR_TRACE(OMX_ErrorBadParameter);
                             }
@@ -4205,7 +4205,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     ReturnPortBuffer(m_pVideoPorts[1], pOmxBuffer);
                     // Try to return processed input buffers
                     ReturnInputBuffers(pHeader->nTimeStamp, false);
-                    BOMX_ASSERT(queueDepthBefore == (m_pVideoPorts[1]->QueueDepth()+1));
+                    ALOG_ASSERT(queueDepthBefore == (m_pVideoPorts[1]->QueueDepth()+1));
                 }
                 if ( destripedSuccess )
                 {
@@ -4288,7 +4288,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             //NEXUS_VideoDecoder_GetDefaultReturnFrameSettings(&returnSettings[numFrames]); Intentionally skipped - there is only one field to set anyway
             if ( pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered )
             {
-                BOMX_WRN(("Dropping outstanding frame %u still owned by client - a later frame (%u) was returned already", pBuffer->frameStatus.serialNumber, pLast->frameStatus.serialNumber));
+                ALOGW("Dropping outstanding frame %u still owned by client - a later frame (%u) was returned already", pBuffer->frameStatus.serialNumber, pLast->frameStatus.serialNumber);
                 pBuffer->state = BOMX_VideoDecoderFrameBufferState_eInvalid;
                 returnSettings[numFrames].display = false;
             }
@@ -4372,7 +4372,7 @@ bool BOMX_VideoDecoder::GraphicsCheckpoint()
         errCode = B_Event_Wait(m_hCheckpointEvent, 150);
         if ( errCode )
         {
-            BOMX_ERR(("!!! ERROR: Timeout waiting for graphics checkpoint !!!"));
+            ALOGW("!!! ERROR: Timeout waiting for graphics checkpoint !!!");
             ret = false;
         }
     }
@@ -4494,7 +4494,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::ConfigBufferInit()
         errCode = AllocateInputBuffer(BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE, m_pConfigBuffer);
         if ( errCode )
         {
-            BOMX_ERR(("Unable to allocate codec config buffer"));
+            ALOGW("Unable to allocate codec config buffer");
             return BOMX_ERR_TRACE(OMX_ErrorUndefined);
         }
     }
@@ -4506,7 +4506,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::ConfigBufferInit()
 
 OMX_ERRORTYPE BOMX_VideoDecoder::ConfigBufferAppend(const void *pBuffer, size_t length)
 {
-    BOMX_ASSERT(NULL != pBuffer);
+    ALOG_ASSERT(NULL != pBuffer);
     if ( m_configBufferSize + length > BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE )
     {
         return BOMX_ERR_TRACE(OMX_ErrorOverflow);
@@ -4520,7 +4520,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::ConfigBufferAppend(const void *pBuffer, size_t 
 BOMX_VideoDecoderFrameBuffer *BOMX_VideoDecoder::FindFrameBuffer(private_handle_t *pPrivateHandle)
 {
     BOMX_VideoDecoderFrameBuffer *pFrameBuffer;
-    BOMX_ASSERT(NULL != pPrivateHandle);
+    ALOG_ASSERT(NULL != pPrivateHandle);
 
     // Scan allocated frame list for matching private handle
     for ( pFrameBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
@@ -4777,7 +4777,7 @@ NEXUS_Error BOMX_VideoDecoder::OpenPidChannel(uint32_t pid)
 {
     if ( m_hPlaypump )
     {
-        BOMX_ASSERT(NULL == m_hPidChannel);
+        ALOG_ASSERT(NULL == m_hPidChannel);
 
         NEXUS_PlaypumpOpenPidChannelSettings pidSettings;
         NEXUS_Playpump_GetDefaultOpenPidChannelSettings(&pidSettings);
@@ -4795,7 +4795,7 @@ void BOMX_VideoDecoder::ClosePidChannel()
 {
     if ( m_hPidChannel )
     {
-        BOMX_ASSERT(NULL != m_hPlaypump);
+        ALOG_ASSERT(NULL != m_hPlaypump);
 
         NEXUS_Playpump_ClosePidChannel(m_hPlaypump, m_hPidChannel);
         m_hPidChannel = NULL;

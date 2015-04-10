@@ -127,16 +127,16 @@ static void BOMX_AudioDecoder_PlaypumpDataCallback(void *pParam, int param)
     B_EventHandle hEvent;
     BSTD_UNUSED(param);
     hEvent = static_cast <B_EventHandle> (pParam);
-    BOMX_ASSERT(NULL != hEvent);
+    ALOG_ASSERT(NULL != hEvent);
     B_Event_Set(hEvent);
-    BOMX_MSG(("PlaypumpDataCallback"));
+    ALOGV("PlaypumpDataCallback");
 }
 
 static void BOMX_AudioDecoder_PlaypumpEvent(void *pParam)
 {
     BOMX_AudioDecoder *pDecoder = static_cast <BOMX_AudioDecoder *> (pParam);
 
-    BOMX_MSG(("PlaypumpEvent"));
+    ALOGV("PlaypumpEvent");
 
     pDecoder->PlaypumpEvent();
 }
@@ -145,7 +145,7 @@ static void BOMX_AudioDecoder_EosTimer(void *pParam)
 {
     BOMX_AudioDecoder *pDecoder = static_cast <BOMX_AudioDecoder *> (pParam);
 
-    BOMX_MSG(("EOS Timer"));
+    ALOGV("EOS Timer");
 
     pDecoder->EosTimer();
 }
@@ -155,16 +155,16 @@ static void BOMX_AudioDecoder_SourceChangedCallback(void *pParam, int param)
     B_EventHandle hEvent;
     BSTD_UNUSED(param);
     hEvent = static_cast <B_EventHandle> (pParam);
-    BOMX_ASSERT(NULL != hEvent);
+    ALOG_ASSERT(NULL != hEvent);
     B_Event_Set(hEvent);
-    BOMX_MSG(("SourceChangedCallback"));
+    ALOGV("SourceChangedCallback");
 }
 
 static void BOMX_AudioDecoder_SourceChangedEvent(void *pParam)
 {
     BOMX_AudioDecoder *pDecoder = static_cast <BOMX_AudioDecoder *> (pParam);
 
-    BOMX_MSG(("SourceChangedEvent"));
+    ALOGV("SourceChangedEvent");
 
     pDecoder->SourceChangedEvent();
 }
@@ -173,7 +173,7 @@ static OMX_ERRORTYPE BOMX_AudioDecoder_InitMimeType(OMX_AUDIO_CODINGTYPE eCompre
 {
     const char *pMimeTypeStr;
     OMX_ERRORTYPE err = OMX_ErrorNone;
-    BOMX_ASSERT(NULL != pMimeType);
+    ALOG_ASSERT(NULL != pMimeType);
 
     switch ( (int)eCompressionFormat ) // Typecasted to int to avoid warning about OMX_AUDIO_CodingVP8 not in enum
     {
@@ -229,7 +229,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_pAudioPorts[0] = new BOMX_AudioPort(m_audioPortBase, OMX_DirInput, B_NUM_BUFFERS, B_DATA_BUFFER_SIZE, false, 0, &portDefs, portFormats, MAX_PORT_FORMATS);
     if ( NULL == m_pAudioPorts[0] )
     {
-        BOMX_ERR(("Unable to create audio input port"));
+        ALOGW("Unable to create audio input port");
         this->Invalidate();
         return;
     }
@@ -244,7 +244,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_pAudioPorts[1] = new BOMX_AudioPort(m_audioPortBase+1, OMX_DirOutput, B_MAX_FRAMES, sizeof(NEXUS_StripedSurfaceHandle), false, 0, &portDefs, portFormats, 1);
     if ( NULL == m_pAudioPorts[1] )
     {
-        BOMX_ERR(("Unable to create audio output port"));
+        ALOGW("Unable to create audio output port");
         this->Invalidate();
         return;
     }
@@ -253,7 +253,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_hPlaypumpEvent = B_Event_Create(NULL);
     if ( NULL == m_hPlaypumpEvent )
     {
-        BOMX_ERR(("Unable to create playpump event"));
+        ALOGW("Unable to create playpump event");
         this->Invalidate();
         return;
     }
@@ -261,7 +261,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_hSourceChangedEvent = B_Event_Create(NULL);
     if ( NULL == m_hSourceChangedEvent )
     {
-        BOMX_ERR(("Unable to create source changed event"));
+        ALOGW("Unable to create source changed event");
         this->Invalidate();
         return;
     }
@@ -269,7 +269,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_sourceChangedEventId = this->RegisterEvent(m_hSourceChangedEvent, BOMX_AudioDecoder_SourceChangedEvent, static_cast <void *> (this));
     if ( NULL == m_sourceChangedEventId )
     {
-        BOMX_ERR(("Unable to register source changed event"));
+        ALOGW("Unable to register source changed event");
         this->Invalidate();
         return;
     }
@@ -529,12 +529,12 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
         BOMX_STRUCT_VALIDATE(pDef);
         if ( pDef->nPortIndex == m_audioPortBase && pDef->format.audio.cMIMEType != m_inputMimeType )
         {
-            BOMX_ERR(("Audio input MIME type cannot be changed in the application"));
+            ALOGW("Audio input MIME type cannot be changed in the application");
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
         else if ( pDef->nPortIndex == (m_audioPortBase+1) && pDef->format.audio.cMIMEType != m_outputMimeType )
         {
-            BOMX_ERR(("Audio output MIME type cannot be changed in the application"));
+            ALOGW("Audio output MIME type cannot be changed in the application");
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
         BOMX_Port *pPort = FindPortByIndex(pDef->nPortIndex);
@@ -544,7 +544,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
         }
         if ( pDef->nPortIndex == m_audioPortBase && pDef->format.audio.eEncoding != GetCodec() )
         {
-            BOMX_ERR(("Audio compression format cannot be changed in the port defintion.  Change Port Format instead."));
+            ALOGW("Audio compression format cannot be changed in the port defintion.  Change Port Format instead.");
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
         // Handle remainder in base class
@@ -565,7 +565,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
             case OMX_AUDIO_AACStreamFormatMP4LOAS:
                 break;
             default:
-                BOMX_ERR(("AAC stream format %u is not supported.  Only ADTS/LOAS formats are supported.", pAac->eAACStreamFormat));
+                ALOGW("AAC stream format %u is not supported.  Only ADTS/LOAS formats are supported.", pAac->eAACStreamFormat);
                 return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
             }
             m_aacParams = *pAac;
@@ -606,7 +606,7 @@ NEXUS_AudioCodec BOMX_AudioDecoder::GetNexusCodec()
         case OMX_AUDIO_AACStreamFormatMP4LOAS:
             return NEXUS_AudioCodec_eAacPlusLoas;
         default:
-            BOMX_ERR(("Unsupported AAC audio format.  Only ADTS/LOAS are supported."));
+            ALOGW("Unsupported AAC audio format.  Only ADTS/LOAS are supported.");
             return NEXUS_AudioCodec_eUnknown;
         }
     case OMX_AUDIO_CodingMP3:
@@ -617,14 +617,14 @@ NEXUS_AudioCodec BOMX_AudioDecoder::GetNexusCodec()
     case OMX_AUDIO_CodingEAC3:
         return NEXUS_AudioCodec_eAc3Plus;
     default:
-        BOMX_ERR(("Unsupported audio codec"));
+        ALOGW("Unsupported audio codec");
         return NEXUS_AudioCodec_eUnknown;
     }
 }
 
 NEXUS_Error BOMX_AudioDecoder::SetNexusState(OMX_STATETYPE state)
 {
-    BOMX_MSG(("Setting Nexus State to %s", BOMX_StateName(state)));
+    ALOGV("Setting Nexus State to %s", BOMX_StateName(state));
     if ( state == OMX_StateLoaded )
     {
         if ( m_hSimpleAudioDecoder )
@@ -705,7 +705,7 @@ NEXUS_Error BOMX_AudioDecoder::SetNexusState(OMX_STATETYPE state)
             m_playpumpEventId = RegisterEvent(m_hPlaypumpEvent, BOMX_AudioDecoder_PlaypumpEvent, static_cast <void *> (this));
             if ( NULL == m_playpumpEventId )
             {
-                BOMX_ERR(("Unable to register playpump event"));
+                ALOGW("Unable to register playpump event");
                 NEXUS_Playpump_ClosePidChannel(m_hPlaypump, m_hPidChannel);
                 m_hPidChannel = NULL;
                 NEXUS_Playpump_Close(m_hPlaypump);
@@ -786,7 +786,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
 {
     OMX_ERRORTYPE err;
 
-    BOMX_MSG(("Begin State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState)));
+    ALOGV("Begin State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
 
     switch ( newState )
     {
@@ -823,7 +823,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
         {
             (void)m_pAudioPorts[1]->Enable();
         }
-        BOMX_MSG(("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState)));
+        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     }
     case OMX_StateIdle:
@@ -837,7 +837,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
                 return BOMX_ERR_TRACE(OMX_ErrorUndefined);
             }
             m_hSimpleAudioDecoder = NEXUS_SimpleAudioDecoder_Acquire(m_nxClientAllocResults.simpleAudioDecoder.id);
-            BOMX_WRN(("SimpleAudioDecoder %#x", m_hSimpleAudioDecoder));
+            ALOGW("SimpleAudioDecoder %#x", m_hSimpleAudioDecoder);
             if ( NULL == m_hSimpleAudioDecoder )
             {
                 ReleaseResources();
@@ -851,7 +851,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
             adecSettings.primary.sourceChanged.context = static_cast <void *> (m_hSourceChangedEvent);
             NEXUS_SimpleAudioDecoder_SetSettings(m_hSimpleAudioDecoder, &adecSettings);
 
-            BOMX_MSG(("Waiting for port population..."));
+            ALOGV("Waiting for port population...");
             PortWaitBegin();
             // Now we need to wait for all enabled ports to become populated
             while ( (m_pAudioPorts[0]->IsEnabled() && !m_pAudioPorts[0]->IsPopulated()) ||
@@ -859,7 +859,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
             {
                 if ( PortWait() != B_ERROR_SUCCESS )
                 {
-                    BOMX_ERR(("Timeout waiting for ports to be populated"));
+                    ALOGW("Timeout waiting for ports to be populated");
                     PortWaitEnd();
                     NEXUS_SimpleAudioDecoder_Release(m_hSimpleAudioDecoder);
                     m_hSimpleAudioDecoder = NULL;
@@ -868,7 +868,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
                 }
             }
             PortWaitEnd();
-            BOMX_MSG(("Done waiting for port population"));
+            ALOGV("Done waiting for port population");
 
             if ( m_pAudioPorts[0]->IsPopulated() && m_pAudioPorts[1]->IsPopulated() )
             {
@@ -895,7 +895,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
             }
             (void)CommandFlush(OMX_ALL);
         }
-        BOMX_MSG(("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState)));
+        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     }
     case OMX_StateExecuting:
@@ -908,10 +908,10 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
                 return BOMX_ERR_TRACE(OMX_ErrorUndefined);
             }
         }
-        BOMX_MSG(("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState)));
+        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     default:
-        BOMX_ERR(("Unsupported state %u", newState));
+        ALOGW("Unsupported state %u", newState);
         return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
     }
 }
@@ -924,7 +924,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandFlush(
     // Handle case for OMX_ALL by calling flush on each port
     if ( portIndex == OMX_ALL )
     {
-        BOMX_MSG(("Flushing all ports"));
+        ALOGV("Flushing all ports");
 
         err = CommandFlush(m_audioPortBase);
         if ( err )
@@ -942,10 +942,10 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandFlush(
         BOMX_Port *pPort = FindPortByIndex(portIndex);
         if ( NULL == pPort )
         {
-            BOMX_ERR(("Invalid port %u", portIndex));
+            ALOGW("Invalid port %u", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
-        BOMX_MSG(("Flushing %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output"));
+        ALOGV("Flushing %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output");
         if ( portIndex == m_audioPortBase )
         {
             // Input port.
@@ -980,7 +980,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortEnable(
     // Handle case for OMX_ALL by calling enable on each port
     if ( portIndex == OMX_ALL )
     {
-        BOMX_MSG(("Enabling all ports"));
+        ALOGV("Enabling all ports");
 
         err = CommandPortEnable(m_audioPortBase);
         if ( err )
@@ -998,15 +998,15 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortEnable(
         BOMX_Port *pPort = FindPortByIndex(portIndex);
         if ( NULL == pPort )
         {
-            BOMX_ERR(("Invalid port %u", portIndex));
+            ALOGW("Invalid port %u", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         if ( pPort->IsEnabled() )
         {
-            BOMX_ERR(("Port %u is already enabled", portIndex));
+            ALOGW("Port %u is already enabled", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
         }
-        BOMX_MSG(("Enabling %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output"));
+        ALOGV("Enabling %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output");
         err = pPort->Enable();
         if ( err )
         {
@@ -1015,21 +1015,21 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortEnable(
         if ( StateGet() != OMX_StateLoaded )
         {
             // Wait for port to become populated
-            BOMX_MSG(("Waiting for port to populate"));
+            ALOGV("Waiting for port to populate");
             PortWaitBegin();
             // Now we need to wait for all enabled ports to become populated
             while ( !pPort->IsPopulated() )
             {
                 if ( PortWait() != B_ERROR_SUCCESS )
                 {
-                    BOMX_ERR(("Timeout waiting for port %u to be populated", portIndex));
+                    ALOGW("Timeout waiting for port %u to be populated", portIndex);
                     PortWaitEnd();
                     (void)pPort->Disable();
                     return BOMX_ERR_TRACE(OMX_ErrorTimeout);
                 }
             }
             PortWaitEnd();
-            BOMX_MSG(("Done waiting for port to populate"));
+            ALOGV("Done waiting for port to populate");
 
             // If all ports are enabled, time to do something
             if ( m_pAudioPorts[0]->IsPopulated() && m_pAudioPorts[1]->IsPopulated() )
@@ -1059,7 +1059,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortDisable(
     // Handle case for OMX_ALL by calling enable on each port
     if ( portIndex == OMX_ALL )
     {
-        BOMX_MSG(("Disabling all ports"));
+        ALOGV("Disabling all ports");
 
         err = CommandPortDisable(m_audioPortBase);
         if ( err )
@@ -1077,15 +1077,15 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortDisable(
         BOMX_Port *pPort = FindPortByIndex(portIndex);
         if ( NULL == pPort )
         {
-            BOMX_ERR(("Invalid port %u", portIndex));
+            ALOGW("Invalid port %u", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         if ( pPort->IsDisabled() )
         {
-            BOMX_ERR(("Port %u is already disabled", portIndex));
+            ALOGW("Port %u is already disabled", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
         }
-        BOMX_MSG(("Disabling %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output"));
+        ALOGV("Disabling %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output");
         err = pPort->Disable();
         if ( err )
         {
@@ -1100,21 +1100,21 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortDisable(
             ReturnPortBuffers(pPort);
 
             // Wait for port to become de-populated
-            BOMX_MSG(("Waiting for port to de-populate"));
+            ALOGV("Waiting for port to de-populate");
             PortWaitBegin();
             // Now we need to wait for all enabled ports to become populated
             while ( !pPort->IsEmpty() )
             {
                 if ( PortWait() != B_ERROR_SUCCESS )
                 {
-                    BOMX_ERR(("Timeout waiting for port %u to be de-populated", portIndex));
+                    ALOGW("Timeout waiting for port %u to be de-populated", portIndex);
                     PortWaitEnd();
                     (void)pPort->Enable();
                     return BOMX_ERR_TRACE(OMX_ErrorTimeout);
                 }
             }
             PortWaitEnd();
-            BOMX_MSG(("Done waiting for port to de-populate"));
+            ALOGV("Done waiting for port to de-populate");
         }
     }
 
@@ -1123,13 +1123,13 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortDisable(
 
 void BOMX_AudioDecoder::GetNxClientAllocSettings(NxClient_AllocSettings *pSettings)
 {
-    BOMX_ASSERT(NULL != pSettings);
+    ALOG_ASSERT(NULL != pSettings);
     pSettings->simpleAudioDecoder = 1;
 }
 
 void BOMX_AudioDecoder::GetNxClientConnectSettings(NxClient_ConnectSettings *pSettings)
 {
-    BOMX_ASSERT(NULL != pSettings);
+    ALOG_ASSERT(NULL != pSettings);
     pSettings->simpleAudioDecoder.id = m_nxClientAllocResults.simpleAudioDecoder.id;
 }
 
@@ -1150,12 +1150,12 @@ OMX_ERRORTYPE BOMX_AudioDecoder::ComponentTunnelRequest(
     }
     if ( pPort->IsEnabled() && StateGet() != OMX_StateLoaded )
     {
-        BOMX_ERR(("Cannot tunnel unless component is in loaded state or port is disabled"));
+        ALOGW("Cannot tunnel unless component is in loaded state or port is disabled");
         return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
     }
     if ( pPort->GetDir() == OMX_DirInput )
     {
-        BOMX_ERR(("Only output port supports tunneling"));
+        ALOGW("Only output port supports tunneling");
         return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
     }
     if ( NULL == hTunneledComp )
@@ -1174,7 +1174,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::ComponentTunnelRequest(
         }
         if ( pPort->GetDir() == pTheirPort->GetDir() )
         {
-            BOMX_ERR(("Two ports of the same direction can not be tunneled"));
+            ALOGW("Two ports of the same direction can not be tunneled");
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         if ( !strcmp(pName, "OMX.broadcom.nxclient.audio_renderer") )
@@ -1217,13 +1217,13 @@ OMX_ERRORTYPE BOMX_AudioDecoder::AddPortBuffer(
 
     if ( pPort->IsTunneled() )
     {
-        BOMX_ERR(("Cannot add buffers to a tunneled port"));
+        ALOGW("Cannot add buffers to a tunneled port");
         return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
     }
 
     if ( pPort->IsEnabled() && StateGet() != OMX_StateLoaded )
     {
-        BOMX_ERR(("Can only add buffers to an enabled port while transitioning from loaded->idle (state=%u)", StateGet()));
+        ALOGW("Can only add buffers to an enabled port while transitioning from loaded->idle (state=%u)", StateGet());
         return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
     }
 
@@ -1394,7 +1394,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
     }
     if ( pBufferHeader->nInputPortIndex != m_audioPortBase )
     {
-        BOMX_ERR(("Invalid buffer"));
+        ALOGW("Invalid buffer");
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
     pInfo = (BOMX_AudioDecoderBufferInfo *)pBuffer->GetComponentPrivate();
@@ -1403,7 +1403,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
 
-    BOMX_MSG(("Empty %#x", pBufferHeader));
+    ALOGV("Empty %#x", pBufferHeader);
 
     // Form PES Header
     if ( BOMX_FormPesHeader(pBufferHeader, pInfo->pHeader, B_HEADER_BUFFER_SIZE, B_STREAM_ID, &headerLen) )
@@ -1444,7 +1444,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
     }
     else
     {
-        BOMX_WRN(("Discarding empty payload"));
+        ALOGW("Discarding empty payload");
         numConsumed = 1;
     }
     #else
@@ -1458,7 +1458,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
     }
     err = m_pAudioPorts[0]->QueueBuffer(pBufferHeader);
-    BOMX_ASSERT(err == OMX_ErrorNone);
+    ALOG_ASSERT(err == OMX_ErrorNone);
 
     if ( pBufferHeader->nFlags & OMX_BUFFERFLAG_EOS )
     {
@@ -1466,7 +1466,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
         m_prevFifoDepth = (unsigned)-1;
         m_staticFifoDepthCount = 0;
         m_eosTimer = StartTimer(BOMX_AUDIO_EOS_TIMEOUT, BOMX_AudioDecoder_EosTimer, static_cast <void *> (this));
-        BOMX_ASSERT(NULL != m_eosTimer);
+        ALOG_ASSERT(NULL != m_eosTimer);
     }
 
     return OMX_ErrorNone;
@@ -1515,12 +1515,12 @@ void BOMX_AudioDecoder::PlaypumpEvent()
 
         if ( numComplete > 0 )
         {
-            BOMX_MSG(("Returning %u buffers (%u queued, %u pending)", numComplete, numQueued, numPending));
+            ALOGV("Returning %u buffers (%u queued, %u pending)", numComplete, numQueued, numPending);
         }
         for ( i = 0; i < numComplete; i++ )
         {
             BOMX_Buffer *pBuffer = m_pAudioPorts[0]->GetBuffer();
-            BOMX_ASSERT(NULL != pBuffer);
+            ALOG_ASSERT(NULL != pBuffer);
             ReturnPortBuffer(m_pAudioPorts[0], pBuffer);
         }
     } while ( numComplete > 0 );
@@ -1528,7 +1528,7 @@ void BOMX_AudioDecoder::PlaypumpEvent()
 
 void BOMX_AudioDecoder::GetMediaTime(OMX_TICKS *pTicks)
 {
-    BOMX_ASSERT(NULL != pTicks);
+    ALOG_ASSERT(NULL != pTicks);
 
     // Initialize
     BOMX_Component::GetMediaTime(pTicks);
@@ -1717,29 +1717,29 @@ void BOMX_AudioDecoder::SourceChangedEvent()
 void BOMX_AudioDecoder::EosTimer()
 {
     m_eosTimer = NULL;
-    BOMX_MSG(("EOS Timer (eosPending=%u)", m_eosPending));
+    ALOGV("EOS Timer (eosPending=%u)", m_eosPending);
     if ( m_eosPending )
     {
         NEXUS_PlaypumpStatus playpumpStatus;
 
         if ( m_hPlaypump == NULL || m_hSimpleAudioDecoder == NULL )
         {
-            BOMX_MSG(("m_hPlaypump %#x m_hDecoder %#x", m_hPlaypump, m_hSimpleAudioDecoder));
+            ALOGV("m_hPlaypump %#x m_hDecoder %#x", m_hPlaypump, m_hSimpleAudioDecoder);
             m_eosPending = false;
             return;
         }
 
         NEXUS_Playpump_GetStatus(m_hPlaypump, &playpumpStatus);
-        BOMX_MSG(("descFifoDepth %u", playpumpStatus.descFifoDepth));
+        ALOGV("descFifoDepth %u", playpumpStatus.descFifoDepth);
         if ( playpumpStatus.descFifoDepth <= 1 )
         {
             NEXUS_AudioDecoderStatus adecStatus;
             NEXUS_SimpleAudioDecoder_GetStatus(m_hSimpleAudioDecoder, &adecStatus);
-            BOMX_MSG(("Audio FIFO Depth %u", adecStatus.fifoDepth));
+            ALOGV("Audio FIFO Depth %u", adecStatus.fifoDepth);
             if ( adecStatus.fifoDepth == m_prevFifoDepth )
             {
                 m_staticFifoDepthCount++;
-                BOMX_MSG(("Static for %u timers", m_staticFifoDepthCount));
+                ALOGV("Static for %u timers", m_staticFifoDepthCount);
                 if ( m_staticFifoDepthCount >= 3 )
                 {
                     m_eosPending = false;
@@ -1756,7 +1756,7 @@ void BOMX_AudioDecoder::EosTimer()
 
     if ( m_eosPending )
     {
-        BOMX_MSG(("Re-Starting EOS Timer"));
+        ALOGV("Re-Starting EOS Timer");
         m_eosTimer = StartTimer(BOMX_AUDIO_EOS_TIMEOUT, BOMX_AudioDecoder_EosTimer, static_cast <void *> (this));
     }
 }

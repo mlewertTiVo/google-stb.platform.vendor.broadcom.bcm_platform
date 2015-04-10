@@ -140,7 +140,7 @@ uint32_t BOMX_TickToPts(
     )
 {
     OMX_S64 ticks;
-    BOMX_ASSERT(NULL != pTicks);
+    ALOG_ASSERT(NULL != pTicks);
     ticks = *pTicks;
     if ( ticks <= 0 )
     {
@@ -154,7 +154,7 @@ void BOMX_PtsToTick(
     OMX_TICKS *pTicks   /* [out] */
     )
 {
-    BOMX_ASSERT(NULL != pTicks);
+    ALOG_ASSERT(NULL != pTicks);
     *pTicks = (((OMX_S64)pts)*1000LL)/45LL;
 }
 
@@ -165,8 +165,8 @@ int32_t BOMX_TickDiffMs(
 {
     int32_t ms1,ms2;
 
-    BOMX_ASSERT(NULL != pTime1);
-    BOMX_ASSERT(NULL != pTime2);
+    ALOG_ASSERT(NULL != pTime1);
+    ALOG_ASSERT(NULL != pTime2);
 
     ms1 = (int32_t)(*pTime1/1000LL);
     ms2 = (int32_t)(*pTime2/1000LL);
@@ -191,12 +191,12 @@ int BOMX_FormPesHeader(
     uint32_t pts;
     bool unbounded=false;
 
-    BOMX_ASSERT(NULL != pFrame);
-    BOMX_ASSERT(NULL != pBuffer);
-    BOMX_ASSERT(NULL != pHeaderLength);
+    ALOG_ASSERT(NULL != pFrame);
+    ALOG_ASSERT(NULL != pBuffer);
+    ALOG_ASSERT(NULL != pHeaderLength);
     if ( codecHeaderLength > 0 )
     {
-        BOMX_ASSERT(NULL != pCodecHeader);
+        ALOG_ASSERT(NULL != pCodecHeader);
     }
 
     pHeaderBuf = (uint8_t *)pBuffer;
@@ -206,7 +206,7 @@ int BOMX_FormPesHeader(
     payloadLength += length - 6; /* Payload length doesn't count the 6-byte header */
     if ( length > bufferSize )
     {
-        BOMX_ERR(("Buffer not large enough for PES header"));
+        ALOGW("Buffer not large enough for PES header");
         return -1;
     }
 

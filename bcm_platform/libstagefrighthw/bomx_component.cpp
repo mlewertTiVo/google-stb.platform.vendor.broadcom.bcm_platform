@@ -158,11 +158,11 @@ static OMX_ERRORTYPE BOMX_Component_ComponentRoleEnum(
 
 OMX_ERRORTYPE BOMX_InitComponentResourceList()
 {
-    BOMX_ASSERT(NULL == g_resourceMutex);
+    ALOG_ASSERT(NULL == g_resourceMutex);
     g_resourceMutex = B_Mutex_Create(NULL);
     if ( NULL == g_resourceMutex )
     {
-        BOMX_ERR(("Unable to create resource mutex"));
+        ALOGW("Unable to create resource mutex");
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
     }
     BLST_Q_INIT(&g_resourceList);
@@ -173,11 +173,11 @@ void BOMX_UninitComponentResourceList()
 {
     BOMX_ComponentResources *pRes;
 
-    BOMX_ASSERT(NULL != g_resourceMutex);
+    ALOG_ASSERT(NULL != g_resourceMutex);
 
     while ( NULL != (pRes=BLST_Q_FIRST(&g_resourceList)) )
     {
-        BOMX_WRN(("Freeing active resource entry %p", pRes));
+        ALOGW("Freeing active resource entry %p", pRes);
         BLST_Q_REMOVE_HEAD(&g_resourceList, node);
         delete pRes;
     }
@@ -280,7 +280,7 @@ BOMX_Component::BOMX_Component(
     m_hCommandQueue(NULL),
     m_portWaitTimeout(0)
 {
-    BOMX_ASSERT(NULL != pComponentType);
+    ALOG_ASSERT(NULL != pComponentType);
     m_pComponentType = pComponentType;
     memset(m_uuid, 0, sizeof(m_uuid));
     FILE *pUuid = fopen("/proc/sys/kernel/random/uuid", "r");
@@ -299,26 +299,26 @@ BOMX_Component::BOMX_Component(
     }
     m_pGetRole = pGetRole;
     m_hScheduler = B_Scheduler_Create(NULL);
-    BOMX_ASSERT(NULL != m_hScheduler);
+    ALOG_ASSERT(NULL != m_hScheduler);
     m_hMutex = B_Mutex_Create(NULL);
-    BOMX_ASSERT(NULL != m_hMutex);
+    ALOG_ASSERT(NULL != m_hMutex);
     m_hCommandEvent = B_Event_Create(NULL);
-    BOMX_ASSERT(NULL != m_hCommandEvent);
+    ALOG_ASSERT(NULL != m_hCommandEvent);
     m_commandEventId = B_Scheduler_RegisterEvent(m_hScheduler, m_hMutex, m_hCommandEvent, BOMX_Component_CommandEvent, this);
-    BOMX_ASSERT(NULL != m_commandEventId);
+    ALOG_ASSERT(NULL != m_commandEventId);
     m_hEosEvent = B_Event_Create(NULL);
-    BOMX_ASSERT(NULL != m_hEosEvent);
+    ALOG_ASSERT(NULL != m_hEosEvent);
     m_eosEventId = B_Scheduler_RegisterEvent(m_hScheduler, m_hMutex, m_hEosEvent, BOMX_Component_EosEvent, this);
-    BOMX_ASSERT(NULL != m_eosEventId);
+    ALOG_ASSERT(NULL != m_eosEventId);
     m_hPortEvent = B_Event_Create(NULL);
-    BOMX_ASSERT(NULL != m_hPortEvent);
+    ALOG_ASSERT(NULL != m_hPortEvent);
 
     B_MessageQueueSettings messageQueueSettings;
     B_MessageQueue_GetDefaultSettings(&messageQueueSettings);
     messageQueueSettings.maxMessages = BOMX_COMPONENT_MAX_MSGS;
     messageQueueSettings.maxMessageSize = sizeof(BOMX_CommandMsg);
     m_hCommandQueue = B_MessageQueue_Create(&messageQueueSettings);
-    BOMX_ASSERT(NULL != m_hCommandQueue);
+    ALOG_ASSERT(NULL != m_hCommandQueue);
     m_numAudioPorts = m_numImagePorts = m_numVideoPorts = m_numOtherPorts = 0;
     memset(m_pAudioPorts, 0, sizeof(m_pAudioPorts));
     memset(m_pImagePorts, 0, sizeof(m_pAudioPorts));
@@ -355,7 +355,7 @@ BOMX_Component::BOMX_Component(
     // Currently, each component requires its own thread - it's by far the easiest way to
     // Implement the command queue/response handling
     m_hThread = B_Thread_Create(pName, BOMX_ComponentThread, static_cast <void *> (this), NULL);
-    BOMX_ASSERT(NULL != m_hThread);
+    ALOG_ASSERT(NULL != m_hThread);
 }
 
 BOMX_Component::~BOMX_Component()
@@ -386,7 +386,7 @@ BOMX_Component::~BOMX_Component()
     }
     else
     {
-        BOMX_ERR(("NOT Unregistering event"));
+        ALOGW("NOT Unregistering event");
     }
     if ( m_hScheduler )
     {
@@ -499,10 +499,10 @@ OMX_ERRORTYPE BOMX_Component::GetComponentVersion(
         OMX_OUT OMX_VERSIONTYPE* pSpecVersion,
         OMX_OUT OMX_UUIDTYPE* pComponentUUID)
 {
-    BOMX_ASSERT(NULL != pComponentName);
-    BOMX_ASSERT(NULL != pComponentVersion);
-    BOMX_ASSERT(NULL != pSpecVersion);
-    BOMX_ASSERT(NULL != pComponentUUID);
+    ALOG_ASSERT(NULL != pComponentName);
+    ALOG_ASSERT(NULL != pComponentVersion);
+    ALOG_ASSERT(NULL != pSpecVersion);
+    ALOG_ASSERT(NULL != pComponentUUID);
 
     strncpy(pComponentName, m_componentName, OMX_MAX_STRINGNAME_SIZE);
     pComponentVersion->nVersion = m_version;
@@ -554,7 +554,7 @@ OMX_ERRORTYPE BOMX_Component::GetParameter(
         BOMX_Port *pPort = FindPortByIndex(pDefinition->nPortIndex);
         if ( NULL == pPort )
         {
-            BOMX_ERR(("Invalid port number %u", pDefinition->nPortIndex));
+            ALOGW("Invalid port number %u", pDefinition->nPortIndex);
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         pPort->GetDefinition(pDefinition);
@@ -567,7 +567,7 @@ OMX_ERRORTYPE BOMX_Component::GetParameter(
         BOMX_Port *pPort = FindPortByIndex(pSupplier->nPortIndex);
         if ( NULL == pPort )
         {
-            BOMX_ERR(("Invalid port number %u", pSupplier->nPortIndex));
+            ALOGW("Invalid port number %u", pSupplier->nPortIndex);
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         pSupplier->eBufferSupplier = pPort->GetSupplier();
@@ -604,11 +604,11 @@ OMX_ERRORTYPE BOMX_Component::GetParameter(
             if ( pAudioPortFormat->nPortIndex < m_audioPortBase ||
                  pAudioPortFormat->nPortIndex >= (m_audioPortBase+m_numAudioPorts) )
             {
-                BOMX_ERR(("Invalid audio port number %u", pAudioPortFormat->nPortIndex));
+                ALOGW("Invalid audio port number %u", pAudioPortFormat->nPortIndex);
                 return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
             }
             BOMX_AudioPort *pAudioPort = m_pAudioPorts[pAudioPortFormat->nPortIndex-m_audioPortBase];
-            BOMX_ASSERT(NULL != pAudioPort);
+            ALOG_ASSERT(NULL != pAudioPort);
             return pAudioPort->GetPortFormat(pAudioPortFormat->nIndex, pAudioPortFormat);
     }
     case OMX_IndexParamVideoPortFormat:
@@ -618,11 +618,11 @@ OMX_ERRORTYPE BOMX_Component::GetParameter(
             if ( pVideoPortFormat->nPortIndex < m_videoPortBase ||
                  pVideoPortFormat->nPortIndex >= (m_videoPortBase+m_numVideoPorts) )
             {
-                BOMX_ERR(("Invalid video port number %u", pVideoPortFormat->nPortIndex));
+                ALOGW("Invalid video port number %u", pVideoPortFormat->nPortIndex);
                 return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
             }
             BOMX_VideoPort *pVideoPort = m_pVideoPorts[pVideoPortFormat->nPortIndex-m_videoPortBase];
-            BOMX_ASSERT(NULL != pVideoPort);
+            ALOG_ASSERT(NULL != pVideoPort);
             return pVideoPort->GetPortFormat(pVideoPortFormat->nIndex, pVideoPortFormat);
     }
     case OMX_IndexParamImagePortFormat:
@@ -632,11 +632,11 @@ OMX_ERRORTYPE BOMX_Component::GetParameter(
             if ( pImagePortFormat->nPortIndex < m_imagePortBase ||
                  pImagePortFormat->nPortIndex >= (m_imagePortBase+m_numImagePorts) )
             {
-                BOMX_ERR(("Invalid image port number %u", pImagePortFormat->nPortIndex));
+                ALOGW("Invalid image port number %u", pImagePortFormat->nPortIndex);
                 return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
             }
             BOMX_ImagePort *pImagePort = m_pImagePorts[pImagePortFormat->nPortIndex-m_imagePortBase];
-            BOMX_ASSERT(NULL != pImagePort);
+            ALOG_ASSERT(NULL != pImagePort);
             return pImagePort->GetPortFormat(pImagePortFormat->nIndex, pImagePortFormat);
     }
     case OMX_IndexParamOtherPortFormat:
@@ -646,11 +646,11 @@ OMX_ERRORTYPE BOMX_Component::GetParameter(
             if ( pOtherPortFormat->nPortIndex < m_otherPortBase ||
                  pOtherPortFormat->nPortIndex >= (m_otherPortBase+m_numOtherPorts) )
             {
-                BOMX_ERR(("Invalid other port number %u", pOtherPortFormat->nPortIndex));
+                ALOGW("Invalid other port number %u", pOtherPortFormat->nPortIndex);
                 return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
             }
             BOMX_OtherPort *pOtherPort = m_pOtherPorts[pOtherPortFormat->nPortIndex-m_otherPortBase];
-            BOMX_ASSERT(NULL != pOtherPort);
+            ALOG_ASSERT(NULL != pOtherPort);
             return pOtherPort->GetPortFormat(pOtherPortFormat->nIndex, pOtherPortFormat);
     }
     case OMX_IndexParamStandardComponentRole:
@@ -661,7 +661,7 @@ OMX_ERRORTYPE BOMX_Component::GetParameter(
         return OMX_ErrorNone;
     }
     default:
-        BOMX_ERR(("Unsupported parameter index %u (%#x)", nParamIndex, nParamIndex));
+        ALOGW("Unsupported parameter index %u (%#x)", nParamIndex, nParamIndex);
         return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
     }
 }
@@ -680,7 +680,7 @@ OMX_ERRORTYPE BOMX_Component::SetParameter(
         BOMX_Port *pPort = FindPortByIndex(pDefinition->nPortIndex);
         if ( NULL == pPort )
         {
-            BOMX_ERR(("Invalid port number %u", pDefinition->nPortIndex));
+            ALOGW("Invalid port number %u", pDefinition->nPortIndex);
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         return BOMX_ERR_TRACE(pPort->SetDefinition(pDefinition));
@@ -692,7 +692,7 @@ OMX_ERRORTYPE BOMX_Component::SetParameter(
         BOMX_Port *pPort = FindPortByIndex(pSupplier->nPortIndex);
         if ( NULL == pPort )
         {
-            BOMX_ERR(("Invalid port number %u", pSupplier->nPortIndex));
+            ALOGW("Invalid port number %u", pSupplier->nPortIndex);
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         switch ( pSupplier->eBufferSupplier )
@@ -702,7 +702,7 @@ OMX_ERRORTYPE BOMX_Component::SetParameter(
         case OMX_BufferSupplyOutput:
             break;
         default:
-            BOMX_ERR(("Invalid buffer supplier type %d", (int)pSupplier->eBufferSupplier));
+            ALOGW("Invalid buffer supplier type %d", (int)pSupplier->eBufferSupplier);
         }
         pPort->SetSupplier(pSupplier->eBufferSupplier);
         return OMX_ErrorNone;
@@ -715,7 +715,7 @@ OMX_ERRORTYPE BOMX_Component::SetParameter(
     case OMX_IndexParamOtherPortFormat:
     #endif
     default:
-        BOMX_ERR(("Unsupported parameter index %u (%#x)", nIndex, nIndex));
+        ALOGW("Unsupported parameter index %u (%#x)", nIndex, nIndex);
         return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
     }
 }
@@ -725,7 +725,7 @@ OMX_ERRORTYPE BOMX_Component::GetConfig(
         OMX_INOUT OMX_PTR pComponentConfigStructure)
 {
     BSTD_UNUSED(pComponentConfigStructure);
-    BOMX_ERR(("Unsupported config index %u (%#x)", nIndex, nIndex));
+    ALOGW("Unsupported config index %u (%#x)", nIndex, nIndex);
     return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
 }
 
@@ -734,7 +734,7 @@ OMX_ERRORTYPE BOMX_Component::SetConfig(
         OMX_IN  OMX_PTR pComponentConfigStructure)
 {
     BSTD_UNUSED(pComponentConfigStructure);
-    BOMX_ERR(("Unsupported config index %u (%#x)", nIndex, nIndex));
+    ALOGW("Unsupported config index %u (%#x)", nIndex, nIndex);
     return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
 }
 
@@ -750,7 +750,7 @@ OMX_ERRORTYPE BOMX_Component::GetExtensionIndex(
 OMX_ERRORTYPE BOMX_Component::GetState(
         OMX_OUT OMX_STATETYPE* pState)
 {
-    BOMX_ASSERT(NULL != pState);
+    ALOG_ASSERT(NULL != pState);
     *pState = m_currentState;
     return OMX_ErrorNone;
 }
@@ -1208,7 +1208,7 @@ static OMX_ERRORTYPE BOMX_Component_SendCommand(
     msg.nParam1 = nParam1;
     if ( Cmd == OMX_CommandMarkBuffer )
     {
-        BOMX_ASSERT(NULL != pCmdData);
+        ALOG_ASSERT(NULL != pCmdData);
         memcpy((void *)&msg.data.markType, pCmdData, sizeof(OMX_MARKTYPE));
     }
 
@@ -1525,15 +1525,15 @@ void BOMX_Component::WalkTunnels(BOMX_ComponentArray *pArray)
     {
         if ( pArray->pComponents[i] == this )
         {
-            BOMX_MSG(("Component %#x (%s) already in array", this, GetName()));
+            ALOGV("Component %#x (%s) already in array", this, GetName());
             return;
         }
     }
-    BOMX_MSG(("Component %#x (%s) not in array", this, GetName()));
+    ALOGV("Component %#x (%s) not in array", this, GetName());
 
     if ( pArray->numComponents >= BOMX_MAX_COMPONENTS_IN_ARRAY )
     {
-        BOMX_WRN(("Component Array Full"));
+        ALOGW("Component Array Full");
         return;
     }
 
@@ -1630,13 +1630,13 @@ NEXUS_Error BOMX_Component::AllocateResources()
         {
             if ( pRes->componentArray.pComponents[i] == this )
             {
-                BOMX_ASSERT(pRes->allocated[i] == false);
+                ALOG_ASSERT(pRes->allocated[i] == false);
                 pRes->allocated[i] = true;
                 this->m_pResources = pRes;
                 break;
             }
         }
-        BOMX_ASSERT(i < pRes->componentArray.numComponents);
+        ALOG_ASSERT(i < pRes->componentArray.numComponents);
     }
     B_Mutex_Unlock(g_resourceMutex);
 
@@ -1656,12 +1656,12 @@ void BOMX_Component::ReleaseResources()
         {
             if ( pRes->componentArray.pComponents[i] == this )
             {
-                BOMX_ASSERT(pRes->allocated[i] == true);
+                ALOG_ASSERT(pRes->allocated[i] == true);
                 pRes->allocated[i] = false;
                 break;
             }
         }
-        BOMX_ASSERT(i < pRes->componentArray.numComponents);
+        ALOG_ASSERT(i < pRes->componentArray.numComponents);
         for ( i = 0; i < pRes->componentArray.numComponents; i++ )
         {
             if ( pRes->allocated[i] )
@@ -1686,7 +1686,7 @@ B_Error BOMX_Component::PortWait()
     B_Time now;
     unsigned timeout;
 
-    BOMX_ASSERT(m_portWaitTimeout > 0);
+    ALOG_ASSERT(m_portWaitTimeout > 0);
 
     B_Time_Get(&now);
     timeout = B_Time_Diff(&now, &m_portWaitStartTime);
@@ -1720,7 +1720,7 @@ void BOMX_Component::ReturnPortBuffers(BOMX_Port *pPort)
 {
     BOMX_Buffer *pBuffer;
 
-    BOMX_ASSERT(NULL != pPort);
+    ALOG_ASSERT(NULL != pPort);
 
     while ( (pBuffer = pPort->GetBuffer()) )
     {
@@ -1730,7 +1730,7 @@ void BOMX_Component::ReturnPortBuffers(BOMX_Port *pPort)
 
 void BOMX_Component::ReturnPortBuffer(BOMX_Port *pPort, BOMX_Buffer *pBuffer)
 {
-    BOMX_ASSERT(NULL != pPort);
+    ALOG_ASSERT(NULL != pPort);
 
     pPort->BufferComplete(pBuffer);
     if ( !pPort->IsTunneled() )

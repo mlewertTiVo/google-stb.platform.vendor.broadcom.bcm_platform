@@ -67,11 +67,6 @@ extern "C" {
 #define BOMX_ERR_TRACE(omxerr) (((omxerr) == OMX_ErrorNone)?OMX_ErrorNone:BOMX_PrintError(LOG_TAG, __FILE__,__LINE__,(omxerr)))
 #define BOMX_GET_NXCLIENT_SLOT(arr,slot) {for ( (slot)=0; (slot)<NXCLIENT_MAX_IDS && (arr)[(slot)].id != 0; (slot)++ );}
 
-#define BOMX_ERR(x) ALOGE x
-#define BOMX_WRN(x) ALOGW x
-#define BOMX_MSG(x) ALOGV x
-#define BOMX_ASSERT(cond) LOG_ALWAYS_FATAL_IF(!(cond));
-
 BERR_Code BOMX_PrintBError(const char *pLogTag, const char *pFile, unsigned lineno, BERR_Code berr);
 OMX_ERRORTYPE BOMX_PrintError(const char *pLogTag, const char *pFile, unsigned lineno, OMX_ERRORTYPE omxerr);
 

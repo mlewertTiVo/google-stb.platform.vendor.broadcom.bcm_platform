@@ -167,7 +167,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure::ConfigBufferAppend(const void *pBuffer, 
 {
     NEXUS_Error err;
 
-    BOMX_ASSERT(NULL != pBuffer);
+    ALOG_ASSERT(NULL != pBuffer);
     ALOGV("%s, buffer:%p, length:%d", __FUNCTION__, pBuffer, length);
     if ( m_configBufferSize + length > BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE )
         return BOMX_ERR_TRACE(OMX_ErrorOverflow);
@@ -226,7 +226,7 @@ NEXUS_Error BOMX_VideoDecoder_Secure::AllocateNexusMemory(size_t nSize, void *& 
     errCode = NEXUS_Memory_Allocate(nSize, &memorySettings, &pBuffer);
     if ( errCode )
     {
-        BOMX_ERR(("Unable to allocate nexus memory"));
+        ALOGW("Unable to allocate nexus memory");
         return errCode;
     }
 

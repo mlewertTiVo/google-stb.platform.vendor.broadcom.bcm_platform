@@ -100,7 +100,7 @@ bool BOMX_BufferTracker::Add(
     uint32_t *pPts /* [out] */
     )
 {
-    BOMX_ASSERT(NULL != pHeader);
+    ALOG_ASSERT(NULL != pHeader);
 
     // Get a node
     BOMX_BufferTrackerNode *pNode = BLST_Q_FIRST(&m_freeList);
@@ -145,7 +145,7 @@ bool BOMX_BufferTracker::Add(
             do {
                 pPrev = BLST_Q_PREV(pPrev, node);
             } while ( NULL != pPrev && pPrev->pts > pNode->pts );
-            BOMX_ASSERT(NULL != pPrev); // Should never happen - above checks for head/tail should have caught this
+            ALOG_ASSERT(NULL != pPrev); // Should never happen - above checks for head/tail should have caught this
             BLST_Q_INSERT_AFTER(&m_allocList, pPrev, pNode, node);
         }
     }
