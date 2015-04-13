@@ -423,6 +423,16 @@ int main(void)
         sleep(1);
     }
 
+    /* Setup logger environment */
+    int32_t loggerDisabled;
+    loggerDisabled = property_get_int32("ro.nx.logger_disabled", 0);
+    if ( loggerDisabled ) {
+        setenv("nexus_logger", "disabled", 1);
+    } else {
+        setenv("nexus_logger", "/system/bin/nxlogger", 1);
+        setenv("nexus_logger_file", "/data/nexus/nexus.log", 1);
+    }
+
     nx_srv = init_nxserver();
     if (nx_srv == NULL) {
         ALOGE("FATAL: Daemonise Failed!");

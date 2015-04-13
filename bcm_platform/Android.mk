@@ -28,6 +28,7 @@ include vendor/broadcom/bcm_platform/libpower/Android.mk
 include vendor/broadcom/bcm_platform/libstagefrighthw/Android.mk
 include vendor/broadcom/bcm_platform/libtv_input/Android.mk
 include vendor/broadcom/bcm_platform/libsecurity/Android.mk
+include vendor/broadcom/bcm_platform/nxlogger/Android.mk
 include vendor/broadcom/bcm_platform/nxserver/Android.mk
 include vendor/broadcom/bcm_platform/pmlibservice/Android.mk
 

@@ -73,6 +73,8 @@ on post-fs
    export nexus_ipc_dir /dev
 
    export SAGEBIN_PATH /system/bin
+   export NEXUS_LOGGER /system/bin/nxlogger
+   export NEXUS_LOGGER_FILE /data/nexus/nexus.log
 
    setprop ro.nexus.nxserver.hdcp1x_keys /system/bin/drm_hdcp1x.bin
    setprop ro.nexus.nxserver.hdcp2x_keys /mnt/hwcfg/drm.bin
