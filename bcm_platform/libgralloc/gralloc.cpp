@@ -601,13 +601,24 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       }
 
       if (gralloc_log_mapper()) {
-         ALOGI("alloc: owner:%d::s-blk:0x%x::p:%d::p-blk:0x%x::p-addr:0x%x::mapped:0x%x",
+         NEXUS_Addr physAddr;
+         unsigned sharedPhysAddr = grallocPrivateHandle->sharedData;
+         if (grallocPrivateHandle->is_mma) {
+            NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+            sharedPhysAddr = (unsigned)physAddr;
+         }
+         ALOGI("alloc: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
+               grallocPrivateHandle->is_mma,
                getpid(),
                grallocPrivateHandle->sharedData,
-               DEFAULT_PLANE,
+               sharedPhysAddr,
                pSharedData->planes[DEFAULT_PLANE].physAddr,
                grallocPrivateHandle->nxSurfacePhysicalAddress,
+               pSharedData->planes[DEFAULT_PLANE].size,
                grallocPrivateHandle->nxSurfaceAddress);
+         if (grallocPrivateHandle->is_mma) {
+            NEXUS_MemoryBlock_UnlockOffset(block_handle);
+         }
       }
 
    } else if ((format == HAL_PIXEL_FORMAT_YV12) && !(usage & GRALLOC_USAGE_PRIVATE_0)) {
@@ -687,13 +698,24 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       }
 
       if (gralloc_log_mapper()) {
-         ALOGI("alloc (overruled): owner:%d::s-blk:0x%x::p:%d::p-blk:0x%x::p-addr:0x%x::mapped:0x%x",
+         NEXUS_Addr physAddr;
+         unsigned sharedPhysAddr = grallocPrivateHandle->sharedData;
+         if (grallocPrivateHandle->is_mma) {
+            NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+            sharedPhysAddr = (unsigned)physAddr;
+         }
+         ALOGI("alloc (overruled): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
+               grallocPrivateHandle->is_mma,
                getpid(),
                grallocPrivateHandle->sharedData,
-               GL_PLANE,
+               sharedPhysAddr,
                pSharedData->planes[GL_PLANE].physAddr,
                grallocPrivateHandle->nxSurfacePhysicalAddress,
+               pSharedData->planes[GL_PLANE].size,
                grallocPrivateHandle->nxSurfaceAddress);
+         if (grallocPrivateHandle->is_mma) {
+            NEXUS_MemoryBlock_UnlockOffset(block_handle);
+         }
       }
    }
 
@@ -768,13 +790,28 @@ grallocFreeHandle(private_handle_t *handleToFree)
 
    if (pSharedData) {
       if (gralloc_log_mapper()) {
-         ALOGI(" free: owner:%d::s-blk:0x%x::p:%d::p-blk:0x%x::p-addr:0x%x::mapped:0x%x",
+         NEXUS_Addr physAddr;
+         unsigned sharedPhysAddr = handleToFree->sharedData;
+         unsigned planePhysAddr =
+            (pSharedData->planes[GL_PLANE].physAddr ? pSharedData->planes[GL_PLANE].physAddr : pSharedData->planes[DEFAULT_PLANE].physAddr);
+         unsigned planePhysSize =
+            (pSharedData->planes[GL_PLANE].physAddr ? pSharedData->planes[GL_PLANE].size : pSharedData->planes[DEFAULT_PLANE].size);
+         if (handleToFree->is_mma) {
+            NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+            sharedPhysAddr = (unsigned)physAddr;
+         }
+         ALOGI(" free: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
+               handleToFree->is_mma,
                handleToFree->pid,
                handleToFree->sharedData,
-               pSharedData->planes[GL_PLANE].physAddr ? GL_PLANE : DEFAULT_PLANE,
-               pSharedData->planes[GL_PLANE].physAddr ? pSharedData->planes[GL_PLANE].physAddr : pSharedData->planes[DEFAULT_PLANE].physAddr,
+               sharedPhysAddr,
+               planePhysAddr,
                handleToFree->nxSurfacePhysicalAddress,
+               planePhysSize,
                handleToFree->nxSurfaceAddress);
+         if (handleToFree->is_mma) {
+            NEXUS_MemoryBlock_UnlockOffset(block_handle);
+         }
       }
 
       if (android_atomic_acquire_load(&pSharedData->hwc.active)) {
