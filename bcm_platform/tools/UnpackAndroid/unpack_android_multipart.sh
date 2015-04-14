@@ -17,6 +17,7 @@ function usage {
   echo ""
   echo "ESEENTIAL arguments:"
   echo "  '-S': Preserves labeling for SELinux support (incurs longer copy time)"
+  echo "  '-u': Update existing USB, keep files created by Android"
   echo "  '-p': sd<b-z> corresponding to your usb drive."
   echo "        'a' is not permitted because it is probably your main hard drive."
   echo "  '-i': Optional. Directory containing your *.img files. Not needed if you"
@@ -40,11 +41,15 @@ function usage {
 }
 
 selinux=0
+delete="--delete"
 
-while getopts "hSi:p:b:s:d:c:k:r:z:" tag; do
+while getopts "hSui:p:b:s:d:c:k:r:z:" tag; do
   case $tag in
     S)
       selinux=1
+      ;;
+    u)
+      delete=""
       ;;
     i)
       image_dir=$OPTARG
@@ -244,13 +249,13 @@ if [ $selinux -eq 0 ]; then
   mount -t ext4 -o loop ./unpack_android_raw_images/cache.raw.img ./unpack_android_raw_images/cache || { cleanup "raw cache mount failed";  exit; }
 
   echo "Copying rootfs"
-  rsync -av --delete ./unpack_android_boot/ramdisk/ $rootfs_dir
+  rsync -av $delete ./unpack_android_boot/ramdisk/ $rootfs_dir
   echo "Copying system"
-  rsync -av --delete ./unpack_android_raw_images/system/ $system_dir
+  rsync -av $delete ./unpack_android_raw_images/system/ $system_dir
   echo "Copying data"
-  rsync -av --delete ./unpack_android_raw_images/data/ $data_dir
+  rsync -av $delete ./unpack_android_raw_images/data/ $data_dir
   echo "Copying cache"
-  rsync -av --delete ./unpack_android_raw_images/cache/ $cache_dir
+  rsync -av $delete ./unpack_android_raw_images/cache/ $cache_dir
 
   # Cleanup
   echo "Cleaning up"
