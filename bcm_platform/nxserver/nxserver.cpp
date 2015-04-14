@@ -82,6 +82,7 @@
 
 #define NX_MMA                         "ro.nx.mma"
 #define NX_TRANSCODE                   "ro.nx.transcode"
+#define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
 
 #define NX_HEAP_MAIN                   "ro.nx.heap.main"
 #define NX_HEAP_GFX                    "ro.nx.heap.gfx"
@@ -227,6 +228,19 @@ static nxserver_t init_nxserver(void)
     memset(value, 0, sizeof(value));
     if (property_get(NX_MMA, value, "0")) {
        uses_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
+    }
+
+    memset(value, 0, sizeof(value));
+    if ( property_get(NX_AUDIO_LOUDNESS, value, "disabled") ) {
+        if ( !strcmp(value, "atsc") ) {
+            ALOGI("Enabling ATSC A/85 Loudness Equivalence");
+            platformSettings.audioModuleSettings.loudnessMode = NEXUS_AudioLoudnessEquivalenceMode_eAtscA85;
+        } else if ( !strcmp(value, "ebu") ) {
+            ALOGI("Enabling EBU-R128 Loudness Equivalence");
+            platformSettings.audioModuleSettings.loudnessMode = NEXUS_AudioLoudnessEquivalenceMode_eEbuR128;
+        } else if ( strcmp(value, "disabled") ) {
+            ALOGE("Unrecognized value '%s' for %s - expected disabled, atsc, or ebu", value, NX_AUDIO_LOUDNESS);
+        }
     }
 
     /* setup the configuration we want for the device.  right now, hardcoded for a generic
