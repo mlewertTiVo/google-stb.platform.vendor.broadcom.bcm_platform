@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 The Android Open Source Project
+ * Copyright (C) 2015 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -243,6 +243,11 @@ static void hdmi_cec_set_option(const struct hdmi_cec_device* dev, int flag, int
         case HDMI_OPTION_SYSTEM_CEC_CONTROL: {
             ALOGV("%s: HDMI_OPTION_SYSTEM_CEC_CONTROL=%d", __PRETTY_FUNCTION__, value);
             device->setControlState(!!value);
+        } break;
+
+        case HDMI_OPTION_SET_LANG: {
+            ALOGV("%s: HDMI_OPTION_SET_LANG=0x%08x (%c%c%c)", __PRETTY_FUNCTION__, value,
+                ((value & 0xFF0000) >> 16), ((value & 0x00FF00) >> 8), ((value & 0x0000FF) >> 0));
         } break;
 
         default: {
