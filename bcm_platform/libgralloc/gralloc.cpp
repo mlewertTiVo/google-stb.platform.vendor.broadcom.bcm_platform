@@ -59,6 +59,7 @@ else \
 static void *gl_dyn_lib;
 static void *nexus_client = NULL;
 static int gralloc_with_mma = 0;
+static int gralloc_default_align = 0;
 static int gralloc_log_map = 0;
 static int gralloc_conv_time = 0;
 
@@ -69,13 +70,13 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 #define DATA_PLANE_MAX_WIDTH    1920
 #define DATA_PLANE_MAX_HEIGHT   1200
 
-/* default alignment for gralloc buffers is based on the 'worst case' for
- * gfx, can be tuned up further later on as necessary.
+/* default alignment for gralloc buffers:
  *
- *      vc4 - 16 bytes alignment on surfaces, 4K alignment on textures.
- *      vc5 - 256/512 bytes alignment on textures.
+ *      vc4 - 16 bytes alignment on surfaces, 4K alignment on textures (max).
+ *      vc5 - 256/512 bytes alignment on textures (min).
  */
-#define GRALLOC_BUFFER_ALIGNED  4096
+#define GRALLOC_MAX_BUFFER_ALIGNED  4096
+#define GRALLOC_MIN_BUFFER_ALIGNED  256
 
 #define NX_MMA                  "ro.nx.mma"
 #define NX_GR_LOG_MAP           "ro.gr.log.map"
@@ -122,6 +123,11 @@ static void gralloc_load_lib(void)
 
    if (property_get(NX_GR_CONV_TIME, value, "0")) {
       gralloc_conv_time = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
+   }
+
+   gralloc_default_align = GRALLOC_MAX_BUFFER_ALIGNED;
+   if (!dyn_BEGLint_BufferGetRequirements) {
+      gralloc_default_align = GRALLOC_MIN_BUFFER_ALIGNED;
    }
 }
 
@@ -423,7 +429,7 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
       }
 
       ashmem_alloc.size = bufferConstrainedRequirements.totalByteSize;
-      ashmem_alloc.align = GRALLOC_BUFFER_ALIGNED;
+      ashmem_alloc.align = gralloc_default_align;
       ret = ioctl(fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
       if (ret < 0) {
          return 0;
@@ -651,7 +657,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
    if (needs_yv12) {
       ashmem_alloc.size = size;
-      ashmem_alloc.align = GRALLOC_BUFFER_ALIGNED;
+      ashmem_alloc.align = gralloc_default_align;
       ret = ioctl(fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
       if (ret >= 0) {
          pSharedData->planes[DEFAULT_PLANE].physAddr =
@@ -681,7 +687,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       pSharedData->planes[EXTRA_PLANE].allocSize = extra_size;
       pSharedData->planes[EXTRA_PLANE].stride = bpp * *pStride;
       ashmem_alloc.size = extra_size;
-      ashmem_alloc.align = GRALLOC_BUFFER_ALIGNED;
+      ashmem_alloc.align = gralloc_default_align;
       ret = ioctl(fd3, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
       if (ret >= 0) {
          pSharedData->planes[EXTRA_PLANE].physAddr =
