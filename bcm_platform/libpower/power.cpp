@@ -189,9 +189,9 @@ static void dozeTimerCallback(union sigval val __unused)
     b_powerState powerOffState = power_get_property_off_state();
     b_powerState dozeState = power_get_property_doze_state();
 
-    ALOGV("%s: Entering power off state %s...", __FUNCTION__, power_to_string[powerOffState]);
+    ALOGI("%s: Entering power off state %s...", __FUNCTION__, power_to_string[powerOffState]);
     ret = power_set_state(powerOffState, dozeState);
-    LOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", power_to_string[powerOffState]);
+    ALOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", power_to_string[powerOffState]);
 }
 
 static void power_init(struct power_module *module __unused)
@@ -500,11 +500,11 @@ static void power_finish_set_interactive(int on)
             toState = dozeState;
 
             if (dozeTimeout < 0) {
-                ALOGV("%s: Dozing in power state %s indefinitely...", __FUNCTION__, power_to_string[toState]);
+                ALOGI("%s: Dozing in power state %s indefinitely...", __FUNCTION__, power_to_string[toState]);
             }
             else if (gDozeTimer) {
                 // Arm the doze timer...
-                ALOGV("%s: Dozing in power state %s for %ds...", __FUNCTION__, power_to_string[toState], dozeTimeout);
+                ALOGI("%s: Dozing in power state %s for %ds...", __FUNCTION__, power_to_string[toState], dozeTimeout);
                 ts.it_value.tv_sec = dozeTimeout;
                 ts.it_value.tv_nsec = 0;
                 ts.it_interval.tv_sec = 0;
@@ -517,12 +517,12 @@ static void power_finish_set_interactive(int on)
         }
     }
     ret = power_set_state(toState, fromState);
-    LOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", power_to_string[toState]);
+    ALOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", power_to_string[toState]);
 }
 
 static void power_set_interactive(struct power_module *module __unused, int on)
 {
-    ALOGV("%s: %s", __FUNCTION__, on ? "ON" : "OFF");
+    ALOGI("%s: %s", __FUNCTION__, on ? "ON" : "OFF");
 
     if (on) {
         if (gNexusPower.get()) {
@@ -553,7 +553,7 @@ static void power_set_interactive(struct power_module *module __unused, int on)
                 interactiveTimeout = power_get_property_interactive_timeout();
                 ts.it_value.tv_nsec = 0;
             }
-            ALOGV("%s: Waiting %ds before actually setting the power state...", __FUNCTION__, interactiveTimeout);
+            ALOGI("%s: Waiting %ds before actually setting the power state...", __FUNCTION__, interactiveTimeout);
             ts.it_value.tv_sec = interactiveTimeout;
             ts.it_interval.tv_sec = 0;
             ts.it_interval.tv_nsec = 0;
