@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 The Android Open Source Project
+ * Copyright (C) 2015 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -541,10 +541,11 @@ static void power_set_interactive(struct power_module *module __unused, int on)
             // Start interactive timer
             struct itimerspec ts;
             int interactiveTimeout;
+            int dozeTimeout = power_get_property_doze_timeout();
 
             // If we want to enter S5 (aka cold boot), then we can enter immediately as
             // the system will begin its slow shutdown process...
-            if (offState == ePowerState_S5) {
+            if (dozeTimeout == 0 && offState == ePowerState_S5) {
                 interactiveTimeout = 0;
                 ts.it_value.tv_nsec = 1;
             }
