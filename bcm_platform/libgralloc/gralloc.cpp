@@ -69,6 +69,14 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 #define DATA_PLANE_MAX_WIDTH    1920
 #define DATA_PLANE_MAX_HEIGHT   1200
 
+/* default alignment for gralloc buffers is based on the 'worst case' for
+ * gfx, can be tuned up further later on as necessary.
+ *
+ *      vc4 - 16 bytes alignment on surfaces, 4K alignment on textures.
+ *      vc5 - 256/512 bytes alignment on textures.
+ */
+#define GRALLOC_BUFFER_ALIGNED  4096
+
 #define NX_MMA                  "ro.nx.mma"
 #define NX_GR_LOG_MAP           "ro.gr.log.map"
 #define NX_GR_CONV_TIME         "ro.gr.conv.time"
@@ -370,6 +378,7 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
    BEGL_PixmapInfo bufferRequirements;
    BEGL_BufferSettings bufferConstrainedRequirements;
    unsigned int phyAddr = 0;
+   struct nx_ashmem_alloc ashmem_alloc;
 
    if (!allocContext) {
       return -EINVAL;
@@ -413,9 +422,9 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
          bufferConstrainedRequirements.totalByteSize = height * bufferConstrainedRequirements.pitchBytes;
       }
 
-      // nx_ashmem always aligns to 4k.  Add an additional 4k block at the start for shared memory.
-      // This needs reference counting in the same way as the regular blocks
-      ret = ioctl(fd, NX_ASHMEM_SET_SIZE, bufferConstrainedRequirements.totalByteSize);
+      ashmem_alloc.size = bufferConstrainedRequirements.totalByteSize;
+      ashmem_alloc.align = GRALLOC_BUFFER_ALIGNED;
+      ret = ioctl(fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
       if (ret < 0) {
          return 0;
       };
@@ -495,6 +504,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    bool needs_yv12 = false;
    bool needs_ycrcb = false;
    bool needs_rgb = false;
+   struct nx_ashmem_alloc ashmem_alloc;
 
    (void)dev;
 
@@ -542,7 +552,9 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       grallocPrivateHandle->alignment = fmt_align;
    }
 
-   int ret = ioctl(fd2, NX_ASHMEM_SET_SIZE, sizeof(SHARED_DATA));
+   ashmem_alloc.size = sizeof(SHARED_DATA);
+   ashmem_alloc.align = 0;
+   int ret = ioctl(fd2, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
    if (ret < 0) {
       return -ENOMEM;
    };
@@ -638,7 +650,9 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    }
 
    if (needs_yv12) {
-      ret = ioctl(fd, NX_ASHMEM_SET_SIZE, size);
+      ashmem_alloc.size = size;
+      ashmem_alloc.align = GRALLOC_BUFFER_ALIGNED;
+      ret = ioctl(fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
       if (ret >= 0) {
          pSharedData->planes[DEFAULT_PLANE].physAddr =
              (NEXUS_Addr)ioctl(fd, NX_ASHMEM_GETMEM);
@@ -666,7 +680,9 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       pSharedData->planes[EXTRA_PLANE].size = extra_size;
       pSharedData->planes[EXTRA_PLANE].allocSize = extra_size;
       pSharedData->planes[EXTRA_PLANE].stride = bpp * *pStride;
-      ret = ioctl(fd3, NX_ASHMEM_SET_SIZE, extra_size);
+      ashmem_alloc.size = extra_size;
+      ashmem_alloc.align = GRALLOC_BUFFER_ALIGNED;
+      ret = ioctl(fd3, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
       if (ret >= 0) {
          pSharedData->planes[EXTRA_PLANE].physAddr =
              (NEXUS_Addr)ioctl(fd3, NX_ASHMEM_GETMEM);
@@ -910,7 +926,7 @@ int gralloc_device_open(const hw_module_t* module, const char* name,
 {
    int status = -EINVAL;
 
-   ALOGD("%s: %s", __FUNCTION__, name);
+   ALOGD("%s: %s (s-data: %d)", __FUNCTION__, name, sizeof(SHARED_DATA));
 
    if (!strcmp(name, GRALLOC_HARDWARE_GPU0)) {
       gralloc_context_t *dev;
