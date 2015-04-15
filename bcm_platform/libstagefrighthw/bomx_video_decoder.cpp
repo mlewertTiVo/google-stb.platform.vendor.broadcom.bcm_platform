@@ -58,6 +58,7 @@
 #include "OMX_VideoExt.h"
 #include "nexus_base_mmap.h"
 #include "nexus_video_decoder.h"
+#include "nexus_core_utils.h"
 
 #define BOMX_INPUT_MSG(x)
 
@@ -611,6 +612,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_secureDecoder(false),
     m_outputWidth(1920),
     m_outputHeight(1080),
+    m_maxDecoderWidth(1920),
+    m_maxDecoderHeight(1080),
     m_pRoles(NULL),
     m_numRoles(0),
     m_pConfigBuffer(NULL),
@@ -770,6 +773,23 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
 
+
+    NEXUS_VideoFormatInfo videoInfo;
+    NEXUS_VideoDecoderCapabilities caps;
+
+    // Check the decoder capabilities for the highest resolution.
+    NEXUS_GetVideoDecoderCapabilities(&caps);
+    for ( i = 0; i < caps.numVideoDecoders; i++ )
+    {
+        NEXUS_VideoFormat_GetInfo(caps.memory[i].maxFormat, &videoInfo);
+        if ( videoInfo.width > m_maxDecoderWidth ) {
+            m_maxDecoderWidth = videoInfo.width;
+        }
+        if ( videoInfo.height > m_maxDecoderHeight ) {
+            m_maxDecoderHeight = videoInfo.height;
+        }
+    }
+
     NxClient_ConnectSettings connectSettings;
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleVideoDecoder[0].id = m_allocResults.simpleVideoDecoder[0].id;
@@ -780,8 +800,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     {
         connectSettings.simpleVideoDecoder[0].decoderCapabilities.supportedCodecs[GetNexusCodec((OMX_VIDEO_CODINGTYPE)m_pRoles[i].omxCodec)] = true;
     }
-    connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = 3840;  // Always request 4k decoder
-    connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = 2160;
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = m_maxDecoderWidth;
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = m_maxDecoderHeight;
+
     errCode = NxClient_Connect(&connectSettings, &m_nxClientId);
     if ( errCode )
     {
@@ -1822,9 +1843,9 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 ALOGV("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec);
                 if ( vdecStartSettings.settings.codec == NEXUS_VideoCodec_eH265 || vdecStartSettings.settings.codec == NEXUS_VideoCodec_eVp9 )
                 {
-                    // Request 4k decoder for HEVC/VP9 only
-                    vdecStartSettings.maxWidth = 3840;
-                    vdecStartSettings.maxHeight = 2160;
+                    // Request non-standard decoder for HEVC/VP9 only
+                    vdecStartSettings.maxWidth = m_maxDecoderWidth;
+                    vdecStartSettings.maxHeight = m_maxDecoderHeight;
                 }
                 errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
                 if ( errCode )

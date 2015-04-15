@@ -292,6 +292,8 @@ protected:
     bool m_secureDecoder;
     unsigned m_outputWidth;
     unsigned m_outputHeight;
+    unsigned m_maxDecoderWidth;
+    unsigned m_maxDecoderHeight;
     BOMX_VideoDecoderRole *m_pRoles;
     unsigned m_numRoles;
 
