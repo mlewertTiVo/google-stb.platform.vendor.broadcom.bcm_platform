@@ -399,9 +399,15 @@ bool NexusNxClient::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHd
         memset(pHdmiOutputStatus, 0, sizeof(*pHdmiOutputStatus));
 
         for (loops = 0; loops < 4; loops++) {
-            rc = NxClient_GetDisplayStatus(&status);
-            if ((rc == NEXUS_SUCCESS) && status.hdmi.status.connected) {
-                break;
+            NEXUS_Error rc2;
+            NxClient_StandbyStatus standbyStatus;
+
+            rc2 = NxClient_GetStandbyStatus(&standbyStatus);
+            if (rc2 == NEXUS_SUCCESS && standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
+                rc = NxClient_GetDisplayStatus(&status);
+                if ((rc == NEXUS_SUCCESS) && status.hdmi.status.connected) {
+                    break;
+                }
             }
             LOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
             usleep(250 * 1000);
