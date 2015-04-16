@@ -30,14 +30,56 @@ ifeq ($(SAGE_SUPPORT), y)
 #---------------
 # liboemcrypto.so for Modular DRM
 #---------------
+LOCAL_PATH := $(LOCAL_PATH)/../../../refsw/BSEAV/lib/security/third_party/widevine/CENC_sage
 include $(CLEAR_VARS)
-LOCAL_SRC_FILES := ${DRM_BUILD_MODE}/liboemcrypto.so
+
+# add SAGElib related includes
+include $(LOCAL_PATH)/../../../../../../magnum/syslib/sagelib/bsagelib_public.inc
+
+ifeq ($(NEXUS_MODE),proxy)
+NEXUS_LIB=libnexus
+else
+ifeq ($(NEXUS_WEBCPU),core1_server)
+NEXUS_LIB=libnexus_webcpu
+else
+NEXUS_LIB=libnexus_client
+endif
+endif
+
+LOCAL_SRC_FILES := \
+    src/oemcrypto_brcm_TL.cpp\
+    src/string_conversions.cpp\
+    src/properties.cpp \
+    src/modp_b64w.cpp
+
+LOCAL_C_INCLUDES := \
+    $(TOP)/bionic \
+    $(TOP)/external/stlport/stlport \
+    $(TOP)/external/openssl/include \
+    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/third_party/widevine/CENC_sage/include \
+    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_crypto/include \
+    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_drm/include \
+    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_drm/include/tl \
+    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/sage/srai/include \
+    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/sage/platforms/include \
+    $(BSAGELIB_INCLUDES) \
+    $(NEXUS_APP_INCLUDE_PATHS)
+
+LOCAL_CFLAGS += -DPIC -fpic -DANDROID
+LOCAL_CFLAGS += -DNDEBUG -DBRCM_IMPL
+
+LOCAL_CFLAGS += $(NEXUS_CFLAGS)
+LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
+LOCAL_CFLAGS += -DBDBG_DEBUG_BUILD=0
+LOCAL_CFLAGS := $(filter-out -DBDBG_DEBUG_BUILD=1,$(LOCAL_CFLAGS))
+
+LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) liblog libstlport
+LOCAL_SHARED_LIBRARIES += libcmndrm_tl
+
 LOCAL_MODULE := liboemcrypto
 LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR_SHARED_LIBRARIES)
 LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_SUFFIX := .so
-LOCAL_MODULE_CLASS := SHARED_LIBRARIES
-include $(BUILD_PREBUILT)
+include $(BUILD_SHARED_LIBRARY)
 endif
 endif
 
