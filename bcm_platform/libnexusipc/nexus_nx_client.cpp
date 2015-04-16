@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2014 Broadcom Corporation
+ *    (c)2010-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -72,7 +72,7 @@
 
 /* Define the MAX timeout to wait after setting NxClient standby settings
    to allow standby monitor threads to complete. */
-#define NXCLIENT_PM_TIMEOUT_IN_MS (2000)
+#define NXCLIENT_PM_TIMEOUT_IN_MS (5000)
 
 /* Define the MAX number of times to monitor for the NxClient to have
    entered the desired standby mode. */
@@ -103,7 +103,7 @@ android::status_t NexusNxClient::StandbyMonitorThread::run(const char* name, int
     if (status == android::OK) {
         state = StandbyMonitorThread::STATE_RUNNING;
     }
-    return android::OK;
+    return status;
 }
 
 bool NexusNxClient::StandbyMonitorThread::threadLoop()
