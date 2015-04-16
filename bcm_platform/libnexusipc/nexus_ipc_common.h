@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2014 Broadcom Corporation
+ *    (c)2011-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -119,6 +119,7 @@ typedef enum b_powerState {
 
 typedef enum b_cecDeviceType
 {
+    eCecDeviceType_eInactive = -1,
     eCecDeviceType_eTv = 0,
     eCecDeviceType_eRecordingDevice,
     eCecDeviceType_eReserved,
@@ -127,7 +128,8 @@ typedef enum b_cecDeviceType
     eCecDeviceType_eAudioSystem,
     eCecDeviceType_ePureCecSwitch,
     eCecDeviceType_eVideoProcessor,
-    eCecDeviceType_eMax
+    eCecDeviceType_eInvalid,
+    eCecDeviceType_eMax = eCecDeviceType_eInvalid
 } b_cecDeviceType;
 
 typedef struct b_cecStatus {
@@ -237,6 +239,7 @@ public:
     virtual bool isCecEnabled(uint32_t cecId)=0;
     virtual bool setCecAutoWakeupEnabled(uint32_t cecId, bool enabled)=0;
     virtual bool isCecAutoWakeupEnabled(uint32_t cecId)=0;
+    virtual b_cecDeviceType getCecDeviceType(uint32_t cecId=0)=0;
     virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr)=0;
     virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus)=0;
 };

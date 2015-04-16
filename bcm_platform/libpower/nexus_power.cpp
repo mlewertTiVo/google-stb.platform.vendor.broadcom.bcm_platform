@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2014 Broadcom Corporation
+ *    (c)2011-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -95,7 +95,7 @@ NexusPower::LinuxUInputRef::~LinuxUInputRef()
     close();
 }
 
-NexusPower::NexusPower() : deviceType(-1), mIpcClient(NULL), mClientContext(NULL)
+NexusPower::NexusPower() : mCecDeviceType(eCecDeviceType_eInvalid), mIpcClient(NULL), mClientContext(NULL)
 {
     ALOGV("%s: Called", __PRETTY_FUNCTION__);
 }
@@ -103,7 +103,7 @@ NexusPower::NexusPower() : deviceType(-1), mIpcClient(NULL), mClientContext(NULL
 NexusPower::NexusPower(NexusIPCClientBase *pIpcClient, NexusClientContext *pClientContext) : mIpcClient(pIpcClient), mClientContext(pClientContext)
 {
     ALOGV("%s: pIpcClient=%p, pClientContext=%p", __PRETTY_FUNCTION__, (void *)pIpcClient, (void *)pClientContext);
-    deviceType = getDeviceType();
+    mCecDeviceType = mIpcClient->getCecDeviceType();
 
     mUInput = NexusPower::LinuxUInputRef::instantiate();
 }
@@ -154,19 +154,6 @@ sp<NexusPower> NexusPower::instantiate()
         }
     }
     return np;
-}
-
-/* Android-L sets up a property to define the device type and hence
-   the logical address of the device.  */
-int NexusPower::getDeviceType()
-{
-    char value[PROPERTY_VALUE_MAX];
-    int type = -1;
-
-    if (property_get("ro.hdmi.device_type", value, NULL)) {
-        type = atoi(value);
-    }
-    return type;
 }
 
 bool NexusPower::getCecTransmitStandby()
@@ -226,13 +213,13 @@ status_t NexusPower::setPowerState(b_powerState state)
             ALOGE("%s: Could not set PowerState S%d!", __FUNCTION__, state);
             ret = INVALID_OPERATION;
         }
-        else if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && getCecTransmitViewOn() == true &&
+        else if (mCecDeviceType == eCecDeviceType_eInvalid && mIpcClient->isCecEnabled(cecId) && getCecTransmitViewOn() == true &&
                                      mIpcClient->setCecPowerState(cecId, state) != true) {
             ALOGW("%s: Could not set CEC%d PowerState S%d!", __FUNCTION__, cecId, state);
         }
     }
     else {
-        if (deviceType == -1 && mIpcClient->isCecEnabled(cecId) && getCecTransmitStandby() == true &&
+        if (mCecDeviceType == eCecDeviceType_eInvalid && mIpcClient->isCecEnabled(cecId) && getCecTransmitStandby() == true &&
                                 mIpcClient->setCecPowerState(cecId, state) != true) {
             ALOGW("%s: Could not set CEC%d PowerState S%d!", __FUNCTION__, cecId, state);
         }

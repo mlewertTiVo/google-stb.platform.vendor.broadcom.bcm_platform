@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2014 Broadcom Corporation
+ *    (c)2010-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -356,6 +356,58 @@ bool NexusIPCClient::isCecAutoWakeupEnabled(uint32_t cecId __unused)
         enabled = true;
     }
     return enabled;
+}
+
+b_cecDeviceType NexusIPCClient::toCecDeviceType(char *string)
+{
+    b_cecDeviceType deviceType;
+    int type = atoi(string);
+
+    switch (type) {
+        case -1:
+            deviceType = eCecDeviceType_eInactive;
+            break;
+        case 0:
+            deviceType = eCecDeviceType_eTv;
+            break;
+        case 1:
+            deviceType = eCecDeviceType_eRecordingDevice;
+            break;
+        case 2:
+            deviceType = eCecDeviceType_eReserved;
+            break;
+        case 3:
+            deviceType = eCecDeviceType_eTuner;
+            break;
+        case 4:
+            deviceType = eCecDeviceType_ePlaybackDevice;
+            break;
+        case 5:
+            deviceType = eCecDeviceType_eAudioSystem;
+            break;
+        case 6:
+            deviceType = eCecDeviceType_ePureCecSwitch;
+            break;
+        case 7:
+            deviceType = eCecDeviceType_eVideoProcessor;
+            break;
+        default:
+            deviceType = eCecDeviceType_eInvalid;
+    }
+    return deviceType;
+}
+
+/* Android-L sets up a property to define the device type and hence
+   the logical address of the device.  */
+b_cecDeviceType NexusIPCClient::getCecDeviceType(uint32_t cecId __unused)
+{
+    char value[PROPERTY_VALUE_MAX];
+    b_cecDeviceType type = eCecDeviceType_eInvalid;
+
+    if (property_get("ro.hdmi.device_type", value, NULL)) {
+        type = NexusIPCClient::toCecDeviceType(value);
+    }
+    return type;
 }
 
 bool NexusIPCClient::setCecPowerState(uint32_t cecId, b_powerState pmState)

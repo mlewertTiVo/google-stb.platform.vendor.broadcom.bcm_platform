@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2014 Broadcom Corporation
+ *    (c)2011-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -186,6 +186,7 @@ public:
     virtual bool isCecEnabled(uint32_t cecId);
     virtual bool setCecAutoWakeupEnabled(uint32_t cecId, bool enabled);
     virtual bool isCecAutoWakeupEnabled(uint32_t cecId);
+    virtual b_cecDeviceType getCecDeviceType(uint32_t cecId);
     virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr);
     virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus);
 
@@ -217,6 +218,7 @@ private:
     void platformUninitHdmiOutputs();
     static void hdmiOutputHotplugCallback(void *context, int param);
     static void hdmiOutputHdcpStateChangedCallback(void *pContext, int param);
+    static b_cecDeviceType toCecDeviceType(char *string);
     void setDisplayState(bool enable);
     void setVideoState(bool enable);
     void setAudioState(bool enable);

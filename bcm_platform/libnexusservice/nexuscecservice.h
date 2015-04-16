@@ -77,7 +77,7 @@ protected:
     static sp<CecServiceManager> instantiate(NexusService *ns, uint32_t cecId) { return new CecServiceManager(ns, cecId); }
 
 private:
-    int                                     mCecDeviceType;
+    b_cecDeviceType                         mCecDeviceType;
     uint8_t                                 mCecPowerStatus;
     Mutex                                   mCecDeviceReadyLock;
     Condition                               mCecDeviceReadyCondition;

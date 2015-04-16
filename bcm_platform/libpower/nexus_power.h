@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2014 Broadcom Corporation
+ *    (c)2011-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -145,14 +145,13 @@ class NexusPower : public android::RefBase {
     };
 
     private:
-    int deviceType;
+    b_cecDeviceType mCecDeviceType;
     NexusIPCClientBase *mIpcClient;
     NexusClientContext *mClientContext;
     sp<NexusGpio> gpios[NexusGpio::MAX_INSTANCES];
     sp<LinuxUInputRef> mUInput;
 
     // Private methods...
-    int getDeviceType();
     bool getCecTransmitStandby();
     bool getCecTransmitViewOn();
 

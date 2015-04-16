@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2014 Broadcom Corporation
+ *    (c)2010-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -375,7 +375,7 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
     // Is this a logical address determination polling message?
     if (srcaddr == destaddr) {
         // No need to loop excessively if we are using the HDMI Control Service...
-        if (mCecServiceManager->mCecDeviceType != -1)
+        if (mCecServiceManager->mCecDeviceType != eCecDeviceType_eInvalid)
             maxLoops = 1;
         else
             maxLoops = 2;
@@ -463,11 +463,11 @@ NexusService::CecServiceManager::CecTxMessageHandler::~CecTxMessageHandler()
 }
 
 NexusService::CecServiceManager::CecServiceManager(NexusService *ns, uint32_t cecId) :  mNexusService(ns), cecId(cecId), cecHandle(NULL),
-                                                                                            mLogicalAddress(0xFF), mCecRxMessageHandler(NULL),
-                                                                                            mCecTxMessageHandler(NULL)
+                                                                                        mLogicalAddress(0xFF), mCecRxMessageHandler(NULL),
+                                                                                        mCecTxMessageHandler(NULL)
 {
     ALOGV("%s: called for CEC%d", __PRETTY_FUNCTION__, cecId);
-    mCecDeviceType = getPropertyDeviceType();
+    mCecDeviceType = mNexusService->getCecDeviceType(cecId);
 }
 
 
@@ -856,19 +856,6 @@ bool NexusService::CecServiceManager::setLogicalAddress(uint8_t addr)
     return (NEXUS_Cec_SetSettings(cecHandle, &cecSettings) == NEXUS_SUCCESS);
 }
 
-/* Android-L sets up a property to define the device type and hence
-   the logical address of the device.  */
-int NexusService::CecServiceManager::getPropertyDeviceType()
-{
-    char value[PROPERTY_VALUE_MAX];
-    int type = -1;
-
-    if (property_get("ro.hdmi.device_type", value, NULL)) {
-        type = atoi(value);
-    }
-    return type;
-}
-
 status_t NexusService::CecServiceManager::platformInit()
 {
     status_t status = OK;
@@ -916,7 +903,7 @@ status_t NexusService::CecServiceManager::platformInit()
         cecSettings.physicalAddress[0] = hdmiOutputStatus.physicalAddress[0];
         cecSettings.physicalAddress[1] = hdmiOutputStatus.physicalAddress[1];
 
-        if (mCecDeviceType != -1) {
+        if (mCecDeviceType != eCecDeviceType_eInvalid) {
             cecSettings.disableLogicalAddressPolling = true;
             cecSettings.logicalAddress = 0xff;
             ALOGV("%s: setting CEC%d logical address to 0xFF", __PRETTY_FUNCTION__, cecId);
@@ -938,7 +925,7 @@ status_t NexusService::CecServiceManager::platformInit()
                 status = UNKNOWN_ERROR;
             }
             else {
-                if (mCecDeviceType == -1) {
+                if (mCecDeviceType == eCecDeviceType_eInvalid) {
                     for (loops = 0; loops < 5; loops++) {
                         ALOGV("%s: Waiting for CEC%d logical address...", __PRETTY_FUNCTION__, cecId);
                         mCecDeviceReadyLock.lock();
@@ -957,7 +944,7 @@ status_t NexusService::CecServiceManager::platformInit()
                             cecStatus.messageTxPending ? "" : "Not "
                             );
 
-                    if (mCecDeviceType == -1 && cecStatus.logicalAddress == 0xFF) {
+                    if (mCecDeviceType == eCecDeviceType_eInvalid && cecStatus.logicalAddress == 0xFF) {
                         ALOGE("%s: No Cec capable device found on HDMI output %d!", __PRETTY_FUNCTION__, cecId);
                         status = NO_INIT;
                     }
@@ -988,7 +975,7 @@ status_t NexusService::CecServiceManager::platformInit()
                         mCecTxMessageLooper->registerHandler(mCecTxMessageHandler);
 
                         // Create HDMI CEC Message Event Listener only for non Android-L builds
-                        if (mCecDeviceType == -1) {
+                        if (mCecDeviceType == eCecDeviceType_eInvalid) {
                             sp<INexusHdmiCecMessageEventListener> eventListener = new NexusService::CecServiceManager::EventListener(this);
                             status = setEventListener(eventListener);
                         }
@@ -1017,7 +1004,7 @@ void NexusService::CecServiceManager::platformUninit()
 {
     NEXUS_PlatformConfiguration *pPlatformConfig;
 
-    if (mCecDeviceType == -1 && mEventListener != NULL) {
+    if (mCecDeviceType == eCecDeviceType_eInvalid && mEventListener != NULL) {
         setEventListener(NULL);
     }
 
