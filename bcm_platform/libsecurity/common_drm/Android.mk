@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+LOCAL_PATH := $(call my-dir)
+# save original 
+LOCAL_PATH_ORIG := $(LOCAL_PATH)
 #-------------
 # libcmndrm.so
 #-------------
-LOCAL_PATH := $(call my-dir)
-
 include $(CLEAR_VARS)
 LOCAL_PREBUILT_LIBS := ${DRM_BUILD_MODE}/libcmndrm.so
 LOCAL_MODULE_TAGS := optional
@@ -26,17 +27,41 @@ ifeq ($(ANDROID_SUPPORTS_PLAYREADY), y)
 #-------------
 # libcmndrmprdy.so
 #-------------
+LOCAL_PATH := $(LOCAL_PATH_ORIG)/../../../refsw/BSEAV/lib/security/common_drm
 include $(CLEAR_VARS)
-LOCAL_PREBUILT_LIBS := ${DRM_BUILD_MODE}/libcmndrmprdy.so
+include $(LOCAL_PATH)/drm/playready/playready.inc
+LOCAL_SRC_FILES := ${PLAYREADY_SOURCES}
+
+LOCAL_C_INCLUDES := \
+    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_crypto/include \
+    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_drm/include \
+    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/drmrootfs \
+    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/playready/2.5/inc \
+    $(NEXUS_APP_INCLUDE_PATHS) \
+    $(TOP)/vendor/broadcom/refsw/nexus/nxclient/include
+
+DRM_BUILD_PROFILE := 900
+LOCAL_CFLAGS += -DDRM_BUILD_PROFILE=${DRM_BUILD_PROFILE} -DTARGET_LITTLE_ENDIAN=1 -DTARGET_SUPPORTS_UNALIGNED_DWORD_POINTERS=1
+LOCAL_CFLAGS += -DPIC -fpic -DANDROID
+LOCAL_CFLAGS += $(NEXUS_CFLAGS) ${PLAYREADY_DEFINES}
+LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
+LOCAL_CFLAGS += -DBDBG_DEBUG_BUILD=0
+LOCAL_CFLAGS := $(filter-out -DBDBG_DEBUG_BUILD=1,$(LOCAL_CFLAGS))
+
+LOCAL_SHARED_LIBRARIES := libnexus libnxclient libplayreadypk_host libdrmrootfs
+
+LOCAL_MODULE := libcmndrmprdy
 LOCAL_MODULE_TAGS := optional
-include $(BUILD_MULTI_PREBUILT)
+include $(BUILD_SHARED_LIBRARY)
 endif
+
+
 
 ifeq ($(SAGE_SUPPORT), y)
 #---------------
 # libcmndrm_tl.so for Modular DRM
 #---------------
-LOCAL_PATH := $(LOCAL_PATH)/../../../refsw/BSEAV/lib/security/common_drm
+LOCAL_PATH := $(LOCAL_PATH_ORIG)/../../../refsw/BSEAV/lib/security/common_drm
 
 include $(CLEAR_VARS)
 
