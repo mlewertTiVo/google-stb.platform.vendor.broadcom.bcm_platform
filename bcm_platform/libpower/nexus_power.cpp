@@ -207,25 +207,25 @@ status_t NexusPower::setPowerState(b_powerState state)
         ret = setGpios(state);
 
         if (ret != NO_ERROR) {
-            ALOGE("%s: Could not set GPIO's for PowerState S%d!!!", __FUNCTION__, state);
+            ALOGE("%s: Could not set GPIO's for PowerState %s!!!", __FUNCTION__, NexusIPCClientBase::getPowerString(state));
         }
         else if (mIpcClient->setPowerState(state) != true) {
-            ALOGE("%s: Could not set PowerState S%d!", __FUNCTION__, state);
+            ALOGE("%s: Could not set PowerState %s!", __FUNCTION__, NexusIPCClientBase::getPowerString(state));
             ret = INVALID_OPERATION;
         }
         else if (mCecDeviceType == eCecDeviceType_eInvalid && mIpcClient->isCecEnabled(cecId) && getCecTransmitViewOn() == true &&
                                      mIpcClient->setCecPowerState(cecId, state) != true) {
-            ALOGW("%s: Could not set CEC%d PowerState S%d!", __FUNCTION__, cecId, state);
+            ALOGW("%s: Could not set CEC%d PowerState %s!", __FUNCTION__, cecId, NexusIPCClientBase::getPowerString(state));
         }
     }
     else {
         if (mCecDeviceType == eCecDeviceType_eInvalid && mIpcClient->isCecEnabled(cecId) && getCecTransmitStandby() == true &&
                                 mIpcClient->setCecPowerState(cecId, state) != true) {
-            ALOGW("%s: Could not set CEC%d PowerState S%d!", __FUNCTION__, cecId, state);
+            ALOGW("%s: Could not set CEC%d PowerState %s!", __FUNCTION__, cecId, NexusIPCClientBase::getPowerString(state));
         }
 
         if (mIpcClient->setPowerState(state) != true) {
-            ALOGE("%s: Could not set PowerState S%d!", __FUNCTION__, state);
+            ALOGE("%s: Could not set PowerState %s!", __FUNCTION__, NexusIPCClientBase::getPowerString(state));
             ret = INVALID_OPERATION;
         }
         else {
@@ -255,7 +255,7 @@ status_t NexusPower::getPowerState(b_powerState *pState)
     }
 
     *pState = mIpcClient->getPowerState();
-    ALOGD("%s: Power state = S%d", __FUNCTION__, *pState);
+    ALOGD("%s: Power state = %s", __FUNCTION__, NexusIPCClientBase::getPowerString(*pState));
     return NO_ERROR;
 }
 

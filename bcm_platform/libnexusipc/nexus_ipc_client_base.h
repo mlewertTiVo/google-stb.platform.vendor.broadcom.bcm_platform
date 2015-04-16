@@ -68,6 +68,8 @@ public:
     unsigned getClientPid();
     virtual NexusClientContext * createClientContext(const b_refsw_client_client_configuration *config = NULL) = 0;
 
+    static const char *getPowerString(b_powerState pmState);
+
 protected:
             NexusIPCClientBase(const char *clientName = NULL);
     virtual NEXUS_Error clientJoin(const b_refsw_client_client_configuration *config) = 0;

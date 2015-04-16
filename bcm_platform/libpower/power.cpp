@@ -90,15 +90,6 @@ static sp<NexusPower> gNexusPower;
 static int power_set_state(b_powerState toState, b_powerState fromState);
 static void power_finish_set_interactive(int on);
 
-static const char *power_to_string[] = {
-    "S0",
-    "S1",
-    "S2",
-    "S3",
-    "S4",
-    "S5"
-};
-
 static const char *power_sys_power_state = "/sys/power/state";
 static const char *power_standby_state   = "standby";
 
@@ -189,9 +180,9 @@ static void dozeTimerCallback(union sigval val __unused)
     b_powerState powerOffState = power_get_property_off_state();
     b_powerState dozeState = power_get_property_doze_state();
 
-    ALOGI("%s: Entering power off state %s...", __FUNCTION__, power_to_string[powerOffState]);
+    ALOGI("%s: Entering power off state %s...", __FUNCTION__, NexusIPCClientBase::getPowerString(powerOffState));
     ret = power_set_state(powerOffState, dozeState);
-    ALOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", power_to_string[powerOffState]);
+    ALOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", NexusIPCClientBase::getPowerString(powerOffState));
 }
 
 static void power_init(struct power_module *module __unused)
@@ -445,7 +436,7 @@ static int power_set_state(b_powerState toState, b_powerState fromState)
         } break;
 
         default: {
-            ALOGE("%s: Invalid Power State %s!!!", __FUNCTION__, power_to_string[toState]);
+            ALOGE("%s: Invalid Power State %s!!!", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
             rc = BAD_VALUE;
         } break;
     }
@@ -500,11 +491,11 @@ static void power_finish_set_interactive(int on)
             toState = dozeState;
 
             if (dozeTimeout < 0) {
-                ALOGI("%s: Dozing in power state %s indefinitely...", __FUNCTION__, power_to_string[toState]);
+                ALOGI("%s: Dozing in power state %s indefinitely...", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
             }
             else if (gDozeTimer) {
                 // Arm the doze timer...
-                ALOGI("%s: Dozing in power state %s for %ds...", __FUNCTION__, power_to_string[toState], dozeTimeout);
+                ALOGI("%s: Dozing in power state %s for %ds...", __FUNCTION__, NexusIPCClientBase::getPowerString(toState), dozeTimeout);
                 ts.it_value.tv_sec = dozeTimeout;
                 ts.it_value.tv_nsec = 0;
                 ts.it_interval.tv_sec = 0;
@@ -517,7 +508,7 @@ static void power_finish_set_interactive(int on)
         }
     }
     ret = power_set_state(toState, fromState);
-    ALOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", power_to_string[toState]);
+    ALOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", NexusIPCClientBase::getPowerString(toState));
 }
 
 static void power_set_interactive(struct power_module *module __unused, int on)

@@ -201,6 +201,8 @@ protected:
     virtual NEXUS_ClientHandle getNexusClient(unsigned pid, const char * name);
     void getInitialOutputFormats(NEXUS_VideoFormat *hd_format, NEXUS_VideoFormat *sd_format);
 
+    static const char *getPowerString(b_powerState pmState);
+
     NexusServerContext                  *server;
     b_powerState                        powerState;
 #if NEXUS_HAS_CEC

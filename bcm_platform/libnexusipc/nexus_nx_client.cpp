@@ -272,8 +272,6 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
     NEXUS_Error rc = NEXUS_SUCCESS;
     NxClient_StandbySettings standbySettings;
 
-    LOGD("%s: pmState = %d",__PRETTY_FUNCTION__, pmState);
-
     NxClient_GetDefaultStandbySettings(&standbySettings);
     standbySettings.settings.wakeupSettings.ir = 1;
     standbySettings.settings.wakeupSettings.uhf = 1;
@@ -308,7 +306,7 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
         case ePowerState_S3:
         case ePowerState_S5:
         {
-            LOGD("%s: About to set power state S%d...", __PRETTY_FUNCTION__, pmState-ePowerState_S0);
+            LOGD("%s: About to set power state %s...", __PRETTY_FUNCTION__, NexusIPCClientBase::getPowerString(pmState));
             standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eDeepSleep;
             break;
         }
@@ -368,14 +366,14 @@ b_powerState NexusNxClient::getPowerState()
 
         if (state != ePowerState_Max) {
             LOGD("%s: Standby Status : \n"
-                 "State   : S%d\n"
+                 "State   : %s\n"
                  "IR      : %d\n"
                  "UHF     : %d\n"
                  "XPT     : %d\n"
                  "CEC     : %d\n"
                  "GPIO    : %d\n"
                  "Timeout : %d\n", __PRETTY_FUNCTION__,
-                 state,
+                 NexusIPCClientBase::getPowerString(state),
                  standbyStatus.status.wakeupStatus.ir,
                  standbyStatus.status.wakeupStatus.uhf,
                  standbyStatus.status.wakeupStatus.transport,

@@ -79,3 +79,25 @@ unsigned NexusIPCClientBase::getClientPid()
 {
     return clientPid;
 }
+
+const char *NexusIPCClientBase::getPowerString(b_powerState pmState)
+{
+    switch (pmState) {
+        case ePowerState_S0:
+            return "S0";
+        case ePowerState_S1:
+            return "S1";
+        case ePowerState_S2:
+            return "S2";
+        case ePowerState_S3:
+            return "S3";
+        case ePowerState_S4:
+            return "S4";
+        case ePowerState_S5:
+            return "S5";
+        default:
+            ALOGE("%s: Invalid power state %d!!!", __FUNCTION__, pmState);
+            return "";
+    }
+}
+

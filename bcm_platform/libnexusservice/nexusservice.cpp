@@ -1321,7 +1321,7 @@ bool NexusService::setCecPowerState(unsigned cecId, b_powerState pmState)
     }
 #endif
     if (!success) {
-        LOGE("%s: Could not set CEC%d power state %d!", __PRETTY_FUNCTION__, cecId, pmState);
+        LOGE("%s: Could not set CEC%d power state %s!", __PRETTY_FUNCTION__, cecId, NexusService::getPowerString(pmState));
     }
     return success;
 }
@@ -1521,7 +1521,7 @@ bool NexusService::setPowerState(b_powerState pmState)
             case ePowerState_S3:
             case ePowerState_S5:
             {
-                LOGD("%s: About to set power state S%d...", __PRETTY_FUNCTION__, pmState-ePowerState_S0);
+                LOGD("%s: About to set power state %s...", __PRETTY_FUNCTION__, NexusService::getPowerString(pmState));
                 setDisplayState(0);
                 setVideoState(0);
                 setAudioState(0);
@@ -1543,7 +1543,7 @@ bool NexusService::setPowerState(b_powerState pmState)
         powerState = pmState;
         return true;
     } else {
-        LOGE("%s: ERROR setting power state to S%d!", __PRETTY_FUNCTION__, pmState);
+        LOGE("%s: ERROR setting power state to %s!", __PRETTY_FUNCTION__, NexusService::getPowerString(pmState));
         return false;
     }
 }
@@ -1551,6 +1551,27 @@ bool NexusService::setPowerState(b_powerState pmState)
 b_powerState NexusService::getPowerState()
 {
     return powerState;
+}
+
+const char *NexusService::getPowerString(b_powerState pmState)
+{
+    switch (pmState) {
+        case ePowerState_S0:
+            return "S0";
+        case ePowerState_S1:
+            return "S1";
+        case ePowerState_S2:
+            return "S2";
+        case ePowerState_S3:
+            return "S3";
+        case ePowerState_S4:
+            return "S4";
+        case ePowerState_S5:
+            return "S5";
+        default:
+            ALOGE("%s: Invalid power state %d!!!", __FUNCTION__, pmState);
+            return "";
+    }
 }
 
 status_t NexusService::setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener)
