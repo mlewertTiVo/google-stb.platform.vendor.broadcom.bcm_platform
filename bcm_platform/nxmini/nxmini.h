@@ -1,5 +1,5 @@
 /******************************************************************************
-* (c) 2014-2015 Broadcom Corporation
+* (c) 2015 Broadcom Corporation
 *
 * This program is the proprietary software of Broadcom Corporation and/or its
 * licensors, and may only be used, duplicated, modified or distributed pursuant
@@ -39,8 +39,8 @@
 *    ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
 ******************************************************************************/
 
-#ifndef __NX_SERVER_H__
-#define __NX_SERVER_H__
+#ifndef __NX_MINI_H__
+#define __NN_MINI_H__
 
 #include "nexus_platform.h"
 #include "nexus_display.h"
