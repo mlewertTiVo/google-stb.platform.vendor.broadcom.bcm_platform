@@ -4183,7 +4183,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 pSharedData->videoFrame.hStripedSurface = NULL; // Don't allow gralloc_lock in metadata mode.  We won't know when it's safe to destroy the striped surface.
 
                                 /* Destripe the decoded frame immediately and store it on the RGB-GL plane */
-                                if ( (pBuffer->pPrivateHandle->usage & GRALLOC_USAGE_HW_TEXTURE) &&
+                                if ( !m_secureDecoder && (pBuffer->pPrivateHandle->usage & GRALLOC_USAGE_HW_TEXTURE) &&
                                      pBuffer->hStripedSurface &&
                                      pSharedData->planes[GL_PLANE].physAddr )
                                 {
