@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2014 Broadcom Corporation
+ *    (c)2011-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -114,9 +114,9 @@ status_t NexusHdmiCecDevice::HdmiCecMessageEventListener::onHdmiCecMessageReceiv
 
     // If we receive CEC commands whilst we are in standby, then in order
     // to be able to send CEC commands, we need Nexus to be out of standby.
-    Mutex::Autolock autoLock(mNexusHdmiCecDevice->mLock);
-
+    mNexusHdmiCecDevice->standbyLock();
     if (mNexusHdmiCecDevice->mStandby) {
+        mNexusHdmiCecDevice->standbyUnlock();
         b_powerState powerState = mNexusHdmiCecDevice->pIpcClient->getPowerState();
 
         // If we are in S1, then we need to check the validity of the wake-up message before
@@ -125,15 +125,19 @@ status_t NexusHdmiCecDevice::HdmiCecMessageEventListener::onHdmiCecMessageReceiv
         // Android and also send a hotplug "connected" event to wake it up.
         if ((powerState == ePowerState_S1 && isValidWakeupCecMessage(message)) || powerState != ePowerState_S1) {
             forwardCecMessage = true;
-            if (powerState != ePowerState_S1) {
-                sendHotplugWakeUpEvent = true;
-            }
+            sendHotplugWakeUpEvent = true;
+
+            mNexusHdmiCecDevice->standbyLock();
             mNexusHdmiCecDevice->mStandby = false;
+            mNexusHdmiCecDevice->standbyUnlock();
         }
         else {
             // Don't forward the CEC message if in S1 and it was an invalid wake-up opcode...
             forwardCecMessage = false;
         }
+    }
+    else {
+        mNexusHdmiCecDevice->standbyUnlock();
     }
 
     hdmi_event_t hdmiCecEvent;
@@ -201,9 +205,9 @@ bool NexusHdmiCecDevice::standbyMonitor(void *ctx)
 {
     NexusHdmiCecDevice *dev = reinterpret_cast<NexusHdmiCecDevice *>(ctx);
 
-    Mutex::Autolock autoLock(dev->mLock);
+    Mutex::Autolock autoLock(dev->mStandbyLock);
 
-    ALOGV("%s: Entering standby", __FUNCTION__);
+    ALOGV("%s: Entering standby", __PRETTY_FUNCTION__);
     dev->mStandby = true;
     return true;
 }
@@ -445,6 +449,9 @@ void NexusHdmiCecDevice::setControlState(bool enable)
 
         if (enable) {
             state = ePowerState_S0;
+            standbyLock();
+            mStandby = false;
+            standbyUnlock();
             tx = getCecTransmitViewOn();
 
             // If the logical address of the STB has not been setup, then we must delay
@@ -455,13 +462,16 @@ void NexusHdmiCecDevice::setControlState(bool enable)
             }
         }
         else {
+            standbyLock();
+            mStandby = true;
+            standbyUnlock();
             mCecViewOnCmdPending = false;
             state = ePowerState_S3;
             tx = getCecTransmitStandby();
         }
 
         if (tx && pIpcClient->setCecPowerState(mCecId, state) != true) {
-            ALOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, mCecId, state);
+            ALOGE("%s: Could not set CEC%d PowerState %d!", __PRETTY_FUNCTION__, mCecId, state);
         }
     }
 }

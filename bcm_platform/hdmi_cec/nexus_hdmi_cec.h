@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2014 Broadcom Corporation
+ *    (c)2011-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -92,6 +92,9 @@ class NexusHdmiCecDevice : public RefBase
         status_t sendCecMessage(const cec_message_t*);
         status_t getCecPortInfo(struct hdmi_port_info* list[], int* total);
 
+        inline void standbyLock() { mStandbyLock.lock(); }
+        inline void standbyUnlock() { mStandbyLock.unlock(); }
+
     protected:
         class HdmiCecMessageEventListener : public BnNexusHdmiCecMessageEventListener {
             public:
@@ -120,7 +123,7 @@ class NexusHdmiCecDevice : public RefBase
         bool                            mCecSystemControlEnable;
         bool                            mCecViewOnCmdPending;
         bool                            mStandby;
-        Mutex                           mLock;
+        Mutex                           mStandbyLock;
         NexusIPCClientBase*             pIpcClient;
         NexusClientContext*             pNexusClientContext;
         hdmi_port_info                  mPortInfo[NEXUS_NUM_CEC];
