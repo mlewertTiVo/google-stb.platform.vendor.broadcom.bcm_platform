@@ -120,10 +120,11 @@ status_t NexusHdmiCecDevice::HdmiCecMessageEventListener::onHdmiCecMessageReceiv
         b_powerState powerState = mNexusHdmiCecDevice->pIpcClient->getPowerState();
 
         // If we are in S1, then we need to check the validity of the wake-up message before
-        // decoding whether to pass it up to Android.  For the other power modes, we would
+        // decoding whether to pass it up to Android.  For the other standby modes, we would
         // only reach here if we were already woken up, so we can pass the message on to
         // Android and also send a hotplug "connected" event to wake it up.
-        if ((powerState == ePowerState_S1 && isValidWakeupCecMessage(message)) || powerState != ePowerState_S1) {
+        if ((powerState == ePowerState_S1 && isValidWakeupCecMessage(message)) ||
+            (powerState != ePowerState_S0 && powerState != ePowerState_S1)) {
             forwardCecMessage = true;
             sendHotplugWakeUpEvent = true;
 
@@ -132,7 +133,8 @@ status_t NexusHdmiCecDevice::HdmiCecMessageEventListener::onHdmiCecMessageReceiv
             mNexusHdmiCecDevice->standbyUnlock();
         }
         else {
-            // Don't forward the CEC message if in S1 and it was an invalid wake-up opcode...
+            // Don't forward the CEC message if in S1 and it was an invalid wake-up opcode or
+            // we are in S0 (i.e. not fully in standby yet).
             forwardCecMessage = false;
         }
     }
