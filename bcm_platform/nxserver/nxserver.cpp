@@ -74,6 +74,8 @@
 #define APP_MAX_CLIENTS 20
 #define MB (1024*1024)
 #define KB (1024)
+#define SEC_TO_NSEC (1000000000LL)
+#define RUNNER_SEC_THRESHOLD (10)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     1920
 #define GRAPHICS_RES_HEIGHT_DEFAULT    1080
@@ -101,9 +103,18 @@
 #define NX_TRIM_PIP                    "ro.nx.trim.pip"
 #define NX_TRIM_MOSAIC                 "ro.nx.trim.mosaic"
 
+typedef struct {
+   pthread_t runner;
+   int running;
+   BKNI_EventHandle runner_run;
+
+} RUNNER_T;
+
 static struct {
     BKNI_MutexHandle lock;
     nxserver_t server;
+    RUNNER_T proactive_runner;
+    BKNI_MutexHandle runner_mutex;
     unsigned refcnt;
     struct {
         nxclient_t client;
@@ -113,6 +124,29 @@ static struct {
 
 static bool g_exit = false;
 
+static void *proactive_runner_task(void *argv)
+{
+    (void)argv;
+
+    do
+    {
+       BKNI_WaitForEvent(g_app.proactive_runner.runner_run, BKNI_INFINITE);
+
+       /* the proactive runner can be used for several purposes, but primarely
+        * meant for memory management monitoring:
+        *
+        * 1) active dynamic heap allocation to ensure sufficient head room to avoid
+        *    last minute application requests if possible.
+        *
+        * 2) proactive LMK on behalf of android for nexus managed memory not seen in
+        *    standard LMK.
+        */
+
+    } while(g_app.proactive_runner.running);
+
+done:
+    return NULL;
+}
 
 static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinSettings, NEXUS_ClientSettings *pClientSettings)
 {
@@ -424,8 +458,11 @@ static void uninit_nxserver(nxserver_t server)
 
 int main(void)
 {
+    struct timespec t;
+    int64_t now, then;
     struct stat sbuf;
     nxserver_t nx_srv = NULL;
+    pthread_attr_t attr;
 
     memset(&g_app, 0, sizeof(g_app));
 
@@ -469,11 +506,41 @@ int main(void)
     NexusNxService::instantiate();
     android::IPCThreadState::self()->joinThreadPool();
 
+    BKNI_CreateMutex(&g_app.runner_mutex);
+    BKNI_CreateEvent(&g_app.proactive_runner.runner_run);
+    g_app.proactive_runner.running = 1;
+    pthread_attr_init(&attr);
+    if (pthread_create(&g_app.proactive_runner.runner, &attr,
+                       proactive_runner_task, (void *)&g_app) != 0) {
+        ALOGE("failed proactive runner start, ignoring...");
+        g_app.proactive_runner.running = 0;
+    }
+    pthread_attr_destroy(&attr);
+
     /* loop forever. */
+    t.tv_sec = t.tv_nsec = 0;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    then = (int64_t)(t.tv_sec) * SEC_TO_NSEC + t.tv_nsec;
+
     while (1) {
        BKNI_Sleep(1000);
+       t.tv_sec = t.tv_nsec = 0;
+       clock_gettime(CLOCK_MONOTONIC, &t);
+       now = (int64_t)(t.tv_sec) * SEC_TO_NSEC + t.tv_nsec;
+       if ((now > then) && ((now - then) > (SEC_TO_NSEC * RUNNER_SEC_THRESHOLD))) {
+          BKNI_SetEvent(g_app.proactive_runner.runner_run);
+       } else {
+          then = now;
+       }
        if (g_exit) break;
     }
+
+    if (g_app.proactive_runner.running) {
+       g_app.proactive_runner.running = 0;
+       pthread_join(g_app.proactive_runner.runner, NULL);
+    }
+    BKNI_DestroyEvent(g_app.proactive_runner.runner_run);
+    BKNI_DestroyMutex(g_app.runner_mutex);
 
     uninit_nxserver(nx_srv);
     return 0;
