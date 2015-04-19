@@ -164,6 +164,7 @@ status_t NexusHdmiCecDevice::HdmiCecMessageEventListener::onHdmiCecMessageReceiv
         if (sendHotplugWakeUpEvent == true) {
             ALOGV("%s: About to call port %d HDMI HOTPLUG callback function %p to wake the device up...", __PRETTY_FUNCTION__,
                    portId, mNexusHdmiCecDevice->mCallback);
+            mNexusHdmiCecDevice->mHotPlugConnected = true;
             hdmiCecEvent.type = HDMI_EVENT_HOT_PLUG;
             hdmiCecEvent.dev = mNexusHdmiCecDevice->mHdmiCecDevice;
             hdmiCecEvent.hotplug.port_id = portId;
@@ -191,14 +192,17 @@ status_t NexusHdmiCecDevice::HdmiHotplugEventListener::onHdmiHotplugEventReceive
 
     HDMI_CEC_TRACE_ENTER;
 
-    hdmiCecEvent.type = HDMI_EVENT_HOT_PLUG;
-    hdmiCecEvent.dev = mNexusHdmiCecDevice->mHdmiCecDevice;
-    hdmiCecEvent.hotplug.port_id = portId;
-    hdmiCecEvent.hotplug.connected = connected;
+    if (mNexusHdmiCecDevice->mHotPlugConnected != connected) {
+        hdmiCecEvent.type = HDMI_EVENT_HOT_PLUG;
+        hdmiCecEvent.dev = mNexusHdmiCecDevice->mHdmiCecDevice;
+        hdmiCecEvent.hotplug.port_id = portId;
+        hdmiCecEvent.hotplug.connected = connected;
+        mNexusHdmiCecDevice->mHotPlugConnected = connected;
 
-    if (mNexusHdmiCecDevice->mCallback != NULL) {
-        ALOGV("%s: About to call port %d HDMI HOTPLUG callback function %p...", __PRETTY_FUNCTION__, portId, mNexusHdmiCecDevice->mCallback);
-        (*mNexusHdmiCecDevice->mCallback)(&hdmiCecEvent, mNexusHdmiCecDevice->mCallbackArg);
+        if (mNexusHdmiCecDevice->mCallback != NULL) {
+            ALOGV("%s: About to call port %d HDMI HOTPLUG callback function %p...", __PRETTY_FUNCTION__, portId, mNexusHdmiCecDevice->mCallback);
+            (*mNexusHdmiCecDevice->mCallback)(&hdmiCecEvent, mNexusHdmiCecDevice->mCallbackArg);
+        }
     }
     return NO_ERROR;
 }
@@ -217,7 +221,7 @@ bool NexusHdmiCecDevice::standbyMonitor(void *ctx)
 NexusHdmiCecDevice::NexusHdmiCecDevice(uint32_t cecId) : mCecId(cecId), mCecLogicalAddr(UNDEFINED_LOGICAL_ADDRESS),
                                                          mCecPhysicalAddr(UNDEFINED_PHYSICAL_ADDRESS), mCecEnable(true),
                                                          mCecSystemControlEnable(true), mCecViewOnCmdPending(false), mStandby(false),
-                                                         pIpcClient(NULL), pNexusClientContext(NULL), mCallback(NULL),
+                                                         mHotPlugConnected(false), pIpcClient(NULL), pNexusClientContext(NULL), mCallback(NULL),
                                                          mHdmiCecDevice(NULL), mHdmiCecMessageEventListener(NULL), mHdmiHotplugEventListener(NULL)
 {
     HDMI_CEC_TRACE_ENTER;
@@ -249,7 +253,7 @@ status_t NexusHdmiCecDevice::initialise()
 
         pNexusClientContext = pIpcClient->createClientContext(&clientConfig);
         if (pNexusClientContext == NULL) {
-            ALOGE("%s: Could not create Nexus Client Context!!!", __FUNCTION__);
+            ALOGE("%s: Could not create Nexus Client Context!!!", __PRETTY_FUNCTION__);
             delete pIpcClient;
             pIpcClient = NULL;
         }
@@ -378,7 +382,7 @@ status_t NexusHdmiCecDevice::setCecLogicalAddress(uint8_t addr)
             ALOGE("%s: NexusIPCClient has been instantiated!!!", __PRETTY_FUNCTION__);
         }
         else if (pIpcClient->setCecPowerState(mCecId, ePowerState_S0) != true) {
-            ALOGE("%s: Could not set CEC%d PowerState %d!", __FUNCTION__, mCecId, ePowerState_S0);
+            ALOGE("%s: Could not set CEC%d PowerState %d!", __PRETTY_FUNCTION__, mCecId, ePowerState_S0);
         }
         else {
             mCecViewOnCmdPending = false;

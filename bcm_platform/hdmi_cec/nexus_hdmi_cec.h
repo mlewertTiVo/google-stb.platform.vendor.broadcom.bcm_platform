@@ -123,6 +123,7 @@ class NexusHdmiCecDevice : public RefBase
         bool                            mCecSystemControlEnable;
         bool                            mCecViewOnCmdPending;
         bool                            mStandby;
+        bool                            mHotPlugConnected;
         Mutex                           mStandbyLock;
         NexusIPCClientBase*             pIpcClient;
         NexusClientContext*             pNexusClientContext;
