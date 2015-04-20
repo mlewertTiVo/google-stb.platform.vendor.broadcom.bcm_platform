@@ -87,6 +87,7 @@ class NexusHdmiCecDevice : public RefBase
         void setEnableState(bool enable);
         void setAutoWakeupState(bool enable);
         void setControlState(bool enable);
+        bool getHdmiHotplugWakeup();
         bool getCecTransmitStandby();
         bool getCecTransmitViewOn();
 
@@ -160,6 +161,7 @@ class NexusHdmiCecDevice : public RefBase
                 virtual void onMessageReceived(const sp<AMessage> &msg);
                 virtual bool isValidWakeupCecMessage(cec_message_t *message);
                 virtual status_t handleCecMessage(const sp<AMessage> &msg);
+                virtual status_t processCecMessage(cec_message_t *message);
 
                 /* Disallow copy constructor and copy operator... */
                 HdmiCecRxMessageHandler(const HdmiCecRxMessageHandler &);

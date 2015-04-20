@@ -289,6 +289,13 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
             break;
         }
 
+        case ePowerState_S05:
+        {
+            LOGD("%s: About to set power state S0.5...", __PRETTY_FUNCTION__);
+            standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eOn;
+            break;
+        }
+
         case ePowerState_S1:
         {
             LOGD("%s: About to set power state S1...", __PRETTY_FUNCTION__);
@@ -320,14 +327,45 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
     }
 
     if (rc == NEXUS_SUCCESS) {
-        rc = NxClient_SetStandbySettings(&standbySettings);
-        if (rc != NEXUS_SUCCESS) {
-            LOGE("%s: NxClient_SetStandbySettings failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
+        NxClient_StandbyStatus standbyStatus;
+
+        rc = NxClient_GetStandbyStatus(&standbyStatus);
+
+        if (rc == NEXUS_SUCCESS) {
+            if (standbyStatus.settings.mode != standbySettings.settings.mode) {
+                rc = NxClient_SetStandbySettings(&standbySettings);
+            }
+            if (rc == NEXUS_SUCCESS) {
+                if (pmState == ePowerState_S0) {
+                    NxClient_DisplaySettings displaySettings;
+
+                    NxClient_GetDisplaySettings(&displaySettings);
+                    displaySettings.hdmiPreferences.enabled = true;
+                    displaySettings.componentPreferences.enabled = true;
+                    displaySettings.compositePreferences.enabled = true;
+                    rc = NxClient_SetDisplaySettings(&displaySettings);
+                }
+                else if (pmState == ePowerState_S05) {
+                    NxClient_DisplaySettings displaySettings;
+
+                    NxClient_GetDisplaySettings(&displaySettings);
+                    displaySettings.hdmiPreferences.enabled = false;
+                    displaySettings.componentPreferences.enabled = false;
+                    displaySettings.compositePreferences.enabled = false;
+                    rc = NxClient_SetDisplaySettings(&displaySettings);
+                }
+            }
+            else {
+                LOGE("%s: NxClient_SetStandbySettings failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
+            }
+        }
+        else {
+            LOGE("%s: NxClient_GetStandbyStatus failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
         }
     }
 
-    /* Now check whether Nexus Platform has entered the desired standby mode (excluding S0)... */
-    if (rc == NEXUS_SUCCESS && pmState != ePowerState_S0) {
+    /* Now check whether Nexus Platform has entered the desired standby mode (excluding S0 and S0.5)... */
+    if (rc == NEXUS_SUCCESS && (pmState != ePowerState_S0 && pmState != ePowerState_S05)) {
         rc = standbyCheck(standbySettings.settings.mode);
         if (rc != NEXUS_SUCCESS) {
             LOGE("%s: standbyCheck failed [rc=%d]!", __PRETTY_FUNCTION__, rc);

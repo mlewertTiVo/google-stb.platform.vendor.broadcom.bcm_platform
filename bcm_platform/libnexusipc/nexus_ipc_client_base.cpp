@@ -85,6 +85,8 @@ const char *NexusIPCClientBase::getPowerString(b_powerState pmState)
     switch (pmState) {
         case ePowerState_S0:
             return "S0";
+        case ePowerState_S05:
+            return "S0.5";
         case ePowerState_S1:
             return "S1";
         case ePowerState_S2:

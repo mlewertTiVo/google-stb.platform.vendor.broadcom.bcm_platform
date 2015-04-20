@@ -122,6 +122,113 @@ bool NexusHdmiCecDevice::HdmiCecRxMessageHandler::isValidWakeupCecMessage(cec_me
     return wakeup;
 }
 
+status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::processCecMessage(cec_message_t *message)
+{
+    status_t ret = NO_ERROR;
+    bool sendMessage = false;
+    int portId = mNexusHdmiCecDevice->mCecId;
+    uint8_t destAddr = message->destination;
+    unsigned char opcode = message->body[0];
+    cec_message_t txMessage;
+
+    HDMI_CEC_TRACE_ENTER;
+
+    switch (opcode) {
+        case CEC_MESSAGE_USER_CONTROL_PRESSED:
+        case CEC_MESSAGE_USER_CONTROL_RELEASED:
+        case CEC_MESSAGE_INACTIVE_SOURCE:
+        {
+                ALOGV("%s: Ignoring opcode 0x%02x CEC port %d...", __PRETTY_FUNCTION__, opcode, portId);
+        } break;
+
+        case CEC_MESSAGE_GIVE_DEVICE_POWER_STATUS: {
+            if (mNexusHdmiCecDevice->mCecLogicalAddr == destAddr) {
+                txMessage.initiator = message->destination;
+                txMessage.destination = message->initiator;
+                txMessage.length = 2;
+                txMessage.body[0] = CEC_MESSAGE_REPORT_POWER_STATUS;
+                txMessage.body[1] = mNexusHdmiCecDevice->mStandby ? 0x01 : 0x00;
+                ALOGV("%s: Sending <Report Power Status> on CEC port %d...", __PRETTY_FUNCTION__, portId);
+                sendMessage = true;
+            }
+        } break;
+
+        case CEC_MESSAGE_GIVE_DEVICE_VENDOR_ID: {
+            if (mNexusHdmiCecDevice->mCecLogicalAddr == destAddr) {
+                uint32_t vendorId;
+                if (mNexusHdmiCecDevice->getCecVendorId(&vendorId) == NO_ERROR) {
+                    txMessage.initiator = message->destination;
+                    txMessage.destination = CEC_ADDR_BROADCAST;
+                    txMessage.length = 4;
+                    txMessage.body[0] = CEC_MESSAGE_DEVICE_VENDOR_ID;
+                    txMessage.body[1] = (vendorId & 0xFF0000) >> 16;
+                    txMessage.body[2] = (vendorId & 0x00FF00) >> 8;
+                    txMessage.body[3] = (vendorId & 0x0000FF) >> 0;
+                    ALOGV("%s: Sending <Device Vendor ID> on CEC port %d...", __PRETTY_FUNCTION__, portId);
+                    sendMessage = true;
+                }
+            }
+        } break;
+
+        case CEC_MESSAGE_GIVE_PHYSICAL_ADDRESS: {
+            if (mNexusHdmiCecDevice->mCecLogicalAddr == destAddr) {
+                uint16_t physicalAddr;
+                if (mNexusHdmiCecDevice->getCecPhysicalAddress(&physicalAddr) == NO_ERROR) {
+                    b_cecDeviceType type = mNexusHdmiCecDevice->pIpcClient->getCecDeviceType(mNexusHdmiCecDevice->mCecId);
+                    if (type >= 0 && type < eCecDeviceType_eInvalid) {
+                        txMessage.initiator = message->destination;
+                        txMessage.destination = CEC_ADDR_BROADCAST;
+                        txMessage.length = 4;
+                        txMessage.body[0] = CEC_MESSAGE_REPORT_PHYSICAL_ADDRESS;
+                        txMessage.body[1] = (physicalAddr & 0xFF00) >> 8;
+                        txMessage.body[2] = (physicalAddr & 0x00FF) >> 0;
+                        txMessage.body[3] = type;
+                        ALOGV("%s: Sending <Report Physical Address> on CEC port %d...", __PRETTY_FUNCTION__, portId);
+                        sendMessage = true;
+                    }
+                }
+            }
+        } break;
+
+        case CEC_MESSAGE_GET_CEC_VERSION: {
+            if (mNexusHdmiCecDevice->mCecLogicalAddr == destAddr) {
+                int version;
+                if (mNexusHdmiCecDevice->getCecVersion(&version) == NO_ERROR) {
+                    txMessage.initiator = message->destination;
+                    txMessage.destination = message->initiator;
+                    txMessage.length = 2;
+                    txMessage.body[0] = CEC_MESSAGE_CEC_VERSION;
+                    txMessage.body[1] = version & 0xff;
+                    ALOGV("%s: Sending <CEC Version> on CEC port %d...", __PRETTY_FUNCTION__, portId);
+                    sendMessage = true;
+                }
+            }
+        } break;
+
+        default: {
+            if (mNexusHdmiCecDevice->mCecLogicalAddr == destAddr) {
+                txMessage.initiator = message->destination;
+                txMessage.destination = message->initiator;
+                txMessage.length = 3;
+                txMessage.body[0] = CEC_MESSAGE_FEATURE_ABORT;
+                txMessage.body[1] = opcode;
+                txMessage.body[2] = 0x01;   // Abort Reason = "Not in correct mode to respond"
+                ALOGV("%s: Sending <Feature Abort> on CEC port %d...", __PRETTY_FUNCTION__, portId);
+                sendMessage = true;
+            }
+        }
+    }
+
+    if (sendMessage) {
+        ret = mNexusHdmiCecDevice->sendCecMessage(&txMessage);
+
+        if (ret != NO_ERROR) {
+            ALOGE("%s: Could not send CEC message opcode=0x%02x on CEC port %d!!!", __PRETTY_FUNCTION__, txMessage.body[0], portId);
+        }
+    }
+    return ret;
+}
+
 status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::handleCecMessage(const sp<AMessage> &msg)
 {
     status_t ret = NO_ERROR;
@@ -181,11 +288,11 @@ status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::handleCecMessage(const sp<
 
             powerState = mNexusHdmiCecDevice->pIpcClient->getPowerState();
 
-            // If we are in S1, then we need to check the validity of the wake-up message before
+            // If we are in S0.5 (effectively S0) or S1, then we need to check the validity of the wake-up message before
             // deciding whether to pass it up to Android.  For the other standby modes, we would
             // only reach here if we were already woken up, so we can pass the message on to
             // Android and also send a hotplug "connected" event to wake it up.
-            if ((powerState == ePowerState_S1 && isValidWakeupCecMessage(&cecMessage)) ||
+            if (((powerState == ePowerState_S0 || powerState == ePowerState_S1) && isValidWakeupCecMessage(&cecMessage)) ||
                 (powerState != ePowerState_S0 && powerState != ePowerState_S1)) {
                 forwardCecMessage = true;
                 sendHotplugWakeUpEvent = true;
@@ -195,9 +302,16 @@ status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::handleCecMessage(const sp<
                 mNexusHdmiCecDevice->standbyUnlock();
             }
             else {
-                // Don't forward the CEC message if in S1 and it was an invalid wake-up opcode or
-                // we are in S0 (i.e. not fully in standby yet).
+                // Don't forward the CEC message if in S0.5 or S1 and it was an invalid wake-up opcode or
+                // we are in S0 (i.e. not fully in standby yet) or S1.
                 forwardCecMessage = false;
+
+                // If we are in S0.5 (effectively S0), then the AutoCEC h/w is disabled as the drivers are fully running.
+                // However, we still need to respond to some received CEC messages in order to ensure the TV's state machine
+                // can continue to run to allow a valid wake-up CEC message to be sent.
+                if (powerState == ePowerState_S0) {
+                    processCecMessage(&cecMessage);
+                }
             }
         }
         else {
@@ -303,7 +417,11 @@ status_t NexusHdmiCecDevice::HdmiHotplugEventListener::onHdmiHotplugEventReceive
 
     HDMI_CEC_TRACE_ENTER;
 
-    if (mNexusHdmiCecDevice->mHotPlugConnected != connected) {
+    // If not in standby or the STB is configured to allow waking up the box on reception of
+    // an HDMI hotplug event, then allow the event to propogate to Android if there has
+    // been a change in the "connected" state.
+    if ((mNexusHdmiCecDevice->mHotPlugConnected != connected) &&
+        (!mNexusHdmiCecDevice->mStandby || (mNexusHdmiCecDevice->mStandby && mNexusHdmiCecDevice->getHdmiHotplugWakeup()))) {
         hdmiCecEvent.type = HDMI_EVENT_HOT_PLUG;
         hdmiCecEvent.dev = mNexusHdmiCecDevice->mHdmiCecDevice;
         hdmiCecEvent.hotplug.port_id = portId;
@@ -591,6 +709,17 @@ status_t NexusHdmiCecDevice::setCecLogicalAddress(uint8_t addr)
     }
 
     return NO_ERROR;
+}
+
+bool NexusHdmiCecDevice::getHdmiHotplugWakeup()
+{
+    char value[PROPERTY_VALUE_MAX];
+    bool wakeup=false;
+
+    if (property_get(PROPERTY_HDMI_HOTPLUG_WAKEUP, value, DEFAULT_PROPERTY_HDMI_HOTPLUG_WAKEUP)) {
+        wakeup = (strncmp(value, "1", PROPERTY_VALUE_MAX) == 0);
+    }
+    return wakeup;
 }
 
 bool NexusHdmiCecDevice::getCecTransmitStandby()

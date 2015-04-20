@@ -91,7 +91,7 @@ class NexusPower : public android::RefBase {
     class NexusGpio : public android::RefBase {
         public:
         static int const MAX_INSTANCES = 8;
-        static int const MAX_POWER_STATES = 6;  // S0 through to S5
+        static int const MAX_POWER_STATES = 7;  // S0 through to S5
         static int const NUM_INP_PARAMETERS = 2; // gpio mode + interrupt mode
         static int const NUM_OUT_PARAMETERS = MAX_POWER_STATES + 1; // gpio mode + S0 through to S5 output values
         static int const MIN_PARAMETERS = NUM_INP_PARAMETERS;

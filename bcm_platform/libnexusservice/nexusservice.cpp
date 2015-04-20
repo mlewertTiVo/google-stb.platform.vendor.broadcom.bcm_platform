@@ -38,7 +38,7 @@
  * $brcm_Workfile: nexusservice.cpp $
  * 
  *****************************************************************************/
-  
+
 //#define LOG_NDEBUG 0
 
 #include <utils/Log.h>
@@ -374,7 +374,7 @@ int NexusService::platformInitAudio(void)
             return NEXUS_UNKNOWN;
         }
     }
-    
+
     /* open audio mixer */
     mixer = NEXUS_AudioMixer_Open(NULL);
     if (mixer == NULL) {
@@ -413,7 +413,7 @@ int NexusService::platformInitAudio(void)
             }
         }
     }
-    
+
     if (MAX_AUDIO_PLAYBACKS > 0) {
         rc = NEXUS_AudioMixer_AddInput(mixer, NEXUS_AudioPlayback_GetConnector(audioPlayback[0]));
         if (rc) {
@@ -493,7 +493,7 @@ void NexusService::setAudioState(bool enable)
     int i;
     NEXUS_SimpleAudioDecoderServerSettings simpleAudioDecoderSettings;
     NEXUS_SimpleAudioPlaybackServerSettings simpleAudioPlaybackSettings;
-    
+
     /* Enable/Disable simple audio player */
     for (i=0; i<MAX_AUDIO_PLAYBACKS; i++) {
         NEXUS_SimpleAudioPlayback_GetServerSettings(simpleAudioPlayback[i], &simpleAudioPlaybackSettings);
@@ -671,12 +671,12 @@ int NexusService::platformInitVideo(void)
         return NEXUS_OUT_OF_SYSTEM_MEMORY;
     }
     NEXUS_Platform_GetConfiguration(pPlatformConfig);
-    
+
     /* Init displays */
     for(int j=0; j<MAX_NUM_DISPLAYS; j++) {
         NEXUS_Display_GetDefaultSettings(&displaySettings);
         displaySettings.displayType = NEXUS_DisplayType_eAuto;
-        displaySettings.format = (j == HD_DISPLAY) ? initial_hd_format : initial_sd_format;       
+        displaySettings.format = (j == HD_DISPLAY) ? initial_hd_format : initial_sd_format;
         displayState[j].display = NEXUS_Display_Open(j, &displaySettings);
         if (!displayState[j].display) {
             LOGE("%s: NEXUS_Display_Open(%d) failed!!", __PRETTY_FUNCTION__, j);
@@ -685,7 +685,7 @@ int NexusService::platformInitVideo(void)
         }
         displayState[j].hNexusDisplay = reinterpret_cast<int>(displayState[j].display);
     }
-    
+
 #if NEXUS_NUM_COMPONENT_OUTPUTS
     /* Add Component Output to the HD-Display */
     rc = NEXUS_Display_AddOutput(displayState[HD_DISPLAY].display, NEXUS_ComponentOutput_GetConnector(pPlatformConfig->outputs.component[0]));
@@ -728,7 +728,7 @@ int NexusService::platformInitVideo(void)
             videoDecoderOpenSettings.svc3dSupported = true;
         }
 
-        videoDecoder[i] = NEXUS_VideoDecoder_Open(i, &videoDecoderOpenSettings); 
+        videoDecoder[i] = NEXUS_VideoDecoder_Open(i, &videoDecoderOpenSettings);
         if (!videoDecoder[i]) {
             LOGE("%s: NEXUS_VideoDecoder_Open(%d) failed!!", __PRETTY_FUNCTION__, i);
             BKNI_Free(pPlatformConfig);
@@ -741,12 +741,12 @@ int NexusService::platformInitVideo(void)
         if ((i==0) && (platformSettings.videoDecoderModuleSettings.supportedCodecs[NEXUS_VideoCodec_eH265])) {
             NEXUS_VideoDecoder_GetSettings(videoDecoder[i], &videoDecoderSettings);
             videoDecoderSettings.supportedCodecs[NEXUS_VideoCodec_eH265] = true;
-            videoDecoderSettings.maxWidth  = 3840; 
+            videoDecoderSettings.maxWidth  = 3840;
             videoDecoderSettings.maxHeight = 2160;
             NEXUS_VideoDecoder_SetSettings(videoDecoder[i], &videoDecoderSettings);
         }
 
-        // create simple video decoder 
+        // create simple video decoder
         NEXUS_SimpleVideoDecoder_GetDefaultServerSettings(&settings);
         settings.videoDecoder = videoDecoder[i];
         settings.window[0] = NULL;
@@ -796,8 +796,8 @@ void framebuffer_callback(void *context, int param)
 
 static BKNI_EventHandle inactiveEvent;
 static void inactive_callback(void *context, int param)
-{    
-    BSTD_UNUSED(param);    
+{
+    BSTD_UNUSED(param);
     BKNI_SetEvent((BKNI_EventHandle)context);
 }
 
@@ -1165,7 +1165,7 @@ NexusClientContext * NexusService::createClientContext(const b_refsw_client_clie
 
         LOGI("We need to set Nexus Power State S0 first...");
         NEXUS_Platform_GetStandbySettings(&nexusStandbySettings);
-        nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eOn;    
+        nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eOn;
         rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
         if (rc != NEXUS_SUCCESS) {
             LOGE("Oops we couldn't set Nexus Power State to S0!");
@@ -1385,7 +1385,7 @@ bool NexusService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdm
                 usleep(250 * 1000);
             }
         }
-        
+
         if (rc == NEXUS_SUCCESS) {
             if (status.connected) {
                 pHdmiOutputStatus->connected            = status.connected;
@@ -1486,12 +1486,25 @@ bool NexusService::setPowerState(b_powerState pmState)
             case ePowerState_S0:
             {
                 LOGD("%s: About to set power state S0...", __PRETTY_FUNCTION__);
-                nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eOn;    
+                nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eOn;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 if (rc == NEXUS_SUCCESS) {
                     setDisplayState(1);
                     setVideoState(1);
                     setAudioState(1);
+                }
+                break;
+            }
+
+            case ePowerState_S05:
+            {
+                LOGD("%s: About to set power state S0.5...", __PRETTY_FUNCTION__);
+                nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eOn;
+                rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
+                if (rc == NEXUS_SUCCESS) {
+                    setDisplayState(0);
+                    setVideoState(0);
+                    setAudioState(0);
                 }
                 break;
             }
@@ -1502,7 +1515,7 @@ bool NexusService::setPowerState(b_powerState pmState)
                 setDisplayState(0);
                 setVideoState(0);
                 setAudioState(0);
-                nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eActive;    
+                nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eActive;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 break;
             }
@@ -1525,7 +1538,7 @@ bool NexusService::setPowerState(b_powerState pmState)
                 setDisplayState(0);
                 setVideoState(0);
                 setAudioState(0);
-                nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eDeepSleep;  
+                nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eDeepSleep;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 break;
             }
@@ -1558,6 +1571,8 @@ const char *NexusService::getPowerString(b_powerState pmState)
     switch (pmState) {
         case ePowerState_S0:
             return "S0";
+        case ePowerState_S05:
+            return "S0.5";
         case ePowerState_S1:
             return "S1";
         case ePowerState_S2:
@@ -1713,7 +1728,7 @@ status_t NexusService::onTransact(uint32_t code,
                                   uint32_t flags)
 {
     CHECK_INTERFACE(INexusService, data, reply);
-    
+
     switch(code) {
     case API_OVER_BINDER: { /* braces are necessary when declaring variables within case: */
         int rc = 0;
@@ -1724,7 +1739,7 @@ status_t NexusService::onTransact(uint32_t code,
         {
             case api_clientJoin:
             {
-                cmd.param.clientJoin.out.clientHandle = 
+                cmd.param.clientJoin.out.clientHandle =
                     clientJoin(&cmd.param.clientJoin.in.clientName, &cmd.param.clientJoin.in.clientAuthenticationSettings);
                 break;
             }

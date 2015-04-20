@@ -109,6 +109,7 @@ typedef struct b_video_window_settings
 
 typedef enum b_powerState {
     ePowerState_S0, // Power on
+    ePowerState_S05,// Standby 0.5 = power on but with HDMI output disconnected
     ePowerState_S1, // Standby S1
     ePowerState_S2, // Standby S2
     ePowerState_S3, // Standby S3 (deep sleep - aka suspend to ram)
@@ -152,6 +153,11 @@ typedef struct b_cecStatus {
 // Enable STB auto wakeup on CEC by ensuring this property is set to 1...
 #define PROPERTY_HDMI_AUTO_WAKEUP_CEC           "persist.sys.hdmi.auto_wake_cec"
 #define DEFAULT_PROPERTY_HDMI_AUTO_WAKEUP_CEC   "1"
+
+// Disable STB HDMI hot-plug wakeup whilst in standby by ensuring that
+// this property is set to 0...
+#define PROPERTY_HDMI_HOTPLUG_WAKEUP            "persist.sys.hdmi.hotplug_wakeup"
+#define DEFAULT_PROPERTY_HDMI_HOTPLUG_WAKEUP    "0"
 
 // Disable sending CEC standby message to TV on entry to standby by ensuring
 // that this property is set to 0...

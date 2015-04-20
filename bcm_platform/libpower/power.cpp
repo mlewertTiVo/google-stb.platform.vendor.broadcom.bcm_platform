@@ -50,7 +50,7 @@ static const char *PROPERTY_PM_DDROFF               = "ro.pm.ddroff";
 static const char *PROPERTY_PM_MEMC1OFF             = "ro.pm.memc1off";
 
 // Property defaults
-static const char *DEFAULT_PROPERTY_PM_DOZESTATE    = "S1";
+static const char *DEFAULT_PROPERTY_PM_DOZESTATE    = "S0.5";
 static const char *DEFAULT_PROPERTY_PM_OFFSTATE     = "S2";
 static const char *DEFAULT_PROPERTY_PM_USBOFF       = "1";
 static const char *DEFAULT_PROPERTY_PM_ETHOFF       = "1";
@@ -97,7 +97,13 @@ static b_powerState power_get_state_from_string(char *value)
 {
     b_powerState powerOffState = ePowerState_Max;
 
-    if (strcasecmp(value, "1") == 0 || strcasecmp(value, "s1") == 0) {
+    if (strcasecmp(value, "0") == 0 || strcasecmp(value, "s0") == 0) {
+        powerOffState = ePowerState_S0;
+    }
+    else if (strcasecmp(value, "0.5") == 0 || strcasecmp(value, "s0.5") == 0) {
+        powerOffState = ePowerState_S05;
+    }
+    else if (strcasecmp(value, "1") == 0 || strcasecmp(value, "s1") == 0) {
         powerOffState = ePowerState_S1;
     }
     else if (strcasecmp(value, "2") == 0 || strcasecmp(value, "s2") == 0) {
@@ -263,7 +269,7 @@ static int power_set_pmlibservice_state(b_powerState state)
         return rc;
     }
 
-    if (state == ePowerState_S1) {
+    if (state == ePowerState_S05 || state == ePowerState_S1) {
         char value[PROPERTY_VALUE_MAX] = "";
         bool usboff   = true;
         bool ethoff   = true;
@@ -388,7 +394,7 @@ static int power_set_state(b_powerState toState, b_powerState fromState)
     switch (toState)
     {
         case ePowerState_S0: {
-            if (fromState == ePowerState_S1) {
+            if (fromState == ePowerState_S05 || fromState == ePowerState_S1) {
                 power_set_pmlibservice_state(toState);
             }
 
@@ -400,6 +406,15 @@ static int power_set_state(b_powerState toState, b_powerState fromState)
                 // Release the CPU wakelock as the system should be back up now...
                 ALOGV("%s: Releasing \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
                 release_wake_lock(WAKE_LOCK_ID);
+            }
+        } break;
+
+        case ePowerState_S05: {
+            if (gNexusPower.get()) {
+                rc = gNexusPower->setPowerState(toState);
+            }
+            if (rc == 0) {
+                power_set_pmlibservice_state(toState);
             }
         } break;
 
