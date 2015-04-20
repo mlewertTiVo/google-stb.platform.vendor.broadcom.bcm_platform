@@ -66,38 +66,53 @@
 
 using namespace android;
 
-NexusHdmiCecDevice::HdmiCecMessageEventListener::HdmiCecMessageEventListener(NexusHdmiCecDevice *device) : mNexusHdmiCecDevice(device)
+/******************************************************************************
+  HdmiCecRxMessageHandler methods
+******************************************************************************/
+NexusHdmiCecDevice::HdmiCecRxMessageHandler::HdmiCecRxMessageHandler(sp<NexusHdmiCecDevice> device) : AHandler(), mNexusHdmiCecDevice(device)
 {
     HDMI_CEC_TRACE_ENTER;
 }
 
-NexusHdmiCecDevice::HdmiCecMessageEventListener::~HdmiCecMessageEventListener()
+NexusHdmiCecDevice::HdmiCecRxMessageHandler::~HdmiCecRxMessageHandler()
 {
     HDMI_CEC_TRACE_ENTER;
 }
 
-bool NexusHdmiCecDevice::HdmiCecMessageEventListener::isValidWakeupCecMessage(android::INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message)
+bool NexusHdmiCecDevice::HdmiCecRxMessageHandler::isValidWakeupCecMessage(cec_message_t *message)
 {
     // Check for valid wake-up opcodes which are:
     // 1) <Set Stream Path> [physical address of STB]
     // 2) <User Control Pressed> ("Power", "Power On" or "Power Toggle")
     bool wakeup = false;
-    uint8_t opcode = message->body[0];
+    unsigned char opcode = message->body[0];
+    int portId = mNexusHdmiCecDevice->mCecId;
+
+    HDMI_CEC_TRACE_ENTER;
 
     switch (opcode) {
         case CEC_MESSAGE_SET_STREAM_PATH: {
             uint16_t physicalAddr = message->body[1] * 256 + message->body[2];
-            if (mNexusHdmiCecDevice->mCecPhysicalAddr == physicalAddr) {
-                ALOGV("%s: Waking up on <Set Stream Path> opcode...", __PRETTY_FUNCTION__);
-                wakeup = true;
+            uint16_t currentPhysicalAddr;
+
+            if (message->destination == CEC_ADDR_BROADCAST) {
+                if (mNexusHdmiCecDevice->getCecPhysicalAddress(&currentPhysicalAddr) == NO_ERROR) {
+                    if (currentPhysicalAddr == physicalAddr) {
+                        ALOGV("%s: Waking up on <Set Stream Path> opcode on CEC port %d...", __PRETTY_FUNCTION__, portId);
+                        wakeup = true;
+                    }
+                }
             }
         } break;
 
         case CEC_MESSAGE_USER_CONTROL_PRESSED: {
             uint8_t uiCommand = message->body[1];
-            if (uiCommand == CEC_UI_COMMAND_POWER || uiCommand == CEC_UI_COMMAND_POWER_ON || uiCommand == CEC_UI_COMMAND_POWER_TOGGLE) {
-                ALOGV("%s: Waking up on <User Control Pressed>[0x%02x] opcode...", __PRETTY_FUNCTION__, uiCommand);
-                wakeup = true;
+
+            if (mNexusHdmiCecDevice->mCecLogicalAddr == message->destination) {
+                if (uiCommand == CEC_UI_COMMAND_POWER || uiCommand == CEC_UI_COMMAND_POWER_ON || uiCommand == CEC_UI_COMMAND_POWER_TOGGLE) {
+                    ALOGV("%s: Waking up on <User Control Pressed>[0x%02x] opcode on CEC port %d...", __PRETTY_FUNCTION__, uiCommand, portId);
+                    wakeup = true;
+                }
             }
         } break;
 
@@ -107,76 +122,172 @@ bool NexusHdmiCecDevice::HdmiCecMessageEventListener::isValidWakeupCecMessage(an
     return wakeup;
 }
 
-status_t NexusHdmiCecDevice::HdmiCecMessageEventListener::onHdmiCecMessageReceived(int32_t portId, android::INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message)
+status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::handleCecMessage(const sp<AMessage> &msg)
 {
-    bool forwardCecMessage = mNexusHdmiCecDevice->mCecEnable && mNexusHdmiCecDevice->mCecSystemControlEnable;
-    bool sendHotplugWakeUpEvent = false;
+    status_t ret = NO_ERROR;
+    uint8_t portId;
+    int32_t initiator;
+    int32_t destination;
+    size_t  length;
 
-    // If we receive CEC commands whilst we are in standby, then in order
-    // to be able to send CEC commands, we need Nexus to be out of standby.
-    mNexusHdmiCecDevice->standbyLock();
-    if (mNexusHdmiCecDevice->mStandby) {
-        mNexusHdmiCecDevice->standbyUnlock();
-        b_powerState powerState = mNexusHdmiCecDevice->pIpcClient->getPowerState();
+    HDMI_CEC_TRACE_ENTER;
 
-        // If we are in S1, then we need to check the validity of the wake-up message before
-        // decoding whether to pass it up to Android.  For the other standby modes, we would
-        // only reach here if we were already woken up, so we can pass the message on to
-        // Android and also send a hotplug "connected" event to wake it up.
-        if ((powerState == ePowerState_S1 && isValidWakeupCecMessage(message)) ||
-            (powerState != ePowerState_S0 && powerState != ePowerState_S1)) {
-            forwardCecMessage = true;
-            sendHotplugWakeUpEvent = true;
+    portId = mNexusHdmiCecDevice->mCecId;
 
-            mNexusHdmiCecDevice->standbyLock();
-            mNexusHdmiCecDevice->mStandby = false;
-            mNexusHdmiCecDevice->standbyUnlock();
-        }
-        else {
-            // Don't forward the CEC message if in S1 and it was an invalid wake-up opcode or
-            // we are in S0 (i.e. not fully in standby yet).
-            forwardCecMessage = false;
-        }
+    msg->findInt32("srcAddr",  &initiator);
+    msg->findInt32("destAddr", &destination);
+    msg->findSize("length", &length);
+
+    if (initiator > NexusHdmiCecDevice::MAX_LOGICAL_ADDRESS) {
+        ALOGE("%s: Invalid initiator logical address of %d on CEC port %d!!!", __PRETTY_FUNCTION__, initiator, portId);
+        ret = BAD_VALUE;
+    }
+    else if (destination > NexusHdmiCecDevice::MAX_LOGICAL_ADDRESS) {
+        ALOGE("%s: Invalid destination logical address of %d on CEC port %d!!!", __PRETTY_FUNCTION__, destination, portId);
+        ret = BAD_VALUE;
+    }
+    else if (length > CEC_MESSAGE_BODY_MAX_LENGTH) {
+        ALOGE("%s: Message length %d out of range on CEC port %d!!!", __PRETTY_FUNCTION__, length, portId);
+        ret = BAD_VALUE;
     }
     else {
-        mNexusHdmiCecDevice->standbyUnlock();
-    }
+        cec_message_t cecMessage;
+        bool forwardCecMessage = mNexusHdmiCecDevice->mCecEnable && mNexusHdmiCecDevice->mCecSystemControlEnable;
+        bool sendHotplugWakeUpEvent = false;
 
-    hdmi_event_t hdmiCecEvent;
+        memset(&cecMessage, 0, sizeof(cecMessage));
+        cecMessage.initiator = NexusHdmiCecDevice::toCecLogicalAddressT(initiator);
+        cecMessage.destination = NexusHdmiCecDevice::toCecLogicalAddressT(destination);
+        cecMessage.length = length;
 
-    hdmiCecEvent.type = HDMI_EVENT_CEC_MESSAGE;
-    hdmiCecEvent.dev = mNexusHdmiCecDevice->mHdmiCecDevice;
-    hdmiCecEvent.cec.initiator = (cec_logical_address_t)message->initiator;
-    hdmiCecEvent.cec.destination = (cec_logical_address_t)message->destination;
-    hdmiCecEvent.cec.length = message->length;
-    memcpy(hdmiCecEvent.cec.body, message->body, message->length);
+        if (length > 0) {
+            sp<ABuffer> body;
+            msg->findBuffer("body", &body);
+            if (body != NULL) {
+                memcpy(cecMessage.body, body->base(), length);
+            }
+        }
 
-    ALOGV("%s: portId=%d, initiator=%d, destination=%d, length=%d, opcode=0x%02x", __PRETTY_FUNCTION__, portId,
-            hdmiCecEvent.cec.initiator, hdmiCecEvent.cec.destination,hdmiCecEvent.cec.length, hdmiCecEvent.cec.body[0]);
+        ALOGV("%s: CEC portId=%d, initiator=%d, destination=%d, length=%d, opcode=0x%02x", __PRETTY_FUNCTION__, portId,
+                initiator, destination, length, cecMessage.body[0]);
 
-    if (mNexusHdmiCecDevice->mCallback != NULL) {
+        // If we receive CEC commands whilst we are in standby, then in order
+        // to be able to send CEC commands, we need Nexus to be out of standby.
+        mNexusHdmiCecDevice->standbyLock();
+        if (mNexusHdmiCecDevice->mStandby) {
+            b_powerState powerState;
+
+            mNexusHdmiCecDevice->standbyUnlock();
+
+            powerState = mNexusHdmiCecDevice->pIpcClient->getPowerState();
+
+            // If we are in S1, then we need to check the validity of the wake-up message before
+            // deciding whether to pass it up to Android.  For the other standby modes, we would
+            // only reach here if we were already woken up, so we can pass the message on to
+            // Android and also send a hotplug "connected" event to wake it up.
+            if ((powerState == ePowerState_S1 && isValidWakeupCecMessage(&cecMessage)) ||
+                (powerState != ePowerState_S0 && powerState != ePowerState_S1)) {
+                forwardCecMessage = true;
+                sendHotplugWakeUpEvent = true;
+
+                mNexusHdmiCecDevice->standbyLock();
+                mNexusHdmiCecDevice->mStandby = false;
+                mNexusHdmiCecDevice->standbyUnlock();
+            }
+            else {
+                // Don't forward the CEC message if in S1 and it was an invalid wake-up opcode or
+                // we are in S0 (i.e. not fully in standby yet).
+                forwardCecMessage = false;
+            }
+        }
+        else {
+            mNexusHdmiCecDevice->standbyUnlock();
+        }
+
+        hdmi_event_t hdmiCecEvent;
+
+        // Forward the CEC message to the Android HDMI service...
         if (forwardCecMessage == true) {
-            ALOGV("%s: About to call port %d CEC MESSAGE callback function %p...", __PRETTY_FUNCTION__, portId, mNexusHdmiCecDevice->mCallback);
-            (*mNexusHdmiCecDevice->mCallback)(&hdmiCecEvent, mNexusHdmiCecDevice->mCallbackArg);
+            hdmiCecEvent.type = HDMI_EVENT_CEC_MESSAGE;
+            hdmiCecEvent.dev = mNexusHdmiCecDevice->mHdmiCecDevice;
+            memcpy(&hdmiCecEvent.cec, &cecMessage, sizeof(hdmiCecEvent.cec));
+
+            ALOGV("%s: About to call CEC port %d CEC MESSAGE callback function...", __PRETTY_FUNCTION__, portId);
+            mNexusHdmiCecDevice->fireEventCallback(&hdmiCecEvent);
         }
 
         // Send a hotplug "connected" event to the Android HDMI service to wake-up from sleep...
         if (sendHotplugWakeUpEvent == true) {
-            ALOGV("%s: About to call port %d HDMI HOTPLUG callback function %p to wake the device up...", __PRETTY_FUNCTION__,
-                   portId, mNexusHdmiCecDevice->mCallback);
-            mNexusHdmiCecDevice->mHotPlugConnected = true;
             hdmiCecEvent.type = HDMI_EVENT_HOT_PLUG;
             hdmiCecEvent.dev = mNexusHdmiCecDevice->mHdmiCecDevice;
             hdmiCecEvent.hotplug.port_id = portId;
             hdmiCecEvent.hotplug.connected = true;
-            (*mNexusHdmiCecDevice->mCallback)(&hdmiCecEvent, mNexusHdmiCecDevice->mCallbackArg);
+            mNexusHdmiCecDevice->mHotPlugConnected = true;
+
+            ALOGV("%s: About to call port %d HDMI HOTPLUG callback function to wake the device up...", __PRETTY_FUNCTION__, portId);
+            mNexusHdmiCecDevice->fireEventCallback(&hdmiCecEvent);
         }
     }
+    return ret;
+}
+
+void NexusHdmiCecDevice::HdmiCecRxMessageHandler::onMessageReceived(const sp<AMessage> &msg)
+{
+    uint8_t portId = mNexusHdmiCecDevice->mCecId;
+
+    switch (msg->what())
+    {
+        case kWhatHandleMsg:
+            ALOGV("%s: handling CEC port %d message...", __PRETTY_FUNCTION__, portId);
+            handleCecMessage(msg);
+            break;
+        default:
+            ALOGE("%s: Invalid message received on CEC port %d - ignoring!", __PRETTY_FUNCTION__, portId);
+    }
+}
+
+/******************************************************************************
+  HdmiCecMessageEventListener methods
+******************************************************************************/
+NexusHdmiCecDevice::HdmiCecMessageEventListener::HdmiCecMessageEventListener(sp<NexusHdmiCecDevice> device) : mNexusHdmiCecDevice(device)
+{
+    HDMI_CEC_TRACE_ENTER;
+}
+
+NexusHdmiCecDevice::HdmiCecMessageEventListener::~HdmiCecMessageEventListener()
+{
+    HDMI_CEC_TRACE_ENTER;
+}
+
+status_t NexusHdmiCecDevice::HdmiCecMessageEventListener::onHdmiCecMessageReceived(int32_t portId, INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message)
+{
+    ALOGV("%s: CEC portId=%d, from %d, to %d, length %d, opcode=0x%02x", __PRETTY_FUNCTION__, portId,
+            message->initiator, message->destination, message->length, message->body[0]);
+
+    sp<AMessage> msg = new AMessage;
+    sp<ABuffer> buf = new ABuffer(message->length);
+
+    msg->setInt32("srcAddr", message->initiator);
+    msg->setInt32("destAddr", message->destination);
+    msg->setSize("length",  message->length);
+
+    if (message->length > 0) {
+        buf->setRange(0, 0);
+        memcpy(buf->data(), &message->body[0], message->length);
+        buf->setRange(0, message->length);
+        msg->setBuffer("body", buf);
+    }
+    msg->setWhat(NexusHdmiCecDevice::HdmiCecRxMessageHandler::kWhatHandleMsg);
+    msg->setTarget(mNexusHdmiCecDevice->mHdmiCecRxMessageHandler->id());
+    msg->post();
 
     return NO_ERROR;
 }
 
-NexusHdmiCecDevice::HdmiHotplugEventListener::HdmiHotplugEventListener(NexusHdmiCecDevice *device) : mNexusHdmiCecDevice(device)
+/******************************************************************************
+  HdmiHotplugEventListener methods
+******************************************************************************/
+NexusHdmiCecDevice::HdmiHotplugEventListener::HdmiHotplugEventListener(sp<NexusHdmiCecDevice> device) : mNexusHdmiCecDevice(device)
 {
     HDMI_CEC_TRACE_ENTER;
 }
@@ -199,12 +310,70 @@ status_t NexusHdmiCecDevice::HdmiHotplugEventListener::onHdmiHotplugEventReceive
         hdmiCecEvent.hotplug.connected = connected;
         mNexusHdmiCecDevice->mHotPlugConnected = connected;
 
-        if (mNexusHdmiCecDevice->mCallback != NULL) {
-            ALOGV("%s: About to call port %d HDMI HOTPLUG callback function %p...", __PRETTY_FUNCTION__, portId, mNexusHdmiCecDevice->mCallback);
-            (*mNexusHdmiCecDevice->mCallback)(&hdmiCecEvent, mNexusHdmiCecDevice->mCallbackArg);
-        }
+        ALOGV("%s: About to call CEC port %d HDMI HOTPLUG callback...", __PRETTY_FUNCTION__, portId);
+        mNexusHdmiCecDevice->fireEventCallback(&hdmiCecEvent);
     }
     return NO_ERROR;
+}
+
+/******************************************************************************
+  NexusHdmiCecDevice methods
+******************************************************************************/
+cec_logical_address_t NexusHdmiCecDevice::toCecLogicalAddressT(uint8_t addr)
+{
+    cec_logical_address_t logicalAddr = CEC_ADDR_UNREGISTERED;
+
+    switch (addr) {
+        case 0:
+            logicalAddr = CEC_ADDR_TV;
+            break;
+        case 1:
+            logicalAddr = CEC_ADDR_RECORDER_1;
+            break;
+        case 2:
+            logicalAddr = CEC_ADDR_RECORDER_2;
+            break;
+        case 3:
+            logicalAddr = CEC_ADDR_TUNER_1;
+            break;
+        case 4:
+            logicalAddr = CEC_ADDR_PLAYBACK_1;
+            break;
+        case 5:
+            logicalAddr = CEC_ADDR_AUDIO_SYSTEM;
+            break;
+        case 6:
+            logicalAddr = CEC_ADDR_TUNER_2;
+            break;
+        case 7:
+            logicalAddr = CEC_ADDR_TUNER_3;
+            break;
+        case 8:
+            logicalAddr = CEC_ADDR_PLAYBACK_2;
+            break;
+        case 9:
+            logicalAddr = CEC_ADDR_RECORDER_3;
+            break;
+        case 10:
+            logicalAddr = CEC_ADDR_TUNER_4;
+            break;
+        case 11:
+            logicalAddr = CEC_ADDR_PLAYBACK_3;
+            break;
+        case 12:
+            logicalAddr = CEC_ADDR_RESERVED_1;
+            break;
+        case 13:
+            logicalAddr = CEC_ADDR_RESERVED_2;
+            break;
+        case 14:
+            logicalAddr = CEC_ADDR_FREE_USE;
+            break;
+        case 15:
+            logicalAddr = CEC_ADDR_BROADCAST;
+            break;
+    }
+    return logicalAddr;
 }
 
 bool NexusHdmiCecDevice::standbyMonitor(void *ctx)
@@ -218,11 +387,12 @@ bool NexusHdmiCecDevice::standbyMonitor(void *ctx)
     return true;
 }
 
-NexusHdmiCecDevice::NexusHdmiCecDevice(uint32_t cecId) : mCecId(cecId), mCecLogicalAddr(UNDEFINED_LOGICAL_ADDRESS),
-                                                         mCecPhysicalAddr(UNDEFINED_PHYSICAL_ADDRESS), mCecEnable(true),
-                                                         mCecSystemControlEnable(true), mCecViewOnCmdPending(false), mStandby(false),
-                                                         mHotPlugConnected(false), pIpcClient(NULL), pNexusClientContext(NULL), mCallback(NULL),
-                                                         mHdmiCecDevice(NULL), mHdmiCecMessageEventListener(NULL), mHdmiHotplugEventListener(NULL)
+NexusHdmiCecDevice::NexusHdmiCecDevice(int cecId) : mCecId(cecId), mCecLogicalAddr(UNDEFINED_LOGICAL_ADDRESS),
+                                                    mCecPhysicalAddr(UNDEFINED_PHYSICAL_ADDRESS), mCecEnable(true),
+                                                    mCecSystemControlEnable(true), mCecViewOnCmdPending(false), mStandby(false),
+                                                    mHotPlugConnected(false), pIpcClient(NULL), pNexusClientContext(NULL), mCallback(NULL),
+                                                    mHdmiCecDevice(NULL), mHdmiCecMessageEventListener(NULL), mHdmiHotplugEventListener(NULL),
+                                                    mHdmiCecRxMessageHandler(NULL), mHdmiCecRxMessageLooper(NULL)
 {
     HDMI_CEC_TRACE_ENTER;
 }
@@ -254,85 +424,105 @@ status_t NexusHdmiCecDevice::initialise()
         pNexusClientContext = pIpcClient->createClientContext(&clientConfig);
         if (pNexusClientContext == NULL) {
             ALOGE("%s: Could not create Nexus Client Context!!!", __PRETTY_FUNCTION__);
-            delete pIpcClient;
-            pIpcClient = NULL;
+            goto fail_create_client_context;
         }
         else {
-            mHdmiHotplugEventListener = new HdmiHotplugEventListener(this);
+            mHdmiHotplugEventListener = NexusHdmiCecDevice::HdmiHotplugEventListener::instantiate(this);
 
             if (mHdmiHotplugEventListener == NULL) {
                 ALOGE("%s: cannot create HDMI hotplug event listener!!!", __PRETTY_FUNCTION__);
-                pIpcClient->destroyClientContext(pNexusClientContext);
-                pNexusClientContext = NULL;
-                delete pIpcClient;
-                pIpcClient = NULL;
+                goto fail_create_hotplug_listener;
             }
             else {
                 // Attempt to register the HDMI Hotplug Event Listener with NexusService
                 ret = pIpcClient->addHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
                 if (ret != NO_ERROR) {
-                    ALOGE("%s: could not register HDMI hotplug event listener (rc=%d)!!!", __PRETTY_FUNCTION__, ret);
-                    mHdmiHotplugEventListener = NULL;
-                    pIpcClient->destroyClientContext(pNexusClientContext);
-                    pNexusClientContext = NULL;
-                    delete pIpcClient;
-                    pIpcClient = NULL;
+                    ALOGE("%s: could not add HDMI hotplug event listener (rc=%d)!!!", __PRETTY_FUNCTION__, ret);
+                    goto fail_add_hotplug_listener;
                 }
                 else {
                     if (pIpcClient->isCecEnabled(mCecId) == true) {
                         if (pIpcClient->getCecStatus(mCecId, &cecStatus) != true) {
                             ALOGE("%s: cannot get CEC status!!!", __PRETTY_FUNCTION__);
-                            pIpcClient->removeHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
-                            mHdmiHotplugEventListener = NULL;
-                            pIpcClient->destroyClientContext(pNexusClientContext);
-                            pNexusClientContext = NULL;
-                            delete pIpcClient;
-                            pIpcClient = NULL;
                             ret = UNKNOWN_ERROR;
+                            goto fail_get_cec_status;
                         }
                         else if (cecStatus.ready) {
-                            mHdmiCecMessageEventListener = new HdmiCecMessageEventListener(this);
+                            // Create looper to receive CEC messages...
+                            char looperName[] = "Hdmi Cec  Rx Message Looper";
+                            looperName[8] = '0' + mCecId;
 
-                            if (mHdmiCecMessageEventListener == NULL) {
-                                ALOGE("%s: cannot create HDMI CEC message event listener!!!", __PRETTY_FUNCTION__);
-                                pIpcClient->removeHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
-                                mHdmiHotplugEventListener = NULL;
-                                pIpcClient->destroyClientContext(pNexusClientContext);
-                                pNexusClientContext = NULL;
-                                delete pIpcClient;
-                                pIpcClient = NULL;
+                            mHdmiCecRxMessageLooper = new ALooper;
+                            if (mHdmiCecRxMessageLooper.get() == NULL) {
+                                ALOGE("%s: could not create CEC%d messasge looper!!!", __PRETTY_FUNCTION__, mCecId);
                                 ret = NO_INIT;
+                                goto fail_create_looper;
                             }
                             else {
-                                // Attempt to register the HDMI CEC Message Event Listener with NexusService
-                                ret = pIpcClient->setHdmiCecMessageEventListener(mCecId, mHdmiCecMessageEventListener);
-                                if (ret != NO_ERROR) {
-                                    ALOGE("%s: could not register HDMI CEC message event listener (rc=%d)!!!", __PRETTY_FUNCTION__, ret);
-                                    mHdmiCecMessageEventListener = NULL;
-                                    pIpcClient->removeHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
-                                    mHdmiHotplugEventListener = NULL;
-                                    pIpcClient->destroyClientContext(pNexusClientContext);
-                                    pNexusClientContext = NULL;
-                                    delete pIpcClient;
-                                    pIpcClient = NULL;
+                                mHdmiCecRxMessageLooper->setName(looperName);
+                                mHdmiCecRxMessageLooper->start();
+
+                                // Create Handler to handle reception of CEC messages...
+                                mHdmiCecRxMessageHandler = NexusHdmiCecDevice::HdmiCecRxMessageHandler::instantiate(this);
+
+                                if (mHdmiCecRxMessageHandler.get() == NULL) {
+                                    ALOGE("%s: could not create CEC%d message handler!!!", __PRETTY_FUNCTION__, mCecId);
+                                    ret = NO_INIT;
+                                    goto fail_create_message_handler;
+                                }
+                                else {
+                                    mHdmiCecRxMessageLooper->registerHandler(mHdmiCecRxMessageHandler);
+
+                                    mHdmiCecMessageEventListener = NexusHdmiCecDevice::HdmiCecMessageEventListener::instantiate(this);
+
+                                    if (mHdmiCecMessageEventListener.get() == NULL) {
+                                        ALOGE("%s: cannot create HDMI CEC message event listener!!!", __PRETTY_FUNCTION__);
+                                        ret = NO_INIT;
+                                        goto fail_create_event_listener;
+                                    }
+                                    else {
+                                        // Attempt to register the HDMI CEC Message Event Listener with NexusService
+                                        ret = pIpcClient->setHdmiCecMessageEventListener(mCecId, mHdmiCecMessageEventListener);
+                                        if (ret != NO_ERROR) {
+                                            ALOGE("%s: could not register HDMI CEC message event listener (rc=%d)!!!", __PRETTY_FUNCTION__, ret);
+                                            goto fail_set_event_listener;
+                                        }
+                                    }
                                 }
                             }
                         }
                         else {
                             ALOGE("%s: CEC%d not ready!!!", __PRETTY_FUNCTION__, mCecId);
-                            pIpcClient->removeHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
-                            mHdmiHotplugEventListener = NULL;
-                            pIpcClient->destroyClientContext(pNexusClientContext);
-                            pNexusClientContext = NULL;
-                            delete pIpcClient;
-                            pIpcClient = NULL;
                             ret = UNKNOWN_ERROR;
+                            goto fail_get_cec_status;
                         }
                     }
                 }
             }
         }
     }
+    return ret;
+
+fail_set_event_listener:
+    mHdmiCecMessageEventListener = NULL;
+fail_create_event_listener:
+    mHdmiCecRxMessageLooper->unregisterHandler(mHdmiCecRxMessageHandler->id());
+fail_create_message_handler:
+    mHdmiCecRxMessageLooper->stop();
+    mHdmiCecRxMessageHandler = NULL;
+    mHdmiCecRxMessageLooper = NULL;
+fail_get_cec_status:
+fail_create_looper:
+    pIpcClient->removeHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
+fail_add_hotplug_listener:
+    mHdmiHotplugEventListener = NULL;
+fail_create_hotplug_listener:
+    pIpcClient->destroyClientContext(pNexusClientContext);
+    pNexusClientContext = NULL;
+fail_create_client_context:
+    delete pIpcClient;
+    pIpcClient = NULL;
+
     return ret;
 }
 
@@ -341,12 +531,23 @@ status_t NexusHdmiCecDevice::uninitialise()
     status_t ret = NO_ERROR;
 
     if (pIpcClient != NULL) {
-        if (mHdmiHotplugEventListener != NULL) {
+        if (mHdmiCecMessageEventListener.get() != NULL) {
+            mHdmiCecMessageEventListener = NULL;
+        }
+
+        if (mHdmiCecRxMessageHandler.get() != NULL && mHdmiCecRxMessageLooper.get() != NULL) {
+            mHdmiCecRxMessageLooper->unregisterHandler(mHdmiCecRxMessageHandler->id());
+            mHdmiCecRxMessageLooper->stop();
+            mHdmiCecRxMessageHandler = NULL;
+            mHdmiCecRxMessageLooper = NULL;
+        }
+
+        if (mHdmiHotplugEventListener.get() != NULL) {
             ret = pIpcClient->removeHdmiHotplugEventListener(mCecId, mHdmiHotplugEventListener);
             mHdmiHotplugEventListener = NULL;
         }
 
-        if (mHdmiCecMessageEventListener != NULL) {
+        if (mHdmiCecMessageEventListener.get() != NULL) {
             ret = pIpcClient->setHdmiCecMessageEventListener(mCecId, NULL);
             mHdmiCecMessageEventListener = NULL;
         }
@@ -500,13 +701,22 @@ status_t NexusHdmiCecDevice::getConnectedState(int *pIsConnected)
     return NO_ERROR;
 }
 
-void NexusHdmiCecDevice::registerEventCallback(const struct hdmi_cec_device* dev, event_callback_t callback, void *arg)
+void NexusHdmiCecDevice::registerEventCallback(const hdmi_cec_device_t* dev, event_callback_t callback, void *arg)
 {
     HDMI_CEC_TRACE_ENTER;
 
-    mHdmiCecDevice = const_cast<struct hdmi_cec_device*>(dev);
+    mHdmiCecDevice = const_cast<hdmi_cec_device_t*>(dev);
     mCallback = callback;
     mCallbackArg = arg;
+}
+
+void NexusHdmiCecDevice::fireEventCallback(hdmi_event_t *pHdmiCecEvent)
+{
+    HDMI_CEC_TRACE_ENTER;
+
+    if (mCallback != NULL) {
+        (*mCallback)(pHdmiCecEvent, mCallbackArg);
+    }
 }
 
 status_t NexusHdmiCecDevice::getCecPhysicalAddress(uint16_t* addr)

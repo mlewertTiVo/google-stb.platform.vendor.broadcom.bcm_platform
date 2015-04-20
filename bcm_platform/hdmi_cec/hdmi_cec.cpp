@@ -341,7 +341,7 @@ static int hdmi_cec_device_open(const struct hw_module_t* module, const char* na
 
         *device = &dev->device.common;
 
-        dev->mNexusHdmiCecDevice = new NexusHdmiCecDevice();
+        dev->mNexusHdmiCecDevice = NexusHdmiCecDevice::instantiate();
         if (dev->mNexusHdmiCecDevice == NULL) {
             ALOGE("%s: cannot instantiate NexusHdmiCecDevice!!!", __PRETTY_FUNCTION__);
             free(dev);

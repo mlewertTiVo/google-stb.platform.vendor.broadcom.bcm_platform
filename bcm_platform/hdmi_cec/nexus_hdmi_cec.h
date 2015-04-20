@@ -51,6 +51,11 @@
 #include "nexus_types.h"
 #include "nexus_platform.h"
 
+#include <media/stagefright/foundation/ABuffer.h>
+#include <media/stagefright/foundation/AHandler.h>
+#include <media/stagefright/foundation/ALooper.h>
+#include <media/stagefright/foundation/AMessage.h>
+
 #include <hardware/hdmi_cec.h>
 #include <utils/SortedVector.h>
 #include <utils/threads.h>
@@ -71,16 +76,19 @@ enum cec_ui_command_type {
 class NexusHdmiCecDevice : public RefBase
 {
     public:
-        NexusHdmiCecDevice(uint32_t cecId=0);
+        static sp<NexusHdmiCecDevice> instantiate(int cecId=0) { return new NexusHdmiCecDevice(cecId); }
         ~NexusHdmiCecDevice();
 
-        void registerEventCallback(const struct hdmi_cec_device* dev, event_callback_t callback, void *arg);
+        static cec_logical_address_t toCecLogicalAddressT(uint8_t addr);
+        static bool standbyMonitor(void *ctx);
+
+        void registerEventCallback(const hdmi_cec_device_t* dev, event_callback_t callback, void *arg);
+        void fireEventCallback(hdmi_event_t *pHdmiCecEvent);
         void setEnableState(bool enable);
         void setAutoWakeupState(bool enable);
         void setControlState(bool enable);
         bool getCecTransmitStandby();
         bool getCecTransmitViewOn();
-        static bool standbyMonitor(void *ctx);
 
         status_t initialise();
         status_t uninitialise();
@@ -96,27 +104,70 @@ class NexusHdmiCecDevice : public RefBase
         inline void standbyUnlock() { mStandbyLock.unlock(); }
 
     protected:
+        // Protected constructor prevents a client from creating an instance of this
+        // class directly, but allows a sub-class to call it through inheritence.
+        NexusHdmiCecDevice(int cecId);
+
         class HdmiCecMessageEventListener : public BnNexusHdmiCecMessageEventListener {
             public:
-                HdmiCecMessageEventListener(NexusHdmiCecDevice *device);
+                static sp<HdmiCecMessageEventListener> instantiate(sp<NexusHdmiCecDevice> device) { return new HdmiCecMessageEventListener(device); }
                 ~HdmiCecMessageEventListener();
-                virtual status_t onHdmiCecMessageReceived(int32_t portId, android::INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message);
+                virtual status_t onHdmiCecMessageReceived(int32_t portId, INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message);
+            protected:
+                // Protected constructor prevents a client from creating an instance of this
+                // class directly, but allows a sub-class to call it through inheritence.
+                HdmiCecMessageEventListener(sp<NexusHdmiCecDevice> device);
             private:
-                bool isValidWakeupCecMessage(android::INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message);
                 sp<NexusHdmiCecDevice> mNexusHdmiCecDevice;
+
+                /* Disallow copy constructor and copy operator... */
+                HdmiCecMessageEventListener(const HdmiCecMessageEventListener &);
+                HdmiCecMessageEventListener &operator=(const HdmiCecMessageEventListener &);
         };
 
         class HdmiHotplugEventListener : public BnNexusHdmiHotplugEventListener {
             public:
-                HdmiHotplugEventListener(NexusHdmiCecDevice *device);
+                static sp<HdmiHotplugEventListener> instantiate(sp<NexusHdmiCecDevice> device) { return new HdmiHotplugEventListener(device); }
                 ~HdmiHotplugEventListener();
                 virtual status_t onHdmiHotplugEventReceived(int32_t portId, bool connected);
+            protected:
+                // Protected constructor prevents a client from creating an instance of this
+                // class directly, but allows a sub-class to call it through inheritence.
+                HdmiHotplugEventListener(sp<NexusHdmiCecDevice> device);
             private:
                 sp<NexusHdmiCecDevice> mNexusHdmiCecDevice;
+
+                /* Disallow copy constructor and copy operator... */
+                HdmiHotplugEventListener(const HdmiHotplugEventListener &);
+                HdmiHotplugEventListener &operator=(const HdmiHotplugEventListener &);
+        };
+
+        class HdmiCecRxMessageHandler : public AHandler {
+            public:
+                static sp<HdmiCecRxMessageHandler> instantiate(sp<NexusHdmiCecDevice> device) { return new HdmiCecRxMessageHandler(device); }
+                ~HdmiCecRxMessageHandler();
+
+                enum {
+                    kWhatHandleMsg =  0x01,
+                };
+            protected:
+                // Protected constructor prevents a client from creating an instance of this
+                // class directly, but allows a sub-class to call it through inheritence.
+                HdmiCecRxMessageHandler(sp<NexusHdmiCecDevice> device);
+            private:
+                sp<NexusHdmiCecDevice> mNexusHdmiCecDevice;
+
+                virtual void onMessageReceived(const sp<AMessage> &msg);
+                virtual bool isValidWakeupCecMessage(cec_message_t *message);
+                virtual status_t handleCecMessage(const sp<AMessage> &msg);
+
+                /* Disallow copy constructor and copy operator... */
+                HdmiCecRxMessageHandler(const HdmiCecRxMessageHandler &);
+                HdmiCecRxMessageHandler &operator=(const HdmiCecRxMessageHandler &);
         };
 
     private:
-        uint32_t                        mCecId;
+        int                             mCecId;
         uint8_t                         mCecLogicalAddr;
         uint16_t                        mCecPhysicalAddr;
         bool                            mCecEnable;
@@ -130,12 +181,19 @@ class NexusHdmiCecDevice : public RefBase
         hdmi_port_info                  mPortInfo[NEXUS_NUM_CEC];
         event_callback_t                mCallback;
         void*                           mCallbackArg;
-        struct hdmi_cec_device*         mHdmiCecDevice;
+        hdmi_cec_device_t*              mHdmiCecDevice;
         sp<HdmiCecMessageEventListener> mHdmiCecMessageEventListener;
         sp<HdmiHotplugEventListener>    mHdmiHotplugEventListener;
+        sp<HdmiCecRxMessageHandler>     mHdmiCecRxMessageHandler;
+        sp<ALooper>                     mHdmiCecRxMessageLooper;
 
         static const uint32_t UNDEFINED_PHYSICAL_ADDRESS = 0xFFFF;
         static const uint32_t UNDEFINED_LOGICAL_ADDRESS = 0xFF;
+        static const uint8_t  MAX_LOGICAL_ADDRESS = 0x0F;
+
+        /* Disallow copy constructor and copy operator... */
+        NexusHdmiCecDevice(const NexusHdmiCecDevice &);
+        NexusHdmiCecDevice &operator=(const NexusHdmiCecDevice &);
 };
 
 #endif  // _NEXUS_HDMI_CEC_H_
