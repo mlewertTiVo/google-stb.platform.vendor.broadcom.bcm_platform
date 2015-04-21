@@ -1454,7 +1454,7 @@ static bool primary_need_nsc_layer(struct hwc_context_t *ctx, hwc_layer_1_t *lay
 out:
 
     if (!rc && (total_layers == 1) && ctx->display_dump_layer) {
-       ALOGI("comp: %d - skip-single - reason %d", ctx->stats[0].prepare_call, skip_layer);
+       ALOGI("comp: %llu - skip-single - reason %d", ctx->stats[0].prepare_call, skip_layer);
     }
     return rc;
 }
@@ -1561,7 +1561,7 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
     bool has_video = false;
 
     if (ctx->display_dump_layer) {
-       ALOGI("comp: %d - classifying %d layers", ctx->stats[0].prepare_call, list->numHwLayers);
+       ALOGI("comp: %llu - classifying %d layers", ctx->stats[0].prepare_call, list->numHwLayers);
     }
 
     ctx->needs_fb_target = false;
@@ -1676,7 +1676,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
             layer = &list->hwLayers[i];
             if (primary_need_nsc_layer(ctx, layer, list->numHwLayers)) {
                 if (ctx->display_dump_layer) {
-                   ALOGI("comp: %d - show - sf:%d (%d) -> nsc:%d", ctx->stats[0].prepare_call, i, layer->compositionType, i);
+                   ALOGI("comp: %llu - show - sf:%d (%d)", ctx->stats[0].prepare_call, (int)i, (int)layer->compositionType);
                 }
                 hwc_nsc_prepare_layer(ctx, layer, (int)i,
                                       (bool)(list->flags & HWC_GEOMETRY_CHANGED),
@@ -1684,7 +1684,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
                                       &sideband_layer_id);
             } else {
                 if (ctx->display_dump_layer) {
-                   ALOGI("comp: %d - hiding - sf:%d (%d) -> nsc:%d", ctx->stats[0].prepare_call, i, layer->compositionType, i);
+                   ALOGI("comp: %llu - hiding - sf:%d (%d)", ctx->stats[0].prepare_call, (int)i, (int)layer->compositionType);
                 }
                 hwc_hide_unused_gpx_layer(ctx, i);
             }
