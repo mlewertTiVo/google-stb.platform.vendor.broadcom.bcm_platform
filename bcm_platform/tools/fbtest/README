@@ -1,0 +1,17 @@
+couple changes from the default code in refsw which appears to have gone unsupported...
+
+1) remove <asm/page.h> inclusion from fb.c
+
+2) remove 'test004' and 'test009' from tests.c as they rely on a module not available.
+
+
+
+to use:
+
+1) boot android but do not start nxserver, this will load up the nexus driver still.
+
+2) insmod the framebuffer kernel driver.
+
+3) run nxmini to initialize the minimum nexus platform.
+
+4) run "fbtest -f /dev/graphics/fb0 -d <test>"

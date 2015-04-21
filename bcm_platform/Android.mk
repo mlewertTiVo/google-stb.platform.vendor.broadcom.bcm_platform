@@ -50,6 +50,7 @@ include vendor/broadcom/bcm_platform/tools/calcfb/Android.mk
 include vendor/broadcom/bcm_platform/tools/cec/Android.mk
 include vendor/broadcom/bcm_platform/tools/clipping/Android.mk
 include vendor/broadcom/bcm_platform/tools/cmatool/Android.mk
+include vendor/broadcom/bcm_platform/tools/fbtest/Android.mk
 include vendor/broadcom/bcm_platform/tools/lmkstats/Android.mk
 include vendor/broadcom/bcm_platform/tools/nxcfg/Android.mk
 include vendor/broadcom/bcm_platform/tools/nxmem/Android.mk
