@@ -619,7 +619,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pConfigBuffer(NULL),
     m_configBufferState(ConfigBufferState_eAccumulating),
     m_configBufferSize(0),
-    m_outputMode(BOMX_VideoDecoderOutputBufferType_eStandard)
+    m_outputMode(BOMX_VideoDecoderOutputBufferType_eStandard),
+    m_omxHwcBinder(NULL)
 {
     unsigned i;
     NEXUS_Error errCode;
