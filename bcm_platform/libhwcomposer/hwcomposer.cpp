@@ -135,7 +135,6 @@ using namespace android;
 #define HWC_GLES_VIRTUAL_PROP        "ro.hwc.gles.virtual"
 #define HWC_SW_SYNC_PROP             "ro.hwc.sw_sync"
 #define HWC_DUMP_LAYER_PROP          "ro.hwc.dump.layer"
-#define HWC_DUMP_PUSH_PROP           "ro.hwc.dump.push"
 #define HWC_DUMP_VSYNC_PROP          "ro.hwc.dump.vsync"
 #define HWC_NSC_COPY_PROP            "ro.hwc.nsc.copy"
 #define HWC_TRACK_BUFFER_PROP        "ro.hwc.track.buffer"
@@ -491,7 +490,6 @@ struct hwc_context_t {
     unsigned int sync_timeline_inc;
 
     bool display_dump_layer;
-    bool display_dump_push;
     bool display_dump_vsync;
     bool nsc_copy;
     bool track_buffer;
@@ -631,8 +629,28 @@ static NEXUS_PixelFormat gralloc_to_nexus_pixel_format(int format)
    return NEXUS_PixelFormat_eUnknown;
 }
 
+static int hwc_mem_lock_phys(struct hwc_context_t *ctx, unsigned handle, NEXUS_Addr *paddr) {
+   if (handle && ctx->hwc_with_mma) {
+      NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
+      NEXUS_MemoryBlock_LockOffset(block_handle, paddr);
+   } else if (handle) {
+      *paddr = (NEXUS_Addr)handle;
+   } else {
+      *paddr = NULL;
+   }
+   return 0;
+}
+
+static int hwc_mem_unlock_phys(struct hwc_context_t *ctx, unsigned handle) {
+   if (handle && ctx->hwc_with_mma) {
+      NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
+      NEXUS_MemoryBlock_UnlockOffset(block_handle);
+   }
+   return 0;
+}
+
 static int hwc_mem_lock(struct hwc_context_t *ctx, unsigned handle, void **addr, bool lock) {
-   if (ctx->hwc_with_mma) {
+   if (handle && ctx->hwc_with_mma) {
       if (lock) {
          NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
          NEXUS_MemoryBlock_Lock(block_handle, addr);
@@ -641,8 +659,10 @@ static int hwc_mem_lock(struct hwc_context_t *ctx, unsigned handle, void **addr,
             ALOGI("mma-lock: %p -> %p", handle, *addr);
          }
       }
-   } else {
+   } else if (handle) {
       *addr = NEXUS_OffsetToCachedAddr((NEXUS_Addr)handle);
+   } else {
+      *addr = NULL;
    }
    return 0;
 }
@@ -1676,7 +1696,15 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
             layer = &list->hwLayers[i];
             if (primary_need_nsc_layer(ctx, layer, list->numHwLayers)) {
                 if (ctx->display_dump_layer) {
-                   ALOGI("comp: %llu - show - sf:%d (%d)", ctx->stats[0].prepare_call, (int)i, (int)layer->compositionType);
+                   unsigned handle_dump = 0;
+                   if (layer->handle != NULL) {
+                      private_handle_t *gr_buffer = (private_handle_t *)layer->handle;
+                      NEXUS_Addr pAddr;
+                      hwc_mem_lock_phys(ctx, (unsigned)gr_buffer->sharedData, &pAddr);
+                      handle_dump = (unsigned)pAddr;
+                      hwc_mem_unlock_phys(ctx, (unsigned)gr_buffer->sharedData);
+                   }
+                   ALOGI("comp: %llu - show - sf:%d (%d) - hdl:0x%x", ctx->stats[0].prepare_call, (int)i, (int)layer->compositionType, handle_dump);
                 }
                 hwc_nsc_prepare_layer(ctx, layer, (int)i,
                                       (bool)(list->flags & HWC_GEOMETRY_CHANGED),
@@ -2497,10 +2525,6 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
 
    if (property_get(HWC_DUMP_LAYER_PROP, value, HWC_DEFAULT_DISABLED)) {
       dev->display_dump_layer = (strtoul(value, NULL, 10) == 0) ? false : true;
-   }
-
-   if (property_get(HWC_DUMP_PUSH_PROP, value, HWC_DEFAULT_DISABLED)) {
-      dev->display_dump_push = (strtoul(value, NULL, 10) == 0) ? false : true;
    }
 
    if (property_get(HWC_DUMP_VSYNC_PROP, value, HWC_DEFAULT_DISABLED)) {
