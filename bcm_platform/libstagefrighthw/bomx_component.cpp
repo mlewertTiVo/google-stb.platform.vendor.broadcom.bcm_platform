@@ -158,6 +158,7 @@ static OMX_ERRORTYPE BOMX_Component_ComponentRoleEnum(
 
 OMX_ERRORTYPE BOMX_InitComponentResourceList()
 {
+    BLST_Q_INIT(&g_resourceList);
     ALOG_ASSERT(NULL == g_resourceMutex);
     g_resourceMutex = B_Mutex_Create(NULL);
     if ( NULL == g_resourceMutex )
@@ -165,7 +166,6 @@ OMX_ERRORTYPE BOMX_InitComponentResourceList()
         ALOGW("Unable to create resource mutex");
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
     }
-    BLST_Q_INIT(&g_resourceList);
     return OMX_ErrorNone;
 }
 

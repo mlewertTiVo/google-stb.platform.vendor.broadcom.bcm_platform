@@ -624,6 +624,10 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
 {
     unsigned i;
     NEXUS_Error errCode;
+
+    BLST_Q_INIT(&m_frameBufferFreeList);
+    BLST_Q_INIT(&m_frameBufferAllocList);
+
     #define MAX_PORT_FORMATS (6)
     #define MAX_OUTPUT_PORT_FORMATS (2)
 
@@ -922,9 +926,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
             return;
         }
     }
-
-    BLST_Q_INIT(&m_frameBufferFreeList);
-    BLST_Q_INIT(&m_frameBufferAllocList);
 
     for ( i = 0; i < B_MAX_DECODED_FRAMES; i++ )
     {
