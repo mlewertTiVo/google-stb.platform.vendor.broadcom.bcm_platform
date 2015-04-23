@@ -130,19 +130,15 @@ androidrootdevice='%s%s%s' % (chip, revision, boardtype)
 if target_option == "AOSP" or target_option == "REDUX" or target_option == "NFS":
 	androiddevice='%s_%s' % (androiddevice, target_option)
 if target_option == "PROFILE":
-	custom_target_settings="./device/broadcom/custom/%s/%s/settings.mk" %(androiddevice, target_profile)
-	if not os.access(custom_target_settings, os.F_OK):
+        custom_directory="./device/broadcom/custom/%s/%s" %(androiddevice, target_profile)
+	custom_target_settings="%s/settings.mk" %(custom_directory)
+	custom_target_pre_settings="%s/pre_settings.mk" %(custom_directory)
+	androiddevice='%s_%s' % (androiddevice, target_profile)
+	if not os.path.exists(custom_directory):
 		print '\n*** your custom profile "%s/%s" does not appear to be a valid one.\n' %(androiddevice, target_profile)
 		plat_droid_usage()
-	else:
-		custom_target_settings="include device/broadcom/custom/%s/%s/settings.mk" %(androiddevice, target_profile)
-		custom_target_pre_settings="./device/broadcom/custom/%s/%s/pre_settings.mk" %(androiddevice, target_profile)
-		if not os.access(custom_target_pre_settings, os.F_OK):
-			custom_target_pre_settings='nope'
-		else:
-			custom_target_pre_settings="include device/broadcom/custom/%s/%s/pre_settings.mk" %(androiddevice, target_profile)
-		androiddevice='%s_%s' % (androiddevice, target_profile)
-
+	if not os.access(custom_target_pre_settings, os.F_OK):
+		custom_target_pre_settings='nope'
 if spoof_device == 'nope':
 	devicedirectory='./device/broadcom/bcm_%s/' % (androiddevice)
 else:
@@ -252,8 +248,9 @@ if os.access(root_pre_settings, os.F_OK):
 	root_pre_settings="\ninclude device/broadcom/custom/%s/root/pre_settings.mk" %(androidrootdevice)
 	os.write(s, root_pre_settings)
 if target_option == "PROFILE" and custom_target_pre_settings != 'nope':
-	os.write(s, "\n\n# CUSTOM 'pre' setting tweaks...\n")
-	os.write(s, custom_target_pre_settings)
+	if os.access(custom_target_pre_settings, os.F_OK):
+		os.write(s, "\n\n# CUSTOM 'pre' setting tweaks...\n")
+		os.write(s, "include %s\n" % custom_target_pre_settings)
 if target_option == "REDUX":
 	os.write(s, "\n\n# REDUX target set...\n")
 	os.write(s, "include device/broadcom/common/target_redux.mk")
@@ -269,8 +266,9 @@ if target_option == "NFS":
 	os.write(s, "\n\n# NFS setting tweaks...\n")
 	os.write(s, "include device/broadcom/common/settings_nfs.mk")
 if target_option == "PROFILE":
-	os.write(s, "\n\n# CUSTOM setting tweaks...\n")
-	os.write(s, custom_target_settings)
+	if os.access(custom_target_settings, os.F_OK):
+		os.write(s, "\n\n# CUSTOM setting tweaks...\n")
+		os.write(s, "include %s\n" % custom_target_settings)
 if spoof_device != "nope":
 	spoof_settings="./device/%s/config/settings.mk" %(spoof_device)
 	if os.access(spoof_settings, os.F_OK):
