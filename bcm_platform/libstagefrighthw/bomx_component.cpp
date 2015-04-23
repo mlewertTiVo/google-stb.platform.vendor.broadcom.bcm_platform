@@ -54,6 +54,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define B_THREAD_EXIT_TIMEOUT           5000
+
 static BLST_Q_HEAD(ComponentResourceList,BOMX_ComponentResources) g_resourceList;
 static B_MutexHandle g_resourceMutex;
 
@@ -274,6 +276,7 @@ BOMX_Component::BOMX_Component(
     m_hCommandEvent(NULL),
     m_hPortEvent(NULL),
     m_hEosEvent(NULL),
+    m_hExitEvent(NULL),
     m_hThread(NULL),
     m_commandEventId(NULL),
     m_eosEventId(NULL),
@@ -312,6 +315,8 @@ BOMX_Component::BOMX_Component(
     ALOG_ASSERT(NULL != m_eosEventId);
     m_hPortEvent = B_Event_Create(NULL);
     ALOG_ASSERT(NULL != m_hPortEvent);
+    m_hExitEvent = B_Event_Create(NULL);
+    ALOG_ASSERT(NULL != m_hExitEvent);
 
     B_MessageQueueSettings messageQueueSettings;
     B_MessageQueue_GetDefaultSettings(&messageQueueSettings);
@@ -364,11 +369,7 @@ BOMX_Component::~BOMX_Component()
 
     if ( m_hThread )
     {
-        if ( !m_schedulerStopped )
-        {
-            B_Scheduler_Stop(m_hScheduler);
-            m_schedulerStopped = true;
-        }
+        ShutdownScheduler();
         B_Thread_Destroy(m_hThread);
     }
 
@@ -404,6 +405,10 @@ BOMX_Component::~BOMX_Component()
     if ( m_hPortEvent )
     {
         B_Event_Destroy(m_hPortEvent);
+    }
+    if ( m_hExitEvent )
+    {
+        B_Event_Destroy(m_hExitEvent);
     }
     if ( m_hMutex )
     {
@@ -1756,7 +1761,14 @@ void BOMX_Component::ShutdownScheduler()
 {
     if ( !m_schedulerStopped )
     {
+        B_Error rc;
+
         B_Scheduler_Stop(m_hScheduler);
         m_schedulerStopped = true;
+        rc = B_Event_Wait(m_hExitEvent, B_THREAD_EXIT_TIMEOUT);
+        if ( rc )
+        {
+            ALOGE("Timed out waiting for component thread to finish (%d)!", rc);
+        }
     }
 }

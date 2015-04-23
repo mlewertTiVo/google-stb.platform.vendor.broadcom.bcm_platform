@@ -124,7 +124,9 @@ public:
     OMX_ERRORTYPE QueueCommand(const BOMX_CommandMsg *pMsg);
     void CommandEventHandler();
 
-    void RunScheduler() { B_Scheduler_Run(m_hScheduler); }
+    void RunScheduler() {
+                B_Scheduler_Run(m_hScheduler);
+                B_Event_Set(m_hExitEvent); }
     void Lock() { B_Mutex_Lock(m_hMutex); };
     void Unlock() { B_Mutex_Unlock(m_hMutex); };
 
@@ -328,6 +330,7 @@ private:
     B_EventHandle m_hCommandEvent;
     B_EventHandle m_hPortEvent;
     B_EventHandle m_hEosEvent;
+    B_EventHandle m_hExitEvent;
     B_ThreadHandle m_hThread;
     B_SchedulerEventId m_commandEventId;
     B_SchedulerEventId m_eosEventId;

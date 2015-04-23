@@ -983,10 +983,9 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         g_pDebugFile = NULL;
     }
 
+    ShutdownScheduler();
 
     Lock();
-
-    ShutdownScheduler();
 
     if ( m_hSimpleVideoDecoder )
     {
