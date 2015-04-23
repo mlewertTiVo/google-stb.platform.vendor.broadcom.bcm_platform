@@ -45,6 +45,7 @@ include ${BCM_APPS_PATH}/BcmCoverFlow/Android.mk
 include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
+include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
 
 include vendor/broadcom/bcm_platform/tools/calcfb/Android.mk
 include vendor/broadcom/bcm_platform/tools/cec/Android.mk
