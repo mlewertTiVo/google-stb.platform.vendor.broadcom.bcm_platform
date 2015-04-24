@@ -74,7 +74,7 @@
 #define APP_MAX_CLIENTS 20
 #define MB (1024*1024)
 #define KB (1024)
-#define SEC_TO_NSEC (1000000000LL)
+#define SEC_TO_MSEC (1000LL)
 #define RUNNER_SEC_THRESHOLD (10)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     1920
@@ -83,6 +83,7 @@
 #define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
 
 #define NX_MMA                         "ro.nx.mma"
+#define NX_MMA_GROW_SIZE               "ro.nx.heap.grow"
 #define NX_TRANSCODE                   "ro.nx.transcode"
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
 
@@ -103,6 +104,8 @@
 #define NX_TRIM_PIP                    "ro.nx.trim.pip"
 #define NX_TRIM_MOSAIC                 "ro.nx.trim.mosaic"
 
+#define NX_HEAP_DYN_FREE_THRESHOLD     (1920*1080*4) /* one 1080p RGBA. */
+
 typedef struct {
    pthread_t runner;
    int running;
@@ -110,27 +113,73 @@ typedef struct {
 
 } RUNNER_T;
 
-static struct {
+typedef struct {
+   pthread_t runner;
+   int running;
+
+} BINDER_T;
+
+typedef struct {
     BKNI_MutexHandle lock;
     nxserver_t server;
+    BINDER_T binder;
     RUNNER_T proactive_runner;
-    BKNI_MutexHandle runner_mutex;
     unsigned refcnt;
+    int uses_mma;
     struct {
         nxclient_t client;
         NxClient_JoinSettings joinSettings;
     } clients[APP_MAX_CLIENTS]; /* index provides id */
-} g_app;
 
+} NX_SERVER_T;
+
+static NX_SERVER_T g_app;
 static bool g_exit = false;
 
-static void *proactive_runner_task(void *argv)
+static unsigned calc_heap_size(const char *value)
 {
-    (void)argv;
+   if (strchr(value, 'M') || strchr(value, 'm')) {
+     return atof(value)*MB;
+   } else if (strchr(value, 'K') || strchr(value, 'k')) {
+     return atof(value)*KB;
+   } else {
+     return strtoul(value, NULL, 0);
+   }
+}
+
+static void *binder_task(void *argv)
+{
+    NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
 
     do
     {
-       BKNI_WaitForEvent(g_app.proactive_runner.runner_run, BKNI_INFINITE);
+       android::ProcessState::self()->startThreadPool();
+       NexusNxService::instantiate();
+       android::IPCThreadState::self()->joinThreadPool();
+
+    } while(nx_server->binder.running);
+
+done:
+    return NULL;
+}
+
+static void *proactive_runner_task(void *argv)
+{
+    NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
+    unsigned gfx_heap_grow_size = 0;
+    char value[PROPERTY_VALUE_MAX];
+
+    if (property_get(NX_MMA_GROW_SIZE, value, NULL)) {
+       if (strlen(value)) {
+          gfx_heap_grow_size = calc_heap_size(value);
+       }
+    }
+
+    ALOGI("%s: launching, gpx-grow: %u...", __FUNCTION__, gfx_heap_grow_size);
+
+    do
+    {
+       BKNI_WaitForEvent(nx_server->proactive_runner.runner_run, BKNI_INFINITE);
 
        /* the proactive runner can be used for several purposes, but primarely
         * meant for memory management monitoring:
@@ -142,7 +191,20 @@ static void *proactive_runner_task(void *argv)
         *    standard LMK.
         */
 
-    } while(g_app.proactive_runner.running);
+        if (nx_server->uses_mma) {
+           NEXUS_PlatformConfiguration platformConfig;
+           NEXUS_MemoryStatus heapStatus;
+
+           NEXUS_Platform_GetConfiguration(&platformConfig);
+           NEXUS_Heap_GetStatus(platformConfig.heap[NEXUS_MAX_HEAPS-2], &heapStatus);
+           ALOGV("%s: dyn-heap largest free = %u", __FUNCTION__, heapStatus.largestFreeBlock);
+           if (gfx_heap_grow_size && (heapStatus.largestFreeBlock < NX_HEAP_DYN_FREE_THRESHOLD)) {
+              ALOGI("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
+              NEXUS_Platform_GrowHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size);
+           }
+        }
+
+    } while(nx_server->proactive_runner.running);
 
 done:
     return NULL;
@@ -182,17 +244,6 @@ static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, uns
         if (pPlatformSettings->heap[i].size && pPlatformSettings->heap[i].heapType & heapType) return i;
     }
     return -1;
-}
-
-static unsigned calc_heap_size(const char *value)
-{
-   if (strchr(value, 'M') || strchr(value, 'm')) {
-     return atof(value)*MB;
-   } else if (strchr(value, 'K') || strchr(value, 'k')) {
-     return atof(value)*KB;
-   } else {
-     return strtoul(value, NULL, 0);
-   }
 }
 
 static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
@@ -295,8 +346,8 @@ static nxserver_t init_nxserver(void)
         if (strlen(value)) {
             /* -display_format XX */
             settings.display.format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
-            ALOGI("%s: display format = %s", __FUNCTION__, lookup_name(
-                g_videoFormatStrs, settings.display.format));
+            ALOGI("%s: display format = %s", __FUNCTION__,
+                  lookup_name(g_videoFormatStrs, settings.display.format));
             /* -ignore_edid */
             settings.display.hdmiPreferences.followPreferredFormat = false;
         }
@@ -441,6 +492,7 @@ static nxserver_t init_nxserver(void)
        return NULL;
     }
 
+    g_app.uses_mma = uses_mma;
     g_app.refcnt++;
     return g_app.server;
 }
@@ -473,7 +525,7 @@ int main(void)
 
     /* delay until nexus device is present and writable */
     while (stat(devName, &sbuf) == -1 || !(sbuf.st_mode & S_IWOTH)) {
-        ALOGW("Waiting for %s device...\n", devName);
+        ALOGW("waiting for %s device...\n", devName);
         sleep(1);
     }
 
@@ -492,21 +544,14 @@ int main(void)
         setenv("debug_log_size", loggerSize, 1);
     }
 
+    ALOGI("init nxserver - nexus side.");
     nx_srv = init_nxserver();
     if (nx_srv == NULL) {
         ALOGE("FATAL: Daemonise Failed!");
         _exit(1);
     }
 
-    /* trigger waiter on nexus server initialization. */
-    property_set("hw.nexus.platforminit", "on");
-
-    /* start binder ipc. */
-    android::ProcessState::self()->startThreadPool();
-    NexusNxService::instantiate();
-    android::IPCThreadState::self()->joinThreadPool();
-
-    BKNI_CreateMutex(&g_app.runner_mutex);
+    ALOGI("starting proactive runner.");
     BKNI_CreateEvent(&g_app.proactive_runner.runner_run);
     g_app.proactive_runner.running = 1;
     pthread_attr_init(&attr);
@@ -517,30 +562,37 @@ int main(void)
     }
     pthread_attr_destroy(&attr);
 
-    /* loop forever. */
-    t.tv_sec = t.tv_nsec = 0;
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    then = (int64_t)(t.tv_sec) * SEC_TO_NSEC + t.tv_nsec;
+    ALOGI("starting binder-ipc.");
+    g_app.binder.running = 1;
+    pthread_attr_init(&attr);
+    if (pthread_create(&g_app.binder.runner, &attr,
+                       binder_task, (void *)&g_app) != 0) {
+        ALOGE("failed binder start, ignoring...");
+        g_app.binder.running = 0;
+    }
+    pthread_attr_destroy(&attr);
 
+    ALOGI("trigger nexus waiters now.");
+    property_set("hw.nexus.platforminit", "on");
+
+    ALOGI("init done.");
     while (1) {
-       BKNI_Sleep(1000);
-       t.tv_sec = t.tv_nsec = 0;
-       clock_gettime(CLOCK_MONOTONIC, &t);
-       now = (int64_t)(t.tv_sec) * SEC_TO_NSEC + t.tv_nsec;
-       if ((now > then) && ((now - then) > (SEC_TO_NSEC * RUNNER_SEC_THRESHOLD))) {
-          BKNI_SetEvent(g_app.proactive_runner.runner_run);
-       } else {
-          then = now;
-       }
+       BKNI_Sleep(SEC_TO_MSEC * RUNNER_SEC_THRESHOLD);
+       BKNI_SetEvent(g_app.proactive_runner.runner_run);
        if (g_exit) break;
     }
 
+    ALOGI("terminating nxserver.");
     if (g_app.proactive_runner.running) {
        g_app.proactive_runner.running = 0;
        pthread_join(g_app.proactive_runner.runner, NULL);
     }
     BKNI_DestroyEvent(g_app.proactive_runner.runner_run);
-    BKNI_DestroyMutex(g_app.runner_mutex);
+
+    if (g_app.binder.running) {
+       g_app.binder.running = 0;
+       pthread_join(g_app.binder.runner, NULL);
+    }
 
     uninit_nxserver(nx_srv);
     return 0;
