@@ -559,7 +559,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    }
 
    ashmem_alloc.size = sizeof(SHARED_DATA);
-   ashmem_alloc.align = 0;
+   ashmem_alloc.align = GRALLOC_MAX_BUFFER_ALIGNED;
    int ret = ioctl(fd2, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
    if (ret < 0) {
       return -ENOMEM;
