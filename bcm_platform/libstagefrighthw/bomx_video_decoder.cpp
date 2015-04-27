@@ -4798,6 +4798,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToRGB(int is_mma, SHARED_DATA *pSharedD
 
 err_gfx:
 err_destripe:
+    NEXUS_Surface_Unlock(hTargetSurface);
 err_surface_lock:
     NEXUS_Surface_Destroy(hTargetSurface);
 err_surface:
