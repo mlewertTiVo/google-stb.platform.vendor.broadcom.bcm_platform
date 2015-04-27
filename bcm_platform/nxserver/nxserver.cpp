@@ -94,6 +94,9 @@
 #define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
 #define NX_HDCP2X_KEY                  "ro.nexus.nxserver.hdcp2x_keys"
 
+#define NX_LOGGER_DISABLED             "ro.nx.logger_disabled"
+#define NX_LOGGER_SIZE                 "ro.nx.logger_size"
+
 #define NX_TRIM_VP9                    "ro.nx.trim.vp9"
 #define NX_TRIM_PIP                    "ro.nx.trim.pip"
 #define NX_TRIM_MOSAIC                 "ro.nx.trim.mosaic"
@@ -439,12 +442,17 @@ int main(void)
 
     /* Setup logger environment */
     int32_t loggerDisabled;
-    loggerDisabled = property_get_int32("ro.nx.logger_disabled", 0);
+    loggerDisabled = property_get_int32(NX_LOGGER_DISABLED, 0);
     if ( loggerDisabled ) {
         setenv("nexus_logger", "disabled", 1);
     } else {
         setenv("nexus_logger", "/system/bin/nxlogger", 1);
         setenv("nexus_logger_file", "/data/nexus/nexus.log", 1);
+    }
+    char loggerSize[PROPERTY_VALUE_MAX];
+    if ( property_get(NX_LOGGER_SIZE, loggerSize, "0") && loggerSize[0] != '0' )
+    {
+        setenv("debug_log_size", loggerSize, 1);
     }
 
     nx_srv = init_nxserver();

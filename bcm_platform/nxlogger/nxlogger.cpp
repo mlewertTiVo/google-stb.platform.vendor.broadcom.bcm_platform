@@ -60,7 +60,9 @@
 
 BDBG_MODULE(logger);
 
-#define PROP_LOGGER_PRIORITY "ro.nx.logger_priority"
+#define PROP_LOGGER_PRIORITY "nx.logger_priority"
+
+#define PRIORITY_REFRESH_INTERVAL 300
 
 static bool sigusr1_fired=false;
 
@@ -222,6 +224,7 @@ int main(int argc, const char *argv[])
     BDBG_Fifo_Handle logWriter;
     int fd;
     int device_fd=-1;
+    int sched_rc;
     bool driver_ready = false;
     const char *fname;
     size_t size;
@@ -231,6 +234,8 @@ int main(int argc, const char *argv[])
     pid_t parent;
     PROXY_NEXUS_Log_Instance instance;
     int32_t priority=0;
+    int32_t new_priority;
+    unsigned acc_timeout=0;
 
     if(argc<2) {
         usage(argv[0]);
@@ -247,7 +252,11 @@ int main(int argc, const char *argv[])
     {
         struct sched_param pri;
         pri.sched_priority = priority;
-        sched_setscheduler(0, SCHED_FIFO, &pri);
+        sched_rc = sched_setscheduler(0, SCHED_FIFO, &pri);
+        if ( sched_rc )
+        {
+            ALOGE("Error updating scheduler %d", sched_rc);
+        }
     }
 
     /* coverity[var_assign_var] */
@@ -328,9 +337,41 @@ int main(int argc, const char *argv[])
             break;
         }
         BKNI_Sleep(timeout);
+
+        acc_timeout += timeout;
+        if ( acc_timeout > PRIORITY_REFRESH_INTERVAL )
+        {
+            /* Check latest logger priority */
+            new_priority = property_get_int32(PROP_LOGGER_PRIORITY, 0);
+            if ( new_priority > 0 && new_priority != priority )
+            {
+                struct sched_param pri;
+                pri.sched_priority = new_priority;
+                if ( priority )
+                {
+                    sched_rc = sched_setparam(0, &pri);
+                }
+                else
+                {
+                    /* Scheduler has not been specified yet */
+                    sched_rc = sched_setscheduler(0, SCHED_FIFO, &pri);
+                }
+                if ( sched_rc )
+                {
+                    ALOGE("Error updating priority %d", sched_rc);
+                }
+                else
+                {
+                    priority = new_priority;
+                }
+            }
+
+            acc_timeout = 0;
+        }
+
         if(device_fd>=0 && !driver_ready) {
             int ready;
-            /* if parent was dealyed keep trying to attach */
+            /* if parent was delayed keep trying to attach */
             urc = ioctl(device_fd, IOCTL_PROXY_NEXUS_Log_Test, &ready);
             if(urc!=0) {
                 goto done;
