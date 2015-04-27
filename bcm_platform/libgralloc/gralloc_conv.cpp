@@ -283,9 +283,13 @@ int gralloc_yv12to422p(private_handle_t *handle)
     }
 
 out_cleanup:
+    NEXUS_Surface_Unlock(srcCb);
     NEXUS_Surface_Destroy(srcCb);
+    NEXUS_Surface_Unlock(srcCr);
     NEXUS_Surface_Destroy(srcCr);
+    NEXUS_Surface_Unlock(srcY);
     NEXUS_Surface_Destroy(srcY);
+    NEXUS_Surface_Unlock(dst422);
     NEXUS_Surface_Destroy(dst422);
 out:
    if (handle->is_mma && block_handle) {
@@ -414,6 +418,8 @@ int gralloc_plane_copy(private_handle_t *handle, unsigned src, unsigned dst)
    rc = 0;
 
 err_checkpoint:
+   NEXUS_Surface_Unlock(hSurfaceDst);
+   NEXUS_Surface_Unlock(hSurfaceSrc);
 err_blit:
    NEXUS_Surface_Destroy(hSurfaceDst);
 err_dst_surface:
