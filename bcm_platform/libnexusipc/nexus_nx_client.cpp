@@ -332,7 +332,8 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
         rc = NxClient_GetStandbyStatus(&standbyStatus);
 
         if (rc == NEXUS_SUCCESS) {
-            if (standbyStatus.settings.mode != standbySettings.settings.mode) {
+            // If any setting is different, then we need to set the standby settings...
+            if (memcmp(&standbyStatus.settings, &standbySettings.settings, sizeof(standbyStatus.settings))) {
                 rc = NxClient_SetStandbySettings(&standbySettings);
             }
             if (rc == NEXUS_SUCCESS) {
@@ -340,19 +341,23 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
                     NxClient_DisplaySettings displaySettings;
 
                     NxClient_GetDisplaySettings(&displaySettings);
-                    displaySettings.hdmiPreferences.enabled = true;
-                    displaySettings.componentPreferences.enabled = true;
-                    displaySettings.compositePreferences.enabled = true;
-                    rc = NxClient_SetDisplaySettings(&displaySettings);
+                    if (displaySettings.hdmiPreferences.enabled == false) {
+                        displaySettings.hdmiPreferences.enabled = true;
+                        displaySettings.componentPreferences.enabled = true;
+                        displaySettings.compositePreferences.enabled = true;
+                        rc = NxClient_SetDisplaySettings(&displaySettings);
+                    }
                 }
                 else if (pmState == ePowerState_S05) {
                     NxClient_DisplaySettings displaySettings;
 
                     NxClient_GetDisplaySettings(&displaySettings);
-                    displaySettings.hdmiPreferences.enabled = false;
-                    displaySettings.componentPreferences.enabled = false;
-                    displaySettings.compositePreferences.enabled = false;
-                    rc = NxClient_SetDisplaySettings(&displaySettings);
+                    if (displaySettings.hdmiPreferences.enabled == true) {
+                        displaySettings.hdmiPreferences.enabled = false;
+                        displaySettings.componentPreferences.enabled = false;
+                        displaySettings.compositePreferences.enabled = false;
+                        rc = NxClient_SetDisplaySettings(&displaySettings);
+                    }
                 }
             }
             else {
