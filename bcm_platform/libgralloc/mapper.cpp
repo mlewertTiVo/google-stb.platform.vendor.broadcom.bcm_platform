@@ -122,7 +122,8 @@ int gralloc_register_buffer(gralloc_module_t const* module,
             NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
             sharedPhysAddr = (unsigned)physAddr;
          }
-         ALOGI("  reg: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
+         ALOGI("  reg (%s): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
+               (plane == GL_PLANE) ? "GL" : "ST",
                hnd->is_mma,
                hnd->pid,
                hnd->sharedData,
@@ -181,7 +182,8 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
             NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
             sharedPhysAddr = (unsigned)physAddr;
          }
-         ALOGI("unreg: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
+         ALOGI("unreg (%s): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
+               (plane == GL_PLANE) ? "GL" : "ST",
                hnd->is_mma,
                hnd->pid,
                hnd->sharedData,
@@ -298,7 +300,7 @@ int gralloc_lock(gralloc_module_t const* module,
          NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
          sharedPhysAddr = (unsigned)physAddr;
       }
-      ALOGI(" lock: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::vaddr:0x%x::act:%d",
+      ALOGI(" lock (ST): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::vaddr:0x%x::act:%d",
             hnd->is_mma,
             hnd->pid,
             hnd->sharedData,
@@ -410,7 +412,7 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
          NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
          sharedPhysAddr = (unsigned)physAddr;
       }
-      ALOGI("ulock: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
+      ALOGI("ulock (ST): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
             hnd->is_mma,
             hnd->pid,
             hnd->sharedData,

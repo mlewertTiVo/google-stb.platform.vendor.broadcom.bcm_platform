@@ -560,7 +560,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
    ashmem_alloc.size = sizeof(SHARED_DATA);
    ashmem_alloc.align = GRALLOC_MAX_BUFFER_ALIGNED;
-   int ret = ioctl(fd2, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+   int ret = ioctl(grallocPrivateHandle->fd2, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
    if (ret < 0) {
       return -ENOMEM;
    };
@@ -625,7 +625,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
             NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
             sharedPhysAddr = (unsigned)physAddr;
          }
-         ALOGI("alloc: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
+         ALOGI("alloc (ST): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
                grallocPrivateHandle->is_mma,
                getpid(),
                grallocPrivateHandle->sharedData,
@@ -658,10 +658,10 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    if (needs_yv12) {
       ashmem_alloc.size = size;
       ashmem_alloc.align = gralloc_default_align;
-      ret = ioctl(fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+      ret = ioctl(grallocPrivateHandle->fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
       if (ret >= 0) {
          pSharedData->planes[DEFAULT_PLANE].physAddr =
-             (NEXUS_Addr)ioctl(fd, NX_ASHMEM_GETMEM);
+             (NEXUS_Addr)ioctl(grallocPrivateHandle->fd, NX_ASHMEM_GETMEM);
       }
 
       if ((usage & GRALLOC_USAGE_HW_TEXTURE)) {
@@ -688,10 +688,10 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       pSharedData->planes[EXTRA_PLANE].stride = bpp * *pStride;
       ashmem_alloc.size = extra_size;
       ashmem_alloc.align = gralloc_default_align;
-      ret = ioctl(fd3, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+      ret = ioctl(grallocPrivateHandle->fd3, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
       if (ret >= 0) {
          pSharedData->planes[EXTRA_PLANE].physAddr =
-             (NEXUS_Addr)ioctl(fd3, NX_ASHMEM_GETMEM);
+             (NEXUS_Addr)ioctl(grallocPrivateHandle->fd3, NX_ASHMEM_GETMEM);
       }
    }
 
@@ -726,7 +726,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
             NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
             sharedPhysAddr = (unsigned)physAddr;
          }
-         ALOGI("alloc (overruled): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
+         ALOGI("alloc (GL): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
                grallocPrivateHandle->is_mma,
                getpid(),
                grallocPrivateHandle->sharedData,
@@ -795,58 +795,62 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 }
 
 static int
-grallocFreeHandle(private_handle_t *handleToFree)
+gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
 {
-   if (!handleToFree) {
-      return -EINVAL;
-   }
+   (void)dev;
 
    PSHARED_DATA pSharedData = NULL;
    NEXUS_MemoryBlockHandle block_handle = NULL;
 
-   if (handleToFree->is_mma) {
+   if (!hnd) {
+      return -EINVAL;
+   }
+
+   if (hnd->is_mma) {
       void *pMemory;
-      block_handle = (NEXUS_MemoryBlockHandle)handleToFree->sharedData;
+      block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
       NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
       pSharedData = (PSHARED_DATA) pMemory;
    } else {
-      pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(handleToFree->sharedData);
+      pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
    }
 
    if (pSharedData) {
       if (gralloc_log_mapper()) {
          NEXUS_Addr physAddr;
-         unsigned sharedPhysAddr = handleToFree->sharedData;
+         unsigned sharedPhysAddr = hnd->sharedData;
+         int gl_plane = (pSharedData->planes[GL_PLANE].physAddr ? 1 : 0);
          unsigned planePhysAddr =
             (pSharedData->planes[GL_PLANE].physAddr ? pSharedData->planes[GL_PLANE].physAddr : pSharedData->planes[DEFAULT_PLANE].physAddr);
          unsigned planePhysSize =
             (pSharedData->planes[GL_PLANE].physAddr ? pSharedData->planes[GL_PLANE].size : pSharedData->planes[DEFAULT_PLANE].size);
-         if (handleToFree->is_mma) {
+         if (hnd->is_mma) {
             NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
             sharedPhysAddr = (unsigned)physAddr;
          }
-         ALOGI(" free: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
-               handleToFree->is_mma,
-               handleToFree->pid,
-               handleToFree->sharedData,
+         ALOGI(" free (%s): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
+               gl_plane ? "GL" : "ST",
+               hnd->is_mma,
+               hnd->pid,
+               hnd->sharedData,
                sharedPhysAddr,
                planePhysAddr,
-               handleToFree->nxSurfacePhysicalAddress,
+               hnd->nxSurfacePhysicalAddress,
                planePhysSize,
-               handleToFree->nxSurfaceAddress);
-         if (handleToFree->is_mma) {
+               hnd->nxSurfaceAddress);
+         if (hnd->is_mma) {
             NEXUS_MemoryBlock_UnlockOffset(block_handle);
          }
       }
 
       if (android_atomic_acquire_load(&pSharedData->hwc.active)) {
          ALOGE("Freeing gralloc buffer %#x used by HWC!  layer %d surface %#x",
-               handleToFree->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
+               hnd->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
       }
    }
 
-   if (handleToFree->is_mma) {
-      if (pSharedData && handleToFree->nxSurfacePhysicalAddress) {
+   if (hnd->is_mma) {
+      if (pSharedData) {
          if (pSharedData->planes[GL_PLANE].physAddr) {
             NEXUS_MemoryBlock_UnlockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr);
             NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr);
@@ -860,26 +864,22 @@ grallocFreeHandle(private_handle_t *handleToFree)
       }
    }
 
-   if (handleToFree->fd >= 0)
-      close(handleToFree->fd);
-   if (handleToFree->fd2 >= 0)
-      close(handleToFree->fd2);
-   if (handleToFree->fd3 >= 0)
-      close(handleToFree->fd3);
-   if (handleToFree->fd4 >= 0)
-      close(handleToFree->fd4);
-   delete handleToFree;
+   if (hnd->fd >= 0) {
+      close(hnd->fd);
+   }
+   if (hnd->fd2 >= 0) {
+      close(hnd->fd2);
+   }
+   if (hnd->fd3 >= 0) {
+      close(hnd->fd3);
+   }
+   if (hnd->fd4 >= 0) {
+      close(hnd->fd4);
+   }
+   delete hnd;
+
    return 0;
 }
-
-static int
-gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
-{
-   (void)dev;
-   grallocFreeHandle(hnd);
-   return 0;
-}
-
 
 /*****************************************************************************/
 
