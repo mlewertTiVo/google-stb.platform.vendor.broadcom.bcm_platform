@@ -49,9 +49,25 @@
  *
  *****************************************************************************/
 /* Nexus example app: Play Ready decrypt, PIFF parser, and PES conversion decode */
-
+#define USE_BDBG_LOGGING    0
+#if defined(ANDROID) && !(USE_BDBG_LOGGING)
 #define LOG_NDEBUG 0
 #include <utils/Log.h>
+#define LOG_TAG "pr_piff_playback"
+#define LOGV(x) ALOGV x
+#define LOGD(x) ALOGD x
+#define LOGE(x) ALOGE x
+#define LOGW(x) ALOGW x
+#else
+#include "bstd.h"
+#include "bdbg.h"
+BDBG_MODULE(pr_piff_playback);
+#define BDBG_MODULE_NAME "pr_piff_playback"
+#define LOGV BDBG_MSG
+#define LOGD BDBG_MSG
+#define LOGE BDBG_ERR
+#define LOGW BDBG_WRN
+#endif
 
 #include "nexus_platform.h"
 #include "nexus_video_decoder.h"
@@ -70,10 +86,10 @@
 #include "drm_prdy.h"
 #include "drm_prdy_types.h"
 
+
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
-#include "bstd.h"
 #include "bkni.h"
 #include "bkni_multi.h"
 #include "bmp4_util.h"
@@ -110,7 +126,6 @@
 
 #define CALCULATE_PTS(t)        (((uint64_t)(t) / 10000LL) * 45LL)
 
-BDBG_MODULE(encode_piff_example);
 
 typedef struct app_ctx {
     FILE *fp_piff;
@@ -284,7 +299,7 @@ static int decrypt_sample(CommonCryptoHandle commonCryptoHandle,
                         &aesCtrInfo,
                         (uint8_t *)out,
                         num_enc ) != DRM_Prdy_ok) {
-                BDBG_ERR(("%s Reader_Decrypt failed - %d", __FUNCTION__, __LINE__));
+                LOGE(("%s Reader_Decrypt failed - %u", __FUNCTION__, __LINE__));
                 rc = -1;
                 goto ErrorExit;
             }
@@ -299,7 +314,7 @@ static int decrypt_sample(CommonCryptoHandle commonCryptoHandle,
                 *bytes_processed  += (num_clear - decrypt_offset + num_enc);
 
             if( *bytes_processed > sampleSize) {
-                BDBG_WRN(("Wrong buffer size is detected while decrypting the ciphertext, bytes processed %d, sample size to decrypt %d",*bytes_processed,sampleSize));
+                LOGW(("Wrong buffer size is detected while decrypting the ciphertext, bytes processed %d, sample size to decrypt %d",*bytes_processed,sampleSize));
                 rc = -1;
                 goto ErrorExit;
             }
@@ -315,7 +330,7 @@ static int decrypt_sample(CommonCryptoHandle commonCryptoHandle,
                         &aesCtrInfo,
                         (uint8_t *)out,
                         sampleSize ) != DRM_Prdy_ok) {
-            BDBG_ERR(("%s Reader_Decrypt failed - %d", __FUNCTION__, __LINE__));
+            LOGE(("%s Reader_Decrypt failed - %d", __FUNCTION__, __LINE__));
             rc = -1;
             goto ErrorExit;
         }
@@ -462,7 +477,7 @@ static int secure_process_fragment(CommonCryptoHandle commonCryptoHandle, app_ct
                     outSize += app->outBufSize;
                 }
             } else {
-                BDBG_WRN(("%s Unsupported track type %d detected", __FUNCTION__, frag_info->trackType));
+                LOGW(("%s Unsupported track type %d detected", __FUNCTION__, frag_info->trackType));
                 return -1;
             }
 
@@ -539,7 +554,7 @@ static int secure_process_fragment(CommonCryptoHandle commonCryptoHandle, app_ct
                                 &aesCtrInfo,
                                 (uint8_t *)out,
                                 num_enc ) != DRM_Prdy_ok) {
-                        BDBG_ERR(("%s Reader_Decrypt failed - %d", __FUNCTION__, __LINE__));
+                        LOGE(("%s Reader_Decrypt failed - %d", __FUNCTION__, __LINE__));
                         return -1;
                     }
 
@@ -549,7 +564,7 @@ static int secure_process_fragment(CommonCryptoHandle commonCryptoHandle, app_ct
                     numOfByteDecrypted  += (num_clear - decrypt_offset + num_enc);
 
                     if(numOfByteDecrypted > sampleSize) {
-                        BDBG_WRN(("Wrong buffer size is detected while decrypting the ciphertext, bytes processed %d, sample size to decrypt %d",
+                        LOGW(("Wrong buffer size is detected while decrypting the ciphertext, bytes processed %d, sample size to decrypt %d",
                                     numOfByteDecrypted, sampleSize));
                         return -1;
                     }
@@ -564,7 +579,7 @@ static int secure_process_fragment(CommonCryptoHandle commonCryptoHandle, app_ct
                             &aesCtrInfo,
                             (uint8_t *)out,
                             sampleSize ) != DRM_Prdy_ok) {
-                    BDBG_ERR(("%s Reader_Decrypt failed - %d", __FUNCTION__, __LINE__));
+                    LOGE(("%s Reader_Decrypt failed - %d", __FUNCTION__, __LINE__));
                     return -1;
                 }
 
@@ -578,7 +593,7 @@ static int secure_process_fragment(CommonCryptoHandle commonCryptoHandle, app_ct
     }
 
     if(bytes_processed != payload_size) {
-        BDBG_WRN(("%s the number of bytes %d decrypted doesn't match the actual size %d of the payload, return failure...%d",__FUNCTION__,
+        LOGW(("%s the number of bytes %d decrypted doesn't match the actual size %d of the payload, return failure...%d",__FUNCTION__,
                     bytes_processed, payload_size, __LINE__));
         rc = -1;
     }
@@ -673,13 +688,13 @@ static int process_fragment(CommonCryptoHandle commonCryptoHandle, app_ctx *app,
                     decrypt_offset = 0;
                 }
             } else {
-                BDBG_WRN(("%s Unsupported track type %d detected", __FUNCTION__, frag_info->trackType));
+                LOGW(("%s Unsupported track type %d detected", __FUNCTION__, frag_info->trackType));
                 return -1;
             }
 
             if(decrypt_sample(commonCryptoHandle, sampleSize, &frag_info->cursor, pSample, &numOfByteDecrypted,
                         &app->decryptor, frag_info->samples_enc->flags, pOutBuf, decrypt_offset) !=0) {
-                BDBG_ERR(("%s Failed to decrypt sample, can't continue - %d", __FUNCTION__, __LINE__));
+                LOGE(("%s Failed to decrypt sample, can't continue - %d", __FUNCTION__, __LINE__));
                 return -1;
                 break;
             }
@@ -690,7 +705,7 @@ static int process_fragment(CommonCryptoHandle commonCryptoHandle, app_ctx *app,
     }
 
     if( bytes_processed != payload_size) {
-        BDBG_WRN(("%s the number of bytes %d decrypted doesn't match the actual size %d of the payload, return failure...%d",__FUNCTION__,bytes_processed,payload_size, __LINE__));
+        LOGW(("%s the number of bytes %d decrypted doesn't match the actual size %d of the payload, return failure...%d",__FUNCTION__,bytes_processed,payload_size, __LINE__));
         rc = -1;
     }
 
@@ -881,12 +896,12 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
     uint8_t *pssh_data;
     uint32_t pssh_len;
 
-    BDBG_MSG(("%s - %d\n", __FUNCTION__, __LINE__));
+    LOGV(("%s - %d\n", __FUNCTION__, __LINE__));
     if(piff_file == NULL ) {
         goto clean_exit;
     }
 
-    BDBG_MSG(("PIFF file: %s\n",piff_file));
+    LOGV(("PIFF file: %s\n",piff_file));
     fflush(stdout);
 
     BKNI_Memset(&app, 0, sizeof( app_ctx));
@@ -903,7 +918,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
 
     piff_handle = piff_parser_create(fd);
     if (!piff_handle) {
-        BDBG_ERR(("Unable to create PIFF parser context"));
+        LOGE(("Unable to create PIFF parser context"));
         goto clean_exit;
     }
 
@@ -913,7 +928,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
 
     if( drm_context == NULL)
     {
-       BDBG_ERR(("drm_context is NULL, quitting...."));
+       LOGE(("drm_context is NULL, quitting...."));
        goto clean_exit ;
     }
 
@@ -940,11 +955,11 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
     moovBoxParsed = piff_parser_scan_movie_info(piff_handle);
 
     if(!moovBoxParsed) {
-        BDBG_ERR(("Failed to parse moov box, can't continue..."));
+        LOGE(("Failed to parse moov box, can't continue..."));
         goto clean_up;
     }
 
-    BDBG_MSG(("Successfully parsed the moov box, continue...\n\n"));
+    LOGV(("Successfully parsed the moov box, continue...\n\n"));
 
     /* EXTRACT AND PLAYBACK THE MDAT */
 
@@ -956,7 +971,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
     pSecureVideoHeapBuffer = SRAI_Memory_Allocate(videoplaypumpOpenSettings.fifoSize,
             SRAI_MemoryType_SagePrivate);
     if ( pSecureVideoHeapBuffer == NULL ) {
-        BDBG_ERR((" Failed to allocate from Secure Video heap"));
+        LOGE((" Failed to allocate from Secure Video heap"));
         BDBG_ASSERT( false );
     }
     videoplaypumpOpenSettings.memory = NEXUS_MemoryBlock_FromAddress(pSecureVideoHeapBuffer);
@@ -967,7 +982,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
 
     videoPlaypump = NEXUS_Playpump_Open(NEXUS_ANY_ID, &videoplaypumpOpenSettings);
     if (!videoPlaypump) {
-        BDBG_ERR(("@@@ Video Playpump Open FAILED----"));
+        LOGE(("@@@ Video Playpump Open FAILED----"));
         goto clean_up;
     }
     BDBG_ASSERT(videoPlaypump != NULL);
@@ -978,7 +993,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
     pSecureAudioHeapBuffer = SRAI_Memory_Allocate(audioplaypumpOpenSettings.fifoSize,
             SRAI_MemoryType_SagePrivate);
     if ( pSecureAudioHeapBuffer == NULL ) {
-        BDBG_ERR((" Failed to allocate from Secure Audio heap"));
+        LOGE((" Failed to allocate from Secure Audio heap"));
         goto clean_up;
     }
     BDBG_ASSERT( pSecureAudioHeapBuffer != NULL );
@@ -990,7 +1005,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
 #endif
     audioPlaypump = NEXUS_Playpump_Open(NEXUS_ANY_ID, &audioplaypumpOpenSettings);
     if (!audioPlaypump) {
-        BDBG_ERR(("@@@ Video Playpump Open FAILED----"));
+        LOGE(("@@@ Video Playpump Open FAILED----"));
         goto clean_up;
     }
     BDBG_ASSERT(audioPlaypump != NULL);
@@ -1000,7 +1015,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
     stcSettings.mode = NEXUS_StcChannelMode_eAuto;
     rc = NEXUS_SimpleStcChannel_SetSettings(stcChannel, &stcSettings);
     if (rc) {
-       BDBG_WRN(("@@@ Stc Set FAILED ---------------"));
+       LOGW(("@@@ Stc Set FAILED ---------------"));
     }
 
     BKNI_CreateEvent(&event);
@@ -1033,9 +1048,9 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
     NEXUS_SetPidChannelBypassKeyslot(videoPidChannel, NEXUS_BypassKeySlot_eGR2R);
 #endif
     if ( !videoPidChannel )
-      BDBG_WRN(("@@@ videoPidChannel NULL"));
+      LOGW(("@@@ videoPidChannel NULL"));
     else
-      BDBG_WRN(("@@@ videoPidChannel OK"));
+      LOGW(("@@@ videoPidChannel OK"));
 
     audioPidChannel = NEXUS_Playpump_OpenPidChannel(audioPlaypump, REPACK_AUDIO_PES_ID, NULL);
 #if USE_SECURE_AUDIO_PLAYBACK
@@ -1043,19 +1058,19 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
 #endif
 
     if ( !audioPidChannel )
-      BDBG_WRN(("@@@ audioPidChannel NULL"));
+      LOGW(("@@@ audioPidChannel NULL"));
     else
-      BDBG_WRN(("@@@ audioPidChannel OK"));
+      LOGW(("@@@ audioPidChannel OK"));
 
     NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&audioProgram);
     NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&videoProgram);
 
     if ( vc1_stream ) {
-       BDBG_MSG(("@@@ set video audio program for vc1"));
+       LOGV(("@@@ set video audio program for vc1"));
        videoProgram.settings.codec = NEXUS_VideoCodec_eVc1;
        audioProgram.primary.codec = NEXUS_AudioCodec_eWmaPro;
     } else {
-       BDBG_MSG(("@@@ set video audio program for h264"));
+       LOGV(("@@@ set video audio program for h264"));
        videoProgram.settings.codec = NEXUS_VideoCodec_eH264;
        audioProgram.primary.codec = NEXUS_AudioCodec_eAacAdts;
     }
@@ -1067,12 +1082,12 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
     NEXUS_SimpleAudioDecoder_Start(audioDecoder, &audioProgram);
 
     if (videoProgram.settings.pidChannel) {
-        BDBG_WRN(("@@@ set stc channel video"));
+        LOGW(("@@@ set stc channel video"));
         NEXUS_SimpleVideoDecoder_SetStcChannel(videoDecoder, stcChannel);
     }
 
     if (audioProgram.primary.pidChannel) {
-        BDBG_WRN(("@@@ set stc channel audio"));
+        LOGW(("@@@ set stc channel audio"));
         NEXUS_SimpleAudioDecoder_SetStcChannel(audioDecoder, stcChannel);
     }
 
@@ -1081,39 +1096,39 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
      ***********************/
     pssh_data = piff_parser_get_pssh(piff_handle, &pssh_len);
     if (!pssh_data) {
-        BDBG_ERR(("Failed to obtain pssh data"));
+        LOGE(("Failed to obtain pssh data"));
         goto clean_exit;
     }
 
     if( DRM_Prdy_Content_SetProperty(drm_context,
                 DRM_Prdy_contentSetProperty_eAutoDetectHeader,
                 pssh_data, pssh_len) != DRM_Prdy_ok) {
-        BDBG_ERR(("Failed to SetProperty for the KID, exiting..."));
+        LOGE(("Failed to SetProperty for the KID, exiting..."));
         goto clean_exit;
     }
 
     if( DRM_Prdy_Get_Buffer_Size( drm_context, DRM_Prdy_getBuffer_licenseAcq_challenge,
                 NULL, 0, &urlLen, &chLen) != DRM_Prdy_ok ) {
-        BDBG_ERR(("DRM_Prdy_Get_Buffer_Size() failed, exiting"));
+        LOGE(("DRM_Prdy_Get_Buffer_Size() failed, exiting"));
         goto clean_exit;
     }
 
     pCh_url = BKNI_Malloc(urlLen);
 
     if(pCh_url == NULL) {
-        BDBG_ERR(("BKNI_Malloc(urlent) failed, exiting..."));
+        LOGE(("BKNI_Malloc(urlent) failed, exiting..."));
         goto clean_exit;
     }
 
     pCh_data = BKNI_Malloc(chLen);
     if(pCh_data == NULL) {
-        BDBG_ERR(("BKNI_Malloc(chLen) failed, exiting..."));
+        LOGE(("BKNI_Malloc(chLen) failed, exiting..."));
         goto clean_exit;
     }
 
     if(DRM_Prdy_LicenseAcq_GenerateChallenge(drm_context, NULL,
                 0, pCh_url, &urlLen, pCh_data, &chLen) != DRM_Prdy_ok ) {
-        BDBG_ERR(("DRM_Prdy_License_GenerateChallenge() failed, exiting"));
+        LOGE(("DRM_Prdy_License_GenerateChallenge() failed, exiting"));
         goto clean_exit;
     }
 
@@ -1121,24 +1136,24 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
 
     if(DRM_Prdy_http_client_license_post_soap(pCh_url, pCh_data, 1,
         150, (unsigned char **)&pResponse, &respOffset, &respLen) != 0) {
-        BDBG_ERR(("DRM_Prdy_http_client_license_post_soap() failed, exiting"));
+        LOGE(("DRM_Prdy_http_client_license_post_soap() failed, exiting"));
         goto clean_exit;
     }
 
     if( DRM_Prdy_LicenseAcq_ProcessResponse(drm_context, (char *)&pResponse[respOffset],
                 respLen, NULL) != DRM_Prdy_ok ) {
-        BDBG_ERR(("DRM_Prdy_LicenseAcq_ProcessResponse() failed, exiting"));
+        LOGE(("DRM_Prdy_LicenseAcq_ProcessResponse() failed, exiting"));
         goto clean_exit;
     }
 
     if( DRM_Prdy_Reader_Bind( drm_context,
                 &app.decryptor)!= DRM_Prdy_ok ) {
-        BDBG_ERR(("Failed to Bind the license, the license may not exist. Exiting..."));
+        LOGE(("Failed to Bind the license, the license may not exist. Exiting..."));
         goto clean_exit;
     }
 
     if( DRM_Prdy_Reader_Commit(drm_context) != DRM_Prdy_ok ) {
-        BDBG_ERR(("Failed to Commit the license after Reader_Bind, exiting..."));
+        LOGE(("Failed to Commit the license after Reader_Bind, exiting..."));
         goto clean_exit;
     }
 
@@ -1157,10 +1172,10 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
 
         if (!piff_parser_scan_movie_fragment(piff_handle, &frag_info, app.pPayload, BUF_SIZE)) {
             if (feof(app.fp_piff)) {
-                BDBG_WRN(("Reached EOF"));
+                LOGW(("Reached EOF"));
                 break;
             } else {
-                BDBG_ERR(("Unable to parse movie fragment"));
+                LOGE(("Unable to parse movie fragment"));
                 goto clean_up;
             }
         }
@@ -1244,15 +1259,19 @@ int main(int argc, char* argv[])
     DRM_Prdy_Init_t     prdyParamSettings;
     DRM_Prdy_Handle_t   drm_context;
 
+#if USE_BDBG_LOGGING
+    BDBG_SetModuleLevel( BDBG_MODULE_NAME, BDBG_eMsg );
+#endif
+
     if (argc < 2) {
-        BDBG_ERR(("Usage : %s <input_file> [-vc1]", argv[0]));
+        LOGE(("Usage : %s <input_file> [-vc1]", argv[0]));
         return 0;
     }
 
     if ((argc == 3) && (strcmp(argv[2], "-vc1") == 0))
         vc1_stream = 1;
 
-    BDBG_MSG(("@@@ MSG Check Point Start vc1_stream %d--", vc1_stream));
+    LOGV(("@@@ MSG Check Point Start vc1_stream %d--", vc1_stream));
 
 #ifdef NEED_TO_BE_TRUSTED_APP
 	char nx_key[PROPERTY_VALUE_MAX];
@@ -1302,7 +1321,7 @@ int main(int argc, char* argv[])
 
     drm_context =  DRM_Prdy_Initialize( &prdyParamSettings);
     if( drm_context == NULL) {
-       BDBG_ERR(("Failed to create drm_context, quitting...."));
+       LOGE(("Failed to create drm_context, quitting...."));
        goto clean_exit ;
     }
 
@@ -1310,20 +1329,20 @@ int main(int argc, char* argv[])
     fp_vid = fopen ("/video.out", "wb");
     fp_aud = fopen ("/audio.out", "wb");
 #endif
-    BDBG_MSG(("@@@ Check Point #01"));
+    LOGV(("@@@ Check Point #01"));
 
     if (allocResults.simpleVideoDecoder[0].id) {
-        BDBG_MSG(("@@@ to acquire video decoder"));
+        LOGV(("@@@ to acquire video decoder"));
         videoDecoder = NEXUS_SimpleVideoDecoder_Acquire(allocResults.simpleVideoDecoder[0].id);
     }
     BDBG_ASSERT(videoDecoder);
     if (allocResults.simpleAudioDecoder.id) {
-        BDBG_MSG(("@@@ to acquire audio decoder"));
+        LOGV(("@@@ to acquire audio decoder"));
         audioDecoder = NEXUS_SimpleAudioDecoder_Acquire(allocResults.simpleAudioDecoder.id);
     }
     BDBG_ASSERT(audioDecoder);
     if (allocResults.surfaceClient[0].id) {
-        BDBG_MSG(("@@@ to acquire surfaceclient"));
+        LOGV(("@@@ to acquire surfaceclient"));
         /* surfaceClient is the top-level graphics window in which video will fit.
         videoSurfaceClient must be "acquired" to associate the video window with surface compositor.
         Graphics do not have to be submitted to surfaceClient for video to work, but at least an
@@ -1390,7 +1409,7 @@ static int gui_init( NEXUS_SurfaceClientHandle surfaceClient )
 
     if (!surfaceClient) return -1;
 
-    BDBG_MSG(("@@@ gui_init surfaceclient %d", (int)surfaceClient));
+    LOGV(("@@@ gui_init surfaceclient %d", (int)surfaceClient));
     gfx = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, NULL);
     NEXUS_Graphics2D_GetSettings(gfx, &gfxSettings);
     rc = NEXUS_Graphics2D_SetSettings(gfx, &gfxSettings);
