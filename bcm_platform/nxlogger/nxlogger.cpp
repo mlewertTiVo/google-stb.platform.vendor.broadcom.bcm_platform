@@ -60,7 +60,7 @@
 
 BDBG_MODULE(logger);
 
-#define PROP_LOGGER_PRIORITY "nx.logger_priority"
+#define PROP_LOGGER_PRIORITY "sys.nx.logger_priority"
 
 #define PRIORITY_REFRESH_INTERVAL 300
 
