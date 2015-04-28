@@ -189,6 +189,7 @@ int gralloc_destripe_yv12(
 err_yv12:
 err_checkpoint:
 err_destripe:
+    NEXUS_Surface_Unlock(hSurface422);
 err_surface_lock:
     NEXUS_Surface_Destroy(hSurface422);
 err_surface:
