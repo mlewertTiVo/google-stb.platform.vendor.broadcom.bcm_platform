@@ -43,8 +43,11 @@ static NEXUS_SurfaceHandle to_nsc_surface(int width, int height, int stride, NEX
 
     shdl = NEXUS_Surface_Create(&createSettings);
 
-    ALOGV("%s: (%d,%d), s:%d, fmt:%d, p:%p, h:%p -> %p",
-          __FUNCTION__, width, height, stride, format, data, handle, shdl);
+    if (CONVERSION_IS_VERBOSE) {
+       ALOGD("%s: (%d,%d), s:%d, fmt:%d, p:%p, h:%p, o:%u -> %p",
+             __FUNCTION__, width, height, stride, format, data, handle, offset, shdl);
+    }
+
     return shdl;
 }
 
@@ -163,7 +166,7 @@ int gralloc_yv12to422p(private_handle_t *handle)
                            NEXUS_PixelFormat_eCb8,
                            handle->is_mma,
                            pSharedData->planes[DEFAULT_PLANE].physAddr,
-                           cb_offset,
+                           cr_offset + cb_offset,
                            cb_addr);
     NEXUS_Surface_Lock(srcCb, &slock);
     NEXUS_Surface_Flush(srcCb);

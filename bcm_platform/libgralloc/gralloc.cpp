@@ -597,7 +597,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    pSharedData->planes[DEFAULT_PLANE].format    = format;
    pSharedData->planes[DEFAULT_PLANE].size      = size;
    pSharedData->planes[DEFAULT_PLANE].allocSize = size;
-   pSharedData->planes[DEFAULT_PLANE].stride = *pStride;
+   pSharedData->planes[DEFAULT_PLANE].stride    = *pStride;
 
    if (format != HAL_PIXEL_FORMAT_YV12) {
       // standard graphic buffer.
@@ -679,13 +679,13 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    }
 
    if (needs_ycrcb) {
-      pSharedData->planes[EXTRA_PLANE].width = w;
-      pSharedData->planes[EXTRA_PLANE].height = h;
-      pSharedData->planes[EXTRA_PLANE].bpp = bpp;
-      pSharedData->planes[EXTRA_PLANE].format = (int)nxFormat;
-      pSharedData->planes[EXTRA_PLANE].size = extra_size;
+      pSharedData->planes[EXTRA_PLANE].width     = w;
+      pSharedData->planes[EXTRA_PLANE].height    = h;
+      pSharedData->planes[EXTRA_PLANE].bpp       = bpp;
+      pSharedData->planes[EXTRA_PLANE].format    = (int)nxFormat;
+      pSharedData->planes[EXTRA_PLANE].size      = extra_size;
       pSharedData->planes[EXTRA_PLANE].allocSize = extra_size;
-      pSharedData->planes[EXTRA_PLANE].stride = bpp * *pStride;
+      pSharedData->planes[EXTRA_PLANE].stride    = bpp * *pStride;
       ashmem_alloc.size = extra_size;
       ashmem_alloc.align = gralloc_default_align;
       ret = ioctl(grallocPrivateHandle->fd3, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
@@ -699,13 +699,13 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       // Create a RGB plane for GL texture as Khronos does not support YUV texturing.
       pSharedData->planes[GL_PLANE].physAddr =
          allocGLSuitableBuffer(grallocPrivateHandle, grallocPrivateHandle->fd4, w, h, 4, HAL_PIXEL_FORMAT_RGBA_8888);
-      pSharedData->planes[GL_PLANE].width = w;
-      pSharedData->planes[GL_PLANE].height = h;
-      pSharedData->planes[GL_PLANE].bpp = 4;
-      pSharedData->planes[GL_PLANE].format = (int)NEXUS_PixelFormat_eA8_B8_G8_R8;
-      pSharedData->planes[GL_PLANE].size = size;
+      pSharedData->planes[GL_PLANE].width     = w;
+      pSharedData->planes[GL_PLANE].height    = h;
+      pSharedData->planes[GL_PLANE].bpp       = 4;
+      pSharedData->planes[GL_PLANE].format    = (int)NEXUS_PixelFormat_eA8_B8_G8_R8;
+      pSharedData->planes[GL_PLANE].size      = size;
       pSharedData->planes[GL_PLANE].allocSize = grallocPrivateHandle->oglSize;
-      pSharedData->planes[GL_PLANE].stride = grallocPrivateHandle->oglStride;
+      pSharedData->planes[GL_PLANE].stride    = grallocPrivateHandle->oglStride;
 
       if (grallocPrivateHandle->is_mma) {
          NEXUS_Addr physAddr;
