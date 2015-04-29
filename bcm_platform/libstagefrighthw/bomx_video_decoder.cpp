@@ -3592,7 +3592,7 @@ void BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTime
             break;
         }
 
-        if ( causedByTimeout )
+        if ( causedByTimeout || pReturnBuffer == NULL )
         {
             pReturnBuffer = pBuffer;
         }
