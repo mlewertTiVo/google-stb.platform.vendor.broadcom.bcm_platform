@@ -255,7 +255,7 @@ int gralloc_lock(gralloc_module_t const* module,
       if (err) {
          ALOGE("Unable to lock video frame data (timeout)");
          pthread_mutex_unlock(gralloc_g2d_lock());
-         goto out;
+         goto out_video_failed;
       }
       if (pSharedData->videoFrame.hStripedSurface) {
          if (usage & GRALLOC_USAGE_SW_WRITE_MASK) {
@@ -263,7 +263,7 @@ int gralloc_lock(gralloc_module_t const* module,
             private_handle_t::unlock_video_frame(hnd);
             pthread_mutex_unlock(gralloc_g2d_lock());
             err = -EINVAL;
-            goto out;
+            goto out_video_failed;
          }
          if (usage & GRALLOC_USAGE_SW_READ_MASK) {
             if (!pSharedData->videoFrame.destripeComplete) {
@@ -274,7 +274,7 @@ int gralloc_lock(gralloc_module_t const* module,
                if (err) {
                   private_handle_t::unlock_video_frame(hnd);
                   pthread_mutex_unlock(gralloc_g2d_lock());
-                  goto out;
+                  goto out_video_failed;
                }
                if (gralloc_timestamp_conversion()) {
                   tick_end_conv = gralloc_tick();
@@ -289,6 +289,7 @@ int gralloc_lock(gralloc_module_t const* module,
       pthread_mutex_unlock(gralloc_g2d_lock());
    }
 
+out_video_failed:
    if ((usage & (GRALLOC_USAGE_SW_READ_MASK|GRALLOC_USAGE_SW_WRITE_MASK)) && !hwConverted) {
       NEXUS_FlushCache(*vaddr, pSharedData->planes[DEFAULT_PLANE].allocSize);
    }

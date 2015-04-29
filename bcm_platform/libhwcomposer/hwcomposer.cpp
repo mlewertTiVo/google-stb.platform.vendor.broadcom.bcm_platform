@@ -1342,7 +1342,7 @@ bool hwc_compose_gralloc_buffer(
     if ((ctx->hwc_with_mma && !pSharedData->planes[plane_select].physAddr) ||
         (!ctx->hwc_with_mma && pAddr == NULL)) {
         ALOGE("%s: plane buffer address NULL: %d\n", __FUNCTION__, layer_id);
-        goto out;
+        goto out_unlock;
     }
 
     NEXUS_Surface_GetCreateSettings(display_surface, &displaySurfaceSettings);
@@ -1424,8 +1424,8 @@ bool hwc_compose_gralloc_buffer(
         }
     }
 
-    hwc_mem_unlock(ctx, (unsigned)pSharedData->planes[plane_select].physAddr, false);
-
+out_unlock:
+   hwc_mem_unlock(ctx, (unsigned)pSharedData->planes[plane_select].physAddr, false);
 out:
    return composed;
 }
@@ -1566,7 +1566,6 @@ static void hwc_prepare_gpx_layer(
         }
     }
 
-out_unlock:
     BKNI_ReleaseMutex(ctx->mutex);
 out:
     hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
@@ -2001,10 +2000,11 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         rc = hwc_checkpoint(ctx);
         if ( rc )  {
             ALOGW("%s: checkpoint timeout", __FUNCTION__);
-        }
-        rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[0].schdl, display_surface, NULL, false);
-        if ( rc ) {
-            ALOGW("%s: Unable to push surface to client (%d)", __FUNCTION__, rc);
+        } else {
+            rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[0].schdl, display_surface, NULL, false);
+            if ( rc ) {
+               ALOGW("%s: Unable to push surface to client (%d)", __FUNCTION__, rc);
+            }
         }
         for (i = 0; i < list->numHwLayers; i++) {
             if ( ctx->gpx_cli[i].active_surface ) {
@@ -2026,7 +2026,6 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
 
 out_mutex:
     BKNI_ReleaseMutex(ctx->mutex);
-
 out:
     return 0;
 }
