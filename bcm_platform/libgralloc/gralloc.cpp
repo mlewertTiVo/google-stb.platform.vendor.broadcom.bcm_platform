@@ -244,7 +244,7 @@ static void gralloc_bzero(int is_mma, unsigned handle, size_t numBytes)
 
         if (is_mma) {
            if (pMemory == NULL) {
-              return;
+              goto out_release;
            }
            // TODO: using m2m.
         } else {
@@ -276,6 +276,7 @@ static void gralloc_bzero(int is_mma, unsigned handle, size_t numBytes)
        NEXUS_FlushCache(pMemory, numBytes);
     }
 
+out_release:
     if (is_mma && block_handle) {
        NEXUS_MemoryBlock_UnlockOffset(block_handle);
        NEXUS_MemoryBlock_Unlock(block_handle);

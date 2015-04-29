@@ -360,6 +360,9 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       bool flushed = false;
 
       if (!pSharedData->planes[DEFAULT_PLANE].physAddr) {
+         if (hnd->is_mma && shared_block_handle) {
+            NEXUS_MemoryBlock_Unlock(shared_block_handle);
+         }
          return -EINVAL;
       }
 
