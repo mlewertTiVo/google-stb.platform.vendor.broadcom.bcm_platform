@@ -27,8 +27,18 @@ ifeq ($(ANDROID_SUPPORTS_PLAYREADY), y)
 #-------------
 # libcmndrmprdy.so
 #-------------
-LOCAL_PATH := $(LOCAL_PATH_ORIG)/../../../refsw/BSEAV/lib/security/common_drm
 include $(CLEAR_VARS)
+LOCAL_LIB_NAME := libcmndrmprdy
+LOCAL_MODULE_TAGS := optional
+
+# Check if a prebuilt library has been created in the release_prebuilts folder
+ifneq (,$(wildcard $(TOP)/release_prebuilts/$(LOCAL_LIB_NAME).so))
+# use prebuilt library if one exists
+LOCAL_PREBUILT_LIBS := ../../../../../release_prebuilts/$(LOCAL_LIB_NAME).so
+include $(BUILD_MULTI_PREBUILT)
+else
+# compile library from source
+LOCAL_PATH := $(LOCAL_PATH_ORIG)/../../../refsw/BSEAV/lib/security/common_drm
 include $(LOCAL_PATH)/drm/playready/playready.inc
 LOCAL_SRC_FILES := ${PLAYREADY_SOURCES}
 
@@ -50,12 +60,10 @@ LOCAL_CFLAGS := $(filter-out -DBDBG_DEBUG_BUILD=1,$(LOCAL_CFLAGS))
 
 LOCAL_SHARED_LIBRARIES := libnexus libnxclient libplayreadypk_host libdrmrootfs
 
-LOCAL_MODULE := libcmndrmprdy
-LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE :=  $(LOCAL_LIB_NAME)
 include $(BUILD_SHARED_LIBRARY)
 endif
-
-
+endif
 
 ifeq ($(SAGE_SUPPORT), y)
 #---------------

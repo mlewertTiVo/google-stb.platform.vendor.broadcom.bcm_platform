@@ -30,8 +30,21 @@ ifeq ($(SAGE_SUPPORT), y)
 #---------------
 # liboemcrypto.so for Modular DRM
 #---------------
-LOCAL_PATH := $(LOCAL_PATH)/../../../refsw/BSEAV/lib/security/third_party/widevine/CENC_sage
 include $(CLEAR_VARS)
+LOCAL_MODULE := liboemcrypto
+LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR_SHARED_LIBRARIES)
+LOCAL_MODULE_TAGS := optional
+
+# Check if a prebuilt library has been created in the release_prebuilts folder
+ifneq (,$(wildcard $(TOP)/release_prebuilts/$(LOCAL_MODULE).so))
+# use prebuilt library if one exists
+LOCAL_SRC_FILES := ../../../../../release_prebuilts/$(LOCAL_MODULE).so
+LOCAL_MODULE_SUFFIX := .so
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+include $(BUILD_PREBUILT)
+else
+# compile library from source
+LOCAL_PATH := $(LOCAL_PATH)/../../../refsw/BSEAV/lib/security/third_party/widevine/CENC_sage
 
 # add SAGElib related includes
 include $(LOCAL_PATH)/../../../../../../magnum/syslib/sagelib/bsagelib_public.inc
@@ -76,10 +89,8 @@ LOCAL_CFLAGS := $(filter-out -DBDBG_DEBUG_BUILD=1,$(LOCAL_CFLAGS))
 LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) liblog libstlport
 LOCAL_SHARED_LIBRARIES += libcmndrm_tl
 
-LOCAL_MODULE := liboemcrypto
-LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR_SHARED_LIBRARIES)
-LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)
+endif
 endif
 endif
 
