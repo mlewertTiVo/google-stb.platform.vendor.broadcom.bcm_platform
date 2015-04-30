@@ -506,7 +506,7 @@ bool NexusHdmiCecDevice::standbyMonitor(void *ctx)
 }
 
 NexusHdmiCecDevice::NexusHdmiCecDevice(int cecId) : mCecId(cecId), mCecLogicalAddr(UNDEFINED_LOGICAL_ADDRESS),
-                                                    mCecPhysicalAddr(UNDEFINED_PHYSICAL_ADDRESS), mCecEnable(true),
+                                                    mCecPhysicalAddr(UNDEFINED_PHYSICAL_ADDRESS), mCecVendorId(UNKNOWN_VENDOR_ID), mCecEnable(true),
                                                     mCecSystemControlEnable(true), mCecViewOnCmdPending(false), mStandby(false),
                                                     mHotPlugConnected(false), pIpcClient(NULL), pNexusClientContext(NULL), mCallback(NULL),
                                                     mHdmiCecDevice(NULL), mHdmiCecMessageEventListener(NULL), mHdmiHotplugEventListener(NULL),
@@ -889,17 +889,11 @@ status_t NexusHdmiCecDevice::getCecVersion(int* version)
 
 status_t NexusHdmiCecDevice::getCecVendorId(uint32_t* vendor_id)
 {
-    union {
-        char id_array[4];
-        uint32_t id_u32;
-    } vendorId;
-
-    vendorId.id_array[0] = 'B';
-    vendorId.id_array[1] = 'R';
-    vendorId.id_array[2] = 'C';
-    vendorId.id_array[3] = 'M';
-
-    *vendor_id = vendorId.id_u32;
+    // Is the value cached?
+    if (mCecVendorId == NexusHdmiCecDevice::UNKNOWN_VENDOR_ID) {
+        mCecVendorId = property_get_int32(PROPERTY_HDMI_CEC_VENDOR_ID, DEFAULT_PROPERTY_HDMI_CEC_VENDOR_ID);
+    }
+    *vendor_id = mCecVendorId;
     return NO_ERROR;
 }
 

@@ -172,6 +172,7 @@ class NexusHdmiCecDevice : public RefBase
         int                             mCecId;
         uint8_t                         mCecLogicalAddr;
         uint16_t                        mCecPhysicalAddr;
+        uint32_t                        mCecVendorId;
         bool                            mCecEnable;
         bool                            mCecSystemControlEnable;
         bool                            mCecViewOnCmdPending;
@@ -192,6 +193,7 @@ class NexusHdmiCecDevice : public RefBase
         static const uint32_t UNDEFINED_PHYSICAL_ADDRESS = 0xFFFF;
         static const uint32_t UNDEFINED_LOGICAL_ADDRESS = 0xFF;
         static const uint8_t  MAX_LOGICAL_ADDRESS = 0x0F;
+        static const uint32_t UNKNOWN_VENDOR_ID = 0x0;
 
         /* Disallow copy constructor and copy operator... */
         NexusHdmiCecDevice(const NexusHdmiCecDevice &);

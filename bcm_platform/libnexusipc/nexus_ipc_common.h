@@ -169,6 +169,10 @@ typedef struct b_cecStatus {
 #define PROPERTY_HDMI_TX_VIEW_ON_CEC            "persist.sys.hdmi.tx_view_on_cec"
 #define DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC    "0"
 
+// Setup the default CEC vendor ID to Broadcom's
+#define PROPERTY_HDMI_CEC_VENDOR_ID             "ro.sys.hdmi.cec_vendor_id"
+#define DEFAULT_PROPERTY_HDMI_CEC_VENDOR_ID     0x18C086
+
 
 typedef struct b_hdmiOutputStatus
 {

@@ -164,12 +164,15 @@ void NexusService::CecServiceManager::CecRxMessageHandler::getOsdName (unsigned 
 
 void NexusService::CecServiceManager::CecRxMessageHandler::getDeviceVendorID(unsigned inLength __unused, uint8_t *content, unsigned *outLength )
 {
-#define VendorID_SIZE 4 /* Size no larger than 15 */
-    char vendorID[]= "BRCM";
+    uint32_t vendorId;
+
+    vendorId = property_get_int32(PROPERTY_HDMI_CEC_VENDOR_ID, DEFAULT_PROPERTY_HDMI_CEC_VENDOR_ID);
+
+#define VendorID_SIZE 3 /* Size no larger than 3 bytes */
     unsigned j;
 
     for( j = 0; j < VendorID_SIZE ; j++ ) {
-        content[j] = (int)vendorID[j];
+        content[j] = (int)((vendorId >> (VendorID_SIZE-1-j)*8) & 0xFF);
     }
     *outLength = VendorID_SIZE;
 }
