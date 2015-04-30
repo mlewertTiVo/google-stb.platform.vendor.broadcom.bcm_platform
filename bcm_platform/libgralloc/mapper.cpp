@@ -91,6 +91,7 @@ int gralloc_register_buffer(gralloc_module_t const* module,
    (void)module;
 
    if (private_handle_t::validate(handle) < 0) {
+      ALOGE("%s : invalid handle, freed?", __FUNCTION__);
       return -EINVAL;
    }
 
@@ -158,6 +159,7 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
    (void)module;
 
    if (private_handle_t::validate(handle) < 0) {
+      ALOGE("%s : invalid handle, freed?", __FUNCTION__);
       return -EINVAL;
    }
 
@@ -227,6 +229,7 @@ int gralloc_lock(gralloc_module_t const* module,
    (void)h;
 
    if (private_handle_t::validate(handle) < 0) {
+      ALOGE("%s : invalid handle, freed?", __FUNCTION__);
       return -EINVAL;
    }
 
@@ -342,6 +345,7 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
    private_module_t* pModule = (private_module_t *)module;
 
    if (private_handle_t::validate(handle) < 0) {
+      ALOGE("%s : invalid handle, freed?", __FUNCTION__);
       return -EINVAL;
    }
 

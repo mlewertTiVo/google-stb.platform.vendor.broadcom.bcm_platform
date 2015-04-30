@@ -911,6 +911,7 @@ static int gralloc_free(alloc_device_t* dev,
         buffer_handle_t handle)
 {
    if (private_handle_t::validate(handle) < 0) {
+      ALOGE("%s : attempt to free invalid handle?", __FUNCTION__);
       return -EINVAL;
    }
 
