@@ -410,6 +410,9 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
             vaddr = NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
          }
          NEXUS_FlushCache(vaddr, pSharedData->planes[DEFAULT_PLANE].allocSize);
+         if (hnd->is_mma) {
+            NEXUS_MemoryBlock_Unlock(block_handle);
+         }
       }
    }
 
