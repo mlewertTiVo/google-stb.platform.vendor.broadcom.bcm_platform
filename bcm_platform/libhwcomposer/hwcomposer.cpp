@@ -2776,8 +2776,8 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
 
         NEXUS_Graphics2DOpenSettings g2dOpenSettings;
         NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
-        g2dOpenSettings.packetFifoThreshold = 0;    // Minimize latency
-        dev->hwc_2dg = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, NULL);
+        g2dOpenSettings.compatibleWithSurfaceCompaction = false;
+        dev->hwc_2dg = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &g2dOpenSettings);
         if (dev->hwc_2dg == NULL) {
            ALOGE("%s: failed to create hwc_2dg, conversion services will not work!", __FUNCTION__);
         } else {

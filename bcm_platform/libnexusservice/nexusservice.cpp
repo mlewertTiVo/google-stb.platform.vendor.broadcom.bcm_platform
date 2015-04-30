@@ -935,6 +935,7 @@ void NexusService::platformInit()
     NEXUS_Error                        rc;
     int                                i=0;
     char                               value[PROPERTY_VALUE_MAX];
+    NEXUS_Graphics2DOpenSettings       g2dOpenSettings;
     NEXUS_Graphics2DSettings           gfxSettings;
     NEXUS_PlatformStartServerSettings  serverSettings;
 
@@ -974,7 +975,9 @@ void NexusService::platformInit()
 
     getInitialOutputFormats(&initial_hd_format, &initial_sd_format);
 
-    gfx2D = NEXUS_Graphics2D_Open(NEXUS_ANY_ID,NULL);
+    NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
+    g2dOpenSettings.compatibleWithSurfaceCompaction = false;
+    gfx2D = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &g2dOpenSettings);
 
     BKNI_CreateEvent(&gfxDone);
     NEXUS_Graphics2D_GetSettings(gfx2D, &gfxSettings);

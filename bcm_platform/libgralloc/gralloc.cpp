@@ -141,7 +141,8 @@ static void gralloc_checkpoint_callback(void *pParam, int param)
 
 void gralloc_explicit_load(void)
 {
-   NEXUS_Error     rc;
+   NEXUS_Error rc;
+   NEXUS_Graphics2DOpenSettings g2dOpenSettings;
 
    gralloc_load_lib();
 
@@ -151,7 +152,9 @@ void gralloc_explicit_load(void)
       hCheckpointEvent = NULL;
       hGraphics = NULL;
    } else {
-      hGraphics = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, NULL);
+      NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
+      g2dOpenSettings.compatibleWithSurfaceCompaction = false;
+      hGraphics = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &g2dOpenSettings);
       if (!hGraphics) {
          ALOGW("Unable to open Graphics2D.  HW/SW access format conversions will fail...");
       } else {

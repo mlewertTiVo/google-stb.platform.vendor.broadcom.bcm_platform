@@ -882,7 +882,11 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         this->Invalidate();
         return;
     }
-    m_hGraphics2d = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, NULL);
+
+    NEXUS_Graphics2DOpenSettings g2dOpenSettings;
+    NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
+    g2dOpenSettings.compatibleWithSurfaceCompaction = false;
+    m_hGraphics2d = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &g2dOpenSettings);
     if ( NULL == m_hGraphics2d )
     {
         ALOGW("Unable to open graphics 2d");

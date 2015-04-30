@@ -28,14 +28,16 @@ extern "C" NEXUS_SurfaceHandle hwc_to_nsc_surface(int width, int height, int str
     NEXUS_SurfaceCreateSettings createSettings;
 
     NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
-    createSettings.pixelFormat = format;
-    createSettings.width       = width;
-    createSettings.height      = height;
-    createSettings.pitch       = stride;
+    createSettings.pixelFormat   = format;
+    createSettings.width         = width;
+    createSettings.height        = height;
+    createSettings.pitch         = stride;
+    createSettings.managedAccess = false;
     if (!is_mma && data) {
         createSettings.pMemory = data;
     } else if (is_mma && handle) {
         createSettings.pixelMemory = (NEXUS_MemoryBlockHandle) handle;
+        createSettings.pixelMemoryOffset = 0;
     }
 
     shdl = NEXUS_Surface_Create(&createSettings);
