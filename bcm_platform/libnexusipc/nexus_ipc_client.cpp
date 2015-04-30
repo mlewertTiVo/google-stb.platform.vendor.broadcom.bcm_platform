@@ -443,7 +443,7 @@ bool NexusIPCClient::getCecStatus(uint32_t cecId, b_cecStatus *pCecStatus)
     return cmd.param.getCecStatus.out.status;
 }
 
-bool NexusIPCClient::sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage)
+bool NexusIPCClient::sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage, uint8_t maxRetries)
 {
     api_data cmd;
     BKNI_Memset(&cmd, 0, sizeof(cmd));
@@ -453,6 +453,7 @@ bool NexusIPCClient::sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t des
     cmd.param.sendCecMessage.in.destAddr = destAddr;
     cmd.param.sendCecMessage.in.length = length;
     memcpy(cmd.param.sendCecMessage.in.message, pMessage, MIN(length, NEXUS_CEC_MESSAGE_DATA_SIZE));
+    cmd.param.sendCecMessage.in.maxRetries = maxRetries;
     iNC->api_over_binder(&cmd);
     return cmd.param.sendCecMessage.out.status;
 }

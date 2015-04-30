@@ -1415,12 +1415,12 @@ bool NexusService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdm
     return (rc == NEXUS_SUCCESS);
 }
 
-bool NexusService::sendCecMessage(unsigned cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage)
+bool NexusService::sendCecMessage(unsigned cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage, uint8_t maxRetries)
 {
     bool success = false;
 #if NEXUS_HAS_CEC
     if (mCecServiceManager[cecId] != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
-        success = (mCecServiceManager[cecId]->sendCecMessage(srcAddr, destAddr, length, pMessage) == OK) ? true : false;
+        success = (mCecServiceManager[cecId]->sendCecMessage(srcAddr, destAddr, length, pMessage, maxRetries) == OK) ? true : false;
     }
 #endif
     if (!success) {
@@ -1793,7 +1793,8 @@ status_t NexusService::onTransact(uint32_t code,
                                                                      cmd.param.sendCecMessage.in.srcAddr,
                                                                      cmd.param.sendCecMessage.in.destAddr,
                                                                      cmd.param.sendCecMessage.in.length,
-                                                                     cmd.param.sendCecMessage.in.message);
+                                                                     cmd.param.sendCecMessage.in.message,
+                                                                     cmd.param.sendCecMessage.in.maxRetries);
                 break;
             }
             case api_setCecLogicalAddress:

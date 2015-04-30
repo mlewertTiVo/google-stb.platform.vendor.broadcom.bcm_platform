@@ -98,7 +98,7 @@ class NexusHdmiCecDevice : public RefBase
         status_t getCecPhysicalAddress(uint16_t* addr);
         status_t getCecVersion(int* version);
         status_t getCecVendorId(uint32_t* vendor_id);
-        status_t sendCecMessage(const cec_message_t*);
+        status_t sendCecMessage(const cec_message_t*, uint8_t maxRetries=NexusHdmiCecDevice::DEFAULT_CEC_RETRIES);
         status_t getCecPortInfo(struct hdmi_port_info* list[], int* total);
 
         inline void standbyLock() { mStandbyLock.lock(); }
@@ -193,6 +193,7 @@ class NexusHdmiCecDevice : public RefBase
         static const uint32_t UNDEFINED_PHYSICAL_ADDRESS = 0xFFFF;
         static const uint32_t UNDEFINED_LOGICAL_ADDRESS = 0xFF;
         static const uint8_t  MAX_LOGICAL_ADDRESS = 0x0F;
+        static const uint8_t  DEFAULT_CEC_RETRIES = 0;
         static const uint32_t UNKNOWN_VENDOR_ID = 0x0;
 
         /* Disallow copy constructor and copy operator... */

@@ -244,7 +244,7 @@ public:
     virtual bool setCecPowerState(uint32_t cecId, b_powerState pmState)=0;
     virtual bool getCecPowerStatus(uint32_t cecId, uint8_t *pPowerStatus)=0;
     virtual bool getCecStatus(uint32_t cecId, b_cecStatus *pCecStatus)=0;
-    virtual bool sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage)=0;
+    virtual bool sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage, uint8_t maxRetries=DEFAULT_MAX_CEC_RETRIES)=0;
     virtual bool setCecEnabled(uint32_t cecId, bool enabled)=0;
     virtual bool isCecEnabled(uint32_t cecId)=0;
     virtual bool setCecAutoWakeupEnabled(uint32_t cecId, bool enabled)=0;
@@ -252,6 +252,8 @@ public:
     virtual b_cecDeviceType getCecDeviceType(uint32_t cecId=0)=0;
     virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr)=0;
     virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus)=0;
+
+    static const uint8_t DEFAULT_MAX_CEC_RETRIES = 5;
 };
 
 /* -----------------------------------------------------------------------------

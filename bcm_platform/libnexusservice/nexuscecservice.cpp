@@ -321,13 +321,12 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
     int32_t destaddr;
     int32_t opcode;
     size_t  length;
+    int32_t maxRetries;
+    int     retryCount;
     uint8_t *pBuffer;
     sp<ABuffer> params;
     char msgBuffer[3*(NEXUS_CEC_MESSAGE_DATA_SIZE +1)];
     NEXUS_CecMessage transmitMessage;
-    unsigned i, j;
-    unsigned loops;
-    unsigned maxLoops;
 
     if (!msg->findInt32("srcaddr", &srcaddr)) {
         ALOGE("%s: Could not find \"srcaddr\" in CEC%d message!", __PRETTY_FUNCTION__, cecId);
@@ -343,6 +342,10 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
     }
     if (!msg->findSize("length", &length)) {
         ALOGE("%s: Could not find \"length\" in CEC%d message!", __PRETTY_FUNCTION__, cecId);
+        return FAILED_TRANSACTION;
+    }
+    if (!msg->findInt32("maxRetries", &maxRetries)) {
+        ALOGE("%s: Could not find \"maxRetries\" in CEC%d message!", __PRETTY_FUNCTION__, cecId);
         return FAILED_TRANSACTION;
     }
 
@@ -366,6 +369,8 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
         }
 
         if (params != NULL) {
+            unsigned i, j;
+
             pBuffer = params->base();
 
             for (i = 0, j = 0; i < length-1 && j<(sizeof(msgBuffer)-1); i++) {
@@ -375,19 +380,11 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
         }
     }
 
-    // Is this a logical address determination polling message?
-    if (srcaddr == destaddr) {
-        // No need to loop excessively if we are using the HDMI Control Service...
-        if (mCecServiceManager->mCecDeviceType != eCecDeviceType_eInvalid)
-            maxLoops = 1;
-        else
-            maxLoops = 2;
-    } else {
-        maxLoops = 5;
-    }
-
-    for (loops = 0; loops < maxLoops; loops++) {
+    for (retryCount = 0; retryCount <= maxRetries; retryCount++) {
         NEXUS_Error rc;
+        unsigned long timeoutInMs = 0;
+
+        usleep(timeoutInMs * 1000);
 
         ALOGD("%s: Outputting CEC%d message: src addr=0x%02X dest addr=0x%02X opcode=0x%02X length=%d params=\'%s\' [thread %d]", __PRETTY_FUNCTION__,
               cecId, srcaddr, destaddr, opcode, length, msgBuffer, gettid());
@@ -419,18 +416,22 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
                 }
             }
             else {
-                ALOGW("%s: Timed out waiting for CEC%d message be transmitted!", __PRETTY_FUNCTION__, cecId);
+                ALOGW("%s: Timed out waiting for CEC%d message be transmitted%s", __PRETTY_FUNCTION__, cecId,
+                      (retryCount < maxRetries) ? " - retrying..." : "!");
             }
             // Always wait 35ms for (start + header block) and (25ms x length) + 25ms between transmitting messages...
-            usleep((60 + 25*length) * 1000);
+            timeoutInMs = 60 + 25*length;
         }
         else {
             mCecServiceManager->mCecMessageTransmittedLock.unlock();
-            ALOGE("%s: ERROR sending CEC%d message: opcode=0x%02X [rc=%d]%s", __PRETTY_FUNCTION__, cecId, opcode, rc, loops<(maxLoops-1) ? " - retrying..." : "!!!");
-            usleep(500 * 1000);
+            ALOGE("%s: ERROR sending CEC%d message: opcode=0x%02X [rc=%d]%s", __PRETTY_FUNCTION__, cecId, opcode, rc,
+                  (retryCount < maxRetries) ? " - retrying..." : "!!!");
+
+            timeoutInMs = 500;
         }
     }
-    return (loops < maxLoops) ? OK : UNKNOWN_ERROR;
+
+    return (retryCount <= maxRetries) ? OK : UNKNOWN_ERROR;
 }
 
 void NexusService::CecServiceManager::CecTxMessageHandler::onMessageReceived(const sp<AMessage> &msg)
@@ -632,9 +633,9 @@ void NexusService::CecServiceManager::msgTransmitted_callback(void *context, int
     }
 }
 
-status_t NexusService::CecServiceManager::sendCecMessage(uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pBuffer)
+status_t NexusService::CecServiceManager::sendCecMessage(uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pBuffer, uint8_t maxRetries)
 {
-    status_t err = BAD_VALUE;
+    status_t err = NO_ERROR;
     b_cecStatus status;
 
     // Check to ensure that the device's CEC logical address has been initialised first...
@@ -651,13 +652,25 @@ status_t NexusService::CecServiceManager::sendCecMessage(uint8_t srcAddr, uint8_
         msg->setInt32("opcode", *pBuffer);
         msg->setSize("length",  length);
 
-        // If we are not sending a polling message, then check to make sure that the
-        // logical address has been set prior to sending the message.
-        if (srcAddr != destAddr && status.logicalAddress == 0xFF) {
+        // If we are sending a polling message, then don't retry if we are using the HDMI Controller...
+        if (srcAddr == destAddr) {
+            if (mCecDeviceType == eCecDeviceType_eInvalid) {
+                maxRetries = 1;
+            }
+            else {
+                maxRetries = 0;
+            }
+        }
+        else if (status.logicalAddress == 0xFF) {
+            // If we are not sending a polling message, then check to make sure that the
+            // logical address has been set prior to sending the message.
             ALOGW("%s: CEC%d logical address not initialised!", __PRETTY_FUNCTION__, cecId);
             err = NO_INIT;
         }
-        else {
+
+        if (err == NO_ERROR) {
+            msg->setInt32("maxRetries", maxRetries);
+
             if (length > 1) {
                 buf->setRange(0, 0);
                 memcpy(buf->data(), &pBuffer[1], length-1);
@@ -673,14 +686,13 @@ status_t NexusService::CecServiceManager::sendCecMessage(uint8_t srcAddr, uint8_
 
             if (err != OK) {
                 ALOGE("%s: ERROR posting message (err=%d)!!!", __PRETTY_FUNCTION__, err);
-                return err;
             }
             else {
                 ALOGV("%s: Returned from posting message to looper.", __PRETTY_FUNCTION__);
-            }
-
-            if (!response->findInt32("err", &err)) {
-                err = OK;
+            
+                if (!response->findInt32("err", &err)) {
+                    err = OK;
+                }
             }
         }
     }

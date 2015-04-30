@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2014 Broadcom Corporation
+ *    (c)2011-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -161,6 +161,7 @@ typedef union api_param
             uint8_t  destAddr;
             size_t   length;
             uint8_t  message[NEXUS_CEC_MESSAGE_DATA_SIZE];
+            uint8_t  maxRetries;
         } in;
 
         struct {

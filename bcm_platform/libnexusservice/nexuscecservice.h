@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2014 Broadcom Corporation
+ *    (c)2011-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -53,7 +53,7 @@ public:
     virtual status_t platformInit();
     virtual void platformUninit();
     virtual bool isPlatformInitialised();
-    virtual status_t sendCecMessage(uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pBuffer);
+    virtual status_t sendCecMessage(uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pBuffer, uint8_t maxRetries=NexusIPCCommon::DEFAULT_MAX_CEC_RETRIES);
     virtual bool setPowerState(b_powerState pmState);
     virtual bool getPowerStatus(uint8_t *pPowerStatus);
     virtual bool getCecStatus(b_cecStatus *pCecStatus);
