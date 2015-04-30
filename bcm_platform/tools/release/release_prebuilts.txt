@@ -1,0 +1,2 @@
+libcmndrmprdy.so
+liboemcrypto.so

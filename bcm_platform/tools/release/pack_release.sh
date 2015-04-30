@@ -22,6 +22,8 @@ fi
 TOP_DIR=$(pwd)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR=tmp_bcmrel
+PREBUILT=release_prebuilts
+PREBUILT_DIR="$TOP_DIR/$PREBUILT"
 
 DFT_XML="$TOP_DIR/.repo/manifests/default.xml"
 BCG_XML="$TOP_DIR/.repo/manifests/bcg.xml"
@@ -111,6 +113,31 @@ if [ -d $TMP_DIR ]; then
   rm -rf $TMP_DIR
 fi
 mkdir -p $TMP_DIR
+
+if [ -d $PREBUILT_DIR ]; then
+  echo "Checking if prebuilt libraries are provided..."
+  while read line; do
+    if [ ! -f $PREBUILT_DIR/$line ]; then
+      echo ""
+      echo "!!! MISSING prebuilt libraries for release packaging: $line"
+      echo ""
+      echo "Exiting..."
+      echo ""
+      exit 0
+    fi
+  done < $SCRIPT_DIR/release_prebuilts.txt
+  echo $PREBUILT >> $WHITE_LIST
+else
+   echo ""
+   echo "!!! MISSING prebuilt libraries for release packaging."
+   echo "!!! Please create the missing folder $PREBUILT_DIR"
+   echo "!!! and put the following prebuilt libraries into the folder:"
+   echo ""
+   cat $SCRIPT_DIR/release_prebuilts.txt 
+   echo ""
+   echo " Exiting..."
+   exit 0
+fi
 
 if [ -f $BCG_XML ]; then
   # refsw is packed separately, store its location for unpack
