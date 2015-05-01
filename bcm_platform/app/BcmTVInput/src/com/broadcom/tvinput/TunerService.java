@@ -25,7 +25,6 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.database.Cursor;
 import android.media.tv.TvContract;
-import android.media.tv.TvContract.Programs;
 import android.media.tv.TvInputHardwareInfo;
 import android.media.tv.TvInputInfo;
 import android.media.tv.TvInputManager;
@@ -48,7 +47,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.lang.Long;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
@@ -138,25 +136,6 @@ public class TunerService extends TvInputService {
         if (api.end_time_utc_millis != pi.end_time_utc_millis) {
             Log.d(TAG, "DatabaseSyncTask: different end " + api.end_time_utc_millis + " " + pi.end_time_utc_millis);
             return true;
-        }
-        return false;
-    }
-
-    private static void insertProgram(Context context, long channelId, ProgramInfo program) {
-        ContentValues prog_values = buildProgramValues(channelId, program, true);
-        context.getContentResolver().insert(TvContract.Programs.CONTENT_URI, prog_values);
-    }
-
-    private static void updateProgram(Context context, long programId, ProgramInfo program) {
-        ContentValues prog_values = buildProgramValues(0, program, false);
-        context.getContentResolver().update(TvContract.buildProgramUri(programId), prog_values, null, null);
-    }
-
-    private boolean isAtleastOneSessionTuned() {
-        for(TunerTvInputSessionImpl session : sessionSet) {
-            if (!session.mCurrentChannelId.equals("")) {
-                return true;
-            }
         }
         return false;
     }
@@ -435,7 +414,7 @@ public class TunerService extends TvInputService {
 
             private void deleteProgramUpdate(String channel_id, String id, boolean expire)
             {
-                Pair<String, String> key = new Pair(channel_id, id);
+                Pair<String, String> key = new Pair<String, String>(channel_id, id);
                 int rows = 0;
                 if (mBroadcastProgramIdMap.containsKey(key)) {
                     Long programId = mBroadcastProgramIdMap.get(key);
@@ -461,14 +440,14 @@ public class TunerService extends TvInputService {
                     Uri uri = getContentResolver().insert(TvContract.Programs.CONTENT_URI, prog_values);
                     if (uri != null) {
                         long programId = ContentUris.parseId(uri);
-                        mBroadcastProgramIdMap.put(new Pair(pui.channel_id, pui.id), new Long(programId));
+                        mBroadcastProgramIdMap.put(new Pair<String, String>(pui.channel_id, pui.id), Long.valueOf(programId));
                         Log.d(TAG, "insertProgramUpdate(" + pui.channel_id + ", " + pui.id + ") succeeded: mapped to " + programId);
                     }
                 }
             }
 
             private void updateProgramUpdate(ProgramUpdateInfo pui) {
-                Pair<String, String> key = new Pair(pui.channel_id, pui.id);
+                Pair<String, String> key = new Pair<String, String>(pui.channel_id, pui.id);
                 if (mBroadcastProgramIdMap.containsKey(key)) {
                     Long programId = mBroadcastProgramIdMap.get(key);
                     ContentValues prog_values = buildProgramValuesFromUpdate(0, pui, false);
@@ -853,7 +832,7 @@ public class TunerService extends TvInputService {
 
         long channelId = ContentUris.parseId(channelUri);
         Log.d(TAG, "channelId = " +channelId);
-        mBroadcastChannelIdMap.put(channel.id, new Long(channelId));
+        mBroadcastChannelIdMap.put(channel.id, Long.valueOf(channelId));
 
         // Initialize the Programs class
         //ProgramInfo programs[] = TunerHAL.getProgramList(channel.id);
@@ -931,12 +910,12 @@ public class TunerService extends TvInputService {
                             // Duplicate - don't re-add
                             skipList.add(dbci.id);
                             // But add to cache
-                            mBroadcastChannelIdMap.put(dbci.id, new Long(channelId));
+                            mBroadcastChannelIdMap.put(dbci.id, Long.valueOf(channelId));
                         }
                         else {
                             // Remove from TvContract
                             // Already not in cache
-                            zapList.add(new Pair(new Long(channelId), dbci.id));
+                            zapList.add(new Pair<Long, String>(Long.valueOf(channelId), dbci.id));
                         }
                     }
                 }
