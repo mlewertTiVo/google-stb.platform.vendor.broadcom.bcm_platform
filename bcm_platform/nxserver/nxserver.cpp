@@ -174,6 +174,7 @@ static void *proactive_runner_task(void *argv)
     int active_gs;
     int gc_tick = 0;
     char value[PROPERTY_VALUE_MAX];
+    bool needs_growth;
 
     if (property_get(NX_MMA_GROW_SIZE, value, NULL)) {
        if (strlen(value)) {
@@ -206,23 +207,28 @@ static void *proactive_runner_task(void *argv)
 
         if (nx_server->uses_mma && gfx_heap_grow_size) {
            NEXUS_PlatformConfiguration platformConfig;
+           NEXUS_MemoryStatus heapStatus;
            NEXUS_Platform_GetConfiguration(&platformConfig);
+           NEXUS_Heap_GetStatus(platformConfig.heap[NEXUS_MAX_HEAPS-2], &heapStatus);
+
+           ALOGV("%s: dyn-heap largest free = %u", __FUNCTION__, heapStatus.largestFreeBlock);
+           needs_growth = false;
+           if (heapStatus.largestFreeBlock < NX_HEAP_DYN_FREE_THRESHOLD) {
+              needs_growth = true;
+           }
 
            if (active_gc) {
               if (++gc_tick > RUNNER_GC_THRESHOLD) {
                  gc_tick = 0;
-                 NEXUS_Platform_ShrinkHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size, (size_t)gfx_heap_grow_size);
+                 if (!needs_growth) {
+                    NEXUS_Platform_ShrinkHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size, (size_t)gfx_heap_grow_size);
+                 }
               }
            }
 
-           if (active_gs) {
-              NEXUS_MemoryStatus heapStatus;
-              NEXUS_Heap_GetStatus(platformConfig.heap[NEXUS_MAX_HEAPS-2], &heapStatus);
-              ALOGV("%s: dyn-heap largest free = %u", __FUNCTION__, heapStatus.largestFreeBlock);
-              if (heapStatus.largestFreeBlock < NX_HEAP_DYN_FREE_THRESHOLD) {
-                 ALOGI("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
-                 NEXUS_Platform_GrowHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size);
-              }
+           if (active_gs && needs_growth) {
+              ALOGI("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
+              NEXUS_Platform_GrowHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size);
            }
         }
 
