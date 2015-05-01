@@ -35,9 +35,6 @@ on init
    export NEXUS_DEVICE_NODE /dev/mali
    export NEXUS_WAKE_DEVICE_NODE /dev/mali0
 
-   # Do not let SYSTEMPORT get an IPv6 address (when using gphy)
-   write /proc/sys/net/ipv6/conf/eth0/disable_ipv6 1
-
    # Mount kernel debugfs
    mount debugfs none /sys/kernel/debug
 
@@ -54,9 +51,6 @@ on boot
    mkdir /data/tombstones 0777 system system
    mkdir /data/tombstones/ramdump 0777 system system
    restorecon_recursive /data/tombstones
-
-   # gphy depends on eth0 being up
-   ifup eth0
 
 on post-fs
    # nexus ipc socket, use a device from the exception list.

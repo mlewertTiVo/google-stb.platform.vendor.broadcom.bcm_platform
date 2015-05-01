@@ -1,3 +1,11 @@
+on init
+   # Do not let SYSTEMPORT get an IPv6 address (when using gphy)
+   write /proc/sys/net/ipv6/conf/eth0/disable_ipv6 1
+
+on boot
+   # gphy depends on eth0 being up
+   ifup eth0
+
 service dhcpcd_gphy /system/bin/dhcpcd -dABKL
    class main
    group dhcp
