@@ -76,6 +76,7 @@
 #define KB (1024)
 #define SEC_TO_MSEC (1000LL)
 #define RUNNER_SEC_THRESHOLD (10)
+#define RUNNER_GC_THRESHOLD (3)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     1920
 #define GRAPHICS_RES_HEIGHT_DEFAULT    1080
@@ -83,6 +84,8 @@
 #define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
 
 #define NX_MMA                         "ro.nx.mma"
+#define NX_MMA_ACT_GC                  "ro.nx.mma.act.gc"
+#define NX_MMA_ACT_GS                  "ro.nx.mma.act.gs"
 #define NX_MMA_GROW_SIZE               "ro.nx.heap.grow"
 #define NX_TRANSCODE                   "ro.nx.transcode"
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
@@ -167,6 +170,9 @@ static void *proactive_runner_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
     unsigned gfx_heap_grow_size = 0;
+    int active_gc;
+    int active_gs;
+    int gc_tick = 0;
     char value[PROPERTY_VALUE_MAX];
 
     if (property_get(NX_MMA_GROW_SIZE, value, NULL)) {
@@ -174,8 +180,11 @@ static void *proactive_runner_task(void *argv)
           gfx_heap_grow_size = calc_heap_size(value);
        }
     }
+    active_gc = property_get_int32(NX_MMA_ACT_GC, 1);
+    active_gs = property_get_int32(NX_MMA_ACT_GS, 1);
 
-    ALOGI("%s: launching, gpx-grow: %u...", __FUNCTION__, gfx_heap_grow_size);
+    ALOGI("%s: launching, gpx-grow: %u, active-gc: %c, active-gs %c",
+          __FUNCTION__, gfx_heap_grow_size, active_gc ? 'o' : 'x', active_gs ? 'o' : 'x');
 
     do
     {
@@ -184,23 +193,36 @@ static void *proactive_runner_task(void *argv)
        /* the proactive runner can be used for several purposes, but primarely
         * meant for memory management monitoring:
         *
-        * 1) active dynamic heap allocation to ensure sufficient head room to avoid
+        * 1) proactive dynamic heap allocation to ensure sufficient head room to avoid
         *    last minute application requests if possible.
         *
-        * 2) proactive LMK on behalf of android for nexus managed memory not seen in
+        * 2) proactive dynamic heap shrink to free up memory not actually used by the
+        *    application but which client is still alive (default shrink only runs on
+        *    nexus client disconnect).
+        *
+        * 3) proactive LMK on behalf of android for nexus managed memory not seen in
         *    standard LMK.
         */
 
-        if (nx_server->uses_mma) {
+        if (nx_server->uses_mma && gfx_heap_grow_size) {
            NEXUS_PlatformConfiguration platformConfig;
-           NEXUS_MemoryStatus heapStatus;
-
            NEXUS_Platform_GetConfiguration(&platformConfig);
-           NEXUS_Heap_GetStatus(platformConfig.heap[NEXUS_MAX_HEAPS-2], &heapStatus);
-           ALOGV("%s: dyn-heap largest free = %u", __FUNCTION__, heapStatus.largestFreeBlock);
-           if (gfx_heap_grow_size && (heapStatus.largestFreeBlock < NX_HEAP_DYN_FREE_THRESHOLD)) {
-              ALOGI("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
-              NEXUS_Platform_GrowHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size);
+
+           if (active_gc) {
+              if (++gc_tick > RUNNER_GC_THRESHOLD) {
+                 gc_tick = 0;
+                 NEXUS_Platform_ShrinkHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size, (size_t)gfx_heap_grow_size);
+              }
+           }
+
+           if (active_gs) {
+              NEXUS_MemoryStatus heapStatus;
+              NEXUS_Heap_GetStatus(platformConfig.heap[NEXUS_MAX_HEAPS-2], &heapStatus);
+              ALOGV("%s: dyn-heap largest free = %u", __FUNCTION__, heapStatus.largestFreeBlock);
+              if (heapStatus.largestFreeBlock < NX_HEAP_DYN_FREE_THRESHOLD) {
+                 ALOGI("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
+                 NEXUS_Platform_GrowHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size);
+              }
            }
         }
 
