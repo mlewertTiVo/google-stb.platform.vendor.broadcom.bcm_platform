@@ -143,7 +143,7 @@ using namespace android;
 
 #define HWC_USES_MMA_PROP            "ro.nx.mma"
 
-#define HWC_CHECKPOINT_TIMEOUT       (100)
+#define HWC_CHECKPOINT_TIMEOUT       (5000)
 
 enum {
     NEXUS_SURFACE_COMPOSITOR = 0,
