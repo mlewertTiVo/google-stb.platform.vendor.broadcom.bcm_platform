@@ -81,7 +81,7 @@ public class TunerService extends TvInputService {
     private final Map<String, TvInputInfo> mInputMap = new HashMap<>();
 
     // broadcast channel_id -> channelId
-    private final Map<String, Long> mBroadcastChannelIdMap = new HashMap<>();
+    private final BiMap<String, Long> mBroadcastChannelIdMap = new BiMap<>();
 
     // broadcast channel_id,program_id -> programId
     private final Map<Pair<String, String>, Long> mBroadcastProgramIdMap = new HashMap<>();
@@ -1093,23 +1093,14 @@ public class TunerService extends TvInputService {
         @Override
         public boolean onTune(Uri channelUri) 
         {
-
-            String[] projection = { TvContract.Channels.COLUMN_INTERNAL_PROVIDER_DATA };
             if (channelUri == null) {
                 return false;
             }
-            Cursor cursor = getContentResolver().query(
-                    channelUri, projection, null, null, null);
-            if (cursor == null) {
-                return false;
+            long channelId = ContentUris.parseId(channelUri);
+            String id = mCurrentChannelId;
+            if (mBroadcastChannelIdMap.containsValue(channelId)) {
+                id = mBroadcastChannelIdMap.rget(channelId); //reverse map
             }
-            if (cursor.getCount() < 1) {
-                cursor.close();
-                return false;
-            }
-            cursor.moveToNext();
-            String id = new String(cursor.getBlob(0));
-            cursor.close();
 
             Log.d(TAG, "onTune,  channelUri = " + channelUri + ", id = " + id);
 
