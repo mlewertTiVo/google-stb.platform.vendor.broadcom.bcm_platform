@@ -1160,6 +1160,7 @@ void BOMX_Component::CommandEventHandler()
         // Report back to application
         if ( m_callbacks.EventHandler )
         {
+            Unlock();
             if ( err == OMX_ErrorNone && reply )
             {
                 ALOGV("%s: OMX_EventCmdComplete begin", GetName());
@@ -1174,6 +1175,7 @@ void BOMX_Component::CommandEventHandler()
                                                OMX_EventError, (OMX_U32)err, (OMX_U32)msg.command, (msg.command == OMX_CommandMarkBuffer)?(OMX_PTR)&msg.data.markType:NULL);
                 ALOGV("%s: OMX_EventError end", GetName());
             }
+            Lock();
         }
     }
 }
