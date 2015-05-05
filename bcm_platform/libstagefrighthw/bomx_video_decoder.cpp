@@ -76,6 +76,8 @@
 #define B_PES_HEADER_LENGTH_WITH_PTS (14)
 #define B_PES_HEADER_LENGTH_WITHOUT_PTS (9)
 
+#define B_CHECKPOINT_TIMEOUT (5000)
+
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
  * [PES Header] [Codec Config Data] [Codec Header] [Payload] = 4 descriptors
@@ -4391,7 +4393,7 @@ bool BOMX_VideoDecoder::GraphicsCheckpoint()
     errCode = NEXUS_Graphics2D_Checkpoint(m_hGraphics2d, NULL);
     if ( errCode == NEXUS_GRAPHICS2D_QUEUED )
     {
-        errCode = B_Event_Wait(m_hCheckpointEvent, 150);
+        errCode = B_Event_Wait(m_hCheckpointEvent, B_CHECKPOINT_TIMEOUT);
         if ( errCode )
         {
             ALOGW("!!! ERROR: Timeout waiting for graphics checkpoint !!!");
