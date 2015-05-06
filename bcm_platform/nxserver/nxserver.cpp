@@ -188,9 +188,9 @@ static void *proactive_runner_task(void *argv)
           gfx_heap_grow_size = calc_heap_size(value);
        }
     }
-    active_gc = property_get_int32(NX_MMA_ACT_GC, 1);
-    active_gs = property_get_int32(NX_MMA_ACT_GS, 1);
-    active_gs = property_get_int32(NX_MMA_ACT_LMK, 1);
+    active_gc  = property_get_int32(NX_MMA_ACT_GC, 1);
+    active_gs  = property_get_int32(NX_MMA_ACT_GS, 1);
+    active_lmk = property_get_int32(NX_MMA_ACT_LMK, 1);
 
     ALOGI("%s: launching, gpx-grow: %u, active-gc: %c, active-gs: %c, active-lmk: %c",
           __FUNCTION__, gfx_heap_grow_size,
