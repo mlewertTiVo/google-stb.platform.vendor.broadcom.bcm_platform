@@ -434,8 +434,13 @@ public class TunerService extends TvInputService {
             }
 
             private void insertProgramUpdate(ProgramUpdateInfo pui) {
-                if (mBroadcastChannelIdMap.containsKey(pui.channel_id)) {
-                    Long channelId = mBroadcastChannelIdMap.get(pui.channel_id);
+                Long channelId = null;
+                synchronized (mBroadcastChannelIdMap) {
+                    if (mBroadcastChannelIdMap.containsKey(pui.channel_id)) {
+                        channelId = mBroadcastChannelIdMap.get(pui.channel_id);
+                    }
+                }
+                if (channelId != null) {
                     ContentValues prog_values = buildProgramValuesFromUpdate(channelId.longValue(), pui, true);
                     Uri uri = getContentResolver().insert(TvContract.Programs.CONTENT_URI, prog_values);
                     if (uri != null) {
@@ -832,7 +837,9 @@ public class TunerService extends TvInputService {
 
         long channelId = ContentUris.parseId(channelUri);
         Log.d(TAG, "channelId = " +channelId);
-        mBroadcastChannelIdMap.put(channel.id, Long.valueOf(channelId));
+        synchronized (mBroadcastChannelIdMap) {
+            mBroadcastChannelIdMap.put(channel.id, Long.valueOf(channelId));
+        }
 
         // Initialize the Programs class
         //ProgramInfo programs[] = TunerHAL.getProgramList(channel.id);
@@ -881,7 +888,9 @@ public class TunerService extends TvInputService {
         List<String> skipList = new ArrayList<>();
 
         // Cache clear
-        mBroadcastChannelIdMap.clear();
+        synchronized (mBroadcastChannelIdMap) {
+            mBroadcastChannelIdMap.clear();
+        }
 
         if (channels.length > 0) {
             Cursor channelcursor = getContentResolver().query(uri, channelprojection, null, null, null); 
@@ -910,7 +919,9 @@ public class TunerService extends TvInputService {
                             // Duplicate - don't re-add
                             skipList.add(dbci.id);
                             // But add to cache
-                            mBroadcastChannelIdMap.put(dbci.id, Long.valueOf(channelId));
+                            synchronized (mBroadcastChannelIdMap) {
+                                mBroadcastChannelIdMap.put(dbci.id, Long.valueOf(channelId));
+                            }
                         }
                         else {
                             // Remove from TvContract
@@ -1098,8 +1109,10 @@ public class TunerService extends TvInputService {
             }
             long channelId = ContentUris.parseId(channelUri);
             String id = mCurrentChannelId;
-            if (mBroadcastChannelIdMap.containsValue(channelId)) {
-                id = mBroadcastChannelIdMap.rget(channelId); //reverse map
+            synchronized (mBroadcastChannelIdMap) {
+                if (mBroadcastChannelIdMap.containsValue(channelId)) {
+                    id = mBroadcastChannelIdMap.rget(channelId); // reverse map
+                }
             }
 
             Log.d(TAG, "onTune,  channelUri = " + channelUri + ", id = " + id);
