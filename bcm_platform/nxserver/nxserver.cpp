@@ -67,16 +67,20 @@
 #include "nxserver.h"
 #include "nxclient.h"
 #include "nxserverlib.h"
+#include "nxserverlib_impl.h"
 #include "nexusnxservice.h"
 #include "namevalue.h"
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
-#define APP_MAX_CLIENTS 20
+#define APP_MAX_CLIENTS (64)
 #define MB (1024*1024)
 #define KB (1024)
 #define SEC_TO_MSEC (1000LL)
 #define RUNNER_SEC_THRESHOLD (10)
 #define RUNNER_GC_THRESHOLD (3)
+#define RUNNER_LMK_THRESHOLD (10)
+#define NUM_NX_OBJS (128)
+#define MAX_NX_OBJS (2048)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     1920
 #define GRAPHICS_RES_HEIGHT_DEFAULT    1080
@@ -86,6 +90,7 @@
 #define NX_MMA                         "ro.nx.mma"
 #define NX_MMA_ACT_GC                  "ro.nx.mma.act.gc"
 #define NX_MMA_ACT_GS                  "ro.nx.mma.act.gs"
+#define NX_MMA_ACT_LMK                 "ro.nx.mma.act.lmk"
 #define NX_MMA_GROW_SIZE               "ro.nx.heap.grow"
 #define NX_TRANSCODE                   "ro.nx.transcode"
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
@@ -129,6 +134,7 @@ typedef struct {
     RUNNER_T proactive_runner;
     unsigned refcnt;
     int uses_mma;
+    BKNI_MutexHandle clients_lock;
     struct {
         nxclient_t client;
         NxClient_JoinSettings joinSettings;
@@ -170,11 +176,12 @@ static void *proactive_runner_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
     unsigned gfx_heap_grow_size = 0;
-    int active_gc;
-    int active_gs;
+    int active_gc, active_lmk, active_gs;
     int gc_tick = 0;
+    int lmk_tick = 0;
     char value[PROPERTY_VALUE_MAX];
     bool needs_growth;
+    int i, j;
 
     if (property_get(NX_MMA_GROW_SIZE, value, NULL)) {
        if (strlen(value)) {
@@ -183,9 +190,13 @@ static void *proactive_runner_task(void *argv)
     }
     active_gc = property_get_int32(NX_MMA_ACT_GC, 1);
     active_gs = property_get_int32(NX_MMA_ACT_GS, 1);
+    active_gs = property_get_int32(NX_MMA_ACT_LMK, 1);
 
-    ALOGI("%s: launching, gpx-grow: %u, active-gc: %c, active-gs %c",
-          __FUNCTION__, gfx_heap_grow_size, active_gc ? 'o' : 'x', active_gs ? 'o' : 'x');
+    ALOGI("%s: launching, gpx-grow: %u, active-gc: %c, active-gs: %c, active-lmk: %c",
+          __FUNCTION__, gfx_heap_grow_size,
+          active_gc ? 'o' : 'x',
+          active_gs ? 'o' : 'x',
+          active_lmk ? 'o' : 'x');
 
     do
     {
@@ -205,6 +216,66 @@ static void *proactive_runner_task(void *argv)
         *    standard LMK.
         */
 
+        if (++lmk_tick > RUNNER_LMK_THRESHOLD) {
+           NEXUS_InterfaceName interfaceName;
+           size_t num, queried;
+           NEXUS_PlatformObjectInstance *objects = NULL;
+           NEXUS_Error nrc;
+           unsigned client_allocation_size;
+
+           if (!active_lmk) {
+              goto skip_lmk;
+           }
+
+           strcpy(interfaceName.name, "NEXUS_MemoryBlock");
+           /* find memory allocation for all registered clients. */
+           if (BKNI_AcquireMutex(g_app.clients_lock) == BERR_SUCCESS) {
+              for (i = 0; i < APP_MAX_CLIENTS; i++) {
+                 client_allocation_size = 0;
+                 if (g_app.clients[i].client) {
+                    num = NUM_NX_OBJS;
+                    do {
+                       queried = num;
+                       if (objects != NULL) {
+                          BKNI_Free(objects);
+                          objects = NULL;
+                       }
+                       objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
+                       if (objects == NULL) {
+                          num = 0;
+                          nrc = NEXUS_SUCCESS;
+                       }
+                       nrc = NEXUS_Platform_GetClientObjects(g_app.clients[i].client->nexusClient, &interfaceName, objects, num, &num);
+                       if (nrc == NEXUS_PLATFORM_ERR_OVERFLOW) {
+                          num = 2 * queried;
+                          if (num > MAX_NX_OBJS) {
+                             num = 0;
+                             nrc = NEXUS_SUCCESS;
+                          }
+                       }
+                    } while (nrc == NEXUS_PLATFORM_ERR_OVERFLOW);
+                    for (j = 0; j < (int)num; j++) {
+                       NEXUS_MemoryBlockProperties prop;
+                       NEXUS_MemoryBlock_GetProperties((NEXUS_MemoryBlockHandle)objects[i].object, &prop);
+                       client_allocation_size += prop.size;
+                    }
+                    if (objects != NULL) {
+                       BKNI_Free(objects);
+                       objects = NULL;
+                    }
+                 }
+                 if (g_app.clients[i].client && client_allocation_size) {
+                    ALOGI("lmk-runner(%d): %p -> %u bytes", i, g_app.clients[i].client, client_allocation_size);
+                 }
+              }
+              BKNI_ReleaseMutex(g_app.clients_lock);
+           }
+
+           /* sort clients via oom_adj score and select kill. */
+           lmk_tick = 0;
+        }
+
+skip_lmk:
         if (nx_server->uses_mma && gfx_heap_grow_size) {
            NEXUS_PlatformConfiguration platformConfig;
            NEXUS_MemoryStatus heapStatus;
@@ -242,7 +313,10 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
 {
     unsigned i;
     BSTD_UNUSED(pClientSettings);
-    /* server app has opportunity to reject client altogether, or modify pClientSettings */
+    if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
+        ALOGE("failed to add client %p", client);
+        goto out;
+    }
     for (i=0;i<APP_MAX_CLIENTS;i++) {
         if (!g_app.clients[i].client) {
             g_app.clients[i].client = client;
@@ -250,6 +324,8 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
             break;
         }
     }
+    BKNI_ReleaseMutex(g_app.clients_lock);
+out:
     return 0;
 }
 
@@ -257,12 +333,19 @@ static void client_disconnect(nxclient_t client, const NxClient_JoinSettings *pJ
 {
     unsigned i;
     BSTD_UNUSED(pJoinSettings);
+    if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
+        ALOGE("failed to remove client %p", client);
+        goto out;
+    }
     for (i=0;i<APP_MAX_CLIENTS;i++) {
         if (g_app.clients[i].client == client) {
             g_app.clients[i].client = NULL;
             break;
         }
     }
+    BKNI_ReleaseMutex(g_app.clients_lock);
+out:
+    return;
 }
 
 static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned heapType)
@@ -520,6 +603,7 @@ static nxserver_t init_nxserver(void)
        return NULL;
     }
 
+    BKNI_CreateMutex(&g_app.clients_lock);
     g_app.uses_mma = uses_mma;
     g_app.refcnt++;
     return g_app.server;
@@ -533,6 +617,7 @@ static void uninit_nxserver(nxserver_t server)
     nxserver_ipc_uninit();
     nxserverlib_uninit(server);
     BKNI_DestroyMutex(g_app.lock);
+    BKNI_DestroyMutex(g_app.clients_lock);
     NEXUS_Platform_Uninit();
 }
 
