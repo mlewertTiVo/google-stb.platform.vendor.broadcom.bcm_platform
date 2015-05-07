@@ -265,7 +265,7 @@ static void *proactive_runner_task(void *argv)
                     }
                  }
                  if (g_app.clients[i].client && client_allocation_size) {
-                    ALOGI("lmk-runner(%d): %p -> %u bytes", i, g_app.clients[i].client, client_allocation_size);
+                    ALOGI("lmk-runner(%d): '%s'::%p -> %u bytes", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client, client_allocation_size);
                  }
               }
               BKNI_ReleaseMutex(g_app.clients_lock);
@@ -317,10 +317,11 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
         ALOGE("failed to add client %p", client);
         goto out;
     }
-    for (i=0;i<APP_MAX_CLIENTS;i++) {
+    for (i = 0; i < APP_MAX_CLIENTS; i++) {
         if (!g_app.clients[i].client) {
             g_app.clients[i].client = client;
             g_app.clients[i].joinSettings = *pJoinSettings;
+            ALOGI("client_connect(%d): '%s'::%p", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client);
             break;
         }
     }
@@ -339,6 +340,7 @@ static void client_disconnect(nxclient_t client, const NxClient_JoinSettings *pJ
     }
     for (i=0;i<APP_MAX_CLIENTS;i++) {
         if (g_app.clients[i].client == client) {
+            ALOGI("client_disconnect(%d): '%s'::%p", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client);
             g_app.clients[i].client = NULL;
             break;
         }
