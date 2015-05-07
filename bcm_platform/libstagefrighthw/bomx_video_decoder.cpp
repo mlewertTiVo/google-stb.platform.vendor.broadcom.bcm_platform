@@ -35,16 +35,6 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
  *
- * $brcm_Workfile: $
- * $brcm_Revision: $
- * $brcm_Date: $
- *
- * Module Description:
- *
- * Revision History:
- *
- * $brcm_Log: $
- *
  *****************************************************************************/
 //#define LOG_NDEBUG 0
 #undef LOG_TAG
@@ -61,6 +51,10 @@
 #include "nexus_core_utils.h"
 
 #define BOMX_INPUT_MSG(x)
+
+// Runtime Properties
+#define B_PROPERTY_PES_DEBUG ("media.brcm.vdec_pes_debug")
+#define B_PROPERTY_TRIM_VP9 ("ro.nx.trim.vp9")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE (1024*1024)  // Taken from soft HEVC decoder (worst case)
@@ -98,12 +92,6 @@
 
 using namespace android;
 
-// Uncomment this to enable output logging to a file
-//#define DEBUG_FILE_OUTPUT 1
-
-#include <stdio.h>
-static FILE *g_pDebugFile;
-
 static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
                                                        {"video_decoder.h263", OMX_VIDEO_CodingH263},
                                                        {"video_decoder.avc", OMX_VIDEO_CodingAVC},
@@ -135,12 +123,6 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(
     {
         if ( pVideoDecoder->IsValid() )
         {
-            #ifdef DEBUG_FILE_OUTPUT
-            if ( NULL == g_pDebugFile )
-            {
-                g_pDebugFile = fopen("/data/media/video_decoder.debug.pes", "wb+");
-            }
-            #endif
             return OMX_ErrorNone;
         }
         else
@@ -181,7 +163,7 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
     }
 
     // VP9 can be disabled by this property
-    if ( property_get_int32("ro.nx.trim.vp9", 0) )
+    if ( property_get_int32(B_PROPERTY_TRIM_VP9, 0) )
     {
         ALOGW("VP9 hardware support is available but disabled (ro.nx.trim.vp9=1)");
         return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
@@ -196,12 +178,6 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
     {
         if ( pVideoDecoder->IsValid() )
         {
-            #ifdef DEBUG_FILE_OUTPUT
-            if ( NULL == g_pDebugFile )
-            {
-                g_pDebugFile = fopen("/data/media/video_decoder.debug.pes", "wb+");
-            }
-            #endif
             return OMX_ErrorNone;
         }
         else
@@ -604,6 +580,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_hVideoClient(NULL),
     m_hAlphaSurface(NULL),
     m_setSurface(false),
+    m_pPesFile(NULL),
     m_pEosBuffer(NULL),
     m_eosPending(false),
     m_eosDelivered(false),
@@ -950,6 +927,26 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pBcmvHeader[2] = 'M';
     m_pBcmvHeader[3] = 'V';
 
+    // Setup file to debug PES data packing if required
+    if ( property_get_int32(B_PROPERTY_PES_DEBUG, 0) )
+    {
+        time_t rawtime;
+        struct tm * timeinfo;
+        char fname[100];
+
+        // Generate unique file name
+        time(&rawtime);
+        timeinfo = localtime(&rawtime);
+        strftime(fname, sizeof(fname), "/data/tombstones/vdec-%F_%H_%M_%S.pes", timeinfo);
+        ALOGD("PES debug output file:%s", fname);
+        m_pPesFile = fopen(fname, "wb+");
+        if ( NULL == m_pPesFile )
+        {
+            ALOGW("Error creating PES debug file %s");
+            // Just keep going without debug
+        }
+    }
+
     // connect to the HWC binder.
     m_omxHwcBinder = new OmxBinder_wrap;
     if ( NULL == m_omxHwcBinder )
@@ -979,15 +976,15 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         m_omxHwcBinder = NULL;
     }
 
-    if ( g_pDebugFile )
-    {
-        fclose(g_pDebugFile);
-        g_pDebugFile = NULL;
-    }
-
     ShutdownScheduler();
 
     Lock();
+
+    if ( m_pPesFile )
+    {
+        fclose(m_pPesFile);
+        m_pPesFile = NULL;
+    }
 
     if ( m_hSimpleVideoDecoder )
     {
@@ -3288,12 +3285,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         if ( numRequested > 0 )
         {
             // Log data to file if requested
-            if ( NULL != g_pDebugFile )
+            if ( NULL != m_pPesFile )
             {
                 unsigned i;
                 for ( i = 0; i < numRequested; i++ )
                 {
-                    fwrite(desc[i].addr, 1, desc[i].length, g_pDebugFile);
+                    fwrite(desc[i].addr, 1, desc[i].length, m_pPesFile);
                 }
             }
 
@@ -3339,9 +3336,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         pInfo->numDescriptors += numRequested;
         m_submittedDescriptors += numConsumed;
         m_eosPending = true;
-        if ( NULL != g_pDebugFile )
+        if ( NULL != m_pPesFile )
         {
-            fwrite(m_pEosBuffer, 1, BOMX_VIDEO_EOS_LEN, g_pDebugFile);
+            fwrite(m_pEosBuffer, 1, BOMX_VIDEO_EOS_LEN, m_pPesFile);
         }
     }
 

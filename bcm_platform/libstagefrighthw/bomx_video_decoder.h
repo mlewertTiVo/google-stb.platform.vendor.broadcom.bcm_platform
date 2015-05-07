@@ -35,16 +35,6 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
  *
- * $brcm_Workfile: $
- * $brcm_Revision: $
- * $brcm_Date: $
- *
- * Module Description:
- *
- * Revision History:
- *
- * $brcm_Log: $
- *
  *****************************************************************************/
 #ifndef BOMX_VIDEO_DECODER_H__
 #define BOMX_VIDEO_DECODER_H__
@@ -64,6 +54,7 @@
 #include "nxclient.h"
 #include "nexus_surface_compositor.h"
 #include "bomx_video_decoder_stats.h"
+#include <stdio.h>
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex);
@@ -277,6 +268,7 @@ protected:
     NEXUS_SurfaceClientHandle        m_hVideoClient;
     NEXUS_SurfaceHandle              m_hAlphaSurface;
     bool                             m_setSurface;
+    FILE                            *m_pPesFile;
 
     char m_inputMimeType[OMX_MAX_STRINGNAME_SIZE];
     char m_outputMimeType[OMX_MAX_STRINGNAME_SIZE];
