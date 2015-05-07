@@ -19,6 +19,12 @@ LOCAL_SRC_FILES := efi_crc32.c efi.c make-gpt-tables.c
 LOCAL_CFLAGS := -Werror
 
 LOCAL_MODULE := makegpt
+LOCAL_MODULE_TAGS := optional
+
+LOCAL_POST_INSTALL_CMD :=  \
+  if [ ! -z $(BCM_GPT_CONFIG_FILE) ]; then \
+    $(HOST_OUT_EXECUTABLES)/$(LOCAL_MODULE) `paste -sd " " $(BCM_GPT_CONFIG_FILE)` -o $(PRODUCT_OUT)/gpt.bin; \
+  fi
 
 include $(BUILD_HOST_EXECUTABLE)
 
