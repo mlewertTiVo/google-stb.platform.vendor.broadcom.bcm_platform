@@ -15,11 +15,15 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
-makehwcfg:
+_hwcfg_empty.img := $(PRODUCT_OUT_FROM_TOP)/hwcfg_empty.img
+$(_hwcfg_empty.img):
 	mkdir -p $(PRODUCT_OUT_FROM_TOP)/hwcfg
-	mkfs.cramfs -n hwcfg $(PRODUCT_OUT_FROM_TOP)/hwcfg $(PRODUCT_OUT_FROM_TOP)/hwcfg_empty.img
+	mkfs.cramfs -n hwcfg $(PRODUCT_OUT_FROM_TOP)/hwcfg $@
 
 LOCAL_MODULE := makehwcfg
 LOCAL_MODULE_TAGS := optional
+LOCAL_ADDITIONAL_DEPENDENCIES := $(_hwcfg_empty.img)
 
 include $(BUILD_PHONY_PACKAGE)
+
+_hwcfg_empty.img :=
