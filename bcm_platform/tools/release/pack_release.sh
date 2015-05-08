@@ -9,13 +9,17 @@
 # to specify the output file and location, and the rest should be taken care
 # of.
 
-if [ $# -lt 1 ]; then
-  echo "Usage: $(basename $0) <output> [<aosp_baseline>]"
-  echo "      output: Output file name and location of the packed release, e.g. ./release.tgz"
-  echo "      aosp_baseline: AOSP baseline tag where patches is generated from."
-  echo "                     If not specified, revision from default manifest will be used."
-  exit 0
-fi
+function HELP {
+  echo -e \\n"Usage: $(basename $0) [-r <refsw_baseline>] [-s <refsw_sha>] [-t] [-a <aosp_baseline>] <output>"
+  echo "     output : Output file name and location of the packed release, e.g. ./release.tgz"
+  echo "     -r     : Specify the URSR official branch that the release is based on."
+  echo "     -s     : The SHA in the URSR official branch that the release is based on."
+  echo "     -t     : Include this option if you want to package the refsw baseline in the release"
+  echo "     -a     : AOSP baseline tag where patches is generated from; if not specified,"
+  echo "              revision from default manifest will be used."
+  exit 1
+}
+
 
 # The current directory should be the top of tree.  If not the script would
 # bail at one point.
@@ -32,15 +36,59 @@ BOLT_DIR="$TMP_DIR/bolt_dir.txt"
 BOLT_VER="$TMP_DIR/bolt_version.txt"
 REFSW_TARBALL="$TMP_DIR/refsw_rel_src.tgz"
 AOSP_LIST="$TMP_DIR/aosp_patches.txt"
+REFSW_PATCH="$TMP_DIR/refsw_patch.txt"
 
 # TODO: Move these to a true temp directory but we can live this for now
 WHITE_LIST="$TMP_DIR/white_list.txt"
 BLACK_LIST="$TMP_DIR/black_list.txt"
 AOSP_NAME_LIST="$TMP_DIR/aosp_override_list.txt"
 
-if [ $# -ge 2 ]; then
-  AOSP_BASELINE=$2
+# Parse input arguments and options
+while getopts :r:s:a:t opt; do
+  case $opt in
+    a)
+      AOSP_BASELINE=$OPTARG
+      ;;
+    r)
+      REFSW_BASELINE=$OPTARG
+      ;;
+    s)
+      REFSW_SHA=$OPTARG
+      ;;
+    t)
+      REFSW_SRC="yes"
+      ;;
+    \?)
+      echo -e "   Option -${BOLD}$OPTARG${NORM} not allowed."
+      HELP
+      exit 1
+  esac
+done
+shift $(($OPTIND -1))
+
+if [ $# -lt 1 ]; then
+  HELP
+  exit 1
 fi
+
+echo -e \\n"Release packaging will start in 5 seconds with the following options..."\\n
+if [ -n "$AOSP_BASELINE" ]; then
+echo "   AOSP baseline        : $AOSP_BASELINE"
+fi
+if [ -n "$REFSW_BASELINE" ]; then
+echo "   REFSW baseline       : $REFSW_BASELINE"
+fi
+if [ -n "$REFSW_SHA" ]; then
+echo "   REFSW's SHA          : $REFSW_SHA"
+fi
+if [ -n "$REFSW_SRC" ]; then
+echo "   Package REFSW src?   : YES"
+else
+echo "   Package REFSW src?   : NO"
+fi
+echo -e "   Release package name : $1"\\n
+for i in {5..1}; do echo -en "Starting in $i \r"; sleep 1; done;
+echo -e ""\\n
 
 # Helper to extract a value from xml based on the specified attribute name/value
 extract_value_from_xml()
@@ -118,24 +166,19 @@ if [ -d $PREBUILT_DIR ]; then
   echo "Checking if prebuilt libraries are provided..."
   while read line; do
     if [ ! -f $PREBUILT_DIR/$line ]; then
-      echo ""
-      echo "!!! MISSING prebuilt libraries for release packaging: $line"
-      echo ""
+      echo -e \\n"!!! MISSING prebuilt libraries for release packaging: $line"\\n
       echo "Exiting..."
-      echo ""
       exit 0
     fi
   done < $SCRIPT_DIR/release_prebuilts.txt
   echo $PREBUILT >> $WHITE_LIST
 else
-   echo ""
-   echo "!!! MISSING prebuilt libraries for release packaging."
-   echo "!!! Please create the missing folder $PREBUILT_DIR"
-   echo "!!! and put the following prebuilt libraries into the folder:"
-   echo ""
+   echo -e \\n"!!! MISSING prebuilt libraries for release packaging."
+   echo "!!! Please create the missing folder:"
+   echo "!!!    $PREBUILT_DIR"
+   echo -e "!!! and put the following prebuilt libraries into the folder:"\\n
    cat $SCRIPT_DIR/release_prebuilts.txt 
-   echo ""
-   echo " Exiting..."
+   echo -e \\n"Exiting..."
    exit 0
 fi
 
@@ -163,14 +206,34 @@ if [ -f $BCG_XML ]; then
 
   # Misc tools
   extract_path_from_xml name android/busybox >> $WHITE_LIST
+
 else
   echo "$BCG_XML not found, exiting..."
   exit 0
 fi
 
-# Tar up refsw separately, note black list contains the refsw location
+# Create refsw patch based on the given baseline/SHA and optionally
+# tar up refsw separately; note black list contains the refsw location
 cd $(cat $REFSW_DIR)
-tar --exclude=*.git* --exclude-from=rockford/release/exclude.txt -cvzf $TOP_DIR/$REFSW_TARBALL *
+if [ -n "$REFSW_BASELINE" ]; then
+  git fetch refsw $REFSW_BASELINE
+  if [ -n "$REFSW_SHA" ]; then
+    git diff $REFSW_SHA > $TOP_DIR/$REFSW_PATCH
+    git checkout -B $REFSW_BASELINE $REFSW_SHA
+  else
+    git diff remote/refsw/$REFSW_BASELINE > $TOP_DIR/$REFSW_PATCH
+    git checkout -B $REFSW_BASELINE
+  fi
+fi
+# Create a refsw src tarball if -t is set
+if [ -n "$REFSW_SRC" ]; then
+  tar --exclude=*.git* --exclude-from=rockford/release/exclude.txt -cvzf $TOP_DIR/$REFSW_TARBALL *
+fi
+# clean up refsw residual branches created if any
+if [ -n "$REFSW_BASELINE" ]; then
+  git checkout -
+  git branch -D $REFSW_BASELINE
+fi
 cd $TOP_DIR
 
 # Append custom white and black lists if present
