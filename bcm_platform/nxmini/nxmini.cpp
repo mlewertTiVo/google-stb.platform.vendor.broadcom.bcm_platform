@@ -74,7 +74,7 @@
 #define NX_HEAP_MAIN               1
 #define NX_HEAP_MAIN_VALUE         "48m"
 #define NX_HEAP_GFX                1
-#define NX_HEAP_GFX_VALUE          "32m"
+#define NX_HEAP_GFX_VALUE          "64m"
 #define NX_HEAP_GFX2               0
 #define NX_HEAP_GFX2_VALUE         "0m"
 
