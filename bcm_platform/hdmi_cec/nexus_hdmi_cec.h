@@ -79,17 +79,10 @@ class NexusHdmiCecDevice : public RefBase
         static sp<NexusHdmiCecDevice> instantiate(int cecId=0) { return new NexusHdmiCecDevice(cecId); }
         ~NexusHdmiCecDevice();
 
-        static cec_logical_address_t toCecLogicalAddressT(uint8_t addr);
-        static bool standbyMonitor(void *ctx);
-
         void registerEventCallback(const hdmi_cec_device_t* dev, event_callback_t callback, void *arg);
-        void fireEventCallback(hdmi_event_t *pHdmiCecEvent);
         void setEnableState(bool enable);
         void setAutoWakeupState(bool enable);
         void setControlState(bool enable);
-        bool getHdmiHotplugWakeup();
-        bool getCecTransmitStandby();
-        bool getCecTransmitViewOn();
 
         status_t initialise();
         status_t uninitialise();
@@ -100,9 +93,6 @@ class NexusHdmiCecDevice : public RefBase
         status_t getCecVendorId(uint32_t* vendor_id);
         status_t sendCecMessage(const cec_message_t*, uint8_t maxRetries=NexusHdmiCecDevice::DEFAULT_CEC_RETRIES);
         status_t getCecPortInfo(struct hdmi_port_info* list[], int* total);
-
-        inline void standbyLock() { mStandbyLock.lock(); }
-        inline void standbyUnlock() { mStandbyLock.unlock(); }
 
     protected:
         // Protected constructor prevents a client from creating an instance of this
@@ -177,7 +167,8 @@ class NexusHdmiCecDevice : public RefBase
         bool                            mCecSystemControlEnable;
         bool                            mCecViewOnCmdPending;
         bool                            mStandby;
-        bool                            mHotPlugConnected;
+        bool                            mHotplugConnected;
+        Mutex                           mHotplugLock;
         Mutex                           mStandbyLock;
         NexusIPCClientBase*             pIpcClient;
         NexusClientContext*             pNexusClientContext;
@@ -195,6 +186,22 @@ class NexusHdmiCecDevice : public RefBase
         static const uint8_t  MAX_LOGICAL_ADDRESS = 0x0F;
         static const uint8_t  DEFAULT_CEC_RETRIES = 0;
         static const uint32_t UNKNOWN_VENDOR_ID = 0x0;
+
+        static cec_logical_address_t toCecLogicalAddressT(uint8_t addr);
+        static bool standbyMonitor(void *ctx);
+
+        status_t getHdmiOutputStatus(b_hdmiOutputStatus *pHdmiOutputStatus);
+        void fireEventCallback(hdmi_event_t *pHdmiCecEvent);
+        void fireHotplugCallback(bool connected);
+        bool getHdmiHotplugWakeup();
+        bool getCecTransmitStandby();
+        bool getCecTransmitViewOn();
+
+        inline void hotplugLock() { mHotplugLock.lock(); }
+        inline void hotplugUnlock() { mHotplugLock.unlock(); }
+
+        inline void standbyLock() { mStandbyLock.lock(); }
+        inline void standbyUnlock() { mStandbyLock.unlock(); }
 
         /* Disallow copy constructor and copy operator... */
         NexusHdmiCecDevice(const NexusHdmiCecDevice &);

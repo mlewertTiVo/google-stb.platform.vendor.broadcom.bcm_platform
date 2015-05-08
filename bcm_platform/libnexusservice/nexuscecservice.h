@@ -58,6 +58,7 @@ public:
     virtual bool getPowerStatus(uint8_t *pPowerStatus);
     virtual bool getCecStatus(b_cecStatus *pCecStatus);
     virtual bool setLogicalAddress(uint8_t addr);
+    virtual bool setPhysicalAddress(uint16_t addr);
     virtual status_t setEventListener(const sp<INexusHdmiCecMessageEventListener> &listener);
 
 protected:

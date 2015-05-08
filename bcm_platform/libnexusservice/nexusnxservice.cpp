@@ -194,9 +194,9 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
         return;
     }
 
-    if (standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
-        LOGV("%s: Received HDMI%d hotplug event", __func__, param);
+    LOGV("%s: Received HDMI%d hotplug event", __func__, param);
 
+    if (standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
         NxClient_DisplayStatus status;
         rc = NxClient_GetDisplayStatus(&status);
         if (rc) {
@@ -208,11 +208,37 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
              __func__, param,
              status.hdmi.status.connected ? "connected" : "disconnected", status.hdmi.status.rxPowered ? "is" : "isn't");
 
+#if NEXUS_HAS_CEC
+        // Ensure that CEC Physical Address is updated on a "connected" hot-plug event...
+        if (status.hdmi.status.connected) {
+            b_hdmiOutputStatus hdmiOutputStatus;
+            uint16_t addr;
+
+            if (pNexusNxService->getHdmiOutputStatus(param, &hdmiOutputStatus)) {
+                addr = hdmiOutputStatus.physicalAddress[0] * 256 + hdmiOutputStatus.physicalAddress[1];
+
+                if (pNexusNxService->setCecPhysicalAddress(param, addr)) {
+                    LOGD("%s: Set CEC%d physical address to %01d.%01d.%01d.%01d", __PRETTY_FUNCTION__, param,
+                    (addr >> 12) & 0x0F,
+                    (addr >>  8) & 0x0F,
+                    (addr >>  4) & 0x0F,
+                    (addr >>  0) & 0x0F);
+                }
+                else {
+                    LOGE("%s: Could not set CEC%d physical address!!!", __PRETTY_FUNCTION__, param);
+                }
+            }
+            else {
+                LOGW("%s: Could not get HDMI%d output status!", __PRETTY_FUNCTION__, param);
+            }
+        }
+#endif
         Vector<sp<INexusHdmiHotplugEventListener> >::const_iterator it;
 
         Mutex::Autolock autoLock(pNexusNxService->server->mLock);
 
-        for (it = pNexusNxService->server->mHdmiHotplugEventListenerList[param].begin(); it != pNexusNxService->server->mHdmiHotplugEventListenerList[param].end(); ++it) {
+        for (it = pNexusNxService->server->mHdmiHotplugEventListenerList[param].begin();
+             it != pNexusNxService->server->mHdmiHotplugEventListenerList[param].end(); ++it) {
             LOGV("%s: Firing off HDMI%d hotplug %s event for listener %p...", __PRETTY_FUNCTION__, param,
                  (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? "connected" : "disconnected", (*it).get());
             (*it)->onHdmiHotplugEventReceived(param, status.hdmi.status.connected && status.hdmi.status.rxPowered);

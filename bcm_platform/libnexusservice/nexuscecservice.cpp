@@ -871,6 +871,21 @@ bool NexusService::CecServiceManager::setLogicalAddress(uint8_t addr)
     return (NEXUS_Cec_SetSettings(cecHandle, &cecSettings) == NEXUS_SUCCESS);
 }
 
+bool NexusService::CecServiceManager::setPhysicalAddress(uint16_t addr)
+{
+    NEXUS_CecSettings cecSettings;
+
+    NEXUS_Cec_GetSettings(cecHandle, &cecSettings);
+    cecSettings.physicalAddress[0] = (addr >> 8) & 0xFF;
+    cecSettings.physicalAddress[1] = (addr >> 0) & 0xFF;
+    ALOGV("%s: settings CEC%d physical address to %01d.%01d.%01d.%01d", __PRETTY_FUNCTION__, cecId,
+            (addr >> 12) & 0x0F,
+            (addr >>  8) & 0x0F,
+            (addr >>  4) & 0x0F,
+            (addr >>  0) & 0x0F);
+    return (NEXUS_Cec_SetSettings(cecHandle, &cecSettings) == NEXUS_SUCCESS);
+}
+
 status_t NexusService::CecServiceManager::platformInit()
 {
     status_t status = OK;

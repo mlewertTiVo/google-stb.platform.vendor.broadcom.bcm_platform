@@ -143,6 +143,7 @@ status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::processCecMessage(cec_mess
 
         case CEC_MESSAGE_GIVE_DEVICE_POWER_STATUS: {
             if (mNexusHdmiCecDevice->mCecLogicalAddr == destAddr) {
+                Mutex::Autolock autoLock(mNexusHdmiCecDevice->mStandbyLock);
                 txMessage.initiator = message->destination;
                 txMessage.destination = message->initiator;
                 txMessage.length = 2;
@@ -294,12 +295,10 @@ status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::handleCecMessage(const sp<
             // Android and also send a hotplug "connected" event to wake it up.
             if (((powerState == ePowerState_S0 || powerState == ePowerState_S1) && isValidWakeupCecMessage(&cecMessage)) ||
                 (powerState != ePowerState_S0 && powerState != ePowerState_S1)) {
+                Mutex::Autolock autoLock(mNexusHdmiCecDevice->mStandbyLock);
                 forwardCecMessage = true;
                 sendHotplugWakeUpEvent = true;
-
-                mNexusHdmiCecDevice->standbyLock();
                 mNexusHdmiCecDevice->mStandby = false;
-                mNexusHdmiCecDevice->standbyUnlock();
             }
             else {
                 // Don't forward the CEC message if in S0.5 or S1 and it was an invalid wake-up opcode or
@@ -330,16 +329,15 @@ status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::handleCecMessage(const sp<
             mNexusHdmiCecDevice->fireEventCallback(&hdmiCecEvent);
         }
 
-        // Send a hotplug "connected" event to the Android HDMI service to wake-up from sleep...
+        // Send a fake hotplug "connected" event to the Android HDMI service to wake-up from sleep...
         if (sendHotplugWakeUpEvent == true) {
-            hdmiCecEvent.type = HDMI_EVENT_HOT_PLUG;
-            hdmiCecEvent.dev = mNexusHdmiCecDevice->mHdmiCecDevice;
-            hdmiCecEvent.hotplug.port_id = portId;
-            hdmiCecEvent.hotplug.connected = true;
-            mNexusHdmiCecDevice->mHotPlugConnected = true;
-
+            mNexusHdmiCecDevice->hotplugLock();
+            // Reset the CEC physical address when we wake-up, as the HDMI port may have
+            // changed whilst we were in standby...
+            mNexusHdmiCecDevice->mCecPhysicalAddr = NexusHdmiCecDevice::UNDEFINED_PHYSICAL_ADDRESS;
+            mNexusHdmiCecDevice->hotplugUnlock();
             ALOGV("%s: About to call port %d HDMI HOTPLUG callback function to wake the device up...", __PRETTY_FUNCTION__, portId);
-            mNexusHdmiCecDevice->fireEventCallback(&hdmiCecEvent);
+            mNexusHdmiCecDevice->fireHotplugCallback(true);
         }
     }
     return ret;
@@ -413,23 +411,32 @@ NexusHdmiCecDevice::HdmiHotplugEventListener::~HdmiHotplugEventListener()
 
 status_t NexusHdmiCecDevice::HdmiHotplugEventListener::onHdmiHotplugEventReceived(int32_t portId, bool connected)
 {
-    hdmi_event_t hdmiCecEvent;
-
     HDMI_CEC_TRACE_ENTER;
 
-    // If not in standby or the STB is configured to allow waking up the box on reception of
-    // an HDMI hotplug event, then allow the event to propogate to Android if there has
-    // been a change in the "connected" state.
-    if ((mNexusHdmiCecDevice->mHotPlugConnected != connected) &&
-        (!mNexusHdmiCecDevice->mStandby || (mNexusHdmiCecDevice->mStandby && mNexusHdmiCecDevice->getHdmiHotplugWakeup()))) {
-        hdmiCecEvent.type = HDMI_EVENT_HOT_PLUG;
-        hdmiCecEvent.dev = mNexusHdmiCecDevice->mHdmiCecDevice;
-        hdmiCecEvent.hotplug.port_id = portId;
-        hdmiCecEvent.hotplug.connected = connected;
-        mNexusHdmiCecDevice->mHotPlugConnected = connected;
+    ALOGV("%s: HDMI%d %s", __PRETTY_FUNCTION__, portId, connected ? "connected" : "disconnected");
 
-        ALOGV("%s: About to call CEC port %d HDMI HOTPLUG callback...", __PRETTY_FUNCTION__, portId);
-        mNexusHdmiCecDevice->fireEventCallback(&hdmiCecEvent);
+    if (connected)
+    {
+        // Reset the CEC physical address when hotplug connected event occurs...
+        Mutex::Autolock autoLock(mNexusHdmiCecDevice->mHotplugLock);
+        mNexusHdmiCecDevice->mCecPhysicalAddr = NexusHdmiCecDevice::UNDEFINED_PHYSICAL_ADDRESS;
+    }
+
+    if (mNexusHdmiCecDevice->mHotplugConnected != connected) {
+        uint16_t addr;
+
+        // If not in standby or the STB is configured to allow waking up the box on reception of
+        // an HDMI hotplug event, then allow the event to propogate to Android if there has
+        // been a change in the "connected" state.
+        mNexusHdmiCecDevice->standbyLock();
+        if (!mNexusHdmiCecDevice->mStandby || (mNexusHdmiCecDevice->mStandby && mNexusHdmiCecDevice->getHdmiHotplugWakeup())) {
+            mNexusHdmiCecDevice->standbyUnlock();
+            ALOGV("%s: About to call CEC port %d HDMI HOTPLUG callback...", __PRETTY_FUNCTION__, portId);
+            mNexusHdmiCecDevice->fireHotplugCallback(connected);
+        }
+        else {
+            mNexusHdmiCecDevice->standbyUnlock();
+        }
     }
     return NO_ERROR;
 }
@@ -508,7 +515,7 @@ bool NexusHdmiCecDevice::standbyMonitor(void *ctx)
 NexusHdmiCecDevice::NexusHdmiCecDevice(int cecId) : mCecId(cecId), mCecLogicalAddr(UNDEFINED_LOGICAL_ADDRESS),
                                                     mCecPhysicalAddr(UNDEFINED_PHYSICAL_ADDRESS), mCecVendorId(UNKNOWN_VENDOR_ID), mCecEnable(true),
                                                     mCecSystemControlEnable(true), mCecViewOnCmdPending(false), mStandby(false),
-                                                    mHotPlugConnected(false), pIpcClient(NULL), pNexusClientContext(NULL), mCallback(NULL),
+                                                    mHotplugConnected(false), pIpcClient(NULL), pNexusClientContext(NULL), mCallback(NULL),
                                                     mHdmiCecDevice(NULL), mHdmiCecMessageEventListener(NULL), mHdmiHotplugEventListener(NULL),
                                                     mHdmiCecRxMessageHandler(NULL), mHdmiCecRxMessageLooper(NULL)
 {
@@ -790,6 +797,12 @@ void NexusHdmiCecDevice::setControlState(bool enable)
             standbyUnlock();
             tx = getCecTransmitViewOn();
 
+            hotplugLock();
+            // Reset the CEC physical address when we wake-up, as the HDMI port may have
+            // changed whilst we were in standby...
+            mCecPhysicalAddr = NexusHdmiCecDevice::UNDEFINED_PHYSICAL_ADDRESS;
+            hotplugUnlock();
+
             // If the logical address of the STB has not been setup, then we must delay
             // sending the View On Cec command...
             if (tx && mCecLogicalAddr == UNDEFINED_LOGICAL_ADDRESS) {
@@ -812,22 +825,41 @@ void NexusHdmiCecDevice::setControlState(bool enable)
     }
 }
 
-status_t NexusHdmiCecDevice::getConnectedState(int *pIsConnected)
+status_t NexusHdmiCecDevice::getHdmiOutputStatus(b_hdmiOutputStatus *pHdmiOutputStatus)
 {
+    status_t ret = NO_ERROR;
+
     if (pIpcClient == NULL) {
         ALOGE("%s: NexusIPCClient has been instantiated!!!", __PRETTY_FUNCTION__);
-        return NO_INIT;
+        ret = NO_INIT;
     }
+    else {
+        b_hdmiOutputStatus hdmiOutputStatus;
 
+        if (pIpcClient->getHdmiOutputStatus(mCecId, &hdmiOutputStatus) != true) {
+            ALOGE("%s: cannot get HDMI%d output status!!!", __PRETTY_FUNCTION__, mCecId);
+            ret = UNKNOWN_ERROR;
+        }
+        else {
+            *pHdmiOutputStatus = hdmiOutputStatus;
+        }
+    }
+    return ret;
+}
+
+status_t NexusHdmiCecDevice::getConnectedState(int *pIsConnected)
+{
+    status_t ret;
     b_hdmiOutputStatus hdmiOutputStatus;
+    int connected = HDMI_NOT_CONNECTED;
 
-    if (pIpcClient->getHdmiOutputStatus(mCecId, &hdmiOutputStatus) != true) {
-        *pIsConnected = HDMI_NOT_CONNECTED;
-        ALOGE("%s: cannot get HDMI%d output status!!!", __PRETTY_FUNCTION__, mCecId);
-        return UNKNOWN_ERROR;
+    ret = getHdmiOutputStatus(&hdmiOutputStatus);
+
+    if (ret == NO_ERROR) {
+        connected = hdmiOutputStatus.connected ? HDMI_CONNECTED : HDMI_NOT_CONNECTED;
     }
-    *pIsConnected = hdmiOutputStatus.connected ? HDMI_CONNECTED : HDMI_NOT_CONNECTED;
-    return NO_ERROR;
+    *pIsConnected = connected;
+    return ret;
 }
 
 void NexusHdmiCecDevice::registerEventCallback(const hdmi_cec_device_t* dev, event_callback_t callback, void *arg)
@@ -848,26 +880,54 @@ void NexusHdmiCecDevice::fireEventCallback(hdmi_event_t *pHdmiCecEvent)
     }
 }
 
-status_t NexusHdmiCecDevice::getCecPhysicalAddress(uint16_t* addr)
+void NexusHdmiCecDevice::fireHotplugCallback(bool connected)
 {
+    hdmi_event_t hdmiCecEvent;
+
     HDMI_CEC_TRACE_ENTER;
 
-    if (mCecPhysicalAddr == UNDEFINED_PHYSICAL_ADDRESS) {
-        b_cecStatus cecStatus;
+    hdmiCecEvent.type = HDMI_EVENT_HOT_PLUG;
+    hdmiCecEvent.dev = mHdmiCecDevice;
+    hdmiCecEvent.hotplug.port_id = mCecId;
+    hdmiCecEvent.hotplug.connected = connected;
+    mHotplugConnected = connected;
 
-        if (pIpcClient == NULL) {
-            ALOGE("%s: NexusIPCClient has been instantiated!!!", __PRETTY_FUNCTION__);
-            return NO_INIT;
-        }
+    fireEventCallback(&hdmiCecEvent);
+}
 
-        if (pIpcClient->getCecStatus(mCecId, &cecStatus) != true) {
-            ALOGE("%s: cannot get CEC status!!!", __PRETTY_FUNCTION__);
-            return UNKNOWN_ERROR;
+status_t NexusHdmiCecDevice::getCecPhysicalAddress(uint16_t* addr)
+{
+    status_t ret = NO_ERROR;
+
+    HDMI_CEC_TRACE_ENTER;
+
+    hotplugLock();
+    // Is the CEC Physical address cached?
+    if (mCecPhysicalAddr == NexusHdmiCecDevice::UNDEFINED_PHYSICAL_ADDRESS) {
+        b_hdmiOutputStatus hdmiOutputStatus;
+
+        hotplugUnlock();
+
+        ret = getHdmiOutputStatus(&hdmiOutputStatus);
+        if (ret == NO_ERROR) {
+            Mutex::Autolock autoLock(mHotplugLock);
+
+            mCecPhysicalAddr = (hdmiOutputStatus.physicalAddress[0] * 256) + hdmiOutputStatus.physicalAddress[1];
+            ALOGV("%s: Read CEC Physical Address as %01d.%01d.%01d.%01d", __PRETTY_FUNCTION__,
+                    (mCecPhysicalAddr >> 12) & 0x0F,
+                    (mCecPhysicalAddr >>  8) & 0x0F,
+                    (mCecPhysicalAddr >>  4) & 0x0F,
+                    (mCecPhysicalAddr >>  0) & 0x0F);
         }
-        mCecPhysicalAddr = (cecStatus.physicalAddress[0] * 256) + cecStatus.physicalAddress[1];
+        else {
+            ALOGE("%s: Could not get HDMI%d output status!!!", __PRETTY_FUNCTION__, mCecId);
+        }
+    }
+    else {
+        hotplugUnlock();
     }
     *addr = mCecPhysicalAddr;
-    return NO_ERROR;
+    return ret;
 }
 
 status_t NexusHdmiCecDevice::getCecVersion(int* version)

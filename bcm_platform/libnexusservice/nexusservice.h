@@ -188,6 +188,7 @@ public:
     virtual bool isCecAutoWakeupEnabled(uint32_t cecId);
     virtual b_cecDeviceType getCecDeviceType(uint32_t cecId);
     virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr);
+    virtual bool setCecPhysicalAddress(unsigned cecId, uint16_t addr);
     virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus);
 
 protected:

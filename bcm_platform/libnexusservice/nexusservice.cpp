@@ -524,6 +524,8 @@ void NexusService::hdmiOutputHotplugCallback(void *context __unused, int param _
     NEXUS_HdmiOutputSettings     hdmiSettings;
     NexusService *               pNexusService;
 
+    pNexusService = reinterpret_cast<NexusService *>(context);
+
     pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
     if (pPlatformConfig == NULL) {
         ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
@@ -541,10 +543,34 @@ void NexusService::hdmiOutputHotplugCallback(void *context __unused, int param _
         NEXUS_HdmiOutput_GetSettings(hdmiOutput, &hdmiSettings) ;
         NEXUS_HdmiOutput_SetSettings(hdmiOutput, &hdmiSettings) ;
 
+#if NEXUS_HAS_CEC
+        // Ensure that CEC Physical Address is updated on a "connected" hot-plug event...
+        if (status.connected) {
+            b_hdmiOutputStatus hdmiOutputStatus;
+            uint16_t addr;
+
+            if (pNexusService->getHdmiOutputStatus(param, &hdmiOutputStatus)) {
+                addr = hdmiOutputStatus.physicalAddress[0] * 256 + hdmiOutputStatus.physicalAddress[1];
+
+                if (pNexusService->setCecPhysicalAddress(param, addr)) {
+                    LOGD("%s: Set CEC%d physical address to %01d.%01d.%01d.%01d", __PRETTY_FUNCTION__, param,
+                    (addr >> 12) & 0x0F,
+                    (addr >>  8) & 0x0F,
+                    (addr >>  4) & 0x0F,
+                    (addr >>  0) & 0x0F);
+                }
+                else {
+                    LOGE("%s: Could not set CEC%d physical address!!!", __PRETTY_FUNCTION__, param);
+                }
+            }
+            else {
+                LOGW("%s: Could not get HDMI%d output status!", __PRETTY_FUNCTION__, param);
+            }
+        }
+#endif
         /* restart HDCP if it was previously enabled */
         NEXUS_HdmiOutput_StartHdcpAuthentication(hdmiOutput);
 
-        pNexusService = reinterpret_cast<NexusService *>(context);
         Vector<sp<INexusHdmiHotplugEventListener> >::const_iterator it;
 
         Mutex::Autolock autoLock(pNexusService->server->mLock);
@@ -1308,6 +1334,24 @@ bool NexusService::setCecLogicalAddress(unsigned cecId, uint8_t addr)
 #endif
     if (!success) {
         LOGE("%s: Could not set CEC%d logical address to 0x%02x!", __PRETTY_FUNCTION__, cecId, addr);
+    }
+    return success;
+}
+
+bool NexusService::setCecPhysicalAddress(unsigned cecId, uint16_t addr)
+{
+    bool success = false;
+#if NEXUS_HAS_CEC
+    if (mCecServiceManager[cecId] != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
+        success = mCecServiceManager[cecId]->setPhysicalAddress(addr);
+    }
+#endif
+    if (!success) {
+        LOGE("%s: Could not set CEC%d physical address to %01d.%01d.%01d.%01d", __PRETTY_FUNCTION__, cecId,
+            (addr >> 12) & 0x0F,
+            (addr >>  8) & 0x0F,
+            (addr >>  4) & 0x0F,
+            (addr >>  0) & 0x0F);
     }
     return success;
 }
