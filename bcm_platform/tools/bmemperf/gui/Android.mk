@@ -36,9 +36,10 @@ endef
 $(TOP)/vendor/broadcom/bcm_platform/tools/bmemperf/gui/bmemperf_info.auto.c:
 	$(hide) $(call generate-gui-info-module)
 
-LOCAL_MODULE := bmemperf_client.cgi
+LOCAL_MODULE := bmemperf_client
+LOCAL_MODULE_SUFFIX := .cgi
 LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR_OPTIONAL_EXECUTABLES)
+LOCAL_MODULE_PATH := $(TARGET_OUT_DATA)/nexus/bmemperf
 
 LOCAL_POST_INSTALL_CMD := \
 	rm $(NEXUS_TOP)/../../bcm_platform/tools/bmemperf/gui/bmemperf_info.auto.c
