@@ -40,6 +40,7 @@
 #define _NEXUSCECSERVICE_H_
 
 #include "nexusservice.h"
+#include <nexus_cec.h>
 
 #include <utils/RefBase.h>
 

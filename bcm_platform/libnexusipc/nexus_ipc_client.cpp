@@ -324,13 +324,11 @@ bool NexusIPCClient::setCecEnabled(uint32_t cecId __unused, bool enabled)
 bool NexusIPCClient::isCecEnabled(uint32_t cecId __unused)
 {
     bool enabled = false;
-#if NEXUS_HAS_CEC
     char value[PROPERTY_VALUE_MAX];
 
-    if (property_get(PROPERTY_HDMI_ENABLE_CEC, value, DEFAULT_PROPERTY_HDMI_ENABLE_CEC) && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
+    if (NEXUS_NUM_CEC > 0 && property_get(PROPERTY_HDMI_ENABLE_CEC, value, DEFAULT_PROPERTY_HDMI_ENABLE_CEC) && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
         enabled = true;
     }
-#endif
     return enabled;
 }
 

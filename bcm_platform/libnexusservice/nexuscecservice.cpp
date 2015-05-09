@@ -902,7 +902,9 @@ status_t NexusService::CecServiceManager::platformInit()
         return NO_MEMORY;
     }
     NEXUS_Platform_GetConfiguration(pPlatformConfig);
+#if NEXUS_HAS_CEC && NEXUS_NUM_CEC
     cecHandle  = pPlatformConfig->outputs.cec[cecId];
+#endif
     BKNI_Free(pPlatformConfig);
 
     if (cecHandle == NULL) {
@@ -1057,7 +1059,11 @@ void NexusService::CecServiceManager::platformUninit()
     }
     else {
         NEXUS_Platform_GetConfiguration(pPlatformConfig);
-        if (pPlatformConfig->outputs.cec[cecId] == NULL && cecHandle != NULL) {
+        if (cecHandle != NULL
+#if NEXUS_HAS_CEC && NEXUS_NUM_CEC
+             && pPlatformConfig->outputs.cec[cecId] == NULL
+#endif
+           ) {
             NEXUS_Cec_Close(cecHandle);
             cecHandle = NULL;
         }

@@ -65,7 +65,7 @@ int parseArgs(int argc, char *argv[], uint8_t *pCecId, bool *pGetPowerStatus)
 {
    int opt;
    char *endptr;
-   unsigned long tmpValue;
+   long tmpValue;
 
    if (argc < 2) {
        usage(argv[0]);
@@ -82,10 +82,14 @@ int parseArgs(int argc, char *argv[], uint8_t *pCecId, bool *pGetPowerStatus)
            break;
        case 'i':
            if (optarg != NULL) {
-               tmpValue = strtoul(optarg, &endptr, 0);
+               tmpValue = strtol(optarg, &endptr, 0);
                if (*endptr == '\0') {
                    if (tmpValue >= NEXUS_NUM_CEC) {
-                       fprintf(stderr, "ERROR: CEC id out of range (0 to %d)!\n", NEXUS_NUM_CEC-1);
+                       if (NEXUS_NUM_CEC > 0) {
+                           fprintf(stderr, "ERROR: CEC id out of range (0 to %d)!\n", NEXUS_NUM_CEC-1);
+                       } else {
+                           fprintf(stderr, "ERROR: No CEC ports on device!\n");
+                       }
                        return -1;
                    }
                    else {
@@ -93,7 +97,7 @@ int parseArgs(int argc, char *argv[], uint8_t *pCecId, bool *pGetPowerStatus)
                    }
                }
                else {
-                    fprintf(stderr, "ERROR: Invalid CEC id (must be between 0x0 and %d)!\n", NEXUS_NUM_CEC);
+                    fprintf(stderr, "ERROR: Invalid CEC id!\n");
                     return -1;
                }
            }

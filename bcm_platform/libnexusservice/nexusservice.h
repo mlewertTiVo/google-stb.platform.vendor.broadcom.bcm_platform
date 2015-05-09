@@ -62,9 +62,6 @@
 #if NEXUS_HAS_HDMI_OUTPUT
 #include "nexus_hdmi_output.h"
 #include "nexus_hdmi_output_hdcp.h"
-#if NEXUS_HAS_CEC
-#include "nexus_cec.h"
-#endif
 #endif
 #if NEXUS_HAS_HDMI_INPUT
 #include "nexus_hdmi_input.h"
@@ -192,9 +189,7 @@ public:
     virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus);
 
 protected:
-#if NEXUS_HAS_CEC
     struct CecServiceManager;
-#endif
 
     NexusService();
     virtual void platformInit();
@@ -206,9 +201,7 @@ protected:
 
     NexusServerContext                  *server;
     b_powerState                        powerState;
-#if NEXUS_HAS_CEC
-    sp<CecServiceManager>               mCecServiceManager[NEXUS_NUM_CEC];
-#endif
+    sp<CecServiceManager>               mCecServiceManager[NexusIPCCommon::MAX_NUM_CEC_PORTS];
 
 private:
     /* These API's are private helper functions... */

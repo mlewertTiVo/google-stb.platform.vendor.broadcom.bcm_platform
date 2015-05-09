@@ -566,7 +566,7 @@ status_t NexusHdmiCecDevice::initialise()
                     goto fail_add_hotplug_listener;
                 }
                 else {
-                    if (pIpcClient->isCecEnabled(mCecId) == true) {
+                    if (NEXUS_NUM_CEC > 0) {
                         if (pIpcClient->getCecStatus(mCecId, &cecStatus) != true) {
                             ALOGE("%s: cannot get CEC status!!!", __PRETTY_FUNCTION__);
                             ret = UNKNOWN_ERROR;
@@ -621,6 +621,10 @@ status_t NexusHdmiCecDevice::initialise()
                             ret = UNKNOWN_ERROR;
                             goto fail_get_cec_status;
                         }
+                    }
+                    else {
+                        ALOGE("%s: No CEC ports available on device!!!", __PRETTY_FUNCTION__);
+                        ret = NO_INIT;
                     }
                 }
             }

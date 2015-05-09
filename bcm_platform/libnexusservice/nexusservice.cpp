@@ -57,9 +57,7 @@
 #include "cutils/properties.h"
 
 #include "nexusservice.h"
-#if NEXUS_HAS_CEC
 #include "nexuscecservice.h"
-#endif
 
 #include "nexus_audio_mixer.h"
 #include "nexus_audio_decoder.h"
@@ -543,16 +541,17 @@ void NexusService::hdmiOutputHotplugCallback(void *context __unused, int param _
         NEXUS_HdmiOutput_GetSettings(hdmiOutput, &hdmiSettings) ;
         NEXUS_HdmiOutput_SetSettings(hdmiOutput, &hdmiSettings) ;
 
-#if NEXUS_HAS_CEC
         // Ensure that CEC Physical Address is updated on a "connected" hot-plug event...
-        if (status.connected) {
+        if (NEXUS_NUM_CEC > 0 && status.connected) {
             b_hdmiOutputStatus hdmiOutputStatus;
             uint16_t addr;
 
             if (pNexusService->getHdmiOutputStatus(param, &hdmiOutputStatus)) {
                 addr = hdmiOutputStatus.physicalAddress[0] * 256 + hdmiOutputStatus.physicalAddress[1];
 
-                if (pNexusService->setCecPhysicalAddress(param, addr)) {
+                if (pNexusService->mCecServiceManager[param].get() != NULL &&
+                    pNexusService->mCecServiceManager[param]->isPlatformInitialised() &&
+                    pNexusService->setCecPhysicalAddress(param, addr)) {
                     LOGD("%s: Set CEC%d physical address to %01d.%01d.%01d.%01d", __PRETTY_FUNCTION__, param,
                     (addr >> 12) & 0x0F,
                     (addr >>  8) & 0x0F,
@@ -567,7 +566,7 @@ void NexusService::hdmiOutputHotplugCallback(void *context __unused, int param _
                 LOGW("%s: Could not get HDMI%d output status!", __PRETTY_FUNCTION__, param);
             }
         }
-#endif
+
         /* restart HDCP if it was previously enabled */
         NEXUS_HdmiOutput_StartHdcpAuthentication(hdmiOutput);
 
@@ -1005,38 +1004,34 @@ void NexusService::platformInit()
         }
     }
 
-#if NEXUS_HAS_CEC
     i = NEXUS_NUM_CEC;
     while (i--) {
-        if (isCecEnabled(i)) {
-            mCecServiceManager[i] = CecServiceManager::instantiate(this, i);
+        mCecServiceManager[i] = CecServiceManager::instantiate(this, i);
 
-            if (mCecServiceManager[i] != NULL) {
-                if (mCecServiceManager[i]->platformInit() != OK) {
-                    LOGE("%s: ERROR initialising CecServiceManager platform for CEC%d!", __PRETTY_FUNCTION__, i);
-                    mCecServiceManager[i] = NULL;
-                }
-            }
-            else {
-                LOGE("%s: ERROR instantiating CecServiceManager for CEC%d!", __PRETTY_FUNCTION__, i);
+        if (mCecServiceManager[i].get() != NULL) {
+            if (mCecServiceManager[i]->platformInit() != OK) {
+                LOGE("%s: ERROR initialising CecServiceManager platform for CEC%d!", __PRETTY_FUNCTION__, i);
+                mCecServiceManager[i] = NULL;
             }
         }
+        else {
+            LOGE("%s: ERROR instantiating CecServiceManager for CEC%d!", __PRETTY_FUNCTION__, i);
+        }
     }
-#endif
 }
 
 void NexusService::platformUninit()
 {
     platformUninitHdmiOutputs();
 
-#if NEXUS_HAS_CEC
-    for (unsigned i = 0; i < NEXUS_NUM_CEC; i++) {
-        if (mCecServiceManager[i] != NULL) {
+    unsigned i = NEXUS_NUM_CEC;
+
+    while (i--) {
+        if (mCecServiceManager[i].get() != NULL) {
             mCecServiceManager[i]->platformUninit();
             mCecServiceManager[i] = NULL;
         }
     }
-#endif
 
     if (gfx2D) {
         NEXUS_Graphics2D_Close(gfx2D);
@@ -1238,13 +1233,11 @@ bool NexusService::setCecEnabled(uint32_t cecId __unused, bool enabled)
 bool NexusService::isCecEnabled(uint32_t cecId __unused)
 {
     bool enabled = false;
-#if NEXUS_HAS_CEC
     char value[PROPERTY_VALUE_MAX];
 
-    if (property_get(PROPERTY_HDMI_ENABLE_CEC, value, DEFAULT_PROPERTY_HDMI_ENABLE_CEC) && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
+    if (NEXUS_NUM_CEC > 0 && property_get(PROPERTY_HDMI_ENABLE_CEC, value, DEFAULT_PROPERTY_HDMI_ENABLE_CEC) && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
         enabled = true;
     }
-#endif
     return enabled;
 }
 
@@ -1327,11 +1320,11 @@ b_cecDeviceType NexusService::getCecDeviceType(uint32_t cecId __unused)
 bool NexusService::setCecLogicalAddress(unsigned cecId, uint8_t addr)
 {
     bool success = false;
-#if NEXUS_HAS_CEC
-    if (mCecServiceManager[cecId] != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
+
+    if (mCecServiceManager[cecId].get() != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
         success = mCecServiceManager[cecId]->setLogicalAddress(addr);
     }
-#endif
+
     if (!success) {
         LOGE("%s: Could not set CEC%d logical address to 0x%02x!", __PRETTY_FUNCTION__, cecId, addr);
     }
@@ -1341,11 +1334,11 @@ bool NexusService::setCecLogicalAddress(unsigned cecId, uint8_t addr)
 bool NexusService::setCecPhysicalAddress(unsigned cecId, uint16_t addr)
 {
     bool success = false;
-#if NEXUS_HAS_CEC
-    if (mCecServiceManager[cecId] != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
+
+    if (mCecServiceManager[cecId].get() != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
         success = mCecServiceManager[cecId]->setPhysicalAddress(addr);
     }
-#endif
+
     if (!success) {
         LOGE("%s: Could not set CEC%d physical address to %01d.%01d.%01d.%01d", __PRETTY_FUNCTION__, cecId,
             (addr >> 12) & 0x0F,
@@ -1359,11 +1352,11 @@ bool NexusService::setCecPhysicalAddress(unsigned cecId, uint16_t addr)
 bool NexusService::setCecPowerState(unsigned cecId, b_powerState pmState)
 {
     bool success = false;
-#if NEXUS_HAS_CEC
-    if (mCecServiceManager[cecId] != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
+
+    if (mCecServiceManager[cecId].get() != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
         success = mCecServiceManager[cecId]->setPowerState(pmState);
     }
-#endif
+
     if (!success) {
         LOGE("%s: Could not set CEC%d power state %s!", __PRETTY_FUNCTION__, cecId, NexusService::getPowerString(pmState));
     }
@@ -1373,11 +1366,11 @@ bool NexusService::setCecPowerState(unsigned cecId, b_powerState pmState)
 bool NexusService::getCecPowerStatus(uint32_t cecId, uint8_t *pPowerStatus)
 {
     bool success = false;
-#if NEXUS_HAS_CEC
-    if (mCecServiceManager[cecId] != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
+
+    if (mCecServiceManager[cecId].get() != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
         success = mCecServiceManager[cecId]->getPowerStatus(pPowerStatus);
     }
-#endif
+
     if (!success) {
         LOGE("%s: Could not get CEC%d TV power status!", __PRETTY_FUNCTION__, cecId);
     }
@@ -1387,11 +1380,11 @@ bool NexusService::getCecPowerStatus(uint32_t cecId, uint8_t *pPowerStatus)
 bool NexusService::getCecStatus(uint32_t cecId, b_cecStatus *pCecStatus)
 {
     bool success = false;
-#if NEXUS_HAS_CEC
-    if (mCecServiceManager[cecId] != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
+
+    if (mCecServiceManager[cecId].get() != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
         success = mCecServiceManager[cecId]->getCecStatus(pCecStatus);
     }
-#endif
+
     if (!success) {
         LOGE("%s: Could not get CEC%d TV status!", __PRETTY_FUNCTION__, cecId);
     }
@@ -1462,11 +1455,11 @@ bool NexusService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdm
 bool NexusService::sendCecMessage(unsigned cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage, uint8_t maxRetries)
 {
     bool success = false;
-#if NEXUS_HAS_CEC
-    if (mCecServiceManager[cecId] != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
+
+    if (mCecServiceManager[cecId].get() != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
         success = (mCecServiceManager[cecId]->sendCecMessage(srcAddr, destAddr, length, pMessage, maxRetries) == OK) ? true : false;
     }
-#endif
+
     if (!success) {
         LOGE("%s: Could not send CEC%d message opcode: 0x%02X!", __PRETTY_FUNCTION__, cecId, *pMessage);
     }
@@ -1638,20 +1631,12 @@ status_t NexusService::setHdmiCecMessageEventListener(uint32_t cecId, const sp<I
     status_t status = INVALID_OPERATION;
     ALOGV("%s: CEC%d listener=%p", __PRETTY_FUNCTION__, cecId, listener.get());
 
-#if NEXUS_HAS_CEC
-    if (cecId < NEXUS_NUM_CEC) {
-        if (mCecServiceManager[cecId] != NULL) {
-            status = mCecServiceManager[cecId]->setEventListener(listener);
-        }
-
-        if (status != OK) {
-            LOGE("%s: Could not set CEC%d message listener!", __PRETTY_FUNCTION__, cecId);
-        }
+    if (mCecServiceManager[cecId].get() != NULL) {
+        status = mCecServiceManager[cecId]->setEventListener(listener);
     }
-    else
-#endif
-    {
-        LOGE("%s: No CEC%d output on this device!!!", __PRETTY_FUNCTION__, cecId);
+
+    if (status != OK) {
+        LOGE("%s: Could not set CEC%d message listener!", __PRETTY_FUNCTION__, cecId);
     }
     return status;
 }

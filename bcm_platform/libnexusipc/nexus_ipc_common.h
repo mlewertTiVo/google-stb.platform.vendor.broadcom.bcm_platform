@@ -254,6 +254,7 @@ public:
     virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus)=0;
 
     static const uint8_t DEFAULT_MAX_CEC_RETRIES = 5;
+    static const uint8_t MAX_NUM_CEC_PORTS = (NEXUS_NUM_CEC > 0) ? NEXUS_NUM_CEC : 1;
 };
 
 /* -----------------------------------------------------------------------------

@@ -70,7 +70,7 @@ int parseArgs(int argc, char *argv[], uint8_t *pCecId, uint8_t *pSrcAddr, uint8_
    char *token;
    size_t i;
    size_t len = 0;
-   unsigned long tmpValue;
+   long tmpValue;
    char messageBuffer[3*sizeof(char)*MAX_MESSAGE_LEN + 1];
    char *pBuf = messageBuffer;
    bool messageFlag = false;
@@ -88,7 +88,7 @@ int parseArgs(int argc, char *argv[], uint8_t *pCecId, uint8_t *pSrcAddr, uint8_
        switch (opt) {
        case 's':
            if (optarg != NULL) {
-               tmpValue = strtoul(optarg, &endptr, 0);
+               tmpValue = strtol(optarg, &endptr, 0);
                if (*endptr == '\0') {
                    if (tmpValue > 0xf) {
                        fprintf(stderr, "ERROR: source address 0x%08lx out of range (0x0 to 0xf)!\n", tmpValue);
@@ -109,7 +109,7 @@ int parseArgs(int argc, char *argv[], uint8_t *pCecId, uint8_t *pSrcAddr, uint8_
            break;
        case 'd':
            if (optarg != NULL) {
-               tmpValue = strtoul(optarg, &endptr, 0);
+               tmpValue = strtol(optarg, &endptr, 0);
                if (*endptr == '\0') {
                    if (tmpValue > 0xf) {
                        fprintf(stderr, "ERROR: destination address 0x%08lx out of range (0x0 to 0xf)!\n", tmpValue);
@@ -130,10 +130,14 @@ int parseArgs(int argc, char *argv[], uint8_t *pCecId, uint8_t *pSrcAddr, uint8_
            break;
        case 'i':
            if (optarg != NULL) {
-               tmpValue = strtoul(optarg, &endptr, 0);
+               tmpValue = strtol(optarg, &endptr, 0);
                if (*endptr == '\0') {
                    if (tmpValue >= NEXUS_NUM_CEC) {
-                       fprintf(stderr, "ERROR: CEC id out of range (0 to %d)!\n", NEXUS_NUM_CEC-1);
+                       if (NEXUS_NUM_CEC > 0) {
+                           fprintf(stderr, "ERROR: CEC id out of range (0 to %d)!\n", NEXUS_NUM_CEC-1);
+                       } else {
+                           fprintf(stderr, "ERROR: No CEC ports on device!\n");
+                       }
                        return -1;
                    }
                    else {
@@ -141,7 +145,7 @@ int parseArgs(int argc, char *argv[], uint8_t *pCecId, uint8_t *pSrcAddr, uint8_
                    }
                }
                else {
-                    fprintf(stderr, "ERROR: Invalid CEC id (must be between 0x0 and %d)!\n", NEXUS_NUM_CEC);
+                    fprintf(stderr, "ERROR: Invalid CEC id!\n");
                     return -1;
                }
            }
@@ -174,7 +178,7 @@ int parseArgs(int argc, char *argv[], uint8_t *pCecId, uint8_t *pSrcAddr, uint8_
    i = 0;
    while ((token = strtok(pBuf, " ,")) != NULL) {
        pBuf = NULL;
-       tmpValue = strtoul(token, &endptr, 0);
+       tmpValue = strtol(token, &endptr, 0);
        if (*endptr == '\0') {
            if (tmpValue > 0xFF) {
                fprintf(stderr, "ERROR: Message parameter %d value 0x%08lx is out of range (0x00 to 0xFF)!\n", i, tmpValue);

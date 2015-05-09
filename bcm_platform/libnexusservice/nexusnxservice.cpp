@@ -55,9 +55,7 @@
 #include "cutils/properties.h"
 
 #include "nexusnxservice.h"
-#if NEXUS_HAS_CEC
 #include "nexusnxcecservice.h"
-#endif
 
 #include "nexus_video_window.h"
 #include "blst_list.h"
@@ -208,16 +206,17 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
              __func__, param,
              status.hdmi.status.connected ? "connected" : "disconnected", status.hdmi.status.rxPowered ? "is" : "isn't");
 
-#if NEXUS_HAS_CEC
         // Ensure that CEC Physical Address is updated on a "connected" hot-plug event...
-        if (status.hdmi.status.connected) {
+        if (NEXUS_NUM_CEC > 0 && status.hdmi.status.connected) {
             b_hdmiOutputStatus hdmiOutputStatus;
             uint16_t addr;
 
             if (pNexusNxService->getHdmiOutputStatus(param, &hdmiOutputStatus)) {
                 addr = hdmiOutputStatus.physicalAddress[0] * 256 + hdmiOutputStatus.physicalAddress[1];
 
-                if (pNexusNxService->setCecPhysicalAddress(param, addr)) {
+                if (pNexusNxService->mCecServiceManager[param].get() != NULL &&
+                    pNexusNxService->mCecServiceManager[param]->isPlatformInitialised() &&
+                    pNexusNxService->setCecPhysicalAddress(param, addr)) {
                     LOGD("%s: Set CEC%d physical address to %01d.%01d.%01d.%01d", __PRETTY_FUNCTION__, param,
                     (addr >> 12) & 0x0F,
                     (addr >>  8) & 0x0F,
@@ -232,7 +231,7 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
                 LOGW("%s: Could not get HDMI%d output status!", __PRETTY_FUNCTION__, param);
             }
         }
-#endif
+
         Vector<sp<INexusHdmiHotplugEventListener> >::const_iterator it;
 
         Mutex::Autolock autoLock(pNexusNxService->server->mLock);
@@ -499,25 +498,21 @@ void NexusNxService::platformInit()
     nxServer->mStandbyMonitorThread = new NexusNxServerContext::StandbyMonitorThread();
     nxServer->mStandbyMonitorThread->run(&joinSettings.name[0], ANDROID_PRIORITY_NORMAL);
 
-#if NEXUS_HAS_CEC
     unsigned i = NEXUS_NUM_CEC;
     while (i--) {
-        if (isCecEnabled(i)) {
-            ALOGV("%s: Instantiating CecServiceManager[%d]...", __PRETTY_FUNCTION__, i);
-            mCecServiceManager[i] = CecServiceManager::instantiate(this, i);
+        ALOGV("%s: Instantiating CecServiceManager[%d]...", __PRETTY_FUNCTION__, i);
+        mCecServiceManager[i] = CecServiceManager::instantiate(this, i);
 
-            if (mCecServiceManager[i] != NULL) {
-                if (mCecServiceManager[i]->platformInit() != OK) {
-                    LOGE("%s: ERROR initialising CecServiceManager platform for CEC%d!", __PRETTY_FUNCTION__, i);
-                    mCecServiceManager[i] = NULL;
-                }
-            }
-            else {
-                LOGE("%s: ERROR instantiating CecServiceManager for CEC%d!", __PRETTY_FUNCTION__, i);
+        if (mCecServiceManager[i].get() != NULL) {
+            if (mCecServiceManager[i]->platformInit() != OK) {
+                LOGE("%s: ERROR initialising CecServiceManager platform for CEC%d!", __PRETTY_FUNCTION__, i);
+                mCecServiceManager[i] = NULL;
             }
         }
+        else {
+            LOGE("%s: ERROR instantiating CecServiceManager for CEC%d!", __PRETTY_FUNCTION__, i);
+        }
     }
-#endif
     platformInitHdmiOutputs();
     platformInitIR();
 }
@@ -527,14 +522,13 @@ void NexusNxService::platformUninit()
     platformUninitIR();
     platformUninitHdmiOutputs();
 
-#if NEXUS_HAS_CEC
-    for (unsigned i = 0; i < NEXUS_NUM_CEC; i++) {
-        if (mCecServiceManager[i] != NULL) {
+    unsigned i = NEXUS_NUM_CEC;
+    while (i--) {
+        if (mCecServiceManager[i].get() != NULL) {
             mCecServiceManager[i]->platformUninit();
             mCecServiceManager[i] = NULL;
         }
     }
-#endif
 
     NexusNxServerContext *nxServer = static_cast<NexusNxServerContext *>(server);
     /* Cancel the standby monitor thread... */

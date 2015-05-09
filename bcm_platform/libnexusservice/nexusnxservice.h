@@ -72,9 +72,7 @@ public:
     virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus);
 
 protected:
-#if NEXUS_HAS_CEC
     struct CecServiceManager;
-#endif
     NexusNxService();
     virtual void platformInit();
     virtual void platformUninit();
