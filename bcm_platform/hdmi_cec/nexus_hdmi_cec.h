@@ -167,7 +167,7 @@ class NexusHdmiCecDevice : public RefBase
         bool                            mCecSystemControlEnable;
         bool                            mCecViewOnCmdPending;
         bool                            mStandby;
-        bool                            mHotplugConnected;
+        int                             mHotplugConnected;
         Mutex                           mHotplugLock;
         Mutex                           mStandbyLock;
         NexusIPCClientBase*             pIpcClient;
@@ -192,7 +192,7 @@ class NexusHdmiCecDevice : public RefBase
 
         status_t getHdmiOutputStatus(b_hdmiOutputStatus *pHdmiOutputStatus);
         void fireEventCallback(hdmi_event_t *pHdmiCecEvent);
-        void fireHotplugCallback(bool connected);
+        void fireHotplugCallback(int connected);
         bool getHdmiHotplugWakeup();
         bool getCecTransmitStandby();
         bool getCecTransmitViewOn();
