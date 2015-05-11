@@ -56,6 +56,9 @@
 
 #define B_HW_ENCODER_POLL_INTERVAL (20)
 
+#define B_DEFAULT_INPUT_FRAMERATE (65536 * 15)
+#define B_DEFAULT_INPUT_NEXUS_FRAMERATE (NEXUS_VideoFrameRate_e15)
+
 #define NAL_UNIT_TYPE_SPS  7
 #define NAL_UNIT_TYPE_PPS  8
 
@@ -313,7 +316,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     portDefs.nFrameHeight = m_inputHeight;
     portDefs.nStride = portDefs.nFrameWidth;
     portDefs.nSliceHeight = portDefs.nFrameHeight;
-    portDefs.xFramerate = (OMX_U32) (65536 * 15); // default frame rate
+    portDefs.xFramerate = (OMX_U32)B_DEFAULT_INPUT_FRAMERATE;
     for ( i = 0; i < MAX_INPUT_PORT_FORMATS; i++ )
     {
         memset(&portFormats[i], 0, sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE));
@@ -2208,6 +2211,11 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
     surfSettings.pts = pInfo->pts;
     surfSettings.ptsValid = true;
     surfSettings.frameRate = MapOMXFrameRateToNexus(pPortDef->format.video.xFramerate);
+    if (surfSettings.frameRate == NEXUS_VideoFrameRate_eUnknown)
+    {
+        surfSettings.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
+    }
+
     ALOGV("Push surface setting: pts:%d, frameRate:%d", surfSettings.pts, surfSettings.frameRate);
 
     if ( 0 == pBufferHeader->nFilledLen && surfSettings.endOfStream)
@@ -2816,7 +2824,6 @@ NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
     encoderSettings.video.width = pPortDef->format.video.nFrameWidth;;
     encoderSettings.video.height = pPortDef->format.video.nFrameHeight;
     encoderSettings.video.refreshRate = 60000;
-    encoderSettings.videoEncoder.frameRate = MapOMXFrameRateToNexus(pPortDef->format.video.xFramerate);
 
     encoderSettings.videoEncoder.bitrateMax = m_sVideoBitrateParams.nTargetBitrate;
     switch (m_sVideoBitrateParams.eControlRate)
@@ -2857,6 +2864,14 @@ NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
         encoderSettings.videoEncoder.variableFrameRate = false;
     }
     break;
+    }
+    encoderSettings.videoEncoder.frameRate = MapOMXFrameRateToNexus(pPortDef->format.video.xFramerate);
+    if (encoderSettings.videoEncoder.frameRate == NEXUS_VideoFrameRate_eUnknown)
+    {
+        ALOGW("Unknown encoder frame rate %u. Use variable frame rate...", pPortDef->format.video.xFramerate);
+
+        encoderSettings.videoEncoder.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
+        encoderSettings.videoEncoder.variableFrameRate = true;
     }
 
     ALOGV("FrameRate=%d BitRateMax=%d BitRateTarget=%d bVarFrameRate=%d",
