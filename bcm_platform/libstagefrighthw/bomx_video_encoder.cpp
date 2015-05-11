@@ -3880,7 +3880,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
 
-    int stride, cstride, alignment = 16;
+    int stride, cstride, alignment = 4;
     uint8_t *y_addr, *cr_addr, *cb_addr;
     unsigned cr_offset, cb_offset;
     NEXUS_SurfaceHandle srcCb, srcCr, srcY;
