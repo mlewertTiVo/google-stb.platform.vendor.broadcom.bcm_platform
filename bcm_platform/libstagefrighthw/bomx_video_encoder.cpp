@@ -73,6 +73,8 @@
 #define NXCLIENT_INVALID_ID     (0xffffffff)
 #define MIN_BLOCK_SIZE          (960*1080*2)
 
+#define B_CHECKPOINT_TIMEOUT (5000)
+
 using namespace android;
 
 static const char *g_roles[] = {"video_encoder.avc", "video_encoder.mpeg4", "video_encoder.h263", "video_encoder.vp8"};
@@ -3709,7 +3711,7 @@ bool BOMX_VideoEncoder::GraphicsCheckpoint()
     errCode = NEXUS_Graphics2D_Checkpoint(m_hGraphics2d, NULL);
     if ( errCode == NEXUS_GRAPHICS2D_QUEUED )
     {
-        errCode = B_Event_Wait(m_hCheckpointEvent, 150);
+        errCode = B_Event_Wait(m_hCheckpointEvent, B_CHECKPOINT_TIMEOUT);
         if ( errCode )
         {
             ALOGE("!!! ERROR: Timeout waiting for graphics checkpoint !!!");

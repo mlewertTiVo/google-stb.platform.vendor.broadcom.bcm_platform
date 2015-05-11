@@ -41,8 +41,6 @@
 
 #include "gralloc_priv.h"
 
-#define CHECKPOINT_TIMEOUT (5000)
-
 extern int gralloc_destripe_yv12(private_handle_t *pHandle, NEXUS_StripedSurfaceHandle hStripedSurface);
 extern int gralloc_yv12to422p(private_handle_t *pHandle);
 extern int gralloc_plane_copy(private_handle_t *pHandle, unsigned src, unsigned dst);

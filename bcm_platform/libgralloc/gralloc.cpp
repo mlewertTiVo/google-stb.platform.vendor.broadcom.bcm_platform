@@ -243,7 +243,7 @@ static void gralloc_bzero(int is_mma, unsigned handle, size_t numBytes)
            if (0 == errCode) {
                errCode = NEXUS_Graphics2D_Checkpoint(gfx, NULL);
                if (errCode == NEXUS_GRAPHICS2D_QUEUED) {
-                   errCode = BKNI_WaitForEvent(event, 150);
+                   errCode = BKNI_WaitForEvent(event, CHECKPOINT_TIMEOUT);
                    if (errCode) {
                       ALOGW("Timeout zeroing gralloc buffer");
                    }

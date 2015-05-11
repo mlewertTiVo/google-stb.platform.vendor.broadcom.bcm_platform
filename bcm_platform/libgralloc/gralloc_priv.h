@@ -50,6 +50,8 @@ extern "C" {
 #define EXTRA_PLANE             1
 #define GL_PLANE                2
 
+#define CHECKPOINT_TIMEOUT      (5000)
+
 /*****************************************************************************/
 
 struct private_module_t;
