@@ -231,6 +231,9 @@ static OMX_ERRORTYPE BOMX_VideoEncoder_InitMimeType(OMX_VIDEO_CODINGTYPE eCompre
     case OMX_VIDEO_CodingAVC:
         pMimeTypeStr = "video/avc";
         break;
+    case OMX_VIDEO_CodingVP8:
+        pMimeTypeStr = "video/x-vnd.on2.vp8";
+        break;
     default:
         ALOGW("Unable to find MIME type for eCompressionFormat %u", eCompressionFormat);
         pMimeTypeStr = NULL;
@@ -292,7 +295,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
 
 #define MAX_PORT_FORMATS (4)
 #define MAX_INPUT_PORT_FORMATS  BOMX_VideoEncoderInputBufferType_eMax
-#define MAX_OUTPUT_PORT_FORMATS (1)
+#define MAX_OUTPUT_PORT_FORMATS (3)
 
     BDBG_CASSERT(MAX_INPUT_PORT_FORMATS  <= MAX_PORT_FORMATS);
     BDBG_CASSERT(MAX_OUTPUT_PORT_FORMATS <= MAX_PORT_FORMATS);
@@ -368,7 +371,13 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
         {
         default:
         case 0:
+            portFormats[i].eCompressionFormat = OMX_VIDEO_CodingMPEG2;
+            break;
+        case 1:
             portFormats[i].eCompressionFormat = OMX_VIDEO_CodingAVC;
+            break;
+        case 2:
+            portFormats[i].eCompressionFormat = OMX_VIDEO_CodingVP8;
             break;
         }
     }
@@ -2905,6 +2914,12 @@ NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
         encoderStartSettings.output.video.settings.interlaced = false;
         break;
     }
+    case NEXUS_VideoCodec_eVp8:
+    {
+        encoderStartSettings.output.video.settings.nonRealTime = true;
+        encoderStartSettings.output.video.settings.interlaced = false;
+        break;
+    }
     default:
     {
         ALOGE("invalid code: %d", GetNexusCodec());
@@ -3430,6 +3445,13 @@ bool BOMX_VideoEncoder::GetCodecConfig( const NEXUS_VideoEncoderDescriptor *pCon
         NEXUS_SimpleEncoder_VideoReadComplete(m_hSimpleEncoder, count);
     }
 
+    /* skip SPS/PPS for VP8 */
+    if (GetNexusCodec() == NEXUS_VideoCodec_eVp8)
+    {
+        ALOGV("Skipping SPS/PPS");
+        return true;
+    }
+
     ADVANCE_DESC();
     ALOG_ASSERT(pDesc0);
     ALOGV("Index: %d - Descriptor:%p - flags=%x, videoFlags = %x, length = %d, dataUnitType = %d",
@@ -3668,6 +3690,11 @@ unsigned int BOMX_VideoEncoder::RetrieveFrameFromHardware()
                 if ( pDesc0->flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_PTS_VALID )
                 {
                     pEmptyFr->usTimeStampIntepolated = pDesc0->pts;
+                }
+                if ( pDesc0->videoFlags & NEXUS_VIDEOENCODERDESCRIPTOR_VIDEOFLAG_RAP )
+                {
+                    /* frames with random access point (RAP) flag are sync frames */
+                    pEmptyFr->clientFlags |= OMX_BUFFERFLAG_SYNCFRAME;
                 }
                 numToProcess--;
                 ADVANCE_DESC();
