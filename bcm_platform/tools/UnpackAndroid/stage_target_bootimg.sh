@@ -2,14 +2,17 @@
 set -e
 
 function usage {
-   echo "stage_host_bootimg.sh [-b] [-s] [-d] [-c] [-z] [-S] [-p <name>] [-F <ip-address>]"
+   echo "stage_host_bootimg.sh [-g] [-b] [-s] [-d] [-c] [-u] [-w] [-z] [-S] [-p <name>] [-F <ip-address>]"
    echo ""
    echo "list partitions to update. partitions in:"
    echo ""
+   echo "     '-g': gpt"
    echo "     '-b': boot"
    echo "     '-s': system"
    echo "     '-d': userdata"
    echo "     '-c': cache"
+   echo "     '-u': bsu"
+   echo "     '-w': hwcfg"
    echo "     '-z': recovery"
    echo ""
    echo "'-S' - to preserve labeling for SELinux support (incurs longer copy time)."
@@ -41,9 +44,13 @@ fastboot_target=0.0.0.0
 update_boot_img=1
 update_system=1
 update_data=1
-# not needed by default...
+# not needed by default because we assume using USB to boot instead of eMMC
+# but if we need to boot from eMMC, all the following partitions should be updated
 update_cache=0
 update_recovery=0
+update_gpt=0
+update_hwcfg=0
+update_bsu=0
 selinux=0
 fastboot=0
 if [ $# -gt 0 ]; then
@@ -52,8 +59,11 @@ if [ $# -gt 0 ]; then
 	update_data=0
 fi
 
-while getopts "hbsdczSp:F:" tag; do
+while getopts "hgbsdcuwzSp:F:" tag; do
 	case $tag in
+	g)
+		update_gpt=1
+		;;
 	b)
 		update_boot_img=1
 		;;
@@ -65,6 +75,12 @@ while getopts "hbsdczSp:F:" tag; do
 		;;
 	c)
 		update_cache=1
+		;;
+	u)
+		update_bsu=1
+		;;
+	w)
+		update_hwcfg=1
 		;;
 	z)
 		update_recovery=1
@@ -89,7 +105,7 @@ done
 echo ""
 echo "******** WARNING ********"
 echo ""
-echo " expected partition layout is: "
+echo " For staging USB stick, expected partition layout is: "
 echo ""
 echo "   boot:     /dev/${partition_root}${partition_boot}"
 echo "   system:   /dev/${partition_root}${partition_system}"
@@ -127,6 +143,9 @@ fi
 
 echo ""
 echo "partitions updated in this run:"
+if [ $update_gpt -gt 0 ]; then
+	echo "     gpt (partition table)"
+fi
 if [ $update_boot_img -gt 0 ]; then
 	echo "     boot image"
 fi
@@ -141,6 +160,12 @@ if [ $update_cache -gt 0 ]; then
 fi
 if [ $update_recovery -gt 0 ]; then
 	echo "     recovery"
+fi
+if [ $update_hwcfg -gt 0 ]; then
+	echo "     hwcfg"
+fi
+if [ $update_bsu -gt 0 ]; then
+	echo "     bsu"
 fi
 echo ""
 if [ $selinux -gt 0 ]; then
@@ -159,11 +184,23 @@ sleep 2
 #
 if [ $fastboot -gt 0 ]; then
 	echo "running fastboot against $fastboot_target"
+	# always update the gpt first if user wants to update gpt partition
+	if [ $update_gpt -gt 0 ]; then
+		./fastboot_tcp -t $fastboot_target flash gpt ./gpt.bin
+	fi
+
+	# update the other paritions after gpt has been updated
 	if [ $update_boot_img -gt 0 ]; then
 		./fastboot_tcp -t $fastboot_target flash boot ./boot.img
 	fi
+	if [ $update_hwcfg -gt 0 ]; then
+		./fastboot_tcp -t $fastboot_target flash hwcfg ./hwcfg_empty.img
+	fi
 	if [ $update_recovery -gt 0 ]; then
 		./fastboot_tcp -t $fastboot_target flash recovery ./recovery.img
+	fi
+	if [ $update_bsu -gt 0 ]; then
+		./fastboot_tcp -t $fastboot_target flash bsu ./loaders/android_bsu.elf
 	fi
 	if [ $update_system -gt 0 ]; then
 		./fastboot_tcp -t $fastboot_target flash system ./unpack_android_boot/system.img

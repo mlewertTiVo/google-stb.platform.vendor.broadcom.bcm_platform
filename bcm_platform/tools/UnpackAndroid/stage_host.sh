@@ -52,4 +52,10 @@ mkdir -p $staging_dir/loaders
 cp $image_dir/android_bsu.elf $staging_dir/loaders
 cp $image_dir/bolt-*.bin $staging_dir/loaders
 
+echo "6) Copying android-info.txt, gpt.bin, hwcfg.img"
+cp $image_dir/android-info.txt android-info.txt
+cp $image_dir/gpt.bin gpt.bin
+cp $image_dir/hwcfg_empty.img hwcfg_empty.img
+
+
 echo "!!! Done staging !!!"
