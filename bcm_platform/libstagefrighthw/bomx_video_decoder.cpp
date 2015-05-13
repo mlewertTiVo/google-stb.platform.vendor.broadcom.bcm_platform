@@ -1274,12 +1274,19 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_VP8Level_Version3;   // ?
                 break;
             case OMX_VIDEO_CodingHEVC:
-                if ( pProfileLevel->nProfileIndex > 0 )
+                switch ( pProfileLevel->nProfileIndex )
                 {
+                case 0:
+                    pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_HEVCProfileMain;
+                    pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_HEVCMainTierLevel51;
+                    break;
+                case 1:
+                    pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_HEVCProfileMain10;
+                    pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_HEVCMainTierLevel51;
+                    break;
+                default:
                     return OMX_ErrorNoMore;
                 }
-                pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_HEVCProfileMain;
-                pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_HEVCMainTierLevel51;
                 break;
             }
             return OMX_ErrorNone;
