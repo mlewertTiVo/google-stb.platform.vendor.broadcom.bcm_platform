@@ -59,6 +59,7 @@ include vendor/broadcom/bcm_platform/tools/nxcfg/Android.mk
 include vendor/broadcom/bcm_platform/tools/nxmem/Android.mk
 include vendor/broadcom/bcm_platform/tools/otpgetchipid/Android.mk
 include vendor/broadcom/bcm_platform/tools/prdy_pes_playback/Android.mk
+include vendor/broadcom/bcm_platform/tools/setdisplay/Android.mk
 
 ifneq ($(wildcard vendor/broadcom/bcm_platform/not_for_release/README.txt),)
 include vendor/broadcom/bcm_platform/not_for_release/libbcmsideband/Android.mk
