@@ -721,7 +721,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
 
-    m_pBufferTracker = new BOMX_BufferTracker();
+    m_pBufferTracker = new BOMX_BufferTracker(this);
     if ( NULL == m_pBufferTracker || !m_pBufferTracker->Valid() )
     {
         ALOGW("Unable to create buffer tracker");

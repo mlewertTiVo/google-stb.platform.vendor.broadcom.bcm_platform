@@ -133,7 +133,7 @@ public:
     bool IsValid() { return m_currentState == OMX_StateInvalid ? false : true; }
 
     // Component Name
-    const char *GetName() {return m_componentName;}
+    const char *GetName() const {return m_componentName;}
 
     // Find Port by Index
     BOMX_Port *FindPortByIndex(unsigned index);

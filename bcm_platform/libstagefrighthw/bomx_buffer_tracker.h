@@ -55,6 +55,7 @@
 #include "OMX_Core.h"
 #include "OMX_Types.h"
 #include "blst_queue.h"
+#include "bomx_component.h"
 
 struct BOMX_BufferTrackerNode
 {
@@ -67,7 +68,7 @@ struct BOMX_BufferTrackerNode
 class BOMX_BufferTracker
 {
 public:
-    BOMX_BufferTracker(unsigned minEntries=1024);
+    BOMX_BufferTracker(const BOMX_Component *pComponent, unsigned minEntries=1024);
     ~BOMX_BufferTracker();
 
     bool Add(const OMX_BUFFERHEADERTYPE *pHeader, uint32_t *pPts /* [out] */);
@@ -77,6 +78,7 @@ public:
     bool Valid() const { return m_valid; }
 
 protected:
+    const BOMX_Component *m_pComponent;
     BLST_Q_HEAD(AllocList, BOMX_BufferTrackerNode) m_allocList;
     BLST_Q_HEAD(FreeList, BOMX_BufferTrackerNode) m_freeList;
     unsigned m_minAllocated;

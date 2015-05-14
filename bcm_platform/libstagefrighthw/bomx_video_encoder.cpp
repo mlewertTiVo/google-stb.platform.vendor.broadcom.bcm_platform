@@ -434,7 +434,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     }
 
     /* create buffer tracker */
-    m_pBufferTracker = new BOMX_BufferTracker();
+    m_pBufferTracker = new BOMX_BufferTracker(this);
     if ( NULL == m_pBufferTracker || !m_pBufferTracker->Valid() )
     {
         ALOGE("Unable to create buffer tracker");

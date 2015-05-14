@@ -52,8 +52,15 @@
 
 #include "bomx_utils.h"
 #include "bomx_buffer_tracker.h"
+#include <inttypes.h>
 
-BOMX_BufferTracker::BOMX_BufferTracker(unsigned minEntries) :
+#define BUFTR_LOGE(msg, ...) ALOGE("[%s] " msg, m_pComponent->GetName(), ##__VA_ARGS__)
+#define BUFTR_LOGW(msg, ...) ALOGW("[%s] " msg, m_pComponent->GetName(), ##__VA_ARGS__)
+#define BUFTR_LOGI(msg, ...) ALOGI("[%s] " msg, m_pComponent->GetName(), ##__VA_ARGS__)
+#define BUFTR_LOGV(msg, ...) ALOGV("[%s] " msg, m_pComponent->GetName(), ##__VA_ARGS__)
+
+BOMX_BufferTracker::BOMX_BufferTracker(const BOMX_Component *pComponent, unsigned minEntries) :
+    m_pComponent(pComponent),
     m_minAllocated(minEntries),
     m_maxAllocated(minEntries),
     m_valid(true)
@@ -92,7 +99,7 @@ BOMX_BufferTracker::~BOMX_BufferTracker()
         delete pNode;
     }
     m_valid = false;
-    ALOGI("%u min entries %u max entries", m_minAllocated, m_maxAllocated);
+    BUFTR_LOGI("%u min entries %u max entries", m_minAllocated, m_maxAllocated);
 }
 
 bool BOMX_BufferTracker::Add(
@@ -123,7 +130,7 @@ bool BOMX_BufferTracker::Add(
     pNode->ticks = pHeader->nTimeStamp;
     pNode->flags = pHeader->nFlags;
     pNode->pts = BOMX_TickToPts(&pHeader->nTimeStamp);
-    ALOGV("Adding PTS %#x for tick %08x %08x flags %#x", pNode->pts, (int)(pNode->ticks>>(OMX_TICKS)32), (int)pNode->ticks, pNode->flags);
+    BUFTR_LOGV("Adding PTS %#"PRIx32" for tick %08"PRIx32" %08"PRIx32" flags %#"PRIx32, pNode->pts, (int32_t)(pNode->ticks>>(OMX_TICKS)32), (int32_t)pNode->ticks, pNode->flags);
 
     // Add to list sorted in display order
     BOMX_BufferTrackerNode *pPrev = BLST_Q_LAST(&m_allocList);
@@ -177,7 +184,7 @@ bool BOMX_BufferTracker::Remove(
     // See if we found a match
     if ( NULL == pNode )
     {
-        ALOGW("PTS %u not in tracker", pts);
+        BUFTR_LOGW("PTS %"PRIu32" not in tracker", pts);
         if ( NULL != pHeader )
         {
             BOMX_PtsToTick(pts, &pHeader->nTimeStamp);
@@ -187,7 +194,7 @@ bool BOMX_BufferTracker::Remove(
     }
     else
     {
-        ALOGV("Matched PTS %#x to tick %08x %08x flags %#x", pts, (int)(pNode->ticks>>(OMX_TICKS)32), (int)pNode->ticks, pNode->flags);
+        BUFTR_LOGV("Matched PTS %#"PRIx32" to tick %08"PRIx32" %08"PRIx32" flags %#"PRIx32"", pts, (int)(pNode->ticks>>(OMX_TICKS)32), (int)pNode->ticks, pNode->flags);
         BLST_Q_REMOVE(&m_allocList, pNode, node);
         BLST_Q_INSERT_TAIL(&m_freeList, pNode, node);
         if ( NULL != pHeader )
@@ -202,7 +209,7 @@ bool BOMX_BufferTracker::Remove(
 void BOMX_BufferTracker::Flush()
 {
     BOMX_BufferTrackerNode *pNode;
-    ALOGV("Flush");
+    BUFTR_LOGV("Flush");
     while ( NULL != (pNode=BLST_Q_FIRST(&m_allocList)) )
     {
         BLST_Q_REMOVE_HEAD(&m_allocList, node);
