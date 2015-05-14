@@ -1217,19 +1217,6 @@ void NexusService::destroyClientContext(NexusClientContext * client)
     BKNI_Free(client);
 }
 
-bool NexusService::setCecEnabled(uint32_t cecId __unused, bool enabled)
-{
-    bool success = true;
-    char value[PROPERTY_VALUE_MAX];
-
-    snprintf(value, PROPERTY_VALUE_MAX, "%d", enabled);
-
-    if (property_set(PROPERTY_HDMI_ENABLE_CEC, value) != 0) {
-        success = false;
-    }
-    return success;
-}
-
 bool NexusService::isCecEnabled(uint32_t cecId __unused)
 {
     bool enabled = false;
