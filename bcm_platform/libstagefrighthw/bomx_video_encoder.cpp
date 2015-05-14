@@ -48,8 +48,12 @@
 #include "OMX_IndexExt.h"
 #include "OMX_VideoExt.h"
 #include "nexus_base_mmap.h"
+#include <inttypes.h>
 
 #define BOMX_INPUT_MSG(x)
+
+// Runtime Properties (note: set selinux to permissive mode)
+#define B_PROPERTY_ITB_DESC_DEBUG ("media.brcm.venc_itb_desc_debug")
 
 #define B_NUM_OF_OUT_BUFFERS (10)
 #define B_NUM_OF_IN_BUFFERS (5)
@@ -83,12 +87,6 @@ using namespace android;
 static const char *g_roles[] = {"video_encoder.avc", "video_encoder.mpeg4", "video_encoder.h263", "video_encoder.vp8"};
 static const unsigned int g_numRoles = sizeof(g_roles)/sizeof(const char *);
 static int g_roleCodec[] = {OMX_VIDEO_CodingAVC, OMX_VIDEO_CodingMPEG4, OMX_VIDEO_CodingH263, OMX_VIDEO_CodingVP8};
-
-// Uncomment this to enable output logging to a file
-//#define DEBUG_FILE_OUTPUT 1
-
-#include <stdio.h>
-static FILE *g_pDebugFile;
 
 enum BOMX_VideoEncoderEventType
 {
@@ -133,12 +131,6 @@ extern "C" OMX_ERRORTYPE BOMX_VideoEncoder_Create(
     {
         if ( pVideoEncoder->IsValid() )
         {
-#ifdef DEBUG_FILE_OUTPUT
-            if ( NULL == g_pDebugFile )
-            {
-                g_pDebugFile = fopen("/data/media/video_encoder.debug.pes", "wb+");
-            }
-#endif
             return OMX_ErrorNone;
         }
         else
@@ -288,7 +280,8 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_inputHeight(720),
     m_metadataEnabled(false),
     m_nativeGraphicsEnabled(false),
-    m_inputMode(BOMX_VideoEncoderInputBufferType_eStandard)
+    m_inputMode(BOMX_VideoEncoderInputBufferType_eStandard),
+    m_pITBDescDumpFile(NULL)
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -531,12 +524,6 @@ BOMX_VideoEncoder::~BOMX_VideoEncoder()
 {
     unsigned i;
     BOMX_NexusEncodedVideoFrame *pNxVidEncFr;
-
-    if ( g_pDebugFile )
-    {
-        fclose(g_pDebugFile);
-        g_pDebugFile = NULL;
-    }
 
     ShutdownScheduler();
 
@@ -2604,7 +2591,7 @@ void BOMX_VideoEncoder::PollEncodedFrames()
         {
             if ( !m_pBufferTracker->Remove(pNxVidEncFr->usTimeStampOriginal, pHeader) )
             {
-                ALOGW("Unable to find tracker entry for pts %#x", pNxVidEncFr->usTimeStampOriginal);
+                ALOGW("Unable to find tracker entry for pts %llu", pNxVidEncFr->usTimeStampOriginal);
                 BOMX_PtsToTick(pNxVidEncFr->usTimeStampOriginal, &pHeader->nTimeStamp);
             }
             if ( (pHeader->nFlags & OMX_BUFFERFLAG_EOS) && !m_pBufferTracker->Last(pHeader->nTimeStamp) )
@@ -3137,6 +3124,30 @@ NEXUS_Error BOMX_VideoEncoder::AllocateEncoderResource()
     }
 
     ALOGV("set STC channel");
+
+    // Setup file to debug ITB descriptors if required
+    if ( property_get_int32(B_PROPERTY_ITB_DESC_DEBUG, 0) )
+    {
+        time_t rawtime;
+        struct tm * timeinfo;
+        char fname[100];
+
+        // Generate unique file name
+        time(&rawtime);
+        timeinfo = localtime(&rawtime);
+        strftime(fname, sizeof(fname), "/data/tombstones/venc-%F_%H_%M_%S.csv", timeinfo);
+        ALOGD("ITB descriptors output file:%s", fname);
+        m_pITBDescDumpFile = fopen(fname, "w+");
+        if ( m_pITBDescDumpFile )
+        {
+            fprintf(m_pITBDescDumpFile, "offset,length,flags,dts(90Khz),pts(90Khz),origPts(45Khz),escr(27Mhz),tpb,shr,videoFlags,stcSnapshot,dataUnitType\n");
+        }
+        else
+        {
+            ALOGW("Error creating ITB descriptors dump file %s (%s)", fname, strerror(errno));
+            // Just keep going without debug
+        }
+    }
     return NEXUS_SUCCESS;
 }
 
@@ -3168,6 +3179,11 @@ void BOMX_VideoEncoder::ReleaseEncoderResource()
         m_nxClientId = NXCLIENT_INVALID_ID;
     }
 
+    if ( m_pITBDescDumpFile )
+    {
+        fclose(m_pITBDescDumpFile);
+        m_pITBDescDumpFile = NULL;
+    }
 }
 
 NEXUS_Error BOMX_VideoEncoder::StartEncoder()
@@ -3681,6 +3697,12 @@ unsigned int BOMX_VideoEncoder::RetrieveFrameFromHardware()
             {
                 ALOG_ASSERT(pDesc0);
                 ALOGV("FRAME: %p - add descriptor: %p flag: %x PTS: %u", pEmptyFr, pDesc0, pDesc0->flags, pDesc0->originalPts);
+                if ( m_pITBDescDumpFile )
+                {
+                    /* offset,length,flags,dts(90Khz),pts(90Khz),origPts(45Khz),escr(27Mhz),tpb,shr,videoFlags,stcSnapshot,dataUnitType */
+                    fprintf(m_pITBDescDumpFile, "%u,%u,0x%08"PRIx32",%"PRIu64",%"PRIu64",%"PRIu32",%"PRIu32",%"PRIu16",%"PRIi16",0x%08"PRIx32",%"PRIu64",%"PRIu8"\n",
+                        pDesc0->offset, pDesc0->length, pDesc0->flags, pDesc0->dts, pDesc0->pts, pDesc0->originalPts, pDesc0->escr, pDesc0->ticksPerBit, pDesc0->shr, pDesc0->videoFlags, pDesc0->stcSnapshot, pDesc0->dataUnitType);
+                }
                 pEmptyFr->combinedSz += pDesc0->length;
                 pEmptyFr->frameData->add((NEXUS_VideoEncoderDescriptor *) pDesc0);
                 if ( pDesc0->flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_ORIGINALPTS_VALID )

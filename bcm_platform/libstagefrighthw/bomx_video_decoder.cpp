@@ -942,7 +942,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         m_pPesFile = fopen(fname, "wb+");
         if ( NULL == m_pPesFile )
         {
-            ALOGW("Error creating PES debug file %s");
+            ALOGW("Error creating PES debug file %s (%s)", fname, strerror(errno));
             // Just keep going without debug
         }
     }
