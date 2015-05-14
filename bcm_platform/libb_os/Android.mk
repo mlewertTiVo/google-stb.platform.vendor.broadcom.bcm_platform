@@ -1,5 +1,5 @@
 #############################################################################
-#    (c)2010-2011 Broadcom Corporation
+#    (c)2015 Broadcom Corporation
 #
 # This program is the proprietary software of Broadcom Corporation and/or its licensors,
 # and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -37,88 +37,29 @@
 #
 #############################################################################
 LOCAL_PATH := $(call my-dir)
-REFSW_PATH :=${LOCAL_PATH}/../brcm_nexus
 NEXUS_TOP ?= $(LOCAL_PATH)/../../refsw/nexus
-
-ifeq ($(NEXUS_MODE),proxy)
-NEXUS_LIB=libnexus
-else
-ifeq ($(NEXUS_WEBCPU),core1_server)
-NEXUS_LIB=libnexus_webcpu
-else
-NEXUS_LIB=libnexus_client
-endif
-endif
 
 include $(CLEAR_VARS)
 
-# Core component framework
-LOCAL_SRC_FILES := \
-    bomx_android_plugin.cpp \
-    bomx_buffer.cpp \
-    bomx_buffer_tracker.cpp \
-    bomx_component.cpp \
-    bomx_core.cpp \
-    bomx_port.cpp \
-    bomx_utils.cpp
-
-# Component instances
-LOCAL_SRC_FILES += bomx_video_decoder.cpp
-LOCAL_SRC_FILES += bomx_video_encoder.cpp
-
-# Audio is not ready yet
-#LOCAL_SRC_FILES += bomx_audio_decoder.cpp
-
-LOCAL_C_INCLUDES := \
-        $(TOP)/frameworks/native/include/media/hardware \
-        $(TOP)/frameworks/native/include/media/openmax \
-        $(TOP)/frameworks/native/include/utils \
-        $(TOP)/frameworks/native/include/ui  \
-        $(TOP)/hardware/libhardware/include/hardware \
-        $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
-        $(TOP)/vendor/broadcom/bcm_platform/libnexusipc \
-        $(TOP)/vendor/broadcom/bcm_platform/libgralloc \
-        $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/blib \
-
-include $(BSEAV)/lib/utils/batom.inc
-include $(BSEAV)/lib/media/bmedia.inc
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 REMOVE_NEXUS_CFLAGS := -Wstrict-prototypes
 MANGLED_NEXUS_CFLAGS := $(filter-out $(REMOVE_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
 
 LOCAL_CFLAGS := $(MANGLED_NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS) $(addprefix -I,$(BMEDIA_INCLUDES) $(BFILE_MEDIA_INCLUDES))
-# Required for nexusipcclient using LOGX in a header file
-LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
-
-LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include $(REFSW_PATH)/../libnexusservice
-LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/lib/os/include $(NEXUS_TOP)/lib/os/include/linuxuser
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 
+B_LIB_TOP := $(NEXUS_TOP)/lib
+B_REFSW_OS ?= linuxuser
+include $(NEXUS_TOP)/lib/os/b_os_lib.inc
+LOCAL_SRC_FILES += $(subst $(B_LIB_TOP),../../refsw/nexus/lib,$(B_OS_LIB_SOURCES))
+LOCAL_C_INCLUDES += $(subst $(B_LIB_TOP),$(TOP)/vendor/broadcom/refsw/nexus/lib,$(B_OS_LIB_PUBLIC_INCLUDES) $(B_OS_LIB_PRIVATE_INCLUDES))
+LOCAL_CFLAGS += $(addprefix -D,$(B_OS_LIB_DEFINES))
+
 LOCAL_SHARED_LIBRARIES :=         \
-        $(NEXUS_LIB)              \
-        libbinder                 \
-        libb_os                   \
         libcutils                 \
-        libdl                     \
-        libhwcbinder              \
-        libnexusipcclient         \
-        libnxclient               \
-        libstagefright_foundation \
-        libui                     \
         libutils
 
-# Secure decoder has dependencies on Sage
-ifeq ($(SAGE_SUPPORT),y)
-LOCAL_SRC_FILES += bomx_video_decoder_secure.cpp
-LOCAL_C_INCLUDES+=$(REFSW_BASE_DIR)/BSEAV/lib/security/sage/srai/include
-LOCAL_C_INCLUDES+=$(REFSW_BASE_DIR)/magnum/syslib/sagelib/include
-LOCAL_C_INCLUDES+=$(REFSW_BASE_DIR)/BSEAV/lib/security/common_crypto/include
-LOCAL_SHARED_LIBRARIES+=libsrai
-LOCAL_CFLAGS += -DSECURE_DECODER_ON
-endif
-
-LOCAL_MODULE := libstagefrighthw
-
+LOCAL_MODULE := libb_os
 include $(BUILD_SHARED_LIBRARY)
