@@ -6,6 +6,7 @@ include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 LOCAL_SRC_FILES:=  \
     brcm_memtrack.cpp
 
+LOCAL_CFLAGS += $(NEXUS_CFLAGS)
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-mem\"
