@@ -17,6 +17,7 @@ include vendor/broadcom/bcm_platform/brcm_memtrack/Android.mk
 include vendor/broadcom/bcm_platform/brcm_nexus/Android.mk
 include vendor/broadcom/bcm_platform/hdmi_cec/Android.mk
 include vendor/broadcom/bcm_platform/libb_os/Android.mk
+include vendor/broadcom/bcm_platform/libb_playback_ip/Android.mk
 include vendor/broadcom/bcm_platform/libcamera2/Android.mk
 include vendor/broadcom/bcm_platform/libGLES_nexus/Android.mk
 include vendor/broadcom/bcm_platform/libgralloc/Android.mk
