@@ -858,7 +858,8 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
          if (pSharedData->planes[GL_PLANE].physAddr) {
             NEXUS_MemoryBlock_UnlockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr);
             NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr);
-         } else if (pSharedData->planes[DEFAULT_PLANE].physAddr) {
+         }
+         if (pSharedData->planes[DEFAULT_PLANE].physAddr) {
             NEXUS_MemoryBlock_UnlockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr);
             NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr);
          }
