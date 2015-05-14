@@ -426,11 +426,11 @@ int gralloc_plane_copy(private_handle_t *handle, unsigned src, unsigned dst)
    rc = 0;
 
 err_checkpoint:
-   NEXUS_Surface_Unlock(hSurfaceDst);
-   NEXUS_Surface_Unlock(hSurfaceSrc);
 err_blit:
+   NEXUS_Surface_Unlock(hSurfaceDst);
    NEXUS_Surface_Destroy(hSurfaceDst);
 err_dst_surface:
+   NEXUS_Surface_Unlock(hSurfaceSrc);
    NEXUS_Surface_Destroy(hSurfaceSrc);
 err_src_surface:
 err_dst:
