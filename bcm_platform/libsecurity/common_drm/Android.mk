@@ -99,6 +99,14 @@ COMMON_DRM_TL_SOURCES += ${WVOEMCRYPTO_SOURCES}
 COMMON_DRM_TL_DEFINES += ${WVOEMCRYPTO_DEFINES}
 endif
 
+###################### Playback ################################
+ifeq (${PLAYBACK_SAGE},OFF)
+else
+include $(LOCAL_PATH)/drm_tl/playback/playback.inc
+COMMON_DRM_TL_SOURCES += ${PLAYBACK_SOURCES}
+COMMON_DRM_TL_DEFINES += ${PLAYBACK_DEFINES}
+endif
+
 #################### NETFLIX ################################
 ifeq (${NETFLIX_SAGE},OFF)
 #Cannot build non-TL version of Common DRM library)
