@@ -39,6 +39,7 @@
 #include "gralloc_destripe.h"
 
 extern int gralloc_log_mapper();
+extern int gralloc_boom_check();
 extern int gralloc_timestamp_conversion();
 
 static int64_t gralloc_tick(void)
@@ -203,6 +204,11 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
       if (hnd->is_mma) {
          NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr);
          NEXUS_MemoryBlock_Unlock(block_handle);
+
+         if (gralloc_boom_check()) {
+            NEXUS_MemoryBlock_CheckIfLocked((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr);
+            NEXUS_MemoryBlock_CheckIfLocked(block_handle);
+         }
       }
    }
 

@@ -62,6 +62,7 @@ static int gralloc_with_mma = 0;
 static int gralloc_default_align = 0;
 static int gralloc_log_map = 0;
 static int gralloc_conv_time = 0;
+static int gralloc_boom_chk = 0;
 
 static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
 static NEXUS_Graphics2DHandle hGraphics = NULL;
@@ -81,6 +82,7 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 #define NX_MMA                  "ro.nx.mma"
 #define NX_GR_LOG_MAP           "ro.gr.log.map"
 #define NX_GR_CONV_TIME         "ro.gr.conv.time"
+#define NX_GR_BOOM_CHK          "ro.gr.boom.chk"
 
 #define NEXUS_JOIN_CLIENT_PROCESS "gralloc"
 static void gralloc_load_lib(void)
@@ -128,6 +130,10 @@ static void gralloc_load_lib(void)
    gralloc_default_align = GRALLOC_MAX_BUFFER_ALIGNED;
    if (!dyn_BEGLint_BufferGetRequirements) {
       gralloc_default_align = GRALLOC_MIN_BUFFER_ALIGNED;
+   }
+
+   if (property_get(NX_GR_BOOM_CHK, value, "0")) {
+      gralloc_boom_chk = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 }
 
@@ -201,6 +207,11 @@ int gralloc_log_mapper(void)
 int gralloc_timestamp_conversion(void)
 {
    return gralloc_conv_time;
+}
+
+int gralloc_boom_check(void)
+{
+   return gralloc_boom_chk;
 }
 
 void * gralloc_v3d_get_nexus_client_context(void)
