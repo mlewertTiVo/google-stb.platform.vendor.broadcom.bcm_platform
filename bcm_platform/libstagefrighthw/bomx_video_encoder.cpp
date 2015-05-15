@@ -2177,11 +2177,20 @@ OMX_ERRORTYPE BOMX_VideoEncoder::FillThisBuffer(
     return OMX_ErrorNone;
 }
 
+NEXUS_Error BOMX_VideoEncoder::PushInputEosFrame()
+{
+    NEXUS_VideoImageInputSurfaceSettings surfSettings;
+
+    // NEXUS: EOS mush be pushed with NULL frame
+    NEXUS_VideoImageInput_GetDefaultSurfaceSettings(&surfSettings);
+    surfSettings.endOfStream = true;
+    return NEXUS_VideoImageInput_PushSurface(m_hImageInput, NULL, &surfSettings);
+}
+
 OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHeader)
 {
     BOMX_Buffer *pBuffer;
     BOMX_VideoEncoderInputBufferInfo *pInfo;
-    NEXUS_VideoImageInputSurfaceSettings surfSettings;
     NEXUS_Error nerr;
     OMX_ERRORTYPE oerr;
 
@@ -2189,45 +2198,28 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
     ALOG_ASSERT(NULL != pBuffer);
     pInfo = (BOMX_VideoEncoderInputBufferInfo *)pBuffer->GetComponentPrivate();
     ALOG_ASSERT(NULL != pInfo);
-    const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[0]->GetDefinition();
 
-    /* Assign a nexus surface */
-    pInfo->pSurfaceNode = AllocImageSurfaceNode();
-    ALOG_ASSERT(NULL != pInfo->pSurfaceNode);
-
-
-    NEXUS_VideoImageInput_GetDefaultSurfaceSettings(&surfSettings);
-
-    if (pBufferHeader->nFlags & OMX_BUFFERFLAG_EOS)
+    if (pBufferHeader->nFilledLen)
     {
-        /* set end of stream flag */
-        ALOGV("EOS is received");
-        surfSettings.endOfStream = true;
-    }
-    surfSettings.pts = pInfo->pts;
-    surfSettings.ptsValid = true;
-    surfSettings.frameRate = MapOMXFrameRateToNexus(pPortDef->format.video.xFramerate);
-    if (surfSettings.frameRate == NEXUS_VideoFrameRate_eUnknown)
-    {
-        surfSettings.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
-    }
+        NEXUS_VideoImageInputSurfaceSettings surfSettings;
+        const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[0]->GetDefinition();
 
-    ALOGV("Push surface setting: pts:%d, frameRate:%d", surfSettings.pts, surfSettings.frameRate);
+        /* Assign a nexus surface */
+        pInfo->pSurfaceNode = AllocImageSurfaceNode();
+        ALOG_ASSERT(NULL != pInfo->pSurfaceNode);
 
-    if ( 0 == pBufferHeader->nFilledLen && surfSettings.endOfStream)
-    {
-        /* no surface pushed if no data associated with EOS */
-        ALOGV("Push surface:NULL PTS = %d", pInfo->pts);
-        nerr = NEXUS_VideoImageInput_PushSurface(m_hImageInput, NULL, &surfSettings);
-        if (nerr)
+        NEXUS_VideoImageInput_GetDefaultSurfaceSettings(&surfSettings);
+
+        surfSettings.pts = pInfo->pts;
+        surfSettings.ptsValid = true;
+        surfSettings.frameRate = MapOMXFrameRateToNexus(pPortDef->format.video.xFramerate);
+        if (surfSettings.frameRate == NEXUS_VideoFrameRate_eUnknown)
         {
-            FreeImageSurfaceNode(pInfo->pSurfaceNode);
-            ALOGE("Error sending EOS to HW. err = %d", nerr);
-            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+            surfSettings.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
         }
-    }
-    else
-    {
+
+        ALOGV("Push surface setting: pts:%d, frameRate:%d", surfSettings.pts, surfSettings.frameRate);
+
         /* do color format conversion */
         if (!ConvertOMXPixelFormatToCrYCbY(pBufferHeader))
         {
@@ -2244,6 +2236,13 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
             ALOGE("Error Push Surface. err = %d", nerr);
             return BOMX_ERR_TRACE(OMX_ErrorUndefined);
         }
+    }
+
+    // handle EOS
+    if (pBufferHeader->nFlags & OMX_BUFFERFLAG_EOS)
+    {
+        ALOGD("input EOS received");
+        m_bPushEos = true;
     }
 
     pInfo->state = BOMX_VideoEncoderInputBufferState_ePushed;
@@ -2273,10 +2272,23 @@ void BOMX_VideoEncoder::ReturnInputBuffers(bool returnAll)
     {
         BOMX_VideoEncoderInputBufferInfo *pInfo =
             (BOMX_VideoEncoderInputBufferInfo *)pBuffer->GetComponentPrivate();
-        ALOG_ASSERT(NULL != pInfo);
+        OMX_BUFFERHEADERTYPE *pBufferHeader = pBuffer->GetHeader();
 
-        /* release associated surface */
-        if (pInfo->state == BOMX_VideoEncoderInputBufferState_ePushed)
+        ALOG_ASSERT(NULL != pInfo);
+        ALOG_ASSERT(NULL != pBufferHeader);
+
+        // only non-zero length buffer is counted.
+        // zero-length buffer is not pushed, so return them as soon as possible
+        if (pBufferHeader->nFilledLen > 0)
+        {
+            // walk down till next non-zero length buffer
+            if (count++ >= buffersToReturn)
+                break;
+        }
+
+        // release associated surface for non-zero length buffer
+        if (pInfo->state == BOMX_VideoEncoderInputBufferState_ePushed &&
+                pBufferHeader->nFilledLen > 0)
         {
             FreeImageSurfaceNode(pInfo->pSurfaceNode);
         }
@@ -2284,9 +2296,6 @@ void BOMX_VideoEncoder::ReturnInputBuffers(bool returnAll)
         pInfo->state = BOMX_VideoEncoderInputBufferState_eAllocated;
 
         ReturnPortBuffer(m_pVideoPorts[0], pBuffer);
-
-        if (++count >= buffersToReturn)
-            break;
     }
 
     ALOGV("returned %u buffers, %u attempted", count, buffersToReturn);
@@ -2427,7 +2436,8 @@ void BOMX_VideoEncoder::InputBufferProcess()
 
 
         /* ignore the error. In this way, we won't get into busy loop
-         * when encoder FIFO is full.
+         * when encoder FIFO is full. Retry will be triggered after
+         * surface is recycled.
          */
         err = BuildInputFrame(pBufferHeader);
         if ( OMX_ErrorNone == err  )
@@ -2436,7 +2446,17 @@ void BOMX_VideoEncoder::InputBufferProcess()
         }
     }
 
+    // handle EOS
+    if (m_bPushEos)
+    {
+        if (NEXUS_SUCCESS == PushInputEosFrame())
+        {
+            m_bPushEos = false;
+        }
+    }
+
     ALOGV(" %d buffer(s) pushed", nPushed);
+
     if ( nPushed > 0 && m_pVideoPorts[1]->QueueDepth() > 0 )
     {
         /* Force a check for new output frames each time a new input frame
@@ -2931,6 +2951,7 @@ NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
     m_bCodecConfigDone = false;
     m_bEosDelieverd = false;
     m_bEosReceived = false;
+    m_bPushEos = false;
 
     ALOGV("started Nexus encoder");
 
@@ -3340,6 +3361,13 @@ void BOMX_VideoEncoder::ImageBufferProcess()
 
         ReturnInputBuffers(false);
     }
+    // retry if failed to push EOS, or input queue is not empty.
+    if ((m_pVideoPorts[0]->QueueDepth() > 0) || m_bPushEos )
+    {
+        B_Event_Set(m_hInputBufferProcessEvent);
+        ALOGV("trigger input event process for %s", m_bPushEos ? "EOS" : "remaining buffer");
+    }
+
 }
 
 
@@ -3701,7 +3729,7 @@ unsigned int BOMX_VideoEncoder::RetrieveFrameFromHardware()
                 {
                     /* offset,length,flags,dts(90Khz),pts(90Khz),origPts(45Khz),escr(27Mhz),tpb,shr,videoFlags,stcSnapshot,dataUnitType */
                     fprintf(m_pITBDescDumpFile, "%u,%u,0x%08"PRIx32",%"PRIu64",%"PRIu64",%"PRIu32",%"PRIu32",%"PRIu16",%"PRIi16",0x%08"PRIx32",%"PRIu64",%"PRIu8"\n",
-                        pDesc0->offset, pDesc0->length, pDesc0->flags, pDesc0->dts, pDesc0->pts, pDesc0->originalPts, pDesc0->escr, pDesc0->ticksPerBit, pDesc0->shr, pDesc0->videoFlags, pDesc0->stcSnapshot, pDesc0->dataUnitType);
+                            pDesc0->offset, pDesc0->length, pDesc0->flags, pDesc0->dts, pDesc0->pts, pDesc0->originalPts, pDesc0->escr, pDesc0->ticksPerBit, pDesc0->shr, pDesc0->videoFlags, pDesc0->stcSnapshot, pDesc0->dataUnitType);
                 }
                 pEmptyFr->combinedSz += pDesc0->length;
                 pEmptyFr->frameData->add((NEXUS_VideoEncoderDescriptor *) pDesc0);
