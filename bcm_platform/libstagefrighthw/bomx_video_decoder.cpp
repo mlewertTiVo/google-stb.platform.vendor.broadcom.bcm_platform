@@ -1254,10 +1254,14 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 switch ( pProfileLevel->nProfileIndex )
                 {
                 case 0:
-                    pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileMain;
+                    pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileBaseline;
                     pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_AVCLevel42;
                     break;
                 case 1:
+                    pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileMain;
+                    pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_AVCLevel42;
+                    break;
+                case 2:
                     pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileHigh;
                     pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_AVCLevel42;
                     break;
