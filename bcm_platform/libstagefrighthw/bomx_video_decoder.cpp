@@ -49,11 +49,13 @@
 #include "nexus_base_mmap.h"
 #include "nexus_video_decoder.h"
 #include "nexus_core_utils.h"
+#include "bomx_vp9_parser.h"
 
 #define BOMX_INPUT_MSG(x)
 
 // Runtime Properties
 #define B_PROPERTY_PES_DEBUG ("media.brcm.vdec_pes_debug")
+#define B_PROPERTY_INPUT_DEBUG ("media.brcm.vdec_input_debug")
 #define B_PROPERTY_TRIM_VP9 ("ro.nx.trim.vp9")
 #define B_PROPERTY_MMA ("ro.nx.mma")
 
@@ -80,8 +82,12 @@
  *                        This requires 2 descriptors and we can fit a max
  *                        of 65535-3 bytes of payload in each based on
  *                        the 16-bit PES length field.
+ *
+ * For VP9, super-frames can be subdivided into at most 8 frames, each needing
+ * its own PES header / Codec Header / Payload (3 descriptors per subframe).
 *****************************************************************************/
-#define B_MAX_DESCRIPTORS_PER_BUFFER (4+(2*(B_DATA_BUFFER_SIZE/(B_MAX_PES_PACKET_LENGTH-(B_PES_HEADER_LENGTH_WITHOUT_PTS-B_PES_HEADER_START_BYTES)))))
+#define B_MAX_EXTRAFRAMES_PER_BUFFER (7)
+#define B_MAX_DESCRIPTORS_PER_BUFFER (4+(B_MAX_EXTRAFRAMES_PER_BUFFER*3)+(2*(B_DATA_BUFFER_SIZE/(B_MAX_PES_PACKET_LENGTH-(B_PES_HEADER_LENGTH_WITHOUT_PTS-B_PES_HEADER_START_BYTES)))))
 
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
@@ -582,6 +588,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_hAlphaSurface(NULL),
     m_setSurface(false),
     m_pPesFile(NULL),
+    m_pInputFile(NULL),
     m_pEosBuffer(NULL),
     m_eosPending(false),
     m_eosDelivered(false),
@@ -932,8 +939,11 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pBcmvHeader[2] = 'M';
     m_pBcmvHeader[3] = 'V';
 
-    // Setup file to debug PES data packing if required
-    if ( property_get_int32(B_PROPERTY_PES_DEBUG, 0) )
+    int32_t pesDebug, inputDebug;
+    pesDebug = property_get_int32(B_PROPERTY_PES_DEBUG, 0);
+    inputDebug = property_get_int32(B_PROPERTY_INPUT_DEBUG, 0);
+    // Setup file to debug input or PES data packing if required
+    if ( pesDebug || inputDebug )
     {
         time_t rawtime;
         struct tm * timeinfo;
@@ -942,13 +952,27 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         // Generate unique file name
         time(&rawtime);
         timeinfo = localtime(&rawtime);
-        strftime(fname, sizeof(fname), "/data/tombstones/vdec-%F_%H_%M_%S.pes", timeinfo);
-        ALOGD("PES debug output file:%s", fname);
-        m_pPesFile = fopen(fname, "wb+");
-        if ( NULL == m_pPesFile )
+        if ( pesDebug )
         {
-            ALOGW("Error creating PES debug file %s (%s)", fname, strerror(errno));
-            // Just keep going without debug
+            strftime(fname, sizeof(fname), "/data/tombstones/vdec-%F_%H_%M_%S.pes", timeinfo);
+            ALOGD("PES debug output file:%s", fname);
+            m_pPesFile = fopen(fname, "wb+");
+            if ( NULL == m_pPesFile )
+            {
+                ALOGW("Error creating PES debug file %s (%s)", fname, strerror(errno));
+                // Just keep going without debug
+            }
+        }
+        if ( inputDebug )
+        {
+            strftime(fname, sizeof(fname), "/data/tombstones/vdec-%F_%H_%M_%S.input", timeinfo);
+            ALOGD("Input debug output file:%s", fname);
+            m_pInputFile = fopen(fname, "wb+");
+            if ( NULL == m_pInputFile )
+            {
+                ALOGW("Error creating input debug file %s (%s)", fname, strerror(errno));
+                // Just keep going without debug
+            }
         }
     }
 
@@ -989,6 +1013,12 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         fclose(m_pPesFile);
         m_pPesFile = NULL;
+    }
+
+    if ( m_pInputFile )
+    {
+        fclose(m_pInputFile);
+        m_pInputFile = NULL;
     }
 
     if ( m_hSimpleVideoDecoder )
@@ -2383,10 +2413,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddInputPortBuffer(
     headerBufferSize = B_PES_HEADER_LENGTH_WITH_PTS;  // Basic PES header w/PTS.
     switch ( GetCodec() )
     {
-    case OMX_VIDEO_CodingVP8:
     case OMX_VIDEO_CodingVP9:
+        headerBufferSize += (BOMX_BCMV_HEADER_SIZE + B_PES_HEADER_LENGTH_WITH_PTS) * B_MAX_EXTRAFRAMES_PER_BUFFER;  // VP9 requires extra space for a PES+PTS and BCMV header on each sub-frame from a super-frame.
+        // Fall through
+    case OMX_VIDEO_CodingVP8:
         headerBufferSize += BOMX_BCMV_HEADER_SIZE;  // VP8/VP9 require space for a BCMV header on each frame.
-        break;
     default:
         break;
     }
@@ -3034,6 +3065,8 @@ static void SetPesPayloadLength(uint8_t *pPesStart, size_t payloadLength)
 
 OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     OMX_BUFFERHEADERTYPE *pBufferHeader,
+    bool first,
+    unsigned chunkLength,
     uint32_t pts,
     void *pCodecHeader,
     size_t codecHeaderLength,
@@ -3044,6 +3077,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
 {
     BOMX_Buffer *pBuffer;
     BOMX_VideoDecoderInputBufferInfo *pInfo;
+    size_t headerBytes;
     size_t bufferBytesRemaining;
     unsigned numDescriptors = 0;
     size_t chunkBytesAvailable;
@@ -3064,7 +3098,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     pInfo = (BOMX_VideoDecoderInputBufferInfo *)pBuffer->GetComponentPrivate();
     ALOG_ASSERT(NULL != pInfo);
 
-    bufferBytesRemaining = pBufferHeader->nFilledLen;
+    bufferBytesRemaining = chunkLength;
+
+    ALOGV("Input Frame Offset %u, Length %u, PTS %#x first=%d", pBufferHeader->nOffset, chunkLength, pts, first ? 1 : 0);
 
     if ( maxDescriptors < 4 )
     {
@@ -3086,22 +3122,28 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
         pPayload = pBufferHeader->pBuffer + pBufferHeader->nOffset;
     }
 
-    // Flush data cache for frame payload
-    if ( !m_secureDecoder && bufferBytesRemaining > 0 )
+    // If this is the first frame, reset header length and flush data cache
+    if ( first )
     {
-        NEXUS_FlushCache(pPayload, bufferBytesRemaining);
+        pInfo->headerLen = 0;
+        // Flush data cache for frame payload
+        if ( !m_secureDecoder && pBufferHeader->nFilledLen > 0 )
+        {
+            NEXUS_FlushCache(pPayload, pBufferHeader->nFilledLen);
+        }
     }
 
     // Begin first PES packet
-    pPesHeader = (uint8_t *)pInfo->pHeader;
-    pInfo->headerLen = InitPesHeader(pPesHeader, pInfo->maxHeaderLen, B_STREAM_ID, true, pts);
-    if ( 0 == pInfo->headerLen )
+    pPesHeader = ((uint8_t *)pInfo->pHeader)+pInfo->headerLen;
+    headerBytes = InitPesHeader(pPesHeader, (pInfo->maxHeaderLen-pInfo->headerLen), B_STREAM_ID, true, pts);
+    if ( 0 == headerBytes )
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
-    chunkBytesAvailable = B_MAX_PES_PACKET_LENGTH-(pInfo->headerLen-B_PES_HEADER_START_BYTES);  /* Max PES length - bytes used in header that affect packet length field */
-    pDescriptors[0].addr = pInfo->pHeader;
-    pDescriptors[0].length = pInfo->headerLen;
+    pInfo->headerLen += headerBytes;
+    chunkBytesAvailable = B_MAX_PES_PACKET_LENGTH-(headerBytes-B_PES_HEADER_START_BYTES);  /* Max PES length - bytes used in header that affect packet length field */
+    pDescriptors[0].addr = pPesHeader;
+    pDescriptors[0].length = headerBytes;
     numDescriptors = 1;
 
     // Add codec config if required
@@ -3156,8 +3198,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     // write as much data as we can in each one.
     while ( bufferBytesRemaining > 0 )
     {
-        size_t pesHeaderLength;
-
         if ( maxDescriptors - numDescriptors < 2 )
         {
             ALOGE("Insufficient descriptors available");
@@ -3167,16 +3207,16 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
 
         // PES Header
         pPesHeader = (uint8_t *)pInfo->pHeader + pInfo->headerLen;
-        pesHeaderLength = InitPesHeader(pPesHeader, pInfo->maxHeaderLen-pInfo->headerLen, B_STREAM_ID, false, 0);
-        if ( 0 == pesHeaderLength )
+        headerBytes = InitPesHeader(pPesHeader, pInfo->maxHeaderLen-pInfo->headerLen, B_STREAM_ID, false, 0);
+        if ( 0 == headerBytes )
         {
             if ( configSubmitted ) { m_configBufferState = ConfigBufferState_eAccumulating; }
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
-        pInfo->headerLen += pesHeaderLength;
-        chunkBytesAvailable = B_MAX_PES_PACKET_LENGTH-(pesHeaderLength-B_PES_HEADER_START_BYTES);
+        pInfo->headerLen += headerBytes;
+        chunkBytesAvailable = B_MAX_PES_PACKET_LENGTH-(headerBytes-B_PES_HEADER_START_BYTES);
         pDescriptors[numDescriptors].addr = pPesHeader;
-        pDescriptors[numDescriptors].length = pesHeaderLength;
+        pDescriptors[numDescriptors].length = headerBytes;
         numDescriptors++;
 
         // Payload
@@ -3198,11 +3238,46 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
         SetPesPayloadLength(pPesHeader, B_MAX_PES_PACKET_LENGTH-chunkBytesAvailable);
     }
 
-    // Finally, flush header buffer now that we know how many bytes we've used
-    NEXUS_FlushCache(pInfo->pHeader, pInfo->headerLen);
+    // Update buffer descriptor with amount consumed
+    pBuffer->UpdateBuffer(chunkLength);
+
+    // Finally, flush header buffer
+    NEXUS_FlushCache(pInfo->pHeader, pInfo->maxHeaderLen);
 
     *pNumDescriptors = numDescriptors;
     return OMX_ErrorNone;
+}
+
+struct InputBufferHeader
+{
+    char tag[4];
+    uint32_t length; // not including header
+    uint32_t flags;
+    uint32_t timeHi;
+    uint32_t timeLo;
+    uint32_t pad[3];
+};
+
+void BOMX_VideoDecoder::DumpInputBuffer(OMX_BUFFERHEADERTYPE *pHeader)
+{
+    InputBufferHeader hdr;
+    ALOG_ASSERT(NULL != pHeader);
+
+    if ( NULL == m_pInputFile || m_secureDecoder )
+        return;
+
+    hdr.tag[0] = 'O';
+    hdr.tag[1] = 'M';
+    hdr.tag[2] = 'X';
+    hdr.tag[3] = 'I';
+    hdr.flags = pHeader->nFlags;
+    hdr.length = pHeader->nFilledLen;
+    hdr.timeHi = (uint32_t)(pHeader->nTimeStamp >> 32);
+    hdr.timeLo = (uint32_t)(pHeader->nTimeStamp);
+    hdr.pad[0] = hdr.pad[1] = hdr.pad[2] = 0;
+
+    fwrite(&hdr, sizeof(hdr), 1, m_pInputFile);
+    fwrite(pHeader->pBuffer + pHeader->nOffset, pHeader->nFilledLen, 1, m_pInputFile);
 }
 
 OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
@@ -3218,6 +3293,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     size_t numConsumed, numRequested;
     uint8_t *pCodecHeader = NULL;
     size_t codecHeaderLength = 0;
+    unsigned frame, numFrames=1;
+    uint32_t frameLength[B_MAX_EXTRAFRAMES_PER_BUFFER+1];
+    frameLength[0] = pBufferHeader->nFilledLen;
 
     if ( NULL == pBufferHeader )
     {
@@ -3247,6 +3325,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
 
     ALOGV("%s, comp:%s, buff:%p len:%d ts:%d flags:0x%x", __FUNCTION__, GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, (int)pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
     BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::INPUT_FRAME, pBufferHeader->nTimeStamp, pBufferHeader->nFlags, pBufferHeader->nFilledLen);
+
+    if ( m_pInputFile )
+    {
+        DumpInputBuffer(pBufferHeader);
+    }
+
     if ( pBufferHeader->nFlags & OMX_BUFFERFLAG_CODECCONFIG )
     {
         if ( m_configBufferState != ConfigBufferState_eAccumulating )
@@ -3278,30 +3362,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
 
     // If we get here, we have an actual frame to send.
 
-    // Create codec-specific header if required
-    switch ( (int)GetCodec() )
-    {
-    case OMX_VIDEO_CodingVP8:
-    case OMX_VIDEO_CodingVP9:
-    /* Also true for spark and possibly other codecs */
-    {
-        uint32_t packetLen = pBufferHeader->nFilledLen;
-        if ( packetLen > 0 )
-        {
-            pCodecHeader = m_pBcmvHeader;
-            codecHeaderLength = BOMX_BCMV_HEADER_SIZE;
-            packetLen += codecHeaderLength;   // BCMV packet length must include BCMV header
-            pCodecHeader[4] = (packetLen>>24)&0xff;
-            pCodecHeader[5] = (packetLen>>16)&0xff;
-            pCodecHeader[6] = (packetLen>>8)&0xff;
-            pCodecHeader[7] = (packetLen>>0)&0xff;
-        }
-        break;
-    }
-    default:
-        break;
-    }
-
     if ( pBufferHeader->nFilledLen > 0 )
     {
         // Track the buffer
@@ -3311,40 +3371,100 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
             pInfo->pts = BOMX_TickToPts(&pBufferHeader->nTimeStamp);
         }
 
-        // Build up descriptor list
-        err = BuildInputFrame(pBufferHeader, pInfo->pts, pCodecHeader, codecHeaderLength, desc, B_MAX_DESCRIPTORS_PER_BUFFER, &numRequested);
-        if ( err != OMX_ErrorNone )
+        // For VP9, identify the number of frames
+        if ( (int)GetCodec() == OMX_VIDEO_CodingVP9 && !m_secureDecoder )
         {
-            return BOMX_ERR_TRACE(err);
+            BOMX_Vp9_ParseSuperframe(pBufferHeader->pBuffer + pBufferHeader->nOffset, pBufferHeader->nFilledLen, frameLength, &numFrames);
+            if ( numFrames == 0 )
+            {
+                numFrames = 1;
+                frameLength[0] = pBufferHeader->nFilledLen;
+            }
         }
 
-        if ( numRequested > 0 )
+        for ( frame = 0; frame < numFrames; frame++ )
         {
-            // Log data to file if requested
-            if ( NULL != m_pPesFile )
+            switch ( (int)GetCodec() )
             {
-                unsigned i;
-                for ( i = 0; i < numRequested; i++ )
+            case OMX_VIDEO_CodingVP8:
+            case OMX_VIDEO_CodingVP9:
+            /* Also true for spark and possibly other codecs */
+            {
+                uint32_t packetLen = frameLength[frame];
+                if ( packetLen > 0 )
                 {
-                    fwrite(desc[i].addr, 1, desc[i].length, m_pPesFile);
+                    pCodecHeader = m_pBcmvHeader;
+                    codecHeaderLength = BOMX_BCMV_HEADER_SIZE;
+                    packetLen += codecHeaderLength;   // BCMV packet length must include BCMV header
+                    pCodecHeader[4] = (packetLen>>24)&0xff;
+                    pCodecHeader[5] = (packetLen>>16)&0xff;
+                    pCodecHeader[6] = (packetLen>>8)&0xff;
+                    pCodecHeader[7] = (packetLen>>0)&0xff;
                 }
+                break;
+            }
+            default:
+                break;
             }
 
-            // Submit to playpump
-            errCode = NEXUS_Playpump_SubmitScatterGatherDescriptor(m_hPlaypump, desc, numRequested, &numConsumed);
-            if ( errCode )
-            {
-                return BOMX_ERR_TRACE(OMX_ErrorUndefined);
-            }
-            ALOG_ASSERT(numConsumed == numRequested);
-            pInfo->numDescriptors += numRequested;
-            m_submittedDescriptors += numConsumed;
-            InputBufferNew();
-            err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
-            if ( err )
+            // Build up descriptor list
+            err = BuildInputFrame(pBufferHeader, (frame == 0), frameLength[frame], pInfo->pts, pCodecHeader, codecHeaderLength, desc, B_MAX_DESCRIPTORS_PER_BUFFER, &numRequested);            
+            if ( err != OMX_ErrorNone )
             {
                 return BOMX_ERR_TRACE(err);
             }
+            ALOG_ASSERT(numRequested <= B_MAX_DESCRIPTORS_PER_BUFFER);
+
+            if ( numRequested > 0 )
+            {
+                unsigned i;
+                // Log data to file if requested
+                if ( NULL != m_pPesFile )
+                {
+                    for ( i = 0; i < numRequested; i++ )
+                    {
+                        fwrite(desc[i].addr, 1, desc[i].length, m_pPesFile);
+                    }
+                }
+                for ( i = 0; i < numRequested; i++ )
+                {
+                    unsigned j;
+                    for ( j = 0; j < numRequested; j++ )
+                    {
+                        if ( i == j ) continue;
+
+                        // Check for overlap
+                        if ( desc[i].addr == desc[j].addr )
+                        {
+                            ALOGE("Error, desc %u and %u share the same address", i, j);
+                        }
+                        else if ( desc[i].addr < desc[j].addr && (uint8_t *)desc[i].addr + desc[i].length > desc[j].addr )
+                        {
+                            ALOGE("Error, desc %u intrudes in to desc %u", i, j);
+                        }
+                        else if ( desc[j].addr < desc[i].addr && (uint8_t *)desc[j].addr + desc[j].length > desc[i].addr )
+                        {
+                            ALOGE("Error, desc %u intrudes into desc %u", j, i);
+                        }
+                    }
+                }
+
+                // Submit to playpump
+                errCode = NEXUS_Playpump_SubmitScatterGatherDescriptor(m_hPlaypump, desc, numRequested, &numConsumed);
+                if ( errCode )
+                {
+                    return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+                }
+                ALOG_ASSERT(numConsumed == numRequested);
+                pInfo->numDescriptors += numRequested;
+                m_submittedDescriptors += numConsumed;
+            }
+        }
+        InputBufferNew();
+        err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
+        if ( err )
+        {
+            return BOMX_ERR_TRACE(err);
         }
     }
     else
