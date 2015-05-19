@@ -1153,7 +1153,13 @@ NEXUS_Error BOMX_VideoEncoder::SetInputPortState(OMX_STATETYPE newState)
             else
             {
                 // Idle -> Executing = Start
-                StartEncoder();
+                errCode = StartEncoder();
+                if (errCode)
+                {
+                    StopEncoder(); // Encoder might be partially started
+                    ReleaseEncoderResource();
+                    return BOMX_BERR_TRACE(errCode);
+                }
                 // kick off the encoded frame polling
                 if ( m_pVideoPorts[1]->IsEnabled() )
                 {
