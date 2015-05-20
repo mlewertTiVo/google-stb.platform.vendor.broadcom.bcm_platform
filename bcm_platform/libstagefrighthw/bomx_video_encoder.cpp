@@ -41,7 +41,6 @@
 #define LOG_TAG "bomx_video_encoder"
 
 #include <cutils/log.h>
-#include "bioatom.h"
 
 #include "bomx_video_encoder.h"
 #include "nexus_platform.h"
@@ -2546,8 +2545,6 @@ void BOMX_VideoEncoder::PollEncodedFrames()
 
     while (pNxVidEncFr)
     {
-        batom_cursor BatomCursor;
-        batom_vec BatomVector[VIDEO_ENCODE_DEPTH];
         BOMX_Buffer *pOmxBuffer = m_pVideoPorts[1]->GetBuffer();
 
         if ( NULL == pOmxBuffer )
@@ -2558,6 +2555,25 @@ void BOMX_VideoEncoder::PollEncodedFrames()
         m_EncodedFrListLen--;
 
         BDBG_ASSERT(pNxVidEncFr->baseAddr);
+
+        unsigned int NumVectors = pNxVidEncFr->frameData->size();
+        unsigned int TotalLen = 0;
+        for (unsigned int i = 0; i < NumVectors; i++)
+        {
+            NEXUS_VideoEncoderDescriptor * pVidEncOut = pNxVidEncFr->frameData->editItemAt(i);
+            BDBG_ASSERT(pVidEncOut);
+            TotalLen += pVidEncOut->length;
+        }
+        if (pNxVidEncFr->combinedSz != TotalLen)
+        {
+            ALOGE("Length mismatch in the frame descriptors %d != %d", pNxVidEncFr->combinedSz, TotalLen);
+            VideoEncoderBufferBlock_Unlock();
+            ResetEncodedFrameList();
+            ReturnEncodedFrameSynchronized(pNxVidEncFr);
+            /* notify the client */
+            NotifyOutputPortSettingsChanged();
+            return;
+        }
 
         if (pNxVidEncFr->combinedSz > pHeader->nAllocLen)
         {
@@ -2570,50 +2586,16 @@ void BOMX_VideoEncoder::PollEncodedFrames()
             return;
         }
 
-        unsigned int NumVectors = pNxVidEncFr->frameData->size();
-
-        BDBG_ASSERT(NumVectors <= VIDEO_ENCODE_DEPTH);
-
+        OMX_U8 *pDest = pHeader->pBuffer;
         for (unsigned int i = 0; i < NumVectors; i++)
         {
             NEXUS_VideoEncoderDescriptor * pVidEncOut = pNxVidEncFr->frameData->editItemAt(i);
             BDBG_ASSERT(pVidEncOut);
 
-
-            batom_vec_init(&BatomVector[i],
-                           (void *)(pNxVidEncFr->baseAddr + pVidEncOut->offset),
-                           pVidEncOut->length);
-        }
-
-        batom_cursor_from_vec(&BatomCursor, BatomVector, NumVectors);
-        unsigned int SizeToCopy = batom_cursor_size(&BatomCursor);
-
-
-        if (SizeToCopy > pHeader->nAllocLen)
-        {
-            ALOGE("Input Buffer Sz [%d] Not Enough To Hold Encoded Video Data [Sz:%d]",
-                  pHeader->nAllocLen,SizeToCopy);
-
-            ResetEncodedFrameList();
-            ReturnEncodedFrameSynchronized(pNxVidEncFr);
-            VideoEncoderBufferBlock_Unlock();
-            /* notify the client */
-            NotifyOutputPortSettingsChanged();
-            return;
-        }
-
-        unsigned int CopiedSz=0;
-
-        CopiedSz =  batom_cursor_copy(&BatomCursor, pHeader->pBuffer, SizeToCopy);
-
-        if (CopiedSz != SizeToCopy)
-        {
-            ALOGE("Cursor Copy Error Requested Size %d != Copied Sz:%d",
-                  SizeToCopy,CopiedSz);
-            ResetEncodedFrameList();
-            ReturnEncodedFrameSynchronized(pNxVidEncFr);
-            VideoEncoderBufferBlock_Unlock();
-            return;
+            BKNI_Memcpy(pDest,
+                    (void *)(pNxVidEncFr->baseAddr + pVidEncOut->offset),
+                    pVidEncOut->length);
+            pDest += pVidEncOut->length;
         }
 
         ALOGV("PTS: Fr:%p - origin ts:%llu flags:%x",  pNxVidEncFr, pNxVidEncFr->usTimeStampOriginal, pNxVidEncFr->clientFlags);
@@ -2637,7 +2619,7 @@ void BOMX_VideoEncoder::PollEncodedFrames()
         }
 
         pHeader->nFlags = pNxVidEncFr->clientFlags;
-        pHeader->nFilledLen = SizeToCopy;
+        pHeader->nFilledLen = pNxVidEncFr->combinedSz;
 
         /* return frame buffer */
         ReturnEncodedFrameSynchronized(pNxVidEncFr);
