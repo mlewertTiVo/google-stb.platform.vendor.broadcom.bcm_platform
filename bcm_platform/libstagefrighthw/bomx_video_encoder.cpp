@@ -55,7 +55,7 @@
 #define B_PROPERTY_ITB_DESC_DEBUG ("media.brcm.venc_itb_desc_debug")
 
 #define B_NUM_OF_OUT_BUFFERS (10)
-#define B_NUM_OF_IN_BUFFERS (5)
+#define B_NUM_OF_IN_BUFFERS (8)
 
 #define B_HW_ENCODER_POLL_INTERVAL (20)
 
@@ -66,6 +66,7 @@
 #define NAL_UNIT_TYPE_PPS  8
 
 #define VIDEO_ENCODE_DEPTH 16
+#define VIDEO_ENCODE_IMAGEINPUT_DEPTH 8
 
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
@@ -261,7 +262,8 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_hSimpleEncoder(NULL),
     m_hStcChannel(NULL),
     m_hImageInput(NULL),
-    m_numImageSurfaces(0),
+    m_nImageSurfaceFreeListLen(0),
+    m_nImageSurfacePushedListLen(0),
     m_bSimpleEncoderStarted(false),
     m_EmptyFrListLen(0),
     m_EncodedFrListLen(0),
@@ -295,7 +297,8 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     OMX_VIDEO_PORTDEFINITIONTYPE portDefs;
     OMX_VIDEO_PARAM_PORTFORMATTYPE portFormats[MAX_PORT_FORMATS];
 
-    BLST_Q_INIT(&m_ImageSurfaceList);
+    BLST_Q_INIT(&m_ImageSurfaceFreeList);
+    BLST_Q_INIT(&m_ImageSurfacePushedList);
     BLST_Q_INIT(&m_EmptyFrList);
     BLST_Q_INIT(&m_EncodedFrList);
 
@@ -2042,12 +2045,6 @@ OMX_ERRORTYPE BOMX_VideoEncoder::FreeBuffer(
             break;
         }
 
-        /* check if surface node is released */
-        if ( NULL != pInfo->pSurfaceNode )
-        {
-            ALOGE("Surface node is not released");
-            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-        }
         delete pInfo;
 
     }
@@ -2132,15 +2129,6 @@ OMX_ERRORTYPE BOMX_VideoEncoder::EmptyThisBuffer(
 
     ALOGV("PTS: ts:%llu - pts:%lu", pBufferHeader->nTimeStamp, pInfo->pts);
 
-    // set buffer state
-    pInfo->state = BOMX_VideoEncoderInputBufferState_eQueued;
-
-    // sanity check
-    if (pInfo->pSurfaceNode)
-    {
-        ALOGE("still hold a surface node: %p", pInfo->pSurfaceNode);
-    }
-
     /* queue the buffer */
     err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
     if ( err )
@@ -2210,12 +2198,17 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
 
     if (pBufferHeader->nFilledLen)
     {
+        BOMX_ImageSurfaceNode *pNode;
         NEXUS_VideoImageInputSurfaceSettings surfSettings;
         const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[0]->GetDefinition();
 
-        /* Assign a nexus surface */
-        pInfo->pSurfaceNode = AllocImageSurfaceNode();
-        ALOG_ASSERT(NULL != pInfo->pSurfaceNode);
+        /* allocate an image input surface */
+        pNode = BLST_Q_FIRST(&m_ImageSurfaceFreeList);
+        if (NULL == pNode)
+        {
+            ALOGV("no image surface is available");
+            return OMX_ErrorInsufficientResources;
+        }
 
         NEXUS_VideoImageInput_GetDefaultSurfaceSettings(&surfSettings);
 
@@ -2230,31 +2223,38 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
         ALOGV("Push surface setting: pts:%d, frameRate:%d", surfSettings.pts, surfSettings.frameRate);
 
         /* do color format conversion */
-        if (!ConvertOMXPixelFormatToCrYCbY(pBufferHeader))
+        if (!ConvertOMXPixelFormatToCrYCbY(pBufferHeader, pNode->hSurface))
         {
-            FreeImageSurfaceNode(pInfo->pSurfaceNode);
             ALOGE("Error converting colour format");
             return BOMX_ERR_TRACE(OMX_ErrorUndefined);
         }
 
-        ALOGV("Push surface:%p PTS = %d", pInfo->pSurfaceNode->hSurface, pInfo->pts);
-        nerr = NEXUS_VideoImageInput_PushSurface(m_hImageInput, pInfo->pSurfaceNode->hSurface, &surfSettings);
+        ALOGV("Push surface:%p PTS = %d", pNode->hSurface, pInfo->pts);
+        nerr = NEXUS_VideoImageInput_PushSurface(m_hImageInput, pNode->hSurface, &surfSettings);
         if (nerr)
         {
-            FreeImageSurfaceNode(pInfo->pSurfaceNode);
             ALOGE("Error Push Surface. err = %d", nerr);
             return BOMX_ERR_TRACE(OMX_ErrorUndefined);
         }
+        // add the image input surface to pushed list
+        BLST_Q_REMOVE_HEAD(&m_ImageSurfaceFreeList, node);
+        ALOG_ASSERT(m_nImageSurfaceFreeListLen > 0);
+        m_nImageSurfaceFreeListLen--;
+        BLST_Q_INSERT_TAIL(&m_ImageSurfacePushedList, pNode, node);
+        m_nImageSurfacePushedListLen++;
     }
 
     // handle EOS
     if (pBufferHeader->nFlags & OMX_BUFFERFLAG_EOS)
     {
         ALOGD("input EOS received");
-        m_bPushEos = true;
+        if (NEXUS_SUCCESS != PushInputEosFrame())
+        {
+            m_bPushEos = true;
+        }
     }
 
-    pInfo->state = BOMX_VideoEncoderInputBufferState_ePushed;
+    ReturnPortBuffer(m_pVideoPorts[0], pBuffer);
 
     return OMX_ErrorNone;
 }
@@ -2285,24 +2285,6 @@ void BOMX_VideoEncoder::ReturnInputBuffers(bool returnAll)
 
         ALOG_ASSERT(NULL != pInfo);
         ALOG_ASSERT(NULL != pBufferHeader);
-
-        // only non-zero length buffer is counted.
-        // zero-length buffer is not pushed, so return them as soon as possible
-        if (pBufferHeader->nFilledLen > 0)
-        {
-            // walk down till next non-zero length buffer
-            if (count++ >= buffersToReturn)
-                break;
-        }
-
-        // release associated surface for non-zero length buffer
-        if (pInfo->state == BOMX_VideoEncoderInputBufferState_ePushed &&
-                pBufferHeader->nFilledLen > 0)
-        {
-            FreeImageSurfaceNode(pInfo->pSurfaceNode);
-        }
-        pInfo->pSurfaceNode = NULL;
-        pInfo->state = BOMX_VideoEncoderInputBufferState_eAllocated;
 
         ReturnPortBuffer(m_pVideoPorts[0], pBuffer);
     }
@@ -2440,10 +2422,6 @@ void BOMX_VideoEncoder::InputBufferProcess()
         OMX_BUFFERHEADERTYPE *pBufferHeader = pBuffer->GetHeader();
         OMX_ERRORTYPE err;
 
-        if (pInfo->state == BOMX_VideoEncoderInputBufferState_ePushed)
-            continue;
-
-
         /* ignore the error. In this way, we won't get into busy loop
          * when encoder FIFO is full. Retry will be triggered after
          * surface is recycled.
@@ -2452,6 +2430,10 @@ void BOMX_VideoEncoder::InputBufferProcess()
         if ( OMX_ErrorNone == err  )
         {
             nPushed++;
+        }
+        else
+        {
+            break;
         }
     }
 
@@ -2593,8 +2575,8 @@ void BOMX_VideoEncoder::PollEncodedFrames()
             BDBG_ASSERT(pVidEncOut);
 
             BKNI_Memcpy(pDest,
-                    (void *)(pNxVidEncFr->baseAddr + pVidEncOut->offset),
-                    pVidEncOut->length);
+                        (void *)(pNxVidEncFr->baseAddr + pVidEncOut->offset),
+                        pVidEncOut->length);
             pDest += pVidEncOut->length;
         }
 
@@ -2641,12 +2623,11 @@ bool BOMX_VideoEncoder::IsEncoderStarted()
     return m_bSimpleEncoderStarted;
 }
 
-bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInBufHdr)
+bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInBufHdr, NEXUS_SurfaceHandle hDst)
 {
     const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[0]->GetDefinition();
     BOMX_Buffer *pBomxBuffer = BOMX_BUFFERHEADER_TO_BUFFER(pInBufHdr);
     BOMX_VideoEncoderInputBufferInfo *pInfo = (BOMX_VideoEncoderInputBufferInfo*)pBomxBuffer->GetComponentPrivate();
-    NEXUS_SurfaceHandle hDst = pInfo->pSurfaceNode->hSurface;
     bool bRet = true;
 
     if (pInfo->type == BOMX_VideoEncoderInputBufferType_eStandard)
@@ -3011,7 +2992,7 @@ NEXUS_Error BOMX_VideoEncoder::StartInput()
           surfaceCfg.width, surfaceCfg.height, surfaceCfg.pixelFormat);
 
     BOMX_ImageSurfaceNode *pNode;
-    for (unsigned int i = 0; i < pPortDef->nBufferCountActual; i++)
+    for (unsigned int i = 0; i < VIDEO_ENCODE_IMAGEINPUT_DEPTH; i++)
     {
         pNode = new BOMX_ImageSurfaceNode;
         if ( NULL == pNode )
@@ -3028,11 +3009,11 @@ NEXUS_Error BOMX_VideoEncoder::StartInput()
             return BOMX_BERR_TRACE(BERR_UNKNOWN);
         }
 
-        BLST_Q_INSERT_TAIL(&m_ImageSurfaceList, pNode, node);
-        m_numImageSurfaces++;
+        BLST_Q_INSERT_TAIL(&m_ImageSurfaceFreeList, pNode, node);
+        m_nImageSurfaceFreeListLen++;
 
     }
-    ALOGV("%d Nexus surfaces created", m_numImageSurfaces);
+    ALOGV("%d Nexus surfaces created", m_nImageSurfaceFreeListLen);
 
     /* add call back function */
     NEXUS_VideoImageInput_GetSettings(m_hImageInput, &imageInputSetting);
@@ -3223,46 +3204,31 @@ NEXUS_Error BOMX_VideoEncoder::StartEncoder()
     return NEXUS_SUCCESS;
 }
 
-
-
-BOMX_ImageSurfaceNode *BOMX_VideoEncoder::AllocImageSurfaceNode()
-{
-    BOMX_ImageSurfaceNode *pNode;
-
-    pNode = BLST_Q_FIRST(&m_ImageSurfaceList);
-    ALOG_ASSERT(NULL != pNode);
-    ALOG_ASSERT(NULL != pNode->hSurface);
-
-    BLST_Q_REMOVE_HEAD(&m_ImageSurfaceList, node);
-    ALOG_ASSERT(m_numImageSurfaces > 0);
-    m_numImageSurfaces--;
-    return pNode;
-}
-
-void BOMX_VideoEncoder::FreeImageSurfaceNode(BOMX_ImageSurfaceNode *pNode)
-{
-    ALOG_ASSERT(NULL != pNode);
-    ALOG_ASSERT(NULL != pNode->hSurface);
-
-    BLST_Q_INSERT_TAIL(&m_ImageSurfaceList, pNode, node);
-    m_numImageSurfaces++;
-    return;
-}
-
 void BOMX_VideoEncoder::DestroyImageSurfaces()
 {
     BOMX_ImageSurfaceNode *pNode;
 
-    while ( (pNode = BLST_Q_FIRST(&m_ImageSurfaceList)) )
+    while ( (pNode = BLST_Q_FIRST(&m_ImageSurfaceFreeList)) )
     {
-        BLST_Q_REMOVE_HEAD(&m_ImageSurfaceList, node);
+        BLST_Q_REMOVE_HEAD(&m_ImageSurfaceFreeList, node);
         if ( pNode->hSurface )
         {
             NEXUS_Surface_Destroy(pNode->hSurface);
         }
         delete pNode;
     }
-    m_numImageSurfaces = 0;
+    m_nImageSurfaceFreeListLen = 0;
+
+    while ( (pNode = BLST_Q_FIRST(&m_ImageSurfacePushedList)) )
+    {
+        BLST_Q_REMOVE_HEAD(&m_ImageSurfacePushedList, node);
+        if ( pNode->hSurface )
+        {
+            NEXUS_Surface_Destroy(pNode->hSurface);
+        }
+        delete pNode;
+    }
+    m_nImageSurfacePushedListLen = 0;
 }
 
 
@@ -3342,16 +3308,20 @@ void BOMX_VideoEncoder::ImageBufferProcess()
 
     for (unsigned i = 0; i < num_entries; i++)
     {
-        BOMX_Buffer *pBuffer = m_pVideoPorts[0]->GetBuffer();
-        ALOG_ASSERT(NULL != pBuffer);
-        BOMX_VideoEncoderInputBufferInfo *pInfo =
-            (BOMX_VideoEncoderInputBufferInfo *)pBuffer->GetComponentPrivate();
-        ALOG_ASSERT(NULL != pInfo);
+        BOMX_ImageSurfaceNode *pNode;
+        pNode = BLST_Q_FIRST(&m_ImageSurfacePushedList);
+        ALOG_ASSERT(NULL != pNode);
 
-        ALOGV("pBuffer=%p, hFreeSurface=%p, pInfo->pSurfaceNode->hSurface = %p",  pBuffer, hFreeSurface[i], pInfo->pSurfaceNode->hSurface);
-        ALOG_ASSERT(hFreeSurface[i] == pInfo->pSurfaceNode->hSurface);
+        ALOGV("pNode=%p, pNode->hSurface = %p, hFreeSurface=%p",  pNode, pNode->hSurface, hFreeSurface[i]);
+        ALOG_ASSERT(hFreeSurface[i] == pNode->hSurface);
 
-        ReturnInputBuffers(false);
+        // remove recycled image surface from pushed list and put it back to free list
+        BLST_Q_REMOVE_HEAD(&m_ImageSurfacePushedList, node);
+        ALOG_ASSERT(m_nImageSurfacePushedListLen > 0);
+        m_nImageSurfacePushedListLen--;
+        BLST_Q_INSERT_TAIL(&m_ImageSurfaceFreeList, pNode, node);
+        m_nImageSurfaceFreeListLen++;
+
     }
     // retry if failed to push EOS, or input queue is not empty.
     if ((m_pVideoPorts[0]->QueueDepth() > 0) || m_bPushEos )

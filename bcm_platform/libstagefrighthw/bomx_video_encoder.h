@@ -100,19 +100,9 @@ enum BOMX_VideoEncoderInputBufferType
     BOMX_VideoEncoderInputBufferType_eMax
 };
 
-enum BOMX_VideoEncoderInputBufferState
-{
-    BOMX_VideoEncoderInputBufferState_eAllocated, // own by client
-    BOMX_VideoEncoderInputBufferState_eQueued, // own by encoder, but not pushed yet
-    BOMX_VideoEncoderInputBufferState_ePushed, // own by encoder and pushed to HW
-    BOMX_VideoEncoderInputBufferState_eMax
-};
-
 struct BOMX_VideoEncoderInputBufferInfo
 {
-    BOMX_ImageSurfaceNode *pSurfaceNode; // Associated Surface handle
     uint32_t pts; // PTS for this input buffer
-    BOMX_VideoEncoderInputBufferState state; // buffer state
     BOMX_VideoEncoderInputBufferType type; // buffer type
     union
     {
@@ -243,8 +233,10 @@ protected:
     NEXUS_SimpleEncoderHandle       m_hSimpleEncoder;
     NEXUS_SimpleStcChannelHandle    m_hStcChannel;
     NEXUS_VideoImageInputHandle     m_hImageInput;
-    BLST_Q_HEAD(BOMX_ImageSurfaceList,  BOMX_ImageSurfaceNode) m_ImageSurfaceList;
-    unsigned m_numImageSurfaces;
+    BLST_Q_HEAD(BOMX_ImageSurfaceFreeList,  BOMX_ImageSurfaceNode) m_ImageSurfaceFreeList;
+    BLST_Q_HEAD(BOMX_ImageSurfacePushedList,  BOMX_ImageSurfaceNode) m_ImageSurfacePushedList;
+    unsigned m_nImageSurfaceFreeListLen;
+    unsigned m_nImageSurfacePushedListLen;
 
     bool m_bSimpleEncoderStarted;
     bool m_bCodecConfigDone;
@@ -338,8 +330,6 @@ protected:
     NEXUS_Error AllocateEncoderResource();
     void ReleaseEncoderResource();
     NEXUS_Error StartEncoder();
-    BOMX_ImageSurfaceNode* AllocImageSurfaceNode();
-    void FreeImageSurfaceNode(BOMX_ImageSurfaceNode *pNode);
     void DestroyImageSurfaces();
     NEXUS_VideoFrameRate MapOMXFrameRateToNexus(OMX_U32);
     unsigned int RetrieveFrameFromHardware();
@@ -368,7 +358,7 @@ protected:
 
 
 
-    bool ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInBufHdr);
+    bool ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *, NEXUS_SurfaceHandle);
     bool GetCodecConfig( const NEXUS_VideoEncoderDescriptor *, size_t , const NEXUS_VideoEncoderDescriptor *, size_t );
     bool HaveCompleteFrame( const NEXUS_VideoEncoderDescriptor *, size_t, const NEXUS_VideoEncoderDescriptor *, size_t, size_t *);
 
