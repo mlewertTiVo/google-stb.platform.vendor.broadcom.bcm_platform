@@ -59,7 +59,7 @@ LOCAL_SRC_FILES := \
 LOCAL_C_INCLUDES := \
     $(TOP)/bionic \
     $(TOP)/external/stlport/stlport \
-    $(TOP)/external/openssl/include \
+    $(TOP)/external/boringssl/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21/test_sage/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21/core/include \

@@ -44,7 +44,7 @@ LOCAL_SRC_FILES := \
 LOCAL_C_INCLUDES := \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/include \
-    $(TOP)/external/openssl/include \
+    $(TOP)/external/boringssl/include \
     $(NEXUS_APP_INCLUDE_PATHS)
 
 LOCAL_CFLAGS += -DPIC -fpic -DANDROID

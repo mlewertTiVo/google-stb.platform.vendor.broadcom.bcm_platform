@@ -135,7 +135,7 @@ LOCAL_C_INCLUDES := \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/platforms/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/drmrootfs \
     $(BSAGELIB_INCLUDES) \
-    $(TOP)/external/openssl/include \
+    $(TOP)/external/boringssl/include \
     $(NEXUS_APP_INCLUDE_PATHS)
 
 LOCAL_CFLAGS += -DPIC -fpic -DANDROID
