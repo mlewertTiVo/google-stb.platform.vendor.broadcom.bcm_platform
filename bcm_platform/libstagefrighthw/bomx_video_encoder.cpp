@@ -491,7 +491,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_sAvcVideoParams.nPortIndex = m_videoPortBase + 1;
     m_sAvcVideoParams.nRefFrames = 16;
     m_sAvcVideoParams.eProfile = OMX_VIDEO_AVCProfileBaseline;
-    m_sAvcVideoParams.eLevel = OMX_VIDEO_AVCLevel1;
+    m_sAvcVideoParams.eLevel = OMX_VIDEO_AVCLevel31;
     m_sAvcVideoParams.nAllowedPictureTypes = (OMX_U32)OMX_VIDEO_PictureTypeI|(OMX_U32)OMX_VIDEO_PictureTypeP|(OMX_U32)OMX_VIDEO_PictureTypeB|(OMX_U32)OMX_VIDEO_PictureTypeEI|(OMX_U32)OMX_VIDEO_PictureTypeEP;
 
     /* set video bitrate defaults */
