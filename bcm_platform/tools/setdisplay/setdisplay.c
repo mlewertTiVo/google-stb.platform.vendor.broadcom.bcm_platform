@@ -231,8 +231,6 @@ void nxclient_callback(void *context, int param)
     }
 }
 
-#define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
-
 int main(int argc, char **argv)  {
     NxClient_JoinSettings joinSettings;
     NxClient_DisplaySettings displaySettings;
@@ -243,27 +241,11 @@ int main(int argc, char **argv)  {
     bool wait = false;
     bool sd = false;
     bool macrovision = false;
-    char value[256];
-    FILE *key = NULL;
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
     snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "%s", argv[0]);
     joinSettings.ignoreStandbyRequest = true;
     joinSettings.timeout = 60;
-    joinSettings.mode = NEXUS_ClientMode_eUntrusted;
-    sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
-    key = fopen(value, "r");
-    if (key != NULL) {
-       memset(value, 0, sizeof(value));
-       fread(value, 256, 1, key);
-       if (strstr(value, "trusted:") == value) {
-          const char *password = &value[8];
-          joinSettings.mode = NEXUS_ClientMode_eProtected;
-          joinSettings.certificate.length = strlen(password);
-          memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
-       }
-       fclose(key);
-    }
     rc = NxClient_Join(&joinSettings);
     if (rc) return -1;
     

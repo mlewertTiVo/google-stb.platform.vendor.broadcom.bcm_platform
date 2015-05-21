@@ -140,36 +140,16 @@ bool NexusNxClient::StandbyMonitorThread::threadLoop()
     return false;
 }
 
-#define NEXUS_TRUSTED_DATA_PATH "/data/misc/nexus"
 NEXUS_Error NexusNxClient::clientJoin(const b_refsw_client_client_configuration *config)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
     NxClient_JoinSettings joinSettings;
     NEXUS_PlatformStatus status;
-    char value[PROPERTY_VALUE_MAX];
-    FILE *key = NULL;
 
     android::Mutex::Autolock autoLock(mLock);
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
     BKNI_Snprintf(&joinSettings.name[0], NXCLIENT_MAX_NAME, "%s", getClientName());
-
-    sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
-    key = fopen(value, "r");
-    joinSettings.mode = NEXUS_ClientMode_eUntrusted;
-    if (key == NULL) {
-       ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, value, errno, strerror(errno));
-    } else {
-       memset(value, 0, sizeof(value));
-       fread(value, PROPERTY_VALUE_MAX, 1, key);
-       if (strstr(value, "trusted:") == value) {
-          const char *password = &value[8];
-          joinSettings.mode = NEXUS_ClientMode_eVerified;
-          joinSettings.certificate.length = strlen(password);
-          memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
-       }
-       fclose(key);
-    }
 
     if (config == NULL || config->standbyMonitorCallback == NULL) {
         joinSettings.ignoreStandbyRequest = true;
