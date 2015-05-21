@@ -45,6 +45,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include <string.h>
 #include <cutils/atomic.h>
@@ -71,6 +72,7 @@
 
 #include "nexus_ipc_priv.h"
 #include "nxclient.h"
+#include <linux/brcmstb/hdmi_hpd_switch.h>
 
 #ifdef UINT32_C
 #undef UINT32_C
@@ -100,9 +102,11 @@ typedef struct NexusNxServerContext : public NexusServerContext {
 void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param __unused)
 {
 #if NEXUS_HAS_HDMI_OUTPUT
-    int rc;
+    int rc, hdmiHpdSwitchFd;
     NxClient_StandbyStatus standbyStatus;
     NexusNxService *pNexusNxService = reinterpret_cast<NexusNxService *>(context);
+    hdmi_state hdmiSwitch;
+    const char *hdmiHpdDevName = "/dev/hdmi_hpd";
 
     rc = NxClient_GetStandbyStatus(&standbyStatus);
     if (rc != NEXUS_SUCCESS) {
@@ -159,6 +163,17 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
             ALOGV("%s: Firing off HDMI%d hotplug %s event for listener %p...", __PRETTY_FUNCTION__, param,
                  (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? "connected" : "disconnected", (*it).get());
             (*it)->onHdmiHotplugEventReceived(param, status.hdmi.status.connected && status.hdmi.status.rxPowered);
+        }
+
+        if ((hdmiHpdSwitchFd = open(hdmiHpdDevName, O_WRONLY)) == -1) {
+            LOGE("%s: Could not open %s (errno=%d)", __PRETTY_FUNCTION__, hdmiHpdDevName, errno);
+        } else {
+            hdmiSwitch = (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? HDMI_CONNECTED : HDMI_UNPLUGGED;
+
+            if (ioctl(hdmiHpdSwitchFd, HDMI_HPD_IOCTL_SET_SWITCH, &hdmiSwitch) == -1)
+                LOGE("%s: HDMI_HPD_IOCTL_SET_SWITCH ioctl failed (errno=%d)", __PRETTY_FUNCTION__, errno);
+
+            close(hdmiHpdSwitchFd);
         }
 
 #if ANDROID_ENABLE_HDMI_HDCP
