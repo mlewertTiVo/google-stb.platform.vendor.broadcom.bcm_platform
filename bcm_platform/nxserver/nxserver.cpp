@@ -256,7 +256,7 @@ static void *proactive_runner_task(void *argv)
                     } while (nrc == NEXUS_PLATFORM_ERR_OVERFLOW);
                     for (j = 0; j < (int)num; j++) {
                        NEXUS_MemoryBlockProperties prop;
-                       NEXUS_MemoryBlock_GetProperties((NEXUS_MemoryBlockHandle)objects[i].object, &prop);
+                       NEXUS_MemoryBlock_GetProperties((NEXUS_MemoryBlockHandle)objects[j].object, &prop);
                        client_allocation_size += prop.size;
                     }
                     if (objects != NULL) {
