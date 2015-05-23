@@ -55,6 +55,7 @@
 // Runtime Properties
 #define B_PROPERTY_PES_DEBUG ("media.brcm.vdec_pes_debug")
 #define B_PROPERTY_TRIM_VP9 ("ro.nx.trim.vp9")
+#define B_PROPERTY_MMA ("ro.nx.mma")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE (1024*1024)  // Taken from soft HEVC decoder (worst case)
@@ -603,6 +604,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
 {
     unsigned i;
     NEXUS_Error errCode;
+    NEXUS_ClientConfiguration clientConfig;
 
     BLST_Q_INIT(&m_frameBufferFreeList);
     BLST_Q_INIT(&m_frameBufferAllocList);
@@ -855,7 +857,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     BKNI_Memset(surfaceMemory.buffer, 0, surfaceCreateSettings.height * surfaceMemory.pitch);
     NEXUS_Surface_Flush(m_hAlphaSurface);
 
-    NEXUS_ClientConfiguration               clientConfig;
     NEXUS_MemoryAllocationSettings          memorySettings;
 
     NEXUS_Platform_GetClientConfiguration(&clientConfig);
@@ -2473,9 +2474,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     {
     case BOMX_VideoDecoderOutputBufferType_eStandard:
         {
+            NEXUS_ClientConfiguration clientConfig;
             NEXUS_SurfaceCreateSettings surfaceSettings;
             const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef;
             void *pMemory;
+            int isMma = property_get_int32(B_PROPERTY_MMA, 0);
 
             /* Check buffer size */
             pPortDef = pPort->GetDefinition();
@@ -2500,12 +2503,18 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             }
 
             /* Create output surfaces */
+            NEXUS_Platform_GetClientConfiguration(&clientConfig);
+
 #if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
             NEXUS_Surface_GetDefaultCreateSettings(&surfaceSettings);
             surfaceSettings.pixelFormat = NEXUS_PixelFormat_eY8;
             surfaceSettings.width = pPortDef->format.video.nFrameWidth;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight;
             surfaceSettings.pitch = pPortDef->format.video.nStride;
+            if ( isMma )
+            {
+                surfaceSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
+            }
             pInfo->typeInfo.standard.hSurfaceY = NEXUS_Surface_Create(&surfaceSettings);
             if ( NULL == pInfo->typeInfo.standard.hSurfaceY )
             {
@@ -2519,6 +2528,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             surfaceSettings.width = pPortDef->format.video.nFrameWidth/2;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight/2;
             surfaceSettings.pitch = pPortDef->format.video.nStride/2;
+            if ( isMma )
+            {
+                surfaceSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
+            }
             pInfo->typeInfo.standard.hSurfaceCb = NEXUS_Surface_Create(&surfaceSettings);
             if ( NULL == pInfo->typeInfo.standard.hSurfaceCb )
             {
@@ -2528,6 +2541,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             }
             NEXUS_Surface_Lock(pInfo->typeInfo.standard.hSurfaceCb, &pMemory);    // Pin the surface in memory so we can flush at the correct time without extra locks
             surfaceSettings.pixelFormat = NEXUS_PixelFormat_eCr8;
+            if ( isMma )
+            {
+                surfaceSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
+            }
             pInfo->typeInfo.standard.hSurfaceCr = NEXUS_Surface_Create(&surfaceSettings);
             if ( NULL == pInfo->typeInfo.standard.hSurfaceCr )
             {
@@ -2543,6 +2560,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             surfaceSettings.width = pPortDef->format.video.nFrameWidth;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight;
             surfaceSettings.pitch = 2*surfaceSettings.width;
+            if ( isMma )
+            {
+                surfaceSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
+            }
             pInfo->typeInfo.standard.hDestripeSurface = NEXUS_Surface_Create(&surfaceSettings);
             if ( NULL == pInfo->typeInfo.standard.hDestripeSurface )
             {
