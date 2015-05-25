@@ -1420,21 +1420,34 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     {
         DescribeColorFormatParams *pColorFormat = (DescribeColorFormatParams *)pComponentParameterStructure;
         BOMX_STRUCT_VALIDATE(pColorFormat);
-        ALOGV("GetParameter OMX_IndexParamDescribeColorFormat");
+        ALOGV("GetParameter OMX_IndexParamDescribeColorFormat eColorFormat=%d", (int)pColorFormat->eColorFormat);
         switch ( (int)pColorFormat->eColorFormat )
         {
             case HAL_PIXEL_FORMAT_YV12:
             {
                 // YV12 is Y/Cr/Cb
-                pColorFormat->sMediaImage.mPlane[MediaImage::V].mOffset = pColorFormat->nStride*pColorFormat->nSliceHeight;
+                size_t yAlign, cAlign;
+
+                yAlign = (pColorFormat->nStride + (16-1)) & ~(16-1);
+                cAlign = ((pColorFormat->nStride/2) + (16-1)) & ~(16-1);
+                pColorFormat->sMediaImage.mPlane[MediaImage::Y].mRowInc = yAlign;
+                pColorFormat->sMediaImage.mPlane[MediaImage::V].mRowInc = cAlign;
+                pColorFormat->sMediaImage.mPlane[MediaImage::U].mRowInc = cAlign;
+
+                pColorFormat->sMediaImage.mPlane[MediaImage::V].mOffset = yAlign*pColorFormat->nSliceHeight;
                 pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset =
                                         pColorFormat->sMediaImage.mPlane[MediaImage::V].mOffset +
-                                        (pColorFormat->nStride*pColorFormat->nSliceHeight)/4;
+                                        (cAlign*pColorFormat->nSliceHeight)/2;
             }
             break;
             case OMX_COLOR_FormatYUV420Planar:
+            case OMX_COLOR_FormatYUV420SemiPlanar:
             {
                 // 420Planar is Y/Cb/Cr
+                pColorFormat->sMediaImage.mPlane[MediaImage::Y].mRowInc = pColorFormat->nStride;
+                pColorFormat->sMediaImage.mPlane[MediaImage::U].mRowInc = pColorFormat->nStride/2;
+                pColorFormat->sMediaImage.mPlane[MediaImage::V].mRowInc = pColorFormat->nStride/2;
+
                 pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset = pColorFormat->nStride*pColorFormat->nSliceHeight;
                 pColorFormat->sMediaImage.mPlane[MediaImage::V].mOffset =
                                         pColorFormat->sMediaImage.mPlane[MediaImage::U].mOffset +
@@ -1455,15 +1468,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
         pColorFormat->sMediaImage.mBitDepth = 8;
         pColorFormat->sMediaImage.mPlane[MediaImage::Y].mOffset = 0;
         pColorFormat->sMediaImage.mPlane[MediaImage::Y].mColInc = 1;
-        pColorFormat->sMediaImage.mPlane[MediaImage::Y].mRowInc = pColorFormat->nStride;
         pColorFormat->sMediaImage.mPlane[MediaImage::Y].mHorizSubsampling = 1;
         pColorFormat->sMediaImage.mPlane[MediaImage::Y].mVertSubsampling = 1;
         pColorFormat->sMediaImage.mPlane[MediaImage::U].mColInc = 1;
-        pColorFormat->sMediaImage.mPlane[MediaImage::U].mRowInc = pColorFormat->nStride/2;
         pColorFormat->sMediaImage.mPlane[MediaImage::U].mHorizSubsampling = 2;
         pColorFormat->sMediaImage.mPlane[MediaImage::U].mVertSubsampling = 2;
         pColorFormat->sMediaImage.mPlane[MediaImage::V].mColInc = 1;
-        pColorFormat->sMediaImage.mPlane[MediaImage::V].mRowInc = pColorFormat->nStride/2;
         pColorFormat->sMediaImage.mPlane[MediaImage::V].mHorizSubsampling = 2;
         pColorFormat->sMediaImage.mPlane[MediaImage::V].mVertSubsampling = 2;
 
