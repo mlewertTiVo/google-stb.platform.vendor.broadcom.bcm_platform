@@ -558,6 +558,27 @@ static void BOMX_VideoDecoder_MemUnlock(private_handle_t *pPrivateHandle)
    }
 }
 
+static NEXUS_SurfaceHandle BOMX_VideoDecoder_SurfaceAlloc(const NEXUS_SurfaceCreateSettings *pCreateSettings, int isMma)
+{
+   NEXUS_SurfaceHandle surface = NULL;
+
+   surface = NEXUS_Surface_Create(pCreateSettings);
+   if (isMma && surface == NULL) {
+      /* default assumption: allocation failed due to memory, try to grow the heap.
+       */
+      if (NxClient_GrowHeap(NXCLIENT_DYNAMIC_HEAP) == NEXUS_SUCCESS) {
+         surface = NEXUS_Surface_Create(pCreateSettings);
+         if (surface == NULL) {
+            ALOGE("%s: out-of-memory for surface %dx%d, st:%d, fmt:%d", __FUNCTION__,
+                  pCreateSettings->width, pCreateSettings->height,
+                  pCreateSettings->pitch, pCreateSettings->pixelFormat);
+         }
+      }
+   }
+
+   return surface;
+}
+
 BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
@@ -2556,7 +2577,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             {
                 surfaceSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
             }
-            pInfo->typeInfo.standard.hSurfaceY = NEXUS_Surface_Create(&surfaceSettings);
+            pInfo->typeInfo.standard.hSurfaceY = BOMX_VideoDecoder_SurfaceAlloc(&surfaceSettings, isMma);
             if ( NULL == pInfo->typeInfo.standard.hSurfaceY )
             {
                 delete pInfo;
@@ -2573,7 +2594,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             {
                 surfaceSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
             }
-            pInfo->typeInfo.standard.hSurfaceCb = NEXUS_Surface_Create(&surfaceSettings);
+            pInfo->typeInfo.standard.hSurfaceCb = BOMX_VideoDecoder_SurfaceAlloc(&surfaceSettings, isMma);
             if ( NULL == pInfo->typeInfo.standard.hSurfaceCb )
             {
                 NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceY);
@@ -2586,7 +2607,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             {
                 surfaceSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
             }
-            pInfo->typeInfo.standard.hSurfaceCr = NEXUS_Surface_Create(&surfaceSettings);
+            pInfo->typeInfo.standard.hSurfaceCr = BOMX_VideoDecoder_SurfaceAlloc(&surfaceSettings, isMma);
             if ( NULL == pInfo->typeInfo.standard.hSurfaceCr )
             {
                 NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceCb);
@@ -2605,7 +2626,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             {
                 surfaceSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
             }
-            pInfo->typeInfo.standard.hDestripeSurface = NEXUS_Surface_Create(&surfaceSettings);
+            pInfo->typeInfo.standard.hDestripeSurface = BOMX_VideoDecoder_SurfaceAlloc(&surfaceSettings, isMma);
             if ( NULL == pInfo->typeInfo.standard.hDestripeSurface )
             {
                 delete pInfo;
