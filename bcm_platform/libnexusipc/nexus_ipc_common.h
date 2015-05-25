@@ -35,8 +35,6 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
  * ANY LIMITED REMEDY.
  *
- * $brcm_Workfile: nexus_ipc_common.h $
- * 
  * Module Description:
  * This header file contains the prototype of the API functions and their params.
  * This file is included by both the client and the server code and provides the 
@@ -102,7 +100,7 @@ typedef struct b_video_window_settings
     NEXUS_Rect position;
     NEXUS_Rect clipRect;
     bool visible;
-    NEXUS_VideoWindowContentMode contentMode; 
+    NEXUS_VideoWindowContentMode contentMode;
     bool autoMaster;
     unsigned zorder;
 } b_video_window_settings;
@@ -255,11 +253,6 @@ public:
     static const uint8_t DEFAULT_MAX_CEC_RETRIES = 5;
     static const uint8_t MAX_NUM_CEC_PORTS = (NEXUS_NUM_CEC > 0) ? NEXUS_NUM_CEC : 1;
 };
-
-/* -----------------------------------------------------------------------------
-   All utility functions that are common between client and server can be put 
-   below as static functions 
-   ---------------------------------------------------------------------------*/
 
 #endif /* __cplusplus */
 #endif /* _NEXUS_IPC_COMMON_H_ */

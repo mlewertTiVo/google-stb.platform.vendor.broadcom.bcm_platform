@@ -54,7 +54,7 @@
 
 class NexusIPCClientFactory
 {
-public: 
+public:
     static NexusIPCClientBase *getClient(const char *clientName);
 
 private:

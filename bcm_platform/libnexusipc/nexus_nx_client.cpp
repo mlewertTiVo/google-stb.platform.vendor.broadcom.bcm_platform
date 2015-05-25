@@ -85,7 +85,7 @@
 
 NexusNxClient::StandbyMonitorThread::~StandbyMonitorThread()
 {
-    ALOGD("%s: called", __PRETTY_FUNCTION__); 
+    ALOGD("%s: called", __PRETTY_FUNCTION__);
 
     if (this->name != NULL) {
         free(name);
@@ -96,7 +96,7 @@ NexusNxClient::StandbyMonitorThread::~StandbyMonitorThread()
 android::status_t NexusNxClient::StandbyMonitorThread::run(const char* name, int32_t priority, size_t stack)
 {
     android::status_t status;
-    
+
     this->name = strdup(name);
 
     status = Thread::run(name, priority, stack);
@@ -111,15 +111,15 @@ bool NexusNxClient::StandbyMonitorThread::threadLoop()
     NEXUS_Error rc;
     NxClient_StandbyStatus standbyStatus, prevStatus;
 
-    LOGD("%s: Entering for client \"%s\"", __PRETTY_FUNCTION__, getName());
+    ALOGD("%s: Entering for client \"%s\"", __PRETTY_FUNCTION__, getName());
 
     NxClient_GetStandbyStatus(&standbyStatus);
-    
+
     prevStatus = standbyStatus;
 
     while (isRunning()) {
         rc = NxClient_GetStandbyStatus(&standbyStatus);
-    
+
         if (rc == NEXUS_SUCCESS && standbyStatus.settings.mode != prevStatus.settings.mode) {
             bool ack = true;
 
@@ -129,14 +129,14 @@ bool NexusNxClient::StandbyMonitorThread::threadLoop()
                 }
             }
             if (ack) {
-                LOGD("%s: Acknowledge state %d\n", getName(), standbyStatus.settings.mode);
+                ALOGD("%s: Acknowledge state %d\n", getName(), standbyStatus.settings.mode);
                 NxClient_AcknowledgeStandby(true);
                 prevStatus = standbyStatus;
             }
         }
         BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
     }
-    LOGD("%s: Exiting for client \"%s\"", __PRETTY_FUNCTION__, getName());
+    ALOGD("%s: Exiting for client \"%s\"", __PRETTY_FUNCTION__, getName());
     return false;
 }
 
@@ -178,14 +178,9 @@ NEXUS_Error NexusNxClient::clientJoin(const b_refsw_client_client_configuration 
     do {
         rc = NxClient_Join(&joinSettings);
         if (rc != NEXUS_SUCCESS) {
-            LOGW("%s: NxServer is not ready, waiting...", __FUNCTION__);
             usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
         }
     } while (rc != NEXUS_SUCCESS);
-
-    LOGI("%s: \"%s\" joins %s mode (%d)", __FUNCTION__, joinSettings.name,
-         (joinSettings.mode == NEXUS_ClientMode_eVerified) ? "VERIFIED" : "UNTRUSTED",
-         joinSettings.mode);
 
     return rc;
 }
@@ -196,19 +191,16 @@ NEXUS_Error NexusNxClient::clientUninit()
     android::Mutex::Autolock autoLock(mLock);
     void *res;
 
-    LOGI("---- %s: Calling NxClient_Uninit() for client \"%s\" ----", __PRETTY_FUNCTION__, getClientName());
     NxClient_Uninit();
     return rc;
 }
 
 NexusNxClient::NexusNxClient(const char *client_name) : NexusIPCClient(client_name)
 {
-    LOGV("++++++ %s: \"%s\" ++++++", __PRETTY_FUNCTION__, getClientName());
 }
 
 NexusNxClient::~NexusNxClient()
 {
-    LOGV("~~~~~~ %s: \"%s\" ~~~~~~", __PRETTY_FUNCTION__, getClientName());
 }
 
 NEXUS_Error NexusNxClient::standbyCheck(NEXUS_PlatformStandbyMode mode)
@@ -219,7 +211,7 @@ NEXUS_Error NexusNxClient::standbyCheck(NEXUS_PlatformStandbyMode mode)
     while (count < NXCLIENT_PM_TIMEOUT_COUNT) {
         NxClient_GetStandbyStatus(&standbyStatus);
         if (standbyStatus.settings.mode == mode && standbyStatus.standbyTransition) {
-            LOGD("%s: Entered S%d", __PRETTY_FUNCTION__, mode);
+            ALOGD("%s: Entered S%d", __PRETTY_FUNCTION__, mode);
             break;
         }
         else {
@@ -284,28 +276,28 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
     {
         case ePowerState_S0:
         {
-            LOGD("%s: About to set power state S0...", __PRETTY_FUNCTION__);
+            ALOGD("%s: About to set power state S0...", __PRETTY_FUNCTION__);
             standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eOn;
             break;
         }
 
         case ePowerState_S05:
         {
-            LOGD("%s: About to set power state S0.5...", __PRETTY_FUNCTION__);
+            ALOGD("%s: About to set power state S0.5...", __PRETTY_FUNCTION__);
             standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eOn;
             break;
         }
 
         case ePowerState_S1:
         {
-            LOGD("%s: About to set power state S1...", __PRETTY_FUNCTION__);
+            ALOGD("%s: About to set power state S1...", __PRETTY_FUNCTION__);
             standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eActive;
             break;
         }
 
         case ePowerState_S2:
         {
-            LOGD("%s: About to set power state S2...", __PRETTY_FUNCTION__);
+            ALOGD("%s: About to set power state S2...", __PRETTY_FUNCTION__);
             standbySettings.settings.mode = NEXUS_PlatformStandbyMode_ePassive;
             break;
         }
@@ -313,14 +305,14 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
         case ePowerState_S3:
         case ePowerState_S5:
         {
-            LOGD("%s: About to set power state %s...", __PRETTY_FUNCTION__, NexusIPCClientBase::getPowerString(pmState));
+            ALOGD("%s: About to set power state %s...", __PRETTY_FUNCTION__, NexusIPCClientBase::getPowerString(pmState));
             standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eDeepSleep;
             break;
         }
 
         default:
         {
-            LOGE("%s: invalid power state %d!", __PRETTY_FUNCTION__, pmState);
+            ALOGE("%s: invalid power state %d!", __PRETTY_FUNCTION__, pmState);
             rc = NEXUS_INVALID_PARAMETER;
             break;
         }
@@ -361,11 +353,11 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
                 }
             }
             else {
-                LOGE("%s: NxClient_SetStandbySettings failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
+                ALOGE("%s: NxClient_SetStandbySettings failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
             }
         }
         else {
-            LOGE("%s: NxClient_GetStandbyStatus failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
+            ALOGE("%s: NxClient_GetStandbyStatus failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
         }
     }
 
@@ -373,7 +365,7 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
     if (rc == NEXUS_SUCCESS && (pmState != ePowerState_S0 && pmState != ePowerState_S05)) {
         rc = standbyCheck(standbySettings.settings.mode);
         if (rc != NEXUS_SUCCESS) {
-            LOGE("%s: standbyCheck failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
+           ALOGE("%s: standbyCheck failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
         }
     }
 
@@ -408,7 +400,7 @@ b_powerState NexusNxClient::getPowerState()
         }
 
         if (state != ePowerState_Max) {
-            LOGD("%s: Standby Status : \n"
+            ALOGD("%s: Standby Status : \n"
                  "State   : %s\n"
                  "IR      : %d\n"
                  "UHF     : %d\n"
@@ -450,7 +442,7 @@ bool NexusNxClient::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHd
                     break;
                 }
             }
-            LOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
+            ALOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
             usleep(250 * 1000);
         }
 
@@ -472,13 +464,13 @@ bool NexusNxClient::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHd
             }
         }
         else {
-            LOGE("%s: Could not get HDMI%d output status!!!", __PRETTY_FUNCTION__, portId);
+            ALOGE("%s: Could not get HDMI%d output status!!!", __PRETTY_FUNCTION__, portId);
         }
     }
     else
 #endif
     {
-        LOGE("%s: No HDMI%d output on this device!!!", __PRETTY_FUNCTION__, portId);
+        ALOGE("%s: No HDMI%d output on this device!!!", __PRETTY_FUNCTION__, portId);
     }
     return (rc == NEXUS_SUCCESS);
 }

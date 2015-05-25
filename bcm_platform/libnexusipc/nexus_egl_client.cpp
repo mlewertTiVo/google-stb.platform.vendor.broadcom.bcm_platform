@@ -35,38 +35,8 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
  * ANY LIMITED REMEDY.
  *
- * $brcm_Workfile: nexus_egl_client.cpp $
- * $brcm_Revision: 6 $
- * $brcm_Date: 12/3/12 3:23p $
- * 
- * Module Description:
- * 
- * Revision History:
- * 
- * $brcm_Log: /AppLibs/opensource/android/src/broadcom/ics/vendor/broadcom/bcm_platform/libnexusipc/nexus_egl_client.cpp $
- * 
- * 6   12/3/12 3:23p saranya
- * SWANDROID-266: Removed Non-IPC Standalone Mode
- * 
- * 5   9/13/12 11:30a kagrawal
- * SWANDROID-104: Added support for dynamic display resolution change,
- *  1080p and screen resizing
- * 
- * 4   7/6/12 9:11p ajitabhp
- * SWANDROID-128: FIXED Graphics Window Resource Leakage in SBS and NSC
- *  mode.
- * 
- * 3   6/20/12 6:00p kagrawal
- * SWANDROID-118: Extended get_output_format() to return width and height
- * 
- * 2   5/7/12 3:44p ajitabhp
- * SWANDROID-96: Initial checkin for android side by side implementation.
- * 
- * 1   2/24/12 1:50p kagrawal
- * SWANDROID-12: Initial version of ipc over binder
- *
  *****************************************************************************/
-  
+
 #define LOG_TAG "EGL_nexus_client"
 
 #include "nexus_types.h"
@@ -82,7 +52,7 @@
 
 class nexus_egl_client : public NexusIPCClientBase
 {
-public: 
+public:
       static void* IEGL_nexus_join();
       static void IEGL_nexus_unjoin(void *nexus_client);
 };
@@ -95,18 +65,14 @@ void* nexus_egl_client::IEGL_nexus_join()
      NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("Android-EGL");
 
      if (pIpcClient != NULL) {
-         /* Create the client context that will be used by Gralloc */
          nexus_client = pIpcClient->createClientContext();
-         if (nexus_client != NULL) {
-             LOGI("%s: Client \"%s\" successfully created : client=%p", __FUNCTION__, pIpcClient->getClientName(), (void *)nexus_client);
-         }
-         else {
-            LOGE("%s: Client \"%s\" could NOT be created!", __FUNCTION__, pIpcClient->getClientName());
+         if (nexus_client == NULL) {
+            ALOGE("%s: Client \"%s\" could NOT be created!", __FUNCTION__, pIpcClient->getClientName());
          }
          delete pIpcClient;
      }
      else {
-        LOGE("%s: FATAL: Could not create \"Android-EGL\" Nexus IPC Client!!!", __FUNCTION__);
+        ALOGE("%s: FATAL: Could not create \"Android-EGL\" Nexus IPC Client!!!", __FUNCTION__);
      }
      return (reinterpret_cast<void *>(nexus_client));
 }
@@ -115,8 +81,6 @@ void nexus_egl_client::IEGL_nexus_unjoin(void *nexus_client)
 {
     NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("Android-EGL");
 
-    /* Destroy the client context using IPC */
-    LOGV("%s: Destroying client \%s\"...", __FUNCTION__, pIpcClient->getClientName());
     pIpcClient->destroyClientContext((reinterpret_cast<NexusClientContext *>(nexus_client)));
     delete pIpcClient;
     return;
@@ -129,21 +93,13 @@ void* EGL_nexus_join(char *client_process_name)
 {
     void *nexus_client = NULL;
 
-    LOGE("%s:%d str = %s",__FUNCTION__,__LINE__,client_process_name);
- 
-    LOGD("==============================================================");
-    LOGD(" EGL_nexus_join");
-    LOGD("==============================================================");
- 
     do
     {
         nexus_client = nexus_egl_client::IEGL_nexus_join();
         if (!nexus_client)
         {
-            LOGE("IEGL_nexus_join Failed\n");
+            /* really?  infinite loop here? */
             sleep(1);
-        } else {
-            LOGI("IEGL_nexus_join Success\n");
         }
     } while (!nexus_client);
 
@@ -155,4 +111,3 @@ void EGL_nexus_unjoin(void *nexus_client)
     nexus_egl_client::IEGL_nexus_unjoin(nexus_client);
     return;
 }
-

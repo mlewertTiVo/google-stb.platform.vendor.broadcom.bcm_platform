@@ -180,7 +180,7 @@ void NexusService::CecServiceManager::CecRxMessageHandler::getDeviceVendorID(uns
 void NexusService::CecServiceManager::CecRxMessageHandler::enterStandby (unsigned inLength __unused, uint8_t *content __unused, unsigned *outLength __unused )
 {
     ALOGD("%s: TV STANDBY RECEIVED: STB WILL NOW ENTER STANDBY...", __PRETTY_FUNCTION__);
-    
+
     system("/system/bin/input keyevent POWER");
 }
 
@@ -283,7 +283,7 @@ void NexusService::CecServiceManager::CecRxMessageHandler::parseCecMessage(const
 
             for (i = 0, j = 0; i < length-1 && j<(sizeof(msgBuffer)-1); i++) {
                 j += BKNI_Snprintf(msgBuffer + j, sizeof(msgBuffer)-j, "%02X ", *pBuffer++);
-            }           
+            }
 
             pBuffer = params->base();
         }
@@ -376,7 +376,7 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
             for (i = 0, j = 0; i < length-1 && j<(sizeof(msgBuffer)-1); i++) {
                 transmitMessage.buffer[i+1] = *pBuffer;
                 j += BKNI_Snprintf(msgBuffer + j, sizeof(msgBuffer)-j, "%02X ", *pBuffer++);
-            }           
+            }
         }
     }
 
@@ -401,7 +401,7 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
 
             if (status == OK) {
                 b_cecStatus cecStatus;
-                
+
                 if (mCecServiceManager->getCecStatus(&cecStatus) == true) {
                     if (cecStatus.txMessageAck == true) {
                         ALOGV("%s: Successfully sent CEC%d message: opcode=0x%02X.", __PRETTY_FUNCTION__, cecId, opcode);
@@ -689,7 +689,7 @@ status_t NexusService::CecServiceManager::sendCecMessage(uint8_t srcAddr, uint8_
             }
             else {
                 ALOGV("%s: Returned from posting message to looper.", __PRETTY_FUNCTION__);
-            
+
                 if (!response->findInt32("err", &err)) {
                     err = OK;
                 }
@@ -789,7 +789,7 @@ bool NexusService::CecServiceManager::getPowerStatus(uint8_t *pPowerStatus)
             status_t status;
 
             ALOGV("%s: Successfully sent <Give Device Power Status> CEC%d message.", __PRETTY_FUNCTION__, cecId);
-                
+
             /* Now wait up to 1s for the <Report Power Status> receive message */
             mCecGetPowerStatusLock.lock();
             status = mCecGetPowerStatusCondition.waitRelative(mCecGetPowerStatusLock, 1 * 1000 * 1000 * 1000);  // Wait up to 1s
@@ -940,7 +940,7 @@ status_t NexusService::CecServiceManager::platformInit()
             cecSettings.logicalAddress = 0xff;
             ALOGV("%s: setting CEC%d logical address to 0xFF", __PRETTY_FUNCTION__, cecId);
         }
-        
+
         rc = NEXUS_Cec_SetSettings(cecHandle, &cecSettings);
 
         if (rc != NEXUS_SUCCESS) {

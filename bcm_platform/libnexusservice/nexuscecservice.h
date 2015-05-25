@@ -136,7 +136,7 @@ protected:
     CecRxMessageHandler(sp<NexusService::CecServiceManager> sm, uint32_t cecId) : AHandler(), cecId(cecId), mCecServiceManager(sm) {
         ALOGV("%s: called for CEC%d", __PRETTY_FUNCTION__, cecId);
     }
-    
+
     virtual void getPhysicalAddress( unsigned inLength, uint8_t *content, unsigned *outLength );
     virtual void getDeviceType(unsigned inLength, uint8_t *content, unsigned *outLength );
     virtual void getCecVersion(unsigned inLength, uint8_t *content, unsigned *outLength );
@@ -172,7 +172,7 @@ private:
     /* Disallow copy constructor and copy operator... */
     CecRxMessageHandler(const CecRxMessageHandler &);
     CecRxMessageHandler &operator=(const CecRxMessageHandler &);
-}; 
+};
 
 struct NexusService::CecServiceManager::CecTxMessageHandler : public AHandler
 {
@@ -205,6 +205,6 @@ private:
     /* Disallow copy constructor and copy operator... */
     CecTxMessageHandler(const CecTxMessageHandler &);
     CecTxMessageHandler &operator=(const CecTxMessageHandler &);
-}; 
+};
 
 #endif // _NEXUSCECSERVICE_H_

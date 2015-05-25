@@ -93,8 +93,8 @@ typedef struct NexusClientContext {
 BDBG_OBJECT_ID(NexusClientContext);
 
 typedef struct NexusNxServerContext : public NexusServerContext {
-    NexusNxServerContext()  { LOGV("%s: called", __PRETTY_FUNCTION__); }
-    ~NexusNxServerContext() { LOGV("%s: called", __PRETTY_FUNCTION__); }
+    NexusNxServerContext()  { ALOGV("%s: called", __PRETTY_FUNCTION__); }
+    ~NexusNxServerContext() { ALOGV("%s: called", __PRETTY_FUNCTION__); }
 
     struct StandbyMonitorThread : public android::Thread {
 
@@ -160,7 +160,7 @@ bool NexusNxServerContext::StandbyMonitorThread::threadLoop()
     NEXUS_Error rc;
     NxClient_StandbyStatus standbyStatus, prevStatus;
 
-    LOGD("%s: Entering for client \"%s\"", __PRETTY_FUNCTION__, getName());
+    ALOGD("%s: Entering for client \"%s\"", __PRETTY_FUNCTION__, getName());
 
     NxClient_GetStandbyStatus(&standbyStatus);
     prevStatus = standbyStatus;
@@ -169,13 +169,13 @@ bool NexusNxServerContext::StandbyMonitorThread::threadLoop()
         rc = NxClient_GetStandbyStatus(&standbyStatus);
 
         if(standbyStatus.settings.mode != prevStatus.settings.mode) {
-            LOGD("%s: Acknowledge state %d\n", getName(), standbyStatus.settings.mode);
+            ALOGD("%s: Acknowledge state %d\n", getName(), standbyStatus.settings.mode);
             NxClient_AcknowledgeStandby(true);
         }
         prevStatus = standbyStatus;
         BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
     }
-    LOGD("%s: Exiting for client \"%s\"", __PRETTY_FUNCTION__, getName());
+    ALOGD("%s: Exiting for client \"%s\"", __PRETTY_FUNCTION__, getName());
     return false;
 }
 
@@ -188,21 +188,21 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
 
     rc = NxClient_GetStandbyStatus(&standbyStatus);
     if (rc != NEXUS_SUCCESS) {
-        LOGE("%s: Could not get standby status!!!", __PRETTY_FUNCTION__);
+        ALOGE("%s: Could not get standby status!!!", __PRETTY_FUNCTION__);
         return;
     }
 
-    LOGV("%s: Received HDMI%d hotplug event", __func__, param);
+    ALOGV("%s: Received HDMI%d hotplug event", __func__, param);
 
     if (standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
         NxClient_DisplayStatus status;
         rc = NxClient_GetDisplayStatus(&status);
         if (rc) {
-            LOGE("%s: Could not get display status!!!", __PRETTY_FUNCTION__);
+            ALOGE("%s: Could not get display status!!!", __PRETTY_FUNCTION__);
             return;
         }
 
-        LOGD("%s: HDMI%d hotplug %s (receive device %s powered)",
+        ALOGD("%s: HDMI%d hotplug %s (receive device %s powered)",
              __func__, param,
              status.hdmi.status.connected ? "connected" : "disconnected", status.hdmi.status.rxPowered ? "is" : "isn't");
 
@@ -217,18 +217,18 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
                 if (pNexusNxService->mCecServiceManager[param].get() != NULL &&
                     pNexusNxService->mCecServiceManager[param]->isPlatformInitialised() &&
                     pNexusNxService->setCecPhysicalAddress(param, addr)) {
-                    LOGD("%s: Set CEC%d physical address to %01d.%01d.%01d.%01d", __PRETTY_FUNCTION__, param,
+                    ALOGD("%s: Set CEC%d physical address to %01d.%01d.%01d.%01d", __PRETTY_FUNCTION__, param,
                     (addr >> 12) & 0x0F,
                     (addr >>  8) & 0x0F,
                     (addr >>  4) & 0x0F,
                     (addr >>  0) & 0x0F);
                 }
                 else {
-                    LOGE("%s: Could not set CEC%d physical address!!!", __PRETTY_FUNCTION__, param);
+                    ALOGE("%s: Could not set CEC%d physical address!!!", __PRETTY_FUNCTION__, param);
                 }
             }
             else {
-                LOGW("%s: Could not get HDMI%d output status!", __PRETTY_FUNCTION__, param);
+                ALOGW("%s: Could not get HDMI%d output status!", __PRETTY_FUNCTION__, param);
             }
         }
 
@@ -238,7 +238,7 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
 
         for (it = pNexusNxService->server->mHdmiHotplugEventListenerList[param].begin();
              it != pNexusNxService->server->mHdmiHotplugEventListenerList[param].end(); ++it) {
-            LOGV("%s: Firing off HDMI%d hotplug %s event for listener %p...", __PRETTY_FUNCTION__, param,
+            ALOGV("%s: Firing off HDMI%d hotplug %s event for listener %p...", __PRETTY_FUNCTION__, param,
                  (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? "connected" : "disconnected", (*it).get());
             (*it)->onHdmiHotplugEventReceived(param, status.hdmi.status.connected && status.hdmi.status.rxPowered);
         }
@@ -255,13 +255,13 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
 
         rc = NxClient_SetDisplaySettings(&settings);
         if (rc) {
-            LOGE("%s: Could not set display settings!!!", __PRETTY_FUNCTION__);
+            ALOGE("%s: Could not set display settings!!!", __PRETTY_FUNCTION__);
             return;
         }
 #endif
     }
     else {
-        LOGW("%s: Ignoring HDMI%d hotplug as we are in standby!", __PRETTY_FUNCTION__, param);
+        ALOGW("%s: Ignoring HDMI%d hotplug as we are in standby!", __PRETTY_FUNCTION__, param);
     }
 #endif
 }
@@ -275,21 +275,21 @@ void NexusNxService::hdmiOutputHdcpStateChangedCallback(void *context __unused, 
 
     rc = NxClient_GetStandbyStatus(&standbyStatus);
     if (rc != NEXUS_SUCCESS) {
-        LOGE("%s: Could not get standby status!!!", __PRETTY_FUNCTION__);
+        ALOGE("%s: Could not get standby status!!!", __PRETTY_FUNCTION__);
         return;
     }
 
     if (standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
-        LOGV("%s: Received HDMI%d hdcp event", __func__, param);
+        ALOGV("%s: Received HDMI%d hdcp event", __func__, param);
 
         NxClient_DisplayStatus status;
         rc = NxClient_GetDisplayStatus(&status);
         if (rc) {
-            LOGE("%s: Could not get display status!!!", __PRETTY_FUNCTION__);
+            ALOGE("%s: Could not get display status!!!", __PRETTY_FUNCTION__);
             return;
         }
 
-        LOGD("%s: HDMI%d HDCP state=%d error=%d repeater=%d hdcp1.1=%d hdcp2.2=%d\n",
+        ALOGD("%s: HDMI%d HDCP state=%d error=%d repeater=%d hdcp1.1=%d hdcp2.2=%d\n",
              __func__, param,
              status.hdmi.hdcp.hdcpState,
              status.hdmi.hdcp.hdcpError,
@@ -298,7 +298,7 @@ void NexusNxService::hdmiOutputHdcpStateChangedCallback(void *context __unused, 
              status.hdmi.hdcp.hdcp2_2Features);
     }
     else {
-        LOGW("%s: Ignoring HDMI%d HDCP event as we are in standby!", __PRETTY_FUNCTION__, param);
+        ALOGW("%s: Ignoring HDMI%d HDCP event as we are in standby!", __PRETTY_FUNCTION__, param);
     }
 #endif
 }
@@ -321,7 +321,7 @@ int NexusNxService::platformInitHdmiOutputs()
 #endif
     rc = NxClient_StartCallbackThread(&settings);
     if (rc) {
-        LOGE("%s: Could not start HDMI callback thread!!!", __PRETTY_FUNCTION__);
+        ALOGE("%s: Could not start HDMI callback thread!!!", __PRETTY_FUNCTION__);
         return rc;
     }
 
@@ -418,9 +418,9 @@ bool NexusNxService::platformInitIR()
     memset(ir_mode_property, 0, sizeof(ir_mode_property));
     property_get("ro.ir_remote.mode", ir_mode_property, ir_mode_default);
     if (parseNexusIrMode(ir_mode_property, &mode)) {
-        LOGI("Nexus IR remote mode: %s", ir_mode_property);
+        ALOGI("Nexus IR remote mode: %s", ir_mode_property);
     } else {
-        LOGW("Unknown IR remote mode: '%s', falling back to default '%s'",
+        ALOGW("Unknown IR remote mode: '%s', falling back to default '%s'",
                 ir_mode_property, ir_mode_default);
         mode = ir_mode_default_enum;
     }
@@ -431,18 +431,18 @@ bool NexusNxService::platformInitIR()
     map_path += "/";
     map_path += ir_map_property;
     map_path += ir_map_ext;
-    LOGI("Nexus IR remote map: %s (%s)", ir_map_property, map_path.string());
+    ALOGI("Nexus IR remote map: %s (%s)", ir_map_property, map_path.string());
     status_t status = NexusIrMap::load(map_path, &map);
     if (status)
     {
-        LOGE("Nexus IR map load failed: %s", map_path.string());
+        ALOGE("Nexus IR map load failed: %s", map_path.string());
         return false;
     }
 
     memset(ir_mask_property, 0, sizeof(ir_mask_property));
     property_get("ro.ir_remote.mask", ir_mask_property, ir_mask_default);
     mask = strtoull(ir_mask_property, NULL, 0);
-    LOGI("Nexus IR remote mask: %s (0x%llx)", ir_mask_property,
+    ALOGI("Nexus IR remote mask: %s (0x%llx)", ir_mask_property,
             (unsigned long long)mask);
 
     return irHandler.start(mode, map, mask);
@@ -485,14 +485,10 @@ void NexusNxService::platformInit()
         rc = NxClient_Join(&joinSettings);
 
         if (rc != NEXUS_SUCCESS) {
-            LOGW("NexusNxService::platformInit NxServer is not ready, waiting...");
+            ALOGW("NexusNxService::platformInit NxServer is not ready, waiting...");
             usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
         }
     } while (rc != NEXUS_SUCCESS);
-
-    LOGI("%s: \"%s\"; joins %s mode (%d)", __FUNCTION__, joinSettings.name,
-         (joinSettings.mode == NEXUS_ClientMode_eVerified) ? "VERIFIED" : "UNTRUSTED",
-         joinSettings.mode);
 
     NexusNxServerContext *nxServer = static_cast<NexusNxServerContext *>(server);
     nxServer->mStandbyMonitorThread = new NexusNxServerContext::StandbyMonitorThread();
@@ -505,12 +501,12 @@ void NexusNxService::platformInit()
 
         if (mCecServiceManager[i].get() != NULL) {
             if (mCecServiceManager[i]->platformInit() != OK) {
-                LOGE("%s: ERROR initialising CecServiceManager platform for CEC%d!", __PRETTY_FUNCTION__, i);
+                ALOGE("%s: ERROR initialising CecServiceManager platform for CEC%d!", __PRETTY_FUNCTION__, i);
                 mCecServiceManager[i] = NULL;
             }
         }
         else {
-            LOGE("%s: ERROR instantiating CecServiceManager for CEC%d!", __PRETTY_FUNCTION__, i);
+            ALOGE("%s: ERROR instantiating CecServiceManager for CEC%d!", __PRETTY_FUNCTION__, i);
         }
     }
     platformInitHdmiOutputs();
@@ -545,7 +541,7 @@ void NexusNxService::instantiate()
     NexusNxServerContext *server = new NexusNxServerContext();
 
     if (server == NULL) {
-        LOGE("%s: FATAL: Could not instantiate NexusNxServerContext!!!", __PRETTY_FUNCTION__);
+        ALOGE("%s: FATAL: Could not instantiate NexusNxServerContext!!!", __PRETTY_FUNCTION__);
         BDBG_ASSERT(server != NULL);
     }
 
@@ -559,19 +555,16 @@ void NexusNxService::instantiate()
                     INexusService::descriptor, nexusservice);
     }
     else {
-        LOGE("%s: Could not instantiate NexusNxService!!!", __PRETTY_FUNCTION__);
+        ALOGE("%s: Could not instantiate NexusNxService!!!", __PRETTY_FUNCTION__);
     }
 }
 
 NexusNxService::NexusNxService()
 {
-    LOGI("NexusNxService Created");
 }
 
 NexusNxService::~NexusNxService()
 {
-    LOGI("NexusNxService Destroyed");
-
     platformUninit();
 
     delete server;
@@ -603,23 +596,21 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
     if (powerState != ePowerState_S0) {
         NxClient_StandbySettings standbySettings;
 
-        LOGI("We need to set Nexus Power State S0 first...");
+        ALOGI("We need to set Nexus Power State S0 first...");
         NxClient_GetDefaultStandbySettings(&standbySettings);
         standbySettings.settings.mode = NEXUS_PlatformStandbyMode_eOn;
         rc = NxClient_SetStandbySettings(&standbySettings);
 
         if (rc != NEXUS_SUCCESS) {
-            LOGE("Oops we couldn't set Nexus Power State to S0!");
+            ALOGE("Oops we couldn't set Nexus Power State to S0!");
             goto err_client;
         }
         else {
-            LOGI("Successfully set Nexus Power State S0");
+            ALOGI("Successfully set Nexus Power State S0");
         }
     }
 
     client->ipc.nexusClient = getNexusClient(client->clientPid, client->clientName.string);
-
-    LOGI("%s: Exiting with client=%p", __PRETTY_FUNCTION__, (void *)client);
     return client;
 
 err_client:
@@ -633,8 +624,6 @@ void NexusNxService::destroyClientContext(NexusClientContext * client)
     void *res;
 
     Mutex::Autolock autoLock(server->mLock);
-
-    LOGI("%s: client=\"%s\"", __PRETTY_FUNCTION__, client->clientName.string);
 
     BLST_D_REMOVE(&server->clients, client, link);
     BDBG_OBJECT_DESTROY(client, NexusClientContext);
@@ -773,7 +762,7 @@ bool NexusNxService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pH
                     break;
                 }
             }
-            LOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
+            ALOGV("%s: Waiting for HDMI%d output to be connected...", __PRETTY_FUNCTION__, portId);
             usleep(250 * 1000);
         }
 
@@ -795,13 +784,13 @@ bool NexusNxService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pH
             }
         }
         else {
-            LOGE("%s: Could not get HDMI%d output status!!!", __PRETTY_FUNCTION__, portId);
+            ALOGE("%s: Could not get HDMI%d output status!!!", __PRETTY_FUNCTION__, portId);
         }
     }
     else
 #endif
     {
-        LOGE("%s: No HDMI%d output on this device!!!", __PRETTY_FUNCTION__, portId);
+        ALOGE("%s: No HDMI%d output on this device!!!", __PRETTY_FUNCTION__, portId);
     }
     return (rc == NEXUS_SUCCESS);
 }

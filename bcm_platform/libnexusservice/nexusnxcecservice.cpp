@@ -36,7 +36,7 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
-  
+
 #ifdef LOG_TAG
 #undef LOG_TAG
 #endif
@@ -49,6 +49,6 @@
 
 NexusNxService::CecServiceManager::~CecServiceManager()
 {
-    ALOGV("%s: for CEC%d called", __PRETTY_FUNCTION__, cecId); 
+    ALOGV("%s: for CEC%d called", __PRETTY_FUNCTION__, cecId);
 }
 

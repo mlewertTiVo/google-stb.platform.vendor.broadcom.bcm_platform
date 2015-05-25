@@ -207,8 +207,8 @@ private:
     NEXUS_ClientHandle clientJoin(const b_refsw_client_client_name *pClientName, NEXUS_ClientAuthenticationSettings *pClientAuthenticationSettings);
     NEXUS_Error clientUninit(NEXUS_ClientHandle clientHandle);
     int platformInitSurfaceCompositor(void);
-    int platformInitVideo(void);    
-    int platformInitAudio(void);    
+    int platformInitVideo(void);
+    int platformInitAudio(void);
     int platformInitHdmiOutputs(void);
     void platformUninitHdmiOutputs();
     static void hdmiOutputHotplugCallback(void *context, int param);
@@ -232,7 +232,7 @@ private:
     NEXUS_Graphics2DHandle              gfx2D;
     BKNI_EventHandle                    gfxDone;
     NEXUS_VideoFormat                   initial_hd_format;
-    NEXUS_VideoFormat                   initial_sd_format;    
+    NEXUS_VideoFormat                   initial_sd_format;
 };
 
 #endif // _NEXUSSERVICE_H_

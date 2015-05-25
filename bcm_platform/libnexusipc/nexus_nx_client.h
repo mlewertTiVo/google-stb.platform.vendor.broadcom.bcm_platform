@@ -35,8 +35,6 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
  * ANY LIMITED REMEDY.
  *
- * $brcm_Workfile: nexus_nx_client.h $
- * 
  * Module Description:
  * This file contains the class that implements the NxClient bipc communication
  * with the nxserver server process and Binder IPC communication with the
