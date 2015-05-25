@@ -3972,6 +3972,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
     {
         ALOGE("failed to create intermediate Cr surface");
         rc = NEXUS_INVALID_PARAMETER;
+        NEXUS_Surface_Unlock(srcY);
         NEXUS_Surface_Destroy(srcY);
         goto en_out;
     }
@@ -3983,7 +3984,9 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
     {
         ALOGE("failed to create intermediate Cb surface");
         rc = NEXUS_INVALID_PARAMETER;
+        NEXUS_Surface_Unlock(srcCr);
         NEXUS_Surface_Destroy(srcCr);
+        NEXUS_Surface_Unlock(srcY);
         NEXUS_Surface_Destroy(srcY);
         goto en_out;
     }
@@ -3998,8 +4001,11 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
 
     NEXUS_Surface_Flush(hDst);
 
+    NEXUS_Surface_Unlock(srcCb);
     NEXUS_Surface_Destroy(srcCb);
+    NEXUS_Surface_Unlock(srcCr);
     NEXUS_Surface_Destroy(srcCr);
+    NEXUS_Surface_Unlock(srcY);
     NEXUS_Surface_Destroy(srcY);
     NEXUS_Surface_Unlock(hDst);
 en_out:
@@ -4095,6 +4101,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         {
             ALOGE("failed to create intermediate Cr surface");
             rc = NEXUS_INVALID_PARAMETER;
+            NEXUS_Surface_Unlock(srcY);
             NEXUS_Surface_Destroy(srcY);
             goto out;
         }
@@ -4106,7 +4113,9 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         {
             ALOGE("failed to create intermediate Cb surface");
             rc = NEXUS_INVALID_PARAMETER;
+            NEXUS_Surface_Unlock(srcCr);
             NEXUS_Surface_Destroy(srcCr);
+            NEXUS_Surface_Unlock(srcY);
             NEXUS_Surface_Destroy(srcY);
             goto out;
         }
@@ -4121,8 +4130,11 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
 
         NEXUS_Surface_Flush(hDst);
 
+        NEXUS_Surface_Unlock(srcCb);
         NEXUS_Surface_Destroy(srcCb);
+        NEXUS_Surface_Unlock(srcCr);
         NEXUS_Surface_Destroy(srcCr);
+        NEXUS_Surface_Unlock(srcY);
         NEXUS_Surface_Destroy(srcY);
         NEXUS_Surface_Unlock(hDst);
     }
@@ -4183,7 +4195,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         if ( rc )
         {
             ALOGE("NEXUS_Graphics2D_Blit error - %d", rc);
-            goto rgb_out_cleanup;
+            goto rgb_out_cleanup_locked;
         }
 
         // Wait for completion
@@ -4191,11 +4203,12 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         {
             ALOGE("NEXUS_Graphics2D_Blit checkpoint timeout");
             rc = NEXUS_TIMEOUT;
-            goto rgb_out_cleanup;
+            goto rgb_out_cleanup_locked;
         }
 
         NEXUS_Surface_Flush(hDst);
-
+rgb_out_cleanup_locked:
+        NEXUS_Surface_Unlock(hSrc);
 rgb_out_cleanup:
         NEXUS_Surface_Destroy(hSrc);
         NEXUS_Surface_Unlock(hDst);
