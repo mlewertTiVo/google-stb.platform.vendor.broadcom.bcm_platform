@@ -166,12 +166,12 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
         }
 
         if ((hdmiHpdSwitchFd = open(hdmiHpdDevName, O_WRONLY)) == -1) {
-            LOGE("%s: Could not open %s (errno=%d)", __PRETTY_FUNCTION__, hdmiHpdDevName, errno);
+            ALOGE("%s: Could not open %s (errno=%d)", __PRETTY_FUNCTION__, hdmiHpdDevName, errno);
         } else {
             hdmiSwitch = (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? HDMI_CONNECTED : HDMI_UNPLUGGED;
 
             if (ioctl(hdmiHpdSwitchFd, HDMI_HPD_IOCTL_SET_SWITCH, &hdmiSwitch) == -1)
-                LOGE("%s: HDMI_HPD_IOCTL_SET_SWITCH ioctl failed (errno=%d)", __PRETTY_FUNCTION__, errno);
+                ALOGE("%s: HDMI_HPD_IOCTL_SET_SWITCH ioctl failed (errno=%d)", __PRETTY_FUNCTION__, errno);
 
             close(hdmiHpdSwitchFd);
         }
