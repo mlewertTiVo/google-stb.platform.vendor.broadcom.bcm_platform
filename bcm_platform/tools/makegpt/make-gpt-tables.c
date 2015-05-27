@@ -14,21 +14,13 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include "efi.h"
-
-typedef struct
-{
-    char name[35];      /* name of image (not unicode) */
-    uint64_t start;     /* starting address of image in bytes */
-    uint64_t size;      /* ending address of image in bytes */
-    uint64_t attributes;    /* image attributes (flags) */
-}
-info_t;;
 
 
 /* Verbosity levels */
@@ -141,8 +133,8 @@ int main(int argc, char **argv)
         exit(1);
     }
     PDEBUG("Output file %s\n", fspec);
-    PDEBUG("total_disk_size 0x%llx\n", (unsigned long long) total_disk_size);
-    PDEBUG("base_address 0x%llx\n", (unsigned long long) base_address);
+    PDEBUG("total_disk_size 0x%"PRIx64"\n", total_disk_size);
+    PDEBUG("base_address 0x%"PRIx64"\n", base_address);
     while (optind < argc)
     {
         /* Parse partitionName,startaddr,size,attr...*/
@@ -197,12 +189,12 @@ int main(int argc, char **argv)
         }
         partinfo[imgcount].attributes = attr;
 
-        PNORMAL( "partition \'%s\' start=0x%llx, end=0x%llx, attr=0x%llx size=0x%llx\n",
+        PNORMAL( "partition \'%s\' start=0x%"PRIx64", end=0x%"PRIx64", attr=0x%"PRIx64" size=0x%"PRIx64"\n",
                   partinfo[imgcount].name,
-                  (unsigned long long) partinfo[imgcount].start,
-                  (unsigned long long) partinfo[imgcount].end,
-                  (unsigned long long) partinfo[imgcount].attributes,
-                  (unsigned long long) size);
+                  partinfo[imgcount].start,
+                  partinfo[imgcount].end,
+                  partinfo[imgcount].attributes,
+                  size);
 
         imgcount++;
     }
