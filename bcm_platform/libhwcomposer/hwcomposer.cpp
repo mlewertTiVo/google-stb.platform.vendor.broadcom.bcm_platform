@@ -636,7 +636,7 @@ static int hwc_mem_lock_phys(struct hwc_context_t *ctx, unsigned handle, NEXUS_A
    } else if (handle) {
       *paddr = (NEXUS_Addr)handle;
    } else {
-      *paddr = NULL;
+      *paddr = (NEXUS_Addr)NULL;
    }
    return 0;
 }
@@ -1302,12 +1302,8 @@ out:
 }
 
 bool hwc_compose_gralloc_buffer(
-   struct hwc_context_t* ctx,
-   GPX_CLIENT_INFO *client,
-   int layer_id,
-   PSHARED_DATA pSharedData,
-   private_handle_t *gr_buffer,
-   NEXUS_SurfaceHandle display_surface)
+   struct hwc_context_t* ctx, int layer_id, PSHARED_DATA pSharedData,
+   private_handle_t *gr_buffer, NEXUS_SurfaceHandle display_surface, bool is_virtual)
 {
     bool composed = false;
     NEXUS_Error rc;
@@ -1317,6 +1313,16 @@ bool hwc_compose_gralloc_buffer(
     void *slock;
     NEXUS_PixelFormat pixel_format = NEXUS_PixelFormat_eUnknown;
     NEXUS_SurfaceCreateSettings displaySurfaceSettings;
+    NEXUS_SurfaceComposition *pComp;
+    NEXUS_SurfaceHandle *pActSurf;
+
+    if (!is_virtual) {
+       pComp = &ctx->gpx_cli[layer_id].composition;
+       pActSurf = &ctx->gpx_cli[layer_id].active_surface;
+    } else {
+       pComp = &ctx->vd_cli[layer_id].composition;
+       pActSurf = &ctx->vd_cli[layer_id].active_surface;
+    }
 
     if ( pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12 ) {
         if (pSharedData->planes[EXTRA_PLANE].physAddr) {
@@ -1346,38 +1352,40 @@ bool hwc_compose_gralloc_buffer(
     }
 
     NEXUS_Surface_GetCreateSettings(display_surface, &displaySurfaceSettings);
+    if ((is_virtual && ctx->display_dump_virt) ||
+        (!is_virtual && ctx->display_dump_layer)) {
+       ALOGI("%s: layer %u vis %u pf %u %ux%u (%ux%u@%u,%u) to %ux%u@%u,%u",
+             is_virtual ? "vcmp" : "comp", layer_id, (unsigned)pComp->visible,
+             pixel_format, pSharedData->planes[plane_select].width, pSharedData->planes[plane_select].height,
+             pComp->clipRect.width, pComp->clipRect.height, pComp->clipRect.x, pComp->clipRect.y,
+             pComp->position.width, pComp->position.height, pComp->position.x, pComp->position.y);
+    }
 
-    ALOGV("compose layer %u vis %u pf %u %ux%u (%ux%u@%u,%u) to %ux%u@%u,%u", layer_id, (unsigned)client->composition.visible,
-        pixel_format, pSharedData->planes[plane_select].width, pSharedData->planes[plane_select].height,
-        client->composition.clipRect.width, client->composition.clipRect.height, client->composition.clipRect.x, client->composition.clipRect.y,
-        client->composition.position.width, client->composition.position.height, client->composition.position.x, client->composition.position.y);
+    *pActSurf = NULL;
+    if (pComp->visible) {
+        *pActSurf = hwc_to_nsc_surface(pSharedData->planes[plane_select].width,
+                                       pSharedData->planes[plane_select].height,
+                                       stride,
+                                       pixel_format,
+                                       ctx->hwc_with_mma,
+                                       pSharedData->planes[plane_select].physAddr,
+                                       (uint8_t *)pAddr);
 
-    client->active_surface = NULL;
-    if ( client->composition.visible ) {
-        client->active_surface = hwc_to_nsc_surface(pSharedData->planes[plane_select].width,
-                                                    pSharedData->planes[plane_select].height,
-                                                    stride,
-                                                    pixel_format,
-                                                    ctx->hwc_with_mma,
-                                                    pSharedData->planes[plane_select].physAddr,
-                                                    (uint8_t *)pAddr);
-
-        if ( NULL != client->active_surface ) {
+        if (*pActSurf != NULL) {
             NEXUS_Graphics2DBlitSettings blitSettings;
             int adj;
             NEXUS_Graphics2D_GetDefaultBlitSettings(&blitSettings);
 
-            blitSettings.source.surface = client->active_surface;
-            blitSettings.source.rect = client->composition.clipRect;
+            blitSettings.source.surface = *pActSurf;
+            blitSettings.source.rect = pComp->clipRect;
             blitSettings.dest.surface = display_surface;
             blitSettings.output.surface = display_surface;
-            blitSettings.output.rect = client->composition.position;
+            blitSettings.output.rect = pComp->position;
             blitSettings.colorOp = NEXUS_BlitColorOp_eUseBlendEquation;
             blitSettings.alphaOp = NEXUS_BlitAlphaOp_eUseBlendEquation;
-            blitSettings.colorBlend = client->composition.colorBlend;
-            blitSettings.alphaBlend = client->composition.alphaBlend;
+            blitSettings.colorBlend = pComp->colorBlend;
+            blitSettings.alphaBlend = pComp->alphaBlend;
 
-            // Handle overscan adjustments that may cause out-of-bounds rectangles
             if ( blitSettings.output.rect.x < 0 ) {
                 adj = -blitSettings.output.rect.x;
                 blitSettings.output.rect.x = 0;
@@ -1480,11 +1488,8 @@ out:
 }
 
 static void hwc_prepare_gpx_layer(
-    struct hwc_context_t* ctx,
-    hwc_layer_1_t *layer,
-    int layer_id,
-    bool geometry_changed,
-    bool is_virtual)
+    struct hwc_context_t* ctx, hwc_layer_1_t *layer, int layer_id,
+    bool geometry_changed, bool is_virtual, bool is_locked)
 {
     NEXUS_Error rc;
     private_handle_t *gr_buffer = NULL;
@@ -1503,8 +1508,9 @@ static void hwc_prepare_gpx_layer(
     bool layer_changed = false;
 
     // sideband layer is handled through the video window directly.
-    if (layer->compositionType == HWC_SIDEBAND)
+    if (layer->compositionType == HWC_SIDEBAND) {
         return;
+    }
 
     // if we do not have a valid handle at this point, we have a problem.
     if (!layer->handle) {
@@ -1518,15 +1524,18 @@ static void hwc_prepare_gpx_layer(
     hwc_get_buffer_sizes(pSharedData, &cur_width, &cur_height);
     cur_blending_type = hwc_android_blend_to_nsc_blend(layer->blending);
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-        goto out;
+    if (!is_locked) {
+       if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+           goto out;
+       }
     }
 
     if (!is_virtual) {
        ctx->gpx_cli[layer_id].layer_type = layer->compositionType;
        ctx->gpx_cli[layer_id].layer_subtype = NEXUS_SURFACE_COMPOSITOR;
-       if (ctx->gpx_cli[layer_id].layer_type == HWC_CURSOR_OVERLAY)
+       if (ctx->gpx_cli[layer_id].layer_type == HWC_CURSOR_OVERLAY) {
           ctx->gpx_cli[layer_id].layer_subtype = NEXUS_CURSOR;
+       }
        ctx->gpx_cli[layer_id].layer_flags = layer->flags;
        ctx->gpx_cli[layer_id].plane_alpha = layer->planeAlpha;
 
@@ -1566,7 +1575,9 @@ static void hwc_prepare_gpx_layer(
         }
     }
 
-    BKNI_ReleaseMutex(ctx->mutex);
+    if (!is_locked) {
+       BKNI_ReleaseMutex(ctx->mutex);
+    }
 out:
     hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
     return;
@@ -1741,6 +1752,7 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
     unsigned int stride;
     void *pAddr;
     int layer_id = 0;
+    int virt_w = -1, virt_h = -1;
 
     if (list) {
        ctx->stats[1].prepare_call += 1;
@@ -1754,17 +1766,41 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
            ctx->vd_cli[i].composition.visible = false;
        }
 
-       if (ctx->display_gles_always || ctx->display_gles_virtual) {
+       ctx->cfg[1].width = -1;
+       ctx->cfg[1].height = -1;
+       if (list->outbuf != NULL) {
+          void *pAddr;
+          private_handle_t *gr_buffer = (private_handle_t *)list->outbuf;
+          hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+          PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
+          if (pSharedData != NULL) {
+             hwc_get_buffer_sizes(pSharedData, &virt_w, &virt_h);
+             ctx->cfg[1].width = virt_w;
+             ctx->cfg[1].height = virt_h;
+          }
+          hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+       }
+
+       if (ctx->display_gles_always || ctx->display_gles_virtual ||
+           (ctx->cfg[1].width == -1 && ctx->cfg[1].height == -1)) {
           goto out_unlock;
        }
 
        for (i = 0; i < list->numHwLayers; i++) {
           layer = &list->hwLayers[i];
+          if (ctx->display_dump_virt) {
+             ALOGI("vcmp: %llu - %dx%d, layer: %d, kind: %d",
+                   ctx->stats[1].prepare_call, virt_w, virt_h, i, layer->compositionType);
+          }
           if (layer->compositionType == HWC_FRAMEBUFFER) {
-             hwc_prepare_gpx_layer(ctx, layer, layer_id, (bool)(list->flags & HWC_GEOMETRY_CHANGED), true);
+             hwc_prepare_gpx_layer(ctx, layer, layer_id, false /*don't care*/, true, true);
              layer_id++;
              layer->compositionType = HWC_OVERLAY;
           }
+       }
+
+       if (ctx->display_dump_virt) {
+          ALOGI("vcmp: %llu - %dx%d, composing %d layers", ctx->stats[1].prepare_call, virt_w, virt_h, layer_id);
        }
     }
 
@@ -1881,7 +1917,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     int fence_id = INVALID_FENCE;
     struct sync_fence_info_data fence;
     int layer_composed = 0;
-    NEXUS_SurfaceHandle display_surface=NULL;
+    NEXUS_SurfaceHandle display_surface = NULL;
 
     if (!list)
        return -EINVAL;
@@ -1975,7 +2011,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                    list->hwLayers[i].releaseFenceFd = fence_id;
                 }
 
-                if (hwc_compose_gralloc_buffer(ctx, &ctx->gpx_cli[i], i, pSharedData, gr_buffer, display_surface)) {
+                if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, display_surface, false)) {
                    layer_composed++;
                 }
                 ctx->gpx_cli[i].last.grhdl = (buffer_handle_t)gr_buffer;
@@ -2007,7 +2043,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
             }
         }
         for (i = 0; i < list->numHwLayers; i++) {
-            if ( ctx->gpx_cli[i].active_surface ) {
+            if (ctx->gpx_cli[i].active_surface) {
                 NEXUS_Surface_Destroy(ctx->gpx_cli[i].active_surface);
                 ctx->gpx_cli[i].active_surface = NULL;
             }
@@ -2032,9 +2068,13 @@ out:
 
 static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* list)
 {
+    NEXUS_Error rc;
     size_t i;
     hwc_layer_1_t *layer;
     int layer_count = 0;
+    void *pAddr;
+    int layer_composed = 0, overlay_seen = 0, fb_target_seen = 0;
+    NEXUS_SurfaceHandle display_surface = NULL;
 
     if (list) {
 
@@ -2045,13 +2085,98 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
           goto out;
        }
 
-       if (ctx->display_gles_always || ctx->display_gles_virtual) {
+       if (ctx->display_gles_always || ctx->display_gles_virtual ||
+           (ctx->cfg[1].width == -1 && ctx->cfg[1].height == -1)) {
           list->retireFenceFd = list->outbufAcquireFenceFd;
+         goto out_unlock;
+       }
+
+       if (list->outbuf == NULL) {
+         ALOGE("vcmp: %llu - unexpected null output target", ctx->stats[1].set_call);
+         ctx->stats[1].set_skipped += 1;
+         goto out_unlock;
+       }
+
+       if (list->outbufAcquireFenceFd != -1) {
+          if (ctx->display_dump_virt) {
+             ALOGI("vcmp: %llu: outbuf-fence:%d\n", ctx->stats[1].set_call, list->outbufAcquireFenceFd);
+          }
+       }
+
+       list->retireFenceFd = -1;
+
+       if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+          ALOGE("%s: could not acquire power_mutex!!!", __FUNCTION__);
+          ctx->stats[1].set_skipped += 1;
           goto out_unlock;
        }
 
-       for (i = 0; i < list->numHwLayers; i++) {
-          // compose all OVERLAY layers into the buffer passed as outbuf.
+       if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
+          BKNI_ReleaseMutex(ctx->power_mutex);
+
+          private_handle_t *gr_out_buffer = (private_handle_t *)list->outbuf;
+          hwc_mem_lock(ctx, (unsigned)gr_out_buffer->sharedData, &pAddr, true);
+          PSHARED_DATA pOutSharedData = (PSHARED_DATA) pAddr;
+          display_surface = hwc_to_nsc_surface(pOutSharedData->planes[DEFAULT_PLANE].width,
+                                               pOutSharedData->planes[DEFAULT_PLANE].height,
+                                               pOutSharedData->planes[DEFAULT_PLANE].stride,
+                                               gralloc_to_nexus_pixel_format(pOutSharedData->planes[DEFAULT_PLANE].format),
+                                               ctx->hwc_with_mma,
+                                               pOutSharedData->planes[DEFAULT_PLANE].physAddr,
+                                               (uint8_t *)pAddr);
+          if (display_surface == NULL) {
+             ALOGE("vcmp: %llu - no display surface available", ctx->stats[1].set_call);
+             ctx->stats[1].set_skipped += 1;
+             goto out_unlock;
+          }
+
+          for (i = 0; i < list->numHwLayers; i++) {
+             if (list->hwLayers[i].compositionType == HWC_OVERLAY) {
+                overlay_seen++;
+                list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
+             } else if (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET) {
+                fb_target_seen++;
+                list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
+             }
+             if ((list->hwLayers[i].compositionType == HWC_OVERLAY) && ctx->vd_cli[i].composition.visible) {
+                if (i > HWC_VD_CLIENTS_NUMBER) {
+                    break;
+                }
+                private_handle_t *gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
+                if (gr_buffer == NULL) {
+                   continue;
+                }
+                hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+                PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
+                if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, display_surface, true)) {
+                   layer_composed++;
+                }
+                hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+             }
+          }
+
+          if (layer_composed) {
+             rc = hwc_checkpoint(ctx);
+             if (rc)  {
+                ALOGW("vcmp: checkpoint timeout");
+             }
+
+             for (i = 0; i < list->numHwLayers; i++) {
+                if (ctx->vd_cli[i].active_surface) {
+                   NEXUS_Surface_Destroy(ctx->vd_cli[i].active_surface);
+                   ctx->vd_cli[i].active_surface = NULL;
+                }
+             }
+          }
+
+          hwc_mem_unlock(ctx, (unsigned)gr_out_buffer->sharedData, true);
+          NEXUS_Surface_Destroy(display_surface);
+       }
+
+       if (ctx->display_dump_virt) {
+          ALOGI("vcmp: %llu (%llu): ov:%d, fb:%d - composed:%d\n",
+                ctx->stats[1].set_call, ctx->stats[1].prepare_call,
+                overlay_seen, fb_target_seen, layer_composed);
        }
     }
 
@@ -2508,8 +2633,8 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
    dev->cfg[0].width = property_get_int32(GRAPHICS_RES_WIDTH_PROP, GRAPHICS_RES_WIDTH_DEFAULT);
    dev->cfg[0].height = property_get_int32(GRAPHICS_RES_HEIGHT_PROP, GRAPHICS_RES_HEIGHT_DEFAULT);
 
-   dev->cfg[1].width = dev->cfg[0].width;
-   dev->cfg[1].height = dev->cfg[0].height;
+   dev->cfg[1].width = -1;
+   dev->cfg[1].height = -1;
 
    if (property_get(HWC_GLES_MODE_PROP, value, HWC_DEFAULT_GLES_MODE)) {
       dev->display_gles_fallback =
@@ -2572,6 +2697,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
     NxClient_AllocSettings nxAllocSettings;
     NEXUS_SurfaceClientSettings client_settings;
     NEXUS_SurfaceComposition composition;
+    NEXUS_ClientConfiguration clientConfig;
 
     if (!strcmp(name, HWC_HARDWARE_COMPOSER)) {
         NEXUS_Error rc = NEXUS_SUCCESS;
@@ -2586,11 +2712,11 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
 
         hwc_read_dev_props(dev);
 
-        // TODO: only one callback installed for all nsc operations regarding of display, hmmm...
         if ( BKNI_CreateEvent(&dev->recycle_event) ) {
            goto out;
         }
 
+        NEXUS_Platform_GetClientConfiguration(&clientConfig);
         NxClient_GetDefaultAllocSettings(&nxAllocSettings);
         nxAllocSettings.surfaceClient = DISPLAY_SUPPORTED;
         rc = NxClient_Alloc(&nxAllocSettings, &dev->nxAllocResults);
@@ -2599,11 +2725,11 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            goto out;
         }
 
-        for (int i = 0; i < DISPLAY_SUPPORTED; i++) {
+        for (int i = 0; i < (DISPLAY_SUPPORTED-1); i++) {
             dev->disp_cli[i].sccid = dev->nxAllocResults.surfaceClient[i].id;
             dev->disp_cli[i].schdl = NEXUS_SurfaceClient_Acquire(dev->disp_cli[i].sccid);
             if (NULL == dev->disp_cli[i].schdl) {
-               ALOGE("%s: Unable to allocate surface client", __FUNCTION__);
+               ALOGE("%s: unable to allocate surface client", __FUNCTION__);
                goto out;
             }
             NEXUS_SurfaceClient_GetSettings(dev->disp_cli[i].schdl, &client_settings);
@@ -2611,7 +2737,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             client_settings.recycled.context = dev;
             rc = NEXUS_SurfaceClient_SetSettings(dev->disp_cli[i].schdl, &client_settings);
             if (rc) {
-               ALOGE("%s: Unable to setup surface client", __FUNCTION__);
+               ALOGE("%s: unable to setup surface client", __FUNCTION__);
                goto out;
             }
             NxClient_GetSurfaceClientComposition(dev->disp_cli[i].sccid, &composition);
@@ -2627,7 +2753,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             composition.alphaBlend = alphaBlendingEquation[BLENDIND_TYPE_SRC_OVER];
             rc = NxClient_SetSurfaceClientComposition(dev->disp_cli[i].sccid, &composition);
             if (rc) {
-               ALOGE("%s: Unable to set client composition %d", __FUNCTION__, rc);
+               ALOGE("%s: unable to set client composition %d", __FUNCTION__, rc);
                goto out;
             }
             for ( int j = 0; j < HWC_NUM_DISP_BUFFERS; j++ ) {
@@ -2636,9 +2762,11 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                surfaceCreateSettings.width = dev->cfg[i].width;
                surfaceCreateSettings.height = dev->cfg[i].height;
                surfaceCreateSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
-               dev->disp_cli[i].display_buffers[j] = NEXUS_Surface_Create(&surfaceCreateSettings);
-               if (NULL == dev->disp_cli[i].display_buffers[j]) {
-                  ALOGE("%s: Unable to allocate display %d buffer %d", __FUNCTION__, i, j);
+               if (dev->hwc_with_mma) {
+                  surfaceCreateSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
+               }
+               dev->disp_cli[i].display_buffers[j] = hwc_surface_create(&surfaceCreateSettings, dev->hwc_with_mma);
+               if (dev->disp_cli[i].display_buffers[j] == NULL) {
                   goto out;
                }
             }
@@ -3018,12 +3146,8 @@ out:
 }
 
 static void hwc_nsc_prepare_layer(
-    struct hwc_context_t* ctx,
-    hwc_layer_1_t *layer,
-    int layer_id,
-    bool geometry_changed,
-    unsigned int *video_layer_id,
-    unsigned int *sideband_layer_id)
+    struct hwc_context_t* ctx, hwc_layer_1_t *layer, int layer_id,
+    bool geometry_changed, unsigned int *video_layer_id, unsigned int *sideband_layer_id)
 {
     bool is_sideband = false;
     bool is_yuv = false;
@@ -3031,7 +3155,7 @@ static void hwc_nsc_prepare_layer(
     if (is_video_layer(ctx, layer, layer_id, &is_sideband, &is_yuv)) {
         if (!is_sideband) {
             if (is_yuv) {
-               hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false);
+               hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false, false);
             }
             else {
                if (*video_layer_id < NSC_MM_CLIENTS_NUMBER) {
@@ -3056,7 +3180,7 @@ static void hwc_nsc_prepare_layer(
             }
         }
     } else {
-        hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false);
+        hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false, false);
     }
 }
 

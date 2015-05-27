@@ -45,3 +45,25 @@ extern "C" NEXUS_SurfaceHandle hwc_to_nsc_surface(int width, int height, int str
     ALOGV("%s: (%d,%d), s:%d, fmt:%d, p:%p, h:%p -> %p", __FUNCTION__, width, height, stride, format, data, handle, shdl);
     return shdl;
 }
+
+extern "C" NEXUS_SurfaceHandle hwc_surface_create(
+   const NEXUS_SurfaceCreateSettings *pCreateSettings, int isMma)
+{
+   NEXUS_SurfaceHandle surface = NULL;
+
+   surface = NEXUS_Surface_Create(pCreateSettings);
+   if (isMma && surface == NULL) {
+      /* default assumption: allocation failed due to memory, try to grow the heap.
+       */
+      if (NxClient_GrowHeap(NXCLIENT_DYNAMIC_HEAP) == NEXUS_SUCCESS) {
+         surface = NEXUS_Surface_Create(pCreateSettings);
+         if (surface == NULL) {
+            ALOGE("%s: out-of-memory for surface %dx%d, st:%d, fmt:%d", __FUNCTION__,
+                  pCreateSettings->width, pCreateSettings->height,
+                  pCreateSettings->pitch, pCreateSettings->pixelFormat);
+         }
+      }
+   }
+
+   return surface;
+}

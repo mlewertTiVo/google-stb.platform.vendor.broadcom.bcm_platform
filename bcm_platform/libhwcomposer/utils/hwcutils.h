@@ -31,6 +31,10 @@ NEXUS_SurfaceHandle hwc_to_nsc_surface(
    unsigned handle,
    uint8_t *data);
 
+NEXUS_SurfaceHandle hwc_surface_create(
+   const NEXUS_SurfaceCreateSettings *pCreateSettings,
+   int isMma);
+
 #ifdef __cplusplus
 };
 #endif
