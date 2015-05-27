@@ -1792,7 +1792,7 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
              ALOGI("vcmp: %llu - %dx%d, layer: %d, kind: %d",
                    ctx->stats[1].prepare_call, virt_w, virt_h, i, layer->compositionType);
           }
-          if (layer->compositionType == HWC_FRAMEBUFFER) {
+          if ((layer->compositionType == HWC_FRAMEBUFFER) || (layer->compositionType == HWC_OVERLAY)) {
              hwc_prepare_gpx_layer(ctx, layer, layer_id, false /*don't care*/, true, true);
              layer_id++;
              layer->compositionType = HWC_OVERLAY;
