@@ -92,6 +92,8 @@
 #define NX_MMA_ACT_GS                  "ro.nx.mma.act.gs"
 #define NX_MMA_ACT_LMK                 "ro.nx.mma.act.lmk"
 #define NX_MMA_GROW_SIZE               "ro.nx.heap.grow"
+#define NX_MMA_SHRINK_THRESHOLD        "ro.nx.heap.shrink"
+#define NX_MMA_SHRINK_THRESHOLD_DEF    "2m"
 #define NX_TRANSCODE                   "ro.nx.transcode"
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
 
@@ -176,6 +178,7 @@ static void *proactive_runner_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
     unsigned gfx_heap_grow_size = 0;
+    unsigned gfx_heap_shrink_threshold = 0;
     int active_gc, active_lmk, active_gs;
     int gc_tick = 0;
     int lmk_tick = 0;
@@ -188,12 +191,17 @@ static void *proactive_runner_task(void *argv)
           gfx_heap_grow_size = calc_heap_size(value);
        }
     }
+    if (property_get(NX_MMA_SHRINK_THRESHOLD, value, NX_MMA_SHRINK_THRESHOLD_DEF)) {
+       if (strlen(value)) {
+          gfx_heap_shrink_threshold = calc_heap_size(value);
+       }
+    }
     active_gc  = property_get_int32(NX_MMA_ACT_GC, 1);
     active_gs  = property_get_int32(NX_MMA_ACT_GS, 1);
     active_lmk = property_get_int32(NX_MMA_ACT_LMK, 1);
 
-    ALOGI("%s: launching, gpx-grow: %u, active-gc: %c, active-gs: %c, active-lmk: %c",
-          __FUNCTION__, gfx_heap_grow_size,
+    ALOGI("%s: launching, gpx-grow: %u, gpx-shrink: %u, active-gc: %c, active-gs: %c, active-lmk: %c",
+          __FUNCTION__, gfx_heap_grow_size, gfx_heap_shrink_threshold,
           active_gc ? 'o' : 'x',
           active_gs ? 'o' : 'x',
           active_lmk ? 'o' : 'x');
@@ -292,7 +300,7 @@ skip_lmk:
               if (++gc_tick > RUNNER_GC_THRESHOLD) {
                  gc_tick = 0;
                  if (!needs_growth) {
-                    NEXUS_Platform_ShrinkHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size, (size_t)gfx_heap_grow_size);
+                    NEXUS_Platform_ShrinkHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size, (size_t)gfx_heap_shrink_threshold);
                  }
               }
            }
