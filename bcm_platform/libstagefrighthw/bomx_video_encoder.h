@@ -362,6 +362,8 @@ protected:
     bool GetCodecConfig( const NEXUS_VideoEncoderDescriptor *, size_t , const NEXUS_VideoEncoderDescriptor *, size_t );
     bool HaveCompleteFrame( const NEXUS_VideoEncoderDescriptor *, size_t, const NEXUS_VideoEncoderDescriptor *, size_t, size_t *);
 
+    NEXUS_Error UpdateEncoderSettings();
+
 private:
 };
 

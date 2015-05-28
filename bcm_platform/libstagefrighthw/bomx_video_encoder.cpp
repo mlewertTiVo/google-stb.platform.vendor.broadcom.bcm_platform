@@ -62,6 +62,12 @@
 #define B_DEFAULT_INPUT_FRAMERATE (65536 * 15)
 #define B_DEFAULT_INPUT_NEXUS_FRAMERATE (NEXUS_VideoFrameRate_e15)
 
+#define B_MAX_FRAME_WIDTH           1280
+#define B_MAX_FRAME_HEIGHT          720
+#define B_MAX_FRAME_RATE            NEXUS_VideoFrameRate_e30
+#define B_MIN_FRAME_RATE            NEXUS_VideoFrameRate_e15
+#define B_RATE_BUFFER_DELAY_MS      1500
+
 #define NAL_UNIT_TYPE_SPS  7
 #define NAL_UNIT_TYPE_PPS  8
 
@@ -532,7 +538,7 @@ BOMX_VideoEncoder::~BOMX_VideoEncoder()
     Lock();
 
     /* stop encoder if started */
-    if (IsEncoderStarted())
+    if ( IsEncoderStarted() )
     {
         StopEncoder();
     }
@@ -549,7 +555,7 @@ BOMX_VideoEncoder::~BOMX_VideoEncoder()
     {
         UnregisterEvent(m_inputBufferProcessEventId);
     }
-    if (m_ImageInputEventId)
+    if ( m_ImageInputEventId )
     {
         UnregisterEvent(m_ImageInputEventId);
     }
@@ -644,7 +650,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::GetParameter(
         OMX_VIDEO_PARAM_BITRATETYPE *pBitrate = (OMX_VIDEO_PARAM_BITRATETYPE *)pComponentParameterStructure;
         ALOGV("GetParameter OMX_IndexParamVideoBitrate");
         BOMX_STRUCT_VALIDATE(pBitrate);
-        if ( pBitrate->nPortIndex != m_videoPortBase + 1)
+        if ( pBitrate->nPortIndex != m_videoPortBase + 1 )
         {
             ALOGE("output port only");
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -961,7 +967,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
         OMX_VIDEO_PARAM_AVCTYPE *pParam = (OMX_VIDEO_PARAM_AVCTYPE *)pComponentParameterStructure;
         ALOGV("SetParameter OMX_IndexParamVideoAvc");
         BOMX_STRUCT_VALIDATE(pParam);
-        if ( pParam->nPortIndex != m_videoPortBase + 1)
+        if ( pParam->nPortIndex != m_videoPortBase + 1 )
         {
             ALOGE("output port only");
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -976,7 +982,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
         OMX_VIDEO_PARAM_BITRATETYPE *pParam = (OMX_VIDEO_PARAM_BITRATETYPE *)pComponentParameterStructure;
         ALOGV("SetParameter OMX_IndexParamVideoBitrate");
         BOMX_STRUCT_VALIDATE(pParam);
-        if ( pParam->nPortIndex != m_videoPortBase + 1)
+        if ( pParam->nPortIndex != m_videoPortBase + 1 )
         {
             ALOGE("output port only");
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -984,6 +990,16 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
 
         BKNI_Memcpy(&m_sVideoBitrateParams, pParam, sizeof(OMX_VIDEO_PARAM_BITRATETYPE));
         ALOGV("control type = %d, bitrate = %d", pParam->eControlRate, pParam->nTargetBitrate);
+
+        if ( IsEncoderStarted() )
+        {
+            NEXUS_Error rc = UpdateEncoderSettings();
+            if ( rc )
+            {
+                LOGE("Failed to update encoder settings");
+                return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+            }
+        }
         return OMX_ErrorNone;
     }
     case OMX_IndexParamEnableAndroidNativeGraphicsBuffer:
@@ -1043,7 +1059,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
 
         if ( pMetadata->nPortIndex != m_videoPortBase )
         {
-            if (pMetadata->bStoreMetaData == OMX_FALSE)
+            if ( pMetadata->bStoreMetaData == OMX_FALSE )
             {
                 // to make ACodec happy
                 return OMX_ErrorNone;
@@ -2356,21 +2372,74 @@ OMX_ERRORTYPE BOMX_VideoEncoder::GetConfig(
     OMX_IN  OMX_INDEXTYPE nIndex,
     OMX_INOUT OMX_PTR pComponentConfigStructure)
 {
-    BSTD_UNUSED(pComponentConfigStructure);
-    ALOGE("Config index %#x is not supported", nIndex);
-    return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
+    switch ( (int)nIndex )
+    {
+    case OMX_IndexConfigVideoBitrate:
+    {
+        OMX_VIDEO_CONFIG_BITRATETYPE *pConfig = (OMX_VIDEO_CONFIG_BITRATETYPE *)pComponentConfigStructure;
+        ALOGV("GetConfig OMX_IndexConfigVideoBitrate");
+        BOMX_STRUCT_VALIDATE(pConfig);
+
+        if ( pConfig->nPortIndex != m_videoPortBase + 1 )
+        {
+            ALOGE("Unable to get bit rate: Can only get the output port's bit rate");
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+
+        pConfig->nEncodeBitrate = m_sVideoBitrateParams.nTargetBitrate;
+        return OMX_ErrorNone;
+    }
+    default:
+    {
+        ALOGE("Config index %#x is not supported", nIndex);
+        return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
+    }
+    }
 }
 
 OMX_ERRORTYPE BOMX_VideoEncoder::SetConfig(
     OMX_IN  OMX_INDEXTYPE nIndex,
     OMX_IN  OMX_PTR pComponentConfigStructure)
 {
-    BSTD_UNUSED(pComponentConfigStructure);
     switch ( (int)nIndex )
     {
+    case OMX_IndexConfigVideoBitrate:
+    {
+        OMX_VIDEO_CONFIG_BITRATETYPE *pConfig = (OMX_VIDEO_CONFIG_BITRATETYPE *)pComponentConfigStructure;
+        ALOGV("SetConfig OMX_IndexConfigVideoBitrate");
+        BOMX_STRUCT_VALIDATE(pConfig);
+
+        if ( pConfig->nPortIndex != m_videoPortBase + 1 )
+        {
+           ALOGE("Unable to change bit rate: Can only change the output port's bit rate");
+           return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+
+        if ( m_sVideoBitrateParams.eControlRate == OMX_Video_ControlRateConstant ||
+             m_sVideoBitrateParams.eControlRate == OMX_Video_ControlRateDisable )
+        {
+           ALOGE("Unable to change bit rate: Control Rate doesn't support changing the bit rate");
+           return BOMX_ERR_TRACE(OMX_ErrorUnsupportedSetting);
+        }
+
+        m_sVideoBitrateParams.nTargetBitrate = pConfig->nEncodeBitrate;
+        ALOGV("Set: control type = %d, bitrate = %d", m_sVideoBitrateParams.eControlRate,
+              m_sVideoBitrateParams.nTargetBitrate);
+
+        NEXUS_Error rc = UpdateEncoderSettings();
+        if ( rc )
+        {
+            LOGE("Failed to update encoder settings");
+            return BOMX_ERR_TRACE(OMX_ErrorUnsupportedSetting);
+        }
+
+        return OMX_ErrorNone;
+    }
     default:
+    {
         ALOGE("Config index %#x is not supported", nIndex);
         return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
+    }
     }
 }
 
@@ -2804,77 +2873,16 @@ void BOMX_VideoEncoder::StopEncoder(void)
 NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
 {
     NEXUS_Error rc;
-    NEXUS_SimpleEncoderSettings encoderSettings;
     NEXUS_SimpleEncoderStartSettings encoderStartSettings;
     const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[0]->GetDefinition();
 
-    NEXUS_SimpleEncoder_GetSettings(m_hSimpleEncoder, &encoderSettings);
-
-    encoderSettings.video.width = pPortDef->format.video.nFrameWidth;;
-    encoderSettings.video.height = pPortDef->format.video.nFrameHeight;
-    encoderSettings.video.refreshRate = 60000;
-
-    encoderSettings.videoEncoder.bitrateMax = m_sVideoBitrateParams.nTargetBitrate;
-    switch (m_sVideoBitrateParams.eControlRate)
+    ALOGV("BOMX_VideoEncoder::StartOutput");
+    rc = UpdateEncoderSettings();
+    if ( rc )
     {
-    case OMX_Video_ControlRateVariable:
-    {
-        encoderSettings.videoEncoder.bitrateTarget = m_sVideoBitrateParams.nTargetBitrate;
-        encoderSettings.videoEncoder.variableFrameRate = false;
+        LOGE("Failed to update encoder settings");
+        return BOMX_BERR_TRACE(rc);
     }
-    break;
-
-    case OMX_Video_ControlRateConstant:
-    {
-        encoderSettings.videoEncoder.bitrateTarget = 0;
-        encoderSettings.videoEncoder.variableFrameRate = false;
-    }
-    break;
-
-    case OMX_Video_ControlRateVariableSkipFrames:
-    {
-        encoderSettings.videoEncoder.bitrateTarget = m_sVideoBitrateParams.nTargetBitrate;
-        encoderSettings.videoEncoder.variableFrameRate = true;
-    }
-    break;
-
-    case OMX_Video_ControlRateConstantSkipFrames:
-    {
-        encoderSettings.videoEncoder.bitrateTarget = 0;
-        encoderSettings.videoEncoder.variableFrameRate = true;
-    }
-    break;
-
-    case OMX_Video_ControlRateDisable:
-    default:
-    {
-        ALOGW("%s: No rate control", __FUNCTION__);
-        encoderSettings.videoEncoder.bitrateTarget = 0;
-        encoderSettings.videoEncoder.variableFrameRate = false;
-    }
-    break;
-    }
-    encoderSettings.videoEncoder.frameRate = MapOMXFrameRateToNexus(pPortDef->format.video.xFramerate);
-    if (encoderSettings.videoEncoder.frameRate == NEXUS_VideoFrameRate_eUnknown)
-    {
-        ALOGW("Unknown encoder frame rate %u. Use variable frame rate...", pPortDef->format.video.xFramerate);
-
-        encoderSettings.videoEncoder.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
-        encoderSettings.videoEncoder.variableFrameRate = true;
-    }
-
-    ALOGV("FrameRate=%d BitRateMax=%d BitRateTarget=%d bVarFrameRate=%d",
-          encoderSettings.videoEncoder.frameRate,
-          encoderSettings.videoEncoder.bitrateMax,
-          encoderSettings.videoEncoder.bitrateTarget,
-          encoderSettings.videoEncoder.variableFrameRate);
-
-    rc = NEXUS_SimpleEncoder_SetSettings(m_hSimpleEncoder, &encoderSettings);
-    if (rc)
-    {
-        return BOMX_BERR_TRACE(BERR_UNKNOWN);
-    }
-    ALOGV("configured Nexus encoder");
 
     // const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[1]->GetDefinition();
     NEXUS_SimpleEncoder_GetDefaultStartSettings(&encoderStartSettings);
@@ -2906,6 +2914,15 @@ NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
         return BOMX_BERR_TRACE(OMX_ErrorNotImplemented);
     }
     }
+
+    /* setup encoder bounds to improve latency */
+    encoderStartSettings.output.video.settings.bounds.outputFrameRate.min = B_MIN_FRAME_RATE;
+    encoderStartSettings.output.video.settings.bounds.outputFrameRate.max = B_MAX_FRAME_RATE;
+    encoderStartSettings.output.video.settings.bounds.inputFrameRate.min = B_MIN_FRAME_RATE;
+    encoderStartSettings.output.video.settings.bounds.inputDimension.max.width = B_MAX_FRAME_WIDTH;
+    encoderStartSettings.output.video.settings.bounds.inputDimension.max.height = B_MAX_FRAME_HEIGHT;
+    encoderStartSettings.output.video.settings.bounds.streamStructure.max.framesB = 0;
+    encoderStartSettings.output.video.settings.rateBufferDelay = B_RATE_BUFFER_DELAY_MS;
 
     ALOGV("Profile = %d, Level = %d, width = %d, height = %d",
           encoderStartSettings.output.video.settings.profile,
@@ -4219,5 +4236,82 @@ out:
         NEXUS_MemoryBlock_Unlock(block_handle);
     }
     return rc;
+}
+
+NEXUS_Error BOMX_VideoEncoder::UpdateEncoderSettings(void)
+{
+    NEXUS_Error rc;
+    NEXUS_SimpleEncoderSettings encoderSettings;
+    const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[0]->GetDefinition();
+
+    NEXUS_SimpleEncoder_GetSettings(m_hSimpleEncoder, &encoderSettings);
+
+    encoderSettings.video.width = pPortDef->format.video.nFrameWidth;;
+    encoderSettings.video.height = pPortDef->format.video.nFrameHeight;
+    encoderSettings.video.refreshRate = 60000;
+
+    encoderSettings.videoEncoder.bitrateMax = m_sVideoBitrateParams.nTargetBitrate;
+    switch ( m_sVideoBitrateParams.eControlRate )
+    {
+    case OMX_Video_ControlRateVariable:
+    {
+        encoderSettings.videoEncoder.bitrateTarget = m_sVideoBitrateParams.nTargetBitrate;
+        encoderSettings.videoEncoder.variableFrameRate = false;
+    }
+    break;
+
+    case OMX_Video_ControlRateConstant:
+    {
+        encoderSettings.videoEncoder.bitrateTarget = 0;
+        encoderSettings.videoEncoder.variableFrameRate = false;
+    }
+    break;
+
+    case OMX_Video_ControlRateVariableSkipFrames:
+    {
+        encoderSettings.videoEncoder.bitrateTarget = m_sVideoBitrateParams.nTargetBitrate;
+        encoderSettings.videoEncoder.variableFrameRate = true;
+    }
+    break;
+
+    case OMX_Video_ControlRateConstantSkipFrames:
+    {
+        encoderSettings.videoEncoder.bitrateTarget = 0;
+        encoderSettings.videoEncoder.variableFrameRate = true;
+    }
+    break;
+
+    case OMX_Video_ControlRateDisable:
+    default:
+    {
+        ALOGW("%s: No rate control", __FUNCTION__);
+        encoderSettings.videoEncoder.bitrateTarget = 0;
+        encoderSettings.videoEncoder.variableFrameRate = false;
+    }
+    break;
+    }
+    encoderSettings.videoEncoder.frameRate = MapOMXFrameRateToNexus(pPortDef->format.video.xFramerate);
+    if ( encoderSettings.videoEncoder.frameRate == NEXUS_VideoFrameRate_eUnknown )
+    {
+        ALOGW("Unknown encoder frame rate %u. Use variable frame rate...", pPortDef->format.video.xFramerate);
+
+        encoderSettings.videoEncoder.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
+        encoderSettings.videoEncoder.variableFrameRate = true;
+    }
+
+    ALOGV("FrameRate=%d BitRateMax=%d BitRateTarget=%d bVarFrameRate=%d",
+          encoderSettings.videoEncoder.frameRate,
+          encoderSettings.videoEncoder.bitrateMax,
+          encoderSettings.videoEncoder.bitrateTarget,
+          encoderSettings.videoEncoder.variableFrameRate);
+
+    rc = NEXUS_SimpleEncoder_SetSettings(m_hSimpleEncoder, &encoderSettings);
+    if ( rc )
+    {
+        return BOMX_BERR_TRACE(BERR_UNKNOWN);
+    }
+    ALOGV("configured Nexus encoder");
+
+    return NEXUS_SUCCESS;
 }
 
