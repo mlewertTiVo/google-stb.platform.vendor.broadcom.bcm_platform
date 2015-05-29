@@ -49,11 +49,15 @@ static void Usage(void)
     PRINT( "  -v  level           turns on verbose mode. 0=off, 1=normal, 2=debug, 3=noisy\n");
     PRINT( "  -h                  prints this help\n");
     PRINT( "\n");
-    PRINT( "Example: makegpt -a -b 0x60000 -o gpt_alt.bin -s 0x1e0000000 "
+    PRINT( "  startaddr can be '-' to guess based on previous startaddr+size.\n");
+    PRINT( "  size can be '-' to guess based on next startaddr.\n");
+    PRINT( "  size can be a hex value or a value with suffix K, M, or G.\n");
+    PRINT( "\n");
+    PRINT( "Example: makegpt -a -b 0x60000 -o gpt_alt.bin -s 0x1e0000000 -- "
              "image1,0x10000,0x10000,0 "
-             "image2,0x20000,0x10000,0 "
+             "image2,-,64k,0 "
              "image3,0x30000,0x30000,0 "
-             "image4,0x90000,0x50000,0\n");
+             "image4,0x90000,-,0\n");
 }
 
 /*****************************************************************************
@@ -66,7 +70,7 @@ static efi_partition_info_t partinfo[64];
 int main(int argc, char **argv)
 {
     int arg;
-    int verbose = V_QUIET;
+    int verbose = V_NORMAL;
     char fspec[256] = "";
     efi_legacy_mbr_t pmbr;
     efi_gpt_header_t gpt;
@@ -76,6 +80,10 @@ int main(int argc, char **argv)
     uint64_t total_disk_size = 0;
     int isAlternate = 0;
     uint64_t base_address = ~0;
+    int i;
+    int part_guess_start[64];
+    int part_guess_size[64];
+    uint64_t agpt_reserved_size;
 
     memset(&pmbr, 0, sizeof(pmbr));
     memset(&gpt, 0, sizeof(gpt));
@@ -151,20 +159,53 @@ int main(int argc, char **argv)
         {
             *startStr++ = '\0';
             start = strtoull(startStr, NULL, 0);
+            if (start==0 && index(startStr, '-'))
+            {
+                part_guess_start[imgcount]=1;
+            }
+            else
+            {
+                part_guess_start[imgcount]=0;
+            }
         }
         else
         {
             PRINT( "Error: Bad line format  partitionName,startaddr,size,attr ...\n");
+            PRINT( "Unable to find start of partition %d (%s)\n", imgcount, partitionNameStr);
             exit(1);
         }
         if ((sizeStr = strchr(startStr, ',')) != NULL)
         {
+            char *endptr;
             *sizeStr++ = '\0';
-            size = strtoull(sizeStr, NULL, 0);
+            size = strtoull(sizeStr, &endptr, 0);
+            if (size==0 && index(sizeStr, '-'))
+            {
+                part_guess_size[imgcount]=1;
+            }
+            else
+            {
+                part_guess_size[imgcount]=0;
+                /* Handle suffixes */
+                switch (*endptr)
+                {
+                case 'k':
+                case 'K':
+                    size *= 1024;
+                    break;
+                case 'M':
+                    size *= 1024*1024;
+                    break;
+                case 'G':
+                    size *= 1024*1024*1024;
+                    break;
+                }
+            }
         }
         else
         {
             PRINT( "Error: Bad line format  partitionName,startaddr,size,attr ...\n");
+            PRINT( "Unable to find size of partition %d (%s)\n", imgcount, partitionNameStr);
             exit(1);
         }
         if ((attrStr = strchr(sizeStr, ',')) != NULL)
@@ -175,6 +216,7 @@ int main(int argc, char **argv)
         else
         {
             PRINT( "Error: Bad line format  partitionName,startaddr,size,attr ...\n");
+            PRINT( "Unable to find attributes of partition %d (%s)\n", imgcount, partitionNameStr);
             exit(1);
         }
         strncpy(partinfo[imgcount].name, partitionNameStr, sizeof(partinfo[imgcount].name));
@@ -188,15 +230,90 @@ int main(int argc, char **argv)
             partinfo[imgcount].end = start;
         }
         partinfo[imgcount].attributes = attr;
+        imgcount++;
+    }
+
+    /* Reserve space for the alternate gpt (used when guessing the size of
+       the last partition).
+
+       The minimum size required is 1 sector for the header + 1 sector per
+       4 partition table entries. However, we'll reserve more space so that
+       the gpt binary can grow without impacting the last partition.
+
+       Similar to sgdisk, we'll reserve 2 sectors for the header + 32 sectors
+       for 128 partition table entries.
+
+       At this time, efi_populate_header doesn't take advantage of all that
+       space, but when a user modifies the GPT at runtime, the tool can
+       regenerate the GPT at the correct offset within our reserved space.
+    */
+    if (imgcount <= 128)
+        agpt_reserved_size = EFI_SECTORSIZE*(2+EFI_SECTORADDR(EFI_PART2SECT(128)));
+    else
+        agpt_reserved_size = EFI_SECTORSIZE*(2+EFI_SECTORADDR(EFI_PART2SECT(imgcount)));
+    PDEBUG("agpt_reserved_size 0x%"PRIx64"\n", agpt_reserved_size);
+
+    /* Finalize partition start and sizes */
+    for (i=0; i<imgcount; i++)
+    {
+        uint64_t size;
+
+        if (part_guess_start[i])
+        {
+            if (i == 0)
+            {
+                partinfo[i].start = 0;
+            }
+            else if (part_guess_size[i-1])
+            {
+                PRINT( "Error: unable to guess consecutive size and start...\n");
+                exit(1);
+            }
+            else
+            {
+                /* Reuse "size" value from i-1 */
+                partinfo[i].start = partinfo[i-1].start + size;
+                /* "end" was based on 0, rebase on the new "start" */
+                partinfo[i].end += partinfo[i].start;
+            }
+        }
+
+        /* Check if the user requested to fill (size='-') */
+        if (part_guess_size[i])
+        {
+            /* Find how much we can fill */
+            int j;
+
+            if ((partinfo[i].start + EFI_SECTORSIZE) >= (total_disk_size - agpt_reserved_size))
+            {
+                PRINT("Error: no room for partition %d (%s). start=0x%"PRIx64" limit=0x%"PRIx64"\n",
+                      i, partinfo[i].name, partinfo[i].start,
+                      total_disk_size - agpt_reserved_size);
+                exit(1);
+            }
+
+            size = total_disk_size - agpt_reserved_size - partinfo[i].start;
+            for (j=0; j<imgcount; j++)
+            {
+                if (partinfo[j].start > partinfo[i].start &&
+                    (partinfo[j].start - partinfo[i].start) < size)
+                {
+                    size = partinfo[j].start - partinfo[i].start;
+                }
+            }
+            partinfo[i].end = partinfo[i].start + size - EFI_SECTORSIZE;
+        }
+        else
+        {
+            size = partinfo[i].end - partinfo[i].start + EFI_SECTORSIZE;
+        }
 
         PNORMAL( "partition \'%s\' start=0x%"PRIx64", end=0x%"PRIx64", attr=0x%"PRIx64" size=0x%"PRIx64"\n",
-                  partinfo[imgcount].name,
-                  partinfo[imgcount].start,
-                  partinfo[imgcount].end,
-                  partinfo[imgcount].attributes,
+                  partinfo[i].name,
+                  partinfo[i].start,
+                  partinfo[i].end,
+                  partinfo[i].attributes,
                   size);
-
-        imgcount++;
     }
 
     ofp = fopen(fspec, "w+");

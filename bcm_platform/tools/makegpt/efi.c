@@ -478,7 +478,7 @@ void efi_dump_gpt(char *banner, efi_gpt_header_t *gpt)
         efi_debug("%02x", gpt->disk_guid.b[i]);
     }
     efi_debug("\n");
-    efi_debug("partition_entry_lba          0x%08llx  (0x%08llx\n", le64_to_cpu(gpt->partition_entry_lba), EFI_SECTORSIZE * le64_to_cpu(gpt->partition_entry_lba));
+    efi_debug("partition_entry_lba          0x%08llx  (0x%08llx)\n", le64_to_cpu(gpt->partition_entry_lba), EFI_SECTORSIZE * le64_to_cpu(gpt->partition_entry_lba));
     efi_debug("num_partition_entries        %d\n", le32_to_cpu(gpt->num_partition_entries));
     efi_debug("sizeof_partition_entry       0x%x\n", le32_to_cpu(gpt->sizeof_partition_entry));
     efi_debug("partition_entry_array_crc32  0x%08x\n", le32_to_cpu(gpt->partition_entry_array_crc32));
