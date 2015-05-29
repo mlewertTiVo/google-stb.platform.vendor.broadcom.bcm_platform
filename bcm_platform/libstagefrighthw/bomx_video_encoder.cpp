@@ -55,7 +55,7 @@
 #define B_PROPERTY_ITB_DESC_DEBUG ("media.brcm.venc_itb_desc_debug")
 
 #define B_NUM_OF_OUT_BUFFERS (10)
-#define B_NUM_OF_IN_BUFFERS (8)
+#define B_NUM_OF_IN_BUFFERS (5)
 
 #define B_HW_ENCODER_POLL_INTERVAL (20)
 
@@ -66,7 +66,7 @@
 #define NAL_UNIT_TYPE_PPS  8
 
 #define VIDEO_ENCODE_DEPTH 16
-#define VIDEO_ENCODE_IMAGEINPUT_DEPTH 8
+#define VIDEO_ENCODE_IMAGEINPUT_DEPTH 5
 
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
