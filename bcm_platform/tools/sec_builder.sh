@@ -249,6 +249,7 @@ function compiler {
 			export B_REFSW_DEBUG=y
 		else
 			export B_REFSW_DEBUG=n
+			export B_REFSW_DEBUG_COMPACT_ERR=n
 		fi
 		make -j12 clean_security_user
 		make -j12 security_user
