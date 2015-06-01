@@ -84,6 +84,7 @@ int main(int argc, char **argv)
     int part_guess_start[64];
     int part_guess_size[64];
     uint64_t agpt_reserved_size;
+    uint64_t size;
 
     memset(&pmbr, 0, sizeof(pmbr));
     memset(&gpt, 0, sizeof(gpt));
@@ -151,7 +152,6 @@ int main(int argc, char **argv)
         char *sizeStr = NULL;
         char *attrStr = NULL;
         uint64_t start;
-        uint64_t size;
         uint64_t attr;
 
         partitionNameStr = argv[optind++];
@@ -254,10 +254,9 @@ int main(int argc, char **argv)
     PDEBUG("agpt_reserved_size 0x%"PRIx64"\n", agpt_reserved_size);
 
     /* Finalize partition start and sizes */
+    size = 0;
     for (i=0; i<imgcount; i++)
     {
-        uint64_t size;
-
         if (part_guess_start[i])
         {
             if (i == 0)
