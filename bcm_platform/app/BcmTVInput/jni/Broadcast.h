@@ -174,7 +174,7 @@ public:
     int (*Tune)(String8);
     Vector<BroadcastChannelInfo> (*GetChannelList)();
     Vector<BroadcastProgramInfo> (*GetProgramList)(String8);
-    Vector<BroadcastProgramUpdateInfo> (*GetProgramUpdateList)();
+    Vector<BroadcastProgramUpdateInfo> (*GetProgramUpdateList)(jint limit);
     BroadcastScanInfo (*GetScanInfo)();
     jlong (*GetUtcTime)();
     int (*Stop)();

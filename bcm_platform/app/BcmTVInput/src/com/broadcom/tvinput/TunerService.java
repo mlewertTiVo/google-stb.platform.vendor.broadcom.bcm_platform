@@ -466,7 +466,7 @@ public class TunerService extends TvInputService {
 
             private boolean updatePrograms()
             {
-                ProgramUpdateInfo puiv[] = TunerHAL.getProgramUpdateList();
+                ProgramUpdateInfo puiv[] = TunerHAL.getProgramUpdateList(10);
                 for (ProgramUpdateInfo pui : puiv) {
                     Log.d(TAG, "DatabaseSyncTask::Got programUpdate " + pui.type + " " + pui.channel_id + " " + pui.id);
                     switch (pui.type) {

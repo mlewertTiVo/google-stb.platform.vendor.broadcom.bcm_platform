@@ -102,7 +102,7 @@ static JNINativeMethod gMethods[] =
     {"tune",           "(Ljava/lang/String;)I",     (void *)Java_com_broadcom_tvinput_TunerHAL_tune},
     {"getChannelList", "()[Lcom/broadcom/tvinput/ChannelInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getChannelList},
     {"getProgramList", "(Ljava/lang/String;)[Lcom/broadcom/tvinput/ProgramInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getProgramList},
-    {"getProgramUpdateList", "()[Lcom/broadcom/tvinput/ProgramUpdateInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getProgramUpdateList},
+    {"getProgramUpdateList", "(I)[Lcom/broadcom/tvinput/ProgramUpdateInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getProgramUpdateList},
     {"getScanInfo",    "()Lcom/broadcom/tvinput/ScanInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getScanInfo},
     {"getUtcTime",     "()J",      (void *)Java_com_broadcom_tvinput_TunerHAL_getUtcTime},  
     {"stop",           "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stop},  
@@ -665,7 +665,7 @@ static const char * programUpdateInfoUpdateTypeName(BroadcastProgramUpdateInfo::
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_com_broadcom_tvinput_TunerHAL_getProgramUpdateList(JNIEnv *env, jclass /*thiz*/)
+Java_com_broadcom_tvinput_TunerHAL_getProgramUpdateList(JNIEnv *env, jclass /*thiz*/, jint limit)
 {
     TV_LOG("%s: Fetching program update list!!", __FUNCTION__);
 
@@ -677,7 +677,7 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramUpdateList(JNIEnv *env, jclass /*th
     }
 
     LOCKHAL
-    puiv = (*g_pTD->driver.GetProgramUpdateList)();
+    puiv = (*g_pTD->driver.GetProgramUpdateList)(limit);
     UNLOCKHAL
 
     jclass cls = env->FindClass("com/broadcom/tvinput/ProgramUpdateInfo"); 

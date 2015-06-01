@@ -25,7 +25,7 @@ public class TunerHAL
     static native int tune(String id); // from ChannelInfo
     static native ChannelInfo[] getChannelList();
     static native ProgramInfo[] getProgramList(String internalid);
-    static native ProgramUpdateInfo[] getProgramUpdateList();
+    static native ProgramUpdateInfo[] getProgramUpdateList(int limit);
     static native ScanInfo getScanInfo();
     static native long getUtcTime();
     static native int stop();

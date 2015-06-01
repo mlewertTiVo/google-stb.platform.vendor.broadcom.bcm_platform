@@ -798,7 +798,7 @@ static Vector<BroadcastProgramInfo> BroadcastDTVKit_GetProgramList(String8 s8id)
 }
 
 #ifdef JOURNAL
-static Vector<BroadcastProgramUpdateInfo> BroadcastDTVKit_GetProgramUpdateList()
+static Vector<BroadcastProgramUpdateInfo> BroadcastDTVKit_GetProgramUpdateList(jint limit)
 {
     Vector<BroadcastProgramUpdateInfo> puiv;
 
@@ -809,7 +809,6 @@ static Vector<BroadcastProgramUpdateInfo> BroadcastDTVKit_GetProgramUpdateList()
     bool empty;
     int backlog = 0;
     int found = 0;
-    int requested = 10;
     do {
         STB_OSMutexLock(pSelf->epg.mutex);
         empty = pSelf->epg.queue.empty(); 
@@ -864,7 +863,7 @@ static Vector<BroadcastProgramUpdateInfo> BroadcastDTVKit_GetProgramUpdateList()
                 found++; 
             }
         }
-    } while (!empty && found < requested);
+    } while (!empty && (!limit || (found < limit)));
     ALOGE("%s: Exit", __FUNCTION__);
     return puiv;
 }
