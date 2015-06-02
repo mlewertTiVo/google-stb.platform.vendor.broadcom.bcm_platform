@@ -168,7 +168,7 @@ kerneltoolchain="${ANDROID}/prebuilts/gcc/linux-x86/arm/stb/%s/bin" % lines[0].r
 # get the toolchain expected for building BOLT and make sure it does not
 # diverge from kernel toolchain as we want only a single verion in Android
 # tree at any point in time
-run_toolchain='bash -c "cat ./bootable/bootloader/bolt/config/toolchain"'
+run_toolchain='bash -c "cat ./vendor/broadcom/bolt/config/toolchain"'
 if verbose:
 	print run_toolchain
 boltlines = check_output(run_toolchain,shell=True).splitlines()
