@@ -2415,16 +2415,8 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetConfig(
            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
 
-        if ( m_sVideoBitrateParams.eControlRate == OMX_Video_ControlRateConstant ||
-             m_sVideoBitrateParams.eControlRate == OMX_Video_ControlRateDisable )
-        {
-           ALOGE("Unable to change bit rate: Control Rate doesn't support changing the bit rate");
-           return BOMX_ERR_TRACE(OMX_ErrorUnsupportedSetting);
-        }
-
         m_sVideoBitrateParams.nTargetBitrate = pConfig->nEncodeBitrate;
-        ALOGV("Set: control type = %d, bitrate = %d", m_sVideoBitrateParams.eControlRate,
-              m_sVideoBitrateParams.nTargetBitrate);
+        ALOGV("Set: bitrate = %d", m_sVideoBitrateParams.nTargetBitrate);
 
         NEXUS_Error rc = UpdateEncoderSettings();
         if ( rc )
