@@ -439,6 +439,19 @@ public class TunerService extends TvInputService {
                 return channelId;
             }
 
+            private void deleteAllPrograms(String channel_id)
+            {
+                Long channelId = mapChannelId(channel_id);
+                if (channelId != null) {
+                    Uri uri = TvContract.buildProgramsUriForChannel(channelId.longValue());
+                    getContentResolver().delete(uri, null, null);
+                    Log.d(TAG, "deleteAllPrograms(" + channel_id + ") succeeded");
+                }
+                else {
+                    Log.e(TAG, "deleteAllPrograms(" + channel_id + ") failed");
+                }
+            }
+
             private void deleteProgramUpdate(String channel_id, String id, boolean expire)
             {
                 Pair<String, String> key = new Pair<String, String>(channel_id, id);
@@ -560,6 +573,19 @@ public class TunerService extends TvInputService {
                         applyBatch(insertions, keys); //apply all pending additions first
                         updateProgramUpdate(pui);
                         break;
+                    case CLEAR_CHANNEL:
+                        applyBatch(insertions, keys); //apply all pending additions first
+                                                      //(might be for different channels)
+                        deleteAllPrograms(pui.channel_id);
+                        break;
+                    case CLEAR_ALL:
+                        Log.d(TAG, "Clear all EPG programs");
+                        insertions.clear(); //everything will be deleted so don't add
+                        keys.clear(); //everything will be deleted so don't add
+                        getContentResolver().delete(
+                                TvContract.Programs.CONTENT_URI, null, null);
+                        break;
+                    // no default to catch missing case statements
                     }
                 }
                 applyBatch(insertions, keys); //apply all pending additions
