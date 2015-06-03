@@ -13,6 +13,8 @@ import java.io.FileNotFoundException;
 import java.lang.Runtime;
 import java.lang.Process;
 import android.graphics.Rect;
+import android.content.Context;
+import android.widget.Toast;
 
 public class BcmAdjustScreenOffsetActivity extends Activity {
     /** Called when the activity is first created. */
@@ -28,8 +30,6 @@ public class BcmAdjustScreenOffsetActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
 
-        nav=new native_adjustScreenOffset();
-
         button_x_inc = (Button)findViewById(R.id.button_x_inc);
         button_x_dec = (Button)findViewById(R.id.button_x_dec);
         button_y_inc = (Button)findViewById(R.id.button_y_inc);
@@ -38,47 +38,47 @@ public class BcmAdjustScreenOffsetActivity extends Activity {
         button_x_inc.setOnClickListener(new OnClickListener() {
             public void onClick(View v) {
                 Log.i(TAG,"click on button_x_inc");
-                Rect offset = new Rect();
-                nav.getScreenOffset(offset);
-                offset.left -= step_x;
-                offset.right += step_x;
-                nav.setScreenOffset(offset);
+                adjustScreenOffset(-step_x, 0);
             }
         });
 
         button_x_dec.setOnClickListener(new OnClickListener() {
             public void onClick(View v) {
                 Log.i(TAG,"click on button_x_dec");
-                Rect offset = new Rect();
-                nav.getScreenOffset(offset);
-                offset.left += step_x;
-                offset.right -= step_x;
-                nav.setScreenOffset(offset);
+                adjustScreenOffset(step_x, 0);
             }
         });
 
         button_y_inc.setOnClickListener(new OnClickListener() {
             public void onClick(View v) {
                 Log.i(TAG,"click on button_y_inc");
-                Rect offset = new Rect();
-                nav.getScreenOffset(offset);
-                offset.top -= step_y;
-                offset.bottom += step_y;
-                nav.setScreenOffset(offset);
+                adjustScreenOffset(0, -step_y);
             }
         });
 
         button_y_dec.setOnClickListener(new OnClickListener() {
             public void onClick(View v) {
                 Log.i(TAG,"click on button_y_dec");
-                Rect offset = new Rect();
-                nav.getScreenOffset(offset);
-                offset.top += step_y;
-                offset.bottom -= step_y;
-                nav.setScreenOffset(offset);
+                adjustScreenOffset(0, step_y);
             }
         });
 
+    }
+
+    private void adjustScreenOffset(int dx, int dy) {
+        if (nav == null)
+            nav = new native_adjustScreenOffset();
+
+        Rect offset = new Rect();
+        nav.getScreenOffset(offset);
+        offset.inset(dx, dy);
+        nav.setScreenOffset(offset);
+
+        Rect newoffset = new Rect();
+        nav.getScreenOffset(newoffset);
+        if (!newoffset.equals(offset)) {
+            Toast.makeText(getApplicationContext(), "Can't modify screen offset. Is SE-Linux enforced?", Toast.LENGTH_LONG).show();
+        }
     }
 
     private static Scanner findToken(Scanner scanner, String token) {
