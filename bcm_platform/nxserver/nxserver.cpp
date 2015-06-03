@@ -101,6 +101,7 @@
 #define NX_HEAP_GFX                    "ro.nx.heap.gfx"
 #define NX_HEAP_GFX2                   "ro.nx.heap.gfx2"
 #define NX_HEAP_VIDEO_SECURE           "ro.nx.heap.video_secure"
+#define NX_HEAP_HIGH_MEM               "ro.nx.heap.highmem"
 #define NX_HEAP_GROW                   "ro.nx.heap.grow"
 
 #define NX_HD_OUT_FMT                  "persist.hd_output_format"
@@ -484,6 +485,13 @@ static nxserver_t init_nxserver(void)
     settings.session[0].output.hd = true;
     /* -memconfig display,hddvi=off */
     memConfigSettings.videoInputs.hdDvi = false;
+
+    if (property_get(NX_HEAP_HIGH_MEM, value, "0m")) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_MEMORY_TYPE_HIGH_MEMORY);
+       if (strlen(value) && (index != -1)) {
+          platformSettings.heap[index].size = calc_heap_size(value);
+       }
+    }
 
     if (property_get(NX_HEAP_VIDEO_SECURE, value, NULL)) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_COMPRESSED_RESTRICTED_REGION);
