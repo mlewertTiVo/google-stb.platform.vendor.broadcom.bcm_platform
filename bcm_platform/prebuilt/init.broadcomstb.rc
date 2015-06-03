@@ -91,7 +91,7 @@ on post-fs-data
 
 on property:hw.nexus.platforminit=on
    # insmod nx_ashmem driver (gralloc memory support).
-   insmod /system/vendor/drivers/nx_ashmem.ko devname="ion" heap_grow="16m"
+   insmod /system/vendor/drivers/nx_ashmem.ko devname="ion" heap_grow="8m"
    class_start main
 
 service sdcard /system/bin/sdcard -u 1023 -g 1023 -l /data/media /mnt/shell/emulated
