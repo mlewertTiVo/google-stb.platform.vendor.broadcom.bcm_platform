@@ -1,7 +1,7 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
-LOCAL_PATH := $(TOP)/kernel/rootfs
+LOCAL_PATH := $(TOP)/kernel/private/97xxx-bcm/rootfs
 
 LOCAL_SRC_FILES := user/cmatool/cmatool.c
 
