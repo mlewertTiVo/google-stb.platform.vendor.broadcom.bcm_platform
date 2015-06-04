@@ -645,6 +645,7 @@ public class TunerService extends TvInputService {
         DatabaseSync(String id) {
             task = new DatabaseSyncTask(id);
             thread = new Thread(task);
+            thread.setPriority(Thread.MIN_PRIORITY);
             thread.start();
         }
     }
