@@ -4035,7 +4035,8 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
     if (handle->is_mma) {
         pMemory = NULL;
         block_handle = (NEXUS_MemoryBlockHandle)handle->sharedData;
-        NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+        rc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+        ALOG_ASSERT(!rc);
         pSharedData = (PSHARED_DATA) pMemory;
     } else {
         pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(handle->sharedData);

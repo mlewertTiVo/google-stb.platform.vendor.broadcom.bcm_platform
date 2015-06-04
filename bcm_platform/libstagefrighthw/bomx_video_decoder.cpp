@@ -1064,6 +1064,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         NEXUS_Surface_Destroy(m_hAlphaSurface);
     }
+    if ( m_playpumpEventId )
+    {
+        UnregisterEvent(m_playpumpEventId);
+    }
     if ( m_hPlaypumpEvent )
     {
         B_Event_Destroy(m_hPlaypumpEvent);
@@ -2907,6 +2911,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AllocateBuffer(
     {
         // TODO: Implement if required
         ALOGW("AllocateBuffer is not supported for output ports");
+        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
     }
 
     return OMX_ErrorNone;
