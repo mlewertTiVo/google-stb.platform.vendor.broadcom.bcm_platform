@@ -102,6 +102,7 @@
 #define NX_HEAP_GFX2                   "ro.nx.heap.gfx2"
 #define NX_HEAP_VIDEO_SECURE           "ro.nx.heap.video_secure"
 #define NX_HEAP_HIGH_MEM               "ro.nx.heap.highmem"
+#define NX_HEAP_DRV_MANAGED            "ro.nx.heap.drv_managed"
 #define NX_HEAP_GROW                   "ro.nx.heap.grow"
 
 #define NX_HD_OUT_FMT                  "persist.hd_output_format"
@@ -496,7 +497,17 @@ static nxserver_t init_nxserver(void)
     memConfigSettings.videoInputs.hdDvi = false;
 
     if (property_get(NX_HEAP_HIGH_MEM, value, "0m")) {
+       /* high-mem heap is used for 40 bits addressing. */
        int index = lookup_heap_memory_type(&platformSettings, NEXUS_MEMORY_TYPE_HIGH_MEMORY);
+       if (strlen(value) && (index != -1)) {
+          platformSettings.heap[index].size = calc_heap_size(value);
+       }
+    }
+
+    if (property_get(NX_HEAP_DRV_MANAGED, value, NULL)) {
+       /* driver-managed heap is used for encoder on some platforms only. */
+       int index = lookup_heap_memory_type(&platformSettings,
+          (NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_DRIVER_UNCACHED|NEXUS_MEMORY_TYPE_DRIVER_CACHED|NEXUS_MEMORY_TYPE_APPLICATION_CACHED));
        if (strlen(value) && (index != -1)) {
           platformSettings.heap[index].size = calc_heap_size(value);
        }
