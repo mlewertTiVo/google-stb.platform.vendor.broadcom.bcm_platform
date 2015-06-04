@@ -72,7 +72,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 
 public class TunerService extends TvInputService {
-    private static final boolean DEBUG = true;
+    private static final boolean DEBUG = false;
     private static final String TAG = TunerService.class.getSimpleName();
     private static final TvStreamConfig[] EMPTY_STREAM_CONFIGS = {};
 
