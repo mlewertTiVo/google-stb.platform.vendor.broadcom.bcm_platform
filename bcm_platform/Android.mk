@@ -49,7 +49,7 @@ include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
 include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
 
-include vendor/broadcom/bcm_platform/tools/bmemperf/Android.mk
+include vendor/broadcom/bcm_platform/tools/bmem/Android.mk
 include vendor/broadcom/bcm_platform/tools/calcfb/Android.mk
 include vendor/broadcom/bcm_platform/tools/cec/Android.mk
 include vendor/broadcom/bcm_platform/tools/clipping/Android.mk

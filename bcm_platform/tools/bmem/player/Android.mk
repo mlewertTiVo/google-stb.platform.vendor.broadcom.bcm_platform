@@ -25,24 +25,24 @@ BCHP_VER_LOWER = $(shell awk 'BEGIN{print tolower("$(BCHP_VER)")}')
 BOXMODE_FILES = $(shell ls -1v $(NEXUS_TOP)/../magnum/commonutils/box/src/$(BCHP_CHIP)/$(BCHP_VER_LOWER)/bbox_memc_box*_config.c)
 
 define generate-player-info-module
-	awk -f $(NEXUS_TOP)/../BSEAV/tools/bmemperf/include/bmemperf_info_pre.awk $(NEXUS_TOP)/../BSEAV/tools/bmemperf/player/Makefile > $(NEXUS_TOP)/../../bcm_platform/tools/bmemperf/player/bmemperf_info.auto.c
+	awk -f $(NEXUS_TOP)/../BSEAV/tools/bmemperf/include/bmemperf_info_pre.awk $(NEXUS_TOP)/../BSEAV/tools/bmemperf/player/Makefile > $(NEXUS_TOP)/../../bcm_platform/tools/bmem/player/bmemperf_info.auto.c
 	$(foreach myfile,$(BOXMODE_FILES), \
-		awk -f $(NEXUS_TOP)/../BSEAV/tools/bmemperf/include/bmemperf_info.awk $(myfile) >> $(NEXUS_TOP)/../../bcm_platform/tools/bmemperf/player/bmemperf_info.auto.c;) >/dev/null
-	awk -f $(NEXUS_TOP)/../BSEAV/tools/bmemperf/include/bmemperf_info_post.awk $(NEXUS_TOP)/../../bcm_platform/tools/bmemperf/player/bmemperf_info.auto.c > $(NEXUS_TOP)/../../bcm_platform/tools/bmemperf/player/bmemperf_info.auto.tmp
-	cat $(NEXUS_TOP)/../../bcm_platform/tools/bmemperf/player/bmemperf_info.auto.tmp >> $(NEXUS_TOP)/../../bcm_platform/tools/bmemperf/player/bmemperf_info.auto.c
-	rm $(NEXUS_TOP)/../../bcm_platform/tools/bmemperf/player/bmemperf_info.auto.tmp
+		awk -f $(NEXUS_TOP)/../BSEAV/tools/bmemperf/include/bmemperf_info.awk $(myfile) >> $(NEXUS_TOP)/../../bcm_platform/tools/bmem/player/bmemperf_info.auto.c;) >/dev/null
+	awk -f $(NEXUS_TOP)/../BSEAV/tools/bmemperf/include/bmemperf_info_post.awk $(NEXUS_TOP)/../../bcm_platform/tools/bmem/player/bmemperf_info.auto.c > $(NEXUS_TOP)/../../bcm_platform/tools/bmem/player/bmemperf_info.auto.tmp
+	cat $(NEXUS_TOP)/../../bcm_platform/tools/bmem/player/bmemperf_info.auto.tmp >> $(NEXUS_TOP)/../../bcm_platform/tools/bmem/player/bmemperf_info.auto.c
+	rm $(NEXUS_TOP)/../../bcm_platform/tools/bmem/player/bmemperf_info.auto.tmp
 endef
 
-$(TOP)/vendor/broadcom/bcm_platform/tools/bmemperf/player/bmemperf_info.auto.c:
+$(TOP)/vendor/broadcom/bcm_platform/tools/bmem/player/bmemperf_info.auto.c:
 	$(hide) $(call generate-player-info-module)
 
 LOCAL_MODULE := bmemperf_player
 LOCAL_MODULE_SUFFIX := .cgi
 LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_PATH := $(TARGET_OUT_DATA)/nexus/bmemperf
+LOCAL_MODULE_PATH := $(TARGET_OUT_DATA)/nexus/bmem
 
 LOCAL_POST_INSTALL_CMD := \
-	rm $(NEXUS_TOP)/../../bcm_platform/tools/bmemperf/player/bmemperf_info.auto.c
+	rm $(NEXUS_TOP)/../../bcm_platform/tools/bmem/player/bmemperf_info.auto.c
 
 include $(BUILD_EXECUTABLE)
 
