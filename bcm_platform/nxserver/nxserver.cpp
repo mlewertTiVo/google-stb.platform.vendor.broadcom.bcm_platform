@@ -368,6 +368,15 @@ static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, uns
     return -1;
 }
 
+static int lookup_heap_memory_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned memoryType)
+{
+    unsigned i;
+    for (i=0;i<NEXUS_MAX_HEAPS;i++) {
+        if (pPlatformSettings->heap[i].size && pPlatformSettings->heap[i].memoryType & memoryType) return i;
+    }
+    return -1;
+}
+
 static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
 {
    int i;
@@ -487,7 +496,7 @@ static nxserver_t init_nxserver(void)
     memConfigSettings.videoInputs.hdDvi = false;
 
     if (property_get(NX_HEAP_HIGH_MEM, value, "0m")) {
-       int index = lookup_heap_type(&platformSettings, NEXUS_MEMORY_TYPE_HIGH_MEMORY);
+       int index = lookup_heap_memory_type(&platformSettings, NEXUS_MEMORY_TYPE_HIGH_MEMORY);
        if (strlen(value) && (index != -1)) {
           platformSettings.heap[index].size = calc_heap_size(value);
        }
