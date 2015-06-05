@@ -17,10 +17,13 @@
 package com.broadcom.tvinput;
 
 import android.app.AlarmManager;
+import android.content.ContentProviderOperation;
+import android.content.ContentProviderResult;
 import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.content.OperationApplicationException;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.database.Cursor;
@@ -34,6 +37,7 @@ import android.media.tv.TvTrackInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.RemoteException;
 import android.os.SystemClock;
 import android.util.Log;
 import android.util.Pair;
@@ -49,6 +53,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.security.InvalidParameterException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -312,6 +317,7 @@ public class TunerService extends TvInputService {
         private class DatabaseSyncTask implements Runnable {
 
             private final String inputId;
+            private static final int BATCH_MAX_SIZE = 100;
 
             private void insertProgram(long channelId, ProgramInfo program) {
                 ContentValues prog_values = buildProgramValues(channelId, program, true);
@@ -412,6 +418,27 @@ public class TunerService extends TvInputService {
                 channelcursor.close();
             }
 
+            /**
+             * @brief Convert HAL channel id into TVContract row id
+             * @param channel_id channel ID returned by TunerHAL
+             * @return row id in TVContract.Channels table
+             */
+            private Long mapChannelId(String channel_id)
+            {
+                Long channelId = null;
+                synchronized (mBroadcastChannelIdMap) {
+                    if (mBroadcastChannelIdMap.containsKey(channel_id)) {
+                        channelId = mBroadcastChannelIdMap.get(channel_id);
+                        if (DEBUG)
+                            Log.d(TAG, "mapChannelId(" + channel_id + ") --> " + channelId);
+                    }
+                    else {
+                        Log.w(TAG, "mapChannelId(" + channel_id + ") --> unknown");
+                    }
+                }
+                return channelId;
+            }
+
             private void deleteProgramUpdate(String channel_id, String id, boolean expire)
             {
                 Pair<String, String> key = new Pair<String, String>(channel_id, id);
@@ -433,22 +460,19 @@ public class TunerService extends TvInputService {
                 }
             }
 
-            private void insertProgramUpdate(ProgramUpdateInfo pui) {
-                Long channelId = null;
-                synchronized (mBroadcastChannelIdMap) {
-                    if (mBroadcastChannelIdMap.containsKey(pui.channel_id)) {
-                        channelId = mBroadcastChannelIdMap.get(pui.channel_id);
-                    }
-                }
+            private ContentProviderOperation insertProgramUpdate(ProgramUpdateInfo pui) {
+                ContentProviderOperation operation = null;
+                Long channelId = mapChannelId(pui.channel_id);
                 if (channelId != null) {
                     ContentValues prog_values = buildProgramValuesFromUpdate(channelId.longValue(), pui, true);
-                    Uri uri = getContentResolver().insert(TvContract.Programs.CONTENT_URI, prog_values);
-                    if (uri != null) {
-                        long programId = ContentUris.parseId(uri);
-                        mBroadcastProgramIdMap.put(new Pair<String, String>(pui.channel_id, pui.id), Long.valueOf(programId));
-                        Log.d(TAG, "insertProgramUpdate(" + pui.channel_id + ", " + pui.id + ") succeeded: mapped to " + programId);
-                    }
+                    operation = ContentProviderOperation.newInsert(
+                            TvContract.Programs.CONTENT_URI)
+                            .withValues(prog_values)
+                            .build();
+                    if (DEBUG)
+                        Log.d(TAG, "insertProgramUpdate(" + pui.channel_id + ", " + pui.id + ")");
                 }
+                return operation;
             }
 
             private void updateProgramUpdate(ProgramUpdateInfo pui) {
@@ -464,26 +488,81 @@ public class TunerService extends TvInputService {
                 }
             }
 
+            private void addMappings(ArrayList<Pair<String, String>> keys,
+                    ContentProviderResult[] results)
+            {
+                //Assumption: the order and size of the results array
+                //is the same as the order and size of keys
+
+                if (keys.size() != results.length) {
+                    throw new InvalidParameterException(
+                            "wrong number of results: keys=" + keys.size() +
+                            ", results=" + results.length);
+                }
+
+                for (int i = 0; i < results.length; i++) {
+                    Pair<String, String> key = keys.get(i);
+                    long programId = ContentUris.parseId(results[i].uri);
+                    mBroadcastProgramIdMap.put(
+                            key, Long.valueOf(programId));
+                    if (DEBUG)
+                        Log.d(TAG, "new program ID mapping: (" +
+                                key.first + ", " + key.second +
+                                ") --> " + programId);
+                }
+            }
+
+            private void applyBatch(ArrayList<ContentProviderOperation> ops,
+                    ArrayList<Pair<String, String>> keys)
+            {
+                if (ops.size() <= 0)
+                    return; //nothing to do
+
+                Log.i(TAG, "applying batch of " + ops.size() + " operations");
+                try {
+                    ContentProviderResult[] results;
+                    results = getContentResolver().applyBatch(
+                            TvContract.AUTHORITY, ops);
+                    Log.d(TAG, "applied " + Integer.valueOf(ops.size()) +
+                            "ops, got " + results.length + " results");
+                    addMappings(keys, results);
+                    ops.clear();
+                    keys.clear();
+                } catch (RemoteException | OperationApplicationException e) {
+                    Log.e(TAG, "Failed to apply batch.", e);
+                }
+            }
+
             private boolean updatePrograms()
             {
-                ProgramUpdateInfo puiv[] = TunerHAL.getProgramUpdateList(10);
+                ArrayList<ContentProviderOperation> insertions = new ArrayList<>();
+                ArrayList<Pair<String, String>> keys = new ArrayList<>();
+                ProgramUpdateInfo puiv[] = TunerHAL.getProgramUpdateList(BATCH_MAX_SIZE);
                 for (ProgramUpdateInfo pui : puiv) {
-                    Log.d(TAG, "DatabaseSyncTask::Got programUpdate " + pui.type + " " + pui.channel_id + " " + pui.id);
+                    Log.i(TAG, "DatabaseSyncTask::Got programUpdate " +
+                            pui.type + " " + pui.channel_id + " " + pui.id);
                     switch (pui.type) {
                     case ADD:
-                        insertProgramUpdate(pui);
+                        ContentProviderOperation insert = insertProgramUpdate(pui);
+                        if (insert != null)
+                            insertions.add(insert);
+                            keys.add(new Pair<String, String>(pui.channel_id, pui.id));
                         break;
                     case DELETE:
+                        applyBatch(insertions, keys); //apply all pending additions first
                         deleteProgramUpdate(pui.channel_id, pui.id, false);
                         break;
                     case EXPIRE:
+                        applyBatch(insertions, keys); //apply all pending additions first
                         deleteProgramUpdate(pui.channel_id, pui.id, true);
                         break;
                     case UPDATE:
+                        applyBatch(insertions, keys); //apply all pending additions first
                         updateProgramUpdate(pui);
                         break;
                     }
                 }
+                applyBatch(insertions, keys); //apply all pending additions
 
                 return puiv.length > 0;
             }
@@ -873,6 +952,8 @@ public class TunerService extends TvInputService {
     }
 
     private void updateChannels(Context context, String inputId, ChannelInfo channels[]) {
+        if (DEBUG)
+            Log.d(TAG, "--- updateChannels start ---");
         Uri uri = TvContract.buildChannelsUriForInput(inputId);
         // Get list of channelIds and bids
         String[] channelprojection = {
@@ -933,7 +1014,7 @@ public class TunerService extends TvInputService {
                 channelcursor.close();
                 if (skipList.size() == 0) {
                     if (!databaseEmpty) {
-                        Log.d(TAG, "updateChannels: deleting all channels");
+                        Log.d(TAG, "updateChannels: deleting all channels for " + uri.toString());
                         getContentResolver().delete(uri, null, null);
                     }
                 }
@@ -960,6 +1041,8 @@ public class TunerService extends TvInputService {
                 Log.d(TAG, "updateChannels: preserving " + channel.id + " (" + channel.name + ")");
             }
         }
+        if (DEBUG)
+            Log.d(TAG, "--- updateChannels end ---");
     }
 
     private class TunerTvInputSessionImpl extends Session 
