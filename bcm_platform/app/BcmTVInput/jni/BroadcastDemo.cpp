@@ -2,6 +2,7 @@
 #include "TunerHAL.h"
 #include "Broadcast.h"
 #include "nexus_frontend.h"
+#include "nexus_simple_audio_decoder.h"
 #include "nexus_simple_video_decoder.h"
 #include "nexus_simple_stc_channel.h"
 #include "nexus_pid_channel.h"
@@ -14,16 +15,25 @@
 #define LOG_TAG "BroadcastDemo"
 #include <cutils/log.h>
 
+static const NEXUS_AudioCodec audio_codec = NEXUS_AudioCodec_eMpeg;
+static const NEXUS_VideoCodec video_codec = NEXUS_VideoCodec_eMpeg2;
+static const int audio_channels = 2;
+static const int audio_sample_rate = 48000;
+
+
 class BroadcastDemo_Context {
 public:
     BroadcastDemo_Context() {
         frontend = NULL;
         parserBand = NEXUS_ParserBand_eInvalid;
+        m_hSimpleAudioDecoder = NULL;
         m_hSimpleVideoDecoder = NULL;
         stcChannel = NULL;
         connected = false;
-        pidChannel = NULL;
+        apidChannel = NULL;
+        vpidChannel = NULL;
         decoding = false;
+        apid = 0;
         memset(&m_allocResults, 0, sizeof(m_allocResults));
         m_nxClientId = 0;
         m_hSurfaceClient = NULL;
@@ -32,11 +42,14 @@ public:
     };
     NEXUS_FrontendHandle frontend;
     NEXUS_ParserBand parserBand;
+    NEXUS_SimpleAudioDecoderHandle m_hSimpleAudioDecoder;
     NEXUS_SimpleVideoDecoderHandle m_hSimpleVideoDecoder;
     NEXUS_SimpleStcChannelHandle stcChannel;
     bool connected;
-    NEXUS_PidChannelHandle pidChannel;
+    NEXUS_PidChannelHandle apidChannel;
+    NEXUS_PidChannelHandle vpidChannel;
     bool decoding;
+    int apid;
     /**/
     NxClient_AllocResults            m_allocResults;
     unsigned                         m_nxClientId;
@@ -45,6 +58,7 @@ public:
     NEXUS_SurfaceClientHandle        m_hVideoClient;
 
     struct TrackInfoList {
+        Vector<BroadcastTrackInfo> audio;
         Vector<BroadcastTrackInfo> video;
         Vector<BroadcastTrackInfo> subtitle;
     } trackInfoList;
@@ -54,8 +68,13 @@ public:
 
 BroadcastDemo_Context *pSelf;
 
+#define MAX_AUDIO 3
 #define MAX_SUBTITLES 3
 
+struct audio {
+    int pid;
+    const char * language;
+};
 struct subtitle {
     const char *language;
     uint32_t demo_color;
@@ -78,16 +97,35 @@ static struct {
     int sid;
     int freqKHz;
     int vpid;
+    struct audio audio[MAX_AUDIO]; //language == NULL marks the end of the array
     struct subtitle subtitle[MAX_SUBTITLES]; //language == NULL marks the end of the array
     const char *logoUrl;
 } lineup[] = {
-    { 0, BroadcastChannelInfo::TYPE_DVB_T, "8", "8madrid", 0x22d4, 0x0027, 0x0f3d, 618000, 0x100, {RED}, "http://static.programacion-tdt.com/imgAPP/8madrid.min.png" },
-    { 1, BroadcastChannelInfo::TYPE_DVB_T, "13", "13tv Madrid", 0x22d4, 0x0027, 0x0f3e, 618000, 0x200, {GREEN, BLUE}, "http://static.programacion-tdt.com/imgAPP/13_TV.min.png" },
-    { 2, BroadcastChannelInfo::TYPE_DVB_T, "800", "ASTROCANAL SHOP", 0x22d4, 0x0027, 0x0f43, 577000, 0x700, {}, "" },
-    { 3, BroadcastChannelInfo::TYPE_DVB_T, "801", "Kiss TV", 0x22d4, 0x0027, 0x0f40, 618000, 0x401, {RED, GREEN, BLUE}, "http://www.ranklogos.com/wp-content/uploads/2012/04/kiss-tv-logo-1.jpg" },
-    { 4, BroadcastChannelInfo::TYPE_DVB_T, "802", "INTER TV", 0x22d4, 0x0027, 0x0f3f, 618000, 0x300, {YELLOW}, "" },
-    { 5, BroadcastChannelInfo::TYPE_DVB_T, "803", "MGustaTV", 0x22d4, 0x0027, 0x1392, 618000, 0x1000, {WHITE}, "" },
-    { -1, BroadcastChannelInfo::TYPE_OTHER, "", "", 0, 0, 0, 0, 0, {}, "" }
+    { 0, BroadcastChannelInfo::TYPE_DVB_T, "8", "8madrid", 0x22d4, 0x0027, 0x0f3d, 618000, 0x100,
+            {{0x101, "spa"}, {0x102, "eng"}},
+            {RED},
+            "http://static.programacion-tdt.com/imgAPP/8madrid.min.png" },
+    { 1, BroadcastChannelInfo::TYPE_DVB_T, "13", "13tv Madrid", 0x22d4, 0x0027, 0x0f3e, 618000, 0x200,
+            {{0x201, "spa"}, {0x202, "eng"}},
+            {GREEN, BLUE},
+            "http://static.programacion-tdt.com/imgAPP/13_TV.min.png" },
+    { 2, BroadcastChannelInfo::TYPE_DVB_T, "800", "ASTROCANAL SHOP", 0x22d4, 0x0027, 0x0f43, 577000, 0x700,
+            {{ 0x701, "spa"}},
+            {},
+            "" },
+    { 3, BroadcastChannelInfo::TYPE_DVB_T, "801", "Kiss TV", 0x22d4, 0x0027, 0x0f40, 618000, 0x401,
+            {{0x400, "spa"}},
+            {RED, GREEN, BLUE},
+            "http://www.ranklogos.com/wp-content/uploads/2012/04/kiss-tv-logo-1.jpg" },
+    { 4, BroadcastChannelInfo::TYPE_DVB_T, "802", "INTER TV", 0x22d4, 0x0027, 0x0f3f, 618000, 0x300,
+            {{0x301, "spa"}},
+            {YELLOW},
+            "" },
+    { 5, BroadcastChannelInfo::TYPE_DVB_T, "803", "MGustaTV", 0x22d4, 0x0027, 0x1392, 618000, 0x1000,
+            {{0x1001, "spa"}},
+            {WHITE},
+            "" },
+    { -1, BroadcastChannelInfo::TYPE_OTHER, "", "", 0, 0, 0, 0, 0, {}, {}, "" }
 };
 
 static const size_t lineup_size = sizeof(lineup) / sizeof(lineup[0]);
@@ -103,10 +141,6 @@ FreeContext()
         if (pSelf->frontend) {
             NEXUS_Frontend_Release(pSelf->frontend);
             pSelf->frontend = NULL;
-        }
-        if (pSelf->stcChannel) {
-            NEXUS_SimpleStcChannel_Destroy(pSelf->stcChannel);
-            pSelf->stcChannel = NULL;
         }
         delete pSelf;
         pSelf = 0; 
@@ -196,6 +230,8 @@ Connect()
         NEXUS_Error errCode;
 
         NxClient_GetDefaultConnectSettings(&connectSettings);
+        connectSettings.simpleAudioDecoder.id = pSelf->m_allocResults.simpleAudioDecoder.id;
+        connectSettings.simpleAudioDecoder.decoderCapabilities.encoder = false;
         connectSettings.simpleVideoDecoder[0].id = pSelf->m_allocResults.simpleVideoDecoder[0].id;
         connectSettings.simpleVideoDecoder[0].surfaceClientId = pSelf->m_allocResults.surfaceClient[0].id;
         connectSettings.simpleVideoDecoder[0].windowId = 0;
@@ -205,6 +241,14 @@ Connect()
         if ( errCode )
         {
             ALOGE("%s: connect failed (%d)", __FUNCTION__, errCode);
+            return -1;
+        }
+
+        pSelf->m_hSimpleAudioDecoder = NEXUS_SimpleAudioDecoder_Acquire(pSelf->m_allocResults.simpleAudioDecoder.id);
+        if ( NULL == pSelf->m_hSimpleAudioDecoder )
+        {
+            NxClient_Disconnect(pSelf->m_nxClientId);
+            ALOGE("%s: SimpleAudioDecoder_Acquire failed", __FUNCTION__);
             return -1;
         }
 
@@ -230,6 +274,11 @@ Disconnect()
 {
     if (pSelf->connected) {
         ALOGE("%s: disconnecting", __FUNCTION__);
+
+        if (pSelf->m_hSimpleAudioDecoder) {
+            NEXUS_SimpleAudioDecoder_Release(pSelf->m_hSimpleAudioDecoder);
+            pSelf->m_hSimpleAudioDecoder = NULL;
+        }
 
         if (pSelf->m_hSimpleVideoDecoder) {
             NEXUS_SimpleVideoDecoder_Release(pSelf->m_hSimpleVideoDecoder);
@@ -294,17 +343,34 @@ static int BroadcastDemo_Stop()
 
     // Stop the video decoder
     if (pSelf->decoding) {
+        NEXUS_SimpleAudioDecoder_Stop(pSelf->m_hSimpleAudioDecoder);
         NEXUS_SimpleVideoDecoder_Stop(pSelf->m_hSimpleVideoDecoder);
         TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 0, 0);
         pSelf->decoding = false;
     }
 
-    // Close the PID channel
-    if (pSelf->pidChannel) {
-        NEXUS_PidChannel_Close(pSelf->pidChannel);
-        pSelf->pidChannel = 0;
+    NEXUS_SimpleAudioDecoder_SetStcChannel(pSelf->m_hSimpleAudioDecoder, NULL);
+    NEXUS_SimpleVideoDecoder_SetStcChannel(pSelf->m_hSimpleVideoDecoder, NULL);
+
+    // Close the STC channel
+    if (pSelf->stcChannel) {
+        NEXUS_SimpleStcChannel_Destroy(pSelf->stcChannel);
+        pSelf->stcChannel = NULL;
     }
 
+    pSelf->apid = 0;
+
+    // Close the PID channel
+    if (pSelf->apidChannel) {
+        NEXUS_PidChannel_Close(pSelf->apidChannel);
+        pSelf->apidChannel = 0;
+    }
+    if (pSelf->vpidChannel) {
+        NEXUS_PidChannel_Close(pSelf->vpidChannel);
+        pSelf->vpidChannel = 0;
+    }
+
+    pSelf->trackInfoList.audio.clear();
     pSelf->trackInfoList.video.clear();
     pSelf->trackInfoList.subtitle.clear();
 
@@ -357,8 +423,38 @@ CacheTrackInfoList(int channel_id)
 {
     Vector<BroadcastTrackInfo> v;
     NEXUS_VideoDecoderStatus status;
+
+    int index = channelIndex(channel_id);
+    if (index < 0) {
+        ALOGE("%s: invalid channel_id: %d", __FUNCTION__, channel_id);
+        return;
+    }
+
+    /* audio */
+    {
+        BroadcastTrackInfo info;
+
+        v.clear();
+        for (int i = 0; i < MAX_AUDIO; i++) {
+            struct audio *a = &lineup[index].audio[i];
+            if (!a->language) //end of list
+                break;
+            ALOGE("%s: audio[%d]: 0x%04x %s", __FUNCTION__, i, a->pid, a->language);
+            info.type = 0;
+            info.id = String8::format("0x%04x", a->pid);
+            info.lang = String8(a->language);
+            info.channels = audio_channels;
+            info.sampleRate = audio_sample_rate;
+            v.push_back(info);
+        }
+        pSelf->trackInfoList.audio = v;
+    }
+
+    /* video */
     if (NEXUS_SimpleVideoDecoder_GetStatus(pSelf->m_hSimpleVideoDecoder, &status) == NEXUS_SUCCESS && status.source.height > 0) {
         BroadcastTrackInfo info;
+
+        v.clear();
         info.type = 1;
         info.id = "0";
         info.squarePixelHeight = status.source.height; 
@@ -395,23 +491,23 @@ CacheTrackInfoList(int channel_id)
         v.push_back(info);
         pSelf->trackInfoList.video = v;
 
+    }
+
+    /* subtitles */
+    {
+        BroadcastTrackInfo info;
+
         v.clear();
-        int index = channelIndex(channel_id);
-        if (index >= 0) {
-            for (int i = 0; i < MAX_SUBTITLES; i++) {
-                struct subtitle *s = &lineup[index].subtitle[i];
-                if (!s->language) //end of list
-                    break;
-                ALOGE("%s: subtitle %d: 0x%08x  %s", __FUNCTION__, i,
-                        s->demo_color, s->language);
-                info.type = 2;
-                info.id = String8::format("0x%08x", s->demo_color);
-                info.lang = String8(s->language);
-                v.push_back(info);
-            }
-        }
-        else {
-            ALOGE("%s: invalid channel_id: %d", __FUNCTION__, channel_id);
+        for (int i = 0; i < MAX_SUBTITLES; i++) {
+            struct subtitle *s = &lineup[index].subtitle[i];
+            if (!s->language) //end of list
+                break;
+            ALOGE("%s: subtitle[%d]: 0x%08x  %s", __FUNCTION__, i,
+                    s->demo_color, s->language);
+            info.type = 2;
+            info.id = String8::format("0x%08x", s->demo_color);
+            info.lang = String8(s->language);
+            v.push_back(info);
         }
         pSelf->trackInfoList.subtitle = v;
     }
@@ -421,6 +517,9 @@ static void sourceChangeCallback(void * /*context*/, int param)
 {
     CacheTrackInfoList(param);
     TunerHAL_onBroadcastEvent(TRACK_LIST_CHANGED, 0, 0);
+    if (pSelf->trackInfoList.audio.size()) {
+        TunerHAL_onBroadcastEvent(TRACK_SELECTED, 0, &pSelf->trackInfoList.audio[0].id);
+    }
     if (pSelf->trackInfoList.video.size()) {
         TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 1, 0);
         TunerHAL_onBroadcastEvent(TRACK_SELECTED, 1, &pSelf->trackInfoList.video[0].id);
@@ -430,11 +529,24 @@ static void sourceChangeCallback(void * /*context*/, int param)
 static Vector<BroadcastTrackInfo>
 BroadcastDemo_GetTrackInfoList()
 {
+    if (pSelf->trackInfoList.audio.size() == 0) {
+        ALOGE("%s: no audio info", __FUNCTION__);
+    }
+    else {
+        for (size_t i = 0; i < pSelf->trackInfoList.audio.size(); i++) {
+            ALOGE("%s: audio[%d]: %s %s %d channels, %dHz", __FUNCTION__, i,
+                  pSelf->trackInfoList.audio[i].id.string(),
+                  pSelf->trackInfoList.audio[i].lang.string(),
+                  pSelf->trackInfoList.audio[i].channels,
+                  pSelf->trackInfoList.audio[i].sampleRate
+                  );
+        }
+    }
     if (pSelf->trackInfoList.video.size() == 0) {
         ALOGE("%s: no video info", __FUNCTION__); 
     }
     else {
-        ALOGE("%s: video %s %dx%d fr %f", __FUNCTION__,
+        ALOGE("%s: video: %s %dx%d fr %f", __FUNCTION__,
               pSelf->trackInfoList.video[0].id.string(),
               pSelf->trackInfoList.video[0].squarePixelWidth,
               pSelf->trackInfoList.video[0].squarePixelHeight,
@@ -446,7 +558,7 @@ BroadcastDemo_GetTrackInfoList()
     }
     else {
         for (size_t i = 0; i < pSelf->trackInfoList.subtitle.size(); i++) {
-            ALOGE("%s: subtitle %s %s", __FUNCTION__,
+            ALOGE("%s: subtitle[%d]: %s %s", __FUNCTION__, i,
                   pSelf->trackInfoList.subtitle[i].id.string(),
                   pSelf->trackInfoList.subtitle[i].lang.string()
                   );
@@ -454,9 +566,62 @@ BroadcastDemo_GetTrackInfoList()
     }
 
     Vector<BroadcastTrackInfo> all;
+    all.appendVector(pSelf->trackInfoList.audio);
     all.appendVector(pSelf->trackInfoList.video);
     all.appendVector(pSelf->trackInfoList.subtitle);
     return all;
+}
+
+static void
+BroadcastDemo_StopAudioTrack()
+{
+    pSelf->apid = 0;
+
+    NEXUS_SimpleAudioDecoder_Stop(pSelf->m_hSimpleAudioDecoder);
+
+    if (pSelf->apidChannel) {
+        NEXUS_PidChannel_Close(pSelf->apidChannel);
+        pSelf->apidChannel = 0;
+    }
+}
+
+static int
+BroadcastDemo_StartAudioTrack(int audio_pid)
+{
+    NEXUS_SimpleAudioDecoderStartSettings audioProgram;
+    NEXUS_Error rc;
+
+    pSelf->apidChannel = NEXUS_PidChannel_Open(pSelf->parserBand, audio_pid, NULL);
+    if (pSelf->apidChannel == NULL) {
+        ALOGE("%s: Failed to open audio pidchannel", __FUNCTION__);
+        return -1;
+    }
+
+    NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&audioProgram);
+    audioProgram.primary.pidChannel = pSelf->apidChannel;
+    audioProgram.primary.codec = audio_codec;
+    rc = NEXUS_SimpleAudioDecoder_Start(pSelf->m_hSimpleAudioDecoder, &audioProgram);
+    if (rc)
+    {
+        ALOGE("%s: AudioDecoderStart failed", __FUNCTION__);
+        return -1;
+    }
+
+    pSelf->apid = audio_pid;
+    return 0;
+}
+
+static int
+BroadcastDemo_SelectAudioTrack(int audio_pid)
+{
+    int result = 0;
+    if (pSelf->apid != audio_pid) {
+        BroadcastDemo_StopAudioTrack();
+        if (audio_pid) {
+            result = BroadcastDemo_StartAudioTrack(audio_pid);
+        }
+    }
+    return result;
 }
 
 static int
@@ -468,6 +633,15 @@ BroadcastDemo_SelectTrack(int type, const String8 *id)
         uint32_t argb = id ? strtoul(id->string(), 0, 0) : TRANSPARENT;
         DrawSubtitleDemo(argb);
         TunerHAL_onBroadcastEvent(TRACK_SELECTED, 2, id);
+        result = 0;
+    }
+    else if (type == 0) { // audio
+        ALOGI("%s: audio track %s", __FUNCTION__, id ? id->string() : "NULL");
+        uint32_t pid = id ? strtoul(id->string(), 0, 0) : 0;
+        result = BroadcastDemo_SelectAudioTrack(pid);
+        if (result == 0) {
+            TunerHAL_onBroadcastEvent(TRACK_SELECTED, 0, id);
+        }
         result = 0;
     }
     return result;
@@ -483,14 +657,16 @@ BroadcastDemo_SetCaptionEnabled(bool enabled)
 
 static int BroadcastDemo_Tune(String8 s8id)
 {
-    NEXUS_VideoDecoderSettings settings;
+    NEXUS_SimpleAudioDecoderSettings audioSettings;
+    NEXUS_VideoDecoderSettings videoSettings;
+    NEXUS_SimpleAudioDecoderStartSettings audioProgram;
     NEXUS_SimpleVideoDecoderStartSettings videoProgram;
     NEXUS_FrontendOfdmSettings ofdmSettings;
     NEXUS_FrontendUserParameters userParams;
     NEXUS_ParserBandSettings parserBandSettings;
-    NEXUS_VideoCodec video_codec = NEXUS_VideoCodec_eMpeg2;
     NEXUS_Error rc;
     int video_pid;
+    int audio_pid;
 
     const int channel_id = strtoul(s8id.string(), 0, 0);
     int i = channelIndex(channel_id);
@@ -548,50 +724,91 @@ static int BroadcastDemo_Tune(String8 s8id)
         return -1;
     }
 
-    NEXUS_SimpleVideoDecoder_GetSettings(pSelf->m_hSimpleVideoDecoder, &settings);
+    NEXUS_SimpleAudioDecoder_GetSettings(pSelf->m_hSimpleAudioDecoder, &audioSettings);
 
-    settings.sourceChanged.callback = sourceChangeCallback;
-    settings.sourceChanged.context = pSelf;
-    settings.sourceChanged.param = channel_id;
+    audioSettings.primary.sourceChanged.callback = sourceChangeCallback;
+    audioSettings.primary.sourceChanged.context = pSelf;
+    audioSettings.primary.sourceChanged.param = channel_id;
 
-    rc = NEXUS_SimpleVideoDecoder_SetSettings(pSelf->m_hSimpleVideoDecoder, &settings);
+    rc = NEXUS_SimpleAudioDecoder_SetSettings(pSelf->m_hSimpleAudioDecoder, &audioSettings);
     if (rc)
     {
         ALOGE("%s: SetSettings failed", __FUNCTION__);
         return -1;
     }
 
-    rc = NEXUS_SimpleVideoDecoder_SetStcChannel(pSelf->m_hSimpleVideoDecoder, pSelf->stcChannel);
+    NEXUS_SimpleVideoDecoder_GetSettings(pSelf->m_hSimpleVideoDecoder, &videoSettings);
+
+    videoSettings.sourceChanged.callback = sourceChangeCallback;
+    videoSettings.sourceChanged.context = pSelf;
+    videoSettings.sourceChanged.param = channel_id;
+
+    rc = NEXUS_SimpleVideoDecoder_SetSettings(pSelf->m_hSimpleVideoDecoder, &videoSettings);
     if (rc)
     {
-        ALOGE("%s: SetStcChannel failed", __FUNCTION__);
+        ALOGE("%s: SetSettings failed", __FUNCTION__);
         return -1;
     }
 
     // Set up the video PID
     video_pid = lineup[i].vpid;
-    pSelf->pidChannel = NEXUS_PidChannel_Open(pSelf->parserBand, video_pid, NULL);
-    if (pSelf->pidChannel == NULL) {
-        ALOGE("%s: Failed to open pidchannel", __FUNCTION__);
-        return -1;
+    pSelf->vpidChannel = NEXUS_PidChannel_Open(pSelf->parserBand, video_pid, NULL);
+    if (pSelf->vpidChannel == NULL) {
+        ALOGE("%s: Failed to open video pidchannel", __FUNCTION__);
+        goto error;
+    }
+
+    // Setup STC channel
+    NEXUS_SimpleStcChannelSettings stc_settings;
+    NEXUS_SimpleStcChannel_GetDefaultSettings(&stc_settings);
+    stc_settings.mode = NEXUS_StcChannelMode_ePcr;
+    stc_settings.modeSettings.pcr.pidChannel = pSelf->vpidChannel;
+    pSelf->stcChannel = NEXUS_SimpleStcChannel_Create(&stc_settings);
+    if (!pSelf->stcChannel)
+    {
+        ALOGE("%s: Unable to create stcChannel", __FUNCTION__);
+        goto error;
+    }
+
+
+    rc = NEXUS_SimpleAudioDecoder_SetStcChannel(pSelf->m_hSimpleAudioDecoder, pSelf->stcChannel);
+    if (rc)
+    {
+        ALOGE("%s: SetStcChannel failed", __FUNCTION__);
+        goto error;
+    }
+
+    rc = NEXUS_SimpleVideoDecoder_SetStcChannel(pSelf->m_hSimpleVideoDecoder, pSelf->stcChannel);
+    if (rc)
+    {
+        ALOGE("%s: SetStcChannel failed", __FUNCTION__);
+        goto error;
+    }
+
+    audio_pid = lineup[i].audio[0].pid;
+    if (BroadcastDemo_SelectAudioTrack(audio_pid) != 0) {
+        ALOGE("%s: AudioDecoderStart failed", __FUNCTION__);
+        goto error;
     }
 
     NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&videoProgram); 
-    videoProgram.settings.pidChannel = pSelf->pidChannel;
+    videoProgram.settings.pidChannel = pSelf->vpidChannel;
     videoProgram.settings.codec = video_codec;
     rc = NEXUS_SimpleVideoDecoder_Start(pSelf->m_hSimpleVideoDecoder, &videoProgram);
     if (rc)
     {
         ALOGE("%s: VideoDecoderStart failed", __FUNCTION__);
-        NEXUS_PidChannel_Close(pSelf->pidChannel);
-        pSelf->pidChannel = 0;
-        return -1;
+        goto error;
     }
 
     pSelf->decoding = true;
 
     ALOGE("%s: Tuner has started streaming!!", __FUNCTION__);
     return 0;
+
+error:
+    BroadcastDemo_Stop();
+    return -1;
 }
 
 static Vector<BroadcastChannelInfo>
@@ -685,6 +902,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
         NxClient_AllocSettings nxAllocSettings;
         NEXUS_Error errCode;
         NxClient_GetDefaultAllocSettings(&nxAllocSettings);
+        nxAllocSettings.simpleAudioDecoder = 1;
         nxAllocSettings.simpleVideoDecoder = 1;
         nxAllocSettings.surfaceClient = 1;
         errCode = NxClient_Alloc(&nxAllocSettings, &pSelf->m_allocResults);
@@ -724,15 +942,6 @@ Broadcast_Initialize(BroadcastDriver *pD)
             createSettings.height = 480;
             pSelf->m_surface = NEXUS_Surface_Create(&createSettings);
             rv = DrawSubtitleDemo(TRANSPARENT);
-        }
-    }
-
-    if (rv == 0) {
-        pSelf->stcChannel = NEXUS_SimpleStcChannel_Create(NULL);
-        if (!pSelf->stcChannel)
-        {
-            ALOGE("%s: Unable to create stcChannel", __FUNCTION__);
-            rv = -1;
         }
     }
 
