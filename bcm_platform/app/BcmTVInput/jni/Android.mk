@@ -39,6 +39,7 @@ ifeq ($(ANDROID_SUPPORTS_DTVKIT),y)
 LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/DTVKitPlatform/inc
 LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/inc
 LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/dvb/inc
+LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/dvb/src
 LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/midware/stb/inc
 LOCAL_C_INCLUDES += $(TOP)/external/DVBCore/platform/inc
 LOCAL_STATIC_LIBRARIES := libdtvkitdvbcore libdtvkitdvb_hw libdtvkitdvb_os libdtvkitdvb_version

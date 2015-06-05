@@ -24,7 +24,7 @@ extern "C" {
 
 //#define DEBUG_EVENTS
 
-//#define JOURNAL
+#define JOURNAL
 //#define NOWNEXT
 
 class UpdateRecord {
@@ -878,8 +878,7 @@ PushUpdate(E_APP_SI_EIT_JOURNAL_TYPE type, BOOLEAN isSchedule, U16BIT allocated_
         ur.lcn = allocated_lcn;
         ur.event_id = event_id;
         switch (type) {
-        case APP_SI_EIT_JOURNAL_TYPE_CLEAR_ALL: ur.type = BroadcastProgramUpdateInfo::ClearAll; break;
-        case APP_SI_EIT_JOURNAL_TYPE_CLEAR_SERVICE: ur.type = BroadcastProgramUpdateInfo::ClearChannel; break;
+        case APP_SI_EIT_JOURNAL_TYPE_CLEAR: ur.type = BroadcastProgramUpdateInfo::ClearChannel; break;
         case APP_SI_EIT_JOURNAL_TYPE_DELETE: ur.type = BroadcastProgramUpdateInfo::Delete; break;
         case APP_SI_EIT_JOURNAL_TYPE_ADD: ur.type = BroadcastProgramUpdateInfo::Add; break;
         case APP_SI_EIT_JOURNAL_TYPE_UPDATE: ur.type = BroadcastProgramUpdateInfo::Update; break;
@@ -1231,7 +1230,11 @@ updateTrackList(int videoStarted)
 }
 
 static void
+#ifndef JOURNAL
 event_handler(U32BIT event, void */*event_data*/, U32BIT /*data_size*/)
+#else
+event_handler(U32BIT event, void *event_data, U32BIT /*data_size*/)
+#endif
 {
     if (pSelf) {
         int videoStarted = 0;
@@ -1252,6 +1255,13 @@ event_handler(U32BIT event, void */*event_data*/, U32BIT /*data_size*/)
             TunerHAL_onBroadcastEvent(PROGRAM_LIST_CHANGED, 0, 0);
         }
 #endif
+#else
+        if (event == APP_EVENT_SERVICE_EIT_SCHED_UPDATE && !pSelf->scanner.active) {
+           S_APP_SI_EIT_SCHED_UPDATE *update = (S_APP_SI_EIT_SCHED_UPDATE *)event_data;
+           PushUpdate(update->type, update->is_sched, update->allocated_lcn,
+                 update->orig_net_id, update->tran_id, update->serv_id,
+                 update->event_id);
+        }
 #endif
         else if (event == STB_EVENT_VIDEO_DECODE_STARTED) {
             videoStarted = 1;
@@ -1533,7 +1543,6 @@ Broadcast_Initialize(BroadcastDriver *pD)
     APP_InitialiseDVB(event_handler);
 #ifdef JOURNAL
     ASI_SetEITScheduleLimit(2 * 24);
-    ASI_SetEitJournalFunction(PushUpdate);
 #else
     ASI_SetEITScheduleLimit(1 * 24);
 #endif
