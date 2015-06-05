@@ -95,6 +95,10 @@ def plat_droid_usage():
 input = len(sys.argv)
 if input < 4 :
 	plat_droid_usage()
+target_option='nope'
+target_profile='nope'
+spoof_device='nope'
+spoof_variant='nope'
 if input > 4 :
 	target_option=str(sys.argv[4]).upper()
 	if target_option == "PROFILE":
@@ -113,11 +117,6 @@ if input > 4 :
 		else:
 			spoof_device=str(sys.argv[5])
 			spoof_variant=str(sys.argv[6])
-else:
-	target_option='nope'
-	target_profile='nope'
-	spoof_device='nope'
-	spoof_variant='nope'
 
 chip=str(sys.argv[1]).upper()
 revision=str(sys.argv[2]).upper()
