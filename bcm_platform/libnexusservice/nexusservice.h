@@ -220,13 +220,10 @@ private:
 
     NEXUS_SurfaceCompositorHandle       surface_compositor;
     DisplayState                        displayState[MAX_NUM_DISPLAYS];
-    NEXUS_VideoDecoderHandle            videoDecoder[MAX_VIDEO_DECODERS];
-    NEXUS_SimpleVideoDecoderHandle      simpleVideoDecoder[MAX_VIDEO_DECODERS];
     NEXUS_AudioDecoderHandle            audioDecoder[MAX_AUDIO_DECODERS];
     NEXUS_AudioPlaybackHandle           audioPlayback[MAX_AUDIO_PLAYBACKS];
     NEXUS_SimpleAudioDecoderHandle      simpleAudioDecoder[MAX_AUDIO_DECODERS];
     NEXUS_SimpleAudioPlaybackHandle     simpleAudioPlayback[MAX_AUDIO_PLAYBACKS];
-    NEXUS_SimpleEncoderHandle           simpleEncoder[MAX_ENCODERS];
     NEXUS_AudioMixerHandle              mixer;
     NEXUS_SurfaceClientHandle           surfaceclient;
     NEXUS_Graphics2DHandle              gfx2D;

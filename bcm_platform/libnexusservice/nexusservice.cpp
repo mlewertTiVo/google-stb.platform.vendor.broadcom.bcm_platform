@@ -738,74 +738,8 @@ int NexusService::platformInitVideo(void)
         }
     }
 
-    for (int i=0; i<MAX_VIDEO_DECODERS; i++) {
-        NEXUS_SimpleVideoDecoderServerSettings settings;
-
-        // open video decoder
-        NEXUS_VideoDecoder_GetDefaultOpenSettings(&videoDecoderOpenSettings);
-        videoDecoderOpenSettings.fifoSize = VIDEO_DECODER_FIFO_SIZE;
-        if (i == 0) {
-            videoDecoderOpenSettings.svc3dSupported = true;
-        }
-
-        videoDecoder[i] = NEXUS_VideoDecoder_Open(i, &videoDecoderOpenSettings);
-        if (!videoDecoder[i]) {
-            ALOGE("%s: NEXUS_VideoDecoder_Open(%d) failed!!", __PRETTY_FUNCTION__, i);
-            BKNI_Free(pPlatformConfig);
-            return NEXUS_UNKNOWN;
-        }
-
-        NEXUS_VideoDecoderSettings videoDecoderSettings;
-        NEXUS_PlatformSettings     platformSettings;
-        NEXUS_Platform_GetSettings(&platformSettings);
-        if ((i==0) && (platformSettings.videoDecoderModuleSettings.supportedCodecs[NEXUS_VideoCodec_eH265])) {
-            NEXUS_VideoDecoder_GetSettings(videoDecoder[i], &videoDecoderSettings);
-            videoDecoderSettings.supportedCodecs[NEXUS_VideoCodec_eH265] = true;
-            videoDecoderSettings.maxWidth  = 3840;
-            videoDecoderSettings.maxHeight = 2160;
-            NEXUS_VideoDecoder_SetSettings(videoDecoder[i], &videoDecoderSettings);
-        }
-
-        // create simple video decoder
-        NEXUS_SimpleVideoDecoder_GetDefaultServerSettings(&settings);
-        settings.videoDecoder = videoDecoder[i];
-        settings.window[0] = NULL;
-        settings.stcIndex = i;  /* Must set this to be able to do STC trick modes! */
-        simpleVideoDecoder[i] = NEXUS_SimpleVideoDecoder_Create(i, &settings);
-        if (!simpleVideoDecoder[i]) {
-            ALOGE("%s: NEXUS_SimpleVideoDecoder_Open(%d) failed!!", __PRETTY_FUNCTION__, i);
-            BKNI_Free(pPlatformConfig);
-            return NEXUS_UNKNOWN;
-        }
-
-        //
-        // by default give video_window to the simplevideodecoder
-        // Note: simplevideodecoder_start will connect videodecoder to the videowindow
-        // later if we want to disconnect and connect other videoinput (say, HDMI-input)
-        // stop simplevideodecoder, set below to NULL and add new videoinput explicitly 
-        // to the video window.
-        //
-        NEXUS_SimpleVideoDecoder_GetServerSettings(simpleVideoDecoder[i], &settings);
-        for (int j=0; j<MAX_NUM_DISPLAYS; j++) {
-            settings.window[j] = displayState[j].video_window[i >= MAX_VIDEO_WINDOWS_PER_DISPLAY ? MAX_VIDEO_WINDOWS_PER_DISPLAY-1 : i];
-        }
-        NEXUS_SimpleVideoDecoder_SetServerSettings(simpleVideoDecoder[i], &settings);
-    }
     BKNI_Free(pPlatformConfig);
     return rc;
-}
-
-void NexusService::setVideoState(bool enable)
-{
-    for(int i=0; i<MAX_VIDEO_DECODERS; i++)
-    {
-        NEXUS_SimpleVideoDecoderServerSettings settings;
-
-        NEXUS_SimpleVideoDecoder_GetServerSettings(simpleVideoDecoder[i], &settings);
-        settings.enabled = enable;
-        NEXUS_SimpleVideoDecoder_SetServerSettings(simpleVideoDecoder[i], &settings);
-    }
-    return;
 }
 
 void framebuffer_callback(void *context, int param)
@@ -954,15 +888,6 @@ void NexusService::platformInit()
     for (i=0; i<MAX_AUDIO_PLAYBACKS; i++) {
         audioPlayback[i] = NULL;
         simpleAudioPlayback[i] = NULL;
-    }
-
-    for (i=0; i<MAX_VIDEO_DECODERS; i++) {
-        videoDecoder[i] = NULL;
-        simpleVideoDecoder[i] = NULL;
-    }
-
-    for (i=0; i<MAX_ENCODERS; i++) {
-        simpleEncoder[i] = NULL;
     }
 
     getInitialOutputFormats(&initial_hd_format, &initial_sd_format);
@@ -1499,7 +1424,6 @@ bool NexusService::setPowerState(b_powerState pmState)
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 if (rc == NEXUS_SUCCESS) {
                     setDisplayState(1);
-                    setVideoState(1);
                     setAudioState(1);
                 }
                 break;
@@ -1512,7 +1436,6 @@ bool NexusService::setPowerState(b_powerState pmState)
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 if (rc == NEXUS_SUCCESS) {
                     setDisplayState(0);
-                    setVideoState(0);
                     setAudioState(0);
                 }
                 break;
@@ -1522,7 +1445,6 @@ bool NexusService::setPowerState(b_powerState pmState)
             {
                 ALOGD("%s: About to set power state S1...", __PRETTY_FUNCTION__);
                 setDisplayState(0);
-                setVideoState(0);
                 setAudioState(0);
                 nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eActive;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
@@ -1533,7 +1455,6 @@ bool NexusService::setPowerState(b_powerState pmState)
             {
                 ALOGD("%s: About to set power state S2...", __PRETTY_FUNCTION__);
                 setDisplayState(0);
-                setVideoState(0);
                 setAudioState(0);
                 nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_ePassive;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
@@ -1545,7 +1466,6 @@ bool NexusService::setPowerState(b_powerState pmState)
             {
                 ALOGD("%s: About to set power state %s...", __PRETTY_FUNCTION__, NexusService::getPowerString(pmState));
                 setDisplayState(0);
-                setVideoState(0);
                 setAudioState(0);
                 nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eDeepSleep;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
