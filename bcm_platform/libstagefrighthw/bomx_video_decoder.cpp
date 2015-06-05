@@ -3944,9 +3944,7 @@ static const struct {
     {"OMX.google.android.index.getAndroidNativeBufferUsage", (int)OMX_IndexParamGetAndroidNativeBufferUsage},
     {"OMX.google.android.index.useAndroidNativeBuffer", (int)OMX_IndexParamUseAndroidNativeBuffer},
     {"OMX.google.android.index.useAndroidNativeBuffer2", (int)OMX_IndexParamUseAndroidNativeBuffer2},
-#if 0 /* Disable for now */
     {"OMX.google.android.index.describeColorFormat", (int)OMX_IndexParamDescribeColorFormat},
-#endif
     {"OMX.google.android.index.storeMetaDataInBuffers", (int)OMX_IndexParamStoreMetaDataInBuffers},
 #if 0 /* Not yet supported */
     {"OMX.google.android.index.configureVideoTunnelMode", (int)OMX_IndexParamConfigureVideoTunnelMode},     // TODO: Requires audio HW acceleration
