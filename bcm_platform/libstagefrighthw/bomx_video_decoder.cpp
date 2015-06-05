@@ -4327,28 +4327,20 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         break;
                     case BOMX_VideoDecoderOutputBufferType_eNative:
                         {
+                            int rc;
                             pHeader->nFilledLen = ComputeBufferSize(m_pVideoPorts[1]->GetDefinition()->format.video.nStride, m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight);
                             pInfo->typeInfo.native.pSharedData->videoFrame.status = pBuffer->frameStatus;
                             pBuffer->pPrivateHandle = pInfo->typeInfo.native.pPrivateHandle;
-                            errCode = NEXUS_Platform_SetSharedHandle(pBuffer->hStripedSurface, true);       // Unlock the handle so that gralloc_lock() can use this in a different process.
-                            if ( NEXUS_SUCCESS == errCode )
+                            rc = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 100);
+                            if ( 0 == rc )
                             {
-                                int rc = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 100);
-                                if ( 0 == rc )
-                                {
-                                    pInfo->typeInfo.native.pSharedData->videoFrame.hStripedSurface = pBuffer->hStripedSurface;
-                                    pInfo->typeInfo.native.pSharedData->videoFrame.destripeComplete = 0;
-                                    private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
-                                }
-                                else
-                                {
-                                    ALOGW("Timeout locking video frame");
-                                }
+                                pInfo->typeInfo.native.pSharedData->videoFrame.hStripedSurface = pBuffer->hStripedSurface;
+                                pInfo->typeInfo.native.pSharedData->videoFrame.destripeComplete = 0;
+                                private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
                             }
                             else
                             {
-                                (void)BOMX_BERR_TRACE(errCode);
-                                pInfo->typeInfo.native.pSharedData->videoFrame.hStripedSurface = NULL;
+                                ALOGW("Timeout locking video frame");
                             }
                         }
                         break;
