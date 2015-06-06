@@ -373,7 +373,8 @@ static int lookup_heap_memory_type(const NEXUS_PlatformSettings *pPlatformSettin
 {
     unsigned i;
     for (i=0;i<NEXUS_MAX_HEAPS;i++) {
-        if (pPlatformSettings->heap[i].size && pPlatformSettings->heap[i].memoryType & memoryType) return i;
+        if (pPlatformSettings->heap[i].size &&
+            ((pPlatformSettings->heap[i].memoryType & memoryType) == memoryType)) return i;
     }
     return -1;
 }
