@@ -388,7 +388,7 @@ status_t NexusHdmiCecDevice::HdmiCecMessageEventListener::onHdmiCecMessageReceiv
         msg->setBuffer("body", buf);
     }
     msg->setWhat(NexusHdmiCecDevice::HdmiCecRxMessageHandler::kWhatHandleMsg);
-    msg->setTarget(mNexusHdmiCecDevice->mHdmiCecRxMessageHandler->id());
+    msg->setTarget(mNexusHdmiCecDevice->mHdmiCecRxMessageHandler);
     msg->post();
 
     return NO_ERROR;
