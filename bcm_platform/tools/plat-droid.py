@@ -109,12 +109,12 @@ if input > 4 :
 			plat_droid_usage()
 		else:
 			target_profile=str(sys.argv[5])
-			if input == 6:
+			if input == 7:
 				is_pdk=str(sys.argv[6])
-		if input > 6:
+		if input > 7:
 			spoof_device=str(sys.argv[7])
 			spoof_variant=str(sys.argv[8])
-			if input == 9:
+			if input == 10:
 				is_pdk=str(sys.argv[9])
 		else:
 			spoof_device='nope'
@@ -124,7 +124,7 @@ if input > 4 :
 		else:
 			spoof_device=str(sys.argv[5])
 			spoof_variant=str(sys.argv[6])
-			if input == 7:
+			if input == 8:
 				is_pdk=str(sys.argv[7])
 	if target_option == "PDK":
 		is_pdk='PDK'
