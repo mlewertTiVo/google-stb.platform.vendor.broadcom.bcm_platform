@@ -441,7 +441,7 @@ void NexusService::CecServiceManager::CecTxMessageHandler::onMessageReceived(con
         case kWhatSend:
         {
             status_t err;
-            uint32_t replyID;
+            sp<AReplyToken> replyID;
 
             ALOGV("%s: Sending CEC message...", __PRETTY_FUNCTION__);
             err = outputCecMessage(msg);
@@ -451,7 +451,7 @@ void NexusService::CecServiceManager::CecTxMessageHandler::onMessageReceived(con
             }
             else {
                 sp<AMessage> response = new AMessage;
-                response->setInt32("err", err);
+                response->setInt32("err", (int32_t)err);
                 response->postReply(replyID);
             }
             break;
@@ -496,7 +496,7 @@ NexusService::CecServiceManager::EventListener::onHdmiCecMessageReceived(int32_t
         msg->setBuffer("params", buf);
     }
     msg->setWhat(NexusService::CecServiceManager::CecRxMessageHandler::kWhatParse);
-    msg->setTarget(mCecServiceManager->mCecRxMessageHandler->id());
+    msg->setTarget(mCecServiceManager->mCecRxMessageHandler);
     msg->post();
 
     return NO_ERROR;
@@ -678,7 +678,7 @@ status_t NexusService::CecServiceManager::sendCecMessage(uint8_t srcAddr, uint8_
                 msg->setBuffer("params", buf);
             }
             msg->setWhat(CecTxMessageHandler::kWhatSend);
-            msg->setTarget(mCecTxMessageHandler->id());
+            msg->setTarget(mCecTxMessageHandler);
 
             ALOGV("%s: Posting message to looper...", __PRETTY_FUNCTION__);
             sp<AMessage> response;
