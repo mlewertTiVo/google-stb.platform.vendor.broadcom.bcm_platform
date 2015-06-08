@@ -47,11 +47,11 @@ BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/app
 
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
 include ${BCM_APPS_PATH}/BcmCoverFlow/Android.mk
-include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
-include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 ifneq ($(TARGET_BUILD_PDK),true)
-include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
+include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 endif
+include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
+include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
 include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
 include ${BCM_APPS_PATH}/LeanbackBcmCustom/Android.mk
 
@@ -81,7 +81,9 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/libbcmsideband/Andro
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/Bouncer/Android.mk
 endif
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/ExoPlayerDemo/Android.mk
+ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/WidevineSamplePlayer/Android.mk
+endif
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/omx_conformance_test/Android.mk
 endif
 
