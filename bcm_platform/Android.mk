@@ -49,7 +49,9 @@ include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
 include ${BCM_APPS_PATH}/BcmCoverFlow/Android.mk
 include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
+ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
+endif
 include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
 include ${BCM_APPS_PATH}/LeanbackBcmCustom/Android.mk
 
@@ -74,8 +76,10 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/setdisplay/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/yv12torgba/Android.mk
 
 ifneq ($(wildcard ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/README.txt),)
+ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/libbcmsideband/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/Bouncer/Android.mk
+endif
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/ExoPlayerDemo/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/WidevineSamplePlayer/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/omx_conformance_test/Android.mk
