@@ -74,7 +74,7 @@ def write_header(s, d):
 
 # how you should use this.
 def plat_droid_usage():
-	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [redux|aosp|nfs|profile <name>] [spoof <cust-device> <cust-variant>]'
+	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [redux|aosp|nfs|profile <name>] [spoof <cust-device> <cust-variant>] [pdk]'
 	print '\t<platform>    - the BCM platform number to build for, eg: 97252, 97445, ...'
 	print '\t<chip-rev>    - the BCM chip revision of interest, eg: A0, B0, C1, ...'
 	print '\t<board-type>  - the target board type, eg: SV, C'
@@ -88,6 +88,8 @@ def plat_droid_usage():
 	print '\t                corresponding to the customer android variant must be present and valid.'
 	print '\t              - cust-device: the customer device we are spoofing.'
         print '\t              - cust-variant: the customer device variant we are spoofing'
+	print '\t[pdk]'
+	print '\t              - when set, assume we are building for a pdk integration'
 	print '\n'
 	sys.exit(0)
 
@@ -99,6 +101,7 @@ target_option='nope'
 target_profile='nope'
 spoof_device='nope'
 spoof_variant='nope'
+is_pdk='nope'
 if input > 4 :
 	target_option=str(sys.argv[4]).upper()
 	if target_option == "PROFILE":
@@ -106,9 +109,13 @@ if input > 4 :
 			plat_droid_usage()
 		else:
 			target_profile=str(sys.argv[5])
+			if input == 6:
+				is_pdk=str(sys.argv[6])
 		if input > 6:
 			spoof_device=str(sys.argv[7])
 			spoof_variant=str(sys.argv[8])
+			if input == 9:
+				is_pdk=str(sys.argv[9])
 		else:
 			spoof_device='nope'
 	if target_option == "SPOOF":
@@ -117,11 +124,21 @@ if input > 4 :
 		else:
 			spoof_device=str(sys.argv[5])
 			spoof_variant=str(sys.argv[6])
+			if input == 7:
+				is_pdk=str(sys.argv[7])
+	if target_option == "PDK":
+		is_pdk='PDK'
+		target_option='nope'
 
 chip=str(sys.argv[1]).upper()
 revision=str(sys.argv[2]).upper()
 boardtype=str(sys.argv[3]).upper()
 nexus_platform_selected=''
+
+if verbose:
+	print 'target: %s' % target_profile
+	print 'spoof: %s, %s' % (spoof_device, spoof_variant)
+	print 'pdk: %s' % is_pdk
 
 # create android cruft.
 androiddevice='%s%s%s' % (chip, revision, boardtype)
@@ -253,6 +270,9 @@ if target_option == "PROFILE" and custom_target_pre_settings != 'nope':
 if target_option == "REDUX":
 	os.write(s, "\n\n# REDUX target set...\n")
 	os.write(s, "include device/broadcom/common/target_redux.mk")
+if is_pdk == 'PDK':
+	os.write(s, "\n\n# PDK image...\n")
+	os.write(s, "include device/broadcom/common/settings_pdk.mk")
 os.write(s, "\n\ninclude device/broadcom/bcm_platform/bcm_platform.mk")
 root_settings="./device/broadcom/custom/%s/root/settings.mk" %(androidrootdevice)
 if os.access(root_settings, os.F_OK):
