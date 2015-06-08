@@ -58,7 +58,6 @@ LOCAL_SRC_FILES := \
 
 LOCAL_C_INCLUDES := \
     $(TOP)/bionic \
-    $(TOP)/external/stlport/stlport \
     $(TOP)/external/boringssl/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21/test_sage/include \
@@ -85,7 +84,7 @@ ifneq ($(TARGET_BUILD_TYPE),debug)
 LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
 
-LOCAL_SHARED_LIBRARIES := libnexus liblog libstlport
+LOCAL_SHARED_LIBRARIES := libnexus liblog
 LOCAL_SHARED_LIBRARIES += libcmndrm_tl
 
 include $(BUILD_SHARED_LIBRARY)
