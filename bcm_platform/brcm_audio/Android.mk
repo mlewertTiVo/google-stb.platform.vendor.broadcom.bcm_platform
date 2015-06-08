@@ -88,7 +88,9 @@ LOCAL_SHARED_LIBRARIES := \
 LOCAL_C_INCLUDES := \
     external/tinyalsa/include \
     frameworks/av/services/audiopolicy \
-    frameworks/av/services/audiopolicy/engine/interface
+    frameworks/av/services/audiopolicy/engine/interface \
+    frameworks/av/services/audiopolicy/common/managerdefinitions/include \
+    frameworks/av/services/audiopolicy/common/include/
 
 LOCAL_MODULE := libaudiopolicymanager
 LOCAL_MODULE_TAGS := optional
