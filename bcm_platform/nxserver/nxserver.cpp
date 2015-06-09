@@ -115,6 +115,7 @@
 #define NX_TRIM_VP9                    "ro.nx.trim.vp9"
 #define NX_TRIM_PIP                    "ro.nx.trim.pip"
 #define NX_TRIM_MOSAIC                 "ro.nx.trim.mosaic"
+#define NX_TRIM_STILLS                 "ro.nx.trim.stills"
 
 #define NX_HEAP_DYN_FREE_THRESHOLD     (1920*1080*4) /* one 1080p RGBA. */
 
@@ -388,6 +389,11 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    pMemConfigSettings->display[1].window[0].used = false;
    pMemConfigSettings->display[1].window[1].used = false;
 
+   /* only request a single encoder - this is hardcoded knowledge. */
+   for (i = 1 ; i < NEXUS_NUM_VIDEO_ENCODERS ; i++) {
+      pMemConfigSettings->videoEncoder[i].used = false;
+   }
+
    /* need vp9? */
    if (property_get(NX_TRIM_VP9, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
@@ -395,6 +401,13 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
             pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
          }
          pMemConfigSettings->stillDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
+      }
+   }
+
+   /* need stills? */
+   if (property_get(NX_TRIM_STILLS, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         pMemConfigSettings->stillDecoder[0].used = false;
       }
    }
 
