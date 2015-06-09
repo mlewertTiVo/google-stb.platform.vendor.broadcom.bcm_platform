@@ -692,23 +692,20 @@ int NexusService::platformInitVideo(void)
     }
     NEXUS_Platform_GetConfiguration(pPlatformConfig);
 
-    /* Init displays */
-    for(int j=0; j<MAX_NUM_DISPLAYS; j++) {
-        NEXUS_Display_GetDefaultSettings(&displaySettings);
-        displaySettings.displayType = NEXUS_DisplayType_eAuto;
-        displaySettings.format = (j == HD_DISPLAY) ? initial_hd_format : initial_sd_format;
-        displayState[j].display = NEXUS_Display_Open(j, &displaySettings);
-        if (!displayState[j].display) {
-            ALOGE("%s: NEXUS_Display_Open(%d) failed!!", __PRETTY_FUNCTION__, j);
-            BKNI_Free(pPlatformConfig);
-            return NEXUS_UNKNOWN;
-        }
-        displayState[j].hNexusDisplay = reinterpret_cast<int>(displayState[j].display);
+    NEXUS_Display_GetDefaultSettings(&displaySettings);
+    displaySettings.displayType = NEXUS_DisplayType_eAuto;
+    displaySettings.format = initial_hd_format;
+    displayState.display = NEXUS_Display_Open(0, &displaySettings);
+    if (!displayState.display) {
+        ALOGE("%s: NEXUS_Display_Open(%d) failed!!", __PRETTY_FUNCTION__, 0);
+        BKNI_Free(pPlatformConfig);
+        return NEXUS_UNKNOWN;
     }
+    displayState.hNexusDisplay = reinterpret_cast<int>(displayState.display);
 
 #if NEXUS_NUM_COMPONENT_OUTPUTS
     /* Add Component Output to the HD-Display */
-    rc = NEXUS_Display_AddOutput(displayState[HD_DISPLAY].display, NEXUS_ComponentOutput_GetConnector(pPlatformConfig->outputs.component[0]));
+    rc = NEXUS_Display_AddOutput(displayState.display, NEXUS_ComponentOutput_GetConnector(pPlatformConfig->outputs.component[0]));
     if (rc!=NEXUS_SUCCESS) {
         ALOGE("%s: NEXUS_Display_AddOutput(component) failed!!", __PRETTY_FUNCTION__);
         BKNI_Free(pPlatformConfig);
@@ -718,7 +715,7 @@ int NexusService::platformInitVideo(void)
 
 #if NEXUS_HAS_HDMI_OUTPUT && NEXUS_NUM_HDMI_OUTPUTS
     /* Add HDMI Output to the HD-Display */
-    rc = NEXUS_Display_AddOutput(displayState[HD_DISPLAY].display, NEXUS_HdmiOutput_GetVideoConnector(pPlatformConfig->outputs.hdmi[0]));
+    rc = NEXUS_Display_AddOutput(displayState.display, NEXUS_HdmiOutput_GetVideoConnector(pPlatformConfig->outputs.hdmi[0]));
     if (rc!=NEXUS_SUCCESS) {
         ALOGE("%s: NEXUS_Display_AddOutput(hdmi) failed!!", __PRETTY_FUNCTION__);
         BKNI_Free(pPlatformConfig);
@@ -726,17 +723,13 @@ int NexusService::platformInitVideo(void)
     }
 #endif
 
-    for (int j=0; j<MAX_NUM_DISPLAYS; j++) {
-        for (int i=0; i<MAX_VIDEO_WINDOWS_PER_DISPLAY; i++) {
-            displayState[j].video_window[i] = NEXUS_VideoWindow_Open(displayState[j].display, i);
-            if (!displayState[j].video_window[i]) {
-                ALOGE("%s: NEXUS_VideoWindow_Open(%d) failed!!", __PRETTY_FUNCTION__, i);
-                BKNI_Free(pPlatformConfig);
-                return NEXUS_UNKNOWN;
-            }
-            displayState[j].hNexusVideoWindow[i] = reinterpret_cast<int>(displayState[j].video_window[i]);
-        }
+    displayState.video_window = NEXUS_VideoWindow_Open(displayState.display, 0);
+    if (!displayState.video_window) {
+        ALOGE("%s: NEXUS_VideoWindow_Open(%d) failed!!", __PRETTY_FUNCTION__, 0);
+        BKNI_Free(pPlatformConfig);
+        return NEXUS_UNKNOWN;
     }
+    displayState.hNexusVideoWindow = reinterpret_cast<int>(displayState.video_window);
 
     BKNI_Free(pPlatformConfig);
     return rc;
@@ -785,21 +778,16 @@ int NexusService::platformInitSurfaceCompositor(void)
         return NEXUS_UNKNOWN;
     }
     NEXUS_SurfaceCompositor_GetSettings(surface_compositor, p_surface_compositor_settings);
-    NEXUS_Display_GetGraphicsSettings(displayState[HD_DISPLAY].display, &p_surface_compositor_settings->display[HD_DISPLAY].graphicsSettings);
-    // Give space for videowindows to change zorder without using same one twice
-    p_surface_compositor_settings->display[HD_DISPLAY].graphicsSettings.zorder = MAX_VIDEO_WINDOWS_PER_DISPLAY + 1;
+    NEXUS_Display_GetGraphicsSettings(displayState.display, &p_surface_compositor_settings->display[HD_DISPLAY].graphicsSettings);
+    p_surface_compositor_settings->display[HD_DISPLAY].graphicsSettings.zorder = 1;
     p_surface_compositor_settings->display[HD_DISPLAY].graphicsSettings.enabled = true;
-    p_surface_compositor_settings->display[HD_DISPLAY].display = displayState[HD_DISPLAY].display;
+    p_surface_compositor_settings->display[HD_DISPLAY].display = displayState.display;
     p_surface_compositor_settings->display[HD_DISPLAY].framebuffer.number = 2;
     p_surface_compositor_settings->display[HD_DISPLAY].framebuffer.width = formatInfo.width;
     p_surface_compositor_settings->display[HD_DISPLAY].framebuffer.height = formatInfo.height;
     p_surface_compositor_settings->display[HD_DISPLAY].framebuffer.backgroundColor = 0; /* black background */
     p_surface_compositor_settings->display[HD_DISPLAY].framebuffer.heap = NEXUS_Platform_GetFramebufferHeap(0);
 
-    if((NEXUS_VideoFormat_e720p_3DOU_AS == initial_hd_format) || (NEXUS_VideoFormat_e1080p24hz_3DOU_AS == initial_hd_format)) {
-        p_surface_compositor_settings->display[HD_DISPLAY].display3DSettings.overrideOrientation = true;
-        p_surface_compositor_settings->display[HD_DISPLAY].display3DSettings.orientation = NEXUS_VideoOrientation_e2D;
-    }
     p_surface_compositor_settings->frameBufferCallback.callback = framebuffer_callback;
     p_surface_compositor_settings->frameBufferCallback.context = surface_compositor;
     p_surface_compositor_settings->inactiveCallback.callback = inactive_callback;
@@ -809,11 +797,7 @@ int NexusService::platformInitSurfaceCompositor(void)
     return rc;
 }
 
-/* This function reads persist.hd_output_format and persist.sd_output_format properties and
-   return respective enums for hd and sd formats. These HD and SD output formats
-   are the initial configuration with which Android boots up. */
-void NexusService::getInitialOutputFormats(
-        NEXUS_VideoFormat *hd_format, NEXUS_VideoFormat *sd_format)
+void NexusService::getInitialOutputFormats(NEXUS_VideoFormat *hd_format)
 {
     char value[PROPERTY_VALUE_MAX];
     NEXUS_VideoFormat fmt;
@@ -831,27 +815,6 @@ void NexusService::getInitialOutputFormats(
     }
 
     if(hd_format) *hd_format = fmt;
-
-    // SD output format
-    if(property_get("persist.sd_output_format", value, NULL))
-    {
-        if (strncmp((char *) value, "PAL",3)==0)
-        {
-            ALOGW("Set SD output format to PAL...");
-            fmt = NEXUS_VideoFormat_ePal;
-        }
-        else
-        {
-            ALOGW("Set SD output format to NTSC");
-            fmt = NEXUS_VideoFormat_eNtsc;
-        }
-    }
-    else
-    {
-        ALOGW("Set SD output format to default Ntsc");
-        fmt = NEXUS_VideoFormat_eNtsc;
-    }
-    if(sd_format) *sd_format = fmt;
 
     return;
 }
@@ -876,9 +839,7 @@ void NexusService::platformInit()
         BDBG_ASSERT(rc == NEXUS_SUCCESS);
     }
 
-    for (i=0; i<MAX_NUM_DISPLAYS; i++) {
-        BKNI_Memset(&displayState[i], 0, sizeof(DisplayState));
-    }
+    BKNI_Memset(&displayState, 0, sizeof(DisplayState));
 
     for (i=0; i<MAX_AUDIO_DECODERS; i++) {
         audioDecoder[i] = NULL;
@@ -890,7 +851,7 @@ void NexusService::platformInit()
         simpleAudioPlayback[i] = NULL;
     }
 
-    getInitialOutputFormats(&initial_hd_format, &initial_sd_format);
+    getInitialOutputFormats(&initial_hd_format);
 
     NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
     g2dOpenSettings.compatibleWithSurfaceCompaction = false;

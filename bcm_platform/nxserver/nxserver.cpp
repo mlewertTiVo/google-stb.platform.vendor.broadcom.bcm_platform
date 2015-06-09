@@ -117,6 +117,7 @@
 #define NX_TRIM_MOSAIC                 "ro.nx.trim.mosaic"
 #define NX_TRIM_STILLS                 "ro.nx.trim.stills"
 #define NX_TRIM_MINFMT                 "ro.nx.trim.minfmt"
+#define NX_TRIM_DISP                   "ro.nx.trim.disp"
 
 #define NX_HEAP_DYN_FREE_THRESHOLD     (1920*1080*4) /* one 1080p RGBA. */
 
@@ -383,12 +384,20 @@ static int lookup_heap_memory_type(const NEXUS_PlatformSettings *pPlatformSettin
 
 static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
 {
-   int i;
+   int i, j;
    char value[PROPERTY_VALUE_MAX];
 
-   /* no SD display - this is hardcoded knowledge. */
-   pMemConfigSettings->display[1].window[0].used = false;
-   pMemConfigSettings->display[1].window[1].used = false;
+   /* need more than a single display? */
+   if (property_get(NX_TRIM_DISP, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         for (i = 1 ; i < NEXUS_MAX_DISPLAYS ; i++) {
+            pMemConfigSettings->display[i].maxFormat = NEXUS_VideoFormat_eUnknown;
+            for (j = 0 ; j < NEXUS_MAX_VIDEO_WINDOWS ; j++) {
+               pMemConfigSettings->display[i].window[j].used = false;
+            }
+         }
+      }
+   }
 
    /* only request a single encoder - this is hardcoded knowledge. */
    for (i = 1 ; i < NEXUS_NUM_VIDEO_ENCODERS ; i++) {
