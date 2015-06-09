@@ -116,6 +116,7 @@
 #define NX_TRIM_PIP                    "ro.nx.trim.pip"
 #define NX_TRIM_MOSAIC                 "ro.nx.trim.mosaic"
 #define NX_TRIM_STILLS                 "ro.nx.trim.stills"
+#define NX_TRIM_MINFMT                 "ro.nx.trim.minfmt"
 
 #define NX_HEAP_DYN_FREE_THRESHOLD     (1920*1080*4) /* one 1080p RGBA. */
 
@@ -407,7 +408,9 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    /* need stills? */
    if (property_get(NX_TRIM_STILLS, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         pMemConfigSettings->stillDecoder[0].used = false;
+         for (i = 0 ; i < NEXUS_NUM_VIDEO_DECODERS ; i++) {
+            pMemConfigSettings->stillDecoder[i].used = false;
+         }
       }
    }
 
@@ -421,7 +424,18 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* need pip? */
+   /* default to lowest format for non main decoder (i.e. transcode). */
+   if (property_get(NX_TRIM_MINFMT, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         for (i = 1; i < NEXUS_NUM_VIDEO_DECODERS ; i++) {
+            if (pMemConfigSettings->videoDecoder[i].used) {
+               pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_eNtsc;
+            }
+         }
+      }
+   }
+
+   /* need pip? - note you may have to reset format set above if pip needed. */
    if (property_get(NX_TRIM_PIP, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          pMemConfigSettings->videoDecoder[1].used = false;

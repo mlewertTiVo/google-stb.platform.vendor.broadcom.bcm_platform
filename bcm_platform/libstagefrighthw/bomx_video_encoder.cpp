@@ -3078,6 +3078,8 @@ NEXUS_Error BOMX_VideoEncoder::AllocateEncoderResource()
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleVideoDecoder[0].id = m_allocResults.simpleVideoDecoder[0].id;
     connectSettings.simpleVideoDecoder[0].windowCapabilities.encoder = true;
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = 720;
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = 480;
     connectSettings.simpleEncoder[0].id = m_allocResults.simpleEncoder[0].id;
     connectSettings.simpleEncoder[0].nonRealTime = true;
     connectSettings.simpleEncoder[0].audio.cpuAccessible = true;
