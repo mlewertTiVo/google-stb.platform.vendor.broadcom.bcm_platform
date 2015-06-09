@@ -59,7 +59,8 @@
 
 #define B_HW_ENCODER_POLL_INTERVAL (20)
 
-#define B_DEFAULT_INPUT_FRAMERATE (65536 * 15)
+#define Q16_SCALE_FACTOR 65536.0
+#define B_DEFAULT_INPUT_FRAMERATE (Q16_SCALE_FACTOR * 15.0)
 #define B_DEFAULT_INPUT_NEXUS_FRAMERATE (NEXUS_VideoFrameRate_e15)
 
 #define B_MAX_FRAME_WIDTH           1280
@@ -940,6 +941,13 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
             ALOGE("Video compression format cannot be changed in the port definition.  Change Port Format instead.");
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
+        /* The value 0x0 is used to indicate the frame rate is unknown, variable, or is not needed. */
+        if ( pDef->format.video.xFramerate && MapOMXFrameRateToNexus(pDef->format.video.xFramerate) == NEXUS_VideoFrameRate_eUnknown )
+        {
+           ALOGE("Video framerate: %d is not supported by the encoder", pDef->format.video.xFramerate);
+           return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
+
         // Handle update in base class
         err = BOMX_Component::SetParameter(nIndex, (OMX_PTR)pDef);
         if ( err != OMX_ErrorNone )
@@ -3244,45 +3252,44 @@ void BOMX_VideoEncoder::DestroyImageSurfaces()
 NEXUS_VideoFrameRate BOMX_VideoEncoder::MapOMXFrameRateToNexus(OMX_U32 omxFR)
 {
     NEXUS_VideoFrameRate eFrameRate;
+
+    /* Convert from Q16 fixed point format.
+     * If framerate is not supported or doesn't exist it will return unknown.
+     * List of supported framerates can be found in refsw.
+     */
     switch ( omxFR )
     {
-    case (OMX_U32)(65536.0 * 23.976):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 23.976):
         eFrameRate = NEXUS_VideoFrameRate_e23_976;
         break;
-    case (OMX_U32)(65536.0 * 24.0):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 24.0):
         eFrameRate = NEXUS_VideoFrameRate_e24;
         break;
-    case (OMX_U32)(65536.0 * 25.0):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 25.0):
         eFrameRate = NEXUS_VideoFrameRate_e25;
         break;
-    case (OMX_U32)(65536.0 * 29.97):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 29.97):
         eFrameRate = NEXUS_VideoFrameRate_e29_97;
         break;
-    case (OMX_U32)(65536.0 * 30.0):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 30.0):
         eFrameRate = NEXUS_VideoFrameRate_e30;
         break;
-    case (OMX_U32)(65536.0 * 50.0):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 50.0):
         eFrameRate = NEXUS_VideoFrameRate_e50;
         break;
-    case (OMX_U32)(65536.0 * 59.94):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 59.94):
         eFrameRate = NEXUS_VideoFrameRate_e59_94;
         break;
-    case (OMX_U32)(65536.0 * 60.0):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 60.0):
         eFrameRate = NEXUS_VideoFrameRate_e60;
         break;
-    case (OMX_U32)(65536.0 * 14.985):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 14.985):
         eFrameRate = NEXUS_VideoFrameRate_e14_985;
         break;
-    case (OMX_U32)(65536.0 * 7.493):
-        eFrameRate = NEXUS_VideoFrameRate_e7_493;
-        break;
-    case (OMX_U32)(65536.0 * 10.0):
-        eFrameRate = NEXUS_VideoFrameRate_e10;
-        break;
-    case (OMX_U32)(65536.0 * 15.0):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 15.0):
         eFrameRate = NEXUS_VideoFrameRate_e15;
         break;
-    case (OMX_U32)(65536.0 * 20.0):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 20.0):
         eFrameRate = NEXUS_VideoFrameRate_e20;
         break;
     default:
