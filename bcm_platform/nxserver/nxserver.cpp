@@ -400,14 +400,14 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* only request a single encoder - this is hardcoded knowledge. */
-   for (i = 1 ; i < NEXUS_NUM_VIDEO_ENCODERS ; i++) {
+   for (i = 1 ; i < NEXUS_MAX_VIDEO_ENCODERS ; i++) {
       pMemConfigSettings->videoEncoder[i].used = false;
    }
 
    /* need vp9? */
    if (property_get(NX_TRIM_VP9, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         for (i = 0 ; i < NEXUS_NUM_VIDEO_DECODERS ; i++) {
+         for (i = 0 ; i < NEXUS_MAX_VIDEO_DECODERS ; i++) {
             pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
          }
          pMemConfigSettings->stillDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
@@ -417,7 +417,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    /* need stills? */
    if (property_get(NX_TRIM_STILLS, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         for (i = 0 ; i < NEXUS_NUM_VIDEO_DECODERS ; i++) {
+         for (i = 0 ; i < NEXUS_MAX_STILL_DECODERS ; i++) {
             pMemConfigSettings->stillDecoder[i].used = false;
          }
       }
@@ -436,7 +436,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    /* default to lowest format for non main decoder (i.e. transcode). */
    if (property_get(NX_TRIM_MINFMT, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         for (i = 1; i < NEXUS_NUM_VIDEO_DECODERS ; i++) {
+         for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS ; i++) {
             if (pMemConfigSettings->videoDecoder[i].used) {
                pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_eNtsc;
             }
