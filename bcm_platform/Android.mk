@@ -60,6 +60,7 @@ include vendor/broadcom/stb/bcm_platform/tools/fbtest/Android.mk
 include vendor/broadcom/stb/bcm_platform/tools/lmkstats/Android.mk
 include vendor/broadcom/stb/bcm_platform/tools/makegpt/Android.mk
 include vendor/broadcom/stb/bcm_platform/tools/makehwcfg/Android.mk
+include vendor/broadcom/stb/bcm_platform/tools/nxblk/Android.mk
 include vendor/broadcom/stb/bcm_platform/tools/nxcfg/Android.mk
 include vendor/broadcom/stb/bcm_platform/tools/nxmem/Android.mk
 include vendor/broadcom/stb/bcm_platform/tools/otpgetchipid/Android.mk
