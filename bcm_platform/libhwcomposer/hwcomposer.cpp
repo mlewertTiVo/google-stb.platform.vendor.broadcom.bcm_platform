@@ -2117,6 +2117,12 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
           private_handle_t *gr_out_buffer = (private_handle_t *)list->outbuf;
           hwc_mem_lock(ctx, (unsigned)gr_out_buffer->sharedData, &pAddr, true);
           PSHARED_DATA pOutSharedData = (PSHARED_DATA) pAddr;
+          if (pOutSharedData == NULL) {
+             ALOGE("vcmp: %llu (%p) - invalid output buffer?", ctx->stats[1].set_call, gr_out_buffer->sharedData);
+             ctx->stats[1].set_skipped += 1;
+             hwc_mem_unlock(ctx, (unsigned)gr_out_buffer->sharedData, true);
+             goto out_unlock;
+          }
           display_surface = hwc_to_nsc_surface(pOutSharedData->planes[DEFAULT_PLANE].width,
                                                pOutSharedData->planes[DEFAULT_PLANE].height,
                                                pOutSharedData->planes[DEFAULT_PLANE].stride,
@@ -2125,8 +2131,9 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                                                pOutSharedData->planes[DEFAULT_PLANE].physAddr,
                                                (uint8_t *)pAddr);
           if (display_surface == NULL) {
-             ALOGE("vcmp: %llu - no display surface available", ctx->stats[1].set_call);
+             ALOGE("vcmp: %llu (%p) - no display surface available", ctx->stats[1].set_call, gr_out_buffer->sharedData);
              ctx->stats[1].set_skipped += 1;
+             hwc_mem_unlock(ctx, (unsigned)gr_out_buffer->sharedData, true);
              goto out_unlock;
           }
 
