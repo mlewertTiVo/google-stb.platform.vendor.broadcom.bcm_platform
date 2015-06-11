@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+ifneq ($(filter bcm_% fbx6lc avko,$(TARGET_DEVICE)),)
+
 include vendor/broadcom/bcm_platform/brcm_audio/Android.mk
 include vendor/broadcom/bcm_platform/brcm_memtrack/Android.mk
 include vendor/broadcom/bcm_platform/brcm_nexus/Android.mk
@@ -72,3 +74,4 @@ include vendor/broadcom/bcm_platform/not_for_release/WidevineSamplePlayer/Androi
 include vendor/broadcom/bcm_platform/not_for_release/omx_conformance_test/Android.mk
 endif
 
+endif
