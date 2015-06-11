@@ -60,7 +60,7 @@
 #define B_PROPERTY_MMA ("ro.nx.mma")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
-#define B_DATA_BUFFER_SIZE (1024*1024)  // Taken from soft HEVC decoder (worst case)
+#define B_DATA_BUFFER_SIZE (1536*1536)  // 1024 * 1024 from soft decoder is not big enough for some HEVC streams
 #define B_NUM_BUFFERS (12)
 #define B_STREAM_ID 0xe0
 #define B_MAX_FRAMES (12)
