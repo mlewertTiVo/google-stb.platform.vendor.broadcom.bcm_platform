@@ -525,6 +525,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    bool needs_yv12 = false;
    bool needs_ycrcb = false;
    bool needs_rgb = false;
+   bool needs_none = false;
    struct nx_ashmem_alloc ashmem_alloc;
 
    (void)dev;
@@ -664,10 +665,14 @@ gralloc_alloc_buffer(alloc_device_t* dev,
           h <= DATA_PLANE_MAX_HEIGHT) {
          needs_ycrcb = true;
       }
-   } else if ((format == HAL_PIXEL_FORMAT_YV12) && (usage & GRALLOC_USAGE_PRIVATE_0) & (usage & GRALLOC_USAGE_SW_READ_OFTEN)) {
-      // private multimedia buffer, we only need a yv12 plane in case cpu is intending to read
-      // the content, eg decode->encode type of scenario; yv12 data is produced during lock.
-      needs_yv12 = true;
+   } else if ((format == HAL_PIXEL_FORMAT_YV12) && (usage & GRALLOC_USAGE_PRIVATE_0)) {
+      if (usage & GRALLOC_USAGE_SW_READ_OFTEN) {
+         // private multimedia buffer, we only need a yv12 plane in case cpu is intending to read
+         // the content, eg decode->encode type of scenario; yv12 data is produced during lock.
+         needs_yv12 = true;
+      } else {
+         needs_none = true;
+      }
    }
 
    if (needs_yv12) {
@@ -691,6 +696,27 @@ gralloc_alloc_buffer(alloc_device_t* dev,
             needs_rgb = true;
          }
       }
+
+      if (gralloc_log_mapper()) {
+         NEXUS_Addr physAddr;
+         unsigned sharedPhysAddr = grallocPrivateHandle->sharedData;
+         if (grallocPrivateHandle->is_mma) {
+            NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+            sharedPhysAddr = (unsigned)physAddr;
+         }
+         ALOGI("alloc (MM): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
+               grallocPrivateHandle->is_mma,
+               getpid(),
+               grallocPrivateHandle->sharedData,
+               sharedPhysAddr,
+               pSharedData->planes[DEFAULT_PLANE].physAddr,
+               grallocPrivateHandle->nxSurfacePhysicalAddress,
+               pSharedData->planes[DEFAULT_PLANE].size,
+               grallocPrivateHandle->nxSurfaceAddress);
+         if (grallocPrivateHandle->is_mma) {
+            NEXUS_MemoryBlock_UnlockOffset(block_handle);
+         }
+      }
    }
 
    if (needs_ycrcb) {
@@ -707,6 +733,27 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       if (ret >= 0) {
          pSharedData->planes[EXTRA_PLANE].physAddr =
              (NEXUS_Addr)ioctl(grallocPrivateHandle->fd3, NX_ASHMEM_GETMEM);
+      }
+
+      if (gralloc_log_mapper()) {
+         NEXUS_Addr physAddr;
+         unsigned sharedPhysAddr = grallocPrivateHandle->sharedData;
+         if (grallocPrivateHandle->is_mma) {
+            NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+            sharedPhysAddr = (unsigned)physAddr;
+         }
+         ALOGI("alloc (EX): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
+               grallocPrivateHandle->is_mma,
+               getpid(),
+               grallocPrivateHandle->sharedData,
+               sharedPhysAddr,
+               pSharedData->planes[EXTRA_PLANE].physAddr,
+               grallocPrivateHandle->nxSurfacePhysicalAddress,
+               pSharedData->planes[EXTRA_PLANE].size,
+               grallocPrivateHandle->nxSurfaceAddress);
+         if (grallocPrivateHandle->is_mma) {
+            NEXUS_MemoryBlock_UnlockOffset(block_handle);
+         }
       }
    }
 
@@ -765,7 +812,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       ALOGE("%s: failed to allocate extra ycrcb plane (%d,%d), size %d", __FUNCTION__, w, h, size);
       alloc_failed = true;
    }
-   if (!needs_yv12 && ((!grallocPrivateHandle->is_mma && pSharedData->planes[DEFAULT_PLANE].physAddr == 0) ||
+   if (!needs_none && !needs_yv12 && ((!grallocPrivateHandle->is_mma && pSharedData->planes[DEFAULT_PLANE].physAddr == 0) ||
        (grallocPrivateHandle->is_mma && grallocPrivateHandle->nxSurfacePhysicalAddress == 0))) {
       ALOGE("%s: failed to allocate standard plane (%d,%d), size %d", __FUNCTION__, w, h, extra_size);
       alloc_failed = true;
@@ -832,7 +879,7 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
 
    if (pSharedData) {
       if (gralloc_log_mapper()) {
-         NEXUS_Addr physAddr;
+         NEXUS_Addr physAddr = 0;
          unsigned sharedPhysAddr = hnd->sharedData;
          int gl_plane = (pSharedData->planes[GL_PLANE].physAddr ? 1 : 0);
          unsigned planePhysAddr =

@@ -110,9 +110,11 @@ int gralloc_register_buffer(gralloc_module_t const* module,
          plane = GL_PLANE;
       }
       if (hnd->is_mma) {
-         pMemory = NULL;
-         NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr, &pMemory);
-         hnd->nxSurfaceAddress = (unsigned)pMemory;
+         if (pSharedData->planes[plane].physAddr) {
+            pMemory = NULL;
+            NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr, &pMemory);
+            hnd->nxSurfaceAddress = (unsigned)pMemory;
+         }
       } else {
          hnd->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->planes[plane].physAddr);
       }
@@ -202,11 +204,14 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
       }
 
       if (hnd->is_mma) {
-         NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr);
+         if (pSharedData->planes[plane].physAddr) {
+            NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr);
+            if (gralloc_boom_check()) {
+               NEXUS_MemoryBlock_CheckIfLocked((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr);
+            }
+         }
          NEXUS_MemoryBlock_Unlock(block_handle);
-
          if (gralloc_boom_check()) {
-            NEXUS_MemoryBlock_CheckIfLocked((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr);
             NEXUS_MemoryBlock_CheckIfLocked(block_handle);
          }
       }
@@ -247,7 +252,12 @@ int gralloc_lock(gralloc_module_t const* module,
       NEXUS_MemoryBlock_Lock(shared_block_handle, &pMemory);
       pSharedData = (PSHARED_DATA) pMemory;
       block_handle = (NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr;
-      NEXUS_MemoryBlock_Lock(block_handle, vaddr);
+      if (block_handle) {
+         NEXUS_MemoryBlock_Lock(block_handle, vaddr);
+      } else {
+         ALOGE("no default plane on s-blk:0x%x", shared_block_handle);
+         *vaddr = NULL;
+      }
    } else {
       pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
       *vaddr = NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
