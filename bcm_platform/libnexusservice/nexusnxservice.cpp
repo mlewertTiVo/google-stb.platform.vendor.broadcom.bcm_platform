@@ -95,89 +95,7 @@ BDBG_OBJECT_ID(NexusClientContext);
 typedef struct NexusNxServerContext : public NexusServerContext {
     NexusNxServerContext()  { ALOGV("%s: called", __PRETTY_FUNCTION__); }
     ~NexusNxServerContext() { ALOGV("%s: called", __PRETTY_FUNCTION__); }
-
-    struct StandbyMonitorThread : public android::Thread {
-
-        enum ThreadState {
-            STATE_UNKNOWN,
-            STATE_STOPPED,
-            STATE_RUNNING
-        };
-
-        StandbyMonitorThread() : state(STATE_STOPPED), name(NULL) {
-            ALOGD("%s: called", __PRETTY_FUNCTION__);
-        }
-
-        virtual ~StandbyMonitorThread();
-
-        virtual android::status_t run( const char* name = 0,
-                                       int32_t priority = android::PRIORITY_DEFAULT,
-                                       size_t stack = 0);
-
-        virtual void stop() { state = STATE_STOPPED; }
-
-        bool isRunning() { return (state == STATE_RUNNING); }
-
-        const char *getName() { return name; }
-
-    private:
-        ThreadState state;
-        char *name;
-        bool threadLoop();
-
-        /* Disallow copy constructor and copy operator... */
-        StandbyMonitorThread(const StandbyMonitorThread &);
-        StandbyMonitorThread &operator=(const StandbyMonitorThread &);
-    };
-    android::sp<NexusNxServerContext::StandbyMonitorThread> mStandbyMonitorThread;
 } NexusNxServerContext;
-
-NexusNxServerContext::StandbyMonitorThread::~StandbyMonitorThread()
-{
-    ALOGD("%s: called", __PRETTY_FUNCTION__);
-
-    if (this->name != NULL) {
-        free(name);
-        this->name = NULL;
-    }
-}
-
-android::status_t NexusNxServerContext::StandbyMonitorThread::run(const char* name, int32_t priority, size_t stack)
-{
-    android::status_t status;
-
-    this->name = strdup(name);
-
-    status = Thread::run(name, priority, stack);
-    if (status == android::OK) {
-        state = StandbyMonitorThread::STATE_RUNNING;
-    }
-    return android::OK;
-}
-
-bool NexusNxServerContext::StandbyMonitorThread::threadLoop()
-{
-    NEXUS_Error rc;
-    NxClient_StandbyStatus standbyStatus, prevStatus;
-
-    ALOGD("%s: Entering for client \"%s\"", __PRETTY_FUNCTION__, getName());
-
-    NxClient_GetStandbyStatus(&standbyStatus);
-    prevStatus = standbyStatus;
-
-    while (isRunning()) {
-        rc = NxClient_GetStandbyStatus(&standbyStatus);
-
-        if(standbyStatus.settings.mode != prevStatus.settings.mode) {
-            ALOGD("%s: Acknowledge state %d\n", getName(), standbyStatus.settings.mode);
-            NxClient_AcknowledgeStandby(true);
-        }
-        prevStatus = standbyStatus;
-        BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
-    }
-    ALOGD("%s: Exiting for client \"%s\"", __PRETTY_FUNCTION__, getName());
-    return false;
-}
 
 void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param __unused)
 {
@@ -467,6 +385,7 @@ void NexusNxService::platformInit()
     sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
     key = fopen(value, "r");
     joinSettings.mode = NEXUS_ClientMode_eUntrusted;
+    joinSettings.ignoreStandbyRequest = true;
     if (key == NULL) {
        ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, value, errno, strerror(errno));
     } else {
@@ -489,10 +408,6 @@ void NexusNxService::platformInit()
             usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
         }
     } while (rc != NEXUS_SUCCESS);
-
-    NexusNxServerContext *nxServer = static_cast<NexusNxServerContext *>(server);
-    nxServer->mStandbyMonitorThread = new NexusNxServerContext::StandbyMonitorThread();
-    nxServer->mStandbyMonitorThread->run(&joinSettings.name[0], ANDROID_PRIORITY_NORMAL);
 
     unsigned i = NEXUS_NUM_CEC;
     while (i--) {
@@ -524,14 +439,6 @@ void NexusNxService::platformUninit()
             mCecServiceManager[i]->platformUninit();
             mCecServiceManager[i] = NULL;
         }
-    }
-
-    NexusNxServerContext *nxServer = static_cast<NexusNxServerContext *>(server);
-    /* Cancel the standby monitor thread... */
-    if (nxServer->mStandbyMonitorThread != NULL && nxServer->mStandbyMonitorThread->isRunning()) {
-        nxServer->mStandbyMonitorThread->stop();
-        nxServer->mStandbyMonitorThread->join();
-        nxServer->mStandbyMonitorThread = NULL;
     }
     NxClient_Uninit();
 }
