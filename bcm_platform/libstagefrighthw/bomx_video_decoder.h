@@ -105,10 +105,14 @@ struct BOMX_VideoDecoderOutputBufferInfo
         {
 #if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
             NEXUS_SurfaceHandle hSurfaceY;
+            int yMemBlkFd;
             NEXUS_SurfaceHandle hSurfaceCb;
+            int cbMemBlkFd;
             NEXUS_SurfaceHandle hSurfaceCr;
+            int crMemBlkFd;
 #else
             NEXUS_SurfaceHandle hDestripeSurface;
+            int destripeMemBlkFd;
 #endif
             void *pClientMemory;    // Client memory provided in OMX_UseBuffer (NULL for OMX_AllocateBuffer)
         } standard;
