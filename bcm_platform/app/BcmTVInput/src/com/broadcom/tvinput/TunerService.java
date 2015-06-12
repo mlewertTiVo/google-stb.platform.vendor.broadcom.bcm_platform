@@ -694,6 +694,18 @@ public class TunerService extends TvInputService {
         SCANNING_COMPLETE,
     }
 
+    private void sendBroadcastTimeToAllSessions()
+    {
+        Bundle b = new Bundle();
+        long utc = TunerHAL.getUtcTime();
+        b.putLong("utc", utc);
+        if (DEBUG)
+            Log.d(TAG, "send broadcast time " + Long.valueOf(utc));
+        for(TunerTvInputSessionImpl session : sessionSet) {
+            reflectedNotifySessionEvent(session, "broadcastTime", b);
+        }
+    }
+
     private void sendScanStatusToAllSessions()
     {
         for(TunerTvInputSessionImpl session : sessionSet) {
@@ -1283,6 +1295,9 @@ public class TunerService extends TvInputService {
             }
             else if (action.equals("setClockFromStream")) {
                 forgeTime();
+            }
+            else if (action.equals("broadcastTime")) {
+                sendBroadcastTimeToAllSessions();
             }
 
         }
