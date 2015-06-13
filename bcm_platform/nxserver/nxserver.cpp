@@ -119,6 +119,7 @@
 #define NX_TRIM_STILLS                 "ro.nx.trim.stills"
 #define NX_TRIM_MINFMT                 "ro.nx.trim.minfmt"
 #define NX_TRIM_DISP                   "ro.nx.trim.disp"
+#define NX_TRIM_VIDIN                  "ro.nx.trim.vidin"
 
 #define NX_HEAP_DYN_FREE_THRESHOLD     (1920*1080*4) /* one 1080p RGBA. */
 
@@ -397,6 +398,14 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
                pMemConfigSettings->display[i].window[j].used = false;
             }
          }
+      }
+   }
+
+   /* need video input? */
+   if (property_get(NX_TRIM_VIDIN, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         pMemConfigSettings->videoInputs.hdDvi = false;
+         pMemConfigSettings->videoInputs.ccir656 = false;
       }
    }
 
