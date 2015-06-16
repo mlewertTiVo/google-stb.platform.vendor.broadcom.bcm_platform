@@ -1082,6 +1082,7 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     }
     if ( m_hPlaypump )
     {
+        ClosePidChannel();
         NEXUS_Playpump_Close(m_hPlaypump);
     }
     if ( m_hVideoClient )
