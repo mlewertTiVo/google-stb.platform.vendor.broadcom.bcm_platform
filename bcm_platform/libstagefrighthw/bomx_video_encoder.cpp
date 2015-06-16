@@ -102,6 +102,7 @@ enum BOMX_VideoEncoderEventType
 {
     BOMX_VideoEncoderEventType_eImageBuffer = 0,
     BOMX_VideoEncoderEventType_eCheckpoint,
+    BOMX_VideoEncoderEventType_eDataReady,
     BOMX_VideoEncoderEventType_eMax
 };
 
@@ -207,7 +208,8 @@ static void BOMX_VideoEncoder_EventCallback(void *pParam, int param)
 
     static const char *pEventMsg[BOMX_VideoEncoderEventType_eMax] = {
         "ImageBuffer",
-        "Graphic2DCheckPoint"
+        "Graphic2DCheckPoint",
+        "DataReady"
     };
 
     hEvent = static_cast <B_EventHandle> (pParam);
@@ -2973,6 +2975,11 @@ NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
     encoderStartSettings.output.video.settings.bounds.inputDimension.max.height = B_MAX_FRAME_HEIGHT;
     encoderStartSettings.output.video.settings.bounds.streamStructure.max.framesB = 0;
     encoderStartSettings.output.video.settings.rateBufferDelay = B_RATE_BUFFER_DELAY_MS;
+
+    /* Setup output frame ready callback */
+    encoderStartSettings.output.video.settings.dataReady.callback = BOMX_VideoEncoder_EventCallback;
+    encoderStartSettings.output.video.settings.dataReady.context = m_hOutputBufferProcessEvent;
+    encoderStartSettings.output.video.settings.dataReady.param = (int) BOMX_VideoEncoderEventType_eDataReady;
 
     ALOGV("Profile = %d, Level = %d, width = %d, height = %d",
           encoderStartSettings.output.video.settings.profile,
