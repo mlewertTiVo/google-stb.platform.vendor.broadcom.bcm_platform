@@ -52,7 +52,7 @@ LOCAL_SRC_FILES := \
     bcrypt_x509_sw.c
 
 LOCAL_C_INCLUDES := \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/bcrypt/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/bcrypt/include \
     $(TOP)/external/openssl/include \
     $(NEXUS_APP_INCLUDE_PATHS)
 

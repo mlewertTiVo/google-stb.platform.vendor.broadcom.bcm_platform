@@ -4,7 +4,7 @@ include $(CLEAR_VARS)
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
-                    $(TOP)/vendor/broadcom/refsw/BSEAV/tools/bmemperf/include
+                    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/tools/bmemperf/include
 
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))

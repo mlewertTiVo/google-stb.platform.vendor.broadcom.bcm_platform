@@ -8,8 +8,8 @@ LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
-                    $(TOP)/vendor/broadcom/refsw/BSEAV/tools/bmemperf/include \
-                    $(TOP)/vendor/broadcom/refsw/BSEAV/tools/bmemconfig
+                    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/tools/bmemperf/include \
+                    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/tools/bmemconfig
 
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))

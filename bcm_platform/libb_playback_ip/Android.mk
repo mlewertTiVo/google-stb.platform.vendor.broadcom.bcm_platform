@@ -58,7 +58,7 @@ include $(NEXUS_TOP)/lib/playback_ip/b_playback_ip_lib.inc
 LOCAL_SRC_FILES += $(subst $(B_PLAYBACK_IP_LIB_TOP),../../refsw/nexus/lib/playback_ip,$(B_PLAYBACK_IP_LIB_SOURCES))
 LOCAL_SRC_FILES := $(subst $(BSEAV_LIB_TOP_FROM_NEXUS_TOP),../../refsw/BSEAV/lib,$(LOCAL_SRC_FILES))
 
-LOCAL_C_INCLUDES += $(subst $(B_LIB_TOP),$(TOP)/vendor/broadcom/refsw/nexus/lib,$(B_PLAYBACK_IP_LIB_PUBLIC_INCLUDES) $(B_PLAYBACK_IP_LIB_PRIVATE_INCLUDES))
+LOCAL_C_INCLUDES += $(subst $(B_LIB_TOP),$(TOP)/vendor/broadcom/stb/refsw/nexus/lib,$(B_PLAYBACK_IP_LIB_PUBLIC_INCLUDES) $(B_PLAYBACK_IP_LIB_PRIVATE_INCLUDES))
 LOCAL_C_INCLUDES += $(TOP)/external/openssl/include
 LOCAL_CFLAGS += $(addprefix -D,$(B_PLAYBACK_IP_LIB_DEFINES))
 

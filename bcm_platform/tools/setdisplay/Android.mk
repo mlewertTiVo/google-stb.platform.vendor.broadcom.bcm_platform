@@ -8,8 +8,8 @@ LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
-                    $(TOP)/vendor/broadcom/refsw/nexus/nxclient/apps/utils \
-                    $(TOP)/vendor/broadcom/refsw/nexus/utils
+                    $(TOP)/vendor/broadcom/stb/refsw/nexus/nxclient/apps/utils \
+                    $(TOP)/vendor/broadcom/stb/refsw/nexus/utils
 
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))

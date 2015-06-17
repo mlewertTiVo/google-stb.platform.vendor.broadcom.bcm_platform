@@ -19,8 +19,8 @@ include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
-LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusipc
-LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusservice
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/stb/bcm_platform/libnexusipc
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/stb/bcm_platform/libnexusservice
 
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_CFLAGS += $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES))

@@ -69,12 +69,12 @@ LOCAL_C_INCLUDES := \
     $(TOP)/bionic \
     $(TOP)/external/stlport/stlport \
     $(TOP)/external/openssl/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/third_party/widevine/CENC_sage/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_crypto/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_drm/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_drm/include/tl \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/sage/srai/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/sage/platforms/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/third_party/widevine/CENC_sage/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_crypto/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_drm/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_drm/include/tl \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/srai/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/platforms/include \
     $(BSAGELIB_INCLUDES) \
     $(NEXUS_APP_INCLUDE_PATHS)
 

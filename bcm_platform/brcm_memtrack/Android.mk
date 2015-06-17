@@ -14,8 +14,8 @@ LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 
 LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include \
-                    $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
-                    $(TOP)/vendor/broadcom/bcm_platform/libnexusipc \
+                    $(TOP)/vendor/broadcom/stb/bcm_platform/libnexusservice \
+                    $(TOP)/vendor/broadcom/stb/bcm_platform/libnexusipc \
                     $(NXCLIENT_INCLUDES)
 
 LOCAL_SHARED_LIBRARIES += libbinder

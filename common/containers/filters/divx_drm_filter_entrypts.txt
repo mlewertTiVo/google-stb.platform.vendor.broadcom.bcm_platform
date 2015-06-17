@@ -1,2 +1,0 @@
-filter_open
-get_divx_drm_func_table

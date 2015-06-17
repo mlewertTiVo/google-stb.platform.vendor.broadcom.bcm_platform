@@ -75,10 +75,10 @@ LOCAL_C_INCLUDES := \
         $(TOP)/frameworks/native/include/utils \
         $(TOP)/frameworks/native/include/ui  \
         $(TOP)/hardware/libhardware/include/hardware \
-        $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
-        $(TOP)/vendor/broadcom/bcm_platform/libnexusipc \
-        $(TOP)/vendor/broadcom/bcm_platform/libgralloc \
-        $(TOP)/vendor/broadcom/bcm_platform/libhwcomposer/blib \
+        $(TOP)/vendor/broadcom/stb/bcm_platform/libnexusservice \
+        $(TOP)/vendor/broadcom/stb/bcm_platform/libnexusipc \
+        $(TOP)/vendor/broadcom/stb/bcm_platform/libgralloc \
+        $(TOP)/vendor/broadcom/stb/bcm_platform/libhwcomposer/blib \
 
 include $(BSEAV)/lib/utils/batom.inc
 include $(BSEAV)/lib/media/bmedia.inc

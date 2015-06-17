@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-REFSW_PATH :=vendor/broadcom/bcm_platform/brcm_nexus
+REFSW_PATH :=vendor/broadcom/stb/bcm_platform/brcm_nexus
 
 LOCAL_PATH := $(call my-dir)
 
