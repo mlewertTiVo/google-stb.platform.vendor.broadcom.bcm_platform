@@ -83,9 +83,18 @@
 #define UINT32_C(x)  (x ## U)
 #endif
 
+NexusNxClient::StandbyMonitorThread::StandbyMonitorThread(b_refsw_client_standby_monitor_callback callback, b_refsw_client_standby_monitor_context context) :
+    state(STATE_STOPPED), mCallback(callback), mContext(context), name(NULL)
+{
+    ALOGD("%s: called", __PRETTY_FUNCTION__);
+    mStandbyId = NxClient_RegisterAcknowledgeStandby();
+}
+
 NexusNxClient::StandbyMonitorThread::~StandbyMonitorThread()
 {
     ALOGD("%s: called", __PRETTY_FUNCTION__);
+
+    NxClient_UnregisterAcknowledgeStandby(mStandbyId);
 
     if (this->name != NULL) {
         free(name);
@@ -130,7 +139,7 @@ bool NexusNxClient::StandbyMonitorThread::threadLoop()
             }
             if (ack) {
                 ALOGD("%s: Acknowledge state %d\n", getName(), standbyStatus.settings.mode);
-                NxClient_AcknowledgeStandby(true);
+                NxClient_AcknowledgeStandby(mStandbyId);
                 prevStatus = standbyStatus;
             }
         }
