@@ -620,12 +620,12 @@ status_t NexusNxService::addHdmiHotplugEventListener(uint32_t portId, const sp<I
 #if NEXUS_HAS_HDMI_OUTPUT
         if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
             Vector<sp<INexusHdmiHotplugEventListener> >::iterator it;
-            sp<IBinder> binder = listener->asBinder();
+            sp<IBinder> binder = listener->asBinder(listener);
 
             Mutex::Autolock autoLock(server->mLock);
 
             for (it = server->mHdmiHotplugEventListenerList[portId].begin(); it != server->mHdmiHotplugEventListenerList[portId].end(); ++it) {
-                if ((*it)->asBinder() == binder) {
+                if ((*it)->asBinder(listener) == binder) {
                     ALOGE("%s: Already added HDMI%d hotplug event listener %p!!!", __PRETTY_FUNCTION__, portId, listener.get());
                     status = ALREADY_EXISTS;
                     break;
@@ -660,12 +660,12 @@ status_t NexusNxService::removeHdmiHotplugEventListener(uint32_t portId, const s
 #if NEXUS_HAS_HDMI_OUTPUT
         if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
             Vector<sp<INexusHdmiHotplugEventListener> >::iterator it;
-            sp<IBinder> binder = listener->asBinder();
+            sp<IBinder> binder = listener->asBinder(listener);
 
             Mutex::Autolock autoLock(server->mLock);
 
             for (it = server->mHdmiHotplugEventListenerList[portId].begin(); it != server->mHdmiHotplugEventListenerList[portId].end(); ++it) {
-                if ((*it)->asBinder() == binder) {
+                if ((*it)->asBinder(listener) == binder) {
                     binder->unlinkToDeath(this);
                     server->mHdmiHotplugEventListenerList[portId].erase(it);
                     status = OK;
@@ -698,7 +698,7 @@ void NexusNxService::binderDied(const wp<IBinder>& who)
 
         for (unsigned portId = 0; portId < NEXUS_NUM_HDMI_OUTPUTS; portId++) {
             for (it = server->mHdmiHotplugEventListenerList[portId].begin(); it != server->mHdmiHotplugEventListenerList[portId].end(); ++it) {
-                if ((*it)->asBinder() == binder) {
+                if ((*it)->asBinder((*it)) == binder) {
                     ALOGD("%s: Removing HDMI%d hotplug event listener...", __PRETTY_FUNCTION__, portId);
                     server->mHdmiHotplugEventListenerList[portId].erase(it);
                     return;

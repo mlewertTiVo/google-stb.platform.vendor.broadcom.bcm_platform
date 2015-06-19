@@ -146,7 +146,7 @@ status_t Hwc::dump(int fd, const Vector<String16>& args)
 void Hwc::registerListener(const sp<IHwcListener>& listener, int kind)
 {
     ALOGD("%s: %p, tid %d, from tid %d", __FUNCTION__,
-          listener->asBinder().get(), gettid(),
+          listener->asBinder(listener).get(), gettid(),
           IPCThreadState::self()->getCallingPid());
 
     Mutex::Autolock _l(mLock);
@@ -155,14 +155,14 @@ void Hwc::registerListener(const sp<IHwcListener>& listener, int kind)
     bool found = false;
     for ( size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
-        if (client.binder.get() == listener->asBinder().get()) {
+        if (client.binder.get() == listener->asBinder(listener).get()) {
            found = true;
            break;
         }
     }
 
     if (!found) {
-       sp<IBinder> binder = listener->asBinder();
+       sp<IBinder> binder = listener->asBinder(listener);
        binder->linkToDeath(this);
 
        mNotificationListeners.add(hwc_listener_t(binder, kind));
@@ -179,7 +179,7 @@ void Hwc::registerListener(const sp<IHwcListener>& listener, int kind)
 void Hwc::unregisterListener(const sp<IHwcListener>& listener)
 {
     ALOGD("%s: %p, tid %d, from tid %d", __FUNCTION__,
-          listener->asBinder().get(), gettid(),
+          listener->asBinder(listener).get(), gettid(),
           IPCThreadState::self()->getCallingPid());
 
     Mutex::Autolock _l(mLock);
@@ -187,20 +187,20 @@ void Hwc::unregisterListener(const sp<IHwcListener>& listener)
     size_t N = mNotificationListeners.size();
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
-        if (client.binder.get() == listener->asBinder().get()) {
-           sp<IBinder> binder = listener->asBinder();
+        if (client.binder.get() == listener->asBinder(listener).get()) {
+           sp<IBinder> binder = listener->asBinder(listener);
            binder->unlinkToDeath(this);
 
            mNotificationListeners.removeAt(i);
 
            for ( int j = 0; j < HWC_BINDER_VIDEO_SURFACE_SIZE; j++) {
-               if (mVideoSurface[j].listener == (int)listener->asBinder().get()) {
+               if (mVideoSurface[j].listener == (int)listener->asBinder(listener).get()) {
                    mVideoSurface[j].listener = 0;
                }
            }
 
            for ( int j = 0; j < HWC_BINDER_SIDEBAND_SURFACE_SIZE; j++) {
-               if (mSidebandSurface[j].listener == (int)listener->asBinder().get()) {
+               if (mSidebandSurface[j].listener == (int)listener->asBinder(listener).get()) {
                    mSidebandSurface[j].listener = 0;
                }
            }
@@ -213,14 +213,14 @@ void Hwc::unregisterListener(const sp<IHwcListener>& listener)
 void Hwc::setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int value, int disp_w, int disp_h)
 {
     ALOGD("%s: %p, index %d, value %d, display {%d,%d}", __FUNCTION__,
-          listener->asBinder().get(), index, value, disp_w, disp_h);
+          listener->asBinder(listener).get(), index, value, disp_w, disp_h);
 
     Mutex::Autolock _l(mLock);
 
     size_t N = mNotificationListeners.size();
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
-        if ((client.binder.get() == listener->asBinder().get()) &&
+        if ((client.binder.get() == listener->asBinder(listener).get()) &&
             (client.kind == HWC_BINDER_HWC)) {
            mVideoSurface[index].surface = value;
            mVideoSurface[index].listener = 0;
@@ -237,16 +237,16 @@ void Hwc::getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &va
 
     if (index > HWC_BINDER_VIDEO_SURFACE_SIZE-1) {
        ALOGE("%s: %p, index %d - invalid, ignored", __FUNCTION__,
-              listener->asBinder().get(), index);
+              listener->asBinder(listener).get(), index);
        value = -1;
     } else {
        // remember who asked for it last, this is who we will
        // notify of changes.  we are not responsible for managing
        // contention, we are just a pass through service.
-       mVideoSurface[index].listener = (int)listener->asBinder().get();
+       mVideoSurface[index].listener = (int)listener->asBinder(listener).get();
        value = mVideoSurface[index].surface;
        ALOGD("%s: %p, index %d, value %x", __FUNCTION__,
-             listener->asBinder().get(), index, value);
+             listener->asBinder(listener).get(), index, value);
 
        // notify back the hwc so it can reset the frame counter for this
        // session.  session equals surface scope owner claimed.
@@ -270,7 +270,7 @@ void Hwc::setGeometry(const sp<IHwcListener>& listener, int type, int index,
                       int zorder, int visible)
 {
     ALOGV("%s: %p, index %d", __FUNCTION__,
-          listener->asBinder().get(), index);
+          listener->asBinder(listener).get(), index);
     bool updated = false;
 
     Mutex::Autolock _l(mLock);
@@ -278,7 +278,7 @@ void Hwc::setGeometry(const sp<IHwcListener>& listener, int type, int index,
     size_t N = mNotificationListeners.size();
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
-        if ((client.binder.get() == listener->asBinder().get()) &&
+        if ((client.binder.get() == listener->asBinder(listener).get()) &&
             (client.kind == HWC_BINDER_HWC)) {
            if ((type == HWC_BINDER_OMX) && (index < HWC_BINDER_VIDEO_SURFACE_SIZE)) {
               if (memcmp(&frame, &mVideoSurface[index].frame, sizeof(struct hwc_position)) ||
@@ -343,14 +343,14 @@ void Hwc::getGeometry(const sp<IHwcListener>& listener, int type, int index,
     if (((type == HWC_BINDER_OMX) && (index > HWC_BINDER_VIDEO_SURFACE_SIZE-1)) ||
         ((type == HWC_BINDER_SDB) && (index > HWC_BINDER_SIDEBAND_SURFACE_SIZE-1))) {
        ALOGE("%s: %p, type %d, index %d - invalid, ignored", __FUNCTION__,
-              listener->asBinder().get(), type, index);
+              listener->asBinder(listener).get(), type, index);
     } else if (type == HWC_BINDER_OMX) {
        memcpy(&frame, &mVideoSurface[index].frame, sizeof(struct hwc_position));
        memcpy(&clipped, &mVideoSurface[index].clipped, sizeof(struct hwc_position));
        zorder = mVideoSurface[index].zorder;
        visible = mVideoSurface[index].visible;
        ALOGD("%s:video: %p, index %d, {%d,%d,%d,%d} {%d,%d,%d,%d} z:%d, visible: %s", __FUNCTION__,
-             listener->asBinder().get(), index, frame.x, frame.y, frame.w, frame.h,
+             listener->asBinder(listener).get(), index, frame.x, frame.y, frame.w, frame.h,
              clipped.x, clipped.y, clipped.w, clipped.h, zorder, visible?"oui":"non");
     } else if (type == HWC_BINDER_SDB) {
        memcpy(&frame, &mSidebandSurface[index].frame, sizeof(struct hwc_position));
@@ -358,7 +358,7 @@ void Hwc::getGeometry(const sp<IHwcListener>& listener, int type, int index,
        zorder = mSidebandSurface[index].zorder;
        visible = mSidebandSurface[index].visible;
        ALOGD("%s:sideband: %p, index %d, {%d,%d,%d,%d} {%d,%d,%d,%d} z:%d, visible: %s", __FUNCTION__,
-             listener->asBinder().get(), index, frame.x, frame.y, frame.w, frame.h,
+             listener->asBinder(listener).get(), index, frame.x, frame.y, frame.w, frame.h,
              clipped.x, clipped.y, clipped.w, clipped.h, zorder, visible?"oui":"non");
     }
 }
@@ -366,7 +366,7 @@ void Hwc::getGeometry(const sp<IHwcListener>& listener, int type, int index,
 void Hwc::setDisplayFrameId(const sp<IHwcListener>& listener, int handle, int frame)
 {
     ALOGV("%s: %p, index %d, value %d", __FUNCTION__,
-          listener->asBinder().get(), handle, frame);
+          listener->asBinder(listener).get(), handle, frame);
 
     int index = -1;
     Mutex::Autolock _l(mLock);
@@ -380,7 +380,7 @@ void Hwc::setDisplayFrameId(const sp<IHwcListener>& listener, int handle, int fr
 
     if ((index == -1) || !mVideoSurface[index].listener) {
        ALOGE("%s: %p, handle %x, frame %d - not registered, ignored", __FUNCTION__,
-              listener->asBinder().get(), handle, frame);
+              listener->asBinder(listener).get(), handle, frame);
     } else {
        size_t N = mNotificationListeners.size();
        for (size_t i = 0; i < N; i++) {
@@ -407,14 +407,14 @@ void Hwc::setDisplayFrameId(const sp<IHwcListener>& listener, int handle, int fr
 void Hwc::setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value, int disp_w, int disp_h)
 {
     ALOGD("%s: %p, index %d, value %x", __FUNCTION__,
-          listener->asBinder().get(), index, value);
+          listener->asBinder(listener).get(), index, value);
 
     Mutex::Autolock _l(mLock);
 
     size_t N = mNotificationListeners.size();
     for (size_t i = 0; i < N; i++) {
         const hwc_listener_t& client = mNotificationListeners[i];
-        if ((client.binder.get() == listener->asBinder().get()) &&
+        if ((client.binder.get() == listener->asBinder(listener).get()) &&
             (client.kind == HWC_BINDER_HWC)) {
            mSidebandSurface[index].surface = value;
            mSidebandSurface[index].listener = 0;
@@ -431,16 +431,16 @@ void Hwc::getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int 
 
     if (index > HWC_BINDER_SIDEBAND_SURFACE_SIZE-1) {
        ALOGE("%s: %p, index %d - invalid, ignored", __FUNCTION__,
-              listener->asBinder().get(), index);
+              listener->asBinder(listener).get(), index);
        value = -1;
     } else {
        // remember who asked for it last, this is who we will
        // notify of changes.  we are not responsible for managing
        // contention, we are just a pass through service.
-       mSidebandSurface[index].listener = (int)listener->asBinder().get();
+       mSidebandSurface[index].listener = (int)listener->asBinder(listener).get();
        value = mSidebandSurface[index].surface;
        ALOGD("%s: %p, index %d, value %x", __FUNCTION__,
-             listener->asBinder().get(), index, value);
+             listener->asBinder(listener).get(), index, value);
 
        // notify back the hwc so it can reset the frame counter for this
        // session.  session equals surface scope owner claimed.

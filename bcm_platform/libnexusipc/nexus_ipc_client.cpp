@@ -367,7 +367,7 @@ status_t NexusIPCClient::setHdmiCecMessageEventListener(uint32_t cecId, const sp
     android::Parcel data, reply;
     data.writeInterfaceToken(android::String16(NEXUS_INTERFACE_NAME));
     data.writeInt32(cecId);
-    data.writeStrongBinder(listener->asBinder());
+    data.writeStrongBinder(listener->asBinder(listener));
     iNC->get_remote()->transact(SET_HDMI_CEC_MESSAGE_EVENT_LISTENER, data, &reply);
     return reply.readInt32();
 }
@@ -377,7 +377,7 @@ status_t NexusIPCClient::addHdmiHotplugEventListener(uint32_t portId, const sp<I
     android::Parcel data, reply;
     data.writeInterfaceToken(android::String16(NEXUS_INTERFACE_NAME));
     data.writeInt32(portId);
-    data.writeStrongBinder(listener->asBinder());
+    data.writeStrongBinder(listener->asBinder(listener));
     iNC->get_remote()->transact(ADD_HDMI_HOTPLUG_EVENT_LISTENER, data, &reply);
     return reply.readInt32();
 }
@@ -387,7 +387,7 @@ status_t NexusIPCClient::removeHdmiHotplugEventListener(uint32_t portId, const s
     android::Parcel data, reply;
     data.writeInterfaceToken(android::String16(NEXUS_INTERFACE_NAME));
     data.writeInt32(portId);
-    data.writeStrongBinder(listener->asBinder());
+    data.writeStrongBinder(listener->asBinder(listener));
     iNC->get_remote()->transact(REMOVE_HDMI_HOTPLUG_EVENT_LISTENER, data, &reply);
     return reply.readInt32();
 }

@@ -990,7 +990,7 @@ void NexusService::binderDied(const wp<IBinder>& who)
 
         for (unsigned portId = 0; portId < NEXUS_NUM_HDMI_OUTPUTS; portId++) {
             for (it = server->mHdmiHotplugEventListenerList[portId].begin(); it != server->mHdmiHotplugEventListenerList[portId].end(); ++it) {
-                if ((*it)->asBinder() == binder) {
+                if ((*it)->asBinder((*it)) == binder) {
                     ALOGD("%s: Removing HDMI%d hotplug event listener...", __PRETTY_FUNCTION__, portId);
                     server->mHdmiHotplugEventListenerList[portId].erase(it);
                     return;

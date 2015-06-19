@@ -47,7 +47,7 @@ public:
     void registerListener(const sp<IHwcListener>& listener, int kind) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
-        data.writeStrongBinder(listener->asBinder());
+        data.writeStrongBinder(listener->asBinder(listener));
         data.writeInt32(kind);
         remote()->transact(REGISTER_LISTENER, data, &reply);
     }
@@ -55,14 +55,14 @@ public:
     void unregisterListener(const sp<IHwcListener>& listener) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
-        data.writeStrongBinder(listener->asBinder());
+        data.writeStrongBinder(listener->asBinder(listener));
         remote()->transact(UNREGISTER_LISTENER, data, &reply);
     }
 
     void setVideoSurfaceId(const sp<IHwcListener>& listener, int index, int value, int disp_w, int disp_h) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
-        data.writeStrongBinder(listener->asBinder());
+        data.writeStrongBinder(listener->asBinder(listener));
         data.writeInt32(index);
         data.writeInt32(value);
         data.writeInt32(disp_w);
@@ -73,7 +73,7 @@ public:
     void getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &value) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
-        data.writeStrongBinder(listener->asBinder());
+        data.writeStrongBinder(listener->asBinder(listener));
         data.writeInt32(index);
         remote()->transact(GET_VIDEO_SURF_CLIENT_ID, data, &reply);
         value = reply.readInt32();
@@ -82,7 +82,7 @@ public:
     void setDisplayFrameId(const sp<IHwcListener>& listener, int surface, int frame) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
-        data.writeStrongBinder(listener->asBinder());
+        data.writeStrongBinder(listener->asBinder(listener));
         data.writeInt32(surface);
         data.writeInt32(frame);
         remote()->transact(SET_DISPLAY_FRAME_ID, data, &reply);
@@ -91,7 +91,7 @@ public:
     void setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value, int disp_w, int disp_h) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
-        data.writeStrongBinder(listener->asBinder());
+        data.writeStrongBinder(listener->asBinder(listener));
         data.writeInt32(index);
         data.writeInt32(value);
         data.writeInt32(disp_w);
@@ -102,7 +102,7 @@ public:
     void getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int &value) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
-        data.writeStrongBinder(listener->asBinder());
+        data.writeStrongBinder(listener->asBinder(listener));
         data.writeInt32(index);
         remote()->transact(GET_SIDEBAND_SURF_CLIENT_ID, data, &reply);
         value = reply.readInt32();
@@ -113,7 +113,7 @@ public:
                      int zorder, int visible) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
-        data.writeStrongBinder(listener->asBinder());
+        data.writeStrongBinder(listener->asBinder(listener));
         data.writeInt32(type);
         data.writeInt32(index);
         data.writeInt32(frame.x);
@@ -134,7 +134,7 @@ public:
                      int &zorder, int &visible) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
-        data.writeStrongBinder(listener->asBinder());
+        data.writeStrongBinder(listener->asBinder(listener));
         data.writeInt32(type);
         data.writeInt32(index);
         remote()->transact(GET_VIDEO_GEOMETRY_CLIENT_ID, data, &reply);
@@ -154,7 +154,7 @@ public:
                      struct hwc_position &position) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
-        data.writeStrongBinder(listener->asBinder());
+        data.writeStrongBinder(listener->asBinder(listener));
         data.writeInt32(position.x);
         data.writeInt32(position.y);
         data.writeInt32(position.h);
@@ -166,7 +166,7 @@ public:
                      struct hwc_position &position) {
         Parcel data, reply;
         data.writeInterfaceToken(IHwc::getInterfaceDescriptor());
-        data.writeStrongBinder(listener->asBinder());
+        data.writeStrongBinder(listener->asBinder(listener));
         remote()->transact(GET_OVERSCAN_ADJUST, data, &reply);
         position.x = reply.readInt32();
         position.y = reply.readInt32();

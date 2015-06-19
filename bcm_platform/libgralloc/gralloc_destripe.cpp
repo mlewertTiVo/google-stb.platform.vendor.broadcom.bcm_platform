@@ -37,6 +37,7 @@
  *
  *****************************************************************************/
 //#define LOG_NDEBUG 0
+#include <cutils/atomic.h>
 #include "gralloc_destripe.h"
 #include <cutils/log.h>
 

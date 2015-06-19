@@ -42,7 +42,6 @@ extern "C" {
 #include <time.h>
 #include <linux/time.h>
 #include <assert.h>
-#include <cutils/atomic.h>
 
 #define GR_MGMT_MODE_LOCKED     1
 #define GR_MGMT_MODE_UNLOCKED   2
