@@ -55,6 +55,7 @@
 #include <cutils/log.h>
 #include "nxclient.h"
 #include <fcntl.h>
+#include <errno.h>
 
 BDBG_MODULE(client);
 
