@@ -23,9 +23,6 @@ echo "   ... removing the boot+bootloaders folder"
 rm -rf $staging_dir/unpack_android_boot
 rm -rf $staging_dir/loaders
 
-# For cleaning up old staging folder
-rm -rf $staging_dir/boot
-
 echo "2) Copying: boot.img, recovery.img; Unpacking ramdisk..."
 cd $staging_dir
 $tools_dir/tools/split_boot $image_dir/boot.img
