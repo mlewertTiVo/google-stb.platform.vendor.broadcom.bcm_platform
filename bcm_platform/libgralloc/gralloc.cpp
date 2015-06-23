@@ -452,6 +452,7 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
          bufferConstrainedRequirements.totalByteSize = height * bufferConstrainedRequirements.pitchBytes;
       }
 
+      memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
       ashmem_alloc.size = bufferConstrainedRequirements.totalByteSize;
       ashmem_alloc.align = gralloc_default_align;
       ret = ioctl(fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
@@ -584,6 +585,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       hnd->alignment = fmt_align;
    }
 
+   memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
    ashmem_alloc.size = sizeof(SHARED_DATA);
    ashmem_alloc.align = GRALLOC_MAX_BUFFER_ALIGNED;
    int ret = ioctl(hnd->fd2, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
@@ -691,6 +693,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    }
 
    if (needs_yv12) {
+      memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
       ashmem_alloc.size = size;
       ashmem_alloc.align = gralloc_default_align;
       ret = ioctl(hnd->fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
@@ -742,6 +745,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       pSharedData->planes[EXTRA_PLANE].size      = extra_size;
       pSharedData->planes[EXTRA_PLANE].allocSize = extra_size;
       pSharedData->planes[EXTRA_PLANE].stride    = bpp * *pStride;
+      memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
       ashmem_alloc.size = extra_size;
       ashmem_alloc.align = gralloc_default_align;
       ret = ioctl(hnd->fd3, NX_ASHMEM_SET_SIZE, &ashmem_alloc);

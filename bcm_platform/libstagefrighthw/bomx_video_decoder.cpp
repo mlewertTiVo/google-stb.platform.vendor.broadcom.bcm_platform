@@ -576,6 +576,7 @@ static NEXUS_MemoryBlockHandle BOMX_VideoDecoder_AllocatePixelMemoryBlk(const NE
          memBlkFd = open(name, O_RDWR, 0);
          if (memBlkFd >= 0) {
             struct nx_ashmem_alloc ashmem_alloc;
+            memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
             ashmem_alloc.size = pCreateSettings->height * pCreateSettings->pitch;
             ashmem_alloc.align = 4096;
             int ret = ioctl(memBlkFd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
