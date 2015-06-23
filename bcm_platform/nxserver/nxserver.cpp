@@ -96,6 +96,7 @@
 #define NX_MMA_SHRINK_THRESHOLD_DEF    "2m"
 #define NX_TRANSCODE                   "ro.nx.transcode"
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
+#define NX_ODV                         "ro.nx.odv"
 
 #define NX_HEAP_MAIN                   "ro.nx.heap.main"
 #define NX_HEAP_GFX                    "ro.nx.heap.gfx"
@@ -587,8 +588,21 @@ static nxserver_t init_nxserver(void)
     /* -sd off */
     settings.session[0].output.sd = settings.session[0].output.encode = false;
     settings.session[0].output.hd = true;
-    /* -memconfig display,hddvi=off */
-    memConfigSettings.videoInputs.hdDvi = false;
+
+    if (property_get(NX_ODV, value, "0")) {
+       settings.videoDecoder.dynamicPictureBuffers = (strtoul(value, NULL, 10) > 0) ? true : false;
+       if (settings.videoDecoder.dynamicPictureBuffers) {
+          unsigned d;
+          for (d = 0; d < NEXUS_MAX_VIDEO_DECODERS; d++) {
+             memConfigSettings.videoDecoder[d].dynamicPictureBuffers = true;
+          }
+          for (d = 0; d < NEXUS_MAX_HEAPS; d++) {
+             if (platformSettings.heap[d].heapType & NEXUS_HEAP_TYPE_PICTURE_BUFFERS) {
+                platformSettings.heap[d].memoryType = NEXUS_MEMORY_TYPE_MANAGED | NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED;
+             }
+          }
+       }
+    }
 
     if (property_get(NX_HEAP_HIGH_MEM, value, "0m")) {
        /* high-mem heap is used for 40 bits addressing. */
