@@ -70,20 +70,21 @@
 #include "nxserverlib_impl.h"
 #include "nexusnxservice.h"
 #include "namevalue.h"
+#include "nx_ashmem.h"
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
-#define APP_MAX_CLIENTS (64)
-#define MB (1024*1024)
-#define KB (1024)
-#define SEC_TO_MSEC (1000LL)
-#define RUNNER_SEC_THRESHOLD (10)
-#define RUNNER_GC_THRESHOLD (3)
-#define RUNNER_LMK_THRESHOLD (10)
-#define NUM_NX_OBJS (128)
-#define MAX_NX_OBJS (2048)
+#define APP_MAX_CLIENTS                (64)
+#define MB                             (1024*1024)
+#define KB                             (1024)
+#define SEC_TO_MSEC                    (1000LL)
+#define RUNNER_SEC_THRESHOLD           (10)
+#define RUNNER_GC_THRESHOLD            (3)
+#define RUNNER_LMK_THRESHOLD           (10)
+#define NUM_NX_OBJS                    (128)
+#define MAX_NX_OBJS                    (2048)
 
-#define GRAPHICS_RES_WIDTH_DEFAULT     1920
-#define GRAPHICS_RES_HEIGHT_DEFAULT    1080
+#define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
+#define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
 #define GRAPHICS_RES_WIDTH_PROP        "ro.graphics_resolution.width"
 #define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
 
@@ -96,7 +97,11 @@
 #define NX_MMA_SHRINK_THRESHOLD_DEF    "2m"
 #define NX_TRANSCODE                   "ro.nx.transcode"
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
+
 #define NX_ODV                         "ro.nx.odv"
+#define NX_ODV_ALT_THRESHOLD           "ro.nx.odv.use.alt"
+#define NX_ODV_ALT_1_USAGE             "ro.nx.odv.a1.use"
+#define NX_ODV_ALT_2_USAGE             "ro.nx.odv.a2.use"
 
 #define NX_HEAP_MAIN                   "ro.nx.heap.main"
 #define NX_HEAP_GFX                    "ro.nx.heap.gfx"
@@ -774,6 +779,10 @@ int main(void)
     struct stat sbuf;
     nxserver_t nx_srv = NULL;
     pthread_attr_t attr;
+    bool mem_cfg = false;
+    char device[PROPERTY_VALUE_MAX];
+    char name[PROPERTY_VALUE_MAX];
+    int memCfgFd = -1;
 
     memset(&g_app, 0, sizeof(g_app));
 
@@ -833,6 +842,37 @@ int main(void)
 
     ALOGI("trigger nexus waiters now.");
     property_set("hw.nexus.platforminit", "on");
+
+    struct nx_ashmem_mgr_cfg ashmem_mgr_cfg;
+    property_get(NX_ODV_ALT_THRESHOLD, device, "0m");
+    ashmem_mgr_cfg.alt_use_threshold = calc_heap_size(device);
+    ashmem_mgr_cfg.alt_use_max[0] = property_get_int32(NX_ODV_ALT_1_USAGE, -1);
+    ashmem_mgr_cfg.alt_use_max[1] = property_get_int32(NX_ODV_ALT_2_USAGE, -1);
+
+    property_get("ro.nexus.ashmem.devname", device, NULL);
+    if (strlen(device)) {
+       strcpy(name, "/dev/");
+       strcat(name, device);
+    } else {
+       ALOGE("failed to find memory manager - some features will not work!");
+       mem_cfg = true;
+    }
+
+    while (mem_cfg == false) {
+       memCfgFd = open(name, O_RDWR, 0);
+       if (memCfgFd >= 0) {
+          int ret = ioctl(memCfgFd, NX_ASHMEM_MGR_CFG, &ashmem_mgr_cfg);
+          if (ret < 0) {
+             ALOGE("failed to configure memory manager - some features will not work!");
+          }
+          close(memCfgFd);
+          mem_cfg = true;
+       } else {
+          ALOGI("waiting for memory manager availability...");
+          BKNI_Sleep(100);
+          continue;
+       }
+    }
 
     ALOGI("init done.");
     while (1) {
