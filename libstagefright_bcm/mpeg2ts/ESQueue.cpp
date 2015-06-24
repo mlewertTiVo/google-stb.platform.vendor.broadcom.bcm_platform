@@ -30,6 +30,7 @@
 #include <media/stagefright/Utils.h>
 
 #include "include/avc_utils.h"
+#include "include/hevc_utils.h"
 
 #include <inttypes.h>
 #include <netinet/in.h>
@@ -254,6 +255,7 @@ status_t ElementaryStreamQueue::appendData(
     }
     if (mBuffer == NULL || mBuffer->size() == 0) {
         switch (mMode) {
+            case H265:
             case H264:
             case MPEG_VIDEO:
             {
@@ -490,6 +492,8 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnit() {
     }
 
     switch (mMode) {
+        case H265:
+           return dequeueAccessUnitH265();
         case H264:
             return dequeueAccessUnitH264();
         case AAC:
@@ -1041,6 +1045,101 @@ static sp<ABuffer> MakeMPEGVideoESDS(const sp<ABuffer> &csd) {
     memcpy(ptr, csd->data(), csd->size());
 
     return esds;
+}
+
+sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitH265() {
+    const uint8_t *data = mBuffer->data();
+
+    size_t size = mBuffer->size();
+    Vector<NALPosition> nals;
+
+    size_t totalSize = 0;
+
+    status_t err;
+    const uint8_t *nalStart;
+    size_t nalSize;
+    bool foundSlice = false;
+
+    while ((err = getNextNALUnitHEVC(&data, &size, &nalStart, &nalSize)) == OK) {
+        if (nalSize == 0) continue;
+
+        int nalType = (nalStart[0]>>1) & 0x3f;
+        bool flush = false;
+        ALOGV("HEVC accessUnit contains nal types %d", nalType);
+
+        if (((nalType>=0) && (nalType<=9)) || ((nalType>=16)&& (nalType<=21))) {
+            if (foundSlice) {
+                flush = true;
+            }
+
+            foundSlice = true;
+        } else if ((nalType == 33 || nalType == 35) && foundSlice) {
+            // Access unit delimiter and SPS will be associated with the
+            // next frame.
+            flush = true;
+        }
+
+        if (flush) {
+            // The access unit will contain all nal units up to, but excluding
+            // the current one, separated by 0x00 0x00 0x00 0x01 startcodes.
+            size_t auSize = 4 * nals.size() + totalSize;
+            sp<ABuffer> accessUnit = new ABuffer(auSize);
+
+#if !LOG_NDEBUG
+            AString out;
+#endif
+
+            size_t dstOffset = 0;
+            for (size_t i = 0; i < nals.size(); ++i) {
+                const NALPosition &pos = nals.itemAt(i);
+
+#if !LOG_NDEBUG
+                unsigned nalType = (mBuffer->data()[pos.nalOffset] >>1) & 0x3f;
+                char tmp[128];
+                sprintf(tmp, "0x%02x", nalType);
+                if (i > 0) {
+                    out.append(", ");
+                }
+                out.append(tmp);
+#endif
+
+                memcpy(accessUnit->data() + dstOffset, "\x00\x00\x00\x01", 4);
+                memcpy(accessUnit->data() + dstOffset + 4,
+                       mBuffer->data() + pos.nalOffset,
+                       pos.nalSize);
+                dstOffset += pos.nalSize + 4;
+            }
+
+            const NALPosition &pos = nals.itemAt(nals.size() - 1);
+            size_t nextScan = pos.nalOffset + pos.nalSize;
+
+            memmove(mBuffer->data(),
+                    mBuffer->data() + nextScan,
+                    mBuffer->size() - nextScan);
+            mBuffer->setRange(0, mBuffer->size() - nextScan);
+
+            int64_t timeUs = fetchTimestamp(nextScan);
+            CHECK_GE(timeUs, 0ll);
+
+            accessUnit->meta()->setInt64("timeUs", timeUs);
+
+            if (mFormat == NULL) {
+                mFormat = MakeHEVCCodecSpecificData(accessUnit);
+            }
+
+            return accessUnit;
+        }
+
+        NALPosition pos;
+        pos.nalOffset = nalStart - mBuffer->data();
+        pos.nalSize = nalSize;
+        nals.push(pos);
+        totalSize += nalSize;
+    }
+
+    CHECK_EQ(err, (status_t)-EAGAIN);
+
+    return NULL;
 }
 
 sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitMPEGVideo() {

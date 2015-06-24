@@ -23,6 +23,7 @@
 #include "AnotherPacketSource.h"
 #include "ESQueue.h"
 #include "include/avc_utils.h"
+#include "include/hevc_utils.h"
 
 #include <media/stagefright/foundation/ABitReader.h>
 #include <media/stagefright/foundation/ABuffer.h>
@@ -622,6 +623,16 @@ ATSParser::Stream::Stream(
             mQueue = new ElementaryStreamQueue(
                     ElementaryStreamQueue::MPEG4_VIDEO);
             break;
+        case STREAMTYPE_PCM_AUDIO:
+            mQueue = new ElementaryStreamQueue(
+                    ElementaryStreamQueue::PCM_AUDIO);
+            break;
+        case STREAMTYPE_H265:
+            mQueue = new ElementaryStreamQueue(
+                    ElementaryStreamQueue::H265,
+                    (mProgram->parserFlags() & ALIGNED_VIDEO_DATA)
+                    ? ElementaryStreamQueue::kFlag_AlignedData : 0);
+            break;
 
         case STREAMTYPE_LPCM_AC3:
         case STREAMTYPE_AC3:
@@ -734,6 +745,7 @@ status_t ATSParser::Stream::parse(
 
 bool ATSParser::Stream::isVideo() const {
     switch (mStreamType) {
+        case STREAMTYPE_H265:
         case STREAMTYPE_H264:
         case STREAMTYPE_MPEG1_VIDEO:
         case STREAMTYPE_MPEG2_VIDEO:
