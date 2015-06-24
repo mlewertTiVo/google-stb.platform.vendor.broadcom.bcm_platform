@@ -13,12 +13,12 @@
 # limitations under the License.
 
 
-REFSW_PATH := vendor/broadcom/stb/bcm_platform/brcm_nexus
+REFSW_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_nexus
 
 LOCAL_PATH := $(call my-dir)
 
-ifeq ($(shell test -d vendor/broadcom/stb/refsw/BSEAV && echo "y"),y)
-BSEAV_INC_PATH := vendor/broadcom/stb/refsw/BSEAV
+ifeq ($(shell test -d ${BCM_VENDOR_STB_ROOT}/refsw/BSEAV && echo "y"),y)
+BSEAV_INC_PATH := ${BCM_VENDOR_STB_ROOT}/refsw/BSEAV
 LOCAL_BSEAV_TOP := ../../refsw/BSEAV
 else
 BSEAV_INC_PATH := $(LOCAL_PATH)

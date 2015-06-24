@@ -15,7 +15,7 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
-include $(TOP)/vendor/broadcom/stb/refsw/nexus/nxclient/include/nxclient.inc
+include $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include/nxclient.inc
 
 LOCAL_FORCE_STATIC_EXECUTABLE := true
 
@@ -29,7 +29,7 @@ LOCAL_STATIC_LIBRARIES := libcutils \
                           libmagnum
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
-LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/stb/refsw/nexus/nxclient/server
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/server
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
 
 LOCAL_CFLAGS += $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES))

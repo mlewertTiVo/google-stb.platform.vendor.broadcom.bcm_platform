@@ -11,7 +11,7 @@ LOCAL_SHARED_LIBRARIES := \
            libutils
 
 LOCAL_C_INCLUDES += $(JNI_H_INCLUDE) \
-                    $(TOP)/vendor/broadcom/stb/bcm_platform/libhwcomposer/blib
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/blib
 
 LOCAL_SRC_FILES := jni_adjustScreenOffset.cpp
 

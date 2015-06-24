@@ -165,18 +165,18 @@ function ou_suis_je {
 # $1 - android tree root.
 function verifier_liens {
 	liens=0
-	if [ -L "$1/vendor/broadcom/stb/refsw/secsrcs" ]; then
+	if [ -L "$1/${BCM_VENDOR_STB_ROOT}/refsw/secsrcs" ]; then
 		liens=$(($liens + 1))
 	fi
-	if [ -L "$1/vendor/broadcom/stb/refsw/prsrcs" ]; then
+	if [ -L "$1/${BCM_VENDOR_STB_ROOT}/refsw/prsrcs" ]; then
 		liens=$(($liens + 1))
 	fi
 	if [ "$liens" == "2" ]; then
 		if [ "$reset" == "1" ]; then
 			# remove all existing links, reset the refsw code
-			cd $1/vendor/broadcom/stb/refsw
-			rm $1/vendor/broadcom/stb/refsw/secsrcs
-			rm $1/vendor/broadcom/stb/refsw/prsrcs
+			cd $1/${BCM_VENDOR_STB_ROOT}/refsw
+			rm $1/${BCM_VENDOR_STB_ROOT}/refsw/secsrcs
+			rm $1/${BCM_VENDOR_STB_ROOT}/refsw/prsrcs
 			git checkout -f
 		else
 			rejouez "environment already setup; add --reset option with --configure, or drop --configure."
@@ -190,7 +190,7 @@ function verifier_liens {
 # $4 - 'playready' subtree on secure filer.
 function mettre_en_place {
 	# note: link the secure code into the non-secure tree, do not move the code out of the secure filer.
-	cd $1/vendor/broadcom/stb/refsw
+	cd $1/${BCM_VENDOR_STB_ROOT}/refsw
 	if [ -L "secsrcs" ]; then
 		rm secsrcs
 	fi
@@ -206,7 +206,7 @@ function mettre_en_place {
 # $2 - 'security' subtree on secure filer.
 # $3 - 'playready' subtree on secure filer.
 function mettre_code_a_jour {
-	cd $1/vendor/broadcom/stb/refsw
+	cd $1/${BCM_VENDOR_STB_ROOT}/refsw
 	git checkout -f
 	cd $1
 	repo sync -j12
@@ -226,7 +226,7 @@ function compiler {
 		#
 		# TODO: make the platform configured.
 		#
-		./vendor/broadcom/stb/bcm_platform/tools/plat-droid.py ${plat_target} profile secu
+		./${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/plat-droid.py ${plat_target} profile secu
 		source ./build/envsetup.sh
 		# build the user side libraries, we need to build a system first to get
 		# the android objects setup and the refsw/nexus libs.
@@ -272,7 +272,7 @@ function comparer {
 		OLDIFS=$IFS; IFS='=' var=(${seclib_mapping[$ix]}); IFS=$OLDIFS;
 		if [[ "${var[0]}" != "" &&  "${var[1]}" != "" ]]; then
 			built=$1/out/target/product/bcm_platform/sysroot/${var[0]}
-			temp=$1/vendor/broadcom/stb/bcm_platform/${var[1]}
+			temp=$1/${BCM_VENDOR_STB_ROOT}/bcm_platform/${var[1]}
 			# strip trailing '\n'
 			original=$(echo $temp | sed -e 's/\n//g')
 			# optionally strip the MARKER (used for debug vs retail).
@@ -306,9 +306,9 @@ function comparer {
 # $2 - sec-filer tree root.
 function montre_code {
 	depth=$show_tree_depth
-	cd $1/vendor/broadcom/stb/refsw
+	cd $1/${BCM_VENDOR_STB_ROOT}/refsw
 	echo ""
-	echo "*** code for $1/vendor/broadcom/stb/refsw"
+	echo "*** code for $1/${BCM_VENDOR_STB_ROOT}/refsw"
 	echo ""
 	git log --pretty=oneline -n $depth
 	cd $2/$security_root
@@ -331,7 +331,7 @@ function verifier {
 		que_faites_vous "verification skipped on demand"
 	else
 		cd $1
-		./vendor/broadcom/stb/bcm_platform/tools/plat-droid.py ${plat_target}
+		./${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/plat-droid.py ${plat_target}
 		source ./build/envsetup.sh
 		lunch bcm_${lunch_target}-eng
 		make -j12 clean_refsw
@@ -411,7 +411,7 @@ que_faites_vous "... located at $fqn_root."
 
 if [ "$secliblist" == "" ]; then
 	# use defaut one for this code tree.
-	secliblist=$fqn_root/vendor/broadcom/stb/bcm_platform/tools/seclibs.map
+	secliblist=$fqn_root/${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/seclibs.map
 fi
 if [ ! -f "$secliblist" ]; then
 	rejouez "security library mapping list '$secliblist' does not exists"
