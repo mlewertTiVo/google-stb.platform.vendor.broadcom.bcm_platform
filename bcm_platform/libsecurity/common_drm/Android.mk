@@ -32,9 +32,9 @@ LOCAL_LIB_NAME := libcmndrmprdy
 LOCAL_MODULE_TAGS := optional
 
 # Check if a prebuilt library has been created in the release_prebuilts folder
-ifneq (,$(wildcard $(TOP)/release_prebuilts/$(LOCAL_LIB_NAME).so))
+ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/$(LOCAL_LIB_NAME).so))
 # use prebuilt library if one exists
-LOCAL_PREBUILT_LIBS := ../../../../../../release_prebuilts/$(LOCAL_LIB_NAME).so
+LOCAL_PREBUILT_LIBS := ../release_prebuilts/$(LOCAL_LIB_NAME).so
 include $(BUILD_MULTI_PREBUILT)
 else
 # compile library from source
