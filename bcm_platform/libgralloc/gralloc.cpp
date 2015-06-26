@@ -64,6 +64,7 @@ static int gralloc_default_align = 0;
 static int gralloc_log_map = 0;
 static int gralloc_conv_time = 0;
 static int gralloc_boom_chk = 0;
+static int gralloc_disable_glplane = 0;
 
 static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
 static NEXUS_Graphics2DHandle hGraphics = NULL;
@@ -85,8 +86,8 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 #define NX_GR_LOG_MAP           "ro.gr.log.map"
 #define NX_GR_CONV_TIME         "ro.gr.conv.time"
 #define NX_GR_BOOM_CHK          "ro.gr.boom.chk"
-
 #define NX_MMA_MGMT_MODE_DEF    "locked"
+#define NX_GR_DISABLE_GLPLANE   "ro.gr.disable.glplane"
 
 #define NEXUS_JOIN_CLIENT_PROCESS "gralloc"
 static void gralloc_load_lib(void)
@@ -134,6 +135,10 @@ static void gralloc_load_lib(void)
 
    if (property_get(NX_GR_CONV_TIME, value, "0")) {
       gralloc_conv_time = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
+   }
+
+   if (property_get(NX_GR_DISABLE_GLPLANE, value, "0")) {
+      gralloc_disable_glplane = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
    gralloc_default_align = GRALLOC_MAX_BUFFER_ALIGNED;
@@ -702,7 +707,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
              (NEXUS_Addr)ioctl(hnd->fd, NX_ASHMEM_GETMEM);
       }
 
-      if ((usage & GRALLOC_USAGE_HW_TEXTURE)) {
+      if ((usage & GRALLOC_USAGE_HW_TEXTURE) && !gralloc_disable_glplane) {
          // 1) vc5 suports 4k texture and does not require special
          //    alignment considerations.
          // 2) vc4 does only support 2k textures and does require
