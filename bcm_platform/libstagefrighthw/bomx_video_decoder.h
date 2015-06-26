@@ -154,6 +154,7 @@ public:
         const OMX_STRING pName,
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
+        bool secure=false,
         unsigned numRoles=0,
         const BOMX_VideoDecoderRole *pRoles=NULL);
 
@@ -308,6 +309,7 @@ protected:
     BLST_Q_HEAD(FrameBufferAllocList, BOMX_VideoDecoderFrameBuffer) m_frameBufferAllocList;
 
     OmxBinder_wrap *m_omxHwcBinder;
+    int m_memTracker;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();

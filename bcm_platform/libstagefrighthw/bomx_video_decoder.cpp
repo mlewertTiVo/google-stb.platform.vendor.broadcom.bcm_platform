@@ -179,7 +179,7 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
         return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
     }
 
-    pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, 1, &vp9Role);
+    pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, 1, &vp9Role);
     if ( NULL == pVideoDecoder )
     {
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
@@ -561,6 +561,44 @@ static void BOMX_VideoDecoder_MemUnlock(private_handle_t *pPrivateHandle)
    }
 }
 
+static int BOMX_VideoDecoder_OpenMemoryInterface(void)
+{
+   int memBlkFd = -1;
+   char device[PROPERTY_VALUE_MAX];
+   char name[PROPERTY_VALUE_MAX];
+
+   memset(device, 0, sizeof(device));
+   memset(name, 0, sizeof(name));
+
+   property_get(B_PROPERTY_MEMBLK_ALLOC, device, NULL);
+   if (strlen(device)) {
+      strcpy(name, "/dev/");
+      strcat(name, device);
+      memBlkFd = open(name, O_RDWR, 0);
+   }
+
+   return memBlkFd;
+}
+
+static int BOMX_VideoDecoder_AdvertisePresence(bool secure)
+{
+   int memBlkFd = -1;
+
+   memBlkFd = BOMX_VideoDecoder_OpenMemoryInterface();
+   if (memBlkFd >= 0) {
+      struct nx_ashmem_alloc ashmem_alloc;
+      memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
+      ashmem_alloc.marker = secure ? NX_ASHMEM_MARKER_VIDEO_DEC_SECURE : NX_ASHMEM_MARKER_VIDEO_DECODER;
+      int ret = ioctl(memBlkFd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+      if (ret < 0) {
+         close(memBlkFd);
+         memBlkFd = -1;
+      }
+   }
+
+   return memBlkFd;
+}
+
 static NEXUS_MemoryBlockHandle BOMX_VideoDecoder_AllocatePixelMemoryBlk(const NEXUS_SurfaceCreateSettings *pCreateSettings, int *pMemBlkFd)
 {
    NEXUS_MemoryBlockHandle hMemBlk = NULL;
@@ -569,30 +607,24 @@ static NEXUS_MemoryBlockHandle BOMX_VideoDecoder_AllocatePixelMemoryBlk(const NE
    char name[PROPERTY_VALUE_MAX];
 
    if (pCreateSettings && pMemBlkFd) {
-      property_get(B_PROPERTY_MEMBLK_ALLOC, device, NULL);
-      if (strlen(device)) {
-         strcpy(name, "/dev/");
-         strcat(name, device);
-         memBlkFd = open(name, O_RDWR, 0);
-         if (memBlkFd >= 0) {
-            struct nx_ashmem_alloc ashmem_alloc;
-            memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
-            ashmem_alloc.size = pCreateSettings->height * pCreateSettings->pitch;
-            ashmem_alloc.align = 4096;
-            int ret = ioctl(memBlkFd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
-            if (ret < 0) {
+      memBlkFd = BOMX_VideoDecoder_OpenMemoryInterface();
+      if (memBlkFd >= 0) {
+         struct nx_ashmem_alloc ashmem_alloc;
+         memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
+         ashmem_alloc.size = pCreateSettings->height * pCreateSettings->pitch;
+         ashmem_alloc.align = 4096;
+         int ret = ioctl(memBlkFd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+         if (ret < 0) {
+            close(memBlkFd);
+            memBlkFd = -1;
+         } else {
+            hMemBlk = (NEXUS_MemoryBlockHandle)ioctl(memBlkFd, NX_ASHMEM_GETMEM);
+            if (hMemBlk == NULL) {
                close(memBlkFd);
                memBlkFd = -1;
-            } else {
-               hMemBlk = (NEXUS_MemoryBlockHandle)ioctl(memBlkFd, NX_ASHMEM_GETMEM);
-               if (hMemBlk == NULL) {
-                  close(memBlkFd);
-                  memBlkFd = -1;
-               }
             }
          }
       }
-
       *pMemBlkFd = memBlkFd;
    }
 
@@ -619,6 +651,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     const OMX_STRING pName,
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks,
+    bool secure,
     unsigned numRoles,
     const BOMX_VideoDecoderRole *pRoles) :
     BOMX_Component(pComponentType, pName, pAppData, pCallbacks, BOMX_VideoDecoder_GetRole),
@@ -652,7 +685,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_formatChangePending(false),
     m_nativeGraphicsEnabled(false),
     m_metadataEnabled(false),
-    m_secureDecoder(false),
+    m_secureDecoder(secure),
     m_outputWidth(1920),
     m_outputHeight(1080),
     m_maxDecoderWidth(1920),
@@ -663,7 +696,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_configBufferState(ConfigBufferState_eAccumulating),
     m_configBufferSize(0),
     m_outputMode(BOMX_VideoDecoderOutputBufferType_eStandard),
-    m_omxHwcBinder(NULL)
+    m_omxHwcBinder(NULL),
+    m_memTracker(-1)
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -679,6 +713,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
 
     OMX_VIDEO_PORTDEFINITIONTYPE portDefs;
     OMX_VIDEO_PARAM_PORTFORMATTYPE portFormats[MAX_PORT_FORMATS];
+
+    m_memTracker = BOMX_VideoDecoder_AdvertisePresence(m_secureDecoder);
 
     m_videoPortBase = 0;    // Android seems to require this - was: BOMX_COMPONENT_PORT_BASE(BOMX_ComponentId_eVideoDecoder, OMX_PortDomainVideo);
 
@@ -1168,6 +1204,12 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     if ( m_pRoles )
     {
         delete m_pRoles;
+    }
+
+    if (m_memTracker != -1)
+    {
+       close(m_memTracker);
+       m_memTracker = -1;
     }
 
     BOMX_VIDEO_STATS_RESET;
