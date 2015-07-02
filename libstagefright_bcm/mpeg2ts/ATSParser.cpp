@@ -46,7 +46,7 @@ namespace android {
 #define MY_LOGV(x, y) \
     do { unsigned tmp = y; ALOGV(x, tmp); } while (0)
 
-static const size_t kTSPacketSize = 188;
+static size_t kTSPacketSize = 188;
 
 struct ATSParser::Program : public RefBase {
     Program(ATSParser *parser, unsigned programNumber, unsigned programMapPID,
@@ -1178,6 +1178,10 @@ ATSParser::~ATSParser() {
 
 status_t ATSParser::feedTSPacket(const void *data, size_t size,
         SyncEvent *event) {
+    if (size == 192) {
+        kTSPacketSize = 192;
+    }
+
     if (size != kTSPacketSize) {
         ALOGE("Wrong TS packet size");
         return BAD_VALUE;
@@ -1466,8 +1470,14 @@ status_t ATSParser::parseTS(ABitReader *br, SyncEvent *event) {
 
     unsigned sync_byte = br->getBits(8);
     if (sync_byte != 0x47u) {
-        ALOGE("[error] parseTS: return error as sync_byte=0x%x", sync_byte);
-        return BAD_VALUE;
+        br->getBits(24);
+        sync_byte = br->getBits(8);
+        if (sync_byte != 0x47u) {
+            ALOGE("[error] parseTS: return error as sync_byte=0x%x", sync_byte);
+            return BAD_VALUE;
+        }
+
+        kTSPacketSize = 192;
     }
 
     if (br->getBits(1)) {  // transport_error_indicator

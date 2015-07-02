@@ -39,7 +39,7 @@
 
 namespace android {
 
-static const size_t kTSPacketSize = 188;
+static size_t kTSPacketSize = 188;
 
 struct MPEG2TSSource : public MediaSource {
     MPEG2TSSource(
@@ -465,12 +465,23 @@ status_t MPEG2TSExtractor::feedUntilBufferAvailable(
 bool SniffMPEG2TS(
         const sp<DataSource> &source, String8 *mimeType, float *confidence,
         sp<AMessage> *) {
-    for (int i = 0; i < 5; ++i) {
-        char header;
-        if (source->readAt(kTSPacketSize * i, &header, 1) != 1
+    char header;
+    if (source->readAt(0, &header, 1) != 1 || header != 0x47) {
+        for (int i = 0; i < 5; ++i) {
+            if (source->readAt(192 * i + 4, &header, 1) != 1
                 || header != 0x47) {
-            return false;
+                return false;
+            }
         }
+        kTSPacketSize = 192;
+    } else {
+        for (int i = 0; i < 5; ++i) {
+            if (source->readAt(188 * i, &header, 1) != 1
+                || header != 0x47) {
+                return false;
+            }
+        }
+        kTSPacketSize = 188;
     }
 
     *confidence = 0.1f;
