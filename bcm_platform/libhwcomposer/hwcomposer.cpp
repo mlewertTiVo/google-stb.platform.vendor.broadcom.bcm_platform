@@ -454,6 +454,7 @@ struct hwc_context_t {
     hwc_procs_t const* procs;
 
     bool vsync_callback_enabled;
+    bool vsync_callback_initialized;
     BKNI_MutexHandle vsync_callback_enabled_mutex;
     pthread_t vsync_callback_thread;
     int vsync_thread_run;
@@ -2312,10 +2313,13 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
          case HWC_POWER_MODE_DOZE_SUSPEND:
              break;
          case HWC_POWER_MODE_NORMAL:
-             /* note: needs restore after standby. */
-             desc.callback = hw_vsync_cb;
-             desc.context = (void *)&ctx->syn_cli;
-             NEXUS_Display_SetVsyncCallback(ctx->display_handle, &desc);
+             if (!ctx->vsync_callback_initialized)
+             {
+                 desc.callback = hw_vsync_cb;
+                 desc.context = (void *)&ctx->syn_cli;
+                 NEXUS_Display_SetVsyncCallback(ctx->display_handle, &desc);
+                 ctx->vsync_callback_initialized = true;
+             }
              break;
          default:
             goto out;
