@@ -25,8 +25,7 @@ LOCAL_STATIC_LIBRARIES := libcutils \
                           libm \
                           libc \
                           libnxserver \
-                          libnexus_static \
-                          libmagnum
+                          libnexus_static
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/server

@@ -3,7 +3,11 @@ BSEAV_TOP  ?= ../../../../../../../../../BSEAV
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := libnexus
+ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/$(LOCAL_MODULE).so))
+LOCAL_SRC_FILES := ../../release_prebuilts/$(LOCAL_MODULE).so
+else
 LOCAL_SRC_FILES := bin/libnexus.so
+endif
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
@@ -20,17 +24,12 @@ LOCAL_STRIP_MODULE := false
 include $(BUILD_PREBUILT)
 
 include $(CLEAR_VARS)
-LOCAL_MODULE := libmagnum
-LOCAL_SRC_FILES := bin/libmagnum.a
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_SUFFIX := .a
-LOCAL_MODULE_CLASS := STATIC_LIBRARIES
-LOCAL_STRIP_MODULE := false
-include $(BUILD_PREBUILT)
-
-include $(CLEAR_VARS)
 LOCAL_MODULE := libnexus_static
+ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/$(LOCAL_MODULE).a))
+LOCAL_SRC_FILES := ../../release_prebuilts/$(LOCAL_MODULE).a
+else
 LOCAL_SRC_FILES := bin/libnexus_static.a
+endif
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_SUFFIX := .a
 LOCAL_MODULE_CLASS := STATIC_LIBRARIES
