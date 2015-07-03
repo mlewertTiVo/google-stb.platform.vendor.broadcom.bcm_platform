@@ -14,5 +14,24 @@
 
 LOCAL_STEM := bcm_platform/device-partial.mk
 
+# always try to build from sources if we have them available.
+#
+ifneq ($(wildcard vendor/widevine/Android.mk),)
+
+export BUILD_WIDEVINE_CLASSIC_FROM_SOURCE := y
+export BUILD_WIDEVINE_FROM_SOURCE := y
+
+PRODUCT_COPY_FILES += \
+    vendor/widevine/proprietary/drmwvmplugin/com.google.widevine.software.drm.xml:system/etc/permissions/com.google.widevine.software.drm.xml:widevine \
+    vendor/widevine/proprietary/drmwvmplugin/com.google.widevine.software.drm.jar:system/framework/com.google.widevine.software.drm.jar:widevine
+
+$(call first-makefiles-under, vendor/widevine)
+
+#
+# nope - use proprietary prebuilts..
+#
+else
+
 $(call inherit-product-if-exists, vendor/widevine/$(LOCAL_STEM))
 
+endif
