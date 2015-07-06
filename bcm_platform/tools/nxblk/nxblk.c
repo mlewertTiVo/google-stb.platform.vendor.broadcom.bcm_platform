@@ -62,17 +62,29 @@ BDBG_MODULE(client);
 
 static void usage(void)
 {
-   ALOGI("nxblk [--dump]");
+   ALOGI("nxblk [--dump] [--marker 0|1]");
 }
 
 int main(int argc, char **argv)
 {
     int i = 1;
     int dump = 0;
+    int marker = 0, mark_option = -1;
+    char value[PROPERTY_VALUE_MAX];
+    char value2[PROPERTY_VALUE_MAX];
+    int fd, ret;
+
+    property_get("ro.nexus.ashmem.devname", value, "nx_ashmem");
+    strcpy(value2, "/dev/");
+    strcat(value2, value);
 
     while (i < argc) {
        if (!strcmp(argv[i], "--dump")) {
           dump = 1;
+       }
+       if (!strcmp(argv[i], "--marker")) {
+          marker = 1;
+          mark_option = atoi(argv[++i]);
        }
        if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
           usage();
@@ -81,27 +93,28 @@ int main(int argc, char **argv)
        i++;
     };
 
-    if (dump) {
-       char value[PROPERTY_VALUE_MAX];
-       char value2[PROPERTY_VALUE_MAX];
-       int fd, ret;
+    fd = open(value2, O_RDWR, 0);
+    if ((fd == -1) || (!fd)) {
+       return -EINVAL;
+    }
 
-       property_get("ro.nexus.ashmem.devname", value, "nx_ashmem");
-       strcpy(value2, "/dev/");
-       strcat(value2, value);
-
-       fd = open(value2, O_RDWR, 0);
-       if ((fd == -1) || (!fd)) {
+    if (marker) {
+       struct nx_ashmem_alloc ashmem_alloc;
+       memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
+       ashmem_alloc.marker = (mark_option == 1) ? NX_ASHMEM_MARKER_VIDEO_DECODER : 0;
+       ret = ioctl(fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+       if (ret < 0) {
           return -EINVAL;
        }
+    }
 
+    if (dump) {
        ret = ioctl(fd, NX_ASHMEM_DUMP_ALL, NULL);
        if (ret < 0) {
           return -EINVAL;
        }
-
-       close(fd);
     }
 
+    close(fd);
     return 0;
 }
