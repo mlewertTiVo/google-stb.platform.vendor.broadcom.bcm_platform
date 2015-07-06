@@ -176,7 +176,7 @@ boardconfig="BoardConfig.mk"
 rmdir_then_mkdir(devicedirectory)
 
 # get the toolchain expected for kernel image and modules build
-run_toolchain='bash -c "cat ./kernel/private/97xxx-bcm/rootfs/toolchain"'
+run_toolchain='bash -c "cat ./kernel/private/bcm-97xxx/rootfs/toolchain"'
 if verbose:
 	print run_toolchain
 lines = check_output(run_toolchain,shell=True).splitlines()
