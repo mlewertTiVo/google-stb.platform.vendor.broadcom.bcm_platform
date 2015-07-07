@@ -25,6 +25,9 @@ PRODUCT_COPY_FILES += \
     vendor/widevine/proprietary/drmwvmplugin/com.google.widevine.software.drm.xml:system/etc/permissions/com.google.widevine.software.drm.xml:widevine \
     vendor/widevine/proprietary/drmwvmplugin/com.google.widevine.software.drm.jar:system/framework/com.google.widevine.software.drm.jar:widevine
 
+PRODUCT_PACKAGES += \
+    WidevineSamplePlayer
+
 $(call first-makefiles-under, vendor/widevine)
 
 #
