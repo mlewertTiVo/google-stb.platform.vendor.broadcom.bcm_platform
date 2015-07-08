@@ -63,7 +63,7 @@ LOCAL_SRC_FILES := \
     bomx_utils.cpp
 
 # Component instances
-LOCAL_SRC_FILES += bomx_video_decoder.cpp bomx_vp9_parser.cpp
+LOCAL_SRC_FILES += bomx_video_decoder.cpp bomx_vp9_parser.cpp bomx_pes_formatter.cpp
 LOCAL_SRC_FILES += bomx_video_encoder.cpp
 
 # Audio is not ready yet

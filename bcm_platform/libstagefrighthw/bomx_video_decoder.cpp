@@ -52,6 +52,7 @@
 #include "nexus_core_utils.h"
 #include "bomx_vp9_parser.h"
 #include "nx_ashmem.h"
+#include "bomx_pes_formatter.h"
 
 #define BOMX_INPUT_MSG(x)
 
@@ -70,11 +71,6 @@
 #define B_MAX_DECODED_FRAMES (16)
 #define B_FRAME_TIMER_INTERVAL (32)
 #define B_INPUT_BUFFERS_RETURN_INTERVAL (100)
-
-#define B_MAX_PES_PACKET_LENGTH (65535)     // PES packets have a 16-bit length field.  0 indicates unbounded.
-#define B_PES_HEADER_START_BYTES (6)        // 00 00 01 [Stream ID] [Length 0] [Length 1] are not reported in the packet length field.
-#define B_PES_HEADER_LENGTH_WITH_PTS (14)
-#define B_PES_HEADER_LENGTH_WITHOUT_PTS (9)
 
 #define B_CHECKPOINT_TIMEOUT (5000)
 
@@ -471,36 +467,6 @@ static OMX_VIDEO_VP8LEVELTYPE BOMX_VP8LevelFromNexus(NEXUS_VideoProtocolLevel ne
     }
 }
 
-static void BOMX_VideoDecoder_FormBppPacket(char *pBuffer, uint32_t opcode)
-{
-    BKNI_Memset(pBuffer, 0, 184);
-    /* PES Header */
-    pBuffer[0] = 0x00;
-    pBuffer[1] = 0x00;
-    pBuffer[2] = 0x01;
-    pBuffer[3] = B_STREAM_ID;
-    pBuffer[4] = 0x00;
-    pBuffer[5] = 178;
-    pBuffer[6] = 0x81;
-    pBuffer[7] = 0x01;
-    pBuffer[8] = 0x14;
-    pBuffer[9] = 0x80;
-    pBuffer[10] = 0x42; /* B */
-    pBuffer[11] = 0x52; /* R */
-    pBuffer[12] = 0x43; /* C */
-    pBuffer[13] = 0x4d; /* M */
-    /* 14..25 are unused and set to 0 by above memset */
-    pBuffer[26] = 0xff;
-    pBuffer[27] = 0xff;
-    pBuffer[28] = 0xff;
-    /* sub-stream id - not used in this config */;
-    /* Next 4 are opcode 0000_000ah = inline flush/tpd */
-    pBuffer[30] = (opcode>>24) & 0xff;
-    pBuffer[31] = (opcode>>16) & 0xff;
-    pBuffer[32] = (opcode>>8) & 0xff;
-    pBuffer[33] = (opcode>>0) & 0xff;
-}
-
 void OmxBinder::notify(int msg, struct hwc_notification_info &ntfy)
 {
    ALOGV( "%s: notify received: msg=%u", __FUNCTION__, msg);
@@ -678,6 +644,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_setSurface(false),
     m_pPesFile(NULL),
     m_pInputFile(NULL),
+    m_pPes(NULL),
     m_pEosBuffer(NULL),
     m_eosPending(false),
     m_eosDelivered(false),
@@ -968,11 +935,20 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         this->Invalidate();
         return;
     }
+
+    m_pPes = new BOMX_PesFormatter(B_STREAM_ID);
+    if ( NULL == m_pPes )
+    {
+        ALOGW("Unable to create PES formatter");
+        this->Invalidate();
+        return;
+    }
+
     /* Populate EOS buffer */
     char *pBuffer = (char *)m_pEosBuffer;
-    BOMX_VideoDecoder_FormBppPacket(pBuffer, 0xa); /* Inline flush / TPD */
-    BOMX_VideoDecoder_FormBppPacket(pBuffer+184, 0x82); /* LAST */
-    BOMX_VideoDecoder_FormBppPacket(pBuffer+368, 0xa); /* Inline flush / TPD */
+    m_pPes->FormBppPacket(pBuffer, 0xa); /* Inline flush / TPD */
+    m_pPes->FormBppPacket(pBuffer+B_BPP_PACKET_LEN, 0x82); /* LAST */
+    m_pPes->FormBppPacket(pBuffer+(2*B_BPP_PACKET_LEN), 0xa); /* Inline flush / TPD */
     NEXUS_FlushCache(pBuffer, BOMX_VIDEO_EOS_LEN);
 
     m_hCheckpointEvent = B_Event_Create(NULL);
@@ -1111,6 +1087,12 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         fclose(m_pInputFile);
         m_pInputFile = NULL;
+    }
+
+    if ( m_pPes )
+    {
+        delete m_pPes;
+        m_pPes = NULL;
     }
 
     if ( m_hSimpleVideoDecoder )
@@ -3162,55 +3144,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
     return OMX_ErrorNone;
 }
 
-static size_t InitPesHeader(uint8_t *pHeaderBuf, size_t maxHeaderBytes, uint8_t streamId, bool ptsValid, uint32_t pts)
-{
-    size_t headerSize = ptsValid ? B_PES_HEADER_LENGTH_WITH_PTS : B_PES_HEADER_LENGTH_WITHOUT_PTS;
-
-    if ( headerSize > maxHeaderBytes )
-    {
-        ALOGE("Unable to create PES header (insufficient buffer space)");
-        return 0;
-    }
-
-    pHeaderBuf[0] = 0x00;
-    pHeaderBuf[1] = 0x00;
-    pHeaderBuf[2] = 0x01;
-    pHeaderBuf[3] = streamId;
-    pHeaderBuf[4] = 0;
-    pHeaderBuf[5] = 0;
-    pHeaderBuf[6] = 0x81;                   /* Indicate header with 0x10 in the upper bits, original material */
-    if ( ptsValid )
-    {
-        pHeaderBuf[7] = 0x80;
-        pHeaderBuf[8] = 0x05;
-        pHeaderBuf[9] =
-            B_SET_BITS("0010", 0x02, 7, 4) |
-            B_SET_BITS("PTS [32..30]", B_GET_BITS(pts,31,29), 3, 1) |
-            B_SET_BIT(marker_bit, 1, 0);
-        pHeaderBuf[10] = B_GET_BITS(pts,28,21); /* PTS [29..15] -> PTS [29..22] */
-        pHeaderBuf[11] =
-            B_SET_BITS("PTS [29..15] -> PTS [21..15]", B_GET_BITS(pts,20,14), 7, 1) |
-            B_SET_BIT(marker_bit, 1, 0);
-        pHeaderBuf[12] = B_GET_BITS(pts,13,6); /* PTS [14..0] -> PTS [14..7]  */
-        pHeaderBuf[13] =
-            B_SET_BITS("PTS [14..0] -> PTS [6..0]", B_GET_BITS(pts,5,0), 7, 2) |
-            B_SET_BIT("PTS[0]", 0, 1) |
-            B_SET_BIT(marker_bit, 1, 0);
-    }
-    else
-    {
-        pHeaderBuf[7] = 0;
-        pHeaderBuf[8] = 0;
-    }
-    return headerSize;
-}
-
-static void SetPesPayloadLength(uint8_t *pPesStart, size_t payloadLength)
-{
-    pPesStart[4] = (payloadLength >> 8) & 0xff;
-    pPesStart[5] = payloadLength & 0xff;
-}
-
 OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     OMX_BUFFERHEADERTYPE *pBufferHeader,
     bool first,
@@ -3283,7 +3216,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
 
     // Begin first PES packet
     pPesHeader = ((uint8_t *)pInfo->pHeader)+pInfo->headerLen;
-    headerBytes = InitPesHeader(pPesHeader, (pInfo->maxHeaderLen-pInfo->headerLen), B_STREAM_ID, true, pts);
+    headerBytes = m_pPes->InitHeader(pPesHeader, (pInfo->maxHeaderLen-pInfo->headerLen), pts);
     if ( 0 == headerBytes )
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
@@ -3340,7 +3273,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     }
 
     // Update PES length now that we know it
-    SetPesPayloadLength(pPesHeader, B_MAX_PES_PACKET_LENGTH-chunkBytesAvailable);
+    m_pPes->SetPayloadLength(pPesHeader, B_MAX_PES_PACKET_LENGTH-chunkBytesAvailable);
 
     // Now, we deal with residual data.  This is simpler, we just build PES packets and
     // write as much data as we can in each one.
@@ -3355,7 +3288,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
 
         // PES Header
         pPesHeader = (uint8_t *)pInfo->pHeader + pInfo->headerLen;
-        headerBytes = InitPesHeader(pPesHeader, pInfo->maxHeaderLen-pInfo->headerLen, B_STREAM_ID, false, 0);
+        headerBytes = m_pPes->InitHeader(pPesHeader, pInfo->maxHeaderLen-pInfo->headerLen);
         if ( 0 == headerBytes )
         {
             if ( configSubmitted ) { m_configBufferState = ConfigBufferState_eAccumulating; }
@@ -3383,7 +3316,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
         numDescriptors++;
 
         // Update PES length now that we know it
-        SetPesPayloadLength(pPesHeader, B_MAX_PES_PACKET_LENGTH-chunkBytesAvailable);
+        m_pPes->SetPayloadLength(pPesHeader, B_MAX_PES_PACKET_LENGTH-chunkBytesAvailable);
     }
 
     // Update buffer descriptor with amount consumed
