@@ -26,7 +26,10 @@ PRODUCT_COPY_FILES += \
     vendor/widevine/proprietary/drmwvmplugin/com.google.widevine.software.drm.jar:system/framework/com.google.widevine.software.drm.jar:widevine
 
 PRODUCT_PACKAGES += \
-    WidevineSamplePlayer
+    WidevineSamplePlayer \
+    libdrmwvmplugin \
+    libwvm \
+    libdrmdecrypt
 
 $(call first-makefiles-under, vendor/widevine)
 
