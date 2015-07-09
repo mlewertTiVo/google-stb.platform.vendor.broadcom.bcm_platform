@@ -37,8 +37,6 @@ public:
 class BroadcastDTVKit_Context {
 public:
     BroadcastDTVKit_Context() {
-        scanner.active = false;
-        scanner.infoValid = false;
         scanner_mutex = STB_OSCreateMutex();
         path = INVALID_RES_ID;
         s_ptr = NULL;
@@ -56,11 +54,38 @@ public:
 #endif
     };
     void *scanner_mutex;
-    struct {
-        bool active;
-        bool infoValid;
-        jchar progress;
-    } scanner;
+
+    class Scanner {
+    public:
+        Scanner() :
+            m_active(false),
+            m_infoValid(false),
+            m_progress(0)
+        {}
+
+        void start() {
+            m_active = true;
+            m_infoValid = false;
+        }
+        void stop() {
+            m_active = false;
+            // preserve m_infoValid flag
+        }
+
+        bool active() const { return m_active; }
+        bool infoValid() const { return m_infoValid; }
+        jchar progress() const { return m_progress; }
+        void setProgress(jchar progress) {
+            m_progress = progress;
+            m_infoValid = true;
+        };
+    private:
+        bool m_active;
+        bool m_infoValid;
+        jchar m_progress;
+    };
+
+    Scanner scanner;
     U8BIT path;
     void *s_ptr;
     U16BIT vpid;
@@ -145,25 +170,24 @@ onScanStart()
 static bool
 scannerUpdateUnderLock(bool stop)
 {
-    if (!pSelf->scanner.active) {
+    if (!pSelf->scanner.active()) {
         return false;
     }
 
-    pSelf->scanner.progress = ACTL_GetSearchProgress();
-    pSelf->scanner.infoValid = true;
+    pSelf->scanner.setProgress(ACTL_GetSearchProgress());
 
     if (!stop) {
-        onScanProgress(pSelf->scanner.progress);
+        onScanProgress(pSelf->scanner.progress());
     }
 
     bool justCompleted = false;
     if (ACTL_IsSearchComplete()) {
-        pSelf->scanner.active = false;
+        pSelf->scanner.stop();
         justCompleted = true;
     }
 
-    if (stop && pSelf->scanner.active) {
-        pSelf->scanner.active = false;
+    if (stop && pSelf->scanner.active()) {
+        pSelf->scanner.stop();
         ACTL_StopServiceSearch();
         justCompleted = true;
     }
@@ -210,13 +234,12 @@ startBlindScan()
     }
 
     // manual scan with network
-    pSelf->scanner.infoValid = false;
     ADB_ResetDatabase();
     if (!ACTL_StartServiceSearch(SIGNAL_COFDM, ACTL_FREQ_SEARCH)) {
         STB_OSMutexUnlock(pSelf->scanner_mutex);
         return false;
     }
-    pSelf->scanner.active = true;
+    pSelf->scanner.start();
     STB_OSMutexUnlock(pSelf->scanner_mutex);
     onScanStart();
     return true;
@@ -343,12 +366,11 @@ startManualScan(BroadcastScanParams *pParams)
     }
 
     // manual scan with network
-    pSelf->scanner.infoValid = false;
     if (!ACTL_StartManualSearch(tunerType, &dtvkitParams, pParams->scanMode == BroadcastScanParams::ScanMode_Home ? ACTL_NETWORK_SEARCH : ACTL_FREQ_SEARCH)) {
         STB_OSMutexUnlock(pSelf->scanner_mutex);
         return false;
     }
-    pSelf->scanner.active = true;
+    pSelf->scanner.start();
     STB_OSMutexUnlock(pSelf->scanner_mutex);
     onScanStart();
     return true;
@@ -1252,16 +1274,16 @@ event_handler(U32BIT event, void *event_data, U32BIT /*data_size*/)
         }
 #ifndef JOURNAL
 #ifdef NOWNEXT
-        else if (event == APP_EVENT_SERVICE_EIT_NOW_UPDATE && !pSelf->scanner.active) {
+        else if (event == APP_EVENT_SERVICE_EIT_NOW_UPDATE && !pSelf->scanner.active()) {
             TunerHAL_onBroadcastEvent(PROGRAM_LIST_CHANGED, 0, 0);
         }
 #else
-        else if (event == APP_EVENT_SERVICE_EIT_SCHED_UPDATE && !pSelf->scanner.active) {
+        else if (event == APP_EVENT_SERVICE_EIT_SCHED_UPDATE && !pSelf->scanner.active()) {
             TunerHAL_onBroadcastEvent(PROGRAM_LIST_CHANGED, 0, 0);
         }
 #endif
 #else
-        if (event == APP_EVENT_SERVICE_EIT_SCHED_UPDATE && !pSelf->scanner.active) {
+        if (event == APP_EVENT_SERVICE_EIT_SCHED_UPDATE && !pSelf->scanner.active()) {
            S_APP_SI_EIT_SCHED_UPDATE *update = (S_APP_SI_EIT_SCHED_UPDATE *)event_data;
            PushUpdate(update->type, update->is_sched, update->allocated_lcn,
                  update->orig_net_id, update->tran_id, update->serv_id,
@@ -1294,15 +1316,14 @@ BroadcastDTVKit_GetScanInfo()
     memset(&scanInfo, 0, sizeof(scanInfo));
     STB_OSMutexLock(pSelf->scanner_mutex);
 
-    if (pSelf->scanner.active) {
-        pSelf->scanner.progress = ACTL_GetSearchProgress();
-        pSelf->scanner.infoValid = true;
+    if (pSelf->scanner.active()) {
+        pSelf->scanner.setProgress(ACTL_GetSearchProgress());
     }
     
-    if (pSelf->scanner.infoValid) {
-        scanInfo.busy = pSelf->scanner.active;
+    if (pSelf->scanner.infoValid()) {
+        scanInfo.busy = pSelf->scanner.active();
         scanInfo.valid = true;
-        scanInfo.progress = pSelf->scanner.progress;
+        scanInfo.progress = pSelf->scanner.progress();
         {
             void **slist = 0;
             U16BIT ns;
