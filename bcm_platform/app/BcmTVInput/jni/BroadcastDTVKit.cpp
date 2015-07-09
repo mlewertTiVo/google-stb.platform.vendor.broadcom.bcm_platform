@@ -58,21 +58,24 @@ public:
     class Scanner {
     public:
         Scanner() :
-            m_active(false),
+            m_state(INACTIVE),
             m_infoValid(false),
             m_progress(0)
         {}
 
-        void start() {
-            m_active = true;
+        void start(bool manual) {
+            m_state = manual ? MANUAL : AUTOMATIC;
             m_infoValid = false;
         }
         void stop() {
-            m_active = false;
+            m_state = INACTIVE;
             // preserve m_infoValid flag
         }
 
-        bool active() const { return m_active; }
+        bool active() const { return m_state != INACTIVE; }
+        bool manual() const { return m_state == MANUAL; }
+        bool automatic() const { return m_state == AUTOMATIC; }
+
         bool infoValid() const { return m_infoValid; }
         jchar progress() const { return m_progress; }
         void setProgress(jchar progress) {
@@ -80,7 +83,12 @@ public:
             m_infoValid = true;
         };
     private:
-        bool m_active;
+        enum State {
+            INACTIVE = 0,
+            MANUAL,
+            AUTOMATIC
+        };
+        State m_state;
         bool m_infoValid;
         jchar m_progress;
     };
@@ -181,6 +189,7 @@ scannerUpdateUnderLock(bool stop)
     }
 
     bool justCompleted = false;
+    bool manual = pSelf->scanner.manual();
     if (ACTL_IsSearchComplete()) {
         pSelf->scanner.stop();
         justCompleted = true;
@@ -188,7 +197,12 @@ scannerUpdateUnderLock(bool stop)
 
     if (stop && pSelf->scanner.active()) {
         pSelf->scanner.stop();
-        ACTL_StopServiceSearch();
+        if (manual) {
+            ACTL_FinishManualSearch();
+        }
+        else {
+            ACTL_StopServiceSearch();
+        }
         justCompleted = true;
     }
 
@@ -234,12 +248,14 @@ startBlindScan()
     }
 
     // manual scan with network
-    ADB_ResetDatabase();
+    static const BOOLEAN retune = TRUE;
+    static const BOOLEAN manual_search = FALSE;
+    ADB_PrepareDatabaseForSearch(SIGNAL_COFDM, NULL, retune, manual_search);
     if (!ACTL_StartServiceSearch(SIGNAL_COFDM, ACTL_FREQ_SEARCH)) {
         STB_OSMutexUnlock(pSelf->scanner_mutex);
         return false;
     }
-    pSelf->scanner.start();
+    pSelf->scanner.start(manual_search);
     STB_OSMutexUnlock(pSelf->scanner_mutex);
     onScanStart();
     return true;
@@ -366,11 +382,14 @@ startManualScan(BroadcastScanParams *pParams)
     }
 
     // manual scan with network
+    static const BOOLEAN retune = pParams->scanMode != BroadcastScanParams::ScanMode_Single;
+    static const BOOLEAN manual_search = TRUE;
+    ADB_PrepareDatabaseForSearch(tunerType, NULL, retune, manual_search);
     if (!ACTL_StartManualSearch(tunerType, &dtvkitParams, pParams->scanMode == BroadcastScanParams::ScanMode_Home ? ACTL_NETWORK_SEARCH : ACTL_FREQ_SEARCH)) {
         STB_OSMutexUnlock(pSelf->scanner_mutex);
         return false;
     }
-    pSelf->scanner.start();
+    pSelf->scanner.start(manual_search);
     STB_OSMutexUnlock(pSelf->scanner_mutex);
     onScanStart();
     return true;
