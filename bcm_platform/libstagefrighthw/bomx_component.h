@@ -303,7 +303,7 @@ protected:
     void ShutdownScheduler();
 
     // Component Role
-    void SetRole(const char *pNewRole) { strncpy(m_componentRole, pNewRole, OMX_MAX_STRINGNAME_SIZE); }
+    void SetRole(const char *pNewRole) { strncpy(m_componentRole, pNewRole, OMX_MAX_STRINGNAME_SIZE-1); m_componentRole[OMX_MAX_STRINGNAME_SIZE-1] = '\0'; }
     void GetRole(char *pRole) { strncpy(pRole, m_componentRole, OMX_MAX_STRINGNAME_SIZE); }
 
     // Walk through tunneled components

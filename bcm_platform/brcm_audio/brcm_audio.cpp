@@ -958,9 +958,9 @@ static void bdev_close_output_stream(struct audio_hw_device *adev,
     pthread_mutex_unlock(&bdev->lock);
 
     pthread_mutex_destroy(&bout->lock);
-    free(bout);
 
     LOGI("Audio output stream closed, stream = 0x%X\n", (uint32_t)aout);
+    free(bout);
 }
 
 static int bdev_open_input_stream(struct audio_hw_device *adev,
@@ -1109,9 +1109,9 @@ static void bdev_close_input_stream(struct audio_hw_device *adev,
     pthread_mutex_unlock(&bdev->lock);
 
     pthread_mutex_destroy(&bin->lock);
-    free(bin);
 
     LOGI("Audio input stream closed, stream = 0x%X\n", (uint32_t)ain);
+    free(bin);
 }
 
 static int bdev_dump(const audio_hw_device_t *adev, int fd)
@@ -1162,9 +1162,9 @@ static int bdev_close(hw_device_t *dev)
     }
 
     pthread_mutex_destroy(&bdev->lock);
-    free(bdev);
 
     LOGI("Audio device closed, dev = 0x%X\n", (uint32_t)dev);
+    free(bdev);
     return 0;
 }
 

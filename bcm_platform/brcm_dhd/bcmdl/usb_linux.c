@@ -85,6 +85,7 @@ usbdev_init(struct bcm_device_id *devtable, struct bcm_device_id **bcmdev)
 		return NULL;
 
 	info->devtable = devtable;
+	info->bulkoutpipe = 0;
 
 	/* Initialize USB subsystem */
 	usb_init();

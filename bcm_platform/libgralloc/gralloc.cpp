@@ -454,6 +454,7 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
          // VC5, can use any stride, so just calculate the values (dont need to call the function)
          // push into VC4 return header to simplify the build/code paths
          bufferConstrainedRequirements.pitchBytes = width * bpp;
+         bufferConstrainedRequirements.format = bufferRequirements.format;
          bufferConstrainedRequirements.totalByteSize = height * bufferConstrainedRequirements.pitchBytes;
       }
 
@@ -529,7 +530,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
                     buffer_handle_t* pHandle,
                     int *pStride)
 {
-   int bpp = 0, fd = -1, fd2 = -1, fd3 = -1, fd4 = -1;
+   int bpp = 0, err = 0, ret = 0, fd = -1, fd2 = -1, fd3 = -1, fd4 = -1;
    int size, extra_size, fmt_align;
    NEXUS_PixelFormat nxFormat = getNexusPixelFormat(format, &bpp);
    PSHARED_DATA pSharedData = NULL;
@@ -543,6 +544,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    bool needs_none = false;
    struct nx_ashmem_alloc ashmem_alloc;
 
+   private_handle_t *hnd = NULL;
    (void)dev;
 
    if (nxFormat == NEXUS_PixelFormat_eUnknown) {
@@ -556,25 +558,29 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
    fd = open(value2, O_RDWR, 0);
    if ((fd == -1) || (!fd)) {
-      return -EINVAL;
+      err = -EINVAL;
+      goto error;
    }
    fd2 = open(value2, O_RDWR, 0);
    if ((fd2 == -1) || (!fd2)) {
-      return -EINVAL;
+      err = -EINVAL;
+      goto error;
    }
    fd3 = open(value2, O_RDWR, 0);
    if ((fd3 == -1) || (!fd3)) {
-      return -EINVAL;
+      err = -EINVAL;
+      goto error;
    }
    fd4 = open(value2, O_RDWR, 0);
    if ((fd4 == -1) || (!fd4)) {
-      return -EINVAL;
+      err = -EINVAL;
+      goto error;
    }
 
-   private_handle_t *hnd = new private_handle_t(fd, fd2, fd3, fd4, 0);
+   hnd = new private_handle_t(fd, fd2, fd3, fd4, 0);
    if (hnd == NULL) {
-      *pHandle = NULL;
-      return -ENOMEM;
+      err = -ENOMEM;
+      goto error;
    }
 
    hnd->is_mma = gralloc_with_mma;
@@ -593,16 +599,16 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
    ashmem_alloc.size = sizeof(SHARED_DATA);
    ashmem_alloc.align = GRALLOC_MAX_BUFFER_ALIGNED;
-   int ret = ioctl(hnd->fd2, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+   ret = ioctl(hnd->fd2, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
    if (ret < 0) {
-      return -ENOMEM;
+      err = -ENOMEM;
+      goto error;
    };
 
    hnd->sharedData = (NEXUS_Addr)ioctl(fd2, NX_ASHMEM_GETMEM);
    if (hnd->sharedData == 0) {
-      *pHandle = NULL;
-      delete hnd;
-      return -ENOMEM;
+      err = -ENOMEM;
+      goto error;
    }
 
    if (hnd->is_mma) {
@@ -616,9 +622,8 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
    if (pSharedData == NULL) {
       /* that's pretty bad...  failed to map the allocated memory! */
-      *pHandle = NULL;
-      delete hnd;
-      return -ENOMEM;
+      err = -ENOMEM;
+      goto error;
    }
 
    memset(pSharedData, 0, sizeof(SHARED_DATA));
@@ -832,47 +837,37 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       }
    }
 
-   bool alloc_failed = false;
    if (needs_yv12 && (pSharedData->planes[DEFAULT_PLANE].physAddr == 0)) {
       ALOGE("%s: failed to allocate default yv12 plane (%d,%d), size %d", __FUNCTION__, w, h, size);
-      alloc_failed = true;
+      err = -ENOMEM;
+      goto alloc_failed;
    }
    if (needs_ycrcb && (pSharedData->planes[EXTRA_PLANE].physAddr == 0)) {
       ALOGE("%s: failed to allocate extra ycrcb plane (%d,%d), size %d", __FUNCTION__, w, h, size);
-      alloc_failed = true;
+      err = -ENOMEM;
+      goto alloc_failed;
    }
    if (!needs_none && !needs_yv12 && ((!hnd->is_mma && pSharedData->planes[DEFAULT_PLANE].physAddr == 0) ||
        (hnd->is_mma && hnd->nxSurfacePhysicalAddress == 0))) {
       ALOGE("%s: failed to allocate standard plane (%d,%d), size %d", __FUNCTION__, w, h, extra_size);
-      alloc_failed = true;
+      err = -ENOMEM;
+      goto alloc_failed;
    }
    if (needs_rgb && ((!hnd->is_mma && pSharedData->planes[GL_PLANE].physAddr == 0) ||
        (hnd->is_mma && hnd->nxSurfacePhysicalAddress == 0))) {
       ALOGE("%s: failed to allocate gl plane (%d,%d), size %d", __FUNCTION__, w, h, size);
-      alloc_failed = true;
+      err = -ENOMEM;
+      goto alloc_failed;
    }
 
-   if (alloc_failed) {
-      *pHandle = NULL;
-      if (hnd->is_mma && block_handle) {
-         NEXUS_MemoryBlock_Unlock(block_handle);
-      }
-      delete hnd;
-      close(fd);
-      close(fd2);
-      close(fd3);
-      close(fd4);
-      return -ENOMEM;
-   } else {
-      if (pSharedData->planes[DEFAULT_PLANE].physAddr) {
-          gralloc_bzero(hnd->is_mma, pSharedData->planes[DEFAULT_PLANE].physAddr, pSharedData->planes[DEFAULT_PLANE].allocSize);
-      }
-      if (pSharedData->planes[EXTRA_PLANE].physAddr) {
-          gralloc_bzero(hnd->is_mma, pSharedData->planes[EXTRA_PLANE].physAddr, pSharedData->planes[EXTRA_PLANE].allocSize);
-      }
-      if (pSharedData->planes[GL_PLANE].physAddr) {
-          gralloc_bzero(hnd->is_mma, pSharedData->planes[GL_PLANE].physAddr, pSharedData->planes[GL_PLANE].allocSize);
-      }
+   if (pSharedData->planes[DEFAULT_PLANE].physAddr) {
+       gralloc_bzero(hnd->is_mma, pSharedData->planes[DEFAULT_PLANE].physAddr, pSharedData->planes[DEFAULT_PLANE].allocSize);
+   }
+   if (pSharedData->planes[EXTRA_PLANE].physAddr) {
+       gralloc_bzero(hnd->is_mma, pSharedData->planes[EXTRA_PLANE].physAddr, pSharedData->planes[EXTRA_PLANE].allocSize);
+   }
+   if (pSharedData->planes[GL_PLANE].physAddr) {
+       gralloc_bzero(hnd->is_mma, pSharedData->planes[GL_PLANE].physAddr, pSharedData->planes[GL_PLANE].allocSize);
    }
 
 
@@ -883,6 +878,24 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    }
 
    return 0;
+
+alloc_failed:
+   if (hnd->is_mma && block_handle) {
+      NEXUS_MemoryBlock_Unlock(block_handle);
+   }
+
+error:
+   *pHandle = NULL;
+   delete hnd;
+   if (fd > 0)
+      close(fd);
+   if (fd2 > 0)
+      close(fd2);
+   if (fd3 > 0)
+      close(fd3);
+   if (fd4 > 0)
+      close(fd4);
+   return err;
 }
 
 static int

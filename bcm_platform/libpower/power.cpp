@@ -200,6 +200,7 @@ static void power_init(struct power_module *module __unused)
     }
     else {
         struct sigevent se;
+        memset(&se, 0, sizeof(se));
 
         // Create the interactive timer...
         se.sigev_notify = SIGEV_THREAD;

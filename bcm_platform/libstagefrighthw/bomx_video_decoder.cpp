@@ -2736,6 +2736,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
         break;
     default:
         ALOGW("Unsupported buffer type");
+        delete pInfo;
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
 
