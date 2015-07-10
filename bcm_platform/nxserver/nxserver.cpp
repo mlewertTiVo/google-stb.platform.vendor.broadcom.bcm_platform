@@ -594,7 +594,7 @@ static nxserver_t init_nxserver(void)
     settings.session[0].output.sd = settings.session[0].output.encode = false;
     settings.session[0].output.hd = true;
 
-    if (property_get(NX_ODV, value, "0")) {
+    if (property_get_int32(NX_ODV, 0)) {
        settings.videoDecoder.dynamicPictureBuffers = (strtoul(value, NULL, 10) > 0) ? true : false;
        if (settings.videoDecoder.dynamicPictureBuffers) {
           unsigned d;
@@ -844,10 +844,13 @@ int main(void)
     property_set("hw.nexus.platforminit", "on");
 
     struct nx_ashmem_mgr_cfg ashmem_mgr_cfg;
-    property_get(NX_ODV_ALT_THRESHOLD, device, "0m");
-    ashmem_mgr_cfg.alt_use_threshold = calc_heap_size(device);
-    ashmem_mgr_cfg.alt_use_max[0] = property_get_int32(NX_ODV_ALT_1_USAGE, -1);
-    ashmem_mgr_cfg.alt_use_max[1] = property_get_int32(NX_ODV_ALT_2_USAGE, -1);
+    memset(&ashmem_mgr_cfg, 0, sizeof(struct nx_ashmem_mgr_cfg));
+    if (property_get_int32(NX_ODV, 0)) {
+       property_get(NX_ODV_ALT_THRESHOLD, device, "0m");
+       ashmem_mgr_cfg.alt_use_threshold = calc_heap_size(device);
+       ashmem_mgr_cfg.alt_use_max[0] = property_get_int32(NX_ODV_ALT_1_USAGE, -1);
+       ashmem_mgr_cfg.alt_use_max[1] = property_get_int32(NX_ODV_ALT_2_USAGE, -1);
+    }
 
     property_get("ro.nexus.ashmem.devname", device, NULL);
     if (strlen(device)) {
