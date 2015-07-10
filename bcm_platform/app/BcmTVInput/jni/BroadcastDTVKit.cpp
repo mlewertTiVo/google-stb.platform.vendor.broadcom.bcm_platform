@@ -264,7 +264,7 @@ startBlindScan()
 static bool
 satelliteTuningParamsToDTVKit(BroadcastScanParams *pParams, S_MANUAL_TUNING_PARAMS &dtvkitParams)
 {
-    dtvkitParams.freq = pParams->freqKHz / 1000;
+    dtvkitParams.freq = pParams->freqKHz;
     dtvkitParams.u.sat.satellite = 0;
     dtvkitParams.u.sat.polarity = pParams->satellitePolarity == BroadcastScanParams::SatellitePolarity_Horizontal ? POLARITY_HORIZONTAL : POLARITY_VERTICAL;
     dtvkitParams.u.sat.symbol_rate = pParams->symK;
