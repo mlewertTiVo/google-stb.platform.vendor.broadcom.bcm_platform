@@ -400,8 +400,8 @@ startManualScan(BroadcastScanParams *pParams)
         return false;
     }
     pSelf->scanner.start(manual_search);
-    STB_OSMutexUnlock(pSelf->scanner_mutex);
     onScanStart();
+    STB_OSMutexUnlock(pSelf->scanner_mutex);
 
     ALOGI("%s: Exit - success", __FUNCTION__);
     return true;
