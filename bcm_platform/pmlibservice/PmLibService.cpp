@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2013 Broadcom Corporation
+ *    (c)2011-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -53,7 +53,7 @@
 extern "C" {
 #endif
 
-#include "pmlib-263x.h"
+#include "pmlib.h"
 
 #ifdef __cplusplus
 }
@@ -65,19 +65,29 @@ Mutex PmLibService::mLock("PmLibService Lock");
 
 PmLibService::PmLibService() : mPmCtx(NULL)
 {
+    struct brcm_pm_state pmState;
+
     ALOGV("%s", __func__);
     mPmCtx = brcm_pm_init();
-    mState.usb   = true;
-    mState.enet  = true;
-    mState.moca  = true;
-    mState.sata  = true;
-    mState.tp1   = true;
-    mState.tp2   = true;
-    mState.tp3   = true;
-    mState.memc1 = true;
-    mState.cpu   = true;
-    mState.ddr   = true;
-    mState.flags = true;
+    mState.enet_en          = true;
+    mState.moca_en          = true;
+    mState.sata_en          = true;
+    mState.tp1_en           = true;
+    mState.tp2_en           = true;
+    mState.tp3_en           = true;
+    mState.cpufreq_scale_en = false;
+    mState.ddr_pm_en        = false;
+
+    if (brcm_pm_get_status(mPmCtx, &pmState)) {
+        ALOGE("%s: Can't get PM status!!!", __func__);
+    }
+    else {
+        mState.sata_en   =  pmState.sata_status;
+        mState.tp1_en    =  pmState.tp1_status;
+        mState.tp2_en    =  pmState.tp2_status;
+        mState.tp3_en    =  pmState.tp3_status;
+        mState.ddr_pm_en = (pmState.srpd_status > 0);
+    }
 }
 
 PmLibService::~PmLibService()
@@ -95,7 +105,6 @@ void PmLibService::instantiate()
 
 status_t PmLibService::setState(pmlib_state_t *state)
 {
-    int rc;
     status_t ret = OK;
     struct brcm_pm_state pmState;    
 
@@ -103,65 +112,57 @@ status_t PmLibService::setState(pmlib_state_t *state)
 
     ALOGV("%s", __func__);
 
-    rc = brcm_pm_get_status(mPmCtx, &pmState);
-    if (rc) {
-        ALOGE("%s: Can't get PM status [rc=%d]!!!", __func__, rc);
+    if (brcm_pm_get_status(mPmCtx, &pmState)) {
+        ALOGE("%s: Can't get PM status!!!", __func__);
         ret = UNKNOWN_ERROR;
     }
     else {
-#if (PMLIB_SUPPORTS_BRCMSTB_SYSFS == 1)
-        pmState.usb_status = state->usb;
 
-#if (NEXUS_NUM_MEMC > 1)
-        pmState.memc1_status = state->memc1;
-#else
-        pmState.memc1_status = BRCM_PM_UNDEF;
-#endif
-        pmState.sata_status = state->sata;
-        pmState.tp1_status = state->tp1;
-#if (BCHP_CHIP == 7435)
-        pmState.tp2_status = state->tp2;
-        pmState.tp3_status = state->tp3;
-#endif
-        /* pmState.cpu_divisor = state->cpu?1:8; */
-        pmState.ddr_timeout = state->ddr?0:64;
-        
-        pmState.standby_flags = state->flags;
+        if (pmState.sata_status != BRCM_PM_UNDEF) {
+            pmState.sata_status = state->sata_en;
+        }
+        if (pmState.tp1_status != BRCM_PM_UNDEF) {
+            pmState.tp1_status = state->tp1_en;
+        }
+        if (pmState.tp2_status != BRCM_PM_UNDEF) {
+            pmState.tp2_status = state->tp2_en;
+        }
+        if (pmState.tp3_status != BRCM_PM_UNDEF) {
+            pmState.tp3_status = state->tp3_en;
+        }
+        if (pmState.srpd_status != BRCM_PM_UNDEF) {
+            pmState.srpd_status = state->ddr_pm_en ? 64 : 0;
+        }
 
-        /* 2.6.37-2.4 Kernel has some issue while resuming from S2 standby mode. So it requires
-         * some delay to added while resuming. Changing the flag to 0x4 makes sure that this
-         * delay is added. Needs to be removed once the Kernel fix is available.
-         */
-#if (BCHP_CHIP == 7358)     
-        pmState.standby_flags |=  0x4;
-#endif
+        // TODO add support for CPU frequency scaling
 
-#endif  // PMLIB_SUPPORTS_BRCMSTB_SYSFS
-
-        rc = brcm_pm_set_status(mPmCtx, &pmState);
-        if (rc) {
-            ALOGE("%s: Can't set PM status [rc=%d]!!!", __func__, rc);
+        if (brcm_pm_set_status(mPmCtx, &pmState)) {
+            ALOGE("%s: Can't set PM status!!!", __func__);
             ret = UNKNOWN_ERROR;
         }
         else {
-            if (state->enet) {
-                if (!mState.enet) {
+            if (state->enet_en) {
+                if (!mState.enet_en) {
+                    ALOGD("%s: Bringing up ethernet...", __FUNCTION__);
                     system("netcfg eth0 up");
                 }
             } else {
-                if (mState.enet) {
+                if (mState.enet_en) {
+                    ALOGD("%s: Shutting down ethernet...", __FUNCTION__);
                     system("netcfg eth0 down");
                 }
             }
 
 #if MOCA_SUPPORT
-            if (state->moca) {
-                if (!mState.moca) {
+            if (state->moca_en) {
+                if (!mState.moca_en) {
+                    ALOGD("%s: Bringing up MoCA...", __FUNCTION__);
                     system("mocactl start");
                     system("netcfg eth1 up");
                 }
             } else {
-                if (mState.moca) {
+                if (mState.moca_en) {
+                    ALOGD("%s: Shutting down MoCA...", __FUNCTION__);
                     system("netcfg eth1 down");
                     system("mocactl stop");
                 }

@@ -13,25 +13,16 @@
 # limitations under the License.
 
 
-REFSW_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_nexus
-
 LOCAL_PATH := $(call my-dir)
 
-ifeq ($(shell test -d ${BCM_VENDOR_STB_ROOT}/refsw/BSEAV && echo "y"),y)
 BSEAV_INC_PATH := ${BCM_VENDOR_STB_ROOT}/refsw/BSEAV
 LOCAL_BSEAV_TOP := ../../refsw/BSEAV
-else
-BSEAV_INC_PATH := $(LOCAL_PATH)
-LOCAL_BSEAV_TOP  ?= ../../../../../../../../../BSEAV
-endif
-
 GLOB_PATH  := $(LOCAL_BSEAV_TOP)/lib/glob
-POWER_PATH := $(LOCAL_BSEAV_TOP)/lib/power_standby
-
-# Linux 3.3 supports the /sys/devices/platform/brcmstb sysfs layout.
-PMLIB_SUPPORTS_BRCMSTB_SYSFS := $(shell test "${LINUXVER}" \< "3.8.0" && echo "y")
 
 include $(CLEAR_VARS)
+include $(BSEAV_INC_PATH)/lib/pmlib/pmlib.inc
+
+POWER_PATH := $(LOCAL_BSEAV_TOP)/lib/pmlib/$(PMLIB_DIR)
 
 LOCAL_MODULE := libpmlibservice
 
@@ -39,21 +30,16 @@ LOCAL_PRELINK_MODULE := false
 
 LOCAL_SHARED_LIBRARIES := liblog libcutils libdl libbinder libutils 
 
-LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
 LOCAL_C_INCLUDES += $(BSEAV_INC_PATH)/$(GLOB_PATH) \
                     $(BSEAV_INC_PATH)/$(POWER_PATH)
                     
-LOCAL_CFLAGS:= $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
-LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
-
-ifeq ($(PMLIB_SUPPORTS_BRCMSTB_SYSFS), y)
-LOCAL_CFLAGS += -DPMLIB_SUPPORTS_BRCMSTB_SYSFS=1
-endif
+LOCAL_CFLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
+LOCAL_CFLAGS += $(PMLIB_CFLAGS)
 
 LOCAL_SRC_FILES := IPmLibService.cpp \
                    PmLibService.cpp \
                    $(GLOB_PATH)/glob.c \
-                   $(POWER_PATH)/pmlib-263x.c
+                   $(POWER_PATH)/pmlib.c
 
 LOCAL_MODULE_TAGS := optional
 
@@ -72,9 +58,8 @@ LOCAL_SHARED_LIBRARIES := \
     libutils \
     libbinder
 
-LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include
-
-LOCAL_CFLAGS:= $(NEXUS_CFLAGS) -DANDROID
+LOCAL_CFLAGS := $(NEXUS_CFLAGS) -DANDROID
+LOCAL_CFLAGS += $(PMLIB_CFLAGS)
 
 LOCAL_MODULE_TAGS := optional
 
