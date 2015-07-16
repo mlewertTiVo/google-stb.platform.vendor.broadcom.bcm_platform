@@ -233,8 +233,15 @@ scannerInitUnderLock()
     return true;
 }
 
+static void setScanEncrypted(bool scan_encrypted)
+{
+    E_SEARCH_SERVICE_TYPE search_type = scan_encrypted ?
+            SEARCH_SERVICE_TYPE_ALL : SEARCH_SERVICE_TYPE_FTA;
+    ASI_SetSearchServiceType(search_type);
+}
+
 static bool
-startBlindScan()
+startBlindScan(bool scan_encrypted)
 {
     if (pSelf->tot_search_active) {
         ACTL_StopTotSearch();
@@ -251,6 +258,7 @@ startBlindScan()
     static const BOOLEAN retune = TRUE;
     static const BOOLEAN manual_search = FALSE;
     ADB_PrepareDatabaseForSearch(SIGNAL_COFDM, NULL, retune, manual_search);
+    setScanEncrypted(scan_encrypted);
     if (!ACTL_StartServiceSearch(SIGNAL_COFDM, ACTL_FREQ_SEARCH)) {
         STB_OSMutexUnlock(pSelf->scanner_mutex);
         return false;
@@ -394,6 +402,7 @@ startManualScan(BroadcastScanParams *pParams)
     static const BOOLEAN retune = pParams->scanMode != BroadcastScanParams::ScanMode_Single;
     static const BOOLEAN manual_search = TRUE;
     ADB_PrepareDatabaseForSearch(tunerType, NULL, retune, manual_search);
+    setScanEncrypted(pParams->encrypted);
     if (!ACTL_StartManualSearch(tunerType, &dtvkitParams, pParams->scanMode == BroadcastScanParams::ScanMode_Home ? ACTL_NETWORK_SEARCH : ACTL_FREQ_SEARCH)) {
         STB_OSMutexUnlock(pSelf->scanner_mutex);
         ALOGE("%s: Exit - unable to start scan", __FUNCTION__);
@@ -414,7 +423,8 @@ static int BroadcastDTVKit_StartScan(BroadcastScanParams *pParams)
 
     if (pParams == 0 || (pParams->deliverySystem == BroadcastScanParams::DeliverySystem_Dvbt && pParams->scanMode == BroadcastScanParams::ScanMode_Blind)) {
         ALOGI("%s: DVB-T blind scan", __FUNCTION__);
-        startBlindScan();
+        bool scan_encrypted = pParams ? pParams->encrypted : false;
+        startBlindScan(scan_encrypted);
         rv = 0;
     }
     else if (pParams->scanMode == BroadcastScanParams::ScanMode_Blind) {

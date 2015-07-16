@@ -57,6 +57,7 @@ public class ScanParams implements Parcelable {
     public DeliverySystem deliverySystem;
     public ScanMode scanMode;
     public int freqKHz;
+    public boolean encrypted;
     /* DVB_S */
     public SatellitePolarity satellitePolarity;
     public short codeRateNumerator;
@@ -75,6 +76,7 @@ public class ScanParams implements Parcelable {
         deliverySystem = DeliverySystem.Undefined;
         scanMode = ScanMode.Undefined;
         freqKHz = 0;
+        encrypted = false;
         satellitePolarity = SatellitePolarity.Undefined;
         codeRateNumerator = 0;
         codeRateDenominator = 0;
@@ -87,14 +89,17 @@ public class ScanParams implements Parcelable {
         plpId = 0;
     }
 
+    @Override
     public int describeContents() {
         return 0;
     }
 
+    @Override
     public void writeToParcel(Parcel out, int flags) {
         out.writeSerializable(deliverySystem);
         out.writeSerializable(scanMode);
         out.writeInt(freqKHz);
+        out.writeInt(encrypted ? 1 : 0);
         out.writeSerializable(satellitePolarity);
         out.writeInt(codeRateNumerator);
         out.writeInt(codeRateDenominator);
@@ -111,6 +116,7 @@ public class ScanParams implements Parcelable {
         deliverySystem = (DeliverySystem)in.readSerializable();
         scanMode = (ScanMode)in.readSerializable();
         freqKHz = in.readInt();
+        encrypted = in.readInt() != 0;
         satellitePolarity = (SatellitePolarity)in.readSerializable();
         codeRateNumerator = (short)in.readInt();
         codeRateDenominator = (short)in.readInt();
@@ -121,20 +127,19 @@ public class ScanParams implements Parcelable {
         ofdmTransmissionMode = (OfdmTransmissionMode)in.readSerializable();
         ofdmMode = (OfdmMode)in.readSerializable();
         plpId = (short)in.readInt();
-   }
+    }
 
     public static final Parcelable.Creator<ScanParams> CREATOR
         = new Parcelable.Creator<ScanParams>() {
+            @Override
             public ScanParams createFromParcel(Parcel in) {
                 return new ScanParams(in);
             }
 
+            @Override
             public ScanParams[] newArray(int size) {
                 return new ScanParams[size];
             }
         };
 
 }
-
-
-

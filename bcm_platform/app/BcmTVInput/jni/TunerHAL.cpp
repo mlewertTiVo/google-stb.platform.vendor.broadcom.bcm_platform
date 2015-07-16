@@ -1017,6 +1017,10 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startScan(JNIEnv *env,
         bsp.freqKHz = env->GetIntField(scanParams, freqKHzID);
         ALOGD("%s: freqKHz %d", __FUNCTION__, bsp.freqKHz);
 
+        booleanField(encrypted)
+        bsp.encrypted = env->GetBooleanField(scanParams, encryptedID);
+        ALOGD("%s: encrypted %s", __FUNCTION__, bsp.encrypted ? "true" : "false");
+
         jfieldID satellitePolarityID = env->GetFieldID(cls, "satellitePolarity", SCANPARAMSSATELLITEPOLARITY_SIG);
         if(satellitePolarityID == 0){
             ALOGE("%s: could not get satellitePolarity ID", __FUNCTION__);
