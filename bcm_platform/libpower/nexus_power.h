@@ -60,6 +60,7 @@
 #include "nexus_types.h"
 #include "nexus_platform_features.h"
 #include "nexus_ipc_client_factory.h"
+#include "nxclient.h"
 #include <nexus_gpio.h>
 #include "linuxuinput.h"
 
@@ -72,6 +73,7 @@ class NexusPower : public android::RefBase {
     status_t preparePowerState(b_powerState state);
     status_t setPowerState(b_powerState state);
     status_t getPowerState(b_powerState *pState);
+    status_t setVideoOutputsState(b_powerState state);
     status_t initialiseGpios();
     void uninitialiseGpios();
     status_t setGpios(b_powerState state);

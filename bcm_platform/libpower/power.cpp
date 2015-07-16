@@ -462,12 +462,16 @@ static void power_set_interactive(struct power_module *module __unused, int on)
             gNexusPower->preparePowerState(ePowerState_S0);
         }
         power_finish_set_interactive(on);
+        if (gNexusPower.get()) {
+            gNexusPower->setVideoOutputsState(ePowerState_S0);
+        }
     }
     else {
         b_powerState offState = power_get_property_off_state();
 
         if (gNexusPower.get()) {
             gNexusPower->preparePowerState(offState);
+            gNexusPower->setVideoOutputsState(offState);
         }
 
         if (gInteractiveTimer) {
