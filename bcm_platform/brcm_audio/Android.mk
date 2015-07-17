@@ -1,3 +1,17 @@
+# Copyright (C) 2015 Broadcom Canada Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 LOCAL_PATH := $(call my-dir)
 REFSW_PATH :=${LOCAL_PATH}/../brcm_nexus
 APPLIBS_TOP ?=$(LOCAL_PATH)/../../../../../../../..
@@ -79,3 +93,33 @@ LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)
 endif
 
+# ATV Remote audio module
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES := \
+    alsa_utils.cpp \
+    AudioHardwareInput.cpp \
+    AudioStreamIn.cpp \
+    AudioHotplugThread.cpp \
+    audio_hal_hooks.c \
+    audio_hal_thunks.cpp
+
+LOCAL_C_INCLUDES := \
+    external/tinyalsa/include \
+    $(call include-path-for, audio-utils)
+
+LOCAL_SHARED_LIBRARIES := \
+    libcutils \
+    liblog \
+    libutils \
+    libmedia \
+    libtinyalsa \
+    libaudioutils
+
+LOCAL_STATIC_LIBRARIES += libmedia_helper
+
+LOCAL_MODULE := audio.atvr.default
+LOCAL_MODULE_RELATIVE_PATH := hw
+LOCAL_MODULE_TAGS := optional
+
+include $(BUILD_SHARED_LIBRARY)
