@@ -143,6 +143,7 @@ LOCAL_CFLAGS += -DLOG_TAG=\"bcm-hwc\"
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 
 LOCAL_SRC_FILES := hwcomposer.cpp
+LOCAL_SRC_FILES_arm += check_frame_transparency.s
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := hwcomposer.bcm_platform
 

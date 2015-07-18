@@ -297,6 +297,7 @@ typedef struct {
 
 } DISPLAY_CLIENT_INFO;
 
+extern "C" bool check_frame_transparency(void *data, size_t width, size_t height, size_t stride);
 typedef void (* HWC_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
 
 class HwcBinder : public HwcListener
@@ -1304,9 +1305,51 @@ out:
     return ret;
 }
 
+static bool hwc_can_layer_init_display(struct hwc_context_t* ctx, int layer_id,
+                                      NEXUS_SurfaceHandle display_surface, bool is_virtual)
+{
+    NEXUS_SurfaceComposition *pComp;
+    NEXUS_SurfaceCreateSettings settings;
+
+    // Enable this only for gpx
+    if (is_virtual)
+       return false;
+
+    // Check blending type
+    pComp = &ctx->gpx_cli[layer_id].composition;
+    if ((memcmp(&pComp->colorBlend, &colorBlendingEquation[BLENDIND_TYPE_SRC_OVER], sizeof(pComp->colorBlend)) != 0) &&
+       (memcmp(&pComp->colorBlend, &colorBlendingEquation[BLENDIND_TYPE_SRC], sizeof(pComp->colorBlend)) != 0))
+       return false;
+    if ((memcmp(&pComp->alphaBlend, &alphaBlendingEquation[BLENDIND_TYPE_SRC_OVER], sizeof(pComp->alphaBlend)) != 0) &&
+       (memcmp(&pComp->alphaBlend, &alphaBlendingEquation[BLENDIND_TYPE_SRC], sizeof(pComp->alphaBlend)) != 0))
+       return false;
+
+    // Make sure clip rect has the same size as the display surface
+    NEXUS_Surface_GetCreateSettings(display_surface, &settings);
+    if ((pComp->clipRect.x == 0) && (pComp->clipRect.y == 0) &&
+       (pComp->clipRect.width == settings.width) &&
+       (pComp->clipRect.height == settings.height)) {
+       return true;
+    }
+
+    return false;
+}
+
+static void hwc_set_layer_blending(struct hwc_context_t* ctx, int layer_id, int blending)
+{
+    NEXUS_SurfaceComposition *pComp;
+
+    // Assumption is that this is a gpx layer
+    pComp = &ctx->gpx_cli[layer_id].composition;
+    pComp->colorBlend = colorBlendingEquation[blending];
+    pComp->alphaBlend = alphaBlendingEquation[blending];
+}
+
+
 bool hwc_compose_gralloc_buffer(
    struct hwc_context_t* ctx, int layer_id, PSHARED_DATA pSharedData,
-   private_handle_t *gr_buffer, NEXUS_SurfaceHandle display_surface, bool is_virtual)
+   private_handle_t *gr_buffer, NEXUS_SurfaceHandle display_surface, bool is_virtual,
+   bool check_transparency = false)
 {
     bool composed = false;
     NEXUS_Error rc;
@@ -1366,6 +1409,23 @@ bool hwc_compose_gralloc_buffer(
 
     *pActSurf = NULL;
     if (pComp->visible) {
+        if (check_transparency && (pixel_format == NEXUS_PixelFormat_eA8_B8_G8_R8)) {
+            void *addr;
+            nsecs_t t1, t2;
+
+            hwc_mem_lock(ctx, pSharedData->planes[DEFAULT_PLANE].physAddr , &addr, true);
+            t1 = systemTime(CLOCK_MONOTONIC);
+            bool transparent = check_frame_transparency(addr, pSharedData->planes[DEFAULT_PLANE].width,
+                                                        pSharedData->planes[DEFAULT_PLANE].height, stride);
+            t2 = systemTime(CLOCK_MONOTONIC);
+            int msecDelay = toMillisecondTimeoutDelay(t1, t2);
+            ALOGV("%s, trasparency:%d, delay:%d", __FUNCTION__, transparent, msecDelay);
+
+            hwc_mem_unlock(ctx, (unsigned)pSharedData->planes[DEFAULT_PLANE].physAddr, true);
+            if (transparent)
+                goto out_unlock;
+        }
+
         *pActSurf = hwc_to_nsc_surface(pSharedData->planes[plane_select].width,
                                        pSharedData->planes[plane_select].height,
                                        stride,
@@ -2023,9 +2083,15 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                 }
 
                 if (!layer_composed) {
-                   hwc_seed_disp_surface(ctx, display_surface);
+                   bool can_skip_fill = has_video && hwc_can_layer_init_display(ctx, i, display_surface, false);
+                   if (!can_skip_fill)
+                      hwc_seed_disp_surface(ctx, display_surface);
+                   else {
+                      hwc_set_layer_blending(ctx, i, BLENDIND_TYPE_SRC);
+                   }
                 }
-                if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, display_surface, false)) {
+
+                if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, display_surface, false, has_video)) {
                    layer_composed++;
                 }
                 ctx->gpx_cli[i].last.grhdl = (buffer_handle_t)gr_buffer;
