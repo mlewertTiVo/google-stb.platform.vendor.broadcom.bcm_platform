@@ -2764,14 +2764,17 @@ static void * hwc_vsync_task(void *argv)
 
       if (BKNI_AcquireMutex(ctx->vsync_callback_enabled_mutex) == BERR_SUCCESS) {
          if (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) {
+            BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
             ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, vsync_system_time);
+            if (ctx->display_dump_vsync) {
+               ALOGI("vsync-pushed: @ %lld", vsync_system_time);
+            }
+         } else {
+            BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
+            if (ctx->display_dump_vsync) {
+               ALOGI("vsync-ticked: @ %lld", vsync_system_time);
+            }
          }
-         if (ctx->display_dump_vsync) {
-            ALOGI("vsync-%s: @ %lld",
-                  (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) ? "pushed" : "ticked",
-                  vsync_system_time);
-         }
-         BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
       }
 
    } while(ctx->vsync_thread_run);
