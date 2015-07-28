@@ -601,13 +601,20 @@ void BOMX_Port::BufferComplete(BOMX_Buffer *pBuffer)
 {
     BOMX_BufferNode *pNode;
 
-    pNode = BLST_Q_FIRST(&m_bufferQueue);
-    ALOG_ASSERT(NULL != pNode);
-    ALOG_ASSERT(pNode->pBuffer == pBuffer);
+    for ( pNode = BLST_Q_FIRST(&m_bufferQueue);
+          NULL != pNode;
+          pNode = BLST_Q_NEXT(pNode, queueNode) )
+    {
+        if (pNode->pBuffer == pBuffer)
+        {
+            BLST_Q_REMOVE(&m_bufferQueue, pNode, queueNode);
+            ALOG_ASSERT(m_queueDepth > 0);
+            m_queueDepth--;
+            return;
+        }
+    }
 
-    BLST_Q_REMOVE_HEAD(&m_bufferQueue, queueNode);
-    ALOG_ASSERT(m_queueDepth > 0);
-    m_queueDepth--;
+    ALOG_ASSERT(NULL != pNode);
 }
 
 BOMX_Buffer *BOMX_Port::FindBuffer(BOMX_BufferCompareFunction pCompareFunc, void *pData)
