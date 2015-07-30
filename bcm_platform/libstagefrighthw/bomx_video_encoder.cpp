@@ -36,7 +36,7 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_encoder"
 
