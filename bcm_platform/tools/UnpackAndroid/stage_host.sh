@@ -40,8 +40,6 @@ cp $image_dir/cache.img ./unpack_android_boot/cache.img
 
 echo "4) Copying stage_target* scripts, and tools."
 cp $tools_dir/stage_target.sh $staging_dir
-cp $tools_dir/stage_target_multipart.sh $staging_dir
-cp $tools_dir/stage_target_bootimg.sh $staging_dir
 cp $tools_dir/tools/fastboot_tcp $staging_dir
 
 echo "5) Copying bootloaders."

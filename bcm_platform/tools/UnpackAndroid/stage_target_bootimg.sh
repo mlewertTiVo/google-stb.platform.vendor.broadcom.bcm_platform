@@ -2,7 +2,7 @@
 set -e
 
 function usage {
-   echo "stage_host_bootimg.sh [-g] [-b] [-s] [-d] [-c] [-u] [-w] [-z] [-S] [-p <name>] [-F <ip-address>]"
+   echo "stage_target_bootimg.sh [-g] [-b] [-s] [-d] [-c] [-u] [-w [<name>]] [-z] [-S] [-p <name>] [-F <ip-address>]"
    echo ""
    echo "list partitions to update. partitions in:"
    echo ""
@@ -12,7 +12,7 @@ function usage {
    echo "     '-d': userdata"
    echo "     '-c': cache"
    echo "     '-u': bsu"
-   echo "     '-w': hwcfg"
+   echo "     '-w <name>': hwcfg (name defaults to hwcfg_empty.img)"
    echo "     '-z': recovery"
    echo ""
    echo "'-S' - to preserve labeling for SELinux support (incurs longer copy time)."
@@ -31,19 +31,12 @@ function usage {
    echo ""
 }
 
-# those partition are coming from the format script (usb) and/or the gpt (emmc).
-partition_boot=1
-partition_system=3
-partition_data=4
-partition_cache=5
-partition_recovery=6
-
 partition_root=sda
 fastboot_target=0.0.0.0
 
 update_boot_img=1
 update_system=1
-update_data=1
+update_userdata=1
 # not needed by default because we assume using USB to boot instead of eMMC
 # but if we need to boot from eMMC, all the following partitions should be updated
 update_cache=0
@@ -56,12 +49,12 @@ fastboot=0
 if [ $# -gt 0 ]; then
 	update_boot_img=0
 	update_system=0
-	update_data=0
+	update_userdata=0
 fi
 
 #flag to check if any of the $update_* variables are set
 update_something=0
-while getopts "hgbsdcuwzSp:F:" tag; do
+while getopts "hgbsdcuw:zSp:F:" tag; do
 	case $tag in
 	g)
 		update_gpt=1
@@ -76,7 +69,7 @@ while getopts "hgbsdcuwzSp:F:" tag; do
 		update_something=1
 		;;
 	d)
-		update_data=1
+		update_userdata=1
 		update_something=1
 		;;
 	c)
@@ -90,6 +83,10 @@ while getopts "hgbsdcuwzSp:F:" tag; do
 	w)
 		update_hwcfg=1
 		update_something=1
+		hwcfg_img=$OPTARG
+		if [ -z $hwcfg_img ]; then
+			hwcfg_img=hwcfg_empty.img
+		fi
 		;;
 	z)
 		update_recovery=1
@@ -112,19 +109,6 @@ while getopts "hgbsdcuwzSp:F:" tag; do
 	esac
 done
 
-echo ""
-echo "******** WARNING ********"
-echo ""
-echo " For staging USB stick, expected partition layout is: "
-echo ""
-echo "   boot:     /dev/${partition_root}${partition_boot}"
-echo "   system:   /dev/${partition_root}${partition_system}"
-echo "   data:     /dev/${partition_root}${partition_data}"
-echo "   cache:    /dev/${partition_root}${partition_cache}"
-echo "   recovery: /dev/${partition_root}${partition_recovery}"
-echo ""
-echo "******** WARNING ********"
-
 # if both selinux and fastboot are together, nuke selinux since fastboot will actually achieve the same outcome.
 if [[ $selinux -gt 0 && $fastboot -gt 0 ]]; then
 	selinux=0
@@ -134,14 +118,25 @@ fi
 if [[ $fastboot -gt 0 && $update_something -eq 0 ]]; then
 	update_boot_img=1
 	update_system=1
-	update_data=1
+	update_userdata=1
 	update_something=1
 fi
 if [[ $selinux -gt 0 && $update_something -eq 0 ]]; then
 	update_boot_img=1
 	update_system=1
-	update_data=1
+	update_userdata=1
 	update_something=1
+fi
+
+if [[ $fastboot -eq 0 && $update_gpt -gt 0 ]]; then
+	echo "Not using fastboot: gpt flashing requires a reboot"
+	update_boot_img=0
+	update_system=0
+	update_userdata=0
+	update_cache=0
+	update_recovery=0
+	update_hwcfg=0
+	update_bsu=0
 fi
 
 # if nothing to do, warn and exit.
@@ -164,8 +159,8 @@ fi
 if [ $update_system -gt 0 ]; then
 	echo "     system"
 fi
-if [ $update_data -gt 0 ]; then
-	echo "     data (userdata)"
+if [ $update_userdata -gt 0 ]; then
+	echo "     userdata"
 fi
 if [ $update_cache -gt 0 ]; then
 	echo "     cache"
@@ -174,7 +169,7 @@ if [ $update_recovery -gt 0 ]; then
 	echo "     recovery"
 fi
 if [ $update_hwcfg -gt 0 ]; then
-	echo "     hwcfg"
+	echo "     hwcfg ($hwcfg_img)"
 fi
 if [ $update_bsu -gt 0 ]; then
 	echo "     bsu"
@@ -206,7 +201,7 @@ if [ $fastboot -gt 0 ]; then
 		./fastboot_tcp -t $fastboot_target flash boot ./boot.img
 	fi
 	if [ $update_hwcfg -gt 0 ]; then
-		./fastboot_tcp -t $fastboot_target flash hwcfg ./hwcfg_empty.img
+		./fastboot_tcp -t $fastboot_target flash hwcfg ./$hwcfg_img
 	fi
 	if [ $update_recovery -gt 0 ]; then
 		./fastboot_tcp -t $fastboot_target flash recovery ./recovery.img
@@ -217,8 +212,8 @@ if [ $fastboot -gt 0 ]; then
 	if [ $update_system -gt 0 ]; then
 		./fastboot_tcp -t $fastboot_target flash system ./unpack_android_boot/system.img
 	fi
-	if [ $update_data -gt 0 ]; then
-		./fastboot_tcp -t $fastboot_target flash data ./unpack_android_boot/userdata.img
+	if [ $update_userdata -gt 0 ]; then
+		./fastboot_tcp -t $fastboot_target flash userdata ./unpack_android_boot/userdata.img
 	fi
 	if [ $update_cache -gt 0 ]; then
 		./fastboot_tcp -t $fastboot_target flash cache ./unpack_android_boot/cache.img
@@ -228,21 +223,11 @@ if [ $fastboot -gt 0 ]; then
 	exit 0
 fi
 
-if [ $update_recovery -gt 0 ]; then
-	# cheat-sheet: make sure kernel is mounted as well...
-	update_boot_img=1
-fi
-if [ $update_boot_img -gt 0 ]; then
-	mkdir -p /mnt/kernel
-fi
-if [ $update_recovery -gt 0 ]; then
-	mkdir -p /mnt/recovery
-fi
 if [ $selinux -eq 0 ]; then
 	if [ $update_system -gt 0 ]; then
 		mkdir -p /mnt/system
 	fi
-	if [ $update_data -gt 0 ]; then
+	if [ $update_userdata -gt 0 ]; then
 		mkdir -p /mnt/data
 	fi
 	if [ $update_cache -gt 0 ]; then
@@ -250,27 +235,51 @@ if [ $selinux -eq 0 ]; then
 	fi
 fi
 
-echo "mounting partitions /dev/${partition_root}X to target system"
-if [ $update_boot_img -gt 0 ]; then
-	mount /dev/${partition_root}${partition_boot} /mnt/kernel
+# always update the gpt first if user wants to update gpt partition
+if [ $update_gpt -gt 0 ]; then
+	dd if=/mnt/work/gpt.bin of=/dev/${partition_root}
+	# Tried: echo 1 > /sys/block/${partition_root}/device/rescan
+	# Tried: mdev -s
+	echo "Please reboot with the new partition table before flashing anything else."
+	exit 1
 fi
-if [ $update_recovery -gt 0 ]; then
-	mount /dev/${partition_root}${partition_recovery} /mnt/recovery
-fi
-if [ $selinux -eq 0 ]; then
-	if [ $update_system -gt 0 ]; then
-		mount /dev/${partition_root}${partition_system} /mnt/system
+
+# Arguments:    $1=name
+# Return value: stdout=index
+# Usage:        myindex=$(get_partition_index mypartition)
+function get_partition_index {
+	index=$(fdisk -l /dev/sda | grep $1 | awk {'print $1'})
+	if [ "$index" == "" ]; then
+		echo "Unable to find partition $1" >&2
+		exit 1
 	fi
-	if [ $update_data -gt 0 ]; then
-		mount /dev/${partition_root}${partition_data} /mnt/data
+	echo $index
+}
+
+partition_boot=$(get_partition_index boot)
+partition_system=$(get_partition_index system)
+partition_userdata=$(get_partition_index userdata)
+partition_cache=$(get_partition_index cache)
+partition_recovery=$(get_partition_index recovery)
+partition_hwcfg=$(get_partition_index hwcfg)
+partition_bsu=$(get_partition_index bsu)
+
+# update the other paritions after gpt has been updated
+if [ $selinux -eq 0 ]; then
+	echo "mounting partitions /dev/${partition_root}X to target system"
+	if [ $update_system -gt 0 ]; then
+		mount -t ext4 /dev/${partition_root}${partition_system} /mnt/system
+	fi
+	if [ $update_userdata -gt 0 ]; then
+		mount -t ext4 /dev/${partition_root}${partition_userdata} /mnt/data
 	fi
 	if [ $update_cache -gt 0 ]; then
-		mount /dev/${partition_root}${partition_cache} /mnt/cache
+		mount -t ext4 /dev/${partition_root}${partition_cache} /mnt/cache
 	fi
 	if [ $update_system -gt 0 ]; then
 		rm -rf /mnt/system/*
 	fi
-	if [ $update_data -gt 0 ]; then
+	if [ $update_userdata -gt 0 ]; then
 		rm -rf /mnt/data/*
 	fi
 	if [ $update_cache -gt 0 ]; then
@@ -281,8 +290,8 @@ fi
 cd /mnt/work/
 
 if [ $update_boot_img -gt 0 ]; then
-	echo "copying boot.img..."
-	cp ./boot.img /mnt/kernel/
+	echo "copying boot partition..."
+	dd if=./boot.img of=/dev/${partition_root}${partition_boot} bs=4M
 fi
 
 if [ $update_system -gt 0 ]; then
@@ -297,10 +306,10 @@ if [ $update_system -gt 0 ]; then
 	fi
 fi
 
-if [ $update_data -gt 0 ]; then
-	echo "copying data partition..."
+if [ $update_userdata -gt 0 ]; then
+	echo "copying userdata partition..."
 	if [ $selinux -gt 0 ]; then
-		dd if=./unpack_android_boot/userdata.raw.img of=/dev/${partition_root}${partition_data} bs=4M
+		dd if=./unpack_android_boot/userdata.raw.img of=/dev/${partition_root}${partition_userdata} bs=4M
 	else
 		mkdir -p ./unpack_android_boot/data
 		mount -t ext4 -o loop ./unpack_android_boot/userdata.raw.img ./unpack_android_boot/data
@@ -322,23 +331,26 @@ if [ $update_cache -gt 0 ]; then
 fi
 
 if [ $update_recovery -gt 0 ]; then
-	echo "copying recovery.img (in recovery partition and kernel partition)..."
-	cp ./recovery.img /mnt/recovery/
-	cp ./recovery.img /mnt/kernel/
+	echo "copying recovery partition..."
+	dd if=./recovery.img of=/dev/${partition_root}${partition_recovery} bs=4M
+fi
+
+if [ $update_hwcfg -gt 0 ]; then
+	echo "copying hwcfg partition..."
+	dd if=./$hwcfg_img of=/dev/${partition_root}${partition_hwcfg}
+fi
+
+if [ $update_bsu -gt 0 ]; then
+	echo "copying bsu partition..."
+	dd if=./loaders/android_bsu.elf of=/dev/${partition_root}${partition_bsu}
 fi
 
 echo "clean up..."
-if [ $update_boot_img -gt 0 ]; then
-	umount /mnt/kernel
-fi
-if [ $update_recovery -gt 0 ]; then
-	umount /mnt/recovery
-fi
 if [ $selinux -eq 0 ]; then
 	if [ $update_system -gt 0 ]; then
 		umount /mnt/system
 	fi
-	if [ $update_data -gt 0 ]; then
+	if [ $update_userdata -gt 0 ]; then
 		umount /mnt/data
 	fi
 	if [ $update_cache -gt 0 ]; then

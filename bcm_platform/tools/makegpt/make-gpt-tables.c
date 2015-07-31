@@ -51,7 +51,7 @@ static void Usage(void)
     PRINT( "\n");
     PRINT( "  startaddr can be '-' to guess based on previous startaddr+size.\n");
     PRINT( "  size can be '-' to guess based on next startaddr.\n");
-    PRINT( "  size can be a hex value or a value with suffix K, M, or G.\n");
+    PRINT( "  startaddr and size can be a hex value or a value with suffix K, M, or G.\n");
     PRINT( "\n");
     PRINT( "Example: makegpt -a -b 0x60000 -o gpt_alt.bin -s 0x1e0000000 -- "
              "image1,0x10000,0x10000,0 "
@@ -151,6 +151,7 @@ int main(int argc, char **argv)
         char *startStr = NULL;
         char *sizeStr = NULL;
         char *attrStr = NULL;
+        char *endptr = NULL;
         uint64_t start;
         uint64_t attr;
 
@@ -158,7 +159,7 @@ int main(int argc, char **argv)
         if ((startStr = strchr(partitionNameStr, ',')) != NULL)
         {
             *startStr++ = '\0';
-            start = strtoull(startStr, NULL, 0);
+            start = strtoull(startStr, &endptr, 0);
             if (start==0 && index(startStr, '-'))
             {
                 part_guess_start[imgcount]=1;
@@ -166,6 +167,20 @@ int main(int argc, char **argv)
             else
             {
                 part_guess_start[imgcount]=0;
+                /* Handle suffixes */
+                switch (*endptr)
+                {
+                case 'k':
+                case 'K':
+                    start *= 1024;
+                    break;
+                case 'M':
+                    start *= 1024*1024;
+                    break;
+                case 'G':
+                    start *= 1024*1024*1024;
+                    break;
+                }
             }
         }
         else
@@ -176,7 +191,6 @@ int main(int argc, char **argv)
         }
         if ((sizeStr = strchr(startStr, ',')) != NULL)
         {
-            char *endptr;
             *sizeStr++ = '\0';
             size = strtoull(sizeStr, &endptr, 0);
             if (size==0 && index(sizeStr, '-'))
@@ -240,7 +254,7 @@ int main(int argc, char **argv)
        4 partition table entries. However, we'll reserve more space so that
        the gpt binary can grow without impacting the last partition.
 
-       Similar to sgdisk, we'll reserve 2 sectors for the header + 32 sectors
+       Similar to sgdisk, we'll reserve 1 sector for the header + 32 sectors
        for 128 partition table entries.
 
        At this time, efi_populate_header doesn't take advantage of all that
@@ -248,9 +262,9 @@ int main(int argc, char **argv)
        regenerate the GPT at the correct offset within our reserved space.
     */
     if (imgcount <= 128)
-        agpt_reserved_size = EFI_SECTORSIZE*(2+EFI_SECTORADDR(EFI_PART2SECT(128)));
+        agpt_reserved_size = EFI_SECTORSIZE*(1+EFI_SECTORADDR(EFI_PART2SECT(128)));
     else
-        agpt_reserved_size = EFI_SECTORSIZE*(2+EFI_SECTORADDR(EFI_PART2SECT(imgcount)));
+        agpt_reserved_size = EFI_SECTORSIZE*(1+EFI_SECTORADDR(EFI_PART2SECT(imgcount)));
     PDEBUG("agpt_reserved_size 0x%"PRIx64"\n", agpt_reserved_size);
 
     /* Finalize partition start and sizes */
