@@ -82,6 +82,7 @@
 #define RUNNER_LMK_THRESHOLD           (10)
 #define NUM_NX_OBJS                    (128)
 #define MAX_NX_OBJS                    (2048)
+#define MIN_PLATFORM_DEC               (2)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
 #define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
@@ -398,6 +399,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
 {
    int i, j;
    char value[PROPERTY_VALUE_MAX];
+   int dec_used = 0;
 
    /* 1. additional display(s). */
    if (property_get(NX_TRIM_DISP, value, NULL)) {
@@ -457,9 +459,16 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 7. pip. */
+   for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+      if (pMemConfigSettings->videoDecoder[i].used) {
+         ++dec_used;
+      }
+   }
    if (property_get(NX_TRIM_PIP, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         pMemConfigSettings->videoDecoder[1].used = false;
+         if (dec_used > MIN_PLATFORM_DEC) {
+            pMemConfigSettings->videoDecoder[1].used = false;
+         }
          pMemConfigSettings->display[0].window[1].used = false;
       }
    }
