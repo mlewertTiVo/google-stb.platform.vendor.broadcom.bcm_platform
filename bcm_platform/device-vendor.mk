@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-LOCAL_STEM := bcm_platform/device-partial.mk
 
 # always try to build from sources if we have them available.
 #
@@ -38,6 +37,14 @@ $(call first-makefiles-under, vendor/widevine)
 #
 else
 
-$(call inherit-product-if-exists, vendor/widevine/$(LOCAL_STEM))
+PRODUCT_COPY_FILES += \
+    vendor/broadcom/stb/release_prebuilts/com.google.widevine.software.drm.xml:system/etc/permissions/com.google.widevine.software.drm.xml:widevine \
+    vendor/broadcom/stb/release_prebuilts/com.google.widevine.software.drm.jar:system/framework/com.google.widevine.software.drm.jar:widevine \
+    vendor/broadcom/stb/release_prebuilts/libdrmdecrypt.so:system/lib/libdrmdecrypt.so:widevine \
+    vendor/broadcom/stb/release_prebuilts/libdrmwvmplugin.so:system/lib/drm/libdrmwvmplugin.so:widevine \
+    vendor/broadcom/stb/release_prebuilts/libwvdrm_L3.so:system/vendor/lib/libwvdrm_L3.so:widevine \
+    vendor/broadcom/stb/release_prebuilts/libwvm.so:system/vendor/lib/libwvm.so:widevine \
+    vendor/broadcom/stb/release_prebuilts/libWVStreamControlAPI_L3.so:system/vendor/lib/libWVStreamControlAPI_L3.so:widevine \
+    vendor/broadcom/stb/release_prebuilts/libwvdrmengine.so:system/vendor/lib/mediadrm/libwvdrmengine.so:widevine
 
 endif
