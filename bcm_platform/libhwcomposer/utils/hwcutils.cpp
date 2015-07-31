@@ -22,7 +22,7 @@
 #include "nxclient.h"
 
 extern "C" NEXUS_SurfaceHandle hwc_to_nsc_surface(int width, int height, int stride, NEXUS_PixelFormat format,
-    bool is_mma, unsigned handle, uint8_t *data)
+    bool is_mma, unsigned handle, unsigned offset, uint8_t *data)
 {
     NEXUS_SurfaceHandle shdl = NULL;
     NEXUS_SurfaceCreateSettings createSettings;
@@ -33,11 +33,12 @@ extern "C" NEXUS_SurfaceHandle hwc_to_nsc_surface(int width, int height, int str
     createSettings.height        = height;
     createSettings.pitch         = stride;
     createSettings.managedAccess = false;
+
     if (!is_mma && data) {
         createSettings.pMemory = data;
     } else if (is_mma && handle) {
         createSettings.pixelMemory = (NEXUS_MemoryBlockHandle) handle;
-        createSettings.pixelMemoryOffset = 0;
+        createSettings.pixelMemoryOffset = offset;
     }
 
     shdl = NEXUS_Surface_Create(&createSettings);

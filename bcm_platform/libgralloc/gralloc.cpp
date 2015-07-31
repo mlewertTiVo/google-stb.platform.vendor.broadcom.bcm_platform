@@ -30,7 +30,6 @@
 #include <dlfcn.h>
 
 #include <cutils/log.h>
-#include <cutils/atomic.h>
 
 #include <hardware/hardware.h>
 #include <hardware/gralloc.h>
@@ -69,7 +68,6 @@ static int gralloc_default_align = 0;
 static int gralloc_log_map = 0;
 static int gralloc_conv_time = 0;
 static int gralloc_boom_chk = 0;
-static int gralloc_disable_glplane = 0;
 
 static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
 static NEXUS_Graphics2DHandle hGraphics = NULL;
@@ -92,7 +90,6 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 #define NX_GR_CONV_TIME         "ro.gr.conv.time"
 #define NX_GR_BOOM_CHK          "ro.gr.boom.chk"
 #define NX_MMA_MGMT_MODE_DEF    "locked"
-#define NX_GR_DISABLE_GLPLANE   "ro.gr.disable.glplane"
 
 #define NEXUS_JOIN_CLIENT_PROCESS "gralloc"
 static void gralloc_load_lib(void)
@@ -142,10 +139,6 @@ static void gralloc_load_lib(void)
 
    if (property_get(NX_GR_CONV_TIME, value, "0")) {
       gralloc_conv_time = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
-   }
-
-   if (property_get(NX_GR_DISABLE_GLPLANE, value, "0")) {
-      gralloc_disable_glplane = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
 #if defined(V3D_VARIANT_v3d)
@@ -256,7 +249,7 @@ BKNI_EventHandle gralloc_g2d_evt(void)
    return hCheckpointEvent;
 }
 
-static void gralloc_bzero(int is_mma, PSHARED_DATA pSharedData, int plane)
+static void gralloc_bzero(int is_mma, PSHARED_DATA pSharedData)
 {
     NEXUS_Graphics2DHandle gfx = gralloc_g2d_hdl();
     BKNI_EventHandle event = gralloc_g2d_evt();
@@ -271,11 +264,11 @@ static void gralloc_bzero(int is_mma, PSHARED_DATA pSharedData, int plane)
        BM2MC_PACKET_BlendFactor_eZero, BM2MC_PACKET_BlendFactor_eZero, false, BM2MC_PACKET_BlendFactor_eZero};
 
     if (is_mma) {
-       block_handle = (NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr;
+       block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
        NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
        NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
     } else {
-       pMemory = NEXUS_OffsetToCachedAddr((NEXUS_Addr)pSharedData->planes[plane].physAddr);
+       pMemory = NEXUS_OffsetToCachedAddr((NEXUS_Addr)pSharedData->container.physAddr);
     }
 
     if (pMemory == NULL) {
@@ -296,10 +289,10 @@ static void gralloc_bzero(int is_mma, PSHARED_DATA pSharedData, int plane)
                  BM2MC_PACKET_PacketOutputFeeder *pPacket = (BM2MC_PACKET_PacketOutputFeeder *)next;
                  BM2MC_PACKET_INIT(pPacket, OutputFeeder, false);
                  pPacket->plane.address = physAddr;
-                 pPacket->plane.pitch   = pSharedData->planes[plane].stride;
-                 pPacket->plane.format  = getBm2mcPixelFormat(pSharedData->planes[plane].format);
-                 pPacket->plane.width   = pSharedData->planes[plane].width;
-                 pPacket->plane.height  = pSharedData->planes[plane].height;
+                 pPacket->plane.pitch   = pSharedData->container.stride;
+                 pPacket->plane.format  = getBm2mcPixelFormat(pSharedData->container.format);
+                 pPacket->plane.width   = pSharedData->container.width;
+                 pPacket->plane.height  = pSharedData->container.height;
                  next = ++pPacket;
               }
               {
@@ -321,8 +314,8 @@ static void gralloc_bzero(int is_mma, PSHARED_DATA pSharedData, int plane)
                  BM2MC_PACKET_INIT(pPacket, FillBlit, true);
                  pPacket->rect.x        = 0;
                  pPacket->rect.y        = 0;
-                 pPacket->rect.width    = pSharedData->planes[plane].width;
-                 pPacket->rect.height   = pSharedData->planes[plane].height;
+                 pPacket->rect.width    = pSharedData->container.width;
+                 pPacket->rect.height   = pSharedData->container.height;
                  next = ++pPacket;
               }
               errCode = NEXUS_Graphics2D_PacketWriteComplete(gfx, (uint8_t*)next - (uint8_t*)pktBuffer);
@@ -341,7 +334,7 @@ static void gralloc_bzero(int is_mma, PSHARED_DATA pSharedData, int plane)
            }
            pthread_mutex_unlock(pMutex);
         } else {
-           size_t roundedSize = (pSharedData->planes[plane].size + 0xFFF) & ~0xFFF;
+           size_t roundedSize = (pSharedData->container.size + 0xFFF) & ~0xFFF;
 
            NEXUS_FlushCache(pMemory, roundedSize);
            pthread_mutex_lock(pMutex);
@@ -363,9 +356,9 @@ static void gralloc_bzero(int is_mma, PSHARED_DATA pSharedData, int plane)
     }
 
     if (!done) {
-       bzero(pMemory, pSharedData->planes[plane].size);
+       bzero(pMemory, pSharedData->container.size);
     } else if (!is_mma) {
-       NEXUS_FlushCache(pMemory, pSharedData->planes[plane].size);
+       NEXUS_FlushCache(pMemory, pSharedData->container.size);
     }
 
 out_release:
@@ -440,23 +433,35 @@ struct private_module_t HAL_MODULE_INFO_SYM = {
 
 /*****************************************************************************/
 
-NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt,
-                                      int *bpp)
+NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt, int *bpp)
 {
    NEXUS_PixelFormat pf;
    int b;
    switch (pixelFmt) {
-      case HAL_PIXEL_FORMAT_RGBA_8888:    b = 4;   pf = NEXUS_PixelFormat_eA8_B8_G8_R8;   break;
-      case HAL_PIXEL_FORMAT_RGBX_8888:    b = 4;   pf = NEXUS_PixelFormat_eX8_R8_G8_B8;   break;
-      case HAL_PIXEL_FORMAT_RGB_888:      b = 4;   pf = NEXUS_PixelFormat_eX8_R8_G8_B8;   break;
-      case HAL_PIXEL_FORMAT_RGB_565:      b = 2;   pf = NEXUS_PixelFormat_eR5_G6_B5;      break;
+      case HAL_PIXEL_FORMAT_RGBA_8888:
+         b = 4;
+         pf = NEXUS_PixelFormat_eA8_B8_G8_R8;
+      break;
+      case HAL_PIXEL_FORMAT_RGBX_8888:
+      case HAL_PIXEL_FORMAT_RGB_888:
       case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
-                                          b = 4;   pf = NEXUS_PixelFormat_eX8_R8_G8_B8;   break;
-      // yv12 planar - nexus does not support this natively, instead we return the expected
-      //               converted to packed format that eventually we would produce.
-      case HAL_PIXEL_FORMAT_YV12:         b = 2;   pf = NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8; break;
-      default:                            b = 0;   pf = NEXUS_PixelFormat_eUnknown;
-                                          ALOGE("%s %d FORMAT [ %d ] NOT SUPPORTED ",__FUNCTION__,__LINE__,pixelFmt); break;
+         b = 4;
+         pf = NEXUS_PixelFormat_eX8_R8_G8_B8;
+      break;
+      case HAL_PIXEL_FORMAT_RGB_565:
+         b = 2;
+         pf = NEXUS_PixelFormat_eR5_G6_B5;
+      break;
+      case HAL_PIXEL_FORMAT_YV12:
+         /* no native nexus support, return the 'converted for nexus consumption'. */
+         b = 2;
+         pf = NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8;
+      break;
+      default:
+         b = 0;
+         pf = NEXUS_PixelFormat_eUnknown;
+         ALOGE("%s %d FORMAT [ %d ] NOT SUPPORTED ",__FUNCTION__,__LINE__,pixelFmt);
+      break;
    }
 
    *bpp = b;
@@ -467,136 +472,126 @@ BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt)
 {
    BM2MC_PACKET_PixelFormat pf;
    switch (pixelFmt) {
-      case NEXUS_PixelFormat_eA8_B8_G8_R8:     pf = BM2MC_PACKET_PixelFormat_eA8_B8_G8_R8;   break;
-      case HAL_PIXEL_FORMAT_RGBA_8888:         pf = BM2MC_PACKET_PixelFormat_eA8_B8_G8_R8;   break;
-      case HAL_PIXEL_FORMAT_RGBX_8888:         pf = BM2MC_PACKET_PixelFormat_eX8_R8_G8_B8;   break;
-      case HAL_PIXEL_FORMAT_RGB_888:           pf = BM2MC_PACKET_PixelFormat_eX8_R8_G8_B8;   break;
-      case HAL_PIXEL_FORMAT_RGB_565:           pf = BM2MC_PACKET_PixelFormat_eR5_G6_B5;      break;
+      case HAL_PIXEL_FORMAT_RGBA_8888:
+         pf = BM2MC_PACKET_PixelFormat_eA8_B8_G8_R8;
+      break;
+      case HAL_PIXEL_FORMAT_RGBX_8888:
+      case HAL_PIXEL_FORMAT_RGB_888:
       case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
-                                               pf = BM2MC_PACKET_PixelFormat_eX8_R8_G8_B8;   break;
-      case NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8: pf = BM2MC_PACKET_PixelFormat_eY08_Cb8_Y18_Cr8; break;
-      case HAL_PIXEL_FORMAT_YV12:              pf = BM2MC_PACKET_PixelFormat_eY08_Cb8_Y18_Cr8; break;
-      default:                                 pf = BM2MC_PACKET_PixelFormat_eUnknown;
-                                           ALOGE("%s %d FORMAT [ %d ] NOT SUPPORTED ",__FUNCTION__,__LINE__,pixelFmt); break;
+         pf = BM2MC_PACKET_PixelFormat_eX8_R8_G8_B8;
+      break;
+      case HAL_PIXEL_FORMAT_RGB_565:
+         pf = BM2MC_PACKET_PixelFormat_eR5_G6_B5;
+      break;
+      case HAL_PIXEL_FORMAT_YV12:
+         /* no native bm2mc support, return the 'converted for bm2mc consumption'. */
+         pf = BM2MC_PACKET_PixelFormat_eY08_Cb8_Y18_Cr8;
+      break;
+      default:
+         pf = BM2MC_PACKET_PixelFormat_eUnknown;
+         ALOGE("%s %d FORMAT [ %d ] NOT SUPPORTED ",__FUNCTION__,__LINE__,pixelFmt);
+      break;
    }
 
    return pf;
 }
 
-static
-unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
-                                   int fd,
-                                   int width,
-                                   int height,
-                                   int bpp,
-                                   int format)
+static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pSharedData)
 {
    BEGL_PixmapInfo bufferRequirements;
 #if defined(V3D_VARIANT_v3d)
    BEGL_BufferSettings bufferConstrainedRequirements;
 #endif
-   unsigned int phyAddr = 0;
-   struct nx_ashmem_alloc ashmem_alloc;
+   int rc = -EINVAL;
 
-   if (!allocContext) {
-      return -EINVAL;
-   }
+   memset(&bufferRequirements, 0, sizeof(BEGL_PixmapInfo));
+   bufferRequirements.width = pSharedData->container.width;
+   bufferRequirements.height = pSharedData->container.height;
+   bufferRequirements.format = BEGL_BufferFormat_INVALID;
 
-   bufferRequirements.width = width;
-   bufferRequirements.height = height;
-
-   // WARNING! GL only has three renderable surfaces, premote 888 to X888
-   switch (format)
-   {
-   case HAL_PIXEL_FORMAT_RGBA_8888:  bufferRequirements.format = BEGL_BufferFormat_eA8B8G8R8;     break;
-   case HAL_PIXEL_FORMAT_RGBX_8888:  bufferRequirements.format = BEGL_BufferFormat_eX8B8G8R8;     break;
-   case HAL_PIXEL_FORMAT_RGB_888:    bufferRequirements.format = BEGL_BufferFormat_eX8B8G8R8;     break;
-   case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
-                                     bufferRequirements.format = BEGL_BufferFormat_eX8B8G8R8;     break;
-   case HAL_PIXEL_FORMAT_RGB_565:    bufferRequirements.format = BEGL_BufferFormat_eR5G6B5;       break;
-
-   default:                          bufferRequirements.format = BEGL_BufferFormat_INVALID;       break;
-   }
-
-   //
-   // this surface may not necessarily be used by GL,
-   // so it can still succeed, it will however fail at eglCreateImageKHR()
-   //
-   if (bufferRequirements.format != BEGL_BufferFormat_INVALID) {
-      int ret;
-      // We need to call the V3D driver buffer get requirements function in order to
-      // get the parameters of the shadow buffer that we are creating.
-      if (gralloc_v3d_get_nexus_client_context() == NULL) {
-         ALOGE("%s: no valid client context...", __FUNCTION__);
-      }
-
+   switch (pSharedData->container.format) {
+      case HAL_PIXEL_FORMAT_RGBA_8888:
+         bufferRequirements.format = BEGL_BufferFormat_eA8B8G8R8;
+      break;
+      case HAL_PIXEL_FORMAT_RGBX_8888:
+      case HAL_PIXEL_FORMAT_RGB_888:
+      case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
+         bufferRequirements.format = BEGL_BufferFormat_eX8B8G8R8;
+      break;
+      case HAL_PIXEL_FORMAT_RGB_565:
+         bufferRequirements.format = BEGL_BufferFormat_eR5G6B5;
+      break;
+      case HAL_PIXEL_FORMAT_YV12:
 #if defined(V3D_VARIANT_v3d)
-      dyn_BEGLint_BufferGetRequirements(&bufferRequirements, &bufferConstrainedRequirements);
-      allocContext->oglStride = bufferConstrainedRequirements.pitchBytes;
-      allocContext->oglFormat = bufferConstrainedRequirements.format;
-      allocContext->oglSize   = bufferConstrainedRequirements.totalByteSize;
+         bufferRequirements.format = BEGL_BufferFormat_eYV12_Texture;
 #else
-      allocContext->oglStride = width * bpp;
-      allocContext->oglFormat = bufferRequirements.format;
-      allocContext->oglSize   = height * allocContext->oglStride;
+         bufferRequirements.format = BEGL_BufferFormat_eYV12;
 #endif
-
-      memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
-      ashmem_alloc.size = allocContext->oglSize;
-      ashmem_alloc.align = gralloc_default_align;
-      ret = ioctl(fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
-      if (ret < 0) {
-         return 0;
-      };
-
-      phyAddr = (NEXUS_Addr)ioctl(fd, NX_ASHMEM_GETMEM);
-   }
-   else {
-      allocContext->oglStride = 0;
-      allocContext->oglFormat = 0;
-      allocContext->oglSize   = 0;
+      break;
+      default:
+      break;
    }
 
-   return phyAddr;
+   switch (bufferRequirements.format) {
+      case BEGL_BufferFormat_INVALID:
+         hnd->oglStride = 0;
+         hnd->oglFormat = 0;
+         hnd->oglSize   = 0;
+      break;
+#if defined(V3D_VARIANT_v3d)
+      case BEGL_BufferFormat_eYV12_Texture:
+#else
+      case BEGL_BufferFormat_eYV12:
+#endif
+         hnd->oglStride = pSharedData->container.stride;
+         hnd->oglFormat = bufferRequirements.format;
+         hnd->oglSize   = pSharedData->container.size;
+         rc = 0;
+      break;
+      default:
+#if defined(V3D_VARIANT_v3d)
+         if (gralloc_v3d_get_nexus_client_context() == NULL) {
+            ALOGE("%s: no valid client context...", __FUNCTION__);
+         }
+         dyn_BEGLint_BufferGetRequirements(&bufferRequirements, &bufferConstrainedRequirements);
+         hnd->oglStride = bufferConstrainedRequirements.pitchBytes;
+         hnd->oglFormat = bufferConstrainedRequirements.format;
+         hnd->oglSize   = bufferConstrainedRequirements.totalByteSize;
+#else
+         hnd->oglStride = pSharedData->container.width * pSharedData->container.bpp;
+         hnd->oglFormat = bufferRequirements.format;
+         hnd->oglSize   = pSharedData->container.height * hnd->oglStride;
+#endif
+         rc = 0;
+      break;
+   }
+
+out:
+   return rc;
 }
 
-static void getBufferDataFromFormat(int *alignment, int w, int h, int bpp, int format, int *pStride, int *size, int *extra_size)
+static void getBufferDataFromFormat(int *alignment, int w, int h, int bpp, int format, int *pStride, int *size)
 {
-   /* note: alignment - as 'input' provides an indication of what the platform expects,
-            may be changed as 'output' based on the format requirements.
-   */
-
    switch (format) {
       case HAL_PIXEL_FORMAT_RGBA_8888:
       case HAL_PIXEL_FORMAT_RGBX_8888:
       case HAL_PIXEL_FORMAT_RGB_888:
       case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
       case HAL_PIXEL_FORMAT_RGB_565:
-      {
-          int bpr = (w*bpp + (*alignment-1)) & ~(*alignment-1);
-          *size = bpr * h;
-          *pStride = bpr / bpp;
-          *extra_size = 0;
-      }
+         *pStride = ((w*bpp + (*alignment-1)) & ~(*alignment-1)) / bpp;
+         *size = ((w*bpp + (*alignment-1)) & ~(*alignment-1)) * h;
       break;
-
       case HAL_PIXEL_FORMAT_YV12:
-      {
-          // force alignment according to (android) format definition.
-          *alignment = 16;
-          // use y-stride: ALIGN(w, 16)
-          *pStride = (w + (*alignment-1)) & ~(*alignment-1);
-          // size: y-stride * h + 2 * (c-stride * h/2), with c-stride: ALIGN(y-stride/2, 16)
-          *size = (*pStride * h) + 2 * ((h/2) * ((*pStride/2 + (*alignment-1)) & ~(*alignment-1)));
-          // extra_size: stride * height * bpp
-          *extra_size = *pStride * bpp * h;
-      }
+         // force alignment according to (android) format definition.
+         *alignment = 16;
+         // use y-stride: ALIGN(w, 16)
+         *pStride = (w + (*alignment-1)) & ~(*alignment-1);
+         // size: y-stride * h + 2 * (c-stride * h/2), with c-stride: ALIGN(y-stride/2, 16)
+         *size = (*pStride * h) + 2 * ((h/2) * ((*pStride/2 + (*alignment-1)) & ~(*alignment-1)));
       break;
-
       default:
-          *pStride = 0;
-          *size = 0;
-          *extra_size = 0;
+         *pStride = 0;
+         *size = 0;
       break;
    }
 }
@@ -609,18 +604,14 @@ gralloc_alloc_buffer(alloc_device_t* dev,
                     buffer_handle_t* pHandle,
                     int *pStride)
 {
-   int bpp = 0, err = 0, ret = 0, fd = -1, fd2 = -1, fd3 = -1, fd4 = -1;
-   int size, extra_size, fmt_align;
+   int bpp = 0, err = 0, ret = 0, fd = -1, fd2 = -1;
+   int size, fmt_align, fmt_set = GR_NONE;
    NEXUS_PixelFormat nxFormat = getNexusPixelFormat(format, &bpp);
    PSHARED_DATA pSharedData = NULL;
    NEXUS_MemoryBlockHandle block_handle = NULL;
    char value[PROPERTY_VALUE_MAX];
    char value2[PROPERTY_VALUE_MAX];
    void *pMemory;
-   bool needs_yv12 = false;
-   bool needs_ycrcb = false;
-   bool needs_rgb = false;
-   bool needs_none = false;
    struct nx_ashmem_alloc ashmem_alloc;
 
    private_handle_t *hnd = NULL;
@@ -645,18 +636,8 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       err = -EINVAL;
       goto error;
    }
-   fd3 = open(value2, O_RDWR, 0);
-   if ((fd3 == -1) || (!fd3)) {
-      err = -EINVAL;
-      goto error;
-   }
-   fd4 = open(value2, O_RDWR, 0);
-   if ((fd4 == -1) || (!fd4)) {
-      err = -EINVAL;
-      goto error;
-   }
 
-   hnd = new private_handle_t(fd, fd2, fd3, fd4, 0);
+   hnd = new private_handle_t(fd, fd2, 0);
    if (hnd == NULL) {
       err = -ENOMEM;
       goto error;
@@ -670,7 +651,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 #endif
 
    fmt_align = hnd->alignment;
-   getBufferDataFromFormat(&fmt_align, w, h, bpp, format, pStride, &size, &extra_size);
+   getBufferDataFromFormat(&fmt_align, w, h, bpp, format, pStride, &size);
    if (fmt_align != hnd->alignment) {
       hnd->alignment = fmt_align;
    }
@@ -684,7 +665,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       goto error;
    };
 
-   hnd->sharedData = (NEXUS_Addr)ioctl(fd2, NX_ASHMEM_GETMEM);
+   hnd->sharedData = (NEXUS_Addr)ioctl(hnd->fd2, NX_ASHMEM_GETMEM);
    if (hnd->sharedData == 0) {
       err = -ENOMEM;
       goto error;
@@ -708,245 +689,102 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    memset(pSharedData, 0, sizeof(SHARED_DATA));
 
    hnd->usage = usage;
-   pSharedData->planes[DEFAULT_PLANE].width     = w;
-   pSharedData->planes[DEFAULT_PLANE].height    = h;
-   pSharedData->planes[DEFAULT_PLANE].bpp       = bpp;
-   pSharedData->planes[DEFAULT_PLANE].format    = format;
-   pSharedData->planes[DEFAULT_PLANE].size      = size;
-   pSharedData->planes[DEFAULT_PLANE].allocSize = size;
-   pSharedData->planes[DEFAULT_PLANE].stride    = *pStride;
+   pSharedData->container.width     = w;
+   pSharedData->container.height    = h;
+   pSharedData->container.bpp       = bpp;
+   pSharedData->container.format    = format;
+   pSharedData->container.size      = size;
+   pSharedData->container.allocSize = size;
+   pSharedData->container.stride    = *pStride;
+
+   if (setupGLSuitableBuffer(hnd, pSharedData)) {
+      ALOGE("%s: failed to setup GL buffer, aborting...", __FUNCTION__);
+      return -EINVAL;
+   }
 
    if (format != HAL_PIXEL_FORMAT_YV12) {
-      // standard graphic buffer.
-      pSharedData->planes[DEFAULT_PLANE].physAddr =
-         allocGLSuitableBuffer(hnd, hnd->fd, w, h, bpp, format);
-      pSharedData->planes[DEFAULT_PLANE].allocSize = hnd->oglSize;
-      pSharedData->planes[DEFAULT_PLANE].stride = hnd->oglStride;
-
-      if (hnd->is_mma) {
-         if (hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) {
-            NEXUS_Addr physAddr;
-            NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr, &physAddr);
-            hnd->nxSurfacePhysicalAddress = (unsigned)physAddr;
-            pMemory = NULL;
-            NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr, &pMemory);
-            hnd->nxSurfaceAddress = (unsigned)pMemory;
-         } else {
-            hnd->nxSurfacePhysicalAddress = (unsigned)0;
-            hnd->nxSurfaceAddress = (unsigned)pMemory;
-         }
-      } else {
-         hnd->nxSurfacePhysicalAddress = pSharedData->planes[DEFAULT_PLANE].physAddr;
-         hnd->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
-      }
-
-      if (gralloc_log_mapper()) {
-         NEXUS_Addr physAddr;
-         unsigned sharedPhysAddr = hnd->sharedData;
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-            sharedPhysAddr = (unsigned)physAddr;
-         }
-         ALOGI("alloc (ST): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
-               hnd->is_mma,
-               getpid(),
-               hnd->sharedData,
-               sharedPhysAddr,
-               pSharedData->planes[DEFAULT_PLANE].physAddr,
-               hnd->nxSurfacePhysicalAddress,
-               pSharedData->planes[DEFAULT_PLANE].size,
-               hnd->nxSurfaceAddress);
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_UnlockOffset(block_handle);
-         }
-      }
-
+      fmt_set |= GR_STANDARD;
    } else if ((format == HAL_PIXEL_FORMAT_YV12) && !(usage & GRALLOC_USAGE_PRIVATE_0)) {
-      // standard yv12 buffer for multimedia, need also a secondary buffer for
-      // planar to packed conversion when going through the hwc/nsc.
-      needs_yv12 = true;
-      if ((usage & GRALLOC_USAGE_HW_COMPOSER) &&
-          (usage & GRALLOC_USAGE_SW_WRITE_MASK) &&
-          w <= DATA_PLANE_MAX_WIDTH &&
-          h <= DATA_PLANE_MAX_HEIGHT) {
-         needs_ycrcb = true;
-      }
+      fmt_set |= GR_YV12;
    } else if ((format == HAL_PIXEL_FORMAT_YV12) && (usage & GRALLOC_USAGE_PRIVATE_0)) {
       if (usage & GRALLOC_USAGE_SW_READ_OFTEN) {
          // private multimedia buffer, we only need a yv12 plane in case cpu is intending to read
          // the content, eg decode->encode type of scenario; yv12 data is produced during lock.
-         needs_yv12 = true;
+         fmt_set |= GR_YV12;
       } else {
-         needs_none = true;
+         fmt_set = GR_NONE;
       }
    }
-
-   if (needs_yv12) {
-      memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
+   memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
+   ashmem_alloc.align = gralloc_default_align;
+   if ((fmt_set & GR_YV12) == GR_YV12) {
       ashmem_alloc.size = size;
-      ashmem_alloc.align = gralloc_default_align;
-      ret = ioctl(hnd->fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
-      if (ret >= 0) {
-         pSharedData->planes[DEFAULT_PLANE].physAddr =
-             (NEXUS_Addr)ioctl(hnd->fd, NX_ASHMEM_GETMEM);
-      }
-
-      if ((usage & GRALLOC_USAGE_HW_TEXTURE) && !gralloc_disable_glplane) {
-         // 1) vc5 suports 4k texture and does not require special
-         //    alignment considerations.
-         // 2) vc4 does only support 2k textures and does require
-         //    special alignmnent considerations.
+      if (usage & GRALLOC_USAGE_HW_TEXTURE) {
          if ((w <= DATA_PLANE_MAX_WIDTH &&
               h <= DATA_PLANE_MAX_HEIGHT)) {
-            needs_rgb = true;
+            fmt_set |= GR_HWTEX;
          }
       }
-
-      if (gralloc_log_mapper()) {
-         NEXUS_Addr physAddr;
-         unsigned sharedPhysAddr = hnd->sharedData;
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-            sharedPhysAddr = (unsigned)physAddr;
-         }
-         ALOGI("alloc (MM): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
-               hnd->is_mma,
-               getpid(),
-               hnd->sharedData,
-               sharedPhysAddr,
-               pSharedData->planes[DEFAULT_PLANE].physAddr,
-               hnd->nxSurfacePhysicalAddress,
-               pSharedData->planes[DEFAULT_PLANE].size,
-               hnd->nxSurfaceAddress);
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_UnlockOffset(block_handle);
-         }
-      }
+   } else {
+      pSharedData->container.allocSize = hnd->oglSize;
+      pSharedData->container.stride = hnd->oglStride;
+      ashmem_alloc.size = pSharedData->container.allocSize;
    }
-
-   if (needs_ycrcb) {
-      pSharedData->planes[EXTRA_PLANE].width     = w;
-      pSharedData->planes[EXTRA_PLANE].height    = h;
-      pSharedData->planes[EXTRA_PLANE].bpp       = bpp;
-      pSharedData->planes[EXTRA_PLANE].format    = (int)nxFormat;
-      pSharedData->planes[EXTRA_PLANE].size      = extra_size;
-      pSharedData->planes[EXTRA_PLANE].allocSize = extra_size;
-      pSharedData->planes[EXTRA_PLANE].stride    = bpp * *pStride;
-      memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
-      ashmem_alloc.size = extra_size;
-      ashmem_alloc.align = gralloc_default_align;
-      ret = ioctl(hnd->fd3, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
-      if (ret >= 0) {
-         pSharedData->planes[EXTRA_PLANE].physAddr =
-             (NEXUS_Addr)ioctl(hnd->fd3, NX_ASHMEM_GETMEM);
-      }
-
-      if (gralloc_log_mapper()) {
-         NEXUS_Addr physAddr;
-         unsigned sharedPhysAddr = hnd->sharedData;
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-            sharedPhysAddr = (unsigned)physAddr;
-         }
-         ALOGI("alloc (EX): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
-               hnd->is_mma,
-               getpid(),
-               hnd->sharedData,
-               sharedPhysAddr,
-               pSharedData->planes[EXTRA_PLANE].physAddr,
-               hnd->nxSurfacePhysicalAddress,
-               pSharedData->planes[EXTRA_PLANE].size,
-               hnd->nxSurfaceAddress);
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_UnlockOffset(block_handle);
-         }
-      }
+   ret = ioctl(hnd->fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+   if (ret >= 0) {
+      pSharedData->container.physAddr =
+          (NEXUS_Addr)ioctl(hnd->fd, NX_ASHMEM_GETMEM);
    }
+   hnd->fmt_set = fmt_set;
 
-   if (needs_rgb) {
-      // Create a RGB plane for GL texture as Khronos does not support YUV texturing.
-      pSharedData->planes[GL_PLANE].physAddr =
-         allocGLSuitableBuffer(hnd, hnd->fd4, w, h, 4, HAL_PIXEL_FORMAT_RGBA_8888);
-      pSharedData->planes[GL_PLANE].width     = w;
-      pSharedData->planes[GL_PLANE].height    = h;
-      pSharedData->planes[GL_PLANE].bpp       = 4;
-      pSharedData->planes[GL_PLANE].format    = (int)NEXUS_PixelFormat_eA8_B8_G8_R8;
-      pSharedData->planes[GL_PLANE].size      = size;
-      pSharedData->planes[GL_PLANE].allocSize = hnd->oglSize;
-      pSharedData->planes[GL_PLANE].stride    = hnd->oglStride;
-
-      if (hnd->is_mma) {
-         if (hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) {
-            NEXUS_Addr physAddr;
-            NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr, &physAddr);
-            hnd->nxSurfacePhysicalAddress = (unsigned)physAddr;
-            pMemory = NULL;
-            NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr, &pMemory);
-            hnd->nxSurfaceAddress = (unsigned)pMemory;
-         } else {
-            hnd->nxSurfacePhysicalAddress = (unsigned)0;
-            hnd->nxSurfaceAddress = (unsigned)pMemory;
-         }
+   if (hnd->is_mma) {
+      if (hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) {
+         NEXUS_Addr physAddr;
+         NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &physAddr);
+         hnd->nxSurfacePhysicalAddress = (unsigned)physAddr;
+         pMemory = NULL;
+         NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &pMemory);
+         hnd->nxSurfaceAddress = (unsigned)pMemory;
       } else {
-         hnd->nxSurfacePhysicalAddress = pSharedData->planes[GL_PLANE].physAddr;
-         hnd->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->planes[GL_PLANE].physAddr);
+         hnd->nxSurfacePhysicalAddress = (unsigned)0;
+         hnd->nxSurfaceAddress = (unsigned)pMemory;
       }
+   } else {
+      hnd->nxSurfacePhysicalAddress = pSharedData->container.physAddr;
+      hnd->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->container.physAddr);
+   }
 
-      if (gralloc_log_mapper()) {
-         NEXUS_Addr physAddr;
-         unsigned sharedPhysAddr = hnd->sharedData;
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-            sharedPhysAddr = (unsigned)physAddr;
-         }
-         ALOGI("alloc (GL): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
-               hnd->is_mma,
-               getpid(),
-               hnd->sharedData,
-               sharedPhysAddr,
-               pSharedData->planes[GL_PLANE].physAddr,
-               hnd->nxSurfacePhysicalAddress,
-               pSharedData->planes[GL_PLANE].size,
-               hnd->nxSurfaceAddress);
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_UnlockOffset(block_handle);
-         }
+   if (gralloc_log_mapper()) {
+      NEXUS_Addr physAddr;
+      unsigned sharedPhysAddr = hnd->sharedData;
+      if (hnd->is_mma) {
+         NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+         sharedPhysAddr = (unsigned)physAddr;
+      }
+      ALOGI("alloc (%s): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::use:0x%x:0x%x::mapped:0x%x",
+            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+            hnd->is_mma,
+            getpid(),
+            hnd->sharedData,
+            sharedPhysAddr,
+            pSharedData->container.physAddr,
+            hnd->nxSurfacePhysicalAddress,
+            pSharedData->container.size,
+            hnd->usage,
+            hnd->fmt_set,
+            hnd->nxSurfaceAddress);
+      if (hnd->is_mma) {
+         NEXUS_MemoryBlock_UnlockOffset(block_handle);
       }
    }
 
-   if (needs_yv12 && (pSharedData->planes[DEFAULT_PLANE].physAddr == 0)) {
-      ALOGE("%s: failed to allocate default yv12 plane (%d,%d), size %d", __FUNCTION__, w, h, size);
+   if ((fmt_set != GR_NONE) && pSharedData->container.physAddr == 0) {
+      ALOGE("%s: failed to allocate default plane (%d,%d), size %d", __FUNCTION__, w, h, size);
       err = -ENOMEM;
       goto alloc_failed;
+   } else if (pSharedData->container.physAddr) {
+       gralloc_bzero(hnd->is_mma, pSharedData);
    }
-   if (needs_ycrcb && (pSharedData->planes[EXTRA_PLANE].physAddr == 0)) {
-      ALOGE("%s: failed to allocate extra ycrcb plane (%d,%d), size %d", __FUNCTION__, w, h, size);
-      err = -ENOMEM;
-      goto alloc_failed;
-   }
-   if (!needs_none && !needs_yv12 && ((!hnd->is_mma && pSharedData->planes[DEFAULT_PLANE].physAddr == 0) ||
-       (hnd->is_mma && hnd->nxSurfacePhysicalAddress == 0))) {
-      ALOGE("%s: failed to allocate standard plane (%d,%d), size %d", __FUNCTION__, w, h, extra_size);
-      err = -ENOMEM;
-      goto alloc_failed;
-   }
-   if (needs_rgb && ((!hnd->is_mma && pSharedData->planes[GL_PLANE].physAddr == 0) ||
-       (hnd->is_mma && hnd->nxSurfacePhysicalAddress == 0))) {
-      ALOGE("%s: failed to allocate gl plane (%d,%d), size %d", __FUNCTION__, w, h, size);
-      err = -ENOMEM;
-      goto alloc_failed;
-   }
-
-   if (pSharedData->planes[DEFAULT_PLANE].physAddr) {
-       gralloc_bzero(hnd->is_mma, pSharedData, DEFAULT_PLANE);
-   }
-   if (pSharedData->planes[EXTRA_PLANE].physAddr) {
-       gralloc_bzero(hnd->is_mma, pSharedData, EXTRA_PLANE);
-   }
-   if (pSharedData->planes[GL_PLANE].physAddr) {
-       gralloc_bzero(hnd->is_mma, pSharedData, GL_PLANE);
-   }
-
 
    *pHandle = hnd;
 
@@ -968,10 +806,6 @@ error:
       close(fd);
    if (fd2 > 0)
       close(fd2);
-   if (fd3 > 0)
-      close(fd3);
-   if (fd4 > 0)
-      close(fd4);
    return err;
 }
 
@@ -1000,17 +834,14 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
       if (gralloc_log_mapper()) {
          NEXUS_Addr physAddr = 0;
          unsigned sharedPhysAddr = hnd->sharedData;
-         int gl_plane = (pSharedData->planes[GL_PLANE].physAddr ? 1 : 0);
-         unsigned planePhysAddr =
-            (pSharedData->planes[GL_PLANE].physAddr ? pSharedData->planes[GL_PLANE].physAddr : pSharedData->planes[DEFAULT_PLANE].physAddr);
-         unsigned planePhysSize =
-            (pSharedData->planes[GL_PLANE].physAddr ? pSharedData->planes[GL_PLANE].size : pSharedData->planes[DEFAULT_PLANE].size);
+         unsigned planePhysAddr = pSharedData->container.physAddr;
+         unsigned planePhysSize = pSharedData->container.size;
          if (hnd->is_mma) {
             NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
             sharedPhysAddr = (unsigned)physAddr;
          }
-         ALOGI(" free (%s): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
-               gl_plane ? "GL" : "ST",
+         ALOGI(" free (%s): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::use:0x%x:0x%x::mapped:0x%x",
+               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
                hnd->is_mma,
                hnd->pid,
                hnd->sharedData,
@@ -1018,27 +849,21 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
                planePhysAddr,
                hnd->nxSurfacePhysicalAddress,
                planePhysSize,
+               hnd->usage,
+               hnd->fmt_set,
                hnd->nxSurfaceAddress);
          if (hnd->is_mma) {
             NEXUS_MemoryBlock_UnlockOffset(block_handle);
          }
-      }
-
-      if (android_atomic_acquire_load(&pSharedData->hwc.active)) {
-         ALOGE("Freeing gralloc buffer %#x used by HWC!  layer %d surface %#x",
-               hnd->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
       }
    }
 
    if (hnd->is_mma) {
       if (pSharedData) {
          if (hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) {
-            if (pSharedData->planes[GL_PLANE].physAddr) {
-               NEXUS_MemoryBlock_UnlockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr);
-               NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr);
-            } else if (pSharedData->planes[DEFAULT_PLANE].physAddr) {
-               NEXUS_MemoryBlock_UnlockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr);
-               NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr);
+            if (pSharedData->container.physAddr) {
+               NEXUS_MemoryBlock_UnlockOffset((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr);
+               NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr);
             }
          }
       }
@@ -1052,12 +877,6 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
    }
    if (hnd->fd2 >= 0) {
       close(hnd->fd2);
-   }
-   if (hnd->fd3 >= 0) {
-      close(hnd->fd3);
-   }
-   if (hnd->fd4 >= 0) {
-      close(hnd->fd4);
    }
    delete hnd;
 

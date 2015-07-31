@@ -4063,17 +4063,17 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
     }
 
     if (handle->is_mma) {
-        planeHandle = pSharedData->planes[DEFAULT_PLANE].physAddr;
+        planeHandle = pSharedData->container.physAddr;
         pAddr = NULL;
     } else {
         planeHandle = 0;
-        pAddr = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
+        pAddr = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->container.physAddr);
     }
 
-    cFormat = pSharedData->planes[DEFAULT_PLANE].format;
-    width = pSharedData->planes[DEFAULT_PLANE].width;
-    height = pSharedData->planes[DEFAULT_PLANE].height;
-    stride = pSharedData->planes[DEFAULT_PLANE].stride;
+    cFormat = pSharedData->container.format;
+    width = pSharedData->container.width;
+    height = pSharedData->container.height;
+    stride = pSharedData->container.stride;
     ALOGV("InputBufferType_eNative: pSharedData:%p mma=%d", pSharedData, handle->is_mma);
 
     // create source surface with gralloc buffer

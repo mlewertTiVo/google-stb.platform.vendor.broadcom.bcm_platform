@@ -29,6 +29,7 @@ NEXUS_SurfaceHandle hwc_to_nsc_surface(
    NEXUS_PixelFormat format,
    bool is_mma,
    unsigned handle,
+   unsigned offset,
    uint8_t *data);
 
 NEXUS_SurfaceHandle hwc_surface_create(
