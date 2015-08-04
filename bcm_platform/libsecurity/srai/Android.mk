@@ -38,6 +38,7 @@ LOCAL_SRC_FILES := \
     magnum/syslib/sagelib/src/bsagelib_tools.c
 
 LOCAL_C_INCLUDES := \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/include/private \
@@ -47,10 +48,13 @@ LOCAL_C_INCLUDES := \
 LOCAL_CFLAGS += -DPIC -fpic -DANDROID
 LOCAL_CFLAGS += $(NEXUS_CFLAGS)
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_WRN -DBDBG_NO_ERR -DBDBG_NO_LOG
+LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_LOG
+ifneq ($(TARGET_BUILD_TYPE),debug)
+LOCAL_CFLAGS += -DBDBG_NO_WRN -DBDBG_NO_ERR
+endif
 
 
-LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB)
+LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) liblog
 
 LOCAL_MODULE := libsrai
 

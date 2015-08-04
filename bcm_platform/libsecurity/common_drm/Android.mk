@@ -43,6 +43,7 @@ include $(LOCAL_PATH)/drm/playready/playready.inc
 LOCAL_SRC_FILES := ${PLAYREADY_SOURCES}
 
 LOCAL_C_INCLUDES := \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_crypto/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/drmrootfs \
@@ -55,9 +56,12 @@ LOCAL_CFLAGS += -DDRM_BUILD_PROFILE=${DRM_BUILD_PROFILE} -DTARGET_LITTLE_ENDIAN=
 LOCAL_CFLAGS += -DPIC -fpic -DANDROID
 LOCAL_CFLAGS += $(NEXUS_CFLAGS) ${PLAYREADY_DEFINES}
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_WRN -DBDBG_NO_ERR -DBDBG_NO_LOG
+LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_LOG
+ifneq ($(TARGET_BUILD_TYPE),debug)
+LOCAL_CFLAGS += -DBDBG_NO_WRN -DBDBG_NO_ERR
+endif
 
-LOCAL_SHARED_LIBRARIES := libnexus libnxclient libplayreadypk_host libdrmrootfs
+LOCAL_SHARED_LIBRARIES := liblog libnexus libnxclient libplayreadypk_host libdrmrootfs
 
 LOCAL_MODULE :=  $(LOCAL_LIB_NAME)
 include $(BUILD_SHARED_LIBRARY)
@@ -128,6 +132,7 @@ endif
 LOCAL_SRC_FILES := ${COMMON_DRM_TL_SOURCES}
 
 LOCAL_C_INCLUDES := \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/bcrypt/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_crypto/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include \
@@ -145,11 +150,14 @@ LOCAL_C_INCLUDES := \
 LOCAL_CFLAGS += -DPIC -fpic -DANDROID
 LOCAL_CFLAGS += $(NEXUS_CFLAGS) $(COMMON_DRM_TL_DEFINES)
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_WRN -DBDBG_NO_ERR -DBDBG_NO_LOG
+LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_LOG
+ifneq ($(TARGET_BUILD_TYPE),debug)
+LOCAL_CFLAGS += -DBDBG_NO_WRN -DBDBG_NO_ERR
+endif
 # Set common DRM TL to not overwrite Type 1 or 2 drm bin files on rootfs
 LOCAL_CFLAGS += -DCMNDRM_SKIP_BINFILE_OVERWRITE
 
-LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) libcmndrm libdrmrootfs libsrai
+LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) libcmndrm libdrmrootfs libsrai liblog
 
 LOCAL_MODULE := libcmndrm_tl
 LOCAL_MODULE_TAGS := optional

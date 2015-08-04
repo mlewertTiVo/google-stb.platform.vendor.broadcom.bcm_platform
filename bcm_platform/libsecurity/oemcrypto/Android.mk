@@ -69,6 +69,7 @@ LOCAL_C_INCLUDES := \
     $(TOP)/bionic \
     $(TOP)/external/stlport/stlport \
     $(TOP)/external/openssl/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/third_party/widevine/CENC_sage/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_crypto/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include \
@@ -83,7 +84,10 @@ LOCAL_CFLAGS += -DNDEBUG -DBRCM_IMPL
 
 LOCAL_CFLAGS += $(NEXUS_CFLAGS)
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_WRN -DBDBG_NO_ERR -DBDBG_NO_LOG
+LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_LOG
+ifneq ($(TARGET_BUILD_TYPE),debug)
+LOCAL_CFLAGS += -DBDBG_NO_WRN -DBDBG_NO_ERR
+endif
 
 LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) liblog libstlport
 LOCAL_SHARED_LIBRARIES += libcmndrm_tl
