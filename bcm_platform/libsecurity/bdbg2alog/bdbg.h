@@ -42,7 +42,7 @@
  *
  *    This wrapper is created to allow modules that are dynamically loaded/unloaded
  *    in Android environment to use Android native logs instead of BDBG logs.
- *    BDBG logs by design does not support dynamically unloading.
+ *    BDBG by design does not support dynamically unloading.
  *
  * Revision History:
  *
@@ -65,6 +65,15 @@
 extern "C" {
 #endif
 
+#ifdef BDBG_DEBUG_BUILD
+#undef BDBG_DEBUG_BUILD
+#endif
+#ifdef BDBG2ALOG_ENABLE_LOGS
+#define BDBG_DEBUG_BUILD BDBG2ALOG_ENABLE_LOGS
+#else
+#define BDBG_DEBUG_BUILD 0
+#endif
+
 /* Mapping of BDBG Log levels to Android log levels
  *    BDBG_ENTER  - ANDROID_LOG_VERBOSE
  *    BDBG_LEAVE  - ANDROID_LOG_VERBOSE
@@ -78,18 +87,20 @@ extern "C" {
 
 #define BDBG_MODULE(module) static const char *alog_module=#module;
 
-/* Alls logs are disabled by default unless explicitely enabled */
+#if !BDBG_DEBUG_BUILD
+/* All logs are disabled by default for non debug build */
 #ifndef BDBG_NO_LOG
 #define BDBG_NO_LOG 1
 #endif
 #ifndef BDBG_NO_MSG
-#define BDNG_NO_MSG 1
+#define BDBG_NO_MSG 1
 #endif
 #ifndef BDBG_NO_WRN
-#define BDNG_NO_WRN 1
+#define BDBG_NO_WRN 1
 #endif
 #ifndef BDBG_NO_ERR
-#define BDNG_NO_ERR 1
+#define BDBG_NO_ERR 1
+#endif
 #endif
 
 
@@ -106,7 +117,7 @@ extern "C" {
 #define BDBG_LEAVE(function) ((void)LOG_PRI(ANDROID_LOG_VERBOSE, alog_module, "Leave... %s", #function ))
 #endif
 
-#if  BDBG_NO_MSG
+#if BDBG_NO_MSG
 #define BDBG_MSG(x) BDBG_NOP()
 #else
 #define BDBG_MSG(x) BDBG2ALOG_INFO x
@@ -129,14 +140,14 @@ extern "C" {
 
 #define BDBG_ASSERT ALOG_ASSERT
 
-/* Stubs for BDBG macros not appliable to ALOG butrequired for the code to comple with the bdbg wrapper */
+/* Stubs for BDBG macros not appliable to ALOG but required for the code to comple with the bdbg wrapper */
 #define BDBG_OBJECT(name)
 #define BDBG_OBJECT_ASSERT(ptr,name)
 #define BDBG_OBJECT_DESTROY(ptr,name)
 #define BDBG_OBJECT_SET(ptr,name)
 #define BDBG_OBJECT_ID(name)
 #define BDBG_OBJECT_ID_DECLARE(name)
-
+#define BDBG_SetModuleLevel(module, level)
 
 #ifdef __cplusplus
 }

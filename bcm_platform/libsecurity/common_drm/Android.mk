@@ -56,9 +56,12 @@ LOCAL_CFLAGS += -DDRM_BUILD_PROFILE=${DRM_BUILD_PROFILE} -DTARGET_LITTLE_ENDIAN=
 LOCAL_CFLAGS += -DPIC -fpic -DANDROID
 LOCAL_CFLAGS += $(NEXUS_CFLAGS) ${PLAYREADY_DEFINES}
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_LOG
+
+# Enable warning and error logs by default
+LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
 ifneq ($(TARGET_BUILD_TYPE),debug)
-LOCAL_CFLAGS += -DBDBG_NO_WRN -DBDBG_NO_ERR
+# Enable error logs for non debug build
+LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
 
 LOCAL_SHARED_LIBRARIES := liblog libnexus libnxclient libplayreadypk_host libdrmrootfs
@@ -150,10 +153,14 @@ LOCAL_C_INCLUDES := \
 LOCAL_CFLAGS += -DPIC -fpic -DANDROID
 LOCAL_CFLAGS += $(NEXUS_CFLAGS) $(COMMON_DRM_TL_DEFINES)
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_LOG
+
+# Enable warning and error logs by default
+LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
 ifneq ($(TARGET_BUILD_TYPE),debug)
-LOCAL_CFLAGS += -DBDBG_NO_WRN -DBDBG_NO_ERR
+# Enable error logs for non debug build
+LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
+
 # Set common DRM TL to not overwrite Type 1 or 2 drm bin files on rootfs
 LOCAL_CFLAGS += -DCMNDRM_SKIP_BINFILE_OVERWRITE
 

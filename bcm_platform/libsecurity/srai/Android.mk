@@ -48,11 +48,13 @@ LOCAL_C_INCLUDES := \
 LOCAL_CFLAGS += -DPIC -fpic -DANDROID
 LOCAL_CFLAGS += $(NEXUS_CFLAGS)
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_LOG
-ifneq ($(TARGET_BUILD_TYPE),debug)
-LOCAL_CFLAGS += -DBDBG_NO_WRN -DBDBG_NO_ERR
-endif
 
+# Enable warning and error logs by default
+LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
+ifneq ($(TARGET_BUILD_TYPE),debug)
+# Enable error logs for non debug build
+LOCAL_CFLAGS += -DBDBG_NO_WRN=1
+endif
 
 LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) liblog
 
