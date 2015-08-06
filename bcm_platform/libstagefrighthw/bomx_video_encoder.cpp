@@ -60,8 +60,6 @@
 #define B_NUM_OF_OUT_BUFFERS (10)
 #define B_NUM_OF_IN_BUFFERS (5)
 
-#define B_HW_ENCODER_POLL_INTERVAL (20)
-
 #define Q16_SCALE_FACTOR 65536.0
 #define B_DEFAULT_INPUT_FRAMERATE (Q16_SCALE_FACTOR * 15.0)
 #define B_DEFAULT_INPUT_NEXUS_FRAMERATE (NEXUS_VideoFrameRate_e15)
@@ -321,7 +319,6 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_ImageInputEventId(NULL),
     m_hOutputBufferProcessEvent(NULL),
     m_outputBufferProcessEventId(NULL),
-    m_outputBufferProcessTimerId(NULL),
     m_hInputBufferProcessEvent(NULL),
     m_inputBufferProcessEventId(NULL),
     m_hCheckpointEvent(NULL),
@@ -481,9 +478,9 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
 
     /* register input buffer process event handler */
     m_inputBufferProcessEventId = this->RegisterEvent(m_hInputBufferProcessEvent, BOMX_VideoEncoder_InputBufferProcess, static_cast <void *> (this));
-    if ( NULL == m_outputBufferProcessEventId )
+    if ( NULL == m_inputBufferProcessEventId )
     {
-        ALOGE("Unable to register output frame event");
+        ALOGE("Unable to register input frame event");
         this->Invalidate();
         return;
     }
@@ -1238,11 +1235,6 @@ NEXUS_Error BOMX_VideoEncoder::SetInputPortState(OMX_STATETYPE newState)
                     ReleaseEncoderResource();
                     return BOMX_BERR_TRACE(errCode);
                 }
-                // kick off the encoded frame polling
-                if ( m_pVideoPorts[1]->IsEnabled() )
-                {
-                    B_Event_Set(m_hOutputBufferProcessEvent);
-                }
             }
             break;
         case OMX_StatePause:
@@ -1273,27 +1265,11 @@ NEXUS_Error BOMX_VideoEncoder::SetOutputPortState(OMX_STATETYPE newState)
     // output port independently and leave the input port active during any
     // Resolution Change.
     ALOGV("Setting Output Port State to %s", BOMX_StateName(newState));
-    if ( newState == OMX_StateLoaded )
+    if ( newState == OMX_StateLoaded || newState == OMX_StateIdle )
     {
         // Return all pending buffers to the client
-        CancelTimerId(m_outputBufferProcessTimerId);
         ReturnPortBuffers(m_pVideoPorts[1]);
         ResetEncodedFrameList();
-    }
-    else
-    {
-        // For any other state change, kick off the frame check if the encoder is running
-        if ( newState == OMX_StateIdle )
-        {
-            // Return all pending buffers to the client
-            CancelTimerId(m_outputBufferProcessTimerId);
-            ReturnPortBuffers(m_pVideoPorts[1]);
-            ResetEncodedFrameList();
-        }
-        else if ( IsEncoderStarted() )
-        {
-            B_Event_Set(m_hOutputBufferProcessEvent);
-        }
     }
     return NEXUS_SUCCESS;
 }
@@ -2336,15 +2312,6 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
 }
 
 
-void BOMX_VideoEncoder::CancelTimerId(B_SchedulerTimerId& timerId)
-{
-    if ( timerId )
-    {
-        CancelTimer(timerId);
-        timerId = NULL;
-    }
-}
-
 void BOMX_VideoEncoder::ReturnInputBuffers(bool returnAll)
 {
     BOMX_Buffer *pBuffer;
@@ -2495,32 +2462,6 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetConfig(
     }
 }
 
-static void BOMX_VideoEncoder_OutputBufferProcessTimer(void *pParam)
-{
-    BOMX_VideoEncoder *pEncoder = static_cast <BOMX_VideoEncoder *> (pParam);
-    ALOGV("OutputBufferProcessTimer");
-    pEncoder->OutputBufferProcess();
-}
-
-void BOMX_VideoEncoder::OutputBufferProcess()
-{
-    CancelTimerId(m_outputBufferProcessTimerId);
-
-    // Check for new frames
-    PollEncodedFrames();
-
-    /* schedule a timer event if EOS is not received and a buffer needs to be filled and encoder is started */
-    BOMX_Buffer *pOmxBuffer = m_pVideoPorts[1]->GetBuffer();
-
-    ALOGV("OutputBufferProcess: pOmxBuffer=%p,  EOS=%d, IsEncoderStarted=%d", pOmxBuffer, m_bEosDelieverd, IsEncoderStarted());
-    if ( NULL != pOmxBuffer && !m_bEosDelieverd && IsEncoderStarted() )
-    {
-        m_outputBufferProcessTimerId = StartTimer(B_HW_ENCODER_POLL_INTERVAL,
-                                       BOMX_VideoEncoder_OutputBufferProcessTimer, static_cast<void *>(this));
-        ALOGV("schedule a timer to poll frames:%x", m_outputBufferProcessTimerId);
-    }
-}
-
 void BOMX_VideoEncoder::InputBufferProcess()
 {
     BOMX_Buffer *pBuffer;
@@ -2568,14 +2509,6 @@ void BOMX_VideoEncoder::InputBufferProcess()
     }
 
     ALOGV(" %d buffer(s) pushed", nPushed);
-
-    if ( nPushed > 0 && m_pVideoPorts[1]->QueueDepth() > 0 )
-    {
-        /* Force a check for new output frames each time a new input frame
-         * arrives if we have output buffers ready to fill
-         */
-        B_Event_Set(m_hOutputBufferProcessEvent);
-    }
 }
 
 void BOMX_VideoEncoder::PrintVideoEncoderStatus()
@@ -2614,7 +2547,7 @@ void BOMX_VideoEncoder::NotifyOutputPortSettingsChanged()
     }
 }
 
-void BOMX_VideoEncoder::PollEncodedFrames()
+void BOMX_VideoEncoder::OutputBufferProcess()
 {
     NEXUS_Error errCode;
     unsigned numFrames=0;

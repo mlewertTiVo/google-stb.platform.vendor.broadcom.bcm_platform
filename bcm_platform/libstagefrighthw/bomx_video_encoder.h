@@ -216,7 +216,6 @@ public:
     // Local Event Handlers
     void OutputFrameEvent();
     void OutputBufferProcess();
-    void PollEncodedFrames();
     void ImageBufferProcess();
     void InputBufferProcess();
 
@@ -254,7 +253,6 @@ protected:
 
     B_EventHandle m_hOutputBufferProcessEvent;
     B_SchedulerEventId m_outputBufferProcessEventId;
-    B_SchedulerTimerId m_outputBufferProcessTimerId;
 
     B_EventHandle m_hInputBufferProcessEvent;
     B_SchedulerEventId m_inputBufferProcessEventId;
@@ -320,8 +318,6 @@ protected:
         OMX_IN OMX_U8* pBuffer,
         bool componentAllocated);
 
-
-    void CancelTimerId(B_SchedulerTimerId& timerId);
 
     // misc functions
     void StopEncoder();
