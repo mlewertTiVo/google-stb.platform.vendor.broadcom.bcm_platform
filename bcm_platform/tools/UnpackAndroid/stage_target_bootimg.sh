@@ -2,7 +2,7 @@
 set -e
 
 function usage {
-   echo "stage_target_bootimg.sh [-g] [-b] [-s] [-d] [-c] [-u] [-w [<name>]] [-z] [-S] [-p <name>] [-F <ip-address>]"
+   echo "stage_target_bootimg.sh [-g] [-b] [-s] [-d] [-c] [-u] [-w <name>] [-z] [-S] [-p <name>] [-F <ip-address>]"
    echo ""
    echo "list partitions to update. partitions in:"
    echo ""
@@ -12,7 +12,7 @@ function usage {
    echo "     '-d': userdata"
    echo "     '-c': cache"
    echo "     '-u': bsu"
-   echo "     '-w <name>': hwcfg (name defaults to hwcfg_empty.img)"
+   echo "     '-w <name>': hwcfg image path"
    echo "     '-z': recovery"
    echo ""
    echo "'-S' - to preserve labeling for SELinux support (incurs longer copy time)."
@@ -84,9 +84,6 @@ while getopts "hgbsdcuw:zSp:F:" tag; do
 		update_hwcfg=1
 		update_something=1
 		hwcfg_img=$OPTARG
-		if [ -z $hwcfg_img ]; then
-			hwcfg_img=hwcfg_empty.img
-		fi
 		;;
 	z)
 		update_recovery=1
