@@ -13,9 +13,24 @@
 # limitations under the License.
 
 
-# always try to build from sources if we have them available.
+# if release_prebuilts directory exists and it contains widevine prebuilt
+# binaries, always use them even if widevine source is present
 #
-ifneq ($(wildcard vendor/widevine/Android.mk),)
+ifneq ($(wildcard vendor/broadcom/stb/release_prebuilts/libwvm.so),)
+
+PRODUCT_COPY_FILES += \
+    vendor/broadcom/stb/release_prebuilts/com.google.widevine.software.drm.xml:system/etc/permissions/com.google.widevine.software.drm.xml:widevine \
+    vendor/broadcom/stb/release_prebuilts/com.google.widevine.software.drm.jar:system/framework/com.google.widevine.software.drm.jar:widevine \
+    vendor/broadcom/stb/release_prebuilts/libdrmdecrypt.so:system/lib/libdrmdecrypt.so:widevine \
+    vendor/broadcom/stb/release_prebuilts/libdrmwvmplugin.so:system/lib/drm/libdrmwvmplugin.so:widevine \
+    vendor/broadcom/stb/release_prebuilts/libwvdrm_L3.so:system/vendor/lib/libwvdrm_L3.so:widevine \
+    vendor/broadcom/stb/release_prebuilts/libwvm.so:system/vendor/lib/libwvm.so:widevine \
+    vendor/broadcom/stb/release_prebuilts/libWVStreamControlAPI_L3.so:system/vendor/lib/libWVStreamControlAPI_L3.so:widevine \
+    vendor/broadcom/stb/release_prebuilts/libwvdrmengine.so:system/vendor/lib/mediadrm/libwvdrmengine.so:widevine
+
+# no prebuilt binaries included, build from source if we have it
+#
+else ifneq ($(wildcard vendor/widevine/Android.mk),)
 
 export BUILD_WIDEVINE_CLASSIC_FROM_SOURCE := y
 export BUILD_WIDEVINE_FROM_SOURCE := y
@@ -31,20 +46,5 @@ PRODUCT_PACKAGES += \
     libdrmdecrypt
 
 $(call first-makefiles-under, vendor/widevine)
-
-#
-# nope - use proprietary prebuilts..
-#
-else
-
-PRODUCT_COPY_FILES += \
-    vendor/broadcom/stb/release_prebuilts/com.google.widevine.software.drm.xml:system/etc/permissions/com.google.widevine.software.drm.xml:widevine \
-    vendor/broadcom/stb/release_prebuilts/com.google.widevine.software.drm.jar:system/framework/com.google.widevine.software.drm.jar:widevine \
-    vendor/broadcom/stb/release_prebuilts/libdrmdecrypt.so:system/lib/libdrmdecrypt.so:widevine \
-    vendor/broadcom/stb/release_prebuilts/libdrmwvmplugin.so:system/lib/drm/libdrmwvmplugin.so:widevine \
-    vendor/broadcom/stb/release_prebuilts/libwvdrm_L3.so:system/vendor/lib/libwvdrm_L3.so:widevine \
-    vendor/broadcom/stb/release_prebuilts/libwvm.so:system/vendor/lib/libwvm.so:widevine \
-    vendor/broadcom/stb/release_prebuilts/libWVStreamControlAPI_L3.so:system/vendor/lib/libWVStreamControlAPI_L3.so:widevine \
-    vendor/broadcom/stb/release_prebuilts/libwvdrmengine.so:system/vendor/lib/mediadrm/libwvdrmengine.so:widevine
 
 endif
