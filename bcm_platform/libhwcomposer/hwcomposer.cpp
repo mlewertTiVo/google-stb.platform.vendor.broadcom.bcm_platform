@@ -1409,7 +1409,9 @@ bool hwc_compose_gralloc_buffer(
 
     *pActSurf = NULL;
     if (pComp->visible) {
-        if (check_transparency && (pixel_format == NEXUS_PixelFormat_eA8_B8_G8_R8)) {
+        size_t width = pSharedData->planes[DEFAULT_PLANE].width;
+        if (check_transparency && (pixel_format == NEXUS_PixelFormat_eA8_B8_G8_R8)
+                               && (width > 32) && (width % 8  == 0)) {
             void *addr;
             nsecs_t t1, t2;
 
