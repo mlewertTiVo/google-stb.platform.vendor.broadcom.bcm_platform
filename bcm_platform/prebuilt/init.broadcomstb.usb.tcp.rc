@@ -6,10 +6,12 @@ on fs
 # Used to disable USB when switching states
 on property:sys.usb.config=none
     stop adbd
+    setprop service.adb.tcp.port -1
     setprop sys.usb.state ${sys.usb.config}
 
 # adb only
 on property:sys.usb.config=adb
+    setprop service.adb.tcp.port 5555
     start adbd
     setprop sys.usb.state ${sys.usb.config}
 
