@@ -234,6 +234,7 @@ typedef struct {
 } COMMON_CLIENT_INFO;
 
 typedef struct {
+    buffer_handle_t layerhdl;
     buffer_handle_t grhdl;
     unsigned long long comp_ix;
 
@@ -250,6 +251,7 @@ typedef struct {
     int layer_id;
     int plane_alpha;
     NEXUS_SurfaceHandle active_surface;
+    bool skip_set;
 
 } GPX_CLIENT_INFO;
 
@@ -522,7 +524,7 @@ static void hwc_hide_unused_sb_layers(struct hwc_context_t* dev);
 
 static void hwc_nsc_prepare_layer(struct hwc_context_t* dev, hwc_layer_1_t *layer,
    int layer_id, bool geometry_changed,
-   unsigned int *video_layer_id, unsigned int *sideband_layer_id);
+   unsigned int *video_layer_id, unsigned int *sideband_layer_id, unsigned int *skip_set);
 
 static void hwc_binder_advertise_video_surface(struct hwc_context_t* dev);
 
@@ -829,9 +831,10 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
     }
 
     write = snprintf(start + offset, local_capacity,
-        "\t\t[%d:%d]::grhdl:%p::comp:%llu\n",
+        "\t\t[%d:%d]::hdl:%p::grhdl:%p::comp:%llu\n",
         client->layer_id,
         index,
+        client->last.layerhdl,
         client->last.grhdl,
         client->last.comp_ix);
 
@@ -1311,20 +1314,24 @@ static bool hwc_can_layer_init_display(struct hwc_context_t* ctx, int layer_id,
     NEXUS_SurfaceComposition *pComp;
     NEXUS_SurfaceCreateSettings settings;
 
-    // Enable this only for gpx
-    if (is_virtual)
+    if (is_virtual) {
        return false;
+    }
 
-    // Check blending type
+    if (ctx->gpx_cli[layer_id].skip_set) {
+       return true;
+    }
+
     pComp = &ctx->gpx_cli[layer_id].composition;
     if ((memcmp(&pComp->colorBlend, &colorBlendingEquation[BLENDIND_TYPE_SRC_OVER], sizeof(pComp->colorBlend)) != 0) &&
-       (memcmp(&pComp->colorBlend, &colorBlendingEquation[BLENDIND_TYPE_SRC], sizeof(pComp->colorBlend)) != 0))
+       (memcmp(&pComp->colorBlend, &colorBlendingEquation[BLENDIND_TYPE_SRC], sizeof(pComp->colorBlend)) != 0)) {
        return false;
+    }
     if ((memcmp(&pComp->alphaBlend, &alphaBlendingEquation[BLENDIND_TYPE_SRC_OVER], sizeof(pComp->alphaBlend)) != 0) &&
-       (memcmp(&pComp->alphaBlend, &alphaBlendingEquation[BLENDIND_TYPE_SRC], sizeof(pComp->alphaBlend)) != 0))
+       (memcmp(&pComp->alphaBlend, &alphaBlendingEquation[BLENDIND_TYPE_SRC], sizeof(pComp->alphaBlend)) != 0)) {
        return false;
+    }
 
-    // Make sure clip rect has the same size as the display surface
     NEXUS_Surface_GetCreateSettings(display_surface, &settings);
     if ((pComp->clipRect.x == 0) && (pComp->clipRect.y == 0) &&
        (pComp->clipRect.width == settings.width) &&
@@ -1363,6 +1370,10 @@ bool hwc_compose_gralloc_buffer(
     NEXUS_SurfaceHandle *pActSurf;
 
     if (!is_virtual) {
+       if (ctx->gpx_cli[layer_id].skip_set) {
+          ALOGV("%s: willingly skipping layer: %d\n", __FUNCTION__, layer_id);
+          goto out;
+       }
        pComp = &ctx->gpx_cli[layer_id].composition;
        pActSurf = &ctx->gpx_cli[layer_id].active_surface;
     } else {
@@ -1370,7 +1381,7 @@ bool hwc_compose_gralloc_buffer(
        pActSurf = &ctx->vd_cli[layer_id].active_surface;
     }
 
-    if ( pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12 ) {
+    if (pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12) {
         if (pSharedData->planes[EXTRA_PLANE].physAddr) {
             plane_select = EXTRA_PLANE;
             pixel_format = (NEXUS_PixelFormat)pSharedData->planes[plane_select].format;
@@ -1503,7 +1514,8 @@ out:
    return composed;
 }
 
-static bool primary_need_nsc_layer(struct hwc_context_t *ctx, hwc_layer_1_t *layer, size_t total_layers)
+static bool primary_need_nsc_layer(struct hwc_context_t *ctx, hwc_layer_1_t *layer,
+   size_t total_layers, size_t *overlay_layers)
 {
     bool rc = false;
     int skip_layer = -1;
@@ -1543,6 +1555,9 @@ static bool primary_need_nsc_layer(struct hwc_context_t *ctx, hwc_layer_1_t *lay
         }
     }
 
+    if (layer->compositionType == HWC_OVERLAY) {
+       *overlay_layers += 1;
+    }
     rc = true;
 out:
 
@@ -1554,7 +1569,8 @@ out:
 
 static void hwc_prepare_gpx_layer(
     struct hwc_context_t* ctx, hwc_layer_1_t *layer, int layer_id,
-    bool geometry_changed, bool is_virtual, bool is_locked)
+    bool geometry_changed, bool is_virtual, bool is_locked,
+    unsigned int *skip_set)
 {
     NEXUS_Error rc;
     private_handle_t *gr_buffer = NULL;
@@ -1595,7 +1611,21 @@ static void hwc_prepare_gpx_layer(
        }
     }
 
+    ctx->gpx_cli[layer_id].skip_set = false;
+    if (layer->compositionType == HWC_OVERLAY) {
+       if (ctx->gpx_cli[layer_id].last.layerhdl &&
+           (ctx->gpx_cli[layer_id].last.layerhdl == layer->handle) &&
+           !geometry_changed) {
+           ctx->gpx_cli[layer_id].skip_set = true;
+           if (skip_set) {
+              *skip_set += 1;
+           }
+           goto out_mutex;
+       }
+    }
+
     if (!is_virtual) {
+       ctx->gpx_cli[layer_id].last.layerhdl = layer->handle;
        ctx->gpx_cli[layer_id].layer_type = layer->compositionType;
        ctx->gpx_cli[layer_id].layer_subtype = NEXUS_SURFACE_COMPOSITOR;
        if (ctx->gpx_cli[layer_id].layer_type == HWC_CURSOR_OVERLAY) {
@@ -1640,6 +1670,7 @@ static void hwc_prepare_gpx_layer(
         }
     }
 
+out_mutex:
     if (!is_locked) {
        BKNI_ReleaseMutex(ctx->mutex);
     }
@@ -1742,6 +1773,8 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     int skiped_layer = 0;
     unsigned int video_layer_id = 0;
     unsigned int sideband_layer_id = 0;
+    unsigned int skip_set = 0;
+    size_t overlay_layers = 0;
 
     ctx->stats[0].prepare_call += 1;
 
@@ -1769,7 +1802,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
         // allocate the NSC layer, if need be change the geometry, etc...
         for (i = 0; i < list->numHwLayers; i++) {
             layer = &list->hwLayers[i];
-            if (primary_need_nsc_layer(ctx, layer, list->numHwLayers)) {
+            if (primary_need_nsc_layer(ctx, layer, list->numHwLayers, &overlay_layers)) {
                 if (ctx->display_dump_layer) {
                    unsigned handle_dump = 0;
                    if (layer->handle != NULL) {
@@ -1784,13 +1817,26 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
                 hwc_nsc_prepare_layer(ctx, layer, (int)i,
                                       (bool)(list->flags & HWC_GEOMETRY_CHANGED),
                                       &video_layer_id,
-                                      &sideband_layer_id);
+                                      &sideband_layer_id,
+                                      &skip_set);
             } else {
                 if (ctx->display_dump_layer) {
                    ALOGI("comp: %llu - hiding - sf:%d (%d)", ctx->stats[0].prepare_call, (int)i, (int)layer->compositionType);
                 }
                 hwc_hide_unused_gpx_layer(ctx, i);
             }
+        }
+
+        if ((skip_set > 1) ||
+            ((overlay_layers - (video_layer_id + sideband_layer_id)) > 1)) {
+           if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+              for (i = 0; i < list->numHwLayers; i++) {
+                 ctx->gpx_cli[i].skip_set = false;
+              }
+              BKNI_ReleaseMutex(ctx->mutex);
+           } else {
+              ALOGE("comp: %llu - failed hidding skip", ctx->stats[0].prepare_call);
+           }
         }
 
         // remove all remaining gpx layers from the stack that are not needed.
@@ -1858,7 +1904,7 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
                    ctx->stats[1].prepare_call, virt_w, virt_h, i, layer->compositionType);
           }
           if ((layer->compositionType == HWC_FRAMEBUFFER) || (layer->compositionType == HWC_OVERLAY)) {
-             hwc_prepare_gpx_layer(ctx, layer, layer_id, false /*don't care*/, true, true);
+             hwc_prepare_gpx_layer(ctx, layer, layer_id, false /*don't care*/, true, true, NULL);
              layer_id++;
              layer->compositionType = HWC_OVERLAY;
           }
@@ -1990,6 +2036,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     struct sync_fence_info_data fence;
     int layer_composed = 0;
     NEXUS_SurfaceHandle display_surface = NULL;
+    bool display_surface_seeded = false;
 
     if (!list)
        return -EINVAL;
@@ -2086,8 +2133,10 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
 
                 if (!layer_composed) {
                    bool can_skip_fill = has_video && hwc_can_layer_init_display(ctx, i, display_surface, false);
-                   if (!can_skip_fill)
+                   if (!can_skip_fill) {
+                      display_surface_seeded = true;
                       hwc_seed_disp_surface(ctx, display_surface);
+                   }
                    else {
                       hwc_set_layer_blending(ctx, i, BLENDIND_TYPE_SRC);
                    }
@@ -2115,7 +2164,9 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
               list->retireFenceFd = INVALID_FENCE;
            }
            if (has_video && !ctx->alpha_hole_background) {
-              hwc_seed_disp_surface(ctx, display_surface);
+              if (!display_surface_seeded) {
+                 hwc_seed_disp_surface(ctx, display_surface);
+              }
               rc = hwc_checkpoint(ctx);
               if (rc) {
                  ALOGW("%s: checkpoint timeout", __FUNCTION__);
@@ -3259,7 +3310,8 @@ out:
 
 static void hwc_nsc_prepare_layer(
     struct hwc_context_t* ctx, hwc_layer_1_t *layer, int layer_id,
-    bool geometry_changed, unsigned int *video_layer_id, unsigned int *sideband_layer_id)
+    bool geometry_changed, unsigned int *video_layer_id,
+    unsigned int *sideband_layer_id, unsigned int *skip_set)
 {
     bool is_sideband = false;
     bool is_yuv = false;
@@ -3267,9 +3319,8 @@ static void hwc_nsc_prepare_layer(
     if (is_video_layer(ctx, layer, layer_id, &is_sideband, &is_yuv)) {
         if (!is_sideband) {
             if (is_yuv) {
-               hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false, false);
-            }
-            else {
+               hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false, false, skip_set);
+            } else {
                if (*video_layer_id < NSC_MM_CLIENTS_NUMBER) {
                   hwc_prepare_mm_layer(ctx, layer, layer_id, *video_layer_id);
                   (*video_layer_id)++;
@@ -3292,7 +3343,7 @@ static void hwc_nsc_prepare_layer(
             }
         }
     } else {
-        hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false, false);
+        hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false, false, skip_set);
     }
 }
 
@@ -3304,9 +3355,9 @@ static void hwc_hide_unused_gpx_layer(struct hwc_context_t* ctx, int index)
         goto out;
     }
 
-    if (ctx->gpx_cli[index].composition.visible) {
-       ctx->gpx_cli[index].composition.visible = false;
-    }
+    ctx->gpx_cli[index].last.layerhdl = NULL;
+    ctx->gpx_cli[index].skip_set = false;
+    ctx->gpx_cli[index].composition.visible = false;
 
     BKNI_ReleaseMutex(ctx->mutex);
 
