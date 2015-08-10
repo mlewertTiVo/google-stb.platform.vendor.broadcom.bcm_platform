@@ -1423,20 +1423,21 @@ bool hwc_compose_gralloc_buffer(
         size_t width = pSharedData->planes[DEFAULT_PLANE].width;
         if (check_transparency && (pixel_format == NEXUS_PixelFormat_eA8_B8_G8_R8)
                                && (width > 32) && (width % 8  == 0)) {
-            void *addr;
-            nsecs_t t1, t2;
-
-            hwc_mem_lock(ctx, pSharedData->planes[DEFAULT_PLANE].physAddr , &addr, true);
-            t1 = systemTime(CLOCK_MONOTONIC);
-            bool transparent = check_frame_transparency(addr, pSharedData->planes[DEFAULT_PLANE].width,
-                                                        pSharedData->planes[DEFAULT_PLANE].height, stride);
-            t2 = systemTime(CLOCK_MONOTONIC);
-            int msecDelay = toMillisecondTimeoutDelay(t1, t2);
-            ALOGV("%s, trasparency:%d, delay:%d", __FUNCTION__, transparent, msecDelay);
-
-            hwc_mem_unlock(ctx, (unsigned)pSharedData->planes[DEFAULT_PLANE].physAddr, true);
-            if (transparent)
-                goto out_unlock;
+           void *pAddr;
+           bool transparent = false;
+           hwc_mem_lock(ctx, pSharedData->planes[DEFAULT_PLANE].physAddr, &pAddr, true);
+           if (pAddr != NULL) {
+              nsecs_t t1, t2;
+              t1 = systemTime(CLOCK_MONOTONIC);
+              transparent = check_frame_transparency(pAddr, pSharedData->planes[DEFAULT_PLANE].width,
+                                                          pSharedData->planes[DEFAULT_PLANE].height, stride);
+              t2 = systemTime(CLOCK_MONOTONIC);
+              int msecDelay = toMillisecondTimeoutDelay(t1, t2);
+              ALOGV("%s, trasparency:%d, delay:%d", __FUNCTION__, transparent, msecDelay);
+           }
+           hwc_mem_unlock(ctx, (unsigned)pSharedData->planes[DEFAULT_PLANE].physAddr, true);
+           if (transparent)
+              goto out_unlock;
         }
 
         *pActSurf = hwc_to_nsc_surface(pSharedData->planes[plane_select].width,
