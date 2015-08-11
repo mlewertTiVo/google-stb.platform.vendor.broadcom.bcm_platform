@@ -1359,6 +1359,7 @@ bool hwc_compose_gralloc_buffer(
    bool check_transparency = false)
 {
     bool composed = false;
+    bool is_cursor_layer = false;
     NEXUS_Error rc;
     int plane_select = -1;
     unsigned int stride = 0;
@@ -1376,6 +1377,7 @@ bool hwc_compose_gralloc_buffer(
        }
        pComp = &ctx->gpx_cli[layer_id].composition;
        pActSurf = &ctx->gpx_cli[layer_id].active_surface;
+       is_cursor_layer = (ctx->gpx_cli[layer_id].layer_flags & HWC_IS_CURSOR_LAYER) ? true : false;
     } else {
        pComp = &ctx->vd_cli[layer_id].composition;
        pActSurf = &ctx->vd_cli[layer_id].active_surface;
@@ -1419,7 +1421,7 @@ bool hwc_compose_gralloc_buffer(
     }
 
     *pActSurf = NULL;
-    if (pComp->visible) {
+    if (pComp->visible && !is_cursor_layer) {
         size_t width = pSharedData->planes[DEFAULT_PLANE].width;
         if (check_transparency && (pixel_format == NEXUS_PixelFormat_eA8_B8_G8_R8)
                                && (width > 32) && (width % 8  == 0)) {
