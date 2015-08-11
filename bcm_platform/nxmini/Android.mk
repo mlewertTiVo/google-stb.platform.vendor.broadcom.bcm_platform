@@ -19,9 +19,9 @@ include $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include/nxclient.inc
 
 LOCAL_FORCE_STATIC_EXECUTABLE := true
 
-LOCAL_STATIC_LIBRARIES := libcutils \
-                          liblog \
-                          libstdc++ \
+LOCAL_WHOLE_STATIC_LIBRARIES := libcutils \
+                                liblog
+LOCAL_STATIC_LIBRARIES := libstdc++ \
                           libm \
                           libc \
                           libnxserver \
