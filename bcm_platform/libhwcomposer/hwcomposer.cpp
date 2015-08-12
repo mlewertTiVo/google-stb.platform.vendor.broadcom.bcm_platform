@@ -140,6 +140,7 @@ using namespace android;
 #define HWC_TRACK_BUFFER_PROP        "ro.hwc.track.buffer"
 #define HWC_DUMP_VIRT_PROP           "ro.hwc.dump.virt"
 #define HWC_DUMP_MMA_OPS_PROP        "ro.hwc.dump.mma"
+#define HWC_SKIP_DUP_PROP            "ro.hwc.skip.dup"
 
 #define HWC_USES_MMA_PROP            "ro.nx.mma"
 
@@ -497,7 +498,7 @@ struct hwc_context_t {
     bool display_dump_vsync;
     bool nsc_copy;
     bool track_buffer;
-
+    bool skip_dup;
     bool display_dump_virt;
 
     int hwc_with_mma;
@@ -1615,7 +1616,9 @@ static void hwc_prepare_gpx_layer(
     }
 
     ctx->gpx_cli[layer_id].skip_set = false;
-    if (layer->compositionType == HWC_OVERLAY) {
+    if (ctx->skip_dup &&
+        (layer->compositionType == HWC_OVERLAY) &&
+        !(layer->flags & HWC_IS_CURSOR_LAYER)) {
        if (ctx->gpx_cli[layer_id].last.layerhdl &&
            (ctx->gpx_cli[layer_id].last.layerhdl == layer->handle) &&
            !geometry_changed) {
@@ -2839,6 +2842,10 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
 
    if (property_get(HWC_DUMP_MMA_OPS_PROP, value, HWC_DEFAULT_DISABLED)) {
       dev->dump_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
+   }
+
+   if (property_get(HWC_SKIP_DUP_PROP, value, HWC_DEFAULT_DISABLED)) {
+      dev->skip_dup = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
    if (property_get(HWC_SW_SYNC_PROP, value, HWC_DEFAULT_DISABLED)) {
