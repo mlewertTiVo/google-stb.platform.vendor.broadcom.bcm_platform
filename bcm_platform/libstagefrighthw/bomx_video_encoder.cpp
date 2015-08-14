@@ -3070,6 +3070,7 @@ NEXUS_Error BOMX_VideoEncoder::AllocateEncoderResource()
     connectSettings.simpleVideoDecoder[0].windowCapabilities.encoder = true;
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = 720;
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = 480;
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxFormat = NEXUS_VideoFormat_eNtsc;
     connectSettings.simpleEncoder[0].id = m_allocResults.simpleEncoder[0].id;
     connectSettings.simpleEncoder[0].nonRealTime = true;
     connectSettings.simpleEncoder[0].audio.cpuAccessible = true;
