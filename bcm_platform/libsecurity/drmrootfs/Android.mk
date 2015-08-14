@@ -15,7 +15,7 @@
 #----------------
 # libdrmrootfs.so
 #----------------
-LOCAL_PATH := $(call my-dir)/../../../refsw/BSEAV/lib/drmrootfs
+LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/drmrootfs
 
 include $(CLEAR_VARS)
 

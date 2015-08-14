@@ -15,19 +15,9 @@
 #-------------
 # libbcrypt.so
 #-------------
-LOCAL_PATH := $(call my-dir)/../../../refsw/BSEAV/lib/security/bcrypt/src
+LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/src
 
 include $(CLEAR_VARS)
-
-ifeq ($(NEXUS_MODE),proxy)
-NEXUS_LIB=libnexus
-else
-ifeq ($(NEXUS_WEBCPU),core1_server)
-NEXUS_LIB=libnexus_webcpu
-else
-NEXUS_LIB=libnexus_client
-endif
-endif
 
 LOCAL_SRC_FILES := \
     bcrypt.c \
@@ -53,7 +43,7 @@ LOCAL_SRC_FILES := \
 
 LOCAL_C_INCLUDES := \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/bcrypt/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/include \
     $(TOP)/external/openssl/include \
     $(NEXUS_APP_INCLUDE_PATHS)
 
@@ -68,7 +58,7 @@ ifneq ($(TARGET_BUILD_TYPE),debug)
 LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
 
-LOCAL_SHARED_LIBRARIES := liblog libssl libcrypto $(NEXUS_LIB)
+LOCAL_SHARED_LIBRARIES := liblog libssl libcrypto libnexus
 
 LOCAL_MODULE := libbcrypt
 LOCAL_MODULE_TAGS := optional

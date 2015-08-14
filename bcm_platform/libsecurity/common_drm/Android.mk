@@ -13,13 +13,11 @@
 # limitations under the License.
 
 LOCAL_PATH := $(call my-dir)
-# save original 
-LOCAL_PATH_ORIG := $(LOCAL_PATH)
 #-------------
 # libcmndrm.so
 #-------------
 include $(CLEAR_VARS)
-LOCAL_PREBUILT_LIBS := ${DRM_BUILD_MODE}/libcmndrm.so
+LOCAL_PREBUILT_LIBS := prebuilt/libcmndrm.so
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_MULTI_PREBUILT)
 
@@ -38,18 +36,18 @@ LOCAL_PREBUILT_LIBS := ../../../release_prebuilts/$(LOCAL_LIB_NAME).so
 include $(BUILD_MULTI_PREBUILT)
 else
 # compile library from source
-LOCAL_PATH := $(LOCAL_PATH_ORIG)/../../../refsw/BSEAV/lib/security/common_drm
+LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm
 include $(LOCAL_PATH)/drm/playready/playready.inc
 LOCAL_SRC_FILES := ${PLAYREADY_SOURCES}
 
 LOCAL_C_INCLUDES := \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_crypto/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/drmrootfs \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/playready/2.5/inc \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/drmrootfs \
+    ${REFSW_BASE_DIR}/BSEAV/lib/playready/2.5/inc \
     $(NEXUS_APP_INCLUDE_PATHS) \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include
+    ${REFSW_BASE_DIR}/nexus/nxclient/include
 
 DRM_BUILD_PROFILE := 900
 LOCAL_CFLAGS += -DDRM_BUILD_PROFILE=${DRM_BUILD_PROFILE} -DTARGET_LITTLE_ENDIAN=1 -DTARGET_SUPPORTS_UNALIGNED_DWORD_POINTERS=1
@@ -75,12 +73,12 @@ ifeq ($(SAGE_SUPPORT), y)
 #---------------
 # libcmndrm_tl.so for Modular DRM
 #---------------
-LOCAL_PATH := $(LOCAL_PATH_ORIG)/../../../refsw/BSEAV/lib/security/common_drm
+LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm
 
 include $(CLEAR_VARS)
 
 # add SAGElib related includes
-include $(LOCAL_PATH)/../../../../magnum/syslib/sagelib/bsagelib_public.inc
+include ${REFSW_BASE_DIR}/magnum/syslib/sagelib/bsagelib_public.inc
 
 ############################################################################
 # Go through all <DRM>_SAGE variables from config.inc and include those
@@ -122,30 +120,20 @@ COMMON_DRM_TL_SOURCES += ${NETFLIX_SOURCES}
 COMMON_DRM_TL_DEFINES += ${NETFLIX_DEFINES}
 endif
 
-ifeq ($(NEXUS_MODE),proxy)
-NEXUS_LIB=libnexus
-else
-ifeq ($(NEXUS_WEBCPU),core1_server)
-NEXUS_LIB=libnexus_webcpu
-else
-NEXUS_LIB=libnexus_client
-endif
-endif
-
 LOCAL_SRC_FILES := ${COMMON_DRM_TL_SOURCES}
 
 LOCAL_C_INCLUDES := \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/bcrypt/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_crypto/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include/priv \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include/tl \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/include/private \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/platforms/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/drmrootfs \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include/priv \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include/tl \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/srai/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/include/private \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/platforms/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/drmrootfs \
     $(BSAGELIB_INCLUDES) \
     $(TOP)/external/openssl/include \
     $(NEXUS_APP_INCLUDE_PATHS)
@@ -164,7 +152,7 @@ endif
 # Set common DRM TL to not overwrite Type 1 or 2 drm bin files on rootfs
 LOCAL_CFLAGS += -DCMNDRM_SKIP_BINFILE_OVERWRITE
 
-LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) libcmndrm libdrmrootfs libsrai liblog
+LOCAL_SHARED_LIBRARIES := libnexus libcmndrm libdrmrootfs libsrai liblog
 
 LOCAL_MODULE := libcmndrm_tl
 LOCAL_MODULE_TAGS := optional

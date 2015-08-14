@@ -15,22 +15,12 @@
 #-------------
 # libsrai.so
 #-------------
-LOCAL_PATH := $(call my-dir)/../../../refsw/
+LOCAL_PATH := ${REFSW_BASE_DIR}
 
 include $(CLEAR_VARS)
 
 # add SAGElib related includes
 include $(LOCAL_PATH)/magnum/syslib/sagelib/bsagelib_public.inc
-
-ifeq ($(NEXUS_MODE),proxy)
-NEXUS_LIB=libnexus
-else
-ifeq ($(NEXUS_WEBCPU),core1_server)
-NEXUS_LIB=libnexus_webcpu
-else
-NEXUS_LIB=libnexus_client
-endif
-endif
 
 LOCAL_SRC_FILES := \
     BSEAV/lib/security/sage/srai/src/sage_srai.c \
@@ -39,9 +29,9 @@ LOCAL_SRC_FILES := \
 
 LOCAL_C_INCLUDES := \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/include/private \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/srai/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/include/private \
     $(BSAGELIB_INCLUDES) \
     $(NEXUS_APP_INCLUDE_PATHS)
 
@@ -56,7 +46,7 @@ ifneq ($(TARGET_BUILD_TYPE),debug)
 LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
 
-LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) liblog
+LOCAL_SHARED_LIBRARIES := libnexus liblog
 
 LOCAL_MODULE := libsrai
 
