@@ -1422,10 +1422,11 @@ bool hwc_compose_gralloc_buffer(
     }
 
     *pActSurf = NULL;
-    if (pComp->visible && !is_cursor_layer) {
+    if (pComp->visible) {
         size_t width = pSharedData->planes[DEFAULT_PLANE].width;
-        if (check_transparency && (pixel_format == NEXUS_PixelFormat_eA8_B8_G8_R8)
-                               && (width > 32) && (width % 8  == 0)) {
+        if (!is_cursor_layer && check_transparency &&
+            (pixel_format == NEXUS_PixelFormat_eA8_B8_G8_R8) &&
+            (width > 32) && (width % 8  == 0)) {
            void *pAddr;
            bool transparent = false;
            hwc_mem_lock(ctx, pSharedData->planes[DEFAULT_PLANE].physAddr, &pAddr, true);
