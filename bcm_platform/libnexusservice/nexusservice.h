@@ -186,7 +186,7 @@ protected:
     virtual void platformInit();
     virtual void platformUninit();
     virtual NEXUS_ClientHandle getNexusClient(unsigned pid, const char * name);
-    void getInitialOutputFormats(NEXUS_VideoFormat *hd_format);
+    static void getInitialOutputFormats(NEXUS_VideoFormat *hd_format);
 
     static const char *getPowerString(b_powerState pmState);
 

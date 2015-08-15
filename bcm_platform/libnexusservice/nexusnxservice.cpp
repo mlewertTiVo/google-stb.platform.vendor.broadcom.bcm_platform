@@ -99,14 +99,61 @@ typedef struct NexusNxServerContext : public NexusServerContext {
     ~NexusNxServerContext() { ALOGV("%s: called", __PRETTY_FUNCTION__); }
 } NexusNxServerContext;
 
+bool NexusNxService::hdmiOutputUHDSupport(NEXUS_HdmiOutputStatus *status, NEXUS_VideoFormat *selected)
+{
+   int i;
+   NEXUS_VideoFormat format = NEXUS_VideoFormat_eUnknown;
+   NEXUS_VideoFormat uhd_only[] = {
+      NEXUS_VideoFormat_e3840x2160p24hz,  /* UHD 3840x2160 24Hz */
+      NEXUS_VideoFormat_e3840x2160p25hz,  /* UHD 3840x2160 25Hz */
+      NEXUS_VideoFormat_e3840x2160p30hz,  /* UHD 3840x2160 30Hz */
+      NEXUS_VideoFormat_e3840x2160p50hz,  /* UHD 3840x2160 50Hz */
+      NEXUS_VideoFormat_e3840x2160p60hz,  /* UHD 3840x2160 60Hz */
+      NEXUS_VideoFormat_e4096x2160p24hz,  /* UHD 4096x2160 24Hz */
+      NEXUS_VideoFormat_e4096x2160p25hz,  /* UHD 4096x2160 25Hz */
+      NEXUS_VideoFormat_e4096x2160p30hz,  /* UHD 4096x2160 30Hz */
+      NEXUS_VideoFormat_e4096x2160p50hz,  /* UHD 4096x2160 50Hz */
+      NEXUS_VideoFormat_e4096x2160p60hz,  /* UHD 4096x2160 60Hz */
+      NEXUS_VideoFormat_eUnknown,
+   };
+
+   *selected = NEXUS_VideoFormat_eUnknown;
+   for (i = 0 ; uhd_only[i] != NEXUS_VideoFormat_eUnknown; i++) {
+      if (status->videoFormatSupported[uhd_only[i]]) {
+         if (status->preferredVideoFormat == uhd_only[i]) {
+            *selected = uhd_only[i];
+            break;
+         }
+         if (format == 0) {
+            format = uhd_only[i];
+         }
+      }
+   }
+
+   if (*selected == NEXUS_VideoFormat_eUnknown && format != NEXUS_VideoFormat_eUnknown) {
+      *selected = format;
+   }
+
+   if (*selected) {
+      ALOGI("%s: enbaling UHD output format: %d", __func__, (int)*selected);
+      return true;
+   } else {
+      ALOGV("%s: no compatible UHD output.", __func__);
+      return false;
+   }
+}
+
 void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param __unused)
 {
 #if NEXUS_HAS_HDMI_OUTPUT
-    int rc, hdmiHpdSwitchFd;
+    int rc, hdmiHpdSwitchFd, i;
     NxClient_StandbyStatus standbyStatus;
+    NxClient_DisplaySettings settings;
     NexusNxService *pNexusNxService = reinterpret_cast<NexusNxService *>(context);
     hdmi_state hdmiSwitch;
     const char *hdmiHpdDevName = "/dev/hdmi_hpd";
+    NEXUS_VideoFormat format;
+    bool update = false;
 
     rc = NxClient_GetStandbyStatus(&standbyStatus);
     if (rc != NEXUS_SUCCESS) {
@@ -176,22 +223,38 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
             close(hdmiHpdSwitchFd);
         }
 
-#if ANDROID_ENABLE_HDMI_HDCP
-        NxClient_DisplaySettings settings;
         NxClient_GetDisplaySettings(&settings);
 
+        if (status.hdmi.status.connected && status.hdmi.status.rxPowered) {
+           if (hdmiOutputUHDSupport(&status.hdmi.status, &format)) {
+              if (settings.format != format) {
+                 settings.format = format;
+                 update = true;
+              }
+           } else {
+              getInitialOutputFormats(&format);
+              if (settings.format != format) {
+                 settings.format = format;
+                 update = true;
+              }
+           }
+        }
+
+#if ANDROID_ENABLE_HDMI_HDCP
         /* enable hdcp authentication if hdmi connected and powered */
         settings.hdmiPreferences.hdcp =
             (status.hdmi.status.connected && status.hdmi.status.rxPowered) ?
             NxClient_HdcpLevel_eMandatory :
             NxClient_HdcpLevel_eNone;
-
-        rc = NxClient_SetDisplaySettings(&settings);
-        if (rc) {
-            ALOGE("%s: Could not set display settings!!!", __PRETTY_FUNCTION__);
-            return;
-        }
+        update = true;
 #endif
+        if (update) {
+           rc = NxClient_SetDisplaySettings(&settings);
+           if (rc) {
+               ALOGE("%s: Could not set display settings!!!", __PRETTY_FUNCTION__);
+               return;
+           }
+        }
     }
     else {
         ALOGW("%s: Ignoring HDMI%d hotplug as we are in standby!", __PRETTY_FUNCTION__, param);
