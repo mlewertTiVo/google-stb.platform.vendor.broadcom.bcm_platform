@@ -243,6 +243,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_eosDelivered(false),
     m_eosReceived(false),
     m_eosStandalone(false),
+    m_eosReady(false),
     m_eosTimeStamp(0),
     m_formatChangePending(false),
     m_secureDecoder(secure),
@@ -251,6 +252,9 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_numRoles(0),
     m_pFrameStatus(NULL),
     m_pMemoryBlocks(NULL),
+    m_sampleRate(0),
+    m_bitsPerSample(0),
+    m_numPcmChannels(0),
     m_pConfigBuffer(NULL),
     m_configBufferState(ConfigBufferState_eAccumulating),
     m_configBufferSize(0)
@@ -456,6 +460,8 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
         this->Invalidate();
         return;
     }
+    m_bitsPerSample = decSettings.bitsPerSample;
+    m_numPcmChannels = decSettings.numPcmChannels;
 
     // Init BCMA header for some codecs
     BKNI_Memset(m_pBcmaHeader, 0, sizeof(m_pBcmaHeader));
@@ -994,6 +1000,8 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
                 return OMX_ErrorUndefined;
             }
             m_sampleRate = pPcm->nSamplingRate;
+            m_bitsPerSample = pPcm->nBitPerSample;
+            m_numPcmChannels = pPcm->nChannels;
             return OMX_ErrorNone;
         }
     case OMX_IndexParamAudioAndroidAc3:
@@ -1061,6 +1069,7 @@ NEXUS_Error BOMX_AudioDecoder::StartDecoder()
             m_eosDelivered = false;
             m_eosReceived = false;
             m_eosStandalone = false;
+            m_eosReady = false;
             return BOMX_BERR_TRACE(errCode);
         }
         m_decoderState = BOMX_AudioDecoderState_eStarted;
@@ -1084,6 +1093,7 @@ NEXUS_Error BOMX_AudioDecoder::StopDecoder()
         m_eosDelivered = false;
         m_eosReceived = false;
         m_eosStandalone = false;
+        m_eosReady = false;
         m_pBufferTracker->Flush();
         InputBufferCounterReset();
         m_decoderState = BOMX_AudioDecoderState_eStopped;
@@ -2851,6 +2861,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
     // Check if we have client buffers ready to be delivered
     if ( m_pAudioPorts[1]->QueueDepth() > 0 )
     {
+        int numSample;
         BOMX_Buffer *pBuffer;
         OMX_BUFFERHEADERTYPE *pHeader;
         errCode = NEXUS_AudioDecoder_GetDecodedFrames(m_hAudioDecoder, m_pMemoryBlocks, m_pFrameStatus, m_pAudioPorts[1]->GetDefinition()->nBufferCountActual, &numFrames);
@@ -2906,34 +2917,6 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                     pHeader->nFlags |= OMX_BUFFERFLAG_EOS;
                 }
 
-                if ( pHeader->nFlags & OMX_BUFFERFLAG_EOS )
-                {
-                    ALOGV("EOS frame received");
-                    if ( m_eosPending )
-                    {
-                        m_eosPending = false;
-                        m_eosDelivered = true;
-                    }
-                    else
-                    {
-                        // Fatal error - we did something wrong.
-                        ALOGW("Additional frames received after EOS");
-                        ALOG_ASSERT(true == m_eosPending);
-                        return;
-                    }
-
-                    if ( pHeader->nTimeStamp == 0 )
-                    {
-                        pHeader->nTimeStamp = m_eosTimeStamp;
-                        m_eosTimeStamp = 0;
-                    }
-                }
-                else
-                {
-                    // Keep track of the latest output timestamp for the empty EOS frame
-                    m_eosTimeStamp = pHeader->nTimeStamp;
-                }
-
                 if ( m_pFrameStatus[i].filledBytes > 0 )
                 {
                     NEXUS_FlushCache(pInfo->pNexusMemory, m_pFrameStatus[i].filledBytes);
@@ -2947,14 +2930,11 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                 {
                     if ( m_pFrameStatus[i].filledBytes > 0 )
                     {
-                        NEXUS_AudioDecoderDecodeToMemorySettings decSettings;
                         int delaySamples = GetCodecDelay();
 
                         m_firstFrame = false;
 
-                        NEXUS_AudioDecoder_GetDecodeToMemorySettings(m_hAudioDecoder, &decSettings);
-
-                        pHeader->nOffset = delaySamples * (decSettings.bitsPerSample/8) * decSettings.numPcmChannels;
+                        pHeader->nOffset = delaySamples * (m_bitsPerSample/8) * m_numPcmChannels;
                         if ( pHeader->nOffset >= m_pFrameStatus[i].filledBytes )
                         {
                             pHeader->nOffset = 0;
@@ -2966,7 +2946,35 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                 {
                     fwrite(pHeader->pBuffer + pHeader->nOffset, pHeader->nFilledLen, 1, m_pOutputFile);
                 }
-                ALOGV("Return output buffer TS %llu bytes %u flags 0x%x", pHeader->nTimeStamp, m_pFrameStatus[i].filledBytes, pHeader->nFlags);
+
+                if ( pHeader->nFlags & OMX_BUFFERFLAG_EOS )
+                {
+                    ALOGV("EOS frame received");
+                    if ( m_eosPending && !m_eosReady )
+                    {
+                        ALOG_ASSERT(!m_eosStandalone);
+
+                        // Defer EOS for the next zero padded frame
+                        pHeader->nFlags &= ~OMX_BUFFERFLAG_EOS;
+                        m_eosReady = true;
+                    }
+                    else
+                    {
+                        // Fatal error - we did something wrong.
+                        ALOGW("Additional frames received after EOS");
+                        ALOG_ASSERT(true == m_eosPending);
+                        return;
+                    }
+                }
+
+                if ( pHeader->nTimeStamp != 0 )
+                {
+                    // Update the expected timestamp if the next frame is an EOS frame
+                    numSample = pHeader->nFilledLen / (m_bitsPerSample / 8 * m_numPcmChannels);
+                    m_eosTimeStamp = pHeader->nTimeStamp + (numSample * 1000000ll / m_pFrameStatus[i].sampleRate);
+                }
+
+                ALOGV("Return output buffer TS %llu bytes %lu (%lu@%lu) flags 0x%x", pHeader->nTimeStamp, m_pFrameStatus[i].filledBytes, pHeader->nFilledLen, pHeader->nOffset, pHeader->nFlags);
                 ReturnPortBuffer(m_pAudioPorts[1], pBuffer);
                 // Try to return processed input buffers
                 ReturnInputBuffers(pHeader->nTimeStamp, false);
@@ -2974,7 +2982,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                 NEXUS_AudioDecoder_ConsumeDecodedFrames(m_hAudioDecoder, 1);
             }
         }
-        if ( m_eosPending && m_eosStandalone )
+        if ( m_eosPending && ( m_eosStandalone || m_eosReady ) )
         {
             if ( m_pAudioPorts[0]->QueueDepth() <= 1 &&
                  m_pAudioPorts[1]->QueueDepth() > 0 )
@@ -2993,9 +3001,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                     pHeader = pBuffer->GetHeader();
                     if ( delaySamples > 0 )
                     {
-                        NEXUS_AudioDecoderDecodeToMemorySettings decSettings;
-                        NEXUS_AudioDecoder_GetDecodeToMemorySettings(m_hAudioDecoder, &decSettings);
-                        pHeader->nFilledLen = delaySamples * (decSettings.bitsPerSample/8) * decSettings.numPcmChannels;
+                        pHeader->nFilledLen = delaySamples * (m_bitsPerSample/8) * m_numPcmChannels;
                         BKNI_Memset(pHeader->pBuffer, 0, pHeader->nFilledLen);
                         if ( NULL != m_pOutputFile )
                         {
@@ -3011,6 +3017,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                     m_pAudioPorts[1]->BufferComplete(pBuffer);
                     m_eosPending = false;
                     m_eosStandalone = false;
+                    m_eosReady = false;
                     m_eosDelivered = true;
                     m_eosTimeStamp = 0;
                     ALOGV("Return EOS output buffer %llu bytes %u", pHeader->nTimeStamp, pHeader->nFilledLen);

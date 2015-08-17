@@ -217,6 +217,7 @@ protected:
     bool m_eosDelivered;
     bool m_eosReceived;
     bool m_eosStandalone;
+    bool m_eosReady;
     OMX_TICKS m_eosTimeStamp;
     bool m_formatChangePending;
     bool m_secureDecoder;
@@ -226,6 +227,8 @@ protected:
     NEXUS_AudioDecoderFrameStatus *m_pFrameStatus;
     NEXUS_MemoryBlockHandle *m_pMemoryBlocks;
     unsigned m_sampleRate;
+    unsigned m_bitsPerSample;
+    unsigned m_numPcmChannels;
 
     #define BOMX_BCMA_HEADER_SIZE (26)
     uint8_t m_pBcmaHeader[BOMX_BCMA_HEADER_SIZE];
