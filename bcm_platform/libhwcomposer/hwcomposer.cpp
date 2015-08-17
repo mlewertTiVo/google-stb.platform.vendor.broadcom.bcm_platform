@@ -1357,7 +1357,7 @@ static void hwc_set_layer_blending(struct hwc_context_t* ctx, int layer_id, int 
 bool hwc_compose_gralloc_buffer(
    struct hwc_context_t* ctx, int layer_id, PSHARED_DATA pSharedData,
    private_handle_t *gr_buffer, NEXUS_SurfaceHandle display_surface, bool is_virtual,
-   bool check_transparency = false)
+   bool check_transparency, bool *skip_set)
 {
     bool composed = false;
     bool is_cursor_layer = false;
@@ -1373,6 +1373,9 @@ bool hwc_compose_gralloc_buffer(
 
     if (!is_virtual) {
        if (ctx->gpx_cli[layer_id].skip_set) {
+          if (skip_set) {
+             *skip_set = true;
+          }
           ALOGV("%s: willingly skipping layer: %d\n", __FUNCTION__, layer_id);
           goto out;
        }
@@ -2043,7 +2046,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     struct sync_fence_info_data fence;
     int layer_composed = 0;
     NEXUS_SurfaceHandle display_surface = NULL;
-    bool display_surface_seeded = false;
+    bool display_surface_seeded = false, skip_set = false;
 
     if (!list)
        return -EINVAL;
@@ -2149,7 +2152,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                    }
                 }
 
-                if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, display_surface, false, has_video)) {
+                if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, display_surface, false, has_video, &skip_set)) {
                    layer_composed++;
                 }
                 ctx->gpx_cli[i].last.grhdl = (buffer_handle_t)gr_buffer;
@@ -2171,18 +2174,22 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
               list->retireFenceFd = INVALID_FENCE;
            }
            if (has_video && !ctx->alpha_hole_background) {
-              if (!display_surface_seeded) {
-                 hwc_seed_disp_surface(ctx, display_surface);
-              }
-              rc = hwc_checkpoint(ctx);
-              if (rc) {
-                 ALOGW("%s: checkpoint timeout", __FUNCTION__);
+              if (skip_set) {
+                 hwc_put_disp_surface(ctx, 0, display_surface);
               } else {
-                 rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[0].schdl, display_surface, NULL, false);
+                 if (!display_surface_seeded) {
+                    hwc_seed_disp_surface(ctx, display_surface);
+                 }
+                 rc = hwc_checkpoint(ctx);
                  if (rc) {
-                    ALOGW("%s: Unable to push surface to client (%d)", __FUNCTION__, rc);
+                    ALOGW("%s: checkpoint timeout", __FUNCTION__);
                  } else {
-                    ctx->alpha_hole_background = true;
+                    rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[0].schdl, display_surface, NULL, false);
+                    if (rc) {
+                       ALOGW("%s: Unable to push surface to client (%d)", __FUNCTION__, rc);
+                    } else {
+                       ctx->alpha_hole_background = true;
+                    }
                  }
               }
            } else {
@@ -2313,7 +2320,7 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                 }
                 hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
                 PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
-                if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, display_surface, true)) {
+                if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, display_surface, true, false, NULL)) {
                    layer_composed++;
                 }
                 hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
