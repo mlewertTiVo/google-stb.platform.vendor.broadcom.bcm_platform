@@ -21,7 +21,6 @@ on init
    mkdir /storage/usb0 0700 root root
 
    export EXTERNAL_STORAGE /storage/emulated/legacy
-   export EMULATED_STORAGE_SOURCE /mnt/shell/emulated
    export SECONDARY_STORAGE /storage/sdcard1
 
    # Support legacy paths
@@ -99,17 +98,6 @@ on property:dyn.nx.vidout.set=1
 on property:sys.gator=1
    insmod /system/vendor/drivers/gator.ko
    start gatord
-
-service sdcard /system/bin/sdcard -u 1023 -g 1023 -l /data/media /mnt/shell/emulated
-   class late_start
-
-service fuse_sdcard1 /system/bin/sdcard -u 1023 -g 1023 -w /mnt/media_rw/sdcard1 /storage/sdcard1
-   class late_start
-   disabled
-
-service fuse_usb0 /system/bin/sdcard -u 1023 -g 1023 -w /mnt/media_rw/usb0 /storage/usb0
-   class late_start
-   disabled
 
 service nxserver /system/bin/nxserver
    class core
