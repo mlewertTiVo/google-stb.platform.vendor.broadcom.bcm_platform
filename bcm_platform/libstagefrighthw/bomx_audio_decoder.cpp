@@ -1000,8 +1000,8 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
                 return OMX_ErrorUndefined;
             }
             m_sampleRate = pPcm->nSamplingRate;
-            m_bitsPerSample = pPcm->nBitPerSample;
-            m_numPcmChannels = pPcm->nChannels;
+            m_bitsPerSample = decSettings.bitsPerSample;
+            m_numPcmChannels = decSettings.numPcmChannels;
             return OMX_ErrorNone;
         }
     case OMX_IndexParamAudioAndroidAc3:
