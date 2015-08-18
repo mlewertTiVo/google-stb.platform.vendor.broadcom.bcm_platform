@@ -52,6 +52,7 @@ include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
 include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
 
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bsysperf/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/calcfb/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/cec/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/clipping/Android.mk
