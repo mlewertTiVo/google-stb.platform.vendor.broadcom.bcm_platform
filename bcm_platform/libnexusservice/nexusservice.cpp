@@ -694,7 +694,7 @@ int NexusService::platformInitVideo(void)
 
     NEXUS_Display_GetDefaultSettings(&displaySettings);
     displaySettings.displayType = NEXUS_DisplayType_eAuto;
-    displaySettings.format = initial_hd_format;
+    displaySettings.format = initial_output_format;
     displayState.display = NEXUS_Display_Open(0, &displaySettings);
     if (!displayState.display) {
         ALOGE("%s: NEXUS_Display_Open(%d) failed!!", __PRETTY_FUNCTION__, 0);
@@ -761,7 +761,7 @@ int NexusService::platformInitSurfaceCompositor(void)
     int rc=0; unsigned i;
     NEXUS_SurfaceCompositorSettings *p_surface_compositor_settings = NULL;
     NEXUS_VideoFormatInfo formatInfo;
-    NEXUS_VideoFormat_GetInfo(initial_hd_format, &formatInfo);
+    NEXUS_VideoFormat_GetInfo(initial_output_format, &formatInfo);
 
     BKNI_CreateEvent(&inactiveEvent);
     p_surface_compositor_settings = (NEXUS_SurfaceCompositorSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorSettings));
@@ -797,26 +797,18 @@ int NexusService::platformInitSurfaceCompositor(void)
     return rc;
 }
 
-void NexusService::getInitialOutputFormats(NEXUS_VideoFormat *hd_format)
+NEXUS_VideoFormat NexusService::getForcedOutputFormat(void)
 {
     char value[PROPERTY_VALUE_MAX];
-    NEXUS_VideoFormat fmt;
 
-    // HD output format
-    if(property_get("persist.hd_output_format", value, NULL))
-    {
-        fmt = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
-        ALOGW("Set output format to %s", lookup_name(g_videoFormatStrs, fmt));
-    }
-    else
-    {
-        ALOGW("Set output format to default e720p");
-        fmt = NEXUS_VideoFormat_e720p;
+    memset(value, 0, sizeof(value));
+    if (property_get("ro.nx.vidout.force", value, NULL)) {
+       if (strlen(value)) {
+          return (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
+       }
     }
 
-    if(hd_format) *hd_format = fmt;
-
-    return;
+    return  NEXUS_VideoFormat_eUnknown;
 }
 
 void NexusService::platformInit()
@@ -851,7 +843,10 @@ void NexusService::platformInit()
         simpleAudioPlayback[i] = NULL;
     }
 
-    getInitialOutputFormats(&initial_hd_format);
+    initial_output_format = getForcedOutputFormat();
+    if (initial_output_format == NEXUS_VideoFormat_eUnknown) {
+       initial_output_format = NEXUS_VideoFormat_e1080p;
+    }
 
     NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
     g2dOpenSettings.compatibleWithSurfaceCompaction = false;

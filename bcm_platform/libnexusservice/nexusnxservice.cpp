@@ -99,48 +99,47 @@ typedef struct NexusNxServerContext : public NexusServerContext {
     ~NexusNxServerContext() { ALOGV("%s: called", __PRETTY_FUNCTION__); }
 } NexusNxServerContext;
 
-bool NexusNxService::hdmiOutputUHDSupport(NEXUS_HdmiOutputStatus *status, NEXUS_VideoFormat *selected)
+NEXUS_VideoFormat NexusNxService::getBestOutputFormat(NEXUS_HdmiOutputStatus *status)
 {
    int i;
    NEXUS_VideoFormat format = NEXUS_VideoFormat_eUnknown;
-   NEXUS_VideoFormat uhd_only[] = {
-      NEXUS_VideoFormat_e3840x2160p24hz,  /* UHD 3840x2160 24Hz */
-      NEXUS_VideoFormat_e3840x2160p25hz,  /* UHD 3840x2160 25Hz */
-      NEXUS_VideoFormat_e3840x2160p30hz,  /* UHD 3840x2160 30Hz */
-      NEXUS_VideoFormat_e3840x2160p50hz,  /* UHD 3840x2160 50Hz */
-      NEXUS_VideoFormat_e3840x2160p60hz,  /* UHD 3840x2160 60Hz */
-      NEXUS_VideoFormat_e4096x2160p24hz,  /* UHD 4096x2160 24Hz */
-      NEXUS_VideoFormat_e4096x2160p25hz,  /* UHD 4096x2160 25Hz */
-      NEXUS_VideoFormat_e4096x2160p30hz,  /* UHD 4096x2160 30Hz */
-      NEXUS_VideoFormat_e4096x2160p50hz,  /* UHD 4096x2160 50Hz */
-      NEXUS_VideoFormat_e4096x2160p60hz,  /* UHD 4096x2160 60Hz */
+   NEXUS_VideoFormat ordered_list[] = {
+      NEXUS_VideoFormat_e4096x2160p60hz,
+      NEXUS_VideoFormat_e4096x2160p50hz,
+      NEXUS_VideoFormat_e4096x2160p30hz,
+      NEXUS_VideoFormat_e4096x2160p25hz,
+      NEXUS_VideoFormat_e4096x2160p24hz,
+      NEXUS_VideoFormat_e3840x2160p60hz,
+      NEXUS_VideoFormat_e3840x2160p50hz,
+      NEXUS_VideoFormat_e3840x2160p30hz,
+      NEXUS_VideoFormat_e3840x2160p25hz,
+      NEXUS_VideoFormat_e3840x2160p24hz,
+      NEXUS_VideoFormat_e1080p,
+      NEXUS_VideoFormat_e1080p50hz,
+      NEXUS_VideoFormat_e1080p30hz,
+      NEXUS_VideoFormat_e1080p25hz,
+      NEXUS_VideoFormat_e1080p24hz,
+      NEXUS_VideoFormat_e720p,
+      NEXUS_VideoFormat_e720p30hz,
+      NEXUS_VideoFormat_e720p25hz,
+      NEXUS_VideoFormat_e720p24hz,
       NEXUS_VideoFormat_eUnknown,
    };
 
-   *selected = NEXUS_VideoFormat_eUnknown;
-   for (i = 0 ; uhd_only[i] != NEXUS_VideoFormat_eUnknown; i++) {
-      if (status->videoFormatSupported[uhd_only[i]]) {
-         if (status->preferredVideoFormat == uhd_only[i]) {
-            *selected = uhd_only[i];
-            break;
-         }
-         if (format == 0) {
-            format = uhd_only[i];
-         }
+   for (i = 0 ; ordered_list[i] != NEXUS_VideoFormat_eUnknown; i++) {
+      if (status->videoFormatSupported[ordered_list[i]]) {
+         format = ordered_list[i];
+         break;
       }
    }
 
-   if (*selected == NEXUS_VideoFormat_eUnknown && format != NEXUS_VideoFormat_eUnknown) {
-      *selected = format;
+   if (format != NEXUS_VideoFormat_eUnknown) {
+      ALOGI("%s: enabling output format: %d", __func__, (int)format);
+   } else {
+      ALOGV("%s: no compatible output format.", __func__);
    }
 
-   if (*selected) {
-      ALOGI("%s: enbaling UHD output format: %d", __func__, (int)*selected);
-      return true;
-   } else {
-      ALOGV("%s: no compatible UHD output.", __func__);
-      return false;
-   }
+   return format;
 }
 
 void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param __unused)
@@ -226,17 +225,13 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
         NxClient_GetDisplaySettings(&settings);
 
         if (status.hdmi.status.connected && status.hdmi.status.rxPowered) {
-           if (hdmiOutputUHDSupport(&status.hdmi.status, &format)) {
-              if (settings.format != format) {
-                 settings.format = format;
-                 update = true;
-              }
-           } else {
-              getInitialOutputFormats(&format);
-              if (settings.format != format) {
-                 settings.format = format;
-                 update = true;
-              }
+           format = getForcedOutputFormat();
+           if (format == NEXUS_VideoFormat_eUnknown) {
+              format = getBestOutputFormat(&status.hdmi.status);
+           }
+           if ((format != NEXUS_VideoFormat_eUnknown) && (settings.format != format)) {
+              settings.format = format;
+              update = true;
            }
         }
 

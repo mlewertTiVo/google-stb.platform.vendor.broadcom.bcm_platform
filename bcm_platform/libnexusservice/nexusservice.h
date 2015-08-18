@@ -186,7 +186,7 @@ protected:
     virtual void platformInit();
     virtual void platformUninit();
     virtual NEXUS_ClientHandle getNexusClient(unsigned pid, const char * name);
-    static void getInitialOutputFormats(NEXUS_VideoFormat *hd_format);
+    static NEXUS_VideoFormat getForcedOutputFormat(void);
 
     static const char *getPowerString(b_powerState pmState);
 
@@ -220,8 +220,7 @@ private:
     NEXUS_SurfaceClientHandle           surfaceclient;
     NEXUS_Graphics2DHandle              gfx2D;
     BKNI_EventHandle                    gfxDone;
-    NEXUS_VideoFormat                   initial_hd_format;
-    NEXUS_VideoFormat                   initial_sd_format;
+    NEXUS_VideoFormat                   initial_output_format;
 };
 
 #endif // _NEXUSSERVICE_H_

@@ -112,7 +112,7 @@
 #define NX_HEAP_DRV_MANAGED            "ro.nx.heap.drv_managed"
 #define NX_HEAP_GROW                   "ro.nx.heap.grow"
 
-#define NX_HD_OUT_FMT                  "persist.hd_output_format"
+#define NX_HD_OUT_FMT                  "ro.nx.vidout.force"
 #define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
 #define NX_HDCP2X_KEY                  "ro.nexus.nxserver.hdcp2x_keys"
 
