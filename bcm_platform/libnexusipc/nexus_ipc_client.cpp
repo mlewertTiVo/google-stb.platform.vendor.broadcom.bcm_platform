@@ -227,7 +227,8 @@ NexusClientContext * NexusIPCClient::createClientContext(const b_refsw_client_cl
     if (rc == NEXUS_SUCCESS) {
         BKNI_Memset(&cmd, 0, sizeof(cmd));
         cmd.api = api_createClientContext;
-        strncpy(cmd.param.createClientContext.in.clientName.string, getClientName(), CLIENT_MAX_NAME);
+        strncpy(cmd.param.createClientContext.in.clientName.string, getClientName(), CLIENT_MAX_NAME-1);
+        cmd.param.createClientContext.in.clientName.string[CLIENT_MAX_NAME-1] = '\0';
         cmd.param.createClientContext.in.clientPid = getClientPid();
         iNC->api_over_binder(&cmd);
 

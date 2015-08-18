@@ -680,7 +680,7 @@ static nxserver_t init_nxserver(void)
 
     if (uses_mma && settings.growHeapBlockSize) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
-       if (index >= NEXUS_MAX_HEAPS) {
+       if (index == -1) {
            ALOGE("growHeapBlockSize: requires platform implement NEXUS_PLATFORM_P_GET_FRAMEBUFFER_HEAP_INDEX");
            return NULL;
        }
