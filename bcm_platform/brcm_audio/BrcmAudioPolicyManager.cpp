@@ -109,6 +109,14 @@ audio_devices_t BrcmAudioPolicyManager::getDeviceForInputSource(audio_source_t i
             device = AUDIO_DEVICE_IN_REMOTE_SUBMIX;
         }
     }
+    else if (inputSource == AUDIO_SOURCE_CAMCORDER) {
+        audio_devices_t availableDeviceTypes = mAvailableInputDevices.types() &
+                                                ~AUDIO_DEVICE_BIT_IN;
+        if (availableDeviceTypes & AUDIO_DEVICE_IN_USB_DEVICE) {
+            ALOGV("Use USB MIC for CAMCORDER");
+            device = AUDIO_DEVICE_IN_USB_DEVICE;
+        }
+    }
 
     // Fall back to default policy if no device is found
     if (device == AUDIO_DEVICE_NONE) {
