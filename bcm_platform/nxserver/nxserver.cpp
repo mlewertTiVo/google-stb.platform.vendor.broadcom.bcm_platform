@@ -603,17 +603,15 @@ static nxserver_t init_nxserver(void)
     settings.session[0].output.sd = settings.session[0].output.encode = false;
     settings.session[0].output.hd = true;
 
-    if (property_get_int32(NX_ODV, 0)) {
-       settings.videoDecoder.dynamicPictureBuffers = (strtoul(value, NULL, 10) > 0) ? true : false;
-       if (settings.videoDecoder.dynamicPictureBuffers) {
-          unsigned d;
-          for (d = 0; d < NEXUS_MAX_VIDEO_DECODERS; d++) {
-             memConfigSettings.videoDecoder[d].dynamicPictureBuffers = true;
-          }
-          for (d = 0; d < NEXUS_MAX_HEAPS; d++) {
-             if (platformSettings.heap[d].heapType & NEXUS_HEAP_TYPE_PICTURE_BUFFERS) {
-                platformSettings.heap[d].memoryType = NEXUS_MEMORY_TYPE_MANAGED | NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED;
-             }
+    settings.videoDecoder.dynamicPictureBuffers = property_get_int32(NX_ODV, 0) ? true : false;
+    if (settings.videoDecoder.dynamicPictureBuffers) {
+       unsigned d;
+       for (d = 0; d < NEXUS_MAX_VIDEO_DECODERS; d++) {
+          memConfigSettings.videoDecoder[d].dynamicPictureBuffers = true;
+       }
+       for (d = 0; d < NEXUS_MAX_HEAPS; d++) {
+          if (platformSettings.heap[d].heapType & NEXUS_HEAP_TYPE_PICTURE_BUFFERS) {
+             platformSettings.heap[d].memoryType = NEXUS_MEMORY_TYPE_MANAGED | NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED;
           }
        }
     }
