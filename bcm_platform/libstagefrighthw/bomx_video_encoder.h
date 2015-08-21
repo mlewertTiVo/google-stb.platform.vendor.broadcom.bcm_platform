@@ -269,8 +269,8 @@ protected:
     char m_inputMimeType[OMX_MAX_STRINGNAME_SIZE];
     char m_outputMimeType[OMX_MAX_STRINGNAME_SIZE];
 
-    unsigned m_inputWidth;
-    unsigned m_inputHeight;
+    unsigned m_maxFrameWidth;
+    unsigned m_maxFrameHeight;
     bool m_metadataEnabled;
     bool m_nativeGraphicsEnabled;
 
@@ -360,6 +360,7 @@ protected:
     bool HaveCompleteFrame( const NEXUS_VideoEncoderDescriptor *, size_t, const NEXUS_VideoEncoderDescriptor *, size_t, size_t *);
 
     NEXUS_Error UpdateEncoderSettings();
+    OMX_VIDEO_AVCLEVELTYPE GetMaxLevelAvc(OMX_VIDEO_AVCPROFILETYPE profile);
 
 private:
 };
