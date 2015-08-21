@@ -64,7 +64,7 @@
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMA_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE (1920*2)  // Worst case AC3 frame size is 640Kbps 32kHz = 1920 16-bit words/syncframe
-#define B_OUTPUT_BUFFER_SIZE (1536*2*2) // 16-bit stereo 1536 samples/frame for AC3
+#define B_OUTPUT_BUFFER_SIZE (1536*2*6) // 16-bit 5.1 with 1536 samples/frame for AC3
 #define B_NUM_BUFFERS (4)
 #define B_STREAM_ID 0xc0
 #define B_FRAME_TIMER_INTERVAL (32)
@@ -752,10 +752,10 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetParameter(
                     {
                     case NEXUS_AudioChannel_eLeft:          pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelLF; break;
                     case NEXUS_AudioChannel_eRight:         pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelRF; break;
-                    case NEXUS_AudioChannel_eLeftSurround:  pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelLS; break;
-                    case NEXUS_AudioChannel_eRightSurround: pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelRS; break;
-                    case NEXUS_AudioChannel_eLeftRear:      pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelLR; break;
-                    case NEXUS_AudioChannel_eRightRear:     pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelRR; break;
+                    case NEXUS_AudioChannel_eLeftSurround:  pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelLR; break; // Note: Android reverses the definition of Rear and Surround
+                    case NEXUS_AudioChannel_eRightSurround: pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelRR; break;
+                    case NEXUS_AudioChannel_eLeftRear:      pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelLS; break;
+                    case NEXUS_AudioChannel_eRightRear:     pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelRS; break;
                     case NEXUS_AudioChannel_eCenter:        pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelCF; break;
                     case NEXUS_AudioChannel_eLfe:           pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelLFE; break;
                     default:                                pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelNone; break;
@@ -966,6 +966,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
             {
                 return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
             }
+            ALOGI("Configuring decoder for %u channels", pPcm->nChannels);
             if ( pPcm->nChannels >= 2 )
             {
                 decSettings.numPcmChannels = pPcm->nChannels;
@@ -975,10 +976,10 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
                     {
                     case OMX_AUDIO_ChannelLF:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eLeft; break;
                     case OMX_AUDIO_ChannelRF:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eRight; break;
-                    case OMX_AUDIO_ChannelLS:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eLeftSurround; break;
-                    case OMX_AUDIO_ChannelRS:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eRightSurround; break;
-                    case OMX_AUDIO_ChannelLR:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eLeftRear; break;
-                    case OMX_AUDIO_ChannelRR:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eRightRear; break;
+                    case OMX_AUDIO_ChannelLR:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eLeftSurround; break; // Note: Android reverses the definition of Rear and Surround
+                    case OMX_AUDIO_ChannelRR:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eRightSurround; break;
+                    case OMX_AUDIO_ChannelLS:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eLeftRear; break;
+                    case OMX_AUDIO_ChannelRS:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eRightRear; break;
                     case OMX_AUDIO_ChannelCF:               decSettings.channelLayout[i] = NEXUS_AudioChannel_eCenter; break;
                     case OMX_AUDIO_ChannelLFE:              decSettings.channelLayout[i] = NEXUS_AudioChannel_eLfe; break;
                     default:                                decSettings.channelLayout[i] = NEXUS_AudioChannel_eMax; break;
