@@ -4248,6 +4248,12 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 {
                     ALOGV("EOS-only frame.  Returning length of 0.");
                     pHeader->nFilledLen = 0;
+                    // For metadata mode, the private handle still needs to be set since it's required to correlate
+                    // omx buffers to framebuffers in function FillThisBuffer. Without this, EOS messages (zero length) coul
+                    // end up permanently in the allocated list if the application is playing video in a loop.
+                    if (pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata){
+                        pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
+                    }
                 }
                 else
                 {
