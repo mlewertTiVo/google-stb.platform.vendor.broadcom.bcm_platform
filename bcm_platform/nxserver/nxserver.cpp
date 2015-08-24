@@ -122,6 +122,9 @@
 
 #define NX_HEAP_DYN_FREE_THRESHOLD     (1920*1080*4) /* one 1080p RGBA. */
 
+#define NX_PROP_ENABLED                "1"
+#define NX_PROP_DISABLED               "0"
+
 /* begnine trimming config - not needed for ATV experience. */
 #define NX_TRIM_VC1                    "ro.nx.trim.vc1"
 #define NX_TRIM_PIP                    "ro.nx.trim.pip"
@@ -134,6 +137,7 @@
 #define NX_TRIM_VP9                    "ro.nx.trim.vp9"
 #define NX_TRIM_4KDEC                  "ro.nx.trim.4kdec"
 #define NX_TRIM_10BCOL                 "ro.nx.trim.10bcol"
+#define NX_TRIM_MTG                    "ro.nx.trim.mtg"
 
 typedef struct {
    pthread_t runner;
@@ -410,6 +414,17 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
             pMemConfigSettings->display[i].maxFormat = NEXUS_VideoFormat_eUnknown;
             for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
                pMemConfigSettings->display[i].window[j].used = false;
+            }
+         }
+      }
+   }
+
+   /* 1.5. mtg. */
+   if (property_get(NX_TRIM_MTG, value, NX_PROP_ENABLED)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         for (i =0; i < NEXUS_MAX_DISPLAYS; i++) {
+            for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
+               pMemConfigSettings->display[i].window[j].mtg = false;
             }
          }
       }
