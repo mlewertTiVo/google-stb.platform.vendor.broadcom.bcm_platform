@@ -15,9 +15,17 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
-_hwcfg_empty.img := $(PRODUCT_OUT_FROM_TOP)/hwcfg_empty.img
-$(_hwcfg_empty.img):
+$(PRODUCT_OUT_FROM_TOP)/hwcfg:
 	mkdir -p $(PRODUCT_OUT_FROM_TOP)/hwcfg
+
+ifneq ($(wildcard $(BROADCOM_DHD_SOURCE_PATH)/nvrams/$(BRCM_DHD_NVRAM_NAME)),)
+_hwcfg_dhd_nvram_file := $(PRODUCT_OUT_FROM_TOP)/hwcfg/nvm.txt
+$(_hwcfg_dhd_nvram_file): $(PRODUCT_OUT_FROM_TOP)/hwcfg ${BROADCOM_DHD_SOURCE_PATH}/nvrams/${BRCM_DHD_NVRAM_NAME}
+	cp ${BROADCOM_DHD_SOURCE_PATH}/nvrams/${BRCM_DHD_NVRAM_NAME} $@
+endif
+
+_hwcfg_empty.img := $(PRODUCT_OUT_FROM_TOP)/hwcfg_empty.img
+$(_hwcfg_empty.img): $(PRODUCT_OUT_FROM_TOP)/hwcfg $(_hwcfg_dhd_nvram_file)
 	mkfs.cramfs -n hwcfg $(PRODUCT_OUT_FROM_TOP)/hwcfg $@
 
 LOCAL_MODULE := makehwcfg
@@ -26,4 +34,5 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(_hwcfg_empty.img)
 
 include $(BUILD_PHONY_PACKAGE)
 
+_hwcfg_dhd_nvram_file :=
 _hwcfg_empty.img :=
