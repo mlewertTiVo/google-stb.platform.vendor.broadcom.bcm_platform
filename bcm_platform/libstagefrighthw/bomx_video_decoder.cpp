@@ -3905,51 +3905,7 @@ void BOMX_VideoDecoder::SourceChangedEvent()
         {
             OMX_U32 xFramerate;
             bool formatChanged=false;
-            switch ( vdecStatus.frameRate )
-            {
-            case NEXUS_VideoFrameRate_e23_976:
-                xFramerate = (OMX_U32)(65536.0 * 23.976);
-                break;
-            case NEXUS_VideoFrameRate_e24:
-                xFramerate = (OMX_U32)(65536.0 * 24.0);
-                break;
-            case NEXUS_VideoFrameRate_e25:
-                xFramerate = (OMX_U32)(65536.0 * 25.0);
-                break;
-            case NEXUS_VideoFrameRate_e29_97:
-                xFramerate = (OMX_U32)(65536.0 * 29.97);
-                break;
-            case NEXUS_VideoFrameRate_e30:
-                xFramerate = (OMX_U32)(65536.0 * 30.0);
-                break;
-            case NEXUS_VideoFrameRate_e50:
-                xFramerate = (OMX_U32)(65536.0 * 50.0);
-                break;
-            case NEXUS_VideoFrameRate_e59_94:
-                xFramerate = (OMX_U32)(65536.0 * 59.94);
-                break;
-            case NEXUS_VideoFrameRate_e60:
-                xFramerate = (OMX_U32)(65536.0 * 60.0);
-                break;
-            case NEXUS_VideoFrameRate_e14_985:
-                xFramerate = (OMX_U32)(65536.0 * 14.985);
-                break;
-            case NEXUS_VideoFrameRate_e7_493:
-                xFramerate = (OMX_U32)(65536.0 * 7.493);
-                break;
-            case NEXUS_VideoFrameRate_e10:
-                xFramerate = (OMX_U32)(65536.0 * 10.0);
-                break;
-            case NEXUS_VideoFrameRate_e15:
-                xFramerate = (OMX_U32)(65536.0 * 15.0);
-                break;
-            case NEXUS_VideoFrameRate_e20:
-                xFramerate = (OMX_U32)(65536.0 * 20.0);
-                break;
-            default:
-                xFramerate = 0;
-                break;
-            }
+            xFramerate = (OMX_U32)(65536.0 * BOMX_NexusFramerateValue(vdecStatus.frameRate));
             pPort->GetDefinition(&portDef);
             if ( portDef.format.video.nFrameWidth != vdecStatus.display.width ||
                  portDef.format.video.nFrameHeight != vdecStatus.display.height ||

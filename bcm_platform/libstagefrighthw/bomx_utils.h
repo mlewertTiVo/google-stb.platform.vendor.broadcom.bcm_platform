@@ -55,6 +55,7 @@
 #include "OMX_Core.h"
 #include "OMX_Types.h"
 #include "biobits.h"
+#include "nexus_video_types.h"
 
 #include <cutils/log.h>
 
@@ -96,6 +97,7 @@ int BOMX_FormPesHeader(
     );
 
 const char * BOMX_StateName(OMX_STATETYPE state);
+float BOMX_NexusFramerateValue(NEXUS_VideoFrameRate framerate);
 
 }
 

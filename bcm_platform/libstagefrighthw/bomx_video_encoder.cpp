@@ -2286,7 +2286,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
             surfSettings.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
         }
 
-        ALOGV("Push surface setting: pts:%d, frameRate:%d", surfSettings.pts, surfSettings.frameRate);
+        ALOGV("Push surface setting: pts:%d, frameRate:%g", surfSettings.pts, BOMX_NexusFramerateValue(surfSettings.frameRate));
 
         /* do color format conversion */
         if (!ConvertOMXPixelFormatToCrYCbY(pBufferHeader, pNode->hSurface))
@@ -4306,8 +4306,8 @@ NEXUS_Error BOMX_VideoEncoder::UpdateEncoderSettings(void)
         encoderSettings.videoEncoder.variableFrameRate = true;
     }
 
-    ALOGV("FrameRate=%d BitRateMax=%d BitRateTarget=%d bVarFrameRate=%d",
-          encoderSettings.videoEncoder.frameRate,
+    ALOGV("FrameRate=%g BitRateMax=%d BitRateTarget=%d bVarFrameRate=%d",
+          BOMX_NexusFramerateValue(encoderSettings.videoEncoder.frameRate),
           encoderSettings.videoEncoder.bitrateMax,
           encoderSettings.videoEncoder.bitrateTarget,
           encoderSettings.videoEncoder.variableFrameRate);
