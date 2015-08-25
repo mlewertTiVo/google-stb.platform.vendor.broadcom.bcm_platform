@@ -105,14 +105,14 @@ NEXUS_VideoFormat NexusNxService::getBestOutputFormat(NEXUS_HdmiOutputStatus *st
    NEXUS_VideoFormat format = NEXUS_VideoFormat_eUnknown;
    NEXUS_VideoFormat ordered_list[] = {
       NEXUS_VideoFormat_e4096x2160p60hz,
-      NEXUS_VideoFormat_e4096x2160p50hz,
-      NEXUS_VideoFormat_e4096x2160p30hz,
-      NEXUS_VideoFormat_e4096x2160p25hz,
-      NEXUS_VideoFormat_e4096x2160p24hz,
       NEXUS_VideoFormat_e3840x2160p60hz,
+      NEXUS_VideoFormat_e4096x2160p50hz,
       NEXUS_VideoFormat_e3840x2160p50hz,
+      NEXUS_VideoFormat_e4096x2160p30hz,
       NEXUS_VideoFormat_e3840x2160p30hz,
+      NEXUS_VideoFormat_e4096x2160p25hz,
       NEXUS_VideoFormat_e3840x2160p25hz,
+      NEXUS_VideoFormat_e4096x2160p24hz,
       NEXUS_VideoFormat_e3840x2160p24hz,
       NEXUS_VideoFormat_e1080p,
       NEXUS_VideoFormat_e1080p50hz,
