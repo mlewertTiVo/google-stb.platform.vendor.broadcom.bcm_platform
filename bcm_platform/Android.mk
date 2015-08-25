@@ -68,6 +68,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxmem/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/otpgetchipid/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/prdy_pes_playback/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/setdisplay/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/yv12torgba/Android.mk
 
 ifneq ($(wildcard ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/README.txt),)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/libbcmsideband/Android.mk
