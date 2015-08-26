@@ -289,12 +289,10 @@ status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::handleCecMessage(const sp<
 
             powerState = mNexusHdmiCecDevice->pIpcClient->getPowerState();
 
-            // If we are in S0.5 (effectively S0) or S1, then we need to check the validity of the wake-up message before
-            // deciding whether to pass it up to Android.  For the other standby modes, we would
-            // only reach here if we were already woken up, so we can pass the message on to
-            // Android and also send a hotplug "connected" event to wake it up.
-            if (((powerState == ePowerState_S0 || powerState == ePowerState_S1) && isValidWakeupCecMessage(&cecMessage)) ||
-                (powerState != ePowerState_S0 && powerState != ePowerState_S1)) {
+            // We always need to check the validity of the received wake-up message before deciding
+            // whether to pass it up to the Android framework. If it's valid, then we also spoof
+            // an HDMI hot-plug event to force the framework to wake-up.
+            if (isValidWakeupCecMessage(&cecMessage)) {
                 Mutex::Autolock autoLock(mNexusHdmiCecDevice->mStandbyLock);
                 forwardCecMessage = true;
                 sendHotplugWakeUpEvent = true;
