@@ -62,7 +62,6 @@ else \
    ALOGV("resolved '%s' to %p", #name, dyn_ ## name);
 static void *gl_dyn_lib;
 static void *nexus_client = NULL;
-static int gralloc_with_mma = 0;
 static int gralloc_mgmt_mode = -1;
 static int gralloc_default_align = 0;
 static int gralloc_log_map = 0;
@@ -84,7 +83,6 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 #define GRALLOC_MAX_BUFFER_ALIGNED  4096
 #define GRALLOC_MIN_BUFFER_ALIGNED  256
 
-#define NX_MMA                  "ro.nx.mma"
 #define NX_MMA_MGMT_MODE        "ro.nx.mma.mgmt_mode"
 #define NX_GR_LOG_MAP           "ro.gr.log.map"
 #define NX_GR_CONV_TIME         "ro.gr.conv.time"
@@ -122,10 +120,6 @@ static void gralloc_load_lib(void)
       }
    } else {
       ALOGE("%s: dyn_EGL_nexus_join unavailable, something will break!", __FUNCTION__);
-   }
-
-   if (property_get(NX_MMA, value, "0")) {
-      gralloc_with_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
    if (property_get(NX_MMA_MGMT_MODE, value, NX_MMA_MGMT_MODE_DEF)) {
@@ -249,7 +243,7 @@ BKNI_EventHandle gralloc_g2d_evt(void)
    return hCheckpointEvent;
 }
 
-static void gralloc_bzero(int is_mma, PSHARED_DATA pSharedData)
+static void gralloc_bzero(PSHARED_DATA pSharedData)
 {
     NEXUS_Graphics2DHandle gfx = gralloc_g2d_hdl();
     BKNI_EventHandle event = gralloc_g2d_evt();
@@ -263,13 +257,9 @@ static void gralloc_bzero(int is_mma, PSHARED_DATA pSharedData)
     static const BM2MC_PACKET_Blend copyAlpha = {BM2MC_PACKET_BlendFactor_eSourceAlpha, BM2MC_PACKET_BlendFactor_eOne, false,
        BM2MC_PACKET_BlendFactor_eZero, BM2MC_PACKET_BlendFactor_eZero, false, BM2MC_PACKET_BlendFactor_eZero};
 
-    if (is_mma) {
-       block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
-       NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-       NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-    } else {
-       pMemory = NEXUS_OffsetToCachedAddr((NEXUS_Addr)pSharedData->container.physAddr);
-    }
+    block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
+    NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+    NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
 
     if (pMemory == NULL) {
        goto out_release;
@@ -277,92 +267,69 @@ static void gralloc_bzero(int is_mma, PSHARED_DATA pSharedData)
 
     if (gfx && event && pMutex) {
         NEXUS_Error errCode;
+        size_t pktSize;
+        void *pktBuffer, *next;
 
-        if (is_mma) {
-           size_t pktSize;
-           void *pktBuffer, *next;
-           pthread_mutex_lock(pMutex);
-           errCode = NEXUS_Graphics2D_GetPacketBuffer(gfx, &pktBuffer, &pktSize, 1024);
+        pthread_mutex_lock(pMutex);
+        errCode = NEXUS_Graphics2D_GetPacketBuffer(gfx, &pktBuffer, &pktSize, 1024);
+        if (errCode == 0) {
+           next = pktBuffer;
+           {
+              BM2MC_PACKET_PacketOutputFeeder *pPacket = (BM2MC_PACKET_PacketOutputFeeder *)next;
+              BM2MC_PACKET_INIT(pPacket, OutputFeeder, false);
+              pPacket->plane.address = physAddr;
+              pPacket->plane.pitch   = pSharedData->container.stride;
+              pPacket->plane.format  = getBm2mcPixelFormat(pSharedData->container.format);
+              pPacket->plane.width   = pSharedData->container.width;
+              pPacket->plane.height  = pSharedData->container.height;
+              next = ++pPacket;
+           }
+           {
+              BM2MC_PACKET_PacketBlend *pPacket = (BM2MC_PACKET_PacketBlend *)next;
+              BM2MC_PACKET_INIT( pPacket, Blend, false );
+              pPacket->color_blend   = copyColor;
+              pPacket->alpha_blend   = copyAlpha;
+              pPacket->color         = 0;
+              next = ++pPacket;
+           }
+           {
+              BM2MC_PACKET_PacketSourceColor *pPacket = (BM2MC_PACKET_PacketSourceColor *)next;
+              BM2MC_PACKET_INIT(pPacket, SourceColor, false );
+              pPacket->color         = 0x00000000;
+              next = ++pPacket;
+           }
+           {
+              BM2MC_PACKET_PacketFillBlit *pPacket = (BM2MC_PACKET_PacketFillBlit *)next;
+              BM2MC_PACKET_INIT(pPacket, FillBlit, true);
+              pPacket->rect.x        = 0;
+              pPacket->rect.y        = 0;
+              pPacket->rect.width    = pSharedData->container.width;
+              pPacket->rect.height   = pSharedData->container.height;
+              next = ++pPacket;
+           }
+           errCode = NEXUS_Graphics2D_PacketWriteComplete(gfx, (uint8_t*)next - (uint8_t*)pktBuffer);
            if (errCode == 0) {
-              next = pktBuffer;
-              {
-                 BM2MC_PACKET_PacketOutputFeeder *pPacket = (BM2MC_PACKET_PacketOutputFeeder *)next;
-                 BM2MC_PACKET_INIT(pPacket, OutputFeeder, false);
-                 pPacket->plane.address = physAddr;
-                 pPacket->plane.pitch   = pSharedData->container.stride;
-                 pPacket->plane.format  = getBm2mcPixelFormat(pSharedData->container.format);
-                 pPacket->plane.width   = pSharedData->container.width;
-                 pPacket->plane.height  = pSharedData->container.height;
-                 next = ++pPacket;
-              }
-              {
-                 BM2MC_PACKET_PacketBlend *pPacket = (BM2MC_PACKET_PacketBlend *)next;
-                 BM2MC_PACKET_INIT( pPacket, Blend, false );
-                 pPacket->color_blend   = copyColor;
-                 pPacket->alpha_blend   = copyAlpha;
-                 pPacket->color         = 0;
-                 next = ++pPacket;
-              }
-              {
-                 BM2MC_PACKET_PacketSourceColor *pPacket = (BM2MC_PACKET_PacketSourceColor *)next;
-                 BM2MC_PACKET_INIT(pPacket, SourceColor, false );
-                 pPacket->color         = 0x00000000;
-                 next = ++pPacket;
-              }
-              {
-                 BM2MC_PACKET_PacketFillBlit *pPacket = (BM2MC_PACKET_PacketFillBlit *)next;
-                 BM2MC_PACKET_INIT(pPacket, FillBlit, true);
-                 pPacket->rect.x        = 0;
-                 pPacket->rect.y        = 0;
-                 pPacket->rect.width    = pSharedData->container.width;
-                 pPacket->rect.height   = pSharedData->container.height;
-                 next = ++pPacket;
-              }
-              errCode = NEXUS_Graphics2D_PacketWriteComplete(gfx, (uint8_t*)next - (uint8_t*)pktBuffer);
-              if (errCode == 0) {
-                 errCode = NEXUS_Graphics2D_Checkpoint(gfx, NULL);
-                 if (errCode == NEXUS_GRAPHICS2D_QUEUED) {
-                    errCode = BKNI_WaitForEvent(event, CHECKPOINT_TIMEOUT);
-                    if (errCode) {
-                       ALOGW("Timeout zeroing gralloc buffer");
-                    }
+              errCode = NEXUS_Graphics2D_Checkpoint(gfx, NULL);
+              if (errCode == NEXUS_GRAPHICS2D_QUEUED) {
+                 errCode = BKNI_WaitForEvent(event, CHECKPOINT_TIMEOUT);
+                 if (errCode) {
+                    ALOGW("Timeout zeroing gralloc buffer");
                  }
               }
-              if (!errCode) {
-                 done = true;
-              }
            }
-           pthread_mutex_unlock(pMutex);
-        } else {
-           size_t roundedSize = (pSharedData->container.size + 0xFFF) & ~0xFFF;
-
-           NEXUS_FlushCache(pMemory, roundedSize);
-           pthread_mutex_lock(pMutex);
-           errCode = NEXUS_Graphics2D_Memset32(gfx, pMemory, 0, roundedSize/4);
-           if (errCode == 0) {
-               errCode = NEXUS_Graphics2D_Checkpoint(gfx, NULL);
-               if (errCode == NEXUS_GRAPHICS2D_QUEUED) {
-                   errCode = BKNI_WaitForEvent(event, CHECKPOINT_TIMEOUT);
-                   if (errCode) {
-                      ALOGW("Timeout zeroing gralloc buffer");
-                   }
-               }
-               if (!errCode) {
-                  done = true;
-               }
+           if (!errCode) {
+              done = true;
            }
-           pthread_mutex_unlock(pMutex);
         }
+        pthread_mutex_unlock(pMutex);
     }
 
     if (!done) {
        bzero(pMemory, pSharedData->container.size);
-    } else if (!is_mma) {
-       NEXUS_FlushCache(pMemory, pSharedData->container.size);
     }
 
 out_release:
-    if (is_mma && block_handle) {
+    if (block_handle) {
        NEXUS_MemoryBlock_UnlockOffset(block_handle);
        NEXUS_MemoryBlock_Unlock(block_handle);
     }
@@ -643,7 +610,6 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       goto error;
    }
 
-   hnd->is_mma = gralloc_with_mma;
    hnd->mgmt_mode = gralloc_mgmt_mode;
    hnd->alignment = 1;
 #if defined(V3D_VARIANT_v3d)
@@ -671,14 +637,10 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       goto error;
    }
 
-   if (hnd->is_mma) {
-      pMemory = NULL;
-      block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
-      NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-      pSharedData = (PSHARED_DATA) pMemory;
-   } else {
-      pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
-   }
+   pMemory = NULL;
+   block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
+   NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   pSharedData = (PSHARED_DATA) pMemory;
 
    if (pSharedData == NULL) {
       /* that's pretty bad...  failed to map the allocated memory! */
@@ -737,33 +699,25 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    }
    hnd->fmt_set = fmt_set;
 
-   if (hnd->is_mma) {
-      if (hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) {
-         NEXUS_Addr physAddr;
-         NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &physAddr);
-         hnd->nxSurfacePhysicalAddress = (unsigned)physAddr;
-         pMemory = NULL;
-         NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &pMemory);
-         hnd->nxSurfaceAddress = (unsigned)pMemory;
-      } else {
-         hnd->nxSurfacePhysicalAddress = (unsigned)0;
-         hnd->nxSurfaceAddress = (unsigned)pMemory;
-      }
+   if (hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) {
+      NEXUS_Addr physAddr;
+      NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &physAddr);
+      hnd->nxSurfacePhysicalAddress = (unsigned)physAddr;
+      pMemory = NULL;
+      NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &pMemory);
+      hnd->nxSurfaceAddress = (unsigned)pMemory;
    } else {
-      hnd->nxSurfacePhysicalAddress = pSharedData->container.physAddr;
-      hnd->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->container.physAddr);
+      hnd->nxSurfacePhysicalAddress = (unsigned)0;
+      hnd->nxSurfaceAddress = (unsigned)pMemory;
    }
 
    if (gralloc_log_mapper()) {
       NEXUS_Addr physAddr;
       unsigned sharedPhysAddr = hnd->sharedData;
-      if (hnd->is_mma) {
-         NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-         sharedPhysAddr = (unsigned)physAddr;
-      }
-      ALOGI("alloc (%s): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::use:0x%x:0x%x::mapped:0x%x",
+      NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+      sharedPhysAddr = (unsigned)physAddr;
+      ALOGI("alloc (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::use:0x%x:0x%x::mapped:0x%x",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
-            hnd->is_mma,
             getpid(),
             hnd->sharedData,
             sharedPhysAddr,
@@ -773,9 +727,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
             hnd->usage,
             hnd->fmt_set,
             hnd->nxSurfaceAddress);
-      if (hnd->is_mma) {
-         NEXUS_MemoryBlock_UnlockOffset(block_handle);
-      }
+      NEXUS_MemoryBlock_UnlockOffset(block_handle);
    }
 
    if ((fmt_set != GR_NONE) && pSharedData->container.physAddr == 0) {
@@ -783,19 +735,19 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       err = -ENOMEM;
       goto alloc_failed;
    } else if (pSharedData->container.physAddr) {
-       gralloc_bzero(hnd->is_mma, pSharedData);
+       gralloc_bzero(pSharedData);
    }
 
    *pHandle = hnd;
 
-   if (hnd->is_mma && block_handle) {
+   if (block_handle) {
       NEXUS_MemoryBlock_Unlock(block_handle);
    }
 
    return 0;
 
 alloc_failed:
-   if (hnd->is_mma && block_handle) {
+   if (block_handle) {
       NEXUS_MemoryBlock_Unlock(block_handle);
    }
 
@@ -821,14 +773,10 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
       return -EINVAL;
    }
 
-   if (hnd->is_mma) {
-      void *pMemory;
-      block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
-      NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-      pSharedData = (PSHARED_DATA) pMemory;
-   } else {
-      pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
-   }
+   void *pMemory;
+   block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
+   NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   pSharedData = (PSHARED_DATA) pMemory;
 
    if (pSharedData) {
       if (gralloc_log_mapper()) {
@@ -836,13 +784,10 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
          unsigned sharedPhysAddr = hnd->sharedData;
          unsigned planePhysAddr = pSharedData->container.physAddr;
          unsigned planePhysSize = pSharedData->container.size;
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-            sharedPhysAddr = (unsigned)physAddr;
-         }
-         ALOGI(" free (%s): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::use:0x%x:0x%x::mapped:0x%x",
+         NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+         sharedPhysAddr = (unsigned)physAddr;
+         ALOGI(" free (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::use:0x%x:0x%x::mapped:0x%x",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
-               hnd->is_mma,
                hnd->pid,
                hnd->sharedData,
                sharedPhysAddr,
@@ -852,24 +797,20 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
                hnd->usage,
                hnd->fmt_set,
                hnd->nxSurfaceAddress);
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_UnlockOffset(block_handle);
-         }
+         NEXUS_MemoryBlock_UnlockOffset(block_handle);
       }
    }
 
-   if (hnd->is_mma) {
-      if (pSharedData) {
-         if (hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) {
-            if (pSharedData->container.physAddr) {
-               NEXUS_MemoryBlock_UnlockOffset((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr);
-               NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr);
-            }
+   if (pSharedData) {
+      if (hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) {
+         if (pSharedData->container.physAddr) {
+            NEXUS_MemoryBlock_UnlockOffset((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr);
+            NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr);
          }
       }
-      if (block_handle) {
-         NEXUS_MemoryBlock_Unlock(block_handle);
-      }
+   }
+   if (block_handle) {
+      NEXUS_MemoryBlock_Unlock(block_handle);
    }
 
    if (hnd->fd >= 0) {

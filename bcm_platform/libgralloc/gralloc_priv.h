@@ -117,13 +117,12 @@ struct private_handle_t {
 /*8.*/        int         usage;
 /*9.*/        unsigned    nxSurfacePhysicalAddress;
 /*10.*/       unsigned    nxSurfaceAddress;
-/*11.*/       int         is_mma;
-/*12.*/       int         alignment;
-/*13.*/       int         mgmt_mode;
-/*14.*/       int         fmt_set;
+/*11.*/       int         alignment;
+/*12.*/       int         mgmt_mode;
+/*13.*/       int         fmt_set;
 
 #ifdef __cplusplus
-    static const int sNumInts = 14;
+    static const int sNumInts = 13;
     static const int sNumFds = 2;
     static const int sMagic = 0x4F77656E;
 
@@ -131,7 +130,7 @@ struct private_handle_t {
         fd(fd), fd2(fd2), magic(sMagic), flags(flags),
         pid(getpid()), oglStride(0), oglFormat(0), oglSize(0),
         sharedData(0), usage(0), nxSurfacePhysicalAddress(0),
-        nxSurfaceAddress(0), is_mma(0), alignment(0),
+        nxSurfaceAddress(0), alignment(0),
         mgmt_mode(GR_MGMT_MODE_LOCKED), fmt_set(GR_NONE)
     {
         version = sizeof(native_handle);
@@ -164,15 +163,11 @@ struct private_handle_t {
         PSHARED_DATA pSharedData = NULL;
         NEXUS_MemoryBlockHandle block_handle = NULL;
         int rc = 0;
+        void *pMemory;
 
-        if (pHandle->is_mma) {
-           void *pMemory;
-           block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
-           NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-           pSharedData = (PSHARED_DATA) pMemory;
-        } else {
-           pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(pHandle->sharedData);
-        }
+        block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
+        NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+        pSharedData = (PSHARED_DATA) pMemory;
 
         struct timespec ts_end, ts_now;
         if (NULL == pSharedData) {
@@ -202,7 +197,7 @@ struct private_handle_t {
         }
 
 out:
-        if (pHandle->is_mma && block_handle) {
+        if (block_handle) {
            NEXUS_MemoryBlock_Unlock(block_handle);
         }
         return rc;
@@ -213,15 +208,11 @@ out:
         PSHARED_DATA pSharedData = NULL;
         NEXUS_MemoryBlockHandle block_handle = NULL;
         int rc = 0;
+        void *pMemory;
 
-        if (pHandle->is_mma) {
-           void *pMemory;
-           block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
-           NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-           pSharedData = (PSHARED_DATA) pMemory;
-        } else {
-           pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(pHandle->sharedData);
-        }
+        block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
+        NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+        pSharedData = (PSHARED_DATA) pMemory;
 
         if (NULL == pSharedData) {
           goto out;
@@ -230,7 +221,7 @@ out:
         assert(rc);
 
 out:
-        if (pHandle->is_mma && block_handle) {
+        if (block_handle) {
            NEXUS_MemoryBlock_Unlock(block_handle);
         }
     }

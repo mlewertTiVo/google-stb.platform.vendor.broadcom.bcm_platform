@@ -41,7 +41,7 @@
 #include <cutils/log.h>
 
 static NEXUS_SurfaceHandle to_nx_surface(int width, int height, int stride, NEXUS_PixelFormat format,
-                                         int is_mma, unsigned handle, unsigned offset, uint8_t *data)
+                                         unsigned handle, unsigned offset)
 {
     NEXUS_SurfaceHandle shdl = NULL;
     NEXUS_SurfaceCreateSettings createSettings;
@@ -52,9 +52,7 @@ static NEXUS_SurfaceHandle to_nx_surface(int width, int height, int stride, NEXU
     createSettings.height        = height;
     createSettings.pitch         = stride;
     createSettings.managedAccess = false;
-    if (!is_mma && data) {
-       createSettings.pMemory = data;
-    } else if (is_mma && handle) {
+    if (handle) {
        createSettings.pixelMemory = (NEXUS_MemoryBlockHandle) handle;
        createSettings.pixelMemoryOffset = offset;
     }
@@ -79,14 +77,10 @@ int gralloc_destripe_yv12(
       goto err_gfx2d;
    }
 
-   if (pHandle->is_mma) {
-      pMemory = NULL;
-      block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
-      NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-      pSharedData = (PSHARED_DATA) pMemory;
-   } else {
-      pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(pHandle->sharedData);
-   }
+   pMemory = NULL;
+   block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
+   NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   pSharedData = (PSHARED_DATA) pMemory;
    if (pSharedData == NULL) {
       ALOGE("gralloc_destripe_yv12: invalid buffer?");
       errCode = NEXUS_INVALID_PARAMETER;
@@ -97,10 +91,8 @@ int gralloc_destripe_yv12(
                              pSharedData->container.height,
                              pSharedData->container.stride,
                              NEXUS_PixelFormat_eY8,
-                             pHandle->is_mma,
                              pSharedData->container.physAddr,
-                             0,
-                             NULL /*!! non-mma case.*/);
+                             0);
    if (hSurfaceY == NULL) {
       ALOGE("gralloc_destripe_yv12: failed to create Y plane.");
       errCode = NEXUS_INVALID_PARAMETER;
@@ -113,10 +105,8 @@ int gralloc_destripe_yv12(
                               pSharedData->container.height/2,
                               (pSharedData->container.stride/2 + (pHandle->alignment-1)) & ~(pHandle->alignment-1),
                               NEXUS_PixelFormat_eCr8,
-                              pHandle->is_mma,
                               pSharedData->container.physAddr,
-                              pSharedData->container.stride * pSharedData->container.height,
-                              NULL /*!! non-mma case.*/);
+                              pSharedData->container.stride * pSharedData->container.height);
    if (hSurfaceCr == NULL) {
       ALOGE("gralloc_destripe_yv12: failed to create Cr plane.");
       errCode = NEXUS_INVALID_PARAMETER;
@@ -129,11 +119,9 @@ int gralloc_destripe_yv12(
                               pSharedData->container.height/2,
                               (pSharedData->container.stride/2 + (pHandle->alignment-1)) & ~(pHandle->alignment-1),
                               NEXUS_PixelFormat_eCb8,
-                              pHandle->is_mma,
                               pSharedData->container.physAddr,
                               (pSharedData->container.stride * pSharedData->container.height) +
-                              ((pSharedData->container.height/2) * ((pSharedData->container.stride/2 + (pHandle->alignment-1)) & ~(pHandle->alignment-1))),
-                              NULL /*!! non-mma case.*/);
+                              ((pSharedData->container.height/2) * ((pSharedData->container.stride/2 + (pHandle->alignment-1)) & ~(pHandle->alignment-1))));
    if (hSurfaceCb == NULL) {
       ALOGE("gralloc_destripe_yv12: failed to create Cb plane.");
       errCode = NEXUS_INVALID_PARAMETER;
@@ -191,7 +179,7 @@ err_surfaces:
       NEXUS_Surface_Destroy(hSurfaceCb);
    }
 err_shared_data:
-   if (pHandle->is_mma && block_handle) {
+   if (block_handle) {
       NEXUS_MemoryBlock_Unlock(block_handle);
    }
 err_gfx2d:

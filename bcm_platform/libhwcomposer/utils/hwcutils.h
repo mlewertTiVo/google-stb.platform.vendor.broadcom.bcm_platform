@@ -27,14 +27,11 @@ NEXUS_SurfaceHandle hwc_to_nsc_surface(
    int height,
    int stride,
    NEXUS_PixelFormat format,
-   bool is_mma,
    unsigned handle,
-   unsigned offset,
-   uint8_t *data);
+   unsigned offset);
 
 NEXUS_SurfaceHandle hwc_surface_create(
-   const NEXUS_SurfaceCreateSettings *pCreateSettings,
-   int isMma);
+   const NEXUS_SurfaceCreateSettings *pCreateSettings);
 
 #ifdef __cplusplus
 };
