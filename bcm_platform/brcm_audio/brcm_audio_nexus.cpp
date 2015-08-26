@@ -101,6 +101,16 @@ static uint32_t Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX+1] =
     2602,   2796,   3046,   3398,   9000
 };
 
+StandbyMonitorThread::StandbyMonitorThread(b_standby_monitor_callback callback, void *context) : mCallback(callback), mContext(context)
+{
+    mStandbyId = NxClient_RegisterAcknowledgeStandby();
+}
+
+StandbyMonitorThread::~StandbyMonitorThread()
+{
+    NxClient_UnregisterAcknowledgeStandby(mStandbyId);
+}
+
 /* Standby monitor thread */
 #define NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS  (20)
 bool StandbyMonitorThread::threadLoop()
@@ -125,7 +135,7 @@ bool StandbyMonitorThread::threadLoop()
             }
             if (ack) {
                 LOGD("%s: Acknowledge state %d\n", __FUNCTION__, standbyStatus.settings.mode);
-                NxClient_AcknowledgeStandby(true);
+                NxClient_AcknowledgeStandby(mStandbyId);
                 prevStatus = standbyStatus;
             }
         }
