@@ -286,6 +286,8 @@ const char * BOMX_StateName(OMX_STATETYPE state)
     }
 }
 
+/* Please keep in sync with the enum from refsw
+   nexus/modules/core/include/nexus_video_types.h */
 float BOMX_NexusFramerateValue(NEXUS_VideoFrameRate framerate)
 {
     switch ( framerate )
@@ -305,9 +307,9 @@ float BOMX_NexusFramerateValue(NEXUS_VideoFrameRate framerate)
     case NEXUS_VideoFrameRate_e15:     return 15.0;
     case NEXUS_VideoFrameRate_e20:     return 20.0;
     case NEXUS_VideoFrameRate_e12_5:   return 12.5;
-    case NEXUS_VideoFrameRate_eMax:
     default:
-        LOG_ALWAYS_FATAL("Unhandled NEXUS_VideoFrameRate (%d).", framerate);
+        BDBG_CASSERT(NEXUS_VideoFrameRate_eMax == 15);
+        ALOGE("Unhandled NEXUS_VideoFrameRate (%d).", framerate);
         break;
     }
     return 0.0;
