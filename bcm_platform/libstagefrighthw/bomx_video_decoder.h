@@ -157,7 +157,8 @@ public:
         const OMX_CALLBACKTYPE *pCallbacks,
         bool secure=false,
         unsigned numRoles=0,
-        const BOMX_VideoDecoderRole *pRoles=NULL);
+        const BOMX_VideoDecoderRole *pRoles=NULL,
+        const char *(*pGetRole)(unsigned roleIndex)=NULL);
 
     virtual ~BOMX_VideoDecoder();
 

@@ -175,7 +175,7 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
         return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
     }
 
-    pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, 1, &vp9Role);
+    pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, 1, &vp9Role, BOMX_VideoDecoder_GetRoleVp9);
     if ( NULL == pVideoDecoder )
     {
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
@@ -619,8 +619,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     const OMX_CALLBACKTYPE *pCallbacks,
     bool secure,
     unsigned numRoles,
-    const BOMX_VideoDecoderRole *pRoles) :
-    BOMX_Component(pComponentType, pName, pAppData, pCallbacks, BOMX_VideoDecoder_GetRole),
+    const BOMX_VideoDecoderRole *pRoles,
+    const char *(*pGetRole)(unsigned roleIndex)) :
+    BOMX_Component(pComponentType, pName, pAppData, pCallbacks, (pGetRole!=NULL) ? pGetRole : BOMX_VideoDecoder_GetRole),
     m_hSimpleVideoDecoder(NULL),
     m_hPlaypump(NULL),
     m_hPidChannel(NULL),

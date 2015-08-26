@@ -51,8 +51,11 @@
 #include "bomx_pes_formatter.h"
 #include <stdio.h>
 
-extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" const char *BOMX_AudioDecoder_GetRole(unsigned roleIndex);
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" const char *BOMX_AudioDecoder_GetRoleAc3(unsigned roleIndex);
+
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateMp3(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" const char *BOMX_AudioDecoder_GetRoleMp3(unsigned roleIndex);
 
 struct BOMX_AudioDecoderInputBufferInfo
 {
@@ -95,9 +98,10 @@ public:
         const OMX_STRING pName,
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
-        bool secure=false,
-        unsigned numRoles=0,
-        const BOMX_AudioDecoderRole *pRoles=NULL);
+        bool secure,
+        unsigned numRoles,
+        const BOMX_AudioDecoderRole *pRoles,
+        const char *(*pGetRole)(unsigned roleIndex));
 
     virtual ~BOMX_AudioDecoder();
 

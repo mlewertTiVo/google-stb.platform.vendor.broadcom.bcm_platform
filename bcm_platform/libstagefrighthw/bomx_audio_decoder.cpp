@@ -86,10 +86,6 @@
 
 using namespace android;
 
-static const BOMX_AudioDecoderRole g_defaultRoles[] = {{"audio_decoder.ac3", OMX_AUDIO_CodingAndroidAC3},
-                                                       {"audio_decoder.mp3", OMX_AUDIO_CodingMP3}};
-static const unsigned g_numDefaultRoles = sizeof(g_defaultRoles)/sizeof(BOMX_AudioDecoderRole);
-
 enum BOMX_AudioDecoderEventType
 {
     BOMX_AudioDecoderEventType_ePlaypump=0,
@@ -98,13 +94,29 @@ enum BOMX_AudioDecoderEventType
     BOMX_AudioDecoderEventType_eMax
 };
 
-extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Create(
+static const BOMX_AudioDecoderRole g_ac3Role[] = {"audio_decoder.ac3", OMX_AUDIO_CodingAndroidAC3};
+static const BOMX_AudioDecoderRole g_mp3Role[] = {"audio_decoder.mp3", OMX_AUDIO_CodingMP3};
+
+#define BOMX_AUDIO_GET_ROLE_COUNT(roleArray) (sizeof(roleArray)/sizeof(BOMX_AudioDecoderRole))
+#define BOMX_AUDIO_GET_ROLE_NAME(roleArray, idx) ((idx) >= (BOMX_AUDIO_GET_ROLE_COUNT(roleArray))?NULL:(roleArray)[(idx)].name)
+
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(
     OMX_COMPONENTTYPE *pComponentTpe,
     OMX_IN OMX_STRING pName,
     OMX_IN OMX_PTR pAppData,
     OMX_IN OMX_CALLBACKTYPE *pCallbacks)
 {
-    BOMX_AudioDecoder *pAudioDecoder = new BOMX_AudioDecoder(pComponentTpe, pName, pAppData, pCallbacks);
+    NEXUS_AudioCapabilities audioCaps;
+
+    NEXUS_GetAudioCapabilities(&audioCaps);
+    if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
+         !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
+    {
+        ALOGW("AC3 hardware support is not available");
+        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+    }
+
+    BOMX_AudioDecoder *pAudioDecoder = new BOMX_AudioDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, BOMX_AUDIO_GET_ROLE_COUNT(g_ac3Role), g_ac3Role, BOMX_AudioDecoder_GetRoleAc3);
     if ( NULL == pAudioDecoder )
     {
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
@@ -123,16 +135,49 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Create(
     }
 }
 
-extern "C" const char *BOMX_AudioDecoder_GetRole(unsigned roleIndex)
+extern "C" const char *BOMX_AudioDecoder_GetRoleAc3(unsigned roleIndex)
 {
-    if ( roleIndex >= g_numDefaultRoles )
+    return BOMX_AUDIO_GET_ROLE_NAME(g_ac3Role, roleIndex);
+}
+
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateMp3(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    NEXUS_AudioCapabilities audioCaps;
+
+    NEXUS_GetAudioCapabilities(&audioCaps);
+    if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eMp3].decode &&
+         !audioCaps.dsp.codecs[NEXUS_AudioCodec_eMpeg].decode )
     {
-        return NULL;
+        ALOGW("MP3 hardware support is not available");
+        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+    }
+
+    BOMX_AudioDecoder *pAudioDecoder = new BOMX_AudioDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, BOMX_AUDIO_GET_ROLE_COUNT(g_mp3Role), g_mp3Role, BOMX_AudioDecoder_GetRoleMp3);
+    if ( NULL == pAudioDecoder )
+    {
+        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
     }
     else
     {
-        return g_defaultRoles[roleIndex].name;
+        if ( pAudioDecoder->IsValid() )
+        {
+            return OMX_ErrorNone;
+        }
+        else
+        {
+            delete pAudioDecoder;
+            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+        }
     }
+}
+
+extern "C" const char *BOMX_AudioDecoder_GetRoleMp3(unsigned roleIndex)
+{
+    return BOMX_AUDIO_GET_ROLE_NAME(g_mp3Role, roleIndex);
 }
 
 static void BOMX_AudioDecoder_PlaypumpEvent(void *pParam)
@@ -218,8 +263,10 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     const OMX_CALLBACKTYPE *pCallbacks,
     bool secure,
     unsigned numRoles,
-    const BOMX_AudioDecoderRole *pRoles) :
-    BOMX_Component(pComponentType, pName, pAppData, pCallbacks, BOMX_AudioDecoder_GetRole),
+    const BOMX_AudioDecoderRole *pRoles,
+    const char *(*pGetRole)(unsigned roleIndex)
+    ) :
+    BOMX_Component(pComponentType, pName, pAppData, pCallbacks, pGetRole),
     m_hAudioDecoder(NULL),
     m_hPlaypump(NULL),
     m_hPidChannel(NULL),
@@ -275,8 +322,9 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
 
     if ( numRoles==0 || pRoles==NULL )
     {
-        pRoles = g_defaultRoles;
-        numRoles = g_numDefaultRoles;
+        ALOGE("Must specify at least one role");
+        this->Invalidate();
+        return;
     }
     if ( numRoles > MAX_PORT_FORMATS )
     {
