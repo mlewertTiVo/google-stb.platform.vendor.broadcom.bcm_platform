@@ -112,7 +112,7 @@
 #define NX_HEAP_DRV_MANAGED            "ro.nx.heap.drv_managed"
 #define NX_HEAP_GROW                   "ro.nx.heap.grow"
 
-#define NX_HD_OUT_FMT                  "ro.nx.vidout.force"
+#define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
 #define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
 #define NX_HDCP2X_KEY                  "ro.nexus.nxserver.hdcp2x_keys"
 
@@ -526,6 +526,33 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 }
 
+static NEXUS_VideoFormat forced_output_format(void)
+{
+   NEXUS_VideoFormat forced_format = NEXUS_VideoFormat_eUnknown;
+   char value[PROPERTY_VALUE_MAX];
+   char name[PROPERTY_VALUE_MAX];
+
+   memset(value, 0, sizeof(value));
+   sprintf(name, "persist.%s", NX_HD_OUT_FMT);
+   if (property_get(name, value, "")) {
+      if (strlen(value)) {
+         forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
+      }
+   }
+
+   if ((forced_format == NEXUS_VideoFormat_eUnknown) || (forced_format >= NEXUS_VideoFormat_eMax)) {
+      memset(value, 0, sizeof(value));
+      sprintf(name, "ro.%s", NX_HD_OUT_FMT);
+      if (property_get(name, value, "")) {
+         if (strlen(value)) {
+            forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
+         }
+      }
+   }
+
+   return forced_format;
+}
+
 static nxserver_t init_nxserver(void)
 {
     NEXUS_Error rc;
@@ -539,6 +566,7 @@ static nxserver_t init_nxserver(void)
     int ix, uses_mma = 0;
     char nx_key[PROPERTY_VALUE_MAX];
     FILE *key = NULL;
+    NEXUS_VideoFormat forced_format;
 
     if (g_app.refcnt == 1) {
         g_app.refcnt++;
@@ -583,16 +611,13 @@ static nxserver_t init_nxserver(void)
         GRAPHICS_RES_WIDTH_PROP, GRAPHICS_RES_WIDTH_DEFAULT);
     settings.fbsize.height = property_get_int32(
         GRAPHICS_RES_HEIGHT_PROP, GRAPHICS_RES_HEIGHT_DEFAULT);
-    memset(value, 0, sizeof(value));
-    if (property_get(NX_HD_OUT_FMT, value, "")) {
-        if (strlen(value)) {
-            /* -display_format XX */
-            settings.display.format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
-            ALOGI("%s: display format = %s", __FUNCTION__,
-                  lookup_name(g_videoFormatStrs, settings.display.format));
-            /* -ignore_edid */
-            settings.display.hdmiPreferences.followPreferredFormat = false;
-        }
+    forced_format = forced_output_format();
+    if ((forced_format != NEXUS_VideoFormat_eUnknown) && (forced_format < NEXUS_VideoFormat_eMax)) {
+       /* -display_format XX */
+       settings.display.format = forced_format;
+       ALOGI("%s: display format = %s", __FUNCTION__, lookup_name(g_videoFormatStrs, settings.display.format));
+       /* -ignore_edid */
+       settings.display.hdmiPreferences.followPreferredFormat = false;
     }
     /* -transcode off */
     settings.transcode = (property_get_int32(NX_TRANSCODE, 0) ? true : false);

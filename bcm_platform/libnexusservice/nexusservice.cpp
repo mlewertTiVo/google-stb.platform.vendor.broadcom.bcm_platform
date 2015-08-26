@@ -89,6 +89,8 @@ extern "C" {
 #define NEXUS_MAIN_HEAP_IDX NEXUS_MEMC0_MAIN_HEAP
 #endif
 
+#define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
+
 BDBG_OBJECT_ID(NexusClientContext);
 
 #if ANDROID_ENABLE_HDMI_HDCP
@@ -799,16 +801,29 @@ int NexusService::platformInitSurfaceCompositor(void)
 
 NEXUS_VideoFormat NexusService::getForcedOutputFormat(void)
 {
-    char value[PROPERTY_VALUE_MAX];
+   NEXUS_VideoFormat forced_format = NEXUS_VideoFormat_eUnknown;
+   char value[PROPERTY_VALUE_MAX];
+   char name[PROPERTY_VALUE_MAX];
 
-    memset(value, 0, sizeof(value));
-    if (property_get("ro.nx.vidout.force", value, NULL)) {
-       if (strlen(value)) {
-          return (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
-       }
-    }
+   memset(value, 0, sizeof(value));
+   sprintf(name, "persist.%s", NX_HD_OUT_FMT);
+   if (property_get(name, value, "")) {
+      if (strlen(value)) {
+         forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
+      }
+   }
 
-    return  NEXUS_VideoFormat_eUnknown;
+   if ((forced_format == NEXUS_VideoFormat_eUnknown) || (forced_format >= NEXUS_VideoFormat_eMax)) {
+      memset(value, 0, sizeof(value));
+      sprintf(name, "ro.%s", NX_HD_OUT_FMT);
+      if (property_get(name, value, "")) {
+         if (strlen(value)) {
+            forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
+         }
+      }
+   }
+
+   return forced_format;
 }
 
 void NexusService::platformInit()
@@ -844,7 +859,7 @@ void NexusService::platformInit()
     }
 
     initial_output_format = getForcedOutputFormat();
-    if (initial_output_format == NEXUS_VideoFormat_eUnknown) {
+    if ((initial_output_format == NEXUS_VideoFormat_eUnknown) || (initial_output_format >= NEXUS_VideoFormat_eMax)) {
        initial_output_format = NEXUS_VideoFormat_e1080p;
     }
 
