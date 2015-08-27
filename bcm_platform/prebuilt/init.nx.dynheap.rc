@@ -21,7 +21,7 @@ on boot
    #
    # in doubt, or if unsure, you may specify the same value for 1 and 2.
    #
-   insmod /system/vendor/drivers/wakeup_drv.ko devname="mali0"
+   insmod /system/vendor/drivers/droid_pm.ko devname="mali0"
    setprop ro.nx.msg_modules ""
    insmod /system/vendor/drivers/nexus.ko devname="mali" config="auto_subindex=true"
 

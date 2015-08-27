@@ -13,8 +13,6 @@
 # limitations under the License.
 
 
-REFSW_PATH :=${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_nexus
-
 LOCAL_PATH := $(call my-dir)
 
 ifeq ($(NEXUS_MODE),proxy)
@@ -52,11 +50,12 @@ ifneq ($(findstring NEXUS_HAS_GPIO, $(NEXUS_APP_DEFINES)),)
 LOCAL_C_INCLUDES += $(NEXUS_GPIO_PUBLIC_INCLUDES)
 endif
 
-LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
-                    $(REFSW_PATH)/../libnexusservice \
-                    $(REFSW_PATH)/../libnexusipc \
-                    $(REFSW_PATH)/../pmlibservice \
-                    $(REFSW_PATH)/../libnexusir
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusir \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/pmlibservice \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/droid_pm \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/linux/driver
                     
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 
