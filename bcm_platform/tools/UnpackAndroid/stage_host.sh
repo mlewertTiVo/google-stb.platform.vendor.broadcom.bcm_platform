@@ -50,7 +50,7 @@ cp $image_dir/bolt-*.bin $staging_dir/loaders
 echo "6) Copying android-info.txt, gpt.bin, hwcfg.img"
 cp $image_dir/android-info.txt android-info.txt
 cp $image_dir/gpt.bin gpt.bin
-cp $image_dir/hwcfg_empty.img hwcfg_empty.img
+cp $image_dir/hwcfg.img hwcfg.img
 
 
 echo "!!! Done staging !!!"
