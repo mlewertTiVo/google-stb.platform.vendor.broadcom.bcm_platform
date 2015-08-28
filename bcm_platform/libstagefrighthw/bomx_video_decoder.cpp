@@ -4514,10 +4514,16 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 if ( pNext == pEnd )
                 {
                     returnSettings[numFrames].display = (pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDisplayReady) ? true : false;
+                    if (!returnSettings[numFrames].display)
+                    {
+                        ALOGW("Dropping outstanding frame %u - state is [%d] %s", pBuffer->frameStatus.serialNumber, pBuffer->state,
+                              pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDropReady ? "eDropReady" : "???");
+                    }
                 }
                 else
                 {
                     returnSettings[numFrames].display = false;
+                    ALOGW("Dropping outstanding frame %u - falling behind", pBuffer->frameStatus.serialNumber);
                 }
                 if ( pBuffer->pPrivateHandle )
                 {
