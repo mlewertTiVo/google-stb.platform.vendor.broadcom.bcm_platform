@@ -43,7 +43,7 @@ _hwcfg.img := $(PRODUCT_OUT_FROM_TOP)/hwcfg.img
 $(_hwcfg.img): $(PRODUCT_OUT_FROM_TOP)/hwcfg $(_hwcfg_dhd_nvram_file) $(_hwcfg_drm_file)
 	mkfs.cramfs -n hwcfg $(PRODUCT_OUT_FROM_TOP)/hwcfg $@
 
-LOCAL_MODULE := hwcfg
+LOCAL_MODULE := makehwcfg
 LOCAL_MODULE_TAGS := optional
 LOCAL_ADDITIONAL_DEPENDENCIES := $(_hwcfg.img)
 
