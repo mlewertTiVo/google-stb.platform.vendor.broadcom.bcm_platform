@@ -152,7 +152,7 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
     hdmi_state hdmiSwitch;
     const char *hdmiHpdDevName = "/dev/hdmi_hpd";
     NEXUS_VideoFormat format;
-    bool update = false;
+    bool update;
 
     rc = NxClient_GetStandbyStatus(&standbyStatus);
     if (rc != NEXUS_SUCCESS) {
@@ -222,34 +222,36 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
             close(hdmiHpdSwitchFd);
         }
 
-        NxClient_GetDisplaySettings(&settings);
+        do {
+            update = false;
+            NxClient_GetDisplaySettings(&settings);
 
-        if (status.hdmi.status.connected && status.hdmi.status.rxPowered) {
-           format = getForcedOutputFormat();
-           if (format == NEXUS_VideoFormat_eUnknown) {
-              format = getBestOutputFormat(&status.hdmi.status);
-           }
-           if ((format != NEXUS_VideoFormat_eUnknown) && (settings.format != format)) {
-              settings.format = format;
-              update = true;
-           }
-        }
+            if (status.hdmi.status.connected && status.hdmi.status.rxPowered) {
+               format = getForcedOutputFormat();
+               if (format == NEXUS_VideoFormat_eUnknown) {
+                  format = getBestOutputFormat(&status.hdmi.status);
+               }
+               if ((format != NEXUS_VideoFormat_eUnknown) && (settings.format != format)) {
+                  settings.format = format;
+                  update = true;
+               }
+            }
 
 #if ANDROID_ENABLE_HDMI_HDCP
-        /* enable hdcp authentication if hdmi connected and powered */
-        settings.hdmiPreferences.hdcp =
-            (status.hdmi.status.connected && status.hdmi.status.rxPowered) ?
-            NxClient_HdcpLevel_eMandatory :
-            NxClient_HdcpLevel_eNone;
-        update = true;
+            /* enable hdcp authentication if hdmi connected and powered */
+            settings.hdmiPreferences.hdcp =
+                (status.hdmi.status.connected && status.hdmi.status.rxPowered) ?
+                NxClient_HdcpLevel_eMandatory :
+                NxClient_HdcpLevel_eNone;
+            update = true;
 #endif
-        if (update) {
-           rc = NxClient_SetDisplaySettings(&settings);
-           if (rc) {
-               ALOGE("%s: Could not set display settings!!!", __PRETTY_FUNCTION__);
-               return;
-           }
-        }
+            if (update) {
+               rc = NxClient_SetDisplaySettings(&settings);
+               if (rc) {
+                   ALOGE("%s: Could not set display settings rc=%d)!!!", __PRETTY_FUNCTION__, rc);
+               }
+            }
+        } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
     }
     else {
         ALOGW("%s: Ignoring HDMI%d hotplug as we are in standby!", __PRETTY_FUNCTION__, param);
