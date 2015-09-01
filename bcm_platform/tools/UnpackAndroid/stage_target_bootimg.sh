@@ -2,7 +2,7 @@
 set -e
 
 function usage {
-   echo "stage_target_bootimg.sh [-g] [-b] [-s] [-d] [-c] [-u] [-w <name>] [-z] [-S] [-p <name>] [-F <ip-address>]"
+   echo "stage_target_bootimg.sh [-g] [-b] [-s] [-d] [-c] [-u] [-w <name>] [-z] [-S] [-p <name>] [-F <ip-address|usb>]"
    echo ""
    echo "list partitions to update. partitions in:"
    echo ""
@@ -12,7 +12,7 @@ function usage {
    echo "     '-d': userdata"
    echo "     '-c': cache"
    echo "     '-u': bsu"
-   echo "     '-w <name>': hwcfg image path"
+   echo "     '-w <name>': hwcfg image name"
    echo "     '-z': recovery"
    echo ""
    echo "'-S' - to preserve labeling for SELinux support (incurs longer copy time)."
@@ -24,7 +24,7 @@ function usage {
    echo ""
    echo "     '-b -s -d' - if '-S' is not specified."
    echo "     '-S -b -s -d' - if '-S' specified without explicit targets."
-   echo "     '-F <ip-address> -b -s -d' - if '-F' specified without explicit targets."
+   echo "     '-F <ip-address|usb> -b -s -d' - if '-F' specified without explicit targets."
    echo ""
    echo "'-p <name>' - to specify the root of the partition flashing"
    echo "              eg: sda, mmcblk0p - defaults to 'sda'."
@@ -32,7 +32,8 @@ function usage {
 }
 
 partition_root=sda
-fastboot_target=0.0.0.0
+fastboot_target=usb
+fastboot_cmd=fastboot
 
 update_boot_img=1
 update_system=1
@@ -98,6 +99,9 @@ while getopts "hgbsdcuw:zSp:F:" tag; do
 	F)
 		fastboot=1
 		fastboot_target=$OPTARG
+		if [[ $fastboot_target != "usb" ]]; then
+			fastboot_cmd="./fastboot_tcp -t $fastboot_target"
+		fi
 		;;
 	h|*)
 		usage
@@ -190,32 +194,32 @@ if [ $fastboot -gt 0 ]; then
 	echo "running fastboot against $fastboot_target"
 	# always update the gpt first if user wants to update gpt partition
 	if [ $update_gpt -gt 0 ]; then
-		./fastboot_tcp -t $fastboot_target flash gpt ./gpt.bin
+		$fastboot_cmd flash gpt ./gpt.bin
 	fi
 
 	# update the other paritions after gpt has been updated
 	if [ $update_boot_img -gt 0 ]; then
-		./fastboot_tcp -t $fastboot_target flash boot ./boot.img
+		$fastboot_cmd flash boot ./boot.img
 	fi
 	if [ $update_hwcfg -gt 0 ]; then
-		./fastboot_tcp -t $fastboot_target flash hwcfg ./$hwcfg_img
+		$fastboot_cmd flash hwcfg $hwcfg_img
 	fi
 	if [ $update_recovery -gt 0 ]; then
-		./fastboot_tcp -t $fastboot_target flash recovery ./recovery.img
+		$fastboot_cmd flash recovery ./recovery.img
 	fi
 	if [ $update_bsu -gt 0 ]; then
-		./fastboot_tcp -t $fastboot_target flash bsu ./loaders/android_bsu.elf
+		$fastboot_cmd flash bsu ./loaders/android_bsu.elf
 	fi
 	if [ $update_system -gt 0 ]; then
-		./fastboot_tcp -t $fastboot_target flash system ./unpack_android_boot/system.img
+		$fastboot_cmd flash system ./unpack_android_boot/system.img
 	fi
 	if [ $update_userdata -gt 0 ]; then
-		./fastboot_tcp -t $fastboot_target flash userdata ./unpack_android_boot/userdata.img
+		$fastboot_cmd flash userdata ./unpack_android_boot/userdata.img
 	fi
 	if [ $update_cache -gt 0 ]; then
-		./fastboot_tcp -t $fastboot_target flash cache ./unpack_android_boot/cache.img
+		$fastboot_cmd flash cache ./unpack_android_boot/cache.img
 	fi
-	./fastboot_tcp -t $fastboot_target reboot
+	$fastboot_cmd reboot
 	echo "done!!!"
 	exit 0
 fi
