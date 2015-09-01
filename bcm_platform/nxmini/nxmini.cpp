@@ -80,7 +80,7 @@
 #define NX_HEAP_HIGH_MEM           1
 #define NX_HEAP_HIGH_MEM_VALUE     "0m"
 #define NX_HEAP_DRV_MANAGED        1
-#define NX_HEAP_DRV_MANAGED_VALUE  "0m"
+#define NX_HEAP_DRV_MANAGED_VALUE  "4m"
 
 static struct {
     BKNI_MutexHandle lock;
