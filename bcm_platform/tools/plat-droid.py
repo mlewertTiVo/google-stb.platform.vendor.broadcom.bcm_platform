@@ -234,6 +234,8 @@ if spoof_device == 'nope':
 	os.write(s, "add_lunch_combo bcm_%s-user\n" % androiddevice)
 else:
 	os.write(s, "add_lunch_combo full_%s-eng\n" % androiddevice)
+	os.write(s, "add_lunch_combo full_%s-userdebug\n" % androiddevice)
+	os.write(s, "add_lunch_combo full_%s-user\n" % androiddevice)
 os.close(s);
 
 f='%s%s' % (devicedirectory, androidproduct)
