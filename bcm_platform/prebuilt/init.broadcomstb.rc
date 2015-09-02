@@ -97,6 +97,9 @@ on property:hw.nexus.platforminit=on
    insmod /system/vendor/drivers/nx_ashmem.ko devname="ion" heap_grow="8m"
    class_start main
 
+on property:dyn.nx.vidout.set=1
+   start nxdispfmt
+
 service sdcard /system/bin/sdcard -u 1023 -g 1023 -l /data/media /mnt/shell/emulated
    class late_start
 
@@ -127,4 +130,9 @@ service hwcbinder /system/bin/hwcbinder
    group system media
    critical
    oneshot
+
+service nxdispfmt /system/bin/nxdispfmt
+   class late_start
+   oneshot
+   disabled
 

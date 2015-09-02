@@ -32,6 +32,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libpower/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libstagefrighthw/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libtv_input/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxdispfmt/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxlogger/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxmini/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxserver/Android.mk
