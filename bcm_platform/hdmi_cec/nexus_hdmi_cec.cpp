@@ -514,7 +514,7 @@ bool NexusHdmiCecDevice::standbyMonitor(void *ctx)
 NexusHdmiCecDevice::NexusHdmiCecDevice(int cecId) : mCecId(cecId), mCecLogicalAddr(UNDEFINED_LOGICAL_ADDRESS),
                                                     mCecPhysicalAddr(UNDEFINED_PHYSICAL_ADDRESS), mCecVendorId(UNKNOWN_VENDOR_ID), mCecEnable(false),
                                                     mCecSystemControlEnable(true), mCecViewOnCmdPending(false), mStandby(false),
-                                                    mHotplugConnected(HDMI_NOT_CONNECTED), pIpcClient(NULL), pNexusClientContext(NULL), mCallback(NULL),
+                                                    mHotplugConnected(-1), pIpcClient(NULL), pNexusClientContext(NULL), mCallback(NULL),
                                                     mHdmiCecDevice(NULL), mHdmiCecMessageEventListener(NULL), mHdmiHotplugEventListener(NULL),
                                                     mHdmiCecRxMessageHandler(NULL), mHdmiCecRxMessageLooper(NULL)
 {
