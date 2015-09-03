@@ -5,3 +5,4 @@ vendor/broadcom/stb/bcm_platform/libsecurity/playreadypk
 device/broadcom/custom/97252D0C/fbx1
 device/broadcom/custom/97252D0C/fbx2
 vendor/widevine
+device/freebox
