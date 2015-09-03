@@ -2906,8 +2906,11 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            goto out;
         }
 
-        for (int i = 0; i < (DISPLAY_SUPPORTED-1); i++) {
+        for (int i = 0; i < DISPLAY_SUPPORTED; i++) {
             dev->disp_cli[i].sccid = dev->nxAllocResults.surfaceClient[i].id;
+        }
+
+        for (int i = 0; i < (DISPLAY_SUPPORTED-1); i++) {
             dev->disp_cli[i].schdl = NEXUS_SurfaceClient_Acquire(dev->disp_cli[i].sccid);
             if (NULL == dev->disp_cli[i].schdl) {
                ALOGE("%s: unable to allocate surface client", __FUNCTION__);
