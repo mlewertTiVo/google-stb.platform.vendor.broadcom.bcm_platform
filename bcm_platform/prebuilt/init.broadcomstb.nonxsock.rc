@@ -6,7 +6,7 @@ import /init.brcm_hwmon.rc
 import /init.nfs.rc
 import /init.blockdev.rc
 import /init.eth.rc
-import /init.nx.${ro.nx.boot.mode}.rc
+import /init.nx.dynheap.rc
 
 on init
    mkdir /mnt/hwcfg 0555 root root
