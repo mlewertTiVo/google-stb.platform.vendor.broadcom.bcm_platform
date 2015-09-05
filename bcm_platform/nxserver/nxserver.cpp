@@ -125,7 +125,7 @@
 #define NX_PROP_ENABLED                "1"
 #define NX_PROP_DISABLED               "0"
 
-/* begnine trimming config - not needed for ATV experience. */
+/* begnine trimming config - not needed for ATV experience - default ENABLED. */
 #define NX_TRIM_VC1                    "ro.nx.trim.vc1"
 #define NX_TRIM_PIP                    "ro.nx.trim.pip"
 #define NX_TRIM_MOSAIC                 "ro.nx.trim.mosaic"
@@ -133,11 +133,11 @@
 #define NX_TRIM_MINFMT                 "ro.nx.trim.minfmt"
 #define NX_TRIM_DISP                   "ro.nx.trim.disp"
 #define NX_TRIM_VIDIN                  "ro.nx.trim.vidin"
-/* destructive trimming config - feature set limitation. */
+#define NX_TRIM_MTG                    "ro.nx.trim.mtg"
+/* destructive trimming config - feature set limitation - default DISABLED. */
 #define NX_TRIM_VP9                    "ro.nx.trim.vp9"
 #define NX_TRIM_4KDEC                  "ro.nx.trim.4kdec"
 #define NX_TRIM_10BCOL                 "ro.nx.trim.10bcol"
-#define NX_TRIM_MTG                    "ro.nx.trim.mtg"
 
 typedef struct {
    pthread_t runner;
@@ -407,7 +407,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    int dec_used = 0;
 
    /* 1. additional display(s). */
-   if (property_get(NX_TRIM_DISP, value, NULL)) {
+   if (property_get(NX_TRIM_DISP, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          /* start index -> 1 */
          for (i = 1; i < NEXUS_MAX_DISPLAYS; i++) {
@@ -431,7 +431,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 2. video input. */
-   if (property_get(NX_TRIM_VIDIN, value, NULL)) {
+   if (property_get(NX_TRIM_VIDIN, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          pMemConfigSettings->videoInputs.hdDvi = false;
          pMemConfigSettings->videoInputs.ccir656 = false;
@@ -444,7 +444,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 4. vc1 decoder. */
-   if (property_get(NX_TRIM_VC1, value, NULL)) {
+   if (property_get(NX_TRIM_VC1, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
             pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVc1] = false;
@@ -456,7 +456,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 5. stills decoder. */
-   if (property_get(NX_TRIM_STILLS, value, NULL)) {
+   if (property_get(NX_TRIM_STILLS, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0 ; i < NEXUS_MAX_STILL_DECODERS ; i++) {
             pMemConfigSettings->stillDecoder[i].used = false;
@@ -465,7 +465,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 6. mosaic video. */
-   if (property_get(NX_TRIM_MOSAIC, value, NULL)) {
+   if (property_get(NX_TRIM_MOSAIC, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          pMemConfigSettings->videoDecoder[0].mosaic.maxNumber = 0;
          pMemConfigSettings->videoDecoder[0].mosaic.maxHeight = 0;
@@ -480,7 +480,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          ++dec_used;
       }
    }
-   if (property_get(NX_TRIM_PIP, value, NULL)) {
+   if (property_get(NX_TRIM_PIP, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          if (dec_used > MIN_PLATFORM_DEC) {
             pMemConfigSettings->videoDecoder[1].used = false;
@@ -492,7 +492,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    /* 8. *** TEMPORARY *** force lowest format for mandated transcode decoder until
     *    we can instantiate an encoder without decoder back-end (architectural change).
     */
-   if (property_get(NX_TRIM_MINFMT, value, NULL)) {
+   if (property_get(NX_TRIM_MINFMT, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          /* start index -> 1.  beware interaction with pip above. */
          for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
