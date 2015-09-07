@@ -78,6 +78,10 @@
    entered the desired standby mode. */
 #define NXCLIENT_PM_TIMEOUT_COUNT (20)
 
+/* Define the MAX timeout to wait before polling for the standby status again
+   during "clientUninit()". */
+#define NXCLIENT_STANDBY_CHECK_TIMEOUT_IN_MS (100)
+
 #ifdef UINT32_C
 #undef UINT32_C
 #define UINT32_C(x)  (x ## U)
@@ -178,7 +182,17 @@ NEXUS_Error NexusNxClient::clientUninit()
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
     android::Mutex::Autolock autoLock(mLock);
-    void *res;
+    NxClient_StandbyStatus standbyStatus;
+
+    do {
+        NxClient_GetStandbyStatus(&standbyStatus);
+        if (standbyStatus.standbyTransition || (standbyStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn)) {
+            usleep(NXCLIENT_STANDBY_CHECK_TIMEOUT_IN_MS * 1000);
+        }
+        else {
+            break;
+        }
+    } while (true);
 
     NxClient_Uninit();
     return rc;
