@@ -72,6 +72,13 @@
 #include "namevalue.h"
 #include "nx_ashmem.h"
 
+#include "nexus_security.h"
+#include "nexus_bsp_config.h"
+#include "nexus_base_mmap.h"
+
+#define DHD_SECDMA_PROP                "ro.dhd.secdma"
+#define DHD_SECDMA_PARAMS_PATH          "/data/nexus/secdma"
+
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 #define APP_MAX_CLIENTS                (64)
 #define MB                             (1024*1024)
@@ -820,6 +827,60 @@ static void uninit_nxserver(nxserver_t server)
     NEXUS_Platform_Uninit();
 }
 
+static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
+{
+    NEXUS_Error rc = NEXUS_SUCCESS;
+    NEXUS_Addr secdmaPhysicalOffset = 0;
+    uint32_t secdmaMemSize;
+    char value[PROPERTY_VALUE_MAX];
+    char secdma_param_file[PROPERTY_VALUE_MAX];
+    FILE *pFile;
+
+    memset (value, 0, sizeof(value));
+
+    if (property_get(DHD_SECDMA_PROP, value, NULL))
+    {
+        secdmaMemSize = strtoul(value, NULL, 0);
+        if (strlen(value) && (secdmaMemSize > 0)) {
+            sprintf(secdma_param_file, "%s/stbpriv.txt", DHD_SECDMA_PARAMS_PATH);
+            pFile = fopen(secdma_param_file, "w");
+            if (pFile == NULL) {
+                ALOGE("couldn't open %s", secdma_param_file);
+            } else {
+                *hMemoryBlock = NEXUS_MemoryBlock_Allocate(NEXUS_MEMC0_MAIN_HEAP, secdmaMemSize, 0x1000, NULL);
+                if (*hMemoryBlock == NULL) {
+                    ALOGE("NEXUS_MemoryBlock_Allocate failed");
+                    fclose(pFile);
+                    return;
+                }
+                rc = NEXUS_MemoryBlock_LockOffset(*hMemoryBlock, &secdmaPhysicalOffset);
+                if (rc != NEXUS_SUCCESS) {
+                    ALOGE("NEXUS_MemoryBlock_LockOffset returned %d", rc);
+                    NEXUS_MemoryBlock_Free(*hMemoryBlock);
+                    *hMemoryBlock = NULL;
+                    fclose(pFile);
+                    return;
+                }
+                ALOGV("secdmaPhysicalOffset 0x%x secdmaMemSize 0x%x", (unsigned)secdmaPhysicalOffset, secdmaMemSize);
+                rc = NEXUS_Security_SetPciERestrictedRange( secdmaPhysicalOffset, (size_t) secdmaMemSize, (unsigned)0 );
+                if (rc != NEXUS_SUCCESS) {
+                    ALOGE("NEXUS_Security_SetPciERestrictedRange returned %d", rc);
+                    NEXUS_MemoryBlock_Unlock(*hMemoryBlock);
+                    NEXUS_MemoryBlock_Free(*hMemoryBlock);
+                    *hMemoryBlock = NULL;
+                    fclose(pFile);
+                    return;
+                }
+                fprintf(pFile, "secdma_cma_addr=0x%x secdma_cma_size=0x%x\n", secdmaPhysicalOffset, secdmaMemSize);
+                fclose(pFile);
+            }
+        } else {
+            ALOGE("secdma size not set");
+        }
+    }
+}
+
+
 int main(void)
 {
     struct timespec t;
@@ -831,6 +892,7 @@ int main(void)
     char device[PROPERTY_VALUE_MAX];
     char name[PROPERTY_VALUE_MAX];
     int memCfgFd = -1;
+    NEXUS_MemoryBlockHandle hSecDmaMemoryBlock = NULL;
 
     memset(&g_app, 0, sizeof(g_app));
 
@@ -894,6 +956,8 @@ int main(void)
     }
     pthread_attr_destroy(&attr);
 
+    alloc_secdma(&hSecDmaMemoryBlock);
+
     ALOGI("trigger nexus waiters now.");
     property_set("hw.nexus.platforminit", "on");
 
@@ -936,6 +1000,11 @@ int main(void)
        BKNI_Sleep(SEC_TO_MSEC * RUNNER_SEC_THRESHOLD);
        BKNI_SetEvent(g_app.proactive_runner.runner_run);
        if (g_exit) break;
+    }
+
+    if(hSecDmaMemoryBlock != NULL) {
+       NEXUS_MemoryBlock_Unlock(hSecDmaMemoryBlock);
+       NEXUS_MemoryBlock_Free(hSecDmaMemoryBlock);
     }
 
     ALOGI("terminating nxserver.");

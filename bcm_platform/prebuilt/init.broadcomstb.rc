@@ -75,6 +75,8 @@ on post-fs-data
 
    mkdir /data/mediadrm/playready/ 0770 mediadrm mediadrm
 
+   mkdir /data/nexus/secdma 0777 system system
+
    # *** sample only.
    #
    #    seed the nx_key with some password to allow
