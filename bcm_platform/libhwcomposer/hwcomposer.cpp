@@ -138,7 +138,7 @@ using namespace android;
 #define HWC_DUMP_MMA_OPS_PROP        "ro.hwc.dump.mma"
 #define HWC_DUMP_FENCE_PROP          "ro.hwc.dump.fence"
 #define HWC_SKIP_DUP_PROP            "ro.hwc.skip.dup"
-#define HWC_WITH_FENCE_PROP          "ro.hwc.fence"
+#define HWC_WITH_FENCE_PROP          "ro.v3d.fence.expose"
 #define HWC_USES_MMA_PROP            "ro.nx.mma"
 #define HWC_TRACK_COMP_TIME          "ro.hwc.track.comptime"
 #define HWC_TRACK_COMP_CHATTY        "ro.hwc.track.chatty"
@@ -3433,9 +3433,7 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
       dev->skip_dup = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
-   if (property_get(HWC_WITH_FENCE_PROP, value, HWC_DEFAULT_DISABLED)) {
-      dev->fence_support = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
-   }
+   dev->fence_support = property_get_bool(HWC_WITH_FENCE_PROP, 0);
 
    if (property_get(HWC_TRACK_COMP_TIME, value, HWC_DEFAULT_ENABLED)) {
       dev->track_comp_time = (strtoul(value, NULL, 10) > 0) ? true : false;
