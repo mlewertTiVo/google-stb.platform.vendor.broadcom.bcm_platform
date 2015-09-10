@@ -14,6 +14,7 @@
 
 
 LOCAL_PATH := $(call my-dir)
+SAVED_LOCAL_PATH := $(LOCAL_PATH)
 
 BSEAV_INC_PATH := ${BCM_VENDOR_STB_ROOT}/refsw/BSEAV
 LOCAL_BSEAV_TOP := ../../refsw/BSEAV
@@ -36,15 +37,17 @@ LOCAL_C_INCLUDES += $(BSEAV_INC_PATH)/$(GLOB_PATH) \
 LOCAL_CFLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
 LOCAL_CFLAGS += $(PMLIB_CFLAGS)
 
-LOCAL_SRC_FILES := IPmLibService.cpp \
-                   PmLibService.cpp \
-                   $(GLOB_PATH)/glob.c \
-                   $(POWER_PATH)/pmlib.c
+LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/
+LOCAL_SRC_FILES := bcm_platform/pmlibservice/IPmLibService.cpp \
+                   bcm_platform/pmlibservice/PmLibService.cpp \
+                   refsw/BSEAV/lib/glob/glob.c \
+                   refsw/BSEAV/lib/pmlib/$(PMLIB_DIR)/pmlib.c
 
 LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_SHARED_LIBRARY)
 
+LOCAL_PATH := $(SAVED_LOCAL_PATH)
 include $(CLEAR_VARS)
 
 LOCAL_PRELINK_MODULE := false
