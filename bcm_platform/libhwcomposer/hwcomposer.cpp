@@ -70,7 +70,7 @@ using namespace android;
 #define HWC_SB_NO_ALLOC_SURF_CLI     1
 #define HWC_MM_NO_ALLOC_SURF_CLI     1
 
-#define HWC_REFRESH_HACK             1
+#define HWC_REFRESH_HACK             0
 
 #define HWC_NUM_DISP_BUFFERS         3
 
@@ -274,11 +274,6 @@ typedef struct {
     int layer_type;
     int layer_subtype;
     nsecs_t refresh;
-
-    double fps_max;
-    double fps_now;
-    unsigned long long last_set;
-    int64_t last_tick;
 
 } VSYNC_CLIENT_INFO;
 
@@ -1077,13 +1072,6 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
        }
     }
     if (capacity) {
-       write = snprintf(buff + index, capacity, "\tfps::max:%.3f::now:%.3f\n",
-           ctx->syn_cli.fps_max,
-           ctx->syn_cli.fps_now);
-       if (write > 0) {
-           capacity = (capacity > write) ? (capacity - write) : 0;
-           index += write;
-       }
        write = snprintf(buff + index, capacity, "\tprepare:{%llu,%llu}::set:{%llu,%llu}::comp:%llu::sync-ret:%d\n",
            ctx->stats[HWC_PRIMARY_IX].prepare_call,
            ctx->stats[HWC_PRIMARY_IX].prepare_skipped,
@@ -1699,7 +1687,7 @@ static void hwc_prepare_gpx_layer(
     PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
     if (pSharedData == NULL) {
         ALOGE("%s: invalid buffer on layer_id %d", __FUNCTION__, layer_id);
-        return;
+        goto out;
     }
     hwc_get_buffer_sizes(pSharedData, &cur_width, &cur_height);
     cur_blending_type = hwc_android_blend_to_nsc_blend(layer->blending);
@@ -2910,7 +2898,6 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
        }
        if (ctx->power_mode != mode) {
           ctx->power_mode = mode;
-          ctx->syn_cli.last_tick = -1;
        }
        BKNI_ReleaseMutex(ctx->power_mutex);
        rc = 0;
@@ -3108,20 +3095,12 @@ static int hwc_device_setCursorPositionAsync(struct hwc_composer_device_1 *dev, 
     return 0;
 }
 
-static int64_t VsyncSystemTime(void)
-{
-    struct timespec t;
-    t.tv_sec = t.tv_nsec = 0;
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    return (int64_t)(t.tv_sec) * 1000000000LL + t.tv_nsec;
-}
-
 #define VSYNC_HACK_REFRESH_COUNT 10
 static void * hwc_vsync_task(void *argv)
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)argv;
     const double nsec_to_msec = 1.0 / 1000000.0;
-    int64_t vsync_system_time = VsyncSystemTime();
+    int64_t vsync_system_time;
     unsigned int vsync_hack_count = 0;
     unsigned long long vsync_hack_count_last_tick = 0;
     unsigned long long vsync_hack_count_expected_tick = 0;
@@ -3136,57 +3115,49 @@ static void * hwc_vsync_task(void *argv)
           BKNI_ReleaseMutex(ctx->power_mutex);
           BKNI_WaitForEvent(ctx->syn_cli.vsync_event, BKNI_INFINITE);
 
-          vsync_system_time = VsyncSystemTime();
-
-          if (ctx->syn_cli.last_tick != -1 && (ctx->stats[HWC_PRIMARY_IX].set_call != ctx->syn_cli.last_set)) {
-             ctx->syn_cli.fps_now = (float)(ctx->stats[HWC_PRIMARY_IX].set_call - ctx->syn_cli.last_set) /
-                                    (nsec_to_msec * (float)(vsync_system_time - ctx->syn_cli.last_tick));
-             ctx->syn_cli.fps_now *= 1000.0;
-             if (ctx->syn_cli.fps_now > ctx->syn_cli.fps_max) {
-                ctx->syn_cli.fps_max = ctx->syn_cli.fps_now;
-             }
-          }
-          if ((ctx->syn_cli.last_tick != -1) || (ctx->stats[HWC_PRIMARY_IX].set_call != ctx->syn_cli.last_set)) {
-             ctx->syn_cli.last_tick = vsync_system_time;
-             ctx->syn_cli.last_set = ctx->stats[HWC_PRIMARY_IX].set_call;
-          }
+          vsync_system_time = hwc_tick();
 
           if (HWC_REFRESH_HACK) {
              vsync_hack_count++;
-             if (vsync_hack_count == VSYNC_HACK_REFRESH_COUNT/2) {
-                vsync_hack_count_last_tick = ctx->stats[HWC_PRIMARY_IX].set_call;
-                if (vsync_hack_count_expected_tick == vsync_hack_count_last_tick) {
+             if (vsync_hack_count_expected_tick == 0) {
+                vsync_hack_count_expected_tick = ctx->stats[HWC_PRIMARY_IX].composed + 1;
+             }
+             if (vsync_hack_count >= VSYNC_HACK_REFRESH_COUNT/2) {
+                vsync_hack_count_last_tick = ctx->stats[HWC_PRIMARY_IX].composed;
+                if (vsync_hack_count_expected_tick <= vsync_hack_count_last_tick) {
                    vsync_hack_count = 0; /* reset */
+                   vsync_hack_count_expected_tick = ctx->stats[HWC_PRIMARY_IX].composed + 1;
                 }
-             } else if (vsync_hack_count == VSYNC_HACK_REFRESH_COUNT) {
+             } else if (vsync_hack_count >= VSYNC_HACK_REFRESH_COUNT) {
                  vsync_hack_count = 0;
-                 if (vsync_hack_count_last_tick == ctx->stats[HWC_PRIMARY_IX].set_call) {
-                    vsync_hack_count_expected_tick = ctx->stats[HWC_PRIMARY_IX].set_call + 1;
-                    ALOGV("hack-refresh: tick %d", vsync_hack_count_expected_tick);
+                 if (vsync_hack_count_last_tick == ctx->stats[HWC_PRIMARY_IX].composed) {
+                    ALOGV("hack-refresh: tick %llu", vsync_hack_count_expected_tick);
                     if (ctx->procs->invalidate != NULL) {
                        ctx->procs->invalidate(const_cast<hwc_procs_t *>(ctx->procs));
                     }
+                    vsync_hack_count_expected_tick = 0;
                  }
              }
          }
+
+         if (BKNI_AcquireMutex(ctx->vsync_callback_enabled_mutex) == BERR_SUCCESS) {
+            if (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) {
+               BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
+               ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, vsync_system_time);
+               if (ctx->display_dump_vsync) {
+                  ALOGI("vsync-pushed: @ %lld", vsync_system_time);
+               }
+            } else {
+               BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
+               if (ctx->display_dump_vsync) {
+                  ALOGI("vsync-ticked: @ %lld", vsync_system_time);
+               }
+            }
+         }
+
       } else {
          BKNI_ReleaseMutex(ctx->power_mutex);
          BKNI_Sleep(16);
-      }
-
-      if (BKNI_AcquireMutex(ctx->vsync_callback_enabled_mutex) == BERR_SUCCESS) {
-         if (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) {
-            BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
-            ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, vsync_system_time);
-            if (ctx->display_dump_vsync) {
-               ALOGI("vsync-pushed: @ %lld", vsync_system_time);
-            }
-         } else {
-            BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
-            if (ctx->display_dump_vsync) {
-               ALOGI("vsync-ticked: @ %lld", vsync_system_time);
-            }
-         }
       }
 
    } while(ctx->vsync_thread_run);
