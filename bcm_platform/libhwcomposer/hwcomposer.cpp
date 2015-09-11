@@ -503,7 +503,8 @@ struct hwc_context_t {
 
     HwcBinder_wrap *hwc_binder;
 
-    NEXUS_Graphics2DHandle hwc_2dg;
+    NEXUS_Graphics2DHandle hwc_g2d;
+    BKNI_MutexHandle g2d_mutex;
     NEXUS_Graphics2DCapabilities gfxCaps;
     BKNI_EventHandle checkpoint_event;
 
@@ -569,7 +570,8 @@ static void hwc_nsc_prepare_layer(struct hwc_context_t* dev, hwc_layer_1_t *laye
 static void hwc_binder_advertise_video_surface(struct hwc_context_t* dev);
 
 static void hwc_checkpoint_callback(void *pParam, int param2);
-static int hwc_checkpoint(struct hwc_context_t *dev);
+static int hwc_checkpoint(struct hwc_context_t *ctx);
+static int hwc_checkpoint_locked(struct hwc_context_t *ctx);
 
 hwc_module_t HAL_MODULE_INFO_SYM = {
     common: {
@@ -1398,7 +1400,7 @@ out:
 }
 
 static bool hwc_can_layer_init_display(struct hwc_context_t* ctx, int layer_id, NEXUS_SurfaceComposition *pComp,
-                                       NEXUS_SurfaceHandle display_surface, bool is_virtual)
+                                       NEXUS_SurfaceHandle outputHdl, bool is_virtual)
 {
     NEXUS_SurfaceCreateSettings settings;
 
@@ -1419,7 +1421,7 @@ static bool hwc_can_layer_init_display(struct hwc_context_t* ctx, int layer_id, 
        return false;
     }
 
-    NEXUS_Surface_GetCreateSettings(display_surface, &settings);
+    NEXUS_Surface_GetCreateSettings(outputHdl, &settings);
     if ((pComp->clipRect.x == 0) && (pComp->clipRect.y == 0) &&
        (pComp->clipRect.width == settings.width) &&
        (pComp->clipRect.height == settings.height)) {
@@ -1442,7 +1444,7 @@ static void hwc_set_layer_blending(struct hwc_context_t* ctx, int layer_id, int 
 
 bool hwc_compose_gralloc_buffer(
    struct hwc_context_t* ctx, int layer_id, PSHARED_DATA pSharedData,
-   private_handle_t *gr_buffer, NEXUS_SurfaceHandle display_surface, bool is_virtual,
+   private_handle_t *gr_buffer, NEXUS_SurfaceHandle outputHdl, bool is_virtual,
    bool check_transparency, bool *skip_set, NEXUS_SurfaceHandle *pActSurf,
    NEXUS_SurfaceComposition *pComp)
 {
@@ -1494,7 +1496,7 @@ bool hwc_compose_gralloc_buffer(
         goto out_unlock;
     }
 
-    NEXUS_Surface_GetCreateSettings(display_surface, &displaySurfaceSettings);
+    NEXUS_Surface_GetCreateSettings(outputHdl, &displaySurfaceSettings);
     if ((is_virtual && ctx->display_dump_virt) ||
         (!is_virtual && ctx->display_dump_layer)) {
        ALOGI("%s: layer %u vis %u pf %u %ux%u (%ux%u@%u,%u) to %ux%u@%u,%u",
@@ -1542,8 +1544,8 @@ bool hwc_compose_gralloc_buffer(
 
             blitSettings.source.surface = *pActSurf;
             blitSettings.source.rect = pComp->clipRect;
-            blitSettings.dest.surface = display_surface;
-            blitSettings.output.surface = display_surface;
+            blitSettings.dest.surface = outputHdl;
+            blitSettings.output.surface = outputHdl;
             blitSettings.output.rect = pComp->position;
             blitSettings.colorOp = NEXUS_BlitColorOp_eUseBlendEquation;
             blitSettings.alphaOp = NEXUS_BlitAlphaOp_eUseBlendEquation;
@@ -1578,20 +1580,25 @@ bool hwc_compose_gralloc_buffer(
             if ( blitSettings.output.rect.width > 0 && blitSettings.output.rect.height > 0 &&
                  blitSettings.source.rect.width > 0 && blitSettings.source.rect.height  > 0 ) {
 
-                blitSettings.dest.rect = blitSettings.output.rect;
-                rc = NEXUS_Graphics2D_Blit(ctx->hwc_2dg, &blitSettings);
-                if (rc == NEXUS_GRAPHICS2D_QUEUE_FULL) {
-                    rc = hwc_checkpoint(ctx);
-                    if (rc)  {
-                        ALOGW("Checkpoint timeout composing layer %u", __FUNCTION__, layer_id);
-                    }
-                    rc = NEXUS_Graphics2D_Blit(ctx->hwc_2dg, &blitSettings);
-                }
-                if (rc) {
-                    ALOGE("%s: Unable to blit layer %u", __FUNCTION__, layer_id);
-                } else {
-                    composed = true;
-                }
+               blitSettings.dest.rect = blitSettings.output.rect;
+               if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+                  ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
+               } else {
+                  rc = NEXUS_Graphics2D_Blit(ctx->hwc_g2d, &blitSettings);
+                  if (rc == NEXUS_GRAPHICS2D_QUEUE_FULL) {
+                      rc = hwc_checkpoint_locked(ctx);
+                      if (rc)  {
+                         ALOGW("Checkpoint timeout composing layer %u", __FUNCTION__, layer_id);
+                      }
+                      rc = NEXUS_Graphics2D_Blit(ctx->hwc_g2d, &blitSettings);
+                  }
+                  if (rc) {
+                     ALOGE("%s: Unable to blit layer %u", __FUNCTION__, layer_id);
+                  } else {
+                     composed = true;
+                  }
+                  BKNI_ReleaseMutex(ctx->g2d_mutex);
+               }
             }
         }
     }
@@ -2071,7 +2078,12 @@ static void hwc_seed_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
       fillSettings.color = 0;
       fillSettings.colorOp = NEXUS_FillOp_eCopy;
       fillSettings.alphaOp = NEXUS_FillOp_eCopy;
-      NEXUS_Graphics2D_Fill(ctx->hwc_2dg, &fillSettings);
+      if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+         ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
+         return;
+      }
+      NEXUS_Graphics2D_Fill(ctx->hwc_g2d, &fillSettings);
+      BKNI_ReleaseMutex(ctx->g2d_mutex);
    }
 }
 
@@ -2302,7 +2314,7 @@ out:
 static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, int *overlay_seen, int *fb_target_seen)
 {
    int layer_composed = 0;
-   NEXUS_SurfaceHandle display_surface = NULL;
+   NEXUS_SurfaceHandle outputHdl = NULL;
    size_t i;
    NEXUS_Error rc;
    bool is_sideband = false, is_yuv = false, has_video = false, oob_video = false;
@@ -2318,8 +2330,8 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
        }
        goto out;
    }
-   display_surface = hwc_get_disp_surface(ctx, HWC_PRIMARY_IX);
-   if (display_surface == NULL) {
+   outputHdl = hwc_get_disp_surface(ctx, HWC_PRIMARY_IX);
+   if (outputHdl == NULL) {
       ALOGE("%s: no display surface available", __FUNCTION__);
       BKNI_ReleaseMutex(ctx->mutex);
       if (list->retireFenceFd != INVALID_FENCE) {
@@ -2366,10 +2378,10 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             *fb_target_seen += 1;
          }
          if (!layer_composed) {
-            bool can_skip_fill = oob_video && hwc_can_layer_init_display(ctx, i, &item->comp[i], display_surface, false);
+            bool can_skip_fill = oob_video && hwc_can_layer_init_display(ctx, i, &item->comp[i], outputHdl, false);
             if (!can_skip_fill) {
                display_surface_seeded = true;
-               hwc_seed_disp_surface(ctx, display_surface);
+               hwc_seed_disp_surface(ctx, outputHdl);
             } else {
                hwc_set_layer_blending(ctx, i, BLENDIND_TYPE_SRC);
             }
@@ -2390,7 +2402,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             }
          }
          if (pSharedData != NULL) {
-            if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, display_surface, false,
+            if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, outputHdl, false,
                                            oob_video, &skip_set, &surface[i], &item->comp[i])) {
                layer_composed++;
             }
@@ -2405,20 +2417,20 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       if (has_video && !ctx->alpha_hole_background) {
          if (skip_set) {
             BKNI_AcquireMutex(ctx->mutex);
-            hwc_put_disp_surface(ctx, 0, display_surface);
+            hwc_put_disp_surface(ctx, 0, outputHdl);
             BKNI_ReleaseMutex(ctx->mutex);
             if (list->retireFenceFd != INVALID_FENCE) {
                hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, false);
             }
          } else {
             if (!display_surface_seeded) {
-               hwc_seed_disp_surface(ctx, display_surface);
+               hwc_seed_disp_surface(ctx, outputHdl);
             }
             rc = hwc_checkpoint(ctx);
             if (rc) {
                ALOGW("%s: checkpoint timeout", __FUNCTION__);
             } else {
-               rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, display_surface, NULL, false);
+               rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, outputHdl, NULL, false);
                if (rc) {
                   ALOGW("%s: failed to push surface to client (%d)", __FUNCTION__, rc);
                   if (list->retireFenceFd != INVALID_FENCE) {
@@ -2431,7 +2443,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          }
       } else {
          BKNI_AcquireMutex(ctx->mutex);
-         hwc_put_disp_surface(ctx, 0, display_surface);
+         hwc_put_disp_surface(ctx, 0, outputHdl);
          BKNI_ReleaseMutex(ctx->mutex);
          if (list->retireFenceFd != INVALID_FENCE) {
             hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, false);
@@ -2443,7 +2455,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       if (rc) {
          ALOGW("%s: checkpoint timeout", __FUNCTION__);
       } else {
-         rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, display_surface, NULL, false);
+         rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, outputHdl, NULL, false);
          if (rc) {
             ALOGW("%s: failed to push surface to client (%d)", __FUNCTION__, rc);
             if (list->retireFenceFd != INVALID_FENCE) {
@@ -2616,7 +2628,7 @@ out:
 static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, int *overlay_seen, int *fb_target_seen)
 {
    int layer_composed = 0;
-   NEXUS_SurfaceHandle display_surface = NULL;
+   NEXUS_SurfaceHandle outputHdl = NULL;
    NEXUS_Error rc;
    size_t i;
    void *pAddr;
@@ -2634,14 +2646,14 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
       hwc_mem_unlock(ctx, (unsigned)gr_out_buffer->sharedData, true);
       goto out;
    }
-   display_surface = hwc_to_nsc_surface(pOutSharedData->planes[DEFAULT_PLANE].width,
-                                        pOutSharedData->planes[DEFAULT_PLANE].height,
-                                        pOutSharedData->planes[DEFAULT_PLANE].stride,
-                                        gralloc_to_nexus_pixel_format(pOutSharedData->planes[DEFAULT_PLANE].format),
-                                        ctx->hwc_with_mma,
-                                        pOutSharedData->planes[DEFAULT_PLANE].physAddr,
-                                        (uint8_t *)pAddr);
-   if (display_surface == NULL) {
+   outputHdl = hwc_to_nsc_surface(pOutSharedData->planes[DEFAULT_PLANE].width,
+                                  pOutSharedData->planes[DEFAULT_PLANE].height,
+                                  pOutSharedData->planes[DEFAULT_PLANE].stride,
+                                  gralloc_to_nexus_pixel_format(pOutSharedData->planes[DEFAULT_PLANE].format),
+                                  ctx->hwc_with_mma,
+                                  pOutSharedData->planes[DEFAULT_PLANE].physAddr,
+                                  (uint8_t *)pAddr);
+   if (outputHdl == NULL) {
       ALOGE("vcmp: %llu (%p) - no display surface available", ctx->stats[HWC_VIRTUAL_IX].set_call, gr_out_buffer->sharedData);
       ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
       hwc_mem_unlock(ctx, (unsigned)gr_out_buffer->sharedData, true);
@@ -2654,7 +2666,7 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
       } else if (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET) {
          *fb_target_seen += 1;
       }
-      if ((list->hwLayers[i].compositionType == HWC_OVERLAY) && item->comp[i].visible) {
+      if (item->comp[i].visible) {
          if (i > HWC_VD_CLIENTS_NUMBER) {
             break;
          }
@@ -2683,7 +2695,8 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
             hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
             continue;
          }
-         if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, display_surface, true, false, NULL, &surface[i], &item->comp[i])) {
+         if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, outputHdl,
+                                        true, false, NULL, &surface[i], &item->comp[i])) {
             layer_composed++;
          }
          hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
@@ -2707,9 +2720,8 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
       }
    }
    hwc_mem_unlock(ctx, (unsigned)gr_out_buffer->sharedData, true);
-
-   if (display_surface) {
-      NEXUS_Surface_Destroy(display_surface);
+   if (outputHdl) {
+      NEXUS_Surface_Destroy(outputHdl);
    }
 
    if (ctx->display_dump_virt) {
@@ -2721,6 +2733,7 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
 out:
    if (list->outbufAcquireFenceFd >= 0) {
       close(list->outbufAcquireFenceFd);
+      list->outbufAcquireFenceFd = INVALID_FENCE;
    }
    for (i = 0; i < list->numHwLayers; i++) {
       if (list->hwLayers[i].acquireFenceFd != INVALID_FENCE) {
@@ -2742,10 +2755,7 @@ out:
       }
    }
    if (list->retireFenceFd != INVALID_FENCE) {
-      hwc_inc_retire_timeline(ctx, HWC_VIRTUAL_IX,
-         ((ctx->stats[HWC_VIRTUAL_IX].set_call > ctx->stats[HWC_VIRTUAL_IX].composed) ?
-          (ctx->stats[HWC_VIRTUAL_IX].set_call - ctx->stats[HWC_VIRTUAL_IX].composed) : 1),
-         false);
+      hwc_inc_retire_timeline(ctx, HWC_VIRTUAL_IX, 1, false);
    }
 
    return layer_composed;
@@ -2839,13 +2849,14 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         BKNI_DestroyMutex(ctx->mutex);
         BKNI_DestroyMutex(ctx->power_mutex);
         BKNI_DestroyMutex(ctx->dev_mutex);
+        BKNI_DestroyMutex(ctx->g2d_mutex);
 
         if (ctx->hwc_binder) {
            delete ctx->hwc_binder;
         }
 
-        if (ctx->hwc_2dg) {
-           NEXUS_Graphics2D_Close(ctx->hwc_2dg);
+        if (ctx->hwc_g2d) {
+           NEXUS_Graphics2D_Close(ctx->hwc_g2d);
         }
         if (ctx->checkpoint_event) {
            BKNI_DestroyEvent(ctx->checkpoint_event);
@@ -3485,6 +3496,9 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         if (BKNI_CreateMutex(&dev->power_mutex) == BERR_OS_ERROR) {
            goto clean_up;
         }
+        if (BKNI_CreateMutex(&dev->g2d_mutex) == BERR_OS_ERROR) {
+           goto clean_up;
+        }
 
         NEXUS_Platform_GetClientConfiguration(&clientConfig);
         NxClient_GetDefaultAllocSettings(&nxAllocSettings);
@@ -3715,19 +3729,19 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         NEXUS_Graphics2DOpenSettings g2dOpenSettings;
         NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
         g2dOpenSettings.compatibleWithSurfaceCompaction = false;
-        dev->hwc_2dg = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &g2dOpenSettings);
-        if (dev->hwc_2dg == NULL) {
-           ALOGE("%s: failed to create hwc_2dg, conversion services will not work!", __FUNCTION__);
+        dev->hwc_g2d = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &g2dOpenSettings);
+        if (dev->hwc_g2d == NULL) {
+           ALOGE("%s: failed to create hwc_g2d, composition will not work!", __FUNCTION__);
         } else {
-           NEXUS_Graphics2D_GetSettings(dev->hwc_2dg, &gfxSettings);
+           NEXUS_Graphics2D_GetSettings(dev->hwc_g2d, &gfxSettings);
            gfxSettings.pollingCheckpoint = false;
            gfxSettings.checkpointCallback.callback = hwc_checkpoint_callback;
            gfxSettings.checkpointCallback.context = (void *)dev;
-           rc = NEXUS_Graphics2D_SetSettings(dev->hwc_2dg, &gfxSettings);
+           rc = NEXUS_Graphics2D_SetSettings(dev->hwc_g2d, &gfxSettings);
            if (rc) {
-              ALOGE("%s: failed to setup hwc_2dg checkpoint, conversion services will not work!", __FUNCTION__);
+              ALOGE("%s: failed to setup hwc_g2d checkpoint, composition will not work!", __FUNCTION__);
            }
-           NEXUS_Graphics2D_GetCapabilities(dev->hwc_2dg, &dev->gfxCaps);
+           NEXUS_Graphics2D_GetCapabilities(dev->hwc_g2d, &dev->gfxCaps);
            ALOGI("%s: gfx caps: h-down-scale: %d, v-down-scale: %d", __FUNCTION__,
                  dev->gfxCaps.maxHorizontalDownScale, dev->gfxCaps.maxVerticalDownScale);
         }
@@ -4107,30 +4121,41 @@ out:
 
 static void hwc_checkpoint_callback(void *pParam, int param2)
 {
-    struct hwc_context_t *dev = (struct hwc_context_t *)pParam;
+    struct hwc_context_t *ctx = (struct hwc_context_t *)pParam;
     (void)param2;
-    BKNI_SetEvent(dev->checkpoint_event);
+    BKNI_SetEvent(ctx->checkpoint_event);
 }
 
-static int hwc_checkpoint(struct hwc_context_t *dev)
+static int hwc_checkpoint(struct hwc_context_t *ctx)
+{
+    int rc;
+
+    if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+        ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
+        return -1;
+    }
+    rc = hwc_checkpoint_locked(ctx);
+    BKNI_ReleaseMutex(ctx->g2d_mutex);
+    return rc;
+}
+
+static int hwc_checkpoint_locked(struct hwc_context_t *ctx)
 {
     NEXUS_Error rc;
 
-    rc = NEXUS_Graphics2D_Checkpoint(dev->hwc_2dg, NULL);
-    switch ( rc )
-    {
+    rc = NEXUS_Graphics2D_Checkpoint(ctx->hwc_g2d, NULL);
+    switch (rc) {
     case NEXUS_SUCCESS:
       break;
     case NEXUS_GRAPHICS2D_QUEUED:
-      rc = BKNI_WaitForEvent(dev->checkpoint_event, HWC_CHECKPOINT_TIMEOUT);
-      if ( rc )
-      {
-          ALOGW("Checkpoint Timeout");
+      rc = BKNI_WaitForEvent(ctx->checkpoint_event, HWC_CHECKPOINT_TIMEOUT);
+      if (rc) {
+          ALOGW("%s: checkpoint timeout", __FUNCTION__);
           return -1;
       }
       break;
     default:
-      ALOGE("Checkpoint Error");
+      ALOGE("%s: checkpoint error (%d)", __FUNCTION__, rc);
       return -1;
     }
 
