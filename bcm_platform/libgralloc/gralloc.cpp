@@ -45,6 +45,9 @@
 #include "cutils/properties.h"
 #include "nx_ashmem.h"
 
+static NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt, int *bpp);
+static BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt);
+
 void __attribute__ ((constructor)) gralloc_explicit_load(void);
 void __attribute__ ((destructor)) gralloc_explicit_unload(void);
 
@@ -248,7 +251,7 @@ BKNI_EventHandle gralloc_g2d_evt(void)
    return hCheckpointEvent;
 }
 
-static void gralloc_bzero(int is_mma, unsigned handle, size_t numBytes)
+static void gralloc_bzero(int is_mma, PSHARED_DATA pSharedData, int plane)
 {
     NEXUS_Graphics2DHandle gfx = gralloc_g2d_hdl();
     BKNI_EventHandle event = gralloc_g2d_evt();
@@ -257,32 +260,88 @@ static void gralloc_bzero(int is_mma, unsigned handle, size_t numBytes)
     NEXUS_Addr physAddr;
     void *pMemory = NULL;
     NEXUS_MemoryBlockHandle block_handle = NULL;
+    static const BM2MC_PACKET_Blend copyColor = {BM2MC_PACKET_BlendFactor_eSourceColor, BM2MC_PACKET_BlendFactor_eOne, false,
+       BM2MC_PACKET_BlendFactor_eZero, BM2MC_PACKET_BlendFactor_eZero, false, BM2MC_PACKET_BlendFactor_eZero};
+    static const BM2MC_PACKET_Blend copyAlpha = {BM2MC_PACKET_BlendFactor_eSourceAlpha, BM2MC_PACKET_BlendFactor_eOne, false,
+       BM2MC_PACKET_BlendFactor_eZero, BM2MC_PACKET_BlendFactor_eZero, false, BM2MC_PACKET_BlendFactor_eZero};
 
     if (is_mma) {
-       block_handle = (NEXUS_MemoryBlockHandle) handle;
+       block_handle = (NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr;
        NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
        NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
     } else {
-       pMemory = NEXUS_OffsetToCachedAddr((NEXUS_Addr)handle);
+       pMemory = NEXUS_OffsetToCachedAddr((NEXUS_Addr)pSharedData->planes[plane].physAddr);
+    }
+
+    if (pMemory == NULL) {
+       goto out_release;
     }
 
     if (gfx && event && pMutex) {
         NEXUS_Error errCode;
-        size_t roundedSize = (numBytes + 0xFFF) & ~0xFFF;
 
         if (is_mma) {
-           if (pMemory == NULL) {
-              goto out_release;
+           size_t pktSize;
+           void *pktBuffer, *next;
+           pthread_mutex_lock(pMutex);
+           errCode = NEXUS_Graphics2D_GetPacketBuffer(gfx, &pktBuffer, &pktSize, 1024);
+           if (errCode == 0) {
+              next = pktBuffer;
+              {
+                 BM2MC_PACKET_PacketOutputFeeder *pPacket = (BM2MC_PACKET_PacketOutputFeeder *)next;
+                 BM2MC_PACKET_INIT(pPacket, OutputFeeder, false);
+                 pPacket->plane.address = physAddr;
+                 pPacket->plane.pitch   = pSharedData->planes[plane].stride;
+                 pPacket->plane.format  = getBm2mcPixelFormat(pSharedData->planes[plane].format);
+                 pPacket->plane.width   = pSharedData->planes[plane].width;
+                 pPacket->plane.height  = pSharedData->planes[plane].height;
+                 next = ++pPacket;
+              }
+              {
+                 BM2MC_PACKET_PacketBlend *pPacket = (BM2MC_PACKET_PacketBlend *)next;
+                 BM2MC_PACKET_INIT( pPacket, Blend, false );
+                 pPacket->color_blend   = copyColor;
+                 pPacket->alpha_blend   = copyAlpha;
+                 pPacket->color         = 0;
+                 next = ++pPacket;
+              }
+              {
+                 BM2MC_PACKET_PacketSourceColor *pPacket = (BM2MC_PACKET_PacketSourceColor *)next;
+                 BM2MC_PACKET_INIT(pPacket, SourceColor, false );
+                 pPacket->color         = 0x00000000;
+                 next = ++pPacket;
+              }
+              {
+                 BM2MC_PACKET_PacketFillBlit *pPacket = (BM2MC_PACKET_PacketFillBlit *)next;
+                 BM2MC_PACKET_INIT(pPacket, FillBlit, true);
+                 pPacket->rect.x        = 0;
+                 pPacket->rect.y        = 0;
+                 pPacket->rect.width    = pSharedData->planes[plane].width;
+                 pPacket->rect.height   = pSharedData->planes[plane].height;
+                 next = ++pPacket;
+              }
+              errCode = NEXUS_Graphics2D_PacketWriteComplete(gfx, (uint8_t*)next - (uint8_t*)pktBuffer);
+              if (errCode == 0) {
+                 errCode = NEXUS_Graphics2D_Checkpoint(gfx, NULL);
+                 if (errCode == NEXUS_GRAPHICS2D_QUEUED) {
+                    errCode = BKNI_WaitForEvent(event, CHECKPOINT_TIMEOUT);
+                    if (errCode) {
+                       ALOGW("Timeout zeroing gralloc buffer");
+                    }
+                 }
+              }
+              if (!errCode) {
+                 done = true;
+              }
            }
-           // TODO: using m2m.
+           pthread_mutex_unlock(pMutex);
         } else {
-           if (pMemory == NULL) {
-              return;
-           }
+           size_t roundedSize = (pSharedData->planes[plane].size + 0xFFF) & ~0xFFF;
+
            NEXUS_FlushCache(pMemory, roundedSize);
            pthread_mutex_lock(pMutex);
            errCode = NEXUS_Graphics2D_Memset32(gfx, pMemory, 0, roundedSize/4);
-           if (0 == errCode) {
+           if (errCode == 0) {
                errCode = NEXUS_Graphics2D_Checkpoint(gfx, NULL);
                if (errCode == NEXUS_GRAPHICS2D_QUEUED) {
                    errCode = BKNI_WaitForEvent(event, CHECKPOINT_TIMEOUT);
@@ -299,9 +358,9 @@ static void gralloc_bzero(int is_mma, unsigned handle, size_t numBytes)
     }
 
     if (!done) {
-       bzero(pMemory, numBytes);
+       bzero(pMemory, pSharedData->planes[plane].size);
     } else if (!is_mma) {
-       NEXUS_FlushCache(pMemory, numBytes);
+       NEXUS_FlushCache(pMemory, pSharedData->planes[plane].size);
     }
 
 out_release:
@@ -341,9 +400,6 @@ extern int gralloc_register_buffer(gralloc_module_t const* module,
 
 extern int gralloc_unregister_buffer(gralloc_module_t const* module,
         buffer_handle_t handle);
-
-NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt,
-                                      int *bpp);
 
 /*****************************************************************************/
 
@@ -399,6 +455,24 @@ NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt,
    }
 
    *bpp = b;
+   return pf;
+}
+
+BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt)
+{
+   BM2MC_PACKET_PixelFormat pf;
+   switch (pixelFmt) {
+      case HAL_PIXEL_FORMAT_RGBA_8888:    pf = BM2MC_PACKET_PixelFormat_eA8_B8_G8_R8;   break;
+      case HAL_PIXEL_FORMAT_RGBX_8888:    pf = BM2MC_PACKET_PixelFormat_eX8_R8_G8_B8;   break;
+      case HAL_PIXEL_FORMAT_RGB_888:      pf = BM2MC_PACKET_PixelFormat_eX8_R8_G8_B8;   break;
+      case HAL_PIXEL_FORMAT_RGB_565:      pf = BM2MC_PACKET_PixelFormat_eR5_G6_B5;      break;
+      case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
+                                          pf = BM2MC_PACKET_PixelFormat_eX8_R8_G8_B8;   break;
+      case HAL_PIXEL_FORMAT_YV12:         pf = BM2MC_PACKET_PixelFormat_eY08_Cb8_Y18_Cr8; break;
+      default:                            pf = BM2MC_PACKET_PixelFormat_eUnknown;
+                                          ALOGE("%s %d FORMAT [ %d ] NOT SUPPORTED ",__FUNCTION__,__LINE__,pixelFmt); break;
+   }
+
    return pf;
 }
 
@@ -861,13 +935,13 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    }
 
    if (pSharedData->planes[DEFAULT_PLANE].physAddr) {
-       gralloc_bzero(hnd->is_mma, pSharedData->planes[DEFAULT_PLANE].physAddr, pSharedData->planes[DEFAULT_PLANE].allocSize);
+       gralloc_bzero(hnd->is_mma, pSharedData, DEFAULT_PLANE);
    }
    if (pSharedData->planes[EXTRA_PLANE].physAddr) {
-       gralloc_bzero(hnd->is_mma, pSharedData->planes[EXTRA_PLANE].physAddr, pSharedData->planes[EXTRA_PLANE].allocSize);
+       gralloc_bzero(hnd->is_mma, pSharedData, EXTRA_PLANE);
    }
    if (pSharedData->planes[GL_PLANE].physAddr) {
-       gralloc_bzero(hnd->is_mma, pSharedData->planes[GL_PLANE].physAddr, pSharedData->planes[GL_PLANE].allocSize);
+       gralloc_bzero(hnd->is_mma, pSharedData, GL_PLANE);
    }
 
 
