@@ -2335,6 +2335,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          ALOGW("comp: %llu/%llu - layer: %d - invalid for comp (%d)\n",
                ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed,
                i, list->hwLayers[i].acquireFenceFd);
+         continue;
       }
       if (i > NSC_GPX_CLIENTS_NUMBER-1) {
          ALOGE("Exceedeed max number of accounted layers\n");
