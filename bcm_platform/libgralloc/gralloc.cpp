@@ -462,15 +462,16 @@ BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt)
 {
    BM2MC_PACKET_PixelFormat pf;
    switch (pixelFmt) {
-      case HAL_PIXEL_FORMAT_RGBA_8888:    pf = BM2MC_PACKET_PixelFormat_eA8_B8_G8_R8;   break;
-      case HAL_PIXEL_FORMAT_RGBX_8888:    pf = BM2MC_PACKET_PixelFormat_eX8_R8_G8_B8;   break;
-      case HAL_PIXEL_FORMAT_RGB_888:      pf = BM2MC_PACKET_PixelFormat_eX8_R8_G8_B8;   break;
-      case HAL_PIXEL_FORMAT_RGB_565:      pf = BM2MC_PACKET_PixelFormat_eR5_G6_B5;      break;
+      case NEXUS_PixelFormat_eA8_B8_G8_R8: pf = BM2MC_PACKET_PixelFormat_eA8_B8_G8_R8;   break;
+      case HAL_PIXEL_FORMAT_RGBA_8888:     pf = BM2MC_PACKET_PixelFormat_eA8_B8_G8_R8;   break;
+      case HAL_PIXEL_FORMAT_RGBX_8888:     pf = BM2MC_PACKET_PixelFormat_eX8_R8_G8_B8;   break;
+      case HAL_PIXEL_FORMAT_RGB_888:       pf = BM2MC_PACKET_PixelFormat_eX8_R8_G8_B8;   break;
+      case HAL_PIXEL_FORMAT_RGB_565:       pf = BM2MC_PACKET_PixelFormat_eR5_G6_B5;      break;
       case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
-                                          pf = BM2MC_PACKET_PixelFormat_eX8_R8_G8_B8;   break;
-      case HAL_PIXEL_FORMAT_YV12:         pf = BM2MC_PACKET_PixelFormat_eY08_Cb8_Y18_Cr8; break;
-      default:                            pf = BM2MC_PACKET_PixelFormat_eUnknown;
-                                          ALOGE("%s %d FORMAT [ %d ] NOT SUPPORTED ",__FUNCTION__,__LINE__,pixelFmt); break;
+                                           pf = BM2MC_PACKET_PixelFormat_eX8_R8_G8_B8;   break;
+      case HAL_PIXEL_FORMAT_YV12:          pf = BM2MC_PACKET_PixelFormat_eY08_Cb8_Y18_Cr8; break;
+      default:                             pf = BM2MC_PACKET_PixelFormat_eUnknown;
+                                           ALOGE("%s %d FORMAT [ %d ] NOT SUPPORTED ",__FUNCTION__,__LINE__,pixelFmt); break;
    }
 
    return pf;
