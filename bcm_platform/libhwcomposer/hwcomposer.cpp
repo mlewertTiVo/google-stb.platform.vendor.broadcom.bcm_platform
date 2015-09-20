@@ -433,6 +433,7 @@ struct hwc_display_stats {
 
 struct hwc_time_track_stats {
    unsigned long long tracked;
+   unsigned long long skipped;
    unsigned long long ontime;
    unsigned long long slow;
    long double fastest;
@@ -1099,10 +1100,11 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
        }
-       write = snprintf(buff + index, capacity, "\tcomp:%llu:{%llu,%llu}::slow:%.3f::fast:%.3f::avg:%.3f\n",
+       write = snprintf(buff + index, capacity, "\tcomp:%llu,%llu:{%llu,%llu}::slow:%.3f::fast:%.3f::avg:%.3f\n",
            ctx->time_track[HWC_PRIMARY_IX].tracked,
-           ctx->time_track[HWC_PRIMARY_IX].slow,
+           ctx->time_track[HWC_PRIMARY_IX].skipped,
            ctx->time_track[HWC_PRIMARY_IX].ontime,
+           ctx->time_track[HWC_PRIMARY_IX].slow,
            ctx->time_track[HWC_PRIMARY_IX].slowest,
            ctx->time_track[HWC_PRIMARY_IX].fastest,
            ctx->time_track[HWC_PRIMARY_IX].cumul/ctx->time_track[HWC_PRIMARY_IX].tracked);
@@ -1132,10 +1134,11 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
        }
-       write = snprintf(buff + index, capacity, "\tcomp:%llu:{%llu,%llu}::slow:%.3f::fast:%.3f::avg:%.3f\n",
+       write = snprintf(buff + index, capacity, "\tcomp:%llu,%llu:{%llu,%llu}::slow:%.3f::fast:%.3f::avg:%.3f\n",
            ctx->time_track[HWC_VIRTUAL_IX].tracked,
-           ctx->time_track[HWC_VIRTUAL_IX].slow,
+           ctx->time_track[HWC_VIRTUAL_IX].skipped,
            ctx->time_track[HWC_VIRTUAL_IX].ontime,
+           ctx->time_track[HWC_VIRTUAL_IX].slow,
            ctx->time_track[HWC_VIRTUAL_IX].slowest,
            ctx->time_track[HWC_VIRTUAL_IX].fastest,
            ctx->time_track[HWC_VIRTUAL_IX].cumul/ctx->time_track[HWC_VIRTUAL_IX].tracked);
@@ -2080,24 +2083,39 @@ static void hwc_seed_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
 static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int disp_ix)
 {
     int no_surface_count = 0;
+    NEXUS_SurfaceHandle *pSurface = NULL;
 
     if (disp_ix > (DISPLAY_SUPPORTED-1)) {
        return NULL;
     }
 
-    while (BFIFO_READ_PEEK(&ctx->disp_cli[disp_ix].display_fifo) == 0) {
+    while (true) {
+       if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+          if (BFIFO_READ_PEEK(&ctx->disp_cli[disp_ix].display_fifo) != 0) {
+             BKNI_ReleaseMutex(ctx->mutex);
+             goto out_read;
+          }
+       } else {
+          goto out;
+       }
+       BKNI_ReleaseMutex(ctx->mutex);
        if (BKNI_WaitForEvent(ctx->recycle_event, HWC_SURFACE_WAIT_TIMEOUT)) {
           no_surface_count++;
           if (no_surface_count == HWC_SURFACE_WAIT_ATTEMPT) {
              ALOGW("%s: warning no surface received in %d ms", __FUNCTION__,
                    HWC_SURFACE_WAIT_TIMEOUT*HWC_SURFACE_WAIT_ATTEMPT);
-             return NULL;
+             goto out;
           }
        }
     }
 
-    NEXUS_SurfaceHandle *pSurface = BFIFO_READ(&ctx->disp_cli[disp_ix].display_fifo);
-    BFIFO_READ_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
+out_read:
+    if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+       pSurface = BFIFO_READ(&ctx->disp_cli[disp_ix].display_fifo);
+       BFIFO_READ_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
+       BKNI_ReleaseMutex(ctx->mutex);
+    }
+out:
     return *pSurface;
 }
 
@@ -2312,20 +2330,19 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
 
    memset(surface, 0, sizeof(surface));
 
+   outputHdl = hwc_get_disp_surface(ctx, HWC_PRIMARY_IX);
+   if (outputHdl == NULL) {
+      ALOGE("%s: no display surface available", __FUNCTION__);
+      if (list->retireFenceFd != INVALID_FENCE) {
+         hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, true);
+      }
+      goto out;
+   }
    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
        if (list->retireFenceFd != INVALID_FENCE) {
           hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, true);
        }
        goto out;
-   }
-   outputHdl = hwc_get_disp_surface(ctx, HWC_PRIMARY_IX);
-   if (outputHdl == NULL) {
-      ALOGE("%s: no display surface available", __FUNCTION__);
-      BKNI_ReleaseMutex(ctx->mutex);
-      if (list->retireFenceFd != INVALID_FENCE) {
-         hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, true);
-      }
-      goto out;
    }
    BKNI_ReleaseMutex(ctx->mutex);
 
@@ -3220,6 +3237,8 @@ static void hwc_collect_composer(struct hwc_context_t *ctx, struct hwc_work_item
             ctx->time_track[index].fastest = comp_time;
          }
          ctx->time_track[index].cumul += comp_time;
+      } else {
+         ctx->time_track[index].skipped++;
       }
    }
 }
@@ -3749,12 +3768,17 @@ static void hwc_nsc_recycled_cb(void *context, int param)
     numSurfaces = 0;
     rc = NEXUS_SurfaceClient_RecycleSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, surfaces, HWC_NUM_DISP_BUFFERS, &numSurfaces);
     if (rc) {
-       ALOGW("%s: recycle Surface Error %#x %d", __FUNCTION__, ctx->disp_cli[HWC_PRIMARY_IX].schdl, rc);
+       ALOGW("%s: error recycling %#x %d", __FUNCTION__, ctx->disp_cli[HWC_PRIMARY_IX].schdl, rc);
     } else if ( numSurfaces > 0 ) {
-       for (i = 0; i < numSurfaces; i++) {
-          NEXUS_SurfaceHandle *pHandle = BFIFO_WRITE(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo);
-          *pHandle = surfaces[i];
-          BFIFO_WRITE_COMMIT(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo, 1);
+       if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+          for (i = 0; i < numSurfaces; i++) {
+             NEXUS_SurfaceHandle *pHandle = BFIFO_WRITE(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo);
+             *pHandle = surfaces[i];
+             BFIFO_WRITE_COMMIT(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo, 1);
+          }
+          BKNI_ReleaseMutex(ctx->mutex);
+       } else {
+          ALOGW("%s: error posting", __FUNCTION__);
        }
     }
 
