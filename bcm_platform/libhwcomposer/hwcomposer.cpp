@@ -434,6 +434,7 @@ struct hwc_display_stats {
 struct hwc_time_track_stats {
    unsigned long long tracked;
    unsigned long long skipped;
+   unsigned long long oob;
    unsigned long long ontime;
    unsigned long long slow;
    long double fastest;
@@ -1100,8 +1101,9 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
        }
-       write = snprintf(buff + index, capacity, "\tcomp:%llu,%llu:{%llu,%llu}::slow:%.3f::fast:%.3f::avg:%.3f\n",
+       write = snprintf(buff + index, capacity, "\tcomp:%llu,%llu,%llu:{%llu,%llu}::slow:%.3f::fast:%.3f::avg:%.3f\n",
            ctx->time_track[HWC_PRIMARY_IX].tracked,
+           ctx->time_track[HWC_PRIMARY_IX].oob,
            ctx->time_track[HWC_PRIMARY_IX].skipped,
            ctx->time_track[HWC_PRIMARY_IX].ontime,
            ctx->time_track[HWC_PRIMARY_IX].slow,
@@ -1134,8 +1136,9 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
        }
-       write = snprintf(buff + index, capacity, "\tcomp:%llu,%llu:{%llu,%llu}::slow:%.3f::fast:%.3f::avg:%.3f\n",
+       write = snprintf(buff + index, capacity, "\tcomp:%llu,%llu,%llu:{%llu,%llu}::slow:%.3f::fast:%.3f::avg:%.3f\n",
            ctx->time_track[HWC_VIRTUAL_IX].tracked,
+           ctx->time_track[HWC_VIRTUAL_IX].oob,
            ctx->time_track[HWC_VIRTUAL_IX].skipped,
            ctx->time_track[HWC_VIRTUAL_IX].ontime,
            ctx->time_track[HWC_VIRTUAL_IX].slow,
@@ -2317,13 +2320,13 @@ out:
     return 0;
 }
 
-static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, int *overlay_seen, int *fb_target_seen)
+static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, int *overlay_seen, int *fb_target_seen, bool *oob_video)
 {
    int layer_composed = 0;
    NEXUS_SurfaceHandle outputHdl = NULL;
    size_t i;
    NEXUS_Error rc;
-   bool is_sideband = false, is_yuv = false, has_video = false, oob_video = false;
+   bool is_sideband = false, is_yuv = false, has_video = false;
    bool display_surface_seeded, skip_set;
    hwc_display_contents_1_t* list = &item->content;
    NEXUS_SurfaceHandle surface[NSC_GPX_CLIENTS_NUMBER];
@@ -2367,7 +2370,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
       has_video = is_video_layer(ctx, &list->hwLayers[i], -1, &is_sideband, &is_yuv);
       if (has_video && !is_yuv) {
-         oob_video = true;
+         *oob_video = true;
          if (!is_sideband) {
             if (ctx->hwc_binder) {
                // TODO: currently only one video window exposed.
@@ -2384,7 +2387,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             *fb_target_seen += 1;
          }
          if (!layer_composed) {
-            bool can_skip_fill = oob_video && hwc_can_layer_init_display(ctx, i, &item->comp[i], outputHdl, false);
+            bool can_skip_fill = *oob_video && hwc_can_layer_init_display(ctx, i, &item->comp[i], outputHdl, false);
             if (!can_skip_fill) {
                display_surface_seeded = true;
                hwc_seed_disp_surface(ctx, outputHdl);
@@ -2409,7 +2412,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          }
          if (pSharedData != NULL) {
             if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, outputHdl, false,
-                                           oob_video, &skip_set, &surface[i], &item->comp[i])) {
+                                           *oob_video, &skip_set, &surface[i], &item->comp[i])) {
                layer_composed++;
             }
             ctx->gpx_cli[i].last.grhdl = (buffer_handle_t)gr_buffer;
@@ -2475,7 +2478,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       ALOGI("comp: %llu (%llu,%llu): ov:%d, fb:%d - composed:%d (%c%c%c)\n",
             ctx->stats[HWC_PRIMARY_IX].composed, ctx->stats[HWC_PRIMARY_IX].prepare_call,
             ctx->stats[HWC_PRIMARY_IX].set_call, *overlay_seen, *fb_target_seen, layer_composed,
-            is_yuv?'y':'-', oob_video?'o':'-', is_sideband?'s':'-');
+            is_yuv?'y':'-', *oob_video?'o':'-', is_sideband?'s':'-');
    }
 
 out:
@@ -3202,7 +3205,7 @@ out:
 }
 
 static void hwc_collect_composer(struct hwc_context_t *ctx, struct hwc_work_item *this_frame,
-   int index, int overlay_seen, int fb_target_seen, int layer_composed)
+   int index, int overlay_seen, int fb_target_seen, int layer_composed, bool oob_video)
 {
    const long double nsec_to_msec = 1.0 / 1000000.0;
    long double comp_time;
@@ -3238,7 +3241,11 @@ static void hwc_collect_composer(struct hwc_context_t *ctx, struct hwc_work_item
          }
          ctx->time_track[index].cumul += comp_time;
       } else {
-         ctx->time_track[index].skipped++;
+         if (oob_video) {
+            ctx->time_track[index].oob++;
+         } else {
+            ctx->time_track[index].skipped++;
+         }
       }
    }
 }
@@ -3248,6 +3255,7 @@ static void * hwc_compose_task_primary(void *argv)
    struct hwc_context_t* ctx = (struct hwc_context_t*)argv;
    struct hwc_work_item *this_frame = NULL;
    int layer_composed, overlay_seen, fb_target_seen;
+   bool oob_video;
 
    ALOGI("%s: starting primary composer loop.", __FUNCTION__);
 
@@ -3282,9 +3290,9 @@ static void * hwc_compose_task_primary(void *argv)
             }
 
             if (this_frame != NULL) {
-               overlay_seen = 0; fb_target_seen = 0;
-               layer_composed = hwc_compose_primary(ctx, this_frame, &overlay_seen, &fb_target_seen);
-               hwc_collect_composer(ctx, this_frame, HWC_PRIMARY_IX, overlay_seen, fb_target_seen, layer_composed);
+               overlay_seen = 0; fb_target_seen = 0; oob_video = false;
+               layer_composed = hwc_compose_primary(ctx, this_frame, &overlay_seen, &fb_target_seen, &oob_video);
+               hwc_collect_composer(ctx, this_frame, HWC_PRIMARY_IX, overlay_seen, fb_target_seen, layer_composed, oob_video);
                free(this_frame);
                this_frame = NULL;
             }
@@ -3350,7 +3358,7 @@ static void * hwc_compose_task_virtual(void *argv)
             if (this_frame != NULL) {
                overlay_seen = 0; fb_target_seen = 0;
                layer_composed = hwc_compose_virtual(ctx, this_frame, &overlay_seen, &fb_target_seen);
-               hwc_collect_composer(ctx, this_frame, HWC_VIRTUAL_IX, overlay_seen, fb_target_seen, layer_composed);
+               hwc_collect_composer(ctx, this_frame, HWC_VIRTUAL_IX, overlay_seen, fb_target_seen, layer_composed, false);
                free(this_frame);
                this_frame = NULL;
             }
