@@ -1251,7 +1251,7 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
            for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
                // reset the 'drop duplicate frame notifier' count.
                if (ctx->mm_cli[i].id == ntfy.surface_hdl) {
-                  ALOGD("%s: rest drop-dup-count on sfid %x, id %p", __FUNCTION__, ntfy.surface_hdl, ctx->mm_cli[i].id);
+                  ALOGD("%s: reset drop-dup-count on sfid %x, id %p", __FUNCTION__, ntfy.surface_hdl, ctx->mm_cli[i].id);
                   ctx->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_INVALID;
                   break;
                }
@@ -2341,13 +2341,6 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       }
       goto out;
    }
-   if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-       if (list->retireFenceFd != INVALID_FENCE) {
-          hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, true);
-       }
-       goto out;
-   }
-   BKNI_ReleaseMutex(ctx->mutex);
 
    for (i = 0; i < list->numHwLayers; i++) {
       if (list->hwLayers[i].handle &&
@@ -2358,12 +2351,14 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          continue;
       }
       if (i > NSC_GPX_CLIENTS_NUMBER-1) {
-         ALOGE("Exceedeed max number of accounted layers\n");
+         ALOGE("exceedeed max number of accounted layers\n");
          break;
       }
       void *pAddr;
       private_handle_t *gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
       if (gr_buffer == NULL) {
+         ALOGE("comp: %llu/%llu - layer: %d - invalid buffer\n",
+               ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
          continue;
       }
       hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
@@ -2373,11 +2368,12 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          *oob_video = true;
          if (!is_sideband) {
             if (ctx->hwc_binder) {
-               // TODO: currently only one video window exposed.
+               BKNI_AcquireMutex(ctx->mutex);
                if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
                   ctx->mm_cli[0].last_ping_frame_id = pSharedData->videoFrame.status.serialNumber;
                   ctx->hwc_binder->setframe(ctx->mm_cli[0].id, ctx->mm_cli[0].last_ping_frame_id);
                }
+               BKNI_ReleaseMutex(ctx->mutex);
             }
          }
       } else if (item->comp[i].visible) {
