@@ -1101,7 +1101,7 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
        }
-       write = snprintf(buff + index, capacity, "\tcomp:%llu,%llu,%llu:{%llu,%llu}::slow:%.3f::fast:%.3f::avg:%.3f\n",
+       write = snprintf(buff + index, capacity, "\tcomp:%llu,%llu,%llu:{%llu,%llu}::slow:%.3Lf::fast:%.3Lf::avg:%.3Lf\n",
            ctx->time_track[HWC_PRIMARY_IX].tracked,
            ctx->time_track[HWC_PRIMARY_IX].oob,
            ctx->time_track[HWC_PRIMARY_IX].skipped,
@@ -1136,7 +1136,7 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
        }
-       write = snprintf(buff + index, capacity, "\tcomp:%llu,%llu,%llu:{%llu,%llu}::slow:%.3f::fast:%.3f::avg:%.3f\n",
+       write = snprintf(buff + index, capacity, "\tcomp:%llu,%llu,%llu:{%llu,%llu}::slow:%.3Lf::fast:%.3Lf::avg:%.3Lf\n",
            ctx->time_track[HWC_VIRTUAL_IX].tracked,
            ctx->time_track[HWC_VIRTUAL_IX].oob,
            ctx->time_track[HWC_VIRTUAL_IX].skipped,
