@@ -88,7 +88,6 @@ private:
     bool platformInitIR();
     void platformUninitIR();
 
-    NEXUS_SurfaceCompositorClientId     graphicSurfaceClientId;
     NexusIrHandler irHandler;
 };
 
