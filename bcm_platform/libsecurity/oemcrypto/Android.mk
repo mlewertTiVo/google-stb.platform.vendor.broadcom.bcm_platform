@@ -14,7 +14,7 @@
 
 LOCAL_PATH := $(call my-dir)
 
-ifeq ($(ANDROID_SUPPORTS_WIDEVINE), y)
+ifneq ($(ANDROID_SUPPORTS_WIDEVINE), n)
 ifneq ($(WIDEVINE_CLASSIC), n)
 #---------------
 # liboemcrypto.a
