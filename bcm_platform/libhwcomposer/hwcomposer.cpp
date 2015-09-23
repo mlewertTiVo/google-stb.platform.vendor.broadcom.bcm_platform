@@ -292,7 +292,6 @@ typedef struct {
 
 } DISPLAY_CLIENT_INFO;
 
-extern "C" bool check_frame_transparency(void *data, size_t width, size_t height, size_t stride);
 typedef void (* HWC_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
 
 class HwcBinder : public HwcListener
@@ -1393,14 +1392,10 @@ out:
     return ret;
 }
 
-static bool hwc_can_layer_init_display(struct hwc_context_t* ctx, int layer_id, NEXUS_SurfaceComposition *pComp,
-                                       NEXUS_SurfaceHandle outputHdl, bool is_virtual)
+static bool hwc_layer_seeds_output(struct hwc_context_t* ctx, int layer_id, NEXUS_SurfaceComposition *pComp,
+                                   NEXUS_SurfaceHandle outputHdl)
 {
     NEXUS_SurfaceCreateSettings settings;
-
-    if (is_virtual) {
-       return false;
-    }
 
     if (ctx->gpx_cli[layer_id].skip_set) {
        return true;
@@ -1435,12 +1430,35 @@ static void hwc_set_layer_blending(struct hwc_context_t* ctx, int layer_id, int 
     pComp->alphaBlend = alphaBlendingEquation[blending];
 }
 
+static void hwc_seed_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle surface, int *ops_count)
+{
+   NEXUS_Error rc;
+   if (surface) {
+      NEXUS_Graphics2DFillSettings fillSettings;
+      NEXUS_Graphics2D_GetDefaultFillSettings(&fillSettings);
+      fillSettings.surface = surface;
+      fillSettings.color = 0;
+      fillSettings.colorOp = NEXUS_FillOp_eCopy;
+      fillSettings.alphaOp = NEXUS_FillOp_eCopy;
+      if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+         ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
+         return;
+      }
+      rc = NEXUS_Graphics2D_Fill(ctx->hwc_g2d, &fillSettings);
+      BKNI_ReleaseMutex(ctx->g2d_mutex);
+      if (rc == NEXUS_SUCCESS) {
+         if (ops_count) {
+            *ops_count += 1;
+         }
+      }
+   }
+}
 
 bool hwc_compose_gralloc_buffer(
    struct hwc_context_t* ctx, int layer_id, PSHARED_DATA pSharedData,
    private_handle_t *gr_buffer, NEXUS_SurfaceHandle outputHdl, bool is_virtual,
-   bool check_transparency, bool *skip_set, NEXUS_SurfaceHandle *pActSurf,
-   NEXUS_SurfaceComposition *pComp)
+   bool *skip_set, NEXUS_SurfaceHandle *pActSurf, NEXUS_SurfaceComposition *pComp,
+   bool layer_seeds_output, int already_comp, int *ops_count)
 {
     bool composed = false;
     bool is_cursor_layer = false;
@@ -1502,27 +1520,6 @@ bool hwc_compose_gralloc_buffer(
 
     *pActSurf = NULL;
     if (pComp->visible) {
-        size_t width = pSharedData->planes[DEFAULT_PLANE].width;
-        if (!is_cursor_layer && check_transparency &&
-            (pixel_format == NEXUS_PixelFormat_eA8_B8_G8_R8) &&
-            (width > 32) && (width % 8  == 0)) {
-           void *pAddr;
-           bool transparent = false;
-           hwc_mem_lock(ctx, pSharedData->planes[DEFAULT_PLANE].physAddr, &pAddr, true);
-           if (pAddr != NULL) {
-              nsecs_t t1, t2;
-              t1 = systemTime(CLOCK_MONOTONIC);
-              transparent = check_frame_transparency(pAddr, pSharedData->planes[DEFAULT_PLANE].width,
-                                                          pSharedData->planes[DEFAULT_PLANE].height, stride);
-              t2 = systemTime(CLOCK_MONOTONIC);
-              int msecDelay = toMillisecondTimeoutDelay(t1, t2);
-              ALOGV("%s, trasparency:%d, delay:%d", __FUNCTION__, transparent, msecDelay);
-           }
-           hwc_mem_unlock(ctx, (unsigned)pSharedData->planes[DEFAULT_PLANE].physAddr, true);
-           if (transparent)
-              goto out_unlock;
-        }
-
         *pActSurf = hwc_to_nsc_surface(pSharedData->planes[plane_select].width,
                                        pSharedData->planes[plane_select].height,
                                        stride,
@@ -1545,6 +1542,10 @@ bool hwc_compose_gralloc_buffer(
             blitSettings.alphaOp = NEXUS_BlitAlphaOp_eUseBlendEquation;
             blitSettings.colorBlend = pComp->colorBlend;
             blitSettings.alphaBlend = pComp->alphaBlend;
+
+            if (!layer_seeds_output && !already_comp) {
+               hwc_seed_disp_surface(ctx, outputHdl, ops_count);
+            }
 
             if ( blitSettings.output.rect.x < 0 ) {
                 adj = -blitSettings.output.rect.x;
@@ -1590,6 +1591,9 @@ bool hwc_compose_gralloc_buffer(
                      ALOGE("%s: Unable to blit layer %u", __FUNCTION__, layer_id);
                   } else {
                      composed = true;
+                     if (ops_count) {
+                        *ops_count += 1;
+                     }
                   }
                   BKNI_ReleaseMutex(ctx->g2d_mutex);
                }
@@ -2063,24 +2067,6 @@ static void hwc_put_disp_surface(struct hwc_context_t *ctx, int disp_ix, NEXUS_S
    }
 }
 
-static void hwc_seed_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle surface)
-{
-   if (surface) {
-      NEXUS_Graphics2DFillSettings fillSettings;
-      NEXUS_Graphics2D_GetDefaultFillSettings(&fillSettings);
-      fillSettings.surface = surface;
-      fillSettings.color = 0;
-      fillSettings.colorOp = NEXUS_FillOp_eCopy;
-      fillSettings.alphaOp = NEXUS_FillOp_eCopy;
-      if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
-         ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
-         return;
-      }
-      NEXUS_Graphics2D_Fill(ctx->hwc_g2d, &fillSettings);
-      BKNI_ReleaseMutex(ctx->g2d_mutex);
-   }
-}
-
 #define HWC_SURFACE_WAIT_TIMEOUT 50
 #define HWC_SURFACE_WAIT_ATTEMPT 4
 static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int disp_ix)
@@ -2327,9 +2313,10 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    size_t i;
    NEXUS_Error rc;
    bool is_sideband = false, is_yuv = false, has_video = false;
-   bool display_surface_seeded, skip_set;
+   bool skip_set = false, layer_seeds_output = false;
    hwc_display_contents_1_t* list = &item->content;
    NEXUS_SurfaceHandle surface[NSC_GPX_CLIENTS_NUMBER];
+   int ops_count = 0;
 
    memset(surface, 0, sizeof(surface));
 
@@ -2363,6 +2350,12 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       }
       hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
       PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
+      if (pSharedData == NULL) {
+         hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+         ALOGE("comp: %llu/%llu - layer: %d - invalid shared data\n",
+               ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
+         continue;
+      }
       has_video = is_video_layer(ctx, &list->hwLayers[i], -1, &is_sideband, &is_yuv);
       if (has_video && !is_yuv) {
          *oob_video = true;
@@ -2383,13 +2376,12 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             *fb_target_seen += 1;
          }
          if (!layer_composed) {
-            bool can_skip_fill = *oob_video && hwc_can_layer_init_display(ctx, i, &item->comp[i], outputHdl, false);
-            if (!can_skip_fill) {
-               display_surface_seeded = true;
-               hwc_seed_disp_surface(ctx, outputHdl);
-            } else {
+            layer_seeds_output = hwc_layer_seeds_output(ctx, i, &item->comp[i], outputHdl);
+            if (layer_seeds_output) {
                hwc_set_layer_blending(ctx, i, BLENDIND_TYPE_SRC);
             }
+         } else {
+            layer_seeds_output = false;
          }
          if (list->hwLayers[i].acquireFenceFd >= 0) {
             if (!ctx->fence_support) {
@@ -2406,11 +2398,10 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                      list->hwLayers[i].acquireFenceFd);
             }
          }
-         if (pSharedData != NULL) {
-            if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, outputHdl, false,
-                                           *oob_video, &skip_set, &surface[i], &item->comp[i])) {
-               layer_composed++;
-            }
+         if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, outputHdl,
+                                        false, &skip_set, &surface[i], &item->comp[i],
+                                        layer_seeds_output, layer_composed, &ops_count)) {
+            layer_composed++;
             ctx->gpx_cli[i].last.grhdl = (buffer_handle_t)gr_buffer;
             ctx->gpx_cli[i].last.comp_ix = item->comp_ix;
          }
@@ -2428,9 +2419,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, false);
             }
          } else {
-            if (!display_surface_seeded) {
-               hwc_seed_disp_surface(ctx, outputHdl);
-            }
+            hwc_seed_disp_surface(ctx, outputHdl, &ops_count);
             rc = hwc_checkpoint(ctx);
             if (rc) {
                ALOGW("%s: checkpoint timeout", __FUNCTION__);
@@ -2471,10 +2460,10 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    }
 
    if (ctx->display_dump_layer) {
-      ALOGI("comp: %llu (%llu,%llu): ov:%d, fb:%d - composed:%d (%c%c%c)\n",
+      ALOGI("comp: %llu (%llu,%llu): ov:%d, fb:%d - composed:%d (%c%c%c) - ops: %d\n",
             ctx->stats[HWC_PRIMARY_IX].composed, ctx->stats[HWC_PRIMARY_IX].prepare_call,
             ctx->stats[HWC_PRIMARY_IX].set_call, *overlay_seen, *fb_target_seen, layer_composed,
-            is_yuv?'y':'-', *oob_video?'o':'-', is_sideband?'s':'-');
+            is_yuv?'y':'-', *oob_video?'o':'-', is_sideband?'s':'-', ops_count);
    }
 
 out:
@@ -2701,7 +2690,8 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
             continue;
          }
          if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, outputHdl,
-                                        true, false, NULL, &surface[i], &item->comp[i])) {
+                                        true, NULL, &surface[i], &item->comp[i],
+                                        false, layer_composed, NULL)) {
             layer_composed++;
          }
          hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
@@ -3435,7 +3425,7 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
       dev->dump_fence = (strtoul(value, NULL, 10) > 0) ? true : false;
    }
 
-   if (property_get(HWC_SKIP_DUP_PROP, value, HWC_DEFAULT_DISABLED)) {
+   if (property_get(HWC_SKIP_DUP_PROP, value, HWC_DEFAULT_ENABLED)) {
       dev->skip_dup = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
