@@ -60,14 +60,7 @@
 
 #include "nexus_video_window.h"
 #include "blst_list.h"
-#include "nexus_audio_mixer.h"
-#include "nexus_audio_decoder.h"
-#include "nexus_audio_playback.h"
-#include "nexus_video_decoder_extra.h"
 #include "nexus_base_mmap.h"
-#if NEXUS_HAS_HDMI_INPUT
-#include "nexus_hdmi_input.h"
-#endif
 #include "nexusirmap.h"
 
 #include "nexus_ipc_priv.h"

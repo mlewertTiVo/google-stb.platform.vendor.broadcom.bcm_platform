@@ -59,10 +59,6 @@
 #include "nexusservice.h"
 #include "nexuscecservice.h"
 
-#include "nexus_audio_mixer.h"
-#include "nexus_audio_decoder.h"
-#include "nexus_audio_playback.h"
-#include "nexus_video_decoder_extra.h"
 #include "nexus_base_mmap.h"
 
 extern "C" {
@@ -338,176 +334,6 @@ NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid)
        BKNI_Free(objects);
     }
     return nexusClient;
-}
-
-int NexusService::platformInitAudio(void)
-{
-    int i;
-    int rc = 0;
-    NEXUS_PlatformConfiguration            *pPlatformConfig;
-    NEXUS_AudioPlaybackOpenSettings         simpleAudioDecoderOpenSettings;
-    NEXUS_SimpleAudioDecoderServerSettings  simpleAudioDecoderSettings;
-    NEXUS_SimpleAudioPlaybackServerSettings simpleAudioPlaybackSettings;
-    NEXUS_AudioDecoderOpenSettings          audioDecoderOpenSettings;
-
-    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
-    if (pPlatformConfig == NULL) {
-        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
-        return NEXUS_OUT_OF_SYSTEM_MEMORY;
-    }
-    NEXUS_Platform_GetConfiguration(pPlatformConfig);
-
-    /* create audio decoders */
-    for (i=0; i<MAX_AUDIO_DECODERS; i++) {
-        NEXUS_AudioDecoder_GetDefaultOpenSettings(&audioDecoderOpenSettings);
-        audioDecoderOpenSettings.fifoSize = AUDIO_DECODER_FIFO_SIZE;
-        audioDecoderOpenSettings.type     = NEXUS_AudioDecoderType_eDecode;
-        audioDecoder[i] = NEXUS_AudioDecoder_Open(i, &audioDecoderOpenSettings);
-        if (audioDecoder[i] == NULL) {
-            ALOGE("%s: Could not open audio decoder %d!!!", __PRETTY_FUNCTION__, i);
-            BKNI_Free(pPlatformConfig);
-            return NEXUS_UNKNOWN;
-        }
-    }
-
-    /* open audio mixer */
-    mixer = NEXUS_AudioMixer_Open(NULL);
-    if (mixer == NULL) {
-        ALOGE("%s: Could not open audio mixer!!!", __PRETTY_FUNCTION__);
-        BKNI_Free(pPlatformConfig);
-        return NEXUS_UNKNOWN;
-    }
-
-    NEXUS_AudioPlayback_GetDefaultOpenSettings(&simpleAudioDecoderOpenSettings);
-    simpleAudioDecoderOpenSettings.heap = pPlatformConfig->heap[NEXUS_MAIN_HEAP_IDX]; /* eFull mapping */
-
-    /* open the audio playback */
-    for (i=0; i<MAX_AUDIO_PLAYBACKS; i++) {
-        audioPlayback[i] = NEXUS_AudioPlayback_Open(i, &simpleAudioDecoderOpenSettings);
-        if (audioPlayback[i] == NULL) {
-            ALOGE("%s: Could not open audio playback %d!!!", __PRETTY_FUNCTION__, i);
-            BKNI_Free(pPlatformConfig);
-            return NEXUS_UNKNOWN;
-        }
-    }
-
-    /* Connect audio inputs to the mixer and mixer to the outputs */
-    if (MAX_AUDIO_DECODERS > 0) {
-        rc = NEXUS_AudioMixer_AddInput(mixer, NEXUS_AudioDecoder_GetConnector(audioDecoder[0], NEXUS_AudioDecoderConnectorType_eStereo));
-        if (rc) {
-            ALOGE("%s: Could not add audio decoder 0 to audio mixer!!!", __PRETTY_FUNCTION__);
-            BKNI_Free(pPlatformConfig);
-            return NEXUS_UNKNOWN;
-        }
-        if (MAX_AUDIO_DECODERS > 1) {
-            rc = NEXUS_AudioMixer_AddInput(mixer, NEXUS_AudioDecoder_GetConnector(audioDecoder[1], NEXUS_AudioDecoderConnectorType_eStereo));
-            if (rc) {
-                ALOGE("%s: Could not add audio decoder 1 to audio mixer!!!", __PRETTY_FUNCTION__);
-                BKNI_Free(pPlatformConfig);
-                return NEXUS_UNKNOWN;
-            }
-        }
-    }
-
-    if (MAX_AUDIO_PLAYBACKS > 0) {
-        rc = NEXUS_AudioMixer_AddInput(mixer, NEXUS_AudioPlayback_GetConnector(audioPlayback[0]));
-        if (rc) {
-            ALOGE("%s: Could not add audio playback 0 to audio mixer!!!", __PRETTY_FUNCTION__);
-            BKNI_Free(pPlatformConfig);
-            return NEXUS_UNKNOWN;
-        }
-        if (MAX_AUDIO_PLAYBACKS > 1) {
-            rc = NEXUS_AudioMixer_AddInput(mixer, NEXUS_AudioPlayback_GetConnector(audioPlayback[1]));
-            if (rc) {
-                ALOGE("%s: Could not add audio playback 1 to audio mixer!!!", __PRETTY_FUNCTION__);
-                BKNI_Free(pPlatformConfig);
-                return NEXUS_UNKNOWN;
-            }
-        }
-    }
-
-#if NEXUS_NUM_AUDIO_DACS
-    rc = NEXUS_AudioOutput_AddInput(NEXUS_AudioDac_GetConnector(pPlatformConfig->outputs.audioDacs[0]), NEXUS_AudioMixer_GetConnector(mixer));
-    if (rc) {
-        ALOGE("%s: Could not add audio mixer to dacs 0 output!!!", __PRETTY_FUNCTION__);
-        BKNI_Free(pPlatformConfig);
-        return NEXUS_UNKNOWN;
-    }
-#endif
-#if NEXUS_HAS_HDMI_OUTPUT && NEXUS_NUM_HDMI_OUTPUTS
-    rc = NEXUS_AudioOutput_AddInput(NEXUS_HdmiOutput_GetAudioConnector(pPlatformConfig->outputs.hdmi[0]), NEXUS_AudioMixer_GetConnector(mixer));
-    if (rc) {
-        ALOGE("%s: Could not add audio mixer to HDMI 0 output!!!", __PRETTY_FUNCTION__);
-        BKNI_Free(pPlatformConfig);
-        return NEXUS_UNKNOWN;
-    }
-#endif
-#if NEXUS_NUM_SPDIF_OUTPUTS 
-    rc = NEXUS_AudioOutput_AddInput(NEXUS_SpdifOutput_GetConnector(pPlatformConfig->outputs.spdif[0]), NEXUS_AudioMixer_GetConnector(mixer));
-    if (rc) {
-        ALOGE("%s: Could not add audio mixer to SPDIF 0 output!!!", __PRETTY_FUNCTION__);
-        BKNI_Free(pPlatformConfig);
-        return NEXUS_UNKNOWN;
-    }
-#endif
-
-    /* create simple audio decoder */
-    for (i=0; i<MAX_AUDIO_DECODERS; i++) {
-        NEXUS_SimpleAudioDecoder_GetDefaultServerSettings(&simpleAudioDecoderSettings);
-        simpleAudioDecoderSettings.primary = audioDecoder[i];
-#if NEXUS_HAS_HDMI_OUTPUT && NEXUS_NUM_HDMI_OUTPUTS
-        simpleAudioDecoderSettings.hdmi.outputs[0] = pPlatformConfig->outputs.hdmi[0];
-#endif
-        simpleAudioDecoderSettings.stcIndex = i;  /* Must set this to be able to do STC trick modes! */
-        simpleAudioDecoder[i] = NEXUS_SimpleAudioDecoder_Create(i, &simpleAudioDecoderSettings);
-        if (simpleAudioDecoder[i] == NULL) {
-            ALOGE("%s: Could not open simple audio decoder %d!!!", __PRETTY_FUNCTION__, i);
-            BKNI_Free(pPlatformConfig);
-            return NEXUS_UNKNOWN;
-        }
-    }
-
-    /* create simple audio player */
-    for (i=0; i<MAX_AUDIO_PLAYBACKS; i++) {
-        NEXUS_SimpleAudioPlayback_GetDefaultServerSettings(&simpleAudioPlaybackSettings);
-        simpleAudioPlaybackSettings.decoder = simpleAudioDecoder[i]; /* linked to the audio decoder for StcChannel */
-        simpleAudioPlaybackSettings.playback = audioPlayback[i];
-        simpleAudioPlayback[i] = NEXUS_SimpleAudioPlayback_Create(i, &simpleAudioPlaybackSettings);
-        if (simpleAudioPlayback[i] == NULL) {
-            ALOGE("%s: Could not open simple audio playback %d!!!", __PRETTY_FUNCTION__, i);
-            BKNI_Free(pPlatformConfig);
-            return NEXUS_UNKNOWN;
-        }
-    }
-    BKNI_Free(pPlatformConfig);
-    return rc;
-}
-
-void NexusService::setAudioState(bool enable)
-{
-    int i;
-    NEXUS_SimpleAudioDecoderServerSettings simpleAudioDecoderSettings;
-    NEXUS_SimpleAudioPlaybackServerSettings simpleAudioPlaybackSettings;
-
-    /* Enable/Disable simple audio player */
-    for (i=0; i<MAX_AUDIO_PLAYBACKS; i++) {
-        NEXUS_SimpleAudioPlayback_GetServerSettings(simpleAudioPlayback[i], &simpleAudioPlaybackSettings);
-        if (enable) {
-            simpleAudioPlaybackSettings.decoder = simpleAudioDecoder[i]; /* linked to the audio decoder for StcChannel */
-            simpleAudioPlaybackSettings.playback = audioPlayback[i];
-        } else {
-            simpleAudioPlaybackSettings.decoder = NULL;
-            simpleAudioPlaybackSettings.playback = NULL;
-        }
-        NEXUS_SimpleAudioPlayback_SetServerSettings(simpleAudioPlayback[i], &simpleAudioPlaybackSettings);
-    }
-
-    /* Enable/Disable simple audio decoder */
-    for (i=0; i<MAX_AUDIO_DECODERS; i++) {
-        NEXUS_SimpleAudioDecoder_GetServerSettings(simpleAudioDecoder[i], &simpleAudioDecoderSettings);
-        simpleAudioDecoderSettings.enabled = enable;
-        NEXUS_SimpleAudioDecoder_SetServerSettings(simpleAudioDecoder[i], &simpleAudioDecoderSettings);
-    }
 }
 
 void NexusService::hdmiOutputHotplugCallback(void *context __unused, int param __unused)
@@ -815,8 +641,6 @@ void NexusService::platformInit()
     NEXUS_Error                        rc;
     int                                i=0;
     char                               value[PROPERTY_VALUE_MAX];
-    NEXUS_Graphics2DOpenSettings       g2dOpenSettings;
-    NEXUS_Graphics2DSettings           gfxSettings;
     NEXUS_PlatformStartServerSettings  serverSettings;
 
     NEXUS_Platform_GetDefaultStartServerSettings(&serverSettings);
@@ -832,40 +656,24 @@ void NexusService::platformInit()
 
     BKNI_Memset(&displayState, 0, sizeof(DisplayState));
 
-    for (i=0; i<MAX_AUDIO_DECODERS; i++) {
-        audioDecoder[i] = NULL;
-        simpleAudioDecoder[i] = NULL;
-    }
-
-    for (i=0; i<MAX_AUDIO_PLAYBACKS; i++) {
-        audioPlayback[i] = NULL;
-        simpleAudioPlayback[i] = NULL;
-    }
-
     initial_output_format = getForcedOutputFormat();
     if ((initial_output_format == NEXUS_VideoFormat_eUnknown) || (initial_output_format >= NEXUS_VideoFormat_eMax)) {
        initial_output_format = NEXUS_VideoFormat_e1080p;
     }
 
-    if (platformInitAudio() != 0) {
-        ALOGE("%s: Could not initialise platform audio!!!", __PRETTY_FUNCTION__);
-        BDBG_ASSERT(false);
+    if (platformInitVideo() != 0) {
+       ALOGE("%s: Could not initialise platform video!!!", __PRETTY_FUNCTION__);
+       BDBG_ASSERT(false);
     }
     else {
-        if (platformInitVideo() != 0) {
-            ALOGE("%s: Could not initialise platform video!!!", __PRETTY_FUNCTION__);
-            BDBG_ASSERT(false);
+        if (platformInitHdmiOutputs() != 0) {
+           ALOGE("%s: Could not initialise HDMI output(s)!!!", __PRETTY_FUNCTION__);
+           BDBG_ASSERT(false);
         }
         else {
-            if (platformInitHdmiOutputs() != 0) {
-                ALOGE("%s: Could not initialise HDMI output(s)!!!", __PRETTY_FUNCTION__);
-                BDBG_ASSERT(false);
-            }
-            else {
-                if (platformInitSurfaceCompositor() != 0) {
-                    ALOGE("%s: Could not initialise surface compositor!!!", __PRETTY_FUNCTION__);
-                    BDBG_ASSERT(false);
-                }
+            if (platformInitSurfaceCompositor() != 0) {
+               ALOGE("%s: Could not initialise surface compositor!!!", __PRETTY_FUNCTION__);
+               BDBG_ASSERT(false);
             }
         }
     }
@@ -1363,7 +1171,6 @@ bool NexusService::setPowerState(b_powerState pmState)
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 if (rc == NEXUS_SUCCESS) {
                     setDisplayState(1);
-                    setAudioState(1);
                 }
                 break;
             }
@@ -1375,7 +1182,6 @@ bool NexusService::setPowerState(b_powerState pmState)
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 if (rc == NEXUS_SUCCESS) {
                     setDisplayState(0);
-                    setAudioState(0);
                 }
                 break;
             }
@@ -1384,7 +1190,6 @@ bool NexusService::setPowerState(b_powerState pmState)
             {
                 ALOGD("%s: About to set power state S1...", __PRETTY_FUNCTION__);
                 setDisplayState(0);
-                setAudioState(0);
                 nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eActive;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 break;
@@ -1394,7 +1199,6 @@ bool NexusService::setPowerState(b_powerState pmState)
             {
                 ALOGD("%s: About to set power state S2...", __PRETTY_FUNCTION__);
                 setDisplayState(0);
-                setAudioState(0);
                 nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_ePassive;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 break;
@@ -1405,7 +1209,6 @@ bool NexusService::setPowerState(b_powerState pmState)
             {
                 ALOGD("%s: About to set power state %s...", __PRETTY_FUNCTION__, NexusService::getPowerString(pmState));
                 setDisplayState(0);
-                setAudioState(0);
                 nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eDeepSleep;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 break;
