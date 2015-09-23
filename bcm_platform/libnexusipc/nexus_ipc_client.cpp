@@ -168,7 +168,7 @@ NEXUS_Error NexusIPCClient::clientJoin(const b_refsw_client_client_configuration
             NEXUS_ClientAuthenticationSettings *pAuthentication = &cmd.param.clientJoin.in.clientAuthenticationSettings;
 
             do {
-                rc = NEXUS_ABSTRACTED_JOIN(pAuthentication);
+                rc = NEXUS_Platform_AuthenticatedJoin(pAuthentication);
                 if(rc != NEXUS_SUCCESS)
                 {
                     ALOGE("%s: NEXUS_Platform_AuthenticatedJoin failed for client \"%s\"!!!\n", __PRETTY_FUNCTION__, getClientName());

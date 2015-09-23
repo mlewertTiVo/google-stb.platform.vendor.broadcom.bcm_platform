@@ -288,7 +288,7 @@ String16 INexusService::getInterfaceDescriptor() {
         return INexusService::descriptor;
 }
 
-NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid, const char * name)
+NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid)
 {
     NEXUS_PlatformObjectInstance *objects = NULL;
     NEXUS_ClientHandle nexusClient = NULL;
@@ -703,7 +703,6 @@ int NexusService::platformInitVideo(void)
         BKNI_Free(pPlatformConfig);
         return NEXUS_UNKNOWN;
     }
-    displayState.hNexusDisplay = reinterpret_cast<int>(displayState.display);
 
 #if NEXUS_NUM_COMPONENT_OUTPUTS
     /* Add Component Output to the HD-Display */
@@ -725,14 +724,6 @@ int NexusService::platformInitVideo(void)
     }
 #endif
 
-    displayState.video_window = NEXUS_VideoWindow_Open(displayState.display, 0);
-    if (!displayState.video_window) {
-        ALOGE("%s: NEXUS_VideoWindow_Open(%d) failed!!", __PRETTY_FUNCTION__, 0);
-        BKNI_Free(pPlatformConfig);
-        return NEXUS_UNKNOWN;
-    }
-    displayState.hNexusVideoWindow = reinterpret_cast<int>(displayState.video_window);
-
     BKNI_Free(pPlatformConfig);
     return rc;
 }
@@ -748,13 +739,6 @@ static void inactive_callback(void *context, int param)
 {
     BSTD_UNUSED(param);
     BKNI_SetEvent((BKNI_EventHandle)context);
-}
-
-/* Event callback that will be called when a gfx op is complete */
-static void complete(void *data, int unused)
-{
-    BSTD_UNUSED(unused);
-    BKNI_SetEvent((BKNI_EventHandle)data);
 }
 
 int NexusService::platformInitSurfaceCompositor(void)
@@ -863,15 +847,6 @@ void NexusService::platformInit()
        initial_output_format = NEXUS_VideoFormat_e1080p;
     }
 
-    NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
-    g2dOpenSettings.compatibleWithSurfaceCompaction = false;
-    gfx2D = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &g2dOpenSettings);
-
-    BKNI_CreateEvent(&gfxDone);
-    NEXUS_Graphics2D_GetSettings(gfx2D, &gfxSettings);
-    gfxSettings.checkpointCallback.callback = complete;
-    gfxSettings.checkpointCallback.context = gfxDone;
-    NEXUS_Graphics2D_SetSettings(gfx2D, &gfxSettings);
     if (platformInitAudio() != 0) {
         ALOGE("%s: Could not initialise platform audio!!!", __PRETTY_FUNCTION__);
         BDBG_ASSERT(false);
@@ -923,11 +898,6 @@ void NexusService::platformUninit()
             mCecServiceManager[i] = NULL;
         }
     }
-
-    if (gfx2D) {
-        NEXUS_Graphics2D_Close(gfx2D);
-        gfx2D = NULL;
-    }
 }
 
 void NexusService::instantiate() {
@@ -955,8 +925,6 @@ void NexusService::instantiate() {
 NexusService::NexusService() : powerState(ePowerState_S0)
 {
     surface_compositor = NULL;
-    surfaceclient = NULL;
-    gfx2D = NULL;
 }
 
 NexusService::~NexusService()
@@ -1061,7 +1029,7 @@ NexusClientContext * NexusService::createClientContext(const b_refsw_client_clie
 
     BLST_D_INSERT_HEAD(&server->clients, client, link);
 
-    client->ipc.nexusClient = getNexusClient(clientPid, pClientName->string);
+    client->ipc.nexusClient = getNexusClient(clientPid);
 
     if (powerState != ePowerState_S0) {
         NEXUS_PlatformStandbySettings nexusStandbySettings;

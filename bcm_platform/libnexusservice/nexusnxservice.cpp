@@ -571,7 +571,7 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
         }
     }
 
-    client->ipc.nexusClient = getNexusClient(client->clientPid, client->clientName.string);
+    client->ipc.nexusClient = getNexusClient(client->clientPid);
     return client;
 
 err_client:

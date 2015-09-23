@@ -87,9 +87,6 @@
 #include "nexus_surface_compositor.h"
 #include "nexus_picture_ctrl.h"
 
-/*If the security mode is not eUntrusted then we do Join else we do Authenticated Join*/
-#define NEXUS_ABSTRACTED_JOIN(auth) NEXUS_Platform_AuthenticatedJoin(auth)
-
 #ifndef NEXUS_NUM_VIDEO_ENCODERS
 #define NEXUS_NUM_VIDEO_ENCODERS 0
 #endif
@@ -119,10 +116,6 @@ class BnNexusService : public BnInterface<INexusService>
 typedef struct DisplayState
 {
     NEXUS_DisplayHandle display;
-    NEXUS_VideoWindowHandle video_window;
-    /* Below are only for standalone mode, should be removed when standalone mode is gone */
-    int hNexusDisplay;
-    int hNexusVideoWindow;
 } DisplayState;
 
 typedef struct NexusServerContext
@@ -185,7 +178,7 @@ protected:
     NexusService();
     virtual void platformInit();
     virtual void platformUninit();
-    virtual NEXUS_ClientHandle getNexusClient(unsigned pid, const char * name);
+    virtual NEXUS_ClientHandle getNexusClient(unsigned pid);
     static NEXUS_VideoFormat getForcedOutputFormat(void);
 
     static const char *getPowerString(b_powerState pmState);
@@ -217,9 +210,6 @@ private:
     NEXUS_SimpleAudioDecoderHandle      simpleAudioDecoder[MAX_AUDIO_DECODERS];
     NEXUS_SimpleAudioPlaybackHandle     simpleAudioPlayback[MAX_AUDIO_PLAYBACKS];
     NEXUS_AudioMixerHandle              mixer;
-    NEXUS_SurfaceClientHandle           surfaceclient;
-    NEXUS_Graphics2DHandle              gfx2D;
-    BKNI_EventHandle                    gfxDone;
     NEXUS_VideoFormat                   initial_output_format;
 };
 

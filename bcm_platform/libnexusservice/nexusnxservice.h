@@ -65,7 +65,6 @@ public:
     virtual void destroyClientContext(NexusClientContext * client);
 
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/
-    //virtual status_t setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener);
     virtual status_t addHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener);
     virtual status_t removeHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener);
 
@@ -76,7 +75,6 @@ protected:
     NexusNxService();
     virtual void platformInit();
     virtual void platformUninit();
-    //virtual NEXUS_ClientHandle getNexusClient(NexusClientContext * client);
 
 private:
     int platformInitHdmiOutputs(void);
