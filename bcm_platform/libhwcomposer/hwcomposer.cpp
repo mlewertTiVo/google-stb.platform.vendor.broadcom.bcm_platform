@@ -230,14 +230,12 @@ const NEXUS_BlendEquation alphaBlendingEquation[BLENDIND_TYPE_LAST] = {
 typedef struct {
     int type;
     void *parent;
-
 } COMMON_CLIENT_INFO;
 
 typedef struct {
     buffer_handle_t layerhdl;
     buffer_handle_t grhdl;
     unsigned long long comp_ix;
-
 } GPX_CLIENT_SURFACE_INFO;
 
 typedef struct {
@@ -251,7 +249,6 @@ typedef struct {
     int layer_id;
     int plane_alpha;
     bool skip_set;
-
 } GPX_CLIENT_INFO;
 
 typedef struct {
@@ -274,14 +271,12 @@ typedef struct {
     int layer_type;
     int layer_subtype;
     nsecs_t refresh;
-
 } VSYNC_CLIENT_INFO;
 
 typedef struct {
     COMMON_CLIENT_INFO ncci;
     buffer_handle_t grhdl;
     NEXUS_SurfaceComposition composition;
-
 } VD_CLIENT_INFO;
 
 typedef struct {
@@ -289,7 +284,6 @@ typedef struct {
     NEXUS_SurfaceCompositorClientId sccid;
     BFIFO_HEAD(DisplayFifo, NEXUS_SurfaceHandle) display_fifo;
     NEXUS_SurfaceHandle display_buffers[HWC_NUM_DISP_BUFFERS];
-
 } DISPLAY_CLIENT_INFO;
 
 typedef void (* HWC_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
@@ -2344,7 +2338,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       void *pAddr;
       private_handle_t *gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
       if (gr_buffer == NULL) {
-         ALOGE("comp: %llu/%llu - layer: %d - invalid buffer\n",
+         ALOGV("comp: %llu/%llu - layer: %d - invalid buffer\n",
                ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
          continue;
       }
@@ -3487,7 +3481,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
 
         NEXUS_Platform_GetClientConfiguration(&clientConfig);
         NxClient_GetDefaultAllocSettings(&nxAllocSettings);
-        nxAllocSettings.surfaceClient = DISPLAY_SUPPORTED;
+        nxAllocSettings.surfaceClient = DISPLAY_SUPPORTED - 1;
         rc = NxClient_Alloc(&nxAllocSettings, &dev->nxAllocResults);
         if (rc) {
            ALOGE("%s: failed NxClient_Alloc (rc=%d)!", __FUNCTION__, rc);
@@ -3495,7 +3489,9 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         }
 
         for (i = 0; i < DISPLAY_SUPPORTED; i++) {
-            dev->disp_cli[i].sccid = dev->nxAllocResults.surfaceClient[i].id;
+            if (i == 0) {
+               dev->disp_cli[i].sccid = dev->nxAllocResults.surfaceClient[i].id;
+            }
             dev->composer_thread_run[i] = 1;
             dev->composer_work_list[i] = NULL;
             if (dev->fence_support) {
@@ -3611,11 +3607,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         for (i = 0; i < HWC_VD_CLIENTS_NUMBER; i++) {
             dev->vd_cli[i].ncci.parent = (void *)dev;
             dev->vd_cli[i].ncci.type = NEXUS_CLIENT_VD;
-            NxClient_GetSurfaceClientComposition(dev->disp_cli[HWC_VIRTUAL_IX].sccid, &dev->vd_cli[i].composition);
-            if (!i) {
-               dev->vd_cli[i].composition.visible = false;
-               NxClient_SetSurfaceClientComposition(dev->disp_cli[HWC_VIRTUAL_IX].sccid, &dev->vd_cli[i].composition);
-            }
+            memset(&dev->vd_cli[i].composition, 0, sizeof(dev->vd_cli[i].composition));
         }
 
         dev->device.common.tag                     = HARDWARE_DEVICE_TAG;
