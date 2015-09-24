@@ -406,7 +406,7 @@ void NexusService::hdmiOutputHotplugCallback(void *context __unused, int param _
 #endif
 }
 
-int NexusService::platformInitHdmiOutputs()
+int NexusService::platformSetupHdmiOutputs()
 {
     int rc = 0;
 #if NEXUS_HAS_HDMI_OUTPUT
@@ -463,7 +463,7 @@ int NexusService::platformInitHdmiOutputs()
     return rc;
 }
 
-void NexusService::platformUninitHdmiOutputs()
+void NexusService::platformCleanHdmiOutputs()
 {
 #if NEXUS_HAS_HDMI_OUTPUT
     NEXUS_PlatformConfiguration *pPlatformConfig;
@@ -504,109 +504,6 @@ void NexusService::platformUninitHdmiOutputs()
     }
     BKNI_Free(pPlatformConfig);
 #endif
-}
-
-int NexusService::platformInitVideo(void)
-{
-    NEXUS_DisplaySettings          displaySettings;
-    NEXUS_PlatformConfiguration   *pPlatformConfig;
-    NEXUS_VideoDecoderOpenSettings videoDecoderOpenSettings;
-    int rc = 0;
-
-    pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
-    if (pPlatformConfig == NULL) {
-        ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
-        return NEXUS_OUT_OF_SYSTEM_MEMORY;
-    }
-    NEXUS_Platform_GetConfiguration(pPlatformConfig);
-
-    NEXUS_Display_GetDefaultSettings(&displaySettings);
-    displaySettings.displayType = NEXUS_DisplayType_eAuto;
-    displaySettings.format = initial_output_format;
-    displayState.display = NEXUS_Display_Open(0, &displaySettings);
-    if (!displayState.display) {
-        ALOGE("%s: NEXUS_Display_Open(%d) failed!!", __PRETTY_FUNCTION__, 0);
-        BKNI_Free(pPlatformConfig);
-        return NEXUS_UNKNOWN;
-    }
-
-#if NEXUS_NUM_COMPONENT_OUTPUTS
-    /* Add Component Output to the HD-Display */
-    rc = NEXUS_Display_AddOutput(displayState.display, NEXUS_ComponentOutput_GetConnector(pPlatformConfig->outputs.component[0]));
-    if (rc!=NEXUS_SUCCESS) {
-        ALOGE("%s: NEXUS_Display_AddOutput(component) failed!!", __PRETTY_FUNCTION__);
-        BKNI_Free(pPlatformConfig);
-        return rc;
-    }
-#endif
-
-#if NEXUS_HAS_HDMI_OUTPUT && NEXUS_NUM_HDMI_OUTPUTS
-    /* Add HDMI Output to the HD-Display */
-    rc = NEXUS_Display_AddOutput(displayState.display, NEXUS_HdmiOutput_GetVideoConnector(pPlatformConfig->outputs.hdmi[0]));
-    if (rc!=NEXUS_SUCCESS) {
-        ALOGE("%s: NEXUS_Display_AddOutput(hdmi) failed!!", __PRETTY_FUNCTION__);
-        BKNI_Free(pPlatformConfig);
-        return rc;
-    }
-#endif
-
-    BKNI_Free(pPlatformConfig);
-    return rc;
-}
-
-void framebuffer_callback(void *context, int param)
-{
-    BSTD_UNUSED(context);
-    BSTD_UNUSED(param);
-}
-
-static BKNI_EventHandle inactiveEvent;
-static void inactive_callback(void *context, int param)
-{
-    BSTD_UNUSED(param);
-    BKNI_SetEvent((BKNI_EventHandle)context);
-}
-
-int NexusService::platformInitSurfaceCompositor(void)
-{
-    NEXUS_SurfaceCreateSettings createSettings;
-    int rc=0; unsigned i;
-    NEXUS_SurfaceCompositorSettings *p_surface_compositor_settings = NULL;
-    NEXUS_VideoFormatInfo formatInfo;
-    NEXUS_VideoFormat_GetInfo(initial_output_format, &formatInfo);
-
-    BKNI_CreateEvent(&inactiveEvent);
-    p_surface_compositor_settings = (NEXUS_SurfaceCompositorSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorSettings));
-    if (NULL == p_surface_compositor_settings) {
-        ALOGE("%s:%d BKNI_Malloc failed",__PRETTY_FUNCTION__,__LINE__);
-        return NEXUS_OUT_OF_SYSTEM_MEMORY;
-    }
-
-    /* create surface compositor server */
-    surface_compositor = NEXUS_SurfaceCompositor_Create(0);
-    if (surface_compositor == NULL) {
-        ALOGE("%s: Could not create Surface Compositor 0!!!", __PRETTY_FUNCTION__);
-        BKNI_Free(p_surface_compositor_settings);
-        return NEXUS_UNKNOWN;
-    }
-    NEXUS_SurfaceCompositor_GetSettings(surface_compositor, p_surface_compositor_settings);
-    NEXUS_Display_GetGraphicsSettings(displayState.display, &p_surface_compositor_settings->display[HD_DISPLAY].graphicsSettings);
-    p_surface_compositor_settings->display[HD_DISPLAY].graphicsSettings.zorder = 1;
-    p_surface_compositor_settings->display[HD_DISPLAY].graphicsSettings.enabled = true;
-    p_surface_compositor_settings->display[HD_DISPLAY].display = displayState.display;
-    p_surface_compositor_settings->display[HD_DISPLAY].framebuffer.number = 2;
-    p_surface_compositor_settings->display[HD_DISPLAY].framebuffer.width = formatInfo.width;
-    p_surface_compositor_settings->display[HD_DISPLAY].framebuffer.height = formatInfo.height;
-    p_surface_compositor_settings->display[HD_DISPLAY].framebuffer.backgroundColor = 0; /* black background */
-    p_surface_compositor_settings->display[HD_DISPLAY].framebuffer.heap = NEXUS_Platform_GetFramebufferHeap(0);
-
-    p_surface_compositor_settings->frameBufferCallback.callback = framebuffer_callback;
-    p_surface_compositor_settings->frameBufferCallback.context = surface_compositor;
-    p_surface_compositor_settings->inactiveCallback.callback = inactive_callback;
-    p_surface_compositor_settings->inactiveCallback.context = inactiveEvent;
-    rc = NEXUS_SurfaceCompositor_SetSettings(surface_compositor, p_surface_compositor_settings);
-    BKNI_Free(p_surface_compositor_settings);
-    return rc;
 }
 
 NEXUS_VideoFormat NexusService::getForcedOutputFormat(void)
@@ -654,28 +551,9 @@ void NexusService::platformInit()
         BDBG_ASSERT(rc == NEXUS_SUCCESS);
     }
 
-    BKNI_Memset(&displayState, 0, sizeof(DisplayState));
-
-    initial_output_format = getForcedOutputFormat();
-    if ((initial_output_format == NEXUS_VideoFormat_eUnknown) || (initial_output_format >= NEXUS_VideoFormat_eMax)) {
-       initial_output_format = NEXUS_VideoFormat_e1080p;
-    }
-
-    if (platformInitVideo() != 0) {
-       ALOGE("%s: Could not initialise platform video!!!", __PRETTY_FUNCTION__);
+    if (platformSetupHdmiOutputs() != 0) {
+       ALOGE("%s: Could not initialise HDMI output(s)!!!", __PRETTY_FUNCTION__);
        BDBG_ASSERT(false);
-    }
-    else {
-        if (platformInitHdmiOutputs() != 0) {
-           ALOGE("%s: Could not initialise HDMI output(s)!!!", __PRETTY_FUNCTION__);
-           BDBG_ASSERT(false);
-        }
-        else {
-            if (platformInitSurfaceCompositor() != 0) {
-               ALOGE("%s: Could not initialise surface compositor!!!", __PRETTY_FUNCTION__);
-               BDBG_ASSERT(false);
-            }
-        }
     }
 
     i = NEXUS_NUM_CEC;
@@ -696,7 +574,7 @@ void NexusService::platformInit()
 
 void NexusService::platformUninit()
 {
-    platformUninitHdmiOutputs();
+    platformCleanHdmiOutputs();
 
     unsigned i = NEXUS_NUM_CEC;
 
@@ -732,7 +610,6 @@ void NexusService::instantiate() {
 
 NexusService::NexusService() : powerState(ePowerState_S0)
 {
-    surface_compositor = NULL;
 }
 
 NexusService::~NexusService()
@@ -1111,43 +988,6 @@ bool NexusService::sendCecMessage(unsigned cecId, uint8_t srcAddr, uint8_t destA
     return success;
 }
 
-void NexusService::setDisplayState(bool enable)
-{
-    NEXUS_SurfaceCompositorSettings *p_surface_compositor_settings = NULL;
-    int rc;
-
-    p_surface_compositor_settings = (NEXUS_SurfaceCompositorSettings *)BKNI_Malloc(sizeof(NEXUS_SurfaceCompositorSettings));
-    if (NULL == p_surface_compositor_settings) {
-        ALOGE("%s:%d BKNI_Malloc failed",__PRETTY_FUNCTION__,__LINE__);
-        return;
-    }
-
-    NEXUS_SurfaceCompositor_GetSettings(surface_compositor, p_surface_compositor_settings);
-
-    if (!enable) {
-        BKNI_ResetEvent(inactiveEvent);
-
-        /* disable surface compositor */
-        p_surface_compositor_settings->enabled = false;
-        NEXUS_SurfaceCompositor_SetSettings(surface_compositor, p_surface_compositor_settings);
-        rc = BKNI_WaitForEvent(inactiveEvent, 5000);
-        if (rc) {
-            if(p_surface_compositor_settings)
-                BKNI_Free(p_surface_compositor_settings);
-            return;
-        }
-    }
-    else {
-        p_surface_compositor_settings->enabled = true;
-        NEXUS_SurfaceCompositor_SetSettings(surface_compositor, p_surface_compositor_settings);
-    }
-
-    if (p_surface_compositor_settings) {
-        BKNI_Free(p_surface_compositor_settings);
-    }
-    return;
-}
-
 bool NexusService::setPowerState(b_powerState pmState)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
@@ -1169,9 +1009,6 @@ bool NexusService::setPowerState(b_powerState pmState)
                 ALOGD("%s: About to set power state S0...", __PRETTY_FUNCTION__);
                 nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eOn;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
-                if (rc == NEXUS_SUCCESS) {
-                    setDisplayState(1);
-                }
                 break;
             }
 
@@ -1180,16 +1017,12 @@ bool NexusService::setPowerState(b_powerState pmState)
                 ALOGD("%s: About to set power state S0.5...", __PRETTY_FUNCTION__);
                 nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eOn;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
-                if (rc == NEXUS_SUCCESS) {
-                    setDisplayState(0);
-                }
                 break;
             }
 
             case ePowerState_S1:
             {
                 ALOGD("%s: About to set power state S1...", __PRETTY_FUNCTION__);
-                setDisplayState(0);
                 nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eActive;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 break;
@@ -1198,7 +1031,6 @@ bool NexusService::setPowerState(b_powerState pmState)
             case ePowerState_S2:
             {
                 ALOGD("%s: About to set power state S2...", __PRETTY_FUNCTION__);
-                setDisplayState(0);
                 nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_ePassive;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 break;
@@ -1208,7 +1040,6 @@ bool NexusService::setPowerState(b_powerState pmState)
             case ePowerState_S5:
             {
                 ALOGD("%s: About to set power state %s...", __PRETTY_FUNCTION__, NexusService::getPowerString(pmState));
-                setDisplayState(0);
                 nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eDeepSleep;
                 rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
                 break;

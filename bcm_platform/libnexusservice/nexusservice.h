@@ -172,19 +172,11 @@ private:
     /* These API's are private helper functions... */
     NEXUS_ClientHandle clientJoin(const b_refsw_client_client_name *pClientName, NEXUS_ClientAuthenticationSettings *pClientAuthenticationSettings);
     NEXUS_Error clientUninit(NEXUS_ClientHandle clientHandle);
-    int platformInitSurfaceCompositor(void);
-    int platformInitVideo(void);
-    int platformInitHdmiOutputs(void);
-    void platformUninitHdmiOutputs();
+    int platformSetupHdmiOutputs(void);
+    void platformCleanHdmiOutputs();
     static void hdmiOutputHotplugCallback(void *context, int param);
     static void hdmiOutputHdcpStateChangedCallback(void *pContext, int param);
     static b_cecDeviceType toCecDeviceType(char *string);
-    void setDisplayState(bool enable);
-    void setVideoState(bool enable);
-
-    NEXUS_SurfaceCompositorHandle       surface_compositor;
-    DisplayState                        displayState;
-    NEXUS_VideoFormat                   initial_output_format;
 };
 
 #endif // _NEXUSSERVICE_H_
