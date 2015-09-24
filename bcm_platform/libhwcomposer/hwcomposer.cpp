@@ -137,7 +137,6 @@ using namespace android;
 #define HWC_DUMP_VIRT_PROP           "ro.hwc.dump.virt"
 #define HWC_DUMP_MMA_OPS_PROP        "ro.hwc.dump.mma"
 #define HWC_DUMP_FENCE_PROP          "ro.hwc.dump.fence"
-#define HWC_SKIP_DUP_PROP            "ro.hwc.skip.dup"
 #define HWC_WITH_FENCE_PROP          "ro.v3d.fence.expose"
 #define HWC_USES_MMA_PROP            "ro.nx.mma"
 #define HWC_TRACK_COMP_TIME          "ro.hwc.track.comptime"
@@ -510,7 +509,6 @@ struct hwc_context_t {
     bool display_dump_vsync;
     bool nsc_copy;
     bool track_buffer;
-    bool skip_dup;
     bool display_dump_virt;
     bool fence_support;
 
@@ -1703,8 +1701,7 @@ static void hwc_prepare_gpx_layer(
     }
 
     ctx->gpx_cli[layer_id].skip_set = false;
-    if (ctx->skip_dup &&
-        (layer->compositionType == HWC_OVERLAY) &&
+    if ((layer->compositionType == HWC_OVERLAY) &&
         !(layer->flags & HWC_IS_CURSOR_LAYER)) {
        if (ctx->gpx_cli[layer_id].last.layerhdl &&
            (ctx->gpx_cli[layer_id].last.layerhdl == layer->handle) &&
@@ -3421,10 +3418,6 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
 
    if (property_get(HWC_DUMP_FENCE_PROP, value, HWC_DEFAULT_DISABLED)) {
       dev->dump_fence = (strtoul(value, NULL, 10) > 0) ? true : false;
-   }
-
-   if (property_get(HWC_SKIP_DUP_PROP, value, HWC_DEFAULT_ENABLED)) {
-      dev->skip_dup = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
    dev->fence_support = property_get_bool(HWC_WITH_FENCE_PROP, 0);
