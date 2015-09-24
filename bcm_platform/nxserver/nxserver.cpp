@@ -90,6 +90,7 @@
 #define NUM_NX_OBJS                    (128)
 #define MAX_NX_OBJS                    (2048)
 #define MIN_PLATFORM_DEC               (2)
+#define NSC_FB_NUMBER                  (3)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
 #define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
@@ -650,6 +651,8 @@ static nxserver_t init_nxserver(void)
     /* -sd off */
     settings.session[0].output.sd = settings.session[0].output.encode = false;
     settings.session[0].output.hd = true;
+
+    settings.framebuffers = NSC_FB_NUMBER;
 
     settings.videoDecoder.dynamicPictureBuffers = property_get_int32(NX_ODV, 0) ? true : false;
     if (settings.videoDecoder.dynamicPictureBuffers) {
