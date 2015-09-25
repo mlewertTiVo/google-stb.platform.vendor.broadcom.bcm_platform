@@ -132,8 +132,6 @@ using namespace android;
 #define HWC_GLES_VIRTUAL_PROP        "ro.hwc.gles.virtual"
 #define HWC_DUMP_LAYER_PROP          "ro.hwc.dump.layer"
 #define HWC_DUMP_VSYNC_PROP          "ro.hwc.dump.vsync"
-#define HWC_NSC_COPY_PROP            "ro.hwc.nsc.copy"
-#define HWC_TRACK_BUFFER_PROP        "ro.hwc.track.buffer"
 #define HWC_DUMP_VIRT_PROP           "ro.hwc.dump.virt"
 #define HWC_DUMP_MMA_OPS_PROP        "ro.hwc.dump.mma"
 #define HWC_DUMP_FENCE_PROP          "ro.hwc.dump.fence"
@@ -507,8 +505,6 @@ struct hwc_context_t {
 
     bool display_dump_layer;
     bool display_dump_vsync;
-    bool nsc_copy;
-    bool track_buffer;
     bool display_dump_virt;
     bool fence_support;
 
@@ -1076,14 +1072,13 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
        }
-       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%p::vscb:%s::d:{%d,%d}::pm:%s::nsc-copy:%s::oscan:{%d,%d:%d,%d}\n",
+       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%p::vscb:%s::d:{%d,%d}::pm:%s::oscan:{%d,%d:%d,%d}\n",
            ctx->pIpcClient,
            ctx->pNexusClientContext,
            ctx->vsync_callback_enabled ? "enabled" : "disabled",
            ctx->cfg[HWC_PRIMARY_IX].width,
            ctx->cfg[HWC_PRIMARY_IX].height,
            hwc_power_mode[ctx->power_mode],
-           ctx->nsc_copy ? "oui" : "non",
            ctx->overscan_position.x,
            ctx->overscan_position.y,
            ctx->overscan_position.w,
@@ -3384,51 +3379,16 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
          (strncmp(value, HWC_GLES_MODE_ALWAYS, strlen(HWC_GLES_MODE_ALWAYS)) == 0) ? true : false;
    }
 
-   if (property_get(HWC_GLES_VIRTUAL_PROP, value, HWC_DEFAULT_ENABLED)) {
-      dev->display_gles_virtual = (strtoul(value, NULL, 10) == 0) ? false : true;
-   }
-
-   if (property_get(HWC_DUMP_LAYER_PROP, value, HWC_DEFAULT_DISABLED)) {
-      dev->display_dump_layer = (strtoul(value, NULL, 10) == 0) ? false : true;
-   }
-
-   if (property_get(HWC_DUMP_VSYNC_PROP, value, HWC_DEFAULT_DISABLED)) {
-      dev->display_dump_vsync = (strtoul(value, NULL, 10) == 0) ? false : true;
-   }
-
-   if (property_get(HWC_NSC_COPY_PROP, value, HWC_DEFAULT_DISABLED)) {
-      dev->nsc_copy = (strtoul(value, NULL, 10) == 0) ? false : true;
-   }
-
-   if (property_get(HWC_TRACK_BUFFER_PROP, value, HWC_DEFAULT_DISABLED)) {
-      dev->track_buffer = (strtoul(value, NULL, 10) == 0) ? false : true;
-   }
-
-   if (property_get(HWC_DUMP_VIRT_PROP, value, HWC_DEFAULT_DISABLED)) {
-      dev->display_dump_virt = (strtoul(value, NULL, 10) == 0) ? false : true;
-   }
-
-   if (property_get(HWC_USES_MMA_PROP, value, HWC_DEFAULT_DISABLED)) {
-      dev->hwc_with_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
-   }
-
-   if (property_get(HWC_DUMP_MMA_OPS_PROP, value, HWC_DEFAULT_DISABLED)) {
-      dev->dump_mma = (strtoul(value, NULL, 10) > 0) ? true : false;
-   }
-
-   if (property_get(HWC_DUMP_FENCE_PROP, value, HWC_DEFAULT_DISABLED)) {
-      dev->dump_fence = (strtoul(value, NULL, 10) > 0) ? true : false;
-   }
-
-   dev->fence_support = property_get_bool(HWC_WITH_FENCE_PROP, 0);
-
-   if (property_get(HWC_TRACK_COMP_TIME, value, HWC_DEFAULT_ENABLED)) {
-      dev->track_comp_time = (strtoul(value, NULL, 10) > 0) ? true : false;
-   }
-
-   if (property_get(HWC_TRACK_COMP_CHATTY, value, HWC_DEFAULT_DISABLED)) {
-      dev->track_comp_chatty = (strtoul(value, NULL, 10) > 0) ? true : false;
-   }
+   dev->display_gles_virtual = property_get_bool(HWC_GLES_VIRTUAL_PROP, 0);
+   dev->display_dump_layer   = property_get_bool(HWC_DUMP_LAYER_PROP, 0);
+   dev->display_dump_vsync   = property_get_bool(HWC_DUMP_VSYNC_PROP, 0);
+   dev->display_dump_virt    = property_get_bool(HWC_DUMP_VIRT_PROP, 0);
+   dev->hwc_with_mma         = property_get_bool(HWC_USES_MMA_PROP, 1);
+   dev->dump_mma             = property_get_bool(HWC_DUMP_MMA_OPS_PROP, 0);
+   dev->dump_fence           = property_get_bool(HWC_DUMP_FENCE_PROP, 0);
+   dev->fence_support        = property_get_bool(HWC_WITH_FENCE_PROP, 0);
+   dev->track_comp_time      = property_get_bool(HWC_TRACK_COMP_TIME, 1);
+   dev->track_comp_chatty    = property_get_bool(HWC_TRACK_COMP_CHATTY, 0);
 }
 
 static int hwc_device_open(const struct hw_module_t* module, const char* name,
