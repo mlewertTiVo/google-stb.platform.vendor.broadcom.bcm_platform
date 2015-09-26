@@ -535,21 +535,7 @@ NEXUS_VideoFormat NexusService::getForcedOutputFormat(void)
 
 void NexusService::platformInit()
 {
-    NEXUS_Error                        rc;
     int                                i=0;
-    char                               value[PROPERTY_VALUE_MAX];
-    NEXUS_PlatformStartServerSettings  serverSettings;
-
-    NEXUS_Platform_GetDefaultStartServerSettings(&serverSettings);
-
-    serverSettings.allowUnprotectedClientsToCrash = true;
-    serverSettings.allowUnauthenticatedClients = false;
-
-    rc = NEXUS_Platform_StartServer(&serverSettings);
-    if (rc != NEXUS_SUCCESS) {
-        ALOGE("%s:NEXUS_Platform_StartServer Failed (rc=%d)!\n", __PRETTY_FUNCTION__, rc);
-        BDBG_ASSERT(rc == NEXUS_SUCCESS);
-    }
 
     if (platformSetupHdmiOutputs() != 0) {
        ALOGE("%s: Could not initialise HDMI output(s)!!!", __PRETTY_FUNCTION__);
@@ -1094,6 +1080,7 @@ const char *NexusService::getPowerString(b_powerState pmState)
 status_t NexusService::setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener)
 {
     status_t status = INVALID_OPERATION;
+
     ALOGV("%s: CEC%d listener=%p", __PRETTY_FUNCTION__, cecId, listener.get());
 
     if (mCecServiceManager[cecId].get() != NULL) {
@@ -1108,83 +1095,12 @@ status_t NexusService::setHdmiCecMessageEventListener(uint32_t cecId, const sp<I
 
 status_t NexusService::addHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener)
 {
-    status_t status = OK;
-
-    if (listener == 0) {
-        ALOGE("%s: HDMI%d listener is NULL!!!", __PRETTY_FUNCTION__, portId);
-        status = BAD_VALUE;
-    }
-    else {
-        ALOGV("%s: HDMI%d listener %p", __PRETTY_FUNCTION__, portId, listener.get());
-
-#if NEXUS_HAS_HDMI_OUTPUT
-        if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
-            Vector<sp<INexusHdmiHotplugEventListener> >::iterator it;
-            sp<IBinder> binder = listener->asBinder();
-
-            Mutex::Autolock autoLock(server->mLock);
-
-            for (it = server->mHdmiHotplugEventListenerList[portId].begin(); it != server->mHdmiHotplugEventListenerList[portId].end(); ++it) {
-                if ((*it)->asBinder() == binder) {
-                    ALOGE("%s: Already added HDMI%d listener %p!!!", __PRETTY_FUNCTION__, portId, listener.get());
-                    status = ALREADY_EXISTS;
-                    break;
-                }
-            }
-
-            if (status == OK) {
-                server->mHdmiHotplugEventListenerList[portId].push_back(listener);
-                binder->linkToDeath(this);
-            }
-        }
-        else
-#endif
-        {
-            ALOGE("%s: No HDMI%d output on this device!!!", __PRETTY_FUNCTION__, portId);
-            status = INVALID_OPERATION;
-        }
-    }
-    return status;
+    return INVALID_OPERATION;
 }
 
 status_t NexusService::removeHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener>& listener)
 {
-    status_t status = BAD_VALUE;
-
-    if (listener == 0) {
-        ALOGE("%s: HDMI%d listener is NULL!!!", __PRETTY_FUNCTION__, portId);
-    }
-    else {
-        ALOGV("%s: HDMI%d listener %p", __PRETTY_FUNCTION__, portId, listener.get());
-
-#if NEXUS_HAS_HDMI_OUTPUT
-        if (portId < NEXUS_NUM_HDMI_OUTPUTS) {
-            Vector<sp<INexusHdmiHotplugEventListener> >::iterator it;
-            sp<IBinder> binder = listener->asBinder();
-
-            Mutex::Autolock autoLock(server->mLock);
-
-            for (it = server->mHdmiHotplugEventListenerList[portId].begin(); it != server->mHdmiHotplugEventListenerList[portId].end(); ++it) {
-                if ((*it)->asBinder() == binder) {
-                    binder->unlinkToDeath(this);
-                    server->mHdmiHotplugEventListenerList[portId].erase(it);
-                    status = OK;
-                    break;
-                }
-            }
-
-            if (status == BAD_VALUE) {
-                ALOGW("%s: Could NOT find HDMI%d listener %p!!!", __PRETTY_FUNCTION__, portId, listener.get());
-            }
-        }
-        else
-#endif
-        {
-            ALOGE("%s: No HDMI%d output on this device!!!", __PRETTY_FUNCTION__, portId);
-            status = INVALID_OPERATION;
-        }
-    }
-    return status;
+    return INVALID_OPERATION;
 }
 
 void NexusService::binderDied(const wp<IBinder>& who)
