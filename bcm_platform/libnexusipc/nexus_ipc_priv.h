@@ -47,8 +47,6 @@
 
 // api's supported over ipc (binder)
 enum api_name{
-    api_clientJoin,
-    api_clientUninit,
     api_createClientContext,
     api_destroyClientContext,
     api_setPowerState,
@@ -64,27 +62,6 @@ enum api_name{
 // in and out parameters for each of these api's
 typedef union api_param
 {
-    struct {
-        struct {
-            b_refsw_client_client_name         clientName;
-            NEXUS_ClientAuthenticationSettings clientAuthenticationSettings;
-        } in;
-
-        struct {
-            NEXUS_ClientHandle clientHandle;
-        } out;
-    } clientJoin;
-
-    struct {
-        struct {
-            NEXUS_ClientHandle clientHandle;
-        } in;
-
-        struct {
-            NEXUS_Error status;
-        } out;
-    } clientUninit;
-
     struct {
         struct {
             b_refsw_client_client_name clientName;

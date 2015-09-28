@@ -94,26 +94,16 @@ class BnNexusService : public BnInterface<INexusService>
 {
 };
 
-typedef struct DisplayState
-{
-    NEXUS_DisplayHandle display;
-} DisplayState;
-
 typedef struct NexusServerContext
 {
     NexusServerContext();
     ~NexusServerContext() { ALOGV("%s: called", __PRETTY_FUNCTION__); }
 
     Mutex mLock;
-    unsigned mJoinRefCount;
-    BLST_D_HEAD(b_refsw_client_list, NexusClientContext) clients;
 #if NEXUS_HAS_HDMI_OUTPUT
     Vector<sp<INexusHdmiHotplugEventListener> > mHdmiHotplugEventListenerList[NEXUS_NUM_HDMI_OUTPUTS];
 #endif
 
-    struct {
-        unsigned client;
-    } lastId;
 } NexusServerContext;
 
 class NexusService : public NexusServiceBase, public BnNexusService, public IBinder::DeathRecipient
@@ -170,8 +160,6 @@ protected:
 
 private:
     /* These API's are private helper functions... */
-    NEXUS_ClientHandle clientJoin(const b_refsw_client_client_name *pClientName, NEXUS_ClientAuthenticationSettings *pClientAuthenticationSettings);
-    NEXUS_Error clientUninit(NEXUS_ClientHandle clientHandle);
     int platformSetupHdmiOutputs(void);
     void platformCleanHdmiOutputs();
     static void hdmiOutputHotplugCallback(void *context, int param);

@@ -148,74 +148,6 @@ void NexusIPCClient::unbindNexusService()
     }
 }
 
-NEXUS_Error NexusIPCClient::clientJoin(const b_refsw_client_client_configuration *config __unused)
-{
-    NEXUS_Error rc = NEXUS_SUCCESS;
-
-    android::Mutex::Autolock autoLock(mLock);
-
-    if (mJoinRefCount == 0) {
-        api_data cmd;
-
-        BKNI_Memset(&cmd, 0, sizeof(cmd));
-        cmd.api = api_clientJoin;
-        BKNI_Snprintf(&cmd.param.clientJoin.in.clientName.string[0], CLIENT_MAX_NAME, "%s", getClientName());
-        iNC->api_over_binder(&cmd);
-
-        clientHandle = cmd.param.clientJoin.out.clientHandle;
-
-        if (clientHandle != NULL) {
-            NEXUS_ClientAuthenticationSettings *pAuthentication = &cmd.param.clientJoin.in.clientAuthenticationSettings;
-
-            do {
-                rc = NEXUS_Platform_AuthenticatedJoin(pAuthentication);
-                if(rc != NEXUS_SUCCESS)
-                {
-                    ALOGE("%s: NEXUS_Platform_AuthenticatedJoin failed for client \"%s\"!!!\n", __PRETTY_FUNCTION__, getClientName());
-                    sleep(1);
-                }
-            } while (rc != NEXUS_SUCCESS);
-        }
-        else {
-            ALOGE("%s: FATAL: could not obtain join client \"%s\" with server!!!", __PRETTY_FUNCTION__, getClientName());
-            rc = NEXUS_NOT_INITIALIZED;
-        }
-    }
-
-    if (rc == NEXUS_SUCCESS) {
-        mJoinRefCount++;
-    }
-    return rc;
-}
-
-NEXUS_Error NexusIPCClient::clientUninit()
-{
-    NEXUS_Error rc = NEXUS_SUCCESS;
-    android::Mutex::Autolock autoLock(mLock);
-
-    if (mJoinRefCount > 0) {
-        mJoinRefCount--;
-
-        if (mJoinRefCount == 0) {
-            api_data cmd;
-
-            BKNI_Memset(&cmd, 0, sizeof(cmd));
-            cmd.api = api_clientUninit;
-            cmd.param.clientUninit.in.clientHandle = clientHandle;
-            iNC->api_over_binder(&cmd);
-
-            rc = cmd.param.clientUninit.out.status;
-            if (rc == NEXUS_SUCCESS) {
-                NEXUS_Platform_Uninit();
-            }
-        }
-    } else {
-        rc = NEXUS_NOT_INITIALIZED;
-    }
-    return rc;
-}
-
-/* Client side implementation of the APIs that are transferred to the server process over binder */
 NexusClientContext * NexusIPCClient::createClientContext(const b_refsw_client_client_configuration *config)
 {
     NEXUS_Error rc;
@@ -459,3 +391,14 @@ status_t NexusIPCClient::removeHdmiHotplugEventListener(uint32_t portId, const s
     iNC->get_remote()->transact(REMOVE_HDMI_HOTPLUG_EVENT_LISTENER, data, &reply);
     return reply.readInt32();
 }
+
+NEXUS_Error NexusIPCClient::clientUninit()
+{
+   return NEXUS_SUCCESS;
+}
+
+NEXUS_Error NexusIPCClient::clientJoin(const b_refsw_client_client_configuration *config __unused)
+{
+   return NEXUS_SUCCESS;
+}
+

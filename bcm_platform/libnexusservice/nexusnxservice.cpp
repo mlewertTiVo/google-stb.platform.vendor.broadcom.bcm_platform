@@ -545,8 +545,6 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
     client->clientName = *pClientName;
     client->clientPid = clientPid;
 
-    BLST_D_INSERT_HEAD(&server->clients, client, link);
-
     if (powerState != ePowerState_S0) {
         NxClient_StandbySettings standbySettings;
 
@@ -579,7 +577,6 @@ void NexusNxService::destroyClientContext(NexusClientContext * client)
 
     Mutex::Autolock autoLock(server->mLock);
 
-    BLST_D_REMOVE(&server->clients, client, link);
     BDBG_OBJECT_DESTROY(client, NexusClientContext);
     BKNI_Free(client);
 }

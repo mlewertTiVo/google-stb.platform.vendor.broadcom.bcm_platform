@@ -272,10 +272,8 @@ typedef struct NexusClientContext {
     b_refsw_client_client_info info;
 } NexusClientContext;
 
-NexusServerContext::NexusServerContext() : mLock(Mutex::SHARED), mJoinRefCount(0)
+NexusServerContext::NexusServerContext() : mLock(Mutex::SHARED)
 {
-    BLST_D_INIT(&clients);
-    lastId.client = 0;
 }
 
 const String16 INexusService::descriptor(NEXUS_INTERFACE_NAME);
@@ -606,136 +604,14 @@ NexusService::~NexusService()
     server = NULL;
 }
 
-NEXUS_ClientHandle NexusService::clientJoin(const b_refsw_client_client_name *pClientName, NEXUS_ClientAuthenticationSettings *pClientAuthenticationSettings)
-{
-    NEXUS_ClientHandle nexusClient;
-
-    Mutex::Autolock autoLock(server->mLock);
-
-    nexusClient = NULL;
-
-    pClientAuthenticationSettings->certificate.length =
-        BKNI_Snprintf((char *)pClientAuthenticationSettings->certificate.data,
-                      sizeof(pClientAuthenticationSettings->certificate.data),
-                      "%u,%#x%#x,%s", server->lastId.client, lrand48(), lrand48(), pClientName->string);
-
-    if (pClientAuthenticationSettings->certificate.length >= sizeof(pClientAuthenticationSettings->certificate.data)-1) {
-        ALOGE("%s: Invalid certificate length %d for client \"%s\"!!!", __PRETTY_FUNCTION__, pClientAuthenticationSettings->certificate.length, pClientName->string);
-        (void)BERR_TRACE(BERR_NOT_SUPPORTED);
-    }
-    else {
-        NEXUS_PlatformConfiguration *pPlatformConfig;
-        NEXUS_ClientSettings         clientSettings;
-
-        pPlatformConfig = reinterpret_cast<NEXUS_PlatformConfiguration *>(BKNI_Malloc(sizeof(*pPlatformConfig)));
-        if (pPlatformConfig == NULL) {
-            ALOGE("%s: Could not allocate enough memory for the platform configuration!!!", __FUNCTION__);
-            (void)BERR_TRACE(BERR_OUT_OF_SYSTEM_MEMORY);
-        }
-        else {
-            NEXUS_Platform_GetDefaultClientSettings(&clientSettings);
-            clientSettings.authentication.certificate = pClientAuthenticationSettings->certificate;
-            NEXUS_Platform_GetConfiguration(pPlatformConfig);
-            clientSettings.configuration.heap[0] = NEXUS_Platform_GetFramebufferHeap(NEXUS_OFFSCREEN_SURFACE);
-            clientSettings.configuration.heap[1] = pPlatformConfig->heap[NEXUS_MAIN_HEAP_IDX];
-#ifdef NEXUS_VIDEO_SECURE_HEAP
-            clientSettings.configuration.heap[2] = pPlatformConfig->heap[NEXUS_VIDEO_SECURE_HEAP];
-#endif
-#ifdef NEXUS_SECONDARY_OFFSCREEN_SURFACE
-            clientSettings.configuration.heap[3] = NEXUS_Platform_GetFramebufferHeap(NEXUS_SECONDARY_OFFSCREEN_SURFACE);
-            if (clientSettings.configuration.heap[3] == clientSettings.configuration.heap[0]) {
-                clientSettings.configuration.heap[3] = NULL;
-            }
-#endif
-            nexusClient = NEXUS_Platform_RegisterClient(&clientSettings);
-            if (nexusClient) {
-                server->lastId.client++;
-                server->mJoinRefCount++;
-            }
-            else {
-                (void)BERR_TRACE(BERR_NOT_SUPPORTED);
-            }
-            BKNI_Free(pPlatformConfig);
-        }
-    }
-    return nexusClient;
-}
-
-NEXUS_Error NexusService::clientUninit(NEXUS_ClientHandle nexusClient)
-{
-    NEXUS_Error rc;
-
-    Mutex::Autolock autoLock(server->mLock);
-
-    server->mJoinRefCount--;
-
-    if (nexusClient == NULL) {
-        rc = NEXUS_INVALID_PARAMETER;
-    } else {
-        NEXUS_Platform_UnregisterClient(nexusClient);
-        rc = NEXUS_SUCCESS;
-    }
-    return rc;
-}
-
 NexusClientContext * NexusService::createClientContext(const b_refsw_client_client_name *pClientName, unsigned clientPid)
 {
-    NexusClientContext * client;
-    NEXUS_ClientSettings clientSettings;
-    NEXUS_Error rc;
-
-    Mutex::Autolock autoLock(server->mLock);
-
-    client = (NexusClientContext *)BKNI_Malloc(sizeof(NexusClientContext));
-    if (client==NULL) {
-        (void)BERR_TRACE(BERR_OUT_OF_SYSTEM_MEMORY);
-        return NULL;
-    }
-
-    BKNI_Memset(client, 0, sizeof(*client));
-    BDBG_OBJECT_SET(client, NexusClientContext);
-
-    client->clientName = *pClientName;
-    client->clientPid = clientPid;
-
-    BLST_D_INSERT_HEAD(&server->clients, client, link);
-
-    client->ipc.nexusClient = getNexusClient(clientPid);
-
-    if (powerState != ePowerState_S0) {
-        NEXUS_PlatformStandbySettings nexusStandbySettings;
-
-        ALOGI("We need to set Nexus Power State S0 first...");
-        NEXUS_Platform_GetStandbySettings(&nexusStandbySettings);
-        nexusStandbySettings.mode = NEXUS_PlatformStandbyMode_eOn;
-        rc = NEXUS_Platform_SetStandbySettings(&nexusStandbySettings);
-        if (rc != NEXUS_SUCCESS) {
-            ALOGE("Oops we couldn't set Nexus Power State to S0!");
-            goto err_client;
-        }
-        else {
-            ALOGI("Successfully set Nexus Power State S0");
-        }
-    }
-    ALOGI("%s: Exiting with client=%p, name=\"%s\"", __PRETTY_FUNCTION__, (void *)client, pClientName->string);
-    return client;
-
-err_client:
-    /* todo fix cleanup */
-    return NULL;
+   return NULL;
 }
 
 void NexusService::destroyClientContext(NexusClientContext * client)
 {
-    Mutex::Autolock autoLock(server->mLock);
-
-    BDBG_OBJECT_ASSERT(client, NexusClientContext);
-    if(client->ipc.nexusClient) {
-        client->ipc.nexusClient = NULL;
-    }
-    BLST_D_REMOVE(&server->clients, client, link);
-    BDBG_OBJECT_DESTROY(client, NexusClientContext);
-    BKNI_Free(client);
+   return;
 }
 
 bool NexusService::isCecEnabled(uint32_t cecId __unused)
@@ -1147,17 +1023,6 @@ status_t NexusService::onTransact(uint32_t code,
 
         switch(cmd.api)
         {
-            case api_clientJoin:
-            {
-                cmd.param.clientJoin.out.clientHandle =
-                    clientJoin(&cmd.param.clientJoin.in.clientName, &cmd.param.clientJoin.in.clientAuthenticationSettings);
-                break;
-            }
-            case api_clientUninit:
-            {
-                cmd.param.clientUninit.out.status = clientUninit(cmd.param.clientUninit.in.clientHandle);
-                break;
-            }
             case api_createClientContext:
             {
                 cmd.param.createClientContext.out.client = createClientContext(&cmd.param.createClientContext.in.clientName,

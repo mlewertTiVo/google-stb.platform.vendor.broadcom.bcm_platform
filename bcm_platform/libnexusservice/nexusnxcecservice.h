@@ -49,12 +49,6 @@ struct NexusNxService::CecServiceManager : public NexusService::CecServiceManage
 public:
     friend class NexusNxService;
     virtual      ~CecServiceManager();
-    //virtual status_t platformInit();
-    //virtual void platformUninit();
-    //virtual bool isPlatformInitialised();
-    //virtual status_t sendCecMessage(uint8_t destAddr, size_t length, uint8_t *pBuffer, uint8_t maxRetries);
-    //virtual bool setPowerState(b_powerState pmState);
-    //virtual bool getPowerStatus(uint8_t *pPowerStatus);
 
 protected:
     struct CecRxMessageHandler;
