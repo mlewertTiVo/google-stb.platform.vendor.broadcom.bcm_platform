@@ -51,7 +51,7 @@ static BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt);
 void __attribute__ ((constructor)) gralloc_explicit_load(void);
 void __attribute__ ((destructor)) gralloc_explicit_unload(void);
 
-#if (V3D == VC4)
+#if (V3D == v3d)
 static void (* dyn_BEGLint_BufferGetRequirements)(BEGL_PixmapInfo *, BEGL_BufferSettings *);
 #endif
 static void * (* dyn_EGL_nexus_join)(char *client_process_name);
@@ -146,7 +146,7 @@ static void gralloc_load_lib(void)
       gralloc_disable_glplane = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
-#if (V3D == VC4)
+#if (V3D == v3d)
    gralloc_default_align = GRALLOC_MAX_BUFFER_ALIGNED;
 #else
    gralloc_default_align = GRALLOC_MIN_BUFFER_ALIGNED;
@@ -526,7 +526,7 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
          ALOGE("%s: no valid client context...", __FUNCTION__);
       }
 
-#if (V3D == VC4)
+#if (V3D == v3d)
       dyn_BEGLint_BufferGetRequirements(&bufferRequirements, &bufferConstrainedRequirements);
 #else
       bufferConstrainedRequirements.pitchBytes = width * bpp;
@@ -662,7 +662,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    hnd->is_mma = gralloc_with_mma;
    hnd->mgmt_mode = gralloc_mgmt_mode;
    hnd->alignment = 1;
-#if (V3D == VC4)
+#if (V3D == v3d)
    hnd->alignment = 16;
 #endif
 
