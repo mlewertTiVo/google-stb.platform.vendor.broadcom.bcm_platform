@@ -51,7 +51,9 @@ static BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt);
 void __attribute__ ((constructor)) gralloc_explicit_load(void);
 void __attribute__ ((destructor)) gralloc_explicit_unload(void);
 
+#if (V3D == VC4)
 static void (* dyn_BEGLint_BufferGetRequirements)(BEGL_PixmapInfo *, BEGL_BufferSettings *);
+#endif
 static void * (* dyn_EGL_nexus_join)(char *client_process_name);
 static void (* dyn_EGL_nexus_unjoin)(void *nexus_client);
 #define LOAD_FN(lib, name) \
@@ -144,10 +146,11 @@ static void gralloc_load_lib(void)
       gralloc_disable_glplane = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
+#if (V3D == VC4)
    gralloc_default_align = GRALLOC_MAX_BUFFER_ALIGNED;
-   if (!dyn_BEGLint_BufferGetRequirements) {
-      gralloc_default_align = GRALLOC_MIN_BUFFER_ALIGNED;
-   }
+#else
+   gralloc_default_align = GRALLOC_MIN_BUFFER_ALIGNED;
+#endif
 
    if (property_get(NX_GR_BOOM_CHK, value, "0")) {
       gralloc_boom_chk = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
@@ -523,16 +526,13 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
          ALOGE("%s: no valid client context...", __FUNCTION__);
       }
 
-      // VC4 requires memory with a set stride.
-      if (dyn_BEGLint_BufferGetRequirements)
-         dyn_BEGLint_BufferGetRequirements(&bufferRequirements, &bufferConstrainedRequirements);
-      else {
-         // VC5, can use any stride, so just calculate the values (dont need to call the function)
-         // push into VC4 return header to simplify the build/code paths
-         bufferConstrainedRequirements.pitchBytes = width * bpp;
-         bufferConstrainedRequirements.format = bufferRequirements.format;
-         bufferConstrainedRequirements.totalByteSize = height * bufferConstrainedRequirements.pitchBytes;
-      }
+#if (V3D == VC4)
+      dyn_BEGLint_BufferGetRequirements(&bufferRequirements, &bufferConstrainedRequirements);
+#else
+      bufferConstrainedRequirements.pitchBytes = width * bpp;
+      bufferConstrainedRequirements.format = bufferRequirements.format;
+      bufferConstrainedRequirements.totalByteSize = height * bufferConstrainedRequirements.pitchBytes;
+#endif
 
       memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
       ashmem_alloc.size = bufferConstrainedRequirements.totalByteSize;
@@ -662,9 +662,9 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    hnd->is_mma = gralloc_with_mma;
    hnd->mgmt_mode = gralloc_mgmt_mode;
    hnd->alignment = 1;
-   if (dyn_BEGLint_BufferGetRequirements) {
-      hnd->alignment = 16;
-   }
+#if (V3D == VC4)
+   hnd->alignment = 16;
+#endif
 
    fmt_align = hnd->alignment;
    getBufferDataFromFormat(&fmt_align, w, h, bpp, format, pStride, &size, &extra_size);
@@ -793,9 +793,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
          //    alignment considerations.
          // 2) vc4 does only support 2k textures and does require
          //    special alignmnent considerations.
-         if (/*!dyn_BEGLint_BufferGetRequirements ||
-             (dyn_BEGLint_BufferGetRequirements &&*/
-             (w <= DATA_PLANE_MAX_WIDTH &&
+         if ((w <= DATA_PLANE_MAX_WIDTH &&
               h <= DATA_PLANE_MAX_HEIGHT)) {
             needs_rgb = true;
          }
