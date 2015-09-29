@@ -2281,6 +2281,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
            }
            goto out;
         }
+    } else {
+         BKNI_ReleaseMutex(ctx->power_mutex);
     }
 
 out_mutex:
@@ -2594,6 +2596,8 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
           BKNI_SetEvent(ctx->composer_event[HWC_VIRTUAL_IX]);
           goto out;
        }
+    } else {
+         BKNI_ReleaseMutex(ctx->power_mutex);
     }
 
 out_mutex:
