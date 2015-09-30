@@ -104,6 +104,8 @@ using namespace android;
 #define HWC_VIRTUAL_IX               1
 #define NEXUS_DISPLAY_OBJECTS        4
 #define HWC_SET_COMP_THRESHOLD       2
+#define HWC_TICKER_W                 64
+#define HWC_TICKER_H                 64
 
 /* note: matching other parts of the integration, we
  *       want to default product resolution to 1080p.
@@ -139,6 +141,7 @@ using namespace android;
 #define HWC_USES_MMA_PROP            "ro.nx.mma"
 #define HWC_TRACK_COMP_TIME          "ro.hwc.track.comptime"
 #define HWC_TRACK_COMP_CHATTY        "ro.hwc.track.chatty"
+#define HWC_TICKER                   "ro.hwc.ticker"
 
 #define HWC_CHECKPOINT_TIMEOUT       (5000)
 
@@ -514,6 +517,7 @@ struct hwc_context_t {
 
     bool track_comp_time;
     bool track_comp_chatty;
+    bool ticker;
 
     bool alpha_hole_background;
 };
@@ -1439,6 +1443,33 @@ static void hwc_seed_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
          }
       }
    }
+}
+
+static uint32_t tick_color[2] = {0xFF00FF00, 0xFFFF00FF};
+static void hwc_tick_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle surface)
+{
+   static int tick_ix = 0;
+   NEXUS_Error rc;
+   NEXUS_Graphics2DFillSettings fillSettings;
+   NEXUS_Graphics2D_GetDefaultFillSettings(&fillSettings);
+   fillSettings.surface     = surface;
+   fillSettings.color       = tick_color[tick_ix];
+   fillSettings.colorOp     = NEXUS_FillOp_eCopy;
+   fillSettings.alphaOp     = NEXUS_FillOp_eCopy;
+   fillSettings.rect.x      = ctx->cfg[HWC_PRIMARY_IX].width - (2*HWC_TICKER_W);
+   fillSettings.rect.y      = ctx->cfg[HWC_PRIMARY_IX].height - (2*HWC_TICKER_H);
+   fillSettings.rect.width  = HWC_TICKER_W;
+   fillSettings.rect.height = HWC_TICKER_H;
+   ++tick_ix %= 2;
+   if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+      ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
+      return;
+   }
+   rc = NEXUS_Graphics2D_Fill(ctx->hwc_g2d, &fillSettings);
+   if (rc == NEXUS_SUCCESS) {
+      hwc_checkpoint_locked(ctx);
+   }
+   BKNI_ReleaseMutex(ctx->g2d_mutex);
 }
 
 bool hwc_compose_gralloc_buffer(
@@ -2412,6 +2443,9 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             if (rc) {
                ALOGW("%s: checkpoint timeout", __FUNCTION__);
             } else {
+               if (ctx->ticker) {
+                  hwc_tick_disp_surface(ctx, outputHdl);
+               }
                rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, outputHdl, NULL, false);
                if (rc) {
                   ALOGW("%s: failed to push surface to client (%d)", __FUNCTION__, rc);
@@ -2437,6 +2471,9 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       if (rc) {
          ALOGW("%s: checkpoint timeout", __FUNCTION__);
       } else {
+         if (ctx->ticker) {
+            hwc_tick_disp_surface(ctx, outputHdl);
+         }
          rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, outputHdl, NULL, false);
          if (rc) {
             ALOGW("%s: failed to push surface to client (%d)", __FUNCTION__, rc);
@@ -3389,6 +3426,7 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
    dev->fence_support        = property_get_bool(HWC_WITH_FENCE_PROP, 0);
    dev->track_comp_time      = property_get_bool(HWC_TRACK_COMP_TIME, 1);
    dev->track_comp_chatty    = property_get_bool(HWC_TRACK_COMP_CHATTY, 0);
+   dev->ticker               = property_get_bool(HWC_TICKER, 0);
 }
 
 static int hwc_device_open(const struct hw_module_t* module, const char* name,
