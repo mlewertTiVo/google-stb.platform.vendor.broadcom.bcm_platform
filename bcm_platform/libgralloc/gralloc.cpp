@@ -51,7 +51,7 @@ static BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt);
 void __attribute__ ((constructor)) gralloc_explicit_load(void);
 void __attribute__ ((destructor)) gralloc_explicit_unload(void);
 
-#if (V3D == v3d)
+#if defined(V3D_VARIANT_v3d)
 static void (* dyn_BEGLint_BufferGetRequirements)(BEGL_PixmapInfo *, BEGL_BufferSettings *);
 #endif
 static void * (* dyn_EGL_nexus_join)(char *client_process_name);
@@ -110,7 +110,9 @@ static void gralloc_load_lib(void)
    }
 
    // load wanted functions from the library now.
+#if defined(V3D_VARIANT_v3d)
    LOAD_FN(gl_dyn_lib, BEGLint_BufferGetRequirements);
+#endif
    LOAD_FN(gl_dyn_lib, EGL_nexus_join);
    LOAD_FN(gl_dyn_lib, EGL_nexus_unjoin);
 
@@ -146,7 +148,7 @@ static void gralloc_load_lib(void)
       gralloc_disable_glplane = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
-#if (V3D == v3d)
+#if defined(V3D_VARIANT_v3d)
    gralloc_default_align = GRALLOC_MAX_BUFFER_ALIGNED;
 #else
    gralloc_default_align = GRALLOC_MIN_BUFFER_ALIGNED;
@@ -490,7 +492,9 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
                                    int format)
 {
    BEGL_PixmapInfo bufferRequirements;
+#if defined(V3D_VARIANT_v3d)
    BEGL_BufferSettings bufferConstrainedRequirements;
+#endif
    unsigned int phyAddr = 0;
    struct nx_ashmem_alloc ashmem_alloc;
 
@@ -526,16 +530,19 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
          ALOGE("%s: no valid client context...", __FUNCTION__);
       }
 
-#if (V3D == v3d)
+#if defined(V3D_VARIANT_v3d)
       dyn_BEGLint_BufferGetRequirements(&bufferRequirements, &bufferConstrainedRequirements);
+      allocContext->oglStride = bufferConstrainedRequirements.pitchBytes;
+      allocContext->oglFormat = bufferConstrainedRequirements.format;
+      allocContext->oglSize   = bufferConstrainedRequirements.totalByteSize;
 #else
-      bufferConstrainedRequirements.pitchBytes = width * bpp;
-      bufferConstrainedRequirements.format = bufferRequirements.format;
-      bufferConstrainedRequirements.totalByteSize = height * bufferConstrainedRequirements.pitchBytes;
+      allocContext->oglStride = width * bpp;
+      allocContext->oglFormat = bufferRequirements.format;
+      allocContext->oglSize   = height * allocContext->oglStride;
 #endif
 
       memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
-      ashmem_alloc.size = bufferConstrainedRequirements.totalByteSize;
+      ashmem_alloc.size = allocContext->oglSize;
       ashmem_alloc.align = gralloc_default_align;
       ret = ioctl(fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
       if (ret < 0) {
@@ -543,10 +550,6 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
       };
 
       phyAddr = (NEXUS_Addr)ioctl(fd, NX_ASHMEM_GETMEM);
-
-      allocContext->oglStride = bufferConstrainedRequirements.pitchBytes;
-      allocContext->oglFormat = bufferConstrainedRequirements.format;
-      allocContext->oglSize   = bufferConstrainedRequirements.totalByteSize;
    }
    else {
       allocContext->oglStride = 0;
@@ -662,7 +665,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    hnd->is_mma = gralloc_with_mma;
    hnd->mgmt_mode = gralloc_mgmt_mode;
    hnd->alignment = 1;
-#if (V3D == v3d)
+#if defined(V3D_VARIANT_v3d)
    hnd->alignment = 16;
 #endif
 
