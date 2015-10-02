@@ -77,7 +77,7 @@
 #include "nexus_base_mmap.h"
 
 #define DHD_SECDMA_PROP                "ro.dhd.secdma"
-#define DHD_SECDMA_PARAMS_PATH          "/data/nexus/secdma"
+#define DHD_SECDMA_PARAMS_PATH         "/data/nexus/secdma"
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 #define APP_MAX_CLIENTS                (64)
@@ -874,7 +874,7 @@ static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
                     fclose(pFile);
                     return;
                 }
-                fprintf(pFile, "secdma_cma_addr=0x%x secdma_cma_size=0x%x\n", secdmaPhysicalOffset, secdmaMemSize);
+                fprintf(pFile, "secdma_cma_addr=0x%llx secdma_cma_size=0x%x\n", secdmaPhysicalOffset, secdmaMemSize);
                 fclose(pFile);
             }
         } else {
