@@ -21,7 +21,25 @@ LOCAL_SRC_FILES := \
    $(BMEM_CONFIG_SRC_ROOT)/bmemconfig.c \
    $(BMEM_CONFIG_SRC_ROOT)/${NEXUS_PLATFORM}/boxmodes.c \
    $(BMEM_CONFIG_SRC_ROOT)/memusage.c \
-   bmemperf_utils_mod.c
+   bmemperf_utils_mod.c \
+   bmemconfig_box_info.auto.c
+
+
+BCHP_VER_LOWER = $(shell awk 'BEGIN{print tolower("$(BCHP_VER)")}')
+BOXMODE_FILES = $(shell ls -1v $(NEXUS_TOP)/../magnum/commonutils/box/src/$(BCHP_CHIP)/$(BCHP_VER_LOWER)/bbox_memc_box*_config.c)
+
+define generate-config-box-info-module
+	awk -f $(NEXUS_TOP)/../BSEAV/tools/bmemconfig/bmemconfig_box_info_pre.awk $(NEXUS_TOP)/../BSEAV/tools/bmemconfig/Makefile > $(NEXUS_TOP)/../../bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.c
+	$(foreach myfile,$(BOXMODE_FILES), \
+		awk -f $(NEXUS_TOP)/../BSEAV/tools/bmemconfig/bmemconfig_box_info.awk $(myfile) >> $(NEXUS_TOP)/../../bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.c;) >/dev/null
+	awk -f $(NEXUS_TOP)/../BSEAV/tools/bmemconfig/bmemconfig_box_info_post.awk $(NEXUS_TOP)/../../bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.c > $(NEXUS_TOP)/../../bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.tmp
+	cat $(NEXUS_TOP)/../../bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.tmp >> $(NEXUS_TOP)/../../bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.c
+	rm $(NEXUS_TOP)/../../bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.tmp
+endef
+
+$(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.c:
+	$(hide) $(call generate-config-box-info-module)
+
 
 LOCAL_MODULE := bmemconfig
 LOCAL_MODULE_SUFFIX := .cgi
