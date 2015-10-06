@@ -61,14 +61,15 @@
 #define B_PROPERTY_INPUT_DEBUG ("media.brcm.adec_input_debug")
 #define B_PROPERTY_OUTPUT_DEBUG ("media.brcm.adec_output_debug")
 #define B_PROPERTY_MP3_DELAY ("media.brcm.adec_mp3_delay")
+#define B_PROPERTY_AAC_DELAY ("media.brcm.adec_aac_delay")
 
-#define B_HEADER_BUFFER_SIZE (32+BOMX_BCMA_HEADER_SIZE)
-#define B_DATA_BUFFER_SIZE (1920*2)  // Worst case AC3 frame size is 640Kbps 32kHz = 1920 16-bit words/syncframe
-#define B_OUTPUT_BUFFER_SIZE (1536*2*6) // 16-bit 5.1 with 1536 samples/frame for AC3
-#define B_NUM_BUFFERS (4)
+#define B_DATA_BUFFER_SIZE (8192)       // Taken from SoftAAC decoder - large enough for AC3/MP3 as well
+#define B_OUTPUT_BUFFER_SIZE (2048*2*8) // 16-bit 5.1 with 2048 samples/frame for AAC
+#define B_NUM_BUFFERS (6)
 #define B_STREAM_ID 0xc0
 #define B_FRAME_TIMER_INTERVAL (32)
 #define B_INPUT_BUFFERS_RETURN_INTERVAL (100)
+#define B_AAC_ADTS_HEADER_LEN (7)
 
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
@@ -77,10 +78,7 @@
  *                        This requires 2 descriptors and we can fit a max
  *                        of 65535-3 bytes of payload in each based on
  *                        the 16-bit PES length field.
- *
- * For VP9, super-frames can be subdivided into at most 8 frames, each needing
- * its own PES header / Codec Header / Payload (3 descriptors per subframe).
-*****************************************************************************/
+ ****************************************************************************/
 #define B_MAX_EXTRAFRAMES_PER_BUFFER (0)
 #define B_MAX_DESCRIPTORS_PER_BUFFER (4+(B_MAX_EXTRAFRAMES_PER_BUFFER*3)+(2*(B_DATA_BUFFER_SIZE/(B_MAX_PES_PACKET_LENGTH-(B_PES_HEADER_LENGTH_WITHOUT_PTS-B_PES_HEADER_START_BYTES)))))
 
@@ -96,6 +94,8 @@ enum BOMX_AudioDecoderEventType
 
 static const BOMX_AudioDecoderRole g_ac3Role[] = {"audio_decoder.ac3", OMX_AUDIO_CodingAndroidAC3};
 static const BOMX_AudioDecoderRole g_mp3Role[] = {"audio_decoder.mp3", OMX_AUDIO_CodingMP3};
+static const BOMX_AudioDecoderRole g_aacRole[] = {"audio_decoder.aac", OMX_AUDIO_CodingAAC};
+static int32_t g_instanceNum;
 
 #define BOMX_AUDIO_GET_ROLE_COUNT(roleArray) (sizeof(roleArray)/sizeof(BOMX_AudioDecoderRole))
 #define BOMX_AUDIO_GET_ROLE_NAME(roleArray, idx) ((idx) >= (BOMX_AUDIO_GET_ROLE_COUNT(roleArray))?NULL:(roleArray)[(idx)].name)
@@ -180,6 +180,46 @@ extern "C" const char *BOMX_AudioDecoder_GetRoleMp3(unsigned roleIndex)
     return BOMX_AUDIO_GET_ROLE_NAME(g_mp3Role, roleIndex);
 }
 
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAac(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    NEXUS_AudioCapabilities audioCaps;
+
+    NEXUS_GetAudioCapabilities(&audioCaps);
+    if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacAdts].decode &&
+         !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacPlusAdts].decode )
+    {
+        ALOGW("AAC hardware support is not available");
+        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+    }
+
+    BOMX_AudioDecoder *pAudioDecoder = new BOMX_AudioDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, BOMX_AUDIO_GET_ROLE_COUNT(g_aacRole), g_aacRole, BOMX_AudioDecoder_GetRoleAac);
+    if ( NULL == pAudioDecoder )
+    {
+        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+    }
+    else
+    {
+        if ( pAudioDecoder->IsValid() )
+        {
+            return OMX_ErrorNone;
+        }
+        else
+        {
+            delete pAudioDecoder;
+            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+        }
+    }
+}
+
+extern "C" const char *BOMX_AudioDecoder_GetRoleAac(unsigned roleIndex)
+{
+    return BOMX_AUDIO_GET_ROLE_NAME(g_aacRole, roleIndex);
+}
+
 static void BOMX_AudioDecoder_PlaypumpEvent(void *pParam)
 {
     BOMX_AudioDecoder *pDecoder = static_cast <BOMX_AudioDecoder *> (pParam);
@@ -187,6 +227,7 @@ static void BOMX_AudioDecoder_PlaypumpEvent(void *pParam)
     BOMX_INPUT_MSG(("PlaypumpEvent"));
 
     pDecoder->PlaypumpEvent();
+    pDecoder->OutputFrameEvent();
 }
 
 static void BOMX_AudioDecoder_EventCallback(void *pParam, int param)
@@ -225,7 +266,8 @@ static void BOMX_AudioDecoder_OutputFrameEvent(void *pParam)
 static void BOMX_AudioDecoder_InputBuffersTimer(void *pParam)
 {
     BOMX_AudioDecoder *pDecoder = static_cast <BOMX_AudioDecoder *> (pParam);
-    ALOGW("%s: Run out of input buffers. Returning all completed buffers...", __FUNCTION__);
+    ALOGV("%s: Run out of input buffers. Returning all completed buffers...", __FUNCTION__);
+    pDecoder->OutputFrameEvent();
     pDecoder->InputBufferTimeoutCallback();
 }
 
@@ -242,6 +284,9 @@ static OMX_ERRORTYPE BOMX_AudioDecoder_InitMimeType(OMX_AUDIO_CODINGTYPE eCompre
         break;
     case OMX_AUDIO_CodingMP3:
         pMimeTypeStr = "audio/mp3";
+        break;
+    case OMX_AUDIO_CodingAAC:
+        pMimeTypeStr = "audio/aac";
         break;
     case OMX_AUDIO_CodingPCM:
         pMimeTypeStr = "audio/x-raw";
@@ -286,6 +331,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_pInputFile(NULL),
     m_pOutputFile(NULL),
     m_pPes(NULL),
+    m_instanceNum(0),
     m_eosPending(false),
     m_eosDelivered(false),
     m_eosReceived(false),
@@ -294,7 +340,6 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_eosTimeStamp(0),
     m_formatChangePending(false),
     m_secureDecoder(secure),
-    m_firstFrame(false),
     m_pRoles(NULL),
     m_numRoles(0),
     m_pFrameStatus(NULL),
@@ -302,6 +347,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_sampleRate(0),
     m_bitsPerSample(0),
     m_numPcmChannels(0),
+    m_codecDelayAdjusted(0),
     m_pConfigBuffer(NULL),
     m_configBufferState(ConfigBufferState_eAccumulating),
     m_configBufferSize(0)
@@ -319,6 +365,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     OMX_AUDIO_PARAM_PORTFORMATTYPE portFormats[MAX_PORT_FORMATS];
 
     m_audioPortBase = 0;    // Android seems to require this - was: BOMX_COMPONENT_PORT_BASE(BOMX_ComponentId_eAudioDecoder, OMX_PortDomainAudio);
+    m_instanceNum = android_atomic_inc(&g_instanceNum);
 
     if ( numRoles==0 || pRoles==NULL )
     {
@@ -387,6 +434,11 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
         return;
     }
     m_numAudioPorts = 2;
+
+    // Init AAC Params
+    BKNI_Memset(&m_aacParams, 0, sizeof(m_aacParams));
+    BOMX_STRUCT_INIT(&m_aacParams);
+    m_aacParams.nChannels = 2;
 
     m_pFrameStatus = new NEXUS_AudioDecoderFrameStatus[B_NUM_BUFFERS];
     if ( NULL == m_pFrameStatus )
@@ -510,6 +562,17 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     }
     m_bitsPerSample = decSettings.bitsPerSample;
     m_numPcmChannels = decSettings.numPcmChannels;
+
+    // Set AAC DRC to Line mode for conformance
+    NEXUS_AudioDecoderCodecSettings codecSettings;
+    NEXUS_AudioDecoder_GetCodecSettings(m_hAudioDecoder, NEXUS_AudioCodec_eAacAdts, &codecSettings);
+    codecSettings.codecSettings.aac.drcMode = NEXUS_AudioDecoderDolbyPulseDrcMode_eLine;
+    errCode = NEXUS_AudioDecoder_SetCodecSettings(m_hAudioDecoder, &codecSettings);
+    if ( errCode )
+    {
+        // Report and keep going
+        (void)BOMX_BERR_TRACE(errCode);
+    }
 
     // Init BCMA header for some codecs
     BKNI_Memset(m_pBcmaHeader, 0, sizeof(m_pBcmaHeader));
@@ -765,6 +828,61 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetParameter(
             {
                 // Low/Quarter sampling rate is MP2.  We don't support 2.5.
                 pMp3->eFormat = OMX_AUDIO_MP3StreamFormatMP2Layer3;
+            }
+            return OMX_ErrorNone;
+        }
+    case OMX_IndexParamAudioAac:
+        {
+            OMX_AUDIO_PARAM_AACPROFILETYPE *pAac = (OMX_AUDIO_PARAM_AACPROFILETYPE *)pComponentParameterStructure;
+            NEXUS_AudioDecoderStatus decStatus;
+            ALOGV("GetParameter OMX_IndexParamAudioAac");
+            BOMX_STRUCT_VALIDATE(pAac);
+            if ( pAac->nPortIndex != m_audioPortBase )
+            {
+                return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+            }
+            *pAac = m_aacParams;
+            NEXUS_AudioDecoder_GetStatus(m_hAudioDecoder, &decStatus);
+            if ( decStatus.started )
+            {
+                pAac->eChannelMode = OMX_AUDIO_ChannelModeStereo;   // Default from SW decoder
+                switch ( decStatus.codecStatus.aac.acmod )
+                {
+                default:
+                    pAac->nChannels = 0;
+                    break;
+                case NEXUS_AudioAacAcmod_eOneCenter_1_0_C:
+                    pAac->eChannelMode = OMX_AUDIO_ChannelModeMono;
+                    pAac->nChannels = 1;
+                    break;
+                case NEXUS_AudioAacAcmod_eTwoMono_1_ch1_ch2:
+                    pAac->eChannelMode = OMX_AUDIO_ChannelModeDual;
+                    // Fall through
+                case NEXUS_AudioAacAcmod_eTwoChannel_2_0_L_R:
+                    pAac->nChannels = 2;
+                    break;
+                case NEXUS_AudioAacAcmod_eThreeChannel_3_0_L_C_R:
+                    pAac->nChannels = 3;
+                    break;
+                case NEXUS_AudioAacAcmod_eFourChannel_3_1_L_C_R_S:
+                case NEXUS_AudioAacAcmod_eFourChannel_2_2_L_R_SL_SR:
+                    pAac->nChannels = 4;
+                    break;
+                case NEXUS_AudioAacAcmod_eFiveChannel_3_2_L_C_R_SL_SR:
+                    pAac->nChannels = 5;
+                    break;
+                }
+                if ( decStatus.codecStatus.aac.lfe )
+                {
+                    pAac->nChannels++;
+                }
+                pAac->nBitRate = decStatus.codecStatus.aac.bitrate;
+                pAac->nAudioBandWidth = 0;
+                pAac->nFrameLength = 0;
+                pAac->nAACtools = 0;
+                pAac->nAACERtools = 0;
+                pAac->nSampleRate = decStatus.sampleRate;
+                m_aacParams = *pAac;
             }
             return OMX_ErrorNone;
         }
@@ -1032,11 +1150,13 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
                     case OMX_AUDIO_ChannelLFE:              decSettings.channelLayout[i] = NEXUS_AudioChannel_eLfe; break;
                     default:                                decSettings.channelLayout[i] = NEXUS_AudioChannel_eMax; break;
                     }
+                    ALOGV("PCM Channel %u -> %u OMX %u nexus", i, pPcm->eChannelMapping[i], decSettings.channelLayout[i]);
                 }
             }
             else
             {
                 // Force mono to output as stereo
+                ALOGV("PCM config mono -> stereo");
                 decSettings.numPcmChannels = 2;
                 decSettings.channelLayout[0] = NEXUS_AudioChannel_eLeft;
                 decSettings.channelLayout[1] = NEXUS_AudioChannel_eRight;
@@ -1057,12 +1177,42 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
         {
             OMX_AUDIO_PARAM_ANDROID_AC3TYPE *pAc3 = (OMX_AUDIO_PARAM_ANDROID_AC3TYPE *)pComponentParameterStructure;
             NEXUS_AudioDecoderStatus decStatus;
-            ALOGV("GetParameter OMX_IndexParamAudioAndroidAc3");
+            ALOGV("SetParameter OMX_IndexParamAudioAndroidAc3");
             BOMX_STRUCT_VALIDATE(pAc3);
             if ( pAc3->nPortIndex != m_audioPortBase )
             {
                 return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
             }
+            // Do nothing, just make android happy we accepted it.
+            return OMX_ErrorNone;
+        }
+    case OMX_IndexParamAudioAac:
+        {
+            OMX_AUDIO_PARAM_AACPROFILETYPE *pAac = (OMX_AUDIO_PARAM_AACPROFILETYPE *)pComponentParameterStructure;
+            NEXUS_AudioDecoderStatus decStatus;
+            ALOGV("SetParameter OMX_IndexParamAudioAac");
+            BOMX_STRUCT_VALIDATE(pAac);
+            if ( pAac->nPortIndex != m_audioPortBase )
+            {
+                return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+            }
+            switch ( pAac->eAACStreamFormat )
+            {
+            case OMX_AUDIO_AACStreamFormatMP2ADTS:
+            case OMX_AUDIO_AACStreamFormatMP4ADTS:
+            case OMX_AUDIO_AACStreamFormatMP4FF:
+                break;
+            default:
+                ALOGE("Unsupported AAC Stream Format.  Only ADTS/MP4FF are supported");
+                return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+            }
+            m_aacParams = *pAac;
+            return OMX_ErrorNone;
+        }
+    case OMX_IndexParamAudioAndroidAacPresentation:
+        {
+            OMX_AUDIO_PARAM_ANDROID_AACPRESENTATIONTYPE *pAac = (OMX_AUDIO_PARAM_ANDROID_AACPRESENTATIONTYPE *)pComponentParameterStructure;
+            ALOGV("SetParameter OMX_IndexParamAudioAndroidAacPresentation");
             // Do nothing, just make android happy we accepted it.
             return OMX_ErrorNone;
         }
@@ -1085,6 +1235,8 @@ NEXUS_AudioCodec BOMX_AudioDecoder::GetNexusCodec(OMX_AUDIO_CODINGTYPE omxType)
         return NEXUS_AudioCodec_eAc3;
     case OMX_AUDIO_CodingMP3:
         return NEXUS_AudioCodec_eMp3;
+    case OMX_AUDIO_CodingAAC:
+        return NEXUS_AudioCodec_eAacAdts;
     default:
         ALOGW("Unknown audio codec %u (%#x)", GetCodec(), GetCodec());
         return NEXUS_AudioCodec_eUnknown;
@@ -1102,13 +1254,13 @@ NEXUS_Error BOMX_AudioDecoder::StartDecoder()
         adecStartSettings.pidChannel = m_hPidChannel;
         adecStartSettings.codec = GetNexusCodec();
         adecStartSettings.targetSyncEnabled = false;    // Make sure decoder will return all frames and not hold last one
-        ALOGV("Start Decoder codec %u", adecStartSettings.codec);
+        ALOGV("%d Start Decoder codec %u", m_instanceNum, adecStartSettings.codec);
         errCode = NEXUS_AudioDecoder_Start(m_hAudioDecoder, &adecStartSettings);
         if ( errCode )
         {
             return BOMX_BERR_TRACE(errCode);
         }
-        m_firstFrame = true;
+        m_codecDelayAdjusted = 0;
         m_submittedDescriptors = 0;
         errCode = NEXUS_Playpump_Start(m_hPlaypump);
         if ( errCode )
@@ -1157,7 +1309,7 @@ NEXUS_Error BOMX_AudioDecoder::StopDecoder()
 
 NEXUS_Error BOMX_AudioDecoder::SetInputPortState(OMX_STATETYPE newState)
 {
-    ALOGV("Setting Input Port State to %s", BOMX_StateName(newState));
+    ALOGV("%d Setting Input Port State to %s", m_instanceNum, BOMX_StateName(newState));
     // Loaded means stop and release all resources
     if ( newState == OMX_StateLoaded )
     {
@@ -1328,7 +1480,7 @@ NEXUS_Error BOMX_AudioDecoder::SetInputPortState(OMX_STATETYPE newState)
 NEXUS_Error BOMX_AudioDecoder::SetOutputPortState(OMX_STATETYPE newState)
 {
     NEXUS_Error errCode;
-    ALOGV("Setting Output Port State to %s", BOMX_StateName(newState));
+    ALOGV("%d Setting Output Port State to %s", m_instanceNum, BOMX_StateName(newState));
     if ( newState == OMX_StateLoaded )
     {
         CancelTimerId(m_inputBuffersTimerId);
@@ -1410,7 +1562,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
     OMX_ERRORTYPE err;
     NEXUS_Error errCode;
 
-    ALOGV("Begin State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+    ALOGV("%u Begin State Change %s->%s", m_instanceNum, BOMX_StateName(oldState), BOMX_StateName(newState));
 
     switch ( newState )
     {
@@ -1440,7 +1592,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
             (void)m_pAudioPorts[1]->Enable();
         }
 
-        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGV("%d End State Change %s->%s", m_instanceNum, BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     }
     case OMX_StateIdle:
@@ -1453,7 +1605,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
         // Transitioning from Loaded->Idle requires us to allocate all required resources
         if ( oldState == OMX_StateLoaded )
         {
-            ALOGV("Waiting for port population...");
+            ALOGV("%d Waiting for port population...", m_instanceNum);
             PortWaitBegin();
             // Now we need to wait for all enabled ports to become populated
             while ( (m_pAudioPorts[0]->IsEnabled() && !m_pAudioPorts[0]->IsPopulated()) ||
@@ -1461,13 +1613,13 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
             {
                 if ( PortWait() != B_ERROR_SUCCESS )
                 {
-                    ALOGW("Timeout waiting for ports to be populated");
+                    ALOGW("%d Timeout waiting for ports to be populated", m_instanceNum);
                     PortWaitEnd();
                     return BOMX_ERR_TRACE(OMX_ErrorTimeout);
                 }
             }
             PortWaitEnd();
-            ALOGV("Done waiting for port population");
+            ALOGV("%d Done waiting for port population", m_instanceNum);
 
             bool inputEnabled = m_pAudioPorts[0]->IsEnabled();
             bool outputEnabled = m_pAudioPorts[1]->IsEnabled();
@@ -1506,7 +1658,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
                 (void)SetOutputPortState(OMX_StateIdle);
             }
         }
-        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGV("%d End State Change %s->%s", m_instanceNum, BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     }
     case OMX_StateExecuting:
@@ -1527,10 +1679,10 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandStateSet(
                 return BOMX_ERR_TRACE(OMX_ErrorUndefined);
             }
         }
-        ALOGV("End State Change %s->%s", BOMX_StateName(oldState), BOMX_StateName(newState));
+        ALOGV("%d End State Change %s->%s", m_instanceNum, BOMX_StateName(oldState), BOMX_StateName(newState));
         return OMX_ErrorNone;
     default:
-        ALOGW("Unsupported state %u", newState);
+        ALOGW("%d Unsupported state %u", m_instanceNum, newState);
         return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
     }
 }
@@ -1549,7 +1701,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandFlush(
     // Handle case for OMX_ALL by calling flush on each port
     if ( portIndex == OMX_ALL )
     {
-        ALOGV("Flushing all ports");
+        ALOGV("%d Flushing all ports", m_instanceNum);
 
         err = CommandFlush(m_audioPortBase);
         if ( err )
@@ -1570,7 +1722,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandFlush(
             ALOGW("Invalid port %u", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
-        ALOGV("Flushing %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output");
+        ALOGV("%d Flushing %s port", m_instanceNum, pPort->GetDir() == OMX_DirInput ? "input" : "output");
         if ( portIndex == m_audioPortBase )
         {
             // Input port
@@ -1604,7 +1756,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortEnable(
     // Handle case for OMX_ALL by calling enable on each port
     if ( portIndex == OMX_ALL )
     {
-        ALOGV("Enabling all ports");
+        ALOGV("%d Enabling all ports", m_instanceNum);
 
         // Enable output first
         if ( !m_pAudioPorts[1]->IsEnabled() )
@@ -1638,7 +1790,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortEnable(
             ALOGW("Port %u is already enabled", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
         }
-        ALOGV("Enabling %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output");
+        ALOGV("%d Enabling %s port", m_instanceNum, pPort->GetDir() == OMX_DirInput ? "input" : "output");
         err = pPort->Enable();
         if ( err )
         {
@@ -1647,7 +1799,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortEnable(
         if ( StateGet() != OMX_StateLoaded )
         {
             // Wait for port to become populated
-            ALOGV("Waiting for port to populate");
+            ALOGV("%d Waiting for port to populate", m_instanceNum);
             PortWaitBegin();
             // Now we need to wait for all enabled ports to become populated
             while ( !pPort->IsPopulated() )
@@ -1661,7 +1813,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortEnable(
                 }
             }
             PortWaitEnd();
-            ALOGV("Done waiting for port to populate");
+            ALOGV("%d Done waiting for port to populate", m_instanceNum);
 
             NEXUS_Error errCode;
             // Handle port specifics
@@ -1697,7 +1849,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortDisable(
     // Handle case for OMX_ALL by calling enable on each port
     if ( portIndex == OMX_ALL )
     {
-        ALOGV("Disabling all ports");
+        ALOGV("%d Disabling all ports", m_instanceNum);
 
         if ( m_pAudioPorts[0]->IsEnabled() )
         {
@@ -1729,7 +1881,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortDisable(
             ALOGW("Port %u is already disabled", portIndex);
             return BOMX_ERR_TRACE(OMX_ErrorIncorrectStateOperation);
         }
-        ALOGV("Disabling %s port", pPort->GetDir() == OMX_DirInput ? "input" : "output");
+        ALOGV("%d Disabling %s port", m_instanceNum, pPort->GetDir() == OMX_DirInput ? "input" : "output");
         err = pPort->Disable();
         if ( err )
         {
@@ -1754,7 +1906,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortDisable(
             ReturnPortBuffers(pPort);
 
             // Wait for port to become de-populated
-            ALOGV("Waiting for port to de-populate");
+            ALOGV("%d Waiting for port to de-populate", m_instanceNum);
             PortWaitBegin();
             // Now we need to wait for all enabled ports to become populated
             while ( !pPort->IsEmpty() )
@@ -1768,7 +1920,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::CommandPortDisable(
                 }
             }
             PortWaitEnd();
-            ALOGV("Done waiting for port to de-populate");
+            ALOGV("%d Done waiting for port to de-populate", m_instanceNum);
         }
     }
 
@@ -1821,7 +1973,9 @@ OMX_ERRORTYPE BOMX_AudioDecoder::AddInputPortBuffer(
     headerBufferSize = B_PES_HEADER_LENGTH_WITH_PTS;  // Basic PES header w/PTS.
     switch ( GetCodec() )
     {
-    // TODO: Add BCMA codecs here
+    case OMX_AUDIO_CodingAAC:
+        headerBufferSize += B_AAC_ADTS_HEADER_LEN;
+        break;
     default:
         break;
     }
@@ -2119,7 +2273,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::BuildInputFrame(
 
     bufferBytesRemaining = chunkLength;
 
-    ALOGV("Input Frame Offset %u, Length %u, PTS %#x first=%d", pBufferHeader->nOffset, chunkLength, pts, first ? 1 : 0);
+    ALOGV("%d Input Frame Offset %u, Length %u, PTS %#x first=%d", m_instanceNum, pBufferHeader->nOffset, chunkLength, pts, first ? 1 : 0);
 
     if ( maxDescriptors < 4 )
     {
@@ -2343,7 +2497,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
     pInfo->numDescriptors = 0;
     pInfo->complete = false;
 
-    ALOGV("%s, comp:%s, buff:%p len:%d ts:%d flags:0x%x", __FUNCTION__, GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, (int)pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
+    ALOGV("%s, comp:%s %d, buff:%p len:%d ts:%d flags:0x%x", __FUNCTION__, GetName(), m_instanceNum, pBufferHeader->pBuffer, pBufferHeader->nFilledLen, (int)pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
 
     if ( m_pInputFile )
     {
@@ -2352,16 +2506,21 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
 
     if ( pBufferHeader->nFlags & OMX_BUFFERFLAG_CODECCONFIG )
     {
+        if ( GetCodec() == OMX_AUDIO_CodingAAC && m_aacParams.eAACStreamFormat == OMX_AUDIO_AACStreamFormatMP4FF )
+        {
+            // Parse ASC (AudioSpecificConfig) block and extract info required to generate ADTS headers
+            BOMX_AAC_ParseASC(pBufferHeader->pBuffer + pBufferHeader->nOffset, pBufferHeader->nFilledLen,  &m_ascInfo);
+        }
         if ( m_configBufferState != ConfigBufferState_eAccumulating )
         {
             // If the app re-sends config data after we have delivered it to the decoder we
             // may be receiving a dynamic resolution change.  Overwrite old config data with
             // the new data
-            ALOGV("Invalidating cached config buffer ");
+            ALOGV("%d Invalidating cached config buffer ", m_instanceNum);
             ConfigBufferInit();
         }
 
-        ALOGV("Accumulating %u bytes of codec config data", pBufferHeader->nFilledLen);
+        ALOGV("%d Accumulating %u bytes of codec config data", m_instanceNum, pBufferHeader->nFilledLen);
 
         err = ConfigBufferAppend(pBufferHeader->pBuffer + pBufferHeader->nOffset, pBufferHeader->nFilledLen);
         if ( err != OMX_ErrorNone )
@@ -2394,7 +2553,14 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
         {
             switch ( (int)GetCodec() )
             {
-                // TODO: Handle BCMA codecs
+            case OMX_AUDIO_CodingAAC:
+                if ( m_aacParams.eAACStreamFormat == OMX_AUDIO_AACStreamFormatMP4FF )
+                {
+                    // Create ADTS header for this frame
+                    pCodecHeader = m_pBcmaHeader;
+                    BOMX_AAC_SetupAdtsHeader(pCodecHeader, sizeof(m_pBcmaHeader),  &codecHeaderLength, frameLength[frame], &m_ascInfo);
+                }
+                break;
             default:
                 break;
             }
@@ -2494,12 +2660,12 @@ OMX_ERRORTYPE BOMX_AudioDecoder::EmptyThisBuffer(
         }
         if ( emptyBuffer )
         {
-            ALOGV("Queued standalone EOS");
+            ALOGV("%d Queued standalone EOS", m_instanceNum);
             m_eosStandalone = true;
         }
         else
         {
-            ALOGV("Queued EOS buffer w/payload");
+            ALOGV("%d Queued EOS buffer w/payload", m_instanceNum);
             m_eosStandalone = false;
         }
     }
@@ -2535,7 +2701,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::FillThisBuffer(
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
 
-    ALOGV("Fill Buffer, comp:%s ts %u us pInfo %#x HDR %#x", GetName(), (unsigned int)pBufferHeader->nTimeStamp, pInfo, pBufferHeader);
+    ALOGV("Fill Buffer, comp:%s %d ts %u us pInfo %#x HDR %#x", GetName(), m_instanceNum, (unsigned int)pBufferHeader->nTimeStamp, pInfo, pBufferHeader);
     // Determine what to do with the buffer
     pBuffer->Reset();
 
@@ -2657,8 +2823,8 @@ void BOMX_AudioDecoder::InputBufferNew()
     ALOG_ASSERT(m_AvailInputBuffers > 0);
     --m_AvailInputBuffers;
     if (m_AvailInputBuffers == 0) {
-        ALOGV("%s: reached zero input buffers, minputBuffersTimerId:%u",
-              __FUNCTION__, m_inputBuffersTimerId);
+        ALOGV("%s: (%d) reached zero input buffers, minputBuffersTimerId:%u",
+              __FUNCTION__, m_instanceNum, m_inputBuffersTimerId);
         CancelTimerId(m_inputBuffersTimerId);
         m_inputBuffersTimerId = StartTimer(B_INPUT_BUFFERS_RETURN_INTERVAL,
                                 BOMX_AudioDecoder_InputBuffersTimer, static_cast<void *>(this));
@@ -2735,7 +2901,7 @@ void BOMX_AudioDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTime
         }
     }
 
-    ALOGV("%s: returned %u buffers, %u available", __FUNCTION__, count, m_AvailInputBuffers);
+    ALOGV("%s %d: returned %u buffers, %u available", __FUNCTION__, m_instanceNum, count, m_AvailInputBuffers);
 }
 
 bool BOMX_AudioDecoder::ReturnInputPortBuffer(BOMX_Buffer *pBuffer)
@@ -2876,7 +3042,7 @@ void BOMX_AudioDecoder::RemoveOutputBuffers()
         return;
     }
 
-    ALOGV("Removing %u output buffers from nexus", numFrames);
+    ALOGV("%d Removing %u output buffers from nexus", m_instanceNum, numFrames);
 
     for ( i = 0; i < numFrames; i++ )
     {
@@ -2919,12 +3085,12 @@ void BOMX_AudioDecoder::PollDecodedFrames()
             (void)BOMX_BERR_TRACE(errCode);
             return;
         }
-        ALOGV("Decoder has %u frames ready", numFrames);
+        ALOGV("%d Decoder has %u frames ready", m_instanceNum, numFrames);
 
         // Scan buffers returned for matches in OMX buffers.  These should really be in order.
         for ( i = 0; i < numFrames; i++ )
         {
-            ALOGV("  Frame %u: pts=%lu bytes=%lu@%lu sr=%lu", i, m_pFrameStatus[i].pts, m_pFrameStatus[i].filledBytes, m_pFrameStatus[i].bufferOffset, m_pFrameStatus[i].sampleRate);
+            ALOGV("%d Frame %u: pts=%lu bytes=%lu@%lu sr=%lu", m_instanceNum, i, m_pFrameStatus[i].pts, m_pFrameStatus[i].filledBytes, m_pFrameStatus[i].bufferOffset, m_pFrameStatus[i].sampleRate);
 
             if ( m_pFrameStatus[i].sampleRate != m_sampleRate && m_pFrameStatus[i].filledBytes > 0 )
             {
@@ -2975,21 +3141,30 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                     }
                 }
 
-                if ( m_firstFrame )
+                if ( m_pFrameStatus[i].filledBytes > 0 )
                 {
-                    if ( m_pFrameStatus[i].filledBytes > 0 )
-                    {
-                        int delaySamples = GetCodecDelay();
+                    int delaySamples = GetCodecDelay();
 
-                        m_firstFrame = false;
+                    delaySamples -= m_codecDelayAdjusted;
+
+                    if ( delaySamples > 0 )
+                    {
+                        int frameSamples = m_pFrameStatus[i].filledBytes / ((m_bitsPerSample/8) * m_numPcmChannels);
+
+                        if ( delaySamples > frameSamples )
+                        {
+                            delaySamples = frameSamples;
+                        }
 
                         pHeader->nOffset = delaySamples * (m_bitsPerSample/8) * m_numPcmChannels;
-                        if ( pHeader->nOffset >= m_pFrameStatus[i].filledBytes )
+                        if ( pHeader->nOffset > m_pFrameStatus[i].filledBytes )
                         {
-                            pHeader->nOffset = 0;
+                            pHeader->nOffset = m_pFrameStatus[i].filledBytes;
                         }
+                        m_codecDelayAdjusted += delaySamples;
                     }
                 }
+
                 pHeader->nFilledLen = m_pFrameStatus[i].filledBytes - pHeader->nOffset;
                 if ( NULL != m_pOutputFile && pHeader->nFilledLen > 0 )
                 {
@@ -3023,7 +3198,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                     m_eosTimeStamp = pHeader->nTimeStamp + (numSample * 1000000ll / m_pFrameStatus[i].sampleRate);
                 }
 
-                ALOGV("Return output buffer TS %llu bytes %lu (%lu@%lu) flags 0x%x", pHeader->nTimeStamp, m_pFrameStatus[i].filledBytes, pHeader->nFilledLen, pHeader->nOffset, pHeader->nFlags);
+                ALOGV("%d Return output buffer TS %llu bytes %lu (%lu@%lu) flags 0x%x", m_instanceNum, pHeader->nTimeStamp, m_pFrameStatus[i].filledBytes, pHeader->nFilledLen, pHeader->nOffset, pHeader->nFlags);
                 ReturnPortBuffer(m_pAudioPorts[1], pBuffer);
                 // Try to return processed input buffers
                 ReturnInputBuffers(pHeader->nTimeStamp, false);
@@ -3045,7 +3220,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                 // No frames left in decoder's output queue, send EOS
                 if ( numFrames == 0 )
                 {
-                    int delaySamples = GetCodecDelay();
+                    int delaySamples = m_codecDelayAdjusted;
                     pBuffer = m_pAudioPorts[1]->GetBuffer();
                     pHeader = pBuffer->GetHeader();
                     if ( delaySamples > 0 )
@@ -3069,7 +3244,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                     m_eosReady = false;
                     m_eosDelivered = true;
                     m_eosTimeStamp = 0;
-                    ALOGV("Return EOS output buffer %llu bytes %u", pHeader->nTimeStamp, pHeader->nFilledLen);
+                    ALOGV("%d Return EOS output buffer %llu bytes %u", m_instanceNum, pHeader->nTimeStamp, pHeader->nFilledLen);
                     ReturnPortBuffer(m_pAudioPorts[1], pBuffer);
                     // Force remaining input buffers to be flushed
                     ReturnInputBuffers(0, true);
@@ -3168,9 +3343,9 @@ int BOMX_AudioDecoder::GetCodecDelay()
     switch ( (int)GetCodec() )
     {
     case OMX_AUDIO_CodingMP3:
-/// TODO: Refactor EOS to always send an extra buffer with the delay compensation at the end - even if EOS was on a valid frame and add timestamp to previous frame.
         return property_get_int32(B_PROPERTY_MP3_DELAY, 529);
-        //return property_get_int32(B_PROPERTY_MP3_DELAY, 0); // For now, have the default  be 0 because the 1105 offset causes more cts issues
+    case OMX_AUDIO_CodingAAC:
+        return property_get_int32(B_PROPERTY_AAC_DELAY, 0); // Our HW AAC decoders do not add delay like the SW decoder does
     default:
         return 0;
     }

@@ -65,7 +65,7 @@ LOCAL_SRC_FILES := \
 # Component instances
 LOCAL_SRC_FILES += bomx_video_decoder.cpp bomx_vp9_parser.cpp bomx_pes_formatter.cpp
 LOCAL_SRC_FILES += bomx_video_encoder.cpp
-LOCAL_SRC_FILES += bomx_audio_decoder.cpp
+LOCAL_SRC_FILES += bomx_audio_decoder.cpp bomx_aac_parser.cpp
 
 LOCAL_C_INCLUDES := \
         $(TOP)/frameworks/native/include/media/hardware \
