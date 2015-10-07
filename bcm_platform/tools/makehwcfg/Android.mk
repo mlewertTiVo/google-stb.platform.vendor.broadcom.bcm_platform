@@ -39,8 +39,15 @@ $(_hwcfg_drm_file): $(PRODUCT_OUT_FROM_TOP)/hwcfg $(ANDROID_TOP)/hwcfg/drm.bin
 	@echo "Found drm.bin, included in hwcfg.img"
 endif
 
+ifneq ($(wildcard $(ANDROID_TOP)/hwcfg/drm_hdcp1x.bin),)
+_hwcfg_drm_hdcp1x_file := $(PRODUCT_OUT_FROM_TOP)/hwcfg/drm_hdcp1x.bin
+$(_hwcfg_drm_hdcp1x_file): $(PRODUCT_OUT_FROM_TOP)/hwcfg $(ANDROID_TOP)/hwcfg/drm_hdcp1x.bin
+	cp $(ANDROID_TOP)/hwcfg/drm_hdcp1x.bin $@
+	@echo "Found drm_hdcp1x.bin, included in hwcfg.img"
+endif
+
 _hwcfg.img := $(PRODUCT_OUT_FROM_TOP)/hwcfg.img
-$(_hwcfg.img): $(PRODUCT_OUT_FROM_TOP)/hwcfg $(_hwcfg_dhd_nvram_file) $(_hwcfg_drm_file)
+$(_hwcfg.img): $(PRODUCT_OUT_FROM_TOP)/hwcfg $(_hwcfg_dhd_nvram_file) $(_hwcfg_drm_file) $(_hwcfg_drm_hdcp1x_file)
 	mkfs.cramfs -n hwcfg $(PRODUCT_OUT_FROM_TOP)/hwcfg $@
 
 LOCAL_MODULE := makehwcfg
@@ -51,4 +58,5 @@ include $(BUILD_PHONY_PACKAGE)
 
 _hwcfg_dhd_nvram_file :=
 _hwcfg_drm_file :=
+_hwcfg_drm_hdcp1x_file :=
 _hwcfg.img :=
