@@ -2102,7 +2102,7 @@ static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int d
              goto out_read;
           }
        } else {
-          goto out;
+          return NULL;
        }
        BKNI_ReleaseMutex(ctx->mutex);
        if (BKNI_WaitForEvent(ctx->recycle_event, HWC_SURFACE_WAIT_TIMEOUT)) {
@@ -2110,7 +2110,7 @@ static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int d
           if (no_surface_count == HWC_SURFACE_WAIT_ATTEMPT) {
              ALOGW("%s: warning no surface received in %d ms", __FUNCTION__,
                    HWC_SURFACE_WAIT_TIMEOUT*HWC_SURFACE_WAIT_ATTEMPT);
-             goto out;
+             return NULL;
           }
        }
     }
