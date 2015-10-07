@@ -172,6 +172,7 @@ typedef struct {
         nxclient_t client;
         NxClient_JoinSettings joinSettings;
     } clients[APP_MAX_CLIENTS]; /* index provides id */
+    int watchdogFd;
 
 } NX_SERVER_T;
 
@@ -187,6 +188,28 @@ static unsigned calc_heap_size(const char *value)
    } else {
      return strtoul(value, NULL, 0);
    }
+}
+
+static void watchdogWrite(char *msg)
+{
+    int ret, retries = 3;
+
+    if (!msg) {
+        return;
+    }
+
+    do {
+        ret = write(g_app.watchdogFd, msg, 1);
+        if (ret != 1) {
+            ALOGE("could not write to watchdog, retrying...");
+        } else {
+            break;
+        }
+    } while(retries--);
+
+    if (retries <= 0 && ret != 1) {
+        ALOGE("watchdog write failed, platform will reboot!!!");
+    }
 }
 
 static void *binder_task(void *argv)
@@ -253,6 +276,13 @@ static void *proactive_runner_task(void *argv)
         *
         * 3) proactive LMK on behalf of android for nexus managed memory not seen in
         *    standard LMK.
+        *
+        * 4) kick the platform's reset watchdog timer. The watchdog can be kicked by
+        *    writing any single character to the watchdog device. On a normal exit, the
+        *    magic letter 'V' must be written to the watchdog before closing the file,
+        *    which will stop the device. If not kicked within 30 seconds, the watchdog
+        *    will expire and trigger a system reset.
+        *
         */
 
         if (++lmk_tick > RUNNER_LMK_THRESHOLD) {
@@ -340,6 +370,10 @@ skip_lmk:
               ALOGI("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
               NEXUS_Platform_GrowHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size);
            }
+        }
+
+        if (g_app.watchdogFd >= 0) {
+            watchdogWrite("\0");
         }
 
     } while(nx_server->proactive_runner.running);
@@ -883,7 +917,6 @@ static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
     }
 }
 
-
 int main(void)
 {
     struct timespec t;
@@ -936,6 +969,11 @@ int main(void)
     if (nx_srv == NULL) {
         ALOGE("FATAL: Daemonise Failed!");
         _exit(1);
+    }
+
+    g_app.watchdogFd = open("/dev/watchdog", O_WRONLY);
+    if (g_app.watchdogFd < 0) {
+        ALOGE("Failed to start reset watchdog timer(reason:%s)!", strerror(errno));
     }
 
     ALOGI("starting proactive runner.");
@@ -1023,5 +1061,11 @@ int main(void)
     }
 
     uninit_nxserver(nx_srv);
+
+    if (g_app.watchdogFd >= 0) {
+        watchdogWrite("V");
+        close(g_app.watchdogFd);
+    }
+
     return 0;
 }
