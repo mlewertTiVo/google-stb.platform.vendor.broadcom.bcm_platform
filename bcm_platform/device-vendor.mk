@@ -36,14 +36,14 @@ export BUILD_WIDEVINE_CLASSIC_FROM_SOURCE := y
 export BUILD_WIDEVINE_FROM_SOURCE := y
 
 PRODUCT_COPY_FILES += \
-    vendor/widevine/proprietary/drmwvmplugin/com.google.widevine.software.drm.xml:system/etc/permissions/com.google.widevine.software.drm.xml:widevine \
-    vendor/widevine/proprietary/drmwvmplugin/com.google.widevine.software.drm.jar:system/framework/com.google.widevine.software.drm.jar:widevine
+    vendor/widevine/proprietary/drmwvmplugin/com.google.widevine.software.drm.xml:system/etc/permissions/com.google.widevine.software.drm.xml:widevine
 
 PRODUCT_PACKAGES += \
     WidevineSamplePlayer \
     libdrmwvmplugin \
     libwvm \
-    libdrmdecrypt
+    libdrmdecrypt \
+    com.google.widevine.software.drm
 
 $(call first-makefiles-under, vendor/widevine)
 
