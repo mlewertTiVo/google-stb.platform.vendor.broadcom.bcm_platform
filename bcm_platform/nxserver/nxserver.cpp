@@ -106,6 +106,7 @@
 #define NX_MMA_SHRINK_THRESHOLD_DEF    "2m"
 #define NX_TRANSCODE                   "ro.nx.transcode"
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
+#define NX_CAPABLE_COMP_BYPASS         "ro.nx.capable.cb"
 
 #define NX_ODV                         "ro.nx.odv"
 #define NX_ODV_ALT_THRESHOLD           "ro.nx.odv.use.alt"
@@ -687,6 +688,7 @@ static nxserver_t init_nxserver(void)
     settings.session[0].output.hd = true;
 
     settings.framebuffers = NSC_FB_NUMBER;
+    settings.allowCompositionBypass = property_get_int32(NX_CAPABLE_COMP_BYPASS, 0) ? true : false;
 
     settings.videoDecoder.dynamicPictureBuffers = property_get_int32(NX_ODV, 0) ? true : false;
     if (settings.videoDecoder.dynamicPictureBuffers) {
