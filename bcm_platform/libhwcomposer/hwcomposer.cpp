@@ -127,6 +127,7 @@ using namespace android;
 #define HWC_GLES_MODE_NEVER          "never"
 #define HWC_DEFAULT_GLES_MODE        HWC_GLES_MODE_FALLBACK
 #define HWC_GLES_MODE_PROP           "ro.hwc.gles.mode"
+#define HWC_CAPABLE_COMP_BYPASS      "ro.nx.capable.cb"
 
 #define HWC_DEFAULT_DISABLED         "0"
 #define HWC_DEFAULT_ENABLED          "1"
@@ -3521,6 +3522,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             NEXUS_SurfaceClient_GetSettings(dev->disp_cli[i].schdl, &client_settings);
             client_settings.recycled.callback = hwc_nsc_recycled_cb;
             client_settings.recycled.context = dev;
+            client_settings.allowCompositionBypass = property_get_int32(HWC_CAPABLE_COMP_BYPASS, 0) ? true : false;
             rc = NEXUS_SurfaceClient_SetSettings(dev->disp_cli[i].schdl, &client_settings);
             if (rc) {
                ALOGE("%s: unable to setup surface client", __FUNCTION__);
