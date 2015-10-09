@@ -30,6 +30,7 @@
 #include <hardware/hardware.h>
 #include <hardware/gralloc.h>
 
+#include <cutils/atomic.h>
 #include "gralloc_priv.h"
 #include "nexus_base_mmap.h"
 #include "nexus_types.h"

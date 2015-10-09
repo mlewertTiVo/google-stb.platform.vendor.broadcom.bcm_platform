@@ -32,6 +32,7 @@
 #include <linux/fb.h>
 #endif
 
+#include <cutils/atomic.h>
 #include "gralloc_priv.h"
 #include "cutils/properties.h"
 
