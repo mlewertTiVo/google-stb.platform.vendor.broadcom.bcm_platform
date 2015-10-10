@@ -3873,11 +3873,17 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                surfaceCreateSettings.width = dev->cfg[i].width;
                surfaceCreateSettings.height = dev->cfg[i].height;
                surfaceCreateSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
-               surfaceCreateSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
+               if (property_get_int32(HWC_CAPABLE_COMP_BYPASS, 0)) {
+                  surfaceCreateSettings.heap = NEXUS_Platform_GetFramebufferHeap(0);
+               } else {
+                  surfaceCreateSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
+               }
                dev->disp_cli[i].display_buffers[j] = hwc_surface_create(&surfaceCreateSettings);
                if (dev->disp_cli[i].display_buffers[j] == NULL) {
                   goto clean_up;
                }
+               ALOGI("%s: fb:%d::%dx%d::%d::heap:%p -> %p", __FUNCTION__, j, surfaceCreateSettings.width, surfaceCreateSettings.height,
+                  surfaceCreateSettings.pixelFormat, surfaceCreateSettings.heap, dev->disp_cli[i].display_buffers[j]);
             }
             BFIFO_INIT(&dev->disp_cli[i].display_fifo, dev->disp_cli[i].display_buffers, HWC_NUM_DISP_BUFFERS);
             BFIFO_WRITE_COMMIT(&dev->disp_cli[i].display_fifo, HWC_NUM_DISP_BUFFERS);
