@@ -107,6 +107,7 @@
 #define NX_TRANSCODE                   "ro.nx.transcode"
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
 #define NX_CAPABLE_COMP_BYPASS         "ro.nx.capable.cb"
+#define NX_ACT_WD                      "ro.nx.act.wd"
 
 #define NX_ODV                         "ro.nx.odv"
 #define NX_ODV_ALT_THRESHOLD           "ro.nx.odv.use.alt"
@@ -234,7 +235,7 @@ static void *proactive_runner_task(void *argv)
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
     unsigned gfx_heap_grow_size = 0;
     unsigned gfx_heap_shrink_threshold = 0;
-    int active_gc, active_lmk, active_gs;
+    int active_gc, active_lmk, active_gs, active_wd;
     int gc_tick = 0;
     int lmk_tick = 0;
     char value[PROPERTY_VALUE_MAX];
@@ -254,12 +255,14 @@ static void *proactive_runner_task(void *argv)
     active_gc  = property_get_int32(NX_MMA_ACT_GC, 1);
     active_gs  = property_get_int32(NX_MMA_ACT_GS, 1);
     active_lmk = property_get_int32(NX_MMA_ACT_LMK, 1);
+    active_wd  = property_get_int32(NX_ACT_WD, 1);
 
-    ALOGI("%s: launching, gpx-grow: %u, gpx-shrink: %u, active-gc: %c, active-gs: %c, active-lmk: %c",
+    ALOGI("%s: launching, gpx-grow: %u, gpx-shrink: %u, active-gc: %c, active-gs: %c, active-lmk: %c, active-wd: %c",
           __FUNCTION__, gfx_heap_grow_size, gfx_heap_shrink_threshold,
           active_gc ? 'o' : 'x',
           active_gs ? 'o' : 'x',
-          active_lmk ? 'o' : 'x');
+          active_lmk ? 'o' : 'x',
+          active_wd ? 'o' : 'x');
 
     do
     {
@@ -973,9 +976,13 @@ int main(void)
         _exit(1);
     }
 
-    g_app.watchdogFd = open("/dev/watchdog", O_WRONLY);
-    if (g_app.watchdogFd < 0) {
-        ALOGE("Failed to start reset watchdog timer(reason:%s)!", strerror(errno));
+    if (property_get_int32(NX_ACT_WD, 1)) {
+       g_app.watchdogFd = open("/dev/watchdog", O_WRONLY);
+       if (g_app.watchdogFd < 0) {
+          ALOGE("Failed to start reset watchdog timer(reason:%s)!", strerror(errno));
+       }
+    } else {
+       g_app.watchdogFd = -1;
     }
 
     ALOGI("starting proactive runner.");
