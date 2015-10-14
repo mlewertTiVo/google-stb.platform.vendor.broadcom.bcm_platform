@@ -16,4 +16,5 @@ bcm_platform/DTVKitPlatform/
 drivers/bcmdhd/
 drivers/btusb/
 drivers/connectivity/
+drivers/gator/
 
