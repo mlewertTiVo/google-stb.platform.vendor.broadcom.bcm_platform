@@ -146,7 +146,6 @@ using namespace android;
 
 #define HWC_GLES_VIRTUAL_PROP        "ro.hwc.gles.virtual"
 #define HWC_WITH_FENCE_PROP          "ro.v3d.fence.expose"
-#define HWC_USES_MMA_PROP            "ro.nx.mma"
 #define HWC_TRACK_COMP_TIME          "ro.hwc.track.comptime"
 #define HWC_G2D_SIM_OPS_PROP         "ro.hwc.g2d.sim_ops"
 

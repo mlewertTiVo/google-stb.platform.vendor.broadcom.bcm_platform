@@ -97,17 +97,16 @@
 #define GRAPHICS_RES_WIDTH_PROP        "ro.graphics_resolution.width"
 #define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
 
-#define NX_MMA                         "ro.nx.mma"
-#define NX_MMA_ACT_GC                  "ro.nx.mma.act.gc"
-#define NX_MMA_ACT_GS                  "ro.nx.mma.act.gs"
-#define NX_MMA_ACT_LMK                 "ro.nx.mma.act.lmk"
+#define NX_ACT_GC                      "ro.nx.act.gc"
+#define NX_ACT_GS                      "ro.nx.act.gs"
+#define NX_ACT_LMK                     "ro.nx.act.lmk"
+#define NX_ACT_WD                      "ro.nx.act.wd"
 #define NX_MMA_GROW_SIZE               "ro.nx.heap.grow"
 #define NX_MMA_SHRINK_THRESHOLD        "ro.nx.heap.shrink"
 #define NX_MMA_SHRINK_THRESHOLD_DEF    "2m"
 #define NX_TRANSCODE                   "ro.nx.transcode"
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
 #define NX_CAPABLE_COMP_BYPASS         "ro.nx.capable.cb"
-#define NX_ACT_WD                      "ro.nx.act.wd"
 
 #define NX_ODV                         "ro.nx.odv"
 #define NX_ODV_ALT_THRESHOLD           "ro.nx.odv.use.alt"
@@ -168,7 +167,6 @@ typedef struct {
     BINDER_T binder;
     RUNNER_T proactive_runner;
     unsigned refcnt;
-    int uses_mma;
     BKNI_MutexHandle clients_lock;
     struct {
         nxclient_t client;
@@ -252,9 +250,9 @@ static void *proactive_runner_task(void *argv)
           gfx_heap_shrink_threshold = calc_heap_size(value);
        }
     }
-    active_gc  = property_get_int32(NX_MMA_ACT_GC, 1);
-    active_gs  = property_get_int32(NX_MMA_ACT_GS, 1);
-    active_lmk = property_get_int32(NX_MMA_ACT_LMK, 1);
+    active_gc  = property_get_int32(NX_ACT_GC, 1);
+    active_gs  = property_get_int32(NX_ACT_GS, 1);
+    active_lmk = property_get_int32(NX_ACT_LMK, 1);
     active_wd  = property_get_int32(NX_ACT_WD, 1);
 
     ALOGI("%s: launching, gpx-grow: %u, gpx-shrink: %u, active-gc: %c, active-gs: %c, active-lmk: %c, active-wd: %c",
@@ -349,7 +347,7 @@ static void *proactive_runner_task(void *argv)
         }
 
 skip_lmk:
-        if (nx_server->uses_mma && gfx_heap_grow_size) {
+        if (gfx_heap_grow_size) {
            NEXUS_PlatformConfiguration platformConfig;
            NEXUS_MemoryStatus heapStatus;
            NEXUS_Platform_GetConfiguration(&platformConfig);
@@ -624,7 +622,7 @@ static nxserver_t init_nxserver(void)
 
     char value[PROPERTY_VALUE_MAX];
     char value2[PROPERTY_VALUE_MAX];
-    int ix, uses_mma = 0;
+    int ix;
     char nx_key[PROPERTY_VALUE_MAX];
     FILE *key = NULL;
     NEXUS_VideoFormat forced_format;
@@ -643,11 +641,6 @@ static nxserver_t init_nxserver(void)
     nxserver_get_default_settings(&settings);
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
     NEXUS_GetDefaultMemoryConfigurationSettings(&memConfigSettings);
-
-    memset(value, 0, sizeof(value));
-    if (property_get(NX_MMA, value, "0")) {
-       uses_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
-    }
 
     memset(value, 0, sizeof(value));
     if ( property_get(NX_AUDIO_LOUDNESS, value, "disabled") ) {
@@ -747,26 +740,22 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (!uses_mma) {
-       if (property_get(NX_HEAP_GFX2, value, NULL)) {
-          int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_SECONDARY_GRAPHICS);
-          if (strlen(value) && (index != -1)) {
-             /* -heap gfx2,XXy */
-             platformSettings.heap[index].size = calc_heap_size(value);
-          }
+    if (property_get(NX_HEAP_GFX2, value, NULL)) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_SECONDARY_GRAPHICS);
+       if (strlen(value) && (index != -1)) {
+          /* -heap gfx2,XXy */
+          platformSettings.heap[index].size = calc_heap_size(value);
        }
     }
 
-    if (uses_mma) {
-       if (property_get(NX_HEAP_GROW, value, NULL)) {
-          if (strlen(value)) {
-             /* -growHeapBlockSize XXy */
-             settings.growHeapBlockSize = calc_heap_size(value);
-          }
+    if (property_get(NX_HEAP_GROW, value, NULL)) {
+       if (strlen(value)) {
+          /* -growHeapBlockSize XXy */
+          settings.growHeapBlockSize = calc_heap_size(value);
        }
     }
 
-    if (uses_mma && settings.growHeapBlockSize) {
+    if (settings.growHeapBlockSize) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
        if (index == -1) {
            ALOGE("growHeapBlockSize: requires platform implement NEXUS_PLATFORM_P_GET_FRAMEBUFFER_HEAP_INDEX");
@@ -852,7 +841,6 @@ static nxserver_t init_nxserver(void)
     }
 
     BKNI_CreateMutex(&g_app.clients_lock);
-    g_app.uses_mma = uses_mma;
     g_app.refcnt++;
     return g_app.server;
 }
