@@ -48,6 +48,7 @@ typedef struct BOMX_AAC_ASCInfo
     uint8_t samplingFrequencyIndex;
     uint8_t channelConfiguration;
     uint8_t profile;
+    bool sbrPresent;
 } BOMX_AAC_ASCInfo;
 
 bool BOMX_AAC_ParseASC(const uint8_t *pData, size_t length, BOMX_AAC_ASCInfo *pInfo);

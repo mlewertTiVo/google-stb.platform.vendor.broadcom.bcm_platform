@@ -45,27 +45,107 @@
 #include "bioatom.h"
 #include <cutils/log.h>
 
-static unsigned BOMX_AAC_ConvertProfileFromASC(unsigned ascVal)
+// Below utilities borrowed from bmedia_util.c
+
+/* ISO/IEC 13818-7:2005(E) */
+/* Table 35 . Sampling frequency dependent on sampling_frequency_index. Must remain sorted in decending order */
+static const unsigned b_aac_adts_sample_rate[]={
+    96000,
+    88200,
+    64000,
+    48000,
+    44100,
+    32000,
+    24000,
+    22050,
+    16000,
+    12000,
+    11025,
+    8000
+};
+
+static bool BOMX_AAC_SetSamplingFrequencyIndex(BOMX_AAC_ASCInfo *pInfo, unsigned sampling_frequency)
 {
-    switch(ascVal)
+    unsigned i, dif;
+
+    for(i=0;i<sizeof(b_aac_adts_sample_rate)/sizeof(*b_aac_adts_sample_rate);i++) {
+        if (b_aac_adts_sample_rate[i] == sampling_frequency) {
+            pInfo->samplingFrequencyIndex = i;
+            return true;
+        } else
+            if(b_aac_adts_sample_rate[i] < sampling_frequency) {
+                break;
+        }
+    }
+
+    /* Find the closest samplerate in the list to the desired sample rate.
+       We use the previous sample rate index if:
+          1. The provided sample rate is less than any on the list (i == num_sample_rates)
+          2. The provided sample rate is not larger than any on the list (i>0) *and*
+             The provided sample rate is closer to the previous list rate than it is to the current list rate */
+    if ((i == sizeof(b_aac_adts_sample_rate)/sizeof(*b_aac_adts_sample_rate)) ||
+        (i>0 && ((sampling_frequency - b_aac_adts_sample_rate[i]) > (b_aac_adts_sample_rate[i-1] - sampling_frequency)))){
+        i--;
+    }
+
+    if(sampling_frequency > 0) {
+        /* Allow for a successful hit with a .5% margin of error */
+        dif = (b_aac_adts_sample_rate[i] * 1000) / sampling_frequency;
+        if ((dif >= 995) && (dif <= 1005)) {
+            pInfo->samplingFrequencyIndex = i;
+            return true;
+        }
+    }
+    ALOGW("BOMX_AAC_SetSamplingFrequencyIndex: unknown frequency %u", sampling_frequency);
+    return false;
+}
+
+static unsigned BOMX_AAC_GetSamplingFrequencyFromIndex(unsigned index) {
+    if (index < sizeof(b_aac_adts_sample_rate)/sizeof(*b_aac_adts_sample_rate)) {
+        return b_aac_adts_sample_rate[index];
+    }
+    return 0;
+}
+
+static void BOMX_AAC_ConvertAscToAdts(BOMX_AAC_ASCInfo *pInfo)
+{
+    pInfo->sbrPresent = false;
+    switch(pInfo->profile)
     {
     /* AAC Main */
     case 1:
-        return 0;
+        pInfo->profile = 0;
+        break;
     /* AAC LC and AAC SBR */
     case 2:
+        pInfo->profile = 1;
+        break;
     case 5:
-        return 1;
+        pInfo->sbrPresent = true;
+        pInfo->profile = 1;
+        break;
     /* AAC SSR */
     case 3:
-        return 2;
+        pInfo->profile = 2;
+        break;
     /*AAC LTP */
     case 4:
-        return 3;
+        pInfo->profile = 3;
+        break;
     /* There are other types of Audio object types, but non fit in to any of the ADTS profiles.
        There has been no test content for the other types.  Defaulting to AAC LC */
     default:
-        return 1;
+        pInfo->profile = 1;
+        break;
+    }
+    /* If the stream is SBR we need to program the ADTS header with the AAC-LC sample rate index */
+    if (pInfo->sbrPresent)
+    {
+        size_t sample_rate;
+
+        sample_rate = BOMX_AAC_GetSamplingFrequencyFromIndex(pInfo->samplingFrequencyIndex);
+        sample_rate = sample_rate / 2;
+        BOMX_AAC_SetSamplingFrequencyIndex(pInfo,sample_rate);
     }
 }
 
@@ -208,9 +288,9 @@ bool BOMX_AAC_ParseASC(const uint8_t *pData, size_t length, BOMX_AAC_ASCInfo *pI
             }
         }
     }
-    ALOGV("aac_info: profile:%u sampling_frequency_index:%u channel_configuration:%u", pInfo->profile, pInfo->samplingFrequencyIndex, pInfo->channelConfiguration);
 
-    pInfo->profile = BOMX_AAC_ConvertProfileFromASC(pInfo->profile);
+    BOMX_AAC_ConvertAscToAdts(pInfo);
+    ALOGV("aac_info: profile:%u sampling_frequency_index:%u channel_configuration:%u", pInfo->profile, pInfo->samplingFrequencyIndex, pInfo->channelConfiguration);
 
     return true;
 
@@ -228,9 +308,9 @@ basic_parse:
         return false;
     }
     pInfo->channelConfiguration = B_GET_BITS(byte, 6, 3);
-    ALOGV("aac_info:basic profile:%u sampling_frequency_index:%u channel_configuration:%u", pInfo->profile, pInfo->samplingFrequencyIndex, pInfo->channelConfiguration);
 
-    pInfo->profile = BOMX_AAC_ConvertProfileFromASC(pInfo->profile);
+    BOMX_AAC_ConvertAscToAdts(pInfo);
+    ALOGV("aac_info:basic profile:%u sampling_frequency_index:%u channel_configuration:%u", pInfo->profile, pInfo->samplingFrequencyIndex, pInfo->channelConfiguration);
 
     return true;
 }
