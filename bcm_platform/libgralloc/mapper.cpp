@@ -103,13 +103,15 @@ int gralloc_register_buffer(gralloc_module_t const* module,
          unsigned sharedPhysAddr = hnd->sharedData;
          NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
          sharedPhysAddr = (unsigned)physAddr;
-         ALOGI("  reg (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::use:0x%x:0x%x::mapped:0x%x::act:%d",
+         ALOGI("  reg (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::act:%d",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
                hnd->pid,
                hnd->sharedData,
                sharedPhysAddr,
                pSharedData->container.physAddr,
                hnd->nxSurfacePhysicalAddress,
+               pSharedData->container.width,
+               pSharedData->container.height,
                pSharedData->container.size,
                hnd->usage,
                hnd->fmt_set,
@@ -150,13 +152,15 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
          unsigned sharedPhysAddr = hnd->sharedData;
          NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
          sharedPhysAddr = (unsigned)physAddr;
-         ALOGI("unreg (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::use:0x%x:0x%x::mapped:0x%x::act:%d",
+         ALOGI("unreg (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::act:%d",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
                hnd->pid,
                hnd->sharedData,
                sharedPhysAddr,
                pSharedData->container.physAddr,
                hnd->nxSurfacePhysicalAddress,
+               pSharedData->container.width,
+               pSharedData->container.height,
                pSharedData->container.size,
                hnd->usage,
                hnd->fmt_set,
@@ -279,13 +283,15 @@ out_video_failed:
       unsigned sharedPhysAddr = hnd->sharedData;
       NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
       sharedPhysAddr = (unsigned)physAddr;
-      ALOGI(" lock (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::use:0x%x:0x%x::mapped:0x%x::vaddr:0x%x::act:%d",
+      ALOGI(" lock (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::vaddr:0x%x::act:%d",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
             hnd->pid,
             hnd->sharedData,
             sharedPhysAddr,
             pSharedData->container.physAddr,
             hnd->nxSurfacePhysicalAddress,
+            pSharedData->container.width,
+            pSharedData->container.height,
             pSharedData->container.size,
             hnd->usage,
             hnd->fmt_set,
@@ -346,13 +352,15 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       unsigned sharedPhysAddr = hnd->sharedData;
       NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
       sharedPhysAddr = (unsigned)physAddr;
-      ALOGI("ulock (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::use:0x%x:0x%x::mapped:0x%x::act:%d",
+      ALOGI("ulock (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::act:%d",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
             hnd->pid,
             hnd->sharedData,
             sharedPhysAddr,
             pSharedData->container.physAddr,
             hnd->nxSurfacePhysicalAddress,
+            pSharedData->container.width,
+            pSharedData->container.height,
             pSharedData->container.size,
             hnd->usage,
             hnd->fmt_set,

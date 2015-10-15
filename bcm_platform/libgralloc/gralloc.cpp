@@ -716,13 +716,15 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       unsigned sharedPhysAddr = hnd->sharedData;
       NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
       sharedPhysAddr = (unsigned)physAddr;
-      ALOGI("alloc (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::use:0x%x:0x%x::mapped:0x%x",
+      ALOGI("alloc (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
             getpid(),
             hnd->sharedData,
             sharedPhysAddr,
             pSharedData->container.physAddr,
             hnd->nxSurfacePhysicalAddress,
+            pSharedData->container.width,
+            pSharedData->container.height,
             pSharedData->container.size,
             hnd->usage,
             hnd->fmt_set,
@@ -784,15 +786,19 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
          unsigned sharedPhysAddr = hnd->sharedData;
          unsigned planePhysAddr = pSharedData->container.physAddr;
          unsigned planePhysSize = pSharedData->container.size;
+         unsigned planeWidth = pSharedData->container.width;
+         unsigned planeHeight = pSharedData->container.height;
          NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
          sharedPhysAddr = (unsigned)physAddr;
-         ALOGI(" free (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::use:0x%x:0x%x::mapped:0x%x",
+         ALOGI(" free (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
                hnd->pid,
                hnd->sharedData,
                sharedPhysAddr,
                planePhysAddr,
                hnd->nxSurfacePhysicalAddress,
+               planeWidth,
+               planeHeight,
                planePhysSize,
                hnd->usage,
                hnd->fmt_set,
