@@ -1795,7 +1795,7 @@ bool hwc_compose_gralloc_buffer(
                  next = ++pPacket;
               }
 
-              if (ctx->display_dump_layer) {
+              if (ctx->display_dump_layer & HWC_DUMP_LEVEL_COMPOSE) {
                  ALOGI("%s: y(%dx%d,s:%d,f:%d):cr(%dx%d,s:%d,f:%d,o:%d):cb(%dx%d,s:%d,f:%d,o:%d) => yuv(%dx%d,s:%d,f:%d) => rgba(%dx%d,s:%d,f:%d) @ src(0,0,%dx%d):dst(%d,%d,%dx%d)",
                     __FUNCTION__,
                     planeY.width, planeY.height, planeY.pitch, planeY.format,
