@@ -271,57 +271,64 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
         void *pktBuffer, *next;
 
         pthread_mutex_lock(pMutex);
-        errCode = NEXUS_Graphics2D_GetPacketBuffer(gfx, &pktBuffer, &pktSize, 1024);
-        if (errCode == 0) {
-           next = pktBuffer;
-           {
-              BM2MC_PACKET_PacketOutputFeeder *pPacket = (BM2MC_PACKET_PacketOutputFeeder *)next;
-              BM2MC_PACKET_INIT(pPacket, OutputFeeder, false);
-              pPacket->plane.address = physAddr;
-              pPacket->plane.pitch   = pSharedData->container.stride;
-              pPacket->plane.format  = getBm2mcPixelFormat(pSharedData->container.format);
-              pPacket->plane.width   = pSharedData->container.width;
-              pPacket->plane.height  = pSharedData->container.height;
-              next = ++pPacket;
-           }
-           {
-              BM2MC_PACKET_PacketBlend *pPacket = (BM2MC_PACKET_PacketBlend *)next;
-              BM2MC_PACKET_INIT( pPacket, Blend, false );
-              pPacket->color_blend   = copyColor;
-              pPacket->alpha_blend   = copyAlpha;
-              pPacket->color         = 0;
-              next = ++pPacket;
-           }
-           {
-              BM2MC_PACKET_PacketSourceColor *pPacket = (BM2MC_PACKET_PacketSourceColor *)next;
-              BM2MC_PACKET_INIT(pPacket, SourceColor, false );
-              pPacket->color         = 0x00000000;
-              next = ++pPacket;
-           }
-           {
-              BM2MC_PACKET_PacketFillBlit *pPacket = (BM2MC_PACKET_PacketFillBlit *)next;
-              BM2MC_PACKET_INIT(pPacket, FillBlit, true);
-              pPacket->rect.x        = 0;
-              pPacket->rect.y        = 0;
-              pPacket->rect.width    = pSharedData->container.width;
-              pPacket->rect.height   = pSharedData->container.height;
-              next = ++pPacket;
-           }
-           errCode = NEXUS_Graphics2D_PacketWriteComplete(gfx, (uint8_t*)next - (uint8_t*)pktBuffer);
+        switch (pSharedData->container.format) {
+        case HAL_PIXEL_FORMAT_YV12:
+           errCode = 0;
+        break;
+        default:
+           errCode = NEXUS_Graphics2D_GetPacketBuffer(gfx, &pktBuffer, &pktSize, 1024);
            if (errCode == 0) {
-              errCode = NEXUS_Graphics2D_Checkpoint(gfx, NULL);
-              if (errCode == NEXUS_GRAPHICS2D_QUEUED) {
-                 errCode = BKNI_WaitForEvent(event, CHECKPOINT_TIMEOUT);
-                 if (errCode) {
-                    ALOGW("Timeout zeroing gralloc buffer");
+              next = pktBuffer;
+              {
+                 BM2MC_PACKET_PacketOutputFeeder *pPacket = (BM2MC_PACKET_PacketOutputFeeder *)next;
+                 BM2MC_PACKET_INIT(pPacket, OutputFeeder, false);
+                 pPacket->plane.address = physAddr;
+                 pPacket->plane.pitch   = pSharedData->container.stride;
+                 pPacket->plane.format  = getBm2mcPixelFormat(pSharedData->container.format);
+                 pPacket->plane.width   = pSharedData->container.width;
+                 pPacket->plane.height  = pSharedData->container.height;
+                 next = ++pPacket;
+              }
+              {
+                 BM2MC_PACKET_PacketBlend *pPacket = (BM2MC_PACKET_PacketBlend *)next;
+                 BM2MC_PACKET_INIT( pPacket, Blend, false );
+                 pPacket->color_blend   = copyColor;
+                 pPacket->alpha_blend   = copyAlpha;
+                 pPacket->color         = 0;
+                 next = ++pPacket;
+              }
+              {
+                 BM2MC_PACKET_PacketSourceColor *pPacket = (BM2MC_PACKET_PacketSourceColor *)next;
+                 BM2MC_PACKET_INIT(pPacket, SourceColor, false );
+                 pPacket->color         = 0x00000000;
+                 next = ++pPacket;
+              }
+              {
+                 BM2MC_PACKET_PacketFillBlit *pPacket = (BM2MC_PACKET_PacketFillBlit *)next;
+                 BM2MC_PACKET_INIT(pPacket, FillBlit, true);
+                 pPacket->rect.x        = 0;
+                 pPacket->rect.y        = 0;
+                 pPacket->rect.width    = pSharedData->container.width;
+                 pPacket->rect.height   = pSharedData->container.height;
+                 next = ++pPacket;
+              }
+              errCode = NEXUS_Graphics2D_PacketWriteComplete(gfx, (uint8_t*)next - (uint8_t*)pktBuffer);
+              if (errCode == 0) {
+                 errCode = NEXUS_Graphics2D_Checkpoint(gfx, NULL);
+                 if (errCode == NEXUS_GRAPHICS2D_QUEUED) {
+                    errCode = BKNI_WaitForEvent(event, CHECKPOINT_TIMEOUT);
+                    if (errCode) {
+                       ALOGW("Timeout zeroing gralloc buffer");
+                    }
                  }
               }
            }
-           if (!errCode) {
-              done = true;
-           }
+           break;
         }
         pthread_mutex_unlock(pMutex);
+        if (!errCode) {
+           done = true;
+        }
     }
 
     if (!done) {
