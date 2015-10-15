@@ -2528,9 +2528,6 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     size_t hwc_work_item_size = 0;
     struct hwc_work_item *this_frame = NULL;
     size_t i;
-    NEXUS_Error rc;
-    int fence_id = INVALID_FENCE;
-    struct sync_fence_info_data fence;
 
     if (!list) {
        return -EINVAL;
