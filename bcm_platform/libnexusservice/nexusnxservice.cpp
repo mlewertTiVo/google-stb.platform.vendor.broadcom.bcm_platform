@@ -242,6 +242,24 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
                rc = NxClient_SetDisplaySettings(&settings);
                if (rc) {
                    ALOGE("%s: Could not set display settings rc=%d)!!!", __PRETTY_FUNCTION__, rc);
+               } else {
+                  switch (settings.format) {
+                  case NEXUS_VideoFormat_e4096x2160p60hz:
+                  case NEXUS_VideoFormat_e3840x2160p60hz:
+                  case NEXUS_VideoFormat_e4096x2160p50hz:
+                  case NEXUS_VideoFormat_e3840x2160p50hz:
+                  case NEXUS_VideoFormat_e4096x2160p30hz:
+                  case NEXUS_VideoFormat_e3840x2160p30hz:
+                  case NEXUS_VideoFormat_e4096x2160p25hz:
+                  case NEXUS_VideoFormat_e3840x2160p25hz:
+                  case NEXUS_VideoFormat_e4096x2160p24hz:
+                  case NEXUS_VideoFormat_e3840x2160p24hz:
+                     property_set("sys.display-size", "3840x2160");
+                  break;
+                  default:
+                     property_set("sys.display-size", "1920x1080");
+                  break;
+                  }
                }
             }
         } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
