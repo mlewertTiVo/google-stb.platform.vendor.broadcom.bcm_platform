@@ -2546,7 +2546,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
         ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
         ctx->stats[HWC_PRIMARY_IX].set_skipped += 1;
-        goto out;
+        goto out_mutex;
     }
 
     if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
