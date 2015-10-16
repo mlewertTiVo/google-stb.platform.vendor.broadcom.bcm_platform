@@ -43,6 +43,11 @@
 #undef LOG_TAG
 #define LOG_TAG "NexusIR"
 #include <cutils/log.h>
+#include <cutils/properties.h>
+
+/* Override for the hardcoded repeatTimeout values in bkir module */
+#define PROPERTY_IR_INITIAL_TIMEOUT "ro.ir_remote.initial_timeout"
+#define PROPERTY_IR_TIMEOUT "ro.ir_remote.timeout"
 
 NexusIrInput::NexusIrInput() :
         m_handle(0),
@@ -99,8 +104,22 @@ void NexusIrInput::stop()
     m_observer = 0;
 }
 
+unsigned NexusIrInput::initialRepeatTimeout()
+{
+    unsigned timeout = property_get_int32(PROPERTY_IR_INITIAL_TIMEOUT, 0);
+    if (timeout) {
+        return timeout;
+    }
+    return repeatTimeout();
+}
+
 unsigned NexusIrInput::repeatTimeout()
 {
+    unsigned timeout = property_get_int32(PROPERTY_IR_TIMEOUT, 0);
+    if (timeout) {
+        return timeout;
+    }
+
     NEXUS_IrInputSettings irSettings;
     NEXUS_IrInput_GetSettings(m_handle, &irSettings);
 
