@@ -1,2 +1,2 @@
 on init
-   symlink /dev/block/platform/rdb.4/by-name /dev/block/by-name
+   symlink /dev/block/platform/rdb.4/f0471000.xhci_v2/by-name /dev/block/by-name
