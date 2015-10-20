@@ -566,7 +566,7 @@ void NexusService::CecServiceManager::msgReceived_callback(void *context, int pa
             rc = NEXUS_Cec_ReceiveMessage(pCecServiceManager->cecHandle, &receivedMessage);
 
             if (rc == NEXUS_SUCCESS) {
-                ALOGD("%s: CEC%d Msg Recd (opcode=0x%02x, length=%d) for Physical/Logical Addrs: %X.%X.%X.%X/%d", __PRETTY_FUNCTION__, param,
+                ALOGV("%s: CEC%d Msg Recd (opcode=0x%02x, length=%d) for Physical/Logical Addrs: %X.%X.%X.%X/%d", __PRETTY_FUNCTION__, param,
                     receivedMessage.data.buffer[0], receivedMessage.data.length,
                     (status.physicalAddress[0] & 0xF0) >> 4, (status.physicalAddress[0] & 0x0F),
                     (status.physicalAddress[1] & 0xF0) >> 4, (status.physicalAddress[1] & 0x0F),
