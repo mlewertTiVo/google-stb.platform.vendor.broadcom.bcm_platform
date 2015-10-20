@@ -60,6 +60,9 @@
 #include <sys/sysmacros.h>
 #include <sys/mman.h>
 #include <linux/kdev_t.h>
+#include <sched.h>
+#include <sys/resource.h>
+#include <cutils/sched_policy.h>
 
 #include <binder/IPCThreadState.h>
 #include <binder/ProcessState.h>
@@ -924,6 +927,9 @@ int main(void)
     NEXUS_MemoryBlockHandle hSecDmaMemoryBlock = NULL;
 
     memset(&g_app, 0, sizeof(g_app));
+
+    setpriority(PRIO_PROCESS, 0, PRIORITY_URGENT_DISPLAY);
+    set_sched_policy(0, SP_FOREGROUND);
 
     const char *devName = getenv("NEXUS_DEVICE_NODE");
     if (!devName) {
