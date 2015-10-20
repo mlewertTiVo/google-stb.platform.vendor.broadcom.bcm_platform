@@ -57,7 +57,7 @@ on post-fs
    export NEXUS_LOGGER /system/bin/nxlogger
    export NEXUS_LOGGER_FILE /data/nexus/nexus.log
 
-   setprop ro.nx.v3d.no_map_lock 1
+   setprop ro.nx.v3d.no_map_lock 0
 
    setprop ro.nexus.nxserver.hdcp1x_keys /mnt/hwcfg/drm_hdcp1x.bin
    setprop ro.nexus.nxserver.hdcp2x_keys /mnt/hwcfg/drm.bin
