@@ -69,7 +69,9 @@
 #define B_DEFAULT_MAX_FRAME_HEIGHT  720
 #define B_MAX_FRAME_RATE            NEXUS_VideoFrameRate_e30
 #define B_MAX_FRAME_RATE_F          30.0f
+#define B_MAX_FRAME_RATE_Q16        (Q16_SCALE_FACTOR*30)
 #define B_MIN_FRAME_RATE            NEXUS_VideoFrameRate_e15
+#define B_MIN_FRAME_RATE_Q16        (Q16_SCALE_FACTOR*15)
 #define B_RATE_BUFFER_DELAY_MS      1500
 
 #define NAL_UNIT_TYPE_SPS  7
@@ -1005,7 +1007,9 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
         /* The value 0x0 is used to indicate the frame rate is unknown, variable, or is not needed. */
-        if ( pDef->format.video.xFramerate && MapOMXFrameRateToNexus(pDef->format.video.xFramerate) == NEXUS_VideoFrameRate_eUnknown )
+        if ( pDef->format.video.xFramerate && (MapOMXFrameRateToNexus(pDef->format.video.xFramerate) == NEXUS_VideoFrameRate_eUnknown ||
+                                               pDef->format.video.xFramerate > B_MAX_FRAME_RATE_Q16 ||
+                                               pDef->format.video.xFramerate < B_MIN_FRAME_RATE_Q16) )
         {
            ALOGE("Video framerate: %d is not supported by the encoder", pDef->format.video.xFramerate);
            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
