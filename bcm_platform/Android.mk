@@ -65,6 +65,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makegpt/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makehwcfg/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxblk/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxcfg/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxheaps/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxmem/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/otpgetchipid/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/prdy_pes_playback/Android.mk
