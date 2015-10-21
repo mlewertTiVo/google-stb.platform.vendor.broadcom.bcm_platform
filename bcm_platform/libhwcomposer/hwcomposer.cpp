@@ -346,6 +346,7 @@ typedef struct {
     NEXUS_SurfaceCompositorClientId sccid;
     BFIFO_HEAD(DisplayFifo, NEXUS_SurfaceHandle) display_fifo;
     NEXUS_SurfaceHandle display_buffers[HWC_NUM_DISP_BUFFERS];
+    BKNI_MutexHandle fifo_mutex;
 } DISPLAY_CLIENT_INFO;
 
 typedef void (* HWC_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
@@ -530,7 +531,9 @@ struct hwc_context_t {
     bool vsync_callback_initialized;
     BKNI_MutexHandle vsync_callback_enabled_mutex;
     pthread_t vsync_callback_thread;
+    pthread_t recycle_callback_thread;
     int vsync_thread_run;
+    int recycle_thread_run;
     NEXUS_DisplayHandle display_handle;
 
     GPX_CLIENT_INFO gpx_cli[NSC_GPX_CLIENTS_NUMBER];
@@ -543,6 +546,7 @@ struct hwc_context_t {
     VD_CLIENT_INFO vd_cli[HWC_VD_CLIENTS_NUMBER];
     DISPLAY_CLIENT_INFO disp_cli[DISPLAY_SUPPORTED];
     BKNI_EventHandle recycle_event;
+    BKNI_EventHandle recycle_callback;
 
     struct hwc_position overscan_position;
 
@@ -604,8 +608,7 @@ static struct hw_module_methods_t hwc_module_methods = {
    open: hwc_device_open
 };
 
-static void hwc_nsc_recycled_cb(void *context, int param);
-
+static void hwc_recycled_cb(void *context, int param);
 static void hw_vsync_cb(void *context, int param);
 
 static void hwc_hide_unused_gpx_layer(struct hwc_context_t* dev, int index);
@@ -2395,9 +2398,14 @@ static void hwc_put_disp_surface(struct hwc_context_t *ctx, int disp_ix, NEXUS_S
    }
 
    if (surface) {
-      NEXUS_SurfaceHandle *pSurface = BFIFO_WRITE(&ctx->disp_cli[disp_ix].display_fifo);
-      *pSurface = surface;
-      BFIFO_WRITE_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
+      if (BKNI_AcquireMutex(ctx->disp_cli[disp_ix].fifo_mutex) == BERR_SUCCESS) {
+         NEXUS_SurfaceHandle *pSurface = BFIFO_WRITE(&ctx->disp_cli[disp_ix].display_fifo);
+         *pSurface = surface;
+         BFIFO_WRITE_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
+         BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
+      } else {
+         ALOGW("%s: leaked surface %p (disp %d)!", __FUNCTION__, surface, disp_ix);
+      }
    }
 }
 
@@ -2413,19 +2421,19 @@ static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int d
     }
 
     while (true) {
-       if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+       if (BKNI_AcquireMutex(ctx->disp_cli[disp_ix].fifo_mutex) == BERR_SUCCESS) {
           if (BFIFO_READ_PEEK(&ctx->disp_cli[disp_ix].display_fifo) != 0) {
-             BKNI_ReleaseMutex(ctx->mutex);
+             BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
              goto out_read;
           }
        } else {
           return NULL;
        }
-       BKNI_ReleaseMutex(ctx->mutex);
+       BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
        if (BKNI_WaitForEvent(ctx->recycle_event, HWC_SURFACE_WAIT_TIMEOUT)) {
           no_surface_count++;
           if (no_surface_count == HWC_SURFACE_WAIT_ATTEMPT) {
-             ALOGW("%s: warning no surface received in %d ms", __FUNCTION__,
+             ALOGW("%s: no surface received in %d ms", __FUNCTION__,
                    HWC_SURFACE_WAIT_TIMEOUT*HWC_SURFACE_WAIT_ATTEMPT);
              return NULL;
           }
@@ -2433,10 +2441,10 @@ static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int d
     }
 
 out_read:
-    if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+    if (BKNI_AcquireMutex(ctx->disp_cli[disp_ix].fifo_mutex) == BERR_SUCCESS) {
        pSurface = BFIFO_READ(&ctx->disp_cli[disp_ix].display_fifo);
        BFIFO_READ_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
-       BKNI_ReleaseMutex(ctx->mutex);
+       BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
     }
 out:
     return *pSurface;
@@ -2761,9 +2769,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    if (layer_composed == 0) {
       if (has_video && !ctx->alpha_hole_background) {
          if (skip_comp) {
-            BKNI_AcquireMutex(ctx->mutex);
             hwc_put_disp_surface(ctx, 0, outputHdl);
-            BKNI_ReleaseMutex(ctx->mutex);
             if (list->retireFenceFd != INVALID_FENCE) {
                hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, false);
             }
@@ -2788,9 +2794,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             }
          }
       } else {
-         BKNI_AcquireMutex(ctx->mutex);
          hwc_put_disp_surface(ctx, 0, outputHdl);
-         BKNI_ReleaseMutex(ctx->mutex);
          if (list->retireFenceFd != INVALID_FENCE) {
             hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, false);
          }
@@ -3156,6 +3160,9 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         ctx->vsync_thread_run = 0;
         pthread_join(ctx->vsync_callback_thread, NULL);
 
+        ctx->recycle_thread_run = 0;
+        pthread_join(ctx->recycle_callback_thread, NULL);
+
         if (ctx->pIpcClient != NULL) {
             if (ctx->pNexusClientContext != NULL) {
                 ctx->pIpcClient->destroyClientContext(ctx->pNexusClientContext);
@@ -3177,6 +3184,9 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
               NEXUS_SurfaceClient_Release(ctx->disp_cli[i].schdl);
            }
            pthread_join(ctx->composer_thread[i], NULL);
+           if (ctx->disp_cli[i].fifo_mutex) {
+              BKNI_DestroyMutex(ctx->disp_cli[i].fifo_mutex);
+           }
            if (ctx->composer_event[i]) {
               BKNI_DestroyEvent(ctx->composer_event[i]);
            }
@@ -3193,6 +3203,9 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         }
         if (ctx->recycle_event) {
            BKNI_DestroyEvent(ctx->recycle_event);
+        }
+        if (ctx->recycle_callback) {
+           BKNI_DestroyEvent(ctx->recycle_callback);
         }
 
         NxClient_Free(&ctx->nxAllocResults);
@@ -3524,6 +3537,41 @@ out:
     return NULL;
 }
 
+static void * hwc_recycle_task(void *argv)
+{
+   struct hwc_context_t* ctx = (struct hwc_context_t*)argv;
+   NEXUS_SurfaceHandle surfaces[HWC_NUM_DISP_BUFFERS];
+   NEXUS_Error rc;
+   size_t numSurfaces, i;
+
+   do
+   {
+      BKNI_WaitForEvent(ctx->recycle_callback, BKNI_INFINITE);
+      numSurfaces = 0;
+      rc = NEXUS_SurfaceClient_RecycleSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, surfaces, HWC_NUM_DISP_BUFFERS, &numSurfaces);
+      if (rc) {
+         ALOGW("%s: error recycling %#x %d", __FUNCTION__, ctx->disp_cli[HWC_PRIMARY_IX].schdl, rc);
+      } else if ( numSurfaces > 0 ) {
+         if (BKNI_AcquireMutex(ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex) == BERR_SUCCESS) {
+            for (i = 0; i < numSurfaces; i++) {
+               NEXUS_SurfaceHandle *pHandle = BFIFO_WRITE(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo);
+               *pHandle = surfaces[i];
+               BFIFO_WRITE_COMMIT(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo, 1);
+            }
+            BKNI_ReleaseMutex(ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex);
+         } else {
+            ALOGW("%s: error posting", __FUNCTION__);
+         }
+      }
+      hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, (int)numSurfaces, false);
+      BKNI_SetEvent(ctx->recycle_event);
+
+   } while(ctx->recycle_thread_run);
+
+out:
+    return NULL;
+}
+
 static bool hwc_standby_monitor(void *dev)
 {
     bool standby = false;
@@ -3778,6 +3826,9 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         if ( BKNI_CreateEvent(&dev->recycle_event) ) {
            goto clean_up;
         }
+        if ( BKNI_CreateEvent(&dev->recycle_callback) ) {
+           goto clean_up;
+        }
         if (BKNI_CreateMutex(&dev->vsync_callback_enabled_mutex) == BERR_OS_ERROR) {
            goto clean_up;
         }
@@ -3839,8 +3890,8 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                goto clean_up;
             }
             NEXUS_SurfaceClient_GetSettings(dev->disp_cli[i].schdl, &client_settings);
-            client_settings.recycled.callback = hwc_nsc_recycled_cb;
-            client_settings.recycled.context = dev;
+            client_settings.recycled.callback = hwc_recycled_cb;
+            client_settings.recycled.context = (void *)dev;
             client_settings.allowCompositionBypass = property_get_int32(HWC_CAPABLE_COMP_BYPASS, 0) ? true : false;
             rc = NEXUS_SurfaceClient_SetSettings(dev->disp_cli[i].schdl, &client_settings);
             if (rc) {
@@ -3880,6 +3931,9 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                }
                ALOGI("%s: fb:%d::%dx%d::%d::heap:%p -> %p", __FUNCTION__, j, surfaceCreateSettings.width, surfaceCreateSettings.height,
                   surfaceCreateSettings.pixelFormat, surfaceCreateSettings.heap, dev->disp_cli[i].display_buffers[j]);
+            }
+            if (BKNI_CreateMutex(&dev->disp_cli[i].fifo_mutex) == BERR_OS_ERROR) {
+               goto clean_up;
             }
             BFIFO_INIT(&dev->disp_cli[i].display_fifo, dev->disp_cli[i].display_buffers, HWC_NUM_DISP_BUFFERS);
             BFIFO_WRITE_COMMIT(&dev->disp_cli[i].display_fifo, HWC_NUM_DISP_BUFFERS);
@@ -3949,6 +4003,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         dev->device.setCursorPositionAsync         = hwc_device_setCursorPositionAsync;
 
         dev->vsync_thread_run = 1;
+        dev->recycle_thread_run = 1;
         dev->display_handle = NULL;
 
         dev->pIpcClient = NexusIPCClientFactory::getClient("hwc");
@@ -3987,6 +4042,14 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         }
         pthread_attr_destroy(&attr);
         pthread_setname_np(dev->vsync_callback_thread, "hwc_sync_cb");
+
+        pthread_attr_init(&attr);
+        if (pthread_create(&dev->recycle_callback_thread, &attr, hwc_recycle_task, (void *)dev) != 0) {
+            ALOGE("%s: unable to create recycle thread", __FUNCTION__, i);
+            goto clean_up;
+        }
+        pthread_attr_destroy(&attr);
+        pthread_setname_np(dev->recycle_callback_thread, "hwc_rec_cb");
 
         for (i = 0; i < DISPLAY_SUPPORTED; i++) {
             pthread_attr_init(&attr);
@@ -4052,33 +4115,12 @@ static void hw_vsync_cb(void *context, int param)
     BKNI_SetEvent(ci->vsync_event);
 }
 
-static void hwc_nsc_recycled_cb(void *context, int param)
+static void hwc_recycled_cb(void *context, int param)
 {
     struct hwc_context_t *ctx = (struct hwc_context_t *)context;
-    NEXUS_SurfaceHandle surfaces[HWC_NUM_DISP_BUFFERS];
-    NEXUS_Error rc;
-    size_t numSurfaces, i;
-
     BSTD_UNUSED(param);
-    numSurfaces = 0;
-    rc = NEXUS_SurfaceClient_RecycleSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, surfaces, HWC_NUM_DISP_BUFFERS, &numSurfaces);
-    if (rc) {
-       ALOGW("%s: error recycling %#x %d", __FUNCTION__, ctx->disp_cli[HWC_PRIMARY_IX].schdl, rc);
-    } else if ( numSurfaces > 0 ) {
-       if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
-          for (i = 0; i < numSurfaces; i++) {
-             NEXUS_SurfaceHandle *pHandle = BFIFO_WRITE(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo);
-             *pHandle = surfaces[i];
-             BFIFO_WRITE_COMMIT(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo, 1);
-          }
-          BKNI_ReleaseMutex(ctx->mutex);
-       } else {
-          ALOGW("%s: error posting", __FUNCTION__);
-       }
-    }
 
-    hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, (int)numSurfaces, false);
-    BKNI_SetEvent(ctx->recycle_event);
+    BKNI_SetEvent(ctx->recycle_callback);
 }
 
 static void hwc_prepare_mm_layer(
@@ -4410,10 +4452,11 @@ out:
     return;
 }
 
-static void hwc_checkpoint_callback(void *pParam, int param2)
+static void hwc_checkpoint_callback(void *context, int param)
 {
-    struct hwc_context_t *ctx = (struct hwc_context_t *)pParam;
-    (void)param2;
+    struct hwc_context_t *ctx = (struct hwc_context_t *)context;
+    (void)param;
+
     BKNI_SetEvent(ctx->checkpoint_event);
 }
 
