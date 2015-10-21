@@ -2409,6 +2409,44 @@ static void hwc_put_disp_surface(struct hwc_context_t *ctx, int disp_ix, NEXUS_S
    }
 }
 
+static void hwc_inc_retire_timeline(struct hwc_context_t *ctx, int index, int inc, bool err)
+{
+   if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
+      ALOGI("%s: %llu - retire[%d]-inc: %d, on-err: %d\n",
+            (index == HWC_PRIMARY_IX) ? "fence" : "vfence",
+            ctx->stats[index].set_call, ctx->composer_ret_timeline[index], inc, err);
+   }
+
+   if (inc && ctx->composer_ret_timeline[index] != INVALID_FENCE) {
+      sw_sync_timeline_inc(ctx->composer_ret_timeline[index], (unsigned) inc);
+   }
+}
+
+static void hwc_recycle_now(struct hwc_context_t* ctx)
+{
+   NEXUS_SurfaceHandle surfaces[HWC_NUM_DISP_BUFFERS];
+   NEXUS_Error rc;
+   size_t numSurfaces, i;
+
+   numSurfaces = 0;
+   rc = NEXUS_SurfaceClient_RecycleSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, surfaces, HWC_NUM_DISP_BUFFERS, &numSurfaces);
+   if (rc) {
+      ALOGW("%s: error recycling %#x %d", __FUNCTION__, ctx->disp_cli[HWC_PRIMARY_IX].schdl, rc);
+   } else if ( numSurfaces > 0 ) {
+      if (BKNI_AcquireMutex(ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex) == BERR_SUCCESS) {
+         for (i = 0; i < numSurfaces; i++) {
+            NEXUS_SurfaceHandle *pHandle = BFIFO_WRITE(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo);
+            *pHandle = surfaces[i];
+            BFIFO_WRITE_COMMIT(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo, 1);
+         }
+         BKNI_ReleaseMutex(ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex);
+      } else {
+         ALOGW("%s: lost surfaces!", __FUNCTION__);
+      }
+   }
+   hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, (int)numSurfaces, false);
+}
+
 #define HWC_SURFACE_WAIT_TIMEOUT 50
 #define HWC_SURFACE_WAIT_ATTEMPT 4
 static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int disp_ix)
@@ -2425,6 +2463,12 @@ static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int d
           if (BFIFO_READ_PEEK(&ctx->disp_cli[disp_ix].display_fifo) != 0) {
              BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
              goto out_read;
+          } else {
+             BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
+             hwc_recycle_now(ctx);
+             if (BFIFO_READ_PEEK(&ctx->disp_cli[disp_ix].display_fifo) != 0) {
+                goto out_read;
+             }
           }
        } else {
           return NULL;
@@ -2478,19 +2522,6 @@ out_err:
    ALOGW("%s: %s: failed RET fence %llu", __FUNCTION__, (index == HWC_PRIMARY_IX) ? "prim" : "virt",
          ctx->stats[index].set_call);
    return INVALID_FENCE;
-}
-
-static void hwc_inc_retire_timeline(struct hwc_context_t *ctx, int index, int inc, bool err)
-{
-   if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-      ALOGI("%s: %llu - retire[%d]-inc: %d, on-err: %d\n",
-            (index == HWC_PRIMARY_IX) ? "fence" : "vfence",
-            ctx->stats[index].set_call, ctx->composer_ret_timeline[index], inc, err);
-   }
-
-   if (ctx->composer_ret_timeline[index] != INVALID_FENCE) {
-      sw_sync_timeline_inc(ctx->composer_ret_timeline[index], (unsigned) inc);
-   }
 }
 
 static int hwc_release_timeline_with_fence(struct hwc_context_t *ctx, int index, int layer, int *fence)
@@ -3540,30 +3571,11 @@ out:
 static void * hwc_recycle_task(void *argv)
 {
    struct hwc_context_t* ctx = (struct hwc_context_t*)argv;
-   NEXUS_SurfaceHandle surfaces[HWC_NUM_DISP_BUFFERS];
-   NEXUS_Error rc;
-   size_t numSurfaces, i;
 
    do
    {
       BKNI_WaitForEvent(ctx->recycle_callback, BKNI_INFINITE);
-      numSurfaces = 0;
-      rc = NEXUS_SurfaceClient_RecycleSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, surfaces, HWC_NUM_DISP_BUFFERS, &numSurfaces);
-      if (rc) {
-         ALOGW("%s: error recycling %#x %d", __FUNCTION__, ctx->disp_cli[HWC_PRIMARY_IX].schdl, rc);
-      } else if ( numSurfaces > 0 ) {
-         if (BKNI_AcquireMutex(ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex) == BERR_SUCCESS) {
-            for (i = 0; i < numSurfaces; i++) {
-               NEXUS_SurfaceHandle *pHandle = BFIFO_WRITE(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo);
-               *pHandle = surfaces[i];
-               BFIFO_WRITE_COMMIT(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo, 1);
-            }
-            BKNI_ReleaseMutex(ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex);
-         } else {
-            ALOGW("%s: error posting", __FUNCTION__);
-         }
-      }
-      hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, (int)numSurfaces, false);
+      hwc_recycle_now(ctx);
       BKNI_SetEvent(ctx->recycle_event);
 
    } while(ctx->recycle_thread_run);
