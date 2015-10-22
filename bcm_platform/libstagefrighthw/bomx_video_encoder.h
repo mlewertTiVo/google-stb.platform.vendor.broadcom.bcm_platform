@@ -90,6 +90,7 @@ struct BOMX_ImageSurfaceNode
 {
     BLST_Q_ENTRY(BOMX_ImageSurfaceNode) node;
     NEXUS_SurfaceHandle hSurface;
+    int memBlkFd;
 };
 
 enum BOMX_VideoEncoderInputBufferType
@@ -363,6 +364,9 @@ protected:
     OMX_VIDEO_AVCLEVELTYPE GetMaxLevelAvc(OMX_VIDEO_AVCPROFILETYPE profile);
 
 private:
+
+    NEXUS_SurfaceHandle CreateSurface(int width, int height, int stride, NEXUS_PixelFormat format,
+        unsigned handle, unsigned offset, void *pAddr, int *pMemBlkFd);
 };
 
 #endif //BOMX_VIDEO_ENCODER_H__

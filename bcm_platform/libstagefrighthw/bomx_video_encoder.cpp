@@ -2959,14 +2959,141 @@ void BOMX_VideoEncoder::StopOutput()
     NEXUS_SimpleEncoder_Stop(m_hSimpleEncoder);
 }
 
+static void BOMX_VideoEncoder_NodeDestroy(BOMX_ImageSurfaceNode *pNode)
+{
+   if (pNode->hSurface != NULL) {
+      NEXUS_Surface_Destroy(pNode->hSurface);
+   }
+
+   if (pNode->memBlkFd >= 0) {
+      close(pNode->memBlkFd);
+   }
+
+   return;
+}
+
+static NEXUS_MemoryBlockHandle BOMX_VideoEncoder_AllocateMemoryBlk(size_t size, int *pMemBlkFd)
+{
+   NEXUS_MemoryBlockHandle hMemBlk = NULL;
+   int memBlkFd = -1;
+   char device[PROPERTY_VALUE_MAX];
+   char name[PROPERTY_VALUE_MAX];
+
+   if (pMemBlkFd) {
+      memBlkFd = BOMX_VideoEncoder_OpenMemoryInterface();
+      if (memBlkFd >= 0) {
+         struct nx_ashmem_alloc ashmem_alloc;
+         memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
+         ashmem_alloc.size  = size;
+         ashmem_alloc.align = 4096;
+         int ret = ioctl(memBlkFd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+         if (ret < 0) {
+            close(memBlkFd);
+            memBlkFd = -1;
+         } else {
+            hMemBlk = (NEXUS_MemoryBlockHandle)ioctl(memBlkFd, NX_ASHMEM_GETMEM);
+            if (hMemBlk == NULL) {
+               close(memBlkFd);
+               memBlkFd = -1;
+            }
+         }
+      }
+      *pMemBlkFd = memBlkFd;
+   }
+
+   return hMemBlk;
+}
+
+NEXUS_SurfaceHandle BOMX_VideoEncoder::CreateSurface(
+        int width, int height, int stride, NEXUS_PixelFormat format,
+        unsigned handle, unsigned offset, void *pAddr, int *pMemBlkFd)
+{
+    NEXUS_SurfaceCreateSettings createSettings;
+
+    NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
+    createSettings.pixelFormat   = format;
+    createSettings.width         = width;
+    createSettings.height        = height;
+    createSettings.pitch         = stride;
+    createSettings.managedAccess = false;
+
+    if (!handle && !offset && !pAddr)
+    {
+       NEXUS_Error rc;
+       NEXUS_ClientConfiguration clientConfig;
+       NEXUS_VideoImageInputStatus imageInputStatus;
+       NEXUS_HeapHandle surfaceHeap = NULL;
+       bool dynHeap = false;
+
+       NEXUS_Platform_GetClientConfiguration(&clientConfig);
+
+       if (m_hImageInput == NULL)
+       {
+          return NULL;
+       }
+
+       rc = NEXUS_VideoImageInput_GetStatus(m_hImageInput, &imageInputStatus);
+       if (rc)
+       {
+          BOMX_BERR_TRACE(rc);
+          return NULL;
+       }
+
+       for (int i=0; i<NEXUS_MAX_HEAPS; i++) {
+          NEXUS_MemoryStatus s;
+          if (!clientConfig.heap[i] || NEXUS_Heap_GetStatus(clientConfig.heap[i], &s)) continue;
+          if (!surfaceHeap && s.memcIndex == imageInputStatus.memcIndex && (s.memoryType & NEXUS_MemoryType_eApplication) && s.largestFreeBlock >= MIN_BLOCK_SIZE) {
+             surfaceHeap = clientConfig.heap[i];
+             ALOGI("found default heap[%d] on MEMC%d for VideoImageInput", i, s.memcIndex);
+          }
+          if (s.memcIndex == imageInputStatus.memcIndex && (s.memoryType & (NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED|NEXUS_MEMORY_TYPE_DYNAMIC))) {
+            dynHeap = true;
+            ALOGI("prefered dynamic heap[%d] on MEMC%d for VideoImageInput", i, s.memcIndex);
+            break;
+          }
+       }
+
+       if (!dynHeap && !surfaceHeap) {
+          ALOGE("no heap found. RTS failure likely.");
+          BOMX_BERR_TRACE(BERR_UNKNOWN);
+          return NULL;
+       }
+
+       if (dynHeap && pMemBlkFd)
+       {
+          createSettings.pixelMemory = BOMX_VideoEncoder_AllocateMemoryBlk(
+              createSettings.pitch * createSettings.height, pMemBlkFd);
+          if (createSettings.pixelMemory == NULL)
+          {
+              ALOGE("Failed to create image input memory block");
+              BOMX_BERR_TRACE(BERR_UNKNOWN);
+              return NULL;
+          }
+          createSettings.pixelMemoryOffset = offset;
+       }
+       else
+       {
+          createSettings.heap = surfaceHeap;
+       }
+    }
+    else if (handle)
+    {
+        createSettings.pixelMemory       = (NEXUS_MemoryBlockHandle) handle;
+        createSettings.pixelMemoryOffset = offset;
+    }
+    else if (pAddr)
+    {
+        createSettings.pMemory = pAddr;
+    }
+
+    return NEXUS_Surface_Create(&createSettings);
+}
+
 NEXUS_Error BOMX_VideoEncoder::StartInput()
 {
-    NEXUS_VideoImageInputSettings imageInputSetting;
-    NEXUS_SurfaceCreateSettings surfaceCfg;
-    NEXUS_ClientConfiguration clientConfig;
-    NEXUS_VideoImageInputStatus imageInputStatus;
-    NEXUS_SimpleVideoDecoderStartSettings decoderStartSettings;
     NEXUS_Error rc;
+    NEXUS_VideoImageInputSettings imageInputSetting;
+    NEXUS_SimpleVideoDecoderStartSettings decoderStartSettings;
 
     /* create video decoder image input handle */
     NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&decoderStartSettings);
@@ -2979,40 +3106,11 @@ NEXUS_Error BOMX_VideoEncoder::StartInput()
 
     ALOGV("Image Input Started Successfully!");
 
-    /* find Nexus heap info for video image input */
-    rc = NEXUS_VideoImageInput_GetStatus(m_hImageInput, &imageInputStatus);
-    if (rc)
-    {
-        return BOMX_BERR_TRACE(rc);
-    }
-
-    NEXUS_Surface_GetDefaultCreateSettings(&surfaceCfg);
-    NEXUS_Platform_GetClientConfiguration(&clientConfig);
-
-    for (int i=0; i<NEXUS_MAX_HEAPS; i++) {
-        NEXUS_MemoryStatus s;
-        if (!clientConfig.heap[i] || NEXUS_Heap_GetStatus(clientConfig.heap[i], &s)) continue;
-        if (s.memcIndex == imageInputStatus.memcIndex && (s.memoryType & NEXUS_MemoryType_eApplication) && s.largestFreeBlock >= MIN_BLOCK_SIZE) {
-            surfaceCfg.heap = clientConfig.heap[i];
-            ALOGI("found heap[%d] on MEMC%d for VideoImageInput", i, s.memcIndex);
-            break;
-        }
-    }
-
-    if (!surfaceCfg.heap) {
-        ALOGE("no heap found. RTS failure likely.");
-        return BOMX_BERR_TRACE(BERR_UNKNOWN);
-    }
-
     /* create surface on specified heap */
     const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[0]->GetDefinition();
 
-    surfaceCfg.width  = pPortDef->format.video.nFrameWidth;
-    surfaceCfg.height = pPortDef->format.video.nFrameHeight;
-    surfaceCfg.pixelFormat = NEXUS_PixelFormat_eCr8_Y18_Cb8_Y08;
-
     ALOGV("creating surfaces: width=%d height=%d pixelFormat=%d",
-          surfaceCfg.width, surfaceCfg.height, surfaceCfg.pixelFormat);
+          pPortDef->format.video.nFrameWidth, pPortDef->format.video.nFrameHeight, NEXUS_PixelFormat_eCr8_Y18_Cb8_Y08);
 
     BOMX_ImageSurfaceNode *pNode;
     for (unsigned int i = 0; i < VIDEO_ENCODE_IMAGEINPUT_DEPTH; i++)
@@ -3023,11 +3121,20 @@ NEXUS_Error BOMX_VideoEncoder::StartInput()
             ALOGE("Failed to create pNode");
             return BOMX_BERR_TRACE(BERR_OUT_OF_SYSTEM_MEMORY);
         }
-
-        pNode->hSurface = NEXUS_Surface_Create(&surfaceCfg);
+        pNode->memBlkFd = -1;
+        pNode->hSurface = CreateSurface(
+                              pPortDef->format.video.nFrameWidth,
+                              pPortDef->format.video.nFrameHeight,
+                              2 * pPortDef->format.video.nFrameWidth,
+                              NEXUS_PixelFormat_eCr8_Y18_Cb8_Y08,
+                              0,
+                              0,
+                              NULL,
+                              &pNode->memBlkFd);
         if (NULL == pNode->hSurface)
         {
             ALOGE("Failed to create image input surface");
+            BOMX_VideoEncoder_NodeDestroy(pNode);
             delete pNode;
             return BOMX_BERR_TRACE(BERR_UNKNOWN);
         }
@@ -3237,10 +3344,7 @@ void BOMX_VideoEncoder::DestroyImageSurfaces()
     while ( (pNode = BLST_Q_FIRST(&m_ImageSurfaceFreeList)) )
     {
         BLST_Q_REMOVE_HEAD(&m_ImageSurfaceFreeList, node);
-        if ( pNode->hSurface )
-        {
-            NEXUS_Surface_Destroy(pNode->hSurface);
-        }
+        BOMX_VideoEncoder_NodeDestroy(pNode);
         delete pNode;
     }
     m_nImageSurfaceFreeListLen = 0;
@@ -3248,10 +3352,7 @@ void BOMX_VideoEncoder::DestroyImageSurfaces()
     while ( (pNode = BLST_Q_FIRST(&m_ImageSurfacePushedList)) )
     {
         BLST_Q_REMOVE_HEAD(&m_ImageSurfacePushedList, node);
-        if ( pNode->hSurface )
-        {
-            NEXUS_Surface_Destroy(pNode->hSurface);
-        }
+        BOMX_VideoEncoder_NodeDestroy(pNode);
         delete pNode;
     }
     m_nImageSurfacePushedListLen = 0;
@@ -3801,31 +3902,6 @@ bool BOMX_VideoEncoder::GraphicsCheckpoint()
     return ret;
 }
 
-// ported from gralloc implementation
-static NEXUS_SurfaceHandle to_nsc_surface(int width, int height, int stride, NEXUS_PixelFormat format,
-        unsigned handle, unsigned offset, void *pAddr)
-{
-    NEXUS_SurfaceCreateSettings createSettings;
-
-    NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
-    createSettings.pixelFormat = format;
-    createSettings.width       = width;
-    createSettings.height      = height;
-    createSettings.pitch       = stride;
-    createSettings.managedAccess = false;
-    if (handle)
-    {
-        createSettings.pixelMemory = (NEXUS_MemoryBlockHandle) handle;
-        createSettings.pixelMemoryOffset = offset;
-    }
-    else if (pAddr)
-    {
-        createSettings.pMemory = pAddr;
-    }
-
-    return NEXUS_Surface_Create(&createSettings);
-}
-
 NEXUS_Error BOMX_VideoEncoder::ConvertYv12To422p(NEXUS_SurfaceHandle hSrcCb, NEXUS_SurfaceHandle hSrcCr, NEXUS_SurfaceHandle hSrcY, NEXUS_SurfaceHandle hDst, bool isSurfaceBuffer)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
@@ -3978,7 +4054,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
     ALOGV("%s: yv12 (%d,%d):%d: cr-off:%u, cb-off:%u\n", __FUNCTION__,
           width, height, stride, cr_offset, cb_offset);
 
-    srcY = to_nsc_surface(width, height, stride, NEXUS_PixelFormat_eY8, 0, 0, y_addr);
+    srcY = CreateSurface(width, height, stride, NEXUS_PixelFormat_eY8, 0, 0, y_addr, NULL);
     if (NULL == srcY)
     {
         ALOGE("failed to create intermediate Y surface");
@@ -3988,7 +4064,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
     NEXUS_Surface_Lock(srcY, &slock);
     NEXUS_Surface_Flush(srcY);
 
-    srcCr = to_nsc_surface(width/2, height/2, cstride, NEXUS_PixelFormat_eCr8, 0, 0, cr_addr);
+    srcCr = CreateSurface(width/2, height/2, cstride, NEXUS_PixelFormat_eCr8, 0, 0, cr_addr, NULL);
     if (NULL == srcCr)
     {
         ALOGE("failed to create intermediate Cr surface");
@@ -4000,7 +4076,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
     NEXUS_Surface_Lock(srcCr, &slock);
     NEXUS_Surface_Flush(srcCr);
 
-    srcCb = to_nsc_surface(width/2, height/2, cstride, NEXUS_PixelFormat_eCb8, 0, 0, cb_addr);
+    srcCb = CreateSurface(width/2, height/2, cstride, NEXUS_PixelFormat_eCb8, 0, 0, cb_addr, NULL);
     if (NULL == srcCb)
     {
         ALOGE("failed to create intermediate Cb surface");
@@ -4086,7 +4162,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         ALOGV("%s: yv12 (%d,%d):%d: cr-off:%u, cb-off:%u\n", __FUNCTION__,
               width, height, stride, cr_offset, cb_offset);
 
-        srcY = to_nsc_surface(width, height, stride, NEXUS_PixelFormat_eY8, planeHandle, 0, NULL);
+        srcY = CreateSurface(width, height, stride, NEXUS_PixelFormat_eY8, planeHandle, 0, NULL, NULL);
         if (NULL == srcY)
         {
             ALOGE("failed to create intermediate Y surface");
@@ -4096,7 +4172,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         NEXUS_Surface_Lock(srcY, &slock);
         NEXUS_Surface_Flush(srcY);
 
-        srcCr = to_nsc_surface(width/2, height/2, cstride, NEXUS_PixelFormat_eCr8, planeHandle, cr_offset, NULL);
+        srcCr = CreateSurface(width/2, height/2, cstride, NEXUS_PixelFormat_eCr8, planeHandle, cr_offset, NULL, NULL);
         if (NULL == srcCr)
         {
             ALOGE("failed to create intermediate Cr surface");
@@ -4108,7 +4184,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         NEXUS_Surface_Lock(srcCr, &slock);
         NEXUS_Surface_Flush(srcCr);
 
-        srcCb = to_nsc_surface(width/2, height/2, cstride, NEXUS_PixelFormat_eCb8, planeHandle, cb_offset, NULL);
+        srcCb = CreateSurface(width/2, height/2, cstride, NEXUS_PixelFormat_eCb8, planeHandle, cb_offset, NULL, NULL);
         if (NULL == srcCb)
         {
             ALOGE("failed to create intermediate Cb surface");
@@ -4168,7 +4244,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         ALOGV("Nexus pixel format:%d - pAddr=%p, plane handle=%u",
               pixelFormat, pAddr, planeHandle);
 
-        hSrc = to_nsc_surface(width, height, stride, pixelFormat, planeHandle, 0, NULL);
+        hSrc = CreateSurface(width, height, stride, pixelFormat, planeHandle, 0, NULL, NULL);
         if ( NULL == hSrc )
         {
             ALOGE("Unable to allocate color format conversion surface");
