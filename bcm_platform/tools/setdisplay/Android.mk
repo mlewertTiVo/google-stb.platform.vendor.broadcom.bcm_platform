@@ -16,9 +16,10 @@ LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_CFLAGS += -DBSTD_CPU_ENDIAN=BSTD_ENDIAN_LITTLE
 
-LOCAL_SRC_FILES := setdisplay.c \
-                   ../../../refsw/nexus/nxclient/apps/utils/nxapps_cmdline.c \
-                   ../../../refsw/nexus/utils/namevalue.c
+LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/
+LOCAL_SRC_FILES := bcm_platform/tools/setdisplay/setdisplay.c \
+                   refsw/nexus/nxclient/apps/utils/nxapps_cmdline.c \
+                   refsw/nexus/utils/namevalue.c
 
 LOCAL_MODULE := nxsetdisp
 LOCAL_MODULE_TAGS := optional
