@@ -1011,7 +1011,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
                                                pDef->format.video.xFramerate > B_MAX_FRAME_RATE_Q16 ||
                                                pDef->format.video.xFramerate < B_MIN_FRAME_RATE_Q16) )
         {
-           ALOGE("Video framerate: %d is not supported by the encoder", pDef->format.video.xFramerate);
+           ALOGE("Video framerate: %.2fHz is not supported by the encoder", (float)pDef->format.video.xFramerate/(float)Q16_SCALE_FACTOR);
            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
 
