@@ -685,6 +685,12 @@ static nxserver_t init_nxserver(void)
     /* -sd off */
     settings.session[0].output.sd = settings.session[0].output.encode = false;
     settings.session[0].output.hd = true;
+    /* -enablePassthroughBuffer */
+    settings.audioDecoder.enablePassthroughBuffer = true;
+    if (settings.session[0].audioPlaybacks > 0) {
+       /* Reserve one for the decoder instead of playback */
+       settings.session[0].audioPlaybacks--;
+    }
 
     settings.framebuffers = NSC_FB_NUMBER;
     settings.allowCompositionBypass = property_get_int32(NX_CAPABLE_COMP_BYPASS, 0) ? true : false;

@@ -35,17 +35,6 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
  *
- * $brcm_Workfile: AudioHardware.cpp $
- * $brcm_Revision:  $
- * $brcm_Date: 08/08/14 12:05p $
- * $brcm_Author: zhang@broadcom.com
- *
- * Module Description:
- *
- * Revision History:
- *
- * $brcm_Log:  $
- *
  *****************************************************************************/
 
 #define LOG_TAG "BrcmAudio"
@@ -92,8 +81,9 @@ static brcm_devices_out_t get_brcm_devices_out(audio_devices_t devices)
 {
     switch (devices) {
     case AUDIO_DEVICE_OUT_SPEAKER:
-    case AUDIO_DEVICE_OUT_AUX_DIGITAL:
         return BRCM_DEVICE_OUT_NEXUS;
+    case AUDIO_DEVICE_OUT_AUX_DIGITAL:
+        return BRCM_DEVICE_OUT_NEXUS_DIRECT;
     default:
         return BRCM_DEVICE_OUT_MAX;
     }
@@ -271,23 +261,16 @@ static int bout_set_parameters(struct audio_stream *stream,
 static char *bout_get_parameters(const struct audio_stream *stream,
                                  const char *keys)
 {
-    struct str_parms *query;
-    struct str_parms *reply;
-    char *str;
+    struct brcm_stream_out *bout = (struct brcm_stream_out *)stream;
 
     LOGV("%s: at %d, stream = 0x%X\n",
          __FUNCTION__, __LINE__, (uint32_t)stream);
 
-    query = str_parms_create_str(keys);
-    reply = str_parms_create();
+    if (bout->ops.do_bout_get_parameters) {
+        return bout->ops.do_bout_get_parameters(bout, keys);
+    }
 
-    /* Get parameter here !!! */
-
-    str = str_parms_to_str(reply);
-
-    str_parms_destroy(query);
-    str_parms_destroy(reply);
-    return str;
+    return strdup("");
 }
 
 static int bout_add_audio_effect(const struct audio_stream *stream,
@@ -903,6 +886,9 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     case BRCM_DEVICE_OUT_NEXUS:
         bout->ops = nexus_bout_ops;
         break;
+    case BRCM_DEVICE_OUT_NEXUS_DIRECT:
+        bout->ops = nexus_direct_bout_ops;
+        break;
     case BRCM_DEVICE_OUT_USB:
     default:
         LOGE("%s: at %d, invalid devices %d\n",
@@ -1240,6 +1226,8 @@ static int bdev_open(const hw_module_t *module, const char *name,
     bdev->adev.dump = bdev_dump;
 
     *dev = &bdev->adev.common;
+
+    bdev->standbyThread = new StandbyMonitorThread();
 
     LOGI("Audio device open, dev = 0x%X\n", (uint32_t)*dev);
     return 0;

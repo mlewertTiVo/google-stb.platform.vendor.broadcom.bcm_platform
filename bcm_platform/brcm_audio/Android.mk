@@ -58,8 +58,10 @@ endif
 LOCAL_SRC_FILES += \
 	brcm_audio.cpp \
 	brcm_audio_nexus.cpp \
+	brcm_audio_nexus_direct.cpp \
 	brcm_audio_builtin.cpp \
 	brcm_audio_dummy.cpp \
+	StandbyMonitorThread.cpp \
 
 LOCAL_CFLAGS := -DLOG_TAG=\"BrcmAudio\" $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
 LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
