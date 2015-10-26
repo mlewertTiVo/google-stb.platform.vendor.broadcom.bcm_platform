@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ifneq ($(filter bcm_% fbx6lc avko,$(TARGET_DEVICE)),)
+ifneq ($(filter bcm_% fbx6lc avko arrow,$(TARGET_DEVICE)),)
 
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_audio/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_memtrack/Android.mk
