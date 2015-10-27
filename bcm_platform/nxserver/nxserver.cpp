@@ -452,15 +452,24 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    int i, j;
    char value[PROPERTY_VALUE_MAX];
    int dec_used = 0;
+   NEXUS_PlatformCapabilities platformCap;
+   bool transcode = property_get_int32(NX_TRANSCODE, 0) ? true : false;
+   NEXUS_GetPlatformCapabilities(&platformCap);
 
    /* 1. additional display(s). */
    if (property_get(NX_TRIM_DISP, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         /* start index -> 1 */
+         /* start index -> 1, do not remove the display associated with encoder if transcode wanted. */
          for (i = 1; i < NEXUS_MAX_DISPLAYS; i++) {
-            pMemConfigSettings->display[i].maxFormat = NEXUS_VideoFormat_eUnknown;
-            for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
-               pMemConfigSettings->display[i].window[j].used = false;
+            if (platformCap.display[i].supported && platformCap.display[i].encoder && transcode &&
+                platformCap.videoEncoder[0].supported && (platformCap.videoEncoder[0].displayIndex == i)) {
+               ALOGI("keeping display %d for transcode session on encoder %d", i, 0);
+               continue;
+            } else {
+               pMemConfigSettings->display[i].maxFormat = NEXUS_VideoFormat_eUnknown;
+               for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
+                  pMemConfigSettings->display[i].window[j].used = false;
+               }
             }
          }
       }
@@ -677,7 +686,7 @@ static nxserver_t init_nxserver(void)
        settings.display.hdmiPreferences.followPreferredFormat = false;
     }
     /* -transcode off */
-    settings.transcode = (property_get_int32(NX_TRANSCODE, 0) ? true : false);
+    settings.transcode = false;
     /* -svp */
     settings.svp = true;
     /* -grab off */
