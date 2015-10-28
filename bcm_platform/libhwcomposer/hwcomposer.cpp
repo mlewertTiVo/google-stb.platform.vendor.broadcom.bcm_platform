@@ -74,8 +74,6 @@ using namespace android;
 #define HWC_SB_NO_ALLOC_SURF_CLI     1
 #define HWC_MM_NO_ALLOC_SURF_CLI     1
 
-#define HWC_REFRESH_HACK             0
-
 #define HWC_NUM_DISP_BUFFERS         3
 
 #define NSC_GPX_CLIENTS_NUMBER       11 /* graphics client layers; typically no
@@ -3508,10 +3506,6 @@ static void * hwc_vsync_task(void *argv)
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)argv;
     const double nsec_to_msec = 1.0 / 1000000.0;
-    int64_t vsync_system_time;
-    unsigned int vsync_hack_count = 0;
-    unsigned long long vsync_hack_count_last_tick = 0;
-    unsigned long long vsync_hack_count_expected_tick = 0;
 
     do
     {
@@ -3523,39 +3517,9 @@ static void * hwc_vsync_task(void *argv)
           BKNI_ReleaseMutex(ctx->power_mutex);
           BKNI_WaitForEvent(ctx->syn_cli.vsync_event, BKNI_INFINITE);
 
-          vsync_system_time = hwc_tick();
-
-          if (HWC_REFRESH_HACK) {
-             vsync_hack_count++;
-             if (vsync_hack_count_expected_tick == 0) {
-                vsync_hack_count_expected_tick = ctx->stats[HWC_PRIMARY_IX].composed + 1;
-             }
-             if (vsync_hack_count >= VSYNC_HACK_REFRESH_COUNT/2) {
-                vsync_hack_count_last_tick = ctx->stats[HWC_PRIMARY_IX].composed;
-                if (vsync_hack_count_expected_tick <= vsync_hack_count_last_tick) {
-                   vsync_hack_count = 0; /* reset */
-                   vsync_hack_count_expected_tick = ctx->stats[HWC_PRIMARY_IX].composed + 1;
-                }
-             } else if (vsync_hack_count >= VSYNC_HACK_REFRESH_COUNT) {
-                 vsync_hack_count = 0;
-                 if (vsync_hack_count_last_tick == ctx->stats[HWC_PRIMARY_IX].composed) {
-                    ALOGV("hack-refresh: tick %llu", vsync_hack_count_expected_tick);
-                    if (ctx->procs->invalidate != NULL) {
-                       ctx->procs->invalidate(const_cast<hwc_procs_t *>(ctx->procs));
-                    }
-                    vsync_hack_count_expected_tick = 0;
-                 }
-             }
-         }
-
-         if (BKNI_AcquireMutex(ctx->vsync_callback_enabled_mutex) == BERR_SUCCESS) {
-            if (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) {
-               BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
-               ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, vsync_system_time);
-            } else {
-               BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
-            }
-         }
+          if (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) {
+             ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, hwc_tick());
+          }
 
       } else {
          BKNI_ReleaseMutex(ctx->power_mutex);
