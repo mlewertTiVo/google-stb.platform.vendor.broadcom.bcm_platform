@@ -195,7 +195,7 @@ public:
         // Generate unique file name
         time (&rawtime);
         timeinfo = localtime (&rawtime);
-        strftime (fname, sizeof(fname),"/data/misc/nxdbg/vdec-%F_%H_%M_%S.txt", timeinfo);
+        strftime (fname, sizeof(fname),"/data/nxmedia/vdec-%F_%H_%M_%S.txt", timeinfo);
         ALOGD("%s, output file:%s", __FUNCTION__, fname);
         FILE *fd = fopen(fname, "w");
         if (fd == NULL){
