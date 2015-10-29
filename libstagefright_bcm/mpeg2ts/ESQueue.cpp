@@ -983,11 +983,11 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitMPEGAudio() {
         switch (layer) {
             case 1:
                 mFormat->setCString(
-                        kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_MPEG_LAYER_I);
+                        kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_MPEG);
                 break;
             case 2:
                 mFormat->setCString(
-                        kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_MPEG_LAYER_II);
+                        kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_MPEG);
                 break;
             case 3:
                 mFormat->setCString(
