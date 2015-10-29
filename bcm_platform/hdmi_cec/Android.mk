@@ -53,6 +53,6 @@ LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 
 LOCAL_SRC_FILES := hdmi_cec.cpp nexus_hdmi_cec.cpp
 LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE := hdmi_cec.bcm_platform
+LOCAL_MODULE := hdmi_cec.$(TARGET_BOARD_PLATFORM)
 
 include $(BUILD_SHARED_LIBRARY)

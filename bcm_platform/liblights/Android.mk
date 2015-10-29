@@ -30,6 +30,6 @@ LOCAL_SHARED_LIBRARIES := libcutils liblog libutils libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient libnexusipcclient libbinder
 
 LOCAL_SRC_FILES := lights.cpp
-LOCAL_MODULE := lights.bcm_platform
+LOCAL_MODULE := lights.$(TARGET_BOARD_PLATFORM)
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)

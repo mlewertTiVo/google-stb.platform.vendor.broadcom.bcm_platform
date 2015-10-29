@@ -30,7 +30,7 @@ endif
 include $(CLEAR_VARS)
 include $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include/nxclient.inc
 
-LOCAL_MODULE := power.bcm_platform
+LOCAL_MODULE := power.$(TARGET_BOARD_PLATFORM)
 
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw

@@ -53,6 +53,6 @@ LOCAL_SRC_FILES := \
         mapper.cpp \
         gralloc_destripe.cpp
 
-LOCAL_MODULE := gralloc.bcm_platform
+LOCAL_MODULE := gralloc.$(TARGET_BOARD_PLATFORM)
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)

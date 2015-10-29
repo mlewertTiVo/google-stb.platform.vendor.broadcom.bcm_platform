@@ -26,7 +26,7 @@ LOCAL_SHARED_LIBRARIES := \
 	libui \
 	libutils \
 
-LOCAL_MODULE := camera.bcm_platform
+LOCAL_MODULE := camera.$(TARGET_BOARD_PLATFORM)
 LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_SHARED_LIBRARY)

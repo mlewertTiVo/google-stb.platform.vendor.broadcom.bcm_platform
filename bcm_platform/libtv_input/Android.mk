@@ -34,6 +34,6 @@ LOCAL_SHARED_LIBRARIES := libcutils liblog libutils $(NEXUS_LIB)
 LOCAL_SHARED_LIBRARIES += libnxclient libnexusipcclient libbinder
 
 LOCAL_SRC_FILES := tv_input.cpp
-LOCAL_MODULE := tv_input.bcm_platform
+LOCAL_MODULE := tv_input.$(TARGET_BOARD_PLATFORM)
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)

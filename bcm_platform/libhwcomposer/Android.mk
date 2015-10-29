@@ -144,6 +144,6 @@ LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 
 LOCAL_SRC_FILES := hwcomposer.cpp
 LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE := hwcomposer.bcm_platform
+LOCAL_MODULE := hwcomposer.$(TARGET_BOARD_PLATFORM)
 
 include $(BUILD_SHARED_LIBRARY)
