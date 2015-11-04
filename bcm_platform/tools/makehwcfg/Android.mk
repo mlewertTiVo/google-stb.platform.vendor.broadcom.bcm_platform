@@ -18,16 +18,16 @@ include $(CLEAR_VARS)
 $(PRODUCT_OUT_FROM_TOP)/hwcfg:
 	mkdir -p $(PRODUCT_OUT_FROM_TOP)/hwcfg
 
-ifneq ($(wildcard $(BROADCOM_DHD_SOURCE_PATH)/nvrams/$(BRCM_DHD_NVRAM_NAME)),)
+ifneq ($(wildcard $(BRCM_DHD_NVRAM_DIR)/$(BRCM_DHD_NVRAM_NAME)),)
 _hwcfg_dhd_nvram_file := $(PRODUCT_OUT_FROM_TOP)/hwcfg/nvm.txt
 
 ifneq ($(wildcard $(ANDROID_TOP)/hwcfg/wifimac.txt),)
-$(_hwcfg_dhd_nvram_file): $(PRODUCT_OUT_FROM_TOP)/hwcfg ${BROADCOM_DHD_SOURCE_PATH}/nvrams/${BRCM_DHD_NVRAM_NAME} $(ANDROID_TOP)/hwcfg/wifimac.txt
-	sed -e "s/macaddr=\([0-9a-fA-F][0-9a-fA-F]:\)\{5\}[0-9a-fA-F][0-9a-fA-F]/macaddr=$$(cat $(ANDROID_TOP)/hwcfg/wifimac.txt)/" ${BROADCOM_DHD_SOURCE_PATH}/nvrams/${BRCM_DHD_NVRAM_NAME} > $@
+$(_hwcfg_dhd_nvram_file): $(PRODUCT_OUT_FROM_TOP)/hwcfg ${BRCM_DHD_NVRAM_DIR}/${BRCM_DHD_NVRAM_NAME} $(ANDROID_TOP)/hwcfg/wifimac.txt
+	sed -e "s/macaddr=\([0-9a-fA-F][0-9a-fA-F]:\)\{5\}[0-9a-fA-F][0-9a-fA-F]/macaddr=$$(cat $(ANDROID_TOP)/hwcfg/wifimac.txt)/" ${BRCM_DHD_NVRAM_DIR}/${BRCM_DHD_NVRAM_NAME} > $@
 	@echo "Found wifimac.txt, updated nvm.txt with macaddr=$$(cat $(ANDROID_TOP)/hwcfg/wifimac.txt)"
 else
-$(_hwcfg_dhd_nvram_file): $(PRODUCT_OUT_FROM_TOP)/hwcfg ${BROADCOM_DHD_SOURCE_PATH}/nvrams/${BRCM_DHD_NVRAM_NAME}
-	cp ${BROADCOM_DHD_SOURCE_PATH}/nvrams/${BRCM_DHD_NVRAM_NAME} $@
+$(_hwcfg_dhd_nvram_file): $(PRODUCT_OUT_FROM_TOP)/hwcfg ${BRCM_DHD_NVRAM_DIR}/${BRCM_DHD_NVRAM_NAME}
+	cp ${BRCM_DHD_NVRAM_DIR}/${BRCM_DHD_NVRAM_NAME} $@
 	@echo "Could not find $(ANDROID_TOP)/hwcfg/wifimac.txt, nvm.txt will contain default mac address"
 endif
 endif
