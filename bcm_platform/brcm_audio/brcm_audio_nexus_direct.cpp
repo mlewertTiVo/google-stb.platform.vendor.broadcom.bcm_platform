@@ -64,8 +64,6 @@ static NEXUS_Error clientJoin(const char *name)
     NEXUS_PlatformStatus status;
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
-    BKNI_Snprintf(&joinSettings.name[0], NXCLIENT_MAX_NAME, "%s", name);
-
     do {
         rc = NxClient_Join(&joinSettings);
         if (rc != NEXUS_SUCCESS) {

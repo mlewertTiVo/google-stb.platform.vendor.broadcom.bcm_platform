@@ -1287,7 +1287,6 @@ int main(int argc, char* argv[])
     LOGV(("@@@ MSG Check Point Start vc1_stream %d--", vc1_stream));
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
-    snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "pr_piff_playback");
     joinSettings.ignoreStandbyRequest = true;
     rc = NxClient_Join(&joinSettings);
     if (rc)

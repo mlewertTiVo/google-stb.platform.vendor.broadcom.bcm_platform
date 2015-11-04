@@ -463,7 +463,6 @@ void NexusNxService::platformInit()
     NxClient_JoinSettings joinSettings;
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
-    strncpy(joinSettings.name, "config", NXCLIENT_MAX_NAME);
     joinSettings.ignoreStandbyRequest = true;
     do {
         rc = NxClient_Join(&joinSettings);

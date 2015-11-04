@@ -103,7 +103,6 @@ int main(int argc, char **argv)
     };
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
-    snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "nxmem");
     joinSettings.ignoreStandbyRequest = true;
     joinSettings.timeout = 60;
     rc = NxClient_Join(&joinSettings);

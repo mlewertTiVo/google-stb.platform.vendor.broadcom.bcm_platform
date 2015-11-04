@@ -243,7 +243,6 @@ int main(int argc, char **argv)  {
     bool macrovision = false;
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
-    snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "%s", argv[0]);
     joinSettings.ignoreStandbyRequest = true;
     joinSettings.timeout = 60;
     rc = NxClient_Join(&joinSettings);

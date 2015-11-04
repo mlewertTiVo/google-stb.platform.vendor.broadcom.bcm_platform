@@ -286,7 +286,6 @@ int main(int argc, char **argv)
     ALOGI("%s: ouput {%d,%d, %dx%d}", __FUNCTION__, outAdj.x, outAdj.y, outAdj.width, outAdj.height);
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
-    snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "yv12torgba");
     joinSettings.ignoreStandbyRequest = true;
     joinSettings.timeout = 60;
     rc = NxClient_Join(&joinSettings);

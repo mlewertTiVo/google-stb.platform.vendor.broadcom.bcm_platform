@@ -162,8 +162,6 @@ NEXUS_Error NexusNxClient::clientJoin(const b_refsw_client_client_configuration 
     android::Mutex::Autolock autoLock(mLock);
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
-    BKNI_Snprintf(&joinSettings.name[0], NXCLIENT_MAX_NAME, "%s", getClientName());
-
     if (config == NULL || config->standbyMonitorCallback == NULL) {
         joinSettings.ignoreStandbyRequest = true;
     }

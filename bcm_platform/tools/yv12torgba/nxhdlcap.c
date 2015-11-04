@@ -108,7 +108,6 @@ int main(int argc, char **argv)
     if (width <= 0 || height <= 0 || size <= 0 || fp == NULL || block_handle == NULL) return -1;
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
-    snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "yv12cap");
     joinSettings.ignoreStandbyRequest = true;
     joinSettings.timeout = 60;
     rc = NxClient_Join(&joinSettings);

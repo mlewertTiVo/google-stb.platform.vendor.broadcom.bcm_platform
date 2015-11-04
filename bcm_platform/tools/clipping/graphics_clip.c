@@ -71,7 +71,6 @@ int main(void)
     NEXUS_Rect clipped;
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
-    snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "gclip");
     joinSettings.ignoreStandbyRequest = true;
     joinSettings.timeout = 60;
     rc = NxClient_Join(&joinSettings);
