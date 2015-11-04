@@ -94,7 +94,8 @@ BOMX_VideoDecoder_Secure::BOMX_VideoDecoder_Secure(
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks)
     :BOMX_VideoDecoder(pComponentType, pName, pAppData, pCallbacks, true)
-    ,m_Sage_PlatformHandle(NULL)
+    ,m_Sage_PlatformHandle(NULL),
+    m_Sagelib_Container(NULL)
 {
     ALOGV("%s", __FUNCTION__);
 }
@@ -148,18 +149,15 @@ int BOMX_VideoDecoder_Secure::Sage_Platform_Init()
 void BOMX_VideoDecoder_Secure::Sage_Platform_Close()
 {
     ALOGV("%s", __FUNCTION__);
-    if (m_Sage_PlatformHandle) {
-        SRAI_Platform_Close(m_Sage_PlatformHandle);
-        m_Sage_PlatformHandle = NULL;
-    }
-
-// TODO: This is causing a crash, check with the security team
-#if 0
     if (m_Sagelib_Container != NULL) {
         SRAI_Container_Free(m_Sagelib_Container);
         m_Sagelib_Container = NULL;
     }
-#endif
+
+    if (m_Sage_PlatformHandle) {
+        SRAI_Platform_Close(m_Sage_PlatformHandle);
+        m_Sage_PlatformHandle = NULL;
+    }
 }
 
 OMX_ERRORTYPE BOMX_VideoDecoder_Secure::ConfigBufferAppend(const void *pBuffer, size_t length)
