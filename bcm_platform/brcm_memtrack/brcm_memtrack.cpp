@@ -45,9 +45,6 @@
 */
 #define MEMTRACK_HAL_NUM_RECORDS_MAX 1
 
-#define MEMTRACK_HAL_NUM_NX_OBJS 128
-#define MEMTRACK_HAL_MAX_NX_OBJS 2048
-
 NexusIPCClientBase *memtrackIpcClient;
 
 int brcm_memtrack_init(const struct memtrack_module *module)
@@ -66,11 +63,10 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
                                 size_t *num_records)
 {
    int rc = 0;
-   NEXUS_Error nrc;
    NEXUS_ClientHandle client;
    NEXUS_PlatformObjectInstance *objects = NULL;
    NEXUS_InterfaceName interfaceName;
-   size_t num = MEMTRACK_HAL_NUM_NX_OBJS, i;
+   size_t num, i;
    size_t queried;
    unsigned total = 0;
    NxClient_JoinSettings joinSettings;
@@ -81,11 +77,9 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
    }
 
    NxClient_GetDefaultJoinSettings(&joinSettings);
-   strncpy(joinSettings.name, "memtrack", NXCLIENT_MAX_NAME);
    joinSettings.ignoreStandbyRequest = true;
 
-   nrc = NxClient_Join(&joinSettings);
-   if (nrc != NEXUS_SUCCESS) {
+   if (NxClient_Join(&joinSettings) != NEXUS_SUCCESS) {
        rc = -EBUSY;
        goto exit;
    }
@@ -99,36 +93,25 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
 
    if (!*num_records) {
        *num_records = MEMTRACK_HAL_NUM_RECORDS_MAX;
-       ALOGV("%s: querying record size: %d.", __FUNCTION__, MEMTRACK_HAL_NUM_RECORDS_MAX);
        goto exit_clean;
    }
 
    switch(type) {
        case MEMTRACK_TYPE_GRAPHICS:
        {
-           ALOGV("%s: pid %d, queries NEXUS_Surface.", __FUNCTION__, pid);
            strcpy(interfaceName.name, "NEXUS_Surface");
-           num = MEMTRACK_HAL_NUM_NX_OBJS;
-           do {
-              queried = num;
-              if (objects != NULL) {
-                 BKNI_Free(objects);
-                 objects = NULL;
-              }
+           num = 0;
+           NEXUS_Platform_GetClientObjects(client, &interfaceName, NULL, 0, &num);
+           ALOGV("%s: pid %d, queries %d NEXUS_Surface.", __FUNCTION__, pid, num);
+           if (num > 0) {
               objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
               if (objects == NULL) {
                  num = 0;
-                 nrc = NEXUS_SUCCESS;
+              } else {
+                 BKNI_Memset(objects, 0, num*sizeof(NEXUS_PlatformObjectInstance));
+                 NEXUS_Platform_GetClientObjects(client, &interfaceName, objects, num, &num);
               }
-              nrc = NEXUS_Platform_GetClientObjects(client, &interfaceName, objects, num, &num);
-              if (nrc == NEXUS_PLATFORM_ERR_OVERFLOW) {
-                 num = 2 * queried;
-                 if (num > MEMTRACK_HAL_MAX_NX_OBJS) {
-                    num = 0;
-                    nrc = NEXUS_SUCCESS;
-                 }
-              }
-           } while (nrc == NEXUS_PLATFORM_ERR_OVERFLOW);
+           }
            for (i = 0; i < num; i++) {
                NEXUS_SurfaceCreateSettings createSettings;
                NEXUS_SurfaceStatus status;
@@ -140,29 +123,19 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
               BKNI_Free(objects);
               objects = NULL;
            }
-           ALOGV("%s: pid %d, queries NEXUS_MemoryBlock.", __FUNCTION__, pid);
            strcpy(interfaceName.name, "NEXUS_MemoryBlock");
-           num = MEMTRACK_HAL_NUM_NX_OBJS;
-           do {
-              queried = num;
-              if (objects != NULL) {
-                 BKNI_Free(objects);
-                 objects = NULL;
-              }
+           num = 0;
+           NEXUS_Platform_GetClientObjects(client, &interfaceName, NULL, 0, &num);
+           ALOGV("%s: pid %d, queries %d NEXUS_MemoryBlock.", __FUNCTION__, pid, num);
+           if (num > 0) {
               objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
               if (objects == NULL) {
                  num = 0;
-                 nrc = NEXUS_SUCCESS;
+              } else {
+                 BKNI_Memset(objects, 0, num*sizeof(NEXUS_PlatformObjectInstance));
+                 NEXUS_Platform_GetClientObjects(client, &interfaceName, objects, num, &num);
               }
-              nrc = NEXUS_Platform_GetClientObjects(client, &interfaceName, objects, num, &num);
-              if (nrc == NEXUS_PLATFORM_ERR_OVERFLOW) {
-                 num = 2 * queried;
-                 if (num > MEMTRACK_HAL_MAX_NX_OBJS) {
-                    num = 0;
-                    nrc = NEXUS_SUCCESS;
-                 }
-              }
-           } while (nrc == NEXUS_PLATFORM_ERR_OVERFLOW);
+           }
            for (i = 0; i < num; i++) {
                NEXUS_MemoryBlockProperties prop;
                NEXUS_MemoryBlock_GetProperties((NEXUS_MemoryBlockHandle)objects[i].object, &prop);

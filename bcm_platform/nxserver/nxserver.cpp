@@ -253,10 +253,10 @@ static void *proactive_runner_task(void *argv)
           gfx_heap_shrink_threshold = calc_heap_size(value);
        }
     }
-    active_gc  = property_get_int32(NX_ACT_GC, 1);
-    active_gs  = property_get_int32(NX_ACT_GS, 1);
-    active_lmk = property_get_int32(NX_ACT_LMK, 1);
-    active_wd  = property_get_int32(NX_ACT_WD, 1);
+    active_gc  = property_get_int32(NX_ACT_GC,  1);
+    active_gs  = property_get_int32(NX_ACT_GS,  1);
+    active_lmk = property_get_int32(NX_ACT_LMK, 0);
+    active_wd  = property_get_int32(NX_ACT_WD,  1);
 
     ALOGI("%s: launching, gpx-grow: %u, gpx-shrink: %u, active-gc: %c, active-gs: %c, active-lmk: %c, active-wd: %c",
           __FUNCTION__, gfx_heap_grow_size, gfx_heap_shrink_threshold,
@@ -291,64 +291,10 @@ static void *proactive_runner_task(void *argv)
         */
 
         if (++lmk_tick > RUNNER_LMK_THRESHOLD) {
-           NEXUS_InterfaceName interfaceName;
-           size_t num, queried;
-           NEXUS_PlatformObjectInstance *objects = NULL;
-           NEXUS_Error nrc;
-           unsigned client_allocation_size;
-
            if (!active_lmk) {
               goto skip_lmk;
            }
-
-           strcpy(interfaceName.name, "NEXUS_MemoryBlock");
-           /* find memory allocation for all registered clients. */
-           if (BKNI_AcquireMutex(g_app.clients_lock) == BERR_SUCCESS) {
-              for (i = 0; i < APP_MAX_CLIENTS; i++) {
-                 client_allocation_size = 0;
-                 if (g_app.clients[i].client) {
-                    num = NUM_NX_OBJS;
-                    do {
-                       queried = num;
-                       if (objects != NULL) {
-                          BKNI_Free(objects);
-                          objects = NULL;
-                       }
-                       objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
-                       if (objects == NULL) {
-                          num = 0;
-                          nrc = NEXUS_SUCCESS;
-                       }
-                       nrc = NEXUS_Platform_GetClientObjects(g_app.clients[i].client->nexusClient, &interfaceName, objects, num, &num);
-                       if (nrc == NEXUS_PLATFORM_ERR_OVERFLOW) {
-                          num = 2 * queried;
-                          if (num > MAX_NX_OBJS) {
-                             num = 0;
-                             nrc = NEXUS_SUCCESS;
-                          }
-                       }
-                    } while (nrc == NEXUS_PLATFORM_ERR_OVERFLOW);
-                    for (j = 0; j < (int)num; j++) {
-                       NEXUS_MemoryBlockProperties prop;
-                       NEXUS_MemoryBlock_GetProperties((NEXUS_MemoryBlockHandle)objects[j].object, &prop);
-                       client_allocation_size += prop.size;
-                    }
-                    if (objects != NULL) {
-                       BKNI_Free(objects);
-                       objects = NULL;
-                    }
-                 }
-                 if (g_app.clients[i].client && client_allocation_size) {
-                    ALOGI("lmk-runner(%d): '%s'::%p -> %u bytes", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client, client_allocation_size);
-                 }
-              }
-              BKNI_ReleaseMutex(g_app.clients_lock);
-           }
-
-           /* sort clients via oom_adj score and select kill. */
-           lmk_tick = 0;
         }
-
 skip_lmk:
         if (gfx_heap_grow_size) {
            NEXUS_PlatformConfiguration platformConfig;
