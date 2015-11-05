@@ -94,6 +94,7 @@
 #define MAX_NX_OBJS                    (2048)
 #define MIN_PLATFORM_DEC               (2)
 #define NSC_FB_NUMBER                  (3)
+#define STANDBY_MONITOR_TIMEOUT        (20)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
 #define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
@@ -169,12 +170,16 @@ typedef struct {
     nxserver_t server;
     BINDER_T binder;
     RUNNER_T proactive_runner;
+    BINDER_T standby_monitor;
     unsigned refcnt;
     BKNI_MutexHandle clients_lock;
+    unsigned standbyId;
+    BKNI_MutexHandle standby_lock;
+    NxClient_StandbyStatus standbyState;
     struct {
         nxclient_t client;
         NxClient_JoinSettings joinSettings;
-    } clients[APP_MAX_CLIENTS]; /* index provides id */
+    } clients[APP_MAX_CLIENTS];
     int watchdogFd;
 
 } NX_SERVER_T;
@@ -228,6 +233,34 @@ static void *binder_task(void *argv)
     } while(nx_server->binder.running);
 
 done:
+    return NULL;
+}
+
+static void *standby_monitor_task(void *argv)
+{
+    NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
+    NEXUS_Error rc;
+    NxClient_StandbyStatus previous;
+
+    nx_server->standbyId = NxClient_RegisterAcknowledgeStandby();
+    NxClient_GetStandbyStatus(&nx_server->standbyState);
+    previous = nx_server->standbyState;
+
+    do
+    {
+       if (BKNI_AcquireMutex(nx_server->standby_lock) == BERR_SUCCESS) {
+          rc = NxClient_GetStandbyStatus(&nx_server->standbyState);
+          if (nx_server->standbyState.settings.mode != previous.settings.mode) {
+             NxClient_AcknowledgeStandby(nx_server->standbyId);
+             previous = nx_server->standbyState;
+          }
+          BKNI_ReleaseMutex(nx_server->standby_lock);
+       }
+       BKNI_Sleep(STANDBY_MONITOR_TIMEOUT);
+
+    } while(nx_server->standby_monitor.running);
+
+    NxClient_UnregisterAcknowledgeStandby(nx_server->standbyId);
     return NULL;
 }
 
@@ -297,29 +330,34 @@ static void *proactive_runner_task(void *argv)
         }
 skip_lmk:
         if (gfx_heap_grow_size) {
-           NEXUS_PlatformConfiguration platformConfig;
-           NEXUS_MemoryStatus heapStatus;
-           NEXUS_Platform_GetConfiguration(&platformConfig);
-           NEXUS_Heap_GetStatus(platformConfig.heap[NEXUS_MAX_HEAPS-2], &heapStatus);
+           if (BKNI_AcquireMutex(g_app.standby_lock) == BERR_SUCCESS) {
+              if (g_app.standbyState.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
+                 NEXUS_PlatformConfiguration platformConfig;
+                 NEXUS_MemoryStatus heapStatus;
+                 NEXUS_Platform_GetConfiguration(&platformConfig);
+                 NEXUS_Heap_GetStatus(platformConfig.heap[NEXUS_MAX_HEAPS-2], &heapStatus);
 
-           ALOGV("%s: dyn-heap largest free = %u", __FUNCTION__, heapStatus.largestFreeBlock);
-           needs_growth = false;
-           if (heapStatus.largestFreeBlock < NX_HEAP_DYN_FREE_THRESHOLD) {
-              needs_growth = true;
-           }
+                 ALOGV("%s: dyn-heap largest free = %u", __FUNCTION__, heapStatus.largestFreeBlock);
+                 needs_growth = false;
+                 if (heapStatus.largestFreeBlock < NX_HEAP_DYN_FREE_THRESHOLD) {
+                    needs_growth = true;
+                 }
 
-           if (active_gc) {
-              if (++gc_tick > RUNNER_GC_THRESHOLD) {
-                 gc_tick = 0;
-                 if (!needs_growth) {
-                    NEXUS_Platform_ShrinkHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size, (size_t)gfx_heap_shrink_threshold);
+                 if (active_gc) {
+                    if (++gc_tick > RUNNER_GC_THRESHOLD) {
+                       gc_tick = 0;
+                       if (!needs_growth) {
+                          NEXUS_Platform_ShrinkHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size, (size_t)gfx_heap_shrink_threshold);
+                       }
+                    }
+                 }
+
+                 if (active_gs && needs_growth) {
+                    ALOGI("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
+                    NEXUS_Platform_GrowHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size);
                  }
               }
-           }
-
-           if (active_gs && needs_growth) {
-              ALOGI("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
-              NEXUS_Platform_GrowHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size);
+              BKNI_ReleaseMutex(g_app.standby_lock);
            }
         }
 
@@ -805,6 +843,7 @@ static nxserver_t init_nxserver(void)
     }
 
     BKNI_CreateMutex(&g_app.clients_lock);
+    BKNI_CreateMutex(&g_app.standby_lock);
     g_app.refcnt++;
     return g_app.server;
 }
@@ -818,6 +857,7 @@ static void uninit_nxserver(nxserver_t server)
     nxserverlib_uninit(server);
     BKNI_DestroyMutex(g_app.lock);
     BKNI_DestroyMutex(g_app.clients_lock);
+    BKNI_DestroyMutex(g_app.standby_lock);
     NEXUS_Platform_Uninit();
 }
 
@@ -886,6 +926,8 @@ int main(void)
     char name[PROPERTY_VALUE_MAX];
     int memCfgFd = -1;
     NEXUS_MemoryBlockHandle hSecDmaMemoryBlock = NULL;
+    NxClient_JoinSettings joinSettings;
+    NEXUS_Error rc;
 
     memset(&g_app, 0, sizeof(g_app));
 
@@ -1000,6 +1042,23 @@ int main(void)
        }
     }
 
+    ALOGI("connecting ourselves.");
+    NxClient_GetDefaultJoinSettings(&joinSettings);
+    rc = NxClient_Join(&joinSettings);
+    if (rc != NEXUS_SUCCESS) {
+       ALOGE("failed to join the server - some features will not work!");
+    } else {
+       ALOGI("starting standby-monitor.");
+       g_app.standby_monitor.running = 1;
+       pthread_attr_init(&attr);
+       if (pthread_create(&g_app.standby_monitor.runner, &attr,
+                          standby_monitor_task, (void *)&g_app) != 0) {
+          ALOGE("failed standby monitor start, ignoring...");
+          g_app.standby_monitor.running = 0;
+       }
+       pthread_attr_destroy(&attr);
+    }
+
     ALOGI("init done.");
     while (1) {
        BKNI_Sleep(SEC_TO_MSEC * RUNNER_SEC_THRESHOLD);
@@ -1013,6 +1072,13 @@ int main(void)
     }
 
     ALOGI("terminating nxserver.");
+
+    if (g_app.standby_monitor.running) {
+       g_app.standby_monitor.running = 0;
+       pthread_join(g_app.standby_monitor.runner, NULL);
+    }
+    NxClient_Uninit();
+
     if (g_app.proactive_runner.running) {
        g_app.proactive_runner.running = 0;
        pthread_join(g_app.proactive_runner.runner, NULL);
