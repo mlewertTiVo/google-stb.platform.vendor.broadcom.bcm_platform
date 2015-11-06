@@ -668,7 +668,8 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
    if (setupGLSuitableBuffer(hnd, pSharedData)) {
       ALOGE("%s: failed to setup GL buffer, aborting...", __FUNCTION__);
-      return -EINVAL;
+      err = -EINVAL;
+      goto alloc_failed;
    }
 
    if (format != HAL_PIXEL_FORMAT_YV12) {
@@ -703,6 +704,10 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    if (ret >= 0) {
       pSharedData->container.physAddr =
           (NEXUS_Addr)ioctl(hnd->fd, NX_ASHMEM_GETMEM);
+      if (pSharedData->container.physAddr == 0) {
+         err = -ENOMEM;
+         goto alloc_failed;
+      }
    }
    hnd->fmt_set = fmt_set;
 
