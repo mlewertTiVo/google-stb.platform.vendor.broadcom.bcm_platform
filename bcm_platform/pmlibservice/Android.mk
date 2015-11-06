@@ -46,26 +46,3 @@ LOCAL_SRC_FILES := bcm_platform/pmlibservice/IPmLibService.cpp \
 LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_SHARED_LIBRARY)
-
-LOCAL_PATH := $(SAVED_LOCAL_PATH)
-include $(CLEAR_VARS)
-
-LOCAL_PRELINK_MODULE := false
-
-LOCAL_SRC_FILES:= main_pmlibserver.cpp 
-
-LOCAL_SHARED_LIBRARIES := \
-    libpmlibservice \
-    liblog \
-    libcutils \
-    libutils \
-    libbinder
-
-LOCAL_CFLAGS := $(NEXUS_CFLAGS) -DANDROID
-LOCAL_CFLAGS += $(PMLIB_CFLAGS)
-
-LOCAL_MODULE_TAGS := optional
-
-LOCAL_MODULE:= pmlibserver
-
-include $(BUILD_EXECUTABLE)

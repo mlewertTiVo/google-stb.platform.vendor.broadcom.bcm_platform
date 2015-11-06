@@ -120,12 +120,6 @@ service nxserver /system/bin/nxserver
    critical
    oneshot
 
-service pmlibservice /system/bin/pmlibserver
-    class core
-    user root
-    group root
-    critical
-
 service hwcbinder /system/bin/hwcbinder
    class pre_core
    user root

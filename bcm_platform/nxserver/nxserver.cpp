@@ -79,6 +79,8 @@
 #include "nexus_bsp_config.h"
 #include "nexus_base_mmap.h"
 
+#include "PmLibService.h"
+
 #define DHD_SECDMA_PROP                "ro.dhd.secdma"
 #define DHD_SECDMA_PARAMS_PATH         "/data/nexus/secdma"
 
@@ -228,6 +230,7 @@ static void *binder_task(void *argv)
     {
        android::ProcessState::self()->startThreadPool();
        NexusNxService::instantiate();
+       PmLibService::instantiate();
        android::IPCThreadState::self()->joinThreadPool();
 
     } while(nx_server->binder.running);
