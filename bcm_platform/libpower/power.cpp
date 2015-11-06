@@ -52,7 +52,7 @@ static const char *PROPERTY_PM_CPU_FREQ_SCALE_EN          = "ro.pm.cpufreq_scale
 
 // Property defaults
 static const char *DEFAULT_PROPERTY_PM_DOZESTATE          = "S0.5";
-static const char *DEFAULT_PROPERTY_PM_OFFSTATE           = "S3";
+static const char *DEFAULT_PROPERTY_PM_OFFSTATE           = "S2";
 static const int8_t DEFAULT_PROPERTY_PM_ETH_EN            = 1;     // Enable Ethernet during standby
 static const int8_t DEFAULT_PROPERTY_PM_MOCA_EN           = 0;     // Disable MOCA during standby
 static const int8_t DEFAULT_PROPERTY_PM_SATA_EN           = 0;     // Disable SATA during standby
