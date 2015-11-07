@@ -266,6 +266,7 @@ protected:
 
     BOMX_BufferTracker *m_pBufferTracker;
     unsigned m_AvailInputBuffers;
+    NEXUS_VideoFrameRate m_frameRate;
 
     NexusIPCClientBase              *m_pIpcClient;
     NexusClientContext              *m_pNexusClient;
