@@ -35,23 +35,34 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
   *****************************************************************************/
+#include <fcntl.h>
 #include <errno.h>
+#include <sys/ioctl.h>
 #include <cutils/log.h>
 #include "cutils/properties.h"
 #include "brcm_memtrack.h"
-#include "nexus_ipc_client_factory.h"
+#include "nx_ashmem.h"
+#include "nxclient.h"
+#include "bkni.h"
 
 /* only ever report a single record per process.
 */
 #define MEMTRACK_HAL_NUM_RECORDS_MAX 1
-
-NexusIPCClientBase *memtrackIpcClient;
+int ashmem_fd;
 
 int brcm_memtrack_init(const struct memtrack_module *module)
 {
+    char value[PROPERTY_VALUE_MAX];
+    char value2[PROPERTY_VALUE_MAX];
+
     if (!module) {
        return -ENOMEM;
     }
+
+    property_get("ro.nexus.ashmem.devname", value, "nx_ashmem");
+    strcpy(value2, "/dev/");
+    strcat(value2, value);
+    ashmem_fd = open(value2, O_RDWR, 0);
 
     return 0;
 }
@@ -70,6 +81,7 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
    size_t queried;
    unsigned total = 0;
    NxClient_JoinSettings joinSettings;
+   int playback = 0;
 
    if (!module) {
        ALOGE("%s: invalid module.", __FUNCTION__);
@@ -92,13 +104,22 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
    }
 
    if (!*num_records) {
-       *num_records = MEMTRACK_HAL_NUM_RECORDS_MAX;
-       goto exit_clean;
+      *num_records = MEMTRACK_HAL_NUM_RECORDS_MAX;
+      goto exit_clean;
    }
 
    switch(type) {
        case MEMTRACK_TYPE_GRAPHICS:
        {
+           playback = 0;
+           if (ashmem_fd >= 0) {
+              ioctl(ashmem_fd, NX_ASHMEM_CHK_PLAY, &playback);
+           }
+           if (playback) {
+              total = 0;
+              ALOGI("%s: pid %d, skips reports - multimedia activity.", __FUNCTION__, pid);
+              goto exit_early;
+           }
            strcpy(interfaceName.name, "NEXUS_Surface");
            num = 0;
            NEXUS_Platform_GetClientObjects(client, &interfaceName, NULL, 0, &num);
@@ -158,9 +179,9 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
           goto exit_clean;
    }
 
+exit_early:
    records[0].size_in_bytes = total;
    records[0].flags = MEMTRACK_FLAG_SHARED | MEMTRACK_FLAG_DEDICATED | MEMTRACK_FLAG_NONSECURE;
-
 exit_clean:
    NxClient_Uninit();
 exit:
