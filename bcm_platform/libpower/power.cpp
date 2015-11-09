@@ -29,7 +29,6 @@
 #include <hardware/power.h>
 #include <hardware_legacy/power.h>
 #include "PmLibService.h"
-#include "droid_pm.h"
 
 using namespace android;
 
@@ -195,34 +194,38 @@ static void releaseWakeLock()
 
 static void power_init(struct power_module *module __unused)
 {
-    gNexusPower = NexusPower::instantiate();
+    int fd;
+    const char *devname = getenv("NEXUS_WAKE_DEVICE_NODE");
 
-    if (gNexusPower.get() == NULL) {
-        ALOGE("%s: failed!!!", __FUNCTION__);
+    if (!devname) devname = "/dev/wake0";
+    fd = open(devname, O_RDONLY);
+
+    if (fd < 0) {
+        ALOGE("%s: Could not open %s PM driver!!!", __FUNCTION__, devname);
     }
     else {
-        struct sigevent se;
-
-        // Create the doze timer...
-        se.sigev_value.sival_int = power_get_property_off_state();
-        se.sigev_notify = SIGEV_THREAD;
-        se.sigev_notify_function = dozeTimerCallback;
-        se.sigev_notify_attributes = NULL;
-        if (timer_create(CLOCK_MONOTONIC, &se, &gDozeTimer) != 0) {
-            ALOGE("%s: Could not create doze timer!!!", __FUNCTION__);
-        }
-
-        int fd;
-        const char *devname = getenv("NEXUS_WAKE_DEVICE_NODE");
-
-        if (!devname) devname = "/dev/wake0";
-        fd = open(devname, O_RDONLY);
-
-        if (fd < 0) {
-            ALOGE("%s: Could not open %s PM driver!!!", __FUNCTION__, devname);
+        gPowerFd = fd;
+        if (ioctl(gPowerFd, BRCM_IOCTL_REGISTER_SUSPEND) != NO_ERROR) {
+            ALOGE("%s: Could not register PowerHAL with %s PM driver!!!", __FUNCTION__, devname);
         }
         else {
-            gPowerFd = fd;
+            gNexusPower = NexusPower::instantiate(fd);
+
+            if (gNexusPower.get() == NULL) {
+                ALOGE("%s: failed!!!", __FUNCTION__);
+            }
+            else {
+                struct sigevent se;
+
+                // Create the doze timer...
+                se.sigev_value.sival_int = power_get_property_off_state();
+                se.sigev_notify = SIGEV_THREAD;
+                se.sigev_notify_function = dozeTimerCallback;
+                se.sigev_notify_attributes = NULL;
+                if (timer_create(CLOCK_MONOTONIC, &se, &gDozeTimer) != 0) {
+                    ALOGE("%s: Could not create doze timer!!!", __FUNCTION__);
+                }
+            }
         }
     }
 }
@@ -317,7 +320,6 @@ static status_t power_set_state_s0()
 static status_t power_set_state_s05()
 {
     status_t status = NO_ERROR;
-    char buf[80];
 
     if (status == NO_ERROR && gNexusPower.get()) {
         status = gNexusPower->setPowerState(ePowerState_S05);
@@ -332,7 +334,6 @@ static status_t power_set_state_s05()
 static status_t power_set_state_s1()
 {
     status_t status = NO_ERROR;
-    char buf[80];
 
     if (status == NO_ERROR && gNexusPower.get()) {
         status = gNexusPower->setPowerState(ePowerState_S1);
@@ -344,11 +345,43 @@ static status_t power_set_state_s1()
     return status;
 }
 
+static status_t power_prepare_suspend()
+{
+    status_t status;
+    char buf[80];
+
+    if (gPowerFd != -1) {
+        status = ioctl(gPowerFd, BRCM_IOCTL_SET_SUSPEND_ACK);
+        if (status != NO_ERROR) {
+            strerror_r(errno, buf, sizeof(buf));
+            ALOGE("%s: Error trying to acknowledge suspend [%s]!!!", __FUNCTION__, buf);
+        }
+        else {
+            int pm_status;
+            status = ioctl(gPowerFd, BRCM_IOCTL_GET_SUSPEND_STATUS, &pm_status);
+            if (status != NO_ERROR) {
+                strerror_r(errno, buf, sizeof(buf));
+                ALOGE("%s: Error trying to read suspend status [%s]!!!", __FUNCTION__, buf);
+            }
+            else {
+                status = pm_status;
+                if (status != NO_ERROR) {
+                    strerror_r(abs(status), buf, sizeof(buf));
+                    ALOGE("%s: Error trying to enter suspend [%s]!!!", __FUNCTION__, buf);
+                }
+            }
+        }
+    }
+    else {
+        ALOGE("%s: %s driver not opened!!!", __FUNCTION__, DROID_PM_DRV_NAME);
+        status = NO_INIT;
+    }
+    return status;
+}
+
 static status_t power_set_state_s2()
 {
     status_t status = NO_ERROR;
-    int fd;
-    char buf[80];
 
     acquireWakeLock();  // Prevent the system from suspending to RAM
 
@@ -357,17 +390,13 @@ static status_t power_set_state_s2()
     }
 
     if (status == NO_ERROR) {
-        if (gPowerFd != -1) {
-            status = ioctl(gPowerFd, BRCM_IOCTL_STANDBY);
-            if (status != NO_ERROR) {
-                strerror_r(errno, buf, sizeof(buf));
-                ALOGE("%s: Error trying to enter S2 standby [%s]!!!", __FUNCTION__, buf);
-                releaseWakeLock();   // Must release to allow a retry by the kernel suspend framework
-            }
+        if (gNexusPower.get()) {
+            gNexusPower->preparePowerState(ePowerState_S2);
         }
-        else {
-            ALOGE("%s: %s driver not opened!!!", __FUNCTION__, DROID_PM_DRV_NAME);
-            status = NO_INIT;
+        status = power_prepare_suspend();
+        if (status != NO_ERROR && status != NO_INIT) {
+            ALOGE("%s: Error trying to enter S2 standby!!!", __FUNCTION__);
+            releaseWakeLock();   // Must release to allow a retry by the kernel suspend framework
         }
     }
     return status;
@@ -376,37 +405,18 @@ static status_t power_set_state_s2()
 static status_t power_set_state_s3()
 {
     status_t status = NO_ERROR;
-    char buf[80];
 
     if (gNexusPower.get()) {
         status = gNexusPower->setPowerState(ePowerState_S3);
     }
 
     if (status == NO_ERROR) {
-        if (gPowerFd != -1) {
-            status = ioctl(gPowerFd, BRCM_IOCTL_SUSPEND);
-            if (status != NO_ERROR) {
-                strerror_r(errno, buf, sizeof(buf));
-                ALOGE("%s: Error trying to enter S3 deep sleep [%s]!!!", __FUNCTION__, buf);
-            }
-            else {
-                int pm_status;
-                status = ioctl(gPowerFd, BRCM_IOCTL_GET_STATUS, &pm_status);
-                if (status != NO_ERROR) {
-                    strerror_r(errno, buf, sizeof(buf));
-                    ALOGE("%s: Error trying to read PM status [%s]!!!", __FUNCTION__, buf);
-                }
-                else {
-                    status = pm_status;
-                    if (status != NO_ERROR) {
-                        strerror_r(abs(status), buf, sizeof(buf));
-                        ALOGE("%s: Error trying to enter S3 deep sleep [%s]!!!", __FUNCTION__, buf);
-                    }
-                }
-            }
+        if (gNexusPower.get()) {
+            gNexusPower->preparePowerState(ePowerState_S3);
         }
-        else {
-            ALOGE("%s: %s driver not opened!!!", __FUNCTION__, DROID_PM_DRV_NAME);
+        status = power_prepare_suspend();
+        if (status != NO_ERROR && status != NO_INIT) {
+            ALOGE("%s: Error trying to enter S3 deep sleep!!!", __FUNCTION__);
         }
     }
     return status;
@@ -546,19 +556,30 @@ static void *power_standby_finish_thread(void *arg)
 
 static void power_finish_set_no_interactive(b_powerState toState, powerFinishFunction_t powerFunction)
 {
+    status_t status = NO_ERROR;
     pthread_t thread;
     pthread_attr_t attr;
     void *(*pthread_function)(void *);
+    char buf[80];
 
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
     // Spawn a thread that monitors for kernel suspend callbacks in S2/S3 standby only...
     if (toState == ePowerState_S2 || toState == ePowerState_S3) {
-        // Ensure we release a wake-lock to allow the system to begin suspending.  We then
-        // use this notification to place Nexus in to standby (suspend in S2/S3 modes only).
-        releaseWakeLock();
-
+        if (gPowerFd != -1) {
+            int mode = (toState == ePowerState_S2) ? 2 : 3;
+            status = ioctl(gPowerFd, BRCM_IOCTL_SET_SUSPEND_MODE, &mode);
+            if (status != NO_ERROR) {
+                strerror_r(errno, buf, sizeof(buf));
+                ALOGE("%s: Cannot set suspend mode %s [%s]!!!", __FUNCTION__, NexusIPCClientBase::getPowerString(toState), buf);
+            }
+        }
+        if (status == NO_ERROR) {
+            // Ensure we release a wake-lock to allow the system to begin suspending.  We then
+            // use this notification to place Nexus in to standby (suspend in S2/S3 modes only).
+            releaseWakeLock();
+        }
         gLock.lock();
         gPowerSuspendMonitorThreadExit = false;
         gLock.unlock();
@@ -628,7 +649,6 @@ static void power_set_interactive(struct power_module *module __unused, int on)
         b_powerState sleepState = power_get_sleep_state();
 
         if (gNexusPower.get()) {
-            gNexusPower->preparePowerState(sleepState);
             gNexusPower->setVideoOutputsState(sleepState);
         }
 
