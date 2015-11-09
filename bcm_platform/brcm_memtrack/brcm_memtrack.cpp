@@ -37,6 +37,7 @@
   *****************************************************************************/
 #include <fcntl.h>
 #include <errno.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <cutils/log.h>
 #include "cutils/properties.h"
@@ -50,20 +51,35 @@
 #define MEMTRACK_HAL_NUM_RECORDS_MAX 1
 int ashmem_fd;
 
-int brcm_memtrack_init(const struct memtrack_module *module)
+#define MEMTRACK_SURFACE_IF_NAME     "NEXUS_Surface"
+#define MEMTRACK_MEMBLCK_IF_NAME     "NEXUS_MemoryBlock"
+
+static int brcm_memtrack_open_device(void)
 {
     char value[PROPERTY_VALUE_MAX];
     char value2[PROPERTY_VALUE_MAX];
 
+    if (ashmem_fd == -1) {
+       property_get("ro.nexus.ashmem.devname", value, "nx_ashmem");
+       strcpy(value2, "/dev/");
+       strcat(value2, value);
+       ashmem_fd = open(value2, O_RDWR, 0);
+    }
+
+    return ashmem_fd;
+}
+
+int brcm_memtrack_init(const struct memtrack_module *module)
+{
     if (!module) {
        return -ENOMEM;
     }
 
-    property_get("ro.nexus.ashmem.devname", value, "nx_ashmem");
-    strcpy(value2, "/dev/");
-    strcat(value2, value);
-    ashmem_fd = open(value2, O_RDWR, 0);
-
+    ashmem_fd = -1;
+    /* may be too early if memory management not yet enabled (nexus still booting).
+     * will retry when actually needed if so.
+     */
+    brcm_memtrack_open_device();
     return 0;
 }
 
@@ -112,6 +128,7 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
        case MEMTRACK_TYPE_GRAPHICS:
        {
            playback = 0;
+           brcm_memtrack_open_device();
            if (ashmem_fd >= 0) {
               ioctl(ashmem_fd, NX_ASHMEM_CHK_PLAY, &playback);
            }
@@ -120,10 +137,10 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
               ALOGI("%s: pid %d, skips reports - multimedia activity.", __FUNCTION__, pid);
               goto exit_early;
            }
-           strcpy(interfaceName.name, "NEXUS_Surface");
+           strncpy(interfaceName.name, MEMTRACK_SURFACE_IF_NAME, strlen(MEMTRACK_SURFACE_IF_NAME));
            num = 0;
            NEXUS_Platform_GetClientObjects(client, &interfaceName, NULL, 0, &num);
-           ALOGV("%s: pid %d, queries %d NEXUS_Surface.", __FUNCTION__, pid, num);
+           ALOGV("%s: pid %d, queries %d items on if: %s.", __FUNCTION__, pid, num, MEMTRACK_SURFACE_IF_NAME);
            if (num > 0) {
               objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
               if (objects == NULL) {
@@ -144,10 +161,10 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
               BKNI_Free(objects);
               objects = NULL;
            }
-           strcpy(interfaceName.name, "NEXUS_MemoryBlock");
+           strncpy(interfaceName.name, MEMTRACK_MEMBLCK_IF_NAME, strlen(MEMTRACK_MEMBLCK_IF_NAME));
            num = 0;
            NEXUS_Platform_GetClientObjects(client, &interfaceName, NULL, 0, &num);
-           ALOGV("%s: pid %d, queries %d NEXUS_MemoryBlock.", __FUNCTION__, pid, num);
+           ALOGV("%s: pid %d, queries %d items on if: %s.", __FUNCTION__, pid, num, MEMTRACK_MEMBLCK_IF_NAME);
            if (num > 0) {
               objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
               if (objects == NULL) {
