@@ -59,6 +59,7 @@ oops="oops"
 security_root="security"
 playready_root="playready"
 show_tree_depth=3
+BCM_VENDOR_STB_ROOT="vendor/broadcom/stb"
 
 plat_target="97252 D0 C"
 lunch_target="97252D0C"
