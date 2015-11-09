@@ -3825,7 +3825,7 @@ unsigned int BOMX_VideoEncoder::RetrieveFrameFromHardware()
                 if ( m_pITBDescDumpFile )
                 {
                     /* offset,length,flags,dts(90Khz),pts(90Khz),origPts(45Khz),escr(27Mhz),tpb,shr,videoFlags,stcSnapshot,dataUnitType */
-                    fprintf(m_pITBDescDumpFile, "%u,%u,0x%08"PRIx32",%"PRIu64",%"PRIu64",%"PRIu32",%"PRIu32",%"PRIu16",%"PRIi16",0x%08"PRIx32",%"PRIu64",%"PRIu8"\n",
+                    fprintf(m_pITBDescDumpFile, "%u,%u,0x%08" PRIx32 ",%" PRIu64 ",%" PRIu64 ",%" PRIu32 ",%" PRIu32 ",%" PRIu16 ",%" PRIi16 ",0x%08" PRIx32 ",%" PRIu64 ",%" PRIu8 "\n",
                             pDesc0->offset, pDesc0->length, pDesc0->flags, pDesc0->dts, pDesc0->pts, pDesc0->originalPts, pDesc0->escr, pDesc0->ticksPerBit, pDesc0->shr, pDesc0->videoFlags, pDesc0->stcSnapshot, pDesc0->dataUnitType);
                 }
                 pEmptyFr->combinedSz += pDesc0->length;
