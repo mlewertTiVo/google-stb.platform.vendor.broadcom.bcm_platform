@@ -67,6 +67,7 @@ int gralloc_destripe_yv12(
    NEXUS_Error errCode = NEXUS_SUCCESS;
    NEXUS_SurfaceHandle hSurfaceY = NULL, hSurfaceCb = NULL, hSurfaceCr = NULL;
    NEXUS_SurfaceCreateSettings surfaceSettings;
+   NEXUS_Graphics2DDestripeBlitSettings destripeSettings;
    NEXUS_MemoryBlockHandle block_handle = NULL;
    PSHARED_DATA pSharedData;
    void *slock, *pMemory;
@@ -130,15 +131,24 @@ int gralloc_destripe_yv12(
    NEXUS_Surface_Lock(hSurfaceCb, &slock);
    NEXUS_Surface_Flush(hSurfaceCb);
 
-   errCode = NEXUS_Graphics2D_DestripeToSurface(gralloc_g2d_hdl(), hStripedSurface, hSurfaceY, NULL);
+   NEXUS_Graphics2D_GetDefaultDestripeBlitSettings(&destripeSettings);
+   // Turn off any filtering to perserve the original decoded content as-is
+   destripeSettings.horizontalFilter = NEXUS_Graphics2DFilterCoeffs_ePointSample;
+   destripeSettings.verticalFilter = NEXUS_Graphics2DFilterCoeffs_ePointSample;
+   destripeSettings.chromaFilter = false;  // The data will be internally upconverted to 4:4:4 but we convert back to 4:2:0 so don't filter and just repeat samples
+   destripeSettings.source.stripedSurface = hStripedSurface;
+   destripeSettings.output.surface = hSurfaceY;
+   errCode = NEXUS_Graphics2D_DestripeBlit(gralloc_g2d_hdl(), &destripeSettings);
    if (errCode) {
       goto err_destripe;
    }
-   errCode = NEXUS_Graphics2D_DestripeToSurface(gralloc_g2d_hdl(), hStripedSurface, hSurfaceCb, NULL);
+   destripeSettings.output.surface = hSurfaceCb;
+   errCode = NEXUS_Graphics2D_DestripeBlit(gralloc_g2d_hdl(), &destripeSettings);
    if (errCode) {
       goto err_destripe;
    }
-   errCode = NEXUS_Graphics2D_DestripeToSurface(gralloc_g2d_hdl(), hStripedSurface, hSurfaceCr, NULL);
+   destripeSettings.output.surface = hSurfaceCr;
+   errCode = NEXUS_Graphics2D_DestripeBlit(gralloc_g2d_hdl(), &destripeSettings);
    if (errCode) {
       goto err_destripe;
    }

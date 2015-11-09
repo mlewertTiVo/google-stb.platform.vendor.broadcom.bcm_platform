@@ -4293,30 +4293,41 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     case BOMX_VideoDecoderOutputBufferType_eStandard:
                         {
                             NEXUS_Error errCode;
+                            NEXUS_Graphics2DDestripeBlitSettings destripeSettings;
+                            NEXUS_Graphics2D_GetDefaultDestripeBlitSettings(&destripeSettings);
+                            // Turn off any filtering to perserve the original decoded content as-is
+                            destripeSettings.horizontalFilter = NEXUS_Graphics2DFilterCoeffs_ePointSample;
+                            destripeSettings.verticalFilter = NEXUS_Graphics2DFilterCoeffs_ePointSample;
+                            destripeSettings.chromaFilter = false;  // The data will be internally upconverted to 4:4:4 but we convert back to 4:2:0 so don't filter and just repeat samples
+                            destripeSettings.source.stripedSurface = pBuffer->hStripedSurface;
                             if ( pBuffer->hStripedSurface )
                             {
 #if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
                                 NEXUS_Surface_Flush(pInfo->typeInfo.standard.hSurfaceY);
-                                errCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, pBuffer->hStripedSurface, pInfo->typeInfo.standard.hSurfaceY, NULL);
+                                destripeSettings.output.surface = pInfo->typeInfo.standard.hSurfaceY;
+                                errCode = NEXUS_Graphics2D_DestripeBlit(m_hGraphics2d, &destripeSettings);
                                 if ( errCode )
                                 {
                                     (void)BOMX_BERR_TRACE(errCode);
                                 }
                                 NEXUS_Surface_Flush(pInfo->typeInfo.standard.hSurfaceCb);
-                                errCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, pBuffer->hStripedSurface, pInfo->typeInfo.standard.hSurfaceCb, NULL);
+                                destripeSettings.output.surface = pInfo->typeInfo.standard.hSurfaceCb;
+                                errCode = NEXUS_Graphics2D_DestripeBlit(m_hGraphics2d, &destripeSettings);
                                 if ( errCode )
                                 {
                                     (void)BOMX_BERR_TRACE(errCode);
                                 }
                                 NEXUS_Surface_Flush(pInfo->typeInfo.standard.hSurfaceCr);
-                                errCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, pBuffer->hStripedSurface, pInfo->typeInfo.standard.hSurfaceCr, NULL);
+                                destripeSettings.output.surface = pInfo->typeInfo.standard.hSurfaceCr;
+                                errCode = NEXUS_Graphics2D_DestripeBlit(m_hGraphics2d, &destripeSettings);
                                 if ( errCode )
                                 {
                                     (void)BOMX_BERR_TRACE(errCode);
                                 }
 #else
                                 NEXUS_Surface_Flush(pInfo->typeInfo.standard.hDestripeSurface);
-                                errCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, pBuffer->hStripedSurface, pInfo->typeInfo.standard.hDestripeSurface, NULL);
+                                destripeSettings.output.surface = pInfo->typeInfo.standard.hDestripeSurface;
+                                errCode = NEXUS_Graphics2D_DestripeBlit(m_hGraphics2d, &destripeSettings);
                                 if ( errCode )
                                 {
                                     (void)BOMX_BERR_TRACE(errCode);
@@ -4947,6 +4958,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
    OMX_ERRORTYPE errCode = OMX_ErrorUndefined;
    NEXUS_SurfaceHandle hSurfaceY = NULL, hSurfaceCb = NULL, hSurfaceCr = NULL;
    NEXUS_SurfaceCreateSettings surfaceSettings;
+   NEXUS_Graphics2DDestripeBlitSettings destripeSettings;
    NEXUS_MemoryBlockHandle block_handle = NULL;
    void *slock;
    NEXUS_Error nxCode;
@@ -5010,19 +5022,29 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
    NEXUS_Surface_Lock(hSurfaceCb, &slock);
    NEXUS_Surface_Flush(hSurfaceCb);
 
-   nxCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, hStripedSurface, hSurfaceY, NULL);
+   NEXUS_Graphics2D_GetDefaultDestripeBlitSettings(&destripeSettings);
+   // Turn off any filtering to perserve the original decoded content as-is
+   destripeSettings.horizontalFilter = NEXUS_Graphics2DFilterCoeffs_ePointSample;
+   destripeSettings.verticalFilter = NEXUS_Graphics2DFilterCoeffs_ePointSample;
+   destripeSettings.chromaFilter = false;  // Maintain pixel accuracy as if it came directly from the decoder
+   destripeSettings.source.stripedSurface = hStripedSurface;
+
+   destripeSettings.output.surface = hSurfaceY;
+   nxCode = NEXUS_Graphics2D_DestripeBlit(m_hGraphics2d, &destripeSettings);
    if (nxCode) {
       ALOGE("DestripeToYV12: failed destripe to Y surface");
       errCode = OMX_ErrorUndefined;
       goto err_destripe;
    }
-   nxCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, hStripedSurface, hSurfaceCb, NULL);
+   destripeSettings.output.surface = hSurfaceCb;
+   nxCode = NEXUS_Graphics2D_DestripeBlit(m_hGraphics2d, &destripeSettings);
    if (nxCode) {
       ALOGE("DestripeToYV12: failed destripe to Cb surface");
       errCode = OMX_ErrorUndefined;
       goto err_destripe;
    }
-   nxCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, hStripedSurface, hSurfaceCr, NULL);
+   destripeSettings.output.surface = hSurfaceCr;
+   nxCode = NEXUS_Graphics2D_DestripeBlit(m_hGraphics2d, &destripeSettings);
    if (nxCode) {
       ALOGE("DestripeToYV12: failed destripe to Cr surface");
       errCode = OMX_ErrorUndefined;
