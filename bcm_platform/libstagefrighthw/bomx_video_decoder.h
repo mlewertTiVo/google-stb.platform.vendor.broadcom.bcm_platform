@@ -315,6 +315,7 @@ protected:
 
     OmxBinder_wrap *m_omxHwcBinder;
     int m_memTracker;
+    bool m_securePicBuff;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();

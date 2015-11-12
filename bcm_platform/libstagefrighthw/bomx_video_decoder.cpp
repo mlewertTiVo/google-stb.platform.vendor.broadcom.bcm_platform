@@ -53,6 +53,7 @@
 #include "bomx_vp9_parser.h"
 #include "nx_ashmem.h"
 #include "bomx_pes_formatter.h"
+#include "nexus_sage.h"
 
 #define BOMX_INPUT_MSG(x)
 
@@ -72,6 +73,9 @@
 #define B_MAX_INPUT_TIMEOUT_RETURN (2)
 
 #define B_CHECKPOINT_TIMEOUT (5000)
+
+#define B_SECURE_QUERY_MAX_RETRIES (10)
+#define B_SECURE_QUERY_SLEEP_INTERVAL_US (200000)
 
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
@@ -728,7 +732,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_configBufferSize(0),
     m_outputMode(BOMX_VideoDecoderOutputBufferType_eStandard),
     m_omxHwcBinder(NULL),
-    m_memTracker(-1)
+    m_memTracker(-1),
+    m_securePicBuff(false)
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -2000,6 +2005,38 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
         // All states other than loaded require a playpump and video decoder handle
         if ( NULL == m_hSimpleVideoDecoder )
         {
+            if ( !m_secureDecoder )
+            {
+                int i;
+                NEXUS_SageStatus secureStatus;
+
+                for ( i = 0; i < B_SECURE_QUERY_MAX_RETRIES; i++ )
+                {
+                    errCode = NEXUS_Sage_GetStatus(&secureStatus);
+                    if ( errCode != NEXUS_SUCCESS )
+                    {
+                        /* SAGE possibly in reset */
+                        ALOGW("Unable to query SAGE secure status, SAGE unrepsonsive");
+                        /* Break out of loop if timed out last attempt and SAGE not responsive */
+                        if ( m_securePicBuff )
+                            break;
+                    }
+                    else
+                    {
+                        m_securePicBuff = secureStatus.urr.secured;
+                        /* Completed unsecure process, break */
+                        if ( !m_securePicBuff )
+                            break;
+                        usleep(B_SECURE_QUERY_SLEEP_INTERVAL_US);
+                    }
+                }
+
+                if ( i >= B_SECURE_QUERY_MAX_RETRIES )
+                    ALOGI("Maximum URR query attempts reached");
+                ALOGV("Slept %dms before starting non-secure decoder",
+                      i * (B_SECURE_QUERY_SLEEP_INTERVAL_US / 1000));
+            }
+
             NEXUS_VideoDecoderSettings vdecSettings;
             NEXUS_VideoDecoderExtendedSettings extSettings;
             NEXUS_PlaypumpOpenSettings playpumpOpenSettings;
@@ -4529,7 +4566,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 // Don't allow gralloc_lock to destripe in metadata mode.  We won't know when it's safe to destroy the striped surface.
                                 pSharedData->videoFrame.hStripedSurface = NULL;
 
-                                if ( !m_secureDecoder && pBuffer->hStripedSurface &&
+                                if ( !m_secureDecoder && !m_securePicBuff && pBuffer->hStripedSurface &&
                                      ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX))
                                 {
                                     int err = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 100);
