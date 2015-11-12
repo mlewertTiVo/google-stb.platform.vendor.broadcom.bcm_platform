@@ -62,6 +62,7 @@
 #define B_PROPERTY_OUTPUT_DEBUG ("media.brcm.adec_output_debug")
 #define B_PROPERTY_MP3_DELAY ("media.brcm.adec_mp3_delay")
 #define B_PROPERTY_AAC_DELAY ("media.brcm.adec_aac_delay")
+#define B_PROPERTY_ADEC_ENABLED ("media.brcm.adec_enabled")
 
 #define B_DATA_BUFFER_SIZE (8192)       // Taken from SoftAAC decoder - large enough for AC3/MP3 as well
 #define B_OUTPUT_BUFFER_SIZE (2048*2*8) // 16-bit 5.1 with 2048 samples/frame for AAC
@@ -366,6 +367,13 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
 
     m_audioPortBase = 0;    // Android seems to require this - was: BOMX_COMPONENT_PORT_BASE(BOMX_ComponentId_eAudioDecoder, OMX_PortDomainAudio);
     m_instanceNum = android_atomic_inc(&g_instanceNum);
+
+    if ( !property_get_int32(B_PROPERTY_ADEC_ENABLED, 1) )
+    {
+        ALOGD("ADEC Disabled");
+        this->Invalidate();
+        return;
+    }
 
     if ( numRoles==0 || pRoles==NULL )
     {
