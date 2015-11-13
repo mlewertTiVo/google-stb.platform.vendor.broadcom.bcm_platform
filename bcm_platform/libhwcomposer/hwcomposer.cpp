@@ -509,6 +509,9 @@ struct hwc_work_item {
    struct hwc_work_item *next;
    unsigned long long comp_ix;
    int64_t tick_queued;
+   int64_t comp_wait;
+   int64_t fence_wait;
+   int64_t surf_wait;
    bool skip_set[NSC_GPX_CLIENTS_NUMBER];
    NEXUS_SurfaceComposition comp[NSC_GPX_CLIENTS_NUMBER];
    hwc_display_contents_1_t content;
@@ -2776,9 +2779,14 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    NEXUS_SurfaceHandle surface[NSC_GPX_CLIENTS_NUMBER];
    int ops_count = 0, video_seen = 0;
    uint64_t pinged_frame = 0;
+   int64_t tick_now;
 
    memset(surface, 0, sizeof(surface));
 
+   if (ctx->track_comp_time) {
+      item->surf_wait = hwc_tick();
+      item->fence_wait = 0;
+   }
    outputHdl = hwc_get_disp_surface(ctx, HWC_PRIMARY_IX);
    if (outputHdl == NULL) {
       ALOGE("%s: no display surface available", __FUNCTION__);
@@ -2786,6 +2794,9 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, true);
       }
       goto out;
+   }
+   if (ctx->track_comp_time) {
+      item->surf_wait = hwc_tick() - item->surf_wait;
    }
 
    for (i = 0; i < list->numHwLayers; i++) {
@@ -2859,7 +2870,13 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                      ctx->stats[HWC_PRIMARY_IX].set_call, i,
                      list->hwLayers[i].acquireFenceFd);
             }
+            if (ctx->track_comp_time) {
+               tick_now = hwc_tick();
+            }
             sync_wait(list->hwLayers[i].acquireFenceFd, BKNI_INFINITE);
+            if (ctx->track_comp_time) {
+               item->fence_wait += (hwc_tick() - tick_now);
+            }
             close(list->hwLayers[i].acquireFenceFd);
             list->hwLayers[i].acquireFenceFd = INVALID_FENCE;
             if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
@@ -2871,6 +2888,9 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          if (item->skip_set[i]) {
             skip_comp = true;
          }
+         if (ctx->track_comp_time) {
+            tick_now = hwc_tick();
+         }
          if (hwc_compose_gralloc_buffer(ctx, list, i, pSharedData, gr_buffer, outputHdl,
                                         false, item->skip_set[i], &surface[i], &item->comp[i],
                                         layer_seeds_output, layer_composed, &q_ops, &ops_count,
@@ -2878,6 +2898,9 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             layer_composed++;
             ctx->gpx_cli[i].last.grhdl = (buffer_handle_t)gr_buffer;
             ctx->gpx_cli[i].last.comp_ix = item->comp_ix;
+         }
+         if (ctx->track_comp_time) {
+            item->comp_wait += (hwc_tick() - tick_now);
          }
       }
       hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
@@ -3676,10 +3699,12 @@ static void hwc_collect_composer(struct hwc_context_t *ctx, struct hwc_work_item
 
       if ((ctx->display_dump_layer & HWC_DUMP_LEVEL_LATENCY) ||
           (ctx->track_comp_chatty && ((tick_composed - this_frame->tick_queued) > VSYNC_CLIENT_REFRESH))) {
-         ALOGI("%s: %llu: ov:%d, fb:%d, comp:%d, time:%.3f msecs => %s\n",
+         ALOGI("%s: %llu: ov:%d, fb:%d, comp:%d, time:%.3f msecs (sw:%.5f::fw:%.5f::cw:%.5f) => %s\n",
                (index == HWC_PRIMARY_IX) ? "comp" : "vcmp",
                this_frame->comp_ix, overlay_seen, fb_target_seen, layer_composed,
-               comp_time, ((tick_composed - this_frame->tick_queued) > VSYNC_CLIENT_REFRESH) ? "slow" : "on-time");
+               comp_time, nsec_to_msec * this_frame->surf_wait,
+               nsec_to_msec * this_frame->fence_wait, nsec_to_msec * this_frame->comp_wait,
+               ((tick_composed - this_frame->tick_queued) > VSYNC_CLIENT_REFRESH) ? "slow" : "on-time");
       }
 
       if (layer_composed) {
