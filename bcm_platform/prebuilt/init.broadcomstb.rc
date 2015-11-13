@@ -9,7 +9,8 @@ import /init.eth.rc
 import /init.nx.dynheap.rc
 
 on init
-   mkdir /mnt/hwcfg 0555 root root
+   mkdir /hwcfg 0555 root root
+   symlink /hwcfg /mnt/hwcfg
 
    mkdir /mnt/shell/emulated 0700 shell shell
    mkdir /storage/emulated 0555 root root
