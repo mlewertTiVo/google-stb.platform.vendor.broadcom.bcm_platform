@@ -583,6 +583,7 @@ struct hwc_context_t {
     bool ticker;
 
     bool alpha_hole_background;
+    bool flush_background;
 };
 
 static void *hwc_compose_task_primary(void *argv);
@@ -1224,6 +1225,7 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
                if (ctx->mm_cli[i].id == ntfy.surface_hdl) {
                   ALOGD("%s: reset drop-dup-count on sfid %x, id %p", __FUNCTION__, ntfy.surface_hdl, ctx->mm_cli[i].id);
                   ctx->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_INVALID;
+                  ctx->flush_background = true;
                   break;
                }
            }
@@ -1895,9 +1897,12 @@ bool hwc_compose_gralloc_buffer(
                  }
                  NxClient_SetSurfaceClientComposition(ctx->disp_cli[HWC_PRIMARY_IX].sccid, &composition);
 
-                 if (!layer_seeds_output) {
+                 if (!layer_seeds_output || (ctx->flush_background && video_layer)) {
                     hwc_seed_disp_surface(ctx, outputHdl, q_ops, ops_count,
                                           video_layer?HWC_TRANSPARENT:HWC_OPAQUE);
+                    if (ctx->flush_background) {
+                       ctx->flush_background = false;
+                    }
                  } else if (!video_layer) {
                     blitSettings.constantColor = HWC_OPAQUE;
                     blitSettings.alphaOp       = NEXUS_BlitAlphaOp_eCopyConstant;
