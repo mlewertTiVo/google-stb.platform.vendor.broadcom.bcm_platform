@@ -63,6 +63,19 @@
 #define B_PROPERTY_MP3_DELAY ("media.brcm.adec_mp3_delay")
 #define B_PROPERTY_AAC_DELAY ("media.brcm.adec_aac_delay")
 #define B_PROPERTY_ADEC_ENABLED ("media.brcm.adec_enabled")
+#define B_PROPERTY_ADEC_DRC_MODE ("media.brcm.adec_drc_mode")           // Can be set to "rf" or "line"
+#define B_PROPERTY_ADEC_DRC_REF_LEVEL ("media.brcm.adec_drc_ref_level") // Specified in -.25 dB units - e.g. 64 = -16dB.
+#define B_PROPERTY_ADEC_DRC_CUT ("media.brcm.adec_drc_cut")             // 0..127 where 127=maximum compression
+#define B_PROPERTY_ADEC_DRC_BOOST ("media.brcm.adec_drc_boost")         // 0..127 where 127=maximum compression
+#define B_PROPERTY_ADEC_DRC_ENC_LEVEL ("media.brcm.adec_drc_enc_level") // -1 default or 0..127 in -.25 dB units
+
+#define B_DRC_DEFAULT_MODE ("line")
+#define B_DRC_DEFAULT_REF_LEVEL (92)    // -23dB - SW decoder targets -16dB with higher compression for mobile devices but this leaves enough headroom to avoid saturation
+#define B_DRC_DEFAULT_CUT (127)         // Max
+#define B_DRC_DEFAULT_BOOST (127)       // Max
+#define B_DRC_DEFAULT_ENC_LEVEL -1      // Unknown
+#define B_DRC_TO_NEXUS(cutboost) (((cutboost)*100)/127)
+#define B_DRC_FROM_NEXUS(cutboost) (((cutboost)*127)/100)
 
 #define B_DATA_BUFFER_SIZE (8192)       // Taken from SoftAAC decoder - large enough for AC3/MP3 as well
 #define B_OUTPUT_BUFFER_SIZE (2048*2*8) // 16-bit 5.1 with 2048 samples/frame for AAC
@@ -356,6 +369,8 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     unsigned i;
     NEXUS_Error errCode;
     NEXUS_ClientConfiguration clientConfig;
+    char property[PROPERTY_VALUE_MAX];
+    int32_t temp;
 
     #define MAX_PORT_FORMATS (2)
     #define MAX_OUTPUT_PORT_FORMATS (1)
@@ -571,10 +586,28 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_bitsPerSample = decSettings.bitsPerSample;
     m_numPcmChannels = decSettings.numPcmChannels;
 
-    // Set AAC DRC to Line mode for conformance
+    // Set AAC DRC defaults
     NEXUS_AudioDecoderCodecSettings codecSettings;
     NEXUS_AudioDecoder_GetCodecSettings(m_hAudioDecoder, NEXUS_AudioCodec_eAacAdts, &codecSettings);
-    codecSettings.codecSettings.aac.drcMode = NEXUS_AudioDecoderDolbyPulseDrcMode_eLine;
+    if ( property_get(B_PROPERTY_ADEC_DRC_MODE, property, B_DRC_DEFAULT_MODE) )
+    {
+        if ( !strcmp(property, "line") )
+        {
+            codecSettings.codecSettings.aac.drcMode = NEXUS_AudioDecoderDolbyPulseDrcMode_eLine;
+        }
+        else
+        {
+            codecSettings.codecSettings.aac.drcMode = NEXUS_AudioDecoderDolbyPulseDrcMode_eRf;
+        }
+    }
+    codecSettings.codecSettings.aac.cut = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
+    codecSettings.codecSettings.aac.boost = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
+    codecSettings.codecSettings.aac.drcTargetLevel = property_get_int32(B_PROPERTY_ADEC_DRC_REF_LEVEL, B_DRC_DEFAULT_REF_LEVEL);
+    temp = property_get_int32(B_PROPERTY_ADEC_DRC_ENC_LEVEL, B_DRC_DEFAULT_ENC_LEVEL);
+    if ( temp >= 0 )
+    {
+        codecSettings.codecSettings.aac.drcDefaultLevel = temp;
+    }
     errCode = NEXUS_AudioDecoder_SetCodecSettings(m_hAudioDecoder, &codecSettings);
     if ( errCode )
     {
@@ -1229,9 +1262,34 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
         }
     case OMX_IndexParamAudioAndroidAacPresentation:
         {
+            NEXUS_AudioDecoderCodecSettings codecSettings;
+
             OMX_AUDIO_PARAM_ANDROID_AACPRESENTATIONTYPE *pAac = (OMX_AUDIO_PARAM_ANDROID_AACPRESENTATIONTYPE *)pComponentParameterStructure;
             ALOGV("SetParameter OMX_IndexParamAudioAndroidAacPresentation");
-            // Do nothing, just make android happy we accepted it.
+
+            NEXUS_AudioDecoder_GetCodecSettings(m_hAudioDecoder, NEXUS_AudioCodec_eAacAdts, &codecSettings);
+            if ( pAac->nDrcCut >= 0 )
+            {
+                codecSettings.codecSettings.aac.cut = B_DRC_TO_NEXUS(pAac->nDrcCut);
+            }
+            if ( pAac->nDrcBoost >= 0 )
+            {
+                codecSettings.codecSettings.aac.boost = B_DRC_TO_NEXUS(pAac->nDrcBoost);
+            }
+            if ( pAac->nTargetReferenceLevel >= 0 )
+            {
+                codecSettings.codecSettings.aac.drcTargetLevel = pAac->nTargetReferenceLevel;
+            }
+            if ( pAac->nEncodedTargetLevel >= 0 )
+            {
+                codecSettings.codecSettings.aac.drcDefaultLevel = pAac->nEncodedTargetLevel;
+            }
+            errCode = NEXUS_AudioDecoder_SetCodecSettings(m_hAudioDecoder, &codecSettings);
+            if ( errCode )
+            {
+                ALOGW("Unable to update AAC presentation settings");
+                // ACodec will assert if this actually fails so just warn.
+            }
             return OMX_ErrorNone;
         }
     default:
