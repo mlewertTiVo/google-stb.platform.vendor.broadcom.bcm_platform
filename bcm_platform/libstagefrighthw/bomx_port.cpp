@@ -637,6 +637,15 @@ BOMX_Buffer *BOMX_Port::FindBuffer(BOMX_BufferCompareFunction pCompareFunc, void
     return NULL;
 }
 
+BOMX_Buffer *BOMX_Port::GetPortBuffer()
+{
+    BOMX_BufferNode *pNode;
+
+    pNode = BLST_Q_FIRST(&m_bufferList);
+
+    return (pNode == NULL)?NULL:pNode->pBuffer;
+}
+
 OMX_ERRORTYPE BOMX_Port::SetTunnel(BOMX_Component *pComp, BOMX_Port *pPort)
 {
     if ( m_numBuffers > 0 )

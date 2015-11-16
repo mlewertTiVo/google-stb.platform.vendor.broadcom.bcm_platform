@@ -696,12 +696,22 @@ BOMX_AudioDecoder::~BOMX_AudioDecoder()
     {
         if ( m_pAudioPorts[i] )
         {
+            while ( !m_pAudioPorts[i]->IsEmpty() )
+            {
+                // Clean up the allocated OMX buffers if they have not been freed for some reason
+                BOMX_Buffer *pBuffer = m_pAudioPorts[i]->GetPortBuffer();
+                ALOG_ASSERT(NULL != pBuffer);
+
+                OMX_ERRORTYPE err = FreeBuffer((m_pAudioPorts[i]->GetDir() == OMX_DirInput) ? m_audioPortBase : m_audioPortBase+1,  pBuffer->GetHeader());
+                ALOGE_IF(err != OMX_ErrorNone, "Failed to free buffer at destructor %d", err);
+            }
+
             delete m_pAudioPorts[i];
         }
     }
     if ( m_pEosBuffer )
     {
-        NEXUS_Memory_Free(m_pEosBuffer);
+        FreeInputBuffer(m_pEosBuffer);
     }
     if ( m_pConfigBuffer )
     {
@@ -2204,7 +2214,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::FreeBuffer(
         if ( pInfo->pPayload )
         {
             // UseBuffer
-            NEXUS_Memory_Free(pInfo->pPayload);
+            FreeInputBuffer(pInfo->pPayload);
         }
         else
         {

@@ -646,6 +646,15 @@ BOMX_VideoEncoder::~BOMX_VideoEncoder()
     {
         if ( m_pVideoPorts[i] )
         {
+            while ( !m_pVideoPorts[i]->IsEmpty() )
+            {
+                // Clean up the allocated OMX buffers if they have not been freed for some reason
+                BOMX_Buffer *pBuffer = m_pVideoPorts[i]->GetPortBuffer();
+                ALOG_ASSERT(NULL != pBuffer);
+
+                OMX_ERRORTYPE err = FreeBuffer((m_pVideoPorts[i]->GetDir() == OMX_DirInput) ? m_videoPortBase : m_videoPortBase+1,  pBuffer->GetHeader());
+                ALOGE_IF(err != OMX_ErrorNone, "Failed to free buffer at destructor %d", err);
+            }
             delete m_pVideoPorts[i];
         }
     }

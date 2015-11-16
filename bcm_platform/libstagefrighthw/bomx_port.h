@@ -113,6 +113,7 @@ public:
     void BufferComplete(BOMX_Buffer *pBuffer);
     // Search through queued buffers for a match using the provided function
     BOMX_Buffer *FindBuffer(BOMX_BufferCompareFunction pCompareFunc, void *pData);
+    BOMX_Buffer *GetPortBuffer();
 
     unsigned QueueDepth() { return m_queueDepth; }
 
