@@ -134,6 +134,7 @@ using namespace android;
 #define HWC_DEFAULT_GLES_MODE        HWC_GLES_MODE_FALLBACK
 #define HWC_GLES_MODE_PROP           "ro.hwc.gles.mode"
 #define HWC_CAPABLE_COMP_BYPASS      "ro.nx.capable.cb"
+#define HWC_CAPABLE_BACKGROUND       "ro.nx.capable.bg"
 
 #define HWC_DUMP_LAYER_PROP          "dyn.nx.hwc.dump.layer"
 #define HWC_DUMP_VIRT_PROP           "dyn.nx.hwc.dump.virt"
@@ -584,6 +585,7 @@ struct hwc_context_t {
 
     bool alpha_hole_background;
     bool flush_background;
+    bool smart_background;
 };
 
 static void *hwc_compose_task_primary(void *argv);
@@ -1638,7 +1640,7 @@ bool hwc_compose_gralloc_buffer(
            NEXUS_Surface_Flush(dstYUV);
 
            if (srcY != NULL && srcCr != NULL && srcCb != NULL && dstYUV != NULL) {
-              if (!layer_seeds_output && !already_comp) {
+              if ((!layer_seeds_output || !ctx->smart_background) && !already_comp) {
                  hwc_seed_disp_surface(ctx, outputHdl, q_ops, ops_count, HWC_TRANSPARENT);
               }
               if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
@@ -1886,26 +1888,30 @@ bool hwc_compose_gralloc_buffer(
               blitSettings.dest.rect      = blitSettings.output.rect;
 
               if (!already_comp) {
-                 NEXUS_SurfaceComposition composition;
-                 NxClient_GetSurfaceClientComposition(ctx->disp_cli[HWC_PRIMARY_IX].sccid, &composition);
-                 if (!video_layer) {
-                    composition.colorBlend = nexusColorBlendingEquation[BLENDIND_TYPE_SRC];
-                    composition.alphaBlend = nexusAlphaBlendingEquation[BLENDIND_TYPE_SRC];
+                 if (!ctx->smart_background) {
+                    hwc_seed_disp_surface(ctx, outputHdl, q_ops, ops_count, HWC_TRANSPARENT);
                  } else {
-                    composition.colorBlend = nexusColorBlendingEquation[BLENDIND_TYPE_SRC_OVER];
-                    composition.alphaBlend = nexusAlphaBlendingEquation[BLENDIND_TYPE_SRC_OVER];
-                 }
-                 NxClient_SetSurfaceClientComposition(ctx->disp_cli[HWC_PRIMARY_IX].sccid, &composition);
-
-                 if (!layer_seeds_output || (ctx->flush_background && video_layer)) {
-                    hwc_seed_disp_surface(ctx, outputHdl, q_ops, ops_count,
-                                          video_layer?HWC_TRANSPARENT:HWC_OPAQUE);
-                    if (ctx->flush_background) {
-                       ctx->flush_background = false;
+                    NEXUS_SurfaceComposition composition;
+                    NxClient_GetSurfaceClientComposition(ctx->disp_cli[HWC_PRIMARY_IX].sccid, &composition);
+                    if (!video_layer) {
+                       composition.colorBlend = nexusColorBlendingEquation[BLENDIND_TYPE_SRC];
+                       composition.alphaBlend = nexusAlphaBlendingEquation[BLENDIND_TYPE_SRC];
+                    } else {
+                       composition.colorBlend = nexusColorBlendingEquation[BLENDIND_TYPE_SRC_OVER];
+                       composition.alphaBlend = nexusAlphaBlendingEquation[BLENDIND_TYPE_SRC_OVER];
                     }
-                 } else if (!video_layer) {
-                    blitSettings.constantColor = HWC_OPAQUE;
-                    blitSettings.alphaOp       = NEXUS_BlitAlphaOp_eCopyConstant;
+                    NxClient_SetSurfaceClientComposition(ctx->disp_cli[HWC_PRIMARY_IX].sccid, &composition);
+
+                    if (!layer_seeds_output || (ctx->flush_background && video_layer)) {
+                       hwc_seed_disp_surface(ctx, outputHdl, q_ops, ops_count,
+                                             video_layer?HWC_TRANSPARENT:HWC_OPAQUE);
+                       if (ctx->flush_background) {
+                          ctx->flush_background = false;
+                       }
+                    } else if (!video_layer) {
+                       blitSettings.constantColor = HWC_OPAQUE;
+                       blitSettings.alphaOp       = NEXUS_BlitAlphaOp_eCopyConstant;
+                    }
                  }
               } else {
                  blitSettings.constantColor = pComp->constantColor;
@@ -2765,7 +2771,9 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          if (!layer_composed) {
             layer_seeds_output = hwc_layer_seeds_output(item->skip_set[i], &item->comp[i], outputHdl);
             if (layer_seeds_output) {
-               hwc_set_layer_blending(ctx, i, BLENDIND_TYPE_SRC);
+               if (ctx->smart_background) {
+                  hwc_set_layer_blending(ctx, i, BLENDIND_TYPE_SRC);
+               }
             }
          } else {
             layer_seeds_output = false;
@@ -3774,10 +3782,11 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
 
    hwc_setup_props_locked(dev);
 
-   dev->display_gles_virtual = property_get_bool(HWC_GLES_VIRTUAL_PROP, 0);
-   dev->fence_support        = property_get_bool(HWC_WITH_FENCE_PROP,   0);
-   dev->track_comp_time      = property_get_bool(HWC_TRACK_COMP_TIME,   1);
-   dev->g2d_allow_simult     = property_get_bool(HWC_G2D_SIM_OPS_PROP,  0);
+   dev->display_gles_virtual = property_get_bool(HWC_GLES_VIRTUAL_PROP,  0);
+   dev->fence_support        = property_get_bool(HWC_WITH_FENCE_PROP,    0);
+   dev->track_comp_time      = property_get_bool(HWC_TRACK_COMP_TIME,    1);
+   dev->g2d_allow_simult     = property_get_bool(HWC_G2D_SIM_OPS_PROP,   0);
+   dev->smart_background     = property_get_bool(HWC_CAPABLE_BACKGROUND, 1);
 }
 
 static int hwc_device_open(const struct hw_module_t* module, const char* name,
