@@ -688,8 +688,8 @@ static nxserver_t init_nxserver(void)
        settings.session[0].audioPlaybacks--;
     }
 
-    settings.framebuffers = NSC_FB_NUMBER;
     settings.allowCompositionBypass = property_get_int32(NX_CAPABLE_COMP_BYPASS, 0) ? true : false;
+    settings.framebuffers = settings.allowCompositionBypass ? 0 : NSC_FB_NUMBER;
 
     settings.videoDecoder.dynamicPictureBuffers = property_get_int32(NX_ODV, 0) ? true : false;
     if (settings.videoDecoder.dynamicPictureBuffers) {
