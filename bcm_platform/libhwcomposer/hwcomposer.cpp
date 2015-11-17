@@ -3782,7 +3782,7 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
 
    hwc_setup_props_locked(dev);
 
-   dev->display_gles_virtual = property_get_bool(HWC_GLES_VIRTUAL_PROP,  0);
+   dev->display_gles_virtual = property_get_bool(HWC_GLES_VIRTUAL_PROP,  1);
    dev->fence_support        = property_get_bool(HWC_WITH_FENCE_PROP,    0);
    dev->track_comp_time      = property_get_bool(HWC_TRACK_COMP_TIME,    1);
    dev->g2d_allow_simult     = property_get_bool(HWC_G2D_SIM_OPS_PROP,   0);
