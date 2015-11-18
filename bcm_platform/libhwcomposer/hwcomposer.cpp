@@ -1327,44 +1327,47 @@ static bool split_layer_scaling(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
 {
     bool ret = true;
     void *pAddr;
-
-    private_handle_t *gr_buffer = (private_handle_t *)layer->handle;
-    hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
-    PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
-
-    NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
-                                (int16_t)(int)layer->sourceCropf.top,
-                                (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
-                                (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
+    PSHARED_DATA pSharedData = NULL;
+    private_handle_t *gr_buffer = NULL;
+    NEXUS_Rect clip_position;
 
     if (!layer->handle) {
         goto out;
     }
 
+    gr_buffer = (private_handle_t *)layer->handle;
+    hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+    pSharedData = (PSHARED_DATA) pAddr;
+    clip_position.x = (int16_t)(int)layer->sourceCropf.left;
+    clip_position.y = (int16_t)(int)layer->sourceCropf.top;
+    clip_position.width = (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left);
+    clip_position.height = (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top);
+
     if (pSharedData == NULL) {
-        goto out;
+        goto out_unlock;
     }
 
     if (is_video_layer(ctx, layer, -1, NULL, NULL)) {
-        goto out;
+        goto out_unlock;
     }
 
     if (clip_position.width && ((pSharedData->container.width / clip_position.width) >= ctx->gfxCaps.maxHorizontalDownScale)) {
         ALOGV("%s: width: %d -> %d (>%d)", __FUNCTION__, pSharedData->container.width, clip_position.width,
               ctx->gfxCaps.maxHorizontalDownScale);
         ret = false;
-        goto out;
+        goto out_unlock;
     }
 
     if (clip_position.height && ((pSharedData->container.height / clip_position.height) >= ctx->gfxCaps.maxVerticalDownScale)) {
         ALOGV("%s: height: %d -> %d (>%d)", __FUNCTION__, pSharedData->container.height, clip_position.height,
               ctx->gfxCaps.maxVerticalDownScale);
         ret = false;
-        goto out;
+        goto out_unlock;
     }
 
-out:
+out_unlock:
     hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+out:
     return ret;
 }
 
