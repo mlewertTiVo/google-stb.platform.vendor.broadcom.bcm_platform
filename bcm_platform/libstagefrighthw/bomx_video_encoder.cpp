@@ -96,9 +96,9 @@
 
 using namespace android;
 
-static const char *g_roles[] = {"video_encoder.avc", "video_encoder.mpeg4", "video_encoder.h263", "video_encoder.vp8"};
+static const char *g_roles[] = {"video_encoder.avc", "video_encoder.vp8"};
 static const unsigned int g_numRoles = sizeof(g_roles)/sizeof(const char *);
-static int g_roleCodec[] = {OMX_VIDEO_CodingAVC, OMX_VIDEO_CodingMPEG4, OMX_VIDEO_CodingH263, OMX_VIDEO_CodingVP8};
+static int g_roleCodec[] = {OMX_VIDEO_CodingAVC, OMX_VIDEO_CodingVP8};
 
 enum BOMX_VideoEncoderEventType
 {
@@ -745,28 +745,34 @@ OMX_ERRORTYPE BOMX_VideoEncoder::GetParameter(
         }
         switch ( (int)GetCodec() )
         {
-        default:
-            // Only certain codecs support this interface
-            return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
         case OMX_VIDEO_CodingAVC:
             switch ( pProfileLevel->nProfileIndex )
             {
             case 0:
                 pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileBaseline;
-                pProfileLevel->eLevel = (OMX_U32)GetMaxLevelAvc(OMX_VIDEO_AVCProfileBaseline);
                 break;
             case 1:
                 pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileMain;
-                pProfileLevel->eLevel = (OMX_U32)GetMaxLevelAvc(OMX_VIDEO_AVCProfileMain);
                 break;
             case 2:
                 pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileHigh;
-                pProfileLevel->eLevel = (OMX_U32)GetMaxLevelAvc(OMX_VIDEO_AVCProfileHigh);
                 break;
             default:
                 return OMX_ErrorNoMore;
             }
+            pProfileLevel->eLevel = ( m_maxFrameWidth > 1280 && m_maxFrameHeight > 720 ) ? (OMX_U32)OMX_VIDEO_AVCLevel4 : (OMX_U32)OMX_VIDEO_AVCLevel31;
             break;
+        case OMX_VIDEO_CodingVP8:
+            if ( pProfileLevel->nProfileIndex > 0 )
+            {
+                return OMX_ErrorNoMore;
+            }
+            pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_VP8ProfileMain;
+            pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_VP8Level_Version3;   // ?
+            break;
+        default:
+            // Only certain codecs support this interface
+            return OMX_ErrorNoMore;
         }
         return OMX_ErrorNone;
     }
@@ -4381,151 +4387,4 @@ NEXUS_Error BOMX_VideoEncoder::UpdateEncoderSettings(void)
     ALOGV("configured Nexus encoder");
 
     return NEXUS_SUCCESS;
-}
-
-/* https://en.wikipedia.org/wiki/H.264/MPEG-4_AVC#Levels */
-static const struct {
-    OMX_VIDEO_AVCLEVELTYPE level;
-    struct {
-        unsigned lumaSamples;
-        unsigned macroblocks;
-    } maxDecodingSpeed;
-    struct {
-        unsigned lumaSamples;
-        unsigned macroblocks;
-    } maxFrameSize;
-    struct {
-        unsigned baselineExtendedMain;
-        unsigned high;
-        unsigned high10;
-    } maxVideoBitRate; // (VCL) kbit/s
-    struct {
-        unsigned width;
-        unsigned height;
-        float frameRate;
-        unsigned maxStoredFrames;
-    } examples[6];
-    int nbExamples;
-} MPEG4_AVC_Levels[] = {
-    /*      Level         | Max decoding speed  | Max frame size  | Max video bit rate for  | Examples for high resolution
-    |                     |                     |                 |  video coding layer     | @ highest frame rate
-    |                     |                     |                 |     (VCL) kbit/s        |{{width, height, rate,
-    |                     |{Luma samples/s,     |{Luma samples,   |{Baseline/Extended/Main, |      max stored frames},
-    |                     |      Macroblocks/s} |    Macroblocks} |          High, High 10} | {width, ...}}, nbExamples} */
-    {OMX_VIDEO_AVCLevel1,  {   380160,    1485}, {  25344,    99}, {    64,     80,    192}, {{ 128,   96,  30.9,  8},
-                                                                                              { 176,  144,  15.0,  4}}, 2},
-    {OMX_VIDEO_AVCLevel1b, {   380160,    1485}, {  25344,    99}, {   128,    160,    384}, {{ 128,   96,  30.9,  8},
-                                                                                              { 176,  144,  15.0,  4}}, 2},
-    {OMX_VIDEO_AVCLevel11, {   768000,    3000}, { 101376,   396}, {   192,    240,    576}, {{ 176,  144,  30.3,  9},
-                                                                                              { 320,  240,  10.0,  3},
-                                                                                              { 352,  288,   7.5,  2}}, 3},
-    {OMX_VIDEO_AVCLevel12, {  1536000,    6000}, { 101376,   396}, {   384,    480,   1152}, {{ 320,  240,  20.0,  7},
-                                                                                              { 352,  288,  15.2,  6}}, 2},
-    {OMX_VIDEO_AVCLevel13, {  3041280,   11880}, { 101376,   396}, {   768,    960,   2304}, {{ 320,  240,  36.0,  7},
-                                                                                              { 352,  288,  30.0,  6}}, 2},
-    {OMX_VIDEO_AVCLevel2,  {  3041280,   11880}, { 101376,   396}, {  2000,   2500,   6000}, {{ 320,  240,  36.0,  7},
-                                                                                              { 352,  288,  30.0,  6}}, 2},
-    {OMX_VIDEO_AVCLevel21, {  5068800,   19800}, { 202752,   792}, {  4000,   5000,  12000}, {{ 352,  480,  30.0,  7},
-                                                                                              { 352,  576,  25.0,  6}}, 2},
-    {OMX_VIDEO_AVCLevel22, {  5184000,   20250}, { 414720,  1620}, {  4000,   5000,  12000}, {{ 352,  480,  30.7, 12},
-                                                                                              { 352,  576,  25.6, 10},
-                                                                                              { 720,  480,  15.0,  6},
-                                                                                              { 720,  576,  12.5,  5}}, 4},
-    {OMX_VIDEO_AVCLevel3,  { 10368000,   40500}, { 414720,  1620}, { 10000,  12500,  30000}, {{ 352,  480,  61.4, 12},
-                                                                                              { 352,  576,  51.1, 10},
-                                                                                              { 720,  480,  30.0,  6},
-                                                                                              { 720,  576,  25.0,  5}}, 4},
-    {OMX_VIDEO_AVCLevel31, { 27648000,  108000}, { 921600,  3600}, { 14000,  17500,  42000}, {{ 720,  480,  80.0, 13},
-                                                                                              { 720,  576,  66.7, 11},
-                                                                                              {1280,  720,  30.0,  5}}, 3},
-    {OMX_VIDEO_AVCLevel32, { 55296000,  216000}, {1310720,  5120}, { 20000,  25000,  60000}, {{1280,  720,  60.0,  5},
-                                                                                              {1280, 1024,  42.2,  4}}, 2},
-    {OMX_VIDEO_AVCLevel4,  { 62914560,  245760}, {2097152,  8192}, { 20000,  25000,  60000}, {{1280,  720,  68.3,  9},
-                                                                                              {1920, 1080,  30.1,  4},
-                                                                                              {2048, 1024,  30.0,  4}}, 3},
-    {OMX_VIDEO_AVCLevel41, { 62914560,  245760}, {2097152,  8192}, { 50000,  62500, 150000}, {{1280,  720,  68.3,  9},
-                                                                                              {1920, 1080,  30.1,  4},
-                                                                                              {2048, 1024,  30.0,  4}}, 3},
-    {OMX_VIDEO_AVCLevel42, {133693440,  522240}, {2228224,  8704}, { 50000,  62500, 150000}, {{1280,  720, 145.1,  9},
-                                                                                              {1920, 1080,  64.0,  4},
-                                                                                              {2048, 1080,  60.0,  4}}, 3},
-    {OMX_VIDEO_AVCLevel5,  {150994944,  589824}, {5652480, 22080}, {135000, 168750, 405000}, {{1920, 1080,  72.3, 13},
-                                                                                              {2048, 1024,  72.0, 13},
-                                                                                              {2048, 1080,  67.8, 12},
-                                                                                              {2560, 1920,  30.7,  5},
-                                                                                              {3672, 1536,  26.7,  5}}, 5},
-    {OMX_VIDEO_AVCLevel51, {251658240,  983040}, {9437184, 36864}, {240000, 300000, 720000}, {{1920, 1080, 120.5, 16},
-                                                                                              {2560, 1920,  51.2,  9},
-                                                                                              {3840, 2160,  31.7,  5},
-                                                                                              {4096, 2048,  30.0,  5},
-                                                                                              {4096, 2160,  28.5,  5},
-                                                                                              {4096, 2304,  26.7,  5}}, 6},
-    {OMX_VIDEO_AVCLevel52, {530841600, 2073600}, {9437184, 36864}, {240000, 300000, 720000}, {{1920, 1080, 172.0, 16},
-                                                                                              {2560, 1920, 108.0,  9},
-                                                                                              {3840, 2160,  66.8,  5},
-                                                                                              {4096, 2048,  63.3,  5},
-                                                                                              {4096, 2160,  60.0,  5},
-                                                                                              {4096, 2304,  56.3,  5}}, 6},
-};
-static const int nMPEG4_AVC_Levels = sizeof(MPEG4_AVC_Levels)/sizeof(MPEG4_AVC_Levels[0]);
-
-/* Return the maximum level supported for a given profile. */
-OMX_VIDEO_AVCLEVELTYPE BOMX_VideoEncoder::GetMaxLevelAvc(OMX_VIDEO_AVCPROFILETYPE profile)
-{
-    int i, j;
-
-    ALOGV("GetMaxLevelAvc %s %ux%u@%f",
-        asString(profile), m_maxFrameWidth, m_maxFrameHeight, B_MAX_FRAME_RATE_F);
-
-    for ( i = nMPEG4_AVC_Levels-1; i >= 0; i-- )
-    {
-        unsigned maxVideoBitRate;
-
-        switch (profile) {
-        case OMX_VIDEO_AVCProfileBaseline:
-        case OMX_VIDEO_AVCProfileMain:
-        case OMX_VIDEO_AVCProfileExtended:
-            maxVideoBitRate = MPEG4_AVC_Levels[i].maxVideoBitRate.baselineExtendedMain;
-            break;
-        case OMX_VIDEO_AVCProfileHigh:
-            maxVideoBitRate = MPEG4_AVC_Levels[i].maxVideoBitRate.high;
-            break;
-        case OMX_VIDEO_AVCProfileHigh10:
-            maxVideoBitRate = MPEG4_AVC_Levels[i].maxVideoBitRate.high10;
-            break;
-        default:
-            /* We don't know */
-            maxVideoBitRate = 0;
-        }
-
-        ALOGV("AVC trying %s %s maxDecodingSpeed=%u Luma samples/s (%u Macroblocks/s) "
-            "maxFrameSize=%u Luma samples (%u Macroblocks) maxVideoBitRate=%u",
-            asString(profile),
-            asString(MPEG4_AVC_Levels[i].level),
-            MPEG4_AVC_Levels[i].maxDecodingSpeed.lumaSamples,
-            MPEG4_AVC_Levels[i].maxDecodingSpeed.macroblocks,
-            MPEG4_AVC_Levels[i].maxFrameSize.lumaSamples,
-            MPEG4_AVC_Levels[i].maxFrameSize.macroblocks,
-            maxVideoBitRate);
-
-        for ( j = MPEG4_AVC_Levels[i].nbExamples-1; j >= 0; j-- )
-        {
-            if (MPEG4_AVC_Levels[i].examples[j].width <= m_maxFrameWidth &&
-                MPEG4_AVC_Levels[i].examples[j].height <= m_maxFrameHeight &&
-                MPEG4_AVC_Levels[i].examples[j].frameRate <= B_MAX_FRAME_RATE_F /*&&
-                MPEG4_AVC_Levels[i].examples[j].maxStoredFrames <= our encoder's max stored frames*/ )
-            {
-                ALOGV("AVC: %s %s matching example %ux%u@%f (%u)",
-                    asString(profile),
-                    asString(MPEG4_AVC_Levels[i].level),
-                    MPEG4_AVC_Levels[i].examples[j].width,
-                    MPEG4_AVC_Levels[i].examples[j].height,
-                    MPEG4_AVC_Levels[i].examples[j].frameRate,
-                    MPEG4_AVC_Levels[i].examples[j].maxStoredFrames);
-                return MPEG4_AVC_Levels[i].level;
-            }
-        }
-    }
-    ALOGV("AVC: no matching example found in spec");
-    return (OMX_VIDEO_AVCLEVELTYPE)0;
 }

@@ -1401,9 +1401,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
             }
             switch ( (int)GetCodec() )
             {
-            default:
-                // Only certain codecs support this interface
-                return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
             case OMX_VIDEO_CodingMPEG2:
                 pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_MPEG2ProfileMain;   // We support Main Profile
                 switch ( pProfileLevel->nProfileIndex )
@@ -1470,6 +1467,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_VP8ProfileMain;
                 pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_VP8Level_Version3;   // ?
                 break;
+            // TODO: Add supported profiles/levels for OMX_VIDEO_CodingVP9 after Android has defined them in the frameworks
             case OMX_VIDEO_CodingHEVC:
                 switch ( pProfileLevel->nProfileIndex )
                 {
@@ -1485,6 +1483,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                     return OMX_ErrorNoMore;
                 }
                 break;
+            default:
+                // Only certain codecs support this interface
+                return OMX_ErrorNoMore;
             }
             return OMX_ErrorNone;
         }
