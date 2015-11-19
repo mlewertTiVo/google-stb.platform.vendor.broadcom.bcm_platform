@@ -3245,6 +3245,11 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
               close(ctx->composer_ret_timeline[i]);
               ctx->composer_ret_timeline[i] = INVALID_FENCE;
            }
+           for (j = 0; j < HWC_NUM_DISP_BUFFERS; j++) {
+              if (ctx->disp_cli[i].display_buffers[j]) {
+                 NEXUS_Surface_Destroy(ctx->disp_cli[i].display_buffers[j]);
+              }
+           }
         }
         if (ctx->recycle_event) {
            BKNI_DestroyEvent(ctx->recycle_event);
