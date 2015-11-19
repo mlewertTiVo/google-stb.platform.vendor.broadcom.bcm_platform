@@ -732,6 +732,8 @@ static int hwc_mem_lock_phys(struct hwc_context_t *ctx, unsigned handle, NEXUS_A
          ALOGI("mma-lock-phys: %p -> %p", handle, *paddr);
       } else if (rc) {
          ALOGW("mma-lock-phys: %p -> invalid!?!", handle);
+         *paddr = (NEXUS_Addr)NULL;
+         return rc;
       }
    } else {
       *paddr = (NEXUS_Addr)NULL;
@@ -757,11 +759,16 @@ static int hwc_mem_lock(struct hwc_context_t *ctx, unsigned handle, void **addr,
       if (lock) {
          NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
          rc = NEXUS_MemoryBlock_Lock(block_handle, addr);
+         if (rc == BERR_NOT_SUPPORTED) {
+            NEXUS_MemoryBlock_Unlock(block_handle);
+         }
 
          if (ctx->dump_mma) {
             ALOGI("mma-lock: %p -> %p", handle, *addr);
          } else if (rc) {
             ALOGW("mma-lock: %p -> invalid!?!", handle);
+            *addr = NULL;
+            return (int)rc;
          }
       }
    } else {
@@ -1282,12 +1289,14 @@ static bool is_video_layer(struct hwc_context_t *ctx, hwc_layer_1_t *layer, int 
         client_context = NULL;
 
         if (layer->compositionType == HWC_OVERLAY) {
-            int index = -1;
+            int lrc = 0, index = -1;
             private_handle_t *gr_buffer = (private_handle_t *)layer->handle;
-            hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+            lrc = hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
             PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
-            if (pSharedData == NULL) {
-               hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+            if (lrc || pSharedData == NULL) {
+               if (!lrc) {
+                  hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+               }
                goto out;
             }
             index = android_atomic_acquire_load(&pSharedData->videoWindow.windowIdPlusOne);
@@ -1327,6 +1336,7 @@ static bool split_layer_scaling(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
 {
     bool ret = true;
     void *pAddr;
+    int lrc = 0;
     PSHARED_DATA pSharedData = NULL;
     private_handle_t *gr_buffer = NULL;
     NEXUS_Rect clip_position;
@@ -1336,15 +1346,19 @@ static bool split_layer_scaling(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
     }
 
     gr_buffer = (private_handle_t *)layer->handle;
-    hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+    lrc = hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
     pSharedData = (PSHARED_DATA) pAddr;
     clip_position.x = (int16_t)(int)layer->sourceCropf.left;
     clip_position.y = (int16_t)(int)layer->sourceCropf.top;
     clip_position.width = (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left);
     clip_position.height = (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top);
 
-    if (pSharedData == NULL) {
-        goto out_unlock;
+    if (lrc || pSharedData == NULL) {
+        if (!lrc) {
+           goto out_unlock;
+        } else {
+           goto out;
+        }
     }
 
     if (is_video_layer(ctx, layer, -1, NULL, NULL)) {
@@ -1499,7 +1513,7 @@ bool hwc_compose_gralloc_buffer(
 {
     bool composed = false, blit_yv12, is_cursor_layer = false;
     NEXUS_Error rc;
-    int adj;
+    int adj, lrc = 0;
     unsigned int cstride = 0, cr_offset = 0, cb_offset = 0;
     void *pAddr, *slock;
     NEXUS_SurfaceCreateSettings displaySurfaceSettings;
@@ -1516,10 +1530,14 @@ bool hwc_compose_gralloc_buffer(
        is_cursor_layer = (ctx->gpx_cli[layer_id].layer_flags & HWC_IS_CURSOR_LAYER) ? true : false;
     }
 
-    hwc_mem_lock(ctx, pSharedData->container.physAddr, &pAddr, false);
-    if (!pSharedData->container.physAddr) {
+    lrc = hwc_mem_lock(ctx, pSharedData->container.physAddr, &pAddr, false);
+    if (lrc || !pSharedData->container.physAddr) {
         ALOGE("%s: plane buffer address NULL: %d\n", __FUNCTION__, layer_id);
-        goto out_unlock;
+        if (!lrc) {
+           goto out_unlock;
+        } else {
+           goto out;
+        }
     }
 
     NEXUS_Surface_GetCreateSettings(outputHdl, &displaySurfaceSettings);
@@ -2026,7 +2044,7 @@ static void hwc_prepare_gpx_layer(
                                 (int16_t)(int)layer->sourceCropf.top,
                                 (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
                                 (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
-    int cur_width = 0, cur_height = 0;
+    int cur_width = 0, cur_height = 0, lrc = 0;
     unsigned int cur_blending_type;
     bool layer_changed = false;
 
@@ -2042,11 +2060,15 @@ static void hwc_prepare_gpx_layer(
     }
 
     gr_buffer = (private_handle_t *)layer->handle;
-    hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+    lrc = hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
     PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
-    if (pSharedData == NULL) {
-        ALOGE("%s: invalid buffer on layer_id %d", __FUNCTION__, layer_id);
-        goto out;
+    if (lrc || pSharedData == NULL) {
+       ALOGE("%s: invalid buffer on layer_id %d", __FUNCTION__, layer_id);
+       if (!lrc) {
+          goto out_unlock;
+       } else {
+          goto out;
+       }
     }
     cur_width  = pSharedData->container.width;
     cur_height = pSharedData->container.height;
@@ -2054,7 +2076,7 @@ static void hwc_prepare_gpx_layer(
 
     if (!is_locked) {
        if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-           goto out;
+           goto out_unlock;
        }
     }
 
@@ -2123,8 +2145,9 @@ out_mutex:
     if (!is_locked) {
        BKNI_ReleaseMutex(ctx->mutex);
     }
-out:
+out_unlock:
     hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+out:
     return;
 }
 
@@ -2255,12 +2278,15 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
             if (primary_need_nsc_layer(ctx, layer, list->numHwLayers, &overlay_layers)) {
                 if (ctx->display_dump_layer & HWC_DUMP_LEVEL_PREPARE) {
                    unsigned handle_dump = 0;
+                   int lrc = 0;
                    if (layer->handle != NULL) {
                       private_handle_t *gr_buffer = (private_handle_t *)layer->handle;
                       NEXUS_Addr pAddr;
-                      hwc_mem_lock_phys(ctx, (unsigned)gr_buffer->sharedData, &pAddr);
+                      lrc = hwc_mem_lock_phys(ctx, (unsigned)gr_buffer->sharedData, &pAddr);
                       handle_dump = (unsigned)pAddr;
-                      hwc_mem_unlock_phys(ctx, (unsigned)gr_buffer->sharedData);
+                      if (!lrc) {
+                         hwc_mem_unlock_phys(ctx, (unsigned)gr_buffer->sharedData);
+                      }
                    }
                    ALOGI("comp: %llu - show - sf:%d (%d) - hdl:0x%x", ctx->stats[HWC_PRIMARY_IX].prepare_call, (int)i, (int)layer->compositionType, handle_dump);
                 }
@@ -2696,7 +2722,7 @@ out:
 
 static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, int *overlay_seen, int *fb_target_seen, bool *oob_video)
 {
-   int layer_composed = 0;
+   int layer_composed = 0, lrc = 0;
    NEXUS_SurfaceHandle outputHdl = NULL;
    size_t i;
    NEXUS_Error rc;
@@ -2748,10 +2774,12 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
          continue;
       }
-      hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+      lrc = hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
       PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
-      if (pSharedData == NULL) {
-         hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+      if (lrc || pSharedData == NULL) {
+         if (!lrc) {
+            hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+         }
          ALOGE("comp: %llu/%llu - layer: %d - invalid shared data\n",
                ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
          continue;

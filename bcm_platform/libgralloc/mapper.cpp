@@ -79,6 +79,7 @@ int gralloc_register_buffer(gralloc_module_t const* module,
    NEXUS_MemoryBlockHandle block_handle = NULL;
    private_handle_t* hnd = (private_handle_t*)handle;
    void *pMemory;
+   NEXUS_Error lrc;
 
    (void)module;
 
@@ -89,7 +90,12 @@ int gralloc_register_buffer(gralloc_module_t const* module,
 
    pMemory = NULL;
    block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
-   NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   if (lrc) {
+      if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(block_handle);
+      ALOGE("%s : invalid lock for 0x%x", __FUNCTION__, block_handle);
+      return -EINVAL;
+   }
    pSharedData = (PSHARED_DATA) pMemory;
    if (pSharedData != NULL) {
       if ((hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) && pSharedData->container.physAddr) {
@@ -119,9 +125,8 @@ int gralloc_register_buffer(gralloc_module_t const* module,
                getpid());
          NEXUS_MemoryBlock_UnlockOffset(block_handle);
       }
-
-      NEXUS_MemoryBlock_Unlock(block_handle);
    }
+   if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
 
    return 0;
 }
@@ -133,6 +138,7 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
    NEXUS_MemoryBlockHandle block_handle = NULL;
    private_handle_t* hnd = (private_handle_t*)handle;
    void *pMemory;
+   NEXUS_Error lrc;
 
    (void)module;
 
@@ -143,9 +149,13 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
 
    pMemory = NULL;
    block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
-   NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   if (lrc) {
+      if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(block_handle);
+      ALOGE("%s : invalid lock for 0x%x", __FUNCTION__, block_handle);
+      return -EINVAL;
+   }
    pSharedData = (PSHARED_DATA) pMemory;
-
    if (pSharedData != NULL) {
       if (gralloc_log_mapper()) {
          NEXUS_Addr physAddr;
@@ -175,10 +185,11 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
             NEXUS_MemoryBlock_CheckIfLocked((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr);
          }
       }
-      NEXUS_MemoryBlock_Unlock(block_handle);
-      if (gralloc_boom_check()) {
-         NEXUS_MemoryBlock_CheckIfLocked(block_handle);
-      }
+   }
+
+   if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
+   if (gralloc_boom_check()) {
+      NEXUS_MemoryBlock_CheckIfLocked(block_handle);
    }
 
    return 0;
@@ -191,6 +202,7 @@ int gralloc_lock(gralloc_module_t const* module,
 {
    int64_t tick_start, tick_end;
    int err = 0;
+   NEXUS_Error lrc;
    bool hwConverted=false;
    NEXUS_MemoryBlockHandle block_handle = NULL, shared_block_handle = NULL;
    PSHARED_DATA pSharedData = NULL;
@@ -210,9 +222,10 @@ int gralloc_lock(gralloc_module_t const* module,
 
    void *pMemory;
    shared_block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
-   NEXUS_MemoryBlock_Lock(shared_block_handle, &pMemory);
+   lrc = NEXUS_MemoryBlock_Lock(shared_block_handle, &pMemory);
    pSharedData = (PSHARED_DATA) pMemory;
-   if (pSharedData == NULL) {
+   if (lrc || pSharedData == NULL) {
+      if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(shared_block_handle);
       ALOGE("%s : invalid private buffer %p, freed?", __FUNCTION__, shared_block_handle);
       return -EINVAL;
    }
@@ -309,7 +322,7 @@ out_video_failed:
 
 out:
    if (shared_block_handle) {
-      NEXUS_MemoryBlock_Unlock(shared_block_handle);
+      if (!lrc) NEXUS_MemoryBlock_Unlock(shared_block_handle);
    }
    return err;
 }
@@ -317,6 +330,7 @@ out:
 int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
 {
    NEXUS_Error rc;
+   NEXUS_Error lrc;
    NEXUS_MemoryBlockHandle block_handle = NULL, shared_block_handle = NULL;
    private_handle_t *hnd = (private_handle_t *) handle;
    private_module_t* pModule = (private_module_t *)module;
@@ -327,9 +341,10 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
    }
 
    PSHARED_DATA pSharedData = NULL;
-   void *pMemory;
+   void *pMemory = NULL;
    shared_block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
-   NEXUS_MemoryBlock_Lock(shared_block_handle, &pMemory);
+   lrc = NEXUS_MemoryBlock_Lock(shared_block_handle, &pMemory);
+   if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(shared_block_handle);
    pSharedData = (PSHARED_DATA) pMemory;
    block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
 
@@ -376,7 +391,7 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       }
    }
    if (shared_block_handle) {
-      NEXUS_MemoryBlock_Unlock(shared_block_handle);
+      if (!lrc) NEXUS_MemoryBlock_Unlock(shared_block_handle);
    }
 
    return 0;

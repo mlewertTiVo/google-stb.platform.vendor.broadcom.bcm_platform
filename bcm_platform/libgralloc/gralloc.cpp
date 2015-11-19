@@ -251,6 +251,7 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
     bool done=false;
     NEXUS_Addr physAddr;
     void *pMemory = NULL;
+    NEXUS_Error lrco, lrc;
     NEXUS_MemoryBlockHandle block_handle = NULL;
     static const BM2MC_PACKET_Blend copyColor = {BM2MC_PACKET_BlendFactor_eSourceColor, BM2MC_PACKET_BlendFactor_eOne, false,
        BM2MC_PACKET_BlendFactor_eZero, BM2MC_PACKET_BlendFactor_eZero, false, BM2MC_PACKET_BlendFactor_eZero};
@@ -258,11 +259,12 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
        BM2MC_PACKET_BlendFactor_eZero, BM2MC_PACKET_BlendFactor_eZero, false, BM2MC_PACKET_BlendFactor_eZero};
 
     block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
-    NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-    NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+    lrco = NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+    lrc  = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
 
-    if (pMemory == NULL) {
-       goto out_release;
+    if (lrc || lrco || pMemory == NULL) {
+       if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(block_handle);
+       goto out;
     }
 
     if (gfx && event && pMutex) {
@@ -337,9 +339,11 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
 
 out_release:
     if (block_handle) {
-       NEXUS_MemoryBlock_UnlockOffset(block_handle);
-       NEXUS_MemoryBlock_Unlock(block_handle);
+       if (!lrco) NEXUS_MemoryBlock_UnlockOffset(block_handle);
+       if (!lrc)  NEXUS_MemoryBlock_Unlock(block_handle);
     }
+out:
+    return;
 }
 
 /*****************************************************************************/
@@ -579,6 +583,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
                     int *pStride)
 {
    int bpp = 0, err = 0, ret = 0, fd = -1, fd2 = -1;
+   NEXUS_Error lrc;
    int size, fmt_align, fmt_set = GR_NONE;
    NEXUS_PixelFormat nxFormat = getNexusPixelFormat(format, &bpp);
    PSHARED_DATA pSharedData = NULL;
@@ -601,12 +606,12 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    strcat(value2, value);
 
    fd = open(value2, O_RDWR, 0);
-   if ((fd == -1) || (!fd)) {
+   if (fd < 0) {
       err = -EINVAL;
       goto error;
    }
    fd2 = open(value2, O_RDWR, 0);
-   if ((fd2 == -1) || (!fd2)) {
+   if (fd2 < 0) {
       err = -EINVAL;
       goto error;
    }
@@ -646,10 +651,10 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
    pMemory = NULL;
    block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
-   NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
    pSharedData = (PSHARED_DATA) pMemory;
-
-   if (pSharedData == NULL) {
+   if (lrc || pSharedData == NULL) {
+      if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(block_handle);
       /* that's pretty bad...  failed to map the allocated memory! */
       err = -ENOMEM;
       goto error;
@@ -755,23 +760,19 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    *pHandle = hnd;
 
    if (block_handle) {
-      NEXUS_MemoryBlock_Unlock(block_handle);
+      if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
    }
-
    return 0;
 
 alloc_failed:
    if (block_handle) {
-      NEXUS_MemoryBlock_Unlock(block_handle);
+      if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
    }
-
 error:
    *pHandle = NULL;
+   if (fd >= 0) close(fd);
+   if (fd2 >= 0) close(fd2);
    delete hnd;
-   if (fd > 0)
-      close(fd);
-   if (fd2 > 0)
-      close(fd2);
    return err;
 }
 
@@ -782,6 +783,7 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
 
    PSHARED_DATA pSharedData = NULL;
    NEXUS_MemoryBlockHandle block_handle = NULL;
+   NEXUS_Error lrc;
 
    if (!hnd) {
       return -EINVAL;
@@ -789,9 +791,9 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
 
    void *pMemory;
    block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
-   NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(block_handle);
    pSharedData = (PSHARED_DATA) pMemory;
-
    if (pSharedData) {
       if (gralloc_log_mapper()) {
          NEXUS_Addr physAddr = 0;
@@ -828,17 +830,12 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
       }
    }
    if (block_handle) {
-      NEXUS_MemoryBlock_Unlock(block_handle);
+      if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
    }
 
-   if (hnd->fd >= 0) {
-      close(hnd->fd);
-   }
-   if (hnd->fd2 >= 0) {
-      close(hnd->fd2);
-   }
+   if (hnd->fd >= 0) close(hnd->fd);
+   if (hnd->fd2 >= 0) close(hnd->fd2);
    delete hnd;
-
    return 0;
 }
 
@@ -863,7 +860,6 @@ static int gralloc_alloc(alloc_device_t* dev,
    if (err < 0) {
       ALOGE("alloc: FAILED::w:%d::h:%d::fmt:%d::usage:0x%08x", w, h, format, usage);
    }
-
    return err;
 }
 
@@ -877,7 +873,6 @@ static int gralloc_free(alloc_device_t* dev,
 
    private_handle_t const* hnd = reinterpret_cast<private_handle_t const*>(handle);
    gralloc_free_buffer(dev,const_cast<private_handle_t*>(hnd));
-
    return 0;
 }
 
