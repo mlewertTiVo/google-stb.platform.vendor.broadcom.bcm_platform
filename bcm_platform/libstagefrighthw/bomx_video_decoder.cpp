@@ -1572,7 +1572,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         // Flag this as a HW video decoder allocation to gralloc
-        pUsage->nUsage = 0; //GRALLOC_USAGE_PRIVATE_0 -- TODO: This causes Dequeue buffer to fail and playback stops.
+        pUsage->nUsage = GRALLOC_USAGE_PRIVATE_0;
         return OMX_ErrorNone;
     }
     case OMX_IndexParamDescribeColorFormat:

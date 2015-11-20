@@ -680,44 +680,49 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
    if (format != HAL_PIXEL_FORMAT_YV12) {
       fmt_set |= GR_STANDARD;
+   } else if (usage & GRALLOC_USAGE_PROTECTED) {
+      fmt_set |= GR_NONE;
    } else if ((format == HAL_PIXEL_FORMAT_YV12) && !(usage & GRALLOC_USAGE_PRIVATE_0)) {
       fmt_set |= GR_YV12;
    } else if ((format == HAL_PIXEL_FORMAT_YV12) && (usage & GRALLOC_USAGE_PRIVATE_0)) {
-      if (usage & GRALLOC_USAGE_SW_READ_OFTEN) {
+      if ((usage & GRALLOC_USAGE_SW_READ_OFTEN) || (usage & GRALLOC_USAGE_HW_TEXTURE)) {
          // private multimedia buffer, we only need a yv12 plane in case cpu is intending to read
-         // the content, eg decode->encode type of scenario; yv12 data is produced during lock.
+         // the content, eg decode->encode type of scenario or if texture usage is specified;
+         // yv12 data is produced during lock.
          fmt_set |= GR_YV12;
       } else {
          fmt_set = GR_NONE;
       }
    }
-   memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
-   ashmem_alloc.align = gralloc_default_align;
-   if ((fmt_set & GR_YV12) == GR_YV12) {
-      ashmem_alloc.size = size;
-      if (usage & GRALLOC_USAGE_HW_TEXTURE) {
-         if ((w <= DATA_PLANE_MAX_WIDTH &&
-              h <= DATA_PLANE_MAX_HEIGHT)) {
-            fmt_set |= GR_HWTEX;
+   if (fmt_set != GR_NONE) {
+      memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
+      ashmem_alloc.align = gralloc_default_align;
+      if ((fmt_set & GR_YV12) == GR_YV12) {
+         ashmem_alloc.size = size;
+         if (usage & GRALLOC_USAGE_HW_TEXTURE) {
+            if ((w <= DATA_PLANE_MAX_WIDTH &&
+                 h <= DATA_PLANE_MAX_HEIGHT)) {
+               fmt_set |= GR_HWTEX;
+            }
          }
+      } else {
+         pSharedData->container.allocSize = hnd->oglSize;
+         pSharedData->container.stride = hnd->oglStride;
+         ashmem_alloc.size = pSharedData->container.allocSize;
       }
-   } else {
-      pSharedData->container.allocSize = hnd->oglSize;
-      pSharedData->container.stride = hnd->oglStride;
-      ashmem_alloc.size = pSharedData->container.allocSize;
-   }
-   ret = ioctl(hnd->fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
-   if (ret >= 0) {
-      pSharedData->container.physAddr =
-          (NEXUS_Addr)ioctl(hnd->fd, NX_ASHMEM_GETMEM);
-      if (pSharedData->container.physAddr == 0) {
-         err = -ENOMEM;
-         goto alloc_failed;
+      ret = ioctl(hnd->fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+      if (ret >= 0) {
+         pSharedData->container.physAddr =
+             (NEXUS_Addr)ioctl(hnd->fd, NX_ASHMEM_GETMEM);
+         if (pSharedData->container.physAddr == 0) {
+            err = -ENOMEM;
+            goto alloc_failed;
+         }
       }
    }
    hnd->fmt_set = fmt_set;
 
-   if (hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) {
+   if ((hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) && pSharedData->container.physAddr) {
       NEXUS_Addr physAddr;
       NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &physAddr);
       hnd->nxSurfacePhysicalAddress = (unsigned)physAddr;
@@ -726,7 +731,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       hnd->nxSurfaceAddress = (unsigned)pMemory;
    } else {
       hnd->nxSurfacePhysicalAddress = (unsigned)0;
-      hnd->nxSurfaceAddress = (unsigned)pMemory;
+      hnd->nxSurfaceAddress = (unsigned)0;
    }
 
    if (gralloc_log_mapper()) {
