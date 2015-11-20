@@ -59,6 +59,7 @@
 
 #include "sync/sync.h"
 #include "sw_sync.h"
+#include "nx_ashmem.h"
 
 using namespace android;
 
@@ -147,6 +148,8 @@ using namespace android;
 #define HWC_WITH_FENCE_PROP          "ro.v3d.fence.expose"
 #define HWC_TRACK_COMP_TIME          "ro.hwc.track.comptime"
 #define HWC_G2D_SIM_OPS_PROP         "ro.hwc.g2d.sim_ops"
+
+#define HWC_EXT_REFCNT_DEV           "ro.nexus.ashmem.devname"
 
 #define HWC_CHECKPOINT_TIMEOUT       (5000)
 
@@ -534,6 +537,7 @@ struct hwc_context_t {
     int vsync_thread_run;
     int recycle_thread_run;
     NEXUS_DisplayHandle display_handle;
+    int mem_if;
 
     GPX_CLIENT_INFO gpx_cli[NSC_GPX_CLIENTS_NUMBER];
     MM_CLIENT_INFO mm_cli[NSC_MM_CLIENTS_NUMBER];
@@ -679,6 +683,39 @@ static const char *nsc_layer_type[] =
    "VS", // NEXUS_VIDEO_SIDEBAND
 };
 
+static int hwc_open_memory_interface(void)
+{
+   int mem_fd = INVALID_FENCE;
+   char device[PROPERTY_VALUE_MAX];
+   char name[PROPERTY_VALUE_MAX];
+
+   memset(device, 0, sizeof(device));
+   memset(name, 0, sizeof(name));
+
+   property_get(HWC_EXT_REFCNT_DEV, device, NULL);
+   if (strlen(device)) {
+      strcpy(name, "/dev/");
+      strcat(name, device);
+      mem_fd = open(name, O_RDWR, 0);
+   }
+
+   return mem_fd;
+}
+
+static void hwc_ext_refcnt(struct hwc_context_t *ctx, NEXUS_MemoryBlockHandle hnd, int cnt)
+{
+   if (ctx->mem_if != INVALID_FENCE) {
+      struct nx_ashmem_ext_refcnt ashmem_ext_refcnt;
+      memset(&ashmem_ext_refcnt, 0, sizeof(struct nx_ashmem_ext_refcnt));
+      ashmem_ext_refcnt.hdl = (size_t)hnd;
+      ashmem_ext_refcnt.cnt = cnt;
+      int ret = ioctl(ctx->mem_if, NX_ASHMEM_EXT_REFCNT, &ashmem_ext_refcnt);
+      if (ret < 0) {
+         ALOGE("%s: failed (%d) for 0x%x, count:%d", __FUNCTION__, ret, hnd, cnt);
+      }
+   }
+}
+
 static int64_t hwc_tick(void)
 {
     struct timespec t;
@@ -727,6 +764,9 @@ static int hwc_mem_lock_phys(struct hwc_context_t *ctx, unsigned handle, NEXUS_A
    if (handle) {
       NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
       rc = NEXUS_MemoryBlock_LockOffset(block_handle, paddr);
+      if (rc == NEXUS_SUCCESS) {
+         hwc_ext_refcnt(ctx, block_handle, 1);
+      }
 
       if (ctx->dump_mma) {
          ALOGI("mma-lock-phys: %p -> %p", handle, *paddr);
@@ -745,6 +785,7 @@ static int hwc_mem_unlock_phys(struct hwc_context_t *ctx, unsigned handle) {
    if (handle) {
       NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
       NEXUS_MemoryBlock_UnlockOffset(block_handle);
+      hwc_ext_refcnt(ctx, block_handle, -1);
 
       if (ctx->dump_mma) {
          ALOGI("mma-unlock-phys: %p", handle);
@@ -761,6 +802,8 @@ static int hwc_mem_lock(struct hwc_context_t *ctx, unsigned handle, void **addr,
          rc = NEXUS_MemoryBlock_Lock(block_handle, addr);
          if (rc == BERR_NOT_SUPPORTED) {
             NEXUS_MemoryBlock_Unlock(block_handle);
+         } else if (rc == NEXUS_SUCCESS) {
+            hwc_ext_refcnt(ctx, block_handle, 1);
          }
 
          if (ctx->dump_mma) {
@@ -782,6 +825,7 @@ static int hwc_mem_unlock(struct hwc_context_t *ctx, unsigned handle, bool lock)
       if (lock) {
          NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
          NEXUS_MemoryBlock_Unlock(block_handle);
+         hwc_ext_refcnt(ctx, block_handle, -1);
 
          if (ctx->dump_mma) {
             ALOGI("mma-unlock: %p", handle);
@@ -3304,6 +3348,11 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         if (ctx->checkpoint_event) {
            BKNI_DestroyEvent(ctx->checkpoint_event);
         }
+
+        if (ctx->mem_if > 0) {
+           close(ctx->mem_if);
+           ctx->mem_if = INVALID_FENCE;
+        }
     }
 }
 
@@ -3848,6 +3897,8 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         }
 
         hwc_read_dev_props(dev);
+        dev->mem_if = hwc_open_memory_interface();
+        ALOGI("%s: mem-if on %d", __FUNCTION__, dev->mem_if);
 
         if ( BKNI_CreateEvent(&dev->recycle_event) ) {
            goto clean_up;

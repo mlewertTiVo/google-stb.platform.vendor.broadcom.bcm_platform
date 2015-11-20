@@ -134,7 +134,8 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/blib \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/utils \
                     $(TOP)/system/core/libsync \
-                    $(TOP)/system/core/libsync/include
+                    $(TOP)/system/core/libsync/include \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 
 LOCAL_CFLAGS += $(NEXUS_CFLAGS)
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
