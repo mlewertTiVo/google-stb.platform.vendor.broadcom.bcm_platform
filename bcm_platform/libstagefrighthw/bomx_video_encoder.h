@@ -95,7 +95,7 @@ struct BOMX_ImageSurfaceNode
 
 enum BOMX_VideoEncoderInputBufferType
 {
-    BOMX_VideoEncoderInputBufferType_eStandard,
+    BOMX_VideoEncoderInputBufferType_eStandard = 0,
     BOMX_VideoEncoderInputBufferType_eNative,
     BOMX_VideoEncoderInputBufferType_eMetadata,
     BOMX_VideoEncoderInputBufferType_eMax

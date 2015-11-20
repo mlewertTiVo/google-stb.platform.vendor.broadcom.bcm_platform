@@ -263,15 +263,6 @@ static OMX_ERRORTYPE BOMX_VideoEncoder_InitMimeType(OMX_VIDEO_CODINGTYPE eCompre
 
     switch ( eCompressionFormat )
     {
-    case OMX_VIDEO_CodingMPEG2:
-        pMimeTypeStr = "video/mpeg2";
-        break;
-    case OMX_VIDEO_CodingH263:
-        pMimeTypeStr = "video/3gpp";
-        break;
-    case OMX_VIDEO_CodingMPEG4:
-        pMimeTypeStr = "video/mp4v-es";
-        break;
     case OMX_VIDEO_CodingAVC:
         pMimeTypeStr = "video/avc";
         break;
@@ -341,7 +332,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
 
 #define MAX_PORT_FORMATS (4)
 #define MAX_INPUT_PORT_FORMATS  BOMX_VideoEncoderInputBufferType_eMax
-#define MAX_OUTPUT_PORT_FORMATS (3)
+#define MAX_OUTPUT_PORT_FORMATS (2)
 
     BDBG_CASSERT(MAX_INPUT_PORT_FORMATS  <= MAX_PORT_FORMATS);
     BDBG_CASSERT(MAX_OUTPUT_PORT_FORMATS <= MAX_PORT_FORMATS);
@@ -432,12 +423,9 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
         {
         default:
         case 0:
-            portFormats[i].eCompressionFormat = OMX_VIDEO_CodingMPEG2;
-            break;
-        case 1:
             portFormats[i].eCompressionFormat = OMX_VIDEO_CodingAVC;
             break;
-        case 2:
+        case 1:
             portFormats[i].eCompressionFormat = OMX_VIDEO_CodingVP8;
             break;
         }
