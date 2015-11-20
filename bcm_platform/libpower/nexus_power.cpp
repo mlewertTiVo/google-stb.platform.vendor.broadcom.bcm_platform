@@ -297,23 +297,16 @@ void NexusPower::NexusGpio::gpioCallback(void *context, int param __unused)
 
             // toggle the power key only when needed
             if (pNexusGpio->mUInput != NULL && pNexusGpio->mPowerKeyEvent) {
-                int status;
-                wakeup_devices wakeups;
-
-                status = ioctl(pNexusGpio->mPowerFd, BRCM_IOCTL_WAKEUP_ACK_STATUS, &wakeups);
-                if (status != NO_ERROR) {
-                    ALOGE("%s: Error trying to get wake up status [%d]!!!", __FUNCTION__, status);
-                }
-                else if (wakeups.gpio) {
-                    ALOGV("%s: AON GPIO wakeup detected - spoofing KEY_POWER event...", __FUNCTION__);
-                    // release->press->release will guarantee that the press event takes place
-                    pNexusGpio->mUInput->emit_key_state(KEY_POWER, false);
-                    pNexusGpio->mUInput->emit_syn();
-                    pNexusGpio->mUInput->emit_key_state(KEY_POWER, true);
-                    pNexusGpio->mUInput->emit_syn();
-                    pNexusGpio->mUInput->emit_key_state(KEY_POWER, false);
-                    pNexusGpio->mUInput->emit_syn();
-                }
+                ALOGV("%s: AON GPIO wakeup detected - spoofing KEY_POWER event...", __FUNCTION__);
+                // release->press->release will guarantee that the press event takes place
+                pNexusGpio->mUInput->emit_key_state(KEY_POWER, false);
+                pNexusGpio->mUInput->emit_syn();
+                pNexusGpio->mUInput->emit_key_state(KEY_POWER, true);
+                pNexusGpio->mUInput->emit_syn();
+                pNexusGpio->mUInput->emit_key_state(KEY_POWER, false);
+                pNexusGpio->mUInput->emit_syn();
+                // Disable POWER key event spoofing once we emitted a POWER key event...
+                pNexusGpio->setPowerKeyEvent(false);
             }
         }
         else {
