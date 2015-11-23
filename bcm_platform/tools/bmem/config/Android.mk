@@ -30,6 +30,7 @@ BOXMODE_FILES = $(shell ls -1v $(NEXUS_TOP)/../magnum/commonutils/box/src/$(BCHP
 
 define generate-config-box-info-module
 	awk -f $(NEXUS_TOP)/../BSEAV/tools/bmemconfig/bmemconfig_box_info_pre.awk $(NEXUS_TOP)/../BSEAV/tools/bmemconfig/Makefile > $(NEXUS_TOP)/../../bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.c
+	echo ",\"unknown DDR SCB\"}" >> $(NEXUS_TOP)/../../bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.c
 	$(foreach myfile,$(BOXMODE_FILES), \
 		awk -f $(NEXUS_TOP)/../BSEAV/tools/bmemconfig/bmemconfig_box_info.awk $(myfile) >> $(NEXUS_TOP)/../../bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.c;) >/dev/null
 	awk -f $(NEXUS_TOP)/../BSEAV/tools/bmemconfig/bmemconfig_box_info_post.awk $(NEXUS_TOP)/../../bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.c > $(NEXUS_TOP)/../../bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.tmp
