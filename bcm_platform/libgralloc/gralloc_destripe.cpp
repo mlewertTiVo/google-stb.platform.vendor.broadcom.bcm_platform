@@ -65,7 +65,7 @@ int gralloc_destripe_yv12(
     private_handle_t *pHandle,
     NEXUS_StripedSurfaceHandle hStripedSurface)
 {
-   NEXUS_Error errCode = NEXUS_SUCCESS;
+   NEXUS_Error errCode = NEXUS_SUCCESS, lrc = NEXUS_SUCCESS;
    NEXUS_SurfaceHandle hSurfaceY = NULL, hSurfaceCb = NULL, hSurfaceCr = NULL;
    NEXUS_SurfaceCreateSettings surfaceSettings;
    NEXUS_Graphics2DDestripeBlitSettings destripeSettings;
@@ -81,7 +81,10 @@ int gralloc_destripe_yv12(
 
    pMemory = NULL;
    block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
-   NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   if (lrc == BERR_NOT_SUPPORTED) {
+      NEXUS_MemoryBlock_Unlock(block_handle);
+   }
    pSharedData = (PSHARED_DATA) pMemory;
    if (pSharedData == NULL) {
       ALOGE("gralloc_destripe_yv12: invalid buffer?");
@@ -191,7 +194,7 @@ err_surfaces:
    }
 err_shared_data:
    if (block_handle) {
-      NEXUS_MemoryBlock_Unlock(block_handle);
+      if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
    }
 err_gfx2d:
     return errCode;

@@ -160,12 +160,16 @@ struct private_handle_t {
     static int lock_video_frame(private_handle_t *pHandle, int timeoutMs)
     {
         PSHARED_DATA pSharedData = NULL;
+        NEXUS_Error lrc = NEXUS_SUCCESS;
         NEXUS_MemoryBlockHandle block_handle = NULL;
         int rc = 0;
         void *pMemory;
 
         block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
-        NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+        lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+        if (lrc == BERR_NOT_SUPPORTED) {
+           NEXUS_MemoryBlock_Unlock(block_handle);
+        }
         pSharedData = (PSHARED_DATA) pMemory;
 
         struct timespec ts_end, ts_now;
@@ -197,7 +201,7 @@ struct private_handle_t {
 
 out:
         if (block_handle) {
-           NEXUS_MemoryBlock_Unlock(block_handle);
+           if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
         }
         return rc;
     }
@@ -206,11 +210,15 @@ out:
     {
         PSHARED_DATA pSharedData = NULL;
         NEXUS_MemoryBlockHandle block_handle = NULL;
+        NEXUS_Error lrc = NEXUS_SUCCESS;
         int rc = 0;
         void *pMemory;
 
         block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
-        NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+        lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+        if (lrc == BERR_NOT_SUPPORTED) {
+           NEXUS_MemoryBlock_Unlock(block_handle);
+        }
         pSharedData = (PSHARED_DATA) pMemory;
 
         if (NULL == pSharedData) {
@@ -221,7 +229,7 @@ out:
 
 out:
         if (block_handle) {
-           NEXUS_MemoryBlock_Unlock(block_handle);
+           if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
         }
     }
 
