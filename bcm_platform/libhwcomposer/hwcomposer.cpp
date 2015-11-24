@@ -515,6 +515,7 @@ struct hwc_work_item {
    bool skip_set[NSC_GPX_CLIENTS_NUMBER];
    NEXUS_SurfaceComposition comp[NSC_GPX_CLIENTS_NUMBER];
    hwc_display_contents_1_t content;
+   int video_layers;
 };
 
 struct hwc_context_t {
@@ -540,6 +541,7 @@ struct hwc_context_t {
     int vsync_thread_run;
     int recycle_thread_run;
     NEXUS_DisplayHandle display_handle;
+    char mem_if_name[PROPERTY_VALUE_MAX];
     int mem_if;
 
     GPX_CLIENT_INFO gpx_cli[NSC_GPX_CLIENTS_NUMBER];
@@ -593,6 +595,7 @@ struct hwc_context_t {
     bool alpha_hole_background;
     bool flush_background;
     bool smart_background;
+    int prepare_video;
 };
 
 static void *hwc_compose_task_primary(void *argv);
@@ -686,37 +689,58 @@ static const char *nsc_layer_type[] =
    "VS", // NEXUS_VIDEO_SIDEBAND
 };
 
-static int hwc_open_memory_interface(void)
+static int hwc_open_memory_interface(struct hwc_context_t *ctx)
 {
    int mem_fd = INVALID_FENCE;
    char device[PROPERTY_VALUE_MAX];
-   char name[PROPERTY_VALUE_MAX];
 
-   memset(device, 0, sizeof(device));
-   memset(name, 0, sizeof(name));
-
-   property_get(HWC_EXT_REFCNT_DEV, device, NULL);
-   if (strlen(device)) {
-      strcpy(name, "/dev/");
-      strcat(name, device);
-      mem_fd = open(name, O_RDWR, 0);
+   if (ctx->mem_if >= 0) {
+      goto out;
    }
 
-   return mem_fd;
-}
+   if (strlen(ctx->mem_if_name) == 0) {
+      memset(device, 0, sizeof(device));
+      memset(ctx->mem_if_name, 0, sizeof(ctx->mem_if_name));
 
-static void hwc_ext_refcnt(struct hwc_context_t *ctx, NEXUS_MemoryBlockHandle hnd, int cnt)
-{
-   if (ctx->mem_if != INVALID_FENCE) {
-      struct nx_ashmem_ext_refcnt ashmem_ext_refcnt;
-      memset(&ashmem_ext_refcnt, 0, sizeof(struct nx_ashmem_ext_refcnt));
-      ashmem_ext_refcnt.hdl = (size_t)hnd;
-      ashmem_ext_refcnt.cnt = cnt;
-      int ret = ioctl(ctx->mem_if, NX_ASHMEM_EXT_REFCNT, &ashmem_ext_refcnt);
-      if (ret < 0) {
-         ALOGE("%s: failed (%d) for 0x%x, count:%d", __FUNCTION__, ret, hnd, cnt);
+      property_get(HWC_EXT_REFCNT_DEV, device, NULL);
+      if (strlen(device)) {
+         strcpy(ctx->mem_if_name, "/dev/");
+         strcat(ctx->mem_if_name, device);
       }
    }
+
+   ctx->mem_if = open(ctx->mem_if_name, O_RDWR, 0);
+
+out:
+   return ctx->mem_if;
+}
+
+static void hwc_close_memory_interface(struct hwc_context_t *ctx)
+{
+   if (ctx->mem_if != INVALID_FENCE) {
+      close(ctx->mem_if);
+      ctx->mem_if = INVALID_FENCE;
+   }
+}
+
+static NEXUS_Error hwc_ext_refcnt(struct hwc_context_t *ctx, NEXUS_MemoryBlockHandle block_handle, int cnt)
+{
+   int mem_if = hwc_open_memory_interface(ctx);
+   if (mem_if != INVALID_FENCE) {
+      struct nx_ashmem_ext_refcnt ashmem_ext_refcnt;
+      memset(&ashmem_ext_refcnt, 0, sizeof(struct nx_ashmem_ext_refcnt));
+      ashmem_ext_refcnt.hdl = (size_t)block_handle;
+      ashmem_ext_refcnt.cnt = cnt;
+      int ret = ioctl(mem_if, NX_ASHMEM_EXT_REFCNT, &ashmem_ext_refcnt);
+      if (ret < 0) {
+         ALOGE("%s: failed (%d) for 0x%x, count:0x%x", __FUNCTION__, ret, block_handle, cnt);
+         hwc_close_memory_interface(ctx);
+         return NEXUS_OS_ERROR;
+      }
+   } else {
+      return NEXUS_INVALID_PARAMETER;
+   }
+   return NEXUS_SUCCESS;
 }
 
 static int64_t hwc_tick(void)
@@ -762,21 +786,29 @@ static void hwc_setup_props_locked(struct hwc_context_t* ctx)
    ctx->ticker               = property_get_bool(HWC_TICKER, 0);
 }
 
-static int hwc_mem_lock_phys(struct hwc_context_t *ctx, unsigned handle, NEXUS_Addr *paddr) {
-   NEXUS_Error rc;
-   if (handle) {
-      NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
-      rc = NEXUS_MemoryBlock_LockOffset(block_handle, paddr);
-      if (rc == NEXUS_SUCCESS) {
-         hwc_ext_refcnt(ctx, block_handle, 1);
+static int hwc_mem_lock_phys(struct hwc_context_t *ctx, NEXUS_MemoryBlockHandle block_handle, NEXUS_Addr *paddr) {
+   NEXUS_Error rc = NEXUS_SUCCESS;
+   NEXUS_Error ext = NEXUS_SUCCESS;
+
+   if (block_handle) {
+      ext = hwc_ext_refcnt(ctx, block_handle, NX_ASHMEM_REFCNT_ADD);
+      if (ext == NEXUS_SUCCESS) {
+         rc = NEXUS_MemoryBlock_LockOffset(block_handle, paddr);
+         if (rc != NEXUS_SUCCESS) {
+            hwc_ext_refcnt(ctx, block_handle, NX_ASHMEM_REFCNT_REM);
+         }
+      } else {
+         rc = NEXUS_OS_ERROR;
       }
 
-      if (ctx->dump_mma) {
-         ALOGI("mma-lock-phys: %p -> %p", handle, *paddr);
-      } else if (rc) {
-         ALOGW("mma-lock-phys: %p -> invalid!?!", handle);
+      if (rc != NEXUS_SUCCESS) {
+         if (ctx->dump_mma) {
+            ALOGW("mma-lock-phys: 0x%x -> invalid!?!", block_handle);
+         }
          *paddr = (NEXUS_Addr)NULL;
-         return rc;
+         return (int)rc;
+      } else if (ctx->dump_mma) {
+         ALOGI("mma-lock-phys: 0x%x -> %p", block_handle, *paddr);
       }
    } else {
       *paddr = (NEXUS_Addr)NULL;
@@ -784,38 +816,48 @@ static int hwc_mem_lock_phys(struct hwc_context_t *ctx, unsigned handle, NEXUS_A
    return 0;
 }
 
-static int hwc_mem_unlock_phys(struct hwc_context_t *ctx, unsigned handle) {
-   if (handle) {
-      NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
+static int hwc_mem_unlock_phys(struct hwc_context_t *ctx, NEXUS_MemoryBlockHandle block_handle) {
+   if (block_handle) {
       NEXUS_MemoryBlock_UnlockOffset(block_handle);
-      hwc_ext_refcnt(ctx, block_handle, -1);
+      hwc_ext_refcnt(ctx, block_handle, NX_ASHMEM_REFCNT_REM);
 
       if (ctx->dump_mma) {
-         ALOGI("mma-unlock-phys: %p", handle);
+         ALOGI("mma-unlock-phys: 0x%x", block_handle);
       }
    }
    return 0;
 }
 
-static int hwc_mem_lock(struct hwc_context_t *ctx, unsigned handle, void **addr, bool lock) {
-   NEXUS_Error rc;
-   if (handle) {
+static int hwc_mem_lock(struct hwc_context_t *ctx, NEXUS_MemoryBlockHandle block_handle, void **addr, bool lock) {
+   NEXUS_Error rc = NEXUS_SUCCESS;
+   NEXUS_Error ext = NEXUS_SUCCESS;
+
+   if (block_handle) {
       if (lock) {
-         NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
-         rc = NEXUS_MemoryBlock_Lock(block_handle, addr);
-         if (rc == BERR_NOT_SUPPORTED) {
-            NEXUS_MemoryBlock_Unlock(block_handle);
-         } else if (rc == NEXUS_SUCCESS) {
-            hwc_ext_refcnt(ctx, block_handle, 1);
+         ext = hwc_ext_refcnt(ctx, block_handle, NX_ASHMEM_REFCNT_ADD);
+         if (ext == NEXUS_SUCCESS) {
+            rc = NEXUS_MemoryBlock_Lock(block_handle, addr);
+            if (rc != NEXUS_SUCCESS) {
+               hwc_ext_refcnt(ctx, block_handle, NX_ASHMEM_REFCNT_REM);
+               if (rc == BERR_NOT_SUPPORTED) {
+                  NEXUS_MemoryBlock_Unlock(block_handle);
+               }
+            }
+         } else {
+            rc = NEXUS_OS_ERROR;
          }
 
-         if (ctx->dump_mma) {
-            ALOGI("mma-lock: %p -> %p", handle, *addr);
-         } else if (rc) {
-            ALOGW("mma-lock: %p -> invalid!?!", handle);
+         if (rc) {
+            if (ctx->dump_mma) {
+               ALOGW("mma-lock: 0x%x -> invalid!?!", block_handle);
+            }
             *addr = NULL;
             return (int)rc;
+         } else if (ctx->dump_mma) {
+            ALOGI("mma-lock: 0x%x -> %p", block_handle, *addr);
          }
+      } else {
+        return NEXUS_SUCCESS;
       }
    } else {
       *addr = NULL;
@@ -823,15 +865,14 @@ static int hwc_mem_lock(struct hwc_context_t *ctx, unsigned handle, void **addr,
    return 0;
 }
 
-static int hwc_mem_unlock(struct hwc_context_t *ctx, unsigned handle, bool lock) {
-   if (handle) {
+static int hwc_mem_unlock(struct hwc_context_t *ctx, NEXUS_MemoryBlockHandle block_handle, bool lock) {
+   if (block_handle) {
       if (lock) {
-         NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
          NEXUS_MemoryBlock_Unlock(block_handle);
-         hwc_ext_refcnt(ctx, block_handle, -1);
+         hwc_ext_refcnt(ctx, block_handle, NX_ASHMEM_REFCNT_REM);
 
          if (ctx->dump_mma) {
-            ALOGI("mma-unlock: %p", handle);
+            ALOGI("mma-unlock: 0x%x", block_handle);
          }
       }
    }
@@ -871,7 +912,8 @@ static int dump_vd_layer_data(char *start, int capacity, int index, VD_CLIENT_IN
 
     if (client->grhdl) {
        private_handle_t *gr_buffer = (private_handle_t *)client->grhdl;
-       hwc_mem_lock((struct hwc_context_t*)client->ncci.parent, (unsigned)gr_buffer->sharedData, &pAddr, true);
+       NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+       hwc_mem_lock((struct hwc_context_t*)client->ncci.parent, block_handle, &pAddr, true);
        PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
 
        write = snprintf(start + offset, local_capacity,
@@ -906,7 +948,7 @@ static int dump_vd_layer_data(char *start, int capacity, int index, VD_CLIENT_IN
           total_write += write;
        }
 
-       hwc_mem_unlock((struct hwc_context_t*)client->ncci.parent, (unsigned)gr_buffer->sharedData, true);
+       hwc_mem_unlock((struct hwc_context_t*)client->ncci.parent, block_handle, true);
     }
 
     return total_write;
@@ -963,7 +1005,8 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
 
     if (client->last.grhdl) {
        private_handle_t *gr_buffer = (private_handle_t *)client->last.grhdl;
-       hwc_mem_lock((struct hwc_context_t*)client->ncci.parent, (unsigned)gr_buffer->sharedData, &pAddr, true);
+       NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+       hwc_mem_lock((struct hwc_context_t*)client->ncci.parent, block_handle, &pAddr, true);
        PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
 
        write = snprintf(start + offset, local_capacity,
@@ -999,7 +1042,7 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
            total_write += write;
        }
 
-       hwc_mem_unlock((struct hwc_context_t*)client->ncci.parent, (unsigned)gr_buffer->sharedData, true);
+       hwc_mem_unlock((struct hwc_context_t*)client->ncci.parent, block_handle, true);
     }
 
     return total_write;
@@ -1316,62 +1359,78 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
    }
 }
 
-static bool is_video_layer(struct hwc_context_t *ctx, hwc_layer_1_t *layer, int layer_id, bool *is_sideband, bool *is_yuv)
+static bool is_video_layer_locked(hwc_layer_1_t *layer, PSHARED_DATA pSharedData, int usage, bool *is_sideband, bool *is_yuv)
 {
-    bool rc = false;
-    NexusClientContext *client_context = NULL;
-    void *pAddr;
+   bool rc = false;
+   NexusClientContext *client_context = NULL;
 
-    if (is_sideband) {
-        *is_sideband = false;
-    }
-    if (is_yuv) {
-        *is_yuv = false;
-    }
-
-    if (((layer->compositionType == HWC_OVERLAY && layer->handle) ||
-         (layer->compositionType == HWC_SIDEBAND && layer->sidebandStream))
-        && !(layer->flags & HWC_SKIP_LAYER)) {
-
-        client_context = NULL;
-
-        if (layer->compositionType == HWC_OVERLAY) {
-            int lrc = 0, index = -1;
-            private_handle_t *gr_buffer = (private_handle_t *)layer->handle;
-            lrc = hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
-            PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
-            if (lrc || pSharedData == NULL) {
-               goto out;
-            }
-            index = android_atomic_acquire_load(&pSharedData->videoWindow.windowIdPlusOne);
-            if (index > 0) {
-                client_context = reinterpret_cast<NexusClientContext *>(pSharedData->videoWindow.nexusClientContext);
-                if (client_context != NULL) {
-                   rc = true;
-                }
-            } else if ((pSharedData->container.format == HAL_PIXEL_FORMAT_YV12) &&
-                       (gr_buffer->usage & GRALLOC_USAGE_HW_COMPOSER)) {
-                if (is_yuv) {
-                   *is_yuv = true;
-                }
-                rc = true;
-            }
-            if (!lrc) hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
-        } else if (layer->compositionType == HWC_SIDEBAND) {
-            client_context = (NexusClientContext*)layer->sidebandStream->data[1];
-            if (client_context != NULL) {
-               rc = true;
-            }
-            if (is_sideband) {
-               *is_sideband = true;
-            }
+   if (layer->compositionType == HWC_OVERLAY) {
+      int index = -1;
+      index = android_atomic_acquire_load(&pSharedData->videoWindow.windowIdPlusOne);
+      if (index > 0) {
+         client_context = reinterpret_cast<NexusClientContext *>(pSharedData->videoWindow.nexusClientContext);
+         if (client_context != NULL) {
+            rc = true;
         }
-    }
+      } else if ((pSharedData->container.format == HAL_PIXEL_FORMAT_YV12) && (usage & GRALLOC_USAGE_HW_COMPOSER)) {
+         if (is_yuv) {
+            *is_yuv = true;
+         }
+         rc = true;
+      }
+   } else if (layer->compositionType == HWC_SIDEBAND) {
+      client_context = (NexusClientContext*)layer->sidebandStream->data[1];
+      if (client_context != NULL) {
+         rc = true;
+      }
+      if (is_sideband) {
+         *is_sideband = true;
+      }
+   }
 
-    if (rc) {
-       layer->hints |= HWC_HINT_CLEAR_FB;
-       ALOGV("%s: found on layer %d.", __FUNCTION__, layer_id);
-    }
+   if (rc) {
+      layer->hints |= HWC_HINT_CLEAR_FB;
+   }
+
+out:
+   return rc;
+}
+
+static bool is_video_layer(struct hwc_context_t *ctx, hwc_layer_1_t *layer, bool *is_sideband, bool *is_yuv)
+{
+   bool rc = false;
+   private_handle_t *gr_buffer = (private_handle_t *)layer->handle;
+   NEXUS_MemoryBlockHandle block_handle = NULL;
+   NEXUS_Error lrc = NEXUS_SUCCESS;
+   void *pAddr;
+
+   if (is_sideband) {
+      *is_sideband = false;
+   }
+   if (is_yuv) {
+      *is_yuv = false;
+   }
+
+   if (!layer->handle ||
+       (layer->handle && private_handle_t::validate(layer->handle) != 0)) {
+      goto out;
+   }
+
+   if (((layer->compositionType == HWC_OVERLAY && layer->handle) ||
+        (layer->compositionType == HWC_SIDEBAND && layer->sidebandStream))
+       && !(layer->flags & HWC_SKIP_LAYER)) {
+      block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+      lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
+      PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
+      if ((lrc != NEXUS_SUCCESS) || pSharedData == NULL) {
+         goto out;
+      }
+      rc = is_video_layer_locked(layer, pSharedData, gr_buffer->usage, is_sideband, is_yuv);
+      if (lrc == NEXUS_SUCCESS) {
+         hwc_mem_unlock(ctx, block_handle, true);
+      }
+   }
+
 out:
     return rc;
 }
@@ -1384,13 +1443,15 @@ static bool split_layer_scaling(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
     PSHARED_DATA pSharedData = NULL;
     private_handle_t *gr_buffer = NULL;
     NEXUS_Rect clip_position;
+    NEXUS_MemoryBlockHandle block_handle;
 
     if (!layer->handle) {
         goto out;
     }
 
     gr_buffer = (private_handle_t *)layer->handle;
-    lrc = hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+    block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+    lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
     pSharedData = (PSHARED_DATA) pAddr;
     clip_position.x = (int16_t)(int)layer->sourceCropf.left;
     clip_position.y = (int16_t)(int)layer->sourceCropf.top;
@@ -1401,8 +1462,8 @@ static bool split_layer_scaling(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
         goto out;
     }
 
-    if (is_video_layer(ctx, layer, -1, NULL, NULL)) {
-        goto out_unlock;
+    if (is_video_layer_locked(layer, pSharedData, gr_buffer->usage, NULL, NULL)) {
+       goto out_unlock;
     }
 
     if (clip_position.width && ((pSharedData->container.width / clip_position.width) >= ctx->gfxCaps.maxHorizontalDownScale)) {
@@ -1420,7 +1481,7 @@ static bool split_layer_scaling(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
     }
 
 out_unlock:
-    if (!lrc) hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+    if (!lrc) hwc_mem_unlock(ctx, block_handle, true);
 out:
     return ret;
 }
@@ -1555,7 +1616,7 @@ bool hwc_compose_gralloc_buffer(
 {
     bool composed = false, blit_yv12, is_cursor_layer = false;
     NEXUS_Error rc;
-    int adj, lrc = 0;
+    int adj;
     unsigned int cstride = 0, cr_offset = 0, cb_offset = 0;
     void *pAddr, *slock;
     NEXUS_SurfaceCreateSettings displaySurfaceSettings;
@@ -1570,12 +1631,6 @@ bool hwc_compose_gralloc_buffer(
           goto out;
        }
        is_cursor_layer = (ctx->gpx_cli[layer_id].layer_flags & HWC_IS_CURSOR_LAYER) ? true : false;
-    }
-
-    lrc = hwc_mem_lock(ctx, pSharedData->container.physAddr, &pAddr, false);
-    if (lrc || !pSharedData->container.physAddr) {
-        ALOGE("%s: plane buffer address NULL: %d\n", __FUNCTION__, layer_id);
-        goto out;
     }
 
     NEXUS_Surface_GetCreateSettings(outputHdl, &displaySurfaceSettings);
@@ -1623,7 +1678,7 @@ bool hwc_compose_gralloc_buffer(
               srcAdj.width > 0 && srcAdj.height > 0)) {
            ALOGE("%s: invalid plane skipping: %d, src{%d,%d} -> dst{%d,%d}\n", __FUNCTION__, layer_id,
                  srcAdj.width, srcAdj.height, outAdj.width, outAdj.height);
-           goto out_unlock;
+           goto out;
         }
 
         if (blit_yv12) {
@@ -1710,7 +1765,7 @@ bool hwc_compose_gralloc_buffer(
                     ALOGE("%s: failed getting packet buffer from g2d: (num:%d, id:0x%x)\n", __FUNCTION__,
                           NEXUS_GET_ERR_NUM(rc), NEXUS_GET_ERR_ID(rc));
                     BKNI_ReleaseMutex(ctx->g2d_mutex);
-                    goto out_unlock;
+                    goto out;
                  }
                  if ((q_ops != NULL) && !ctx->g2d_allow_simult) {
                     if (*q_ops == true) {
@@ -1879,10 +1934,12 @@ bool hwc_compose_gralloc_buffer(
                     ALOGE("%s: failed writting packet buffer: (num:%d, id:0x%x)\n", __FUNCTION__,
                           NEXUS_GET_ERR_NUM(rc), NEXUS_GET_ERR_ID(rc));
                  } else {
-                    if (!ctx->g2d_allow_simult) {
+                    if (!ctx->g2d_allow_simult || ctx->fence_support) {
                        rc = hwc_checkpoint_locked(ctx);
                        if (rc)  {
                           ALOGW("%s: checkpoint timeout composing layer %u", __FUNCTION__, layer_id);
+                       } else if (q_ops) {
+                          *q_ops = false;
                        }
                     } else if (q_ops) {
                        *q_ops = true;
@@ -1895,7 +1952,7 @@ bool hwc_compose_gralloc_buffer(
                     if (ops_count) {
                        *ops_count += 1;
                     }
-                    if (!ctx->g2d_allow_simult) {
+                    if (!ctx->g2d_allow_simult || ctx->fence_support) {
                        hwc_clear_acquire_release_fences(ctx, list, layer_id);
                     }
                  }
@@ -1993,19 +2050,19 @@ bool hwc_compose_gralloc_buffer(
                     ALOGE("%s: failed to blit layer %u", __FUNCTION__, layer_id);
                  } else {
                     composed = true;
-                    if (q_ops) {
-                       *q_ops = true;
-                    }
                     if (ops_count) {
                        *ops_count += 1;
                     }
-                    if (q_ops && (*q_ops == true)) {
-                       rc = hwc_checkpoint_locked(ctx);
-                       if (rc)  {
-                          ALOGW("%s: checkpoint timeout composing layer %d", __FUNCTION__, layer_id);
-                       } else {
-                          *q_ops = false;
-                          hwc_clear_acquire_release_fences(ctx, list, layer_id);
+                    if (q_ops) {
+                       *q_ops = true;
+                       if (ctx->fence_support) {
+                          rc = hwc_checkpoint_locked(ctx);
+                          if (rc)  {
+                             ALOGW("%s: checkpoint timeout forcing layer %d composition", __FUNCTION__, layer_id);
+                          } else {
+                             *q_ops = false;
+                             hwc_clear_acquire_release_fences(ctx, list, layer_id);
+                          }
                        }
                     }
                  }
@@ -2015,8 +2072,6 @@ bool hwc_compose_gralloc_buffer(
         }
     }
 
-out_unlock:
-   hwc_mem_unlock(ctx, (unsigned)pSharedData->container.physAddr, false);
 out:
    return composed;
 }
@@ -2094,6 +2149,7 @@ static void hwc_prepare_gpx_layer(
     int cur_width = 0, cur_height = 0, lrc = 0;
     unsigned int cur_blending_type;
     bool layer_changed = false;
+    NEXUS_MemoryBlockHandle block_handle;
 
     // sideband layer is handled through the video window directly.
     if (layer->compositionType == HWC_SIDEBAND) {
@@ -2107,7 +2163,8 @@ static void hwc_prepare_gpx_layer(
     }
 
     gr_buffer = (private_handle_t *)layer->handle;
-    lrc = hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+    block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+    lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
     PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
     if (lrc || pSharedData == NULL) {
        ALOGE("%s: invalid buffer on layer_id %d", __FUNCTION__, layer_id);
@@ -2189,7 +2246,7 @@ out_mutex:
        BKNI_ReleaseMutex(ctx->mutex);
     }
 out_unlock:
-    if (!lrc) hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+    if (!lrc) hwc_mem_unlock(ctx, block_handle, true);
 out:
     return;
 }
@@ -2248,11 +2305,12 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
         }
     }
 
+    ctx->prepare_video = 0;
     for (i = 0; i < list->numHwLayers; i++) {
        layer = &list->hwLayers[i];
-       if (is_video_layer(ctx, layer, -1, NULL, NULL)) {
+       if (is_video_layer(ctx, layer, NULL, NULL)) {
           has_video = true;
-          break;
+          ctx->prepare_video++;
        }
     }
 
@@ -2261,7 +2319,7 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
        for (i = 0; i < list->numHwLayers; i++) {
           layer = &list->hwLayers[i];
           if (layer->compositionType == HWC_OVERLAY &&
-              !is_video_layer(ctx, layer, -1, NULL, NULL)) {
+              !is_video_layer(ctx, layer, NULL, NULL)) {
              layer->compositionType = HWC_FRAMEBUFFER;
              layer->hints = 0;
           }
@@ -2323,12 +2381,13 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
                    unsigned handle_dump = 0;
                    int lrc = 0;
                    if (layer->handle != NULL) {
-                      private_handle_t *gr_buffer = (private_handle_t *)layer->handle;
                       NEXUS_Addr pAddr;
-                      lrc = hwc_mem_lock_phys(ctx, (unsigned)gr_buffer->sharedData, &pAddr);
+                      private_handle_t *gr_buffer = (private_handle_t *)layer->handle;
+                      NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+                      lrc = hwc_mem_lock_phys(ctx, block_handle, &pAddr);
                       handle_dump = (unsigned)pAddr;
                       if (lrc == NEXUS_SUCCESS) {
-                         hwc_mem_unlock_phys(ctx, (unsigned)gr_buffer->sharedData);
+                         hwc_mem_unlock_phys(ctx, block_handle);
                       }
                    }
                    ALOGI("comp: %llu - show - sf:%d (%d) - hdl:0x%x", ctx->stats[HWC_PRIMARY_IX].prepare_call, (int)i, (int)layer->compositionType, handle_dump);
@@ -2383,6 +2442,7 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
     void *pAddr;
     int layer_id = 0;
     int virt_w = -1, virt_h = -1;
+    NEXUS_Error lrc;
 
     if (list) {
        ctx->stats[HWC_VIRTUAL_IX].prepare_call += 1;
@@ -2401,13 +2461,14 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
        if (list->outbuf != NULL) {
           void *pAddr;
           private_handle_t *gr_buffer = (private_handle_t *)list->outbuf;
-          hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+          NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+          lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
           PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
           if (pSharedData != NULL) {
              ctx->cfg[HWC_VIRTUAL_IX].width = pSharedData->container.width;
              ctx->cfg[HWC_VIRTUAL_IX].height = pSharedData->container.height;
           }
-          hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+          if (!lrc) hwc_mem_unlock(ctx, block_handle, true);
        }
 
        if (ctx->display_gles_always || ctx->display_gles_virtual ||
@@ -2578,7 +2639,7 @@ out:
 static int hwc_retire_fence(struct hwc_context_t *ctx, int index)
 {
    struct sync_fence_info_data info;
-   int sw_timeline, fence;
+   int sw_timeline = INVALID_FENCE, fence = INVALID_FENCE;
 
    if (index != HWC_PRIMARY_IX && index != HWC_VIRTUAL_IX) {
       goto out_err;
@@ -2608,7 +2669,7 @@ out_err:
 static int hwc_release_timeline_with_fence(struct hwc_context_t *ctx, int index, int layer, int *fence)
 {
    struct sync_fence_info_data info;
-   int sw_timeline;
+   int sw_timeline = INVALID_FENCE;
 
    if (fence == NULL) {
       goto out_err;
@@ -2681,6 +2742,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
            this_frame->skip_set[i] = ctx->gpx_cli[i].skip_set;
         }
         this_frame->comp_ix = ctx->stats[HWC_PRIMARY_IX].set_call;
+        this_frame->video_layers = ctx->prepare_video;
         this_frame->next = NULL;
         if (ctx->composer_work_list[HWC_PRIMARY_IX] == NULL) {
            ctx->composer_work_list[HWC_PRIMARY_IX] = this_frame;
@@ -2765,7 +2827,8 @@ out:
 
 static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, int *overlay_seen, int *fb_target_seen, bool *oob_video)
 {
-   int layer_composed = 0, lrc = 0;
+   int layer_composed = 0;
+   NEXUS_Error lrc = NEXUS_SUCCESS, lrcp = NEXUS_SUCCESS;
    NEXUS_SurfaceHandle outputHdl = NULL;
    size_t i;
    NEXUS_Error rc;
@@ -2775,7 +2838,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    NEXUS_SurfaceHandle surface[NSC_GPX_CLIENTS_NUMBER];
    int ops_count = 0, video_seen = 0;
    uint64_t pinged_frame = 0;
-   int64_t tick_now;
+   int64_t tick_now = 0;
 
    memset(surface, 0, sizeof(surface));
 
@@ -2795,10 +2858,9 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       item->surf_wait = hwc_tick() - item->surf_wait;
    }
 
+   video_seen = item->video_layers;
    for (i = 0; i < list->numHwLayers; i++) {
-      if (is_video_layer(ctx, &list->hwLayers[i], -1, NULL, NULL)) {
-         video_seen += 1;
-      } else if (item->comp[i].visible) {
+      if (item->comp[i].visible) {
          if (list->hwLayers[i].compositionType == HWC_OVERLAY) {
             *overlay_seen += 1;
          } else if (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET) {
@@ -2806,7 +2868,12 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          }
       }
    }
+   if (*overlay_seen >= video_seen) {
+      *overlay_seen -= video_seen;
+   }
+
    for (i = 0; i < list->numHwLayers; i++) {
+      lrc = NEXUS_OS_ERROR;
       if (list->hwLayers[i].handle &&
           private_handle_t::validate(list->hwLayers[i].handle) != 0) {
          ALOGW("comp: %llu/%llu - layer: %d - invalid for comp (%d)\n",
@@ -2819,20 +2886,29 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          break;
       }
       void *pAddr;
+      NEXUS_MemoryBlockHandle block_handle, phys_block_handle;
       private_handle_t *gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
       if (gr_buffer == NULL) {
          ALOGV("comp: %llu/%llu - layer: %d - invalid buffer\n",
                ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
          continue;
       }
-      lrc = hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+      block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+      lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
       PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
       if (lrc || pSharedData == NULL) {
          ALOGE("comp: %llu/%llu - layer: %d - invalid shared data\n",
                ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
          continue;
       }
-      has_video = is_video_layer(ctx, &list->hwLayers[i], -1, &is_sideband, &is_yuv);
+      phys_block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
+      lrcp = hwc_mem_lock(ctx, phys_block_handle, &pAddr, true);
+      if (lrcp || pAddr == NULL) {
+         ALOGE("comp: %llu/%llu - layer: %d - invalid physical data\n",
+               ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
+         continue;
+      }
+      has_video = is_video_layer_locked(&list->hwLayers[i], pSharedData, gr_buffer->usage, &is_sideband, &is_yuv);
       if (has_video && !is_yuv) {
          *oob_video = true;
          if (!is_sideband) {
@@ -2896,7 +2972,12 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             item->comp_wait += (hwc_tick() - tick_now);
          }
       }
-      if (!lrc) hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+      if (lrcp == NEXUS_SUCCESS) {
+         hwc_mem_unlock(ctx, phys_block_handle, true);
+      }
+      if (lrc == NEXUS_SUCCESS) {
+         hwc_mem_unlock(ctx, block_handle, true);
+      }
    }
 
    if (layer_composed == 0) {
@@ -3127,11 +3208,14 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
    void *pAddr;
    hwc_display_contents_1_t* list = &item->content;
    NEXUS_SurfaceHandle surface[NSC_GPX_CLIENTS_NUMBER];
+   NEXUS_Error lrc, lrcs;
+   NEXUS_MemoryBlockHandle block_handle, out_block_handle;
 
    memset(surface, 0, sizeof(surface));
 
    private_handle_t *gr_out_buffer = (private_handle_t *)list->outbuf;
-   hwc_mem_lock(ctx, (unsigned)gr_out_buffer->sharedData, &pAddr, true);
+   out_block_handle = (NEXUS_MemoryBlockHandle)gr_out_buffer->sharedData;
+   lrc = hwc_mem_lock(ctx, out_block_handle, &pAddr, true);
    PSHARED_DATA pOutSharedData = (PSHARED_DATA) pAddr;
    if (pOutSharedData == NULL) {
       ALOGE("vcmp: %llu (%p) - invalid output buffer?", ctx->stats[HWC_VIRTUAL_IX].set_call, gr_out_buffer->sharedData);
@@ -3147,7 +3231,7 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
    if (outputHdl == NULL) {
       ALOGE("vcmp: %llu (%p) - no display surface available", ctx->stats[HWC_VIRTUAL_IX].set_call, gr_out_buffer->sharedData);
       ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
-      hwc_mem_unlock(ctx, (unsigned)gr_out_buffer->sharedData, true);
+      if (!lrc) hwc_mem_unlock(ctx, out_block_handle, true);
       goto out;
    }
 
@@ -3165,7 +3249,8 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
          if (gr_buffer == NULL) {
             continue;
          }
-         hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+         block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+         lrcs = hwc_mem_lock(ctx, block_handle, &pAddr, true);
          PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
          if (list->hwLayers[i].acquireFenceFd >= 0) {
             if (!ctx->fence_support) {
@@ -3183,7 +3268,6 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
             }
          }
          if (pSharedData == NULL) {
-            hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
             continue;
          }
          if (hwc_compose_gralloc_buffer(ctx, list, i, pSharedData, gr_buffer, outputHdl,
@@ -3191,7 +3275,7 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
                                         false, layer_composed, NULL, NULL, 0)) {
             layer_composed++;
          }
-         hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+         if (!lrcs) hwc_mem_unlock(ctx, block_handle, true);
       }
    }
 
@@ -3211,7 +3295,7 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
          }
       }
    }
-   hwc_mem_unlock(ctx, (unsigned)gr_out_buffer->sharedData, true);
+   if (!lrc) hwc_mem_unlock(ctx, out_block_handle, true);
    if (outputHdl) {
       NEXUS_Surface_Destroy(outputHdl);
    }
@@ -3368,10 +3452,7 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
            BKNI_DestroyEvent(ctx->checkpoint_event);
         }
 
-        if (ctx->mem_if > 0) {
-           close(ctx->mem_if);
-           ctx->mem_if = INVALID_FENCE;
-        }
+        hwc_close_memory_interface(ctx);
     }
 }
 
@@ -3918,8 +3999,6 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         }
 
         hwc_read_dev_props(dev);
-        dev->mem_if = hwc_open_memory_interface();
-        ALOGI("%s: mem-if on %d", __FUNCTION__, dev->mem_if);
 
         if ( BKNI_CreateEvent(&dev->recycle_event) ) {
            goto clean_up;
@@ -4423,7 +4502,7 @@ static void hwc_nsc_prepare_layer(
     bool is_sideband = false;
     bool is_yuv = false;
 
-    if (is_video_layer(ctx, layer, layer_id, &is_sideband, &is_yuv)) {
+    if (is_video_layer(ctx, layer, &is_sideband, &is_yuv)) {
         if (!is_sideband) {
             if (is_yuv) {
                hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false, false, skip_set);
