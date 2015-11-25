@@ -69,8 +69,7 @@
 #define B_PROPERTY_ADEC_DRC_BOOST ("media.brcm.adec_drc_boost")         // 0..127 where 127=maximum compression
 #define B_PROPERTY_ADEC_DRC_ENC_LEVEL ("media.brcm.adec_drc_enc_level") // -1 default or 0..127 in -.25 dB units
 
-#define B_DRC_DEFAULT_MODE_PULSE ("line")
-#define B_DRC_DEFAULT_MODE_LEGACY ("rf")
+#define B_DRC_DEFAULT_MODE ("rf")
 #define B_DRC_DEFAULT_REF_LEVEL (92)    // -23dB - SW decoder targets -16dB with higher compression for mobile devices but this leaves enough headroom to avoid saturation
 #define B_DRC_DEFAULT_CUT (127)         // Max
 #define B_DRC_DEFAULT_BOOST (127)       // Max
@@ -589,21 +588,8 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
 
     // Set AAC DRC defaults
     NEXUS_AudioDecoderCodecSettings codecSettings;
-    const char *pDefaultDrcMode;
     NEXUS_AudioDecoder_GetCodecSettings(m_hAudioDecoder, NEXUS_AudioCodec_eAacAdts, &codecSettings);
-    switch ( codecSettings.codecSettings.aac.downmixMode ) // Sniff out legacy vs. Dolby Pulse decoder
-    {
-    case NEXUS_AudioDecoderAacDownmixMode_eMatrix:
-    case NEXUS_AudioDecoderAacDownmixMode_eArib:
-        pDefaultDrcMode = B_DRC_DEFAULT_MODE_LEGACY;
-        break;
-    default:
-    case NEXUS_AudioDecoderAacDownmixMode_eLtRt:
-    case NEXUS_AudioDecoderAacDownmixMode_eLoRo:
-        pDefaultDrcMode = B_DRC_DEFAULT_MODE_PULSE;
-        break;
-    }
-    if ( property_get(B_PROPERTY_ADEC_DRC_MODE, property, pDefaultDrcMode) )
+    if ( property_get(B_PROPERTY_ADEC_DRC_MODE, property, B_DRC_DEFAULT_MODE) )
     {
         if ( !strcmp(property, "line") )
         {
@@ -622,6 +608,11 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     {
         codecSettings.codecSettings.aac.drcDefaultLevel = temp;
     }
+    else
+    {
+        codecSettings.codecSettings.aac.drcDefaultLevel = B_DRC_DEFAULT_REF_LEVEL;
+    }
+
     errCode = NEXUS_AudioDecoder_SetCodecSettings(m_hAudioDecoder, &codecSettings);
     if ( errCode )
     {
