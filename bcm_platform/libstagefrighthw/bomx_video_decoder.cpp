@@ -489,7 +489,7 @@ static OMX_VIDEO_VP8LEVELTYPE BOMX_VP8LevelFromNexus(NEXUS_VideoProtocolLevel ne
 
 static int BOMX_VideoDecoder_GetFrameInterval(NEXUS_VideoFrameRate frameRate)
 {
-    int i;
+    unsigned i;
     for ( i = 0; i < g_numInFrameIntervals; i++ )
     {
         if ( g_inFrameIntervals[i].rate == frameRate )
@@ -1469,20 +1469,25 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 break;
             // TODO: Add supported profiles/levels for OMX_VIDEO_CodingVP9 after Android has defined them in the frameworks
             case OMX_VIDEO_CodingHEVC:
-                switch ( pProfileLevel->nProfileIndex )
-                {
-                case 0:
-                    pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_HEVCProfileMain;
-                    pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_HEVCMainTierLevel51;
-                    break;
-                case 1:
-                    pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_HEVCProfileMain10;
-                    pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_HEVCMainTierLevel51;
-                    break;
-                default:
+            {
+                // Return all combinations of profiles/levels supported
+                OMX_VIDEO_HEVCLEVELTYPE levels[] = {OMX_VIDEO_HEVCMainTierLevel1,
+                                                    OMX_VIDEO_HEVCMainTierLevel2,
+                                                    OMX_VIDEO_HEVCMainTierLevel21,
+                                                    OMX_VIDEO_HEVCMainTierLevel3,
+                                                    OMX_VIDEO_HEVCMainTierLevel31,
+                                                    OMX_VIDEO_HEVCMainTierLevel4,
+                                                    OMX_VIDEO_HEVCMainTierLevel41,
+                                                    OMX_VIDEO_HEVCMainTierLevel5,
+                                                    OMX_VIDEO_HEVCMainTierLevel51};
+                size_t countLevels = sizeof(levels)/sizeof(levels[0]);
+                if (pProfileLevel->nProfileIndex >= 2*countLevels)
                     return OMX_ErrorNoMore;
-                }
+                pProfileLevel->eProfile = (OMX_U32)(pProfileLevel->nProfileIndex < countLevels  ?
+                                          OMX_VIDEO_HEVCProfileMain : OMX_VIDEO_HEVCProfileMain10);
+                pProfileLevel->eLevel = (OMX_U32) levels[pProfileLevel->nProfileIndex % countLevels];
                 break;
+            }
             default:
                 // Only certain codecs support this interface
                 return OMX_ErrorNoMore;
