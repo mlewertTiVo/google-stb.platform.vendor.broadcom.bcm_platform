@@ -2901,12 +2901,16 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
          continue;
       }
-      phys_block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
-      lrcp = hwc_mem_lock(ctx, phys_block_handle, &pAddr, true);
-      if (lrcp || pAddr == NULL) {
-         ALOGE("comp: %llu/%llu - layer: %d - invalid physical data\n",
-               ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
-         continue;
+      if (gr_buffer->fmt_set != GR_NONE) {
+         phys_block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
+         lrcp = hwc_mem_lock(ctx, phys_block_handle, &pAddr, true);
+         if (lrcp || pAddr == NULL) {
+            ALOGE("comp: %llu/%llu - layer: %d - invalid physical data\n",
+                  ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
+            continue;
+         }
+      } else {
+         lrcp = NEXUS_NOT_INITIALIZED;
       }
       has_video = is_video_layer_locked(&list->hwLayers[i], pSharedData, gr_buffer->usage, &is_sideband, &is_yuv);
       if (has_video && !is_yuv) {
