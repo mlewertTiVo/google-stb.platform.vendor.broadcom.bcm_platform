@@ -15,7 +15,7 @@
  */
 
 //#define LOG_NDEBUG 0
-#define LOG_TAG "ATSParser"
+#define LOG_TAG "ATSParserBcm"
 #include <utils/Log.h>
 
 #include "ATSParser.h"
@@ -39,6 +39,13 @@
 #include <utils/Vector.h>
 
 #include <inttypes.h>
+
+namespace {
+enum {
+  REGISTRATION_DESCRIPTOR = 0x05,
+  FORMAT_IDENTIFIER_HEVC = 0x48455643 /* "HEVC" */,
+};
+}
 
 namespace android {
 
@@ -95,6 +102,7 @@ private:
     struct StreamInfo {
         unsigned mType;
         unsigned mPID;
+        unsigned mFormatId;
     };
 
     ATSParser *mParser;
@@ -116,7 +124,8 @@ struct ATSParser::Stream : public RefBase {
     Stream(Program *program,
            unsigned elementaryPID,
            unsigned streamType,
-           unsigned PCR_PID);
+           unsigned PCR_PID,
+           unsigned formatId = -1);
 
     unsigned type() const { return mStreamType; }
     unsigned pid() const { return mElementaryPID; }
@@ -150,6 +159,7 @@ private:
     unsigned mElementaryPID;
     unsigned mStreamType;
     unsigned mPCR_PID;
+    unsigned mFormatId;
     int32_t mExpectedContinuityCounter;
 
     sp<ABuffer> mBuffer;
@@ -411,28 +421,38 @@ status_t ATSParser::Program::parseProgramMap(ABitReader *br) {
         unsigned ES_info_length = br->getBits(12);
         ALOGV("    ES_info_length = %u", ES_info_length);
 
-#if 0
-        br->skipBits(ES_info_length * 8);  // skip descriptors
-#else
-        unsigned info_bytes_remaining = ES_info_length;
-        while (info_bytes_remaining >= 2) {
-            MY_LOGV("      tag = 0x%02x", br->getBits(8));
+        unsigned temp = ES_info_length;
+        unsigned formatIdentifier = -1;
+        while (temp >= 2) {
+            uint8_t tag = br->getBits(8);
+            ALOGV("      tag = 0x%02x", tag);
 
             unsigned descLength = br->getBits(8);
             ALOGV("      len = %u", descLength);
 
-            if (info_bytes_remaining < descLength) {
+            if (temp < descLength) {
                 return ERROR_MALFORMED;
             }
-            br->skipBits(descLength * 8);
 
-            info_bytes_remaining -= descLength + 2;
+            // REGISTRATION descriptor
+            if (tag == REGISTRATION_DESCRIPTOR) {
+              formatIdentifier = br->getBits(32);
+              ALOGV("      FormatIdentifier = %u", formatIdentifier);
+              if (descLength > 6) {
+                br->skipBits((descLength - 6) * 8);
+              }
+            }
+            // other descriptor
+            else {
+              br->skipBits(descLength * 8);
+            }
+            temp -= descLength + 2;
         }
-#endif
 
         StreamInfo info;
         info.mType = streamType;
         info.mPID = elementaryPID;
+        info.mFormatId = formatIdentifier;
         infos.push(info);
 
         infoBytesRemaining -= 5 + ES_info_length;
@@ -489,7 +509,7 @@ status_t ATSParser::Program::parseProgramMap(ABitReader *br) {
 
         if (index < 0) {
             sp<Stream> stream = new Stream(
-                    this, info.mPID, info.mType, PCR_PID);
+                    this, info.mPID, info.mType, PCR_PID, info.mFormatId);
 
             mStreams.add(info.mPID, stream);
         }
@@ -587,11 +607,13 @@ ATSParser::Stream::Stream(
         Program *program,
         unsigned elementaryPID,
         unsigned streamType,
-        unsigned PCR_PID)
+        unsigned PCR_PID,
+        unsigned formatId)
     : mProgram(program),
       mElementaryPID(elementaryPID),
       mStreamType(streamType),
       mPCR_PID(PCR_PID),
+      mFormatId(formatId),
       mExpectedContinuityCounter(-1),
       mPayloadStarted(false),
       mEOSReached(false),
@@ -644,12 +666,19 @@ ATSParser::Stream::Stream(
             mQueue = new ElementaryStreamQueue(
                     ElementaryStreamQueue::METADATA);
             break;
-
+        case STREAMTYPE_PRIVATE:
+            if (mFormatId == FORMAT_IDENTIFIER_HEVC) {
+              mQueue = new ElementaryStreamQueue(
+                    ElementaryStreamQueue::H265,
+                    (mProgram->parserFlags() & ALIGNED_VIDEO_DATA)
+                    ? ElementaryStreamQueue::kFlag_AlignedData : 0);
+            }
+            break;
         default:
             break;
     }
 
-    ALOGV("new stream PID 0x%02x, type 0x%02x", elementaryPID, streamType);
+    ALOGI("new stream PID 0x%02x, type 0x%02x", elementaryPID, streamType);
 
     if (mQueue != NULL) {
         mBuffer = new ABuffer(192 * 1024);
@@ -751,7 +780,8 @@ bool ATSParser::Stream::isVideo() const {
         case STREAMTYPE_MPEG2_VIDEO:
         case STREAMTYPE_MPEG4_VIDEO:
             return true;
-
+        case STREAMTYPE_PRIVATE:
+            return mFormatId == FORMAT_IDENTIFIER_HEVC;
         default:
             return false;
     }
