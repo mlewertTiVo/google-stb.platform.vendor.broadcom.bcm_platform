@@ -2965,6 +2965,9 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       } else if (item->comp[i].visible) {
          if (!layer_composed) {
             layer_seeds_output = hwc_layer_seeds_output(item->skip_set[i], &item->comp[i], outputHdl);
+            if (layer_seeds_output && has_video && (*fb_target_seen) && !(*overlay_seen)) {
+               layer_seeds_output = false;
+            }
             if (layer_seeds_output) {
                if (ctx->smart_background) {
                   hwc_set_layer_blending(ctx, i, BLENDIND_TYPE_SRC);
