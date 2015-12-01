@@ -1353,6 +1353,16 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
             }
        break;
        case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
+       {
+           for (int i = 0; i < NSC_SB_CLIENTS_NUMBER; i++) {
+               if (ctx->sb_cli[i].id == ntfy.surface_hdl) {
+                  ALOGD("%s: flush-background on sfid %x, id %p", __FUNCTION__, ntfy.surface_hdl, ctx->sb_cli[i].id);
+                  ctx->flush_background = true;
+                  break;
+               }
+           }
+       }
+       break;
        default:
        break;
        }
