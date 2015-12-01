@@ -59,6 +59,7 @@
 // Runtime Properties
 #define B_PROPERTY_PES_DEBUG ("media.brcm.vdec_pes_debug")
 #define B_PROPERTY_INPUT_DEBUG ("media.brcm.vdec_input_debug")
+#define B_PROPERTY_ENABLE_METADATA ("media.brcm.vdec_enable_metadata")
 #define B_PROPERTY_TRIM_VP9 ("ro.nx.trim.vp9")
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
 
@@ -93,6 +94,7 @@
 #define OMX_IndexParamUseAndroidNativeBuffer2                0x7F000005
 #define OMX_IndexParamDescribeColorFormat                    0x7F000006
 #define OMX_IndexParamConfigureVideoTunnelMode               0x7F000007
+#define OMX_IndexParamPrepareForAdaptivePlayback             0x7F000008
 
 using namespace android;
 
@@ -713,6 +715,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_formatChangePending(false),
     m_nativeGraphicsEnabled(false),
     m_metadataEnabled(false),
+    m_adaptivePlaybackEnabled(false),
     m_secureDecoder(secure),
     m_outputWidth(1920),
     m_outputHeight(1080),
@@ -1567,6 +1570,20 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
         pMetadata->bStoreMetaData = m_metadataEnabled == true ? OMX_TRUE : OMX_FALSE;
         return OMX_ErrorNone;
     }
+    case OMX_IndexParamPrepareForAdaptivePlayback:
+    {
+        PrepareForAdaptivePlaybackParams *pAdaptive = (PrepareForAdaptivePlaybackParams *)pComponentParameterStructure;
+        BOMX_STRUCT_VALIDATE(pAdaptive);
+        ALOGV("GetParameter OMX_IndexParamPrepareForAdaptivePlayback %u", pAdaptive->bEnable);
+        if ( pAdaptive->nPortIndex != m_videoPortBase+1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+        pAdaptive->bEnable = m_adaptivePlaybackEnabled == true ? OMX_TRUE : OMX_FALSE;
+        pAdaptive->nMaxFrameWidth = m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth;
+        pAdaptive->nMaxFrameHeight = m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight;
+        return OMX_ErrorNone;
+    }
     case OMX_IndexParamGetAndroidNativeBufferUsage:
     {
         GetAndroidNativeBufferUsageParams *pUsage = (GetAndroidNativeBufferUsageParams *)pComponentParameterStructure;
@@ -1847,6 +1864,36 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         m_metadataEnabled = pMetadata->bStoreMetaData == OMX_TRUE ? true : false;
+        return OMX_ErrorNone;
+    }
+    case OMX_IndexParamPrepareForAdaptivePlayback:
+    {
+        PrepareForAdaptivePlaybackParams *pAdaptive = (PrepareForAdaptivePlaybackParams *)pComponentParameterStructure;
+        BOMX_STRUCT_VALIDATE(pAdaptive);
+        ALOGV("SetParameter OMX_IndexParamPrepareForAdaptivePlayback %u %ux%u", pAdaptive->bEnable, pAdaptive->nMaxFrameWidth, pAdaptive->nMaxFrameHeight);
+        if ( pAdaptive->nPortIndex != m_videoPortBase+1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+        m_adaptivePlaybackEnabled = pAdaptive->bEnable == OMX_TRUE ? true : false;
+        // Update crop and port format
+        OMX_PARAM_PORTDEFINITIONTYPE portDef;
+        m_pVideoPorts[1]->GetDefinition(&portDef);
+        // Ensure crop reports buffer width/height
+        m_outputWidth = pAdaptive->nMaxFrameWidth;
+        m_outputHeight = pAdaptive->nMaxFrameHeight;
+        // Ensure slice height and stride match frame width/height and update buffer size
+        portDef.format.video.nFrameWidth = m_outputWidth;
+        portDef.format.video.nFrameHeight = m_outputHeight;
+        portDef.format.video.nSliceHeight = m_outputHeight;
+        portDef.format.video.nStride = m_outputWidth;
+        portDef.nBufferSize = ComputeBufferSize(portDef.format.video.nStride, portDef.format.video.nSliceHeight);
+        err = m_pVideoPorts[1]->SetDefinition(&portDef);
+        if ( err )
+        {
+            return BOMX_ERR_TRACE(err);
+        }
+        PortFormatChanged(m_pVideoPorts[1]);
         return OMX_ErrorNone;
     }
     case OMX_IndexParamUseAndroidNativeBuffer:
@@ -4023,6 +4070,7 @@ static const struct {
     {"OMX.google.android.index.useAndroidNativeBuffer2", (int)OMX_IndexParamUseAndroidNativeBuffer2},
     {"OMX.google.android.index.describeColorFormat", (int)OMX_IndexParamDescribeColorFormat},
     {"OMX.google.android.index.storeMetaDataInBuffers", (int)OMX_IndexParamStoreMetaDataInBuffers},
+    {"OMX.google.android.index.prepareForAdaptivePlayback", (int)OMX_IndexParamPrepareForAdaptivePlayback},
 #if 0 /* Not yet supported */
     {"OMX.google.android.index.configureVideoTunnelMode", (int)OMX_IndexParamConfigureVideoTunnelMode},     // TODO: Requires audio HW acceleration
 #endif
@@ -4046,8 +4094,17 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetExtensionIndex(
     {
         if ( !strcmp(g_extensions[i].pName, cParameterName) )
         {
-            *pIndexType = (OMX_INDEXTYPE)g_extensions[i].index;
-            return OMX_ErrorNone;
+            if ( (g_extensions[i].index == OMX_IndexParamStoreMetaDataInBuffers) && (0 == property_get_int32(B_PROPERTY_ENABLE_METADATA, 1)) )
+            {
+                ALOGD("Metadata output disabled");
+                // Drop out here to reduce spam in logcat
+                return OMX_ErrorUnsupportedIndex;
+            }
+            else
+            {
+                *pIndexType = (OMX_INDEXTYPE)g_extensions[i].index;
+                return OMX_ErrorNone;
+            }
         }
     }
 
@@ -4293,16 +4350,26 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     if ( pBuffer->frameStatus.surfaceCreateSettings.imageWidth != m_outputWidth || pBuffer->frameStatus.surfaceCreateSettings.imageHeight != m_outputHeight )
                     {
                         OMX_PARAM_PORTDEFINITIONTYPE portDefs;
+                        bool portReset;
 
                         ALOGI("Video output format change %ux%u -> %ux%u [max %ux%u] on frame %u", m_outputWidth, m_outputHeight,
                             pBuffer->frameStatus.surfaceCreateSettings.imageWidth, pBuffer->frameStatus.surfaceCreateSettings.imageHeight,
                             m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth, m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight,
                             pBuffer->frameStatus.serialNumber);
 
-                        // For metadata output, treat port width/height as max values.  Crop can never be > port values.
-                        if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata ||
-                             pBuffer->frameStatus.surfaceCreateSettings.imageWidth > m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth ||
-                             pBuffer->frameStatus.surfaceCreateSettings.imageHeight > m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight )
+                        if ( m_outputMode == BOMX_VideoDecoderOutputBufferType_eMetadata || m_adaptivePlaybackEnabled )
+                        {
+                            // For metadata output, treat port width/height as max values.  Crop can never be > port values.
+                            portReset = (pBuffer->frameStatus.surfaceCreateSettings.imageWidth > m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth ||
+                                         pBuffer->frameStatus.surfaceCreateSettings.imageHeight > m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight);
+                        }
+                        else
+                        {
+                            // Not metadata or adaptive, port must reset.
+                            portReset = true;
+                        }
+
+                        if ( portReset )
                         {
                             ALOGI("Output port will reset");
                             // Push this entry back into the PTS tracker and reset any changes to EOS state

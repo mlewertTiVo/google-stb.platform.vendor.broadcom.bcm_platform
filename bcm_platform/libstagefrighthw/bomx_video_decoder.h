@@ -291,6 +291,7 @@ protected:
     bool m_formatChangePending;
     bool m_nativeGraphicsEnabled;
     bool m_metadataEnabled;
+    bool m_adaptivePlaybackEnabled;
     bool m_secureDecoder;
     unsigned m_outputWidth;
     unsigned m_outputHeight;
