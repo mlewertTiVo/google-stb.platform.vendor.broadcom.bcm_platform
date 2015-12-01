@@ -2825,28 +2825,6 @@ out:
     return 0;
 }
 
-static int hwc_validate_layer_handle(hwc_layer_1_t *layer)
-{
-   int rc = 0;
-
-   switch (layer->compositionType) {
-   case HWC_OVERLAY:
-      if (layer->handle && (private_handle_t::validate(layer->handle) != 0)) {
-         rc = -EINVAL;
-      }
-   break;
-   case HWC_SIDEBAND:
-      if (layer->sidebandStream && (layer->sidebandStream->data[1] == 0)) {
-         rc = -EINVAL;
-      }
-   break;
-   default:
-   break;
-   }
-
-   return rc;
-}
-
 static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, int *overlay_seen, int *fb_target_seen, bool *oob_video)
 {
    int layer_composed = 0;
@@ -2896,7 +2874,8 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
 
    for (i = 0; i < list->numHwLayers; i++) {
       lrc = NEXUS_OS_ERROR;
-      if (hwc_validate_layer_handle(&list->hwLayers[i]) != 0) {
+      if (list->hwLayers[i].handle &&
+          private_handle_t::validate(list->hwLayers[i].handle) != 0) {
          ALOGW("comp: %llu/%llu - layer: %d - invalid for comp (%d)\n",
                ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed,
                i, list->hwLayers[i].acquireFenceFd);
@@ -2907,41 +2886,33 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          break;
       }
       void *pAddr;
-      NEXUS_MemoryBlockHandle block_handle = NULL, phys_block_handle = NULL;
-      private_handle_t *gr_buffer = NULL;
-      PSHARED_DATA pSharedData = NULL;
-      if (list->hwLayers[i].compositionType != HWC_SIDEBAND) {
-         gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
-         if (gr_buffer == NULL) {
-            ALOGV("comp: %llu/%llu - layer: %d - invalid buffer\n",
+      NEXUS_MemoryBlockHandle block_handle, phys_block_handle;
+      private_handle_t *gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
+      if (gr_buffer == NULL) {
+         ALOGV("comp: %llu/%llu - layer: %d - invalid buffer\n",
+               ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
+         continue;
+      }
+      block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+      lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
+      PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
+      if (lrc || pSharedData == NULL) {
+         ALOGE("comp: %llu/%llu - layer: %d - invalid shared data\n",
+               ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
+         continue;
+      }
+      if (gr_buffer->fmt_set != GR_NONE) {
+         phys_block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
+         lrcp = hwc_mem_lock(ctx, phys_block_handle, &pAddr, true);
+         if (lrcp || pAddr == NULL) {
+            ALOGE("comp: %llu/%llu - layer: %d - invalid physical data\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
             continue;
-         }
-         block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
-         lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
-         pSharedData = (PSHARED_DATA) pAddr;
-         if (lrc || pSharedData == NULL) {
-            ALOGE("comp: %llu/%llu - layer: %d - invalid shared data\n",
-                  ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
-            continue;
-         }
-         if (gr_buffer->fmt_set != GR_NONE) {
-            phys_block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
-            lrcp = hwc_mem_lock(ctx, phys_block_handle, &pAddr, true);
-            if (lrcp || pAddr == NULL) {
-               ALOGE("comp: %llu/%llu - layer: %d - invalid physical data\n",
-                     ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
-               continue;
-            }
-         } else {
-            lrcp = NEXUS_NOT_INITIALIZED;
          }
       } else {
-         lrc = NEXUS_NOT_INITIALIZED;
+         lrcp = NEXUS_NOT_INITIALIZED;
       }
-      has_video = is_video_layer_locked(&list->hwLayers[i], pSharedData,
-                                        (gr_buffer != NULL) ? gr_buffer->usage : 0,
-                                        &is_sideband, &is_yuv);
+      has_video = is_video_layer_locked(&list->hwLayers[i], pSharedData, gr_buffer->usage, &is_sideband, &is_yuv);
       if (has_video && !is_yuv) {
          *oob_video = true;
          if (!is_sideband) {
