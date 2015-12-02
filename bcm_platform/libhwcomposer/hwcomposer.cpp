@@ -114,6 +114,9 @@ using namespace android;
 #define HWC_OPAQUE                   0xFF000000
 #define HWC_TRANSPARENT              0x00000000
 
+#define HWC_SCOPE_PREP               0x0000C036
+#define HWC_SCOPE_COMP               0x00006436
+
 /* note: matching other parts of the integration, we
  *       want to default product resolution to 1080p.
  */
@@ -351,6 +354,18 @@ typedef struct {
     BKNI_MutexHandle fifo_mutex;
 } DISPLAY_CLIENT_INFO;
 
+typedef struct {
+    /* inputs. */
+    int scope;
+    hwc_layer_1_t *layer;
+    PSHARED_DATA sharedData;
+    int gr_usage;
+    int sideband_client;
+    /* outputs. */
+    bool is_sideband;
+    bool is_yuv;
+} VIDEO_LAYER_VALIDATION;
+
 typedef void (* HWC_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
 
 class HwcBinder : public HwcListener
@@ -514,8 +529,9 @@ struct hwc_work_item {
    int64_t surf_wait;
    bool skip_set[NSC_GPX_CLIENTS_NUMBER];
    NEXUS_SurfaceComposition comp[NSC_GPX_CLIENTS_NUMBER];
-   hwc_display_contents_1_t content;
+   int sb_cli[NSC_GPX_CLIENTS_NUMBER];
    int video_layers;
+   hwc_display_contents_1_t content;
 };
 
 struct hwc_context_t {
@@ -1369,56 +1385,69 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
    }
 }
 
-static bool is_video_layer_locked(hwc_layer_1_t *layer, PSHARED_DATA pSharedData, int usage, bool *is_sideband, bool *is_yuv)
+static bool is_video_layer_locked(VIDEO_LAYER_VALIDATION *data)
 {
    bool rc = false;
    NexusClientContext *client_context = NULL;
 
-   if (layer->compositionType == HWC_OVERLAY) {
+   if (data->layer->compositionType == HWC_OVERLAY) {
       int index = -1;
-      index = android_atomic_acquire_load(&pSharedData->videoWindow.windowIdPlusOne);
+      if (data->sharedData == NULL) {
+         ALOGE("%s: unexpected NULL overlay (%p) - verify caller.", __FUNCTION__, data->layer);
+         goto out;
+      }
+      index = android_atomic_acquire_load(&(data->sharedData->videoWindow.windowIdPlusOne));
       if (index > 0) {
-         client_context = reinterpret_cast<NexusClientContext *>(pSharedData->videoWindow.nexusClientContext);
+         client_context = reinterpret_cast<NexusClientContext *>(data->sharedData->videoWindow.nexusClientContext);
          if (client_context != NULL) {
             rc = true;
         }
-      } else if ((pSharedData->container.format == HAL_PIXEL_FORMAT_YV12) && (usage & GRALLOC_USAGE_HW_COMPOSER)) {
-         if (is_yuv) {
-            *is_yuv = true;
+      } else if ((data->sharedData->container.format == HAL_PIXEL_FORMAT_YV12) &&
+                 (data->gr_usage & GRALLOC_USAGE_HW_COMPOSER)) {
+         data->is_yuv = true;
+         rc = true;
+      }
+   } else if (data->layer->compositionType == HWC_SIDEBAND) {
+      if (data->scope == HWC_SCOPE_PREP) {
+         client_context = (NexusClientContext*)data->layer->sidebandStream->data[1];
+         if (client_context != NULL) {
+            rc = true;
          }
-         rc = true;
+      } else if (data->scope == HWC_SCOPE_COMP) {
+         if (data->sideband_client != 0) {
+            rc = true;
+         }
       }
-   } else if (layer->compositionType == HWC_SIDEBAND) {
-      client_context = (NexusClientContext*)layer->sidebandStream->data[1];
-      if (client_context != NULL) {
-         rc = true;
-      }
-      if (is_sideband) {
-         *is_sideband = true;
-      }
+      data->is_sideband = true;
    }
 
    if (rc) {
-      layer->hints |= HWC_HINT_CLEAR_FB;
+      data->layer->hints |= HWC_HINT_CLEAR_FB;
    }
 
 out:
    return rc;
 }
 
-static int hwc_validate_layer_handle(hwc_layer_1_t *layer)
+static int hwc_validate_layer_handle(VIDEO_LAYER_VALIDATION *data)
 {
    int rc = 0;
 
-   switch (layer->compositionType) {
+   switch (data->layer->compositionType) {
    case HWC_OVERLAY:
-      if (layer->handle && (private_handle_t::validate(layer->handle) != 0)) {
-         rc = -EINVAL;
+      if (data->layer->handle && (private_handle_t::validate(data->layer->handle) != 0)) {
+         rc = -1;
       }
    break;
    case HWC_SIDEBAND:
-      if (layer->sidebandStream && (layer->sidebandStream->data[1] == 0)) {
-         rc = -EINVAL;
+      if (data->scope == HWC_SCOPE_COMP) {
+         if (data->sideband_client == 0) {
+            rc = -2;
+         }
+      } else if (data->scope == HWC_SCOPE_PREP) {
+         if (data->layer->sidebandStream && (data->layer->sidebandStream->data[1] == 0)) {
+            rc = -3;
+         }
       }
    break;
    default:
@@ -1428,7 +1457,7 @@ static int hwc_validate_layer_handle(hwc_layer_1_t *layer)
    return rc;
 }
 
-static bool is_video_layer(struct hwc_context_t *ctx, hwc_layer_1_t *layer, bool *is_sideband, bool *is_yuv)
+static bool is_video_layer(struct hwc_context_t *ctx, VIDEO_LAYER_VALIDATION *data)
 {
    bool rc = false;
    private_handle_t *gr_buffer = NULL;
@@ -1437,34 +1466,30 @@ static bool is_video_layer(struct hwc_context_t *ctx, hwc_layer_1_t *layer, bool
    PSHARED_DATA pSharedData = NULL;
    void *pAddr;
 
-   if (is_sideband) {
-      *is_sideband = false;
-   }
-   if (is_yuv) {
-      *is_yuv = false;
-   }
+   data->is_sideband = false;
+   data->is_yuv = false;
 
-   if (hwc_validate_layer_handle(layer) != 0) {
+   if (hwc_validate_layer_handle(data) != 0) {
       goto out;
    }
 
-   if (((layer->compositionType == HWC_OVERLAY && layer->handle) ||
-        (layer->compositionType == HWC_SIDEBAND && layer->sidebandStream))
-       && !(layer->flags & HWC_SKIP_LAYER)) {
-      if (layer->compositionType != HWC_SIDEBAND) {
-         gr_buffer = (private_handle_t *)layer->handle;
+   if (((data->layer->compositionType == HWC_OVERLAY && data->layer->handle) ||
+        (data->layer->compositionType == HWC_SIDEBAND && data->layer->sidebandStream))
+       && !(data->layer->flags & HWC_SKIP_LAYER)) {
+      if (data->layer->compositionType != HWC_SIDEBAND) {
+         gr_buffer = (private_handle_t *)data->layer->handle;
+         data->gr_usage = gr_buffer->usage;
          block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
          lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
          pSharedData = (PSHARED_DATA) pAddr;
          if ((lrc != NEXUS_SUCCESS) || pSharedData == NULL) {
             goto out;
          }
+         data->sharedData = pSharedData;
       } else {
          lrc = NEXUS_NOT_INITIALIZED;
       }
-      rc = is_video_layer_locked(layer, pSharedData,
-                                 (gr_buffer != NULL) ? gr_buffer->usage : 0,
-                                 is_sideband, is_yuv);
+      rc = is_video_layer_locked(data);
       if (lrc == NEXUS_SUCCESS) {
          hwc_mem_unlock(ctx, block_handle, true);
       }
@@ -1483,6 +1508,7 @@ static bool split_layer_scaling(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
     private_handle_t *gr_buffer = NULL;
     NEXUS_Rect clip_position;
     NEXUS_MemoryBlockHandle block_handle;
+    VIDEO_LAYER_VALIDATION video;
 
     if (!layer->handle) {
         goto out;
@@ -1501,7 +1527,11 @@ static bool split_layer_scaling(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
         goto out;
     }
 
-    if (is_video_layer_locked(layer, pSharedData, gr_buffer->usage, NULL, NULL)) {
+    video.scope = HWC_SCOPE_PREP;
+    video.layer = layer;
+    video.sharedData = pSharedData;
+    video.gr_usage = gr_buffer->usage;
+    if (is_video_layer_locked(&video)) {
        goto out_unlock;
     }
 
@@ -2296,6 +2326,7 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
     hwc_layer_1_t *layer;
     int skip_layer_index = -1;
     bool has_video = false;
+    VIDEO_LAYER_VALIDATION video;
 
     if (ctx->display_dump_layer & HWC_DUMP_LEVEL_CLASSIFY) {
        ALOGI("comp: %llu - classify: %d, geom: %d",
@@ -2345,9 +2376,11 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
     }
 
     ctx->prepare_video = 0;
+    video.scope = HWC_SCOPE_PREP;
     for (i = 0; i < list->numHwLayers; i++) {
        layer = &list->hwLayers[i];
-       if (is_video_layer(ctx, layer, NULL, NULL)) {
+       video.layer = layer;
+       if (is_video_layer(ctx, &video)) {
           has_video = true;
           ctx->prepare_video++;
        }
@@ -2357,8 +2390,9 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
         (ctx->display_gles_always && has_video == false)) {
        for (i = 0; i < list->numHwLayers; i++) {
           layer = &list->hwLayers[i];
+          video.layer = layer;
           if (layer->compositionType == HWC_OVERLAY &&
-              !is_video_layer(ctx, layer, NULL, NULL)) {
+              !is_video_layer(ctx, &video)) {
              layer->compositionType = HWC_FRAMEBUFFER;
              layer->hints = 0;
           }
@@ -2777,8 +2811,12 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         memcpy(&this_frame->content, list,
                sizeof(hwc_display_contents_1_t) + (list->numHwLayers * sizeof(hwc_layer_1_t)));
         for (i = 0; i < list->numHwLayers; i++) {
+           hwc_layer_1_t *layer = &list->hwLayers[i];
            memcpy(&this_frame->comp[i], &ctx->gpx_cli[i].composition, sizeof(NEXUS_SurfaceComposition));
            this_frame->skip_set[i] = ctx->gpx_cli[i].skip_set;
+           if (layer->compositionType == HWC_SIDEBAND && layer->sidebandStream) {
+              this_frame->sb_cli[i] = layer->sidebandStream->data[1];
+           }
         }
         this_frame->comp_ix = ctx->stats[HWC_PRIMARY_IX].set_call;
         this_frame->video_layers = ctx->prepare_video;
@@ -2875,9 +2913,10 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    bool skip_comp = false, layer_seeds_output = false;
    hwc_display_contents_1_t* list = &item->content;
    NEXUS_SurfaceHandle surface[NSC_GPX_CLIENTS_NUMBER];
-   int ops_count = 0, video_seen = 0;
+   int ops_count = 0, video_seen = 0, chk;
    uint64_t pinged_frame = 0;
    int64_t tick_now = 0;
+   VIDEO_LAYER_VALIDATION video;
 
    memset(surface, 0, sizeof(surface));
 
@@ -2913,10 +2952,15 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
 
    for (i = 0; i < list->numHwLayers; i++) {
       lrc = NEXUS_OS_ERROR;
-      if (hwc_validate_layer_handle(&list->hwLayers[i]) != 0) {
-         ALOGW("comp: %llu/%llu - layer: %d - invalid for comp (%d)\n",
+      memset(&video, 0, sizeof(VIDEO_LAYER_VALIDATION));
+      video.scope = HWC_SCOPE_COMP;
+      video.layer = &list->hwLayers[i];
+      video.sideband_client = item->sb_cli[i];
+      chk = hwc_validate_layer_handle(&video);
+      if (chk != 0) {
+         ALOGW("comp: %llu/%llu - layer: %d (%d) - invalid for comp (%d)\n",
                ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed,
-               i, list->hwLayers[i].acquireFenceFd);
+               i, chk, list->hwLayers[i].acquireFenceFd);
          continue;
       }
       if (i > NSC_GPX_CLIENTS_NUMBER-1) {
@@ -2956,12 +3000,12 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       } else {
          lrc = NEXUS_NOT_INITIALIZED;
       }
-      has_video = is_video_layer_locked(&list->hwLayers[i], pSharedData,
-                                        (gr_buffer != NULL) ? gr_buffer->usage : 0,
-                                        &is_sideband, &is_yuv);
-      if (has_video && !is_yuv) {
+      video.sharedData = pSharedData;
+      video.gr_usage = (gr_buffer != NULL) ? gr_buffer->usage : 0;
+      has_video = is_video_layer_locked(&video);
+      if (has_video && !video.is_yuv) {
          *oob_video = true;
-         if (!is_sideband) {
+         if (!video.is_sideband) {
             if (ctx->hwc_binder) {
                BKNI_AcquireMutex(ctx->mutex);
                if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
@@ -2971,8 +3015,13 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                pinged_frame = ctx->mm_cli[0].last_ping_frame_id;
                BKNI_ReleaseMutex(ctx->mutex);
             }
+         } else {
+            is_sideband = true;
          }
       } else if (item->comp[i].visible) {
+         if (video.is_yuv) {
+            is_yuv = true;
+         }
          if (!layer_composed) {
             layer_seeds_output = hwc_layer_seeds_output(item->skip_set[i], &item->comp[i], outputHdl);
             if (layer_seeds_output && video_seen && (*fb_target_seen) && !(*overlay_seen)) {
@@ -4552,12 +4601,13 @@ static void hwc_nsc_prepare_layer(
     bool geometry_changed, unsigned int *video_layer_id,
     unsigned int *sideband_layer_id, unsigned int *skip_set)
 {
-    bool is_sideband = false;
-    bool is_yuv = false;
+    VIDEO_LAYER_VALIDATION video;
 
-    if (is_video_layer(ctx, layer, &is_sideband, &is_yuv)) {
-        if (!is_sideband) {
-            if (is_yuv) {
+    video.scope = HWC_SCOPE_PREP;
+    video.layer = layer;
+    if (is_video_layer(ctx, &video)) {
+        if (!video.is_sideband) {
+            if (video.is_yuv) {
                hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false, false, skip_set);
             } else {
                if (*video_layer_id < NSC_MM_CLIENTS_NUMBER) {
@@ -4570,7 +4620,7 @@ static void hwc_nsc_prepare_layer(
                      *video_layer_id, NSC_MM_CLIENTS_NUMBER);
                }
             }
-        } else if (is_sideband) {
+        } else if (video.is_sideband) {
             if (*sideband_layer_id < NSC_SB_CLIENTS_NUMBER) {
                 hwc_prepare_sb_layer(ctx, layer, layer_id, *sideband_layer_id);
                 (*sideband_layer_id)++;
