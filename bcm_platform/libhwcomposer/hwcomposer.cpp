@@ -2975,7 +2975,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       } else if (item->comp[i].visible) {
          if (!layer_composed) {
             layer_seeds_output = hwc_layer_seeds_output(item->skip_set[i], &item->comp[i], outputHdl);
-            if (layer_seeds_output && has_video && (*fb_target_seen) && !(*overlay_seen)) {
+            if (layer_seeds_output && video_seen && (*fb_target_seen) && !(*overlay_seen)) {
                layer_seeds_output = false;
             }
             if (layer_seeds_output) {
@@ -3034,7 +3034,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    }
 
    if (layer_composed == 0) {
-      if (has_video && !ctx->alpha_hole_background) {
+      if (video_seen && !ctx->alpha_hole_background) {
          if (skip_comp) {
             hwc_put_disp_surface(ctx, 0, outputHdl);
             if (list->retireFenceFd != INVALID_FENCE) {
