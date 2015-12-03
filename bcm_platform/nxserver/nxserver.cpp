@@ -477,8 +477,12 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    /* 2. video input. */
    if (property_get(NX_TRIM_VIDIN, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         pMemConfigSettings->videoInputs.hdDvi = false;
          pMemConfigSettings->videoInputs.ccir656 = false;
+      }
+   }
+   if (property_get(NX_TRIM_HDMIIN, value, NX_PROP_ENABLED)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         pMemConfigSettings->videoInputs.hdDvi = false;
       }
    }
 
@@ -529,11 +533,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          if (dec_used > MIN_PLATFORM_DEC) {
             pMemConfigSettings->videoDecoder[1].used = false;
          }
-         if (property_get(NX_TRIM_HDMIIN, value, NX_PROP_ENABLED)) {
-            if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-               pMemConfigSettings->display[0].window[1].used = false;
-            }
-         }
+         pMemConfigSettings->display[0].window[1].used = false;
       }
    }
 
