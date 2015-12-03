@@ -694,7 +694,7 @@ static nxserver_t init_nxserver(void)
     }
 
     settings.allowCompositionBypass = property_get_int32(NX_CAPABLE_COMP_BYPASS, 0) ? true : false;
-    settings.framebuffers = settings.allowCompositionBypass ? 0 : NSC_FB_NUMBER;
+    settings.framebuffers = settings.allowCompositionBypass ? 1 : NSC_FB_NUMBER;
 
     settings.videoDecoder.dynamicPictureBuffers = property_get_int32(NX_ODV, 0) ? true : false;
     if (settings.videoDecoder.dynamicPictureBuffers) {
