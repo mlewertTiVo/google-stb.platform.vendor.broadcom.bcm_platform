@@ -149,6 +149,7 @@
 #define NX_TRIM_DISP                   "ro.nx.trim.disp"
 #define NX_TRIM_VIDIN                  "ro.nx.trim.vidin"
 #define NX_TRIM_MTG                    "ro.nx.trim.mtg"
+#define NX_TRIM_HDMIIN                 "ro.nx.trim.hdmiin"
 /* destructive trimming config - feature set limitation - default DISABLED. */
 #define NX_TRIM_VP9                    "ro.nx.trim.vp9"
 #define NX_TRIM_4KDEC                  "ro.nx.trim.4kdec"
@@ -528,7 +529,11 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          if (dec_used > MIN_PLATFORM_DEC) {
             pMemConfigSettings->videoDecoder[1].used = false;
          }
-         pMemConfigSettings->display[0].window[1].used = false;
+         if (property_get(NX_TRIM_HDMIIN, value, NX_PROP_ENABLED)) {
+            if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+               pMemConfigSettings->display[0].window[1].used = false;
+            }
+         }
       }
    }
 
