@@ -3478,6 +3478,8 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
 {
     int i, j;
 
+    ALOGI("%s: context %p", __FUNCTION__, ctx);
+
     if (ctx) {
         ctx->vsync_thread_run = 0;
         pthread_join(ctx->vsync_callback_thread, NULL);
@@ -4195,6 +4197,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             }
             for (j = 0; j < HWC_NUM_DISP_BUFFERS; j++) {
                NEXUS_SurfaceCreateSettings surfaceCreateSettings;
+               bool dynamic_heap = false;
                NEXUS_Surface_GetDefaultCreateSettings(&surfaceCreateSettings);
                surfaceCreateSettings.width = dev->cfg[i].width;
                surfaceCreateSettings.height = dev->cfg[i].height;
@@ -4203,8 +4206,9 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                   surfaceCreateSettings.heap = NEXUS_Platform_GetFramebufferHeap(0);
                } else {
                   surfaceCreateSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
+                  dynamic_heap = true;
                }
-               dev->disp_cli[i].display_buffers[j] = hwc_surface_create(&surfaceCreateSettings);
+               dev->disp_cli[i].display_buffers[j] = hwc_surface_create(&surfaceCreateSettings, dynamic_heap);
                if (dev->disp_cli[i].display_buffers[j] == NULL) {
                   goto clean_up;
                }

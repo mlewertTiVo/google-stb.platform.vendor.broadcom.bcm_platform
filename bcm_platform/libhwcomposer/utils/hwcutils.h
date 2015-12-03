@@ -31,7 +31,8 @@ NEXUS_SurfaceHandle hwc_to_nsc_surface(
    unsigned offset);
 
 NEXUS_SurfaceHandle hwc_surface_create(
-   const NEXUS_SurfaceCreateSettings *pCreateSettings);
+   const NEXUS_SurfaceCreateSettings *pCreateSettings,
+   bool dynamic_heap);
 
 #ifdef __cplusplus
 };

@@ -43,22 +43,23 @@ extern "C" NEXUS_SurfaceHandle hwc_to_nsc_surface(
 }
 
 extern "C" NEXUS_SurfaceHandle hwc_surface_create(
-   const NEXUS_SurfaceCreateSettings *pCreateSettings)
+   const NEXUS_SurfaceCreateSettings *pCreateSettings,
+   bool dynamic_heap)
 {
    NEXUS_SurfaceHandle surface = NULL;
 
    surface = NEXUS_Surface_Create(pCreateSettings);
-   if (surface == NULL) {
-      /* default assumption: allocation failed due to memory, try to grow the heap.
-       */
+   if ((surface == NULL) && dynamic_heap) {
       if (NxClient_GrowHeap(NXCLIENT_DYNAMIC_HEAP) == NEXUS_SUCCESS) {
          surface = NEXUS_Surface_Create(pCreateSettings);
-         if (surface == NULL) {
-            ALOGE("%s: out-of-memory for surface %dx%d, st:%d, fmt:%d", __FUNCTION__,
-                  pCreateSettings->width, pCreateSettings->height,
-                  pCreateSettings->pitch, pCreateSettings->pixelFormat);
-         }
       }
+   }
+
+   if (surface == NULL) {
+      ALOGE("%s: oom (%s) - size:%dx%d, st:%d, fmt:%d", __FUNCTION__,
+         dynamic_heap ? "d-cma" : "static",
+         pCreateSettings->width, pCreateSettings->height,
+         pCreateSettings->pitch, pCreateSettings->pixelFormat);
    }
 
    return surface;
