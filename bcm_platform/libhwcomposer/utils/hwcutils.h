@@ -34,6 +34,12 @@ NEXUS_SurfaceHandle hwc_surface_create(
    const NEXUS_SurfaceCreateSettings *pCreateSettings,
    bool dynamic_heap);
 
+NEXUS_MemoryBlockHandle hwc_block_create(
+   const NEXUS_SurfaceCreateSettings *pCreateSettings,
+   char *mem_if,
+   bool dynamic_heap,
+   int *mem_blk_fd);
+
 #ifdef __cplusplus
 };
 #endif

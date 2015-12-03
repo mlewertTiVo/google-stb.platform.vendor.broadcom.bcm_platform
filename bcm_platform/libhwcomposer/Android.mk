@@ -92,6 +92,7 @@ LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/utils \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem \
                     $(NXCLIENT_INCLUDES)
 
 LOCAL_CFLAGS += $(NEXUS_CFLAGS)

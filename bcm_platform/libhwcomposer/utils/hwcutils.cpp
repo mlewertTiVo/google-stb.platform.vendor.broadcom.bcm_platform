@@ -17,9 +17,11 @@
 #define LOG_TAG "bcm-hwc-utils"
 
 #include <cutils/log.h>
+#include <fcntl.h>
 
 #include "nexus_surface_client.h"
 #include "nxclient.h"
+#include "nx_ashmem.h"
 
 extern "C" NEXUS_SurfaceHandle hwc_to_nsc_surface(
     int width, int height, int stride, NEXUS_PixelFormat format,
@@ -64,3 +66,39 @@ extern "C" NEXUS_SurfaceHandle hwc_surface_create(
 
    return surface;
 }
+
+extern "C" NEXUS_MemoryBlockHandle hwc_block_create(
+   const NEXUS_SurfaceCreateSettings *pCreateSettings,
+   char *mem_if,
+   bool dynamic_heap,
+   int *mem_blk_fd)
+{
+   NEXUS_MemoryBlockHandle block_handle = NULL;
+   int block_fd = -1;
+
+   block_fd = open(mem_if, O_RDWR, 0);
+   if (block_fd >= 0) {
+      struct nx_ashmem_alloc ashmem_alloc;
+      memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
+      ashmem_alloc.size = pCreateSettings->height * pCreateSettings->pitch;
+      ashmem_alloc.align = 4096;
+      ashmem_alloc.heap = dynamic_heap ? NX_ASHMEM_HEAP_DCMA : NX_ASHMEM_HEAP_FB;
+      int ret = ioctl(block_fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+      if (ret < 0) {
+         close(block_fd);
+         block_fd = -1;
+      } else {
+         block_handle = (NEXUS_MemoryBlockHandle)ioctl(block_fd, NX_ASHMEM_GETMEM);
+         if (block_handle == NULL) {
+            close(block_fd);
+            block_fd = -1;
+         }
+      }
+   }
+
+   if (block_fd >= 0) {
+      *mem_blk_fd = block_fd;
+   }
+   return block_handle;
+}
+

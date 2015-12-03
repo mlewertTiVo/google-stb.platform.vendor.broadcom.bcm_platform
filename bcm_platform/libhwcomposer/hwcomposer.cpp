@@ -351,6 +351,7 @@ typedef struct {
     NEXUS_SurfaceCompositorClientId sccid;
     BFIFO_HEAD(DisplayFifo, NEXUS_SurfaceHandle) display_fifo;
     NEXUS_SurfaceHandle display_buffers[HWC_NUM_DISP_BUFFERS];
+    int display_buffers_fd[HWC_NUM_DISP_BUFFERS];
     BKNI_MutexHandle fifo_mutex;
 } DISPLAY_CLIENT_INFO;
 
@@ -705,14 +706,9 @@ static const char *nsc_layer_type[] =
    "VS", // NEXUS_VIDEO_SIDEBAND
 };
 
-static int hwc_open_memory_interface(struct hwc_context_t *ctx)
+static void hwc_assign_memory_interface_name(struct hwc_context_t *ctx)
 {
-   int mem_fd = INVALID_FENCE;
    char device[PROPERTY_VALUE_MAX];
-
-   if (ctx->mem_if >= 0) {
-      goto out;
-   }
 
    if (strlen(ctx->mem_if_name) == 0) {
       memset(device, 0, sizeof(device));
@@ -724,7 +720,16 @@ static int hwc_open_memory_interface(struct hwc_context_t *ctx)
          strcat(ctx->mem_if_name, device);
       }
    }
+}
 
+static int hwc_open_memory_interface(struct hwc_context_t *ctx)
+{
+   int mem_fd = INVALID_FENCE;
+
+   if (ctx->mem_if >= 0) {
+      goto out;
+   }
+   hwc_assign_memory_interface_name(ctx);
    ctx->mem_if = open(ctx->mem_if_name, O_RDWR, 0);
 
 out:
@@ -3528,6 +3533,10 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
               if (ctx->disp_cli[i].display_buffers[j]) {
                  NEXUS_Surface_Destroy(ctx->disp_cli[i].display_buffers[j]);
               }
+              if (ctx->disp_cli[i].display_buffers_fd[j] != INVALID_FENCE) {
+                 close(ctx->disp_cli[i].display_buffers_fd[j]);
+                 ctx->disp_cli[i].display_buffers_fd[j] = INVALID_FENCE;
+              }
            }
         }
         if (ctx->recycle_event) {
@@ -4103,6 +4112,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         }
 
         hwc_read_dev_props(dev);
+        hwc_assign_memory_interface_name(dev);
 
         if ( BKNI_CreateEvent(&dev->recycle_event) ) {
            goto clean_up;
@@ -4197,10 +4207,12 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             }
             for (j = 0; j < HWC_NUM_DISP_BUFFERS; j++) {
                NEXUS_SurfaceCreateSettings surfaceCreateSettings;
+               NEXUS_MemoryBlockHandle block_handle = NULL;
                bool dynamic_heap = false;
                NEXUS_Surface_GetDefaultCreateSettings(&surfaceCreateSettings);
                surfaceCreateSettings.width = dev->cfg[i].width;
                surfaceCreateSettings.height = dev->cfg[i].height;
+               surfaceCreateSettings.pitch = surfaceCreateSettings.width * 4;
                surfaceCreateSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
                if (property_get_int32(HWC_CAPABLE_COMP_BYPASS, 0)) {
                   surfaceCreateSettings.heap = NEXUS_Platform_GetFramebufferHeap(0);
@@ -4208,12 +4220,19 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                   surfaceCreateSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
                   dynamic_heap = true;
                }
-               dev->disp_cli[i].display_buffers[j] = hwc_surface_create(&surfaceCreateSettings, dynamic_heap);
+               dev->disp_cli[i].display_buffers[j] = NULL;
+               block_handle = hwc_block_create(&surfaceCreateSettings, dev->mem_if_name, dynamic_heap, &dev->disp_cli[i].display_buffers_fd[j]);
+               if (block_handle != NULL) {
+                  surfaceCreateSettings.pixelMemory = block_handle;
+                  surfaceCreateSettings.heap = NULL;
+                  dev->disp_cli[i].display_buffers[j] = hwc_surface_create(&surfaceCreateSettings, dynamic_heap);
+               }
                if (dev->disp_cli[i].display_buffers[j] == NULL) {
                   goto clean_up;
                }
-               ALOGI("%s: fb:%d::%dx%d::%d::heap:%p -> %p", __FUNCTION__, j, surfaceCreateSettings.width, surfaceCreateSettings.height,
-                  surfaceCreateSettings.pixelFormat, surfaceCreateSettings.heap, dev->disp_cli[i].display_buffers[j]);
+               ALOGI("%s: fb:%d::%dx%d::%d::heap:%s -> %p (%d::%p)", __FUNCTION__, j, surfaceCreateSettings.width, surfaceCreateSettings.height,
+                  surfaceCreateSettings.pixelFormat, dynamic_heap ? "d-cma" : "static", dev->disp_cli[i].display_buffers[j],
+                  dev->disp_cli[i].display_buffers_fd[j], block_handle);
             }
             if (BKNI_CreateMutex(&dev->disp_cli[i].fifo_mutex) == BERR_OS_ERROR) {
                goto clean_up;
