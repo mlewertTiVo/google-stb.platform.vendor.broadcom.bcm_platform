@@ -18,6 +18,7 @@
 
 #include <cutils/log.h>
 #include <fcntl.h>
+#include <string.h>
 
 #include "nexus_surface_client.h"
 #include "nxclient.h"
