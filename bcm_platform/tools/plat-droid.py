@@ -66,7 +66,7 @@ def save_copy_dir(d):
 	new_dir = '%s.saved' %d
 	if os.path.exists(new_dir):
 		shutil.rmtree(d)
-	shutil.copytree(d, new_dir)
+	shutil.copytree(d, new_dir, ignore = shutil.ignore_patterns(".git"))
 
 def rmdir_device_root(d):
 	os.rmdir(d)
@@ -365,7 +365,7 @@ if clone_device != 'nope' and clone_variant != 'nope':
 		shutil.copy2(clone_copy, clone_destination)
 	clone_copy_source="./device/broadcom/bcm_platform/recovery"
 	clone_copy_destination="./device/%s/%s/recovery" %(clone_device, clone_variant)
-	shutil.copytree(clone_copy_source, clone_copy_destination)
+	shutil.copytree(clone_copy_source, clone_copy_destination, ignore = shutil.ignore_patterns(".git"))
 	clone_copy="./vendor/broadcom/stb/bcm_platform/tools/droid-clone/%s-%s/Android.mk.recovery" %(clone_device, clone_variant)
 	if os.access(clone_copy, os.F_OK):
 		clone_destination="./device/%s/%s/recovery/Android.mk" %(clone_device, clone_variant)
