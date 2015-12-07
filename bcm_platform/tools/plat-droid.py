@@ -58,8 +58,9 @@ def parse_and_select(l):
 def rmdir_then_mkdir(d):
 	if os.path.exists(d):
 		shutil.rmtree(d)
-	else:
-		os.makedirs(d)
+		if verbose:
+			print 'removing: %s' % (d)
+	os.makedirs(d)
 
 def save_copy_dir(d):
 	new_dir = '%s.saved' %d
