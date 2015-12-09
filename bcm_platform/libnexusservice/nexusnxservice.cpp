@@ -197,24 +197,6 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
 
         Mutex::Autolock autoLock(pNexusNxService->server->mLock);
 
-        for (it = pNexusNxService->server->mHdmiHotplugEventListenerList[param].begin();
-             it != pNexusNxService->server->mHdmiHotplugEventListenerList[param].end(); ++it) {
-            ALOGV("%s: Firing off HDMI%d hotplug %s event for listener %p...", __PRETTY_FUNCTION__, param,
-                 (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? "connected" : "disconnected", (*it).get());
-            (*it)->onHdmiHotplugEventReceived(param, status.hdmi.status.connected && status.hdmi.status.rxPowered);
-        }
-
-        if ((hdmiHpdSwitchFd = open(hdmiHpdDevName, O_WRONLY)) == -1) {
-            ALOGE("%s: Could not open %s (errno=%d)", __PRETTY_FUNCTION__, hdmiHpdDevName, errno);
-        } else {
-            hdmiSwitch = (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? HDMI_CONNECTED : HDMI_UNPLUGGED;
-
-            if (ioctl(hdmiHpdSwitchFd, HDMI_HPD_IOCTL_SET_SWITCH, &hdmiSwitch) == -1)
-                ALOGE("%s: HDMI_HPD_IOCTL_SET_SWITCH ioctl failed (errno=%d)", __PRETTY_FUNCTION__, errno);
-
-            close(hdmiHpdSwitchFd);
-        }
-
         do {
             update = false;
             NxClient_GetDisplaySettings(&settings);
@@ -263,6 +245,24 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
                }
             }
         } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
+
+        for (it = pNexusNxService->server->mHdmiHotplugEventListenerList[param].begin();
+             it != pNexusNxService->server->mHdmiHotplugEventListenerList[param].end(); ++it) {
+            ALOGV("%s: Firing off HDMI%d hotplug %s event for listener %p...", __PRETTY_FUNCTION__, param,
+                 (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? "connected" : "disconnected", (*it).get());
+            (*it)->onHdmiHotplugEventReceived(param, status.hdmi.status.connected && status.hdmi.status.rxPowered);
+        }
+
+        if ((hdmiHpdSwitchFd = open(hdmiHpdDevName, O_WRONLY)) == -1) {
+            ALOGE("%s: Could not open %s (errno=%d)", __PRETTY_FUNCTION__, hdmiHpdDevName, errno);
+        } else {
+            hdmiSwitch = (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? HDMI_CONNECTED : HDMI_UNPLUGGED;
+
+            if (ioctl(hdmiHpdSwitchFd, HDMI_HPD_IOCTL_SET_SWITCH, &hdmiSwitch) == -1)
+                ALOGE("%s: HDMI_HPD_IOCTL_SET_SWITCH ioctl failed (errno=%d)", __PRETTY_FUNCTION__, errno);
+
+            close(hdmiHpdSwitchFd);
+        }
     }
     else {
         ALOGW("%s: Ignoring HDMI%d hotplug as we are in standby!", __PRETTY_FUNCTION__, param);
