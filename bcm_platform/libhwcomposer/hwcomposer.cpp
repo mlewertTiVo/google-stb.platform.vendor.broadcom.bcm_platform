@@ -139,6 +139,7 @@ using namespace android;
 #define HWC_GLES_MODE_PROP           "ro.hwc.gles.mode"
 #define HWC_CAPABLE_COMP_BYPASS      "ro.nx.capable.cb"
 #define HWC_CAPABLE_BACKGROUND       "ro.nx.capable.bg"
+#define HWC_CAPABLE_TOGGLE_MODE      "ro.nx.capable.tm"
 
 #define HWC_DUMP_LAYER_PROP          "dyn.nx.hwc.dump.layer"
 #define HWC_DUMP_VIRT_PROP           "dyn.nx.hwc.dump.virt"
@@ -366,6 +367,7 @@ typedef struct {
     DISPLAY_FIFO_ELEMENT display_buffers[HWC_NUM_DISP_BUFFERS];
     BKNI_MutexHandle fifo_mutex;
     DISPLAY_CLIENT_MODE mode;
+    bool mode_toggle;
 } DISPLAY_CLIENT_INFO;
 
 typedef struct {
@@ -381,6 +383,7 @@ typedef struct {
 } VIDEO_LAYER_VALIDATION;
 
 typedef void (* HWC_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
+typedef void (* HWC_HOTPLUG_NTFY_CB)(int);
 
 class HwcBinder : public HwcListener
 {
@@ -510,6 +513,58 @@ void HwcBinder::notify(int msg, struct hwc_notification_info &ntfy)
       cb(cb_data, msg, ntfy);
 }
 
+class HwcHotPlug : public BnNexusHdmiHotplugEventListener
+{
+public:
+
+    HwcHotPlug() {};
+    ~HwcHotPlug() {};
+    virtual status_t onHdmiHotplugEventReceived(int32_t portId, bool connected);
+
+    void register_notify(HWC_HOTPLUG_NTFY_CB callback, int data) {
+       cb = callback;
+       cb_data = data;
+    }
+
+private:
+    HWC_HOTPLUG_NTFY_CB cb;
+    int cb_data;
+};
+
+class HwcHotPlug_wrap
+{
+private:
+
+   sp<HwcHotPlug> ihwc;
+
+public:
+   HwcHotPlug_wrap(void) {
+      ALOGD("%s: allocated %p", __FUNCTION__, this);
+      ihwc = new HwcHotPlug;
+   };
+
+   ~HwcHotPlug_wrap(void) {
+      ALOGD("%s: cleared %p", __FUNCTION__, this);
+      ihwc.clear();
+   };
+
+   HwcHotPlug *get(void) {
+      return ihwc.get();
+   }
+};
+
+status_t HwcHotPlug::onHdmiHotplugEventReceived(int32_t portId, bool connected)
+{
+   (void) portId;
+
+   ALOGD( "%s: hotplug-%d -> %s", __FUNCTION__, portId, connected ? "connected" : "disconnected");
+
+   if (connected && cb)
+      cb(cb_data);
+
+   return NO_ERROR;
+}
+
 struct hwc_display_stats {
    unsigned long long prepare_call;
    unsigned long long prepare_skipped;
@@ -597,6 +652,7 @@ struct hwc_context_t {
     int power_mode;
 
     HwcBinder_wrap *hwc_binder;
+    HwcHotPlug_wrap *hwc_hp;
 
     NEXUS_Graphics2DHandle hwc_g2d;
     BKNI_MutexHandle g2d_mutex;
@@ -625,6 +681,7 @@ struct hwc_context_t {
     bool alpha_hole_background;
     bool flush_background;
     bool smart_background;
+    bool toggle_fb_mode;
     int prepare_video;
 };
 
@@ -1498,6 +1555,34 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
        break;
        }
    }
+}
+
+static void hwc_hotplug_notify(int dev)
+{
+    struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
+    DISPLAY_CLIENT_MODE newmode = CLIENT_MODE_NONE;
+    NxClient_DisplaySettings settings;
+
+    NxClient_GetDisplaySettings(&settings);
+    switch (settings.format) {
+    case NEXUS_VideoFormat_e720p:
+    case NEXUS_VideoFormat_e720p30hz:
+    case NEXUS_VideoFormat_e720p25hz:
+    case NEXUS_VideoFormat_e720p24hz:
+       newmode = CLIENT_MODE_NSC_FRAMEBUFFER;
+    break;
+    default:
+       newmode = CLIENT_MODE_COMP_BYPASS;
+    break;
+    }
+
+    if (ctx) {
+       if (ctx->toggle_fb_mode && (ctx->disp_cli[HWC_PRIMARY_IX].mode != newmode)) {
+          ALOGI("%s: framebuffer mode: %s -> %s", __FUNCTION__,
+             hwc_fb_mode[ctx->disp_cli[HWC_PRIMARY_IX].mode], hwc_fb_mode[newmode]);
+          ctx->disp_cli[HWC_PRIMARY_IX].mode_toggle = true;
+       }
+    }
 }
 
 static bool is_video_layer_locked(VIDEO_LAYER_VALIDATION *data)
@@ -3055,6 +3140,11 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       item->surf_wait = hwc_tick();
       item->fence_wait = 0;
    }
+   if (ctx->disp_cli[HWC_PRIMARY_IX].mode_toggle) {
+      hwc_setup_framebuffer_mode(ctx, HWC_PRIMARY_IX,
+         (ctx->disp_cli[HWC_PRIMARY_IX].mode == CLIENT_MODE_COMP_BYPASS) ? CLIENT_MODE_NSC_FRAMEBUFFER : CLIENT_MODE_COMP_BYPASS);
+      ctx->disp_cli[HWC_PRIMARY_IX].mode_toggle = false;
+   }
    outputHdl = hwc_get_disp_surface(ctx, HWC_PRIMARY_IX);
    if (outputHdl == NULL) {
       ALOGE("%s: no display surface available", __FUNCTION__);
@@ -3621,6 +3711,10 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         if (ctx->pIpcClient != NULL) {
             if (ctx->pNexusClientContext != NULL) {
                 ctx->pIpcClient->destroyClientContext(ctx->pNexusClientContext);
+            }
+            if (ctx->hwc_hp) {
+                ctx->pIpcClient->removeHdmiHotplugEventListener(0, ctx->hwc_hp->get());
+                delete ctx->hwc_hp;
             }
             delete ctx->pIpcClient;
         }
@@ -4208,11 +4302,12 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
 
    hwc_setup_props_locked(dev);
 
-   dev->display_gles_virtual = property_get_bool(HWC_GLES_VIRTUAL_PROP,  1);
-   dev->fence_support        = property_get_bool(HWC_WITH_FENCE_PROP,    0);
-   dev->track_comp_time      = property_get_bool(HWC_TRACK_COMP_TIME,    1);
-   dev->g2d_allow_simult     = property_get_bool(HWC_G2D_SIM_OPS_PROP,   0);
-   dev->smart_background     = property_get_bool(HWC_CAPABLE_BACKGROUND, 1);
+   dev->display_gles_virtual = property_get_bool(HWC_GLES_VIRTUAL_PROP,   1);
+   dev->fence_support        = property_get_bool(HWC_WITH_FENCE_PROP,     0);
+   dev->track_comp_time      = property_get_bool(HWC_TRACK_COMP_TIME,     1);
+   dev->g2d_allow_simult     = property_get_bool(HWC_G2D_SIM_OPS_PROP,    0);
+   dev->smart_background     = property_get_bool(HWC_CAPABLE_BACKGROUND,  1);
+   dev->toggle_fb_mode       = property_get_bool(HWC_CAPABLE_TOGGLE_MODE, 0);
 }
 
 static int hwc_device_open(const struct hw_module_t* module, const char* name,
@@ -4223,6 +4318,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
     NxClient_AllocSettings nxAllocSettings;
     NEXUS_SurfaceComposition composition;
     int i, j;
+    status_t ret;
 
     if (!strcmp(name, HWC_HARDWARE_COMPOSER)) {
         NEXUS_Error rc = NEXUS_SUCCESS;
@@ -4328,6 +4424,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                ALOGE("%s: unable to setup framebuffer mode %d", __FUNCTION__, rc);
                goto clean_up;
             }
+            hwc_hotplug_notify((int)dev);
         }
 
         BKNI_CreateEvent(&dev->syn_cli.vsync_event);
@@ -4397,6 +4494,22 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         dev->recycle_thread_run = 1;
         dev->display_handle = NULL;
 
+        dev->hwc_binder = new HwcBinder_wrap;
+        if (dev->hwc_binder == NULL) {
+           ALOGE("%s: failed to create hwcbinder, some services will not run!", __FUNCTION__);
+        } else {
+           dev->hwc_binder->get()->register_notify(&hwc_binder_notify, (int)dev);
+           ALOGI("%s: created hwcbinder (%p)", __FUNCTION__, dev->hwc_binder);
+        }
+
+        dev->hwc_hp = new HwcHotPlug_wrap;
+        if (dev->hwc_hp == NULL) {
+           ALOGE("%s: failed to create hwc-hotplug, some services will not run!", __FUNCTION__);
+        } else {
+           dev->hwc_hp->get()->register_notify(&hwc_hotplug_notify, (int)dev);
+           ALOGI("%s: created hwc-hotplug (%p)", __FUNCTION__, dev->hwc_hp);
+        }
+
         dev->pIpcClient = NexusIPCClientFactory::getClient("hwc");
         if (dev->pIpcClient == NULL) {
             ALOGE("%s: failed NexusIPCClientFactory::getClient", __FUNCTION__);
@@ -4424,6 +4537,11 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                   ALOGE("%s: failed to get display handle, sync will not work.", __FUNCTION__);
                }
             }
+
+            ret = dev->pIpcClient->addHdmiHotplugEventListener(0, dev->hwc_hp->get());
+            if (ret != NO_ERROR) {
+               ALOGE("%s: failed to get register hot-plug listener: %d.", __FUNCTION__, ret);
+            }
         }
 
         pthread_attr_init(&attr);
@@ -4450,14 +4568,6 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             }
             pthread_attr_destroy(&attr);
             pthread_setname_np(dev->composer_thread[i], (i==0)?"hwc_comp_prim":"hwc_comp_virt");
-        }
-
-        dev->hwc_binder = new HwcBinder_wrap;
-        if (dev->hwc_binder == NULL) {
-           ALOGE("%s: failed to create hwcbinder, some services will not run!", __FUNCTION__);
-        } else {
-           dev->hwc_binder->get()->register_notify(&hwc_binder_notify, (int)dev);
-           ALOGE("%s: created hwcbinder (%p)", __FUNCTION__, dev->hwc_binder);
         }
 
         rc = BKNI_CreateEvent(&dev->checkpoint_event);
