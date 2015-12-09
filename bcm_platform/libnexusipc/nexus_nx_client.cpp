@@ -82,6 +82,9 @@
    during "clientUninit()". */
 #define NXCLIENT_STANDBY_CHECK_TIMEOUT_IN_MS (100)
 
+/* Define the MAX number of retry attempts if entering standby fails */
+#define NXCLIENT_PM_RETRY_ATTEMPTS  (1)
+
 #ifdef UINT32_C
 #undef UINT32_C
 #define UINT32_C(x)  (x ## U)
@@ -327,23 +330,26 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
         if (rc == NEXUS_SUCCESS) {
             // If any setting is different, then we need to set the standby settings...
             if (memcmp(&standbyStatus.settings, &standbySettings.settings, sizeof(standbyStatus.settings))) {
-                rc = NxClient_SetStandbySettings(&standbySettings);
+                unsigned retries = NXCLIENT_PM_RETRY_ATTEMPTS;
+                do {
+                    rc = NxClient_SetStandbySettings(&standbySettings);
 
-                if (rc != NEXUS_SUCCESS) {
-                    ALOGE("%s: NxClient_SetStandbySettings failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
+                    if (rc != NEXUS_SUCCESS) {
+                        ALOGE("%s: NxClient_SetStandbySettings failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
+                    }
+                    /* Now check whether Nexus Platform has entered the desired standby mode (excluding S0 and S0.5)... */
+                    else if (pmState != ePowerState_S0 && pmState != ePowerState_S05) {
+                        rc = standbyCheck(standbySettings.settings.mode);
+                        if (rc != NEXUS_SUCCESS) {
+                           ALOGE("%s: standbyCheck failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
+                        }
+                    }
                 }
+                while (rc != NEXUS_SUCCESS && retries--);
             }
         }
         else {
             ALOGE("%s: NxClient_GetStandbyStatus failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
-        }
-    }
-
-    /* Now check whether Nexus Platform has entered the desired standby mode (excluding S0 and S0.5)... */
-    if (rc == NEXUS_SUCCESS && (pmState != ePowerState_S0 && pmState != ePowerState_S05)) {
-        rc = standbyCheck(standbySettings.settings.mode);
-        if (rc != NEXUS_SUCCESS) {
-           ALOGE("%s: standbyCheck failed [rc=%d]!", __PRETTY_FUNCTION__, rc);
         }
     }
 
