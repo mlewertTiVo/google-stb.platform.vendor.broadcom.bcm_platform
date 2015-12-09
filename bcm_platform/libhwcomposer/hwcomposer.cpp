@@ -146,6 +146,7 @@ using namespace android;
 #define HWC_DUMP_FENCE_PROP          "dyn.nx.hwc.dump.fence"
 #define HWC_TRACK_COMP_CHATTY        "dyn.nx.hwc.track.chatty"
 #define HWC_TICKER                   "dyn.nx.hwc.ticker"
+#define HWC_FB_MODE                  "dyn.nx.hwc.fbmode"
 
 #define HWC_GLES_VIRTUAL_PROP        "ro.hwc.gles.virtual"
 #define HWC_WITH_FENCE_PROP          "ro.v3d.fence.expose"
@@ -718,6 +719,13 @@ static const char *nsc_layer_type[] =
    "VS", // NEXUS_VIDEO_SIDEBAND
 };
 
+static const char *hwc_fb_mode[] =
+{
+   "INVALID",     // CLIENT_MODE_NONE
+   "COMP-BYPASS", // CLIENT_MODE_COMP_BYPASS
+   "NSC-FB",      // CLIENT_MODE_NSC_FRAMEBUFFER
+};
+
 static void hwc_assign_memory_interface_name(struct hwc_context_t *ctx)
 {
    char device[PROPERTY_VALUE_MAX];
@@ -817,6 +825,94 @@ static void hwc_setup_props_locked(struct hwc_context_t* ctx)
    ctx->dump_fence           = property_get_int32(HWC_DUMP_FENCE_PROP, 0);
    ctx->track_comp_chatty    = property_get_bool(HWC_TRACK_COMP_CHATTY, 0);
    ctx->ticker               = property_get_bool(HWC_TICKER, 0);
+}
+
+static int hwc_setup_framebuffer_mode(struct hwc_context_t* dev, int disp_ix, DISPLAY_CLIENT_MODE mode)
+{
+   int j;
+   NEXUS_Error rc;
+   NEXUS_ClientConfiguration clientConfig;
+   NEXUS_SurfaceClientSettings surfaceClientSettings;
+
+   NEXUS_Platform_GetClientConfiguration(&clientConfig);
+
+   if (dev->disp_cli[disp_ix].mode != CLIENT_MODE_NONE) {
+      for (j = 0; j < HWC_NUM_DISP_BUFFERS; j++) {
+         if (dev->disp_cli[disp_ix].display_buffers[j].fifo_fd != INVALID_FENCE) {
+            close(dev->disp_cli[disp_ix].display_buffers[j].fifo_fd);
+            dev->disp_cli[disp_ix].display_buffers[j].fifo_fd = INVALID_FENCE;
+         }
+         if (dev->disp_cli[disp_ix].display_buffers[j].fifo_surf) {
+            NEXUS_Surface_Destroy(dev->disp_cli[disp_ix].display_buffers[j].fifo_surf);
+         }
+      }
+   }
+
+   if (dev->disp_cli[disp_ix].mode != mode) {
+      NEXUS_SurfaceClient_GetSettings(dev->disp_cli[disp_ix].schdl, &surfaceClientSettings);
+      surfaceClientSettings.recycled.callback = hwc_recycled_cb;
+      surfaceClientSettings.recycled.context = (void *)dev;
+      surfaceClientSettings.allowCompositionBypass = (mode == CLIENT_MODE_COMP_BYPASS) ? true : false;
+      rc = NEXUS_SurfaceClient_SetSettings(dev->disp_cli[disp_ix].schdl, &surfaceClientSettings);
+      if (rc) {
+         ALOGE("%s: unable to set surface client settings", __FUNCTION__);
+         return -EINVAL;
+      }
+   }
+
+   for (j = 0; j < HWC_NUM_DISP_BUFFERS; j++) {
+      NEXUS_SurfaceCreateSettings surfaceCreateSettings;
+      NEXUS_MemoryBlockHandle block_handle = NULL;
+      bool dynamic_heap = false;
+      NEXUS_Surface_GetDefaultCreateSettings(&surfaceCreateSettings);
+      surfaceCreateSettings.width = dev->cfg[disp_ix].width;
+      surfaceCreateSettings.height = dev->cfg[disp_ix].height;
+      surfaceCreateSettings.pitch = surfaceCreateSettings.width * 4;
+      surfaceCreateSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
+      if (mode == CLIENT_MODE_COMP_BYPASS) {
+         surfaceCreateSettings.heap = NEXUS_Platform_GetFramebufferHeap(0);
+      } else {
+         surfaceCreateSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
+         dynamic_heap = true;
+      }
+      dev->disp_cli[disp_ix].display_buffers[j].fifo_surf = NULL;
+      block_handle = hwc_block_create(&surfaceCreateSettings, dev->mem_if_name, dynamic_heap, &dev->disp_cli[disp_ix].display_buffers[j].fifo_fd);
+      if (block_handle != NULL) {
+         surfaceCreateSettings.pixelMemory = block_handle;
+         surfaceCreateSettings.heap = NULL;
+         dev->disp_cli[disp_ix].display_buffers[j].fifo_surf = hwc_surface_create(&surfaceCreateSettings, dynamic_heap);
+      }
+      if (dev->disp_cli[disp_ix].display_buffers[j].fifo_surf == NULL) {
+         return -ENOMEM;
+      }
+      ALOGI("%s: fb:%d::%dx%d::%d::heap:%s -> %p (%d::%p)", __FUNCTION__, j, surfaceCreateSettings.width, surfaceCreateSettings.height,
+            surfaceCreateSettings.pixelFormat, dynamic_heap ? "d-cma" : "static", dev->disp_cli[disp_ix].display_buffers[j].fifo_surf,
+            dev->disp_cli[disp_ix].display_buffers[j].fifo_fd, block_handle);
+   }
+   if (BKNI_AcquireMutex(dev->disp_cli[disp_ix].fifo_mutex) == BERR_SUCCESS) {
+      for (j = 0; j < HWC_NUM_DISP_BUFFERS; j++) {
+         dev->disp_cli[disp_ix].display_elements[j] = dev->disp_cli[disp_ix].display_buffers[j].fifo_surf;
+      }
+      BFIFO_INIT(&dev->disp_cli[disp_ix].display_fifo, dev->disp_cli[disp_ix].display_elements, HWC_NUM_DISP_BUFFERS);
+      BFIFO_WRITE_COMMIT(&dev->disp_cli[disp_ix].display_fifo, HWC_NUM_DISP_BUFFERS);
+      BKNI_ReleaseMutex(dev->disp_cli[disp_ix].fifo_mutex);
+   } else {
+      return -EINVAL;
+   }
+   dev->disp_cli[disp_ix].mode = mode;
+   return 0;
+}
+
+static void hwc_execute_dyn_change_locked(struct hwc_context_t* ctx)
+{
+   DISPLAY_CLIENT_MODE fbmode = (DISPLAY_CLIENT_MODE) property_get_int32(HWC_FB_MODE, 0);
+   if (fbmode != ctx->disp_cli[HWC_PRIMARY_IX].mode) {
+      if (fbmode == CLIENT_MODE_COMP_BYPASS || fbmode == CLIENT_MODE_NSC_FRAMEBUFFER) {
+         ALOGW("toggling display %d fb-mode: %s->%s", HWC_PRIMARY_IX,
+            hwc_fb_mode[ctx->disp_cli[HWC_PRIMARY_IX].mode], hwc_fb_mode[fbmode]);
+         hwc_setup_framebuffer_mode(ctx, HWC_PRIMARY_IX, fbmode);
+      }
+   }
 }
 
 static int hwc_mem_lock_phys(struct hwc_context_t *ctx, NEXUS_MemoryBlockHandle block_handle, NEXUS_Addr *paddr) {
@@ -1189,13 +1285,14 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
        }
-       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%p::vscb:%s::d:{%d,%d}::pm:%s::oscan:{%d,%d:%d,%d}\n",
+       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%p::vscb:%s::d:{%d,%d}::pm:%s::fm:%s::oscan:{%d,%d:%d,%d}\n",
            ctx->pIpcClient,
            ctx->pNexusClientContext,
            ctx->vsync_callback_enabled ? "enabled" : "disabled",
            ctx->cfg[HWC_PRIMARY_IX].width,
            ctx->cfg[HWC_PRIMARY_IX].height,
            hwc_power_mode[ctx->power_mode],
+           hwc_fb_mode[ctx->disp_cli[HWC_PRIMARY_IX].mode],
            ctx->overscan_position.x,
            ctx->overscan_position.y,
            ctx->overscan_position.w,
@@ -1332,6 +1429,7 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
     }
 
     hwc_setup_props_locked(ctx);
+    hwc_execute_dyn_change_locked(ctx);
     BKNI_ReleaseMutex(ctx->mutex);
 
 out:
@@ -4115,82 +4213,6 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
    dev->track_comp_time      = property_get_bool(HWC_TRACK_COMP_TIME,    1);
    dev->g2d_allow_simult     = property_get_bool(HWC_G2D_SIM_OPS_PROP,   0);
    dev->smart_background     = property_get_bool(HWC_CAPABLE_BACKGROUND, 1);
-}
-
-static int hwc_setup_framebuffer_mode(struct hwc_context_t* dev, int disp_ix, DISPLAY_CLIENT_MODE mode)
-{
-   int j;
-   NEXUS_Error rc;
-   NEXUS_ClientConfiguration clientConfig;
-   NEXUS_SurfaceClientSettings surfaceClientSettings;
-
-   NEXUS_Platform_GetClientConfiguration(&clientConfig);
-
-   if (dev->disp_cli[disp_ix].mode != CLIENT_MODE_NONE) {
-      for (j = 0; j < HWC_NUM_DISP_BUFFERS; j++) {
-         if (dev->disp_cli[disp_ix].display_buffers[j].fifo_fd != INVALID_FENCE) {
-            close(dev->disp_cli[disp_ix].display_buffers[j].fifo_fd);
-            dev->disp_cli[disp_ix].display_buffers[j].fifo_fd = INVALID_FENCE;
-         }
-         if (dev->disp_cli[disp_ix].display_buffers[j].fifo_surf) {
-            NEXUS_Surface_Destroy(dev->disp_cli[disp_ix].display_buffers[j].fifo_surf);
-         }
-      }
-   }
-
-   if (dev->disp_cli[disp_ix].mode != mode) {
-      NEXUS_SurfaceClient_GetSettings(dev->disp_cli[disp_ix].schdl, &surfaceClientSettings);
-      surfaceClientSettings.recycled.callback = hwc_recycled_cb;
-      surfaceClientSettings.recycled.context = (void *)dev;
-      surfaceClientSettings.allowCompositionBypass = (mode == CLIENT_MODE_COMP_BYPASS) ? true : false;
-      rc = NEXUS_SurfaceClient_SetSettings(dev->disp_cli[disp_ix].schdl, &surfaceClientSettings);
-      if (rc) {
-         ALOGE("%s: unable to set surface client settings", __FUNCTION__);
-         return -EINVAL;
-      }
-   }
-
-   for (j = 0; j < HWC_NUM_DISP_BUFFERS; j++) {
-      NEXUS_SurfaceCreateSettings surfaceCreateSettings;
-      NEXUS_MemoryBlockHandle block_handle = NULL;
-      bool dynamic_heap = false;
-      NEXUS_Surface_GetDefaultCreateSettings(&surfaceCreateSettings);
-      surfaceCreateSettings.width = dev->cfg[disp_ix].width;
-      surfaceCreateSettings.height = dev->cfg[disp_ix].height;
-      surfaceCreateSettings.pitch = surfaceCreateSettings.width * 4;
-      surfaceCreateSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
-      if (mode == CLIENT_MODE_COMP_BYPASS) {
-         surfaceCreateSettings.heap = NEXUS_Platform_GetFramebufferHeap(0);
-      } else {
-         surfaceCreateSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
-         dynamic_heap = true;
-      }
-      dev->disp_cli[disp_ix].display_buffers[j].fifo_surf = NULL;
-      block_handle = hwc_block_create(&surfaceCreateSettings, dev->mem_if_name, dynamic_heap, &dev->disp_cli[disp_ix].display_buffers[j].fifo_fd);
-      if (block_handle != NULL) {
-         surfaceCreateSettings.pixelMemory = block_handle;
-         surfaceCreateSettings.heap = NULL;
-         dev->disp_cli[disp_ix].display_buffers[j].fifo_surf = hwc_surface_create(&surfaceCreateSettings, dynamic_heap);
-      }
-      if (dev->disp_cli[disp_ix].display_buffers[j].fifo_surf == NULL) {
-         return -ENOMEM;
-      }
-      ALOGI("%s: fb:%d::%dx%d::%d::heap:%s -> %p (%d::%p)", __FUNCTION__, j, surfaceCreateSettings.width, surfaceCreateSettings.height,
-            surfaceCreateSettings.pixelFormat, dynamic_heap ? "d-cma" : "static", dev->disp_cli[disp_ix].display_buffers[j].fifo_surf,
-            dev->disp_cli[disp_ix].display_buffers[j].fifo_fd, block_handle);
-   }
-   if (BKNI_AcquireMutex(dev->disp_cli[disp_ix].fifo_mutex) == BERR_SUCCESS) {
-      for (j = 0; j < HWC_NUM_DISP_BUFFERS; j++) {
-         dev->disp_cli[disp_ix].display_elements[j] = dev->disp_cli[disp_ix].display_buffers[j].fifo_surf;
-      }
-      BFIFO_INIT(&dev->disp_cli[disp_ix].display_fifo, dev->disp_cli[disp_ix].display_elements, HWC_NUM_DISP_BUFFERS);
-      BFIFO_WRITE_COMMIT(&dev->disp_cli[disp_ix].display_fifo, HWC_NUM_DISP_BUFFERS);
-      BKNI_ReleaseMutex(dev->disp_cli[disp_ix].fifo_mutex);
-   } else {
-      return -EINVAL;
-   }
-   dev->disp_cli[disp_ix].mode = mode;
-   return 0;
 }
 
 static int hwc_device_open(const struct hw_module_t* module, const char* name,
