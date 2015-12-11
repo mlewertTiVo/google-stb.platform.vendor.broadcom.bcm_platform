@@ -62,6 +62,6 @@ recovery_bcm_libs: $(NXMINI) \
 		$(EXTRA_SYSTEM_BIN_FILES)
 	$(hide) $(call copy-recovery-extra-files)
 
-out/target/product/bcm_platform/recovery.img : recovery_bcm_libs
+out/target/product/$(TARGET_DEVICE)/recovery.img : recovery_bcm_libs
 
 endif
