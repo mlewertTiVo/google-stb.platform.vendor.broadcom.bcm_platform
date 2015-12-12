@@ -1562,6 +1562,7 @@ static void hwc_hotplug_notify(int dev)
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
     DISPLAY_CLIENT_MODE newmode = CLIENT_MODE_NONE;
     NxClient_DisplaySettings settings;
+    int i;
 
     NxClient_GetDisplaySettings(&settings);
     switch (settings.format) {
@@ -1581,6 +1582,18 @@ static void hwc_hotplug_notify(int dev)
           ALOGI("%s: framebuffer mode: %s -> %s", __FUNCTION__,
              hwc_fb_mode[ctx->disp_cli[HWC_PRIMARY_IX].mode], hwc_fb_mode[newmode]);
           ctx->disp_cli[HWC_PRIMARY_IX].mode_toggle = true;
+       }
+
+       if (ctx->procs && ctx->procs->invalidate != NULL) {
+          if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+             for (i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++) {
+                ctx->gpx_cli[i].last.layerhdl = NULL;
+                ctx->gpx_cli[i].skip_set = false;
+             }
+             BKNI_ReleaseMutex(ctx->mutex);
+          }
+          ALOGI("%s: refresh disp-%d on connected", __FUNCTION__, HWC_PRIMARY_IX);
+          ctx->procs->invalidate(const_cast<hwc_procs_t *>(ctx->procs));
        }
     }
 }
@@ -3872,10 +3885,10 @@ static int hwc_device_query(struct hwc_composer_device_1* dev, int what, int* va
     return 0;
 }
 
-static void hwc_registerProcs(struct hwc_composer_device_1* dev, hwc_procs_t const* procs)
+static void hwc_device_registerProcs(struct hwc_composer_device_1* dev, hwc_procs_t const* procs)
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
-    ALOGI("HWC hwc_register_procs (%p)", procs);
+    ALOGI("hwc_register_procs (%p) (%p, %p, %p)", procs, procs->vsync, procs->invalidate, procs->hotplug);
     ctx->procs = (hwc_procs_t *)procs;
 }
 
@@ -4482,7 +4495,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         dev->device.setPowerMode                   = hwc_device_setPowerMode;
         dev->device.eventControl                   = hwc_device_eventControl;
         dev->device.query                          = hwc_device_query;
-        dev->device.registerProcs                  = hwc_registerProcs;
+        dev->device.registerProcs                  = hwc_device_registerProcs;
         dev->device.dump                           = hwc_device_dump;
         dev->device.getDisplayConfigs              = hwc_device_getDisplayConfigs;
         dev->device.getDisplayAttributes           = hwc_device_getDisplayAttributes;
