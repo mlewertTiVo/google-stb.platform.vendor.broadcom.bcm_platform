@@ -29,7 +29,7 @@ LOCAL_MODULE := libdrmwvmplugin
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/drm
 LOCAL_MODULE_TAGS := optional
 LOCAL_STATIC_LIBRARIES := liboemcrypto
-LOCAL_SHARED_LIBRARIES += $(NEXUS_LIB) libcmndrm libnexusipcclient
+LOCAL_SHARED_LIBRARIES += libnexus libcmndrm libnexusipcclient
 LOCAL_PRELINK_MODULE := false
 include $(BUILD_SHARED_LIBRARY)
 
