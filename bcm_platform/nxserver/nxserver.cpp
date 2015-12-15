@@ -145,7 +145,6 @@
 #define NX_TRIM_PIP                    "ro.nx.trim.pip"
 #define NX_TRIM_MOSAIC                 "ro.nx.trim.mosaic"
 #define NX_TRIM_STILLS                 "ro.nx.trim.stills"
-#define NX_TRIM_MINFMT                 "ro.nx.trim.minfmt"
 #define NX_TRIM_DISP                   "ro.nx.trim.disp"
 #define NX_TRIM_VIDIN                  "ro.nx.trim.vidin"
 #define NX_TRIM_MTG                    "ro.nx.trim.mtg"
@@ -523,32 +522,16 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 7. pip. */
-   for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
-      if (pMemConfigSettings->videoDecoder[i].used) {
-         ++dec_used;
-      }
-   }
    if (property_get(NX_TRIM_PIP, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         if (dec_used > MIN_PLATFORM_DEC) {
-            pMemConfigSettings->videoDecoder[1].used = false;
-         }
+         pMemConfigSettings->videoDecoder[1].used = false;
          pMemConfigSettings->display[0].window[1].used = false;
       }
    }
 
-   /* 8. *** TEMPORARY *** force lowest format for mandated transcode decoder until
-    *    we can instantiate an encoder without decoder back-end (architectural change).
-    */
-   if (property_get(NX_TRIM_MINFMT, value, NX_PROP_ENABLED)) {
-      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         /* start index -> 1.  beware interaction with pip above. */
-         for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
-            if (pMemConfigSettings->videoDecoder[i].used) {
-               pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_eNtsc;
-            }
-         }
-      }
+   /* 8. *** HARDCODE *** only request a single decoder (note pip config above). */
+   for (i = 2; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+      pMemConfigSettings->videoDecoder[i].used = false;
    }
 
    /* 9. vp9. */
