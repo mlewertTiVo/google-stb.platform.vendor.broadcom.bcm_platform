@@ -67,9 +67,6 @@ using namespace android;
 #define LAST_PING_FRAME_ID_INVALID   0xBAADCAFE
 #define INVALID_FENCE                -1
 
-// cursor surface is behaving slightly differently than
-// other gpx (or mm) ones and may lead to a lot of false
-// alarm logs.
 #define HWC_CURSOR_SURFACE_SUPPORTED 0
 
 #define HWC_SB_NO_ALLOC_SURF_CLI     1
@@ -148,6 +145,7 @@ using namespace android;
 #define HWC_TRACK_COMP_CHATTY        "dyn.nx.hwc.track.chatty"
 #define HWC_TICKER                   "dyn.nx.hwc.ticker"
 #define HWC_FB_MODE                  "dyn.nx.hwc.fbmode"
+#define HWC_IGNORE_CURSOR            "dyn.nx.hwc.nocursor"
 
 #define HWC_GLES_VIRTUAL_PROP        "ro.hwc.gles.virtual"
 #define HWC_WITH_FENCE_PROP          "ro.v3d.fence.expose"
@@ -682,6 +680,7 @@ struct hwc_context_t {
     bool flush_background;
     bool smart_background;
     bool toggle_fb_mode;
+    bool ignore_cursor;
     int prepare_video;
 };
 
@@ -3205,6 +3204,10 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       NEXUS_MemoryBlockHandle block_handle = NULL, phys_block_handle = NULL;
       private_handle_t *gr_buffer = NULL;
       PSHARED_DATA pSharedData = NULL;
+      lrc = NEXUS_NOT_INITIALIZED;
+      if (list->hwLayers[i].compositionType == HWC_CURSOR_OVERLAY && ctx->ignore_cursor) {
+         continue;
+      }
       if (list->hwLayers[i].compositionType != HWC_SIDEBAND) {
          gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
          if (gr_buffer == NULL) {
@@ -3231,8 +3234,6 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          } else {
             lrcp = NEXUS_NOT_INITIALIZED;
          }
-      } else {
-         lrc = NEXUS_NOT_INITIALIZED;
       }
       video.sharedData = pSharedData;
       video.gr_usage = (gr_buffer != NULL) ? gr_buffer->usage : 0;
@@ -4028,16 +4029,16 @@ static int hwc_device_setCursorPositionAsync(struct hwc_composer_device_1 *dev, 
     }
 
     if (disp == HWC_DISPLAY_PRIMARY) {
-       NEXUS_SurfaceCursorHandle cursor = NULL;
-       if (cursor != NULL) {
-          NEXUS_SurfaceCursorSettings config;
-          NEXUS_SurfaceCursor_GetSettings(cursor, &config);
-          config.composition.position.x = x_pos;
-          config.composition.position.y = y_pos;
-          NEXUS_SurfaceCursor_SetSettings(cursor, &config);
-          // TODO: push right away?  or wait for next hwc_set?
-       } else {
-          //ALOGE("%s: failed cursor update (display %d, pos {%d,%d})", __FUNCTION__, disp, x_pos, y_pos);
+       if (!ctx->ignore_cursor) {
+          NEXUS_SurfaceCursorHandle cursor = NULL;
+          if (cursor != NULL) {
+             NEXUS_SurfaceCursorSettings config;
+             NEXUS_SurfaceCursor_GetSettings(cursor, &config);
+             config.composition.position.x = x_pos;
+             config.composition.position.y = y_pos;
+             NEXUS_SurfaceCursor_SetSettings(cursor, &config);
+             // TODO: push right away?  or wait for next hwc_set?
+          }
        }
     }
 
@@ -4321,6 +4322,7 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
    dev->g2d_allow_simult     = property_get_bool(HWC_G2D_SIM_OPS_PROP,    0);
    dev->smart_background     = property_get_bool(HWC_CAPABLE_BACKGROUND,  1);
    dev->toggle_fb_mode       = property_get_bool(HWC_CAPABLE_TOGGLE_MODE, 0);
+   dev->ignore_cursor        = property_get_bool(HWC_IGNORE_CURSOR,       HWC_CURSOR_SURFACE_SUPPORTED ? 1 : 0);
 }
 
 static int hwc_device_open(const struct hw_module_t* module, const char* name,
