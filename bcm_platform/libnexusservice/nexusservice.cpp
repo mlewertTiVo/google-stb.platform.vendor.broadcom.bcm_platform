@@ -592,7 +592,7 @@ void NexusService::instantiate() {
     }
 }
 
-NexusService::NexusService() : powerState(ePowerState_S0)
+NexusService::NexusService() : powerState(ePowerState_S0), mHotplugConnectedState(HDMI_UNPLUGGED)
 {
 }
 

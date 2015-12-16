@@ -65,7 +65,6 @@
 
 #include "nexus_ipc_priv.h"
 #include "nxclient.h"
-#include <linux/brcmstb/hdmi_hpd_switch.h>
 
 #ifdef UINT32_C
 #undef UINT32_C
@@ -135,17 +134,126 @@ NEXUS_VideoFormat NexusNxService::getBestOutputFormat(NEXUS_HdmiOutputStatus *st
    return format;
 }
 
-void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param __unused)
+void NexusNxService::handleHdmiOutputHotplugCallback(int port, hdmi_state isConnected)
 {
 #if NEXUS_HAS_HDMI_OUTPUT
-    int rc, hdmiHpdSwitchFd, i;
-    NxClient_StandbyStatus standbyStatus;
+    int rc, hdmiHpdSwitchFd;
+    NxClient_DisplayStatus status;
     NxClient_DisplaySettings settings;
-    NexusNxService *pNexusNxService = reinterpret_cast<NexusNxService *>(context);
-    hdmi_state hdmiSwitch;
     const char *hdmiHpdDevName = "/dev/hdmi_hpd";
     NEXUS_VideoFormat format;
     bool update;
+
+    ALOGD("%s: HDMI%d hotplug %s", __func__, port, (isConnected == HDMI_CONNECTED) ? "connected" : "disconnected");
+
+    // Ensure that CEC Physical Address is updated on a "connected" hot-plug event...
+    if (NEXUS_NUM_CEC > 0 && isConnected == HDMI_CONNECTED) {
+        b_hdmiOutputStatus hdmiOutputStatus;
+        uint16_t addr;
+
+        if (getHdmiOutputStatus(port, &hdmiOutputStatus)) {
+            addr = hdmiOutputStatus.physicalAddress[0] * 256 + hdmiOutputStatus.physicalAddress[1];
+
+            if (mCecServiceManager[port].get() != NULL &&
+                mCecServiceManager[port]->isPlatformInitialised() &&
+                setCecPhysicalAddress(port, addr)) {
+                ALOGD("%s: Set CEC%d physical address to %01d.%01d.%01d.%01d", __PRETTY_FUNCTION__, port,
+                (addr >> 12) & 0x0F,
+                (addr >>  8) & 0x0F,
+                (addr >>  4) & 0x0F,
+                (addr >>  0) & 0x0F);
+            }
+            else {
+                ALOGE("%s: Could not set CEC%d physical address!!!", __PRETTY_FUNCTION__, port);
+            }
+        }
+        else {
+            ALOGW("%s: Could not get HDMI%d output status!", __PRETTY_FUNCTION__, port);
+        }
+    }
+
+    Vector<sp<INexusHdmiHotplugEventListener> >::const_iterator it;
+
+    Mutex::Autolock autoLock(server->mLock);
+
+    rc = NxClient_GetDisplayStatus(&status);
+    if (rc) {
+        ALOGE("%s: Could not get display status!!!", __PRETTY_FUNCTION__);
+        return;
+    }
+
+    do {
+        update = false;
+        NxClient_GetDisplaySettings(&settings);
+
+        if (isConnected == HDMI_CONNECTED) {
+           format = getForcedOutputFormat();
+           if (format == NEXUS_VideoFormat_eUnknown) {
+              format = getBestOutputFormat(&status.hdmi.status);
+           }
+           if ((format != NEXUS_VideoFormat_eUnknown) && (settings.format != format)) {
+              settings.format = format;
+              update = true;
+           }
+        }
+
+#if ANDROID_ENABLE_HDMI_HDCP
+        /* enable hdcp authentication if hdmi connected and powered */
+        settings.hdmiPreferences.hdcp = (isConnected == HDMI_CONNECTED) ?
+            NxClient_HdcpLevel_eMandatory :
+            NxClient_HdcpLevel_eNone;
+        update = true;
+#endif
+        if (update) {
+           rc = NxClient_SetDisplaySettings(&settings);
+           if (rc) {
+               ALOGE("%s: Could not set display settings rc=%d)!!!", __PRETTY_FUNCTION__, rc);
+           } else {
+              switch (settings.format) {
+              case NEXUS_VideoFormat_e4096x2160p60hz:
+              case NEXUS_VideoFormat_e3840x2160p60hz:
+              case NEXUS_VideoFormat_e4096x2160p50hz:
+              case NEXUS_VideoFormat_e3840x2160p50hz:
+              case NEXUS_VideoFormat_e4096x2160p30hz:
+              case NEXUS_VideoFormat_e3840x2160p30hz:
+              case NEXUS_VideoFormat_e4096x2160p25hz:
+              case NEXUS_VideoFormat_e3840x2160p25hz:
+              case NEXUS_VideoFormat_e4096x2160p24hz:
+              case NEXUS_VideoFormat_e3840x2160p24hz:
+                 property_set("sys.display-size", "3840x2160");
+              break;
+              default:
+                 property_set("sys.display-size", "1920x1080");
+              break;
+              }
+           }
+        }
+    } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
+
+    for (it = server->mHdmiHotplugEventListenerList[port].begin();
+         it != server->mHdmiHotplugEventListenerList[port].end(); ++it) {
+        ALOGV("%s: Firing off HDMI%d hotplug %s event for listener %p...", __PRETTY_FUNCTION__, port,
+             (isConnected == HDMI_CONNECTED) ? "connected" : "disconnected", (*it).get());
+        (*it)->onHdmiHotplugEventReceived(port, isConnected == HDMI_CONNECTED);
+    }
+
+    if ((hdmiHpdSwitchFd = open(hdmiHpdDevName, O_WRONLY)) == -1) {
+        ALOGE("%s: Could not open %s (errno=%d)", __PRETTY_FUNCTION__, hdmiHpdDevName, errno);
+    } else {
+        if (ioctl(hdmiHpdSwitchFd, HDMI_HPD_IOCTL_SET_SWITCH, &isConnected) == -1)
+            ALOGE("%s: HDMI_HPD_IOCTL_SET_SWITCH ioctl failed (errno=%d)", __PRETTY_FUNCTION__, errno);
+
+        close(hdmiHpdSwitchFd);
+    }
+#endif
+}
+
+void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param __unused)
+{
+#if NEXUS_HAS_HDMI_OUTPUT
+    NEXUS_Error rc;
+    NxClient_StandbyStatus standbyStatus;
+    NexusNxService *pNexusNxService = reinterpret_cast<NexusNxService *>(context);
 
     rc = NxClient_GetStandbyStatus(&standbyStatus);
     if (rc != NEXUS_SUCCESS) {
@@ -156,113 +264,25 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
     ALOGV("%s: Received HDMI%d hotplug event", __func__, param);
 
     if (standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
+        hdmi_state isConnected;
         NxClient_DisplayStatus status;
+
         rc = NxClient_GetDisplayStatus(&status);
         if (rc) {
             ALOGE("%s: Could not get display status!!!", __PRETTY_FUNCTION__);
             return;
         }
 
-        ALOGD("%s: HDMI%d hotplug %s (receive device %s powered)",
-             __func__, param,
-             status.hdmi.status.connected ? "connected" : "disconnected", status.hdmi.status.rxPowered ? "is" : "isn't");
+        isConnected = (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? HDMI_CONNECTED : HDMI_UNPLUGGED;
 
-        // Ensure that CEC Physical Address is updated on a "connected" hot-plug event...
-        if (NEXUS_NUM_CEC > 0 && status.hdmi.status.connected) {
-            b_hdmiOutputStatus hdmiOutputStatus;
-            uint16_t addr;
-
-            if (pNexusNxService->getHdmiOutputStatus(param, &hdmiOutputStatus)) {
-                addr = hdmiOutputStatus.physicalAddress[0] * 256 + hdmiOutputStatus.physicalAddress[1];
-
-                if (pNexusNxService->mCecServiceManager[param].get() != NULL &&
-                    pNexusNxService->mCecServiceManager[param]->isPlatformInitialised() &&
-                    pNexusNxService->setCecPhysicalAddress(param, addr)) {
-                    ALOGD("%s: Set CEC%d physical address to %01d.%01d.%01d.%01d", __PRETTY_FUNCTION__, param,
-                    (addr >> 12) & 0x0F,
-                    (addr >>  8) & 0x0F,
-                    (addr >>  4) & 0x0F,
-                    (addr >>  0) & 0x0F);
-                }
-                else {
-                    ALOGE("%s: Could not set CEC%d physical address!!!", __PRETTY_FUNCTION__, param);
-                }
-            }
-            else {
-                ALOGW("%s: Could not get HDMI%d output status!", __PRETTY_FUNCTION__, param);
-            }
+        // If the last hotplug connected state is the same as the current one and we are connected,
+        // then it means that we need to manually generate a disconnected event...
+        if (isConnected == pNexusNxService->mHotplugConnectedState && isConnected == HDMI_CONNECTED) {
+            ALOGV("%s: Forcing an HDMI%d hotplug disconnect...", __PRETTY_FUNCTION__, param);
+            pNexusNxService->handleHdmiOutputHotplugCallback(param, HDMI_UNPLUGGED);
         }
-
-        Vector<sp<INexusHdmiHotplugEventListener> >::const_iterator it;
-
-        Mutex::Autolock autoLock(pNexusNxService->server->mLock);
-
-        do {
-            update = false;
-            NxClient_GetDisplaySettings(&settings);
-
-            if (status.hdmi.status.connected && status.hdmi.status.rxPowered) {
-               format = getForcedOutputFormat();
-               if (format == NEXUS_VideoFormat_eUnknown) {
-                  format = getBestOutputFormat(&status.hdmi.status);
-               }
-               if ((format != NEXUS_VideoFormat_eUnknown) && (settings.format != format)) {
-                  settings.format = format;
-                  update = true;
-               }
-            }
-
-#if ANDROID_ENABLE_HDMI_HDCP
-            /* enable hdcp authentication if hdmi connected and powered */
-            settings.hdmiPreferences.hdcp =
-                (status.hdmi.status.connected && status.hdmi.status.rxPowered) ?
-                NxClient_HdcpLevel_eMandatory :
-                NxClient_HdcpLevel_eNone;
-            update = true;
-#endif
-            if (update) {
-               rc = NxClient_SetDisplaySettings(&settings);
-               if (rc) {
-                   ALOGE("%s: Could not set display settings rc=%d)!!!", __PRETTY_FUNCTION__, rc);
-               } else {
-                  switch (settings.format) {
-                  case NEXUS_VideoFormat_e4096x2160p60hz:
-                  case NEXUS_VideoFormat_e3840x2160p60hz:
-                  case NEXUS_VideoFormat_e4096x2160p50hz:
-                  case NEXUS_VideoFormat_e3840x2160p50hz:
-                  case NEXUS_VideoFormat_e4096x2160p30hz:
-                  case NEXUS_VideoFormat_e3840x2160p30hz:
-                  case NEXUS_VideoFormat_e4096x2160p25hz:
-                  case NEXUS_VideoFormat_e3840x2160p25hz:
-                  case NEXUS_VideoFormat_e4096x2160p24hz:
-                  case NEXUS_VideoFormat_e3840x2160p24hz:
-                     property_set("sys.display-size", "3840x2160");
-                  break;
-                  default:
-                     property_set("sys.display-size", "1920x1080");
-                  break;
-                  }
-               }
-            }
-        } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
-
-        for (it = pNexusNxService->server->mHdmiHotplugEventListenerList[param].begin();
-             it != pNexusNxService->server->mHdmiHotplugEventListenerList[param].end(); ++it) {
-            ALOGV("%s: Firing off HDMI%d hotplug %s event for listener %p...", __PRETTY_FUNCTION__, param,
-                 (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? "connected" : "disconnected", (*it).get());
-            (*it)->onHdmiHotplugEventReceived(param, status.hdmi.status.connected && status.hdmi.status.rxPowered);
-        }
-
-        if ((hdmiHpdSwitchFd = open(hdmiHpdDevName, O_WRONLY)) == -1) {
-            ALOGE("%s: Could not open %s (errno=%d)", __PRETTY_FUNCTION__, hdmiHpdDevName, errno);
-        } else {
-            hdmiSwitch = (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? HDMI_CONNECTED : HDMI_UNPLUGGED;
-
-            if (ioctl(hdmiHpdSwitchFd, HDMI_HPD_IOCTL_SET_SWITCH, &hdmiSwitch) == -1)
-                ALOGE("%s: HDMI_HPD_IOCTL_SET_SWITCH ioctl failed (errno=%d)", __PRETTY_FUNCTION__, errno);
-
-            close(hdmiHpdSwitchFd);
-        }
+        pNexusNxService->mHotplugConnectedState = isConnected;
+        pNexusNxService->handleHdmiOutputHotplugCallback(param, isConnected);
     }
     else {
         ALOGW("%s: Ignoring HDMI%d hotplug as we are in standby!", __PRETTY_FUNCTION__, param);
@@ -329,9 +349,8 @@ int NexusNxService::platformInitHdmiOutputs()
         return rc;
     }
 
-    /* Self-trigger the first callback */
-    hdmiOutputHotplugCallback(this, 0);
 #if ANDROID_ENABLE_HDMI_HDCP
+    /* Self-trigger the first callback */
     hdmiOutputHdcpStateChangedCallback(this, 0);
 #endif
 #endif

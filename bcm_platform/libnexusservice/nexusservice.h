@@ -77,6 +77,8 @@
 #include "nexus_surface_compositor.h"
 #include "nexus_picture_ctrl.h"
 
+#include <linux/brcmstb/hdmi_hpd_switch.h>
+
 #define HD_DISPLAY (0)
 
 #ifndef NEXUS_CEC_MESSAGE_DATA_SIZE
@@ -156,6 +158,7 @@ protected:
 
     NexusServerContext                  *server;
     b_powerState                        powerState;
+    hdmi_state                          mHotplugConnectedState;
     sp<CecServiceManager>               mCecServiceManager[NexusIPCCommon::MAX_NUM_CEC_PORTS];
 
 private:

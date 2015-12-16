@@ -79,6 +79,7 @@ protected:
 private:
     int platformInitHdmiOutputs(void);
     void platformUninitHdmiOutputs();
+    void handleHdmiOutputHotplugCallback(int port, hdmi_state isConnected);
     static void hdmiOutputHotplugCallback(void *context, int param);
     static void hdmiOutputHdcpStateChangedCallback(void *pContext, int param);
     static NEXUS_VideoFormat getBestOutputFormat(NEXUS_HdmiOutputStatus *status);
