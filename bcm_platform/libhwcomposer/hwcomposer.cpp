@@ -2598,19 +2598,6 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
        }
     }
 
-    if ((ctx->display_gles_fallback && skip_layer_index != -1) ||
-        (ctx->display_gles_always && has_video == false)) {
-       for (i = 0; i < list->numHwLayers; i++) {
-          layer = &list->hwLayers[i];
-          video.layer = layer;
-          if (layer->compositionType == HWC_OVERLAY &&
-              !is_video_layer(ctx, &video)) {
-             layer->compositionType = HWC_FRAMEBUFFER;
-             layer->hints = 0;
-          }
-       }
-    }
-
     if (ctx->display_gles_fallback ||
         (ctx->display_gles_always && has_video == false)) {
        for (i = 0; i < list->numHwLayers; i++) {
@@ -2618,6 +2605,20 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
           if (layer->compositionType == HWC_FRAMEBUFFER) {
               ctx->needs_fb_target = true;
               break;
+          }
+       }
+    }
+
+    if ((ctx->display_gles_fallback && skip_layer_index != -1) ||
+        (ctx->display_gles_always && has_video == false) ||
+        ctx->needs_fb_target) {
+       for (i = 0; i < list->numHwLayers; i++) {
+          layer = &list->hwLayers[i];
+          video.layer = layer;
+          if (layer->compositionType == HWC_OVERLAY &&
+              !is_video_layer(ctx, &video)) {
+             layer->compositionType = HWC_FRAMEBUFFER;
+             layer->hints = 0;
           }
        }
     }
