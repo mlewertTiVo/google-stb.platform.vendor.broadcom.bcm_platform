@@ -1903,12 +1903,14 @@ bool hwc_compose_gralloc_buffer(
     NEXUS_SurfaceCreateSettings displaySurfaceSettings;
     NEXUS_Rect srcAdj, outAdj;
     NEXUS_Graphics2DBlitSettings blitSettings;
+    int stats_ix = is_virtual ? HWC_VIRTUAL_IX : HWC_PRIMARY_IX;
 
     blit_yv12 = (pSharedData->container.format == HAL_PIXEL_FORMAT_YV12) ? true : false;
 
     if (!is_virtual) {
        if (skip_comp) {
-          ALOGV("%s: willingly skipping layer: %d\n", __FUNCTION__, layer_id);
+          ALOGV("comp: %llu/%d - willingly skipping layer\n",
+                ctx->stats[stats_ix].set_call, layer_id);
           goto out;
        }
        is_cursor_layer = (ctx->gpx_cli[layer_id].layer_flags & HWC_IS_CURSOR_LAYER) ? true : false;
@@ -1917,8 +1919,9 @@ bool hwc_compose_gralloc_buffer(
     NEXUS_Surface_GetCreateSettings(outputHdl, &displaySurfaceSettings);
     if ((is_virtual && (ctx->display_dump_virt & HWC_DUMP_LEVEL_COMPOSE)) ||
         (!is_virtual && (ctx->display_dump_layer & HWC_DUMP_LEVEL_COMPOSE))) {
-       ALOGI("%s: layer %u vis %u pf %u %ux%u (%ux%u@%u,%u) to %ux%u@%u,%u",
-             is_virtual ? "vcmp" : "comp", layer_id, (unsigned)pComp->visible,
+       ALOGI("%s: %llu/%d - v:%u::f:%u:: %ux%u (%ux%u@%u,%u) -> %ux%u@%u,%u",
+             is_virtual ? "vcmp" : "comp", ctx->stats[stats_ix].set_call,
+             layer_id, (unsigned)pComp->visible,
              gralloc_to_nexus_pixel_format(pSharedData->container.format),
              pSharedData->container.width, pSharedData->container.height,
              pComp->clipRect.width, pComp->clipRect.height, pComp->clipRect.x, pComp->clipRect.y,
@@ -1957,7 +1960,9 @@ bool hwc_compose_gralloc_buffer(
 
         if (!(outAdj.width > 0 && outAdj.height > 0 &&
               srcAdj.width > 0 && srcAdj.height > 0)) {
-           ALOGE("%s: invalid plane skipping: %d, src{%d,%d} -> dst{%d,%d}\n", __FUNCTION__, layer_id,
+           ALOGE("%s: %llu/%d - invalid, skipping src{%d,%d} -> dst{%d,%d}\n",
+                 is_virtual ? "vcmp" : "comp",
+                 ctx->stats[stats_ix].set_call, layer_id,
                  srcAdj.width, srcAdj.height, outAdj.width, outAdj.height);
            goto out;
         }
@@ -2196,8 +2201,9 @@ bool hwc_compose_gralloc_buffer(
               }
 
               if (ctx->display_dump_layer & HWC_DUMP_LEVEL_COMPOSE) {
-                 ALOGI("%s: y(%dx%d,s:%d,f:%d):cr(%dx%d,s:%d,f:%d,o:%d):cb(%dx%d,s:%d,f:%d,o:%d) => yuv(%dx%d,s:%d,f:%d) => rgba(%dx%d,s:%d,f:%d) @ src(0,0,%dx%d):dst(%d,%d,%dx%d)",
-                    __FUNCTION__,
+                 ALOGI("%s: %llu/%d - y(%dx%d,s:%d,f:%d):cr(%dx%d,s:%d,f:%d,o:%d):cb(%dx%d,s:%d,f:%d,o:%d) => yuv(%dx%d,s:%d,f:%d) => rgba(%dx%d,s:%d,f:%d) @ src(0,0,%dx%d):dst(%d,%d,%dx%d)",
+                    is_virtual ? "vcmp" : "comp",
+                    ctx->stats[stats_ix].set_call, layer_id,
                     planeY.width, planeY.height, planeY.pitch, planeY.format,
                     planeCr.width, planeCr.height, planeCr.pitch, planeCr.format, cr_offset,
                     planeCb.width, planeCb.height, planeCb.pitch, planeCb.format, cb_offset,
@@ -2227,7 +2233,9 @@ bool hwc_compose_gralloc_buffer(
                     }
                  }
                  if (rc) {
-                    ALOGE("%s: unable to complete layer %u", __FUNCTION__, layer_id);
+                    ALOGE("%s: %llu/%d - failed layer completion",
+                          is_virtual ? "vcmp" : "comp",
+                          ctx->stats[stats_ix].set_call, layer_id);
                  } else {
                     composed = true;
                     if (ops_count) {
