@@ -19,7 +19,7 @@ import android.widget.Toast;
 public class BcmAdjustScreenOffsetActivity extends Activity {
     /** Called when the activity is first created. */
     private static final String TAG = "BcmAdjustScreenOffset";
-    private Button button_x_inc, button_x_dec, button_y_inc, button_y_dec;
+    private Button button_x_inc, button_x_dec, button_y_inc, button_y_dec, button_reset;
     private native_adjustScreenOffset nav;
     private final static int step_x = 4;
     private final static int step_y = 4;
@@ -34,6 +34,7 @@ public class BcmAdjustScreenOffsetActivity extends Activity {
         button_x_dec = (Button)findViewById(R.id.button_x_dec);
         button_y_inc = (Button)findViewById(R.id.button_y_inc);
         button_y_dec = (Button)findViewById(R.id.button_y_dec);
+        button_reset = (Button)findViewById(R.id.button_reset);
 
         button_x_inc.setOnClickListener(new OnClickListener() {
             public void onClick(View v) {
@@ -63,6 +64,13 @@ public class BcmAdjustScreenOffsetActivity extends Activity {
             }
         });
 
+        button_reset.setOnClickListener(new OnClickListener() {
+            public void onClick(View v) {
+                Log.i(TAG,"click on button_y_dec");
+                resetScreenOffset();
+            }
+        });
+
     }
 
     private void adjustScreenOffset(int dx, int dy) {
@@ -79,6 +87,13 @@ public class BcmAdjustScreenOffsetActivity extends Activity {
         if (!newoffset.equals(offset)) {
             Toast.makeText(getApplicationContext(), "Can't modify screen offset. Is SE-Linux enforced?", Toast.LENGTH_LONG).show();
         }
+    }
+
+    private void resetScreenOffset() {
+        if (nav == null)
+            nav = new native_adjustScreenOffset();
+
+        nav.resetScreenOffset();
     }
 
     private static Scanner findToken(Scanner scanner, String token) {

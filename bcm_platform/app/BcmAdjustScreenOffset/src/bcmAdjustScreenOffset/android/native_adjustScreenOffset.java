@@ -10,4 +10,5 @@ public class native_adjustScreenOffset {
     /* set graphics setting according to video offset settings */
     public native void setScreenOffset(Rect offset);
     public native void getScreenOffset(Rect offset);
+    public native void resetScreenOffset();
 }

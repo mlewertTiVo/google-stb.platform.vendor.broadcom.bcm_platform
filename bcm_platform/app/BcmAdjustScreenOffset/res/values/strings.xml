@@ -7,5 +7,6 @@
     <string name="xdec">x decrease</string>
     <string name="xinc">x increase</string>
     <string name="yinc">y increase</string>
+    <string name="reset">reset</string>
 
 </resources>

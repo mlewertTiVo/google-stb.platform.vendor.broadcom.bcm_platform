@@ -34,4 +34,10 @@
         android:layout_height="wrap_content"
         android:text="@string/ydec" />
 
+    <Button
+        android:id="@+id/button_reset"
+        android:layout_width="250dp"
+        android:layout_height="wrap_content"
+        android:text="@string/reset" />
+
 </LinearLayout>
