@@ -129,6 +129,8 @@ clone_variant='nope'
 is_pdk='nope'
 if input > 4 :
 	target_option=str(sys.argv[4]).upper()
+	if target_option != "PROFILE" and target_option != "SPOOF" and target_option != "CLONE" and target_option != "PDK":
+		plat_droid_usage()
 	if target_option == "PROFILE":
 		if input < 6:
 			plat_droid_usage()
@@ -189,17 +191,17 @@ if clone_device != 'nope' and clone_variant != 'nope':
 		rmdir_then_mkdir(clone_directory)
 
 # create android cruft.
-androiddevice='%s%s%s' % (chip, revision, boardtype)
+androiddevice='bcm_%s%s%s' % (chip, revision, boardtype)
 androidrootdevice='%s%s%s' % (chip, revision, boardtype)
 if target_option == "AOSP" or target_option == "REDUX" or target_option == "NFS":
-	androiddevice='%s_%s' % (androiddevice, target_option)
+	androiddevice='%s_%s' % (androidrootdevice, target_option)
 if target_option == "PROFILE":
-        custom_directory="./device/broadcom/custom/%s/%s" %(androiddevice, target_profile)
+        custom_directory="./device/broadcom/custom/%s/%s" %(androidrootdevice, target_profile)
 	custom_target_settings="%s/settings.mk" %(custom_directory)
 	custom_target_pre_settings="%s/pre_settings.mk" %(custom_directory)
-	androiddevice='%s_%s' % (androiddevice, target_profile)
+	androiddevice='%s' % (target_profile)
 	if not os.path.exists(custom_directory):
-		print '\n*** your custom profile "%s/%s" does not appear to be a valid one.\n' %(androiddevice, target_profile)
+		print '\n*** your custom profile "%s/%s" does not appear to be a valid one.\n' %(androidrootdevice, target_profile)
 		plat_droid_usage()
 	if not os.access(custom_target_pre_settings, os.F_OK):
 		custom_target_pre_settings='nope'
@@ -210,7 +212,7 @@ elif spoof_device != 'nope' and spoof_variant != 'nope':
 	androiddevice='%s' % (spoof_variant)
 	devicedirectory='./device/%s/%s/' % (spoof_device, androiddevice)
 else:
-	devicedirectory='./device/broadcom/bcm_%s/' % (androiddevice)
+	devicedirectory='./device/broadcom/%s/' % (androiddevice)
 
 if verbose:
 	print 'creating android device: %s, in directory: %s' % (androiddevice, devicedirectory)
@@ -218,12 +220,10 @@ if verbose:
 # minimum modules for android device build created by this script.
 vendorsetup="vendorsetup.sh"
 androidproduct="AndroidProducts.mk"
-if clone_device != 'nope' and clone_variant != 'nope':
-	target="%s.mk" % (androiddevice)
-elif spoof_device != 'nope' and spoof_variant != 'nope':
+if spoof_device != 'nope' and spoof_variant != 'nope':
 	target="full_%s.mk" % (androiddevice)
 else:
-	target="bcm_%s.mk" % (androiddevice)
+	target="%s.mk" % (androiddevice)
 boardconfig="BoardConfig.mk"
 # clean old config, do this here so even if we fail later on we do not
 # keep around some old stuff.
@@ -278,29 +278,23 @@ f='%s%s' % (devicedirectory, vendorsetup)
 s=os.open(f, os.O_WRONLY|os.O_CREAT)
 write_header(s, androiddevice)
 # note: additional combo can be added if need be (ie: -user)
-if clone_device != 'nope' and clone_variant != 'nope':
-	os.write(s, "add_lunch_combo %s-eng\n" % androiddevice)
-	os.write(s, "add_lunch_combo %s-userdebug\n" % androiddevice)
-	os.write(s, "add_lunch_combo %s-user\n" % androiddevice)
-elif spoof_device != 'nope' and spoof_variant != 'nope':
+if spoof_device != 'nope' and spoof_variant != 'nope':
 	os.write(s, "add_lunch_combo full_%s-eng\n" % androiddevice)
 	os.write(s, "add_lunch_combo full_%s-userdebug\n" % androiddevice)
 	os.write(s, "add_lunch_combo full_%s-user\n" % androiddevice)
 else:
-	os.write(s, "add_lunch_combo bcm_%s-eng\n" % androiddevice)
-	os.write(s, "add_lunch_combo bcm_%s-userdebug\n" % androiddevice)
-	os.write(s, "add_lunch_combo bcm_%s-user\n" % androiddevice)
+	os.write(s, "add_lunch_combo %s-eng\n" % androiddevice)
+	os.write(s, "add_lunch_combo %s-userdebug\n" % androiddevice)
+	os.write(s, "add_lunch_combo %s-user\n" % androiddevice)
 os.close(s);
 
 f='%s%s' % (devicedirectory, androidproduct)
 s=os.open(f, os.O_WRONLY|os.O_CREAT)
 write_header(s, androiddevice)
-if clone_device != 'nope' and clone_variant != 'nope':
-	os.write(s, "PRODUCT_MAKEFILES := $(LOCAL_DIR)/%s.mk\n" % androiddevice)
-elif spoof_device != 'nope' and spoof_variant != 'nope':
+if spoof_device != 'nope' and spoof_variant != 'nope':
 	os.write(s, "PRODUCT_MAKEFILES := $(LOCAL_DIR)/full_%s.mk\n" % androiddevice)
 else:
-	os.write(s, "PRODUCT_MAKEFILES := $(LOCAL_DIR)/bcm_%s.mk\n" % androiddevice)
+	os.write(s, "PRODUCT_MAKEFILES := $(LOCAL_DIR)/%s.mk\n" % androiddevice)
 os.close(s);
 
 if (spoof_device != 'nope' and spoof_variant != 'nope') or (clone_device != 'nope' and clone_variant != 'nope'):
@@ -360,7 +354,7 @@ elif spoof_device != 'nope' and spoof_variant != 'nope':
 		os.write(s, "\n\n# SPOOF setting tweaks...\n")
 		os.write(s, spoof_settings)
 else:
-	os.write(s, "\n\nPRODUCT_NAME := bcm_%s\n" % androiddevice)
+	os.write(s, "\n\nPRODUCT_NAME := %s\n" % androiddevice)
 os.write(s, "\n\n# exporting toolchains path for kernel image+modules\n")
 os.write(s, "export PATH := %s:${PATH}\n" % kerneltoolchain)
 os.close(s);
@@ -396,13 +390,13 @@ elif spoof_device != 'nope' and spoof_variant != 'nope':
 
 # yeah! happy...
 print '\n'
-if (clone_device != 'nope' and clone_variant != 'nope') or (spoof_device != 'nope' and spoof_variant != 'nope'):
+if spoof_device != 'nope' and spoof_variant != 'nope':
+	print 'congratulations! device "%s" configured, you may proceed with android build...' % androiddevice
+	print '\t1) source ./build/envsetup.sh'
+	print '\t2) lunch full_%s-[eng|userdebug|user]' % androiddevice
+else:
 	print 'congratulations! device "%s" configured, you may proceed with android build...' % androiddevice
 	print '\t1) source ./build/envsetup.sh'
 	print '\t2) lunch %s-[eng|userdebug|user]' % androiddevice
-else:
-	print 'congratulations! device "bcm_%s" configured, you may proceed with android build...' % androiddevice
-	print '\t1) source ./build/envsetup.sh'
-	print '\t2) lunch bcm_%s-[eng|userdebug|user]' % androiddevice
 print '\t3) make'
 print '\n'
