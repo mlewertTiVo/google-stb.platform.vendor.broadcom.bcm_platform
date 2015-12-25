@@ -65,7 +65,7 @@ def rmdir_then_mkdir(d):
 def save_copy_dir(d):
 	new_dir = '%s.saved' %d
 	if os.path.exists(new_dir):
-		shutil.rmtree(d)
+		shutil.rmtree(new_dir)
 	shutil.copytree(d, new_dir, ignore = shutil.ignore_patterns(".git"))
 	ignore_src = '%s/vendorsetup.sh' % new_dir
 	ignore_dst = '%s/vendorsetup.sh.ignored' % new_dir
