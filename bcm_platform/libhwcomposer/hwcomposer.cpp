@@ -2492,6 +2492,13 @@ static void hwc_prepare_gpx_layer(
        }
        ctx->gpx_cli[layer_id].layer_flags = layer->flags;
 
+       if (ctx->disp_cli[HWC_PRIMARY_IX].mode == CLIENT_MODE_COMP_BYPASS) {
+          disp_position.x += ctx->overscan_position.x;
+          disp_position.y += ctx->overscan_position.y;
+          disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
+          disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
+       }
+
        if ((memcmp((void *)&disp_position, (void *)&ctx->gpx_cli[layer_id].composition.position, sizeof(NEXUS_Rect)) != 0) ||
            (memcmp((void *)&clip_position, (void *)&ctx->gpx_cli[layer_id].composition.clipRect, sizeof(NEXUS_Rect)) != 0) ||
            (cur_width != ctx->gpx_cli[layer_id].composition.clipBase.width) ||
@@ -2512,8 +2519,8 @@ static void hwc_prepare_gpx_layer(
         pComp->position.y            = disp_position.y;
         pComp->position.width        = disp_position.width;
         pComp->position.height       = disp_position.height;
-        pComp->virtualDisplay.width  = ctx->cfg[is_virtual?1:0].width;
-        pComp->virtualDisplay.height = ctx->cfg[is_virtual?1:0].height;
+        pComp->virtualDisplay.width  = ctx->cfg[is_virtual?HWC_VIRTUAL_IX:HWC_PRIMARY_IX].width;
+        pComp->virtualDisplay.height = ctx->cfg[is_virtual?HWC_VIRTUAL_IX:HWC_PRIMARY_IX].height;
         pComp->colorBlend            = ((cur_blending_type == BLENDIND_TYPE_SRC_OVER) && layer->planeAlpha) ? nexusColorSrcOverConstAlpha : nexusColorBlendingEquation[cur_blending_type];
         pComp->alphaBlend            = ((cur_blending_type == BLENDIND_TYPE_SRC_OVER) && layer->planeAlpha) ? nexusAlphaSrcOverConstAlpha : nexusAlphaBlendingEquation[cur_blending_type];
         pComp->visible               = true;
