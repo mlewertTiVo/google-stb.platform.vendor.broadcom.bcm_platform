@@ -4337,7 +4337,7 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
    dev->track_comp_time      = property_get_bool(HWC_TRACK_COMP_TIME,     1);
    dev->g2d_allow_simult     = property_get_bool(HWC_G2D_SIM_OPS_PROP,    0);
    dev->smart_background     = property_get_bool(HWC_CAPABLE_BACKGROUND,  1);
-   dev->toggle_fb_mode       = property_get_bool(HWC_CAPABLE_TOGGLE_MODE, 0);
+   dev->toggle_fb_mode       = property_get_bool(HWC_CAPABLE_TOGGLE_MODE, 1);
    dev->ignore_cursor        = property_get_bool(HWC_IGNORE_CURSOR,       HWC_CURSOR_SURFACE_SUPPORTED ? 1 : 0);
 }
 
