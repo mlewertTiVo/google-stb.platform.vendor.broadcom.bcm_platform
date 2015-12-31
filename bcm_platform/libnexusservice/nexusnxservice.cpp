@@ -644,7 +644,7 @@ status_t NexusNxService::addHdmiHotplugEventListener(uint32_t portId, const sp<I
             Mutex::Autolock autoLock(server->mLock);
 
             for (it = server->mHdmiHotplugEventListenerList[portId].begin(); it != server->mHdmiHotplugEventListenerList[portId].end(); ++it) {
-                if ((*it)->asBinder(listener) == binder) {
+                if ((*it)->asBinder((*it)) == binder) {
                     ALOGE("%s: Already added HDMI%d hotplug event listener %p!!!", __PRETTY_FUNCTION__, portId, listener.get());
                     status = ALREADY_EXISTS;
                     break;
@@ -684,7 +684,7 @@ status_t NexusNxService::removeHdmiHotplugEventListener(uint32_t portId, const s
             Mutex::Autolock autoLock(server->mLock);
 
             for (it = server->mHdmiHotplugEventListenerList[portId].begin(); it != server->mHdmiHotplugEventListenerList[portId].end(); ++it) {
-                if ((*it)->asBinder(listener) == binder) {
+                if ((*it)->asBinder((*it)) == binder) {
                     binder->unlinkToDeath(this);
                     server->mHdmiHotplugEventListenerList[portId].erase(it);
                     status = OK;
