@@ -349,8 +349,9 @@ int NexusNxService::platformInitHdmiOutputs()
         return rc;
     }
 
-#if ANDROID_ENABLE_HDMI_HDCP
     /* Self-trigger the first callback */
+    hdmiOutputHotplugCallback(this, 0);
+#if ANDROID_ENABLE_HDMI_HDCP
     hdmiOutputHdcpStateChangedCallback(this, 0);
 #endif
 #endif
