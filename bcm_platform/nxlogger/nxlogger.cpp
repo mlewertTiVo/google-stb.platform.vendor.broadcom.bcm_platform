@@ -269,7 +269,7 @@ int main(int argc, const char *argv[])
         usage(argv[0]);
     }
 
-    if(argc>2) {
+    if(argc>2 && argv[2][0]!='\0') {
         int ready;
         /*( device_fd = open(argv[2],O_RDWR); */
         device_fd = atoi(argv[2]);
@@ -304,6 +304,13 @@ int main(int argc, const char *argv[])
         usage(argv[0]);
     }
     logWriter = (BDBG_Fifo_Handle)shared;
+    if(argc>3) {
+        int ready_fd = atoi(argv[3]);
+        char data[1]={'\0'};
+        int rc;
+        rc = write(ready_fd,data,1); /* signal parent that we've started */
+        close(ready_fd);
+    }
     rc = BDBG_FifoReader_Create(&logReader, logWriter);
     BDBG_ASSERT(rc==BERR_SUCCESS);
     for(;;) {
