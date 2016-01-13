@@ -61,8 +61,16 @@ playready_root="playready"
 show_tree_depth=3
 BCM_VENDOR_STB_ROOT="vendor/broadcom/stb"
 
+# you can change the auto-magic profile selection here if desired, but there is really no need to.
+#
+# note: if changing those, you have to make sure there is a valid 'device/broadcom/custom' profile
+#       associated with your selection.
+#
 plat_target="97252 D0 C"
-lunch_target="97252D0C"
+plat_profile="BCM97252CSECU"
+plat_profile_verifier="BCM97252C_43602"
+#
+# -- end profile (auto-magic) selection.
 
 verbose=
 update=
@@ -227,11 +235,11 @@ function compiler {
 		#
 		# TODO: make the platform configured.
 		#
-		./${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/plat-droid.py ${plat_target} profile secu
+		./${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/plat-droid.py ${plat_target} profile ${plat_profile}
 		source ./build/envsetup.sh
 		# build the user side libraries, we need to build a system first to get
 		# the android objects setup and the refsw/nexus libs.
-		lunch bcm_${lunch_target}_secu-eng
+		lunch ${plat_profile}-eng
 		if [ "$force_clean" == "1" ]; then
 			make -j12 clean
 		else
@@ -332,9 +340,9 @@ function verifier {
 		que_faites_vous "verification skipped on demand"
 	else
 		cd $1
-		./${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/plat-droid.py ${plat_target}
+		./${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/plat-droid.py ${plat_target} profile ${plat_profile_verifier}
 		source ./build/envsetup.sh
-		lunch bcm_${lunch_target}-eng
+		lunch ${plat_profile_verifier}-eng
 		make -j12 clean_refsw
 		make -j12
 	fi
