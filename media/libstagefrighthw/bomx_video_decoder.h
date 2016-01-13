@@ -56,11 +56,14 @@
 #include "bomx_video_decoder_stats.h"
 #include "bomx_pes_formatter.h"
 #include <stdio.h>
+#include <cutils/native_handle.h>
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateTunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex);
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Tunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_VideoDecoder_GetRoleVp9(unsigned roleIndex);
 
 struct BOMX_VideoDecoderInputBufferInfo
@@ -89,6 +92,7 @@ enum BOMX_VideoDecoderOutputBufferType
     BOMX_VideoDecoderOutputBufferType_eStandard,
     BOMX_VideoDecoderOutputBufferType_eNative,
     BOMX_VideoDecoderOutputBufferType_eMetadata,
+    BOMX_VideoDecoderOutputBufferType_eNone,
     BOMX_VideoDecoderOutputBufferType_eMax
 };
 
@@ -156,6 +160,7 @@ public:
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
         bool secure=false,
+        bool tunnel=false,
         unsigned numRoles=0,
         const BOMX_VideoDecoderRole *pRoles=NULL,
         const char *(*pGetRole)(unsigned roleIndex)=NULL);
@@ -298,6 +303,8 @@ protected:
     bool m_metadataEnabled;
     bool m_adaptivePlaybackEnabled;
     bool m_secureDecoder;
+    bool m_tunnelMode;
+    native_handle_t *m_pTunnelNativeHandle;
     unsigned m_outputWidth;
     unsigned m_outputHeight;
     unsigned m_maxDecoderWidth;
@@ -330,6 +337,8 @@ protected:
     size_t m_droppedFrames;
     size_t m_consecDroppedFrames;
     size_t m_maxConsecDroppedFrames;
+
+    NEXUS_SimpleStcChannelHandle m_tunnelStcChannel;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();

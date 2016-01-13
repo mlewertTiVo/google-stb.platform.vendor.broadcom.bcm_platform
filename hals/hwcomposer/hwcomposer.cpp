@@ -353,6 +353,7 @@ typedef struct {
     GPX_CLIENT_INFO root;
     NEXUS_SurfaceClientSettings settings;
     int id;
+    bool geometry_updated;
 } SB_CLIENT_INFO;
 
 typedef struct {
@@ -1607,7 +1608,7 @@ static void hwc_binder_notify(void *dev, int msg, struct hwc_notification_info &
            for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
                // reset the 'drop duplicate frame notifier' count.
                if (ctx->mm_cli[i].id == ntfy.surface_hdl) {
-                  ALOGD("%s: reset drop-dup-count on sfid 0x%x, id 0x%x", __FUNCTION__, ntfy.surface_hdl, ctx->mm_cli[i].id);
+                  ALOGD("%s: reset drop-dup-count on vid 0x%x, id 0x%x", __FUNCTION__, ntfy.surface_hdl, ctx->mm_cli[i].id);
                   ctx->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_RESET;
                   break;
                }
@@ -1642,6 +1643,7 @@ static void hwc_binder_notify(void *dev, int msg, struct hwc_notification_info &
                if (ctx->sb_cli[i].id == ntfy.surface_hdl) {
                   ALOGD("%s: flush-background on sfid 0x%x, id 0x%x", __FUNCTION__, ntfy.surface_hdl, ctx->sb_cli[i].id);
                   ctx->flush_background = true;
+                  ctx->sb_cli[i].geometry_updated = true;
                   break;
                }
            }
@@ -3639,6 +3641,24 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             }
          } else {
             is_sideband = true;
+            if (ctx->hwc_binder) {
+               BKNI_AcquireMutex(ctx->mutex);
+               if (ctx->sb_cli[0].geometry_updated) {
+                  struct hwc_position frame, clipped;
+                  frame.x = ctx->sb_cli[0].root.composition.position.x;;
+                  frame.y = ctx->sb_cli[0].root.composition.position.y;
+                  frame.w = ctx->sb_cli[0].root.composition.position.width;
+                  frame.h = ctx->sb_cli[0].root.composition.position.height;
+                  clipped.x = ctx->sb_cli[0].root.composition.clipRect.x;
+                  clipped.y = ctx->sb_cli[0].root.composition.clipRect.y;
+                  clipped.w = (ctx->sb_cli[0].root.composition.clipRect.width == 0xFFFF) ? 0 : ctx->sb_cli[0].root.composition.clipRect.width;
+                  clipped.h = (ctx->sb_cli[0].root.composition.clipRect.height == 0xFFFF) ? 0 : ctx->sb_cli[0].root.composition.clipRect.height;
+                  ctx->hwc_binder->setgeometry(HWC_BINDER_SDB, 0, frame, clipped, SB_CLIENT_ZORDER, 1);
+                  ALOGI("comp: sdb-0: {%d,%d,%dx%d} -> {%d,%d,%dx%d}", frame.x, frame.y, frame.w, frame.h, clipped.x, clipped.y, clipped.w, clipped.h);
+                  ctx->sb_cli[0].geometry_updated = false;
+               }
+               BKNI_ReleaseMutex(ctx->mutex);
+            }
          }
       } else if (item->comp[i].visible) {
          if (video.is_yuv) {
@@ -5205,49 +5225,46 @@ static void hwc_prepare_mm_layer(
     unsigned int gpx_layer_id,
     unsigned int vid_layer_id)
 {
-    NEXUS_Error rc;
-    NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
-                                (int16_t)layer->displayFrame.top,
-                                (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
-                                (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
-    NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
-                                (int16_t)(int)layer->sourceCropf.top,
-                                (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
-                                (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
-    int cur_width;
-    int cur_height;
-    unsigned int stride;
-    unsigned int cur_blending_type;
-    bool layer_updated = true;
+   NEXUS_Error rc;
+   NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
+                               (int16_t)layer->displayFrame.top,
+                               (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
+                               (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
+   NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
+                               (int16_t)(int)layer->sourceCropf.top,
+                               (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
+                               (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
+   int cur_width;
+   int cur_height;
+   unsigned int stride;
+   unsigned int cur_blending_type;
+   bool layer_updated = true;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-        goto out;
-    }
+   if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+      goto out;
+   }
 
-    // Factor in overscan adjustments
-    disp_position.x += ctx->overscan_position.x;
-    disp_position.y += ctx->overscan_position.y;
-    disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
-    disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
-    clip_position.x += ctx->overscan_position.x;
-    clip_position.y += ctx->overscan_position.y;
-    clip_position.width = (int)clip_position.width + (((int)clip_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
-    clip_position.height = (int)clip_position.height + (((int)clip_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
+   disp_position.x += ctx->overscan_position.x;
+   disp_position.y += ctx->overscan_position.y;
+   disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
+   disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
+   clip_position.x += ctx->overscan_position.x;
+   clip_position.y += ctx->overscan_position.y;
+   clip_position.width = (int)clip_position.width + (((int)clip_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
+   clip_position.height = (int)clip_position.height + (((int)clip_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
 
-    // make the gpx corresponding layer non-visible in the layer stack.
-    if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
-       ctx->gpx_cli[gpx_layer_id].composition.visible = false;
-    }
+   if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
+      ctx->gpx_cli[gpx_layer_id].composition.visible = false;
+   }
 
-    ctx->mm_cli[vid_layer_id].root.layer_type = layer->compositionType;
-    ctx->mm_cli[vid_layer_id].root.layer_subtype = NEXUS_VIDEO_WINDOW;
-    if (ctx->mm_cli[vid_layer_id].root.layer_type == HWC_SIDEBAND) {
-       ALOGE("%s: miscategorized sideband layer as video layer %d!", __FUNCTION__, vid_layer_id);
-       goto out_unlock;
-    }
-    ctx->mm_cli[vid_layer_id].root.layer_flags = layer->flags;
+   ctx->mm_cli[vid_layer_id].root.layer_type = layer->compositionType;
+   ctx->mm_cli[vid_layer_id].root.layer_subtype = NEXUS_VIDEO_WINDOW;
+   if (ctx->mm_cli[vid_layer_id].root.layer_type == HWC_SIDEBAND) {
+      ALOGE("%s: miscategorized sideband layer as video layer %d!", __FUNCTION__, vid_layer_id);
+      goto out_unlock;
+   }
+   ctx->mm_cli[vid_layer_id].root.layer_flags = layer->flags;
 
-    // deal with any change in the geometry/visibility of the layer.
    if (!ctx->mm_cli[vid_layer_id].root.composition.visible) {
       ctx->mm_cli[vid_layer_id].root.composition.visible = true;
       layer_updated = true;
@@ -5283,7 +5300,6 @@ static void hwc_prepare_mm_layer(
 
    if (layer_updated && ctx->hwc_binder) {
       struct hwc_position frame, clipped;
-
       frame.x = disp_position.x;
       frame.y = disp_position.y;
       frame.w = disp_position.width;
@@ -5293,6 +5309,9 @@ static void hwc_prepare_mm_layer(
       clipped.w = clip_position.width;
       clipped.h = clip_position.height;
 
+      ALOGI("%s: %d - update: {%d,%d,%dx%d} {%d,%d,%dx%d}", __FUNCTION__, vid_layer_id,
+            frame.x, frame.y, frame.w, frame.h,
+            clipped.x, clipped.y, clipped.w, clipped.h);
       ctx->hwc_binder->setgeometry(HWC_BINDER_OMX, 0, frame, clipped, MM_CLIENT_ZORDER, 1);
    }
 
@@ -5308,84 +5327,70 @@ static void hwc_prepare_sb_layer(
     unsigned int gpx_layer_id,
     unsigned int sb_layer_id)
 {
-    NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
-                                (int16_t)layer->displayFrame.top,
-                                (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
-                                (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
-    NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
-                                (int16_t)(int)layer->sourceCropf.top,
-                                (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
-                                (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
-    int cur_width;
-    int cur_height;
-    unsigned int stride;
-    unsigned int cur_blending_type;
-    bool layer_updated = true;
+   NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
+                               (int16_t)layer->displayFrame.top,
+                               (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
+                               (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
+   NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
+                               (int16_t)(int)layer->sourceCropf.top,
+                               (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
+                               (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
+   int cur_width;
+   int cur_height;
+   unsigned int stride;
+   unsigned int cur_blending_type;
+   bool layer_updated = true;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-        goto out;
-    }
+   if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+       goto out;
+   }
 
-    // Factor in overscan adjustments
-    disp_position.x += ctx->overscan_position.x;
-    disp_position.y += ctx->overscan_position.y;
-    disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
-    disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
-    clip_position.x += ctx->overscan_position.x;
-    clip_position.y += ctx->overscan_position.y;
-    clip_position.width = (int)clip_position.width + (((int)clip_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
-    clip_position.height = (int)clip_position.height + (((int)clip_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
+   disp_position.x += ctx->overscan_position.x;
+   disp_position.y += ctx->overscan_position.y;
+   disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
+   disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
+   clip_position.x += ctx->overscan_position.x;
+   clip_position.y += ctx->overscan_position.y;
+   clip_position.width = (int)clip_position.width + (((int)clip_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
+   clip_position.height = (int)clip_position.height + (((int)clip_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
 
-    // make the gpx corresponding layer non-visible in the layer stack.
-    if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
-       ctx->gpx_cli[gpx_layer_id].composition.visible = false;
-    }
+   if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
+      ctx->gpx_cli[gpx_layer_id].composition.visible = false;
+   }
 
-    ctx->sb_cli[sb_layer_id].root.layer_type = layer->compositionType;
-    ctx->sb_cli[sb_layer_id].root.layer_subtype = NEXUS_VIDEO_SIDEBAND;
-    if (ctx->sb_cli[sb_layer_id].root.layer_type == HWC_OVERLAY) {
-       ALOGE("%s: miscategorized video layer as sideband layer %d!", __FUNCTION__, sb_layer_id);
-       goto out_unlock;
-    }
-    ctx->sb_cli[sb_layer_id].root.layer_flags = layer->flags;
+   ctx->sb_cli[sb_layer_id].root.layer_type = layer->compositionType;
+   ctx->sb_cli[sb_layer_id].root.layer_subtype = NEXUS_VIDEO_SIDEBAND;
+   if (ctx->sb_cli[sb_layer_id].root.layer_type == HWC_OVERLAY) {
+      ALOGE("%s: miscategorized video layer as sideband layer %d!", __FUNCTION__, sb_layer_id);
+      goto out_unlock;
+   }
+   ctx->sb_cli[sb_layer_id].root.layer_flags = layer->flags;
 
-    // deal with any change in the geometry/visibility of the layer.
-    if (!ctx->sb_cli[sb_layer_id].root.composition.visible) {
-        ctx->sb_cli[sb_layer_id].root.composition.visible = true;
-        layer_updated = true;
-    }
+   if (!ctx->sb_cli[sb_layer_id].root.composition.visible) {
+       ctx->sb_cli[sb_layer_id].root.composition.visible = true;
+       layer_updated = true;
+   }
 
-    if ((memcmp((void *)&disp_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) ||
-       (memcmp((void *)&clip_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.clipRect, sizeof(NEXUS_Rect)) != 0)) {
-        layer_updated = true;
-        ctx->sb_cli[sb_layer_id].root.composition.visible               = true;
-        ctx->sb_cli[sb_layer_id].root.composition.zorder                = SB_CLIENT_ZORDER;
-        ctx->sb_cli[sb_layer_id].root.composition.position.x            = disp_position.x;
-        ctx->sb_cli[sb_layer_id].root.composition.position.y            = disp_position.y;
-        ctx->sb_cli[sb_layer_id].root.composition.position.width        = disp_position.width;
-        ctx->sb_cli[sb_layer_id].root.composition.position.height       = disp_position.height;
-        ctx->sb_cli[sb_layer_id].root.composition.clipRect.x            = clip_position.x;
-        ctx->sb_cli[sb_layer_id].root.composition.clipRect.y            = clip_position.y;
-        ctx->sb_cli[sb_layer_id].root.composition.clipRect.width        = clip_position.width;
-        ctx->sb_cli[sb_layer_id].root.composition.clipRect.height       = clip_position.height;
-        ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.width  = ctx->cfg[HWC_PRIMARY_IX].width;
-        ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.height = ctx->cfg[HWC_PRIMARY_IX].height;
-    }
+   if ((memcmp((void *)&disp_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) ||
+      (memcmp((void *)&clip_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.clipRect, sizeof(NEXUS_Rect)) != 0)) {
+       layer_updated = true;
+       ctx->sb_cli[sb_layer_id].root.composition.visible               = true;
+       ctx->sb_cli[sb_layer_id].root.composition.zorder                = SB_CLIENT_ZORDER;
+       ctx->sb_cli[sb_layer_id].root.composition.position.x            = disp_position.x;
+       ctx->sb_cli[sb_layer_id].root.composition.position.y            = disp_position.y;
+       ctx->sb_cli[sb_layer_id].root.composition.position.width        = disp_position.width;
+       ctx->sb_cli[sb_layer_id].root.composition.position.height       = disp_position.height;
+       ctx->sb_cli[sb_layer_id].root.composition.clipRect.x            = clip_position.x;
+       ctx->sb_cli[sb_layer_id].root.composition.clipRect.y            = clip_position.y;
+       ctx->sb_cli[sb_layer_id].root.composition.clipRect.width        = clip_position.width;
+       ctx->sb_cli[sb_layer_id].root.composition.clipRect.height       = clip_position.height;
+       ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.width  = ctx->cfg[HWC_PRIMARY_IX].width;
+       ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.height = ctx->cfg[HWC_PRIMARY_IX].height;
+   }
 
-    if (layer_updated && ctx->hwc_binder) {
-        struct hwc_position frame, clipped;
-
-        frame.x = disp_position.x;
-        frame.y = disp_position.y;
-        frame.w = disp_position.width;
-        frame.h = disp_position.height;
-        clipped.x = clip_position.x;
-        clipped.y = clip_position.y;
-        clipped.w = clip_position.width;
-        clipped.h = clip_position.height;
-
-        ctx->hwc_binder->setgeometry(HWC_BINDER_SDB, 0, frame, clipped, SB_CLIENT_ZORDER, 1);
-    }
+   if (layer_updated) {
+      ctx->sb_cli[sb_layer_id].geometry_updated = true;
+   }
 
 out_unlock:
     BKNI_ReleaseMutex(ctx->mutex);

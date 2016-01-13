@@ -34,17 +34,6 @@
  * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
- *
- * $brcm_Workfile: $
- * $brcm_Revision: $
- * $brcm_Date: $
- *
- * Module Description:
- *
- * Revision History:
- *
- * $brcm_Log: $
- *
  *****************************************************************************/
 //#define LOG_NDEBUG 0
 #undef LOG_TAG
@@ -58,13 +47,14 @@
 #include "OMX_VideoExt.h"
 
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_Create(
+OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateCommon(
     OMX_COMPONENTTYPE *pComponentTpe,
     OMX_IN OMX_STRING pName,
     OMX_IN OMX_PTR pAppData,
-    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks,
+    bool tunnelMode)
 {
-    BOMX_VideoDecoder_Secure *pVideoDecoder = new BOMX_VideoDecoder_Secure(pComponentTpe, pName, pAppData, pCallbacks);
+    BOMX_VideoDecoder_Secure *pVideoDecoder = new BOMX_VideoDecoder_Secure(pComponentTpe, pName, pAppData, pCallbacks, tunnelMode);
     if ( NULL == pVideoDecoder )
     {
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
@@ -84,6 +74,24 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_Create(
     }
 }
 
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_Create(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    return BOMX_VideoDecoder_Secure_CreateCommon(pComponentTpe, pName, pAppData, pCallbacks, false);
+}
+
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateTunnel(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    return BOMX_VideoDecoder_Secure_CreateCommon(pComponentTpe, pName, pAppData, pCallbacks, true);
+}
+
 extern "C" const char *BOMX_VideoDecoder_Secure_GetRole(unsigned roleIndex)
 {
     return BOMX_VideoDecoder_GetRole(roleIndex);
@@ -93,8 +101,9 @@ BOMX_VideoDecoder_Secure::BOMX_VideoDecoder_Secure(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
     const OMX_PTR pAppData,
-    const OMX_CALLBACKTYPE *pCallbacks)
-    :BOMX_VideoDecoder(pComponentType, pName, pAppData, pCallbacks, true)
+    const OMX_CALLBACKTYPE *pCallbacks,
+    bool tunnel)
+    :BOMX_VideoDecoder(pComponentType, pName, pAppData, pCallbacks, true, tunnel)
     ,m_Sage_PlatformHandle(NULL),
     m_Sagelib_Container(NULL)
 {
@@ -212,26 +221,6 @@ void BOMX_VideoDecoder_Secure::FreeInputBuffer(void*& pBuffer)
 {
     SRAI_Memory_Free((uint8_t*)pBuffer);
     pBuffer = NULL;
-}
-
-NEXUS_Error BOMX_VideoDecoder_Secure::AllocateNexusMemory(size_t nSize, void *& pBuffer)
-{
-    NEXUS_ClientConfiguration               clientConfig;
-    NEXUS_MemoryAllocationSettings          memorySettings;
-    NEXUS_Error errCode;
-
-    ALOGV("%s, size:%d", __FUNCTION__, nSize);
-    NEXUS_Platform_GetClientConfiguration(&clientConfig);
-    NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
-    memorySettings.heap = clientConfig.heap[1];
-    errCode = NEXUS_Memory_Allocate(nSize, &memorySettings, &pBuffer);
-    if ( errCode )
-    {
-        ALOGW("Unable to allocate nexus memory");
-        return errCode;
-    }
-
-    return NEXUS_SUCCESS;
 }
 
 static void complete(void *context, int param)
