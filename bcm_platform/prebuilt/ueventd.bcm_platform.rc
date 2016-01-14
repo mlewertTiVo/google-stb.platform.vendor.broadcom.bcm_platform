@@ -1,9 +1,6 @@
 # access for camera.
 /dev/video0               0660   system     camera
 
-# huh??
-/dev/mem                  0770   root       root
-
 # BT USB device nodes
 /dev/btusb0               0660   bluetooth  net_bt_stack
 
