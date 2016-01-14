@@ -12,21 +12,9 @@ on init
    mkdir /hwcfg 0555 root root
    symlink /hwcfg /mnt/hwcfg
 
-   mkdir /mnt/shell/emulated 0700 shell shell
-   mkdir /storage/emulated 0555 root root
-
-   mkdir /mnt/media_rw/sdcard1 0700 media_rw media_rw
-   mkdir /storage/sdcard1 0700 root root
-
-   mkdir /mnt/media_rw/usb0 0700 media_rw media_rw
-   mkdir /storage/usb0 0700 root root
-
-   export EXTERNAL_STORAGE /storage/emulated/legacy
-   export SECONDARY_STORAGE /storage/sdcard1
-
    # Support legacy paths
-   symlink /mnt/runtime/default/emulated/0/ /sdcard
-   symlink /mnt/runtime/default/emulated/0/ /mnt/sdcard
+   symlink /sdcard /mnt/sdcard
+   symlink /sdcard /storage/sdcard0
 
    # allocate node(s) which are part of the CTS exception list.
    export NEXUS_DEVICE_NODE /dev/mali
@@ -37,7 +25,6 @@ on init
 
 on fs
    mount_all /fstab.bcm_platform
-   setprop ro.crypto.fuse_sdcard true
    setprop chrome.tv.hole_threshold 0
    setprop ro.nexus.devname mali
    setprop ro.nexus.wake.devname mali0
