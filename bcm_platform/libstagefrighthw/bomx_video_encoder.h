@@ -330,9 +330,9 @@ protected:
     NEXUS_Error StartEncoder();
     void DestroyImageSurfaces();
     NEXUS_VideoFrameRate MapOMXFrameRateToNexus(OMX_U32);
-    unsigned int RetrieveFrameFromHardware();
+    unsigned int RetrieveFrameFromHardware(void *pBufferBase);
     bool ReturnEncodedFrameSynchronized(BOMX_NexusEncodedVideoFrame *);
-    void PrintVideoEncoderStatus();
+    void PrintVideoEncoderStatus(void *pBufferBase);
     bool IsEncoderStarted();
     NEXUS_Error PushInputEosFrame();
     OMX_ERRORTYPE BuildInputFrame(OMX_BUFFERHEADERTYPE *);
@@ -343,9 +343,8 @@ protected:
     void ReturnInputBuffers(bool returnAll = false);
     void ResetEncodedFrameList();
 
-    void VideoEncoderBufferBlock_Lock();
+    void VideoEncoderBufferBlock_Lock(void **pBufferBase);
     void VideoEncoderBufferBlock_Unlock();
-    void* VideoEncoderBufferBaseAddress();
 
     NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
     void FreeInputBuffer(void*& pBuffer);
@@ -357,7 +356,7 @@ protected:
 
 
     bool ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *, NEXUS_SurfaceHandle);
-    bool GetCodecConfig( const NEXUS_VideoEncoderDescriptor *, size_t , const NEXUS_VideoEncoderDescriptor *, size_t );
+    bool GetCodecConfig(void *pBufferBase, const NEXUS_VideoEncoderDescriptor *, size_t , const NEXUS_VideoEncoderDescriptor *, size_t );
     bool HaveCompleteFrame( const NEXUS_VideoEncoderDescriptor *, size_t, const NEXUS_VideoEncoderDescriptor *, size_t, size_t *);
 
     NEXUS_Error UpdateEncoderSettings();

@@ -2532,14 +2532,13 @@ void BOMX_VideoEncoder::InputBufferProcess()
     ALOGV(" %d buffer(s) pushed", nPushed);
 }
 
-void BOMX_VideoEncoder::PrintVideoEncoderStatus()
+void BOMX_VideoEncoder::PrintVideoEncoderStatus(void *pBufferBase)
 {
     NEXUS_SimpleEncoderStatus EncSts;
     NEXUS_SimpleEncoder_GetStatus(m_hSimpleEncoder,&EncSts);
 
-    ALOGI("pBaseAddr:%p pMetaDataBuff:%p picturesReceived:%d picturesEncoded:%d picturesDroppedFRC:%d picturesDroppedHRD:%d picturesDroppedErrors:%d pictureIdLastEncoded:%d",
-          EncSts.video.pBufferBase,
-          EncSts.video.pMetadataBufferBase,
+    ALOGI("pBaseAddr:%p picturesReceived:%d picturesEncoded:%d picturesDroppedFRC:%d picturesDroppedHRD:%d picturesDroppedErrors:%d pictureIdLastEncoded:%d",
+          pBufferBase,
           EncSts.video.picturesReceived,
           EncSts.video.picturesEncoded,
           EncSts.video.picturesDroppedFRC,
@@ -2574,6 +2573,7 @@ void BOMX_VideoEncoder::OutputBufferProcess()
     unsigned numFrames=0;
     unsigned i;
     BOMX_NexusEncodedVideoFrame *pNxVidEncFr;
+    void *pBufferBase;
 
     /* check if encoder is started */
     if (!IsEncoderStarted())
@@ -2590,13 +2590,13 @@ void BOMX_VideoEncoder::OutputBufferProcess()
     }
 
     /* lock video encoder buffer */
-    VideoEncoderBufferBlock_Lock();
+    VideoEncoderBufferBlock_Lock(&pBufferBase);
 
     /* log encoder status */
-    PrintVideoEncoderStatus();
+    PrintVideoEncoderStatus(pBufferBase);
 
     /* retrieve frames from encoder */
-    RetrieveFrameFromHardware();
+    RetrieveFrameFromHardware(pBufferBase);
 
     pNxVidEncFr = BLST_Q_FIRST(&m_EncodedFrList);
 
@@ -3509,18 +3509,18 @@ bool BOMX_VideoEncoder::ReturnEncodedFrameSynchronized(BOMX_NexusEncodedVideoFra
     return true;
 }
 
-void BOMX_VideoEncoder::VideoEncoderBufferBlock_Lock()
+void BOMX_VideoEncoder::VideoEncoderBufferBlock_Lock(void **pBufferBase)
 {
     NEXUS_Error rc;
-    void *pBufferBase;
+
+    *pBufferBase = NULL;
 
     /* get encoder buffer base address */
     NEXUS_SimpleEncoder_GetStatus(m_hSimpleEncoder, &m_videoEncStatus);
     if (m_videoEncStatus.video.bufferBlock)
     {
-        rc = NEXUS_MemoryBlock_Lock(m_videoEncStatus.video.bufferBlock, &pBufferBase);
+        rc = NEXUS_MemoryBlock_Lock(m_videoEncStatus.video.bufferBlock, pBufferBase);
         ALOG_ASSERT(!rc);
-        m_videoEncStatus.video.pBufferBase = pBufferBase;
     }
 }
 
@@ -3530,23 +3530,16 @@ void BOMX_VideoEncoder::VideoEncoderBufferBlock_Unlock()
     {
         NEXUS_MemoryBlock_Unlock(m_videoEncStatus.video.bufferBlock);
         m_videoEncStatus.video.bufferBlock = NULL;
-        m_videoEncStatus.video.pBufferBase = NULL;
     }
 }
 
-void * BOMX_VideoEncoder::VideoEncoderBufferBaseAddress()
-{
-    return (void *)m_videoEncStatus.video.pBufferBase;
-}
-
-
 #define ADVANCE_DESC() do { if ( size0 > 1 ) { pDesc0++; size0--; } else { pDesc0=pDesc1; size0=size1; pDesc1=NULL; size1=0; } } while (0)
 
-bool BOMX_VideoEncoder::GetCodecConfig( const NEXUS_VideoEncoderDescriptor *pConstDesc0, size_t size0,
+bool BOMX_VideoEncoder::GetCodecConfig( void *pBufferBase,
+                                        const NEXUS_VideoEncoderDescriptor *pConstDesc0, size_t size0,
                                         const NEXUS_VideoEncoderDescriptor *pConstDesc1, size_t size1)
 {
     unsigned int count;
-    void *pBufferBase;
     BOMX_NexusEncodedVideoFrame *pEmptyFr;
     NEXUS_VideoEncoderDescriptor *pDescSps, *pDescPps;
     NEXUS_VideoEncoderDescriptor *pDesc0 = (NEXUS_VideoEncoderDescriptor *) pConstDesc0;
@@ -3619,9 +3612,6 @@ bool BOMX_VideoEncoder::GetCodecConfig( const NEXUS_VideoEncoderDescriptor *pCon
     }
 
     pDescPps = pDesc0;
-
-    /* get buffer base address */
-    pBufferBase = VideoEncoderBufferBaseAddress();
 
     /* get free frame header */
     pEmptyFr = BLST_Q_FIRST(&m_EmptyFrList);
@@ -3720,11 +3710,10 @@ bool BOMX_VideoEncoder::HaveCompleteFrame( const NEXUS_VideoEncoderDescriptor *p
     return false;
 }
 
-unsigned int BOMX_VideoEncoder::RetrieveFrameFromHardware()
+unsigned int BOMX_VideoEncoder::RetrieveFrameFromHardware(void *pBufferBase)
 {
     const NEXUS_VideoEncoderDescriptor *pDesc0=NULL, *pDesc1=NULL;
     size_t  size0=0,size1=0;
-    void *pBufferBase;
     unsigned int framesRetrived=0;
     NEXUS_Error NxErrCode = NEXUS_SUCCESS;
 
@@ -3752,11 +3741,6 @@ unsigned int BOMX_VideoEncoder::RetrieveFrameFromHardware()
     pEmptyFr = BLST_Q_FIRST(&m_EmptyFrList);
     ALOG_ASSERT(pEmptyFr);
 
-    /* get encoder buffer base address */
-    /* Nothing we can do if the base address is NULL */
-    pBufferBase = VideoEncoderBufferBaseAddress();
-    ALOG_ASSERT(pBufferBase);
-
     NxErrCode = NEXUS_SimpleEncoder_GetVideoBuffer(m_hSimpleEncoder,
                 &pDesc0,
                 &size0,
@@ -3775,7 +3759,7 @@ unsigned int BOMX_VideoEncoder::RetrieveFrameFromHardware()
     // get codec config first
     if (!m_bCodecConfigDone)
     {
-        if (GetCodecConfig(pDesc0, size0, pDesc1, size1))
+        if (GetCodecConfig(pBufferBase, pDesc0, size0, pDesc1, size1))
         {
             // Codec config flag is expected to be set only once after start of encode.
             m_bCodecConfigDone = true;
