@@ -2714,7 +2714,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
         }
 
         if ((skip_set > 1) ||
-            ((overlay_layers - (video_layer_id + sideband_layer_id)) > 1)) {
+            (((overlay_layers + sideband_layer_id) - (video_layer_id + sideband_layer_id)) > 1)) {
            if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
               for (i = 0; i < list->numHwLayers; i++) {
                  ctx->gpx_cli[i].skip_set = false;
