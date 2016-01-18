@@ -598,6 +598,7 @@ struct hwc_work_item {
    NEXUS_SurfaceComposition comp[NSC_GPX_CLIENTS_NUMBER];
    int sb_cli[NSC_GPX_CLIENTS_NUMBER];
    int video_layers;
+   int sideband_layers;
    hwc_display_contents_1_t content;
 };
 
@@ -682,6 +683,7 @@ struct hwc_context_t {
     bool toggle_fb_mode;
     bool ignore_cursor;
     int prepare_video;
+    int prepare_sideband;
 };
 
 static void *hwc_compose_task_primary(void *argv);
@@ -2603,13 +2605,18 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
     }
 
     ctx->prepare_video = 0;
+    ctx->prepare_sideband = 0;
     video.scope = HWC_SCOPE_PREP;
     for (i = 0; i < list->numHwLayers; i++) {
        layer = &list->hwLayers[i];
        video.layer = layer;
        if (is_video_layer(ctx, &video)) {
           has_video = true;
-          ctx->prepare_video++;
+          if (video.is_sideband) {
+             ctx->prepare_sideband++;
+          } else {
+             ctx->prepare_video++;
+          }
        }
     }
 
@@ -3064,6 +3071,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         }
         this_frame->comp_ix = ctx->stats[HWC_PRIMARY_IX].set_call;
         this_frame->video_layers = ctx->prepare_video;
+        this_frame->sideband_layers = ctx->prepare_sideband;
         this_frame->next = NULL;
         if (ctx->composer_work_list[HWC_PRIMARY_IX] == NULL) {
            ctx->composer_work_list[HWC_PRIMARY_IX] = this_frame;
@@ -3185,7 +3193,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       item->surf_wait = hwc_tick() - item->surf_wait;
    }
 
-   video_seen = item->video_layers;
+   video_seen = item->video_layers + item->sideband_layers;
    for (i = 0; i < list->numHwLayers; i++) {
       if (item->comp[i].visible) {
          if (list->hwLayers[i].compositionType == HWC_OVERLAY) {
@@ -3195,8 +3203,8 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          }
       }
    }
-   if (*overlay_seen >= video_seen) {
-      *overlay_seen -= video_seen;
+   if (*overlay_seen >= item->video_layers) {
+      *overlay_seen -= item->video_layers;
    }
 
    for (i = 0; i < list->numHwLayers; i++) {
