@@ -188,6 +188,10 @@ void NexusNxService::handleHdmiOutputHotplugCallback(int port, hdmi_state isConn
 
         if (isConnected == HDMI_CONNECTED) {
            format = getForcedOutputFormat();
+           if (!status.hdmi.status.videoFormatSupported[format]) {
+              ALOGE("%s: getForcedOutputFormat(%d) - overruled, not supported.", __FUNCTION__, format);
+              format = NEXUS_VideoFormat_eUnknown;
+           }
            if (format == NEXUS_VideoFormat_eUnknown) {
               format = getBestOutputFormat(&status.hdmi.status);
            }
