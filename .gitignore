@@ -1,7 +1,3 @@
-refsw/
-bolt/
-bcmdvb/
-
 # copied by build.
 bcm_platform/brcm_nexus/bin/
 bcm_platform/libGLES_nexus/bin/
@@ -14,8 +10,7 @@ bcm_platform/brcm_dhd/tools/wl
 
 # separate repo.
 bcm_platform/DTVKitPlatform/
-drivers/bcmdhd/
-drivers/btusb/
-drivers/connectivity/
-drivers/gator/
-
+refsw/
+bolt/
+bcmdvb/
+drivers/
