@@ -59,7 +59,7 @@ oops="oops"
 security_root="security"
 playready_root="playready"
 show_tree_depth=3
-BCM_VENDOR_STB_ROOT="vendor/broadcom"
+BCM_VENDOR_STB_ROOT="vendor/broadcom/stb"
 
 # you can change the auto-magic profile selection here if desired, but there is really no need to.
 #
@@ -155,6 +155,7 @@ function rejouez {
 function ou_suis_je {
 	la=$(cd $(dirname $0) && pwd)
 	# cheat - we know where we 'should be' in relation to root, go there.
+	la=$(dirname $la)
 	la=$(dirname $la)
 	la=$(dirname $la)
 	la=$(dirname $la)

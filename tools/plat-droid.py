@@ -36,13 +36,6 @@ def parse_and_select(l):
 			selected = True
 			if verbose:
 				print 'selecting: %s' % l
-	data = re.findall('BCHP_CHIP', l)
-	if len(data) > 0:
-		data = re.findall('=', l)
-		if len(data) > 0:
-			selected = True
-			if verbose:
-				print 'selecting: %s' % l
 	data = re.findall('B_REFSW_', l)
 	if len(data) > 0:
 		data = re.findall('=[yn]', l)
@@ -96,7 +89,7 @@ def write_header(s, d):
 
 # how you should use this.
 def plat_droid_usage():
-	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [redux|aosp|nfs|profile <profile-name>] [spoof <cust-device> <cust-variant>|clone broadcom <device>] [pdk]'
+	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [redux|aosp|nfs|profile <profile-name>] [spoof <cust-device> <cust-variant>|clone google <device>] [pdk]'
 	print '\t<platform>    - the BCM platform number to build for, eg: 97252, 97445, ...'
 	print '\t<chip-rev>    - the BCM chip revision of interest, eg: A0, B0, C1, ...'
 	print '\t<board-type>  - the target board type, eg: SV, C'
@@ -117,7 +110,7 @@ def plat_droid_usage():
 	print '\t              -- clone-customer: the customer we are cloning.'
         print '\t              -- clone-variant: the customer device variant we are cloning.'
         print '\t              -- cloning would impersonate the cloned device while keeping the initial bcm_platform device characteristics.'
-        print '\t              -- note: the only valid clone target at this time is "broadcom avko".'
+        print '\t              -- note: the only valid clone target at this time is "google avko".'
 	print '\t[pdk]'
 	print '\t              - when set, assume we are building for a pdk integration'
 	print '\n'
@@ -203,7 +196,7 @@ androidrootdevice='%s%s%s' % (chip, revision, boardtype)
 if target_option == "AOSP" or target_option == "REDUX" or target_option == "NFS":
 	androiddevice='%s_%s' % (androidrootdevice, target_option)
 if target_option == "PROFILE":
-        custom_directory="./device/broadcom/bcm_platform/custom/%s/%s" %(androidrootdevice, target_profile)
+        custom_directory="./device/broadcom/custom/%s/%s" %(androidrootdevice, target_profile)
 	custom_target_settings="%s/settings.mk" %(custom_directory)
 	custom_target_pre_settings="%s/pre_settings.mk" %(custom_directory)
 	androiddevice='%s' % (target_profile)
@@ -237,7 +230,7 @@ boardconfig="BoardConfig.mk"
 rmdir_then_mkdir(devicedirectory)
 
 # get the toolchain expected for kernel image and modules build
-run_toolchain='bash -c "cat ./vendor/broadcom/bcm_platform/tools/kernel-toolchain"'
+run_toolchain='bash -c "cat ./kernel/private/bcm-97xxx/rootfs/toolchain"'
 if verbose:
 	print run_toolchain
 lines = check_output(run_toolchain,shell=True).splitlines()
@@ -246,21 +239,19 @@ kerneltoolchain="${ANDROID}/prebuilts/gcc/linux-x86/arm/stb/%s/bin" % lines[0].r
 # get the toolchain expected for building BOLT and make sure it does not
 # diverge from kernel toolchain as we want only a single verion in Android
 # tree at any point in time
-run_toolchain='bash -c "cat ./vendor/broadcom/bolt/config/toolchain"'
+run_toolchain='bash -c "cat ./vendor/broadcom/stb/bolt/config/toolchain"'
 if verbose:
 	print run_toolchain
 boltlines = check_output(run_toolchain,shell=True).splitlines()
 
 # run the refsw plat tool to get the generated versions of the config.
-run_plat='bash -c "source ./vendor/broadcom/refsw/BSEAV/tools/build/plat %s %s %s"' % (chip, revision, boardtype)
+run_plat='bash -c "source ./vendor/broadcom/stb/refsw/BSEAV/tools/build/plat %s %s %s"' % (chip, revision, boardtype)
 if verbose:
 	print run_plat
 refsw_configuration_selected=''
 lines = check_output(run_plat,stderr=STDOUT,shell=True).splitlines()
 for line in lines:
 	line = line.rstrip()
-	if verbose:
-		print line
 	if parse_and_select(line):
 		refsw_configuration_selected='%s\nexport %s' % (refsw_configuration_selected, line)
 		nexus_platform = re.findall('NEXUS_PLATFORM', line)
@@ -321,45 +312,39 @@ write_header(s, androiddevice)
 os.write(s, "# start of refsw gathered configuration\n\n")
 os.write(s, "%s\n\n" % refsw_configuration_selected)
 os.write(s, "# end of refsw gathered config...\n")
-root_pre_settings="./device/broadcom/bcm_platform/custom/%s/root/pre_settings.mk" %(androidrootdevice)
+root_pre_settings="./device/broadcom/custom/%s/root/pre_settings.mk" %(androidrootdevice)
 if os.access(root_pre_settings, os.F_OK):
-	root_pre_settings="\ninclude device/broadcom/bcm_platform/custom/%s/root/pre_settings.mk" %(androidrootdevice)
+	root_pre_settings="\ninclude device/broadcom/custom/%s/root/pre_settings.mk" %(androidrootdevice)
 	os.write(s, root_pre_settings)
 if target_option == "PROFILE" and custom_target_pre_settings != 'nope':
 	if os.access(custom_target_pre_settings, os.F_OK):
 		os.write(s, "\n\n# CUSTOM 'pre' setting tweaks...\n")
 		os.write(s, "include %s\n" % custom_target_pre_settings)
-if clone_device != 'nope' and clone_variant != 'nope':
-	clone_pre_settings="./vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/pre_settings.mk" %(clone_device, clone_variant)
-	if os.access(clone_pre_settings, os.F_OK):
-		clone_pre_settings="include vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/pre_settings.mk\n" %(clone_device, clone_variant)
-		os.write(s, "\n\n# CLONE 'pre' setting tweaks...\n")
-		os.write(s, clone_pre_settings)
 if target_option == "REDUX":
 	os.write(s, "\n\n# REDUX target set...\n")
-	os.write(s, "include device/broadcom/bcm_platform/common/target_redux.mk")
+	os.write(s, "include device/broadcom/common/target_redux.mk")
 if is_pdk == 'PDK':
 	os.write(s, "\n\n# PDK image...\n")
-	os.write(s, "include device/broadcom/bcm_platform/common/settings_pdk.mk")
+	os.write(s, "include device/broadcom/common/settings_pdk.mk")
 os.write(s, "\n\ninclude device/broadcom/bcm_platform/bcm_platform.mk")
-root_settings="./device/broadcom/bcm_platform/custom/%s/root/settings.mk" %(androidrootdevice)
+root_settings="./device/broadcom/custom/%s/root/settings.mk" %(androidrootdevice)
 if os.access(root_settings, os.F_OK):
-	root_settings="\ninclude device/broadcom/bcm_platform/custom/%s/root/settings.mk" %(androidrootdevice)
+	root_settings="\ninclude device/broadcom/custom/%s/root/settings.mk" %(androidrootdevice)
 	os.write(s, root_settings)
 if target_option == "AOSP":
 	os.write(s, "\n\n# AOSP setting tweaks...\n")
-	os.write(s, "include device/broadcom/bcm_platform/common/settings_aosp.mk")
+	os.write(s, "include device/broadcom/common/settings_aosp.mk")
 if target_option == "NFS":
 	os.write(s, "\n\n# NFS setting tweaks...\n")
-	os.write(s, "include device/broadcom/bcm_platform/common/settings_nfs.mk")
+	os.write(s, "include device/broadcom/common/settings_nfs.mk")
 if target_option == "PROFILE":
 	if os.access(custom_target_settings, os.F_OK):
 		os.write(s, "\n\n# CUSTOM setting tweaks...\n")
 		os.write(s, "include %s\n" % custom_target_settings)
 if clone_device != 'nope' and clone_variant != 'nope':
-	clone_settings="./vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/settings.mk" %(clone_device, clone_variant)
+	clone_settings="./vendor/broadcom/stb/bcm_platform/tools/droid-clone/%s-%s/settings.mk" %(clone_device, clone_variant)
 	if os.access(clone_settings, os.F_OK):
-		clone_settings="include vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/settings.mk\n" %(clone_device, clone_variant)
+		clone_settings="include vendor/broadcom/stb/bcm_platform/tools/droid-clone/%s-%s/settings.mk\n" %(clone_device, clone_variant)
 		os.write(s, "\n\n# CLONE setting tweaks...\n")
 		os.write(s, clone_settings)
 elif spoof_device != 'nope' and spoof_variant != 'nope':
@@ -374,22 +359,18 @@ os.write(s, "\n\n# exporting toolchains path for kernel image+modules\n")
 os.write(s, "export PATH := %s:${PATH}\n" % kerneltoolchain)
 os.close(s);
 if clone_device != 'nope' and clone_variant != 'nope':
-	clone_copy="./vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/AndroidBoard.mk" %(clone_device, clone_variant)
+	clone_copy="./vendor/broadcom/stb/bcm_platform/tools/droid-clone/%s-%s/AndroidBoard.mk" %(clone_device, clone_variant)
 	if os.access(clone_copy, os.F_OK):
 		clone_destination="./device/%s/%s/AndroidBoard.mk" %(clone_device, clone_variant)
 		shutil.copy2(clone_copy, clone_destination)
-	clone_copy="./vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/AndroidProduct.clone" %(clone_device, clone_variant)
+	clone_copy="./vendor/broadcom/stb/bcm_platform/tools/droid-clone/%s-%s/AndroidBoard.mk" %(clone_device, clone_variant)
 	if os.access(clone_copy, os.F_OK):
-		clone_destination="./device/%s/%s/AndroidProduct.mk" %(clone_device, clone_variant)
+		clone_destination="./device/%s/%s/AndroidBoard.mk" %(clone_device, clone_variant)
 		shutil.copy2(clone_copy, clone_destination)
 	clone_copy_source="./device/broadcom/bcm_platform/recovery"
 	clone_copy_destination="./device/%s/%s/recovery" %(clone_device, clone_variant)
 	shutil.copytree(clone_copy_source, clone_copy_destination, ignore = shutil.ignore_patterns(".git"))
-	clone_copy="./device/broadcom/bcm_platform/recovery.fstab"
-	if os.access(clone_copy, os.F_OK):
-		clone_destination="./device/%s/%s/recovery.fstab" %(clone_device, clone_variant)
-		shutil.copy2(clone_copy, clone_destination)
-	clone_copy="./vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/Android.mk.recovery" %(clone_device, clone_variant)
+	clone_copy="./vendor/broadcom/stb/bcm_platform/tools/droid-clone/%s-%s/Android.mk.recovery" %(clone_device, clone_variant)
 	if os.access(clone_copy, os.F_OK):
 		clone_destination="./device/%s/%s/recovery/Android.mk" %(clone_device, clone_variant)
 		shutil.copy2(clone_copy, clone_destination)

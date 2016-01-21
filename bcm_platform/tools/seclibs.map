@@ -1,3 +1,0 @@
-usr/lib/libplayreadypk_host.so=libsecurity/playreadypk/prebuilt/libplayreadypk_host.so
-usr/lib/libcmndrm.so=libsecurity/common_drm/prebuilt/libcmndrm.so
-usr/lib/liboemcrypto.a=libsecurity/oemcrypto/prebuilt/liboemcrypto.a
