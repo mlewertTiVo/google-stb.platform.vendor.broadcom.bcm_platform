@@ -52,6 +52,7 @@ static const char * PROPERTY_PM_TP2_EN                    = "ro.pm.tp2_en";
 static const char * PROPERTY_PM_TP3_EN                    = "ro.pm.tp3_en";
 static const char * PROPERTY_PM_DDR_PM_EN                 = "ro.pm.ddr_pm_en";
 static const char * PROPERTY_PM_CPU_FREQ_SCALE_EN         = "ro.pm.cpufreq_scale_en";
+static const char * PROPERTY_PM_WOL_EN                    = "ro.pm.wol_en";
 
 // Property defaults
 static const char * DEFAULT_PROPERTY_PM_DOZESTATE         = "S0.5";
@@ -64,9 +65,11 @@ static const int8_t DEFAULT_PROPERTY_PM_TP2_EN            = 0;     // Disable CP
 static const int8_t DEFAULT_PROPERTY_PM_TP3_EN            = 0;     // Disable CPU3 during standby
 static const int8_t DEFAULT_PROPERTY_PM_DDR_PM_EN         = 1;     // Enabled DDR power management during standby
 static const int8_t DEFAULT_PROPERTY_PM_CPU_FREQ_SCALE_EN = 1;     // Enable CPU frequency scaling during standby
+static const int8_t DEFAULT_PROPERTY_PM_WOL_EN            = 0;     // Disable Android wake up by the WoLAN event
 
 // Sysfs paths
 static const char * SYS_MAP_MEM_TO_S2                     = "/sys/devices/platform/droid_pm/map_mem_to_s2";
+static const char * SYS_FULL_WOL_WAKEUP                   = "/sys/devices/platform/droid_pm/full_wol_wakeup";
 
 // This is the default doze timeout in seconds.  The doze time specifies how long
 // the Power HAL must wait in the "doze" state prior to entering the off state.
@@ -141,6 +144,31 @@ static status_t sysfs_get(const char *path, unsigned int *out)
     return status;
 }
 
+static status_t sysfs_set(const char *path, unsigned int in)
+{
+    FILE *f;
+    char buf[BUF_SIZE];
+    status_t status = NO_ERROR;
+
+    f = fopen(path, "w");
+    if(!f)
+    {
+        status = errno;
+        strerror_r(status, buf, sizeof(buf));
+        ALOGE("%s: Cannot open \"%s\" [%s]!!!", __FUNCTION__, path, buf);
+    }
+    else {
+        sprintf(buf, "%u", in);
+        if((fputs(buf, f) < 0) || (fflush(f) < 0))
+        {
+            status = INVALID_OPERATION;
+            ALOGE("%s: Could not write to \"%s\"!!!", __FUNCTION__, path);
+        }
+        fclose(f);
+    }
+    return status;
+}
+
 static b_powerState power_get_state_from_string(char *value)
 {
     b_powerState powerOffState = ePowerState_Max;
@@ -210,6 +238,11 @@ static int power_get_property_doze_timeout()
     return dozeTimeout;
 }
 
+static bool power_get_property_wol_en()
+{
+    return property_get_bool(PROPERTY_PM_WOL_EN, DEFAULT_PROPERTY_PM_WOL_EN);
+}
+
 static b_powerState power_get_off_state()
 {
     static b_powerState offState = ePowerState_Max;
@@ -274,6 +307,7 @@ static void power_init(struct power_module *module __unused)
 {
     char buf[BUF_SIZE];
     const char *devname = getenv("NEXUS_WAKE_DEVICE_NODE");
+    unsigned int wol_en;
 
     if (!devname) devname = "/dev/wake0";
     gPowerFd = open(devname, O_RDONLY);
@@ -317,6 +351,34 @@ static void power_init(struct power_module *module __unused)
                 }
             }
         }
+    }
+
+    // Handle Android WoLAN enable/disable property
+    // If enabled, a WoLAN event will wake up Android
+    // Otherwise, Android PM won't be notified and
+    // device will return back to low power state
+    if (sysfs_get(SYS_FULL_WOL_WAKEUP, &wol_en) == NO_ERROR)
+    {
+        bool wol_en_pr = power_get_property_wol_en();
+        if (wol_en_pr != wol_en) {
+            if (sysfs_set(SYS_FULL_WOL_WAKEUP, wol_en_pr) != NO_ERROR) {
+                ALOGE("%s: Could not set WOL entry at %s, leaving it %s!!!",
+                    __FUNCTION__, SYS_FULL_WOL_WAKEUP,
+                    wol_en?"enabled":"disabled");
+            }
+            else {
+                    ALOGI("%s: successfully set WOL %s", __FUNCTION__,
+                    wol_en_pr?"enabled":"disabled");
+            }
+        }
+        else {
+            ALOGI("%s: WOL is %s", __FUNCTION__,
+                wol_en_pr?"enabled":"disabled");
+}
+    }
+    else
+    {
+        ALOGE("%s: Could not read %s!!!", __FUNCTION__, SYS_FULL_WOL_WAKEUP);
     }
 }
 
