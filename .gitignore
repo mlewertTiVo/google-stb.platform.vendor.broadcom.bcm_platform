@@ -1,16 +1,8 @@
 # copied by build.
-bcm_platform/brcm_nexus/bin/
-bcm_platform/libGLES_nexus/bin/
-bcm_platform/brcm_btusb/driver/btusb.ko
-bcm_platform/brcm_dhd/driver/bcmdhd.ko
-bcm_platform/brcm_dhd/firmware/fw.bin.trx
-bcm_platform/brcm_dhd/nvrams/nvm.txt
-bcm_platform/brcm_dhd/tools/dhd
-bcm_platform/brcm_dhd/tools/wl
-
-# separate repo.
-bcm_platform/DTVKitPlatform/
-refsw/
-bolt/
-bcmdvb/
-drivers/
+brcm_nexus/bin/
+libGLES_nexus/bin/
+brcm_dhd/driver/bcmdhd.ko
+brcm_dhd/firmware/fw.bin.trx
+brcm_dhd/nvrams/nvm.txt
+brcm_dhd/tools/dhd
+brcm_dhd/tools/wl
