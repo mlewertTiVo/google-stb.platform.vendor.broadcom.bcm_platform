@@ -231,7 +231,6 @@ static nxserver_t init_nxserver(void)
      */
     settings.session[0].ir_input_mode = NEXUS_IrInputMode_eMax;
     settings.transcode = false;
-    settings.svp = false;
     settings.grab = 0;
     settings.session[0].output.sd = false;
     settings.session[0].output.encode = false;

@@ -679,8 +679,6 @@ static nxserver_t init_nxserver(void)
     }
     /* -transcode off */
     settings.transcode = false;
-    /* -svp */
-    settings.svp = true;
     /* -grab off */
     settings.grab = 0;
     /* -sd off */
