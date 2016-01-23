@@ -1713,14 +1713,15 @@ out:
     return rc;
 }
 
-static bool split_layer_scaling(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
+static bool can_handle_downscale(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
 {
     bool ret = true;
     void *pAddr;
     int lrc = 0;
     PSHARED_DATA pSharedData = NULL;
     private_handle_t *gr_buffer = NULL;
-    NEXUS_Rect clip_position;
+    NEXUS_Rect source;
+    NEXUS_Rect destination;
     NEXUS_MemoryBlockHandle block_handle;
     VIDEO_LAYER_VALIDATION video;
 
@@ -1732,13 +1733,26 @@ static bool split_layer_scaling(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
     block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
     lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
     pSharedData = (PSHARED_DATA) pAddr;
-    clip_position.x = (int16_t)(int)layer->sourceCropf.left;
-    clip_position.y = (int16_t)(int)layer->sourceCropf.top;
-    clip_position.width = (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left);
-    clip_position.height = (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top);
 
     if (lrc || pSharedData == NULL) {
         goto out;
+    }
+
+    source.x = (int16_t)(int)layer->sourceCropf.left;
+    source.y = (int16_t)(int)layer->sourceCropf.top;
+    source.width = (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left);
+    source.height = (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top);
+
+    destination.x = (int16_t)(int)layer->displayFrame.left;
+    destination.y = (int16_t)(int)layer->displayFrame.top;
+    destination.width = (uint16_t)((int)layer->displayFrame.right - (int)layer->displayFrame.left);
+    destination.height = (uint16_t)((int)layer->displayFrame.bottom - (int)layer->displayFrame.top);
+
+    if ((source.x == destination.x) &&
+        (source.y == destination.y) &&
+        (source.width == destination.width) &&
+        (source.height == destination.height)) {
+        goto out_unlock;
     }
 
     video.scope = HWC_SCOPE_PREP;
@@ -1749,15 +1763,23 @@ static bool split_layer_scaling(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
        goto out_unlock;
     }
 
-    if (clip_position.width && ((pSharedData->container.width / clip_position.width) >= ctx->gfxCaps.maxHorizontalDownScale)) {
-        ALOGV("%s: width: %d -> %d (>%d)", __FUNCTION__, pSharedData->container.width, clip_position.width,
+    if (source.width && destination.width &&
+        ((source.width / destination.width) >= ctx->gfxCaps.maxHorizontalDownScale)) {
+        ALOGV("%s: width: %d (%d) -> %d (>%d)", __FUNCTION__,
+              source.width,
+              pSharedData->container.width,
+              destination.width,
               ctx->gfxCaps.maxHorizontalDownScale);
         ret = false;
         goto out_unlock;
     }
 
-    if (clip_position.height && ((pSharedData->container.height / clip_position.height) >= ctx->gfxCaps.maxVerticalDownScale)) {
-        ALOGV("%s: height: %d -> %d (>%d)", __FUNCTION__, pSharedData->container.height, clip_position.height,
+    if (source.height && destination.height &&
+        ((source.height / destination.height) >= ctx->gfxCaps.maxVerticalDownScale)) {
+        ALOGV("%s: height: %d (%d) -> %d (>%d)", __FUNCTION__,
+              source.height,
+              pSharedData->container.height,
+              destination.height,
               ctx->gfxCaps.maxVerticalDownScale);
         ret = false;
         goto out_unlock;
@@ -2596,7 +2618,7 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
                     layer->compositionType = HWC_OVERLAY;
                     layer->hints |= HWC_HINT_TRIPLE_BUFFER;
                  }
-                 if (ctx->display_gles_fallback && !split_layer_scaling(ctx, layer)) {
+                 if (ctx->display_gles_fallback && !can_handle_downscale(ctx, layer)) {
                     layer->compositionType = HWC_FRAMEBUFFER;
                  }
               }
