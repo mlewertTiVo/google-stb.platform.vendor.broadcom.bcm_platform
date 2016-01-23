@@ -646,6 +646,10 @@ static nxserver_t init_nxserver(void)
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
     NEXUS_GetDefaultMemoryConfigurationSettings(&memConfigSettings);
 
+    /* svp 2.0 */
+    memConfigSettings.videoDecoder[0].secure = NEXUS_SecureVideo_eSecure;
+    memConfigSettings.display[0].window[0].secure = NEXUS_SecureVideo_eSecure;
+
     memset(value, 0, sizeof(value));
     if ( property_get(NX_AUDIO_LOUDNESS, value, "disabled") ) {
         if ( !strcmp(value, "atsc") ) {
