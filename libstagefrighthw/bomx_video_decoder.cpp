@@ -45,6 +45,7 @@
 
 #include "bomx_video_decoder.h"
 #include "nexus_platform.h"
+#include "nexus_memory.h"
 #include "OMX_IndexExt.h"
 #include "OMX_VideoExt.h"
 #include "nexus_base_mmap.h"
@@ -63,6 +64,7 @@
 #define B_PROPERTY_ENABLE_METADATA ("media.brcm.vdec_enable_metadata")
 #define B_PROPERTY_TRIM_VP9 ("ro.nx.trim.vp9")
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
+#define B_PROPERTY_SVP ("ro.nx.svp")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE (1536*1536)  // 1024 * 1024 from soft decoder is not big enough for some HEVC streams
@@ -677,6 +679,56 @@ static void BOMX_VideoDecoder_StripedSurfaceDestroy(BOMX_VideoDecoderFrameBuffer
    }
 }
 
+static bool BOMX_VideoDecoder_SetupRuntimeHeaps(bool secureDecoder, bool secureHeap)
+{
+   unsigned i;
+   NEXUS_Error errCode;
+   NEXUS_PlatformConfiguration platformConfig;
+   NEXUS_PlatformSettings platformSettings;
+   NEXUS_MemoryStatus memoryStatus;
+
+   if (property_get_int32(B_PROPERTY_SVP, 0))
+   {
+      NEXUS_Platform_GetConfiguration(&platformConfig);
+      for (i = 0; i < NEXUS_MAX_HEAPS ; i++)
+      {
+         if (platformConfig.heap[i] != NULL)
+         {
+            errCode = NEXUS_Heap_GetStatus(platformConfig.heap[i], &memoryStatus);
+            if (!errCode && (memoryStatus.heapType & NEXUS_HEAP_TYPE_PICTURE_BUFFERS))
+            {
+               NEXUS_HeapRuntimeSettings settings;
+               bool origin, wanted;
+               NEXUS_Platform_GetHeapRuntimeSettings(platformConfig.heap[i], &settings);
+               origin = settings.secure;
+               wanted = secureHeap ? true : false;
+               if (origin != wanted)
+               {
+                  settings.secure = wanted;
+                  errCode = NEXUS_Platform_SetHeapRuntimeSettings(platformConfig.heap[i], &settings);
+                  if (errCode)
+                  {
+                     ALOGE("NEXUS_Platform_SetHeapRuntimeSettings(%i:%p, %s) on decoder %s -> failed: %d",
+                            i, platformConfig.heap[i], settings.secure?"secure":"open", secureDecoder?"secure":"open", errCode);
+                     /* Continue anyways, something may still work... */
+                     if (origin && !wanted)
+                     {
+                        return false;
+                     }
+                  }
+                  else
+                  {
+                     ALOGI("NEXUS_Platform_SetHeapRuntimeSettings(%i:%p, %s) on decoder %s -> success",
+                           i, platformConfig.heap[i], settings.secure?"secure":"open", secureDecoder?"secure":"open");
+                  }
+               }
+            }
+         }
+      }
+   }
+   return true;
+}
+
 BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
@@ -882,6 +934,11 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
 
+    if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))
+    {
+       BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
+    }
+
     NxClient_AllocSettings nxAllocSettings;
     NxClient_GetDefaultAllocSettings(&nxAllocSettings);
     nxAllocSettings.simpleVideoDecoder = 1;
@@ -924,6 +981,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = m_maxDecoderWidth;
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = m_maxDecoderHeight;
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.secureVideo = m_secureDecoder ? true : false;
 
     errCode = NxClient_Connect(&connectSettings, &m_nxClientId);
     if ( errCode )
@@ -2019,7 +2077,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                         ALOGW("Unable to query SAGE secure status, SAGE unrepsonsive");
                         /* Break out of loop if timed out last attempt and SAGE not responsive */
                         if ( m_securePicBuff )
+                        {
+                            BOMX_VideoDecoder_SetupRuntimeHeaps(!m_secureDecoder, true);
                             break;
+                        }
                     }
                     else
                     {

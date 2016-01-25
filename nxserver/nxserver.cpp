@@ -126,6 +126,7 @@
 #define NX_HEAP_HIGH_MEM               "ro.nx.heap.highmem"
 #define NX_HEAP_DRV_MANAGED            "ro.nx.heap.drv_managed"
 #define NX_HEAP_GROW                   "ro.nx.heap.grow"
+#define NX_SVP                         "ro.nx.svp"
 
 #define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
 #define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
@@ -626,10 +627,11 @@ static nxserver_t init_nxserver(void)
 
     char value[PROPERTY_VALUE_MAX];
     char value2[PROPERTY_VALUE_MAX];
-    int ix;
+    int ix, jx;
     char nx_key[PROPERTY_VALUE_MAX];
     FILE *key = NULL;
     NEXUS_VideoFormat forced_format;
+    bool svp;
 
     if (g_app.refcnt == 1) {
         g_app.refcnt++;
@@ -662,6 +664,18 @@ static nxserver_t init_nxserver(void)
     /* setup the configuration we want for the device.  right now, hardcoded for a generic
        android device, longer term, we want more flexibility. */
 
+    /* "svp 2.0" configuration. */
+    svp = property_get_int32(NX_SVP, 0) ? true : false;
+    for (ix = 0; ix < NEXUS_MAX_VIDEO_DECODERS; ix++) {
+       memConfigSettings.videoDecoder[ix].secure =
+          svp ? NEXUS_SecureVideo_eSecure : NEXUS_SecureVideo_eUnsecure;
+    }
+    for (ix = 0; ix < NEXUS_MAX_DISPLAYS; ix++) {
+       for (jx = 0; jx < NEXUS_MAX_VIDEO_WINDOWS; jx++) {
+          memConfigSettings.display[ix].window[jx].secure =
+             svp ? NEXUS_SecureVideo_eSecure : NEXUS_SecureVideo_eUnsecure;
+       }
+    }
     /* -ir none */
     settings.session[0].ir_input_mode = NEXUS_IrInputMode_eMax;
     /* -fbsize w,h */
