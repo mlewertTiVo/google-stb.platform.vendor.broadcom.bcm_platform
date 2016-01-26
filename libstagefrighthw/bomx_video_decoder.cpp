@@ -981,7 +981,10 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = m_maxDecoderWidth;
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = m_maxDecoderHeight;
-    connectSettings.simpleVideoDecoder[0].decoderCapabilities.secureVideo = m_secureDecoder ? true : false;
+    if (property_get_int32(B_PROPERTY_SVP, 0))
+    {
+       connectSettings.simpleVideoDecoder[0].decoderCapabilities.secureVideo = m_secureDecoder ? true : false;
+    }
 
     errCode = NxClient_Connect(&connectSettings, &m_nxClientId);
     if ( errCode )
