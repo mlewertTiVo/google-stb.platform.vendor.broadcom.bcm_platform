@@ -370,6 +370,10 @@ if clone_device != 'nope' and clone_variant != 'nope':
 	clone_copy_source="./device/broadcom/bcm_platform/recovery"
 	clone_copy_destination="./device/%s/%s/recovery" %(clone_device, clone_variant)
 	shutil.copytree(clone_copy_source, clone_copy_destination, ignore = shutil.ignore_patterns(".git"))
+	clone_copy="./device/broadcom/bcm_platform/recovery.fstab"
+	if os.access(clone_copy, os.F_OK):
+		clone_destination="./device/%s/%s/recovery.fstab" %(clone_device, clone_variant)
+		shutil.copy2(clone_copy, clone_destination)
 	clone_copy="./vendor/broadcom/stb/bcm_platform/tools/droid-clone/%s-%s/Android.mk.recovery" %(clone_device, clone_variant)
 	if os.access(clone_copy, os.F_OK):
 		clone_destination="./device/%s/%s/recovery/Android.mk" %(clone_device, clone_variant)
