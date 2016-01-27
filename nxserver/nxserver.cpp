@@ -436,6 +436,12 @@ static int lookup_heap_memory_type(const NEXUS_PlatformSettings *pPlatformSettin
     return -1;
 }
 
+static void pre_trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
+{
+   /* sd 'off' - hardcoded knowledge. */
+   pMemConfigSettings->display[1].maxFormat = NEXUS_VideoFormat_eUnknown;
+}
+
 static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
 {
    int i, j;
@@ -823,6 +829,8 @@ static nxserver_t init_nxserver(void)
     if (strlen(value2)) {
        settings.hdcp.hdcp2xBinFile = value2;
     }
+
+    pre_trim_mem_config(&memConfigSettings);
 
     rc = nxserver_modify_platform_settings(&settings, &cmdline_settings, &platformSettings, &memConfigSettings);
     if (rc) {
