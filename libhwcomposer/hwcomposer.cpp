@@ -103,7 +103,7 @@ using namespace android;
 #define HWC_PRIMARY_IX               0
 #define HWC_VIRTUAL_IX               1
 #define NEXUS_DISPLAY_OBJECTS        4
-#define HWC_SET_COMP_THRESHOLD       2
+#define HWC_SET_COMP_THRESHOLD       1 /* legacy support (no fencing) */
 #define HWC_TICKER_W                 64
 #define HWC_TICKER_H                 64
 #define ALPHA_SHIFT                  24
@@ -151,6 +151,7 @@ using namespace android;
 #define HWC_WITH_FENCE_PROP          "ro.v3d.fence.expose"
 #define HWC_TRACK_COMP_TIME          "ro.hwc.track.comptime"
 #define HWC_G2D_SIM_OPS_PROP         "ro.hwc.g2d.sim_ops"
+#define HWC_HACK_SYNC_REFRESH        "ro.hwc.hack.sync.refresh"
 
 #define HWC_EXT_REFCNT_DEV           "ro.nexus.ashmem.devname"
 
@@ -162,6 +163,7 @@ using namespace android;
 #define HWC_DUMP_LEVEL_CLASSIFY      (1<<3)
 #define HWC_DUMP_LEVEL_LATENCY       (1<<4)
 #define HWC_DUMP_LEVEL_FINAL         (1<<5)
+#define HWC_DUMP_LEVEL_HACKS         (1<<6)
 
 #define HWC_DUMP_FENCE_PRIM          (1<<0)
 #define HWC_DUMP_FENCE_VIRT          (1<<1)
@@ -682,6 +684,7 @@ struct hwc_context_t {
     bool smart_background;
     bool toggle_fb_mode;
     bool ignore_cursor;
+    bool hack_sync_refresh;
     int prepare_video;
     int prepare_sideband;
 };
@@ -4092,11 +4095,17 @@ static int hwc_device_setCursorPositionAsync(struct hwc_composer_device_1 *dev, 
     return 0;
 }
 
-#define VSYNC_HACK_REFRESH_COUNT 10
+#define HACK_REFRESH_COUNT 10
 static void * hwc_vsync_task(void *argv)
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)argv;
     const double nsec_to_msec = 1.0 / 1000000.0;
+
+    unsigned int hack_count = 0;
+    unsigned long long hack_reference_composition = 0;
+    unsigned long long hack_current_composition = 0;
+    unsigned long long hack_triggered_composition = 0;
+    bool no_lock = false;
 
     do
     {
@@ -4108,9 +4117,41 @@ static void * hwc_vsync_task(void *argv)
           BKNI_ReleaseMutex(ctx->power_mutex);
           BKNI_WaitForEvent(ctx->syn_cli.vsync_event, BKNI_INFINITE);
 
-          if (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) {
-             ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, hwc_tick());
-          }
+          if (ctx->hack_sync_refresh) {
+             if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+                if (hack_reference_composition == 0) {
+                   hack_reference_composition = ctx->stats[HWC_PRIMARY_IX].composed;
+                }
+                hack_count++;
+                if (hack_count >= HACK_REFRESH_COUNT) {
+                   hack_count = 0;
+                   hack_current_composition = ctx->stats[HWC_PRIMARY_IX].composed;
+                   if (hack_reference_composition &&
+                      (hack_reference_composition == hack_current_composition) &&
+                      (hack_triggered_composition != hack_current_composition) &&
+                      ctx->procs->invalidate != NULL) {
+                      no_lock = true;
+                      if (ctx->display_dump_layer & HWC_DUMP_LEVEL_HACKS) {
+                         ALOGI("*** FORCED REFRESH TICK @ %llu (last:%llu)", hack_reference_composition, hack_triggered_composition);
+                      }
+                      hack_reference_composition = 0;
+                      hack_triggered_composition = hack_current_composition + 1;
+                      BKNI_ReleaseMutex(ctx->mutex);
+                      ctx->procs->invalidate(const_cast<hwc_procs_t *>(ctx->procs));
+                   } else if (hack_current_composition > hack_reference_composition) {
+                      hack_reference_composition = 0;
+                   }
+                }
+                if (!no_lock) {
+                   BKNI_ReleaseMutex(ctx->mutex);
+                }
+                no_lock = false;
+             }
+         }
+
+         if (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) {
+            ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, hwc_tick());
+         }
 
       } else {
          BKNI_ReleaseMutex(ctx->power_mutex);
@@ -4369,6 +4410,7 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
    dev->smart_background     = property_get_bool(HWC_CAPABLE_BACKGROUND,  1);
    dev->toggle_fb_mode       = property_get_bool(HWC_CAPABLE_TOGGLE_MODE, 1);
    dev->ignore_cursor        = property_get_bool(HWC_IGNORE_CURSOR,       HWC_CURSOR_SURFACE_SUPPORTED ? 1 : 0);
+   dev->hack_sync_refresh    = property_get_bool(HWC_HACK_SYNC_REFRESH,   0);
 }
 
 static int hwc_device_open(const struct hw_module_t* module, const char* name,
