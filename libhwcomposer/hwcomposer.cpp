@@ -40,6 +40,7 @@
 #include "nexus_base_mmap.h"
 #include "nexus_surface_client.h"
 #include "nexus_surface_cursor.h"
+#include "nexus_core_utils.h"
 #include "nxclient.h"
 #include "nxclient_config.h"
 #include "bfifo.h"
@@ -587,6 +588,8 @@ struct hwc_time_track_stats {
 struct hwc_display_cfg {
    int width;
    int height;
+   int x_dpi;
+   int y_dpi;
 };
 
 struct hwc_work_item {
@@ -1598,6 +1601,31 @@ static void hwc_hotplug_notify(int dev)
           }
           ALOGI("%s: refresh disp-%d on connected", __FUNCTION__, HWC_PRIMARY_IX);
           ctx->procs->invalidate(const_cast<hwc_procs_t *>(ctx->procs));
+       }
+
+       {
+          NEXUS_HdmiOutputHandle handle;
+          NEXUS_HdmiOutputBasicEdidData edid;
+          NEXUS_VideoFormatInfo info;
+          NEXUS_Error errCode;
+          NEXUS_PlatformConfiguration *pConfig = (NEXUS_PlatformConfiguration *)BKNI_Malloc(sizeof(*pConfig));
+          if (pConfig) {
+             NEXUS_Platform_GetConfiguration(pConfig);
+             handle = pConfig->outputs.hdmi[0]; /* always first output. */
+             BKNI_Free(pConfig);
+             errCode = NEXUS_HdmiOutput_GetBasicEdidData(handle, &edid);
+             if (!errCode) {
+                NEXUS_VideoFormat_GetInfo(settings.format, &info);
+                float x_dpi = info.width / ((float)edid.maxHorizSize * 0.39370);
+                float y_dpi = info.height / ((float)edid.maxVertSize * 0.39370);
+
+                ALOGI("%s: %d x % d (pixel), %d x %d (cm) -> %.3Lf x %.3Lf (dpi)", __FUNCTION__,
+                      info.width, info.height, edid.maxHorizSize, edid.maxVertSize, x_dpi, y_dpi);
+
+                ctx->cfg[HWC_PRIMARY_IX].x_dpi = (int)x_dpi;
+                ctx->cfg[HWC_PRIMARY_IX].y_dpi = (int)y_dpi;
+             }
+          }
        }
     }
 }
@@ -4016,8 +4044,10 @@ static int hwc_device_getDisplayAttributes(struct hwc_composer_device_1* dev, in
                       values[i] = ctx->cfg[HWC_PRIMARY_IX].height;
                    break;
                    case HWC_DISPLAY_DPI_X:
+                      values[i] = ctx->cfg[HWC_PRIMARY_IX].x_dpi;
+                   break;
                    case HWC_DISPLAY_DPI_Y:
-                      values[i] = 0;
+                      values[i] = ctx->cfg[HWC_PRIMARY_IX].y_dpi;
                    break;
                    default:
                    break;
