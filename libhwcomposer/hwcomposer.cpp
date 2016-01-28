@@ -88,7 +88,7 @@ using namespace android;
 #define NSC_CLIENTS_NUMBER           (NSC_GPX_CLIENTS_NUMBER+NSC_MM_CLIENTS_NUMBER+NSC_SB_CLIENTS_NUMBER)
 #define HWC_VD_CLIENTS_NUMBER        NSC_GPX_CLIENTS_NUMBER
 
-#define VSYNC_CLIENT_REFRESH         16666667
+#define VSYNC_REFRESH                16666667
 #define DISPLAY_CONFIG_DEFAULT       0
 
 #define BOTTOM_CLIENT_ZORDER         0
@@ -340,14 +340,6 @@ typedef struct {
     NEXUS_SurfaceClientSettings settings;
     int id;
 } SB_CLIENT_INFO;
-
-typedef struct {
-    COMMON_CLIENT_INFO ncci;
-    BKNI_EventHandle vsync_event;
-    int layer_type;
-    int layer_subtype;
-    nsecs_t refresh;
-} VSYNC_CLIENT_INFO;
 
 typedef struct {
     COMMON_CLIENT_INFO ncci;
@@ -637,13 +629,13 @@ struct hwc_context_t {
     MM_CLIENT_INFO mm_cli[NSC_MM_CLIENTS_NUMBER];
     SB_CLIENT_INFO sb_cli[NSC_SB_CLIENTS_NUMBER];
     BKNI_MutexHandle mutex;
-    VSYNC_CLIENT_INFO syn_cli;
     bool nsc_video_changed;
     bool nsc_sideband_changed;
     VD_CLIENT_INFO vd_cli[HWC_VD_CLIENTS_NUMBER];
     DISPLAY_CLIENT_INFO disp_cli[DISPLAY_SUPPORTED];
     BKNI_EventHandle recycle_event;
     BKNI_EventHandle recycle_callback;
+    BKNI_EventHandle vsync_callback;
 
     struct hwc_position overscan_position;
 
@@ -714,7 +706,7 @@ static struct hw_module_methods_t hwc_module_methods = {
 };
 
 static void hwc_recycled_cb(void *context, int param);
-static void hw_vsync_cb(void *context, int param);
+static void hwc_vsync_cb(void *context, int param);
 
 static void hwc_hide_unused_gpx_layer(struct hwc_context_t* dev, int index);
 static void hwc_hide_unused_mm_layers(struct hwc_context_t* dev);
@@ -916,6 +908,8 @@ static int hwc_setup_framebuffer_mode(struct hwc_context_t* dev, int disp_ix, DI
       NEXUS_SurfaceClient_GetSettings(dev->disp_cli[disp_ix].schdl, &surfaceClientSettings);
       surfaceClientSettings.recycled.callback = hwc_recycled_cb;
       surfaceClientSettings.recycled.context = (void *)dev;
+      surfaceClientSettings.vsync.callback = hwc_vsync_cb;
+      surfaceClientSettings.vsync.context = (void *)dev;
       surfaceClientSettings.allowCompositionBypass = (mode == CLIENT_MODE_COMP_BYPASS) ? true : false;
       rc = NEXUS_SurfaceClient_SetSettings(dev->disp_cli[disp_ix].schdl, &surfaceClientSettings);
       if (rc) {
@@ -1349,10 +1343,9 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
        }
-       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%p::vscb:%s::d:{%d,%d}::pm:%s::fm:%s::oscan:{%d,%d:%d,%d}\n",
+       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%p::d:{%d,%d}::pm:%s::fm:%s::oscan:{%d,%d:%d,%d}\n",
            ctx->pIpcClient,
            ctx->pNexusClientContext,
-           ctx->vsync_callback_enabled ? "enabled" : "disabled",
            ctx->cfg[HWC_PRIMARY_IX].width,
            ctx->cfg[HWC_PRIMARY_IX].height,
            hwc_power_mode[ctx->power_mode],
@@ -3856,6 +3849,9 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         if (ctx->recycle_callback) {
            BKNI_DestroyEvent(ctx->recycle_callback);
         }
+        if (ctx->vsync_callback) {
+           BKNI_DestroyEvent(ctx->vsync_callback);
+        }
 
         NxClient_Free(&ctx->nxAllocResults);
 
@@ -3906,16 +3902,8 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
          case HWC_POWER_MODE_OFF:
          case HWC_POWER_MODE_DOZE:
          case HWC_POWER_MODE_DOZE_SUSPEND:
-             break;
          case HWC_POWER_MODE_NORMAL:
-             if (!ctx->vsync_callback_initialized)
-             {
-                 desc.callback = hw_vsync_cb;
-                 desc.context = (void *)&ctx->syn_cli;
-                 NEXUS_Display_SetVsyncCallback(ctx->display_handle, &desc);
-                 ctx->vsync_callback_initialized = true;
-             }
-             break;
+            break;
          default:
             goto out;
        }
@@ -3951,7 +3939,7 @@ static int hwc_device_query(struct hwc_composer_device_1* dev, int what, int* va
            if (BKNI_AcquireMutex(ctx->dev_mutex) != BERR_SUCCESS) {
                return -EINVAL;
            }
-           *value = (int) ctx->syn_cli.refresh;
+           *value = (int)VSYNC_REFRESH;
            BKNI_ReleaseMutex(ctx->dev_mutex);
        break;
 
@@ -4035,7 +4023,7 @@ static int hwc_device_getDisplayAttributes(struct hwc_composer_device_1* dev, in
             while (attributes[i] != HWC_DISPLAY_NO_ATTRIBUTE) {
                switch (attributes[i]) {
                    case HWC_DISPLAY_VSYNC_PERIOD:
-                      values[i] = (int32_t)ctx->syn_cli.refresh;
+                      values[i] = (int32_t)VSYNC_REFRESH;
                    break;
                    case HWC_DISPLAY_WIDTH:
                       values[i] = ctx->cfg[HWC_PRIMARY_IX].width;
@@ -4145,7 +4133,7 @@ static void * hwc_vsync_task(void *argv)
        }
        if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
           BKNI_ReleaseMutex(ctx->power_mutex);
-          BKNI_WaitForEvent(ctx->syn_cli.vsync_event, BKNI_INFINITE);
+          BKNI_WaitForEvent(ctx->vsync_callback, BKNI_INFINITE);
 
           if (ctx->hack_sync_refresh) {
              if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
@@ -4239,18 +4227,18 @@ static void hwc_collect_composer(struct hwc_context_t *ctx, struct hwc_work_item
       comp_time = nsec_to_msec * (tick_composed - this_frame->tick_queued);
 
       if ((ctx->display_dump_layer & HWC_DUMP_LEVEL_LATENCY) ||
-          (ctx->track_comp_chatty && ((tick_composed - this_frame->tick_queued) > VSYNC_CLIENT_REFRESH))) {
+          (ctx->track_comp_chatty && ((tick_composed - this_frame->tick_queued) > VSYNC_REFRESH))) {
          ALOGI("%s: %llu: ov:%d, fb:%d, comp:%d, time:%.3f msecs (sw:%.5f::fw:%.5f::cw:%.5f) => %s\n",
                (index == HWC_PRIMARY_IX) ? "comp" : "vcmp",
                this_frame->comp_ix, overlay_seen, fb_target_seen, layer_composed,
                comp_time, nsec_to_msec * this_frame->surf_wait,
                nsec_to_msec * this_frame->fence_wait, nsec_to_msec * this_frame->comp_wait,
-               ((tick_composed - this_frame->tick_queued) > VSYNC_CLIENT_REFRESH) ? "slow" : "on-time");
+               ((tick_composed - this_frame->tick_queued) > VSYNC_REFRESH) ? "slow" : "on-time");
       }
 
       if (layer_composed) {
          ctx->time_track[index].tracked++;
-         if ((tick_composed - this_frame->tick_queued) > VSYNC_CLIENT_REFRESH) {
+         if ((tick_composed - this_frame->tick_queued) > VSYNC_REFRESH) {
             ctx->time_track[index].slow++;
          } else {
             ctx->time_track[index].ontime++;
@@ -4467,10 +4455,13 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         hwc_read_dev_props(dev);
         hwc_assign_memory_interface_name(dev);
 
-        if ( BKNI_CreateEvent(&dev->recycle_event) ) {
+        if (BKNI_CreateEvent(&dev->recycle_event)) {
            goto clean_up;
         }
-        if ( BKNI_CreateEvent(&dev->recycle_callback) ) {
+        if (BKNI_CreateEvent(&dev->recycle_callback)) {
+           goto clean_up;
+        }
+        if (BKNI_CreateEvent(&dev->vsync_callback)) {
            goto clean_up;
         }
         if (BKNI_CreateMutex(&dev->vsync_callback_enabled_mutex) == BERR_OS_ERROR) {
@@ -4559,11 +4550,6 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             }
             hwc_hotplug_notify((int)dev);
         }
-
-        BKNI_CreateEvent(&dev->syn_cli.vsync_event);
-        dev->syn_cli.refresh       = VSYNC_CLIENT_REFRESH;
-        dev->syn_cli.ncci.type     = NEXUS_CLIENT_VSYNC;
-        dev->syn_cli.ncci.parent   = (void *)dev;
 
         for (i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++) {
             dev->gpx_cli[i].ncci.parent = (void *)dev;
@@ -4740,13 +4726,12 @@ out:
     return status;
 }
 
-static void hw_vsync_cb(void *context, int param)
+static void hwc_vsync_cb(void *context, int param)
 {
-    VSYNC_CLIENT_INFO *ci = (VSYNC_CLIENT_INFO *)context;
-    struct hwc_context_t* ctx = (struct hwc_context_t*)ci->ncci.parent;
+    struct hwc_context_t* ctx = (struct hwc_context_t*)context;
     BSTD_UNUSED(param);
 
-    BKNI_SetEvent(ci->vsync_event);
+    BKNI_SetEvent(ctx->vsync_callback);
 }
 
 static void hwc_recycled_cb(void *context, int param)
