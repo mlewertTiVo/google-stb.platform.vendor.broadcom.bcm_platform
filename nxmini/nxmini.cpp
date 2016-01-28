@@ -120,6 +120,12 @@ static unsigned calc_heap_size(const char *value)
    }
 }
 
+static void pre_trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
+{
+   /* sd 'off' - hardcoded knowledge. */
+   pMemConfigSettings->display[1].maxFormat = NEXUS_VideoFormat_eUnknown;
+}
+
 static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
 {
    int i, j;
@@ -278,6 +284,8 @@ static nxserver_t init_nxserver(void)
           platformSettings.heap[index].size = calc_heap_size(NX_HEAP_DRV_MANAGED_VALUE);
        }
     }
+
+    pre_trim_mem_config(&memConfigSettings);
 
     rc = nxserver_modify_platform_settings(&settings, &cmdline_settings, &platformSettings, &memConfigSettings);
     if (rc) {
