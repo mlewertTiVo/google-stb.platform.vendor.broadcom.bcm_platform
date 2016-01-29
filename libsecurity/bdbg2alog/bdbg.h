@@ -111,7 +111,7 @@ extern "C" {
 #define BDBG_ENTER(function) BDBG_NOP()
 #define BDBG_LEAVE(function) BDBG_NOP()
 #else
-#define BDBG_LOG(x) BDBG2ALOG_DEBUG x
+#define BDBG_LOG(x) BDBG_NOP()
 #define BDBG2ALOG_DEBUG(...) ((void)LOG_PRI(ANDROID_LOG_DEBUG, alog_module, __VA_ARGS__))
 #define BDBG_ENTER(function) ((void)LOG_PRI(ANDROID_LOG_VERBOSE, alog_module, "Enter... %s", #function ))
 #define BDBG_LEAVE(function) ((void)LOG_PRI(ANDROID_LOG_VERBOSE, alog_module, "Leave... %s", #function ))
@@ -120,21 +120,21 @@ extern "C" {
 #if BDBG_NO_MSG
 #define BDBG_MSG(x) BDBG_NOP()
 #else
-#define BDBG_MSG(x) BDBG2ALOG_INFO x
+#define BDBG_MSG(x) BDBG_NOP()
 #define BDBG2ALOG_INFO(...) ((void)LOG_PRI(ANDROID_LOG_INFO, alog_module, __VA_ARGS__))
 #endif
 
 #if BDBG_NO_WRN
 #define BDBG_WRN(x) BDBG_NOP()
 #else
-#define BDBG_WRN(x) BDBG2ALOG_WRN x
+#define BDBG_WRN(x) BDBG_NOP()
 #define BDBG2ALOG_WRN(...) ((void)LOG_PRI(ANDROID_LOG_WARN, alog_module, __VA_ARGS__))
 #endif
 
 #if BDBG_NO_ERR
 #define BDBG_ERR(x) BDBG_NOP()
 #else
-#define BDBG_ERR(x) BDBG2ALOG_ERR x
+#define BDBG_ERR(x) BDBG_NOP()
 #define BDBG2ALOG_ERR(...) ((void)LOG_PRI(ANDROID_LOG_ERROR, alog_module, __VA_ARGS__))
 #endif
 
