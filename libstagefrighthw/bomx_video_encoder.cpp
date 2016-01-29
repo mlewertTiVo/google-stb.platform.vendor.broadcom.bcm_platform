@@ -1074,7 +1074,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
             NEXUS_Error rc = UpdateEncoderSettings();
             if ( rc )
             {
-                LOGE("Failed to update encoder settings");
+                ALOGE("Failed to update encoder settings");
                 return BOMX_ERR_TRACE(OMX_ErrorUndefined);
             }
         }
@@ -2469,7 +2469,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetConfig(
         NEXUS_Error rc = UpdateEncoderSettings();
         if ( rc )
         {
-            LOGE("Failed to update encoder settings");
+            ALOGE("Failed to update encoder settings");
             return BOMX_ERR_TRACE(OMX_ErrorUnsupportedSetting);
         }
 
@@ -2884,7 +2884,7 @@ NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
     rc = UpdateEncoderSettings();
     if ( rc )
     {
-        LOGE("Failed to update encoder settings");
+        ALOGE("Failed to update encoder settings");
         return BOMX_BERR_TRACE(rc);
     }
 
@@ -2942,7 +2942,7 @@ NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
     rc = NEXUS_SimpleEncoder_Start(m_hSimpleEncoder, &encoderStartSettings);
     if (rc)
     {
-        LOGE("Failed to start Nexus simple encoder");
+        ALOGE("Failed to start Nexus simple encoder");
         return BOMX_BERR_TRACE(rc);
     }
 
