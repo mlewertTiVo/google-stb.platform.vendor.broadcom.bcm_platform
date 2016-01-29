@@ -65,7 +65,7 @@ NexusIrInput::~NexusIrInput()
 bool NexusIrInput::start(NEXUS_IrInputMode mode,
         NexusIrInput::Observer &observer, uint32_t power_key, uint64_t mask)
 {
-    LOGI("NexusIrInput start");
+    ALOGI("NexusIrInput start");
 
     m_observer = &observer;
     m_power_key = power_key;
@@ -79,7 +79,7 @@ bool NexusIrInput::start(NEXUS_IrInputMode mode,
     m_handle = NEXUS_IrInput_Open(0, &irSettings);
 
     if (!m_handle) {
-        LOGE("NexusIrInput start failed!");
+        ALOGE("NexusIrInput start failed!");
     }
     else {
         NEXUS_IrInputDataFilter irPattern;
@@ -97,7 +97,7 @@ void NexusIrInput::stop()
 {
     if (m_handle)
     {
-        LOGI("NexusIrInput stop");
+        ALOGI("NexusIrInput stop");
         NEXUS_IrInput_Close(m_handle);
         m_handle = 0;
     }
@@ -149,7 +149,7 @@ void NexusIrInput::dataReady()
                 &overflow);
         if (numEvents)
         {
-            LOGV("Nexus IR callback: rc: %d, code: %08x, mask: %llx, repeat: %s, interval: %u",
+            ALOGV("Nexus IR callback: rc: %d, code: %08x, mask: %llx, repeat: %s, interval: %u",
                (int)rc, (unsigned) irEvent.code, (unsigned long long)m_mask,
                irEvent.repeat ? "true" : "false",
                irEvent.interval);
