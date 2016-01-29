@@ -80,7 +80,7 @@ static int dummy_bout_start(struct brcm_stream_out *bout)
     int fd = bout->dummy.fd;
 
     if (fd < 0) {
-        LOGE("%s: at %d, device not open\n",
+        ALOGE("%s: at %d, device not open\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
@@ -101,7 +101,7 @@ static int dummy_bout_write(struct brcm_stream_out *bout,
     int fd = bout->dummy.fd;
 
     if (fd < 0) {
-        LOGE("%s: at %d, device not open\n",
+        ALOGE("%s: at %d, device not open\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
@@ -123,7 +123,7 @@ static int dummy_bout_open(struct brcm_stream_out *bout)
     /* Open output device */
     fd = open(DUMMY_OUT_DEFAULT_DEVICE_NAME, O_RDWR);
     if (fd < 0) {
-        LOGE("%s: at %d, device open failed\n",
+        ALOGE("%s: at %d, device open failed\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
@@ -174,7 +174,7 @@ static int dummy_bin_start(struct brcm_stream_in *bin)
     int fd = bin->dummy.fd;
 
     if (fd < 0) {
-        LOGE("%s: at %d, device not open\n",
+        ALOGE("%s: at %d, device not open\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
@@ -194,7 +194,7 @@ static int dummy_bin_read(struct brcm_stream_in *bin,
     int fd = bin->dummy.fd;
 
     if (fd < 0) {
-        LOGE("%s: at %d, device not open\n",
+        ALOGE("%s: at %d, device not open\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
@@ -216,7 +216,7 @@ static int dummy_bin_open(struct brcm_stream_in *bin)
     /* Open input device */
     fd = open(DUMMY_IN_DEFAULT_DEVICE_NAME, O_RDWR);
     if (fd < 0) {
-        LOGE("%s: at %d, device open failed\n",
+        ALOGE("%s: at %d, device open failed\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }

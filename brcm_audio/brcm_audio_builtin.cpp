@@ -85,14 +85,14 @@ static int builtin_bin_start(struct brcm_stream_in *bin)
     int ret = 0;
 
     if (fd < 0) {
-        LOGE("%s: at %d, device not open\n",
+        ALOGE("%s: at %d, device not open\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
 
     ret = ioctl(fd, SNDCTL_DSP_RESET, &fmt);
     if (ret) {
-        LOGE("%s: at %d, device reset failed, ret = %d\n",
+        ALOGE("%s: at %d, device reset failed, ret = %d\n",
              __FUNCTION__, __LINE__, ret);
         return -ENOSYS;
     }
@@ -101,7 +101,7 @@ static int builtin_bin_start(struct brcm_stream_in *bin)
         AFMT_S16_LE : AFMT_S8;
     ret = ioctl(fd, SNDCTL_DSP_SETFMT, &fmt);
     if (ret) {
-        LOGE("%s: at %d, set format failed, ret = %d\n",
+        ALOGE("%s: at %d, set format failed, ret = %d\n",
              __FUNCTION__, __LINE__, ret);
         return -ENOSYS;
     }
@@ -110,7 +110,7 @@ static int builtin_bin_start(struct brcm_stream_in *bin)
         1 : 0;
     ret = ioctl(fd, SNDCTL_DSP_CHANNELS, &channels);
     if (ret) {
-        LOGE("%s: at %d, set channels failed, ret = %d\n",
+        ALOGE("%s: at %d, set channels failed, ret = %d\n",
              __FUNCTION__, __LINE__, ret);
         return -ENOSYS;
     }
@@ -118,7 +118,7 @@ static int builtin_bin_start(struct brcm_stream_in *bin)
     speed = bin->config.sample_rate;
     ret = ioctl(fd, SNDCTL_DSP_SPEED, &speed);
     if (ret) {
-        LOGE("%s: at %d, set speed failed, ret = %d\n",
+        ALOGE("%s: at %d, set speed failed, ret = %d\n",
              __FUNCTION__, __LINE__, ret);
         return -ENOSYS;
     }
@@ -126,7 +126,7 @@ static int builtin_bin_start(struct brcm_stream_in *bin)
     fragment = bin->builtin.fragment;
     ret = ioctl(fd, SNDCTL_DSP_SETFRAGMENT, &fragment);
     if (ret) {
-        LOGE("%s: at %d, set fragment failed, ret = %d\n",
+        ALOGE("%s: at %d, set fragment failed, ret = %d\n",
              __FUNCTION__, __LINE__, ret);
         return -ENOSYS;
     }
@@ -148,7 +148,7 @@ static int builtin_bin_read(struct brcm_stream_in *bin,
     int ret = 0;
 
     if (fd < 0) {
-        LOGE("%s: at %d, device not open\n",
+        ALOGE("%s: at %d, device not open\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
@@ -157,7 +157,7 @@ static int builtin_bin_read(struct brcm_stream_in *bin,
         ret = read(fd, (void *)((int)buffer + bytes_read), bytes);
         if (ret < 0) {
             if (errno != EAGAIN) {
-                LOGE("%s: at %d, device read failed, ret = %d\n",
+                ALOGE("%s: at %d, device read failed, ret = %d\n",
                      __FUNCTION__, __LINE__, ret);
                 break;
             }
@@ -209,7 +209,7 @@ static int builtin_bin_open(struct brcm_stream_in *bin)
     /* Open input device */
     fd = open(BUILTIN_IN_DEFAULT_DEVICE_NAME, O_RDWR);
     if (fd < 0) {
-        LOGE("%s: at %d, device open failed\n",
+        ALOGE("%s: at %d, device open failed\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }

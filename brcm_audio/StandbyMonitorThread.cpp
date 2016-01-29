@@ -65,7 +65,7 @@ int StandbyMonitorThread::RegisterCallback(b_standby_monitor_callback callback, 
     }
 
     if (i >= MAX_STANDBY_MONITOR_CALLBACKS) {
-        LOGE("%s: Too many callbacks", __FUNCTION__);
+        ALOGE("%s: Too many callbacks", __FUNCTION__);
         return -ENOMEM;
     }
 
@@ -76,14 +76,14 @@ int StandbyMonitorThread::RegisterCallback(b_standby_monitor_callback callback, 
         /* Start running monitor thread */
         status = this->run();
         if (status != android::OK){
-            LOGE("%s: error starting standby thread", __FUNCTION__);
+            ALOGE("%s: error starting standby thread", __FUNCTION__);
             mCallbacks[i] = NULL;
             mContexts[i] = NULL;
             mNumCallbacks--;
             return -ENOSYS;
         }
     }
-    LOGV("%s: Callback %d/%d registered", __FUNCTION__, i, mNumCallbacks);
+    ALOGV("%s: Callback %d/%d registered", __FUNCTION__, i, mNumCallbacks);
     return i;
 }
 
@@ -91,29 +91,29 @@ void StandbyMonitorThread::UnregisterCallback(int id)
 {
     android::Mutex::Autolock _l(mMutex);
     if ((id < 0) || (id >= MAX_STANDBY_MONITOR_CALLBACKS)) {
-        LOGE("%s: Invalid callback %d", __FUNCTION__, id);
+        ALOGE("%s: Invalid callback %d", __FUNCTION__, id);
         return;
     }
 
     if (mNumCallbacks == 0) {
-        LOGE("%s: No callbacks registered", __FUNCTION__);
+        ALOGE("%s: No callbacks registered", __FUNCTION__);
         return;
     }
 
     if (mCallbacks[id] == NULL) {
-        LOGE("%s: Callback %d not registered", __FUNCTION__, id);
+        ALOGE("%s: Callback %d not registered", __FUNCTION__, id);
         return;
     }
 
     mCallbacks[id] = NULL;
     mContexts[id] = NULL;
     mNumCallbacks--;
-    LOGV("%s: Callback %d/%d unregistered", __FUNCTION__, id, mNumCallbacks);
+    ALOGV("%s: Callback %d/%d unregistered", __FUNCTION__, id, mNumCallbacks);
 
     if (mNumCallbacks == 0) {
         android::status_t status = this->requestExitAndWait();
         if (status != android::OK){
-            LOGE("%s: Failed to stop standby thread!", __FUNCTION__);
+            ALOGE("%s: Failed to stop standby thread!", __FUNCTION__);
         }
     }
 }
@@ -128,8 +128,8 @@ bool StandbyMonitorThread::threadLoop()
     NxClient_StandbyStatus standbyStatus, prevStatus;
     int i;
 
-    LOGV("%s", __FUNCTION__);
-    LOGD("RegisterAcknowledgeStandby() = %d", mStandbyId);
+    ALOGV("%s", __FUNCTION__);
+    ALOGD("RegisterAcknowledgeStandby() = %d", mStandbyId);
     NxClient_GetStandbyStatus(&standbyStatus);
     prevStatus = standbyStatus;
 
@@ -144,12 +144,12 @@ bool StandbyMonitorThread::threadLoop()
                     for (i = 0; i < MAX_STANDBY_MONITOR_CALLBACKS; i++) {
                         if (mCallbacks[i] != NULL) {
                             ack = ack && mCallbacks[i](mContexts[i]);
-                            LOGV("%s: Can suspend after %d callabck %s\n", __FUNCTION__, i, ack?"true":"false");
+                            ALOGV("%s: Can suspend after %d callabck %s\n", __FUNCTION__, i, ack?"true":"false");
                         }
                     }
                 }
                 if (ack) {
-                    LOGD("%s: Acknowledge state %d\n", __FUNCTION__, standbyStatus.settings.mode);
+                    ALOGD("%s: Acknowledge state %d\n", __FUNCTION__, standbyStatus.settings.mode);
                     NxClient_AcknowledgeStandby(mStandbyId);
                     prevStatus = standbyStatus;
                 }
@@ -159,9 +159,9 @@ bool StandbyMonitorThread::threadLoop()
         BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
     }
     NxClient_UnregisterAcknowledgeStandby(mStandbyId);
-    LOGD("UnregisterAcknoledgeStandby(%d)", mStandbyId);
+    ALOGD("UnregisterAcknoledgeStandby(%d)", mStandbyId);
 
-    LOGV("%s: Exiting", __FUNCTION__);
+    ALOGV("%s: Exiting", __FUNCTION__);
     return false;
 }
 
