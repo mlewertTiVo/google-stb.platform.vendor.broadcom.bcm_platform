@@ -1609,8 +1609,8 @@ static void hwc_hotplug_notify(int dev)
              errCode = NEXUS_HdmiOutput_GetBasicEdidData(handle, &edid);
              if (!errCode) {
                 NEXUS_VideoFormat_GetInfo(settings.format, &info);
-                float x_dpi = info.width / ((float)edid.maxHorizSize * 0.39370);
-                float y_dpi = info.height / ((float)edid.maxVertSize * 0.39370);
+                float x_dpi = edid.maxHorizSize ? (info.width / ((float)edid.maxHorizSize * 0.39370)) : 0.0;
+                float y_dpi = edid.maxVertSize  ? (info.height / ((float)edid.maxVertSize * 0.39370)) : 0.0;
 
                 ALOGI("%s: %d x % d (pixel), %d x %d (cm) -> %.3Lf x %.3Lf (dpi)", __FUNCTION__,
                       info.width, info.height, edid.maxHorizSize, edid.maxVertSize, x_dpi, y_dpi);
