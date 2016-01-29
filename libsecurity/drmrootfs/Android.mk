@@ -23,12 +23,10 @@ LOCAL_MODULE := libdrmrootfs
 LOCAL_SRC_FILES := drm_data.c
 
 LOCAL_C_INCLUDES := \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
-    ${NEXUS_APP_INCLUDE_PATHS}
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog
 
-LOCAL_CFLAGS += -DPIC -fpic -fshort-wchar -DANDROID
-LOCAL_CFLAGS += $(NEXUS_CFLAGS)
-LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+LOCAL_CFLAGS += -fshort-wchar
 
 LOCAL_LDFLAGS := -Wl,--no-fatal-warnings
 

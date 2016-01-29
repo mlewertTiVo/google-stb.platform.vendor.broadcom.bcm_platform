@@ -14,7 +14,6 @@
 
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
-
 include $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include/nxclient.inc
 
 LOCAL_PRELINK_MODULE := false
@@ -39,7 +38,7 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/server
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 
-LOCAL_CFLAGS += $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES))
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 
 LOCAL_SRC_FILES := nxserver.cpp
 

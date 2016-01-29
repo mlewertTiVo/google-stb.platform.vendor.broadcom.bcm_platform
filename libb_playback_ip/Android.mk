@@ -37,16 +37,10 @@
 #
 #############################################################################
 LOCAL_PATH := $(call my-dir)
-NEXUS_TOP ?= $(LOCAL_PATH)/../../refsw/nexus
-
 include $(CLEAR_VARS)
-
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
-REMOVE_NEXUS_CFLAGS := -Wstrict-prototypes
-MANGLED_NEXUS_CFLAGS := $(filter-out $(REMOVE_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
-
-LOCAL_CFLAGS := $(MANGLED_NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS) $(addprefix -I,$(BMEDIA_INCLUDES) $(BFILE_MEDIA_INCLUDES))
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/lib/os/include $(NEXUS_TOP)/lib/os/include/linuxuser
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 

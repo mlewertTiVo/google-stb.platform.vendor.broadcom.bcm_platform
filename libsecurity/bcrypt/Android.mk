@@ -44,15 +44,12 @@ LOCAL_SRC_FILES := \
 LOCAL_C_INCLUDES := \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/include \
-    $(TOP)/external/boringssl/include \
-    $(NEXUS_APP_INCLUDE_PATHS)
+    $(TOP)/external/boringssl/include
 
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 ifeq ($(ANDROID_USES_BORINGSSL),y)
 LOCAL_CFLAGS += -DUSES_BORINGSSL
 endif
-LOCAL_CFLAGS += -DPIC -fpic -DANDROID
-LOCAL_CFLAGS += $(NEXUS_CFLAGS)
-LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
 
 # Enable warning and error logs by default
 LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1

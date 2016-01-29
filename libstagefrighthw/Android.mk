@@ -37,19 +37,6 @@
 #
 #############################################################################
 LOCAL_PATH := $(call my-dir)
-REFSW_PATH :=${LOCAL_PATH}/../brcm_nexus
-NEXUS_TOP ?= $(LOCAL_PATH)/../../refsw/nexus
-
-ifeq ($(NEXUS_MODE),proxy)
-NEXUS_LIB=libnexus
-else
-ifeq ($(NEXUS_WEBCPU),core1_server)
-NEXUS_LIB=libnexus_webcpu
-else
-NEXUS_LIB=libnexus_client
-endif
-endif
-
 include $(CLEAR_VARS)
 
 # Core component framework
@@ -79,27 +66,23 @@ LOCAL_C_INCLUDES := \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/blib \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 
+
 include $(BSEAV)/lib/utils/batom.inc
 include $(BSEAV)/lib/media/bmedia.inc
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
-REMOVE_NEXUS_CFLAGS := -Wstrict-prototypes
-MANGLED_NEXUS_CFLAGS := $(filter-out $(REMOVE_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
-
-LOCAL_CFLAGS := $(MANGLED_NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS) $(addprefix -I,$(BMEDIA_INCLUDES) $(BFILE_MEDIA_INCLUDES))
-
-LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include $(REFSW_PATH)/../libnexusservice
-LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/lib/os/include $(NEXUS_TOP)/lib/os/include/linuxuser
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+
 LOCAL_SHARED_LIBRARIES :=         \
-        $(NEXUS_LIB)              \
         libbinder                 \
         libb_os                   \
         libcutils                 \
         libdl                     \
         libhwcbinder              \
+        libnexus                  \
         libnexusipcclient         \
         libnxclient               \
         libstagefright_foundation \
@@ -109,10 +92,10 @@ LOCAL_SHARED_LIBRARIES :=         \
 # Secure decoder has dependencies on Sage
 ifeq ($(SAGE_SUPPORT),y)
 LOCAL_SRC_FILES += bomx_video_decoder_secure.cpp
-LOCAL_C_INCLUDES+=$(REFSW_BASE_DIR)/BSEAV/lib/security/sage/srai/include
-LOCAL_C_INCLUDES+=$(REFSW_BASE_DIR)/magnum/syslib/sagelib/include
-LOCAL_C_INCLUDES+=$(REFSW_BASE_DIR)/BSEAV/lib/security/common_crypto/include
-LOCAL_SHARED_LIBRARIES+=libsrai
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/magnum/syslib/sagelib/include
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_crypto/include
+LOCAL_SHARED_LIBRARIES += libsrai
 LOCAL_CFLAGS += -DSECURE_DECODER_ON
 endif
 

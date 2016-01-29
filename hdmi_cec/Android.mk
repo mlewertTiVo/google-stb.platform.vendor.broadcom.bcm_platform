@@ -13,22 +13,7 @@
 # limitations under the License.
 
 
-REFSW_PATH :=${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_nexus
-
 LOCAL_PATH := $(call my-dir)
-
-ifeq ($(NEXUS_MODE),proxy)
-NEXUS_LIB=libnexus
-else
-ifeq ($(NEXUS_WEBCPU),core1_server)
-NEXUS_LIB=libnexus_webcpu
-else
-NEXUS_LIB=libnexus_client
-endif
-endif
-
-# HAL module implementation, not prelinked and stored in
-# hw/<OVERLAY_HARDWARE_MODULE_ID>.<ro.product.board>.so
 include $(CLEAR_VARS)
 
 LOCAL_PRELINK_MODULE := false
@@ -42,14 +27,12 @@ LOCAL_SHARED_LIBRARIES := \
     libnexusipcclient \
     libnexusipceventlistener \
     libstagefright_foundation \
-    $(NEXUS_LIB)
+    libnexus
 
-LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
-                    $(REFSW_PATH)/../libnexusservice \
-                    $(REFSW_PATH)/../libnexusipc
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc
 
-LOCAL_CFLAGS += $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
-LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
+LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 
 LOCAL_SRC_FILES := hdmi_cec.cpp nexus_hdmi_cec.cpp
 LOCAL_MODULE_TAGS := optional
