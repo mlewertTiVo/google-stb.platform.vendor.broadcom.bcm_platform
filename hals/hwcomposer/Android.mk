@@ -75,6 +75,8 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/b
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := hwcbinder
 
+LOCAL_INIT_RC := hwcbinder.rc
+
 include $(BUILD_EXECUTABLE)
 
 # build the hwcutils helper

@@ -74,36 +74,9 @@ on property:dyn.nx.state=loaded
    insmod /system/vendor/drivers/nx_ashmem.ko devname="ion" heap_grow="8m"
    class_start main
 
-on property:dyn.nx.vidout.set=1
-   start nxdispfmt
-
 on property:sys.gator=1
    insmod /system/vendor/drivers/gator.ko
    start gatord
-
-service nxserver /system/bin/nxserver
-   class core
-   user root
-   group system
-   socket nxserver stream 0666 root system
-   critical
-
-service hwcbinder /system/bin/hwcbinder
-   class pre_core
-   user root
-   group system media
-   critical
-
-service nxdispfmt /system/bin/nxdispfmt
-   class late_start
-   oneshot
-   disabled
-
-service gatord /system/bin/gatord
-   class late_start
-   user root
-   oneshot
-   disabled
 
 service hfrvideo /system/bin/hfrvideo
    class late_start

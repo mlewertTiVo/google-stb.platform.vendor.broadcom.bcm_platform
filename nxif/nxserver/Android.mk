@@ -49,6 +49,8 @@ else
 LOCAL_SRC_FILES += nxserver_stub_encoder.cpp
 endif
 
+LOCAL_INIT_RC := nxserver.rc
+
 LOCAL_MODULE := nxserver
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_EXECUTABLE)
