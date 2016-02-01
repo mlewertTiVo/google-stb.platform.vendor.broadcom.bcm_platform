@@ -1,0 +1,10 @@
+This app allows the TvSettings application to be used without the 
+Leanback launcher, which is only available as part of GMS.
+
+TvSettings registers with the Leanback launcher, but not with the
+standard Android launcher. As a result, TvSettings doesn't appear in
+the app tray in non-GMS builds, and can not be invoked via the GUI,
+only via console commands.
+
+This app registers as 'Settings' with the standard Android launcher, and 
+when invoked, fires an intent that starts the real TvSettings app.

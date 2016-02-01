@@ -1,0 +1,8 @@
+# copied by build.
+brcm_nexus/bin/
+libGLES_nexus/bin/
+brcm_dhd/driver/bcmdhd.ko
+brcm_dhd/firmware/fw.bin.trx
+brcm_dhd/nvrams/nvm.txt
+brcm_dhd/tools/dhd
+brcm_dhd/tools/wl
