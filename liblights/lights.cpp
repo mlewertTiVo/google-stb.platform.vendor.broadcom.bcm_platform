@@ -95,23 +95,23 @@ static int lights_set_light_backlight(struct light_device_t *dev,
         return -EINVAL;
     }
 
-    LOGI("requested color: 0x%08x", state->color);
+    ALOGI("requested color: 0x%08x", state->color);
 
     // calculate luminance
     double r = ((state->color >> 16) & 0xff) / 255.0;
     double g = ((state->color >> 8) & 0xff) / 255.0;
     double b = ((state->color) & 0xff) / 255.0;
     double y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    LOGV("relative luminance: %f", y);
+    ALOGV("relative luminance: %f", y);
 
     NEXUS_GraphicsColorSettings settings;
     NEXUS_Display_GetGraphicsColorSettings(priv_dev->dispHandle, &settings);
-    LOGV("current brightness: %d", (int)settings.brightness);
+    ALOGV("current brightness: %d", (int)settings.brightness);
 
     //scale to *half* of int16_t range for Nexus (full range is not usable)
     static const int full_range = 65535;
     settings.brightness = 0.5 * full_range * (y - 0.5);
-    LOGV("new brightness: %d", (int)settings.brightness);
+    ALOGV("new brightness: %d", (int)settings.brightness);
     NEXUS_Display_SetGraphicsColorSettings(priv_dev->dispHandle, &settings);
 
     return 0;
@@ -154,13 +154,13 @@ static int lights_device_open(const struct hw_module_t *module,
 
         dev->pIpcClient = NexusIPCClientFactory::getClient("lights");
         if (!dev->pIpcClient) {
-            LOGE("%s: failed NexusIPCClientFactory::getClient", __FUNCTION__);
+            ALOGE("%s: failed NexusIPCClientFactory::getClient", __FUNCTION__);
             goto out;
         }
 
         dev->pClientCxt = dev->pIpcClient->createClientContext();
         if (!dev->pClientCxt) {
-            LOGE("%s: failed createClientContext", __FUNCTION__);
+            ALOGE("%s: failed createClientContext", __FUNCTION__);
             goto out;
         }
 
@@ -169,7 +169,7 @@ static int lights_device_open(const struct hw_module_t *module,
         nrc = NEXUS_Platform_GetObjects(&interfaceName, &objects[0], num, &num);
         if (nrc != NEXUS_SUCCESS)
         {
-            LOGE("%s: failed to get display handle (%u)", __FUNCTION__, nrc);
+            ALOGE("%s: failed to get display handle (%u)", __FUNCTION__, nrc);
             goto out;
         }
 
