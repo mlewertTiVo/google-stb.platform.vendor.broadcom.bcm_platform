@@ -20,6 +20,8 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_nexus/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hdmi_cec/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libb_os/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libb_playback_ip/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libbcmsideband/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libbcmsidebandplayer/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libcamera2/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libGLES_nexus/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libgralloc/Android.mk
@@ -55,6 +57,7 @@ include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
 include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
 include ${BCM_APPS_PATH}/LeanbackBcmCustom/Android.mk
+include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
 
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bsysperf/Android.mk
@@ -77,10 +80,6 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/setdisplay/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/yv12torgba/Android.mk
 
 ifneq ($(wildcard ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/README.txt),)
-ifneq ($(TARGET_BUILD_PDK),true)
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/libbcmsideband/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/Bouncer/Android.mk
-endif
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/ExoPlayerDemo/Android.mk
 ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/WidevineSamplePlayer/Android.mk

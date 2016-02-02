@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+   <string name="app_name">BcmSidebandViewer</string>
+   <string name="button_fs">Full screen</string>
+   <string name="button_exit_fs">Full screen</string>
+   <string name="button_start_hdmi">HDMI input</string>
+   <string name="button_stop_hdmi">HDMI input</string>
+   <string name="button_start_file">File playback</string>
+   <string name="button_stop_file">File playback</string>
+   <string name="file_path_hint">Enter file path</string>
+   <string name="button_left">Left</string>
+   <string name="button_top">Top</string>
+   <string name="button_center">Center</string>
+   <string name="button_bottom">Bottom</string>
+   <string name="button_right">Right</string>
+</resources>

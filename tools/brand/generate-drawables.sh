@@ -2,11 +2,11 @@
 
 # Script to re-generate our common icons (do not run in each app)
 
-# To avoid duplicating PNG files, please append the common res subdirectory to
+# To avoid duplicating PNG files, please prepend the common res subdirectory to
 # your LOCAL_RESOURCE_DIR in Android.mk. For example:
 #   LOCAL_RESOURCE_DIR := $(TOP)/frameworks/support/v17/leanback/res
-#   LOCAL_RESOURCE_DIR += $(LOCAL_PATH)/res
 #   LOCAL_RESOURCE_DIR += $(BCM_VENDOR_STB_ROOT)/bcm_platform/tools/brand/res
+#   LOCAL_RESOURCE_DIR += $(LOCAL_PATH)/res
 
 BROADCOM_LOGO=Broadcom.svg
 
