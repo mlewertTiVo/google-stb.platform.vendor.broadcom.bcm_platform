@@ -196,7 +196,7 @@ androidrootdevice='%s%s%s' % (chip, revision, boardtype)
 if target_option == "AOSP" or target_option == "REDUX" or target_option == "NFS":
 	androiddevice='%s_%s' % (androidrootdevice, target_option)
 if target_option == "PROFILE":
-        custom_directory="./device/broadcom/custom/%s/%s" %(androidrootdevice, target_profile)
+        custom_directory="./device/broadcom/bcm_platform/custom/%s/%s" %(androidrootdevice, target_profile)
 	custom_target_settings="%s/settings.mk" %(custom_directory)
 	custom_target_pre_settings="%s/pre_settings.mk" %(custom_directory)
 	androiddevice='%s' % (target_profile)
@@ -312,9 +312,9 @@ write_header(s, androiddevice)
 os.write(s, "# start of refsw gathered configuration\n\n")
 os.write(s, "%s\n\n" % refsw_configuration_selected)
 os.write(s, "# end of refsw gathered config...\n")
-root_pre_settings="./device/broadcom/custom/%s/root/pre_settings.mk" %(androidrootdevice)
+root_pre_settings="./device/broadcom/bcm_platform/custom/%s/root/pre_settings.mk" %(androidrootdevice)
 if os.access(root_pre_settings, os.F_OK):
-	root_pre_settings="\ninclude device/broadcom/custom/%s/root/pre_settings.mk" %(androidrootdevice)
+	root_pre_settings="\ninclude device/broadcom/bcm_platform/custom/%s/root/pre_settings.mk" %(androidrootdevice)
 	os.write(s, root_pre_settings)
 if target_option == "PROFILE" and custom_target_pre_settings != 'nope':
 	if os.access(custom_target_pre_settings, os.F_OK):
@@ -322,21 +322,21 @@ if target_option == "PROFILE" and custom_target_pre_settings != 'nope':
 		os.write(s, "include %s\n" % custom_target_pre_settings)
 if target_option == "REDUX":
 	os.write(s, "\n\n# REDUX target set...\n")
-	os.write(s, "include device/broadcom/common/target_redux.mk")
+	os.write(s, "include device/broadcom/bcm_platform/common/target_redux.mk")
 if is_pdk == 'PDK':
 	os.write(s, "\n\n# PDK image...\n")
-	os.write(s, "include device/broadcom/common/settings_pdk.mk")
+	os.write(s, "include device/broadcom/bcm_platform/common/settings_pdk.mk")
 os.write(s, "\n\ninclude device/broadcom/bcm_platform/bcm_platform.mk")
-root_settings="./device/broadcom/custom/%s/root/settings.mk" %(androidrootdevice)
+root_settings="./device/broadcom/bcm_platform/custom/%s/root/settings.mk" %(androidrootdevice)
 if os.access(root_settings, os.F_OK):
-	root_settings="\ninclude device/broadcom/custom/%s/root/settings.mk" %(androidrootdevice)
+	root_settings="\ninclude device/broadcom/bcm_platform/custom/%s/root/settings.mk" %(androidrootdevice)
 	os.write(s, root_settings)
 if target_option == "AOSP":
 	os.write(s, "\n\n# AOSP setting tweaks...\n")
-	os.write(s, "include device/broadcom/common/settings_aosp.mk")
+	os.write(s, "include device/broadcom/bcm_platform/common/settings_aosp.mk")
 if target_option == "NFS":
 	os.write(s, "\n\n# NFS setting tweaks...\n")
-	os.write(s, "include device/broadcom/common/settings_nfs.mk")
+	os.write(s, "include device/broadcom/bcm_platform/common/settings_nfs.mk")
 if target_option == "PROFILE":
 	if os.access(custom_target_settings, os.F_OK):
 		os.write(s, "\n\n# CUSTOM setting tweaks...\n")
