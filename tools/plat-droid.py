@@ -89,7 +89,7 @@ def write_header(s, d):
 
 # how you should use this.
 def plat_droid_usage():
-	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [redux|aosp|nfs|profile <profile-name>] [spoof <cust-device> <cust-variant>|clone google <device>] [pdk]'
+	print 'usage: plat-droid.py <platform> <chip-rev> <board-type> [redux|aosp|nfs|profile <profile-name>] [spoof <cust-device> <cust-variant>|clone broadcom <device>] [pdk]'
 	print '\t<platform>    - the BCM platform number to build for, eg: 97252, 97445, ...'
 	print '\t<chip-rev>    - the BCM chip revision of interest, eg: A0, B0, C1, ...'
 	print '\t<board-type>  - the target board type, eg: SV, C'
@@ -110,7 +110,7 @@ def plat_droid_usage():
 	print '\t              -- clone-customer: the customer we are cloning.'
         print '\t              -- clone-variant: the customer device variant we are cloning.'
         print '\t              -- cloning would impersonate the cloned device while keeping the initial bcm_platform device characteristics.'
-        print '\t              -- note: the only valid clone target at this time is "google avko".'
+        print '\t              -- note: the only valid clone target at this time is "broadcom avko".'
 	print '\t[pdk]'
 	print '\t              - when set, assume we are building for a pdk integration'
 	print '\n'

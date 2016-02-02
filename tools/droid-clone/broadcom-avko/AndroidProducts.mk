@@ -1,4 +1,5 @@
-# Copyright (C) 2008 The Android Open Source Project
+#
+# Copyright 2015 The Android Open-Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,19 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
 
-LOCAL_PATH := $(call my-dir)
-
-ifneq ($(ANDROID_SUPPORTS_PLAYREADY), n)
-#---------------
-# libplayready_host.so for Sage support
-# libplayready.so for non-sage
-#---------------
-include $(CLEAR_VARS)
-ifeq ($(SAGE_SUPPORT), y)
-LOCAL_PREBUILT_LIBS := prebuilt/libplayreadypk_host.so
-endif
-LOCAL_MODULE_TAGS := optional
-include $(BUILD_MULTI_PREBUILT)
-endif
-
+PRODUCT_MAKEFILES := \
+   $(LOCAL_DIR)/avko.mk
