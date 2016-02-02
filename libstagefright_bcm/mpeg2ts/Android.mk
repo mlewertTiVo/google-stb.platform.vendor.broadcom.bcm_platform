@@ -11,12 +11,13 @@ LOCAL_SRC_FILES:=                 \
 
 LOCAL_C_INCLUDES:= \
 	$(TOP)/frameworks/av/media/libstagefright \
-	$(TOP)/frameworks/native/include/media/openmax
+	$(TOP)/frameworks/native/include/media/openmax \
+	$(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libstagefright_bcm
 
 LOCAL_CFLAGS += -Werror -Wall
 LOCAL_CLANG := true
 
-LOCAL_MODULE:= libstagefright_mpeg2ts
+LOCAL_MODULE:= libstagefright_mpeg2ts_bcm
 
 ifeq ($(TARGET_ARCH),arm)
     LOCAL_CFLAGS += -Wno-psabi

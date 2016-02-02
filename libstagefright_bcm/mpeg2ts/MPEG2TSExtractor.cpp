@@ -15,12 +15,12 @@
  */
 
 //#define LOG_NDEBUG 0
-#define LOG_TAG "MPEG2TSExtractor"
+#define LOG_TAG "BcmMPEG2TSExtractor"
 
 #include <inttypes.h>
 #include <utils/Log.h>
 
-#include "include/MPEG2TSExtractor.h"
+#include "include/BcmMPEG2TSExtractor.h"
 #include "include/NuCachedSource2.h"
 
 #include <media/stagefright/foundation/ABuffer.h>
@@ -477,6 +477,10 @@ bool SniffMPEG2TS(
     mimeType->setTo(MEDIA_MIMETYPE_CONTAINER_MPEG2TS);
 
     return true;
+}
+
+MediaExtractor* createMPEG2TSExtractor(const sp<DataSource> &source) {
+    return new MPEG2TSExtractor(source);
 }
 
 }  // namespace android

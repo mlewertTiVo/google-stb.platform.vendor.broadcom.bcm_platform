@@ -15,7 +15,7 @@
  */
 
 //#define LOG_NDEBUG 0
-#define LOG_TAG "MPEG4Extractor"
+#define LOG_TAG "BcmMPEG4Extractor"
 
 #include <ctype.h>
 #include <inttypes.h>
@@ -25,7 +25,7 @@
 
 #include <utils/Log.h>
 
-#include "include/MPEG4Extractor.h"
+#include "include/BcmMPEG4Extractor.h"
 #include "include/SampleTable.h"
 #include "include/ESDS.h"
 
@@ -4781,6 +4781,10 @@ bool SniffMPEG4(
     }
 
     return false;
+}
+
+MediaExtractor* createMPEG4Extractor(const sp<DataSource> &source) {
+    return new MPEG4Extractor(source);
 }
 
 }  // namespace android
