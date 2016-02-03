@@ -20,8 +20,8 @@ PRODUCT_NAME := avko
 PRODUCT_DEVICE := avko
 PRODUCT_MODEL := avko
 PRODUCT_CHARACTERISTICS := tv
-PRODUCT_MANUFACTURER := Google
-PRODUCT_BRAND := Google
+PRODUCT_MANUFACTURER := google
+PRODUCT_BRAND := google
 
 # clone install the correct extensions for the hardware based identified modules.
 PRODUCT_COPY_FILES += \
