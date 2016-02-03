@@ -82,7 +82,7 @@
 #define B_NUM_BUFFERS (6)
 #define B_STREAM_ID 0xc0
 #define B_FRAME_TIMER_INTERVAL (32)
-#define B_INPUT_BUFFERS_RETURN_INTERVAL (100)
+#define B_INPUT_BUFFERS_RETURN_INTERVAL (5000)
 #define B_AAC_ADTS_HEADER_LEN (7)
 
 /****************************************************************************
@@ -3276,6 +3276,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                 {
                     // Update the expected timestamp if the next frame is an EOS frame
                     numSample = pHeader->nFilledLen / (m_bitsPerSample / 8 * m_numPcmChannels);
+                    ALOGV("m_eosTimeStamp %llu->%llu", m_eosTimeStamp, pHeader->nTimeStamp + (numSample * 1000000ll / m_pFrameStatus[i].sampleRate));
                     m_eosTimeStamp = pHeader->nTimeStamp + (numSample * 1000000ll / m_pFrameStatus[i].sampleRate);
                 }
 
