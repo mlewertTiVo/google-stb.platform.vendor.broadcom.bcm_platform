@@ -237,6 +237,9 @@ if [ -f $BCG_XML ]; then
   # Misc tools
   extract_path_from_xml name android/busybox >> $WHITE_LIST
 
+  # Reference devices
+  extract_path_from_xml name android/device/google/avko >> $WHITE_LIST
+
 else
   echo "$BCG_XML not found, exiting..."
   exit 0
@@ -268,10 +271,16 @@ cd $TOP_DIR
 
 # Append custom white and black lists if present
 if [ -f $SCRIPT_DIR/include.txt ]; then
-  cat $SCRIPT_DIR/include.txt >> $WHITE_LIST
+  while read -r line
+  do
+    echo $line >> $WHITE_LIST
+  done < "$SCRIPT_DIR/include.txt"
 fi
 if [ -f $SCRIPT_DIR/exclude.txt ]; then
-  cat $SCRIPT_DIR/exclude.txt >> $BLACK_LIST
+  while read -r line
+  do
+    echo $line >> $BLACK_LIST
+  done < "$SCRIPT_DIR/exclude.txt"
 fi
 
 # Tar up the entire temp directory except the white/black lists
