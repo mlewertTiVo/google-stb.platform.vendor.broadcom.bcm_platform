@@ -138,6 +138,7 @@ using namespace android;
 #define HWC_CAPABLE_COMP_BYPASS      "ro.nx.capable.cb"
 #define HWC_CAPABLE_BACKGROUND       "ro.nx.capable.bg"
 #define HWC_CAPABLE_TOGGLE_MODE      "ro.nx.capable.tm"
+#define HWC_COMP_VIDEO               "ro.nx.cvbs"
 
 #define HWC_DUMP_LAYER_PROP          "dyn.nx.hwc.dump.layer"
 #define HWC_DUMP_VIRT_PROP           "dyn.nx.hwc.dump.virt"
@@ -643,6 +644,7 @@ struct hwc_context_t {
     bool display_gles_always;
     bool display_gles_virtual;
     bool needs_fb_target;
+    bool comp_bypass;
 
     BKNI_MutexHandle power_mutex;
     int power_mode;
@@ -1573,7 +1575,7 @@ static void hwc_hotplug_notify(int dev)
        newmode = CLIENT_MODE_NSC_FRAMEBUFFER;
     break;
     default:
-       newmode = CLIENT_MODE_COMP_BYPASS;
+       newmode = ctx->comp_bypass ? CLIENT_MODE_COMP_BYPASS : CLIENT_MODE_NSC_FRAMEBUFFER;
     break;
     }
 
@@ -4429,6 +4431,11 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
    dev->toggle_fb_mode       = property_get_bool(HWC_CAPABLE_TOGGLE_MODE, 1);
    dev->ignore_cursor        = property_get_bool(HWC_IGNORE_CURSOR,       HWC_CURSOR_SURFACE_SUPPORTED ? 1 : 0);
    dev->hack_sync_refresh    = property_get_bool(HWC_HACK_SYNC_REFRESH,   0);
+   dev->comp_bypass          = property_get_bool(HWC_CAPABLE_COMP_BYPASS, 0);
+
+   if (property_get_bool(HWC_COMP_VIDEO, 0)) {
+      dev->comp_bypass = false;
+   }
 }
 
 static int hwc_device_open(const struct hw_module_t* module, const char* name,
@@ -4543,7 +4550,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                goto clean_up;
             }
             rc = hwc_setup_framebuffer_mode(dev, i,
-               property_get_int32(HWC_CAPABLE_COMP_BYPASS, 0) ? CLIENT_MODE_COMP_BYPASS : CLIENT_MODE_NSC_FRAMEBUFFER);
+               dev->comp_bypass ? CLIENT_MODE_COMP_BYPASS : CLIENT_MODE_NSC_FRAMEBUFFER);
             if (rc) {
                ALOGE("%s: unable to setup framebuffer mode %d", __FUNCTION__, rc);
                goto clean_up;
