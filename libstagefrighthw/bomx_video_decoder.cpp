@@ -117,7 +117,7 @@ struct BOMX_VideoDecodeFrameInterval
     NEXUS_VideoFrameRate rate;
     int interval;
 };
-static const BOMX_VideoDecodeFrameInterval g_inFrameIntervals[] = {{NEXUS_VideoFrameRate_eUnknown,  34},
+static const BOMX_VideoDecodeFrameInterval g_inFrameIntervals[] = {{NEXUS_VideoFrameRate_eUnknown,  17},    // Worst case
                                                                    {NEXUS_VideoFrameRate_e23_976,   42},
                                                                    {NEXUS_VideoFrameRate_e24,       42},
                                                                    {NEXUS_VideoFrameRate_e25,       40},
@@ -2218,13 +2218,9 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 vdecStartSettings.settings.stcChannel = NULL;
                 vdecStartSettings.settings.pidChannel = m_hPidChannel;
                 vdecStartSettings.settings.codec = GetNexusCodec();
+                vdecStartSettings.maxWidth = m_maxDecoderWidth;     // Always request the max dimension for allowing decoder not waiting for output buffer
+                vdecStartSettings.maxHeight = m_maxDecoderHeight;
                 ALOGV("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec);
-                if ( vdecStartSettings.settings.codec == NEXUS_VideoCodec_eH265 || vdecStartSettings.settings.codec == NEXUS_VideoCodec_eVp9 )
-                {
-                    // Request non-standard decoder for HEVC/VP9 only
-                    vdecStartSettings.maxWidth = m_maxDecoderWidth;
-                    vdecStartSettings.maxHeight = m_maxDecoderHeight;
-                }
                 errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
                 if ( errCode )
                 {
@@ -3623,7 +3619,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     pInfo->numDescriptors = 0;
     pInfo->complete = false;
 
-    ALOGV("%s, comp:%s, buff:%p len:%d ts:%d flags:0x%x", __FUNCTION__, GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, (int)pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
+    ALOGV("%s, comp:%s, buff:%p len:%d ts:%lld flags:0x%x avail:%d", __FUNCTION__, GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags, m_AvailInputBuffers);
     BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::INPUT_FRAME, pBufferHeader->nTimeStamp, pBufferHeader->nFlags, pBufferHeader->nFilledLen);
 
     if ( m_pInputFile )
@@ -3868,7 +3864,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         pFrameBuffer = pInfo->pFrameBuffer;
     }
     pInfo->pFrameBuffer = NULL;
-    ALOGV("Fill Buffer, comp:%s ts %u us serial %u pInfo %#x HDR %#x", GetName(), (unsigned int)pBufferHeader->nTimeStamp, pFrameBuffer ? pFrameBuffer->frameStatus.serialNumber : -1, pInfo, pBufferHeader);
+    ALOGV("Fill Buffer, comp:%s ts %lld us serial %u pInfo %#x HDR %#x", GetName(), pBufferHeader->nTimeStamp, pFrameBuffer ? pFrameBuffer->frameStatus.serialNumber : -1, pInfo, pBufferHeader);
     // Determine what to do with the buffer
     if ( pFrameBuffer )
     {
@@ -4666,7 +4662,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 pBuffer->state = BOMX_VideoDecoderFrameBufferState_eDelivered;
                 pInfo->pFrameBuffer = pBuffer;
                 pBuffer->pBufferInfo = pInfo;
-                ALOGV("Returning Port Buffer ts %u us serial %u pInfo %#x FB %#x HDR %#x flags %#x", (unsigned int)pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader, pHeader->nFlags);
+                ALOGV("Returning Port Buffer ts %lld us serial %u pInfo %#x FB %#x HDR %#x flags %#x", pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader, pHeader->nFlags);
                 {
                     unsigned queueDepthBefore = m_pVideoPorts[1]->QueueDepth();
                     BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::OUTPUT_FRAME, pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber);
