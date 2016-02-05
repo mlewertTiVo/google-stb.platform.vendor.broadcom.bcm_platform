@@ -56,6 +56,7 @@ endif
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
 include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
+include ${BCM_APPS_PATH}/BcmKeyInterceptor/Android.mk
 include ${BCM_APPS_PATH}/LeanbackBcmCustom/Android.mk
 include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
 
