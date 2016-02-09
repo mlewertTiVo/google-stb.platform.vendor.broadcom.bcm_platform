@@ -282,7 +282,7 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
             return;
         }
 
-        isConnected = (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? HDMI_CONNECTED : HDMI_UNPLUGGED;
+        isConnected = (status.hdmi.status.connected) ? HDMI_CONNECTED : HDMI_UNPLUGGED;
 
         // If the last hotplug connected state is the same as the current one and we are connected,
         // then it means that we need to manually generate a disconnected event...

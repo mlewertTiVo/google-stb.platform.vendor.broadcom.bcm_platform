@@ -397,7 +397,7 @@ void NexusService::hdmiOutputHotplugCallback(void *context __unused, int param _
 
         for (it = pNexusService->server->mHdmiHotplugEventListenerList[param].begin(); it != pNexusService->server->mHdmiHotplugEventListenerList[param].end(); ++it) {
             ALOGV("%s: Firing off HDMI%d hotplug %s event for listener %p...", __PRETTY_FUNCTION__, param,
-                 (status.connected && status.rxPowered) ? "connected" : "disconnected", (*it).get());
+                 (status.connected) ? "connected" : "disconnected", (*it).get());
             (*it)->onHdmiHotplugEventReceived(param, status.connected && status.rxPowered);
         }
     }
