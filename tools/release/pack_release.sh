@@ -273,13 +273,19 @@ cd $TOP_DIR
 if [ -f $SCRIPT_DIR/include.txt ]; then
   while read -r line
   do
-    echo $line >> $WHITE_LIST
+    stringarray=($line)
+    for word in "${stringarray[@]}"; do
+      echo $word >> $WHITE_LIST
+    done
   done < "$SCRIPT_DIR/include.txt"
 fi
 if [ -f $SCRIPT_DIR/exclude.txt ]; then
   while read -r line
   do
-    echo $line >> $BLACK_LIST
+    stringarray=($line)
+    for word in "${stringarray[@]}"; do
+      echo $word >> $BLACK_LIST
+    done
   done < "$SCRIPT_DIR/exclude.txt"
 fi
 
