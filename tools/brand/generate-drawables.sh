@@ -25,7 +25,10 @@ generate_ic_launcher_by_density_size()
 
     echo "Generating $output (${size}x${size})..."
     mkdir -p $directory
-    convert -resize $size $BROADCOM_LOGO $output
+    convert -resize $size \
+        -gravity center \
+        -extent ${size}x${size} \
+        $BROADCOM_LOGO $output
 }
 
 # Generate an icon by density
