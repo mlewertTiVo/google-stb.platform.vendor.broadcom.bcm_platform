@@ -115,6 +115,8 @@
 #define NX_CAPABLE_COMP_BYPASS         "ro.nx.capable.cb"
 #define NX_COMP_VIDEO                  "ro.nx.cvbs"
 
+#define NX_HDMI_DRM_KEY                "ro.nx.hdmi_drm"
+
 #define NX_ODV                         "ro.nx.odv"
 #define NX_ODV_ALT_THRESHOLD           "ro.nx.odv.use.alt"
 #define NX_ODV_ALT_1_USAGE             "ro.nx.odv.a1.use"
@@ -835,6 +837,15 @@ static nxserver_t init_nxserver(void)
        }
        fclose(key);
     }
+
+    /* -hdmi_drm */
+    memset(value, 0, sizeof(value));
+    if ( property_get(NX_HDMI_DRM_KEY, value, NX_PROP_DISABLED) ) {
+        if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+            settings.hdmi.drm = true;
+        }
+    }
+
     /* -hdcp1x_keys some-key-file  -- setup last. */
     memset(value, 0, sizeof(value));
     property_get(NX_HDCP1X_KEY, value, NULL);
