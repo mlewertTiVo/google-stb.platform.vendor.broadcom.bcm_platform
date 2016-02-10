@@ -4218,14 +4218,24 @@ static bool hwc_standby_monitor(void *dev)
 {
     bool standby = false;
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
+    int powerMode;
 
     if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
        ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
        goto out;
     }
-    standby = (ctx == NULL) || (ctx->power_mode == HWC_POWER_MODE_OFF);
-    ALOGV("%s: standby=%d", __FUNCTION__, standby);
+    powerMode = ctx->power_mode;
     BKNI_ReleaseMutex(ctx->power_mutex);
+
+    // If Nexus has been told to enter standby and the primary display is turned on,
+    // then force the display to power off...
+    if (powerMode == HWC_POWER_MODE_NORMAL) {
+        hwc_device_setPowerMode(&ctx->device, HWC_DISPLAY_PRIMARY, HWC_POWER_MODE_OFF);
+    }
+    else {
+        standby = (powerMode == HWC_POWER_MODE_OFF);
+    }
+    ALOGV("%s: standby=%d", __FUNCTION__, standby);
 
 out:
     return standby;

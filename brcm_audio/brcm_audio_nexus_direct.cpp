@@ -273,11 +273,19 @@ static bool nexus_direct_bout_standby_monitor(void *context)
 {
     bool standby = true;
     struct brcm_stream_out *bout = (struct brcm_stream_out *)context;
+    bool started;
 
     if (bout != NULL) {
         pthread_mutex_lock(&bout->lock);
-        standby = (bout->started == false);
+        started = bout->started;
         pthread_mutex_unlock(&bout->lock);
+        if (started) {
+            bout->aout.common.standby(&bout->aout.common);
+            bout->suspended = true;
+        }
+        else {
+            standby = (started == false);
+        }
     }
     ALOGV("%s: standby=%d", __FUNCTION__, standby);
     return standby;
