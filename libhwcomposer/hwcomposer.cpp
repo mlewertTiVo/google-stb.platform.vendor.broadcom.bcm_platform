@@ -1736,7 +1736,7 @@ static bool is_video_layer(struct hwc_context_t *ctx, VIDEO_LAYER_VALIDATION *da
    }
 
 out:
-    return rc;
+   return rc;
 }
 
 static bool can_handle_downscale(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
@@ -2462,8 +2462,13 @@ static bool primary_need_nsc_layer(struct hwc_context_t *ctx, hwc_layer_1_t *lay
     rc = true;
 out:
 
-    if (!rc && (total_layers == 1) && (ctx->display_dump_layer & HWC_DUMP_LEVEL_CLASSIFY)) {
-       ALOGI("comp: %llu - skip-single - reason %d", ctx->stats[HWC_PRIMARY_IX].prepare_call, skip_layer);
+    if (!rc && (ctx->display_dump_layer & HWC_DUMP_LEVEL_CLASSIFY)) {
+       if (total_layers == 1) {
+          ALOGI("comp: %llu - skip-single - reason %d", ctx->stats[HWC_PRIMARY_IX].prepare_call, skip_layer);
+       } else {
+          ALOGI("comp: %llu - skip-layer (%d:%d:%d:%d) - reason %d", ctx->stats[HWC_PRIMARY_IX].prepare_call, layer->compositionType,
+                ctx->display_gles_always, ctx->display_gles_fallback, ctx->needs_fb_target, skip_layer);
+       }
     }
     return rc;
 }
@@ -2613,6 +2618,10 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
     ctx->needs_fb_target = false;
     for (i = 0; i < list->numHwLayers; i++) {
         layer = &list->hwLayers[i];
+        if (ctx->display_dump_layer & HWC_DUMP_LEVEL_CLASSIFY) {
+           ALOGI("comp: %llu - in-layer: %d, comp: %d",
+              ctx->stats[HWC_PRIMARY_IX].prepare_call, i, layer->compositionType);
+        }
         // we do not handle background layer at this time, we report such to SF.
         if (layer->compositionType == HWC_BACKGROUND)
            layer->compositionType = HWC_FRAMEBUFFER;
@@ -2644,11 +2653,16 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
                     layer->compositionType = HWC_OVERLAY;
                     layer->hints |= HWC_HINT_TRIPLE_BUFFER;
                  }
-                 if (ctx->display_gles_fallback && !can_handle_downscale(ctx, layer)) {
+                 if (ctx->display_gles_always ||
+                     (ctx->display_gles_fallback && !can_handle_downscale(ctx, layer))) {
                     layer->compositionType = HWC_FRAMEBUFFER;
                  }
               }
            }
+        }
+        if (ctx->display_dump_layer & HWC_DUMP_LEVEL_CLASSIFY) {
+           ALOGI("comp: %llu - out-layer: %d, comp: %d",
+              ctx->stats[HWC_PRIMARY_IX].prepare_call, i, layer->compositionType);
         }
     }
 
@@ -2669,7 +2683,7 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
     }
 
     if (ctx->display_gles_fallback ||
-        (ctx->display_gles_always && has_video == false)) {
+        (ctx->display_gles_always && !has_video)) {
        for (i = 0; i < list->numHwLayers; i++) {
           layer = &list->hwLayers[i];
           if (layer->compositionType == HWC_FRAMEBUFFER) {
@@ -2679,8 +2693,8 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
        }
     }
 
-    if ((ctx->display_gles_fallback && skip_layer_index != -1) ||
-        (ctx->display_gles_always && has_video == false) ||
+    if ((ctx->display_gles_fallback && (skip_layer_index != -1)) ||
+        (ctx->display_gles_always && !has_video) ||
         ctx->needs_fb_target) {
        for (i = 0; i < list->numHwLayers; i++) {
           layer = &list->hwLayers[i];
