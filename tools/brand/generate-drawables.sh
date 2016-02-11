@@ -8,7 +8,10 @@
 #   LOCAL_RESOURCE_DIR += $(BCM_VENDOR_STB_ROOT)/bcm_platform/tools/brand/res
 #   LOCAL_RESOURCE_DIR += $(LOCAL_PATH)/res
 
-BROADCOM_LOGO=Broadcom.svg
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+BROADCOM_LOGO=Broadcom_pulse.svg
+# librsvg limitation: external file reference paths must be absolute
+sed -i 's|\(.*xlink:href="\).*\(Broadcom\.svg.*\)|\1file://'$DIR'/\2|' $BROADCOM_LOGO
 
 # Create (non-leanback) launcher icons (used in TvSettings)
 
@@ -28,6 +31,7 @@ generate_ic_launcher_by_density_size()
     convert -resize $size \
         -gravity center \
         -extent ${size}x${size} \
+        -background none \
         $BROADCOM_LOGO $output
 }
 
