@@ -1919,7 +1919,7 @@ static void hwc_clear_acquire_release_fences(struct hwc_context_t* ctx, hwc_disp
       if (list->hwLayers[i].acquireFenceFd != INVALID_FENCE) {
          close(list->hwLayers[i].acquireFenceFd);
          if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-            ALOGI("fence: %llu/%d - acquire: %d -> early-comp+close\n",
+            ALOGI("fence: %llu/%d - acquire-fence: %d -> early-comp+close\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, i,
                   list->hwLayers[i].acquireFenceFd);
          }
@@ -1929,7 +1929,7 @@ static void hwc_clear_acquire_release_fences(struct hwc_context_t* ctx, hwc_disp
          sw_sync_timeline_inc(list->hwLayers[i].releaseFenceFd, 1);
          close(list->hwLayers[i].releaseFenceFd);
          if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-            ALOGI("fence: %llu/%d - timeline: %d -> early-inc+close\n",
+            ALOGI("fence: %llu/%d - timeline-release: %d -> early-inc+close\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, i,
                   list->hwLayers[i].releaseFenceFd);
          }
@@ -3159,7 +3159,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
            list->retireFenceFd = hwc_retire_fence(ctx, HWC_PRIMARY_IX);
            this_frame->content.retireFenceFd = list->retireFenceFd;
            if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-              ALOGI("fence: %llu/%d - retire: %d\n",
+              ALOGI("fence: %llu/%d - retire-fence: %d\n",
                  ctx->stats[HWC_PRIMARY_IX].set_call, i, list->retireFenceFd);
            }
            for (i = 0; i < list->numHwLayers; i++) {
@@ -3169,7 +3169,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                  this_frame->content.hwLayers[i].releaseFenceFd =
                      hwc_release_timeline_with_fence(ctx, HWC_PRIMARY_IX, i, &list->hwLayers[i].releaseFenceFd);
                  if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-                    ALOGI("fence: %llu/%d - timeline: %d -> fence: %d\n",
+                    ALOGI("fence: %llu/%d - timeline-release: %d -> fence: %d\n",
                        ctx->stats[HWC_PRIMARY_IX].set_call, i,
                        this_frame->content.hwLayers[i].releaseFenceFd, list->hwLayers[i].releaseFenceFd);
                  }
@@ -3369,13 +3369,13 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             if (ctx->track_comp_time) {
                item->fence_wait += (hwc_tick() - tick_now);
             }
-            close(list->hwLayers[i].acquireFenceFd);
-            list->hwLayers[i].acquireFenceFd = INVALID_FENCE;
             if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-               ALOGI("fence: %llu/%d - acquire: %d -> wait+close\n",
+               ALOGI("fence: %llu/%d - acquire-fence: %d -> wait+close\n",
                      ctx->stats[HWC_PRIMARY_IX].set_call, i,
                      list->hwLayers[i].acquireFenceFd);
             }
+            close(list->hwLayers[i].acquireFenceFd);
+            list->hwLayers[i].acquireFenceFd = INVALID_FENCE;
          }
          if (item->skip_set[i]) {
             skip_comp = true;
@@ -3475,7 +3475,7 @@ out:
       if (list->hwLayers[i].acquireFenceFd != INVALID_FENCE) {
          close(list->hwLayers[i].acquireFenceFd);
          if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-            ALOGI("fence: %llu/%d - acquire: %d -> comp+err+close\n",
+            ALOGI("fence: %llu/%d - acquire-fence: %d -> comp+err+close\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, i,
                   list->hwLayers[i].acquireFenceFd);
          }
@@ -3484,7 +3484,7 @@ out:
          sw_sync_timeline_inc(list->hwLayers[i].releaseFenceFd, 1);
          close(list->hwLayers[i].releaseFenceFd);
          if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-            ALOGI("fence: %llu/%d - timeline: %d -> inc+close\n",
+            ALOGI("fence: %llu/%d - timeline-release: %d -> inc+close\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, i,
                   list->hwLayers[i].releaseFenceFd);
          }
@@ -3578,7 +3578,7 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                 this_frame->content.hwLayers[i].releaseFenceFd =
                     hwc_release_timeline_with_fence(ctx, HWC_VIRTUAL_IX, i, &list->hwLayers[i].releaseFenceFd);
                 if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-                   ALOGI("vfence: %llu/%d - timeline: %d -> fence: %d\n",
+                   ALOGI("vfence: %llu/%d - timeline-release: %d -> fence: %d\n",
                       ctx->stats[HWC_VIRTUAL_IX].set_call, i,
                       this_frame->content.hwLayers[i].releaseFenceFd, list->hwLayers[i].releaseFenceFd);
                 }
@@ -3738,7 +3738,7 @@ out:
       if (list->hwLayers[i].acquireFenceFd != INVALID_FENCE) {
          close(list->hwLayers[i].acquireFenceFd);
          if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-            ALOGI("vfence: %llu/%d - acquire: %d -> comp+err+close\n",
+            ALOGI("vfence: %llu/%d - acquire-fence: %d -> comp+err+close\n",
                   ctx->stats[HWC_VIRTUAL_IX].set_call, i,
                   list->hwLayers[i].acquireFenceFd);
          }
@@ -3747,7 +3747,7 @@ out:
          sw_sync_timeline_inc(list->hwLayers[i].releaseFenceFd, 1);
          close(list->hwLayers[i].releaseFenceFd);
          if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-            ALOGI("vfence: %llu/%d - timeline: %d -> inc+close\n",
+            ALOGI("vfence: %llu/%d - timeline-release: %d -> inc+close\n",
                   ctx->stats[HWC_VIRTUAL_IX].set_call, i,
                   list->hwLayers[i].releaseFenceFd);
          }
