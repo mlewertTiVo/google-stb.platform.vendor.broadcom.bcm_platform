@@ -363,9 +363,9 @@ if clone_device != 'nope' and clone_variant != 'nope':
 	if os.access(clone_copy, os.F_OK):
 		clone_destination="./device/%s/%s/AndroidBoard.mk" %(clone_device, clone_variant)
 		shutil.copy2(clone_copy, clone_destination)
-	clone_copy="./vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/AndroidBoard.mk" %(clone_device, clone_variant)
+	clone_copy="./vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/AndroidProduct.clone" %(clone_device, clone_variant)
 	if os.access(clone_copy, os.F_OK):
-		clone_destination="./device/%s/%s/AndroidBoard.mk" %(clone_device, clone_variant)
+		clone_destination="./device/%s/%s/AndroidProduct.mk" %(clone_device, clone_variant)
 		shutil.copy2(clone_copy, clone_destination)
 	clone_copy_source="./device/broadcom/bcm_platform/recovery"
 	clone_copy_destination="./device/%s/%s/recovery" %(clone_device, clone_variant)
