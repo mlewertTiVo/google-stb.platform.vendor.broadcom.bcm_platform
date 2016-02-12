@@ -27,7 +27,7 @@ function HELP {
 TOP_DIR=$(pwd)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR=tmp_bcmrel
-PREBUILT=vendor/broadcom/stb/release_prebuilts
+PREBUILT=vendor/broadcom/release_prebuilts
 PREBUILT_DIR="$TOP_DIR/$PREBUILT"
 
 DFT_XML="$TOP_DIR/.repo/manifests/default.xml"

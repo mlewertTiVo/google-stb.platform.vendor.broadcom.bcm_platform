@@ -230,7 +230,7 @@ boardconfig="BoardConfig.mk"
 rmdir_then_mkdir(devicedirectory)
 
 # get the toolchain expected for kernel image and modules build
-run_toolchain='bash -c "cat ./vendor/broadcom/stb/bcm_platform/tools/kernel-toolchain"'
+run_toolchain='bash -c "cat ./vendor/broadcom/bcm_platform/tools/kernel-toolchain"'
 if verbose:
 	print run_toolchain
 lines = check_output(run_toolchain,shell=True).splitlines()
@@ -239,13 +239,13 @@ kerneltoolchain="${ANDROID}/prebuilts/gcc/linux-x86/arm/stb/%s/bin" % lines[0].r
 # get the toolchain expected for building BOLT and make sure it does not
 # diverge from kernel toolchain as we want only a single verion in Android
 # tree at any point in time
-run_toolchain='bash -c "cat ./vendor/broadcom/stb/bolt/config/toolchain"'
+run_toolchain='bash -c "cat ./vendor/broadcom/bolt/config/toolchain"'
 if verbose:
 	print run_toolchain
 boltlines = check_output(run_toolchain,shell=True).splitlines()
 
 # run the refsw plat tool to get the generated versions of the config.
-run_plat='bash -c "source ./vendor/broadcom/stb/refsw/BSEAV/tools/build/plat %s %s %s"' % (chip, revision, boardtype)
+run_plat='bash -c "source ./vendor/broadcom/refsw/BSEAV/tools/build/plat %s %s %s"' % (chip, revision, boardtype)
 if verbose:
 	print run_plat
 refsw_configuration_selected=''
@@ -342,9 +342,9 @@ if target_option == "PROFILE":
 		os.write(s, "\n\n# CUSTOM setting tweaks...\n")
 		os.write(s, "include %s\n" % custom_target_settings)
 if clone_device != 'nope' and clone_variant != 'nope':
-	clone_settings="./vendor/broadcom/stb/bcm_platform/tools/droid-clone/%s-%s/settings.mk" %(clone_device, clone_variant)
+	clone_settings="./vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/settings.mk" %(clone_device, clone_variant)
 	if os.access(clone_settings, os.F_OK):
-		clone_settings="include vendor/broadcom/stb/bcm_platform/tools/droid-clone/%s-%s/settings.mk\n" %(clone_device, clone_variant)
+		clone_settings="include vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/settings.mk\n" %(clone_device, clone_variant)
 		os.write(s, "\n\n# CLONE setting tweaks...\n")
 		os.write(s, clone_settings)
 elif spoof_device != 'nope' and spoof_variant != 'nope':
@@ -359,11 +359,11 @@ os.write(s, "\n\n# exporting toolchains path for kernel image+modules\n")
 os.write(s, "export PATH := %s:${PATH}\n" % kerneltoolchain)
 os.close(s);
 if clone_device != 'nope' and clone_variant != 'nope':
-	clone_copy="./vendor/broadcom/stb/bcm_platform/tools/droid-clone/%s-%s/AndroidBoard.mk" %(clone_device, clone_variant)
+	clone_copy="./vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/AndroidBoard.mk" %(clone_device, clone_variant)
 	if os.access(clone_copy, os.F_OK):
 		clone_destination="./device/%s/%s/AndroidBoard.mk" %(clone_device, clone_variant)
 		shutil.copy2(clone_copy, clone_destination)
-	clone_copy="./vendor/broadcom/stb/bcm_platform/tools/droid-clone/%s-%s/AndroidBoard.mk" %(clone_device, clone_variant)
+	clone_copy="./vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/AndroidBoard.mk" %(clone_device, clone_variant)
 	if os.access(clone_copy, os.F_OK):
 		clone_destination="./device/%s/%s/AndroidBoard.mk" %(clone_device, clone_variant)
 		shutil.copy2(clone_copy, clone_destination)
@@ -374,7 +374,7 @@ if clone_device != 'nope' and clone_variant != 'nope':
 	if os.access(clone_copy, os.F_OK):
 		clone_destination="./device/%s/%s/recovery.fstab" %(clone_device, clone_variant)
 		shutil.copy2(clone_copy, clone_destination)
-	clone_copy="./vendor/broadcom/stb/bcm_platform/tools/droid-clone/%s-%s/Android.mk.recovery" %(clone_device, clone_variant)
+	clone_copy="./vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/Android.mk.recovery" %(clone_device, clone_variant)
 	if os.access(clone_copy, os.F_OK):
 		clone_destination="./device/%s/%s/recovery/Android.mk" %(clone_device, clone_variant)
 		shutil.copy2(clone_copy, clone_destination)
