@@ -50,7 +50,7 @@ LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21
 include ${REFSW_BASE_DIR}/magnum/syslib/sagelib/bsagelib_public.inc
 
 LOCAL_SRC_FILES := \
-    test_sage/src/oemcrypto_brcm_TL.cpp\
+    brcm_oemcrypto_L1/src/oemcrypto_brcm_TL.cpp\
     core/src/string_conversions.cpp\
     core/src/properties.cpp \
     linux/src/log.cpp \
@@ -60,7 +60,7 @@ LOCAL_C_INCLUDES := \
     $(TOP)/bionic \
     $(TOP)/external/boringssl/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
-    ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21/test_sage/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21/brcm_oemcrypto_L1/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21/core/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21/third_party/stringencoders/src \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
