@@ -14,9 +14,10 @@
 
 ifneq ($(filter bcm_% fbx6lc avko arrow,$(TARGET_DEVICE)),)
 
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-nexus.mk
+
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_audio/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_memtrack/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_nexus/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hdmi_cec/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libb_os/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libb_playback_ip/Android.mk
@@ -41,7 +42,6 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxmini/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxserver/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/pmlibservice/Android.mk
 
-
 ifeq ($(ANDROID_SUPPORTS_DTVKIT),y)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_dtvkit/Android.mk
 endif
@@ -50,15 +50,15 @@ BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/app
 
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
 include ${BCM_APPS_PATH}/BcmCoverFlow/Android.mk
+include ${BCM_APPS_PATH}/BcmKeyInterceptor/Android.mk
+include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
+include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
 ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 endif
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
-include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
-include ${BCM_APPS_PATH}/BcmKeyInterceptor/Android.mk
 include ${BCM_APPS_PATH}/LeanbackBcmCustom/Android.mk
-include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
 
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bsysperf/Android.mk
@@ -79,13 +79,5 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/otpgetchipid/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/prdy_pes_playback/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/setdisplay/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/yv12torgba/Android.mk
-
-ifneq ($(wildcard ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/README.txt),)
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/ExoPlayerDemo/Android.mk
-ifneq ($(TARGET_BUILD_PDK),true)
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/WidevineSamplePlayer/Android.mk
-endif
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/omx_conformance_test/Android.mk
-endif
 
 endif

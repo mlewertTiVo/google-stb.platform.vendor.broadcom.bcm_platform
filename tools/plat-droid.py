@@ -20,7 +20,7 @@ from subprocess import call,check_output,STDOUT
 from stat import *
 
 # debug this script.
-verbose=0
+verbose=1
 
 def parse_and_select(l):
 	selected = False
@@ -30,6 +30,13 @@ def parse_and_select(l):
 		if verbose:
 			print 'selecting: %s' % l
 	data = re.findall('BCHP_VER', l)
+	if len(data) > 0:
+		data = re.findall('=', l)
+		if len(data) > 0:
+			selected = True
+			if verbose:
+				print 'selecting: %s' % l
+	data = re.findall('BCHP_CHIP', l)
 	if len(data) > 0:
 		data = re.findall('=', l)
 		if len(data) > 0:
@@ -252,6 +259,8 @@ refsw_configuration_selected=''
 lines = check_output(run_plat,stderr=STDOUT,shell=True).splitlines()
 for line in lines:
 	line = line.rstrip()
+	if verbose:
+		print line
 	if parse_and_select(line):
 		refsw_configuration_selected='%s\nexport %s' % (refsw_configuration_selected, line)
 		nexus_platform = re.findall('NEXUS_PLATFORM', line)

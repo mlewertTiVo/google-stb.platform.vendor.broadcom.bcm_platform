@@ -39,10 +39,10 @@ EXTRA_SYSTEM_LIB_FILES := \
 
 ifeq ($(SAGE_SUPPORT),y)
 EXTRA_SYSTEM_BIN_FILES := \
-   $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_nexus/bin/sage_bl.bin \
-   $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_nexus/bin/sage_bl_dev.bin \
-   $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_nexus/bin/sage_os_app.bin \
-   $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_nexus/bin/sage_os_app_dev.bin
+   ${NEXUS_BIN_DIR}/sage_bl.bin \
+   ${NEXUS_BIN_DIR}/sage_bl_dev.bin \
+   ${NEXUS_BIN_DIR}/sage_os_app.bin \
+   ${NEXUS_BIN_DIR}/sage_os_app_dev.bin
 endif
 
 define copy-recovery-extra-files
