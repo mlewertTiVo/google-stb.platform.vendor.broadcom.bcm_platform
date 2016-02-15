@@ -35,14 +35,16 @@ NXMINI := $(call intermediates-dir-for,EXECUTABLES,nxmini)/nxmini
 
 EXTRA_SYSTEM_LIB_FILES := \
    $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/fbdev/bcmnexusfb.ko \
-   $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_nexus/bin/nexus.ko
+   ${NEXUS_BIN_DIR}/nexus.ko
 
 ifeq ($(SAGE_SUPPORT),y)
+SAGE_BL_BINARY_PATH  := $(BSEAV_TOP)/lib/security/sage/bin/$(BCHP_CHIP)$(BCHP_VER)
+SAGE_APP_BINARY_PATH := $(SAGE_BL_BINARY_PATH)/securemode$(SAGE_SECURE_MODE)
 EXTRA_SYSTEM_BIN_FILES := \
-   ${NEXUS_BIN_DIR}/sage_bl.bin \
-   ${NEXUS_BIN_DIR}/sage_bl_dev.bin \
-   ${NEXUS_BIN_DIR}/sage_os_app.bin \
-   ${NEXUS_BIN_DIR}/sage_os_app_dev.bin
+   ${SAGE_BL_BINARY_PATH}/sage_bl.bin \
+   ${SAGE_BL_BINARY_PATH}/sage_bl_dev.bin \
+   ${SAGE_APP_BINARY_PATH}/sage_os_app.bin \
+   ${SAGE_APP_BINARY_PATH}/sage_os_app_dev.bin
 endif
 
 define copy-recovery-extra-files
