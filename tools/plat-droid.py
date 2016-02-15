@@ -329,6 +329,12 @@ if target_option == "PROFILE" and custom_target_pre_settings != 'nope':
 	if os.access(custom_target_pre_settings, os.F_OK):
 		os.write(s, "\n\n# CUSTOM 'pre' setting tweaks...\n")
 		os.write(s, "include %s\n" % custom_target_pre_settings)
+if clone_device != 'nope' and clone_variant != 'nope':
+	clone_pre_settings="./vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/pre_settings.mk" %(clone_device, clone_variant)
+	if os.access(clone_pre_settings, os.F_OK):
+		clone_pre_settings="include vendor/broadcom/bcm_platform/tools/droid-clone/%s-%s/pre_settings.mk\n" %(clone_device, clone_variant)
+		os.write(s, "\n\n# CLONE 'pre' setting tweaks...\n")
+		os.write(s, clone_pre_settings)
 if target_option == "REDUX":
 	os.write(s, "\n\n# REDUX target set...\n")
 	os.write(s, "include device/broadcom/bcm_platform/common/target_redux.mk")
