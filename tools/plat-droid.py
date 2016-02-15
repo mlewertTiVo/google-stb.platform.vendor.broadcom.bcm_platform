@@ -20,7 +20,7 @@ from subprocess import call,check_output,STDOUT
 from stat import *
 
 # debug this script.
-verbose=1
+verbose=0
 
 def parse_and_select(l):
 	selected = False
