@@ -34,7 +34,7 @@ include $(CLEAR_VARS)
 NXMINI := $(call intermediates-dir-for,EXECUTABLES,nxmini)/nxmini
 
 EXTRA_SYSTEM_LIB_FILES := \
-   $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/fbdev/bcmnexusfb.ko \
+   ${NEXUS_BIN_DIR}/bcmnexusfb.ko \
    ${NEXUS_BIN_DIR}/nexus.ko
 
 ifeq ($(SAGE_SUPPORT),y)
