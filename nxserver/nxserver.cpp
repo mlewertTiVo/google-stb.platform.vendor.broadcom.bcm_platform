@@ -696,6 +696,10 @@ static nxserver_t init_nxserver(void)
              svp ? NEXUS_SecureVideo_eSecure : NEXUS_SecureVideo_eUnsecure;
        }
     }
+    if (svp) {
+       settings.svp = nxserverlib_svp_type_cdb_urr;
+    }
+    ALOGI("%s: svp ** %s **", __FUNCTION__, svp?"enabled":"disabled");
     /* -ir none */
     settings.session[0].ir_input_mode = NEXUS_IrInputMode_eMax;
     /* -fbsize w,h */
