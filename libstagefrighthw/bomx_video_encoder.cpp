@@ -142,14 +142,15 @@ extern "C" OMX_ERRORTYPE BOMX_VideoEncoder_Create(
     }
     else
     {
-        if ( pVideoEncoder->IsValid() )
+        OMX_ERRORTYPE constructorError = pVideoEncoder->IsValid();
+        if ( constructorError == OMX_ErrorNone )
         {
             return OMX_ErrorNone;
         }
         else
         {
             delete pVideoEncoder;
-            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+            return BOMX_ERR_TRACE(constructorError);
         }
     }
 }
@@ -397,7 +398,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     if ( NULL == m_pVideoPorts[0] )
     {
         ALOGE("Unable to create video input port");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     m_numVideoPorts++;
@@ -435,7 +436,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     if ( NULL == m_pVideoPorts[1] )
     {
         ALOGE("Unable to create video output port");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     m_numVideoPorts++;
@@ -449,7 +450,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     if ( NULL == m_hImageInputEvent )
     {
         ALOGE("Unable to create image input event");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -458,7 +459,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     if ( NULL == m_hOutputBufferProcessEvent )
     {
         ALOGE("Unable to create output process event");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -467,7 +468,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     if ( NULL == m_outputBufferProcessEventId )
     {
         ALOGE("Unable to register output frame event");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -476,7 +477,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     if ( NULL == m_hInputBufferProcessEvent )
     {
         ALOGE("Unable to create input buffer process event");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -485,7 +486,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     if ( NULL == m_inputBufferProcessEventId )
     {
         ALOGE("Unable to register input frame event");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -494,7 +495,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     if ( NULL == m_pBufferTracker || !m_pBufferTracker->Valid() )
     {
         ALOGE("Unable to create buffer tracker");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -503,7 +504,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     if ( NULL == m_pIpcClient )
     {
         ALOGE("Unable to create client factory");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -512,7 +513,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     if (m_pNexusClient == NULL)
     {
         ALOGE("Unable to create nexus client context");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -521,7 +522,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     if ( NULL == m_hGraphics2d )
     {
         ALOGE("Unable to open graphics 2d");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorInsufficientResources);
         return;
     }
     else
@@ -536,7 +537,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
         if ( errCode )
         {
             errCode = BOMX_BERR_TRACE(errCode);
-            this->Invalidate();
+            this->Invalidate(OMX_ErrorUndefined);
             return;
         }
     }
@@ -565,7 +566,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
         if (!pEncoFr)
         {
             ALOGE("failed to allocate frame header");
-            this->Invalidate();
+            this->Invalidate(OMX_ErrorUndefined);
             return;
         }
 

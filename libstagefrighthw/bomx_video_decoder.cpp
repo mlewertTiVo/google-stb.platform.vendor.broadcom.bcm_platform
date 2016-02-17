@@ -155,14 +155,15 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(
     }
     else
     {
-        if ( pVideoDecoder->IsValid() )
+        OMX_ERRORTYPE constructorError = pVideoDecoder->IsValid();
+        if ( constructorError == OMX_ErrorNone )
         {
             return OMX_ErrorNone;
         }
         else
         {
             delete pVideoDecoder;
-            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+            return BOMX_ERR_TRACE(constructorError);
         }
     }
 }
@@ -210,14 +211,15 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
     }
     else
     {
-        if ( pVideoDecoder->IsValid() )
+        OMX_ERRORTYPE constructorError = pVideoDecoder->IsValid();
+        if ( constructorError == OMX_ErrorNone )
         {
             return OMX_ErrorNone;
         }
         else
         {
             delete pVideoDecoder;
-            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+            return BOMX_ERR_TRACE(constructorError);
         }
     }
 }
@@ -822,7 +824,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_pRoles )
     {
         ALOGE("Unable to allocate role memory");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     BKNI_Memcpy(m_pRoles, pRoles, numRoles*sizeof(BOMX_VideoDecoderRole));
@@ -846,7 +848,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_pVideoPorts[0] )
     {
         ALOGW("Unable to create video input port");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     m_numVideoPorts = 1;
@@ -881,7 +883,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_pVideoPorts[1] )
     {
         ALOGW("Unable to create video output port");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     m_numVideoPorts = 2;
@@ -890,7 +892,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_hPlaypumpEvent )
     {
         ALOGW("Unable to create playpump event");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -898,7 +900,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_hOutputFrameEvent )
     {
         ALOGW("Unable to create output frame event");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -906,7 +908,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_outputFrameEventId )
     {
         ALOGW("Unable to register output frame event");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -914,7 +916,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_pBufferTracker || !m_pBufferTracker->Valid() )
     {
         ALOGW("Unable to create buffer tracker");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -922,7 +924,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_pIpcClient )
     {
         ALOGW("Unable to create client factory");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -930,7 +932,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if (m_pNexusClient == NULL)
     {
         ALOGW("Unable to create nexus client context");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -947,7 +949,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( errCode )
     {
         ALOGW("NxClient_Alloc failed");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorInsufficientResources);
         return;
     }
 
@@ -992,7 +994,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         ALOGW("NxClient_Connect failed.  Resources may be exhausted.");
         (void)BOMX_BERR_TRACE(errCode);
         NxClient_Free(&m_allocResults);
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorInsufficientResources);
         return;
     }
 
@@ -1002,14 +1004,14 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         ALOGW("Unable to acquire surface client");
         NxClient_Disconnect(m_nxClientId);
         NxClient_Free(&m_allocResults);
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     m_hVideoClient = NEXUS_SurfaceClient_AcquireVideoWindow(m_hSurfaceClient, 0);
     if ( NULL == m_hVideoClient )
     {
         ALOGW("Unable to acquire video client");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     // Initialize video window to full screen
@@ -1027,7 +1029,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( errCode )
     {
         ALOGW("Unable to setup video initial size");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -1039,7 +1041,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_hAlphaSurface )
     {
         ALOGW("Unable to create alpha surface");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -1048,7 +1050,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( errCode )
     {
         ALOGW("Unable to fill surface");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     BKNI_Memset(surfaceMemory.buffer, 0, surfaceCreateSettings.height * surfaceMemory.pitch);
@@ -1063,7 +1065,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( errCode )
     {
         ALOGW("Unable to allocate EOS buffer");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -1071,7 +1073,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_pPes )
     {
         ALOGW("Unable to create PES formatter");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -1086,7 +1088,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_hCheckpointEvent )
     {
         ALOGW("Unable to create checkpoint event");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -1097,7 +1099,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_hGraphics2d )
     {
         ALOGW("Unable to open graphics 2d");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     else
@@ -1112,7 +1114,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         if ( errCode )
         {
             errCode = BOMX_BERR_TRACE(errCode);
-            this->Invalidate();
+            this->Invalidate(OMX_ErrorUndefined);
             return;
         }
     }
@@ -1123,7 +1125,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         if ( NULL == pBuffer )
         {
             errCode = BOMX_BERR_TRACE(BERR_OUT_OF_SYSTEM_MEMORY);
-            this->Invalidate();
+            this->Invalidate(OMX_ErrorUndefined);
             return;
         }
         BKNI_Memset(pBuffer, 0, sizeof(BOMX_VideoDecoderFrameBuffer));
@@ -1180,7 +1182,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_omxHwcBinder )
     {
         ALOGW("Unable to connect to HwcBinder");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     m_omxHwcBinder->get()->register_notify(&BOMX_OmxBinderNotify, (int)this);
