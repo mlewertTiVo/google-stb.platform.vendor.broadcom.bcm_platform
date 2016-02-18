@@ -169,6 +169,7 @@ using namespace android;
 
 #define HWC_DUMP_FENCE_PRIM          (1<<0)
 #define HWC_DUMP_FENCE_VIRT          (1<<1)
+#define HWC_DUMP_FENCE_SUMMARY       (1<<2)
 
 enum {
     NEXUS_SURFACE_COMPOSITOR = 0,
@@ -3156,24 +3157,36 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
               this_frame->content.hwLayers[i].releaseFenceFd = INVALID_FENCE;
            }
         } else {
-           list->retireFenceFd = hwc_retire_fence(ctx, HWC_PRIMARY_IX);
-           this_frame->content.retireFenceFd = list->retireFenceFd;
-           if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-              ALOGI("fence: %llu/%d - retire-fence: %d\n",
-                 ctx->stats[HWC_PRIMARY_IX].set_call, i, list->retireFenceFd);
-           }
+           int installed = 0;
            for (i = 0; i < list->numHwLayers; i++) {
               if (((list->hwLayers[i].compositionType == HWC_OVERLAY) ||
                    (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET)) &&
                    ctx->gpx_cli[i].composition.visible) {
                  this_frame->content.hwLayers[i].releaseFenceFd =
                      hwc_release_timeline_with_fence(ctx, HWC_PRIMARY_IX, i, &list->hwLayers[i].releaseFenceFd);
+                 installed++;
                  if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
                     ALOGI("fence: %llu/%d - timeline-release: %d -> fence: %d\n",
                        ctx->stats[HWC_PRIMARY_IX].set_call, i,
                        this_frame->content.hwLayers[i].releaseFenceFd, list->hwLayers[i].releaseFenceFd);
                  }
               }
+           }
+           if (installed) {
+              list->retireFenceFd = hwc_retire_fence(ctx, HWC_PRIMARY_IX);
+              this_frame->content.retireFenceFd = list->retireFenceFd;
+              if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
+                 ALOGI("fence: %llu/%d - retire-fence: %d\n",
+                    ctx->stats[HWC_PRIMARY_IX].set_call, i, list->retireFenceFd);
+              }
+           } else {
+              list->retireFenceFd = INVALID_FENCE;
+              this_frame->content.retireFenceFd = INVALID_FENCE;
+           }
+           if (ctx->dump_fence & HWC_DUMP_FENCE_SUMMARY) {
+              ALOGI("comp: %llu - installed %d fences (retire: %d) for %d layers\n",
+                    ctx->stats[HWC_PRIMARY_IX].set_call,
+                    installed, list->retireFenceFd, list->numHwLayers);
            }
         }
 
