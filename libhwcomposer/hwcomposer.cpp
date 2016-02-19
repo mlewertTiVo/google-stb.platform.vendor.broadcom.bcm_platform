@@ -150,7 +150,8 @@ using namespace android;
 #define HWC_IGNORE_CURSOR            "dyn.nx.hwc.nocursor"
 
 #define HWC_GLES_VIRTUAL_PROP        "ro.hwc.gles.virtual"
-#define HWC_WITH_FENCE_PROP          "ro.v3d.fence.expose"
+#define HWC_WITH_V3D_FENCE_PROP      "ro.v3d.fence.expose"
+#define HWC_WITH_DSP_FENCE_PROP      "ro.hwc.fence.retire"
 #define HWC_TRACK_COMP_TIME          "ro.hwc.track.comptime"
 #define HWC_G2D_SIM_OPS_PROP         "ro.hwc.g2d.sim_ops"
 #define HWC_HACK_SYNC_REFRESH        "ro.hwc.hack.sync.refresh"
@@ -672,6 +673,7 @@ struct hwc_context_t {
 
     bool g2d_allow_simult;
     bool fence_support;
+    bool fence_retire;
     bool dump_mma;
     bool track_comp_time;
     bool track_comp_chatty;
@@ -3172,7 +3174,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                  }
               }
            }
-           if (installed) {
+           if (ctx->fence_retire) {
               list->retireFenceFd = hwc_retire_fence(ctx, HWC_PRIMARY_IX);
               this_frame->content.retireFenceFd = list->retireFenceFd;
               if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
@@ -4461,7 +4463,8 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
    hwc_setup_props_locked(dev);
 
    dev->display_gles_virtual = property_get_bool(HWC_GLES_VIRTUAL_PROP,   1);
-   dev->fence_support        = property_get_bool(HWC_WITH_FENCE_PROP,     0);
+   dev->fence_support        = property_get_bool(HWC_WITH_V3D_FENCE_PROP, 0);
+   dev->fence_retire         = property_get_bool(HWC_WITH_DSP_FENCE_PROP, 0);
    dev->track_comp_time      = property_get_bool(HWC_TRACK_COMP_TIME,     1);
    dev->g2d_allow_simult     = property_get_bool(HWC_G2D_SIM_OPS_PROP,    0);
    dev->smart_background     = property_get_bool(HWC_CAPABLE_BACKGROUND,  1);
