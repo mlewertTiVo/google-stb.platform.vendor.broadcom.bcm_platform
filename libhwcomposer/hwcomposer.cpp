@@ -167,6 +167,7 @@ using namespace android;
 #define HWC_DUMP_LEVEL_LATENCY       (1<<4)
 #define HWC_DUMP_LEVEL_FINAL         (1<<5)
 #define HWC_DUMP_LEVEL_HACKS         (1<<6)
+#define HWC_DUMP_LEVEL_SCREEN_TIME   (1<<7)
 
 #define HWC_DUMP_FENCE_PRIM          (1<<0)
 #define HWC_DUMP_FENCE_VIRT          (1<<1)
@@ -580,6 +581,16 @@ struct hwc_time_track_stats {
    long double cumul;
 };
 
+struct hwc_time_on_display_stats {
+   int64_t last_push;
+   int64_t last_vsync;
+   int64_t vsync;
+   unsigned long long tracked;
+   long double fastest;
+   long double slowest;
+   long double cumul;
+};
+
 struct hwc_display_cfg {
    int width;
    int height;
@@ -608,6 +619,7 @@ struct hwc_context_t {
     struct hwc_display_stats stats[DISPLAY_SUPPORTED];
     struct hwc_display_cfg cfg[DISPLAY_SUPPORTED];
     struct hwc_time_track_stats time_track[DISPLAY_SUPPORTED];
+    struct hwc_time_on_display_stats on_display;
 
     /* our private state goes below here */
     NexusIPCClientBase *pIpcClient;
@@ -3442,6 +3454,8 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                   }
                } else {
                   ctx->alpha_hole_background = true;
+                  ctx->on_display.last_push = hwc_tick();
+                  ctx->on_display.last_vsync = ctx->on_display.vsync;
                }
             }
          }
@@ -3470,6 +3484,9 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             if (list->retireFenceFd != INVALID_FENCE) {
                hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, true);
             }
+         } else {
+            ctx->on_display.last_push = hwc_tick();
+            ctx->on_display.last_vsync = ctx->on_display.vsync;
          }
       }
    }
@@ -4166,6 +4183,8 @@ static void * hwc_vsync_task(void *argv)
           BKNI_ReleaseMutex(ctx->power_mutex);
           BKNI_WaitForEvent(ctx->vsync_callback, BKNI_INFINITE);
 
+          ctx->on_display.vsync = hwc_tick();
+
           if (ctx->hack_sync_refresh) {
              if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
                 if (hack_reference_composition == 0) {
@@ -4199,7 +4218,7 @@ static void * hwc_vsync_task(void *argv)
          }
 
          if (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) {
-            ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, hwc_tick());
+            ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, ctx->on_display.vsync);
          }
 
       } else {
@@ -4213,6 +4232,44 @@ out:
     return NULL;
 }
 
+static void hwc_collect_on_screen(struct hwc_context_t *ctx)
+{
+   const long double nsec_to_msec = 1.0 / 1000000.0;
+   long double on_display, vsync_delta;
+   int64_t tick_off_screen = hwc_tick();
+
+   if (ctx->on_display.last_push == 0) {
+      ALOGI("%s: errand recycle (@ %llu)?\n",
+            __FUNCTION__, tick_off_screen);
+      return;
+   }
+
+   on_display = nsec_to_msec * (tick_off_screen - ctx->on_display.last_push);
+   vsync_delta = nsec_to_msec * (ctx->on_display.last_push - ctx->on_display.last_vsync);
+   ctx->on_display.last_push = 0;
+
+   if ((on_display > 0) && (on_display > ctx->on_display.slowest)) {
+      ctx->on_display.slowest = on_display;
+   }
+   if (ctx->on_display.fastest == 0) {
+      ctx->on_display.fastest = on_display;
+   }
+   if ((on_display > 0) && (on_display < ctx->on_display.fastest)) {
+      ctx->on_display.fastest = on_display;
+   }
+   ctx->on_display.cumul += on_display;
+   ctx->on_display.tracked++;
+
+   if (ctx->display_dump_layer & HWC_DUMP_LEVEL_SCREEN_TIME) {
+      ALOGI("%s: tick:%.5Lf ms (vd: %.5Lf) (s:%.5Lf::f:%.5Lf::a:%.5Lf)\n",
+            __FUNCTION__,
+            on_display, vsync_delta,
+            ctx->on_display.slowest,
+            ctx->on_display.fastest,
+            ctx->on_display.cumul/ctx->on_display.tracked);
+   }
+}
+
 static void * hwc_recycle_task(void *argv)
 {
    struct hwc_context_t* ctx = (struct hwc_context_t*)argv;
@@ -4220,6 +4277,7 @@ static void * hwc_recycle_task(void *argv)
    do
    {
       BKNI_WaitForEvent(ctx->recycle_callback, BKNI_INFINITE);
+      hwc_collect_on_screen(ctx);
       hwc_recycle_now(ctx);
       BKNI_SetEvent(ctx->recycle_event);
 
