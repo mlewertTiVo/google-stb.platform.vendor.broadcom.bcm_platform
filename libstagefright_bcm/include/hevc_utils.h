@@ -23,9 +23,44 @@
 
 namespace android {
 
+enum {
+    kHEVCNALUnitVPS = 0x20,
+    kHEVCNALUnitSPS = 0x21,
+    kHEVCNALUnitPPS = 0x22
+};
+
+struct hevc_nal_info {
+    uint8_t general_profile_space;
+    uint8_t general_tier_flag;
+    uint8_t general_profile_idc;
+    uint32_t general_profile_compatibility_flags;
+    uint64_t general_constraint_indicator_flags;
+    uint8_t general_level_idc;
+    uint32_t min_spatial_segmentation_idc;
+    uint8_t parallelism_type;
+    uint32_t chroma_format;
+    int32_t pic_width_in_luma_samples;
+    int32_t pic_height_in_luma_samples;
+    uint8_t bit_depth_luma_minus8;
+    uint8_t bit_depth_chroma_minus8;
+    uint16_t avg_frame_rate;
+    uint8_t constant_frame_rate;
+    uint8_t num_temporal_layers;
+    uint8_t temporal_id_nesting_flag;
+};
+
+void ParseHEVCVPS(
+        const sp<ABuffer> &videoParamSet,
+        struct hevc_sps_info *info);
+
 void ParseHEVCSPS(
         const sp<ABuffer> &seqParamSet,
-        int32_t *width, int32_t *height);
+        struct hevc_sps_info *info);
+
+void ParseHEVCPPS(
+        const sp<ABuffer> &picParamSet,
+        struct hevc_sps_info *info);
+
 status_t getNextNALUnitHEVC(
         const uint8_t **_data, size_t *_size,
         const uint8_t **nalStart, size_t *nalSize,
