@@ -172,6 +172,7 @@ using namespace android;
 #define HWC_DUMP_FENCE_PRIM          (1<<0)
 #define HWC_DUMP_FENCE_VIRT          (1<<1)
 #define HWC_DUMP_FENCE_SUMMARY       (1<<2)
+#define HWC_DUMP_FENCE_TICK          (1<<3)
 
 enum {
     NEXUS_SURFACE_COMPOSITOR = 0,
@@ -332,6 +333,7 @@ typedef struct {
     bool skip_set;
     int rel_tl;
     int rel_tl_ix;
+    uint64_t rel_tl_tick;
 } GPX_CLIENT_INFO;
 
 typedef struct {
@@ -353,6 +355,7 @@ typedef struct {
     NEXUS_SurfaceComposition composition;
     int rel_tl;
     int rel_tl_ix;
+    uint64_t rel_tl_tick;
 } VD_CLIENT_INFO;
 
 typedef struct {
@@ -1930,6 +1933,33 @@ static void hwc_tick_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
    BKNI_ReleaseMutex(ctx->g2d_mutex);
 }
 
+static void hwc_rel_tl_inc(struct hwc_context_t *ctx, int index, int layer)
+{
+   int sw_timeline = INVALID_FENCE;
+   uint64_t start, end, created;
+   const long double nsec_to_msec = 1.0 / 1000000.0;
+
+   sw_timeline = (index == HWC_PRIMARY_IX) ? ctx->gpx_cli[layer].rel_tl : ctx->vd_cli[layer].rel_tl;
+
+   if (ctx->dump_fence & HWC_DUMP_FENCE_TICK) {
+      start = hwc_tick();
+      created = (index == HWC_PRIMARY_IX) ? ctx->gpx_cli[layer].rel_tl_tick : ctx->vd_cli[layer].rel_tl_tick;
+   }
+
+   if (sw_timeline != INVALID_FENCE) {
+      sw_sync_timeline_inc(sw_timeline, 1);
+   }
+
+   if (ctx->dump_fence & HWC_DUMP_FENCE_TICK) {
+      end = hwc_tick();
+      ALOGI("%s: %llu - tl[%d]: %d, tick: %.7Lf, total: %.7Lf\n",
+            (index == HWC_PRIMARY_IX) ? "fence" : "vfence",
+            ctx->stats[index].set_call, layer, sw_timeline,
+            nsec_to_msec * (end-start),
+            created ? nsec_to_msec * (end-created) : 0);
+   }
+}
+
 static void hwc_clear_acquire_release_fences(struct hwc_context_t* ctx, hwc_display_contents_1_t *list, int index)
 {
    size_t i;
@@ -1945,7 +1975,7 @@ static void hwc_clear_acquire_release_fences(struct hwc_context_t* ctx, hwc_disp
          list->hwLayers[i].acquireFenceFd = INVALID_FENCE;
       }
       if (list->hwLayers[i].releaseFenceFd != INVALID_FENCE) {
-         sw_sync_timeline_inc(ctx->gpx_cli[i].rel_tl, 1);
+         hwc_rel_tl_inc(ctx, HWC_PRIMARY_IX, i);
          list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
          if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
             ALOGI("fence: %llu/%d - timeline-release: %d -> early-inc\n",
@@ -2938,16 +2968,34 @@ static void hwc_put_disp_surface(struct hwc_context_t *ctx, int disp_ix, NEXUS_S
    }
 }
 
-static void hwc_inc_retire_timeline(struct hwc_context_t *ctx, int index, int inc, bool err)
+static void hwc_ret_tl_inc(struct hwc_context_t *ctx, int index, int inc, bool err)
 {
+   uint64_t tick, action;
+   const long double nsec_to_msec = 1.0 / 1000000.0;
+
+   if (!ctx->fence_retire) {
+      return;
+   }
+
    if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-      ALOGI("%s: %llu - retire[%d]-inc: %d, on-err: %d\n",
+      ALOGI("%s: %llu - tl: %d, inc: %d, on-err: %d\n",
             (index == HWC_PRIMARY_IX) ? "fence" : "vfence",
             ctx->stats[index].set_call, ctx->ret_tl[index], inc, err);
    }
 
+   if (ctx->dump_fence & HWC_DUMP_FENCE_TICK) {
+      tick = hwc_tick();
+   }
+
    if (inc && ctx->ret_tl[index] != INVALID_FENCE) {
       sw_sync_timeline_inc(ctx->ret_tl[index], (unsigned) inc);
+   }
+
+   if (ctx->dump_fence & HWC_DUMP_FENCE_TICK) {
+      action = (hwc_tick() - tick);
+      ALOGI("%s: %llu - tl: %d, tick: %.7Lf\n",
+            (index == HWC_PRIMARY_IX) ? "fence" : "vfence",
+            ctx->stats[index].set_call, ctx->ret_tl[index], nsec_to_msec * action);
    }
 }
 
@@ -2989,7 +3037,7 @@ static void hwc_recycle_now(struct hwc_context_t* ctx)
          ALOGW("%s: lost surfaces!", __FUNCTION__);
       }
    }
-   hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, (int)numSurfaces, false);
+   hwc_ret_tl_inc(ctx, HWC_PRIMARY_IX, (int)numSurfaces, false);
 }
 
 #define HWC_SURFACE_WAIT_TIMEOUT 50
@@ -3092,8 +3140,24 @@ static int hwc_rel_tl_fence(struct hwc_context_t *ctx, int index, int layer)
       goto out_err;
    }
 
-   ALOGV("%s: %s:%s -> %d/%d", __FUNCTION__, (index == HWC_PRIMARY_IX) ? "prim" : "virt",
-         info.name, sw_timeline, fence);
+   if (ctx->dump_fence & HWC_DUMP_FENCE_TICK) {
+      if (index == HWC_PRIMARY_IX) {
+         ctx->gpx_cli[layer].rel_tl_tick = hwc_tick();
+      } else {
+         ctx->vd_cli[layer].rel_tl_tick = hwc_tick();
+      }
+   } else {
+      if (index == HWC_PRIMARY_IX) {
+         ctx->gpx_cli[layer].rel_tl_tick = 0;
+      } else {
+         ctx->vd_cli[layer].rel_tl_tick = 0;
+      }
+   }
+
+   if (ctx->dump_fence & HWC_DUMP_FENCE_SUMMARY) {
+      ALOGI("%s: %s:%s -> %d/%d", __FUNCTION__, (index == HWC_PRIMARY_IX) ? "prim" : "virt",
+            info.name, sw_timeline, fence);
+   }
    return fence;
 
 out_err:
@@ -3271,7 +3335,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    if (outputHdl == NULL) {
       ALOGE("%s: no display surface available", __FUNCTION__);
       if (list->retireFenceFd != INVALID_FENCE) {
-         hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, true);
+         hwc_ret_tl_inc(ctx, HWC_PRIMARY_IX, 1, true);
       }
       goto out;
    }
@@ -3432,7 +3496,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          if (skip_comp) {
             hwc_put_disp_surface(ctx, 0, outputHdl);
             if (list->retireFenceFd != INVALID_FENCE) {
-               hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, false);
+               hwc_ret_tl_inc(ctx, HWC_PRIMARY_IX, 1, false);
             }
          } else {
             hwc_seed_disp_surface(ctx, outputHdl, &q_ops, &ops_count, HWC_TRANSPARENT);
@@ -3447,7 +3511,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                if (rc) {
                   ALOGW("%s: failed to push surface to client (%d)", __FUNCTION__, rc);
                   if (list->retireFenceFd != INVALID_FENCE) {
-                     hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, true);
+                     hwc_ret_tl_inc(ctx, HWC_PRIMARY_IX, 1, true);
                   }
                } else {
                   ctx->alpha_hole_background = true;
@@ -3459,7 +3523,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       } else {
          hwc_put_disp_surface(ctx, 0, outputHdl);
          if (list->retireFenceFd != INVALID_FENCE) {
-            hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, false);
+            hwc_ret_tl_inc(ctx, HWC_PRIMARY_IX, 1, false);
          }
       }
    } else {
@@ -3479,7 +3543,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          if (rc) {
             ALOGW("%s: failed to push surface to client (%d)", __FUNCTION__, rc);
             if (list->retireFenceFd != INVALID_FENCE) {
-               hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, true);
+               hwc_ret_tl_inc(ctx, HWC_PRIMARY_IX, 1, true);
             }
          } else {
             ctx->on_display.last_push = hwc_tick();
@@ -3510,7 +3574,7 @@ out:
          }
       }
       if (list->hwLayers[i].releaseFenceFd != INVALID_FENCE) {
-         sw_sync_timeline_inc(ctx->gpx_cli[i].rel_tl, 1);
+         hwc_rel_tl_inc(ctx, HWC_PRIMARY_IX, i);
          list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
          if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
             ALOGI("fence: %llu/%d - timeline-release: %d -> inc\n",
@@ -3593,12 +3657,6 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
              this_frame->content.hwLayers[i].releaseFenceFd = INVALID_FENCE;
           }
        } else {
-          list->retireFenceFd = hwc_ret_tl_fence(ctx, HWC_VIRTUAL_IX);
-          this_frame->content.retireFenceFd = list->retireFenceFd;
-          if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-             ALOGI("vfence: %llu/%d - retire: %d\n",
-                ctx->stats[HWC_VIRTUAL_IX].set_call, i, list->retireFenceFd);
-          }
           for (i = 0; i < list->numHwLayers; i++) {
              if (ctx->vd_cli[i].composition.visible &&
                  ((list->hwLayers[i].compositionType == HWC_OVERLAY) ||
@@ -3611,6 +3669,18 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                       ctx->vd_cli[i].rel_tl, list->hwLayers[i].releaseFenceFd);
                 }
              }
+          }
+
+          if (ctx->fence_retire) {
+             list->retireFenceFd = hwc_ret_tl_fence(ctx, HWC_VIRTUAL_IX);
+             this_frame->content.retireFenceFd = list->retireFenceFd;
+             if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
+                ALOGI("vfence: %llu/%d - retire: %d\n",
+                   ctx->stats[HWC_VIRTUAL_IX].set_call, i, list->retireFenceFd);
+             }
+          } else {
+             list->retireFenceFd = INVALID_FENCE;
+             this_frame->content.retireFenceFd = INVALID_FENCE;
           }
        }
 
@@ -3772,7 +3842,7 @@ out:
          }
       }
       if (list->hwLayers[i].releaseFenceFd != INVALID_FENCE) {
-         sw_sync_timeline_inc(ctx->vd_cli[i].rel_tl, 1);
+         hwc_rel_tl_inc(ctx, HWC_VIRTUAL_IX, i);
          list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
          if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
             ALOGI("vfence: %llu/%d - timeline-release: %d -> inc\n",
@@ -3781,7 +3851,7 @@ out:
       }
    }
    if (list->retireFenceFd != INVALID_FENCE) {
-      hwc_inc_retire_timeline(ctx, HWC_VIRTUAL_IX, 1, false);
+      hwc_ret_tl_inc(ctx, HWC_VIRTUAL_IX, 1, false);
    }
 
    return layer_composed;
@@ -4248,7 +4318,7 @@ static void hwc_collect_on_screen(struct hwc_context_t *ctx)
    int64_t tick_off_screen = hwc_tick();
 
    if (ctx->on_display.last_push == 0) {
-      ALOGI("%s: errand recycle (@ %llu)?\n",
+      ALOGV("%s: errand recycle (@ %llu)?\n",
             __FUNCTION__, tick_off_screen);
       return;
    }
