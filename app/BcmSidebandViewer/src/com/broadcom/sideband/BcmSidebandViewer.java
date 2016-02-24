@@ -24,22 +24,18 @@ import android.widget.TextView;
 public class BcmSidebandViewer extends Activity implements SurfaceHolder.Callback, CompoundButton.OnCheckedChangeListener, TextView.OnEditorActionListener, View.OnFocusChangeListener {
     private static final String TAG = BcmSidebandViewer.class.getSimpleName();
 
-    private static int mHdmiInputPort = 0;
     // Please include your own video file and make sure to set ownership, group, and permission flags
     private static String mFilePathDefault = "/data/data/com.broadcom.sideband/video.mp4";
 
     private SurfaceView mSurfaceView; // Sideband surface
     private CompoundButton mButtonFullscreen;
-    private CompoundButton mButtonStartHdmi;
     private CompoundButton mButtonStartFile;
     private EditText mFilePath;
 
     private native boolean start_sideband(Surface s);
     private native void stop_sideband();
-    private native boolean start_hdmi_player(int x, int y, int w, int h, int port);
     private native boolean start_file_player(int x, int y, int w, int h, String path);
     private native void stop_player();
-    private native boolean has_hdmi_input();
     private native boolean can_access_file(String path);
 
     /**
@@ -59,8 +55,6 @@ public class BcmSidebandViewer extends Activity implements SurfaceHolder.Callbac
 
         mButtonFullscreen = (CompoundButton) findViewById(R.id.button_fs);
         mButtonFullscreen.setOnCheckedChangeListener(this);
-        mButtonStartHdmi = (CompoundButton) findViewById(R.id.button_start_hdmi);
-        mButtonStartHdmi.setOnCheckedChangeListener(this);
         mButtonStartFile = (CompoundButton) findViewById(R.id.button_start_file);
         mButtonStartFile.setOnCheckedChangeListener(this);
         mFilePath = (EditText) findViewById(R.id.file_path);
@@ -74,13 +68,6 @@ public class BcmSidebandViewer extends Activity implements SurfaceHolder.Callbac
             mButtonStartFile.setEnabled(true);
         else
             mButtonStartFile.setEnabled(false);
-    }
-
-    private void enableHdmiInputButton() {
-        if (has_hdmi_input())
-            mButtonStartHdmi.setEnabled(true);
-        else
-            mButtonStartHdmi.setEnabled(false);
     }
 
     @Override
@@ -104,7 +91,6 @@ public class BcmSidebandViewer extends Activity implements SurfaceHolder.Callbac
     @Override
     protected void onPause() {
         Log.d(TAG, "onPause");
-        mButtonStartHdmi.setChecked(false);
         mButtonStartFile.setChecked(false);
         super.onPause();
     }
@@ -112,7 +98,6 @@ public class BcmSidebandViewer extends Activity implements SurfaceHolder.Callbac
     @Override
     protected void onStop() {
         Log.d(TAG, "onStop");
-        mButtonStartHdmi.setChecked(false);
         mButtonStartFile.setChecked(false);
         super.onStop();
     }
@@ -132,7 +117,7 @@ public class BcmSidebandViewer extends Activity implements SurfaceHolder.Callbac
             Log.d(TAG, "onCheckedChanged: button is not enabled!!!");
             return;
         }
-        if (buttonView == mButtonStartHdmi || buttonView == mButtonStartFile) {
+        if (buttonView == mButtonStartFile) {
             Log.d(TAG, "onCheckedChanged (Start) isChecked=" + isChecked);
             if (isChecked) {
                 int[] pos = new int[2];
@@ -141,25 +126,12 @@ public class BcmSidebandViewer extends Activity implements SurfaceHolder.Callbac
                 width = mSurfaceView.getMeasuredWidth();
                 height = mSurfaceView.getMeasuredHeight();
                 Log.d(TAG, "coordinates: " + pos[0] + "," + pos[1] + "," + width + "," + height);
-                if (buttonView == mButtonStartHdmi) {
-                    mButtonStartFile.setChecked(false);
-                    mButtonStartFile.setEnabled(false);
-                    if (!start_hdmi_player(pos[0], pos[1], width, height, mHdmiInputPort)) {
-                        buttonView.setChecked(false);
-                        enableFilePlaybackButton();
-                    }
-                } else {
-                    mButtonStartHdmi.setChecked(false);
-                    mButtonStartHdmi.setEnabled(false);
-                    if (!start_file_player(pos[0], pos[1], width, height, mFilePath.getText().toString())) {
-                        buttonView.setChecked(false);
-                        enableHdmiInputButton();
-                    }
+                if (!start_file_player(pos[0], pos[1], width, height, mFilePath.getText().toString())) {
+                    buttonView.setChecked(false);
                 }
             } else {
                 stop_player();
                 enableFilePlaybackButton();
-                enableHdmiInputButton();
             }
         } else if (buttonView == mButtonFullscreen) {
             Log.d(TAG, "onCheckedChanged (FullScreen) isChecked=" + isChecked);
@@ -264,7 +236,6 @@ public class BcmSidebandViewer extends Activity implements SurfaceHolder.Callbac
         if (!start_sideband(holder.getSurface())) {
             Log.w(TAG, "Unable to register the sideband");
         }
-        enableHdmiInputButton();
         enableFilePlaybackButton();
     }
 
@@ -309,9 +280,7 @@ public class BcmSidebandViewer extends Activity implements SurfaceHolder.Callbac
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
         Log.d(TAG, "surfaceDestroyed");
-        mButtonStartHdmi.setChecked(false);
         mButtonStartFile.setChecked(false);
-        mButtonStartHdmi.setEnabled(false);
         mButtonStartFile.setEnabled(false);
         stop_sideband();
     }

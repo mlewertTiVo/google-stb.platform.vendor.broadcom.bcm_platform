@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <errno.h>
 
+#define LOG_TAG "tv_input"
 #include <cutils/log.h>
 #include <cutils/native_handle.h>
 
@@ -49,6 +50,10 @@
 #include <utils/String16.h>
 #include <TunerInterface.h>
 
+#define DEVICE_ID_TUNER 0
+#define DEVICE_ID_HDMI 1
+extern tv_input_module_t hdmi_module;
+
 using namespace android;
 
 // Binder class for interaction with Tuner-HAL
@@ -80,6 +85,9 @@ typedef struct tv_input_private {
 
     sp<INexusTunerClient> mNTC;
     NexusClientContext *nexus_client;
+
+    tv_input_device_t      *hdmi_dev;
+    struct tv_input_device *hdmi_ops;
 } tv_input_private_t;
 
 static int tv_input_device_open(const struct hw_module_t* module,
@@ -98,6 +106,8 @@ tv_input_module_t HAL_MODULE_INFO_SYM = {
         name: "Sample TV input module",
         author: "The Android Open Source Project",
         methods: &tv_input_module_methods,
+        dso: NULL,
+        reserved: {0},
     }
 };
 
@@ -109,10 +119,10 @@ tv_input_module_t HAL_MODULE_INFO_SYM = {
 
 static int tv_input_initialize(struct tv_input_device* dev, const tv_input_callback_ops_t* callback, void* data)
 {
-	tv_input_event_t tuner_event;
+    tv_input_event_t tuner_event;
     NEXUS_Error rc;
 
-	ALOGE("%s: Enter", __FUNCTION__);
+    ALOGV("%s: Enter", __FUNCTION__);
 
     if (dev == NULL || callback == NULL) {
         return -EINVAL;
@@ -129,18 +139,21 @@ static int tv_input_initialize(struct tv_input_device* dev, const tv_input_callb
 
     tuner_event.type = TV_INPUT_EVENT_DEVICE_AVAILABLE;
     tuner_event.device_info.type = TV_INPUT_TYPE_TUNER;
-	tuner_event.device_info.device_id = 0;
+    tuner_event.device_info.device_id = DEVICE_ID_TUNER;
 
-	// No audio data for tuner
-	tuner_event.device_info.audio_type = AUDIO_DEVICE_NONE;
-	tuner_event.device_info.audio_address = NULL;
+    // No audio data for tuner
+    tuner_event.device_info.audio_type = AUDIO_DEVICE_NONE;
+    tuner_event.device_info.audio_address = NULL;
 
     // Config data
     priv->iNumConfigs = 1;
     priv->s_config =  (tv_stream_config_t *) malloc(sizeof (tv_stream_config_t));
 
-	ALOGE("%s: Calling notify", __FUNCTION__);
+    ALOGI("%s: Calling notify", __FUNCTION__);
     callback->notify(dev, &tuner_event, data);
+
+    if (priv->hdmi_dev)
+        return priv->hdmi_ops->initialize(priv->hdmi_dev, callback, data);
 
     return 0;
 }
@@ -150,7 +163,10 @@ static int tv_input_get_stream_configurations(const struct tv_input_device *dev,
     int i;
     tv_input_private_t* priv = (tv_input_private_t*)dev;
 
-	ALOGE("%s: Enter", __FUNCTION__);
+    if (dev_id == DEVICE_ID_HDMI)
+        return priv->hdmi_ops->get_stream_configurations(priv->hdmi_dev, dev_id, numConfigs, s_out);
+
+    ALOGV("%s: Enter", __FUNCTION__);
 
     // Initialize the # of channels
     *numConfigs = priv->iNumConfigs;
@@ -158,7 +174,7 @@ static int tv_input_get_stream_configurations(const struct tv_input_device *dev,
     // Just update 1 stream (represents main video, no PIP for now)
     if (priv->s_config != NULL)
     {
-        ALOGE("%s: s_config = %p", __FUNCTION__, priv->s_config);
+        ALOGI("%s: s_config = %p", __FUNCTION__, priv->s_config);
 
         priv->s_config->stream_id = 1;
         priv->s_config->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
@@ -168,7 +184,7 @@ static int tv_input_get_stream_configurations(const struct tv_input_device *dev,
 
     *s_out = (priv->s_config);
 
-	ALOGE("%s: Exit", __FUNCTION__);
+    ALOGV("%s: Exit", __FUNCTION__);
 
     return 0;
 }
@@ -176,6 +192,9 @@ static int tv_input_get_stream_configurations(const struct tv_input_device *dev,
 static int tv_input_open_stream(struct tv_input_device *dev, int dev_id, tv_stream_t *pTVStream)
 {
     tv_input_private_t* priv = (tv_input_private_t*)dev;
+
+    if (dev_id == DEVICE_ID_HDMI)
+        return priv->hdmi_ops->open_stream(priv->hdmi_dev, dev_id, pTVStream);
 
     sp<IServiceManager> sm = defaultServiceManager();
     sp<IBinder> binder;
@@ -185,18 +204,18 @@ static int tv_input_open_stream(struct tv_input_device *dev, int dev_id, tv_stre
             break;
         }
 
-        ALOGE("%s: TV-HAL is waiting for TunerService...", __FUNCTION__);
+        ALOGI("%s: TV-HAL is waiting for TunerService...", __FUNCTION__);
         usleep(500000);
     } while(true);
 
-    ALOGE("%s: TV-HAL acquired TunerService...", __FUNCTION__);
+    ALOGI("%s: TV-HAL acquired TunerService...", __FUNCTION__);
     priv->mNTC = interface_cast<INexusTunerClient>(binder);
 
     Parcel data, reply;
     data.writeInterfaceToken(android::String16(TUNER_INTERFACE_NAME));
     priv->mNTC->get_remote()->transact(GET_TUNER_CONTEXT, data, &reply);
     priv->nexus_client = (NexusClientContext *)reply.readInt32();
-    ALOGE("%s: nexus_client = %p", __FUNCTION__, priv->nexus_client);
+    ALOGI("%s: nexus_client = %p", __FUNCTION__, priv->nexus_client);
 
     // Create a native handle
     pTVStream->sideband_stream_source_handle = native_handle_create(NUM_FD, NUM_INT);
@@ -209,21 +228,30 @@ static int tv_input_open_stream(struct tv_input_device *dev, int dev_id, tv_stre
     return 0;
 }
 
-static int tv_input_close_stream(struct tv_input_device*, int, int)
+static int tv_input_close_stream(struct tv_input_device *dev, int dev_id, int stream_id)
 {
-	ALOGE("%s: Enter", __FUNCTION__);
+    tv_input_private_t* priv = (tv_input_private_t*)dev;
+    if (dev_id == DEVICE_ID_HDMI)
+        return priv->hdmi_ops->close_stream(priv->hdmi_dev, dev_id, stream_id);
+    ALOGV("%s: Enter", __FUNCTION__);
     return 0;
 }
 
-static int tv_input_request_capture(struct tv_input_device*, int, int, buffer_handle_t, uint32_t)
+static int tv_input_request_capture(struct tv_input_device *dev, int dev_id, int stream_id, buffer_handle_t buffer, uint32_t seq)
 {
-	ALOGE("%s: Enter", __FUNCTION__);
+    tv_input_private_t* priv = (tv_input_private_t*)dev;
+    if (dev_id == DEVICE_ID_HDMI)
+        return priv->hdmi_ops->request_capture(priv->hdmi_dev, dev_id, stream_id, buffer, seq);
+    ALOGV("%s: Enter", __FUNCTION__);
     return 0;
 }
 
-static int tv_input_cancel_capture(struct tv_input_device*, int, int, uint32_t)
+static int tv_input_cancel_capture(struct tv_input_device *dev, int dev_id, int stream_id, uint32_t seq)
 {
-	ALOGE("%s: Enter", __FUNCTION__);
+    tv_input_private_t* priv = (tv_input_private_t*)dev;
+    if (dev_id == DEVICE_ID_HDMI)
+        return priv->hdmi_ops->cancel_capture(priv->hdmi_dev, dev_id, stream_id, seq);
+    ALOGV("%s: Enter", __FUNCTION__);
     return 0;
 }
 
@@ -231,9 +259,11 @@ static int tv_input_cancel_capture(struct tv_input_device*, int, int, uint32_t)
 
 static int tv_input_device_close(struct hw_device_t *dev)
 {
-	ALOGE("%s: Enter", __FUNCTION__);
+    ALOGV("%s: Enter", __FUNCTION__);
     tv_input_private_t* priv = (tv_input_private_t*)dev;
     if (priv) {
+        if (priv->hdmi_dev)
+            priv->hdmi_ops->common.close((struct hw_device_t*)priv->hdmi_dev);
         free(priv->s_config);
         free(priv);
     }
@@ -245,7 +275,7 @@ static int tv_input_device_close(struct hw_device_t *dev)
 static int tv_input_device_open(const struct hw_module_t* module,
         const char* name, struct hw_device_t** device)
 {
-	ALOGE("%s: Enter", __FUNCTION__);
+    ALOGV("%s: Enter", __FUNCTION__);
 
     int status = -EINVAL;
     if (!strcmp(name, TV_INPUT_DEFAULT_DEVICE)) {
@@ -269,7 +299,15 @@ static int tv_input_device_open(const struct hw_module_t* module,
         dev->device.cancel_capture = tv_input_cancel_capture;
 
         *device = &dev->device.common;
-        status = 0;
+
+        // Use a fake tv_input_module_t to keep the code separate while using
+        // the standard API. Use the last argument for an exchange of pointers:
+        // * out: Send a pointer to the tuner device (required for callbacks)
+        // *  in: Receive a pointer to the hdmi device
+        struct hw_device_t* in_out_ptr = (struct hw_device_t*)dev;
+        status = hdmi_module.common.methods->open(module, name, &in_out_ptr);
+        dev->hdmi_dev = (tv_input_device_t *)in_out_ptr;
+        dev->hdmi_ops = (struct tv_input_device *)in_out_ptr;
     }
     return status;
 }

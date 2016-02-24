@@ -28,8 +28,11 @@ LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 
 LOCAL_SHARED_LIBRARIES := libcutils liblog libutils libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient libnexusipcclient libbinder
+LOCAL_SHARED_LIBRARIES += libbcmsideband
 
 LOCAL_SRC_FILES := tv_input.cpp
+LOCAL_SRC_FILES += hdmi_tv_input.cpp
+
 LOCAL_MODULE := tv_input.$(TARGET_BOARD_PLATFORM)
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)

@@ -50,7 +50,6 @@ public:
 class BcmSidebandPlayerFactory {
 public:
     static BcmSidebandPlayer* createFilePlayer(const char* path);
-    static BcmSidebandPlayer* createHdmiPlayer(int port);
     static void destroy(BcmSidebandPlayer* player);
 };
 #endif // BCM_SIDEBAND_PLAYER_FACTORY_H

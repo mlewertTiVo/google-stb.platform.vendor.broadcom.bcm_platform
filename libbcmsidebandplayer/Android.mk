@@ -50,11 +50,6 @@ LOCAL_SRC_FILES := \
     $(PATH_TO_NEXUS)/nxclient/apps/utils/bgui.c \
     $(PATH_TO_NEXUS)/utils/namevalue.c
 
-ifeq ($(NEXUS_HDMI_INPUT_SUPPORT),y)
-LOCAL_SRC_FILES += \
-    bcmsidebandhdmiplayer.cpp
-endif
-
 LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)/include
 
 LOCAL_MODULE := libbcmsidebandplayer

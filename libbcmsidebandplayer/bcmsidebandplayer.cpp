@@ -37,7 +37,7 @@
   *****************************************************************************/
 #include "bcmsidebandplayer.h"
 
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #define LOG_TAG "BcmSidbandPlayer"
 #include <cutils/log.h>
 

@@ -24,13 +24,6 @@
                 android:textOn="@string/button_exit_fs"
                 android:textOff="@string/button_fs"
                 android:checked="true" />
-            <ToggleButton android:id="@+id/button_start_hdmi"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textOff="@string/button_start_hdmi"
-                android:textOn="@string/button_stop_hdmi"
-                android:checked="false"
-                android:enabled="false" />
             <ToggleButton android:id="@+id/button_start_file"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"

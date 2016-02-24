@@ -17,7 +17,7 @@ namespace android {
 BcmSidebandPlayer *sidebandPlayer = NULL;
 struct bcmsideband_ctx *sidebandContext = NULL;
 
-static void sb_geometry_update(unsigned int x, unsigned int y, unsigned int width, unsigned int height)
+static void sb_geometry_update(void *, unsigned int x, unsigned int y, unsigned int width, unsigned int height)
 {
     ALOGV("%s", __FUNCTION__);
     if (sidebandPlayer)
@@ -49,28 +49,6 @@ static void stop_sideband(JNIEnv */*env*/, jobject /*thizvoid*/)
         libbcmsideband_release(sidebandContext);
         sidebandContext = NULL;
     }
-}
-
-static jboolean start_hdmi_player(JNIEnv */*env*/, jobject /*thizvoid*/, jint x, jint y, jint w, jint h, jint port)
-{
-    int err;
-
-    ALOGV("%s", __FUNCTION__);
-    if (sidebandPlayer == NULL) {
-        BcmSidebandPlayer *player = BcmSidebandPlayerFactory::createHdmiPlayer(port);
-        if (player == NULL) {
-            ALOGE("Unable to create an HDMI sideband player");
-            return JNI_FALSE;
-        }
-        err = player->start(x, y, w, h);
-        if (err) {
-            ALOGE("Unable to start the HDMI sideband player (%d)", err);
-            delete player;
-            return JNI_FALSE;
-        }
-        sidebandPlayer = player;
-    }
-    return JNI_TRUE;
 }
 
 static jboolean start_file_player(JNIEnv *env, jobject /*thizvoid*/, jint x, jint y, jint w, jint h, jstring path)
@@ -106,15 +84,6 @@ static void stop_player(JNIEnv */*env*/, jobject /*thizvoid*/)
     }
 }
 
-static jboolean has_hdmi_input(JNIEnv */*env*/, jobject /*thizvoid*/)
-{
-#if NEXUS_HAS_HDMI_INPUT
-    return JNI_TRUE;
-#else
-    return JNI_FALSE;
-#endif
-}
-
 static jboolean can_access_file(JNIEnv *env, jobject /*thizvoid*/, jstring path)
 {
     const char* cpath = env->GetStringUTFChars(path, NULL);
@@ -132,10 +101,8 @@ static jboolean can_access_file(JNIEnv *env, jobject /*thizvoid*/, jstring path)
 const JNINativeMethod g_methods[] = {
     { "start_sideband", "(Landroid/view/Surface;)Z", (void*)start_sideband },
     { "stop_sideband", "()V", (void*)stop_sideband },
-    { "start_hdmi_player", "(IIIII)Z", (void*)start_hdmi_player },
     { "start_file_player", "(IIIILjava/lang/String;)Z", (void*)start_file_player },
     { "stop_player", "()V", (void*)stop_player },
-    { "has_hdmi_input", "()Z", (void*)has_hdmi_input },
     { "can_access_file", "(Ljava/lang/String;)Z", (void*)can_access_file },
 };
 

@@ -38,22 +38,10 @@
  *****************************************************************************/
 #include <bcmsidebandplayerfactory.h>
 #include "bcmsidebandfileplayer.h"
-#if NEXUS_HAS_HDMI_INPUT
-#include "bcmsidebandhdmiplayer.h"
-#endif
 
 BcmSidebandPlayer* BcmSidebandPlayerFactory::createFilePlayer(const char* path)
 {
     return new BcmSidebandFilePlayer(path);
-}
-
-BcmSidebandPlayer* BcmSidebandPlayerFactory::createHdmiPlayer(int port)
-{
-#if NEXUS_HAS_HDMI_INPUT
-    return new BcmSidebandHdmiPlayer(port);
-#else
-    return NULL;
-#endif
 }
 
 void BcmSidebandPlayerFactory::destroy(BcmSidebandPlayer* player)
