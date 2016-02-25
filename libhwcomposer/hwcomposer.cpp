@@ -968,7 +968,8 @@ static int hwc_setup_framebuffer_mode(struct hwc_context_t* dev, int disp_ix, DI
          return -ENOMEM;
       }
       ALOGI("%s: fb:%d::%dx%d::%d::heap:%s -> %p (%d::%p)", __FUNCTION__, j, surfaceCreateSettings.width, surfaceCreateSettings.height,
-            surfaceCreateSettings.pixelFormat, dynamic_heap ? "d-cma" : "static", dev->disp_cli[disp_ix].display_buffers[j].fifo_surf,
+            surfaceCreateSettings.pixelFormat, dynamic_heap?"d-cma":"gfx",
+            dev->disp_cli[disp_ix].display_buffers[j].fifo_surf,
             dev->disp_cli[disp_ix].display_buffers[j].fifo_fd, block_handle);
    }
    if (BKNI_AcquireMutex(dev->disp_cli[disp_ix].fifo_mutex) == BERR_SUCCESS) {
@@ -4662,6 +4663,19 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         }
         if (BKNI_CreateMutex(&dev->g2d_mutex) == BERR_OS_ERROR) {
            goto clean_up;
+        }
+
+        {
+           NEXUS_MemoryStatus status;
+           NEXUS_ClientConfiguration clientConfig;
+           char buf[128];
+           NEXUS_Platform_GetClientConfiguration(&clientConfig);
+           NEXUS_Heap_GetStatus(NEXUS_Platform_GetFramebufferHeap(0), &status);
+           NEXUS_Heap_ToString(&status, buf, sizeof(buf));
+           ALOGI("%s: fb0 heap: %s", __FUNCTION__, buf);
+           NEXUS_Heap_GetStatus(clientConfig.heap[NXCLIENT_DYNAMIC_HEAP], &status);
+           NEXUS_Heap_ToString(&status, buf, sizeof(buf));
+           ALOGI("%s: d-cma heap: %s", __FUNCTION__, buf);
         }
 
         NxClient_GetDefaultAllocSettings(&nxAllocSettings);
