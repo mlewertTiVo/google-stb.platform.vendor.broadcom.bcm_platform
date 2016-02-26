@@ -794,6 +794,7 @@ bool ATSParser::Stream::isAudio() const {
         case STREAMTYPE_MPEG2_AUDIO_ADTS:
         case STREAMTYPE_LPCM_AC3:
         case STREAMTYPE_AC3:
+        case STREAMTYPE_PCM_AUDIO:
             return true;
 
         default:
