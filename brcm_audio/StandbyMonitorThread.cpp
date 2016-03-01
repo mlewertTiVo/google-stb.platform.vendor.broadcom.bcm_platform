@@ -38,6 +38,7 @@
  *****************************************************************************/
 
 #include "brcm_audio.h"
+#include "nexus_ipc_client_factory.h"
 
 StandbyMonitorThread::StandbyMonitorThread() : mMutex("BrcmAudio::StandbyMonitorThread::mMutex")
 {
@@ -120,7 +121,6 @@ void StandbyMonitorThread::UnregisterCallback(int id)
 
 
 /* Standby monitor thread */
-#define NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS  (20)
 bool StandbyMonitorThread::threadLoop()
 {
     NEXUS_Error rc;

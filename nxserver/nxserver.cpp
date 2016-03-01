@@ -96,7 +96,6 @@
 #define MAX_NX_OBJS                    (2048)
 #define MIN_PLATFORM_DEC               (2)
 #define NSC_FB_NUMBER                  (3)
-#define STANDBY_MONITOR_TIMEOUT        (20)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
 #define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
@@ -264,7 +263,7 @@ static void *standby_monitor_task(void *argv)
           }
           BKNI_ReleaseMutex(nx_server->standby_lock);
        }
-       BKNI_Sleep(STANDBY_MONITOR_TIMEOUT);
+       BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
 
     } while(nx_server->standby_monitor.running);
 

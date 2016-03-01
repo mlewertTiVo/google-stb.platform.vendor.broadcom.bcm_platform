@@ -44,7 +44,9 @@ LOCAL_SRC_FILES += \
 LOCAL_CFLAGS := -DLOG_TAG=\"BrcmAudio\"
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 
-LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/nexus/nxclient/include
+LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/nexus/nxclient/include \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc
 
 include $(BUILD_SHARED_LIBRARY)
 
