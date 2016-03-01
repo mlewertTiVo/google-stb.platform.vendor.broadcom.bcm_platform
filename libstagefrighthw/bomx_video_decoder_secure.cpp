@@ -168,7 +168,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure::ConfigBufferAppend(const void *pBuffer, 
     ALOG_ASSERT(NULL != pBuffer);
     ALOGV("%s, buffer:%p, length:%d", __FUNCTION__, pBuffer, length);
     if ( m_configBufferSize + length > BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE )
+    {
+        ALOGE("Config buffer not big enough! Size: %d", m_configBufferSize + length);
         return BOMX_ERR_TRACE(OMX_ErrorOverflow);
+    }
 
     uint8_t *dest = (uint8_t *)m_pConfigBuffer + m_configBufferSize;
     err = SecureCopy(dest, pBuffer, length);
