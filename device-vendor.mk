@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# GMS
+$(call inherit-product-if-exists, vendor/broadcom/prebuilts/gms/google/products/gms.mk)
 
 # if release_prebuilts directory exists and it contains widevine prebuilt
 # binaries, always use them even if widevine source is present
