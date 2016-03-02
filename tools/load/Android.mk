@@ -13,11 +13,9 @@
 # limitations under the License.
 
 LOCAL_PATH := $(call my-dir)
-
-# set to 'true' to avoid stripping symbols during build.
 include $(CLEAR_VARS)
-include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
+include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 LOCAL_SHARED_LIBRARIES := libnexus \
                           liblog \
                           libcutils \
@@ -37,5 +35,32 @@ LOCAL_SRC_FILES := \
         load.c
 
 LOCAL_MODULE := testload
+LOCAL_MODULE_TAGS := optional
+include $(BUILD_EXECUTABLE)
+
+
+include $(CLEAR_VARS)
+
+include $(NEXUS_TOP)/nxclient/include/nxclient.inc
+LOCAL_SHARED_LIBRARIES := libnexus \
+                          liblog \
+                          libcutils \
+                          libutils \
+                          libnexusipcclient \
+                          libnxclient \
+                          libsrai
+
+LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/magnum/syslib/sagelib/include \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_crypto/include
+
+LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
+LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
+
+LOCAL_SRC_FILES := testdma.c
+LOCAL_MODULE := testdma
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_EXECUTABLE)
