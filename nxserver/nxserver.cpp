@@ -455,23 +455,35 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    bool cvbs = property_get_int32(NX_COMP_VIDEO, 0) ? true : false;
    NEXUS_GetPlatformCapabilities(&platformCap);
 
-   /* 1. additional display(s). */
+   /* 1. *** HARDCODE *** only request a single encoder. */
+   for (i = 1; i < NEXUS_MAX_VIDEO_ENCODERS; i++) {
+      pMemConfigSettings->videoEncoder[i].used = false;
+   }
+
+   /* 2. additional display(s). */
    if (property_get(NX_TRIM_DISP, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          /* start index -> 1 */
          for (i = 1; i < NEXUS_MAX_DISPLAYS; i++) {
             /* keep display associated with encoder if transcode wanted. */
-            if (platformCap.display[i].supported && platformCap.display[i].encoder && transcode &&
+            if (platformCap.display[i].supported && platformCap.display[i].encoder &&
                 platformCap.videoEncoder[0].supported && (platformCap.videoEncoder[0].displayIndex == i)) {
-               ALOGI("keeping display %d for transcode session on encoder %d", i, 0);
-               continue;
+               if (transcode) {
+                  ALOGI("keeping display %d for transcode session on encoder %d", i, 0);
+               } else {
+                  ALOGI("encoder %d using display %d: disable display, windows and deinterlacer", 0, i);
+                  pMemConfigSettings->display[i].maxFormat = NEXUS_VideoFormat_eUnknown;
+                  for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
+                     pMemConfigSettings->display[i].window[j].deinterlacer = NEXUS_DeinterlacerMode_eNone;
+                     pMemConfigSettings->display[i].window[j].used = false;
+                  }
+               }
             /* keep display 1 if composite video wanted, but remove all window except the first one. */
             } else if ((i == 1) && cvbs && platformCap.display[i].supported) {
                ALOGI("keeping display %d for composite video out", i);
                for (j = 1; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
                   pMemConfigSettings->display[i].window[j].used = false;
                }
-               continue;
             } else {
                pMemConfigSettings->display[i].maxFormat = NEXUS_VideoFormat_eUnknown;
                for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
@@ -482,7 +494,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* 1.5. mtg. */
+   /* 3. mtg. */
    if (property_get(NX_TRIM_MTG, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i =0; i < NEXUS_MAX_DISPLAYS; i++) {
@@ -493,7 +505,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* 2. video input. */
+   /* 4. video input. */
    if (property_get(NX_TRIM_VIDIN, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          pMemConfigSettings->videoInputs.ccir656 = false;
@@ -505,12 +517,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* 3. *** HARDCODE *** only request a single encoder. */
-   for (i = 1; i < NEXUS_MAX_VIDEO_ENCODERS; i++) {
-      pMemConfigSettings->videoEncoder[i].used = false;
-   }
-
-   /* 4. vc1 decoder. */
+   /* 5. vc1 decoder. */
    if (property_get(NX_TRIM_VC1, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
@@ -522,7 +529,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* 5. stills decoder. */
+   /* 6. stills decoder. */
    if (property_get(NX_TRIM_STILLS, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0 ; i < NEXUS_MAX_STILL_DECODERS ; i++) {
@@ -531,7 +538,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* 6. mosaic video. */
+   /* 7. mosaic video. */
    if (property_get(NX_TRIM_MOSAIC, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          pMemConfigSettings->videoDecoder[0].mosaic.maxNumber = 0;
@@ -541,7 +548,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* 7. pip. */
+   /* 8. pip. */
    for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
       if (pMemConfigSettings->videoDecoder[i].used) {
          ++dec_used;
@@ -556,7 +563,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* 8. *** TEMPORARY *** force lowest format for mandated transcode decoder until
+   /* 9. *** TEMPORARY *** force lowest format for mandated transcode decoder until
     *    we can instantiate an encoder without decoder back-end (architectural change).
     */
    if (property_get(NX_TRIM_MINFMT, value, NX_PROP_ENABLED)) {
@@ -570,7 +577,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* 9. vp9. */
+   /* 10. vp9. */
    if (property_get(NX_TRIM_VP9, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
@@ -584,7 +591,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* 10. uhd decoder. */
+   /* 11. uhd decoder. */
    if (property_get(NX_TRIM_4KDEC, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
@@ -596,7 +603,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* 11. color depth. */
+   /* 12. color depth. */
    if (property_get(NX_TRIM_10BCOL, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
