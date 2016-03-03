@@ -3313,7 +3313,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    size_t i;
    NEXUS_Error rc;
    bool is_sideband = false, is_yuv = false, has_video = false, q_ops = false;
-   bool skip_comp = false, layer_seeds_output = false;
+   bool skip_comp = false, layer_seeds_output = false, forced_background = false;
    hwc_display_contents_1_t* list = &item->content;
    NEXUS_SurfaceHandle surface[NSC_GPX_CLIENTS_NUMBER];
    int ops_count = 0, video_seen = 0, chk;
@@ -3467,7 +3467,12 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             list->hwLayers[i].acquireFenceFd = INVALID_FENCE;
          }
          if (item->skip_set[i]) {
-            skip_comp = true;
+            if (video_seen && !ctx->alpha_hole_background) {
+               item->skip_set[i] = false;
+               forced_background = true;
+            } else {
+               skip_comp = true;
+            }
          }
          if (ctx->track_comp_time) {
             tick_now = hwc_tick();
@@ -3528,7 +3533,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          }
       }
    } else {
-      ctx->alpha_hole_background = false;
+      ctx->alpha_hole_background = forced_background;
       if (q_ops) {
          rc = hwc_checkpoint(ctx);
       } else {
