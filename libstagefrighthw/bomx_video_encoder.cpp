@@ -359,8 +359,13 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
         {
             m_maxFrameWidth = caps.videoEncoder[i].memory.maxWidth;
             m_maxFrameHeight = caps.videoEncoder[i].memory.maxHeight;
+            ALOGV("Encoder %d max size reported by Nexus: %ux%u", i, m_maxFrameWidth, m_maxFrameHeight);
             break;
         }
+    }
+    if ( i == NEXUS_MAX_VIDEO_ENCODERS )
+    {
+        ALOGV("Encoder max size not reported by Nexus, using default: %ux%u", m_maxFrameWidth, m_maxFrameHeight);
     }
 
     memset(&portDefs, 0, sizeof(portDefs));
@@ -1016,6 +1021,14 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
                                                pDef->format.video.xFramerate < B_MIN_FRAME_RATE_Q16) )
         {
            ALOGE("Video framerate: %.2fHz is not supported by the encoder", (float)pDef->format.video.xFramerate/(float)Q16_SCALE_FACTOR);
+           return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
+        if ( pDef->format.video.nFrameWidth > m_maxFrameWidth ||
+             pDef->format.video.nFrameHeight > m_maxFrameHeight )
+        {
+           ALOGE("Video frame size: %" PRIu32 "x%" PRIu32 " is not supported by the encoder (max is %ux%u)",
+                 pDef->format.video.nFrameWidth, pDef->format.video.nFrameHeight,
+                 m_maxFrameWidth, m_maxFrameHeight);
            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
 
