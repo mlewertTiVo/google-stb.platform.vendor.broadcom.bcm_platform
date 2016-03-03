@@ -435,7 +435,7 @@ status_t ATSParser::Program::parseProgramMap(ABitReader *br) {
             }
 
             // REGISTRATION descriptor
-            if (tag == REGISTRATION_DESCRIPTOR) {
+            if (tag == REGISTRATION_DESCRIPTOR && streamType == STREAMTYPE_PRIVATE) {
               formatIdentifier = br->getBits(32);
               ALOGV("      FormatIdentifier = %u", formatIdentifier);
               if (descLength > 6) {
@@ -1209,8 +1209,8 @@ ATSParser::~ATSParser() {
 
 status_t ATSParser::feedTSPacket(const void *data, size_t size,
         SyncEvent *event) {
-    if (size == 192) {
-        kTSPacketSize = 192;
+    if (size == 192 || size == 188) {
+        kTSPacketSize = size;
     }
 
     if (size != kTSPacketSize) {
