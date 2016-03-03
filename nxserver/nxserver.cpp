@@ -102,6 +102,11 @@
 #define GRAPHICS_RES_WIDTH_PROP        "ro.graphics_resolution.width"
 #define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
 
+#define ENCODER_RES_WIDTH_DEFAULT      (1280)
+#define ENCODER_RES_HEIGHT_DEFAULT     (720)
+#define ENCODER_RES_WIDTH_PROP         "ro.nx.enc.max.width"
+#define ENCODER_RES_HEIGHT_PROP        "ro.nx.enc.max.height"
+
 #define NX_ACT_GC                      "ro.nx.act.gc"
 #define NX_ACT_GS                      "ro.nx.act.gs"
 #define NX_ACT_LMK                     "ro.nx.act.lmk"
@@ -455,9 +460,15 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    bool cvbs = property_get_int32(NX_COMP_VIDEO, 0) ? true : false;
    NEXUS_GetPlatformCapabilities(&platformCap);
 
-   /* 1. *** HARDCODE *** only request a single encoder. */
+   /* 1. *** HARDCODE *** only request a single encoder and limit its capabilities. */
    for (i = 1; i < NEXUS_MAX_VIDEO_ENCODERS; i++) {
       pMemConfigSettings->videoEncoder[i].used = false;
+   }
+   if (NEXUS_MAX_VIDEO_ENCODERS) {
+      pMemConfigSettings->videoEncoder[0].maxWidth =
+         property_get_int32(ENCODER_RES_WIDTH_PROP , ENCODER_RES_WIDTH_DEFAULT);
+      pMemConfigSettings->videoEncoder[0].maxHeight =
+         property_get_int32(ENCODER_RES_HEIGHT_PROP, ENCODER_RES_HEIGHT_DEFAULT);
    }
 
    /* 2. additional display(s). */
