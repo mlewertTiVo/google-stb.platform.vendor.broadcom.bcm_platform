@@ -159,7 +159,6 @@ function ou_suis_je {
 	la=$(dirname $la)
 	la=$(dirname $la)
 	la=$(dirname $la)
-	la=$(dirname $la)
 	# sanity, does not hurt...
 	chk=$la
 	chk+="/"
