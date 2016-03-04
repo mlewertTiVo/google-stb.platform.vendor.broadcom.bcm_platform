@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/main_layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <SurfaceView
+        android:id="@+id/surfaceView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/border" />
+    <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        android:id="@+id/menu"
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:id="@+id/menu_row1"
+            android:orientation="horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+            <ToggleButton android:id="@+id/button_fs"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textOn="@string/button_exit_fs"
+                android:textOff="@string/button_fs"
+                android:checked="true" />
+            <ToggleButton android:id="@+id/button_start_file"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textOff="@string/button_start_file"
+                android:textOn="@string/button_stop_file"
+                android:checked="false"
+                android:enabled="false" />
+            <EditText android:id="@+id/file_path"
+                android:layout_width="fill_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/file_path_hint"
+                android:inputType="textUri|textNoSuggestions"
+                android:imeOptions="actionDone" />
+        </LinearLayout>
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:id="@+id/menu_row2"
+            android:orientation="horizontal"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:visibility="gone">
+            <Button android:id="@+id/button_left"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/button_left"
+                android:onClick="handleLeftBtn" />
+            <Button android:id="@+id/button_top"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/button_top"
+                android:onClick="handleTopBtn" />
+            <Button android:id="@+id/button_center"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/button_center"
+                android:onClick="handleCenterBtn" />
+            <Button android:id="@+id/button_bottom"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/button_bottom"
+                android:onClick="handleBottomBtn" />
+            <Button android:id="@+id/button_right"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/button_right"
+                android:onClick="handleRightBtn" />
+        </LinearLayout>
+    </LinearLayout>
+    <ImageView
+        android:id="@+id/bannerView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:src="@+drawable/banner" />
+</FrameLayout>

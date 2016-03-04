@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1"
+     width="833.834" height="833.834" style="stroke:none">
+  <g id="Broadcom_logo_with_clear_space" transform="translate(63.53,63.53)">
+    <title>Broadcom Limited</title>
+    <desc>
+      Broadcom Limited is a diversified global semiconductor leader built on
+      50 years of innovation, collaboration and engineering excellence.
+    </desc>
+    <!-- librsvg limitation: external references must be absolute path -->
+    <use x="0" y="0" xlink:href="Broadcom.svg#Symbol" />
+  </g>
+</svg>

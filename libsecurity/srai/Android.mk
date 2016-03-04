@@ -16,7 +16,6 @@
 # libsrai.so
 #-------------
 LOCAL_PATH := ${REFSW_BASE_DIR}
-
 include $(CLEAR_VARS)
 
 # add SAGElib related includes
@@ -32,12 +31,9 @@ LOCAL_C_INCLUDES := \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/srai/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/include/private \
-    $(BSAGELIB_INCLUDES) \
-    $(NEXUS_APP_INCLUDE_PATHS)
+    $(BSAGELIB_INCLUDES)
 
-LOCAL_CFLAGS += -DPIC -fpic -DANDROID
-LOCAL_CFLAGS += $(NEXUS_CFLAGS)
-LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 
 # Enable warning and error logs by default
 LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1

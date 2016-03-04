@@ -65,6 +65,12 @@
 extern "C" {
 #endif
 
+/* 64-bit support */
+#define BDBG_UINT64_FMT "0x%x%08x"
+#define BDBG_UINT64_ARG(x) (unsigned)((x)>>32), (unsigned)(x)
+const char *BDBG_P_Int64DecArg(int64_t x, char *buf, size_t buf_size);
+#define BDBG_INT64_DEC_FMT  "%s"
+
 #ifdef BDBG_DEBUG_BUILD
 #undef BDBG_DEBUG_BUILD
 #endif

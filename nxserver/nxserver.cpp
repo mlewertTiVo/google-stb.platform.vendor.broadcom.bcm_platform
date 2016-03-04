@@ -113,6 +113,9 @@
 #define NX_TRANSCODE                   "ro.nx.transcode"
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
 #define NX_CAPABLE_COMP_BYPASS         "ro.nx.capable.cb"
+#define NX_COMP_VIDEO                  "ro.nx.cvbs"
+
+#define NX_HDMI_DRM_KEY                "ro.nx.hdmi_drm"
 
 #define NX_ODV                         "ro.nx.odv"
 #define NX_ODV_ALT_THRESHOLD           "ro.nx.odv.use.alt"
@@ -126,6 +129,7 @@
 #define NX_HEAP_HIGH_MEM               "ro.nx.heap.highmem"
 #define NX_HEAP_DRV_MANAGED            "ro.nx.heap.drv_managed"
 #define NX_HEAP_GROW                   "ro.nx.heap.grow"
+#define NX_SVP                         "ro.nx.svp"
 
 #define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
 #define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
@@ -387,7 +391,7 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
         if (!g_app.clients[i].client) {
             g_app.clients[i].client = client;
             g_app.clients[i].joinSettings = *pJoinSettings;
-            ALOGI("client_connect(%d): '%s'::%p", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client);
+            ALOGV("client_connect(%d): '%s'::%p", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client);
             break;
         }
     }
@@ -406,7 +410,7 @@ static void client_disconnect(nxclient_t client, const NxClient_JoinSettings *pJ
     }
     for (i=0;i<APP_MAX_CLIENTS;i++) {
         if (g_app.clients[i].client == client) {
-            ALOGI("client_disconnect(%d): '%s'::%p", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client);
+            ALOGV("client_disconnect(%d): '%s'::%p", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client);
             g_app.clients[i].client = NULL;
             break;
         }
@@ -435,6 +439,13 @@ static int lookup_heap_memory_type(const NEXUS_PlatformSettings *pPlatformSettin
     return -1;
 }
 
+static void pre_trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings, bool cvbs)
+{
+   if (!cvbs) {
+      pMemConfigSettings->display[1].maxFormat = NEXUS_VideoFormat_eUnknown;
+   }
+}
+
 static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
 {
    int i, j;
@@ -442,16 +453,25 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    int dec_used = 0;
    NEXUS_PlatformCapabilities platformCap;
    bool transcode = property_get_int32(NX_TRANSCODE, 0) ? true : false;
+   bool cvbs = property_get_int32(NX_COMP_VIDEO, 0) ? true : false;
    NEXUS_GetPlatformCapabilities(&platformCap);
 
    /* 1. additional display(s). */
    if (property_get(NX_TRIM_DISP, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         /* start index -> 1, do not remove the display associated with encoder if transcode wanted. */
+         /* start index -> 1 */
          for (i = 1; i < NEXUS_MAX_DISPLAYS; i++) {
+            /* keep display associated with encoder if transcode wanted. */
             if (platformCap.display[i].supported && platformCap.display[i].encoder && transcode &&
                 platformCap.videoEncoder[0].supported && (platformCap.videoEncoder[0].displayIndex == i)) {
                ALOGI("keeping display %d for transcode session on encoder %d", i, 0);
+               continue;
+            /* keep display 1 if composite video wanted, but remove all window except the first one. */
+            } else if ((i == 1) && cvbs && platformCap.display[i].supported) {
+               ALOGI("keeping display %d for composite video out", i);
+               for (j = 1; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
+                  pMemConfigSettings->display[i].window[j].used = false;
+               }
                continue;
             } else {
                pMemConfigSettings->display[i].maxFormat = NEXUS_VideoFormat_eUnknown;
@@ -626,10 +646,12 @@ static nxserver_t init_nxserver(void)
 
     char value[PROPERTY_VALUE_MAX];
     char value2[PROPERTY_VALUE_MAX];
-    int ix;
+    int ix, jx;
     char nx_key[PROPERTY_VALUE_MAX];
     FILE *key = NULL;
     NEXUS_VideoFormat forced_format;
+    bool svp;
+    bool cvbs = property_get_int32(NX_COMP_VIDEO, 0) ? true : false;
 
     if (g_app.refcnt == 1) {
         g_app.refcnt++;
@@ -662,6 +684,22 @@ static nxserver_t init_nxserver(void)
     /* setup the configuration we want for the device.  right now, hardcoded for a generic
        android device, longer term, we want more flexibility. */
 
+    /* "svp 2.0" configuration. */
+    svp = property_get_int32(NX_SVP, 0) ? true : false;
+    for (ix = 0; ix < NEXUS_MAX_VIDEO_DECODERS; ix++) {
+       memConfigSettings.videoDecoder[ix].secure =
+          svp ? NEXUS_SecureVideo_eSecure : NEXUS_SecureVideo_eUnsecure;
+    }
+    for (ix = 0; ix < NEXUS_MAX_DISPLAYS; ix++) {
+       for (jx = 0; jx < NEXUS_MAX_VIDEO_WINDOWS; jx++) {
+          memConfigSettings.display[ix].window[jx].secure =
+             svp ? NEXUS_SecureVideo_eSecure : NEXUS_SecureVideo_eUnsecure;
+       }
+    }
+    if (svp) {
+       settings.svp = nxserverlib_svp_type_cdb_urr;
+    }
+    ALOGI("%s: svp ** %s **", __FUNCTION__, svp?"enabled":"disabled");
     /* -ir none */
     settings.session[0].ir_input_mode = NEXUS_IrInputMode_eMax;
     /* -fbsize w,h */
@@ -681,8 +719,11 @@ static nxserver_t init_nxserver(void)
     settings.transcode = false;
     /* -grab off */
     settings.grab = 0;
-    /* -sd off */
-    settings.session[0].output.sd = settings.session[0].output.encode = false;
+    /* -sd off (unless composite video enabled) */
+    if (!cvbs) {
+       settings.session[0].output.sd = false;
+    }
+    settings.session[0].output.encode = false;
     settings.session[0].output.hd = true;
     /* -enablePassthroughBuffer */
     settings.audioDecoder.enablePassthroughBuffer = true;
@@ -692,6 +733,9 @@ static nxserver_t init_nxserver(void)
     }
 
     settings.allowCompositionBypass = property_get_int32(NX_CAPABLE_COMP_BYPASS, 0) ? true : false;
+    if (cvbs) {
+       settings.allowCompositionBypass = false;
+    }
     settings.framebuffers = NSC_FB_NUMBER;
 
     settings.videoDecoder.dynamicPictureBuffers = property_get_int32(NX_ODV, 0) ? true : false;
@@ -797,6 +841,15 @@ static nxserver_t init_nxserver(void)
        }
        fclose(key);
     }
+
+    /* -hdmi_drm */
+    memset(value, 0, sizeof(value));
+    if ( property_get(NX_HDMI_DRM_KEY, value, NX_PROP_DISABLED) ) {
+        if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+            settings.hdmi.drm = true;
+        }
+    }
+
     /* -hdcp1x_keys some-key-file  -- setup last. */
     memset(value, 0, sizeof(value));
     property_get(NX_HDCP1X_KEY, value, NULL);
@@ -809,6 +862,8 @@ static nxserver_t init_nxserver(void)
     if (strlen(value2)) {
        settings.hdcp.hdcp2xBinFile = value2;
     }
+
+    pre_trim_mem_config(&memConfigSettings, cvbs);
 
     rc = nxserver_modify_platform_settings(&settings, &cmdline_settings, &platformSettings, &memConfigSettings);
     if (rc) {

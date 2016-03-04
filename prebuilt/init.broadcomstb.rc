@@ -8,6 +8,10 @@ import /init.blockdev.rc
 import /init.eth.rc
 import /init.nx.dynheap.rc
 
+on early-init
+   # Mount kernel debugfs
+   mount debugfs debugfs /sys/kernel/debug mode=0755
+
 on init
    mkdir /hwcfg 0555 root root
    symlink /hwcfg /mnt/hwcfg
@@ -19,9 +23,6 @@ on init
    # allocate node(s) which are part of the CTS exception list.
    export NEXUS_DEVICE_NODE /dev/mali
    export NEXUS_WAKE_DEVICE_NODE /dev/mali0
-
-   # Mount kernel debugfs
-   mount debugfs none /sys/kernel/debug
 
 on fs
    mount_all /fstab.bcm_platform

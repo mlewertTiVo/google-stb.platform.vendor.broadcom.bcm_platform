@@ -27,7 +27,7 @@ function HELP {
 TOP_DIR=$(pwd)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR=tmp_bcmrel
-PREBUILT=vendor/broadcom/stb/release_prebuilts
+PREBUILT=vendor/broadcom/release_prebuilts
 PREBUILT_DIR="$TOP_DIR/$PREBUILT"
 
 DFT_XML="$TOP_DIR/.repo/manifests/default.xml"
@@ -237,6 +237,9 @@ if [ -f $BCG_XML ]; then
   # Misc tools
   extract_path_from_xml name android/busybox >> $WHITE_LIST
 
+  # Reference devices
+  extract_path_from_xml name android/device/google/avko >> $WHITE_LIST
+
 else
   echo "$BCG_XML not found, exiting..."
   exit 0
@@ -268,10 +271,22 @@ cd $TOP_DIR
 
 # Append custom white and black lists if present
 if [ -f $SCRIPT_DIR/include.txt ]; then
-  cat $SCRIPT_DIR/include.txt >> $WHITE_LIST
+  while read -r line
+  do
+    stringarray=($line)
+    for word in "${stringarray[@]}"; do
+      echo $word >> $WHITE_LIST
+    done
+  done < "$SCRIPT_DIR/include.txt"
 fi
 if [ -f $SCRIPT_DIR/exclude.txt ]; then
-  cat $SCRIPT_DIR/exclude.txt >> $BLACK_LIST
+  while read -r line
+  do
+    stringarray=($line)
+    for word in "${stringarray[@]}"; do
+      echo $word >> $BLACK_LIST
+    done
+  done < "$SCRIPT_DIR/exclude.txt"
 fi
 
 # Tar up the entire temp directory except the white/black lists

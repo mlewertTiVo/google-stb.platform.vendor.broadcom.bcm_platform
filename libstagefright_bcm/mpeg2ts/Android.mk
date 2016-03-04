@@ -7,14 +7,15 @@ LOCAL_SRC_FILES:=                 \
         ATSParser.cpp             \
         ESQueue.cpp               \
         MPEG2PSExtractor.cpp      \
-        MPEG2TSExtractor.cpp
+        MPEG2TSExtractor.cpp      \
 
 LOCAL_C_INCLUDES:= \
 	$(TOP)/frameworks/av/media/libstagefright \
 	$(TOP)/frameworks/native/include/media/openmax \
-        $(TOP)/vendor/broadcom/stb/bcm_platform/libstagefright_bcm
+	$(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libstagefright_bcm
 
-LOCAL_CFLAGS += -Werror
+LOCAL_CFLAGS += -Werror -Wall
+LOCAL_CLANG := true
 
 LOCAL_MODULE:= libstagefright_mpeg2ts_bcm
 

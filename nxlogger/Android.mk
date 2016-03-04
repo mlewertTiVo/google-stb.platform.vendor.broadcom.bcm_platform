@@ -28,7 +28,7 @@ LOCAL_SHARED_LIBRARIES := liblog \
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) $(NEXUS_TOP)/platforms/common/src/linuxuser.proxy $(NEXUS_TOP)/platforms/common/src/linuxkernel/common $(NEXUS_TOP)/base/include
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
 
-LOCAL_CFLAGS += $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES))
+LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 
 LOCAL_SRC_FILES := nxlogger.cpp
 

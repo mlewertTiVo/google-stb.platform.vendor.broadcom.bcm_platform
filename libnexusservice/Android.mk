@@ -29,10 +29,6 @@ LOCAL_SHARED_LIBRARIES := \
    libstagefright_foundation \
    libnxclient
 
-ifneq ($(findstring NEXUS_HAS_CEC, $(NEXUS_APP_DEFINES)),)
-LOCAL_C_INCLUDES += $(NEXUS_CEC_PUBLIC_INCLUDES)
-endif
-
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusir
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
@@ -44,11 +40,8 @@ LOCAL_SRC_FILES += \
     nexuscecservice.cpp \
     nexusnxcecservice.cpp
 
-ifeq ($(findstring NEXUS_HAS_CEC, $(NEXUS_APP_DEFINES)),)
-LOCAL_SRC_FILES += nexus_cec_stubs.cpp
-endif
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 
-LOCAL_CFLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES))
 ifneq ($(ANDROID_ENABLE_HDMI_HDCP),n)
 LOCAL_CFLAGS += -DANDROID_ENABLE_HDMI_HDCP=1
 else

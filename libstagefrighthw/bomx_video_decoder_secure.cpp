@@ -71,14 +71,15 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_Create(
     }
     else
     {
-        if ( pVideoDecoder->IsValid() )
+        OMX_ERRORTYPE constructorError = pVideoDecoder->IsValid();
+        if ( constructorError == OMX_ErrorNone )
         {
             return OMX_ErrorNone;
         }
         else
         {
             delete pVideoDecoder;
-            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+            return BOMX_ERR_TRACE(constructorError);
         }
     }
 }

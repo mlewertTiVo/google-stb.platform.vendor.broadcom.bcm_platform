@@ -107,8 +107,8 @@ int fb_device_open(hw_module_t const* module, const char* name,
 
          // those are hardcoded already.  note that dpi is overtaken by the ro.lcd_density anyways.
          const_cast<int&>(dev->device.format) = HAL_PIXEL_FORMAT_RGBA_8888;
-         const_cast<float&>(dev->device.xdpi) = 160;
-         const_cast<float&>(dev->device.ydpi) = 160;
+         const_cast<float&>(dev->device.xdpi) = 0;
+         const_cast<float&>(dev->device.ydpi) = 0;
          const_cast<float&>(dev->device.fps) = 60;
          const_cast<int&>(dev->device.minSwapInterval) = 1;
          const_cast<int&>(dev->device.maxSwapInterval) = 1;

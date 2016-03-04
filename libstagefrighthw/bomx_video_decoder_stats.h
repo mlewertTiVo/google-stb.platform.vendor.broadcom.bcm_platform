@@ -91,10 +91,11 @@ public:
         nsecs_t rts;
         uint32_t data1;
         uint32_t data2;
+        uint32_t data3;
     } EventEntry;
 
     void addEventEntry(EventType eventType, OMX_TICKS ts,
-                      uint32_t data1 = 0, uint32_t data2 = 0) {
+                      uint32_t data1 = 0, uint32_t data2 = 0, uint32_t data3 = 0) {
         if (mStatsLevel == STATS_DISABLED) return;
         EventData &eventData = eventDataList[eventType];
         EventEntry *entry = eventData.getNew();
@@ -103,6 +104,7 @@ public:
         entry->rts = systemTime(CLOCK_MONOTONIC);
         entry->data1 = data1;
         entry->data2 = data2;
+        entry->data3 = data3;
         if (eventType == INPUT_FRAME) {
             // Mark the smallest/largest timestamps and accumulate input frame sizes
             // eventData.data1->smallest, eventData.data2->largest
@@ -168,15 +170,16 @@ public:
         if (eventData->count() > 0) {
             // Count number of dropped frames
             uint32_t droppedFrames = 0;
+            uint32_t lastSerial = 0;
             for (uint32_t idx = 0; idx < eventData->count(); ++idx) {
                 EventEntry *entry = eventData->getByIndex(idx);
                 ALOG_ASSERT(entry);
                 if (entry->data1 == 0) {
                     ++droppedFrames;
-                    ALOGD("Dropped frame with serial no:%u", entry->data2);
+                    lastSerial = entry->data2;
                 }
             }
-            ALOGD("Dropped frames:%u", droppedFrames);
+            ALOGD("Dropped frames:%u Last dropped frame:%u", droppedFrames, lastSerial);
         }
     }
 
@@ -207,7 +210,7 @@ public:
         // 1. Time-mark | input-ts
         // 2. Out-time-mark | output-ts | serial | displayed | in-time-mark | delta
         fprintf(fd, "==============================\n");
-        fprintf(fd, "Time-mark | input-ts\n");
+        fprintf(fd, "Time-mark | input-ts | avail-input\n");
         // First entry of input data must be our earliest available time mark in the stats
         EventEntry *entry = eventData->getByIndex(0);
         nsecs_t baseTime = entry->rts;
@@ -216,11 +219,11 @@ public:
             if (entry->data1 & OMX_BUFFERFLAG_CODECCONFIG)
                 continue;
             int msecDelay = toMillisecondTimeoutDelay(baseTime, entry->rts);
-            fprintf(fd, "%9u%11u\n", msecDelay, (uint32_t)(entry->ts/1000));
+            fprintf(fd, "%9u%11u%14u\n", msecDelay, (uint32_t)(entry->ts/1000), entry->data3);
         }
 
         fprintf(fd, "\n\n==============================\n");
-        fprintf(fd, "Out-time-mark | output-ts | serial | displayed | in-time-mark | delta\n");
+        fprintf(fd, "Out-time-mark | output-ts | serial | in-time-mark | out-in-delta | display | display-time-mark | display-out-delta\n");
         eventData = &eventDataList[OUTPUT_FRAME];
         for (uint32_t idx = 0; idx < eventData->count(); ++idx) {
             entry = eventData->getByIndex(idx);
@@ -228,11 +231,13 @@ public:
             // find out if frame was displayed.
             // Ugly inner loop for now.
             uint32_t displayed = 0;
+            int mSecDelayDisp = 0;
             EventData *dispEventData = &eventDataList[DISPLAY_FRAME];
             for (uint32_t j=0; j<dispEventData->count(); ++j) {
                 EventEntry *e = dispEventData->getByIndex(j);
                 if (e->data2 == entry->data1){
                     displayed = e->data1;
+                    mSecDelayDisp = toMillisecondTimeoutDelay(baseTime, e->rts);
                     break;
                 }
             }
@@ -247,9 +252,9 @@ public:
                 }
             }
 
-            fprintf(fd, "%13u%12u%9u%12u%15u%8u\n",
-                    msecDelay, (uint32_t)(entry->ts/1000), entry->data1, displayed,
-                    mSecDelayInput, msecDelay-mSecDelayInput);
+            fprintf(fd, "%13u%12u%9u%15u%15u%10u%20u%20u\n",
+                    msecDelay, (uint32_t)(entry->ts/1000), entry->data1, mSecDelayInput,
+                    msecDelay-mSecDelayInput, displayed, mSecDelayDisp, mSecDelayDisp-msecDelay);
         }
         fclose(fd);
     }

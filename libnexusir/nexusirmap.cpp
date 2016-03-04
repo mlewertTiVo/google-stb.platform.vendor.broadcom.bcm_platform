@@ -527,12 +527,12 @@ NexusIrMap::~NexusIrMap()
     Tokenizer* tokenizer;
     status_t status = Tokenizer::open(filename, &tokenizer);
     if (status) {
-        LOGE("Error %d opening key layout map file %s.", status,
+        ALOGE("Error %d opening key layout map file %s.", status,
                 filename.string());
     } else {
         sp<NexusIrMap> map = new NexusIrMap();
         if (!map.get()) {
-            LOGE("Error allocating key layout map.");
+            ALOGE("Error allocating key layout map.");
             status = NO_MEMORY;
         } else {
             Parser parser(map, tokenizer);
@@ -561,7 +561,7 @@ NexusIrMap::Parser::~Parser()
 status_t NexusIrMap::Parser::parse()
 {
     while (!mTokenizer->isEof()) {
-        LOGV("Parsing %s: '%s'.", mTokenizer->getLocation().string(),
+        ALOGV("Parsing %s: '%s'.", mTokenizer->getLocation().string(),
                 mTokenizer->peekRemainderOfLine().string());
 
         mTokenizer->skipDelimiters(WHITESPACE);
@@ -579,21 +579,21 @@ status_t NexusIrMap::Parser::parse()
 status_t NexusIrMap::Parser::parseKey()
 {
     String8 irCodeToken = mTokenizer->nextToken(WHITESPACE);
-    LOGV("%s: Got IR code '%s'",
+    ALOGV("%s: Got IR code '%s'",
             mTokenizer->getLocation().string(),
             irCodeToken.string());
 
     char* end;
     uint32_t irCode = uint32_t(strtoul(irCodeToken.string(), &end, 0));
     if (*end) {
-        LOGE("%s: Expected IR code, got '%s'.",
+        ALOGE("%s: Expected IR code, got '%s'.",
                 mTokenizer->getLocation().string(),
                 irCodeToken.string());
         return BAD_VALUE;
     }
 
     if (mMap->mKeys.indexOfKey(irCode) >= 0) {
-        LOGE("%s: Duplicate entry '%s' for key 0x%08x",
+        ALOGE("%s: Duplicate entry '%s' for key 0x%08x",
                 mTokenizer->getLocation().string(),
                 irCodeToken.string(), irCode);
         return BAD_VALUE;
@@ -601,20 +601,20 @@ status_t NexusIrMap::Parser::parseKey()
 
     mTokenizer->skipDelimiters(WHITESPACE);
     String8 keyCodeToken = mTokenizer->nextToken(WHITESPACE);
-    LOGV("%s: Got key code for '%s': '%s'",
+    ALOGV("%s: Got key code for '%s': '%s'",
             mTokenizer->getLocation().string(),
             irCodeToken.string(),
             keyCodeToken.string());
 
     __u16 keyCode = key(keyCodeToken.string());
     if (!keyCode) {
-        LOGE("%s: Expected key code label, got '%s'.",
+        ALOGE("%s: Expected key code label, got '%s'.",
                 mTokenizer->getLocation().string(),
                 keyCodeToken.string());
         return BAD_VALUE;
     }
 
-    LOGV("Parsed irCode=0x%08x ('%s'), keyCode=%d ('KEY_%s').",
+    ALOGV("Parsed irCode=0x%08x ('%s'), keyCode=%d ('KEY_%s').",
             (unsigned)irCode, irCodeToken.string(),
             (int)keyCode, keyCodeToken.string());
 

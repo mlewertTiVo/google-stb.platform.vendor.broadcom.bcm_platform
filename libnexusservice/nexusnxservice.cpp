@@ -111,10 +111,15 @@ NEXUS_VideoFormat NexusNxService::getBestOutputFormat(NEXUS_HdmiOutputStatus *st
       NEXUS_VideoFormat_e1080p30hz,
       NEXUS_VideoFormat_e1080p25hz,
       NEXUS_VideoFormat_e1080p24hz,
+      NEXUS_VideoFormat_e1080i,
+      NEXUS_VideoFormat_e1080i50hz,
       NEXUS_VideoFormat_e720p,
+      NEXUS_VideoFormat_e720p50hz,
       NEXUS_VideoFormat_e720p30hz,
       NEXUS_VideoFormat_e720p25hz,
       NEXUS_VideoFormat_e720p24hz,
+      NEXUS_VideoFormat_ePal,
+      NEXUS_VideoFormat_eSecam,
       NEXUS_VideoFormat_eUnknown,
    };
 
@@ -277,7 +282,7 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
             return;
         }
 
-        isConnected = (status.hdmi.status.connected && status.hdmi.status.rxPowered) ? HDMI_CONNECTED : HDMI_UNPLUGGED;
+        isConnected = (status.hdmi.status.connected) ? HDMI_CONNECTED : HDMI_UNPLUGGED;
 
         // If the last hotplug connected state is the same as the current one and we are connected,
         // then it means that we need to manually generate a disconnected event...

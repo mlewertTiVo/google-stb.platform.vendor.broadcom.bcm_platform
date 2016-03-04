@@ -84,9 +84,9 @@ extern "C" {
 #define VERY_VERBOSE 0
 
 #if VERY_VERBOSE
-#define LOGVV LOGV
+#define ALOGVV ALOGV
 #else
-#define LOGVV(...) ((void)0)
+#define ALOGVV(...) ((void)0)
 #endif
 
 #ifndef UNUSED

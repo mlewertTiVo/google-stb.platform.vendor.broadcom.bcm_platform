@@ -130,7 +130,7 @@ public:
     void Lock() { B_Mutex_Lock(m_hMutex); };
     void Unlock() { B_Mutex_Unlock(m_hMutex); };
 
-    bool IsValid() { return m_currentState == OMX_StateInvalid ? false : true; }
+    OMX_ERRORTYPE IsValid()	{ if ( m_currentState == OMX_StateInvalid ) { return m_constructorError; } else { return OMX_ErrorNone; } };
 
     // Component Name
     const char *GetName() const {return m_componentName;}
@@ -255,8 +255,8 @@ protected:
     BOMX_VideoPort *m_pVideoPorts[BOMX_COMPONENT_MAX_PORTS];
     BOMX_OtherPort *m_pOtherPorts[BOMX_COMPONENT_MAX_PORTS];
 
-    // If a constructor fails, mark as invalid
-    void Invalidate() { m_currentState = m_targetState = OMX_StateInvalid; };
+    // If a constructor fails, mark as invalid, set the constructor error with the failure reason
+    void Invalidate(OMX_ERRORTYPE errorReason) { m_currentState = m_targetState = OMX_StateInvalid; m_constructorError = errorReason; };
 
     // State Management Routines
     OMX_ERRORTYPE StateChangeStart(OMX_STATETYPE newState);
@@ -322,6 +322,7 @@ protected:
 
 private:
     OMX_STATETYPE m_currentState, m_targetState;
+    OMX_ERRORTYPE m_constructorError;
     char m_componentName[OMX_MAX_STRINGNAME_SIZE];
     char m_componentRole[OMX_MAX_STRINGNAME_SIZE];
     char m_uuid[36];

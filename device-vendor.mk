@@ -41,7 +41,6 @@ PRODUCT_COPY_FILES += \
     vendor/widevine/proprietary/drmwvmplugin/com.google.widevine.software.drm.xml:system/etc/permissions/com.google.widevine.software.drm.xml:widevine
 
 PRODUCT_PACKAGES += \
-    WidevineSamplePlayer \
     libdrmwvmplugin \
     libwvm \
     libdrmdecrypt \

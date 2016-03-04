@@ -59,7 +59,7 @@ oops="oops"
 security_root="security"
 playready_root="playready"
 show_tree_depth=3
-BCM_VENDOR_STB_ROOT="vendor/broadcom/stb"
+BCM_VENDOR_STB_ROOT="vendor/broadcom"
 
 # you can change the auto-magic profile selection here if desired, but there is really no need to.
 #

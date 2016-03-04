@@ -11,10 +11,9 @@ LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/tools/bmemperf/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/tools/bmemconfig
 
-LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
-LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
+LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
-LOCAL_CFLAGS += -DBSTD_CPU_ENDIAN=BSTD_ENDIAN_LITTLE -DUSE_BOXMODES
+LOCAL_CFLAGS += -DUSE_BOXMODES
 
 BMEM_CONFIG_SRC_ROOT := ../../../../refsw/BSEAV/tools/bmemconfig
 LOCAL_SRC_FILES := \

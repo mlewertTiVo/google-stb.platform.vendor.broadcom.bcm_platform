@@ -45,6 +45,7 @@
 
 #include "bomx_video_decoder.h"
 #include "nexus_platform.h"
+#include "nexus_memory.h"
 #include "OMX_IndexExt.h"
 #include "OMX_VideoExt.h"
 #include "nexus_base_mmap.h"
@@ -63,6 +64,7 @@
 #define B_PROPERTY_ENABLE_METADATA ("media.brcm.vdec_enable_metadata")
 #define B_PROPERTY_TRIM_VP9 ("ro.nx.trim.vp9")
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
+#define B_PROPERTY_SVP ("ro.nx.svp")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE (1536*1536)  // 1024 * 1024 from soft decoder is not big enough for some HEVC streams
@@ -115,7 +117,7 @@ struct BOMX_VideoDecodeFrameInterval
     NEXUS_VideoFrameRate rate;
     int interval;
 };
-static const BOMX_VideoDecodeFrameInterval g_inFrameIntervals[] = {{NEXUS_VideoFrameRate_eUnknown,  34},
+static const BOMX_VideoDecodeFrameInterval g_inFrameIntervals[] = {{NEXUS_VideoFrameRate_eUnknown,  17},    // Worst case
                                                                    {NEXUS_VideoFrameRate_e23_976,   42},
                                                                    {NEXUS_VideoFrameRate_e24,       42},
                                                                    {NEXUS_VideoFrameRate_e25,       40},
@@ -153,14 +155,15 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(
     }
     else
     {
-        if ( pVideoDecoder->IsValid() )
+        OMX_ERRORTYPE constructorError = pVideoDecoder->IsValid();
+        if ( constructorError == OMX_ErrorNone )
         {
             return OMX_ErrorNone;
         }
         else
         {
             delete pVideoDecoder;
-            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+            return BOMX_ERR_TRACE(constructorError);
         }
     }
 }
@@ -208,14 +211,15 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
     }
     else
     {
-        if ( pVideoDecoder->IsValid() )
+        OMX_ERRORTYPE constructorError = pVideoDecoder->IsValid();
+        if ( constructorError == OMX_ErrorNone )
         {
             return OMX_ErrorNone;
         }
         else
         {
             delete pVideoDecoder;
-            return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+            return BOMX_ERR_TRACE(constructorError);
         }
     }
 }
@@ -677,6 +681,56 @@ static void BOMX_VideoDecoder_StripedSurfaceDestroy(BOMX_VideoDecoderFrameBuffer
    }
 }
 
+static bool BOMX_VideoDecoder_SetupRuntimeHeaps(bool secureDecoder, bool secureHeap)
+{
+   unsigned i;
+   NEXUS_Error errCode;
+   NEXUS_PlatformConfiguration platformConfig;
+   NEXUS_PlatformSettings platformSettings;
+   NEXUS_MemoryStatus memoryStatus;
+
+   if (property_get_int32(B_PROPERTY_SVP, 0))
+   {
+      NEXUS_Platform_GetConfiguration(&platformConfig);
+      for (i = 0; i < NEXUS_MAX_HEAPS ; i++)
+      {
+         if (platformConfig.heap[i] != NULL)
+         {
+            errCode = NEXUS_Heap_GetStatus(platformConfig.heap[i], &memoryStatus);
+            if (!errCode && (memoryStatus.heapType & NEXUS_HEAP_TYPE_PICTURE_BUFFERS))
+            {
+               NEXUS_HeapRuntimeSettings settings;
+               bool origin, wanted;
+               NEXUS_Platform_GetHeapRuntimeSettings(platformConfig.heap[i], &settings);
+               origin = settings.secure;
+               wanted = secureHeap ? true : false;
+               if (origin != wanted)
+               {
+                  settings.secure = wanted;
+                  errCode = NEXUS_Platform_SetHeapRuntimeSettings(platformConfig.heap[i], &settings);
+                  if (errCode)
+                  {
+                     ALOGE("NEXUS_Platform_SetHeapRuntimeSettings(%i:%p, %s) on decoder %s -> failed: %d",
+                            i, platformConfig.heap[i], settings.secure?"secure":"open", secureDecoder?"secure":"open", errCode);
+                     /* Continue anyways, something may still work... */
+                     if (origin && !wanted)
+                     {
+                        return false;
+                     }
+                  }
+                  else
+                  {
+                     ALOGI("NEXUS_Platform_SetHeapRuntimeSettings(%i:%p, %s) on decoder %s -> success",
+                           i, platformConfig.heap[i], settings.secure?"secure":"open", secureDecoder?"secure":"open");
+                  }
+               }
+            }
+         }
+      }
+   }
+   return true;
+}
+
 BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
@@ -770,7 +824,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_pRoles )
     {
         ALOGE("Unable to allocate role memory");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     BKNI_Memcpy(m_pRoles, pRoles, numRoles*sizeof(BOMX_VideoDecoderRole));
@@ -794,7 +848,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_pVideoPorts[0] )
     {
         ALOGW("Unable to create video input port");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     m_numVideoPorts = 1;
@@ -829,7 +883,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_pVideoPorts[1] )
     {
         ALOGW("Unable to create video output port");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     m_numVideoPorts = 2;
@@ -838,7 +892,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_hPlaypumpEvent )
     {
         ALOGW("Unable to create playpump event");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -846,7 +900,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_hOutputFrameEvent )
     {
         ALOGW("Unable to create output frame event");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -854,7 +908,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_outputFrameEventId )
     {
         ALOGW("Unable to register output frame event");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -862,7 +916,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_pBufferTracker || !m_pBufferTracker->Valid() )
     {
         ALOGW("Unable to create buffer tracker");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -870,7 +924,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_pIpcClient )
     {
         ALOGW("Unable to create client factory");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -878,8 +932,13 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if (m_pNexusClient == NULL)
     {
         ALOGW("Unable to create nexus client context");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
+    }
+
+    if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))
+    {
+       BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
     }
 
     NxClient_AllocSettings nxAllocSettings;
@@ -890,7 +949,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( errCode )
     {
         ALOGW("NxClient_Alloc failed");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorInsufficientResources);
         return;
     }
 
@@ -924,6 +983,10 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = m_maxDecoderWidth;
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = m_maxDecoderHeight;
+    if (property_get_int32(B_PROPERTY_SVP, 0))
+    {
+       connectSettings.simpleVideoDecoder[0].decoderCapabilities.secureVideo = m_secureDecoder ? true : false;
+    }
 
     errCode = NxClient_Connect(&connectSettings, &m_nxClientId);
     if ( errCode )
@@ -931,7 +994,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         ALOGW("NxClient_Connect failed.  Resources may be exhausted.");
         (void)BOMX_BERR_TRACE(errCode);
         NxClient_Free(&m_allocResults);
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorInsufficientResources);
         return;
     }
 
@@ -941,14 +1004,14 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         ALOGW("Unable to acquire surface client");
         NxClient_Disconnect(m_nxClientId);
         NxClient_Free(&m_allocResults);
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     m_hVideoClient = NEXUS_SurfaceClient_AcquireVideoWindow(m_hSurfaceClient, 0);
     if ( NULL == m_hVideoClient )
     {
         ALOGW("Unable to acquire video client");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     // Initialize video window to full screen
@@ -966,7 +1029,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( errCode )
     {
         ALOGW("Unable to setup video initial size");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -978,7 +1041,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_hAlphaSurface )
     {
         ALOGW("Unable to create alpha surface");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -987,7 +1050,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( errCode )
     {
         ALOGW("Unable to fill surface");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     BKNI_Memset(surfaceMemory.buffer, 0, surfaceCreateSettings.height * surfaceMemory.pitch);
@@ -1002,7 +1065,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( errCode )
     {
         ALOGW("Unable to allocate EOS buffer");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -1010,7 +1073,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_pPes )
     {
         ALOGW("Unable to create PES formatter");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -1025,7 +1088,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_hCheckpointEvent )
     {
         ALOGW("Unable to create checkpoint event");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
@@ -1036,7 +1099,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_hGraphics2d )
     {
         ALOGW("Unable to open graphics 2d");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     else
@@ -1051,7 +1114,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         if ( errCode )
         {
             errCode = BOMX_BERR_TRACE(errCode);
-            this->Invalidate();
+            this->Invalidate(OMX_ErrorUndefined);
             return;
         }
     }
@@ -1062,7 +1125,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         if ( NULL == pBuffer )
         {
             errCode = BOMX_BERR_TRACE(BERR_OUT_OF_SYSTEM_MEMORY);
-            this->Invalidate();
+            this->Invalidate(OMX_ErrorUndefined);
             return;
         }
         BKNI_Memset(pBuffer, 0, sizeof(BOMX_VideoDecoderFrameBuffer));
@@ -1119,7 +1182,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_omxHwcBinder )
     {
         ALOGW("Unable to connect to HwcBinder");
-        this->Invalidate();
+        this->Invalidate(OMX_ErrorUndefined);
         return;
     }
     m_omxHwcBinder->get()->register_notify(&BOMX_OmxBinderNotify, (int)this);
@@ -2019,7 +2082,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                         ALOGW("Unable to query SAGE secure status, SAGE unrepsonsive");
                         /* Break out of loop if timed out last attempt and SAGE not responsive */
                         if ( m_securePicBuff )
+                        {
+                            BOMX_VideoDecoder_SetupRuntimeHeaps(!m_secureDecoder, true);
                             break;
+                        }
                     }
                     else
                     {
@@ -2154,13 +2220,9 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 vdecStartSettings.settings.stcChannel = NULL;
                 vdecStartSettings.settings.pidChannel = m_hPidChannel;
                 vdecStartSettings.settings.codec = GetNexusCodec();
+                vdecStartSettings.maxWidth = m_maxDecoderWidth;     // Always request the max dimension for allowing decoder not waiting for output buffer
+                vdecStartSettings.maxHeight = m_maxDecoderHeight;
                 ALOGV("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec);
-                if ( vdecStartSettings.settings.codec == NEXUS_VideoCodec_eH265 || vdecStartSettings.settings.codec == NEXUS_VideoCodec_eVp9 )
-                {
-                    // Request non-standard decoder for HEVC/VP9 only
-                    vdecStartSettings.maxWidth = m_maxDecoderWidth;
-                    vdecStartSettings.maxHeight = m_maxDecoderHeight;
-                }
                 errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
                 if ( errCode )
                 {
@@ -3559,8 +3621,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     pInfo->numDescriptors = 0;
     pInfo->complete = false;
 
-    ALOGV("%s, comp:%s, buff:%p len:%d ts:%d flags:0x%x", __FUNCTION__, GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, (int)pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
-    BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::INPUT_FRAME, pBufferHeader->nTimeStamp, pBufferHeader->nFlags, pBufferHeader->nFilledLen);
+    ALOGV("%s, comp:%s, buff:%p len:%d ts:%lld flags:0x%x avail:%d", __FUNCTION__, GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags, m_AvailInputBuffers);
+    BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::INPUT_FRAME, pBufferHeader->nTimeStamp, pBufferHeader->nFlags, pBufferHeader->nFilledLen, m_AvailInputBuffers);
 
     if ( m_pInputFile )
     {
@@ -3804,7 +3866,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         pFrameBuffer = pInfo->pFrameBuffer;
     }
     pInfo->pFrameBuffer = NULL;
-    ALOGV("Fill Buffer, comp:%s ts %u us serial %u pInfo %#x HDR %#x", GetName(), (unsigned int)pBufferHeader->nTimeStamp, pFrameBuffer ? pFrameBuffer->frameStatus.serialNumber : -1, pInfo, pBufferHeader);
+    ALOGV("Fill Buffer, comp:%s ts %lld us serial %u pInfo %#x HDR %#x", GetName(), pBufferHeader->nTimeStamp, pFrameBuffer ? pFrameBuffer->frameStatus.serialNumber : -1, pInfo, pBufferHeader);
     // Determine what to do with the buffer
     if ( pFrameBuffer )
     {
@@ -3814,7 +3876,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         {
             // The frame has been flushed while the app owned it.  Move it back to the free list silently.
             ALOGV("Invalid FrameBuffer (%u) - Return to free list", pFrameBuffer->frameStatus.serialNumber);
-            BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, 0, pFrameBuffer->frameStatus.serialNumber);
             BLST_Q_REMOVE(&m_frameBufferAllocList, pFrameBuffer, node);
             BOMX_VideoDecoder_StripedSurfaceDestroy(pFrameBuffer);
             BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pFrameBuffer, node);
@@ -4602,7 +4663,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 pBuffer->state = BOMX_VideoDecoderFrameBufferState_eDelivered;
                 pInfo->pFrameBuffer = pBuffer;
                 pBuffer->pBufferInfo = pInfo;
-                ALOGV("Returning Port Buffer ts %u us serial %u pInfo %#x FB %#x HDR %#x flags %#x", (unsigned int)pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader, pHeader->nFlags);
+                ALOGV("Returning Port Buffer ts %lld us serial %u pInfo %#x FB %#x HDR %#x flags %#x", pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader, pHeader->nFlags);
                 {
                     unsigned queueDepthBefore = m_pVideoPorts[1]->QueueDepth();
                     BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::OUTPUT_FRAME, pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber);
@@ -4651,7 +4712,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             m_frameRate = NEXUS_VideoFrameRate_eUnknown;
             return;
         }
-        ALOGV_IF(m_frameRate != status.frameRate, "Frame rate %d->%d", m_frameRate, status.frameRate);
+        ALOGI_IF(m_frameRate != status.frameRate, "Frame rate %d->%d", m_frameRate, status.frameRate);
         m_frameRate = status.frameRate;
     }
 
@@ -4745,12 +4806,12 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 }
                 pBuffer->pPrivateHandle = NULL;
                 pBuffer->pBufferInfo = NULL;
-                BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, returnSettings[numFrames].display ? 1: 0,
-                                      pBuffer->frameStatus.serialNumber);
                 BLST_Q_REMOVE(&m_frameBufferAllocList, pBuffer, node);
                 BOMX_VideoDecoder_StripedSurfaceDestroy(pBuffer);
                 BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pBuffer, node);
             }
+            BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, returnSettings[numFrames].display ? 1: 0, pBuffer->frameStatus.serialNumber);
+
             numFrames++;
             pBuffer = pNext;
         }

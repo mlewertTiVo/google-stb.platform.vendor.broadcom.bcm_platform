@@ -26,7 +26,7 @@
 namespace android {
 
 struct ABuffer;
-struct MetaData;
+class MetaData;
 
 struct ElementaryStreamQueue {
     enum Mode {
@@ -37,6 +37,7 @@ struct ElementaryStreamQueue {
         MPEG_VIDEO,
         MPEG4_VIDEO,
         PCM_AUDIO,
+        METADATA,
         H265,
     };
 
@@ -47,6 +48,7 @@ struct ElementaryStreamQueue {
     ElementaryStreamQueue(Mode mode, uint32_t flags = 0);
 
     status_t appendData(const void *data, size_t size, int64_t timeUs);
+    void signalEOS();
     void clear(bool clearFormat);
 
     sp<ABuffer> dequeueAccessUnit();
@@ -61,6 +63,7 @@ private:
 
     Mode mMode;
     uint32_t mFlags;
+    bool mEOSReached;
 
     sp<ABuffer> mBuffer;
     List<RangeInfo> mRangeInfos;
@@ -74,12 +77,12 @@ private:
     sp<ABuffer> dequeueAccessUnitMPEGVideo();
     sp<ABuffer> dequeueAccessUnitMPEG4Video();
     sp<ABuffer> dequeueAccessUnitPCMAudio();
+    sp<ABuffer> dequeueAccessUnitMetadata();
     sp<ABuffer> dequeueAccessUnitH265();
 
     // consume a logical (compressed) access unit of size "size",
     // returns its timestamp in us (or -1 if no time information).
     int64_t fetchTimestamp(size_t size);
-    int64_t fetchTimestampAAC(size_t size);
 
     DISALLOW_EVIL_CONSTRUCTORS(ElementaryStreamQueue);
 };

@@ -67,11 +67,11 @@ static NEXUS_Error clientJoin(const char *name)
     do {
         rc = NxClient_Join(&joinSettings);
         if (rc != NEXUS_SUCCESS) {
-            LOGW("%s: NxServer is not ready, waiting...", __FUNCTION__);
+            ALOGW("%s: NxServer is not ready, waiting...", __FUNCTION__);
             usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
         }
         else {
-            LOGD("%s: NxClient_Join succeeded for client \"%s\".", __FUNCTION__, name);
+            ALOGD("%s: NxClient_Join succeeded for client \"%s\".", __FUNCTION__, name);
         }
     } while (rc != NEXUS_SUCCESS);
 
@@ -155,7 +155,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
     int ret = 0;
 
     if (bout->suspended || !simple_decoder) {
-        LOGE("%s: at %d, device not open\n",
+        ALOGE("%s: at %d, device not open\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
@@ -171,7 +171,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
     ret = NEXUS_SimpleAudioDecoder_Start(simple_decoder,
                                           &start_settings);
     if (ret) {
-        LOGE("%s: at %d, start decoder failed, ret = %d\n",
+        ALOGE("%s: at %d, start decoder failed, ret = %d\n",
              __FUNCTION__, __LINE__, ret);
         return -ENOSYS;
     }
@@ -201,7 +201,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
     int ret = 0;
 
     if (bout->suspended || !simple_decoder) {
-        LOGE("%s: at %d, device not open\n",
+        ALOGE("%s: at %d, device not open\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
@@ -213,7 +213,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
         ret = NEXUS_SimpleAudioDecoder_GetPassthroughBuffer(simple_decoder,
                                                   &nexus_buffer, &nexus_space);
         if (ret) {
-            LOGE("%s: at %d, get decoder passthrough buffer failed, ret = %d\n",
+            ALOGE("%s: at %d, get decoder passthrough buffer failed, ret = %d\n",
                  __FUNCTION__, __LINE__, ret);
             break;
         }
@@ -229,7 +229,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
             ret = NEXUS_SimpleAudioDecoder_PassthroughWriteComplete(simple_decoder,
                                                           bytes_to_copy);
             if (ret) {
-                LOGE("%s: at %d, commit decoder passthrough buffer failed, ret = %d\n",
+                ALOGE("%s: at %d, commit decoder passthrough buffer failed, ret = %d\n",
                      __FUNCTION__, __LINE__, ret);
                 break;
             }
@@ -239,7 +239,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
         else {
             ret = BKNI_WaitForEvent(event, 500);
             if (ret) {
-                LOGE("%s: at %d, decoder timeout, ret = %d\n",
+                ALOGE("%s: at %d, decoder timeout, ret = %d\n",
                      __FUNCTION__, __LINE__, ret);
 
                 /* Stop decoder */
@@ -273,11 +273,19 @@ static bool nexus_direct_bout_standby_monitor(void *context)
 {
     bool standby = true;
     struct brcm_stream_out *bout = (struct brcm_stream_out *)context;
+    bool started;
 
     if (bout != NULL) {
         pthread_mutex_lock(&bout->lock);
-        standby = (bout->started == false);
+        started = bout->started;
         pthread_mutex_unlock(&bout->lock);
+        if (started) {
+            bout->aout.common.standby(&bout->aout.common);
+            bout->suspended = true;
+        }
+        else {
+            standby = (started == false);
+        }
     }
     ALOGV("%s: standby=%d", __FUNCTION__, standby);
     return standby;
@@ -311,7 +319,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     /* Open Nexus simple decoder */
     rc = clientJoin(BRCM_AUDIO_DIRECT_NXCLIENT_NAME);
     if (rc != NEXUS_SUCCESS) {
-        LOGE("%s: clientJoin error, rc:%d", __FUNCTION__, rc);
+        ALOGE("%s: clientJoin error, rc:%d", __FUNCTION__, rc);
         return -ENOSYS;
     }
 
@@ -320,7 +328,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     allocSettings.simpleAudioDecoder = 1;
     rc = NxClient_Alloc(&allocSettings, &(bout->nexus.allocResults));
     if (rc) {
-        LOGE("%s: Cannot allocate NxClient resources, rc:%d", __FUNCTION__, rc);
+        ALOGE("%s: Cannot allocate NxClient resources, rc:%d", __FUNCTION__, rc);
         ret = -ENOSYS;
         goto err_alloc;
     }
@@ -328,7 +336,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     audioDecoderId = bout->nexus.allocResults.simpleAudioDecoder.id;
     simple_decoder = NEXUS_SimpleAudioDecoder_Acquire(audioDecoderId);
     if (!simple_decoder) {
-        LOGE("%s: at %d, acquire Nexus simple decoder handle failed\n",
+        ALOGE("%s: at %d, acquire Nexus simple decoder handle failed\n",
              __FUNCTION__, __LINE__);
         ret = -ENOSYS;
         goto err_acquire;
@@ -338,14 +346,14 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     connectSettings.simpleAudioDecoder.id = audioDecoderId;
     rc = NxClient_Connect(&connectSettings, &(bout->nexus.connectId));
     if (rc) {
-        LOGE("%s: error calling NxClient_Connect, rc:%d", __FUNCTION__, rc);
+        ALOGE("%s: error calling NxClient_Connect, rc:%d", __FUNCTION__, rc);
         ret = -ENOSYS;
         goto err_acquire;
     }
 
     ret = BKNI_CreateEvent(&event);
     if (ret) {
-        LOGE("%s: at %d, create event failed, ret = %d\n",
+        ALOGE("%s: at %d, create event failed, ret = %d\n",
              __FUNCTION__, __LINE__, ret);
         ret = -ENOSYS;
         goto err_event;
@@ -354,7 +362,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     // register standby callback
     bout->standbyCallback = bout->bdev->standbyThread->RegisterCallback(nexus_direct_bout_standby_monitor, bout);
     if (bout->standbyCallback < 0) {
-        LOGE("Error registering standby callback");
+        ALOGE("Error registering standby callback");
         ret = -ENOSYS;
         goto err_callback;
     }

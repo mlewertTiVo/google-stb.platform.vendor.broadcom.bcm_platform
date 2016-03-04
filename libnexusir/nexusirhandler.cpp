@@ -75,7 +75,7 @@ bool NexusIrHandler::start(NEXUS_IrInputMode mode,
     1  /* version */
     };
 
-    LOGI("NexusIrHandler start");
+    ALOGI("NexusIrHandler start");
 
     m_mode = mode;
     bool success = map.get() && m_uinput.open() &&
@@ -103,17 +103,17 @@ bool NexusIrHandler::start(NEXUS_IrInputMode mode,
 
     if (!success)
     {
-        LOGE("NexusIrHandler::start failed!\n");
+        ALOGE("NexusIrHandler::start failed!\n");
         stop();
     }
 
-    LOGI("NexusIrHandler::start returns %s\n", success ? "true" : "false");
+    ALOGI("NexusIrHandler::start returns %s\n", success ? "true" : "false");
     return success;
 }
 
 void NexusIrHandler::stop()
 {
-    LOGI("NexusIrHandler::stop\n");
+    ALOGI("NexusIrHandler::stop\n");
 
     m_key_thread.requestExit();
     m_key_thread.signal(NEXUSIRINPUT_NO_KEY, false, 0);
@@ -128,7 +128,7 @@ void NexusIrHandler::stop()
 /*virtual*/ void NexusIrHandler::onIrInput(uint32_t nexus_key, bool repeat,
         unsigned interval)
 {
-    LOGV("NexusIrHandler: got Nexus key 0x%08x%s, interval: %u",
+    ALOGV("NexusIrHandler: got Nexus key 0x%08x%s, interval: %u",
             (unsigned)nexus_key, repeat ? " (repeat)" : "", interval);
 
     m_key_thread.signal(nexus_key, repeat, interval);
@@ -172,7 +172,7 @@ void NexusIrHandler::KeyThread::signal(uint32_t nexus_key, bool repeat,
 {
     android::Mutex::Autolock _l(m_mutex);
 
-    LOGV("%s: nexus_key=0x%08x repeat=%d interval=%u, m_old_key=%d", __PRETTY_FUNCTION__, nexus_key, repeat, interval, m_old_key);
+    ALOGV("%s: nexus_key=0x%08x repeat=%d interval=%u, m_old_key=%d", __PRETTY_FUNCTION__, nexus_key, repeat, interval, m_old_key);
 
     // If we have received a repeat before we have had a chance to process it in "threadloop",
     // then we need to behave as if a new key press has been made.  This typically occurs when
@@ -181,11 +181,11 @@ void NexusIrHandler::KeyThread::signal(uint32_t nexus_key, bool repeat,
     m_key = repeat ? m_old_key : m_map->get(nexus_key);
 
     if (m_key == KEY_RESERVED) {
-        LOGW("No Linux key mapping for Nexus IR code 0x%08x",
+        ALOGW("No Linux key mapping for Nexus IR code 0x%08x",
                 (unsigned)nexus_key);
     }
     else {
-        LOGV("Linux key mapping for Nexus IR code 0x%08x = %d",
+        ALOGV("Linux key mapping for Nexus IR code 0x%08x = %d",
                 (unsigned)nexus_key, (int)m_key);
     }
 
@@ -198,7 +198,7 @@ void NexusIrHandler::KeyThread::signal(uint32_t nexus_key, bool repeat,
 {
     nsecs_t timeout = m_timeout;
 
-    LOGI("KeyThread start");
+    ALOGI("KeyThread start");
 
     while (isRunning())
     {
@@ -207,20 +207,20 @@ void NexusIrHandler::KeyThread::signal(uint32_t nexus_key, bool repeat,
         //enable timeout only if we saw a key
         android::status_t res;
         if (m_key != KEY_RESERVED) {
-            LOGI("waiting for key repeat, timeout: %u ms",
+            ALOGI("waiting for key repeat, timeout: %u ms",
                     (unsigned)NS_TO_MS(timeout));
             res = m_cond.waitRelative(m_mutex, timeout);
         } else {
-            LOGI("waiting for key, no timeout");
+            ALOGI("waiting for key, no timeout");
             res = m_cond.wait(m_mutex);
         }
 
         if (res == android::OK) {
-            LOGI("got key: %d, old key: %d, interval %u ms",
+            ALOGI("got key: %d, old key: %d, interval %u ms",
                     (int)m_key, (int)m_old_key, m_interval);
             timeout = m_timeout;
         } else if (res == android::TIMED_OUT) {
-           LOGI("repeat time out for key: %d, old key: %d",
+           ALOGI("repeat time out for key: %d, old key: %d",
                    (int)m_key, (int)m_old_key);
 
             //simulate key release
@@ -228,7 +228,7 @@ void NexusIrHandler::KeyThread::signal(uint32_t nexus_key, bool repeat,
             m_repeat = false;
             m_interval = 0;
         } else {
-            LOGE("wait error %d", (int)res);
+            ALOGE("wait error %d", (int)res);
         }
 
         // We've got something to handle either if a new key was pressed
@@ -241,11 +241,11 @@ void NexusIrHandler::KeyThread::signal(uint32_t nexus_key, bool repeat,
 
         if (key_event) {
             if (m_old_key != KEY_RESERVED) {
-                LOGI("emit key release: %d", (int)m_old_key);
+                ALOGI("emit key release: %d", (int)m_old_key);
                 m_uinput.emit_key_state(m_old_key, false) && m_uinput.emit_syn();
             }
             if (m_key != KEY_RESERVED) {
-                LOGI("emit key press: %d", (int)m_key);
+                ALOGI("emit key press: %d", (int)m_key);
                 m_uinput.emit_key_state(m_key, true) && m_uinput.emit_syn();
                 timeout = m_initial_timeout;
             }
@@ -254,6 +254,6 @@ void NexusIrHandler::KeyThread::signal(uint32_t nexus_key, bool repeat,
         }
     }
 
-    LOGI("KeyThread end");
+    ALOGI("KeyThread end");
     return false;
 }

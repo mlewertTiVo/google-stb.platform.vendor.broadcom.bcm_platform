@@ -111,11 +111,11 @@ static NEXUS_Error clientJoin(const char *name)
     do {
         rc = NxClient_Join(&joinSettings);
         if (rc != NEXUS_SUCCESS) {
-            LOGW("%s: NxServer is not ready, waiting...", __FUNCTION__);
+            ALOGW("%s: NxServer is not ready, waiting...", __FUNCTION__);
             usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
         }
         else {
-            LOGD("%s: NxClient_Join succeeded for client \"%s\".", __FUNCTION__, name);
+            ALOGD("%s: NxClient_Join succeeded for client \"%s\".", __FUNCTION__, name);
         }
     } while (rc != NEXUS_SUCCESS);
 
@@ -129,7 +129,7 @@ static void setAudioVolume(float leftVol, float rightVol)
     int32_t leftVolume;
     int32_t rightVolume;
 
-    LOGV("nexus_nx_client %s:%d left=%f right=%f\n",__PRETTY_FUNCTION__,__LINE__,leftVol,rightVol);
+    ALOGV("nexus_nx_client %s:%d left=%f right=%f\n",__PRETTY_FUNCTION__,__LINE__,leftVol,rightVol);
 
     leftVolume = leftVol*AUDIO_VOLUME_SETTING_MAX;
     rightVolume = rightVol*AUDIO_VOLUME_SETTING_MAX;
@@ -158,23 +158,23 @@ static void setAudioVolume(float leftVol, float rightVol)
         NxClient_Uninit();
     }
     else {
-        LOGE("%s: Could not join client", __FUNCTION__);
+        ALOGE("%s: Could not join client", __FUNCTION__);
     }
 }
 
 static int lookupDecibelIndex(uint32_t volume, int index, int min, int max)
 {
-    LOGV("%s: volume=%d index=%d min=%d max=%d", __FUNCTION__, volume, index, min, max);
+    ALOGV("%s: volume=%d index=%d min=%d max=%d", __FUNCTION__, volume, index, min, max);
 
     if (index < min || index > max)
     {
-        LOGV("%s: exceeded range!", __FUNCTION__);
+        ALOGV("%s: exceeded range!", __FUNCTION__);
         return 0;
     }
 
     if (volume == Gemini_VolTable[index])
     {
-        LOGV("%s: found volume at index=%d", __FUNCTION__, index);
+        ALOGV("%s: found volume at index=%d", __FUNCTION__, index);
         return index;
     }
     else if (volume > Gemini_VolTable[index])
@@ -194,7 +194,7 @@ void set_mute_state(bool mute)
     NEXUS_Error rc;
     NxClient_AudioSettings settings;
 
-    LOGV("nexus_nx_client %s:%d mute=%s\n",__PRETTY_FUNCTION__,__LINE__,mute ? "true":"false");
+    ALOGV("nexus_nx_client %s:%d mute=%s\n",__PRETTY_FUNCTION__,__LINE__,mute ? "true":"false");
 
     rc = clientJoin(BRCM_AUDIO_NXCLIENT_NAME);
 
@@ -208,7 +208,7 @@ void set_mute_state(bool mute)
         NxClient_Uninit();
     }
     else {
-        LOGE("%s: Could not join client", __FUNCTION__);
+        ALOGE("%s: Could not join client", __FUNCTION__);
     }
 }
 
@@ -226,7 +226,7 @@ bool get_mute_state(void)
         NxClient_Uninit();
     }
     else {
-        LOGE("%s: Could not join client", __FUNCTION__);
+        ALOGE("%s: Could not join client", __FUNCTION__);
     }
 
     return mute;
@@ -263,10 +263,10 @@ float get_master_volume(void)
         NxClient_Uninit();
     }
     else {
-        LOGE("%s: Could not join client", __FUNCTION__);
+        ALOGE("%s: Could not join client", __FUNCTION__);
     }
 
-    LOGV("%s: master_volume=%f", __FUNCTION__, master_volume);
+    ALOGV("%s: master_volume=%f", __FUNCTION__, master_volume);
     return master_volume;
 }
 
@@ -311,7 +311,7 @@ static int nexus_bout_start(struct brcm_stream_out *bout)
     int ret = 0;
 
     if (bout->suspended || !simple_playback) {
-        LOGE("%s: at %d, device not open\n",
+        ALOGE("%s: at %d, device not open\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
@@ -335,7 +335,7 @@ static int nexus_bout_start(struct brcm_stream_out *bout)
     ret = NEXUS_SimpleAudioPlayback_Start(simple_playback,
                                           &start_settings);
     if (ret) {
-        LOGE("%s: at %d, start playback failed, ret = %d\n",
+        ALOGE("%s: at %d, start playback failed, ret = %d\n",
              __FUNCTION__, __LINE__, ret);
         return -ENOSYS;
     }
@@ -365,7 +365,7 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
     int ret = 0;
 
     if (bout->suspended || !simple_playback) {
-        LOGE("%s: at %d, device not open\n",
+        ALOGE("%s: at %d, device not open\n",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
@@ -377,7 +377,7 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
         ret = NEXUS_SimpleAudioPlayback_GetBuffer(simple_playback,
                                                   &nexus_buffer, &nexus_space);
         if (ret) {
-            LOGE("%s: at %d, get playback buffer failed, ret = %d\n",
+            ALOGE("%s: at %d, get playback buffer failed, ret = %d\n",
                  __FUNCTION__, __LINE__, ret);
             break;
         }
@@ -393,7 +393,7 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
             ret = NEXUS_SimpleAudioPlayback_WriteComplete(simple_playback,
                                                           bytes_to_copy);
             if (ret) {
-                LOGE("%s: at %d, commit playback buffer failed, ret = %d\n",
+                ALOGE("%s: at %d, commit playback buffer failed, ret = %d\n",
                      __FUNCTION__, __LINE__, ret);
                 break;
             }
@@ -403,7 +403,7 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
         else {
             ret = BKNI_WaitForEvent(event, 500);
             if (ret) {
-                LOGE("%s: at %d, playback timeout, ret = %d\n",
+                ALOGE("%s: at %d, playback timeout, ret = %d\n",
                      __FUNCTION__, __LINE__, ret);
 
                 /* Stop playback */
@@ -437,11 +437,19 @@ static bool nexus_bout_standby_monitor(void *context)
 {
     bool standby = true;
     struct brcm_stream_out *bout = (struct brcm_stream_out *)context;
+    bool started;
 
     if (bout != NULL) {
         pthread_mutex_lock(&bout->lock);
-        standby = (bout->started == false);
+        started = bout->started;
         pthread_mutex_unlock(&bout->lock);
+        if (started) {
+            bout->aout.common.standby(&bout->aout.common);
+            bout->suspended = true;
+        }
+        else {
+            standby = (started == false);
+        }
     }
     ALOGV("%s: standby=%d", __FUNCTION__, standby);
     return standby;
@@ -484,7 +492,7 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     /* Open Nexus simple playback */
     rc = clientJoin(BRCM_AUDIO_NXCLIENT_NAME);
     if (rc != NEXUS_SUCCESS) {
-        LOGE("%s: clientJoin error, rc:%d", __FUNCTION__, rc);
+        ALOGE("%s: clientJoin error, rc:%d", __FUNCTION__, rc);
         return -ENOSYS;
     }
 
@@ -493,7 +501,7 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     allocSettings.simpleAudioPlayback = 1;
     rc = NxClient_Alloc(&allocSettings, &(bout->nexus.allocResults));
     if (rc) {
-        LOGE("%s: Cannot allocate NxClient resources, rc:%d", __FUNCTION__, rc);
+        ALOGE("%s: Cannot allocate NxClient resources, rc:%d", __FUNCTION__, rc);
         ret = -ENOSYS;
         goto err_alloc;
     }
@@ -501,7 +509,7 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     audioPlaybackId = bout->nexus.allocResults.simpleAudioPlayback[0].id;
     simple_playback = NEXUS_SimpleAudioPlayback_Acquire(audioPlaybackId);
     if (!simple_playback) {
-        LOGE("%s: at %d, acquire Nexus simple plackback handle failed\n",
+        ALOGE("%s: at %d, acquire Nexus simple plackback handle failed\n",
              __FUNCTION__, __LINE__);
         ret = -ENOSYS;
         goto err_acquire;
@@ -511,14 +519,14 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     connectSettings.simpleAudioPlayback[0].id = audioPlaybackId;
     rc = NxClient_Connect(&connectSettings, &(bout->nexus.connectId));
     if (rc) {
-        LOGE("%s: error calling NxClient_Connect, rc:%d", __FUNCTION__, rc);
+        ALOGE("%s: error calling NxClient_Connect, rc:%d", __FUNCTION__, rc);
         ret = -ENOSYS;
         goto err_acquire;
     }
 
     ret = BKNI_CreateEvent(&event);
     if (ret) {
-        LOGE("%s: at %d, create event failed, ret = %d\n",
+        ALOGE("%s: at %d, create event failed, ret = %d\n",
              __FUNCTION__, __LINE__, ret);
         ret = -ENOSYS;
         goto err_event;
@@ -527,7 +535,7 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     // register standby callback
     bout->standbyCallback = bout->bdev->standbyThread->RegisterCallback(nexus_bout_standby_monitor, bout);
     if (bout->standbyCallback < 0) {
-        LOGE("Error registering standby callback");
+        ALOGE("Error registering standby callback");
         ret = -ENOSYS;
         goto err_callback;
     }

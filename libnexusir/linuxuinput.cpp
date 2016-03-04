@@ -71,7 +71,7 @@ bool LinuxUInput::start(const char * name, const struct input_id &id)
     struct uinput_user_dev uidev;
     size_t bytes;
 
-    LOGI("LinuxUInput start");
+    ALOGI("LinuxUInput start");
 
     memset(&uidev, 0, sizeof(uidev));
     if (name)
@@ -86,18 +86,18 @@ bool LinuxUInput::start(const char * name, const struct input_id &id)
     if (ioctl(m_fd, UI_DEV_CREATE) < 0)
         goto err;
 
-    LOGI("LinuxUInput start success");
+    ALOGI("LinuxUInput start success");
     return true;
 
 err:
-    LOGE("LinuxUInput start failed: %d - %s", errno, strerror(errno));
+    ALOGE("LinuxUInput start failed: %d - %s", errno, strerror(errno));
     stop();
     return false;
 }
 
 void LinuxUInput::stop()
 {
-    LOGI("LinuxUInput stop");
+    ALOGI("LinuxUInput stop");
     if (m_fd != -1)
     {
         ioctl(m_fd, UI_DEV_DESTROY);
@@ -119,7 +119,7 @@ bool LinuxUInput::register_event(int type)
     int result = ioctl(m_fd, UI_SET_EVBIT, type);
     if (result == -1)
     {
-        LOGI("LinuxUInput register_event type %d failed: %d - %s",
+        ALOGI("LinuxUInput register_event type %d failed: %d - %s",
                 type, errno, strerror(errno));
     }
     return result != -1;
@@ -130,19 +130,19 @@ bool LinuxUInput::register_key(__u16 code)
     int result = ioctl(m_fd, UI_SET_KEYBIT, (int)code);
     if (result == -1)
     {
-        LOGE("LinuxUInput register_key %d failed: %d - %s",
+        ALOGE("LinuxUInput register_key %d failed: %d - %s",
                 (int)code, errno, strerror(errno));
     }
     else
     {
-        LOGV("LinuxUInput register_key: %d", (int)code);
+        ALOGV("LinuxUInput register_key: %d", (int)code);
     }
     return result != -1;
 }
 
 bool LinuxUInput::emit(const struct input_event &event)
 {
-    LOGV("LinuxUInput emit type: %0x02x, code: %0x02x, value: %d\n",
+    ALOGV("LinuxUInput emit type: %0x02x, code: %0x02x, value: %d\n",
             (unsigned)event.type, (unsigned)event.code, (int)event.value);
     ssize_t bytes = write(m_fd, &event, sizeof(event));
     return bytes == sizeof(event);

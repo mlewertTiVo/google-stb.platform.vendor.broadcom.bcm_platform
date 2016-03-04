@@ -17,12 +17,12 @@
 #include "nexus_power.h"
 
 #include <errno.h>
-#include <string.h>
-#include <sys/eventfd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <string.h>
+#include <sys/eventfd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include <cutils/properties.h>
 #include <utils/Timers.h>
@@ -96,8 +96,13 @@ static int gPowerFd = -1;
 // Event file descriptor for reading back events from the power driver
 static int gPowerEventFd = -1;
 
-// Flag to signal when to exit the event monitor thread.
+// Flags to signal when to exit and exited the event monitor thread.
 static volatile bool gPowerEventMonitorThreadExit = false;
+static volatile bool gPowerEventMonitorThreadExited = true;
+
+// Event monitor thread synchronisation primitives.
+static pthread_mutex_t gPowerEventMonitorThreadMutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  gPowerEventMonitorThreadCond  = PTHREAD_COND_INITIALIZER;
 
 // Flag to indicate whether the power state has been prepared or not.
 static volatile bool gPowerStatePrepared = false;
@@ -495,9 +500,10 @@ static status_t power_prepare_suspend(b_powerState toState)
                         gPowerStatePrepared = true;
                     }
                     if (event == DROID_PM_EVENT_RESUMED_WAKEUP) {
-                        Mutex::Autolock autoLock(gLock);
                         ALOGV("%s: Received a valid wakeup event", __FUNCTION__);
+                        pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
                         gPowerEventMonitorThreadExit = true;
+                        pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
                     }
                 }
                 else {
@@ -651,6 +657,25 @@ static status_t power_set_sleep_state()
     return status;
 }
 
+static status_t power_set_shutdown()
+{
+    status_t status = NO_ERROR;
+
+    ALOGV("%s: entered", __FUNCTION__);
+
+    if (status == NO_ERROR && gNexusPower.get()) {
+        status = gNexusPower->setPowerState(ePowerState_S5);
+    }
+
+    if (status == NO_ERROR) {
+        status = power_prepare_suspend(ePowerState_S5);
+        if (status != NO_ERROR && status != NO_INIT) {
+            ALOGE("%s: Error trying to enter %s standby!!!", __FUNCTION__, NexusIPCClientBase::getPowerString(ePowerState_S5));
+        }
+    }
+    return status;
+}
+
 static void *power_event_monitor_thread(void *arg)
 {
     int ret;
@@ -658,19 +683,26 @@ static void *power_event_monitor_thread(void *arg)
     char buf[BUF_SIZE];
     powerFinishFunction_t powerFunction = reinterpret_cast<powerFinishFunction_t>(arg);
 
+    pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
+    gPowerEventMonitorThreadExit = false;
+    gPowerEventMonitorThreadExited = false;
+    pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
+
+    ALOGV("%s: Starting power event monitor thread...", __FUNCTION__);
+
     pollFd.fd = gPowerEventFd;
     pollFd.events = POLLIN | POLLRDNORM;
 
     while (gPowerEventFd >= 0) {
-        gLock.lock();
-        if (gPowerEventMonitorThreadExit == true) {
-            gLock.unlock();
+        pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
+        if (gPowerEventMonitorThreadExit) {
+            pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
             break;
         }
-        gLock.unlock();
+        pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
         ret = poll(&pollFd, 1, DEFAULT_EVENT_MONITOR_THREAD_TIMEOUT_MS);
         if (ret == 0) {
-            ALOGW("%s: Timed out waiting for device to suspend - retrying...", __FUNCTION__);
+            ALOGV("%s: Timed out waiting for event - retrying...", __FUNCTION__);
         }
         else if (ret < 0) {
             strerror_r(errno, buf, sizeof(buf));
@@ -688,23 +720,28 @@ static void *power_event_monitor_thread(void *arg)
             else {
                 // Event received from droid_pm - now find out which one...
                 ALOGV("%s: Received power event %d", __FUNCTION__, event);
-                if (event == DROID_PM_EVENT_SUSPENDING) {
+                if (event == DROID_PM_EVENT_SUSPENDING || event == DROID_PM_EVENT_SHUTDOWN) {
                     if (powerFunction() == NO_ERROR) {
                         ALOGD("%s: Successfully finished setting power state.", __FUNCTION__);
                     }
                 }
                 else if (event == DROID_PM_EVENT_RESUMED_WAKEUP) {
-                    Mutex::Autolock autoLock(gLock);
                     ALOGV("%s: Received a valid wakeup event", __FUNCTION__);
+                    pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
                     gPowerEventMonitorThreadExit = true;
+                    pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
                 }
             }
         }
         else {
-            ALOGW("%s: Not ready to suspend - retrying...", __FUNCTION__);
+            ALOGW("%s: Not ready to suspend/shutdown - retrying...", __FUNCTION__);
         }
     }
-    ALOGV("%s: Exiting power_event_monitor_thread...", __FUNCTION__);
+    ALOGV("%s: Exiting power event monitor thread...", __FUNCTION__);
+    pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
+    gPowerEventMonitorThreadExited = true;
+    pthread_cond_signal(&gPowerEventMonitorThreadCond);
+    pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
     return NULL;
 }
 
@@ -718,24 +755,48 @@ static void *power_standby_finish_thread(void *arg)
     return NULL;
 }
 
-static void power_finish_set_no_interactive(b_powerState toState, powerFinishFunction_t powerFunction)
+static status_t power_create_thread(void *(pthread_function)(void*), powerFinishFunction_t powerFunction)
 {
+    status_t status;
     pthread_t thread;
     pthread_attr_t attr;
-    void *(*pthread_function)(void *);
+
+    // If the event monitor thread is running, then terminate it...
+    pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
+    if (!gPowerEventMonitorThreadExited) {
+        // Signal Event Monitor Thread to exit...
+        gPowerEventMonitorThreadExit = true;
+        // and wait for it to exit...
+        while (!gPowerEventMonitorThreadExited) {
+            pthread_cond_wait(&gPowerEventMonitorThreadCond, &gPowerEventMonitorThreadMutex);
+        }
+    }
 
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+    if (pthread_create(&thread, &attr, pthread_function, reinterpret_cast<void *>(powerFunction)) == 0) {
+        ALOGV("%s: Successfully created a power thread!", __FUNCTION__);
+        status = NO_ERROR;
+    }
+    else {
+        ALOGE("%s: Could not create a power thread!!!", __FUNCTION__);
+        status = UNKNOWN_ERROR;
+    }
+    pthread_attr_destroy(&attr);
+    pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
+    return status;
+}
+
+static void power_finish_set_no_interactive(b_powerState toState, powerFinishFunction_t powerFunction)
+{
+    void *(*pthread_function)(void *);
 
     // Spawn a thread that monitors for kernel suspend callbacks in S2/S3 standby only...
     if (toState == ePowerState_S2 || toState == ePowerState_S3) {
         // Ensure we release a wake-lock to allow the system to begin suspending.  We then
         // use this notification to place Nexus in to standby (suspend in S2/S3 modes only).
         releaseWakeLock();
-
-        gLock.lock();
-        gPowerEventMonitorThreadExit = false;
-        gLock.unlock();
         pthread_function = power_event_monitor_thread;
     }
     // Spawn a thread that just finishes the standby sequence...
@@ -743,24 +804,17 @@ static void power_finish_set_no_interactive(b_powerState toState, powerFinishFun
         // Ensure we acquire a wake-lock to prevent the system from suspending *BEFORE* we have
         // placed Nexus in to standby (we should not suspend in S0.5/S1/S5 modes anyway).
         acquireWakeLock();
-
         pthread_function = power_standby_finish_thread;
     }
 
-    ALOGI("%s: Entering power state %s...", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
-
-    if (pthread_create(&thread, &attr, pthread_function, reinterpret_cast<void *>(powerFunction)) == 0) {
-        ALOGV("%s: Successfully created a standby thread!", __FUNCTION__);
+    if (power_create_thread(pthread_function, powerFunction) == NO_ERROR) {
+        ALOGI("%s: Entering power state %s...", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
     }
-    else {
-        ALOGE("%s: Could not create a standby thread!!!", __FUNCTION__);
-    }
-    pthread_attr_destroy(&attr);
 }
 
 static status_t power_finish_set_interactive()
 {
-    status_t status;
+    status_t status = NO_ERROR;
 
     if (power_get_property_doze_timeout() > 0 && gDozeTimer) {
         struct itimerspec ts;
@@ -775,7 +829,10 @@ static status_t power_finish_set_interactive()
             timer_settime(gDozeTimer, 0, &ts, NULL);
         }
     }
-    status = power_set_state(ePowerState_S0);
+
+    if (power_create_thread(power_event_monitor_thread, power_set_shutdown) == NO_ERROR) {
+        status = power_set_state(ePowerState_S0);
+    }
     return status;
 }
 
@@ -784,10 +841,6 @@ static void power_set_interactive(struct power_module *module __unused, int on)
     ALOGI("%s: %s", __FUNCTION__, on ? "ON" : "OFF");
 
     if (on) {
-        gLock.lock();
-        gPowerEventMonitorThreadExit = true;
-        gLock.unlock();
-
         if (gNexusPower.get()) {
             gNexusPower->preparePowerState(ePowerState_S0);
             gPowerStatePrepared = false;

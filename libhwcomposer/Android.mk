@@ -74,7 +74,6 @@ include $(BUILD_EXECUTABLE)
 # build the hwcutils helper
 #
 include $(CLEAR_VARS)
-
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 LOCAL_SRC_FILES:= \
@@ -95,10 +94,7 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/uti
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem \
                     $(NXCLIENT_INCLUDES)
 
-LOCAL_CFLAGS += $(NEXUS_CFLAGS)
-LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
-LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libhwcutils
 
@@ -107,7 +103,6 @@ include $(BUILD_SHARED_LIBRARY)
 # build the hwcomposer for the device.
 #
 include $(CLEAR_VARS)
-
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 ifeq ($(HWC_DEBUG_SYMBOLS),true)
@@ -139,9 +134,7 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
                     $(TOP)/system/core/libsync/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 
-LOCAL_CFLAGS += $(NEXUS_CFLAGS)
-LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
-LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-hwc\"
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 

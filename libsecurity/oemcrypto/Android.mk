@@ -50,7 +50,7 @@ LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21
 include ${REFSW_BASE_DIR}/magnum/syslib/sagelib/bsagelib_public.inc
 
 LOCAL_SRC_FILES := \
-    test_sage/src/oemcrypto_brcm_TL.cpp\
+    brcm_oemcrypto_L1/src/oemcrypto_brcm_TL.cpp\
     core/src/string_conversions.cpp\
     core/src/properties.cpp \
     linux/src/log.cpp \
@@ -60,7 +60,7 @@ LOCAL_C_INCLUDES := \
     $(TOP)/bionic \
     $(TOP)/external/boringssl/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
-    ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21/test_sage/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21/brcm_oemcrypto_L1/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21/core/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21/third_party/stringencoders/src \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
@@ -68,14 +68,10 @@ LOCAL_C_INCLUDES := \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include/tl \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/srai/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/platforms/include \
-    $(BSAGELIB_INCLUDES) \
-    $(NEXUS_APP_INCLUDE_PATHS)
+    $(BSAGELIB_INCLUDES)
 
-LOCAL_CFLAGS += -DPIC -fpic -DANDROID
 LOCAL_CFLAGS += -DNDEBUG -DBRCM_IMPL
-
-LOCAL_CFLAGS += $(NEXUS_CFLAGS)
-LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
+LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 
 # Enable warning and error logs by default
 LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
