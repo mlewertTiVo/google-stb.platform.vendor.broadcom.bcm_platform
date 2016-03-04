@@ -15,7 +15,14 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
-LOCAL_SHARED_LIBRARIES := libnexus
+include $(NEXUS_TOP)/nxclient/include/nxclient.inc
+LOCAL_SHARED_LIBRARIES := libnexus \
+                          libnxclient
+
+LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
+LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
+LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
+
 LOCAL_SRC_FILES := memcpy.c
 LOCAL_MODULE := testmemcpy
 LOCAL_MODULE_TAGS := optional
