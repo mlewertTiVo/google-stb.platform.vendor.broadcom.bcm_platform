@@ -65,6 +65,7 @@
 #define B_PROPERTY_TRIM_VP9 ("ro.nx.trim.vp9")
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
 #define B_PROPERTY_SVP ("ro.nx.svp")
+#define B_PROPERTY_COALESCE ("dyn.nx.netcoal.set")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE (1536*1536)  // 1024 * 1024 from soft decoder is not big enough for some HEVC streams
@@ -1191,12 +1192,16 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         int surfaceClientId;
         m_omxHwcBinder->getvideo(0, surfaceClientId);
     }
+
+    property_set(B_PROPERTY_COALESCE, "vmode");
 }
 
 BOMX_VideoDecoder::~BOMX_VideoDecoder()
 {
     unsigned i;
     BOMX_VideoDecoderFrameBuffer *pBuffer;
+
+    property_set(B_PROPERTY_COALESCE, "default");
 
     // Stop listening to HWC. Note that HWC binder does need to be protected given
     // it's not updated during the decoder's lifetime.
