@@ -73,7 +73,7 @@ class NexusPower : public android::RefBase {
     static sp<NexusPower> instantiate(int powerFd);
     status_t preparePowerState(b_powerState state);
     status_t setPowerState(b_powerState state);
-    status_t getPowerState(b_powerState *pState);
+    status_t getPowerStatus(b_powerStatus *pPowerStatus);
     status_t setVideoOutputsState(b_powerState state);
     status_t initialiseGpios(int powerFd);
     void uninitialiseGpios();

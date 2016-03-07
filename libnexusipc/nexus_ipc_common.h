@@ -116,6 +116,22 @@ typedef enum b_powerState {
     ePowerState_Max
 } b_powerState;
 
+typedef struct {
+    bool ir;
+    bool uhf;
+    bool keypad;
+    bool gpio;
+    bool nmi;
+    bool cec;
+    bool transport;
+    bool timeout;
+} b_powerWakeupStatus;
+
+typedef struct {
+    b_powerState pmState;
+    b_powerWakeupStatus wakeupStatus;
+} b_powerStatus;
+
 typedef enum b_cecDeviceType
 {
     eCecDeviceType_eInactive = -1,
@@ -238,7 +254,7 @@ public:
     virtual status_t removeHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener) = 0;
 
     virtual bool setPowerState(b_powerState pmState)=0;
-    virtual b_powerState getPowerState()=0;
+    virtual bool getPowerStatus(b_powerStatus *pPowerStatus)=0;
     virtual bool setCecPowerState(uint32_t cecId, b_powerState pmState)=0;
     virtual bool getCecPowerStatus(uint32_t cecId, uint8_t *pPowerStatus)=0;
     virtual bool getCecStatus(uint32_t cecId, b_cecStatus *pCecStatus)=0;

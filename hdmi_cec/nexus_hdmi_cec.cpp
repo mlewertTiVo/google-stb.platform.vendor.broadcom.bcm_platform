@@ -283,11 +283,7 @@ status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::handleCecMessage(const sp<
         // to be able to send CEC commands, we need Nexus to be out of standby.
         mNexusHdmiCecDevice->standbyLock();
         if (mNexusHdmiCecDevice->mStandby) {
-            b_powerState powerState;
-
             mNexusHdmiCecDevice->standbyUnlock();
-
-            powerState = mNexusHdmiCecDevice->pIpcClient->getPowerState();
 
             // We always need to check the validity of the received wake-up message before deciding
             // whether to pass it up to the Android framework. If it's valid, then we also spoof
@@ -299,6 +295,8 @@ status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::handleCecMessage(const sp<
                 mNexusHdmiCecDevice->mStandby = false;
             }
             else {
+                b_powerStatus powerStatus;
+
                 // Don't forward the CEC message if in S0.5 or S1 and it was an invalid wake-up opcode or
                 // we are in S0 (i.e. not fully in standby yet) or S1.
                 forwardCecMessage = false;
@@ -306,7 +304,7 @@ status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::handleCecMessage(const sp<
                 // If we are in S0.5 (effectively S0), then the AutoCEC h/w is disabled as the drivers are fully running.
                 // However, we still need to respond to some received CEC messages in order to ensure the TV's state machine
                 // can continue to run to allow a valid wake-up CEC message to be sent.
-                if (powerState == ePowerState_S0) {
+                if (mNexusHdmiCecDevice->pIpcClient->getPowerStatus(&powerStatus) && (powerStatus.pmState == ePowerState_S0)) {
                     processCecMessage(&cecMessage);
                 }
             }

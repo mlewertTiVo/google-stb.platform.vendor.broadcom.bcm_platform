@@ -100,6 +100,8 @@ static int gPowerEventFd = -1;
 static volatile bool gPowerEventMonitorThreadExit = false;
 static volatile bool gPowerEventMonitorThreadExited = true;
 
+static volatile bool gPowerFlagSetPowerStateS0 = false;
+
 // Event monitor thread synchronisation primitives.
 static pthread_mutex_t gPowerEventMonitorThreadMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  gPowerEventMonitorThreadCond  = PTHREAD_COND_INITIALIZER;
@@ -113,6 +115,7 @@ Mutex gLock("PowerHAL Lock");
 typedef status_t (*powerFinishFunction_t)(void);
 
 // Prototype declarations...
+static status_t power_set_state(b_powerState toState);
 static status_t power_set_poweroff_state();
 static status_t power_finish_set_interactive();
 static void power_finish_set_no_interactive(b_powerState offState, powerFinishFunction_t powerFunction);
@@ -474,6 +477,7 @@ static status_t power_prepare_suspend(b_powerState toState)
         status = NO_INIT;
     }
     else {
+        ALOGV("%s: Acknowledging suspend with droid_pm driver...", __FUNCTION__);
         ret = ioctl(gPowerFd, BRCM_IOCTL_SET_SUSPEND_ACK);
         if (ret) {
             status = errno;
@@ -504,6 +508,16 @@ static status_t power_prepare_suspend(b_powerState toState)
                         pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
                         gPowerEventMonitorThreadExit = true;
                         pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
+                    }
+                    else {
+                        if (gNexusPower.get()) {
+                            b_powerStatus powerStatus;
+
+                            if ((gNexusPower->getPowerStatus(&powerStatus) == NO_ERROR) && powerStatus.wakeupStatus.timeout) {
+                                ALOGV("%s: Woke up from timer event", __FUNCTION__);
+                                gPowerFlagSetPowerStateS0 = true;
+                            }
+                        }
                     }
                 }
                 else {
@@ -723,6 +737,11 @@ static void *power_event_monitor_thread(void *arg)
                 if (event == DROID_PM_EVENT_SUSPENDING || event == DROID_PM_EVENT_SHUTDOWN) {
                     if (powerFunction() == NO_ERROR) {
                         ALOGD("%s: Successfully finished setting power state.", __FUNCTION__);
+                        if (gPowerFlagSetPowerStateS0) {
+                            // If woke up via a timer then set nexus power state to S0
+                            power_set_state(ePowerState_S0);
+                            gPowerFlagSetPowerStateS0 = false;
+                        }
                     }
                 }
                 else if (event == DROID_PM_EVENT_RESUMED_WAKEUP) {
@@ -863,6 +882,7 @@ static void power_set_interactive(struct power_module *module __unused, int on)
     }
 
     if (gPowerFd != -1) {
+        ALOGV("%s: Set interactive %s with droid_pm driver...", __FUNCTION__, on ? "on" : "off");
         if (ioctl(gPowerFd, BRCM_IOCTL_SET_INTERACTIVE, &on)) {
             ALOGE("%s: Error trying to set interactive state in droid_pm driver !!!", __FUNCTION__);
         }

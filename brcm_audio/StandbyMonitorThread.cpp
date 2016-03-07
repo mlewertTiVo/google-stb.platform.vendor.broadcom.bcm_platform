@@ -119,25 +119,21 @@ void StandbyMonitorThread::UnregisterCallback(int id)
     }
 }
 
-
 /* Standby monitor thread */
 bool StandbyMonitorThread::threadLoop()
 {
     NEXUS_Error rc;
-    unsigned mStandbyId = NxClient_RegisterAcknowledgeStandby();
-    NxClient_StandbyStatus standbyStatus, prevStatus;
     int i;
+    NxClient_StandbyStatus standbyStatus;
+    unsigned mStandbyId = NxClient_RegisterAcknowledgeStandby();
 
-    ALOGV("%s", __FUNCTION__);
-    ALOGD("RegisterAcknowledgeStandby() = %d", mStandbyId);
-    NxClient_GetStandbyStatus(&standbyStatus);
-    prevStatus = standbyStatus;
+    ALOGD("%s: RegisterAcknowledgeStandby() = %d", __FUNCTION__, mStandbyId);
 
     while (!exitPending()) {
         if ((mMutex.tryLock() == 0) && mNumCallbacks > 0) {
             rc = NxClient_GetStandbyStatus(&standbyStatus);
 
-            if (standbyStatus.settings.mode != prevStatus.settings.mode) {
+            if (rc == NEXUS_SUCCESS && standbyStatus.transition == NxClient_StandbyTransition_eAckNeeded) {
                 bool ack = true;
 
                 if (standbyStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn) {
@@ -151,7 +147,6 @@ bool StandbyMonitorThread::threadLoop()
                 if (ack) {
                     ALOGD("%s: Acknowledge state %d\n", __FUNCTION__, standbyStatus.settings.mode);
                     NxClient_AcknowledgeStandby(mStandbyId);
-                    prevStatus = standbyStatus;
                 }
             }
             mMutex.unlock();
@@ -159,9 +154,7 @@ bool StandbyMonitorThread::threadLoop()
         BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
     }
     NxClient_UnregisterAcknowledgeStandby(mStandbyId);
-    ALOGD("UnregisterAcknoledgeStandby(%d)", mStandbyId);
-
-    ALOGV("%s: Exiting", __FUNCTION__);
+    ALOGD("%s: UnregisterAcknowledgeStandby(%d)", __FUNCTION__, mStandbyId);
     return false;
 }
 

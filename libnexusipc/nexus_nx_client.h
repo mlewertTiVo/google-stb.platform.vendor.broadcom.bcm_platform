@@ -105,7 +105,7 @@ public:
     virtual void destroyClientContext(NexusClientContext * client);
 
     virtual bool setPowerState(b_powerState pmState);
-    virtual b_powerState getPowerState();
+    virtual bool getPowerStatus(b_powerStatus *pPowerStatus);
     virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus);
 
 protected:

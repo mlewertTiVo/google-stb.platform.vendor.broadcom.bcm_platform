@@ -282,32 +282,25 @@ static void *standby_monitor(void *context)
 
     BSTD_UNUSED(context);
 
-    rc = NxClient_GetStandbyStatus(&standbyStatus);
+    rc = NxClient_GetStandbyStatus(&prevStatus);
     ALOG_ASSERT(!rc);
-    prevStatus = standbyStatus;
 
     while(!client->stopped) {
-        bool changed = false;
-
         rc = NxClient_GetStandbyStatus(&standbyStatus);
         ALOG_ASSERT(!rc);
 
-        if(standbyStatus.settings.mode != prevStatus.settings.mode) {
-            printf("'play' acknowledges standby state: %s\n", lookup_name(g_platformStandbyModeStrs, standbyStatus.settings.mode));
-            NxClient_AcknowledgeStandby(true);
-            changed = true;
-        }
-        if(changed) {
-            if(standbyStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn)
+        if (rc == NEXUS_SUCCESS) {
+            if (standbyStatus.transition == NxClient_StandbyTransition_eAckNeeded) {
+                printf("'play' acknowledges standby state: %s\n", lookup_name(g_platformStandbyModeStrs, standbyStatus.settings.mode));
                 media_player_stop(client->player);
-            else
+                NxClient_AcknowledgeStandby(true);
+            } else if (standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn && prevStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn) {
                 media_player_start(client->player, &client->start_settings);
+            }
+            prevStatus = standbyStatus;
         }
-
-        prevStatus = standbyStatus;
         BKNI_Sleep(100);
     }
-
     return NULL;
 }
 

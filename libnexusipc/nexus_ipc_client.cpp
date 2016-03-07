@@ -196,13 +196,14 @@ bool NexusIPCClient::setPowerState(b_powerState pmState)
     return cmd.param.setPowerState.out.status;
 }
 
-b_powerState NexusIPCClient::getPowerState()
+bool NexusIPCClient::getPowerStatus(b_powerStatus *pPowerStatus)
 {
     api_data cmd;
     BKNI_Memset(&cmd, 0, sizeof(cmd));
-    cmd.api = api_getPowerState;
+    cmd.api = api_getPowerStatus;
     iNC->api_over_binder(&cmd);
-    return cmd.param.getPowerState.out.pmState;
+    *pPowerStatus = cmd.param.getPowerStatus.out.powerStatus;
+    return cmd.param.getPowerStatus.out.status;
 }
 
 bool NexusIPCClient::isCecEnabled(uint32_t cecId __unused)

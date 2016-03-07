@@ -252,19 +252,16 @@ static void *standby_monitor_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
     NEXUS_Error rc;
-    NxClient_StandbyStatus previous;
 
     nx_server->standbyId = NxClient_RegisterAcknowledgeStandby();
-    NxClient_GetStandbyStatus(&nx_server->standbyState);
-    previous = nx_server->standbyState;
 
     do
     {
        if (BKNI_AcquireMutex(nx_server->standby_lock) == BERR_SUCCESS) {
           rc = NxClient_GetStandbyStatus(&nx_server->standbyState);
-          if (nx_server->standbyState.settings.mode != previous.settings.mode) {
+          if (rc == NEXUS_SUCCESS && nx_server->standbyState.transition == NxClient_StandbyTransition_eAckNeeded) {
+             ALOGD("nxserver: Acknowledge state %d\n", nx_server->standbyState.settings.mode);
              NxClient_AcknowledgeStandby(nx_server->standbyId);
-             previous = nx_server->standbyState;
           }
           BKNI_ReleaseMutex(nx_server->standby_lock);
        }

@@ -118,29 +118,17 @@ android::status_t NexusNxClient::StandbyMonitorThread::run(const char* name, int
 bool NexusNxClient::StandbyMonitorThread::threadLoop()
 {
     NEXUS_Error rc;
-    NxClient_StandbyStatus standbyStatus, prevStatus;
+    NxClient_StandbyStatus standbyStatus;
 
     ALOGD("%s: Entering for client \"%s\"", __PRETTY_FUNCTION__, getName());
-
-    NxClient_GetStandbyStatus(&standbyStatus);
-
-    prevStatus = standbyStatus;
 
     while (isRunning()) {
         rc = NxClient_GetStandbyStatus(&standbyStatus);
 
-        if (rc == NEXUS_SUCCESS && standbyStatus.settings.mode != prevStatus.settings.mode) {
-            bool ack = true;
-
-            if (standbyStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn) {
-                if (mCallback != NULL) {
-                    ack = mCallback(mContext);
-                }
-            }
-            if (ack) {
+        if (rc == NEXUS_SUCCESS && standbyStatus.transition == NxClient_StandbyTransition_eAckNeeded) {
+            if (standbyStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn && mCallback(mContext)) {
                 ALOGD("%s: Acknowledge state %d\n", getName(), standbyStatus.settings.mode);
                 NxClient_AcknowledgeStandby(mStandbyId);
-                prevStatus = standbyStatus;
             }
         }
         BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
@@ -193,11 +181,12 @@ NexusNxClient::~NexusNxClient()
 NEXUS_Error NexusNxClient::standbyCheck(NEXUS_PlatformStandbyMode mode)
 {
     NxClient_StandbyStatus standbyStatus;
+    NEXUS_Error rc;
     int count = 0;
 
     while (count < NXCLIENT_PM_TIMEOUT_COUNT) {
-        NxClient_GetStandbyStatus(&standbyStatus);
-        if (standbyStatus.settings.mode == mode && standbyStatus.standbyTransition) {
+        rc = NxClient_GetStandbyStatus(&standbyStatus);
+        if (rc == NEXUS_SUCCESS && standbyStatus.settings.mode == mode && standbyStatus.transition == NxClient_StandbyTransition_eDone) {
             ALOGD("%s: Entered S%d", __PRETTY_FUNCTION__, mode);
             break;
         }
@@ -335,7 +324,7 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
     return (rc == NEXUS_SUCCESS) ? true : false;
 }
 
-b_powerState NexusNxClient::getPowerState()
+bool NexusNxClient::getPowerStatus(b_powerStatus *pPowerStatus)
 {
     NEXUS_Error rc;
     NxClient_StandbyStatus standbyStatus;
@@ -363,6 +352,15 @@ b_powerState NexusNxClient::getPowerState()
         }
 
         if (state != ePowerState_Max) {
+            pPowerStatus->wakeupStatus.ir        = standbyStatus.status.wakeupStatus.ir;
+            pPowerStatus->wakeupStatus.uhf       = standbyStatus.status.wakeupStatus.uhf;
+            pPowerStatus->wakeupStatus.keypad    = standbyStatus.status.wakeupStatus.keypad;
+            pPowerStatus->wakeupStatus.gpio      = standbyStatus.status.wakeupStatus.gpio;
+            pPowerStatus->wakeupStatus.nmi       = standbyStatus.status.wakeupStatus.nmi;
+            pPowerStatus->wakeupStatus.cec       = standbyStatus.status.wakeupStatus.cec;
+            pPowerStatus->wakeupStatus.transport = standbyStatus.status.wakeupStatus.transport;
+            pPowerStatus->wakeupStatus.timeout   = standbyStatus.status.wakeupStatus.timeout;
+
             ALOGD("%s: Standby Status : \n"
                  "State   : %s\n"
                  "IR      : %d\n"
@@ -372,16 +370,16 @@ b_powerState NexusNxClient::getPowerState()
                  "GPIO    : %d\n"
                  "Timeout : %d\n", __PRETTY_FUNCTION__,
                  NexusIPCClientBase::getPowerString(state),
-                 standbyStatus.status.wakeupStatus.ir,
-                 standbyStatus.status.wakeupStatus.uhf,
-                 standbyStatus.status.wakeupStatus.transport,
-                 standbyStatus.status.wakeupStatus.cec,
-                 standbyStatus.status.wakeupStatus.gpio,
-                 standbyStatus.status.wakeupStatus.timeout);
+                 pPowerStatus->wakeupStatus.ir,
+                 pPowerStatus->wakeupStatus.uhf,
+                 pPowerStatus->wakeupStatus.transport,
+                 pPowerStatus->wakeupStatus.cec,
+                 pPowerStatus->wakeupStatus.gpio,
+                 pPowerStatus->wakeupStatus.timeout);
         }
+        pPowerStatus->pmState = state;
     }
-
-    return state;
+    return (rc == NEXUS_SUCCESS) ? true : false;
 }
 
 bool NexusNxClient::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus)

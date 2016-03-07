@@ -89,7 +89,94 @@ BDBG_OBJECT_ID(NexusClientContext);
 typedef struct NexusNxServerContext : public NexusServerContext {
     NexusNxServerContext()  { ALOGV("%s: called", __PRETTY_FUNCTION__); }
     ~NexusNxServerContext() { ALOGV("%s: called", __PRETTY_FUNCTION__); }
+
+    struct StandbyMonitorThread : public android::Thread {
+
+        enum ThreadState {
+            STATE_UNKNOWN,
+            STATE_STOPPED,
+            STATE_RUNNING
+        };
+
+        StandbyMonitorThread(NexusNxServerContext *pNexusNxServerContext);
+        virtual ~StandbyMonitorThread();
+
+        virtual android::status_t run( const char* name = 0,
+                                       int32_t priority = android::PRIORITY_DEFAULT,
+                                       size_t stack = 0);
+
+        virtual void stop() { state = STATE_STOPPED; }
+
+        bool isRunning() { return (state == STATE_RUNNING); }
+
+        const char *getName() { return name; }
+
+    private:
+        NexusNxServerContext *mNexusNxServerContext;
+        ThreadState state;
+        char *name;
+        unsigned mStandbyId;
+        bool threadLoop();
+
+        /* Disallow copy constructor and copy operator... */
+        StandbyMonitorThread(const StandbyMonitorThread &);
+        StandbyMonitorThread &operator=(const StandbyMonitorThread &);
+    };
+    android::sp<NexusNxServerContext::StandbyMonitorThread> mStandbyMonitorThread;
 } NexusNxServerContext;
+
+NexusNxServerContext::StandbyMonitorThread::StandbyMonitorThread(NexusNxServerContext *pNexusNxServerContext) :
+    mNexusNxServerContext(pNexusNxServerContext), state(STATE_STOPPED), name(NULL)
+{
+    ALOGD("%s: called", __PRETTY_FUNCTION__);
+    mStandbyId = NxClient_RegisterAcknowledgeStandby();
+}
+
+NexusNxServerContext::StandbyMonitorThread::~StandbyMonitorThread()
+{
+    ALOGD("%s: called", __PRETTY_FUNCTION__);
+
+    NxClient_UnregisterAcknowledgeStandby(mStandbyId);
+
+    if (this->name != NULL) {
+        free(name);
+        this->name = NULL;
+    }
+}
+
+android::status_t NexusNxServerContext::StandbyMonitorThread::run(const char* name, int32_t priority, size_t stack)
+{
+    android::status_t status;
+
+    this->name = strdup(name);
+
+    status = Thread::run(name, priority, stack);
+    if (status == android::OK) {
+        state = StandbyMonitorThread::STATE_RUNNING;
+    }
+    return status;
+}
+
+bool NexusNxServerContext::StandbyMonitorThread::threadLoop()
+{
+    NEXUS_Error rc;
+    NxClient_StandbyStatus standbyStatus;
+
+    ALOGD("%s: Entering for client \"%s\"", __PRETTY_FUNCTION__, getName());
+
+    while (isRunning()) {
+        rc = NxClient_GetStandbyStatus(&standbyStatus);
+
+        if (rc == NEXUS_SUCCESS && standbyStatus.transition == NxClient_StandbyTransition_eAckNeeded) {
+            Mutex::Autolock autoLock(mNexusNxServerContext->mLock);
+            ALOGD("%s: Acknowledge state %d\n", getName(), standbyStatus.settings.mode);
+            NxClient_AcknowledgeStandby(mStandbyId);
+        }
+        BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
+    }
+    ALOGD("%s: Exiting for client \"%s\"", __PRETTY_FUNCTION__, getName());
+    return false;
+}
 
 NEXUS_VideoFormat NexusNxService::getBestOutputFormat(NEXUS_HdmiOutputStatus *status)
 {
@@ -179,8 +266,6 @@ void NexusNxService::handleHdmiOutputHotplugCallback(int port, hdmi_state isConn
 
     Vector<sp<INexusHdmiHotplugEventListener> >::const_iterator it;
 
-    Mutex::Autolock autoLock(server->mLock);
-
     rc = NxClient_GetDisplayStatus(&status);
     if (rc) {
         ALOGE("%s: Could not get display status!!!", __PRETTY_FUNCTION__);
@@ -264,6 +349,8 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
     NxClient_StandbyStatus standbyStatus;
     NexusNxService *pNexusNxService = reinterpret_cast<NexusNxService *>(context);
 
+    Mutex::Autolock autoLock(pNexusNxService->server->mLock);
+
     rc = NxClient_GetStandbyStatus(&standbyStatus);
     if (rc != NEXUS_SUCCESS) {
         ALOGE("%s: Could not get standby status!!!", __PRETTY_FUNCTION__);
@@ -305,6 +392,8 @@ void NexusNxService::hdmiOutputHdcpStateChangedCallback(void *context __unused, 
     int rc;
     NxClient_StandbyStatus standbyStatus;
     NexusNxService *pNexusNxService = reinterpret_cast<NexusNxService *>(context);
+
+    Mutex::Autolock autoLock(pNexusNxService->server->mLock);
 
     rc = NxClient_GetStandbyStatus(&standbyStatus);
     if (rc != NEXUS_SUCCESS) {
@@ -493,6 +582,7 @@ void NexusNxService::platformInit()
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
     joinSettings.ignoreStandbyRequest = true;
+    strncpy(joinSettings.name, "NexusNxService", NXCLIENT_MAX_NAME);
     do {
         rc = NxClient_Join(&joinSettings);
 
@@ -501,6 +591,10 @@ void NexusNxService::platformInit()
             usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
         }
     } while (rc != NEXUS_SUCCESS);
+
+    NexusNxServerContext *nxServer = static_cast<NexusNxServerContext *>(server);
+    nxServer->mStandbyMonitorThread = new NexusNxServerContext::StandbyMonitorThread(nxServer);
+    nxServer->mStandbyMonitorThread->run(&joinSettings.name[0], ANDROID_PRIORITY_NORMAL);
 
     unsigned i = NEXUS_NUM_CEC;
     while (i--) {
@@ -532,6 +626,14 @@ void NexusNxService::platformUninit()
             mCecServiceManager[i]->platformUninit();
             mCecServiceManager[i] = NULL;
         }
+    }
+
+    NexusNxServerContext *nxServer = static_cast<NexusNxServerContext *>(server);
+    /* Cancel the standby monitor thread... */
+    if (nxServer->mStandbyMonitorThread != NULL && nxServer->mStandbyMonitorThread->isRunning()) {
+        nxServer->mStandbyMonitorThread->stop();
+        nxServer->mStandbyMonitorThread->join();
+        nxServer->mStandbyMonitorThread = NULL;
     }
     NxClient_Uninit();
 }

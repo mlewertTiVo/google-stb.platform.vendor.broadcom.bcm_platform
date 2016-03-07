@@ -50,7 +50,7 @@ enum api_name{
     api_createClientContext,
     api_destroyClientContext,
     api_setPowerState,
-    api_getPowerState,
+    api_getPowerStatus,
     api_setCecPowerState,
     api_getCecPowerStatus,
     api_getCecStatus,
@@ -94,9 +94,10 @@ typedef union api_param
 
     struct {
         struct {
-            b_powerState pmState;
+            b_powerStatus powerStatus;
+            bool status;
         } out;
-    } getPowerState;
+    } getPowerStatus;
 
     struct {
         struct {

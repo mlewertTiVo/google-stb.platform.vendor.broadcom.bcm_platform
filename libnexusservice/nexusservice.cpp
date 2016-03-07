@@ -925,9 +925,9 @@ bool NexusService::setPowerState(b_powerState pmState)
     }
 }
 
-b_powerState NexusService::getPowerState()
+bool NexusService::getPowerStatus(b_powerStatus *pPowerStatus __unused)
 {
-    return powerState;
+    return true;
 }
 
 const char *NexusService::getPowerString(b_powerState pmState)
@@ -1039,9 +1039,9 @@ status_t NexusService::onTransact(uint32_t code,
                 cmd.param.setPowerState.out.status = setPowerState(cmd.param.setPowerState.in.pmState);
                 break;
             }
-            case api_getPowerState:
+            case api_getPowerStatus:
             {
-                cmd.param.getPowerState.out.pmState = getPowerState();
+                cmd.param.getPowerStatus.out.status = getPowerStatus(&cmd.param.getPowerStatus.out.powerStatus);
                 break;
             }
             case api_setCecPowerState:

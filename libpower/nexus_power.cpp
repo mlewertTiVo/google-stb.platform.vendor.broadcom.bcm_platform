@@ -271,16 +271,22 @@ status_t NexusPower::setPowerState(b_powerState state)
     return ret;
 }
 
-status_t NexusPower::getPowerState(b_powerState *pState)
+status_t NexusPower::getPowerStatus(b_powerStatus *pPowerStatus)
 {
-    if (pState == NULL) {
-        ALOGE("%s: invalid parameter \"pState\"!", __FUNCTION__);
-        return BAD_VALUE;
-    }
+    status_t ret = NO_ERROR;
 
-    *pState = mIpcClient->getPowerState();
-    ALOGD("%s: Power state = %s", __FUNCTION__, NexusIPCClientBase::getPowerString(*pState));
-    return NO_ERROR;
+    if (pPowerStatus == NULL) {
+        ALOGE("%s: invalid parameter \"pPowerStatus\"!", __FUNCTION__);
+        ret = BAD_VALUE;
+    }
+    else if (!mIpcClient->getPowerStatus(pPowerStatus)) {
+        ret = UNKNOWN_ERROR;
+        ALOGE("%s: Could not get power status!", __FUNCTION__);
+    }
+    else {
+        ALOGD("%s: Power state = %s", __FUNCTION__, NexusIPCClientBase::getPowerString(pPowerStatus->pmState));
+    }
+    return ret;
 }
 
 void NexusPower::NexusGpio::gpioCallback(void *context, int param __unused)

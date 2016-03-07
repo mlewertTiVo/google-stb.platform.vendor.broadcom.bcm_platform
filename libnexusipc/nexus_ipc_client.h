@@ -71,7 +71,7 @@ public:
     virtual status_t removeHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener);
 
     virtual bool setPowerState(b_powerState pmState);
-    virtual b_powerState getPowerState();
+    virtual bool getPowerStatus(b_powerStatus *pPowerStatus);
     virtual bool setCecPowerState(uint32_t cecId, b_powerState pmState);
     virtual bool getCecPowerStatus(uint32_t cecId, uint8_t *pPowerStatus);
     virtual bool getCecStatus(uint32_t cecId, b_cecStatus *pCecStatus);
