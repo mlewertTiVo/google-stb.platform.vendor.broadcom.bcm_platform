@@ -12,3 +12,10 @@ service dhcpcd_gphy /system/bin/dhcpcd -dABKL
    disabled
    oneshot
 
+service netcoal /system/bin/netcoal eth0
+   class late_start
+   oneshot
+   disabled
+
+on property:dyn.nx.netcoal.set=*
+   start netcoal
