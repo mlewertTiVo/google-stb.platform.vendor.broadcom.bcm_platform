@@ -4,6 +4,7 @@
 #include <getopt.h>
 
 #include "nxclient.h"
+#include "sage_srai.h"
 
 #define ALIGN	4096
 #define MAX_N	(10*1024*1024)		// bytes
@@ -35,7 +36,7 @@ int test_memcpy(uint8_t *a_, uint8_t *b_)
    copy_size = unit_size;
 
    fflush(stdout);
-   printf("Static Allocation:\na @ 0x%08lX, b @ 0x%08lX\n", (long)a, (long)b);
+   printf("Allocation:\na @ 0x%08lX, b @ 0x%08lX\n", (long)a, (long)b);
    printf("%u iterations, each iteration copies %u bytes\n\n", (unsigned)iterations, (unsigned)copy_size);
 
    // word-aligned
@@ -131,6 +132,14 @@ int test_memcpy(uint8_t *a_, uint8_t *b_)
    return 0;
 }
 
+static const char *mode_name[] = {
+   "LOCAL STATIC",
+   "NEXUS DEFAULT->DEFAULT",
+   "NEXUS FULL->FULL",
+   "LOCAL MALLOC",
+   "NEXUS OPEN->CRR",
+};
+
 int main(int argc, char **argv)
 {
    uint8_t *a_ = NULL;
@@ -148,7 +157,7 @@ int main(int argc, char **argv)
       break;
    case 'm':
       mode = (int) strtoul(optarg, NULL, 0);
-      if (mode < 0 || mode > 3) return -1;
+      if (mode < 0 || mode > 4) return -1;
       break;
    case 's':
       unit_size = (int) strtoul(optarg, NULL, 0);
@@ -161,6 +170,8 @@ int main(int argc, char **argv)
       return -1;
    }
    }
+
+   printf("MEMCPY TEST: %s\n", mode_name[mode]);
 
    if (unit_size == 0) {
       return -1;
@@ -195,6 +206,17 @@ int main(int argc, char **argv)
    } else if (mode == 3) {
       a_ = malloc((MAX_N+(ALIGN-1)) & ~(ALIGN-1));
       b_ = malloc((MAX_N+(ALIGN-1)) & ~(ALIGN-1));
+   } else if (mode == 4) {
+      NEXUS_ClientConfiguration clientConfig;
+      NEXUS_Platform_GetClientConfiguration(&clientConfig);
+      NEXUS_Memory_GetDefaultAllocationSettings(&allocSettings);
+      allocSettings.alignment = ALIGN;
+      allocSettings.heap = clientConfig.heap[NXCLIENT_FULL_HEAP];
+      rc = NEXUS_Memory_Allocate(MAX_N, &allocSettings, &a_);
+      BDBG_ASSERT(!rc);
+      allocSettings.heap = clientConfig.heap[NXCLIENT_VIDEO_SECURE_HEAP];
+      rc = NEXUS_Memory_Allocate(MAX_N, &allocSettings, &b_);
+      BDBG_ASSERT(!b_);
    }
 
    BDBG_ASSERT(!a_);
@@ -204,11 +226,12 @@ int main(int argc, char **argv)
    memset(b_, 0, (MAX_N + (ALIGN-1)) & ~(ALIGN-1));
    test_memcpy(a_, b_);
 
-   memset(a_, 0, (MAX_N + (ALIGN-1)) & ~(ALIGN-1));
-   memset(b_, 0, (MAX_N + (ALIGN-1)) & ~(ALIGN-1));
-   test_memcpy(b_, a_);
-
-   if (mode == 1 || mode == 2) {
+   if (mode != 4) {
+      memset(a_, 0, (MAX_N + (ALIGN-1)) & ~(ALIGN-1));
+      memset(b_, 0, (MAX_N + (ALIGN-1)) & ~(ALIGN-1));
+      test_memcpy(b_, a_);
+   }
+   if (mode == 1 || mode == 2 || mode == 4) {
       NEXUS_Memory_Free(a_);
       NEXUS_Memory_Free(b_);
    }
