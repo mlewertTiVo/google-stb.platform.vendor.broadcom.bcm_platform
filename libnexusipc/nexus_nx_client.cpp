@@ -365,6 +365,7 @@ bool NexusNxClient::getPowerStatus(b_powerStatus *pPowerStatus)
                  "State   : %s\n"
                  "IR      : %d\n"
                  "UHF     : %d\n"
+                 "Keypad  : %d\n"
                  "XPT     : %d\n"
                  "CEC     : %d\n"
                  "GPIO    : %d\n"
@@ -372,6 +373,7 @@ bool NexusNxClient::getPowerStatus(b_powerStatus *pPowerStatus)
                  NexusIPCClientBase::getPowerString(state),
                  pPowerStatus->wakeupStatus.ir,
                  pPowerStatus->wakeupStatus.uhf,
+                 pPowerStatus->wakeupStatus.keypad,
                  pPowerStatus->wakeupStatus.transport,
                  pPowerStatus->wakeupStatus.cec,
                  pPowerStatus->wakeupStatus.gpio,

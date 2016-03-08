@@ -100,6 +100,7 @@ static int gPowerEventFd = -1;
 static volatile bool gPowerEventMonitorThreadExit = false;
 static volatile bool gPowerEventMonitorThreadExited = true;
 
+// Flag used to indicate when to set power state to S0 on a wake-up source.
 static volatile bool gPowerFlagSetPowerStateS0 = false;
 
 // Event monitor thread synchronisation primitives.
@@ -496,7 +497,9 @@ static status_t power_prepare_suspend(b_powerState toState)
             else {
                 ALOGV("%s: Event %d received", __FUNCTION__, event);
 
-                if (event == DROID_PM_EVENT_RESUMED || event == DROID_PM_EVENT_RESUMED_WAKEUP) {
+                if (event == DROID_PM_EVENT_RESUMED ||
+                    event == DROID_PM_EVENT_RESUMED_PARTIAL ||
+                    event == DROID_PM_EVENT_RESUMED_WAKEUP) {
                     // As long as all clients have at least acknowledged the suspend, then we can enable
                     // spoofing of the POWER key event through the call to "preparePowerState()"...
                     if (gNexusPower.get() && !gPowerStatePrepared) {
@@ -508,6 +511,10 @@ static status_t power_prepare_suspend(b_powerState toState)
                         pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
                         gPowerEventMonitorThreadExit = true;
                         pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
+                    }
+                    else if (event == DROID_PM_EVENT_RESUMED_PARTIAL) {
+                        ALOGV("%s: Received a valid partial wakeup event", __FUNCTION__);
+                        gPowerFlagSetPowerStateS0 = true;
                     }
                     else {
                         if (gNexusPower.get()) {
@@ -738,7 +745,7 @@ static void *power_event_monitor_thread(void *arg)
                     if (powerFunction() == NO_ERROR) {
                         ALOGD("%s: Successfully finished setting power state.", __FUNCTION__);
                         if (gPowerFlagSetPowerStateS0) {
-                            // If woke up via a timer then set nexus power state to S0
+                            // If woke up via a timer or partial wake-up event then set nexus power state to S0
                             power_set_state(ePowerState_S0);
                             gPowerFlagSetPowerStateS0 = false;
                         }
