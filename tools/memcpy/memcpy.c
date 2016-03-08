@@ -2,6 +2,9 @@
 #include <sys/time.h>
 #include <string.h>
 #include <getopt.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 
 #include "nxclient.h"
 #include "sage_srai.h"
@@ -10,13 +13,14 @@
 #define MAX_N	(10*1024*1024)		// bytes
 
 #define BKNI_MEMCPY 1
-
+#define NEXUS_FD 0
 
 static uint8_t static_a_[(MAX_N+(ALIGN-1)) & ~(ALIGN-1)];
 static uint8_t static_b_[(MAX_N+(ALIGN-1)) & ~(ALIGN-1)];
 
 int max_iter = 10;
 int unit_size = MAX_N;
+int nexus_device = -1;
 
 int test_memcpy(uint8_t *a_, uint8_t *b_)
 {
@@ -149,6 +153,7 @@ int main(int argc, char **argv)
    int mode = 0;
    int chunk = 0;
    int arg;
+   const char *devname;
 
    while ((arg = getopt(argc, argv, "i:m:s:c:")) != -1) {
    switch (arg) {
@@ -172,6 +177,14 @@ int main(int argc, char **argv)
    }
 
    printf("MEMCPY TEST: %s\n", mode_name[mode]);
+
+   nexus_device = -1;
+   devname = NEXUS_GetEnv("NEXUS_DEVICE_NODE");
+   if (devname) {
+#if NEXUS_FD
+      nexus_device = open(devname, O_RDWR);
+#endif
+   }
 
    if (unit_size == 0) {
       return -1;
@@ -208,6 +221,7 @@ int main(int argc, char **argv)
       b_ = malloc((MAX_N+(ALIGN-1)) & ~(ALIGN-1));
    } else if (mode == 4) {
       NEXUS_ClientConfiguration clientConfig;
+      NEXUS_Addr na;
       NEXUS_Platform_GetClientConfiguration(&clientConfig);
       NEXUS_Memory_GetDefaultAllocationSettings(&allocSettings);
       allocSettings.alignment = ALIGN;
@@ -215,8 +229,16 @@ int main(int argc, char **argv)
       rc = NEXUS_Memory_Allocate(MAX_N, &allocSettings, &a_);
       BDBG_ASSERT(!rc);
       allocSettings.heap = clientConfig.heap[NXCLIENT_VIDEO_SECURE_HEAP];
-      rc = NEXUS_Memory_Allocate(MAX_N, &allocSettings, &b_);
-      BDBG_ASSERT(!b_);
+      rc = NEXUS_Memory_Allocate(MAX_N, &allocSettings, &na);
+      if (nexus_device >= 0) {
+         b_ = mmap64(0, (MAX_N+(ALIGN-1)) & ~(ALIGN-1), PROT_WRITE, MAP_SHARED, nexus_device, na);
+         if (b_ == NULL) {
+            printf("mmap64 failed: %d (%s)\n", errno, strerror(errno));
+         }
+      } else {
+         b_ = NULL;
+         exit(1);
+      }
    }
 
    BDBG_ASSERT(!a_);
@@ -234,11 +256,17 @@ int main(int argc, char **argv)
    if (mode == 1 || mode == 2 || mode == 4) {
       NEXUS_Memory_Free(a_);
       NEXUS_Memory_Free(b_);
+      if (mode == 4 && nexus_device >= 0) {
+         munmap(b_, (MAX_N+(ALIGN-1)) & ~(ALIGN-1));
+      }
    }
    NxClient_Uninit();
    if (mode == 3) {
       free(a_);
       free(b_);
+   }
+   if (nexus_device >= 0) {
+      close(nexus_device);
    }
 
    return 0;
