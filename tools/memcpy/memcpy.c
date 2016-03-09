@@ -20,7 +20,9 @@ static uint8_t static_b_[(MAX_N+(ALIGN-1)) & ~(ALIGN-1)];
 
 int max_iter = 10;
 int unit_size = MAX_N;
+
 int nexus_device = -1;
+#define DEVMEM_DEFAULT "/dev/mem"
 
 int test_memcpy(uint8_t *a_, uint8_t *b_)
 {
@@ -179,15 +181,19 @@ int main(int argc, char **argv)
    printf("MEMCPY TEST: %s\n", mode_name[mode]);
 
    nexus_device = -1;
+   devname = (const char *)DEVMEM_DEFAULT;
+#if NEXUS_FD
    devname = NEXUS_GetEnv("NEXUS_DEVICE_NODE");
    if (devname) {
-#if NEXUS_FD
       nexus_device = open(devname, O_RDWR);
-#endif
    }
+#endif
 
    if (unit_size == 0) {
       return -1;
+   }
+   if (unit_size < 4) {
+      unit_size = 4;
    }
    if (mode == 0 && unit_size > MAX_N) {
       unit_size = MAX_N;
