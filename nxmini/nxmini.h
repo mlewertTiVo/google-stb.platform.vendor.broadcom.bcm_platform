@@ -40,7 +40,7 @@
 ******************************************************************************/
 
 #ifndef __NX_MINI_H__
-#define __NN_MINI_H__
+#define __NX_MINI_H__
 
 #include "nexus_platform.h"
 #include "nexus_display.h"
