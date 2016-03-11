@@ -1592,9 +1592,12 @@ static void hwc_hotplug_notify(int dev)
     NxClient_GetDisplaySettings(&settings);
     switch (settings.format) {
     case NEXUS_VideoFormat_e720p:
+    case NEXUS_VideoFormat_e720p50hz:
     case NEXUS_VideoFormat_e720p30hz:
     case NEXUS_VideoFormat_e720p25hz:
     case NEXUS_VideoFormat_e720p24hz:
+    case NEXUS_VideoFormat_ePal:
+    case NEXUS_VideoFormat_eSecam:
        newmode = CLIENT_MODE_NSC_FRAMEBUFFER;
     break;
     default:
