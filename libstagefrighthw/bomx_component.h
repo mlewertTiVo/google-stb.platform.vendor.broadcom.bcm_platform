@@ -117,7 +117,9 @@ public:
         const OMX_STRING pName,
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
-        const char *(*pGetRole)(unsigned roleIndex));
+        const char *(*pGetRole)(unsigned roleIndex),
+        bool overwriteThreadPriority = false,
+        uint32_t threadPriority = 0);
 
     virtual ~BOMX_Component();
 
@@ -132,6 +134,7 @@ public:
 
     OMX_ERRORTYPE IsValid()	{ if ( m_currentState == OMX_StateInvalid ) { return m_constructorError; } else { return OMX_ErrorNone; } };
 
+    bool getSchedPriority(uint32_t& priority) {priority = m_threadPriority; return m_overwriteThreadPriority;}
     // Component Name
     const char *GetName() const {return m_componentName;}
 
@@ -339,6 +342,8 @@ private:
     B_Time m_portWaitStartTime;
     unsigned m_portWaitTimeout;
     const char *(*m_pGetRole)(unsigned roleIndex);
+    const bool m_overwriteThreadPriority;
+    const uint32_t m_threadPriority;
 };
 
 #endif //BOMX_COMPONENT_H__

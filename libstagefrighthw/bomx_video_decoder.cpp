@@ -291,6 +291,13 @@ static void BOMX_VideoDecoder_OutputFrameEvent(void *pParam)
     pDecoder->OutputFrameEvent();
 }
 
+static void BOMX_VideoDecoder_DisplayFrameEvent(void *pParam)
+{
+    BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
+    ALOGV("DisplayFrameEvent");
+    pDecoder->DisplayFrameEvent();
+}
+
 static void BOMX_VideoDecoder_InputBuffersTimer(void *pParam)
 {
     BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
@@ -533,17 +540,7 @@ static void BOMX_OmxBinderNotify(int cb_data, int msg, struct hwc_notification_i
     {
     case HWC_BINDER_NTFY_DISPLAY:
     {
-        NEXUS_Rect position, clip;
-        position.x = ntfy.frame.x;
-        position.y = ntfy.frame.y;
-        position.width = ntfy.frame.w;
-        position.height = ntfy.frame.h;
-        clip.x = ntfy.clipped.x;
-        clip.y = ntfy.clipped.y;
-        clip.width = ntfy.clipped.w;
-        clip.height = ntfy.clipped.h;
-        pComponent->SetVideoGeometry(&position, &clip, ntfy.frame_id, ntfy.display_width, ntfy.display_height, ntfy.zorder, true);
-        pComponent->DisplayFrame((unsigned)ntfy.frame_id);
+        pComponent->BinderNotifyDisplay(ntfy);
         break;
     }
     default:
@@ -741,7 +738,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     unsigned numRoles,
     const BOMX_VideoDecoderRole *pRoles,
     const char *(*pGetRole)(unsigned roleIndex)) :
-    BOMX_Component(pComponentType, pName, pAppData, pCallbacks, (pGetRole!=NULL) ? pGetRole : BOMX_VideoDecoder_GetRole),
+    BOMX_Component(pComponentType, pName, pAppData, pCallbacks, (pGetRole!=NULL) ? pGetRole : BOMX_VideoDecoder_GetRole,
+                   true, PRIORITY_URGENT_DISPLAY + 2*PRIORITY_MORE_FAVORABLE),
     m_hSimpleVideoDecoder(NULL),
     m_hPlaypump(NULL),
     m_hPidChannel(NULL),
@@ -750,6 +748,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_playpumpTimerId(NULL),
     m_hOutputFrameEvent(NULL),
     m_outputFrameEventId(NULL),
+    m_hDisplayFrameEvent(NULL),
+    m_displayFrameEventId(NULL),
+    m_hDisplayMutex(NULL),
     m_inputBuffersTimerId(NULL),
     m_hCheckpointEvent(NULL),
     m_hGraphics2d(NULL),
@@ -788,7 +789,12 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_outputMode(BOMX_VideoDecoderOutputBufferType_eStandard),
     m_omxHwcBinder(NULL),
     m_memTracker(-1),
-    m_securePicBuff(false)
+    m_securePicBuff(false),
+    m_frameSerial(0),
+    m_displayFrameAvailable(false),
+    m_droppedFrames(0),
+    m_consecDroppedFrames(0),
+    m_maxConsecDroppedFrames(0)
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -909,6 +915,29 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_outputFrameEventId )
     {
         ALOGW("Unable to register output frame event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_hDisplayFrameEvent = B_Event_Create(NULL);
+    if ( NULL == m_hDisplayFrameEvent )
+    {
+        ALOGW("Unable to create display frame event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_displayFrameEventId = this->RegisterEvent(m_hDisplayFrameEvent, BOMX_VideoDecoder_DisplayFrameEvent, static_cast <void *> (this));
+    if ( NULL == m_displayFrameEventId )
+    {
+        ALOGW("Unable to register display frame event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+    m_hDisplayMutex = B_Mutex_Create(NULL);
+    if ( NULL == m_hDisplayMutex )
+    {
+        ALOGW("Unable to create display mutex");
         this->Invalidate(OMX_ErrorUndefined);
         return;
     }
@@ -1268,6 +1297,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         UnregisterEvent(m_outputFrameEventId);
     }
+    if ( m_displayFrameEventId )
+    {
+        UnregisterEvent(m_displayFrameEventId);
+    }
     if ( m_inputBuffersTimerId )
     {
         CancelTimer(m_inputBuffersTimerId);
@@ -1275,6 +1308,14 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     if ( m_hOutputFrameEvent )
     {
         B_Event_Destroy(m_hOutputFrameEvent);
+    }
+    if ( m_hDisplayFrameEvent )
+    {
+        B_Event_Destroy(m_hDisplayFrameEvent);
+    }
+    if ( m_hDisplayMutex )
+    {
+        B_Mutex_Destroy(m_hDisplayMutex);
     }
     if ( m_hGraphics2d )
     {
@@ -2047,6 +2088,9 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_eosPending = false;
             m_eosDelivered = false;
             m_eosReceived = false;
+            B_Mutex_Lock(m_hDisplayMutex);
+            m_displayFrameAvailable = false;
+            B_Mutex_Unlock(m_hDisplayMutex);
             m_pBufferTracker->Flush();
             InputBufferCounterReset();
             NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
@@ -2061,6 +2105,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             BOMX_VIDEO_STATS_PRINT_BASIC;
             BOMX_VIDEO_STATS_PRINT_DETAILED;
             BOMX_VIDEO_STATS_RESET;
+            ALOGD("df:%d, mcdf:%d", m_droppedFrames, m_maxConsecDroppedFrames);
+            m_droppedFrames = m_consecDroppedFrames = m_maxConsecDroppedFrames = 0;
         }
     }
     else
@@ -2202,6 +2248,9 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 InputBufferCounterReset();
                 ReturnPortBuffers(m_pVideoPorts[0]);
                 m_submittedDescriptors = 0;
+                B_Mutex_Lock(m_hDisplayMutex);
+                m_displayFrameAvailable = false;
+                B_Mutex_Unlock(m_hDisplayMutex);
             }
             break;
         case OMX_StateExecuting:
@@ -4162,6 +4211,30 @@ void BOMX_VideoDecoder::OutputFrameEvent()
     PollDecodedFrames();
 }
 
+void BOMX_VideoDecoder::DisplayFrameEvent()
+{
+    NEXUS_Rect framePosition, frameClip;
+    unsigned frameSerial, frameWidth, frameHeight, framezOrder;
+
+    B_Mutex_Lock(m_hDisplayMutex);
+    if (!m_displayFrameAvailable) {
+      ALOGW("%s: No display frame available! Ok only if component has been stopped..", __FUNCTION__);
+      B_Mutex_Unlock(m_hDisplayMutex);
+      return;
+    }
+    memcpy(&framePosition, &m_framePosition, sizeof(m_framePosition));
+    memcpy(&frameClip, &m_frameClip, sizeof(m_frameClip));
+    frameSerial = m_frameSerial;
+    frameWidth = m_frameWidth;
+    frameHeight = m_frameHeight;
+    framezOrder = m_framezOrder;
+    m_displayFrameAvailable = false;
+    B_Mutex_Unlock(m_hDisplayMutex);
+    SetVideoGeometry_locked(&framePosition, &frameClip, frameSerial, frameWidth, frameHeight, framezOrder, true);
+    DisplayFrame_locked(frameSerial);
+
+}
+
 static const struct {
     const char *pName;
     int index;
@@ -4823,6 +4896,17 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
 
         if ( numFrames > 0 )
         {
+            for (uint32_t j=0; j < numFrames; ++j) {
+                if (!returnSettings[j].display) {
+                    ++m_droppedFrames;
+                    ++m_consecDroppedFrames;
+                    if (m_consecDroppedFrames > m_maxConsecDroppedFrames)
+                        m_maxConsecDroppedFrames = m_consecDroppedFrames;
+                } else {
+                    m_consecDroppedFrames = 0;
+                }
+            }
+
             ALOGV("Returning %u frames to nexus last=%u - %s", numFrames, pLast->frameStatus.serialNumber, returnSettings[numFrames-1].display?"display":"drop");
             NEXUS_Error errCode = NEXUS_SimpleVideoDecoder_ReturnDecodedFrames(m_hSimpleVideoDecoder, returnSettings, numFrames);
             if ( errCode )
@@ -5016,6 +5100,30 @@ BOMX_VideoDecoderFrameBuffer *BOMX_VideoDecoder::FindFrameBuffer(unsigned serial
           pFrameBuffer = BLST_Q_NEXT(pFrameBuffer, node) );
 
     return pFrameBuffer;
+}
+
+
+void BOMX_VideoDecoder::BinderNotifyDisplay(struct hwc_notification_info &ntfy)
+{
+    B_Mutex_Lock(m_hDisplayMutex);
+    if (m_displayFrameAvailable) {
+        ALOGW("%s: Previous frame hasn't been displayed yet!", __FUNCTION__);
+    }
+    m_displayFrameAvailable = true;
+    m_framePosition.x = ntfy.frame.x;
+    m_framePosition.y = ntfy.frame.y;
+    m_framePosition.width = ntfy.frame.w;
+    m_framePosition.height = ntfy.frame.h;
+    m_frameClip.x = ntfy.clipped.x;
+    m_frameClip.y = ntfy.clipped.y;
+    m_frameClip.width = ntfy.clipped.w;
+    m_frameClip.height = ntfy.clipped.h;
+    m_frameSerial = (unsigned)ntfy.frame_id;
+    m_frameWidth = ntfy.display_width;
+    m_frameHeight = ntfy.display_height;
+    m_framezOrder = ntfy.zorder;
+    B_Event_Set(m_hDisplayFrameEvent);
+    B_Mutex_Unlock(m_hDisplayMutex);
 }
 
 void BOMX_VideoDecoder::DisplayFrame(unsigned serialNumber)

@@ -53,6 +53,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
+#include <utils/threads.h>
+#include <cutils/sched_policy.h>
 
 #define B_THREAD_EXIT_TIMEOUT           5000
 
@@ -191,7 +194,11 @@ void BOMX_UninitComponentResourceList()
 static void BOMX_ComponentThread(void *pParam)
 {
     BOMX_Component *pComponent = static_cast <BOMX_Component *> (pParam);
-
+    uint32_t priority;
+    if (pComponent->getSchedPriority(priority)) {
+        setpriority(PRIO_PROCESS, 0, priority);
+        set_sched_policy(0, SP_FOREGROUND);
+    }
     ALOGV("%s: Scheduler Thread Start", pComponent->GetName());
     pComponent->RunScheduler();
     ALOGV("%s: Scheduler Exited", pComponent->GetName());
@@ -256,7 +263,9 @@ BOMX_Component::BOMX_Component(
         const OMX_STRING pName,
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
-        const char *(*pGetRole)(unsigned roleIndex)) :
+        const char *(*pGetRole)(unsigned roleIndex),
+        bool overwriteThreadPriority,
+        uint32_t threadPriority) :
     m_pComponentType(NULL),
     m_schedulerStopped(false),
     m_version(0),
@@ -281,7 +290,9 @@ BOMX_Component::BOMX_Component(
     m_commandEventId(NULL),
     m_eosEventId(NULL),
     m_hCommandQueue(NULL),
-    m_portWaitTimeout(0)
+    m_portWaitTimeout(0),
+    m_overwriteThreadPriority(overwriteThreadPriority),
+    m_threadPriority(threadPriority)
 {
     ALOG_ASSERT(NULL != pComponentType);
     m_pComponentType = pComponentType;

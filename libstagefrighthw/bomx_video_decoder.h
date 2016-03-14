@@ -234,9 +234,11 @@ public:
     void PlaypumpEvent();
     void PlaypumpTimer();
     void OutputFrameEvent();
+    void DisplayFrameEvent();
 
     void DisplayFrame(unsigned serialNumber);
     void SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned serialNumber, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible);
+    void BinderNotifyDisplay(struct hwc_notification_info &ntfy);
 
     inline OmxBinder_wrap *omxHwcBinder(void) { return m_omxHwcBinder; };
     void InputBufferTimeoutCallback();
@@ -259,6 +261,9 @@ protected:
     B_SchedulerTimerId m_playpumpTimerId;
     B_EventHandle m_hOutputFrameEvent;
     B_SchedulerEventId m_outputFrameEventId;
+    B_EventHandle m_hDisplayFrameEvent;
+    B_SchedulerEventId m_displayFrameEventId;
+    B_MutexHandle m_hDisplayMutex;
     B_SchedulerTimerId m_inputBuffersTimerId;
     B_EventHandle m_hCheckpointEvent;
     NEXUS_Graphics2DHandle m_hGraphics2d;
@@ -316,6 +321,15 @@ protected:
     OmxBinder_wrap *m_omxHwcBinder;
     int m_memTracker;
     bool m_securePicBuff;
+
+    // Needed to save the latest geometry and frame serial to display
+    NEXUS_Rect m_framePosition, m_frameClip;
+    unsigned m_frameSerial, m_frameWidth, m_frameHeight, m_framezOrder;
+    bool m_displayFrameAvailable;
+
+    size_t m_droppedFrames;
+    size_t m_consecDroppedFrames;
+    size_t m_maxConsecDroppedFrames;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
