@@ -3890,20 +3890,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
 
-        void *pMemory;
-        PSHARED_DATA pSharedData;
-        private_handle_t *pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
-        BOMX_VideoDecoder_MemLock(pPrivateHandle, &pMemory);
-        if ( NULL == pMemory )
-        {
-            ALOGW("Invalid gralloc buffer %#x - sharedDataPhyAddr %#x is invalid", pPrivateHandle, pPrivateHandle->sharedData);
-            BOMX_VideoDecoder_MemUnlock(pPrivateHandle);
-            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-        }
-        else
-        {
-            pSharedData = (PSHARED_DATA)pMemory;
-        }
         ALOG_ASSERT((pInfo->typeInfo.metadata.pMetadata == (void *)pBufferHeader->pBuffer));
         if ( NULL != pInfo->typeInfo.metadata.pMetadata->pHandle )
         {
@@ -3913,7 +3899,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         {
             pFrameBuffer = NULL;
         }
-        BOMX_VideoDecoder_MemUnlock(pPrivateHandle);
     }
     else
     {
@@ -4424,8 +4409,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     // Move frame to allocated list.  Will be delivered to client afterward if there is a buffer ready.
                     BLST_Q_REMOVE_HEAD(&m_frameBufferFreeList, node);
                     pBuffer->frameStatus = *pFrameStatus;
-                    // Don't try and create a striped surface for the EOS picture.
-                    if ( !pFrameStatus->lastPicture )
+                    // Don't try and create a striped surface for the EOS picture or in a secure playback.
+                    if ( !pFrameStatus->lastPicture && !m_secureDecoder && !m_securePicBuff )
                     {
                         pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&pFrameStatus->surfaceCreateSettings);
                         if ( NULL == pBuffer->hStripedSurface )
@@ -4691,7 +4676,6 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             if ( NULL == pMemory )
                             {
                                 ALOGW("Unable to convert SHARED_DATA physical address %#x", pBuffer->pPrivateHandle->sharedData);
-                                BOMX_VideoDecoder_MemUnlock(pBuffer->pPrivateHandle);
                                 (void)BOMX_ERR_TRACE(OMX_ErrorBadParameter);
                             }
                             else
@@ -4857,7 +4841,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                     returnSettings[numFrames].display = false;
                     ALOGW("Dropping outstanding frame %u - falling behind", pBuffer->frameStatus.serialNumber);
                 }
-                if ( pBuffer->pPrivateHandle )
+                if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata && pBuffer->pPrivateHandle )
                 {
                     BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
                     if ( pMemory )
