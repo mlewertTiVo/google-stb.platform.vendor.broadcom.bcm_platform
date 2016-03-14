@@ -44,7 +44,7 @@ LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 include $(BUILD_PREBUILT)
 else
 # compile library from source
-LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21
+LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC30
 
 # add SAGElib related includes
 include ${REFSW_BASE_DIR}/magnum/syslib/sagelib/bsagelib_public.inc
@@ -53,16 +53,16 @@ LOCAL_SRC_FILES := \
     brcm_oemcrypto_L1/src/oemcrypto_brcm_TL.cpp\
     core/src/string_conversions.cpp\
     core/src/properties.cpp \
-    linux/src/log.cpp \
+    cdm/src/log.cpp \
     third_party/stringencoders/src/modp_b64w.cpp
 
 LOCAL_C_INCLUDES := \
     $(TOP)/bionic \
     $(TOP)/external/boringssl/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
-    ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21/brcm_oemcrypto_L1/include \
-    ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21/core/include \
-    ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC21/third_party/stringencoders/src \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC30/brcm_oemcrypto_L1/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC30/core/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC30/third_party/stringencoders/src \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include/tl \
