@@ -34,6 +34,7 @@ BOLT_VER="$TMP_DIR/bolt_version.txt"
 BOLT_DIR="$TMP_DIR/bolt_dir.txt"
 REFSW_DIR="vendor/broadcom/refsw"
 REFSW_PATCH="$TMP_DIR/refsw_patch.txt"
+PR_PATCH="$TMP_DIR/playready_prebuilts.tgz"
 
 # Untar release
 tar -xvf $1 --directory $DST_DIR
@@ -83,6 +84,11 @@ while read line; do
   git am $DST_DIR/$TMP_DIR/$line/* > /dev/null 2>&1 || git apply $DST_DIR/$TMP_DIR/$line/*
   cd $DST_DIR
 done < $DST_DIR/$AOSP_LIST
+
+if [ -f $DST_DIR/$PR_PATCH ]; then
+  tar -zxvf $DST_DIR/$PR_PATCH vendor/playready/
+  tar -C vendor/broadcom/release_prebuilts --strip-components=6 -zxvf $DST_DIR/$PR_PATCH out/target/product/bcm_platform/system/lib/libcmndrmprdy.so
+fi
 
 # Copy version file
 cp $BOLT_VER $(cat $BOLT_DIR)/version

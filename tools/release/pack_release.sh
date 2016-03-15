@@ -10,7 +10,7 @@
 # of.
 
 function HELP {
-  echo -e \\n"Usage: $(basename $0) [-r <refsw_baseline>] [-s <refsw_sha>] [-t] [-a <aosp_baseline>] [-p <prebuilt source> <output>"
+  echo -e \\n"Usage: $(basename $0) [-r <refsw_baseline>] [-s <refsw_sha>] [-t] [-a <aosp_baseline>] [-p <prebuilt source>] <output>"
   echo "     output : Output file name and location of the packed release, e.g. ./release.tgz"
   echo "     -r     : Specify the URSR official branch that the release is based on."
   echo "     -s     : The SHA in the URSR official branch that the release is based on."
@@ -36,6 +36,7 @@ REFSW_DIR="$TMP_DIR/refsw_dir.txt"
 BOLT_DIR="$TMP_DIR/bolt_dir.txt"
 BOLT_VER="$TMP_DIR/bolt_version.txt"
 REFSW_TARBALL="$TMP_DIR/refsw_rel_src.tgz"
+PR_PATCH="$TMP_DIR/playready_prebuilts.tgz"
 AOSP_LIST="$TMP_DIR/aosp_patches.txt"
 REFSW_PATCH="$TMP_DIR/refsw_patch.txt"
 
@@ -184,6 +185,8 @@ if [ -n "$PREBUILT_SRC" ]; then
     fi
   done < $SCRIPT_DIR/release_prebuilts.txt
   echo $PREBUILT >> $WHITE_LIST
+  # package playready prebuilts binaries as separate patch
+  tar -C $PREBUILT_SRC -zcvf $TOP_DIR/$PR_PATCH -T $SCRIPT_DIR/playready_prebuilts.txt
 else
 if [ -d $PREBUILT_DIR ]; then
   echo "Checking if prebuilt libraries are provided..."
@@ -295,7 +298,12 @@ echo $WHITE_LIST >> $BLACK_LIST
 echo $BLACK_LIST >> $BLACK_LIST
 
 # Tar up everything
-tar --exclude=*.git* --exclude-from=$BLACK_LIST -cvzf $1 --files-from=$WHITE_LIST
+if [ -n "$REFSW_SRC" ]; then
+tar --exclude=*.git* --exclude-from=$BLACK_LIST -cvzf $1_REFSW_PR.tgz --files-from=$WHITE_LIST
+tar --exclude=*.git* --exclude-from=$BLACK_LIST --exclude=$PR_PATCH -cvzf $1_REFSW.tgz --files-from=$WHITE_LIST
+#tar --exclude=*.git* --exclude-from=$BLACK_LIST --exclude=$REFSW_TARBALL -cvzf $1_PR.tgz --files-from=$WHITE_LIST
+fi
+tar --exclude=*.git* --exclude-from=$BLACK_LIST --exclude=$REFSW_TARBALL --exclude=$PR_PATCH -cvzf $1.tgz --files-from=$WHITE_LIST
 
 # Be verbose what we are not tar'ing
 echo "Excludes..."
