@@ -1637,11 +1637,20 @@ static void hwc_hotplug_notify(int dev)
              errCode = NEXUS_HdmiOutput_GetBasicEdidData(handle, &edid);
              if (!errCode) {
                 NEXUS_VideoFormat_GetInfo(settings.format, &info);
-                float x_dpi = edid.maxHorizSize ? (info.width / ((float)edid.maxHorizSize * 0.39370)) : 0.0;
-                float y_dpi = edid.maxVertSize  ? (info.height / ((float)edid.maxVertSize * 0.39370)) : 0.0;
 
-                ALOGI("%s: %d x % d (pixel), %d x %d (cm) -> %.3Lf x %.3Lf (dpi)", __FUNCTION__,
-                      info.width, info.height, edid.maxHorizSize, edid.maxVertSize, x_dpi, y_dpi);
+                int width = ctx->cfg[HWC_PRIMARY_IX].width;
+                int height = ctx->cfg[HWC_PRIMARY_IX].height;
+                if (width < 0 || height < 0)
+                {
+                   width = (int)info.width;
+                   height = (int)info.height;
+                }
+
+                float x_dpi = edid.maxHorizSize ? (width * 1000.0 / ((float)edid.maxHorizSize * 0.39370)) : 0.0;
+                float y_dpi = edid.maxVertSize  ? (height * 1000.0 / ((float)edid.maxVertSize * 0.39370)) : 0.0;
+
+                ALOGI("%s: %d x % d (-> %d x %d) (pixel), %d x %d (cm) -> %.3Lf x %.3Lf (dpi)", __FUNCTION__,
+                      info.width, info.height, width, height, edid.maxHorizSize, edid.maxVertSize, x_dpi / 1000.0, y_dpi / 1000.0);
 
                 ctx->cfg[HWC_PRIMARY_IX].x_dpi = (int)x_dpi;
                 ctx->cfg[HWC_PRIMARY_IX].y_dpi = (int)y_dpi;
