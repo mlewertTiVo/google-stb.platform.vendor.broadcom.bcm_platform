@@ -75,7 +75,7 @@ int StandbyMonitorThread::RegisterCallback(b_standby_monitor_callback callback, 
     mNumCallbacks++;
     if (mNumCallbacks == 1) {
         /* Start running monitor thread */
-        status = this->run();
+        status = this->run("BcmAudioStandbyMon");
         if (status != android::OK){
             ALOGE("%s: error starting standby thread", __FUNCTION__);
             mCallbacks[i] = NULL;
