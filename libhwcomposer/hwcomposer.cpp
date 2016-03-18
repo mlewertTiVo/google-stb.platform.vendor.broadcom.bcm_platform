@@ -738,7 +738,7 @@ static void hwc_hide_unused_sb_layers(struct hwc_context_t* dev);
 
 static void hwc_nsc_prepare_layer(struct hwc_context_t* dev, hwc_layer_1_t *layer,
    int layer_id, bool geometry_changed, unsigned int *video_layer_id,
-   unsigned int *sideband_layer_id, unsigned int *skip_set);
+   unsigned int *sideband_layer_id, unsigned int *skip_set, unsigned int *skip_cand);
 
 static void hwc_binder_advertise_video_surface(struct hwc_context_t* dev);
 
@@ -2536,7 +2536,7 @@ out:
 static void hwc_prepare_gpx_layer(
     struct hwc_context_t* ctx, hwc_layer_1_t *layer, int layer_id,
     bool geometry_changed, bool is_virtual, bool is_locked,
-    unsigned int *skip_set)
+    unsigned int *skip_set, unsigned int *skip_cand)
 {
     NEXUS_Error rc;
     private_handle_t *gr_buffer = NULL;
@@ -2587,6 +2587,9 @@ static void hwc_prepare_gpx_layer(
     ctx->gpx_cli[layer_id].skip_set = false;
     if ((layer->compositionType == HWC_OVERLAY) &&
         !(layer->flags & HWC_IS_CURSOR_LAYER)) {
+       if (skip_cand) {
+          *skip_cand += 1;
+       }
        if (ctx->gpx_cli[layer_id].last.layerhdl &&
            (ctx->gpx_cli[layer_id].last.layerhdl == layer->handle) &&
            !geometry_changed) {
@@ -2778,6 +2781,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     unsigned int video_layer_id = 0;
     unsigned int sideband_layer_id = 0;
     unsigned int skip_set = 0;
+    unsigned int skip_cand = 0;
     size_t overlay_layers = 0;
 
     ctx->stats[HWC_PRIMARY_IX].prepare_call += 1;
@@ -2826,7 +2830,8 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
                                       (bool)(list->flags & HWC_GEOMETRY_CHANGED),
                                       &video_layer_id,
                                       &sideband_layer_id,
-                                      &skip_set);
+                                      &skip_set,
+                                      &skip_cand);
             } else {
                 if (ctx->display_dump_layer & HWC_DUMP_LEVEL_PREPARE) {
                    ALOGI("comp: %llu - hiding - sf:%d (%d)", ctx->stats[HWC_PRIMARY_IX].prepare_call, (int)i, (int)layer->compositionType);
@@ -2835,8 +2840,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
             }
         }
 
-        if ((skip_set > 1) ||
-            (((overlay_layers + sideband_layer_id) - (video_layer_id + sideband_layer_id)) > 1)) {
+        if (skip_set < skip_cand) {
            if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
               for (i = 0; i < list->numHwLayers; i++) {
                  ctx->gpx_cli[i].skip_set = false;
@@ -2913,7 +2917,7 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
                    ctx->stats[HWC_VIRTUAL_IX].prepare_call, virt_w, virt_h, i, layer->compositionType);
           }
           if ((layer->compositionType == HWC_FRAMEBUFFER) || (layer->compositionType == HWC_OVERLAY)) {
-             hwc_prepare_gpx_layer(ctx, layer, layer_id, false /*don't care*/, true, true, NULL);
+             hwc_prepare_gpx_layer(ctx, layer, layer_id, false /*don't care*/, true, true, NULL, NULL);
              layer_id++;
              layer->compositionType = HWC_OVERLAY;
           }
@@ -5170,7 +5174,7 @@ out:
 static void hwc_nsc_prepare_layer(
     struct hwc_context_t* ctx, hwc_layer_1_t *layer, int layer_id,
     bool geometry_changed, unsigned int *video_layer_id,
-    unsigned int *sideband_layer_id, unsigned int *skip_set)
+    unsigned int *sideband_layer_id, unsigned int *skip_set, unsigned int *skip_cand)
 {
     VIDEO_LAYER_VALIDATION video;
 
@@ -5179,7 +5183,7 @@ static void hwc_nsc_prepare_layer(
     if (is_video_layer(ctx, &video)) {
         if (!video.is_sideband) {
             if (video.is_yuv) {
-               hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false, false, skip_set);
+               hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false, false, skip_set, skip_cand);
             } else {
                if (*video_layer_id < NSC_MM_CLIENTS_NUMBER) {
                   hwc_prepare_mm_layer(ctx, layer, layer_id, *video_layer_id);
@@ -5203,7 +5207,7 @@ static void hwc_nsc_prepare_layer(
             }
         }
     } else {
-        hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false, false, skip_set);
+        hwc_prepare_gpx_layer(ctx, layer, layer_id, geometry_changed, false, false, skip_set, skip_cand);
     }
 }
 
