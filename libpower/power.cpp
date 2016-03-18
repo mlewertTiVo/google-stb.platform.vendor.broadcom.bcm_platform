@@ -116,7 +116,7 @@ Mutex gLock("PowerHAL Lock");
 typedef status_t (*powerFinishFunction_t)(void);
 
 // Prototype declarations...
-static status_t power_set_state(b_powerState toState);
+static status_t power_set_state(b_powerState toState, bool partial=false);
 static status_t power_set_poweroff_state();
 static status_t power_finish_set_interactive();
 static void power_finish_set_no_interactive(b_powerState offState, powerFinishFunction_t powerFunction);
@@ -537,14 +537,16 @@ static status_t power_prepare_suspend(b_powerState toState)
     return status;
 }
 
-static status_t power_set_state_s0()
+static status_t power_set_state_s0(bool partial)
 {
     status_t status;
 
-    status = power_set_pmlibservice_state(ePowerState_S0);
+    if (!partial) {
+        status = power_set_pmlibservice_state(ePowerState_S0);
+    }
 
     if (gNexusPower.get()) {
-        status = gNexusPower->setPowerState(ePowerState_S0);
+        status = gNexusPower->setPowerState(ePowerState_S0, partial);
     }
 
     // Release the CPU wakelock as the system should be back up now...
@@ -602,14 +604,14 @@ static status_t power_set_state_s5()
     return system("/system/bin/svc power shutdown");
 }
 
-static status_t power_set_state(b_powerState toState)
+static status_t power_set_state(b_powerState toState, bool partial)
 {
     status_t status = NO_ERROR;
 
     switch (toState)
     {
         case ePowerState_S0: {
-            status = power_set_state_s0();
+            status = power_set_state_s0(partial);
         } break;
 
         case ePowerState_S05: {
@@ -646,11 +648,9 @@ static status_t power_set_state(b_powerState toState)
 
 static status_t power_set_poweroff_state()
 {
-    status_t status;
     b_powerState powerOffState = power_get_off_state();
 
-    status = power_set_state(powerOffState);
-    return status;
+    return power_set_state(powerOffState);
 }
 
 static status_t power_set_sleep_state()
@@ -746,7 +746,7 @@ static void *power_event_monitor_thread(void *arg)
                         ALOGD("%s: Successfully finished setting power state.", __FUNCTION__);
                         if (gPowerFlagSetPowerStateS0) {
                             // If woke up via a timer or partial wake-up event then set nexus power state to S0
-                            power_set_state(ePowerState_S0);
+                            power_set_state(ePowerState_S0, true);
                             gPowerFlagSetPowerStateS0 = false;
                         }
                     }

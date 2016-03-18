@@ -219,7 +219,7 @@ status_t NexusPower::preparePowerState(b_powerState state)
     return status;
 }
 
-status_t NexusPower::setPowerState(b_powerState state)
+status_t NexusPower::setPowerState(b_powerState state, bool partial)
 {
     status_t ret = NO_ERROR;
     const uint32_t cecId = 0;   // Hardcoded CEC id to 0
@@ -228,7 +228,9 @@ status_t NexusPower::setPowerState(b_powerState state)
        otherwise if powering down, then we must send CEC commands first. */
     if (state == ePowerState_S0) {
         // Setup the GPIO output values depending on the power state...
-        ret = setGpios(state);
+        if (!partial) {
+            ret = setGpios(state);
+        }
 
         if (ret != NO_ERROR) {
             ALOGE("%s: Could not set GPIO's for PowerState %s!!!", __FUNCTION__, NexusIPCClientBase::getPowerString(state));
