@@ -394,6 +394,8 @@ static void power_init(struct power_module *module __unused)
 static status_t power_set_pmlibservice_state(b_powerState state)
 {
     status_t status;
+    static bool init_S0_state = true;
+    static IPmLibService::pmlib_state_t pmlib_S0_state;
     IPmLibService::pmlib_state_t pmlib_orig_state;
     IPmLibService::pmlib_state_t pmlib_state;
     sp<IBinder> binder = defaultServiceManager()->getService(IPmLibService::descriptor);
@@ -447,12 +449,17 @@ static status_t power_set_pmlibservice_state(b_powerState state)
         pmlib_state.ddr_pm_en        = ddr_pm_en;
     }
     else if (state == ePowerState_S0) {
-        pmlib_state.enet_en          = true;
-        pmlib_state.moca_en          = true;
-        pmlib_state.sata_en          = true;
-        pmlib_state.tp1_en           = true;
-        pmlib_state.tp2_en           = true;
-        pmlib_state.tp3_en           = true;
+        if (init_S0_state) {
+            pmlib_S0_state = pmlib_state;
+            init_S0_state = false;
+        }
+
+        pmlib_state.enet_en          = (true && pmlib_S0_state.enet_en);
+        pmlib_state.moca_en          = (true && pmlib_S0_state.moca_en);
+        pmlib_state.sata_en          = (true && pmlib_S0_state.sata_en);
+        pmlib_state.tp1_en           = (true && pmlib_S0_state.tp1_en);
+        pmlib_state.tp2_en           = (true && pmlib_S0_state.tp2_en);
+        pmlib_state.tp3_en           = (true && pmlib_S0_state.tp3_en);
         pmlib_state.cpufreq_scale_en = false;
         pmlib_state.ddr_pm_en        = false;
     }
