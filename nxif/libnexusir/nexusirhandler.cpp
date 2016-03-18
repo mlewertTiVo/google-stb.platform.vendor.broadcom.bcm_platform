@@ -114,7 +114,7 @@ bool NexusIrHandler::start(NEXUS_IrInputMode mode,
     m_key_thread.setTimeout(m_ir.repeatTimeout());
     m_key_thread.setWakeupKey(wakeup_key);
     success = success
-            && (m_key_thread.run() == android::NO_ERROR);
+            && (m_key_thread.run("NexusIrHandler") == android::NO_ERROR);
 
     if (!success)
     {
