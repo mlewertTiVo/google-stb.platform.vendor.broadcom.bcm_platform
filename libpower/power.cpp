@@ -539,7 +539,7 @@ static status_t power_prepare_suspend(b_powerState toState)
 
 static status_t power_set_state_s0(bool partial)
 {
-    status_t status;
+    volatile status_t status;
 
     if (!partial) {
         status = power_set_pmlibservice_state(ePowerState_S0);
@@ -606,7 +606,7 @@ static status_t power_set_state_s5()
 
 static status_t power_set_state(b_powerState toState, bool partial)
 {
-    status_t status = NO_ERROR;
+    volatile status_t status = NO_ERROR;
 
     switch (toState)
     {
