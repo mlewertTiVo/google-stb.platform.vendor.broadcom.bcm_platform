@@ -67,6 +67,8 @@ public:
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/
     virtual status_t addHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener);
     virtual status_t removeHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener);
+    virtual status_t addDisplaySettingsChangedEventListener(uint32_t portId, const sp<INexusDisplaySettingsChangedEventListener> &listener);
+    virtual status_t removeDisplaySettingsChangedEventListener(uint32_t portId, const sp<INexusDisplaySettingsChangedEventListener> &listener);
 
     virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus);
 
@@ -82,6 +84,8 @@ private:
     void handleHdmiOutputHotplugCallback(int port, hdmi_state isConnected);
     static void hdmiOutputHotplugCallback(void *context, int param);
     static void hdmiOutputHdcpStateChangedCallback(void *pContext, int param);
+    void handleDisplaySettingsChangedCallback(int port);
+    static void displaySettingsChangedCallback(void *context, int param);
     static NEXUS_VideoFormat getBestOutputFormat(NEXUS_HdmiOutputStatus *status);
 
     bool platformInitIR();

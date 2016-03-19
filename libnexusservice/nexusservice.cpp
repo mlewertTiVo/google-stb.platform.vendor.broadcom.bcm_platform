@@ -979,6 +979,16 @@ status_t NexusService::removeHdmiHotplugEventListener(uint32_t portId, const sp<
     return INVALID_OPERATION;
 }
 
+status_t NexusService::addDisplaySettingsChangedEventListener(uint32_t portId, const sp<INexusDisplaySettingsChangedEventListener> &listener)
+{
+    return INVALID_OPERATION;
+}
+
+status_t NexusService::removeDisplaySettingsChangedEventListener(uint32_t portId, const sp<INexusDisplaySettingsChangedEventListener>& listener)
+{
+    return INVALID_OPERATION;
+}
+
 void NexusService::binderDied(const wp<IBinder>& who)
 {
 #if NEXUS_HAS_HDMI_OUTPUT
@@ -1120,6 +1130,20 @@ status_t NexusService::onTransact(uint32_t code,
         uint32_t portId = data.readInt32();
         sp<INexusHdmiHotplugEventListener> listener = interface_cast<INexusHdmiHotplugEventListener>(data.readStrongBinder());
         reply->writeInt32(removeHdmiHotplugEventListener(portId, listener));
+        return NO_ERROR;
+    } break;
+
+    case ADD_DISPLAY_CHANGED_EVENT_LISTENER: {
+        uint32_t portId = data.readInt32();
+        sp<INexusDisplaySettingsChangedEventListener> listener = interface_cast<INexusDisplaySettingsChangedEventListener>(data.readStrongBinder());
+        reply->writeInt32(addDisplaySettingsChangedEventListener(portId, listener));
+        return NO_ERROR;
+    } break;
+
+    case REMOVE_DISPLAY_CHANGED_EVENT_LISTENER: {
+        uint32_t portId = data.readInt32();
+        sp<INexusDisplaySettingsChangedEventListener> listener = interface_cast<INexusDisplaySettingsChangedEventListener>(data.readStrongBinder());
+        reply->writeInt32(removeDisplaySettingsChangedEventListener(portId, listener));
         return NO_ERROR;
     } break;
 

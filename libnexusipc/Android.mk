@@ -26,7 +26,8 @@ LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/include
 
 LOCAL_SRC_FILES := INexusHdmiCecMessageEventListener.cpp \
-                   INexusHdmiHotplugEventListener.cpp
+                   INexusHdmiHotplugEventListener.cpp \
+                   INexusDisplaySettingsChangedEventListener.cpp
 
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libnexusipceventlistener

@@ -425,6 +425,40 @@ void NexusNxService::hdmiOutputHdcpStateChangedCallback(void *context __unused, 
 #endif
 }
 
+void NexusNxService::handleDisplaySettingsChangedCallback(int port)
+{
+    Vector<sp<INexusDisplaySettingsChangedEventListener> >::const_iterator it;
+
+    for (it = server->mDisplaySettingsChangedEventListenerList[port].begin();
+         it != server->mDisplaySettingsChangedEventListenerList[port].end(); ++it) {
+        ALOGV("%s: Firing off display%d settings changed event for listener %p...", __PRETTY_FUNCTION__, port, (*it).get());
+        (*it)->onDisplaySettingsChangedEventReceived(port);
+    }
+}
+
+void NexusNxService::displaySettingsChangedCallback(void *context __unused, int param __unused)
+{
+    NEXUS_Error rc;
+    NxClient_StandbyStatus standbyStatus;
+    NexusNxService *pNexusNxService = reinterpret_cast<NexusNxService *>(context);
+
+    Mutex::Autolock autoLock(pNexusNxService->server->mLock);
+
+    rc = NxClient_GetStandbyStatus(&standbyStatus);
+    if (rc != NEXUS_SUCCESS) {
+        ALOGE("%s: Could not get standby status!!!", __PRETTY_FUNCTION__);
+        return;
+    }
+
+    if (standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
+        ALOGV("%s: display%d settings changed", __PRETTY_FUNCTION__, param);
+        pNexusNxService->handleDisplaySettingsChangedCallback(param);
+    }
+    else {
+        ALOGW("%s: ignoring display%d settings changed as we are in standby!", __PRETTY_FUNCTION__, param);
+    }
+}
+
 int NexusNxService::platformInitHdmiOutputs()
 {
     int rc = 0;
@@ -441,6 +475,9 @@ int NexusNxService::platformInitHdmiOutputs()
     settings.hdmiOutputHdcpChanged.context = this;
     settings.hdmiOutputHdcpChanged.param = 0;
 #endif
+    settings.displaySettingsChanged.callback = displaySettingsChangedCallback;
+    settings.displaySettingsChanged.context = this;
+    settings.displaySettingsChanged.param = 0;
     rc = NxClient_StartCallbackThread(&settings);
     if (rc) {
         ALOGE("%s: Could not start HDMI callback thread!!!", __PRETTY_FUNCTION__);
@@ -818,14 +855,80 @@ status_t NexusNxService::removeHdmiHotplugEventListener(uint32_t portId, const s
     return status;
 }
 
+status_t NexusNxService::addDisplaySettingsChangedEventListener(uint32_t portId, const sp<INexusDisplaySettingsChangedEventListener>& listener)
+{
+    status_t status = OK;
+
+    if (listener == 0) {
+        status = BAD_VALUE;
+    }
+    else {
+        if (portId < NEXUS_NUM_DISPLAYS) {
+            Vector<sp<INexusDisplaySettingsChangedEventListener> >::iterator it;
+            sp<IBinder> binder = listener->asBinder(listener);
+
+            Mutex::Autolock autoLock(server->mLock);
+
+            for (it = server->mDisplaySettingsChangedEventListenerList[portId].begin();
+                 it != server->mDisplaySettingsChangedEventListenerList[portId].end(); ++it) {
+                if ((*it)->asBinder((*it)) == binder) {
+                    status = ALREADY_EXISTS;
+                    break;
+                }
+            }
+
+            if (status == OK) {
+                server->mDisplaySettingsChangedEventListenerList[portId].push_back(listener);
+                binder->linkToDeath(this);
+            }
+        }
+        else
+        {
+            status = INVALID_OPERATION;
+        }
+    }
+    return status;
+}
+
+status_t NexusNxService::removeDisplaySettingsChangedEventListener(uint32_t portId, const sp<INexusDisplaySettingsChangedEventListener>& listener)
+{
+    status_t status = BAD_VALUE;
+
+    if (listener == 0) {
+       return BAD_VALUE;
+    }
+    else {
+        if (portId < NEXUS_NUM_DISPLAYS) {
+            Vector<sp<INexusDisplaySettingsChangedEventListener> >::iterator it;
+            sp<IBinder> binder = listener->asBinder(listener);
+
+            Mutex::Autolock autoLock(server->mLock);
+
+            for (it = server->mDisplaySettingsChangedEventListenerList[portId].begin();
+                 it != server->mDisplaySettingsChangedEventListenerList[portId].end(); ++it) {
+                if ((*it)->asBinder((*it)) == binder) {
+                    binder->unlinkToDeath(this);
+                    server->mDisplaySettingsChangedEventListenerList[portId].erase(it);
+                    status = OK;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            status = INVALID_OPERATION;
+        }
+    }
+    return status;
+}
+
 void NexusNxService::binderDied(const wp<IBinder>& who)
 {
-#if NEXUS_HAS_HDMI_OUTPUT
     IBinder *binder = who.unsafe_get();
     if (binder != NULL) {
-        Vector<sp<INexusHdmiHotplugEventListener> >::iterator it;
-
         Mutex::Autolock autoLock(server->mLock);
+#if NEXUS_HAS_HDMI_OUTPUT
+        Vector<sp<INexusHdmiHotplugEventListener> >::iterator it;
 
         for (unsigned portId = 0; portId < NEXUS_NUM_HDMI_OUTPUTS; portId++) {
             for (it = server->mHdmiHotplugEventListenerList[portId].begin(); it != server->mHdmiHotplugEventListenerList[portId].end(); ++it) {
@@ -836,8 +939,19 @@ void NexusNxService::binderDied(const wp<IBinder>& who)
                 }
             }
         }
-    }
 #endif
+        Vector<sp<INexusDisplaySettingsChangedEventListener> >::iterator it2;
+
+        for (unsigned portId = 0; portId < NEXUS_NUM_DISPLAYS; portId++) {
+            for (it2 = server->mDisplaySettingsChangedEventListenerList[portId].begin();
+                 it2 != server->mDisplaySettingsChangedEventListenerList[portId].end(); ++it2) {
+                if ((*it2)->asBinder((*it2)) == binder) {
+                    server->mDisplaySettingsChangedEventListenerList[portId].erase(it2);
+                    return;
+                }
+            }
+        }
+    }
 }
 
 bool NexusNxService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus)

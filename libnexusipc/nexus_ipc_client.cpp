@@ -393,6 +393,26 @@ status_t NexusIPCClient::removeHdmiHotplugEventListener(uint32_t portId, const s
     return reply.readInt32();
 }
 
+status_t NexusIPCClient::addDisplaySettingsChangedEventListener(uint32_t portId, const sp<INexusDisplaySettingsChangedEventListener> &listener)
+{
+    android::Parcel data, reply;
+    data.writeInterfaceToken(android::String16(NEXUS_INTERFACE_NAME));
+    data.writeInt32(portId);
+    data.writeStrongBinder(listener->asBinder(listener));
+    iNC->get_remote()->transact(ADD_DISPLAY_CHANGED_EVENT_LISTENER, data, &reply);
+    return reply.readInt32();
+}
+
+status_t NexusIPCClient::removeDisplaySettingsChangedEventListener(uint32_t portId, const sp<INexusDisplaySettingsChangedEventListener> &listener)
+{
+    android::Parcel data, reply;
+    data.writeInterfaceToken(android::String16(NEXUS_INTERFACE_NAME));
+    data.writeInt32(portId);
+    data.writeStrongBinder(listener->asBinder(listener));
+    iNC->get_remote()->transact(REMOVE_DISPLAY_CHANGED_EVENT_LISTENER, data, &reply);
+    return reply.readInt32();
+}
+
 NEXUS_Error NexusIPCClient::clientUninit()
 {
    return NEXUS_SUCCESS;

@@ -49,6 +49,7 @@
 
 #include "INexusHdmiCecMessageEventListener.h"
 #include "INexusHdmiHotplugEventListener.h"
+#include "INexusDisplaySettingsChangedEventListener.h"
 #include "nexus_surface_compositor_types.h"
 #include "nexus_types.h"
 #include "nexus_platform.h"
@@ -252,6 +253,8 @@ public:
     virtual status_t setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener) = 0;
     virtual status_t addHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener) = 0;
     virtual status_t removeHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener) = 0;
+    virtual status_t addDisplaySettingsChangedEventListener(uint32_t portId, const sp<INexusDisplaySettingsChangedEventListener> &listener) = 0;
+    virtual status_t removeDisplaySettingsChangedEventListener(uint32_t portId, const sp<INexusDisplaySettingsChangedEventListener> &listener) = 0;
 
     virtual bool setPowerState(b_powerState pmState)=0;
     virtual bool getPowerStatus(b_powerStatus *pPowerStatus)=0;
