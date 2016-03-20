@@ -388,6 +388,7 @@ typedef struct {
 
 typedef void (* HWC_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
 typedef void (* HWC_HOTPLUG_NTFY_CB)(int);
+typedef void (* HWC_DISPLAY_CHANGED_NTFY_CB)(int);
 
 class HwcBinder : public HwcListener
 {
@@ -569,6 +570,58 @@ status_t HwcHotPlug::onHdmiHotplugEventReceived(int32_t portId, bool connected)
    return NO_ERROR;
 }
 
+class HwcDisplayChanged : public BnNexusDisplaySettingsChangedEventListener
+{
+public:
+
+    HwcDisplayChanged() {};
+    ~HwcDisplayChanged() {};
+    virtual status_t onDisplaySettingsChangedEventReceived(int32_t portId);
+
+    void register_notify(HWC_DISPLAY_CHANGED_NTFY_CB callback, int data) {
+       cb = callback;
+       cb_data = data;
+    }
+
+private:
+    HWC_DISPLAY_CHANGED_NTFY_CB cb;
+    int cb_data;
+};
+
+class HwcDisplayChanged_wrap
+{
+private:
+
+   sp<HwcDisplayChanged> ihwc;
+
+public:
+   HwcDisplayChanged_wrap(void) {
+      ALOGD("%s: allocated %p", __FUNCTION__, this);
+      ihwc = new HwcDisplayChanged;
+   };
+
+   ~HwcDisplayChanged_wrap(void) {
+      ALOGD("%s: cleared %p", __FUNCTION__, this);
+      ihwc.clear();
+   };
+
+   HwcDisplayChanged *get(void) {
+      return ihwc.get();
+   }
+};
+
+status_t HwcDisplayChanged::onDisplaySettingsChangedEventReceived(int32_t portId)
+{
+   (void) portId;
+
+   ALOGD( "%s: display-%d -> changed", __FUNCTION__, portId);
+
+   if (cb)
+      cb(cb_data);
+
+   return NO_ERROR;
+}
+
 struct hwc_display_stats {
    unsigned long long prepare_call;
    unsigned long long prepare_skipped;
@@ -672,6 +725,7 @@ struct hwc_context_t {
 
     HwcBinder_wrap *hwc_binder;
     HwcHotPlug_wrap *hwc_hp;
+    HwcDisplayChanged_wrap *hwc_dc;
 
     NEXUS_Graphics2DHandle hwc_g2d;
     BKNI_MutexHandle g2d_mutex;
@@ -1582,15 +1636,16 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
    }
 }
 
-static void hwc_hotplug_notify(int dev)
+static DISPLAY_CLIENT_MODE hwc_fb_mode_for_format(struct hwc_context_t* ctx, NxClient_DisplaySettings *settings)
 {
-    struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
-    DISPLAY_CLIENT_MODE newmode = CLIENT_MODE_NONE;
-    NxClient_DisplaySettings settings;
-    int i;
+    DISPLAY_CLIENT_MODE mode = CLIENT_MODE_NONE;
+    NxClient_GetDisplaySettings(settings);
 
-    NxClient_GetDisplaySettings(&settings);
-    switch (settings.format) {
+    if (ctx == NULL) {
+       goto out;
+    }
+
+    switch (settings->format) {
     case NEXUS_VideoFormat_e720p:
     case NEXUS_VideoFormat_e720p50hz:
     case NEXUS_VideoFormat_e720p30hz:
@@ -1598,18 +1653,56 @@ static void hwc_hotplug_notify(int dev)
     case NEXUS_VideoFormat_e720p24hz:
     case NEXUS_VideoFormat_ePal:
     case NEXUS_VideoFormat_eSecam:
-       newmode = CLIENT_MODE_NSC_FRAMEBUFFER;
+       mode = CLIENT_MODE_NSC_FRAMEBUFFER;
     break;
     default:
-       newmode = ctx->comp_bypass ? CLIENT_MODE_COMP_BYPASS : CLIENT_MODE_NSC_FRAMEBUFFER;
+       mode = ctx->comp_bypass ? CLIENT_MODE_COMP_BYPASS : CLIENT_MODE_NSC_FRAMEBUFFER;
     break;
     }
 
+out:
+    return mode;
+}
+
+static void hwc_display_changed_notify(int dev)
+{
+    NxClient_DisplaySettings settings;
+    struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
+    DISPLAY_CLIENT_MODE newmode = hwc_fb_mode_for_format(ctx, &settings);
+
     if (ctx) {
-       if (ctx->toggle_fb_mode && (ctx->disp_cli[HWC_PRIMARY_IX].mode != newmode)) {
-          ALOGI("%s: framebuffer mode: %s -> %s", __FUNCTION__,
-             hwc_fb_mode[ctx->disp_cli[HWC_PRIMARY_IX].mode], hwc_fb_mode[newmode]);
-          ctx->disp_cli[HWC_PRIMARY_IX].mode_toggle = true;
+       if (ctx->toggle_fb_mode) {
+          if (ctx->disp_cli[HWC_PRIMARY_IX].mode != newmode) {
+             ALOGI("%s: framebuffer mode: %s -> %s (on display-changed)", __FUNCTION__,
+                hwc_fb_mode[ctx->disp_cli[HWC_PRIMARY_IX].mode], hwc_fb_mode[newmode]);
+             ctx->disp_cli[HWC_PRIMARY_IX].mode_toggle = true;
+          } else if (ctx->disp_cli[HWC_PRIMARY_IX].mode_toggle) {
+             ALOGI("%s: framebuffer mode: %s preserved (CANCELLED on display-changed)", __FUNCTION__,
+                hwc_fb_mode[ctx->disp_cli[HWC_PRIMARY_IX].mode]);
+             ctx->disp_cli[HWC_PRIMARY_IX].mode_toggle = false;
+          }
+       }
+    }
+}
+
+static void hwc_hotplug_notify(int dev)
+{
+    NxClient_DisplaySettings settings;
+    struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
+    DISPLAY_CLIENT_MODE newmode = hwc_fb_mode_for_format(ctx, &settings);
+    int i;
+
+    if (ctx) {
+       if (ctx->toggle_fb_mode) {
+          if (ctx->disp_cli[HWC_PRIMARY_IX].mode != newmode) {
+             ALOGI("%s: framebuffer mode: %s -> %s (on hotplug)", __FUNCTION__,
+                hwc_fb_mode[ctx->disp_cli[HWC_PRIMARY_IX].mode], hwc_fb_mode[newmode]);
+             ctx->disp_cli[HWC_PRIMARY_IX].mode_toggle = true;
+          } else if (ctx->disp_cli[HWC_PRIMARY_IX].mode_toggle) {
+             ALOGI("%s: framebuffer mode: %s preserved (CANCELLED on hotplug)", __FUNCTION__,
+                hwc_fb_mode[ctx->disp_cli[HWC_PRIMARY_IX].mode]);
+             ctx->disp_cli[HWC_PRIMARY_IX].mode_toggle = false;
+          }
        }
 
        if (ctx->procs && ctx->procs->invalidate != NULL) {
@@ -3935,6 +4028,10 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
                 ctx->pIpcClient->removeHdmiHotplugEventListener(0, ctx->hwc_hp->get());
                 delete ctx->hwc_hp;
             }
+            if (ctx->hwc_dc) {
+                ctx->pIpcClient->removeDisplaySettingsChangedEventListener(0, ctx->hwc_dc->get());
+                delete ctx->hwc_dc;
+            }
             delete ctx->pIpcClient;
         }
 
@@ -4864,6 +4961,14 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            ALOGI("%s: created hwc-hotplug (%p)", __FUNCTION__, dev->hwc_hp);
         }
 
+        dev->hwc_dc = new HwcDisplayChanged_wrap;
+        if (dev->hwc_dc == NULL) {
+           ALOGE("%s: failed to create hwc-display-changed, some services will not run!", __FUNCTION__);
+        } else {
+           dev->hwc_dc->get()->register_notify(&hwc_display_changed_notify, (int)dev);
+           ALOGI("%s: created hwc-display-changed (%p)", __FUNCTION__, dev->hwc_dc);
+        }
+
         dev->pIpcClient = NexusIPCClientFactory::getClient("hwc");
         if (dev->pIpcClient == NULL) {
             ALOGE("%s: failed NexusIPCClientFactory::getClient", __FUNCTION__);
@@ -4894,7 +4999,11 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
 
             ret = dev->pIpcClient->addHdmiHotplugEventListener(0, dev->hwc_hp->get());
             if (ret != NO_ERROR) {
-               ALOGE("%s: failed to get register hot-plug listener: %d.", __FUNCTION__, ret);
+               ALOGE("%s: failed to get register hotplug listener: %d.", __FUNCTION__, ret);
+            }
+            ret = dev->pIpcClient->addDisplaySettingsChangedEventListener(0, dev->hwc_dc->get());
+            if (ret != NO_ERROR) {
+               ALOGE("%s: failed to get register display-changed listener: %d.", __FUNCTION__, ret);
             }
         }
 
