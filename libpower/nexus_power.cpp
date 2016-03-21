@@ -729,7 +729,7 @@ status_t NexusPower::initialiseGpios(int powerFd)
 
     path = NexusGpio::getConfigurationFilePath();
     if (path.isEmpty()) {
-        ALOGW("%s: Could not find configuration file, so not initialising GPIOs!", __FUNCTION__, path.string());
+        ALOGW("%s: Could not find configuration file \"%s\", so not initialising GPIOs!", __FUNCTION__, path.string());
         status = NAME_NOT_FOUND;
     }
     else {
@@ -740,12 +740,19 @@ status_t NexusPower::initialiseGpios(int powerFd)
             String8 gpioName;
             String8 gpioValue;
             sp<NexusGpio> gpio;
+            unsigned cnt = 0;
+            size_t numEntries = config->getProperties().size();
+
+            ALOGV("%s: There %s %d %s in configuration file \"%s\".", __FUNCTION__, (numEntries == 1) ? "is" : "are",
+                   numEntries, (numEntries == 1) ? "entry" : "entries", path.string());
 
             /* Setup standard GPIO custom configuration */
-            for (pin = 0; pin < NEXUS_NUM_GPIO_PINS && (status == NO_ERROR) && NexusGpio::getInstances() < NexusGpio::MAX_INSTANCES; pin++) {
+            for (pin = 0; (pin < NEXUS_NUM_GPIO_PINS) && (status == NO_ERROR) &&
+                          (cnt < numEntries) && (NexusGpio::getInstances() < NexusGpio::MAX_INSTANCES); pin++) {
                 gpioName.setTo("GPIO");
                 gpioName.appendFormat("%02d", pin);
                 if (config->tryGetProperty(gpioName, gpioValue)) {
+                    cnt++;
                     gpio = NexusGpio::initialise(powerFd, gpioName, gpioValue, pin, NEXUS_GpioType_eStandard, mUInput);
 
                     if (gpio.get() != NULL) {
@@ -760,6 +767,7 @@ status_t NexusPower::initialiseGpios(int powerFd)
                     gpioName.setTo("GPIO");
                     gpioName.appendFormat("%03d", pin);
                     if (config->tryGetProperty(gpioName, gpioValue)) {
+                        cnt++;
                         gpio = NexusGpio::initialise(powerFd, gpioName, gpioValue, pin, NEXUS_GpioType_eStandard, mUInput);
 
                         if (gpio.get() != NULL) {
@@ -774,10 +782,12 @@ status_t NexusPower::initialiseGpios(int powerFd)
             }
 
             /* Setup AON_GPIO custom configuration */
-            for (pin = 0; pin < NEXUS_NUM_AON_GPIO_PINS && (status == NO_ERROR) && NexusGpio::getInstances() < NexusGpio::MAX_INSTANCES; pin++) {
+            for (pin = 0; (pin < NEXUS_NUM_AON_GPIO_PINS) && (status == NO_ERROR) &&
+                          (cnt < numEntries) && (NexusGpio::getInstances() < NexusGpio::MAX_INSTANCES); pin++) {
                 gpioName.setTo("AON_GPIO");
                 gpioName.appendFormat("%02d", pin);
                 if (config->tryGetProperty(gpioName, gpioValue)) {
+                    cnt++;
                     gpio = NexusGpio::initialise(powerFd, gpioName, gpioValue, pin, NEXUS_GpioType_eAonStandard, mUInput);
 
                     if (gpio.get() != NULL) {
@@ -791,10 +801,12 @@ status_t NexusPower::initialiseGpios(int powerFd)
             }
 
             /* Setup AON_SGPIO custom configuration */
-            for (pin = 0; pin < NEXUS_NUM_AON_SGPIO_PINS && (status == NO_ERROR) && NexusGpio::getInstances() < NexusGpio::MAX_INSTANCES; pin++) {
+            for (pin = 0; (pin < NEXUS_NUM_AON_SGPIO_PINS) && (status == NO_ERROR) &&
+                          (cnt < numEntries) && (NexusGpio::getInstances() < NexusGpio::MAX_INSTANCES); pin++) {
                 gpioName.setTo("AON_SGPIO");
                 gpioName.appendFormat("%02d", pin);
                 if (config->tryGetProperty(gpioName, gpioValue)) {
+                    cnt++;
                     gpio = NexusGpio::initialise(powerFd, gpioName, gpioValue, pin, NEXUS_GpioType_eAonSpecial, mUInput);
 
                     if (gpio.get() != NULL) {
@@ -805,6 +817,10 @@ status_t NexusPower::initialiseGpios(int powerFd)
                         status = NO_INIT;
                     }
                 }
+            }
+            if (cnt != numEntries) {
+                ALOGE("%s: Error(s) found in configuration file \"%s\"!", __FUNCTION__,  path.string());
+                status = NO_INIT;
             }
             delete config;
         }
