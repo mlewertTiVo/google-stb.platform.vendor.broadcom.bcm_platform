@@ -40,6 +40,7 @@
 #define _PMLIBSERVICE_H_
 
 #include <binder/IServiceManager.h>
+#include <string.h>
 #include <utils/Mutex.h>
 
 #include "IPmLibService.h"
@@ -60,6 +61,15 @@ private:
     static Mutex         mLock;
     void *               mPmCtx;
     pmlib_state_t        mState;
+
+    static const String8 IP_CTRL_CMD;
+    static const String8 IP_IF0;
+    static const String8 IP_IF1;
+    static const String8 IP_IF_ENABLE;
+    static const String8 IP_IF_DISABLE;
+    static const String8 MOCA_CTRL_CMD;
+    static const String8 MOCA_ENABLE;
+    static const String8 MOCA_DISABLE;
 };
 
 }; // namespace android

@@ -36,7 +36,7 @@
  * ANY LIMITED REMEDY.
  * 
  *****************************************************************************/
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 
 #include <binder/IPCThreadState.h>
 #include <binder/ProcessState.h>
@@ -62,6 +62,16 @@ extern "C" {
 using namespace android;
 
 Mutex PmLibService::mLock("PmLibService Lock");
+
+// String constant definitions...
+const String8 PmLibService::IP_CTRL_CMD("ifconfig");
+const String8 PmLibService::IP_IF0("eth0");
+const String8 PmLibService::IP_IF1("eth1");
+const String8 PmLibService::IP_IF_ENABLE("up");
+const String8 PmLibService::IP_IF_DISABLE("down");
+const String8 PmLibService::MOCA_CTRL_CMD("mocactl");
+const String8 PmLibService::MOCA_ENABLE("start");
+const String8 PmLibService::MOCA_DISABLE("stop");
 
 PmLibService::PmLibService() : mPmCtx(NULL)
 {
@@ -144,12 +154,12 @@ status_t PmLibService::setState(pmlib_state_t *state)
             if (state->enet_en) {
                 if (!mState.enet_en) {
                     ALOGD("%s: Bringing up ethernet...", __FUNCTION__);
-                    system("netcfg eth0 up");
+                    system(String8(IP_CTRL_CMD + " " + IP_IF0 + " " + IP_IF_ENABLE).string());
                 }
             } else {
                 if (mState.enet_en) {
                     ALOGD("%s: Shutting down ethernet...", __FUNCTION__);
-                    system("netcfg eth0 down");
+                    system(String8(IP_CTRL_CMD + " " + IP_IF0 + " " + IP_IF_DISABLE).string());
                 }
             }
 
@@ -157,14 +167,14 @@ status_t PmLibService::setState(pmlib_state_t *state)
             if (state->moca_en) {
                 if (!mState.moca_en) {
                     ALOGD("%s: Bringing up MoCA...", __FUNCTION__);
-                    system("mocactl start");
-                    system("netcfg eth1 up");
+                    system(String8(MOCA_CTRL_CMD + " " + MOCA_ENABLE).string());
+                    system(String8(IP_CTRL_CMD + " " + IP_IF1 + " " + IP_IF_ENABLE).string());
                 }
             } else {
                 if (mState.moca_en) {
                     ALOGD("%s: Shutting down MoCA...", __FUNCTION__);
-                    system("netcfg eth1 down");
-                    system("mocactl stop");
+                    system(String8(IP_CTRL_CMD + " " + IP_IF1 + " " + IP_IF_DISABLE).string());
+                    system(String8(MOCA_CTRL_CMD + " " + MOCA_DISABLE).string());
                 }
             }
 #endif
