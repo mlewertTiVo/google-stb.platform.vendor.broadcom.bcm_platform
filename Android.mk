@@ -14,20 +14,24 @@
 
 ifneq ($(filter bcm_% fbx6lc avko arrow,$(TARGET_DEVICE)),)
 
+# nexus interface and core integration.
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-nexus.mk
+# gles stack and friends.
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-v3d.mk
+# android hals implementation.
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-hals.mk
+# multimedia integration.
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-media.mk
 
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/netcoal/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/pmlibservice/Android.mk
-
+# unclassified.
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/netcoal/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice/Android.mk
 ifeq ($(ANDROID_SUPPORTS_DTVKIT),y)
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_dtvkit/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/dtvkit/Android.mk
 endif
 
+# apk's released.
 BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/apks
-
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
 include ${BCM_APPS_PATH}/BcmCoverFlow/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
@@ -41,6 +45,7 @@ include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
 include ${BCM_APPS_PATH}/LeanbackBcmCustom/Android.mk
 
+# additional tools, not needed for default integration.
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bsysperf/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/calcfb/Android.mk

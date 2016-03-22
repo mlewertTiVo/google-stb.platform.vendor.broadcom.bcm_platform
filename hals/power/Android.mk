@@ -35,7 +35,7 @@ LOCAL_SHARED_LIBRARIES := libbinder \
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/pmlibservice \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/droid_pm \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/linux/driver \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/modules/gpio/include

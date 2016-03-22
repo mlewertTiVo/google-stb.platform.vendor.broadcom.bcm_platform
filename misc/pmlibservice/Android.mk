@@ -36,8 +36,8 @@ LOCAL_CFLAGS += -DIP_CTRL_CMD_FOR_SDK=\"ifconfig\"
 endif
 
 LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/
-LOCAL_SRC_FILES := bcm_platform/pmlibservice/IPmLibService.cpp \
-                   bcm_platform/pmlibservice/PmLibService.cpp \
+LOCAL_SRC_FILES := bcm_platform/misc/pmlibservice/IPmLibService.cpp \
+                   bcm_platform/misc/pmlibservice/PmLibService.cpp \
                    refsw/BSEAV/lib/glob/glob.c \
                    refsw/BSEAV/lib/pmlib/$(PMLIB_DIR)/pmlib.c
 
