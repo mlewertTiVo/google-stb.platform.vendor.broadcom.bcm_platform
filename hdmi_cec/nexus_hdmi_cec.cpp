@@ -722,11 +722,12 @@ status_t NexusHdmiCecDevice::setCecLogicalAddress(uint8_t addr)
 
 bool NexusHdmiCecDevice::getHdmiHotplugWakeup()
 {
-    char value[PROPERTY_VALUE_MAX];
-    bool wakeup=false;
+    static bool cached=false;
+    static bool wakeup = false;
 
-    if (property_get(PROPERTY_HDMI_HOTPLUG_WAKEUP, value, DEFAULT_PROPERTY_HDMI_HOTPLUG_WAKEUP)) {
-        wakeup = (strncmp(value, "1", PROPERTY_VALUE_MAX) == 0);
+    if (!cached) {
+        wakeup = property_get_bool(PROPERTY_HDMI_HOTPLUG_WAKEUP, DEFAULT_PROPERTY_HDMI_HOTPLUG_WAKEUP);
+        cached = true;
     }
     return wakeup;
 }

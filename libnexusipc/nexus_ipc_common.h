@@ -171,8 +171,8 @@ typedef struct b_cecStatus {
 
 // Disable STB HDMI hot-plug wakeup whilst in standby by ensuring that
 // this property is set to 0...
-#define PROPERTY_HDMI_HOTPLUG_WAKEUP            "persist.sys.hdmi.hotplug_wakeup"
-#define DEFAULT_PROPERTY_HDMI_HOTPLUG_WAKEUP    "0"
+#define PROPERTY_HDMI_HOTPLUG_WAKEUP            "ro.hdmi.wake_on_hotplug"
+#define DEFAULT_PROPERTY_HDMI_HOTPLUG_WAKEUP    0
 
 // Disable sending CEC standby message to TV on entry to standby by ensuring
 // that this property is set to 0...
