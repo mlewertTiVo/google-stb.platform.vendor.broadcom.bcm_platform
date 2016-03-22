@@ -40,7 +40,7 @@ include $(BUILD_SHARED_LIBRARY)
 include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false
 LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusipceventlistener libnexus
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
                     $(TOP)/frameworks/native/include
 
 #
@@ -65,7 +65,7 @@ LOCAL_PRELINK_MODULE := false
 
 LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusipcclient libnexusipceventlistener libnexus
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
                     $(TOP)/frameworks/native/include
 
 LOCAL_SRC_FILES := nexus_egl_client.cpp

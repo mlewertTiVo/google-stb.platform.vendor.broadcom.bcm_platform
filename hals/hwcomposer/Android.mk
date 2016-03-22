@@ -124,8 +124,8 @@ LOCAL_SHARED_LIBRARIES += libnxclient
 LOCAL_SHARED_LIBRARIES += libutils
 LOCAL_SHARED_LIBRARIES += libsync
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc \
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc \
                     $(NXCLIENT_INCLUDES) \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/blib \

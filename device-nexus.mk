@@ -49,3 +49,13 @@ LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_STRIP_MODULE := true
 include $(BUILD_PREBUILT)
+
+# core nexus integration.
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libb_os/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/nxdispfmt/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/nxlogger/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/nxmini/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/nxserver/Android.mk

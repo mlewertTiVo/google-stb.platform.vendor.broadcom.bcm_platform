@@ -13,7 +13,7 @@ LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
 LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)/include
 LOCAL_C_INCLUDES += \
     $(LOCAL_PATH)/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/blib
 include $(BUILD_SHARED_LIBRARY)

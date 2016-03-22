@@ -27,8 +27,8 @@ LOCAL_SHARED_LIBRARIES := \
    libutils \
    libnexusipcclient
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform//libnexusipc
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc
 
 LOCAL_CFLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES))
 LOCAL_CFLAGS += -Wno-multichar -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGI=ALOGI -DLOGV=ALOGV

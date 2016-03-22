@@ -18,28 +18,20 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-nexus.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-v3d.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-hals.mk
 
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libb_os/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libb_playback_ip/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libbcmsideband/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libbcmsidebandplayer/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusir/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libstagefright_bcm/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libstagefrighthw/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/netcoal/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxdispfmt/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxlogger/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxmini/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxserver/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/pmlibservice/Android.mk
 
 ifeq ($(ANDROID_SUPPORTS_DTVKIT),y)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_dtvkit/Android.mk
 endif
 
-BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/app
+BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/apks
 
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
 include ${BCM_APPS_PATH}/BcmCoverFlow/Android.mk

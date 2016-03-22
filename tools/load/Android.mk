@@ -24,8 +24,8 @@ LOCAL_SHARED_LIBRARIES := libnexus \
                           libnxclient \
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
@@ -51,8 +51,8 @@ LOCAL_SHARED_LIBRARIES := libnexus \
                           libsrai
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/magnum/syslib/sagelib/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_crypto/include

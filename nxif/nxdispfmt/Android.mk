@@ -14,7 +14,7 @@ LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 
 LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/
-LOCAL_SRC_FILES := bcm_platform/nxdispfmt/nxdispfmt.c \
+LOCAL_SRC_FILES := bcm_platform/nxif/nxdispfmt/nxdispfmt.c \
                    refsw/nexus/utils/namevalue.c
 
 LOCAL_MODULE := nxdispfmt

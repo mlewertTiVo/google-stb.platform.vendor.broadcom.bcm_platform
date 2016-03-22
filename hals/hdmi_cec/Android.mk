@@ -29,8 +29,8 @@ LOCAL_SHARED_LIBRARIES := \
     libstagefright_foundation \
     libnexus
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc
 
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 
