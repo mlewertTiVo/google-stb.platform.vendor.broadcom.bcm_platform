@@ -28,6 +28,13 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/glob \
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(PMLIB_CFLAGS)
 
+# M onward: sdk version >= 23.
+ifneq (1,$(filter 1,$(shell echo "$$(( $(PLATFORM_SDK_VERSION) >= 23 ))" )))
+LOCAL_CFLAGS += -DIP_CTRL_CMD_FOR_SDK=\"netcfg\"
+else
+LOCAL_CFLAGS += -DIP_CTRL_CMD_FOR_SDK=\"ifconfig\"
+endif
+
 LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/
 LOCAL_SRC_FILES := bcm_platform/pmlibservice/IPmLibService.cpp \
                    bcm_platform/pmlibservice/PmLibService.cpp \

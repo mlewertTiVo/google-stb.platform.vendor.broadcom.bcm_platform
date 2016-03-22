@@ -64,7 +64,7 @@ using namespace android;
 Mutex PmLibService::mLock("PmLibService Lock");
 
 // String constant definitions...
-const String8 PmLibService::IP_CTRL_CMD("ifconfig");
+const String8 PmLibService::IP_CTRL_CMD(IP_CTRL_CMD_FOR_SDK);
 const String8 PmLibService::IP_IF0("eth0");
 const String8 PmLibService::IP_IF1("eth1");
 const String8 PmLibService::IP_IF_ENABLE("up");
