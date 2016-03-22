@@ -32,7 +32,7 @@ LOCAL_MODULE_TAGS := optional
 # Check if a prebuilt library has been created in the release_prebuilts folder
 ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/$(LOCAL_LIB_NAME).so))
 # use prebuilt library if one exists
-LOCAL_PREBUILT_LIBS := ../../../release_prebuilts/$(LOCAL_LIB_NAME).so
+LOCAL_PREBUILT_LIBS := ../../../../release_prebuilts/$(LOCAL_LIB_NAME).so
 include $(BUILD_MULTI_PREBUILT)
 else
 # compile library from source
@@ -41,7 +41,7 @@ include $(LOCAL_PATH)/drm/playready/playready.inc
 LOCAL_SRC_FILES := ${PLAYREADY_SOURCES}
 
 LOCAL_C_INCLUDES := \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/drmrootfs \
@@ -121,7 +121,7 @@ endif
 LOCAL_SRC_FILES := ${COMMON_DRM_TL_SOURCES}
 
 LOCAL_C_INCLUDES := \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \

@@ -38,7 +38,7 @@ LOCAL_MODULE_TAGS := optional
 # Check if a prebuilt library has been created in the release_prebuilts folder
 ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/$(LOCAL_MODULE).so))
 # use prebuilt library if one exists
-LOCAL_SRC_FILES := ../../../release_prebuilts/$(LOCAL_MODULE).so
+LOCAL_SRC_FILES := ../../../../release_prebuilts/$(LOCAL_MODULE).so
 LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 include $(BUILD_PREBUILT)
@@ -59,7 +59,7 @@ LOCAL_SRC_FILES := \
 LOCAL_C_INCLUDES := \
     $(TOP)/bionic \
     $(TOP)/external/boringssl/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC30/brcm_oemcrypto_L1/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC30/core/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC30/third_party/stringencoders/src \

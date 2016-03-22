@@ -13,7 +13,7 @@
 # limitations under the License.
 
 LOCAL_PATH := $(call my-dir)
-PATH_TO_NEXUS := ../../refsw/nexus
+PATH_TO_NEXUS := ../../../refsw/nexus
 include $(CLEAR_VARS)
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc

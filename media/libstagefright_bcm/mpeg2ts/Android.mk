@@ -12,7 +12,7 @@ LOCAL_SRC_FILES:=                 \
 LOCAL_C_INCLUDES:= \
 	$(TOP)/frameworks/av/media/libstagefright \
 	$(TOP)/frameworks/native/include/media/openmax \
-	$(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libstagefright_bcm
+	$(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libstagefright_bcm
 
 LOCAL_CFLAGS += -Werror -Wall
 LOCAL_CLANG := true

@@ -13,43 +13,27 @@
 # limitations under the License.
 
 #-------------
-# libbcrypt.so
+# libsrai.so
 #-------------
-LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/src
-
+LOCAL_PATH := ${REFSW_BASE_DIR}
 include $(CLEAR_VARS)
 
+# add SAGElib related includes
+include $(LOCAL_PATH)/magnum/syslib/sagelib/bsagelib_public.inc
+
 LOCAL_SRC_FILES := \
-    bcrypt.c \
-    bcrypt_aes_sw.c \
-    bcrypt_aescbc_sw.c \
-    bcrypt_aesecb_sw.c \
-    bcrypt_asn1_sw.c \
-    bcrypt_cmac_sw.c \
-    bcrypt_dbg.c \
-    bcrypt_descbc_sw.c \
-    bcrypt_desecb_sw.c \
-    bcrypt_dh_sw.c \
-    bcrypt_dsa_sw.c \
-    bcrypt_ecc_sw.c \
-    bcrypt_ecdsa_sw.c \
-    bcrypt_md5_sw.c \
-    bcrypt_rc4_sw.c \
-    bcrypt_rng_sw.c \
-    bcrypt_rsa_sw.c \
-    bcrypt_sha1_sw.c \
-    bcrypt_sha256_sw.c \
-    bcrypt_x509_sw.c
+    BSEAV/lib/security/sage/srai/src/sage_srai.c \
+    BSEAV/lib/security/sage/srai/src/sage_srai_global_lock.c \
+    magnum/syslib/sagelib/src/bsagelib_tools.c
 
 LOCAL_C_INCLUDES := \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
-    ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/include \
-    $(TOP)/external/boringssl/include
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/srai/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/include/private \
+    $(BSAGELIB_INCLUDES)
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
-ifeq ($(ANDROID_USES_BORINGSSL),y)
-LOCAL_CFLAGS += -DUSES_BORINGSSL
-endif
 
 # Enable warning and error logs by default
 LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
@@ -58,10 +42,9 @@ ifneq ($(TARGET_BUILD_TYPE),debug)
 LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
 
-LOCAL_SHARED_LIBRARIES := liblog libssl libcrypto libnexus
+LOCAL_SHARED_LIBRARIES := libnexus liblog
 
-LOCAL_MODULE := libbcrypt
-LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE := libsrai
 
 include $(BUILD_SHARED_LIBRARY)
 

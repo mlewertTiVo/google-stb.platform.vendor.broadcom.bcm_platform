@@ -17,13 +17,8 @@ ifneq ($(filter bcm_% fbx6lc avko arrow,$(TARGET_DEVICE)),)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-nexus.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-v3d.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-hals.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-media.mk
 
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libb_playback_ip/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libbcmsideband/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libbcmsidebandplayer/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libstagefright_bcm/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libstagefrighthw/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/netcoal/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/pmlibservice/Android.mk
 

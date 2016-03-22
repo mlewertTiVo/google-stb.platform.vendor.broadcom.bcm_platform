@@ -23,7 +23,7 @@ LOCAL_MODULE := libdrmrootfs
 LOCAL_SRC_FILES := drm_data.c
 
 LOCAL_C_INCLUDES := \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -fshort-wchar
