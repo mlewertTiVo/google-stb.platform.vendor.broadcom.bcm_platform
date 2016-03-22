@@ -13,7 +13,7 @@
 # limitations under the License.
 
 V3D_ANDROID_DEFINES := -I$(ANDROID_TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
-V3D_ANDROID_DEFINES += -I$(ANDROID_TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libgralloc
+V3D_ANDROID_DEFINES += -I$(ANDROID_TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc
 V3D_ANDROID_DEFINES += $(NEXUS_APP_CFLAGS)
 
 V3D_ANDROID_LD :=

@@ -15,5 +15,5 @@ LOCAL_C_INCLUDES += \
     $(LOCAL_PATH)/include \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/blib
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/blib
 include $(BUILD_SHARED_LIBRARY)

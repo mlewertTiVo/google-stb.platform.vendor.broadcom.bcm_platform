@@ -39,7 +39,7 @@ LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libnativehelper
 LOCAL_SHARED_LIBRARIES += libutils
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/blib
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/blib
 
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libhwcbinder
@@ -64,7 +64,7 @@ LOCAL_SHARED_LIBRARIES += libhwcbinder
 LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libutils
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/blib
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/blib
 
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := hwcbinder
@@ -90,7 +90,7 @@ LOCAL_SHARED_LIBRARIES += libutils
 LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/utils \
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/utils \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem \
                     $(NXCLIENT_INCLUDES)
 
@@ -126,10 +126,10 @@ LOCAL_SHARED_LIBRARIES += libsync
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libgralloc \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc \
                     $(NXCLIENT_INCLUDES) \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/blib \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/utils \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/blib \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/utils \
                     $(TOP)/system/core/libsync \
                     $(TOP)/system/core/libsync/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem

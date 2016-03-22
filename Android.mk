@@ -16,25 +16,17 @@ ifneq ($(filter bcm_% fbx6lc avko arrow,$(TARGET_DEVICE)),)
 
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-nexus.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-v3d.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-hals.mk
 
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_audio/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_memtrack/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hdmi_cec/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libb_os/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libb_playback_ip/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libbcmsideband/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libbcmsidebandplayer/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libcamera2/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libgralloc/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/liblights/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusir/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libpower/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libstagefright_bcm/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libstagefrighthw/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libtv_input/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/netcoal/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxdispfmt/Android.mk

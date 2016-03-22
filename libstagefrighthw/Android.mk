@@ -62,8 +62,8 @@ LOCAL_C_INCLUDES := \
         $(TOP)/hardware/libhardware/include/hardware \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc \
-        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libgralloc \
-        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/blib \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/blib \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 
 
