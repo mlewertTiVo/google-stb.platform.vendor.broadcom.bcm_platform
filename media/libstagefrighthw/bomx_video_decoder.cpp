@@ -4409,15 +4409,6 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     // Move frame to allocated list.  Will be delivered to client afterward if there is a buffer ready.
                     BLST_Q_REMOVE_HEAD(&m_frameBufferFreeList, node);
                     pBuffer->frameStatus = *pFrameStatus;
-                    // Don't try and create a striped surface for the EOS picture or in a secure playback.
-                    if ( !pFrameStatus->lastPicture && !m_secureDecoder && !m_securePicBuff )
-                    {
-                        pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&pFrameStatus->surfaceCreateSettings);
-                        if ( NULL == pBuffer->hStripedSurface )
-                        {
-                            (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
-                        }
-                    }
                     pBuffer->state = BOMX_VideoDecoderFrameBufferState_eReady;
                     BLST_Q_INSERT_TAIL(&m_frameBufferAllocList, pBuffer, node);
                     pFrameStatus++;
@@ -4473,7 +4464,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 }
 
                 pInfo = (BOMX_VideoDecoderOutputBufferInfo *)pOmxBuffer->GetComponentPrivate();
-                BDBG_ASSERT(NULL == pInfo->pFrameBuffer);
+                ALOG_ASSERT(NULL != pInfo && NULL == pInfo->pFrameBuffer);
                 if ( pBuffer->frameStatus.lastPicture || (pHeader->nFlags & OMX_BUFFERFLAG_EOS) )
                 {
                     ALOGV("EOS picture received");
@@ -4499,7 +4490,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     ALOGV("EOS-only frame.  Returning length of 0.");
                     pHeader->nFilledLen = 0;
                     // For metadata mode, the private handle still needs to be set since it's required to correlate
-                    // omx buffers to framebuffers in function FillThisBuffer. Without this, EOS messages (zero length) coul
+                    // omx buffers to framebuffers in function FillThisBuffer. Without this, EOS messages (zero length) could
                     // end up permanently in the allocated list if the application is playing video in a loop.
                     if (pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata){
                         pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
@@ -4574,7 +4565,24 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         }
                     }
 
-                    ALOG_ASSERT(NULL != pInfo);
+                    // Setting private handle for meta mode ahead of time
+                    if (pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata)
+                    {
+                        pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
+                    }
+
+                    // Don't try to create a striped surface for secure video
+                    if ( !m_secureDecoder && !m_securePicBuff &&
+                         ( pInfo->type != BOMX_VideoDecoderOutputBufferType_eMetadata ||
+                           ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX) ) )
+                    {
+                        pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&(pBuffer->frameStatus.surfaceCreateSettings));
+                        if ( NULL == pBuffer->hStripedSurface )
+                        {
+                            (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
+                        }
+                    }
+
                     switch ( pInfo->type )
                     {
                     case BOMX_VideoDecoderOutputBufferType_eStandard:
@@ -4671,7 +4679,6 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         {
                             void *pMemory;
                             PSHARED_DATA pSharedData;
-                            pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
                             BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
                             if ( NULL == pMemory )
                             {
@@ -4689,8 +4696,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 // Don't allow gralloc_lock to destripe in metadata mode.  We won't know when it's safe to destroy the striped surface.
                                 pSharedData->videoFrame.hStripedSurface = NULL;
 
-                                if ( !m_secureDecoder && !m_securePicBuff && pBuffer->hStripedSurface &&
-                                     ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX))
+                                if ( pBuffer->hStripedSurface )
                                 {
                                     int err = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 100);
                                     if ( err )
