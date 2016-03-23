@@ -935,7 +935,7 @@ void NexusNxService::binderDied(const wp<IBinder>& who)
                 if ((*it)->asBinder((*it)) == binder) {
                     ALOGD("%s: Removing HDMI%d hotplug event listener...", __PRETTY_FUNCTION__, portId);
                     server->mHdmiHotplugEventListenerList[portId].erase(it);
-                    return;
+                    break;
                 }
             }
         }
@@ -947,11 +947,13 @@ void NexusNxService::binderDied(const wp<IBinder>& who)
                  it2 != server->mDisplaySettingsChangedEventListenerList[portId].end(); ++it2) {
                 if ((*it2)->asBinder((*it2)) == binder) {
                     server->mDisplaySettingsChangedEventListenerList[portId].erase(it2);
-                    return;
+                    break;
                 }
             }
         }
     }
+
+    return;
 }
 
 bool NexusNxService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus)
