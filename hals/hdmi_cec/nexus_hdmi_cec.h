@@ -61,6 +61,7 @@
 #include <utils/threads.h>
 #include <utils/Vector.h>
 
+#include "linuxuinput.h"
 #include "nexus_ipc_client_factory.h"
 
 using namespace android;
@@ -158,6 +159,16 @@ class NexusHdmiCecDevice : public RefBase
                 HdmiCecRxMessageHandler &operator=(const HdmiCecRxMessageHandler &);
         };
 
+        // LinuxUInput class with refcount
+        class LinuxUInputRef : public LinuxUInput, public android::RefBase {
+            public:
+                static sp<LinuxUInputRef> instantiate();
+                ~LinuxUInputRef();
+
+            private:
+                LinuxUInputRef();
+        };
+
     private:
         int                             mCecId;
         uint8_t                         mCecLogicalAddr;
@@ -180,6 +191,7 @@ class NexusHdmiCecDevice : public RefBase
         sp<HdmiHotplugEventListener>    mHdmiHotplugEventListener;
         sp<HdmiCecRxMessageHandler>     mHdmiCecRxMessageHandler;
         sp<ALooper>                     mHdmiCecRxMessageLooper;
+        sp<LinuxUInputRef>              mUInput;
 
         static const uint32_t UNDEFINED_PHYSICAL_ADDRESS = 0xFFFF;
         static const uint32_t UNDEFINED_LOGICAL_ADDRESS = 0xFF;

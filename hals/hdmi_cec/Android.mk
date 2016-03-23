@@ -26,11 +26,13 @@ LOCAL_SHARED_LIBRARIES := \
     libutils \
     libnexusipcclient \
     libnexusipceventlistener \
+    libnexusir \
     libstagefright_foundation \
     libnexus
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
 
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 # fix warnings!
