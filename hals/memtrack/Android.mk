@@ -9,6 +9,8 @@ LOCAL_SRC_FILES:=  \
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-mem\"
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem \

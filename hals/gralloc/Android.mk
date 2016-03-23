@@ -37,6 +37,8 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/rockford/middleware/$(V3
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-gr\"
 LOCAL_CFLAGS += -DV3D_VARIANT_$(V3D_VARIANT)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_SRC_FILES := \
         gralloc.cpp \

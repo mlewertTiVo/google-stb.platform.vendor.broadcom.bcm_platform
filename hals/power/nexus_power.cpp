@@ -657,7 +657,7 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::initialise(int powerFd, String8
         ALOGE("%s: Could not parse %s parameters!!!", __FUNCTION__, gpioName.string());
     }
     else if (numGpioParameters < NexusGpio::MIN_PARAMETERS || numGpioParameters > NexusGpio::MAX_PARAMETERS) {
-        ALOGE("%s: Invalid number of parameters %d for %s!!!", __FUNCTION__, gpioName.string(), numGpioParameters);
+        ALOGE("%s: Invalid number of parameters %u for %s!!!", __FUNCTION__, numGpioParameters, gpioName.string());
         status = BAD_VALUE;
     }
     else {

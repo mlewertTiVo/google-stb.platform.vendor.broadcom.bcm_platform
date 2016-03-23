@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (C) 2014-2016 Broadcom Canada Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -381,32 +381,32 @@ extern int gralloc_unregister_buffer(gralloc_module_t const* module,
 /*****************************************************************************/
 
 static struct hw_module_methods_t gralloc_module_methods = {
-        open: gralloc_device_open
+        .open = gralloc_device_open
 };
 
 struct private_module_t HAL_MODULE_INFO_SYM = {
-   base: {
-      common: {
-         tag: HARDWARE_MODULE_TAG,
-         version_major: 1,
-         version_minor: 0,
-         id: GRALLOC_HARDWARE_MODULE_ID,
-         name: "Graphics Memory Allocator Module",
-         author: "The Android Open Source Project",
-         methods: &gralloc_module_methods,
-         dso: NULL,
-         reserved: {0}
+   .base = {
+      .common = {
+         .tag                = HARDWARE_MODULE_TAG,
+         .module_api_version = GRALLOC_MODULE_API_VERSION_0_1,
+         .hal_api_version    = HARDWARE_HAL_API_VERSION,
+         .id                 = GRALLOC_HARDWARE_MODULE_ID,
+         .name               = "gralloc for set-top-box platforms",
+         .author             = "Broadcom",
+         .methods            = &gralloc_module_methods,
+         .dso                = 0,
+         .reserved           = {0}
       },
-      registerBuffer: gralloc_register_buffer,
-      unregisterBuffer: gralloc_unregister_buffer,
-      lock: gralloc_lock,
-      unlock: gralloc_unlock,
-      perform: NULL,
-      lock_ycbcr: NULL,
-      lockAsync: NULL,
-      unlockAsync: NULL,
-      lockAsync_ycbcr: NULL,
-      reserved_proc: {0, 0, 0}
+      .registerBuffer        = gralloc_register_buffer,
+      .unregisterBuffer      = gralloc_unregister_buffer,
+      .lock                  = gralloc_lock,
+      .unlock                = gralloc_unlock,
+      .perform               = NULL,
+      .lock_ycbcr            = NULL,
+      .lockAsync             = NULL,
+      .unlockAsync           = NULL,
+      .lockAsync_ycbcr       = NULL,
+      .reserved_proc         = {0, 0, 0}
    },
 };
 

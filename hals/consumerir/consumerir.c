@@ -109,8 +109,8 @@ consumerir_module_t HAL_MODULE_INFO_SYM = {
         .module_api_version = CONSUMERIR_MODULE_API_VERSION_1_0,
         .hal_api_version    = HARDWARE_HAL_API_VERSION,
         .id                 = CONSUMERIR_HARDWARE_MODULE_ID,
-        .name               = "Demo IR HAL",
-        .author             = "The Android Open Source Project",
+        .name               = "ir for set-top-box platforms (***demo***)",
+        .author             = "Broadcom",
         .methods            = &consumerir_module_methods,
     },
 };

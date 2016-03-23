@@ -43,6 +43,8 @@ LOCAL_SRC_FILES += \
 
 LOCAL_CFLAGS := -DLOG_TAG=\"BrcmAudio\"
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/nexus/nxclient/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
@@ -72,6 +74,9 @@ LOCAL_C_INCLUDES := \
     frameworks/av/services/audiopolicy/common/managerdefinitions/include \
     frameworks/av/services/audiopolicy/common/include/
 
+# fix warnings!
+LOCAL_CFLAGS += -Werror
+
 LOCAL_MODULE := libaudiopolicymanager
 LOCAL_MODULE_TAGS := optional
 
@@ -100,6 +105,9 @@ LOCAL_SHARED_LIBRARIES := \
     libmedia \
     libtinyalsa \
     libaudioutils
+
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_STATIC_LIBRARIES += libmedia_helper
 

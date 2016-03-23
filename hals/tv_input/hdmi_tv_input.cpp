@@ -70,21 +70,21 @@ static int tv_input_device_open(const struct hw_module_t* module,
         const char* name, struct hw_device_t** device);
 
 static struct hw_module_methods_t tv_input_module_methods = {
-    open: tv_input_device_open
+    .open = tv_input_device_open
 };
 
 tv_input_module_t hdmi_module /*HAL_MODULE_INFO_SYM*/ = {
-    common: {
-        tag: HARDWARE_MODULE_TAG,
-        version_major: 0,
-        version_minor: 1,
-        id: TV_INPUT_HARDWARE_MODULE_ID,
-        name: "HDMI TV input module",
-        author: "Broadcom",
-        methods: &tv_input_module_methods,
-        dso: NULL,
-        reserved: {0},
-    }
+   .common = {
+      .tag                = HARDWARE_MODULE_TAG,
+      .module_api_version = TV_INPUT_MODULE_API_VERSION_0_1,
+      .hal_api_version    = HARDWARE_HAL_API_VERSION,
+      .id                 = TV_INPUT_HARDWARE_MODULE_ID,
+      .name               = "hdmi_tv_input for set-top-box platforms",
+      .author             = "Broadcom",
+      .methods            = &tv_input_module_methods,
+      .dso                = 0,
+      .reserved           = {0},
+   }
 };
 
 /*****************************************************************************/

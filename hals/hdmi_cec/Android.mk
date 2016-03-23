@@ -33,6 +33,8 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusserv
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc
 
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_SRC_FILES := hdmi_cec.cpp nexus_hdmi_cec.cpp
 LOCAL_MODULE_TAGS := optional

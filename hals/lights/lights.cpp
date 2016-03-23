@@ -69,20 +69,20 @@ static int lights_device_open(const struct hw_module_t *module,
         const char *name, struct hw_device_t **device);
 
 static struct hw_module_methods_t lights_module_methods = {
-    open: lights_device_open
+   .open = lights_device_open
 };
 
 // The lights module
 struct hw_module_t HAL_MODULE_INFO_SYM = {
-        tag: HARDWARE_MODULE_TAG,
-        version_major: 1,
-        version_minor: 0,
-        id: LIGHTS_HARDWARE_MODULE_ID,
-        name: "BRCM lights module",
-        author: "Broadcom Corp.",
-        methods: &lights_module_methods,
-        dso: NULL,
-        reserved: {}
+   .tag                = HARDWARE_MODULE_TAG,
+   .module_api_version = HARDWARE_MODULE_API_VERSION(0, 1),
+   .hal_api_version    = HARDWARE_HAL_API_VERSION,
+   .id                 = LIGHTS_HARDWARE_MODULE_ID,
+   .name               = "lights for set-top-box platforms",
+   .author             = "Broadcom",
+   .methods            = &lights_module_methods,
+   .dso                = 0,
+   .reserved           = {0}
 };
 
 static int lights_set_light_backlight(struct light_device_t *dev,

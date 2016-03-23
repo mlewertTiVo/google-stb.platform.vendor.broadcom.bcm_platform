@@ -23,6 +23,8 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusserv
 
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_SHARED_LIBRARIES := libcutils liblog libutils libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient libnexusipcclient libbinder

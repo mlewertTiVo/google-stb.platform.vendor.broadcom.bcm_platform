@@ -502,7 +502,7 @@ static status_t power_prepare_suspend(b_powerState toState)
                 ALOGE("%s: Failed to read event(s) [%s]!!!", __FUNCTION__, buf);
             }
             else {
-                ALOGV("%s: Event %d received", __FUNCTION__, event);
+                ALOGV("%s: Event %llu received", __FUNCTION__, event);
 
                 if (event == DROID_PM_EVENT_RESUMED ||
                     event == DROID_PM_EVENT_RESUMED_PARTIAL ||
@@ -535,7 +535,7 @@ static status_t power_prepare_suspend(b_powerState toState)
                     }
                 }
                 else {
-                    ALOGW("%s: Invalid state to receive event %d!", __FUNCTION__, event);
+                    ALOGW("%s: Invalid state to receive event %llu!", __FUNCTION__, event);
                     status = BAD_VALUE;
                 }
             }
@@ -747,7 +747,7 @@ static void *power_event_monitor_thread(void *arg)
             }
             else {
                 // Event received from droid_pm - now find out which one...
-                ALOGV("%s: Received power event %d", __FUNCTION__, event);
+                ALOGV("%s: Received power event %llu", __FUNCTION__, event);
                 if (event == DROID_PM_EVENT_SUSPENDING || event == DROID_PM_EVENT_SHUTDOWN) {
                     if (powerFunction() == NO_ERROR) {
                         ALOGD("%s: Successfully finished setting power state.", __FUNCTION__);
@@ -931,23 +931,23 @@ static void power_set_feature(struct power_module *module __unused, feature_t fe
 }
 
 static struct hw_module_methods_t power_module_methods = {
-    open: NULL
+    .open = NULL
 };
 
 struct power_module HAL_MODULE_INFO_SYM = {
-    common: {
-        tag: HARDWARE_MODULE_TAG,
-        module_api_version: POWER_MODULE_API_VERSION_0_3,
-        hal_api_version: HARDWARE_HAL_API_VERSION,
-        id: POWER_HARDWARE_MODULE_ID,
-        name: "Brcmstb Power HAL",
-        author: "Broadcom Corp",
-        methods: &power_module_methods,
-        dso: 0,
-        reserved: {0}
+   .common = {
+      .tag                = HARDWARE_MODULE_TAG,
+      .module_api_version = POWER_MODULE_API_VERSION_0_3,
+      .hal_api_version    = HARDWARE_HAL_API_VERSION,
+      .id                 = POWER_HARDWARE_MODULE_ID,
+      .name               = "Brcmstb Power HAL",
+      .author             = "Broadcom",
+      .methods            = &power_module_methods,
+      .dso                = 0,
+      .reserved           = {0}
     },
-    init: power_init,
-    setInteractive: power_set_interactive,
-    powerHint: power_hint,
-    setFeature: power_set_feature
+    .init                 = power_init,
+    .setInteractive       = power_set_interactive,
+    .powerHint            = power_hint,
+    .setFeature           = power_set_feature
 };

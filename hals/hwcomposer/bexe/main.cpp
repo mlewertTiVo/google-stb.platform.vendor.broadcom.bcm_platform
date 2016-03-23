@@ -25,6 +25,9 @@ using namespace android;
 
 int main( int argc, char** argv )
 {
+    (void) argc;
+    (void) argv;
+
     // binder threads limit: 3 x video window (max) + 1 hwc.
     ProcessState::self()->setThreadPoolMaxThreadCount(4);
 

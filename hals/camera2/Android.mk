@@ -3,6 +3,8 @@ include $(CLEAR_VARS)
 
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 LOCAL_CFLAGS := -fno-short-enums -DHAVE_CONFIG_H
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_C_INCLUDES := \
 	external/jpeg \

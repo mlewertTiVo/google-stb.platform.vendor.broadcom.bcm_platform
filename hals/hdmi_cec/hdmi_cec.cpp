@@ -362,20 +362,20 @@ static int hdmi_cec_device_open(const struct hw_module_t* module, const char* na
 }
 
 static struct hw_module_methods_t hdmi_cec_module_methods = {
-    open: hdmi_cec_device_open
+    .open = hdmi_cec_device_open
 };
 
 hdmi_module_t HAL_MODULE_INFO_SYM = {
-    common: {
-        tag: HARDWARE_MODULE_TAG,
-        module_api_version: HDMI_CEC_MODULE_API_VERSION_1_0,
-        hal_api_version: HARDWARE_HAL_API_VERSION,
-        id: HDMI_CEC_HARDWARE_MODULE_ID,
-        name: "Broadcom HDMI CEC module",
-        author: "The Android Open Source Project",
-        methods: &hdmi_cec_module_methods,
-        dso: 0,
-        reserved: {0}
-    }
+   .common = {
+      .tag                 = HARDWARE_MODULE_TAG,
+      .module_api_version  = HDMI_CEC_MODULE_API_VERSION_1_0,
+      .hal_api_version     = HARDWARE_HAL_API_VERSION,
+      .id                  = HDMI_CEC_HARDWARE_MODULE_ID,
+      .name                = "hdmi_cec for set-top-box platforms",
+      .author              = "Broadcom",
+      .methods             = &hdmi_cec_module_methods,
+      .dso                 = 0,
+      .reserved            = {0}
+   }
 };
 

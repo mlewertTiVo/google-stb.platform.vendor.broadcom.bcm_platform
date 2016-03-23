@@ -42,6 +42,8 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusserv
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_SRC_FILES := power.cpp \
                    nexus_power.cpp

@@ -33,6 +33,9 @@ LOCAL_STRIP_MODULE := false
 endif
 LOCAL_PRELINK_MODULE := false
 
+# fix warnings!
+LOCAL_CFLAGS += -Werror
+
 LOCAL_SHARED_LIBRARIES += libbinder
 LOCAL_SHARED_LIBRARIES += libcutils
 LOCAL_SHARED_LIBRARIES += liblog
@@ -63,6 +66,9 @@ LOCAL_SHARED_LIBRARIES += libcutils
 LOCAL_SHARED_LIBRARIES += libhwcbinder
 LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libutils
+
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/blib
 
@@ -95,6 +101,9 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/u
                     $(NXCLIENT_INCLUDES)
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
+
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libhwcutils
 
@@ -137,6 +146,8 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusserv
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-hwc\"
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_SRC_FILES := hwcomposer.cpp
 LOCAL_MODULE_TAGS := optional

@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2014 Broadcom Corporation
+ *    (c)2014-2016 Broadcom Corporation
  *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -210,20 +210,19 @@ static struct hw_module_methods_t memtrack_module_methods = {
 };
 
 struct memtrack_module HAL_MODULE_INFO_SYM = {
-    common: {
-        tag: HARDWARE_MODULE_TAG,
-        module_api_version: MEMTRACK_MODULE_API_VERSION_0_1,
-        hal_api_version: HARDWARE_HAL_API_VERSION,
-        id: MEMTRACK_HARDWARE_MODULE_ID,
-        name: "Memory Tracker HAL for BCM STB",
-        author: "Broadcom Canada Ltd.",
-        methods: &memtrack_module_methods,
-        dso: 0,
-        reserved: {0}
+   .common = {
+      .tag                = HARDWARE_MODULE_TAG,
+      .module_api_version = MEMTRACK_MODULE_API_VERSION_0_1,
+      .hal_api_version    = HARDWARE_HAL_API_VERSION,
+      .id                 = MEMTRACK_HARDWARE_MODULE_ID,
+      .name               = "memtrack for set-top-box platforms",
+      .author             = "Broadcom",
+      .methods            = &memtrack_module_methods,
+      .dso                = 0,
+      .reserved           = {0}
     },
-
-    init: brcm_memtrack_init,
-    getMemory: brcm_memtrack_get_memory,
+    .init       = brcm_memtrack_init,
+    .getMemory  = brcm_memtrack_get_memory,
 };
 
 

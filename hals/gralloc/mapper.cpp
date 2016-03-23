@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (C) 2014-2016 Broadcom Canada Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -94,7 +94,7 @@ int gralloc_register_buffer(gralloc_module_t const* module,
    lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
    if (lrc) {
       if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(block_handle);
-      ALOGE("%s : invalid lock for 0x%x", __FUNCTION__, block_handle);
+      ALOGE("%s : invalid lock for %p", __FUNCTION__, block_handle);
       return -EINVAL;
    }
    pSharedData = (PSHARED_DATA) pMemory;
@@ -153,7 +153,7 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
    lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
    if (lrc) {
       if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(block_handle);
-      ALOGE("%s : invalid lock for 0x%x", __FUNCTION__, block_handle);
+      ALOGE("%s : invalid lock for %p", __FUNCTION__, block_handle);
       return -EINVAL;
    }
    pSharedData = (PSHARED_DATA) pMemory;
@@ -240,7 +240,7 @@ int gralloc_lock(gralloc_module_t const* module,
          hnd->nxSurfacePhysicalAddress = (unsigned)physAddr;
       }
    } else {
-      ALOGE("no default plane on s-blk:0x%x", shared_block_handle);
+      ALOGE("no default plane on s-blk:%p", shared_block_handle);
       *vaddr = NULL;
    }
 
@@ -297,7 +297,7 @@ out_video_failed:
       unsigned sharedPhysAddr = hnd->sharedData;
       NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
       sharedPhysAddr = (unsigned)physAddr;
-      ALOGI(" lock (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::vaddr:0x%x::act:%d",
+      ALOGI(" lock (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::vaddr:%p::act:%d",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
             hnd->pid,
             hnd->sharedData,

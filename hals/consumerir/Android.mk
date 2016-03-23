@@ -16,6 +16,8 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 
+# fix warnings!
+LOCAL_CFLAGS := -Werror
 LOCAL_MODULE := consumerir.default
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_SRC_FILES := consumerir.c

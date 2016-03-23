@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014, 2015 Broadcom Canada Ltd.
+ * Copyright (C) 2014-2016 Broadcom Canada Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -780,7 +780,7 @@ static int hwc_device_open(const struct hw_module_t* module,
    const char* name, struct hw_device_t** device);
 
 static struct hw_module_methods_t hwc_module_methods = {
-   open: hwc_device_open
+   .open = hwc_device_open
 };
 
 static void hwc_recycled_cb(void *context, int param);
@@ -801,17 +801,17 @@ static int hwc_checkpoint(struct hwc_context_t *ctx);
 static int hwc_checkpoint_locked(struct hwc_context_t *ctx);
 
 hwc_module_t HAL_MODULE_INFO_SYM = {
-    common: {
-        tag: HARDWARE_MODULE_TAG,
-        version_major: 1,
-        version_minor: 0,
-        id: HWC_HARDWARE_MODULE_ID,
-        name: "HWC module BCM STB platforms",
-        author: "Broadcom Canada Ltd.",
-        methods: &hwc_module_methods,
-        dso: 0,
-        reserved: {0}
-    }
+   .common = {
+      .tag                = HARDWARE_MODULE_TAG,
+      .module_api_version = HWC_MODULE_API_VERSION_0_1,
+      .hal_api_version    = HARDWARE_HAL_API_VERSION,
+      .id                 = HWC_HARDWARE_MODULE_ID,
+      .name               = "hwc for set-top-box platforms",
+      .author             = "Broadcom",
+      .methods            = &hwc_module_methods,
+      .dso                = 0,
+      .reserved           = {0}
+   }
 };
 
 /*****************************************************************************/
@@ -908,7 +908,7 @@ static NEXUS_Error hwc_ext_refcnt(struct hwc_context_t *ctx, NEXUS_MemoryBlockHa
       ashmem_ext_refcnt.cnt = cnt;
       int ret = ioctl(mem_if, NX_ASHMEM_EXT_REFCNT, &ashmem_ext_refcnt);
       if (ret < 0) {
-         ALOGE("%s: failed (%d) for 0x%x, count:0x%x", __FUNCTION__, ret, block_handle, cnt);
+         ALOGE("%s: failed (%d) for %p, count:0x%x", __FUNCTION__, ret, block_handle, cnt);
          hwc_close_memory_interface(ctx);
          return NEXUS_OS_ERROR;
       }
@@ -1069,12 +1069,12 @@ static int hwc_mem_lock_phys(struct hwc_context_t *ctx, NEXUS_MemoryBlockHandle 
 
       if (rc != NEXUS_SUCCESS) {
          if (ctx->dump_mma) {
-            ALOGW("mma-lock-phys: 0x%x -> invalid!?!", block_handle);
+            ALOGW("mma-lock-phys: %p -> invalid!?!", block_handle);
          }
          *paddr = (NEXUS_Addr)NULL;
          return (int)rc;
       } else if (ctx->dump_mma) {
-         ALOGI("mma-lock-phys: 0x%x -> %p", block_handle, *paddr);
+         ALOGI("mma-lock-phys: %p -> 0x%llx", block_handle, *paddr);
       }
    } else {
       *paddr = (NEXUS_Addr)NULL;
@@ -1088,7 +1088,7 @@ static int hwc_mem_unlock_phys(struct hwc_context_t *ctx, NEXUS_MemoryBlockHandl
       hwc_ext_refcnt(ctx, block_handle, NX_ASHMEM_REFCNT_REM);
 
       if (ctx->dump_mma) {
-         ALOGI("mma-unlock-phys: 0x%x", block_handle);
+         ALOGI("mma-unlock-phys: %p", block_handle);
       }
    }
    return 0;
@@ -1115,12 +1115,12 @@ static int hwc_mem_lock(struct hwc_context_t *ctx, NEXUS_MemoryBlockHandle block
 
          if (rc) {
             if (ctx->dump_mma) {
-               ALOGW("mma-lock: 0x%x -> invalid!?!", block_handle);
+               ALOGW("mma-lock: %p -> invalid!?!", block_handle);
             }
             *addr = NULL;
             return (int)rc;
          } else if (ctx->dump_mma) {
-            ALOGI("mma-lock: 0x%x -> %p", block_handle, *addr);
+            ALOGI("mma-lock: %p -> %p", block_handle, *addr);
          }
       } else {
         return NEXUS_SUCCESS;
@@ -1138,7 +1138,7 @@ static int hwc_mem_unlock(struct hwc_context_t *ctx, NEXUS_MemoryBlockHandle blo
          hwc_ext_refcnt(ctx, block_handle, NX_ASHMEM_REFCNT_REM);
 
          if (ctx->dump_mma) {
-            ALOGI("mma-unlock: 0x%x", block_handle);
+            ALOGI("mma-unlock: %p", block_handle);
          }
       }
    }
@@ -1589,7 +1589,7 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
            for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
                // reset the 'drop duplicate frame notifier' count.
                if (ctx->mm_cli[i].id == ntfy.surface_hdl) {
-                  ALOGD("%s: reset drop-dup-count on sfid %x, id %p", __FUNCTION__, ntfy.surface_hdl, ctx->mm_cli[i].id);
+                  ALOGD("%s: reset drop-dup-count on sfid 0x%x, id 0x%x", __FUNCTION__, ntfy.surface_hdl, ctx->mm_cli[i].id);
                   ctx->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_INVALID;
                   ctx->flush_background = true;
                   break;
@@ -1623,7 +1623,7 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
        {
            for (int i = 0; i < NSC_SB_CLIENTS_NUMBER; i++) {
                if (ctx->sb_cli[i].id == ntfy.surface_hdl) {
-                  ALOGD("%s: flush-background on sfid %x, id %p", __FUNCTION__, ntfy.surface_hdl, ctx->sb_cli[i].id);
+                  ALOGD("%s: flush-background on sfid 0x%x, id 0x%x", __FUNCTION__, ntfy.surface_hdl, ctx->sb_cli[i].id);
                   ctx->flush_background = true;
                   break;
                }
@@ -1742,7 +1742,7 @@ static void hwc_hotplug_notify(int dev)
                 float x_dpi = edid.maxHorizSize ? (width * 1000.0 / ((float)edid.maxHorizSize * 0.39370)) : 0.0;
                 float y_dpi = edid.maxVertSize  ? (height * 1000.0 / ((float)edid.maxVertSize * 0.39370)) : 0.0;
 
-                ALOGI("%s: %d x % d (-> %d x %d) (pixel), %d x %d (cm) -> %.3Lf x %.3Lf (dpi)", __FUNCTION__,
+                ALOGI("%s: %d x % d (-> %d x %d) (pixel), %d x %d (cm) -> %.3f x %.3f (dpi)", __FUNCTION__,
                       info.width, info.height, width, height, edid.maxHorizSize, edid.maxVertSize, x_dpi / 1000.0, y_dpi / 1000.0);
 
                 ctx->cfg[HWC_PRIMARY_IX].x_dpi = (int)x_dpi;
@@ -2042,7 +2042,7 @@ static void hwc_tick_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
 static void hwc_rel_tl_inc(struct hwc_context_t *ctx, int index, int layer)
 {
    int sw_timeline = INVALID_FENCE;
-   uint64_t start, end, created;
+   uint64_t start = 0, end = 0, created = 0;
    const long double nsec_to_msec = 1.0 / 1000000.0;
 
    sw_timeline = (index == HWC_PRIMARY_IX) ? ctx->gpx_cli[layer].rel_tl : ctx->vd_cli[layer].rel_tl;
@@ -2268,51 +2268,50 @@ bool hwc_compose_gralloc_buffer(
                     }
                  }
                  BKNI_ReleaseMutex(ctx->g2d_mutex);
-              }
 
-              NEXUS_Surface_LockPlaneAndPalette(srcY, &planeY, NULL);
-              NEXUS_Surface_LockPlaneAndPalette(srcCb, &planeCb, NULL);
-              NEXUS_Surface_LockPlaneAndPalette(srcCr, &planeCr, NULL);
-              NEXUS_Surface_LockPlaneAndPalette(dstYUV, &planeYCbCr, NULL);
-              NEXUS_Surface_LockPlaneAndPalette(outputHdl, &planeRgba, NULL);
+                 NEXUS_Surface_LockPlaneAndPalette(srcY, &planeY, NULL);
+                 NEXUS_Surface_LockPlaneAndPalette(srcCb, &planeCb, NULL);
+                 NEXUS_Surface_LockPlaneAndPalette(srcCr, &planeCr, NULL);
+                 NEXUS_Surface_LockPlaneAndPalette(dstYUV, &planeYCbCr, NULL);
+                 NEXUS_Surface_LockPlaneAndPalette(outputHdl, &planeRgba, NULL);
 
-              next = buffer;
-              {
+                 next = buffer;
+                 {
                  BM2MC_PACKET_PacketFilterEnable *pPacket = (BM2MC_PACKET_PacketFilterEnable *)next;
                  BM2MC_PACKET_INIT(pPacket, FilterEnable, false );
                  pPacket->enable          = 0;
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketSourceFeeders *pPacket = (BM2MC_PACKET_PacketSourceFeeders *)next;
                  BM2MC_PACKET_INIT(pPacket, SourceFeeders, false );
                  pPacket->plane0          = planeCb;
                  pPacket->plane1          = planeCr;
                  pPacket->color           = 0;
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketDestinationFeeder *pPacket = (BM2MC_PACKET_PacketDestinationFeeder *)next;
                  BM2MC_PACKET_INIT(pPacket, DestinationFeeder, false );
                  pPacket->plane           = planeY;
                  pPacket->color           = 0;
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketOutputFeeder *pPacket = (BM2MC_PACKET_PacketOutputFeeder *)next;
                  BM2MC_PACKET_INIT(pPacket, OutputFeeder, false);
                  pPacket->plane           = planeYCbCr;
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketBlend *pPacket = (BM2MC_PACKET_PacketBlend *)next;
                  BM2MC_PACKET_INIT( pPacket, Blend, false );
                  pPacket->color_blend     = combColor;
                  pPacket->alpha_blend     = copyAlpha;
                  pPacket->color           = 0;
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketScaleBlendBlit *pPacket = (BM2MC_PACKET_PacketScaleBlendBlit *)next;
                  BM2MC_PACKET_INIT(pPacket, ScaleBlendBlit, true);
                  pPacket->src_rect.x      = 0;
@@ -2326,64 +2325,64 @@ bool hwc_compose_gralloc_buffer(
                  pPacket->dst_point.x     = 0;
                  pPacket->dst_point.y     = 0;
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketSourceFeeder *pPacket = (BM2MC_PACKET_PacketSourceFeeder *)next;
                  BM2MC_PACKET_INIT(pPacket, SourceFeeder, false );
                  pPacket->plane           = planeYCbCr;
                  pPacket->color           = 0xFF000000; /* add alpha, opaque. */
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketSourceControl *pPacket = (BM2MC_PACKET_PacketSourceControl *)next;
                  BM2MC_PACKET_INIT(pPacket, SourceControl, false);
                  pPacket->chroma_filter   = true;
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketDestinationNone *pPacket = (BM2MC_PACKET_PacketDestinationNone *)next;
                  BM2MC_PACKET_INIT(pPacket, DestinationNone, false);
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketOutputFeeder *pPacket = (BM2MC_PACKET_PacketOutputFeeder *)next;
                  BM2MC_PACKET_INIT(pPacket, OutputFeeder, false);
                  pPacket->plane           = planeRgba;
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketOutputControl *pPacket = (BM2MC_PACKET_PacketOutputControl *)next;
                  BM2MC_PACKET_INIT(pPacket, OutputControl, false);
                  pPacket->chroma_filter    = true;
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketBlend *pPacket = (BM2MC_PACKET_PacketBlend *)next;
                  BM2MC_PACKET_INIT( pPacket, Blend, false );
                  pPacket->color_blend     = copyColor;
                  pPacket->alpha_blend     = copyAlpha;
                  pPacket->color           = 0;
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketFilterEnable *pPacket = (BM2MC_PACKET_PacketFilterEnable *)next;
                  BM2MC_PACKET_INIT(pPacket, FilterEnable, false);
                  pPacket->enable          = 1;
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketSourceColorMatrixEnable *pPacket = (BM2MC_PACKET_PacketSourceColorMatrixEnable *)next;
                  BM2MC_PACKET_INIT(pPacket, SourceColorMatrixEnable, false);
                  pPacket->enable          = 1;
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketSourceColorMatrix *pPacket = (BM2MC_PACKET_PacketSourceColorMatrix *)next;
                  BM2MC_PACKET_INIT(pPacket, SourceColorMatrix, false);
                  NEXUS_Graphics2D_ConvertColorMatrix(&g_hwc_ai32_Matrix_YCbCrtoRGB, &pPacket->matrix);
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketScaleBlit *pPacket = (BM2MC_PACKET_PacketScaleBlit *)next;
                  BM2MC_PACKET_INIT(pPacket, ScaleBlit, true);
                  pPacket->src_rect.x       = 0;
@@ -2395,67 +2394,68 @@ bool hwc_compose_gralloc_buffer(
                  pPacket->out_rect.width   = outAdj.width;
                  pPacket->out_rect.height  = outAdj.height;
                  next = ++pPacket;
-              }
-              {
+                 }
+                 {
                  BM2MC_PACKET_PacketSourceColorMatrixEnable *pPacket = (BM2MC_PACKET_PacketSourceColorMatrixEnable *)next;
                  BM2MC_PACKET_INIT(pPacket, SourceColorMatrixEnable, false);
                  pPacket->enable          = 0;
                  next = ++pPacket;
-              }
+                 }
 
-              if (ctx->display_dump_layer & HWC_DUMP_LEVEL_COMPOSE) {
-                 ALOGI("%s: %llu/%d - y(%dx%d,s:%d,f:%d):cr(%dx%d,s:%d,f:%d,o:%d):cb(%dx%d,s:%d,f:%d,o:%d) => yuv(%dx%d,s:%d,f:%d) => rgba(%dx%d,s:%d,f:%d) @ src(0,0,%dx%d):dst(%d,%d,%dx%d)",
-                    is_virtual ? "vcmp" : "comp",
-                    ctx->stats[stats_ix].set_call, layer_id,
-                    planeY.width, planeY.height, planeY.pitch, planeY.format,
-                    planeCr.width, planeCr.height, planeCr.pitch, planeCr.format, cr_offset,
-                    planeCb.width, planeCb.height, planeCb.pitch, planeCb.format, cb_offset,
-                    planeYCbCr.width, planeYCbCr.height, planeYCbCr.pitch, planeYCbCr.format,
-                    planeRgba.width, planeRgba.height, planeRgba.pitch, planeRgba.format,
-                    planeYCbCr.width, planeYCbCr.height,
-                    outAdj.x, outAdj.y, outAdj.width, outAdj.height);
-              }
+                 if (ctx->display_dump_layer & HWC_DUMP_LEVEL_COMPOSE) {
+                    ALOGI("%s: %llu/%d - y(%dx%d,s:%d,f:%d):cr(%dx%d,s:%d,f:%d,o:%d):cb(%dx%d,s:%d,f:%d,o:%d) => yuv(%dx%d,s:%d,f:%d) => rgba(%dx%d,s:%d,f:%d) @ src(0,0,%dx%d):dst(%d,%d,%dx%d)",
+                       is_virtual ? "vcmp" : "comp",
+                       ctx->stats[stats_ix].set_call, layer_id,
+                       planeY.width, planeY.height, planeY.pitch, planeY.format,
+                       planeCr.width, planeCr.height, planeCr.pitch, planeCr.format, cr_offset,
+                       planeCb.width, planeCb.height, planeCb.pitch, planeCb.format, cb_offset,
+                       planeYCbCr.width, planeYCbCr.height, planeYCbCr.pitch, planeYCbCr.format,
+                       planeRgba.width, planeRgba.height, planeRgba.pitch, planeRgba.format,
+                       planeYCbCr.width, planeYCbCr.height,
+                       outAdj.x, outAdj.y, outAdj.width, outAdj.height);
+                 }
 
-              if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
-                 ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
-              } else {
-                 rc = NEXUS_Graphics2D_PacketWriteComplete(ctx->hwc_g2d, (uint8_t*)next - (uint8_t*)buffer);
-                 if (rc != NEXUS_SUCCESS) {
-                    ALOGE("%s: failed writting packet buffer: (num:%d, id:0x%x)\n", __FUNCTION__,
-                          NEXUS_GET_ERR_NUM(rc), NEXUS_GET_ERR_ID(rc));
+                 if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+                    ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
                  } else {
-                    if (!ctx->g2d_allow_simult || ctx->fence_support) {
-                       rc = hwc_checkpoint_locked(ctx);
-                       if (rc)  {
-                          ALOGW("%s: checkpoint timeout composing layer %u", __FUNCTION__, layer_id);
+                    rc = NEXUS_Graphics2D_PacketWriteComplete(ctx->hwc_g2d, (uint8_t*)next - (uint8_t*)buffer);
+                    if (rc != NEXUS_SUCCESS) {
+                       ALOGE("%s: failed writting packet buffer: (num:%d, id:0x%x)\n", __FUNCTION__,
+                             NEXUS_GET_ERR_NUM(rc), NEXUS_GET_ERR_ID(rc));
+                    } else {
+                       if (!ctx->g2d_allow_simult || ctx->fence_support) {
+                          rc = hwc_checkpoint_locked(ctx);
+                          if (rc)  {
+                             ALOGW("%s: checkpoint timeout composing layer %u", __FUNCTION__, layer_id);
+                          } else if (q_ops) {
+                             *q_ops = false;
+                          }
                        } else if (q_ops) {
-                          *q_ops = false;
+                          *q_ops = true;
                        }
-                    } else if (q_ops) {
-                       *q_ops = true;
                     }
+                    if (rc) {
+                       ALOGE("%s: %llu/%d - failed layer completion",
+                             is_virtual ? "vcmp" : "comp",
+                             ctx->stats[stats_ix].set_call, layer_id);
+                    } else {
+                       composed = true;
+                       if (ops_count) {
+                          *ops_count += 1;
+                       }
+                       if (!ctx->g2d_allow_simult || ctx->fence_support) {
+                          hwc_clear_acquire_release_fences(ctx, list, layer_id);
+                       }
+                    }
+                    BKNI_ReleaseMutex(ctx->g2d_mutex);
                  }
-                 if (rc) {
-                    ALOGE("%s: %llu/%d - failed layer completion",
-                          is_virtual ? "vcmp" : "comp",
-                          ctx->stats[stats_ix].set_call, layer_id);
-                 } else {
-                    composed = true;
-                    if (ops_count) {
-                       *ops_count += 1;
-                    }
-                    if (!ctx->g2d_allow_simult || ctx->fence_support) {
-                       hwc_clear_acquire_release_fences(ctx, list, layer_id);
-                    }
-                 }
-                 BKNI_ReleaseMutex(ctx->g2d_mutex);
-              }
 
-              NEXUS_Surface_UnlockPlaneAndPalette(srcCb);
-              NEXUS_Surface_UnlockPlaneAndPalette(srcCr);
-              NEXUS_Surface_UnlockPlaneAndPalette(srcY);
-              NEXUS_Surface_UnlockPlaneAndPalette(dstYUV);
-              NEXUS_Surface_UnlockPlaneAndPalette(outputHdl);
+                 NEXUS_Surface_UnlockPlaneAndPalette(srcCb);
+                 NEXUS_Surface_UnlockPlaneAndPalette(srcCr);
+                 NEXUS_Surface_UnlockPlaneAndPalette(srcY);
+                 NEXUS_Surface_UnlockPlaneAndPalette(dstYUV);
+                 NEXUS_Surface_UnlockPlaneAndPalette(outputHdl);
+              }
            }
 
            if (srcCb != NULL) {
@@ -3080,7 +3080,7 @@ static void hwc_put_disp_surface(struct hwc_context_t *ctx, int disp_ix, NEXUS_S
 
 static void hwc_ret_tl_inc(struct hwc_context_t *ctx, int index, int inc, bool err)
 {
-   uint64_t tick, action;
+   uint64_t tick = 0, action;
    const long double nsec_to_msec = 1.0 / 1000000.0;
 
    if (!ctx->fence_retire) {
@@ -3119,7 +3119,7 @@ static bool hwc_valid_surface_now(struct hwc_context_t* ctx, int disp_ix, NEXUS_
       }
    }
 
-   ALOGI("disp: %d - stale surface (%x) recycling...\n", disp_ix, surface);
+   ALOGI("disp: %d - stale surface (%p) recycling...", disp_ix, surface);
    return false;
 }
 
@@ -3132,7 +3132,7 @@ static void hwc_recycle_now(struct hwc_context_t* ctx)
    numSurfaces = 0;
    rc = NEXUS_SurfaceClient_RecycleSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, surfaces, HWC_NUM_DISP_BUFFERS, &numSurfaces);
    if (rc) {
-      ALOGW("%s: error recycling %#x %d", __FUNCTION__, ctx->disp_cli[HWC_PRIMARY_IX].schdl, rc);
+      ALOGW("%s: error recycling %p %d", __FUNCTION__, ctx->disp_cli[HWC_PRIMARY_IX].schdl, rc);
    } else if ( numSurfaces > 0 ) {
       if (BKNI_AcquireMutex(ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex) == BERR_SUCCESS) {
          for (i = 0; i < numSurfaces; i++) {
@@ -3854,7 +3854,7 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
    lrc = hwc_mem_lock(ctx, out_block_handle, &pAddr, true);
    PSHARED_DATA pOutSharedData = (PSHARED_DATA) pAddr;
    if (pOutSharedData == NULL) {
-      ALOGE("vcmp: %llu (%p) - invalid output buffer?", ctx->stats[HWC_VIRTUAL_IX].set_call, gr_out_buffer->sharedData);
+      ALOGE("vcmp: %llu (0x%x) - invalid output buffer?", ctx->stats[HWC_VIRTUAL_IX].set_call, gr_out_buffer->sharedData);
       ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
       goto out;
    }
@@ -3865,7 +3865,7 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
                                   pOutSharedData->container.physAddr,
                                   0);
    if (outputHdl == NULL) {
-      ALOGE("vcmp: %llu (%p) - no display surface available", ctx->stats[HWC_VIRTUAL_IX].set_call, gr_out_buffer->sharedData);
+      ALOGE("vcmp: %llu (0x%x) - no display surface available", ctx->stats[HWC_VIRTUAL_IX].set_call, gr_out_buffer->sharedData);
       ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
       if (!lrc) hwc_mem_unlock(ctx, out_block_handle, true);
       goto out;
@@ -4525,7 +4525,7 @@ static void hwc_collect_composer(struct hwc_context_t *ctx, struct hwc_work_item
 
       if ((ctx->display_dump_layer & HWC_DUMP_LEVEL_LATENCY) ||
           (ctx->track_comp_chatty && ((tick_composed - this_frame->tick_queued) > VSYNC_REFRESH))) {
-         ALOGI("%s: %llu: ov:%d, fb:%d, comp:%d, time:%.3f msecs (sw:%.5f::fw:%.5f::cw:%.5f) => %s\n",
+         ALOGI("%s: %llu: ov:%d, fb:%d, comp:%d, time:%.3Lf msecs (sw:%.5Lf::fw:%.5Lf::cw:%.5Lf) => %s\n",
                (index == HWC_PRIMARY_IX) ? "comp" : "vcmp",
                this_frame->comp_ix, overlay_seen, fb_target_seen, layer_composed,
                comp_time, nsec_to_msec * this_frame->surf_wait,
@@ -4818,17 +4818,17 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             }
             rc = BKNI_CreateEvent(&dev->composer_event[i]);
             if (rc) {
-               ALOGE("%s: unable to create composer event", __FUNCTION__, i);
+               ALOGE("%s: unable to create composer event %d", __FUNCTION__, i);
                goto clean_up;
             }
             rc = BKNI_CreateEvent(&dev->composer_event_sync[i]);
             if (rc) {
-               ALOGE("%s: unable to create composer sync event", __FUNCTION__, i);
+               ALOGE("%s: unable to create composer sync event %d", __FUNCTION__, i);
                goto clean_up;
             }
             rc = BKNI_CreateEvent(&dev->composer_event_forced[i]);
             if (rc) {
-               ALOGE("%s: unable to create composer forced event", __FUNCTION__, i);
+               ALOGE("%s: unable to create composer forced event %d", __FUNCTION__, i);
                goto clean_up;
             }
         }
@@ -5009,7 +5009,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
 
         pthread_attr_init(&attr);
         if (pthread_create(&dev->vsync_callback_thread, &attr, hwc_vsync_task, (void *)dev) != 0) {
-            ALOGE("%s: unable to create vsync thread", __FUNCTION__, i);
+            ALOGE("%s: unable to create vsync thread", __FUNCTION__);
             goto clean_up;
         }
         pthread_attr_destroy(&attr);
@@ -5017,7 +5017,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
 
         pthread_attr_init(&attr);
         if (pthread_create(&dev->recycle_callback_thread, &attr, hwc_recycle_task, (void *)dev) != 0) {
-            ALOGE("%s: unable to create recycle thread", __FUNCTION__, i);
+            ALOGE("%s: unable to create recycle thread", __FUNCTION__);
             goto clean_up;
         }
         pthread_attr_destroy(&attr);
@@ -5026,7 +5026,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         for (i = 0; i < DISPLAY_SUPPORTED; i++) {
             pthread_attr_init(&attr);
             if (pthread_create(&dev->composer_thread[i], &attr, hwc_compose_task_item[i], (void *)dev) != 0) {
-                ALOGE("%s: unable to create composer thread", __FUNCTION__, i);
+                ALOGE("%s: unable to create composer thread %d", __FUNCTION__, i);
                 goto clean_up;
             }
             pthread_attr_destroy(&attr);
