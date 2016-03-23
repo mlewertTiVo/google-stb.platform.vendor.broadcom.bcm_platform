@@ -3191,17 +3191,17 @@ OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
         // come first.  It's always safe to do it here.
         if ( m_metadataEnabled )
         {
-            ALOGV("Selecting metadata output mode for output buffer %#x", pBuffer);
+            ALOGV("Selecting metadata output mode for output buffer %p", (void*)pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eMetadata;
         }
         else if ( m_nativeGraphicsEnabled )
         {
-            ALOGV("Selecting native graphics output mode for output buffer %#x", pBuffer);
+            ALOGV("Selecting native graphics output mode for output buffer %p", (void*)pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eNative;
         }
         else
         {
-            ALOGV("Selecting standard buffer output mode for output buffer %#x", pBuffer);
+            ALOGV("Selecting standard buffer output mode for output buffer %p", (void*)pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eStandard;
         }
         switch ( m_outputMode )
@@ -3404,7 +3404,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
             }
             else
             {
-                ALOGV("Not discarding frame %u, state is already %u", pFrameBuffer->state);
+                ALOGV("Not discarding frame %u, state is already %u", pFrameBuffer->frameStatus.serialNumber, pFrameBuffer->state);
             }
         }
 
@@ -3905,7 +3905,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         pFrameBuffer = pInfo->pFrameBuffer;
     }
     pInfo->pFrameBuffer = NULL;
-    ALOGV("Fill Buffer, comp:%s ts %lld us serial %u pInfo %#x HDR %#x", GetName(), pBufferHeader->nTimeStamp, pFrameBuffer ? pFrameBuffer->frameStatus.serialNumber : -1, pInfo, pBufferHeader);
+    ALOGV("Fill Buffer, comp:%s ts %lld us serial %u pInfo %p HDR %p", GetName(), pBufferHeader->nTimeStamp, pFrameBuffer ? pFrameBuffer->frameStatus.serialNumber : -1, pInfo, pBufferHeader);
     // Determine what to do with the buffer
     if ( pFrameBuffer )
     {
@@ -4047,7 +4047,7 @@ void BOMX_VideoDecoder::InputBufferNew()
     ALOG_ASSERT(m_AvailInputBuffers > 0);
     --m_AvailInputBuffers;
     if (m_AvailInputBuffers == 0) {
-        ALOGV("%s: reached zero input buffers, m_inputBuffersTimerId:%u",
+        ALOGV("%s: reached zero input buffers, m_inputBuffersTimerId:%p",
               __FUNCTION__, m_inputBuffersTimerId);
         CancelTimerId(m_inputBuffersTimerId);
         m_inputBuffersTimerId = StartTimer(BOMX_VideoDecoder_GetFrameInterval(m_frameRate)*2, BOMX_VideoDecoder_InputBuffersTimer, static_cast<void *>(this));
@@ -4350,7 +4350,7 @@ void BOMX_VideoDecoder::InvalidateDecodedFrames()
             // Any other state means the buffer is owned by us.  Discard it by moving it back
             // to the free list
             pBuffer->state = BOMX_VideoDecoderFrameBufferState_eInvalid;
-            ALOGV("Invalidating frame buffer %#x (state %u)", pBuffer, pBuffer->state);
+            ALOGV("Invalidating frame buffer %p (state %u)", pBuffer, pBuffer->state);
             BLST_Q_REMOVE(&m_frameBufferAllocList, pBuffer, node);
             BOMX_VideoDecoder_StripedSurfaceDestroy(pBuffer);
             BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pBuffer, node);
@@ -4513,7 +4513,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         OMX_PARAM_PORTDEFINITIONTYPE portDefs;
                         bool portReset;
 
-                        ALOGI("Video output format change %ux%u -> %ux%u [max %ux%u] on frame %u", m_outputWidth, m_outputHeight,
+                        ALOGI("Video output format change %ux%u -> %lux%lu [max %ux%u] on frame %u", m_outputWidth, m_outputHeight,
                             pBuffer->frameStatus.surfaceCreateSettings.imageWidth, pBuffer->frameStatus.surfaceCreateSettings.imageHeight,
                             m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth, m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight,
                             pBuffer->frameStatus.serialNumber);
@@ -4725,7 +4725,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 pBuffer->state = BOMX_VideoDecoderFrameBufferState_eDelivered;
                 pInfo->pFrameBuffer = pBuffer;
                 pBuffer->pBufferInfo = pInfo;
-                ALOGV("Returning Port Buffer ts %lld us serial %u pInfo %#x FB %#x HDR %#x flags %#x", pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader, pHeader->nFlags);
+                ALOGV("Returning Port Buffer ts %lld us serial %u pInfo %p FB %p HDR %p flags %#x", pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader, pHeader->nFlags);
                 {
                     unsigned queueDepthBefore = m_pVideoPorts[1]->QueueDepth();
                     BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::OUTPUT_FRAME, pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber);
@@ -5203,7 +5203,7 @@ void BOMX_VideoDecoder::SetVideoGeometry_locked(NEXUS_Rect *pPosition, NEXUS_Rec
             if ( (pClipRect->x + pClipRect->width) > (int)pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth ||
                  (pClipRect->y + pClipRect->height) > (int)pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight )
             {
-                ALOGW("Invalid clip region %ux%u @ %u,%u - Buffer is %ux%u", pClipRect->width, pClipRect->height, pClipRect->x, pClipRect->y,
+                ALOGW("Invalid clip region %ux%u @ %u,%u - Buffer is %lux%lu", pClipRect->width, pClipRect->height, pClipRect->x, pClipRect->y,
                     pFrameBuffer->frameStatus.surfaceCreateSettings.imageWidth, pFrameBuffer->frameStatus.surfaceCreateSettings.imageHeight);
             }
             else

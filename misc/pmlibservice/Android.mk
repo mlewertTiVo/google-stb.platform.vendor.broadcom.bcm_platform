@@ -28,6 +28,13 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/glob \
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(PMLIB_CFLAGS)
 
+# fix warnings!
+LOCAL_CFLAGS += -Werror
+LOCAL_CFLAGS += -Wno-implicit-function-declaration
+FILTER_OUT_LOCAL_CFLAGS := -Wno-implicit-function-declaration
+LOCAL_CPPFLAGS := $(LOCAL_CFLAGS)
+LOCAL_CPPFLAGS := $(filter-out $(FILTER_OUT_LOCAL_CFLAGS), $(LOCAL_CPPFLAGS))
+
 # M onward: sdk version >= 23.
 ifneq (1,$(filter 1,$(shell echo "$$(( $(PLATFORM_SDK_VERSION) >= 23 ))" )))
 LOCAL_CFLAGS += -DIP_CTRL_CMD_FOR_SDK=\"netcfg\"

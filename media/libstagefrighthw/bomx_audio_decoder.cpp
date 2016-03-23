@@ -106,9 +106,9 @@ enum BOMX_AudioDecoderEventType
     BOMX_AudioDecoderEventType_eMax
 };
 
-static const BOMX_AudioDecoderRole g_ac3Role[] = {"audio_decoder.ac3", OMX_AUDIO_CodingAndroidAC3};
-static const BOMX_AudioDecoderRole g_mp3Role[] = {"audio_decoder.mp3", OMX_AUDIO_CodingMP3};
-static const BOMX_AudioDecoderRole g_aacRole[] = {"audio_decoder.aac", OMX_AUDIO_CodingAAC};
+static const BOMX_AudioDecoderRole g_ac3Role[] = {{"audio_decoder.ac3", OMX_AUDIO_CodingAndroidAC3}};
+static const BOMX_AudioDecoderRole g_mp3Role[] = {{"audio_decoder.mp3", OMX_AUDIO_CodingMP3}};
+static const BOMX_AudioDecoderRole g_aacRole[] = {{"audio_decoder.aac", OMX_AUDIO_CodingAAC}};
 static int32_t g_instanceNum;
 
 #define BOMX_AUDIO_GET_ROLE_COUNT(roleArray) (sizeof(roleArray)/sizeof(BOMX_AudioDecoderRole))
@@ -2785,7 +2785,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::FillThisBuffer(
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
 
-    ALOGV("Fill Buffer, comp:%s %d ts %u us pInfo %#x HDR %#x", GetName(), m_instanceNum, (unsigned int)pBufferHeader->nTimeStamp, pInfo, pBufferHeader);
+    ALOGV("Fill Buffer, comp:%s %d ts %u us pInfo %p HDR %p", GetName(), m_instanceNum, (unsigned int)pBufferHeader->nTimeStamp, pInfo, pBufferHeader);
     // Determine what to do with the buffer
     pBuffer->Reset();
 
@@ -2795,7 +2795,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::FillThisBuffer(
         errCode = NEXUS_AudioDecoder_QueueBuffer(m_hAudioDecoder, pInfo->hMemoryBlock, 0, pBufferHeader->nAllocLen);
         if ( errCode )
         {
-            ALOGE("Unable to queue output buffer hDecoder %#x block #%x len %u (%#x) - rc %u (%#x)", m_hAudioDecoder, pInfo->hMemoryBlock, pBufferHeader->nAllocLen, pBufferHeader->nAllocLen, errCode, errCode);
+            ALOGE("Unable to queue output buffer hDecoder %p block %p len %u (%p) - rc %u", m_hAudioDecoder, pInfo->hMemoryBlock, pBufferHeader->nAllocLen, pBufferHeader, errCode);
             return BOMX_ERR_TRACE(OMX_ErrorUndefined);
         }
         pInfo->nexusOwned = true;
@@ -2907,7 +2907,7 @@ void BOMX_AudioDecoder::InputBufferNew()
     ALOG_ASSERT(m_AvailInputBuffers > 0);
     --m_AvailInputBuffers;
     if (m_AvailInputBuffers == 0) {
-        ALOGV("%s: (%d) reached zero input buffers, minputBuffersTimerId:%u",
+        ALOGV("%s: (%d) reached zero input buffers, minputBuffersTimerId:%p",
               __FUNCTION__, m_instanceNum, m_inputBuffersTimerId);
         CancelTimerId(m_inputBuffersTimerId);
         m_inputBuffersTimerId = StartTimer(B_INPUT_BUFFERS_RETURN_INTERVAL,
@@ -3174,7 +3174,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
         // Scan buffers returned for matches in OMX buffers.  These should really be in order.
         for ( i = 0; i < numFrames; i++ )
         {
-            ALOGV("%d Frame %u: pts=%lu bytes=%lu@%lu sr=%lu", m_instanceNum, i, m_pFrameStatus[i].pts, m_pFrameStatus[i].filledBytes, m_pFrameStatus[i].bufferOffset, m_pFrameStatus[i].sampleRate);
+            ALOGV("%d Frame %u: pts=%u bytes=%zu@%u sr=%u", m_instanceNum, i, m_pFrameStatus[i].pts, m_pFrameStatus[i].filledBytes, m_pFrameStatus[i].bufferOffset, m_pFrameStatus[i].sampleRate);
 
             if ( m_pFrameStatus[i].sampleRate != m_sampleRate && m_pFrameStatus[i].filledBytes > 0 )
             {
@@ -3283,7 +3283,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                     m_eosTimeStamp = pHeader->nTimeStamp + (numSample * 1000000ll / m_pFrameStatus[i].sampleRate);
                 }
 
-                ALOGV("%d Return output buffer TS %llu bytes %lu (%lu@%lu) flags 0x%x", m_instanceNum, pHeader->nTimeStamp, m_pFrameStatus[i].filledBytes, pHeader->nFilledLen, pHeader->nOffset, pHeader->nFlags);
+                ALOGV("%d Return output buffer TS %llu bytes %zu (%u@%u) flags 0x%x", m_instanceNum, pHeader->nTimeStamp, m_pFrameStatus[i].filledBytes, pHeader->nFilledLen, pHeader->nOffset, pHeader->nFlags);
                 ReturnPortBuffer(m_pAudioPorts[1], pBuffer);
                 // Try to return processed input buffers
                 ReturnInputBuffers(pHeader->nTimeStamp, false);

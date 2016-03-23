@@ -29,6 +29,10 @@ LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_CFLAGS += $(NEXUS_CFLAGS)
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
+# fix warnings!
+LOCAL_CFLAGS += -Werror
+# *** TODO: fix refsw.
+LOCAL_CFLAGS += -Wno-strict-aliasing
 
 LOCAL_SHARED_LIBRARIES := libcutils liblog libutils libnexus libnxclient
 

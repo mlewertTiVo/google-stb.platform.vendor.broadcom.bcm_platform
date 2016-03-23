@@ -2215,7 +2215,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::EmptyThisBuffer(
         pInfo->pts = BOMX_TickToPts(&pBufferHeader->nTimeStamp);
     }
 
-    ALOGV("PTS: ts:%llu - pts:%lu", pBufferHeader->nTimeStamp, pInfo->pts);
+    ALOGV("PTS: ts:%llu - pts:%u", pBufferHeader->nTimeStamp, pInfo->pts);
 
     /* queue the buffer */
     err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
@@ -2468,7 +2468,7 @@ void BOMX_VideoEncoder::ResetEncodedFrameList()
     {
         pNxVidEncFrNext = BLST_Q_NEXT(pNxVidEncFr, link);
         pNxVidEncFr->frameData->clear();
-        ALOGV("Invalidating frame buffer %#x ", pNxVidEncFr);
+        ALOGV("Invalidating frame buffer %p ", pNxVidEncFr);
         BLST_Q_REMOVE(&m_EncodedFrList, pNxVidEncFr, link);
         m_EncodedFrListLen--;
         BLST_Q_INSERT_TAIL(&m_EmptyFrList, pNxVidEncFr, link);
@@ -2782,7 +2782,7 @@ void BOMX_VideoEncoder::OutputBufferProcess()
         ReturnEncodedFrameSynchronized(pNxVidEncFr);
 
         /* return client buffer */
-        ALOGV("Returning Port Buffer HDR %#x flags %#x ts %llu us ",
+        ALOGV("Returning Port Buffer HDR %p flags %#x ts %llu us ",
               pHeader, pHeader->nFlags, pHeader->nTimeStamp);
         ReturnPortBuffer(m_pVideoPorts[1], pOmxBuffer);
 
@@ -3931,7 +3931,7 @@ unsigned int BOMX_VideoEncoder::RetrieveFrameFromHardware(void *pBufferBase)
                 pEmptyFr->clientFlags |= OMX_BUFFERFLAG_EOS;
             }
 
-            ALOGV("FRAME: %p - clientFlags: %x, size:%lu orig TS: %llu, intep TS: %llu",
+            ALOGV("FRAME: %p - clientFlags: %x, size:%u orig TS: %llu, intep TS: %llu",
                   pEmptyFr, pEmptyFr->clientFlags, pEmptyFr->combinedSz, pEmptyFr->usTimeStampOriginal, pEmptyFr->usTimeStampIntepolated);
             BLST_Q_INSERT_TAIL(&m_EncodedFrList, pEmptyFr, link);
             m_EncodedFrListLen++;

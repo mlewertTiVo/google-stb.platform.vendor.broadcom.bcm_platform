@@ -75,6 +75,8 @@ LOCAL_C_INCLUDES += $(NEXUS_TOP)/lib/os/include $(NEXUS_TOP)/lib/os/include/linu
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_SHARED_LIBRARIES :=         \
         libbinder                 \

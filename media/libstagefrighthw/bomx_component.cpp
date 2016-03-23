@@ -1543,11 +1543,11 @@ void BOMX_Component::WalkTunnels(BOMX_ComponentArray *pArray)
     {
         if ( pArray->pComponents[i] == this )
         {
-            ALOGV("Component %#x (%s) already in array", this, GetName());
+            ALOGV("Component %p (%s) already in array", this, GetName());
             return;
         }
     }
-    ALOGV("Component %#x (%s) not in array", this, GetName());
+    ALOGV("Component %p (%s) not in array", this, GetName());
 
     if ( pArray->numComponents >= BOMX_MAX_COMPONENTS_IN_ARRAY )
     {

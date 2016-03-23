@@ -99,7 +99,7 @@ OMX_ERRORTYPE BOMX_AndroidPlugin::destroyComponentInstance(
 {
     OMX_ERRORTYPE omxErr;
 
-    ALOGV("OMX_FreeHandle(%#x)", component);
+    ALOGV("OMX_FreeHandle(%p)", component);
 
     omxErr = OMX_FreeHandle(reinterpret_cast<OMX_HANDLETYPE *>(component));
     if ( OMX_ErrorNone != omxErr )
