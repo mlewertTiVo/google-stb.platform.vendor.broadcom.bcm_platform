@@ -42,6 +42,8 @@ public class BcmKeyInterceptorReceiver extends BroadcastReceiver {
     private static final String TV_SETTING_PACKAGE = "com.android.tv.settings";
     private static final String TV_SETTING_WPS_ACTIVITY = "com.android.tv.settings.connectivity.WpsConnectionActivity";
 
+    private static final String NETFLIX_APP = "com.netflix.ninja";
+
     private static final String TAG = "BcmKeyInterceptorReceiver";
 
     private static final boolean DEBUG = true;
@@ -83,6 +85,18 @@ public class BcmKeyInterceptorReceiver extends BroadcastReceiver {
 
                 if (DEBUG) Log.d(TAG, "localIntent: " + localIntent);
                 context.startActivity(localIntent);
+
+            } else if (localKeyCode == KeyEvent.KEYCODE_TV_CONTENTS_MENU ) {
+                /* Start Netflix activity */
+                if (DEBUG) Log.d(TAG, "Got Netflix key");
+
+                localIntent = context.getPackageManager().getLeanbackLaunchIntentForPackage(NETFLIX_APP);
+                if (localIntent != null) {
+                    if (DEBUG) Log.d(TAG, "localIntent: " + localIntent);
+                    context.startActivity(localIntent);
+                } else {
+                    if (DEBUG) Log.d(TAG, "LeanbackLaunchIntent for (" + NETFLIX_APP + ") is null" );
+                }
             }
         }
     }
