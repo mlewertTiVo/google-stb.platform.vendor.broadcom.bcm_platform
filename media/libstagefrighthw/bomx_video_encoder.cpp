@@ -309,6 +309,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_nImageSurfaceFreeListLen(0),
     m_nImageSurfacePushedListLen(0),
     m_bSimpleEncoderStarted(false),
+    m_bPushDummyFrame(true),
     m_EmptyFrListLen(0),
     m_EncodedFrListLen(0),
     m_hImageInputEvent(NULL),
@@ -2264,11 +2265,95 @@ OMX_ERRORTYPE BOMX_VideoEncoder::FillThisBuffer(
 NEXUS_Error BOMX_VideoEncoder::PushInputEosFrame()
 {
     NEXUS_VideoImageInputSurfaceSettings surfSettings;
+    OMX_ERRORTYPE err;
+
+    if (m_bPushDummyFrame)
+    {
+        err = BuildDummyFrame();
+        if ( OMX_ErrorNone != err  )
+        {
+            return err;
+        }
+    }
 
     // NEXUS: EOS mush be pushed with NULL frame
     NEXUS_VideoImageInput_GetDefaultSurfaceSettings(&surfSettings);
     surfSettings.endOfStream = true;
     return NEXUS_VideoImageInput_PushSurface(m_hImageInput, NULL, &surfSettings);
+}
+
+OMX_ERRORTYPE BOMX_VideoEncoder::BuildDummyFrame()
+{
+    NEXUS_Error errCode;
+    OMX_ERRORTYPE oerr;
+    void *pBuffer;
+    BOMX_ImageSurfaceNode *pNode;
+    NEXUS_VideoImageInputSurfaceSettings surfSettings;
+    const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[0]->GetDefinition();
+    unsigned int width = pPortDef->format.video.nFrameWidth;
+    unsigned int height = pPortDef->format.video.nFrameHeight;
+
+    oerr = OMX_ErrorNone;
+
+    errCode = AllocateInputBuffer(ComputeInputBufferSize(pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight), pBuffer);
+
+    if (errCode)
+    {
+        ALOGE("failed to allocate buffer from Nexus heap");
+        return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
+    }
+
+    /* allocate an image input surface */
+    pNode = BLST_Q_FIRST(&m_ImageSurfaceFreeList);
+    if (NULL == pNode)
+    {
+        ALOGV("no image surface is available");
+        oerr = OMX_ErrorInsufficientResources;
+        goto err_out;
+    }
+
+    NEXUS_VideoImageInput_GetDefaultSurfaceSettings(&surfSettings);
+
+    surfSettings.pts = 0;
+    surfSettings.ptsValid = true;
+    surfSettings.frameRate = MapOMXFrameRateToNexus(pPortDef->format.video.xFramerate);
+    if (surfSettings.frameRate == NEXUS_VideoFrameRate_eUnknown)
+    {
+        surfSettings.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
+    }
+
+    ALOGV("Push dummy surface setting: pts:%d, frameRate:%g", surfSettings.pts, BOMX_NexusFramerateValue(surfSettings.frameRate));
+
+    if (NEXUS_SUCCESS != ExtractNexusBuffer((uint8_t *)pBuffer, width, height, pNode->hSurface))
+    {
+        oerr = OMX_ErrorUndefined;
+        goto err_out;
+    }
+
+    ALOGV("Push dummy surface:%p", pNode->hSurface);
+    errCode = NEXUS_VideoImageInput_PushSurface(m_hImageInput, pNode->hSurface, &surfSettings);
+    if (errCode)
+    {
+        ALOGE("Error Push Dummy Surface. err = %d", errCode);
+        oerr = OMX_ErrorUndefined;
+        goto err_out;
+    }
+    // add the image input surface to pushed list
+    BLST_Q_REMOVE_HEAD(&m_ImageSurfaceFreeList, node);
+    ALOG_ASSERT(m_nImageSurfaceFreeListLen > 0);
+    m_nImageSurfaceFreeListLen--;
+    BLST_Q_INSERT_TAIL(&m_ImageSurfacePushedList, pNode, node);
+    m_nImageSurfacePushedListLen++;
+
+err_out:
+    FreeInputBuffer(pBuffer);
+
+    if ( oerr != OMX_ErrorNone)
+    {
+        return BOMX_ERR_TRACE(oerr);
+    }
+
+    return OMX_ErrorNone;
 }
 
 OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHeader)
@@ -2329,6 +2414,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
         m_nImageSurfaceFreeListLen--;
         BLST_Q_INSERT_TAIL(&m_ImageSurfacePushedList, pNode, node);
         m_nImageSurfacePushedListLen++;
+        m_bPushDummyFrame = false;
     }
 
     // handle EOS

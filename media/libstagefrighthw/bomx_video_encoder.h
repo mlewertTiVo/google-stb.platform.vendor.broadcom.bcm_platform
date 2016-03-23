@@ -243,6 +243,7 @@ protected:
     bool m_bEosReceived;
     bool m_bEosDelieverd;
     bool m_bPushEos;
+    bool m_bPushDummyFrame;
 
     BLST_Q_HEAD(BOMX_EncodedFrList, BOMX_NexusEncodedVideoFrame) m_EncodedFrList;
     BLST_Q_HEAD(BOMX_EmptyFrList, BOMX_NexusEncodedVideoFrame) m_EmptyFrList;
@@ -336,6 +337,7 @@ protected:
     bool IsEncoderStarted();
     NEXUS_Error PushInputEosFrame();
     OMX_ERRORTYPE BuildInputFrame(OMX_BUFFERHEADERTYPE *);
+    OMX_ERRORTYPE BuildDummyFrame();
     NEXUS_VideoCodecLevel ConvertOMXLevelTypetoNexus(OMX_VIDEO_AVCLEVELTYPE );
     NEXUS_VideoCodecProfile ConvertOMXProfileTypetoNexus(OMX_VIDEO_AVCPROFILETYPE );
     void NotifyOutputPortSettingsChanged();
