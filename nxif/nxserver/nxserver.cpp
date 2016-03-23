@@ -686,10 +686,10 @@ static nxserver_t init_nxserver(void)
     if ( property_get(NX_AUDIO_LOUDNESS, value, "disabled") ) {
         if ( !strcmp(value, "atsc") ) {
             ALOGI("Enabling ATSC A/85 Loudness Equivalence");
-            platformSettings.audioModuleSettings.loudnessMode = NEXUS_AudioLoudnessEquivalenceMode_eAtscA85;
+            cmdline_settings.loudnessMode = NEXUS_AudioLoudnessEquivalenceMode_eAtscA85;
         } else if ( !strcmp(value, "ebu") ) {
             ALOGI("Enabling EBU-R128 Loudness Equivalence");
-            platformSettings.audioModuleSettings.loudnessMode = NEXUS_AudioLoudnessEquivalenceMode_eEbuR128;
+            cmdline_settings.loudnessMode = NEXUS_AudioLoudnessEquivalenceMode_eEbuR128;
         } else if ( strcmp(value, "disabled") ) {
             ALOGE("Unrecognized value '%s' for %s - expected disabled, atsc, or ebu", value, NX_AUDIO_LOUDNESS);
         }
