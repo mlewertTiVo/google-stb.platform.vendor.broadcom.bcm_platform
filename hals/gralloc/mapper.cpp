@@ -121,7 +121,7 @@ int gralloc_register_buffer(gralloc_module_t const* module,
                pSharedData->container.height,
                pSharedData->container.size,
                hnd->usage,
-               hnd->fmt_set,
+               pSharedData->container.format,
                hnd->nxSurfaceAddress,
                getpid());
          NEXUS_MemoryBlock_UnlockOffset(block_handle);
@@ -174,7 +174,7 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
                pSharedData->container.height,
                pSharedData->container.size,
                hnd->usage,
-               hnd->fmt_set,
+               pSharedData->container.format,
                hnd->nxSurfaceAddress,
                getpid());
          NEXUS_MemoryBlock_UnlockOffset(block_handle);
@@ -194,6 +194,156 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
    }
 
    return 0;
+}
+
+int gralloc_lock_ycbcr(gralloc_module_t const* module,
+        buffer_handle_t handle, int usage,
+        int l, int t, int w, int h,
+        struct android_ycbcr *ycbcr)
+{
+   int64_t tick_start, tick_end;
+   int err = 0;
+   NEXUS_Error lrc;
+   bool hwConverted=false;
+   NEXUS_MemoryBlockHandle block_handle = NULL, shared_block_handle = NULL;
+   PSHARED_DATA pSharedData = NULL;
+   private_module_t* pModule = (private_module_t *)module;
+
+   (void)l;
+   (void)t;
+   (void)w;
+   (void)h;
+
+   if (private_handle_t::validate(handle) < 0) {
+      ALOGE("%s : invalid handle, freed?", __FUNCTION__);
+      return -EINVAL;
+   }
+
+   private_handle_t* hnd = (private_handle_t*)handle;
+   void *pMemory;
+   shared_block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
+   lrc = NEXUS_MemoryBlock_Lock(shared_block_handle, &pMemory);
+   pSharedData = (PSHARED_DATA) pMemory;
+   if (lrc || pSharedData == NULL) {
+      if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(shared_block_handle);
+      ALOGE("%s : invalid private buffer %p, freed?", __FUNCTION__, shared_block_handle);
+      return -EINVAL;
+   }
+   // native HAL_PIXEL_FORMAT_YCbCr_420_888 flex-yuv buffer and native HAL_PIXEL_FORMAT_YV12
+   // multimedia only can be locked using the lock_ycbcr interface.  they are morevover the
+   // same internal format in our integration.
+   if (!((pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) ||
+         (pSharedData->container.format == HAL_PIXEL_FORMAT_YV12))) {
+      ALOGE("%s : invalid call for NON flex-YUV buffer (0x%x)", __FUNCTION__, pSharedData->container.format);
+      return -EINVAL;
+   }
+
+   memset(ycbcr, 0, sizeof(struct android_ycbcr));
+   ycbcr->ystride = pSharedData->container.stride;
+   ycbcr->cstride = (pSharedData->container.stride/2 + (hnd->alignment-1)) & ~(hnd->alignment-1);
+   ycbcr->chroma_step = 1;
+
+   block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
+   if (block_handle) {
+      NEXUS_MemoryBlock_Lock(block_handle, &ycbcr->y);
+      if (hnd->mgmt_mode != GR_MGMT_MODE_LOCKED) {
+         NEXUS_Addr physAddr;
+         hnd->nxSurfaceAddress = (unsigned)&ycbcr->y;
+         NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &physAddr);
+         hnd->nxSurfacePhysicalAddress = (unsigned)physAddr;
+      }
+      ycbcr->cr = (void *) ((uint8_t *)ycbcr->y + (pSharedData->container.stride * pSharedData->container.height));
+      ycbcr->cb = (void *) ((uint8_t *)ycbcr->cr +
+                            ((pSharedData->container.height/2) *
+                             ((pSharedData->container.stride/2 + (hnd->alignment-1)) & ~(hnd->alignment-1))));
+   } else {
+      ALOGE("no default plane on s-blk:%p", shared_block_handle);
+   }
+
+   if (pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) {
+      // locking a flexible YUV means we are doing mainly SW decode since our
+      // HW decoder reports YV12 for native format.
+   } else if (pSharedData->container.format == HAL_PIXEL_FORMAT_YV12) {
+      pthread_mutex_lock(gralloc_g2d_lock());
+      err = private_handle_t::lock_video_frame(hnd, 250);
+      if (err) {
+         ALOGE("Unable to lock video frame data (timeout)");
+         pthread_mutex_unlock(gralloc_g2d_lock());
+         goto out_video_failed;
+      }
+      if (pSharedData->videoFrame.hStripedSurface) {
+         if (usage & GRALLOC_USAGE_SW_WRITE_MASK) {
+            ALOGE("invalid lock of stripped buffers for SW_WRITE");
+            private_handle_t::unlock_video_frame(hnd);
+            pthread_mutex_unlock(gralloc_g2d_lock());
+            err = -EINVAL;
+            goto out_video_failed;
+         }
+         if (usage & GRALLOC_USAGE_SW_READ_MASK) {
+            if (!pSharedData->videoFrame.destripeComplete) {
+               if (gralloc_timestamp_conversion()) {
+                  tick_start = gralloc_tick();
+               }
+               err = gralloc_destripe_yv12(hnd, pSharedData->videoFrame.hStripedSurface);
+               if (err) {
+                  private_handle_t::unlock_video_frame(hnd);
+                  pthread_mutex_unlock(gralloc_g2d_lock());
+                  goto out_video_failed;
+               }
+               if (gralloc_timestamp_conversion()) {
+                  tick_end = gralloc_tick();
+               }
+               pSharedData->videoFrame.destripeComplete = true;
+               hwConverted = true;
+            }
+         }
+      }
+      private_handle_t::unlock_video_frame(hnd);
+      pthread_mutex_unlock(gralloc_g2d_lock());
+   }
+
+out_video_failed:
+   if ((usage & (GRALLOC_USAGE_SW_READ_MASK|GRALLOC_USAGE_SW_WRITE_MASK)) && !hwConverted) {
+      NEXUS_FlushCache(ycbcr->y, pSharedData->container.allocSize);
+   }
+
+   if (gralloc_log_mapper()) {
+      NEXUS_Addr physAddr;
+      unsigned sharedPhysAddr = hnd->sharedData;
+      NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
+      sharedPhysAddr = (unsigned)physAddr;
+      ALOGI(" lock_ycbcr (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::vaddr:%p::act:%d",
+            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+            hnd->pid,
+            hnd->sharedData,
+            sharedPhysAddr,
+            pSharedData->container.physAddr,
+            hnd->nxSurfacePhysicalAddress,
+            pSharedData->container.width,
+            pSharedData->container.height,
+            pSharedData->container.size,
+            hnd->usage,
+            pSharedData->container.format,
+            hnd->nxSurfaceAddress,
+            ycbcr->y,
+            getpid());
+      NEXUS_MemoryBlock_UnlockOffset(shared_block_handle);
+   }
+
+   if (hwConverted && gralloc_timestamp_conversion()) {
+      gralloc_conv_print(pSharedData->container.width,
+                         pSharedData->container.height,
+                         CONV_DESTRIPE, tick_start, tick_end);
+   }
+
+out:
+   if (shared_block_handle) {
+      if (!lrc) NEXUS_MemoryBlock_Unlock(shared_block_handle);
+   }
+   if (err != 0) {
+      memset(ycbcr, 0, sizeof(struct android_ycbcr));
+   }
+   return err;
 }
 
 int gralloc_lock(gralloc_module_t const* module,
@@ -228,6 +378,10 @@ int gralloc_lock(gralloc_module_t const* module,
    if (lrc || pSharedData == NULL) {
       if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(shared_block_handle);
       ALOGE("%s : invalid private buffer %p, freed?", __FUNCTION__, shared_block_handle);
+      return -EINVAL;
+   }
+   if (pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) {
+      ALOGE("%s : invalid call for HAL_PIXEL_FORMAT_YCbCr_420_888 buffer", __FUNCTION__);
       return -EINVAL;
    }
    block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
@@ -308,7 +462,7 @@ out_video_failed:
             pSharedData->container.height,
             pSharedData->container.size,
             hnd->usage,
-            hnd->fmt_set,
+            pSharedData->container.format,
             hnd->nxSurfaceAddress,
             *vaddr,
             getpid());
@@ -379,7 +533,7 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
             pSharedData->container.height,
             pSharedData->container.size,
             hnd->usage,
-            hnd->fmt_set,
+            pSharedData->container.format,
             hnd->nxSurfaceAddress,
             getpid());
       NEXUS_MemoryBlock_UnlockOffset(shared_block_handle);

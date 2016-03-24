@@ -1773,7 +1773,8 @@ static bool is_video_layer_locked(VIDEO_LAYER_VALIDATION *data)
          if (client_context != NULL) {
             rc = true;
         }
-      } else if ((data->sharedData->container.format == HAL_PIXEL_FORMAT_YV12) &&
+      } else if (((data->sharedData->container.format == HAL_PIXEL_FORMAT_YV12) ||
+                  (data->sharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) &&
                  (data->gr_usage & GRALLOC_USAGE_HW_COMPOSER)) {
          data->is_yuv = true;
          rc = true;
@@ -2111,7 +2112,8 @@ bool hwc_compose_gralloc_buffer(
     NEXUS_Graphics2DBlitSettings blitSettings;
     int stats_ix = is_virtual ? HWC_VIRTUAL_IX : HWC_PRIMARY_IX;
 
-    blit_yv12 = (pSharedData->container.format == HAL_PIXEL_FORMAT_YV12) ? true : false;
+    blit_yv12 = ((pSharedData->container.format == HAL_PIXEL_FORMAT_YV12) ||
+                 (pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
 
     if (!is_virtual) {
        if (skip_comp) {

@@ -276,6 +276,7 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
         pthread_mutex_lock(pMutex);
         switch (pSharedData->container.format) {
         case HAL_PIXEL_FORMAT_YV12:
+        case HAL_PIXEL_FORMAT_YCbCr_420_888:
            errCode = 0;
         break;
         default:
@@ -378,6 +379,11 @@ extern int gralloc_register_buffer(gralloc_module_t const* module,
 extern int gralloc_unregister_buffer(gralloc_module_t const* module,
         buffer_handle_t handle);
 
+extern int gralloc_lock_ycbcr(gralloc_module_t const* module,
+        buffer_handle_t handle, int usage,
+        int l, int t, int w, int h,
+        struct android_ycbcr *ycbcr);
+
 /*****************************************************************************/
 
 static struct hw_module_methods_t gralloc_module_methods = {
@@ -388,7 +394,7 @@ struct private_module_t HAL_MODULE_INFO_SYM = {
    .base = {
       .common = {
          .tag                = HARDWARE_MODULE_TAG,
-         .module_api_version = GRALLOC_MODULE_API_VERSION_0_1,
+         .module_api_version = GRALLOC_MODULE_API_VERSION_0_2,
          .hal_api_version    = HARDWARE_HAL_API_VERSION,
          .id                 = GRALLOC_HARDWARE_MODULE_ID,
          .name               = "gralloc for set-top-box platforms",
@@ -402,7 +408,7 @@ struct private_module_t HAL_MODULE_INFO_SYM = {
       .lock                  = gralloc_lock,
       .unlock                = gralloc_unlock,
       .perform               = NULL,
-      .lock_ycbcr            = NULL,
+      .lock_ycbcr            = gralloc_lock_ycbcr,
       .lockAsync             = NULL,
       .unlockAsync           = NULL,
       .lockAsync_ycbcr       = NULL,
@@ -432,6 +438,7 @@ NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt, int *bpp)
          pf = NEXUS_PixelFormat_eR5_G6_B5;
       break;
       case HAL_PIXEL_FORMAT_YV12:
+      case HAL_PIXEL_FORMAT_YCbCr_420_888:
          /* no native nexus support, return the 'converted for nexus consumption'. */
          b = 2;
          pf = NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8;
@@ -463,6 +470,7 @@ BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt)
          pf = BM2MC_PACKET_PixelFormat_eR5_G6_B5;
       break;
       case HAL_PIXEL_FORMAT_YV12:
+      case HAL_PIXEL_FORMAT_YCbCr_420_888:
          /* no native bm2mc support, return the 'converted for bm2mc consumption'. */
          pf = BM2MC_PACKET_PixelFormat_eY08_Cb8_Y18_Cr8;
       break;
@@ -501,6 +509,7 @@ static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pS
          bufferRequirements.format = BEGL_BufferFormat_eR5G6B5;
       break;
       case HAL_PIXEL_FORMAT_YV12:
+      case HAL_PIXEL_FORMAT_YCbCr_420_888:
 #if defined(V3D_VARIANT_v3d)
          bufferRequirements.format = BEGL_BufferFormat_eYV12_Texture;
 #else
@@ -561,6 +570,7 @@ static void getBufferDataFromFormat(int *alignment, int w, int h, int bpp, int f
          *size = ((w*bpp + (*alignment-1)) & ~(*alignment-1)) * h;
       break;
       case HAL_PIXEL_FORMAT_YV12:
+      case HAL_PIXEL_FORMAT_YCbCr_420_888:
          // force alignment according to (android) format definition.
          *alignment = 16;
          // use y-stride: ALIGN(w, 16)
@@ -678,13 +688,15 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       goto alloc_failed;
    }
 
-   if (format != HAL_PIXEL_FORMAT_YV12) {
+   if (format != HAL_PIXEL_FORMAT_YV12 && format != HAL_PIXEL_FORMAT_YCbCr_420_888) {
       fmt_set |= GR_STANDARD;
    } else if (usage & GRALLOC_USAGE_PROTECTED) {
       fmt_set |= GR_NONE;
-   } else if ((format == HAL_PIXEL_FORMAT_YV12) && !(usage & GRALLOC_USAGE_PRIVATE_0)) {
+   } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
+              && !(usage & GRALLOC_USAGE_PRIVATE_0)) {
       fmt_set |= GR_YV12;
-   } else if ((format == HAL_PIXEL_FORMAT_YV12) && (usage & GRALLOC_USAGE_PRIVATE_0)) {
+   } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
+              && (usage & GRALLOC_USAGE_PRIVATE_0)) {
       if ((usage & GRALLOC_USAGE_SW_READ_OFTEN) || (usage & GRALLOC_USAGE_HW_TEXTURE)) {
          // private multimedia buffer, we only need a yv12 plane in case cpu is intending to read
          // the content, eg decode->encode type of scenario or if texture usage is specified;
@@ -750,13 +762,13 @@ gralloc_alloc_buffer(alloc_device_t* dev,
             pSharedData->container.height,
             pSharedData->container.size,
             hnd->usage,
-            hnd->fmt_set,
+            pSharedData->container.format,
             hnd->nxSurfaceAddress);
       NEXUS_MemoryBlock_UnlockOffset(block_handle);
    }
 
    if ((fmt_set != GR_NONE) && pSharedData->container.physAddr == 0) {
-      ALOGE("%s: failed to allocate default plane (%d,%d), size %d", __FUNCTION__, w, h, size);
+      ALOGE("%s: failed to allocate plane (%d,%d), size %d", __FUNCTION__, w, h, size);
       err = -ENOMEM;
       goto alloc_failed;
    } else if (pSharedData->container.physAddr) {
@@ -808,6 +820,7 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
          unsigned planePhysSize = pSharedData->container.size;
          unsigned planeWidth = pSharedData->container.width;
          unsigned planeHeight = pSharedData->container.height;
+         unsigned format = pSharedData->container.format;
          NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
          sharedPhysAddr = (unsigned)physAddr;
          ALOGI(" free (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x",
@@ -821,7 +834,7 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
                planeHeight,
                planePhysSize,
                hnd->usage,
-               hnd->fmt_set,
+               format,
                hnd->nxSurfaceAddress);
          NEXUS_MemoryBlock_UnlockOffset(block_handle);
       }
