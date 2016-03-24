@@ -31,6 +31,8 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/server
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
 
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS) 
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_SRC_FILES := nxmini.cpp
 

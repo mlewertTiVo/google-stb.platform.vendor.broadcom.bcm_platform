@@ -39,6 +39,8 @@ LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_SRC_FILES := nxserver.cpp
 

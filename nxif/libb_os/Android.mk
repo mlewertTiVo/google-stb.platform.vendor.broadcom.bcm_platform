@@ -52,6 +52,8 @@ LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw
 LOCAL_SRC_FILES += $(subst $(B_LIB_TOP),nexus/lib,$(B_OS_LIB_SOURCES))
 LOCAL_C_INCLUDES += $(subst $(B_LIB_TOP),$(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/lib,$(B_OS_LIB_PUBLIC_INCLUDES) $(B_OS_LIB_PRIVATE_INCLUDES))
 LOCAL_CFLAGS += $(addprefix -D,$(B_OS_LIB_DEFINES))
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_SHARED_LIBRARIES :=         \
         libcutils                 \

@@ -41,6 +41,8 @@ LOCAL_SRC_FILES += \
     nexusnxcecservice.cpp
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 ifneq ($(ANDROID_ENABLE_HDMI_HDCP),n)
 LOCAL_CFLAGS += -DANDROID_ENABLE_HDMI_HDCP=1

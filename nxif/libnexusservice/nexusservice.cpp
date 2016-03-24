@@ -604,12 +604,12 @@ NexusService::~NexusService()
     server = NULL;
 }
 
-NexusClientContext * NexusService::createClientContext(const b_refsw_client_client_name *pClientName, unsigned clientPid)
+NexusClientContext * NexusService::createClientContext(const b_refsw_client_client_name *pClientName __unused, unsigned clientPid __unused)
 {
    return NULL;
 }
 
-void NexusService::destroyClientContext(NexusClientContext * client)
+void NexusService::destroyClientContext(NexusClientContext * client __unused)
 {
    return;
 }
@@ -969,22 +969,22 @@ status_t NexusService::setHdmiCecMessageEventListener(uint32_t cecId, const sp<I
     return status;
 }
 
-status_t NexusService::addHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener)
+status_t NexusService::addHdmiHotplugEventListener(uint32_t portId __unused, const sp<INexusHdmiHotplugEventListener> &listener __unused)
 {
     return INVALID_OPERATION;
 }
 
-status_t NexusService::removeHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener>& listener)
+status_t NexusService::removeHdmiHotplugEventListener(uint32_t portId __unused, const sp<INexusHdmiHotplugEventListener>& listener __unused)
 {
     return INVALID_OPERATION;
 }
 
-status_t NexusService::addDisplaySettingsChangedEventListener(uint32_t portId, const sp<INexusDisplaySettingsChangedEventListener> &listener)
+status_t NexusService::addDisplaySettingsChangedEventListener(uint32_t portId __unused, const sp<INexusDisplaySettingsChangedEventListener> &listener __unused)
 {
     return INVALID_OPERATION;
 }
 
-status_t NexusService::removeDisplaySettingsChangedEventListener(uint32_t portId, const sp<INexusDisplaySettingsChangedEventListener>& listener)
+status_t NexusService::removeDisplaySettingsChangedEventListener(uint32_t portId __unused, const sp<INexusDisplaySettingsChangedEventListener>& listener __unused)
 {
     return INVALID_OPERATION;
 }

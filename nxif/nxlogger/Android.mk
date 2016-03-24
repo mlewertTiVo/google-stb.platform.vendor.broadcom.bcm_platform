@@ -29,6 +29,8 @@ LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) $(NEXUS_TOP)/platforms/common/src/linux
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
 
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_SRC_FILES := nxlogger.cpp
 

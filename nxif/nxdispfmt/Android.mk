@@ -12,6 +12,8 @@ LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/
 LOCAL_SRC_FILES := bcm_platform/nxif/nxdispfmt/nxdispfmt.c \

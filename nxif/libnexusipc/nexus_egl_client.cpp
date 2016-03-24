@@ -89,7 +89,7 @@ void nexus_egl_client::IEGL_nexus_unjoin(void *nexus_client)
 extern "C" void* EGL_nexus_join(char *client_process_name);
 extern "C" void EGL_nexus_unjoin(void *nexus_client);
 
-void* EGL_nexus_join(char *client_process_name)
+void* EGL_nexus_join(char *client_process_name __unused)
 {
     void *nexus_client = NULL;
 

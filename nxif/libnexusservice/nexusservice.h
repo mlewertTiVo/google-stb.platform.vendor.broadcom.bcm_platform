@@ -149,7 +149,7 @@ public:
     virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus);
 
 protected:
-    struct CecServiceManager;
+    class CecServiceManager;
 
     NexusService();
     virtual void platformInit();

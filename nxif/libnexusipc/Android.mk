@@ -29,6 +29,9 @@ LOCAL_SRC_FILES := INexusHdmiCecMessageEventListener.cpp \
                    INexusHdmiHotplugEventListener.cpp \
                    INexusDisplaySettingsChangedEventListener.cpp
 
+# fix warnings!
+LOCAL_CFLAGS += -Werror
+
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libnexusipceventlistener
 
@@ -52,6 +55,9 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libnexusipcclient
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
+
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_SHARED_LIBRARIES += libnxclient
 
@@ -72,6 +78,9 @@ LOCAL_SRC_FILES := nexus_egl_client.cpp
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
+
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_SHARED_LIBRARIES += libnxclient
 

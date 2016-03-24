@@ -110,6 +110,7 @@ int main(int argc, char **argv)
    NEXUS_VideoFormat format, old_format;
 
    (void)argc;
+   (void)argv;
 
    NxClient_GetDefaultJoinSettings(&joinSettings);
    joinSettings.ignoreStandbyRequest = true;

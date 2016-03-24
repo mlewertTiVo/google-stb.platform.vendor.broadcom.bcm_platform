@@ -46,7 +46,7 @@
 
 using namespace android;
 
-struct NexusService::CecServiceManager : public RefBase
+class NexusService::CecServiceManager : public RefBase
 {
 public:
     friend class NexusService;

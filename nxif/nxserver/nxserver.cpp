@@ -209,7 +209,9 @@ static unsigned calc_heap_size(const char *value)
    }
 }
 
-static void watchdogWrite(char *msg)
+static const char WATCHDOG_TERMINATE[] = "\0";
+static const char WATCHDOG_KICK[]      = "V";
+static void watchdogWrite(const char *msg)
 {
     int ret, retries = 3;
 
@@ -371,7 +373,7 @@ skip_lmk:
         }
 
         if (g_app.watchdogFd >= 0) {
-            watchdogWrite("\0");
+            watchdogWrite(WATCHDOG_TERMINATE);
         }
 
     } while(nx_server->proactive_runner.running);
@@ -475,7 +477,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          for (i = 1; i < NEXUS_MAX_DISPLAYS; i++) {
             /* keep display associated with encoder if transcode wanted. */
             if (platformCap.display[i].supported && platformCap.display[i].encoder &&
-                platformCap.videoEncoder[0].supported && (platformCap.videoEncoder[0].displayIndex == i)) {
+                platformCap.videoEncoder[0].supported && (platformCap.videoEncoder[0].displayIndex == (unsigned int)i)) {
                if (transcode) {
                   ALOGI("keeping display %d for transcode session on encoder %d", i, 0);
                } else {
@@ -1168,7 +1170,7 @@ int main(void)
     uninit_nxserver(nx_srv);
 
     if (g_app.watchdogFd >= 0) {
-        watchdogWrite("V");
+        watchdogWrite(WATCHDOG_KICK);
         close(g_app.watchdogFd);
     }
 

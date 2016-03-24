@@ -27,6 +27,8 @@ LOCAL_SHARED_LIBRARIES := \
 	libnexus
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
 
 LOCAL_SRC_FILES := \
     linuxuinput.cpp \
