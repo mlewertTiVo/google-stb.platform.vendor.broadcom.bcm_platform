@@ -179,7 +179,6 @@ class NexusHdmiCecDevice : public RefBase
         bool                            mCecViewOnCmdPending;
         bool                            mStandby;
         int                             mHotplugConnected;
-        Mutex                           mHotplugLock;
         Mutex                           mStandbyLock;
         NexusIPCClientBase*             pIpcClient;
         NexusClientContext*             pNexusClientContext;
@@ -208,9 +207,6 @@ class NexusHdmiCecDevice : public RefBase
         bool getHdmiHotplugWakeup();
         bool getCecTransmitStandby();
         bool getCecTransmitViewOn();
-
-        inline void hotplugLock() { mHotplugLock.lock(); }
-        inline void hotplugUnlock() { mHotplugLock.unlock(); }
 
         inline void standbyLock() { mStandbyLock.lock(); }
         inline void standbyUnlock() { mStandbyLock.unlock(); }
