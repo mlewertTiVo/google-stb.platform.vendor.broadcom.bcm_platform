@@ -134,7 +134,7 @@ public:
 
     OMX_ERRORTYPE IsValid()	{ if ( m_currentState == OMX_StateInvalid ) { return m_constructorError; } else { return OMX_ErrorNone; } };
 
-    bool getSchedPriority(uint32_t& priority) {priority = m_threadPriority; return m_overwriteThreadPriority;}
+    bool getSchedPriority(int& priority) {priority = m_threadPriority; return m_overwriteThreadPriority;}
     // Component Name
     const char *GetName() const {return m_componentName;}
 
@@ -343,7 +343,7 @@ private:
     unsigned m_portWaitTimeout;
     const char *(*m_pGetRole)(unsigned roleIndex);
     const bool m_overwriteThreadPriority;
-    const uint32_t m_threadPriority;
+    const int m_threadPriority;
 };
 
 #endif //BOMX_COMPONENT_H__

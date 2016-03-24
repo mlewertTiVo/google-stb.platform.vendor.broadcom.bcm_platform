@@ -194,7 +194,7 @@ void BOMX_UninitComponentResourceList()
 static void BOMX_ComponentThread(void *pParam)
 {
     BOMX_Component *pComponent = static_cast <BOMX_Component *> (pParam);
-    uint32_t priority;
+    int priority;
     if (pComponent->getSchedPriority(priority)) {
         setpriority(PRIO_PROCESS, 0, priority);
         set_sched_policy(0, SP_FOREGROUND);

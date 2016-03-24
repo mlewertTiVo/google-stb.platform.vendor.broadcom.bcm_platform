@@ -3909,8 +3909,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     // Determine what to do with the buffer
     if ( pFrameBuffer )
     {
-        pFrameBuffer->pBufferInfo = NULL;
-        pFrameBuffer->pPrivateHandle = NULL;
+        bool dropFrame = true;
         if ( pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eInvalid )
         {
             // The frame has been flushed while the app owned it.  Move it back to the free list silently.
@@ -3923,21 +3922,34 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         {
             // Any state other than delivered and we've done something horribly wrong.
             ALOG_ASSERT(pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered);
-            pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDropReady;
-            switch ( pInfo->type )
-            {
-            case BOMX_VideoDecoderOutputBufferType_eStandard:
-                ALOGV("Standard Buffer - Drop");
-                break;
-            case BOMX_VideoDecoderOutputBufferType_eNative:
-                ALOGV("Native Buffer %u - Drop", pInfo->typeInfo.native.pSharedData->videoFrame.status.serialNumber);
-                break;
-            case BOMX_VideoDecoderOutputBufferType_eMetadata:
-                ALOGV("Metadata Buffer %u - Drop", pFrameBuffer->frameStatus.serialNumber);
-                break;
-            default:
-                break;
+            // Need to check if this buffer is the same as the frame waiting to be displayed
+            B_Mutex_Lock(m_hDisplayMutex);
+            if (m_displayFrameAvailable && pFrameBuffer->frameStatus.serialNumber == m_frameSerial) {
+                ALOGV("%s: Don't drop frame ready to be displayed!, serial:%d", __FUNCTION__, m_frameSerial);
+                dropFrame = false;
             }
+            B_Mutex_Unlock(m_hDisplayMutex);
+            if (dropFrame) {
+                pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDropReady;
+                switch ( pInfo->type )
+                {
+                case BOMX_VideoDecoderOutputBufferType_eStandard:
+                    ALOGV("Standard Buffer - Drop");
+                    break;
+                case BOMX_VideoDecoderOutputBufferType_eNative:
+                    ALOGV("Native Buffer %u - Drop", pInfo->typeInfo.native.pSharedData->videoFrame.status.serialNumber);
+                    break;
+                case BOMX_VideoDecoderOutputBufferType_eMetadata:
+                    ALOGV("Metadata Buffer %u - Drop", pFrameBuffer->frameStatus.serialNumber);
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
+        if (dropFrame) {
+            pFrameBuffer->pBufferInfo = NULL;
+            pFrameBuffer->pPrivateHandle = NULL;
         }
     }
     else
@@ -4203,7 +4215,9 @@ void BOMX_VideoDecoder::DisplayFrameEvent()
 
     B_Mutex_Lock(m_hDisplayMutex);
     if (!m_displayFrameAvailable) {
-      ALOGW("%s: No display frame available! Ok only if component has been stopped..", __FUNCTION__);
+      // It may happen when component is being stopped or when a
+      // new display frame arrives and m_displayFrameAvailable is true
+      ALOGV("%s: No display frame available!", __FUNCTION__);
       B_Mutex_Unlock(m_hDisplayMutex);
       return;
     }
@@ -5097,7 +5111,8 @@ void BOMX_VideoDecoder::BinderNotifyDisplay(struct hwc_notification_info &ntfy)
 {
     B_Mutex_Lock(m_hDisplayMutex);
     if (m_displayFrameAvailable) {
-        ALOGW("%s: Previous frame hasn't been displayed yet!", __FUNCTION__);
+        ALOGW("%s: New frame (%u) arrived but previous frame (%u) hasn't been displayed yet!",
+                __FUNCTION__, (unsigned)ntfy.frame_id, m_frameSerial);
     }
     m_displayFrameAvailable = true;
     m_framePosition.x = ntfy.frame.x;
