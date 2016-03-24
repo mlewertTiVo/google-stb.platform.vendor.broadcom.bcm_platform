@@ -105,6 +105,7 @@ using namespace android;
 #define HWC_VIRTUAL_IX               1
 #define NEXUS_DISPLAY_OBJECTS        4
 #define HWC_SET_COMP_THRESHOLD       1 /* legacy support (no fencing) */
+#define HWC_SET_COMP_INLINE_DELAY    2
 #define HWC_TICKER_W                 64
 #define HWC_TICKER_H                 64
 #define ALPHA_SHIFT                  24
@@ -138,6 +139,7 @@ using namespace android;
 #define HWC_CAPABLE_COMP_BYPASS      "ro.nx.capable.cb"
 #define HWC_CAPABLE_BACKGROUND       "ro.nx.capable.bg"
 #define HWC_CAPABLE_TOGGLE_MODE      "ro.nx.capable.tm"
+#define HWC_CAPABLE_SIGNAL_OOB_IL    "ro.nx.capable.si"
 #define HWC_COMP_VIDEO               "ro.nx.cvbs"
 
 #define HWC_DUMP_LAYER_PROP          "dyn.nx.hwc.dump.layer"
@@ -758,6 +760,7 @@ struct hwc_context_t {
     bool toggle_fb_mode;
     bool ignore_cursor;
     bool hack_sync_refresh;
+    bool signal_oob_inline;
     int prepare_video;
     int prepare_sideband;
 };
@@ -3276,11 +3279,57 @@ out_err:
    return INVALID_FENCE;
 }
 
+static bool hwc_set_signal_oob_il_locked(struct hwc_context_t *ctx, hwc_display_contents_1_t* list)
+{
+   size_t i;
+   private_handle_t *gr_buffer = NULL;
+   NEXUS_MemoryBlockHandle block_handle = NULL;
+   NEXUS_Error lrc = NEXUS_SUCCESS;
+   PSHARED_DATA pSharedData = NULL;
+   void *pAddr;
+   VIDEO_LAYER_VALIDATION video;
+   bool oob_signaled = false;
+
+   for (i = 0; i < list->numHwLayers; i++) {
+      memset(&video, 0, sizeof(VIDEO_LAYER_VALIDATION));
+      video.layer = &list->hwLayers[i];
+      if (is_video_layer(ctx, &video)) {
+         if (!video.is_sideband) {
+            if (ctx->hwc_binder) {
+               gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
+               block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+               lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
+               pSharedData = (PSHARED_DATA) pAddr;
+               if ((lrc != NEXUS_SUCCESS) || pSharedData == NULL) {
+                  continue;
+               }
+               if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
+                  ctx->mm_cli[0].last_ping_frame_id = pSharedData->videoFrame.status.serialNumber;
+                  ctx->hwc_binder->setframe(ctx->mm_cli[0].id, ctx->mm_cli[0].last_ping_frame_id);
+                  oob_signaled = true;
+               }
+               hwc_mem_unlock(ctx, block_handle, true);
+               if (ctx->display_dump_layer & HWC_DUMP_LEVEL_COMPOSE) {
+                  ALOGI("comp: %llu (%llu,%llu): kicked %d::frame %llu\n",
+                        ctx->stats[HWC_PRIMARY_IX].composed, ctx->stats[HWC_PRIMARY_IX].prepare_call,
+                        ctx->stats[HWC_PRIMARY_IX].set_call, i, ctx->mm_cli[0].last_ping_frame_id);
+               }
+            }
+            /* single oob video support. */
+            break;
+         }
+      }
+   }
+
+   return oob_signaled;
+}
+
 static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* list)
 {
     size_t hwc_work_item_size = 0;
     struct hwc_work_item *this_frame = NULL;
     size_t i;
+    bool oob_signaled = false;
 
     if (!list) {
        return -EINVAL;
@@ -3386,9 +3435,15 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
            BKNI_WaitForEvent(ctx->composer_event_sync[HWC_PRIMARY_IX], BKNI_INFINITE);
            goto out_close_fence;
         } else {
+           if (ctx->signal_oob_inline) {
+              oob_signaled = hwc_set_signal_oob_il_locked(ctx, list);
+           }
            BKNI_ReleaseMutex(ctx->mutex);
            BKNI_SetEvent(ctx->composer_event[HWC_PRIMARY_IX]);
-           if (ctx->stats[HWC_PRIMARY_IX].set_call >= ctx->stats[HWC_PRIMARY_IX].composed + HWC_SET_COMP_THRESHOLD) {
+           if (ctx->stats[HWC_PRIMARY_IX].set_call >=
+                  ctx->stats[HWC_PRIMARY_IX].composed +
+                  HWC_SET_COMP_THRESHOLD +
+                  oob_signaled ? HWC_SET_COMP_INLINE_DELAY : 0) {
               BKNI_WaitForEvent(ctx->composer_event_forced[HWC_PRIMARY_IX], BKNI_INFINITE);
            }
            goto out;
@@ -3526,13 +3581,15 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          *oob_video = true;
          if (!video.is_sideband) {
             if (ctx->hwc_binder) {
-               BKNI_AcquireMutex(ctx->mutex);
-               if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
-                  ctx->mm_cli[0].last_ping_frame_id = pSharedData->videoFrame.status.serialNumber;
-                  ctx->hwc_binder->setframe(ctx->mm_cli[0].id, ctx->mm_cli[0].last_ping_frame_id);
+               if (!ctx->signal_oob_inline) {
+                  BKNI_AcquireMutex(ctx->mutex);
+                  if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
+                     ctx->mm_cli[0].last_ping_frame_id = pSharedData->videoFrame.status.serialNumber;
+                     ctx->hwc_binder->setframe(ctx->mm_cli[0].id, ctx->mm_cli[0].last_ping_frame_id);
+                  }
+                  BKNI_ReleaseMutex(ctx->mutex);
                }
                pinged_frame = ctx->mm_cli[0].last_ping_frame_id;
-               BKNI_ReleaseMutex(ctx->mutex);
             }
          } else {
             is_sideband = true;
@@ -4591,7 +4648,9 @@ static void * hwc_compose_task_primary(void *argv)
                   try_compose = false;
                } else {
                   ctx->composer_work_list[HWC_PRIMARY_IX] = this_frame->next;
-                  if (ctx->stats[HWC_PRIMARY_IX].set_call >= ctx->stats[HWC_PRIMARY_IX].composed + HWC_SET_COMP_THRESHOLD) {
+                  if (ctx->stats[HWC_PRIMARY_IX].set_call >=
+                         ctx->stats[HWC_PRIMARY_IX].composed +
+                         HWC_SET_COMP_THRESHOLD) {
                      release_forced = true;
                   }
                   ctx->stats[HWC_PRIMARY_IX].composed++;
@@ -4718,16 +4777,17 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
 
    hwc_setup_props_locked(dev);
 
-   dev->display_gles_virtual = property_get_bool(HWC_GLES_VIRTUAL_PROP,   1);
-   dev->fence_support        = property_get_bool(HWC_WITH_V3D_FENCE_PROP, 0);
-   dev->fence_retire         = property_get_bool(HWC_WITH_DSP_FENCE_PROP, 0);
-   dev->track_comp_time      = property_get_bool(HWC_TRACK_COMP_TIME,     1);
-   dev->g2d_allow_simult     = property_get_bool(HWC_G2D_SIM_OPS_PROP,    0);
-   dev->smart_background     = property_get_bool(HWC_CAPABLE_BACKGROUND,  1);
-   dev->toggle_fb_mode       = property_get_bool(HWC_CAPABLE_TOGGLE_MODE, 1);
-   dev->ignore_cursor        = property_get_bool(HWC_IGNORE_CURSOR,       HWC_CURSOR_SURFACE_SUPPORTED ? 1 : 0);
-   dev->hack_sync_refresh    = property_get_bool(HWC_HACK_SYNC_REFRESH,   0);
-   dev->comp_bypass          = property_get_bool(HWC_CAPABLE_COMP_BYPASS, 0);
+   dev->display_gles_virtual = property_get_bool(HWC_GLES_VIRTUAL_PROP,     1);
+   dev->fence_support        = property_get_bool(HWC_WITH_V3D_FENCE_PROP,   0);
+   dev->fence_retire         = property_get_bool(HWC_WITH_DSP_FENCE_PROP,   0);
+   dev->track_comp_time      = property_get_bool(HWC_TRACK_COMP_TIME,       1);
+   dev->g2d_allow_simult     = property_get_bool(HWC_G2D_SIM_OPS_PROP,      0);
+   dev->smart_background     = property_get_bool(HWC_CAPABLE_BACKGROUND,    1);
+   dev->toggle_fb_mode       = property_get_bool(HWC_CAPABLE_TOGGLE_MODE,   1);
+   dev->ignore_cursor        = property_get_bool(HWC_IGNORE_CURSOR,         HWC_CURSOR_SURFACE_SUPPORTED ? 1 : 0);
+   dev->hack_sync_refresh    = property_get_bool(HWC_HACK_SYNC_REFRESH,     0);
+   dev->comp_bypass          = property_get_bool(HWC_CAPABLE_COMP_BYPASS,   0);
+   dev->signal_oob_inline    = property_get_bool(HWC_CAPABLE_SIGNAL_OOB_IL, 0);
 
    if (property_get_bool(HWC_COMP_VIDEO, 0)) {
       dev->comp_bypass = false;
