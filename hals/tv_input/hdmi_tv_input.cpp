@@ -171,8 +171,8 @@ static void hdmiInputHdcpStateChanged(void *context, int)
     if (hdcp) {
         NxClient_DisplaySettings displaySettings;
         NxClient_GetDisplaySettings(&displaySettings);
-        if (displaySettings.hdmiPreferences.hdcp != NxClient_HdcpLevel_eMandatory) {
-            displaySettings.hdmiPreferences.hdcp = NxClient_HdcpLevel_eMandatory;
+        if (displaySettings.hdmiPreferences.hdcp != NxClient_HdcpLevel_eOptional) {
+            displaySettings.hdmiPreferences.hdcp = NxClient_HdcpLevel_eOptional;
             rc = NxClient_SetDisplaySettings(&displaySettings);
             if (rc) {
                 ALOGE("Unable to set display settings (%d)", rc);

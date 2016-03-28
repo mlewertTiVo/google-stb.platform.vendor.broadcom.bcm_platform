@@ -294,7 +294,7 @@ void NexusNxService::handleHdmiOutputHotplugCallback(int port, hdmi_state isConn
 #if ANDROID_ENABLE_HDMI_HDCP
         /* enable hdcp authentication if hdmi connected and powered */
         settings.hdmiPreferences.hdcp = (isConnected == HDMI_CONNECTED) ?
-            NxClient_HdcpLevel_eMandatory :
+            NxClient_HdcpLevel_eOptional :
             NxClient_HdcpLevel_eNone;
         update = true;
 #endif
