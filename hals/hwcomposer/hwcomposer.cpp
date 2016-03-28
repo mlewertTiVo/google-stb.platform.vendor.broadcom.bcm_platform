@@ -66,6 +66,7 @@ using namespace android;
 
 #define INVALID_HANDLE               0xBAADCAFE
 #define LAST_PING_FRAME_ID_INVALID   0xBAADCAFE
+#define LAST_PING_FRAME_ID_RESET     0xCAFEBAAD
 #define INVALID_FENCE                -1
 
 #define HWC_CURSOR_SURFACE_SUPPORTED 0
@@ -170,6 +171,7 @@ using namespace android;
 #define HWC_DUMP_LEVEL_FINAL         (1<<5)
 #define HWC_DUMP_LEVEL_HACKS         (1<<6)
 #define HWC_DUMP_LEVEL_SCREEN_TIME   (1<<7)
+#define HWC_DUMP_LEVEL_QOPS          (1<<8)
 
 #define HWC_DUMP_FENCE_PRIM          (1<<0)
 #define HWC_DUMP_FENCE_VIRT          (1<<1)
@@ -387,6 +389,12 @@ typedef struct {
     bool is_sideband;
     bool is_yuv;
 } VIDEO_LAYER_VALIDATION;
+
+typedef struct {
+    int fill;
+    int blit;
+    int yv12;
+} OPS_COUNT;
 
 typedef void (* HWC_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
 typedef void (* HWC_HOTPLUG_NTFY_CB)(int);
@@ -715,6 +723,7 @@ struct hwc_context_t {
     BKNI_EventHandle vsync_callback;
 
     struct hwc_position overscan_position;
+    uint32_t last_seed;
 
     bool display_gles_fallback;
     bool display_gles_always;
@@ -1593,8 +1602,7 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
                // reset the 'drop duplicate frame notifier' count.
                if (ctx->mm_cli[i].id == ntfy.surface_hdl) {
                   ALOGD("%s: reset drop-dup-count on sfid 0x%x, id 0x%x", __FUNCTION__, ntfy.surface_hdl, ctx->mm_cli[i].id);
-                  ctx->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_INVALID;
-                  ctx->flush_background = true;
+                  ctx->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_RESET;
                   break;
                }
            }
@@ -1989,7 +1997,7 @@ static void hwc_set_layer_blending(struct hwc_context_t* ctx, int layer_id, int 
 }
 
 static void hwc_seed_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle surface,
-   bool *q_ops, int *ops_count, uint32_t background)
+   bool *q_ops, OPS_COUNT *ops_count, uint32_t background)
 {
    NEXUS_Error rc;
    if (surface) {
@@ -2010,8 +2018,12 @@ static void hwc_seed_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
             *q_ops = true;
          }
          if (ops_count) {
-            *ops_count += 1;
+            ops_count->fill += 1;
          }
+         if (ctx->last_seed == HWC_OPAQUE) {
+            ctx->alpha_hole_background = false;
+         }
+         ctx->last_seed = background;
       }
    }
 }
@@ -2100,7 +2112,7 @@ bool hwc_compose_gralloc_buffer(
    PSHARED_DATA pSharedData, private_handle_t *gr_buffer, NEXUS_SurfaceHandle outputHdl,
    bool is_virtual, bool skip_comp, NEXUS_SurfaceHandle *pActSurf,
    NEXUS_SurfaceComposition *pComp, bool layer_seeds_output, int already_comp,
-   bool *q_ops, int *ops_count, int video_layer)
+   bool *q_ops, OPS_COUNT *ops_count, int video_layer)
 {
     bool composed = false, blit_yv12, is_cursor_layer = false;
     NEXUS_Error rc;
@@ -2126,11 +2138,13 @@ bool hwc_compose_gralloc_buffer(
 
     NEXUS_Surface_GetCreateSettings(outputHdl, &displaySurfaceSettings);
     if ((is_virtual && (ctx->display_dump_virt & HWC_DUMP_LEVEL_COMPOSE)) ||
-        (!is_virtual && (ctx->display_dump_layer & HWC_DUMP_LEVEL_COMPOSE))) {
-       ALOGI("%s: %llu/%d - v:%u::f:%u:: %ux%u (%ux%u@%u,%u) -> %ux%u@%u,%u",
-             is_virtual ? "vcmp" : "comp", ctx->stats[stats_ix].set_call,
-             layer_id, (unsigned)pComp->visible,
+        (!is_virtual && (ctx->display_dump_layer & (HWC_DUMP_LEVEL_COMPOSE|HWC_DUMP_LEVEL_QOPS)))) {
+       ALOGI("%s: %llu/%d - v:%u::f:%u::so:%s %ux%u (%ux%u@%u,%u) -> %ux%u@%u,%u",
+             is_virtual ? "vcmp" : "comp",
+             ctx->stats[stats_ix].set_call, layer_id,
+             (unsigned)pComp->visible,
              gralloc_to_nexus_pixel_format(pSharedData->container.format),
+             layer_seeds_output ? "yes" : "no",
              pSharedData->container.width, pSharedData->container.height,
              pComp->clipRect.width, pComp->clipRect.height, pComp->clipRect.x, pComp->clipRect.y,
              pComp->position.width, pComp->position.height, pComp->position.x, pComp->position.y);
@@ -2446,7 +2460,7 @@ bool hwc_compose_gralloc_buffer(
                     } else {
                        composed = true;
                        if (ops_count) {
-                          *ops_count += 1;
+                          ops_count->yv12 += 1;
                        }
                        if (!ctx->g2d_allow_simult || ctx->fence_support) {
                           hwc_clear_acquire_release_fences(ctx, list, layer_id);
@@ -2548,7 +2562,7 @@ bool hwc_compose_gralloc_buffer(
                  } else {
                     composed = true;
                     if (ops_count) {
-                       *ops_count += 1;
+                       ops_count->blit += 1;
                     }
                     if (q_ops) {
                        *q_ops = true;
@@ -3482,12 +3496,14 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    bool skip_comp = false, layer_seeds_output = false, forced_background = false;
    hwc_display_contents_1_t* list = &item->content;
    NEXUS_SurfaceHandle surface[NSC_GPX_CLIENTS_NUMBER];
-   int ops_count = 0, video_seen = 0, chk;
+   int video_seen = 0, chk;
    uint64_t pinged_frame = 0;
    int64_t tick_now = 0;
    VIDEO_LAYER_VALIDATION video;
+   OPS_COUNT ops_count;
 
    memset(surface, 0, sizeof(surface));
+   memset(&ops_count, 0, sizeof(ops_count));
 
    if (ctx->track_comp_time) {
       item->surf_wait = hwc_tick();
@@ -3520,8 +3536,18 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          }
       }
    }
-   if (*overlay_seen >= item->video_layers) {
+   if (*overlay_seen > item->video_layers) {
       *overlay_seen -= item->video_layers;
+   }
+   if (video_seen) {
+      for (i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
+         if (ctx->mm_cli[i].last_ping_frame_id == LAST_PING_FRAME_ID_RESET) {
+            ctx->alpha_hole_background = false;
+            for (i = 0; i < list->numHwLayers; i++) {
+               item->skip_set[i] = false;
+            }
+         }
+      }
    }
 
    for (i = 0; i < list->numHwLayers; i++) {
@@ -3600,6 +3626,14 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          if (video.is_yuv) {
             is_yuv = true;
          }
+         if (item->skip_set[i]) {
+            if (video_seen && !ctx->alpha_hole_background) {
+               item->skip_set[i] = false;
+               forced_background = true;
+            } else {
+               skip_comp = true;
+            }
+         }
          if (!layer_composed) {
             layer_seeds_output = hwc_layer_seeds_output(item->skip_set[i], &item->comp[i], outputHdl);
             if (layer_seeds_output && video_seen && (*fb_target_seen) && !(*overlay_seen)) {
@@ -3634,14 +3668,6 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             close(list->hwLayers[i].acquireFenceFd);
             list->hwLayers[i].acquireFenceFd = INVALID_FENCE;
          }
-         if (item->skip_set[i]) {
-            if (video_seen && !ctx->alpha_hole_background) {
-               item->skip_set[i] = false;
-               forced_background = true;
-            } else {
-               skip_comp = true;
-            }
-         }
          if (ctx->track_comp_time) {
             tick_now = hwc_tick();
          }
@@ -3672,6 +3698,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             if (list->retireFenceFd != INVALID_FENCE) {
                hwc_ret_tl_inc(ctx, HWC_PRIMARY_IX, 1, false);
             }
+            ALOGW("%s: dropping no-background on live-video! (comp:%llu)", __FUNCTION__, ctx->stats[HWC_PRIMARY_IX].composed);
          } else {
             hwc_seed_disp_surface(ctx, outputHdl, &q_ops, &ops_count, HWC_TRANSPARENT);
             rc = hwc_checkpoint(ctx);
@@ -3727,11 +3754,12 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    }
 
    if (ctx->display_dump_layer & HWC_DUMP_LEVEL_FINAL) {
-      ALOGI("comp: %llu (%llu,%llu): ov:%d::fb:%d::vs:%d (%llu) - final:%d (%c%c%c) - ops:%d\n",
+      ALOGI("comp: %llu (%llu,%llu): ls:%s::ov:%d::fb:%d::vs:%d (%llu) - final:%d (%c%c%c) - ops(f:%d:b:%d:v:%d)\n",
             ctx->stats[HWC_PRIMARY_IX].composed, ctx->stats[HWC_PRIMARY_IX].prepare_call,
-            ctx->stats[HWC_PRIMARY_IX].set_call, *overlay_seen, *fb_target_seen, video_seen,
+            ctx->stats[HWC_PRIMARY_IX].set_call, ctx->last_seed == HWC_OPAQUE ? "opq" : "trs",
+            *overlay_seen, *fb_target_seen, video_seen,
             pinged_frame, layer_composed, is_yuv?'y':'-', *oob_video?'o':'-', is_sideband?'s':'-',
-            ops_count);
+            ops_count.fill, ops_count.blit, ops_count.yv12);
    }
 
 out:
