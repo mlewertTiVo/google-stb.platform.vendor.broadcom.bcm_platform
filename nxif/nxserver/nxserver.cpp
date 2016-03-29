@@ -1,7 +1,7 @@
 /******************************************************************************
- *    (c) 2015 Broadcom Corporation
+ *    (c) 2015-2016 Broadcom
  *
- * This program is the proprietary software of Broadcom Corporation and/or its licensors,
+ * This program is the proprietary software of Broadcom and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
  * (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
@@ -78,6 +78,7 @@
 #include "nexus_security.h"
 #include "nexus_bsp_config.h"
 #include "nexus_base_mmap.h"
+#include "nexus_watchdog.h"
 
 #include "PmLibService.h"
 
@@ -173,6 +174,13 @@ typedef struct {
 } BINDER_T;
 
 typedef struct {
+    int fd;
+    NEXUS_WatchdogCallbackHandle nx;
+    bool nxAcked;
+    BKNI_MutexHandle lock;
+} WDOG_T;
+
+typedef struct {
     BKNI_MutexHandle lock;
     nxserver_t server;
     BINDER_T binder;
@@ -187,8 +195,7 @@ typedef struct {
         nxclient_t client;
         NxClient_JoinSettings joinSettings;
     } clients[APP_MAX_CLIENTS];
-    int watchdogFd;
-
+    WDOG_T wdog;
 } NX_SERVER_T;
 
 static NX_SERVER_T g_app;
@@ -205,18 +212,14 @@ static unsigned calc_heap_size(const char *value)
    }
 }
 
-static const char WATCHDOG_TERMINATE[] = "\0";
-static const char WATCHDOG_KICK[]      = "V";
+static const char WATCHDOG_TERMINATE[] = "V";
+static const char WATCHDOG_KICK[]      = "\0";
 static void watchdogWrite(const char *msg)
 {
     int ret, retries = 3;
 
-    if (!msg) {
-        return;
-    }
-
     do {
-        ret = write(g_app.watchdogFd, msg, 1);
+        ret = write(g_app.wdog.fd, msg, 1);
         if (ret != 1) {
             ALOGE("could not write to watchdog, retrying...");
         } else {
@@ -229,12 +232,23 @@ static void watchdogWrite(const char *msg)
     }
 }
 
+static void nx_wdog_midpoint(void *context, int param)
+{
+   NX_SERVER_T *nx_server = (NX_SERVER_T *)context;
+   BSTD_UNUSED(param);
+
+   if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
+      nx_server->wdog.nxAcked = true;
+      NEXUS_Watchdog_StartTimer();
+      BKNI_ReleaseMutex(nx_server->wdog.lock);
+   }
+}
+
 static void *binder_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
 
-    do
-    {
+    do {
        android::ProcessState::self()->startThreadPool();
        NexusNxService::instantiate();
        PmLibService::instantiate();
@@ -253,8 +267,7 @@ static void *standby_monitor_task(void *argv)
 
     nx_server->standbyId = NxClient_RegisterAcknowledgeStandby();
 
-    do
-    {
+    do {
        if (BKNI_AcquireMutex(nx_server->standby_lock) == BERR_SUCCESS) {
           rc = NxClient_GetStandbyStatus(&nx_server->standbyState);
           if (rc == NEXUS_SUCCESS && nx_server->standbyState.transition == NxClient_StandbyTransition_eAckNeeded) {
@@ -368,8 +381,14 @@ skip_lmk:
            }
         }
 
-        if (g_app.watchdogFd >= 0) {
-            watchdogWrite(WATCHDOG_TERMINATE);
+        if (g_app.wdog.fd >= 0) {
+           if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
+              if (nx_server->wdog.nxAcked) {
+                 watchdogWrite(WATCHDOG_KICK);
+                 nx_server->wdog.nxAcked = false;
+              }
+              BKNI_ReleaseMutex(nx_server->wdog.lock);
+           }
         }
 
     } while(nx_server->proactive_runner.running);
@@ -908,6 +927,7 @@ static nxserver_t init_nxserver(void)
 
     BKNI_CreateMutex(&g_app.clients_lock);
     BKNI_CreateMutex(&g_app.standby_lock);
+    BKNI_CreateMutex(&g_app.wdog.lock);
     g_app.refcnt++;
     return g_app.server;
 }
@@ -922,6 +942,7 @@ static void uninit_nxserver(nxserver_t server)
     BKNI_DestroyMutex(g_app.lock);
     BKNI_DestroyMutex(g_app.clients_lock);
     BKNI_DestroyMutex(g_app.standby_lock);
+    BKNI_DestroyMutex(g_app.wdog.lock);
     NEXUS_Platform_Uninit();
 }
 
@@ -1012,18 +1033,17 @@ int main(void)
     /* Setup logger environment */
     int32_t loggerDisabled;
     loggerDisabled = property_get_int32(NX_LOGGER_DISABLED, 0);
-    if ( loggerDisabled ) {
+    if (loggerDisabled) {
         setenv("nexus_logger", "disabled", 1);
     } else {
         setenv("nexus_logger", "/system/bin/nxlogger", 1);
         setenv("nexus_logger_file", "/data/nexus/nexus.log", 1);
     }
     char loggerSize[PROPERTY_VALUE_MAX];
-    if ( property_get(NX_LOGGER_SIZE, loggerSize, "0") && loggerSize[0] != '0' )
-    {
+    if (property_get(NX_LOGGER_SIZE, loggerSize, "0") && loggerSize[0] != '0') {
         setenv("debug_log_size", loggerSize, 1);
     }
-    if ( property_get_int32(NX_AUDIO_LOG, 0) ) {
+    if (property_get_int32(NX_AUDIO_LOG, 0)) {
         ALOGD("Enabling audio DSP logs to /data/nexus");
         setenv("audio_uart_file", "/data/nexus/audio_uart", 1);
         setenv("audio_debug_file", "/data/nexus/audio_debug", 1);
@@ -1038,12 +1058,24 @@ int main(void)
     }
 
     if (property_get_int32(NX_ACT_WD, 1)) {
-       g_app.watchdogFd = open("/dev/watchdog", O_WRONLY);
-       if (g_app.watchdogFd < 0) {
+       g_app.wdog.fd = open("/dev/watchdog", O_WRONLY);
+       if (g_app.wdog.fd >= 0) {
+          NEXUS_WatchdogCallbackSettings wdogSettings;
+          NEXUS_WatchdogCallback_GetDefaultSettings(&wdogSettings);
+          wdogSettings.midpointCallback.callback = nx_wdog_midpoint;
+          wdogSettings.midpointCallback.context = (void *)&g_app;
+          g_app.wdog.nx = NEXUS_WatchdogCallback_Create(&wdogSettings);
+          NEXUS_Watchdog_SetTimeout((RUNNER_SEC_THRESHOLD-1)*2);
+          rc = NEXUS_Watchdog_StartTimer();
+          if (rc != NEXUS_SUCCESS) {
+             NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
+             g_app.wdog.nx = NULL;
+          }
+       } else {
           ALOGE("Failed to start reset watchdog timer(reason:%s)!", strerror(errno));
        }
     } else {
-       g_app.watchdogFd = -1;
+       g_app.wdog.fd = -1;
     }
 
     ALOGI("starting proactive runner.");
@@ -1137,6 +1169,12 @@ int main(void)
 
     ALOGI("terminating nxserver.");
 
+    if (g_app.wdog.nx) {
+       NEXUS_Watchdog_StopTimer();
+       NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
+       g_app.wdog.nx = NULL;
+    }
+
     if (g_app.standby_monitor.running) {
        g_app.standby_monitor.running = 0;
        pthread_join(g_app.standby_monitor.runner, NULL);
@@ -1156,9 +1194,9 @@ int main(void)
 
     uninit_nxserver(nx_srv);
 
-    if (g_app.watchdogFd >= 0) {
-        watchdogWrite(WATCHDOG_KICK);
-        close(g_app.watchdogFd);
+    if (g_app.wdog.fd >= 0) {
+        watchdogWrite(WATCHDOG_TERMINATE);
+        close(g_app.wdog.fd);
     }
 
     return 0;
