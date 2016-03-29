@@ -146,10 +146,8 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    pMemConfigSettings->videoInputs.hdDvi = false;
    pMemConfigSettings->videoInputs.ccir656 = false;
 
-   /* 3. *** HARDCODE *** only request a single encoder. */
-   for (i = 1; i < NEXUS_MAX_VIDEO_ENCODERS; i++) {
-      pMemConfigSettings->videoEncoder[i].used = false;
-   }
+   /* 3. *** HARDCODE *** remove all encoders. */
+   trim_encoder_mem_config(pMemConfigSettings);
 
    /* 4. vc1 decoder. */
    for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {

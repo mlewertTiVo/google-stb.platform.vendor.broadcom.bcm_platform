@@ -1,7 +1,11 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
-LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
+ifeq ($(TARGET_2ND_ARCH),arm)
+  LOCAL_MODULE_RELATIVE_PATH := hw
+else
+  LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
+endif
 LOCAL_CFLAGS := -fno-short-enums -DHAVE_CONFIG_H
 # fix warnings!
 LOCAL_CFLAGS += -Werror

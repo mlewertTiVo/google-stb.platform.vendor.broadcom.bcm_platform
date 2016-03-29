@@ -51,7 +51,6 @@ LOCAL_SRC_FILES := \
 
 # Component instances
 LOCAL_SRC_FILES += bomx_video_decoder.cpp bomx_vp9_parser.cpp bomx_pes_formatter.cpp
-LOCAL_SRC_FILES += bomx_video_encoder.cpp
 LOCAL_SRC_FILES += bomx_audio_decoder.cpp bomx_aac_parser.cpp
 
 LOCAL_C_INCLUDES := \
@@ -90,6 +89,12 @@ LOCAL_SHARED_LIBRARIES :=         \
         libstagefright_foundation \
         libui                     \
         libutils
+
+# encoder has dependencies on nexus
+ifneq ($(HW_ENCODER_SUPPORT),n)
+LOCAL_SRC_FILES += bomx_video_encoder.cpp
+LOCAL_CFLAGS += -DENCODER_ON
+endif
 
 # Secure decoder has dependencies on Sage
 ifeq ($(SAGE_SUPPORT),y)

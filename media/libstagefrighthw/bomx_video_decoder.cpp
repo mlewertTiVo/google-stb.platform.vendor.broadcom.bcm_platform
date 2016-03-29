@@ -54,7 +54,9 @@
 #include "bomx_vp9_parser.h"
 #include "nx_ashmem.h"
 #include "bomx_pes_formatter.h"
+#if defined(SECURE_DECODER_ON)
 #include "nexus_sage.h"
+#endif
 
 #define BOMX_INPUT_MSG(x)
 
@@ -2119,6 +2121,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
         // All states other than loaded require a playpump and video decoder handle
         if ( NULL == m_hSimpleVideoDecoder )
         {
+#if defined(SECURE_DECODER_ON)
             if ( !m_secureDecoder )
             {
                 int i;
@@ -2153,6 +2156,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 ALOGV("Slept %dms before starting non-secure decoder",
                       i * (B_SECURE_QUERY_SLEEP_INTERVAL_US / 1000));
             }
+#endif
 
             NEXUS_VideoDecoderSettings vdecSettings;
             NEXUS_VideoDecoderExtendedSettings extSettings;

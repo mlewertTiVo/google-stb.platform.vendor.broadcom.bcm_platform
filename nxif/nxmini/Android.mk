@@ -35,6 +35,11 @@ LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -Werror
 
 LOCAL_SRC_FILES := nxmini.cpp
+ifneq ($(HW_ENCODER_SUPPORT),n)
+LOCAL_SRC_FILES += nxmini_with_encoder.cpp
+else
+LOCAL_SRC_FILES += nxmini_stub_encoder.cpp
+endif
 
 LOCAL_MODULE := nxmini
 LOCAL_MODULE_TAGS := optional

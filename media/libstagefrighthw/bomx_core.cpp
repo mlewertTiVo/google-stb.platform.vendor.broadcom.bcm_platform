@@ -31,7 +31,9 @@
 #ifdef SECURE_DECODER_ON
 #include "bomx_video_decoder_secure.h"
 #endif
+#ifdef ENCODER_ON
 #include "bomx_video_encoder.h"
+#endif
 // Table of known components, constructors, and roles
 static const struct ComponentEntry
 {
@@ -49,7 +51,9 @@ static const struct ComponentEntry
 #ifdef SECURE_DECODER_ON
     {"OMX.broadcom.video_decoder.secure", BOMX_VideoDecoder_Secure_Create, BOMX_VideoDecoder_Secure_GetRole},
 #endif
+#ifdef ENCODER_ON
     {"OMX.broadcom.video_encoder", BOMX_VideoEncoder_Create, BOMX_VideoEncoder_GetRole},
+#endif
 
 };
 
