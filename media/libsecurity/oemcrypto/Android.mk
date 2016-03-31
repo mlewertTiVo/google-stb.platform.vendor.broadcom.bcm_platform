@@ -35,10 +35,16 @@ LOCAL_MODULE := liboemcrypto
 LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR_SHARED_LIBRARIES)
 LOCAL_MODULE_TAGS := optional
 
+ifeq ($(TARGET_BUILD_VARIANT),user)
+RELEASE_PREBUILTS := release_prebuilts/user
+else
+RELEASE_PREBUILTS := release_prebuilts/userdebug
+endif
+
 # Check if a prebuilt library has been created in the release_prebuilts folder
-ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/$(LOCAL_MODULE).so))
+ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so))
 # use prebuilt library if one exists
-LOCAL_SRC_FILES := ../../../../release_prebuilts/$(LOCAL_MODULE).so
+LOCAL_SRC_FILES := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
 LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 include $(BUILD_PREBUILT)

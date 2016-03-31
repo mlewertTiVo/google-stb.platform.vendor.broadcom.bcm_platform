@@ -18,17 +18,23 @@ $(call inherit-product-if-exists, vendor/broadcom/prebuilts/gms/google/products/
 # if release_prebuilts directory exists and it contains widevine prebuilt
 # binaries, always use them even if widevine source is present
 #
-ifneq ($(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/libwvm.so),)
+ifeq ($(TARGET_BUILD_VARIANT),user)
+RELEASE_PREBUILTS := release_prebuilts/user
+else
+RELEASE_PREBUILTS := release_prebuilts/userdebug
+endif
+
+ifneq ($(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvm.so),)
 
 PRODUCT_COPY_FILES += \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/com.google.widevine.software.drm.xml:system/etc/permissions/com.google.widevine.software.drm.xml:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/com.google.widevine.software.drm.jar:system/framework/com.google.widevine.software.drm.jar:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/libdrmdecrypt.so:system/lib/libdrmdecrypt.so:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/libdrmwvmplugin.so:system/lib/drm/libdrmwvmplugin.so:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/libwvdrm_L3.so:system/vendor/lib/libwvdrm_L3.so:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/libwvm.so:system/vendor/lib/libwvm.so:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/libWVStreamControlAPI_L3.so:system/vendor/lib/libWVStreamControlAPI_L3.so:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/libwvdrmengine.so:system/vendor/lib/mediadrm/libwvdrmengine.so:widevine
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/com.google.widevine.software.drm.xml:system/etc/permissions/com.google.widevine.software.drm.xml:widevine \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/com.google.widevine.software.drm.jar:system/framework/com.google.widevine.software.drm.jar:widevine \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libdrmdecrypt.so:system/lib/libdrmdecrypt.so:widevine \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libdrmwvmplugin.so:system/lib/drm/libdrmwvmplugin.so:widevine \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvdrm_L3.so:system/vendor/lib/libwvdrm_L3.so:widevine \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvm.so:system/vendor/lib/libwvm.so:widevine \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libWVStreamControlAPI_L3.so:system/vendor/lib/libWVStreamControlAPI_L3.so:widevine \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvdrmengine.so:system/vendor/lib/mediadrm/libwvdrmengine.so:widevine
 
 # no prebuilt binaries included, build from source if we have it
 #

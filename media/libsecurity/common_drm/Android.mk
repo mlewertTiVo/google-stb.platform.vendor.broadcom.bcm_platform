@@ -29,10 +29,16 @@ include $(CLEAR_VARS)
 LOCAL_LIB_NAME := libcmndrmprdy
 LOCAL_MODULE_TAGS := optional
 
+ifeq ($(TARGET_BUILD_VARIANT),user)
+RELEASE_PREBUILTS := release_prebuilts/user
+else
+RELEASE_PREBUILTS := release_prebuilts/userdebug
+endif
+
 # Check if a prebuilt library has been created in the release_prebuilts folder
-ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/$(LOCAL_LIB_NAME).so))
+ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(LOCAL_LIB_NAME).so))
 # use prebuilt library if one exists
-LOCAL_PREBUILT_LIBS := ../../../../release_prebuilts/$(LOCAL_LIB_NAME).so
+LOCAL_PREBUILT_LIBS := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_LIB_NAME).so
 include $(BUILD_MULTI_PREBUILT)
 else
 # compile library from source
