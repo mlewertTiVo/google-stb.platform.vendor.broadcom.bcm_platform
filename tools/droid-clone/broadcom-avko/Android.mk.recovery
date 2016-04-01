@@ -34,8 +34,8 @@ include $(CLEAR_VARS)
 NXMINI := $(call intermediates-dir-for,EXECUTABLES,nxmini)/nxmini
 
 EXTRA_SYSTEM_LIB_FILES := \
-   ${NEXUS_BIN_DIR}/bcmnexusfb.ko \
-   ${NEXUS_BIN_DIR}/nexus.ko
+   ${NEXUS_BIN_DIR_1ST_ARCH}/bcmnexusfb.ko \
+   ${NEXUS_BIN_DIR_1ST_ARCH}/nexus.ko
 
 ifeq ($(SAGE_SUPPORT),y)
 SAGE_BL_BINARY_PATH  := $(BSEAV_TOP)/lib/security/sage/bin/$(BCHP_CHIP)$(BCHP_VER)

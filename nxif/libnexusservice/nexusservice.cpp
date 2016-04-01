@@ -287,9 +287,9 @@ NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid)
     NEXUS_PlatformObjectInstance *objects = NULL;
     NEXUS_ClientHandle nexusClient = NULL;
     NEXUS_InterfaceName interfaceName;
-    unsigned num = 16; /* starting size. */
-    unsigned max_num = 1024; /* some big value. */
-    unsigned i, cached_num;
+    size_t num = 16; /* starting size. */
+    size_t max_num = 1024; /* some big value. */
+    size_t i, cached_num;
     int rc;
 
     NEXUS_Platform_GetDefaultInterfaceName(&interfaceName);
@@ -318,7 +318,6 @@ NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid)
 
     for (i=0; i < num; i++) {
         NEXUS_ClientStatus status;
-        unsigned j;
         rc = NEXUS_Platform_GetClientStatus(reinterpret_cast<NEXUS_ClientHandle>(objects[i].object), &status);
         if (rc) continue;
 
