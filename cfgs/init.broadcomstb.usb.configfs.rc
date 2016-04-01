@@ -1,0 +1,22 @@
+on init
+	mount configfs none /config
+	mkdir /config/usb_gadget/g1 0770 shell shell
+	write /config/usb_gadget/g1/idVendor 0x18D1
+	write /config/usb_gadget/g1/idProduct 0x4E26
+	mkdir /config/usb_gadget/g1/strings/0x409 0770 shell shell
+	write /config/usb_gadget/g1/strings/0x409/serialnumber ${ro.serialno}
+	write /config/usb_gadget/g1/strings/0x409/manufacturer bcm
+	write /config/usb_gadget/g1/strings/0x409/product bcmstb
+	mkdir /config/usb_gadget/g1/configs/b.1 0770 shell shell
+	mkdir /config/usb_gadget/g1/configs/b.1/strings/0x409 0770 shell shell
+	write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "default"
+	write /config/usb_gadget/g1/configs/b.1/MaxPower 120
+
+	mkdir /config/usb_gadget/g1/functions/ffs.adb 0770 shell shell
+	mkdir /dev/usb-ffs 0770 shell shell
+	mkdir /dev/usb-ffs/adb 0770 shell shell
+	mount functionfs adb /dev/usb-ffs/adb uid=2000,gid=2000
+
+on boot
+	setprop sys.usb.configfs 1
+	setprop sys.usb.controller f0b02000.bdc_v2
