@@ -54,7 +54,7 @@ static void nexus_direct_bout_data_callback(void *param1, int param2)
 {
     UNUSED(param1);
 
-    BKNI_SetEvent((BKNI_EventHandle)param2);
+    BKNI_SetEvent((BKNI_EventHandle)(intptr_t)param2);
 }
 
 static NEXUS_Error clientJoin(const char *name)
@@ -166,7 +166,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
     start_settings.passthroughBuffer.sampleRate = 48000;
     start_settings.passthroughBuffer.dataCallback.callback = nexus_direct_bout_data_callback;
     start_settings.passthroughBuffer.dataCallback.context = bout;
-    start_settings.passthroughBuffer.dataCallback.param = (int)event;
+    start_settings.passthroughBuffer.dataCallback.param = (int)(intptr_t)event;
 
     ret = NEXUS_SimpleAudioDecoder_Start(simple_decoder,
                                           &start_settings);
@@ -223,7 +223,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
 
             bytes_to_copy = (bytes <= nexus_space) ? bytes : nexus_space;
             memcpy(nexus_buffer,
-                   (void *)((int)buffer + bytes_written),
+                   (void *)((int)(intptr_t)buffer + bytes_written),
                    bytes_to_copy);
 
             ret = NEXUS_SimpleAudioDecoder_PassthroughWriteComplete(simple_decoder,

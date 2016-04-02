@@ -154,7 +154,7 @@ static int builtin_bin_read(struct brcm_stream_in *bin,
     }
 
     while (bytes > 0) {
-        ret = read(fd, (void *)((int)buffer + bytes_read), bytes);
+        ret = read(fd, (void *)((intptr_t)buffer + bytes_read), bytes);
         if (ret < 0) {
             if (errno != EAGAIN) {
                 ALOGE("%s: at %d, device read failed, ret = %d\n",

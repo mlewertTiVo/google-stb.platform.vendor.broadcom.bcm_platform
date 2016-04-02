@@ -98,7 +98,7 @@ static void nexus_bout_data_callback(void *param1, int param2)
 {
     UNUSED(param1);
 
-    BKNI_SetEvent((BKNI_EventHandle)param2);
+    BKNI_SetEvent((BKNI_EventHandle)(intptr_t)param2);
 }
 
 static NEXUS_Error clientJoin(const char *name)
@@ -328,7 +328,7 @@ static int nexus_bout_start(struct brcm_stream_out *bout)
 
     start_settings.dataCallback.callback = nexus_bout_data_callback;
     start_settings.dataCallback.context = bout;
-    start_settings.dataCallback.param = (int)event;
+    start_settings.dataCallback.param = (int)(intptr_t)event;
 
     start_settings.startThreshold = 128;
 
@@ -387,7 +387,7 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
 
             bytes_to_copy = (bytes <= nexus_space) ? bytes : nexus_space;
             memcpy(nexus_buffer,
-                   (void *)((int)buffer + bytes_written),
+                   (void *)((int)(intptr_t)buffer + bytes_written),
                    bytes_to_copy);
 
             ret = NEXUS_SimpleAudioPlayback_WriteComplete(simple_playback,

@@ -107,8 +107,8 @@ static uint32_t bout_get_sample_rate(const struct audio_stream *stream)
 {
     struct brcm_stream_out *bout = (struct brcm_stream_out *)stream;
 
-    ALOGV("%s: at %d, stream = 0x%X, sample_rate = %d\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream, bout->config.sample_rate);
+    ALOGV("%s: at %d, stream = %p, sample_rate = %d\n",
+         __FUNCTION__, __LINE__, stream, bout->config.sample_rate);
 
     return bout->config.sample_rate;
 }
@@ -118,8 +118,8 @@ static int bout_set_sample_rate(struct audio_stream *stream,
 {
     UNUSED(stream);
 
-    ALOGV("%s: at %d, stream = 0x%X, sample_rate = %d\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream, sample_rate);
+    ALOGV("%s: at %d, stream = %p, sample_rate = %d\n",
+         __FUNCTION__, __LINE__, stream, sample_rate);
 
     return -ENOSYS;
 }
@@ -128,8 +128,8 @@ static size_t bout_get_buffer_size(const struct audio_stream *stream)
 {
     struct brcm_stream_out *bout = (struct brcm_stream_out *)stream;
 
-    ALOGV("%s: at %d, stream = 0x%X, buffer_size = %d\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream, bout->buffer_size);
+    ALOGV("%s: at %d, stream = %p, buffer_size = %d\n",
+         __FUNCTION__, __LINE__, stream, bout->buffer_size);
 
     return bout->buffer_size;
 }
@@ -138,8 +138,8 @@ static audio_channel_mask_t bout_get_channels(const struct audio_stream *stream)
 {
     struct brcm_stream_out *bout = (struct brcm_stream_out *)stream;
 
-    ALOGV("%s: at %d, stream = 0x%X, channels = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream, bout->config.channel_mask);
+    ALOGV("%s: at %d, stream = %p, channels = 0x%X\n",
+         __FUNCTION__, __LINE__, stream, bout->config.channel_mask);
 
     return bout->config.channel_mask;
 }
@@ -148,8 +148,8 @@ static audio_format_t bout_get_format(const struct audio_stream *stream)
 {
     struct brcm_stream_out *bout = (struct brcm_stream_out *)stream;
 
-    ALOGV("%s: at %d, stream = 0x%X, format = %d\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream, bout->config.format);
+    ALOGV("%s: at %d, stream = %p, format = %d\n",
+         __FUNCTION__, __LINE__, stream, bout->config.format);
 
     return bout->config.format;
 }
@@ -159,8 +159,8 @@ static int bout_set_format(struct audio_stream *stream,
 {
     UNUSED(stream);
 
-    ALOGV("%s: at %d, stream = 0x%X, format = %d\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream, format);
+    ALOGV("%s: at %d, stream = %p, format = %d\n",
+         __FUNCTION__, __LINE__, stream, format);
 
     return -ENOSYS;
 }
@@ -170,8 +170,8 @@ static int bout_standby_l(struct audio_stream *stream)
     struct brcm_stream_out *bout = (struct brcm_stream_out *)stream;
     int ret = 0;
 
-    ALOGV("%s: at %d, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream);
+    ALOGV("%s: at %d, stream = %p\n",
+         __FUNCTION__, __LINE__, stream);
 
     if (bout->started) {
         ret = bout->ops.do_bout_stop(bout);
@@ -202,7 +202,7 @@ static int bout_dump(const struct audio_stream *stream, int fd)
             "\tsample_rate = %d\n"
             "\tchannel_mask = 0x%X\n"
             "\tformat = %d\n"
-            "\tbuffer_size = %d\n"
+            "\tbuffer_size = %zu\n"
             "\tstarted: %s\n"
             "\tsuspended: %s\n",
             bout->devices,
@@ -229,8 +229,8 @@ static int bout_set_parameters(struct audio_stream *stream,
 
     pthread_mutex_lock(&bout->lock);
 
-    ALOGV("%s: at %d, stream = 0x%X, kvpairs=\"%s\"\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream, kvpairs);
+    ALOGV("%s: at %d, stream = %p, kvpairs=\"%s\"\n",
+         __FUNCTION__, __LINE__, stream, kvpairs);
 
     parms = str_parms_create_str(kvpairs);
 
@@ -263,8 +263,8 @@ static char *bout_get_parameters(const struct audio_stream *stream,
 {
     struct brcm_stream_out *bout = (struct brcm_stream_out *)stream;
 
-    ALOGV("%s: at %d, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream);
+    ALOGV("%s: at %d, stream = %p\n",
+         __FUNCTION__, __LINE__, stream);
 
     if (bout->ops.do_bout_get_parameters) {
         return bout->ops.do_bout_get_parameters(bout, keys);
@@ -279,8 +279,8 @@ static int bout_add_audio_effect(const struct audio_stream *stream,
     UNUSED(stream);
     UNUSED(effect);
 
-    ALOGV("%s: at %d, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream);
+    ALOGV("%s: at %d, stream = %p\n",
+         __FUNCTION__, __LINE__, stream);
 
     return 0;
 }
@@ -291,8 +291,8 @@ static int bout_remove_audio_effect(const struct audio_stream *stream,
     UNUSED(stream);
     UNUSED(effect);
 
-    ALOGV("%s: at %d, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream);
+    ALOGV("%s: at %d, stream = %p\n",
+         __FUNCTION__, __LINE__, stream);
 
     return 0;
 }
@@ -301,8 +301,8 @@ static uint32_t bout_get_latency(const struct audio_stream_out *aout)
 {
     UNUSED(aout);
 
-    ALOGV("%s: at %d, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)aout);
+    ALOGV("%s: at %d, stream = %p\n",
+         __FUNCTION__, __LINE__, aout);
 
     return 0;
 }
@@ -313,8 +313,8 @@ static int bout_set_volume(struct audio_stream_out *aout,
     struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
     int ret = 0;
 
-    ALOGV("%s: at %d, stream = 0x%X, left = %f, right = %f\n",
-         __FUNCTION__, __LINE__, (uint32_t)aout, left, right);
+    ALOGV("%s: at %d, stream = %p, left = %f, right = %f\n",
+         __FUNCTION__, __LINE__, aout, left, right);
 
     pthread_mutex_lock(&bout->lock);
     ret = bout->ops.do_bout_set_volume(bout, left, right);
@@ -353,8 +353,8 @@ static ssize_t bout_write(struct audio_stream_out *aout,
 
     pthread_mutex_unlock(&bout->lock);
 
-    ALOGVV("%s: at %d, stream = 0x%X, bytes = %d, bytes_written = %d",
-          __FUNCTION__, __LINE__, (uint32_t)aout, bytes, bytes_written);
+    ALOGVV("%s: at %d, stream = %p, bytes = %d, bytes_written = %d",
+          __FUNCTION__, __LINE__, aout, bytes, bytes_written);
 
     return bytes_written;
 }
@@ -381,8 +381,8 @@ static int bout_get_next_write_timestamp(const struct audio_stream_out *aout,
     clock_gettime(CLOCK_MONOTONIC, &ts);
     *timestamp = ts.tv_sec * 1000000ll + (ts.tv_nsec)/1000ll;
 
-    ALOGV("%s: at %d, stream  =  0x%X, Next timestamp..(%lld)",
-         __FUNCTION__, __LINE__, (uint32_t)aout, *timestamp);
+    ALOGV("%s: at %d, stream = %p, Next timestamp..(%lld)",
+         __FUNCTION__, __LINE__, aout, *timestamp);
 
     return 0;
 }
@@ -421,8 +421,8 @@ static uint32_t bin_get_sample_rate(const struct audio_stream *stream)
 {
     struct brcm_stream_in *bin = (struct brcm_stream_in *)stream;
 
-    ALOGV("%s: at %d, stream = 0x%X, sample_rate = %d\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream, bin->config.sample_rate);
+    ALOGV("%s: at %d, stream = %p, sample_rate = %d\n",
+         __FUNCTION__, __LINE__, stream, bin->config.sample_rate);
 
     return bin->config.sample_rate;
 }
@@ -432,8 +432,8 @@ static int bin_set_sample_rate(struct audio_stream *stream,
 {
     UNUSED(stream);
 
-    ALOGV("%s: at %d, stream = 0x%X, sample_rate = %d\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream, sample_rate);
+    ALOGV("%s: at %d, stream = %p, sample_rate = %d\n",
+         __FUNCTION__, __LINE__, stream, sample_rate);
 
     return -ENOSYS;
 }
@@ -442,8 +442,8 @@ static size_t bin_get_buffer_size(const struct audio_stream *stream)
 {
     struct brcm_stream_in *bin = (struct brcm_stream_in *)stream;
 
-    ALOGV("%s: at %d, stream = 0x%X, buffer_size = %d\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream, bin->buffer_size);
+    ALOGV("%s: at %d, stream = %p, buffer_size = %d\n",
+         __FUNCTION__, __LINE__, stream, bin->buffer_size);
 
     return bin->buffer_size;
 }
@@ -452,8 +452,8 @@ static audio_channel_mask_t bin_get_channels(const struct audio_stream *stream)
 {
     struct brcm_stream_in *bin = (struct brcm_stream_in *)stream;
 
-    ALOGV("%s: at %d, stream = 0x%X, chennels = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream, bin->config.channel_mask);
+    ALOGV("%s: at %d, stream = %p, chennels = 0x%X\n",
+         __FUNCTION__, __LINE__, stream, bin->config.channel_mask);
 
     return bin->config.channel_mask;
 }
@@ -462,8 +462,8 @@ static audio_format_t bin_get_format(const struct audio_stream *stream)
 {
     struct brcm_stream_in *bin = (struct brcm_stream_in *)stream;
 
-    ALOGV("%s: at %d, stream = 0x%X, format = %d\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream, bin->config.format);
+    ALOGV("%s: at %d, stream = %p, format = %d\n",
+         __FUNCTION__, __LINE__, stream, bin->config.format);
 
     return bin->config.format;
 }
@@ -473,8 +473,8 @@ static int bin_set_format(struct audio_stream *stream,
 {
     UNUSED(stream);
 
-    ALOGV("%s: at %d, stream = 0x%X, format = %d\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream, format);
+    ALOGV("%s: at %d, stream = %p, format = %d\n",
+         __FUNCTION__, __LINE__, stream, format);
 
     return -ENOSYS;
 }
@@ -484,8 +484,8 @@ static int bin_standby(struct audio_stream *stream)
     struct brcm_stream_in *bin = (struct brcm_stream_in *)stream;
     int ret = 0;
 
-    ALOGV("%s: at %d, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream);
+    ALOGV("%s: at %d, stream = %p\n",
+         __FUNCTION__, __LINE__, stream);
 
     pthread_mutex_lock(&bin->lock);
 
@@ -508,7 +508,7 @@ static int bin_dump(const struct audio_stream *stream, int fd)
             "\tsample_rate = %d\n"
             "\tchannel_mask = 0x%X\n"
             "\tformat = %d\n"
-            "\tbuffer_size = %d\n"
+            "\tbuffer_size = %zu\n"
             "\tstarted: %s\n"
             "\tsuspended: %s\n",
             bin->devices,
@@ -533,8 +533,8 @@ static int bin_set_parameters(struct audio_stream *stream,
     struct str_parms *parms;
     int ret = 0;
 
-    ALOGV("%s: at %d, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream);
+    ALOGV("%s: at %d, stream = %p\n",
+         __FUNCTION__, __LINE__, stream);
 
     parms = str_parms_create_str(kvpairs);
 
@@ -552,8 +552,8 @@ static char *bin_get_parameters(const struct audio_stream *stream,
     struct str_parms *reply;
     char *str;
 
-    ALOGV("%s: at %d, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream);
+    ALOGV("%s: at %d, stream = %p\n",
+         __FUNCTION__, __LINE__, stream);
 
     query = str_parms_create_str(keys);
     reply = str_parms_create();
@@ -573,8 +573,8 @@ static int bin_add_audio_effect(const struct audio_stream *stream,
     UNUSED(stream);
     UNUSED(effect);
 
-    ALOGV("%s: at %d, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream);
+    ALOGV("%s: at %d, stream = %p\n",
+         __FUNCTION__, __LINE__, stream);
 
     return 0;
 }
@@ -585,8 +585,8 @@ static int bin_remove_audio_effect(const struct audio_stream *stream,
     UNUSED(stream);
     UNUSED(effect);
 
-    ALOGV("%s: at %d, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)stream);
+    ALOGV("%s: at %d, stream = %p\n",
+         __FUNCTION__, __LINE__, stream);
 
     return 0;
 }
@@ -595,8 +595,8 @@ static int bin_set_gain(struct audio_stream_in *ain, float gain)
 {
     UNUSED(ain);
 
-    ALOGV("%s: at %d, stream = 0x%X, gain = %f\n",
-         __FUNCTION__, __LINE__, (uint32_t)ain, gain);
+    ALOGV("%s: at %d, stream = %p, gain = %f\n",
+         __FUNCTION__, __LINE__, ain, gain);
 
     return 0;
 }
@@ -624,8 +624,8 @@ static ssize_t bin_read(struct audio_stream_in *ain,
 
     pthread_mutex_unlock(&bin->lock);
 
-    ALOGVV("%s: at %d, stream = 0x%X, bytes = %d, bytes_read = %d\n",
-          __FUNCTION__, __LINE__, (uint32_t)ain, bytes, bytes_read);
+    ALOGVV("%s: at %d, stream = %p, bytes = %d, bytes_read = %d\n",
+          __FUNCTION__, __LINE__, ain, bytes, bytes_read);
 
     return bytes_read;
 }
@@ -634,8 +634,8 @@ static uint32_t bin_get_input_frames_lost(struct audio_stream_in *ain)
 {
     UNUSED(ain);
 
-    ALOGV("%s: at %d, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)ain);
+    ALOGV("%s: at %d, stream = %p\n",
+         __FUNCTION__, __LINE__, ain);
 
     return 0;
 }
@@ -648,8 +648,8 @@ static int bdev_init_check(const struct audio_hw_device *adev)
 {
     UNUSED(adev);
 
-    ALOGV("%s: at %d, dev = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev);
+    ALOGV("%s: at %d, dev = %p\n",
+         __FUNCTION__, __LINE__, adev);
 
     return 0;
 }
@@ -660,8 +660,8 @@ static int bdev_set_voice_volume(struct audio_hw_device *adev,
     UNUSED(adev);
     UNUSED(volume);
 
-    ALOGV("%s: at %d, dev = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev);
+    ALOGV("%s: at %d, dev = %p\n",
+         __FUNCTION__, __LINE__, adev);
 
     /* set_voice_volume is a no op (simulates phones) */
     return 0;
@@ -672,8 +672,8 @@ static int bdev_set_master_volume(struct audio_hw_device *adev,
 {
     UNUSED(adev);
 
-    ALOGV("%s: at %d, dev = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev);
+    ALOGV("%s: at %d, dev = %p\n",
+         __FUNCTION__, __LINE__, adev);
 
     set_master_volume(volume);
 
@@ -686,8 +686,8 @@ static int bdev_get_master_volume(struct audio_hw_device *adev,
     UNUSED(adev);
     UNUSED(volume);
 
-    ALOGV("%s: at %d, dev = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev);
+    ALOGV("%s: at %d, dev = %p\n",
+         __FUNCTION__, __LINE__, adev);
 
     *volume = get_master_volume();
 
@@ -699,8 +699,8 @@ static int bdev_set_master_mute(struct audio_hw_device *adev,
 {
     UNUSED(adev);
 
-    ALOGV("%s: at %d, dev = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev);
+    ALOGV("%s: at %d, dev = %p\n",
+         __FUNCTION__, __LINE__, adev);
 
     set_mute_state(muted);
 
@@ -712,8 +712,8 @@ static int bdev_get_master_mute(struct audio_hw_device *adev,
 {
     UNUSED(adev);
 
-    ALOGV("%s: at %d, dev = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev);
+    ALOGV("%s: at %d, dev = %p\n",
+         __FUNCTION__, __LINE__, adev);
 
     *muted = get_mute_state();
 
@@ -726,8 +726,8 @@ static int bdev_set_mode(struct audio_hw_device *adev,
     UNUSED(adev);
     UNUSED(mode);
 
-    ALOGV("%s: at %d, dev = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev);
+    ALOGV("%s: at %d, dev = %p\n",
+         __FUNCTION__, __LINE__, adev);
 
     /* set_mode is a no op (simulates phones) */
     return 0;
@@ -738,8 +738,8 @@ static int bdev_set_mic_mute(struct audio_hw_device *adev,
 {
     struct brcm_device *bdev = (struct brcm_device *)adev;
 
-    ALOGV("%s: at %d, dev = 0x%X, muted = %d\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev, muted);
+    ALOGV("%s: at %d, dev = %p, muted = %d\n",
+         __FUNCTION__, __LINE__, adev, muted);
 
     pthread_mutex_lock(&bdev->lock);
     bdev->mic_mute = muted;
@@ -753,8 +753,8 @@ static int bdev_get_mic_mute(const struct audio_hw_device *adev,
 {
     struct brcm_device *bdev = (struct brcm_device *)adev;
 
-    ALOGV("%s: at %d, dev = 0x%X, muted = %d\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev, *muted);
+    ALOGV("%s: at %d, dev = %p, muted = %d\n",
+         __FUNCTION__, __LINE__, adev, *muted);
 
     pthread_mutex_lock(&bdev->lock);
     *muted = bdev->mic_mute;
@@ -769,8 +769,8 @@ static int bdev_set_parameters(struct audio_hw_device *adev,
     struct brcm_device *bdev = (struct brcm_device *)adev;
     int i;
 
-    ALOGV("%s: at %d, dev = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev);
+    ALOGV("%s: at %d, dev = %p\n",
+         __FUNCTION__, __LINE__, adev);
 
     for (i = 0; i < BRCM_DEVICE_OUT_MAX; i++) {
         struct brcm_stream_out *bout = bdev->bouts[i];
@@ -795,8 +795,8 @@ static char *bdev_get_parameters(const struct audio_hw_device *adev,
     UNUSED(adev);
     UNUSED(keys);
 
-    ALOGV("%s: at %d, dev = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev);
+    ALOGV("%s: at %d, dev = %p\n",
+         __FUNCTION__, __LINE__, adev);
 
     return strdup("");
 }
@@ -813,8 +813,8 @@ static size_t bdev_get_input_buffer_size(const struct audio_hw_device *adev,
                                    config->format,
                                    popcount(config->channel_mask));
 
-    ALOGV("%s: at %d, dev = 0x%X, buffer_size = %d\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev, buffer_size);
+    ALOGV("%s: at %d, dev = %p, buffer_size = %d\n",
+         __FUNCTION__, __LINE__, adev, buffer_size);
 
     return buffer_size;
 }
@@ -836,8 +836,8 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     UNUSED(flags);
     UNUSED(address);
 
-    ALOGV("%s: at %d, dev = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev);
+    ALOGV("%s: at %d, dev = %p\n",
+         __FUNCTION__, __LINE__, adev);
 
     ALOGI("Open audio output stream:\n"
          "\tdevices = 0x%X\n"
@@ -931,7 +931,7 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
 
     *aout = &bout->aout;
 
-    ALOGI("Audio output stream open, stream = 0x%X\n", (uint32_t)*aout);
+    ALOGI("Audio output stream open, stream = %p\n", *aout);
     return 0;
 
  err_lock:
@@ -950,8 +950,8 @@ static void bdev_close_output_stream(struct audio_hw_device *adev,
     struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
     int i;
 
-    ALOGV("%s: at %d, dev = 0x%X\n, stream = 0x%X",
-         __FUNCTION__, __LINE__, (uint32_t)adev, (uint32_t)aout);
+    ALOGV("%s: at %d, dev = %p\n, stream = %p",
+         __FUNCTION__, __LINE__, adev, aout);
 
     pthread_mutex_lock(&bdev->lock);
     pthread_mutex_lock(&bout->lock);
@@ -970,7 +970,7 @@ static void bdev_close_output_stream(struct audio_hw_device *adev,
 
     pthread_mutex_destroy(&bout->lock);
 
-    ALOGI("Audio output stream closed, stream = 0x%X\n", (uint32_t)aout);
+    ALOGI("Audio output stream closed, stream = %p\n", aout);
     free(bout);
 }
 
@@ -993,8 +993,8 @@ static int bdev_open_input_stream(struct audio_hw_device *adev,
     UNUSED(address);
     UNUSED(source);
 
-    ALOGV("%s: at %d, dev = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev);
+    ALOGV("%s: at %d, dev = %p\n",
+         __FUNCTION__, __LINE__, adev);
 
     ALOGI("Open audio input stream:\n"
          "\tdevices = 0x%X\n"
@@ -1082,7 +1082,7 @@ static int bdev_open_input_stream(struct audio_hw_device *adev,
 
     *ain = &bin->ain;
 
-    ALOGI("Audio input stream open, stream = 0x%X\n", (uint32_t)*ain);
+    ALOGI("Audio input stream open, stream = %p\n", *ain);
     return 0;
 
  err_lock:
@@ -1101,8 +1101,8 @@ static void bdev_close_input_stream(struct audio_hw_device *adev,
     struct brcm_stream_in *bin = (struct brcm_stream_in *)ain;
     int i;
 
-    ALOGV("%s: at %d, dev = 0x%X, stream = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev, (uint32_t)ain);
+    ALOGV("%s: at %d, dev = %p, stream = %p\n",
+         __FUNCTION__, __LINE__, adev, ain);
 
     pthread_mutex_lock(&bdev->lock);
     pthread_mutex_lock(&bin->lock);
@@ -1121,7 +1121,7 @@ static void bdev_close_input_stream(struct audio_hw_device *adev,
 
     pthread_mutex_destroy(&bin->lock);
 
-    ALOGI("Audio input stream closed, stream = 0x%X\n", (uint32_t)ain);
+    ALOGI("Audio input stream closed, stream = %p\n", ain);
     free(bin);
 }
 
@@ -1174,7 +1174,7 @@ static int bdev_close(hw_device_t *dev)
 
     pthread_mutex_destroy(&bdev->lock);
 
-    ALOGI("Audio device closed, dev = 0x%X\n", (uint32_t)dev);
+    ALOGI("Audio device closed, dev = %p\n", dev);
     free(bdev);
     return 0;
 }
@@ -1229,7 +1229,7 @@ static int bdev_open(const hw_module_t *module, const char *name,
 
     bdev->standbyThread = new StandbyMonitorThread();
 
-    ALOGI("Audio device open, dev = 0x%X\n", (uint32_t)*dev);
+    ALOGI("Audio device open, dev = %p\n", *dev);
     return 0;
 }
 
