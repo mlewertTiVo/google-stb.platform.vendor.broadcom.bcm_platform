@@ -533,7 +533,7 @@ void OmxBinder::notify(int msg, struct hwc_notification_info &ntfy)
       cb(cb_data, msg, ntfy);
 }
 
-static void BOMX_OmxBinderNotify(int cb_data, int msg, struct hwc_notification_info &ntfy)
+static void BOMX_OmxBinderNotify(void *cb_data, int msg, struct hwc_notification_info &ntfy)
 {
     BOMX_VideoDecoder *pComponent = (BOMX_VideoDecoder *)cb_data;
 
@@ -559,13 +559,15 @@ static size_t ComputeBufferSize(unsigned stride, unsigned height)
 static void BOMX_VideoDecoder_MemLock(private_handle_t *pPrivateHandle, void **addr)
 {
    *addr = NULL;
-   NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)pPrivateHandle->sharedData;
+   NEXUS_MemoryBlockHandle block_handle = NULL;
+   private_handle_t::get_block_handles(pPrivateHandle, &block_handle, NULL);
    NEXUS_MemoryBlock_Lock(block_handle, addr);
 }
 
 static void BOMX_VideoDecoder_MemUnlock(private_handle_t *pPrivateHandle)
 {
-   NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)pPrivateHandle->sharedData;
+   NEXUS_MemoryBlockHandle block_handle = NULL;
+   private_handle_t::get_block_handles(pPrivateHandle, &block_handle, NULL);
    NEXUS_MemoryBlock_Unlock(block_handle);
 }
 
@@ -626,10 +628,14 @@ static NEXUS_MemoryBlockHandle BOMX_VideoDecoder_AllocatePixelMemoryBlk(const NE
             close(memBlkFd);
             memBlkFd = -1;
          } else {
-            hMemBlk = (NEXUS_MemoryBlockHandle)ioctl(memBlkFd, NX_ASHMEM_GETMEM);
-            if (hMemBlk == NULL) {
+            struct nx_ashmem_getmem ashmem_getmem;
+            memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
+            ret = ioctl(memBlkFd, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            if (ret < 0) {
                close(memBlkFd);
                memBlkFd = -1;
+            } else {
+               hMemBlk = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
             }
          }
       }
@@ -655,7 +661,7 @@ static void BOMX_VideoDecoder_SurfaceDestroy(int *pMemBlkFd, NEXUS_SurfaceHandle
 }
 
 static NEXUS_SurfaceHandle BOMX_VideoDecoder_ToNexusSurface(int width, int height, int stride, NEXUS_PixelFormat format,
-                                                            unsigned handle, unsigned offset)
+                                                            NEXUS_MemoryBlockHandle handle, unsigned offset)
 {
     NEXUS_SurfaceHandle shdl = NULL;
     NEXUS_SurfaceCreateSettings createSettings;
@@ -1218,7 +1224,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         this->Invalidate(OMX_ErrorUndefined);
         return;
     }
-    m_omxHwcBinder->get()->register_notify(&BOMX_OmxBinderNotify, (int)this);
+    m_omxHwcBinder->get()->register_notify(&BOMX_OmxBinderNotify, this);
     // TODO: This still seems to be required or we stop getting notifications - just discard the value for now.
     {
         int surfaceClientId;
@@ -3433,7 +3439,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     size_t codecHeaderLength,
     NEXUS_PlaypumpScatterGatherDescriptor *pDescriptors,
     unsigned maxDescriptors,
-    unsigned *pNumDescriptors
+    size_t *pNumDescriptors
     )
 {
     BOMX_Buffer *pBuffer;
@@ -4705,7 +4711,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
                             if ( NULL == pMemory )
                             {
-                                ALOGW("Unable to convert SHARED_DATA physical address %#x", pBuffer->pPrivateHandle->sharedData);
+                                ALOGW("Unable to convert SHARED_DATA physical address %p", pBuffer->pPrivateHandle);
                                 (void)BOMX_ERR_TRACE(OMX_ErrorBadParameter);
                             }
                             else
@@ -5336,7 +5342,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
                              pSharedData->container.height,
                              pSharedData->container.stride,
                              NEXUS_PixelFormat_eY8,
-                             pSharedData->container.physAddr,
+                             pSharedData->container.block,
                              0);
    if (hSurfaceY == NULL) {
       ALOGE("DestripeToYV12: invalid plane Y");
@@ -5351,7 +5357,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
                               pSharedData->container.height/2,
                               (pSharedData->container.stride/2 + (yv12_alignment-1)) & ~(yv12_alignment-1),
                               NEXUS_PixelFormat_eCr8,
-                              pSharedData->container.physAddr,
+                              pSharedData->container.block,
                               pSharedData->container.stride * pSharedData->container.height);
    if (hSurfaceCr == NULL) {
       ALOGE("DestripeToYV12: invalid plane Cr");
@@ -5366,7 +5372,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
                               pSharedData->container.height/2,
                               (pSharedData->container.stride/2 + (yv12_alignment-1)) & ~(yv12_alignment-1),
                               NEXUS_PixelFormat_eCb8,
-                              pSharedData->container.physAddr,
+                              pSharedData->container.block,
                               (pSharedData->container.stride * pSharedData->container.height) +
                               ((pSharedData->container.height/2) * ((pSharedData->container.stride/2 + (yv12_alignment-1)) & ~(yv12_alignment-1))));
    if (hSurfaceCb == NULL) {

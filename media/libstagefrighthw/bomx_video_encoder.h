@@ -367,7 +367,7 @@ protected:
 private:
 
     NEXUS_SurfaceHandle CreateSurface(int width, int height, int stride, NEXUS_PixelFormat format,
-        unsigned handle, unsigned offset, void *pAddr, int *pMemBlkFd);
+        NEXUS_MemoryBlockHandle handle, unsigned offset, void *pAddr, int *pMemBlkFd);
 };
 
 #endif //BOMX_VIDEO_ENCODER_H__

@@ -30,7 +30,7 @@ void BcmSidebandBinder::notify(int msg, struct hwc_notification_info &ntfy)
       cb(cb_data, msg, ntfy);
 }
 
-static void BcmSidebandBinderNotify(int cb_data, int msg, struct hwc_notification_info &ntfy)
+static void BcmSidebandBinderNotify(void *cb_data, int msg, struct hwc_notification_info &ntfy)
 {
     struct bcmsideband_ctx *ctx = (struct bcmsideband_ctx *)cb_data;
 
@@ -83,7 +83,7 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband(ANativeWindow *native_wind
         ALOGE("Unable to connect to HwcBinder");
         return NULL;
     }
-    ctx->bcmSidebandHwcBinder->get()->register_notify(&BcmSidebandBinderNotify, (int)ctx);
+    ctx->bcmSidebandHwcBinder->get()->register_notify(&BcmSidebandBinderNotify, (void *)ctx);
     ctx->bcmSidebandHwcBinder->getsideband(0, ctx->surfaceClientId);
 
     NexusClientContext *nexus_client = ipc_client->createClientContext();
@@ -106,7 +106,7 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband(ANativeWindow *native_wind
     }
 
     native_handle->data[0] = 1;
-    native_handle->data[1] = (int)nexus_client;
+    native_handle->data[1] = (intptr_t)nexus_client;
     native_window_set_sideband_stream(native_window, native_handle);
 
     ctx->native_window = native_window;
@@ -140,7 +140,7 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband_tif(native_handle_t **p_na
         ALOGE("Unable to connect to HwcBinder");
         return NULL;
     }
-    ctx->bcmSidebandHwcBinder->get()->register_notify(&BcmSidebandBinderNotify, (int)ctx);
+    ctx->bcmSidebandHwcBinder->get()->register_notify(&BcmSidebandBinderNotify, (void *)ctx);
     ctx->bcmSidebandHwcBinder->getsideband(0, ctx->surfaceClientId);
 
     NexusClientContext *nexus_client = ipc_client->createClientContext();
@@ -163,7 +163,7 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband_tif(native_handle_t **p_na
     }
 
     native_handle->data[0] = 1;
-    native_handle->data[1] = (int)nexus_client;
+    native_handle->data[1] = (intptr_t)nexus_client;
 
     ctx->native_window = NULL;
     ctx->native_handle = native_handle;

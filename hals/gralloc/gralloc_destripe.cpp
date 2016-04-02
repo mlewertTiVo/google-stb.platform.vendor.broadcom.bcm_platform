@@ -42,7 +42,7 @@
 #include <cutils/log.h>
 
 static NEXUS_SurfaceHandle to_nx_surface(int width, int height, int stride, NEXUS_PixelFormat format,
-                                         unsigned handle, unsigned offset)
+                                         NEXUS_MemoryBlockHandle handle, unsigned offset)
 {
     NEXUS_SurfaceHandle shdl = NULL;
     NEXUS_SurfaceCreateSettings createSettings;
@@ -80,7 +80,7 @@ int gralloc_destripe_yv12(
    }
 
    pMemory = NULL;
-   block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
+   private_handle_t::get_block_handles(pHandle, &block_handle, NULL);
    lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
    if (lrc == BERR_NOT_SUPPORTED) {
       NEXUS_MemoryBlock_Unlock(block_handle);
@@ -96,7 +96,7 @@ int gralloc_destripe_yv12(
                              pSharedData->container.height,
                              pSharedData->container.stride,
                              NEXUS_PixelFormat_eY8,
-                             pSharedData->container.physAddr,
+                             pSharedData->container.block,
                              0);
    if (hSurfaceY == NULL) {
       ALOGE("gralloc_destripe_yv12: failed to create Y plane.");
@@ -110,7 +110,7 @@ int gralloc_destripe_yv12(
                               pSharedData->container.height/2,
                               (pSharedData->container.stride/2 + (pHandle->alignment-1)) & ~(pHandle->alignment-1),
                               NEXUS_PixelFormat_eCr8,
-                              pSharedData->container.physAddr,
+                              pSharedData->container.block,
                               pSharedData->container.stride * pSharedData->container.height);
    if (hSurfaceCr == NULL) {
       ALOGE("gralloc_destripe_yv12: failed to create Cr plane.");
@@ -124,7 +124,7 @@ int gralloc_destripe_yv12(
                               pSharedData->container.height/2,
                               (pSharedData->container.stride/2 + (pHandle->alignment-1)) & ~(pHandle->alignment-1),
                               NEXUS_PixelFormat_eCb8,
-                              pSharedData->container.physAddr,
+                              pSharedData->container.block,
                               (pSharedData->container.stride * pSharedData->container.height) +
                               ((pSharedData->container.height/2) * ((pSharedData->container.stride/2 + (pHandle->alignment-1)) & ~(pHandle->alignment-1))));
    if (hSurfaceCb == NULL) {

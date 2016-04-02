@@ -387,7 +387,7 @@ protected:
         size_t codecHeaderLength,
         NEXUS_PlaypumpScatterGatherDescriptor *pDescriptors,
         unsigned maxDescriptors,
-        unsigned *pNumDescriptors
+        size_t *pNumDescriptors
         );
 
     void CancelTimerId(B_SchedulerTimerId& timerId);

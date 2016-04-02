@@ -214,7 +214,7 @@ static int tv_input_open_stream(struct tv_input_device *dev, int dev_id, tv_stre
     Parcel data, reply;
     data.writeInterfaceToken(android::String16(TUNER_INTERFACE_NAME));
     priv->mNTC->get_remote()->transact(GET_TUNER_CONTEXT, data, &reply);
-    priv->nexus_client = (NexusClientContext *)reply.readInt32();
+    priv->nexus_client = (NexusClientContext *)(intptr_t)reply.readInt32();
     ALOGI("%s: nexus_client = %p", __FUNCTION__, priv->nexus_client);
 
     // Create a native handle
@@ -222,7 +222,7 @@ static int tv_input_open_stream(struct tv_input_device *dev, int dev_id, tv_stre
 
     // Setup the native handle data
     pTVStream->sideband_stream_source_handle->data[0] = 1;
-    pTVStream->sideband_stream_source_handle->data[1] = (int)(priv->nexus_client);
+    pTVStream->sideband_stream_source_handle->data[1] = (intptr_t)(priv->nexus_client);
     pTVStream->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
 
     return 0;

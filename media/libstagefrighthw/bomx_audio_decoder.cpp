@@ -2341,7 +2341,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::BuildInputFrame(
     size_t codecHeaderLength,
     NEXUS_PlaypumpScatterGatherDescriptor *pDescriptors,
     unsigned maxDescriptors,
-    unsigned *pNumDescriptors
+    size_t *pNumDescriptors
     )
 {
     BOMX_Buffer *pBuffer;

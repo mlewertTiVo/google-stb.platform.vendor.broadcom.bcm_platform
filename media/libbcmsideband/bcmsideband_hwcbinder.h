@@ -53,7 +53,7 @@
 
 using namespace android;
 
-typedef void (* BCMSIDEBAND_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
+typedef void (* BCMSIDEBAND_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &);
 
 class BcmSidebandBinder : public HwcListener
 {
@@ -98,14 +98,14 @@ public:
        }
     };
 
-    void register_notify(BCMSIDEBAND_BINDER_NTFY_CB callback, int data) {
+    void register_notify(BCMSIDEBAND_BINDER_NTFY_CB callback, void *data) {
        cb = callback;
        cb_data = data;
     }
 
 private:
     BCMSIDEBAND_BINDER_NTFY_CB cb;
-    int cb_data;
+    void * cb_data;
 };
 
 class BcmSidebandBinder_wrap

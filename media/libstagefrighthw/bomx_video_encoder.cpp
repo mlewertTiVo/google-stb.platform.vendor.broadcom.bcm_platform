@@ -2827,17 +2827,14 @@ bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInB
         private_handle_t *pPrivateHandle = pInfo->typeInfo.native.pPrivateHandle;
 
         ALOGV("InputBufferType_eNative: pPrivateHandle:%p", pPrivateHandle);
-        ALOGV("--->phandle:%p magic=%x, flags=%x, pid=%x, stride=%x, format=%x, size=%x, sharedata=%x, usage=%x, paddr=%x, saddr=%x, aligment=%x", pPrivateHandle,
+        ALOGV("--->phandle:%p magic=%x, flags=%x, pid=%x, stride=%x, format=%x, size=%x, usage=%x, aligment=%x", pPrivateHandle,
               pPrivateHandle->magic,
               pPrivateHandle->flags,
               pPrivateHandle->pid,
               pPrivateHandle->oglStride,
               pPrivateHandle->oglFormat,
               pPrivateHandle->oglSize,
-              pPrivateHandle->sharedData,
               pPrivateHandle->usage,
-              pPrivateHandle->nxSurfacePhysicalAddress,
-              pPrivateHandle->nxSurfaceAddress,
               pPrivateHandle->alignment);
 
         if (NEXUS_SUCCESS != ExtractGrallocBuffer(pPrivateHandle, hDst))
@@ -2858,17 +2855,14 @@ bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInB
             return false;
         }
 
-        ALOGV("--->phandle:%p magic=%x, flags=%x, pid=%x, stride=%x, format=%x, size=%x, sharedata=%x, usage=%x, paddr=%x, saddr=%x, aligment=%x", pPrivateHandle,
+        ALOGV("--->phandle:%p magic=%x, flags=%x, pid=%x, stride=%x, format=%x, size=%x, usage=%x, aligment=%x", pPrivateHandle,
               pPrivateHandle->magic,
               pPrivateHandle->flags,
               pPrivateHandle->pid,
               pPrivateHandle->oglStride,
               pPrivateHandle->oglFormat,
               pPrivateHandle->oglSize,
-              pPrivateHandle->sharedData,
               pPrivateHandle->usage,
-              pPrivateHandle->nxSurfacePhysicalAddress,
-              pPrivateHandle->nxSurfaceAddress,
               pPrivateHandle->alignment);
 
         if (NEXUS_SUCCESS != ExtractGrallocBuffer(pPrivateHandle, hDst))
@@ -3095,10 +3089,14 @@ static NEXUS_MemoryBlockHandle BOMX_VideoEncoder_AllocateMemoryBlk(size_t size, 
             close(memBlkFd);
             memBlkFd = -1;
          } else {
-            hMemBlk = (NEXUS_MemoryBlockHandle)ioctl(memBlkFd, NX_ASHMEM_GETMEM);
-            if (hMemBlk == NULL) {
+            struct nx_ashmem_getmem ashmem_getmem;
+            memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
+            ret = ioctl(memBlkFd, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            if (ret < 0) {
                close(memBlkFd);
                memBlkFd = -1;
+            } else {
+               hMemBlk = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
             }
          }
       }
@@ -3110,7 +3108,7 @@ static NEXUS_MemoryBlockHandle BOMX_VideoEncoder_AllocateMemoryBlk(size_t size, 
 
 NEXUS_SurfaceHandle BOMX_VideoEncoder::CreateSurface(
         int width, int height, int stride, NEXUS_PixelFormat format,
-        unsigned handle, unsigned offset, void *pAddr, int *pMemBlkFd)
+        NEXUS_MemoryBlockHandle handle, unsigned offset, void *pAddr, int *pMemBlkFd)
 {
     NEXUS_SurfaceCreateSettings createSettings;
 
@@ -4206,10 +4204,11 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
     uint8_t *pAddr;
     NEXUS_MemoryBlockHandle block_handle = NULL;
     PSHARED_DATA pSharedData;
-    unsigned int cFormat, width, height, stride, planeHandle;
+    unsigned int cFormat, width, height, stride;
+    NEXUS_MemoryBlockHandle planeHandle;
 
     pMemory = NULL;
-    block_handle = (NEXUS_MemoryBlockHandle)handle->sharedData;
+    private_handle_t::get_block_handles(handle, &block_handle, NULL);
     rc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
     ALOG_ASSERT(!rc);
     pSharedData = (PSHARED_DATA) pMemory;
@@ -4220,7 +4219,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         goto out;
     }
 
-    planeHandle = pSharedData->container.physAddr;
+    planeHandle = pSharedData->container.block;
     pAddr = NULL;
 
     cFormat = pSharedData->container.format;

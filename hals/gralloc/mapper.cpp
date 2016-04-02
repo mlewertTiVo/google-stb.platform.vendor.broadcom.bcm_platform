@@ -90,7 +90,7 @@ int gralloc_register_buffer(gralloc_module_t const* module,
    }
 
    pMemory = NULL;
-   block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
+   private_handle_t::get_block_handles(hnd, &block_handle, NULL);
    lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
    if (lrc) {
       if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(block_handle);
@@ -99,32 +99,31 @@ int gralloc_register_buffer(gralloc_module_t const* module,
    }
    pSharedData = (PSHARED_DATA) pMemory;
    if (pSharedData != NULL) {
-      if ((hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) && pSharedData->container.physAddr) {
+      if ((hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) && pSharedData->container.block) {
          pMemory = NULL;
-         NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &pMemory);
-         hnd->nxSurfaceAddress = (unsigned)pMemory;
+         NEXUS_MemoryBlock_Lock(pSharedData->container.block, &pMemory);
+         hnd->nxSurfaceAddress = (uint64_t)pMemory;
       }
 
       if (gralloc_log_mapper()) {
-         NEXUS_Addr physAddr;
-         unsigned sharedPhysAddr = hnd->sharedData;
-         NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-         sharedPhysAddr = (unsigned)physAddr;
-         ALOGI("  reg (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::act:%d",
+         NEXUS_Addr sPhysAddr, pPhysAddr;
+         NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
+         NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);
+         ALOGI("  reg (%s): owner:%d::s-blk:%p::s-addr:%p::p-blk:%p::p-addr:%p::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
                hnd->pid,
-               hnd->sharedData,
-               sharedPhysAddr,
-               pSharedData->container.physAddr,
-               hnd->nxSurfacePhysicalAddress,
+               block_handle,
+               sPhysAddr,
+               pSharedData->container.block,
+               pPhysAddr,
                pSharedData->container.width,
                pSharedData->container.height,
                pSharedData->container.size,
                hnd->usage,
                pSharedData->container.format,
-               hnd->nxSurfaceAddress,
                getpid());
          NEXUS_MemoryBlock_UnlockOffset(block_handle);
+         NEXUS_MemoryBlock_UnlockOffset(pSharedData->container.block);
       }
    }
    if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
@@ -149,7 +148,7 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
    }
 
    pMemory = NULL;
-   block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
+   private_handle_t::get_block_handles(hnd, &block_handle, NULL);
    lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
    if (lrc) {
       if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(block_handle);
@@ -159,31 +158,30 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
    pSharedData = (PSHARED_DATA) pMemory;
    if (pSharedData != NULL) {
       if (gralloc_log_mapper()) {
-         NEXUS_Addr physAddr;
-         unsigned sharedPhysAddr = hnd->sharedData;
-         NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-         sharedPhysAddr = (unsigned)physAddr;
-         ALOGI("unreg (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::act:%d",
+         NEXUS_Addr sPhysAddr, pPhysAddr;
+         NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
+         NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);
+         ALOGI("unreg (%s): owner:%d::s-blk:%p::s-addr:%p::p-blk:%p::p-addr:%p::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
                hnd->pid,
-               hnd->sharedData,
-               sharedPhysAddr,
-               pSharedData->container.physAddr,
-               hnd->nxSurfacePhysicalAddress,
+               block_handle,
+               sPhysAddr,
+               pSharedData->container.block,
+               pPhysAddr,
                pSharedData->container.width,
                pSharedData->container.height,
                pSharedData->container.size,
                hnd->usage,
                pSharedData->container.format,
-               hnd->nxSurfaceAddress,
                getpid());
          NEXUS_MemoryBlock_UnlockOffset(block_handle);
+         NEXUS_MemoryBlock_UnlockOffset(pSharedData->container.block);
       }
 
-      if ((hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) && pSharedData->container.physAddr) {
-         NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr);
+      if ((hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) && pSharedData->container.block) {
+         NEXUS_MemoryBlock_Unlock(pSharedData->container.block);
          if (gralloc_boom_check()) {
-            NEXUS_MemoryBlock_CheckIfLocked((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr);
+            NEXUS_MemoryBlock_CheckIfLocked(pSharedData->container.block);
          }
       }
    }
@@ -221,7 +219,7 @@ int gralloc_lock_ycbcr(gralloc_module_t const* module,
 
    private_handle_t* hnd = (private_handle_t*)handle;
    void *pMemory;
-   shared_block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
+   private_handle_t::get_block_handles(hnd, &shared_block_handle, NULL);
    lrc = NEXUS_MemoryBlock_Lock(shared_block_handle, &pMemory);
    pSharedData = (PSHARED_DATA) pMemory;
    if (lrc || pSharedData == NULL) {
@@ -243,14 +241,14 @@ int gralloc_lock_ycbcr(gralloc_module_t const* module,
    ycbcr->cstride = (pSharedData->container.stride/2 + (hnd->alignment-1)) & ~(hnd->alignment-1);
    ycbcr->chroma_step = 1;
 
-   block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
+   block_handle = pSharedData->container.block;
    if (block_handle) {
       NEXUS_MemoryBlock_Lock(block_handle, &ycbcr->y);
       if (hnd->mgmt_mode != GR_MGMT_MODE_LOCKED) {
          NEXUS_Addr physAddr;
-         hnd->nxSurfaceAddress = (unsigned)&ycbcr->y;
-         NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &physAddr);
-         hnd->nxSurfacePhysicalAddress = (unsigned)physAddr;
+         NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &physAddr);
+         hnd->nxSurfaceAddress = (uint64_t)&ycbcr->y;
+         hnd->nxSurfacePhysicalAddress = (uint64_t)physAddr;
       }
       ycbcr->cr = (void *) ((uint8_t *)ycbcr->y + (pSharedData->container.stride * pSharedData->container.height));
       ycbcr->cb = (void *) ((uint8_t *)ycbcr->cr +
@@ -308,26 +306,25 @@ out_video_failed:
    }
 
    if (gralloc_log_mapper()) {
-      NEXUS_Addr physAddr;
-      unsigned sharedPhysAddr = hnd->sharedData;
-      NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
-      sharedPhysAddr = (unsigned)physAddr;
-      ALOGI(" lock_ycbcr (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::vaddr:%p::act:%d",
+      NEXUS_Addr sPhysAddr, pPhysAddr;
+      NEXUS_MemoryBlock_LockOffset(shared_block_handle, &sPhysAddr);
+      NEXUS_MemoryBlock_LockOffset(block_handle, &pPhysAddr);
+      ALOGI(" lock_ycbcr (%s): owner:%d::s-blk:%p::s-addr:%p::p-blk:%p::p-addr:%p::%dx%d::sz:%d::use:0x%x:0x%x::vaddr:%p::act:%d",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
             hnd->pid,
-            hnd->sharedData,
-            sharedPhysAddr,
-            pSharedData->container.physAddr,
-            hnd->nxSurfacePhysicalAddress,
+            shared_block_handle,
+            sPhysAddr,
+            pSharedData->container.block,
+            pPhysAddr,
             pSharedData->container.width,
             pSharedData->container.height,
             pSharedData->container.size,
             hnd->usage,
             pSharedData->container.format,
-            hnd->nxSurfaceAddress,
             ycbcr->y,
             getpid());
       NEXUS_MemoryBlock_UnlockOffset(shared_block_handle);
+      NEXUS_MemoryBlock_UnlockOffset(block_handle);
    }
 
    if (hwConverted && gralloc_timestamp_conversion()) {
@@ -372,7 +369,7 @@ int gralloc_lock(gralloc_module_t const* module,
    private_handle_t* hnd = (private_handle_t*)handle;
 
    void *pMemory;
-   shared_block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
+   private_handle_t::get_block_handles(hnd, &shared_block_handle, NULL);
    lrc = NEXUS_MemoryBlock_Lock(shared_block_handle, &pMemory);
    pSharedData = (PSHARED_DATA) pMemory;
    if (lrc || pSharedData == NULL) {
@@ -384,14 +381,14 @@ int gralloc_lock(gralloc_module_t const* module,
       ALOGE("%s : invalid call for HAL_PIXEL_FORMAT_YCbCr_420_888 buffer", __FUNCTION__);
       return -EINVAL;
    }
-   block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
+   block_handle = pSharedData->container.block;
    if (block_handle) {
       NEXUS_MemoryBlock_Lock(block_handle, vaddr);
       if (hnd->mgmt_mode != GR_MGMT_MODE_LOCKED) {
          NEXUS_Addr physAddr;
-         hnd->nxSurfaceAddress = (unsigned)vaddr;
-         NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &physAddr);
-         hnd->nxSurfacePhysicalAddress = (unsigned)physAddr;
+         NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &physAddr);
+         hnd->nxSurfaceAddress = (uint64_t)vaddr;
+         hnd->nxSurfacePhysicalAddress = (uint64_t)physAddr;
       }
    } else {
       ALOGE("no default plane on s-blk:%p", shared_block_handle);
@@ -447,26 +444,25 @@ out_video_failed:
    }
 
    if (gralloc_log_mapper()) {
-      NEXUS_Addr physAddr;
-      unsigned sharedPhysAddr = hnd->sharedData;
-      NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
-      sharedPhysAddr = (unsigned)physAddr;
-      ALOGI(" lock (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::vaddr:%p::act:%d",
+      NEXUS_Addr sPhysAddr, pPhysAddr;
+      NEXUS_MemoryBlock_LockOffset(shared_block_handle, &sPhysAddr);
+      NEXUS_MemoryBlock_LockOffset(block_handle, &pPhysAddr);
+      ALOGI(" lock (%s): owner:%d::s-blk:%p::s-addr:%p::p-blk:%p::p-addr:%p::%dx%d::sz:%d::use:0x%x:0x%x::vaddr:%p::act:%d",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
             hnd->pid,
-            hnd->sharedData,
-            sharedPhysAddr,
-            pSharedData->container.physAddr,
-            hnd->nxSurfacePhysicalAddress,
+            shared_block_handle,
+            sPhysAddr,
+            pSharedData->container.block,
+            pPhysAddr,
             pSharedData->container.width,
             pSharedData->container.height,
             pSharedData->container.size,
             hnd->usage,
             pSharedData->container.format,
-            hnd->nxSurfaceAddress,
             *vaddr,
             getpid());
       NEXUS_MemoryBlock_UnlockOffset(shared_block_handle);
+      NEXUS_MemoryBlock_UnlockOffset(block_handle);
    }
 
    if (hwConverted && gralloc_timestamp_conversion()) {
@@ -497,15 +493,15 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
 
    PSHARED_DATA pSharedData = NULL;
    void *pMemory = NULL;
-   shared_block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
+   private_handle_t::get_block_handles(hnd, &shared_block_handle, NULL);
    lrc = NEXUS_MemoryBlock_Lock(shared_block_handle, &pMemory);
    if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(shared_block_handle);
    pSharedData = (PSHARED_DATA) pMemory;
-   block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
+   block_handle = pSharedData->container.block;
 
    if (hnd->usage & GRALLOC_USAGE_SW_WRITE_MASK) {
       void *vaddr;
-      if (!pSharedData->container.physAddr) {
+      if (!pSharedData->container.block) {
          if (shared_block_handle) {
             NEXUS_MemoryBlock_Unlock(shared_block_handle);
          }
@@ -518,25 +514,24 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
    }
 
    if (gralloc_log_mapper()) {
-      NEXUS_Addr physAddr;
-      unsigned sharedPhysAddr = hnd->sharedData;
-      NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
-      sharedPhysAddr = (unsigned)physAddr;
-      ALOGI("ulock (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::act:%d",
+      NEXUS_Addr sPhysAddr, pPhysAddr;
+      NEXUS_MemoryBlock_LockOffset(shared_block_handle, &sPhysAddr);
+      NEXUS_MemoryBlock_LockOffset(block_handle, &pPhysAddr);
+      ALOGI("ulock (%s): owner:%d::s-blk:%p::s-addr:%p::p-blk:%p::p-addr:%p::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
             hnd->pid,
-            hnd->sharedData,
-            sharedPhysAddr,
-            pSharedData->container.physAddr,
-            hnd->nxSurfacePhysicalAddress,
+            shared_block_handle,
+            sPhysAddr,
+            pSharedData->container.block,
+            pPhysAddr,
             pSharedData->container.width,
             pSharedData->container.height,
             pSharedData->container.size,
             hnd->usage,
             pSharedData->container.format,
-            hnd->nxSurfaceAddress,
             getpid());
       NEXUS_MemoryBlock_UnlockOffset(shared_block_handle);
+      NEXUS_MemoryBlock_UnlockOffset(block_handle);
    }
 
    if (block_handle) {
