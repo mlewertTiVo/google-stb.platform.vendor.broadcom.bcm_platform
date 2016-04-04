@@ -958,7 +958,7 @@ static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
                     fclose(pFile);
                     return;
                 }
-                ALOGV("secdmaPhysicalOffset 0x%lx secdmaMemSize 0x%x", secdmaPhysicalOffset, secdmaMemSize);
+                ALOGV("secdmaPhysicalOffset 0x%llx secdmaMemSize 0x%x", secdmaPhysicalOffset, secdmaMemSize);
                 rc = NEXUS_Security_SetPciERestrictedRange( secdmaPhysicalOffset, (size_t) secdmaMemSize, (unsigned)0 );
                 if (rc != NEXUS_SUCCESS) {
                     ALOGE("NEXUS_Security_SetPciERestrictedRange returned %d", rc);
