@@ -1234,17 +1234,6 @@ NEXUS_Error BOMX_VideoEncoder::SetInputPortState(OMX_STATETYPE newState)
     {
         NEXUS_Error errCode;
 
-        // All states other than loaded require encoder/decoder resource allocated
-        if ( m_nxClientId == NXCLIENT_INVALID_ID )
-        {
-            errCode = AllocateEncoderResource();
-            if (errCode)
-            {
-                ReleaseEncoderResource();
-                return BOMX_BERR_TRACE(BERR_UNKNOWN);
-            }
-        }
-
         switch ( newState )
         {
         case OMX_StateIdle:
@@ -1972,6 +1961,18 @@ OMX_ERRORTYPE BOMX_VideoEncoder::AllocateBuffer(
     if ( NULL == ppBuffer )
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+    }
+
+    if ( m_nxClientId == NXCLIENT_INVALID_ID )
+    {
+        ALOGV("AllocateBuffer: Allocating Encoder Resource");
+        errCode = AllocateEncoderResource();
+        if (errCode)
+        {
+            ALOGE("AllocateBuffer: Allocating Encoder Resource failed with errcode, %d", errCode);
+            ReleaseEncoderResource();
+            return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
+        }
     }
 
     if ( nPortIndex == m_videoPortBase )
