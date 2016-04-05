@@ -14,57 +14,51 @@
 
 ifneq ($(filter bcm_% fbx6lc avko arrow,$(TARGET_DEVICE)),)
 
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_audio/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_memtrack/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_nexus/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hdmi_cec/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libb_os/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libb_playback_ip/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libcamera2/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libGLES_nexus/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libgralloc/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/liblights/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusir/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libpower/Android.mk
-#include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libstagefright_bcm/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libstagefrighthw/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libtv_input/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxdispfmt/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxlogger/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxmini/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxserver/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/pmlibservice/Android.mk
+# nexus interface and core integration.
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-nexus.mk
+# gles stack and friends.
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-v3d.mk
+# android hals implementation.
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-hals.mk
+# multimedia integration.
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-media.mk
 
-
+# unclassified.
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/hfrvideo/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/netcoal/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice/Android.mk
 ifeq ($(ANDROID_SUPPORTS_DTVKIT),y)
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_dtvkit/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/dtvkit/Android.mk
 endif
 
-BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/app
-
+# apk's released.
+BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/apks
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
 include ${BCM_APPS_PATH}/BcmCoverFlow/Android.mk
+include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
+include ${BCM_APPS_PATH}/BcmKeyInterceptor/Android.mk
+include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
+include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
 ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 endif
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
-include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
 include ${BCM_APPS_PATH}/LeanbackBcmCustom/Android.mk
 
+# additional tools, not needed for default integration.
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bsysperf/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/calcfb/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/cec/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/clipping/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/fbtest/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/joinstress/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/lmkstats/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/load/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makegpt/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makehwcfg/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/memcpy/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxblk/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxcfg/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxheaps/Android.mk
@@ -75,17 +69,5 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/otpgetchipid/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/prdy_pes_playback/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/setdisplay/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/yv12torgba/Android.mk
-
-ifneq ($(wildcard ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/README.txt),)
-ifneq ($(TARGET_BUILD_PDK),true)
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/libbcmsideband/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/Bouncer/Android.mk
-endif
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/ExoPlayerDemo/Android.mk
-ifneq ($(TARGET_BUILD_PDK),true)
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/WidevineSamplePlayer/Android.mk
-endif
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/not_for_release/omx_conformance_test/Android.mk
-endif
 
 endif

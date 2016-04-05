@@ -68,6 +68,7 @@
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
 #define B_PROPERTY_SVP ("ro.nx.svp")
 #define B_PROPERTY_COALESCE ("dyn.nx.netcoal.set")
+#define B_PROPERTY_HFRVIDEO ("dyn.nx.hfrvideo.set")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE (1536*1536)  // 1024 * 1024 from soft decoder is not big enough for some HEVC streams
@@ -1264,6 +1265,7 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
         property_set(B_PROPERTY_COALESCE, "default");
+        property_set(B_PROPERTY_HFRVIDEO, "default");
     }
     if ( m_hPlaypump )
     {
@@ -2253,6 +2255,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_displayFrameAvailable = false;
                 B_Mutex_Unlock(m_hDisplayMutex);
                 property_set(B_PROPERTY_COALESCE, "default");
+                property_set(B_PROPERTY_HFRVIDEO, "default");
             }
             break;
         case OMX_StateExecuting:
@@ -2280,6 +2283,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 vdecStartSettings.maxHeight = m_maxDecoderHeight;
                 ALOGV("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec);
                 property_set(B_PROPERTY_COALESCE, "vmode");
+                property_set(B_PROPERTY_HFRVIDEO, "vmode");
                 errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
                 if ( errCode )
                 {
@@ -2295,6 +2299,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                     m_eosDelivered = false;
                     m_eosReceived = false;
                     property_set(B_PROPERTY_COALESCE, "default");
+                    property_set(B_PROPERTY_HFRVIDEO, "default");
                     return BOMX_BERR_TRACE(errCode);
                 }
 
