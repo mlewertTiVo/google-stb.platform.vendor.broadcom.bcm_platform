@@ -111,3 +111,11 @@ service gatord /system/bin/gatord
    user root
    oneshot
    disabled
+
+service hfrvideo /system/bin/hfrvideo
+   class late_start
+   oneshot
+   disabled
+
+on property:dyn.nx.hfrvideo.set=*
+   start hfrvideo

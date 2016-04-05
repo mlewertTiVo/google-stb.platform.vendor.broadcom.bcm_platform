@@ -24,6 +24,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-hals.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-media.mk
 
 # unclassified.
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/hfrvideo/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/netcoal/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice/Android.mk
 ifeq ($(ANDROID_SUPPORTS_DTVKIT),y)
