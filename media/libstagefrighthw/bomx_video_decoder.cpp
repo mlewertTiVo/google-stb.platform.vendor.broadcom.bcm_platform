@@ -1223,16 +1223,12 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         int surfaceClientId;
         m_omxHwcBinder->getvideo(0, surfaceClientId);
     }
-
-    property_set(B_PROPERTY_COALESCE, "vmode");
 }
 
 BOMX_VideoDecoder::~BOMX_VideoDecoder()
 {
     unsigned i;
     BOMX_VideoDecoderFrameBuffer *pBuffer;
-
-    property_set(B_PROPERTY_COALESCE, "default");
 
     // Stop listening to HWC. Note that HWC binder does need to be protected given
     // it's not updated during the decoder's lifetime.
@@ -1267,6 +1263,7 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     if ( m_hSimpleVideoDecoder )
     {
         NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
+        property_set(B_PROPERTY_COALESCE, "default");
     }
     if ( m_hPlaypump )
     {
@@ -2255,6 +2252,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 B_Mutex_Lock(m_hDisplayMutex);
                 m_displayFrameAvailable = false;
                 B_Mutex_Unlock(m_hDisplayMutex);
+                property_set(B_PROPERTY_COALESCE, "default");
             }
             break;
         case OMX_StateExecuting:
@@ -2281,6 +2279,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 vdecStartSettings.maxWidth = m_maxDecoderWidth;     // Always request the max dimension for allowing decoder not waiting for output buffer
                 vdecStartSettings.maxHeight = m_maxDecoderHeight;
                 ALOGV("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec);
+                property_set(B_PROPERTY_COALESCE, "vmode");
                 errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
                 if ( errCode )
                 {
@@ -2295,6 +2294,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                     m_eosPending = false;
                     m_eosDelivered = false;
                     m_eosReceived = false;
+                    property_set(B_PROPERTY_COALESCE, "default");
                     return BOMX_BERR_TRACE(errCode);
                 }
 
