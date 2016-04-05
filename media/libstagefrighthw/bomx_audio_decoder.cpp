@@ -85,6 +85,8 @@
 #define B_INPUT_BUFFERS_RETURN_INTERVAL (5000)
 #define B_AAC_ADTS_HEADER_LEN (7)
 
+#define B_MAX_AUDIO_DECODERS (1)
+
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
  * [PES Header] [Codec Config Data] [Codec Header] [Payload] = 4 descriptors
@@ -110,6 +112,7 @@ static const BOMX_AudioDecoderRole g_ac3Role[] = {{"audio_decoder.ac3", OMX_AUDI
 static const BOMX_AudioDecoderRole g_mp3Role[] = {{"audio_decoder.mp3", OMX_AUDIO_CodingMP3}};
 static const BOMX_AudioDecoderRole g_aacRole[] = {{"audio_decoder.aac", OMX_AUDIO_CodingAAC}};
 static int32_t g_instanceNum;
+static int32_t g_activeInstancesNum;
 
 #define BOMX_AUDIO_GET_ROLE_COUNT(roleArray) (sizeof(roleArray)/sizeof(BOMX_AudioDecoderRole))
 #define BOMX_AUDIO_GET_ROLE_NAME(roleArray, idx) ((idx) >= (BOMX_AUDIO_GET_ROLE_COUNT(roleArray))?NULL:(roleArray)[(idx)].name)
@@ -385,6 +388,13 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
 
     m_audioPortBase = 0;    // Android seems to require this - was: BOMX_COMPONENT_PORT_BASE(BOMX_ComponentId_eAudioDecoder, OMX_PortDomainAudio);
     m_instanceNum = android_atomic_inc(&g_instanceNum);
+
+    if(android_atomic_inc(&g_activeInstancesNum) >= B_MAX_AUDIO_DECODERS)
+    {
+        ALOGE("Max Audio Decoders currently exsist");
+        this->Invalidate(OMX_ErrorInsufficientResources);
+        return;
+    }
 
     if ( !property_get_int32(B_PROPERTY_ADEC_ENABLED, 1) )
     {
@@ -790,6 +800,8 @@ BOMX_AudioDecoder::~BOMX_AudioDecoder()
     {
         delete m_pMemoryBlocks;
     }
+
+    android_atomic_dec(&g_activeInstancesNum);
 
     Unlock();
 }
