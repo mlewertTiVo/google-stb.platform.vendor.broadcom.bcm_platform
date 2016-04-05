@@ -86,7 +86,7 @@ public class BcmKeyInterceptorReceiver extends BroadcastReceiver {
                 if (DEBUG) Log.d(TAG, "localIntent: " + localIntent);
                 context.startActivity(localIntent);
 
-            } else if (localKeyCode == KeyEvent.KEYCODE_TV_CONTENTS_MENU ) {
+            } else if (localKeyCode == KeyEvent.KEYCODE_BUTTON_16 && localAction == KeyEvent.ACTION_UP) {
                 /* Start Netflix activity */
                 if (DEBUG) Log.d(TAG, "Got Netflix key");
 
