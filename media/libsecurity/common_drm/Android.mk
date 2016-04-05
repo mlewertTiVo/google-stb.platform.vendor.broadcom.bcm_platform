@@ -17,9 +17,21 @@ LOCAL_PATH := $(call my-dir)
 # libcmndrm.so
 #-------------
 include $(CLEAR_VARS)
-LOCAL_PREBUILT_LIBS := prebuilt/libcmndrm.so
+LOCAL_MODULE := libcmndrm
 LOCAL_MODULE_TAGS := optional
-include $(BUILD_MULTI_PREBUILT)
+LOCAL_MODULE_SUFFIX := .so
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+LOCAL_STRIP_MODULE := true
+ifeq ($(TARGET_2ND_ARCH),arm)
+LOCAL_MULTILIB := both
+LOCAL_MODULE_TARGET_ARCH := arm arm64
+LOCAL_SRC_FILES_arm64 := lib/arm64/libcmndrm.so
+LOCAL_SRC_FILES_arm := lib/arm/libcmndrm.so
+else
+LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_SRC_FILES_arm := lib/arm/libcmndrm.so
+endif
+include $(BUILD_PREBUILT)
 
 ifneq ($(ANDROID_SUPPORTS_PLAYREADY), n)
 #-------------
@@ -38,8 +50,18 @@ endif
 # Check if a prebuilt library has been created in the release_prebuilts folder
 ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(LOCAL_LIB_NAME).so))
 # use prebuilt library if one exists
-LOCAL_PREBUILT_LIBS := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_LIB_NAME).so
-include $(BUILD_MULTI_PREBUILT)
+ifeq ($(TARGET_2ND_ARCH),arm)
+LOCAL_MULTILIB := both
+LOCAL_MODULE_TARGET_ARCH := arm arm64
+# fix me!
+LOCAL_SRC_FILES_arm64 := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_LIB_NAME).so
+LOCAL_SRC_FILES_arm := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_LIB_NAME).so
+else
+LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_SRC_FILES_arm := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_LIB_NAME).so
+endif
+include $(BUILD_PREBUILT)
+
 else
 # compile library from source
 LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm
