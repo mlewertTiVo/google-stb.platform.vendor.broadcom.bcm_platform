@@ -1077,6 +1077,7 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitH265() {
             CHECK_GE(timeUs, 0ll);
 
             accessUnit->meta()->setInt64("timeUs", timeUs);
+            accessUnit->meta()->setInt32("isSync", 1);
 
             if (mFormat == NULL) {
                 mFormat = MakeHEVCCodecSpecificData(accessUnit);
