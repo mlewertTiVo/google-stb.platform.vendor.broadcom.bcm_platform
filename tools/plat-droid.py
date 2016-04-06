@@ -19,6 +19,9 @@ import re, sys, os, shutil
 from subprocess import call,check_output,STDOUT
 from stat import *
 
+# save the clone.
+save_the_clone=0
+
 # debug this script.
 verbose=0
 
@@ -186,7 +189,7 @@ if clone_device != 'nope' and clone_variant != 'nope':
 		print 'looking for existing clone directory: %s' % (clone_directory)
 	if os.path.exists(clone_directory):
 		check_file="%s/aosp_%s.mk" %(clone_directory, clone_variant)
-		if os.path.exists(check_file):
+		if os.path.exists(check_file) and save_the_clone:
 			save_copy_dir(clone_directory)
 		rmdir_then_mkdir(clone_directory)
 
