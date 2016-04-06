@@ -148,7 +148,7 @@ status_t NexusTunerService::onTransact(uint32_t code, const Parcel &data, Parcel
         case GET_TUNER_CONTEXT:
         {
             ALOGE("NexusTunerService::onTransact, sending back nexus_client");
-            reply->writeInt32((int32_t)g_pTD->nexus_client);
+            reply->writeInt32((int32_t)(intptr_t)g_pTD->nexus_client);
         }
         break;
 
@@ -227,7 +227,7 @@ jint JNI_OnLoad(JavaVM* vm, void* /*reserved*/)
 #include "IHwc.h"
 #include "HwcSvc.h"
 
-typedef void (* BCMSIDEBAND_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
+typedef void (* BCMSIDEBAND_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &);
 
 class BcmSidebandBinder : public HwcListener
 {
@@ -272,14 +272,14 @@ public:
        }
     };
 
-    void register_notify(BCMSIDEBAND_BINDER_NTFY_CB callback, int data) {
+    void register_notify(BCMSIDEBAND_BINDER_NTFY_CB callback, void *data) {
        cb = callback;
        cb_data = data;
     }
 
 private:
     BCMSIDEBAND_BINDER_NTFY_CB cb;
-    int cb_data;
+    void * cb_data;
 };
 
 class BcmSidebandBinder_wrap
@@ -347,7 +347,7 @@ BKNI_ReleaseMutex(g_pTD->mutex); \
 }
 
 
-static void TunerHALSidebandBinderNotify(int cb_data, int msg, struct hwc_notification_info &ntfy)
+static void TunerHALSidebandBinderNotify(void * cb_data, int msg, struct hwc_notification_info &ntfy)
 {
     struct bcmsideband_ctx *ctx = (struct bcmsideband_ctx *)cb_data;
 
@@ -396,7 +396,7 @@ HwcBinderConnect()
         ALOGE("%s: Unable to connect to HwcBinder", __FUNCTION__);
         return;
     }
-    m_hwcBinder->get()->register_notify(&TunerHALSidebandBinderNotify, (int)m_hwcBinder);
+    m_hwcBinder->get()->register_notify(&TunerHALSidebandBinderNotify, (void *)m_hwcBinder);
     ALOGE("%s: Connected to HwcBinder", __FUNCTION__);
 }
 
