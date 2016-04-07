@@ -3020,6 +3020,12 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
 
        if (ctx->display_gles_always || ctx->display_gles_virtual ||
            (ctx->cfg[HWC_VIRTUAL_IX].width == -1 && ctx->cfg[HWC_VIRTUAL_IX].height == -1)) {
+          for (i = 0; i < list->numHwLayers; i++) {
+             layer = &list->hwLayers[i];
+             if ((layer->compositionType == HWC_FRAMEBUFFER) || (layer->compositionType == HWC_OVERLAY)) {
+                layer->compositionType = HWC_FRAMEBUFFER;
+             }
+          }
           goto out_unlock;
        }
 
@@ -3813,7 +3819,9 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
 
     if (ctx->display_gles_always || ctx->display_gles_virtual ||
         (ctx->cfg[HWC_VIRTUAL_IX].width == -1 && ctx->cfg[HWC_VIRTUAL_IX].height == -1)) {
-       list->retireFenceFd = list->outbufAcquireFenceFd;
+       list->retireFenceFd = dup(list->outbufAcquireFenceFd);
+       close(list->outbufAcquireFenceFd);
+       list->outbufAcquireFenceFd = INVALID_FENCE;
        goto out_mutex;
     }
 
@@ -3917,6 +3925,7 @@ out_close_fence:
     for (i = 0; i < list->numHwLayers; i++) {
        if (list->hwLayers[i].acquireFenceFd >= 0) {
           close(list->hwLayers[i].acquireFenceFd);
+          list->hwLayers[i].acquireFenceFd = INVALID_FENCE;
           if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
              ALOGI("vfence: %llu/%d - acquire: %d -> err+close\n",
                    ctx->stats[HWC_VIRTUAL_IX].set_call, i,
@@ -4001,6 +4010,11 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
          if (pSharedData == NULL) {
             continue;
          }
+         if (list->outbufAcquireFenceFd >= 0) {
+            sync_wait(list->outbufAcquireFenceFd, BKNI_INFINITE);
+            close(list->outbufAcquireFenceFd);
+            list->outbufAcquireFenceFd = INVALID_FENCE;
+         }
          if (hwc_compose_gralloc_buffer(ctx, list, i, pSharedData, gr_buffer, outputHdl,
                                         true, false, &surface[i], &item->comp[i],
                                         false, layer_composed, &q_ops, &ops_count, 0)) {
@@ -4011,11 +4025,6 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
    }
 
    if (layer_composed) {
-      if (list->outbufAcquireFenceFd >= 0) {
-         sync_wait(list->outbufAcquireFenceFd, BKNI_INFINITE);
-         close(list->outbufAcquireFenceFd);
-         list->outbufAcquireFenceFd = INVALID_FENCE;
-      }
       rc = hwc_checkpoint(ctx);
       if (rc)  {
          ALOGW("vcmp: checkpoint timeout");
