@@ -113,6 +113,7 @@
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
 #define NX_CAPABLE_COMP_BYPASS         "ro.nx.capable.cb"
 #define NX_COMP_VIDEO                  "ro.nx.cvbs"
+#define NX_CAPABLE_FRONT_END           "ro.nx.capable.fe"
 
 #define NX_HDMI_DRM_KEY                "ro.nx.hdmi_drm"
 
@@ -664,7 +665,7 @@ static nxserver_t init_nxserver(void)
     }
 
     memset(&cmdline_settings, 0, sizeof(cmdline_settings));
-    cmdline_settings.frontend = true;
+    cmdline_settings.frontend = property_get_bool(NX_CAPABLE_FRONT_END, 1);
 
     nxserver_get_default_settings(&settings);
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
