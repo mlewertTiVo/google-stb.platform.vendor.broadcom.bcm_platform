@@ -665,7 +665,7 @@ static nxserver_t init_nxserver(void)
     }
 
     memset(&cmdline_settings, 0, sizeof(cmdline_settings));
-    cmdline_settings.frontend = property_get_bool(NX_CAPABLE_FRONT_END, 1);
+    cmdline_settings.frontend = property_get_bool(NX_CAPABLE_FRONT_END, 0);
 
     nxserver_get_default_settings(&settings);
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
