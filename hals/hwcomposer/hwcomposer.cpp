@@ -956,6 +956,8 @@ static NEXUS_PixelFormat gralloc_to_nexus_pixel_format(int format)
       case HAL_PIXEL_FORMAT_RGBX_8888: return NEXUS_PixelFormat_eX8_B8_G8_R8;
       case HAL_PIXEL_FORMAT_RGB_888:   return NEXUS_PixelFormat_eX8_B8_G8_R8;
       case HAL_PIXEL_FORMAT_RGB_565:   return NEXUS_PixelFormat_eR5_G6_B5;
+      case HAL_PIXEL_FORMAT_YV12: /* fall-thru */
+      case HAL_PIXEL_FORMAT_YCbCr_420_888: return NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8;
       default:                         break;
    }
 
@@ -2987,7 +2989,6 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
     unsigned int stride;
     void *pAddr;
     int layer_id = 0;
-    int virt_w = -1, virt_h = -1;
     NEXUS_Error lrc;
 
     if (list) {
@@ -3026,7 +3027,9 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
           layer = &list->hwLayers[i];
           if (ctx->display_dump_virt & HWC_DUMP_LEVEL_PREPARE) {
              ALOGI("vcmp: %llu - %dx%d, layer: %d, kind: %d",
-                   ctx->stats[HWC_VIRTUAL_IX].prepare_call, virt_w, virt_h, i, layer->compositionType);
+                   ctx->stats[HWC_VIRTUAL_IX].prepare_call,
+                   ctx->cfg[HWC_VIRTUAL_IX].width, ctx->cfg[HWC_VIRTUAL_IX].height,
+                   i, layer->compositionType);
           }
           if ((layer->compositionType == HWC_FRAMEBUFFER) || (layer->compositionType == HWC_OVERLAY)) {
              hwc_prepare_gpx_layer(ctx, layer, layer_id, false /*don't care*/, true, true, NULL, NULL);
@@ -3036,7 +3039,10 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
        }
 
        if (ctx->display_dump_virt & HWC_DUMP_LEVEL_PREPARE) {
-          ALOGI("vcmp: %llu - %dx%d, composing %d layers", ctx->stats[HWC_VIRTUAL_IX].prepare_call, virt_w, virt_h, layer_id);
+          ALOGI("vcmp: %llu - %dx%d, composing %d layers",
+                ctx->stats[HWC_VIRTUAL_IX].prepare_call,
+                ctx->cfg[HWC_VIRTUAL_IX].width, ctx->cfg[HWC_VIRTUAL_IX].height,
+                layer_id);
        }
     }
 
@@ -3933,6 +3939,8 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
    NEXUS_SurfaceHandle surface[NSC_GPX_CLIENTS_NUMBER];
    NEXUS_Error lrc, lrcs;
    NEXUS_MemoryBlockHandle block_handle, out_block_handle;
+   OPS_COUNT ops_count;
+   bool q_ops = false;
 
    memset(surface, 0, sizeof(surface));
 
@@ -3995,7 +4003,7 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
          }
          if (hwc_compose_gralloc_buffer(ctx, list, i, pSharedData, gr_buffer, outputHdl,
                                         true, false, &surface[i], &item->comp[i],
-                                        false, layer_composed, NULL, NULL, 0)) {
+                                        false, layer_composed, &q_ops, &ops_count, 0)) {
             layer_composed++;
          }
          if (!lrcs) hwc_mem_unlock(ctx, block_handle, true);
@@ -4003,7 +4011,7 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
    }
 
    if (layer_composed) {
-      if (ctx->fence_support && (list->outbufAcquireFenceFd >= 0)) {
+      if (list->outbufAcquireFenceFd >= 0) {
          sync_wait(list->outbufAcquireFenceFd, BKNI_INFINITE);
          close(list->outbufAcquireFenceFd);
          list->outbufAcquireFenceFd = INVALID_FENCE;
