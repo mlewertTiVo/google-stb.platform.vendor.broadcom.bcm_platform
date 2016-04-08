@@ -43,6 +43,15 @@ LOCAL_CFLAGS += -DLOG_TAG=\"bcm-gr\"
 LOCAL_CFLAGS += -DV3D_VARIANT_$(V3D_VARIANT)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
+ifeq ($(LOCAL_ARM_AARCH64),y)
+ifeq ($(LOCAL_ARM_AARCH64_NOT_ABI_COMPATIBLE),y)
+LOCAL_CFLAGS += -DV3D_DLOPEN_PATH=\"/system/lib/egl/\"
+else
+LOCAL_CFLAGS += -DV3D_DLOPEN_PATH=\"/system/lib64/egl/\"
+endif
+else
+LOCAL_CFLAGS += -DV3D_DLOPEN_PATH=\"/system/lib/egl/\"
+endif
 
 LOCAL_SRC_FILES := \
         gralloc.cpp \

@@ -94,14 +94,14 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 static void gralloc_load_lib(void)
 {
    char value[PROPERTY_VALUE_MAX];
-   const char *gl_dyn_lib_path = "/system/lib/egl/libGLES_nexus.so";
-   gl_dyn_lib = dlopen(gl_dyn_lib_path, RTLD_LAZY | RTLD_LOCAL);
+   snprintf(value, PROPERTY_VALUE_MAX, "%slibGLES_nexus.so", V3D_DLOPEN_PATH);
+   gl_dyn_lib = dlopen(value, RTLD_LAZY | RTLD_LOCAL);
    if (!gl_dyn_lib) {
-      // try legacy path as well.
-      const char *gl_dyn_lib_path = "/vendor/lib/egl/libGLES_nexus.so";
-      gl_dyn_lib = dlopen(gl_dyn_lib_path, RTLD_LAZY | RTLD_LOCAL);
+      // last resort legacy path.
+      snprintf(value, PROPERTY_VALUE_MAX, "/vendor/lib/egl/libGLES_nexus.so");
+      gl_dyn_lib = dlopen(value, RTLD_LAZY | RTLD_LOCAL);
       if (!gl_dyn_lib) {
-         ALOGE("failed loading essential GLES library '%s': <%s>!", gl_dyn_lib_path, dlerror());
+         ALOGE("failed loading essential GLES library '%s': <%s>!", value, dlerror());
       }
    }
 
