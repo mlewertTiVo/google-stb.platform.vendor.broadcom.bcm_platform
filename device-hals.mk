@@ -1,4 +1,4 @@
-ifneq ($(filter bcm_% fbx6lc avko arrow,$(TARGET_DEVICE)),)
+ifneq ($(filter bcm_% fbx6lc avko banff,$(TARGET_DEVICE)),)
 
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/audio/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/camera2/Android.mk
