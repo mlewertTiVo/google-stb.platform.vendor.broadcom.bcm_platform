@@ -651,7 +651,7 @@ status_t NexusHdmiCecDevice::initialise()
                                         }
                                         else {
                                             // Read back CEC enable state from Android property...
-                                            mCecEnable = pIpcClient->isCecEnabled(mCecId);
+                                            mCecEnable = NexusIPCCommon::isCecEnabled(mCecId);
                                         }
                                     }
                                 }
@@ -780,33 +780,11 @@ bool NexusHdmiCecDevice::getHdmiHotplugWakeup()
     return wakeup;
 }
 
-bool NexusHdmiCecDevice::getCecTransmitStandby()
-{
-    char value[PROPERTY_VALUE_MAX];
-    bool tx=false;
-
-    if (property_get(PROPERTY_HDMI_TX_STANDBY_CEC, value, DEFAULT_PROPERTY_HDMI_TX_STANDBY_CEC)) {
-        tx = (strncmp(value, "1", PROPERTY_VALUE_MAX) == 0);
-    }
-    return tx;
-}
-
-bool NexusHdmiCecDevice::getCecTransmitViewOn()
-{
-    char value[PROPERTY_VALUE_MAX];
-    bool tx=false;
-
-    if (property_get(PROPERTY_HDMI_TX_VIEW_ON_CEC, value, DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC)) {
-        tx = (strncmp(value, "1", PROPERTY_VALUE_MAX) == 0);
-    }
-    return tx;
-}
-
 void NexusHdmiCecDevice::setEnableState(bool enable)
 {
     ALOGV("%s: enable=%d", __PRETTY_FUNCTION__, enable);
 
-    mCecEnable = pIpcClient->isCecEnabled(mCecId) && enable;
+    mCecEnable = NexusIPCCommon::isCecEnabled(mCecId) && enable;
 
     if (pIpcClient == NULL) {
         ALOGE("%s: NexusIPCClient has been instantiated!!!", __PRETTY_FUNCTION__);
@@ -843,7 +821,7 @@ void NexusHdmiCecDevice::setControlState(bool enable)
             standbyLock();
             mStandby = false;
             standbyUnlock();
-            tx = getCecTransmitViewOn();
+            tx = NexusIPCCommon::getCecTransmitViewOn();
 
             // If the logical address of the STB has not been setup, then we must delay
             // sending the View On Cec command...
@@ -858,7 +836,7 @@ void NexusHdmiCecDevice::setControlState(bool enable)
             standbyUnlock();
             mCecViewOnCmdPending = false;
             state = ePowerState_S3;
-            tx = getCecTransmitStandby();
+            tx = NexusIPCCommon::getCecTransmitStandby();
         }
 
         if (tx && pIpcClient->setCecPowerState(mCecId, state) != true) {
@@ -1021,7 +999,7 @@ status_t NexusHdmiCecDevice::getCecPortInfo(struct hdmi_port_info* list[], int* 
         return NO_INIT;
     }
 
-    cecEnabled = pIpcClient->isCecEnabled(mCecId) && mCecEnable;
+    cecEnabled = NexusIPCCommon::isCecEnabled(mCecId) && mCecEnable;
 
     mPortInfo[0].type = HDMI_OUTPUT;
     mPortInfo[0].port_id = mCecId + 1;

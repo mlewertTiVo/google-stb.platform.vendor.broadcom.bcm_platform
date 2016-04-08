@@ -244,7 +244,7 @@ bool NexusNxClient::setPowerState(b_powerState pmState)
     standbySettings.settings.wakeupSettings.ir = 1;
     standbySettings.settings.wakeupSettings.uhf = 1;
     standbySettings.settings.wakeupSettings.transport = 1;
-    standbySettings.settings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
+    standbySettings.settings.wakeupSettings.cec = NexusIPCCommon::isCecEnabled(0) && NexusIPCCommon::isCecAutoWakeupEnabled(0);
     standbySettings.settings.wakeupSettings.gpio = 1;
     standbySettings.settings.wakeupSettings.timeout = 0;
 

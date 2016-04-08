@@ -159,10 +159,6 @@ class NexusPower : public android::RefBase {
     sp<NexusGpio> gpios[NexusGpio::MAX_INSTANCES];
     sp<LinuxUInputRef> mUInput;
 
-    // Private methods...
-    bool getCecTransmitStandby();
-    bool getCecTransmitViewOn();
-
     // Disallow constructor and copy constructor...
     NexusPower();
     NexusPower(NexusIPCClientBase *pIpcClient, NexusClientContext *pClientContext);

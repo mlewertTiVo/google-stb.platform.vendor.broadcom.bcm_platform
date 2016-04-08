@@ -205,8 +205,6 @@ class NexusHdmiCecDevice : public RefBase
         void fireEventCallback(hdmi_event_t *pHdmiCecEvent);
         void fireHotplugCallback(int connected);
         bool getHdmiHotplugWakeup();
-        bool getCecTransmitStandby();
-        bool getCecTransmitViewOn();
 
         inline void standbyLock() { mStandbyLock.lock(); }
         inline void standbyUnlock() { mStandbyLock.unlock(); }

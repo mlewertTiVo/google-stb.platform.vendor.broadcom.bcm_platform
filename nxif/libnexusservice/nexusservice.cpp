@@ -613,17 +613,6 @@ void NexusService::destroyClientContext(NexusClientContext * client __unused)
    return;
 }
 
-bool NexusService::isCecEnabled(uint32_t cecId __unused)
-{
-    bool enabled = false;
-    char value[PROPERTY_VALUE_MAX];
-
-    if (NEXUS_NUM_CEC > 0 && property_get(PROPERTY_HDMI_ENABLE_CEC, value, DEFAULT_PROPERTY_HDMI_ENABLE_CEC) && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
-        enabled = true;
-    }
-    return enabled;
-}
-
 bool NexusService::setCecAutoWakeupEnabled(uint32_t cecId __unused, bool enabled)
 {
     bool success = true;
@@ -635,17 +624,6 @@ bool NexusService::setCecAutoWakeupEnabled(uint32_t cecId __unused, bool enabled
         success = false;
     }
     return success;
-}
-
-bool NexusService::isCecAutoWakeupEnabled(uint32_t cecId __unused)
-{
-    bool enabled = false;
-    char value[PROPERTY_VALUE_MAX];
-
-    if (property_get(PROPERTY_HDMI_AUTO_WAKEUP_CEC, value, DEFAULT_PROPERTY_HDMI_AUTO_WAKEUP_CEC) && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
-        enabled = true;
-    }
-    return enabled;
 }
 
 b_cecDeviceType NexusService::toCecDeviceType(char *string)
@@ -859,7 +837,7 @@ bool NexusService::setPowerState(b_powerState pmState)
         nexusStandbySettings.wakeupSettings.ir = 1;
         nexusStandbySettings.wakeupSettings.uhf = 1;
         nexusStandbySettings.wakeupSettings.transport = 1;
-        nexusStandbySettings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
+        nexusStandbySettings.wakeupSettings.cec = NexusIPCCommon::isCecEnabled(0) && NexusIPCCommon::isCecAutoWakeupEnabled(0);
         nexusStandbySettings.wakeupSettings.gpio = 1;
         nexusStandbySettings.wakeupSettings.timeout = 0;
 

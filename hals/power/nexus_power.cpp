@@ -156,28 +156,6 @@ sp<NexusPower> NexusPower::instantiate(int powerFd)
     return np;
 }
 
-bool NexusPower::getCecTransmitStandby()
-{
-    char value[PROPERTY_VALUE_MAX];
-    bool tx=false;
-
-    if (property_get(PROPERTY_HDMI_TX_STANDBY_CEC, value, DEFAULT_PROPERTY_HDMI_TX_STANDBY_CEC)) {
-        tx = (strncmp(value, "1", PROPERTY_VALUE_MAX) == 0);
-    }
-    return tx;
-}
-
-bool NexusPower::getCecTransmitViewOn()
-{
-    char value[PROPERTY_VALUE_MAX];
-    bool tx=false;
-
-    if (property_get(PROPERTY_HDMI_TX_VIEW_ON_CEC, value, DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC)) {
-        tx = (strncmp(value, "1", PROPERTY_VALUE_MAX) == 0);
-    }
-    return tx;
-}
-
 status_t NexusPower::setVideoOutputsState(b_powerState state)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
@@ -239,13 +217,13 @@ status_t NexusPower::setPowerState(b_powerState state, bool partial)
             ALOGE("%s: Could not set PowerState %s!", __FUNCTION__, NexusIPCClientBase::getPowerString(state));
             ret = INVALID_OPERATION;
         }
-        else if (mCecDeviceType == eCecDeviceType_eInvalid && mIpcClient->isCecEnabled(cecId) && getCecTransmitViewOn() == true &&
+        else if (mCecDeviceType == eCecDeviceType_eInvalid && NexusIPCCommon::isCecEnabled(cecId) && NexusIPCCommon::getCecTransmitViewOn() == true &&
                                      mIpcClient->setCecPowerState(cecId, state) != true) {
             ALOGW("%s: Could not set CEC%d PowerState %s!", __FUNCTION__, cecId, NexusIPCClientBase::getPowerString(state));
         }
     }
     else {
-        if (mCecDeviceType == eCecDeviceType_eInvalid && mIpcClient->isCecEnabled(cecId) && getCecTransmitStandby() == true &&
+        if (mCecDeviceType == eCecDeviceType_eInvalid && NexusIPCCommon::isCecEnabled(cecId) && NexusIPCCommon::getCecTransmitStandby() == true &&
                                 mIpcClient->setCecPowerState(cecId, state) != true) {
             ALOGW("%s: Could not set CEC%d PowerState %s!", __FUNCTION__, cecId, NexusIPCClientBase::getPowerString(state));
         }

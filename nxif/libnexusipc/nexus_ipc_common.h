@@ -163,11 +163,11 @@ typedef struct b_cecStatus {
 
 // Enable HDMI CEC functionality by ensuring this property is set to 1...
 #define PROPERTY_HDMI_ENABLE_CEC                "persist.sys.hdmi.enable_cec"
-#define DEFAULT_PROPERTY_HDMI_ENABLE_CEC        "1"
+#define DEFAULT_PROPERTY_HDMI_ENABLE_CEC        1
 
 // Enable STB auto wakeup on CEC by ensuring this property is set to 1...
 #define PROPERTY_HDMI_AUTO_WAKEUP_CEC           "persist.sys.hdmi.auto_wake_cec"
-#define DEFAULT_PROPERTY_HDMI_AUTO_WAKEUP_CEC   "1"
+#define DEFAULT_PROPERTY_HDMI_AUTO_WAKEUP_CEC   1
 
 // Disable STB HDMI hot-plug wakeup whilst in standby by ensuring that
 // this property is set to 0...
@@ -177,12 +177,12 @@ typedef struct b_cecStatus {
 // Disable sending CEC standby message to TV on entry to standby by ensuring
 // that this property is set to 0...
 #define PROPERTY_HDMI_TX_STANDBY_CEC            "persist.sys.hdmi.tx_standby_cec"
-#define DEFAULT_PROPERTY_HDMI_TX_STANDBY_CEC    "0"
+#define DEFAULT_PROPERTY_HDMI_TX_STANDBY_CEC    0
 
 // Disable sending CEC image view on message to TV on exit from standby by
 // ensuring that this property is set to 0...
 #define PROPERTY_HDMI_TX_VIEW_ON_CEC            "persist.sys.hdmi.tx_view_on_cec"
-#define DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC    "0"
+#define DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC    0
 
 // Setup the default CEC vendor ID to Broadcom's
 #define PROPERTY_HDMI_CEC_VENDOR_ID             "ro.sys.hdmi.cec_vendor_id"
@@ -262,12 +262,15 @@ public:
     virtual bool getCecPowerStatus(uint32_t cecId, uint8_t *pPowerStatus)=0;
     virtual bool getCecStatus(uint32_t cecId, b_cecStatus *pCecStatus)=0;
     virtual bool sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage, uint8_t maxRetries=DEFAULT_MAX_CEC_RETRIES)=0;
-    virtual bool isCecEnabled(uint32_t cecId)=0;
     virtual bool setCecAutoWakeupEnabled(uint32_t cecId, bool enabled)=0;
-    virtual bool isCecAutoWakeupEnabled(uint32_t cecId)=0;
     virtual b_cecDeviceType getCecDeviceType(uint32_t cecId=0)=0;
     virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr)=0;
     virtual bool getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdmiOutputStatus)=0;
+
+    static inline bool isCecEnabled(uint32_t cecId __unused) { return (NEXUS_NUM_CEC > 0 && property_get_bool(PROPERTY_HDMI_ENABLE_CEC, DEFAULT_PROPERTY_HDMI_ENABLE_CEC)); }
+    static inline bool isCecAutoWakeupEnabled(uint32_t cecId __unused) { return property_get_bool(PROPERTY_HDMI_AUTO_WAKEUP_CEC, DEFAULT_PROPERTY_HDMI_AUTO_WAKEUP_CEC); }
+    static inline bool getCecTransmitStandby() { return property_get_bool(PROPERTY_HDMI_TX_STANDBY_CEC, DEFAULT_PROPERTY_HDMI_TX_STANDBY_CEC); }
+    static inline bool getCecTransmitViewOn() { return property_get_bool(PROPERTY_HDMI_TX_VIEW_ON_CEC, DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC); }
 
     static const uint8_t DEFAULT_MAX_CEC_RETRIES = 5;
     static const uint8_t MAX_NUM_CEC_PORTS = (NEXUS_NUM_CEC > 0) ? NEXUS_NUM_CEC : 1;
