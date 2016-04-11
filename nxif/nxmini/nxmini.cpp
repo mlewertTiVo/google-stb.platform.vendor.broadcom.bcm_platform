@@ -70,7 +70,7 @@
 // default lower bound that fits all platforms needs.
 //
 #define NX_HEAP_VIDEO_SECURE       1
-#define NX_HEAP_VIDEO_SECURE_VALUE "80m"
+#define NX_HEAP_VIDEO_SECURE_VALUE "32m"
 #define NX_HEAP_MAIN               1
 #define NX_HEAP_MAIN_VALUE         "48m"
 #define NX_HEAP_GFX                1
@@ -134,76 +134,32 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
     *          platform support, keep a decoder just in case.
     */
 
-   /* 1. additional display(s). */
    for (i = 1; i < NEXUS_MAX_DISPLAYS; i++) {
        pMemConfigSettings->display[i].maxFormat = NEXUS_VideoFormat_eUnknown;
        for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
            pMemConfigSettings->display[i].window[j].used = false;
        }
    }
+   pMemConfigSettings->display[0].window[1].used = false;
+   pMemConfigSettings->display[0].window[0].secure = NEXUS_SecureVideo_eUnsecure;
 
-   /* 2. video input. */
    pMemConfigSettings->videoInputs.hdDvi = false;
    pMemConfigSettings->videoInputs.ccir656 = false;
 
-   /* 3. *** HARDCODE *** remove all encoders. */
    trim_encoder_mem_config(pMemConfigSettings);
 
-   /* 4. vc1 decoder. */
-   for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
-      pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVc1] = false;
-      pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVc1SimpleMain] = false;
+   for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+      pMemConfigSettings->videoDecoder[i].used = false;
    }
-   pMemConfigSettings->stillDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVc1] = false;
-   pMemConfigSettings->stillDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVc1SimpleMain] = false;
-
-   /* 5. stills decoder. */
-   for (i = 0 ; i < NEXUS_MAX_STILL_DECODERS ; i++) {
+   for (i = 0; i < NEXUS_NUM_STILL_DECODES; i++) {
       pMemConfigSettings->stillDecoder[i].used = false;
    }
 
-   /* 6. mosaic video. */
-   pMemConfigSettings->videoDecoder[0].mosaic.maxNumber = 0;
-   pMemConfigSettings->videoDecoder[0].mosaic.maxHeight = 0;
-   pMemConfigSettings->videoDecoder[0].mosaic.maxWidth = 0;
-
-   /* 7. pip. */
-   pMemConfigSettings->videoDecoder[1].used = false;
-   pMemConfigSettings->display[0].window[1].used = false;
-
-   /* 8. *** TEMPORARY *** force lowest format for mandated transcode decoder until
-    *    we can instantiate an encoder without decoder back-end (architectural change).
-    */
-   for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
-      if (pMemConfigSettings->videoDecoder[i].used) {
-         pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_eNtsc;
-      }
-   }
-
-   /* 9. vp9. */
-   for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
-      if (pMemConfigSettings->videoDecoder[i].used) {
-         pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
-      }
-   }
-   if (pMemConfigSettings->stillDecoder[0].used) {
-      pMemConfigSettings->stillDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
-   }
-
-   /* 10. uhd decoder. */
-   for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
-      if (pMemConfigSettings->videoDecoder[i].used &&
-          (pMemConfigSettings->videoDecoder[i].maxFormat > NEXUS_VideoFormat_e1080p)) {
-         pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_e1080p;
-      }
-   }
-
-   /* 11. color depth. */
-   for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
-      if (pMemConfigSettings->videoDecoder[i].used) {
-         pMemConfigSettings->videoDecoder[i].colorDepth = 8;
-      }
-   }
+   pMemConfigSettings->videoDecoder[0].maxFormat = NEXUS_VideoFormat_eNtsc;
+   pMemConfigSettings->videoDecoder[0].colorDepth = 8;
+   pMemConfigSettings->videoDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
+   pMemConfigSettings->videoDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVc1] = false;
+   pMemConfigSettings->videoDecoder[0].supportedCodecs[NEXUS_VideoCodec_eH263] = false;
 }
 
 static nxserver_t init_nxserver(void)
@@ -229,10 +185,7 @@ static nxserver_t init_nxserver(void)
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
     NEXUS_GetDefaultMemoryConfigurationSettings(&memConfigSettings);
 
-    /* do not start any display, leave it to the user of this nxmini to do
-     * so when needed.  e.g. framebuffer driver in the case of the recovery
-     * user example.
-     */
+    settings.svp = nxserverlib_svp_type_none;
     settings.session[0].ir_input_mode = NEXUS_IrInputMode_eMax;
     settings.transcode = false;
     settings.grab = 0;
