@@ -38,8 +38,9 @@ ifneq ($(ANDROID_SUPPORTS_PLAYREADY), n)
 # libcmndrmprdy.so
 #-------------
 include $(CLEAR_VARS)
-LOCAL_LIB_NAME := libcmndrmprdy
+LOCAL_MODULE :=  libcmndrmprdy
 LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 
 ifeq ($(TARGET_BUILD_VARIANT),user)
 RELEASE_PREBUILTS := release_prebuilts/user
@@ -48,17 +49,17 @@ RELEASE_PREBUILTS := release_prebuilts/userdebug
 endif
 
 # Check if a prebuilt library has been created in the release_prebuilts folder
-ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(LOCAL_LIB_NAME).so))
+ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so))
 # use prebuilt library if one exists
 ifeq ($(TARGET_2ND_ARCH),arm)
 LOCAL_MULTILIB := both
 LOCAL_MODULE_TARGET_ARCH := arm arm64
 # fix me!
-LOCAL_SRC_FILES_arm64 := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_LIB_NAME).so
-LOCAL_SRC_FILES_arm := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_LIB_NAME).so
+LOCAL_SRC_FILES_arm64 := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
+LOCAL_SRC_FILES_arm := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
 else
 LOCAL_MODULE_TARGET_ARCH := arm
-LOCAL_SRC_FILES_arm := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_LIB_NAME).so
+LOCAL_SRC_FILES_arm := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
 endif
 include $(BUILD_PREBUILT)
 
@@ -90,7 +91,6 @@ endif
 
 LOCAL_SHARED_LIBRARIES := liblog libnexus libnxclient libplayreadypk_host libdrmrootfs
 
-LOCAL_MODULE :=  $(LOCAL_LIB_NAME)
 include $(BUILD_SHARED_LIBRARY)
 endif
 endif
