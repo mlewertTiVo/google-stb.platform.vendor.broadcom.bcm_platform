@@ -551,6 +551,11 @@ static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_s
         goto failed_acquire_video_window;
     }
 
+    NEXUS_SimpleStcChannelHandle stcChannel;
+    stcChannel = NEXUS_SimpleStcChannel_Create(NULL);
+    NEXUS_SimpleVideoDecoder_SetStcChannel(priv->videoDecoder, stcChannel);
+    NEXUS_SimpleAudioDecoder_SetStcChannel(priv->audioDecoder, stcChannel);
+
     NxClient_ConnectSettings connectSettings;
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleVideoDecoder[0].id = priv->allocResults.simpleVideoDecoder[0].id;
