@@ -78,13 +78,5 @@ on property:sys.gator=1
    insmod /system/vendor/drivers/gator.ko
    start gatord
 
-service hfrvideo /system/bin/hfrvideo
-   class late_start
-   oneshot
-   disabled
-
-on property:dyn.nx.hfrvideo.set=*
-   start hfrvideo
-
 on property:dev.bootcomplete=1
    setprop sys.init_log_level 4

@@ -20,5 +20,6 @@ LOCAL_SHARED_LIBRARIES := liblog \
                           libutils
 LOCAL_SRC_FILES := hfrvideo.c
 LOCAL_MODULE := hfrvideo
+LOCAL_INIT_RC := hfrvideo.rc
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_EXECUTABLE)
