@@ -262,6 +262,12 @@ static nxserver_t init_nxserver(void)
        return NULL;
     }
 
+    rc = nxserver_ipc_init(g_app.server, g_app.lock);
+    if (rc) {
+       ALOGE("FATAL: failed nxserver_ipc_init");
+       return NULL;
+    }
+
     g_app.refcnt++;
     return g_app.server;
 }
@@ -271,6 +277,7 @@ static void uninit_nxserver(nxserver_t server)
     BDBG_ASSERT(server == g_app.server);
     if (--g_app.refcnt) return;
 
+    nxserver_ipc_uninit();
     nxserverlib_uninit(server);
     BKNI_DestroyMutex(g_app.lock);
     NEXUS_Platform_Uninit();
