@@ -5,19 +5,19 @@
 # embedded.  Finally, the scripts looks at include.txt and exclude.txt for
 # additionally files/directories to be included and excluded for the release.
 #
-# THe script is meant to be automatic for the most part, so the user only needs
+# The script is meant to be automatic for the most part, so the user only needs
 # to specify the output file and location, and the rest should be taken care
 # of.
 
 function HELP {
-  echo -e \\n"Usage: $(basename $0) [-r <refsw_baseline>] [-s <refsw_sha>] [-t] [-a <aosp_baseline>] [-p <prebuilt source> <output>"
+  echo -e \\n"Usage: $(basename $0) [-r <refsw_baseline>] [-s <refsw_sha>] [-t] [-a <aosp_baseline>] [-p <prebuilts>] <output>"
   echo "     output : Output file name and location of the packed release, e.g. ./release.tgz"
   echo "     -r     : Specify the URSR official branch that the release is based on."
   echo "     -s     : The SHA in the URSR official branch that the release is based on."
   echo "     -t     : Include this option if you want to package the refsw baseline in the release"
   echo "     -a     : AOSP baseline tag where patches is generated from; if not specified,"
+  echo "     -p     : Path to the prebuilt binary tarballs created by the prep_release_prebuilts.sh"
   echo "              revision from default manifest will be used."
-  echo "     -p     : The workspace where the prebuilt binaries will be copied from."
   exit 1
 }
 
@@ -27,7 +27,8 @@ function HELP {
 TOP_DIR=$(pwd)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR=tmp_bcmrel
-PREBUILT=vendor/broadcom/stb/release_prebuilts
+VENDOR_BRCM=vendor/broadcom
+PREBUILT=$VENDOR_BRCM/release_prebuilts
 PREBUILT_DIR="$TOP_DIR/$PREBUILT"
 
 DFT_XML="$TOP_DIR/.repo/manifests/default.xml"
@@ -36,6 +37,8 @@ REFSW_DIR="$TMP_DIR/refsw_dir.txt"
 BOLT_DIR="$TMP_DIR/bolt_dir.txt"
 BOLT_VER="$TMP_DIR/bolt_version.txt"
 REFSW_TARBALL="$TMP_DIR/refsw_rel_src.tgz"
+PR_PATCH_USER="$TMP_DIR/playready_prebuilts_user.tgz"
+PR_PATCH_USERDBG="$TMP_DIR/playready_prebuilts_userdebug.tgz"
 AOSP_LIST="$TMP_DIR/aosp_patches.txt"
 REFSW_PATCH="$TMP_DIR/refsw_patch.txt"
 
@@ -60,7 +63,7 @@ while getopts :r:s:a:p:t opt; do
       REFSW_SRC="yes"
       ;;
     p)
-      PREBUILT_SRC=$OPTARG
+      PREBUILT_BINS_DIR=$OPTARG
       ;;
     \?)
       echo -e "   Option -${BOLD}$OPTARG${NORM} not allowed."
@@ -89,9 +92,6 @@ if [ -n "$REFSW_SRC" ]; then
 echo "   Package REFSW src?   : YES"
 else
 echo "   Package REFSW src?   : NO"
-fi
-if [ -n "$PREBUILT_SRC" ]; then
-echo "   Prebuilt source      : $PREBUILT_SRC"
 fi
 echo -e "   Release package name : $1"\\n
 for i in {5..1}; do echo -en "Starting in $i \r"; sleep 1; done;
@@ -169,47 +169,57 @@ if [ -d $TMP_DIR ]; then
 fi
 mkdir -p $TMP_DIR
 
-# Determine whether the prebuilt libraries will be copied from the given
-# source location or the libraries are already provided by the user
-if [ -n "$PREBUILT_SRC" ]; then
-  echo "Copying prebuilt libraries from the given workspace..."
-  mkdir -p $PREBUILT_DIR
-  while read line; do
-    if [ -f $PREBUILT_SRC/$line ]; then
-      cp $PREBUILT_SRC/$line $PREBUILT_DIR/ 
-    else
-      echo -e "!!! $PREBUILT_SRC/$line cannot be found!!!"
-      echo "Existing..."
-      exit 0
-    fi
-  done < $SCRIPT_DIR/release_prebuilts.txt
-  echo $PREBUILT >> $WHITE_LIST
+# Check if the required prebuilt libraries are already provided by the user
+if [ -d $PREBUILT_BINS_DIR ]; then
+  if [ -f $PREBUILT_BINS_DIR/release_prebuilts_user.tgz ]; then
+    tar -C $VENDOR_BRCM -zxvf  $PREBUILT_BINS_DIR/release_prebuilts_user.tgz;
+  else
+    echo -e \\n"!!! MISSING prebuilt libraries package: release_prebuilts_usr.tgz"\\n
+  fi
+  if [ -f $PREBUILT_BINS_DIR/release_prebuilts_userdebug.tgz ]; then
+    tar -C $VENDOR_BRCM -zxvf  $PREBUILT_BINS_DIR/release_prebuilts_userdebug.tgz;
+  else
+    echo -e \\n"!!! MISSING prebuilt libraries package: release_prebuilts_usrdebug.tgz"\\n
+  fi
+  if [ -f $PREBUILT_BINS_DIR/playready_prebuilts_user.tgz ]; then
+    cp $PREBUILT_BINS_DIR/playready_prebuilts_user.tgz $TMP_DIR
+  else
+    echo -e \\n"!!! MISSING prebuilt libraries package: playready_prebuilts_usr.tgz"\\n
+  fi
+  if [ -f $PREBUILT_BINS_DIR/playready_prebuilts_userdebug.tgz ]; then
+    cp  $PREBUILT_BINS_DIR/playready_prebuilts_userdebug.tgz $TMP_DIR 
+  else
+    echo -e \\n"!!! MISSING prebuilt libraries package: playready_prebuilts_usrdebug.tgz"\\n
+  fi
 else
+  echo -e \\n"!!! MISSING prebuilt libraries path for release packaging"\\n
+fi
+
 if [ -d $PREBUILT_DIR ]; then
   echo "Checking if prebuilt libraries are provided..."
   while read line; do
     PREBUILT_LIB_NAME=$(echo $line | awk -F/ '{print $NF}')
-    if [ ! -f $PREBUILT_DIR/$PREBUILT_LIB_NAME ]; then
+    if [ ! -f $PREBUILT_DIR/user/$PREBUILT_LIB_NAME ]; then
       echo -e \\n"!!! MISSING prebuilt libraries for release packaging: $PREBUILT_LIB_NAME"\\n
-      echo "Exiting..."
-      exit 0
+    fi
+  done < $SCRIPT_DIR/release_prebuilts.txt
+  while read line; do
+    PREBUILT_LIB_NAME=$(echo $line | awk -F/ '{print $NF}')
+    if [ ! -f $PREBUILT_DIR/userdebug/$PREBUILT_LIB_NAME ]; then
+      echo -e \\n"!!! MISSING prebuilt libraries for release packaging: $PREBUILT_LIB_NAME"\\n
     fi
   done < $SCRIPT_DIR/release_prebuilts.txt
   echo $PREBUILT >> $WHITE_LIST
 else
-   echo -e \\n"!!! MISSING prebuilt libraries for release packaging."
-   echo "!!! Please use the -p option to specify the reference workspace"
-   echo "!!! where the prebuilt libraries would be copied from..."
-   echo "!!!   OR"
-   echo "!!! Create the missing folder $PREBUILT_DIR"
-   echo -e "!!! and put the following prebuilt libraries into the folder:"
-   while read line; do
-     PREBUILT_LIB_NAME=$(echo $line | awk -F/ '{print $NF}')
-     echo "!!!   > $PREBUILT_LIB_NAME"
-   done < $SCRIPT_DIR/release_prebuilts.txt
-   echo -e \\n"Exiting..."
-   exit 0
-fi
+  echo -e \\n"!!! MISSING prebuilt libraries for release packaging."
+  echo "!!! Please create the missing folder $PREBUILT_DIR/user and $PREBUILT_DIR/userdebug"
+  echo -e "!!! and put the following prebuilt libraries into the folder:"
+  while read line; do
+    PREBUILT_LIB_NAME=$(echo $line | awk -F/ '{print $NF}')
+    echo "!!!   > $PREBUILT_LIB_NAME"
+  done < $SCRIPT_DIR/release_prebuilts.txt
+  echo -e \\n"Exiting..."
+  exit 0
 fi
 
 if [ -f $BCG_XML ]; then
@@ -236,6 +246,9 @@ if [ -f $BCG_XML ]; then
 
   # Misc tools
   extract_path_from_xml name android/busybox >> $WHITE_LIST
+
+  # Reference devices
+  extract_path_from_xml name android/device/google/avko >> $WHITE_LIST
 
 else
   echo "$BCG_XML not found, exiting..."
@@ -268,10 +281,22 @@ cd $TOP_DIR
 
 # Append custom white and black lists if present
 if [ -f $SCRIPT_DIR/include.txt ]; then
-  cat $SCRIPT_DIR/include.txt >> $WHITE_LIST
+  while read -r line
+  do
+    stringarray=($line)
+    for word in "${stringarray[@]}"; do
+      echo $word >> $WHITE_LIST
+    done
+  done < "$SCRIPT_DIR/include.txt"
 fi
 if [ -f $SCRIPT_DIR/exclude.txt ]; then
-  cat $SCRIPT_DIR/exclude.txt >> $BLACK_LIST
+  while read -r line
+  do
+    stringarray=($line)
+    for word in "${stringarray[@]}"; do
+      echo $word >> $BLACK_LIST
+    done
+  done < "$SCRIPT_DIR/exclude.txt"
 fi
 
 # Tar up the entire temp directory except the white/black lists
@@ -280,7 +305,12 @@ echo $WHITE_LIST >> $BLACK_LIST
 echo $BLACK_LIST >> $BLACK_LIST
 
 # Tar up everything
-tar --exclude=*.git* --exclude-from=$BLACK_LIST -cvzf $1 --files-from=$WHITE_LIST
+if [ -n "$REFSW_SRC" ]; then
+tar --exclude=*.git* --exclude-from=$BLACK_LIST -cvzf $1_REFSW_PR.tgz --files-from=$WHITE_LIST
+tar --exclude=*.git* --exclude-from=$BLACK_LIST --exclude=$PR_PATCH_USER --exclude=$PR_PATCH_USERDBG -cvzf $1_REFSW.tgz --files-from=$WHITE_LIST
+#tar --exclude=*.git* --exclude-from=$BLACK_LIST --exclude=$REFSW_TARBALL -cvzf $1_PR.tgz --files-from=$WHITE_LIST
+fi
+tar --exclude=*.git* --exclude-from=$BLACK_LIST --exclude=$REFSW_TARBALL --exclude=$PR_PATCH_USER --exclude=$PR_PATCH_USERDBG -cvzf $1.tgz --files-from=$WHITE_LIST
 
 # Be verbose what we are not tar'ing
 echo "Excludes..."
