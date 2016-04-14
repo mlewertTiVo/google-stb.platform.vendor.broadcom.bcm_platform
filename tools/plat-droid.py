@@ -191,6 +191,10 @@ if clone_device != 'nope' and clone_variant != 'nope':
 		check_file="%s/aosp_%s.mk" %(clone_directory, clone_variant)
 		if os.path.exists(check_file) and save_the_clone:
 			save_copy_dir(clone_directory)
+		if not save_the_clone:
+			old_saved_cloned_dir = "./device/%s/%s.saved" %(clone_device, clone_variant)
+			if os.path.exists(old_saved_cloned_dir):
+				shutil.rmtree(old_saved_cloned_dir)
 		rmdir_then_mkdir(clone_directory)
 
 # create android cruft.
