@@ -44,6 +44,7 @@
 
 #include "cutils/properties.h"
 #include "nx_ashmem.h"
+#include <inttypes.h>
 
 static NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt, int *bpp);
 static BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt);
@@ -753,7 +754,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       NEXUS_Addr sPhysAddr, pPhysAddr;
       NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
       NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);
-      ALOGI("alloc (%s): owner:%d::s-blk:%p::s-addr:%p::p-blk:%p::p-addr:%p::%dx%d::sz:%d::use:0x%x:0x%x",
+      ALOGI("alloc (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
             getpid(),
             block_handle,
@@ -824,7 +825,7 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
          unsigned format = pSharedData->container.format;
          NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
          NEXUS_MemoryBlock_LockOffset(planeHandle, &pPhysAddr);
-         ALOGI(" free (%s): owner:%d::s-blk:%p::s-addr:%p::p-blk:%p::p-addr:%p::%dx%d::sz:%d::use:0x%x:0x%x",
+         ALOGI(" free (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
                hnd->pid,
                block_handle,

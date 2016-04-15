@@ -4328,7 +4328,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
             goto out;
         }
 
-        ALOGV("Nexus pixel format:%d - pAddr=%p, plane handle=%u",
+        ALOGV("Nexus pixel format:%d - pAddr=%p, plane handle=%p",
               pixelFormat, pAddr, planeHandle);
 
         hSrc = CreateSurface(width, height, stride, pixelFormat, planeHandle, 0, NULL, NULL);

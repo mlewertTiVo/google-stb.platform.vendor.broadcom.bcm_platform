@@ -3962,7 +3962,7 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
    lrc = hwc_mem_lock(ctx, out_block_handle, &pAddr, true);
    PSHARED_DATA pOutSharedData = (PSHARED_DATA) pAddr;
    if (pOutSharedData == NULL) {
-      ALOGE("vcmp: %llu (0x%x) - invalid output buffer?", ctx->stats[HWC_VIRTUAL_IX].set_call, out_block_handle);
+      ALOGE("vcmp: %llu (%p) - invalid output buffer?", ctx->stats[HWC_VIRTUAL_IX].set_call, out_block_handle);
       ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
       goto out;
    }
@@ -3973,7 +3973,7 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
                                   pOutSharedData->container.block,
                                   0);
    if (outputHdl == NULL) {
-      ALOGE("vcmp: %llu (0x%x) - no display surface available", ctx->stats[HWC_VIRTUAL_IX].set_call, out_block_handle);
+      ALOGE("vcmp: %llu (%p) - no display surface available", ctx->stats[HWC_VIRTUAL_IX].set_call, out_block_handle);
       ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
       if (!lrc) hwc_mem_unlock(ctx, out_block_handle, true);
       goto out;
