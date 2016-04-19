@@ -133,7 +133,7 @@ static int hdmi_cec_send_message(const struct hdmi_cec_device* dev, const cec_me
 {
     sp<NexusHdmiCecDevice> device = get_nexus_hdmi_cec_device(dev);
 
-    ALOGV("%s: initiator=%d, destination=%d, length=%d, opcode=0x%02x", __PRETTY_FUNCTION__,
+    ALOGV("%s: initiator=%d, destination=%d, length=%zu, opcode=0x%02x", __PRETTY_FUNCTION__,
             message->initiator, message->destination, message->length, message->body[0]);
 
     if (device->sendCecMessage(message) != NO_ERROR) {

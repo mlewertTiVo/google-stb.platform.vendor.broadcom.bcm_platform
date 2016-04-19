@@ -30,6 +30,7 @@
 #include <hardware/power.h>
 #include <hardware_legacy/power.h>
 #include "PmLibService.h"
+#include <inttypes.h>
 
 using namespace android;
 
@@ -502,7 +503,7 @@ static status_t power_prepare_suspend(b_powerState toState)
                 ALOGE("%s: Failed to read event(s) [%s]!!!", __FUNCTION__, buf);
             }
             else {
-                ALOGV("%s: Event %llu received", __FUNCTION__, event);
+                ALOGV("%s: Event %" PRIu64 " received", __FUNCTION__, event);
 
                 if (event == DROID_PM_EVENT_RESUMED ||
                     event == DROID_PM_EVENT_RESUMED_PARTIAL ||
@@ -535,7 +536,7 @@ static status_t power_prepare_suspend(b_powerState toState)
                     }
                 }
                 else {
-                    ALOGW("%s: Invalid state to receive event %llu!", __FUNCTION__, event);
+                    ALOGW("%s: Invalid state to receive event %" PRIu64 "!", __FUNCTION__, event);
                     status = BAD_VALUE;
                 }
             }
@@ -747,7 +748,7 @@ static void *power_event_monitor_thread(void *arg)
             }
             else {
                 // Event received from droid_pm - now find out which one...
-                ALOGV("%s: Received power event %llu", __FUNCTION__, event);
+                ALOGV("%s: Received power event %" PRIu64 "", __FUNCTION__, event);
                 if (event == DROID_PM_EVENT_SUSPENDING || event == DROID_PM_EVENT_SHUTDOWN) {
                     if (powerFunction() == NO_ERROR) {
                         ALOGD("%s: Successfully finished setting power state.", __FUNCTION__);

@@ -913,7 +913,7 @@ int gralloc_device_open(const hw_module_t* module, const char* name,
 {
    int status = -EINVAL;
 
-   ALOGD("%s: %s (s-data: %d)", __FUNCTION__, name, sizeof(SHARED_DATA));
+   ALOGD("%s: %s (s-data: %zu)", __FUNCTION__, name, sizeof(SHARED_DATA));
 
    if (!strcmp(name, GRALLOC_HARDWARE_GPU0)) {
       gralloc_context_t *dev;

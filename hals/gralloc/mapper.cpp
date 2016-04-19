@@ -66,7 +66,7 @@ static void gralloc_conv_print(int w, int h, int type, int64_t start, int64_t en
 {
    const double nsec_to_msec = 1.0 / 1000000.0;
 
-   ALOGI("conv: %s (%dx%d) -> %.3f msecs (%lld)",
+   ALOGI("conv: %s (%dx%d) -> %.3f msecs (%" PRId64 ")",
          conv_type[type],
          w,
          h,

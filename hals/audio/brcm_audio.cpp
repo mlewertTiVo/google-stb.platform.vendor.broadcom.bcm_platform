@@ -40,6 +40,7 @@
 #define LOG_TAG "BrcmAudio"
 
 #include "brcm_audio.h"
+#include <inttypes.h>
 
 #define BRCM_BUFFER_SIZE_MS 10
 
@@ -128,7 +129,7 @@ static size_t bout_get_buffer_size(const struct audio_stream *stream)
 {
     struct brcm_stream_out *bout = (struct brcm_stream_out *)stream;
 
-    ALOGV("%s: at %d, stream = %p, buffer_size = %d\n",
+    ALOGV("%s: at %d, stream = %p, buffer_size = %zu\n",
          __FUNCTION__, __LINE__, stream, bout->buffer_size);
 
     return bout->buffer_size;
@@ -381,7 +382,7 @@ static int bout_get_next_write_timestamp(const struct audio_stream_out *aout,
     clock_gettime(CLOCK_MONOTONIC, &ts);
     *timestamp = ts.tv_sec * 1000000ll + (ts.tv_nsec)/1000ll;
 
-    ALOGV("%s: at %d, stream = %p, Next timestamp..(%lld)",
+    ALOGV("%s: at %d, stream = %p, Next timestamp..(%" PRId64 ")",
          __FUNCTION__, __LINE__, aout, *timestamp);
 
     return 0;
@@ -405,8 +406,8 @@ static int bout_get_presentation_position(const struct audio_stream_out *aout,
     pthread_mutex_unlock(&bout->lock);
 
     clock_gettime(CLOCK_MONOTONIC, timestamp);
-    ALOGV("%s: frames:%lld, timestamp(%lld)",__FUNCTION__, *frames,
-                                (timestamp->tv_sec* 1000000ll) + (timestamp->tv_nsec)/1000ll);
+    ALOGV("%s: frames:%" PRIu64 ", timestamp(%ld.%06ld)", __FUNCTION__, *frames,
+          timestamp->tv_sec, timestamp->tv_nsec);
 
     return ret;
 }
@@ -442,7 +443,7 @@ static size_t bin_get_buffer_size(const struct audio_stream *stream)
 {
     struct brcm_stream_in *bin = (struct brcm_stream_in *)stream;
 
-    ALOGV("%s: at %d, stream = %p, buffer_size = %d\n",
+    ALOGV("%s: at %d, stream = %p, buffer_size = %zu\n",
          __FUNCTION__, __LINE__, stream, bin->buffer_size);
 
     return bin->buffer_size;
@@ -813,7 +814,7 @@ static size_t bdev_get_input_buffer_size(const struct audio_hw_device *adev,
                                    config->format,
                                    popcount(config->channel_mask));
 
-    ALOGV("%s: at %d, dev = %p, buffer_size = %d\n",
+    ALOGV("%s: at %d, dev = %p, buffer_size = %zu\n",
          __FUNCTION__, __LINE__, adev, buffer_size);
 
     return buffer_size;

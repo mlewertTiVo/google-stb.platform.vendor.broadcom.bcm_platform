@@ -298,7 +298,7 @@ status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::handleCecMessage(const sp<
         ret = BAD_VALUE;
     }
     else if (length > CEC_MESSAGE_BODY_MAX_LENGTH) {
-        ALOGE("%s: Message length %d out of range on CEC port %d!!!", __PRETTY_FUNCTION__, length, portId);
+        ALOGE("%s: Message length %zu out of range on CEC port %d!!!", __PRETTY_FUNCTION__, length, portId);
         ret = BAD_VALUE;
     }
     else {
@@ -319,7 +319,7 @@ status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::handleCecMessage(const sp<
             }
         }
 
-        ALOGV("%s: CEC portId=%d, initiator=%d, destination=%d, length=%d, opcode=0x%02x", __PRETTY_FUNCTION__, portId,
+        ALOGV("%s: CEC portId=%d, initiator=%d, destination=%d, length=%zu, opcode=0x%02x", __PRETTY_FUNCTION__, portId,
                 initiator, destination, length, cecMessage.body[0]);
 
         // If we receive CEC commands whilst we are in standby, then in order
@@ -410,7 +410,7 @@ NexusHdmiCecDevice::HdmiCecMessageEventListener::~HdmiCecMessageEventListener()
 
 status_t NexusHdmiCecDevice::HdmiCecMessageEventListener::onHdmiCecMessageReceived(int32_t portId, INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message)
 {
-    ALOGV("%s: CEC portId=%d, from %d, to %d, length %d, opcode=0x%02x", __PRETTY_FUNCTION__, portId,
+    ALOGV("%s: CEC portId=%d, from %d, to %d, length %zu, opcode=0x%02x", __PRETTY_FUNCTION__, portId,
             message->initiator, message->destination, message->length, message->body[0]);
 
     sp<AMessage> msg = new AMessage;

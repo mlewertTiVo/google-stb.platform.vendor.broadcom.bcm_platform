@@ -277,13 +277,13 @@ void HDMIAudioCaps::getFmtsForAF(String8& fmts) {
     ALOGI("ALSAFORMATS: formats = %s", fmts.string());
 
     for (size_t i = 0; i < mModes.size(); ++i) {
-        ALOGI("ALSAFORMATS: ------- fmt[%d] = 0x%08X = %s",
+        ALOGI("ALSAFORMATS: ------- fmt[%zu] = 0x%08X = %s",
             i, mModes[i].fmt, fmtToString(mModes[i].fmt));
-        ALOGI("ALSAFORMATS:   comp_bitrate[%d] = 0x%08X = %d",
+        ALOGI("ALSAFORMATS:   comp_bitrate[%zu] = 0x%08X = %d",
             i, mModes[i].comp_bitrate, mModes[i].comp_bitrate);
-        ALOGI("ALSAFORMATS:   max_ch[%d] = 0x%08X = %d",
+        ALOGI("ALSAFORMATS:   max_ch[%zu] = 0x%08X = %d",
             i, mModes[i].max_ch, mModes[i].max_ch);
-        ALOGI("ALSAFORMATS:   bps_bitmask[%d] = 0x%08X", i, mModes[i].bps_bitmask);
+        ALOGI("ALSAFORMATS:   bps_bitmask[%zu] = 0x%08X", i, mModes[i].bps_bitmask);
         uint32_t bpsm = mModes[i].bps_bitmask;
         while(bpsm) {
             uint32_t bpsm_next = bpsm & (bpsm - 1);
@@ -293,7 +293,7 @@ void HDMIAudioCaps::getFmtsForAF(String8& fmts) {
             }
             bpsm = bpsm_next;
         }
-        ALOGI("ALSAFORMATS:   sr_bitmask[%d] = 0x%08X", i, mModes[i].sr_bitmask);
+        ALOGI("ALSAFORMATS:   sr_bitmask[%zu] = 0x%08X", i, mModes[i].sr_bitmask);
         uint32_t srs = mModes[i].sr_bitmask;
         while(srs) {
             uint32_t srs_next = srs & (srs - 1);

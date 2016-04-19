@@ -62,6 +62,8 @@
 #include "sw_sync.h"
 #include "nx_ashmem.h"
 
+#include <inttypes.h>
+
 using namespace android;
 
 #define INVALID_HANDLE               0xBAADCAFE
@@ -1088,7 +1090,7 @@ static int hwc_mem_lock_phys(struct hwc_context_t *ctx, NEXUS_MemoryBlockHandle 
          *paddr = (NEXUS_Addr)NULL;
          return (int)rc;
       } else if (ctx->dump_mma) {
-         ALOGI("mma-lock-phys: %p -> 0x%llx", block_handle, *paddr);
+         ALOGI("mma-lock-phys: %p -> 0x%" PRIu64 "", block_handle, *paddr);
       }
    } else {
       *paddr = (NEXUS_Addr)NULL;
@@ -2094,7 +2096,7 @@ static void hwc_clear_acquire_release_fences(struct hwc_context_t* ctx, hwc_disp
       if (list->hwLayers[i].acquireFenceFd != INVALID_FENCE) {
          close(list->hwLayers[i].acquireFenceFd);
          if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-            ALOGI("fence: %llu/%d - acquire-fence: %d -> early-comp+close\n",
+            ALOGI("fence: %llu/%zu - acquire-fence: %d -> early-comp+close\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, i,
                   list->hwLayers[i].acquireFenceFd);
          }
@@ -2104,7 +2106,7 @@ static void hwc_clear_acquire_release_fences(struct hwc_context_t* ctx, hwc_disp
          hwc_rel_tl_inc(ctx, HWC_PRIMARY_IX, i);
          list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
          if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-            ALOGI("fence: %llu/%d - timeline-release: %d -> early-inc\n",
+            ALOGI("fence: %llu/%zu - timeline-release: %d -> early-inc\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, i, ctx->gpx_cli[i].rel_tl);
          }
       }
@@ -2790,7 +2792,7 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
     VIDEO_LAYER_VALIDATION video;
 
     if (ctx->display_dump_layer & HWC_DUMP_LEVEL_CLASSIFY) {
-       ALOGI("comp: %llu - classify: %d, geom: %d",
+       ALOGI("comp: %llu - classify: %zu, geom: %d",
           ctx->stats[HWC_PRIMARY_IX].prepare_call, list->numHwLayers, (bool)(list->flags & HWC_GEOMETRY_CHANGED));
     }
 
@@ -2798,7 +2800,7 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
     for (i = 0; i < list->numHwLayers; i++) {
         layer = &list->hwLayers[i];
         if (ctx->display_dump_layer & HWC_DUMP_LEVEL_CLASSIFY) {
-           ALOGI("comp: %llu - in-layer: %d, comp: %d",
+           ALOGI("comp: %llu - in-layer: %zu, comp: %d",
               ctx->stats[HWC_PRIMARY_IX].prepare_call, i, layer->compositionType);
         }
         // we do not handle background layer at this time, we report such to SF.
@@ -2840,7 +2842,7 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
            }
         }
         if (ctx->display_dump_layer & HWC_DUMP_LEVEL_CLASSIFY) {
-           ALOGI("comp: %llu - out-layer: %d, comp: %d",
+           ALOGI("comp: %llu - out-layer: %zu, comp: %d",
               ctx->stats[HWC_PRIMARY_IX].prepare_call, i, layer->compositionType);
         }
     }
@@ -3036,7 +3038,7 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
        for (i = 0; i < list->numHwLayers; i++) {
           layer = &list->hwLayers[i];
           if (ctx->display_dump_virt & HWC_DUMP_LEVEL_PREPARE) {
-             ALOGI("vcmp: %llu - %dx%d, layer: %d, kind: %d",
+             ALOGI("vcmp: %llu - %dx%d, layer: %zu, kind: %d",
                    ctx->stats[HWC_VIRTUAL_IX].prepare_call,
                    ctx->cfg[HWC_VIRTUAL_IX].width, ctx->cfg[HWC_VIRTUAL_IX].height,
                    i, layer->compositionType);
@@ -3342,7 +3344,7 @@ static bool hwc_set_signal_oob_il_locked(struct hwc_context_t *ctx, hwc_display_
                }
                hwc_mem_unlock(ctx, block_handle, true);
                if (ctx->display_dump_layer & HWC_DUMP_LEVEL_COMPOSE) {
-                  ALOGI("comp: %llu (%llu,%llu): kicked %d::frame %llu\n",
+                  ALOGI("comp: %llu (%llu,%llu): kicked %zu::frame %llu\n",
                         ctx->stats[HWC_PRIMARY_IX].composed, ctx->stats[HWC_PRIMARY_IX].prepare_call,
                         ctx->stats[HWC_PRIMARY_IX].set_call, i, ctx->mm_cli[0].last_ping_frame_id);
                }
@@ -3432,7 +3434,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                  list->hwLayers[i].releaseFenceFd = this_frame->content.hwLayers[i].releaseFenceFd;
                  installed++;
                  if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-                    ALOGI("fence: %llu/%d - timeline-release: %d -> fence: %d\n",
+                    ALOGI("fence: %llu/%zu - timeline-release: %d -> fence: %d\n",
                        ctx->stats[HWC_PRIMARY_IX].set_call, i,
                        ctx->gpx_cli[i].rel_tl, list->hwLayers[i].releaseFenceFd);
                  }
@@ -3442,7 +3444,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
               list->retireFenceFd = hwc_ret_tl_fence(ctx, HWC_PRIMARY_IX);
               this_frame->content.retireFenceFd = list->retireFenceFd;
               if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-                 ALOGI("fence: %llu/%d - retire-fence: %d\n",
+                 ALOGI("fence: %llu/%zu - retire-fence: %d\n",
                     ctx->stats[HWC_PRIMARY_IX].set_call, i, list->retireFenceFd);
               }
            } else {
@@ -3450,7 +3452,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
               this_frame->content.retireFenceFd = INVALID_FENCE;
            }
            if (ctx->dump_fence & HWC_DUMP_FENCE_SUMMARY) {
-              ALOGI("comp: %llu - installed %d fences (retire: %d) for %d layers\n",
+              ALOGI("comp: %llu - installed %d fences (retire: %d) for %zu layers\n",
                     ctx->stats[HWC_PRIMARY_IX].set_call,
                     installed, list->retireFenceFd, list->numHwLayers);
            }
@@ -3491,7 +3493,7 @@ out_close_fence:
        if (list->hwLayers[i].acquireFenceFd >= 0) {
           close(list->hwLayers[i].acquireFenceFd);
           if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-             ALOGI("fence: %llu/%d - acquire: %d -> err+close\n",
+             ALOGI("fence: %llu/%zu - acquire: %d -> err+close\n",
                    ctx->stats[HWC_PRIMARY_IX].set_call, i,
                    list->hwLayers[i].acquireFenceFd);
           }
@@ -3574,7 +3576,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       video.sideband_client = item->sb_cli[i];
       chk = hwc_validate_layer_handle(&video);
       if (chk != 0) {
-         ALOGW("comp: %llu/%llu - layer: %d (%d) - invalid for comp (%d)\n",
+         ALOGW("comp: %llu/%llu - layer: %zu (%d) - invalid for comp (%d)\n",
                ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed,
                i, chk, list->hwLayers[i].acquireFenceFd);
          continue;
@@ -3594,7 +3596,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       if (list->hwLayers[i].compositionType != HWC_SIDEBAND) {
          gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
          if (gr_buffer == NULL) {
-            ALOGV("comp: %llu/%llu - layer: %d - invalid buffer\n",
+            ALOGV("comp: %llu/%llu - layer: %zu - invalid buffer\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
             continue;
          }
@@ -3602,7 +3604,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
          pSharedData = (PSHARED_DATA) pAddr;
          if (lrc || pSharedData == NULL) {
-            ALOGE("comp: %llu/%llu - layer: %d - invalid shared data\n",
+            ALOGE("comp: %llu/%llu - layer: %zu - invalid shared data\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
             continue;
          }
@@ -3610,7 +3612,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             phys_block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.block;
             lrcp = hwc_mem_lock(ctx, phys_block_handle, &pAddr, true);
             if (lrcp || pAddr == NULL) {
-               ALOGE("comp: %llu/%llu - layer: %d - invalid physical data\n",
+               ALOGE("comp: %llu/%llu - layer: %zu - invalid physical data\n",
                      ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
                continue;
             }
@@ -3665,7 +3667,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          }
          if (list->hwLayers[i].acquireFenceFd >= 0) {
             if (!ctx->fence_support) {
-               ALOGI("fence: %llu/%d - fd:%d -> wait+close in sync mode!?! check platform setup.\n",
+               ALOGI("fence: %llu/%zu - fd:%d -> wait+close in sync mode!?! check platform setup.\n",
                      ctx->stats[HWC_PRIMARY_IX].set_call, i,
                      list->hwLayers[i].acquireFenceFd);
             }
@@ -3677,7 +3679,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                item->fence_wait += (hwc_tick() - tick_now);
             }
             if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-               ALOGI("fence: %llu/%d - acquire-fence: %d -> wait+close\n",
+               ALOGI("fence: %llu/%zu - acquire-fence: %d -> wait+close\n",
                      ctx->stats[HWC_PRIMARY_IX].set_call, i,
                      list->hwLayers[i].acquireFenceFd);
             }
@@ -3770,7 +3772,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    }
 
    if (ctx->display_dump_layer & HWC_DUMP_LEVEL_FINAL) {
-      ALOGI("comp: %llu (%llu,%llu): ls:%s::ov:%d::fb:%d::vs:%d (%llu) - final:%d (%c%c%c) - ops(f:%d:b:%d:v:%d)\n",
+      ALOGI("comp: %llu (%llu,%llu): ls:%s::ov:%d::fb:%d::vs:%d (%" PRIu64 ") - final:%d (%c%c%c) - ops(f:%d:b:%d:v:%d)\n",
             ctx->stats[HWC_PRIMARY_IX].composed, ctx->stats[HWC_PRIMARY_IX].prepare_call,
             ctx->stats[HWC_PRIMARY_IX].set_call, ctx->last_seed == HWC_OPAQUE ? "opq" : "trs",
             *overlay_seen, *fb_target_seen, video_seen,
@@ -3786,7 +3788,7 @@ out:
       if (list->hwLayers[i].acquireFenceFd != INVALID_FENCE) {
          close(list->hwLayers[i].acquireFenceFd);
          if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-            ALOGI("fence: %llu/%d - acquire-fence: %d -> comp+err+close\n",
+            ALOGI("fence: %llu/%zu - acquire-fence: %d -> comp+err+close\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, i,
                   list->hwLayers[i].acquireFenceFd);
          }
@@ -3795,7 +3797,7 @@ out:
          hwc_rel_tl_inc(ctx, HWC_PRIMARY_IX, i);
          list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
          if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-            ALOGI("fence: %llu/%d - timeline-release: %d -> inc\n",
+            ALOGI("fence: %llu/%zu - timeline-release: %d -> inc\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, i, ctx->gpx_cli[i].rel_tl);
          }
       }
@@ -3884,7 +3886,7 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                 this_frame->content.hwLayers[i].releaseFenceFd = hwc_rel_tl_fence(ctx, HWC_VIRTUAL_IX, i);
                 list->hwLayers[i].releaseFenceFd = this_frame->content.hwLayers[i].releaseFenceFd;
                 if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-                   ALOGI("vfence: %llu/%d - timeline-release: %d -> fence: %d\n",
+                   ALOGI("vfence: %llu/%zu - timeline-release: %d -> fence: %d\n",
                       ctx->stats[HWC_VIRTUAL_IX].set_call, i,
                       ctx->vd_cli[i].rel_tl, list->hwLayers[i].releaseFenceFd);
                 }
@@ -3895,7 +3897,7 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
              list->retireFenceFd = hwc_ret_tl_fence(ctx, HWC_VIRTUAL_IX);
              this_frame->content.retireFenceFd = list->retireFenceFd;
              if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-                ALOGI("vfence: %llu/%d - retire: %d\n",
+                ALOGI("vfence: %llu/%zu - retire: %d\n",
                    ctx->stats[HWC_VIRTUAL_IX].set_call, i, list->retireFenceFd);
              }
           } else {
@@ -3931,7 +3933,7 @@ out_close_fence:
           close(list->hwLayers[i].acquireFenceFd);
           list->hwLayers[i].acquireFenceFd = INVALID_FENCE;
           if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-             ALOGI("vfence: %llu/%d - acquire: %d -> err+close\n",
+             ALOGI("vfence: %llu/%zu - acquire: %d -> err+close\n",
                    ctx->stats[HWC_VIRTUAL_IX].set_call, i,
                    list->hwLayers[i].acquireFenceFd);
           }
@@ -3998,7 +4000,7 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
          PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
          if (list->hwLayers[i].acquireFenceFd >= 0) {
             if (!ctx->fence_support) {
-               ALOGI("vfence: %llu/%d - fd:%d -> wait+close in sync mode!?! check platform setup.\n",
+               ALOGI("vfence: %llu/%zu - fd:%d -> wait+close in sync mode!?! check platform setup.\n",
                      ctx->stats[HWC_VIRTUAL_IX].set_call, i,
                      list->hwLayers[i].acquireFenceFd);
             }
@@ -4006,7 +4008,7 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
             close(list->hwLayers[i].acquireFenceFd);
             list->hwLayers[i].acquireFenceFd = INVALID_FENCE;
             if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-               ALOGI("vfence: %llu/%d - acquire: %d -> wait+close\n",
+               ALOGI("vfence: %llu/%zu - acquire: %d -> wait+close\n",
                      ctx->stats[HWC_VIRTUAL_IX].set_call, i,
                      list->hwLayers[i].acquireFenceFd);
             }
@@ -4059,7 +4061,7 @@ out:
       if (list->hwLayers[i].acquireFenceFd != INVALID_FENCE) {
          close(list->hwLayers[i].acquireFenceFd);
          if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-            ALOGI("vfence: %llu/%d - acquire-fence: %d -> comp+err+close\n",
+            ALOGI("vfence: %llu/%zu - acquire-fence: %d -> comp+err+close\n",
                   ctx->stats[HWC_VIRTUAL_IX].set_call, i,
                   list->hwLayers[i].acquireFenceFd);
          }
@@ -4068,7 +4070,7 @@ out:
          hwc_rel_tl_inc(ctx, HWC_VIRTUAL_IX, i);
          list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
          if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-            ALOGI("vfence: %llu/%d - timeline-release: %d -> inc\n",
+            ALOGI("vfence: %llu/%zu - timeline-release: %d -> inc\n",
                   ctx->stats[HWC_VIRTUAL_IX].set_call, i, ctx->vd_cli[i].rel_tl);
          }
       }
@@ -4545,7 +4547,7 @@ static void hwc_collect_on_screen(struct hwc_context_t *ctx)
    int64_t tick_off_screen = hwc_tick();
 
    if (ctx->on_display.last_push == 0) {
-      ALOGV("%s: errand recycle (@ %llu)?\n",
+      ALOGV("%s: errand recycle (@ %" PRId64 ")?\n",
             __FUNCTION__, tick_off_screen);
       return;
    }

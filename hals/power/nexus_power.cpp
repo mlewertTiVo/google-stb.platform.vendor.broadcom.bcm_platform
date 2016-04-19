@@ -466,7 +466,7 @@ status_t NexusPower::NexusGpio::parseGpioParameters(String8& inString, size_t *p
     ssize_t relCommaPos;
 
     if (length < 5) {   // "[a,b]" is minimum length
-        ALOGW("%s: GPIO parameter section length=%d is invalid!", __FUNCTION__, length);
+        ALOGW("%s: GPIO parameter section length=%zu is invalid!", __FUNCTION__, length);
         return BAD_VALUE;
     }
 
@@ -501,7 +501,7 @@ status_t NexusPower::NexusGpio::parseGpioParameters(String8& inString, size_t *p
     }
 
     if (numPars <= 1) {
-        ALOGW("%s: Invalid number of parameters [%d] provided in the GPIO parameter section!", __FUNCTION__, numPars);
+        ALOGW("%s: Invalid number of parameters [%zu] provided in the GPIO parameter section!", __FUNCTION__, numPars);
         return BAD_VALUE;
     }
     *pNumParameters = numPars;
@@ -635,7 +635,7 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::initialise(int powerFd, String8
         ALOGE("%s: Could not parse %s parameters!!!", __FUNCTION__, gpioName.string());
     }
     else if (numGpioParameters < NexusGpio::MIN_PARAMETERS || numGpioParameters > NexusGpio::MAX_PARAMETERS) {
-        ALOGE("%s: Invalid number of parameters %u for %s!!!", __FUNCTION__, numGpioParameters, gpioName.string());
+        ALOGE("%s: Invalid number of parameters %zu for %s!!!", __FUNCTION__, numGpioParameters, gpioName.string());
         status = BAD_VALUE;
     }
     else {
@@ -721,7 +721,7 @@ status_t NexusPower::initialiseGpios(int powerFd)
             unsigned cnt = 0;
             size_t numEntries = config->getProperties().size();
 
-            ALOGV("%s: There %s %d %s in configuration file \"%s\".", __FUNCTION__, (numEntries == 1) ? "is" : "are",
+            ALOGV("%s: There %s %zu %s in configuration file \"%s\".", __FUNCTION__, (numEntries == 1) ? "is" : "are",
                    numEntries, (numEntries == 1) ? "entry" : "entries", path.string());
 
             /* Setup standard GPIO custom configuration */

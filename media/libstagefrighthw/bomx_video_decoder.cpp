@@ -2112,7 +2112,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             BOMX_VIDEO_STATS_PRINT_BASIC;
             BOMX_VIDEO_STATS_PRINT_DETAILED;
             BOMX_VIDEO_STATS_RESET;
-            ALOGD("df:%d, mcdf:%d", m_droppedFrames, m_maxConsecDroppedFrames);
+            ALOGD("df:%zu, mcdf:%zu", m_droppedFrames, m_maxConsecDroppedFrames);
             m_droppedFrames = m_consecDroppedFrames = m_maxConsecDroppedFrames = 0;
         }
     }
@@ -5087,7 +5087,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::ConfigBufferAppend(const void *pBuffer, size_t 
     ALOG_ASSERT(NULL != pBuffer);
     if ( m_configBufferSize + length > BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE )
     {
-        ALOGE("Config buffer not big enough! Size: %d", m_configBufferSize + length);
+        ALOGE("Config buffer not big enough! Size: %zu", m_configBufferSize + length);
         return BOMX_ERR_TRACE(OMX_ErrorOverflow);
     }
     BKNI_Memcpy(((uint8_t *)m_pConfigBuffer) + m_configBufferSize, pBuffer, length);

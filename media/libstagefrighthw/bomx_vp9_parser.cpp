@@ -33,7 +33,7 @@ void BOMX_Vp9_ParseSuperframe(const uint8_t *data, size_t data_sz, uint32_t size
         size_t total_sz = 0;
 
         if (data_sz >= index_sz && data[data_sz - index_sz] == marker) {
-            ALOGV("Superframe - %u bytes of index for %u frames (%u total)", index_sz, frames, data_sz);
+            ALOGV("Superframe - %zu bytes of index for %u frames (%zu total)", index_sz, frames, data_sz);
             // found a valid superframe index
             uint32_t i, j;
             const uint8_t *x = &data[data_sz - index_sz + 1];
@@ -49,7 +49,7 @@ void BOMX_Vp9_ParseSuperframe(const uint8_t *data, size_t data_sz, uint32_t size
             }
 
             if ( total_sz > (data_sz-index_sz) ) {
-                ALOGW("VP9 superframe overflow - total of subframes is larger than frame size (%u/%u)", (unsigned)total_sz, (unsigned)data_sz-index_sz);
+                ALOGW("VP9 superframe overflow - total of subframes is larger than frame size (%zu/%zu)", total_sz, data_sz-index_sz);
             } else {
                 *count = frames;
             }

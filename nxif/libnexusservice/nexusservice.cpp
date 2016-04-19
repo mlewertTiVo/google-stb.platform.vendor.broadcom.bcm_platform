@@ -301,7 +301,7 @@ NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid)
         }
         objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
         if (objects == NULL) {
-            ALOGE("%s: FATAL: Could not allocate memory to hold %d Nexus platform objects!!!", __FUNCTION__, num);
+            ALOGE("%s: FATAL: Could not allocate memory to hold %zu Nexus platform objects!!!", __FUNCTION__, num);
             BDBG_ASSERT(false);
         }
         rc = NEXUS_Platform_GetObjects(&interfaceName, objects, num, &num);

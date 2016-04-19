@@ -2878,7 +2878,7 @@ void BOMX_AudioDecoder::PlaypumpEvent()
         }
 
         numComplete = m_submittedDescriptors - playpumpStatus.descFifoDepth;
-        ALOGV("submitted %u fifoDepth %u -> %u completed", m_submittedDescriptors, playpumpStatus.descFifoDepth, numComplete);
+        ALOGV("submitted %u fifoDepth %zu -> %u completed", m_submittedDescriptors, playpumpStatus.descFifoDepth, numComplete);
 
         for (pBuffer = m_pAudioPorts[0]->GetBuffer();
              (pBuffer != NULL) && (pBuffer != pFifoHead);
