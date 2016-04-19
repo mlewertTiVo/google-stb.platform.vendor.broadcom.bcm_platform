@@ -87,6 +87,7 @@ int main(void)
     NEXUS_PlatformStatus platStatus;
     uint32_t outValue233 = 0;
     uint32_t outValue234 = 0;
+    uint8_t outValueSecureBootEnable = 0;
     unsigned i = 0;
     NxClient_JoinSettings joinSettings;
 
@@ -136,8 +137,17 @@ int main(void)
         outValue234 = (outValue234 << 8) | (readMspIO.mspDataBuf[i] & readMspIO.lockMspDataBuf[i] );
     }
 
-     DEBUG_PRINT_ARRAY( "MSP Data 234", readMspIO.mspDataSize, readMspIO.mspDataBuf );
-     DEBUG_PRINT_ARRAY( "MSP Mask 234", readMspIO.mspDataSize, readMspIO.lockMspDataBuf );
+    DEBUG_PRINT_ARRAY( "MSP Data 234", readMspIO.mspDataSize, readMspIO.mspDataBuf );
+    DEBUG_PRINT_ARRAY( "MSP Mask 234", readMspIO.mspDataSize, readMspIO.lockMspDataBuf );
+
+    readMspParms.readMspEnum = NEXUS_OtpCmdMsp_eSecureBootEnable;
+    rc = NEXUS_Security_ReadMSP( &readMspParms, &readMspIO );
+    if( rc != NEXUS_SUCCESS )
+    {
+        printf("NEXUS_Security_ReadMSP() errCode: %x\n", rc );
+        goto BHSM_P_DONE_LABEL;
+    }
+    outValueSecureBootEnable = readMspIO.mspDataBuf[3];
 
     NEXUS_GetSecurityCapabilities( &securityCapabilities );
     NEXUS_Platform_GetStatus( &platStatus );
@@ -150,6 +160,7 @@ int main(void)
                                        , ( securityCapabilities.version.firmware &  0x0000FFFF) );
     printf("OTP signature 233..[0x%X]\n", outValue233 );
     printf("OTP signature 234..[0x%X]\n", outValue234 );
+    printf("OTP secure boot....[0x%X]\n", outValueSecureBootEnable );
     DEBUG_PRINT_ARRAY( "The OTP ID for A", otpRead.size, otpRead.otpId );
 
 BHSM_P_DONE_LABEL:
