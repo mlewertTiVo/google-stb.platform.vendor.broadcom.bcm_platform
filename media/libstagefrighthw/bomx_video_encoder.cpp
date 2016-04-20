@@ -325,6 +325,9 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_maxFrameHeight(B_DEFAULT_MAX_FRAME_HEIGHT),
     m_metadataEnabled(false),
     m_nativeGraphicsEnabled(false),
+    m_duplicateFrameCount(0),
+    m_lastOutputFramePTS(0),
+    m_lastOutputFrameTicks(0),
     m_inputMode(BOMX_VideoEncoderInputBufferType_eStandard),
     m_pITBDescDumpFile(NULL),
     m_memTracker(-1)
@@ -1293,6 +1296,9 @@ NEXUS_Error BOMX_VideoEncoder::SetOutputPortState(OMX_STATETYPE newState)
     if ( newState == OMX_StateLoaded || newState == OMX_StateIdle )
     {
         // Return all pending buffers to the client
+        m_lastOutputFramePTS = 0;
+        m_lastOutputFrameTicks = 0;
+        m_duplicateFrameCount  = 0;
         ReturnPortBuffers(m_pVideoPorts[1]);
         ResetEncodedFrameList();
     }
@@ -2761,9 +2767,30 @@ void BOMX_VideoEncoder::OutputBufferProcess()
         {
             if ( !m_pBufferTracker->Remove(pNxVidEncFr->usTimeStampOriginal, pHeader) )
             {
-                ALOGW("Unable to find tracker entry for pts %llu", pNxVidEncFr->usTimeStampOriginal);
-                BOMX_PtsToTick(pNxVidEncFr->usTimeStampOriginal, &pHeader->nTimeStamp);
+                /* Detect duplicate frames. If the frame has the same PTS as the previous frame this will
+                 * cause problems in android. Adjust the timestamp to be between the previous timestamp and
+                 * the one after this frame if not duplicated.
+                 */
+                if(pNxVidEncFr->usTimeStampOriginal == m_lastOutputFramePTS)
+                {
+                    ALOGV("Duplicate frame, PTS: %llu", pNxVidEncFr->usTimeStampOriginal);
+                    const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[0]->GetDefinition();
+                    unsigned int framerate = pPortDef->format.video.xFramerate / Q16_SCALE_FACTOR;
+                    unsigned int ptsTickOffset = 1000000/framerate;
+                    m_duplicateFrameCount++;
+                    pHeader->nTimeStamp = m_lastOutputFrameTicks + ptsTickOffset/(m_duplicateFrameCount*2);
+                    ALOGV("Duplicate Frame's new PTS (Ticks): %llu", pHeader->nTimeStamp);
+                }
+                else
+                {
+                    ALOGW("Unable to find tracker entry for pts %llu", pNxVidEncFr->usTimeStampOriginal);
+                    BOMX_PtsToTick(pNxVidEncFr->usTimeStampOriginal, &pHeader->nTimeStamp);
+                }
             }
+            else {
+               m_duplicateFrameCount = 0;
+            }
+
             if ( (pHeader->nFlags & OMX_BUFFERFLAG_EOS) && !m_pBufferTracker->Last(pHeader->nTimeStamp) )
             {
                 ALOGE("Received EOS, but timeStamp mis-matched");
@@ -2775,6 +2802,10 @@ void BOMX_VideoEncoder::OutputBufferProcess()
             ALOGV("EOS: EOS is delivered");
             m_bEosDelieverd = true;
         }
+
+        /* Record this frame's PTS info for duplicate frame detection */
+        m_lastOutputFramePTS = pNxVidEncFr->usTimeStampOriginal;
+        m_lastOutputFrameTicks = pHeader->nTimeStamp;
 
         pHeader->nFlags = pNxVidEncFr->clientFlags;
         pHeader->nFilledLen = pNxVidEncFr->combinedSz;
