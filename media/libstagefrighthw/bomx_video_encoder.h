@@ -275,6 +275,9 @@ protected:
     unsigned m_maxFrameHeight;
     bool m_metadataEnabled;
     bool m_nativeGraphicsEnabled;
+    int m_duplicateFrameCount;
+    unsigned long long m_lastOutputFramePTS;
+    unsigned long long m_lastOutputFrameTicks;
 
     BOMX_VideoEncoderInputBufferType m_inputMode;
 
