@@ -7,7 +7,9 @@
 #include <sys/mman.h>
 
 #include "nxclient.h"
+#if SECURITY_SUPPORT
 #include "sage_srai.h"
+#endif
 
 #define ALIGN	4096
 #define MAX_N	(10*1024*1024)		// bytes
@@ -226,6 +228,7 @@ int main(int argc, char **argv)
       a_ = malloc((MAX_N+(ALIGN-1)) & ~(ALIGN-1));
       b_ = malloc((MAX_N+(ALIGN-1)) & ~(ALIGN-1));
    } else if (mode == 4) {
+#if SECURITY_SUPPORT
       NEXUS_ClientConfiguration clientConfig;
       NEXUS_Addr na;
       NEXUS_Platform_GetClientConfiguration(&clientConfig);
@@ -245,6 +248,9 @@ int main(int argc, char **argv)
          b_ = NULL;
          exit(1);
       }
+#else
+      exit(1);
+#endif
    }
 
    BDBG_ASSERT(!a_);
