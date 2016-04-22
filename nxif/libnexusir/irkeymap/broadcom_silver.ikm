@@ -33,8 +33,8 @@
 0xf20dff00 CHANNELDOWN
 0xf00fff00 INFO
 0xa35cff00 STOP
-0xe31cff00 PLAYPAUSE
-0xe21dff00 PLAYCD
+0xe31cff00 PAUSE
+0xe21dff00 PLAY
 0xa758ff00 PREVIOUSSONG
 0xe718ff00 NEXTSONG
 0xe619ff00 REWIND
@@ -48,4 +48,6 @@
 0xec13ff00 ENTER	# ENT button
 0xb847ff00 BACKSPACE	# Text button
 0xac53ff00 DOT
+0xbe41ff00 AUDIO    # Audio button
+0xbf40ff00 SUBTITLE # Subtitle (CC) button
 
