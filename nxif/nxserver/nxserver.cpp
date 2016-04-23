@@ -869,7 +869,7 @@ static nxserver_t init_nxserver(void)
     memset(value, 0, sizeof(value));
     if ( property_get(NX_HDMI_DRM_KEY, value, NX_PROP_DISABLED) ) {
         if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-            settings.hdmi.drm = true;
+            settings.hdmi.noDrm = false;
         }
     }
 
