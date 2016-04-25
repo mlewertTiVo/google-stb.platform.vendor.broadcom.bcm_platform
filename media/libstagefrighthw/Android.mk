@@ -119,7 +119,7 @@ LOCAL_C_INCLUDES := \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
-        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc/${HAL_GR_VERSION} \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 

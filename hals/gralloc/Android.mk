@@ -15,6 +15,12 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
+# gralloc version: 0.x (default) for pre-O android; 1.0 starting with O.
+# in O, both v-0.x and v-1.0 continue to be supported.
+ifeq ($(HAL_GR_VERSION),)
+HAL_GR_VERSION := v-0.x
+endif
+
 LOCAL_PRELINK_MODULE := false
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
@@ -34,6 +40,7 @@ endif
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/gpu/$(V3D_VARIANT)/driver/interface/khronos/include
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/arect/include
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/nativewindow/include
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc/${HAL_GR_VERSION}
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-gr\"
@@ -50,11 +57,12 @@ else
 LOCAL_CFLAGS += -DV3D_DLOPEN_PATH=\"/vendor/lib/egl/\"
 endif
 
-LOCAL_SRC_FILES := \
-        gralloc.cpp \
-        framebuffer.cpp \
-        mapper.cpp \
-        gralloc_destripe.cpp
+LOCAL_SRC_FILES := $(HAL_GR_VERSION)/gralloc.cpp
+ifeq ($(HAL_GR_VERSION),v-0.x)
+LOCAL_SRC_FILES += $(HAL_GR_VERSION)/framebuffer.cpp
+LOCAL_SRC_FILES += $(HAL_GR_VERSION)/mapper.cpp
+LOCAL_SRC_FILES += $(HAL_GR_VERSION)/gralloc_destripe.cpp
+endif
 
 LOCAL_MODULE := gralloc.$(TARGET_BOARD_PLATFORM)
 LOCAL_MODULE_TAGS := optional
