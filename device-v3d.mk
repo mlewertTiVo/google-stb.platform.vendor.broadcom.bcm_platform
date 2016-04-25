@@ -43,12 +43,12 @@ export V3D_ANDROID_DEFINES_1ST_ARCH V3D_ANDROID_LD_1ST_ARCH
 export V3D_ANDROID_DEFINES_2ND_ARCH V3D_ANDROID_LD_2ND_ARCH
 export V3D_DEBUG
 
-# backward compatibility - to removed later on.
-V3D_ANDROID_LD := ${V3D_ANDROID_LD_1ST_ARCH}
-export V3D_ANDROID_DEFINES V3D_ANDROID_LD
-
 # vc4 v3d.
 ifeq ($(V3D_PREFIX),v3d)
+
+# backward compatibility.
+V3D_ANDROID_LD := ${V3D_ANDROID_LD_1ST_ARCH}
+export V3D_ANDROID_DEFINES V3D_ANDROID_LD
 
 include ${ROCKFORD_TOP}/middleware/v3d/driver/Android.mk
 include ${ROCKFORD_TOP}/middleware/v3d/tools/spyhook/Android.mk
