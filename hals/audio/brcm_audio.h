@@ -51,7 +51,7 @@
 extern "C" {
 #endif
 /* LOG_NDEBUG = 0 allows debug logs */
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #ifdef LOG_TAG
 #undef LOG_TAG
 #endif
