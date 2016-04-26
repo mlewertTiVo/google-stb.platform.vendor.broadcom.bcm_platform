@@ -40,6 +40,7 @@
 #include "brcm_audio.h"
 #include "OMX_Types.h"
 #include "bomx_utils.h"
+#include <inttypes.h>
 
 #define NEXUS_OUT_DEFAULT_SAMPLE_RATE   44100
 #define NEXUS_OUT_DEFAULT_CHANNELS      AUDIO_CHANNEL_OUT_STEREO
@@ -78,8 +79,7 @@ const static uint32_t nexus_out_sample_rates[] = {
 static void nexus_tunnel_bout_data_callback(void *param1, int param2)
 {
     UNUSED(param1);
-
-    BKNI_SetEvent((BKNI_EventHandle)param2);
+    BKNI_SetEvent((BKNI_EventHandle)(intptr_t)param2);
 }
 
 /*
@@ -188,7 +188,7 @@ static int nexus_tunnel_bout_pause(struct brcm_stream_out *bout)
 {
     int ret = 0;
     if (bout->nexus.tunnel.stc_channel &&
-        (bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)DUMMY_HW_SYNC)) {
+        (bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC)) {
        NEXUS_SimpleStcChannel_Freeze(bout->nexus.tunnel.stc_channel, true);
     } else {
        ret = -ENOENT;
@@ -200,7 +200,7 @@ static int nexus_tunnel_bout_resume(struct brcm_stream_out *bout)
 {
     int ret = 0;
     if (bout->nexus.tunnel.stc_channel &&
-        (bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)DUMMY_HW_SYNC)) {
+        (bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC)) {
        NEXUS_SimpleStcChannel_Freeze(bout->nexus.tunnel.stc_channel, false);
     } else {
        ret = -ENOENT;
@@ -267,7 +267,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 timestamp |= B_MEDIA_LOAD_UINT32_BE(pts_buffer, 3*sizeof(uint32_t));
                 timestamp /= 1000; // Convert ns -> us
                 pts = BOMX_TickToPts((OMX_TICKS *)&timestamp);
-                ALOGV("%s: av-sync header, ts=%llu pts=%u, size=%u, payload=%u", __FUNCTION__, timestamp, pts, frameBytes, bytes);
+                ALOGV("%s: av-sync header, ts=%" PRIu64 " pts=%" PRIu32 ", size=%zu, payload=%zu", __FUNCTION__, timestamp, pts, frameBytes, bytes);
                 bytes -= HW_AV_SYNC_HDR_LEN;
                 buffer = (void *)((uint8_t *)buffer + HW_AV_SYNC_HDR_LEN);
             }
@@ -275,13 +275,13 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
             {
                 // frame header is later in the payload, write as many bytes as needed to get there
                 frameBytes = (uint8_t *)pts_buffer - (uint8_t *)buffer;
-                ALOGV("%s: later av-sync header, %u bytes to write", __FUNCTION__, (uint32_t)frameBytes);
+                ALOGV("%s: later av-sync header, %zu bytes to write", __FUNCTION__, frameBytes);
             }
         }
         else
         {
             frameBytes = bytes;
-            ALOGV("%s: no av-sync header, %u bytes to write", __FUNCTION__, (uint32_t)frameBytes);
+            ALOGV("%s: no av-sync header, %zu bytes to write", __FUNCTION__, frameBytes);
         }
 
         while ( frameBytes > 0 )
@@ -386,8 +386,8 @@ static bool nexus_tunnel_bout_standby_monitor(void *context)
 static void nexus_tunnel_bout_playpump_callback(void *context, int param)
 {
     struct brcm_stream_out *bout = (struct brcm_stream_out *)context;
-    ALOG_ASSERT(bout->nexus.event == (BKNI_EventHandle)param);
-    BKNI_SetEvent((BKNI_EventHandle)param);
+    ALOG_ASSERT(bout->nexus.event == (BKNI_EventHandle)(intptr_t)param);
+    BKNI_SetEvent((BKNI_EventHandle)(intptr_t)param);
 }
 
 static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
@@ -428,7 +428,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
                                    config->format,
                                    popcount(config->channel_mask));
 #endif
-    ALOGV("%s: sample_rate=%lu frameSize=%lu buffer_size=%ld",
+    ALOGV("%s: sample_rate=%" PRIu32 " frameSize=%" PRIu32 " buffer_size=%zu",
             __FUNCTION__, config->sample_rate, bout->frameSize, bout->buffer_size);
 
     /* Open Nexus simple playback */
@@ -493,7 +493,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     playpumpSettings.transportType = NEXUS_TransportType_eMpeg2Pes;
     playpumpSettings.dataCallback.callback = nexus_tunnel_bout_playpump_callback;
     playpumpSettings.dataCallback.context = bout;
-    playpumpSettings.dataCallback.param = (int)event;
+    playpumpSettings.dataCallback.param = (int)(intptr_t)event;
     rc = NEXUS_Playpump_SetSettings(bout->nexus.tunnel.playpump, &playpumpSettings);
     if (rc) {
         ALOGE("%s: Error setting playpump settings, rc:%d", __FUNCTION__, rc);
@@ -511,7 +511,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
 
     if (bout->nexus.tunnel.stc_channel_owner == BRCM_OWNER_OUTPUT) {
         if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
-           bout->nexus.tunnel.stc_channel = (NEXUS_SimpleStcChannelHandle)DUMMY_HW_SYNC;
+           bout->nexus.tunnel.stc_channel = (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC;
         } else {
            NEXUS_SimpleStcChannelSettings stcChannelSettings;
            NEXUS_SimpleStcChannel_GetDefaultSettings(&stcChannelSettings);
@@ -549,7 +549,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     wave_fmt->nBlockAlign = (wave_fmt->nChannels * wave_fmt->wBitsPerSample) / 8;
     wave_fmt->cbSize = 0;
     wave_fmt->nAvgBytesPerSec = (wave_fmt->wBitsPerSample * wave_fmt->nSamplesPerSec * wave_fmt->nChannels) / 8;
-    ALOGV("%s: wave_fmt channel=%d sample_rate=%ld bit_per_sample=%d align=%d avg_bytes_rate=%ld",
+    ALOGV("%s: wave_fmt channel=%d sample_rate=%" PRId32 " bit_per_sample=%d align=%d avg_bytes_rate=%" PRId32 "",
             __FUNCTION__, wave_fmt->nChannels, wave_fmt->nSamplesPerSec, wave_fmt->wBitsPerSample,
             wave_fmt->nBlockAlign, wave_fmt->nAvgBytesPerSec);
 
@@ -560,7 +560,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
 
 err_pid:
     if (bout->nexus.tunnel.stc_channel_owner == BRCM_OWNER_OUTPUT) {
-       if (bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)DUMMY_HW_SYNC) {
+       if (bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC) {
           NEXUS_Platform_SetSharedHandle(bout->nexus.tunnel.stc_channel, false);
           NEXUS_SimpleStcChannel_Destroy(bout->nexus.tunnel.stc_channel);
        }
@@ -601,7 +601,7 @@ static int nexus_tunnel_bout_close(struct brcm_stream_out *bout)
 
     if ((bout->nexus.tunnel.stc_channel_owner == BRCM_OWNER_OUTPUT) &&
         (bout->nexus.tunnel.stc_channel != NULL)) {
-       if (bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)DUMMY_HW_SYNC) {
+       if (bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC) {
           NEXUS_SimpleStcChannel_Destroy(bout->nexus.tunnel.stc_channel);
        }
        bout->nexus.tunnel.stc_channel = NULL;
@@ -639,7 +639,7 @@ static char *nexus_tunnel_bout_get_parameters (struct brcm_stream_out *bout, con
     pthread_mutex_lock(&bout->lock);
     if (str_parms_has_key(query, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
         str_parms_add_int(result, AUDIO_PARAMETER_STREAM_HW_AV_SYNC,
-                          (int)bout->nexus.tunnel.stc_channel);
+                          (int)(intptr_t)bout->nexus.tunnel.stc_channel);
     }
     pthread_mutex_unlock(&bout->lock);
 

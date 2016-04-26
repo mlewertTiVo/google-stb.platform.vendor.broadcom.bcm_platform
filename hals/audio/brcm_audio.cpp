@@ -273,8 +273,8 @@ static int bout_set_parameters(struct audio_stream *stream,
         } else {
            ret = str_parms_get_int(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC, &hw_sync_id);
            if (!ret) {
-              if (bout->tunneled && bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)hw_sync_id) {
-                 ALOGW("%s: hw_sync_id 0x%X - stc_channel 0x%X - mismatch.",
+              if (bout->tunneled && bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)hw_sync_id) {
+                 ALOGW("%s: hw_sync_id 0x%X - stc_channel %p - mismatch.",
                        __FUNCTION__, hw_sync_id, bout->nexus.tunnel.stc_channel);
                  ret = -EINVAL;
               } else if (!bout->tunneled) {
@@ -905,8 +905,8 @@ static char *bdev_get_parameters(const struct audio_hw_device *adev,
     struct str_parms *result = str_parms_create();
     char* result_str;
 
-    ALOGV("%s: at %d, dev = 0x%X, kvpairs = %s\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev, kvpairs);
+    ALOGV("%s: at %d, dev = %p, kvpairs = %s\n",
+         __FUNCTION__, __LINE__, adev, kvpairs);
 
     if (str_parms_has_key(query, AUDIO_PARAMETER_HW_AV_SYNC)) {
        int hw_sync_id = AUDIO_HW_SYNC_INVALID;
@@ -918,7 +918,7 @@ static char *bdev_get_parameters(const struct audio_hw_device *adev,
           if (bout_tunnel != NULL) {
              // tunnel output exists, use the stc-channel from it.
              pthread_mutex_lock(&bout_tunnel->lock);
-             hw_sync_id = (int)bout_tunnel->nexus.tunnel.stc_channel;
+             hw_sync_id = (int)(intptr_t)bout_tunnel->nexus.tunnel.stc_channel;
              pthread_mutex_unlock(&bout_tunnel->lock);
              ALOGV("%s: at %d, tunnel exists, using stc-channel 0x%X\n", __FUNCTION__, __LINE__, hw_sync_id);
           } else {
@@ -932,11 +932,11 @@ static char *bdev_get_parameters(const struct audio_hw_device *adev,
              }
              bdev->hw_sync_id = NEXUS_SimpleStcChannel_Create(&stcChannelSettings);
              NEXUS_Platform_SetSharedHandle(bdev->hw_sync_id, true);
-             ALOGV("%s: at %d, allocate stc-channel 0x%X\n", __FUNCTION__, __LINE__, bdev->hw_sync_id);
+             ALOGV("%s: at %d, allocate stc-channel %p\n", __FUNCTION__, __LINE__, bdev->hw_sync_id);
              if (bdev->hw_sync_id == NULL) {
                 hw_sync_id = AUDIO_HW_SYNC_INVALID;
              } else {
-                hw_sync_id = (int)bdev->hw_sync_id;
+                hw_sync_id = (int)(intptr_t)bdev->hw_sync_id;
              }
           }
        }
@@ -1095,7 +1095,7 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
        struct brcm_stream_out *bout_close =
           (bdevices == BRCM_DEVICE_OUT_NEXUS_TUNNEL) ? bdev->bouts[BRCM_DEVICE_OUT_NEXUS_DIRECT] :
                                                        bdev->bouts[BRCM_DEVICE_OUT_NEXUS_TUNNEL];
-       ALOGI("%s: nexus resources swap 0x%X -> 0x%X (%d)", __FUNCTION__, bout_close, bout, bdevices);
+       ALOGI("%s: nexus resources swap %p -> %p (%d)", __FUNCTION__, bout_close, bout, bdevices);
        pthread_mutex_lock(&bout_close->lock);
        bout_close->ops.do_bout_close(bout_close);
        pthread_mutex_unlock(&bout_close->lock);

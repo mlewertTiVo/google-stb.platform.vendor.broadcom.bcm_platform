@@ -2147,8 +2147,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         }
         if ( pTunnel->bTunneled )
         {
-            m_tunnelStcChannel = (NEXUS_SimpleStcChannelHandle)pTunnel->nAudioHwSync;
-            ALOGV("OMX_IndexParamConfigureVideoTunnelMode - stc-channel 0x%X", m_tunnelStcChannel);
+            m_tunnelStcChannel = (NEXUS_SimpleStcChannelHandle)(intptr_t)pTunnel->nAudioHwSync;
+            ALOGV("OMX_IndexParamConfigureVideoTunnelMode - stc-channel %p", m_tunnelStcChannel);
         }
 
         return OMX_ErrorNone;
@@ -3338,7 +3338,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
         // come first.  It's always safe to do it here.
         if ( m_tunnelMode )
         {
-            ALOGV("Selecting no output mode for output buffer %#x", pBuffer);
+            ALOGV("Selecting no output mode for output buffer %p", (void*)pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eNone;
         }
         else if ( m_metadataEnabled )
