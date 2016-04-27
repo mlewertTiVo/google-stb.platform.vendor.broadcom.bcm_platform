@@ -96,6 +96,13 @@ const int mediaserver_prio_map[NICE_LEVELS] = {
    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*  10..19  */
 };
 
+const int hwcbinder_prio_map[NICE_LEVELS] = {
+   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* -20..-11 */
+   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* -10..-1  */
+   1, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*   0..9   */
+   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*  10..19  */
+};
+
 struct thread_entity {
    pid_t tid;
    int policy;
@@ -140,6 +147,13 @@ static struct process_entity key_process_list[] = {
       .thread_ignore_filter = NULL,
       .pid = 0,
       .map = mediaserver_prio_map,
+   },
+   {
+      .name = "hwcbinder",
+      .thread_keep_filter = NULL,
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .map = hwcbinder_prio_map,
    },
 };
 static const int num_key_processes = sizeof(key_process_list)/sizeof(key_process_list[0]);
