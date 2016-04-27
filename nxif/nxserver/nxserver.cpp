@@ -178,6 +178,7 @@ typedef struct {
     int fd;
     NEXUS_WatchdogCallbackHandle nx;
     bool nxAcked;
+    bool inStandby;
     BKNI_MutexHandle lock;
 } WDOG_T;
 
@@ -264,16 +265,35 @@ done:
 static void *standby_monitor_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
+    NxClient_StandbyStatus prevStatus;
     NEXUS_Error rc;
 
     nx_server->standbyId = NxClient_RegisterAcknowledgeStandby();
+    rc = NxClient_GetStandbyStatus(&prevStatus);
+    ALOG_ASSERT(!rc);
 
     do {
        if (BKNI_AcquireMutex(nx_server->standby_lock) == BERR_SUCCESS) {
           rc = NxClient_GetStandbyStatus(&nx_server->standbyState);
-          if (rc == NEXUS_SUCCESS && nx_server->standbyState.transition == NxClient_StandbyTransition_eAckNeeded) {
-             ALOGD("nxserver: Acknowledge state %d\n", nx_server->standbyState.settings.mode);
-             NxClient_AcknowledgeStandby(nx_server->standbyId);
+          if (rc == NEXUS_SUCCESS) {
+             if (nx_server->standbyState.transition == NxClient_StandbyTransition_eAckNeeded) {
+                ALOGD("nxserver: Acknowledge state %d\n", nx_server->standbyState.settings.mode);
+                NxClient_AcknowledgeStandby(nx_server->standbyId);
+                // Stop the Watchdog timer if we are entering standby...
+                NEXUS_Watchdog_StopTimer();
+                nx_server->wdog.inStandby = true;
+             }
+             // Restart the Watchdog timer if we are resuming from standby...
+             else if (nx_server->standbyState.settings.mode == NEXUS_PlatformStandbyMode_eOn &&
+                      prevStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn) {
+                if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
+                   nx_server->wdog.nxAcked = true;
+                   nx_server->wdog.inStandby = false;
+                   NEXUS_Watchdog_StartTimer();
+                   BKNI_ReleaseMutex(nx_server->wdog.lock);
+                }
+            }
+            prevStatus = nx_server->standbyState;
           }
           BKNI_ReleaseMutex(nx_server->standby_lock);
        }
@@ -384,7 +404,7 @@ skip_lmk:
 
         if (g_app.wdog.fd >= 0) {
            if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
-              if (nx_server->wdog.nxAcked) {
+              if (nx_server->wdog.nxAcked || nx_server->wdog.inStandby) {
                  watchdogWrite(WATCHDOG_KICK);
                  nx_server->wdog.nxAcked = false;
               }
@@ -1066,6 +1086,7 @@ int main(void)
           wdogSettings.midpointCallback.callback = nx_wdog_midpoint;
           wdogSettings.midpointCallback.context = (void *)&g_app;
           g_app.wdog.nx = NEXUS_WatchdogCallback_Create(&wdogSettings);
+          g_app.wdog.inStandby = false;
           NEXUS_Watchdog_SetTimeout((RUNNER_SEC_THRESHOLD-1)*2);
           rc = NEXUS_Watchdog_StartTimer();
           if (rc != NEXUS_SUCCESS) {
