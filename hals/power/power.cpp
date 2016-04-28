@@ -21,8 +21,13 @@
 #include <poll.h>
 #include <string.h>
 #include <sys/eventfd.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+
+#include <linux/ethtool.h>
+#include <linux/if.h>
+#include <linux/socket.h>
 
 #include <cutils/properties.h>
 #include <utils/Timers.h>
@@ -40,6 +45,11 @@ static bool wakeLockAcquired = false;
 // Maximum length of character buffer
 static const int BUF_SIZE = 64;
 
+static const char *powerNetInterfaces[] = {
+    "gphy",
+    "eth0"
+};
+
 // Property definitions (max length 32)...
 static const char * PROPERTY_SYS_POWER_DOZE_TIMEOUT       = "persist.sys.power.doze.timeout";
 static const char * PROPERTY_PM_DOZESTATE                 = "ro.pm.dozestate";
@@ -52,7 +62,8 @@ static const char * PROPERTY_PM_TP2_EN                    = "ro.pm.tp2_en";
 static const char * PROPERTY_PM_TP3_EN                    = "ro.pm.tp3_en";
 static const char * PROPERTY_PM_DDR_PM_EN                 = "ro.pm.ddr_pm_en";
 static const char * PROPERTY_PM_CPU_FREQ_SCALE_EN         = "ro.pm.cpufreq_scale_en";
-static const char * PROPERTY_PM_WOL_EN                    = "ro.pm.wol_en";
+static const char * PROPERTY_PM_WOL_EN                    = "ro.pm.wol.en";
+static const char * PROPERTY_PM_WOL_OPTS                  = "ro.pm.wol.opts";
 
 // Property defaults
 static const char * DEFAULT_PROPERTY_PM_DOZESTATE         = "S0.5";
@@ -66,10 +77,17 @@ static const int8_t DEFAULT_PROPERTY_PM_TP3_EN            = 0;     // Disable CP
 static const int8_t DEFAULT_PROPERTY_PM_DDR_PM_EN         = 1;     // Enabled DDR power management during standby
 static const int8_t DEFAULT_PROPERTY_PM_CPU_FREQ_SCALE_EN = 1;     // Enable CPU frequency scaling during standby
 static const int8_t DEFAULT_PROPERTY_PM_WOL_EN            = 0;     // Disable Android wake up by the WoLAN event
+static const char * DEFAULT_PROPERTY_PM_WOL_OPTS          = "s";   // Enable WoL for MAGIC SECURE packet
+
+// SecureOn(TM) password file path.
+static const char * SOPASS_KEY_FILE_PATH                  = "/data/misc/nexus/sopass.key";
 
 // Sysfs paths
 static const char * SYS_MAP_MEM_TO_S2                     = "/sys/devices/platform/droid_pm/map_mem_to_s2";
 static const char * SYS_FULL_WOL_WAKEUP                   = "/sys/devices/platform/droid_pm/full_wol_wakeup";
+
+// This is the default WoL monitor timeout in seconds.
+static const int DEFAULT_WOL_MONITOR_TIMEOUT = 4;
 
 // This is the default doze timeout in seconds.  The doze time specifies how long
 // the Power HAL must wait in the "doze" state prior to entering the off state.
@@ -241,7 +259,7 @@ static int power_get_property_doze_timeout()
         char *endptr;
         dozeTimeout = strtol(value, &endptr, 10);
         if (*endptr) {
-            ALOGE("%s: invalid value \"%s\" for property \"persist.sys.power.doze.timeout\"!!!", __FUNCTION__, value);
+            ALOGE("%s: invalid value \"%s\" for property \"%s\"!!!", __FUNCTION__, value, PROPERTY_SYS_POWER_DOZE_TIMEOUT);
         }
     }
     return dozeTimeout;
@@ -250,6 +268,18 @@ static int power_get_property_doze_timeout()
 static bool power_get_property_wol_en()
 {
     return property_get_bool(PROPERTY_PM_WOL_EN, DEFAULT_PROPERTY_PM_WOL_EN);
+}
+
+static int power_get_property_wol_opts(char *opts)
+{
+    int len;
+    char value[PROPERTY_VALUE_MAX];
+
+    len = property_get(PROPERTY_PM_WOL_OPTS, value, DEFAULT_PROPERTY_PM_WOL_OPTS);
+    if (len) {
+        strncpy(opts, value, PROPERTY_VALUE_MAX-1);
+    }
+    return len;
 }
 
 static b_powerState power_get_off_state()
@@ -312,6 +342,262 @@ static void releaseWakeLock()
     }
 }
 
+static status_t power_parse_wolopts(char *optstr, uint32_t *data)
+{
+    status_t status = NO_ERROR;
+
+    *data = 0;
+
+    while (*optstr) {
+        switch (*optstr) {
+            case 'p':
+                *data |= WAKE_PHY;
+                break;
+            case 'u':
+                *data |= WAKE_UCAST;
+                break;
+            case 'm':
+                *data |= WAKE_MCAST;
+                break;
+            case 'b':
+                *data |= WAKE_BCAST;
+                break;
+            case 'a':
+                *data |= WAKE_ARP;
+                break;
+            case 'g':
+                *data |= WAKE_MAGIC;
+                break;
+            case 's':
+                *data |= WAKE_MAGICSECURE;
+                break;
+            case 'd':
+                *data = 0;
+                break;
+            default:
+                status = BAD_VALUE;
+                break;
+        }
+        optstr++;
+    }
+    return status;
+}
+
+static status_t power_parse_sopass(String8& src, uint8_t *dest)
+{
+    status_t status = NO_ERROR;
+    int count;
+    unsigned int buf[ETH_ALEN];
+
+    count = sscanf(src.string(), "%2x:%2x:%2x:%2x:%2x:%2x",
+        &buf[0], &buf[1], &buf[2], &buf[3], &buf[4], &buf[5]);
+
+    if (count != ETH_ALEN) {
+        status = BAD_VALUE;
+    }
+    else {
+        for (int i = 0; i < count; i++) {
+            dest[i] = buf[i];
+        }
+    }
+    return status;
+}
+
+String8 power_get_sopass_file_path()
+{
+    String8 path;
+
+    path.setTo(SOPASS_KEY_FILE_PATH);
+
+    if (!access(path.string(), R_OK)) {
+        ALOGV("%s: Found \"%s\".", __FUNCTION__, path.string());
+        return path;
+    }
+    else {
+        ALOGV("%s: Could not find \"%s\"!", __FUNCTION__, path.string());
+        return String8();
+    }
+}
+
+static status_t power_set_enet_wol()
+{
+    status_t status = NO_ERROR;
+    struct ifreq ifr;
+    unsigned i;
+    int fd = -1;
+
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) {
+        ALOGW("%s: Could not open socket for WoL control!", __FUNCTION__);
+        status = PERMISSION_DENIED;
+    }
+    else {
+        // Search for a valid Ethernet interface...
+        for (i=0; i<sizeof(powerNetInterfaces)/sizeof(powerNetInterfaces[0]); i++) {
+            memset(&ifr, 0, sizeof(ifr));
+            strcpy(ifr.ifr_name, powerNetInterfaces[i]);
+
+            status = ioctl(fd, SIOCGIFFLAGS, &ifr);
+            if (status < 0) {
+                ALOGW("%s: Could not get socket flags for %s!", __FUNCTION__, ifr.ifr_name);
+            }
+            else if (!(ifr.ifr_flags & IFF_UP)) {
+                ALOGW("%s: Interface %s is DOWN!", __FUNCTION__, ifr.ifr_name);
+                status = -EAGAIN;
+            }
+            else {
+                break;
+            }
+        }
+    }
+
+    if (status == NO_ERROR) {
+        struct ethtool_wolinfo wolinfo;
+        char wol_opts[PROPERTY_VALUE_MAX] = "";
+
+        memset(&wolinfo, 0, sizeof(wolinfo));
+
+        if (power_get_property_wol_opts(wol_opts) > 0) {
+            uint32_t data;
+
+            status = power_parse_wolopts(wol_opts, &data);
+            if (status == NO_ERROR) {
+                wolinfo.wolopts = data;
+                ALOGV("%s: WoL options=0x%02x", __FUNCTION__, data);
+
+                // SecureOn(TM) password is stored in a password file
+                if (data & WAKE_MAGICSECURE) {
+                    uint8_t sopass[SOPASS_MAX];
+                    String8 path;
+                    String8 value;
+                    PropertyMap* config;
+
+                    path = power_get_sopass_file_path();
+                    if (path.isEmpty()) {
+                        ALOGE("%s: Could not find SecureOn(TM) password file \"%s\"!", __FUNCTION__, path.string());
+                        status = NAME_NOT_FOUND;
+                    }
+                    else {
+                        status = PropertyMap::load(path, &config);
+                        if (status == NO_ERROR) {
+                            size_t numEntries = config->getProperties().size();
+                            if (numEntries != 1) {
+                                ALOGE("%s: Invalid number of entries %d in SecureOn(TM) password file \"%s\"!", __FUNCTION__, numEntries, path.string());
+                                status = BAD_VALUE;
+                            }
+                            else if (config->tryGetProperty(String8("SOPASS"), value)) {
+                                status = power_parse_sopass(value, sopass);
+                                if (status == NO_ERROR) {
+                                    for (i = 0; i < SOPASS_MAX; i++) {
+                                        wolinfo.sopass[i] = sopass[i];
+                                    }
+                                    ALOGV("%s: WoL sopass=\"%s\"", __FUNCTION__, value.string());
+                                }
+                                else {
+                                    ALOGE("%s: Invalid \"sopass\" key in SecureOn(TM) password file \"%s\"!", __FUNCTION__, path.string());
+                                }
+                            }
+                            else {
+                                ALOGE("%s: Could not find \"sopass\" key in SecureOn(TM) password file \"%s\"!", __FUNCTION__, path.string());
+                                status = BAD_VALUE;
+                            }
+                        }
+                        else {
+                            ALOGE("%s: Could not load SecureOn(TM) password file \"%s\"!", __FUNCTION__, path.string());
+                        }
+                    }
+                }
+            }
+            else {
+                ALOGE("%s: Invalid WoL options \"%s\"!", __FUNCTION__, wol_opts);
+            }
+        }
+        else {
+            ALOGE("%s: No WoL arguments specified!", __FUNCTION__);
+            status = BAD_VALUE;
+        }
+
+        if (status == NO_ERROR) {
+            wolinfo.cmd = ETHTOOL_SWOL;
+            ifr.ifr_data = (void *)&wolinfo;
+            status = ioctl(fd, SIOCETHTOOL, &ifr);
+        }
+
+        if (status == NO_ERROR) {
+            ALOGD("%s: Successfully set WoL settings for %s", __FUNCTION__, ifr.ifr_name);
+        }
+        else {
+            ALOGW("%s: Could not set WoL settings for %s!", __FUNCTION__, ifr.ifr_name);
+        }
+    }
+    close(fd);
+    return status;
+}
+
+static void * power_wol_monitor_thread(void * arg __unused)
+{
+    status_t status;
+
+    while (true) {
+        status = power_set_enet_wol();
+        if (status != -EAGAIN) {
+            break;
+        }
+        else {
+            sleep(DEFAULT_WOL_MONITOR_TIMEOUT);
+        }
+    }
+    return NULL;
+}
+
+static status_t power_set_wol_mode()
+{
+    status_t status;
+    unsigned int full_wol_en;
+    pthread_t thread;
+    pthread_attr_t attr;
+
+    // Handle Android WoLAN enable/disable property
+    // If enabled, a WoLAN event will wake up Android
+    // Otherwise, Android PM won't be notified and
+    // device will return back to low power state
+    if (sysfs_get(SYS_FULL_WOL_WAKEUP, &full_wol_en) == NO_ERROR) {
+        bool full_wol_en_pr = power_get_property_wol_en();
+
+        if (full_wol_en_pr != full_wol_en) {
+            if (sysfs_set(SYS_FULL_WOL_WAKEUP, full_wol_en_pr) != NO_ERROR) {
+                ALOGE("%s: Could not set WOL entry at %s, leaving it %s!!!", __FUNCTION__,
+                      SYS_FULL_WOL_WAKEUP, full_wol_en?"enabled":"disabled");
+            }
+            else {
+                ALOGI("%s: successfully set WOL %s", __FUNCTION__, full_wol_en_pr?"enabled":"disabled");
+            }
+        }
+        else {
+            ALOGI("%s: WOL is %s", __FUNCTION__, full_wol_en_pr?"enabled":"disabled");
+        }
+    }
+    else {
+        ALOGE("%s: Could not read %s!!!", __FUNCTION__, SYS_FULL_WOL_WAKEUP);
+    }
+
+    // Create a monitor thread to poll when the network interface is UP...
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+    if (pthread_create(&thread, &attr, power_wol_monitor_thread, NULL) == 0) {
+        ALOGV("%s: Successfully created a WoL monitor thread!", __FUNCTION__);
+        status = NO_ERROR;
+    }
+    else {
+        ALOGE("%s: Could not create a WoL monitor thread!!!", __FUNCTION__);
+        status = UNKNOWN_ERROR;
+    }
+    pthread_attr_destroy(&attr);
+
+    return status;
+}
+
 static void power_init(struct power_module *module __unused)
 {
     char buf[BUF_SIZE];
@@ -358,37 +644,12 @@ static void power_init(struct power_module *module __unused)
                 if (timer_create(CLOCK_MONOTONIC, &se, &gDozeTimer) != 0) {
                     ALOGE("%s: Could not create doze timer!!!", __FUNCTION__);
                 }
+                // Setup WoLAN mode...
+                power_set_wol_mode();
             }
         }
     }
 
-    // Handle Android WoLAN enable/disable property
-    // If enabled, a WoLAN event will wake up Android
-    // Otherwise, Android PM won't be notified and
-    // device will return back to low power state
-    if (sysfs_get(SYS_FULL_WOL_WAKEUP, &wol_en) == NO_ERROR)
-    {
-        bool wol_en_pr = power_get_property_wol_en();
-        if (wol_en_pr != wol_en) {
-            if (sysfs_set(SYS_FULL_WOL_WAKEUP, wol_en_pr) != NO_ERROR) {
-                ALOGE("%s: Could not set WOL entry at %s, leaving it %s!!!",
-                    __FUNCTION__, SYS_FULL_WOL_WAKEUP,
-                    wol_en?"enabled":"disabled");
-            }
-            else {
-                    ALOGI("%s: successfully set WOL %s", __FUNCTION__,
-                    wol_en_pr?"enabled":"disabled");
-            }
-        }
-        else {
-            ALOGI("%s: WOL is %s", __FUNCTION__,
-                wol_en_pr?"enabled":"disabled");
-}
-    }
-    else
-    {
-        ALOGE("%s: Could not read %s!!!", __FUNCTION__, SYS_FULL_WOL_WAKEUP);
-    }
 }
 
 static status_t power_set_pmlibservice_state(b_powerState state)
