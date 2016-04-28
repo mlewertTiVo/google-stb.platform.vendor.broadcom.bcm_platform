@@ -531,6 +531,10 @@ static status_t power_prepare_suspend(b_powerState toState)
                                 ALOGV("%s: Woke up from timer event", __FUNCTION__);
                                 gPowerFlagSetPowerStateS05 = true;
                             }
+                            else {
+                                ALOGV("%s: Received an unknown wakeup event", __FUNCTION__);
+                                gPowerFlagSetPowerStateS05 = true;
+                            }
                         }
                     }
                 }
@@ -752,7 +756,8 @@ static void *power_event_monitor_thread(void *arg)
                     if (powerFunction() == NO_ERROR) {
                         ALOGD("%s: Successfully finished setting power state.", __FUNCTION__);
                         if (gPowerFlagSetPowerStateS05) {
-                            // If woke up via a timer or partial wake-up event then set nexus power state to S0.5
+                            // Set nexus power state to S0.5 if we woke up via a timer,
+                            // a partial or an unknown wakeup event...
                             power_set_state(ePowerState_S05, true);
                             gPowerFlagSetPowerStateS05 = false;
                         }
