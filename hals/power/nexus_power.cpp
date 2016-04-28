@@ -234,7 +234,9 @@ status_t NexusPower::setPowerState(b_powerState state, bool partial)
         }
         else {
             // Setup the GPIO output values depending on the power state...
-            ret = setGpios(state);
+            if (!partial) {
+                ret = setGpios(state);
+            }
 
             if (ret != NO_ERROR) {
                 ALOGE("%s: Could not set GPIO's for PowerState %d!!!", __FUNCTION__, state);
