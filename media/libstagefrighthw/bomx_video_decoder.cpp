@@ -1286,14 +1286,15 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     {
        int sidebandId;
        m_omxHwcBinder->getsideband(0, sidebandId);
-       m_pTunnelNativeHandle = native_handle_create(0, 1);
+       m_pTunnelNativeHandle = native_handle_create(0, 2);
        if (!m_pTunnelNativeHandle)
        {
           ALOGE("Unable to create native handle for tunnel mode");
           this->Invalidate(OMX_ErrorUndefined);
           return;
        }
-       m_pTunnelNativeHandle->data[0] = sidebandId;
+       m_pTunnelNativeHandle->data[0] = 2;
+       m_pTunnelNativeHandle->data[1] = sidebandId;
 
        m_outputMode = BOMX_VideoDecoderOutputBufferType_eNone;
     }
