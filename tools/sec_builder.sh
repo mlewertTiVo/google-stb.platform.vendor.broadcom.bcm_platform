@@ -280,17 +280,10 @@ function comparer {
 	while [ "$ix" -lt "$count" ]; do
 		OLDIFS=$IFS; IFS='=' var=(${seclib_mapping[$ix]}); IFS=$OLDIFS;
 		if [[ "${var[0]}" != "" &&  "${var[1]}" != "" ]]; then
-			built=$1/out/target/product/bcm_platform/sysroot/${var[0]}
-			temp=$1/${BCM_VENDOR_STB_ROOT}/bcm_platform/${var[1]}
+			built=$1/${var[0]}
+			temp=$1/${var[1]}
 			# strip trailing '\n'
 			original=$(echo $temp | sed -e 's/\n//g')
-			# optionally strip the MARKER (used for debug vs retail).
-			temp=$original
-			if [ "$debug" == "1" ]; then
-				original=$(echo $temp | sed -e 's/MARKER/retail/g')
-			else
-				original=$(echo $temp | sed -e 's/MARKER/debug/g')
-			fi
 
 			if [[ -f "$built" && -f "$original" ]]; then
 				if diff "$original" "$built" >/dev/null; then
