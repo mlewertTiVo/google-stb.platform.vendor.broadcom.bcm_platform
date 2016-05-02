@@ -45,11 +45,14 @@
 #include "nexusirinput.h"
 #include "nexusirmap.h"
 
+#include <cutils/properties.h>
 #include <cutils/log.h>
 
 #define MS_TO_NS(t) (nsecs_t(t) * 1000 * 1000)
 #define NS_TO_MS(t) (nsecs_t(t) / (1000 * 1000))
 #define DEFAULT_TIMEOUT MS_TO_NS(250)
+
+#define WAKEUP_KEY "ro.ir_remote.wakeup.button"
 
 NexusIrHandler::NexusIrHandler() :
         m_mode(NEXUS_IrInputMode_eRemoteA),
@@ -65,7 +68,7 @@ NexusIrHandler::~NexusIrHandler()
 }
 
 bool NexusIrHandler::start(NEXUS_IrInputMode mode,
-        android::sp<NexusIrMap> map, uint64_t mask)
+        android::sp<NexusIrMap> map, uint64_t mask, uint64_t mask_two)
 {
     static const struct input_id id =
     {
@@ -83,21 +86,33 @@ bool NexusIrHandler::start(NEXUS_IrInputMode mode,
 
     size_t size = map->size();
     uint32_t power_key = NEXUSIRINPUT_NO_KEY;
+    uint32_t power_key_two = NEXUSIRINPUT_NO_KEY;
+
+    unsigned wakeup_key = property_get_int32(WAKEUP_KEY, 0);
+
     for (size_t i = 0; success && (i < size); ++i)
     {
         if (map->linuxKeyAt(i) == KEY_POWER) {
             power_key = map->nexusIrCodeAt(i);
         }
+
+        // register a wake up button;
+        if (wakeup_key && map->linuxKeyAt(i) == wakeup_key) {
+            power_key_two = map->nexusIrCodeAt(i);
+            success = success && m_uinput.register_key(KEY_WAKEUP);
+        }
+
         success = success && m_uinput.register_key(map->linuxKeyAt(i));
         //Note: success == false breaks the loop
     }
     success = success
             && m_uinput.start("NexusIrHandler", id)
-            && m_ir.start(m_mode, *this, power_key, mask);
+            && m_ir.start(m_mode, *this, power_key, mask, power_key_two, mask_two);
 
     m_key_thread.setMap(map);
     m_key_thread.setInitialTimeout(m_ir.initialRepeatTimeout());
     m_key_thread.setTimeout(m_ir.repeatTimeout());
+    m_key_thread.setWakeupKey(wakeup_key);
     success = success
             && (m_key_thread.run() == android::NO_ERROR);
 
@@ -155,6 +170,11 @@ NexusIrHandler::KeyThread::~KeyThread()
 void NexusIrHandler::KeyThread::setMap(android::sp<NexusIrMap> map)
 {
     m_map = map;
+}
+
+void NexusIrHandler::KeyThread::setWakeupKey(unsigned key)
+{
+    m_wakeup_key = key;
 }
 
 void NexusIrHandler::KeyThread::setInitialTimeout(unsigned timeout)
@@ -244,6 +264,12 @@ void NexusIrHandler::KeyThread::signal(uint32_t nexus_key, bool repeat,
                 ALOGI("emit key release: %d", (int)m_old_key);
                 m_uinput.emit_key_state(m_old_key, false) && m_uinput.emit_syn();
             }
+
+            // emit WAKEUP input when the button is pressed
+            if (m_wakeup_key && m_key == m_wakeup_key) {
+                m_uinput.emit_key(KEY_WAKEUP);
+            }
+
             if (m_key != KEY_RESERVED) {
                 ALOGI("emit key press: %d", (int)m_key);
                 m_uinput.emit_key_state(m_key, true) && m_uinput.emit_syn();

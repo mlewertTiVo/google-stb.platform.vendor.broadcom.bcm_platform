@@ -604,7 +604,7 @@ bool NexusNxService::platformInitIR()
     ALOGI("Nexus IR remote mask: %s (0x%llx)", ir_mask_property,
             (unsigned long long)mask);
 
-    return irHandler.start(mode, map, mask);
+    return irHandler.start(mode, map, mask, mask);
 }
 
 void NexusNxService::platformUninitIR()

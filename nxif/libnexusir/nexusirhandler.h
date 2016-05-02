@@ -70,10 +70,12 @@ public:
      *
      * @param mode Nexus IR mode.
      * @param map Key map.
+     * @param mask A mask applied to all received remote key code
+     * @param mask_two A mask applied to wake up key event
      * @return true on success, flase othewise.
      */
     bool start(NEXUS_IrInputMode mode, android::sp<NexusIrMap> map,
-            uint64_t mask = 0);
+            uint64_t mask = 0, uint64_t mask_two = 0);
 
     /**
      * @brief Stop IR handler.
@@ -102,6 +104,7 @@ private:
         void setMap(android::sp<NexusIrMap> map);
         void setInitialTimeout(unsigned timeout); //in milliseconds
         void setTimeout(unsigned timeout); //in milliseconds
+        void setWakeupKey(unsigned key);
         void signal(uint32_t nexus_key, bool repeat, unsigned interval);
 
         /** As per android::Thread */
@@ -115,6 +118,7 @@ private:
         android::Condition m_cond;
         __u16 m_old_key; //previous key - needed to emit key release event
         __u16 m_key; //current key - needed to emit key press event
+        __u16 m_wakeup_key; //wakeup key
         bool m_repeat;
         unsigned m_interval;
         nsecs_t m_initial_timeout;

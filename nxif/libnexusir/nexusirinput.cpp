@@ -53,7 +53,9 @@ NexusIrInput::NexusIrInput() :
         m_handle(0),
         m_observer(0),
         m_power_key(NEXUSIRINPUT_NO_KEY),
-        m_mask(0)
+        m_power_key_two(NEXUSIRINPUT_NO_KEY),
+        m_mask(0),
+        m_mask_two(0)
 {
 }
 
@@ -63,13 +65,16 @@ NexusIrInput::~NexusIrInput()
 }
 
 bool NexusIrInput::start(NEXUS_IrInputMode mode,
-        NexusIrInput::Observer &observer, uint32_t power_key, uint64_t mask)
+        NexusIrInput::Observer &observer, uint32_t power_key, uint64_t mask,
+        uint32_t power_key_two, uint64_t mask_two)
 {
     ALOGI("NexusIrInput start");
 
     m_observer = &observer;
     m_power_key = power_key;
+    m_power_key_two = power_key_two;
     m_mask = mask;
+    m_mask_two = mask_two;
 
     NEXUS_IrInputSettings irSettings;
     NEXUS_IrInput_GetDefaultSettings(&irSettings);
@@ -88,6 +93,9 @@ bool NexusIrInput::start(NEXUS_IrInputMode mode,
         irPattern.filterWord[0].patternWord = m_power_key;
         irPattern.filterWord[0].mask = m_mask;
         irPattern.filterWord[0].enabled = (m_power_key != NEXUSIRINPUT_NO_KEY);
+        irPattern.filterWord[1].patternWord = m_power_key_two;
+        irPattern.filterWord[1].mask = m_mask_two;
+        irPattern.filterWord[1].enabled = (m_power_key_two != NEXUSIRINPUT_NO_KEY);
         NEXUS_IrInput_SetDataFilter(m_handle, &irPattern);
     }
     return m_handle != 0;
