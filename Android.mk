@@ -34,7 +34,6 @@ endif
 # apk's released.
 BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/apks
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
-include ${BCM_APPS_PATH}/BcmCoverFlow/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
 include ${BCM_APPS_PATH}/BcmKeyInterceptor/Android.mk
 include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
