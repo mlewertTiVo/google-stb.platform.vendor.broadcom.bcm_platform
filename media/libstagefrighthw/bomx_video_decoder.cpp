@@ -67,6 +67,7 @@
 #define B_PROPERTY_SVP ("ro.nx.svp")
 #define B_PROPERTY_COALESCE ("dyn.nx.netcoal.set")
 #define B_PROPERTY_HFRVIDEO ("dyn.nx.hfrvideo.set")
+#define B_PROPERTY_EARLYDROP_THRESHOLD ("media.brcm.stat.earlydrop_thres")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE (1536*1536)  // 1024 * 1024 from soft decoder is not big enough for some HEVC streams
@@ -75,11 +76,10 @@
 #define B_MAX_FRAMES (12)
 #define B_MAX_DECODED_FRAMES (16)
 #define B_MAX_INPUT_TIMEOUT_RETURN (2)
-
 #define B_CHECKPOINT_TIMEOUT (5000)
-
 #define B_SECURE_QUERY_MAX_RETRIES (10)
 #define B_SECURE_QUERY_SLEEP_INTERVAL_US (200000)
+#define B_STAT_EARLYDROP_THRESHOLD_MS (5000)
 
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
@@ -795,7 +795,10 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_displayFrameAvailable(false),
     m_droppedFrames(0),
     m_consecDroppedFrames(0),
-    m_maxConsecDroppedFrames(0)
+    m_maxConsecDroppedFrames(0),
+    m_earlyDroppedFrames(0),
+    m_earlyDropThresholdMs(0),
+    m_startTime(-1)
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -1222,6 +1225,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         int surfaceClientId;
         m_omxHwcBinder->getvideo(0, surfaceClientId);
     }
+
+    // Threshold that we consider a drop as early for stat tracking purpose.
+    m_earlyDropThresholdMs = property_get_int32(B_PROPERTY_EARLYDROP_THRESHOLD, B_STAT_EARLYDROP_THRESHOLD_MS);
 }
 
 BOMX_VideoDecoder::~BOMX_VideoDecoder()
@@ -2104,8 +2110,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             BOMX_VIDEO_STATS_PRINT_BASIC;
             BOMX_VIDEO_STATS_PRINT_DETAILED;
             BOMX_VIDEO_STATS_RESET;
-            ALOGD("df:%d, mcdf:%d", m_droppedFrames, m_maxConsecDroppedFrames);
-            m_droppedFrames = m_consecDroppedFrames = m_maxConsecDroppedFrames = 0;
+            // Exclude early frame drops from total tally
+            ALOGD("stats df:%d edf:%d mcdf:%d",
+               m_droppedFrames - m_earlyDroppedFrames, m_earlyDroppedFrames, m_maxConsecDroppedFrames);
+            m_droppedFrames = m_earlyDroppedFrames = m_consecDroppedFrames = m_maxConsecDroppedFrames = 0;
         }
     }
     else
@@ -2280,6 +2288,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 ALOGV("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec);
                 property_set(B_PROPERTY_COALESCE, "vmode");
                 property_set(B_PROPERTY_HFRVIDEO, "vmode");
+                m_startTime = systemTime(CLOCK_MONOTONIC); // Track start time
                 errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
                 if ( errCode )
                 {
@@ -4905,9 +4914,20 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
 
         if ( numFrames > 0 )
         {
+            int currentPlayTime = 0;
+            if (m_startTime != -1) {
+                currentPlayTime = toMillisecondTimeoutDelay(m_startTime, systemTime(CLOCK_MONOTONIC));
+            }
             for (uint32_t j=0; j < numFrames; ++j) {
                 if (!returnSettings[j].display) {
                     ++m_droppedFrames;
+                    if (m_startTime != -1) {
+                        if (currentPlayTime < m_earlyDropThresholdMs) {
+                            ++m_earlyDroppedFrames;
+                        } else {
+                            m_startTime = -1; // Stop tracking once past the mark
+                        }
+                    }
                     ++m_consecDroppedFrames;
                     if (m_consecDroppedFrames > m_maxConsecDroppedFrames)
                         m_maxConsecDroppedFrames = m_consecDroppedFrames;

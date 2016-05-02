@@ -330,6 +330,9 @@ protected:
     size_t m_droppedFrames;
     size_t m_consecDroppedFrames;
     size_t m_maxConsecDroppedFrames;
+    size_t m_earlyDroppedFrames;
+    int m_earlyDropThresholdMs;
+    nsecs_t m_startTime;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
