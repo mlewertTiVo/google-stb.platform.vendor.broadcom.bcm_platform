@@ -341,6 +341,9 @@ protected:
     size_t m_droppedFrames;
     size_t m_consecDroppedFrames;
     size_t m_maxConsecDroppedFrames;
+    size_t m_earlyDroppedFrames;
+    int m_earlyDropThresholdMs;
+    nsecs_t m_startTime;
 
     NEXUS_SimpleStcChannelHandle m_tunnelStcChannel;
 
