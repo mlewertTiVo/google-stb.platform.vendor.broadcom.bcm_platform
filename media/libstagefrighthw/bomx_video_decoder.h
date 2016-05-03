@@ -320,6 +320,8 @@ protected:
     ConfigBufferState m_configBufferState;
     size_t m_configBufferSize;
 
+    void *m_pEndOfChunkBuffer;  // End of chunk BPP buffer for VP9
+
     BOMX_VideoDecoderOutputBufferType m_outputMode;
 
     BLST_Q_HEAD(FrameBufferFreeList, BOMX_VideoDecoderFrameBuffer) m_frameBufferFreeList;
