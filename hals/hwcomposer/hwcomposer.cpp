@@ -3215,7 +3215,6 @@ static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int d
        } else {
           return NULL;
        }
-       BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
        if (BKNI_WaitForEvent(ctx->recycle_event, HWC_SURFACE_WAIT_TIMEOUT)) {
           no_surface_count++;
           if (no_surface_count == HWC_SURFACE_WAIT_ATTEMPT) {
