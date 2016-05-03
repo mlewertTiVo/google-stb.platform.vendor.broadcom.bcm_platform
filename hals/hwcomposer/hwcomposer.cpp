@@ -5308,9 +5308,6 @@ static void hwc_prepare_mm_layer(
       clipped.w = clip_position.width;
       clipped.h = clip_position.height;
 
-      ALOGI("%s: %d - update: {%d,%d,%dx%d} {%d,%d,%dx%d}", __FUNCTION__, vid_layer_id,
-            frame.x, frame.y, frame.w, frame.h,
-            clipped.x, clipped.y, clipped.w, clipped.h);
       ctx->hwc_binder->setgeometry(HWC_BINDER_OMX, 0, frame, clipped, MM_CLIENT_ZORDER, 1);
    }
 
