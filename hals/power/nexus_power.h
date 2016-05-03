@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2015 Broadcom Corporation
+ *    (c)2011-2016 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -71,8 +71,7 @@ class NexusPower : public android::RefBase {
 
     public:
     static sp<NexusPower> instantiate(int powerFd);
-    status_t preparePowerState(b_powerState state);
-    status_t setPowerState(b_powerState state, bool partial=false);
+    status_t setPowerState(b_powerState state);
     status_t getPowerStatus(b_powerStatus *pPowerStatus);
     status_t setVideoOutputsState(b_powerState state);
     status_t initialiseGpios(int powerFd);
@@ -95,9 +94,10 @@ class NexusPower : public android::RefBase {
         public:
         static int const MAX_INSTANCES = 8;
         static int const MAX_POWER_STATES = 7;  // S0 through to S5
-        static int const NUM_INP_PARAMETERS = 2; // gpio mode + interrupt mode
+        static int const MIN_INP_PARAMETERS = 2; // gpio mode + interrupt mode
+        static int const MAX_INP_PARAMETERS = 3; // gpio mode + interrupt mode + key
         static int const NUM_OUT_PARAMETERS = MAX_POWER_STATES + 1; // gpio mode + S0 through to S5 output values
-        static int const MIN_PARAMETERS = NUM_INP_PARAMETERS;
+        static int const MIN_PARAMETERS = MIN_INP_PARAMETERS;
         static int const MAX_PARAMETERS = NUM_OUT_PARAMETERS;
         static unsigned mInstances;
 
@@ -116,7 +116,7 @@ class NexusPower : public android::RefBase {
         NEXUS_GpioValue getPinOutputValue(b_powerState state) { return mPinOutputValues[state]; }
         NEXUS_GpioHandle getHandle() { return mHandle; }
         void setHandle(NEXUS_GpioHandle handle) { mHandle = handle; }
-        void setPowerKeyEvent(bool enable) { mPowerKeyEvent = enable; }
+        void setKeyEvent(unsigned key) { mKeyEvent = key; }
         ~NexusGpio();
 
         private:
@@ -129,16 +129,18 @@ class NexusPower : public android::RefBase {
         NEXUS_GpioValue mPinOutputValues[MAX_POWER_STATES];
         NEXUS_GpioHandle mHandle;
         sp<LinuxUInputRef> mUInput;
-        bool mPowerKeyEvent;
+        unsigned mKeyEvent;
         int mPowerFd;
 
         // Private methods...
         static sp<NexusGpio> instantiate(int powerFd, String8& pinName, unsigned pin, unsigned pinType,
-                                         NEXUS_GpioMode pinMode,  NEXUS_GpioInterrupt interruptMode, sp<LinuxUInputRef> uInput);
+                                         NEXUS_GpioMode pinMode,  NEXUS_GpioInterrupt interruptMode,
+                                         sp<LinuxUInputRef> uInput, unsigned key);
         static sp<NexusGpio> instantiate(int powerFd, String8& pinName, unsigned pin, unsigned pinType,
                                          NEXUS_GpioMode pinMode, NEXUS_GpioValue *pOutputValues);
         static status_t parseGpioMode(String8& modeString, NEXUS_GpioMode *pMode);
         static status_t parseGpioInterruptMode(String8& interruptModeString, NEXUS_GpioInterrupt *pInterruptMode);
+        static status_t parseGpioKey(String8& inString, unsigned *key);
         static status_t parseGpioOutputValue(String8& outputValueString, NEXUS_GpioValue *pOutputValue);
         static status_t parseGpioParameters(String8& inString, size_t *pNumParameters, String8 parameters[]);
         static void gpioCallback(void *context, int param);
@@ -146,7 +148,7 @@ class NexusPower : public android::RefBase {
         // Disallow constructor and copy constructor...
         NexusGpio();
         NexusGpio(int powerFd, String8& pinName, unsigned pin, unsigned pinType, NEXUS_GpioMode mode,
-                  NEXUS_GpioInterrupt interruptMode, sp<LinuxUInputRef> uInput);
+                  NEXUS_GpioInterrupt interruptMode, sp<LinuxUInputRef> uInput, unsigned key);
         NexusGpio(int powerFd, String8& pinName, unsigned pin, unsigned pinType, NEXUS_GpioMode mode,
                   NEXUS_GpioValue *pOutputValues);
         NexusGpio &operator=(const NexusGpio &);

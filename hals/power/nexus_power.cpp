@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2015 Broadcom Corporation
+ *    (c)2011-2016 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -55,6 +55,7 @@
 
 unsigned NexusPower::NexusGpio::mInstances = 0;
 
+
 sp<NexusPower::LinuxUInputRef> NexusPower::LinuxUInputRef::instantiate()
 {
     sp<NexusPower::LinuxUInputRef> uInput = NULL;
@@ -73,7 +74,7 @@ sp<NexusPower::LinuxUInputRef> NexusPower::LinuxUInputRef::instantiate()
     {
         if (!uInput->open() ||
             !uInput->register_event(EV_KEY) ||
-            !uInput->register_key(KEY_POWER) ||
+            !uInput->register_key(KEY_WAKEUP) ||
             !uInput->start("NexusPower", id))
         {
             ALOGE("Failed to initialise LinuxUInputRef");
@@ -180,24 +181,7 @@ status_t NexusPower::setVideoOutputsState(b_powerState state)
     return (rc == NEXUS_SUCCESS) ? NO_ERROR : UNKNOWN_ERROR;
 }
 
-status_t NexusPower::preparePowerState(b_powerState state)
-{
-    status_t status = NO_ERROR;
-    sp<NexusGpio> pNexusGpio;
-
-    // Set GPIO Power key event...
-    for (unsigned gpio = 0; gpio < NexusGpio::MAX_INSTANCES; gpio++) {
-        pNexusGpio = gpios[gpio];
-        if (pNexusGpio.get() != NULL && pNexusGpio->getPinMode() == NEXUS_GpioMode_eInput &&
-                pNexusGpio->getPinInterruptMode() != NEXUS_GpioInterrupt_eDisabled) {
-
-            pNexusGpio->setPowerKeyEvent(state != ePowerState_S0);
-        }
-    }
-    return status;
-}
-
-status_t NexusPower::setPowerState(b_powerState state, bool partial)
+status_t NexusPower::setPowerState(b_powerState state)
 {
     status_t ret = NO_ERROR;
     const uint32_t cecId = 0;   // Hardcoded CEC id to 0
@@ -206,9 +190,7 @@ status_t NexusPower::setPowerState(b_powerState state, bool partial)
        otherwise if powering down, then we must send CEC commands first. */
     if (state == ePowerState_S0) {
         // Setup the GPIO output values depending on the power state...
-        if (!partial) {
-            ret = setGpios(state);
-        }
+        ret = setGpios(state);
 
         if (ret != NO_ERROR) {
             ALOGE("%s: Could not set GPIO's for PowerState %s!!!", __FUNCTION__, NexusIPCClientBase::getPowerString(state));
@@ -234,9 +216,7 @@ status_t NexusPower::setPowerState(b_powerState state, bool partial)
         }
         else {
             // Setup the GPIO output values depending on the power state...
-            if (!partial) {
-                ret = setGpios(state);
-            }
+            ret = setGpios(state);
 
             if (ret != NO_ERROR) {
                 ALOGE("%s: Could not set GPIO's for PowerState %d!!!", __FUNCTION__, state);
@@ -283,18 +263,17 @@ void NexusPower::NexusGpio::gpioCallback(void *context, int param __unused)
 
             NEXUS_Gpio_ClearInterrupt(pNexusGpio->getHandle());
 
-            // toggle the power key only when needed
-            if (pNexusGpio->mUInput != NULL && pNexusGpio->mPowerKeyEvent) {
-                ALOGV("%s: AON GPIO wakeup detected - spoofing KEY_POWER event...", __FUNCTION__);
+            // toggle the configured key, if any
+            if (pNexusGpio->mUInput != NULL && pNexusGpio->mKeyEvent) {
+                ALOGD("%s: AON GPIO wakeup detected - spoofing wakeup key event...",
+                      __FUNCTION__);
                 // release->press->release will guarantee that the press event takes place
-                pNexusGpio->mUInput->emit_key_state(KEY_POWER, false);
+                pNexusGpio->mUInput->emit_key_state(pNexusGpio->mKeyEvent, false);
                 pNexusGpio->mUInput->emit_syn();
-                pNexusGpio->mUInput->emit_key_state(KEY_POWER, true);
+                pNexusGpio->mUInput->emit_key_state(pNexusGpio->mKeyEvent, true);
                 pNexusGpio->mUInput->emit_syn();
-                pNexusGpio->mUInput->emit_key_state(KEY_POWER, false);
+                pNexusGpio->mUInput->emit_key_state(pNexusGpio->mKeyEvent, false);
                 pNexusGpio->mUInput->emit_syn();
-                // Disable POWER key event spoofing once we emitted a POWER key event...
-                pNexusGpio->setPowerKeyEvent(false);
             }
         }
         else {
@@ -333,10 +312,10 @@ String8 NexusPower::NexusGpio::getConfigurationFilePath()
    2) "PushPull"  --> a totem-pole output
    3) "OpenDrain" --> an open-drain output
 
-   The second parameter depends on whether the GPIO is configurred as an "input" or "output".
+   The following parameters depend on whether the GPIO is configured as an "input" or "output".
 
    If the pin is configured as an input, then the second parameter is used to indicate the type
-   of "interrupt mode".  The valid value are:
+   of "interrupt mode".  The valid values are:
 
    1) Disabled    --> no interrupt will be generated.
    2) RisingEdge  --> an interrupt will be generated on a rising edge  (i.e. low-->high).
@@ -345,9 +324,14 @@ String8 NexusPower::NexusGpio::getConfigurationFilePath()
    5) High        --> an interrupt will be generated on a high level.
    6) Low         --> an interrupt will be generated on a low level.
 
-   If the pin is configurred as an output, then the following 6 parameters are used to indicate
-   the polarity of the output signal in power states S0 through to S5 (note S4 is not used at
-   this current time).  The valid values are:
+   The third argument for an input pin is optional. If present, the valid values are:
+
+   1) None        --> (default) no key input events will be generated on an interrupt
+   2) Wakeup      --> a KEY_WAKEUP sequence will be generated on an interrupt
+
+   If the pin is configured as an output, then the following 6 parameters are used to indicate
+   the polarity of the output signal in power states S0, S0.5, S1, S2, S3, S4, S5 (note S4 is
+   not used at this current time).  The valid values are:
 
    1) High
    2) Low
@@ -355,21 +339,22 @@ String8 NexusPower::NexusGpio::getConfigurationFilePath()
    Below are some examples of both input and output GPIO configurations.
 
    Example1: GPIO101 = [PushPull,High,Low,Low,Low,Low,Low,High]
-             So this configures GPIO_101 as a totem-pole output which is driven HIGH during S0,
-             LOW during states S0.5 to S4 and HIGH again for state S5
+             This configures GPIO_101 as a totem-pole output which is driven HIGH during S0,
+             LOW during states S0.5 to S4 and HIGH again for state S5.
 
    Example2: AON_GPIO01 = [Input,FallingEdge]
-             This configures AON_GPIO_01 as a negative edge triggered input
+             This configures AON_GPIO_01 as a negative edge triggered input.
 
-   Example3: AON_SGPIO02 = [Input,Edge]
-             this configures AON_SGPIO_02 as any edge triggered input
+   Example3: AON_SGPIO02 = [Input,Edge,Wakeup]
+             This configures AON_SGPIO_02 as any edge triggered input, generating wakeup key
+             events.
 
    Example4: AON_GPIO00 = [PushPull,High,High,Low,Low,Low,Low,Low]
-             So this configures AON_GPIO_00 as a totem-pole output which is driven HIGH during S0
+             This configures AON_GPIO_00 as a totem-pole output which is driven HIGH during S0
              and S0.5 states and LOW in the other standby states S1 to S5.
 
    Example5: AON_GPIO03 = [OpenDrain,Low,High,High,High,High,High,High]
-             So this configures AON_GPIO_03 as an open-drain output which is driven LOW during S0
+             This configures AON_GPIO_03 as an open-drain output which is driven LOW during S0
              and HIGH in all other standby states S0.5 to S5.
 */
 status_t NexusPower::NexusGpio::loadConfigurationFile(String8 path, PropertyMap **configuration)
@@ -378,6 +363,26 @@ status_t NexusPower::NexusGpio::loadConfigurationFile(String8 path, PropertyMap 
 
     if (!path.isEmpty()) {
         status = PropertyMap::load(path, configuration);
+    }
+    return status;
+}
+
+status_t NexusPower::NexusGpio::parseGpioKey(String8& keyString, unsigned *pKey)
+{
+    status_t status = NO_ERROR;
+    String8 string(keyString);
+
+    string.toLower();
+
+    if (string == "none") {
+        *pKey = 0;
+    }
+    else if (string == "wakeup") {
+        *pKey = KEY_WAKEUP;
+    }
+    else {
+        *pKey = 0;
+        status = BAD_VALUE;
     }
     return status;
 }
@@ -522,16 +527,19 @@ NexusPower::NexusGpio::NexusGpio(int powerFd,
                                  unsigned pinType,
                                  NEXUS_GpioMode pinMode,
                                  NEXUS_GpioInterrupt pinInterruptMode,
-                                 sp<LinuxUInputRef> uInput) : mPinName(pinName),
-                                                              mPin(pin),
-                                                              mPinType(pinType),
-                                                              mPinMode(pinMode),
-                                                              mPinInterruptMode(pinInterruptMode),
-                                                              mUInput(uInput),
-                                                              mPowerFd(powerFd)
+                                 sp<LinuxUInputRef> uInput,
+                                 unsigned key) : mPinName(pinName),
+                                                 mPin(pin),
+                                                 mPinType(pinType),
+                                                 mPinMode(pinMode),
+                                                 mPinInterruptMode(pinInterruptMode),
+                                                 mUInput(uInput),
+                                                 mKeyEvent(key),
+                                                 mPowerFd(powerFd)
 {
     mInstance = mInstances++;
-    ALOGV("%s: instance %d: pin=%d, type=%d, pin mode=%d, interrupt mode=%d", __PRETTY_FUNCTION__, mInstance, pin, pinType, pinMode, pinInterruptMode);
+    ALOGV("%s: instance %d: pin=%d, type=%d, pin mode=%d, interrupt mode=%d, key=%d",
+          __PRETTY_FUNCTION__, mInstance, pin, pinType, pinMode, pinInterruptMode, key);
 }
 
 // Constructor for a GPIO output...
@@ -565,10 +573,17 @@ NexusPower::NexusGpio::~NexusGpio()
 }
 
 // Factory method for instantiating an input GPIO...
-sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(int powerFd, String8& pinName,  unsigned pin, unsigned pinType,
-                                                             NEXUS_GpioMode pinMode, NEXUS_GpioInterrupt pinInterruptMode, sp<LinuxUInputRef> uInput)
+sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(int powerFd,
+                                                             String8& pinName,
+                                                             unsigned pin,
+                                                             unsigned pinType,
+                                                             NEXUS_GpioMode pinMode,
+                                                             NEXUS_GpioInterrupt pinInterruptMode,
+                                                             sp<LinuxUInputRef> uInput,
+                                                             unsigned key)
 {
-    sp<NexusPower::NexusGpio> gpio = new NexusGpio(powerFd, pinName, pin, pinType, pinMode, pinInterruptMode, uInput);
+    sp<NexusPower::NexusGpio> gpio = new NexusGpio(powerFd, pinName, pin, pinType,
+                                                   pinMode, pinInterruptMode, uInput, key);
 
     if (gpio.get() != NULL) {
         NEXUS_GpioSettings settings;
@@ -647,18 +662,32 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::initialise(int powerFd, String8
             ALOGE("%s: Could not parse %s pin mode!!!", __FUNCTION__, gpioName.string());
         }
         else if (gpioMode == NEXUS_GpioMode_eInput) {
-            if (numGpioParameters != NexusGpio::NUM_INP_PARAMETERS) {
-                ALOGE("%s: Invalid number of input parameters for %s (must be %d)!!!", __FUNCTION__, gpioName.string(), NexusGpio::NUM_INP_PARAMETERS);
+            if (numGpioParameters < NexusGpio::MIN_INP_PARAMETERS ||
+                numGpioParameters > NexusGpio::MAX_INP_PARAMETERS) {
+                ALOGE("%s: Invalid number of input parameters for %s (must be %d to %d)!!!",
+                      __FUNCTION__, gpioName.string(),
+                      NexusGpio::MIN_INP_PARAMETERS,
+                      NexusGpio::MAX_INP_PARAMETERS);
                 status = BAD_VALUE;
             }
             else {
+                unsigned key;
                 NEXUS_GpioInterrupt gpioInterruptMode;
                 status = NexusGpio::parseGpioInterruptMode(gpioParameters[1], &gpioInterruptMode);
                 if (status != NO_ERROR) {
                     ALOGE("%s: Could not parse %s interrupt mode!!!", __FUNCTION__, gpioName.string());
                 }
-                else {
-                    gpio = NexusGpio::instantiate(powerFd, gpioName, pin, pinType, gpioMode, gpioInterruptMode, uInput);
+                else if (numGpioParameters > NexusGpio::MIN_INP_PARAMETERS) {
+                    status = NexusGpio::parseGpioKey(gpioParameters[2], &key);
+                    if (status != NO_ERROR) {
+                        ALOGE("%s: Could not parse %s key event!!!",
+                              __FUNCTION__, gpioName.string());
+                        status = BAD_VALUE;
+                    }
+                }
+                if (status == NO_ERROR) {
+                    gpio = NexusGpio::instantiate(powerFd, gpioName, pin, pinType,
+                                                  gpioMode, gpioInterruptMode, uInput, key);
                     if (gpio.get() == NULL) {
                         ALOGE("%s: Could not instantiate %s!!!", __FUNCTION__, gpioName.string());
                         status = NO_INIT;
