@@ -27,6 +27,8 @@ function HELP {
 TOP_DIR=$(pwd)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR=tmp_bcmrel
+ADDON_DIR=$TMP_DIR/add-on
+PLAYREADY_DIR=$TMP_DIR/playready_prebuilts
 VENDOR_BRCM=vendor/broadcom
 PREBUILT=$VENDOR_BRCM/release_prebuilts
 PREBUILT_DIR="$TOP_DIR/$PREBUILT"
@@ -36,9 +38,7 @@ BCG_XML="$TOP_DIR/.repo/manifests/bcg.xml"
 REFSW_DIR="$TMP_DIR/refsw_dir.txt"
 BOLT_DIR="$TMP_DIR/bolt_dir.txt"
 BOLT_VER="$TMP_DIR/bolt_version.txt"
-REFSW_TARBALL="$TMP_DIR/refsw_rel_src.tgz"
-PR_PATCH_USER="$TMP_DIR/playready_prebuilts_user.tgz"
-PR_PATCH_USERDBG="$TMP_DIR/playready_prebuilts_userdebug.tgz"
+REFSW_TARBALL="$ADDON_DIR/refsw_rel_src.tgz"
 AOSP_LIST="$TMP_DIR/aosp_patches.txt"
 REFSW_PATCH="$TMP_DIR/refsw_patch.txt"
 
@@ -168,8 +168,12 @@ if [ -d $TMP_DIR ]; then
   rm -rf $TMP_DIR
 fi
 mkdir -p $TMP_DIR
+mkdir -p $ADDON_DIR
+mkdir -p $PLAYREADY_DIR
+echo "$ADDON_DIR" >> $BLACK_LIST
+echo "$PLAYREADY_DIR" >> $BLACK_LIST
 
-# Check if the required prebuilt libraries are already provided by the user
+# Check if the required prebuilt libraries tarballs are already provided by the user
 if [ -d $PREBUILT_BINS_DIR ]; then
   if [ -f $PREBUILT_BINS_DIR/release_prebuilts_user.tgz ]; then
     tar -C $VENDOR_BRCM -zxvf  $PREBUILT_BINS_DIR/release_prebuilts_user.tgz;
@@ -182,15 +186,16 @@ if [ -d $PREBUILT_BINS_DIR ]; then
     echo -e \\n"!!! MISSING prebuilt libraries package: release_prebuilts_usrdebug.tgz"\\n
   fi
   if [ -f $PREBUILT_BINS_DIR/playready_prebuilts_user.tgz ]; then
-    cp $PREBUILT_BINS_DIR/playready_prebuilts_user.tgz $TMP_DIR
+    tar -C $PLAYREADY_DIR -zxvf $PREBUILT_BINS_DIR/playready_prebuilts_user.tgz;
   else
     echo -e \\n"!!! MISSING prebuilt libraries package: playready_prebuilts_usr.tgz"\\n
   fi
   if [ -f $PREBUILT_BINS_DIR/playready_prebuilts_userdebug.tgz ]; then
-    cp  $PREBUILT_BINS_DIR/playready_prebuilts_userdebug.tgz $TMP_DIR 
+    tar -C $PLAYREADY_DIR -zxvf $PREBUILT_BINS_DIR/playready_prebuilts_userdebug.tgz;
   else
     echo -e \\n"!!! MISSING prebuilt libraries package: playready_prebuilts_usrdebug.tgz"\\n
   fi
+  tar -C $PLAYREADY_DIR -zcvf $ADDON_DIR/playready_prebuilts.tgz vendor;
 else
   echo -e \\n"!!! MISSING prebuilt libraries path for release packaging"\\n
 fi
@@ -268,15 +273,17 @@ if [ -n "$REFSW_BASELINE" ]; then
     git checkout -B $REFSW_BASELINE
   fi
 fi
-# Create a refsw src tarball if -t is set
+# Create a refsw src tarball and put it in add-on if -t is set
 if [ -n "$REFSW_SRC" ]; then
   tar --exclude=*.git* --exclude-from=rockford/release/exclude.txt -cvzf $TOP_DIR/$REFSW_TARBALL *
 fi
+
 # clean up refsw residual branches created if any
 if [ -n "$REFSW_BASELINE" ]; then
   git checkout -
   git branch -D $REFSW_BASELINE
 fi
+
 cd $TOP_DIR
 
 # Append custom white and black lists if present
@@ -305,12 +312,8 @@ echo $WHITE_LIST >> $BLACK_LIST
 echo $BLACK_LIST >> $BLACK_LIST
 
 # Tar up everything
-if [ -n "$REFSW_SRC" ]; then
-tar --exclude=*.git* --exclude-from=$BLACK_LIST -cvzf $1_REFSW_PR.tgz --files-from=$WHITE_LIST
-tar --exclude=*.git* --exclude-from=$BLACK_LIST --exclude=$PR_PATCH_USER --exclude=$PR_PATCH_USERDBG -cvzf $1_REFSW.tgz --files-from=$WHITE_LIST
-#tar --exclude=*.git* --exclude-from=$BLACK_LIST --exclude=$REFSW_TARBALL -cvzf $1_PR.tgz --files-from=$WHITE_LIST
-fi
-tar --exclude=*.git* --exclude-from=$BLACK_LIST --exclude=$REFSW_TARBALL --exclude=$PR_PATCH_USER --exclude=$PR_PATCH_USERDBG -cvzf $1.tgz --files-from=$WHITE_LIST
+tar --exclude=*.git* --exclude-from=$BLACK_LIST -cvzf $1.tgz --files-from=$WHITE_LIST
+tar -C $TMP_DIR -cvzf $1-addon.tgz add-on
 
 # Be verbose what we are not tar'ing
 echo "Excludes..."
