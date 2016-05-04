@@ -750,6 +750,7 @@ struct hwc_context_t {
     int composer_thread_run[DISPLAY_SUPPORTED];
     int ret_tl[DISPLAY_SUPPORTED];
     struct hwc_work_item *composer_work_list[DISPLAY_SUPPORTED];
+    pthread_mutex_t comp_work_list_mutex[DISPLAY_SUPPORTED];;
 
     int display_dump_layer;
     int display_dump_virt;
@@ -3385,13 +3386,21 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         this_frame->video_layers = ctx->prepare_video;
         this_frame->sideband_layers = ctx->prepare_sideband;
         this_frame->next = NULL;
-        if (ctx->composer_work_list[HWC_PRIMARY_IX] == NULL) {
-           ctx->composer_work_list[HWC_PRIMARY_IX] = this_frame;
+        if (!pthread_mutex_lock(&ctx->comp_work_list_mutex[HWC_PRIMARY_IX])) {
+           if (ctx->composer_work_list[HWC_PRIMARY_IX] == NULL) {
+              ctx->composer_work_list[HWC_PRIMARY_IX] = this_frame;
+           } else {
+              struct hwc_work_item *item, *last;
+              last = ctx->composer_work_list[HWC_PRIMARY_IX];
+              while (last != NULL) { item = last; last = last->next; }
+              item->next = this_frame;
+           }
+           pthread_mutex_unlock(&ctx->comp_work_list_mutex[HWC_PRIMARY_IX]);
         } else {
-           struct hwc_work_item *item, *last;
-           last = ctx->composer_work_list[HWC_PRIMARY_IX];
-           while (last != NULL) { item = last; last = last->next; }
-           item->next = this_frame;
+           ALOGE("comp: %llu: unable to post (%llu)", ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed);
+           ctx->stats[HWC_PRIMARY_IX].composed++;
+           free(this_frame);
+           goto out_mutex;
         }
 
         if (ctx->track_comp_time) {
@@ -3838,13 +3847,21 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
        }
        this_frame->comp_ix = ctx->stats[HWC_VIRTUAL_IX].set_call;
        this_frame->next = NULL;
-       if (ctx->composer_work_list[HWC_VIRTUAL_IX] == NULL) {
-          ctx->composer_work_list[HWC_VIRTUAL_IX] = this_frame;
+       if (!pthread_mutex_lock(&ctx->comp_work_list_mutex[HWC_VIRTUAL_IX])) {
+          if (ctx->composer_work_list[HWC_VIRTUAL_IX] == NULL) {
+             ctx->composer_work_list[HWC_VIRTUAL_IX] = this_frame;
+          } else {
+             struct hwc_work_item *item, *last;
+             last = ctx->composer_work_list[HWC_VIRTUAL_IX];
+             while (last != NULL) { item = last; last = last->next; }
+             item->next = this_frame;
+          }
+          pthread_mutex_unlock(&ctx->comp_work_list_mutex[HWC_VIRTUAL_IX]);
        } else {
-          struct hwc_work_item *item, *last;
-          last = ctx->composer_work_list[HWC_VIRTUAL_IX];
-          while (last != NULL) { item = last; last = last->next; }
-          item->next = this_frame;
+          ALOGE("vcmp: %llu: unable to post (%llu)", ctx->stats[HWC_VIRTUAL_IX].set_call, ctx->stats[HWC_VIRTUAL_IX].composed);
+          ctx->stats[HWC_VIRTUAL_IX].composed++;
+          free(this_frame);
+          goto out_mutex;
        }
 
        if (ctx->track_comp_time) {
@@ -4173,6 +4190,7 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
               }
            }
            pthread_mutex_destroy(&ctx->disp_cli[i].fifo_mutex);
+           pthread_mutex_destroy(&ctx->comp_work_list_mutex[i]);
         }
         if (ctx->recycle_event) {
            BKNI_DestroyEvent(ctx->recycle_event);
@@ -4670,7 +4688,7 @@ static void * hwc_compose_task_primary(void *argv)
 
          do {
             this_frame = NULL;
-            if (!pthread_mutex_lock(&ctx->mutex)) {
+            if (!pthread_mutex_lock(&ctx->comp_work_list_mutex[HWC_PRIMARY_IX])) {
                this_frame = ctx->composer_work_list[HWC_PRIMARY_IX];
                if (this_frame == NULL) {
                   try_compose = false;
@@ -4683,9 +4701,9 @@ static void * hwc_compose_task_primary(void *argv)
                   }
                   ctx->stats[HWC_PRIMARY_IX].composed++;
                }
-               pthread_mutex_unlock(&ctx->mutex);
+               pthread_mutex_unlock(&ctx->comp_work_list_mutex[HWC_PRIMARY_IX]);
             } else {
-               ALOGE("%s: could not acquire mutex!!!", __FUNCTION__);
+               ALOGE("%s: could not acquire work-list mutex!!!", __FUNCTION__);
                try_compose = false;
             }
 
@@ -4741,7 +4759,7 @@ static void * hwc_compose_task_virtual(void *argv)
 
          do {
             this_frame = NULL;
-            if (!pthread_mutex_lock(&ctx->mutex)) {
+            if (!pthread_mutex_lock(&ctx->comp_work_list_mutex[HWC_VIRTUAL_IX])) {
                this_frame = ctx->composer_work_list[HWC_VIRTUAL_IX];
                if (this_frame == NULL) {
                   try_compose = false;
@@ -4749,9 +4767,9 @@ static void * hwc_compose_task_virtual(void *argv)
                   ctx->composer_work_list[HWC_VIRTUAL_IX] = this_frame->next;
                   ctx->stats[HWC_VIRTUAL_IX].composed++;
                }
-               pthread_mutex_unlock(&ctx->mutex);
+               pthread_mutex_unlock(&ctx->comp_work_list_mutex[HWC_VIRTUAL_IX]);
             } else {
-               ALOGE("%s: could not acquire mutex!!!", __FUNCTION__);
+               ALOGE("%s: could not acquire work-list mutex!!!", __FUNCTION__);
                try_compose = false;
             }
 
@@ -4938,6 +4956,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             }
             pthread_mutexattr_init(&mattr);
             pthread_mutex_init(&dev->disp_cli[i].fifo_mutex, &mattr);
+            pthread_mutex_init(&dev->comp_work_list_mutex[i], &mattr);
             pthread_mutexattr_destroy(&mattr);
             rc = hwc_setup_framebuffer_mode(dev, i,
                dev->comp_bypass ? CLIENT_MODE_COMP_BYPASS : CLIENT_MODE_NSC_FRAMEBUFFER);
