@@ -376,7 +376,7 @@ typedef struct {
     BFIFO_HEAD(DisplayFifo, NEXUS_SurfaceHandle) display_fifo;
     NEXUS_SurfaceHandle display_elements[HWC_NUM_DISP_BUFFERS];
     DISPLAY_FIFO_ELEMENT display_buffers[HWC_NUM_DISP_BUFFERS];
-    BKNI_MutexHandle fifo_mutex;
+    pthread_mutex_t fifo_mutex;
     DISPLAY_CLIENT_MODE mode;
     bool mode_toggle;
 } DISPLAY_CLIENT_INFO;
@@ -698,13 +698,13 @@ struct hwc_context_t {
     NexusIPCClientBase *pIpcClient;
     NexusClientContext *pNexusClientContext;
     NxClient_AllocResults nxAllocResults;
-    BKNI_MutexHandle dev_mutex;
+    pthread_mutex_t dev_mutex;
 
     hwc_procs_t const* procs;
 
     bool vsync_callback_enabled;
     bool vsync_callback_initialized;
-    BKNI_MutexHandle vsync_callback_enabled_mutex;
+    pthread_mutex_t vsync_callback_enabled_mutex;
     pthread_t vsync_callback_thread;
     pthread_t recycle_callback_thread;
     int vsync_thread_run;
@@ -716,7 +716,7 @@ struct hwc_context_t {
     GPX_CLIENT_INFO gpx_cli[NSC_GPX_CLIENTS_NUMBER];
     MM_CLIENT_INFO mm_cli[NSC_MM_CLIENTS_NUMBER];
     SB_CLIENT_INFO sb_cli[NSC_SB_CLIENTS_NUMBER];
-    BKNI_MutexHandle mutex;
+    pthread_mutex_t mutex;
     bool nsc_video_changed;
     bool nsc_sideband_changed;
     VD_CLIENT_INFO vd_cli[HWC_VD_CLIENTS_NUMBER];
@@ -734,7 +734,7 @@ struct hwc_context_t {
     bool needs_fb_target;
     bool comp_bypass;
 
-    BKNI_MutexHandle power_mutex;
+    pthread_mutex_t power_mutex;
     int power_mode;
 
     HwcBinder_wrap *hwc_binder;
@@ -742,7 +742,7 @@ struct hwc_context_t {
     HwcDisplayChanged_wrap *hwc_dc;
 
     NEXUS_Graphics2DHandle hwc_g2d;
-    BKNI_MutexHandle g2d_mutex;
+    pthread_mutex_t g2d_mutex;
     NEXUS_Graphics2DCapabilities gfxCaps;
     BKNI_EventHandle checkpoint_event;
 
@@ -1043,13 +1043,13 @@ static int hwc_setup_framebuffer_mode(struct hwc_context_t* dev, int disp_ix, DI
             dev->disp_cli[disp_ix].display_buffers[j].fifo_surf,
             dev->disp_cli[disp_ix].display_buffers[j].fifo_fd, block_handle);
    }
-   if (BKNI_AcquireMutex(dev->disp_cli[disp_ix].fifo_mutex) == BERR_SUCCESS) {
+   if (!pthread_mutex_lock(&dev->disp_cli[disp_ix].fifo_mutex)) {
       for (j = 0; j < HWC_NUM_DISP_BUFFERS; j++) {
          dev->disp_cli[disp_ix].display_elements[j] = dev->disp_cli[disp_ix].display_buffers[j].fifo_surf;
       }
       BFIFO_INIT(&dev->disp_cli[disp_ix].display_fifo, dev->disp_cli[disp_ix].display_elements, HWC_NUM_DISP_BUFFERS);
       BFIFO_WRITE_COMMIT(&dev->disp_cli[disp_ix].display_fifo, HWC_NUM_DISP_BUFFERS);
-      BKNI_ReleaseMutex(dev->disp_cli[disp_ix].fifo_mutex);
+      pthread_mutex_unlock(&dev->disp_cli[disp_ix].fifo_mutex);
    } else {
       return -EINVAL;
    }
@@ -1417,7 +1417,7 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
     capacity = buff_len;
     index = 0;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
         goto out;
     }
 
@@ -1585,7 +1585,7 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
 
     hwc_setup_props_locked(ctx);
     hwc_execute_dyn_change_locked(ctx);
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 
 out:
     return;
@@ -1725,12 +1725,12 @@ static void hwc_hotplug_notify(void *dev)
        }
 
        if (ctx->procs && ctx->procs->invalidate != NULL) {
-          if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+          if (!pthread_mutex_lock(&ctx->mutex)) {
              for (i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++) {
                 ctx->gpx_cli[i].last.layerhdl = NULL;
                 ctx->gpx_cli[i].skip_set = false;
              }
-             BKNI_ReleaseMutex(ctx->mutex);
+             pthread_mutex_unlock(&ctx->mutex);
           }
           ALOGI("%s: refresh disp-%d on connected", __FUNCTION__, HWC_PRIMARY_IX);
           ctx->procs->invalidate(const_cast<hwc_procs_t *>(ctx->procs));
@@ -2015,12 +2015,12 @@ static void hwc_seed_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
       fillSettings.color   = background;
       fillSettings.colorOp = NEXUS_FillOp_eCopy;
       fillSettings.alphaOp = NEXUS_FillOp_eCopy;
-      if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+      if (pthread_mutex_lock(&ctx->g2d_mutex)) {
          ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
          return;
       }
       rc = NEXUS_Graphics2D_Fill(ctx->hwc_g2d, &fillSettings);
-      BKNI_ReleaseMutex(ctx->g2d_mutex);
+      pthread_mutex_unlock(&ctx->g2d_mutex);
       if (rc == NEXUS_SUCCESS) {
          if (q_ops) {
             *q_ops = true;
@@ -2052,7 +2052,7 @@ static void hwc_tick_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
    fillSettings.rect.width  = HWC_TICKER_W;
    fillSettings.rect.height = HWC_TICKER_H;
    ++tick_ix %= 2;
-   if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+   if (pthread_mutex_lock(&ctx->g2d_mutex)) {
       ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
       return;
    }
@@ -2060,7 +2060,7 @@ static void hwc_tick_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
    if (rc == NEXUS_SUCCESS) {
       hwc_checkpoint_locked(ctx);
    }
-   BKNI_ReleaseMutex(ctx->g2d_mutex);
+   pthread_mutex_unlock(&ctx->g2d_mutex);
 }
 
 static void hwc_rel_tl_inc(struct hwc_context_t *ctx, int index, int layer)
@@ -2273,14 +2273,14 @@ bool hwc_compose_gralloc_buffer(
               if ((!layer_seeds_output || !ctx->smart_background) && !already_comp) {
                  hwc_seed_disp_surface(ctx, outputHdl, q_ops, ops_count, HWC_TRANSPARENT);
               }
-              if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+              if (pthread_mutex_lock(&ctx->g2d_mutex)) {
                  ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
               } else {
                  rc = NEXUS_Graphics2D_GetPacketBuffer(ctx->hwc_g2d, &buffer, &size, 1024);
                  if ((rc != NEXUS_SUCCESS) || !size) {
                     ALOGE("%s: failed getting packet buffer from g2d: (num:%d, id:0x%x)\n", __FUNCTION__,
                           NEXUS_GET_ERR_NUM(rc), NEXUS_GET_ERR_ID(rc));
-                    BKNI_ReleaseMutex(ctx->g2d_mutex);
+                    pthread_mutex_unlock(&ctx->g2d_mutex);
                     goto out;
                  }
                  if ((q_ops != NULL) && !ctx->g2d_allow_simult) {
@@ -2294,7 +2294,7 @@ bool hwc_compose_gralloc_buffer(
                        }
                     }
                  }
-                 BKNI_ReleaseMutex(ctx->g2d_mutex);
+                 pthread_mutex_unlock(&ctx->g2d_mutex);
 
                  NEXUS_Surface_LockPlaneAndPalette(srcY, &planeY, NULL);
                  NEXUS_Surface_LockPlaneAndPalette(srcCb, &planeCb, NULL);
@@ -2442,7 +2442,7 @@ bool hwc_compose_gralloc_buffer(
                        outAdj.x, outAdj.y, outAdj.width, outAdj.height);
                  }
 
-                 if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+                 if (pthread_mutex_lock(&ctx->g2d_mutex)) {
                     ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
                  } else {
                     rc = NEXUS_Graphics2D_PacketWriteComplete(ctx->hwc_g2d, (uint8_t*)next - (uint8_t*)buffer);
@@ -2474,7 +2474,7 @@ bool hwc_compose_gralloc_buffer(
                           hwc_clear_acquire_release_fences(ctx, list, layer_id);
                        }
                     }
-                    BKNI_ReleaseMutex(ctx->g2d_mutex);
+                    pthread_mutex_unlock(&ctx->g2d_mutex);
                  }
 
                  NEXUS_Surface_UnlockPlaneAndPalette(srcCb);
@@ -2552,7 +2552,7 @@ bool hwc_compose_gralloc_buffer(
                  blitSettings.constantColor = pComp->constantColor;
               }
 
-              if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+              if (pthread_mutex_lock(&ctx->g2d_mutex)) {
                  ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
               } else {
                  rc = NEXUS_Graphics2D_Blit(ctx->hwc_g2d, &blitSettings);
@@ -2585,7 +2585,7 @@ bool hwc_compose_gralloc_buffer(
                        }
                     }
                  }
-                 BKNI_ReleaseMutex(ctx->g2d_mutex);
+                 pthread_mutex_unlock(&ctx->g2d_mutex);
               }
            }
         }
@@ -2699,7 +2699,7 @@ static void hwc_prepare_gpx_layer(
     cur_blending_type = hwc_android_blend_to_nsc_blend(layer->blending);
 
     if (!is_locked) {
-       if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+       if (pthread_mutex_lock(&ctx->mutex)) {
            goto out_unlock;
        }
     }
@@ -2777,7 +2777,7 @@ static void hwc_prepare_gpx_layer(
 
 out_mutex:
     if (!is_locked) {
-       BKNI_ReleaseMutex(ctx->mutex);
+       pthread_mutex_unlock(&ctx->mutex);
     }
 out_unlock:
     if (!lrc) hwc_mem_unlock(ctx, block_handle, true);
@@ -2906,14 +2906,14 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
 
     ctx->stats[HWC_PRIMARY_IX].prepare_call += 1;
 
-    if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->power_mutex)) {
         ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
         ctx->stats[HWC_PRIMARY_IX].prepare_skipped += 1;
         goto out;
     }
 
     if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
-        BKNI_ReleaseMutex(ctx->power_mutex);
+        pthread_mutex_unlock(&ctx->power_mutex);
 
         if (ctx->hwc_binder) {
            ctx->hwc_binder->connect();
@@ -2962,11 +2962,11 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
         }
 
         if (skip_set < skip_cand) {
-           if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+           if (!pthread_mutex_lock(&ctx->mutex)) {
               for (i = 0; i < list->numHwLayers; i++) {
                  ctx->gpx_cli[i].skip_set = false;
               }
-              BKNI_ReleaseMutex(ctx->mutex);
+              pthread_mutex_unlock(&ctx->mutex);
            } else {
               ALOGE("comp: %llu - failed hidding skip", ctx->stats[HWC_PRIMARY_IX].prepare_call);
            }
@@ -2979,7 +2979,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     }
     else {
         ctx->stats[HWC_PRIMARY_IX].prepare_skipped += 1;
-        BKNI_ReleaseMutex(ctx->power_mutex);
+        pthread_mutex_unlock(&ctx->power_mutex);
     }
 
 out:
@@ -3001,7 +3001,7 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
     if (list) {
        ctx->stats[HWC_VIRTUAL_IX].prepare_call += 1;
 
-       if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+       if (pthread_mutex_lock(&ctx->mutex)) {
            ctx->stats[HWC_VIRTUAL_IX].prepare_skipped += 1;
            goto out;
        }
@@ -3061,7 +3061,7 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
     }
 
 out_unlock:
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 out:
     return rc;
 }
@@ -3106,11 +3106,11 @@ static void hwc_put_disp_surface(struct hwc_context_t *ctx, int disp_ix, NEXUS_S
    }
 
    if (surface) {
-      if (BKNI_AcquireMutex(ctx->disp_cli[disp_ix].fifo_mutex) == BERR_SUCCESS) {
+      if (!pthread_mutex_lock(&ctx->disp_cli[disp_ix].fifo_mutex)) {
          NEXUS_SurfaceHandle *pElement = BFIFO_WRITE(&ctx->disp_cli[disp_ix].display_fifo);
          *pElement = surface;
          BFIFO_WRITE_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
-         BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
+         pthread_mutex_unlock(&ctx->disp_cli[disp_ix].fifo_mutex);
       } else {
          ALOGW("%s: leaked surface %p (disp %d)!", __FUNCTION__, surface, disp_ix);
       }
@@ -3173,7 +3173,7 @@ static void hwc_recycle_now(struct hwc_context_t* ctx)
    if (rc) {
       ALOGW("%s: error recycling %p %d", __FUNCTION__, ctx->disp_cli[HWC_PRIMARY_IX].schdl, rc);
    } else if ( numSurfaces > 0 ) {
-      if (BKNI_AcquireMutex(ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex) == BERR_SUCCESS) {
+      if (!pthread_mutex_lock(&ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex)) {
          for (i = 0; i < numSurfaces; i++) {
             if (hwc_valid_surface_now(ctx, HWC_PRIMARY_IX, surfaces[i])) {
                NEXUS_SurfaceHandle *pElement = BFIFO_WRITE(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo);
@@ -3181,7 +3181,7 @@ static void hwc_recycle_now(struct hwc_context_t* ctx)
                BFIFO_WRITE_COMMIT(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo, 1);
             }
          }
-         BKNI_ReleaseMutex(ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex);
+         pthread_mutex_unlock(&ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex);
       } else {
          ALOGW("%s: lost surfaces!", __FUNCTION__);
       }
@@ -3201,12 +3201,12 @@ static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int d
     }
 
     while (true) {
-       if (BKNI_AcquireMutex(ctx->disp_cli[disp_ix].fifo_mutex) == BERR_SUCCESS) {
+       if (!pthread_mutex_lock(&ctx->disp_cli[disp_ix].fifo_mutex)) {
           if (BFIFO_READ_PEEK(&ctx->disp_cli[disp_ix].display_fifo) != 0) {
-             BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
+             pthread_mutex_unlock(&ctx->disp_cli[disp_ix].fifo_mutex);
              goto out_read;
           } else {
-             BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
+             pthread_mutex_unlock(&ctx->disp_cli[disp_ix].fifo_mutex);
              hwc_recycle_now(ctx);
              if (BFIFO_READ_PEEK(&ctx->disp_cli[disp_ix].display_fifo) != 0) {
                 goto out_read;
@@ -3226,10 +3226,10 @@ static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int d
     }
 
 out_read:
-    if (BKNI_AcquireMutex(ctx->disp_cli[disp_ix].fifo_mutex) == BERR_SUCCESS) {
+    if (!pthread_mutex_lock(&ctx->disp_cli[disp_ix].fifo_mutex)) {
        pElement = BFIFO_READ(&ctx->disp_cli[disp_ix].display_fifo);
        BFIFO_READ_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
-       BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
+       pthread_mutex_unlock(&ctx->disp_cli[disp_ix].fifo_mutex);
     }
 out:
     return *pElement;
@@ -3372,19 +3372,19 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
 
     ctx->stats[HWC_PRIMARY_IX].set_call += 1;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
         ctx->stats[HWC_PRIMARY_IX].set_skipped += 1;
         goto out_close_fence;
     }
 
-    if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->power_mutex)) {
         ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
         ctx->stats[HWC_PRIMARY_IX].set_skipped += 1;
         goto out_mutex;
     }
 
     if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
-        BKNI_ReleaseMutex(ctx->power_mutex);
+        pthread_mutex_unlock(&ctx->power_mutex);
 
         hwc_work_item_size = sizeof(hwc_work_item) + (list->numHwLayers * sizeof(hwc_layer_1_t));
         this_frame = (struct hwc_work_item *) calloc(1, hwc_work_item_size);
@@ -3465,7 +3465,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         }
 
         if (!ctx->fence_support) {
-           BKNI_ReleaseMutex(ctx->mutex);
+           pthread_mutex_unlock(&ctx->mutex);
            BKNI_SetEvent(ctx->composer_event[HWC_PRIMARY_IX]);
            BKNI_WaitForEvent(ctx->composer_event_sync[HWC_PRIMARY_IX], BKNI_INFINITE);
            goto out_close_fence;
@@ -3473,7 +3473,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
            if (ctx->signal_oob_inline) {
               oob_signaled = hwc_set_signal_oob_il_locked(ctx, list);
            }
-           BKNI_ReleaseMutex(ctx->mutex);
+           pthread_mutex_unlock(&ctx->mutex);
            BKNI_SetEvent(ctx->composer_event[HWC_PRIMARY_IX]);
            if (ctx->stats[HWC_PRIMARY_IX].set_call >=
                   ctx->stats[HWC_PRIMARY_IX].composed +
@@ -3484,11 +3484,11 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
            goto out;
         }
     } else {
-         BKNI_ReleaseMutex(ctx->power_mutex);
+         pthread_mutex_unlock(&ctx->power_mutex);
     }
 
 out_mutex:
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 out_close_fence:
     for (i = 0; i < list->numHwLayers; i++) {
        if (list->hwLayers[i].acquireFenceFd >= 0) {
@@ -3629,12 +3629,12 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          if (!video.is_sideband) {
             if (ctx->hwc_binder) {
                if (!ctx->signal_oob_inline) {
-                  if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+                  if (!pthread_mutex_lock(&ctx->mutex)) {
                      if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
                         ctx->mm_cli[0].last_ping_frame_id = pSharedData->videoFrame.status.serialNumber;
                         ctx->hwc_binder->setframe(ctx->mm_cli[0].id, ctx->mm_cli[0].last_ping_frame_id);
                      }
-                     BKNI_ReleaseMutex(ctx->mutex);
+                     pthread_mutex_unlock(&ctx->mutex);
                   }
                }
                pinged_frame = ctx->mm_cli[0].last_ping_frame_id;
@@ -3642,7 +3642,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          } else {
             is_sideband = true;
             if (ctx->hwc_binder) {
-               if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+               if (!pthread_mutex_lock(&ctx->mutex)) {
                   if (ctx->sb_cli[0].geometry_updated) {
                      struct hwc_position frame, clipped;
                      frame.x = ctx->sb_cli[0].root.composition.position.x;;
@@ -3657,7 +3657,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                      ALOGI("comp: sdb-0: {%d,%d,%dx%d} -> {%d,%d,%dx%d}", frame.x, frame.y, frame.w, frame.h, clipped.x, clipped.y, clipped.w, clipped.h);
                      ctx->sb_cli[0].geometry_updated = false;
                   }
-                  BKNI_ReleaseMutex(ctx->mutex);
+                  pthread_mutex_unlock(&ctx->mutex);
                }
             }
          }
@@ -3839,7 +3839,7 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
 
     ctx->stats[HWC_VIRTUAL_IX].set_call += 1;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
        ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
        goto out_close_fence;
     }
@@ -3858,14 +3858,14 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
       goto out_mutex;
     }
 
-    if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->power_mutex)) {
        ALOGE("%s: could not acquire power_mutex!!!", __FUNCTION__);
        ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
        goto out_mutex;
     }
 
     if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
-       BKNI_ReleaseMutex(ctx->power_mutex);
+       pthread_mutex_unlock(&ctx->power_mutex);
 
        hwc_work_item_size = sizeof(hwc_work_item) + (list->numHwLayers * sizeof(hwc_layer_1_t));
        this_frame = (struct hwc_work_item *) calloc(1, hwc_work_item_size);
@@ -3933,21 +3933,21 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
        }
 
        if (!ctx->fence_support) {
-          BKNI_ReleaseMutex(ctx->mutex);
+          pthread_mutex_unlock(&ctx->mutex);
           BKNI_SetEvent(ctx->composer_event[HWC_VIRTUAL_IX]);
           BKNI_WaitForEvent(ctx->composer_event_sync[HWC_VIRTUAL_IX], BKNI_INFINITE);
           goto out_close_fence;
        } else {
-          BKNI_ReleaseMutex(ctx->mutex);
+          pthread_mutex_unlock(&ctx->mutex);
           BKNI_SetEvent(ctx->composer_event[HWC_VIRTUAL_IX]);
           goto out;
        }
     } else {
-         BKNI_ReleaseMutex(ctx->power_mutex);
+         pthread_mutex_unlock(&ctx->power_mutex);
     }
 
 out_mutex:
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 out_close_fence:
     for (i = 0; i < list->numHwLayers; i++) {
        if (list->hwLayers[i].acquireFenceFd >= 0) {
@@ -4194,9 +4194,6 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
               NEXUS_SurfaceClient_Release(ctx->disp_cli[i].schdl);
            }
            pthread_join(ctx->composer_thread[i], NULL);
-           if (ctx->disp_cli[i].fifo_mutex) {
-              BKNI_DestroyMutex(ctx->disp_cli[i].fifo_mutex);
-           }
            if (ctx->composer_event[i]) {
               BKNI_DestroyEvent(ctx->composer_event[i]);
            }
@@ -4219,6 +4216,7 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
                  NEXUS_Surface_Destroy(ctx->disp_cli[i].display_buffers[j].fifo_surf);
               }
            }
+           pthread_mutex_destroy(&ctx->disp_cli[i].fifo_mutex);
         }
         if (ctx->recycle_event) {
            BKNI_DestroyEvent(ctx->recycle_event);
@@ -4232,12 +4230,6 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
 
         NxClient_Free(&ctx->nxAllocResults);
 
-        BKNI_DestroyMutex(ctx->vsync_callback_enabled_mutex);
-        BKNI_DestroyMutex(ctx->mutex);
-        BKNI_DestroyMutex(ctx->power_mutex);
-        BKNI_DestroyMutex(ctx->dev_mutex);
-        BKNI_DestroyMutex(ctx->g2d_mutex);
-
         if (ctx->hwc_binder) {
            delete ctx->hwc_binder;
         }
@@ -4248,6 +4240,12 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         if (ctx->checkpoint_event) {
            BKNI_DestroyEvent(ctx->checkpoint_event);
         }
+
+        pthread_mutex_destroy(&ctx->vsync_callback_enabled_mutex);
+        pthread_mutex_destroy(&ctx->mutex);
+        pthread_mutex_destroy(&ctx->dev_mutex);
+        pthread_mutex_destroy(&ctx->power_mutex);
+        pthread_mutex_destroy(&ctx->g2d_mutex);
 
         hwc_close_memory_interface(ctx);
     }
@@ -4285,14 +4283,14 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
             goto out;
        }
 
-       if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+       if (pthread_mutex_lock(&ctx->power_mutex)) {
            ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
            goto out;
        }
        if (ctx->power_mode != mode) {
           ctx->power_mode = mode;
        }
-       BKNI_ReleaseMutex(ctx->power_mutex);
+       pthread_mutex_unlock(&ctx->power_mutex);
        rc = 0;
     }
 
@@ -4313,11 +4311,11 @@ static int hwc_device_query(struct hwc_composer_device_1* dev, int what, int* va
        break;
 
        case HWC_VSYNC_PERIOD:
-           if (BKNI_AcquireMutex(ctx->dev_mutex) != BERR_SUCCESS) {
+           if (pthread_mutex_lock(&ctx->dev_mutex)) {
                return -EINVAL;
            }
            *value = (int)VSYNC_REFRESH;
-           BKNI_ReleaseMutex(ctx->dev_mutex);
+           pthread_mutex_unlock(&ctx->dev_mutex);
        break;
 
        case HWC_DISPLAY_TYPES_SUPPORTED:
@@ -4344,10 +4342,10 @@ static int hwc_device_eventControl(struct hwc_composer_device_1* dev, int disp, 
 
     if (event == HWC_EVENT_VSYNC) {
         struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
-        if (BKNI_AcquireMutex(ctx->vsync_callback_enabled_mutex) == BERR_SUCCESS) {
+        if (pthread_mutex_lock(&ctx->vsync_callback_enabled_mutex)) {
            ctx->vsync_callback_enabled = enabled;
            status = 0;
-           BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
+           pthread_mutex_unlock(&ctx->vsync_callback_enabled_mutex);
         }
         if (!status) ALOGV("HWC HWC_EVENT_VSYNC (%s)", enabled ? "enabled":"disabled");
     }
@@ -4367,7 +4365,7 @@ static int hwc_device_getDisplayConfigs(struct hwc_composer_device_1* dev, int d
     if (*numConfigs == 0 || configs == NULL)
        return ret;
 
-    if (BKNI_AcquireMutex(ctx->dev_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->dev_mutex)) {
        return -EINVAL;
     }
 
@@ -4379,7 +4377,7 @@ static int hwc_device_getDisplayConfigs(struct hwc_composer_device_1* dev, int d
         ret = -1;
     }
 
-    BKNI_ReleaseMutex(ctx->dev_mutex);
+    pthread_mutex_unlock(&ctx->dev_mutex);
 
     return ret;
 }
@@ -4390,7 +4388,7 @@ static int hwc_device_getDisplayAttributes(struct hwc_composer_device_1* dev, in
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
     int i = 0;
 
-    if (BKNI_AcquireMutex(ctx->dev_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->dev_mutex)) {
        return -EINVAL;
     }
 
@@ -4420,12 +4418,12 @@ static int hwc_device_getDisplayAttributes(struct hwc_composer_device_1* dev, in
 
                i++;
             }
-            BKNI_ReleaseMutex(ctx->dev_mutex);
+            pthread_mutex_unlock(&ctx->dev_mutex);
             return 0;
         }
     }
 
-    BKNI_ReleaseMutex(ctx->dev_mutex);
+    pthread_mutex_unlock(&ctx->dev_mutex);
     return -EINVAL;
 }
 
@@ -4433,16 +4431,16 @@ static int hwc_device_getActiveConfig(struct hwc_composer_device_1* dev, int dis
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
 
-    if (BKNI_AcquireMutex(ctx->dev_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->dev_mutex)) {
        return -EINVAL;
     }
 
     if (disp == HWC_DISPLAY_PRIMARY) {
         // always first one, index 0.
-        BKNI_ReleaseMutex(ctx->dev_mutex);
+        pthread_mutex_unlock(&ctx->dev_mutex);
         return 0;
     } else {
-        BKNI_ReleaseMutex(ctx->dev_mutex);
+        pthread_mutex_unlock(&ctx->dev_mutex);
         return -1;
     }
 }
@@ -4451,16 +4449,16 @@ static int hwc_device_setActiveConfig(struct hwc_composer_device_1* dev, int dis
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
 
-    if (BKNI_AcquireMutex(ctx->dev_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->dev_mutex)) {
        return -EINVAL;
     }
 
     if (disp == HWC_DISPLAY_PRIMARY && index == 0) {
-       BKNI_ReleaseMutex(ctx->dev_mutex);
+       pthread_mutex_unlock(&ctx->dev_mutex);
        return 0;
     }
 
-    BKNI_ReleaseMutex(ctx->dev_mutex);
+    pthread_mutex_unlock(&ctx->dev_mutex);
     return -EINVAL;
 }
 
@@ -4468,7 +4466,7 @@ static int hwc_device_setCursorPositionAsync(struct hwc_composer_device_1 *dev, 
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
        return -EINVAL;
     }
 
@@ -4486,7 +4484,7 @@ static int hwc_device_setCursorPositionAsync(struct hwc_composer_device_1 *dev, 
        }
     }
 
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
     return 0;
 }
 
@@ -4504,18 +4502,18 @@ static void * hwc_vsync_task(void *argv)
 
     do
     {
-       if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+       if (pthread_mutex_lock(&ctx->power_mutex)) {
           ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
           goto out;
        }
        if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
-          BKNI_ReleaseMutex(ctx->power_mutex);
+          pthread_mutex_unlock(&ctx->power_mutex);
           BKNI_WaitForEvent(ctx->vsync_callback, BKNI_INFINITE);
 
           ctx->on_display.vsync = hwc_tick();
 
           if (ctx->hack_sync_refresh) {
-             if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+             if (!pthread_mutex_lock(&ctx->mutex)) {
                 if (hack_reference_composition == 0) {
                    hack_reference_composition = ctx->stats[HWC_PRIMARY_IX].composed;
                 }
@@ -4533,14 +4531,14 @@ static void * hwc_vsync_task(void *argv)
                       }
                       hack_reference_composition = 0;
                       hack_triggered_composition = hack_current_composition + 1;
-                      BKNI_ReleaseMutex(ctx->mutex);
+                      pthread_mutex_unlock(&ctx->mutex);
                       ctx->procs->invalidate(const_cast<hwc_procs_t *>(ctx->procs));
                    } else if (hack_current_composition > hack_reference_composition) {
                       hack_reference_composition = 0;
                    }
                 }
                 if (!no_lock) {
-                   BKNI_ReleaseMutex(ctx->mutex);
+                   pthread_mutex_unlock(&ctx->mutex);
                 }
                 no_lock = false;
              }
@@ -4551,7 +4549,7 @@ static void * hwc_vsync_task(void *argv)
          }
 
       } else {
-         BKNI_ReleaseMutex(ctx->power_mutex);
+         pthread_mutex_unlock(&ctx->power_mutex);
          BKNI_Sleep(16);
       }
 
@@ -4622,12 +4620,12 @@ static bool hwc_standby_monitor(void *dev)
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
     int powerMode;
 
-    if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->power_mutex)) {
        ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
        goto out;
     }
     powerMode = ctx->power_mode;
-    BKNI_ReleaseMutex(ctx->power_mutex);
+    pthread_mutex_unlock(&ctx->power_mutex);
 
     // If Nexus has been told to enter standby and the primary display is turned on,
     // then force the display to power off...
@@ -4705,18 +4703,18 @@ static void * hwc_compose_task_primary(void *argv)
 
    do
    {
-      if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+      if (pthread_mutex_lock(&ctx->power_mutex)) {
          ALOGE("%s: could not acquire power_mutex!!!", __FUNCTION__);
          goto out;
       }
       if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
-         BKNI_ReleaseMutex(ctx->power_mutex);
+         pthread_mutex_unlock(&ctx->power_mutex);
          BKNI_WaitForEvent(ctx->composer_event[HWC_PRIMARY_IX], BKNI_INFINITE);
          bool try_compose = true, release_forced = false;
 
          do {
             this_frame = NULL;
-            if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+            if (!pthread_mutex_lock(&ctx->mutex)) {
                this_frame = ctx->composer_work_list[HWC_PRIMARY_IX];
                if (this_frame == NULL) {
                   try_compose = false;
@@ -4729,7 +4727,7 @@ static void * hwc_compose_task_primary(void *argv)
                   }
                   ctx->stats[HWC_PRIMARY_IX].composed++;
                }
-               BKNI_ReleaseMutex(ctx->mutex);
+               pthread_mutex_unlock(&ctx->mutex);
             } else {
                ALOGE("%s: could not acquire mutex!!!", __FUNCTION__);
                try_compose = false;
@@ -4755,7 +4753,7 @@ static void * hwc_compose_task_primary(void *argv)
          }
 
       } else {
-         BKNI_ReleaseMutex(ctx->power_mutex);
+         pthread_mutex_unlock(&ctx->power_mutex);
          BKNI_Sleep(16);
       }
 
@@ -4776,18 +4774,18 @@ static void * hwc_compose_task_virtual(void *argv)
 
    do
    {
-      if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+      if (pthread_mutex_lock(&ctx->power_mutex)) {
          ALOGE("%s: could not acquire power_mutex!!!", __FUNCTION__);
          goto out;
       }
       if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
-         BKNI_ReleaseMutex(ctx->power_mutex);
+         pthread_mutex_unlock(&ctx->power_mutex);
          BKNI_WaitForEvent(ctx->composer_event[HWC_VIRTUAL_IX], BKNI_INFINITE);
          bool try_compose = true;
 
          do {
             this_frame = NULL;
-            if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+            if (!pthread_mutex_lock(&ctx->mutex)) {
                this_frame = ctx->composer_work_list[HWC_VIRTUAL_IX];
                if (this_frame == NULL) {
                   try_compose = false;
@@ -4795,7 +4793,7 @@ static void * hwc_compose_task_virtual(void *argv)
                   ctx->composer_work_list[HWC_VIRTUAL_IX] = this_frame->next;
                   ctx->stats[HWC_VIRTUAL_IX].composed++;
                }
-               BKNI_ReleaseMutex(ctx->mutex);
+               pthread_mutex_unlock(&ctx->mutex);
             } else {
                ALOGE("%s: could not acquire mutex!!!", __FUNCTION__);
                try_compose = false;
@@ -4815,7 +4813,7 @@ static void * hwc_compose_task_virtual(void *argv)
          }
 
       } else {
-         BKNI_ReleaseMutex(ctx->power_mutex);
+         pthread_mutex_unlock(&ctx->power_mutex);
          BKNI_Sleep(16);
       }
 
@@ -4882,6 +4880,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         NEXUS_Error rc = NEXUS_SUCCESS;
         NEXUS_Graphics2DSettings gfxSettings;
         pthread_attr_t attr;
+        pthread_mutexattr_t mattr;
         dev = (struct hwc_context_t*)calloc(1, sizeof(*dev));
 
         if (dev == NULL) {
@@ -4901,21 +4900,13 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         if (BKNI_CreateEvent(&dev->vsync_callback)) {
            goto clean_up;
         }
-        if (BKNI_CreateMutex(&dev->vsync_callback_enabled_mutex) == BERR_OS_ERROR) {
-           goto clean_up;
-        }
-        if (BKNI_CreateMutex(&dev->mutex) == BERR_OS_ERROR) {
-           goto clean_up;
-        }
-        if (BKNI_CreateMutex(&dev->dev_mutex) == BERR_OS_ERROR) {
-           goto clean_up;
-        }
-        if (BKNI_CreateMutex(&dev->power_mutex) == BERR_OS_ERROR) {
-           goto clean_up;
-        }
-        if (BKNI_CreateMutex(&dev->g2d_mutex) == BERR_OS_ERROR) {
-           goto clean_up;
-        }
+        pthread_mutexattr_init(&mattr);
+        pthread_mutex_init(&dev->vsync_callback_enabled_mutex, &mattr);
+        pthread_mutex_init(&dev->mutex, &mattr);
+        pthread_mutex_init(&dev->dev_mutex, &mattr);
+        pthread_mutex_init(&dev->power_mutex, &mattr);
+        pthread_mutex_init(&dev->g2d_mutex, &mattr);
+        pthread_mutexattr_destroy(&mattr);
 
         {
            NEXUS_MemoryStatus status;
@@ -4989,9 +4980,9 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                ALOGE("%s: unable to set client composition %d", __FUNCTION__, rc);
                goto clean_up;
             }
-            if (BKNI_CreateMutex(&dev->disp_cli[i].fifo_mutex) == BERR_OS_ERROR) {
-               goto clean_up;
-            }
+            pthread_mutexattr_init(&mattr);
+            pthread_mutex_init(&dev->disp_cli[i].fifo_mutex, &mattr);
+            pthread_mutexattr_destroy(&mattr);
             rc = hwc_setup_framebuffer_mode(dev, i,
                dev->comp_bypass ? CLIENT_MODE_COMP_BYPASS : CLIENT_MODE_NSC_FRAMEBUFFER);
             if (rc) {
@@ -5241,7 +5232,7 @@ static void hwc_prepare_mm_layer(
    unsigned int cur_blending_type;
    bool layer_updated = true;
 
-   if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+   if (pthread_mutex_lock(&ctx->mutex)) {
       goto out;
    }
 
@@ -5314,7 +5305,7 @@ static void hwc_prepare_mm_layer(
    }
 
 out_unlock:
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 out:
     return;
 }
@@ -5339,7 +5330,7 @@ static void hwc_prepare_sb_layer(
    unsigned int cur_blending_type;
    bool layer_updated = true;
 
-   if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+   if (pthread_mutex_lock(&ctx->mutex)) {
        goto out;
    }
 
@@ -5391,7 +5382,7 @@ static void hwc_prepare_sb_layer(
    }
 
 out_unlock:
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 out:
     return;
 }
@@ -5440,7 +5431,7 @@ static void hwc_hide_unused_gpx_layer(struct hwc_context_t* ctx, int index)
 {
     NEXUS_Error rc;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
         goto out;
     }
 
@@ -5448,7 +5439,7 @@ static void hwc_hide_unused_gpx_layer(struct hwc_context_t* ctx, int index)
     ctx->gpx_cli[index].skip_set = false;
     ctx->gpx_cli[index].composition.visible = false;
 
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 
 out:
     return;
@@ -5459,7 +5450,7 @@ static void nx_client_hide_unused_mm_layer(struct hwc_context_t* ctx, int index)
     NEXUS_SurfaceComposition composition;
     NEXUS_Error rc;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
         goto out;
     }
 
@@ -5467,7 +5458,7 @@ static void nx_client_hide_unused_mm_layer(struct hwc_context_t* ctx, int index)
        ctx->mm_cli[index].root.composition.visible = false;
     }
 
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 out:
     return;
 }
@@ -5477,7 +5468,7 @@ static void nx_client_hide_unused_sb_layer(struct hwc_context_t* ctx, int index)
     NEXUS_SurfaceComposition composition;
     NEXUS_Error rc;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
         goto out;
     }
 
@@ -5485,7 +5476,7 @@ static void nx_client_hide_unused_sb_layer(struct hwc_context_t* ctx, int index)
        ctx->sb_cli[index].root.composition.visible = false;
     }
 
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 
 out:
     return;
@@ -5509,7 +5500,7 @@ static void hwc_hide_unused_sb_layers(struct hwc_context_t* ctx)
 
 static void hwc_binder_advertise_video_surface(struct hwc_context_t* ctx)
 {
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
         goto out;
     }
 
@@ -5526,7 +5517,7 @@ static void hwc_binder_advertise_video_surface(struct hwc_context_t* ctx)
        ctx->nsc_sideband_changed = false;
     }
 
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 
 out:
     return;
@@ -5544,12 +5535,12 @@ static int hwc_checkpoint(struct hwc_context_t *ctx)
 {
     int rc;
 
-    if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->g2d_mutex)) {
         ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
         return -1;
     }
     rc = hwc_checkpoint_locked(ctx);
-    BKNI_ReleaseMutex(ctx->g2d_mutex);
+    pthread_mutex_unlock(&ctx->g2d_mutex);
     return rc;
 }
 
