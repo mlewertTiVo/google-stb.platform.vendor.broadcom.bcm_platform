@@ -58,6 +58,8 @@
 #include <stdio.h>
 #include <cutils/native_handle.h>
 
+#define B_PROPERTY_TRIM_VP9 ("ro.nx.trim.vp9")
+
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateTunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex);
