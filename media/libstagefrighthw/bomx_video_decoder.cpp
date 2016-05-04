@@ -851,7 +851,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_outputMode(BOMX_VideoDecoderOutputBufferType_eStandard),
     m_omxHwcBinder(NULL),
     m_memTracker(-1),
-    m_securePicBuff(false),
+    m_secureRuntimeHeaps(false),
     m_frameSerial(0),
     m_displayFrameAvailable(false),
     m_droppedFrames(0),
@@ -1038,6 +1038,12 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))
     {
        BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
+       // failed, so forced to assume picture buffer heaps are secured.
+       m_secureRuntimeHeaps = true;
+    }
+    else
+    {
+       m_secureRuntimeHeaps = m_secureDecoder;
     }
 
     NxClient_AllocSettings nxAllocSettings;
@@ -2253,43 +2259,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
         // All states other than loaded require a playpump and video decoder handle
         if ( NULL == m_hSimpleVideoDecoder )
         {
-#if defined(SECURE_DECODER_ON)
-            if ( !m_secureDecoder && !m_tunnelMode )
-            {
-                int i;
-                NEXUS_SageStatus secureStatus;
-
-                for ( i = 0; i < B_SECURE_QUERY_MAX_RETRIES; i++ )
-                {
-                    errCode = NEXUS_Sage_GetStatus(&secureStatus);
-                    if ( errCode != NEXUS_SUCCESS )
-                    {
-                        /* SAGE possibly in reset */
-                        ALOGW("Unable to query SAGE secure status, SAGE unrepsonsive");
-                        /* Break out of loop if timed out last attempt and SAGE not responsive */
-                        if ( m_securePicBuff )
-                        {
-                            BOMX_VideoDecoder_SetupRuntimeHeaps(!m_secureDecoder, true);
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        m_securePicBuff = secureStatus.urr.secured;
-                        /* Completed unsecure process, break */
-                        if ( !m_securePicBuff )
-                            break;
-                        usleep(B_SECURE_QUERY_SLEEP_INTERVAL_US);
-                    }
-                }
-
-                if ( i >= B_SECURE_QUERY_MAX_RETRIES )
-                    ALOGI("Maximum URR query attempts reached");
-                ALOGV("Slept %dms before starting non-secure decoder",
-                      i * (B_SECURE_QUERY_SLEEP_INTERVAL_US / 1000));
-            }
-#endif
-
             NEXUS_VideoDecoderSettings vdecSettings;
             NEXUS_VideoDecoderExtendedSettings extSettings;
             NEXUS_PlaypumpOpenSettings playpumpOpenSettings;
@@ -4815,7 +4784,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     }
 
                     // Don't try to create a striped surface for secure video
-                    if ( !m_secureDecoder && !m_securePicBuff &&
+                    if ( !m_secureDecoder && !m_secureRuntimeHeaps &&
                          ( pInfo->type != BOMX_VideoDecoderOutputBufferType_eMetadata ||
                            ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX) ) )
                     {
