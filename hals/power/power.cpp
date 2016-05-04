@@ -16,6 +16,7 @@
 
 #include "nexus_power.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -86,6 +87,7 @@ static const char * SOPASS_KEY_FILE_PATH                  = "/data/misc/nexus/so
 // Sysfs paths
 static const char * SYS_MAP_MEM_TO_S2                     = "/sys/devices/platform/droid_pm/map_mem_to_s2";
 static const char * SYS_FULL_WOL_WAKEUP                   = "/sys/devices/platform/droid_pm/full_wol_wakeup";
+static const char * SYS_CLASS_NET                         = "/sys/class/net";
 
 // This is the default WoL monitor timeout in seconds.
 static const int DEFAULT_WOL_MONITOR_TIMEOUT = 4;
@@ -420,6 +422,36 @@ String8 power_get_sopass_file_path()
     }
 }
 
+static int power_filter_dots(const struct dirent *d)
+{
+    return (strcmp(d->d_name, "..") && strcmp(d->d_name, "."));
+}
+
+static bool power_is_iface_present(const char *ifname)
+{
+    /* Check /sys/class/net for what devices are available... */
+    int i;
+    int num_entries;
+    bool present = false;
+    struct dirent **namelist = NULL;
+
+    num_entries = scandir(SYS_CLASS_NET, &namelist, power_filter_dots, alphasort);
+    if (num_entries < 0) {
+        ALOGE("%s: Could not scan dir \"%s\" [%s]!!!", __FUNCTION__, SYS_CLASS_NET, strerror(errno));
+    }
+    else {
+        for (i = 0; i < num_entries && !present; i++) {
+            ALOGV("%s: Checking d_name=\"%s\" matches \"%s\"...", __FUNCTION__, namelist[i]->d_name, ifname);
+            if (strcmp(namelist[i]->d_name, ifname) == 0) {
+                present = true;
+            }
+            free(namelist[i]);
+        }
+        free(namelist);
+    }
+    return present;
+}
+
 static status_t power_set_enet_wol()
 {
     status_t status = NO_ERROR;
@@ -433,21 +465,26 @@ static status_t power_set_enet_wol()
         status = PERMISSION_DENIED;
     }
     else {
+        status = NAME_NOT_FOUND;
+
         // Search for a valid Ethernet interface...
         for (i=0; i<sizeof(powerNetInterfaces)/sizeof(powerNetInterfaces[0]); i++) {
-            memset(&ifr, 0, sizeof(ifr));
-            strcpy(ifr.ifr_name, powerNetInterfaces[i]);
+            if (power_is_iface_present(powerNetInterfaces[i])) {
+                memset(&ifr, 0, sizeof(ifr));
+                strcpy(ifr.ifr_name, powerNetInterfaces[i]);
 
-            status = ioctl(fd, SIOCGIFFLAGS, &ifr);
-            if (status < 0) {
-                ALOGW("%s: Could not get socket flags for %s!", __FUNCTION__, ifr.ifr_name);
-            }
-            else if (!(ifr.ifr_flags & IFF_UP)) {
-                ALOGW("%s: Interface %s is DOWN!", __FUNCTION__, ifr.ifr_name);
-                status = -EAGAIN;
-            }
-            else {
-                break;
+                status = ioctl(fd, SIOCGIFFLAGS, &ifr);
+                if (status < 0) {
+                    ALOGW("%s: Could not get socket flags for %s!", __FUNCTION__, ifr.ifr_name);
+                }
+                else if (!(ifr.ifr_flags & IFF_UP)) {
+                    ALOGW("%s: Interface %s is DOWN!", __FUNCTION__, ifr.ifr_name);
+                    status = -EAGAIN;
+                }
+                else {
+                    status = NO_ERROR;
+                    break;
+                }
             }
         }
     }
@@ -531,7 +568,10 @@ static status_t power_set_enet_wol()
             ALOGW("%s: Could not set WoL settings for %s!", __FUNCTION__, ifr.ifr_name);
         }
     }
-    close(fd);
+
+    if (fd >= 0) {
+        close(fd);
+    }
     return status;
 }
 
