@@ -3629,34 +3629,36 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          if (!video.is_sideband) {
             if (ctx->hwc_binder) {
                if (!ctx->signal_oob_inline) {
-                  BKNI_AcquireMutex(ctx->mutex);
-                  if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
-                     ctx->mm_cli[0].last_ping_frame_id = pSharedData->videoFrame.status.serialNumber;
-                     ctx->hwc_binder->setframe(ctx->mm_cli[0].id, ctx->mm_cli[0].last_ping_frame_id);
+                  if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+                     if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
+                        ctx->mm_cli[0].last_ping_frame_id = pSharedData->videoFrame.status.serialNumber;
+                        ctx->hwc_binder->setframe(ctx->mm_cli[0].id, ctx->mm_cli[0].last_ping_frame_id);
+                     }
+                     BKNI_ReleaseMutex(ctx->mutex);
                   }
-                  BKNI_ReleaseMutex(ctx->mutex);
                }
                pinged_frame = ctx->mm_cli[0].last_ping_frame_id;
             }
          } else {
             is_sideband = true;
             if (ctx->hwc_binder) {
-               BKNI_AcquireMutex(ctx->mutex);
-               if (ctx->sb_cli[0].geometry_updated) {
-                  struct hwc_position frame, clipped;
-                  frame.x = ctx->sb_cli[0].root.composition.position.x;;
-                  frame.y = ctx->sb_cli[0].root.composition.position.y;
-                  frame.w = ctx->sb_cli[0].root.composition.position.width;
-                  frame.h = ctx->sb_cli[0].root.composition.position.height;
-                  clipped.x = ctx->sb_cli[0].root.composition.clipRect.x;
-                  clipped.y = ctx->sb_cli[0].root.composition.clipRect.y;
-                  clipped.w = (ctx->sb_cli[0].root.composition.clipRect.width == 0xFFFF) ? 0 : ctx->sb_cli[0].root.composition.clipRect.width;
-                  clipped.h = (ctx->sb_cli[0].root.composition.clipRect.height == 0xFFFF) ? 0 : ctx->sb_cli[0].root.composition.clipRect.height;
-                  ctx->hwc_binder->setgeometry(HWC_BINDER_SDB, 0, frame, clipped, SB_CLIENT_ZORDER, 1);
-                  ALOGI("comp: sdb-0: {%d,%d,%dx%d} -> {%d,%d,%dx%d}", frame.x, frame.y, frame.w, frame.h, clipped.x, clipped.y, clipped.w, clipped.h);
-                  ctx->sb_cli[0].geometry_updated = false;
+               if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+                  if (ctx->sb_cli[0].geometry_updated) {
+                     struct hwc_position frame, clipped;
+                     frame.x = ctx->sb_cli[0].root.composition.position.x;;
+                     frame.y = ctx->sb_cli[0].root.composition.position.y;
+                     frame.w = ctx->sb_cli[0].root.composition.position.width;
+                     frame.h = ctx->sb_cli[0].root.composition.position.height;
+                     clipped.x = ctx->sb_cli[0].root.composition.clipRect.x;
+                     clipped.y = ctx->sb_cli[0].root.composition.clipRect.y;
+                     clipped.w = (ctx->sb_cli[0].root.composition.clipRect.width == 0xFFFF) ? 0 : ctx->sb_cli[0].root.composition.clipRect.width;
+                     clipped.h = (ctx->sb_cli[0].root.composition.clipRect.height == 0xFFFF) ? 0 : ctx->sb_cli[0].root.composition.clipRect.height;
+                     ctx->hwc_binder->setgeometry(HWC_BINDER_SDB, 0, frame, clipped, SB_CLIENT_ZORDER, 1);
+                     ALOGI("comp: sdb-0: {%d,%d,%dx%d} -> {%d,%d,%dx%d}", frame.x, frame.y, frame.w, frame.h, clipped.x, clipped.y, clipped.w, clipped.h);
+                     ctx->sb_cli[0].geometry_updated = false;
+                  }
+                  BKNI_ReleaseMutex(ctx->mutex);
                }
-               BKNI_ReleaseMutex(ctx->mutex);
             }
          }
       } else if (item->comp[i].visible) {
