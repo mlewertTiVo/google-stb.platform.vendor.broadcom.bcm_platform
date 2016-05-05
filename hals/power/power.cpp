@@ -520,7 +520,7 @@ static status_t power_set_enet_wol()
                         if (status == NO_ERROR) {
                             size_t numEntries = config->getProperties().size();
                             if (numEntries != 1) {
-                                ALOGE("%s: Invalid number of entries %d in SecureOn(TM) password file \"%s\"!", __FUNCTION__, numEntries, path.string());
+                                ALOGE("%s: Invalid number of entries %zu in SecureOn(TM) password file \"%s\"!", __FUNCTION__, numEntries, path.string());
                                 status = BAD_VALUE;
                             }
                             else if (config->tryGetProperty(String8("SOPASS"), value)) {
