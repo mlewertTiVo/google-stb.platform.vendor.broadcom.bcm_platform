@@ -70,7 +70,7 @@
 // default lower bound that fits all platforms needs.
 //
 #define NX_HEAP_VIDEO_SECURE       1
-#define NX_HEAP_VIDEO_SECURE_VALUE "32m"
+#define NX_HEAP_VIDEO_SECURE_VALUE "64m"
 #define NX_HEAP_MAIN               1
 #define NX_HEAP_MAIN_VALUE         "48m"
 #define NX_HEAP_GFX                1
