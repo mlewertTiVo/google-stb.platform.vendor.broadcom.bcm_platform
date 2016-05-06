@@ -4363,7 +4363,7 @@ static int hwc_device_eventControl(struct hwc_composer_device_1* dev, int disp, 
 
     if (event == HWC_EVENT_VSYNC) {
         struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
-        if (pthread_mutex_lock(&ctx->vsync_callback_enabled_mutex)) {
+        if (!pthread_mutex_lock(&ctx->vsync_callback_enabled_mutex)) {
            ctx->vsync_callback_enabled = enabled;
            status = 0;
            pthread_mutex_unlock(&ctx->vsync_callback_enabled_mutex);
