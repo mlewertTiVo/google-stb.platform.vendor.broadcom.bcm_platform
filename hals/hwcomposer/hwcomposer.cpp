@@ -3609,12 +3609,13 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          if (!video.is_sideband) {
             if (ctx->hwc_binder) {
                if (!ctx->signal_oob_inline) {
-                  BKNI_AcquireMutex(ctx->mutex);
-                  if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
-                     ctx->mm_cli[0].last_ping_frame_id = pSharedData->videoFrame.status.serialNumber;
-                     ctx->hwc_binder->setframe(ctx->mm_cli[0].id, ctx->mm_cli[0].last_ping_frame_id);
+                  if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+                     if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
+                        ctx->mm_cli[0].last_ping_frame_id = pSharedData->videoFrame.status.serialNumber;
+                        ctx->hwc_binder->setframe(ctx->mm_cli[0].id, ctx->mm_cli[0].last_ping_frame_id);
+                     }
+                     BKNI_ReleaseMutex(ctx->mutex);
                   }
-                  BKNI_ReleaseMutex(ctx->mutex);
                }
                pinged_frame = ctx->mm_cli[0].last_ping_frame_id;
             }
