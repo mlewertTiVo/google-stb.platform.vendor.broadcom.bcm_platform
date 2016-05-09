@@ -2991,54 +2991,57 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
     int virt_w = -1, virt_h = -1;
     NEXUS_Error lrc;
 
-    if (list) {
-       ctx->stats[HWC_VIRTUAL_IX].prepare_call += 1;
+    if (!list) {
+       /* !!not an error, just nothing to do.*/
+       return 0;
+    }
 
-       if (pthread_mutex_lock(&ctx->mutex)) {
-           ctx->stats[HWC_VIRTUAL_IX].prepare_skipped += 1;
-           goto out;
+    ctx->stats[HWC_VIRTUAL_IX].prepare_call += 1;
+
+    if (pthread_mutex_lock(&ctx->mutex)) {
+        ctx->stats[HWC_VIRTUAL_IX].prepare_skipped += 1;
+        goto out;
+    }
+
+    for (i = 0; i < HWC_VD_CLIENTS_NUMBER; i++) {
+        ctx->vd_cli[i].composition.visible = false;
+    }
+
+    ctx->cfg[HWC_VIRTUAL_IX].width = -1;
+    ctx->cfg[HWC_VIRTUAL_IX].height = -1;
+    if (list->outbuf != NULL) {
+       void *pAddr;
+       private_handle_t *gr_buffer = (private_handle_t *)list->outbuf;
+       NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+       lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
+       PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
+       if (pSharedData != NULL) {
+          ctx->cfg[HWC_VIRTUAL_IX].width = pSharedData->container.width;
+          ctx->cfg[HWC_VIRTUAL_IX].height = pSharedData->container.height;
        }
+       if (!lrc) hwc_mem_unlock(ctx, block_handle, true);
+    }
 
-       for (i = 0; i < HWC_VD_CLIENTS_NUMBER; i++) {
-           ctx->vd_cli[i].composition.visible = false;
-       }
+    if (ctx->display_gles_always || ctx->display_gles_virtual ||
+        (ctx->cfg[HWC_VIRTUAL_IX].width == -1 && ctx->cfg[HWC_VIRTUAL_IX].height == -1)) {
+       goto out_unlock;
+    }
 
-       ctx->cfg[HWC_VIRTUAL_IX].width = -1;
-       ctx->cfg[HWC_VIRTUAL_IX].height = -1;
-       if (list->outbuf != NULL) {
-          void *pAddr;
-          private_handle_t *gr_buffer = (private_handle_t *)list->outbuf;
-          NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
-          lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
-          PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
-          if (pSharedData != NULL) {
-             ctx->cfg[HWC_VIRTUAL_IX].width = pSharedData->container.width;
-             ctx->cfg[HWC_VIRTUAL_IX].height = pSharedData->container.height;
-          }
-          if (!lrc) hwc_mem_unlock(ctx, block_handle, true);
-       }
-
-       if (ctx->display_gles_always || ctx->display_gles_virtual ||
-           (ctx->cfg[HWC_VIRTUAL_IX].width == -1 && ctx->cfg[HWC_VIRTUAL_IX].height == -1)) {
-          goto out_unlock;
-       }
-
-       for (i = 0; i < list->numHwLayers; i++) {
-          layer = &list->hwLayers[i];
-          if (ctx->display_dump_virt & HWC_DUMP_LEVEL_PREPARE) {
-             ALOGI("vcmp: %llu - %dx%d, layer: %d, kind: %d",
-                   ctx->stats[HWC_VIRTUAL_IX].prepare_call, virt_w, virt_h, i, layer->compositionType);
-          }
-          if ((layer->compositionType == HWC_FRAMEBUFFER) || (layer->compositionType == HWC_OVERLAY)) {
-             hwc_prepare_gpx_layer(ctx, layer, layer_id, false /*don't care*/, true, true, NULL, NULL);
-             layer_id++;
-             layer->compositionType = HWC_OVERLAY;
-          }
-       }
-
+    for (i = 0; i < list->numHwLayers; i++) {
+       layer = &list->hwLayers[i];
        if (ctx->display_dump_virt & HWC_DUMP_LEVEL_PREPARE) {
-          ALOGI("vcmp: %llu - %dx%d, composing %d layers", ctx->stats[HWC_VIRTUAL_IX].prepare_call, virt_w, virt_h, layer_id);
+          ALOGI("vcmp: %llu - %dx%d, layer: %d, kind: %d",
+                ctx->stats[HWC_VIRTUAL_IX].prepare_call, virt_w, virt_h, i, layer->compositionType);
        }
+       if ((layer->compositionType == HWC_FRAMEBUFFER) || (layer->compositionType == HWC_OVERLAY)) {
+          hwc_prepare_gpx_layer(ctx, layer, layer_id, false /*don't care*/, true, true, NULL, NULL);
+          layer_id++;
+          layer->compositionType = HWC_OVERLAY;
+       }
+    }
+
+    if (ctx->display_dump_virt & HWC_DUMP_LEVEL_PREPARE) {
+       ALOGI("vcmp: %llu - %dx%d, composing %d layers", ctx->stats[HWC_VIRTUAL_IX].prepare_call, virt_w, virt_h, layer_id);
     }
 
 out_unlock:
