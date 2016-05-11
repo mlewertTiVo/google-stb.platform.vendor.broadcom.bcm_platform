@@ -66,6 +66,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxplay/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxtrans/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/otpgetchipid/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/prdy_pes_playback/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/secboot/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/setdisplay/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/yv12torgba/Android.mk
 
