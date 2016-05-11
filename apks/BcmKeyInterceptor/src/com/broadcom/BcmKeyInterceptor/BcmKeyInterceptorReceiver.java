@@ -42,7 +42,9 @@ public class BcmKeyInterceptorReceiver extends BroadcastReceiver {
     private static final String TV_SETTING_PACKAGE = "com.android.tv.settings";
     private static final String TV_SETTING_WPS_ACTIVITY = "com.android.tv.settings.connectivity.WpsConnectionActivity";
 
-    private static final String NETFLIX_APP = "com.netflix.ninja";
+    private static final String ACTION_NETFLIX_KEY = "com.netflix.ninja.intent.action.NETFLIX_KEY";
+    private static final String NETFLIX_KEY_PERMISSION = "com.netflix.ninja.permission.NETFLIX_KEY";
+    private static final String NETFLIX_KEY_POWER_MODE = "power_on";
 
     private static final String TAG = "BcmKeyInterceptorReceiver";
 
@@ -90,13 +92,14 @@ public class BcmKeyInterceptorReceiver extends BroadcastReceiver {
                 /* Start Netflix activity */
                 if (DEBUG) Log.d(TAG, "Got Netflix key");
 
-                localIntent = context.getPackageManager().getLeanbackLaunchIntentForPackage(NETFLIX_APP);
-                if (localIntent != null) {
-                    if (DEBUG) Log.d(TAG, "localIntent: " + localIntent);
-                    context.startActivity(localIntent);
-                } else {
-                    if (DEBUG) Log.d(TAG, "LeanbackLaunchIntent for (" + NETFLIX_APP + ") is null" );
-                }
+                localIntent = new Intent();
+                localIntent.setAction(ACTION_NETFLIX_KEY);
+                // all Netflix key presses resulted in device power on (via WAKEUP input event)
+                localIntent.putExtra(NETFLIX_KEY_POWER_MODE, true);
+                localIntent.addFlags(intent.FLAG_INCLUDE_STOPPED_PACKAGES);
+
+                if (DEBUG) Log.d(TAG, "localIntent: " + localIntent);
+                context.sendBroadcast(localIntent, NETFLIX_KEY_PERMISSION);
             }
         }
     }
