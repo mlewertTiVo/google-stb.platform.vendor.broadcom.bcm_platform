@@ -7,6 +7,7 @@ import /init.nfs.rc
 import /init.blockdev.rc
 import /init.eth.rc
 import /init.nx.dynheap.rc
+import /init.brcm_fs.rc
 
 on early-init
    # Mount kernel debugfs
@@ -24,13 +25,6 @@ on init
    export NEXUS_DEVICE_NODE /dev/mali
    export NEXUS_WAKE_DEVICE_NODE /dev/mali0
 
-on fs
-   mount_all /fstab.bcm_platform
-   setprop chrome.tv.hole_threshold 0
-   setprop ro.nexus.devname mali
-   setprop ro.nexus.wake.devname mali0
-   setprop ro.nexus.ashmem.devname ion
-
 on boot
    # Subsytem Ramdump collection
    mkdir /data/tombstones 0777 system system
@@ -43,7 +37,6 @@ on post-fs
    export NEXUS_LOGGER_FILE /data/nexus/nexus.log
 
    setprop ro.nx.v3d.no_map_lock 0
-
    setprop ro.nexus.nxserver.hdcp1x_keys /mnt/hwcfg/drm_hdcp1x.bin
    setprop ro.nexus.nxserver.hdcp2x_keys /mnt/hwcfg/drm.bin
 
