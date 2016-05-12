@@ -52,9 +52,9 @@ static const struct ComponentEntry
 // Use a macro for now. Need to find a better way to avoid using macros in cpp code
 #ifdef SECURE_DECODER_ON
     {"OMX.broadcom.video_decoder.secure",               BOMX_VideoDecoder_Secure_Create,            BOMX_VideoDecoder_Secure_GetRole},
-    {"OMX.broadcom.video_decoder.secure.tunnel",        BOMX_VideoDecoder_Secure_CreateTunnel,      BOMX_VideoDecoder_Secure_GetRole},
-    {"OMX.broadcom.video_decoder.secure.vp9",           BOMX_VideoDecoder_Secure_CreateVp9,         BOMX_VideoDecoder_GetRoleVp9},
-    {"OMX.broadcom.video_decoder.secure.vp9.tunnel",    BOMX_VideoDecoder_Secure_CreateVp9Tunnel,   BOMX_VideoDecoder_GetRoleVp9},
+    {"OMX.broadcom.video_decoder.tunnel.secure",        BOMX_VideoDecoder_Secure_CreateTunnel,      BOMX_VideoDecoder_Secure_GetRole},
+    {"OMX.broadcom.video_decoder.vp9.secure",           BOMX_VideoDecoder_Secure_CreateVp9,         BOMX_VideoDecoder_GetRoleVp9},
+    {"OMX.broadcom.video_decoder.vp9.tunnel.secure",    BOMX_VideoDecoder_Secure_CreateVp9Tunnel,   BOMX_VideoDecoder_GetRoleVp9},
 #endif
 #ifdef ENCODER_ON
     {"OMX.broadcom.video_encoder",                  BOMX_VideoEncoder_Create,                BOMX_VideoEncoder_GetRole},
