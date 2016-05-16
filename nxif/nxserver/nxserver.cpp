@@ -145,6 +145,9 @@
 
 #define NX_PROP_ENABLED                "1"
 #define NX_PROP_DISABLED               "0"
+#define NX_INVALID                     -1
+
+#define NX_ANDROID_BOOTCOMPLETE        "sys.boot_completed"
 
 /* begnine trimming config - not needed for ATV experience - default ENABLED. */
 #define NX_TRIM_VC1                    "ro.nx.trim.vc1"
@@ -180,6 +183,8 @@ typedef struct {
     bool nxAcked;
     bool inStandby;
     BKNI_MutexHandle lock;
+    bool init;
+    bool want;
 } WDOG_T;
 
 typedef struct {
@@ -279,13 +284,14 @@ static void *standby_monitor_task(void *argv)
              if (nx_server->standbyState.transition == NxClient_StandbyTransition_eAckNeeded) {
                 ALOGD("nxserver: Acknowledge state %d\n", nx_server->standbyState.settings.mode);
                 NxClient_AcknowledgeStandby(nx_server->standbyId);
-                // Stop the Watchdog timer if we are entering standby...
-                NEXUS_Watchdog_StopTimer();
-                nx_server->wdog.inStandby = true;
+                if (nx_server->wdog.nx != NULL) {
+                   NEXUS_Watchdog_StopTimer();
+                   nx_server->wdog.inStandby = true;
+                }
              }
-             // Restart the Watchdog timer if we are resuming from standby...
              else if (nx_server->standbyState.settings.mode == NEXUS_PlatformStandbyMode_eOn &&
-                      prevStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn) {
+                      prevStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn &&
+                      nx_server->wdog.nx != NULL) {
                 if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
                    nx_server->wdog.nxAcked = true;
                    nx_server->wdog.inStandby = false;
@@ -402,7 +408,38 @@ skip_lmk:
            }
         }
 
-        if (g_app.wdog.fd >= 0) {
+        if (!g_app.wdog.init && g_app.wdog.want) {
+           if (property_get(NX_ANDROID_BOOTCOMPLETE, value, NULL)) {
+              if (strlen(value) && !strncmp(value, NX_PROP_ENABLED, strlen(value))) {
+                 ALOGI("%s: sys.boot_completed detected, launching wdog processing", __FUNCTION__);
+                 g_app.wdog.fd = open("/dev/watchdog", O_WRONLY);
+                 if (g_app.wdog.fd >= 0) {
+                    NEXUS_Error rc;
+                    NEXUS_WatchdogCallbackSettings wdogSettings;
+                    NEXUS_WatchdogCallback_GetDefaultSettings(&wdogSettings);
+                    wdogSettings.midpointCallback.callback = nx_wdog_midpoint;
+                    wdogSettings.midpointCallback.context = (void *)&g_app;
+                    g_app.wdog.nx = NEXUS_WatchdogCallback_Create(&wdogSettings);
+                    g_app.wdog.inStandby = false;
+                    NEXUS_Watchdog_SetTimeout((RUNNER_SEC_THRESHOLD-1)*2);
+                    rc = NEXUS_Watchdog_StartTimer();
+                    if (rc != NEXUS_SUCCESS) {
+                       NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
+                       g_app.wdog.nx = NULL;
+                    }
+                    g_app.wdog.init = true;
+                 } else {
+                    ALOGE("unable to create watchdog support (reason:%s)!", strerror(errno));
+                    g_app.wdog.fd = NX_INVALID;
+                    g_app.wdog.nx = NULL;
+                    g_app.wdog.want = false;
+                 }
+              }
+           }
+        }
+        if (g_app.wdog.init &&
+            g_app.wdog.fd != NX_INVALID &&
+            g_app.wdog.nx != NULL) {
            if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
               if (nx_server->wdog.nxAcked || nx_server->wdog.inStandby) {
                  watchdogWrite(WATCHDOG_KICK);
@@ -1079,25 +1116,11 @@ int main(void)
     }
 
     if (property_get_int32(NX_ACT_WD, 1)) {
-       g_app.wdog.fd = open("/dev/watchdog", O_WRONLY);
-       if (g_app.wdog.fd >= 0) {
-          NEXUS_WatchdogCallbackSettings wdogSettings;
-          NEXUS_WatchdogCallback_GetDefaultSettings(&wdogSettings);
-          wdogSettings.midpointCallback.callback = nx_wdog_midpoint;
-          wdogSettings.midpointCallback.context = (void *)&g_app;
-          g_app.wdog.nx = NEXUS_WatchdogCallback_Create(&wdogSettings);
-          g_app.wdog.inStandby = false;
-          NEXUS_Watchdog_SetTimeout((RUNNER_SEC_THRESHOLD-1)*2);
-          rc = NEXUS_Watchdog_StartTimer();
-          if (rc != NEXUS_SUCCESS) {
-             NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
-             g_app.wdog.nx = NULL;
-          }
-       } else {
-          ALOGE("Failed to start reset watchdog timer(reason:%s)!", strerror(errno));
-       }
+       g_app.wdog.want = true;
     } else {
-       g_app.wdog.fd = -1;
+       g_app.wdog.fd = NX_INVALID;
+       g_app.wdog.nx = NULL;
+       g_app.wdog.want = false;
     }
 
     ALOGI("starting proactive runner.");
@@ -1196,6 +1219,12 @@ int main(void)
        NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
        g_app.wdog.nx = NULL;
     }
+    if (g_app.wdog.fd != NX_INVALID) {
+        watchdogWrite(WATCHDOG_TERMINATE);
+        close(g_app.wdog.fd);
+    }
+    g_app.wdog.init = false;
+    g_app.wdog.want = false;
 
     if (g_app.standby_monitor.running) {
        g_app.standby_monitor.running = 0;
@@ -1215,11 +1244,6 @@ int main(void)
     }
 
     uninit_nxserver(nx_srv);
-
-    if (g_app.wdog.fd >= 0) {
-        watchdogWrite(WATCHDOG_TERMINATE);
-        close(g_app.wdog.fd);
-    }
 
     return 0;
 }
