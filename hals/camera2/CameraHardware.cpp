@@ -330,6 +330,7 @@ status_t CameraHardware::getCameraInfo(struct camera_info* info, int facing)
 {
     ALOGD("CameraHardware::getCameraInfo");
 
+    info->device_version = CAMERA_DEVICE_API_VERSION_1_0;
     info->facing = facing;
     info->orientation = 0;
 
