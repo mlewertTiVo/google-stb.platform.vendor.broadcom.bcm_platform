@@ -198,6 +198,7 @@ typedef struct {
     unsigned standbyId;
     BKNI_MutexHandle standby_lock;
     NxClient_StandbyStatus standbyState;
+    int dcma_index;
     struct {
         nxclient_t client;
         NxClient_JoinSettings joinSettings;
@@ -382,7 +383,7 @@ skip_lmk:
                  NEXUS_PlatformConfiguration platformConfig;
                  NEXUS_MemoryStatus heapStatus;
                  NEXUS_Platform_GetConfiguration(&platformConfig);
-                 NEXUS_Heap_GetStatus(platformConfig.heap[NEXUS_MAX_HEAPS-2], &heapStatus);
+                 NEXUS_Heap_GetStatus(platformConfig.heap[g_app.dcma_index], &heapStatus);
 
                  ALOGV("%s: dyn-heap largest free = %u", __FUNCTION__, heapStatus.largestFreeBlock);
                  needs_growth = false;
@@ -394,14 +395,19 @@ skip_lmk:
                     if (++gc_tick > RUNNER_GC_THRESHOLD) {
                        gc_tick = 0;
                        if (!needs_growth) {
-                          NEXUS_Platform_ShrinkHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size, (size_t)gfx_heap_shrink_threshold);
+                          NEXUS_Platform_ShrinkHeap(
+                             platformConfig.heap[g_app.dcma_index],
+                             (size_t)gfx_heap_grow_size,
+                             (size_t)gfx_heap_shrink_threshold);
                        }
                     }
                  }
 
                  if (active_gs && needs_growth) {
                     ALOGI("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
-                    NEXUS_Platform_GrowHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size);
+                    NEXUS_Platform_GrowHeap(
+                       platformConfig.heap[g_app.dcma_index],
+                       (size_t)gfx_heap_grow_size);
                  }
               }
               BKNI_ReleaseMutex(g_app.standby_lock);
@@ -887,18 +893,6 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (settings.growHeapBlockSize) {
-       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
-       if (index == -1) {
-           ALOGE("growHeapBlockSize: requires platform implement NEXUS_PLATFORM_P_GET_FRAMEBUFFER_HEAP_INDEX");
-           return NULL;
-       }
-       platformSettings.heap[NEXUS_MAX_HEAPS-2].memcIndex = platformSettings.heap[index].memcIndex;
-       platformSettings.heap[NEXUS_MAX_HEAPS-2].subIndex = platformSettings.heap[index].subIndex;
-       platformSettings.heap[NEXUS_MAX_HEAPS-2].size = 4096;
-       platformSettings.heap[NEXUS_MAX_HEAPS-2].memoryType = NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED|NEXUS_MEMORY_TYPE_DYNAMIC;
-    }
-
     /* -password file-path-name */
     sprintf(nx_key, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
     key = fopen(nx_key, "r");
@@ -949,6 +943,12 @@ static nxserver_t init_nxserver(void)
     if (rc) {
        ALOGE("FATAL: failed nxserver_modify_platform_settings");
        return NULL;
+    }
+    if (settings.growHeapBlockSize) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
+       g_app.dcma_index = settings.heaps.dynamicHeap;
+       platformSettings.heap[g_app.dcma_index].heapType |= NEXUS_HEAP_TYPE_GRAPHICS;
+       ALOGI("dynamic: %d (gfx: %d)", g_app.dcma_index, index);
     }
 
     /* now, just before applying the configuration, try to reduce the memory footprint
