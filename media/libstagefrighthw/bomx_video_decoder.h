@@ -347,6 +347,9 @@ protected:
 
     NEXUS_SimpleStcChannelHandle m_tunnelStcChannel;
 
+    bool m_inputFlushing;
+    bool m_outputFlushing;
+
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
     NEXUS_VideoCodec GetNexusCodec(OMX_VIDEO_CODINGTYPE omxType);
