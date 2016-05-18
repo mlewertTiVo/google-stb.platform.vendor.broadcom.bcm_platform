@@ -947,8 +947,9 @@ static nxserver_t init_nxserver(void)
     if (settings.growHeapBlockSize) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
        g_app.dcma_index = settings.heaps.dynamicHeap;
-       platformSettings.heap[g_app.dcma_index].heapType |= NEXUS_HEAP_TYPE_GRAPHICS;
-       ALOGI("dynamic: %d (gfx: %d)", g_app.dcma_index, index);
+       platformSettings.heap[g_app.dcma_index].heapType |= NX_ASHMEM_NEXUS_DCMA_MARKER;
+       ALOGI("dynamic: %d (0x%x) (gfx: %d)", g_app.dcma_index,
+          platformSettings.heap[g_app.dcma_index].heapType, index);
     }
 
     /* now, just before applying the configuration, try to reduce the memory footprint
