@@ -61,16 +61,15 @@ playready_root="playready"
 show_tree_depth=3
 BCM_VENDOR_STB_ROOT="vendor/broadcom/stb"
 
-# you can change the auto-magic profile selection here if desired, but there is really no need to.
-#
-# note: if changing those, you have to make sure there is a valid 'device/broadcom/custom' profile
-#       associated with your selection.
-#
-plat_target="97252 D0 C"
-plat_profile="BCM97252CSECU"
-plat_profile_verifier="BCM97252C_43602"
-#
-# -- end profile (auto-magic) selection.
+plat_legacy_tgt="97252 D0 C"
+plat_legacy_pro="BCM97252CSECU"
+plat_legacy_ver="BCM97252C_43602"
+plat_avko_tgt="97439 B0 SFF"
+plat_avko_pro="BCM97439SECU"
+plat_avko_ver="BCM97252SSFFDR4"
+plat_arch64_tgt="97271 A0 SV"
+plat_arch64_pro="BCM97271SV64"
+plat_arch64_ver="BCM97271SECU"
 
 verbose=
 update=
@@ -85,13 +84,17 @@ debug=
 show_tree=
 secliblist=
 only_build_secu=
+plat_config_profile=
 
 function usage {
 	echo "sec_builder --sec-filer <path-to>"
 	echo "            [--update] [--configure] [--reset] [--force-clean|--force-clean-refsw]"
-	echo "            [--skip-build|--skip-verify] [--debug] [--show-tree-only]"
+	echo "            [--skip-build|--skip-verify] [--debug]"
 	echo "            [--only-build-secu]"
-        echo "            [--show-tree-depth <depth>] [--verbose] [--help|-h]"
+	echo "            [--show-tree-depth <depth>] [--show-tree-only]"
+	echo "            [--profile <profile>]"
+	echo "            [--verbose]"
+	echo "            [--help|-h]"
 	echo ""
 	echo "mandatory parameter(s):"
 	echo ""
@@ -132,6 +135,9 @@ function usage {
 	echo "   --show-tree-depth            : the depth in terms of git log entries to dump from top of tree, defaults to 3."
 	echo ""
 	echo "   --skip-verify                : skip the verification step at the end."
+	echo ""
+	echo "   --profile <profile>          : the build profile for the security libraries build, valid profile include:"
+	echo "                                  'legacy' (default, 7445/7252 devices); 'avko' (7252S/7251S familly); 'arm64' (7271 multi-arch build)."
 	echo ""
 }
 
@@ -230,6 +236,19 @@ function compiler {
 	if [ "$skip_build" == "1" ]; then
 		que_faites_vous "build skipped on demand"
 	else
+		if [ "$plat_config_profile" == "legacy" ]; then
+			plat_target=$plat_legacy_tgt
+			plat_profile=$plat_legacy_pro
+			plat_profile_verifier=$plat_legacy_ver
+		elif [ "$plat_config_profile" == "avko" ]; then
+			plat_target=$plat_avko_tgt
+			plat_profile=$plat_avko_pro
+			plat_profile_verifier=$plat_avko_ver
+		elif [ "$plat_config_profile" == "arch64" ]; then
+			plat_target=$plat_arch64_tgt
+			plat_profile=$plat_arch64_pro
+			plat_profile_verifier=$plat_arch64_ver
+		fi
 		cd $1
 		# generate the device with the profiles we need to build.
 		#
@@ -263,6 +282,9 @@ function compiler {
 		fi
 		make -j12 clean_security_user
 		make -j12 security_user
+		if [ "$plat_config_profile" == "arch64" ]; then
+			make -j12 security_user_2nd_arch
+		fi
 	fi
 }
 
@@ -375,6 +397,9 @@ while [ "$1" != "" ]; do
 						;;
 		--only-build-secu)		only_build_secu=1
 						;;
+		--profile)			shift
+						plat_config_profile=$1
+						;;
 		-h | --help)			usage
 						exit
 						;;
@@ -395,6 +420,10 @@ fqn_sec+=$security_root
 fqn_pr=$sec_filer
 fqn_pr+="/"
 fqn_pr+=$playready_root
+
+if [ "$plat_config_profile" == "" ]; then
+	plat_config_profile="legacy"
+fi
 
 que_faites_vous "verifying security resources are there."
 if [ ! -d "$fqn_sec" ]; then
