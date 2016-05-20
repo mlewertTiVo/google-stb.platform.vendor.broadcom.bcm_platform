@@ -800,7 +800,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_earlyDropThresholdMs(0),
     m_startTime(-1),
     m_inputFlushing(false),
-    m_outputFlushing(false)
+    m_outputFlushing(false),
+    m_ptsReceived(false)
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -2095,6 +2096,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_eosPending = false;
             m_eosDelivered = false;
             m_eosReceived = false;
+            m_ptsReceived = false;
             B_Mutex_Lock(m_hDisplayMutex);
             m_displayFrameAvailable = false;
             B_Mutex_Unlock(m_hDisplayMutex);
@@ -2253,6 +2255,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_eosPending = false;
                 m_eosDelivered = false;
                 m_eosReceived = false;
+                m_ptsReceived = false;
                 m_pBufferTracker->Flush();
                 InputBufferCounterReset();
                 ReturnPortBuffers(m_pVideoPorts[0]);
@@ -2305,6 +2308,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                     m_eosPending = false;
                     m_eosDelivered = false;
                     m_eosReceived = false;
+                    m_ptsReceived = false;
                     property_set(B_PROPERTY_COALESCE, "default");
                     property_set(B_PROPERTY_HFRVIDEO, "default");
                     return BOMX_BERR_TRACE(errCode);
@@ -2573,6 +2577,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
 
                 NEXUS_Playpump_Flush(m_hPlaypump);
                 m_eosPending = false;
+                m_ptsReceived = false;
                 PlaypumpEvent();
                 ALOG_ASSERT(m_submittedDescriptors == 0);
                 ReturnInputBuffers(0, false);
@@ -3524,7 +3529,23 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
 
     // Begin first PES packet
     pPesHeader = ((uint8_t *)pInfo->pHeader)+pInfo->headerLen;
-    headerBytes = m_pPes->InitHeader(pPesHeader, (pInfo->maxHeaderLen-pInfo->headerLen), pts);
+    OMX_VIDEO_CODINGTYPE codec = GetCodec();
+    if ( pts == 0 && m_ptsReceived &&
+         (codec == OMX_VIDEO_CodingMPEG2 ||
+          codec == OMX_VIDEO_CodingAVC ||
+          codec == OMX_VIDEO_CodingH263 ||
+          codec == OMX_VIDEO_CodingMPEG4 ||
+          codec == OMX_VIDEO_CodingHEVC) )
+    {
+        // Fragment from previous input frame. No need to specify PTS.
+        headerBytes = m_pPes->InitHeader(pPesHeader, pInfo->maxHeaderLen-pInfo->headerLen);
+    }
+    else
+    {
+        m_ptsReceived = true;
+        headerBytes = m_pPes->InitHeader(pPesHeader, pInfo->maxHeaderLen-pInfo->headerLen, pts);
+    }
+
     if ( 0 == headerBytes )
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
@@ -3753,15 +3774,29 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
 
     if ( pBufferHeader->nFilledLen > 0 )
     {
-        // Track the buffer
-        if ( !m_pBufferTracker->Add(pBufferHeader, &pInfo->pts) )
+        OMX_VIDEO_CODINGTYPE codec = GetCodec();
+        if ( pBufferHeader->nTimeStamp == 0 && m_ptsReceived &&
+             (codec == OMX_VIDEO_CodingMPEG2 ||
+              codec == OMX_VIDEO_CodingAVC ||
+              codec == OMX_VIDEO_CodingH263 ||
+              codec == OMX_VIDEO_CodingMPEG4 ||
+              codec == OMX_VIDEO_CodingHEVC) )
         {
-            ALOGW("Unable to track buffer");
-            pInfo->pts = BOMX_TickToPts(&pBufferHeader->nTimeStamp);
+            // Fragment from previous input frame. No need to add this to tracker.
+            pInfo->pts = 0;
+        }
+        else
+        {
+            // Track the buffer
+            if ( !m_pBufferTracker->Add(pBufferHeader, &pInfo->pts) )
+            {
+                ALOGW("Unable to track buffer");
+                pInfo->pts = BOMX_TickToPts(&pBufferHeader->nTimeStamp);
+            }
         }
 
         // For VP9, identify the number of frames
-        if ( (int)GetCodec() == OMX_VIDEO_CodingVP9 && !m_secureDecoder )
+        if ( codec == OMX_VIDEO_CodingVP9 && !m_secureDecoder )
         {
             BOMX_Vp9_ParseSuperframe(pBufferHeader->pBuffer + pBufferHeader->nOffset, pBufferHeader->nFilledLen, frameLength, &numFrames);
             if ( numFrames == 0 )
@@ -3773,7 +3808,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
 
         for ( frame = 0; frame < numFrames; frame++ )
         {
-            switch ( (int)GetCodec() )
+            switch ( codec )
             {
             case OMX_VIDEO_CodingVP8:
             case OMX_VIDEO_CodingVP9:

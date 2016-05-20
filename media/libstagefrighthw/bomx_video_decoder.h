@@ -248,7 +248,6 @@ protected:
     enum ConfigBufferState
     {
         ConfigBufferState_eAccumulating,        // Config buffer has not yet been submitted to playpump
-        ConfigBufferState_eFlushed,             // Input port has been flushed with the existing config buffer
         ConfigBufferState_eSubmitted,           // Config buffer has been submited to playpump
         ConfigBufferState_eMax
     };
@@ -336,6 +335,8 @@ protected:
 
     bool m_inputFlushing;
     bool m_outputFlushing;
+
+    bool m_ptsReceived;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
