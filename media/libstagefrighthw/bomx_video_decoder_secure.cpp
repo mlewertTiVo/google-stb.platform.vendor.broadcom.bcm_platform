@@ -253,10 +253,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure::ConfigBufferAppend(const void *pBuffer, 
     NEXUS_Error err;
 
     ALOG_ASSERT(NULL != pBuffer);
-    ALOGV("%s, buffer:%p, length:%d", __FUNCTION__, pBuffer, length);
+    ALOGV("%s, buffer:%p, length:%zu", __FUNCTION__, pBuffer, length);
     if ( m_configBufferSize + length > BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE )
     {
-        ALOGE("Config buffer not big enough! Size: %d", m_configBufferSize + length);
+        ALOGE("Config buffer not big enough! Size: %zu", m_configBufferSize + length);
         return BOMX_ERR_TRACE(OMX_ErrorOverflow);
     }
 
@@ -316,7 +316,7 @@ NEXUS_Error BOMX_VideoDecoder_Secure::SecureCopy(void *pDest, const void *pSrc, 
     BKNI_EventHandle event;
     NEXUS_Error rc;
 
-    ALOGV("%s_, dest:%p, src:%p, size:%d", __FUNCTION__, pDest, pSrc, nSize);
+    ALOGV("%s_, dest:%p, src:%p, size:%zu", __FUNCTION__, pDest, pSrc, nSize);
     BKNI_CreateEvent(&event);
     dma = NEXUS_Dma_Open(NEXUS_ANY_ID, NULL);
     BDBG_ASSERT(dma);
