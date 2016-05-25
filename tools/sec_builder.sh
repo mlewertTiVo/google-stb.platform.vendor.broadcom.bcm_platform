@@ -79,20 +79,22 @@ reset=
 force_clean=
 force_clean_refsw=
 skip_build=
-skip_verify=
+skip_verify=1
 debug=
 show_tree=
 secliblist=
 only_build_secu=
 plat_config_profile=
+copy_in_place=
 
 function usage {
 	echo "sec_builder --sec-filer <path-to>"
 	echo "            [--update] [--configure] [--reset] [--force-clean|--force-clean-refsw]"
-	echo "            [--skip-build|--skip-verify] [--debug]"
+	echo "            [--skip-build|--no-skip-verify] [--debug]"
 	echo "            [--only-build-secu]"
 	echo "            [--show-tree-depth <depth>] [--show-tree-only]"
 	echo "            [--profile <profile>]"
+	echo "            [--copy-in-place]"
 	echo "            [--verbose]"
 	echo "            [--help|-h]"
 	echo ""
@@ -134,10 +136,12 @@ function usage {
 	echo ""
 	echo "   --show-tree-depth            : the depth in terms of git log entries to dump from top of tree, defaults to 3."
 	echo ""
-	echo "   --skip-verify                : skip the verification step at the end."
+	echo "   --no-skip-verify             : do not skip the verification step at the end."
 	echo ""
 	echo "   --profile <profile>          : the build profile for the security libraries build, valid profile include:"
 	echo "                                  'legacy' (default, 7445/7252 devices); 'avko' (7252S/7251S familly); 'arm64' (7271 multi-arch build)."
+	echo ""
+	echo "   --copy-in-place              : copy built libraries in final resting place (i.e. prebuilts)."
 	echo ""
 }
 
@@ -363,6 +367,32 @@ function verifier {
 	fi
 }
 
+# $1 - android tree root.
+# $2 - security library mapping module.
+function copier {
+	readarray seclib_mapping < $2
+	count=${#seclib_mapping[@]}
+	ix=0
+	while [ "$ix" -lt "$count" ]; do
+		OLDIFS=$IFS; IFS='=' var=(${seclib_mapping[$ix]}); IFS=$OLDIFS;
+		if [[ "${var[0]}" != "" &&  "${var[1]}" != "" ]]; then
+			built=$1/${var[0]}
+			temp=$1/${var[1]}
+			# strip trailing '\n'
+			original=$(echo $temp | sed -e 's/\n//g')
+
+			if [[ -f "$built" && -f "$original" ]]; then
+				if diff "$original" "$built" >/dev/null; then
+					echo ""
+				else
+					cp $built $original
+				fi
+			fi
+		fi
+		ix=$(($ix + 1))
+	done
+}
+
 # command line parsing.
 while [ "$1" != "" ]; do
 	case $1 in
@@ -386,7 +416,7 @@ while [ "$1" != "" ]; do
 						;;
 		--skip-build)			skip_build=1
 						;;
-		--skip-verify)			skip_verify=1
+		--no-skip-verify)		skip_verify=0
 						;;
 		--debug)			debug=1
 						;;
@@ -399,6 +429,8 @@ while [ "$1" != "" ]; do
 						;;
 		--profile)			shift
 						plat_config_profile=$1
+						;;
+		--copy-in-place)		copy_in_place=1
 						;;
 		-h | --help)			usage
 						exit
@@ -482,7 +514,12 @@ comparer $fqn_root $secliblist
 que_faites_vous "showing code tree for this build."
 montre_code $fqn_root $sec_filer
 
+# put built libraries in place.
+que_faites_vous "copying built libraries into place."
+copier $fqn_root $secliblist
+
 # build a clean refsw based image from the reference board now to see if the
 # libraries generated do make sense.
 que_faites_vous "now running final verification build..."
 verifier $fqn_root
+
