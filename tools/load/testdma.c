@@ -145,7 +145,9 @@ int main(int argc, char **argv)
     NEXUS_DmaJob_GetDefaultSettings(&jobSettings);
     jobSettings.completionCallback.callback = complete;
     jobSettings.completionCallback.context = event;
-    if (mode == test_mode_default_heap_to_crr || mode == test_mode_main_heap_to_crr || mode == test_mode_crr_to_crr) {
+    if (mode == test_mode_default_heap_to_crr || mode == test_mode_main_heap_to_crr) {
+       jobSettings.bypassKeySlot = NEXUS_BypassKeySlot_eG2GR;
+    }else if (mode == test_mode_crr_to_crr) {
        jobSettings.bypassKeySlot = NEXUS_BypassKeySlot_eGR2R;
     }
     job = NEXUS_DmaJob_Create(dma, &jobSettings);
