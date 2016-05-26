@@ -69,6 +69,7 @@
 #define B_PROPERTY_HFRVIDEO ("dyn.nx.hfrvideo.set")
 #define B_PROPERTY_HW_SYNC_FAKE ("media.brcm.hw_sync.fake")
 #define B_PROPERTY_EARLYDROP_THRESHOLD ("media.brcm.stat.earlydrop_thres")
+#define B_PROPERTY_DISABLE_RUNTIME_HEAPS ("ro.nx.rth.disable")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE (1536*1536)  // 1024 * 1024 from soft decoder is not big enough for some HEVC streams
@@ -745,6 +746,11 @@ static bool BOMX_VideoDecoder_SetupRuntimeHeaps(bool secureDecoder, bool secureH
    NEXUS_PlatformConfiguration platformConfig;
    NEXUS_PlatformSettings platformSettings;
    NEXUS_MemoryStatus memoryStatus;
+
+   if (property_get_int32(B_PROPERTY_DISABLE_RUNTIME_HEAPS, 0))
+   {
+      return false;
+   }
 
    if (property_get_int32(B_PROPERTY_SVP, 0))
    {
