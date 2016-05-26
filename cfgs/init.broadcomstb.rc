@@ -67,6 +67,7 @@ on post-fs-data
    chmod 0644 /data/misc/nexus/nx_key
    export NXCLIENT_PASSWORD /data/misc/nexus/nx_key
 
+   setprop vold.post_fs_data_done 1
    class_start pre_core
 
 on property:dyn.nx.state=loaded
