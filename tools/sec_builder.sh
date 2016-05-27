@@ -86,6 +86,8 @@ secliblist=
 only_build_secu=
 plat_config_profile=
 copy_in_place=
+git_push=
+git_branch=
 
 function usage {
 	echo "sec_builder --sec-filer <path-to>"
@@ -95,6 +97,7 @@ function usage {
 	echo "            [--show-tree-depth <depth>] [--show-tree-only]"
 	echo "            [--profile <profile>]"
 	echo "            [--copy-in-place]"
+	echo "            [--git-push] [--git-branch <branch>]"
 	echo "            [--verbose]"
 	echo "            [--help|-h]"
 	echo ""
@@ -142,6 +145,10 @@ function usage {
 	echo "                                  'legacy' (default, 7445/7252 devices); 'avko' (7252S/7251S familly); 'arm64' (7271 multi-arch build)."
 	echo ""
 	echo "   --copy-in-place              : copy built libraries in final resting place (i.e. prebuilts)."
+	echo ""
+	echo "   --git-push                   : git push the changed libraries."
+	echo ""
+	echo "   --git-branch                 : the branch to used for pushing the changes when applicable."
 	echo ""
 }
 
@@ -383,9 +390,13 @@ function copier {
 
 			if [[ -f "$built" && -f "$original" ]]; then
 				if diff "$original" "$built" >/dev/null; then
-					echo ""
+					echo "unchanged prebuilt ${var[1]}"
 				else
 					cp $built $original
+					if [ "$git_push" == "1" ]; then
+						git -C $1/${var[2]} commit -m "seclibs: auto-generated libs update." ${var[3]};
+						git -C $1/${var[2]} push bcghost HEAD:refs/for/${git_branch};
+					fi
 				fi
 			fi
 		fi
@@ -431,6 +442,11 @@ while [ "$1" != "" ]; do
 						plat_config_profile=$1
 						;;
 		--copy-in-place)		copy_in_place=1
+						;;
+		--git-push)			git_push=1
+						;;
+		--git-branch)			shift
+						git_branch=$1
 						;;
 		-h | --help)			usage
 						exit
