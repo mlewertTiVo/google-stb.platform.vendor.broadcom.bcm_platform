@@ -90,7 +90,7 @@ const int nxserver_prio_map[NICE_LEVELS] = {
 };
 
 const int mediaserver_prio_map[NICE_LEVELS] = {
-   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* -20..-11 */
+   2, 2, 2, 2, 2, 2, 2, 2, 2, 2, /* -20..-11 */
    1, 1, 1, 0, 0, 0, 0, 0, 0, 0, /* -10..-1  */
    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*   0..9   */
    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*  10..19  */
@@ -144,6 +144,13 @@ static struct process_entity key_process_list[] = {
    {
       .name = "mediaserver",
       .thread_keep_filter = "wv_decrypt_thre",
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .map = mediaserver_prio_map,
+   },
+   {
+      .name = "mediaserver",
+      .thread_keep_filter = "bomx_display",
       .thread_ignore_filter = NULL,
       .pid = 0,
       .map = mediaserver_prio_map,

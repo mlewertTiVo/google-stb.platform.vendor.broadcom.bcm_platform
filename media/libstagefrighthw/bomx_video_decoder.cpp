@@ -42,6 +42,9 @@
 
 #include <fcntl.h>
 #include <cutils/log.h>
+#include <cutils/sched_policy.h>
+#include <cutils/compiler.h>
+#include <sys/resource.h>
 
 #include "bomx_video_decoder.h"
 #include "nexus_platform.h"
@@ -329,13 +332,6 @@ static void BOMX_VideoDecoder_OutputFrameEvent(void *pParam)
     pDecoder->OutputFrameEvent();
 }
 
-static void BOMX_VideoDecoder_DisplayFrameEvent(void *pParam)
-{
-    BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
-    ALOGV("DisplayFrameEvent");
-    pDecoder->DisplayFrameEvent();
-}
-
 static void BOMX_VideoDecoder_InputBuffersTimer(void *pParam)
 {
     BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
@@ -600,6 +596,17 @@ static void BOMX_OmxBinderNotify(int cb_data, int msg, struct hwc_notification_i
     }
 }
 
+static void *BOMX_DisplayThread(void *pParam)
+{
+    BOMX_VideoDecoder *pComponent = static_cast <BOMX_VideoDecoder *> (pParam);
+
+    ALOGV("Display Thread Start");
+    pComponent->RunDisplayThread();
+    ALOGV("Display Thread Exited");
+
+    return NULL;
+}
+
 static size_t ComputeBufferSize(unsigned stride, unsigned height)
 {
     return (stride * height * 3) / 2;
@@ -848,6 +855,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_securePicBuff(false),
     m_frameSerial(0),
     m_displayFrameAvailable(false),
+    m_displayThreadStop(false),
+    m_hDisplayThread(0),
     m_droppedFrames(0),
     m_consecDroppedFrames(0),
     m_maxConsecDroppedFrames(0),
@@ -982,21 +991,13 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
 
-    m_hDisplayFrameEvent = B_Event_Create(NULL);
-    if ( NULL == m_hDisplayFrameEvent )
+    if ( BKNI_CreateEvent(&m_hDisplayFrameEvent) != BERR_SUCCESS )
     {
         ALOGW("Unable to create display frame event");
         this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
-    m_displayFrameEventId = this->RegisterEvent(m_hDisplayFrameEvent, BOMX_VideoDecoder_DisplayFrameEvent, static_cast <void *> (this));
-    if ( NULL == m_displayFrameEventId )
-    {
-        ALOGW("Unable to register display frame event");
-        this->Invalidate(OMX_ErrorUndefined);
-        return;
-    }
     m_hDisplayMutex = B_Mutex_Create(NULL);
     if ( NULL == m_hDisplayMutex )
     {
@@ -1303,12 +1304,29 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
 
     // Threshold that we consider a drop as early for stat tracking purpose.
     m_earlyDropThresholdMs = property_get_int32(B_PROPERTY_EARLYDROP_THRESHOLD, B_STAT_EARLYDROP_THRESHOLD_MS);
+
+    // Create the internal display thread
+    if ( pthread_create(&m_hDisplayThread, NULL, BOMX_DisplayThread, static_cast <void *> (this)) != 0 )
+    {
+        ALOGW("Unable to create bomx_display");
+        this->Invalidate(OMX_ErrorInsufficientResources);
+        return;
+    }
+    pthread_setname_np(m_hDisplayThread, "bomx_display");
 }
 
 BOMX_VideoDecoder::~BOMX_VideoDecoder()
 {
     unsigned i;
     BOMX_VideoDecoderFrameBuffer *pBuffer;
+
+    if ( m_hDisplayThread )
+    {
+        m_displayThreadStop = true;
+        BKNI_SetEvent(m_hDisplayFrameEvent);
+        pthread_join(m_hDisplayThread, NULL);
+        m_hDisplayThread = 0;
+    }
 
     // Stop listening to HWC. Note that HWC binder does need to be protected given
     // it's not updated during the decoder's lifetime.
@@ -1394,7 +1412,8 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     }
     if ( m_hDisplayFrameEvent )
     {
-        B_Event_Destroy(m_hDisplayFrameEvent);
+        BKNI_DestroyEvent(m_hDisplayFrameEvent);
+        m_hDisplayFrameEvent = NULL;
     }
     if ( m_hDisplayMutex )
     {
@@ -4473,9 +4492,10 @@ void BOMX_VideoDecoder::DisplayFrameEvent()
     framezOrder = m_framezOrder;
     m_displayFrameAvailable = false;
     B_Mutex_Unlock(m_hDisplayMutex);
+    Lock();
     SetVideoGeometry_locked(&framePosition, &frameClip, frameSerial, frameWidth, frameHeight, framezOrder, true);
     DisplayFrame_locked(frameSerial);
-
+    Unlock();
 }
 
 static const struct {
@@ -4926,6 +4946,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             // Wait for the blit to complete before delivering in case CPU will access it quickly
                             if ( destripedSuccess )
                             {
+                                Unlock();
                                 if ( GraphicsCheckpoint() )
                                 {
 #if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
@@ -4945,6 +4966,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     ALOGE("Error destriping to buffer");
                                     destripedSuccess = false;
                                 }
+                                Lock();
                             }
                         }
                         break;
@@ -4997,7 +5019,9 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     }
                                     else
                                     {
+                                        Unlock();
                                         OMX_ERRORTYPE res = DestripeToYV12(pSharedData, pBuffer->hStripedSurface);
+                                        Lock();
                                         if ( res != OMX_ErrorNone )
                                         {
                                             ALOGE("Unable to destripe to YV12 - %d", res);
@@ -5436,6 +5460,36 @@ BOMX_VideoDecoderFrameBuffer *BOMX_VideoDecoder::FindFrameBuffer(unsigned serial
     return pFrameBuffer;
 }
 
+void BOMX_VideoDecoder::RunDisplayThread()
+{
+    BERR_Code rc;
+    int priority;
+
+    if ( getSchedPriority(priority) )
+    {
+        setpriority(PRIO_PROCESS, 0, priority + 2*PRIORITY_MORE_FAVORABLE);
+        set_sched_policy(0, SP_FOREGROUND);
+    }
+
+    for (;;)
+    {
+        rc = BKNI_WaitForEvent(m_hDisplayFrameEvent, BKNI_INFINITE);
+        if ( m_displayThreadStop )
+        {
+            break;
+        }
+
+        if ( CC_LIKELY(rc == BERR_SUCCESS) )
+        {
+            DisplayFrameEvent();
+        }
+        else
+        {
+            ALOGW("Display frame event failure (%u)", rc);
+            (void)BOMX_BERR_TRACE(rc);
+        }
+    }
+}
 
 void BOMX_VideoDecoder::BinderNotifyDisplay(struct hwc_notification_info &ntfy)
 {
@@ -5457,17 +5511,8 @@ void BOMX_VideoDecoder::BinderNotifyDisplay(struct hwc_notification_info &ntfy)
     m_frameWidth = ntfy.display_width;
     m_frameHeight = ntfy.display_height;
     m_framezOrder = ntfy.zorder;
-    B_Event_Set(m_hDisplayFrameEvent);
     B_Mutex_Unlock(m_hDisplayMutex);
-}
-
-void BOMX_VideoDecoder::DisplayFrame(unsigned serialNumber)
-{
-    // This function is only callable by the binder thread and cannot be called internally
-    ALOGV("DisplayFrame(%d)", serialNumber);
-    Lock();
-    DisplayFrame_locked(serialNumber);
-    Unlock();
+    BKNI_SetEvent(m_hDisplayFrameEvent);
 }
 
 void BOMX_VideoDecoder::SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned serialNumber, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible)
@@ -5480,6 +5525,8 @@ void BOMX_VideoDecoder::SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pCli
 void BOMX_VideoDecoder::DisplayFrame_locked(unsigned serialNumber)
 {
     BOMX_VideoDecoderFrameBuffer *pFrameBuffer;
+
+    ALOGV("DisplayFrame(%d)", serialNumber);
 
     pFrameBuffer = FindFrameBuffer(serialNumber);
     if ( pFrameBuffer )
