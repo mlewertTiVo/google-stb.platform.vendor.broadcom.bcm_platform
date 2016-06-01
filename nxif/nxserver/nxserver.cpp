@@ -64,6 +64,8 @@
 #include <sys/resource.h>
 #include <cutils/sched_policy.h>
 #include <inttypes.h>
+#include <sys/prctl.h>
+#include <semaphore.h>
 
 #include <binder/IPCThreadState.h>
 #include <binder/ProcessState.h>
@@ -87,6 +89,7 @@
 #define DHD_SECDMA_PARAMS_PATH         "/data/nexus/secdma"
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
+#define NEXUS_LOGGER_DATA_PATH         "/data/nexus/nexus.log"
 #define APP_MAX_CLIENTS                (64)
 #define MB                             (1024*1024)
 #define KB                             (1024)
@@ -148,6 +151,7 @@
 #define NX_INVALID                     -1
 
 #define NX_ANDROID_BOOTCOMPLETE        "sys.boot_completed"
+#define NX_STATE                       "dyn.nx.state"
 
 /* begnine trimming config - not needed for ATV experience - default ENABLED. */
 #define NX_TRIM_VC1                    "ro.nx.trim.vc1"
@@ -178,6 +182,14 @@ typedef struct {
 } BINDER_T;
 
 typedef struct {
+   pthread_t catcher;
+   int running;
+   /* use native sem_t as nexus may not be available. */
+   sem_t catcher_run;
+
+} CATCHER_T;
+
+typedef struct {
     int fd;
     NEXUS_WatchdogCallbackHandle nx;
     bool nxAcked;
@@ -204,6 +216,7 @@ typedef struct {
         NxClient_JoinSettings joinSettings;
     } clients[APP_MAX_CLIENTS];
     WDOG_T wdog;
+    CATCHER_T sigterm;
 } NX_SERVER_T;
 
 static NX_SERVER_T g_app;
@@ -256,6 +269,8 @@ static void *binder_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
 
+    prctl(PR_SET_NAME, "nxserver.binder");
+
     do {
        android::ProcessState::self()->startThreadPool();
        NexusNxService::instantiate();
@@ -273,6 +288,8 @@ static void *standby_monitor_task(void *argv)
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
     NxClient_StandbyStatus prevStatus;
     NEXUS_Error rc;
+
+    prctl(PR_SET_NAME, "nxserver.standby");
 
     nx_server->standbyId = NxClient_RegisterAcknowledgeStandby();
     rc = NxClient_GetStandbyStatus(&prevStatus);
@@ -312,6 +329,28 @@ static void *standby_monitor_task(void *argv)
     return NULL;
 }
 
+static void *sigterm_catcher_task(void *argv)
+{
+    NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
+
+    prctl(PR_SET_NAME, "nxserver.sigterm");
+
+    set_sched_policy(0, SP_BACKGROUND);
+    setpriority(PRIO_PROCESS, 0, ANDROID_PRIORITY_BACKGROUND);
+
+    do
+    {
+       sem_wait(&nx_server->sigterm.catcher_run);
+
+       const char *logger = getenv("nexus_logger_file");
+       ALOGW("must close \'%s\'", logger);
+
+    } while(nx_server->sigterm.running);
+
+done:
+    return NULL;
+}
+
 static void *proactive_runner_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
@@ -323,6 +362,8 @@ static void *proactive_runner_task(void *argv)
     char value[PROPERTY_VALUE_MAX];
     bool needs_growth;
     int i, j;
+
+    prctl(PR_SET_NAME, "nxserver.proac");
 
     if (property_get(NX_MMA_GROW_SIZE, value, NULL)) {
        if (strlen(value)) {
@@ -1058,6 +1099,11 @@ static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
     }
 }
 
+static void sigterm_signal_handler(int signal) {
+    (void)signal;
+    sem_post(&g_app.sigterm.catcher_run);
+}
+
 int main(void)
 {
     struct timespec t;
@@ -1072,11 +1118,33 @@ int main(void)
     NEXUS_MemoryBlockHandle hSecDmaMemoryBlock = NULL;
     NxClient_JoinSettings joinSettings;
     NEXUS_Error rc;
+    struct sched_param param;
 
     memset(&g_app, 0, sizeof(g_app));
 
+    sem_init(&g_app.sigterm.catcher_run, 0, 0);
+    signal(SIGTERM, sigterm_signal_handler);
+    ALOGI("starting sigterm catcher.");
+    pthread_attr_init(&attr);
+    memset(&param, 0, sizeof(param));
+    pthread_attr_setschedparam(&attr, &param);
+    pthread_attr_setschedpolicy(&attr, SCHED_BATCH);
+    if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)) {
+        ALOGW("failed sigterm catcher task attributes.");
+    }
+    g_app.sigterm.running = 1;
+    if (pthread_create(&g_app.sigterm.catcher, &attr,
+                       sigterm_catcher_task, (void *)&g_app) != 0) {
+        ALOGE("failed sigterm catcher task, critical for encryption...");
+        /* should abort here if encryption is enforced... tbd. */
+        g_app.sigterm.running = 0;
+    }
+    pthread_attr_destroy(&attr);
+
     setpriority(PRIO_PROCESS, 0, PRIORITY_URGENT_DISPLAY);
     set_sched_policy(0, SP_FOREGROUND);
+
+    property_set(NX_STATE, "init");
 
     const char *devName = getenv("NEXUS_DEVICE_NODE");
     if (!devName) {
@@ -1096,7 +1164,7 @@ int main(void)
         setenv("nexus_logger", "disabled", 1);
     } else {
         setenv("nexus_logger", "/system/bin/nxlogger", 1);
-        setenv("nexus_logger_file", "/data/nexus/nexus.log", 1);
+        setenv("nexus_logger_file", NEXUS_LOGGER_DATA_PATH, 1);
     }
     char loggerSize[PROPERTY_VALUE_MAX];
     if (property_get(NX_LOGGER_SIZE, loggerSize, "0") && loggerSize[0] != '0') {
@@ -1148,7 +1216,7 @@ int main(void)
     alloc_secdma(&hSecDmaMemoryBlock);
 
     ALOGI("trigger nexus waiters now.");
-    property_set("hw.nexus.platforminit", "on");
+    property_set(NX_STATE, "loaded");
 
     struct nx_ashmem_mgr_cfg ashmem_mgr_cfg;
     memset(&ashmem_mgr_cfg, 0, sizeof(struct nx_ashmem_mgr_cfg));
@@ -1215,6 +1283,8 @@ int main(void)
 
     ALOGI("terminating nxserver.");
 
+    property_set(NX_STATE, "ended");
+
     if (g_app.wdog.nx) {
        NEXUS_Watchdog_StopTimer();
        NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
@@ -1244,7 +1314,12 @@ int main(void)
        pthread_join(g_app.binder.runner, NULL);
     }
 
-    uninit_nxserver(nx_srv);
+    if (g_app.sigterm.running) {
+       g_app.sigterm.running = 0;
+       pthread_join(g_app.sigterm.catcher, NULL);
+    }
+    sem_destroy(&g_app.sigterm.catcher_run);
 
+    uninit_nxserver(nx_srv);
     return 0;
 }

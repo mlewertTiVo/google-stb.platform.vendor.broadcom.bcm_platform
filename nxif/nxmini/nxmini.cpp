@@ -297,7 +297,7 @@ int main(void)
     }
 
     /* trigger waiter on nexus server initialization. */
-    property_set("hw.nexus.platforminit", "on");
+    property_set("dyn.nx.state", "loaded");
 
     /* loop forever. */
     while (1) {

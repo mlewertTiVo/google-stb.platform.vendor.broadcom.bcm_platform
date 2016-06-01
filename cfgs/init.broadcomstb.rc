@@ -37,6 +37,7 @@ on post-fs
    export NEXUS_LOGGER_FILE /data/nexus/nexus.log
 
    setprop ro.nx.v3d.no_map_lock 0
+   setprop dyn.nx.state none
    setprop ro.nexus.nxserver.hdcp1x_keys /mnt/hwcfg/drm_hdcp1x.bin
    setprop ro.nexus.nxserver.hdcp2x_keys /mnt/hwcfg/drm.bin
 
@@ -67,7 +68,7 @@ on post-fs-data
 
    class_start pre_core
 
-on property:hw.nexus.platforminit=on
+on property:dyn.nx.state=loaded
    # insmod nx_ashmem driver (gralloc memory support).
    insmod /system/vendor/drivers/nx_ashmem.ko devname="ion" heap_grow="8m"
    class_start main
@@ -85,14 +86,12 @@ service nxserver /system/bin/nxserver
    group system
    socket nxserver stream 0666 root system
    critical
-   oneshot
 
 service hwcbinder /system/bin/hwcbinder
    class pre_core
    user root
    group system media
    critical
-   oneshot
 
 service nxdispfmt /system/bin/nxdispfmt
    class late_start
