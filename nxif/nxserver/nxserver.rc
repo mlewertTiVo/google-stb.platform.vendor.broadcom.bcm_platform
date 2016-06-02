@@ -4,5 +4,5 @@ service nxserver /system/bin/nxserver
    group system
    socket nxserver stream 0666 root system
    critical
-   oneshot
+
 

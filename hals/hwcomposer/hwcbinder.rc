@@ -3,5 +3,4 @@ service hwcbinder /system/bin/hwcbinder
    user root
    group system media
    critical
-   oneshot
 
