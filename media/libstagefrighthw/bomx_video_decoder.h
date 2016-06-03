@@ -248,6 +248,7 @@ protected:
     enum ConfigBufferState
     {
         ConfigBufferState_eAccumulating,        // Config buffer has not yet been submitted to playpump
+        ConfigBufferState_eFlushed,             // Input port has been flushed with the existing config buffer
         ConfigBufferState_eSubmitted,           // Config buffer has been submited to playpump
         ConfigBufferState_eMax
     };
@@ -332,9 +333,6 @@ protected:
     size_t m_earlyDroppedFrames;
     int m_earlyDropThresholdMs;
     nsecs_t m_startTime;
-
-    bool m_inputFlushing;
-    bool m_outputFlushing;
 
     bool m_ptsReceived;
 
