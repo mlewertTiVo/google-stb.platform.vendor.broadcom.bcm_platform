@@ -85,7 +85,7 @@
 #define B_INPUT_BUFFERS_RETURN_INTERVAL (5000)
 #define B_AAC_ADTS_HEADER_LEN (7)
 
-#define B_MAX_AUDIO_DECODERS (1)
+#define B_MAX_AUDIO_DECODERS (2)
 
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
