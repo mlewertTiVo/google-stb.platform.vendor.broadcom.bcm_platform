@@ -4241,6 +4241,12 @@ void BOMX_VideoDecoder::PlaypumpEvent()
             BOMX_INPUT_MSG(("Data still pending in RAVE.  Starting Timer."));
             m_playpumpTimerId = StartTimer(BOMX_VideoDecoder_GetFrameInterval(m_frameRate), BOMX_VideoDecoder_PlaypumpEvent, static_cast<void *>(this));
         }
+
+        if ( m_tunnelMode )
+        {
+            // Return the input buffers as fast as possible
+            ReturnInputBuffers(0, InputReturnMode_eAll);
+        }
     }
 }
 
@@ -4270,7 +4276,7 @@ void BOMX_VideoDecoder::InputBufferCounterReset()
     m_AvailInputBuffers = m_pVideoPorts[0]->GetDefinition()->nBufferCountActual;
 }
 
-void BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTimeout)
+void BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMode mode)
 {
     uint32_t count = 0, timeoutCount = 0;
     BOMX_VideoDecoderInputBufferInfo *pInfo;
@@ -4285,9 +4291,9 @@ void BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTime
             break;
         }
 
-        if ( causedByTimeout || pReturnBuffer == NULL )
+        if ( mode != InputReturnMode_eTimestamp || pReturnBuffer == NULL )
         {
-            if ( causedByTimeout && timeoutCount++ >= B_MAX_INPUT_TIMEOUT_RETURN )
+            if ( mode == InputReturnMode_eTimeout && timeoutCount++ >= B_MAX_INPUT_TIMEOUT_RETURN )
             {
                 break;
             }
@@ -4347,7 +4353,7 @@ bool BOMX_VideoDecoder::ReturnInputPortBuffer(BOMX_Buffer *pBuffer)
 void BOMX_VideoDecoder::InputBufferTimeoutCallback()
 {
     CancelTimerId(m_inputBuffersTimerId);
-    ReturnInputBuffers(0, true);
+    ReturnInputBuffers(0, InputReturnMode_eTimeout);
 }
 
 #if 0  /* Source Changed Event is not required in non-tunneled. */
@@ -4956,7 +4962,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::OUTPUT_FRAME, pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber);
                     ReturnPortBuffer(m_pVideoPorts[1], pOmxBuffer);
                     // Try to return processed input buffers
-                    ReturnInputBuffers(pHeader->nTimeStamp, false);
+                    ReturnInputBuffers(pHeader->nTimeStamp, InputReturnMode_eTimestamp);
                     ALOG_ASSERT(queueDepthBefore == (m_pVideoPorts[1]->QueueDepth()+1));
                 }
                 if ( destripedSuccess )

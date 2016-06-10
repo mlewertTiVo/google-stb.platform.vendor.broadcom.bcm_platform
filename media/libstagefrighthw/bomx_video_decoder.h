@@ -260,6 +260,14 @@ protected:
         ConfigBufferState_eMax
     };
 
+    enum InputReturnMode
+    {
+        InputReturnMode_eTimestamp,             // Return input ports upto the specified timestamp
+        InputReturnMode_eTimeout,               // Return input ports upto the timeout limit
+        InputReturnMode_eAll,                   // Return all input ports that are marked as completed
+        InputReturnMode_eMax
+    };
+
     NEXUS_SimpleVideoDecoderHandle m_hSimpleVideoDecoder;
     NEXUS_PlaypumpHandle m_hPlaypump;
     NEXUS_PidChannelHandle m_hPidChannel;
@@ -416,7 +424,7 @@ protected:
     void InputBufferNew();
     void InputBufferReturned();
     void InputBufferCounterReset();
-    void ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTimeout);
+    void ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMode mode);
     bool ReturnInputPortBuffer(BOMX_Buffer *pBuffer);
 
     // The functions below allow derived classes to override them
