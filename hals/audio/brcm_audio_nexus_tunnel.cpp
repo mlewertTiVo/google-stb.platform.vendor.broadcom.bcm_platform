@@ -422,12 +422,10 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
 
     bout->framesPlayed = 0;
     bout->frameSize = audio_bytes_per_sample(config->format) * popcount(config->channel_mask);
-    bout->buffer_size = 16 + 4096;
-#if 0
-        get_brcm_audio_buffer_size(config->sample_rate,
+    bout->buffer_size = get_brcm_audio_buffer_size(config->sample_rate,
                                    config->format,
                                    popcount(config->channel_mask));
-#endif
+
     ALOGV("%s: sample_rate=%" PRIu32 " frameSize=%" PRIu32 " buffer_size=%zu",
             __FUNCTION__, config->sample_rate, bout->frameSize, bout->buffer_size);
 
