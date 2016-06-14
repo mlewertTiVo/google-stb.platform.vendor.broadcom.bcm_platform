@@ -665,7 +665,6 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          pMemConfigSettings->videoDecoder[0].mosaic.maxNumber = 0;
          pMemConfigSettings->videoDecoder[0].mosaic.maxHeight = 0;
          pMemConfigSettings->videoDecoder[0].mosaic.maxWidth = 0;
-
       }
    }
 

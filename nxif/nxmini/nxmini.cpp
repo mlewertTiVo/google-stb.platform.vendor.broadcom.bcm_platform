@@ -137,7 +137,9 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    for (i = 1; i < NEXUS_MAX_DISPLAYS; i++) {
        pMemConfigSettings->display[i].maxFormat = NEXUS_VideoFormat_eUnknown;
        for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
+           pMemConfigSettings->display[i].window[j].deinterlacer = NEXUS_DeinterlacerMode_eNone;
            pMemConfigSettings->display[i].window[j].used = false;
+           pMemConfigSettings->display[i].window[j].mtg = false;
        }
    }
    pMemConfigSettings->display[0].window[1].used = false;
@@ -155,6 +157,9 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       pMemConfigSettings->stillDecoder[i].used = false;
    }
 
+   pMemConfigSettings->videoDecoder[0].mosaic.maxNumber = 0;
+   pMemConfigSettings->videoDecoder[0].mosaic.maxHeight = 0;
+   pMemConfigSettings->videoDecoder[0].mosaic.maxWidth = 0;
    pMemConfigSettings->videoDecoder[0].maxFormat = NEXUS_VideoFormat_eNtsc;
    pMemConfigSettings->videoDecoder[0].colorDepth = 8;
    pMemConfigSettings->videoDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
@@ -185,7 +190,7 @@ static nxserver_t init_nxserver(void)
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
     NEXUS_GetDefaultMemoryConfigurationSettings(&memConfigSettings);
 
-    settings.svp = nxserverlib_svp_type_none;
+    settings.svp = nxserverlib_svp_type_cdb_urr;
     settings.session[0].ir_input_mode = NEXUS_IrInputMode_eMax;
     settings.transcode = false;
     settings.grab = 0;
