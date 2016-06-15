@@ -2272,6 +2272,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::FillThisBuffer(
 NEXUS_Error BOMX_VideoEncoder::PushInputEosFrame()
 {
     NEXUS_VideoImageInputSurfaceSettings surfSettings;
+    NEXUS_Error errCode;
     OMX_ERRORTYPE err;
 
     if (m_bPushDummyFrame)
@@ -2279,14 +2280,23 @@ NEXUS_Error BOMX_VideoEncoder::PushInputEosFrame()
         err = BuildDummyFrame();
         if ( OMX_ErrorNone != err  )
         {
-            return err;
+            errCode = NEXUS_UNKNOWN;
+            goto done;
         }
     }
 
-    // NEXUS: EOS mush be pushed with NULL frame
+    // NEXUS: EOS must be pushed with NULL frame
     NEXUS_VideoImageInput_GetDefaultSurfaceSettings(&surfSettings);
     surfSettings.endOfStream = true;
-    return NEXUS_VideoImageInput_PushSurface(m_hImageInput, NULL, &surfSettings);
+    errCode = NEXUS_VideoImageInput_PushSurface(m_hImageInput, NULL, &surfSettings);
+done:
+    if (errCode == NEXUS_SUCCESS) {
+        m_bRetryPushInputEos = false;
+        m_bInputEosPushed = true;
+    } else {
+        m_bRetryPushInputEos = true;
+    }
+    return errCode;
 }
 
 OMX_ERRORTYPE BOMX_VideoEncoder::BuildDummyFrame()
@@ -2428,10 +2438,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
     if (pBufferHeader->nFlags & OMX_BUFFERFLAG_EOS)
     {
         ALOGD("input EOS received");
-        if (NEXUS_SUCCESS != PushInputEosFrame())
-        {
-            m_bPushEos = true;
-        }
+        PushInputEosFrame();
     }
 
     ReturnPortBuffer(m_pVideoPorts[0], pBuffer);
@@ -2628,12 +2635,9 @@ void BOMX_VideoEncoder::InputBufferProcess()
     }
 
     // handle EOS
-    if (m_bPushEos)
+    if (m_bRetryPushInputEos)
     {
-        if (NEXUS_SUCCESS == PushInputEosFrame())
-        {
-            m_bPushEos = false;
-        }
+        PushInputEosFrame();
     }
 
     ALOGV(" %d buffer(s) pushed", nPushed);
@@ -2800,7 +2804,6 @@ void BOMX_VideoEncoder::OutputBufferProcess()
         if (pNxVidEncFr->clientFlags & OMX_BUFFERFLAG_EOS)
         {
             ALOGV("EOS: EOS is delivered");
-            m_bEosDelieverd = true;
         }
 
         /* Record this frame's PTS info for duplicate frame detection */
@@ -3074,9 +3077,9 @@ NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
 
     /* reset the codec config flag */
     m_bCodecConfigDone = false;
-    m_bEosDelieverd = false;
-    m_bEosReceived = false;
-    m_bPushEos = false;
+    m_bOutputEosReceived = false;
+    m_bRetryPushInputEos = false;
+    m_bInputEosPushed = false;
 
     ALOGV("started Nexus encoder");
 
@@ -3583,10 +3586,10 @@ void BOMX_VideoEncoder::ImageBufferProcess()
 
     }
     // retry if failed to push EOS, or input queue is not empty.
-    if ((m_pVideoPorts[0]->QueueDepth() > 0) || m_bPushEos )
+    if ((m_pVideoPorts[0]->QueueDepth() > 0) || m_bRetryPushInputEos )
     {
         B_Event_Set(m_hInputBufferProcessEvent);
-        ALOGV("trigger input event process for %s", m_bPushEos ? "EOS" : "remaining buffer");
+        ALOGV("trigger input event process for %s", m_bRetryPushInputEos ? "EOS" : "remaining buffer");
     }
 
 }
@@ -3810,7 +3813,7 @@ bool BOMX_VideoEncoder::HaveCompleteFrame( const NEXUS_VideoEncoderDescriptor *p
                 if (pDesc0->flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_EOS)
                 {
                     ALOGI("EOS: received EOS on encoder output");
-                    m_bEosReceived = true;
+                    m_bOutputEosReceived = true;
                 }
                 return true;
             }
@@ -3827,7 +3830,7 @@ bool BOMX_VideoEncoder::HaveCompleteFrame( const NEXUS_VideoEncoderDescriptor *p
                 if (pDesc1->flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_EOS)
                 {
                     ALOGI("EOS: received EOS on encoder output");
-                    m_bEosReceived = true;
+                    m_bOutputEosReceived = true;
                 }
                 return true;
             }
@@ -3908,6 +3911,12 @@ unsigned int BOMX_VideoEncoder::RetrieveFrameFromHardware(void *pBufferBase)
         if (!HaveCompleteFrame(pDesc0, size0, pDesc1, size1, &numToProcess))
         {
             ALOGV("in-completed frame, retry");
+            if (m_bInputEosPushed && !m_bOutputEosReceived)
+            {
+                // Can't rely on DataReady event for the output EOS, we have to poll.
+                ALOGV("Polling for output EOS");
+                B_Event_Set(m_hOutputBufferProcessEvent);
+            }
             break;
         }
 
@@ -3956,7 +3965,7 @@ unsigned int BOMX_VideoEncoder::RetrieveFrameFromHardware(void *pBufferBase)
             }
 
             pEmptyFr->baseAddr = (unsigned int) pBufferBase;
-            if (m_bEosReceived)
+            if (m_bOutputEosReceived)
             {
                 pEmptyFr->clientFlags |= OMX_BUFFERFLAG_EOS;
             }

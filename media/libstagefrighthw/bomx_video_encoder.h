@@ -240,9 +240,9 @@ protected:
 
     bool m_bSimpleEncoderStarted;
     bool m_bCodecConfigDone;
-    bool m_bEosReceived;
-    bool m_bEosDelieverd;
-    bool m_bPushEos;
+    bool m_bOutputEosReceived;
+    bool m_bInputEosPushed;
+    bool m_bRetryPushInputEos;
     bool m_bPushDummyFrame;
 
     BLST_Q_HEAD(BOMX_EncodedFrList, BOMX_NexusEncodedVideoFrame) m_EncodedFrList;
