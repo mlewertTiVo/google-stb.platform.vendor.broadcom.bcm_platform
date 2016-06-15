@@ -351,7 +351,20 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 }
             }
             else {
+                NEXUS_SimpleAudioDecoderHandle prev_audio_decoder = audio_decoder;
+                NEXUS_PlaypumpHandle prev_playpump = playpump;
+
+                pthread_mutex_unlock(&bout->lock);
                 ret = BKNI_WaitForEvent(event, 500);
+                pthread_mutex_lock(&bout->lock);
+
+                // Sanity check when relocking
+                audio_decoder = bout->nexus.tunnel.audio_decoder;
+                playpump = bout->nexus.tunnel.playpump;
+                ALOG_ASSERT(audio_decoder == prev_audio_decoder);
+                ALOG_ASSERT(playpump == prev_playpump);
+                ALOG_ASSERT(!bout->suspended);
+
                 if (ret) {
                     ALOGE("%s: playpump write timeout, ret=%d", __FUNCTION__, ret);
                     break;

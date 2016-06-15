@@ -224,7 +224,17 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
             bytes -= bytes_to_copy;
         }
         else {
+            NEXUS_SimpleAudioDecoderHandle prev_simple_decoder = simple_decoder;
+
+            pthread_mutex_unlock(&bout->lock);
             ret = BKNI_WaitForEvent(event, 500);
+            pthread_mutex_lock(&bout->lock);
+
+            // Sanity check when relocking
+            simple_decoder = bout->nexus.simple_decoder;
+            ALOG_ASSERT(simple_decoder == prev_simple_decoder);
+            ALOG_ASSERT(!bout->suspended);
+
             if (ret) {
                 ALOGE("%s: at %d, decoder timeout, ret = %d\n",
                      __FUNCTION__, __LINE__, ret);

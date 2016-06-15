@@ -401,7 +401,17 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
             bytes -= bytes_to_copy;
         }
         else {
+            NEXUS_SimpleAudioPlaybackHandle prev_simple_playback = simple_playback;
+
+            pthread_mutex_unlock(&bout->lock);
             ret = BKNI_WaitForEvent(event, 500);
+            pthread_mutex_lock(&bout->lock);
+
+            // Sanity check when relocking
+            simple_playback = bout->nexus.simple_playback;
+            ALOG_ASSERT(simple_playback == prev_simple_playback);
+            ALOG_ASSERT(!bout->suspended);
+
             if (ret) {
                 ALOGE("%s: at %d, playback timeout, ret = %d\n",
                      __FUNCTION__, __LINE__, ret);
