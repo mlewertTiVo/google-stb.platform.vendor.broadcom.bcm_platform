@@ -23,7 +23,8 @@ LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_STRIP_MODULE := true
 ifeq ($(TARGET_2ND_ARCH),arm)
-LOCAL_MULTILIB := both
+LOCAL_MULTILIB := 32
+# LOCAL_MULTILIB := both
 LOCAL_MODULE_TARGET_ARCH := arm arm64
 LOCAL_SRC_FILES_arm64 := lib/arm64/libcmndrm.so
 LOCAL_SRC_FILES_arm := lib/arm/libcmndrm.so
@@ -52,7 +53,8 @@ endif
 ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so))
 # use prebuilt library if one exists
 ifeq ($(TARGET_2ND_ARCH),arm)
-LOCAL_MULTILIB := both
+LOCAL_MULTILIB := 32
+# LOCAL_MULTILIB := both
 LOCAL_MODULE_TARGET_ARCH := arm arm64
 # fix me!
 LOCAL_SRC_FILES_arm64 := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
@@ -90,6 +92,9 @@ LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
 
 LOCAL_SHARED_LIBRARIES := liblog libnexus libnxclient libplayreadypk_host libdrmrootfs
+
+LOCAL_MULTILIB := 32
+# LOCAL_MULTILIB := both
 
 include $(BUILD_SHARED_LIBRARY)
 endif
@@ -178,6 +183,8 @@ LOCAL_CFLAGS += -DCMNDRM_SKIP_BINFILE_OVERWRITE
 
 LOCAL_SHARED_LIBRARIES := libnexus libcmndrm libdrmrootfs libsrai liblog
 
+LOCAL_MULTILIB := 32
+# LOCAL_MULTILIB := both
 LOCAL_MODULE := libcmndrm_tl
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)

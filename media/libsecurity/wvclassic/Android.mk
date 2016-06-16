@@ -35,6 +35,8 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_STATIC_LIBRARIES := liboemcrypto
 LOCAL_SHARED_LIBRARIES += libnexus libcmndrm libnexusipcclient
 LOCAL_PRELINK_MODULE := false
+# LOCAL_MULTILIB := both
+LOCAL_MULTILIB := 32
 include $(BUILD_SHARED_LIBRARY)
 
 #----------
@@ -44,6 +46,8 @@ include $(CLEAR_VARS)
 include $(WV_LOCAL_PATH)/../../../../../widevine/proprietary/wvm/wvm-core.mk
 
 LOCAL_MODULE := libwvm
+# LOCAL_MULTILIB := both
+LOCAL_MULTILIB := 32
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_TAGS := optional
 LOCAL_PRELINK_MODULE := false
@@ -63,6 +67,8 @@ LOCAL_SHARED_LIBRARIES := \
 	libstagefright_foundation \
 	liblog
 
+# LOCAL_MULTILIB := both
+LOCAL_MULTILIB := 32
 LOCAL_MODULE := libdrmdecrypt
 LOCAL_MODULE_TAGS := optional
 LOCAL_SHARED_LIBRARIES += libcrypto libcutils
