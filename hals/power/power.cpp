@@ -57,8 +57,8 @@ static const char *powerNetInterfaces[] = {
 // Property definitions (max length 32)...
 static const char * PROPERTY_SYS_POWER_DOZE_TIMEOUT       = "persist.sys.power.doze.timeout";
 static const char * PROPERTY_SYS_POWER_WAKE_TIMEOUT       = "persist.sys.power.wake.timeout";
-static const char * PROPERTY_PM_DOZESTATE                 = "ro.pm.dozestate";
-static const char * PROPERTY_PM_OFFSTATE                  = "ro.pm.offstate";
+static const char * PROPERTY_SYS_POWER_DOZESTATE          = "persist.sys.power.dozestate";
+static const char * PROPERTY_SYS_POWER_OFFSTATE           = "persist.sys.power.offstate";
 static const char * PROPERTY_PM_ETH_EN                    = "ro.pm.eth_en";
 static const char * PROPERTY_PM_MOCA_EN                   = "ro.pm.moca_en";
 static const char * PROPERTY_PM_SATA_EN                   = "ro.pm.sata_en";
@@ -71,8 +71,8 @@ static const char * PROPERTY_PM_WOL_EN                    = "ro.pm.wol.en";
 static const char * PROPERTY_PM_WOL_OPTS                  = "ro.pm.wol.opts";
 
 // Property defaults
-static const char * DEFAULT_PROPERTY_PM_DOZESTATE         = "S0.5";
-static const char * DEFAULT_PROPERTY_PM_OFFSTATE          = "S2";
+static const char * DEFAULT_PROPERTY_SYS_POWER_DOZESTATE  = "S0.5";
+static const char * DEFAULT_PROPERTY_SYS_POWER_OFFSTATE   = "S2";
 static const int8_t DEFAULT_PROPERTY_PM_ETH_EN            = 1;     // Enable Ethernet during standby
 static const int8_t DEFAULT_PROPERTY_PM_MOCA_EN           = 0;     // Disable MOCA during standby
 static const int8_t DEFAULT_PROPERTY_PM_SATA_EN           = 0;     // Disable SATA during standby
@@ -233,25 +233,23 @@ static b_powerState power_get_state_from_string(char *value)
 
 static b_powerState power_get_property_off_state()
 {
-    static b_powerState offState = ePowerState_Max;
+    b_powerState offState;
     char value[PROPERTY_VALUE_MAX] = "";
 
-    if (offState == ePowerState_Max) {
-        property_get(PROPERTY_PM_OFFSTATE, value, DEFAULT_PROPERTY_PM_OFFSTATE);
-        offState = power_get_state_from_string(value);
-    }
+    property_get(PROPERTY_SYS_POWER_OFFSTATE, value, DEFAULT_PROPERTY_SYS_POWER_OFFSTATE);
+    offState = power_get_state_from_string(value);
+
     return offState;
 }
 
 static b_powerState power_get_property_doze_state()
 {
-    static b_powerState dozeState = ePowerState_Max;
+    b_powerState dozeState;
     char value[PROPERTY_VALUE_MAX] = "";
 
-    if (dozeState == ePowerState_Max) {
-        property_get(PROPERTY_PM_DOZESTATE, value, DEFAULT_PROPERTY_PM_DOZESTATE);
-        dozeState = power_get_state_from_string(value);
-    }
+    property_get(PROPERTY_SYS_POWER_DOZESTATE, value, DEFAULT_PROPERTY_SYS_POWER_DOZESTATE);
+    dozeState = power_get_state_from_string(value);
+
     return dozeState;
 }
 
@@ -274,19 +272,18 @@ static int power_get_property_wol_opts(char *opts)
 
 static b_powerState power_get_off_state()
 {
-    static b_powerState offState = ePowerState_Max;
+    b_powerState offState;
 
-    if (offState == ePowerState_Max) {
-        offState = power_get_property_off_state();
-        // If the default off state is S3 but the kernel has mapped this to S2 instead,
-        // then we need to use S2 rather than S3 for placing Nexus in to standby.
-        if (offState == ePowerState_S3) {
-            unsigned map_mem_to_s2 = 0;
-            if (sysfs_get(SYS_MAP_MEM_TO_S2, &map_mem_to_s2) == NO_ERROR) {
-                if (map_mem_to_s2) {
-                    ALOGW("%s: Kernel cannot support S3, defaulting to S2 instead.", __FUNCTION__);
-                    offState = ePowerState_S2;
-                }
+    offState = power_get_property_off_state();
+
+    // If the default off state is S3 but the kernel has mapped this to S2 instead,
+    // then we need to use S2 rather than S3 for placing Nexus in to standby.
+    if (offState == ePowerState_S3) {
+        unsigned map_mem_to_s2 = 0;
+        if (sysfs_get(SYS_MAP_MEM_TO_S2, &map_mem_to_s2) == NO_ERROR) {
+            if (map_mem_to_s2) {
+                ALOGW("%s: Kernel cannot support S3, defaulting to S2 instead.", __FUNCTION__);
+                offState = ePowerState_S2;
             }
         }
     }
@@ -1052,7 +1049,7 @@ static void *power_event_monitor_thread(void *arg __unused)
                     if (ret != NO_ERROR)
                         ALOGE("%s: Error trying to enter S5!!!", __FUNCTION__);
                     else
-                        ALOGE("%s: entered S5", __FUNCTION__);
+                        ALOGD("%s: Entered S5", __FUNCTION__);
 
                     // Acknowledge shutdown message and wait, shouldn't return
                     power_prepare_suspend();
