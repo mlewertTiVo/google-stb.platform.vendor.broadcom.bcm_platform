@@ -146,7 +146,7 @@ uint32_t BOMX_TickToPts(
     {
         return 0;
     }
-    return (uint32_t)((ticks/1000LL)*45);
+    return (uint32_t)((ticks/1000LL)*45LL);
 }
 
 void BOMX_PtsToTick(
@@ -172,97 +172,6 @@ int32_t BOMX_TickDiffMs(
     ms2 = (int32_t)(*pTime2/1000LL);
 
     return ms2-ms1;
-}
-
-int BOMX_FormPesHeader(
-    const OMX_BUFFERHEADERTYPE *pFrame,
-    const uint32_t *pPts,
-    void *pBuffer,
-    size_t bufferSize,
-    unsigned streamId,
-    const void *pCodecHeader,
-    size_t codecHeaderLength,
-    size_t *pHeaderLength
-    )
-{
-    uint8_t *pHeaderBuf;
-    unsigned payloadLength;
-    unsigned length;
-    uint32_t pts;
-    bool unbounded=false;
-
-    ALOG_ASSERT(NULL != pFrame);
-    ALOG_ASSERT(NULL != pBuffer);
-    ALOG_ASSERT(NULL != pHeaderLength);
-    if ( codecHeaderLength > 0 )
-    {
-        ALOG_ASSERT(NULL != pCodecHeader);
-    }
-
-    pHeaderBuf = (uint8_t *)pBuffer;
-
-    length=14; /* PES header size, 3 byte syncword + 1 byte stream ID + 2 bytes length + 3 byte optional header + 5 byte PTS */
-    payloadLength = pFrame->nFilledLen + codecHeaderLength;
-    payloadLength += length - 6; /* Payload length doesn't count the 6-byte header */
-    if ( length > bufferSize )
-    {
-        ALOGW("Buffer not large enough for PES header");
-        return -1;
-    }
-
-    if ( payloadLength > 65535 )
-    {
-        unbounded=true;
-    }
-
-    if ( pPts )
-    {
-        pts = *pPts;
-    }
-    else
-    {
-        pts = BOMX_TickToPts(&pFrame->nTimeStamp);
-    }
-
-    /* Write PES Header */
-    pHeaderBuf[0] = 0x00;
-    pHeaderBuf[1] = 0x00;
-    pHeaderBuf[2] = 0x01;
-    pHeaderBuf[3] = (uint8_t)streamId;
-    if ( unbounded )
-    {
-        pHeaderBuf[4] = 0;
-        pHeaderBuf[5] = 0;
-    }
-    else
-    {
-        pHeaderBuf[4] = payloadLength >> 8;
-        pHeaderBuf[5] = payloadLength & 0xff;
-    }
-    pHeaderBuf[6] = 0x81;                   /* Indicate header with 0x10 in the upper bits, original material */
-    pHeaderBuf[7] = 0x80;
-    pHeaderBuf[8] = 0x05;
-    pHeaderBuf[9] =
-        B_SET_BITS("0010", 0x02, 7, 4) |
-        B_SET_BITS("PTS [32..30]", B_GET_BITS(pts,31,29), 3, 1) |
-        B_SET_BIT(marker_bit, 1, 0);
-    pHeaderBuf[10] = B_GET_BITS(pts,28,21); /* PTS [29..15] -> PTS [29..22] */
-    pHeaderBuf[11] =
-        B_SET_BITS("PTS [29..15] -> PTS [21..15]", B_GET_BITS(pts,20,14), 7, 1) |
-        B_SET_BIT(marker_bit, 1, 0);
-    pHeaderBuf[12] = B_GET_BITS(pts,13,6); /* PTS [14..0] -> PTS [14..7]  */
-    pHeaderBuf[13] =
-        B_SET_BITS("PTS [14..0] -> PTS [6..0]", B_GET_BITS(pts,5,0), 7, 2) |
-        B_SET_BIT("PTS[0]", 0, 1) |
-        B_SET_BIT(marker_bit, 1, 0);
-
-    if ( codecHeaderLength > 0 )
-    {
-        BKNI_Memcpy(pHeaderBuf+14, pCodecHeader, codecHeaderLength);
-    }
-
-    *pHeaderLength = length + codecHeaderLength;
-    return 0;
 }
 
 const char * BOMX_StateName(OMX_STATETYPE state)

@@ -88,6 +88,12 @@ public:
        }
     };
 
+    inline void getsideband(int index, int &value) {
+       if (get_hwc(false) != NULL) {
+           get_hwc(false)->getSidebandSurfaceId(this, index, value);
+       }
+    };
+
     inline void getvideogeometry(int index, struct hwc_position &frame, struct hwc_position &clipped,
                                  int &zorder, int &visible) {
        if (get_hwc(false) != NULL) {
@@ -126,6 +132,10 @@ public:
 
    void getvideo(int index, int &value) {
       ihwc.get()->getvideo(index, value);
+   }
+
+   void getsideband(int index, int &value) {
+      ihwc.get()->getsideband(index, value);
    }
 
    void getvideogeometry(int index, struct hwc_position &frame, struct hwc_position &clipped,

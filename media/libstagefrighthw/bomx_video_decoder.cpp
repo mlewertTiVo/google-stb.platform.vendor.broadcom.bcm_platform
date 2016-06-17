@@ -67,6 +67,7 @@
 #define B_PROPERTY_SVP ("ro.nx.svp")
 #define B_PROPERTY_COALESCE ("dyn.nx.netcoal.set")
 #define B_PROPERTY_HFRVIDEO ("dyn.nx.hfrvideo.set")
+#define B_PROPERTY_HW_SYNC_FAKE ("media.brcm.hw_sync.fake")
 #define B_PROPERTY_EARLYDROP_THRESHOLD ("media.brcm.stat.earlydrop_thres")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
@@ -144,13 +145,14 @@ enum BOMX_VideoDecoderEventType
     BOMX_VideoDecoderEventType_eMax
 };
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(
+OMX_ERRORTYPE BOMX_VideoDecoder_CreateCommon(
     OMX_COMPONENTTYPE *pComponentTpe,
     OMX_IN OMX_STRING pName,
     OMX_IN OMX_PTR pAppData,
-    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks,
+    bool tunnelMode)
 {
-    BOMX_VideoDecoder *pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks);
+    BOMX_VideoDecoder *pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, tunnelMode);
     if ( NULL == pVideoDecoder )
     {
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
@@ -170,11 +172,30 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(
     }
 }
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateTunnel(
     OMX_COMPONENTTYPE *pComponentTpe,
     OMX_IN OMX_STRING pName,
     OMX_IN OMX_PTR pAppData,
     OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    return BOMX_VideoDecoder_CreateCommon(pComponentTpe, pName, pAppData, pCallbacks, true);
+}
+
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    return BOMX_VideoDecoder_CreateCommon(pComponentTpe, pName, pAppData, pCallbacks, false);
+}
+
+OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks,
+    bool tunnelMode)
 {
     static const BOMX_VideoDecoderRole vp9Role = {"video_decoder.vp9", OMX_VIDEO_CodingVP9};
     BOMX_VideoDecoder *pVideoDecoder;
@@ -206,7 +227,7 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
         return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
     }
 
-    pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, 1, &vp9Role, BOMX_VideoDecoder_GetRoleVp9);
+    pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, tunnelMode, 1, &vp9Role, BOMX_VideoDecoder_GetRoleVp9);
     if ( NULL == pVideoDecoder )
     {
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
@@ -224,6 +245,24 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
             return BOMX_ERR_TRACE(constructorError);
         }
     }
+}
+
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Tunnel(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    return BOMX_VideoDecoder_CreateVp9Common(pComponentTpe, pName, pAppData, pCallbacks, true);
+}
+
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    return BOMX_VideoDecoder_CreateVp9Common(pComponentTpe, pName, pAppData, pCallbacks, false);
 }
 
 extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex)
@@ -544,6 +583,20 @@ static void BOMX_OmxBinderNotify(int cb_data, int msg, struct hwc_notification_i
         pComponent->BinderNotifyDisplay(ntfy);
         break;
     }
+    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_GEOMETRY_UPDATE:
+    {
+       NEXUS_Rect position, clip;
+       position.x = ntfy.frame.x;
+       position.y = ntfy.frame.y;
+       position.width = ntfy.frame.w;
+       position.height = ntfy.frame.h;
+       clip.x = ntfy.clipped.x;
+       clip.y = ntfy.clipped.y;
+       clip.width = ntfy.clipped.w;
+       clip.height = ntfy.clipped.h;
+       pComponent->SetVideoGeometry(&position, &clip, ntfy.frame_id, ntfy.display_width, ntfy.display_height, ntfy.zorder, true);
+       break;
+    }
     default:
         break;
     }
@@ -736,6 +789,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks,
     bool secure,
+    bool tunnel,
     unsigned numRoles,
     const BOMX_VideoDecoderRole *pRoles,
     const char *(*pGetRole)(unsigned roleIndex)) :
@@ -778,6 +832,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_metadataEnabled(false),
     m_adaptivePlaybackEnabled(false),
     m_secureDecoder(secure),
+    m_tunnelMode(tunnel),
+    m_pTunnelNativeHandle(NULL),
     m_outputWidth(1920),
     m_outputHeight(1080),
     m_maxDecoderWidth(1920),
@@ -799,6 +855,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_earlyDroppedFrames(0),
     m_earlyDropThresholdMs(0),
     m_startTime(-1),
+    m_tunnelStcChannel(NULL),
     m_ptsReceived(false)
 {
     unsigned i;
@@ -1221,7 +1278,23 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
     m_omxHwcBinder->get()->register_notify(&BOMX_OmxBinderNotify, (int)this);
-    // TODO: This still seems to be required or we stop getting notifications - just discard the value for now.
+    if (m_tunnelMode)
+    {
+       int sidebandId;
+       m_omxHwcBinder->getsideband(0, sidebandId);
+       m_pTunnelNativeHandle = native_handle_create(0, 2);
+       if (!m_pTunnelNativeHandle)
+       {
+          ALOGE("Unable to create native handle for tunnel mode");
+          this->Invalidate(OMX_ErrorUndefined);
+          return;
+       }
+       m_pTunnelNativeHandle->data[0] = 2;
+       m_pTunnelNativeHandle->data[1] = sidebandId;
+
+       m_outputMode = BOMX_VideoDecoderOutputBufferType_eNone;
+    }
+    else
     {
         int surfaceClientId;
         m_omxHwcBinder->getvideo(0, surfaceClientId);
@@ -1388,6 +1461,12 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
        close(m_memTracker);
        m_memTracker = -1;
+    }
+
+    if (m_pTunnelNativeHandle)
+    {
+        native_handle_delete(m_pTunnelNativeHandle);
+        m_pTunnelNativeHandle = NULL;
     }
 
     BOMX_VIDEO_STATS_RESET;
@@ -1780,7 +1859,25 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
 
         return OMX_ErrorNone;
     }
+    case OMX_IndexParamConfigureVideoTunnelMode:
+    {
+        ConfigureVideoTunnelModeParams *pTunnel = (ConfigureVideoTunnelModeParams *)pComponentParameterStructure;
+        BOMX_STRUCT_VALIDATE(pTunnel);
+        ALOGV("GetParameter OMX_IndexParamConfigureVideoTunnelMode");
+        if ( pTunnel->nPortIndex != m_videoPortBase+1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+        if ( !m_tunnelMode )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
 
+        pTunnel->bTunneled = OMX_TRUE;
+        pTunnel->pSidebandWindow = (OMX_PTR)m_pTunnelNativeHandle;
+
+        return OMX_ErrorNone;
+    }
     default:
         ALOGV("GetParameter %#x Deferring to base class", nParamIndex);
         return BOMX_ERR_TRACE(BOMX_Component::GetParameter(nParamIndex, pComponentParameterStructure));
@@ -2039,7 +2136,22 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
     {
         ConfigureVideoTunnelModeParams *pTunnel = (ConfigureVideoTunnelModeParams *)pComponentParameterStructure;
         BOMX_STRUCT_VALIDATE(pTunnel);
-        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+        ALOGV("SetParameter OMX_IndexParamConfigureVideoTunnelMode");
+        if ( pTunnel->nPortIndex != m_videoPortBase+1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+        if ( !m_tunnelMode )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
+        if ( pTunnel->bTunneled )
+        {
+            m_tunnelStcChannel = (NEXUS_SimpleStcChannelHandle)(intptr_t)pTunnel->nAudioHwSync;
+            ALOGV("OMX_IndexParamConfigureVideoTunnelMode - stc-channel %p", m_tunnelStcChannel);
+        }
+
+        return OMX_ErrorNone;
     }
     default:
         ALOGV("SetParameter %#x - Defer to base class", nIndex);
@@ -2128,7 +2240,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
         // All states other than loaded require a playpump and video decoder handle
         if ( NULL == m_hSimpleVideoDecoder )
         {
-            if ( !m_secureDecoder )
+            if ( !m_secureDecoder && !m_tunnelMode )
             {
                 int i;
                 NEXUS_SageStatus secureStatus;
@@ -2175,16 +2287,19 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
             }
 
-            NEXUS_SimpleVideoDecoder_GetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
-            extSettings.dataReadyCallback.callback = BOMX_VideoDecoder_EventCallback;
-            extSettings.dataReadyCallback.context = (void *)m_hOutputFrameEvent;
-            extSettings.dataReadyCallback.param = (int)BOMX_VideoDecoderEventType_eDataReady;
-            errCode = NEXUS_SimpleVideoDecoder_SetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
-            if ( errCode )
+            if (!m_tunnelMode)
             {
-                NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
-                m_hSimpleVideoDecoder = NULL;
-                return BOMX_BERR_TRACE(errCode);
+                NEXUS_SimpleVideoDecoder_GetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
+                extSettings.dataReadyCallback.callback = BOMX_VideoDecoder_EventCallback;
+                extSettings.dataReadyCallback.context = (void *)m_hOutputFrameEvent;
+                extSettings.dataReadyCallback.param = (int)BOMX_VideoDecoderEventType_eDataReady;
+                errCode = NEXUS_SimpleVideoDecoder_SetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
+                if ( errCode )
+                {
+                    NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
+                    m_hSimpleVideoDecoder = NULL;
+                    return BOMX_BERR_TRACE(errCode);
+                }
             }
 
             NEXUS_Playpump_GetDefaultOpenSettings(&playpumpOpenSettings);
@@ -2281,8 +2396,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             {
                 // Idle -> Executing = Start
                 NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&vdecStartSettings);
-                vdecStartSettings.displayEnabled = (m_outputMode == BOMX_VideoDecoderOutputBufferType_eStandard) ? false : true;  // If we're doing video-as-graphics don't fire up the display path
-                vdecStartSettings.settings.appDisplayManagement = true;
+                vdecStartSettings.displayEnabled = m_tunnelMode ? true : ((m_outputMode == BOMX_VideoDecoderOutputBufferType_eStandard) ? false : true);
+                vdecStartSettings.settings.appDisplayManagement = m_tunnelMode ? false : true;
                 vdecStartSettings.settings.stcChannel = NULL;
                 vdecStartSettings.settings.pidChannel = m_hPidChannel;
                 vdecStartSettings.settings.codec = GetNexusCodec();
@@ -2292,12 +2407,22 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 property_set(B_PROPERTY_COALESCE, "vmode");
                 property_set(B_PROPERTY_HFRVIDEO, "vmode");
                 m_startTime = systemTime(CLOCK_MONOTONIC); // Track start time
+                if (m_tunnelMode)
+                {
+                    if (!property_get_int32(B_PROPERTY_HW_SYNC_FAKE, 0))
+                    {
+                        errCode = NEXUS_SimpleVideoDecoder_SetStcChannel(m_hSimpleVideoDecoder, m_tunnelStcChannel);
+                        if ( errCode )
+                        {
+                            return BOMX_BERR_TRACE(errCode);
+                        }
+                    }
+                }
                 errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
                 if ( errCode )
                 {
                     return BOMX_BERR_TRACE(errCode);
                 }
-
                 m_submittedDescriptors = 0;
                 errCode = NEXUS_Playpump_Start(m_hPlaypump);
                 if ( errCode )
@@ -2452,7 +2577,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
             PortWaitBegin();
             // Now we need to wait for all enabled ports to become populated
             while ( (m_pVideoPorts[0]->IsEnabled() && !m_pVideoPorts[0]->IsPopulated()) ||
-                    (m_pVideoPorts[1]->IsEnabled() && !m_pVideoPorts[1]->IsPopulated()) )
+                    (m_pVideoPorts[1]->IsEnabled() && (!m_tunnelMode && !m_pVideoPorts[1]->IsPopulated())) )
             {
                 if ( PortWait() != B_ERROR_SUCCESS )
                 {
@@ -2466,7 +2591,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
 
             bool inputEnabled = m_pVideoPorts[0]->IsEnabled();
             bool outputEnabled = m_pVideoPorts[1]->IsEnabled();
-            if ( m_pVideoPorts[1]->IsPopulated() && m_pVideoPorts[1]->IsEnabled() )
+            if ( ((!m_tunnelMode && m_pVideoPorts[1]->IsPopulated()) ||
+                  (m_tunnelMode && !m_pVideoPorts[1]->IsPopulated()))
+                 && m_pVideoPorts[1]->IsEnabled())
             {
                 errCode = SetOutputPortState(OMX_StateIdle);
                 if ( errCode )
@@ -2898,6 +3025,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
         return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
     }
 
+    if (m_tunnelMode)
+    {
+        ALOGW("Do not expect output port population in tunnel mode");
+        return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+    }
+
     pInfo = new BOMX_VideoDecoderOutputBufferInfo;
     if ( NULL == pInfo )
     {
@@ -3134,7 +3267,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     BOMX_VideoDecoderOutputBufferInfo *pInfo;
     OMX_ERRORTYPE err;
 
-   if ( NULL == ppBufferHdr || NULL == pMetadata )
+    if ( NULL == ppBufferHdr || NULL == pMetadata )
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
@@ -3208,7 +3341,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
         // race condition where the component thread is scheduled later
         // than the call to EnablePort or CommandStateSet and this will
         // come first.  It's always safe to do it here.
-        if ( m_metadataEnabled )
+        if ( m_tunnelMode )
+        {
+            ALOGV("Selecting no output mode for output buffer %p", (void*)pBuffer);
+            m_outputMode = BOMX_VideoDecoderOutputBufferType_eNone;
+        }
+        else if ( m_metadataEnabled )
         {
             ALOGV("Selecting metadata output mode for output buffer %p", (void*)pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eMetadata;
@@ -3249,6 +3387,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
                     return BOMX_ERR_TRACE(err);
                 }
             }
+            break;
+        case BOMX_VideoDecoderOutputBufferType_eNone:
+            return OMX_ErrorNone;
             break;
         default:
             // TODO: Handle metadata
@@ -3899,7 +4040,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         }
     }
 
-    if ( m_pVideoPorts[1]->QueueDepth() > 0 )
+    if ( !m_tunnelMode && (m_pVideoPorts[1]->QueueDepth() > 0) )
     {
         // Force a check for new output frames each time a new input frame arrives if we have output buffers ready to fill
         B_Event_Set(m_hOutputFrameEvent);
@@ -4013,7 +4154,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     ReturnDecodedFrames();
 
     // Signal thread to look for more
-    B_Event_Set(m_hOutputFrameEvent);
+    if (!m_tunnelMode)
+    {
+       B_Event_Set(m_hOutputFrameEvent);
+    }
 
     return OMX_ErrorNone;
 }
@@ -4100,6 +4244,12 @@ void BOMX_VideoDecoder::PlaypumpEvent()
             BOMX_INPUT_MSG(("Data still pending in RAVE.  Starting Timer."));
             m_playpumpTimerId = StartTimer(BOMX_VideoDecoder_GetFrameInterval(m_frameRate), BOMX_VideoDecoder_PlaypumpEvent, static_cast<void *>(this));
         }
+
+        if ( m_tunnelMode )
+        {
+            // Return the input buffers as fast as possible
+            ReturnInputBuffers(0, InputReturnMode_eAll);
+        }
     }
 }
 
@@ -4129,7 +4279,7 @@ void BOMX_VideoDecoder::InputBufferCounterReset()
     m_AvailInputBuffers = m_pVideoPorts[0]->GetDefinition()->nBufferCountActual;
 }
 
-void BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTimeout)
+void BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMode mode)
 {
     uint32_t count = 0, timeoutCount = 0;
     BOMX_VideoDecoderInputBufferInfo *pInfo;
@@ -4144,9 +4294,9 @@ void BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTime
             break;
         }
 
-        if ( causedByTimeout || pReturnBuffer == NULL )
+        if ( mode != InputReturnMode_eTimestamp || pReturnBuffer == NULL )
         {
-            if ( causedByTimeout && timeoutCount++ >= B_MAX_INPUT_TIMEOUT_RETURN )
+            if ( mode == InputReturnMode_eTimeout && timeoutCount++ >= B_MAX_INPUT_TIMEOUT_RETURN )
             {
                 break;
             }
@@ -4206,7 +4356,7 @@ bool BOMX_VideoDecoder::ReturnInputPortBuffer(BOMX_Buffer *pBuffer)
 void BOMX_VideoDecoder::InputBufferTimeoutCallback()
 {
     CancelTimerId(m_inputBuffersTimerId);
-    ReturnInputBuffers(0, true);
+    ReturnInputBuffers(0, InputReturnMode_eTimeout);
 }
 
 #if 0  /* Source Changed Event is not required in non-tunneled. */
@@ -4295,9 +4445,7 @@ static const struct {
     {"OMX.google.android.index.describeColorFormat", (int)OMX_IndexParamDescribeColorFormat},
     {"OMX.google.android.index.storeMetaDataInBuffers", (int)OMX_IndexParamStoreMetaDataInBuffers},
     {"OMX.google.android.index.prepareForAdaptivePlayback", (int)OMX_IndexParamPrepareForAdaptivePlayback},
-#if 0 /* Not yet supported */
-    {"OMX.google.android.index.configureVideoTunnelMode", (int)OMX_IndexParamConfigureVideoTunnelMode},     // TODO: Requires audio HW acceleration
-#endif
+    {"OMX.google.android.index.configureVideoTunnelMode", (int)OMX_IndexParamConfigureVideoTunnelMode},
     {NULL, 0}
 };
 
@@ -4395,6 +4543,11 @@ void BOMX_VideoDecoder::InvalidateDecodedFrames()
     */
     BOMX_VideoDecoderFrameBuffer *pBuffer, *pNext=NULL;
 
+    if (m_tunnelMode)
+    {
+        return;
+    }
+
     ALOGV("Invalidating decoded frame list");
 
     for ( pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
@@ -4432,6 +4585,13 @@ void BOMX_VideoDecoder::PollDecodedFrames()
     if ( NULL == m_hSimpleVideoDecoder )
     {
         return;
+    }
+
+    if (m_tunnelMode)
+    {
+       // in tunnel mode, there is no output port populated on the omx component and we do not expect
+       // any frame back from the decoder either, so skip all of this...
+       return;
     }
 
     // There should be at least one free buffer in the list or there is no point checking for more from nexus
@@ -4800,7 +4960,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::OUTPUT_FRAME, pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber);
                     ReturnPortBuffer(m_pVideoPorts[1], pOmxBuffer);
                     // Try to return processed input buffers
-                    ReturnInputBuffers(pHeader->nTimeStamp, false);
+                    ReturnInputBuffers(pHeader->nTimeStamp, InputReturnMode_eTimestamp);
                     ALOG_ASSERT(queueDepthBefore == (m_pVideoPorts[1]->QueueDepth()+1));
                 }
                 if ( destripedSuccess )
@@ -4828,24 +4988,29 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
     NEXUS_VideoDecoderReturnFrameSettings returnSettings[B_MAX_DECODED_FRAMES];
     unsigned numFrames=0;
     BOMX_VideoDecoderFrameBuffer *pBuffer, *pStart, *pEnd, *pLast;
+    NEXUS_VideoDecoderStatus status;
 
     // Make sure decoder is available and running
     if ( NULL == m_hSimpleVideoDecoder )
     {
         return;
     }
-    else
+
+    if (m_tunnelMode)
     {
-        NEXUS_VideoDecoderStatus status;
-        NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &status);
-        if ( !status.started )
-        {
-            m_frameRate = NEXUS_VideoFrameRate_eUnknown;
-            return;
-        }
-        ALOGI_IF(m_frameRate != status.frameRate, "Frame rate %d->%d", m_frameRate, status.frameRate);
-        m_frameRate = status.frameRate;
+       // in tunnel mode, there is no decoded frame processing out of the component, so
+       // we can skip this.
+       return;
     }
+
+    NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &status);
+    if ( !status.started )
+    {
+        m_frameRate = NEXUS_VideoFrameRate_eUnknown;
+        return;
+    }
+    ALOGV_IF(m_frameRate != status.frameRate, "Frame rate %d->%d", m_frameRate, status.frameRate);
+    m_frameRate = status.frameRate;
 
     // Skip pending invalidated frames
     for ( pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);

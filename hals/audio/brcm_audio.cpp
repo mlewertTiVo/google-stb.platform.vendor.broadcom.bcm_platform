@@ -37,11 +37,18 @@
  *
  *****************************************************************************/
 
-#define LOG_TAG "BrcmAudio"
-
 #include "brcm_audio.h"
+#include "bomx_utils.h"
 
 #define BRCM_BUFFER_SIZE_MS 10
+
+// Runtime properties
+#define BRCM_PROPERTY_AUDIO_OUTPUT_DEBUG ("media.brcm.aout_debug")
+
+struct output_hdr {
+    char tag[4];
+    uint32_t length;    // not including header
+};
 
 /*
  * Utility Functions
@@ -74,16 +81,23 @@ size_t get_brcm_audio_buffer_size(unsigned int sample_rate,
 
     size = (sample_rate * BRCM_BUFFER_SIZE_MS + 999) / 1000;
 
+    // Round up to multiple of 16 or AF will complain
+    size = (size + 15) & ~15;
+
     return size * channel_count * audio_bytes_per_sample(format);
 }
 
-static brcm_devices_out_t get_brcm_devices_out(audio_devices_t devices)
+static brcm_devices_out_t get_brcm_devices_out(audio_devices_t devices, bool tunneled)
 {
     switch (devices) {
     case AUDIO_DEVICE_OUT_SPEAKER:
         return BRCM_DEVICE_OUT_NEXUS;
     case AUDIO_DEVICE_OUT_AUX_DIGITAL:
-        return BRCM_DEVICE_OUT_NEXUS_DIRECT;
+        if (tunneled) {
+           return BRCM_DEVICE_OUT_NEXUS_TUNNEL;
+        } else {
+           return BRCM_DEVICE_OUT_NEXUS_DIRECT;
+        }
     default:
         return BRCM_DEVICE_OUT_MAX;
     }
@@ -234,12 +248,9 @@ static int bout_set_parameters(struct audio_stream *stream,
 
     parms = str_parms_create_str(kvpairs);
 
-    /* Set parameters here !!! */
-    char value[8];
-    const char STANDBY_KEY[] = "screen_state";
-
-    if (str_parms_has_key(parms, STANDBY_KEY)) {
-        ret = str_parms_get_str(parms, STANDBY_KEY, value, sizeof(value)/sizeof(value[0]));
+    if (str_parms_has_key(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE)) {
+        char value[8];
+        ret = str_parms_get_str(parms, AUDIO_PARAMETER_KEY_SCREEN_STATE, value, sizeof(value)/sizeof(value[0]));
         if (ret > 0) {
             if (strcmp(value, "off") == 0) {
                 ALOGV("%s: Need to enter power saving mode...", __FUNCTION__);
@@ -250,6 +261,27 @@ static int bout_set_parameters(struct audio_stream *stream,
                 ALOGV("%s: Need to exit power saving mode...", __FUNCTION__);
                 bout->suspended = false;
             }
+        }
+    }
+
+    if (str_parms_has_key(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
+        int hw_sync_id = 0;
+        if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
+           ALOGW("%s: ignoring hw-sync in fake mode.", __FUNCTION__);
+           ret = 0;
+        } else {
+           ret = str_parms_get_int(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC, &hw_sync_id);
+           if (!ret) {
+              if (bout->tunneled && bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)hw_sync_id) {
+                 ALOGW("%s: hw_sync_id 0x%X - stc_channel %p - mismatch.",
+                       __FUNCTION__, hw_sync_id, bout->nexus.tunnel.stc_channel);
+                 ret = -EINVAL;
+              } else if (!bout->tunneled) {
+                 ALOGW("%s: hw_sync_id 0x%X - invalid for non tunnel output.",
+                       __FUNCTION__, hw_sync_id);
+                 ret = -ENOENT;
+              }
+           }
         }
     }
 
@@ -356,6 +388,19 @@ static ssize_t bout_write(struct audio_stream_out *aout,
     ALOGVV("%s: at %d, stream = 0x%X, bytes = %d, bytes_written = %d",
           __FUNCTION__, __LINE__, (uint32_t)aout, bytes, bytes_written);
 
+    if (bout->outDebugFile != NULL) {
+        struct output_hdr hdr;
+
+        hdr.tag[0] = 'B';
+        hdr.tag[1] = 'O';
+        hdr.tag[2] = 'U';
+        hdr.tag[3] = 'T';
+        hdr.length = bytes;
+
+        fwrite(&hdr, sizeof(hdr), 1, bout->outDebugFile);
+        fwrite(buffer, bytes, 1, bout->outDebugFile);
+    }
+
     return bytes_written;
 }
 
@@ -411,7 +456,69 @@ static int bout_get_presentation_position(const struct audio_stream_out *aout,
     return ret;
 }
 
+static int bout_pause(struct audio_stream_out *aout)
+{
+    struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
+    int ret;
 
+    if (!bout->tunneled) {
+       return -ENOSYS;
+    }
+
+    pthread_mutex_lock(&bout->lock);
+    ret = bout->ops.do_bout_pause(bout);
+    pthread_mutex_unlock(&bout->lock);
+
+    return ret;
+}
+
+static int bout_resume(struct audio_stream_out *aout)
+{
+    struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
+    int ret;
+
+    if (!bout->tunneled) {
+       return -ENOSYS;
+    }
+
+    pthread_mutex_lock(&bout->lock);
+    ret = bout->ops.do_bout_resume(bout);
+    pthread_mutex_unlock(&bout->lock);
+
+    return ret;
+}
+
+static int bout_drain(struct audio_stream_out *aout, audio_drain_type_t type)
+{
+    struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
+    int ret;
+
+    if (!bout->tunneled) {
+       return -ENOSYS;
+    }
+
+    pthread_mutex_lock(&bout->lock);
+    ret = bout->ops.do_bout_drain(bout, (int)type);
+    pthread_mutex_unlock(&bout->lock);
+
+    return ret;
+}
+
+static int bout_flush(struct audio_stream_out *aout)
+{
+    struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
+    int ret;
+
+    if (!bout->tunneled) {
+       return -ENOSYS;
+    }
+
+    pthread_mutex_lock(&bout->lock);
+    ret = bout->ops.do_bout_flush(bout);
+    pthread_mutex_unlock(&bout->lock);
+
+    return ret;
+}
 
 /*
  * Stream In Functions
@@ -675,7 +782,7 @@ static int bdev_set_master_volume(struct audio_hw_device *adev,
     ALOGV("%s: at %d, dev = 0x%X\n",
          __FUNCTION__, __LINE__, (uint32_t)adev);
 
-    set_master_volume(volume);
+    brcm_audio_set_master_volume(volume);
 
     return 0;
 }
@@ -689,7 +796,7 @@ static int bdev_get_master_volume(struct audio_hw_device *adev,
     ALOGV("%s: at %d, dev = 0x%X\n",
          __FUNCTION__, __LINE__, (uint32_t)adev);
 
-    *volume = get_master_volume();
+    *volume = brcm_audio_get_master_volume();
 
     return 0;
 }
@@ -702,7 +809,7 @@ static int bdev_set_master_mute(struct audio_hw_device *adev,
     ALOGV("%s: at %d, dev = 0x%X\n",
          __FUNCTION__, __LINE__, (uint32_t)adev);
 
-    set_mute_state(muted);
+    brcm_audio_set_mute_state(muted);
 
     return 0;
 }
@@ -715,7 +822,7 @@ static int bdev_get_master_mute(struct audio_hw_device *adev,
     ALOGV("%s: at %d, dev = 0x%X\n",
          __FUNCTION__, __LINE__, (uint32_t)adev);
 
-    *muted = get_mute_state();
+    *muted = brcm_audio_get_mute_state();
 
     return 0;
 }
@@ -790,15 +897,58 @@ static int bdev_set_parameters(struct audio_hw_device *adev,
 }
 
 static char *bdev_get_parameters(const struct audio_hw_device *adev,
-                                 const char *keys)
+                                 const char *kvpairs)
 {
-    UNUSED(adev);
-    UNUSED(keys);
+    struct brcm_device *bdev = (struct brcm_device *)adev;
+    struct str_parms *query = str_parms_create_str(kvpairs);
+    struct str_parms *result = str_parms_create();
+    char* result_str;
 
-    ALOGV("%s: at %d, dev = 0x%X\n",
-         __FUNCTION__, __LINE__, (uint32_t)adev);
+    ALOGV("%s: at %d, dev = %p, kvpairs = %s\n",
+         __FUNCTION__, __LINE__, adev, kvpairs);
 
-    return strdup("");
+    if (str_parms_has_key(query, AUDIO_PARAMETER_HW_AV_SYNC)) {
+       int hw_sync_id = AUDIO_HW_SYNC_INVALID;
+
+       if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
+          hw_sync_id = DUMMY_HW_SYNC;
+       } else {
+          struct brcm_stream_out *bout_tunnel = bdev->bouts[BRCM_DEVICE_OUT_NEXUS_TUNNEL];
+          if (bout_tunnel != NULL) {
+             // tunnel output exists, use the stc-channel from it.
+             pthread_mutex_lock(&bout_tunnel->lock);
+             hw_sync_id = (int)(intptr_t)bout_tunnel->nexus.tunnel.stc_channel;
+             pthread_mutex_unlock(&bout_tunnel->lock);
+             ALOGV("%s: at %d, tunnel exists, using stc-channel 0x%X\n", __FUNCTION__, __LINE__, hw_sync_id);
+          } else {
+             NEXUS_SimpleStcChannelSettings stcChannelSettings;
+             NEXUS_SimpleStcChannel_GetDefaultSettings(&stcChannelSettings);
+             stcChannelSettings.modeSettings.Auto.behavior = NEXUS_StcChannelAutoModeBehavior_eAudioMaster;
+             // tunnel output does not yet exists, create a stc-channel that will be used for it.
+             if (bdev->hw_sync_id != NULL) {
+                NEXUS_Platform_SetSharedHandle(bdev->hw_sync_id, false);
+                NEXUS_SimpleStcChannel_Destroy(bdev->hw_sync_id);
+             }
+             bdev->hw_sync_id = NEXUS_SimpleStcChannel_Create(&stcChannelSettings);
+             NEXUS_Platform_SetSharedHandle(bdev->hw_sync_id, true);
+             ALOGV("%s: at %d, allocate stc-channel %p\n", __FUNCTION__, __LINE__, bdev->hw_sync_id);
+             if (bdev->hw_sync_id == NULL) {
+                hw_sync_id = AUDIO_HW_SYNC_INVALID;
+             } else {
+                hw_sync_id = (int)(intptr_t)bdev->hw_sync_id;
+             }
+          }
+       }
+
+       str_parms_add_int(result, AUDIO_PARAMETER_HW_AV_SYNC, hw_sync_id);
+    }
+
+    result_str = str_parms_to_str(result);
+    str_parms_destroy(query);
+    str_parms_destroy(result);
+
+    ALOGV("%s: result = %s", __FUNCTION__, result_str);
+    return result_str;
 }
 
 static size_t bdev_get_input_buffer_size(const struct audio_hw_device *adev,
@@ -833,7 +983,6 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     int ret = 0;
 
     UNUSED(handle);
-    UNUSED(flags);
     UNUSED(address);
 
     ALOGV("%s: at %d, dev = 0x%X\n",
@@ -880,14 +1029,26 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     bout->aout.get_render_position = bout_get_render_position;
     bout->aout.get_next_write_timestamp = bout_get_next_write_timestamp;
     bout->aout.get_presentation_position = bout_get_presentation_position;
+    // following required for offload (tunnel) tracks.
+    bout->aout.pause = bout_pause;
+    bout->aout.resume = bout_resume;
+    bout->aout.drain = bout_drain;
+    bout->aout.flush = bout_flush;
+    bout->aout.set_callback = NULL; // not needed yet?
 
-    bdevices = get_brcm_devices_out(devices);
+    bout->tunneled =
+        ((flags & (AUDIO_OUTPUT_FLAG_DIRECT | AUDIO_OUTPUT_FLAG_HW_AV_SYNC)) == (AUDIO_OUTPUT_FLAG_DIRECT | AUDIO_OUTPUT_FLAG_HW_AV_SYNC));
+
+    bdevices = get_brcm_devices_out(devices, bout->tunneled);
     switch (bdevices) {
     case BRCM_DEVICE_OUT_NEXUS:
         bout->ops = nexus_bout_ops;
         break;
     case BRCM_DEVICE_OUT_NEXUS_DIRECT:
         bout->ops = nexus_direct_bout_ops;
+        break;
+    case BRCM_DEVICE_OUT_NEXUS_TUNNEL:
+        bout->ops = nexus_tunnel_bout_ops;
         break;
     case BRCM_DEVICE_OUT_USB:
     default:
@@ -902,10 +1063,51 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
 #endif
 
     bout->devices = devices;
+    bout->flags = flags;
     bout->config = *config;
     bout->bdev = bdev;
 
+    if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_DEBUG, 0)) {
+        time_t rawtime;
+        struct tm * timeinfo;
+        char fname[100];
+
+        // Generate unique filename
+        time(&rawtime);
+        timeinfo = localtime(&rawtime);
+        snprintf(fname, sizeof(fname), "/data/nxmedia/aout-dev_%u-", devices);
+        strftime(fname+strlen(fname), sizeof(fname)-strlen(fname), "%F_%H_%M_%S.output", timeinfo);
+        ALOGD("Audio debug output file:%s", fname);
+        bout->outDebugFile = fopen(fname, "wb+");
+        if (bout->outDebugFile == NULL) {
+            ALOGW("Error creating audio output debug file %s (%s)", fname, strerror(errno));
+            // Just keep going without debug
+        }
+    }
+
     pthread_mutex_lock(&bdev->lock);
+
+    // proactive resource management at the nexus level, we have to share the resource and we do not allow
+    // server overwrite.  this scenario typically happens on boot up, so good enough for now.
+    if ((bdevices == BRCM_DEVICE_OUT_NEXUS_TUNNEL && bdev->bouts[BRCM_DEVICE_OUT_NEXUS_DIRECT] != NULL) ||
+        (bdevices == BRCM_DEVICE_OUT_NEXUS_DIRECT && bdev->bouts[BRCM_DEVICE_OUT_NEXUS_TUNNEL] != NULL)) {
+       struct brcm_stream_out *bout_close =
+          (bdevices == BRCM_DEVICE_OUT_NEXUS_TUNNEL) ? bdev->bouts[BRCM_DEVICE_OUT_NEXUS_DIRECT] :
+                                                       bdev->bouts[BRCM_DEVICE_OUT_NEXUS_TUNNEL];
+       ALOGI("%s: nexus resources swap %p -> %p (%d)", __FUNCTION__, bout_close, bout, bdevices);
+       pthread_mutex_lock(&bout_close->lock);
+       bout_close->ops.do_bout_close(bout_close);
+       pthread_mutex_unlock(&bout_close->lock);
+    }
+
+    if (bdevices == BRCM_DEVICE_OUT_NEXUS_TUNNEL) {
+       if (bdev->hw_sync_id != NULL) {
+          bout->nexus.tunnel.stc_channel = bdev->hw_sync_id;
+          bout->nexus.tunnel.stc_channel_owner = BRCM_OWNER_DEVICE;
+       } else {
+          bout->nexus.tunnel.stc_channel_owner = BRCM_OWNER_OUTPUT;
+       }
+    }
 
     ret = bout->ops.do_bout_open(bout);
     if (ret) {
@@ -936,6 +1138,10 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
 
  err_lock:
     pthread_mutex_unlock(&bdev->lock);
+    if (bout->outDebugFile) {
+        fclose(bout->outDebugFile);
+        bout->outDebugFile = NULL;
+    }
 
  err_alloc:
     pthread_mutex_destroy(&bout->lock);
@@ -967,6 +1173,11 @@ static void bdev_close_output_stream(struct audio_hw_device *adev,
 
     pthread_mutex_unlock(&bout->lock);
     pthread_mutex_unlock(&bdev->lock);
+
+    if (bout->outDebugFile) {
+        fclose(bout->outDebugFile);
+        bout->outDebugFile = NULL;
+    }
 
     pthread_mutex_destroy(&bout->lock);
 

@@ -101,7 +101,7 @@ static void nexus_bout_data_callback(void *param1, int param2)
     BKNI_SetEvent((BKNI_EventHandle)param2);
 }
 
-static NEXUS_Error clientJoin(const char *name)
+NEXUS_Error brcm_audio_client_join(const char *name)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
     NxClient_JoinSettings joinSettings;
@@ -122,7 +122,7 @@ static NEXUS_Error clientJoin(const char *name)
     return rc;
 }
 
-static void setAudioVolume(float leftVol, float rightVol)
+void brcm_audio_set_audio_volume(float leftVol, float rightVol)
 {
     NEXUS_Error rc;
     NxClient_AudioSettings settings;
@@ -144,7 +144,7 @@ static void setAudioVolume(float leftVol, float rightVol)
     if (rightVolume < AUDIO_VOLUME_SETTING_MIN)
         rightVolume = AUDIO_VOLUME_SETTING_MIN;
 
-    rc = clientJoin(BRCM_AUDIO_NXCLIENT_NAME);
+    rc = brcm_audio_client_join(BRCM_AUDIO_NXCLIENT_NAME);
 
     if (rc == NEXUS_SUCCESS) {
         do {
@@ -162,7 +162,7 @@ static void setAudioVolume(float leftVol, float rightVol)
     }
 }
 
-static int lookupDecibelIndex(uint32_t volume, int index, int min, int max)
+static int brcm_audio_lookup_db_ix(uint32_t volume, int index, int min, int max)
 {
     ALOGV("%s: volume=%d index=%d min=%d max=%d", __FUNCTION__, volume, index, min, max);
 
@@ -180,23 +180,23 @@ static int lookupDecibelIndex(uint32_t volume, int index, int min, int max)
     else if (volume > Gemini_VolTable[index])
     {
         int new_index = index + (max - index)/2 + 1;
-        return lookupDecibelIndex(volume, new_index, index + 1, max);
+        return brcm_audio_lookup_db_ix(volume, new_index, index + 1, max);
     }
     else
     {
         int new_index = index - (index - min)/2 - 1;
-        return lookupDecibelIndex(volume, new_index, min, index - 1);
+        return brcm_audio_lookup_db_ix(volume, new_index, min, index - 1);
     }
 }
 
-void set_mute_state(bool mute)
+void brcm_audio_set_mute_state(bool mute)
 {
     NEXUS_Error rc;
     NxClient_AudioSettings settings;
 
     ALOGV("nexus_nx_client %s:%d mute=%s\n",__PRETTY_FUNCTION__,__LINE__,mute ? "true":"false");
 
-    rc = clientJoin(BRCM_AUDIO_NXCLIENT_NAME);
+    rc = brcm_audio_client_join(BRCM_AUDIO_NXCLIENT_NAME);
 
     if (rc == NEXUS_SUCCESS) {
         do {
@@ -212,13 +212,13 @@ void set_mute_state(bool mute)
     }
 }
 
-bool get_mute_state(void)
+bool brcm_audio_get_mute_state(void)
 {
     NEXUS_Error rc;
     NxClient_AudioSettings settings;
     bool mute = false;
 
-    rc = clientJoin(BRCM_AUDIO_NXCLIENT_NAME);
+    rc = brcm_audio_client_join(BRCM_AUDIO_NXCLIENT_NAME);
 
     if (rc == NEXUS_SUCCESS) {
         NxClient_GetAudioSettings(&settings);
@@ -232,19 +232,19 @@ bool get_mute_state(void)
     return mute;
 }
 
-void set_master_volume(float volume)
+void brcm_audio_set_master_volume(float volume)
 {
-    setAudioVolume(volume, volume);
+    brcm_audio_set_audio_volume(volume, volume);
 }
 
-float get_master_volume(void)
+float brcm_audio_get_master_volume(void)
 {
     NEXUS_Error rc;
     NxClient_AudioSettings settings;
     float master_volume = 0;
     int volume_index;
 
-    rc = clientJoin(BRCM_AUDIO_NXCLIENT_NAME);
+    rc = brcm_audio_client_join(BRCM_AUDIO_NXCLIENT_NAME);
 
     if (rc == NEXUS_SUCCESS) {
         NxClient_GetAudioSettings(&settings);
@@ -254,7 +254,7 @@ float get_master_volume(void)
             settings.leftVolume == settings.rightVolume)
         {
             /* convert from decibel to range from 0-99 */
-            volume_index = lookupDecibelIndex(-settings.leftVolume, AUDIO_VOLUME_SETTING_MAX/2, 0, AUDIO_VOLUME_SETTING_MAX);
+            volume_index = brcm_audio_lookup_db_ix(-settings.leftVolume, AUDIO_VOLUME_SETTING_MAX/2, 0, AUDIO_VOLUME_SETTING_MAX);
 
             /* normalize between 0 to 1.0 */
             master_volume = ((float)(AUDIO_VOLUME_SETTING_MAX - volume_index))/AUDIO_VOLUME_SETTING_MAX;
@@ -278,7 +278,7 @@ static int nexus_bout_set_volume(struct brcm_stream_out *bout,
                                  float left, float right)
 {
     (void)bout;
-    setAudioVolume(left, right);
+    brcm_audio_set_audio_volume(left, right);
     return 0;
 }
 
@@ -401,7 +401,17 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
             bytes -= bytes_to_copy;
         }
         else {
+            NEXUS_SimpleAudioPlaybackHandle prev_simple_playback = simple_playback;
+
+            pthread_mutex_unlock(&bout->lock);
             ret = BKNI_WaitForEvent(event, 500);
+            pthread_mutex_lock(&bout->lock);
+
+            // Sanity check when relocking
+            simple_playback = bout->nexus.simple_playback;
+            ALOG_ASSERT(simple_playback == prev_simple_playback);
+            ALOG_ASSERT(!bout->suspended);
+ 
             if (ret) {
                 ALOGE("%s: at %d, playback timeout, ret = %d\n",
                      __FUNCTION__, __LINE__, ret);
@@ -490,9 +500,9 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
                                    popcount(config->channel_mask));
 
     /* Open Nexus simple playback */
-    rc = clientJoin(BRCM_AUDIO_NXCLIENT_NAME);
+    rc = brcm_audio_client_join(BRCM_AUDIO_NXCLIENT_NAME);
     if (rc != NEXUS_SUCCESS) {
-        ALOGE("%s: clientJoin error, rc:%d", __FUNCTION__, rc);
+        ALOGE("%s: brcm_audio_client_join error, rc:%d", __FUNCTION__, rc);
         return -ENOSYS;
     }
 
@@ -576,6 +586,14 @@ static int nexus_bout_close(struct brcm_stream_out *bout)
     return 0;
 }
 
+static int nexus_bout_dump(struct brcm_stream_out *bout, int fd)
+{
+   (void)bout;
+   (void)fd;
+
+   return 0;
+}
+
 struct brcm_stream_out_ops nexus_bout_ops = {
     .do_bout_open = nexus_bout_open,
     .do_bout_close = nexus_bout_close,
@@ -585,6 +603,10 @@ struct brcm_stream_out_ops nexus_bout_ops = {
     .do_bout_set_volume = nexus_bout_set_volume,
     .do_bout_get_render_position = nexus_bout_get_render_position,
     .do_bout_get_presentation_position = nexus_bout_get_presentation_position,
-    .do_bout_dump = NULL,
-    .do_bout_get_parameters = NULL
+    .do_bout_dump = nexus_bout_dump,
+    .do_bout_get_parameters = NULL,
+    .do_bout_pause = NULL,
+    .do_bout_resume = NULL,
+    .do_bout_drain = NULL,
+    .do_bout_flush = NULL,
 };

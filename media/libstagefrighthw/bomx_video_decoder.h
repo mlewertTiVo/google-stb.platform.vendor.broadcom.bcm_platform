@@ -56,11 +56,14 @@
 #include "bomx_video_decoder_stats.h"
 #include "bomx_pes_formatter.h"
 #include <stdio.h>
+#include <cutils/native_handle.h>
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateTunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex);
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Tunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_VideoDecoder_GetRoleVp9(unsigned roleIndex);
 
 struct BOMX_VideoDecoderInputBufferInfo
@@ -89,6 +92,7 @@ enum BOMX_VideoDecoderOutputBufferType
     BOMX_VideoDecoderOutputBufferType_eStandard,
     BOMX_VideoDecoderOutputBufferType_eNative,
     BOMX_VideoDecoderOutputBufferType_eMetadata,
+    BOMX_VideoDecoderOutputBufferType_eNone,
     BOMX_VideoDecoderOutputBufferType_eMax
 };
 
@@ -156,6 +160,7 @@ public:
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
         bool secure=false,
+        bool tunnel=false,
         unsigned numRoles=0,
         const BOMX_VideoDecoderRole *pRoles=NULL,
         const char *(*pGetRole)(unsigned roleIndex)=NULL);
@@ -253,6 +258,14 @@ protected:
         ConfigBufferState_eMax
     };
 
+    enum InputReturnMode
+    {
+        InputReturnMode_eTimestamp,             // Return input ports upto the specified timestamp
+        InputReturnMode_eTimeout,               // Return input ports upto the timeout limit
+        InputReturnMode_eAll,                   // Return all input ports that are marked as completed
+        InputReturnMode_eMax
+    };
+
     NEXUS_SimpleVideoDecoderHandle m_hSimpleVideoDecoder;
     NEXUS_PlaypumpHandle m_hPlaypump;
     NEXUS_PidChannelHandle m_hPidChannel;
@@ -298,6 +311,8 @@ protected:
     bool m_metadataEnabled;
     bool m_adaptivePlaybackEnabled;
     bool m_secureDecoder;
+    bool m_tunnelMode;
+    native_handle_t *m_pTunnelNativeHandle;
     unsigned m_outputWidth;
     unsigned m_outputHeight;
     unsigned m_maxDecoderWidth;
@@ -333,6 +348,8 @@ protected:
     size_t m_earlyDroppedFrames;
     int m_earlyDropThresholdMs;
     nsecs_t m_startTime;
+
+    NEXUS_SimpleStcChannelHandle m_tunnelStcChannel;
 
     bool m_ptsReceived;
 
@@ -401,7 +418,7 @@ protected:
     void InputBufferNew();
     void InputBufferReturned();
     void InputBufferCounterReset();
-    void ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTimeout);
+    void ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMode mode);
     bool ReturnInputPortBuffer(BOMX_Buffer *pBuffer);
 
     // The functions below allow derived classes to override them

@@ -40,16 +40,19 @@ static const struct ComponentEntry
     const char *(*pGetRole)(unsigned index);
 } g_components[] =
 {
-    {"OMX.broadcom.video_decoder", BOMX_VideoDecoder_Create, BOMX_VideoDecoder_GetRole},
-    {"OMX.broadcom.video_decoder.vp9", BOMX_VideoDecoder_CreateVp9, BOMX_VideoDecoder_GetRoleVp9},
-    {"OMX.broadcom.audio_decoder.ac3", BOMX_AudioDecoder_CreateAc3, BOMX_AudioDecoder_GetRoleAc3},
-    {"OMX.broadcom.audio_decoder.mp3", BOMX_AudioDecoder_CreateMp3, BOMX_AudioDecoder_GetRoleMp3},
-    {"OMX.broadcom.audio_decoder.aac", BOMX_AudioDecoder_CreateAac, BOMX_AudioDecoder_GetRoleAac},
+    {"OMX.broadcom.video_decoder",                      BOMX_VideoDecoder_Create,                   BOMX_VideoDecoder_GetRole},
+    {"OMX.broadcom.video_decoder.tunnel",               BOMX_VideoDecoder_CreateTunnel,             BOMX_VideoDecoder_GetRole},
+    {"OMX.broadcom.video_decoder.vp9",                  BOMX_VideoDecoder_CreateVp9,                BOMX_VideoDecoder_GetRoleVp9},
+    {"OMX.broadcom.video_decoder.vp9.tunnel",           BOMX_VideoDecoder_CreateVp9Tunnel,          BOMX_VideoDecoder_GetRoleVp9},
+    {"OMX.broadcom.audio_decoder.ac3",                  BOMX_AudioDecoder_CreateAc3,                BOMX_AudioDecoder_GetRoleAc3},
+    {"OMX.broadcom.audio_decoder.mp3",                  BOMX_AudioDecoder_CreateMp3,                BOMX_AudioDecoder_GetRoleMp3},
+    {"OMX.broadcom.audio_decoder.aac",                  BOMX_AudioDecoder_CreateAac,                BOMX_AudioDecoder_GetRoleAac},
 // Use a macro for now. Need to find a better way to avoid using macros in cpp code
 #ifdef SECURE_DECODER_ON
-    {"OMX.broadcom.video_decoder.secure", BOMX_VideoDecoder_Secure_Create, BOMX_VideoDecoder_Secure_GetRole},
+    {"OMX.broadcom.video_decoder.secure",               BOMX_VideoDecoder_Secure_Create,            BOMX_VideoDecoder_Secure_GetRole},
+    {"OMX.broadcom.video_decoder.tunnel.secure",        BOMX_VideoDecoder_Secure_CreateTunnel,      BOMX_VideoDecoder_Secure_GetRole},
 #endif
-    {"OMX.broadcom.video_encoder", BOMX_VideoEncoder_Create, BOMX_VideoEncoder_GetRole},
+    {"OMX.broadcom.video_encoder",                      BOMX_VideoEncoder_Create,                   BOMX_VideoEncoder_GetRole},
 
 };
 
@@ -85,7 +88,7 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_Init(void)
 
     pthread_mutex_lock(&g_initMutex);
     if ( ++g_refCount > 1 )
-    {  
+    {
         ALOGI("Nested call to OMX_Init.  Refcount is now %u", g_refCount);
         pthread_mutex_unlock(&g_initMutex);
         return OMX_ErrorNone;

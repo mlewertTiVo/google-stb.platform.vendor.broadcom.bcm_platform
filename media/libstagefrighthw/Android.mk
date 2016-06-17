@@ -39,6 +39,27 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
+LOCAL_SRC_FILES := \
+        bomx_pes_formatter.cpp \
+        bomx_utils.cpp
+
+LOCAL_C_INCLUDES := $(TOP)/frameworks/native/include/media/openmax
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/utils
+ 
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
+
+LOCAL_SHARED_LIBRARIES :=         \
+        libnexus                  \
+        liblog
+
+LOCAL_MODULE := libbomx_util
+include $(BUILD_SHARED_LIBRARY)
+
+
+include $(CLEAR_VARS)
+
 # Core component framework
 LOCAL_SRC_FILES := \
     bomx_android_plugin.cpp \
@@ -46,8 +67,7 @@ LOCAL_SRC_FILES := \
     bomx_buffer_tracker.cpp \
     bomx_component.cpp \
     bomx_core.cpp \
-    bomx_port.cpp \
-    bomx_utils.cpp
+    bomx_port.cpp
 
 # Component instances
 LOCAL_SRC_FILES += bomx_video_decoder.cpp bomx_vp9_parser.cpp bomx_pes_formatter.cpp
@@ -66,9 +86,6 @@ LOCAL_C_INCLUDES := \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/blib \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 
-
-include $(BSEAV)/lib/utils/batom.inc
-include $(BSEAV)/lib/media/bmedia.inc
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/lib/os/include $(NEXUS_TOP)/lib/os/include/linuxuser
@@ -80,6 +97,7 @@ LOCAL_CFLAGS += -Werror
 
 LOCAL_SHARED_LIBRARIES :=         \
         libbinder                 \
+        libbomx_util              \
         libb_os                   \
         libcutils                 \
         libdl                     \

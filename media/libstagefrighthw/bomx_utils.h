@@ -85,17 +85,6 @@ int32_t BOMX_TickDiffMs(
     const OMX_TICKS *pTime2
     );
 
-int BOMX_FormPesHeader(
-    const OMX_BUFFERHEADERTYPE *pFrame,
-    const uint32_t *pPts,
-    void *pBuffer,
-    size_t bufferSize,
-    unsigned streamId,
-    const void *pCodecHeader,
-    size_t codecHeaderLength,
-    size_t *pHeaderLength
-    );
-
 const char * BOMX_StateName(OMX_STATETYPE state);
 float BOMX_NexusFramerateValue(NEXUS_VideoFrameRate framerate);
 
