@@ -112,3 +112,6 @@ service hfrvideo /system/bin/hfrvideo
 
 on property:dyn.nx.hfrvideo.set=*
    start hfrvideo
+
+on property:dev.bootcomplete=1
+   setprop sys.init_log_level 4
