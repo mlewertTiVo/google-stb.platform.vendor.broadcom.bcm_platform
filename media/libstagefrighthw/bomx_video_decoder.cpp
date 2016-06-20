@@ -753,13 +753,16 @@ static bool BOMX_VideoDecoder_SetupRuntimeHeaps(bool secureDecoder, bool secureH
    NEXUS_PlatformConfiguration platformConfig;
    NEXUS_PlatformSettings platformSettings;
    NEXUS_MemoryStatus memoryStatus;
+   char value[PROPERTY_VALUE_MAX];
 
    if (property_get_int32(B_PROPERTY_DISABLE_RUNTIME_HEAPS, 0))
    {
       return false;
    }
 
-   if (property_get_int32(B_PROPERTY_SVP, 0))
+   memset(value, 0, sizeof(value));
+   property_get(B_PROPERTY_SVP, value, "play");
+   if (strncmp(value, "none", strlen("none")))
    {
       NEXUS_Platform_GetConfiguration(&platformConfig);
       for (i = 0; i < NEXUS_MAX_HEAPS ; i++)
@@ -881,6 +884,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     unsigned i;
     NEXUS_Error errCode;
     NEXUS_ClientConfiguration clientConfig;
+    char value[PROPERTY_VALUE_MAX];
 
     BLST_Q_INIT(&m_frameBufferFreeList);
     BLST_Q_INIT(&m_frameBufferAllocList);
@@ -1093,7 +1097,10 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = m_maxDecoderWidth;
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = m_maxDecoderHeight;
-    if (property_get_int32(B_PROPERTY_SVP, 0))
+
+    memset(value, 0, sizeof(value));
+    property_get(B_PROPERTY_SVP, value, "play");
+    if (strncmp(value, "none", strlen("none")))
     {
        connectSettings.simpleVideoDecoder[0].decoderCapabilities.secureVideo = m_secureDecoder ? true : false;
     }

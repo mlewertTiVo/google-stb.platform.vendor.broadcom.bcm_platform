@@ -114,7 +114,6 @@
 #define NX_MMA_GROW_SIZE               "ro.nx.heap.grow"
 #define NX_MMA_SHRINK_THRESHOLD        "ro.nx.heap.shrink"
 #define NX_MMA_SHRINK_THRESHOLD_DEF    "2m"
-#define NX_TRANSCODE                   "ro.nx.transcode"
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
 #define NX_CAPABLE_COMP_BYPASS         "ro.nx.capable.cb"
 #define NX_COMP_VIDEO                  "ro.nx.cvbs"
@@ -167,6 +166,13 @@
 #define NX_TRIM_VP9                    "ro.nx.trim.vp9"
 #define NX_TRIM_4KDEC                  "ro.nx.trim.4kdec"
 #define NX_TRIM_10BCOL                 "ro.nx.trim.10bcol"
+
+typedef enum {
+   SVP_MODE_NONE,
+   SVP_MODE_PLAYBACK,
+   SVP_MODE_PLAYBACK_TRANSCODE,
+
+} SVP_MODE_T;
 
 typedef struct {
    pthread_t runner;
@@ -569,13 +575,13 @@ static void pre_trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSet
    }
 }
 
-static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
+static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings, SVP_MODE_T svp)
 {
    int i, j;
    char value[PROPERTY_VALUE_MAX];
    int dec_used = 0;
    NEXUS_PlatformCapabilities platformCap;
-   bool transcode = property_get_int32(NX_TRANSCODE, 0) ? true : false;
+   bool transcode = (svp == SVP_MODE_PLAYBACK_TRANSCODE) ? true : false;
    bool cvbs = property_get_int32(NX_COMP_VIDEO, 0) ? true : false;
    NEXUS_GetPlatformCapabilities(&platformCap);
 
@@ -591,6 +597,9 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
             if (keep_display_for_encoder(i, 0, &platformCap)) {
                if (transcode) {
                   ALOGI("keeping display %d for transcode session on encoder %d", i, 0);
+                  for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
+                     pMemConfigSettings->display[i].window[j].secure = NEXUS_SecureVideo_eUnsecure;
+                  }
                } else {
                   ALOGI("encoder %d using display %d: disable display, windows and deinterlacer", 0, i);
                   pMemConfigSettings->display[i].maxFormat = NEXUS_VideoFormat_eUnknown;
@@ -692,6 +701,9 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
             if (pMemConfigSettings->videoDecoder[i].used) {
                pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_eNtsc;
+               if (transcode) {
+                  pMemConfigSettings->videoDecoder[i].secure = NEXUS_SecureVideo_eUnsecure;
+               }
             }
          }
       }
@@ -776,7 +788,7 @@ static nxserver_t init_nxserver(void)
     char nx_key[PROPERTY_VALUE_MAX];
     FILE *key = NULL;
     NEXUS_VideoFormat forced_format;
-    bool svp;
+    SVP_MODE_T svp;
     bool cvbs = property_get_int32(NX_COMP_VIDEO, 0) ? true : false;
 
     if (g_app.refcnt == 1) {
@@ -810,22 +822,6 @@ static nxserver_t init_nxserver(void)
     /* setup the configuration we want for the device.  right now, hardcoded for a generic
        android device, longer term, we want more flexibility. */
 
-    /* "svp 2.0" configuration. */
-    svp = property_get_int32(NX_SVP, 0) ? true : false;
-    for (ix = 0; ix < NEXUS_MAX_VIDEO_DECODERS; ix++) {
-       memConfigSettings.videoDecoder[ix].secure =
-          svp ? NEXUS_SecureVideo_eSecure : NEXUS_SecureVideo_eUnsecure;
-    }
-    for (ix = 0; ix < NEXUS_MAX_DISPLAYS; ix++) {
-       for (jx = 0; jx < NEXUS_MAX_VIDEO_WINDOWS; jx++) {
-          memConfigSettings.display[ix].window[jx].secure =
-             svp ? NEXUS_SecureVideo_eSecure : NEXUS_SecureVideo_eUnsecure;
-       }
-    }
-    if (svp) {
-       settings.svp = nxserverlib_svp_type_cdb_urr;
-    }
-    ALOGI("%s: svp ** %s **", __FUNCTION__, svp?"enabled":"disabled");
     /* -ir none */
     settings.session[0].ir_input_mode = NEXUS_IrInputMode_eMax;
     /* -fbsize w,h */
@@ -979,6 +975,32 @@ static nxserver_t init_nxserver(void)
 
     pre_trim_mem_config(&memConfigSettings, cvbs);
 
+    /* svp configuration. */
+    memset(value, 0, sizeof(value));
+    property_get(NX_SVP, value, "play");
+    svp = SVP_MODE_PLAYBACK;
+    if (!strncmp(value, "none", strlen("none"))) {
+       svp = SVP_MODE_NONE;
+    } else if (!strncmp(value, "play-trans", strlen("play-trans"))) {
+       svp = SVP_MODE_PLAYBACK_TRANSCODE;
+    }
+
+    if (svp == SVP_MODE_PLAYBACK) {
+       settings.svp = nxserverlib_svp_type_cdb_urr;
+    } else {
+       for (ix = 0; ix < NEXUS_MAX_VIDEO_DECODERS; ix++) {
+          memConfigSettings.videoDecoder[ix].secure =
+             (svp == SVP_MODE_NONE) ? NEXUS_SecureVideo_eUnsecure : NEXUS_SecureVideo_eSecure;
+       }
+       for (ix = 0; ix < NEXUS_MAX_DISPLAYS; ix++) {
+          for (jx = 0; jx < NEXUS_MAX_VIDEO_WINDOWS; jx++) {
+             memConfigSettings.display[ix].window[jx].secure =
+                (svp == SVP_MODE_NONE) ? NEXUS_SecureVideo_eUnsecure : NEXUS_SecureVideo_eSecure;
+          }
+       }
+    }
+    ALOGI("%s: svp-mode: \'%s\'", __FUNCTION__, value);
+
     rc = nxserver_modify_platform_settings(&settings, &cmdline_settings, &platformSettings, &memConfigSettings);
     if (rc) {
        ALOGE("FATAL: failed nxserver_modify_platform_settings");
@@ -998,7 +1020,7 @@ static nxserver_t init_nxserver(void)
      * savings are essentially made through feature disablement. thus you have to be careful
      * and aware of the feature targetted for the platform.
      */
-    trim_mem_config(&memConfigSettings);
+    trim_mem_config(&memConfigSettings, svp);
 
     rc = NEXUS_Platform_MemConfigInit(&platformSettings, &memConfigSettings);
     if (rc) {
