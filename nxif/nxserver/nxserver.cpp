@@ -692,17 +692,22 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* 9. *** TEMPORARY *** force lowest format for mandated transcode decoder until
-    *    we can instantiate an encoder without decoder back-end (architectural change).
-    */
-   if (property_get(NX_TRIM_MINFMT, value, NX_PROP_ENABLED)) {
-      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         /* start index -> 1.  beware interaction with pip above. */
-         for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
-            if (pMemConfigSettings->videoDecoder[i].used) {
-               pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_eNtsc;
-               if (transcode) {
-                  pMemConfigSettings->videoDecoder[i].secure = NEXUS_SecureVideo_eUnsecure;
+   if (transcode) {
+      for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+         if (pMemConfigSettings->videoDecoder[i].used) {
+             pMemConfigSettings->videoDecoder[i].secure = NEXUS_SecureVideo_eUnsecure;
+         }
+      }
+   } else {
+     /* 9. *** TEMPORARY *** force lowest format for mandated transcode decoder until
+      *    we can instantiate an encoder without decoder back-end (architectural change).
+      */
+      if (property_get(NX_TRIM_MINFMT, value, NX_PROP_ENABLED)) {
+         if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+            /* start index -> 1.  beware interaction with pip above. */
+            for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+               if (pMemConfigSettings->videoDecoder[i].used) {
+                  pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_eNtsc;
                }
             }
          }
