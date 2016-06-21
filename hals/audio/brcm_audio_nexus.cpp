@@ -43,6 +43,8 @@
 #define NEXUS_OUT_DEFAULT_CHANNELS      AUDIO_CHANNEL_OUT_STEREO
 #define NEXUS_OUT_DEFAULT_FORMAT        AUDIO_FORMAT_PCM_16_BIT
 
+#define NEXUS_OUT_BUFFER_DURATION_MS    10
+
 /* Supported stream out sample rate */
 const static uint32_t nexus_out_sample_rates[] = {
     32000,
@@ -497,7 +499,8 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     bout->buffer_size =
         get_brcm_audio_buffer_size(config->sample_rate,
                                    config->format,
-                                   popcount(config->channel_mask));
+                                   popcount(config->channel_mask),
+                                   NEXUS_OUT_BUFFER_DURATION_MS);
 
     /* Open Nexus simple playback */
     rc = brcm_audio_client_join(BRCM_AUDIO_NXCLIENT_NAME);

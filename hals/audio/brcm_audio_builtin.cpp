@@ -59,6 +59,8 @@
 #define BUILTIN_IN_DEFAULT_FRAGMENT     (0x7fff0006) /* no limitation, 2^6 buffer size*/
 #define BUILTIN_IN_DEFAULT_DEVICE_NAME  "/dev/snd/dsp"
 
+#define BUILTIN_IN_BUFFER_DURATION_MS   10
+
 /* Supported stream in sample rate */
 const static uint32_t builtin_in_sample_rates[] = {
     8000,
@@ -204,7 +206,8 @@ static int builtin_bin_open(struct brcm_stream_in *bin)
     bin->buffer_size =
         get_brcm_audio_buffer_size(config->sample_rate,
                                    config->format,
-                                   popcount(config->channel_mask));
+                                   popcount(config->channel_mask),
+                                   BUILTIN_IN_BUFFER_DURATION_MS);
 
     /* Open input device */
     fd = open(BUILTIN_IN_DEFAULT_DEVICE_NAME, O_RDWR);
