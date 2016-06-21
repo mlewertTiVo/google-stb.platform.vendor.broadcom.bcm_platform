@@ -315,6 +315,7 @@ protected:
     bool m_secureDecoder;
     bool m_tunnelMode;
     native_handle_t *m_pTunnelNativeHandle;
+    uint32_t m_tunnelCurrentPts;
     unsigned m_outputWidth;
     unsigned m_outputHeight;
     unsigned m_maxDecoderWidth;

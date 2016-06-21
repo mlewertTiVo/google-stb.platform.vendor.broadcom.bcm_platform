@@ -57,7 +57,8 @@ struct output_hdr {
 
 size_t get_brcm_audio_buffer_size(unsigned int sample_rate,
                                   audio_format_t format,
-                                  unsigned int channel_count)
+                                  unsigned int channel_count,
+                                  unsigned int duration_ms)
 {
     size_t size;
 
@@ -80,7 +81,7 @@ size_t get_brcm_audio_buffer_size(unsigned int sample_rate,
         return 0;
     }
 
-    size = (sample_rate * BRCM_BUFFER_SIZE_MS + 999) / 1000;
+    size = (sample_rate * duration_ms + 999) / 1000;
 
     // Round up to multiple of 16 or AF will complain
     size = (size + 15) & ~15;
@@ -962,7 +963,8 @@ static size_t bdev_get_input_buffer_size(const struct audio_hw_device *adev,
     buffer_size =
         get_brcm_audio_buffer_size(config->sample_rate,
                                    config->format,
-                                   popcount(config->channel_mask));
+                                   popcount(config->channel_mask),
+                                   BRCM_BUFFER_SIZE_MS);
 
     ALOGV("%s: at %d, dev = %p, buffer_size = %zu\n",
          __FUNCTION__, __LINE__, adev, buffer_size);
