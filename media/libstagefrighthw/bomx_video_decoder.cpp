@@ -56,8 +56,6 @@
 #include "bomx_pes_formatter.h"
 #include "nexus_sage.h"
 
-#define BOMX_INPUT_MSG(x)
-
 // Runtime Properties
 #define B_PROPERTY_PES_DEBUG ("media.brcm.vdec_pes_debug")
 #define B_PROPERTY_INPUT_DEBUG ("media.brcm.vdec_input_debug")
@@ -293,7 +291,7 @@ static void BOMX_VideoDecoder_PlaypumpEvent(void *pParam)
 {
     BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
 
-    BOMX_INPUT_MSG(("PlaypumpEvent"));
+    ALOGV("PlaypumpEvent");
 
     pDecoder->PlaypumpEvent();
 }
@@ -834,6 +832,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_secureDecoder(secure),
     m_tunnelMode(tunnel),
     m_pTunnelNativeHandle(NULL),
+    m_tunnelCurrentPts(0),
     m_outputWidth(1920),
     m_outputHeight(1080),
     m_maxDecoderWidth(1920),
@@ -2199,6 +2198,22 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
         // Shutdown and free resources
         if ( m_hSimpleVideoDecoder )
         {
+            if ( m_tunnelMode )
+            {
+                NEXUS_VideoDecoderStatus status;
+                if ( NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &status) == NEXUS_SUCCESS )
+                {
+                    ALOGD("stats decErr:%u decDrop:%u dispDrop:%u dispUnder:%u ptsErr:%u",
+                        status.numDecodeErrors, status.numDecodeDrops, status.numDisplayDrops, status.numDisplayUnderflows, status.ptsErrorCount);
+                }
+            }
+            else
+            {
+                // Exclude early frame drops from total tally
+                ALOGD("stats df:%d edf:%d mcdf:%d",
+                   m_droppedFrames - m_earlyDroppedFrames, m_earlyDroppedFrames, m_maxConsecDroppedFrames);
+            }
+
             NEXUS_Playpump_Stop(m_hPlaypump);
             NEXUS_SimpleVideoDecoder_Stop(m_hSimpleVideoDecoder);
 
@@ -2224,9 +2239,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             BOMX_VIDEO_STATS_PRINT_BASIC;
             BOMX_VIDEO_STATS_PRINT_DETAILED;
             BOMX_VIDEO_STATS_RESET;
-            // Exclude early frame drops from total tally
-            ALOGD("stats df:%d edf:%d mcdf:%d",
-               m_droppedFrames - m_earlyDroppedFrames, m_earlyDroppedFrames, m_maxConsecDroppedFrames);
             m_droppedFrames = m_earlyDroppedFrames = m_consecDroppedFrames = m_maxConsecDroppedFrames = 0;
         }
     }
@@ -2287,19 +2299,16 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
             }
 
-            if (!m_tunnelMode)
+            NEXUS_SimpleVideoDecoder_GetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
+            extSettings.dataReadyCallback.callback = BOMX_VideoDecoder_EventCallback;
+            extSettings.dataReadyCallback.context = (void *)m_hOutputFrameEvent;
+            extSettings.dataReadyCallback.param = (int)BOMX_VideoDecoderEventType_eDataReady;
+            errCode = NEXUS_SimpleVideoDecoder_SetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
+            if ( errCode )
             {
-                NEXUS_SimpleVideoDecoder_GetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
-                extSettings.dataReadyCallback.callback = BOMX_VideoDecoder_EventCallback;
-                extSettings.dataReadyCallback.context = (void *)m_hOutputFrameEvent;
-                extSettings.dataReadyCallback.param = (int)BOMX_VideoDecoderEventType_eDataReady;
-                errCode = NEXUS_SimpleVideoDecoder_SetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
-                if ( errCode )
-                {
-                    NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
-                    m_hSimpleVideoDecoder = NULL;
-                    return BOMX_BERR_TRACE(errCode);
-                }
+                NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
+                m_hSimpleVideoDecoder = NULL;
+                return BOMX_BERR_TRACE(errCode);
             }
 
             NEXUS_Playpump_GetDefaultOpenSettings(&playpumpOpenSettings);
@@ -4241,7 +4250,7 @@ void BOMX_VideoDecoder::PlaypumpEvent()
         // If there are still input buffers waiting in rave, set the timer to try again later.
         if ( pFifoHead )
         {
-            BOMX_INPUT_MSG(("Data still pending in RAVE.  Starting Timer."));
+            ALOGV("Data still pending in RAVE.  Starting Timer.");
             m_playpumpTimerId = StartTimer(BOMX_VideoDecoder_GetFrameInterval(m_frameRate), BOMX_VideoDecoder_PlaypumpEvent, static_cast<void *>(this));
         }
 
@@ -4587,11 +4596,35 @@ void BOMX_VideoDecoder::PollDecodedFrames()
         return;
     }
 
+    // In tunnel mode, there is no output port populated on the omx component and we do not expect
+    // any frame back from the decoder either, so skip all of this...
     if (m_tunnelMode)
     {
-       // in tunnel mode, there is no output port populated on the omx component and we do not expect
-       // any frame back from the decoder either, so skip all of this...
-       return;
+        // Report the current rendering timestamp back to the framework
+        NEXUS_VideoDecoderStatus status;
+        if ( m_callbacks.EventHandler != NULL &&
+             NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &status) == NEXUS_SUCCESS &&
+             status.pts != m_tunnelCurrentPts )
+        {
+            OMX_BUFFERHEADERTYPE omxHeader;
+            nsecs_t now = systemTime(SYSTEM_TIME_MONOTONIC);
+
+            if ( !m_pBufferTracker->Remove(status.pts, &omxHeader) )
+            {
+                ALOGI("Unable to find tracker entry for pts %#x", status.pts);
+                BOMX_PtsToTick(status.pts, &omxHeader.nTimeStamp);
+            }
+
+            OMX_VIDEO_RENDEREVENTTYPE renderEvent;
+            renderEvent.nMediaTimeUs = omxHeader.nTimeStamp;
+            renderEvent.nSystemTimeNs = now;
+            m_tunnelCurrentPts = status.pts;
+
+            (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventOutputRendered, 1, 0, &renderEvent);
+            ALOGV("Rendering ts=%lld pts=%lu now=%lld", omxHeader.nTimeStamp, status.pts, now);
+        }
+
+        return;
     }
 
     // There should be at least one free buffer in the list or there is no point checking for more from nexus

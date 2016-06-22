@@ -43,7 +43,10 @@
 #define NEXUS_OUT_DEFAULT_CHANNELS      AUDIO_CHANNEL_OUT_STEREO
 #define NEXUS_OUT_DEFAULT_FORMAT        AUDIO_FORMAT_PCM_16_BIT
 
+#define NEXUS_OUT_BUFFER_DURATION_MS    10
+
 #define BRCM_AUDIO_DIRECT_NXCLIENT_NAME "BrcmAudioOutDirect"
+
 
 /*
  * Utility Functions
@@ -311,7 +314,8 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     bout->buffer_size =
         get_brcm_audio_buffer_size(config->sample_rate,
                                    config->format,
-                                   popcount(config->channel_mask));
+                                   popcount(config->channel_mask),
+                                   NEXUS_OUT_BUFFER_DURATION_MS);
 
     /* Open Nexus simple decoder */
     rc = brcm_audio_client_join(BRCM_AUDIO_DIRECT_NXCLIENT_NAME);

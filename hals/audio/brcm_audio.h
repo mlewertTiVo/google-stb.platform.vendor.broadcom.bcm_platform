@@ -213,7 +213,7 @@ struct brcm_stream_out {
                     NEXUS_PidChannelHandle pid_channel;
                     const uint8_t *pp_buffer_end;
                     bmedia_waveformatex_header wave_fmt;
-                    uint64_t pts;
+                    nsecs_t last_write_time;
                 } tunnel;
             };
             BKNI_EventHandle event;
@@ -276,7 +276,8 @@ struct brcm_stream_in {
 
 extern size_t get_brcm_audio_buffer_size(unsigned int sample_rate,
                                          audio_format_t format,
-                                         unsigned int channel_count);
+                                         unsigned int channel_count,
+                                         unsigned int duration_ms);
 
 extern struct brcm_stream_out_ops nexus_bout_ops;
 extern struct brcm_stream_out_ops nexus_direct_bout_ops;

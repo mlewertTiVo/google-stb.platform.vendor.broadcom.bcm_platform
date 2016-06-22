@@ -72,6 +72,9 @@ const static uint32_t nexus_out_sample_rates[] = {
 
 #define BRCM_AUDIO_STREAM_ID (0xC0)
 
+#define BRCM_AUDIO_TUNNEL_DURATION_MS 5
+#define BRCM_AUDIO_TUNNEL_HALF_DURATION_US (BRCM_AUDIO_TUNNEL_DURATION_MS * 500)
+
 /*
  * Utility Functions
  */
@@ -186,26 +189,64 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
 
 static int nexus_tunnel_bout_pause(struct brcm_stream_out *bout)
 {
-    int ret = 0;
-    if (bout->nexus.tunnel.stc_channel &&
-        (bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC)) {
-       NEXUS_SimpleStcChannel_Freeze(bout->nexus.tunnel.stc_channel, true);
-    } else {
-       ret = -ENOENT;
+    NEXUS_Error res;
+
+    if (!bout->nexus.tunnel.audio_decoder || !bout->nexus.tunnel.stc_channel ||
+            (bout->nexus.tunnel.stc_channel == (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC))
+    {
+        return -ENOENT;
     }
-    return ret;
+
+    NEXUS_AudioDecoderTrickState trickState;
+    NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+    trickState.rate = 0;
+    res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+    if (res != NEXUS_SUCCESS) {
+       ALOGE("%s: Error pausing audio decoder %u", __FUNCTION__, res);
+       return -ENOMEM;
+    }
+
+    res = NEXUS_SimpleStcChannel_Freeze(bout->nexus.tunnel.stc_channel, true);
+    if (res != NEXUS_SUCCESS) {
+       ALOGE("%s: Error pausing STC %u", __FUNCTION__, res);
+
+       trickState.rate = NEXUS_NORMAL_DECODE_RATE;
+       NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+       return -ENOMEM;
+    }
+
+    return 0;
 }
 
 static int nexus_tunnel_bout_resume(struct brcm_stream_out *bout)
 {
-    int ret = 0;
-    if (bout->nexus.tunnel.stc_channel &&
-        (bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC)) {
-       NEXUS_SimpleStcChannel_Freeze(bout->nexus.tunnel.stc_channel, false);
-    } else {
-       ret = -ENOENT;
+    NEXUS_Error res;
+
+    if (!bout->nexus.tunnel.audio_decoder || !bout->nexus.tunnel.stc_channel ||
+            (bout->nexus.tunnel.stc_channel == (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC))
+    {
+        return -ENOENT;
     }
-    return ret;
+
+    NEXUS_AudioDecoderTrickState trickState;
+    NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+    trickState.rate = NEXUS_NORMAL_DECODE_RATE;
+    res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+    if (res != NEXUS_SUCCESS) {
+       ALOGE("%s: Error resuming audio decoder %u", __FUNCTION__, res);
+       return -ENOMEM;
+    }
+
+    res = NEXUS_SimpleStcChannel_Freeze(bout->nexus.tunnel.stc_channel, false);
+    if (res != NEXUS_SUCCESS) {
+       ALOGE("%s: Error resuming STC %u", __FUNCTION__, res);
+
+       trickState.rate = 0;
+       NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
+       return -ENOMEM;
+    }
+
+    return 0;
 }
 
 static int nexus_tunnel_bout_drain(struct brcm_stream_out *bout, int action)
@@ -378,6 +419,15 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
         return ret;
     }
 
+    // Throttle the output to prevent audio underruns
+    nsecs_t delta = systemTime(SYSTEM_TIME_MONOTONIC) - bout->nexus.tunnel.last_write_time;
+    int32_t throttle_us = BRCM_AUDIO_TUNNEL_HALF_DURATION_US - (delta / 1000);
+    if (throttle_us <= BRCM_AUDIO_TUNNEL_HALF_DURATION_US && throttle_us > 0) {
+        ALOGV("%s: throttle %ld us", __FUNCTION__, throttle_us);
+        usleep(throttle_us);
+    }
+    bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
+
     return bytes_written;
 }
 
@@ -437,7 +487,9 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     bout->frameSize = audio_bytes_per_sample(config->format) * popcount(config->channel_mask);
     bout->buffer_size = get_brcm_audio_buffer_size(config->sample_rate,
                                    config->format,
-                                   popcount(config->channel_mask));
+                                   popcount(config->channel_mask),
+                                   BRCM_AUDIO_TUNNEL_DURATION_MS);
+
     ALOGV("%s: sample_rate=%" PRIu32 " frameSize=%" PRIu32 " buffer_size=%zu",
             __FUNCTION__, config->sample_rate, bout->frameSize, bout->buffer_size);
 
@@ -562,6 +614,8 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     ALOGV("%s: wave_fmt channel=%d sample_rate=%" PRId32 " bit_per_sample=%d align=%d avg_bytes_rate=%" PRId32 "",
             __FUNCTION__, wave_fmt->nChannels, wave_fmt->nSamplesPerSec, wave_fmt->wBitsPerSample,
             wave_fmt->nBlockAlign, wave_fmt->nAvgBytesPerSec);
+
+    bout->nexus.tunnel.last_write_time = 0;
 
     bout->nexus.event = event;
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
