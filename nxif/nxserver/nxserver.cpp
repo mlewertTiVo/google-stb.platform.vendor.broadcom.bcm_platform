@@ -811,6 +811,9 @@ static nxserver_t init_nxserver(void)
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
     NEXUS_GetDefaultMemoryConfigurationSettings(&memConfigSettings);
 
+    platformSettings.videoDecoderModuleSettings.deferInit = true;
+    platformSettings.videoEncoderSettings.deferInit = true;
+
     memset(value, 0, sizeof(value));
     if ( property_get(NX_AUDIO_LOUDNESS, value, "disabled") ) {
         if ( !strcmp(value, "atsc") ) {
