@@ -4626,7 +4626,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             m_tunnelCurrentPts = status.pts;
 
             (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventOutputRendered, 1, 0, &renderEvent);
-            ALOGV("Rendering ts=%lld pts=%lu now=%lld", omxHeader.nTimeStamp, status.pts, now);
+            ALOGV("Rendering ts=%lld pts=%u now=%lld", omxHeader.nTimeStamp, status.pts, now);
         }
 
         return;
