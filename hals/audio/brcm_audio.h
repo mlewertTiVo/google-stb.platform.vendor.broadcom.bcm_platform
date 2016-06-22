@@ -213,7 +213,7 @@ struct brcm_stream_out {
                     NEXUS_PidChannelHandle pid_channel;
                     const uint8_t *pp_buffer_end;
                     bmedia_waveformatex_header wave_fmt;
-                    uint64_t pts;
+                    nsecs_t last_write_time;
                 } tunnel;
             };
             BKNI_EventHandle event;
