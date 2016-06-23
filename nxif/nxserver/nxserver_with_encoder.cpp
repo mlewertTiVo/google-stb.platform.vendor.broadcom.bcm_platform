@@ -98,8 +98,8 @@ bool keep_display_for_encoder(int disp_ix, int enc_ix, NEXUS_PlatformCapabilitie
    }
 }
 
-void defer_init_encoder(NEXUS_PlatformSettings *pPlatformSettings)
+void defer_init_encoder(NEXUS_PlatformSettings *pPlatformSettings, bool defer)
 {
-   pPlatformSettings->videoEncoderSettings.deferInit = true;
+   pPlatformSettings->videoEncoderSettings.deferInit = defer;
 }
 

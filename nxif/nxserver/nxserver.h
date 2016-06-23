@@ -48,6 +48,6 @@
 
 void trim_encoder_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings);
 bool keep_display_for_encoder(int disp_ix, int enc_ix, NEXUS_PlatformCapabilities *pPlatformCap);
-void defer_init_encoder(NEXUS_PlatformSettings *pPlatformSettings);
+void defer_init_encoder(NEXUS_PlatformSettings *pPlatformSettings, bool defer);
 
 #endif

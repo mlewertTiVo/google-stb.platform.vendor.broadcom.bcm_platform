@@ -134,6 +134,7 @@
 #define NX_HEAP_DRV_MANAGED            "ro.nx.heap.drv_managed"
 #define NX_HEAP_GROW                   "ro.nx.heap.grow"
 #define NX_SVP                         "ro.nx.svp"
+#define NX_SPLASH                      "ro.nx.splash"
 
 #define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
 #define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
@@ -811,8 +812,8 @@ static nxserver_t init_nxserver(void)
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
     NEXUS_GetDefaultMemoryConfigurationSettings(&memConfigSettings);
 
-    platformSettings.videoDecoderModuleSettings.deferInit = true;
-    defer_init_encoder(&platformSettings);
+    platformSettings.videoDecoderModuleSettings.deferInit = property_get_bool(NX_SPLASH, 0);
+    defer_init_encoder(&platformSettings, platformSettings.videoDecoderModuleSettings.deferInit);
 
     memset(value, 0, sizeof(value));
     if ( property_get(NX_AUDIO_LOUDNESS, value, "disabled") ) {
