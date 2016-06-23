@@ -789,7 +789,8 @@ static nxserver_t init_nxserver(void)
     struct nxserver_cmdline_settings cmdline_settings;
 
     char value[PROPERTY_VALUE_MAX];
-    char value2[PROPERTY_VALUE_MAX];
+    char key_hdcp1x[PROPERTY_VALUE_MAX];
+    char key_hdcp2x[PROPERTY_VALUE_MAX];
     int ix, jx;
     char nx_key[PROPERTY_VALUE_MAX];
     FILE *key = NULL;
@@ -969,17 +970,17 @@ static nxserver_t init_nxserver(void)
         }
     }
 
-    /* -hdcp1x_keys some-key-file  -- setup last. */
-    memset(value, 0, sizeof(value));
-    property_get(NX_HDCP1X_KEY, value, NULL);
-    if (strlen(value)) {
-       settings.hdcp.hdcp1xBinFile = value;
+    /* -hdcp1x_keys some-key-file */
+    memset(key_hdcp1x, 0, sizeof(key_hdcp1x));
+    property_get(NX_HDCP1X_KEY, key_hdcp1x, NULL);
+    if (strlen(key_hdcp1x)) {
+       settings.hdcp.hdcp1xBinFile = key_hdcp1x;
     }
-    /* -hdcp2x_keys some-key-file  -- setup last. */
-    memset(value2, 0, sizeof(value2));
-    property_get(NX_HDCP2X_KEY, value2, NULL);
-    if (strlen(value2)) {
-       settings.hdcp.hdcp2xBinFile = value2;
+    /* -hdcp2x_keys some-key-file */
+    memset(key_hdcp2x, 0, sizeof(key_hdcp2x));
+    property_get(NX_HDCP2X_KEY, key_hdcp2x, NULL);
+    if (strlen(key_hdcp2x)) {
+       settings.hdcp.hdcp2xBinFile = key_hdcp2x;
     }
 
     pre_trim_mem_config(&memConfigSettings, cvbs);
