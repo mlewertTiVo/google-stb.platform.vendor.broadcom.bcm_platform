@@ -205,6 +205,19 @@ static bool IsSeeminglyValidADTSHeader(
         return false;
     }
 
+    // Check the next frame starts with syncword (confirms current frame is correct)
+    if (frameLengthInHeader+1 < size) {
+        if (ptr[frameLengthInHeader] != 0xff || (ptr[frameLengthInHeader+1] >> 4) != 0x0f) {
+            return false;
+        }
+    }
+
+    // Check number of frames reported in header is 1 (reported as AAC frames minus 1)
+    int numFrames = ptr[6] & 0x03;
+    if (numFrames != 0) {
+       return false;
+    }
+
     *frameLength = frameLengthInHeader;
     return true;
 }
