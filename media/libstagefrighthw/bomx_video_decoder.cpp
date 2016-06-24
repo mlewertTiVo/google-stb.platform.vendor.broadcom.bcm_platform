@@ -1342,7 +1342,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
         property_set(B_PROPERTY_COALESCE, "default");
-        property_set(B_PROPERTY_HFRVIDEO, "default");
+        if ( !m_tunnelMode )
+        {
+            property_set(B_PROPERTY_HFRVIDEO, "default");
+        }
     }
     if ( m_hPlaypump )
     {
@@ -2386,7 +2389,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_displayFrameAvailable = false;
                 B_Mutex_Unlock(m_hDisplayMutex);
                 property_set(B_PROPERTY_COALESCE, "default");
-                property_set(B_PROPERTY_HFRVIDEO, "default");
+                if ( !m_tunnelMode )
+                {
+                    property_set(B_PROPERTY_HFRVIDEO, "default");
+                }
             }
             break;
         case OMX_StateExecuting:
@@ -2414,7 +2420,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 vdecStartSettings.maxHeight = m_maxDecoderHeight;
                 ALOGV("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec);
                 property_set(B_PROPERTY_COALESCE, "vmode");
-                property_set(B_PROPERTY_HFRVIDEO, "vmode");
+                if ( !m_tunnelMode )
+                {
+                    property_set(B_PROPERTY_HFRVIDEO, "vmode");
+                }
                 m_startTime = systemTime(CLOCK_MONOTONIC); // Track start time
                 if (m_tunnelMode)
                 {
@@ -2442,11 +2451,14 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                     m_eosReceived = false;
                     m_ptsReceived = false;
                     property_set(B_PROPERTY_COALESCE, "default");
-                    property_set(B_PROPERTY_HFRVIDEO, "default");
+                    if ( !m_tunnelMode )
+                    {
+                        property_set(B_PROPERTY_HFRVIDEO, "default");
+                    }
                     return BOMX_BERR_TRACE(errCode);
                 }
 
-                if ( m_pVideoPorts[1]->IsEnabled() )
+                if ( !m_tunnelMode && m_pVideoPorts[1]->IsEnabled() )
                 {
                     // Kick off the decoder frame queue
                     OutputFrameEvent();

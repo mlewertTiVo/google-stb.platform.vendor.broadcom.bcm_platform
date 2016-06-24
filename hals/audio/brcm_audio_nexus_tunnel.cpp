@@ -68,22 +68,19 @@ const static uint32_t nexus_out_sample_rates[] = {
 #define NEXUS_OUT_SAMPLE_RATE_COUNT                     \
     (sizeof(nexus_out_sample_rates) / sizeof(uint32_t))
 
-#define BRCM_AUDIO_NXCLIENT_NAME "BrcmAudioOutTunnel"
+#define BRCM_AUDIO_NXCLIENT_NAME                "BrcmAudioOutTunnel"
 
-#define BRCM_AUDIO_STREAM_ID (0xC0)
+#define BRCM_AUDIO_STREAM_ID                    (0xC0)
 
-#define BRCM_AUDIO_TUNNEL_DURATION_MS 5
-#define BRCM_AUDIO_TUNNEL_HALF_DURATION_US (BRCM_AUDIO_TUNNEL_DURATION_MS * 500)
+#define BRCM_AUDIO_TUNNEL_DURATION_MS           (5)
+#define BRCM_AUDIO_TUNNEL_HALF_DURATION_US      (BRCM_AUDIO_TUNNEL_DURATION_MS * 500)
+#define BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS  (300)
 
 /*
- * Utility Functions
+ * Function declarations
  */
-
-static void nexus_tunnel_bout_data_callback(void *param1, int param2)
-{
-    UNUSED(param1);
-    BKNI_SetEvent((BKNI_EventHandle)(intptr_t)param2);
-}
+static int nexus_tunnel_bout_pause(struct brcm_stream_out *bout);
+static int nexus_tunnel_bout_resume(struct brcm_stream_out *bout);
 
 /*
  * Operation Functions
@@ -129,6 +126,16 @@ static int nexus_tunnel_bout_get_presentation_position(struct brcm_stream_out *b
     return 0;
 }
 
+static void nexus_tunnel_bout_debounce_reset(struct brcm_stream_out *bout)
+{
+    bout->nexus.tunnel.debounce = false;
+    bout->nexus.tunnel.debounce_pausing = false;
+    bout->nexus.tunnel.debounce_more = false;
+    bout->nexus.tunnel.debounce_expired = false;
+    bout->nexus.tunnel.debounce_stopping = false;
+    bout->nexus.tunnel.last_pause_time = 0;
+}
+
 static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
 {
     NEXUS_Error ret;
@@ -157,6 +164,9 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
         return -ENOSYS;
     }
 
+    nexus_tunnel_bout_debounce_reset(bout);
+    bout->nexus.tunnel.last_write_time = 0;
+
     return 0;
 }
 
@@ -164,12 +174,23 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
 {
     NEXUS_Error ret;
 
+    if (bout->nexus.tunnel.debounce) {
+       // Wait for the debouncing thread to finish
+       ALOGV("%s: Waiting for debouncing to finish", __FUNCTION__);
+       pthread_t thread = bout->nexus.tunnel.debounce_thread;
+       bout->nexus.tunnel.debounce_stopping = true;
+
+       pthread_mutex_unlock(&bout->lock);
+       pthread_join(thread, NULL);
+       pthread_mutex_lock(&bout->lock);
+       ALOGV("%s:      ... done", __FUNCTION__);
+    }
+
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_PlaypumpHandle playpump = bout->nexus.tunnel.playpump;
 
     if (audio_decoder) {
         NEXUS_AudioDecoderStatus status;
-        NEXUS_SimpleAudioDecoder_Stop(audio_decoder);
         ret = NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &status);
         if (ret != NEXUS_SUCCESS) {
             ALOGE("%s: Update frame played failed, ret=%d", __FUNCTION__, ret);
@@ -177,6 +198,7 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
         else {
             bout->framesPlayed += status.numBytesDecoded/bout->frameSize;
         }
+        NEXUS_SimpleAudioDecoder_Stop(audio_decoder);
     }
 
     if (playpump) {
@@ -187,14 +209,88 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
     return 0;
 }
 
+static void *nexus_tunnel_bout_debounce_task(void *argv)
+{
+    struct brcm_stream_out *bout = (struct brcm_stream_out *)argv;
+    nsecs_t now;
+    int delta_ms;
+
+    ALOGV("%s: Debouncing started", __FUNCTION__);
+
+    usleep(BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS * 1000);
+
+    pthread_mutex_lock(&bout->lock);
+    while (!bout->nexus.tunnel.debounce_stopping && bout->nexus.tunnel.debounce_more) {
+       bout->nexus.tunnel.debounce_more = false;
+
+       now = systemTime(SYSTEM_TIME_MONOTONIC);
+       delta_ms = BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS - toMillisecondTimeoutDelay(bout->nexus.tunnel.last_pause_time, now);
+       if (delta_ms > 0 && delta_ms <= BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS) {
+          ALOGV("%s: Debouncing more for %d ms", __FUNCTION__, delta_ms);
+          pthread_mutex_unlock(&bout->lock);
+          usleep(delta_ms * 1000);
+          pthread_mutex_lock(&bout->lock);
+       }
+    }
+
+    bout->nexus.tunnel.debounce_expired = true;
+
+    if (!bout->nexus.tunnel.debounce_stopping) {
+       if (bout->nexus.tunnel.debounce_pausing) {
+          ALOGV("%s: Pause after debouncing", __FUNCTION__);
+          nexus_tunnel_bout_pause(bout);
+       }
+       else {
+          ALOGV("%s: Resume after debouncing", __FUNCTION__);
+          nexus_tunnel_bout_resume(bout);
+       }
+
+       pthread_detach(pthread_self());
+    }
+
+    nexus_tunnel_bout_debounce_reset(bout);
+
+    pthread_mutex_unlock(&bout->lock);
+
+    ALOGV("%s: Debouncing stopped", __FUNCTION__);
+
+    return NULL;
+}
+
 static int nexus_tunnel_bout_pause(struct brcm_stream_out *bout)
 {
     NEXUS_Error res;
 
     if (!bout->nexus.tunnel.audio_decoder || !bout->nexus.tunnel.stc_channel ||
-            (bout->nexus.tunnel.stc_channel == (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC))
-    {
-        return -ENOENT;
+            (bout->nexus.tunnel.stc_channel == (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC)) {
+       return -ENOENT;
+    }
+
+    // Audio underruns can happen when the app is not feeding the audio frames fast enough
+    // especially at the beginning of the playback or after seeking. We debounce the pause/resume
+    // operations in such underruns by deferring the pause for 0.3 seconds.
+    if (!bout->nexus.tunnel.debounce) {
+       if (pthread_create(&bout->nexus.tunnel.debounce_thread, NULL, nexus_tunnel_bout_debounce_task, bout) != 0) {
+          ALOGE("%s: Error starting debouncing", __FUNCTION__);
+       }
+       else {
+          pthread_setname_np(bout->nexus.tunnel.debounce_thread, "baudio_debounce");
+          bout->nexus.tunnel.debounce = true;
+          bout->nexus.tunnel.debounce_pausing = true;
+
+          return 0;
+       }
+    }
+
+    // No-op when debouncing
+    if (bout->nexus.tunnel.debounce && !bout->nexus.tunnel.debounce_expired) {
+       ALOGV("%s: No-op", __FUNCTION__);
+       if (!bout->nexus.tunnel.debounce_pausing) {
+          bout->nexus.tunnel.debounce_more = true;
+          bout->nexus.tunnel.last_pause_time = systemTime(SYSTEM_TIME_MONOTONIC);
+       }
+       bout->nexus.tunnel.debounce_pausing = true;
+       return 0;
     }
 
     NEXUS_AudioDecoderTrickState trickState;
@@ -223,9 +319,16 @@ static int nexus_tunnel_bout_resume(struct brcm_stream_out *bout)
     NEXUS_Error res;
 
     if (!bout->nexus.tunnel.audio_decoder || !bout->nexus.tunnel.stc_channel ||
-            (bout->nexus.tunnel.stc_channel == (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC))
-    {
-        return -ENOENT;
+            (bout->nexus.tunnel.stc_channel == (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC)) {
+       return -ENOENT;
+    }
+
+    // No-op when debouncing
+    if (bout->nexus.tunnel.debounce && !bout->nexus.tunnel.debounce_expired) {
+       ALOGV("%s: No-op", __FUNCTION__);
+       bout->nexus.tunnel.debounce_pausing = false;
+       bout->nexus.tunnel.debounce_more = false;
+       return 0;
     }
 
     NEXUS_AudioDecoderTrickState trickState;
@@ -259,14 +362,23 @@ static int nexus_tunnel_bout_drain(struct brcm_stream_out *bout, int action)
 
 static int nexus_tunnel_bout_flush(struct brcm_stream_out *bout)
 {
-    int ret = 0;
+    NEXUS_Error res;
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
-    if (audio_decoder) {
-       NEXUS_SimpleAudioDecoder_Flush(audio_decoder);
-    } else {
-       ret = -ENOENT;
+    NEXUS_PlaypumpHandle playpump = bout->nexus.tunnel.playpump;
+
+    if (!audio_decoder || !playpump) {
+        return -ENOENT;
     }
-    return ret;
+
+    res = NEXUS_Playpump_Flush(playpump);
+    if (res != NEXUS_SUCCESS) {
+       ALOGI("%s: Error flushing playpump %u", __FUNCTION__, res);
+       return -ENOMEM;
+    }
+
+    NEXUS_SimpleAudioDecoder_Flush(audio_decoder);
+
+    return 0;
 }
 
 const static uint8_t av_sync_marker[] = {0x55, 0x55, 0x00, 0x01};
@@ -614,8 +726,6 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     ALOGV("%s: wave_fmt channel=%d sample_rate=%" PRId32 " bit_per_sample=%d align=%d avg_bytes_rate=%" PRId32 "",
             __FUNCTION__, wave_fmt->nChannels, wave_fmt->nSamplesPerSec, wave_fmt->wBitsPerSample,
             wave_fmt->nBlockAlign, wave_fmt->nAvgBytesPerSec);
-
-    bout->nexus.tunnel.last_write_time = 0;
 
     bout->nexus.event = event;
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;

@@ -214,6 +214,13 @@ struct brcm_stream_out {
                     const uint8_t *pp_buffer_end;
                     bmedia_waveformatex_header wave_fmt;
                     nsecs_t last_write_time;
+                    nsecs_t last_pause_time;
+                    bool debounce;
+                    bool debounce_pausing;
+                    bool debounce_more;
+                    bool debounce_expired;
+                    bool debounce_stopping;
+                    pthread_t debounce_thread;
                 } tunnel;
             };
             BKNI_EventHandle event;
