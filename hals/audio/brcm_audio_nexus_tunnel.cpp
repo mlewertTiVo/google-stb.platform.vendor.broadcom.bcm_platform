@@ -132,6 +132,7 @@ static void nexus_tunnel_bout_debounce_reset(struct brcm_stream_out *bout)
     bout->nexus.tunnel.debounce_pausing = false;
     bout->nexus.tunnel.debounce_more = false;
     bout->nexus.tunnel.debounce_expired = false;
+    bout->nexus.tunnel.debounce_stopping = false;
     bout->nexus.tunnel.last_pause_time = 0;
 }
 
@@ -177,7 +178,7 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
        // Wait for the debouncing thread to finish
        ALOGV("%s: Waiting for debouncing to finish", __FUNCTION__);
        pthread_t thread = bout->nexus.tunnel.debounce_thread;
-       nexus_tunnel_bout_debounce_reset(bout);
+       bout->nexus.tunnel.debounce_stopping = true;
 
        pthread_mutex_unlock(&bout->lock);
        pthread_join(thread, NULL);
@@ -219,7 +220,7 @@ static void *nexus_tunnel_bout_debounce_task(void *argv)
     usleep(BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS * 1000);
 
     pthread_mutex_lock(&bout->lock);
-    while (bout->nexus.tunnel.debounce_more) {
+    while (!bout->nexus.tunnel.debounce_stopping && bout->nexus.tunnel.debounce_more) {
        bout->nexus.tunnel.debounce_more = false;
 
        now = systemTime(SYSTEM_TIME_MONOTONIC);
@@ -234,14 +235,19 @@ static void *nexus_tunnel_bout_debounce_task(void *argv)
 
     bout->nexus.tunnel.debounce_expired = true;
 
-    if (bout->nexus.tunnel.debounce_pausing) {
-       ALOGV("%s: Pause after debouncing", __FUNCTION__);
-       nexus_tunnel_bout_pause(bout);
+    if (!bout->nexus.tunnel.debounce_stopping) {
+       if (bout->nexus.tunnel.debounce_pausing) {
+          ALOGV("%s: Pause after debouncing", __FUNCTION__);
+          nexus_tunnel_bout_pause(bout);
+       }
+       else {
+          ALOGV("%s: Resume after debouncing", __FUNCTION__);
+          nexus_tunnel_bout_resume(bout);
+       }
+
+       pthread_detach(pthread_self());
     }
-    else {
-       ALOGV("%s: Resume after debouncing", __FUNCTION__);
-       nexus_tunnel_bout_resume(bout);
-    }
+
     nexus_tunnel_bout_debounce_reset(bout);
 
     pthread_mutex_unlock(&bout->lock);

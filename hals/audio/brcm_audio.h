@@ -219,6 +219,7 @@ struct brcm_stream_out {
                     bool debounce_pausing;
                     bool debounce_more;
                     bool debounce_expired;
+                    bool debounce_stopping;
                     pthread_t debounce_thread;
                 } tunnel;
             };
