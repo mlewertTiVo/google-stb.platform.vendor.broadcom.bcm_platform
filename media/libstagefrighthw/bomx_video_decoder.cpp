@@ -878,6 +878,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_earlyDropThresholdMs(0),
     m_startTime(-1),
     m_tunnelStcChannel(NULL),
+    m_inputFlushing(false),
+    m_outputFlushing(false),
     m_ptsReceived(false)
 {
     unsigned i;
@@ -2731,24 +2733,46 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
         if ( portIndex == m_videoPortBase )
         {
             // Input port
-            if ( m_hSimpleVideoDecoder )
+            if ( m_pVideoPorts[0]->IsEnabled() && m_pVideoPorts[0]->IsPopulated() && m_hPlaypump != NULL )
             {
-                (void)SetInputPortState(OMX_StateIdle);
-                (void)SetInputPortState(StateGet());
+                m_inputFlushing = true;
+
+                NEXUS_Playpump_Flush(m_hPlaypump);
+                m_eosPending = false;
                 m_ptsReceived = false;
+                PlaypumpEvent();
+                ALOG_ASSERT(m_submittedDescriptors == 0);
+                ReturnInputBuffers(0, InputReturnMode_eAll);
                 m_configBufferState = ConfigBufferState_eFlushed;
+
+                m_inputFlushing = false;
+            }
+            else
+            {
+                ReturnPortBuffers(m_pVideoPorts[0]);
             }
         }
         else
         {
             // Output port
-            if ( m_pVideoPorts[1]->IsEnabled() && m_pVideoPorts[1]->IsPopulated() )
+            if ( m_pVideoPorts[1]->IsEnabled() && m_pVideoPorts[1]->IsPopulated() && m_hSimpleVideoDecoder != NULL )
             {
-                (void)SetOutputPortState(OMX_StateIdle);
-                (void)SetOutputPortState(StateGet());
+                m_outputFlushing = true;
+
+                NEXUS_SimpleVideoDecoder_Flush(m_hSimpleVideoDecoder);
+                ReturnDecodedFrames();
+                m_pBufferTracker->Flush();
+                m_eosDelivered = false;
+                m_eosReceived = false;
+                B_Mutex_Lock(m_hDisplayMutex);
+                m_displayFrameAvailable = false;
+                m_frameSerial = 0;
+                B_Mutex_Unlock(m_hDisplayMutex);
+
+                m_outputFlushing = false;
             }
+            ReturnPortBuffers(m_pVideoPorts[1]);
         }
-        ReturnPortBuffers(pPort);
     }
 
     return err;
@@ -4228,7 +4252,7 @@ void BOMX_VideoDecoder::PlaypumpEvent()
     {
         BOMX_Buffer *pBuffer, *pFifoHead=NULL;
 
-        if ( m_hSimpleVideoDecoder )
+        if ( m_hSimpleVideoDecoder && !m_inputFlushing )
         {
             NEXUS_VideoDecoderFifoStatus fifoStatus;
             NEXUS_Error errCode = NEXUS_SimpleVideoDecoder_GetFifoStatus(m_hSimpleVideoDecoder, &fifoStatus);
@@ -5072,24 +5096,39 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
           pBuffer = BLST_Q_NEXT(pBuffer, node) );
 
     // If we scanned the entire list or the first frame is not yet delivered just bail out
-    if ( NULL == pBuffer || pBuffer->state == BOMX_VideoDecoderFrameBufferState_eReady )
+    if ( NULL == pBuffer || (!m_outputFlushing && pBuffer->state == BOMX_VideoDecoderFrameBufferState_eReady ) )
     {
         return;
     }
 
     // Find last actionable frame if there is one
-    for ( pStart = pBuffer, pEnd = NULL;
-          NULL != pBuffer && pBuffer->state != BOMX_VideoDecoderFrameBufferState_eReady;
-          pBuffer = BLST_Q_NEXT(pBuffer, node) )
+    if ( m_outputFlushing )
     {
-        switch ( pBuffer->state )
+        for ( pStart = pBuffer, pEnd = NULL;
+              NULL != pBuffer;
+              pBuffer = BLST_Q_NEXT(pBuffer, node) )
         {
-        case BOMX_VideoDecoderFrameBufferState_eDisplayReady:
-        case BOMX_VideoDecoderFrameBufferState_eDropReady:
-            pEnd = pBuffer;
-            break;
-        default:
-            break;
+            if ( pBuffer->state != BOMX_VideoDecoderFrameBufferState_eInvalid )
+            {
+                pEnd = pBuffer;
+            }
+        }
+    }
+    else
+    {
+        for ( pStart = pBuffer, pEnd = NULL;
+              NULL != pBuffer && pBuffer->state != BOMX_VideoDecoderFrameBufferState_eReady;
+              pBuffer = BLST_Q_NEXT(pBuffer, node) )
+        {
+            switch ( pBuffer->state )
+            {
+            case BOMX_VideoDecoderFrameBufferState_eDisplayReady:
+            case BOMX_VideoDecoderFrameBufferState_eDropReady:
+                pEnd = pBuffer;
+               break;
+            default:
+                break;
+            }
         }
     }
 
@@ -5106,7 +5145,14 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             //NEXUS_VideoDecoder_GetDefaultReturnFrameSettings(&returnSettings[numFrames]); Intentionally skipped - there is only one field to set anyway
             if ( pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered )
             {
-                ALOGW("Dropping outstanding frame %u still owned by client - a later frame (%u) was returned already", pBuffer->frameStatus.serialNumber, pLast->frameStatus.serialNumber);
+                if ( m_outputFlushing )
+                {
+                    ALOGW("Dropping outstanding frame %u still owned by client - flushing", pBuffer->frameStatus.serialNumber);
+                }
+                else
+                {
+                    ALOGW("Dropping outstanding frame %u still owned by client - a later frame (%u) was returned already", pBuffer->frameStatus.serialNumber, pLast->frameStatus.serialNumber);
+                }
                 pBuffer->state = BOMX_VideoDecoderFrameBufferState_eInvalid;
                 returnSettings[numFrames].display = false;
             }
@@ -5120,14 +5166,28 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                     returnSettings[numFrames].display = (pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDisplayReady) ? true : false;
                     if (!returnSettings[numFrames].display)
                     {
-                        ALOGW("Dropping outstanding frame %u - state is [%d] %s", pBuffer->frameStatus.serialNumber, pBuffer->state,
-                              pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDropReady ? "eDropReady" : "???");
+                        if ( m_outputFlushing )
+                        {
+                            ALOGW("Dropping outstanding frame %u - flushing", pBuffer->frameStatus.serialNumber);
+                        }
+                        else
+                        {
+                            ALOGW("Dropping outstanding frame %u - state is [%d] %s", pBuffer->frameStatus.serialNumber, pBuffer->state,
+                                  pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDropReady ? "eDropReady" : "???");
+                        }
                     }
                 }
                 else
                 {
                     returnSettings[numFrames].display = false;
-                    ALOGW("Dropping outstanding frame %u - falling behind", pBuffer->frameStatus.serialNumber);
+                    if ( m_outputFlushing )
+                    {
+                        ALOGW("Dropping outstanding frame %u - flushing", pBuffer->frameStatus.serialNumber);
+                    }
+                    else
+                    {
+                        ALOGW("Dropping outstanding frame %u - falling behind", pBuffer->frameStatus.serialNumber);
+                    }
                 }
                 if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata && pBuffer->pPrivateHandle )
                 {
