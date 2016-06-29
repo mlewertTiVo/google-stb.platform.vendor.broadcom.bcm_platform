@@ -108,14 +108,8 @@ enum BOMX_AudioDecoderEventType
     BOMX_AudioDecoderEventType_eMax
 };
 
-static const BOMX_AudioDecoderRole g_ac3Role[] = {{"audio_decoder.ac3", OMX_AUDIO_CodingAndroidAC3}};
-static const BOMX_AudioDecoderRole g_mp3Role[] = {{"audio_decoder.mp3", OMX_AUDIO_CodingMP3}};
-static const BOMX_AudioDecoderRole g_aacRole[] = {{"audio_decoder.aac", OMX_AUDIO_CodingAAC}};
 static int32_t g_instanceNum;
 static int32_t g_activeInstancesNum;
-
-#define BOMX_AUDIO_GET_ROLE_COUNT(roleArray) (sizeof(roleArray)/sizeof(BOMX_AudioDecoderRole))
-#define BOMX_AUDIO_GET_ROLE_NAME(roleArray, idx) ((idx) >= (BOMX_AUDIO_GET_ROLE_COUNT(roleArray))?NULL:(roleArray)[(idx)].name)
 
 extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(
     OMX_COMPONENTTYPE *pComponentTpe,
@@ -566,6 +560,8 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     NEXUS_AudioDecoderOpenSettings openSettings;
     NEXUS_AudioDecoder_GetDefaultOpenSettings(&openSettings);
     openSettings.type = NEXUS_AudioDecoderType_eDecodeToMemory;
+    if (m_secureDecoder)
+        openSettings.cdbHeap = clientConfig.heap[NXCLIENT_VIDEO_SECURE_HEAP];
     m_hAudioDecoder = NEXUS_AudioDecoder_Open(NEXUS_ANY_ID, &openSettings);
     if ( NULL == m_hAudioDecoder )
     {
@@ -770,11 +766,11 @@ BOMX_AudioDecoder::~BOMX_AudioDecoder()
     }
     if ( m_pEosBuffer )
     {
-        FreeInputBuffer(m_pEosBuffer);
+        NEXUS_Memory_Free(m_pEosBuffer);
     }
     if ( m_pConfigBuffer )
     {
-        FreeInputBuffer(m_pConfigBuffer);
+        NEXUS_Memory_Free(m_pConfigBuffer);
     }
     if ( m_pIpcClient )
     {
@@ -2100,7 +2096,6 @@ OMX_ERRORTYPE BOMX_AudioDecoder::AddInputPortBuffer(
             return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
         }
     }
-
     err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, nSizeBytes, pBuffer, pInfo, componentAllocated);
     if ( OMX_ErrorNone != err )
     {
@@ -2368,7 +2363,6 @@ OMX_ERRORTYPE BOMX_AudioDecoder::BuildInputFrame(
     ALOG_ASSERT(NULL != pInfo);
 
     bufferBytesRemaining = chunkLength;
-
     ALOGV("%d Input Frame Offset %u, Length %u, PTS %#x first=%d", m_instanceNum, pBufferHeader->nOffset, chunkLength, pts, first ? 1 : 0);
 
     if ( maxDescriptors < 4 )
@@ -3358,10 +3352,15 @@ void BOMX_AudioDecoder::PollDecodedFrames()
 OMX_ERRORTYPE BOMX_AudioDecoder::ConfigBufferInit()
 {
     NEXUS_Error errCode;
+    NEXUS_ClientConfiguration   clientConfig;
+    NEXUS_MemoryAllocationSettings  memorySettings;
 
     if (m_pConfigBuffer == NULL)
     {
-        errCode = AllocateInputBuffer(BOMX_AUDIO_CODEC_CONFIG_BUFFER_SIZE, m_pConfigBuffer);
+        NEXUS_Platform_GetClientConfiguration(&clientConfig);
+        NEXUS_Memory_GetDefaultAllocationSettings(&memorySettings);
+        memorySettings.heap = clientConfig.heap[NXCLIENT_FULL_HEAP];
+        errCode = NEXUS_Memory_Allocate(BOMX_AUDIO_CODEC_CONFIG_BUFFER_SIZE, &memorySettings, &m_pConfigBuffer);
         if ( errCode )
         {
             ALOGW("Unable to allocate codec config buffer");

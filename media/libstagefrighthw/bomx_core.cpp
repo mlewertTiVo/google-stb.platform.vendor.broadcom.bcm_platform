@@ -30,6 +30,7 @@
 #include "bomx_audio_decoder.h"
 #ifdef SECURE_DECODER_ON
 #include "bomx_video_decoder_secure.h"
+#include "bomx_audio_decoder_secure.h"
 #endif
 #ifdef ENCODER_ON
 #include "bomx_video_encoder.h"
@@ -55,6 +56,7 @@ static const struct ComponentEntry
     {"OMX.broadcom.video_decoder.tunnel.secure",        BOMX_VideoDecoder_Secure_CreateTunnel,      BOMX_VideoDecoder_Secure_GetRole},
     {"OMX.broadcom.video_decoder.vp9.secure",           BOMX_VideoDecoder_Secure_CreateVp9,         BOMX_VideoDecoder_GetRoleVp9},
     {"OMX.broadcom.video_decoder.vp9.tunnel.secure",    BOMX_VideoDecoder_Secure_CreateVp9Tunnel,   BOMX_VideoDecoder_GetRoleVp9},
+    {"OMX.broadcom.audio_decoder.aac.secure",           BOMX_AudioDecoder_Secure_CreateAac,         BOMX_AudioDecoder_GetRoleAac},
 #endif
 #ifdef ENCODER_ON
     {"OMX.broadcom.video_encoder",                  BOMX_VideoEncoder_Create,                BOMX_VideoEncoder_GetRole},

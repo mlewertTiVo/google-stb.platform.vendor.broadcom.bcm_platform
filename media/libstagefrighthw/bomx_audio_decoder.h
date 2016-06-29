@@ -86,6 +86,12 @@ struct BOMX_AudioDecoderRole
     int omxCodec;
 };
 
+const BOMX_AudioDecoderRole g_ac3Role[] = {{"audio_decoder.ac3", OMX_AUDIO_CodingAndroidAC3}};
+const BOMX_AudioDecoderRole g_mp3Role[] = {{"audio_decoder.mp3", OMX_AUDIO_CodingMP3}};
+const BOMX_AudioDecoderRole g_aacRole[] = {{"audio_decoder.aac", OMX_AUDIO_CodingAAC}};
+#define BOMX_AUDIO_GET_ROLE_COUNT(roleArray) (sizeof(roleArray)/sizeof(BOMX_AudioDecoderRole))
+#define BOMX_AUDIO_GET_ROLE_NAME(roleArray, idx) ((idx) >= (BOMX_AUDIO_GET_ROLE_COUNT(roleArray))?NULL:(roleArray)[(idx)].name)
+
 enum BOMX_AudioDecoderState
 {
     BOMX_AudioDecoderState_eStopped,
@@ -110,52 +116,46 @@ public:
     virtual ~BOMX_AudioDecoder();
 
     // Begin OMX Standard functions.
-
-    OMX_ERRORTYPE SendCommand(
-        OMX_IN  OMX_COMMANDTYPE Cmd,
-        OMX_IN  OMX_U32 nParam1,
-        OMX_IN  OMX_PTR pCmdData);
-
-    OMX_ERRORTYPE GetParameter(
+    virtual OMX_ERRORTYPE GetParameter(
             OMX_IN  OMX_INDEXTYPE nParamIndex,
             OMX_INOUT OMX_PTR pComponentParameterStructure);
 
-    OMX_ERRORTYPE SetParameter(
+    virtual OMX_ERRORTYPE SetParameter(
             OMX_IN  OMX_INDEXTYPE nIndex,
             OMX_IN  OMX_PTR pComponentParameterStructure);
 
-    OMX_ERRORTYPE UseBuffer(
+    virtual OMX_ERRORTYPE UseBuffer(
             OMX_INOUT OMX_BUFFERHEADERTYPE** ppBufferHdr,
             OMX_IN OMX_U32 nPortIndex,
             OMX_IN OMX_PTR pAppPrivate,
             OMX_IN OMX_U32 nSizeBytes,
             OMX_IN OMX_U8* pBuffer);
 
-    OMX_ERRORTYPE AllocateBuffer(
+    virtual OMX_ERRORTYPE AllocateBuffer(
             OMX_INOUT OMX_BUFFERHEADERTYPE** ppBuffer,
             OMX_IN OMX_U32 nPortIndex,
             OMX_IN OMX_PTR pAppPrivate,
             OMX_IN OMX_U32 nSizeBytes);
 
-    OMX_ERRORTYPE FreeBuffer(
+    virtual OMX_ERRORTYPE FreeBuffer(
             OMX_IN  OMX_U32 nPortIndex,
             OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
 
-    OMX_ERRORTYPE EmptyThisBuffer(
+    virtual OMX_ERRORTYPE EmptyThisBuffer(
             OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
 
-    OMX_ERRORTYPE FillThisBuffer(
+    virtual OMX_ERRORTYPE FillThisBuffer(
             OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
 
-    OMX_ERRORTYPE GetExtensionIndex(
+    virtual OMX_ERRORTYPE GetExtensionIndex(
             OMX_IN  OMX_STRING cParameterName,
             OMX_OUT OMX_INDEXTYPE* pIndexType);
 
-    OMX_ERRORTYPE GetConfig(
+    virtual OMX_ERRORTYPE GetConfig(
             OMX_IN  OMX_INDEXTYPE nIndex,
             OMX_INOUT OMX_PTR pComponentConfigStructure);
 
-    OMX_ERRORTYPE SetConfig(
+    virtual OMX_ERRORTYPE SetConfig(
             OMX_IN  OMX_INDEXTYPE nIndex,
             OMX_IN  OMX_PTR pComponentConfigStructure);
 
@@ -164,16 +164,16 @@ public:
     // Begin OMX Command Handlers - These functions should block until completion.  The return code
     // will take care of sending the correct callback to the client.
     // All commands must be implemented except for MarkBuffer, which is optional.
-    OMX_ERRORTYPE CommandStateSet(
+    virtual OMX_ERRORTYPE CommandStateSet(
         OMX_STATETYPE newState,
         OMX_STATETYPE oldState);
 
-    OMX_ERRORTYPE CommandFlush(
+    virtual OMX_ERRORTYPE CommandFlush(
         OMX_U32 portIndex);
 
-    OMX_ERRORTYPE CommandPortEnable(
+    virtual OMX_ERRORTYPE CommandPortEnable(
         OMX_U32 portIndex);
-    OMX_ERRORTYPE CommandPortDisable(
+    virtual OMX_ERRORTYPE CommandPortDisable(
         OMX_U32 portIndex);
     // End OMX Command Handlers
 

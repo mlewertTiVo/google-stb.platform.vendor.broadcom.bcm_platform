@@ -170,52 +170,46 @@ public:
     virtual ~BOMX_VideoDecoder();
 
     // Begin OMX Standard functions.
-
-    OMX_ERRORTYPE SendCommand(
-        OMX_IN  OMX_COMMANDTYPE Cmd,
-        OMX_IN  OMX_U32 nParam1,
-        OMX_IN  OMX_PTR pCmdData);
-
-    OMX_ERRORTYPE GetParameter(
+    virtual OMX_ERRORTYPE GetParameter(
             OMX_IN  OMX_INDEXTYPE nParamIndex,
             OMX_INOUT OMX_PTR pComponentParameterStructure);
 
-    OMX_ERRORTYPE SetParameter(
+    virtual OMX_ERRORTYPE SetParameter(
             OMX_IN  OMX_INDEXTYPE nIndex,
             OMX_IN  OMX_PTR pComponentParameterStructure);
 
-    OMX_ERRORTYPE UseBuffer(
+    virtual OMX_ERRORTYPE UseBuffer(
             OMX_INOUT OMX_BUFFERHEADERTYPE** ppBufferHdr,
             OMX_IN OMX_U32 nPortIndex,
             OMX_IN OMX_PTR pAppPrivate,
             OMX_IN OMX_U32 nSizeBytes,
             OMX_IN OMX_U8* pBuffer);
 
-    OMX_ERRORTYPE AllocateBuffer(
+    virtual OMX_ERRORTYPE AllocateBuffer(
             OMX_INOUT OMX_BUFFERHEADERTYPE** ppBuffer,
             OMX_IN OMX_U32 nPortIndex,
             OMX_IN OMX_PTR pAppPrivate,
             OMX_IN OMX_U32 nSizeBytes);
 
-    OMX_ERRORTYPE FreeBuffer(
+    virtual OMX_ERRORTYPE FreeBuffer(
             OMX_IN  OMX_U32 nPortIndex,
             OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
 
-    OMX_ERRORTYPE EmptyThisBuffer(
+    virtual OMX_ERRORTYPE EmptyThisBuffer(
             OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
 
-    OMX_ERRORTYPE FillThisBuffer(
+    virtual OMX_ERRORTYPE FillThisBuffer(
             OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
 
-    OMX_ERRORTYPE GetExtensionIndex(
+    virtual OMX_ERRORTYPE GetExtensionIndex(
             OMX_IN  OMX_STRING cParameterName,
             OMX_OUT OMX_INDEXTYPE* pIndexType);
 
-    OMX_ERRORTYPE GetConfig(
+    virtual OMX_ERRORTYPE GetConfig(
             OMX_IN  OMX_INDEXTYPE nIndex,
             OMX_INOUT OMX_PTR pComponentConfigStructure);
 
-    OMX_ERRORTYPE SetConfig(
+    virtual OMX_ERRORTYPE SetConfig(
             OMX_IN  OMX_INDEXTYPE nIndex,
             OMX_IN  OMX_PTR pComponentConfigStructure);
 
@@ -434,6 +428,8 @@ protected:
     // The functions below allow derived classes to override them
     virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
     virtual void FreeInputBuffer(void*& pBuffer);
+    virtual NEXUS_Error AllocateConfigBuffer(uint32_t nSize, void*& pBuffer);
+    virtual void FreeConfigBuffer(void*& pBuffer);
     virtual OMX_ERRORTYPE ConfigBufferInit();
     virtual OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
     virtual NEXUS_Error OpenPidChannel(uint32_t pid);

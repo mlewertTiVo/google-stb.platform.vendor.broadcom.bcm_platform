@@ -34,6 +34,7 @@
  * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
+ *
  *****************************************************************************/
 //#define LOG_NDEBUG 0
 #undef LOG_TAG
@@ -43,8 +44,12 @@
 
 #include "bomx_video_decoder_secure.h"
 #include "nexus_platform.h"
+#include "nexus_dma.h"
+#include "nexus_security_client.h"
+#include "bomx_secure_buff.h"
 #include "OMX_IndexExt.h"
 #include "OMX_VideoExt.h"
+#include "sage_srai.h"
 
 OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateCommon(
     OMX_COMPONENTTYPE *pComponentTpe,
@@ -180,10 +185,7 @@ BOMX_VideoDecoder_Secure::BOMX_VideoDecoder_Secure(
     unsigned numRoles,
     const BOMX_VideoDecoderRole *pRoles,
     const char *(*pGetRole)(unsigned roleIndex))
-
     :BOMX_VideoDecoder(pComponentType, pName, pAppData, pCallbacks, true, tunnel, numRoles, pRoles, pGetRole)
-    ,m_Sage_PlatformHandle(NULL),
-    m_Sagelib_Container(NULL)
 {
     ALOGV("%s", __FUNCTION__);
 }
@@ -191,61 +193,6 @@ BOMX_VideoDecoder_Secure::BOMX_VideoDecoder_Secure(
 BOMX_VideoDecoder_Secure::~BOMX_VideoDecoder_Secure()
 {
     ALOGV("%s", __FUNCTION__);
-    Sage_Platform_Close();
-}
-
-int BOMX_VideoDecoder_Secure::Sage_Platform_Init()
-{
-    BSAGElib_State sage_platform_status;
-    BERR_Code sage_rc = BERR_SUCCESS;
-
-    ALOGV("%s", __FUNCTION__);
-    sage_rc = SRAI_Platform_Open(BSAGE_PLATFORM_ID_COMMONDRM, &sage_platform_status,
-                                 &m_Sage_PlatformHandle);
-    if (sage_rc != BERR_SUCCESS)
-    {
-        ALOGE("%s - Error calling platform_open, ret:%d", __FUNCTION__, sage_rc);
-        m_Sage_PlatformHandle = 0;
-        return -1;
-    }
-
-    if(sage_platform_status == BSAGElib_State_eUninit)
-    {
-        m_Sagelib_Container = SRAI_Container_Allocate();
-        if(m_Sagelib_Container == NULL)
-        {
-            ALOGE("%s - Error fetching container", __FUNCTION__);
-            return -1;
-        }
-
-        sage_rc = SRAI_Platform_Init(m_Sage_PlatformHandle, m_Sagelib_Container);
-        if (sage_rc != BERR_SUCCESS)
-        {
-            ALOGE("%s - Error calling platform init, ret:%d", __FUNCTION__,
-                   sage_rc);
-            SRAI_Container_Free(m_Sagelib_Container);
-            m_Sagelib_Container = NULL;
-            m_Sage_PlatformHandle = 0;
-            return -1;
-        }
-    }
-
-    ALOGV("%s, successful", __FUNCTION__);
-    return 0;
-}
-
-void BOMX_VideoDecoder_Secure::Sage_Platform_Close()
-{
-    ALOGV("%s", __FUNCTION__);
-    if (m_Sagelib_Container != NULL) {
-        SRAI_Container_Free(m_Sagelib_Container);
-        m_Sagelib_Container = NULL;
-    }
-
-    if (m_Sage_PlatformHandle) {
-        SRAI_Platform_Close(m_Sage_PlatformHandle);
-        m_Sage_PlatformHandle = NULL;
-    }
 }
 
 OMX_ERRORTYPE BOMX_VideoDecoder_Secure::ConfigBufferAppend(const void *pBuffer, size_t length)
@@ -274,28 +221,40 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure::ConfigBufferAppend(const void *pBuffer, 
 
 NEXUS_Error BOMX_VideoDecoder_Secure::AllocateInputBuffer(uint32_t nSize, void*& pBuffer)
 {
-    // Init Sage Platform if it hasn't been done yet
-    if ((m_Sage_PlatformHandle == NULL) && (Sage_Platform_Init() != 0))
-    {
-        ALOGE("%s: Error initializing sage platform", __FUNCTION__);
-        m_Sage_PlatformHandle = NULL;
-        return NEXUS_UNKNOWN;
+    NEXUS_MemoryBlockHandle inputBuffHandle;
+    NEXUS_Error err = BOMX_AllocSecureBuffer(nSize, false, &inputBuffHandle);
+    if (err != NEXUS_SUCCESS) {
+        ALOGE("%s: failed to allocate secure input buffer", __FUNCTION__);
+        return err;
     }
 
-    // Allocate secure buffer
-    uint8_t *sec_ptr = SRAI_Memory_Allocate(nSize, SRAI_MemoryType_SagePrivate);
-    if (!sec_ptr)
-    {
-        ALOGE("%s: Failed to allocate secure buffer", __FUNCTION__);
-        return NEXUS_UNKNOWN;
-    }
-
-    ALOGV("%s, buff:%p, size:%u", __FUNCTION__, sec_ptr, nSize);
-    pBuffer = sec_ptr;
+    ALOGV("%s: allocated handle:%p", __FUNCTION__, inputBuffHandle);
+    pBuffer = (void*)inputBuffHandle;
     return NEXUS_SUCCESS;
 }
 
 void BOMX_VideoDecoder_Secure::FreeInputBuffer(void*& pBuffer)
+{
+    NEXUS_MemoryBlockHandle inputBuffHandle;
+    inputBuffHandle = (NEXUS_MemoryBlockHandle)pBuffer;
+    BOMX_FreeSecureBuffer(inputBuffHandle);
+    pBuffer = NULL;
+}
+
+NEXUS_Error BOMX_VideoDecoder_Secure::AllocateConfigBuffer(uint32_t nSize, void*& pBuffer)
+{
+    uint8_t *configBuffer;
+
+    configBuffer = SRAI_Memory_Allocate(nSize, SRAI_MemoryType_SagePrivate);
+    if (configBuffer == NULL) {
+        ALOGE("%s: failed to allocate codec config buffer", __FUNCTION__);
+        return NEXUS_OUT_OF_DEVICE_MEMORY;
+    }
+    pBuffer = configBuffer;
+    return NEXUS_SUCCESS;
+}
+
+void BOMX_VideoDecoder_Secure::FreeConfigBuffer(void*& pBuffer)
 {
     SRAI_Memory_Free((uint8_t*)pBuffer);
     pBuffer = NULL;
@@ -306,7 +265,6 @@ static void complete(void *context, int param)
     BSTD_UNUSED(param);
     BKNI_SetEvent((BKNI_EventHandle)context);
 }
-
 
 NEXUS_Error BOMX_VideoDecoder_Secure::SecureCopy(void *pDest, const void *pSrc, size_t nSize)
 {
@@ -378,4 +336,29 @@ void BOMX_VideoDecoder_Secure::ClosePidChannel()
         (void)NEXUS_SetPidChannelBypassKeyslot(m_hPidChannel, NEXUS_BypassKeySlot_eG2GR);
         BOMX_VideoDecoder::ClosePidChannel();
     }
+}
+
+
+OMX_ERRORTYPE BOMX_VideoDecoder_Secure::EmptyThisBuffer(OMX_IN OMX_BUFFERHEADERTYPE* pBufferHeader)
+{
+    BOMX_SecBufferSt *secInputBuff;
+    NEXUS_MemoryBlockHandle inputBuffHandle;
+    OMX_ERRORTYPE omx_err;
+    NEXUS_Error err;
+
+    if (( NULL == pBufferHeader || pBufferHeader->pBuffer == NULL))
+        return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+
+    inputBuffHandle = (NEXUS_MemoryBlockHandle) pBufferHeader->pBuffer;
+    err = BOMX_LockSecureBuffer(inputBuffHandle, &secInputBuff);
+    if (err != NEXUS_SUCCESS) {
+        ALOGE("%s: bufferHandle:%p", __FUNCTION__, inputBuffHandle);
+        return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+    }
+
+    pBufferHeader->pBuffer = (OMX_U8*)secInputBuff->pSecureBuff;
+    omx_err = BOMX_VideoDecoder::EmptyThisBuffer(pBufferHeader);
+    BOMX_UnlockSecureBuffer(inputBuffHandle);
+    pBufferHeader->pBuffer = (OMX_U8*) inputBuffHandle;
+    return omx_err;
 }

@@ -38,7 +38,6 @@
 #############################################################################
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
-
 LOCAL_SRC_FILES := \
         bomx_pes_formatter.cpp \
         bomx_utils.cpp
@@ -59,7 +58,34 @@ include $(BUILD_SHARED_LIBRARY)
 
 
 include $(CLEAR_VARS)
+LOCAL_SRC_FILES := \
+        bomx_secure_buff.cpp
 
+LOCAL_C_INCLUDES := \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
+
+ifeq ($(SAGE_SUPPORT),y)
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/magnum/syslib/sagelib/include
+endif
+
+include $(NEXUS_TOP)/nxclient/include/nxclient.inc
+LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
+
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
+
+LOCAL_SHARED_LIBRARIES :=         \
+        libnexus                  \
+        liblog                    \
+        libcutils                 \
+        libsrai
+
+LOCAL_MODULE := libbomx_secbuff
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
 # Core component framework
 LOCAL_SRC_FILES := \
     bomx_android_plugin.cpp \
@@ -117,10 +143,11 @@ endif
 # Secure decoder has dependencies on Sage
 ifeq ($(SAGE_SUPPORT),y)
 LOCAL_SRC_FILES += bomx_video_decoder_secure.cpp
+LOCAL_SRC_FILES += bomx_audio_decoder_secure.cpp
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/magnum/syslib/sagelib/include
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_crypto/include
-LOCAL_SHARED_LIBRARIES += libsrai
+LOCAL_SHARED_LIBRARIES += libsrai libbomx_secbuff
 LOCAL_CFLAGS += -DSECURE_DECODER_ON
 endif
 

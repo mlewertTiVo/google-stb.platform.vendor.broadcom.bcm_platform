@@ -1476,11 +1476,11 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     }
     if ( m_pEosBuffer )
     {
-        FreeInputBuffer(m_pEosBuffer);
+        NEXUS_Memory_Free(m_pEosBuffer);
     }
     if ( m_pConfigBuffer )
     {
-        FreeInputBuffer(m_pConfigBuffer);
+        FreeConfigBuffer(m_pConfigBuffer);
     }
     if ( m_pIpcClient )
     {
@@ -5393,7 +5393,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::ConfigBufferInit()
 
     if (m_pConfigBuffer == NULL)
     {
-        errCode = AllocateInputBuffer(BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE, m_pConfigBuffer);
+        errCode = AllocateConfigBuffer(BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE, m_pConfigBuffer);
         if ( errCode )
         {
             ALOGW("Unable to allocate codec config buffer");
@@ -5659,6 +5659,16 @@ void BOMX_VideoDecoder::FreeInputBuffer(void*& pBuffer)
 {
     NEXUS_Memory_Free(pBuffer);
     pBuffer = NULL;
+}
+
+NEXUS_Error BOMX_VideoDecoder::AllocateConfigBuffer(uint32_t nSize, void*& pBuffer)
+{
+    return AllocateInputBuffer(nSize, pBuffer);
+}
+
+void BOMX_VideoDecoder::FreeConfigBuffer(void*& pBuffer)
+{
+    FreeInputBuffer(pBuffer);
 }
 
 OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_StripedSurfaceHandle hStripedSurface)

@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2013 Broadcom Corporation
+ *    (c)2010-2016 Broadcom Corporation
  *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -36,50 +36,37 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
-#ifndef BOMX_VIDEO_DECODER_SECURE_H__
-#define BOMX_VIDEO_DECODER_SECURE_H__
+#ifndef BOMX_AUDIO_DECODER_SECURE_H__
+#define BOMX_AUDIO_DECODER_SECURE_H__
 
-#include "bomx_video_decoder.h"
+#include "bomx_audio_decoder.h"
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateTunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" const char *BOMX_VideoDecoder_Secure_GetRole(unsigned roleIndex);
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAac(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Tunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-
-class BOMX_VideoDecoder_Secure : public BOMX_VideoDecoder
+class BOMX_AudioDecoder_Secure : public BOMX_AudioDecoder
 {
 public:
-    BOMX_VideoDecoder_Secure(
+    BOMX_AudioDecoder_Secure(
         OMX_COMPONENTTYPE *pComponentType,
         const OMX_STRING pName,
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
-        bool tunnel=false,
-        unsigned numRoles=0,
-        const BOMX_VideoDecoderRole *pRoles=NULL,
-        const char *(*pGetRole)(unsigned roleIndex)=NULL);
+        unsigned numRoles,
+        const BOMX_AudioDecoderRole *pRoles,
+        const char *(*pGetRole)(unsigned roleIndex));
 
-
-    virtual ~BOMX_VideoDecoder_Secure();
+    virtual ~BOMX_AudioDecoder_Secure();
 
 protected:
-    virtual OMX_ERRORTYPE EmptyThisBuffer( OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
-    virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
-    virtual void FreeInputBuffer(void*& pBuffer);
-    virtual NEXUS_Error AllocateConfigBuffer(uint32_t nSize, void*& pBuffer);
-    virtual void FreeConfigBuffer(void*& pBuffer);
-    virtual OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
     virtual NEXUS_Error OpenPidChannel(uint32_t pid);
     virtual void ClosePidChannel();
+    virtual OMX_ERRORTYPE EmptyThisBuffer(
+            OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
+    virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
+    virtual void FreeInputBuffer(void*& pBuffer);
 
 private:
     NEXUS_Error SecureCopy(void *pDest, const void *pSrc, size_t nSize);
 };
 
-#endif //BOMX_VIDEO_DECODER_SECURE_H__
+#endif //BOMX_AUDIO_DECODER_SECURE_H__
