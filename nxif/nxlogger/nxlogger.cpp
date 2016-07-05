@@ -220,9 +220,9 @@ static BERR_Code print_log_message(BDBG_FifoReader_Handle logReader, int deviceF
 int main(int argc, const char *argv[])
 {
     BERR_Code rc;
-    BDBG_FifoReader_Handle logReader;
-    BDBG_Fifo_Handle logWriter;
-    int fd;
+    BDBG_FifoReader_Handle logReader=NULL;
+    BDBG_Fifo_Handle logWriter=NULL;
+    int fd=-1;
     int device_fd=-1;
     int sched_rc;
     bool driver_ready = false;
@@ -263,10 +263,12 @@ int main(int argc, const char *argv[])
     fname = argv[1];
     BDBG_ASSERT(fname);
     /* coverity[tainted_string] */
-    fd = open(fname, O_RDONLY);
-    if(fd<0) {
-        perror(fname);
-        usage(argv[0]);
+    if ( strcmp(fname, "disabled") ) {
+        fd = open(fname, O_RDONLY);
+        if(fd<0) {
+            perror(fname);
+            usage(argv[0]);
+        }
     }
 
     if(argc>2 && argv[2][0]!='\0') {
@@ -290,20 +292,26 @@ int main(int argc, const char *argv[])
         }
     }
     /* unlink(fname); don't remove file, allow multiple copies of logger */
-    urc = fstat(fd, &st);
-    if(urc<0) {
-        perror("stat");
-        usage(argv[0]);
+    if ( fd >= 0 ) {
+        urc = fstat(fd, &st);
+        if(urc<0) {
+            perror("stat");
+            usage(argv[0]);
+        }
     }
     parent = getppid();
     signal(SIGUSR1,sigusr1_handler);
-    size = st.st_size;
-    shared = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
-    if(shared==MAP_FAILED) {
-        perror("mmap");
-        usage(argv[0]);
+    if ( fd >= 0 ) {
+        size = st.st_size;
+        shared = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
+        if(shared==MAP_FAILED) {
+            perror("mmap");
+            usage(argv[0]);
+        }
+        logWriter = (BDBG_Fifo_Handle)shared;
+        rc = BDBG_FifoReader_Create(&logReader, logWriter);
+        BDBG_ASSERT(rc==BERR_SUCCESS);
     }
-    logWriter = (BDBG_Fifo_Handle)shared;
     if(argc>3) {
         int ready_fd = atoi(argv[3]);
         char data[1]={'\0'};
@@ -311,16 +319,17 @@ int main(int argc, const char *argv[])
         rc = write(ready_fd,data,1); /* signal parent that we've started */
         close(ready_fd);
     }
-    rc = BDBG_FifoReader_Create(&logReader, logWriter);
-    BDBG_ASSERT(rc==BERR_SUCCESS);
     for(;;) {
         unsigned timeout;
         unsigned driverTimeout=0;
 
         for(;;) {
-
-            timeout = 0;
-            rc = print_log_message(logReader, -1, NULL, &timeout );
+            if ( logReader ) {
+                timeout = 0;
+                rc = print_log_message(logReader, -1, NULL, &timeout );
+            } else {
+                timeout = 5;
+            }
 
             if(driver_ready) {
 

@@ -89,7 +89,7 @@
 #define DHD_SECDMA_PARAMS_PATH         "/data/nexus/secdma"
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
-#define NEXUS_LOGGER_DATA_PATH         "/data/nexus/nexus.log"
+#define NEXUS_LOGGER_DATA_PATH         "disabled" // Disable logger use of filesystem
 #define APP_MAX_CLIENTS                (64)
 #define MB                             (1024*1024)
 #define KB                             (1024)
