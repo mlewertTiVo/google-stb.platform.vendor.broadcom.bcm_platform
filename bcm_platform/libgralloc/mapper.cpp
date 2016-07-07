@@ -295,7 +295,7 @@ int gralloc_lock(gralloc_module_t const* module,
       NEXUS_Addr physAddr;
       unsigned sharedPhysAddr = hnd->sharedData;
       if (hnd->is_mma) {
-         NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+         NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
          sharedPhysAddr = (unsigned)physAddr;
       }
       ALOGI(" lock: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::vaddr:0x%x::act:%d",
@@ -310,7 +310,7 @@ int gralloc_lock(gralloc_module_t const* module,
             *vaddr,
             getpid());
       if (hnd->is_mma) {
-         NEXUS_MemoryBlock_UnlockOffset(block_handle);
+         NEXUS_MemoryBlock_UnlockOffset(shared_block_handle);
       }
    }
 
@@ -407,7 +407,7 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       NEXUS_Addr physAddr;
       unsigned sharedPhysAddr = hnd->sharedData;
       if (hnd->is_mma) {
-         NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+         NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
          sharedPhysAddr = (unsigned)physAddr;
       }
       ALOGI("ulock: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
@@ -421,7 +421,7 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
             hnd->nxSurfaceAddress,
             getpid());
       if (hnd->is_mma) {
-         NEXUS_MemoryBlock_UnlockOffset(block_handle);
+         NEXUS_MemoryBlock_UnlockOffset(shared_block_handle);
       }
    }
 
