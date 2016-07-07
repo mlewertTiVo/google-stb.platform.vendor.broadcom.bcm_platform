@@ -60,7 +60,6 @@
 #define B_PROPERTY_PES_DEBUG ("media.brcm.vdec_pes_debug")
 #define B_PROPERTY_INPUT_DEBUG ("media.brcm.vdec_input_debug")
 #define B_PROPERTY_TRIM_VP9 ("ro.nx.trim.vp9")
-#define B_PROPERTY_MMA ("ro.nx.mma")
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
@@ -511,20 +510,14 @@ static size_t ComputeBufferSize(unsigned stride, unsigned height)
 static void BOMX_VideoDecoder_MemLock(private_handle_t *pPrivateHandle, void **addr)
 {
    *addr = NULL;
-   if (pPrivateHandle->is_mma) {
-      NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)pPrivateHandle->sharedData;
-      NEXUS_MemoryBlock_Lock(block_handle, addr);
-   } else {
-      *addr = NEXUS_OffsetToCachedAddr((NEXUS_Addr)pPrivateHandle->sharedData);
-   }
+   NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)pPrivateHandle->sharedData;
+   NEXUS_MemoryBlock_Lock(block_handle, addr);
 }
 
 static void BOMX_VideoDecoder_MemUnlock(private_handle_t *pPrivateHandle)
 {
-   if (pPrivateHandle->is_mma) {
-      NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)pPrivateHandle->sharedData;
-      NEXUS_MemoryBlock_Unlock(block_handle);
-   }
+   NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)pPrivateHandle->sharedData;
+   NEXUS_MemoryBlock_Unlock(block_handle);
 }
 
 static int BOMX_VideoDecoder_OpenMemoryInterface(void)
@@ -610,6 +603,26 @@ static void BOMX_VideoDecoder_SurfaceDestroy(int *pMemBlkFd, NEXUS_SurfaceHandle
    }
 
    return;
+}
+
+static NEXUS_SurfaceHandle BOMX_VideoDecoder_ToNexusSurface(int width, int height, int stride, NEXUS_PixelFormat format,
+                                                            unsigned handle, unsigned offset)
+{
+    NEXUS_SurfaceHandle shdl = NULL;
+    NEXUS_SurfaceCreateSettings createSettings;
+
+    NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
+    createSettings.pixelFormat   = format;
+    createSettings.width         = width;
+    createSettings.height        = height;
+    createSettings.pitch         = stride;
+    createSettings.managedAccess = false;
+    if (handle) {
+       createSettings.pixelMemory = (NEXUS_MemoryBlockHandle) handle;
+       createSettings.pixelMemoryOffset = offset;
+    }
+
+    return NEXUS_Surface_Create(&createSettings);
 }
 
 BOMX_VideoDecoder::BOMX_VideoDecoder(
@@ -2616,7 +2629,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             NEXUS_SurfaceCreateSettings surfaceSettings;
             const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef;
             void *pMemory;
-            int isMma = property_get_int32(B_PROPERTY_MMA, 0);
 
             /* Check buffer size */
             pPortDef = pPort->GetDefinition();
@@ -2653,16 +2665,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             surfaceSettings.width = pPortDef->format.video.nFrameWidth;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight;
             surfaceSettings.pitch = pPortDef->format.video.nStride;
-            if (isMma)
-            {
-                surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.yMemBlkFd);
-                if (surfaceSettings.pixelMemory != NULL) {
-                   pInfo->typeInfo.standard.hSurfaceY = NEXUS_Surface_Create(&surfaceSettings);
-                } else {
-                   pInfo->typeInfo.standard.hSurfaceY = NULL;
-                }
+            surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.yMemBlkFd);
+            if (surfaceSettings.pixelMemory != NULL) {
+               pInfo->typeInfo.standard.hSurfaceY = NEXUS_Surface_Create(&surfaceSettings);
             } else {
-                pInfo->typeInfo.standard.hSurfaceY = NEXUS_Surface_Create(&surfaceSettings);
+               pInfo->typeInfo.standard.hSurfaceY = NULL;
             }
             if ( NULL == pInfo->typeInfo.standard.hSurfaceY )
             {
@@ -2677,16 +2684,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             surfaceSettings.width = pPortDef->format.video.nFrameWidth/2;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight/2;
             surfaceSettings.pitch = pPortDef->format.video.nStride/2;
-            if (isMma)
-            {
-                surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.cbMemBlkFd);
-                if (surfaceSettings.pixelMemory != NULL) {
-                   pInfo->typeInfo.standard.hSurfaceCb = NEXUS_Surface_Create(&surfaceSettings);
-                } else {
-                   pInfo->typeInfo.standard.hSurfaceCb = NULL;
-                }
-            } else {
+            surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.cbMemBlkFd);
+            if (surfaceSettings.pixelMemory != NULL) {
                pInfo->typeInfo.standard.hSurfaceCb = NEXUS_Surface_Create(&surfaceSettings);
+            } else {
+               pInfo->typeInfo.standard.hSurfaceCb = NULL;
             }
             if ( NULL == pInfo->typeInfo.standard.hSurfaceCb )
             {
@@ -2697,16 +2699,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             }
             NEXUS_Surface_Lock(pInfo->typeInfo.standard.hSurfaceCb, &pMemory);    // Pin the surface in memory so we can flush at the correct time without extra locks
             surfaceSettings.pixelFormat = NEXUS_PixelFormat_eCr8;
-            if (isMma)
-            {
-                surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.crMemBlkFd);
-                if (surfaceSettings.pixelMemory != NULL) {
-                   pInfo->typeInfo.standard.hSurfaceCr = NEXUS_Surface_Create(&surfaceSettings);
-                } else {
-                   pInfo->typeInfo.standard.hSurfaceCr = NULL;
-                }
+            surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.crMemBlkFd);
+            if (surfaceSettings.pixelMemory != NULL) {
+               pInfo->typeInfo.standard.hSurfaceCr = NEXUS_Surface_Create(&surfaceSettings);
             } else {
-                pInfo->typeInfo.standard.hSurfaceCr = NEXUS_Surface_Create(&surfaceSettings);
+               pInfo->typeInfo.standard.hSurfaceCr = NULL;
             }
             if ( NULL == pInfo->typeInfo.standard.hSurfaceCr )
             {
@@ -2725,16 +2722,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             surfaceSettings.width = pPortDef->format.video.nFrameWidth;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight;
             surfaceSettings.pitch = 2*surfaceSettings.width;
-            if (isMma)
-            {
-                surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.destripeMemBlkFd);
-                if (surfaceSettings.pixelMemory != NULL) {
-                   pInfo->typeInfo.standard.hDestripeSurface = NEXUS_Surface_Create(&surfaceSettings);
-                } else {
-                   pInfo->typeInfo.standard.hDestripeSurface = NULL;
-                }
+            surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.destripeMemBlkFd);
+            if (surfaceSettings.pixelMemory != NULL) {
+               pInfo->typeInfo.standard.hDestripeSurface = NEXUS_Surface_Create(&surfaceSettings);
             } else {
-                pInfo->typeInfo.standard.hDestripeSurface = NEXUS_Surface_Create(&surfaceSettings);
+               pInfo->typeInfo.standard.hDestripeSurface = NULL;
             }
             if ( NULL == pInfo->typeInfo.standard.hDestripeSurface )
             {
@@ -4384,12 +4376,11 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 pSharedData->videoWindow.nexusClientContext = m_pNexusClient;
                                 android_atomic_release_store(1, &pSharedData->videoWindow.windowIdPlusOne);
                                 pSharedData->videoFrame.status = pBuffer->frameStatus;
-                                pSharedData->videoFrame.hStripedSurface = NULL; // Don't allow gralloc_lock in metadata mode.  We won't know when it's safe to destroy the striped surface.
+                                // Don't allow gralloc_lock to destripe in metadata mode.  We won't know when it's safe to destroy the striped surface.
+                                pSharedData->videoFrame.hStripedSurface = NULL;
 
-                                /* Destripe the decoded frame immediately and store it on the RGB-GL plane */
-                                if ( !m_secureDecoder && (pBuffer->pPrivateHandle->usage & GRALLOC_USAGE_HW_TEXTURE) &&
-                                     pBuffer->hStripedSurface &&
-                                     pSharedData->planes[GL_PLANE].physAddr )
+                                if ( !m_secureDecoder && pBuffer->hStripedSurface &&
+                                     ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX))
                                 {
                                     int err = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 100);
                                     if ( err )
@@ -4398,12 +4389,13 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     }
                                     else
                                     {
-                                        OMX_ERRORTYPE res = DestripeToRGB(pBuffer->pPrivateHandle->is_mma, pSharedData, pBuffer->hStripedSurface);
+                                        OMX_ERRORTYPE res = DestripeToYV12(pSharedData, pBuffer->hStripedSurface);
                                         if ( res != OMX_ErrorNone )
                                         {
-                                            ALOGE("Unable to destripe to RGB - %d", res);
+                                            ALOGE("Unable to destripe to YV12 - %d", res);
                                             (void)BOMX_ERR_TRACE(res);
                                             destripedSuccess = false;
+                                            pSharedData->videoFrame.destripeComplete = true;
                                         }
 
                                         private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
@@ -4941,68 +4933,124 @@ void BOMX_VideoDecoder::FreeInputBuffer(void*& pBuffer)
     pBuffer = NULL;
 }
 
-OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToRGB(int is_mma, SHARED_DATA *pSharedData, NEXUS_StripedSurfaceHandle hStripedSurface)
+OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_StripedSurfaceHandle hStripedSurface)
 {
-    NEXUS_Error errCode;
-    NEXUS_SurfaceHandle hTargetSurface;
-    NEXUS_SurfaceCreateSettings surfaceSettings;
-    void *pAddr;
-    OMX_ERRORTYPE rc = OMX_ErrorUndefined;
+   OMX_ERRORTYPE errCode = OMX_ErrorUndefined;
+   NEXUS_SurfaceHandle hSurfaceY = NULL, hSurfaceCb = NULL, hSurfaceCr = NULL;
+   NEXUS_SurfaceCreateSettings surfaceSettings;
+   NEXUS_MemoryBlockHandle block_handle = NULL;
+   void *slock;
+   NEXUS_Error nxCode;
+   int yv12_alignment = 16;
 
-    NEXUS_Surface_GetDefaultCreateSettings(&surfaceSettings);
-    surfaceSettings.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
-    surfaceSettings.width = pSharedData->planes[GL_PLANE].width;
-    surfaceSettings.height = pSharedData->planes[GL_PLANE].height;
-    surfaceSettings.pitch = 4 * pSharedData->planes[GL_PLANE].width;
-    if (is_mma) {
-       surfaceSettings.pixelMemory = (NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr;
-    }
-    else {
-       surfaceSettings.pMemory = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[GL_PLANE].physAddr);
-    }
-    hTargetSurface = NEXUS_Surface_Create(&surfaceSettings);
-    if ( NULL == hTargetSurface )
-    {
-        ALOGE("Unable to allocate destripe surface");
-        rc = OMX_ErrorInsufficientResources;
-        goto err_surface;
-    }
-    errCode = NEXUS_Surface_Lock(hTargetSurface, &pAddr);
-    if ( errCode )
-    {
-        ALOGE("Error locking destripe surface - %d", errCode);
-        goto err_surface_lock;
-    }
-    NEXUS_Surface_Flush(hTargetSurface);
+   if (m_hGraphics2d == NULL) {
+      ALOGE("DestripeToYV12: no gfx2d.");
+      errCode = OMX_ErrorInsufficientResources;
+      goto err_gfx2d;
+   }
 
-    // Issue destripe request
-    errCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, hStripedSurface, hTargetSurface, NULL);
-    if ( errCode )
-    {
-        ALOGE("Unable to destripe surface - %d", errCode);
-        rc = OMX_ErrorInsufficientResources;
-        goto err_destripe;
-    }
+   if (pSharedData == NULL) {
+      ALOGE("DestripeToYV12: invalid buffer?");
+      errCode = OMX_ErrorInsufficientResources;
+      goto err_shared_data;
+   }
 
-    // Wait for completion
-    if ( !GraphicsCheckpoint() )
-    {
-        ALOGE("Error destriping surface to RGB");
-        rc = OMX_ErrorUndefined;
-        goto err_gfx;
-    }
+   hSurfaceY = BOMX_VideoDecoder_ToNexusSurface(
+                             pSharedData->container.width,
+                             pSharedData->container.height,
+                             pSharedData->container.stride,
+                             NEXUS_PixelFormat_eY8,
+                             pSharedData->container.physAddr,
+                             0);
+   if (hSurfaceY == NULL) {
+      ALOGE("DestripeToYV12: invalid plane Y");
+      errCode = OMX_ErrorInsufficientResources;
+      goto err_surfaces;
+   }
+   NEXUS_Surface_Lock(hSurfaceY, &slock);
+   NEXUS_Surface_Flush(hSurfaceY);
 
-    // Success
-    rc = OMX_ErrorNone;
+   hSurfaceCr = BOMX_VideoDecoder_ToNexusSurface(
+                              pSharedData->container.width/2,
+                              pSharedData->container.height/2,
+                              (pSharedData->container.stride/2 + (yv12_alignment-1)) & ~(yv12_alignment-1),
+                              NEXUS_PixelFormat_eCr8,
+                              pSharedData->container.physAddr,
+                              pSharedData->container.stride * pSharedData->container.height);
+   if (hSurfaceCr == NULL) {
+      ALOGE("DestripeToYV12: invalid plane Cr");
+      errCode = OMX_ErrorInsufficientResources;
+      goto err_surfaces;
+   }
+   NEXUS_Surface_Lock(hSurfaceCr, &slock);
+   NEXUS_Surface_Flush(hSurfaceCr);
 
-err_gfx:
+   hSurfaceCb = BOMX_VideoDecoder_ToNexusSurface(
+                              pSharedData->container.width/2,
+                              pSharedData->container.height/2,
+                              (pSharedData->container.stride/2 + (yv12_alignment-1)) & ~(yv12_alignment-1),
+                              NEXUS_PixelFormat_eCb8,
+                              pSharedData->container.physAddr,
+                              (pSharedData->container.stride * pSharedData->container.height) +
+                              ((pSharedData->container.height/2) * ((pSharedData->container.stride/2 + (yv12_alignment-1)) & ~(yv12_alignment-1))));
+   if (hSurfaceCb == NULL) {
+      ALOGE("DestripeToYV12: invalid plane Cb");
+      errCode = OMX_ErrorInsufficientResources;
+      goto err_surfaces;
+   }
+   NEXUS_Surface_Lock(hSurfaceCb, &slock);
+   NEXUS_Surface_Flush(hSurfaceCb);
+
+   nxCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, hStripedSurface, hSurfaceY, NULL);
+   if (nxCode) {
+      ALOGE("DestripeToYV12: failed destripe to Y surface");
+      errCode = OMX_ErrorUndefined;
+      goto err_destripe;
+   }
+   nxCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, hStripedSurface, hSurfaceCb, NULL);
+   if (nxCode) {
+      ALOGE("DestripeToYV12: failed destripe to Cb surface");
+      errCode = OMX_ErrorUndefined;
+      goto err_destripe;
+   }
+   nxCode = NEXUS_Graphics2D_DestripeToSurface(m_hGraphics2d, hStripedSurface, hSurfaceCr, NULL);
+   if (nxCode) {
+      ALOGE("DestripeToYV12: failed destripe to Cr surface");
+      errCode = OMX_ErrorUndefined;
+      goto err_destripe;
+   }
+
+   if (!GraphicsCheckpoint())
+   {
+       ALOGE("DestripeToYV12: failed!");
+       errCode = OMX_ErrorUndefined;
+       goto err_checkpoint;
+   }
+
+   NEXUS_Surface_Flush(hSurfaceY);
+   NEXUS_Surface_Flush(hSurfaceCr);
+   NEXUS_Surface_Flush(hSurfaceCb);
+
+   errCode = OMX_ErrorNone;
+
+err_checkpoint:
 err_destripe:
-    NEXUS_Surface_Unlock(hTargetSurface);
-err_surface_lock:
-    NEXUS_Surface_Destroy(hTargetSurface);
-err_surface:
-err_rgb:
-    return rc;
+err_surfaces:
+   if (hSurfaceY) {
+      NEXUS_Surface_Unlock(hSurfaceY);
+      NEXUS_Surface_Destroy(hSurfaceY);
+   }
+   if (hSurfaceCr) {
+      NEXUS_Surface_Unlock(hSurfaceCr);
+      NEXUS_Surface_Destroy(hSurfaceCr);
+   }
+   if (hSurfaceCb) {
+      NEXUS_Surface_Unlock(hSurfaceCb);
+      NEXUS_Surface_Destroy(hSurfaceCb);
+   }
+err_shared_data:
+err_gfx2d:
+   return errCode;
 }
 
 NEXUS_Error BOMX_VideoDecoder::OpenPidChannel(uint32_t pid)

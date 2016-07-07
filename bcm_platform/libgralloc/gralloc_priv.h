@@ -44,16 +44,15 @@ extern "C" {
 #include <assert.h>
 #include <cutils/atomic.h>
 
-#define MAX_NUM_INSTANCES       3
-
-#define DEFAULT_PLANE           0
-#define EXTRA_PLANE             1
-#define GL_PLANE                2
-
 #define GR_MGMT_MODE_LOCKED     1
 #define GR_MGMT_MODE_UNLOCKED   2
 
 #define CHECKPOINT_TIMEOUT      (5000)
+
+#define GR_NONE                 (1<<0)
+#define GR_STANDARD             (1<<1)
+#define GR_YV12                 (1<<2)
+#define GR_HWTEX                (1<<3)
 
 /*****************************************************************************/
 
@@ -92,13 +91,8 @@ typedef struct __SHARED_DATA_ {
       unsigned size;
       unsigned allocSize;
       unsigned stride;
-  } planes[MAX_NUM_INSTANCES];
+  } container;
 
-  struct {
-    int32_t active;
-    int layer;
-    NEXUS_SurfaceHandle surface;
-  } hwc;
 } SHARED_DATA, *PSHARED_DATA;
 
 #ifdef __cplusplus
@@ -111,8 +105,6 @@ struct private_handle_t {
 // file-descriptors
 /*1.*/        int         fd;    // default data plane
 /*2.*/        int         fd2;   // used for the small shared data block (SHARED_DATA)
-/*3.*/        int         fd3;   // extra data plane
-/*4.*/        int         fd4;   // data plane for egl
 
 /*Ints Counter*/
 /*1.*/        int         magic;
@@ -125,20 +117,21 @@ struct private_handle_t {
 /*8.*/        int         usage;
 /*9.*/        unsigned    nxSurfacePhysicalAddress;
 /*10.*/       unsigned    nxSurfaceAddress;
-/*11.*/       int         is_mma;
-/*12.*/       int         alignment;
-/*13.*/       int         mgmt_mode;
+/*11.*/       int         alignment;
+/*12.*/       int         mgmt_mode;
+/*13.*/       int         fmt_set;
 
 #ifdef __cplusplus
     static const int sNumInts = 13;
-    static const int sNumFds = 4;
+    static const int sNumFds = 2;
     static const int sMagic = 0x4F77656E;
 
-    private_handle_t(int fd, int fd2, int fd3, int fd4, int flags) :
-        fd(fd), fd2(fd2), fd3(fd3), fd4(fd4), magic(sMagic), flags(flags),
+    private_handle_t(int fd, int fd2, int flags) :
+        fd(fd), fd2(fd2), magic(sMagic), flags(flags),
         pid(getpid()), oglStride(0), oglFormat(0), oglSize(0),
         sharedData(0), usage(0), nxSurfacePhysicalAddress(0),
-        nxSurfaceAddress(0), is_mma(0), alignment(0), mgmt_mode(GR_MGMT_MODE_LOCKED)
+        nxSurfaceAddress(0), alignment(0),
+        mgmt_mode(GR_MGMT_MODE_LOCKED), fmt_set(GR_NONE)
     {
         version = sizeof(native_handle);
         numInts = sNumInts;
@@ -170,15 +163,11 @@ struct private_handle_t {
         PSHARED_DATA pSharedData = NULL;
         NEXUS_MemoryBlockHandle block_handle = NULL;
         int rc = 0;
+        void *pMemory;
 
-        if (pHandle->is_mma) {
-           void *pMemory;
-           block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
-           NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-           pSharedData = (PSHARED_DATA) pMemory;
-        } else {
-           pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(pHandle->sharedData);
-        }
+        block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
+        NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+        pSharedData = (PSHARED_DATA) pMemory;
 
         struct timespec ts_end, ts_now;
         if (NULL == pSharedData) {
@@ -208,7 +197,7 @@ struct private_handle_t {
         }
 
 out:
-        if (pHandle->is_mma && block_handle) {
+        if (block_handle) {
            NEXUS_MemoryBlock_Unlock(block_handle);
         }
         return rc;
@@ -219,15 +208,11 @@ out:
         PSHARED_DATA pSharedData = NULL;
         NEXUS_MemoryBlockHandle block_handle = NULL;
         int rc = 0;
+        void *pMemory;
 
-        if (pHandle->is_mma) {
-           void *pMemory;
-           block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
-           NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-           pSharedData = (PSHARED_DATA) pMemory;
-        } else {
-           pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(pHandle->sharedData);
-        }
+        block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
+        NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+        pSharedData = (PSHARED_DATA) pMemory;
 
         if (NULL == pSharedData) {
           goto out;
@@ -236,7 +221,7 @@ out:
         assert(rc);
 
 out:
-        if (pHandle->is_mma && block_handle) {
+        if (block_handle) {
            NEXUS_MemoryBlock_Unlock(block_handle);
         }
     }

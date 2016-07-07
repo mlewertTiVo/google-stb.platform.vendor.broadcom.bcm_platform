@@ -97,6 +97,10 @@ on property:hw.nexus.platforminit=on
 on property:dyn.nx.vidout.set=1
    start nxdispfmt
 
+on property:sys.gator=1
+   insmod /system/vendor/drivers/gator.ko
+   start gatord
+
 service sdcard /system/bin/sdcard -u 1023 -g 1023 -l /data/media /mnt/shell/emulated
    class late_start
 
@@ -134,3 +138,8 @@ service nxdispfmt /system/bin/nxdispfmt
    oneshot
    disabled
 
+service gatord /system/bin/gatord
+   class late_start
+   user root
+   oneshot
+   disabled

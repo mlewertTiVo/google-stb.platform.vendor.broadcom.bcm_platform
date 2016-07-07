@@ -2719,7 +2719,7 @@ bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInB
         private_handle_t *pPrivateHandle = pInfo->typeInfo.native.pPrivateHandle;
 
         ALOGV("InputBufferType_eNative: pPrivateHandle:%p", pPrivateHandle);
-        ALOGV("--->phandle:%p magic=%x, flags=%x, pid=%x, stride=%x, format=%x, size=%x, sharedata=%x, usage=%x, paddr=%x, saddr=%x, is_mma=%x, aligment=%x", pPrivateHandle,
+        ALOGV("--->phandle:%p magic=%x, flags=%x, pid=%x, stride=%x, format=%x, size=%x, sharedata=%x, usage=%x, paddr=%x, saddr=%x, aligment=%x", pPrivateHandle,
               pPrivateHandle->magic,
               pPrivateHandle->flags,
               pPrivateHandle->pid,
@@ -2730,7 +2730,6 @@ bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInB
               pPrivateHandle->usage,
               pPrivateHandle->nxSurfacePhysicalAddress,
               pPrivateHandle->nxSurfaceAddress,
-              pPrivateHandle->is_mma,
               pPrivateHandle->alignment);
 
         if (NEXUS_SUCCESS != ExtractGrallocBuffer(pPrivateHandle, hDst))
@@ -2751,7 +2750,7 @@ bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInB
             return false;
         }
 
-        ALOGV("--->phandle:%p magic=%x, flags=%x, pid=%x, stride=%x, format=%x, size=%x, sharedata=%x, usage=%x, paddr=%x, saddr=%x, is_mma=%x, aligment=%x", pPrivateHandle,
+        ALOGV("--->phandle:%p magic=%x, flags=%x, pid=%x, stride=%x, format=%x, size=%x, sharedata=%x, usage=%x, paddr=%x, saddr=%x, aligment=%x", pPrivateHandle,
               pPrivateHandle->magic,
               pPrivateHandle->flags,
               pPrivateHandle->pid,
@@ -2762,7 +2761,6 @@ bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInB
               pPrivateHandle->usage,
               pPrivateHandle->nxSurfacePhysicalAddress,
               pPrivateHandle->nxSurfaceAddress,
-              pPrivateHandle->is_mma,
               pPrivateHandle->alignment);
 
         if (NEXUS_SUCCESS != ExtractGrallocBuffer(pPrivateHandle, hDst))
@@ -3801,9 +3799,8 @@ bool BOMX_VideoEncoder::GraphicsCheckpoint()
 
 // ported from gralloc implementation
 static NEXUS_SurfaceHandle to_nsc_surface(int width, int height, int stride, NEXUS_PixelFormat format,
-        uint8_t *data, int is_mma, unsigned handle, unsigned offset)
+        unsigned handle, unsigned offset, void *pAddr)
 {
-    NEXUS_SurfaceHandle shdl = NULL;
     NEXUS_SurfaceCreateSettings createSettings;
 
     NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
@@ -3812,20 +3809,17 @@ static NEXUS_SurfaceHandle to_nsc_surface(int width, int height, int stride, NEX
     createSettings.height      = height;
     createSettings.pitch       = stride;
     createSettings.managedAccess = false;
-    if (is_mma)
+    if (handle)
     {
         createSettings.pixelMemory = (NEXUS_MemoryBlockHandle) handle;
         createSettings.pixelMemoryOffset = offset;
     }
-    else
+    else if (pAddr)
     {
-        createSettings.pMemory = data;
+        createSettings.pMemory = pAddr;
     }
-    shdl = NEXUS_Surface_Create(&createSettings);
 
-    ALOGV("%s: (%d,%d), s:%d, fmt:%d, p:%p -> %p",
-          __FUNCTION__, width, height, stride, format, data, shdl);
-    return shdl;
+    return NEXUS_Surface_Create(&createSettings);
 }
 
 NEXUS_Error BOMX_VideoEncoder::ConvertYv12To422p(NEXUS_SurfaceHandle hSrcCb, NEXUS_SurfaceHandle hSrcCr, NEXUS_SurfaceHandle hSrcY, NEXUS_SurfaceHandle hDst, bool isSurfaceBuffer)
@@ -3980,7 +3974,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
     ALOGV("%s: yv12 (%d,%d):%d: cr-off:%u, cb-off:%u\n", __FUNCTION__,
           width, height, stride, cr_offset, cb_offset);
 
-    srcY = to_nsc_surface(width, height, stride, NEXUS_PixelFormat_eY8, y_addr, 0, 0, 0);
+    srcY = to_nsc_surface(width, height, stride, NEXUS_PixelFormat_eY8, 0, 0, y_addr);
     if (NULL == srcY)
     {
         ALOGE("failed to create intermediate Y surface");
@@ -3990,7 +3984,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
     NEXUS_Surface_Lock(srcY, &slock);
     NEXUS_Surface_Flush(srcY);
 
-    srcCr = to_nsc_surface(width/2, height/2, cstride, NEXUS_PixelFormat_eCr8, cr_addr, 0, 0, 0);
+    srcCr = to_nsc_surface(width/2, height/2, cstride, NEXUS_PixelFormat_eCr8, 0, 0, cr_addr);
     if (NULL == srcCr)
     {
         ALOGE("failed to create intermediate Cr surface");
@@ -4002,7 +3996,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
     NEXUS_Surface_Lock(srcCr, &slock);
     NEXUS_Surface_Flush(srcCr);
 
-    srcCb = to_nsc_surface(width/2, height/2, cstride, NEXUS_PixelFormat_eCb8, cb_addr, 0, 0, 0);
+    srcCb = to_nsc_surface(width/2, height/2, cstride, NEXUS_PixelFormat_eCb8, 0, 0, cb_addr);
     if (NULL == srcCb)
     {
         ALOGE("failed to create intermediate Cb surface");
@@ -4046,15 +4040,11 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
     PSHARED_DATA pSharedData;
     unsigned int cFormat, width, height, stride, planeHandle;
 
-    if (handle->is_mma) {
-        pMemory = NULL;
-        block_handle = (NEXUS_MemoryBlockHandle)handle->sharedData;
-        rc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-        ALOG_ASSERT(!rc);
-        pSharedData = (PSHARED_DATA) pMemory;
-    } else {
-        pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(handle->sharedData);
-    }
+    pMemory = NULL;
+    block_handle = (NEXUS_MemoryBlockHandle)handle->sharedData;
+    rc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+    ALOG_ASSERT(!rc);
+    pSharedData = (PSHARED_DATA) pMemory;
 
     if (pSharedData == NULL) {
         ALOGE("%s: unable to locate shared data, abort conversion\n", __FUNCTION__);
@@ -4062,19 +4052,14 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         goto out;
     }
 
-    if (handle->is_mma) {
-        planeHandle = pSharedData->planes[DEFAULT_PLANE].physAddr;
-        pAddr = NULL;
-    } else {
-        planeHandle = 0;
-        pAddr = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
-    }
+    planeHandle = pSharedData->container.physAddr;
+    pAddr = NULL;
 
-    cFormat = pSharedData->planes[DEFAULT_PLANE].format;
-    width = pSharedData->planes[DEFAULT_PLANE].width;
-    height = pSharedData->planes[DEFAULT_PLANE].height;
-    stride = pSharedData->planes[DEFAULT_PLANE].stride;
-    ALOGV("InputBufferType_eNative: pSharedData:%p mma=%d", pSharedData, handle->is_mma);
+    cFormat = pSharedData->container.format;
+    width = pSharedData->container.width;
+    height = pSharedData->container.height;
+    stride = pSharedData->container.stride;
+    ALOGV("InputBufferType_eNative: pSharedData:%p", pSharedData);
 
     // create source surface with gralloc buffer
     ALOGV("%s: pShareData:%p, width:%u, height:%u, format:%u, stride:%u", __FUNCTION__,
@@ -4083,7 +4068,6 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
     if (HAL_PIXEL_FORMAT_YV12 == cFormat)
     {
         int stride, cstride;
-        uint8_t *y_addr, *cr_addr, *cb_addr;
         unsigned cr_offset, cb_offset;
         NEXUS_SurfaceHandle srcCb, srcCr, srcY;
         void *slock;
@@ -4095,22 +4079,10 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         cr_offset = stride * height;
         cb_offset = (height/2) * ((stride/2 + (alignment-1)) & ~(alignment-1));
 
-        if (handle->is_mma)
-        {
-            y_addr = NULL;
-            cr_addr = NULL;
-            cb_addr = NULL;
-        }
-        else
-        {
-            y_addr  = pAddr;
-            cb_addr = (uint8_t *)(y_addr + cb_offset);
-            cr_addr = (uint8_t *)(cb_addr + cr_offset);
-        }
         ALOGV("%s: yv12 (%d,%d):%d: cr-off:%u, cb-off:%u\n", __FUNCTION__,
               width, height, stride, cr_offset, cb_offset);
 
-        srcY = to_nsc_surface(width, height, stride, NEXUS_PixelFormat_eY8, y_addr, handle->is_mma, planeHandle, 0);
+        srcY = to_nsc_surface(width, height, stride, NEXUS_PixelFormat_eY8, planeHandle, 0, NULL);
         if (NULL == srcY)
         {
             ALOGE("failed to create intermediate Y surface");
@@ -4120,7 +4092,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         NEXUS_Surface_Lock(srcY, &slock);
         NEXUS_Surface_Flush(srcY);
 
-        srcCr = to_nsc_surface(width/2, height/2, cstride, NEXUS_PixelFormat_eCr8, cr_addr, handle->is_mma, planeHandle, cr_offset);
+        srcCr = to_nsc_surface(width/2, height/2, cstride, NEXUS_PixelFormat_eCr8, planeHandle, cr_offset, NULL);
         if (NULL == srcCr)
         {
             ALOGE("failed to create intermediate Cr surface");
@@ -4132,7 +4104,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         NEXUS_Surface_Lock(srcCr, &slock);
         NEXUS_Surface_Flush(srcCr);
 
-        srcCb = to_nsc_surface(width/2, height/2, cstride, NEXUS_PixelFormat_eCb8, cb_addr, handle->is_mma, planeHandle, cb_offset);
+        srcCb = to_nsc_surface(width/2, height/2, cstride, NEXUS_PixelFormat_eCb8, planeHandle, cb_offset, NULL);
         if (NULL == srcCb)
         {
             ALOGE("failed to create intermediate Cb surface");
@@ -4189,10 +4161,10 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
             goto out;
         }
 
-        ALOGV("Nexus pixel format:%d - mma:%x, pAddr=%p, plane handle=%u",
-              pixelFormat, handle->is_mma, pAddr, planeHandle);
+        ALOGV("Nexus pixel format:%d - pAddr=%p, plane handle=%u",
+              pixelFormat, pAddr, planeHandle);
 
-        hSrc = to_nsc_surface(width, height, stride, pixelFormat, pAddr, handle->is_mma, planeHandle, 0);
+        hSrc = to_nsc_surface(width, height, stride, pixelFormat, planeHandle, 0, NULL);
         if ( NULL == hSrc )
         {
             ALOGE("Unable to allocate color format conversion surface");
@@ -4239,7 +4211,7 @@ rgb_out_cleanup:
     }
 
 out:
-    if (handle->is_mma && block_handle) {
+    if (block_handle) {
         NEXUS_MemoryBlock_Unlock(block_handle);
     }
     return rc;

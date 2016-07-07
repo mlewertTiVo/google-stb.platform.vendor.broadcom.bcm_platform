@@ -77,7 +77,7 @@
 #include "nexus_base_mmap.h"
 
 #define DHD_SECDMA_PROP                "ro.dhd.secdma"
-#define DHD_SECDMA_PARAMS_PATH          "/data/nexus/secdma"
+#define DHD_SECDMA_PARAMS_PATH         "/data/nexus/secdma"
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 #define APP_MAX_CLIENTS                (64)
@@ -90,21 +90,23 @@
 #define NUM_NX_OBJS                    (128)
 #define MAX_NX_OBJS                    (2048)
 #define MIN_PLATFORM_DEC               (2)
+#define NSC_FB_NUMBER                  (3)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
 #define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
 #define GRAPHICS_RES_WIDTH_PROP        "ro.graphics_resolution.width"
 #define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
 
-#define NX_MMA                         "ro.nx.mma"
-#define NX_MMA_ACT_GC                  "ro.nx.mma.act.gc"
-#define NX_MMA_ACT_GS                  "ro.nx.mma.act.gs"
-#define NX_MMA_ACT_LMK                 "ro.nx.mma.act.lmk"
+#define NX_ACT_GC                      "ro.nx.act.gc"
+#define NX_ACT_GS                      "ro.nx.act.gs"
+#define NX_ACT_LMK                     "ro.nx.act.lmk"
+#define NX_ACT_WD                      "ro.nx.act.wd"
 #define NX_MMA_GROW_SIZE               "ro.nx.heap.grow"
 #define NX_MMA_SHRINK_THRESHOLD        "ro.nx.heap.shrink"
 #define NX_MMA_SHRINK_THRESHOLD_DEF    "2m"
 #define NX_TRANSCODE                   "ro.nx.transcode"
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
+#define NX_CAPABLE_COMP_BYPASS         "ro.nx.capable.cb"
 
 #define NX_ODV                         "ro.nx.odv"
 #define NX_ODV_ALT_THRESHOLD           "ro.nx.odv.use.alt"
@@ -165,12 +167,12 @@ typedef struct {
     BINDER_T binder;
     RUNNER_T proactive_runner;
     unsigned refcnt;
-    int uses_mma;
     BKNI_MutexHandle clients_lock;
     struct {
         nxclient_t client;
         NxClient_JoinSettings joinSettings;
     } clients[APP_MAX_CLIENTS]; /* index provides id */
+    int watchdogFd;
 
 } NX_SERVER_T;
 
@@ -186,6 +188,28 @@ static unsigned calc_heap_size(const char *value)
    } else {
      return strtoul(value, NULL, 0);
    }
+}
+
+static void watchdogWrite(char *msg)
+{
+    int ret, retries = 3;
+
+    if (!msg) {
+        return;
+    }
+
+    do {
+        ret = write(g_app.watchdogFd, msg, 1);
+        if (ret != 1) {
+            ALOGE("could not write to watchdog, retrying...");
+        } else {
+            break;
+        }
+    } while(retries--);
+
+    if (retries <= 0 && ret != 1) {
+        ALOGE("watchdog write failed, platform will reboot!!!");
+    }
 }
 
 static void *binder_task(void *argv)
@@ -209,7 +233,7 @@ static void *proactive_runner_task(void *argv)
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
     unsigned gfx_heap_grow_size = 0;
     unsigned gfx_heap_shrink_threshold = 0;
-    int active_gc, active_lmk, active_gs;
+    int active_gc, active_lmk, active_gs, active_wd;
     int gc_tick = 0;
     int lmk_tick = 0;
     char value[PROPERTY_VALUE_MAX];
@@ -226,15 +250,17 @@ static void *proactive_runner_task(void *argv)
           gfx_heap_shrink_threshold = calc_heap_size(value);
        }
     }
-    active_gc  = property_get_int32(NX_MMA_ACT_GC, 1);
-    active_gs  = property_get_int32(NX_MMA_ACT_GS, 1);
-    active_lmk = property_get_int32(NX_MMA_ACT_LMK, 1);
+    active_gc  = property_get_int32(NX_ACT_GC, 1);
+    active_gs  = property_get_int32(NX_ACT_GS, 1);
+    active_lmk = property_get_int32(NX_ACT_LMK, 1);
+    active_wd  = property_get_int32(NX_ACT_WD, 1);
 
-    ALOGI("%s: launching, gpx-grow: %u, gpx-shrink: %u, active-gc: %c, active-gs: %c, active-lmk: %c",
+    ALOGI("%s: launching, gpx-grow: %u, gpx-shrink: %u, active-gc: %c, active-gs: %c, active-lmk: %c, active-wd: %c",
           __FUNCTION__, gfx_heap_grow_size, gfx_heap_shrink_threshold,
           active_gc ? 'o' : 'x',
           active_gs ? 'o' : 'x',
-          active_lmk ? 'o' : 'x');
+          active_lmk ? 'o' : 'x',
+          active_wd ? 'o' : 'x');
 
     do
     {
@@ -252,6 +278,13 @@ static void *proactive_runner_task(void *argv)
         *
         * 3) proactive LMK on behalf of android for nexus managed memory not seen in
         *    standard LMK.
+        *
+        * 4) kick the platform's reset watchdog timer. The watchdog can be kicked by
+        *    writing any single character to the watchdog device. On a normal exit, the
+        *    magic letter 'V' must be written to the watchdog before closing the file,
+        *    which will stop the device. If not kicked within 30 seconds, the watchdog
+        *    will expire and trigger a system reset.
+        *
         */
 
         if (++lmk_tick > RUNNER_LMK_THRESHOLD) {
@@ -314,7 +347,7 @@ static void *proactive_runner_task(void *argv)
         }
 
 skip_lmk:
-        if (nx_server->uses_mma && gfx_heap_grow_size) {
+        if (gfx_heap_grow_size) {
            NEXUS_PlatformConfiguration platformConfig;
            NEXUS_MemoryStatus heapStatus;
            NEXUS_Platform_GetConfiguration(&platformConfig);
@@ -339,6 +372,10 @@ skip_lmk:
               ALOGI("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
               NEXUS_Platform_GrowHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size);
            }
+        }
+
+        if (g_app.watchdogFd >= 0) {
+            watchdogWrite("\0");
         }
 
     } while(nx_server->proactive_runner.running);
@@ -585,7 +622,7 @@ static nxserver_t init_nxserver(void)
 
     char value[PROPERTY_VALUE_MAX];
     char value2[PROPERTY_VALUE_MAX];
-    int ix, uses_mma = 0;
+    int ix;
     char nx_key[PROPERTY_VALUE_MAX];
     FILE *key = NULL;
     NEXUS_VideoFormat forced_format;
@@ -604,11 +641,6 @@ static nxserver_t init_nxserver(void)
     nxserver_get_default_settings(&settings);
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
     NEXUS_GetDefaultMemoryConfigurationSettings(&memConfigSettings);
-
-    memset(value, 0, sizeof(value));
-    if (property_get(NX_MMA, value, "0")) {
-       uses_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
-    }
 
     memset(value, 0, sizeof(value));
     if ( property_get(NX_AUDIO_LOUDNESS, value, "disabled") ) {
@@ -650,6 +682,9 @@ static nxserver_t init_nxserver(void)
     /* -sd off */
     settings.session[0].output.sd = settings.session[0].output.encode = false;
     settings.session[0].output.hd = true;
+
+    settings.framebuffers = NSC_FB_NUMBER;
+    settings.allowCompositionBypass = property_get_int32(NX_CAPABLE_COMP_BYPASS, 0) ? true : false;
 
     settings.videoDecoder.dynamicPictureBuffers = property_get_int32(NX_ODV, 0) ? true : false;
     if (settings.videoDecoder.dynamicPictureBuffers) {
@@ -705,26 +740,22 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (!uses_mma) {
-       if (property_get(NX_HEAP_GFX2, value, NULL)) {
-          int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_SECONDARY_GRAPHICS);
-          if (strlen(value) && (index != -1)) {
-             /* -heap gfx2,XXy */
-             platformSettings.heap[index].size = calc_heap_size(value);
-          }
+    if (property_get(NX_HEAP_GFX2, value, NULL)) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_SECONDARY_GRAPHICS);
+       if (strlen(value) && (index != -1)) {
+          /* -heap gfx2,XXy */
+          platformSettings.heap[index].size = calc_heap_size(value);
        }
     }
 
-    if (uses_mma) {
-       if (property_get(NX_HEAP_GROW, value, NULL)) {
-          if (strlen(value)) {
-             /* -growHeapBlockSize XXy */
-             settings.growHeapBlockSize = calc_heap_size(value);
-          }
+    if (property_get(NX_HEAP_GROW, value, NULL)) {
+       if (strlen(value)) {
+          /* -growHeapBlockSize XXy */
+          settings.growHeapBlockSize = calc_heap_size(value);
        }
     }
 
-    if (uses_mma && settings.growHeapBlockSize) {
+    if (settings.growHeapBlockSize) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
        if (index == -1) {
            ALOGE("growHeapBlockSize: requires platform implement NEXUS_PLATFORM_P_GET_FRAMEBUFFER_HEAP_INDEX");
@@ -810,7 +841,6 @@ static nxserver_t init_nxserver(void)
     }
 
     BKNI_CreateMutex(&g_app.clients_lock);
-    g_app.uses_mma = uses_mma;
     g_app.refcnt++;
     return g_app.server;
 }
@@ -871,7 +901,7 @@ static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
                     fclose(pFile);
                     return;
                 }
-                fprintf(pFile, "secdma_cma_addr=0x%x secdma_cma_size=0x%x\n", secdmaPhysicalOffset, secdmaMemSize);
+                fprintf(pFile, "secdma_cma_addr=0x%llx secdma_cma_size=0x%x\n", secdmaPhysicalOffset, secdmaMemSize);
                 fclose(pFile);
             }
         } else {
@@ -879,7 +909,6 @@ static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
         }
     }
 }
-
 
 int main(void)
 {
@@ -933,6 +962,15 @@ int main(void)
     if (nx_srv == NULL) {
         ALOGE("FATAL: Daemonise Failed!");
         _exit(1);
+    }
+
+    if (property_get_int32(NX_ACT_WD, 1)) {
+       g_app.watchdogFd = open("/dev/watchdog", O_WRONLY);
+       if (g_app.watchdogFd < 0) {
+          ALOGE("Failed to start reset watchdog timer(reason:%s)!", strerror(errno));
+       }
+    } else {
+       g_app.watchdogFd = -1;
     }
 
     ALOGI("starting proactive runner.");
@@ -1020,5 +1058,11 @@ int main(void)
     }
 
     uninit_nxserver(nx_srv);
+
+    if (g_app.watchdogFd >= 0) {
+        watchdogWrite("V");
+        close(g_app.watchdogFd);
+    }
+
     return 0;
 }

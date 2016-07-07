@@ -25,7 +25,6 @@
 #include <sys/types.h>
 #include <errno.h>
 #include <cutils/log.h>
-#include <cutils/atomic.h>
 #include <utils/Timers.h>
 
 #include <hardware/hardware.h>
@@ -53,16 +52,12 @@ static int64_t gralloc_tick(void)
 enum {
    CONV_NONE = 0,
    CONV_DESTRIPE,
-   CONV_YV12_TO_YUV422,
-   CONV_YUV422_TO_RGB,
 };
 
 static const char *conv_type[] =
 {
    "invalid-conv",
    "destripe-yuv",
-   "yv12--yuv422",
-   "yuv422---rgb",
 };
 
 static void gralloc_conv_print(int w, int h, int type, int64_t start, int64_t end)
@@ -83,10 +78,6 @@ int gralloc_register_buffer(gralloc_module_t const* module,
    PSHARED_DATA pSharedData;
    NEXUS_MemoryBlockHandle block_handle = NULL;
    private_handle_t* hnd = (private_handle_t*)handle;
-   /* by default, use the default plane holding the buffer used by the gl stack, this
-    * may be overwritten if a gl_plane exists which would mean we want to use that value
-    * instead. */
-   int plane = DEFAULT_PLANE;
    void *pMemory;
 
    (void)module;
@@ -96,55 +87,40 @@ int gralloc_register_buffer(gralloc_module_t const* module,
       return -EINVAL;
    }
 
-   if (hnd->is_mma) {
-      pMemory = NULL;
-      block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
-      NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-      pSharedData = (PSHARED_DATA) pMemory;
-   } else {
-      pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
-   }
-
+   pMemory = NULL;
+   block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
+   NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   pSharedData = (PSHARED_DATA) pMemory;
    if (pSharedData != NULL) {
-      if (pSharedData->planes[GL_PLANE].physAddr) {
-         plane = GL_PLANE;
-      }
-      if (hnd->is_mma) {
-         if ((hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) && pSharedData->planes[plane].physAddr) {
-            pMemory = NULL;
-            NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr, &pMemory);
-            hnd->nxSurfaceAddress = (unsigned)pMemory;
-         }
-      } else {
-         hnd->nxSurfaceAddress = (unsigned)NEXUS_OffsetToCachedAddr(pSharedData->planes[plane].physAddr);
+      if ((hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) && pSharedData->container.physAddr) {
+         pMemory = NULL;
+         NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &pMemory);
+         hnd->nxSurfaceAddress = (unsigned)pMemory;
       }
 
       if (gralloc_log_mapper()) {
          NEXUS_Addr physAddr;
          unsigned sharedPhysAddr = hnd->sharedData;
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-            sharedPhysAddr = (unsigned)physAddr;
-         }
-         ALOGI("  reg (%s): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
-               (plane == GL_PLANE) ? "GL" : "ST",
-               hnd->is_mma,
+         NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+         sharedPhysAddr = (unsigned)physAddr;
+         ALOGI("  reg (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::act:%d",
+               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
                hnd->pid,
                hnd->sharedData,
                sharedPhysAddr,
-               pSharedData->planes[plane].physAddr,
+               pSharedData->container.physAddr,
                hnd->nxSurfacePhysicalAddress,
-               pSharedData->planes[plane].size,
+               pSharedData->container.width,
+               pSharedData->container.height,
+               pSharedData->container.size,
+               hnd->usage,
+               hnd->fmt_set,
                hnd->nxSurfaceAddress,
                getpid());
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_UnlockOffset(block_handle);
-         }
+         NEXUS_MemoryBlock_UnlockOffset(block_handle);
       }
 
-      if (hnd->is_mma) {
-         NEXUS_MemoryBlock_Unlock(block_handle);
-      }
+      NEXUS_MemoryBlock_Unlock(block_handle);
    }
 
    return 0;
@@ -156,7 +132,6 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
    PSHARED_DATA pSharedData;
    NEXUS_MemoryBlockHandle block_handle = NULL;
    private_handle_t* hnd = (private_handle_t*)handle;
-   int plane = DEFAULT_PLANE;
    void *pMemory;
 
    (void)module;
@@ -166,74 +141,60 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
       return -EINVAL;
    }
 
-   if (hnd->is_mma) {
-      pMemory = NULL;
-      block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
-      NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-      pSharedData = (PSHARED_DATA) pMemory;
-   } else {
-      pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
-   }
+   pMemory = NULL;
+   block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
+   NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   pSharedData = (PSHARED_DATA) pMemory;
 
    if (pSharedData != NULL) {
-      if (pSharedData->planes[GL_PLANE].physAddr) {
-         plane = GL_PLANE;
-      }
-
       if (gralloc_log_mapper()) {
          NEXUS_Addr physAddr;
          unsigned sharedPhysAddr = hnd->sharedData;
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-            sharedPhysAddr = (unsigned)physAddr;
-         }
-         ALOGI("unreg (%s): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
-               (plane == GL_PLANE) ? "GL" : "ST",
-               hnd->is_mma,
+         NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+         sharedPhysAddr = (unsigned)physAddr;
+         ALOGI("unreg (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::act:%d",
+               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
                hnd->pid,
                hnd->sharedData,
                sharedPhysAddr,
-               pSharedData->planes[plane].physAddr,
+               pSharedData->container.physAddr,
                hnd->nxSurfacePhysicalAddress,
-               pSharedData->planes[plane].size,
+               pSharedData->container.width,
+               pSharedData->container.height,
+               pSharedData->container.size,
+               hnd->usage,
+               hnd->fmt_set,
                hnd->nxSurfaceAddress,
                getpid());
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_UnlockOffset(block_handle);
-         }
+         NEXUS_MemoryBlock_UnlockOffset(block_handle);
       }
 
-      if (hnd->is_mma) {
-         if ((hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) && pSharedData->planes[plane].physAddr) {
-            NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr);
-            if (gralloc_boom_check()) {
-               NEXUS_MemoryBlock_CheckIfLocked((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr);
-            }
-         }
-         NEXUS_MemoryBlock_Unlock(block_handle);
+      if ((hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) && pSharedData->container.physAddr) {
+         NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr);
          if (gralloc_boom_check()) {
-            NEXUS_MemoryBlock_CheckIfLocked(block_handle);
+            NEXUS_MemoryBlock_CheckIfLocked((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr);
          }
+      }
+      NEXUS_MemoryBlock_Unlock(block_handle);
+      if (gralloc_boom_check()) {
+         NEXUS_MemoryBlock_CheckIfLocked(block_handle);
       }
    }
 
    return 0;
 }
 
-// TODO : lock actually takes width/height of the region you want to lock
-// optimize the case for a sub region (if it ever ocurrs)
 int gralloc_lock(gralloc_module_t const* module,
    buffer_handle_t handle, int usage,
    int l, int t, int w, int h,
    void** vaddr)
 {
-   int64_t tick_start_conv, tick_end_conv;
+   int64_t tick_start, tick_end;
    int err = 0;
    bool hwConverted=false;
    NEXUS_MemoryBlockHandle block_handle = NULL, shared_block_handle = NULL;
    PSHARED_DATA pSharedData = NULL;
    private_module_t* pModule = (private_module_t *)module;
-   int plane = DEFAULT_PLANE;
 
    (void)l;
    (void)t;
@@ -247,39 +208,29 @@ int gralloc_lock(gralloc_module_t const* module,
 
    private_handle_t* hnd = (private_handle_t*)handle;
 
-   if (hnd->is_mma) {
-      void *pMemory;
-      shared_block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
-      NEXUS_MemoryBlock_Lock(shared_block_handle, &pMemory);
-      pSharedData = (PSHARED_DATA) pMemory;
-      if (pSharedData == NULL) {
-         ALOGE("%s : invalid private buffer %p, freed?", __FUNCTION__, shared_block_handle);
-         return -EINVAL;
-      }
-      block_handle = (NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr;
-      if (block_handle) {
-         NEXUS_MemoryBlock_Lock(block_handle, vaddr);
-         if (hnd->mgmt_mode != GR_MGMT_MODE_LOCKED) {
-            NEXUS_Addr physAddr;
-            hnd->nxSurfaceAddress = (unsigned)vaddr;
-            NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr, &physAddr);
-            hnd->nxSurfacePhysicalAddress = (unsigned)physAddr;
-         }
-      } else {
-         ALOGE("no default plane on s-blk:0x%x", shared_block_handle);
-         *vaddr = NULL;
+   void *pMemory;
+   shared_block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
+   NEXUS_MemoryBlock_Lock(shared_block_handle, &pMemory);
+   pSharedData = (PSHARED_DATA) pMemory;
+   if (pSharedData == NULL) {
+      ALOGE("%s : invalid private buffer %p, freed?", __FUNCTION__, shared_block_handle);
+      return -EINVAL;
+   }
+   block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
+   if (block_handle) {
+      NEXUS_MemoryBlock_Lock(block_handle, vaddr);
+      if (hnd->mgmt_mode != GR_MGMT_MODE_LOCKED) {
+         NEXUS_Addr physAddr;
+         hnd->nxSurfaceAddress = (unsigned)vaddr;
+         NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &physAddr);
+         hnd->nxSurfacePhysicalAddress = (unsigned)physAddr;
       }
    } else {
-      pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
-      *vaddr = NEXUS_OffsetToCachedAddr(pSharedData->planes[plane].physAddr);
+      ALOGE("no default plane on s-blk:0x%x", shared_block_handle);
+      *vaddr = NULL;
    }
 
-   if (android_atomic_acquire_load(&pSharedData->hwc.active) && (usage & GRALLOC_USAGE_SW_WRITE_MASK)) {
-      ALOGE("Locking gralloc buffer %#x inuse by HWC!  HWC Layer %d NEXUS_SurfaceHandle %#x",
-            hnd->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
-   }
-
-   if (pSharedData->planes[plane].format == HAL_PIXEL_FORMAT_YV12) {
+   if (pSharedData->container.format == HAL_PIXEL_FORMAT_YV12) {
       pthread_mutex_lock(gralloc_g2d_lock());
       err = private_handle_t::lock_video_frame(hnd, 250);
       if (err) {
@@ -289,7 +240,7 @@ int gralloc_lock(gralloc_module_t const* module,
       }
       if (pSharedData->videoFrame.hStripedSurface) {
          if (usage & GRALLOC_USAGE_SW_WRITE_MASK) {
-            ALOGE("Cannot lock HW video decoder buffers for SW_WRITE");
+            ALOGE("invalid lock of stripped buffers for SW_WRITE");
             private_handle_t::unlock_video_frame(hnd);
             pthread_mutex_unlock(gralloc_g2d_lock());
             err = -EINVAL;
@@ -298,7 +249,7 @@ int gralloc_lock(gralloc_module_t const* module,
          if (usage & GRALLOC_USAGE_SW_READ_MASK) {
             if (!pSharedData->videoFrame.destripeComplete) {
                if (gralloc_timestamp_conversion()) {
-                  tick_start_conv = gralloc_tick();
+                  tick_start = gralloc_tick();
                }
                err = gralloc_destripe_yv12(hnd, pSharedData->videoFrame.hStripedSurface);
                if (err) {
@@ -307,13 +258,16 @@ int gralloc_lock(gralloc_module_t const* module,
                   goto out_video_failed;
                }
                if (gralloc_timestamp_conversion()) {
-                  tick_end_conv = gralloc_tick();
+                  tick_end = gralloc_tick();
                }
                pSharedData->videoFrame.destripeComplete = true;
                hwConverted = true;
-               ALOGV("%s: Destripe Complete", __FUNCTION__);
             }
          }
+      } else if ((hnd->fmt_set & GR_HWTEX) == GR_HWTEX) {
+         /* TODO: add behavior for metadata buffer mode processing of stripped
+          *       surface as needed...
+          */
       }
       private_handle_t::unlock_video_frame(hnd);
       pthread_mutex_unlock(gralloc_g2d_lock());
@@ -321,40 +275,40 @@ int gralloc_lock(gralloc_module_t const* module,
 
 out_video_failed:
    if ((usage & (GRALLOC_USAGE_SW_READ_MASK|GRALLOC_USAGE_SW_WRITE_MASK)) && !hwConverted) {
-      NEXUS_FlushCache(*vaddr, pSharedData->planes[DEFAULT_PLANE].allocSize);
+      NEXUS_FlushCache(*vaddr, pSharedData->container.allocSize);
    }
 
    if (gralloc_log_mapper()) {
       NEXUS_Addr physAddr;
       unsigned sharedPhysAddr = hnd->sharedData;
-      if (hnd->is_mma) {
-         NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
-         sharedPhysAddr = (unsigned)physAddr;
-      }
-      ALOGI(" lock (ST): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::vaddr:0x%x::act:%d",
-            hnd->is_mma,
+      NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
+      sharedPhysAddr = (unsigned)physAddr;
+      ALOGI(" lock (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::vaddr:0x%x::act:%d",
+            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
             hnd->pid,
             hnd->sharedData,
             sharedPhysAddr,
-            pSharedData->planes[plane].physAddr,
+            pSharedData->container.physAddr,
             hnd->nxSurfacePhysicalAddress,
-            pSharedData->planes[plane].size,
+            pSharedData->container.width,
+            pSharedData->container.height,
+            pSharedData->container.size,
+            hnd->usage,
+            hnd->fmt_set,
             hnd->nxSurfaceAddress,
             *vaddr,
             getpid());
-      if (hnd->is_mma) {
-         NEXUS_MemoryBlock_UnlockOffset(shared_block_handle);
-      }
+      NEXUS_MemoryBlock_UnlockOffset(shared_block_handle);
    }
 
    if (hwConverted && gralloc_timestamp_conversion()) {
-      gralloc_conv_print(pSharedData->planes[plane].width,
-                         pSharedData->planes[plane].height,
-                         CONV_DESTRIPE, tick_start_conv, tick_end_conv);
+      gralloc_conv_print(pSharedData->container.width,
+                         pSharedData->container.height,
+                         CONV_DESTRIPE, tick_start, tick_end);
    }
 
 out:
-   if (hnd->is_mma && shared_block_handle) {
+   if (shared_block_handle) {
       NEXUS_MemoryBlock_Unlock(shared_block_handle);
    }
    return err;
@@ -362,15 +316,10 @@ out:
 
 int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
 {
-   int64_t tick_start_conv, tick_end_conv;
-   int64_t tick_start_conv_2, tick_end_conv_2;
-   bool yv12_to_yuv422 = false;
-   bool yuv422_to_rgb = false;
    NEXUS_Error rc;
    NEXUS_MemoryBlockHandle block_handle = NULL, shared_block_handle = NULL;
    private_handle_t *hnd = (private_handle_t *) handle;
    private_module_t* pModule = (private_module_t *)module;
-   int plane = DEFAULT_PLANE;
 
    if (private_handle_t::validate(handle) < 0) {
       ALOGE("%s : invalid handle, freed?", __FUNCTION__);
@@ -378,117 +327,56 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
    }
 
    PSHARED_DATA pSharedData = NULL;
-   if (hnd->is_mma) {
-      void *pMemory;
-      shared_block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
-      NEXUS_MemoryBlock_Lock(shared_block_handle, &pMemory);
-      pSharedData = (PSHARED_DATA) pMemory;
-      block_handle = (NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr;
-   } else {
-      pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
-   }
+   void *pMemory;
+   shared_block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
+   NEXUS_MemoryBlock_Lock(shared_block_handle, &pMemory);
+   pSharedData = (PSHARED_DATA) pMemory;
+   block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
 
    if (hnd->usage & GRALLOC_USAGE_SW_WRITE_MASK) {
-      bool flushed = false;
-
-      if (!pSharedData->planes[plane].physAddr) {
-         if (hnd->is_mma && shared_block_handle) {
+      void *vaddr;
+      if (!pSharedData->container.physAddr) {
+         if (shared_block_handle) {
             NEXUS_MemoryBlock_Unlock(shared_block_handle);
          }
          return -EINVAL;
       }
 
-      if (pSharedData->planes[plane].format == HAL_PIXEL_FORMAT_YV12) {
-         if (pSharedData->planes[EXTRA_PLANE].physAddr != 0) {
-            pthread_mutex_lock(gralloc_g2d_lock());
-            if (gralloc_timestamp_conversion()) {
-               tick_start_conv = gralloc_tick();
-            }
-            rc = gralloc_yv12to422p(hnd);
-            if (!rc) {
-               yv12_to_yuv422 = true;
-               flushed = true;
-               if (gralloc_timestamp_conversion()) {
-                  tick_end_conv = gralloc_tick();
-               }
-            }
-
-            /* TODO: YV12->RBA conversion */
-            if (!rc && pSharedData->planes[GL_PLANE].physAddr != 0) {
-               if (gralloc_timestamp_conversion()) {
-                  tick_start_conv_2 = gralloc_tick();
-               }
-               rc = gralloc_plane_copy(hnd, EXTRA_PLANE, GL_PLANE);
-               if (rc) {
-                  ALOGE("%s: Error converting from 422p to RGB - %d", __FUNCTION__, rc);
-               } else if (gralloc_timestamp_conversion()) {
-                  yuv422_to_rgb = true;
-                  tick_end_conv_2 = gralloc_tick();
-               }
-            }
-            pthread_mutex_unlock(gralloc_g2d_lock());
-         }
-      }
-
-      if (!flushed) {
-         void *vaddr;
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_Lock(block_handle, &vaddr);
-         } else {
-            vaddr = NEXUS_OffsetToCachedAddr(pSharedData->planes[plane].physAddr);
-         }
-         NEXUS_FlushCache(vaddr, pSharedData->planes[plane].allocSize);
-         if (hnd->is_mma) {
-            NEXUS_MemoryBlock_Unlock(block_handle);
-         }
-      }
+      NEXUS_MemoryBlock_Lock(block_handle, &vaddr);
+      NEXUS_FlushCache(vaddr, pSharedData->container.allocSize);
+      NEXUS_MemoryBlock_Unlock(block_handle);
    }
 
    if (gralloc_log_mapper()) {
       NEXUS_Addr physAddr;
       unsigned sharedPhysAddr = hnd->sharedData;
-      if (hnd->is_mma) {
-         NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
-         sharedPhysAddr = (unsigned)physAddr;
-      }
-      ALOGI("ulock (ST): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
-            hnd->is_mma,
+      NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
+      sharedPhysAddr = (unsigned)physAddr;
+      ALOGI("ulock (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x::act:%d",
+            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
             hnd->pid,
             hnd->sharedData,
             sharedPhysAddr,
-            pSharedData->planes[plane].physAddr,
+            pSharedData->container.physAddr,
             hnd->nxSurfacePhysicalAddress,
-            pSharedData->planes[plane].size,
+            pSharedData->container.width,
+            pSharedData->container.height,
+            pSharedData->container.size,
+            hnd->usage,
+            hnd->fmt_set,
             hnd->nxSurfaceAddress,
             getpid());
-      if (hnd->is_mma) {
-         NEXUS_MemoryBlock_UnlockOffset(shared_block_handle);
-      }
+      NEXUS_MemoryBlock_UnlockOffset(shared_block_handle);
    }
 
-   if ((yv12_to_yuv422 || yuv422_to_rgb) && gralloc_timestamp_conversion()) {
-      if (yv12_to_yuv422) {
-         gralloc_conv_print(pSharedData->planes[plane].width,
-                            pSharedData->planes[plane].height,
-                            CONV_YV12_TO_YUV422, tick_start_conv, tick_end_conv);
-      }
-      if (yuv422_to_rgb) {
-         gralloc_conv_print(pSharedData->planes[plane].width,
-                            pSharedData->planes[plane].height,
-                            CONV_YUV422_TO_RGB, tick_start_conv_2, tick_end_conv_2);
+   if (block_handle) {
+      NEXUS_MemoryBlock_Unlock(block_handle);
+      if (hnd->mgmt_mode != GR_MGMT_MODE_LOCKED) {
+         NEXUS_MemoryBlock_UnlockOffset(block_handle);
       }
    }
-
-   if (hnd->is_mma) {
-      if (block_handle) {
-         NEXUS_MemoryBlock_Unlock(block_handle);
-         if (hnd->mgmt_mode != GR_MGMT_MODE_LOCKED) {
-            NEXUS_MemoryBlock_UnlockOffset(block_handle);
-         }
-      }
-      if (shared_block_handle) {
-         NEXUS_MemoryBlock_Unlock(shared_block_handle);
-      }
+   if (shared_block_handle) {
+      NEXUS_MemoryBlock_Unlock(shared_block_handle);
    }
 
    return 0;

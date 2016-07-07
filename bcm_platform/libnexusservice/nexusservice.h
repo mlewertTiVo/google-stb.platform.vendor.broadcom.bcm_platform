@@ -73,33 +73,11 @@
 #include "bkni.h"
 #include "bkni_multi.h"
 #include "blst_list.h"
-#include "nexus_video_decoder.h"
-#include "nexus_audio_decoder.h"
-#include "nexus_audio_input.h"
-#include "nexus_audio_mixer.h"
-#if NEXUS_NUM_AUDIO_INPUT_CAPTURES
-#include "nexus_audio_input_capture.h"
-#endif
-#include "nexus_simple_video_decoder_server.h"
-#include "nexus_simple_audio_decoder_server.h"
-#include "nexus_simple_encoder_server.h"
 #include "nexus_stc_channel.h"
 #include "nexus_surface_compositor.h"
 #include "nexus_picture_ctrl.h"
 
-/*If the security mode is not eUntrusted then we do Join else we do Authenticated Join*/
-#define NEXUS_ABSTRACTED_JOIN(auth) NEXUS_Platform_AuthenticatedJoin(auth)
-
-#ifndef NEXUS_NUM_VIDEO_ENCODERS
-#define NEXUS_NUM_VIDEO_ENCODERS 0
-#endif
 #define HD_DISPLAY (0)
-#define MAX_AUDIO_DECODERS  ((NEXUS_NUM_AUDIO_DECODERS  < 2) ? NEXUS_NUM_AUDIO_DECODERS  : 2)
-#define MAX_AUDIO_PLAYBACKS ((NEXUS_NUM_AUDIO_PLAYBACKS < 2) ? NEXUS_NUM_AUDIO_PLAYBACKS : 2)
-#define MAX_VIDEO_DECODERS  ((NEXUS_NUM_VIDEO_DECODERS  < 2) ? NEXUS_NUM_VIDEO_DECODERS  : 2)
-#define MAX_ENCODERS        ((NEXUS_NUM_VIDEO_ENCODERS  < 2) ? NEXUS_NUM_VIDEO_ENCODERS  : 2)
-#define AUDIO_DECODER_FIFO_SIZE  2*1024*1024
-#define VIDEO_DECODER_FIFO_SIZE 10*1024*1024
 
 #ifndef NEXUS_CEC_MESSAGE_DATA_SIZE
 #define NEXUS_CEC_MESSAGE_DATA_SIZE 16
@@ -116,30 +94,16 @@ class BnNexusService : public BnInterface<INexusService>
 {
 };
 
-typedef struct DisplayState
-{
-    NEXUS_DisplayHandle display;
-    NEXUS_VideoWindowHandle video_window;
-    /* Below are only for standalone mode, should be removed when standalone mode is gone */
-    int hNexusDisplay;
-    int hNexusVideoWindow;
-} DisplayState;
-
 typedef struct NexusServerContext
 {
     NexusServerContext();
     ~NexusServerContext() { ALOGV("%s: called", __PRETTY_FUNCTION__); }
 
     Mutex mLock;
-    unsigned mJoinRefCount;
-    BLST_D_HEAD(b_refsw_client_list, NexusClientContext) clients;
 #if NEXUS_HAS_HDMI_OUTPUT
     Vector<sp<INexusHdmiHotplugEventListener> > mHdmiHotplugEventListenerList[NEXUS_NUM_HDMI_OUTPUTS];
 #endif
 
-    struct {
-        unsigned client;
-    } lastId;
 } NexusServerContext;
 
 class NexusService : public NexusServiceBase, public BnNexusService, public IBinder::DeathRecipient
@@ -185,7 +149,7 @@ protected:
     NexusService();
     virtual void platformInit();
     virtual void platformUninit();
-    virtual NEXUS_ClientHandle getNexusClient(unsigned pid, const char * name);
+    virtual NEXUS_ClientHandle getNexusClient(unsigned pid);
     static NEXUS_VideoFormat getForcedOutputFormat(void);
 
     static const char *getPowerString(b_powerState pmState);
@@ -196,31 +160,11 @@ protected:
 
 private:
     /* These API's are private helper functions... */
-    NEXUS_ClientHandle clientJoin(const b_refsw_client_client_name *pClientName, NEXUS_ClientAuthenticationSettings *pClientAuthenticationSettings);
-    NEXUS_Error clientUninit(NEXUS_ClientHandle clientHandle);
-    int platformInitSurfaceCompositor(void);
-    int platformInitVideo(void);
-    int platformInitAudio(void);
-    int platformInitHdmiOutputs(void);
-    void platformUninitHdmiOutputs();
+    int platformSetupHdmiOutputs(void);
+    void platformCleanHdmiOutputs();
     static void hdmiOutputHotplugCallback(void *context, int param);
     static void hdmiOutputHdcpStateChangedCallback(void *pContext, int param);
     static b_cecDeviceType toCecDeviceType(char *string);
-    void setDisplayState(bool enable);
-    void setVideoState(bool enable);
-    void setAudioState(bool enable);
-
-    NEXUS_SurfaceCompositorHandle       surface_compositor;
-    DisplayState                        displayState;
-    NEXUS_AudioDecoderHandle            audioDecoder[MAX_AUDIO_DECODERS];
-    NEXUS_AudioPlaybackHandle           audioPlayback[MAX_AUDIO_PLAYBACKS];
-    NEXUS_SimpleAudioDecoderHandle      simpleAudioDecoder[MAX_AUDIO_DECODERS];
-    NEXUS_SimpleAudioPlaybackHandle     simpleAudioPlayback[MAX_AUDIO_PLAYBACKS];
-    NEXUS_AudioMixerHandle              mixer;
-    NEXUS_SurfaceClientHandle           surfaceclient;
-    NEXUS_Graphics2DHandle              gfx2D;
-    BKNI_EventHandle                    gfxDone;
-    NEXUS_VideoFormat                   initial_output_format;
 };
 
 #endif // _NEXUSSERVICE_H_

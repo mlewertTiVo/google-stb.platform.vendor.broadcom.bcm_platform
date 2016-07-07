@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2013 Broadcom Corporation
+ *    (c)2010-2015 Broadcom Corporation
  *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -40,163 +40,148 @@
 #include "gralloc_destripe.h"
 #include <cutils/log.h>
 
+static NEXUS_SurfaceHandle to_nx_surface(int width, int height, int stride, NEXUS_PixelFormat format,
+                                         unsigned handle, unsigned offset)
+{
+    NEXUS_SurfaceHandle shdl = NULL;
+    NEXUS_SurfaceCreateSettings createSettings;
+
+    NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
+    createSettings.pixelFormat   = format;
+    createSettings.width         = width;
+    createSettings.height        = height;
+    createSettings.pitch         = stride;
+    createSettings.managedAccess = false;
+    if (handle) {
+       createSettings.pixelMemory = (NEXUS_MemoryBlockHandle) handle;
+       createSettings.pixelMemoryOffset = offset;
+    }
+
+    return NEXUS_Surface_Create(&createSettings);
+}
+
 int gralloc_destripe_yv12(
     private_handle_t *pHandle,
     NEXUS_StripedSurfaceHandle hStripedSurface)
 {
-    NEXUS_Error errCode;
-    NEXUS_SurfaceHandle hSurface422;
-    NEXUS_SurfaceCreateSettings surfaceSettings;
-    void *pAddr, *pMemory;
-    uint8_t *pPackedData, *pY, *pCb, *pCr;
-    int x, y, stride, height, width;
-    int rc=-EINVAL;
-    NEXUS_MemoryBlockHandle block_handle = NULL;
-    PSHARED_DATA pSharedData;
+   NEXUS_Error errCode = NEXUS_SUCCESS;
+   NEXUS_SurfaceHandle hSurfaceY = NULL, hSurfaceCb = NULL, hSurfaceCr = NULL;
+   NEXUS_SurfaceCreateSettings surfaceSettings;
+   NEXUS_MemoryBlockHandle block_handle = NULL;
+   PSHARED_DATA pSharedData;
+   void *slock, *pMemory;
 
-    if ( NULL == gralloc_g2d_hdl() )
-    {
-        ALOGE("Graphics2D Not available.  Cannot access HW decoder data.");
-        goto err_gfx2d;
-    }
+   if (gralloc_g2d_hdl() == NULL) {
+      ALOGE("gralloc_destripe_yv12: no gfx2d.");
+      errCode = NEXUS_INVALID_PARAMETER;
+      goto err_gfx2d;
+   }
 
-    if (pHandle->is_mma) {
-       pMemory = NULL;
-       block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
-       NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
-       pSharedData = (PSHARED_DATA) pMemory;
-    } else {
-       pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(pHandle->sharedData);
-    }
+   pMemory = NULL;
+   block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
+   NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+   pSharedData = (PSHARED_DATA) pMemory;
+   if (pSharedData == NULL) {
+      ALOGE("gralloc_destripe_yv12: invalid buffer?");
+      errCode = NEXUS_INVALID_PARAMETER;
+      goto err_shared_data;
+   }
 
-    if ( NULL == pSharedData )
-    {
-        ALOGE("Unable to access shared data");
-        goto err_shared_data;
-    }
-    // HW destripe to 420 planar is not working.  We have to create an
-    // intermediate 422 surface, destripe to that and SW convert back
-    // to 420.
-    height = pSharedData->planes[DEFAULT_PLANE].height;
-    width = pSharedData->planes[DEFAULT_PLANE].width;
-    NEXUS_Surface_GetDefaultCreateSettings(&surfaceSettings);
-    surfaceSettings.pixelFormat = NEXUS_PixelFormat_eCr8_Y18_Cb8_Y08;
-    surfaceSettings.width = width;
-    surfaceSettings.height = height;
-    surfaceSettings.pitch = 2*surfaceSettings.width;
-    hSurface422 = NEXUS_Surface_Create(&surfaceSettings);
-    if ( NULL == hSurface422 )
-    {
-        ALOGE("Unable to allocate destripe surface");
-        goto err_surface;
-    }
-    errCode = NEXUS_Surface_Lock(hSurface422, &pAddr);
-    if ( errCode )
-    {
-        ALOGE("Error locking destripe surface");
-        goto err_surface_lock;
-    }
-    NEXUS_Surface_Flush(hSurface422);
+   hSurfaceY = to_nx_surface(pSharedData->container.width,
+                             pSharedData->container.height,
+                             pSharedData->container.stride,
+                             NEXUS_PixelFormat_eY8,
+                             pSharedData->container.physAddr,
+                             0);
+   if (hSurfaceY == NULL) {
+      ALOGE("gralloc_destripe_yv12: failed to create Y plane.");
+      errCode = NEXUS_INVALID_PARAMETER;
+      goto err_surfaces;
+   }
+   NEXUS_Surface_Lock(hSurfaceY, &slock);
+   NEXUS_Surface_Flush(hSurfaceY);
 
-    // Issue destripe request
-    errCode = NEXUS_Graphics2D_DestripeToSurface(gralloc_g2d_hdl(), hStripedSurface, hSurface422, NULL);
-    if ( errCode )
-    {
-        ALOGE("Unable to destripe surface");
-        goto err_destripe;
-    }
+   hSurfaceCr = to_nx_surface(pSharedData->container.width/2,
+                              pSharedData->container.height/2,
+                              (pSharedData->container.stride/2 + (pHandle->alignment-1)) & ~(pHandle->alignment-1),
+                              NEXUS_PixelFormat_eCr8,
+                              pSharedData->container.physAddr,
+                              pSharedData->container.stride * pSharedData->container.height);
+   if (hSurfaceCr == NULL) {
+      ALOGE("gralloc_destripe_yv12: failed to create Cr plane.");
+      errCode = NEXUS_INVALID_PARAMETER;
+      goto err_surfaces;
+   }
+   NEXUS_Surface_Lock(hSurfaceCr, &slock);
+   NEXUS_Surface_Flush(hSurfaceCr);
 
-    // Wait for completion
-    errCode = NEXUS_Graphics2D_Checkpoint(gralloc_g2d_hdl(), NULL);
-    switch ( errCode )
-    {
-    case NEXUS_SUCCESS:
+   hSurfaceCb = to_nx_surface(pSharedData->container.width/2,
+                              pSharedData->container.height/2,
+                              (pSharedData->container.stride/2 + (pHandle->alignment-1)) & ~(pHandle->alignment-1),
+                              NEXUS_PixelFormat_eCb8,
+                              pSharedData->container.physAddr,
+                              (pSharedData->container.stride * pSharedData->container.height) +
+                              ((pSharedData->container.height/2) * ((pSharedData->container.stride/2 + (pHandle->alignment-1)) & ~(pHandle->alignment-1))));
+   if (hSurfaceCb == NULL) {
+      ALOGE("gralloc_destripe_yv12: failed to create Cb plane.");
+      errCode = NEXUS_INVALID_PARAMETER;
+      goto err_surfaces;
+   }
+   NEXUS_Surface_Lock(hSurfaceCb, &slock);
+   NEXUS_Surface_Flush(hSurfaceCb);
+
+   errCode = NEXUS_Graphics2D_DestripeToSurface(gralloc_g2d_hdl(), hStripedSurface, hSurfaceY, NULL);
+   if (errCode) {
+      goto err_destripe;
+   }
+   errCode = NEXUS_Graphics2D_DestripeToSurface(gralloc_g2d_hdl(), hStripedSurface, hSurfaceCb, NULL);
+   if (errCode) {
+      goto err_destripe;
+   }
+   errCode = NEXUS_Graphics2D_DestripeToSurface(gralloc_g2d_hdl(), hStripedSurface, hSurfaceCr, NULL);
+   if (errCode) {
+      goto err_destripe;
+   }
+
+   errCode = NEXUS_Graphics2D_Checkpoint(gralloc_g2d_hdl(), NULL);
+   switch (errCode) {
+   case NEXUS_SUCCESS:
       break;
-    case NEXUS_GRAPHICS2D_QUEUED:
+   case NEXUS_GRAPHICS2D_QUEUED:
       errCode = BKNI_WaitForEvent(gralloc_g2d_evt(), CHECKPOINT_TIMEOUT);
-      if ( errCode )
-      {
-          ALOGE("Checkpoint Timeout");
+      if (errCode) {
+          ALOGE("gralloc_destripe_yv12: checkpoint timeout.");
           goto err_checkpoint;
       }
       break;
-    default:
-      ALOGE("Checkpoint Error");
+   default:
+      ALOGE("gralloc_destripe_yv12: checkpoint error.");
       goto err_checkpoint;
-    }
+   }
 
-    // Destripe done.  Now convert to planar for YV12
-    if (pHandle->is_mma) {
-       pMemory = NULL;
-       NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr, &pMemory);
-       pY = (uint8_t *)pMemory;
-    } else {
-       pY = (uint8_t *)NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
-    }
+   NEXUS_Surface_Flush(hSurfaceY);
+   NEXUS_Surface_Flush(hSurfaceCr);
+   NEXUS_Surface_Flush(hSurfaceCb);
 
-    if ( NULL == pY )
-    {
-        ALOGE("Unable to access YV12 pixels");
-        goto err_yv12;
-    }
-    stride = (pSharedData->planes[DEFAULT_PLANE].width + (pHandle->alignment-1)) & ~(pHandle->alignment-1);
-    pCr = (uint8_t *)(pY + (stride * pSharedData->planes[DEFAULT_PLANE].height));
-    pCb = (uint8_t *)(pCr + ((pSharedData->planes[DEFAULT_PLANE].height/2) * ((stride/2 + (pHandle->alignment-1)) & ~(pHandle->alignment-1))));
-    pPackedData = (uint8_t *)pAddr;
-
-    NEXUS_Surface_Flush(hSurface422);
-
-    for ( y = 0; y < height; ++y )
-    {
-        uint8_t y0, y1, cb, cr;
-        if ( y & 1 )
-        {
-            for ( x = 0; x < width; x += 2 )
-            {
-                y0 = *pPackedData;
-                pPackedData+=2;
-                y1 = *pPackedData;
-                pPackedData+=2;
-                pY[x] = y0;
-                pY[x+1] = y1;
-            }
-        }
-        else
-        {
-            for ( x = 0; x < width; x += 2 )
-            {
-                y0 = *pPackedData++;
-                cb = *pPackedData++;
-                y1 = *pPackedData++;
-                cr = *pPackedData++;
-                pY[x] = y0;
-                pY[x+1] = y1;
-                pCr[x/2] = cr;
-                pCb[x/2] = cb;
-            }
-            pCb += stride/2;
-            pCr += stride/2;
-        }
-        pY += stride;
-    }
-    // Success
-    rc = 0;
-
-    if (pHandle->is_mma) {
-       NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[DEFAULT_PLANE].physAddr);
-    }
-
-err_yv12:
 err_checkpoint:
 err_destripe:
-    NEXUS_Surface_Unlock(hSurface422);
-err_surface_lock:
-    NEXUS_Surface_Destroy(hSurface422);
-err_surface:
+err_surfaces:
+   if (hSurfaceY) {
+      NEXUS_Surface_Unlock(hSurfaceY);
+      NEXUS_Surface_Destroy(hSurfaceY);
+   }
+   if (hSurfaceCr) {
+      NEXUS_Surface_Unlock(hSurfaceCr);
+      NEXUS_Surface_Destroy(hSurfaceCr);
+   }
+   if (hSurfaceCb) {
+      NEXUS_Surface_Unlock(hSurfaceCb);
+      NEXUS_Surface_Destroy(hSurfaceCb);
+   }
 err_shared_data:
-   if (pHandle->is_mma && block_handle) {
+   if (block_handle) {
       NEXUS_MemoryBlock_Unlock(block_handle);
    }
 err_gfx2d:
-    return rc;
+    return errCode;
 }

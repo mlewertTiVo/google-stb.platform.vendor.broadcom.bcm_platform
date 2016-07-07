@@ -16,16 +16,11 @@ REFSW_PATH :=${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_nexus
 LOCAL_PATH := $(call my-dir)
 
 # set to 'true' to avoid stripping symbols during build.
-GRALLOC_DEBUG_SYMBOLS := false
-
 include $(CLEAR_VARS)
 
 # HAL module implementation, not prelinked and stored in
 # hw/<OVERLAY_HARDWARE_MODULE_ID>.<ro.product.board>.so
 
-ifeq ($(GRALLOC_DEBUG_SYMBOLS),true)
-LOCAL_STRIP_MODULE := false
-endif
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 
@@ -41,19 +36,22 @@ LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
                     $(REFSW_PATH)/../libnexusservice
 LOCAL_C_INCLUDES += $(REFSW_PATH)/../libnexusipc
 LOCAL_C_INCLUDES += $(REFSW_PATH)/../../drivers/nx_ashmem
-LOCAL_C_INCLUDES += $(REFSW_PATH)/../../refsw/rockford/middleware/v3d/driver/interface/khronos/include
+ifeq ($(V3D_VARIANT),)
+V3D_VARIANT := v3d
+endif
+LOCAL_C_INCLUDES += $(REFSW_PATH)/../../refsw/rockford/middleware/$(V3D_VARIANT)/driver/interface/khronos/include
 
 REMOVE_NEXUS_CFLAGS := -Wstrict-prototypes
 MANGLED_NEXUS_CFLAGS := $(filter-out $(REMOVE_NEXUS_CFLAGS), $(NEXUS_CFLAGS))
 
 LOCAL_CFLAGS := -DLOG_TAG=\"bcm-gr\" $(MANGLED_NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
+LOCAL_CFLAGS += -DV3D_VARIANT_$(V3D_VARIANT)
 
 LOCAL_SRC_FILES := \
         gralloc.cpp \
         framebuffer.cpp \
         mapper.cpp \
-        gralloc_destripe.cpp \
-        gralloc_conv.cpp \
+        gralloc_destripe.cpp
 
 LOCAL_MODULE := gralloc.bcm_platform
 LOCAL_MODULE_TAGS := optional

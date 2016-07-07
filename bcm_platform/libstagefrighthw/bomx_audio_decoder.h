@@ -49,6 +49,7 @@
 #include "nexus_types.h"
 #include "nxclient.h"
 #include "bomx_pes_formatter.h"
+#include "bomx_aac_parser.h"
 #include <stdio.h>
 
 extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
@@ -56,6 +57,9 @@ extern "C" const char *BOMX_AudioDecoder_GetRoleAc3(unsigned roleIndex);
 
 extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateMp3(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_AudioDecoder_GetRoleMp3(unsigned roleIndex);
+
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAac(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" const char *BOMX_AudioDecoder_GetRoleAac(unsigned roleIndex);
 
 struct BOMX_AudioDecoderInputBufferInfo
 {
@@ -211,6 +215,7 @@ protected:
     FILE                            *m_pInputFile;
     FILE                            *m_pOutputFile;
     BOMX_PesFormatter               *m_pPes;
+    int32_t                          m_instanceNum;
 
     char m_inputMimeType[OMX_MAX_STRINGNAME_SIZE];
     char m_outputMimeType[OMX_MAX_STRINGNAME_SIZE];
@@ -225,7 +230,6 @@ protected:
     OMX_TICKS m_eosTimeStamp;
     bool m_formatChangePending;
     bool m_secureDecoder;
-    bool m_firstFrame;
     BOMX_AudioDecoderRole *m_pRoles;
     unsigned m_numRoles;
     NEXUS_AudioDecoderFrameStatus *m_pFrameStatus;
@@ -233,7 +237,13 @@ protected:
     unsigned m_sampleRate;
     unsigned m_bitsPerSample;
     unsigned m_numPcmChannels;
+    int m_codecDelayAdjusted;
 
+    // These parameters are specific only to AAC handling
+    BOMX_AAC_ASCInfo m_ascInfo;
+    OMX_AUDIO_PARAM_AACPROFILETYPE m_aacParams;
+
+    // Required for BCMA codec handling (e.g. WMA)
     #define BOMX_BCMA_HEADER_SIZE (26)
     uint8_t m_pBcmaHeader[BOMX_BCMA_HEADER_SIZE];
 

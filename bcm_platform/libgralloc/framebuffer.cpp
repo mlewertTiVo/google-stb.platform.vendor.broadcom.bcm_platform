@@ -26,7 +26,6 @@
 #include <hardware/gralloc.h>
 
 #include <cutils/log.h>
-#include <cutils/atomic.h>
 #include <utils/Vector.h>
 
 #if HAVE_ANDROID_OS

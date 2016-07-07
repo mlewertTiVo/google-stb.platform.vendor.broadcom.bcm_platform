@@ -96,6 +96,7 @@ bool NexusIrHandler::start(NEXUS_IrInputMode mode,
             && m_ir.start(m_mode, *this, power_key, mask);
 
     m_key_thread.setMap(map);
+    m_key_thread.setInitialTimeout(m_ir.initialRepeatTimeout());
     m_key_thread.setTimeout(m_ir.repeatTimeout());
     success = success
             && (m_key_thread.run() == android::NO_ERROR);
@@ -142,6 +143,7 @@ NexusIrHandler::KeyThread::KeyThread(LinuxUInput &uinput) :
         m_key(KEY_RESERVED),
         m_repeat(false),
         m_interval(0),
+        m_initial_timeout(DEFAULT_TIMEOUT),
         m_timeout(DEFAULT_TIMEOUT)
 {
 }
@@ -153,6 +155,11 @@ NexusIrHandler::KeyThread::~KeyThread()
 void NexusIrHandler::KeyThread::setMap(android::sp<NexusIrMap> map)
 {
     m_map = map;
+}
+
+void NexusIrHandler::KeyThread::setInitialTimeout(unsigned timeout)
+{
+    m_initial_timeout = timeout ? MS_TO_NS(timeout) : DEFAULT_TIMEOUT;
 }
 
 void NexusIrHandler::KeyThread::setTimeout(unsigned timeout)
@@ -189,6 +196,8 @@ void NexusIrHandler::KeyThread::signal(uint32_t nexus_key, bool repeat,
 
 /*virtual*/ bool NexusIrHandler::KeyThread::threadLoop()
 {
+    nsecs_t timeout = m_timeout;
+
     LOGI("KeyThread start");
 
     while (isRunning())
@@ -199,8 +208,8 @@ void NexusIrHandler::KeyThread::signal(uint32_t nexus_key, bool repeat,
         android::status_t res;
         if (m_key != KEY_RESERVED) {
             LOGI("waiting for key repeat, timeout: %u ms",
-                    (unsigned)NS_TO_MS(m_timeout));
-            res = m_cond.waitRelative(m_mutex, m_timeout);
+                    (unsigned)NS_TO_MS(timeout));
+            res = m_cond.waitRelative(m_mutex, timeout);
         } else {
             LOGI("waiting for key, no timeout");
             res = m_cond.wait(m_mutex);
@@ -209,6 +218,7 @@ void NexusIrHandler::KeyThread::signal(uint32_t nexus_key, bool repeat,
         if (res == android::OK) {
             LOGI("got key: %d, old key: %d, interval %u ms",
                     (int)m_key, (int)m_old_key, m_interval);
+            timeout = m_timeout;
         } else if (res == android::TIMED_OUT) {
            LOGI("repeat time out for key: %d, old key: %d",
                    (int)m_key, (int)m_old_key);
@@ -237,6 +247,7 @@ void NexusIrHandler::KeyThread::signal(uint32_t nexus_key, bool repeat,
             if (m_key != KEY_RESERVED) {
                 LOGI("emit key press: %d", (int)m_key);
                 m_uinput.emit_key_state(m_key, true) && m_uinput.emit_syn();
+                timeout = m_initial_timeout;
             }
 
             m_old_key = m_key;

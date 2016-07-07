@@ -91,7 +91,13 @@ public:
     void stop();
 
     /**
-     * @brief Get repeat timout
+     * @brief Get repeat timeout (for the first repeat event)
+     * @return timeout in milliseconds
+     */
+    unsigned initialRepeatTimeout();
+
+    /**
+     * @brief Get repeat timeout (for subsequent repeat events)
      * @return timeout in milliseconds
      */
     unsigned repeatTimeout();

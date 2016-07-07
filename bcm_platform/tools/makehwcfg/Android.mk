@@ -23,7 +23,7 @@ _hwcfg_dhd_nvram_file := $(PRODUCT_OUT_FROM_TOP)/hwcfg/nvm.txt
 
 ifneq ($(wildcard $(ANDROID_TOP)/hwcfg/wifimac.txt),)
 $(_hwcfg_dhd_nvram_file): $(PRODUCT_OUT_FROM_TOP)/hwcfg ${BROADCOM_DHD_SOURCE_PATH}/nvrams/${BRCM_DHD_NVRAM_NAME} $(ANDROID_TOP)/hwcfg/wifimac.txt
-	sed -e "s/macaddr=\([0-9a-fA-F][0-9a-fA-F]:\)\{5\}[0-9a-fA-A][0-9a-fA-F]/macaddr=$$(cat $(ANDROID_TOP)/hwcfg/wifimac.txt)/" ${BROADCOM_DHD_SOURCE_PATH}/nvrams/${BRCM_DHD_NVRAM_NAME} > $@
+	sed -e "s/macaddr=\([0-9a-fA-F][0-9a-fA-F]:\)\{5\}[0-9a-fA-F][0-9a-fA-F]/macaddr=$$(cat $(ANDROID_TOP)/hwcfg/wifimac.txt)/" ${BROADCOM_DHD_SOURCE_PATH}/nvrams/${BRCM_DHD_NVRAM_NAME} > $@
 	@echo "Found wifimac.txt, updated nvm.txt with macaddr=$$(cat $(ANDROID_TOP)/hwcfg/wifimac.txt)"
 else
 $(_hwcfg_dhd_nvram_file): $(PRODUCT_OUT_FROM_TOP)/hwcfg ${BROADCOM_DHD_SOURCE_PATH}/nvrams/${BRCM_DHD_NVRAM_NAME}
@@ -39,8 +39,15 @@ $(_hwcfg_drm_file): $(PRODUCT_OUT_FROM_TOP)/hwcfg $(ANDROID_TOP)/hwcfg/drm.bin
 	@echo "Found drm.bin, included in hwcfg.img"
 endif
 
+ifneq ($(wildcard $(ANDROID_TOP)/hwcfg/drm_hdcp1x.bin),)
+_hwcfg_drm_hdcp1x_file := $(PRODUCT_OUT_FROM_TOP)/hwcfg/drm_hdcp1x.bin
+$(_hwcfg_drm_hdcp1x_file): $(PRODUCT_OUT_FROM_TOP)/hwcfg $(ANDROID_TOP)/hwcfg/drm_hdcp1x.bin
+	cp $(ANDROID_TOP)/hwcfg/drm_hdcp1x.bin $@
+	@echo "Found drm_hdcp1x.bin, included in hwcfg.img"
+endif
+
 _hwcfg.img := $(PRODUCT_OUT_FROM_TOP)/hwcfg.img
-$(_hwcfg.img): $(PRODUCT_OUT_FROM_TOP)/hwcfg $(_hwcfg_dhd_nvram_file) $(_hwcfg_drm_file)
+$(_hwcfg.img): $(PRODUCT_OUT_FROM_TOP)/hwcfg $(_hwcfg_dhd_nvram_file) $(_hwcfg_drm_file) $(_hwcfg_drm_hdcp1x_file)
 	mkfs.cramfs -n hwcfg $(PRODUCT_OUT_FROM_TOP)/hwcfg $@
 
 LOCAL_MODULE := makehwcfg
@@ -51,4 +58,5 @@ include $(BUILD_PHONY_PACKAGE)
 
 _hwcfg_dhd_nvram_file :=
 _hwcfg_drm_file :=
+_hwcfg_drm_hdcp1x_file :=
 _hwcfg.img :=

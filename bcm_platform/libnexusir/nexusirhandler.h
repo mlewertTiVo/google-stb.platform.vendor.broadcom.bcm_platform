@@ -100,6 +100,7 @@ private:
         virtual ~KeyThread();
 
         void setMap(android::sp<NexusIrMap> map);
+        void setInitialTimeout(unsigned timeout); //in milliseconds
         void setTimeout(unsigned timeout); //in milliseconds
         void signal(uint32_t nexus_key, bool repeat, unsigned interval);
 
@@ -116,6 +117,7 @@ private:
         __u16 m_key; //current key - needed to emit key press event
         bool m_repeat;
         unsigned m_interval;
+        nsecs_t m_initial_timeout;
         nsecs_t m_timeout;
     };
 

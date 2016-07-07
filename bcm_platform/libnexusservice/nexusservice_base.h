@@ -73,7 +73,7 @@ protected:
     /* These API's are internal helper functions... */
     virtual void platformInit() = 0;
     virtual void platformUninit() = 0;
-    virtual NEXUS_ClientHandle getNexusClient(unsigned pid, const char * name) = 0;
+    virtual NEXUS_ClientHandle getNexusClient(unsigned pid) = 0;
 };
 
 #endif // _NEXUSSERVICE_BASE_H_

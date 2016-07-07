@@ -60,14 +60,7 @@
 
 #include "nexus_video_window.h"
 #include "blst_list.h"
-#include "nexus_audio_mixer.h"
-#include "nexus_audio_decoder.h"
-#include "nexus_audio_playback.h"
-#include "nexus_video_decoder_extra.h"
 #include "nexus_base_mmap.h"
-#if NEXUS_HAS_HDMI_INPUT
-#include "nexus_hdmi_input.h"
-#endif
 #include "nexusirmap.h"
 
 #include "nexus_ipc_priv.h"
@@ -249,6 +242,24 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
                rc = NxClient_SetDisplaySettings(&settings);
                if (rc) {
                    ALOGE("%s: Could not set display settings rc=%d)!!!", __PRETTY_FUNCTION__, rc);
+               } else {
+                  switch (settings.format) {
+                  case NEXUS_VideoFormat_e4096x2160p60hz:
+                  case NEXUS_VideoFormat_e3840x2160p60hz:
+                  case NEXUS_VideoFormat_e4096x2160p50hz:
+                  case NEXUS_VideoFormat_e3840x2160p50hz:
+                  case NEXUS_VideoFormat_e4096x2160p30hz:
+                  case NEXUS_VideoFormat_e3840x2160p30hz:
+                  case NEXUS_VideoFormat_e4096x2160p25hz:
+                  case NEXUS_VideoFormat_e3840x2160p25hz:
+                  case NEXUS_VideoFormat_e4096x2160p24hz:
+                  case NEXUS_VideoFormat_e3840x2160p24hz:
+                     property_set("sys.display-size", "3840x2160");
+                  break;
+                  default:
+                     property_set("sys.display-size", "1920x1080");
+                  break;
+                  }
                }
             }
         } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
@@ -552,8 +563,6 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
     client->clientName = *pClientName;
     client->clientPid = clientPid;
 
-    BLST_D_INSERT_HEAD(&server->clients, client, link);
-
     if (powerState != ePowerState_S0) {
         NxClient_StandbySettings standbySettings;
 
@@ -571,7 +580,7 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
         }
     }
 
-    client->ipc.nexusClient = getNexusClient(client->clientPid, client->clientName.string);
+    client->ipc.nexusClient = getNexusClient(client->clientPid);
     return client;
 
 err_client:
@@ -586,7 +595,6 @@ void NexusNxService::destroyClientContext(NexusClientContext * client)
 
     Mutex::Autolock autoLock(server->mLock);
 
-    BLST_D_REMOVE(&server->clients, client, link);
     BDBG_OBJECT_DESTROY(client, NexusClientContext);
     BKNI_Free(client);
 }
