@@ -692,17 +692,22 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* 9. *** TEMPORARY *** force lowest format for mandated transcode decoder until
-    *    we can instantiate an encoder without decoder back-end (architectural change).
-    */
-   if (property_get(NX_TRIM_MINFMT, value, NX_PROP_ENABLED)) {
-      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         /* start index -> 1.  beware interaction with pip above. */
-         for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
-            if (pMemConfigSettings->videoDecoder[i].used) {
-               pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_eNtsc;
-               if (transcode) {
-                  pMemConfigSettings->videoDecoder[i].secure = NEXUS_SecureVideo_eUnsecure;
+   if (transcode) {
+      for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+         if (pMemConfigSettings->videoDecoder[i].used) {
+             pMemConfigSettings->videoDecoder[i].secure = NEXUS_SecureVideo_eUnsecure;
+         }
+      }
+   } else {
+     /* 9. *** TEMPORARY *** force lowest format for mandated transcode decoder until
+      *    we can instantiate an encoder without decoder back-end (architectural change).
+      */
+      if (property_get(NX_TRIM_MINFMT, value, NX_PROP_ENABLED)) {
+         if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+            /* start index -> 1.  beware interaction with pip above. */
+            for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+               if (pMemConfigSettings->videoDecoder[i].used) {
+                  pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_eNtsc;
                }
             }
          }
@@ -984,20 +989,8 @@ static nxserver_t init_nxserver(void)
     } else if (!strncmp(value, "play-trans", strlen("play-trans"))) {
        svp = SVP_MODE_PLAYBACK_TRANSCODE;
     }
-
-    if (svp == SVP_MODE_PLAYBACK) {
+    if (svp != SVP_MODE_NONE) {
        settings.svp = nxserverlib_svp_type_cdb_urr;
-    } else {
-       for (ix = 0; ix < NEXUS_MAX_VIDEO_DECODERS; ix++) {
-          memConfigSettings.videoDecoder[ix].secure =
-             (svp == SVP_MODE_NONE) ? NEXUS_SecureVideo_eUnsecure : NEXUS_SecureVideo_eSecure;
-       }
-       for (ix = 0; ix < NEXUS_MAX_DISPLAYS; ix++) {
-          for (jx = 0; jx < NEXUS_MAX_VIDEO_WINDOWS; jx++) {
-             memConfigSettings.display[ix].window[jx].secure =
-                (svp == SVP_MODE_NONE) ? NEXUS_SecureVideo_eUnsecure : NEXUS_SecureVideo_eSecure;
-          }
-       }
     }
     ALOGI("%s: svp-mode: \'%s\'", __FUNCTION__, value);
 
