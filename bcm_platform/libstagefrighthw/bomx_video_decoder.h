@@ -54,6 +54,7 @@
 #include "nxclient.h"
 #include "nexus_surface_compositor.h"
 #include "bomx_video_decoder_stats.h"
+#include "bomx_pes_formatter.h"
 #include <stdio.h>
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
@@ -154,6 +155,7 @@ public:
         const OMX_STRING pName,
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
+        bool secure=false,
         unsigned numRoles=0,
         const BOMX_VideoDecoderRole *pRoles=NULL);
 
@@ -274,11 +276,12 @@ protected:
     bool                             m_setSurface;
     FILE                            *m_pPesFile;
     FILE                            *m_pInputFile;
+    BOMX_PesFormatter               *m_pPes;
 
     char m_inputMimeType[OMX_MAX_STRINGNAME_SIZE];
     char m_outputMimeType[OMX_MAX_STRINGNAME_SIZE];
 
-    #define BOMX_VIDEO_EOS_LEN (184*3) /* BPP TPD+LAST+TPD */
+    #define BOMX_VIDEO_EOS_LEN (B_BPP_PACKET_LEN*3) /* BPP TPD+LAST+TPD */
     void *m_pEosBuffer;
     bool m_eosPending;
     bool m_eosDelivered;
@@ -308,6 +311,7 @@ protected:
     BLST_Q_HEAD(FrameBufferAllocList, BOMX_VideoDecoderFrameBuffer) m_frameBufferAllocList;
 
     OmxBinder_wrap *m_omxHwcBinder;
+    int m_memTracker;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();

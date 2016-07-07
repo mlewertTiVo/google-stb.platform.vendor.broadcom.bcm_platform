@@ -1,5 +1,5 @@
-/***************************************************************************
- *     (c)2015 Broadcom Corporation
+/******************************************************************************
+ *    (c)2010-2015 Broadcom Corporation
  *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -35,86 +35,35 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
  *
- **************************************************************************/
-#ifndef BSTD_CPU_ENDIAN
-#define BSTD_CPU_ENDIAN BSTD_ENDIAN_LITTLE
-#endif
+ *****************************************************************************/
+#ifndef BOMX_PES_FORMATTER_H__
+#define BOMX_PES_FORMATTER_H__
 
-#define LOG_TAG "nxblk"
-
-#include "bstd.h"
-#include "berr.h"
 #include "nexus_platform.h"
-#include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <assert.h>
-#include "bkni.h"
-#include "bkni_multi.h"
-#include <cutils/log.h>
-#include "nxclient.h"
-#include <fcntl.h>
-#include <cutils/properties.h>
-#include "nx_ashmem.h"
 
-BDBG_MODULE(client);
+#define B_MAX_PES_PACKET_LENGTH (65535)     // PES packets have a 16-bit length field.  0 indicates unbounded.
+#define B_PES_HEADER_START_BYTES (6)        // 00 00 01 [Stream ID] [Length 0] [Length 1] are not reported in the packet length field.
+#define B_PES_HEADER_LENGTH_WITH_PTS (14)
+#define B_PES_HEADER_LENGTH_WITHOUT_PTS (9)
+#define B_BPP_PACKET_LEN (184)
 
-static void usage(void)
+class BOMX_PesFormatter
 {
-   ALOGI("nxblk [--dump] [--marker 0|1]");
-}
+public:
+    BOMX_PesFormatter(uint16_t streamId);
+    virtual ~BOMX_PesFormatter();
 
-int main(int argc, char **argv)
-{
-    int i = 1;
-    int dump = 0;
-    int marker = 0, mark_option = -1;
-    char value[PROPERTY_VALUE_MAX];
-    char value2[PROPERTY_VALUE_MAX];
-    int fd, ret;
+    size_t InitHeader(uint8_t *pHeaderBuf, size_t maxHeaderBytes) { return InitHeader(pHeaderBuf, maxHeaderBytes, false, 0); }
+    size_t InitHeader(uint8_t *pHeaderBuf, size_t maxHeaderBytes, uint32_t pts) { return InitHeader(pHeaderBuf, maxHeaderBytes, true, pts); }
 
-    property_get("ro.nexus.ashmem.devname", value, "nx_ashmem");
-    strcpy(value2, "/dev/");
-    strcat(value2, value);
+    void SetPayloadLength(uint8_t *pHeaderBuf, uint16_t payloadLen);
 
-    while (i < argc) {
-       if (!strcmp(argv[i], "--dump")) {
-          dump = 1;
-       }
-       if (!strcmp(argv[i], "--marker")) {
-          marker = 1;
-          mark_option = atoi(argv[++i]);
-       }
-       if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
-          usage();
-          return 0;
-       }
-       i++;
-    };
+    void FormBppPacket(char *pBuffer, uint32_t opcode);
 
-    fd = open(value2, O_RDWR, 0);
-    if ((fd == -1) || (!fd)) {
-       return -EINVAL;
-    }
+protected:
+    size_t InitHeader(uint8_t *pHeaderBuf, size_t maxHeaderBytes, bool ptsValid, uint32_t pts);
 
-    if (marker) {
-       struct nx_ashmem_alloc ashmem_alloc;
-       memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
-       ashmem_alloc.marker = (mark_option == 1) ? NX_ASHMEM_MARKER_VIDEO_DECODER : 0;
-       ret = ioctl(fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
-       if (ret < 0) {
-          return -EINVAL;
-       }
-    }
+    uint16_t m_streamId;
+};
 
-    if (dump) {
-       ret = ioctl(fd, NX_ASHMEM_DUMP_ALL, NULL);
-       if (ret < 0) {
-          return -EINVAL;
-       }
-    }
-
-    close(fd);
-    return 0;
-}
+#endif /* #ifndef BOMX_PES_FORMATTER_H__ */

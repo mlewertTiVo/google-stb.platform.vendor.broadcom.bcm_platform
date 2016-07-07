@@ -30,12 +30,23 @@ endif
 # HAL module implemenation, not prelinked and stored in
 # hw/<OVERLAY_HARDWARE_MODULE_ID>.<ro.product.board>.so
 include $(CLEAR_VARS)
+include $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include/nxclient.inc
 
 LOCAL_MODULE := power.bcm_platform
 
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
-LOCAL_SHARED_LIBRARIES := liblog libcutils libdl libbinder libutils libbinder libnexusipcclient libpmlibservice libpower libnexusir $(NEXUS_LIB)
+LOCAL_SHARED_LIBRARIES := libbinder \
+                          libcutils \
+                          libdl \
+                          liblog \
+                          libnexusipcclient \
+                          libnexusir \
+                          libnxclient \
+                          libpmlibservice \
+                          libpower \
+                          libutils \
+                          $(NEXUS_LIB)
 
 ifneq ($(findstring NEXUS_HAS_GPIO, $(NEXUS_APP_DEFINES)),)
 LOCAL_C_INCLUDES += $(NEXUS_GPIO_PUBLIC_INCLUDES)
@@ -47,6 +58,8 @@ LOCAL_C_INCLUDES += $(REFSW_PATH)/bin/include \
                     $(REFSW_PATH)/../pmlibservice \
                     $(REFSW_PATH)/../libnexusir
                     
+LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
+
 LOCAL_CFLAGS:= $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES)) -DANDROID $(MP_CFLAGS)
 
 LOCAL_SRC_FILES := power.cpp \

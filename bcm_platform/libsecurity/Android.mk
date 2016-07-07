@@ -37,7 +37,7 @@ ifeq ($(BUILD_WIDEVINE_CLASSIC_FROM_SOURCE),y)
 # libdrmwvmplugin.so
 #-------------------
 include $(CLEAR_VARS)
-include $(WV_LOCAL_PATH)/../../../widevine/proprietary/drmwvmplugin/plugin-core.mk
+include $(WV_LOCAL_PATH)/../../../../widevine/proprietary/drmwvmplugin/plugin-core.mk
 
 LOCAL_MODULE := libdrmwvmplugin
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/drm
@@ -51,7 +51,7 @@ include $(BUILD_SHARED_LIBRARY)
 # libwvm.so
 #----------
 include $(CLEAR_VARS)
-include $(WV_LOCAL_PATH)/../../../widevine/proprietary/wvm/wvm-core.mk
+include $(WV_LOCAL_PATH)/../../../../widevine/proprietary/wvm/wvm-core.mk
 
 LOCAL_MODULE := libwvm
 LOCAL_PROPRIETARY_MODULE := true
@@ -63,7 +63,7 @@ include $(BUILD_SHARED_LIBRARY)
 # libdrmdecrypt.so
 #-----------------
 include $(CLEAR_VARS)
-include $(WV_LOCAL_PATH)/../../../widevine/proprietary/cryptoPlugin/decrypt-core.mk
+include $(WV_LOCAL_PATH)/../../../../widevine/proprietary/cryptoPlugin/decrypt-core.mk
 
 LOCAL_C_INCLUDES := \
 	$(TOP)/frameworks/native/include/media/hardware \

@@ -9,7 +9,7 @@ Note: Unfortunately at the moment plat-droid.py looks for a script in refsw
 that is not included as part of refsw release, so need to run this prior to
 packing.
 
-3. [OPTIONAL] Create "release_prebuilts" in the root of tree and copy the needed prebuilt binaries as listed in ./vendor/broadcom/stb/bcm_platform/tools/release/release_prebuilts.txt into release_prebuilts.  Preferrably, use the -p option to specify the staging workspace where the prebuilt binaries will be copied from, in which case the step can be skipped entirely. 
+3. [OPTIONAL] Create a folder called "release_prebuilts" in vendor/broadcom/stb/ from the root of tree and copy the needed prebuilt binaries as listed in ./vendor/broadcom/stb/bcm_platform/tools/release/release_prebuilts.txt to it.  Preferrably, use the -p option to specify the staging workspace where the prebuilt binaries will be copied from, in which case the step can be skipped entirely. 
 
 4. Run pack_release.sh from the root of tree, e.g.:
 

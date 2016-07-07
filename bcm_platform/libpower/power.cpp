@@ -39,28 +39,26 @@ static const char *PROPERTY_SYS_POWER_DOZE_TIMEOUT  = "persist.sys.power.doze.ti
 static const char *PROPERTY_PM_DOZESTATE            = "ro.pm.dozestate";
 static const char *PROPERTY_PM_OFFSTATE             = "ro.pm.offstate";
 static const char *PROPERTY_PM_INTERACTIVE_TIMEOUT  = "ro.pm.interactive.timeout";
-static const char *PROPERTY_PM_USBOFF               = "ro.pm.usboff";
-static const char *PROPERTY_PM_ETHOFF               = "ro.pm.ethoff";
-static const char *PROPERTY_PM_MOCAOFF              = "ro.pm.mocaoff";
-static const char *PROPERTY_PM_SATAOFF              = "ro.pm.sataoff";
-static const char *PROPERTY_PM_TP1OFF               = "ro.pm.tp1off";
-static const char *PROPERTY_PM_TP2OFF               = "ro.pm.tp2off";
-static const char *PROPERTY_PM_TP3OFF               = "ro.pm.tp3off";
-static const char *PROPERTY_PM_DDROFF               = "ro.pm.ddroff";
-static const char *PROPERTY_PM_MEMC1OFF             = "ro.pm.memc1off";
+static const char *PROPERTY_PM_ETH_EN               = "ro.pm.eth_en";
+static const char *PROPERTY_PM_MOCA_EN              = "ro.pm.moca_en";
+static const char *PROPERTY_PM_SATA_EN              = "ro.pm.sata_en";
+static const char *PROPERTY_PM_TP1_EN               = "ro.pm.tp1_en";
+static const char *PROPERTY_PM_TP2_EN               = "ro.pm.tp2_en";
+static const char *PROPERTY_PM_TP3_EN               = "ro.pm.tp3_en";
+static const char *PROPERTY_PM_DDR_PM_EN            = "ro.pm.ddr_pm_en";
+static const char *PROPERTY_PM_CPU_FREQ_SCALE_EN    = "ro.pm.cpufreq_scale_en";
 
 // Property defaults
-static const char *DEFAULT_PROPERTY_PM_DOZESTATE    = "S0.5";
-static const char *DEFAULT_PROPERTY_PM_OFFSTATE     = "S2";
-static const char *DEFAULT_PROPERTY_PM_USBOFF       = "1";
-static const char *DEFAULT_PROPERTY_PM_ETHOFF       = "1";
-static const char *DEFAULT_PROPERTY_PM_MOCAOFF      = "1";
-static const char *DEFAULT_PROPERTY_PM_SATAOFF      = "0";
-static const char *DEFAULT_PROPERTY_PM_TP1OFF       = "0";
-static const char *DEFAULT_PROPERTY_PM_TP2OFF       = "0";
-static const char *DEFAULT_PROPERTY_PM_TP3OFF       = "0";
-static const char *DEFAULT_PROPERTY_PM_DDROFF       = "0";
-static const char *DEFAULT_PROPERTY_PM_MEMC1OFF     = "0";
+static const char *DEFAULT_PROPERTY_PM_DOZESTATE          = "S0.5";
+static const char *DEFAULT_PROPERTY_PM_OFFSTATE           = "S2";
+static const int8_t DEFAULT_PROPERTY_PM_ETH_EN            = 1;     // Enable Ethernet during standby
+static const int8_t DEFAULT_PROPERTY_PM_MOCA_EN           = 0;     // Disable MOCA during standby
+static const int8_t DEFAULT_PROPERTY_PM_SATA_EN           = 0;     // Disable SATA during standby
+static const int8_t DEFAULT_PROPERTY_PM_TP1_EN            = 0;     // Disable CPU1 during standby
+static const int8_t DEFAULT_PROPERTY_PM_TP2_EN            = 0;     // Disable CPU2 during standby
+static const int8_t DEFAULT_PROPERTY_PM_TP3_EN            = 0;     // Disable CPU3 during standby
+static const int8_t DEFAULT_PROPERTY_PM_DDR_PM_EN         = 1;     // Enabled DDR power management during standby
+static const int8_t DEFAULT_PROPERTY_PM_CPU_FREQ_SCALE_EN = 1;     // Enable CPU frequency scaling during standby
 
 // This is the default interactive timeout in seconds, which is the time we have to
 // wait for the framework to finish broadcasting its ACTION_SCREEN_OFF intent before
@@ -200,6 +198,7 @@ static void power_init(struct power_module *module __unused)
     }
     else {
         struct sigevent se;
+        memset(&se, 0, sizeof(se));
 
         // Create the interactive timer...
         se.sigev_notify = SIGEV_THREAD;
@@ -254,7 +253,7 @@ static int power_set_state_s5()
 static int power_set_pmlibservice_state(b_powerState state)
 {
     int rc = 0;
-    pmlib_state_t pmlib_state;
+    IPmLibService::pmlib_state_t pmlib_state;
     sp<IBinder> binder = defaultServiceManager()->getService(IPmLibService::descriptor);
     sp<IPmLibService> service = interface_cast<IPmLibService>(binder);
 
@@ -270,120 +269,48 @@ static int power_set_pmlibservice_state(b_powerState state)
     }
 
     if (state == ePowerState_S05 || state == ePowerState_S1) {
-        char value[PROPERTY_VALUE_MAX] = "";
-        bool usboff   = true;
-        bool ethoff   = true;
-        bool mocaoff  = true;
-        bool sataoff  = false;
-        bool tp1off   = false;
-        bool tp2off   = false;
-        bool tp3off   = false;
-        bool ddroff   = false;
-        bool memc1off = false;
+        /* eth_en == true means leave ethernet ON during standby */
+        bool eth_en = property_get_bool(PROPERTY_PM_ETH_EN, DEFAULT_PROPERTY_PM_ETH_EN);
 
-        /* usboff == true means leave USB ON during standby */
-        property_get(PROPERTY_PM_USBOFF, value, DEFAULT_PROPERTY_PM_USBOFF);
-        if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
-            usboff = false;
-        }
-        else if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0) {
-            usboff = true;
-        }
+        /* moca_en == true means leave MOCA ON during standby */
+        bool moca_en = property_get_bool(PROPERTY_PM_MOCA_EN, DEFAULT_PROPERTY_PM_MOCA_EN);
 
-        /* ethoff == true means leave ethernet ON during standby */
-        property_get(PROPERTY_PM_ETHOFF, value, DEFAULT_PROPERTY_PM_ETHOFF);
-        if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
-            ethoff = false;
-        }
-        else if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0) {
-            ethoff = true;
-        }
+        /* sata_en == true means leave SATA ON during standby */
+        bool sata_en = property_get_bool(PROPERTY_PM_SATA_EN, DEFAULT_PROPERTY_PM_SATA_EN);
 
-        /* mocaoff == true means leave MOCA ON during standby */
-        property_get(PROPERTY_PM_MOCAOFF, value, DEFAULT_PROPERTY_PM_MOCAOFF);
-        if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
-            mocaoff = false;
-        }
-        else if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0) {
-            mocaoff = true;
-        }
+        /* tp1_en == true means leave CPU thread 1 ON during standby */
+        bool tp1_en = property_get_bool(PROPERTY_PM_TP1_EN, DEFAULT_PROPERTY_PM_TP1_EN);
 
-        /* sataoff == true means leave SATA ON during standby */
-        property_get(PROPERTY_PM_SATAOFF, value, DEFAULT_PROPERTY_PM_SATAOFF);
-        if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
-            sataoff = false;
-        }
-        else if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0) {
-            sataoff = true;
-        }
+        /* tp2_en == true means leave CPU thread 2 ON during standby */
+        bool tp2_en = property_get_bool(PROPERTY_PM_TP2_EN, DEFAULT_PROPERTY_PM_TP2_EN);
 
-        /* tp1off == true means leave CPU thread 1 ON during standby */
-        property_get(PROPERTY_PM_TP1OFF, value, DEFAULT_PROPERTY_PM_TP1OFF);
-        if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
-            tp1off = false;
-        }
-        else if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0) {
-            tp1off = true;
-        }
+        /* tp3_en == true means leave CPU thread 3 ON during standby */
+        bool tp3_en = property_get_bool(PROPERTY_PM_TP3_EN, DEFAULT_PROPERTY_PM_TP3_EN);
 
-        /* tp2off == true means leave CPU thread 2 ON during standby */
-        property_get(PROPERTY_PM_TP2OFF, value, DEFAULT_PROPERTY_PM_TP2OFF);
-        if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
-            tp2off = false;
-        }
-        else if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0) {
-            tp2off = true;
-        }
+        /* ddr_pm_en == true means enable DDR power management during standby */
+        bool ddr_pm_en = property_get_bool(PROPERTY_PM_DDR_PM_EN, DEFAULT_PROPERTY_PM_DDR_PM_EN);
 
-        /* tp3off == true means leave CPU thread 3 ON during standby */
-        property_get(PROPERTY_PM_TP3OFF, value, DEFAULT_PROPERTY_PM_TP3OFF);
-        if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
-            tp3off = false;
-        }
-        else if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0) {
-            tp3off = true;
-        }
+        /* cpufreq_scale_en == true means enable CPU frequency scaling during standby */
+        bool cpufreq_scale_en = property_get_bool(PROPERTY_PM_CPU_FREQ_SCALE_EN, DEFAULT_PROPERTY_PM_CPU_FREQ_SCALE_EN);
 
-        /* ddroff == true means leave DDR timeout to default during standby */
-        property_get(PROPERTY_PM_DDROFF, value, DEFAULT_PROPERTY_PM_DDROFF);
-        if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
-            ddroff = false;
-        }
-        else if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0) {
-            ddroff = true;
-        }
-
-        /* memc1off == true means enable MEMC1 status during standby */
-        property_get(PROPERTY_PM_MEMC1OFF, value, DEFAULT_PROPERTY_PM_MEMC1OFF);
-        if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
-            memc1off = false;
-        }
-        else if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0) {
-            memc1off = true;
-        }
-
-        pmlib_state.usb   = usboff;
-        pmlib_state.enet  = ethoff;
-        pmlib_state.moca  = mocaoff;
-        pmlib_state.sata  = sataoff;
-        pmlib_state.tp1   = tp1off;
-        pmlib_state.tp2   = tp2off;
-        pmlib_state.tp3   = tp3off;
-        pmlib_state.cpu   = false;
-        pmlib_state.ddr   = ddroff;
-        pmlib_state.memc1 = memc1off;
+        pmlib_state.enet_en          = eth_en;
+        pmlib_state.moca_en          = moca_en;
+        pmlib_state.sata_en          = sata_en;
+        pmlib_state.tp1_en           = tp1_en;
+        pmlib_state.tp2_en           = tp2_en;
+        pmlib_state.tp3_en           = tp3_en;
+        pmlib_state.cpufreq_scale_en = cpufreq_scale_en;
+        pmlib_state.ddr_pm_en        = ddr_pm_en;
     }
     else if (state == ePowerState_S0) {
-        pmlib_state.usb   = true;
-        pmlib_state.enet  = true;
-        pmlib_state.moca  = true;
-        pmlib_state.sata  = true;
-        pmlib_state.tp1   = true;
-        pmlib_state.tp2   = true;
-        pmlib_state.tp3   = true;
-        pmlib_state.cpu   = true;
-        pmlib_state.ddr   = true;
-        pmlib_state.memc1 = true;
+        pmlib_state.enet_en          = true;
+        pmlib_state.moca_en          = true;
+        pmlib_state.sata_en          = true;
+        pmlib_state.tp1_en           = true;
+        pmlib_state.tp2_en           = true;
+        pmlib_state.tp3_en           = true;
+        pmlib_state.cpufreq_scale_en = false;
+        pmlib_state.ddr_pm_en        = false;
     }
     return service->setState(&pmlib_state);
 }
@@ -535,12 +462,16 @@ static void power_set_interactive(struct power_module *module __unused, int on)
             gNexusPower->preparePowerState(ePowerState_S0);
         }
         power_finish_set_interactive(on);
+        if (gNexusPower.get()) {
+            gNexusPower->setVideoOutputsState(ePowerState_S0);
+        }
     }
     else {
         b_powerState offState = power_get_property_off_state();
 
         if (gNexusPower.get()) {
             gNexusPower->preparePowerState(offState);
+            gNexusPower->setVideoOutputsState(offState);
         }
 
         if (gInteractiveTimer) {

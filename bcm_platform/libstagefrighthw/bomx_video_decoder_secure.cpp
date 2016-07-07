@@ -93,10 +93,9 @@ BOMX_VideoDecoder_Secure::BOMX_VideoDecoder_Secure(
     const OMX_STRING pName,
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks)
-    :BOMX_VideoDecoder(pComponentType, pName, pAppData, pCallbacks)
+    :BOMX_VideoDecoder(pComponentType, pName, pAppData, pCallbacks, true)
     ,m_Sage_PlatformHandle(NULL)
 {
-    m_secureDecoder = true;
     ALOGV("%s", __FUNCTION__);
 }
 

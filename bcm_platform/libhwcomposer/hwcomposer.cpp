@@ -1961,7 +1961,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
             // video layers have a no-op 'hidden' gpx layer association, so this check is valid
             // for all since gpx layers > mm layers.
             //
-            if (i > NSC_GPX_CLIENTS_NUMBER) {
+            if (i > NSC_GPX_CLIENTS_NUMBER-1) {
                 ALOGE("Exceedeed max number of accounted layers\n");
                 break;
             }

@@ -134,7 +134,7 @@ OMX_ERRORTYPE BOMX_AndroidPlugin::getRolesOfComponent(
 {
     roles->clear();
 
-    OMX_U32 numRoles;
+    OMX_U32 numRoles = 0;
     ALOGV("getRolesOfComponent: %s", name);
     OMX_ERRORTYPE err = OMX_GetRolesOfComponent(const_cast<OMX_STRING>(name), &numRoles, NULL);
 
@@ -151,7 +151,7 @@ OMX_ERRORTYPE BOMX_AndroidPlugin::getRolesOfComponent(
             array[i] = new OMX_U8[OMX_MAX_STRINGNAME_SIZE];
         }
 
-        OMX_U32 numRoles2;
+        OMX_U32 numRoles2 = 0;
         err = OMX_GetRolesOfComponent(const_cast<OMX_STRING>(name), &numRoles2, array);
 
         CHECK_EQ(err, OMX_ErrorNone);

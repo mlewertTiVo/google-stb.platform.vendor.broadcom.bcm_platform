@@ -237,6 +237,8 @@ Connect()
         connectSettings.simpleVideoDecoder[0].windowId = 0;
         connectSettings.simpleVideoDecoder[0].windowCapabilities.type = NxClient_VideoWindowType_eMain; // TODO: Support Main/Pip
         connectSettings.simpleVideoDecoder[0].decoderCapabilities.supportedCodecs[NEXUS_VideoCodec_eMpeg2] = true;
+        connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = 1920;
+        connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = 1080;
         errCode = NxClient_Connect(&connectSettings, &pSelf->m_nxClientId);
         if ( errCode )
         {

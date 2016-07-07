@@ -178,6 +178,34 @@ bool NexusPower::getCecTransmitViewOn()
     return tx;
 }
 
+status_t NexusPower::setVideoOutputsState(b_powerState state)
+{
+    NEXUS_Error rc = NEXUS_SUCCESS;
+    NxClient_DisplaySettings displaySettings;
+
+    NxClient_GetDisplaySettings(&displaySettings);
+
+    if (state == ePowerState_S0) {
+        if (displaySettings.hdmiPreferences.enabled == false) {
+            ALOGV("%s: Enabling Video outputs...", __FUNCTION__);
+            displaySettings.hdmiPreferences.enabled = true;
+            displaySettings.componentPreferences.enabled = true;
+            displaySettings.compositePreferences.enabled = true;
+            rc = NxClient_SetDisplaySettings(&displaySettings);
+        }
+    }
+    else {
+        if (displaySettings.hdmiPreferences.enabled == true) {
+            ALOGV("%s: Disabling Video outputs...", __FUNCTION__);
+            displaySettings.hdmiPreferences.enabled = false;
+            displaySettings.componentPreferences.enabled = false;
+            displaySettings.compositePreferences.enabled = false;
+            rc = NxClient_SetDisplaySettings(&displaySettings);
+        }
+    }
+    return (rc == NEXUS_SUCCESS) ? NO_ERROR : UNKNOWN_ERROR;
+}
+
 status_t NexusPower::preparePowerState(b_powerState state)
 {
     status_t status = NO_ERROR;

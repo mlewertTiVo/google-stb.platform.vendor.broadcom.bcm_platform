@@ -281,6 +281,7 @@ protected:
     NEXUS_SimpleEncoderStatus m_videoEncStatus;
 
     FILE *m_pITBDescDumpFile;
+    int m_memTracker;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {
         return m_pVideoPorts[1]->GetDefinition()->format.video.eCompressionFormat;

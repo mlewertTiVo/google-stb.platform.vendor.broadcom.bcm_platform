@@ -1054,7 +1054,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startScan(JNIEnv *env,
         ALOGD("%s: qamMode %s (%d)", __FUNCTION__, qamModeStr.string(), bsp.qamMode);
 
         intField(bandwidthKHz)
-        bsp.symK = env->GetIntField(scanParams, bandwidthKHzID);
+        bsp.bandwidthKHz = env->GetIntField(scanParams, bandwidthKHzID);
         ALOGD("%s: bandwidthKHz %d", __FUNCTION__, bsp.bandwidthKHz);
 
         jfieldID ofdmTransmissionModeID = env->GetFieldID(cls, "ofdmTransmissionMode", SCANPARAMSOFDMTRANSMISSIONMODE_SIG);

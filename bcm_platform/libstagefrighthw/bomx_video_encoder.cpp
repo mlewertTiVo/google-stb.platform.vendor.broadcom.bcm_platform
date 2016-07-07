@@ -40,6 +40,7 @@
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_encoder"
 
+#include <fcntl.h>
 #include <cutils/log.h>
 
 #include "bomx_video_encoder.h"
@@ -48,11 +49,13 @@
 #include "OMX_VideoExt.h"
 #include "nexus_base_mmap.h"
 #include <inttypes.h>
+#include "nx_ashmem.h"
 
 #define BOMX_INPUT_MSG(x)
 
 // Runtime Properties (note: set selinux to permissive mode)
 #define B_PROPERTY_ITB_DESC_DEBUG ("media.brcm.venc_itb_desc_debug")
+#define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
 
 #define B_NUM_OF_OUT_BUFFERS (10)
 #define B_NUM_OF_IN_BUFFERS (5)
@@ -158,6 +161,44 @@ extern "C" const char *BOMX_VideoEncoder_GetRole(unsigned roleIndex)
     {
         return g_roles[roleIndex];
     }
+}
+
+static int BOMX_VideoEncoder_OpenMemoryInterface(void)
+{
+   int memBlkFd = -1;
+   char device[PROPERTY_VALUE_MAX];
+   char name[PROPERTY_VALUE_MAX];
+
+   memset(device, 0, sizeof(device));
+   memset(name, 0, sizeof(name));
+
+   property_get(B_PROPERTY_MEMBLK_ALLOC, device, NULL);
+   if (strlen(device)) {
+      strcpy(name, "/dev/");
+      strcat(name, device);
+      memBlkFd = open(name, O_RDWR, 0);
+   }
+
+   return memBlkFd;
+}
+
+static int BOMX_VideoEncoder_AdvertisePresence(void)
+{
+   int memBlkFd = -1;
+
+   memBlkFd = BOMX_VideoEncoder_OpenMemoryInterface();
+   if (memBlkFd >= 0) {
+      struct nx_ashmem_alloc ashmem_alloc;
+      memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
+      ashmem_alloc.marker = NX_ASHMEM_MARKER_VIDEO_ENCODER;
+      int ret = ioctl(memBlkFd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+      if (ret < 0) {
+         close(memBlkFd);
+         memBlkFd = -1;
+      }
+   }
+
+   return memBlkFd;
 }
 
 static void BOMX_VideoEncoder_EventCallback(void *pParam, int param)
@@ -289,7 +330,8 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_metadataEnabled(false),
     m_nativeGraphicsEnabled(false),
     m_inputMode(BOMX_VideoEncoderInputBufferType_eStandard),
-    m_pITBDescDumpFile(NULL)
+    m_pITBDescDumpFile(NULL),
+    m_memTracker(-1)
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -308,6 +350,8 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     BLST_Q_INIT(&m_ImageSurfacePushedList);
     BLST_Q_INIT(&m_EmptyFrList);
     BLST_Q_INIT(&m_EncodedFrList);
+
+    m_memTracker = BOMX_VideoEncoder_AdvertisePresence();
 
     m_numVideoPorts = 0;
     m_videoPortBase = 0;    // Android seems to require this - was: BOMX_COMPONENT_PORT_BASE(BOMX_ComponentId_eVideoEncoder, OMX_PortDomainVideo);
@@ -617,6 +661,12 @@ BOMX_VideoEncoder::~BOMX_VideoEncoder()
     {
         BLST_Q_REMOVE_HEAD(&m_EmptyFrList, link);
         delete pNxVidEncFr;
+    }
+
+    if (m_memTracker != -1)
+    {
+        close(m_memTracker);
+        m_memTracker = -1;
     }
     Unlock();
 }

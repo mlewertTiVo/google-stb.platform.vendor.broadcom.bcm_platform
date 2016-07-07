@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2013 Broadcom Corporation
+ *    (c)2011-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -47,22 +47,19 @@
 
 namespace android {
 
-typedef struct {
-    bool usb;
-    bool enet;
-    bool moca;
-    bool sata;
-    bool tp1;
-    bool tp2;
-    bool tp3;
-    bool memc1;
-    bool cpu;
-    bool ddr;
-    int flags;
-} pmlib_state_t;
-
 class IPmLibService : public IInterface {
 public:
+    typedef struct pmlib_state_t {
+        bool enet_en;
+        bool moca_en;
+        bool sata_en;
+        bool tp1_en;
+        bool tp2_en;
+        bool tp3_en;
+        bool cpufreq_scale_en;
+        bool ddr_pm_en;
+    } pmlib_state_t;
+
     DECLARE_META_INTERFACE(PmLibService);
 
     virtual status_t setState(pmlib_state_t *state) = 0;

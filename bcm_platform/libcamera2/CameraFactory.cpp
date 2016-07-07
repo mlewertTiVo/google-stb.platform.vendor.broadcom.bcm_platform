@@ -51,8 +51,11 @@ CameraFactory::~CameraFactory()
     ALOGD("CameraFactory::~CameraFactory");
     for (int i=0; i < getCameraNum(); i++) {
         delete mCamera[i];
+        free(mCameraDevices[i]);
     }
     free(mCamera);
+    free(mCameraDevices);
+    free(mCameraOrientation);
 }
 
 /****************************************************************************
@@ -134,6 +137,7 @@ void CameraFactory::parseConfig(const char* configFile)
                 ALOGD("CameraFactory::parseConfig: Unrecognized config line '%s'", line);
             }
         }
+        fclose(config);
     } else {
         ALOGD("%s not found, using camera configuration defaults", CONFIG_FILE);
         if (access(DEFAULT_DEVICE, F_OK) != -1){

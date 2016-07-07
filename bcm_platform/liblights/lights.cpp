@@ -37,6 +37,11 @@
  *
  *****************************************************************************/
 
+//#define LOG_NDEBUG 0
+
+#undef LOG_TAG
+#define LOG_TAG "bcm_light"
+
 #include <hardware/lights.h>
 
 #include "nexus_types.h"
@@ -51,6 +56,14 @@
 #include <cutils/log.h>
 
 #define NEXUS_DISPLAY_OBJECTS 4
+
+
+struct private_device_t {
+    struct light_device_t light;
+    NexusIPCClientBase *pIpcClient;
+    NexusClientContext *pClientCxt;
+    NEXUS_DisplayHandle dispHandle;
+};
 
 static int lights_device_open(const struct hw_module_t *module,
         const char *name, struct hw_device_t **device);
@@ -75,15 +88,12 @@ struct hw_module_t HAL_MODULE_INFO_SYM = {
 static int lights_set_light_backlight(struct light_device_t *dev,
         struct light_state_t const *state)
 {
-    (void)dev;
+    struct private_device_t *priv_dev = reinterpret_cast<struct private_device_t *>(dev);
 
-    NEXUS_DisplayHandle display_handle;
-    NexusIPCClientBase *ipcclient =
-        NexusIPCClientFactory::getClient("lights");
-    if (!ipcclient || !state)
+    if (!state || priv_dev == NULL)
+    {
         return -EINVAL;
-
-    ipcclient->createClientContext();
+    }
 
     LOGI("requested color: 0x%08x", state->color);
 
@@ -95,29 +105,30 @@ static int lights_set_light_backlight(struct light_device_t *dev,
     LOGV("relative luminance: %f", y);
 
     NEXUS_GraphicsColorSettings settings;
-    NEXUS_InterfaceName interfaceName;
-    NEXUS_PlatformObjectInstance objects[NEXUS_DISPLAY_OBJECTS]; /* won't overflow. */
-    size_t num = NEXUS_DISPLAY_OBJECTS;
-    NEXUS_Error nrc;
-    strcpy(interfaceName.name, "NEXUS_Display");
-    nrc = NEXUS_Platform_GetObjects(&interfaceName, &objects[0], num, &num);
-
-    NEXUS_Display_GetGraphicsColorSettings((NEXUS_DisplayHandle)objects[0].object, &settings);
+    NEXUS_Display_GetGraphicsColorSettings(priv_dev->dispHandle, &settings);
     LOGV("current brightness: %d", (int)settings.brightness);
 
     //scale to *half* of int16_t range for Nexus (full range is not usable)
     static const int full_range = 65535;
     settings.brightness = 0.5 * full_range * (y - 0.5);
     LOGV("new brightness: %d", (int)settings.brightness);
-    NEXUS_Display_SetGraphicsColorSettings((NEXUS_DisplayHandle)objects[0].object, &settings);
+    NEXUS_Display_SetGraphicsColorSettings(priv_dev->dispHandle, &settings);
 
     return 0;
 }
 
 static int lights_device_close(struct hw_device_t *dev)
 {
-    if (dev) {
-        free(dev);
+    struct private_device_t *priv_dev = reinterpret_cast<struct private_device_t *>(dev);
+
+    if (priv_dev) {
+        if (priv_dev->pIpcClient) {
+            if (priv_dev->pClientCxt) {
+                priv_dev->pIpcClient->destroyClientContext(priv_dev->pClientCxt);
+            }
+            delete priv_dev->pIpcClient;
+        }
+        free(priv_dev);
     }
     return 0;
 }
@@ -126,22 +137,59 @@ static int lights_device_open(const struct hw_module_t *module,
         const char *name, struct hw_device_t **device)
 {
     int status = -EINVAL;
+
+    *device = NULL;
     if (strcmp(name, LIGHT_ID_BACKLIGHT) == 0) {
-        light_device_t *dev = (light_device_t*)malloc(sizeof(*dev));
+        NEXUS_InterfaceName interfaceName;
+        NEXUS_PlatformObjectInstance objects[NEXUS_DISPLAY_OBJECTS]; /* won't overflow. */
+        size_t num = NEXUS_DISPLAY_OBJECTS;
+        NEXUS_Error nrc;
+
+        struct private_device_t *dev = (struct private_device_t *)malloc(sizeof(*dev));
+
+        *device = reinterpret_cast<hw_device_t *>(dev);
 
         /* initialize our state here */
         memset(dev, 0, sizeof(*dev));
 
+        dev->pIpcClient = NexusIPCClientFactory::getClient("lights");
+        if (!dev->pIpcClient) {
+            LOGE("%s: failed NexusIPCClientFactory::getClient", __FUNCTION__);
+            goto out;
+        }
+
+        dev->pClientCxt = dev->pIpcClient->createClientContext();
+        if (!dev->pClientCxt) {
+            LOGE("%s: failed createClientContext", __FUNCTION__);
+            goto out;
+        }
+
+        /* retrieve Nexus display handle */
+        strcpy(interfaceName.name, "NEXUS_Display");
+        nrc = NEXUS_Platform_GetObjects(&interfaceName, &objects[0], num, &num);
+        if (nrc != NEXUS_SUCCESS)
+        {
+            LOGE("%s: failed to get display handle (%u)", __FUNCTION__, nrc);
+            goto out;
+        }
+
         /* initialize the procs */
-        dev->common.tag = HARDWARE_DEVICE_TAG;
-        dev->common.version = 0;
-        dev->common.module = const_cast<hw_module_t*>(module);
-        dev->common.close = lights_device_close;
+        dev->light.common.tag = HARDWARE_DEVICE_TAG;
+        dev->light.common.version = 0;
+        dev->light.common.module = const_cast<hw_module_t*>(module);
+        dev->light.common.close = lights_device_close;
 
-        dev->set_light = lights_set_light_backlight;
+        dev->light.set_light = lights_set_light_backlight;
 
-        *device = reinterpret_cast<hw_device_t*>(dev);
+        dev->dispHandle = reinterpret_cast<NEXUS_DisplayHandle>(objects[0].object);
+
         status = 0;
     }
+out:
+    if (status) {
+        lights_device_close(*device);
+        *device = NULL;
+    }
+
     return status;
 }

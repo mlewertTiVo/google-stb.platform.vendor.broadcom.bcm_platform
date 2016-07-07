@@ -698,7 +698,10 @@ int jpeg_decode(uint8_t *pic, int stride, uint8_t *buf, int width, int height)
 	if(!isInitHuffman)
 	{
 		if(huffman_init(&ctx) < 0)
-			return -ERR_BAD_TABLES;
+		{
+			err = -ERR_BAD_TABLES;
+			goto error;
+		}
 	}
 	/*
 	if (ctx->dscans[0].cid != 1 || ctx->dscans[1].cid != 2 || ctx->dscans[2].cid != 3)
@@ -718,7 +721,8 @@ int jpeg_decode(uint8_t *pic, int stride, uint8_t *buf, int width, int height)
 	need 1 macroblock line more ?? */
 	if (intwidth > width || intheight > height)
 	{
-		return -ERR_BAD_WIDTH_OR_HEIGHT;
+		err = -ERR_BAD_WIDTH_OR_HEIGHT;
+		goto error;
 #if 0
 		width = intwidth;
 		height = intheight;

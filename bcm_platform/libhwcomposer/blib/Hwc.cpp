@@ -235,7 +235,7 @@ void Hwc::getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &va
 {
     Mutex::Autolock _l(mLock);
 
-    if (index > HWC_BINDER_VIDEO_SURFACE_SIZE) {
+    if (index > HWC_BINDER_VIDEO_SURFACE_SIZE-1) {
        ALOGE("%s: %p, index %d - invalid, ignored", __FUNCTION__,
               listener->asBinder().get(), index);
        value = -1;
@@ -340,8 +340,8 @@ void Hwc::getGeometry(const sp<IHwcListener>& listener, int type, int index,
     zorder = -1;
     visible = 0;
 
-    if (((type == HWC_BINDER_OMX) && (index > HWC_BINDER_VIDEO_SURFACE_SIZE)) ||
-        ((type == HWC_BINDER_SDB) && (index > HWC_BINDER_SIDEBAND_SURFACE_SIZE))) {
+    if (((type == HWC_BINDER_OMX) && (index > HWC_BINDER_VIDEO_SURFACE_SIZE-1)) ||
+        ((type == HWC_BINDER_SDB) && (index > HWC_BINDER_SIDEBAND_SURFACE_SIZE-1))) {
        ALOGE("%s: %p, type %d, index %d - invalid, ignored", __FUNCTION__,
               listener->asBinder().get(), type, index);
     } else if (type == HWC_BINDER_OMX) {
@@ -429,7 +429,7 @@ void Hwc::getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int 
 {
     Mutex::Autolock _l(mLock);
 
-    if (index > HWC_BINDER_SIDEBAND_SURFACE_SIZE) {
+    if (index > HWC_BINDER_SIDEBAND_SURFACE_SIZE-1) {
        ALOGE("%s: %p, index %d - invalid, ignored", __FUNCTION__,
               listener->asBinder().get(), index);
        value = -1;
