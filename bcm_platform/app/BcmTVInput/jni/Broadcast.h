@@ -151,6 +151,7 @@ public:
     DeliverySystem deliverySystem;
     ScanMode scanMode;
     jint freqKHz;
+    jboolean encrypted;
     /* DVB_S */
     SatellitePolarity satellitePolarity;
     jshort codeRateNumerator;

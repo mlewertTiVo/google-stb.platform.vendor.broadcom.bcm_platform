@@ -1,1 +1,9 @@
 out/target/product/bcm_platform/obj/lib/liboemcrypto.so
+out/target/product/bcm_platform/system/etc/permissions/com.google.widevine.software.drm.xml
+out/target/product/bcm_platform/system/framework/com.google.widevine.software.drm.jar
+out/target/product/bcm_platform/system/lib/libdrmdecrypt.so
+out/target/product/bcm_platform/system/lib/drm/libdrmwvmplugin.so
+out/target/product/bcm_platform/system/vendor/lib/libwvdrm_L3.so
+out/target/product/bcm_platform/system/vendor/lib/libwvm.so
+out/target/product/bcm_platform/system/vendor/lib/libWVStreamControlAPI_L3.so
+out/target/product/bcm_platform/system/vendor/lib/mediadrm/libwvdrmengine.so

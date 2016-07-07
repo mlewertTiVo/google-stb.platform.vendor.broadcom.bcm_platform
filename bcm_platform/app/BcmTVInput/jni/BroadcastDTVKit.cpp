@@ -233,8 +233,15 @@ scannerInitUnderLock()
     return true;
 }
 
+static void setScanEncrypted(bool scan_encrypted)
+{
+    E_SEARCH_SERVICE_TYPE search_type = scan_encrypted ?
+            SEARCH_SERVICE_TYPE_ALL : SEARCH_SERVICE_TYPE_FTA;
+    ASI_SetSearchServiceType(search_type);
+}
+
 static bool
-startBlindScan()
+startBlindScan(bool scan_encrypted)
 {
     if (pSelf->tot_search_active) {
         ACTL_StopTotSearch();
@@ -251,6 +258,7 @@ startBlindScan()
     static const BOOLEAN retune = TRUE;
     static const BOOLEAN manual_search = FALSE;
     ADB_PrepareDatabaseForSearch(SIGNAL_COFDM, NULL, retune, manual_search);
+    setScanEncrypted(scan_encrypted);
     if (!ACTL_StartServiceSearch(SIGNAL_COFDM, ACTL_FREQ_SEARCH)) {
         STB_OSMutexUnlock(pSelf->scanner_mutex);
         return false;
@@ -264,7 +272,7 @@ startBlindScan()
 static bool
 satelliteTuningParamsToDTVKit(BroadcastScanParams *pParams, S_MANUAL_TUNING_PARAMS &dtvkitParams)
 {
-    dtvkitParams.freq = pParams->freqKHz / 1000;
+    dtvkitParams.freq = pParams->freqKHz;
     dtvkitParams.u.sat.satellite = 0;
     dtvkitParams.u.sat.polarity = pParams->satellitePolarity == BroadcastScanParams::SatellitePolarity_Horizontal ? POLARITY_HORIZONTAL : POLARITY_VERTICAL;
     dtvkitParams.u.sat.symbol_rate = pParams->symK;
@@ -282,6 +290,9 @@ satelliteTuningParamsToDTVKit(BroadcastScanParams *pParams, S_MANUAL_TUNING_PARA
     case 809: dtvkitParams.u.sat.fec = FEC_8_9; break;
     case 910: dtvkitParams.u.sat.fec = FEC_9_10; break;
     default:
+        ALOGE("%s: Unsupported FEC: %d/%d", __FUNCTION__,
+                (int)pParams->codeRateNumerator,
+                (int)pParams->codeRateDenominator);
         return false;
     }; 
     switch (pParams->satelliteMode) {
@@ -289,6 +300,8 @@ satelliteTuningParamsToDTVKit(BroadcastScanParams *pParams, S_MANUAL_TUNING_PARA
     case BroadcastScanParams::SatelliteMode_Sat8pskLdpc: dtvkitParams.u.sat.dvb_s2 = true; dtvkitParams.u.sat.modulation = MOD_8PSK; break;
     case BroadcastScanParams::SatelliteMode_SatDvb: dtvkitParams.u.sat.dvb_s2 = false; dtvkitParams.u.sat.modulation = MOD_QPSK; break;
     default:
+        ALOGE("%s: Unsupported satellite mode: %d", __FUNCTION__,
+                (int)pParams->satelliteMode);
         return false;
     }
     return true;
@@ -365,7 +378,10 @@ startManualScan(BroadcastScanParams *pParams)
     S_MANUAL_TUNING_PARAMS dtvkitParams;
     E_STB_DP_SIGNAL_TYPE tunerType;
 
+    ALOGI("%s: Enter", __FUNCTION__);
+
     if (!tuningParamsToDTVKit(pParams, tunerType, dtvkitParams)) {
+        ALOGE("%s: Exit - unable to convert parameters", __FUNCTION__);
         return false;
     }
 
@@ -378,6 +394,7 @@ startManualScan(BroadcastScanParams *pParams)
 
     if (!scannerInitUnderLock()) {
         STB_OSMutexUnlock(pSelf->scanner_mutex);
+        ALOGE("%s: Exit - unable to init scanner", __FUNCTION__);
         return false;
     }
 
@@ -385,13 +402,17 @@ startManualScan(BroadcastScanParams *pParams)
     static const BOOLEAN retune = pParams->scanMode != BroadcastScanParams::ScanMode_Single;
     static const BOOLEAN manual_search = TRUE;
     ADB_PrepareDatabaseForSearch(tunerType, NULL, retune, manual_search);
+    setScanEncrypted(pParams->encrypted);
     if (!ACTL_StartManualSearch(tunerType, &dtvkitParams, pParams->scanMode == BroadcastScanParams::ScanMode_Home ? ACTL_NETWORK_SEARCH : ACTL_FREQ_SEARCH)) {
         STB_OSMutexUnlock(pSelf->scanner_mutex);
+        ALOGE("%s: Exit - unable to start scan", __FUNCTION__);
         return false;
     }
     pSelf->scanner.start(manual_search);
-    STB_OSMutexUnlock(pSelf->scanner_mutex);
     onScanStart();
+    STB_OSMutexUnlock(pSelf->scanner_mutex);
+
+    ALOGI("%s: Exit - success", __FUNCTION__);
     return true;
 }
 
@@ -401,15 +422,17 @@ static int BroadcastDTVKit_StartScan(BroadcastScanParams *pParams)
     ALOGE("%s: Enter", __FUNCTION__); 
 
     if (pParams == 0 || (pParams->deliverySystem == BroadcastScanParams::DeliverySystem_Dvbt && pParams->scanMode == BroadcastScanParams::ScanMode_Blind)) {
-        /* DVB-T blind scan */
-        startBlindScan();
+        ALOGI("%s: DVB-T blind scan", __FUNCTION__);
+        bool scan_encrypted = pParams ? pParams->encrypted : false;
+        startBlindScan(scan_encrypted);
         rv = 0;
     }
     else if (pParams->scanMode == BroadcastScanParams::ScanMode_Blind) {
-        /* no other blind scan */
+        ALOGE("%s: no other blind scan", __FUNCTION__);
         rv = -1;
     }
     else {
+        ALOGI("%s: DVB-T/S/C manual scan", __FUNCTION__);
         if (startManualScan(pParams)) {
             rv = 0;
         }
@@ -1585,7 +1608,10 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pSelf = new BroadcastDTVKit_Context;
 
     DTVKitPlatform_SetNVMBasePath("/data/data/com.broadcom.tvinput");
-    APP_InitialiseDVB(event_handler);
+    if (!APP_InitialiseDVB(event_handler)) {
+        ALOGE("%s: Failed to initialise the DVB stack", __FUNCTION__);
+        return -1;
+    }
 #ifdef JOURNAL
     ASI_SetEITScheduleLimit(2 * 24);
 #else

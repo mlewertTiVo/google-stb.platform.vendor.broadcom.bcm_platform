@@ -297,6 +297,7 @@ typedef struct {
 
 } DISPLAY_CLIENT_INFO;
 
+extern "C" bool check_frame_transparency(void *data, size_t width, size_t height, size_t stride);
 typedef void (* HWC_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
 
 class HwcBinder : public HwcListener
@@ -499,6 +500,8 @@ struct hwc_context_t {
 
     int hwc_with_mma;
     int dump_mma;
+
+    bool alpha_hole_background;
 };
 
 static void hwc_device_cleanup(struct hwc_context_t* ctx);
@@ -1302,9 +1305,51 @@ out:
     return ret;
 }
 
+static bool hwc_can_layer_init_display(struct hwc_context_t* ctx, int layer_id,
+                                      NEXUS_SurfaceHandle display_surface, bool is_virtual)
+{
+    NEXUS_SurfaceComposition *pComp;
+    NEXUS_SurfaceCreateSettings settings;
+
+    // Enable this only for gpx
+    if (is_virtual)
+       return false;
+
+    // Check blending type
+    pComp = &ctx->gpx_cli[layer_id].composition;
+    if ((memcmp(&pComp->colorBlend, &colorBlendingEquation[BLENDIND_TYPE_SRC_OVER], sizeof(pComp->colorBlend)) != 0) &&
+       (memcmp(&pComp->colorBlend, &colorBlendingEquation[BLENDIND_TYPE_SRC], sizeof(pComp->colorBlend)) != 0))
+       return false;
+    if ((memcmp(&pComp->alphaBlend, &alphaBlendingEquation[BLENDIND_TYPE_SRC_OVER], sizeof(pComp->alphaBlend)) != 0) &&
+       (memcmp(&pComp->alphaBlend, &alphaBlendingEquation[BLENDIND_TYPE_SRC], sizeof(pComp->alphaBlend)) != 0))
+       return false;
+
+    // Make sure clip rect has the same size as the display surface
+    NEXUS_Surface_GetCreateSettings(display_surface, &settings);
+    if ((pComp->clipRect.x == 0) && (pComp->clipRect.y == 0) &&
+       (pComp->clipRect.width == settings.width) &&
+       (pComp->clipRect.height == settings.height)) {
+       return true;
+    }
+
+    return false;
+}
+
+static void hwc_set_layer_blending(struct hwc_context_t* ctx, int layer_id, int blending)
+{
+    NEXUS_SurfaceComposition *pComp;
+
+    // Assumption is that this is a gpx layer
+    pComp = &ctx->gpx_cli[layer_id].composition;
+    pComp->colorBlend = colorBlendingEquation[blending];
+    pComp->alphaBlend = alphaBlendingEquation[blending];
+}
+
+
 bool hwc_compose_gralloc_buffer(
    struct hwc_context_t* ctx, int layer_id, PSHARED_DATA pSharedData,
-   private_handle_t *gr_buffer, NEXUS_SurfaceHandle display_surface, bool is_virtual)
+   private_handle_t *gr_buffer, NEXUS_SurfaceHandle display_surface, bool is_virtual,
+   bool check_transparency = false)
 {
     bool composed = false;
     NEXUS_Error rc;
@@ -1364,6 +1409,23 @@ bool hwc_compose_gralloc_buffer(
 
     *pActSurf = NULL;
     if (pComp->visible) {
+        if (check_transparency && (pixel_format == NEXUS_PixelFormat_eA8_B8_G8_R8)) {
+            void *addr;
+            nsecs_t t1, t2;
+
+            hwc_mem_lock(ctx, pSharedData->planes[DEFAULT_PLANE].physAddr , &addr, true);
+            t1 = systemTime(CLOCK_MONOTONIC);
+            bool transparent = check_frame_transparency(addr, pSharedData->planes[DEFAULT_PLANE].width,
+                                                        pSharedData->planes[DEFAULT_PLANE].height, stride);
+            t2 = systemTime(CLOCK_MONOTONIC);
+            int msecDelay = toMillisecondTimeoutDelay(t1, t2);
+            ALOGV("%s, trasparency:%d, delay:%d", __FUNCTION__, transparent, msecDelay);
+
+            hwc_mem_unlock(ctx, (unsigned)pSharedData->planes[DEFAULT_PLANE].physAddr, true);
+            if (transparent)
+                goto out_unlock;
+        }
+
         *pActSurf = hwc_to_nsc_surface(pSharedData->planes[plane_select].width,
                                        pSharedData->planes[plane_select].height,
                                        stride,
@@ -1857,6 +1919,19 @@ static void hwc_put_disp_surface(struct hwc_context_t *ctx, int disp_ix, NEXUS_S
     }
 }
 
+static void hwc_seed_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle surface)
+{
+   if (surface) {
+      NEXUS_Graphics2DFillSettings fillSettings;
+      NEXUS_Graphics2D_GetDefaultFillSettings(&fillSettings);
+      fillSettings.surface = surface;
+      fillSettings.color = 0;
+      fillSettings.colorOp = NEXUS_FillOp_eCopy;
+      fillSettings.alphaOp = NEXUS_FillOp_eCopy;
+      NEXUS_Graphics2D_Fill(ctx->hwc_2dg, &fillSettings);
+   }
+}
+
 static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int disp_ix)
 {
     NEXUS_SurfaceHandle surfaces[HWC_NUM_DISP_BUFFERS];
@@ -1868,22 +1943,15 @@ static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int d
        return surface;
     }
 
-    for ( ;; ) {
-        if ( BFIFO_READ_PEEK(&ctx->disp_cli[disp_ix].display_fifo) ) {
-            NEXUS_SurfaceHandle *pSurface = BFIFO_READ(&ctx->disp_cli[disp_ix].display_fifo);
-            BFIFO_READ_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
-            surface = *pSurface;
+    for (;;) {
+        if (BFIFO_READ_PEEK(&ctx->disp_cli[disp_ix].display_fifo)) {
+           NEXUS_SurfaceHandle *pSurface = BFIFO_READ(&ctx->disp_cli[disp_ix].display_fifo);
+           BFIFO_READ_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
+           surface = *pSurface;
         }
 
-        if ( surface ) {
-            NEXUS_Graphics2DFillSettings fillSettings;
-            NEXUS_Graphics2D_GetDefaultFillSettings(&fillSettings);
-            fillSettings.surface = surface;
-            fillSettings.color = 0;
-            fillSettings.colorOp = NEXUS_FillOp_eCopy;
-            fillSettings.alphaOp = NEXUS_FillOp_eCopy;
-            NEXUS_Graphics2D_Fill(ctx->hwc_2dg, &fillSettings);
-            return surface;
+        if (surface) {
+           return surface;
         }
         else {
             numSurfaces=0;
@@ -1913,6 +1981,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
     bool is_sideband = false;
     bool is_yuv = false;
     bool is_video = false;
+    bool has_video = false;
     int overlay_seen = 0;
     int fb_target_seen = 0;
     int fence_id = INVALID_FENCE;
@@ -1978,6 +2047,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
             PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
             is_video = is_video_layer(ctx, &list->hwLayers[i], -1, &is_sideband, &is_yuv);
             if (is_video && !is_yuv) {
+                has_video = true;
                 if (!is_sideband) {
                     if (ctx->hwc_binder) {
                         // TODO: currently only one video window exposed.
@@ -2012,7 +2082,16 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                    list->hwLayers[i].releaseFenceFd = fence_id;
                 }
 
-                if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, display_surface, false)) {
+                if (!layer_composed) {
+                   bool can_skip_fill = has_video && hwc_can_layer_init_display(ctx, i, display_surface, false);
+                   if (!can_skip_fill)
+                      hwc_seed_disp_surface(ctx, display_surface);
+                   else {
+                      hwc_set_layer_blending(ctx, i, BLENDIND_TYPE_SRC);
+                   }
+                }
+
+                if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, display_surface, false, has_video)) {
                    layer_composed++;
                 }
                 ctx->gpx_cli[i].last.grhdl = (buffer_handle_t)gr_buffer;
@@ -2033,21 +2112,39 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
               close(list->retireFenceFd);
               list->retireFenceFd = INVALID_FENCE;
            }
-        }
-        rc = hwc_checkpoint(ctx);
-        if ( rc )  {
-            ALOGW("%s: checkpoint timeout", __FUNCTION__);
+           if (has_video && !ctx->alpha_hole_background) {
+              hwc_seed_disp_surface(ctx, display_surface);
+              rc = hwc_checkpoint(ctx);
+              if (rc) {
+                 ALOGW("%s: checkpoint timeout", __FUNCTION__);
+              } else {
+                 rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[0].schdl, display_surface, NULL, false);
+                 if (rc) {
+                    ALOGW("%s: Unable to push surface to client (%d)", __FUNCTION__, rc);
+                 } else {
+                    ctx->alpha_hole_background = true;
+                 }
+              }
+           } else {
+              hwc_put_disp_surface(ctx, 0, display_surface);
+           }
         } else {
-            rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[0].schdl, display_surface, NULL, false);
-            if ( rc ) {
-               ALOGW("%s: Unable to push surface to client (%d)", __FUNCTION__, rc);
-            }
-        }
-        for (i = 0; i < list->numHwLayers; i++) {
-            if (ctx->gpx_cli[i].active_surface) {
-                NEXUS_Surface_Destroy(ctx->gpx_cli[i].active_surface);
-                ctx->gpx_cli[i].active_surface = NULL;
-            }
+           ctx->alpha_hole_background = false;
+           rc = hwc_checkpoint(ctx);
+           if ( rc )  {
+               ALOGW("%s: checkpoint timeout", __FUNCTION__);
+           } else {
+               rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[0].schdl, display_surface, NULL, false);
+               if ( rc ) {
+                  ALOGW("%s: Unable to push surface to client (%d)", __FUNCTION__, rc);
+               }
+           }
+           for (i = 0; i < list->numHwLayers; i++) {
+              if (ctx->gpx_cli[i].active_surface) {
+                 NEXUS_Surface_Destroy(ctx->gpx_cli[i].active_surface);
+                 ctx->gpx_cli[i].active_surface = NULL;
+              }
+           }
         }
     } else {
         ctx->stats[0].set_skipped += 1;
@@ -2646,6 +2743,8 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
 
    dev->cfg[1].width = -1;
    dev->cfg[1].height = -1;
+
+   dev->alpha_hole_background = false;
 
    if (property_get(HWC_GLES_MODE_PROP, value, HWC_DEFAULT_GLES_MODE)) {
       dev->display_gles_fallback =
