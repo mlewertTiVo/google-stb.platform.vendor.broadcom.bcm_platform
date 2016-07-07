@@ -52,6 +52,10 @@ extern "C" {
 #endif
 /* LOG_NDEBUG = 0 allows debug logs */
 //#define LOG_NDEBUG 0
+#ifdef LOG_TAG
+#undef LOG_TAG
+#endif
+#define LOG_TAG "bcm-audio"
 
 /* Android headers with "C" linkage */
 #include <cutils/log.h>
@@ -79,6 +83,8 @@ extern "C" {
 #include "nxclient.h"
 #include "nexus_simple_audio_playback.h"
 #include "nexus_simple_audio_decoder.h"
+#include "nexus_playpump.h"
+#include "bmedia_util.h"
 
 /* VERY_VERBOSE = 1 allows additional debug logs */
 #define VERY_VERBOSE 0
@@ -96,9 +102,13 @@ extern "C" {
 #define DUMMY_AUDIO_OUT 0
 #define DUMMY_AUDIO_IN  1
 
+#define BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE ("media.brcm.hw_sync.fake")
+#define DUMMY_HW_SYNC   0xCAFEBABE
+
 typedef enum {
     BRCM_DEVICE_OUT_NEXUS = 0,
     BRCM_DEVICE_OUT_NEXUS_DIRECT,
+    BRCM_DEVICE_OUT_NEXUS_TUNNEL,
     BRCM_DEVICE_OUT_USB,
     BRCM_DEVICE_OUT_MAX
 } brcm_devices_out_t;
@@ -108,6 +118,18 @@ typedef enum {
     BRCM_DEVICE_IN_USB,
     BRCM_DEVICE_IN_MAX
 } brcm_devices_in_t;
+
+typedef enum {
+    BRCM_NEXUS_STATE_NULL = 0,
+    BRCM_NEXUS_STATE_CREATED,
+    BRCM_NEXUS_STATE_DESTROYED,
+} brcm_nexus_state_t;
+
+typedef enum {
+    BRCM_OWNER_NULL = 0,
+    BRCM_OWNER_DEVICE,
+    BRCM_OWNER_OUTPUT,
+} brcm_owner_t;
 
 struct StandbyMonitorThread;
 
@@ -122,6 +144,7 @@ struct brcm_device {
     struct brcm_stream_out *bouts[BRCM_DEVICE_OUT_MAX];
     struct brcm_stream_in *bins[BRCM_DEVICE_IN_MAX];
     struct StandbyMonitorThread *standbyThread;
+    NEXUS_SimpleStcChannelHandle hw_sync_id;
 };
 
 struct brcm_stream_out_ops {
@@ -149,6 +172,11 @@ struct brcm_stream_out_ops {
     int (*do_bout_dump)(struct brcm_stream_out *bout, int fd);
     char *(*do_bout_get_parameters)(struct brcm_stream_out *bout, const char *keys);
 
+    /* optional but required for tunnel output */
+    int (*do_bout_pause)(struct brcm_stream_out *bout);
+    int (*do_bout_resume)(struct brcm_stream_out *bout);
+    int (*do_bout_drain)(struct brcm_stream_out *bout, int action);
+    int (*do_bout_flush)(struct brcm_stream_out *bout);
 };
 
 struct brcm_stream_out {
@@ -157,22 +185,36 @@ struct brcm_stream_out {
 
     pthread_mutex_t lock;
     audio_devices_t devices;
+    audio_output_flags_t flags;
     struct audio_config config;
     uint32_t frameSize;
     uint32_t framesPlayed;
     size_t buffer_size;
     bool started;
     bool suspended;
+    bool tunneled;
     int standbyCallback;
+    FILE *outDebugFile;
 
     union {
         /* nexus specific */
         struct {
+            brcm_nexus_state_t state;
             uint32_t connectId;
             NxClient_AllocResults allocResults;
             union {
                 NEXUS_SimpleAudioPlaybackHandle simple_playback;
                 NEXUS_SimpleAudioDecoderHandle simple_decoder;
+                struct {
+                    NEXUS_SimpleAudioDecoderHandle audio_decoder;
+                    NEXUS_PlaypumpHandle playpump;
+                    NEXUS_SimpleStcChannelHandle stc_channel;
+                    brcm_owner_t stc_channel_owner;
+                    NEXUS_PidChannelHandle pid_channel;
+                    const uint8_t *pp_buffer_end;
+                    bmedia_waveformatex_header wave_fmt;
+                    uint64_t pts;
+                } tunnel;
             };
             BKNI_EventHandle event;
         } nexus;
@@ -238,6 +280,7 @@ extern size_t get_brcm_audio_buffer_size(unsigned int sample_rate,
 
 extern struct brcm_stream_out_ops nexus_bout_ops;
 extern struct brcm_stream_out_ops nexus_direct_bout_ops;
+extern struct brcm_stream_out_ops nexus_tunnel_bout_ops;
 
 #if DUMMY_AUDIO_OUT
 extern struct brcm_stream_out_ops dummy_bout_ops;
@@ -249,13 +292,15 @@ extern struct brcm_stream_in_ops builtin_bin_ops;
 extern struct brcm_stream_in_ops dummy_bin_ops;
 #endif
 
-extern void set_mute_state(bool mute);
-extern bool get_mute_state(void);
-extern void set_master_volume(float volume);
-extern float get_master_volume(void);
+extern void brcm_audio_set_mute_state(bool mute);
+extern bool brcm_audio_get_mute_state(void);
+extern void brcm_audio_set_master_volume(float volume);
+extern float brcm_audio_get_master_volume(void);
+extern NEXUS_Error brcm_audio_client_join(const char *name);
+extern void brcm_audio_set_audio_volume(float leftVol, float rightVol);
 
 /* Thread to monitor standby */
-#define MAX_STANDBY_MONITOR_CALLBACKS 2
+#define MAX_STANDBY_MONITOR_CALLBACKS 3
 typedef bool (*b_standby_monitor_callback)(void *context);
 struct StandbyMonitorThread : public android::Thread {
 public:

@@ -287,9 +287,9 @@ NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid)
     NEXUS_PlatformObjectInstance *objects = NULL;
     NEXUS_ClientHandle nexusClient = NULL;
     NEXUS_InterfaceName interfaceName;
-    unsigned num = 16; /* starting size. */
-    unsigned max_num = 1024; /* some big value. */
-    unsigned i, cached_num;
+    size_t num = 16; /* starting size. */
+    size_t max_num = 1024; /* some big value. */
+    size_t i, cached_num;
     int rc;
 
     NEXUS_Platform_GetDefaultInterfaceName(&interfaceName);
@@ -301,7 +301,7 @@ NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid)
         }
         objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
         if (objects == NULL) {
-            ALOGE("%s: FATAL: Could not allocate memory to hold %d Nexus platform objects!!!", __FUNCTION__, num);
+            ALOGE("%s: FATAL: Could not allocate memory to hold %zu Nexus platform objects!!!", __FUNCTION__, num);
             BDBG_ASSERT(false);
         }
         rc = NEXUS_Platform_GetObjects(&interfaceName, objects, num, &num);
@@ -318,7 +318,6 @@ NEXUS_ClientHandle NexusService::getNexusClient(unsigned pid)
 
     for (i=0; i < num; i++) {
         NEXUS_ClientStatus status;
-        unsigned j;
         rc = NEXUS_Platform_GetClientStatus(reinterpret_cast<NEXUS_ClientHandle>(objects[i].object), &status);
         if (rc) continue;
 
@@ -614,17 +613,6 @@ void NexusService::destroyClientContext(NexusClientContext * client __unused)
    return;
 }
 
-bool NexusService::isCecEnabled(uint32_t cecId __unused)
-{
-    bool enabled = false;
-    char value[PROPERTY_VALUE_MAX];
-
-    if (NEXUS_NUM_CEC > 0 && property_get(PROPERTY_HDMI_ENABLE_CEC, value, DEFAULT_PROPERTY_HDMI_ENABLE_CEC) && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
-        enabled = true;
-    }
-    return enabled;
-}
-
 bool NexusService::setCecAutoWakeupEnabled(uint32_t cecId __unused, bool enabled)
 {
     bool success = true;
@@ -636,17 +624,6 @@ bool NexusService::setCecAutoWakeupEnabled(uint32_t cecId __unused, bool enabled
         success = false;
     }
     return success;
-}
-
-bool NexusService::isCecAutoWakeupEnabled(uint32_t cecId __unused)
-{
-    bool enabled = false;
-    char value[PROPERTY_VALUE_MAX];
-
-    if (property_get(PROPERTY_HDMI_AUTO_WAKEUP_CEC, value, DEFAULT_PROPERTY_HDMI_AUTO_WAKEUP_CEC) && (strcmp(value,"1")==0 || strcmp(value, "true")==0)) {
-        enabled = true;
-    }
-    return enabled;
 }
 
 b_cecDeviceType NexusService::toCecDeviceType(char *string)
@@ -860,7 +837,7 @@ bool NexusService::setPowerState(b_powerState pmState)
         nexusStandbySettings.wakeupSettings.ir = 1;
         nexusStandbySettings.wakeupSettings.uhf = 1;
         nexusStandbySettings.wakeupSettings.transport = 1;
-        nexusStandbySettings.wakeupSettings.cec = isCecEnabled(0) && isCecAutoWakeupEnabled(0);
+        nexusStandbySettings.wakeupSettings.cec = NexusIPCCommon::isCecEnabled(0) && NexusIPCCommon::isCecAutoWakeupEnabled(0);
         nexusStandbySettings.wakeupSettings.gpio = 1;
         nexusStandbySettings.wakeupSettings.timeout = 0;
 

@@ -44,6 +44,7 @@
 
 #include "cutils/properties.h"
 #include "nx_ashmem.h"
+#include <inttypes.h>
 
 static NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt, int *bpp);
 static BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt);
@@ -94,14 +95,14 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 static void gralloc_load_lib(void)
 {
    char value[PROPERTY_VALUE_MAX];
-   const char *gl_dyn_lib_path = "/system/lib/egl/libGLES_nexus.so";
-   gl_dyn_lib = dlopen(gl_dyn_lib_path, RTLD_LAZY | RTLD_LOCAL);
+   snprintf(value, PROPERTY_VALUE_MAX, "%slibGLES_nexus.so", V3D_DLOPEN_PATH);
+   gl_dyn_lib = dlopen(value, RTLD_LAZY | RTLD_LOCAL);
    if (!gl_dyn_lib) {
-      // try legacy path as well.
-      const char *gl_dyn_lib_path = "/vendor/lib/egl/libGLES_nexus.so";
-      gl_dyn_lib = dlopen(gl_dyn_lib_path, RTLD_LAZY | RTLD_LOCAL);
+      // last resort legacy path.
+      snprintf(value, PROPERTY_VALUE_MAX, "/vendor/lib/egl/libGLES_nexus.so");
+      gl_dyn_lib = dlopen(value, RTLD_LAZY | RTLD_LOCAL);
       if (!gl_dyn_lib) {
-         ALOGE("failed loading essential GLES library '%s': <%s>!", gl_dyn_lib_path, dlerror());
+         ALOGE("failed loading essential GLES library '%s': <%s>!", value, dlerror());
       }
    }
 
@@ -259,7 +260,7 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
     static const BM2MC_PACKET_Blend copyAlpha = {BM2MC_PACKET_BlendFactor_eSourceAlpha, BM2MC_PACKET_BlendFactor_eOne, false,
        BM2MC_PACKET_BlendFactor_eZero, BM2MC_PACKET_BlendFactor_eZero, false, BM2MC_PACKET_BlendFactor_eZero};
 
-    block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
+    block_handle = pSharedData->container.block;
     lrco = NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
     lrc  = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
 
@@ -593,7 +594,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
                     buffer_handle_t* pHandle,
                     int *pStride)
 {
-   int bpp = 0, err = 0, ret = 0, fd = -1, fd2 = -1;
+   int bpp = 0, err = 0, ret = 0, pdata = -1, sdata = -1;
    NEXUS_Error lrc;
    int size, fmt_align, fmt_set = GR_NONE;
    NEXUS_PixelFormat nxFormat = getNexusPixelFormat(format, &bpp);
@@ -603,6 +604,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    char value2[PROPERTY_VALUE_MAX];
    void *pMemory;
    struct nx_ashmem_alloc ashmem_alloc;
+   struct nx_ashmem_getmem ashmem_getmem;
 
    private_handle_t *hnd = NULL;
    (void)dev;
@@ -616,18 +618,18 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    strcpy(value2, "/dev/");
    strcat(value2, value);
 
-   fd = open(value2, O_RDWR, 0);
-   if (fd < 0) {
+   pdata = open(value2, O_RDWR, 0);
+   if (pdata < 0) {
       err = -EINVAL;
       goto error;
    }
-   fd2 = open(value2, O_RDWR, 0);
-   if (fd2 < 0) {
+   sdata = open(value2, O_RDWR, 0);
+   if (sdata < 0) {
       err = -EINVAL;
       goto error;
    }
 
-   hnd = new private_handle_t(fd, fd2, 0);
+   hnd = new private_handle_t(pdata, sdata, 0);
    if (hnd == NULL) {
       err = -ENOMEM;
       goto error;
@@ -648,20 +650,20 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
    ashmem_alloc.size = sizeof(SHARED_DATA);
    ashmem_alloc.align = GRALLOC_MAX_BUFFER_ALIGNED;
-   ret = ioctl(hnd->fd2, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+   ret = ioctl(hnd->sdata, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
    if (ret < 0) {
       err = -ENOMEM;
       goto error;
    };
-
-   hnd->sharedData = (NEXUS_Addr)ioctl(hnd->fd2, NX_ASHMEM_GETMEM);
-   if (hnd->sharedData == 0) {
+   memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
+   ret = ioctl(hnd->sdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+   if (ret < 0) {
       err = -ENOMEM;
       goto error;
+   } else {
+      block_handle = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
    }
-
    pMemory = NULL;
-   block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
    lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
    pSharedData = (PSHARED_DATA) pMemory;
    if (lrc || pSharedData == NULL) {
@@ -722,56 +724,57 @@ gralloc_alloc_buffer(alloc_device_t* dev,
          pSharedData->container.stride = hnd->oglStride;
          ashmem_alloc.size = pSharedData->container.allocSize;
       }
-      ret = ioctl(hnd->fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+      ret = ioctl(hnd->pdata, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
       if (ret >= 0) {
-         pSharedData->container.physAddr =
-             (NEXUS_Addr)ioctl(hnd->fd, NX_ASHMEM_GETMEM);
-         if (pSharedData->container.physAddr == 0) {
+         memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
+         ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+         if (ret < 0) {
             err = -ENOMEM;
             goto alloc_failed;
+         } else {
+            pSharedData->container.block = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
          }
       }
    }
    hnd->fmt_set = fmt_set;
 
-   if ((hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) && pSharedData->container.physAddr) {
+   if ((hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) && pSharedData->container.block) {
       NEXUS_Addr physAddr;
-      NEXUS_MemoryBlock_LockOffset((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &physAddr);
-      hnd->nxSurfacePhysicalAddress = (unsigned)physAddr;
+      NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &physAddr);
+      hnd->nxSurfacePhysicalAddress = (uint64_t)physAddr;
       pMemory = NULL;
-      NEXUS_MemoryBlock_Lock((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr, &pMemory);
-      hnd->nxSurfaceAddress = (unsigned)pMemory;
+      NEXUS_MemoryBlock_Lock(pSharedData->container.block, &pMemory);
+      hnd->nxSurfaceAddress = (uint64_t)pMemory;
    } else {
-      hnd->nxSurfacePhysicalAddress = (unsigned)0;
-      hnd->nxSurfaceAddress = (unsigned)0;
+      hnd->nxSurfacePhysicalAddress = 0;
+      hnd->nxSurfaceAddress = 0;
    }
 
    if (gralloc_log_mapper()) {
-      NEXUS_Addr physAddr;
-      unsigned sharedPhysAddr = hnd->sharedData;
-      NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-      sharedPhysAddr = (unsigned)physAddr;
-      ALOGI("alloc (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x",
+      NEXUS_Addr sPhysAddr, pPhysAddr;
+      NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
+      NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);
+      ALOGI("alloc (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
             getpid(),
-            hnd->sharedData,
-            sharedPhysAddr,
-            pSharedData->container.physAddr,
-            hnd->nxSurfacePhysicalAddress,
+            block_handle,
+            sPhysAddr,
+            pSharedData->container.block,
+            pPhysAddr,
             pSharedData->container.width,
             pSharedData->container.height,
             pSharedData->container.size,
             hnd->usage,
-            pSharedData->container.format,
-            hnd->nxSurfaceAddress);
+            pSharedData->container.format);
       NEXUS_MemoryBlock_UnlockOffset(block_handle);
+      NEXUS_MemoryBlock_UnlockOffset(pSharedData->container.block);
    }
 
-   if ((fmt_set != GR_NONE) && pSharedData->container.physAddr == 0) {
+   if ((fmt_set != GR_NONE) && pSharedData->container.block == 0) {
       ALOGE("%s: failed to allocate plane (%d,%d), size %d", __FUNCTION__, w, h, size);
       err = -ENOMEM;
       goto alloc_failed;
-   } else if (pSharedData->container.physAddr) {
+   } else if (pSharedData->container.block) {
        gralloc_bzero(pSharedData);
    }
 
@@ -788,8 +791,8 @@ alloc_failed:
    }
 error:
    *pHandle = NULL;
-   if (fd >= 0) close(fd);
-   if (fd2 >= 0) close(fd2);
+   if (pdata >= 0) close(pdata);
+   if (sdata >= 0) close(sdata);
    delete hnd;
    return err;
 }
@@ -808,43 +811,42 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
    }
 
    void *pMemory;
-   block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
+   private_handle_t::get_block_handles(hnd, &block_handle, NULL);
    lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
    if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(block_handle);
    pSharedData = (PSHARED_DATA) pMemory;
    if (pSharedData) {
       if (gralloc_log_mapper()) {
-         NEXUS_Addr physAddr = 0;
-         unsigned sharedPhysAddr = hnd->sharedData;
-         unsigned planePhysAddr = pSharedData->container.physAddr;
+         NEXUS_Addr sPhysAddr = 0, pPhysAddr = 0;
+         NEXUS_MemoryBlockHandle planeHandle = pSharedData->container.block;
          unsigned planePhysSize = pSharedData->container.size;
          unsigned planeWidth = pSharedData->container.width;
          unsigned planeHeight = pSharedData->container.height;
          unsigned format = pSharedData->container.format;
-         NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
-         sharedPhysAddr = (unsigned)physAddr;
-         ALOGI(" free (%s): owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::%dx%d::sz:%d::use:0x%x:0x%x::mapped:0x%x",
+         NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
+         NEXUS_MemoryBlock_LockOffset(planeHandle, &pPhysAddr);
+         ALOGI(" free (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
                hnd->pid,
-               hnd->sharedData,
-               sharedPhysAddr,
-               planePhysAddr,
-               hnd->nxSurfacePhysicalAddress,
+               block_handle,
+               sPhysAddr,
+               planeHandle,
+               pPhysAddr,
                planeWidth,
                planeHeight,
                planePhysSize,
                hnd->usage,
-               format,
-               hnd->nxSurfaceAddress);
+               format);
          NEXUS_MemoryBlock_UnlockOffset(block_handle);
+         NEXUS_MemoryBlock_UnlockOffset(planeHandle);
       }
    }
 
    if (pSharedData) {
       if (hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) {
-         if (pSharedData->container.physAddr) {
-            NEXUS_MemoryBlock_UnlockOffset((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr);
-            NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->container.physAddr);
+         if (pSharedData->container.block) {
+            NEXUS_MemoryBlock_UnlockOffset(pSharedData->container.block);
+            NEXUS_MemoryBlock_Unlock(pSharedData->container.block);
          }
       }
    }
@@ -852,8 +854,8 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
       if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
    }
 
-   if (hnd->fd >= 0) close(hnd->fd);
-   if (hnd->fd2 >= 0) close(hnd->fd2);
+   if (hnd->pdata >= 0) close(hnd->pdata);
+   if (hnd->sdata >= 0) close(hnd->sdata);
    delete hnd;
    return 0;
 }
@@ -911,7 +913,7 @@ int gralloc_device_open(const hw_module_t* module, const char* name,
 {
    int status = -EINVAL;
 
-   ALOGD("%s: %s (s-data: %d)", __FUNCTION__, name, sizeof(SHARED_DATA));
+   ALOGD("%s: %s (s-data: %zu)", __FUNCTION__, name, sizeof(SHARED_DATA));
 
    if (!strcmp(name, GRALLOC_HARDWARE_GPU0)) {
       gralloc_context_t *dev;

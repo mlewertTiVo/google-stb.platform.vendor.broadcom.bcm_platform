@@ -293,10 +293,17 @@ void NexusNxService::handleHdmiOutputHotplugCallback(int port, hdmi_state isConn
 
 #if ANDROID_ENABLE_HDMI_HDCP
         /* enable hdcp authentication if hdmi connected and powered */
-        settings.hdmiPreferences.hdcp = (isConnected == HDMI_CONNECTED) ?
-            NxClient_HdcpLevel_eOptional :
-            NxClient_HdcpLevel_eNone;
-        update = true;
+        NxClient_HdcpLevel hdcp = settings.hdmiPreferences.hdcp;
+
+        if (status.hdmi.status.connected && status.hdmi.status.rxPowered) {
+            settings.hdmiPreferences.hdcp = NxClient_HdcpLevel_eOptional;
+        }
+        else {
+            settings.hdmiPreferences.hdcp = NxClient_HdcpLevel_eNone;
+        }
+        if (hdcp != settings.hdmiPreferences.hdcp) {
+            update = true;
+        }
 #endif
         if (update) {
            rc = NxClient_SetDisplaySettings(&settings);
@@ -604,7 +611,7 @@ bool NexusNxService::platformInitIR()
     ALOGI("Nexus IR remote mask: %s (0x%llx)", ir_mask_property,
             (unsigned long long)mask);
 
-    return irHandler.start(mode, map, mask);
+    return irHandler.start(mode, map, mask, mask);
 }
 
 void NexusNxService::platformUninitIR()

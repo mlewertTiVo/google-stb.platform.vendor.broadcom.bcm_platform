@@ -79,10 +79,110 @@
 #define ETH_COALESCE_RX_USECS       "ro.nx.eth.rx_usecs"
 #define ETH_COALESCE_RX_USECS_VAL   (4096)
 #define ETH_COALESCE_RX_USECS_DEF   (0)
+#define ETH_IRQ_BALANCE             "ro.nx.eth.irq_balance"
+#define ETH_IRQ_BALANCE_VAL         (1)
 
 #define ETH_COALESCE_MODE           "dyn.nx.netcoal.set"
 #define ETH_COALESCE_DEFAULT        "default"
 #define ETH_COALESCE_USEVAL         "vmode"
+
+#define MAX_LINE_LEN                (1024)
+
+static int set_irq_affinity (int irq, int set)
+{
+   FILE *file;
+   int rc = 0;
+   int old_affinity, new_affinity = 0;
+   char name[MAX_LINE_LEN];
+   char line[MAX_LINE_LEN];
+
+   rc = snprintf(name, MAX_LINE_LEN, "/proc/irq/%d/smp_affinity", irq);
+   if (rc < 0 || rc >= MAX_LINE_LEN)
+      return -EINVAL;
+
+   file = fopen(name, "r");
+   if (!file)
+      return errno;
+   fgets (line, sizeof(line), file);
+   fclose(file);
+   new_affinity = old_affinity = strtol(line, NULL, 10);
+
+   if (!old_affinity) {
+      ALOGE("Invalid IRQ %d affinity", irq);
+   }
+
+   if (set) {
+      if (old_affinity == 1) {
+         ALOGE("Cannot clear only CPU in IRQ %d affinity", irq);
+         return -EINVAL;
+      }
+      if (!(old_affinity & 1)) {
+         ALOGV("CPU 0 already cleared in IRQ %d affinity", irq);
+         return 0;
+      }
+      new_affinity &= ~1;
+   } else {
+      if (old_affinity & 1) {
+         ALOGV("CPU 0 already set in IRQ %d affinity", irq);
+         return 0;
+      }
+      new_affinity |= 1;
+   }
+
+   file = fopen(name, "w");
+   if (!file) {
+      ALOGE("Failed to open affinity file");
+      return errno;
+   }
+   fprintf(file, "%d", new_affinity);
+   ALOGI("irq %d affinity: %d->%d", irq, old_affinity, new_affinity);
+
+   fclose(file);
+   return 0;
+}
+
+static int set_eth_irq_affinity (char *ifname, int set)
+{
+   /* find interrupts */
+   FILE *file;
+   int rc = 0;
+   char line[MAX_LINE_LEN];
+   int ifname_len = strlen(ifname);
+   int line_len;
+   int irq;
+
+   file = fopen("/proc/interrupts", "r");
+   if (!file)
+      return errno;
+
+   /* skip the first line of header */
+   fgets (line, sizeof(line), file);
+   while (fgets (line, sizeof(line), file)) {
+      line[MAX_LINE_LEN - 1] = '\0';
+      line_len = strlen(line);
+      irq = strtol(line, NULL, 10);
+      if (irq > 255)
+         break;
+
+      if (line[line_len - 1] == '\n') {
+         line[line_len - 1] = '\0';
+         line_len--;
+      }
+      if (line_len < ifname_len)
+         continue;
+      if (strncmp(ifname, &line[line_len - ifname_len], ifname_len) != 0)
+         continue;
+
+      /* Found one */
+      rc = set_irq_affinity(irq, set);
+      if (rc < 0)
+         break;
+   }
+
+   fclose(file);
+   return rc;
+}
+
 
 int main(int argc, char* argv[])
 {
@@ -181,6 +281,10 @@ int main(int argc, char* argv[])
          ETH_COALESCE_TX_FRAMES, ecoal.rx_max_coalesced_frames,
          ETH_COALESCE_RX_FRAMES, ecoal.rx_max_coalesced_frames,
          ETH_COALESCE_RX_USECS, ecoal.rx_coalesce_usecs);
+
+   if (property_get_int32(ETH_IRQ_BALANCE, ETH_IRQ_BALANCE_VAL)) {
+      set_eth_irq_affinity(argv[1], force_value);
+   }
 
 out:
    if (fd >= 0) {

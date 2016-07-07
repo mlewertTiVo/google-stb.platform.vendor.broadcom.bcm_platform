@@ -38,6 +38,8 @@
 ***************************************************************************/
 #define LOG_TAG "nxproxyif"
 
+#include <stdlib.h>
+#include <string.h>
 #include "nexus_platform_priv.h"
 #include <cutils/log.h>
 #include <sched.h>

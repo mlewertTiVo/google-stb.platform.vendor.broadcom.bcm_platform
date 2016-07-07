@@ -289,7 +289,7 @@ void NexusService::CecServiceManager::CecRxMessageHandler::parseCecMessage(const
         }
     }
 
-    ALOGV("%s: CEC%d message opcode 0x%02X length %d params \'%s\' received in thread %d", __PRETTY_FUNCTION__, cecId, opcode, length, msgBuffer, gettid());
+    ALOGV("%s: CEC%d message opcode 0x%02X length %zu params \'%s\' received in thread %d", __PRETTY_FUNCTION__, cecId, opcode, length, msgBuffer, gettid());
 
     responseLookUp(opcode, length, pBuffer);
 }
@@ -386,7 +386,7 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
 
         usleep(timeoutInMs * 1000);
 
-        ALOGD("%s: Outputting CEC%d message: src addr=0x%02X dest addr=0x%02X opcode=0x%02X length=%d params=\'%s\' [thread %d]", __PRETTY_FUNCTION__,
+        ALOGD("%s: Outputting CEC%d message: src addr=0x%02X dest addr=0x%02X opcode=0x%02X length=%zu params=\'%s\' [thread %d]", __PRETTY_FUNCTION__,
               cecId, srcaddr, destaddr, opcode, length, msgBuffer, gettid());
 
         mCecServiceManager->mCecMessageTransmittedLock.lock();
@@ -481,7 +481,7 @@ NexusService::CecServiceManager::CecServiceManager(NexusService *ns, uint32_t ce
 status_t
 NexusService::CecServiceManager::EventListener::onHdmiCecMessageReceived(int32_t portId, INexusHdmiCecMessageEventListener::hdmiCecMessage_t *message)
 {
-    ALOGV("%s: portId=%d, %d, %d, %d, opcode=0x%02x", __PRETTY_FUNCTION__, portId, message->initiator, message->destination, message->length, message->body[0]);
+    ALOGV("%s: portId=%d, %d, %d, %zu, opcode=0x%02x", __PRETTY_FUNCTION__, portId, message->initiator, message->destination, message->length, message->body[0]);
 
     sp<AMessage> msg = new AMessage;
     sp<ABuffer> buf = new ABuffer(message->length);
@@ -583,7 +583,7 @@ void NexusService::CecServiceManager::msgReceived_callback(void *context, int pa
                                           receivedMessage.data.length : HDMI_CEC_MESSAGE_BODY_MAX_LENGTH;
                     memcpy(hdmiMessage.body, receivedMessage.data.buffer, hdmiMessage.length);
 
-                    ALOGV("%s: portId=%d, %d, %d, %d, opcode=0x%02x", __PRETTY_FUNCTION__, param, hdmiMessage.initiator, hdmiMessage.destination,
+                    ALOGV("%s: portId=%d, %d, %d, %zu, opcode=0x%02x", __PRETTY_FUNCTION__, param, hdmiMessage.initiator, hdmiMessage.destination,
                             hdmiMessage.length, hdmiMessage.body[0]);
 
                     pCecServiceManager->mEventListenerLock.lock();

@@ -12,42 +12,91 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-LOCAL_PATH := ${NEXUS_BIN_DIR}
+LOCAL_PATH :=
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := libnexus
-LOCAL_SRC_FILES := libnexus.so
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_STRIP_MODULE := true
+ifeq ($(TARGET_2ND_ARCH),arm)
+LOCAL_MULTILIB := both
+LOCAL_MODULE_TARGET_ARCH := arm arm64
+LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnexus.so
+LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_2ND_ARCH}/libnexus.so
+else
+LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_1ST_ARCH}/libnexus.so
+endif
 include $(BUILD_PREBUILT)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := libnxserver
-LOCAL_SRC_FILES := libnxserver.a
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_SUFFIX := .a
 LOCAL_MODULE_CLASS := STATIC_LIBRARIES
 LOCAL_STRIP_MODULE := false
+ifeq ($(TARGET_2ND_ARCH),arm)
+LOCAL_MULTILIB := both
+LOCAL_MODULE_TARGET_ARCH := arm arm64
+LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxserver.a
+LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_2ND_ARCH}/libnxserver.a
+else
+LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxserver.a
+endif
 include $(BUILD_PREBUILT)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := libnexus_static
-LOCAL_SRC_FILES := libnexus_static.a
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_SUFFIX := .a
 LOCAL_MODULE_CLASS := STATIC_LIBRARIES
 LOCAL_STRIP_MODULE := false
+ifeq ($(TARGET_2ND_ARCH),arm)
+LOCAL_MULTILIB := both
+LOCAL_MODULE_TARGET_ARCH := arm arm64
+LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnexus_static.a
+LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_2ND_ARCH}/libnexus_static.a
+else
+LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_1ST_ARCH}/libnexus_static.a
+endif
 include $(BUILD_PREBUILT)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := libnxclient
-LOCAL_SRC_FILES := libnxclient.so
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_STRIP_MODULE := true
+ifeq ($(TARGET_2ND_ARCH),arm)
+LOCAL_MULTILIB := both
+LOCAL_MODULE_TARGET_ARCH := arm arm64
+LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxclient.so
+LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_2ND_ARCH}/libnxclient.so
+else
+LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxclient.so
+endif
+include $(BUILD_PREBUILT)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := libnxclient_static
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_SUFFIX := .a
+LOCAL_MODULE_CLASS := STATIC_LIBRARIES
+LOCAL_STRIP_MODULE := false
+ifeq ($(TARGET_2ND_ARCH),arm)
+LOCAL_MULTILIB := both
+LOCAL_MODULE_TARGET_ARCH := arm arm64
+LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxclient_static.a
+LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_2ND_ARCH}/libnxclient_static.a
+else
+LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxclient_static.a
+endif
 include $(BUILD_PREBUILT)
 
 # core nexus integration.

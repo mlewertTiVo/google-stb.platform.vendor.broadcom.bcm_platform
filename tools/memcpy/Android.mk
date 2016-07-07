@@ -17,14 +17,16 @@ include $(CLEAR_VARS)
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 LOCAL_SHARED_LIBRARIES := libnexus \
-                          libnxclient \
-                          libsrai
+                          libnxclient
 
-LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/magnum/syslib/sagelib/include
+LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
-LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
+ifeq ($(SAGE_SUPPORT),y)
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/magnum/syslib/sagelib/include
+LOCAL_SHARED_LIBRARIES += libsrai
+LOCAL_CFLAGS += -DSECURITY_SUPPORT
+endif
 
 LOCAL_SRC_FILES := memcpy.c
 LOCAL_MODULE := testmemcpy

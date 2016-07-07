@@ -13,6 +13,8 @@
 #include <cutils/log.h>
 #include <inttypes.h>
 
+#define REFSW_ADD_ON 0
+
 enum test_mode {
    test_mode_default_heap_to_default_heap,
    test_mode_default_heap_to_crr,
@@ -83,11 +85,13 @@ int main(int argc, char **argv)
        rc = NEXUS_Memory_Allocate(bufferSize, &allocSettings, &buffer);
        BDBG_ASSERT(!rc);
        NEXUS_MemoryBlock_GetProperties(NEXUS_MemoryBlock_FromAddress(buffer), &blockProps);
+#if REFSW_ADD_ON
        if (blockProps.heap != NULL) {
           NEXUS_Heap_GetStatus(blockProps.heap, &memStatus);
           NEXUS_Heap_ToString(&memStatus, bufIn, sizeof(bufIn));
           NEXUS_Heap_ToString(&memStatus, bufOut, sizeof(bufOut));
        }
+#endif
     } else if (mode == test_mode_default_heap_to_crr || mode == test_mode_main_heap_to_crr) {
        if (mode == test_mode_main_heap_to_crr) {
           NEXUS_ClientConfiguration clientConfig;
@@ -97,18 +101,22 @@ int main(int argc, char **argv)
        rc = NEXUS_Memory_Allocate(halfBufferSize, &allocSettings, &buffer);
        BDBG_ASSERT(!rc);
        NEXUS_MemoryBlock_GetProperties(NEXUS_MemoryBlock_FromAddress(buffer), &blockProps);
+#if REFSW_ADD_ON
        if (blockProps.heap != NULL) {
           NEXUS_Heap_GetStatus(blockProps.heap, &memStatus);
           NEXUS_Heap_ToString(&memStatus, bufIn, sizeof(bufIn));
        }
+#endif
        uint8_t *sec_ptr = SRAI_Memory_Allocate(halfBufferSize, SRAI_MemoryType_SagePrivate);
        BDBG_ASSERT(sec_ptr==NULL);
        secureBuffer = (void *)sec_ptr;
        NEXUS_MemoryBlock_GetProperties(NEXUS_MemoryBlock_FromAddress(secureBuffer), &blockProps);
+#if REFSW_ADD_ON
        if (blockProps.heap != NULL) {
           NEXUS_Heap_GetStatus(blockProps.heap, &memStatus);
           NEXUS_Heap_ToString(&memStatus, bufOut, sizeof(bufOut));
        }
+#endif
     } else if (mode == test_mode_main_heap_to_main_heap) {
        NEXUS_ClientConfiguration clientConfig;
        NEXUS_Platform_GetClientConfiguration(&clientConfig);
@@ -116,28 +124,34 @@ int main(int argc, char **argv)
        rc = NEXUS_Memory_Allocate(bufferSize, &allocSettings, &buffer);
        BDBG_ASSERT(!rc);
        NEXUS_MemoryBlock_GetProperties(NEXUS_MemoryBlock_FromAddress(buffer), &blockProps);
+#if REFSW_ADD_ON
        if (blockProps.heap != NULL) {
           NEXUS_Heap_GetStatus(blockProps.heap, &memStatus);
           NEXUS_Heap_ToString(&memStatus, bufIn, sizeof(bufIn));
           NEXUS_Heap_ToString(&memStatus, bufOut, sizeof(bufOut));
        }
+#endif
     } else if (mode == test_mode_crr_to_crr) {
        uint8_t *sec_ptr = SRAI_Memory_Allocate(halfBufferSize, SRAI_MemoryType_SagePrivate);
        BDBG_ASSERT(sec_ptr==NULL);
        buffer = (void *)sec_ptr;
        NEXUS_MemoryBlock_GetProperties(NEXUS_MemoryBlock_FromAddress(buffer), &blockProps);
+#if REFSW_ADD_ON
        if (blockProps.heap != NULL) {
           NEXUS_Heap_GetStatus(blockProps.heap, &memStatus);
           NEXUS_Heap_ToString(&memStatus, bufIn, sizeof(bufIn));
        }
+#endif
        sec_ptr = SRAI_Memory_Allocate(halfBufferSize, SRAI_MemoryType_SagePrivate);
        BDBG_ASSERT(sec_ptr==NULL);
        secureBuffer = (void *)sec_ptr;
        NEXUS_MemoryBlock_GetProperties(NEXUS_MemoryBlock_FromAddress(secureBuffer), &blockProps);
+#if REFSW_ADD_ON
        if (blockProps.heap != NULL) {
           NEXUS_Heap_GetStatus(blockProps.heap, &memStatus);
           NEXUS_Heap_ToString(&memStatus, bufOut, sizeof(bufOut));
        }
+#endif
     }
     dma = NEXUS_Dma_Open(NEXUS_ANY_ID, NULL);
     BDBG_ASSERT(dma);
@@ -145,7 +159,9 @@ int main(int argc, char **argv)
     NEXUS_DmaJob_GetDefaultSettings(&jobSettings);
     jobSettings.completionCallback.callback = complete;
     jobSettings.completionCallback.context = event;
-    if (mode == test_mode_default_heap_to_crr || mode == test_mode_main_heap_to_crr || mode == test_mode_crr_to_crr) {
+    if (mode == test_mode_default_heap_to_crr || mode == test_mode_main_heap_to_crr) {
+       jobSettings.bypassKeySlot = NEXUS_BypassKeySlot_eG2GR;
+    }else if (mode == test_mode_crr_to_crr) {
        jobSettings.bypassKeySlot = NEXUS_BypassKeySlot_eGR2R;
     }
     job = NEXUS_DmaJob_Create(dma, &jobSettings);
@@ -187,8 +203,12 @@ int main(int argc, char **argv)
         rc = NEXUS_DmaJob_GetStatus(job, &dmaStatus);
         BDBG_ASSERT(!rc);
         BDBG_ASSERT(dmaStatus.currentState == NEXUS_DmaJobState_eComplete);
+#if REFSW_ADD_ON
         total_dma += (dmaStatus.done - dmaStatus.queue);
         ALOGV("dma-job: q-%" PRId64", d-%" PRId64"", dmaStatus.queue, dmaStatus.done);
+#else
+        total_dma += 0;
+#endif
         dma_op = tick()-start;
         total += dma_op;
 

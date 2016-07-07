@@ -325,6 +325,9 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_maxFrameHeight(B_DEFAULT_MAX_FRAME_HEIGHT),
     m_metadataEnabled(false),
     m_nativeGraphicsEnabled(false),
+    m_duplicateFrameCount(0),
+    m_lastOutputFramePTS(0),
+    m_lastOutputFrameTicks(0),
     m_inputMode(BOMX_VideoEncoderInputBufferType_eStandard),
     m_pITBDescDumpFile(NULL),
     m_memTracker(-1)
@@ -1293,6 +1296,9 @@ NEXUS_Error BOMX_VideoEncoder::SetOutputPortState(OMX_STATETYPE newState)
     if ( newState == OMX_StateLoaded || newState == OMX_StateIdle )
     {
         // Return all pending buffers to the client
+        m_lastOutputFramePTS = 0;
+        m_lastOutputFrameTicks = 0;
+        m_duplicateFrameCount  = 0;
         ReturnPortBuffers(m_pVideoPorts[1]);
         ResetEncodedFrameList();
     }
@@ -2266,6 +2272,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::FillThisBuffer(
 NEXUS_Error BOMX_VideoEncoder::PushInputEosFrame()
 {
     NEXUS_VideoImageInputSurfaceSettings surfSettings;
+    NEXUS_Error errCode;
     OMX_ERRORTYPE err;
 
     if (m_bPushDummyFrame)
@@ -2273,14 +2280,23 @@ NEXUS_Error BOMX_VideoEncoder::PushInputEosFrame()
         err = BuildDummyFrame();
         if ( OMX_ErrorNone != err  )
         {
-            return err;
+            errCode = NEXUS_UNKNOWN;
+            goto done;
         }
     }
 
-    // NEXUS: EOS mush be pushed with NULL frame
+    // NEXUS: EOS must be pushed with NULL frame
     NEXUS_VideoImageInput_GetDefaultSurfaceSettings(&surfSettings);
     surfSettings.endOfStream = true;
-    return NEXUS_VideoImageInput_PushSurface(m_hImageInput, NULL, &surfSettings);
+    errCode = NEXUS_VideoImageInput_PushSurface(m_hImageInput, NULL, &surfSettings);
+done:
+    if (errCode == NEXUS_SUCCESS) {
+        m_bRetryPushInputEos = false;
+        m_bInputEosPushed = true;
+    } else {
+        m_bRetryPushInputEos = true;
+    }
+    return errCode;
 }
 
 OMX_ERRORTYPE BOMX_VideoEncoder::BuildDummyFrame()
@@ -2422,10 +2438,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
     if (pBufferHeader->nFlags & OMX_BUFFERFLAG_EOS)
     {
         ALOGD("input EOS received");
-        if (NEXUS_SUCCESS != PushInputEosFrame())
-        {
-            m_bPushEos = true;
-        }
+        PushInputEosFrame();
     }
 
     ReturnPortBuffer(m_pVideoPorts[0], pBuffer);
@@ -2622,12 +2635,9 @@ void BOMX_VideoEncoder::InputBufferProcess()
     }
 
     // handle EOS
-    if (m_bPushEos)
+    if (m_bRetryPushInputEos)
     {
-        if (NEXUS_SUCCESS == PushInputEosFrame())
-        {
-            m_bPushEos = false;
-        }
+        PushInputEosFrame();
     }
 
     ALOGV(" %d buffer(s) pushed", nPushed);
@@ -2761,9 +2771,30 @@ void BOMX_VideoEncoder::OutputBufferProcess()
         {
             if ( !m_pBufferTracker->Remove(pNxVidEncFr->usTimeStampOriginal, pHeader) )
             {
-                ALOGW("Unable to find tracker entry for pts %llu", pNxVidEncFr->usTimeStampOriginal);
-                BOMX_PtsToTick(pNxVidEncFr->usTimeStampOriginal, &pHeader->nTimeStamp);
+                /* Detect duplicate frames. If the frame has the same PTS as the previous frame this will
+                 * cause problems in android. Adjust the timestamp to be between the previous timestamp and
+                 * the one after this frame if not duplicated.
+                 */
+                if(pNxVidEncFr->usTimeStampOriginal == m_lastOutputFramePTS)
+                {
+                    ALOGV("Duplicate frame, PTS: %llu", pNxVidEncFr->usTimeStampOriginal);
+                    const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[0]->GetDefinition();
+                    unsigned int framerate = pPortDef->format.video.xFramerate / Q16_SCALE_FACTOR;
+                    unsigned int ptsTickOffset = 1000000/framerate;
+                    m_duplicateFrameCount++;
+                    pHeader->nTimeStamp = m_lastOutputFrameTicks + ptsTickOffset/(m_duplicateFrameCount*2);
+                    ALOGV("Duplicate Frame's new PTS (Ticks): %llu", pHeader->nTimeStamp);
+                }
+                else
+                {
+                    ALOGW("Unable to find tracker entry for pts %llu", pNxVidEncFr->usTimeStampOriginal);
+                    BOMX_PtsToTick(pNxVidEncFr->usTimeStampOriginal, &pHeader->nTimeStamp);
+                }
             }
+            else {
+               m_duplicateFrameCount = 0;
+            }
+
             if ( (pHeader->nFlags & OMX_BUFFERFLAG_EOS) && !m_pBufferTracker->Last(pHeader->nTimeStamp) )
             {
                 ALOGE("Received EOS, but timeStamp mis-matched");
@@ -2773,8 +2804,11 @@ void BOMX_VideoEncoder::OutputBufferProcess()
         if (pNxVidEncFr->clientFlags & OMX_BUFFERFLAG_EOS)
         {
             ALOGV("EOS: EOS is delivered");
-            m_bEosDelieverd = true;
         }
+
+        /* Record this frame's PTS info for duplicate frame detection */
+        m_lastOutputFramePTS = pNxVidEncFr->usTimeStampOriginal;
+        m_lastOutputFrameTicks = pHeader->nTimeStamp;
 
         pHeader->nFlags = pNxVidEncFr->clientFlags;
         pHeader->nFilledLen = pNxVidEncFr->combinedSz;
@@ -2827,17 +2861,14 @@ bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInB
         private_handle_t *pPrivateHandle = pInfo->typeInfo.native.pPrivateHandle;
 
         ALOGV("InputBufferType_eNative: pPrivateHandle:%p", pPrivateHandle);
-        ALOGV("--->phandle:%p magic=%x, flags=%x, pid=%x, stride=%x, format=%x, size=%x, sharedata=%x, usage=%x, paddr=%x, saddr=%x, aligment=%x", pPrivateHandle,
+        ALOGV("--->phandle:%p magic=%x, flags=%x, pid=%x, stride=%x, format=%x, size=%x, usage=%x, aligment=%x", pPrivateHandle,
               pPrivateHandle->magic,
               pPrivateHandle->flags,
               pPrivateHandle->pid,
               pPrivateHandle->oglStride,
               pPrivateHandle->oglFormat,
               pPrivateHandle->oglSize,
-              pPrivateHandle->sharedData,
               pPrivateHandle->usage,
-              pPrivateHandle->nxSurfacePhysicalAddress,
-              pPrivateHandle->nxSurfaceAddress,
               pPrivateHandle->alignment);
 
         if (NEXUS_SUCCESS != ExtractGrallocBuffer(pPrivateHandle, hDst))
@@ -2858,17 +2889,14 @@ bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInB
             return false;
         }
 
-        ALOGV("--->phandle:%p magic=%x, flags=%x, pid=%x, stride=%x, format=%x, size=%x, sharedata=%x, usage=%x, paddr=%x, saddr=%x, aligment=%x", pPrivateHandle,
+        ALOGV("--->phandle:%p magic=%x, flags=%x, pid=%x, stride=%x, format=%x, size=%x, usage=%x, aligment=%x", pPrivateHandle,
               pPrivateHandle->magic,
               pPrivateHandle->flags,
               pPrivateHandle->pid,
               pPrivateHandle->oglStride,
               pPrivateHandle->oglFormat,
               pPrivateHandle->oglSize,
-              pPrivateHandle->sharedData,
               pPrivateHandle->usage,
-              pPrivateHandle->nxSurfacePhysicalAddress,
-              pPrivateHandle->nxSurfaceAddress,
               pPrivateHandle->alignment);
 
         if (NEXUS_SUCCESS != ExtractGrallocBuffer(pPrivateHandle, hDst))
@@ -3049,9 +3077,9 @@ NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
 
     /* reset the codec config flag */
     m_bCodecConfigDone = false;
-    m_bEosDelieverd = false;
-    m_bEosReceived = false;
-    m_bPushEos = false;
+    m_bOutputEosReceived = false;
+    m_bRetryPushInputEos = false;
+    m_bInputEosPushed = false;
 
     ALOGV("started Nexus encoder");
 
@@ -3095,10 +3123,14 @@ static NEXUS_MemoryBlockHandle BOMX_VideoEncoder_AllocateMemoryBlk(size_t size, 
             close(memBlkFd);
             memBlkFd = -1;
          } else {
-            hMemBlk = (NEXUS_MemoryBlockHandle)ioctl(memBlkFd, NX_ASHMEM_GETMEM);
-            if (hMemBlk == NULL) {
+            struct nx_ashmem_getmem ashmem_getmem;
+            memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
+            ret = ioctl(memBlkFd, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            if (ret < 0) {
                close(memBlkFd);
                memBlkFd = -1;
+            } else {
+               hMemBlk = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
             }
          }
       }
@@ -3110,7 +3142,7 @@ static NEXUS_MemoryBlockHandle BOMX_VideoEncoder_AllocateMemoryBlk(size_t size, 
 
 NEXUS_SurfaceHandle BOMX_VideoEncoder::CreateSurface(
         int width, int height, int stride, NEXUS_PixelFormat format,
-        unsigned handle, unsigned offset, void *pAddr, int *pMemBlkFd)
+        NEXUS_MemoryBlockHandle handle, unsigned offset, void *pAddr, int *pMemBlkFd)
 {
     NEXUS_SurfaceCreateSettings createSettings;
 
@@ -3554,10 +3586,10 @@ void BOMX_VideoEncoder::ImageBufferProcess()
 
     }
     // retry if failed to push EOS, or input queue is not empty.
-    if ((m_pVideoPorts[0]->QueueDepth() > 0) || m_bPushEos )
+    if ((m_pVideoPorts[0]->QueueDepth() > 0) || m_bRetryPushInputEos )
     {
         B_Event_Set(m_hInputBufferProcessEvent);
-        ALOGV("trigger input event process for %s", m_bPushEos ? "EOS" : "remaining buffer");
+        ALOGV("trigger input event process for %s", m_bRetryPushInputEos ? "EOS" : "remaining buffer");
     }
 
 }
@@ -3781,7 +3813,7 @@ bool BOMX_VideoEncoder::HaveCompleteFrame( const NEXUS_VideoEncoderDescriptor *p
                 if (pDesc0->flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_EOS)
                 {
                     ALOGI("EOS: received EOS on encoder output");
-                    m_bEosReceived = true;
+                    m_bOutputEosReceived = true;
                 }
                 return true;
             }
@@ -3798,7 +3830,7 @@ bool BOMX_VideoEncoder::HaveCompleteFrame( const NEXUS_VideoEncoderDescriptor *p
                 if (pDesc1->flags & NEXUS_VIDEOENCODERDESCRIPTOR_FLAG_EOS)
                 {
                     ALOGI("EOS: received EOS on encoder output");
-                    m_bEosReceived = true;
+                    m_bOutputEosReceived = true;
                 }
                 return true;
             }
@@ -3879,6 +3911,12 @@ unsigned int BOMX_VideoEncoder::RetrieveFrameFromHardware(void *pBufferBase)
         if (!HaveCompleteFrame(pDesc0, size0, pDesc1, size1, &numToProcess))
         {
             ALOGV("in-completed frame, retry");
+            if (m_bInputEosPushed && !m_bOutputEosReceived)
+            {
+                // Can't rely on DataReady event for the output EOS, we have to poll.
+                ALOGV("Polling for output EOS");
+                B_Event_Set(m_hOutputBufferProcessEvent);
+            }
             break;
         }
 
@@ -3927,7 +3965,7 @@ unsigned int BOMX_VideoEncoder::RetrieveFrameFromHardware(void *pBufferBase)
             }
 
             pEmptyFr->baseAddr = (unsigned int) pBufferBase;
-            if (m_bEosReceived)
+            if (m_bOutputEosReceived)
             {
                 pEmptyFr->clientFlags |= OMX_BUFFERFLAG_EOS;
             }
@@ -4206,10 +4244,11 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
     uint8_t *pAddr;
     NEXUS_MemoryBlockHandle block_handle = NULL;
     PSHARED_DATA pSharedData;
-    unsigned int cFormat, width, height, stride, planeHandle;
+    unsigned int cFormat, width, height, stride;
+    NEXUS_MemoryBlockHandle planeHandle;
 
     pMemory = NULL;
-    block_handle = (NEXUS_MemoryBlockHandle)handle->sharedData;
+    private_handle_t::get_block_handles(handle, &block_handle, NULL);
     rc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
     ALOG_ASSERT(!rc);
     pSharedData = (PSHARED_DATA) pMemory;
@@ -4220,7 +4259,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         goto out;
     }
 
-    planeHandle = pSharedData->container.physAddr;
+    planeHandle = pSharedData->container.block;
     pAddr = NULL;
 
     cFormat = pSharedData->container.format;
@@ -4329,7 +4368,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
             goto out;
         }
 
-        ALOGV("Nexus pixel format:%d - pAddr=%p, plane handle=%u",
+        ALOGV("Nexus pixel format:%d - pAddr=%p, plane handle=%p",
               pixelFormat, pAddr, planeHandle);
 
         hSrc = CreateSurface(width, height, stride, pixelFormat, planeHandle, 0, NULL, NULL);

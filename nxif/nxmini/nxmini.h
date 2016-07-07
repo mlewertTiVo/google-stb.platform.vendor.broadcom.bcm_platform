@@ -46,4 +46,6 @@
 #include "nexus_display.h"
 #include "nexus_graphics2d.h"
 
+void trim_encoder_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings);
+
 #endif

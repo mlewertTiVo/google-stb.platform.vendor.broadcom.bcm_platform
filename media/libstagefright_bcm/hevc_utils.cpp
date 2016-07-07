@@ -257,7 +257,7 @@ static int ParseSPSRps(ABitReader *br, unsigned int rps_idx, unsigned int num_rp
 
         num_delta_pocs[rps_idx] = 0;
 
-        for (i = 0; i < num_delta_pocs[rps_idx - 1 ]; i++) {
+        for (i = 0; i <= num_delta_pocs[rps_idx-1]; i++) {
             uint8_t use_delta_flag = 0;
             uint8_t used_by_curr_pic_flag = br->getBits(1);
 

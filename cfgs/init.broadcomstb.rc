@@ -1,12 +1,14 @@
 # import other bcm_platform specific init.
 import /init.bcm_platform.usb.rc
 import /init.brcm_dhd.rc
+import /init.brcm_nic.rc
 import /init.brcm_bt.rc
 import /init.brcm_hwmon.rc
 import /init.nfs.rc
 import /init.blockdev.rc
 import /init.eth.rc
 import /init.nx.dynheap.rc
+import /init.brcm_fs.rc
 
 on early-init
    # Mount kernel debugfs
@@ -24,13 +26,6 @@ on init
    export NEXUS_DEVICE_NODE /dev/mali
    export NEXUS_WAKE_DEVICE_NODE /dev/mali0
 
-on fs
-   mount_all /fstab.bcm_platform
-   setprop chrome.tv.hole_threshold 0
-   setprop ro.nexus.devname mali
-   setprop ro.nexus.wake.devname mali0
-   setprop ro.nexus.ashmem.devname ion
-
 on boot
    # Subsytem Ramdump collection
    mkdir /data/tombstones 0777 system system
@@ -43,7 +38,7 @@ on post-fs
    export NEXUS_LOGGER_FILE /data/nexus/nexus.log
 
    setprop ro.nx.v3d.no_map_lock 0
-
+   setprop dyn.nx.state none
    setprop ro.nexus.nxserver.hdcp1x_keys /mnt/hwcfg/drm_hdcp1x.bin
    setprop ro.nexus.nxserver.hdcp2x_keys /mnt/hwcfg/drm.bin
 
@@ -74,40 +69,14 @@ on post-fs-data
 
    class_start pre_core
 
-on property:hw.nexus.platforminit=on
+on property:dyn.nx.state=loaded
    # insmod nx_ashmem driver (gralloc memory support).
    insmod /system/vendor/drivers/nx_ashmem.ko devname="ion" heap_grow="8m"
    class_start main
-
-on property:dyn.nx.vidout.set=1
-   start nxdispfmt
 
 on property:sys.gator=1
    insmod /system/vendor/drivers/gator.ko
    start gatord
 
-service nxserver /system/bin/nxserver
-   class core
-   user root
-   group system
-   socket nxserver stream 0666 root system
-   critical
-   oneshot
-
-service hwcbinder /system/bin/hwcbinder
-   class pre_core
-   user root
-   group system media
-   critical
-   oneshot
-
-service nxdispfmt /system/bin/nxdispfmt
-   class late_start
-   oneshot
-   disabled
-
-service gatord /system/bin/gatord
-   class late_start
-   user root
-   oneshot
-   disabled
+on property:dev.bootcomplete=1
+   setprop sys.init_log_level 4

@@ -45,7 +45,7 @@ struct hwc_listener_t
 
 struct hwc_disp_notifier_t
 {
-   int listener;
+   void *listener;
    int surface;
    struct hwc_position frame;
    struct hwc_position clipped;

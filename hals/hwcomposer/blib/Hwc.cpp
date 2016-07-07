@@ -49,7 +49,7 @@ static const char *registrant_name [] = {
 Hwc::Hwc() : BnHwc() {
    for (int i = 0; i < HWC_BINDER_VIDEO_SURFACE_SIZE; i++) {
       mVideoSurface[i].surface = (int)INVALID_HANDLE;
-      mVideoSurface[i].listener = 0;
+      mVideoSurface[i].listener = NULL;
       memset(&mVideoSurface[i].frame, 0, sizeof(struct hwc_position));
       memset(&mVideoSurface[i].clipped, 0, sizeof(struct hwc_position));
       mVideoSurface[i].zorder = -1;
@@ -60,7 +60,7 @@ Hwc::Hwc() : BnHwc() {
 
    for (int i = 0; i < HWC_BINDER_SIDEBAND_SURFACE_SIZE; i++) {
       mSidebandSurface[i].surface = (int)INVALID_HANDLE;
-      mSidebandSurface[i].listener = 0;
+      mSidebandSurface[i].listener = NULL;
       memset(&mSidebandSurface[i].frame, 0, sizeof(struct hwc_position));
       memset(&mSidebandSurface[i].clipped, 0, sizeof(struct hwc_position));
       mSidebandSurface[i].zorder = -1;
@@ -116,7 +116,7 @@ status_t Hwc::dump(int fd, const Vector<String16>& args)
         result.appendFormat("maximum video-surface: %d\n", HWC_BINDER_VIDEO_SURFACE_SIZE);
         for ( int i = 0; i < HWC_BINDER_VIDEO_SURFACE_SIZE; i++) {
             if (mVideoSurface[i].surface != (int)INVALID_HANDLE) {
-               result.appendFormat("\tvideo-surface: %d -> 0x%x, display: {%d,%d} (in-use 0x%x), frame: {%d,%d,%d,%d}, clipped: {%d,%d,%d,%d}, zorder:%d, visible: %s\n",
+               result.appendFormat("\tvideo-surface: %d -> 0x%x, display: {%d,%d} (in-use %p), frame: {%d,%d,%d,%d}, clipped: {%d,%d,%d,%d}, zorder:%d, visible: %s\n",
                   i, mVideoSurface[i].surface, mVideoSurface[i].disp_w, mVideoSurface[i].disp_h, mVideoSurface[i].listener,
                   mVideoSurface[i].frame.x, mVideoSurface[i].frame.y, mVideoSurface[i].frame.w, mVideoSurface[i].frame.h,
                   mVideoSurface[i].clipped.x, mVideoSurface[i].clipped.y, mVideoSurface[i].clipped.w, mVideoSurface[i].clipped.h,
@@ -127,7 +127,7 @@ status_t Hwc::dump(int fd, const Vector<String16>& args)
         result.appendFormat("maximum sideband-surface: %d\n", HWC_BINDER_SIDEBAND_SURFACE_SIZE);
         for ( int i = 0; i < HWC_BINDER_SIDEBAND_SURFACE_SIZE; i++) {
             if (mSidebandSurface[i].surface != (int)INVALID_HANDLE) {
-               result.appendFormat("\tsideband-surface: %d -> 0x%x, display: {%d,%d} (in-use 0x%x), frame: {%d,%d,%d,%d}, clipped: {%d,%d,%d,%d}, zorder:%d, visible: %s\n",
+               result.appendFormat("\tsideband-surface: %d -> 0x%x, display: {%d,%d} (in-use %p), frame: {%d,%d,%d,%d}, clipped: {%d,%d,%d,%d}, zorder:%d, visible: %s\n",
                   i, mSidebandSurface[i].surface, mSidebandSurface[i].disp_w, mSidebandSurface[i].disp_h, mSidebandSurface[i].listener,
                   mSidebandSurface[i].frame.x, mSidebandSurface[i].frame.y, mSidebandSurface[i].frame.w, mSidebandSurface[i].frame.h,
                   mSidebandSurface[i].clipped.x, mSidebandSurface[i].clipped.y, mSidebandSurface[i].clipped.w, mSidebandSurface[i].clipped.h,
@@ -194,13 +194,13 @@ void Hwc::unregisterListener(const sp<IHwcListener>& listener)
            mNotificationListeners.removeAt(i);
 
            for ( int j = 0; j < HWC_BINDER_VIDEO_SURFACE_SIZE; j++) {
-               if (mVideoSurface[j].listener == (int)listener->asBinder(listener).get()) {
+               if (mVideoSurface[j].listener == (void *)listener->asBinder(listener).get()) {
                    mVideoSurface[j].listener = 0;
                }
            }
 
            for ( int j = 0; j < HWC_BINDER_SIDEBAND_SURFACE_SIZE; j++) {
-               if (mSidebandSurface[j].listener == (int)listener->asBinder(listener).get()) {
+               if (mSidebandSurface[j].listener == (void *)listener->asBinder(listener).get()) {
                    mSidebandSurface[j].listener = 0;
                }
            }
@@ -243,7 +243,7 @@ void Hwc::getVideoSurfaceId(const sp<IHwcListener>& listener, int index, int &va
        // remember who asked for it last, this is who we will
        // notify of changes.  we are not responsible for managing
        // contention, we are just a pass through service.
-       mVideoSurface[index].listener = (int)listener->asBinder(listener).get();
+       mVideoSurface[index].listener = (void *)listener->asBinder(listener).get();
        value = mVideoSurface[index].surface;
        ALOGD("%s: %p, index %d, value %x", __FUNCTION__,
              listener->asBinder(listener).get(), index, value);
@@ -313,7 +313,7 @@ void Hwc::setGeometry(const sp<IHwcListener>& listener, int type, int index,
     if (updated && (type == HWC_BINDER_SDB) && (mSidebandSurface[index].listener)) {
        for (size_t j = 0; j < N; j++) {
           const hwc_listener_t& notify = mNotificationListeners[j];
-          if ((int)notify.binder.get() == mSidebandSurface[index].listener) {
+          if ((void *)notify.binder.get() == mSidebandSurface[index].listener) {
              sp<IBinder> binder = notify.binder;
              sp<IHwcListener> target = interface_cast<IHwcListener> (binder);
              struct hwc_notification_info ntfy;
@@ -385,7 +385,7 @@ void Hwc::setDisplayFrameId(const sp<IHwcListener>& listener, int handle, int fr
        size_t N = mNotificationListeners.size();
        for (size_t i = 0; i < N; i++) {
            const hwc_listener_t& client = mNotificationListeners[i];
-           if ((int)client.binder.get() == mVideoSurface[index].listener) {
+           if ((void *)client.binder.get() == mVideoSurface[index].listener) {
               sp<IBinder> binder = client.binder;
               sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
               struct hwc_notification_info ntfy;
@@ -437,7 +437,7 @@ void Hwc::getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int 
        // remember who asked for it last, this is who we will
        // notify of changes.  we are not responsible for managing
        // contention, we are just a pass through service.
-       mSidebandSurface[index].listener = (int)listener->asBinder(listener).get();
+       mSidebandSurface[index].listener = (void *)listener->asBinder(listener).get();
        value = mSidebandSurface[index].surface;
        ALOGD("%s: %p, index %d, value %x", __FUNCTION__,
              listener->asBinder(listener).get(), index, value);

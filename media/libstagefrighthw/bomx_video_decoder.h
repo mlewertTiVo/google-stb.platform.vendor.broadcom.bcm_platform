@@ -56,11 +56,16 @@
 #include "bomx_video_decoder_stats.h"
 #include "bomx_pes_formatter.h"
 #include <stdio.h>
+#include <cutils/native_handle.h>
+
+#define B_PROPERTY_TRIM_VP9 ("ro.nx.trim.vp9")
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateTunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex);
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Tunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_VideoDecoder_GetRoleVp9(unsigned roleIndex);
 
 struct BOMX_VideoDecoderInputBufferInfo
@@ -89,6 +94,7 @@ enum BOMX_VideoDecoderOutputBufferType
     BOMX_VideoDecoderOutputBufferType_eStandard,
     BOMX_VideoDecoderOutputBufferType_eNative,
     BOMX_VideoDecoderOutputBufferType_eMetadata,
+    BOMX_VideoDecoderOutputBufferType_eNone,
     BOMX_VideoDecoderOutputBufferType_eMax
 };
 
@@ -156,6 +162,7 @@ public:
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
         bool secure=false,
+        bool tunnel=false,
         unsigned numRoles=0,
         const BOMX_VideoDecoderRole *pRoles=NULL,
         const char *(*pGetRole)(unsigned roleIndex)=NULL);
@@ -234,10 +241,10 @@ public:
     void PlaypumpEvent();
     void PlaypumpTimer();
     void OutputFrameEvent();
-    void DisplayFrameEvent();
 
-    void DisplayFrame(unsigned serialNumber);
     void SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned serialNumber, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible);
+    void DisplayFrameEvent();
+    void RunDisplayThread(void);
     void BinderNotifyDisplay(struct hwc_notification_info &ntfy);
 
     inline OmxBinder_wrap *omxHwcBinder(void) { return m_omxHwcBinder; };
@@ -253,6 +260,14 @@ protected:
         ConfigBufferState_eMax
     };
 
+    enum InputReturnMode
+    {
+        InputReturnMode_eTimestamp,             // Return input ports upto the specified timestamp
+        InputReturnMode_eTimeout,               // Return input ports upto the timeout limit
+        InputReturnMode_eAll,                   // Return all input ports that are marked as completed
+        InputReturnMode_eMax
+    };
+
     NEXUS_SimpleVideoDecoderHandle m_hSimpleVideoDecoder;
     NEXUS_PlaypumpHandle m_hPlaypump;
     NEXUS_PidChannelHandle m_hPidChannel;
@@ -261,7 +276,7 @@ protected:
     B_SchedulerTimerId m_playpumpTimerId;
     B_EventHandle m_hOutputFrameEvent;
     B_SchedulerEventId m_outputFrameEventId;
-    B_EventHandle m_hDisplayFrameEvent;
+    BKNI_EventHandle m_hDisplayFrameEvent;
     B_SchedulerEventId m_displayFrameEventId;
     B_MutexHandle m_hDisplayMutex;
     B_SchedulerTimerId m_inputBuffersTimerId;
@@ -298,6 +313,8 @@ protected:
     bool m_metadataEnabled;
     bool m_adaptivePlaybackEnabled;
     bool m_secureDecoder;
+    bool m_tunnelMode;
+    native_handle_t *m_pTunnelNativeHandle;
     unsigned m_outputWidth;
     unsigned m_outputHeight;
     unsigned m_maxDecoderWidth;
@@ -313,6 +330,8 @@ protected:
     ConfigBufferState m_configBufferState;
     size_t m_configBufferSize;
 
+    void *m_pEndOfChunkBuffer;  // End of chunk BPP buffer for VP9
+
     BOMX_VideoDecoderOutputBufferType m_outputMode;
 
     BLST_Q_HEAD(FrameBufferFreeList, BOMX_VideoDecoderFrameBuffer) m_frameBufferFreeList;
@@ -320,16 +339,25 @@ protected:
 
     OmxBinder_wrap *m_omxHwcBinder;
     int m_memTracker;
-    bool m_securePicBuff;
+    bool m_secureRuntimeHeaps;
 
     // Needed to save the latest geometry and frame serial to display
     NEXUS_Rect m_framePosition, m_frameClip;
     unsigned m_frameSerial, m_frameWidth, m_frameHeight, m_framezOrder;
     bool m_displayFrameAvailable;
+    bool m_displayThreadStop;
+    pthread_t m_hDisplayThread;
 
     size_t m_droppedFrames;
     size_t m_consecDroppedFrames;
     size_t m_maxConsecDroppedFrames;
+    size_t m_earlyDroppedFrames;
+    int m_earlyDropThresholdMs;
+    nsecs_t m_startTime;
+
+    NEXUS_SimpleStcChannelHandle m_tunnelStcChannel;
+
+    bool m_ptsReceived;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
@@ -387,7 +415,7 @@ protected:
         size_t codecHeaderLength,
         NEXUS_PlaypumpScatterGatherDescriptor *pDescriptors,
         unsigned maxDescriptors,
-        unsigned *pNumDescriptors
+        size_t *pNumDescriptors
         );
 
     void CancelTimerId(B_SchedulerTimerId& timerId);
@@ -396,7 +424,7 @@ protected:
     void InputBufferNew();
     void InputBufferReturned();
     void InputBufferCounterReset();
-    void ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTimeout);
+    void ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMode mode);
     bool ReturnInputPortBuffer(BOMX_Buffer *pBuffer);
 
     // The functions below allow derived classes to override them

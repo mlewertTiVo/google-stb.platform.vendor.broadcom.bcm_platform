@@ -34,7 +34,11 @@ LOCAL_SHARED_LIBRARIES += libnxclient libnexusipcclient libbinder
 LOCAL_SHARED_LIBRARIES += libbcmsideband
 
 LOCAL_SRC_FILES := tv_input.cpp
+ifneq ($(NEXUS_HDMI_INPUT_SUPPORT),n)
 LOCAL_SRC_FILES += hdmi_tv_input.cpp
+else
+LOCAL_SRC_FILES += hdmi_tv_input_stub.cpp
+endif
 
 LOCAL_MODULE := tv_input.$(TARGET_BOARD_PLATFORM)
 LOCAL_MODULE_TAGS := optional

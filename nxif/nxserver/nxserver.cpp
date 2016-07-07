@@ -1,7 +1,7 @@
 /******************************************************************************
- *    (c) 2015 Broadcom Corporation
+ *    (c) 2015-2016 Broadcom
  *
- * This program is the proprietary software of Broadcom Corporation and/or its licensors,
+ * This program is the proprietary software of Broadcom and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
  * (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
@@ -63,6 +63,9 @@
 #include <sched.h>
 #include <sys/resource.h>
 #include <cutils/sched_policy.h>
+#include <inttypes.h>
+#include <sys/prctl.h>
+#include <semaphore.h>
 
 #include <binder/IPCThreadState.h>
 #include <binder/ProcessState.h>
@@ -78,6 +81,7 @@
 #include "nexus_security.h"
 #include "nexus_bsp_config.h"
 #include "nexus_base_mmap.h"
+#include "nexus_watchdog.h"
 
 #include "PmLibService.h"
 
@@ -85,6 +89,7 @@
 #define DHD_SECDMA_PARAMS_PATH         "/data/nexus/secdma"
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
+#define NEXUS_LOGGER_DATA_PATH         "/data/nexus/nexus.log"
 #define APP_MAX_CLIENTS                (64)
 #define MB                             (1024*1024)
 #define KB                             (1024)
@@ -102,11 +107,6 @@
 #define GRAPHICS_RES_WIDTH_PROP        "ro.graphics_resolution.width"
 #define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
 
-#define ENCODER_RES_WIDTH_DEFAULT      (1280)
-#define ENCODER_RES_HEIGHT_DEFAULT     (720)
-#define ENCODER_RES_WIDTH_PROP         "ro.nx.enc.max.width"
-#define ENCODER_RES_HEIGHT_PROP        "ro.nx.enc.max.height"
-
 #define NX_ACT_GC                      "ro.nx.act.gc"
 #define NX_ACT_GS                      "ro.nx.act.gs"
 #define NX_ACT_LMK                     "ro.nx.act.lmk"
@@ -114,10 +114,10 @@
 #define NX_MMA_GROW_SIZE               "ro.nx.heap.grow"
 #define NX_MMA_SHRINK_THRESHOLD        "ro.nx.heap.shrink"
 #define NX_MMA_SHRINK_THRESHOLD_DEF    "2m"
-#define NX_TRANSCODE                   "ro.nx.transcode"
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
 #define NX_CAPABLE_COMP_BYPASS         "ro.nx.capable.cb"
 #define NX_COMP_VIDEO                  "ro.nx.cvbs"
+#define NX_CAPABLE_FRONT_END           "ro.nx.capable.fe"
 
 #define NX_HDMI_DRM_KEY                "ro.nx.hdmi_drm"
 
@@ -147,6 +147,10 @@
 
 #define NX_PROP_ENABLED                "1"
 #define NX_PROP_DISABLED               "0"
+#define NX_INVALID                     -1
+
+#define NX_ANDROID_BOOTCOMPLETE        "sys.boot_completed"
+#define NX_STATE                       "dyn.nx.state"
 
 /* begnine trimming config - not needed for ATV experience - default ENABLED. */
 #define NX_TRIM_VC1                    "ro.nx.trim.vc1"
@@ -163,6 +167,13 @@
 #define NX_TRIM_4KDEC                  "ro.nx.trim.4kdec"
 #define NX_TRIM_10BCOL                 "ro.nx.trim.10bcol"
 
+typedef enum {
+   SVP_MODE_NONE,
+   SVP_MODE_PLAYBACK,
+   SVP_MODE_PLAYBACK_TRANSCODE,
+
+} SVP_MODE_T;
+
 typedef struct {
    pthread_t runner;
    int running;
@@ -177,6 +188,24 @@ typedef struct {
 } BINDER_T;
 
 typedef struct {
+   pthread_t catcher;
+   int running;
+   /* use native sem_t as nexus may not be available. */
+   sem_t catcher_run;
+
+} CATCHER_T;
+
+typedef struct {
+    int fd;
+    NEXUS_WatchdogCallbackHandle nx;
+    bool nxAcked;
+    bool inStandby;
+    BKNI_MutexHandle lock;
+    bool init;
+    bool want;
+} WDOG_T;
+
+typedef struct {
     BKNI_MutexHandle lock;
     nxserver_t server;
     BINDER_T binder;
@@ -187,12 +216,13 @@ typedef struct {
     unsigned standbyId;
     BKNI_MutexHandle standby_lock;
     NxClient_StandbyStatus standbyState;
+    int dcma_index;
     struct {
         nxclient_t client;
         NxClient_JoinSettings joinSettings;
     } clients[APP_MAX_CLIENTS];
-    int watchdogFd;
-
+    WDOG_T wdog;
+    CATCHER_T sigterm;
 } NX_SERVER_T;
 
 static NX_SERVER_T g_app;
@@ -209,18 +239,14 @@ static unsigned calc_heap_size(const char *value)
    }
 }
 
-static const char WATCHDOG_TERMINATE[] = "\0";
-static const char WATCHDOG_KICK[]      = "V";
+static const char WATCHDOG_TERMINATE[] = "V";
+static const char WATCHDOG_KICK[]      = "\0";
 static void watchdogWrite(const char *msg)
 {
     int ret, retries = 3;
 
-    if (!msg) {
-        return;
-    }
-
     do {
-        ret = write(g_app.watchdogFd, msg, 1);
+        ret = write(g_app.wdog.fd, msg, 1);
         if (ret != 1) {
             ALOGE("could not write to watchdog, retrying...");
         } else {
@@ -233,12 +259,25 @@ static void watchdogWrite(const char *msg)
     }
 }
 
+static void nx_wdog_midpoint(void *context, int param)
+{
+   NX_SERVER_T *nx_server = (NX_SERVER_T *)context;
+   BSTD_UNUSED(param);
+
+   if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
+      nx_server->wdog.nxAcked = true;
+      NEXUS_Watchdog_StartTimer();
+      BKNI_ReleaseMutex(nx_server->wdog.lock);
+   }
+}
+
 static void *binder_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
 
-    do
-    {
+    prctl(PR_SET_NAME, "nxserver.binder");
+
+    do {
        android::ProcessState::self()->startThreadPool();
        NexusNxService::instantiate();
        PmLibService::instantiate();
@@ -253,17 +292,38 @@ done:
 static void *standby_monitor_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
+    NxClient_StandbyStatus prevStatus;
     NEXUS_Error rc;
 
-    nx_server->standbyId = NxClient_RegisterAcknowledgeStandby();
+    prctl(PR_SET_NAME, "nxserver.standby");
 
-    do
-    {
+    nx_server->standbyId = NxClient_RegisterAcknowledgeStandby();
+    rc = NxClient_GetStandbyStatus(&prevStatus);
+    ALOG_ASSERT(!rc);
+
+    do {
        if (BKNI_AcquireMutex(nx_server->standby_lock) == BERR_SUCCESS) {
           rc = NxClient_GetStandbyStatus(&nx_server->standbyState);
-          if (rc == NEXUS_SUCCESS && nx_server->standbyState.transition == NxClient_StandbyTransition_eAckNeeded) {
-             ALOGD("nxserver: Acknowledge state %d\n", nx_server->standbyState.settings.mode);
-             NxClient_AcknowledgeStandby(nx_server->standbyId);
+          if (rc == NEXUS_SUCCESS) {
+             if (nx_server->standbyState.transition == NxClient_StandbyTransition_eAckNeeded) {
+                ALOGD("nxserver: Acknowledge state %d\n", nx_server->standbyState.settings.mode);
+                NxClient_AcknowledgeStandby(nx_server->standbyId);
+                if (nx_server->wdog.nx != NULL) {
+                   NEXUS_Watchdog_StopTimer();
+                   nx_server->wdog.inStandby = true;
+                }
+             }
+             else if (nx_server->standbyState.settings.mode == NEXUS_PlatformStandbyMode_eOn &&
+                      prevStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn &&
+                      nx_server->wdog.nx != NULL) {
+                if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
+                   nx_server->wdog.nxAcked = true;
+                   nx_server->wdog.inStandby = false;
+                   NEXUS_Watchdog_StartTimer();
+                   BKNI_ReleaseMutex(nx_server->wdog.lock);
+                }
+            }
+            prevStatus = nx_server->standbyState;
           }
           BKNI_ReleaseMutex(nx_server->standby_lock);
        }
@@ -272,6 +332,28 @@ static void *standby_monitor_task(void *argv)
     } while(nx_server->standby_monitor.running);
 
     NxClient_UnregisterAcknowledgeStandby(nx_server->standbyId);
+    return NULL;
+}
+
+static void *sigterm_catcher_task(void *argv)
+{
+    NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
+
+    prctl(PR_SET_NAME, "nxserver.sigterm");
+
+    set_sched_policy(0, SP_BACKGROUND);
+    setpriority(PRIO_PROCESS, 0, ANDROID_PRIORITY_BACKGROUND);
+
+    do
+    {
+       sem_wait(&nx_server->sigterm.catcher_run);
+
+       const char *logger = getenv("nexus_logger_file");
+       ALOGW("must close \'%s\'", logger);
+
+    } while(nx_server->sigterm.running);
+
+done:
     return NULL;
 }
 
@@ -286,6 +368,8 @@ static void *proactive_runner_task(void *argv)
     char value[PROPERTY_VALUE_MAX];
     bool needs_growth;
     int i, j;
+
+    prctl(PR_SET_NAME, "nxserver.proac");
 
     if (property_get(NX_MMA_GROW_SIZE, value, NULL)) {
        if (strlen(value)) {
@@ -346,7 +430,7 @@ skip_lmk:
                  NEXUS_PlatformConfiguration platformConfig;
                  NEXUS_MemoryStatus heapStatus;
                  NEXUS_Platform_GetConfiguration(&platformConfig);
-                 NEXUS_Heap_GetStatus(platformConfig.heap[NEXUS_MAX_HEAPS-2], &heapStatus);
+                 NEXUS_Heap_GetStatus(platformConfig.heap[g_app.dcma_index], &heapStatus);
 
                  ALOGV("%s: dyn-heap largest free = %u", __FUNCTION__, heapStatus.largestFreeBlock);
                  needs_growth = false;
@@ -358,22 +442,64 @@ skip_lmk:
                     if (++gc_tick > RUNNER_GC_THRESHOLD) {
                        gc_tick = 0;
                        if (!needs_growth) {
-                          NEXUS_Platform_ShrinkHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size, (size_t)gfx_heap_shrink_threshold);
+                          NEXUS_Platform_ShrinkHeap(
+                             platformConfig.heap[g_app.dcma_index],
+                             (size_t)gfx_heap_grow_size,
+                             (size_t)gfx_heap_shrink_threshold);
                        }
                     }
                  }
 
                  if (active_gs && needs_growth) {
                     ALOGI("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
-                    NEXUS_Platform_GrowHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size);
+                    NEXUS_Platform_GrowHeap(
+                       platformConfig.heap[g_app.dcma_index],
+                       (size_t)gfx_heap_grow_size);
                  }
               }
               BKNI_ReleaseMutex(g_app.standby_lock);
            }
         }
 
-        if (g_app.watchdogFd >= 0) {
-            watchdogWrite(WATCHDOG_TERMINATE);
+        if (!g_app.wdog.init && g_app.wdog.want) {
+           if (property_get(NX_ANDROID_BOOTCOMPLETE, value, NULL)) {
+              if (strlen(value) && !strncmp(value, NX_PROP_ENABLED, strlen(value))) {
+                 ALOGI("%s: sys.boot_completed detected, launching wdog processing", __FUNCTION__);
+                 g_app.wdog.fd = open("/dev/watchdog", O_WRONLY);
+                 if (g_app.wdog.fd >= 0) {
+                    NEXUS_Error rc;
+                    NEXUS_WatchdogCallbackSettings wdogSettings;
+                    NEXUS_WatchdogCallback_GetDefaultSettings(&wdogSettings);
+                    wdogSettings.midpointCallback.callback = nx_wdog_midpoint;
+                    wdogSettings.midpointCallback.context = (void *)&g_app;
+                    g_app.wdog.nx = NEXUS_WatchdogCallback_Create(&wdogSettings);
+                    g_app.wdog.inStandby = false;
+                    NEXUS_Watchdog_SetTimeout((RUNNER_SEC_THRESHOLD-1)*2);
+                    rc = NEXUS_Watchdog_StartTimer();
+                    if (rc != NEXUS_SUCCESS) {
+                       NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
+                       g_app.wdog.nx = NULL;
+                    }
+                    g_app.wdog.init = true;
+                 } else {
+                    ALOGE("unable to create watchdog support (reason:%s)!", strerror(errno));
+                    g_app.wdog.fd = NX_INVALID;
+                    g_app.wdog.nx = NULL;
+                    g_app.wdog.want = false;
+                 }
+              }
+           }
+        }
+        if (g_app.wdog.init &&
+            g_app.wdog.fd != NX_INVALID &&
+            g_app.wdog.nx != NULL) {
+           if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
+              if (nx_server->wdog.nxAcked || nx_server->wdog.inStandby) {
+                 watchdogWrite(WATCHDOG_KICK);
+                 nx_server->wdog.nxAcked = false;
+              }
+              BKNI_ReleaseMutex(nx_server->wdog.lock);
+           }
         }
 
     } while(nx_server->proactive_runner.running);
@@ -449,26 +575,18 @@ static void pre_trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSet
    }
 }
 
-static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
+static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings, SVP_MODE_T svp)
 {
    int i, j;
    char value[PROPERTY_VALUE_MAX];
    int dec_used = 0;
    NEXUS_PlatformCapabilities platformCap;
-   bool transcode = property_get_int32(NX_TRANSCODE, 0) ? true : false;
+   bool transcode = (svp == SVP_MODE_PLAYBACK_TRANSCODE) ? true : false;
    bool cvbs = property_get_int32(NX_COMP_VIDEO, 0) ? true : false;
    NEXUS_GetPlatformCapabilities(&platformCap);
 
-   /* 1. *** HARDCODE *** only request a single encoder and limit its capabilities. */
-   for (i = 1; i < NEXUS_MAX_VIDEO_ENCODERS; i++) {
-      pMemConfigSettings->videoEncoder[i].used = false;
-   }
-   if (NEXUS_MAX_VIDEO_ENCODERS) {
-      pMemConfigSettings->videoEncoder[0].maxWidth =
-         property_get_int32(ENCODER_RES_WIDTH_PROP , ENCODER_RES_WIDTH_DEFAULT);
-      pMemConfigSettings->videoEncoder[0].maxHeight =
-         property_get_int32(ENCODER_RES_HEIGHT_PROP, ENCODER_RES_HEIGHT_DEFAULT);
-   }
+   /* 1. encoder configuration. */
+   trim_encoder_mem_config(pMemConfigSettings);
 
    /* 2. additional display(s). */
    if (property_get(NX_TRIM_DISP, value, NX_PROP_ENABLED)) {
@@ -476,10 +594,12 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          /* start index -> 1 */
          for (i = 1; i < NEXUS_MAX_DISPLAYS; i++) {
             /* keep display associated with encoder if transcode wanted. */
-            if (platformCap.display[i].supported && platformCap.display[i].encoder &&
-                platformCap.videoEncoder[0].supported && (platformCap.videoEncoder[0].displayIndex == (unsigned int)i)) {
+            if (keep_display_for_encoder(i, 0, &platformCap)) {
                if (transcode) {
                   ALOGI("keeping display %d for transcode session on encoder %d", i, 0);
+                  for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
+                     pMemConfigSettings->display[i].window[j].secure = NEXUS_SecureVideo_eUnsecure;
+                  }
                } else {
                   ALOGI("encoder %d using display %d: disable display, windows and deinterlacer", 0, i);
                   pMemConfigSettings->display[i].maxFormat = NEXUS_VideoFormat_eUnknown;
@@ -554,7 +674,6 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          pMemConfigSettings->videoDecoder[0].mosaic.maxNumber = 0;
          pMemConfigSettings->videoDecoder[0].mosaic.maxHeight = 0;
          pMemConfigSettings->videoDecoder[0].mosaic.maxWidth = 0;
-
       }
    }
 
@@ -582,6 +701,9 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
             if (pMemConfigSettings->videoDecoder[i].used) {
                pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_eNtsc;
+               if (transcode) {
+                  pMemConfigSettings->videoDecoder[i].secure = NEXUS_SecureVideo_eUnsecure;
+               }
             }
          }
       }
@@ -666,7 +788,7 @@ static nxserver_t init_nxserver(void)
     char nx_key[PROPERTY_VALUE_MAX];
     FILE *key = NULL;
     NEXUS_VideoFormat forced_format;
-    bool svp;
+    SVP_MODE_T svp;
     bool cvbs = property_get_int32(NX_COMP_VIDEO, 0) ? true : false;
 
     if (g_app.refcnt == 1) {
@@ -678,7 +800,7 @@ static nxserver_t init_nxserver(void)
     }
 
     memset(&cmdline_settings, 0, sizeof(cmdline_settings));
-    cmdline_settings.frontend = true;
+    cmdline_settings.frontend = property_get_bool(NX_CAPABLE_FRONT_END, 0);
 
     nxserver_get_default_settings(&settings);
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
@@ -700,22 +822,6 @@ static nxserver_t init_nxserver(void)
     /* setup the configuration we want for the device.  right now, hardcoded for a generic
        android device, longer term, we want more flexibility. */
 
-    /* "svp 2.0" configuration. */
-    svp = property_get_int32(NX_SVP, 0) ? true : false;
-    for (ix = 0; ix < NEXUS_MAX_VIDEO_DECODERS; ix++) {
-       memConfigSettings.videoDecoder[ix].secure =
-          svp ? NEXUS_SecureVideo_eSecure : NEXUS_SecureVideo_eUnsecure;
-    }
-    for (ix = 0; ix < NEXUS_MAX_DISPLAYS; ix++) {
-       for (jx = 0; jx < NEXUS_MAX_VIDEO_WINDOWS; jx++) {
-          memConfigSettings.display[ix].window[jx].secure =
-             svp ? NEXUS_SecureVideo_eSecure : NEXUS_SecureVideo_eUnsecure;
-       }
-    }
-    if (svp) {
-       settings.svp = nxserverlib_svp_type_cdb_urr;
-    }
-    ALOGI("%s: svp ** %s **", __FUNCTION__, svp?"enabled":"disabled");
     /* -ir none */
     settings.session[0].ir_input_mode = NEXUS_IrInputMode_eMax;
     /* -fbsize w,h */
@@ -823,18 +929,6 @@ static nxserver_t init_nxserver(void)
        }
     }
 
-    if (settings.growHeapBlockSize) {
-       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
-       if (index == -1) {
-           ALOGE("growHeapBlockSize: requires platform implement NEXUS_PLATFORM_P_GET_FRAMEBUFFER_HEAP_INDEX");
-           return NULL;
-       }
-       platformSettings.heap[NEXUS_MAX_HEAPS-2].memcIndex = platformSettings.heap[index].memcIndex;
-       platformSettings.heap[NEXUS_MAX_HEAPS-2].subIndex = platformSettings.heap[index].subIndex;
-       platformSettings.heap[NEXUS_MAX_HEAPS-2].size = 4096;
-       platformSettings.heap[NEXUS_MAX_HEAPS-2].memoryType = NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED|NEXUS_MEMORY_TYPE_DYNAMIC;
-    }
-
     /* -password file-path-name */
     sprintf(nx_key, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
     key = fopen(nx_key, "r");
@@ -862,7 +956,7 @@ static nxserver_t init_nxserver(void)
     memset(value, 0, sizeof(value));
     if ( property_get(NX_HDMI_DRM_KEY, value, NX_PROP_DISABLED) ) {
         if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-            settings.hdmi.drm = true;
+            settings.hdmi.noDrm = false;
         }
     }
 
@@ -881,10 +975,43 @@ static nxserver_t init_nxserver(void)
 
     pre_trim_mem_config(&memConfigSettings, cvbs);
 
+    /* svp configuration. */
+    memset(value, 0, sizeof(value));
+    property_get(NX_SVP, value, "play");
+    svp = SVP_MODE_PLAYBACK;
+    if (!strncmp(value, "none", strlen("none"))) {
+       svp = SVP_MODE_NONE;
+    } else if (!strncmp(value, "play-trans", strlen("play-trans"))) {
+       svp = SVP_MODE_PLAYBACK_TRANSCODE;
+    }
+
+    if (svp == SVP_MODE_PLAYBACK) {
+       settings.svp = nxserverlib_svp_type_cdb_urr;
+    } else {
+       for (ix = 0; ix < NEXUS_MAX_VIDEO_DECODERS; ix++) {
+          memConfigSettings.videoDecoder[ix].secure =
+             (svp == SVP_MODE_NONE) ? NEXUS_SecureVideo_eUnsecure : NEXUS_SecureVideo_eSecure;
+       }
+       for (ix = 0; ix < NEXUS_MAX_DISPLAYS; ix++) {
+          for (jx = 0; jx < NEXUS_MAX_VIDEO_WINDOWS; jx++) {
+             memConfigSettings.display[ix].window[jx].secure =
+                (svp == SVP_MODE_NONE) ? NEXUS_SecureVideo_eUnsecure : NEXUS_SecureVideo_eSecure;
+          }
+       }
+    }
+    ALOGI("%s: svp-mode: \'%s\'", __FUNCTION__, value);
+
     rc = nxserver_modify_platform_settings(&settings, &cmdline_settings, &platformSettings, &memConfigSettings);
     if (rc) {
        ALOGE("FATAL: failed nxserver_modify_platform_settings");
        return NULL;
+    }
+    if (settings.growHeapBlockSize) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
+       g_app.dcma_index = settings.heaps.dynamicHeap;
+       platformSettings.heap[g_app.dcma_index].heapType |= NX_ASHMEM_NEXUS_DCMA_MARKER;
+       ALOGI("dynamic: %d (0x%x) (gfx: %d)", g_app.dcma_index,
+          platformSettings.heap[g_app.dcma_index].heapType, index);
     }
 
     /* now, just before applying the configuration, try to reduce the memory footprint
@@ -893,7 +1020,7 @@ static nxserver_t init_nxserver(void)
      * savings are essentially made through feature disablement. thus you have to be careful
      * and aware of the feature targetted for the platform.
      */
-    trim_mem_config(&memConfigSettings);
+    trim_mem_config(&memConfigSettings, svp);
 
     rc = NEXUS_Platform_MemConfigInit(&platformSettings, &memConfigSettings);
     if (rc) {
@@ -921,6 +1048,7 @@ static nxserver_t init_nxserver(void)
 
     BKNI_CreateMutex(&g_app.clients_lock);
     BKNI_CreateMutex(&g_app.standby_lock);
+    BKNI_CreateMutex(&g_app.wdog.lock);
     g_app.refcnt++;
     return g_app.server;
 }
@@ -935,6 +1063,7 @@ static void uninit_nxserver(nxserver_t server)
     BKNI_DestroyMutex(g_app.lock);
     BKNI_DestroyMutex(g_app.clients_lock);
     BKNI_DestroyMutex(g_app.standby_lock);
+    BKNI_DestroyMutex(g_app.wdog.lock);
     NEXUS_Platform_Uninit();
 }
 
@@ -972,7 +1101,7 @@ static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
                     fclose(pFile);
                     return;
                 }
-                ALOGV("secdmaPhysicalOffset 0x%x secdmaMemSize 0x%x", (unsigned)secdmaPhysicalOffset, secdmaMemSize);
+                ALOGV("secdmaPhysicalOffset 0x%" PRIX64 " secdmaMemSize 0x%x", secdmaPhysicalOffset, secdmaMemSize);
                 rc = NEXUS_Security_SetPciERestrictedRange( secdmaPhysicalOffset, (size_t) secdmaMemSize, (unsigned)0 );
                 if (rc != NEXUS_SUCCESS) {
                     ALOGE("NEXUS_Security_SetPciERestrictedRange returned %d", rc);
@@ -982,13 +1111,18 @@ static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
                     fclose(pFile);
                     return;
                 }
-                fprintf(pFile, "secdma_cma_addr=0x%llx secdma_cma_size=0x%x\n", secdmaPhysicalOffset, secdmaMemSize);
+                fprintf(pFile, "secdma_cma_addr=0x%" PRIX64 " secdma_cma_size=0x%x\n", secdmaPhysicalOffset, secdmaMemSize);
                 fclose(pFile);
             }
         } else {
             ALOGE("secdma size not set");
         }
     }
+}
+
+static void sigterm_signal_handler(int signal) {
+    (void)signal;
+    sem_post(&g_app.sigterm.catcher_run);
 }
 
 int main(void)
@@ -1005,11 +1139,33 @@ int main(void)
     NEXUS_MemoryBlockHandle hSecDmaMemoryBlock = NULL;
     NxClient_JoinSettings joinSettings;
     NEXUS_Error rc;
+    struct sched_param param;
 
     memset(&g_app, 0, sizeof(g_app));
 
+    sem_init(&g_app.sigterm.catcher_run, 0, 0);
+    signal(SIGTERM, sigterm_signal_handler);
+    ALOGI("starting sigterm catcher.");
+    pthread_attr_init(&attr);
+    memset(&param, 0, sizeof(param));
+    pthread_attr_setschedparam(&attr, &param);
+    pthread_attr_setschedpolicy(&attr, SCHED_BATCH);
+    if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)) {
+        ALOGW("failed sigterm catcher task attributes.");
+    }
+    g_app.sigterm.running = 1;
+    if (pthread_create(&g_app.sigterm.catcher, &attr,
+                       sigterm_catcher_task, (void *)&g_app) != 0) {
+        ALOGE("failed sigterm catcher task, critical for encryption...");
+        /* should abort here if encryption is enforced... tbd. */
+        g_app.sigterm.running = 0;
+    }
+    pthread_attr_destroy(&attr);
+
     setpriority(PRIO_PROCESS, 0, PRIORITY_URGENT_DISPLAY);
     set_sched_policy(0, SP_FOREGROUND);
+
+    property_set(NX_STATE, "init");
 
     const char *devName = getenv("NEXUS_DEVICE_NODE");
     if (!devName) {
@@ -1025,18 +1181,17 @@ int main(void)
     /* Setup logger environment */
     int32_t loggerDisabled;
     loggerDisabled = property_get_int32(NX_LOGGER_DISABLED, 0);
-    if ( loggerDisabled ) {
+    if (loggerDisabled) {
         setenv("nexus_logger", "disabled", 1);
     } else {
         setenv("nexus_logger", "/system/bin/nxlogger", 1);
-        setenv("nexus_logger_file", "/data/nexus/nexus.log", 1);
+        setenv("nexus_logger_file", NEXUS_LOGGER_DATA_PATH, 1);
     }
     char loggerSize[PROPERTY_VALUE_MAX];
-    if ( property_get(NX_LOGGER_SIZE, loggerSize, "0") && loggerSize[0] != '0' )
-    {
+    if (property_get(NX_LOGGER_SIZE, loggerSize, "0") && loggerSize[0] != '0') {
         setenv("debug_log_size", loggerSize, 1);
     }
-    if ( property_get_int32(NX_AUDIO_LOG, 0) ) {
+    if (property_get_int32(NX_AUDIO_LOG, 0)) {
         ALOGD("Enabling audio DSP logs to /data/nexus");
         setenv("audio_uart_file", "/data/nexus/audio_uart", 1);
         setenv("audio_debug_file", "/data/nexus/audio_debug", 1);
@@ -1051,12 +1206,11 @@ int main(void)
     }
 
     if (property_get_int32(NX_ACT_WD, 1)) {
-       g_app.watchdogFd = open("/dev/watchdog", O_WRONLY);
-       if (g_app.watchdogFd < 0) {
-          ALOGE("Failed to start reset watchdog timer(reason:%s)!", strerror(errno));
-       }
+       g_app.wdog.want = true;
     } else {
-       g_app.watchdogFd = -1;
+       g_app.wdog.fd = NX_INVALID;
+       g_app.wdog.nx = NULL;
+       g_app.wdog.want = false;
     }
 
     ALOGI("starting proactive runner.");
@@ -1083,7 +1237,7 @@ int main(void)
     alloc_secdma(&hSecDmaMemoryBlock);
 
     ALOGI("trigger nexus waiters now.");
-    property_set("hw.nexus.platforminit", "on");
+    property_set(NX_STATE, "loaded");
 
     struct nx_ashmem_mgr_cfg ashmem_mgr_cfg;
     memset(&ashmem_mgr_cfg, 0, sizeof(struct nx_ashmem_mgr_cfg));
@@ -1150,6 +1304,20 @@ int main(void)
 
     ALOGI("terminating nxserver.");
 
+    property_set(NX_STATE, "ended");
+
+    if (g_app.wdog.nx) {
+       NEXUS_Watchdog_StopTimer();
+       NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
+       g_app.wdog.nx = NULL;
+    }
+    if (g_app.wdog.fd != NX_INVALID) {
+        watchdogWrite(WATCHDOG_TERMINATE);
+        close(g_app.wdog.fd);
+    }
+    g_app.wdog.init = false;
+    g_app.wdog.want = false;
+
     if (g_app.standby_monitor.running) {
        g_app.standby_monitor.running = 0;
        pthread_join(g_app.standby_monitor.runner, NULL);
@@ -1167,12 +1335,12 @@ int main(void)
        pthread_join(g_app.binder.runner, NULL);
     }
 
-    uninit_nxserver(nx_srv);
-
-    if (g_app.watchdogFd >= 0) {
-        watchdogWrite(WATCHDOG_KICK);
-        close(g_app.watchdogFd);
+    if (g_app.sigterm.running) {
+       g_app.sigterm.running = 0;
+       pthread_join(g_app.sigterm.catcher, NULL);
     }
+    sem_destroy(&g_app.sigterm.catcher_run);
 
+    uninit_nxserver(nx_srv);
     return 0;
 }

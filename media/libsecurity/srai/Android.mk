@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+ifeq ($(SAGE_SUPPORT),y)
+
 #-------------
 # libsrai.so
 #-------------
@@ -47,4 +49,6 @@ LOCAL_SHARED_LIBRARIES := libnexus liblog
 LOCAL_MODULE := libsrai
 
 include $(BUILD_SHARED_LIBRARY)
+
+endif
 

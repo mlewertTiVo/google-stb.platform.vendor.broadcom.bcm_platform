@@ -42,6 +42,7 @@ extern "C" {
 #include <time.h>
 #include <linux/time.h>
 #include <assert.h>
+#include "nx_ashmem.h"
 
 #define GR_MGMT_MODE_LOCKED     1
 #define GR_MGMT_MODE_UNLOCKED   2
@@ -86,7 +87,7 @@ typedef struct __SHARED_DATA_ {
       unsigned bpp;
       unsigned width;
       unsigned height;
-      unsigned physAddr;
+      NEXUS_MemoryBlockHandle block;
       unsigned size;
       unsigned allocSize;
       unsigned stride;
@@ -98,48 +99,45 @@ typedef struct __SHARED_DATA_ {
 struct private_handle_t : public native_handle {
 #else
 struct private_handle_t {
-                struct native_handle nativeHandle;
+   struct native_handle nativeHandle;
 #endif
-
-// file-descriptors
-/*1.*/        int         fd;    // default data plane
-/*2.*/        int         fd2;   // used for the small shared data block (SHARED_DATA)
-
-/*Ints Counter*/
-/*1.*/        int         magic;
-/*2.*/        int         flags;
-/*3.*/        int         pid;
-/*4.*/        unsigned    oglStride;
-/*5.*/        unsigned    oglFormat;
-/*6.*/        unsigned    oglSize;
-/*7.*/        unsigned    sharedData;
-/*8.*/        int         usage;
-/*9.*/        unsigned    nxSurfacePhysicalAddress;
-/*10.*/       unsigned    nxSurfaceAddress;
-/*11.*/       int         alignment;
-/*12.*/       int         mgmt_mode;
-/*13.*/       int         fmt_set;
+   // file descriptors
+   int         pdata;
+   int         sdata;
+   // int's
+   int         magic;
+   int         flags;
+   int         pid;
+   int         oglStride;
+   int         oglFormat;
+   int         oglSize;
+   int         usage;
+   int         alignment;
+   int         mgmt_mode;
+   int         fmt_set;
+   // v3d/vc5 cached interface
+   uint64_t    nxSurfaceAddress __attribute__((aligned(8)));
+   uint64_t    nxSurfacePhysicalAddress __attribute__((aligned(8)));
 
 #ifdef __cplusplus
-    static const int sNumInts = 13;
     static const int sNumFds = 2;
+    static inline int sNumInts() {
+       return ((sizeof(private_handle_t) - sizeof(native_handle_t)) / sizeof(int)) - sNumFds;
+    }
     static const int sMagic = 0x4F77656E;
 
-    private_handle_t(int fd, int fd2, int flags) :
-        fd(fd), fd2(fd2), magic(sMagic), flags(flags),
+    private_handle_t(int pdata, int sdata, int flags) :
+        pdata(pdata), sdata(sdata), magic(sMagic), flags(flags),
         pid(getpid()), oglStride(0), oglFormat(0), oglSize(0),
-        sharedData(0), usage(0), nxSurfacePhysicalAddress(0),
-        nxSurfaceAddress(0), alignment(0),
-        mgmt_mode(GR_MGMT_MODE_LOCKED), fmt_set(GR_NONE)
+        usage(0), alignment(0),
+        mgmt_mode(GR_MGMT_MODE_LOCKED), fmt_set(GR_NONE),
+        nxSurfaceAddress(0), nxSurfacePhysicalAddress(0)
     {
         version = sizeof(native_handle);
-        numInts = sNumInts;
+        numInts = sNumInts();
         numFds = sNumFds;
     }
 
-    //
-    // Free the shared data in Destructor
-    //
     ~private_handle_t()
     {
         magic = 0;
@@ -149,12 +147,38 @@ struct private_handle_t {
     {
         const private_handle_t* hnd = (const private_handle_t*)h;
         if (!h || h->version != sizeof(native_handle) ||
-                h->numInts != sNumInts || h->numFds != sNumFds ||
-                hnd->magic != sMagic)
+            h->numInts != sNumInts() || h->numFds != sNumFds ||
+            hnd->magic != sMagic)
         {
             return -EINVAL;
         }
         return 0;
+    }
+
+    static int get_block_handles(private_handle_t *pHandle, NEXUS_MemoryBlockHandle *sdata, NEXUS_MemoryBlockHandle *pdata)
+    {
+       int rc;
+       struct nx_ashmem_getmem getmem;
+
+       if ((sdata != NULL) && (pHandle->sdata >= 0)) {
+          rc = ioctl(pHandle->sdata, NX_ASHMEM_GET_BLK, &getmem);
+          if (rc >= 0) {
+             *sdata = (NEXUS_MemoryBlockHandle)getmem.hdl;
+          } else {
+             return rc;
+          }
+       }
+
+       if ((pdata != NULL) && (pHandle->pdata >= 0)) {
+          rc = ioctl(pHandle->pdata, NX_ASHMEM_GET_BLK, &getmem);
+          if (rc >= 0) {
+             *pdata = (NEXUS_MemoryBlockHandle)getmem.hdl;
+          } else {
+             return rc;
+          }
+       }
+
+       return 0;
     }
 
     static int lock_video_frame(private_handle_t *pHandle, int timeoutMs)
@@ -165,7 +189,7 @@ struct private_handle_t {
         int rc = 0;
         void *pMemory;
 
-        block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
+        get_block_handles(pHandle, &block_handle, NULL);
         lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
         if (lrc == BERR_NOT_SUPPORTED) {
            NEXUS_MemoryBlock_Unlock(block_handle);
@@ -214,7 +238,7 @@ out:
         int rc = 0;
         void *pMemory;
 
-        block_handle = (NEXUS_MemoryBlockHandle)pHandle->sharedData;
+        get_block_handles(pHandle, &block_handle, NULL);
         lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
         if (lrc == BERR_NOT_SUPPORTED) {
            NEXUS_MemoryBlock_Unlock(block_handle);

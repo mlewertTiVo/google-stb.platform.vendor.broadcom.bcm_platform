@@ -16,7 +16,7 @@ on post-fs-data
 
     mkdir /data/misc/android 0770 wifi wifi
 
-on property:hw.nexus.platforminit=on
+on property:dyn.nx.state=loaded
     insmod /system/vendor/broadcom/dhd/driver/bcmdhd.ko
     setprop wifi.interface wlan0
     setprop wlan.driver.status "ok"

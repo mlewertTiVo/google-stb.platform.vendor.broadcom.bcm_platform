@@ -26,7 +26,7 @@
 
 extern "C" NEXUS_SurfaceHandle hwc_to_nsc_surface(
     int width, int height, int stride, NEXUS_PixelFormat format,
-    unsigned handle, unsigned offset)
+    NEXUS_MemoryBlockHandle handle, unsigned offset)
 {
     NEXUS_SurfaceCreateSettings createSettings;
 
@@ -80,7 +80,9 @@ extern "C" NEXUS_MemoryBlockHandle hwc_block_create(
    block_fd = open(mem_if, O_RDWR, 0);
    if (block_fd >= 0) {
       struct nx_ashmem_alloc ashmem_alloc;
+      struct nx_ashmem_getmem ashmem_getmem;
       memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
+      memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
       ashmem_alloc.size = pCreateSettings->height * pCreateSettings->pitch;
       ashmem_alloc.align = 4096;
       ashmem_alloc.heap = dynamic_heap ? NX_ASHMEM_HEAP_DCMA : NX_ASHMEM_HEAP_FB;
@@ -89,10 +91,12 @@ extern "C" NEXUS_MemoryBlockHandle hwc_block_create(
          close(block_fd);
          block_fd = -1;
       } else {
-         block_handle = (NEXUS_MemoryBlockHandle)ioctl(block_fd, NX_ASHMEM_GETMEM);
-         if (block_handle == NULL) {
+         ret = ioctl(block_fd, NX_ASHMEM_GETMEM, &ashmem_getmem);
+         if (ret < 0) {
             close(block_fd);
             block_fd = -1;
+         } else {
+            block_handle = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
          }
       }
    }

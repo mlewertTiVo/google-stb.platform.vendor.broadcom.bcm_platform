@@ -1,8 +1,0 @@
-usr/lib/libbcrypt.so=libsecurity/bcrypt/prebuilt/libbcrypt.so
-usr/lib/libplayreadypk_host.so=libsecurity/playreadypk/prebuilt/libplayreadypk_host.so
-usr/lib/libplayreadypk.so=libsecurity/playreadypk/prebuilt/libplayreadypk.so
-usr/lib/libcmndrm.so=libsecurity/common_drm/prebuilt/libcmndrm.so
-usr/lib/libcmndrm_tl.so=libsecurity/common_drm/prebuilt/libcmndrm_tl.so
-usr/lib/liboemcrypto.so=libsecurity/oemcrypto/prebuilt/liboemcrypto.so
-usr/lib/liboemcrypto.a=libsecurity/oemcrypto/prebuilt/liboemcrypto.a
-usr/lib/libcmndrmprdy.so=libsecurity/common_drm/prebuilt/libcmndrmprdy.so

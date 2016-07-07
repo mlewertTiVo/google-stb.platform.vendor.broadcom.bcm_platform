@@ -164,7 +164,7 @@ static BERR_Code print_log_message(BDBG_FifoReader_Handle logReader, int deviceF
      * some space for a prefix and suffix.  */
     char        buf[MAX_PREFIX_LEN + MAX_MSG_LEN + MAX_SUFFIX_LEN + 1]; /* + 1 for ending newline char */
     char       *pMsgBuf = buf + MAX_PREFIX_LEN;
-    unsigned    msgLen;
+    size_t      msgLen;
 
     /* Retrieve the next log message as requested.  Depending on
      * what arguments were passed, we'll either get the message

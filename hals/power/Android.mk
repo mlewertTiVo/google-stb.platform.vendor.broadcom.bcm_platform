@@ -19,7 +19,11 @@ include $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include/nxclient.inc
 LOCAL_MODULE := power.$(TARGET_BOARD_PLATFORM)
 
 LOCAL_PRELINK_MODULE := false
-LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
+ifeq ($(TARGET_2ND_ARCH),arm)
+  LOCAL_MODULE_RELATIVE_PATH := hw
+else
+  LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
+endif
 LOCAL_SHARED_LIBRARIES := libbinder \
                           libcutils \
                           libdl \

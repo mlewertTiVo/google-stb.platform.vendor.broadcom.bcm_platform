@@ -1,0 +1,7 @@
+service hwcbinder /system/bin/hwcbinder
+   class pre_core
+   user root
+   group system media
+   critical
+   oneshot
+

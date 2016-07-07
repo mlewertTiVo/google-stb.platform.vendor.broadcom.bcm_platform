@@ -62,6 +62,8 @@
 #include "sw_sync.h"
 #include "nx_ashmem.h"
 
+#include <inttypes.h>
+
 using namespace android;
 
 #define INVALID_HANDLE               0xBAADCAFE
@@ -351,6 +353,7 @@ typedef struct {
     GPX_CLIENT_INFO root;
     NEXUS_SurfaceClientSettings settings;
     int id;
+    bool geometry_updated;
 } SB_CLIENT_INFO;
 
 typedef struct {
@@ -373,7 +376,7 @@ typedef struct {
     BFIFO_HEAD(DisplayFifo, NEXUS_SurfaceHandle) display_fifo;
     NEXUS_SurfaceHandle display_elements[HWC_NUM_DISP_BUFFERS];
     DISPLAY_FIFO_ELEMENT display_buffers[HWC_NUM_DISP_BUFFERS];
-    BKNI_MutexHandle fifo_mutex;
+    pthread_mutex_t fifo_mutex;
     DISPLAY_CLIENT_MODE mode;
     bool mode_toggle;
 } DISPLAY_CLIENT_INFO;
@@ -396,9 +399,9 @@ typedef struct {
     int yv12;
 } OPS_COUNT;
 
-typedef void (* HWC_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
-typedef void (* HWC_HOTPLUG_NTFY_CB)(int);
-typedef void (* HWC_DISPLAY_CHANGED_NTFY_CB)(int);
+typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &);
+typedef void (* HWC_HOTPLUG_NTFY_CB)(void *);
+typedef void (* HWC_DISPLAY_CHANGED_NTFY_CB)(void *);
 
 class HwcBinder : public HwcListener
 {
@@ -449,14 +452,14 @@ public:
        }
     };
 
-    void register_notify(HWC_BINDER_NTFY_CB callback, int data) {
+    void register_notify(HWC_BINDER_NTFY_CB callback, void *data) {
        cb = callback;
        cb_data = data;
     }
 
 private:
     HWC_BINDER_NTFY_CB cb;
-    int cb_data;
+    void * cb_data;
 };
 
 class HwcBinder_wrap
@@ -536,14 +539,14 @@ public:
     ~HwcHotPlug() {};
     virtual status_t onHdmiHotplugEventReceived(int32_t portId, bool connected);
 
-    void register_notify(HWC_HOTPLUG_NTFY_CB callback, int data) {
+    void register_notify(HWC_HOTPLUG_NTFY_CB callback, void *data) {
        cb = callback;
        cb_data = data;
     }
 
 private:
     HWC_HOTPLUG_NTFY_CB cb;
-    int cb_data;
+    void * cb_data;
 };
 
 class HwcHotPlug_wrap
@@ -588,14 +591,14 @@ public:
     ~HwcDisplayChanged() {};
     virtual status_t onDisplaySettingsChangedEventReceived(int32_t portId);
 
-    void register_notify(HWC_DISPLAY_CHANGED_NTFY_CB callback, int data) {
+    void register_notify(HWC_DISPLAY_CHANGED_NTFY_CB callback, void *data) {
        cb = callback;
        cb_data = data;
     }
 
 private:
     HWC_DISPLAY_CHANGED_NTFY_CB cb;
-    int cb_data;
+    void * cb_data;
 };
 
 class HwcDisplayChanged_wrap
@@ -695,13 +698,13 @@ struct hwc_context_t {
     NexusIPCClientBase *pIpcClient;
     NexusClientContext *pNexusClientContext;
     NxClient_AllocResults nxAllocResults;
-    BKNI_MutexHandle dev_mutex;
+    pthread_mutex_t dev_mutex;
 
     hwc_procs_t const* procs;
 
     bool vsync_callback_enabled;
     bool vsync_callback_initialized;
-    BKNI_MutexHandle vsync_callback_enabled_mutex;
+    pthread_mutex_t vsync_callback_enabled_mutex;
     pthread_t vsync_callback_thread;
     pthread_t recycle_callback_thread;
     int vsync_thread_run;
@@ -713,7 +716,7 @@ struct hwc_context_t {
     GPX_CLIENT_INFO gpx_cli[NSC_GPX_CLIENTS_NUMBER];
     MM_CLIENT_INFO mm_cli[NSC_MM_CLIENTS_NUMBER];
     SB_CLIENT_INFO sb_cli[NSC_SB_CLIENTS_NUMBER];
-    BKNI_MutexHandle mutex;
+    pthread_mutex_t mutex;
     bool nsc_video_changed;
     bool nsc_sideband_changed;
     VD_CLIENT_INFO vd_cli[HWC_VD_CLIENTS_NUMBER];
@@ -731,7 +734,7 @@ struct hwc_context_t {
     bool needs_fb_target;
     bool comp_bypass;
 
-    BKNI_MutexHandle power_mutex;
+    pthread_mutex_t power_mutex;
     int power_mode;
 
     HwcBinder_wrap *hwc_binder;
@@ -739,7 +742,7 @@ struct hwc_context_t {
     HwcDisplayChanged_wrap *hwc_dc;
 
     NEXUS_Graphics2DHandle hwc_g2d;
-    BKNI_MutexHandle g2d_mutex;
+    pthread_mutex_t g2d_mutex;
     NEXUS_Graphics2DCapabilities gfxCaps;
     BKNI_EventHandle checkpoint_event;
 
@@ -750,6 +753,7 @@ struct hwc_context_t {
     int composer_thread_run[DISPLAY_SUPPORTED];
     int ret_tl[DISPLAY_SUPPORTED];
     struct hwc_work_item *composer_work_list[DISPLAY_SUPPORTED];
+    pthread_mutex_t comp_work_list_mutex[DISPLAY_SUPPORTED];;
 
     int display_dump_layer;
     int display_dump_virt;
@@ -916,7 +920,7 @@ static NEXUS_Error hwc_ext_refcnt(struct hwc_context_t *ctx, NEXUS_MemoryBlockHa
    if (mem_if != INVALID_FENCE) {
       struct nx_ashmem_ext_refcnt ashmem_ext_refcnt;
       memset(&ashmem_ext_refcnt, 0, sizeof(struct nx_ashmem_ext_refcnt));
-      ashmem_ext_refcnt.hdl = (size_t)block_handle;
+      ashmem_ext_refcnt.hdl = (__u64)block_handle;
       ashmem_ext_refcnt.cnt = cnt;
       int ret = ioctl(mem_if, NX_ASHMEM_EXT_REFCNT, &ashmem_ext_refcnt);
       if (ret < 0) {
@@ -956,6 +960,8 @@ static NEXUS_PixelFormat gralloc_to_nexus_pixel_format(int format)
       case HAL_PIXEL_FORMAT_RGBX_8888: return NEXUS_PixelFormat_eX8_B8_G8_R8;
       case HAL_PIXEL_FORMAT_RGB_888:   return NEXUS_PixelFormat_eX8_B8_G8_R8;
       case HAL_PIXEL_FORMAT_RGB_565:   return NEXUS_PixelFormat_eR5_G6_B5;
+      case HAL_PIXEL_FORMAT_YV12: /* fall-thru */
+      case HAL_PIXEL_FORMAT_YCbCr_420_888: return NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8;
       default:                         break;
    }
 
@@ -1038,13 +1044,13 @@ static int hwc_setup_framebuffer_mode(struct hwc_context_t* dev, int disp_ix, DI
             dev->disp_cli[disp_ix].display_buffers[j].fifo_surf,
             dev->disp_cli[disp_ix].display_buffers[j].fifo_fd, block_handle);
    }
-   if (BKNI_AcquireMutex(dev->disp_cli[disp_ix].fifo_mutex) == BERR_SUCCESS) {
+   if (!pthread_mutex_lock(&dev->disp_cli[disp_ix].fifo_mutex)) {
       for (j = 0; j < HWC_NUM_DISP_BUFFERS; j++) {
          dev->disp_cli[disp_ix].display_elements[j] = dev->disp_cli[disp_ix].display_buffers[j].fifo_surf;
       }
       BFIFO_INIT(&dev->disp_cli[disp_ix].display_fifo, dev->disp_cli[disp_ix].display_elements, HWC_NUM_DISP_BUFFERS);
       BFIFO_WRITE_COMMIT(&dev->disp_cli[disp_ix].display_fifo, HWC_NUM_DISP_BUFFERS);
-      BKNI_ReleaseMutex(dev->disp_cli[disp_ix].fifo_mutex);
+      pthread_mutex_unlock(&dev->disp_cli[disp_ix].fifo_mutex);
    } else {
       return -EINVAL;
    }
@@ -1086,7 +1092,7 @@ static int hwc_mem_lock_phys(struct hwc_context_t *ctx, NEXUS_MemoryBlockHandle 
          *paddr = (NEXUS_Addr)NULL;
          return (int)rc;
       } else if (ctx->dump_mma) {
-         ALOGI("mma-lock-phys: %p -> 0x%llx", block_handle, *paddr);
+         ALOGI("mma-lock-phys: %p -> 0x%" PRIu64 "", block_handle, *paddr);
       }
    } else {
       *paddr = (NEXUS_Addr)NULL;
@@ -1189,8 +1195,9 @@ static int dump_vd_layer_data(char *start, int capacity, int index, VD_CLIENT_IN
     }
 
     if (client->grhdl) {
+       NEXUS_MemoryBlockHandle block_handle = NULL;
        private_handle_t *gr_buffer = (private_handle_t *)client->grhdl;
-       NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+       private_handle_t::get_block_handles(gr_buffer, &block_handle, NULL);
        hwc_mem_lock((struct hwc_context_t*)client->ncci.parent, block_handle, &pAddr, true);
        PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
 
@@ -1211,13 +1218,13 @@ static int dump_vd_layer_data(char *start, int capacity, int index, VD_CLIENT_IN
        }
 
        write = snprintf(start + offset, local_capacity,
-          "\t\t\t[%p]::{f:0x%x,bpp:%d,{%d,%d},0x%x,sz:%d}\n",
+          "\t\t\t[%p]::{f:0x%x,bpp:%d,{%d,%d},%p,sz:%d}\n",
           client->grhdl,
           pSharedData->container.format,
           pSharedData->container.bpp,
           pSharedData->container.width,
           pSharedData->container.height,
-          pSharedData->container.physAddr,
+          pSharedData->container.block,
           pSharedData->container.size);
 
        if (write > 0) {
@@ -1282,8 +1289,9 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
     }
 
     if (client->last.grhdl) {
+       NEXUS_MemoryBlockHandle block_handle = NULL;
        private_handle_t *gr_buffer = (private_handle_t *)client->last.grhdl;
-       NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+       private_handle_t::get_block_handles(gr_buffer, &block_handle, NULL);
        hwc_mem_lock((struct hwc_context_t*)client->ncci.parent, block_handle, &pAddr, true);
        PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
 
@@ -1304,13 +1312,13 @@ static int dump_gpx_layer_data(char *start, int capacity, int index, GPX_CLIENT_
        }
 
        write = snprintf(start + offset, local_capacity,
-           "\t\t\t[%p]::{f:0x%x,bpp:%d,{%d,%d},0x%x,s:%d,sz:%d}\n",
+           "\t\t\t[%p]::{f:0x%x,bpp:%d,{%d,%d},%p,s:%d,sz:%d}\n",
            client->last.grhdl,
            pSharedData->container.format,
            pSharedData->container.bpp,
            pSharedData->container.width,
            pSharedData->container.height,
-           pSharedData->container.physAddr,
+           pSharedData->container.block,
            pSharedData->container.stride,
            pSharedData->container.size);
 
@@ -1410,7 +1418,7 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
     capacity = buff_len;
     index = 0;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
         goto out;
     }
 
@@ -1578,13 +1586,13 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
 
     hwc_setup_props_locked(ctx);
     hwc_execute_dyn_change_locked(ctx);
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 
 out:
     return;
 }
 
-static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &ntfy)
+static void hwc_binder_notify(void *dev, int msg, struct hwc_notification_info &ntfy)
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
 
@@ -1601,7 +1609,7 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
            for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
                // reset the 'drop duplicate frame notifier' count.
                if (ctx->mm_cli[i].id == ntfy.surface_hdl) {
-                  ALOGD("%s: reset drop-dup-count on sfid 0x%x, id 0x%x", __FUNCTION__, ntfy.surface_hdl, ctx->mm_cli[i].id);
+                  ALOGD("%s: reset drop-dup-count on vid 0x%x, id 0x%x", __FUNCTION__, ntfy.surface_hdl, ctx->mm_cli[i].id);
                   ctx->mm_cli[i].last_ping_frame_id = LAST_PING_FRAME_ID_RESET;
                   break;
                }
@@ -1636,6 +1644,7 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
                if (ctx->sb_cli[i].id == ntfy.surface_hdl) {
                   ALOGD("%s: flush-background on sfid 0x%x, id 0x%x", __FUNCTION__, ntfy.surface_hdl, ctx->sb_cli[i].id);
                   ctx->flush_background = true;
+                  ctx->sb_cli[i].geometry_updated = true;
                   break;
                }
            }
@@ -1675,7 +1684,7 @@ out:
     return mode;
 }
 
-static void hwc_display_changed_notify(int dev)
+static void hwc_display_changed_notify(void *dev)
 {
     NxClient_DisplaySettings settings;
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
@@ -1696,7 +1705,7 @@ static void hwc_display_changed_notify(int dev)
     }
 }
 
-static void hwc_hotplug_notify(int dev)
+static void hwc_hotplug_notify(void *dev)
 {
     NxClient_DisplaySettings settings;
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
@@ -1717,12 +1726,12 @@ static void hwc_hotplug_notify(int dev)
        }
 
        if (ctx->procs && ctx->procs->invalidate != NULL) {
-          if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+          if (!pthread_mutex_lock(&ctx->mutex)) {
              for (i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++) {
                 ctx->gpx_cli[i].last.layerhdl = NULL;
                 ctx->gpx_cli[i].skip_set = false;
              }
-             BKNI_ReleaseMutex(ctx->mutex);
+             pthread_mutex_unlock(&ctx->mutex);
           }
           ALOGI("%s: refresh disp-%d on connected", __FUNCTION__, HWC_PRIMARY_IX);
           ctx->procs->invalidate(const_cast<hwc_procs_t *>(ctx->procs));
@@ -1789,7 +1798,7 @@ static bool is_video_layer_locked(VIDEO_LAYER_VALIDATION *data)
       }
    } else if (data->layer->compositionType == HWC_SIDEBAND) {
       if (data->scope == HWC_SCOPE_PREP) {
-         client_context = (NexusClientContext*)data->layer->sidebandStream->data[1];
+         client_context = (NexusClientContext*)(intptr_t)data->layer->sidebandStream->data[1];
          if (client_context != NULL) {
             rc = true;
          }
@@ -1859,7 +1868,7 @@ static bool is_video_layer(struct hwc_context_t *ctx, VIDEO_LAYER_VALIDATION *da
       if (data->layer->compositionType != HWC_SIDEBAND) {
          gr_buffer = (private_handle_t *)data->layer->handle;
          data->gr_usage = gr_buffer->usage;
-         block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+         private_handle_t::get_block_handles(gr_buffer, &block_handle, NULL);
          lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
          pSharedData = (PSHARED_DATA) pAddr;
          if ((lrc != NEXUS_SUCCESS) || pSharedData == NULL) {
@@ -1888,7 +1897,7 @@ static bool can_handle_downscale(struct hwc_context_t *ctx, hwc_layer_1_t *layer
     private_handle_t *gr_buffer = NULL;
     NEXUS_Rect source;
     NEXUS_Rect destination;
-    NEXUS_MemoryBlockHandle block_handle;
+    NEXUS_MemoryBlockHandle block_handle = NULL;
     VIDEO_LAYER_VALIDATION video;
 
     if (!layer->handle) {
@@ -1896,7 +1905,7 @@ static bool can_handle_downscale(struct hwc_context_t *ctx, hwc_layer_1_t *layer
     }
 
     gr_buffer = (private_handle_t *)layer->handle;
-    block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+    private_handle_t::get_block_handles(gr_buffer, &block_handle, NULL);
     lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
     pSharedData = (PSHARED_DATA) pAddr;
 
@@ -2007,12 +2016,12 @@ static void hwc_seed_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
       fillSettings.color   = background;
       fillSettings.colorOp = NEXUS_FillOp_eCopy;
       fillSettings.alphaOp = NEXUS_FillOp_eCopy;
-      if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+      if (pthread_mutex_lock(&ctx->g2d_mutex)) {
          ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
          return;
       }
       rc = NEXUS_Graphics2D_Fill(ctx->hwc_g2d, &fillSettings);
-      BKNI_ReleaseMutex(ctx->g2d_mutex);
+      pthread_mutex_unlock(&ctx->g2d_mutex);
       if (rc == NEXUS_SUCCESS) {
          if (q_ops) {
             *q_ops = true;
@@ -2044,7 +2053,7 @@ static void hwc_tick_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
    fillSettings.rect.width  = HWC_TICKER_W;
    fillSettings.rect.height = HWC_TICKER_H;
    ++tick_ix %= 2;
-   if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+   if (pthread_mutex_lock(&ctx->g2d_mutex)) {
       ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
       return;
    }
@@ -2052,7 +2061,7 @@ static void hwc_tick_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
    if (rc == NEXUS_SUCCESS) {
       hwc_checkpoint_locked(ctx);
    }
-   BKNI_ReleaseMutex(ctx->g2d_mutex);
+   pthread_mutex_unlock(&ctx->g2d_mutex);
 }
 
 static void hwc_rel_tl_inc(struct hwc_context_t *ctx, int index, int layer)
@@ -2090,7 +2099,7 @@ static void hwc_clear_acquire_release_fences(struct hwc_context_t* ctx, hwc_disp
       if (list->hwLayers[i].acquireFenceFd != INVALID_FENCE) {
          close(list->hwLayers[i].acquireFenceFd);
          if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-            ALOGI("fence: %llu/%d - acquire-fence: %d -> early-comp+close\n",
+            ALOGI("fence: %llu/%zu - acquire-fence: %d -> early-comp+close\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, i,
                   list->hwLayers[i].acquireFenceFd);
          }
@@ -2100,7 +2109,7 @@ static void hwc_clear_acquire_release_fences(struct hwc_context_t* ctx, hwc_disp
          hwc_rel_tl_inc(ctx, HWC_PRIMARY_IX, i);
          list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
          if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-            ALOGI("fence: %llu/%d - timeline-release: %d -> early-inc\n",
+            ALOGI("fence: %llu/%zu - timeline-release: %d -> early-inc\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, i, ctx->gpx_cli[i].rel_tl);
          }
       }
@@ -2222,7 +2231,7 @@ bool hwc_compose_gralloc_buffer(
                              pSharedData->container.height,
                              pSharedData->container.stride,
                              NEXUS_PixelFormat_eY8,
-                             pSharedData->container.physAddr,
+                             pSharedData->container.block,
                              0);
            NEXUS_Surface_Lock(srcY, &slock);
            NEXUS_Surface_Flush(srcY);
@@ -2236,7 +2245,7 @@ bool hwc_compose_gralloc_buffer(
                               pSharedData->container.height/2,
                               cstride,
                               NEXUS_PixelFormat_eCr8,
-                              pSharedData->container.physAddr,
+                              pSharedData->container.block,
                               cr_offset);
            NEXUS_Surface_Lock(srcCr, &slock);
            NEXUS_Surface_Flush(srcCr);
@@ -2246,7 +2255,7 @@ bool hwc_compose_gralloc_buffer(
                               pSharedData->container.height/2,
                               cstride,
                               NEXUS_PixelFormat_eCb8,
-                              pSharedData->container.physAddr,
+                              pSharedData->container.block,
                               cb_offset);
            NEXUS_Surface_Lock(srcCb, &slock);
            NEXUS_Surface_Flush(srcCb);
@@ -2265,14 +2274,14 @@ bool hwc_compose_gralloc_buffer(
               if ((!layer_seeds_output || !ctx->smart_background) && !already_comp) {
                  hwc_seed_disp_surface(ctx, outputHdl, q_ops, ops_count, HWC_TRANSPARENT);
               }
-              if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+              if (pthread_mutex_lock(&ctx->g2d_mutex)) {
                  ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
               } else {
                  rc = NEXUS_Graphics2D_GetPacketBuffer(ctx->hwc_g2d, &buffer, &size, 1024);
                  if ((rc != NEXUS_SUCCESS) || !size) {
                     ALOGE("%s: failed getting packet buffer from g2d: (num:%d, id:0x%x)\n", __FUNCTION__,
                           NEXUS_GET_ERR_NUM(rc), NEXUS_GET_ERR_ID(rc));
-                    BKNI_ReleaseMutex(ctx->g2d_mutex);
+                    pthread_mutex_unlock(&ctx->g2d_mutex);
                     goto out;
                  }
                  if ((q_ops != NULL) && !ctx->g2d_allow_simult) {
@@ -2286,7 +2295,7 @@ bool hwc_compose_gralloc_buffer(
                        }
                     }
                  }
-                 BKNI_ReleaseMutex(ctx->g2d_mutex);
+                 pthread_mutex_unlock(&ctx->g2d_mutex);
 
                  NEXUS_Surface_LockPlaneAndPalette(srcY, &planeY, NULL);
                  NEXUS_Surface_LockPlaneAndPalette(srcCb, &planeCb, NULL);
@@ -2434,7 +2443,7 @@ bool hwc_compose_gralloc_buffer(
                        outAdj.x, outAdj.y, outAdj.width, outAdj.height);
                  }
 
-                 if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+                 if (pthread_mutex_lock(&ctx->g2d_mutex)) {
                     ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
                  } else {
                     rc = NEXUS_Graphics2D_PacketWriteComplete(ctx->hwc_g2d, (uint8_t*)next - (uint8_t*)buffer);
@@ -2466,7 +2475,7 @@ bool hwc_compose_gralloc_buffer(
                           hwc_clear_acquire_release_fences(ctx, list, layer_id);
                        }
                     }
-                    BKNI_ReleaseMutex(ctx->g2d_mutex);
+                    pthread_mutex_unlock(&ctx->g2d_mutex);
                  }
 
                  NEXUS_Surface_UnlockPlaneAndPalette(srcCb);
@@ -2498,7 +2507,7 @@ bool hwc_compose_gralloc_buffer(
                                        pSharedData->container.height,
                                        gr_buffer->oglStride,
                                        gralloc_to_nexus_pixel_format(pSharedData->container.format),
-                                       pSharedData->container.physAddr,
+                                       pSharedData->container.block,
                                        0);
 
            if (*pActSurf != NULL) {
@@ -2544,7 +2553,7 @@ bool hwc_compose_gralloc_buffer(
                  blitSettings.constantColor = pComp->constantColor;
               }
 
-              if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+              if (pthread_mutex_lock(&ctx->g2d_mutex)) {
                  ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
               } else {
                  rc = NEXUS_Graphics2D_Blit(ctx->hwc_g2d, &blitSettings);
@@ -2577,7 +2586,7 @@ bool hwc_compose_gralloc_buffer(
                        }
                     }
                  }
-                 BKNI_ReleaseMutex(ctx->g2d_mutex);
+                 pthread_mutex_unlock(&ctx->g2d_mutex);
               }
            }
         }
@@ -2665,7 +2674,7 @@ static void hwc_prepare_gpx_layer(
     int cur_width = 0, cur_height = 0, lrc = 0;
     unsigned int cur_blending_type;
     bool layer_changed = false;
-    NEXUS_MemoryBlockHandle block_handle;
+    NEXUS_MemoryBlockHandle block_handle = NULL;
 
     // sideband layer is handled through the video window directly.
     if (layer->compositionType == HWC_SIDEBAND) {
@@ -2679,7 +2688,7 @@ static void hwc_prepare_gpx_layer(
     }
 
     gr_buffer = (private_handle_t *)layer->handle;
-    block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+    private_handle_t::get_block_handles(gr_buffer, &block_handle, NULL);
     lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
     PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
     if (lrc || pSharedData == NULL) {
@@ -2691,7 +2700,7 @@ static void hwc_prepare_gpx_layer(
     cur_blending_type = hwc_android_blend_to_nsc_blend(layer->blending);
 
     if (!is_locked) {
-       if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+       if (pthread_mutex_lock(&ctx->mutex)) {
            goto out_unlock;
        }
     }
@@ -2769,7 +2778,7 @@ static void hwc_prepare_gpx_layer(
 
 out_mutex:
     if (!is_locked) {
-       BKNI_ReleaseMutex(ctx->mutex);
+       pthread_mutex_unlock(&ctx->mutex);
     }
 out_unlock:
     if (!lrc) hwc_mem_unlock(ctx, block_handle, true);
@@ -2786,7 +2795,7 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
     VIDEO_LAYER_VALIDATION video;
 
     if (ctx->display_dump_layer & HWC_DUMP_LEVEL_CLASSIFY) {
-       ALOGI("comp: %llu - classify: %d, geom: %d",
+       ALOGI("comp: %llu - classify: %zu, geom: %d",
           ctx->stats[HWC_PRIMARY_IX].prepare_call, list->numHwLayers, (bool)(list->flags & HWC_GEOMETRY_CHANGED));
     }
 
@@ -2794,7 +2803,7 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
     for (i = 0; i < list->numHwLayers; i++) {
         layer = &list->hwLayers[i];
         if (ctx->display_dump_layer & HWC_DUMP_LEVEL_CLASSIFY) {
-           ALOGI("comp: %llu - in-layer: %d, comp: %d",
+           ALOGI("comp: %llu - in-layer: %zu, comp: %d",
               ctx->stats[HWC_PRIMARY_IX].prepare_call, i, layer->compositionType);
         }
         // we do not handle background layer at this time, we report such to SF.
@@ -2836,7 +2845,7 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
            }
         }
         if (ctx->display_dump_layer & HWC_DUMP_LEVEL_CLASSIFY) {
-           ALOGI("comp: %llu - out-layer: %d, comp: %d",
+           ALOGI("comp: %llu - out-layer: %zu, comp: %d",
               ctx->stats[HWC_PRIMARY_IX].prepare_call, i, layer->compositionType);
         }
     }
@@ -2898,14 +2907,14 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
 
     ctx->stats[HWC_PRIMARY_IX].prepare_call += 1;
 
-    if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->power_mutex)) {
         ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
         ctx->stats[HWC_PRIMARY_IX].prepare_skipped += 1;
         goto out;
     }
 
     if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
-        BKNI_ReleaseMutex(ctx->power_mutex);
+        pthread_mutex_unlock(&ctx->power_mutex);
 
         if (ctx->hwc_binder) {
            ctx->hwc_binder->connect();
@@ -2927,9 +2936,10 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
                    unsigned handle_dump = 0;
                    int lrc = 0;
                    if (layer->handle != NULL) {
+                      NEXUS_MemoryBlockHandle block_handle = NULL;
                       NEXUS_Addr pAddr;
                       private_handle_t *gr_buffer = (private_handle_t *)layer->handle;
-                      NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+                      private_handle_t::get_block_handles(gr_buffer, &block_handle, NULL);
                       lrc = hwc_mem_lock_phys(ctx, block_handle, &pAddr);
                       handle_dump = (unsigned)pAddr;
                       if (lrc == NEXUS_SUCCESS) {
@@ -2953,11 +2963,11 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
         }
 
         if (skip_set < skip_cand) {
-           if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+           if (!pthread_mutex_lock(&ctx->mutex)) {
               for (i = 0; i < list->numHwLayers; i++) {
                  ctx->gpx_cli[i].skip_set = false;
               }
-              BKNI_ReleaseMutex(ctx->mutex);
+              pthread_mutex_unlock(&ctx->mutex);
            } else {
               ALOGE("comp: %llu - failed hidding skip", ctx->stats[HWC_PRIMARY_IX].prepare_call);
            }
@@ -2970,7 +2980,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     }
     else {
         ctx->stats[HWC_PRIMARY_IX].prepare_skipped += 1;
-        BKNI_ReleaseMutex(ctx->power_mutex);
+        pthread_mutex_unlock(&ctx->power_mutex);
     }
 
 out:
@@ -2987,61 +2997,75 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
     unsigned int stride;
     void *pAddr;
     int layer_id = 0;
-    int virt_w = -1, virt_h = -1;
     NEXUS_Error lrc;
 
-    if (list) {
-       ctx->stats[HWC_VIRTUAL_IX].prepare_call += 1;
+    if (!list) {
+       /* !!not an error, just nothing to do.*/
+       return 0;
+    }
 
-       if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-           ctx->stats[HWC_VIRTUAL_IX].prepare_skipped += 1;
-           goto out;
+    ctx->stats[HWC_VIRTUAL_IX].prepare_call += 1;
+
+    if (pthread_mutex_lock(&ctx->mutex)) {
+        ctx->stats[HWC_VIRTUAL_IX].prepare_skipped += 1;
+        goto out;
        }
 
-       for (i = 0; i < HWC_VD_CLIENTS_NUMBER; i++) {
-           ctx->vd_cli[i].composition.visible = false;
-       }
+    for (i = 0; i < HWC_VD_CLIENTS_NUMBER; i++) {
+        ctx->vd_cli[i].composition.visible = false;
+    }
 
-       ctx->cfg[HWC_VIRTUAL_IX].width = -1;
-       ctx->cfg[HWC_VIRTUAL_IX].height = -1;
-       if (list->outbuf != NULL) {
-          void *pAddr;
-          private_handle_t *gr_buffer = (private_handle_t *)list->outbuf;
-          NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
-          lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
-          PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
-          if (pSharedData != NULL) {
-             ctx->cfg[HWC_VIRTUAL_IX].width = pSharedData->container.width;
-             ctx->cfg[HWC_VIRTUAL_IX].height = pSharedData->container.height;
-          }
-          if (!lrc) hwc_mem_unlock(ctx, block_handle, true);
+    ctx->cfg[HWC_VIRTUAL_IX].width = -1;
+    ctx->cfg[HWC_VIRTUAL_IX].height = -1;
+    if (list->outbuf != NULL) {
+       void *pAddr;
+       NEXUS_MemoryBlockHandle block_handle = NULL;
+       private_handle_t *gr_buffer = (private_handle_t *)list->outbuf;
+       private_handle_t::get_block_handles(gr_buffer, &block_handle, NULL);
+       lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
+       PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
+       if (pSharedData != NULL) {
+          ctx->cfg[HWC_VIRTUAL_IX].width = pSharedData->container.width;
+          ctx->cfg[HWC_VIRTUAL_IX].height = pSharedData->container.height;
        }
+       if (!lrc) hwc_mem_unlock(ctx, block_handle, true);
+    }
 
-       if (ctx->display_gles_always || ctx->display_gles_virtual ||
-           (ctx->cfg[HWC_VIRTUAL_IX].width == -1 && ctx->cfg[HWC_VIRTUAL_IX].height == -1)) {
-          goto out_unlock;
-       }
-
+    if (ctx->display_gles_always || ctx->display_gles_virtual ||
+        (ctx->cfg[HWC_VIRTUAL_IX].width == -1 && ctx->cfg[HWC_VIRTUAL_IX].height == -1)) {
        for (i = 0; i < list->numHwLayers; i++) {
           layer = &list->hwLayers[i];
-          if (ctx->display_dump_virt & HWC_DUMP_LEVEL_PREPARE) {
-             ALOGI("vcmp: %llu - %dx%d, layer: %d, kind: %d",
-                   ctx->stats[HWC_VIRTUAL_IX].prepare_call, virt_w, virt_h, i, layer->compositionType);
-          }
           if ((layer->compositionType == HWC_FRAMEBUFFER) || (layer->compositionType == HWC_OVERLAY)) {
-             hwc_prepare_gpx_layer(ctx, layer, layer_id, false /*don't care*/, true, true, NULL, NULL);
-             layer_id++;
-             layer->compositionType = HWC_OVERLAY;
+             layer->compositionType = HWC_FRAMEBUFFER;
           }
        }
+       goto out_unlock;
+    }
 
+    for (i = 0; i < list->numHwLayers; i++) {
+       layer = &list->hwLayers[i];
        if (ctx->display_dump_virt & HWC_DUMP_LEVEL_PREPARE) {
-          ALOGI("vcmp: %llu - %dx%d, composing %d layers", ctx->stats[HWC_VIRTUAL_IX].prepare_call, virt_w, virt_h, layer_id);
+          ALOGI("vcmp: %llu - %dx%d, layer: %zu, kind: %d",
+                ctx->stats[HWC_VIRTUAL_IX].prepare_call,
+                ctx->cfg[HWC_VIRTUAL_IX].width, ctx->cfg[HWC_VIRTUAL_IX].height,
+                i, layer->compositionType);
+       }
+       if ((layer->compositionType == HWC_FRAMEBUFFER) || (layer->compositionType == HWC_OVERLAY)) {
+          hwc_prepare_gpx_layer(ctx, layer, layer_id, false /*don't care*/, true, true, NULL, NULL);
+          layer_id++;
+          layer->compositionType = HWC_OVERLAY;
        }
     }
 
+    if (ctx->display_dump_virt & HWC_DUMP_LEVEL_PREPARE) {
+       ALOGI("vcmp: %llu - %dx%d, composing %d layers",
+             ctx->stats[HWC_VIRTUAL_IX].prepare_call,
+             ctx->cfg[HWC_VIRTUAL_IX].width, ctx->cfg[HWC_VIRTUAL_IX].height,
+             layer_id);
+    }
+
 out_unlock:
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 out:
     return rc;
 }
@@ -3086,11 +3110,11 @@ static void hwc_put_disp_surface(struct hwc_context_t *ctx, int disp_ix, NEXUS_S
    }
 
    if (surface) {
-      if (BKNI_AcquireMutex(ctx->disp_cli[disp_ix].fifo_mutex) == BERR_SUCCESS) {
+      if (!pthread_mutex_lock(&ctx->disp_cli[disp_ix].fifo_mutex)) {
          NEXUS_SurfaceHandle *pElement = BFIFO_WRITE(&ctx->disp_cli[disp_ix].display_fifo);
          *pElement = surface;
          BFIFO_WRITE_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
-         BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
+         pthread_mutex_unlock(&ctx->disp_cli[disp_ix].fifo_mutex);
       } else {
          ALOGW("%s: leaked surface %p (disp %d)!", __FUNCTION__, surface, disp_ix);
       }
@@ -3153,7 +3177,7 @@ static void hwc_recycle_now(struct hwc_context_t* ctx)
    if (rc) {
       ALOGW("%s: error recycling %p %d", __FUNCTION__, ctx->disp_cli[HWC_PRIMARY_IX].schdl, rc);
    } else if ( numSurfaces > 0 ) {
-      if (BKNI_AcquireMutex(ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex) == BERR_SUCCESS) {
+      if (!pthread_mutex_lock(&ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex)) {
          for (i = 0; i < numSurfaces; i++) {
             if (hwc_valid_surface_now(ctx, HWC_PRIMARY_IX, surfaces[i])) {
                NEXUS_SurfaceHandle *pElement = BFIFO_WRITE(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo);
@@ -3161,7 +3185,7 @@ static void hwc_recycle_now(struct hwc_context_t* ctx)
                BFIFO_WRITE_COMMIT(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo, 1);
             }
          }
-         BKNI_ReleaseMutex(ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex);
+         pthread_mutex_unlock(&ctx->disp_cli[HWC_PRIMARY_IX].fifo_mutex);
       } else {
          ALOGW("%s: lost surfaces!", __FUNCTION__);
       }
@@ -3181,12 +3205,12 @@ static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int d
     }
 
     while (true) {
-       if (BKNI_AcquireMutex(ctx->disp_cli[disp_ix].fifo_mutex) == BERR_SUCCESS) {
+       if (!pthread_mutex_lock(&ctx->disp_cli[disp_ix].fifo_mutex)) {
           if (BFIFO_READ_PEEK(&ctx->disp_cli[disp_ix].display_fifo) != 0) {
-             BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
+             pthread_mutex_unlock(&ctx->disp_cli[disp_ix].fifo_mutex);
              goto out_read;
           } else {
-             BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
+             pthread_mutex_unlock(&ctx->disp_cli[disp_ix].fifo_mutex);
              hwc_recycle_now(ctx);
              if (BFIFO_READ_PEEK(&ctx->disp_cli[disp_ix].display_fifo) != 0) {
                 goto out_read;
@@ -3195,7 +3219,6 @@ static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int d
        } else {
           return NULL;
        }
-       BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
        if (BKNI_WaitForEvent(ctx->recycle_event, HWC_SURFACE_WAIT_TIMEOUT)) {
           no_surface_count++;
           if (no_surface_count == HWC_SURFACE_WAIT_ATTEMPT) {
@@ -3207,10 +3230,10 @@ static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int d
     }
 
 out_read:
-    if (BKNI_AcquireMutex(ctx->disp_cli[disp_ix].fifo_mutex) == BERR_SUCCESS) {
+    if (!pthread_mutex_lock(&ctx->disp_cli[disp_ix].fifo_mutex)) {
        pElement = BFIFO_READ(&ctx->disp_cli[disp_ix].display_fifo);
        BFIFO_READ_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
-       BKNI_ReleaseMutex(ctx->disp_cli[disp_ix].fifo_mutex);
+       pthread_mutex_unlock(&ctx->disp_cli[disp_ix].fifo_mutex);
     }
 out:
     return *pElement;
@@ -3313,7 +3336,7 @@ static bool hwc_set_signal_oob_il_locked(struct hwc_context_t *ctx, hwc_display_
          if (!video.is_sideband) {
             if (ctx->hwc_binder) {
                gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
-               block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+               private_handle_t::get_block_handles(gr_buffer, &block_handle, NULL);
                lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
                pSharedData = (PSHARED_DATA) pAddr;
                if ((lrc != NEXUS_SUCCESS) || pSharedData == NULL) {
@@ -3326,7 +3349,7 @@ static bool hwc_set_signal_oob_il_locked(struct hwc_context_t *ctx, hwc_display_
                }
                hwc_mem_unlock(ctx, block_handle, true);
                if (ctx->display_dump_layer & HWC_DUMP_LEVEL_COMPOSE) {
-                  ALOGI("comp: %llu (%llu,%llu): kicked %d::frame %llu\n",
+                  ALOGI("comp: %llu (%llu,%llu): kicked %zu::frame %llu\n",
                         ctx->stats[HWC_PRIMARY_IX].composed, ctx->stats[HWC_PRIMARY_IX].prepare_call,
                         ctx->stats[HWC_PRIMARY_IX].set_call, i, ctx->mm_cli[0].last_ping_frame_id);
                }
@@ -3353,19 +3376,19 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
 
     ctx->stats[HWC_PRIMARY_IX].set_call += 1;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
         ctx->stats[HWC_PRIMARY_IX].set_skipped += 1;
         goto out_close_fence;
     }
 
-    if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->power_mutex)) {
         ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
         ctx->stats[HWC_PRIMARY_IX].set_skipped += 1;
         goto out_mutex;
     }
 
     if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
-        BKNI_ReleaseMutex(ctx->power_mutex);
+        pthread_mutex_unlock(&ctx->power_mutex);
 
         hwc_work_item_size = sizeof(hwc_work_item) + (list->numHwLayers * sizeof(hwc_layer_1_t));
         this_frame = (struct hwc_work_item *) calloc(1, hwc_work_item_size);
@@ -3386,13 +3409,21 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         this_frame->video_layers = ctx->prepare_video;
         this_frame->sideband_layers = ctx->prepare_sideband;
         this_frame->next = NULL;
-        if (ctx->composer_work_list[HWC_PRIMARY_IX] == NULL) {
-           ctx->composer_work_list[HWC_PRIMARY_IX] = this_frame;
+        if (!pthread_mutex_lock(&ctx->comp_work_list_mutex[HWC_PRIMARY_IX])) {
+           if (ctx->composer_work_list[HWC_PRIMARY_IX] == NULL) {
+              ctx->composer_work_list[HWC_PRIMARY_IX] = this_frame;
+           } else {
+              struct hwc_work_item *item, *last;
+              last = ctx->composer_work_list[HWC_PRIMARY_IX];
+              while (last != NULL) { item = last; last = last->next; }
+              item->next = this_frame;
+           }
+           pthread_mutex_unlock(&ctx->comp_work_list_mutex[HWC_PRIMARY_IX]);
         } else {
-           struct hwc_work_item *item, *last;
-           last = ctx->composer_work_list[HWC_PRIMARY_IX];
-           while (last != NULL) { item = last; last = last->next; }
-           item->next = this_frame;
+           ALOGE("comp: %llu: unable to post (%llu)", ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed);
+           ctx->stats[HWC_PRIMARY_IX].composed++;
+           free(this_frame);
+           goto out_mutex;
         }
 
         if (ctx->track_comp_time) {
@@ -3416,7 +3447,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                  list->hwLayers[i].releaseFenceFd = this_frame->content.hwLayers[i].releaseFenceFd;
                  installed++;
                  if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-                    ALOGI("fence: %llu/%d - timeline-release: %d -> fence: %d\n",
+                    ALOGI("fence: %llu/%zu - timeline-release: %d -> fence: %d\n",
                        ctx->stats[HWC_PRIMARY_IX].set_call, i,
                        ctx->gpx_cli[i].rel_tl, list->hwLayers[i].releaseFenceFd);
                  }
@@ -3426,7 +3457,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
               list->retireFenceFd = hwc_ret_tl_fence(ctx, HWC_PRIMARY_IX);
               this_frame->content.retireFenceFd = list->retireFenceFd;
               if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-                 ALOGI("fence: %llu/%d - retire-fence: %d\n",
+                 ALOGI("fence: %llu/%zu - retire-fence: %d\n",
                     ctx->stats[HWC_PRIMARY_IX].set_call, i, list->retireFenceFd);
               }
            } else {
@@ -3434,7 +3465,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
               this_frame->content.retireFenceFd = INVALID_FENCE;
            }
            if (ctx->dump_fence & HWC_DUMP_FENCE_SUMMARY) {
-              ALOGI("comp: %llu - installed %d fences (retire: %d) for %d layers\n",
+              ALOGI("comp: %llu - installed %d fences (retire: %d) for %zu layers\n",
                     ctx->stats[HWC_PRIMARY_IX].set_call,
                     installed, list->retireFenceFd, list->numHwLayers);
            }
@@ -3446,7 +3477,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
         }
 
         if (!ctx->fence_support) {
-           BKNI_ReleaseMutex(ctx->mutex);
+           pthread_mutex_unlock(&ctx->mutex);
            BKNI_SetEvent(ctx->composer_event[HWC_PRIMARY_IX]);
            BKNI_WaitForEvent(ctx->composer_event_sync[HWC_PRIMARY_IX], BKNI_INFINITE);
            goto out_close_fence;
@@ -3454,7 +3485,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
            if (ctx->signal_oob_inline) {
               oob_signaled = hwc_set_signal_oob_il_locked(ctx, list);
            }
-           BKNI_ReleaseMutex(ctx->mutex);
+           pthread_mutex_unlock(&ctx->mutex);
            BKNI_SetEvent(ctx->composer_event[HWC_PRIMARY_IX]);
            if (ctx->stats[HWC_PRIMARY_IX].set_call >=
                   ctx->stats[HWC_PRIMARY_IX].composed +
@@ -3465,17 +3496,17 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
            goto out;
         }
     } else {
-         BKNI_ReleaseMutex(ctx->power_mutex);
+         pthread_mutex_unlock(&ctx->power_mutex);
     }
 
 out_mutex:
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 out_close_fence:
     for (i = 0; i < list->numHwLayers; i++) {
        if (list->hwLayers[i].acquireFenceFd >= 0) {
           close(list->hwLayers[i].acquireFenceFd);
           if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-             ALOGI("fence: %llu/%d - acquire: %d -> err+close\n",
+             ALOGI("fence: %llu/%zu - acquire: %d -> err+close\n",
                    ctx->stats[HWC_PRIMARY_IX].set_call, i,
                    list->hwLayers[i].acquireFenceFd);
           }
@@ -3558,7 +3589,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       video.sideband_client = item->sb_cli[i];
       chk = hwc_validate_layer_handle(&video);
       if (chk != 0) {
-         ALOGW("comp: %llu/%llu - layer: %d (%d) - invalid for comp (%d)\n",
+         ALOGW("comp: %llu/%llu - layer: %zu (%d) - invalid for comp (%d)\n",
                ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed,
                i, chk, list->hwLayers[i].acquireFenceFd);
          continue;
@@ -3578,23 +3609,23 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       if (list->hwLayers[i].compositionType != HWC_SIDEBAND) {
          gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
          if (gr_buffer == NULL) {
-            ALOGV("comp: %llu/%llu - layer: %d - invalid buffer\n",
+            ALOGV("comp: %llu/%llu - layer: %zu - invalid buffer\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
             continue;
          }
-         block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+         private_handle_t::get_block_handles(gr_buffer, &block_handle, NULL);
          lrc = hwc_mem_lock(ctx, block_handle, &pAddr, true);
          pSharedData = (PSHARED_DATA) pAddr;
          if (lrc || pSharedData == NULL) {
-            ALOGE("comp: %llu/%llu - layer: %d - invalid shared data\n",
+            ALOGE("comp: %llu/%llu - layer: %zu - invalid shared data\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
             continue;
          }
          if (gr_buffer->fmt_set != GR_NONE) {
-            phys_block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.physAddr;
+            phys_block_handle = (NEXUS_MemoryBlockHandle)pSharedData->container.block;
             lrcp = hwc_mem_lock(ctx, phys_block_handle, &pAddr, true);
             if (lrcp || pAddr == NULL) {
-               ALOGE("comp: %llu/%llu - layer: %d - invalid physical data\n",
+               ALOGE("comp: %llu/%llu - layer: %zu - invalid physical data\n",
                      ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed, i);
                continue;
             }
@@ -3610,17 +3641,37 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          if (!video.is_sideband) {
             if (ctx->hwc_binder) {
                if (!ctx->signal_oob_inline) {
-                  BKNI_AcquireMutex(ctx->mutex);
-                  if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
-                     ctx->mm_cli[0].last_ping_frame_id = pSharedData->videoFrame.status.serialNumber;
-                     ctx->hwc_binder->setframe(ctx->mm_cli[0].id, ctx->mm_cli[0].last_ping_frame_id);
+                  if (!pthread_mutex_lock(&ctx->mutex)) {
+                     if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
+                        ctx->mm_cli[0].last_ping_frame_id = pSharedData->videoFrame.status.serialNumber;
+                        ctx->hwc_binder->setframe(ctx->mm_cli[0].id, ctx->mm_cli[0].last_ping_frame_id);
+                     }
+                     pthread_mutex_unlock(&ctx->mutex);
                   }
-                  BKNI_ReleaseMutex(ctx->mutex);
                }
                pinged_frame = ctx->mm_cli[0].last_ping_frame_id;
             }
          } else {
             is_sideband = true;
+            if (ctx->hwc_binder) {
+               if (!pthread_mutex_lock(&ctx->mutex)) {
+                  if (ctx->sb_cli[0].geometry_updated) {
+                     struct hwc_position frame, clipped;
+                     frame.x = ctx->sb_cli[0].root.composition.position.x;;
+                     frame.y = ctx->sb_cli[0].root.composition.position.y;
+                     frame.w = ctx->sb_cli[0].root.composition.position.width;
+                     frame.h = ctx->sb_cli[0].root.composition.position.height;
+                     clipped.x = ctx->sb_cli[0].root.composition.clipRect.x;
+                     clipped.y = ctx->sb_cli[0].root.composition.clipRect.y;
+                     clipped.w = (ctx->sb_cli[0].root.composition.clipRect.width == 0xFFFF) ? 0 : ctx->sb_cli[0].root.composition.clipRect.width;
+                     clipped.h = (ctx->sb_cli[0].root.composition.clipRect.height == 0xFFFF) ? 0 : ctx->sb_cli[0].root.composition.clipRect.height;
+                     ctx->hwc_binder->setgeometry(HWC_BINDER_SDB, 0, frame, clipped, SB_CLIENT_ZORDER, 1);
+                     ALOGI("comp: sdb-0: {%d,%d,%dx%d} -> {%d,%d,%dx%d}", frame.x, frame.y, frame.w, frame.h, clipped.x, clipped.y, clipped.w, clipped.h);
+                     ctx->sb_cli[0].geometry_updated = false;
+                  }
+                  pthread_mutex_unlock(&ctx->mutex);
+               }
+            }
          }
       } else if (item->comp[i].visible) {
          if (video.is_yuv) {
@@ -3649,7 +3700,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          }
          if (list->hwLayers[i].acquireFenceFd >= 0) {
             if (!ctx->fence_support) {
-               ALOGI("fence: %llu/%d - fd:%d -> wait+close in sync mode!?! check platform setup.\n",
+               ALOGI("fence: %llu/%zu - fd:%d -> wait+close in sync mode!?! check platform setup.\n",
                      ctx->stats[HWC_PRIMARY_IX].set_call, i,
                      list->hwLayers[i].acquireFenceFd);
             }
@@ -3661,7 +3712,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                item->fence_wait += (hwc_tick() - tick_now);
             }
             if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-               ALOGI("fence: %llu/%d - acquire-fence: %d -> wait+close\n",
+               ALOGI("fence: %llu/%zu - acquire-fence: %d -> wait+close\n",
                      ctx->stats[HWC_PRIMARY_IX].set_call, i,
                      list->hwLayers[i].acquireFenceFd);
             }
@@ -3754,7 +3805,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    }
 
    if (ctx->display_dump_layer & HWC_DUMP_LEVEL_FINAL) {
-      ALOGI("comp: %llu (%llu,%llu): ls:%s::ov:%d::fb:%d::vs:%d (%llu) - final:%d (%c%c%c) - ops(f:%d:b:%d:v:%d)\n",
+      ALOGI("comp: %llu (%llu,%llu): ls:%s::ov:%d::fb:%d::vs:%d (%" PRIu64 ") - final:%d (%c%c%c) - ops(f:%d:b:%d:v:%d)\n",
             ctx->stats[HWC_PRIMARY_IX].composed, ctx->stats[HWC_PRIMARY_IX].prepare_call,
             ctx->stats[HWC_PRIMARY_IX].set_call, ctx->last_seed == HWC_OPAQUE ? "opq" : "trs",
             *overlay_seen, *fb_target_seen, video_seen,
@@ -3770,7 +3821,7 @@ out:
       if (list->hwLayers[i].acquireFenceFd != INVALID_FENCE) {
          close(list->hwLayers[i].acquireFenceFd);
          if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-            ALOGI("fence: %llu/%d - acquire-fence: %d -> comp+err+close\n",
+            ALOGI("fence: %llu/%zu - acquire-fence: %d -> comp+err+close\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, i,
                   list->hwLayers[i].acquireFenceFd);
          }
@@ -3779,7 +3830,7 @@ out:
          hwc_rel_tl_inc(ctx, HWC_PRIMARY_IX, i);
          list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
          if (ctx->dump_fence & HWC_DUMP_FENCE_PRIM) {
-            ALOGI("fence: %llu/%d - timeline-release: %d -> inc\n",
+            ALOGI("fence: %llu/%zu - timeline-release: %d -> inc\n",
                   ctx->stats[HWC_PRIMARY_IX].set_call, i, ctx->gpx_cli[i].rel_tl);
          }
       }
@@ -3800,14 +3851,16 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
 
     ctx->stats[HWC_VIRTUAL_IX].set_call += 1;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
        ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
        goto out_close_fence;
     }
 
     if (ctx->display_gles_always || ctx->display_gles_virtual ||
         (ctx->cfg[HWC_VIRTUAL_IX].width == -1 && ctx->cfg[HWC_VIRTUAL_IX].height == -1)) {
-       list->retireFenceFd = list->outbufAcquireFenceFd;
+       list->retireFenceFd = dup(list->outbufAcquireFenceFd);
+       close(list->outbufAcquireFenceFd);
+       list->outbufAcquireFenceFd = INVALID_FENCE;
        goto out_mutex;
     }
 
@@ -3817,14 +3870,14 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
       goto out_mutex;
     }
 
-    if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->power_mutex)) {
        ALOGE("%s: could not acquire power_mutex!!!", __FUNCTION__);
        ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
        goto out_mutex;
     }
 
     if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
-       BKNI_ReleaseMutex(ctx->power_mutex);
+       pthread_mutex_unlock(&ctx->power_mutex);
 
        hwc_work_item_size = sizeof(hwc_work_item) + (list->numHwLayers * sizeof(hwc_layer_1_t));
        this_frame = (struct hwc_work_item *) calloc(1, hwc_work_item_size);
@@ -3838,13 +3891,21 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
        }
        this_frame->comp_ix = ctx->stats[HWC_VIRTUAL_IX].set_call;
        this_frame->next = NULL;
-       if (ctx->composer_work_list[HWC_VIRTUAL_IX] == NULL) {
-          ctx->composer_work_list[HWC_VIRTUAL_IX] = this_frame;
+       if (!pthread_mutex_lock(&ctx->comp_work_list_mutex[HWC_VIRTUAL_IX])) {
+          if (ctx->composer_work_list[HWC_VIRTUAL_IX] == NULL) {
+             ctx->composer_work_list[HWC_VIRTUAL_IX] = this_frame;
+          } else {
+             struct hwc_work_item *item, *last;
+             last = ctx->composer_work_list[HWC_VIRTUAL_IX];
+             while (last != NULL) { item = last; last = last->next; }
+             item->next = this_frame;
+          }
+          pthread_mutex_unlock(&ctx->comp_work_list_mutex[HWC_VIRTUAL_IX]);
        } else {
-          struct hwc_work_item *item, *last;
-          last = ctx->composer_work_list[HWC_VIRTUAL_IX];
-          while (last != NULL) { item = last; last = last->next; }
-          item->next = this_frame;
+          ALOGE("vcmp: %llu: unable to post (%llu)", ctx->stats[HWC_VIRTUAL_IX].set_call, ctx->stats[HWC_VIRTUAL_IX].composed);
+          ctx->stats[HWC_VIRTUAL_IX].composed++;
+          free(this_frame);
+          goto out_mutex;
        }
 
        if (ctx->track_comp_time) {
@@ -3866,7 +3927,7 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
                 this_frame->content.hwLayers[i].releaseFenceFd = hwc_rel_tl_fence(ctx, HWC_VIRTUAL_IX, i);
                 list->hwLayers[i].releaseFenceFd = this_frame->content.hwLayers[i].releaseFenceFd;
                 if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-                   ALOGI("vfence: %llu/%d - timeline-release: %d -> fence: %d\n",
+                   ALOGI("vfence: %llu/%zu - timeline-release: %d -> fence: %d\n",
                       ctx->stats[HWC_VIRTUAL_IX].set_call, i,
                       ctx->vd_cli[i].rel_tl, list->hwLayers[i].releaseFenceFd);
                 }
@@ -3877,7 +3938,7 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
              list->retireFenceFd = hwc_ret_tl_fence(ctx, HWC_VIRTUAL_IX);
              this_frame->content.retireFenceFd = list->retireFenceFd;
              if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-                ALOGI("vfence: %llu/%d - retire: %d\n",
+                ALOGI("vfence: %llu/%zu - retire: %d\n",
                    ctx->stats[HWC_VIRTUAL_IX].set_call, i, list->retireFenceFd);
              }
           } else {
@@ -3892,27 +3953,28 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
        }
 
        if (!ctx->fence_support) {
-          BKNI_ReleaseMutex(ctx->mutex);
+          pthread_mutex_unlock(&ctx->mutex);
           BKNI_SetEvent(ctx->composer_event[HWC_VIRTUAL_IX]);
           BKNI_WaitForEvent(ctx->composer_event_sync[HWC_VIRTUAL_IX], BKNI_INFINITE);
           goto out_close_fence;
        } else {
-          BKNI_ReleaseMutex(ctx->mutex);
+          pthread_mutex_unlock(&ctx->mutex);
           BKNI_SetEvent(ctx->composer_event[HWC_VIRTUAL_IX]);
           goto out;
        }
     } else {
-         BKNI_ReleaseMutex(ctx->power_mutex);
+         pthread_mutex_unlock(&ctx->power_mutex);
     }
 
 out_mutex:
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 out_close_fence:
     for (i = 0; i < list->numHwLayers; i++) {
        if (list->hwLayers[i].acquireFenceFd >= 0) {
           close(list->hwLayers[i].acquireFenceFd);
+          list->hwLayers[i].acquireFenceFd = INVALID_FENCE;
           if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-             ALOGI("vfence: %llu/%d - acquire: %d -> err+close\n",
+             ALOGI("vfence: %llu/%zu - acquire: %d -> err+close\n",
                    ctx->stats[HWC_VIRTUAL_IX].set_call, i,
                    list->hwLayers[i].acquireFenceFd);
           }
@@ -3932,16 +3994,18 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
    hwc_display_contents_1_t* list = &item->content;
    NEXUS_SurfaceHandle surface[NSC_GPX_CLIENTS_NUMBER];
    NEXUS_Error lrc, lrcs;
-   NEXUS_MemoryBlockHandle block_handle, out_block_handle;
+   NEXUS_MemoryBlockHandle block_handle = NULL, out_block_handle = NULL;
+   OPS_COUNT ops_count;
+   bool q_ops = false;
 
    memset(surface, 0, sizeof(surface));
 
    private_handle_t *gr_out_buffer = (private_handle_t *)list->outbuf;
-   out_block_handle = (NEXUS_MemoryBlockHandle)gr_out_buffer->sharedData;
+   private_handle_t::get_block_handles(gr_out_buffer, &out_block_handle, NULL);
    lrc = hwc_mem_lock(ctx, out_block_handle, &pAddr, true);
    PSHARED_DATA pOutSharedData = (PSHARED_DATA) pAddr;
    if (pOutSharedData == NULL) {
-      ALOGE("vcmp: %llu (0x%x) - invalid output buffer?", ctx->stats[HWC_VIRTUAL_IX].set_call, gr_out_buffer->sharedData);
+      ALOGE("vcmp: %llu (%p) - invalid output buffer?", ctx->stats[HWC_VIRTUAL_IX].set_call, out_block_handle);
       ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
       goto out;
    }
@@ -3949,10 +4013,10 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
                                   pOutSharedData->container.height,
                                   pOutSharedData->container.stride,
                                   gralloc_to_nexus_pixel_format(pOutSharedData->container.format),
-                                  pOutSharedData->container.physAddr,
+                                  pOutSharedData->container.block,
                                   0);
    if (outputHdl == NULL) {
-      ALOGE("vcmp: %llu (0x%x) - no display surface available", ctx->stats[HWC_VIRTUAL_IX].set_call, gr_out_buffer->sharedData);
+      ALOGE("vcmp: %llu (%p) - no display surface available", ctx->stats[HWC_VIRTUAL_IX].set_call, out_block_handle);
       ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
       if (!lrc) hwc_mem_unlock(ctx, out_block_handle, true);
       goto out;
@@ -3972,12 +4036,12 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
          if (gr_buffer == NULL) {
             continue;
          }
-         block_handle = (NEXUS_MemoryBlockHandle)gr_buffer->sharedData;
+         private_handle_t::get_block_handles(gr_buffer, &block_handle, NULL);
          lrcs = hwc_mem_lock(ctx, block_handle, &pAddr, true);
          PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
          if (list->hwLayers[i].acquireFenceFd >= 0) {
             if (!ctx->fence_support) {
-               ALOGI("vfence: %llu/%d - fd:%d -> wait+close in sync mode!?! check platform setup.\n",
+               ALOGI("vfence: %llu/%zu - fd:%d -> wait+close in sync mode!?! check platform setup.\n",
                      ctx->stats[HWC_VIRTUAL_IX].set_call, i,
                      list->hwLayers[i].acquireFenceFd);
             }
@@ -3985,7 +4049,7 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
             close(list->hwLayers[i].acquireFenceFd);
             list->hwLayers[i].acquireFenceFd = INVALID_FENCE;
             if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-               ALOGI("vfence: %llu/%d - acquire: %d -> wait+close\n",
+               ALOGI("vfence: %llu/%zu - acquire: %d -> wait+close\n",
                      ctx->stats[HWC_VIRTUAL_IX].set_call, i,
                      list->hwLayers[i].acquireFenceFd);
             }
@@ -3993,9 +4057,14 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
          if (pSharedData == NULL) {
             continue;
          }
+         if (list->outbufAcquireFenceFd >= 0) {
+            sync_wait(list->outbufAcquireFenceFd, BKNI_INFINITE);
+            close(list->outbufAcquireFenceFd);
+            list->outbufAcquireFenceFd = INVALID_FENCE;
+         }
          if (hwc_compose_gralloc_buffer(ctx, list, i, pSharedData, gr_buffer, outputHdl,
                                         true, false, &surface[i], &item->comp[i],
-                                        false, layer_composed, NULL, NULL, 0)) {
+                                        false, layer_composed, &q_ops, &ops_count, 0)) {
             layer_composed++;
          }
          if (!lrcs) hwc_mem_unlock(ctx, block_handle, true);
@@ -4003,11 +4072,6 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
    }
 
    if (layer_composed) {
-      if (ctx->fence_support && (list->outbufAcquireFenceFd >= 0)) {
-         sync_wait(list->outbufAcquireFenceFd, BKNI_INFINITE);
-         close(list->outbufAcquireFenceFd);
-         list->outbufAcquireFenceFd = INVALID_FENCE;
-      }
       rc = hwc_checkpoint(ctx);
       if (rc)  {
          ALOGW("vcmp: checkpoint timeout");
@@ -4038,7 +4102,7 @@ out:
       if (list->hwLayers[i].acquireFenceFd != INVALID_FENCE) {
          close(list->hwLayers[i].acquireFenceFd);
          if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-            ALOGI("vfence: %llu/%d - acquire-fence: %d -> comp+err+close\n",
+            ALOGI("vfence: %llu/%zu - acquire-fence: %d -> comp+err+close\n",
                   ctx->stats[HWC_VIRTUAL_IX].set_call, i,
                   list->hwLayers[i].acquireFenceFd);
          }
@@ -4047,7 +4111,7 @@ out:
          hwc_rel_tl_inc(ctx, HWC_VIRTUAL_IX, i);
          list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
          if (ctx->dump_fence & HWC_DUMP_FENCE_VIRT) {
-            ALOGI("vfence: %llu/%d - timeline-release: %d -> inc\n",
+            ALOGI("vfence: %llu/%zu - timeline-release: %d -> inc\n",
                   ctx->stats[HWC_VIRTUAL_IX].set_call, i, ctx->vd_cli[i].rel_tl);
          }
       }
@@ -4150,9 +4214,6 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
               NEXUS_SurfaceClient_Release(ctx->disp_cli[i].schdl);
            }
            pthread_join(ctx->composer_thread[i], NULL);
-           if (ctx->disp_cli[i].fifo_mutex) {
-              BKNI_DestroyMutex(ctx->disp_cli[i].fifo_mutex);
-           }
            if (ctx->composer_event[i]) {
               BKNI_DestroyEvent(ctx->composer_event[i]);
            }
@@ -4175,6 +4236,8 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
                  NEXUS_Surface_Destroy(ctx->disp_cli[i].display_buffers[j].fifo_surf);
               }
            }
+           pthread_mutex_destroy(&ctx->disp_cli[i].fifo_mutex);
+           pthread_mutex_destroy(&ctx->comp_work_list_mutex[i]);
         }
         if (ctx->recycle_event) {
            BKNI_DestroyEvent(ctx->recycle_event);
@@ -4188,12 +4251,6 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
 
         NxClient_Free(&ctx->nxAllocResults);
 
-        BKNI_DestroyMutex(ctx->vsync_callback_enabled_mutex);
-        BKNI_DestroyMutex(ctx->mutex);
-        BKNI_DestroyMutex(ctx->power_mutex);
-        BKNI_DestroyMutex(ctx->dev_mutex);
-        BKNI_DestroyMutex(ctx->g2d_mutex);
-
         if (ctx->hwc_binder) {
            delete ctx->hwc_binder;
         }
@@ -4204,6 +4261,12 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         if (ctx->checkpoint_event) {
            BKNI_DestroyEvent(ctx->checkpoint_event);
         }
+
+        pthread_mutex_destroy(&ctx->vsync_callback_enabled_mutex);
+        pthread_mutex_destroy(&ctx->mutex);
+        pthread_mutex_destroy(&ctx->dev_mutex);
+        pthread_mutex_destroy(&ctx->power_mutex);
+        pthread_mutex_destroy(&ctx->g2d_mutex);
 
         hwc_close_memory_interface(ctx);
     }
@@ -4241,14 +4304,14 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
             goto out;
        }
 
-       if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+       if (pthread_mutex_lock(&ctx->power_mutex)) {
            ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
            goto out;
        }
        if (ctx->power_mode != mode) {
           ctx->power_mode = mode;
        }
-       BKNI_ReleaseMutex(ctx->power_mutex);
+       pthread_mutex_unlock(&ctx->power_mutex);
        rc = 0;
     }
 
@@ -4269,11 +4332,11 @@ static int hwc_device_query(struct hwc_composer_device_1* dev, int what, int* va
        break;
 
        case HWC_VSYNC_PERIOD:
-           if (BKNI_AcquireMutex(ctx->dev_mutex) != BERR_SUCCESS) {
+           if (pthread_mutex_lock(&ctx->dev_mutex)) {
                return -EINVAL;
            }
            *value = (int)VSYNC_REFRESH;
-           BKNI_ReleaseMutex(ctx->dev_mutex);
+           pthread_mutex_unlock(&ctx->dev_mutex);
        break;
 
        case HWC_DISPLAY_TYPES_SUPPORTED:
@@ -4300,10 +4363,10 @@ static int hwc_device_eventControl(struct hwc_composer_device_1* dev, int disp, 
 
     if (event == HWC_EVENT_VSYNC) {
         struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
-        if (BKNI_AcquireMutex(ctx->vsync_callback_enabled_mutex) == BERR_SUCCESS) {
+        if (!pthread_mutex_lock(&ctx->vsync_callback_enabled_mutex)) {
            ctx->vsync_callback_enabled = enabled;
            status = 0;
-           BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
+           pthread_mutex_unlock(&ctx->vsync_callback_enabled_mutex);
         }
         if (!status) ALOGV("HWC HWC_EVENT_VSYNC (%s)", enabled ? "enabled":"disabled");
     }
@@ -4323,7 +4386,7 @@ static int hwc_device_getDisplayConfigs(struct hwc_composer_device_1* dev, int d
     if (*numConfigs == 0 || configs == NULL)
        return ret;
 
-    if (BKNI_AcquireMutex(ctx->dev_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->dev_mutex)) {
        return -EINVAL;
     }
 
@@ -4335,7 +4398,7 @@ static int hwc_device_getDisplayConfigs(struct hwc_composer_device_1* dev, int d
         ret = -1;
     }
 
-    BKNI_ReleaseMutex(ctx->dev_mutex);
+    pthread_mutex_unlock(&ctx->dev_mutex);
 
     return ret;
 }
@@ -4346,7 +4409,7 @@ static int hwc_device_getDisplayAttributes(struct hwc_composer_device_1* dev, in
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
     int i = 0;
 
-    if (BKNI_AcquireMutex(ctx->dev_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->dev_mutex)) {
        return -EINVAL;
     }
 
@@ -4376,12 +4439,12 @@ static int hwc_device_getDisplayAttributes(struct hwc_composer_device_1* dev, in
 
                i++;
             }
-            BKNI_ReleaseMutex(ctx->dev_mutex);
+            pthread_mutex_unlock(&ctx->dev_mutex);
             return 0;
         }
     }
 
-    BKNI_ReleaseMutex(ctx->dev_mutex);
+    pthread_mutex_unlock(&ctx->dev_mutex);
     return -EINVAL;
 }
 
@@ -4389,16 +4452,16 @@ static int hwc_device_getActiveConfig(struct hwc_composer_device_1* dev, int dis
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
 
-    if (BKNI_AcquireMutex(ctx->dev_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->dev_mutex)) {
        return -EINVAL;
     }
 
     if (disp == HWC_DISPLAY_PRIMARY) {
         // always first one, index 0.
-        BKNI_ReleaseMutex(ctx->dev_mutex);
+        pthread_mutex_unlock(&ctx->dev_mutex);
         return 0;
     } else {
-        BKNI_ReleaseMutex(ctx->dev_mutex);
+        pthread_mutex_unlock(&ctx->dev_mutex);
         return -1;
     }
 }
@@ -4407,16 +4470,16 @@ static int hwc_device_setActiveConfig(struct hwc_composer_device_1* dev, int dis
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
 
-    if (BKNI_AcquireMutex(ctx->dev_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->dev_mutex)) {
        return -EINVAL;
     }
 
     if (disp == HWC_DISPLAY_PRIMARY && index == 0) {
-       BKNI_ReleaseMutex(ctx->dev_mutex);
+       pthread_mutex_unlock(&ctx->dev_mutex);
        return 0;
     }
 
-    BKNI_ReleaseMutex(ctx->dev_mutex);
+    pthread_mutex_unlock(&ctx->dev_mutex);
     return -EINVAL;
 }
 
@@ -4424,7 +4487,7 @@ static int hwc_device_setCursorPositionAsync(struct hwc_composer_device_1 *dev, 
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
        return -EINVAL;
     }
 
@@ -4442,7 +4505,7 @@ static int hwc_device_setCursorPositionAsync(struct hwc_composer_device_1 *dev, 
        }
     }
 
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
     return 0;
 }
 
@@ -4460,18 +4523,18 @@ static void * hwc_vsync_task(void *argv)
 
     do
     {
-       if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+       if (pthread_mutex_lock(&ctx->power_mutex)) {
           ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
           goto out;
        }
        if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
-          BKNI_ReleaseMutex(ctx->power_mutex);
+          pthread_mutex_unlock(&ctx->power_mutex);
           BKNI_WaitForEvent(ctx->vsync_callback, BKNI_INFINITE);
 
           ctx->on_display.vsync = hwc_tick();
 
           if (ctx->hack_sync_refresh) {
-             if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+             if (!pthread_mutex_lock(&ctx->mutex)) {
                 if (hack_reference_composition == 0) {
                    hack_reference_composition = ctx->stats[HWC_PRIMARY_IX].composed;
                 }
@@ -4489,14 +4552,14 @@ static void * hwc_vsync_task(void *argv)
                       }
                       hack_reference_composition = 0;
                       hack_triggered_composition = hack_current_composition + 1;
-                      BKNI_ReleaseMutex(ctx->mutex);
+                      pthread_mutex_unlock(&ctx->mutex);
                       ctx->procs->invalidate(const_cast<hwc_procs_t *>(ctx->procs));
                    } else if (hack_current_composition > hack_reference_composition) {
                       hack_reference_composition = 0;
                    }
                 }
                 if (!no_lock) {
-                   BKNI_ReleaseMutex(ctx->mutex);
+                   pthread_mutex_unlock(&ctx->mutex);
                 }
                 no_lock = false;
              }
@@ -4507,7 +4570,7 @@ static void * hwc_vsync_task(void *argv)
          }
 
       } else {
-         BKNI_ReleaseMutex(ctx->power_mutex);
+         pthread_mutex_unlock(&ctx->power_mutex);
          BKNI_Sleep(16);
       }
 
@@ -4524,7 +4587,7 @@ static void hwc_collect_on_screen(struct hwc_context_t *ctx)
    int64_t tick_off_screen = hwc_tick();
 
    if (ctx->on_display.last_push == 0) {
-      ALOGV("%s: errand recycle (@ %llu)?\n",
+      ALOGV("%s: errand recycle (@ %" PRId64 ")?\n",
             __FUNCTION__, tick_off_screen);
       return;
    }
@@ -4578,12 +4641,12 @@ static bool hwc_standby_monitor(void *dev)
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
     int powerMode;
 
-    if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->power_mutex)) {
        ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
        goto out;
     }
     powerMode = ctx->power_mode;
-    BKNI_ReleaseMutex(ctx->power_mutex);
+    pthread_mutex_unlock(&ctx->power_mutex);
 
     // If Nexus has been told to enter standby and the primary display is turned on,
     // then force the display to power off...
@@ -4661,18 +4724,18 @@ static void * hwc_compose_task_primary(void *argv)
 
    do
    {
-      if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+      if (pthread_mutex_lock(&ctx->power_mutex)) {
          ALOGE("%s: could not acquire power_mutex!!!", __FUNCTION__);
          goto out;
       }
       if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
-         BKNI_ReleaseMutex(ctx->power_mutex);
+         pthread_mutex_unlock(&ctx->power_mutex);
          BKNI_WaitForEvent(ctx->composer_event[HWC_PRIMARY_IX], BKNI_INFINITE);
          bool try_compose = true, release_forced = false;
 
          do {
             this_frame = NULL;
-            if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+            if (!pthread_mutex_lock(&ctx->comp_work_list_mutex[HWC_PRIMARY_IX])) {
                this_frame = ctx->composer_work_list[HWC_PRIMARY_IX];
                if (this_frame == NULL) {
                   try_compose = false;
@@ -4685,9 +4748,9 @@ static void * hwc_compose_task_primary(void *argv)
                   }
                   ctx->stats[HWC_PRIMARY_IX].composed++;
                }
-               BKNI_ReleaseMutex(ctx->mutex);
+               pthread_mutex_unlock(&ctx->comp_work_list_mutex[HWC_PRIMARY_IX]);
             } else {
-               ALOGE("%s: could not acquire mutex!!!", __FUNCTION__);
+               ALOGE("%s: could not acquire work-list mutex!!!", __FUNCTION__);
                try_compose = false;
             }
 
@@ -4711,7 +4774,7 @@ static void * hwc_compose_task_primary(void *argv)
          }
 
       } else {
-         BKNI_ReleaseMutex(ctx->power_mutex);
+         pthread_mutex_unlock(&ctx->power_mutex);
          BKNI_Sleep(16);
       }
 
@@ -4732,18 +4795,18 @@ static void * hwc_compose_task_virtual(void *argv)
 
    do
    {
-      if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+      if (pthread_mutex_lock(&ctx->power_mutex)) {
          ALOGE("%s: could not acquire power_mutex!!!", __FUNCTION__);
          goto out;
       }
       if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
-         BKNI_ReleaseMutex(ctx->power_mutex);
+         pthread_mutex_unlock(&ctx->power_mutex);
          BKNI_WaitForEvent(ctx->composer_event[HWC_VIRTUAL_IX], BKNI_INFINITE);
          bool try_compose = true;
 
          do {
             this_frame = NULL;
-            if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+            if (!pthread_mutex_lock(&ctx->comp_work_list_mutex[HWC_VIRTUAL_IX])) {
                this_frame = ctx->composer_work_list[HWC_VIRTUAL_IX];
                if (this_frame == NULL) {
                   try_compose = false;
@@ -4751,9 +4814,9 @@ static void * hwc_compose_task_virtual(void *argv)
                   ctx->composer_work_list[HWC_VIRTUAL_IX] = this_frame->next;
                   ctx->stats[HWC_VIRTUAL_IX].composed++;
                }
-               BKNI_ReleaseMutex(ctx->mutex);
+               pthread_mutex_unlock(&ctx->comp_work_list_mutex[HWC_VIRTUAL_IX]);
             } else {
-               ALOGE("%s: could not acquire mutex!!!", __FUNCTION__);
+               ALOGE("%s: could not acquire work-list mutex!!!", __FUNCTION__);
                try_compose = false;
             }
 
@@ -4771,7 +4834,7 @@ static void * hwc_compose_task_virtual(void *argv)
          }
 
       } else {
-         BKNI_ReleaseMutex(ctx->power_mutex);
+         pthread_mutex_unlock(&ctx->power_mutex);
          BKNI_Sleep(16);
       }
 
@@ -4838,6 +4901,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         NEXUS_Error rc = NEXUS_SUCCESS;
         NEXUS_Graphics2DSettings gfxSettings;
         pthread_attr_t attr;
+        pthread_mutexattr_t mattr;
         dev = (struct hwc_context_t*)calloc(1, sizeof(*dev));
 
         if (dev == NULL) {
@@ -4857,21 +4921,13 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         if (BKNI_CreateEvent(&dev->vsync_callback)) {
            goto clean_up;
         }
-        if (BKNI_CreateMutex(&dev->vsync_callback_enabled_mutex) == BERR_OS_ERROR) {
-           goto clean_up;
-        }
-        if (BKNI_CreateMutex(&dev->mutex) == BERR_OS_ERROR) {
-           goto clean_up;
-        }
-        if (BKNI_CreateMutex(&dev->dev_mutex) == BERR_OS_ERROR) {
-           goto clean_up;
-        }
-        if (BKNI_CreateMutex(&dev->power_mutex) == BERR_OS_ERROR) {
-           goto clean_up;
-        }
-        if (BKNI_CreateMutex(&dev->g2d_mutex) == BERR_OS_ERROR) {
-           goto clean_up;
-        }
+        pthread_mutexattr_init(&mattr);
+        pthread_mutex_init(&dev->vsync_callback_enabled_mutex, &mattr);
+        pthread_mutex_init(&dev->mutex, &mattr);
+        pthread_mutex_init(&dev->dev_mutex, &mattr);
+        pthread_mutex_init(&dev->power_mutex, &mattr);
+        pthread_mutex_init(&dev->g2d_mutex, &mattr);
+        pthread_mutexattr_destroy(&mattr);
 
         {
            NEXUS_MemoryStatus status;
@@ -4945,16 +5001,17 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                ALOGE("%s: unable to set client composition %d", __FUNCTION__, rc);
                goto clean_up;
             }
-            if (BKNI_CreateMutex(&dev->disp_cli[i].fifo_mutex) == BERR_OS_ERROR) {
-               goto clean_up;
-            }
+            pthread_mutexattr_init(&mattr);
+            pthread_mutex_init(&dev->disp_cli[i].fifo_mutex, &mattr);
+            pthread_mutex_init(&dev->comp_work_list_mutex[i], &mattr);
+            pthread_mutexattr_destroy(&mattr);
             rc = hwc_setup_framebuffer_mode(dev, i,
                dev->comp_bypass ? CLIENT_MODE_COMP_BYPASS : CLIENT_MODE_NSC_FRAMEBUFFER);
             if (rc) {
                ALOGE("%s: unable to setup framebuffer mode %d", __FUNCTION__, rc);
                goto clean_up;
             }
-            hwc_hotplug_notify((int)dev);
+            hwc_hotplug_notify(dev);
         }
 
         for (i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++) {
@@ -5039,7 +5096,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         if (dev->hwc_binder == NULL) {
            ALOGE("%s: failed to create hwcbinder, some services will not run!", __FUNCTION__);
         } else {
-           dev->hwc_binder->get()->register_notify(&hwc_binder_notify, (int)dev);
+           dev->hwc_binder->get()->register_notify(&hwc_binder_notify, (void *)dev);
            ALOGI("%s: created hwcbinder (%p)", __FUNCTION__, dev->hwc_binder);
         }
 
@@ -5047,7 +5104,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         if (dev->hwc_hp == NULL) {
            ALOGE("%s: failed to create hwc-hotplug, some services will not run!", __FUNCTION__);
         } else {
-           dev->hwc_hp->get()->register_notify(&hwc_hotplug_notify, (int)dev);
+           dev->hwc_hp->get()->register_notify(&hwc_hotplug_notify, (void *)dev);
            ALOGI("%s: created hwc-hotplug (%p)", __FUNCTION__, dev->hwc_hp);
         }
 
@@ -5055,7 +5112,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         if (dev->hwc_dc == NULL) {
            ALOGE("%s: failed to create hwc-display-changed, some services will not run!", __FUNCTION__);
         } else {
-           dev->hwc_dc->get()->register_notify(&hwc_display_changed_notify, (int)dev);
+           dev->hwc_dc->get()->register_notify(&hwc_display_changed_notify, (void *)dev);
            ALOGI("%s: created hwc-display-changed (%p)", __FUNCTION__, dev->hwc_dc);
         }
 
@@ -5182,49 +5239,46 @@ static void hwc_prepare_mm_layer(
     unsigned int gpx_layer_id,
     unsigned int vid_layer_id)
 {
-    NEXUS_Error rc;
-    NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
-                                (int16_t)layer->displayFrame.top,
-                                (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
-                                (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
-    NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
-                                (int16_t)(int)layer->sourceCropf.top,
-                                (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
-                                (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
-    int cur_width;
-    int cur_height;
-    unsigned int stride;
-    unsigned int cur_blending_type;
-    bool layer_updated = true;
+   NEXUS_Error rc;
+   NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
+                               (int16_t)layer->displayFrame.top,
+                               (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
+                               (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
+   NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
+                               (int16_t)(int)layer->sourceCropf.top,
+                               (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
+                               (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
+   int cur_width;
+   int cur_height;
+   unsigned int stride;
+   unsigned int cur_blending_type;
+   bool layer_updated = true;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-        goto out;
-    }
+   if (pthread_mutex_lock(&ctx->mutex)) {
+      goto out;
+   }
 
-    // Factor in overscan adjustments
-    disp_position.x += ctx->overscan_position.x;
-    disp_position.y += ctx->overscan_position.y;
-    disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
-    disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
-    clip_position.x += ctx->overscan_position.x;
-    clip_position.y += ctx->overscan_position.y;
-    clip_position.width = (int)clip_position.width + (((int)clip_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
-    clip_position.height = (int)clip_position.height + (((int)clip_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
+   disp_position.x += ctx->overscan_position.x;
+   disp_position.y += ctx->overscan_position.y;
+   disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
+   disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
+   clip_position.x += ctx->overscan_position.x;
+   clip_position.y += ctx->overscan_position.y;
+   clip_position.width = (int)clip_position.width + (((int)clip_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
+   clip_position.height = (int)clip_position.height + (((int)clip_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
 
-    // make the gpx corresponding layer non-visible in the layer stack.
-    if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
-       ctx->gpx_cli[gpx_layer_id].composition.visible = false;
-    }
+   if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
+      ctx->gpx_cli[gpx_layer_id].composition.visible = false;
+   }
 
-    ctx->mm_cli[vid_layer_id].root.layer_type = layer->compositionType;
-    ctx->mm_cli[vid_layer_id].root.layer_subtype = NEXUS_VIDEO_WINDOW;
-    if (ctx->mm_cli[vid_layer_id].root.layer_type == HWC_SIDEBAND) {
-       ALOGE("%s: miscategorized sideband layer as video layer %d!", __FUNCTION__, vid_layer_id);
-       goto out_unlock;
-    }
-    ctx->mm_cli[vid_layer_id].root.layer_flags = layer->flags;
+   ctx->mm_cli[vid_layer_id].root.layer_type = layer->compositionType;
+   ctx->mm_cli[vid_layer_id].root.layer_subtype = NEXUS_VIDEO_WINDOW;
+   if (ctx->mm_cli[vid_layer_id].root.layer_type == HWC_SIDEBAND) {
+      ALOGE("%s: miscategorized sideband layer as video layer %d!", __FUNCTION__, vid_layer_id);
+      goto out_unlock;
+   }
+   ctx->mm_cli[vid_layer_id].root.layer_flags = layer->flags;
 
-    // deal with any change in the geometry/visibility of the layer.
    if (!ctx->mm_cli[vid_layer_id].root.composition.visible) {
       ctx->mm_cli[vid_layer_id].root.composition.visible = true;
       layer_updated = true;
@@ -5260,7 +5314,6 @@ static void hwc_prepare_mm_layer(
 
    if (layer_updated && ctx->hwc_binder) {
       struct hwc_position frame, clipped;
-
       frame.x = disp_position.x;
       frame.y = disp_position.y;
       frame.w = disp_position.width;
@@ -5274,7 +5327,7 @@ static void hwc_prepare_mm_layer(
    }
 
 out_unlock:
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 out:
     return;
 }
@@ -5285,87 +5338,73 @@ static void hwc_prepare_sb_layer(
     unsigned int gpx_layer_id,
     unsigned int sb_layer_id)
 {
-    NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
-                                (int16_t)layer->displayFrame.top,
-                                (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
-                                (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
-    NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
-                                (int16_t)(int)layer->sourceCropf.top,
-                                (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
-                                (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
-    int cur_width;
-    int cur_height;
-    unsigned int stride;
-    unsigned int cur_blending_type;
-    bool layer_updated = true;
+   NEXUS_Rect disp_position = {(int16_t)layer->displayFrame.left,
+                               (int16_t)layer->displayFrame.top,
+                               (uint16_t)(layer->displayFrame.right - layer->displayFrame.left),
+                               (uint16_t)(layer->displayFrame.bottom - layer->displayFrame.top)};
+   NEXUS_Rect clip_position = {(int16_t)(int)layer->sourceCropf.left,
+                               (int16_t)(int)layer->sourceCropf.top,
+                               (uint16_t)((int)layer->sourceCropf.right - (int)layer->sourceCropf.left),
+                               (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
+   int cur_width;
+   int cur_height;
+   unsigned int stride;
+   unsigned int cur_blending_type;
+   bool layer_updated = true;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-        goto out;
-    }
+   if (pthread_mutex_lock(&ctx->mutex)) {
+       goto out;
+   }
 
-    // Factor in overscan adjustments
-    disp_position.x += ctx->overscan_position.x;
-    disp_position.y += ctx->overscan_position.y;
-    disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
-    disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
-    clip_position.x += ctx->overscan_position.x;
-    clip_position.y += ctx->overscan_position.y;
-    clip_position.width = (int)clip_position.width + (((int)clip_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
-    clip_position.height = (int)clip_position.height + (((int)clip_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
+   disp_position.x += ctx->overscan_position.x;
+   disp_position.y += ctx->overscan_position.y;
+   disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
+   disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
+   clip_position.x += ctx->overscan_position.x;
+   clip_position.y += ctx->overscan_position.y;
+   clip_position.width = (int)clip_position.width + (((int)clip_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
+   clip_position.height = (int)clip_position.height + (((int)clip_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
 
-    // make the gpx corresponding layer non-visible in the layer stack.
-    if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
-       ctx->gpx_cli[gpx_layer_id].composition.visible = false;
-    }
+   if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
+      ctx->gpx_cli[gpx_layer_id].composition.visible = false;
+   }
 
-    ctx->sb_cli[sb_layer_id].root.layer_type = layer->compositionType;
-    ctx->sb_cli[sb_layer_id].root.layer_subtype = NEXUS_VIDEO_SIDEBAND;
-    if (ctx->sb_cli[sb_layer_id].root.layer_type == HWC_OVERLAY) {
-       ALOGE("%s: miscategorized video layer as sideband layer %d!", __FUNCTION__, sb_layer_id);
-       goto out_unlock;
-    }
-    ctx->sb_cli[sb_layer_id].root.layer_flags = layer->flags;
+   ctx->sb_cli[sb_layer_id].root.layer_type = layer->compositionType;
+   ctx->sb_cli[sb_layer_id].root.layer_subtype = NEXUS_VIDEO_SIDEBAND;
+   if (ctx->sb_cli[sb_layer_id].root.layer_type == HWC_OVERLAY) {
+      ALOGE("%s: miscategorized video layer as sideband layer %d!", __FUNCTION__, sb_layer_id);
+      goto out_unlock;
+   }
+   ctx->sb_cli[sb_layer_id].root.layer_flags = layer->flags;
 
-    // deal with any change in the geometry/visibility of the layer.
-    if (!ctx->sb_cli[sb_layer_id].root.composition.visible) {
-        ctx->sb_cli[sb_layer_id].root.composition.visible = true;
-        layer_updated = true;
-    }
+   if (!ctx->sb_cli[sb_layer_id].root.composition.visible) {
+       ctx->sb_cli[sb_layer_id].root.composition.visible = true;
+       layer_updated = true;
+   }
 
-    if ((memcmp((void *)&disp_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) ||
-       (memcmp((void *)&clip_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.clipRect, sizeof(NEXUS_Rect)) != 0)) {
-        layer_updated = true;
-        ctx->sb_cli[sb_layer_id].root.composition.visible               = true;
-        ctx->sb_cli[sb_layer_id].root.composition.zorder                = SB_CLIENT_ZORDER;
-        ctx->sb_cli[sb_layer_id].root.composition.position.x            = disp_position.x;
-        ctx->sb_cli[sb_layer_id].root.composition.position.y            = disp_position.y;
-        ctx->sb_cli[sb_layer_id].root.composition.position.width        = disp_position.width;
-        ctx->sb_cli[sb_layer_id].root.composition.position.height       = disp_position.height;
-        ctx->sb_cli[sb_layer_id].root.composition.clipRect.x            = clip_position.x;
-        ctx->sb_cli[sb_layer_id].root.composition.clipRect.y            = clip_position.y;
-        ctx->sb_cli[sb_layer_id].root.composition.clipRect.width        = clip_position.width;
-        ctx->sb_cli[sb_layer_id].root.composition.clipRect.height       = clip_position.height;
-        ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.width  = ctx->cfg[HWC_PRIMARY_IX].width;
-        ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.height = ctx->cfg[HWC_PRIMARY_IX].height;
-    }
+   if ((memcmp((void *)&disp_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.position, sizeof(NEXUS_Rect)) != 0) ||
+      (memcmp((void *)&clip_position, (void *)&ctx->sb_cli[sb_layer_id].root.composition.clipRect, sizeof(NEXUS_Rect)) != 0)) {
+       layer_updated = true;
+       ctx->sb_cli[sb_layer_id].root.composition.visible               = true;
+       ctx->sb_cli[sb_layer_id].root.composition.zorder                = SB_CLIENT_ZORDER;
+       ctx->sb_cli[sb_layer_id].root.composition.position.x            = disp_position.x;
+       ctx->sb_cli[sb_layer_id].root.composition.position.y            = disp_position.y;
+       ctx->sb_cli[sb_layer_id].root.composition.position.width        = disp_position.width;
+       ctx->sb_cli[sb_layer_id].root.composition.position.height       = disp_position.height;
+       ctx->sb_cli[sb_layer_id].root.composition.clipRect.x            = clip_position.x;
+       ctx->sb_cli[sb_layer_id].root.composition.clipRect.y            = clip_position.y;
+       ctx->sb_cli[sb_layer_id].root.composition.clipRect.width        = clip_position.width;
+       ctx->sb_cli[sb_layer_id].root.composition.clipRect.height       = clip_position.height;
+       ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.width  = ctx->cfg[HWC_PRIMARY_IX].width;
+       ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.height = ctx->cfg[HWC_PRIMARY_IX].height;
+   }
 
-    if (layer_updated && ctx->hwc_binder) {
-        struct hwc_position frame, clipped;
-
-        frame.x = disp_position.x;
-        frame.y = disp_position.y;
-        frame.w = disp_position.width;
-        frame.h = disp_position.height;
-        clipped.x = clip_position.x;
-        clipped.y = clip_position.y;
-        clipped.w = clip_position.width;
-        clipped.h = clip_position.height;
-
-        ctx->hwc_binder->setgeometry(HWC_BINDER_SDB, 0, frame, clipped, SB_CLIENT_ZORDER, 1);
-    }
+   if (layer_updated) {
+      ctx->sb_cli[sb_layer_id].geometry_updated = true;
+   }
 
 out_unlock:
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 out:
     return;
 }
@@ -5414,7 +5453,7 @@ static void hwc_hide_unused_gpx_layer(struct hwc_context_t* ctx, int index)
 {
     NEXUS_Error rc;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
         goto out;
     }
 
@@ -5422,7 +5461,7 @@ static void hwc_hide_unused_gpx_layer(struct hwc_context_t* ctx, int index)
     ctx->gpx_cli[index].skip_set = false;
     ctx->gpx_cli[index].composition.visible = false;
 
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 
 out:
     return;
@@ -5433,7 +5472,7 @@ static void nx_client_hide_unused_mm_layer(struct hwc_context_t* ctx, int index)
     NEXUS_SurfaceComposition composition;
     NEXUS_Error rc;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
         goto out;
     }
 
@@ -5441,7 +5480,7 @@ static void nx_client_hide_unused_mm_layer(struct hwc_context_t* ctx, int index)
        ctx->mm_cli[index].root.composition.visible = false;
     }
 
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 out:
     return;
 }
@@ -5451,7 +5490,7 @@ static void nx_client_hide_unused_sb_layer(struct hwc_context_t* ctx, int index)
     NEXUS_SurfaceComposition composition;
     NEXUS_Error rc;
 
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
         goto out;
     }
 
@@ -5459,7 +5498,7 @@ static void nx_client_hide_unused_sb_layer(struct hwc_context_t* ctx, int index)
        ctx->sb_cli[index].root.composition.visible = false;
     }
 
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 
 out:
     return;
@@ -5483,7 +5522,7 @@ static void hwc_hide_unused_sb_layers(struct hwc_context_t* ctx)
 
 static void hwc_binder_advertise_video_surface(struct hwc_context_t* ctx)
 {
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->mutex)) {
         goto out;
     }
 
@@ -5500,7 +5539,7 @@ static void hwc_binder_advertise_video_surface(struct hwc_context_t* ctx)
        ctx->nsc_sideband_changed = false;
     }
 
-    BKNI_ReleaseMutex(ctx->mutex);
+    pthread_mutex_unlock(&ctx->mutex);
 
 out:
     return;
@@ -5518,12 +5557,12 @@ static int hwc_checkpoint(struct hwc_context_t *ctx)
 {
     int rc;
 
-    if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+    if (pthread_mutex_lock(&ctx->g2d_mutex)) {
         ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
         return -1;
     }
     rc = hwc_checkpoint_locked(ctx);
-    BKNI_ReleaseMutex(ctx->g2d_mutex);
+    pthread_mutex_unlock(&ctx->g2d_mutex);
     return rc;
 }
 

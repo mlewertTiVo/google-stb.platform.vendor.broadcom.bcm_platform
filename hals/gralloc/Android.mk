@@ -16,7 +16,11 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_PRELINK_MODULE := false
-LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
+ifeq ($(TARGET_2ND_ARCH),arm)
+  LOCAL_MODULE_RELATIVE_PATH := hw
+else
+  LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
+endif
 
 LOCAL_SHARED_LIBRARIES := libnexus \
                           liblog \
@@ -39,6 +43,15 @@ LOCAL_CFLAGS += -DLOG_TAG=\"bcm-gr\"
 LOCAL_CFLAGS += -DV3D_VARIANT_$(V3D_VARIANT)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
+ifeq ($(LOCAL_ARM_AARCH64),y)
+ifeq ($(LOCAL_ARM_AARCH64_NOT_ABI_COMPATIBLE),y)
+LOCAL_CFLAGS += -DV3D_DLOPEN_PATH=\"/system/lib/egl/\"
+else
+LOCAL_CFLAGS += -DV3D_DLOPEN_PATH=\"/system/lib64/egl/\"
+endif
+else
+LOCAL_CFLAGS += -DV3D_DLOPEN_PATH=\"/system/lib/egl/\"
+endif
 
 LOCAL_SRC_FILES := \
         gralloc.cpp \

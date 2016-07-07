@@ -55,8 +55,14 @@
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
                                                          OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateTunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
+                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_VideoDecoder_Secure_GetRole(unsigned roleIndex);
 
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
+                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Tunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
+                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 
 class BOMX_VideoDecoder_Secure : public BOMX_VideoDecoder
 {
@@ -65,7 +71,12 @@ public:
         OMX_COMPONENTTYPE *pComponentType,
         const OMX_STRING pName,
         const OMX_PTR pAppData,
-        const OMX_CALLBACKTYPE *pCallbacks);
+        const OMX_CALLBACKTYPE *pCallbacks,
+        bool tunnel=false,
+        unsigned numRoles=0,
+        const BOMX_VideoDecoderRole *pRoles=NULL,
+        const char *(*pGetRole)(unsigned roleIndex)=NULL);
+
 
     virtual ~BOMX_VideoDecoder_Secure();
 
@@ -79,7 +90,6 @@ protected:
 private:
     int Sage_Platform_Init();
     void Sage_Platform_Close();
-    NEXUS_Error AllocateNexusMemory(size_t nSize, void *& pBuffer);
     NEXUS_Error SecureCopy(void *pDest, const void *pSrc, size_t nSize);
 
 private:

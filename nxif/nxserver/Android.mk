@@ -43,6 +43,13 @@ LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -Werror
 
 LOCAL_SRC_FILES := nxserver.cpp
+ifneq ($(HW_ENCODER_SUPPORT),n)
+LOCAL_SRC_FILES += nxserver_with_encoder.cpp
+else
+LOCAL_SRC_FILES += nxserver_stub_encoder.cpp
+endif
+
+LOCAL_INIT_RC := nxserver.rc
 
 LOCAL_MODULE := nxserver
 LOCAL_MODULE_TAGS := optional

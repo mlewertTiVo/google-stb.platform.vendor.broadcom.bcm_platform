@@ -27,7 +27,7 @@ NEXUS_SurfaceHandle hwc_to_nsc_surface(
    int height,
    int stride,
    NEXUS_PixelFormat format,
-   unsigned handle,
+   NEXUS_MemoryBlockHandle handle,
    unsigned offset);
 
 NEXUS_SurfaceHandle hwc_surface_create(

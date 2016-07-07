@@ -140,9 +140,7 @@ public:
     virtual bool getCecPowerStatus(uint32_t cecId, uint8_t *pPowerStatus);
     virtual bool getCecStatus(uint32_t cecId, b_cecStatus *pCecStatus);
     virtual bool sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage, uint8_t maxRetries);
-    virtual bool isCecEnabled(uint32_t cecId);
     virtual bool setCecAutoWakeupEnabled(uint32_t cecId, bool enabled);
-    virtual bool isCecAutoWakeupEnabled(uint32_t cecId);
     virtual b_cecDeviceType getCecDeviceType(uint32_t cecId);
     virtual bool setCecLogicalAddress(uint32_t cecId, uint8_t addr);
     virtual bool setCecPhysicalAddress(unsigned cecId, uint16_t addr);

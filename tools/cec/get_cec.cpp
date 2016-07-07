@@ -120,7 +120,7 @@ bool getCecPowerStatus(uint8_t cecId, uint8_t *pPowerStatus)
     bool enableCec;
     NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("get_cec");
 
-    enableCec = pIpcClient->isCecEnabled(cecId);
+    enableCec = NexusIPCCommon::isCecEnabled(cecId);
     if (enableCec) {
         success = pIpcClient->getCecPowerStatus(cecId, pPowerStatus);
     }

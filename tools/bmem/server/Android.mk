@@ -20,6 +20,7 @@ LOCAL_SRC_FILES := \
    $(BMEM_PERF_SRC_ROOT)/server/bmemperf_server.c \
    $(BMEM_PERF_SRC_ROOT)/common/bmemperf_api.c \
    $(BMEM_PERF_SRC_ROOT)/common/bmemperf_utils.c \
+   $(BMEM_PERF_SRC_ROOT)/common/bmemperf_lib.c \
    $(BMEM_PERF_SRC_ROOT)/common/bmemperf.c \
    bmemperf_info.auto.c
 

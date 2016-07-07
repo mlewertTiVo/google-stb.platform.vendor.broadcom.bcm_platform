@@ -57,7 +57,7 @@
 
 using namespace android;
 
-typedef void (* OMX_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
+typedef void (* OMX_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &);
 
 class OmxBinder : public HwcListener
 {
@@ -88,6 +88,12 @@ public:
        }
     };
 
+    inline void getsideband(int index, int &value) {
+       if (get_hwc(false) != NULL) {
+           get_hwc(false)->getSidebandSurfaceId(this, index, value);
+       }
+    };
+
     inline void getvideogeometry(int index, struct hwc_position &frame, struct hwc_position &clipped,
                                  int &zorder, int &visible) {
        if (get_hwc(false) != NULL) {
@@ -95,14 +101,14 @@ public:
        }
     };
 
-    void register_notify(OMX_BINDER_NTFY_CB callback, int data) {
+    void register_notify(OMX_BINDER_NTFY_CB callback, void *data) {
        cb = callback;
        cb_data = data;
     }
 
 private:
     OMX_BINDER_NTFY_CB cb;
-    int cb_data;
+    void * cb_data;
 };
 
 class OmxBinder_wrap
@@ -126,6 +132,10 @@ public:
 
    void getvideo(int index, int &value) {
       ihwc.get()->getvideo(index, value);
+   }
+
+   void getsideband(int index, int &value) {
+      ihwc.get()->getsideband(index, value);
    }
 
    void getvideogeometry(int index, struct hwc_position &frame, struct hwc_position &clipped,

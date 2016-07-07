@@ -140,7 +140,7 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
            strncpy(interfaceName.name, MEMTRACK_SURFACE_IF_NAME, strlen(MEMTRACK_SURFACE_IF_NAME));
            num = 0;
            NEXUS_Platform_GetClientObjects(client, &interfaceName, NULL, 0, &num);
-           ALOGV("%s: pid %d, queries %d items on if: %s.", __FUNCTION__, pid, num, MEMTRACK_SURFACE_IF_NAME);
+           ALOGV("%s: pid %d, queries %zu items on if: %s.", __FUNCTION__, pid, num, MEMTRACK_SURFACE_IF_NAME);
            if (num > 0) {
               objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
               if (objects == NULL) {
@@ -164,7 +164,7 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
            strncpy(interfaceName.name, MEMTRACK_MEMBLCK_IF_NAME, strlen(MEMTRACK_MEMBLCK_IF_NAME));
            num = 0;
            NEXUS_Platform_GetClientObjects(client, &interfaceName, NULL, 0, &num);
-           ALOGV("%s: pid %d, queries %d items on if: %s.", __FUNCTION__, pid, num, MEMTRACK_MEMBLCK_IF_NAME);
+           ALOGV("%s: pid %d, queries %zu items on if: %s.", __FUNCTION__, pid, num, MEMTRACK_MEMBLCK_IF_NAME);
            if (num > 0) {
               objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
               if (objects == NULL) {

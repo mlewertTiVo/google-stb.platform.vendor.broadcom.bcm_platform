@@ -12,9 +12,12 @@
 
 function HELP {
   echo -e \\n"Usage: $(basename $0) <user|userdebug> <output>"
-  echo "     output : path to where the packaged release_prebuilts tarballs will be copied to"
-  echo "     -t     : Specify if the workspace contains binaries from a 'user' image or a 'userdebug/eng' image"
-  echo "              For userdebug and eng image, please use the 'userdebug' option"
+  echo "       output         : path to where the packaged release_prebuilts"
+  echo "                        tarballs will be copied to"
+  echo "       user|userdebug : Specify if the workspace contains binaries"
+  echo "                        from a 'user' image or a 'userdebug/eng' image"
+  echo "                        For user image, use the 'user' option, otherwise"
+  echo "                        userdebug and eng image, use the 'userdebug' option"
   exit 1
 }
 
@@ -42,9 +45,7 @@ echo "staging release_prebuilts..."
 mkdir -p $TMP_DIR/$RP/$VAR;
 while read line; do
   if [ ! -e $line ]; then
-    echo -e \\n"!!! MISSING prebuilt libraries for release packaging: $line"\\n
-    echo "Exiting..."
-    exit 0
+    echo -e "!!! MISSING prebuilt libraries for release packaging: $line"
   else
     cp $line $TMP_DIR/$RP/$VAR;
   fi
@@ -56,9 +57,7 @@ echo "staging playready prebuilts..."
 mkdir -p $TMP_DIR/$VENDOR_BRCM/$RP/$VAR;
 while read line; do
   if [ ! -e $line ]; then
-    echo -e \\n"!!! MISSING prebuilt libraries for release packaging: $line"\\n
-    echo "Exiting..."
-    exit 0
+    echo -e "!!! MISSING prebuilt libraries for release packaging: $line"
   else
     IS_PREBUILT_LIB=$(echo $line | awk -F/ '{print $1}')
     if [[ "$IS_PREBUILT_LIB" == "out" ]]; then

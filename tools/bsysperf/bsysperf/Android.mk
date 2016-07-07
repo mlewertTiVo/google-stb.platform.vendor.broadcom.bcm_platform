@@ -20,8 +20,7 @@ BSYS_PERF_SRC_ROOT := ../../../../refsw/BSEAV/tools/bsysperf
 LOCAL_SRC_FILES := \
    $(BSYS_PERF_SRC_ROOT)/bsysperf.c \
    $(BSYS_PERF_SRC_ROOT)/bheaps.c \
-   $(BSYS_PERF_SRC_ROOT)/bpower.c \
-   $(BMEM_PERF_SRC_ROOT)/common/bmemperf_utils.c
+   $(BMEM_PERF_SRC_ROOT)/common/bmemperf_lib.c
 
 
 LOCAL_MODULE := bsysperf

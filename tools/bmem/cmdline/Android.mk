@@ -19,6 +19,7 @@ LOCAL_SRC_FILES := \
    $(BMEM_PERF_SRC_ROOT)/cmdline/bmemperf_app.c \
    $(BMEM_PERF_SRC_ROOT)/common/bmemperf.c \
    $(BMEM_PERF_SRC_ROOT)/common/bmemperf_utils.c \
+   $(BMEM_PERF_SRC_ROOT)/common/bmemperf_lib.c \
    bmemperf_info.auto.c
 
 BCHP_VER_LOWER = $(shell awk 'BEGIN{print tolower("$(BCHP_VER)")}')

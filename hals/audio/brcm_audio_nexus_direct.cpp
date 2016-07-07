@@ -43,7 +43,6 @@
 #define NEXUS_OUT_DEFAULT_CHANNELS      AUDIO_CHANNEL_OUT_STEREO
 #define NEXUS_OUT_DEFAULT_FORMAT        AUDIO_FORMAT_PCM_16_BIT
 
-#define NXCLIENT_SERVER_TIMEOUT_IN_MS (500)
 #define BRCM_AUDIO_DIRECT_NXCLIENT_NAME "BrcmAudioOutDirect"
 
 /*
@@ -54,28 +53,7 @@ static void nexus_direct_bout_data_callback(void *param1, int param2)
 {
     UNUSED(param1);
 
-    BKNI_SetEvent((BKNI_EventHandle)param2);
-}
-
-static NEXUS_Error clientJoin(const char *name)
-{
-    NEXUS_Error rc = NEXUS_SUCCESS;
-    NxClient_JoinSettings joinSettings;
-    NEXUS_PlatformStatus status;
-
-    NxClient_GetDefaultJoinSettings(&joinSettings);
-    do {
-        rc = NxClient_Join(&joinSettings);
-        if (rc != NEXUS_SUCCESS) {
-            ALOGW("%s: NxServer is not ready, waiting...", __FUNCTION__);
-            usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
-        }
-        else {
-            ALOGD("%s: NxClient_Join succeeded for client \"%s\".", __FUNCTION__, name);
-        }
-    } while (rc != NEXUS_SUCCESS);
-
-    return rc;
+    BKNI_SetEvent((BKNI_EventHandle)(intptr_t)param2);
 }
 
 /*
@@ -95,8 +73,13 @@ static int nexus_direct_bout_get_render_position(struct brcm_stream_out *bout, u
 {
     NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.simple_decoder;
     NEXUS_AudioDecoderStatus status;
-    NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &status);
-    *dsp_frames = status.numBytesDecoded/bout->frameSize;
+
+    if (simple_decoder) {
+       NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &status);
+       *dsp_frames = status.numBytesDecoded/bout->frameSize;
+    } else {
+       *dsp_frames = 0;
+    }
     return 0;
 }
 
@@ -106,8 +89,12 @@ static int nexus_direct_bout_get_presentation_position(struct brcm_stream_out *b
     NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.simple_decoder;
     NEXUS_AudioDecoderStatus status;
 
-    NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &status);
-    *frames = (uint64_t)(bout->framesPlayed + status.numBytesDecoded/bout->frameSize);
+    if (simple_decoder) {
+       NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &status);
+       *frames = (uint64_t)(bout->framesPlayed + status.numBytesDecoded/bout->frameSize);
+    } else {
+       *frames =0;
+    }
     return 0;
 }
 static char *nexus_direct_bout_get_parameters (struct brcm_stream_out *bout, const char *keys)
@@ -166,7 +153,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
     start_settings.passthroughBuffer.sampleRate = 48000;
     start_settings.passthroughBuffer.dataCallback.callback = nexus_direct_bout_data_callback;
     start_settings.passthroughBuffer.dataCallback.context = bout;
-    start_settings.passthroughBuffer.dataCallback.param = (int)event;
+    start_settings.passthroughBuffer.dataCallback.param = (int)(intptr_t)event;
 
     ret = NEXUS_SimpleAudioDecoder_Start(simple_decoder,
                                           &start_settings);
@@ -223,7 +210,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
 
             bytes_to_copy = (bytes <= nexus_space) ? bytes : nexus_space;
             memcpy(nexus_buffer,
-                   (void *)((int)buffer + bytes_written),
+                   (void *)((int)(intptr_t)buffer + bytes_written),
                    bytes_to_copy);
 
             ret = NEXUS_SimpleAudioDecoder_PassthroughWriteComplete(simple_decoder,
@@ -237,7 +224,17 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
             bytes -= bytes_to_copy;
         }
         else {
+            NEXUS_SimpleAudioDecoderHandle prev_simple_decoder = simple_decoder;
+
+            pthread_mutex_unlock(&bout->lock);
             ret = BKNI_WaitForEvent(event, 500);
+            pthread_mutex_lock(&bout->lock);
+
+            // Sanity check when relocking
+            simple_decoder = bout->nexus.simple_decoder;
+            ALOG_ASSERT(simple_decoder == prev_simple_decoder);
+            ALOG_ASSERT(!bout->suspended);
+
             if (ret) {
                 ALOGE("%s: at %d, decoder timeout, ret = %d\n",
                      __FUNCTION__, __LINE__, ret);
@@ -317,9 +314,9 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
                                    popcount(config->channel_mask));
 
     /* Open Nexus simple decoder */
-    rc = clientJoin(BRCM_AUDIO_DIRECT_NXCLIENT_NAME);
+    rc = brcm_audio_client_join(BRCM_AUDIO_DIRECT_NXCLIENT_NAME);
     if (rc != NEXUS_SUCCESS) {
-        ALOGE("%s: clientJoin error, rc:%d", __FUNCTION__, rc);
+        ALOGE("%s: brcm_audio_client_join error, rc:%d", __FUNCTION__, rc);
         return -ENOSYS;
     }
 
@@ -369,6 +366,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
     bout->nexus.simple_decoder = simple_decoder;
     bout->nexus.event = event;
+    bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
 
     return 0;
 
@@ -388,6 +386,10 @@ static int nexus_direct_bout_close(struct brcm_stream_out *bout)
 {
     BKNI_EventHandle event = bout->nexus.event;
 
+    if (bout->nexus.state == BRCM_NEXUS_STATE_DESTROYED) {
+        return 0;
+    }
+
     nexus_direct_bout_stop(bout);
 
     if (event) {
@@ -395,10 +397,12 @@ static int nexus_direct_bout_close(struct brcm_stream_out *bout)
     }
 
     bout->bdev->standbyThread->UnregisterCallback(bout->standbyCallback);
+    bout->nexus.simple_decoder = NULL;
 
     NxClient_Disconnect(bout->nexus.connectId);
     NxClient_Free(&(bout->nexus.allocResults));
     NxClient_Uninit();
+    bout->nexus.state = BRCM_NEXUS_STATE_DESTROYED;
 
     return 0;
 }
@@ -413,5 +417,9 @@ struct brcm_stream_out_ops nexus_direct_bout_ops = {
     .do_bout_get_render_position = nexus_direct_bout_get_render_position,
     .do_bout_get_presentation_position = nexus_direct_bout_get_presentation_position,
     .do_bout_dump = NULL,
-    .do_bout_get_parameters = nexus_direct_bout_get_parameters
+    .do_bout_get_parameters = nexus_direct_bout_get_parameters,
+    .do_bout_pause = NULL,
+    .do_bout_resume = NULL,
+    .do_bout_drain = NULL,
+    .do_bout_flush = NULL,
 };

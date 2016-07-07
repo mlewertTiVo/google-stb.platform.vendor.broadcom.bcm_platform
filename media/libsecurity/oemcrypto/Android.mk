@@ -20,10 +20,21 @@ ifneq ($(WIDEVINE_CLASSIC), n)
 # liboemcrypto.a
 #---------------
 include $(CLEAR_VARS)
-LOCAL_PREBUILT_LIBS := prebuilt/liboemcrypto.a
-LOCAL_SHARED_LIBRARIES := libcmndrm libdrmrootfs
+LOCAL_MODULE := liboemcrypto
 LOCAL_MODULE_TAGS := optional
-include $(BUILD_MULTI_PREBUILT)
+LOCAL_MODULE_SUFFIX := .a
+LOCAL_MODULE_CLASS := STATIC_LIBRARIES
+ifeq ($(TARGET_2ND_ARCH),arm)
+LOCAL_MULTILIB := 32
+# LOCAL_MULTILIB := both
+LOCAL_MODULE_TARGET_ARCH := arm arm64
+LOCAL_SRC_FILES_arm64 := lib/arm64/liboemcrypto.a
+LOCAL_SRC_FILES_arm := lib/arm/liboemcrypto.a
+else
+LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_SRC_FILES_arm := lib/arm/liboemcrypto.a
+endif
+include $(BUILD_PREBUILT)
 endif
 
 ifeq ($(SAGE_SUPPORT), y)
@@ -44,9 +55,19 @@ endif
 # Check if a prebuilt library has been created in the release_prebuilts folder
 ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so))
 # use prebuilt library if one exists
-LOCAL_SRC_FILES := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
 LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+ifeq ($(TARGET_2ND_ARCH),arm)
+LOCAL_MULTILIB := 32
+# LOCAL_MULTILIB := both
+LOCAL_MODULE_TARGET_ARCH := arm arm64
+# TODO: fix me!
+LOCAL_SRC_FILES_arm64 := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
+LOCAL_SRC_FILES_arm := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
+else
+LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_SRC_FILES_arm := ../../../../$(RELEASE_PREBUILTS)/$(LOCAL_MODULE).so
+endif
 include $(BUILD_PREBUILT)
 else
 # compile library from source
@@ -85,6 +106,9 @@ ifneq ($(TARGET_BUILD_TYPE),debug)
 # Enable error logs for non debug build
 LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
+
+LOCAL_MULTILIB := 32
+# LOCAL_MULTILIB := both
 
 LOCAL_SHARED_LIBRARIES := libnexus liblog
 LOCAL_SHARED_LIBRARIES += libcmndrm_tl

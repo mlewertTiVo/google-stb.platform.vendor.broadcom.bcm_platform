@@ -206,17 +206,6 @@ bool sendCecMessage(uint8_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t len
     return success;
 }
 
-bool isCecEnabled(uint8_t cecId)
-{
-    bool cecEnabled;
-    NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("send_cec");
-
-    cecEnabled = pIpcClient->isCecEnabled(cecId);
-    delete pIpcClient;
-
-    return cecEnabled;
-}
-
 int main(int argc, char** argv)
 {
     uint8_t message[MAX_MESSAGE_LEN];
@@ -228,7 +217,7 @@ int main(int argc, char** argv)
     if (parseArgs(argc, argv, &cecId, &srcAddr, &destAddr, &length, message) != 0) {
         return -1;
     }
-    else if (isCecEnabled(cecId)) {
+    else if (NexusIPCCommon::isCecEnabled(cecId)) {
         if (length == 0 || length > MAX_MESSAGE_LEN) {
             fprintf(stderr, "ERROR: Invalid message length %d!\n", length);
             return -1;

@@ -30,7 +30,7 @@ LOCAL_CFLAGS += $(PMLIB_CFLAGS)
 
 # fix warnings!
 LOCAL_CFLAGS += -Werror
-LOCAL_CFLAGS += -Wno-implicit-function-declaration
+LOCAL_CFLAGS += -DB_REFSW_ANDROID
 FILTER_OUT_LOCAL_CFLAGS := -Wno-implicit-function-declaration
 LOCAL_CPPFLAGS := $(LOCAL_CFLAGS)
 LOCAL_CPPFLAGS := $(filter-out $(FILTER_OUT_LOCAL_CFLAGS), $(LOCAL_CPPFLAGS))

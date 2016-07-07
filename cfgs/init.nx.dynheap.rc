@@ -1,7 +1,7 @@
 on boot
    # install wakeup.ko first, then nexus.ko.  any other drivers
    # depending on nexus.ko need to be insmod'ed through the property
-   # hook up (see: on property:hw.nexus.platforminit) after the
+   # hook up (see: on property:dyn.nx.state=loaded) after the
    # nxserver has started (since only then is a nexus platform valid).
    #
    # optional additional module parameters can be passed to nexus.ko

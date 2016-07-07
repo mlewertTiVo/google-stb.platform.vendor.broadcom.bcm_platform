@@ -16,13 +16,19 @@
 
 #include "nexus_power.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <string.h>
 #include <sys/eventfd.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+
+#include <linux/ethtool.h>
+#include <linux/if.h>
+#include <linux/socket.h>
 
 #include <cutils/properties.h>
 #include <utils/Timers.h>
@@ -30,6 +36,7 @@
 #include <hardware/power.h>
 #include <hardware_legacy/power.h>
 #include "PmLibService.h"
+#include <inttypes.h>
 
 using namespace android;
 
@@ -37,13 +44,21 @@ using namespace android;
 static const char *WAKE_LOCK_ID = "PowerHAL";
 static bool wakeLockAcquired = false;
 
+static bool shutdownStarted = false;
+
 // Maximum length of character buffer
 static const int BUF_SIZE = 64;
 
+static const char *powerNetInterfaces[] = {
+    "gphy",
+    "eth0"
+};
+
 // Property definitions (max length 32)...
 static const char * PROPERTY_SYS_POWER_DOZE_TIMEOUT       = "persist.sys.power.doze.timeout";
-static const char * PROPERTY_PM_DOZESTATE                 = "ro.pm.dozestate";
-static const char * PROPERTY_PM_OFFSTATE                  = "ro.pm.offstate";
+static const char * PROPERTY_SYS_POWER_WAKE_TIMEOUT       = "persist.sys.power.wake.timeout";
+static const char * PROPERTY_SYS_POWER_DOZESTATE          = "persist.sys.power.dozestate";
+static const char * PROPERTY_SYS_POWER_OFFSTATE           = "persist.sys.power.offstate";
 static const char * PROPERTY_PM_ETH_EN                    = "ro.pm.eth_en";
 static const char * PROPERTY_PM_MOCA_EN                   = "ro.pm.moca_en";
 static const char * PROPERTY_PM_SATA_EN                   = "ro.pm.sata_en";
@@ -52,11 +67,12 @@ static const char * PROPERTY_PM_TP2_EN                    = "ro.pm.tp2_en";
 static const char * PROPERTY_PM_TP3_EN                    = "ro.pm.tp3_en";
 static const char * PROPERTY_PM_DDR_PM_EN                 = "ro.pm.ddr_pm_en";
 static const char * PROPERTY_PM_CPU_FREQ_SCALE_EN         = "ro.pm.cpufreq_scale_en";
-static const char * PROPERTY_PM_WOL_EN                    = "ro.pm.wol_en";
+static const char * PROPERTY_PM_WOL_EN                    = "ro.pm.wol.en";
+static const char * PROPERTY_PM_WOL_OPTS                  = "ro.pm.wol.opts";
 
 // Property defaults
-static const char * DEFAULT_PROPERTY_PM_DOZESTATE         = "S0.5";
-static const char * DEFAULT_PROPERTY_PM_OFFSTATE          = "S2";
+static const char * DEFAULT_PROPERTY_SYS_POWER_DOZESTATE  = "S0.5";
+static const char * DEFAULT_PROPERTY_SYS_POWER_OFFSTATE   = "S2";
 static const int8_t DEFAULT_PROPERTY_PM_ETH_EN            = 1;     // Enable Ethernet during standby
 static const int8_t DEFAULT_PROPERTY_PM_MOCA_EN           = 0;     // Disable MOCA during standby
 static const int8_t DEFAULT_PROPERTY_PM_SATA_EN           = 0;     // Disable SATA during standby
@@ -66,21 +82,34 @@ static const int8_t DEFAULT_PROPERTY_PM_TP3_EN            = 0;     // Disable CP
 static const int8_t DEFAULT_PROPERTY_PM_DDR_PM_EN         = 1;     // Enabled DDR power management during standby
 static const int8_t DEFAULT_PROPERTY_PM_CPU_FREQ_SCALE_EN = 1;     // Enable CPU frequency scaling during standby
 static const int8_t DEFAULT_PROPERTY_PM_WOL_EN            = 0;     // Disable Android wake up by the WoLAN event
+static const char * DEFAULT_PROPERTY_PM_WOL_OPTS          = "s";   // Enable WoL for MAGIC SECURE packet
+
+// SecureOn(TM) password file path.
+static const char * SOPASS_KEY_FILE_PATH                  = "/data/misc/nexus/sopass.key";
 
 // Sysfs paths
 static const char * SYS_MAP_MEM_TO_S2                     = "/sys/devices/platform/droid_pm/map_mem_to_s2";
 static const char * SYS_FULL_WOL_WAKEUP                   = "/sys/devices/platform/droid_pm/full_wol_wakeup";
+static const char * SYS_CLASS_NET                         = "/sys/class/net";
 
-// This is the default doze timeout in seconds.  The doze time specifies how long
-// the Power HAL must wait in the "doze" state prior to entering the off state.
-// If the doze timeout is 0, then the system will not enter the doze state but will
-// transition to the off state when a no interactivity event is received. If the
+// This is the default WoL monitor timeout in seconds.
+static const int DEFAULT_WOL_MONITOR_TIMEOUT = 4;
+
+// This is the default doze timeout in seconds.  The doze time specifies the
+// minimum time, in seconds, the Power HAL must wait in the "doze" state after
+// a non-interactive event is received, prior to entering the off state. If the
 // doze time is a negative value, then the system will remain in the doze state
 // and will not transition to the off state.
 static const int DEFAULT_DOZE_TIMEOUT = 0;
 
+// The wake timeout specifies the minimum time the system will stay awake in the
+// doze state after being woken up by a timer or external event.
+// If the wake timeout is a negative value, the system will remain in
+// the doze state and will not transition to the off state.
+static const int DEFAULT_WAKE_TIMEOUT = 10;
+
 // This is the default timeout for which the event monitor thread will poll the
-// PM kernel driver for an indication that the system is about to suspend/resume.
+// PM kernel driver for an indication that the system is about to suspend/resume/shutdown.
 static const int DEFAULT_EVENT_MONITOR_THREAD_TIMEOUT_MS = 1000;
 
 // The doze timer will be used only if the platform has be configured to
@@ -100,15 +129,9 @@ static int gPowerEventFd = -1;
 static volatile bool gPowerEventMonitorThreadExit = false;
 static volatile bool gPowerEventMonitorThreadExited = true;
 
-// Flag used to indicate when to set power state to S0 on a wake-up source.
-static volatile bool gPowerFlagSetPowerStateS0 = false;
-
 // Event monitor thread synchronisation primitives.
 static pthread_mutex_t gPowerEventMonitorThreadMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  gPowerEventMonitorThreadCond  = PTHREAD_COND_INITIALIZER;
-
-// Flag to indicate whether the power state has been prepared or not.
-static volatile bool gPowerStatePrepared = false;
 
 // Global Power HAL Mutex
 Mutex gLock("PowerHAL Lock");
@@ -116,10 +139,15 @@ Mutex gLock("PowerHAL Lock");
 typedef status_t (*powerFinishFunction_t)(void);
 
 // Prototype declarations...
-static status_t power_set_state(b_powerState toState, bool partial=false);
+static status_t power_set_state(b_powerState toState);
 static status_t power_set_poweroff_state();
 static status_t power_finish_set_interactive();
-static void power_finish_set_no_interactive(b_powerState offState, powerFinishFunction_t powerFunction);
+static void power_finish_set_no_interactive();
+static void releaseWakeLock();
+static void *power_s5_shutdown(void *arg);
+static status_t power_create_thread(void *(pthread_function)(void*));
+static status_t power_set_doze_state(int timeout);
+static void *power_event_monitor_thread(void *arg);
 
 
 static status_t sysfs_get(const char *path, unsigned int *out)
@@ -205,46 +233,24 @@ static b_powerState power_get_state_from_string(char *value)
 
 static b_powerState power_get_property_off_state()
 {
-    static b_powerState offState = ePowerState_Max;
+    b_powerState offState;
     char value[PROPERTY_VALUE_MAX] = "";
 
-    if (offState == ePowerState_Max) {
-        property_get(PROPERTY_PM_OFFSTATE, value, DEFAULT_PROPERTY_PM_OFFSTATE);
-        offState = power_get_state_from_string(value);
-    }
+    property_get(PROPERTY_SYS_POWER_OFFSTATE, value, DEFAULT_PROPERTY_SYS_POWER_OFFSTATE);
+    offState = power_get_state_from_string(value);
+
     return offState;
 }
 
 static b_powerState power_get_property_doze_state()
 {
-    static b_powerState dozeState = ePowerState_Max;
+    b_powerState dozeState;
     char value[PROPERTY_VALUE_MAX] = "";
 
-    if (dozeState == ePowerState_Max) {
-        property_get(PROPERTY_PM_DOZESTATE, value, DEFAULT_PROPERTY_PM_DOZESTATE);
-        dozeState = power_get_state_from_string(value);
-    }
+    property_get(PROPERTY_SYS_POWER_DOZESTATE, value, DEFAULT_PROPERTY_SYS_POWER_DOZESTATE);
+    dozeState = power_get_state_from_string(value);
+
     return dozeState;
-}
-
-// Read back the doze timeout (if it exists) and if it is > 0, then it means we need to enter the
-// doze state (e.g. S0.5 or S1) and stay there until either:
-//     a) Power button is pressed to exit doze and return to active full power-on state.
-//     b) No power button is pressed and the timeout expires, then enter power-off state.
-static int power_get_property_doze_timeout()
-{
-    int dozeTimeout = DEFAULT_DOZE_TIMEOUT;
-    char value[PROPERTY_VALUE_MAX] = "";
-
-    property_get(PROPERTY_SYS_POWER_DOZE_TIMEOUT, value, NULL);
-    if (value[0]) {
-        char *endptr;
-        dozeTimeout = strtol(value, &endptr, 10);
-        if (*endptr) {
-            ALOGE("%s: invalid value \"%s\" for property \"persist.sys.power.doze.timeout\"!!!", __FUNCTION__, value);
-        }
-    }
-    return dozeTimeout;
 }
 
 static bool power_get_property_wol_en()
@@ -252,42 +258,43 @@ static bool power_get_property_wol_en()
     return property_get_bool(PROPERTY_PM_WOL_EN, DEFAULT_PROPERTY_PM_WOL_EN);
 }
 
+static int power_get_property_wol_opts(char *opts)
+{
+    int len;
+    char value[PROPERTY_VALUE_MAX];
+
+    len = property_get(PROPERTY_PM_WOL_OPTS, value, DEFAULT_PROPERTY_PM_WOL_OPTS);
+    if (len) {
+        strncpy(opts, value, PROPERTY_VALUE_MAX-1);
+    }
+    return len;
+}
+
 static b_powerState power_get_off_state()
 {
-    static b_powerState offState = ePowerState_Max;
+    b_powerState offState;
 
-    if (offState == ePowerState_Max) {
-        offState = power_get_property_off_state();
-        // If the default off state is S3 but the kernel has mapped this to S2 instead,
-        // then we need to use S2 rather than S3 for placing Nexus in to standby.
-        if (offState == ePowerState_S3) {
-            unsigned map_mem_to_s2 = 0;
-            if (sysfs_get(SYS_MAP_MEM_TO_S2, &map_mem_to_s2) == NO_ERROR) {
-                if (map_mem_to_s2) {
-                    ALOGW("%s: Kernel cannot support S3, defaulting to S2 instead.", __FUNCTION__);
-                    offState = ePowerState_S2;
-                }
+    offState = power_get_property_off_state();
+
+    // If the default off state is S3 but the kernel has mapped this to S2 instead,
+    // then we need to use S2 rather than S3 for placing Nexus in to standby.
+    if (offState == ePowerState_S3) {
+        unsigned map_mem_to_s2 = 0;
+        if (sysfs_get(SYS_MAP_MEM_TO_S2, &map_mem_to_s2) == NO_ERROR) {
+            if (map_mem_to_s2) {
+                ALOGW("%s: Kernel cannot support S3, defaulting to S2 instead.", __FUNCTION__);
+                offState = ePowerState_S2;
             }
         }
     }
     return offState;
 }
 
-static b_powerState power_get_sleep_state()
+static void dozeTimerCallback(union sigval val __unused)
 {
-    static b_powerState sleepState = ePowerState_Max;
-
-    if (sleepState == ePowerState_Max) {
-        sleepState = (power_get_property_doze_timeout() != 0) ? power_get_property_doze_state() : power_get_off_state();
-    }
-    return sleepState;
-}
-
-static void dozeTimerCallback(union sigval val)
-{
-    b_powerState powerOffState = (b_powerState)val.sival_int;
-
-    power_finish_set_no_interactive(powerOffState, power_set_poweroff_state);
+    // Ensure we release a wake-lock to allow the system to begin suspending.  We then
+    // use this notification to place Nexus in to standby (suspend in S2/S3 modes only).
+    releaseWakeLock();
 }
 
 static void acquireWakeLock()
@@ -305,11 +312,305 @@ static void releaseWakeLock()
 {
     Mutex::Autolock autoLock(gLock);
 
-    if (wakeLockAcquired == true) {
+    if (wakeLockAcquired == true && shutdownStarted == false) {
         ALOGV("%s: Releasing \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
         release_wake_lock(WAKE_LOCK_ID);
         wakeLockAcquired = false;
     }
+}
+
+static status_t power_parse_wolopts(char *optstr, uint32_t *data)
+{
+    status_t status = NO_ERROR;
+
+    *data = 0;
+
+    while (*optstr) {
+        switch (*optstr) {
+            case 'p':
+                *data |= WAKE_PHY;
+                break;
+            case 'u':
+                *data |= WAKE_UCAST;
+                break;
+            case 'm':
+                *data |= WAKE_MCAST;
+                break;
+            case 'b':
+                *data |= WAKE_BCAST;
+                break;
+            case 'a':
+                *data |= WAKE_ARP;
+                break;
+            case 'g':
+                *data |= WAKE_MAGIC;
+                break;
+            case 's':
+                *data |= WAKE_MAGICSECURE;
+                break;
+            case 'd':
+                *data = 0;
+                break;
+            default:
+                status = BAD_VALUE;
+                break;
+        }
+        optstr++;
+    }
+    return status;
+}
+
+static status_t power_parse_sopass(String8& src, uint8_t *dest)
+{
+    status_t status = NO_ERROR;
+    int count;
+    unsigned int buf[ETH_ALEN];
+
+    count = sscanf(src.string(), "%2x:%2x:%2x:%2x:%2x:%2x",
+        &buf[0], &buf[1], &buf[2], &buf[3], &buf[4], &buf[5]);
+
+    if (count != ETH_ALEN) {
+        status = BAD_VALUE;
+    }
+    else {
+        for (int i = 0; i < count; i++) {
+            dest[i] = buf[i];
+        }
+    }
+    return status;
+}
+
+String8 power_get_sopass_file_path()
+{
+    String8 path;
+
+    path.setTo(SOPASS_KEY_FILE_PATH);
+
+    if (!access(path.string(), R_OK)) {
+        ALOGV("%s: Found \"%s\".", __FUNCTION__, path.string());
+        return path;
+    }
+    else {
+        ALOGV("%s: Could not find \"%s\"!", __FUNCTION__, path.string());
+        return String8();
+    }
+}
+
+static int power_filter_dots(const struct dirent *d)
+{
+    return (strcmp(d->d_name, "..") && strcmp(d->d_name, "."));
+}
+
+static bool power_is_iface_present(const char *ifname)
+{
+    /* Check /sys/class/net for what devices are available... */
+    int i;
+    int num_entries;
+    bool present = false;
+    struct dirent **namelist = NULL;
+
+    num_entries = scandir(SYS_CLASS_NET, &namelist, power_filter_dots, alphasort);
+    if (num_entries < 0) {
+        ALOGE("%s: Could not scan dir \"%s\" [%s]!!!", __FUNCTION__, SYS_CLASS_NET, strerror(errno));
+    }
+    else {
+        for (i = 0; i < num_entries && !present; i++) {
+            ALOGV("%s: Checking d_name=\"%s\" matches \"%s\"...", __FUNCTION__, namelist[i]->d_name, ifname);
+            if (strcmp(namelist[i]->d_name, ifname) == 0) {
+                present = true;
+            }
+            free(namelist[i]);
+        }
+        free(namelist);
+    }
+    return present;
+}
+
+static status_t power_set_enet_wol()
+{
+    status_t status = NO_ERROR;
+    struct ifreq ifr;
+    unsigned i;
+    int fd = -1;
+
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) {
+        ALOGW("%s: Could not open socket for WoL control!", __FUNCTION__);
+        status = PERMISSION_DENIED;
+    }
+    else {
+        status = NAME_NOT_FOUND;
+
+        // Search for a valid Ethernet interface...
+        for (i=0; i<sizeof(powerNetInterfaces)/sizeof(powerNetInterfaces[0]); i++) {
+            if (power_is_iface_present(powerNetInterfaces[i])) {
+                memset(&ifr, 0, sizeof(ifr));
+                strcpy(ifr.ifr_name, powerNetInterfaces[i]);
+
+                status = ioctl(fd, SIOCGIFFLAGS, &ifr);
+                if (status < 0) {
+                    ALOGW("%s: Could not get socket flags for %s!", __FUNCTION__, ifr.ifr_name);
+                }
+                else if (!(ifr.ifr_flags & IFF_UP)) {
+                    ALOGW("%s: Interface %s is DOWN!", __FUNCTION__, ifr.ifr_name);
+                    status = -EAGAIN;
+                }
+                else {
+                    status = NO_ERROR;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (status == NO_ERROR) {
+        struct ethtool_wolinfo wolinfo;
+        char wol_opts[PROPERTY_VALUE_MAX] = "";
+
+        memset(&wolinfo, 0, sizeof(wolinfo));
+
+        if (power_get_property_wol_opts(wol_opts) > 0) {
+            uint32_t data;
+
+            status = power_parse_wolopts(wol_opts, &data);
+            if (status == NO_ERROR) {
+                wolinfo.wolopts = data;
+                ALOGV("%s: WoL options=0x%02x", __FUNCTION__, data);
+
+                // SecureOn(TM) password is stored in a password file
+                if (data & WAKE_MAGICSECURE) {
+                    uint8_t sopass[SOPASS_MAX];
+                    String8 path;
+                    String8 value;
+                    PropertyMap* config;
+
+                    path = power_get_sopass_file_path();
+                    if (path.isEmpty()) {
+                        ALOGE("%s: Could not find SecureOn(TM) password file \"%s\"!", __FUNCTION__, path.string());
+                        status = NAME_NOT_FOUND;
+                    }
+                    else {
+                        status = PropertyMap::load(path, &config);
+                        if (status == NO_ERROR) {
+                            size_t numEntries = config->getProperties().size();
+                            if (numEntries != 1) {
+                                ALOGE("%s: Invalid number of entries %zu in SecureOn(TM) password file \"%s\"!", __FUNCTION__, numEntries, path.string());
+                                status = BAD_VALUE;
+                            }
+                            else if (config->tryGetProperty(String8("SOPASS"), value)) {
+                                status = power_parse_sopass(value, sopass);
+                                if (status == NO_ERROR) {
+                                    for (i = 0; i < SOPASS_MAX; i++) {
+                                        wolinfo.sopass[i] = sopass[i];
+                                    }
+                                    ALOGV("%s: WoL sopass=\"%s\"", __FUNCTION__, value.string());
+                                }
+                                else {
+                                    ALOGE("%s: Invalid \"sopass\" key in SecureOn(TM) password file \"%s\"!", __FUNCTION__, path.string());
+                                }
+                            }
+                            else {
+                                ALOGE("%s: Could not find \"sopass\" key in SecureOn(TM) password file \"%s\"!", __FUNCTION__, path.string());
+                                status = BAD_VALUE;
+                            }
+                        }
+                        else {
+                            ALOGE("%s: Could not load SecureOn(TM) password file \"%s\"!", __FUNCTION__, path.string());
+                        }
+                    }
+                }
+            }
+            else {
+                ALOGE("%s: Invalid WoL options \"%s\"!", __FUNCTION__, wol_opts);
+            }
+        }
+        else {
+            ALOGE("%s: No WoL arguments specified!", __FUNCTION__);
+            status = BAD_VALUE;
+        }
+
+        if (status == NO_ERROR) {
+            wolinfo.cmd = ETHTOOL_SWOL;
+            ifr.ifr_data = (void *)&wolinfo;
+            status = ioctl(fd, SIOCETHTOOL, &ifr);
+        }
+
+        if (status == NO_ERROR) {
+            ALOGD("%s: Successfully set WoL settings for %s", __FUNCTION__, ifr.ifr_name);
+        }
+        else {
+            ALOGW("%s: Could not set WoL settings for %s!", __FUNCTION__, ifr.ifr_name);
+        }
+    }
+
+    if (fd >= 0) {
+        close(fd);
+    }
+    return status;
+}
+
+static void * power_wol_monitor_thread(void * arg __unused)
+{
+    status_t status;
+
+    while (true) {
+        status = power_set_enet_wol();
+        if (status != -EAGAIN) {
+            break;
+        }
+        else {
+            sleep(DEFAULT_WOL_MONITOR_TIMEOUT);
+        }
+    }
+    return NULL;
+}
+
+static status_t power_set_wol_mode()
+{
+    status_t status;
+    unsigned int full_wol_en;
+    pthread_t thread;
+    pthread_attr_t attr;
+
+    // Handle Android WoLAN enable/disable property
+    // If enabled, a WoLAN event will wake up Android
+    // Otherwise, Android PM won't be notified and
+    // device will return back to low power state
+    if (sysfs_get(SYS_FULL_WOL_WAKEUP, &full_wol_en) == NO_ERROR) {
+        bool full_wol_en_pr = power_get_property_wol_en();
+
+        if (full_wol_en_pr != full_wol_en) {
+            if (sysfs_set(SYS_FULL_WOL_WAKEUP, full_wol_en_pr) != NO_ERROR) {
+                ALOGE("%s: Could not set WOL entry at %s, leaving it %s!!!", __FUNCTION__,
+                      SYS_FULL_WOL_WAKEUP, full_wol_en?"enabled":"disabled");
+            }
+            else {
+                ALOGI("%s: successfully set WOL %s", __FUNCTION__, full_wol_en_pr?"enabled":"disabled");
+            }
+        }
+        else {
+            ALOGI("%s: WOL is %s", __FUNCTION__, full_wol_en_pr?"enabled":"disabled");
+        }
+    }
+    else {
+        ALOGE("%s: Could not read %s!!!", __FUNCTION__, SYS_FULL_WOL_WAKEUP);
+    }
+
+    // Create a monitor thread to poll when the network interface is UP...
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+    if (pthread_create(&thread, &attr, power_wol_monitor_thread, NULL) == 0) {
+        ALOGV("%s: Successfully created a WoL monitor thread!", __FUNCTION__);
+        status = NO_ERROR;
+    }
+    else {
+        ALOGE("%s: Could not create a WoL monitor thread!!!", __FUNCTION__);
+        status = UNKNOWN_ERROR;
+    }
+    pthread_attr_destroy(&attr);
+
+    return status;
 }
 
 static void power_init(struct power_module *module __unused)
@@ -351,44 +652,19 @@ static void power_init(struct power_module *module __unused)
                 struct sigevent se;
 
                 // Create the doze timer...
-                se.sigev_value.sival_int = power_get_off_state();
+                se.sigev_value.sival_int = 0;
                 se.sigev_notify = SIGEV_THREAD;
                 se.sigev_notify_function = dozeTimerCallback;
                 se.sigev_notify_attributes = NULL;
                 if (timer_create(CLOCK_MONOTONIC, &se, &gDozeTimer) != 0) {
                     ALOGE("%s: Could not create doze timer!!!", __FUNCTION__);
                 }
+                // Setup WoLAN mode...
+                power_set_wol_mode();
             }
         }
     }
 
-    // Handle Android WoLAN enable/disable property
-    // If enabled, a WoLAN event will wake up Android
-    // Otherwise, Android PM won't be notified and
-    // device will return back to low power state
-    if (sysfs_get(SYS_FULL_WOL_WAKEUP, &wol_en) == NO_ERROR)
-    {
-        bool wol_en_pr = power_get_property_wol_en();
-        if (wol_en_pr != wol_en) {
-            if (sysfs_set(SYS_FULL_WOL_WAKEUP, wol_en_pr) != NO_ERROR) {
-                ALOGE("%s: Could not set WOL entry at %s, leaving it %s!!!",
-                    __FUNCTION__, SYS_FULL_WOL_WAKEUP,
-                    wol_en?"enabled":"disabled");
-            }
-            else {
-                    ALOGI("%s: successfully set WOL %s", __FUNCTION__,
-                    wol_en_pr?"enabled":"disabled");
-            }
-        }
-        else {
-            ALOGI("%s: WOL is %s", __FUNCTION__,
-                wol_en_pr?"enabled":"disabled");
-}
-    }
-    else
-    {
-        ALOGE("%s: Could not read %s!!!", __FUNCTION__, SYS_FULL_WOL_WAKEUP);
-    }
 }
 
 static status_t power_set_pmlibservice_state(b_powerState state)
@@ -470,7 +746,7 @@ static status_t power_set_pmlibservice_state(b_powerState state)
     return status;
 }
 
-static status_t power_prepare_suspend(b_powerState toState)
+static status_t power_prepare_suspend()
 {
     int ret;
     status_t status = NO_ERROR;
@@ -495,6 +771,7 @@ static status_t power_prepare_suspend(b_powerState toState)
         else {
             eventfd_t event;
 
+            // Ready to suspend. Block and wait for a resume indication to exit suspend
             ret = eventfd_read(gPowerEventFd, &event);
             if (ret < 0) {
                 status = errno;
@@ -502,26 +779,16 @@ static status_t power_prepare_suspend(b_powerState toState)
                 ALOGE("%s: Failed to read event(s) [%s]!!!", __FUNCTION__, buf);
             }
             else {
-                ALOGV("%s: Event %llu received", __FUNCTION__, event);
+                ALOGV("%s: Event %" PRIu64 " received", __FUNCTION__, event);
 
                 if (event == DROID_PM_EVENT_RESUMED ||
                     event == DROID_PM_EVENT_RESUMED_PARTIAL ||
                     event == DROID_PM_EVENT_RESUMED_WAKEUP) {
-                    // As long as all clients have at least acknowledged the suspend, then we can enable
-                    // spoofing of the POWER key event through the call to "preparePowerState()"...
-                    if (gNexusPower.get() && !gPowerStatePrepared) {
-                        gNexusPower->preparePowerState(toState);
-                        gPowerStatePrepared = true;
-                    }
                     if (event == DROID_PM_EVENT_RESUMED_WAKEUP) {
                         ALOGV("%s: Received a valid wakeup event", __FUNCTION__);
-                        pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
-                        gPowerEventMonitorThreadExit = true;
-                        pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
                     }
                     else if (event == DROID_PM_EVENT_RESUMED_PARTIAL) {
                         ALOGV("%s: Received a valid partial wakeup event", __FUNCTION__);
-                        gPowerFlagSetPowerStateS0 = true;
                     }
                     else {
                         if (gNexusPower.get()) {
@@ -529,13 +796,12 @@ static status_t power_prepare_suspend(b_powerState toState)
 
                             if ((gNexusPower->getPowerStatus(&powerStatus) == NO_ERROR) && powerStatus.wakeupStatus.timeout) {
                                 ALOGV("%s: Woke up from timer event", __FUNCTION__);
-                                gPowerFlagSetPowerStateS0 = true;
                             }
                         }
                     }
                 }
                 else {
-                    ALOGW("%s: Invalid state to receive event %llu!", __FUNCTION__, event);
+                    ALOGW("%s: Invalid state to receive event %" PRIu64 "!", __FUNCTION__, event);
                     status = BAD_VALUE;
                 }
             }
@@ -544,20 +810,16 @@ static status_t power_prepare_suspend(b_powerState toState)
     return status;
 }
 
-static status_t power_set_state_s0(bool partial)
+static status_t power_set_state_s0()
 {
     volatile status_t status;
 
-    if (!partial) {
-        status = power_set_pmlibservice_state(ePowerState_S0);
-    }
+    status = power_set_pmlibservice_state(ePowerState_S0);
 
     if (gNexusPower.get()) {
-        status = gNexusPower->setPowerState(ePowerState_S0, partial);
+        status = gNexusPower->setPowerState(ePowerState_S0);
     }
 
-    // Release the CPU wakelock as the system should be back up now...
-    releaseWakeLock();
     return status;
 }
 
@@ -596,29 +858,36 @@ static status_t power_set_state_s2_s3(b_powerState toState)
     if (gNexusPower.get()) {
         status = gNexusPower->setPowerState(toState);
     }
-
-    if (status == NO_ERROR) {
-        status = power_prepare_suspend(toState);
-        if (status != NO_ERROR && status != NO_INIT) {
-            ALOGE("%s: Error trying to enter %s standby!!!", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
-        }
-    }
     return status;
 }
 
 static status_t power_set_state_s5()
 {
-    return system("/system/bin/svc power shutdown");
+    // When offstate is S5, we wait until the kernel starts to suspend before
+    // invoking the shutdown. Prevent us from suspending by taking a wakelock.
+    acquireWakeLock();
+
+    // Don't kill the current event monitor thread.
+    // Spawn a thread to call the blocking shutdown interface
+    // We can't block or we will miss the shutdown notification
+    return power_create_thread(power_s5_shutdown);
 }
 
-static status_t power_set_state(b_powerState toState, bool partial)
+static void *power_s5_shutdown(void *arg __unused)
+{
+    shutdownStarted = true;
+    system("/system/bin/svc power shutdown");
+    return NULL;
+}
+
+static status_t power_set_state(b_powerState toState)
 {
     volatile status_t status = NO_ERROR;
 
     switch (toState)
     {
         case ePowerState_S0: {
-            status = power_set_state_s0(partial);
+            status = power_set_state_s0();
         } break;
 
         case ePowerState_S05: {
@@ -660,56 +929,67 @@ static status_t power_set_poweroff_state()
     return power_set_state(powerOffState);
 }
 
-static status_t power_set_sleep_state()
+static void *power_doze_monitor_thread(void *arg __unused)
+{
+    status_t status = NO_ERROR;
+    int dozeTimeout = property_get_int32(PROPERTY_SYS_POWER_DOZE_TIMEOUT,
+                                         DEFAULT_DOZE_TIMEOUT);
+
+    ALOGV("%s: entered", __FUNCTION__);
+
+    power_set_doze_state(dozeTimeout);
+
+    // Monitor for suspend and shutdown events
+    return power_event_monitor_thread(NULL);
+}
+
+static status_t power_set_doze_state(int timeout)
 {
     status_t status;
     struct itimerspec ts;
-    b_powerState sleepState = power_get_sleep_state();
-    int dozeTimeout = power_get_property_doze_timeout();
+    b_powerState dozeState = power_get_property_doze_state();
+    b_powerState powerOffState = power_get_off_state();
 
-    if (dozeTimeout < 0) {
-        ALOGI("%s: Dozing in power state %s indefinitely...", __FUNCTION__, NexusIPCClientBase::getPowerString(sleepState));
+    if (powerOffState != ePowerState_S2 &&
+        powerOffState != ePowerState_S3 &&
+        powerOffState != ePowerState_S5) {
+       // Kernel suspend is not enabled, so doze forever
+       timeout = -1;
     }
-    else if (dozeTimeout > 0 && gDozeTimer) {
+
+    if (timeout < 0) {
+        ALOGI("%s: Dozing in power state %s indefinitely...",
+              __FUNCTION__, NexusIPCClientBase::getPowerString(dozeState));
+    }
+    else if (timeout >= 0 && gDozeTimer) {
         timer_gettime(gDozeTimer, &ts);
 
         // Arm the doze timer...
-        ALOGI("%s: Dozing in power state %s for %ds...", __FUNCTION__, NexusIPCClientBase::getPowerString(sleepState), dozeTimeout);
-        ts.it_value.tv_sec = dozeTimeout;
+        ALOGI("%s: Dozing in power state %s for at least %ds...",
+              __FUNCTION__, NexusIPCClientBase::getPowerString(dozeState), timeout);
+        ts.it_value.tv_sec = timeout;
         ts.it_value.tv_nsec = 0;
         ts.it_interval.tv_sec = 0;
         ts.it_interval.tv_nsec = 0;
         timer_settime(gDozeTimer, 0, &ts, NULL);
     }
-    status = power_set_state(sleepState);
+
+    if (timeout != 0)
+        acquireWakeLock();
+    else
+        releaseWakeLock();
+
+    status = power_set_state(dozeState);
     return status;
 }
 
-static status_t power_set_shutdown()
-{
-    status_t status = NO_ERROR;
-
-    ALOGV("%s: entered", __FUNCTION__);
-
-    if (status == NO_ERROR && gNexusPower.get()) {
-        status = gNexusPower->setPowerState(ePowerState_S5);
-    }
-
-    if (status == NO_ERROR) {
-        status = power_prepare_suspend(ePowerState_S5);
-        if (status != NO_ERROR && status != NO_INIT) {
-            ALOGE("%s: Error trying to enter %s standby!!!", __FUNCTION__, NexusIPCClientBase::getPowerString(ePowerState_S5));
-        }
-    }
-    return status;
-}
-
-static void *power_event_monitor_thread(void *arg)
+static void *power_event_monitor_thread(void *arg __unused)
 {
     int ret;
     struct pollfd pollFd;
     char buf[BUF_SIZE];
-    powerFinishFunction_t powerFunction = reinterpret_cast<powerFinishFunction_t>(arg);
+    int wakeTimeout = property_get_int32(PROPERTY_SYS_POWER_WAKE_TIMEOUT,
+                                         DEFAULT_WAKE_TIMEOUT);
 
     pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
     gPowerEventMonitorThreadExit = false;
@@ -747,22 +1027,35 @@ static void *power_event_monitor_thread(void *arg)
             }
             else {
                 // Event received from droid_pm - now find out which one...
-                ALOGV("%s: Received power event %llu", __FUNCTION__, event);
-                if (event == DROID_PM_EVENT_SUSPENDING || event == DROID_PM_EVENT_SHUTDOWN) {
-                    if (powerFunction() == NO_ERROR) {
-                        ALOGD("%s: Successfully finished setting power state.", __FUNCTION__);
-                        if (gPowerFlagSetPowerStateS0) {
-                            // If woke up via a timer or partial wake-up event then set nexus power state to S0
-                            power_set_state(ePowerState_S0, true);
-                            gPowerFlagSetPowerStateS0 = false;
+                ALOGV("%s: Received power event %" PRIu64 "", __FUNCTION__, event);
+                if (event == DROID_PM_EVENT_SUSPENDING) {
+                    ret = power_set_poweroff_state();
+                    if (ret == NO_ERROR) {
+                        ALOGD("%s: Successfully finished setting power off state.", __FUNCTION__);
+                        // Wait for suspend to complete
+                        ret = power_prepare_suspend();
+                        if (ret != NO_ERROR && ret != NO_INIT) {
+                            ALOGE("%s: Error trying to enter suspend!!!", __FUNCTION__);
                         }
+                        // Suspend complete, back to doze
+                        power_set_doze_state(wakeTimeout);
                     }
                 }
+
+                else if (event == DROID_PM_EVENT_SHUTDOWN) {
+                    if (gNexusPower.get()) {
+                        ret = gNexusPower->setPowerState(ePowerState_S5);
+                    }
+                    if (ret != NO_ERROR)
+                        ALOGE("%s: Error trying to enter S5!!!", __FUNCTION__);
+                    else
+                        ALOGD("%s: Entered S5", __FUNCTION__);
+
+                    // Acknowledge shutdown message and wait, shouldn't return
+                    power_prepare_suspend();
+                }
                 else if (event == DROID_PM_EVENT_RESUMED_WAKEUP) {
-                    ALOGV("%s: Received a valid wakeup event", __FUNCTION__);
-                    pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
-                    gPowerEventMonitorThreadExit = true;
-                    pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
+                    ALOGV("%s: Received an unexpected wakeup event", __FUNCTION__);
                 }
             }
         }
@@ -778,22 +1071,24 @@ static void *power_event_monitor_thread(void *arg)
     return NULL;
 }
 
-static void *power_standby_finish_thread(void *arg)
+static void *power_standby_finish_thread(void *arg __unused)
 {
-    powerFinishFunction_t powerFunction = reinterpret_cast<powerFinishFunction_t>(arg);
+    status_t status = NO_ERROR;
 
-    if (powerFunction() == NO_ERROR) {
-        ALOGD("%s: Successfully finished setting power state.", __FUNCTION__);
+    ALOGV("%s: entered", __FUNCTION__);
+
+    status = power_set_state(ePowerState_S0);
+
+    if (gNexusPower.get()) {
+        gNexusPower->setVideoOutputsState(ePowerState_S0);
     }
-    return NULL;
+
+    // Monitor for shutdown events
+    return power_event_monitor_thread(NULL);
 }
 
-static status_t power_create_thread(void *(pthread_function)(void*), powerFinishFunction_t powerFunction)
+static void power_kill_thread()
 {
-    status_t status;
-    pthread_t thread;
-    pthread_attr_t attr;
-
     // If the event monitor thread is running, then terminate it...
     pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
     if (!gPowerEventMonitorThreadExited) {
@@ -804,11 +1099,19 @@ static status_t power_create_thread(void *(pthread_function)(void*), powerFinish
             pthread_cond_wait(&gPowerEventMonitorThreadCond, &gPowerEventMonitorThreadMutex);
         }
     }
+    pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
+}
+
+static status_t power_create_thread(void *(pthread_function)(void*))
+{
+    status_t status;
+    pthread_t thread;
+    pthread_attr_t attr;
 
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
-    if (pthread_create(&thread, &attr, pthread_function, reinterpret_cast<void *>(powerFunction)) == 0) {
+    if (pthread_create(&thread, &attr, pthread_function, NULL) == 0) {
         ALOGV("%s: Successfully created a power thread!", __FUNCTION__);
         status = NO_ERROR;
     }
@@ -817,39 +1120,25 @@ static status_t power_create_thread(void *(pthread_function)(void*), powerFinish
         status = UNKNOWN_ERROR;
     }
     pthread_attr_destroy(&attr);
-    pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
     return status;
 }
 
-static void power_finish_set_no_interactive(b_powerState toState, powerFinishFunction_t powerFunction)
+static void power_finish_set_no_interactive()
 {
-    void *(*pthread_function)(void *);
+    // Ensure we acquire a wake-lock to prevent the system from suspending *BEFORE* we have
+    // placed Nexus in to standby (we should not suspend in S0.5/S1/S5 modes anyway).
+    acquireWakeLock();
 
-    // Spawn a thread that monitors for kernel suspend callbacks in S2/S3 standby only...
-    if (toState == ePowerState_S2 || toState == ePowerState_S3) {
-        // Ensure we release a wake-lock to allow the system to begin suspending.  We then
-        // use this notification to place Nexus in to standby (suspend in S2/S3 modes only).
-        releaseWakeLock();
-        pthread_function = power_event_monitor_thread;
-    }
-    // Spawn a thread that just finishes the standby sequence...
-    else {
-        // Ensure we acquire a wake-lock to prevent the system from suspending *BEFORE* we have
-        // placed Nexus in to standby (we should not suspend in S0.5/S1/S5 modes anyway).
-        acquireWakeLock();
-        pthread_function = power_standby_finish_thread;
-    }
-
-    if (power_create_thread(pthread_function, powerFunction) == NO_ERROR) {
-        ALOGI("%s: Entering power state %s...", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
-    }
+    // Listen for standby and suspend messages
+    power_kill_thread();
+    power_create_thread(power_doze_monitor_thread);
 }
 
 static status_t power_finish_set_interactive()
 {
     status_t status = NO_ERROR;
 
-    if (power_get_property_doze_timeout() > 0 && gDozeTimer) {
+    if (gDozeTimer) {
         struct itimerspec ts;
         timer_gettime(gDozeTimer, &ts);
 
@@ -863,9 +1152,11 @@ static status_t power_finish_set_interactive()
         }
     }
 
-    if (power_create_thread(power_event_monitor_thread, power_set_shutdown) == NO_ERROR) {
-        status = power_set_state(ePowerState_S0);
-    }
+    power_kill_thread();
+    power_create_thread(power_standby_finish_thread);
+
+    // Release the CPU wakelock as the system should be back up now...
+    releaseWakeLock();
     return status;
 }
 
@@ -874,25 +1165,20 @@ static void power_set_interactive(struct power_module *module __unused, int on)
     ALOGI("%s: %s", __FUNCTION__, on ? "ON" : "OFF");
 
     if (on) {
-        if (gNexusPower.get()) {
-            gNexusPower->preparePowerState(ePowerState_S0);
-            gPowerStatePrepared = false;
+        if (shutdownStarted) {
+            ALOGI("%s: Ignoring interaction, shutdown in progress.", __FUNCTION__);
+            return;
         }
-
         power_finish_set_interactive();
-
-        if (gNexusPower.get()) {
-            gNexusPower->setVideoOutputsState(ePowerState_S0);
-        }
     }
     else {
-        b_powerState sleepState = power_get_sleep_state();
+        b_powerState dozeState = power_get_property_doze_state();
 
         if (gNexusPower.get()) {
-            gNexusPower->setVideoOutputsState(sleepState);
+            gNexusPower->setVideoOutputsState(dozeState);
         }
 
-        power_finish_set_no_interactive(sleepState, power_set_sleep_state);
+        power_finish_set_no_interactive();
     }
 
     if (gPowerFd != -1) {

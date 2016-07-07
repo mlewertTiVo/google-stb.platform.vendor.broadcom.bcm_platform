@@ -75,6 +75,8 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/b
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := hwcbinder
 
+LOCAL_INIT_RC := hwcbinder.rc
+
 include $(BUILD_EXECUTABLE)
 
 # build the hwcutils helper
@@ -118,7 +120,11 @@ ifeq ($(HWC_DEBUG_SYMBOLS),true)
 LOCAL_STRIP_MODULE := false
 endif
 LOCAL_PRELINK_MODULE := false
-LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
+ifeq ($(TARGET_2ND_ARCH),arm)
+  LOCAL_MODULE_RELATIVE_PATH := hw
+else
+  LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
+endif
 
 LOCAL_SHARED_LIBRARIES += libbinder
 LOCAL_SHARED_LIBRARIES += libcutils

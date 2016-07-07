@@ -59,18 +59,17 @@ oops="oops"
 security_root="security"
 playready_root="playready"
 show_tree_depth=3
-BCM_VENDOR_STB_ROOT="vendor/broadcom"
+BCM_VENDOR_STB_ROOT="vendor/broadcom/stb"
 
-# you can change the auto-magic profile selection here if desired, but there is really no need to.
-#
-# note: if changing those, you have to make sure there is a valid 'device/broadcom/custom' profile
-#       associated with your selection.
-#
-plat_target="97252 D0 C"
-plat_profile="BCM97252CSECU"
-plat_profile_verifier="BCM97252C_43602"
-#
-# -- end profile (auto-magic) selection.
+plat_legacy_tgt="97252 D0 C"
+plat_legacy_pro="BCM97252CSECU"
+plat_legacy_ver="BCM97252C_43602"
+plat_avko_tgt="97439 B0 SFF"
+plat_avko_pro="BCM97439SECU"
+plat_avko_ver="BCM97252SSFFDR4"
+plat_arch64_tgt="97271 A0 SV"
+plat_arch64_pro="BCM97271SV64"
+plat_arch64_ver="BCM97271SECU"
 
 verbose=
 update=
@@ -80,18 +79,27 @@ reset=
 force_clean=
 force_clean_refsw=
 skip_build=
-skip_verify=
+skip_verify=1
 debug=
 show_tree=
 secliblist=
 only_build_secu=
+plat_config_profile=
+copy_in_place=
+git_push=
+git_branch=
 
 function usage {
 	echo "sec_builder --sec-filer <path-to>"
 	echo "            [--update] [--configure] [--reset] [--force-clean|--force-clean-refsw]"
-	echo "            [--skip-build|--skip-verify] [--debug] [--show-tree-only]"
+	echo "            [--skip-build|--no-skip-verify] [--debug]"
 	echo "            [--only-build-secu]"
-        echo "            [--show-tree-depth <depth>] [--verbose] [--help|-h]"
+	echo "            [--show-tree-depth <depth>] [--show-tree-only]"
+	echo "            [--profile <profile>]"
+	echo "            [--copy-in-place]"
+	echo "            [--git-push] [--git-branch <branch>]"
+	echo "            [--verbose]"
+	echo "            [--help|-h]"
 	echo ""
 	echo "mandatory parameter(s):"
 	echo ""
@@ -131,7 +139,16 @@ function usage {
 	echo ""
 	echo "   --show-tree-depth            : the depth in terms of git log entries to dump from top of tree, defaults to 3."
 	echo ""
-	echo "   --skip-verify                : skip the verification step at the end."
+	echo "   --no-skip-verify             : do not skip the verification step at the end."
+	echo ""
+	echo "   --profile <profile>          : the build profile for the security libraries build, valid profile include:"
+	echo "                                  'legacy' (default, 7445/7252 devices); 'avko' (7252S/7251S familly); 'arm64' (7271 multi-arch build)."
+	echo ""
+	echo "   --copy-in-place              : copy built libraries in final resting place (i.e. prebuilts)."
+	echo ""
+	echo "   --git-push                   : git push the changed libraries."
+	echo ""
+	echo "   --git-branch                 : the branch to used for pushing the changes when applicable."
 	echo ""
 }
 
@@ -155,6 +172,7 @@ function rejouez {
 function ou_suis_je {
 	la=$(cd $(dirname $0) && pwd)
 	# cheat - we know where we 'should be' in relation to root, go there.
+	la=$(dirname $la)
 	la=$(dirname $la)
 	la=$(dirname $la)
 	la=$(dirname $la)
@@ -229,6 +247,19 @@ function compiler {
 	if [ "$skip_build" == "1" ]; then
 		que_faites_vous "build skipped on demand"
 	else
+		if [ "$plat_config_profile" == "legacy" ]; then
+			plat_target=$plat_legacy_tgt
+			plat_profile=$plat_legacy_pro
+			plat_profile_verifier=$plat_legacy_ver
+		elif [ "$plat_config_profile" == "avko" ]; then
+			plat_target=$plat_avko_tgt
+			plat_profile=$plat_avko_pro
+			plat_profile_verifier=$plat_avko_ver
+		elif [ "$plat_config_profile" == "arch64" ]; then
+			plat_target=$plat_arch64_tgt
+			plat_profile=$plat_arch64_pro
+			plat_profile_verifier=$plat_arch64_ver
+		fi
 		cd $1
 		# generate the device with the profiles we need to build.
 		#
@@ -262,6 +293,9 @@ function compiler {
 		fi
 		make -j12 clean_security_user
 		make -j12 security_user
+		if [ "$plat_config_profile" == "arch64" ]; then
+			make -j12 security_user_2nd_arch
+		fi
 	fi
 }
 
@@ -279,17 +313,10 @@ function comparer {
 	while [ "$ix" -lt "$count" ]; do
 		OLDIFS=$IFS; IFS='=' var=(${seclib_mapping[$ix]}); IFS=$OLDIFS;
 		if [[ "${var[0]}" != "" &&  "${var[1]}" != "" ]]; then
-			built=$1/out/target/product/bcm_platform/sysroot/${var[0]}
-			temp=$1/${BCM_VENDOR_STB_ROOT}/bcm_platform/${var[1]}
+			built=$1/${var[0]}
+			temp=$1/${var[1]}
 			# strip trailing '\n'
 			original=$(echo $temp | sed -e 's/\n//g')
-			# optionally strip the MARKER (used for debug vs retail).
-			temp=$original
-			if [ "$debug" == "1" ]; then
-				original=$(echo $temp | sed -e 's/MARKER/retail/g')
-			else
-				original=$(echo $temp | sed -e 's/MARKER/debug/g')
-			fi
 
 			if [[ -f "$built" && -f "$original" ]]; then
 				if diff "$original" "$built" >/dev/null; then
@@ -347,6 +374,36 @@ function verifier {
 	fi
 }
 
+# $1 - android tree root.
+# $2 - security library mapping module.
+function copier {
+	readarray seclib_mapping < $2
+	count=${#seclib_mapping[@]}
+	ix=0
+	while [ "$ix" -lt "$count" ]; do
+		OLDIFS=$IFS; IFS='=' var=(${seclib_mapping[$ix]}); IFS=$OLDIFS;
+		if [[ "${var[0]}" != "" &&  "${var[1]}" != "" ]]; then
+			built=$1/${var[0]}
+			temp=$1/${var[1]}
+			# strip trailing '\n'
+			original=$(echo $temp | sed -e 's/\n//g')
+
+			if [[ -f "$built" && -f "$original" ]]; then
+				if diff "$original" "$built" >/dev/null; then
+					echo "unchanged prebuilt ${var[1]}"
+				else
+					cp $built $original
+					if [ "$git_push" == "1" ]; then
+						git -C $1/${var[2]} commit -m "seclibs: auto-generated libs update." ${var[3]};
+						git -C $1/${var[2]} push bcghost HEAD:refs/for/${git_branch};
+					fi
+				fi
+			fi
+		fi
+		ix=$(($ix + 1))
+	done
+}
+
 # command line parsing.
 while [ "$1" != "" ]; do
 	case $1 in
@@ -370,7 +427,7 @@ while [ "$1" != "" ]; do
 						;;
 		--skip-build)			skip_build=1
 						;;
-		--skip-verify)			skip_verify=1
+		--no-skip-verify)		skip_verify=0
 						;;
 		--debug)			debug=1
 						;;
@@ -380,6 +437,16 @@ while [ "$1" != "" ]; do
 						show_tree_depth=$1
 						;;
 		--only-build-secu)		only_build_secu=1
+						;;
+		--profile)			shift
+						plat_config_profile=$1
+						;;
+		--copy-in-place)		copy_in_place=1
+						;;
+		--git-push)			git_push=1
+						;;
+		--git-branch)			shift
+						git_branch=$1
 						;;
 		-h | --help)			usage
 						exit
@@ -401,6 +468,10 @@ fqn_sec+=$security_root
 fqn_pr=$sec_filer
 fqn_pr+="/"
 fqn_pr+=$playready_root
+
+if [ "$plat_config_profile" == "" ]; then
+	plat_config_profile="legacy"
+fi
 
 que_faites_vous "verifying security resources are there."
 if [ ! -d "$fqn_sec" ]; then
@@ -459,7 +530,12 @@ comparer $fqn_root $secliblist
 que_faites_vous "showing code tree for this build."
 montre_code $fqn_root $sec_filer
 
+# put built libraries in place.
+que_faites_vous "copying built libraries into place."
+copier $fqn_root $secliblist
+
 # build a clean refsw based image from the reference board now to see if the
 # libraries generated do make sense.
 que_faites_vous "now running final verification build..."
 verifier $fqn_root
+

@@ -240,9 +240,9 @@ protected:
 
     bool m_bSimpleEncoderStarted;
     bool m_bCodecConfigDone;
-    bool m_bEosReceived;
-    bool m_bEosDelieverd;
-    bool m_bPushEos;
+    bool m_bOutputEosReceived;
+    bool m_bInputEosPushed;
+    bool m_bRetryPushInputEos;
     bool m_bPushDummyFrame;
 
     BLST_Q_HEAD(BOMX_EncodedFrList, BOMX_NexusEncodedVideoFrame) m_EncodedFrList;
@@ -275,6 +275,9 @@ protected:
     unsigned m_maxFrameHeight;
     bool m_metadataEnabled;
     bool m_nativeGraphicsEnabled;
+    int m_duplicateFrameCount;
+    unsigned long long m_lastOutputFramePTS;
+    unsigned long long m_lastOutputFrameTicks;
 
     BOMX_VideoEncoderInputBufferType m_inputMode;
 
@@ -367,7 +370,7 @@ protected:
 private:
 
     NEXUS_SurfaceHandle CreateSurface(int width, int height, int stride, NEXUS_PixelFormat format,
-        unsigned handle, unsigned offset, void *pAddr, int *pMemBlkFd);
+        NEXUS_MemoryBlockHandle handle, unsigned offset, void *pAddr, int *pMemBlkFd);
 };
 
 #endif //BOMX_VIDEO_ENCODER_H__

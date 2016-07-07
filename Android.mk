@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ifneq ($(filter bcm_% fbx6lc avko arrow,$(TARGET_DEVICE)),)
+ifneq ($(filter bcm_% fbx6lc avko banff,$(TARGET_DEVICE)),)
 
 # nexus interface and core integration.
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-nexus.mk
@@ -24,6 +24,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-hals.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-media.mk
 
 # unclassified.
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/hfrvideo/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/netcoal/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice/Android.mk
 ifeq ($(ANDROID_SUPPORTS_DTVKIT),y)
@@ -33,12 +34,11 @@ endif
 # apk's released.
 BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/apks
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
-include ${BCM_APPS_PATH}/BcmCoverFlow/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
 include ${BCM_APPS_PATH}/BcmKeyInterceptor/Android.mk
 include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
-include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
 ifneq ($(TARGET_BUILD_PDK),true)
+include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
 include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 endif
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
@@ -46,6 +46,7 @@ include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
 include ${BCM_APPS_PATH}/LeanbackBcmCustom/Android.mk
 
 # additional tools, not needed for default integration.
+ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bsysperf/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/calcfb/Android.mk
@@ -66,7 +67,9 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxplay/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxtrans/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/otpgetchipid/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/prdy_pes_playback/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/secboot/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/setdisplay/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/yv12torgba/Android.mk
+endif
 
 endif

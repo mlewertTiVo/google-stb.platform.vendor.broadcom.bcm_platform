@@ -1,2 +1,0 @@
-on init
-   symlink /dev/block/platform/rdb.4/by-name /dev/block/by-name

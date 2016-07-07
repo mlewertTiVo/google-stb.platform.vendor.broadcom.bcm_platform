@@ -16,19 +16,17 @@ LOCAL_PATH := $(call my-dir)
 PATH_TO_NEXUS := ../../../refsw/nexus
 include $(CLEAR_VARS)
 
-include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 LOCAL_PRELINK_MODULE := false
 
-LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/nxclient/apps/utils
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
 LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/tshdrbuilder
+LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 
-LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
-LOCAL_CFLAGS += $(NEXUS_CFLAGS)
-LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
-LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+LOCAL_CFLAGS += -DB_REFSW_ANDROID
+LOCAL_CFLAGS += -DNXCLIENT_SUPPORT
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 # *** TODO: fix refsw.
@@ -53,8 +51,6 @@ LOCAL_SRC_FILES := \
     $(PATH_TO_NEXUS)/nxclient/apps/utils/bfont.c \
     $(PATH_TO_NEXUS)/nxclient/apps/utils/bgui.c \
     $(PATH_TO_NEXUS)/utils/namevalue.c
-
-LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)/include
 
 LOCAL_MODULE := libbcmsidebandplayer
 LOCAL_MODULE_TAGS := optional

@@ -20,15 +20,21 @@ include $(CLEAR_VARS)
 
 LOCAL_MODULE := audio.primary.$(TARGET_BOARD_PLATFORM)
 LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 LOCAL_PRELINK_MODULE := false
+ifeq ($(TARGET_2ND_ARCH),arm)
+  LOCAL_MODULE_RELATIVE_PATH := hw
+else
+  LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
+endif
+LOCAL_STRIP_MODULE := false
 
 LOCAL_SHARED_LIBRARIES := \
     libutils \
     libcutils \
     libmedia \
     libnexus \
-    libnxclient
+    libnxclient \
+    libbomx_util
 
 LOCAL_STATIC_LIBRARIES := \
     libmedia_helper
@@ -37,18 +43,23 @@ LOCAL_SRC_FILES += \
 	brcm_audio.cpp \
 	brcm_audio_nexus.cpp \
 	brcm_audio_nexus_direct.cpp \
+	brcm_audio_nexus_tunnel.cpp \
 	brcm_audio_builtin.cpp \
 	brcm_audio_dummy.cpp \
 	StandbyMonitorThread.cpp \
 
-LOCAL_CFLAGS := -DLOG_TAG=\"BrcmAudio\"
+LOCAL_CFLAGS := -DLOG_TAG=\"bcm-audio\"
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 
-LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/nexus/nxclient/include \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc
+LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/nexus/nxclient/include
+LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/BSEAV/lib/media
+LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/BSEAV/lib/utils
+LOCAL_C_INCLUDES += $(TOP)/frameworks/native/include/media/openmax
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libstagefrighthw
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc
 
 include $(BUILD_SHARED_LIBRARY)
 

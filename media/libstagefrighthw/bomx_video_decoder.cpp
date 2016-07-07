@@ -42,6 +42,9 @@
 
 #include <fcntl.h>
 #include <cutils/log.h>
+#include <cutils/sched_policy.h>
+#include <cutils/compiler.h>
+#include <sys/resource.h>
 
 #include "bomx_video_decoder.h"
 #include "nexus_platform.h"
@@ -51,10 +54,11 @@
 #include "nexus_base_mmap.h"
 #include "nexus_video_decoder.h"
 #include "nexus_core_utils.h"
-#include "bomx_vp9_parser.h"
 #include "nx_ashmem.h"
 #include "bomx_pes_formatter.h"
+#if defined(SECURE_DECODER_ON)
 #include "nexus_sage.h"
+#endif
 
 #define BOMX_INPUT_MSG(x)
 
@@ -62,10 +66,13 @@
 #define B_PROPERTY_PES_DEBUG ("media.brcm.vdec_pes_debug")
 #define B_PROPERTY_INPUT_DEBUG ("media.brcm.vdec_input_debug")
 #define B_PROPERTY_ENABLE_METADATA ("media.brcm.vdec_enable_metadata")
-#define B_PROPERTY_TRIM_VP9 ("ro.nx.trim.vp9")
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
 #define B_PROPERTY_SVP ("ro.nx.svp")
 #define B_PROPERTY_COALESCE ("dyn.nx.netcoal.set")
+#define B_PROPERTY_HFRVIDEO ("dyn.nx.hfrvideo.set")
+#define B_PROPERTY_HW_SYNC_FAKE ("media.brcm.hw_sync.fake")
+#define B_PROPERTY_EARLYDROP_THRESHOLD ("media.brcm.stat.earlydrop_thres")
+#define B_PROPERTY_DISABLE_RUNTIME_HEAPS ("ro.nx.rth.disable")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE (1536*1536)  // 1024 * 1024 from soft decoder is not big enough for some HEVC streams
@@ -74,11 +81,10 @@
 #define B_MAX_FRAMES (12)
 #define B_MAX_DECODED_FRAMES (16)
 #define B_MAX_INPUT_TIMEOUT_RETURN (2)
-
 #define B_CHECKPOINT_TIMEOUT (5000)
-
 #define B_SECURE_QUERY_MAX_RETRIES (10)
 #define B_SECURE_QUERY_SLEEP_INTERVAL_US (200000)
+#define B_STAT_EARLYDROP_THRESHOLD_MS (5000)
 
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
@@ -88,11 +94,10 @@
  *                        of 65535-3 bytes of payload in each based on
  *                        the 16-bit PES length field.
  *
- * For VP9, super-frames can be subdivided into at most 8 frames, each needing
- * its own PES header / Codec Header / Payload (3 descriptors per subframe).
+ * For VP9, a BPP packet for end of chunk is added at the end of the chunk
+ * payload so the firmware can parse the chunk for super-frames.
 *****************************************************************************/
-#define B_MAX_EXTRAFRAMES_PER_BUFFER (7)
-#define B_MAX_DESCRIPTORS_PER_BUFFER (4+(B_MAX_EXTRAFRAMES_PER_BUFFER*3)+(2*(B_DATA_BUFFER_SIZE/(B_MAX_PES_PACKET_LENGTH-(B_PES_HEADER_LENGTH_WITHOUT_PTS-B_PES_HEADER_START_BYTES)))))
+#define B_MAX_DESCRIPTORS_PER_BUFFER (4+1+(2*(B_DATA_BUFFER_SIZE/(B_MAX_PES_PACKET_LENGTH-(B_PES_HEADER_LENGTH_WITHOUT_PTS-B_PES_HEADER_START_BYTES)))))
 
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
@@ -143,13 +148,14 @@ enum BOMX_VideoDecoderEventType
     BOMX_VideoDecoderEventType_eMax
 };
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(
+OMX_ERRORTYPE BOMX_VideoDecoder_CreateCommon(
     OMX_COMPONENTTYPE *pComponentTpe,
     OMX_IN OMX_STRING pName,
     OMX_IN OMX_PTR pAppData,
-    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks,
+    bool tunnelMode)
 {
-    BOMX_VideoDecoder *pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks);
+    BOMX_VideoDecoder *pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, tunnelMode);
     if ( NULL == pVideoDecoder )
     {
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
@@ -169,11 +175,30 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(
     }
 }
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateTunnel(
     OMX_COMPONENTTYPE *pComponentTpe,
     OMX_IN OMX_STRING pName,
     OMX_IN OMX_PTR pAppData,
     OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    return BOMX_VideoDecoder_CreateCommon(pComponentTpe, pName, pAppData, pCallbacks, true);
+}
+
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Create(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    return BOMX_VideoDecoder_CreateCommon(pComponentTpe, pName, pAppData, pCallbacks, false);
+}
+
+OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks,
+    bool tunnelMode)
 {
     static const BOMX_VideoDecoderRole vp9Role = {"video_decoder.vp9", OMX_VIDEO_CodingVP9};
     BOMX_VideoDecoder *pVideoDecoder;
@@ -205,7 +230,7 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
         return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
     }
 
-    pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, 1, &vp9Role, BOMX_VideoDecoder_GetRoleVp9);
+    pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, tunnelMode, 1, &vp9Role, BOMX_VideoDecoder_GetRoleVp9);
     if ( NULL == pVideoDecoder )
     {
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
@@ -223,6 +248,24 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
             return BOMX_ERR_TRACE(constructorError);
         }
     }
+}
+
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Tunnel(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    return BOMX_VideoDecoder_CreateVp9Common(pComponentTpe, pName, pAppData, pCallbacks, true);
+}
+
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    return BOMX_VideoDecoder_CreateVp9Common(pComponentTpe, pName, pAppData, pCallbacks, false);
 }
 
 extern "C" const char *BOMX_VideoDecoder_GetRole(unsigned roleIndex)
@@ -289,13 +332,6 @@ static void BOMX_VideoDecoder_OutputFrameEvent(void *pParam)
     ALOGV("OutputFrameEvent");
 
     pDecoder->OutputFrameEvent();
-}
-
-static void BOMX_VideoDecoder_DisplayFrameEvent(void *pParam)
-{
-    BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
-    ALOGV("DisplayFrameEvent");
-    pDecoder->DisplayFrameEvent();
 }
 
 static void BOMX_VideoDecoder_InputBuffersTimer(void *pParam)
@@ -530,7 +566,7 @@ void OmxBinder::notify(int msg, struct hwc_notification_info &ntfy)
       cb(cb_data, msg, ntfy);
 }
 
-static void BOMX_OmxBinderNotify(int cb_data, int msg, struct hwc_notification_info &ntfy)
+static void BOMX_OmxBinderNotify(void *cb_data, int msg, struct hwc_notification_info &ntfy)
 {
     BOMX_VideoDecoder *pComponent = (BOMX_VideoDecoder *)cb_data;
 
@@ -543,9 +579,34 @@ static void BOMX_OmxBinderNotify(int cb_data, int msg, struct hwc_notification_i
         pComponent->BinderNotifyDisplay(ntfy);
         break;
     }
+    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_GEOMETRY_UPDATE:
+    {
+       NEXUS_Rect position, clip;
+       position.x = ntfy.frame.x;
+       position.y = ntfy.frame.y;
+       position.width = ntfy.frame.w;
+       position.height = ntfy.frame.h;
+       clip.x = ntfy.clipped.x;
+       clip.y = ntfy.clipped.y;
+       clip.width = ntfy.clipped.w;
+       clip.height = ntfy.clipped.h;
+       pComponent->SetVideoGeometry(&position, &clip, ntfy.frame_id, ntfy.display_width, ntfy.display_height, ntfy.zorder, true);
+       break;
+    }
     default:
         break;
     }
+}
+
+static void *BOMX_DisplayThread(void *pParam)
+{
+    BOMX_VideoDecoder *pComponent = static_cast <BOMX_VideoDecoder *> (pParam);
+
+    ALOGV("Display Thread Start");
+    pComponent->RunDisplayThread();
+    ALOGV("Display Thread Exited");
+
+    return NULL;
 }
 
 static size_t ComputeBufferSize(unsigned stride, unsigned height)
@@ -556,13 +617,15 @@ static size_t ComputeBufferSize(unsigned stride, unsigned height)
 static void BOMX_VideoDecoder_MemLock(private_handle_t *pPrivateHandle, void **addr)
 {
    *addr = NULL;
-   NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)pPrivateHandle->sharedData;
+   NEXUS_MemoryBlockHandle block_handle = NULL;
+   private_handle_t::get_block_handles(pPrivateHandle, &block_handle, NULL);
    NEXUS_MemoryBlock_Lock(block_handle, addr);
 }
 
 static void BOMX_VideoDecoder_MemUnlock(private_handle_t *pPrivateHandle)
 {
-   NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle)pPrivateHandle->sharedData;
+   NEXUS_MemoryBlockHandle block_handle = NULL;
+   private_handle_t::get_block_handles(pPrivateHandle, &block_handle, NULL);
    NEXUS_MemoryBlock_Unlock(block_handle);
 }
 
@@ -623,10 +686,14 @@ static NEXUS_MemoryBlockHandle BOMX_VideoDecoder_AllocatePixelMemoryBlk(const NE
             close(memBlkFd);
             memBlkFd = -1;
          } else {
-            hMemBlk = (NEXUS_MemoryBlockHandle)ioctl(memBlkFd, NX_ASHMEM_GETMEM);
-            if (hMemBlk == NULL) {
+            struct nx_ashmem_getmem ashmem_getmem;
+            memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
+            ret = ioctl(memBlkFd, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            if (ret < 0) {
                close(memBlkFd);
                memBlkFd = -1;
+            } else {
+               hMemBlk = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
             }
          }
       }
@@ -652,7 +719,7 @@ static void BOMX_VideoDecoder_SurfaceDestroy(int *pMemBlkFd, NEXUS_SurfaceHandle
 }
 
 static NEXUS_SurfaceHandle BOMX_VideoDecoder_ToNexusSurface(int width, int height, int stride, NEXUS_PixelFormat format,
-                                                            unsigned handle, unsigned offset)
+                                                            NEXUS_MemoryBlockHandle handle, unsigned offset)
 {
     NEXUS_SurfaceHandle shdl = NULL;
     NEXUS_SurfaceCreateSettings createSettings;
@@ -686,8 +753,16 @@ static bool BOMX_VideoDecoder_SetupRuntimeHeaps(bool secureDecoder, bool secureH
    NEXUS_PlatformConfiguration platformConfig;
    NEXUS_PlatformSettings platformSettings;
    NEXUS_MemoryStatus memoryStatus;
+   char value[PROPERTY_VALUE_MAX];
 
-   if (property_get_int32(B_PROPERTY_SVP, 0))
+   if (property_get_int32(B_PROPERTY_DISABLE_RUNTIME_HEAPS, 0))
+   {
+      return false;
+   }
+
+   memset(value, 0, sizeof(value));
+   property_get(B_PROPERTY_SVP, value, "play");
+   if (strncmp(value, "none", strlen("none")))
    {
       NEXUS_Platform_GetConfiguration(&platformConfig);
       for (i = 0; i < NEXUS_MAX_HEAPS ; i++)
@@ -735,6 +810,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks,
     bool secure,
+    bool tunnel,
     unsigned numRoles,
     const BOMX_VideoDecoderRole *pRoles,
     const char *(*pGetRole)(unsigned roleIndex)) :
@@ -777,6 +853,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_metadataEnabled(false),
     m_adaptivePlaybackEnabled(false),
     m_secureDecoder(secure),
+    m_tunnelMode(tunnel),
+    m_pTunnelNativeHandle(NULL),
     m_outputWidth(1920),
     m_outputHeight(1080),
     m_maxDecoderWidth(1920),
@@ -789,16 +867,24 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_outputMode(BOMX_VideoDecoderOutputBufferType_eStandard),
     m_omxHwcBinder(NULL),
     m_memTracker(-1),
-    m_securePicBuff(false),
+    m_secureRuntimeHeaps(false),
     m_frameSerial(0),
     m_displayFrameAvailable(false),
+    m_displayThreadStop(false),
+    m_hDisplayThread(0),
     m_droppedFrames(0),
     m_consecDroppedFrames(0),
-    m_maxConsecDroppedFrames(0)
+    m_maxConsecDroppedFrames(0),
+    m_earlyDroppedFrames(0),
+    m_earlyDropThresholdMs(0),
+    m_startTime(-1),
+    m_tunnelStcChannel(NULL),
+    m_ptsReceived(false)
 {
     unsigned i;
     NEXUS_Error errCode;
     NEXUS_ClientConfiguration clientConfig;
+    char value[PROPERTY_VALUE_MAX];
 
     BLST_Q_INIT(&m_frameBufferFreeList);
     BLST_Q_INIT(&m_frameBufferAllocList);
@@ -919,21 +1005,13 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
 
-    m_hDisplayFrameEvent = B_Event_Create(NULL);
-    if ( NULL == m_hDisplayFrameEvent )
+    if ( BKNI_CreateEvent(&m_hDisplayFrameEvent) != BERR_SUCCESS )
     {
         ALOGW("Unable to create display frame event");
         this->Invalidate(OMX_ErrorUndefined);
         return;
     }
 
-    m_displayFrameEventId = this->RegisterEvent(m_hDisplayFrameEvent, BOMX_VideoDecoder_DisplayFrameEvent, static_cast <void *> (this));
-    if ( NULL == m_displayFrameEventId )
-    {
-        ALOGW("Unable to register display frame event");
-        this->Invalidate(OMX_ErrorUndefined);
-        return;
-    }
     m_hDisplayMutex = B_Mutex_Create(NULL);
     if ( NULL == m_hDisplayMutex )
     {
@@ -969,6 +1047,12 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))
     {
        BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
+       // failed, so forced to assume picture buffer heaps are secured.
+       m_secureRuntimeHeaps = true;
+    }
+    else
+    {
+       m_secureRuntimeHeaps = m_secureDecoder;
     }
 
     NxClient_AllocSettings nxAllocSettings;
@@ -1013,7 +1097,10 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = m_maxDecoderWidth;
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = m_maxDecoderHeight;
-    if (property_get_int32(B_PROPERTY_SVP, 0))
+
+    memset(value, 0, sizeof(value));
+    property_get(B_PROPERTY_SVP, value, "play");
+    if (strncmp(value, "none", strlen("none")))
     {
        connectSettings.simpleVideoDecoder[0].decoderCapabilities.secureVideo = m_secureDecoder ? true : false;
     }
@@ -1113,6 +1200,12 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pPes->FormBppPacket(pBuffer+B_BPP_PACKET_LEN, 0x82); /* LAST */
     m_pPes->FormBppPacket(pBuffer+(2*B_BPP_PACKET_LEN), 0xa); /* Inline flush / TPD */
     NEXUS_FlushCache(pBuffer, BOMX_VIDEO_EOS_LEN);
+
+    // Allocate and fill end-of-chunk buffer for vp9
+    errCode = NEXUS_Memory_Allocate(B_BPP_PACKET_LEN, &memorySettings, &m_pEndOfChunkBuffer);
+    pBuffer = (char *)m_pEndOfChunkBuffer;
+    m_pPes->FormBppPacket(pBuffer, 0x85);
+    NEXUS_FlushCache(pBuffer, B_BPP_PACKET_LEN);
 
     m_hCheckpointEvent = B_Event_Create(NULL);
     if ( NULL == m_hCheckpointEvent )
@@ -1215,14 +1308,40 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         this->Invalidate(OMX_ErrorUndefined);
         return;
     }
-    m_omxHwcBinder->get()->register_notify(&BOMX_OmxBinderNotify, (int)this);
-    // TODO: This still seems to be required or we stop getting notifications - just discard the value for now.
+    m_omxHwcBinder->get()->register_notify(&BOMX_OmxBinderNotify, this);
+    if (m_tunnelMode)
+    {
+       int sidebandId;
+       m_omxHwcBinder->getsideband(0, sidebandId);
+       m_pTunnelNativeHandle = native_handle_create(0, 2);
+       if (!m_pTunnelNativeHandle)
+       {
+          ALOGE("Unable to create native handle for tunnel mode");
+          this->Invalidate(OMX_ErrorUndefined);
+          return;
+       }
+       m_pTunnelNativeHandle->data[0] = 2;
+       m_pTunnelNativeHandle->data[1] = sidebandId;
+
+       m_outputMode = BOMX_VideoDecoderOutputBufferType_eNone;
+    }
+    else
     {
         int surfaceClientId;
         m_omxHwcBinder->getvideo(0, surfaceClientId);
     }
 
-    property_set(B_PROPERTY_COALESCE, "vmode");
+    // Threshold that we consider a drop as early for stat tracking purpose.
+    m_earlyDropThresholdMs = property_get_int32(B_PROPERTY_EARLYDROP_THRESHOLD, B_STAT_EARLYDROP_THRESHOLD_MS);
+
+    // Create the internal display thread
+    if ( pthread_create(&m_hDisplayThread, NULL, BOMX_DisplayThread, static_cast <void *> (this)) != 0 )
+    {
+        ALOGW("Unable to create bomx_display");
+        this->Invalidate(OMX_ErrorInsufficientResources);
+        return;
+    }
+    pthread_setname_np(m_hDisplayThread, "bomx_display");
 }
 
 BOMX_VideoDecoder::~BOMX_VideoDecoder()
@@ -1230,7 +1349,13 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     unsigned i;
     BOMX_VideoDecoderFrameBuffer *pBuffer;
 
-    property_set(B_PROPERTY_COALESCE, "default");
+    if ( m_hDisplayThread )
+    {
+        m_displayThreadStop = true;
+        BKNI_SetEvent(m_hDisplayFrameEvent);
+        pthread_join(m_hDisplayThread, NULL);
+        m_hDisplayThread = 0;
+    }
 
     // Stop listening to HWC. Note that HWC binder does need to be protected given
     // it's not updated during the decoder's lifetime.
@@ -1265,6 +1390,8 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     if ( m_hSimpleVideoDecoder )
     {
         NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
+        property_set(B_PROPERTY_COALESCE, "default");
+        property_set(B_PROPERTY_HFRVIDEO, "default");
     }
     if ( m_hPlaypump )
     {
@@ -1311,7 +1438,8 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     }
     if ( m_hDisplayFrameEvent )
     {
-        B_Event_Destroy(m_hDisplayFrameEvent);
+        BKNI_DestroyEvent(m_hDisplayFrameEvent);
+        m_hDisplayFrameEvent = NULL;
     }
     if ( m_hDisplayMutex )
     {
@@ -1382,6 +1510,12 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
        close(m_memTracker);
        m_memTracker = -1;
+    }
+
+    if (m_pTunnelNativeHandle)
+    {
+        native_handle_delete(m_pTunnelNativeHandle);
+        m_pTunnelNativeHandle = NULL;
     }
 
     BOMX_VIDEO_STATS_RESET;
@@ -1774,7 +1908,25 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
 
         return OMX_ErrorNone;
     }
+    case OMX_IndexParamConfigureVideoTunnelMode:
+    {
+        ConfigureVideoTunnelModeParams *pTunnel = (ConfigureVideoTunnelModeParams *)pComponentParameterStructure;
+        BOMX_STRUCT_VALIDATE(pTunnel);
+        ALOGV("GetParameter OMX_IndexParamConfigureVideoTunnelMode");
+        if ( pTunnel->nPortIndex != m_videoPortBase+1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+        if ( !m_tunnelMode )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
 
+        pTunnel->bTunneled = OMX_TRUE;
+        pTunnel->pSidebandWindow = (OMX_PTR)m_pTunnelNativeHandle;
+
+        return OMX_ErrorNone;
+    }
     default:
         ALOGV("GetParameter %#x Deferring to base class", nParamIndex);
         return BOMX_ERR_TRACE(BOMX_Component::GetParameter(nParamIndex, pComponentParameterStructure));
@@ -2033,7 +2185,22 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
     {
         ConfigureVideoTunnelModeParams *pTunnel = (ConfigureVideoTunnelModeParams *)pComponentParameterStructure;
         BOMX_STRUCT_VALIDATE(pTunnel);
-        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+        ALOGV("SetParameter OMX_IndexParamConfigureVideoTunnelMode");
+        if ( pTunnel->nPortIndex != m_videoPortBase+1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+        if ( !m_tunnelMode )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
+        if ( pTunnel->bTunneled )
+        {
+            m_tunnelStcChannel = (NEXUS_SimpleStcChannelHandle)(intptr_t)pTunnel->nAudioHwSync;
+            ALOGV("OMX_IndexParamConfigureVideoTunnelMode - stc-channel %p", m_tunnelStcChannel);
+        }
+
+        return OMX_ErrorNone;
     }
     default:
         ALOGV("SetParameter %#x - Defer to base class", nIndex);
@@ -2088,6 +2255,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_eosPending = false;
             m_eosDelivered = false;
             m_eosReceived = false;
+            m_ptsReceived = false;
             B_Mutex_Lock(m_hDisplayMutex);
             m_displayFrameAvailable = false;
             B_Mutex_Unlock(m_hDisplayMutex);
@@ -2105,8 +2273,10 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             BOMX_VIDEO_STATS_PRINT_BASIC;
             BOMX_VIDEO_STATS_PRINT_DETAILED;
             BOMX_VIDEO_STATS_RESET;
-            ALOGD("df:%d, mcdf:%d", m_droppedFrames, m_maxConsecDroppedFrames);
-            m_droppedFrames = m_consecDroppedFrames = m_maxConsecDroppedFrames = 0;
+            // Exclude early frame drops from total tally
+            ALOGD("stats df:%zu edf:%zu mcdf:%zu",
+               m_droppedFrames - m_earlyDroppedFrames, m_earlyDroppedFrames, m_maxConsecDroppedFrames);
+            m_droppedFrames = m_earlyDroppedFrames = m_consecDroppedFrames = m_maxConsecDroppedFrames = 0;
         }
     }
     else
@@ -2119,41 +2289,6 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
         // All states other than loaded require a playpump and video decoder handle
         if ( NULL == m_hSimpleVideoDecoder )
         {
-            if ( !m_secureDecoder )
-            {
-                int i;
-                NEXUS_SageStatus secureStatus;
-
-                for ( i = 0; i < B_SECURE_QUERY_MAX_RETRIES; i++ )
-                {
-                    errCode = NEXUS_Sage_GetStatus(&secureStatus);
-                    if ( errCode != NEXUS_SUCCESS )
-                    {
-                        /* SAGE possibly in reset */
-                        ALOGW("Unable to query SAGE secure status, SAGE unrepsonsive");
-                        /* Break out of loop if timed out last attempt and SAGE not responsive */
-                        if ( m_securePicBuff )
-                        {
-                            BOMX_VideoDecoder_SetupRuntimeHeaps(!m_secureDecoder, true);
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        m_securePicBuff = secureStatus.urr.secured;
-                        /* Completed unsecure process, break */
-                        if ( !m_securePicBuff )
-                            break;
-                        usleep(B_SECURE_QUERY_SLEEP_INTERVAL_US);
-                    }
-                }
-
-                if ( i >= B_SECURE_QUERY_MAX_RETRIES )
-                    ALOGI("Maximum URR query attempts reached");
-                ALOGV("Slept %dms before starting non-secure decoder",
-                      i * (B_SECURE_QUERY_SLEEP_INTERVAL_US / 1000));
-            }
-
             NEXUS_VideoDecoderSettings vdecSettings;
             NEXUS_VideoDecoderExtendedSettings extSettings;
             NEXUS_PlaypumpOpenSettings playpumpOpenSettings;
@@ -2166,16 +2301,19 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
             }
 
-            NEXUS_SimpleVideoDecoder_GetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
-            extSettings.dataReadyCallback.callback = BOMX_VideoDecoder_EventCallback;
-            extSettings.dataReadyCallback.context = (void *)m_hOutputFrameEvent;
-            extSettings.dataReadyCallback.param = (int)BOMX_VideoDecoderEventType_eDataReady;
-            errCode = NEXUS_SimpleVideoDecoder_SetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
-            if ( errCode )
+            if (!m_tunnelMode)
             {
-                NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
-                m_hSimpleVideoDecoder = NULL;
-                return BOMX_BERR_TRACE(errCode);
+                NEXUS_SimpleVideoDecoder_GetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
+                extSettings.dataReadyCallback.callback = BOMX_VideoDecoder_EventCallback;
+                extSettings.dataReadyCallback.context = (void *)m_hOutputFrameEvent;
+                extSettings.dataReadyCallback.param = (int)BOMX_VideoDecoderEventType_eDataReady;
+                errCode = NEXUS_SimpleVideoDecoder_SetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
+                if ( errCode )
+                {
+                    NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
+                    m_hSimpleVideoDecoder = NULL;
+                    return BOMX_BERR_TRACE(errCode);
+                }
             }
 
             NEXUS_Playpump_GetDefaultOpenSettings(&playpumpOpenSettings);
@@ -2244,6 +2382,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_eosPending = false;
                 m_eosDelivered = false;
                 m_eosReceived = false;
+                m_ptsReceived = false;
                 m_pBufferTracker->Flush();
                 InputBufferCounterReset();
                 ReturnPortBuffers(m_pVideoPorts[0]);
@@ -2251,6 +2390,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 B_Mutex_Lock(m_hDisplayMutex);
                 m_displayFrameAvailable = false;
                 B_Mutex_Unlock(m_hDisplayMutex);
+                property_set(B_PROPERTY_COALESCE, "default");
+                property_set(B_PROPERTY_HFRVIDEO, "default");
             }
             break;
         case OMX_StateExecuting:
@@ -2269,20 +2410,33 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             {
                 // Idle -> Executing = Start
                 NEXUS_SimpleVideoDecoder_GetDefaultStartSettings(&vdecStartSettings);
-                vdecStartSettings.displayEnabled = (m_outputMode == BOMX_VideoDecoderOutputBufferType_eStandard) ? false : true;  // If we're doing video-as-graphics don't fire up the display path
-                vdecStartSettings.settings.appDisplayManagement = true;
+                vdecStartSettings.displayEnabled = m_tunnelMode ? true : ((m_outputMode == BOMX_VideoDecoderOutputBufferType_eStandard) ? false : true);
+                vdecStartSettings.settings.appDisplayManagement = m_tunnelMode ? false : true;
                 vdecStartSettings.settings.stcChannel = NULL;
                 vdecStartSettings.settings.pidChannel = m_hPidChannel;
                 vdecStartSettings.settings.codec = GetNexusCodec();
                 vdecStartSettings.maxWidth = m_maxDecoderWidth;     // Always request the max dimension for allowing decoder not waiting for output buffer
                 vdecStartSettings.maxHeight = m_maxDecoderHeight;
                 ALOGV("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec);
+                property_set(B_PROPERTY_COALESCE, "vmode");
+                property_set(B_PROPERTY_HFRVIDEO, "vmode");
+                m_startTime = systemTime(CLOCK_MONOTONIC); // Track start time
+                if (m_tunnelMode)
+                {
+                    if (!property_get_int32(B_PROPERTY_HW_SYNC_FAKE, 0))
+                    {
+                        errCode = NEXUS_SimpleVideoDecoder_SetStcChannel(m_hSimpleVideoDecoder, m_tunnelStcChannel);
+                        if ( errCode )
+                        {
+                            return BOMX_BERR_TRACE(errCode);
+                        }
+                    }
+                }
                 errCode = NEXUS_SimpleVideoDecoder_Start(m_hSimpleVideoDecoder, &vdecStartSettings);
                 if ( errCode )
                 {
                     return BOMX_BERR_TRACE(errCode);
                 }
-
                 m_submittedDescriptors = 0;
                 errCode = NEXUS_Playpump_Start(m_hPlaypump);
                 if ( errCode )
@@ -2291,6 +2445,9 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                     m_eosPending = false;
                     m_eosDelivered = false;
                     m_eosReceived = false;
+                    m_ptsReceived = false;
+                    property_set(B_PROPERTY_COALESCE, "default");
+                    property_set(B_PROPERTY_HFRVIDEO, "default");
                     return BOMX_BERR_TRACE(errCode);
                 }
 
@@ -2434,7 +2591,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
             PortWaitBegin();
             // Now we need to wait for all enabled ports to become populated
             while ( (m_pVideoPorts[0]->IsEnabled() && !m_pVideoPorts[0]->IsPopulated()) ||
-                    (m_pVideoPorts[1]->IsEnabled() && !m_pVideoPorts[1]->IsPopulated()) )
+                    (m_pVideoPorts[1]->IsEnabled() && (!m_tunnelMode && !m_pVideoPorts[1]->IsPopulated())) )
             {
                 if ( PortWait() != B_ERROR_SUCCESS )
                 {
@@ -2448,7 +2605,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
 
             bool inputEnabled = m_pVideoPorts[0]->IsEnabled();
             bool outputEnabled = m_pVideoPorts[1]->IsEnabled();
-            if ( m_pVideoPorts[1]->IsPopulated() && m_pVideoPorts[1]->IsEnabled() )
+            if ( ((!m_tunnelMode && m_pVideoPorts[1]->IsPopulated()) ||
+                  (m_tunnelMode && !m_pVideoPorts[1]->IsPopulated()))
+                 && m_pVideoPorts[1]->IsEnabled())
             {
                 errCode = SetOutputPortState(OMX_StateIdle);
                 if ( errCode )
@@ -2555,6 +2714,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
             {
                 (void)SetInputPortState(OMX_StateIdle);
                 (void)SetInputPortState(StateGet());
+                m_ptsReceived = false;
                 m_configBufferState = ConfigBufferState_eFlushed;
             }
         }
@@ -2799,8 +2959,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddInputPortBuffer(
     switch ( GetCodec() )
     {
     case OMX_VIDEO_CodingVP9:
-        headerBufferSize += (BOMX_BCMV_HEADER_SIZE + B_PES_HEADER_LENGTH_WITH_PTS) * B_MAX_EXTRAFRAMES_PER_BUFFER;  // VP9 requires extra space for a PES+PTS and BCMV header on each sub-frame from a super-frame.
-        // Fall through
     case OMX_VIDEO_CodingVP8:
         headerBufferSize += BOMX_BCMV_HEADER_SIZE;  // VP8/VP9 require space for a BCMV header on each frame.
     default:
@@ -2876,6 +3034,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     if ( pPort->IsTunneled() )
     {
         ALOGW("Cannot add buffers to a tunneled port");
+        return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+    }
+
+    if (m_tunnelMode)
+    {
+        ALOGW("Do not expect output port population in tunnel mode");
         return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
     }
 
@@ -3115,7 +3279,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     BOMX_VideoDecoderOutputBufferInfo *pInfo;
     OMX_ERRORTYPE err;
 
-   if ( NULL == ppBufferHdr || NULL == pMetadata )
+    if ( NULL == ppBufferHdr || NULL == pMetadata )
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
@@ -3189,7 +3353,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
         // race condition where the component thread is scheduled later
         // than the call to EnablePort or CommandStateSet and this will
         // come first.  It's always safe to do it here.
-        if ( m_metadataEnabled )
+        if ( m_tunnelMode )
+        {
+            ALOGV("Selecting no output mode for output buffer %p", (void*)pBuffer);
+            m_outputMode = BOMX_VideoDecoderOutputBufferType_eNone;
+        }
+        else if ( m_metadataEnabled )
         {
             ALOGV("Selecting metadata output mode for output buffer %p", (void*)pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eMetadata;
@@ -3230,6 +3399,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
                     return BOMX_ERR_TRACE(err);
                 }
             }
+            break;
+        case BOMX_VideoDecoderOutputBufferType_eNone:
+            return OMX_ErrorNone;
             break;
         default:
             // TODO: Handle metadata
@@ -3424,7 +3596,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
     size_t codecHeaderLength,
     NEXUS_PlaypumpScatterGatherDescriptor *pDescriptors,
     unsigned maxDescriptors,
-    unsigned *pNumDescriptors
+    size_t *pNumDescriptors
     )
 {
     BOMX_Buffer *pBuffer;
@@ -3487,7 +3659,23 @@ OMX_ERRORTYPE BOMX_VideoDecoder::BuildInputFrame(
 
     // Begin first PES packet
     pPesHeader = ((uint8_t *)pInfo->pHeader)+pInfo->headerLen;
-    headerBytes = m_pPes->InitHeader(pPesHeader, (pInfo->maxHeaderLen-pInfo->headerLen), pts);
+    OMX_VIDEO_CODINGTYPE codec = GetCodec();
+    if ( pts == 0 && m_ptsReceived &&
+         (codec == OMX_VIDEO_CodingMPEG2 ||
+          codec == OMX_VIDEO_CodingAVC ||
+          codec == OMX_VIDEO_CodingH263 ||
+          codec == OMX_VIDEO_CodingMPEG4 ||
+          codec == OMX_VIDEO_CodingHEVC) )
+    {
+        // Fragment from previous input frame. No need to specify PTS.
+        headerBytes = m_pPes->InitHeader(pPesHeader, pInfo->maxHeaderLen-pInfo->headerLen);
+    }
+    else
+    {
+        m_ptsReceived = true;
+        headerBytes = m_pPes->InitHeader(pPesHeader, pInfo->maxHeaderLen-pInfo->headerLen, pts);
+    }
+
     if ( 0 == headerBytes )
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
@@ -3645,9 +3833,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     size_t numConsumed, numRequested;
     uint8_t *pCodecHeader = NULL;
     size_t codecHeaderLength = 0;
-    unsigned frame, numFrames=1;
-    uint32_t frameLength[B_MAX_EXTRAFRAMES_PER_BUFFER+1];
-    frameLength[0] = pBufferHeader->nFilledLen;
+    uint32_t frameLength = pBufferHeader->nFilledLen;
 
     if ( NULL == pBufferHeader )
     {
@@ -3716,101 +3902,109 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
 
     if ( pBufferHeader->nFilledLen > 0 )
     {
-        // Track the buffer
-        if ( !m_pBufferTracker->Add(pBufferHeader, &pInfo->pts) )
+        OMX_VIDEO_CODINGTYPE codec = GetCodec();
+        if ( pBufferHeader->nTimeStamp == 0 && m_ptsReceived &&
+             (codec == OMX_VIDEO_CodingMPEG2 ||
+              codec == OMX_VIDEO_CodingAVC ||
+              codec == OMX_VIDEO_CodingH263 ||
+              codec == OMX_VIDEO_CodingMPEG4 ||
+              codec == OMX_VIDEO_CodingHEVC) )
         {
-            ALOGW("Unable to track buffer");
-            pInfo->pts = BOMX_TickToPts(&pBufferHeader->nTimeStamp);
+            // Fragment from previous input frame. No need to add this to tracker.
+            pInfo->pts = 0;
+        }
+        else
+        {
+            // Track the buffer
+            if ( !m_pBufferTracker->Add(pBufferHeader, &pInfo->pts) )
+            {
+                ALOGW("Unable to track buffer");
+                pInfo->pts = BOMX_TickToPts(&pBufferHeader->nTimeStamp);
+            }
         }
 
-        // For VP9, identify the number of frames
-        if ( (int)GetCodec() == OMX_VIDEO_CodingVP9 && !m_secureDecoder )
+        switch ( codec )
         {
-            BOMX_Vp9_ParseSuperframe(pBufferHeader->pBuffer + pBufferHeader->nOffset, pBufferHeader->nFilledLen, frameLength, &numFrames);
-            if ( numFrames == 0 )
+        case OMX_VIDEO_CodingVP8:
+        case OMX_VIDEO_CodingVP9:
+        /* Also true for spark and possibly other codecs */
+        {
+            uint32_t packetLen = frameLength;
+            if ( packetLen > 0 )
             {
-                numFrames = 1;
-                frameLength[0] = pBufferHeader->nFilledLen;
+                pCodecHeader = m_pBcmvHeader;
+                codecHeaderLength = BOMX_BCMV_HEADER_SIZE;
+                packetLen += codecHeaderLength;   // BCMV packet length must include BCMV header
+                pCodecHeader[4] = (packetLen>>24)&0xff;
+                pCodecHeader[5] = (packetLen>>16)&0xff;
+                pCodecHeader[6] = (packetLen>>8)&0xff;
+                pCodecHeader[7] = (packetLen>>0)&0xff;
             }
+            break;
+        }
+        default:
+            break;
         }
 
-        for ( frame = 0; frame < numFrames; frame++ )
+        // Build up descriptor list
+        err = BuildInputFrame(pBufferHeader, true, frameLength, pInfo->pts, pCodecHeader, codecHeaderLength, desc, B_MAX_DESCRIPTORS_PER_BUFFER-1, &numRequested);
+        if ( err != OMX_ErrorNone )
         {
-            switch ( (int)GetCodec() )
-            {
-            case OMX_VIDEO_CodingVP8:
-            case OMX_VIDEO_CodingVP9:
-            /* Also true for spark and possibly other codecs */
-            {
-                uint32_t packetLen = frameLength[frame];
-                if ( packetLen > 0 )
-                {
-                    pCodecHeader = m_pBcmvHeader;
-                    codecHeaderLength = BOMX_BCMV_HEADER_SIZE;
-                    packetLen += codecHeaderLength;   // BCMV packet length must include BCMV header
-                    pCodecHeader[4] = (packetLen>>24)&0xff;
-                    pCodecHeader[5] = (packetLen>>16)&0xff;
-                    pCodecHeader[6] = (packetLen>>8)&0xff;
-                    pCodecHeader[7] = (packetLen>>0)&0xff;
-                }
-                break;
-            }
-            default:
-                break;
-            }
+            return BOMX_ERR_TRACE(err);
+        }
+        ALOG_ASSERT(numRequested <= (B_MAX_DESCRIPTORS_PER_BUFFER-1));
 
-            // Build up descriptor list
-            err = BuildInputFrame(pBufferHeader, (frame == 0), frameLength[frame], pInfo->pts, pCodecHeader, codecHeaderLength, desc, B_MAX_DESCRIPTORS_PER_BUFFER, &numRequested);
-            if ( err != OMX_ErrorNone )
+        if ( numRequested > 0 )
+        {
+            unsigned i;
+            // Log data to file if requested
+            if ( NULL != m_pPesFile )
             {
-                return BOMX_ERR_TRACE(err);
-            }
-            ALOG_ASSERT(numRequested <= B_MAX_DESCRIPTORS_PER_BUFFER);
-
-            if ( numRequested > 0 )
-            {
-                unsigned i;
-                // Log data to file if requested
-                if ( NULL != m_pPesFile )
-                {
-                    for ( i = 0; i < numRequested; i++ )
-                    {
-                        fwrite(desc[i].addr, 1, desc[i].length, m_pPesFile);
-                    }
-                }
                 for ( i = 0; i < numRequested; i++ )
                 {
-                    unsigned j;
-                    for ( j = 0; j < numRequested; j++ )
-                    {
-                        if ( i == j ) continue;
+                    fwrite(desc[i].addr, 1, desc[i].length, m_pPesFile);
+                }
+            }
+            for ( i = 0; i < numRequested; i++ )
+            {
+                unsigned j;
+                for ( j = 0; j < numRequested; j++ )
+                {
+                    if ( i == j ) continue;
 
-                        // Check for overlap
-                        if ( desc[i].addr == desc[j].addr )
-                        {
-                            ALOGE("Error, desc %u and %u share the same address", i, j);
-                        }
-                        else if ( desc[i].addr < desc[j].addr && (uint8_t *)desc[i].addr + desc[i].length > desc[j].addr )
-                        {
-                            ALOGE("Error, desc %u intrudes in to desc %u", i, j);
-                        }
-                        else if ( desc[j].addr < desc[i].addr && (uint8_t *)desc[j].addr + desc[j].length > desc[i].addr )
-                        {
-                            ALOGE("Error, desc %u intrudes into desc %u", j, i);
-                        }
+                    // Check for overlap
+                    if ( desc[i].addr == desc[j].addr )
+                    {
+                        ALOGE("Error, desc %u and %u share the same address", i, j);
+                    }
+                    else if ( desc[i].addr < desc[j].addr && (uint8_t *)desc[i].addr + desc[i].length > desc[j].addr )
+                    {
+                        ALOGE("Error, desc %u intrudes in to desc %u", i, j);
+                    }
+                    else if ( desc[j].addr < desc[i].addr && (uint8_t *)desc[j].addr + desc[j].length > desc[i].addr )
+                    {
+                        ALOGE("Error, desc %u intrudes into desc %u", j, i);
                     }
                 }
-
-                // Submit to playpump
-                errCode = NEXUS_Playpump_SubmitScatterGatherDescriptor(m_hPlaypump, desc, numRequested, &numConsumed);
-                if ( errCode )
-                {
-                    return BOMX_ERR_TRACE(OMX_ErrorUndefined);
-                }
-                ALOG_ASSERT(numConsumed == numRequested);
-                pInfo->numDescriptors += numRequested;
-                m_submittedDescriptors += numConsumed;
             }
+
+            // For VP9 insert an end-of-chunk BPP packet
+            if ( OMX_VIDEO_CodingVP9 == (int)GetCodec() )
+            {
+                desc[numRequested].addr = m_pEndOfChunkBuffer;
+                desc[numRequested].length = B_BPP_PACKET_LEN;
+                numRequested++;
+            }
+
+            // Submit to playpump
+            errCode = NEXUS_Playpump_SubmitScatterGatherDescriptor(m_hPlaypump, desc, numRequested, &numConsumed);
+            if ( errCode )
+            {
+                return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+            }
+            ALOG_ASSERT(numConsumed == numRequested);
+            pInfo->numDescriptors += numRequested;
+            m_submittedDescriptors += numConsumed;
         }
         InputBufferNew();
         err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
@@ -3850,7 +4044,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         }
     }
 
-    if ( m_pVideoPorts[1]->QueueDepth() > 0 )
+    if ( !m_tunnelMode && (m_pVideoPorts[1]->QueueDepth() > 0) )
     {
         // Force a check for new output frames each time a new input frame arrives if we have output buffers ready to fill
         B_Event_Set(m_hOutputFrameEvent);
@@ -3964,7 +4158,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     ReturnDecodedFrames();
 
     // Signal thread to look for more
-    B_Event_Set(m_hOutputFrameEvent);
+    if (!m_tunnelMode)
+    {
+       B_Event_Set(m_hOutputFrameEvent);
+    }
 
     return OMX_ErrorNone;
 }
@@ -4051,6 +4248,12 @@ void BOMX_VideoDecoder::PlaypumpEvent()
             BOMX_INPUT_MSG(("Data still pending in RAVE.  Starting Timer."));
             m_playpumpTimerId = StartTimer(BOMX_VideoDecoder_GetFrameInterval(m_frameRate), BOMX_VideoDecoder_PlaypumpEvent, static_cast<void *>(this));
         }
+
+        if ( m_tunnelMode )
+        {
+            // Return the input buffers as fast as possible
+            ReturnInputBuffers(0, InputReturnMode_eAll);
+        }
     }
 }
 
@@ -4080,7 +4283,7 @@ void BOMX_VideoDecoder::InputBufferCounterReset()
     m_AvailInputBuffers = m_pVideoPorts[0]->GetDefinition()->nBufferCountActual;
 }
 
-void BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTimeout)
+void BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMode mode)
 {
     uint32_t count = 0, timeoutCount = 0;
     BOMX_VideoDecoderInputBufferInfo *pInfo;
@@ -4095,9 +4298,9 @@ void BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTime
             break;
         }
 
-        if ( causedByTimeout || pReturnBuffer == NULL )
+        if ( mode != InputReturnMode_eTimestamp || pReturnBuffer == NULL )
         {
-            if ( causedByTimeout && timeoutCount++ >= B_MAX_INPUT_TIMEOUT_RETURN )
+            if ( mode == InputReturnMode_eTimeout && timeoutCount++ >= B_MAX_INPUT_TIMEOUT_RETURN )
             {
                 break;
             }
@@ -4157,7 +4360,7 @@ bool BOMX_VideoDecoder::ReturnInputPortBuffer(BOMX_Buffer *pBuffer)
 void BOMX_VideoDecoder::InputBufferTimeoutCallback()
 {
     CancelTimerId(m_inputBuffersTimerId);
-    ReturnInputBuffers(0, true);
+    ReturnInputBuffers(0, InputReturnMode_eTimeout);
 }
 
 #if 0  /* Source Changed Event is not required in non-tunneled. */
@@ -4229,9 +4432,10 @@ void BOMX_VideoDecoder::DisplayFrameEvent()
     framezOrder = m_framezOrder;
     m_displayFrameAvailable = false;
     B_Mutex_Unlock(m_hDisplayMutex);
+    Lock();
     SetVideoGeometry_locked(&framePosition, &frameClip, frameSerial, frameWidth, frameHeight, framezOrder, true);
     DisplayFrame_locked(frameSerial);
-
+    Unlock();
 }
 
 static const struct {
@@ -4246,9 +4450,7 @@ static const struct {
     {"OMX.google.android.index.describeColorFormat", (int)OMX_IndexParamDescribeColorFormat},
     {"OMX.google.android.index.storeMetaDataInBuffers", (int)OMX_IndexParamStoreMetaDataInBuffers},
     {"OMX.google.android.index.prepareForAdaptivePlayback", (int)OMX_IndexParamPrepareForAdaptivePlayback},
-#if 0 /* Not yet supported */
-    {"OMX.google.android.index.configureVideoTunnelMode", (int)OMX_IndexParamConfigureVideoTunnelMode},     // TODO: Requires audio HW acceleration
-#endif
+    {"OMX.google.android.index.configureVideoTunnelMode", (int)OMX_IndexParamConfigureVideoTunnelMode},
     {NULL, 0}
 };
 
@@ -4346,6 +4548,11 @@ void BOMX_VideoDecoder::InvalidateDecodedFrames()
     */
     BOMX_VideoDecoderFrameBuffer *pBuffer, *pNext=NULL;
 
+    if (m_tunnelMode)
+    {
+        return;
+    }
+
     ALOGV("Invalidating decoded frame list");
 
     for ( pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
@@ -4383,6 +4590,13 @@ void BOMX_VideoDecoder::PollDecodedFrames()
     if ( NULL == m_hSimpleVideoDecoder )
     {
         return;
+    }
+
+    if (m_tunnelMode)
+    {
+       // in tunnel mode, there is no output port populated on the omx component and we do not expect
+       // any frame back from the decoder either, so skip all of this...
+       return;
     }
 
     // There should be at least one free buffer in the list or there is no point checking for more from nexus
@@ -4586,7 +4800,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     }
 
                     // Don't try to create a striped surface for secure video
-                    if ( !m_secureDecoder && !m_securePicBuff &&
+                    if ( !m_secureDecoder && !m_secureRuntimeHeaps &&
                          ( pInfo->type != BOMX_VideoDecoderOutputBufferType_eMetadata ||
                            ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX) ) )
                     {
@@ -4648,6 +4862,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             // Wait for the blit to complete before delivering in case CPU will access it quickly
                             if ( destripedSuccess )
                             {
+                                Unlock();
                                 if ( GraphicsCheckpoint() )
                                 {
 #if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
@@ -4667,6 +4882,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     ALOGE("Error destriping to buffer");
                                     destripedSuccess = false;
                                 }
+                                Lock();
                             }
                         }
                         break;
@@ -4696,7 +4912,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
                             if ( NULL == pMemory )
                             {
-                                ALOGW("Unable to convert SHARED_DATA physical address %#x", pBuffer->pPrivateHandle->sharedData);
+                                ALOGW("Unable to convert SHARED_DATA physical address %p", pBuffer->pPrivateHandle);
                                 (void)BOMX_ERR_TRACE(OMX_ErrorBadParameter);
                             }
                             else
@@ -4719,7 +4935,9 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     }
                                     else
                                     {
+                                        Unlock();
                                         OMX_ERRORTYPE res = DestripeToYV12(pSharedData, pBuffer->hStripedSurface);
+                                        Lock();
                                         if ( res != OMX_ErrorNone )
                                         {
                                             ALOGE("Unable to destripe to YV12 - %d", res);
@@ -4751,7 +4969,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::OUTPUT_FRAME, pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber);
                     ReturnPortBuffer(m_pVideoPorts[1], pOmxBuffer);
                     // Try to return processed input buffers
-                    ReturnInputBuffers(pHeader->nTimeStamp, false);
+                    ReturnInputBuffers(pHeader->nTimeStamp, InputReturnMode_eTimestamp);
                     ALOG_ASSERT(queueDepthBefore == (m_pVideoPorts[1]->QueueDepth()+1));
                 }
                 if ( destripedSuccess )
@@ -4779,24 +4997,29 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
     NEXUS_VideoDecoderReturnFrameSettings returnSettings[B_MAX_DECODED_FRAMES];
     unsigned numFrames=0;
     BOMX_VideoDecoderFrameBuffer *pBuffer, *pStart, *pEnd, *pLast;
+    NEXUS_VideoDecoderStatus status;
 
     // Make sure decoder is available and running
     if ( NULL == m_hSimpleVideoDecoder )
     {
         return;
     }
-    else
+
+    if (m_tunnelMode)
     {
-        NEXUS_VideoDecoderStatus status;
-        NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &status);
-        if ( !status.started )
-        {
-            m_frameRate = NEXUS_VideoFrameRate_eUnknown;
-            return;
-        }
-        ALOGI_IF(m_frameRate != status.frameRate, "Frame rate %d->%d", m_frameRate, status.frameRate);
-        m_frameRate = status.frameRate;
+       // in tunnel mode, there is no decoded frame processing out of the component, so
+       // we can skip this.
+       return;
     }
+
+    NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &status);
+    if ( !status.started )
+    {
+        m_frameRate = NEXUS_VideoFrameRate_eUnknown;
+        return;
+    }
+    ALOGV_IF(m_frameRate != status.frameRate, "Frame rate %d->%d", m_frameRate, status.frameRate);
+    m_frameRate = status.frameRate;
 
     // Skip pending invalidated frames
     for ( pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
@@ -4900,9 +5123,20 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
 
         if ( numFrames > 0 )
         {
+            int currentPlayTime = 0;
+            if (m_startTime != -1) {
+                currentPlayTime = toMillisecondTimeoutDelay(m_startTime, systemTime(CLOCK_MONOTONIC));
+            }
             for (uint32_t j=0; j < numFrames; ++j) {
                 if (!returnSettings[j].display) {
                     ++m_droppedFrames;
+                    if (m_startTime != -1) {
+                        if (currentPlayTime < m_earlyDropThresholdMs) {
+                            ++m_earlyDroppedFrames;
+                        } else {
+                            m_startTime = -1; // Stop tracking once past the mark
+                        }
+                    }
                     ++m_consecDroppedFrames;
                     if (m_consecDroppedFrames > m_maxConsecDroppedFrames)
                         m_maxConsecDroppedFrames = m_consecDroppedFrames;
@@ -5072,7 +5306,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::ConfigBufferAppend(const void *pBuffer, size_t 
     ALOG_ASSERT(NULL != pBuffer);
     if ( m_configBufferSize + length > BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE )
     {
-        ALOGE("Config buffer not big enough! Size: %d", m_configBufferSize + length);
+        ALOGE("Config buffer not big enough! Size: %zu", m_configBufferSize + length);
         return BOMX_ERR_TRACE(OMX_ErrorOverflow);
     }
     BKNI_Memcpy(((uint8_t *)m_pConfigBuffer) + m_configBufferSize, pBuffer, length);
@@ -5106,6 +5340,36 @@ BOMX_VideoDecoderFrameBuffer *BOMX_VideoDecoder::FindFrameBuffer(unsigned serial
     return pFrameBuffer;
 }
 
+void BOMX_VideoDecoder::RunDisplayThread()
+{
+    BERR_Code rc;
+    int priority;
+
+    if ( getSchedPriority(priority) )
+    {
+        setpriority(PRIO_PROCESS, 0, priority + 2*PRIORITY_MORE_FAVORABLE);
+        set_sched_policy(0, SP_FOREGROUND);
+    }
+
+    for (;;)
+    {
+        rc = BKNI_WaitForEvent(m_hDisplayFrameEvent, BKNI_INFINITE);
+        if ( m_displayThreadStop )
+        {
+            break;
+        }
+
+        if ( CC_LIKELY(rc == BERR_SUCCESS) )
+        {
+            DisplayFrameEvent();
+        }
+        else
+        {
+            ALOGW("Display frame event failure (%u)", rc);
+            (void)BOMX_BERR_TRACE(rc);
+        }
+    }
+}
 
 void BOMX_VideoDecoder::BinderNotifyDisplay(struct hwc_notification_info &ntfy)
 {
@@ -5127,17 +5391,8 @@ void BOMX_VideoDecoder::BinderNotifyDisplay(struct hwc_notification_info &ntfy)
     m_frameWidth = ntfy.display_width;
     m_frameHeight = ntfy.display_height;
     m_framezOrder = ntfy.zorder;
-    B_Event_Set(m_hDisplayFrameEvent);
     B_Mutex_Unlock(m_hDisplayMutex);
-}
-
-void BOMX_VideoDecoder::DisplayFrame(unsigned serialNumber)
-{
-    // This function is only callable by the binder thread and cannot be called internally
-    ALOGV("DisplayFrame(%d)", serialNumber);
-    Lock();
-    DisplayFrame_locked(serialNumber);
-    Unlock();
+    BKNI_SetEvent(m_hDisplayFrameEvent);
 }
 
 void BOMX_VideoDecoder::SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned serialNumber, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible)
@@ -5150,6 +5405,8 @@ void BOMX_VideoDecoder::SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pCli
 void BOMX_VideoDecoder::DisplayFrame_locked(unsigned serialNumber)
 {
     BOMX_VideoDecoderFrameBuffer *pFrameBuffer;
+
+    ALOGV("DisplayFrame(%d)", serialNumber);
 
     pFrameBuffer = FindFrameBuffer(serialNumber);
     if ( pFrameBuffer )
@@ -5327,7 +5584,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
                              pSharedData->container.height,
                              pSharedData->container.stride,
                              NEXUS_PixelFormat_eY8,
-                             pSharedData->container.physAddr,
+                             pSharedData->container.block,
                              0);
    if (hSurfaceY == NULL) {
       ALOGE("DestripeToYV12: invalid plane Y");
@@ -5342,7 +5599,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
                               pSharedData->container.height/2,
                               (pSharedData->container.stride/2 + (yv12_alignment-1)) & ~(yv12_alignment-1),
                               NEXUS_PixelFormat_eCr8,
-                              pSharedData->container.physAddr,
+                              pSharedData->container.block,
                               pSharedData->container.stride * pSharedData->container.height);
    if (hSurfaceCr == NULL) {
       ALOGE("DestripeToYV12: invalid plane Cr");
@@ -5357,7 +5614,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
                               pSharedData->container.height/2,
                               (pSharedData->container.stride/2 + (yv12_alignment-1)) & ~(yv12_alignment-1),
                               NEXUS_PixelFormat_eCb8,
-                              pSharedData->container.physAddr,
+                              pSharedData->container.block,
                               (pSharedData->container.stride * pSharedData->container.height) +
                               ((pSharedData->container.height/2) * ((pSharedData->container.stride/2 + (yv12_alignment-1)) & ~(yv12_alignment-1))));
    if (hSurfaceCb == NULL) {
