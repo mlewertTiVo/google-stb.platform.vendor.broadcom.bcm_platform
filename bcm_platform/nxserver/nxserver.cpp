@@ -113,6 +113,7 @@
 #define NX_LOGGER_SIZE                 "ro.nx.logger_size"
 
 #define NX_TRIM_VP9                    "ro.nx.trim.vp9"
+#define NX_TRIM_VC1                    "ro.nx.trim.vc1"
 #define NX_TRIM_PIP                    "ro.nx.trim.pip"
 #define NX_TRIM_MOSAIC                 "ro.nx.trim.mosaic"
 #define NX_TRIM_STILLS                 "ro.nx.trim.stills"
@@ -411,6 +412,18 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
             pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
          }
          pMemConfigSettings->stillDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
+      }
+   }
+
+   /* need vc1? */
+   if (property_get(NX_TRIM_VC1, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         for (i = 0 ; i < NEXUS_MAX_VIDEO_DECODERS ; i++) {
+            pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVc1] = false;
+            pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVc1SimpleMain] = false;
+         }
+         pMemConfigSettings->stillDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVc1] = false;
+         pMemConfigSettings->stillDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVc1SimpleMain] = false;
       }
    }
 
