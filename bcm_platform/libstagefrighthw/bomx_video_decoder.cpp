@@ -625,6 +625,14 @@ static NEXUS_SurfaceHandle BOMX_VideoDecoder_ToNexusSurface(int width, int heigh
     return NEXUS_Surface_Create(&createSettings);
 }
 
+static void BOMX_VideoDecoder_StripedSurfaceDestroy(BOMX_VideoDecoderFrameBuffer *pFrameBuffer)
+{
+   if (pFrameBuffer->hStripedSurface) {
+      NEXUS_StripedSurface_Destroy(pFrameBuffer->hStripedSurface);
+      pFrameBuffer->hStripedSurface = NULL;
+   }
+}
+
 BOMX_VideoDecoder::BOMX_VideoDecoder(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
@@ -1037,7 +1045,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         timeinfo = localtime(&rawtime);
         if ( pesDebug )
         {
-            strftime(fname, sizeof(fname), "/data/tombstones/vdec-%F_%H_%M_%S.pes", timeinfo);
+            strftime(fname, sizeof(fname), "/data/misc/nxdbg/vdec-%F_%H_%M_%S.pes", timeinfo);
             ALOGD("PES debug output file:%s", fname);
             m_pPesFile = fopen(fname, "wb+");
             if ( NULL == m_pPesFile )
@@ -1048,7 +1056,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         }
         if ( inputDebug )
         {
-            strftime(fname, sizeof(fname), "/data/tombstones/vdec-%F_%H_%M_%S.input", timeinfo);
+            strftime(fname, sizeof(fname), "/data/misc/nxdbg/vdec-%F_%H_%M_%S.input", timeinfo);
             ALOGD("Input debug output file:%s", fname);
             m_pInputFile = fopen(fname, "wb+");
             if ( NULL == m_pInputFile )
@@ -1191,6 +1199,7 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     while ( (pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList)) )
     {
         BLST_Q_REMOVE_HEAD(&m_frameBufferAllocList, node);
+        BOMX_VideoDecoder_StripedSurfaceDestroy(pBuffer);
         delete pBuffer;
     }
     while ( (pBuffer = BLST_Q_FIRST(&m_frameBufferFreeList)) )
@@ -2147,6 +2156,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandStateSet(
         while ( NULL != (pFrameBuffer = BLST_Q_FIRST(&m_frameBufferAllocList)) )
         {
             BLST_Q_REMOVE_HEAD(&m_frameBufferAllocList, node);
+            BOMX_VideoDecoder_StripedSurfaceDestroy(pFrameBuffer);
             BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pFrameBuffer, node);
         }
 
@@ -3134,6 +3144,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
                 ALOGV("Discarding frame %u on FreeBuffer (%s)", pFrameBuffer->frameStatus.serialNumber, active?"invalid":"stopped");
                 BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, 0, pFrameBuffer->frameStatus.serialNumber);
                 BLST_Q_REMOVE(&m_frameBufferAllocList, pFrameBuffer, node);
+                BOMX_VideoDecoder_StripedSurfaceDestroy(pFrameBuffer);
                 BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pFrameBuffer, node);
             }
             else
@@ -3666,6 +3677,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
             ALOGV("Invalid FrameBuffer (%u) - Return to free list", pFrameBuffer->frameStatus.serialNumber);
             BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, 0, pFrameBuffer->frameStatus.serialNumber);
             BLST_Q_REMOVE(&m_frameBufferAllocList, pFrameBuffer, node);
+            BOMX_VideoDecoder_StripedSurfaceDestroy(pFrameBuffer);
             BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pFrameBuffer, node);
         }
         else
@@ -4063,6 +4075,7 @@ void BOMX_VideoDecoder::InvalidateDecodedFrames()
             pBuffer->state = BOMX_VideoDecoderFrameBufferState_eInvalid;
             ALOGV("Invalidating frame buffer %#x (state %u)", pBuffer, pBuffer->state);
             BLST_Q_REMOVE(&m_frameBufferAllocList, pBuffer, node);
+            BOMX_VideoDecoder_StripedSurfaceDestroy(pBuffer);
             BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pBuffer, node);
         }
     }
@@ -4553,16 +4566,12 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                     }
                     BOMX_VideoDecoder_MemUnlock(pBuffer->pPrivateHandle);
                 }
-                if ( pBuffer->hStripedSurface )
-                {
-                    NEXUS_StripedSurface_Destroy(pBuffer->hStripedSurface);
-                    pBuffer->hStripedSurface = NULL;
-                }
                 pBuffer->pPrivateHandle = NULL;
                 pBuffer->pBufferInfo = NULL;
                 BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::DISPLAY_FRAME, 0, returnSettings[numFrames].display ? 1: 0,
                                       pBuffer->frameStatus.serialNumber);
                 BLST_Q_REMOVE(&m_frameBufferAllocList, pBuffer, node);
+                BOMX_VideoDecoder_StripedSurfaceDestroy(pBuffer);
                 BLST_Q_INSERT_TAIL(&m_frameBufferFreeList, pBuffer, node);
             }
             numFrames++;

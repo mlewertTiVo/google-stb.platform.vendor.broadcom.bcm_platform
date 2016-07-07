@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2013 Broadcom Corporation
+ *    (c)2011-2015 Broadcom Corporation
  *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -35,17 +35,6 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
  *
- * $brcm_Workfile: AudioHardwareNexus.h $
- * $brcm_Revision:  $
- * $brcm_Date: 08/08/14 12:05p $
- * $brcm_Author: zhang@broadcom.com
- *
- * Module Description:
- *
- * Revision History:
- *
- * $brcm_Log:  $
- *
  *****************************************************************************/
 #ifndef BRCM_AUDIO_H
 #define BRCM_AUDIO_H
@@ -75,6 +64,7 @@ extern "C" {
 #include <hardware/audio.h>
 #include <hardware/hardware.h>
 #include <utils/threads.h>
+#include <utils/Mutex.h>
 #include <utils/Errors.h>
 
 /* Nexus headers */
@@ -82,18 +72,18 @@ extern "C" {
 #include "berr.h"
 #include "nexus_types.h"
 #include "nexus_platform.h"
-#include "nexus_audio_playback.h"
 #include "nexus_audio_mixer.h"
 #include "nexus_audio_dac.h"
 #include "nexus_audio_output.h"
 #include "nexus_audio_input.h"
 #include "nxclient.h"
 #include "nexus_simple_audio_playback.h"
+#include "nexus_simple_audio_decoder.h"
 
 /* VERY_VERBOSE = 1 allows additional debug logs */
 #define VERY_VERBOSE 0
 
-#ifdef VERY_VERBOSE
+#if VERY_VERBOSE
 #define LOGVV LOGV
 #else
 #define LOGVV(...) ((void)0)
@@ -108,6 +98,7 @@ extern "C" {
 
 typedef enum {
     BRCM_DEVICE_OUT_NEXUS = 0,
+    BRCM_DEVICE_OUT_NEXUS_DIRECT,
     BRCM_DEVICE_OUT_USB,
     BRCM_DEVICE_OUT_MAX
 } brcm_devices_out_t;
@@ -117,6 +108,8 @@ typedef enum {
     BRCM_DEVICE_IN_USB,
     BRCM_DEVICE_IN_MAX
 } brcm_devices_in_t;
+
+struct StandbyMonitorThread;
 
 struct brcm_device {
     struct audio_hw_device adev;
@@ -128,9 +121,8 @@ struct brcm_device {
 
     struct brcm_stream_out *bouts[BRCM_DEVICE_OUT_MAX];
     struct brcm_stream_in *bins[BRCM_DEVICE_IN_MAX];
+    struct StandbyMonitorThread *standbyThread;
 };
-
-struct StandbyMonitorThread;
 
 struct brcm_stream_out_ops {
     int (*do_bout_open)(struct brcm_stream_out *bout);
@@ -155,6 +147,8 @@ struct brcm_stream_out_ops {
 
     /* optional */
     int (*do_bout_dump)(struct brcm_stream_out *bout, int fd);
+    char *(*do_bout_get_parameters)(struct brcm_stream_out *bout, const char *keys);
+
 };
 
 struct brcm_stream_out {
@@ -169,14 +163,17 @@ struct brcm_stream_out {
     size_t buffer_size;
     bool started;
     bool suspended;
-    struct StandbyMonitorThread *standbyThread;
+    int standbyCallback;
 
     union {
         /* nexus specific */
         struct {
             uint32_t connectId;
             NxClient_AllocResults allocResults;
-            NEXUS_SimpleAudioPlaybackHandle simple_playback;
+            union {
+                NEXUS_SimpleAudioPlaybackHandle simple_playback;
+                NEXUS_SimpleAudioDecoderHandle simple_decoder;
+            };
             BKNI_EventHandle event;
         } nexus;
 #if DUMMY_AUDIO_OUT
@@ -240,6 +237,7 @@ extern size_t get_brcm_audio_buffer_size(unsigned int sample_rate,
                                          unsigned int channel_count);
 
 extern struct brcm_stream_out_ops nexus_bout_ops;
+extern struct brcm_stream_out_ops nexus_direct_bout_ops;
 
 #if DUMMY_AUDIO_OUT
 extern struct brcm_stream_out_ops dummy_bout_ops;
@@ -257,17 +255,22 @@ extern void set_master_volume(float volume);
 extern float get_master_volume(void);
 
 /* Thread to monitor standby */
+#define MAX_STANDBY_MONITOR_CALLBACKS 2
 typedef bool (*b_standby_monitor_callback)(void *context);
 struct StandbyMonitorThread : public android::Thread {
 public:
-    StandbyMonitorThread(b_standby_monitor_callback callback, void *context);
+    StandbyMonitorThread();
     ~StandbyMonitorThread();
+
+    int RegisterCallback(b_standby_monitor_callback callback, void *context);
+    void UnregisterCallback(int id);
 
 private:
     bool threadLoop();
-    b_standby_monitor_callback mCallback;
-    void *mContext;
-    unsigned mStandbyId;
+    android::Mutex mMutex;
+    b_standby_monitor_callback mCallbacks[MAX_STANDBY_MONITOR_CALLBACKS];
+    void *mContexts[MAX_STANDBY_MONITOR_CALLBACKS];
+    unsigned mNumCallbacks;
 
     /* Disallow copy constructor and copy operator... */
     StandbyMonitorThread(const StandbyMonitorThread &);

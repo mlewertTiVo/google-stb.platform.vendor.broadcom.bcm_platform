@@ -5,7 +5,8 @@ LOCAL_SHARED_LIBRARIES += libcutils
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/linux/driver/fbdev/utils/fbtest/include
 
-FBDEV_SRC_ROOT := ../../../refsw/BSEAV/linux/driver/fbdev/utils/fbtest
+LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/
+FBDEV_SRC_ROOT := refsw/BSEAV/linux/driver/fbdev/utils/fbtest
 
 LOCAL_SRC_FILES := \
    $(FBDEV_SRC_ROOT)/util.c \

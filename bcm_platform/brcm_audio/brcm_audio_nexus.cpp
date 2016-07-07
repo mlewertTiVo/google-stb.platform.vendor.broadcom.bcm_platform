@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2014 Broadcom Corporation
+ *    (c)2015 Broadcom Corporation
  *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -34,17 +34,6 @@
  * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
- *
- * $brcm_Workfile: AudioHardware.cpp $
- * $brcm_Revision:  $
- * $brcm_Date: 08/08/14 12:05p $
- * $brcm_Author: zhang@broadcom.com
- *
- * Module Description:
- *
- * Revision History:
- *
- * $brcm_Log:  $
  *
  *****************************************************************************/
 
@@ -100,50 +89,6 @@ static uint32_t Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX+1] =
     2000,   2092,   2194,   2310,   2444,
     2602,   2796,   3046,   3398,   9000
 };
-
-StandbyMonitorThread::StandbyMonitorThread(b_standby_monitor_callback callback, void *context) : mCallback(callback), mContext(context)
-{
-    mStandbyId = NxClient_RegisterAcknowledgeStandby();
-}
-
-StandbyMonitorThread::~StandbyMonitorThread()
-{
-    NxClient_UnregisterAcknowledgeStandby(mStandbyId);
-}
-
-/* Standby monitor thread */
-#define NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS  (20)
-bool StandbyMonitorThread::threadLoop()
-{
-    NEXUS_Error rc;
-    NxClient_StandbyStatus standbyStatus, prevStatus;
-
-    LOGV("%s", __FUNCTION__);
-    NxClient_GetStandbyStatus(&standbyStatus);
-    prevStatus = standbyStatus;
-
-    while (!exitPending()) {
-        rc = NxClient_GetStandbyStatus(&standbyStatus);
-
-        if (standbyStatus.settings.mode != prevStatus.settings.mode) {
-            bool ack = true;
-
-            if (standbyStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn) {
-                if (mCallback != NULL) {
-                    ack =  mCallback(mContext);
-                }
-            }
-            if (ack) {
-                LOGD("%s: Acknowledge state %d\n", __FUNCTION__, standbyStatus.settings.mode);
-                NxClient_AcknowledgeStandby(mStandbyId);
-                prevStatus = standbyStatus;
-            }
-        }
-        BKNI_Sleep(NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS);
-    }
-    LOGV("%s: Exiting", __FUNCTION__);
-    return false;
-}
 
 /*
  * Utility Functions
@@ -581,18 +526,12 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
         goto err_event;
     }
 
-    // start standby thread
-    bout->standbyThread = new StandbyMonitorThread(nexus_bout_standby_monitor, bout);
-    if (bout->standbyThread == NULL) {
-        LOGE("Error allocating standby thread");
-        ret = -ENOMEM;
-        goto err_thread;
-    }
-    status = bout->standbyThread->run();
-    if (status != android::OK){
-        LOGE("%s: error starting standby thread");
+    // register standby callback
+    bout->standbyCallback = bout->bdev->standbyThread->RegisterCallback(nexus_bout_standby_monitor, bout);
+    if (bout->standbyCallback < 0) {
+        LOGE("Error registering standby callback");
         ret = -ENOSYS;
-        goto err_start_thread;
+        goto err_callback;
     }
 
     bout->nexus.simple_playback = simple_playback;
@@ -600,9 +539,7 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
 
     return 0;
 
-err_start_thread:
-    delete bout->standbyThread;
-err_thread:
+err_callback:
     BKNI_DestroyEvent(event);
 err_event:
     NxClient_Disconnect(bout->nexus.connectId);
@@ -624,14 +561,7 @@ static int nexus_bout_close(struct brcm_stream_out *bout)
         BKNI_DestroyEvent(event);
     }
 
-    /* stop and destroy standby thread */
-    android::status_t status = bout->standbyThread->requestExitAndWait();
-    if (status != android::OK){
-        LOGE("Failed to stop standby thread!");
-    }
-
-    // Attempt to destroy the thread anyway.
-    delete bout->standbyThread;
+    bout->bdev->standbyThread->UnregisterCallback(bout->standbyCallback);
 
     NxClient_Disconnect(bout->nexus.connectId);
     NxClient_Free(&(bout->nexus.allocResults));
@@ -649,5 +579,6 @@ struct brcm_stream_out_ops nexus_bout_ops = {
     .do_bout_set_volume = nexus_bout_set_volume,
     .do_bout_get_render_position = nexus_bout_get_render_position,
     .do_bout_get_presentation_position = nexus_bout_get_presentation_position,
-    .do_bout_dump = NULL
+    .do_bout_dump = NULL,
+    .do_bout_get_parameters = NULL
 };

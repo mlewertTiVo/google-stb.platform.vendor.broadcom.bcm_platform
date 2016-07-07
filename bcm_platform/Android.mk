@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ifneq ($(filter bcm_% fbx6lc avko,$(TARGET_DEVICE)),)
+ifneq ($(filter bcm_% fbx6lc avko arrow,$(TARGET_DEVICE)),)
 
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_audio/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_memtrack/Android.mk
@@ -65,7 +65,9 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makegpt/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makehwcfg/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxblk/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxcfg/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxheaps/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxmem/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxtrans/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/otpgetchipid/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/prdy_pes_playback/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/setdisplay/Android.mk

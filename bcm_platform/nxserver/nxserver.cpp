@@ -60,6 +60,9 @@
 #include <sys/sysmacros.h>
 #include <sys/mman.h>
 #include <linux/kdev_t.h>
+#include <sched.h>
+#include <sys/resource.h>
+#include <cutils/sched_policy.h>
 
 #include <binder/IPCThreadState.h>
 #include <binder/ProcessState.h>
@@ -682,6 +685,12 @@ static nxserver_t init_nxserver(void)
     /* -sd off */
     settings.session[0].output.sd = settings.session[0].output.encode = false;
     settings.session[0].output.hd = true;
+    /* -enablePassthroughBuffer */
+    settings.audioDecoder.enablePassthroughBuffer = true;
+    if (settings.session[0].audioPlaybacks > 0) {
+       /* Reserve one for the decoder instead of playback */
+       settings.session[0].audioPlaybacks--;
+    }
 
     settings.framebuffers = NSC_FB_NUMBER;
     settings.allowCompositionBypass = property_get_int32(NX_CAPABLE_COMP_BYPASS, 0) ? true : false;
@@ -764,7 +773,7 @@ static nxserver_t init_nxserver(void)
        platformSettings.heap[NEXUS_MAX_HEAPS-2].memcIndex = platformSettings.heap[index].memcIndex;
        platformSettings.heap[NEXUS_MAX_HEAPS-2].subIndex = platformSettings.heap[index].subIndex;
        platformSettings.heap[NEXUS_MAX_HEAPS-2].size = 4096;
-       platformSettings.heap[NEXUS_MAX_HEAPS-2].memoryType = NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED;
+       platformSettings.heap[NEXUS_MAX_HEAPS-2].memoryType = NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED|NEXUS_MEMORY_TYPE_DYNAMIC;
     }
 
     /* -password file-path-name */
@@ -924,6 +933,9 @@ int main(void)
     NEXUS_MemoryBlockHandle hSecDmaMemoryBlock = NULL;
 
     memset(&g_app, 0, sizeof(g_app));
+
+    setpriority(PRIO_PROCESS, 0, PRIORITY_URGENT_DISPLAY);
+    set_sched_policy(0, SP_FOREGROUND);
 
     const char *devName = getenv("NEXUS_DEVICE_NODE");
     if (!devName) {
