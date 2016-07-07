@@ -86,12 +86,13 @@ on post-fs-data
    #
    write /data/misc/nexus/nx_key trusted:test-passwd
    chmod 0644 /data/misc/nexus/nx_key
+   export NXCLIENT_PASSWORD /data/misc/nexus/nx_key
 
    class_start pre_core
 
 on property:hw.nexus.platforminit=on
    # insmod nx_ashmem driver (gralloc memory support).
-   insmod /system/vendor/drivers/nx_ashmem.ko devname="ion" heap_grow="16m"
+   insmod /system/vendor/drivers/nx_ashmem.ko devname="ion" heap_grow="8m"
    class_start main
 
 service sdcard /system/bin/sdcard -u 1023 -g 1023 -l /data/media /mnt/shell/emulated

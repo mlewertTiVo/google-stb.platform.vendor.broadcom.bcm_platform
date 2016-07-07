@@ -1,2 +1,1 @@
-libcmndrmprdy.so
-liboemcrypto.so
+out/target/product/bcm_platform/obj/lib/liboemcrypto.so

@@ -31,6 +31,9 @@ import android.widget.RatingBar;
 import android.widget.TextView;
 import android.widget.ToggleButton;
 
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 /**
  * TV-Input activity for Broadcom's Tuner
@@ -60,7 +63,24 @@ public class TunerSettings extends Activity {
         public void onSessionCreated(TvInputManager.Session session) {
             mSession = session;
             mSession.sendAppPrivateCommand("scanStatus", null);
+            mHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (mSession != null) {
+                        mSession.sendAppPrivateCommand("broadcastTime", null);
+                    }
+                    mHandler.postDelayed(this, 1000);
+                }
+            });
         }
+
+        @Override
+        public void onSessionReleased(TvInputManager.Session session) {
+            if (mSession == session) {
+                mSession = null;
+            }
+        }
+
         @Override
         public void onSessionEvent(TvInputManager.Session session, String eventType, Bundle eventArgs) {
             if (eventType.equals("scanStatus")) {
@@ -91,6 +111,19 @@ public class TunerSettings extends Activity {
                         quality.setProgress(0);
                     }
                 }
+            }
+            else if (eventType.equals("broadcastTime")) {
+                long utc = eventArgs.getLong("utc");
+                Date date = new Date(utc * 1000);
+                DateFormat format = SimpleDateFormat.getDateTimeInstance(
+                        SimpleDateFormat.FULL, SimpleDateFormat.LONG);
+                //format.setTimeZone(TimeZone.getTimeZone("UTC"));
+                String utc_string = format.format(date);
+                Log.d(TAG, "received broadcast time " + Long.valueOf(utc) +
+                        ": " + utc_string);
+
+                TextView time = (TextView) findViewById(R.id.text_broadcast_time);
+                time.setText(utc_string);
             }
         }
     }

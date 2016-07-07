@@ -38,17 +38,17 @@ LOCAL_SRC_FILES := \
     magnum/syslib/sagelib/src/bsagelib_tools.c
 
 LOCAL_C_INCLUDES := \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/sage/srai/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/sage/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/sage/include/private \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/srai/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/include/private \
     $(BSAGELIB_INCLUDES) \
     $(NEXUS_APP_INCLUDE_PATHS)
 
 LOCAL_CFLAGS += -DPIC -fpic -DANDROID
 LOCAL_CFLAGS += $(NEXUS_CFLAGS)
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DBDBG_DEBUG_BUILD=0
-LOCAL_CFLAGS := $(filter-out -DBDBG_DEBUG_BUILD=1,$(LOCAL_CFLAGS))
+LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_WRN -DBDBG_NO_ERR -DBDBG_NO_LOG
+
 
 LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB)
 

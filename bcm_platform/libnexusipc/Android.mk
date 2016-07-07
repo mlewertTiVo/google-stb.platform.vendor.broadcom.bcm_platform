@@ -13,7 +13,7 @@
 # limitations under the License.
 
 LOCAL_PATH := $(call my-dir)
-include $(TOP)/vendor/broadcom/refsw/nexus/nxclient/include/nxclient.inc
+include $(TOP)/vendor/broadcom/stb/refsw/nexus/nxclient/include/nxclient.inc
 
 #----------------------
 # libnexusipceventlistener 
@@ -28,8 +28,6 @@ LOCAL_C_INCLUDES += $(TOP)/frameworks/native/include
 LOCAL_SRC_FILES := INexusHdmiCecMessageEventListener.cpp \
                    INexusHdmiHotplugEventListener.cpp
 
-LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
-
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libnexusipceventlistener
 
@@ -41,7 +39,7 @@ include $(BUILD_SHARED_LIBRARY)
 include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false
 LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusipceventlistener libnexus
-LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/stb/bcm_platform/libnexusservice \
                     $(TOP)/frameworks/native/include
 
 #
@@ -52,7 +50,6 @@ LOCAL_SRC_FILES := nexus_ipc_client_factory.cpp nexus_ipc_client_base.cpp nexus_
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libnexusipcclient
 LOCAL_CFLAGS:= $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
@@ -68,13 +65,12 @@ LOCAL_PRELINK_MODULE := false
 
 LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusipcclient libnexusipceventlistener libnexus
 
-LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusservice \
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/stb/bcm_platform/libnexusservice \
                     $(TOP)/frameworks/native/include
 
 LOCAL_SRC_FILES := nexus_egl_client.cpp
 
 LOCAL_CFLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)

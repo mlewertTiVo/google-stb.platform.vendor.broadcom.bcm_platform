@@ -38,7 +38,7 @@ LOCAL_MODULE_TAGS := optional
 # Check if a prebuilt library has been created in the release_prebuilts folder
 ifneq (,$(wildcard $(TOP)/release_prebuilts/$(LOCAL_MODULE).so))
 # use prebuilt library if one exists
-LOCAL_SRC_FILES := ../../../../../release_prebuilts/$(LOCAL_MODULE).so
+LOCAL_SRC_FILES := ../../../../../../release_prebuilts/$(LOCAL_MODULE).so
 LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 include $(BUILD_PREBUILT)
@@ -69,12 +69,12 @@ LOCAL_C_INCLUDES := \
     $(TOP)/bionic \
     $(TOP)/external/stlport/stlport \
     $(TOP)/external/openssl/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/third_party/widevine/CENC_sage/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_crypto/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_drm/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_drm/include/tl \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/sage/srai/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/sage/platforms/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/third_party/widevine/CENC_sage/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_crypto/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_drm/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_drm/include/tl \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/srai/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/platforms/include \
     $(BSAGELIB_INCLUDES) \
     $(NEXUS_APP_INCLUDE_PATHS)
 
@@ -83,8 +83,7 @@ LOCAL_CFLAGS += -DNDEBUG -DBRCM_IMPL
 
 LOCAL_CFLAGS += $(NEXUS_CFLAGS)
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DBDBG_DEBUG_BUILD=0
-LOCAL_CFLAGS := $(filter-out -DBDBG_DEBUG_BUILD=1,$(LOCAL_CFLAGS))
+LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_WRN -DBDBG_NO_ERR -DBDBG_NO_LOG
 
 LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) liblog libstlport
 LOCAL_SHARED_LIBRARIES += libcmndrm_tl

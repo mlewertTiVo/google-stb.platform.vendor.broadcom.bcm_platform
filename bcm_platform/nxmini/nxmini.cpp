@@ -110,14 +110,26 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
 {
    int i;
 
-   /* no SD display - this is hardcoded knowledge. */
+   /* nxmini - removes almost everything, fit in a tiny footprint the necessary
+    *          platform support, keep a decoder just in case.
+    */
+
    pMemConfigSettings->display[1].window[0].used = false;
    pMemConfigSettings->display[1].window[1].used = false;
 
    for (i = 0 ; i < NEXUS_NUM_VIDEO_DECODERS ; i++) {
-      pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
+      if (i == 0) {
+         pMemConfigSettings->videoDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
+      } else {
+         pMemConfigSettings->videoDecoder[i].used = false;
+      }
    }
-   pMemConfigSettings->stillDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
+
+   for (i = 0 ; i < NEXUS_NUM_VIDEO_ENCODERS ; i++) {
+      pMemConfigSettings->videoEncoder[i].used = false;
+   }
+
+   pMemConfigSettings->stillDecoder[0].used = false;
 
    pMemConfigSettings->videoDecoder[0].mosaic.maxNumber = 0;
    pMemConfigSettings->videoDecoder[0].mosaic.maxHeight = 0;

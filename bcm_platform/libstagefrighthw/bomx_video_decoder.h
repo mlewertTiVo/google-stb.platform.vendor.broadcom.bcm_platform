@@ -269,6 +269,7 @@ protected:
     NEXUS_SurfaceHandle              m_hAlphaSurface;
     bool                             m_setSurface;
     FILE                            *m_pPesFile;
+    FILE                            *m_pInputFile;
 
     char m_inputMimeType[OMX_MAX_STRINGNAME_SIZE];
     char m_outputMimeType[OMX_MAX_STRINGNAME_SIZE];
@@ -353,6 +354,8 @@ protected:
 
     OMX_ERRORTYPE BuildInputFrame(
         OMX_BUFFERHEADERTYPE *pBufferHeader,
+        bool first,
+        unsigned chunkLength,
         uint32_t pts,
         void *pCodecHeader,
         size_t codecHeaderLength,
@@ -380,6 +383,8 @@ protected:
 
 private:
     BOMX_VIDEO_STATS_DEC;
+
+    void DumpInputBuffer(OMX_BUFFERHEADERTYPE *pHeader);
 };
 
 #endif //BOMX_VIDEO_DECODER_H__

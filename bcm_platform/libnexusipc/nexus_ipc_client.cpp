@@ -35,8 +35,6 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
  * ANY LIMITED REMEDY.
  *
- * $brcm_Workfile: nexus_ipc_client.cpp $
- * 
  * Module Description:
  * This file contains the implementation of the class that uses binder IPC
  * communication with the Nexus Service.  A client process should NOT instantiate
@@ -47,7 +45,7 @@
  * the server side for actual execution.
  *
  *****************************************************************************/
-  
+
 #define LOG_TAG "NexusIPCClient"
 //#define LOG_NDEBUG 0
 
@@ -112,15 +110,11 @@ android::sp<INexusClient> NexusIPCClient::iNC;
 
 NexusIPCClient::NexusIPCClient(const char *clientName) : NexusIPCClientBase(clientName)
 {
-    LOGV("++++++ %s: \"%s\" ++++++", __PRETTY_FUNCTION__, getClientName());
-
     bindNexusService();
 }
 
 NexusIPCClient::~NexusIPCClient()
 {
-    LOGV("~~~~~~ %s: \"%s\" ~~~~~~", __PRETTY_FUNCTION__, getClientName());
-
     unbindNexusService();
 }
 
@@ -129,8 +123,6 @@ void NexusIPCClient::bindNexusService()
     android::Mutex::Autolock autoLock(mLock);
 
     if (mBindRefCount == 0) {
-        LOGV("++++++ %s: \"%s\" ++++++", __PRETTY_FUNCTION__, getClientName());
-
         android::sp<android::IServiceManager> sm = android::defaultServiceManager();
         android::sp<android::IBinder> binder;
         do {
@@ -138,11 +130,10 @@ void NexusIPCClient::bindNexusService()
             if (binder != 0) {
                 break;
             }
-            LOGW("%s: client \"%s\" waiting for NexusService...", __PRETTY_FUNCTION__, getClientName());
+            ALOGW("%s: client \"%s\" waiting for NexusService...", __PRETTY_FUNCTION__, getClientName());
             usleep(500000);
         } while(true);
 
-        LOGI("%s: client \"%s\" acquired NexusService...", __PRETTY_FUNCTION__, getClientName());
         iNC = android::interface_cast<INexusClient>(binder);
     }
     mBindRefCount++;
@@ -154,13 +145,6 @@ void NexusIPCClient::unbindNexusService()
 
     if (mBindRefCount > 0) {
         mBindRefCount--;
-
-        if (mBindRefCount == 0) {
-            LOGV("~~~~~~ %s: \"%s\" ~~~~~~", __PRETTY_FUNCTION__, getClientName());
-        }
-    }
-    else {
-        LOGE("%s: Already unbound from Nexus Service!!", __PRETTY_FUNCTION__);
     }
 }
 
@@ -173,8 +157,6 @@ NEXUS_Error NexusIPCClient::clientJoin(const b_refsw_client_client_configuration
     if (mJoinRefCount == 0) {
         api_data cmd;
 
-        LOGV("++++ %s: \"%s\" ++++", __PRETTY_FUNCTION__, getClientName());
-
         BKNI_Memset(&cmd, 0, sizeof(cmd));
         cmd.api = api_clientJoin;
         BKNI_Snprintf(&cmd.param.clientJoin.in.clientName.string[0], CLIENT_MAX_NAME, "%s", getClientName());
@@ -185,29 +167,23 @@ NEXUS_Error NexusIPCClient::clientJoin(const b_refsw_client_client_configuration
         if (clientHandle != NULL) {
             NEXUS_ClientAuthenticationSettings *pAuthentication = &cmd.param.clientJoin.in.clientAuthenticationSettings;
 
-            LOGI("%s: Authentication returned successfully for client \"%s\", certificate=%s", __PRETTY_FUNCTION__,
-                    getClientName(), pAuthentication->certificate.data);
-
             do {
                 rc = NEXUS_ABSTRACTED_JOIN(pAuthentication);
                 if(rc != NEXUS_SUCCESS)
                 {
-                    LOGE("%s: NEXUS_Platform_AuthenticatedJoin failed for client \"%s\"!!!\n", __PRETTY_FUNCTION__, getClientName());
+                    ALOGE("%s: NEXUS_Platform_AuthenticatedJoin failed for client \"%s\"!!!\n", __PRETTY_FUNCTION__, getClientName());
                     sleep(1);
-                } else {
-                    LOGI("%s: NEXUS_Platform_AuthenticatedJoin succeeded for client \"%s\".\n", __PRETTY_FUNCTION__, getClientName());
                 }
             } while (rc != NEXUS_SUCCESS);
         }
         else {
-            LOGE("%s: FATAL: could not obtain join client \"%s\" with server!!!", __PRETTY_FUNCTION__, getClientName());
+            ALOGE("%s: FATAL: could not obtain join client \"%s\" with server!!!", __PRETTY_FUNCTION__, getClientName());
             rc = NEXUS_NOT_INITIALIZED;
         }
     }
 
     if (rc == NEXUS_SUCCESS) {
         mJoinRefCount++;
-        LOGV("*** %s: incrementing join count to %d for client \"%s\". ***", __PRETTY_FUNCTION__, mJoinRefCount, getClientName());
     }
     return rc;
 }
@@ -219,12 +195,9 @@ NEXUS_Error NexusIPCClient::clientUninit()
 
     if (mJoinRefCount > 0) {
         mJoinRefCount--;
-        LOGV("*** %s: decrementing join count to %d for client \"%s\". ***", __PRETTY_FUNCTION__, mJoinRefCount, getClientName());
 
         if (mJoinRefCount == 0) {
             api_data cmd;
-
-            LOGV("---- %s: \"%s\" ----", __PRETTY_FUNCTION__, getClientName());
 
             BKNI_Memset(&cmd, 0, sizeof(cmd));
             cmd.api = api_clientUninit;
@@ -233,15 +206,10 @@ NEXUS_Error NexusIPCClient::clientUninit()
 
             rc = cmd.param.clientUninit.out.status;
             if (rc == NEXUS_SUCCESS) {
-                LOGI("%s: NEXUS_Platform_Uninit called for client \"%s\".", __PRETTY_FUNCTION__, getClientName());
                 NEXUS_Platform_Uninit();
-            }
-            else {
-                LOGE("%s: Failed to uninitialise client \"%s\"!!!", __PRETTY_FUNCTION__, getClientName());
             }
         }
     } else {
-        LOGE("%s: NEXUS is already uninitialised!", __PRETTY_FUNCTION__);
         rc = NEXUS_NOT_INITIALIZED;
     }
     return rc;
@@ -267,10 +235,7 @@ NexusClientContext * NexusIPCClient::createClientContext(const b_refsw_client_cl
     }
 
     if (client == NULL) {
-        LOGE("%s: Could not create client \"%s\" context!!!", __PRETTY_FUNCTION__, getClientName());
-    }
-    else {
-        LOGI("%s: \"%s\" client=%p", __PRETTY_FUNCTION__, getClientName(), client);
+        ALOGE("%s: Could not create client \"%s\" context!!!", __PRETTY_FUNCTION__, getClientName());
     }
     return client;
 }
@@ -279,7 +244,6 @@ void NexusIPCClient::destroyClientContext(NexusClientContext * client)
 {
     api_data cmd;
 
-    LOGI("%s: \"%s\" client=%p", __PRETTY_FUNCTION__, getClientName(), client);
     BKNI_Memset(&cmd, 0, sizeof(cmd));
     cmd.api = api_destroyClientContext;
     cmd.param.destroyClientContext.in.client = client;

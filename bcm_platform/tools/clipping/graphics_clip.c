@@ -56,8 +56,6 @@
 
 BDBG_MODULE(client);
 
-#define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
-
 int main(void)
 {
     NxClient_AllocSettings allocSettings;
@@ -70,29 +68,12 @@ int main(void)
     NEXUS_Error rc;
     unsigned x, y, x_factor, y_factor;
     NEXUS_SurfaceComposition comp;
-    char value[256];
-    FILE *key = NULL;
     NEXUS_Rect clipped;
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
     snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "gclip");
     joinSettings.ignoreStandbyRequest = true;
     joinSettings.timeout = 60;
-    joinSettings.mode = NEXUS_ClientMode_eUntrusted;
-
-    sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
-    key = fopen(value, "r");
-    if (key != NULL) {
-       memset(value, 0, sizeof(value));
-       fread(value, 256, 1, key);
-       if (strstr(value, "trusted:") == value) {
-          const char *password = &value[8];
-          joinSettings.mode = NEXUS_ClientMode_eProtected;
-          joinSettings.certificate.length = strlen(password);
-          memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
-       }
-       fclose(key);
-    }
     rc = NxClient_Join(&joinSettings);
     if (rc) return -1;
 

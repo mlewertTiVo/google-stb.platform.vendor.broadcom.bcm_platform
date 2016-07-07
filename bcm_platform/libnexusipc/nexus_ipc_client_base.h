@@ -61,7 +61,7 @@
 
 class NexusIPCClientBase : public NexusIPCCommon
 {
-public: 
+public:
     virtual ~NexusIPCClientBase() { }
 
     const char *getClientName();

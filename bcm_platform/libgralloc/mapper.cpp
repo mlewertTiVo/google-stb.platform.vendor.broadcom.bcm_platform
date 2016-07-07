@@ -39,6 +39,7 @@
 #include "gralloc_destripe.h"
 
 extern int gralloc_log_mapper();
+extern int gralloc_boom_check();
 extern int gralloc_timestamp_conversion();
 
 static int64_t gralloc_tick(void)
@@ -91,6 +92,7 @@ int gralloc_register_buffer(gralloc_module_t const* module,
    (void)module;
 
    if (private_handle_t::validate(handle) < 0) {
+      ALOGE("%s : invalid handle, freed?", __FUNCTION__);
       return -EINVAL;
    }
 
@@ -122,7 +124,8 @@ int gralloc_register_buffer(gralloc_module_t const* module,
             NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
             sharedPhysAddr = (unsigned)physAddr;
          }
-         ALOGI("  reg: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
+         ALOGI("  reg (%s): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
+               (plane == GL_PLANE) ? "GL" : "ST",
                hnd->is_mma,
                hnd->pid,
                hnd->sharedData,
@@ -157,6 +160,7 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
    (void)module;
 
    if (private_handle_t::validate(handle) < 0) {
+      ALOGE("%s : invalid handle, freed?", __FUNCTION__);
       return -EINVAL;
    }
 
@@ -181,7 +185,8 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
             NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
             sharedPhysAddr = (unsigned)physAddr;
          }
-         ALOGI("unreg: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
+         ALOGI("unreg (%s): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
+               (plane == GL_PLANE) ? "GL" : "ST",
                hnd->is_mma,
                hnd->pid,
                hnd->sharedData,
@@ -199,6 +204,11 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
       if (hnd->is_mma) {
          NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr);
          NEXUS_MemoryBlock_Unlock(block_handle);
+
+         if (gralloc_boom_check()) {
+            NEXUS_MemoryBlock_CheckIfLocked((NEXUS_MemoryBlockHandle)pSharedData->planes[plane].physAddr);
+            NEXUS_MemoryBlock_CheckIfLocked(block_handle);
+         }
       }
    }
 
@@ -225,6 +235,7 @@ int gralloc_lock(gralloc_module_t const* module,
    (void)h;
 
    if (private_handle_t::validate(handle) < 0) {
+      ALOGE("%s : invalid handle, freed?", __FUNCTION__);
       return -EINVAL;
    }
 
@@ -253,7 +264,7 @@ int gralloc_lock(gralloc_module_t const* module,
       if (err) {
          ALOGE("Unable to lock video frame data (timeout)");
          pthread_mutex_unlock(gralloc_g2d_lock());
-         goto out;
+         goto out_video_failed;
       }
       if (pSharedData->videoFrame.hStripedSurface) {
          if (usage & GRALLOC_USAGE_SW_WRITE_MASK) {
@@ -261,7 +272,7 @@ int gralloc_lock(gralloc_module_t const* module,
             private_handle_t::unlock_video_frame(hnd);
             pthread_mutex_unlock(gralloc_g2d_lock());
             err = -EINVAL;
-            goto out;
+            goto out_video_failed;
          }
          if (usage & GRALLOC_USAGE_SW_READ_MASK) {
             if (!pSharedData->videoFrame.destripeComplete) {
@@ -272,7 +283,7 @@ int gralloc_lock(gralloc_module_t const* module,
                if (err) {
                   private_handle_t::unlock_video_frame(hnd);
                   pthread_mutex_unlock(gralloc_g2d_lock());
-                  goto out;
+                  goto out_video_failed;
                }
                if (gralloc_timestamp_conversion()) {
                   tick_end_conv = gralloc_tick();
@@ -287,6 +298,7 @@ int gralloc_lock(gralloc_module_t const* module,
       pthread_mutex_unlock(gralloc_g2d_lock());
    }
 
+out_video_failed:
    if ((usage & (GRALLOC_USAGE_SW_READ_MASK|GRALLOC_USAGE_SW_WRITE_MASK)) && !hwConverted) {
       NEXUS_FlushCache(*vaddr, pSharedData->planes[DEFAULT_PLANE].allocSize);
    }
@@ -298,7 +310,7 @@ int gralloc_lock(gralloc_module_t const* module,
          NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
          sharedPhysAddr = (unsigned)physAddr;
       }
-      ALOGI(" lock: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::vaddr:0x%x::act:%d",
+      ALOGI(" lock (ST): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::vaddr:0x%x::act:%d",
             hnd->is_mma,
             hnd->pid,
             hnd->sharedData,
@@ -339,6 +351,7 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
    private_module_t* pModule = (private_module_t *)module;
 
    if (private_handle_t::validate(handle) < 0) {
+      ALOGE("%s : invalid handle, freed?", __FUNCTION__);
       return -EINVAL;
    }
 
@@ -357,6 +370,9 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       bool flushed = false;
 
       if (!pSharedData->planes[DEFAULT_PLANE].physAddr) {
+         if (hnd->is_mma && shared_block_handle) {
+            NEXUS_MemoryBlock_Unlock(shared_block_handle);
+         }
          return -EINVAL;
       }
 
@@ -400,6 +416,9 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
             vaddr = NEXUS_OffsetToCachedAddr(pSharedData->planes[DEFAULT_PLANE].physAddr);
          }
          NEXUS_FlushCache(vaddr, pSharedData->planes[DEFAULT_PLANE].allocSize);
+         if (hnd->is_mma) {
+            NEXUS_MemoryBlock_Unlock(block_handle);
+         }
       }
    }
 
@@ -410,7 +429,7 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
          NEXUS_MemoryBlock_LockOffset(shared_block_handle, &physAddr);
          sharedPhysAddr = (unsigned)physAddr;
       }
-      ALOGI("ulock: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
+      ALOGI("ulock (ST): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x::act:%d",
             hnd->is_mma,
             hnd->pid,
             hnd->sharedData,

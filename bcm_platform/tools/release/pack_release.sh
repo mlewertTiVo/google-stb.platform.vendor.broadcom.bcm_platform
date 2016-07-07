@@ -10,13 +10,14 @@
 # of.
 
 function HELP {
-  echo -e \\n"Usage: $(basename $0) [-r <refsw_baseline>] [-s <refsw_sha>] [-t] [-a <aosp_baseline>] <output>"
+  echo -e \\n"Usage: $(basename $0) [-r <refsw_baseline>] [-s <refsw_sha>] [-t] [-a <aosp_baseline>] [-p <prebuilt source> <output>"
   echo "     output : Output file name and location of the packed release, e.g. ./release.tgz"
   echo "     -r     : Specify the URSR official branch that the release is based on."
   echo "     -s     : The SHA in the URSR official branch that the release is based on."
   echo "     -t     : Include this option if you want to package the refsw baseline in the release"
   echo "     -a     : AOSP baseline tag where patches is generated from; if not specified,"
   echo "              revision from default manifest will be used."
+  echo "     -p     : The workspace where the prebuilt binaries will be copied from."
   exit 1
 }
 
@@ -44,7 +45,7 @@ BLACK_LIST="$TMP_DIR/black_list.txt"
 AOSP_NAME_LIST="$TMP_DIR/aosp_override_list.txt"
 
 # Parse input arguments and options
-while getopts :r:s:a:t opt; do
+while getopts :r:s:a:p:t opt; do
   case $opt in
     a)
       AOSP_BASELINE=$OPTARG
@@ -57,6 +58,9 @@ while getopts :r:s:a:t opt; do
       ;;
     t)
       REFSW_SRC="yes"
+      ;;
+    p)
+      PREBUILT_SRC=$OPTARG
       ;;
     \?)
       echo -e "   Option -${BOLD}$OPTARG${NORM} not allowed."
@@ -85,6 +89,9 @@ if [ -n "$REFSW_SRC" ]; then
 echo "   Package REFSW src?   : YES"
 else
 echo "   Package REFSW src?   : NO"
+fi
+if [ -n "$PREBUILT_SRC" ]; then
+echo "   Prebuilt source      : $PREBUILT_SRC"
 fi
 echo -e "   Release package name : $1"\\n
 for i in {5..1}; do echo -en "Starting in $i \r"; sleep 1; done;
@@ -162,11 +169,28 @@ if [ -d $TMP_DIR ]; then
 fi
 mkdir -p $TMP_DIR
 
+# Determine whether the prebuilt libraries will be copied from the given
+# source location or the libraries are already provided by the user
+if [ -n "$PREBUILT_SRC" ]; then
+  echo "Copying prebuilt libraries from the given workspace..."
+  mkdir -p $PREBUILT_DIR
+  while read line; do
+    if [ -f $PREBUILT_SRC/$line ]; then
+      cp $PREBUILT_SRC/$line $PREBUILT_DIR/ 
+    else
+      echo -e "!!! $PREBUILT_SRC/$line cannot be found!!!"
+      echo "Existing..."
+      exit 0
+    fi
+  done < $SCRIPT_DIR/release_prebuilts.txt
+  echo $PREBUILT >> $WHITE_LIST
+else
 if [ -d $PREBUILT_DIR ]; then
   echo "Checking if prebuilt libraries are provided..."
   while read line; do
-    if [ ! -f $PREBUILT_DIR/$line ]; then
-      echo -e \\n"!!! MISSING prebuilt libraries for release packaging: $line"\\n
+    PREBUILT_LIB_NAME=$(echo $line | awk -F/ '{print $NF}')
+    if [ ! -f $PREBUILT_DIR/$PREBUILT_LIB_NAME ]; then
+      echo -e \\n"!!! MISSING prebuilt libraries for release packaging: $PREBUILT_LIB_NAME"\\n
       echo "Exiting..."
       exit 0
     fi
@@ -174,12 +198,18 @@ if [ -d $PREBUILT_DIR ]; then
   echo $PREBUILT >> $WHITE_LIST
 else
    echo -e \\n"!!! MISSING prebuilt libraries for release packaging."
-   echo "!!! Please create the missing folder:"
-   echo "!!!    $PREBUILT_DIR"
-   echo -e "!!! and put the following prebuilt libraries into the folder:"\\n
-   cat $SCRIPT_DIR/release_prebuilts.txt 
+   echo "!!! Please use the -p option to specify the reference workspace"
+   echo "!!! where the prebuilt libraries would be copied from..."
+   echo "!!!   OR"
+   echo "!!! Create the missing folder $PREBUILT_DIR"
+   echo -e "!!! and put the following prebuilt libraries into the folder:"
+   while read line; do
+     PREBUILT_LIB_NAME=$(echo $line | awk -F/ '{print $NF}')
+     echo "!!!   > $PREBUILT_LIB_NAME"
+   done < $SCRIPT_DIR/release_prebuilts.txt
    echo -e \\n"Exiting..."
    exit 0
+fi
 fi
 
 if [ -f $BCG_XML ]; then

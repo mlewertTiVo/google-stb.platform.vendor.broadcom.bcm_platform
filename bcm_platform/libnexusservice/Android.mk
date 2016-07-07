@@ -15,7 +15,7 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
-include $(TOP)/vendor/broadcom/refsw/nexus/nxclient/include/nxclient.inc
+include $(TOP)/vendor/broadcom/stb/refsw/nexus/nxclient/include/nxclient.inc
 
 LOCAL_PRELINK_MODULE := false
 LOCAL_SHARED_LIBRARIES := \
@@ -33,8 +33,8 @@ ifneq ($(findstring NEXUS_HAS_CEC, $(NEXUS_APP_DEFINES)),)
 LOCAL_C_INCLUDES += $(NEXUS_CEC_PUBLIC_INCLUDES)
 endif
 
-LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusipc
-LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/bcm_platform/libnexusir
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/stb/bcm_platform/libnexusipc
+LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/stb/bcm_platform/libnexusir
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
 
@@ -49,7 +49,6 @@ LOCAL_SRC_FILES += nexus_cec_stubs.cpp
 endif
 
 LOCAL_CFLAGS := $(NEXUS_CFLAGS) $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS)) $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGV=ALOGV -DLOGI=ALOGI
 ifeq ($(ANDROID_ENABLE_HDMI_HDCP),y)
 LOCAL_CFLAGS += -DANDROID_ENABLE_HDMI_HDCP=1
 else

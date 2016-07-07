@@ -62,6 +62,7 @@ static int gralloc_with_mma = 0;
 static int gralloc_default_align = 0;
 static int gralloc_log_map = 0;
 static int gralloc_conv_time = 0;
+static int gralloc_boom_chk = 0;
 
 static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
 static NEXUS_Graphics2DHandle hGraphics = NULL;
@@ -81,6 +82,7 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 #define NX_MMA                  "ro.nx.mma"
 #define NX_GR_LOG_MAP           "ro.gr.log.map"
 #define NX_GR_CONV_TIME         "ro.gr.conv.time"
+#define NX_GR_BOOM_CHK          "ro.gr.boom.chk"
 
 #define NEXUS_JOIN_CLIENT_PROCESS "gralloc"
 static void gralloc_load_lib(void)
@@ -129,6 +131,10 @@ static void gralloc_load_lib(void)
    if (!dyn_BEGLint_BufferGetRequirements) {
       gralloc_default_align = GRALLOC_MIN_BUFFER_ALIGNED;
    }
+
+   if (property_get(NX_GR_BOOM_CHK, value, "0")) {
+      gralloc_boom_chk = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
+   }
 }
 
 #undef LOAD_FN
@@ -141,7 +147,8 @@ static void gralloc_checkpoint_callback(void *pParam, int param)
 
 void gralloc_explicit_load(void)
 {
-   NEXUS_Error     rc;
+   NEXUS_Error rc;
+   NEXUS_Graphics2DOpenSettings g2dOpenSettings;
 
    gralloc_load_lib();
 
@@ -151,7 +158,9 @@ void gralloc_explicit_load(void)
       hCheckpointEvent = NULL;
       hGraphics = NULL;
    } else {
-      hGraphics = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, NULL);
+      NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
+      g2dOpenSettings.compatibleWithSurfaceCompaction = false;
+      hGraphics = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &g2dOpenSettings);
       if (!hGraphics) {
          ALOGW("Unable to open Graphics2D.  HW/SW access format conversions will fail...");
       } else {
@@ -200,6 +209,11 @@ int gralloc_timestamp_conversion(void)
    return gralloc_conv_time;
 }
 
+int gralloc_boom_check(void)
+{
+   return gralloc_boom_chk;
+}
+
 void * gralloc_v3d_get_nexus_client_context(void)
 {
    return nexus_client;
@@ -244,7 +258,7 @@ static void gralloc_bzero(int is_mma, unsigned handle, size_t numBytes)
 
         if (is_mma) {
            if (pMemory == NULL) {
-              return;
+              goto out_release;
            }
            // TODO: using m2m.
         } else {
@@ -276,6 +290,7 @@ static void gralloc_bzero(int is_mma, unsigned handle, size_t numBytes)
        NEXUS_FlushCache(pMemory, numBytes);
     }
 
+out_release:
     if (is_mma && block_handle) {
        NEXUS_MemoryBlock_UnlockOffset(block_handle);
        NEXUS_MemoryBlock_Unlock(block_handle);
@@ -559,8 +574,8 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    }
 
    ashmem_alloc.size = sizeof(SHARED_DATA);
-   ashmem_alloc.align = 0;
-   int ret = ioctl(fd2, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+   ashmem_alloc.align = GRALLOC_MAX_BUFFER_ALIGNED;
+   int ret = ioctl(grallocPrivateHandle->fd2, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
    if (ret < 0) {
       return -ENOMEM;
    };
@@ -597,7 +612,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    pSharedData->planes[DEFAULT_PLANE].format    = format;
    pSharedData->planes[DEFAULT_PLANE].size      = size;
    pSharedData->planes[DEFAULT_PLANE].allocSize = size;
-   pSharedData->planes[DEFAULT_PLANE].stride = *pStride;
+   pSharedData->planes[DEFAULT_PLANE].stride    = *pStride;
 
    if (format != HAL_PIXEL_FORMAT_YV12) {
       // standard graphic buffer.
@@ -625,7 +640,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
             NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
             sharedPhysAddr = (unsigned)physAddr;
          }
-         ALOGI("alloc: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
+         ALOGI("alloc (ST): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
                grallocPrivateHandle->is_mma,
                getpid(),
                grallocPrivateHandle->sharedData,
@@ -658,10 +673,10 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    if (needs_yv12) {
       ashmem_alloc.size = size;
       ashmem_alloc.align = gralloc_default_align;
-      ret = ioctl(fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+      ret = ioctl(grallocPrivateHandle->fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
       if (ret >= 0) {
          pSharedData->planes[DEFAULT_PLANE].physAddr =
-             (NEXUS_Addr)ioctl(fd, NX_ASHMEM_GETMEM);
+             (NEXUS_Addr)ioctl(grallocPrivateHandle->fd, NX_ASHMEM_GETMEM);
       }
 
       if ((usage & GRALLOC_USAGE_HW_TEXTURE)) {
@@ -679,19 +694,19 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    }
 
    if (needs_ycrcb) {
-      pSharedData->planes[EXTRA_PLANE].width = w;
-      pSharedData->planes[EXTRA_PLANE].height = h;
-      pSharedData->planes[EXTRA_PLANE].bpp = bpp;
-      pSharedData->planes[EXTRA_PLANE].format = (int)nxFormat;
-      pSharedData->planes[EXTRA_PLANE].size = extra_size;
+      pSharedData->planes[EXTRA_PLANE].width     = w;
+      pSharedData->planes[EXTRA_PLANE].height    = h;
+      pSharedData->planes[EXTRA_PLANE].bpp       = bpp;
+      pSharedData->planes[EXTRA_PLANE].format    = (int)nxFormat;
+      pSharedData->planes[EXTRA_PLANE].size      = extra_size;
       pSharedData->planes[EXTRA_PLANE].allocSize = extra_size;
-      pSharedData->planes[EXTRA_PLANE].stride = bpp * *pStride;
+      pSharedData->planes[EXTRA_PLANE].stride    = bpp * *pStride;
       ashmem_alloc.size = extra_size;
       ashmem_alloc.align = gralloc_default_align;
-      ret = ioctl(fd3, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+      ret = ioctl(grallocPrivateHandle->fd3, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
       if (ret >= 0) {
          pSharedData->planes[EXTRA_PLANE].physAddr =
-             (NEXUS_Addr)ioctl(fd3, NX_ASHMEM_GETMEM);
+             (NEXUS_Addr)ioctl(grallocPrivateHandle->fd3, NX_ASHMEM_GETMEM);
       }
    }
 
@@ -699,13 +714,13 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       // Create a RGB plane for GL texture as Khronos does not support YUV texturing.
       pSharedData->planes[GL_PLANE].physAddr =
          allocGLSuitableBuffer(grallocPrivateHandle, grallocPrivateHandle->fd4, w, h, 4, HAL_PIXEL_FORMAT_RGBA_8888);
-      pSharedData->planes[GL_PLANE].width = w;
-      pSharedData->planes[GL_PLANE].height = h;
-      pSharedData->planes[GL_PLANE].bpp = 4;
-      pSharedData->planes[GL_PLANE].format = (int)NEXUS_PixelFormat_eA8_B8_G8_R8;
-      pSharedData->planes[GL_PLANE].size = size;
+      pSharedData->planes[GL_PLANE].width     = w;
+      pSharedData->planes[GL_PLANE].height    = h;
+      pSharedData->planes[GL_PLANE].bpp       = 4;
+      pSharedData->planes[GL_PLANE].format    = (int)NEXUS_PixelFormat_eA8_B8_G8_R8;
+      pSharedData->planes[GL_PLANE].size      = size;
       pSharedData->planes[GL_PLANE].allocSize = grallocPrivateHandle->oglSize;
-      pSharedData->planes[GL_PLANE].stride = grallocPrivateHandle->oglStride;
+      pSharedData->planes[GL_PLANE].stride    = grallocPrivateHandle->oglStride;
 
       if (grallocPrivateHandle->is_mma) {
          NEXUS_Addr physAddr;
@@ -726,7 +741,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
             NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
             sharedPhysAddr = (unsigned)physAddr;
          }
-         ALOGI("alloc (overruled): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
+         ALOGI("alloc (GL): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
                grallocPrivateHandle->is_mma,
                getpid(),
                grallocPrivateHandle->sharedData,
@@ -795,58 +810,62 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 }
 
 static int
-grallocFreeHandle(private_handle_t *handleToFree)
+gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
 {
-   if (!handleToFree) {
-      return -EINVAL;
-   }
+   (void)dev;
 
    PSHARED_DATA pSharedData = NULL;
    NEXUS_MemoryBlockHandle block_handle = NULL;
 
-   if (handleToFree->is_mma) {
+   if (!hnd) {
+      return -EINVAL;
+   }
+
+   if (hnd->is_mma) {
       void *pMemory;
-      block_handle = (NEXUS_MemoryBlockHandle)handleToFree->sharedData;
+      block_handle = (NEXUS_MemoryBlockHandle)hnd->sharedData;
       NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
       pSharedData = (PSHARED_DATA) pMemory;
    } else {
-      pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(handleToFree->sharedData);
+      pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(hnd->sharedData);
    }
 
    if (pSharedData) {
       if (gralloc_log_mapper()) {
          NEXUS_Addr physAddr;
-         unsigned sharedPhysAddr = handleToFree->sharedData;
+         unsigned sharedPhysAddr = hnd->sharedData;
+         int gl_plane = (pSharedData->planes[GL_PLANE].physAddr ? 1 : 0);
          unsigned planePhysAddr =
             (pSharedData->planes[GL_PLANE].physAddr ? pSharedData->planes[GL_PLANE].physAddr : pSharedData->planes[DEFAULT_PLANE].physAddr);
          unsigned planePhysSize =
             (pSharedData->planes[GL_PLANE].physAddr ? pSharedData->planes[GL_PLANE].size : pSharedData->planes[DEFAULT_PLANE].size);
-         if (handleToFree->is_mma) {
+         if (hnd->is_mma) {
             NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
             sharedPhysAddr = (unsigned)physAddr;
          }
-         ALOGI(" free: mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
-               handleToFree->is_mma,
-               handleToFree->pid,
-               handleToFree->sharedData,
+         ALOGI(" free (%s): mma:%d::owner:%d::s-blk:0x%x::s-addr:0x%x::p-blk:0x%x::p-addr:0x%x::sz:%d::mapped:0x%x",
+               gl_plane ? "GL" : "ST",
+               hnd->is_mma,
+               hnd->pid,
+               hnd->sharedData,
                sharedPhysAddr,
                planePhysAddr,
-               handleToFree->nxSurfacePhysicalAddress,
+               hnd->nxSurfacePhysicalAddress,
                planePhysSize,
-               handleToFree->nxSurfaceAddress);
-         if (handleToFree->is_mma) {
+               hnd->nxSurfaceAddress);
+         if (hnd->is_mma) {
             NEXUS_MemoryBlock_UnlockOffset(block_handle);
          }
       }
 
       if (android_atomic_acquire_load(&pSharedData->hwc.active)) {
          ALOGE("Freeing gralloc buffer %#x used by HWC!  layer %d surface %#x",
-               handleToFree->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
+               hnd->sharedData, pSharedData->hwc.layer, pSharedData->hwc.surface);
       }
    }
 
-   if (handleToFree->is_mma) {
-      if (pSharedData && handleToFree->nxSurfacePhysicalAddress) {
+   if (hnd->is_mma) {
+      if (pSharedData) {
          if (pSharedData->planes[GL_PLANE].physAddr) {
             NEXUS_MemoryBlock_UnlockOffset((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr);
             NEXUS_MemoryBlock_Unlock((NEXUS_MemoryBlockHandle)pSharedData->planes[GL_PLANE].physAddr);
@@ -860,26 +879,22 @@ grallocFreeHandle(private_handle_t *handleToFree)
       }
    }
 
-   if (handleToFree->fd >= 0)
-      close(handleToFree->fd);
-   if (handleToFree->fd2 >= 0)
-      close(handleToFree->fd2);
-   if (handleToFree->fd3 >= 0)
-      close(handleToFree->fd3);
-   if (handleToFree->fd4 >= 0)
-      close(handleToFree->fd4);
-   delete handleToFree;
+   if (hnd->fd >= 0) {
+      close(hnd->fd);
+   }
+   if (hnd->fd2 >= 0) {
+      close(hnd->fd2);
+   }
+   if (hnd->fd3 >= 0) {
+      close(hnd->fd3);
+   }
+   if (hnd->fd4 >= 0) {
+      close(hnd->fd4);
+   }
+   delete hnd;
+
    return 0;
 }
-
-static int
-gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
-{
-   (void)dev;
-   grallocFreeHandle(hnd);
-   return 0;
-}
-
 
 /*****************************************************************************/
 
@@ -910,6 +925,7 @@ static int gralloc_free(alloc_device_t* dev,
         buffer_handle_t handle)
 {
    if (private_handle_t::validate(handle) < 0) {
+      ALOGE("%s : attempt to free invalid handle?", __FUNCTION__);
       return -EINVAL;
    }
 

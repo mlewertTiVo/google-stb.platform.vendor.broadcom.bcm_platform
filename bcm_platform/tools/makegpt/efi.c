@@ -317,6 +317,8 @@ int efi_compare_gpts(efi_gpt_header_t *pgpt, efi_gpt_header_t *agpt, uint64_t la
  */
 void efi_populate_pmbr(efi_legacy_mbr_t *pmbr, uint64_t total_disk_size)
 {
+    uint64_t total_disk_sectors = EFI_SECTORADDR(total_disk_size);
+
     memset (pmbr->partition_record, 0, sizeof pmbr->partition_record);
 
     pmbr->signature = cpu_to_le16(MSDOS_MBR_SIGNATURE);
@@ -326,8 +328,8 @@ void efi_populate_pmbr(efi_legacy_mbr_t *pmbr, uint64_t total_disk_size)
     pmbr->partition_record[0].end_sector = 0xFF;
     pmbr->partition_record[0].end_cyl = 0xFF;
     pmbr->partition_record[0].start_sect = cpu_to_le32(1);
-    pmbr->partition_record[0].nr_sects = ((total_disk_size - 1ULL) > 0xFFFFFFFFULL)
-        ? cpu_to_le32(0xFFFFFFFF) : cpu_to_le32(total_disk_size - 1UL);
+    pmbr->partition_record[0].nr_sects = ((total_disk_sectors - 1ULL) > 0xFFFFFFFFULL)
+        ? cpu_to_le32(0xFFFFFFFF) : cpu_to_le32(total_disk_sectors - 1UL);
 }
 
 /**
@@ -395,7 +397,7 @@ void efi_populate_entry(efi_gpt_entry_t *gpte, efi_partition_info_t *infop)
 
     memset (gpte, 0, sizeof(*gpte));
 
-    efi_randomize_guid(&gpte->partition_type_guid);
+    gpte->partition_type_guid = TYPE_GUID;
     efi_randomize_guid(&gpte->unique_partition_guid);
     gpte->starting_lba = cpu_to_le64(EFI_SECTORADDR(infop->start));
     gpte->ending_lba = cpu_to_le64(EFI_SECTORADDR(infop->end));
@@ -476,7 +478,7 @@ void efi_dump_gpt(char *banner, efi_gpt_header_t *gpt)
         efi_debug("%02x", gpt->disk_guid.b[i]);
     }
     efi_debug("\n");
-    efi_debug("partition_entry_lba          0x%08llx  (0x%08llx\n", le64_to_cpu(gpt->partition_entry_lba), EFI_SECTORSIZE * le64_to_cpu(gpt->partition_entry_lba));
+    efi_debug("partition_entry_lba          0x%08llx  (0x%08llx)\n", le64_to_cpu(gpt->partition_entry_lba), EFI_SECTORSIZE * le64_to_cpu(gpt->partition_entry_lba));
     efi_debug("num_partition_entries        %d\n", le32_to_cpu(gpt->num_partition_entries));
     efi_debug("sizeof_partition_entry       0x%x\n", le32_to_cpu(gpt->sizeof_partition_entry));
     efi_debug("partition_entry_array_crc32  0x%08x\n", le32_to_cpu(gpt->partition_entry_array_crc32));

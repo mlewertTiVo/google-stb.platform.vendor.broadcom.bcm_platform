@@ -90,14 +90,6 @@
 /*If the security mode is not eUntrusted then we do Join else we do Authenticated Join*/
 #define NEXUS_ABSTRACTED_JOIN(auth) NEXUS_Platform_AuthenticatedJoin(auth)
 
-#define MAX_NUM_DISPLAYS (1)
-
-#if (NEXUS_NUM_VIDEO_WINDOWS >= 2)
-#define MAX_VIDEO_WINDOWS_PER_DISPLAY (2)
-#else
-#define MAX_VIDEO_WINDOWS_PER_DISPLAY (NEXUS_NUM_VIDEO_WINDOWS)
-#endif
-
 #ifndef NEXUS_NUM_VIDEO_ENCODERS
 #define NEXUS_NUM_VIDEO_ENCODERS 0
 #endif
@@ -127,10 +119,10 @@ class BnNexusService : public BnInterface<INexusService>
 typedef struct DisplayState
 {
     NEXUS_DisplayHandle display;
-    NEXUS_VideoWindowHandle video_window[MAX_VIDEO_WINDOWS_PER_DISPLAY]; // video window per display
+    NEXUS_VideoWindowHandle video_window;
     /* Below are only for standalone mode, should be removed when standalone mode is gone */
     int hNexusDisplay;
-    int hNexusVideoWindow[MAX_VIDEO_WINDOWS_PER_DISPLAY];
+    int hNexusVideoWindow;
 } DisplayState;
 
 typedef struct NexusServerContext
@@ -194,7 +186,7 @@ protected:
     virtual void platformInit();
     virtual void platformUninit();
     virtual NEXUS_ClientHandle getNexusClient(unsigned pid, const char * name);
-    void getInitialOutputFormats(NEXUS_VideoFormat *hd_format, NEXUS_VideoFormat *sd_format);
+    void getInitialOutputFormats(NEXUS_VideoFormat *hd_format);
 
     static const char *getPowerString(b_powerState pmState);
 
@@ -207,8 +199,8 @@ private:
     NEXUS_ClientHandle clientJoin(const b_refsw_client_client_name *pClientName, NEXUS_ClientAuthenticationSettings *pClientAuthenticationSettings);
     NEXUS_Error clientUninit(NEXUS_ClientHandle clientHandle);
     int platformInitSurfaceCompositor(void);
-    int platformInitVideo(void);    
-    int platformInitAudio(void);    
+    int platformInitVideo(void);
+    int platformInitAudio(void);
     int platformInitHdmiOutputs(void);
     void platformUninitHdmiOutputs();
     static void hdmiOutputHotplugCallback(void *context, int param);
@@ -219,20 +211,17 @@ private:
     void setAudioState(bool enable);
 
     NEXUS_SurfaceCompositorHandle       surface_compositor;
-    DisplayState                        displayState[MAX_NUM_DISPLAYS];
-    NEXUS_VideoDecoderHandle            videoDecoder[MAX_VIDEO_DECODERS];
-    NEXUS_SimpleVideoDecoderHandle      simpleVideoDecoder[MAX_VIDEO_DECODERS];
+    DisplayState                        displayState;
     NEXUS_AudioDecoderHandle            audioDecoder[MAX_AUDIO_DECODERS];
     NEXUS_AudioPlaybackHandle           audioPlayback[MAX_AUDIO_PLAYBACKS];
     NEXUS_SimpleAudioDecoderHandle      simpleAudioDecoder[MAX_AUDIO_DECODERS];
     NEXUS_SimpleAudioPlaybackHandle     simpleAudioPlayback[MAX_AUDIO_PLAYBACKS];
-    NEXUS_SimpleEncoderHandle           simpleEncoder[MAX_ENCODERS];
     NEXUS_AudioMixerHandle              mixer;
     NEXUS_SurfaceClientHandle           surfaceclient;
     NEXUS_Graphics2DHandle              gfx2D;
     BKNI_EventHandle                    gfxDone;
     NEXUS_VideoFormat                   initial_hd_format;
-    NEXUS_VideoFormat                   initial_sd_format;    
+    NEXUS_VideoFormat                   initial_sd_format;
 };
 
 #endif // _NEXUSSERVICE_H_

@@ -30,10 +30,11 @@ static NEXUS_SurfaceHandle to_nsc_surface(int width, int height, int stride, NEX
     NEXUS_SurfaceCreateSettings createSettings;
 
     NEXUS_Surface_GetDefaultCreateSettings(&createSettings);
-    createSettings.pixelFormat = format;
-    createSettings.width       = width;
-    createSettings.height      = height;
-    createSettings.pitch       = stride;
+    createSettings.pixelFormat   = format;
+    createSettings.width         = width;
+    createSettings.height        = height;
+    createSettings.pitch         = stride;
+    createSettings.managedAccess = false;
     if (!is_mma && data) {
         createSettings.pMemory = data;
     } else if (is_mma && handle) {
@@ -43,8 +44,11 @@ static NEXUS_SurfaceHandle to_nsc_surface(int width, int height, int stride, NEX
 
     shdl = NEXUS_Surface_Create(&createSettings);
 
-    ALOGV("%s: (%d,%d), s:%d, fmt:%d, p:%p, h:%p -> %p",
-          __FUNCTION__, width, height, stride, format, data, handle, shdl);
+    if (CONVERSION_IS_VERBOSE) {
+       ALOGD("%s: (%d,%d), s:%d, fmt:%d, p:%p, h:%p, o:%u -> %p",
+             __FUNCTION__, width, height, stride, format, data, handle, offset, shdl);
+    }
+
     return shdl;
 }
 
@@ -163,7 +167,7 @@ int gralloc_yv12to422p(private_handle_t *handle)
                            NEXUS_PixelFormat_eCb8,
                            handle->is_mma,
                            pSharedData->planes[DEFAULT_PLANE].physAddr,
-                           cb_offset,
+                           cr_offset + cb_offset,
                            cb_addr);
     NEXUS_Surface_Lock(srcCb, &slock);
     NEXUS_Surface_Flush(srcCb);
@@ -202,10 +206,10 @@ int gralloc_yv12to422p(private_handle_t *handle)
        goto out_cleanup;
     }
 
-    NEXUS_Surface_InitPlaneAndPaletteOffset(srcY, &planeY, NULL);
-    NEXUS_Surface_InitPlaneAndPaletteOffset(srcCb, &planeCb, NULL);
-    NEXUS_Surface_InitPlaneAndPaletteOffset(srcCr, &planeCr, NULL);
-    NEXUS_Surface_InitPlaneAndPaletteOffset(dst422, &planeYCbCr, NULL);
+    NEXUS_Surface_LockPlaneAndPalette(srcY, &planeY, NULL);
+    NEXUS_Surface_LockPlaneAndPalette(srcCb, &planeCb, NULL);
+    NEXUS_Surface_LockPlaneAndPalette(srcCr, &planeCr, NULL);
+    NEXUS_Surface_LockPlaneAndPalette(dst422, &planeYCbCr, NULL);
 
     next = buffer;
     {
@@ -283,9 +287,17 @@ int gralloc_yv12to422p(private_handle_t *handle)
     }
 
 out_cleanup:
+    NEXUS_Surface_UnlockPlaneAndPalette(srcCb);
+    NEXUS_Surface_Unlock(srcCb);
     NEXUS_Surface_Destroy(srcCb);
+    NEXUS_Surface_UnlockPlaneAndPalette(srcCr);
+    NEXUS_Surface_Unlock(srcCr);
     NEXUS_Surface_Destroy(srcCr);
+    NEXUS_Surface_UnlockPlaneAndPalette(srcY);
+    NEXUS_Surface_Unlock(srcY);
     NEXUS_Surface_Destroy(srcY);
+    NEXUS_Surface_UnlockPlaneAndPalette(dst422);
+    NEXUS_Surface_Unlock(dst422);
     NEXUS_Surface_Destroy(dst422);
 out:
    if (handle->is_mma && block_handle) {
@@ -415,8 +427,10 @@ int gralloc_plane_copy(private_handle_t *handle, unsigned src, unsigned dst)
 
 err_checkpoint:
 err_blit:
+   NEXUS_Surface_Unlock(hSurfaceDst);
    NEXUS_Surface_Destroy(hSurfaceDst);
 err_dst_surface:
+   NEXUS_Surface_Unlock(hSurfaceSrc);
    NEXUS_Surface_Destroy(hSurfaceSrc);
 err_src_surface:
 err_dst:

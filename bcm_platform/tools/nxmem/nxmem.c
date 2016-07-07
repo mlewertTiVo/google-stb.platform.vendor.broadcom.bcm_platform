@@ -70,8 +70,6 @@ int main(int argc, char **argv)
     NEXUS_PlatformConfiguration platformConfig;
     NxClient_JoinSettings joinSettings;
     NEXUS_Error rc;
-    char value[256];
-    FILE *key = NULL;
     int i = 1;
     int heap_index = -1, chart_it = 0, status = 0, detail = 0;
 
@@ -108,21 +106,6 @@ int main(int argc, char **argv)
     snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "nxmem");
     joinSettings.ignoreStandbyRequest = true;
     joinSettings.timeout = 60;
-    joinSettings.mode = NEXUS_ClientMode_eUntrusted;
-
-    sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
-    key = fopen(value, "r");
-    if (key != NULL) {
-       memset(value, 0, sizeof(value));
-       fread(value, 256, 1, key);
-       if (strstr(value, "trusted:") == value) {
-          const char *password = &value[8];
-          joinSettings.mode = NEXUS_ClientMode_eProtected;
-          joinSettings.certificate.length = strlen(password);
-          memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
-       }
-       fclose(key);
-    }
     rc = NxClient_Join(&joinSettings);
     if (rc) {
        ALOGE("failed to join nexus.  aborting.");

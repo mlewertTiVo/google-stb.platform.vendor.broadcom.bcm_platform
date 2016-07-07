@@ -8,6 +8,7 @@
 /dev/btusb0               0660   bluetooth  net_bt_stack
 
 /dev/sw_sync              0660   system     system
+/dev/brcm_lmk             0660   system     system
 
 # nexus in disguise...
 /dev/mali                 0666   root       root

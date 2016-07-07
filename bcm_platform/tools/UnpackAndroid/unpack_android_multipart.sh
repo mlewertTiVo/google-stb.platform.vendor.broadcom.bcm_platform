@@ -167,7 +167,7 @@ fi
 if [ -z "$image_dir" ]; then
   # auto-detect workspace_dir
   script_dir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
-  workspace_dir=${script_dir%vendor/broadcom/bcm_platform/tools/UnpackAndroid}
+  workspace_dir=${script_dir%vendor/broadcom/stb/bcm_platform/tools/UnpackAndroid}
   image_dir="${workspace_dir}out/target/product/bcm_platform"
 fi
 

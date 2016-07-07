@@ -35,14 +35,16 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
  *****************************************************************************/
+//#define LOG_NDEBUG 0
+#define LOG_TAG "bcm-overscan"
+
 #include <jni.h>
 
 #include <cutils/memory.h>
 #include <cutils/properties.h>
 
 #include <utils/Log.h>
-#include  <stdlib.h>
-#include  <stdio.h>
+#include <utils/misc.h>
 
 #include <binder/IInterface.h>
 #include <binder/Parcel.h>
@@ -54,8 +56,6 @@
 #include "HwcListener.h"
 #include "IHwc.h"
 #include "HwcSvc.h"
-
-#define LOG_TAG "bcm-overscan"
 
 using namespace android;
 
@@ -71,29 +71,29 @@ public:
     virtual void notify(int msg, struct hwc_notification_info &ntfy);
 
     inline void listen() {
-       if (get_hwc(false) != NULL)
-           get_hwc(false)->registerListener(this, HWC_BINDER_COM);
-       else
-           ALOGE("%s: failed to associate %p with HwcAppBinder service.", __FUNCTION__, this);
+        if (get_hwc(false) != NULL)
+            get_hwc(false)->registerListener(this, HWC_BINDER_COM);
+        else
+            ALOGE("%s: failed to associate %p with HwcAppBinder service.", __FUNCTION__, this);
     };
 
     inline void hangup() {
-       if (get_hwc(false) != NULL)
-           get_hwc(false)->unregisterListener(this);
-       else
-           ALOGE("%s: failed to dissociate %p from HwcAppBinder service.", __FUNCTION__, this);
+        if (get_hwc(false) != NULL)
+            get_hwc(false)->unregisterListener(this);
+        else
+            ALOGE("%s: failed to dissociate %p from HwcAppBinder service.", __FUNCTION__, this);
     };
 
     inline void getoverscan(struct hwc_position &position) {
-       if (get_hwc(false) != NULL) {
-           get_hwc(false)->getOverscanAdjust(this, position);
-       }
+        if (get_hwc(false) != NULL) {
+            get_hwc(false)->getOverscanAdjust(this, position);
+        }
     };
 
     inline void setoverscan(struct hwc_position &position) {
-       if (get_hwc(false) != NULL) {
-           get_hwc(false)->setOverscanAdjust(this, position);
-       }
+        if (get_hwc(false) != NULL) {
+            get_hwc(false)->setOverscanAdjust(this, position);
+        }
     };
 
 private:
@@ -105,55 +105,51 @@ class HwcAppBinder_wrap
 {
 private:
 
-   sp<HwcAppBinder> ihwc;
+    sp<HwcAppBinder> ihwc;
 
 public:
-   HwcAppBinder_wrap(void) {
-      ALOGV("%s: allocated %p", __FUNCTION__, this);
-      ihwc = new HwcAppBinder;
-      ihwc.get()->listen();
-   };
+    HwcAppBinder_wrap(void) {
+        ALOGV("%s: allocated %p", __FUNCTION__, this);
+        ihwc = new HwcAppBinder;
+        ihwc.get()->listen();
+    };
 
-   virtual ~HwcAppBinder_wrap(void) {
-      ALOGV("%s: cleared %p", __FUNCTION__, this);
-      ihwc.get()->hangup();
-      ihwc.clear();
-   };
+    virtual ~HwcAppBinder_wrap(void) {
+        ALOGV("%s: cleared %p", __FUNCTION__, this);
+        ihwc.get()->hangup();
+        ihwc.clear();
+    };
 
-   void getoverscan(struct hwc_position &position) {
-      ihwc.get()->getoverscan(position);
-   }
+    void getoverscan(struct hwc_position &position) {
+        ihwc.get()->getoverscan(position);
+    }
 
-   void setoverscan(struct hwc_position &position) {
-      ihwc.get()->setoverscan(position);
-   }
+    void setoverscan(struct hwc_position &position) {
+        ihwc.get()->setoverscan(position);
+    }
 
-   HwcAppBinder *get(void) {
-      return ihwc.get();
-   }
+    HwcAppBinder *get(void) {
+        return ihwc.get();
+    }
 };
 
 void HwcAppBinder::notify(int msg, struct hwc_notification_info &ntfy)
 {
-   ALOGV( "%s: notify received: msg=%u", __FUNCTION__, msg);
+    ALOGV( "%s: notify received: msg=%u", __FUNCTION__, msg);
 
-   if (cb)
-      cb(cb_data, msg, ntfy);
+    if (cb)
+        cb(cb_data, msg, ntfy);
 }
 
 HwcAppBinder_wrap *m_appHwcBinder;
 
-static void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset(JNIEnv *env, jobject thisobj, jobject offset);
-
-static void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_getScreenOffset(JNIEnv *env, jobject thisobj, jobject offset);
+JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset(JNIEnv *env, jobject thisobj, jobject offset);
+JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_getScreenOffset(JNIEnv *env, jobject thisobj, jobject offset);
 
 static JNINativeMethod gMethods[] = {
-
-        {"setScreenOffset",   "(Landroid/graphics/Rect;)V", (void *)Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset},
-
-        {"getScreenOffset",   "(Landroid/graphics/Rect;)V", (void *)Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_getScreenOffset}
+    {"setScreenOffset", "(Landroid/graphics/Rect;)V", (void *)Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset},
+    {"getScreenOffset", "(Landroid/graphics/Rect;)V", (void *)Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_getScreenOffset}
 };
-
 
 static int registerNativeMethods(JNIEnv* env, const char* className,
     JNINativeMethod* gMethods, int numMethods)
@@ -173,12 +169,9 @@ static int registerNativeMethods(JNIEnv* env, const char* className,
     return JNI_TRUE;
 }
 
-
-
-
-static int register_adjustScreenOffset_jni(JNIEnv *env){
-
-    return registerNativeMethods(env,"com/android/adjustScreenOffset/native_adjustScreenOffset", gMethods,  sizeof(gMethods) / sizeof(gMethods[0]));
+static int register_adjustScreenOffset_jni(JNIEnv *env)
+{
+    return registerNativeMethods(env,"com/android/adjustScreenOffset/native_adjustScreenOffset", gMethods, NELEM(gMethods));
 }
 
 jint JNI_OnLoad(JavaVM* vm, void* reserved)
@@ -189,7 +182,7 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
     (void)reserved;
 
     if (vm->GetEnv((void**) &env, JNI_VERSION_1_4) != JNI_OK) {
-        ALOGE("ERROR: GetEnv failed\n");
+        ALOGE("ERROR: GetEnv failed");
         return result;
     }
     assert(env != NULL);
@@ -197,7 +190,7 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
 
     if (register_adjustScreenOffset_jni(env) < 0)
     {
-        ALOGE("ERROR: register adjustScreenOffset interface error failed\n");
+        ALOGE("ERROR: register adjustScreenOffset interface error failed");
         return result;
     }
 
@@ -213,7 +206,6 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
 
     return result;
 }
-
 
 JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset
   (JNIEnv *env, jobject thisobj, jobject offset)
@@ -242,7 +234,7 @@ JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenO
 
     m_appHwcBinder->getoverscan(position);
 
-    ALOGI("Changing composition [x,y,w,h] = [%d, %d, %d, %d] ----> [%d, %d, %d, %d] \n",
+    ALOGI("Changing composition [x,y,w,h] = [%d, %d, %d, %d] ----> [%d, %d, %d, %d]",
         position.x, position.y, position.w, position.h,
         left, top, right - left, bottom - top);
 
@@ -263,7 +255,7 @@ JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenO
 
     m_appHwcBinder->getoverscan(position);
 
-    ALOGI("get [%d, %d, %d, %d]  \n",
+    ALOGI("get [%d, %d, %d, %d]",
         position.x, position.y, position.w, position.h);
 
     jint left = position.x;

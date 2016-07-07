@@ -34,7 +34,7 @@ LOCAL_MODULE_TAGS := optional
 # Check if a prebuilt library has been created in the release_prebuilts folder
 ifneq (,$(wildcard $(TOP)/release_prebuilts/$(LOCAL_LIB_NAME).so))
 # use prebuilt library if one exists
-LOCAL_PREBUILT_LIBS := ../../../../../release_prebuilts/$(LOCAL_LIB_NAME).so
+LOCAL_PREBUILT_LIBS := ../../../../../../release_prebuilts/$(LOCAL_LIB_NAME).so
 include $(BUILD_MULTI_PREBUILT)
 else
 # compile library from source
@@ -43,20 +43,19 @@ include $(LOCAL_PATH)/drm/playready/playready.inc
 LOCAL_SRC_FILES := ${PLAYREADY_SOURCES}
 
 LOCAL_C_INCLUDES := \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_crypto/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_drm/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/drmrootfs \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/playready/2.5/inc \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_crypto/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_drm/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/drmrootfs \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/playready/2.5/inc \
     $(NEXUS_APP_INCLUDE_PATHS) \
-    $(TOP)/vendor/broadcom/refsw/nexus/nxclient/include
+    $(TOP)/vendor/broadcom/stb/refsw/nexus/nxclient/include
 
 DRM_BUILD_PROFILE := 900
 LOCAL_CFLAGS += -DDRM_BUILD_PROFILE=${DRM_BUILD_PROFILE} -DTARGET_LITTLE_ENDIAN=1 -DTARGET_SUPPORTS_UNALIGNED_DWORD_POINTERS=1
 LOCAL_CFLAGS += -DPIC -fpic -DANDROID
 LOCAL_CFLAGS += $(NEXUS_CFLAGS) ${PLAYREADY_DEFINES}
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DBDBG_DEBUG_BUILD=0
-LOCAL_CFLAGS := $(filter-out -DBDBG_DEBUG_BUILD=1,$(LOCAL_CFLAGS))
+LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_WRN -DBDBG_NO_ERR -DBDBG_NO_LOG
 
 LOCAL_SHARED_LIBRARIES := libnexus libnxclient libplayreadypk_host libdrmrootfs
 
@@ -129,16 +128,16 @@ endif
 LOCAL_SRC_FILES := ${COMMON_DRM_TL_SOURCES}
 
 LOCAL_C_INCLUDES := \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/bcrypt/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_crypto/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_drm/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_drm/include/priv \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/common_drm/include/tl \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/sage/srai/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/sage/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/sage/include/private \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/security/sage/platforms/include \
-    $(TOP)/vendor/broadcom/refsw/BSEAV/lib/drmrootfs \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/bcrypt/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_crypto/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_drm/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_drm/include/priv \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_drm/include/tl \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/srai/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/include/private \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/platforms/include \
+    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/drmrootfs \
     $(BSAGELIB_INCLUDES) \
     $(TOP)/external/openssl/include \
     $(NEXUS_APP_INCLUDE_PATHS)
@@ -146,8 +145,9 @@ LOCAL_C_INCLUDES := \
 LOCAL_CFLAGS += -DPIC -fpic -DANDROID
 LOCAL_CFLAGS += $(NEXUS_CFLAGS) $(COMMON_DRM_TL_DEFINES)
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DBDBG_DEBUG_BUILD=0
-LOCAL_CFLAGS := $(filter-out -DBDBG_DEBUG_BUILD=1,$(LOCAL_CFLAGS))
+LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_WRN -DBDBG_NO_ERR -DBDBG_NO_LOG
+# Set common DRM TL to not overwrite Type 1 or 2 drm bin files on rootfs
+LOCAL_CFLAGS += -DCMNDRM_SKIP_BINFILE_OVERWRITE
 
 LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) libcmndrm libdrmrootfs libsrai
 

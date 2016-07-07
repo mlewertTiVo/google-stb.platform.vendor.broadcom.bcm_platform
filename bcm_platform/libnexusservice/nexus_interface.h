@@ -88,7 +88,7 @@ public:
 
         virtual void NexusHandles(NEXUS_TRANSACT_ID eTransactId, int32_t *pHandle) = 0;
 
-        typedef struct api_data api_data; 
+        typedef struct api_data api_data;
         virtual void api_over_binder(api_data *cmd) = 0;
         virtual android::IBinder* get_remote() = 0;
 };

@@ -47,7 +47,6 @@
 
 #define MEMTRACK_HAL_NUM_NX_OBJS 128
 #define MEMTRACK_HAL_MAX_NX_OBJS 2048
-#define NEXUS_TRUSTED_DATA_PATH "/data/misc/nexus"
 
 NexusIPCClientBase *memtrackIpcClient;
 
@@ -74,8 +73,6 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
    size_t num = MEMTRACK_HAL_NUM_NX_OBJS, i;
    size_t queried;
    unsigned total = 0;
-   FILE *key = NULL;
-   char value[PROPERTY_VALUE_MAX];
    NxClient_JoinSettings joinSettings;
 
    if (!module) {
@@ -87,22 +84,6 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
    strncpy(joinSettings.name, "memtrack", NXCLIENT_MAX_NAME);
    joinSettings.ignoreStandbyRequest = true;
 
-   sprintf(value, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
-   key = fopen(value, "r");
-   joinSettings.mode = NEXUS_ClientMode_eUntrusted;
-   if (key == NULL) {
-      ALOGE("%s: failed to open key file \'%s\', err=%d (%s)\n", __FUNCTION__, value, errno, strerror(errno));
-   } else {
-      memset(value, 0, sizeof(value));
-      fread(value, PROPERTY_VALUE_MAX, 1, key);
-      if (strstr(value, "trusted:") == value) {
-         const char *password = &value[8];
-         joinSettings.mode = NEXUS_ClientMode_eVerified;
-         joinSettings.certificate.length = strlen(password);
-         memcpy(joinSettings.certificate.data, password, joinSettings.certificate.length);
-      }
-      fclose(key);
-   }
    nrc = NxClient_Join(&joinSettings);
    if (nrc != NEXUS_SUCCESS) {
        rc = -EBUSY;

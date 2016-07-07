@@ -41,7 +41,6 @@
 #define LOG_TAG "bomx_video_encoder"
 
 #include <cutils/log.h>
-#include "bioatom.h"
 
 #include "bomx_video_encoder.h"
 #include "nexus_platform.h"
@@ -60,13 +59,21 @@
 
 #define B_HW_ENCODER_POLL_INTERVAL (20)
 
-#define B_DEFAULT_INPUT_FRAMERATE (65536 * 15)
+#define Q16_SCALE_FACTOR 65536.0
+#define B_DEFAULT_INPUT_FRAMERATE (Q16_SCALE_FACTOR * 15.0)
 #define B_DEFAULT_INPUT_NEXUS_FRAMERATE (NEXUS_VideoFrameRate_e15)
+
+#define B_MAX_FRAME_WIDTH           1280
+#define B_MAX_FRAME_HEIGHT          720
+#define B_MAX_FRAME_RATE            NEXUS_VideoFrameRate_e30
+#define B_MIN_FRAME_RATE            NEXUS_VideoFrameRate_e15
+#define B_RATE_BUFFER_DELAY_MS      1500
 
 #define NAL_UNIT_TYPE_SPS  7
 #define NAL_UNIT_TYPE_PPS  8
 
 #define VIDEO_ENCODE_DEPTH 16
+#define VIDEO_ENCODE_IMAGEINPUT_DEPTH 5
 
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
@@ -262,7 +269,8 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_hSimpleEncoder(NULL),
     m_hStcChannel(NULL),
     m_hImageInput(NULL),
-    m_numImageSurfaces(0),
+    m_nImageSurfaceFreeListLen(0),
+    m_nImageSurfacePushedListLen(0),
     m_bSimpleEncoderStarted(false),
     m_EmptyFrListLen(0),
     m_EncodedFrListLen(0),
@@ -296,7 +304,8 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     OMX_VIDEO_PORTDEFINITIONTYPE portDefs;
     OMX_VIDEO_PARAM_PORTFORMATTYPE portFormats[MAX_PORT_FORMATS];
 
-    BLST_Q_INIT(&m_ImageSurfaceList);
+    BLST_Q_INIT(&m_ImageSurfaceFreeList);
+    BLST_Q_INIT(&m_ImageSurfacePushedList);
     BLST_Q_INIT(&m_EmptyFrList);
     BLST_Q_INIT(&m_EncodedFrList);
 
@@ -492,7 +501,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_sAvcVideoParams.nPortIndex = m_videoPortBase + 1;
     m_sAvcVideoParams.nRefFrames = 16;
     m_sAvcVideoParams.eProfile = OMX_VIDEO_AVCProfileBaseline;
-    m_sAvcVideoParams.eLevel = OMX_VIDEO_AVCLevel1;
+    m_sAvcVideoParams.eLevel = OMX_VIDEO_AVCLevel31;
     m_sAvcVideoParams.nAllowedPictureTypes = (OMX_U32)OMX_VIDEO_PictureTypeI|(OMX_U32)OMX_VIDEO_PictureTypeP|(OMX_U32)OMX_VIDEO_PictureTypeB|(OMX_U32)OMX_VIDEO_PictureTypeEI|(OMX_U32)OMX_VIDEO_PictureTypeEP;
 
     /* set video bitrate defaults */
@@ -530,7 +539,7 @@ BOMX_VideoEncoder::~BOMX_VideoEncoder()
     Lock();
 
     /* stop encoder if started */
-    if (IsEncoderStarted())
+    if ( IsEncoderStarted() )
     {
         StopEncoder();
     }
@@ -547,7 +556,7 @@ BOMX_VideoEncoder::~BOMX_VideoEncoder()
     {
         UnregisterEvent(m_inputBufferProcessEventId);
     }
-    if (m_ImageInputEventId)
+    if ( m_ImageInputEventId )
     {
         UnregisterEvent(m_ImageInputEventId);
     }
@@ -642,7 +651,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::GetParameter(
         OMX_VIDEO_PARAM_BITRATETYPE *pBitrate = (OMX_VIDEO_PARAM_BITRATETYPE *)pComponentParameterStructure;
         ALOGV("GetParameter OMX_IndexParamVideoBitrate");
         BOMX_STRUCT_VALIDATE(pBitrate);
-        if ( pBitrate->nPortIndex != m_videoPortBase + 1)
+        if ( pBitrate->nPortIndex != m_videoPortBase + 1 )
         {
             ALOGE("output port only");
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -932,6 +941,13 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
             ALOGE("Video compression format cannot be changed in the port definition.  Change Port Format instead.");
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
+        /* The value 0x0 is used to indicate the frame rate is unknown, variable, or is not needed. */
+        if ( pDef->format.video.xFramerate && MapOMXFrameRateToNexus(pDef->format.video.xFramerate) == NEXUS_VideoFrameRate_eUnknown )
+        {
+           ALOGE("Video framerate: %d is not supported by the encoder", pDef->format.video.xFramerate);
+           return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
+
         // Handle update in base class
         err = BOMX_Component::SetParameter(nIndex, (OMX_PTR)pDef);
         if ( err != OMX_ErrorNone )
@@ -959,7 +975,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
         OMX_VIDEO_PARAM_AVCTYPE *pParam = (OMX_VIDEO_PARAM_AVCTYPE *)pComponentParameterStructure;
         ALOGV("SetParameter OMX_IndexParamVideoAvc");
         BOMX_STRUCT_VALIDATE(pParam);
-        if ( pParam->nPortIndex != m_videoPortBase + 1)
+        if ( pParam->nPortIndex != m_videoPortBase + 1 )
         {
             ALOGE("output port only");
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -974,7 +990,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
         OMX_VIDEO_PARAM_BITRATETYPE *pParam = (OMX_VIDEO_PARAM_BITRATETYPE *)pComponentParameterStructure;
         ALOGV("SetParameter OMX_IndexParamVideoBitrate");
         BOMX_STRUCT_VALIDATE(pParam);
-        if ( pParam->nPortIndex != m_videoPortBase + 1)
+        if ( pParam->nPortIndex != m_videoPortBase + 1 )
         {
             ALOGE("output port only");
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -982,6 +998,16 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
 
         BKNI_Memcpy(&m_sVideoBitrateParams, pParam, sizeof(OMX_VIDEO_PARAM_BITRATETYPE));
         ALOGV("control type = %d, bitrate = %d", pParam->eControlRate, pParam->nTargetBitrate);
+
+        if ( IsEncoderStarted() )
+        {
+            NEXUS_Error rc = UpdateEncoderSettings();
+            if ( rc )
+            {
+                LOGE("Failed to update encoder settings");
+                return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+            }
+        }
         return OMX_ErrorNone;
     }
     case OMX_IndexParamEnableAndroidNativeGraphicsBuffer:
@@ -1041,7 +1067,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetParameter(
 
         if ( pMetadata->nPortIndex != m_videoPortBase )
         {
-            if (pMetadata->bStoreMetaData == OMX_FALSE)
+            if ( pMetadata->bStoreMetaData == OMX_FALSE )
             {
                 // to make ACodec happy
                 return OMX_ErrorNone;
@@ -1153,7 +1179,13 @@ NEXUS_Error BOMX_VideoEncoder::SetInputPortState(OMX_STATETYPE newState)
             else
             {
                 // Idle -> Executing = Start
-                StartEncoder();
+                errCode = StartEncoder();
+                if (errCode)
+                {
+                    StopEncoder(); // Encoder might be partially started
+                    ReleaseEncoderResource();
+                    return BOMX_BERR_TRACE(errCode);
+                }
                 // kick off the encoded frame polling
                 if ( m_pVideoPorts[1]->IsEnabled() )
                 {
@@ -2037,12 +2069,6 @@ OMX_ERRORTYPE BOMX_VideoEncoder::FreeBuffer(
             break;
         }
 
-        /* check if surface node is released */
-        if ( NULL != pInfo->pSurfaceNode )
-        {
-            ALOGE("Surface node is not released");
-            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-        }
         delete pInfo;
 
     }
@@ -2127,15 +2153,6 @@ OMX_ERRORTYPE BOMX_VideoEncoder::EmptyThisBuffer(
 
     ALOGV("PTS: ts:%llu - pts:%lu", pBufferHeader->nTimeStamp, pInfo->pts);
 
-    // set buffer state
-    pInfo->state = BOMX_VideoEncoderInputBufferState_eQueued;
-
-    // sanity check
-    if (pInfo->pSurfaceNode)
-    {
-        ALOGE("still hold a surface node: %p", pInfo->pSurfaceNode);
-    }
-
     /* queue the buffer */
     err = m_pVideoPorts[0]->QueueBuffer(pBufferHeader);
     if ( err )
@@ -2205,12 +2222,17 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
 
     if (pBufferHeader->nFilledLen)
     {
+        BOMX_ImageSurfaceNode *pNode;
         NEXUS_VideoImageInputSurfaceSettings surfSettings;
         const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[0]->GetDefinition();
 
-        /* Assign a nexus surface */
-        pInfo->pSurfaceNode = AllocImageSurfaceNode();
-        ALOG_ASSERT(NULL != pInfo->pSurfaceNode);
+        /* allocate an image input surface */
+        pNode = BLST_Q_FIRST(&m_ImageSurfaceFreeList);
+        if (NULL == pNode)
+        {
+            ALOGV("no image surface is available");
+            return OMX_ErrorInsufficientResources;
+        }
 
         NEXUS_VideoImageInput_GetDefaultSurfaceSettings(&surfSettings);
 
@@ -2225,31 +2247,38 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
         ALOGV("Push surface setting: pts:%d, frameRate:%d", surfSettings.pts, surfSettings.frameRate);
 
         /* do color format conversion */
-        if (!ConvertOMXPixelFormatToCrYCbY(pBufferHeader))
+        if (!ConvertOMXPixelFormatToCrYCbY(pBufferHeader, pNode->hSurface))
         {
-            FreeImageSurfaceNode(pInfo->pSurfaceNode);
             ALOGE("Error converting colour format");
             return BOMX_ERR_TRACE(OMX_ErrorUndefined);
         }
 
-        ALOGV("Push surface:%p PTS = %d", pInfo->pSurfaceNode->hSurface, pInfo->pts);
-        nerr = NEXUS_VideoImageInput_PushSurface(m_hImageInput, pInfo->pSurfaceNode->hSurface, &surfSettings);
+        ALOGV("Push surface:%p PTS = %d", pNode->hSurface, pInfo->pts);
+        nerr = NEXUS_VideoImageInput_PushSurface(m_hImageInput, pNode->hSurface, &surfSettings);
         if (nerr)
         {
-            FreeImageSurfaceNode(pInfo->pSurfaceNode);
             ALOGE("Error Push Surface. err = %d", nerr);
             return BOMX_ERR_TRACE(OMX_ErrorUndefined);
         }
+        // add the image input surface to pushed list
+        BLST_Q_REMOVE_HEAD(&m_ImageSurfaceFreeList, node);
+        ALOG_ASSERT(m_nImageSurfaceFreeListLen > 0);
+        m_nImageSurfaceFreeListLen--;
+        BLST_Q_INSERT_TAIL(&m_ImageSurfacePushedList, pNode, node);
+        m_nImageSurfacePushedListLen++;
     }
 
     // handle EOS
     if (pBufferHeader->nFlags & OMX_BUFFERFLAG_EOS)
     {
         ALOGD("input EOS received");
-        m_bPushEos = true;
+        if (NEXUS_SUCCESS != PushInputEosFrame())
+        {
+            m_bPushEos = true;
+        }
     }
 
-    pInfo->state = BOMX_VideoEncoderInputBufferState_ePushed;
+    ReturnPortBuffer(m_pVideoPorts[0], pBuffer);
 
     return OMX_ErrorNone;
 }
@@ -2280,24 +2309,6 @@ void BOMX_VideoEncoder::ReturnInputBuffers(bool returnAll)
 
         ALOG_ASSERT(NULL != pInfo);
         ALOG_ASSERT(NULL != pBufferHeader);
-
-        // only non-zero length buffer is counted.
-        // zero-length buffer is not pushed, so return them as soon as possible
-        if (pBufferHeader->nFilledLen > 0)
-        {
-            // walk down till next non-zero length buffer
-            if (count++ >= buffersToReturn)
-                break;
-        }
-
-        // release associated surface for non-zero length buffer
-        if (pInfo->state == BOMX_VideoEncoderInputBufferState_ePushed &&
-                pBufferHeader->nFilledLen > 0)
-        {
-            FreeImageSurfaceNode(pInfo->pSurfaceNode);
-        }
-        pInfo->pSurfaceNode = NULL;
-        pInfo->state = BOMX_VideoEncoderInputBufferState_eAllocated;
 
         ReturnPortBuffer(m_pVideoPorts[0], pBuffer);
     }
@@ -2369,21 +2380,66 @@ OMX_ERRORTYPE BOMX_VideoEncoder::GetConfig(
     OMX_IN  OMX_INDEXTYPE nIndex,
     OMX_INOUT OMX_PTR pComponentConfigStructure)
 {
-    BSTD_UNUSED(pComponentConfigStructure);
-    ALOGE("Config index %#x is not supported", nIndex);
-    return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
+    switch ( (int)nIndex )
+    {
+    case OMX_IndexConfigVideoBitrate:
+    {
+        OMX_VIDEO_CONFIG_BITRATETYPE *pConfig = (OMX_VIDEO_CONFIG_BITRATETYPE *)pComponentConfigStructure;
+        ALOGV("GetConfig OMX_IndexConfigVideoBitrate");
+        BOMX_STRUCT_VALIDATE(pConfig);
+
+        if ( pConfig->nPortIndex != m_videoPortBase + 1 )
+        {
+            ALOGE("Unable to get bit rate: Can only get the output port's bit rate");
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+
+        pConfig->nEncodeBitrate = m_sVideoBitrateParams.nTargetBitrate;
+        return OMX_ErrorNone;
+    }
+    default:
+    {
+        ALOGE("Config index %#x is not supported", nIndex);
+        return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
+    }
+    }
 }
 
 OMX_ERRORTYPE BOMX_VideoEncoder::SetConfig(
     OMX_IN  OMX_INDEXTYPE nIndex,
     OMX_IN  OMX_PTR pComponentConfigStructure)
 {
-    BSTD_UNUSED(pComponentConfigStructure);
     switch ( (int)nIndex )
     {
+    case OMX_IndexConfigVideoBitrate:
+    {
+        OMX_VIDEO_CONFIG_BITRATETYPE *pConfig = (OMX_VIDEO_CONFIG_BITRATETYPE *)pComponentConfigStructure;
+        ALOGV("SetConfig OMX_IndexConfigVideoBitrate");
+        BOMX_STRUCT_VALIDATE(pConfig);
+
+        if ( pConfig->nPortIndex != m_videoPortBase + 1 )
+        {
+           ALOGE("Unable to change bit rate: Can only change the output port's bit rate");
+           return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+
+        m_sVideoBitrateParams.nTargetBitrate = pConfig->nEncodeBitrate;
+        ALOGV("Set: bitrate = %d", m_sVideoBitrateParams.nTargetBitrate);
+
+        NEXUS_Error rc = UpdateEncoderSettings();
+        if ( rc )
+        {
+            LOGE("Failed to update encoder settings");
+            return BOMX_ERR_TRACE(OMX_ErrorUnsupportedSetting);
+        }
+
+        return OMX_ErrorNone;
+    }
     default:
+    {
         ALOGE("Config index %#x is not supported", nIndex);
         return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
+    }
     }
 }
 
@@ -2435,10 +2491,6 @@ void BOMX_VideoEncoder::InputBufferProcess()
         OMX_BUFFERHEADERTYPE *pBufferHeader = pBuffer->GetHeader();
         OMX_ERRORTYPE err;
 
-        if (pInfo->state == BOMX_VideoEncoderInputBufferState_ePushed)
-            continue;
-
-
         /* ignore the error. In this way, we won't get into busy loop
          * when encoder FIFO is full. Retry will be triggered after
          * surface is recycled.
@@ -2447,6 +2499,10 @@ void BOMX_VideoEncoder::InputBufferProcess()
         if ( OMX_ErrorNone == err  )
         {
             nPushed++;
+        }
+        else
+        {
+            break;
         }
     }
 
@@ -2540,8 +2596,6 @@ void BOMX_VideoEncoder::PollEncodedFrames()
 
     while (pNxVidEncFr)
     {
-        batom_cursor BatomCursor;
-        batom_vec BatomVector[VIDEO_ENCODE_DEPTH];
         BOMX_Buffer *pOmxBuffer = m_pVideoPorts[1]->GetBuffer();
 
         if ( NULL == pOmxBuffer )
@@ -2552,6 +2606,25 @@ void BOMX_VideoEncoder::PollEncodedFrames()
         m_EncodedFrListLen--;
 
         BDBG_ASSERT(pNxVidEncFr->baseAddr);
+
+        unsigned int NumVectors = pNxVidEncFr->frameData->size();
+        unsigned int TotalLen = 0;
+        for (unsigned int i = 0; i < NumVectors; i++)
+        {
+            NEXUS_VideoEncoderDescriptor * pVidEncOut = pNxVidEncFr->frameData->editItemAt(i);
+            BDBG_ASSERT(pVidEncOut);
+            TotalLen += pVidEncOut->length;
+        }
+        if (pNxVidEncFr->combinedSz != TotalLen)
+        {
+            ALOGE("Length mismatch in the frame descriptors %d != %d", pNxVidEncFr->combinedSz, TotalLen);
+            VideoEncoderBufferBlock_Unlock();
+            ResetEncodedFrameList();
+            ReturnEncodedFrameSynchronized(pNxVidEncFr);
+            /* notify the client */
+            NotifyOutputPortSettingsChanged();
+            return;
+        }
 
         if (pNxVidEncFr->combinedSz > pHeader->nAllocLen)
         {
@@ -2564,50 +2637,16 @@ void BOMX_VideoEncoder::PollEncodedFrames()
             return;
         }
 
-        unsigned int NumVectors = pNxVidEncFr->frameData->size();
-
-        BDBG_ASSERT(NumVectors <= VIDEO_ENCODE_DEPTH);
-
+        OMX_U8 *pDest = pHeader->pBuffer;
         for (unsigned int i = 0; i < NumVectors; i++)
         {
             NEXUS_VideoEncoderDescriptor * pVidEncOut = pNxVidEncFr->frameData->editItemAt(i);
             BDBG_ASSERT(pVidEncOut);
 
-
-            batom_vec_init(&BatomVector[i],
-                           (void *)(pNxVidEncFr->baseAddr + pVidEncOut->offset),
-                           pVidEncOut->length);
-        }
-
-        batom_cursor_from_vec(&BatomCursor, BatomVector, NumVectors);
-        unsigned int SizeToCopy = batom_cursor_size(&BatomCursor);
-
-
-        if (SizeToCopy > pHeader->nAllocLen)
-        {
-            ALOGE("Input Buffer Sz [%d] Not Enough To Hold Encoded Video Data [Sz:%d]",
-                  pHeader->nAllocLen,SizeToCopy);
-
-            ResetEncodedFrameList();
-            ReturnEncodedFrameSynchronized(pNxVidEncFr);
-            VideoEncoderBufferBlock_Unlock();
-            /* notify the client */
-            NotifyOutputPortSettingsChanged();
-            return;
-        }
-
-        unsigned int CopiedSz=0;
-
-        CopiedSz =  batom_cursor_copy(&BatomCursor, pHeader->pBuffer, SizeToCopy);
-
-        if (CopiedSz != SizeToCopy)
-        {
-            ALOGE("Cursor Copy Error Requested Size %d != Copied Sz:%d",
-                  SizeToCopy,CopiedSz);
-            ResetEncodedFrameList();
-            ReturnEncodedFrameSynchronized(pNxVidEncFr);
-            VideoEncoderBufferBlock_Unlock();
-            return;
+            BKNI_Memcpy(pDest,
+                        (void *)(pNxVidEncFr->baseAddr + pVidEncOut->offset),
+                        pVidEncOut->length);
+            pDest += pVidEncOut->length;
         }
 
         ALOGV("PTS: Fr:%p - origin ts:%llu flags:%x",  pNxVidEncFr, pNxVidEncFr->usTimeStampOriginal, pNxVidEncFr->clientFlags);
@@ -2631,7 +2670,7 @@ void BOMX_VideoEncoder::PollEncodedFrames()
         }
 
         pHeader->nFlags = pNxVidEncFr->clientFlags;
-        pHeader->nFilledLen = SizeToCopy;
+        pHeader->nFilledLen = pNxVidEncFr->combinedSz;
 
         /* return frame buffer */
         ReturnEncodedFrameSynchronized(pNxVidEncFr);
@@ -2653,12 +2692,11 @@ bool BOMX_VideoEncoder::IsEncoderStarted()
     return m_bSimpleEncoderStarted;
 }
 
-bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInBufHdr)
+bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInBufHdr, NEXUS_SurfaceHandle hDst)
 {
     const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[0]->GetDefinition();
     BOMX_Buffer *pBomxBuffer = BOMX_BUFFERHEADER_TO_BUFFER(pInBufHdr);
     BOMX_VideoEncoderInputBufferInfo *pInfo = (BOMX_VideoEncoderInputBufferInfo*)pBomxBuffer->GetComponentPrivate();
-    NEXUS_SurfaceHandle hDst = pInfo->pSurfaceNode->hSurface;
     bool bRet = true;
 
     if (pInfo->type == BOMX_VideoEncoderInputBufferType_eStandard)
@@ -2835,77 +2873,16 @@ void BOMX_VideoEncoder::StopEncoder(void)
 NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
 {
     NEXUS_Error rc;
-    NEXUS_SimpleEncoderSettings encoderSettings;
     NEXUS_SimpleEncoderStartSettings encoderStartSettings;
     const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[0]->GetDefinition();
 
-    NEXUS_SimpleEncoder_GetSettings(m_hSimpleEncoder, &encoderSettings);
-
-    encoderSettings.video.width = pPortDef->format.video.nFrameWidth;;
-    encoderSettings.video.height = pPortDef->format.video.nFrameHeight;
-    encoderSettings.video.refreshRate = 60000;
-
-    encoderSettings.videoEncoder.bitrateMax = m_sVideoBitrateParams.nTargetBitrate;
-    switch (m_sVideoBitrateParams.eControlRate)
+    ALOGV("BOMX_VideoEncoder::StartOutput");
+    rc = UpdateEncoderSettings();
+    if ( rc )
     {
-    case OMX_Video_ControlRateVariable:
-    {
-        encoderSettings.videoEncoder.bitrateTarget = m_sVideoBitrateParams.nTargetBitrate;
-        encoderSettings.videoEncoder.variableFrameRate = false;
+        LOGE("Failed to update encoder settings");
+        return BOMX_BERR_TRACE(rc);
     }
-    break;
-
-    case OMX_Video_ControlRateConstant:
-    {
-        encoderSettings.videoEncoder.bitrateTarget = 0;
-        encoderSettings.videoEncoder.variableFrameRate = false;
-    }
-    break;
-
-    case OMX_Video_ControlRateVariableSkipFrames:
-    {
-        encoderSettings.videoEncoder.bitrateTarget = m_sVideoBitrateParams.nTargetBitrate;
-        encoderSettings.videoEncoder.variableFrameRate = true;
-    }
-    break;
-
-    case OMX_Video_ControlRateConstantSkipFrames:
-    {
-        encoderSettings.videoEncoder.bitrateTarget = 0;
-        encoderSettings.videoEncoder.variableFrameRate = true;
-    }
-    break;
-
-    case OMX_Video_ControlRateDisable:
-    default:
-    {
-        ALOGW("%s: No rate control", __FUNCTION__);
-        encoderSettings.videoEncoder.bitrateTarget = 0;
-        encoderSettings.videoEncoder.variableFrameRate = false;
-    }
-    break;
-    }
-    encoderSettings.videoEncoder.frameRate = MapOMXFrameRateToNexus(pPortDef->format.video.xFramerate);
-    if (encoderSettings.videoEncoder.frameRate == NEXUS_VideoFrameRate_eUnknown)
-    {
-        ALOGW("Unknown encoder frame rate %u. Use variable frame rate...", pPortDef->format.video.xFramerate);
-
-        encoderSettings.videoEncoder.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
-        encoderSettings.videoEncoder.variableFrameRate = true;
-    }
-
-    ALOGV("FrameRate=%d BitRateMax=%d BitRateTarget=%d bVarFrameRate=%d",
-          encoderSettings.videoEncoder.frameRate,
-          encoderSettings.videoEncoder.bitrateMax,
-          encoderSettings.videoEncoder.bitrateTarget,
-          encoderSettings.videoEncoder.variableFrameRate);
-
-    rc = NEXUS_SimpleEncoder_SetSettings(m_hSimpleEncoder, &encoderSettings);
-    if (rc)
-    {
-        return BOMX_BERR_TRACE(BERR_UNKNOWN);
-    }
-    ALOGV("configured Nexus encoder");
 
     // const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[1]->GetDefinition();
     NEXUS_SimpleEncoder_GetDefaultStartSettings(&encoderStartSettings);
@@ -2937,6 +2914,15 @@ NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
         return BOMX_BERR_TRACE(OMX_ErrorNotImplemented);
     }
     }
+
+    /* setup encoder bounds to improve latency */
+    encoderStartSettings.output.video.settings.bounds.outputFrameRate.min = B_MIN_FRAME_RATE;
+    encoderStartSettings.output.video.settings.bounds.outputFrameRate.max = B_MAX_FRAME_RATE;
+    encoderStartSettings.output.video.settings.bounds.inputFrameRate.min = B_MIN_FRAME_RATE;
+    encoderStartSettings.output.video.settings.bounds.inputDimension.max.width = B_MAX_FRAME_WIDTH;
+    encoderStartSettings.output.video.settings.bounds.inputDimension.max.height = B_MAX_FRAME_HEIGHT;
+    encoderStartSettings.output.video.settings.bounds.streamStructure.max.framesB = 0;
+    encoderStartSettings.output.video.settings.rateBufferDelay = B_RATE_BUFFER_DELAY_MS;
 
     ALOGV("Profile = %d, Level = %d, width = %d, height = %d",
           encoderStartSettings.output.video.settings.profile,
@@ -3023,7 +3009,7 @@ NEXUS_Error BOMX_VideoEncoder::StartInput()
           surfaceCfg.width, surfaceCfg.height, surfaceCfg.pixelFormat);
 
     BOMX_ImageSurfaceNode *pNode;
-    for (unsigned int i = 0; i < pPortDef->nBufferCountActual; i++)
+    for (unsigned int i = 0; i < VIDEO_ENCODE_IMAGEINPUT_DEPTH; i++)
     {
         pNode = new BOMX_ImageSurfaceNode;
         if ( NULL == pNode )
@@ -3040,11 +3026,11 @@ NEXUS_Error BOMX_VideoEncoder::StartInput()
             return BOMX_BERR_TRACE(BERR_UNKNOWN);
         }
 
-        BLST_Q_INSERT_TAIL(&m_ImageSurfaceList, pNode, node);
-        m_numImageSurfaces++;
+        BLST_Q_INSERT_TAIL(&m_ImageSurfaceFreeList, pNode, node);
+        m_nImageSurfaceFreeListLen++;
 
     }
-    ALOGV("%d Nexus surfaces created", m_numImageSurfaces);
+    ALOGV("%d Nexus surfaces created", m_nImageSurfaceFreeListLen);
 
     /* add call back function */
     NEXUS_VideoImageInput_GetSettings(m_hImageInput, &imageInputSetting);
@@ -3092,6 +3078,8 @@ NEXUS_Error BOMX_VideoEncoder::AllocateEncoderResource()
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleVideoDecoder[0].id = m_allocResults.simpleVideoDecoder[0].id;
     connectSettings.simpleVideoDecoder[0].windowCapabilities.encoder = true;
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = 720;
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = 480;
     connectSettings.simpleEncoder[0].id = m_allocResults.simpleEncoder[0].id;
     connectSettings.simpleEncoder[0].nonRealTime = true;
     connectSettings.simpleEncoder[0].audio.cpuAccessible = true;
@@ -3235,91 +3223,75 @@ NEXUS_Error BOMX_VideoEncoder::StartEncoder()
     return NEXUS_SUCCESS;
 }
 
-
-
-BOMX_ImageSurfaceNode *BOMX_VideoEncoder::AllocImageSurfaceNode()
-{
-    BOMX_ImageSurfaceNode *pNode;
-
-    pNode = BLST_Q_FIRST(&m_ImageSurfaceList);
-    ALOG_ASSERT(NULL != pNode);
-    ALOG_ASSERT(NULL != pNode->hSurface);
-
-    BLST_Q_REMOVE_HEAD(&m_ImageSurfaceList, node);
-    ALOG_ASSERT(m_numImageSurfaces > 0);
-    m_numImageSurfaces--;
-    return pNode;
-}
-
-void BOMX_VideoEncoder::FreeImageSurfaceNode(BOMX_ImageSurfaceNode *pNode)
-{
-    ALOG_ASSERT(NULL != pNode);
-    ALOG_ASSERT(NULL != pNode->hSurface);
-
-    BLST_Q_INSERT_TAIL(&m_ImageSurfaceList, pNode, node);
-    m_numImageSurfaces++;
-    return;
-}
-
 void BOMX_VideoEncoder::DestroyImageSurfaces()
 {
     BOMX_ImageSurfaceNode *pNode;
 
-    while ( (pNode = BLST_Q_FIRST(&m_ImageSurfaceList)) )
+    while ( (pNode = BLST_Q_FIRST(&m_ImageSurfaceFreeList)) )
     {
-        BLST_Q_REMOVE_HEAD(&m_ImageSurfaceList, node);
+        BLST_Q_REMOVE_HEAD(&m_ImageSurfaceFreeList, node);
         if ( pNode->hSurface )
         {
             NEXUS_Surface_Destroy(pNode->hSurface);
         }
         delete pNode;
     }
-    m_numImageSurfaces = 0;
+    m_nImageSurfaceFreeListLen = 0;
+
+    while ( (pNode = BLST_Q_FIRST(&m_ImageSurfacePushedList)) )
+    {
+        BLST_Q_REMOVE_HEAD(&m_ImageSurfacePushedList, node);
+        if ( pNode->hSurface )
+        {
+            NEXUS_Surface_Destroy(pNode->hSurface);
+        }
+        delete pNode;
+    }
+    m_nImageSurfacePushedListLen = 0;
 }
 
 
 NEXUS_VideoFrameRate BOMX_VideoEncoder::MapOMXFrameRateToNexus(OMX_U32 omxFR)
 {
     NEXUS_VideoFrameRate eFrameRate;
+
+    /* Convert from Q16 fixed point format.
+     * If framerate is not supported or doesn't exist it will return unknown.
+     * List of supported framerates can be found in refsw.
+     */
     switch ( omxFR )
     {
-    case (OMX_U32)(65536.0 * 23.976):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 23.976):
         eFrameRate = NEXUS_VideoFrameRate_e23_976;
         break;
-    case (OMX_U32)(65536.0 * 24.0):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 24.0):
         eFrameRate = NEXUS_VideoFrameRate_e24;
         break;
-    case (OMX_U32)(65536.0 * 25.0):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 25.0):
         eFrameRate = NEXUS_VideoFrameRate_e25;
         break;
-    case (OMX_U32)(65536.0 * 29.97):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 29.97):
         eFrameRate = NEXUS_VideoFrameRate_e29_97;
         break;
-    case (OMX_U32)(65536.0 * 30.0):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 30.0):
         eFrameRate = NEXUS_VideoFrameRate_e30;
         break;
-    case (OMX_U32)(65536.0 * 50.0):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 50.0):
         eFrameRate = NEXUS_VideoFrameRate_e50;
         break;
-    case (OMX_U32)(65536.0 * 59.94):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 59.94):
         eFrameRate = NEXUS_VideoFrameRate_e59_94;
         break;
-    case (OMX_U32)(65536.0 * 60.0):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 60.0):
         eFrameRate = NEXUS_VideoFrameRate_e60;
         break;
-    case (OMX_U32)(65536.0 * 14.985):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 14.985):
         eFrameRate = NEXUS_VideoFrameRate_e14_985;
         break;
-    case (OMX_U32)(65536.0 * 7.493):
-        eFrameRate = NEXUS_VideoFrameRate_e7_493;
-        break;
-    case (OMX_U32)(65536.0 * 10.0):
-        eFrameRate = NEXUS_VideoFrameRate_e10;
-        break;
-    case (OMX_U32)(65536.0 * 15.0):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 15.0):
         eFrameRate = NEXUS_VideoFrameRate_e15;
         break;
-    case (OMX_U32)(65536.0 * 20.0):
+    case (OMX_U32)(Q16_SCALE_FACTOR * 20.0):
         eFrameRate = NEXUS_VideoFrameRate_e20;
         break;
     default:
@@ -3354,16 +3326,20 @@ void BOMX_VideoEncoder::ImageBufferProcess()
 
     for (unsigned i = 0; i < num_entries; i++)
     {
-        BOMX_Buffer *pBuffer = m_pVideoPorts[0]->GetBuffer();
-        ALOG_ASSERT(NULL != pBuffer);
-        BOMX_VideoEncoderInputBufferInfo *pInfo =
-            (BOMX_VideoEncoderInputBufferInfo *)pBuffer->GetComponentPrivate();
-        ALOG_ASSERT(NULL != pInfo);
+        BOMX_ImageSurfaceNode *pNode;
+        pNode = BLST_Q_FIRST(&m_ImageSurfacePushedList);
+        ALOG_ASSERT(NULL != pNode);
 
-        ALOGV("pBuffer=%p, hFreeSurface=%p, pInfo->pSurfaceNode->hSurface = %p",  pBuffer, hFreeSurface[i], pInfo->pSurfaceNode->hSurface);
-        ALOG_ASSERT(hFreeSurface[i] == pInfo->pSurfaceNode->hSurface);
+        ALOGV("pNode=%p, pNode->hSurface = %p, hFreeSurface=%p",  pNode, pNode->hSurface, hFreeSurface[i]);
+        ALOG_ASSERT(hFreeSurface[i] == pNode->hSurface);
 
-        ReturnInputBuffers(false);
+        // remove recycled image surface from pushed list and put it back to free list
+        BLST_Q_REMOVE_HEAD(&m_ImageSurfacePushedList, node);
+        ALOG_ASSERT(m_nImageSurfacePushedListLen > 0);
+        m_nImageSurfacePushedListLen--;
+        BLST_Q_INSERT_TAIL(&m_ImageSurfaceFreeList, pNode, node);
+        m_nImageSurfaceFreeListLen++;
+
     }
     // retry if failed to push EOS, or input queue is not empty.
     if ((m_pVideoPorts[0]->QueueDepth() > 0) || m_bPushEos )
@@ -4014,6 +3990,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
     {
         ALOGE("failed to create intermediate Cr surface");
         rc = NEXUS_INVALID_PARAMETER;
+        NEXUS_Surface_Unlock(srcY);
         NEXUS_Surface_Destroy(srcY);
         goto en_out;
     }
@@ -4025,7 +4002,9 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
     {
         ALOGE("failed to create intermediate Cb surface");
         rc = NEXUS_INVALID_PARAMETER;
+        NEXUS_Surface_Unlock(srcCr);
         NEXUS_Surface_Destroy(srcCr);
+        NEXUS_Surface_Unlock(srcY);
         NEXUS_Surface_Destroy(srcY);
         goto en_out;
     }
@@ -4040,8 +4019,11 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
 
     NEXUS_Surface_Flush(hDst);
 
+    NEXUS_Surface_Unlock(srcCb);
     NEXUS_Surface_Destroy(srcCb);
+    NEXUS_Surface_Unlock(srcCr);
     NEXUS_Surface_Destroy(srcCr);
+    NEXUS_Surface_Unlock(srcY);
     NEXUS_Surface_Destroy(srcY);
     NEXUS_Surface_Unlock(hDst);
 en_out:
@@ -4062,7 +4044,8 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
     if (handle->is_mma) {
         pMemory = NULL;
         block_handle = (NEXUS_MemoryBlockHandle)handle->sharedData;
-        NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+        rc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+        ALOG_ASSERT(!rc);
         pSharedData = (PSHARED_DATA) pMemory;
     } else {
         pSharedData = (PSHARED_DATA) NEXUS_OffsetToCachedAddr(handle->sharedData);
@@ -4137,6 +4120,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         {
             ALOGE("failed to create intermediate Cr surface");
             rc = NEXUS_INVALID_PARAMETER;
+            NEXUS_Surface_Unlock(srcY);
             NEXUS_Surface_Destroy(srcY);
             goto out;
         }
@@ -4148,7 +4132,9 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         {
             ALOGE("failed to create intermediate Cb surface");
             rc = NEXUS_INVALID_PARAMETER;
+            NEXUS_Surface_Unlock(srcCr);
             NEXUS_Surface_Destroy(srcCr);
+            NEXUS_Surface_Unlock(srcY);
             NEXUS_Surface_Destroy(srcY);
             goto out;
         }
@@ -4163,8 +4149,11 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
 
         NEXUS_Surface_Flush(hDst);
 
+        NEXUS_Surface_Unlock(srcCb);
         NEXUS_Surface_Destroy(srcCb);
+        NEXUS_Surface_Unlock(srcCr);
         NEXUS_Surface_Destroy(srcCr);
+        NEXUS_Surface_Unlock(srcY);
         NEXUS_Surface_Destroy(srcY);
         NEXUS_Surface_Unlock(hDst);
     }
@@ -4225,7 +4214,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         if ( rc )
         {
             ALOGE("NEXUS_Graphics2D_Blit error - %d", rc);
-            goto rgb_out_cleanup;
+            goto rgb_out_cleanup_locked;
         }
 
         // Wait for completion
@@ -4233,11 +4222,12 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         {
             ALOGE("NEXUS_Graphics2D_Blit checkpoint timeout");
             rc = NEXUS_TIMEOUT;
-            goto rgb_out_cleanup;
+            goto rgb_out_cleanup_locked;
         }
 
         NEXUS_Surface_Flush(hDst);
-
+rgb_out_cleanup_locked:
+        NEXUS_Surface_Unlock(hSrc);
 rgb_out_cleanup:
         NEXUS_Surface_Destroy(hSrc);
         NEXUS_Surface_Unlock(hDst);
@@ -4248,5 +4238,82 @@ out:
         NEXUS_MemoryBlock_Unlock(block_handle);
     }
     return rc;
+}
+
+NEXUS_Error BOMX_VideoEncoder::UpdateEncoderSettings(void)
+{
+    NEXUS_Error rc;
+    NEXUS_SimpleEncoderSettings encoderSettings;
+    const OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = m_pVideoPorts[0]->GetDefinition();
+
+    NEXUS_SimpleEncoder_GetSettings(m_hSimpleEncoder, &encoderSettings);
+
+    encoderSettings.video.width = pPortDef->format.video.nFrameWidth;;
+    encoderSettings.video.height = pPortDef->format.video.nFrameHeight;
+    encoderSettings.video.refreshRate = 60000;
+
+    encoderSettings.videoEncoder.bitrateMax = m_sVideoBitrateParams.nTargetBitrate;
+    switch ( m_sVideoBitrateParams.eControlRate )
+    {
+    case OMX_Video_ControlRateVariable:
+    {
+        encoderSettings.videoEncoder.bitrateTarget = m_sVideoBitrateParams.nTargetBitrate;
+        encoderSettings.videoEncoder.variableFrameRate = false;
+    }
+    break;
+
+    case OMX_Video_ControlRateConstant:
+    {
+        encoderSettings.videoEncoder.bitrateTarget = 0;
+        encoderSettings.videoEncoder.variableFrameRate = false;
+    }
+    break;
+
+    case OMX_Video_ControlRateVariableSkipFrames:
+    {
+        encoderSettings.videoEncoder.bitrateTarget = m_sVideoBitrateParams.nTargetBitrate;
+        encoderSettings.videoEncoder.variableFrameRate = true;
+    }
+    break;
+
+    case OMX_Video_ControlRateConstantSkipFrames:
+    {
+        encoderSettings.videoEncoder.bitrateTarget = 0;
+        encoderSettings.videoEncoder.variableFrameRate = true;
+    }
+    break;
+
+    case OMX_Video_ControlRateDisable:
+    default:
+    {
+        ALOGW("%s: No rate control", __FUNCTION__);
+        encoderSettings.videoEncoder.bitrateTarget = 0;
+        encoderSettings.videoEncoder.variableFrameRate = false;
+    }
+    break;
+    }
+    encoderSettings.videoEncoder.frameRate = MapOMXFrameRateToNexus(pPortDef->format.video.xFramerate);
+    if ( encoderSettings.videoEncoder.frameRate == NEXUS_VideoFrameRate_eUnknown )
+    {
+        ALOGW("Unknown encoder frame rate %u. Use variable frame rate...", pPortDef->format.video.xFramerate);
+
+        encoderSettings.videoEncoder.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
+        encoderSettings.videoEncoder.variableFrameRate = true;
+    }
+
+    ALOGV("FrameRate=%d BitRateMax=%d BitRateTarget=%d bVarFrameRate=%d",
+          encoderSettings.videoEncoder.frameRate,
+          encoderSettings.videoEncoder.bitrateMax,
+          encoderSettings.videoEncoder.bitrateTarget,
+          encoderSettings.videoEncoder.variableFrameRate);
+
+    rc = NEXUS_SimpleEncoder_SetSettings(m_hSimpleEncoder, &encoderSettings);
+    if ( rc )
+    {
+        return BOMX_BERR_TRACE(BERR_UNKNOWN);
+    }
+    ALOGV("configured Nexus encoder");
+
+    return NEXUS_SUCCESS;
 }
 

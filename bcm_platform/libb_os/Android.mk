@@ -54,7 +54,7 @@ B_LIB_TOP := $(NEXUS_TOP)/lib
 B_REFSW_OS ?= linuxuser
 include $(NEXUS_TOP)/lib/os/b_os_lib.inc
 LOCAL_SRC_FILES += $(subst $(B_LIB_TOP),../../refsw/nexus/lib,$(B_OS_LIB_SOURCES))
-LOCAL_C_INCLUDES += $(subst $(B_LIB_TOP),$(TOP)/vendor/broadcom/refsw/nexus/lib,$(B_OS_LIB_PUBLIC_INCLUDES) $(B_OS_LIB_PRIVATE_INCLUDES))
+LOCAL_C_INCLUDES += $(subst $(B_LIB_TOP),$(TOP)/vendor/broadcom/stb/refsw/nexus/lib,$(B_OS_LIB_PUBLIC_INCLUDES) $(B_OS_LIB_PRIVATE_INCLUDES))
 LOCAL_CFLAGS += $(addprefix -D,$(B_OS_LIB_DEFINES))
 
 LOCAL_SHARED_LIBRARIES :=         \

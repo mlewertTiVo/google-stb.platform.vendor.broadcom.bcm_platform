@@ -67,13 +67,20 @@
 #include "nxserver.h"
 #include "nxclient.h"
 #include "nxserverlib.h"
+#include "nxserverlib_impl.h"
 #include "nexusnxservice.h"
 #include "namevalue.h"
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
-#define APP_MAX_CLIENTS 20
+#define APP_MAX_CLIENTS (64)
 #define MB (1024*1024)
 #define KB (1024)
+#define SEC_TO_MSEC (1000LL)
+#define RUNNER_SEC_THRESHOLD (10)
+#define RUNNER_GC_THRESHOLD (3)
+#define RUNNER_LMK_THRESHOLD (10)
+#define NUM_NX_OBJS (128)
+#define MAX_NX_OBJS (2048)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     1920
 #define GRAPHICS_RES_HEIGHT_DEFAULT    1080
@@ -81,6 +88,12 @@
 #define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
 
 #define NX_MMA                         "ro.nx.mma"
+#define NX_MMA_ACT_GC                  "ro.nx.mma.act.gc"
+#define NX_MMA_ACT_GS                  "ro.nx.mma.act.gs"
+#define NX_MMA_ACT_LMK                 "ro.nx.mma.act.lmk"
+#define NX_MMA_GROW_SIZE               "ro.nx.heap.grow"
+#define NX_MMA_SHRINK_THRESHOLD        "ro.nx.heap.shrink"
+#define NX_MMA_SHRINK_THRESHOLD_DEF    "2m"
 #define NX_TRANSCODE                   "ro.nx.transcode"
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
 
@@ -88,6 +101,8 @@
 #define NX_HEAP_GFX                    "ro.nx.heap.gfx"
 #define NX_HEAP_GFX2                   "ro.nx.heap.gfx2"
 #define NX_HEAP_VIDEO_SECURE           "ro.nx.heap.video_secure"
+#define NX_HEAP_HIGH_MEM               "ro.nx.heap.highmem"
+#define NX_HEAP_DRV_MANAGED            "ro.nx.heap.drv_managed"
 #define NX_HEAP_GROW                   "ro.nx.heap.grow"
 
 #define NX_HD_OUT_FMT                  "persist.hd_output_format"
@@ -100,55 +115,42 @@
 #define NX_TRIM_VP9                    "ro.nx.trim.vp9"
 #define NX_TRIM_PIP                    "ro.nx.trim.pip"
 #define NX_TRIM_MOSAIC                 "ro.nx.trim.mosaic"
+#define NX_TRIM_STILLS                 "ro.nx.trim.stills"
+#define NX_TRIM_MINFMT                 "ro.nx.trim.minfmt"
+#define NX_TRIM_DISP                   "ro.nx.trim.disp"
 
-static struct {
+#define NX_HEAP_DYN_FREE_THRESHOLD     (1920*1080*4) /* one 1080p RGBA. */
+
+typedef struct {
+   pthread_t runner;
+   int running;
+   BKNI_EventHandle runner_run;
+
+} RUNNER_T;
+
+typedef struct {
+   pthread_t runner;
+   int running;
+
+} BINDER_T;
+
+typedef struct {
     BKNI_MutexHandle lock;
     nxserver_t server;
+    BINDER_T binder;
+    RUNNER_T proactive_runner;
     unsigned refcnt;
+    int uses_mma;
+    BKNI_MutexHandle clients_lock;
     struct {
         nxclient_t client;
         NxClient_JoinSettings joinSettings;
     } clients[APP_MAX_CLIENTS]; /* index provides id */
-} g_app;
 
+} NX_SERVER_T;
+
+static NX_SERVER_T g_app;
 static bool g_exit = false;
-
-
-static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinSettings, NEXUS_ClientSettings *pClientSettings)
-{
-    unsigned i;
-    BSTD_UNUSED(pClientSettings);
-    /* server app has opportunity to reject client altogether, or modify pClientSettings */
-    for (i=0;i<APP_MAX_CLIENTS;i++) {
-        if (!g_app.clients[i].client) {
-            g_app.clients[i].client = client;
-            g_app.clients[i].joinSettings = *pJoinSettings;
-            break;
-        }
-    }
-    return 0;
-}
-
-static void client_disconnect(nxclient_t client, const NxClient_JoinSettings *pJoinSettings)
-{
-    unsigned i;
-    BSTD_UNUSED(pJoinSettings);
-    for (i=0;i<APP_MAX_CLIENTS;i++) {
-        if (g_app.clients[i].client == client) {
-            g_app.clients[i].client = NULL;
-            break;
-        }
-    }
-}
-
-static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned heapType)
-{
-    unsigned i;
-    for (i=0;i<NEXUS_MAX_HEAPS;i++) {
-        if (pPlatformSettings->heap[i].size && pPlatformSettings->heap[i].heapType & heapType) return i;
-    }
-    return -1;
-}
 
 static unsigned calc_heap_size(const char *value)
 {
@@ -161,22 +163,263 @@ static unsigned calc_heap_size(const char *value)
    }
 }
 
+static void *binder_task(void *argv)
+{
+    NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
+
+    do
+    {
+       android::ProcessState::self()->startThreadPool();
+       NexusNxService::instantiate();
+       android::IPCThreadState::self()->joinThreadPool();
+
+    } while(nx_server->binder.running);
+
+done:
+    return NULL;
+}
+
+static void *proactive_runner_task(void *argv)
+{
+    NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
+    unsigned gfx_heap_grow_size = 0;
+    unsigned gfx_heap_shrink_threshold = 0;
+    int active_gc, active_lmk, active_gs;
+    int gc_tick = 0;
+    int lmk_tick = 0;
+    char value[PROPERTY_VALUE_MAX];
+    bool needs_growth;
+    int i, j;
+
+    if (property_get(NX_MMA_GROW_SIZE, value, NULL)) {
+       if (strlen(value)) {
+          gfx_heap_grow_size = calc_heap_size(value);
+       }
+    }
+    if (property_get(NX_MMA_SHRINK_THRESHOLD, value, NX_MMA_SHRINK_THRESHOLD_DEF)) {
+       if (strlen(value)) {
+          gfx_heap_shrink_threshold = calc_heap_size(value);
+       }
+    }
+    active_gc  = property_get_int32(NX_MMA_ACT_GC, 1);
+    active_gs  = property_get_int32(NX_MMA_ACT_GS, 1);
+    active_lmk = property_get_int32(NX_MMA_ACT_LMK, 1);
+
+    ALOGI("%s: launching, gpx-grow: %u, gpx-shrink: %u, active-gc: %c, active-gs: %c, active-lmk: %c",
+          __FUNCTION__, gfx_heap_grow_size, gfx_heap_shrink_threshold,
+          active_gc ? 'o' : 'x',
+          active_gs ? 'o' : 'x',
+          active_lmk ? 'o' : 'x');
+
+    do
+    {
+       BKNI_WaitForEvent(nx_server->proactive_runner.runner_run, BKNI_INFINITE);
+
+       /* the proactive runner can be used for several purposes, but primarely
+        * meant for memory management monitoring:
+        *
+        * 1) proactive dynamic heap allocation to ensure sufficient head room to avoid
+        *    last minute application requests if possible.
+        *
+        * 2) proactive dynamic heap shrink to free up memory not actually used by the
+        *    application but which client is still alive (default shrink only runs on
+        *    nexus client disconnect).
+        *
+        * 3) proactive LMK on behalf of android for nexus managed memory not seen in
+        *    standard LMK.
+        */
+
+        if (++lmk_tick > RUNNER_LMK_THRESHOLD) {
+           NEXUS_InterfaceName interfaceName;
+           size_t num, queried;
+           NEXUS_PlatformObjectInstance *objects = NULL;
+           NEXUS_Error nrc;
+           unsigned client_allocation_size;
+
+           if (!active_lmk) {
+              goto skip_lmk;
+           }
+
+           strcpy(interfaceName.name, "NEXUS_MemoryBlock");
+           /* find memory allocation for all registered clients. */
+           if (BKNI_AcquireMutex(g_app.clients_lock) == BERR_SUCCESS) {
+              for (i = 0; i < APP_MAX_CLIENTS; i++) {
+                 client_allocation_size = 0;
+                 if (g_app.clients[i].client) {
+                    num = NUM_NX_OBJS;
+                    do {
+                       queried = num;
+                       if (objects != NULL) {
+                          BKNI_Free(objects);
+                          objects = NULL;
+                       }
+                       objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
+                       if (objects == NULL) {
+                          num = 0;
+                          nrc = NEXUS_SUCCESS;
+                       }
+                       nrc = NEXUS_Platform_GetClientObjects(g_app.clients[i].client->nexusClient, &interfaceName, objects, num, &num);
+                       if (nrc == NEXUS_PLATFORM_ERR_OVERFLOW) {
+                          num = 2 * queried;
+                          if (num > MAX_NX_OBJS) {
+                             num = 0;
+                             nrc = NEXUS_SUCCESS;
+                          }
+                       }
+                    } while (nrc == NEXUS_PLATFORM_ERR_OVERFLOW);
+                    for (j = 0; j < (int)num; j++) {
+                       NEXUS_MemoryBlockProperties prop;
+                       NEXUS_MemoryBlock_GetProperties((NEXUS_MemoryBlockHandle)objects[j].object, &prop);
+                       client_allocation_size += prop.size;
+                    }
+                    if (objects != NULL) {
+                       BKNI_Free(objects);
+                       objects = NULL;
+                    }
+                 }
+                 if (g_app.clients[i].client && client_allocation_size) {
+                    ALOGI("lmk-runner(%d): '%s'::%p -> %u bytes", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client, client_allocation_size);
+                 }
+              }
+              BKNI_ReleaseMutex(g_app.clients_lock);
+           }
+
+           /* sort clients via oom_adj score and select kill. */
+           lmk_tick = 0;
+        }
+
+skip_lmk:
+        if (nx_server->uses_mma && gfx_heap_grow_size) {
+           NEXUS_PlatformConfiguration platformConfig;
+           NEXUS_MemoryStatus heapStatus;
+           NEXUS_Platform_GetConfiguration(&platformConfig);
+           NEXUS_Heap_GetStatus(platformConfig.heap[NEXUS_MAX_HEAPS-2], &heapStatus);
+
+           ALOGV("%s: dyn-heap largest free = %u", __FUNCTION__, heapStatus.largestFreeBlock);
+           needs_growth = false;
+           if (heapStatus.largestFreeBlock < NX_HEAP_DYN_FREE_THRESHOLD) {
+              needs_growth = true;
+           }
+
+           if (active_gc) {
+              if (++gc_tick > RUNNER_GC_THRESHOLD) {
+                 gc_tick = 0;
+                 if (!needs_growth) {
+                    NEXUS_Platform_ShrinkHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size, (size_t)gfx_heap_shrink_threshold);
+                 }
+              }
+           }
+
+           if (active_gs && needs_growth) {
+              ALOGI("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
+              NEXUS_Platform_GrowHeap(platformConfig.heap[NEXUS_MAX_HEAPS-2], (size_t)gfx_heap_grow_size);
+           }
+        }
+
+    } while(nx_server->proactive_runner.running);
+
+done:
+    return NULL;
+}
+
+static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinSettings, NEXUS_ClientSettings *pClientSettings)
+{
+    unsigned i;
+    BSTD_UNUSED(pClientSettings);
+    if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
+        ALOGE("failed to add client %p", client);
+        goto out;
+    }
+    for (i = 0; i < APP_MAX_CLIENTS; i++) {
+        if (!g_app.clients[i].client) {
+            g_app.clients[i].client = client;
+            g_app.clients[i].joinSettings = *pJoinSettings;
+            ALOGI("client_connect(%d): '%s'::%p", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client);
+            break;
+        }
+    }
+    BKNI_ReleaseMutex(g_app.clients_lock);
+out:
+    return 0;
+}
+
+static void client_disconnect(nxclient_t client, const NxClient_JoinSettings *pJoinSettings)
+{
+    unsigned i;
+    BSTD_UNUSED(pJoinSettings);
+    if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
+        ALOGE("failed to remove client %p", client);
+        goto out;
+    }
+    for (i=0;i<APP_MAX_CLIENTS;i++) {
+        if (g_app.clients[i].client == client) {
+            ALOGI("client_disconnect(%d): '%s'::%p", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client);
+            g_app.clients[i].client = NULL;
+            break;
+        }
+    }
+    BKNI_ReleaseMutex(g_app.clients_lock);
+out:
+    return;
+}
+
+static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned heapType)
+{
+    unsigned i;
+    for (i=0;i<NEXUS_MAX_HEAPS;i++) {
+        if (pPlatformSettings->heap[i].size && pPlatformSettings->heap[i].heapType & heapType) return i;
+    }
+    return -1;
+}
+
+static int lookup_heap_memory_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned memoryType)
+{
+    unsigned i;
+    for (i=0;i<NEXUS_MAX_HEAPS;i++) {
+        if (pPlatformSettings->heap[i].size &&
+            ((pPlatformSettings->heap[i].memoryType & memoryType) == memoryType)) return i;
+    }
+    return -1;
+}
+
 static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
 {
-   int i;
+   int i, j;
    char value[PROPERTY_VALUE_MAX];
 
-   /* no SD display - this is hardcoded knowledge. */
-   pMemConfigSettings->display[1].window[0].used = false;
-   pMemConfigSettings->display[1].window[1].used = false;
+   /* need more than a single display? */
+   if (property_get(NX_TRIM_DISP, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         for (i = 1 ; i < NEXUS_MAX_DISPLAYS ; i++) {
+            pMemConfigSettings->display[i].maxFormat = NEXUS_VideoFormat_eUnknown;
+            for (j = 0 ; j < NEXUS_MAX_VIDEO_WINDOWS ; j++) {
+               pMemConfigSettings->display[i].window[j].used = false;
+            }
+         }
+      }
+   }
+
+   /* only request a single encoder - this is hardcoded knowledge. */
+   for (i = 1 ; i < NEXUS_MAX_VIDEO_ENCODERS ; i++) {
+      pMemConfigSettings->videoEncoder[i].used = false;
+   }
 
    /* need vp9? */
    if (property_get(NX_TRIM_VP9, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         for (i = 0 ; i < NEXUS_NUM_VIDEO_DECODERS ; i++) {
+         for (i = 0 ; i < NEXUS_MAX_VIDEO_DECODERS ; i++) {
             pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
          }
          pMemConfigSettings->stillDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
+      }
+   }
+
+   /* need stills? */
+   if (property_get(NX_TRIM_STILLS, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         for (i = 0 ; i < NEXUS_MAX_STILL_DECODERS ; i++) {
+            pMemConfigSettings->stillDecoder[i].used = false;
+         }
       }
    }
 
@@ -190,7 +433,18 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
-   /* need pip? */
+   /* default to lowest format for non main decoder (i.e. transcode). */
+   if (property_get(NX_TRIM_MINFMT, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS ; i++) {
+            if (pMemConfigSettings->videoDecoder[i].used) {
+               pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_eNtsc;
+            }
+         }
+      }
+   }
+
+   /* need pip? - note you may have to reset format set above if pip needed. */
    if (property_get(NX_TRIM_PIP, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          pMemConfigSettings->videoDecoder[1].used = false;
@@ -261,8 +515,8 @@ static nxserver_t init_nxserver(void)
         if (strlen(value)) {
             /* -display_format XX */
             settings.display.format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
-            ALOGI("%s: display format = %s", __FUNCTION__, lookup_name(
-                g_videoFormatStrs, settings.display.format));
+            ALOGI("%s: display format = %s", __FUNCTION__,
+                  lookup_name(g_videoFormatStrs, settings.display.format));
             /* -ignore_edid */
             settings.display.hdmiPreferences.followPreferredFormat = false;
         }
@@ -278,6 +532,23 @@ static nxserver_t init_nxserver(void)
     settings.session[0].output.hd = true;
     /* -memconfig display,hddvi=off */
     memConfigSettings.videoInputs.hdDvi = false;
+
+    if (property_get(NX_HEAP_HIGH_MEM, value, "0m")) {
+       /* high-mem heap is used for 40 bits addressing. */
+       int index = lookup_heap_memory_type(&platformSettings, NEXUS_MEMORY_TYPE_HIGH_MEMORY);
+       if (strlen(value) && (index != -1)) {
+          platformSettings.heap[index].size = calc_heap_size(value);
+       }
+    }
+
+    if (property_get(NX_HEAP_DRV_MANAGED, value, NULL)) {
+       /* driver-managed heap is used for encoder on some platforms only. */
+       int index = lookup_heap_memory_type(&platformSettings,
+          (NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_DRIVER_UNCACHED|NEXUS_MEMORY_TYPE_DRIVER_CACHED|NEXUS_MEMORY_TYPE_APPLICATION_CACHED));
+       if (strlen(value) && (index != -1)) {
+          platformSettings.heap[index].size = calc_heap_size(value);
+       }
+    }
 
     if (property_get(NX_HEAP_VIDEO_SECURE, value, NULL)) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_COMPRESSED_RESTRICTED_REGION);
@@ -407,6 +678,8 @@ static nxserver_t init_nxserver(void)
        return NULL;
     }
 
+    BKNI_CreateMutex(&g_app.clients_lock);
+    g_app.uses_mma = uses_mma;
     g_app.refcnt++;
     return g_app.server;
 }
@@ -419,13 +692,17 @@ static void uninit_nxserver(nxserver_t server)
     nxserver_ipc_uninit();
     nxserverlib_uninit(server);
     BKNI_DestroyMutex(g_app.lock);
+    BKNI_DestroyMutex(g_app.clients_lock);
     NEXUS_Platform_Uninit();
 }
 
 int main(void)
 {
+    struct timespec t;
+    int64_t now, then;
     struct stat sbuf;
     nxserver_t nx_srv = NULL;
+    pthread_attr_t attr;
 
     memset(&g_app, 0, sizeof(g_app));
 
@@ -436,7 +713,7 @@ int main(void)
 
     /* delay until nexus device is present and writable */
     while (stat(devName, &sbuf) == -1 || !(sbuf.st_mode & S_IWOTH)) {
-        ALOGW("Waiting for %s device...\n", devName);
+        ALOGW("waiting for %s device...\n", devName);
         sleep(1);
     }
 
@@ -455,24 +732,54 @@ int main(void)
         setenv("debug_log_size", loggerSize, 1);
     }
 
+    ALOGI("init nxserver - nexus side.");
     nx_srv = init_nxserver();
     if (nx_srv == NULL) {
         ALOGE("FATAL: Daemonise Failed!");
         _exit(1);
     }
 
-    /* trigger waiter on nexus server initialization. */
+    ALOGI("starting proactive runner.");
+    BKNI_CreateEvent(&g_app.proactive_runner.runner_run);
+    g_app.proactive_runner.running = 1;
+    pthread_attr_init(&attr);
+    if (pthread_create(&g_app.proactive_runner.runner, &attr,
+                       proactive_runner_task, (void *)&g_app) != 0) {
+        ALOGE("failed proactive runner start, ignoring...");
+        g_app.proactive_runner.running = 0;
+    }
+    pthread_attr_destroy(&attr);
+
+    ALOGI("starting binder-ipc.");
+    g_app.binder.running = 1;
+    pthread_attr_init(&attr);
+    if (pthread_create(&g_app.binder.runner, &attr,
+                       binder_task, (void *)&g_app) != 0) {
+        ALOGE("failed binder start, ignoring...");
+        g_app.binder.running = 0;
+    }
+    pthread_attr_destroy(&attr);
+
+    ALOGI("trigger nexus waiters now.");
     property_set("hw.nexus.platforminit", "on");
 
-    /* start binder ipc. */
-    android::ProcessState::self()->startThreadPool();
-    NexusNxService::instantiate();
-    android::IPCThreadState::self()->joinThreadPool();
-
-    /* loop forever. */
+    ALOGI("init done.");
     while (1) {
-       BKNI_Sleep(1000);
+       BKNI_Sleep(SEC_TO_MSEC * RUNNER_SEC_THRESHOLD);
+       BKNI_SetEvent(g_app.proactive_runner.runner_run);
        if (g_exit) break;
+    }
+
+    ALOGI("terminating nxserver.");
+    if (g_app.proactive_runner.running) {
+       g_app.proactive_runner.running = 0;
+       pthread_join(g_app.proactive_runner.runner, NULL);
+    }
+    BKNI_DestroyEvent(g_app.proactive_runner.runner_run);
+
+    if (g_app.binder.running) {
+       g_app.binder.running = 0;
+       pthread_join(g_app.binder.runner, NULL);
     }
 
     uninit_nxserver(nx_srv);

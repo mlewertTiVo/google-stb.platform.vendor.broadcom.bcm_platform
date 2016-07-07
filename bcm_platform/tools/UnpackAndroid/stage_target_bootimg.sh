@@ -59,31 +59,41 @@ if [ $# -gt 0 ]; then
 	update_data=0
 fi
 
+#flag to check if any of the $update_* variables are set
+update_something=0
 while getopts "hgbsdcuwzSp:F:" tag; do
 	case $tag in
 	g)
 		update_gpt=1
+		update_something=1
 		;;
 	b)
 		update_boot_img=1
+		update_something=1
 		;;
 	s)
 		update_system=1
+		update_something=1
 		;;
 	d)
 		update_data=1
+		update_something=1
 		;;
 	c)
 		update_cache=1
+		update_something=1
 		;;
 	u)
 		update_bsu=1
+		update_something=1
 		;;
 	w)
 		update_hwcfg=1
+		update_something=1
 		;;
 	z)
 		update_recovery=1
+		update_something=1
 		;;
 	S)
 		selinux=1
@@ -121,19 +131,21 @@ if [[ $selinux -gt 0 && $fastboot -gt 0 ]]; then
 fi
 
 # if only argument set was to ask for selinux/fastboot, roll back default update.
-if [[ $fastboot -gt 0 && $update_boot_img -eq 0 && $update_system -eq 0 && $update_data -eq 0 && $update_cache -eq 0 && $update_recovery -eq 0 ]]; then
+if [[ $fastboot -gt 0 && $update_something -eq 0 ]]; then
 	update_boot_img=1
 	update_system=1
 	update_data=1
+	update_something=1
 fi
-if [[ $selinux -gt 0 && $update_boot_img -eq 0 && $update_system -eq 0 && $update_data -eq 0 && $update_cache -eq 0 && $update_recovery -eq 0 ]]; then
+if [[ $selinux -gt 0 && $update_something -eq 0 ]]; then
 	update_boot_img=1
 	update_system=1
 	update_data=1
+	update_something=1
 fi
 
 # if nothing to do, warn and exit.
-if [[ $update_boot_img -eq 0 && $update_system -eq 0 && $update_data -eq 0 && $update_cache -eq 0 && $update_recovery -eq 0 ]]; then
+if [[ $update_something -eq 0 ]]; then
 	echo ""
 	echo "nothing to do?"
 	echo ""

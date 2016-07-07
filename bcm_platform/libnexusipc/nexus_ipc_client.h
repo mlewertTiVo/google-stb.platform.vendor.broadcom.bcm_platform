@@ -57,7 +57,7 @@ class NexusIPCClientFactory;
 
 class NexusIPCClient : public NexusIPCClientBase
 {
-public: 
+public:
     friend class NexusIPCClientFactory;
     virtual      ~NexusIPCClient();
 

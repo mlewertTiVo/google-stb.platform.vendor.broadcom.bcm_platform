@@ -35,10 +35,6 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
  * ANY LIMITED REMEDY.
  *
- * $brcm_Workfile: nexus_ipc_client_factory.cpp $
- * $brcm_Revision: $
- * $brcm_Date: $
- * 
  * Module Description:
  * This file contains an abstract factory implementation for creation of Nexus
  * IPC Clients of different types (e.g. NexusIPCClient, NexusNxClient).
