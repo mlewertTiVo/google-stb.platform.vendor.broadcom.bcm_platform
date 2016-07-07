@@ -926,23 +926,20 @@ void CameraHardware::initDefaultParameters()
     p.setPictureSize(fw,fh);
     p.set(CameraParameters::KEY_JPEG_QUALITY, 85);
 
-    // Preview - Supporting yuv422i-yuyv,yuv422sp,yuv420sp, defaulting to yuv420sp, as that is the android Defacto default
+    // Preview - Supporting yuv422i-yuyv,yuv422sp,yuv420sp
     p.set(CameraParameters::KEY_SUPPORTED_PREVIEW_FORMATS,"yuv422i-yuyv,yuv422sp,yuv420sp,yuv420p"); // All supported preview formats
-    p.setPreviewFormat(CameraParameters::PIXEL_FORMAT_YUV422SP); // For compatibility sake ... Default to the android standard
+    p.setPreviewFormat(CameraParameters::PIXEL_FORMAT_YUV420SP);
     p.set(CameraParameters::KEY_SUPPORTED_PREVIEW_FPS_RANGE, fpsranges);
     p.set(CameraParameters::KEY_SUPPORTED_PREVIEW_FRAME_RATES, fps);
     p.setPreviewFrameRate( pfps );
     p.set(CameraParameters::KEY_SUPPORTED_PREVIEW_SIZES, szs);
     p.setPreviewSize(pw,ph);
 
-    // Video - Supporting yuv422i-yuyv,yuv422sp,yuv420sp and defaulting to yuv420p
+    // Video - Supporting yuv422i-yuyv,yuv422sp,yuv420sp
     p.set("video-size-values"/*CameraParameters::KEY_SUPPORTED_VIDEO_SIZES*/, szs);
     p.setVideoSize(pw,ph);
 
-    p.set(CameraParameters::KEY_VIDEO_FRAME_FORMAT, CameraParameters::PIXEL_FORMAT_YUV422I);  // Works!!
-    //p.set(CameraParameters::KEY_VIDEO_FRAME_FORMAT, CameraParameters::PIXEL_FORMAT_YUV422SP);
-    //p.set(CameraParameters::KEY_VIDEO_FRAME_FORMAT, CameraParameters::PIXEL_FORMAT_YUV420SP);
-    //p.set(CameraParameters::KEY_VIDEO_FRAME_FORMAT, CameraParameters::PIXEL_FORMAT_YUV420P); // default -doesn't work
+    p.set(CameraParameters::KEY_VIDEO_FRAME_FORMAT, CameraParameters::PIXEL_FORMAT_YUV420SP);
 
     p.set("preferred-preview-size-for-video", "640x480");
 
@@ -1079,13 +1076,13 @@ void CameraHardware::initHeapLocked()
     int how_preview_big = 0;
     if (!strcmp(mParameters.getPreviewFormat(),"yuv422i-yuyv")) {
         mPreviewFmt = PIXEL_FORMAT_YCrCb_422_I;
-        how_preview_big = preview_width * preview_height << 1; // 2 bytes per pixel
+        how_preview_big = preview_width * preview_height << 1; // 2 bytes per pixel (16 bits)
     } else if (!strcmp(mParameters.getPreviewFormat(),"yuv422sp")) {
         mPreviewFmt = PIXEL_FORMAT_YCbCr_422_SP;
-        how_preview_big = (preview_width * preview_height * 3) >> 1; // 1.5 bytes per pixel
+        how_preview_big = (preview_width * preview_height) << 1; // 2 bytes per pixel (16 bits)
     } else if (!strcmp(mParameters.getPreviewFormat(),"yuv420sp")) {
         mPreviewFmt = PIXEL_FORMAT_YCbCr_420_SP;
-        how_preview_big = (preview_width * preview_height * 3) >> 1; // 1.5 bytes per pixel
+        how_preview_big = (preview_width * preview_height * 3) >> 1; // 1.5 bytes per pixel (12 bits)
     } else if (!strcmp(mParameters.getPreviewFormat(),"yuv420p")) {
         mPreviewFmt = PIXEL_FORMAT_YV12;
 

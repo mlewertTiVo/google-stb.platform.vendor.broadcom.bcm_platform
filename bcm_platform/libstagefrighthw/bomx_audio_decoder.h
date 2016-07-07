@@ -35,27 +35,60 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
  *
- * $brcm_Workfile: $
- * $brcm_Revision: $
- * $brcm_Date: $
- *
- * Module Description:
- *
- * Revision History:
- *
- * $brcm_Log: $
- *
  *****************************************************************************/
 #ifndef BOMX_AUDIO_DECODER_H__
 #define BOMX_AUDIO_DECODER_H__
 
 #include "bomx_component.h"
+#include "bomx_buffer_tracker.h"
 #include "nexus_simple_audio_decoder.h"
 #include "nexus_playpump.h"
 #include "OMX_Audio.h"
+#include "OMX_AudioExt.h"
+#include "blst_queue.h"
+#include "nexus_types.h"
+#include "nxclient.h"
+#include "bomx_pes_formatter.h"
+#include <stdio.h>
 
-extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" const char *BOMX_AudioDecoder_GetRole(unsigned roleIndex);
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" const char *BOMX_AudioDecoder_GetRoleAc3(unsigned roleIndex);
+
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateMp3(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" const char *BOMX_AudioDecoder_GetRoleMp3(unsigned roleIndex);
+
+struct BOMX_AudioDecoderInputBufferInfo
+{
+    void *pHeader;              // Header buffer in NEXUS_Memory space
+    size_t maxHeaderLen;        // Allocated header buffer size in bytes
+    size_t headerLen;           // Filled header buffer size in bytes
+    void *pPayload;             // Optional payload buffer in NEXUS_Memory space (set for useBuffer not allocateBuffer)
+    unsigned numDescriptors;    // Number of descriptors in use for this buffer
+    uint32_t pts;               // PTS for this input buffer
+    bool complete;              // True if buffer has already been processed by the playpump.
+};
+
+struct BOMX_AudioDecoderOutputBufferInfo
+{
+    NEXUS_MemoryBlockHandle hMemoryBlock;
+    void *pNexusMemory;     // Locked block virtual address
+    void *pClientMemory;    // NULL if OMX_AllocBuffer was called
+    bool nexusOwned;        // True if owned by nexus.  False if not (e.g. decoder is stopped because of input port disable)
+};
+
+struct BOMX_AudioDecoderRole
+{
+    char name[OMX_MAX_STRINGNAME_SIZE];
+    int omxCodec;
+};
+
+enum BOMX_AudioDecoderState
+{
+    BOMX_AudioDecoderState_eStopped,
+    BOMX_AudioDecoderState_eStarted,
+    BOMX_AudioDecoderState_eSuspended,
+    BOMX_AudioDecoderState_eMax
+};
 
 class BOMX_AudioDecoder : public BOMX_Component
 {
@@ -64,7 +97,11 @@ public:
         OMX_COMPONENTTYPE *pComponentType,
         const OMX_STRING pName,
         const OMX_PTR pAppData,
-        const OMX_CALLBACKTYPE *pCallbacks);
+        const OMX_CALLBACKTYPE *pCallbacks,
+        bool secure,
+        unsigned numRoles,
+        const BOMX_AudioDecoderRole *pRoles,
+        const char *(*pGetRole)(unsigned roleIndex));
 
     virtual ~BOMX_AudioDecoder();
 
@@ -82,12 +119,6 @@ public:
     OMX_ERRORTYPE SetParameter(
             OMX_IN  OMX_INDEXTYPE nIndex,
             OMX_IN  OMX_PTR pComponentParameterStructure);
-
-    OMX_ERRORTYPE ComponentTunnelRequest(
-        OMX_IN  OMX_U32 nPort,
-        OMX_IN  OMX_HANDLETYPE hTunneledComp,
-        OMX_IN  OMX_U32 nTunneledPort,
-        OMX_INOUT  OMX_TUNNELSETUPTYPE* pTunnelSetup);
 
     OMX_ERRORTYPE UseBuffer(
             OMX_INOUT OMX_BUFFERHEADERTYPE** ppBufferHdr,
@@ -112,6 +143,18 @@ public:
     OMX_ERRORTYPE FillThisBuffer(
             OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
 
+    OMX_ERRORTYPE GetExtensionIndex(
+            OMX_IN  OMX_STRING cParameterName,
+            OMX_OUT OMX_INDEXTYPE* pIndexType);
+
+    OMX_ERRORTYPE GetConfig(
+            OMX_IN  OMX_INDEXTYPE nIndex,
+            OMX_INOUT OMX_PTR pComponentConfigStructure);
+
+    OMX_ERRORTYPE SetConfig(
+            OMX_IN  OMX_INDEXTYPE nIndex,
+            OMX_IN  OMX_PTR pComponentConfigStructure);
+
     // End OMX Standard functions.
 
     // Begin OMX Command Handlers - These functions should block until completion.  The return code
@@ -132,37 +175,84 @@ public:
 
     // Local Event Handlers
     void PlaypumpEvent();
-    void SourceChangedEvent();
-    void EosTimer();
+    void PlaypumpTimer();
+    void OutputFrameEvent();
 
-    void GetMediaTime(OMX_TICKS *pTicks);
-    NEXUS_SimpleStcChannelHandle GetStcChannel();
+    void InputBufferTimeoutCallback();
 
 protected:
-    NEXUS_SimpleAudioDecoderHandle m_hSimpleAudioDecoder;
+
+    enum ConfigBufferState
+    {
+        ConfigBufferState_eAccumulating,        // Config buffer has not yet been submitted to playpump
+        ConfigBufferState_eFlushed,             // Input port has been flushed with the existing config buffer
+        ConfigBufferState_eSubmitted,           // Config buffer has been submited to playpump
+        ConfigBufferState_eMax
+    };
+
+    NEXUS_AudioDecoderHandle m_hAudioDecoder;
     NEXUS_PlaypumpHandle m_hPlaypump;
     NEXUS_PidChannelHandle m_hPidChannel;
-    B_EventHandle m_hSourceChangedEvent;
-    B_SchedulerEventId m_sourceChangedEventId;
     B_EventHandle m_hPlaypumpEvent;
     B_SchedulerEventId m_playpumpEventId;
-    bool m_eosPending;
-    B_SchedulerTimerId m_eosTimer;
-    unsigned m_staticFifoDepthCount;
-    unsigned m_prevFifoDepth;
+    B_SchedulerTimerId m_playpumpTimerId;
+    B_EventHandle m_hOutputFrameEvent;
+    B_SchedulerEventId m_outputFrameEventId;
+    B_SchedulerTimerId m_inputBuffersTimerId;
+    unsigned m_submittedDescriptors;
+    BOMX_AudioDecoderState m_decoderState;
+
+    BOMX_BufferTracker *m_pBufferTracker;
+    unsigned m_AvailInputBuffers;
+
+    NexusIPCClientBase              *m_pIpcClient;
+    NexusClientContext              *m_pNexusClient;
+    FILE                            *m_pPesFile;
+    FILE                            *m_pInputFile;
+    FILE                            *m_pOutputFile;
+    BOMX_PesFormatter               *m_pPes;
 
     char m_inputMimeType[OMX_MAX_STRINGNAME_SIZE];
     char m_outputMimeType[OMX_MAX_STRINGNAME_SIZE];
 
+    #define BOMX_AUDIO_EOS_LEN (B_BPP_PACKET_LEN) /* BPP LAST */
+    void *m_pEosBuffer;
+    bool m_eosPending;
+    bool m_eosDelivered;
+    bool m_eosReceived;
+    bool m_eosStandalone;
+    bool m_eosReady;
+    OMX_TICKS m_eosTimeStamp;
+    bool m_formatChangePending;
+    bool m_secureDecoder;
+    bool m_firstFrame;
+    BOMX_AudioDecoderRole *m_pRoles;
+    unsigned m_numRoles;
+    NEXUS_AudioDecoderFrameStatus *m_pFrameStatus;
+    NEXUS_MemoryBlockHandle *m_pMemoryBlocks;
+    unsigned m_sampleRate;
+    unsigned m_bitsPerSample;
+    unsigned m_numPcmChannels;
+
+    #define BOMX_BCMA_HEADER_SIZE (26)
+    uint8_t m_pBcmaHeader[BOMX_BCMA_HEADER_SIZE];
+
+    #define BOMX_AUDIO_CODEC_CONFIG_BUFFER_SIZE (1024)
+    void *m_pConfigBuffer;
+    ConfigBufferState m_configBufferState;
+    size_t m_configBufferSize;
+
     OMX_AUDIO_CODINGTYPE GetCodec() {return m_pAudioPorts[0]->GetDefinition()->format.audio.eEncoding;}
     NEXUS_AudioCodec GetNexusCodec();
+    NEXUS_AudioCodec GetNexusCodec(OMX_AUDIO_CODINGTYPE omxType);
+    int GetCodecDelay();
 
-    OMX_AUDIO_PARAM_AACPROFILETYPE m_aacParams;
-    OMX_AUDIO_PARAM_MP3TYPE m_mp3Params;
+    NEXUS_Error SetInputPortState(OMX_STATETYPE newState);
+    NEXUS_Error SetOutputPortState(OMX_STATETYPE newState);
+    NEXUS_Error StartDecoder();
+    NEXUS_Error StopDecoder();
 
-    NEXUS_Error SetNexusState(OMX_STATETYPE state);
-
-    OMX_ERRORTYPE AddPortBuffer(
+    OMX_ERRORTYPE AddInputPortBuffer(
             OMX_INOUT OMX_BUFFERHEADERTYPE** ppBufferHdr,
             OMX_IN OMX_U32 nPortIndex,
             OMX_IN OMX_PTR pAppPrivate,
@@ -170,7 +260,50 @@ protected:
             OMX_IN OMX_U8* pBuffer,
             bool componentAllocated);
 
+    OMX_ERRORTYPE AddOutputPortBuffer(
+            OMX_INOUT OMX_BUFFERHEADERTYPE** ppBufferHdr,
+            OMX_IN OMX_U32 nPortIndex,
+            OMX_IN OMX_PTR pAppPrivate,
+            OMX_IN OMX_U32 nSizeBytes,
+            OMX_IN OMX_U8* pBuffer);
+
+    void AddOutputBuffers();
+    void RemoveOutputBuffers();
+    void PollDecodedFrames();
+
+    OMX_ERRORTYPE BuildInputFrame(
+        OMX_BUFFERHEADERTYPE *pBufferHeader,
+        bool first,
+        unsigned chunkLength,
+        uint32_t pts,
+        void *pCodecHeader,
+        size_t codecHeaderLength,
+        NEXUS_PlaypumpScatterGatherDescriptor *pDescriptors,
+        unsigned maxDescriptors,
+        unsigned *pNumDescriptors
+        );
+
+    void CancelTimerId(B_SchedulerTimerId& timerId);
+
+    // These functions are used to pace the input buffers rate
+    void InputBufferNew();
+    void InputBufferReturned();
+    void InputBufferCounterReset();
+    void ReturnInputBuffers(OMX_TICKS decodeTs, bool causedByTimeout);
+    bool ReturnInputPortBuffer(BOMX_Buffer *pBuffer);
+
+    // The functions below allow derived classes to override them
+    virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
+    virtual void FreeInputBuffer(void*& pBuffer);
+    virtual OMX_ERRORTYPE ConfigBufferInit();
+    virtual OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
+    virtual NEXUS_Error OpenPidChannel(uint32_t pid);
+    virtual void ClosePidChannel();
+
 private:
+// TODO:    BOMX_AUDIO_STATS_DEC;
+
+    void DumpInputBuffer(OMX_BUFFERHEADERTYPE *pHeader);
 };
 
 #endif //BOMX_AUDIO_DECODER_H__

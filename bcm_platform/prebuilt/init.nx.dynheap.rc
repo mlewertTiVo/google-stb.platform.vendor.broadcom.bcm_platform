@@ -8,10 +8,10 @@ on boot
    # insmod'ing command line.
    #
    # the config parameter has a maximum total length of 256 characters
-   # and accepts a set of <key>=<value> pairs separated by either of
-   # (whitespace, colon, semi-colon).
+   # and accepts a set of '<key>=<value>' pairs separated by a semi-colon.
    #
-   # for nexus logging:
+   #
+   # in particular, for nexus logging:
    #
    # 1) specify 'config="msg_modules=xxx,yyy,zzz"' as an argument to
    #    the server side insmod to trigger server logs setup.
@@ -21,7 +21,7 @@ on boot
    #
    # in doubt, or if unsure, you may specify the same value for 1 and 2.
    #
-   insmod /system/vendor/drivers/wakeup_drv.ko devname="mali0"
+   insmod /system/vendor/drivers/droid_pm.ko devname="mali0"
    setprop ro.nx.msg_modules ""
    insmod /system/vendor/drivers/nexus.ko devname="mali" config="auto_subindex=true"
 

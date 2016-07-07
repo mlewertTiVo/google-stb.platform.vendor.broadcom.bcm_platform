@@ -42,9 +42,8 @@ static const struct ComponentEntry
 {
     {"OMX.broadcom.video_decoder", BOMX_VideoDecoder_Create, BOMX_VideoDecoder_GetRole},
     {"OMX.broadcom.video_decoder.vp9", BOMX_VideoDecoder_CreateVp9, BOMX_VideoDecoder_GetRoleVp9},
-#if 0 /* Enable when audio is ready */    
-    {"OMX.broadcom.audio_decoder", BOMX_AudioDecoder_Create, BOMX_AudioDecoder_GetRole},
-#endif
+    {"OMX.broadcom.audio_decoder.ac3", BOMX_AudioDecoder_CreateAc3, BOMX_AudioDecoder_GetRoleAc3},
+    {"OMX.broadcom.audio_decoder.mp3", BOMX_AudioDecoder_CreateMp3, BOMX_AudioDecoder_GetRoleMp3},
 // Use a macro for now. Need to find a better way to avoid using macros in cpp code
 #ifdef SECURE_DECODER_ON
     {"OMX.broadcom.video_decoder.secure", BOMX_VideoDecoder_Secure_Create, BOMX_VideoDecoder_Secure_GetRole},

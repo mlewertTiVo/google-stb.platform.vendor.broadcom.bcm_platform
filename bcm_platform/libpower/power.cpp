@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <poll.h>
 
 #include <cutils/properties.h>
 #include <utils/Timers.h>
@@ -28,29 +29,30 @@
 #include <hardware/power.h>
 #include <hardware_legacy/power.h>
 #include "PmLibService.h"
+#include "droid_pm.h"
 
 using namespace android;
 
 // Keep the CPU alive wakelock
 static const char *WAKE_LOCK_ID = "PowerHAL";
+static bool wakeLockAcquired = false;
 
 // Property definitions (max length 32)...
-static const char *PROPERTY_SYS_POWER_DOZE_TIMEOUT  = "persist.sys.power.doze.timeout";
-static const char *PROPERTY_PM_DOZESTATE            = "ro.pm.dozestate";
-static const char *PROPERTY_PM_OFFSTATE             = "ro.pm.offstate";
-static const char *PROPERTY_PM_INTERACTIVE_TIMEOUT  = "ro.pm.interactive.timeout";
-static const char *PROPERTY_PM_ETH_EN               = "ro.pm.eth_en";
-static const char *PROPERTY_PM_MOCA_EN              = "ro.pm.moca_en";
-static const char *PROPERTY_PM_SATA_EN              = "ro.pm.sata_en";
-static const char *PROPERTY_PM_TP1_EN               = "ro.pm.tp1_en";
-static const char *PROPERTY_PM_TP2_EN               = "ro.pm.tp2_en";
-static const char *PROPERTY_PM_TP3_EN               = "ro.pm.tp3_en";
-static const char *PROPERTY_PM_DDR_PM_EN            = "ro.pm.ddr_pm_en";
-static const char *PROPERTY_PM_CPU_FREQ_SCALE_EN    = "ro.pm.cpufreq_scale_en";
+static const char *PROPERTY_SYS_POWER_DOZE_TIMEOUT        = "persist.sys.power.doze.timeout";
+static const char *PROPERTY_PM_DOZESTATE                  = "ro.pm.dozestate";
+static const char *PROPERTY_PM_OFFSTATE                   = "ro.pm.offstate";
+static const char *PROPERTY_PM_ETH_EN                     = "ro.pm.eth_en";
+static const char *PROPERTY_PM_MOCA_EN                    = "ro.pm.moca_en";
+static const char *PROPERTY_PM_SATA_EN                    = "ro.pm.sata_en";
+static const char *PROPERTY_PM_TP1_EN                     = "ro.pm.tp1_en";
+static const char *PROPERTY_PM_TP2_EN                     = "ro.pm.tp2_en";
+static const char *PROPERTY_PM_TP3_EN                     = "ro.pm.tp3_en";
+static const char *PROPERTY_PM_DDR_PM_EN                  = "ro.pm.ddr_pm_en";
+static const char *PROPERTY_PM_CPU_FREQ_SCALE_EN          = "ro.pm.cpufreq_scale_en";
 
 // Property defaults
 static const char *DEFAULT_PROPERTY_PM_DOZESTATE          = "S0.5";
-static const char *DEFAULT_PROPERTY_PM_OFFSTATE           = "S2";
+static const char *DEFAULT_PROPERTY_PM_OFFSTATE           = "S3";
 static const int8_t DEFAULT_PROPERTY_PM_ETH_EN            = 1;     // Enable Ethernet during standby
 static const int8_t DEFAULT_PROPERTY_PM_MOCA_EN           = 0;     // Disable MOCA during standby
 static const int8_t DEFAULT_PROPERTY_PM_SATA_EN           = 0;     // Disable SATA during standby
@@ -60,11 +62,6 @@ static const int8_t DEFAULT_PROPERTY_PM_TP3_EN            = 0;     // Disable CP
 static const int8_t DEFAULT_PROPERTY_PM_DDR_PM_EN         = 1;     // Enabled DDR power management during standby
 static const int8_t DEFAULT_PROPERTY_PM_CPU_FREQ_SCALE_EN = 1;     // Enable CPU frequency scaling during standby
 
-// This is the default interactive timeout in seconds, which is the time we have to
-// wait for the framework to finish broadcasting its ACTION_SCREEN_OFF intent before
-// we actually start to power down the platform.
-static const int DEFAULT_INTERACTIVE_TIMEOUT = 5;
-
 // This is the default doze timeout in seconds.  The doze time specifies how long
 // the Power HAL must wait in the "doze" state prior to entering the off state.
 // If the doze timeout is 0, then the system will not enter the doze state but will
@@ -73,9 +70,9 @@ static const int DEFAULT_INTERACTIVE_TIMEOUT = 5;
 // and will not transition to the off state.
 static const int DEFAULT_DOZE_TIMEOUT = 0;
 
-// The interactive timer will be used to delay bringing down the platform
-// when the interactivity has stopped.
-static timer_t gInteractiveTimer = NULL;
+// This is the default timeout for which the suspend monitor thread will poll the
+// PM kernel driver for an indication that the system is about to suspend.
+static const int DEFAULT_SUSPEND_MONITOR_THREAD_TIMEOUT_MS = 1000;
 
 // The doze timer will be used only if the platform has be configured to
 // enter an intermediate "doze" mode, prior to entering the off state.
@@ -84,12 +81,22 @@ static timer_t gDozeTimer = NULL;
 // Global instance of the NexusPower class.
 static sp<NexusPower> gNexusPower;
 
-// Prototype declarations...
-static int power_set_state(b_powerState toState, b_powerState fromState);
-static void power_finish_set_interactive(int on);
+// Power device driver file descriptor.
+static int gPowerFd = -1;
 
-static const char *power_sys_power_state = "/sys/power/state";
-static const char *power_standby_state   = "standby";
+// Flag to signal when to exit the suspend monitor thread.
+static volatile bool gPowerSuspendMonitorThreadExit = false;
+
+// Global Power HAL Mutex
+Mutex gLock("PowerHAL Lock");
+
+typedef status_t (*powerFinishFunction_t)(void);
+
+// Prototype declarations...
+static status_t power_set_poweroff_state();
+static status_t power_finish_set_interactive();
+static void power_finish_set_no_interactive(b_powerState offState, powerFinishFunction_t powerFunction);
+
 
 static b_powerState power_get_state_from_string(char *value)
 {
@@ -132,27 +139,8 @@ static b_powerState power_get_property_doze_state()
     return power_get_state_from_string(value);
 }
 
-// The interactive timeout is the time we have to wait for the framework to finish broadcasting
-// its ACTION_SCREEN_OFF intent before we actually start to power down the platform.
-static int power_get_property_interactive_timeout()
-{
-    int interactiveTimeout = DEFAULT_INTERACTIVE_TIMEOUT;
-    char value[PROPERTY_VALUE_MAX] = "";
-
-    property_get(PROPERTY_PM_INTERACTIVE_TIMEOUT, value, NULL);
-
-    if (value[0]) {
-        char *endptr;
-        interactiveTimeout = strtol(value, &endptr, 10);
-        if (*endptr) {
-            ALOGE("%s: invalid value \"%s\" for property \"%s\"!!!", __FUNCTION__, value, PROPERTY_PM_INTERACTIVE_TIMEOUT);
-        }
-    }
-    return interactiveTimeout;
-}
-
 // Read back the doze timeout (if it exists) and if it is > 0, then it means we need to enter the
-// doze state (S1 or S2) and stay there until either:
+// doze state (e.g. S0.5 or S1) and stay there until either:
 //     a) Power button is pressed to exit doze and return to active full power-on state.
 //     b) No power button is pressed and the timeout expires, then enter power-off state.
 static int power_get_property_doze_timeout()
@@ -171,22 +159,38 @@ static int power_get_property_doze_timeout()
     return dozeTimeout;
 }
 
-static void interactiveTimerCallback(union sigval val __unused)
+static b_powerState power_get_sleep_state()
 {
-    ALOGV("%s: enter", __FUNCTION__);
-    power_finish_set_interactive(false);
+    return (power_get_property_doze_timeout() != 0) ? power_get_property_doze_state() : power_get_property_off_state();
 }
 
-static void dozeTimerCallback(union sigval val __unused)
+static void dozeTimerCallback(union sigval val)
 {
-    int ret;
+    b_powerState powerOffState = (b_powerState)val.sival_int;
 
-    b_powerState powerOffState = power_get_property_off_state();
-    b_powerState dozeState = power_get_property_doze_state();
+    power_finish_set_no_interactive(powerOffState, power_set_poweroff_state);
+}
 
-    ALOGI("%s: Entering power off state %s...", __FUNCTION__, NexusIPCClientBase::getPowerString(powerOffState));
-    ret = power_set_state(powerOffState, dozeState);
-    ALOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", NexusIPCClientBase::getPowerString(powerOffState));
+static void acquireWakeLock()
+{
+    Mutex::Autolock autoLock(gLock);
+
+    if (wakeLockAcquired == false) {
+        ALOGV("%s: Acquiring \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
+        acquire_wake_lock(PARTIAL_WAKE_LOCK, WAKE_LOCK_ID);
+        wakeLockAcquired = true;
+    }
+}
+
+static void releaseWakeLock()
+{
+    Mutex::Autolock autoLock(gLock);
+
+    if (wakeLockAcquired == true) {
+        ALOGV("%s: Releasing \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
+        release_wake_lock(WAKE_LOCK_ID);
+        wakeLockAcquired = false;
+    }
 }
 
 static void power_init(struct power_module *module __unused)
@@ -198,75 +202,51 @@ static void power_init(struct power_module *module __unused)
     }
     else {
         struct sigevent se;
-        memset(&se, 0, sizeof(se));
-
-        // Create the interactive timer...
-        se.sigev_notify = SIGEV_THREAD;
-        se.sigev_notify_function = interactiveTimerCallback;
-        se.sigev_notify_attributes = NULL;
-        if (timer_create(CLOCK_MONOTONIC, &se, &gInteractiveTimer) != 0) {
-            ALOGE("%s: Could not create interactive timer!!!", __FUNCTION__);
-            return;
-        }
 
         // Create the doze timer...
+        se.sigev_value.sival_int = power_get_property_off_state();
         se.sigev_notify = SIGEV_THREAD;
         se.sigev_notify_function = dozeTimerCallback;
         se.sigev_notify_attributes = NULL;
         if (timer_create(CLOCK_MONOTONIC, &se, &gDozeTimer) != 0) {
             ALOGE("%s: Could not create doze timer!!!", __FUNCTION__);
         }
+
+        int fd;
+        const char *devname = getenv("NEXUS_WAKE_DEVICE_NODE");
+
+        if (!devname) devname = "/dev/wake0";
+        fd = open(devname, O_RDONLY);
+
+        if (fd < 0) {
+            ALOGE("%s: Could not open %s PM driver!!!", __FUNCTION__, devname);
+        }
         else {
-            ALOGI("%s: succeeded", __FUNCTION__);
+            gPowerFd = fd;
         }
     }
 }
 
-static int power_set_state_s2()
+static status_t power_set_pmlibservice_state(b_powerState state)
 {
-    int ret = 0;
-    int fd;
-    char buf[80];
-
-    fd = open(power_sys_power_state, O_RDWR);
-
-    if (fd < 0) {
-        strerror_r(errno, buf, sizeof(buf));
-        ALOGE("%s: Error opening %s [err=%s]!!!", __FUNCTION__, power_sys_power_state, buf);
-        ret = -1;
-    }
-    else {
-        ret = (write(fd, power_standby_state, strlen(power_standby_state)) > 0) ? 0 : -1;
-        if (ret) {
-            ALOGE("%s: Error writing \"%s\" to %s!!!", __FUNCTION__, power_standby_state, power_sys_power_state);
-        }
-        close(fd);
-    }
-    return ret;
-}
-
-static int power_set_state_s5()
-{
-    return system("/system/bin/svc power shutdown");
-}
-
-static int power_set_pmlibservice_state(b_powerState state)
-{
-    int rc = 0;
+    status_t status;
+    IPmLibService::pmlib_state_t pmlib_orig_state;
     IPmLibService::pmlib_state_t pmlib_state;
     sp<IBinder> binder = defaultServiceManager()->getService(IPmLibService::descriptor);
     sp<IPmLibService> service = interface_cast<IPmLibService>(binder);
 
     if (service.get() == NULL) {
         ALOGE("%s: Cannot get \"PmLibService\" service!!!", __FUNCTION__);
-        return -1;
+        return NO_INIT;
     }
 
-    rc = service->getState(&pmlib_state);
-    if (rc != 0) {
-        ALOGE("%s: Could not get PmLibService state [rc=%d]!!!", __FUNCTION__, rc);
-        return rc;
+    status = service->getState(&pmlib_state);
+    if (status != NO_ERROR) {
+        ALOGE("%s: Could not get PmLibService state [status=%d]!!!", __FUNCTION__, status);
+        return status;
     }
+
+    pmlib_orig_state = pmlib_state;
 
     if (state == ePowerState_S05 || state == ePowerState_S1) {
         /* eth_en == true means leave ethernet ON during standby */
@@ -312,145 +292,317 @@ static int power_set_pmlibservice_state(b_powerState state)
         pmlib_state.cpufreq_scale_en = false;
         pmlib_state.ddr_pm_en        = false;
     }
-    return service->setState(&pmlib_state);
+
+    if (memcmp(&pmlib_orig_state, &pmlib_state, sizeof(pmlib_state))) {
+        status = service->setState(&pmlib_state);
+    }
+    return status;
 }
-    
-static int power_set_state(b_powerState toState, b_powerState fromState)
+
+static status_t power_set_state_s0()
 {
-    int rc = 0;
+    status_t status;
+
+    status = power_set_pmlibservice_state(ePowerState_S0);
+
+    if (gNexusPower.get()) {
+        status = gNexusPower->setPowerState(ePowerState_S0);
+    }
+
+    // Release the CPU wakelock as the system should be back up now...
+    releaseWakeLock();
+    return status;
+}
+
+static status_t power_set_state_s05()
+{
+    status_t status = NO_ERROR;
+    char buf[80];
+
+    if (status == NO_ERROR && gNexusPower.get()) {
+        status = gNexusPower->setPowerState(ePowerState_S05);
+    }
+
+    if (status == NO_ERROR) {
+        power_set_pmlibservice_state(ePowerState_S05);
+    }
+    return status;
+}
+
+static status_t power_set_state_s1()
+{
+    status_t status = NO_ERROR;
+    char buf[80];
+
+    if (status == NO_ERROR && gNexusPower.get()) {
+        status = gNexusPower->setPowerState(ePowerState_S1);
+    }
+
+    if (status == NO_ERROR) {
+        power_set_pmlibservice_state(ePowerState_S1);
+    }
+    return status;
+}
+
+static status_t power_set_state_s2()
+{
+    status_t status = NO_ERROR;
+    int fd;
+    char buf[80];
+
+    acquireWakeLock();  // Prevent the system from suspending to RAM
+
+    if (gNexusPower.get()) {
+        status = gNexusPower->setPowerState(ePowerState_S2);
+    }
+
+    if (status == NO_ERROR) {
+        if (gPowerFd != -1) {
+            status = ioctl(gPowerFd, BRCM_IOCTL_STANDBY);
+            if (status != NO_ERROR) {
+                strerror_r(errno, buf, sizeof(buf));
+                ALOGE("%s: Error trying to enter S2 standby [%s]!!!", __FUNCTION__, buf);
+                releaseWakeLock();   // Must release to allow a retry by the kernel suspend framework
+            }
+        }
+        else {
+            ALOGE("%s: %s driver not opened!!!", __FUNCTION__, DROID_PM_DRV_NAME);
+            status = NO_INIT;
+        }
+    }
+    return status;
+}
+
+static status_t power_set_state_s3()
+{
+    status_t status = NO_ERROR;
+    char buf[80];
+
+    if (gNexusPower.get()) {
+        status = gNexusPower->setPowerState(ePowerState_S3);
+    }
+
+    if (status == NO_ERROR) {
+        if (gPowerFd != -1) {
+            status = ioctl(gPowerFd, BRCM_IOCTL_SUSPEND);
+            if (status != NO_ERROR) {
+                strerror_r(errno, buf, sizeof(buf));
+                ALOGE("%s: Error trying to enter S3 deep sleep [%s]!!!", __FUNCTION__, buf);
+            }
+            else {
+                int pm_status;
+                status = ioctl(gPowerFd, BRCM_IOCTL_GET_STATUS, &pm_status);
+                if (status != NO_ERROR) {
+                    strerror_r(errno, buf, sizeof(buf));
+                    ALOGE("%s: Error trying to read PM status [%s]!!!", __FUNCTION__, buf);
+                }
+                else {
+                    status = pm_status;
+                    if (status != NO_ERROR) {
+                        strerror_r(abs(status), buf, sizeof(buf));
+                        ALOGE("%s: Error trying to enter S3 deep sleep [%s]!!!", __FUNCTION__, buf);
+                    }
+                }
+            }
+        }
+        else {
+            ALOGE("%s: %s driver not opened!!!", __FUNCTION__, DROID_PM_DRV_NAME);
+        }
+    }
+    return status;
+}
+
+static status_t power_set_state_s5()
+{
+    return system("/system/bin/svc power shutdown");
+}
+
+static status_t power_set_state(b_powerState toState)
+{
+    status_t status = NO_ERROR;
+
     switch (toState)
     {
         case ePowerState_S0: {
-            if (fromState == ePowerState_S05 || fromState == ePowerState_S1) {
-                power_set_pmlibservice_state(toState);
-            }
-
-            if (rc == 0 && gNexusPower.get()) {
-                rc = gNexusPower->setPowerState(toState);
-            }
-
-            if ((fromState != ePowerState_S3) && (fromState != ePowerState_S5)) {
-                // Release the CPU wakelock as the system should be back up now...
-                ALOGV("%s: Releasing \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
-                release_wake_lock(WAKE_LOCK_ID);
-            }
+            status = power_set_state_s0();
         } break;
 
         case ePowerState_S05: {
-            if (gNexusPower.get()) {
-                rc = gNexusPower->setPowerState(toState);
-            }
-            if (rc == 0) {
-                power_set_pmlibservice_state(toState);
-            }
+            status = power_set_state_s05();
         } break;
 
         case ePowerState_S1: {
-            if (gNexusPower.get()) {
-                rc = gNexusPower->setPowerState(toState);
-            }
-            if (rc == 0) {
-                power_set_pmlibservice_state(toState);
-            }
+            status = power_set_state_s1();
         } break;
 
         case ePowerState_S2: {
-            if (gNexusPower.get()) {
-                rc = gNexusPower->setPowerState(toState);
-            }
-            if (rc == 0) {
-                rc = power_set_state_s2();
-            }
+            status = power_set_state_s2();
         } break;
 
         case ePowerState_S3: {
-            if (gNexusPower.get()) {
-                rc = gNexusPower->setPowerState(toState);
-            }
-
-            // Release the CPU wakelock to allow the CPU to suspend...
-            ALOGV("%s: Releasing \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
-            release_wake_lock(WAKE_LOCK_ID);
+            status = power_set_state_s3();
         } break;
 
         case ePowerState_S5: {
-            rc = power_set_state_s5();
+            status = power_set_state_s5();
         } break;
 
         default: {
-            ALOGE("%s: Invalid Power State %s!!!", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
-            rc = BAD_VALUE;
+            ALOGE("%s: Invalid Power State!!!", __FUNCTION__);
+            return BAD_VALUE;
         } break;
     }
-    return rc;
+
+    if (status == NO_ERROR) {
+        ALOGI("%s: Successfully set power state %s", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
+    }
+    else {
+        ALOGE("%s: Could not set power state %s!!!", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
+    }
+    return status;
 }
 
-static void power_finish_set_interactive(int on)
+static status_t power_set_poweroff_state()
 {
-    int ret;
-    struct itimerspec ts;
-    b_powerState fromState;
-    b_powerState toState;
+    status_t status;
     b_powerState powerOffState = power_get_property_off_state();
-    b_powerState dozeState = power_get_property_doze_state();
+
+    status = power_set_state(powerOffState);
+    return status;
+}
+
+static status_t power_set_sleep_state()
+{
+    status_t status;
+    struct itimerspec ts;
+    b_powerState sleepState = power_get_sleep_state();
     int dozeTimeout = power_get_property_doze_timeout();
 
-    ALOGV("%s: %s", __FUNCTION__, on ? "ON" : "OFF");
+    if (dozeTimeout < 0) {
+        ALOGI("%s: Dozing in power state %s indefinitely...", __FUNCTION__, NexusIPCClientBase::getPowerString(sleepState));
+    }
+    else if (dozeTimeout > 0 && gDozeTimer) {
+        timer_gettime(gDozeTimer, &ts);
 
-    if (on) {
-        if (gInteractiveTimer) {
-            // Disarm the interactive timer...
+        // Arm the doze timer...
+        ALOGI("%s: Dozing in power state %s for %ds...", __FUNCTION__, NexusIPCClientBase::getPowerString(sleepState), dozeTimeout);
+        ts.it_value.tv_sec = dozeTimeout;
+        ts.it_value.tv_nsec = 0;
+        ts.it_interval.tv_sec = 0;
+        ts.it_interval.tv_nsec = 0;
+        timer_settime(gDozeTimer, 0, &ts, NULL);
+    }
+    status = power_set_state(sleepState);
+    return status;
+}
+
+static void *power_suspend_monitor_thread(void *arg)
+{
+    int ret;
+    struct pollfd pollFd;
+    powerFinishFunction_t powerFunction = reinterpret_cast<powerFinishFunction_t>(arg);
+
+    pollFd.fd = gPowerFd;
+    pollFd.events = POLLIN | POLLRDNORM;
+
+    while (gPowerFd >= 0) {
+        gLock.lock();
+        if (gPowerSuspendMonitorThreadExit == true) {
+            gLock.unlock();
+            break;
+        }
+        gLock.unlock();
+        ret = poll(&pollFd, 1, DEFAULT_SUSPEND_MONITOR_THREAD_TIMEOUT_MS);
+        if (ret == 0) {
+            ALOGW("%s: Timed out waiting for device to suspend - retrying...", __FUNCTION__);
+        }
+        else if (ret < 0) {
+            ALOGE("%s: Error polling PM device!!!", __FUNCTION__);
+            break;
+        }
+        else if (pollFd.revents & (POLLIN | POLLRDNORM)) {
+            if (powerFunction() == NO_ERROR) {
+                ALOGD("%s: Successfully finished setting power state.", __FUNCTION__);
+                break;
+            }
+        }
+        else {
+            ALOGW("%s: Not ready to suspend - retrying...", __FUNCTION__);
+        }
+    }
+    ALOGV("%s: Exiting power_suspend_monitor_thread...", __FUNCTION__);
+    return NULL;
+}
+
+static void *power_standby_finish_thread(void *arg)
+{
+    powerFinishFunction_t powerFunction = reinterpret_cast<powerFinishFunction_t>(arg);
+
+    if (powerFunction() == NO_ERROR) {
+        ALOGD("%s: Successfully finished setting power state.", __FUNCTION__);
+    }
+    return NULL;
+}
+
+static void power_finish_set_no_interactive(b_powerState toState, powerFinishFunction_t powerFunction)
+{
+    pthread_t thread;
+    pthread_attr_t attr;
+    void *(*pthread_function)(void *);
+
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+    // Spawn a thread that monitors for kernel suspend callbacks in S2/S3 standby only...
+    if (toState == ePowerState_S2 || toState == ePowerState_S3) {
+        // Ensure we release a wake-lock to allow the system to begin suspending.  We then
+        // use this notification to place Nexus in to standby (suspend in S2/S3 modes only).
+        releaseWakeLock();
+
+        gLock.lock();
+        gPowerSuspendMonitorThreadExit = false;
+        gLock.unlock();
+        pthread_function = power_suspend_monitor_thread;
+    }
+    // Spawn a thread that just finishes the standby sequence...
+    else {
+        // Ensure we acquire a wake-lock to prevent the system from suspending *BEFORE* we have
+        // placed Nexus in to standby (we should not suspend in S0.5/S1/S5 modes anyway).
+        acquireWakeLock();
+
+        pthread_function = power_standby_finish_thread;
+    }
+
+    ALOGI("%s: Entering power state %s...", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
+
+    if (pthread_create(&thread, &attr, pthread_function, reinterpret_cast<void *>(powerFunction)) == 0) {
+        ALOGV("%s: Successfully created a standby thread!", __FUNCTION__);
+    }
+    else {
+        ALOGE("%s: Could not create a standby thread!!!", __FUNCTION__);
+    }
+    pthread_attr_destroy(&attr);
+}
+
+static status_t power_finish_set_interactive()
+{
+    status_t status;
+
+    if (power_get_property_doze_timeout() > 0 && gDozeTimer) {
+        struct itimerspec ts;
+        timer_gettime(gDozeTimer, &ts);
+
+        if (ts.it_value.tv_sec > 0 || ts.it_value.tv_nsec > 0) {
+            // Disarm the doze timer...
             ts.it_value.tv_sec = 0;
             ts.it_value.tv_nsec = 0;
             ts.it_interval.tv_sec = 0;
             ts.it_interval.tv_nsec = 0;
-            timer_settime(gInteractiveTimer, 0, &ts, NULL);
-        }
-
-        toState = ePowerState_S0;
-        fromState = powerOffState;
-
-        if (dozeTimeout < 0) {
-            fromState = dozeState;
-        }
-        else if (dozeTimeout > 0 && gDozeTimer) {
-            timer_gettime(gDozeTimer, &ts);
-
-            if (ts.it_value.tv_sec > 0 || ts.it_value.tv_nsec > 0) {
-                // Disarm the doze timer...
-                ts.it_value.tv_sec = 0;
-                ts.it_value.tv_nsec = 0;
-                ts.it_interval.tv_sec = 0;
-                ts.it_interval.tv_nsec = 0;
-                timer_settime(gDozeTimer, 0, &ts, NULL);
-                fromState = dozeState;
-            }
+            timer_settime(gDozeTimer, 0, &ts, NULL);
         }
     }
-    else {
-        fromState = ePowerState_S0;
-        if (dozeTimeout != 0) {
-            toState = dozeState;
-
-            if (dozeTimeout < 0) {
-                ALOGI("%s: Dozing in power state %s indefinitely...", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
-            }
-            else if (gDozeTimer) {
-                // Arm the doze timer...
-                ALOGI("%s: Dozing in power state %s for %ds...", __FUNCTION__, NexusIPCClientBase::getPowerString(toState), dozeTimeout);
-                ts.it_value.tv_sec = dozeTimeout;
-                ts.it_value.tv_nsec = 0;
-                ts.it_interval.tv_sec = 0;
-                ts.it_interval.tv_nsec = 0;
-                timer_settime(gDozeTimer, 0, &ts, NULL);
-            }
-        }
-        else {
-            toState = powerOffState;
-        }
-    }
-    ret = power_set_state(toState, fromState);
-    ALOGI("%s: %s set power state %s", __FUNCTION__, !ret ? "Successfully" : "Could not", NexusIPCClientBase::getPowerString(toState));
+    status = power_set_state(ePowerState_S0);
+    return status;
 }
 
 static void power_set_interactive(struct power_module *module __unused, int on)
@@ -458,47 +610,29 @@ static void power_set_interactive(struct power_module *module __unused, int on)
     ALOGI("%s: %s", __FUNCTION__, on ? "ON" : "OFF");
 
     if (on) {
+        gLock.lock();
+        gPowerSuspendMonitorThreadExit = true;
+        gLock.unlock();
+
         if (gNexusPower.get()) {
             gNexusPower->preparePowerState(ePowerState_S0);
         }
-        power_finish_set_interactive(on);
+
+        power_finish_set_interactive();
+
         if (gNexusPower.get()) {
             gNexusPower->setVideoOutputsState(ePowerState_S0);
         }
     }
     else {
-        b_powerState offState = power_get_property_off_state();
+        b_powerState sleepState = power_get_sleep_state();
 
         if (gNexusPower.get()) {
-            gNexusPower->preparePowerState(offState);
-            gNexusPower->setVideoOutputsState(offState);
+            gNexusPower->preparePowerState(sleepState);
+            gNexusPower->setVideoOutputsState(sleepState);
         }
 
-        if (gInteractiveTimer) {
-            // Start interactive timer
-            struct itimerspec ts;
-            int interactiveTimeout;
-            int dozeTimeout = power_get_property_doze_timeout();
-
-            // If we want to enter S5 (aka cold boot), then we can enter immediately as
-            // the system will begin its slow shutdown process...
-            if (dozeTimeout == 0 && offState == ePowerState_S5) {
-                interactiveTimeout = 0;
-                ts.it_value.tv_nsec = 1;
-            }
-            else {
-                interactiveTimeout = power_get_property_interactive_timeout();
-                ts.it_value.tv_nsec = 0;
-            }
-            ALOGI("%s: Waiting %ds before actually setting the power state...", __FUNCTION__, interactiveTimeout);
-            ts.it_value.tv_sec = interactiveTimeout;
-            ts.it_interval.tv_sec = 0;
-            ts.it_interval.tv_nsec = 0;
-            timer_settime(gInteractiveTimer, 0, &ts, NULL);
-        }
-        // Keep the CPU alive until we are ready to suspend it...
-        ALOGV("%s: Acquire \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
-        acquire_wake_lock(PARTIAL_WAKE_LOCK, WAKE_LOCK_ID);
+        power_finish_set_no_interactive(sleepState, power_set_sleep_state);
     }
 }
 

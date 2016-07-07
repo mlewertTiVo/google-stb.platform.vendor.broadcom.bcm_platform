@@ -182,27 +182,23 @@ status_t NexusPower::setVideoOutputsState(b_powerState state)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
     NxClient_DisplaySettings displaySettings;
+    bool enableHdmiOutput = (state == ePowerState_S0);
 
-    NxClient_GetDisplaySettings(&displaySettings);
+    do {
+        NxClient_GetDisplaySettings(&displaySettings);
 
-    if (state == ePowerState_S0) {
-        if (displaySettings.hdmiPreferences.enabled == false) {
-            ALOGV("%s: Enabling Video outputs...", __FUNCTION__);
-            displaySettings.hdmiPreferences.enabled = true;
-            displaySettings.componentPreferences.enabled = true;
-            displaySettings.compositePreferences.enabled = true;
+        if (displaySettings.hdmiPreferences.enabled != enableHdmiOutput) {
+            ALOGV("%s: %s Video outputs...", __FUNCTION__, enableHdmiOutput ? "Enabling" : "Disabling");
+            displaySettings.hdmiPreferences.enabled      = enableHdmiOutput;
+            displaySettings.componentPreferences.enabled = enableHdmiOutput;
+            displaySettings.compositePreferences.enabled = enableHdmiOutput;
             rc = NxClient_SetDisplaySettings(&displaySettings);
         }
-    }
-    else {
-        if (displaySettings.hdmiPreferences.enabled == true) {
-            ALOGV("%s: Disabling Video outputs...", __FUNCTION__);
-            displaySettings.hdmiPreferences.enabled = false;
-            displaySettings.componentPreferences.enabled = false;
-            displaySettings.compositePreferences.enabled = false;
-            rc = NxClient_SetDisplaySettings(&displaySettings);
+
+        if (rc) {
+            ALOGE("%s: Could not set display settings [rc=%d]!!!", __FUNCTION__, rc);
         }
-    }
+    } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
     return (rc == NEXUS_SUCCESS) ? NO_ERROR : UNKNOWN_ERROR;
 }
 
@@ -211,7 +207,7 @@ status_t NexusPower::preparePowerState(b_powerState state)
     status_t status = NO_ERROR;
     sp<NexusGpio> pNexusGpio;
 
-        // Set GPIO Power key event...
+    // Set GPIO Power key event...
     for (unsigned gpio = 0; gpio < NexusGpio::MAX_INSTANCES; gpio++) {
         pNexusGpio = gpios[gpio];
         if (pNexusGpio.get() != NULL && pNexusGpio->getPinMode() == NEXUS_GpioMode_eInput &&

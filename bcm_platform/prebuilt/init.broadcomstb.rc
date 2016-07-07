@@ -6,7 +6,7 @@ import /init.brcm_hwmon.rc
 import /init.nfs.rc
 import /init.blockdev.rc
 import /init.eth.rc
-import /init.nx.${ro.nx.boot.mode}.rc
+import /init.nx.dynheap.rc
 
 on init
    mkdir /mnt/hwcfg 0555 root root
@@ -62,7 +62,7 @@ on post-fs
    export NEXUS_LOGGER /system/bin/nxlogger
    export NEXUS_LOGGER_FILE /data/nexus/nexus.log
 
-   export V3D_DISABLE_MAP_LOCK_OPT 1
+   setprop ro.nx.v3d.no_map_lock 1
 
    setprop ro.nexus.nxserver.hdcp1x_keys /mnt/hwcfg/drm_hdcp1x.bin
    setprop ro.nexus.nxserver.hdcp2x_keys /mnt/hwcfg/drm.bin
@@ -97,6 +97,9 @@ on property:hw.nexus.platforminit=on
    insmod /system/vendor/drivers/nx_ashmem.ko devname="ion" heap_grow="8m"
    class_start main
 
+on property:dyn.nx.vidout.set=1
+   start nxdispfmt
+
 service sdcard /system/bin/sdcard -u 1023 -g 1023 -l /data/media /mnt/shell/emulated
    class late_start
 
@@ -127,4 +130,9 @@ service hwcbinder /system/bin/hwcbinder
    group system media
    critical
    oneshot
+
+service nxdispfmt /system/bin/nxdispfmt
+   class late_start
+   oneshot
+   disabled
 

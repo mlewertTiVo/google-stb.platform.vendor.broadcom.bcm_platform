@@ -47,6 +47,7 @@
 #include "nexus_platform.h"
 #include "OMX_IndexExt.h"
 #include "OMX_VideoExt.h"
+#include "OMX_AsString.h"
 #include "nexus_base_mmap.h"
 #include <inttypes.h>
 #include "nx_ashmem.h"
@@ -60,15 +61,14 @@
 #define B_NUM_OF_OUT_BUFFERS (10)
 #define B_NUM_OF_IN_BUFFERS (5)
 
-#define B_HW_ENCODER_POLL_INTERVAL (20)
-
 #define Q16_SCALE_FACTOR 65536.0
 #define B_DEFAULT_INPUT_FRAMERATE (Q16_SCALE_FACTOR * 15.0)
 #define B_DEFAULT_INPUT_NEXUS_FRAMERATE (NEXUS_VideoFrameRate_e15)
 
-#define B_MAX_FRAME_WIDTH           1280
-#define B_MAX_FRAME_HEIGHT          720
+#define B_DEFAULT_MAX_FRAME_WIDTH   1280
+#define B_DEFAULT_MAX_FRAME_HEIGHT  720
 #define B_MAX_FRAME_RATE            NEXUS_VideoFrameRate_e30
+#define B_MAX_FRAME_RATE_F          30.0f
 #define B_MIN_FRAME_RATE            NEXUS_VideoFrameRate_e15
 #define B_RATE_BUFFER_DELAY_MS      1500
 
@@ -120,7 +120,7 @@ extern "C" OMX_ERRORTYPE BOMX_VideoEncoder_Create(
     NEXUS_GetVideoEncoderCapabilities(&caps);
     for ( i = 0; i < NEXUS_MAX_VIDEO_ENCODERS; i++ )
     {
-        if ( caps.videoEncoder[i].supported )
+        if ( caps.videoEncoder[i].supported && caps.videoEncoder[i].memory.used )
         {
             encodeSupported = true;
             break;
@@ -321,14 +321,13 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_ImageInputEventId(NULL),
     m_hOutputBufferProcessEvent(NULL),
     m_outputBufferProcessEventId(NULL),
-    m_outputBufferProcessTimerId(NULL),
     m_hInputBufferProcessEvent(NULL),
     m_inputBufferProcessEventId(NULL),
     m_hCheckpointEvent(NULL),
     m_hGraphics2d(NULL),
     m_pBufferTracker(NULL),
-    m_inputWidth(1280),
-    m_inputHeight(720),
+    m_maxFrameWidth(B_DEFAULT_MAX_FRAME_WIDTH),
+    m_maxFrameHeight(B_DEFAULT_MAX_FRAME_HEIGHT),
     m_metadataEnabled(false),
     m_nativeGraphicsEnabled(false),
     m_inputMode(BOMX_VideoEncoderInputBufferType_eStandard),
@@ -358,13 +357,25 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_numVideoPorts = 0;
     m_videoPortBase = 0;    // Android seems to require this - was: BOMX_COMPONENT_PORT_BASE(BOMX_ComponentId_eVideoEncoder, OMX_PortDomainVideo);
 
+    NEXUS_VideoEncoderCapabilities caps;
+    NEXUS_GetVideoEncoderCapabilities(&caps);
+    for ( i = 0; i < NEXUS_MAX_VIDEO_ENCODERS; i++ )
+    {
+        if ( caps.videoEncoder[i].supported && caps.videoEncoder[i].memory.used )
+        {
+            m_maxFrameWidth = caps.videoEncoder[i].memory.maxWidth;
+            m_maxFrameHeight = caps.videoEncoder[i].memory.maxHeight;
+            break;
+        }
+    }
+
     memset(&portDefs, 0, sizeof(portDefs));
     portDefs.eCompressionFormat = OMX_VIDEO_CodingUnused;
     portDefs.eColorFormat = OMX_COLOR_FormatYUV420Planar;
     strcpy(m_inputMimeType, "video/x-raw");
     portDefs.cMIMEType = m_inputMimeType;
-    portDefs.nFrameWidth = m_inputWidth;
-    portDefs.nFrameHeight = m_inputHeight;
+    portDefs.nFrameWidth = m_maxFrameWidth;
+    portDefs.nFrameHeight = m_maxFrameHeight;
     portDefs.nStride = portDefs.nFrameWidth;
     portDefs.nSliceHeight = portDefs.nFrameHeight;
     portDefs.xFramerate = (OMX_U32)B_DEFAULT_INPUT_FRAMERATE;
@@ -403,8 +414,8 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     memset(&portDefs, 0, sizeof(portDefs));
     portDefs.eCompressionFormat = OMX_VIDEO_CodingAVC;
     portDefs.eColorFormat = OMX_COLOR_FormatUnused;
-    portDefs.nFrameWidth = m_inputWidth;
-    portDefs.nFrameHeight = m_inputHeight;
+    portDefs.nFrameWidth = m_maxFrameWidth;
+    portDefs.nFrameHeight = m_maxFrameHeight;
     portDefs.nStride = portDefs.nFrameWidth;
     portDefs.nSliceHeight = portDefs.nFrameHeight;
     (void)BOMX_VideoEncoder_InitMimeType(portDefs.eCompressionFormat, m_outputMimeType);
@@ -481,9 +492,9 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
 
     /* register input buffer process event handler */
     m_inputBufferProcessEventId = this->RegisterEvent(m_hInputBufferProcessEvent, BOMX_VideoEncoder_InputBufferProcess, static_cast <void *> (this));
-    if ( NULL == m_outputBufferProcessEventId )
+    if ( NULL == m_inputBufferProcessEventId )
     {
-        ALOGE("Unable to register output frame event");
+        ALOGE("Unable to register input frame event");
         this->Invalidate();
         return;
     }
@@ -731,15 +742,15 @@ OMX_ERRORTYPE BOMX_VideoEncoder::GetParameter(
             {
             case 0:
                 pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileBaseline;
-                pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_AVCLevel31;
+                pProfileLevel->eLevel = (OMX_U32)GetMaxLevelAvc(OMX_VIDEO_AVCProfileBaseline);
                 break;
             case 1:
                 pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileMain;
-                pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_AVCLevel31;
+                pProfileLevel->eLevel = (OMX_U32)GetMaxLevelAvc(OMX_VIDEO_AVCProfileMain);
                 break;
             case 2:
                 pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileHigh;
-                pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_AVCLevel31;
+                pProfileLevel->eLevel = (OMX_U32)GetMaxLevelAvc(OMX_VIDEO_AVCProfileHigh);
                 break;
             default:
                 return OMX_ErrorNoMore;
@@ -1238,11 +1249,6 @@ NEXUS_Error BOMX_VideoEncoder::SetInputPortState(OMX_STATETYPE newState)
                     ReleaseEncoderResource();
                     return BOMX_BERR_TRACE(errCode);
                 }
-                // kick off the encoded frame polling
-                if ( m_pVideoPorts[1]->IsEnabled() )
-                {
-                    B_Event_Set(m_hOutputBufferProcessEvent);
-                }
             }
             break;
         case OMX_StatePause:
@@ -1273,27 +1279,11 @@ NEXUS_Error BOMX_VideoEncoder::SetOutputPortState(OMX_STATETYPE newState)
     // output port independently and leave the input port active during any
     // Resolution Change.
     ALOGV("Setting Output Port State to %s", BOMX_StateName(newState));
-    if ( newState == OMX_StateLoaded )
+    if ( newState == OMX_StateLoaded || newState == OMX_StateIdle )
     {
         // Return all pending buffers to the client
-        CancelTimerId(m_outputBufferProcessTimerId);
         ReturnPortBuffers(m_pVideoPorts[1]);
         ResetEncodedFrameList();
-    }
-    else
-    {
-        // For any other state change, kick off the frame check if the encoder is running
-        if ( newState == OMX_StateIdle )
-        {
-            // Return all pending buffers to the client
-            CancelTimerId(m_outputBufferProcessTimerId);
-            ReturnPortBuffers(m_pVideoPorts[1]);
-            ResetEncodedFrameList();
-        }
-        else if ( IsEncoderStarted() )
-        {
-            B_Event_Set(m_hOutputBufferProcessEvent);
-        }
     }
     return NEXUS_SUCCESS;
 }
@@ -2296,7 +2286,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
             surfSettings.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
         }
 
-        ALOGV("Push surface setting: pts:%d, frameRate:%d", surfSettings.pts, surfSettings.frameRate);
+        ALOGV("Push surface setting: pts:%d, frameRate:%g", surfSettings.pts, BOMX_NexusFramerateValue(surfSettings.frameRate));
 
         /* do color format conversion */
         if (!ConvertOMXPixelFormatToCrYCbY(pBufferHeader, pNode->hSurface))
@@ -2335,15 +2325,6 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
     return OMX_ErrorNone;
 }
 
-
-void BOMX_VideoEncoder::CancelTimerId(B_SchedulerTimerId& timerId)
-{
-    if ( timerId )
-    {
-        CancelTimer(timerId);
-        timerId = NULL;
-    }
-}
 
 void BOMX_VideoEncoder::ReturnInputBuffers(bool returnAll)
 {
@@ -2495,32 +2476,6 @@ OMX_ERRORTYPE BOMX_VideoEncoder::SetConfig(
     }
 }
 
-static void BOMX_VideoEncoder_OutputBufferProcessTimer(void *pParam)
-{
-    BOMX_VideoEncoder *pEncoder = static_cast <BOMX_VideoEncoder *> (pParam);
-    ALOGV("OutputBufferProcessTimer");
-    pEncoder->OutputBufferProcess();
-}
-
-void BOMX_VideoEncoder::OutputBufferProcess()
-{
-    CancelTimerId(m_outputBufferProcessTimerId);
-
-    // Check for new frames
-    PollEncodedFrames();
-
-    /* schedule a timer event if EOS is not received and a buffer needs to be filled and encoder is started */
-    BOMX_Buffer *pOmxBuffer = m_pVideoPorts[1]->GetBuffer();
-
-    ALOGV("OutputBufferProcess: pOmxBuffer=%p,  EOS=%d, IsEncoderStarted=%d", pOmxBuffer, m_bEosDelieverd, IsEncoderStarted());
-    if ( NULL != pOmxBuffer && !m_bEosDelieverd && IsEncoderStarted() )
-    {
-        m_outputBufferProcessTimerId = StartTimer(B_HW_ENCODER_POLL_INTERVAL,
-                                       BOMX_VideoEncoder_OutputBufferProcessTimer, static_cast<void *>(this));
-        ALOGV("schedule a timer to poll frames:%x", m_outputBufferProcessTimerId);
-    }
-}
-
 void BOMX_VideoEncoder::InputBufferProcess()
 {
     BOMX_Buffer *pBuffer;
@@ -2568,14 +2523,6 @@ void BOMX_VideoEncoder::InputBufferProcess()
     }
 
     ALOGV(" %d buffer(s) pushed", nPushed);
-
-    if ( nPushed > 0 && m_pVideoPorts[1]->QueueDepth() > 0 )
-    {
-        /* Force a check for new output frames each time a new input frame
-         * arrives if we have output buffers ready to fill
-         */
-        B_Event_Set(m_hOutputBufferProcessEvent);
-    }
 }
 
 void BOMX_VideoEncoder::PrintVideoEncoderStatus()
@@ -2614,7 +2561,7 @@ void BOMX_VideoEncoder::NotifyOutputPortSettingsChanged()
     }
 }
 
-void BOMX_VideoEncoder::PollEncodedFrames()
+void BOMX_VideoEncoder::OutputBufferProcess()
 {
     NEXUS_Error errCode;
     unsigned numFrames=0;
@@ -2971,8 +2918,8 @@ NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
     encoderStartSettings.output.video.settings.bounds.outputFrameRate.min = B_MIN_FRAME_RATE;
     encoderStartSettings.output.video.settings.bounds.outputFrameRate.max = B_MAX_FRAME_RATE;
     encoderStartSettings.output.video.settings.bounds.inputFrameRate.min = B_MIN_FRAME_RATE;
-    encoderStartSettings.output.video.settings.bounds.inputDimension.max.width = B_MAX_FRAME_WIDTH;
-    encoderStartSettings.output.video.settings.bounds.inputDimension.max.height = B_MAX_FRAME_HEIGHT;
+    encoderStartSettings.output.video.settings.bounds.inputDimension.max.width = m_maxFrameWidth;
+    encoderStartSettings.output.video.settings.bounds.inputDimension.max.height = m_maxFrameHeight;
     encoderStartSettings.output.video.settings.bounds.streamStructure.max.framesB = 0;
     encoderStartSettings.output.video.settings.rateBufferDelay = B_RATE_BUFFER_DELAY_MS;
 
@@ -3137,6 +3084,7 @@ NEXUS_Error BOMX_VideoEncoder::AllocateEncoderResource()
     connectSettings.simpleVideoDecoder[0].windowCapabilities.encoder = true;
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = 720;
     connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = 480;
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxFormat = NEXUS_VideoFormat_eNtsc;
     connectSettings.simpleEncoder[0].id = m_allocResults.simpleEncoder[0].id;
     connectSettings.simpleEncoder[0].nonRealTime = true;
     connectSettings.simpleEncoder[0].audio.cpuAccessible = true;
@@ -4358,8 +4306,8 @@ NEXUS_Error BOMX_VideoEncoder::UpdateEncoderSettings(void)
         encoderSettings.videoEncoder.variableFrameRate = true;
     }
 
-    ALOGV("FrameRate=%d BitRateMax=%d BitRateTarget=%d bVarFrameRate=%d",
-          encoderSettings.videoEncoder.frameRate,
+    ALOGV("FrameRate=%g BitRateMax=%d BitRateTarget=%d bVarFrameRate=%d",
+          BOMX_NexusFramerateValue(encoderSettings.videoEncoder.frameRate),
           encoderSettings.videoEncoder.bitrateMax,
           encoderSettings.videoEncoder.bitrateTarget,
           encoderSettings.videoEncoder.variableFrameRate);
@@ -4374,3 +4322,149 @@ NEXUS_Error BOMX_VideoEncoder::UpdateEncoderSettings(void)
     return NEXUS_SUCCESS;
 }
 
+/* https://en.wikipedia.org/wiki/H.264/MPEG-4_AVC#Levels */
+static const struct {
+    OMX_VIDEO_AVCLEVELTYPE level;
+    struct {
+        unsigned lumaSamples;
+        unsigned macroblocks;
+    } maxDecodingSpeed;
+    struct {
+        unsigned lumaSamples;
+        unsigned macroblocks;
+    } maxFrameSize;
+    struct {
+        unsigned baselineExtendedMain;
+        unsigned high;
+        unsigned high10;
+    } maxVideoBitRate; // (VCL) kbit/s
+    struct {
+        unsigned width;
+        unsigned height;
+        float frameRate;
+        unsigned maxStoredFrames;
+    } examples[6];
+    int nbExamples;
+} MPEG4_AVC_Levels[] = {
+    /*      Level         | Max decoding speed  | Max frame size  | Max video bit rate for  | Examples for high resolution
+    |                     |                     |                 |  video coding layer     | @ highest frame rate
+    |                     |                     |                 |     (VCL) kbit/s        |{{width, height, rate,
+    |                     |{Luma samples/s,     |{Luma samples,   |{Baseline/Extended/Main, |      max stored frames},
+    |                     |      Macroblocks/s} |    Macroblocks} |          High, High 10} | {width, ...}}, nbExamples} */
+    {OMX_VIDEO_AVCLevel1,  {   380160,    1485}, {  25344,    99}, {    64,     80,    192}, {{ 128,   96,  30.9,  8},
+                                                                                              { 176,  144,  15.0,  4}}, 2},
+    {OMX_VIDEO_AVCLevel1b, {   380160,    1485}, {  25344,    99}, {   128,    160,    384}, {{ 128,   96,  30.9,  8},
+                                                                                              { 176,  144,  15.0,  4}}, 2},
+    {OMX_VIDEO_AVCLevel11, {   768000,    3000}, { 101376,   396}, {   192,    240,    576}, {{ 176,  144,  30.3,  9},
+                                                                                              { 320,  240,  10.0,  3},
+                                                                                              { 352,  288,   7.5,  2}}, 3},
+    {OMX_VIDEO_AVCLevel12, {  1536000,    6000}, { 101376,   396}, {   384,    480,   1152}, {{ 320,  240,  20.0,  7},
+                                                                                              { 352,  288,  15.2,  6}}, 2},
+    {OMX_VIDEO_AVCLevel13, {  3041280,   11880}, { 101376,   396}, {   768,    960,   2304}, {{ 320,  240,  36.0,  7},
+                                                                                              { 352,  288,  30.0,  6}}, 2},
+    {OMX_VIDEO_AVCLevel2,  {  3041280,   11880}, { 101376,   396}, {  2000,   2500,   6000}, {{ 320,  240,  36.0,  7},
+                                                                                              { 352,  288,  30.0,  6}}, 2},
+    {OMX_VIDEO_AVCLevel21, {  5068800,   19800}, { 202752,   792}, {  4000,   5000,  12000}, {{ 352,  480,  30.0,  7},
+                                                                                              { 352,  576,  25.0,  6}}, 2},
+    {OMX_VIDEO_AVCLevel22, {  5184000,   20250}, { 414720,  1620}, {  4000,   5000,  12000}, {{ 352,  480,  30.7, 12},
+                                                                                              { 352,  576,  25.6, 10},
+                                                                                              { 720,  480,  15.0,  6},
+                                                                                              { 720,  576,  12.5,  5}}, 4},
+    {OMX_VIDEO_AVCLevel3,  { 10368000,   40500}, { 414720,  1620}, { 10000,  12500,  30000}, {{ 352,  480,  61.4, 12},
+                                                                                              { 352,  576,  51.1, 10},
+                                                                                              { 720,  480,  30.0,  6},
+                                                                                              { 720,  576,  25.0,  5}}, 4},
+    {OMX_VIDEO_AVCLevel31, { 27648000,  108000}, { 921600,  3600}, { 14000,  17500,  42000}, {{ 720,  480,  80.0, 13},
+                                                                                              { 720,  576,  66.7, 11},
+                                                                                              {1280,  720,  30.0,  5}}, 3},
+    {OMX_VIDEO_AVCLevel32, { 55296000,  216000}, {1310720,  5120}, { 20000,  25000,  60000}, {{1280,  720,  60.0,  5},
+                                                                                              {1280, 1024,  42.2,  4}}, 2},
+    {OMX_VIDEO_AVCLevel4,  { 62914560,  245760}, {2097152,  8192}, { 20000,  25000,  60000}, {{1280,  720,  68.3,  9},
+                                                                                              {1920, 1080,  30.1,  4},
+                                                                                              {2048, 1024,  30.0,  4}}, 3},
+    {OMX_VIDEO_AVCLevel41, { 62914560,  245760}, {2097152,  8192}, { 50000,  62500, 150000}, {{1280,  720,  68.3,  9},
+                                                                                              {1920, 1080,  30.1,  4},
+                                                                                              {2048, 1024,  30.0,  4}}, 3},
+    {OMX_VIDEO_AVCLevel42, {133693440,  522240}, {2228224,  8704}, { 50000,  62500, 150000}, {{1280,  720, 145.1,  9},
+                                                                                              {1920, 1080,  64.0,  4},
+                                                                                              {2048, 1080,  60.0,  4}}, 3},
+    {OMX_VIDEO_AVCLevel5,  {150994944,  589824}, {5652480, 22080}, {135000, 168750, 405000}, {{1920, 1080,  72.3, 13},
+                                                                                              {2048, 1024,  72.0, 13},
+                                                                                              {2048, 1080,  67.8, 12},
+                                                                                              {2560, 1920,  30.7,  5},
+                                                                                              {3672, 1536,  26.7,  5}}, 5},
+    {OMX_VIDEO_AVCLevel51, {251658240,  983040}, {9437184, 36864}, {240000, 300000, 720000}, {{1920, 1080, 120.5, 16},
+                                                                                              {2560, 1920,  51.2,  9},
+                                                                                              {3840, 2160,  31.7,  5},
+                                                                                              {4096, 2048,  30.0,  5},
+                                                                                              {4096, 2160,  28.5,  5},
+                                                                                              {4096, 2304,  26.7,  5}}, 6},
+    {OMX_VIDEO_AVCLevel52, {530841600, 2073600}, {9437184, 36864}, {240000, 300000, 720000}, {{1920, 1080, 172.0, 16},
+                                                                                              {2560, 1920, 108.0,  9},
+                                                                                              {3840, 2160,  66.8,  5},
+                                                                                              {4096, 2048,  63.3,  5},
+                                                                                              {4096, 2160,  60.0,  5},
+                                                                                              {4096, 2304,  56.3,  5}}, 6},
+};
+static const int nMPEG4_AVC_Levels = sizeof(MPEG4_AVC_Levels)/sizeof(MPEG4_AVC_Levels[0]);
+
+/* Return the maximum level supported for a given profile. */
+OMX_VIDEO_AVCLEVELTYPE BOMX_VideoEncoder::GetMaxLevelAvc(OMX_VIDEO_AVCPROFILETYPE profile)
+{
+    int i, j;
+
+    ALOGV("GetMaxLevelAvc %s %ux%u@%f",
+        asString(profile), m_maxFrameWidth, m_maxFrameHeight, B_MAX_FRAME_RATE_F);
+
+    for ( i = nMPEG4_AVC_Levels-1; i >= 0; i-- )
+    {
+        unsigned maxVideoBitRate;
+
+        switch (profile) {
+        case OMX_VIDEO_AVCProfileBaseline:
+        case OMX_VIDEO_AVCProfileMain:
+        case OMX_VIDEO_AVCProfileExtended:
+            maxVideoBitRate = MPEG4_AVC_Levels[i].maxVideoBitRate.baselineExtendedMain;
+            break;
+        case OMX_VIDEO_AVCProfileHigh:
+            maxVideoBitRate = MPEG4_AVC_Levels[i].maxVideoBitRate.high;
+            break;
+        case OMX_VIDEO_AVCProfileHigh10:
+            maxVideoBitRate = MPEG4_AVC_Levels[i].maxVideoBitRate.high10;
+            break;
+        default:
+            /* We don't know */
+            maxVideoBitRate = 0;
+        }
+
+        ALOGV("AVC trying %s %s maxDecodingSpeed=%u Luma samples/s (%u Macroblocks/s) "
+            "maxFrameSize=%u Luma samples (%u Macroblocks) maxVideoBitRate=%u",
+            asString(profile),
+            asString(MPEG4_AVC_Levels[i].level),
+            MPEG4_AVC_Levels[i].maxDecodingSpeed.lumaSamples,
+            MPEG4_AVC_Levels[i].maxDecodingSpeed.macroblocks,
+            MPEG4_AVC_Levels[i].maxFrameSize.lumaSamples,
+            MPEG4_AVC_Levels[i].maxFrameSize.macroblocks,
+            maxVideoBitRate);
+
+        for ( j = MPEG4_AVC_Levels[i].nbExamples-1; j >= 0; j-- )
+        {
+            if (MPEG4_AVC_Levels[i].examples[j].width <= m_maxFrameWidth &&
+                MPEG4_AVC_Levels[i].examples[j].height <= m_maxFrameHeight &&
+                MPEG4_AVC_Levels[i].examples[j].frameRate <= B_MAX_FRAME_RATE_F /*&&
+                MPEG4_AVC_Levels[i].examples[j].maxStoredFrames <= our encoder's max stored frames*/ )
+            {
+                ALOGV("AVC: %s %s matching example %ux%u@%f (%u)",
+                    asString(profile),
+                    asString(MPEG4_AVC_Levels[i].level),
+                    MPEG4_AVC_Levels[i].examples[j].width,
+                    MPEG4_AVC_Levels[i].examples[j].height,
+                    MPEG4_AVC_Levels[i].examples[j].frameRate,
+                    MPEG4_AVC_Levels[i].examples[j].maxStoredFrames);
+                return MPEG4_AVC_Levels[i].level;
+            }
+        }
+    }
+    ALOGV("AVC: no matching example found in spec");
+    return (OMX_VIDEO_AVCLEVELTYPE)0;
+}

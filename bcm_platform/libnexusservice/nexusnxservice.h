@@ -83,6 +83,7 @@ private:
     void platformUninitHdmiOutputs();
     static void hdmiOutputHotplugCallback(void *context, int param);
     static void hdmiOutputHdcpStateChangedCallback(void *pContext, int param);
+    static NEXUS_VideoFormat getBestOutputFormat(NEXUS_HdmiOutputStatus *status);
 
     bool platformInitIR();
     void platformUninitIR();

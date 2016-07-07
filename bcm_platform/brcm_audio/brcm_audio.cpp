@@ -175,7 +175,7 @@ static int bout_set_format(struct audio_stream *stream,
     return -ENOSYS;
 }
 
-static int bout_standby(struct audio_stream *stream)
+static int bout_standby_l(struct audio_stream *stream)
 {
     struct brcm_stream_out *bout = (struct brcm_stream_out *)stream;
     int ret = 0;
@@ -183,13 +183,21 @@ static int bout_standby(struct audio_stream *stream)
     LOGV("%s: at %d, stream = 0x%X\n",
          __FUNCTION__, __LINE__, (uint32_t)stream);
 
-    pthread_mutex_lock(&bout->lock);
-
     if (bout->started) {
         ret = bout->ops.do_bout_stop(bout);
         bout->started = false;
     }
 
+    return ret;
+}
+
+static int bout_standby(struct audio_stream *stream)
+{
+    struct brcm_stream_out *bout = (struct brcm_stream_out *)stream;
+    int ret;
+
+    pthread_mutex_lock(&bout->lock);
+    ret = bout_standby_l(stream);
     pthread_mutex_unlock(&bout->lock);
 
     return ret;
@@ -229,6 +237,8 @@ static int bout_set_parameters(struct audio_stream *stream,
     struct str_parms *parms;
     int ret = 0;
 
+    pthread_mutex_lock(&bout->lock);
+
     LOGV("%s: at %d, stream = 0x%X, kvpairs=\"%s\"\n",
          __FUNCTION__, __LINE__, (uint32_t)stream, kvpairs);
 
@@ -243,19 +253,24 @@ static int bout_set_parameters(struct audio_stream *stream,
         if (ret > 0) {
             if (strcmp(value, "off") == 0) {
                 ALOGV("%s: Need to enter power saving mode...", __FUNCTION__);
-                ret = bout_standby(stream);
+                ret = bout_standby_l(stream);
+                bout->suspended = true;
+            }
+            else if (strcmp(value, "on") == 0) {
+                ALOGV("%s: Need to exit power saving mode...", __FUNCTION__);
+                bout->suspended = false;
             }
         }
     }
 
     str_parms_destroy(parms);
+    pthread_mutex_unlock(&bout->lock);
     return ret;
 }
 
 static char *bout_get_parameters(const struct audio_stream *stream,
                                  const char *keys)
 {
-    struct brcm_stream_out *bout = (struct brcm_stream_out *)stream;
     struct str_parms *query;
     struct str_parms *reply;
     char *str;
@@ -335,14 +350,20 @@ static ssize_t bout_write(struct audio_stream_out *aout,
     pthread_mutex_lock(&bout->lock);
 
      if (!bout->started) {
-        ret = bout->ops.do_bout_start(bout);
-        if (ret) {
-            LOGE("%s: at %d, start failed\n",
-                 __FUNCTION__, __LINE__);
-            pthread_mutex_unlock(&bout->lock); // have to unlock, otherwise deadlock
+        if (!bout->suspended) {
+            ret = bout->ops.do_bout_start(bout);
+            if (ret) {
+                LOGE("%s: at %d, start failed\n",
+                     __FUNCTION__, __LINE__);
+                pthread_mutex_unlock(&bout->lock); // have to unlock, otherwise deadlock
+                return ret;
+            }
+            bout->started = true;
+        }
+        else {
+            pthread_mutex_unlock(&bout->lock);
             return ret;
         }
-        bout->started = true;
     }
 
     bytes_written = bout->ops.do_bout_write(bout, buffer, bytes);
@@ -359,8 +380,12 @@ static int bout_get_render_position(const struct audio_stream_out *aout,
                                     uint32_t *dsp_frames)
 {
     struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
-    int ret = bout->ops.do_bout_get_render_position(bout, dsp_frames);
+    int ret;
+
+    pthread_mutex_lock(&bout->lock);
+    ret = bout->ops.do_bout_get_render_position(bout, dsp_frames);
     LOGV("%s: stream:%p, frames:%u",__FUNCTION__, aout, *dsp_frames);
+    pthread_mutex_unlock(&bout->lock);
     return ret;
 }
 

@@ -285,3 +285,32 @@ const char * BOMX_StateName(OMX_STATETYPE state)
         return "Unknown";
     }
 }
+
+/* Please keep in sync with the enum from refsw
+   nexus/modules/core/include/nexus_video_types.h */
+float BOMX_NexusFramerateValue(NEXUS_VideoFrameRate framerate)
+{
+    switch ( framerate )
+    {
+    case NEXUS_VideoFrameRate_eUnknown: break;
+    case NEXUS_VideoFrameRate_e23_976: return 23.976;
+    case NEXUS_VideoFrameRate_e24:     return 24.0;
+    case NEXUS_VideoFrameRate_e25:     return 25.0;
+    case NEXUS_VideoFrameRate_e29_97:  return 29.97;
+    case NEXUS_VideoFrameRate_e30:     return 30.0;
+    case NEXUS_VideoFrameRate_e50:     return 50.0;
+    case NEXUS_VideoFrameRate_e59_94:  return 59.94;
+    case NEXUS_VideoFrameRate_e60:     return 60.0;
+    case NEXUS_VideoFrameRate_e14_985: return 14.985;
+    case NEXUS_VideoFrameRate_e7_493:  return  7.493;
+    case NEXUS_VideoFrameRate_e10:     return 10.0;
+    case NEXUS_VideoFrameRate_e15:     return 15.0;
+    case NEXUS_VideoFrameRate_e20:     return 20.0;
+    case NEXUS_VideoFrameRate_e12_5:   return 12.5;
+    default:
+        BDBG_CASSERT(NEXUS_VideoFrameRate_eMax == 15);
+        ALOGE("Unhandled NEXUS_VideoFrameRate (%d).", framerate);
+        break;
+    }
+    return 0.0;
+};

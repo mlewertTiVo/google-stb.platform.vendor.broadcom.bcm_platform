@@ -82,6 +82,7 @@
 #define RUNNER_LMK_THRESHOLD           (10)
 #define NUM_NX_OBJS                    (128)
 #define MAX_NX_OBJS                    (2048)
+#define MIN_PLATFORM_DEC               (2)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
 #define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
@@ -111,12 +112,13 @@
 #define NX_HEAP_DRV_MANAGED            "ro.nx.heap.drv_managed"
 #define NX_HEAP_GROW                   "ro.nx.heap.grow"
 
-#define NX_HD_OUT_FMT                  "persist.hd_output_format"
+#define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
 #define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
 #define NX_HDCP2X_KEY                  "ro.nexus.nxserver.hdcp2x_keys"
 
 #define NX_LOGGER_DISABLED             "ro.nx.logger_disabled"
 #define NX_LOGGER_SIZE                 "ro.nx.logger_size"
+#define NX_AUDIO_LOG                   "ro.nx.audio_log"
 
 #define NX_HEAP_DYN_FREE_THRESHOLD     (1920*1080*4) /* one 1080p RGBA. */
 
@@ -398,6 +400,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
 {
    int i, j;
    char value[PROPERTY_VALUE_MAX];
+   int dec_used = 0;
 
    /* 1. additional display(s). */
    if (property_get(NX_TRIM_DISP, value, NULL)) {
@@ -457,9 +460,16 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 7. pip. */
+   for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+      if (pMemConfigSettings->videoDecoder[i].used) {
+         ++dec_used;
+      }
+   }
    if (property_get(NX_TRIM_PIP, value, NULL)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         pMemConfigSettings->videoDecoder[1].used = false;
+         if (dec_used > MIN_PLATFORM_DEC) {
+            pMemConfigSettings->videoDecoder[1].used = false;
+         }
          pMemConfigSettings->display[0].window[1].used = false;
       }
    }
@@ -516,6 +526,33 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 }
 
+static NEXUS_VideoFormat forced_output_format(void)
+{
+   NEXUS_VideoFormat forced_format = NEXUS_VideoFormat_eUnknown;
+   char value[PROPERTY_VALUE_MAX];
+   char name[PROPERTY_VALUE_MAX];
+
+   memset(value, 0, sizeof(value));
+   sprintf(name, "persist.%s", NX_HD_OUT_FMT);
+   if (property_get(name, value, "")) {
+      if (strlen(value)) {
+         forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
+      }
+   }
+
+   if ((forced_format == NEXUS_VideoFormat_eUnknown) || (forced_format >= NEXUS_VideoFormat_eMax)) {
+      memset(value, 0, sizeof(value));
+      sprintf(name, "ro.%s", NX_HD_OUT_FMT);
+      if (property_get(name, value, "")) {
+         if (strlen(value)) {
+            forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
+         }
+      }
+   }
+
+   return forced_format;
+}
+
 static nxserver_t init_nxserver(void)
 {
     NEXUS_Error rc;
@@ -529,6 +566,7 @@ static nxserver_t init_nxserver(void)
     int ix, uses_mma = 0;
     char nx_key[PROPERTY_VALUE_MAX];
     FILE *key = NULL;
+    NEXUS_VideoFormat forced_format;
 
     if (g_app.refcnt == 1) {
         g_app.refcnt++;
@@ -573,16 +611,13 @@ static nxserver_t init_nxserver(void)
         GRAPHICS_RES_WIDTH_PROP, GRAPHICS_RES_WIDTH_DEFAULT);
     settings.fbsize.height = property_get_int32(
         GRAPHICS_RES_HEIGHT_PROP, GRAPHICS_RES_HEIGHT_DEFAULT);
-    memset(value, 0, sizeof(value));
-    if (property_get(NX_HD_OUT_FMT, value, "")) {
-        if (strlen(value)) {
-            /* -display_format XX */
-            settings.display.format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
-            ALOGI("%s: display format = %s", __FUNCTION__,
-                  lookup_name(g_videoFormatStrs, settings.display.format));
-            /* -ignore_edid */
-            settings.display.hdmiPreferences.followPreferredFormat = false;
-        }
+    forced_format = forced_output_format();
+    if ((forced_format != NEXUS_VideoFormat_eUnknown) && (forced_format < NEXUS_VideoFormat_eMax)) {
+       /* -display_format XX */
+       settings.display.format = forced_format;
+       ALOGI("%s: display format = %s", __FUNCTION__, lookup_name(g_videoFormatStrs, settings.display.format));
+       /* -ignore_edid */
+       settings.display.hdmiPreferences.followPreferredFormat = false;
     }
     /* -transcode off */
     settings.transcode = (property_get_int32(NX_TRANSCODE, 0) ? true : false);
@@ -594,17 +629,15 @@ static nxserver_t init_nxserver(void)
     settings.session[0].output.sd = settings.session[0].output.encode = false;
     settings.session[0].output.hd = true;
 
-    if (property_get_int32(NX_ODV, 0)) {
-       settings.videoDecoder.dynamicPictureBuffers = (strtoul(value, NULL, 10) > 0) ? true : false;
-       if (settings.videoDecoder.dynamicPictureBuffers) {
-          unsigned d;
-          for (d = 0; d < NEXUS_MAX_VIDEO_DECODERS; d++) {
-             memConfigSettings.videoDecoder[d].dynamicPictureBuffers = true;
-          }
-          for (d = 0; d < NEXUS_MAX_HEAPS; d++) {
-             if (platformSettings.heap[d].heapType & NEXUS_HEAP_TYPE_PICTURE_BUFFERS) {
-                platformSettings.heap[d].memoryType = NEXUS_MEMORY_TYPE_MANAGED | NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED;
-             }
+    settings.videoDecoder.dynamicPictureBuffers = property_get_int32(NX_ODV, 0) ? true : false;
+    if (settings.videoDecoder.dynamicPictureBuffers) {
+       unsigned d;
+       for (d = 0; d < NEXUS_MAX_VIDEO_DECODERS; d++) {
+          memConfigSettings.videoDecoder[d].dynamicPictureBuffers = true;
+       }
+       for (d = 0; d < NEXUS_MAX_HEAPS; d++) {
+          if (platformSettings.heap[d].heapType & NEXUS_HEAP_TYPE_PICTURE_BUFFERS) {
+             platformSettings.heap[d].memoryType = NEXUS_MEMORY_TYPE_MANAGED | NEXUS_MEMORY_TYPE_ONDEMAND_MAPPED;
           }
        }
     }
@@ -671,7 +704,7 @@ static nxserver_t init_nxserver(void)
 
     if (uses_mma && settings.growHeapBlockSize) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_GRAPHICS);
-       if (index >= NEXUS_MAX_HEAPS) {
+       if (index == -1) {
            ALOGE("growHeapBlockSize: requires platform implement NEXUS_PLATFORM_P_GET_FRAMEBUFFER_HEAP_INDEX");
            return NULL;
        }
@@ -810,6 +843,12 @@ int main(void)
     if ( property_get(NX_LOGGER_SIZE, loggerSize, "0") && loggerSize[0] != '0' )
     {
         setenv("debug_log_size", loggerSize, 1);
+    }
+    if ( property_get_int32(NX_AUDIO_LOG, 0) ) {
+        ALOGD("Enabling audio DSP logs to /data/nexus");
+        setenv("audio_uart_file", "/data/nexus/audio_uart", 1);
+        setenv("audio_debug_file", "/data/nexus/audio_debug", 1);
+        setenv("audio_core_file", "/data/nexus/audio_core", 1);
     }
 
     ALOGI("init nxserver - nexus side.");

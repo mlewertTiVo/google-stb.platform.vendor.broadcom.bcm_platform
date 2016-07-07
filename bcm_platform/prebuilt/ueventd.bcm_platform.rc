@@ -7,6 +7,9 @@
 # BT USB device nodes
 /dev/btusb0               0660   bluetooth  net_bt_stack
 
+#BT UART device nodes
+/dev/ttyS1                0660   bluetooth  net_bt_stack
+
 /dev/sw_sync              0660   system     system
 /dev/brcm_lmk             0660   system     system
 

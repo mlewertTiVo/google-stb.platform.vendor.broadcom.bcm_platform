@@ -260,15 +260,14 @@ extern float get_master_volume(void);
 typedef bool (*b_standby_monitor_callback)(void *context);
 struct StandbyMonitorThread : public android::Thread {
 public:
-    StandbyMonitorThread(b_standby_monitor_callback callback, void *context)
-    :mCallback(callback),
-     mContext(context){}
-    ~StandbyMonitorThread() {};
+    StandbyMonitorThread(b_standby_monitor_callback callback, void *context);
+    ~StandbyMonitorThread();
 
 private:
     bool threadLoop();
     b_standby_monitor_callback mCallback;
     void *mContext;
+    unsigned mStandbyId;
 
     /* Disallow copy constructor and copy operator... */
     StandbyMonitorThread(const StandbyMonitorThread &);

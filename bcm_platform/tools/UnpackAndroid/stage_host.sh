@@ -39,8 +39,6 @@ $tools_dir/tools/simg2img $image_dir/cache.img ./unpack_android_boot/cache.raw.i
 cp $image_dir/cache.img ./unpack_android_boot/cache.img
 
 echo "4) Copying stage_target* scripts, and tools."
-cp $tools_dir/stage_target.sh $staging_dir
-cp $tools_dir/stage_target_multipart.sh $staging_dir
 cp $tools_dir/stage_target_bootimg.sh $staging_dir
 cp $tools_dir/tools/fastboot_tcp $staging_dir
 
@@ -52,7 +50,7 @@ cp $image_dir/bolt-*.bin $staging_dir/loaders
 echo "6) Copying android-info.txt, gpt.bin, hwcfg.img"
 cp $image_dir/android-info.txt android-info.txt
 cp $image_dir/gpt.bin gpt.bin
-cp $image_dir/hwcfg_empty.img hwcfg_empty.img
+cp $image_dir/hwcfg.img hwcfg.img
 
 
 echo "!!! Done staging !!!"

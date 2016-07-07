@@ -178,5 +178,6 @@ OMX_ERRORTYPE BOMX_OutputBuffer::Reset(OMX_U32 nOffset)
     ALOG_ASSERT(nOffset <= m_header.nAllocLen);
     m_header.nOffset = nOffset;
     m_header.nFilledLen = 0;
+    m_header.nTimeStamp = 0;
     return OMX_ErrorNone;
 }

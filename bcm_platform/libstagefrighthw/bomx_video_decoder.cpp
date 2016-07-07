@@ -175,7 +175,7 @@ extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9(
         return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
     }
 
-    pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, 1, &vp9Role);
+    pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, 1, &vp9Role, BOMX_VideoDecoder_GetRoleVp9);
     if ( NULL == pVideoDecoder )
     {
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
@@ -619,8 +619,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     const OMX_CALLBACKTYPE *pCallbacks,
     bool secure,
     unsigned numRoles,
-    const BOMX_VideoDecoderRole *pRoles) :
-    BOMX_Component(pComponentType, pName, pAppData, pCallbacks, BOMX_VideoDecoder_GetRole),
+    const BOMX_VideoDecoderRole *pRoles,
+    const char *(*pGetRole)(unsigned roleIndex)) :
+    BOMX_Component(pComponentType, pName, pAppData, pCallbacks, (pGetRole!=NULL) ? pGetRole : BOMX_VideoDecoder_GetRole),
     m_hSimpleVideoDecoder(NULL),
     m_hPlaypump(NULL),
     m_hPidChannel(NULL),
@@ -3905,51 +3906,7 @@ void BOMX_VideoDecoder::SourceChangedEvent()
         {
             OMX_U32 xFramerate;
             bool formatChanged=false;
-            switch ( vdecStatus.frameRate )
-            {
-            case NEXUS_VideoFrameRate_e23_976:
-                xFramerate = (OMX_U32)(65536.0 * 23.976);
-                break;
-            case NEXUS_VideoFrameRate_e24:
-                xFramerate = (OMX_U32)(65536.0 * 24.0);
-                break;
-            case NEXUS_VideoFrameRate_e25:
-                xFramerate = (OMX_U32)(65536.0 * 25.0);
-                break;
-            case NEXUS_VideoFrameRate_e29_97:
-                xFramerate = (OMX_U32)(65536.0 * 29.97);
-                break;
-            case NEXUS_VideoFrameRate_e30:
-                xFramerate = (OMX_U32)(65536.0 * 30.0);
-                break;
-            case NEXUS_VideoFrameRate_e50:
-                xFramerate = (OMX_U32)(65536.0 * 50.0);
-                break;
-            case NEXUS_VideoFrameRate_e59_94:
-                xFramerate = (OMX_U32)(65536.0 * 59.94);
-                break;
-            case NEXUS_VideoFrameRate_e60:
-                xFramerate = (OMX_U32)(65536.0 * 60.0);
-                break;
-            case NEXUS_VideoFrameRate_e14_985:
-                xFramerate = (OMX_U32)(65536.0 * 14.985);
-                break;
-            case NEXUS_VideoFrameRate_e7_493:
-                xFramerate = (OMX_U32)(65536.0 * 7.493);
-                break;
-            case NEXUS_VideoFrameRate_e10:
-                xFramerate = (OMX_U32)(65536.0 * 10.0);
-                break;
-            case NEXUS_VideoFrameRate_e15:
-                xFramerate = (OMX_U32)(65536.0 * 15.0);
-                break;
-            case NEXUS_VideoFrameRate_e20:
-                xFramerate = (OMX_U32)(65536.0 * 20.0);
-                break;
-            default:
-                xFramerate = 0;
-                break;
-            }
+            xFramerate = (OMX_U32)(65536.0 * BOMX_NexusFramerateValue(vdecStatus.frameRate));
             pPort->GetDefinition(&portDef);
             if ( portDef.format.video.nFrameWidth != vdecStatus.display.width ||
                  portDef.format.video.nFrameHeight != vdecStatus.display.height ||
@@ -4248,6 +4205,12 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 {
                     ALOGV("EOS-only frame.  Returning length of 0.");
                     pHeader->nFilledLen = 0;
+                    // For metadata mode, the private handle still needs to be set since it's required to correlate
+                    // omx buffers to framebuffers in function FillThisBuffer. Without this, EOS messages (zero length) coul
+                    // end up permanently in the allocated list if the application is playing video in a loop.
+                    if (pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata){
+                        pBuffer->pPrivateHandle = (private_handle_t *)pInfo->typeInfo.metadata.pMetadata->pHandle;
+                    }
                 }
                 else
                 {
@@ -4551,10 +4514,16 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 if ( pNext == pEnd )
                 {
                     returnSettings[numFrames].display = (pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDisplayReady) ? true : false;
+                    if (!returnSettings[numFrames].display)
+                    {
+                        ALOGW("Dropping outstanding frame %u - state is [%d] %s", pBuffer->frameStatus.serialNumber, pBuffer->state,
+                              pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDropReady ? "eDropReady" : "???");
+                    }
                 }
                 else
                 {
                     returnSettings[numFrames].display = false;
+                    ALOGW("Dropping outstanding frame %u - falling behind", pBuffer->frameStatus.serialNumber);
                 }
                 if ( pBuffer->pPrivateHandle )
                 {

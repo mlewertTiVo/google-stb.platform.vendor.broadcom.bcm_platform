@@ -77,6 +77,10 @@
 #define NX_HEAP_GFX_VALUE          "64m"
 #define NX_HEAP_GFX2               0
 #define NX_HEAP_GFX2_VALUE         "0m"
+#define NX_HEAP_HIGH_MEM           1
+#define NX_HEAP_HIGH_MEM_VALUE     "0m"
+#define NX_HEAP_DRV_MANAGED        1
+#define NX_HEAP_DRV_MANAGED_VALUE  "4m"
 
 static struct {
     BKNI_MutexHandle lock;
@@ -95,6 +99,16 @@ static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, uns
     return -1;
 }
 
+static int lookup_heap_memory_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned memoryType)
+{
+    unsigned i;
+    for (i=0;i<NEXUS_MAX_HEAPS;i++) {
+        if (pPlatformSettings->heap[i].size &&
+            ((pPlatformSettings->heap[i].memoryType & memoryType) == memoryType)) return i;
+    }
+    return -1;
+}
+
 static unsigned calc_heap_size(const char *value)
 {
    if (strchr(value, 'M') || strchr(value, 'm')) {
@@ -108,35 +122,84 @@ static unsigned calc_heap_size(const char *value)
 
 static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
 {
-   int i;
+   int i, j;
 
    /* nxmini - removes almost everything, fit in a tiny footprint the necessary
     *          platform support, keep a decoder just in case.
     */
 
-   pMemConfigSettings->display[1].window[0].used = false;
-   pMemConfigSettings->display[1].window[1].used = false;
-
-   for (i = 0 ; i < NEXUS_NUM_VIDEO_DECODERS ; i++) {
-      if (i == 0) {
-         pMemConfigSettings->videoDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
-      } else {
-         pMemConfigSettings->videoDecoder[i].used = false;
-      }
+   /* 1. additional display(s). */
+   for (i = 1; i < NEXUS_MAX_DISPLAYS; i++) {
+       pMemConfigSettings->display[i].maxFormat = NEXUS_VideoFormat_eUnknown;
+       for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
+           pMemConfigSettings->display[i].window[j].used = false;
+       }
    }
 
-   for (i = 0 ; i < NEXUS_NUM_VIDEO_ENCODERS ; i++) {
+   /* 2. video input. */
+   pMemConfigSettings->videoInputs.hdDvi = false;
+   pMemConfigSettings->videoInputs.ccir656 = false;
+
+   /* 3. *** HARDCODE *** only request a single encoder. */
+   for (i = 1; i < NEXUS_MAX_VIDEO_ENCODERS; i++) {
       pMemConfigSettings->videoEncoder[i].used = false;
    }
 
-   pMemConfigSettings->stillDecoder[0].used = false;
+   /* 4. vc1 decoder. */
+   for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+      pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVc1] = false;
+      pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVc1SimpleMain] = false;
+   }
+   pMemConfigSettings->stillDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVc1] = false;
+   pMemConfigSettings->stillDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVc1SimpleMain] = false;
 
+   /* 5. stills decoder. */
+   for (i = 0 ; i < NEXUS_MAX_STILL_DECODERS ; i++) {
+      pMemConfigSettings->stillDecoder[i].used = false;
+   }
+
+   /* 6. mosaic video. */
    pMemConfigSettings->videoDecoder[0].mosaic.maxNumber = 0;
    pMemConfigSettings->videoDecoder[0].mosaic.maxHeight = 0;
    pMemConfigSettings->videoDecoder[0].mosaic.maxWidth = 0;
 
+   /* 7. pip. */
    pMemConfigSettings->videoDecoder[1].used = false;
    pMemConfigSettings->display[0].window[1].used = false;
+
+   /* 8. *** TEMPORARY *** force lowest format for mandated transcode decoder until
+    *    we can instantiate an encoder without decoder back-end (architectural change).
+    */
+   for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+      if (pMemConfigSettings->videoDecoder[i].used) {
+         pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_eNtsc;
+      }
+   }
+
+   /* 9. vp9. */
+   for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+      if (pMemConfigSettings->videoDecoder[i].used) {
+         pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
+      }
+   }
+   if (pMemConfigSettings->stillDecoder[0].used) {
+      pMemConfigSettings->stillDecoder[0].supportedCodecs[NEXUS_VideoCodec_eVp9] = false;
+   }
+
+   /* 10. uhd decoder. */
+   for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+      if (pMemConfigSettings->videoDecoder[i].used &&
+          (pMemConfigSettings->videoDecoder[i].maxFormat > NEXUS_VideoFormat_e1080p)) {
+         pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_e1080p;
+      }
+   }
+
+   /* 11. color depth. */
+   for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+      if (pMemConfigSettings->videoDecoder[i].used) {
+         pMemConfigSettings->videoDecoder[i].colorDepth = 8;
+      }
+   }
 }
 
 static nxserver_t init_nxserver(void)
@@ -173,7 +236,6 @@ static nxserver_t init_nxserver(void)
     settings.session[0].output.sd = false;
     settings.session[0].output.encode = false;
     settings.session[0].output.hd = false;
-    memConfigSettings.videoInputs.hdDvi = false;
 
     if (NX_HEAP_VIDEO_SECURE) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_COMPRESSED_RESTRICTED_REGION);
@@ -200,6 +262,21 @@ static nxserver_t init_nxserver(void)
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_SECONDARY_GRAPHICS);
        if (index != -1) {
           platformSettings.heap[index].size = calc_heap_size(NX_HEAP_GFX2_VALUE);
+       }
+    }
+
+    if (NX_HEAP_HIGH_MEM) {
+       int index = lookup_heap_memory_type(&platformSettings, NEXUS_MEMORY_TYPE_HIGH_MEMORY);
+       if (index != -1) {
+          platformSettings.heap[index].size = calc_heap_size(NX_HEAP_HIGH_MEM_VALUE);
+       }
+    }
+
+    if (NX_HEAP_DRV_MANAGED) {
+       int index = lookup_heap_memory_type(&platformSettings,
+          (NEXUS_MEMORY_TYPE_MANAGED|NEXUS_MEMORY_TYPE_DRIVER_UNCACHED|NEXUS_MEMORY_TYPE_DRIVER_CACHED|NEXUS_MEMORY_TYPE_APPLICATION_CACHED));
+       if (index != -1) {
+          platformSettings.heap[index].size = calc_heap_size(NX_HEAP_DRV_MANAGED_VALUE);
        }
     }
 

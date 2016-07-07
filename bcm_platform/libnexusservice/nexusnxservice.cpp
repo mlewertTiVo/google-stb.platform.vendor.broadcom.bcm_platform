@@ -99,14 +99,60 @@ typedef struct NexusNxServerContext : public NexusServerContext {
     ~NexusNxServerContext() { ALOGV("%s: called", __PRETTY_FUNCTION__); }
 } NexusNxServerContext;
 
+NEXUS_VideoFormat NexusNxService::getBestOutputFormat(NEXUS_HdmiOutputStatus *status)
+{
+   int i;
+   NEXUS_VideoFormat format = NEXUS_VideoFormat_eUnknown;
+   NEXUS_VideoFormat ordered_list[] = {
+      NEXUS_VideoFormat_e4096x2160p60hz,
+      NEXUS_VideoFormat_e3840x2160p60hz,
+      NEXUS_VideoFormat_e4096x2160p50hz,
+      NEXUS_VideoFormat_e3840x2160p50hz,
+      NEXUS_VideoFormat_e4096x2160p30hz,
+      NEXUS_VideoFormat_e3840x2160p30hz,
+      NEXUS_VideoFormat_e4096x2160p25hz,
+      NEXUS_VideoFormat_e3840x2160p25hz,
+      NEXUS_VideoFormat_e4096x2160p24hz,
+      NEXUS_VideoFormat_e3840x2160p24hz,
+      NEXUS_VideoFormat_e1080p,
+      NEXUS_VideoFormat_e1080p50hz,
+      NEXUS_VideoFormat_e1080p30hz,
+      NEXUS_VideoFormat_e1080p25hz,
+      NEXUS_VideoFormat_e1080p24hz,
+      NEXUS_VideoFormat_e720p,
+      NEXUS_VideoFormat_e720p30hz,
+      NEXUS_VideoFormat_e720p25hz,
+      NEXUS_VideoFormat_e720p24hz,
+      NEXUS_VideoFormat_eUnknown,
+   };
+
+   for (i = 0 ; ordered_list[i] != NEXUS_VideoFormat_eUnknown; i++) {
+      if (status->videoFormatSupported[ordered_list[i]]) {
+         format = ordered_list[i];
+         break;
+      }
+   }
+
+   if (format != NEXUS_VideoFormat_eUnknown) {
+      ALOGI("%s: enabling output format: %d", __func__, (int)format);
+   } else {
+      ALOGV("%s: no compatible output format.", __func__);
+   }
+
+   return format;
+}
+
 void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param __unused)
 {
 #if NEXUS_HAS_HDMI_OUTPUT
-    int rc, hdmiHpdSwitchFd;
+    int rc, hdmiHpdSwitchFd, i;
     NxClient_StandbyStatus standbyStatus;
+    NxClient_DisplaySettings settings;
     NexusNxService *pNexusNxService = reinterpret_cast<NexusNxService *>(context);
     hdmi_state hdmiSwitch;
     const char *hdmiHpdDevName = "/dev/hdmi_hpd";
+    NEXUS_VideoFormat format;
+    bool update;
 
     rc = NxClient_GetStandbyStatus(&standbyStatus);
     if (rc != NEXUS_SUCCESS) {
@@ -176,22 +222,36 @@ void NexusNxService::hdmiOutputHotplugCallback(void *context __unused, int param
             close(hdmiHpdSwitchFd);
         }
 
+        do {
+            update = false;
+            NxClient_GetDisplaySettings(&settings);
+
+            if (status.hdmi.status.connected && status.hdmi.status.rxPowered) {
+               format = getForcedOutputFormat();
+               if (format == NEXUS_VideoFormat_eUnknown) {
+                  format = getBestOutputFormat(&status.hdmi.status);
+               }
+               if ((format != NEXUS_VideoFormat_eUnknown) && (settings.format != format)) {
+                  settings.format = format;
+                  update = true;
+               }
+            }
+
 #if ANDROID_ENABLE_HDMI_HDCP
-        NxClient_DisplaySettings settings;
-        NxClient_GetDisplaySettings(&settings);
-
-        /* enable hdcp authentication if hdmi connected and powered */
-        settings.hdmiPreferences.hdcp =
-            (status.hdmi.status.connected && status.hdmi.status.rxPowered) ?
-            NxClient_HdcpLevel_eMandatory :
-            NxClient_HdcpLevel_eNone;
-
-        rc = NxClient_SetDisplaySettings(&settings);
-        if (rc) {
-            ALOGE("%s: Could not set display settings!!!", __PRETTY_FUNCTION__);
-            return;
-        }
+            /* enable hdcp authentication if hdmi connected and powered */
+            settings.hdmiPreferences.hdcp =
+                (status.hdmi.status.connected && status.hdmi.status.rxPowered) ?
+                NxClient_HdcpLevel_eMandatory :
+                NxClient_HdcpLevel_eNone;
+            update = true;
 #endif
+            if (update) {
+               rc = NxClient_SetDisplaySettings(&settings);
+               if (rc) {
+                   ALOGE("%s: Could not set display settings rc=%d)!!!", __PRETTY_FUNCTION__, rc);
+               }
+            }
+        } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
     }
     else {
         ALOGW("%s: Ignoring HDMI%d hotplug as we are in standby!", __PRETTY_FUNCTION__, param);

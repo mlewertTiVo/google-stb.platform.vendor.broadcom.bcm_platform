@@ -15,7 +15,7 @@
 # be able to support any device so long a refsw platform exists for it, which
 # should be always the case.
 #
-import re, sys, os
+import re, sys, os, shutil
 from subprocess import call,check_output,STDOUT
 from stat import *
 
@@ -234,6 +234,8 @@ if spoof_device == 'nope':
 	os.write(s, "add_lunch_combo bcm_%s-user\n" % androiddevice)
 else:
 	os.write(s, "add_lunch_combo full_%s-eng\n" % androiddevice)
+	os.write(s, "add_lunch_combo full_%s-userdebug\n" % androiddevice)
+	os.write(s, "add_lunch_combo full_%s-user\n" % androiddevice)
 os.close(s);
 
 f='%s%s' % (devicedirectory, androidproduct)
@@ -300,6 +302,15 @@ else:
 os.write(s, "\n\n# exporting toolchains path for kernel image+modules\n")
 os.write(s, "export PATH := %s:${PATH}\n" % kerneltoolchain)
 os.close(s);
+if spoof_device != "nope":
+	spoof_copy="./device/%s/build/%s/AndroidBoard.mk" %(spoof_device, spoof_variant)
+	if os.access(spoof_copy, os.F_OK):
+		spoof_destination="./device/%s/%s/AndroidBoard.mk" %(spoof_device, spoof_variant)
+		shutil.copy2(spoof_copy, spoof_destination)
+	spoof_copy="./device/%s/build/%s/AndroidKernel.mk" %(spoof_device, spoof_variant)
+	if os.access(spoof_copy, os.F_OK):
+		spoof_destination="./device/%s/%s/AndroidKernel.mk" %(spoof_device, spoof_variant)
+		shutil.copy2(spoof_copy, spoof_destination)
 
 # yeah! happy...
 print '\n'

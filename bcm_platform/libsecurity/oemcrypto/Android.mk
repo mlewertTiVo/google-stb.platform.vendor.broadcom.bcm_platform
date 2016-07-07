@@ -20,7 +20,7 @@ ifneq ($(WIDEVINE_CLASSIC), n)
 # liboemcrypto.a
 #---------------
 include $(CLEAR_VARS)
-LOCAL_PREBUILT_LIBS := ${DRM_BUILD_MODE}/liboemcrypto.a
+LOCAL_PREBUILT_LIBS := prebuilt/liboemcrypto.a
 LOCAL_SHARED_LIBRARIES := libcmndrm libdrmrootfs
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_MULTI_PREBUILT)
@@ -44,20 +44,10 @@ LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 include $(BUILD_PREBUILT)
 else
 # compile library from source
-LOCAL_PATH := $(LOCAL_PATH)/../../../refsw/BSEAV/lib/security/third_party/widevine/CENC_sage
+LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC_sage
 
 # add SAGElib related includes
-include $(LOCAL_PATH)/../../../../../../magnum/syslib/sagelib/bsagelib_public.inc
-
-ifeq ($(NEXUS_MODE),proxy)
-NEXUS_LIB=libnexus
-else
-ifeq ($(NEXUS_WEBCPU),core1_server)
-NEXUS_LIB=libnexus_webcpu
-else
-NEXUS_LIB=libnexus_client
-endif
-endif
+include ${REFSW_BASE_DIR}/magnum/syslib/sagelib/bsagelib_public.inc
 
 LOCAL_SRC_FILES := \
     src/oemcrypto_brcm_TL.cpp\
@@ -69,12 +59,13 @@ LOCAL_C_INCLUDES := \
     $(TOP)/bionic \
     $(TOP)/external/stlport/stlport \
     $(TOP)/external/openssl/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/third_party/widevine/CENC_sage/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_crypto/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include/tl \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/platforms/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC_sage/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include/tl \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/srai/include \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/platforms/include \
     $(BSAGELIB_INCLUDES) \
     $(NEXUS_APP_INCLUDE_PATHS)
 
@@ -83,9 +74,15 @@ LOCAL_CFLAGS += -DNDEBUG -DBRCM_IMPL
 
 LOCAL_CFLAGS += $(NEXUS_CFLAGS)
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_WRN -DBDBG_NO_ERR -DBDBG_NO_LOG
 
-LOCAL_SHARED_LIBRARIES := $(NEXUS_LIB) liblog libstlport
+# Enable warning and error logs by default
+LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
+ifneq ($(TARGET_BUILD_TYPE),debug)
+# Enable error logs for non debug build
+LOCAL_CFLAGS += -DBDBG_NO_WRN=1
+endif
+
+LOCAL_SHARED_LIBRARIES := libnexus liblog libstlport
 LOCAL_SHARED_LIBRARIES += libcmndrm_tl
 
 include $(BUILD_SHARED_LIBRARY)

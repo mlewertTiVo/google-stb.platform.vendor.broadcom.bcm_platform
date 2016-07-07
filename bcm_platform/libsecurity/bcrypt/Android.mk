@@ -15,19 +15,9 @@
 #-------------
 # libbcrypt.so
 #-------------
-LOCAL_PATH := $(call my-dir)/../../../refsw/BSEAV/lib/security/bcrypt/src
+LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/src
 
 include $(CLEAR_VARS)
-
-ifeq ($(NEXUS_MODE),proxy)
-NEXUS_LIB=libnexus
-else
-ifeq ($(NEXUS_WEBCPU),core1_server)
-NEXUS_LIB=libnexus_webcpu
-else
-NEXUS_LIB=libnexus_client
-endif
-endif
 
 LOCAL_SRC_FILES := \
     bcrypt.c \
@@ -52,16 +42,23 @@ LOCAL_SRC_FILES := \
     bcrypt_x509_sw.c
 
 LOCAL_C_INCLUDES := \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/bcrypt/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libsecurity/bdbg2alog \
+    ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/include \
     $(TOP)/external/openssl/include \
     $(NEXUS_APP_INCLUDE_PATHS)
 
 LOCAL_CFLAGS += -DPIC -fpic -DANDROID
 LOCAL_CFLAGS += $(NEXUS_CFLAGS)
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
-LOCAL_CFLAGS += -DBDBG_NO_MSG -DBDBG_NO_WRN -DBDBG_NO_ERR -DBDBG_NO_LOG
 
-LOCAL_SHARED_LIBRARIES := libssl libcrypto $(NEXUS_LIB)
+# Enable warning and error logs by default
+LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
+ifneq ($(TARGET_BUILD_TYPE),debug)
+# Enable error logs for non debug build
+LOCAL_CFLAGS += -DBDBG_NO_WRN=1
+endif
+
+LOCAL_SHARED_LIBRARIES := liblog libssl libcrypto libnexus
 
 LOCAL_MODULE := libbcrypt
 LOCAL_MODULE_TAGS := optional
