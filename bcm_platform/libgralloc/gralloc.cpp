@@ -64,6 +64,7 @@ static int gralloc_default_align = 0;
 static int gralloc_log_map = 0;
 static int gralloc_conv_time = 0;
 static int gralloc_boom_chk = 0;
+static int gralloc_disable_glplane = 0;
 
 static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
 static NEXUS_Graphics2DHandle hGraphics = NULL;
@@ -85,8 +86,8 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 #define NX_GR_LOG_MAP           "ro.gr.log.map"
 #define NX_GR_CONV_TIME         "ro.gr.conv.time"
 #define NX_GR_BOOM_CHK          "ro.gr.boom.chk"
-
 #define NX_MMA_MGMT_MODE_DEF    "locked"
+#define NX_GR_DISABLE_GLPLANE   "ro.gr.disable.glplane"
 
 #define NEXUS_JOIN_CLIENT_PROCESS "gralloc"
 static void gralloc_load_lib(void)
@@ -134,6 +135,10 @@ static void gralloc_load_lib(void)
 
    if (property_get(NX_GR_CONV_TIME, value, "0")) {
       gralloc_conv_time = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
+   }
+
+   if (property_get(NX_GR_DISABLE_GLPLANE, value, "0")) {
+      gralloc_disable_glplane = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
    gralloc_default_align = GRALLOC_MAX_BUFFER_ALIGNED;
@@ -452,6 +457,7 @@ unsigned int allocGLSuitableBuffer(private_handle_t * allocContext,
          bufferConstrainedRequirements.totalByteSize = height * bufferConstrainedRequirements.pitchBytes;
       }
 
+      memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
       ashmem_alloc.size = bufferConstrainedRequirements.totalByteSize;
       ashmem_alloc.align = gralloc_default_align;
       ret = ioctl(fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
@@ -584,6 +590,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       hnd->alignment = fmt_align;
    }
 
+   memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
    ashmem_alloc.size = sizeof(SHARED_DATA);
    ashmem_alloc.align = GRALLOC_MAX_BUFFER_ALIGNED;
    int ret = ioctl(hnd->fd2, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
@@ -691,6 +698,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    }
 
    if (needs_yv12) {
+      memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
       ashmem_alloc.size = size;
       ashmem_alloc.align = gralloc_default_align;
       ret = ioctl(hnd->fd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
@@ -699,7 +707,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
              (NEXUS_Addr)ioctl(hnd->fd, NX_ASHMEM_GETMEM);
       }
 
-      if ((usage & GRALLOC_USAGE_HW_TEXTURE)) {
+      if ((usage & GRALLOC_USAGE_HW_TEXTURE) && !gralloc_disable_glplane) {
          // 1) vc5 suports 4k texture and does not require special
          //    alignment considerations.
          // 2) vc4 does only support 2k textures and does require
@@ -742,6 +750,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       pSharedData->planes[EXTRA_PLANE].size      = extra_size;
       pSharedData->planes[EXTRA_PLANE].allocSize = extra_size;
       pSharedData->planes[EXTRA_PLANE].stride    = bpp * *pStride;
+      memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
       ashmem_alloc.size = extra_size;
       ashmem_alloc.align = gralloc_default_align;
       ret = ioctl(hnd->fd3, NX_ASHMEM_SET_SIZE, &ashmem_alloc);

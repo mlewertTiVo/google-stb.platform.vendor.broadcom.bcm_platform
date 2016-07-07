@@ -38,9 +38,9 @@ LOCAL_SRC_FILES := \
     magnum/syslib/sagelib/src/bsagelib_tools.c
 
 LOCAL_C_INCLUDES := \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/srai/include \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/include \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/include/private \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/include/private \
     $(BSAGELIB_INCLUDES) \
     $(NEXUS_APP_INCLUDE_PATHS)
 

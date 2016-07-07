@@ -39,7 +39,7 @@ LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libnativehelper
 LOCAL_SHARED_LIBRARIES += libutils
 
-LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/stb/bcm_platform/libhwcomposer/blib
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/blib
 
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libhwcbinder
@@ -64,7 +64,7 @@ LOCAL_SHARED_LIBRARIES += libhwcbinder
 LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libutils
 
-LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/stb/bcm_platform/libhwcomposer/blib
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/blib
 
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := hwcbinder
@@ -91,7 +91,7 @@ LOCAL_SHARED_LIBRARIES += libutils
 LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient
 
-LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/stb/bcm_platform/libhwcomposer/utils \
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/utils \
                     $(NXCLIENT_INCLUDES)
 
 LOCAL_CFLAGS += $(NEXUS_CFLAGS)
@@ -127,12 +127,12 @@ LOCAL_SHARED_LIBRARIES += libnxclient
 LOCAL_SHARED_LIBRARIES += libutils
 LOCAL_SHARED_LIBRARIES += libsync
 
-LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/stb/bcm_platform/libnexusservice \
-                    $(TOP)/vendor/broadcom/stb/bcm_platform/libnexusipc \
-                    $(TOP)/vendor/broadcom/stb/bcm_platform/libgralloc \
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libgralloc \
                     $(NXCLIENT_INCLUDES) \
-                    $(TOP)/vendor/broadcom/stb/bcm_platform/libhwcomposer/blib \
-                    $(TOP)/vendor/broadcom/stb/bcm_platform/libhwcomposer/utils \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/blib \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libhwcomposer/utils \
                     $(TOP)/system/core/libsync \
                     $(TOP)/system/core/libsync/include
 

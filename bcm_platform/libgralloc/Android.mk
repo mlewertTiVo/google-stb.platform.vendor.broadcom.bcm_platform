@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-REFSW_PATH :=vendor/broadcom/stb/bcm_platform/brcm_nexus
+REFSW_PATH :=${BCM_VENDOR_STB_ROOT}/bcm_platform/brcm_nexus
 LOCAL_PATH := $(call my-dir)
 
 # set to 'true' to avoid stripping symbols during build.

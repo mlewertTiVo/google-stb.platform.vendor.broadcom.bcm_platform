@@ -3,7 +3,7 @@ include $(CLEAR_VARS)
 
 LOCAL_SHARED_LIBRARIES += libcutils
 
-LOCAL_C_INCLUDES += $(TOP)/vendor/broadcom/stb/refsw/BSEAV/linux/driver/fbdev/utils/fbtest/include
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/linux/driver/fbdev/utils/fbtest/include
 
 FBDEV_SRC_ROOT := ../../../refsw/BSEAV/linux/driver/fbdev/utils/fbtest
 

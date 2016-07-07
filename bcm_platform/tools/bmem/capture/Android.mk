@@ -8,7 +8,7 @@ LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
-                    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/tools/bmemperf/include
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/tools/bmemperf/include
 
 LOCAL_CFLAGS += $(addprefix -I,$(NEXUS_APP_INCLUDE_PATHS))
 LOCAL_CFLAGS += $(addprefix -D,$(NEXUS_APP_DEFINES))
@@ -33,7 +33,7 @@ define generate-capture-info-module
 	rm $(NEXUS_TOP)/../../bcm_platform/tools/bmem/capture/bmemperf_info.auto.tmp
 endef
 
-$(TOP)/vendor/broadcom/stb/bcm_platform/tools/bmem/capture/bmemperf_info.auto.c:
+$(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/capture/bmemperf_info.auto.c:
 	$(hide) $(call generate-capture-info-module)
 
 LOCAL_MODULE := bmemperf_capture

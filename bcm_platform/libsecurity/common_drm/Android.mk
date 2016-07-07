@@ -32,9 +32,9 @@ LOCAL_LIB_NAME := libcmndrmprdy
 LOCAL_MODULE_TAGS := optional
 
 # Check if a prebuilt library has been created in the release_prebuilts folder
-ifneq (,$(wildcard $(TOP)/release_prebuilts/$(LOCAL_LIB_NAME).so))
+ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/release_prebuilts/$(LOCAL_LIB_NAME).so))
 # use prebuilt library if one exists
-LOCAL_PREBUILT_LIBS := ../../../../../../release_prebuilts/$(LOCAL_LIB_NAME).so
+LOCAL_PREBUILT_LIBS := ../release_prebuilts/$(LOCAL_LIB_NAME).so
 include $(BUILD_MULTI_PREBUILT)
 else
 # compile library from source
@@ -43,12 +43,12 @@ include $(LOCAL_PATH)/drm/playready/playready.inc
 LOCAL_SRC_FILES := ${PLAYREADY_SOURCES}
 
 LOCAL_C_INCLUDES := \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_crypto/include \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_drm/include \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/drmrootfs \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/playready/2.5/inc \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_crypto/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/drmrootfs \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/playready/2.5/inc \
     $(NEXUS_APP_INCLUDE_PATHS) \
-    $(TOP)/vendor/broadcom/stb/refsw/nexus/nxclient/include
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include
 
 DRM_BUILD_PROFILE := 900
 LOCAL_CFLAGS += -DDRM_BUILD_PROFILE=${DRM_BUILD_PROFILE} -DTARGET_LITTLE_ENDIAN=1 -DTARGET_SUPPORTS_UNALIGNED_DWORD_POINTERS=1
@@ -128,16 +128,16 @@ endif
 LOCAL_SRC_FILES := ${COMMON_DRM_TL_SOURCES}
 
 LOCAL_C_INCLUDES := \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/bcrypt/include \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_crypto/include \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_drm/include \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_drm/include/priv \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/common_drm/include/tl \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/srai/include \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/include \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/include/private \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/security/sage/platforms/include \
-    $(TOP)/vendor/broadcom/stb/refsw/BSEAV/lib/drmrootfs \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/bcrypt/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_crypto/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include/priv \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_drm/include/tl \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/include/private \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/platforms/include \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/drmrootfs \
     $(BSAGELIB_INCLUDES) \
     $(TOP)/external/openssl/include \
     $(NEXUS_APP_INCLUDE_PATHS)
