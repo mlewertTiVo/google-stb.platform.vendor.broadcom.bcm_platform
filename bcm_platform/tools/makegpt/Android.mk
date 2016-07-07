@@ -20,12 +20,17 @@ LOCAL_CFLAGS := -Werror
 
 LOCAL_MODULE := makegpt
 LOCAL_MODULE_TAGS := optional
-LOCAL_ADDITIONAL_DEPENDENCIES := $(BCM_GPT_CONFIG_FILE)
-
-LOCAL_POST_INSTALL_CMD :=  \
-  if [ ! -z $(BCM_GPT_CONFIG_FILE) ]; then \
-    $(HOST_OUT_EXECUTABLES)/$(LOCAL_MODULE) -o $(PRODUCT_OUT)/gpt.bin `paste -sd " " $(BCM_GPT_CONFIG_FILE)`; \
-  fi
 
 include $(BUILD_HOST_EXECUTABLE)
 
+_gpt.bin := $(PRODUCT_OUT)/gpt.bin
+$(_gpt.bin): $(HOST_OUT_EXECUTABLES)/makegpt $(BCM_GPT_CONFIG_FILE)
+	$< -o $@ `paste -sd " " $(BCM_GPT_CONFIG_FILE)`;
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := gptbin
+LOCAL_MODULE_TAGS := optional
+LOCAL_REQUIRED_MODULES := makegpt
+LOCAL_ADDITIONAL_DEPENDENCIES := $(_gpt.bin)
+
+include $(BUILD_PHONY_PACKAGE)

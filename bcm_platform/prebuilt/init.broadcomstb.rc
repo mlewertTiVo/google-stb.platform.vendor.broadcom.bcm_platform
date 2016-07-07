@@ -53,11 +53,6 @@ on boot
    restorecon_recursive /data/tombstones
 
 on post-fs
-   # nexus ipc socket, use a device from the exception list.
-   export nxclient_ipc_node /dev/ump
-   # TODO: remove this.  keeping it for backward compatibility.
-   export nexus_ipc_dir /dev
-
    export SAGEBIN_PATH /system/bin
    export NEXUS_LOGGER /system/bin/nxlogger
    export NEXUS_LOGGER_FILE /data/nexus/nexus.log
@@ -79,6 +74,8 @@ on post-fs-data
    mkdir /data/misc/nexus 0755 root system
 
    mkdir /data/mediadrm/playready/ 0770 mediadrm mediadrm
+
+   mkdir /data/nexus/secdma 0777 system system
 
    # *** sample only.
    #
@@ -115,6 +112,7 @@ service nxserver /system/bin/nxserver
    class core
    user root
    group system
+   socket nxserver stream 0666 root system
    critical
    oneshot
 

@@ -69,6 +69,7 @@ BDBG_MODULE(pr_piff_playback);
 #define LOGW BDBG_WRN
 #endif
 
+#include <signal.h>
 #include "nexus_platform.h"
 #include "nexus_video_decoder.h"
 #include "nexus_stc_channel.h"
@@ -135,6 +136,8 @@ typedef struct app_ctx {
 
     DRM_Prdy_DecryptContext_t decryptor;
 } app_ctx;
+
+static int exit_flag = 0;
 
 #if DEBUG_OUTPUT_CAPTURE
 /* Input file pointer */
@@ -1164,6 +1167,11 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
         void *decoder_data;
         size_t decoder_len;
 
+        if (exit_flag) {
+           LOGE(("User signalled exit"));
+           break;
+        }
+
         if (!piff_parser_scan_movie_fragment(piff_handle, &frag_info, app.pPayload, BUF_SIZE)) {
             if (feof(app.fp_piff)) {
                 LOGW(("Reached EOF"));
@@ -1204,7 +1212,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
             }
 #endif
         }
-        }
+    }
     complete_play_fragments(audioDecoder, videoDecoder, videoPlaypump,
             audioPlaypump, display, audioPidChannel, videoPidChannel, NULL, event);
 
@@ -1232,6 +1240,10 @@ clean_exit:
     return;
 }
 
+void intHandler(int dummy) {
+   exit_flag = 1;
+}
+
 int main(int argc, char* argv[])
 {
     NxClient_JoinSettings joinSettings;
@@ -1248,10 +1260,17 @@ int main(int argc, char* argv[])
     NEXUS_SimpleVideoDecoderHandle videoDecoder = NULL;
     NEXUS_SimpleAudioDecoderHandle audioDecoder = NULL;
     BKNI_EventHandle event;
+    NEXUS_VideoFormatInfo videoInfo;
+    NEXUS_VideoDecoderCapabilities caps;
+    uint32_t maxDecoderWidth = 1920;
+    uint32_t maxDecoderHeight = 1080;
+    int i;
 
     /* DRM_Prdy specific */
     DRM_Prdy_Init_t     prdyParamSettings;
     DRM_Prdy_Handle_t   drm_context;
+
+    signal(SIGINT, intHandler);
 
 #if USE_BDBG_LOGGING
     BDBG_SetModuleLevel( BDBG_MODULE_NAME, BDBG_eMsg );
@@ -1323,7 +1342,23 @@ int main(int argc, char* argv[])
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleVideoDecoder[0].id = allocResults.simpleVideoDecoder[0].id;
     connectSettings.simpleVideoDecoder[0].surfaceClientId = allocResults.surfaceClient[0].id;
+
+    // Check the decoder capabilities for the highest resolution.
+    NEXUS_GetVideoDecoderCapabilities(&caps);
+    for ( i = 0; i < caps.numVideoDecoders; i++ )
+    {
+        NEXUS_VideoFormat_GetInfo(caps.memory[i].maxFormat, &videoInfo);
+        if ( videoInfo.width > maxDecoderWidth ) {
+            maxDecoderWidth = videoInfo.width;
+        }
+        if ( videoInfo.height > maxDecoderHeight ) {
+            maxDecoderHeight = videoInfo.height;
+        }
+    }
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxWidth = maxDecoderWidth;
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.maxHeight = maxDecoderHeight;
     connectSettings.simpleAudioDecoder.id = allocResults.simpleAudioDecoder.id;
+
     rc = NxClient_Connect(&connectSettings, &connectId);
     if (rc) return BERR_TRACE(rc);
 

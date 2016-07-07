@@ -21,7 +21,7 @@ LOCAL_PREBUILT_LIBS := prebuilt/libcmndrm.so
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_MULTI_PREBUILT)
 
-ifeq ($(ANDROID_SUPPORTS_PLAYREADY), y)
+ifneq ($(ANDROID_SUPPORTS_PLAYREADY), n)
 #-------------
 # libcmndrmprdy.so
 #-------------

@@ -15,7 +15,7 @@
 LOCAL_PATH := $(call my-dir)
 WV_LOCAL_PATH := $(LOCAL_PATH)
 
-ifeq ($(ANDROID_SUPPORTS_WIDEVINE),y)
+ifneq ($(ANDROID_SUPPORTS_WIDEVINE),n)
 ifeq ($(BUILD_WIDEVINE_CLASSIC_FROM_SOURCE),y)
 # this requires widevine classic plugin source be placed under
 # vendor/widevine/proprietary
@@ -64,4 +64,4 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_SHARED_LIBRARIES += libcrypto libcutils
 include $(BUILD_SHARED_LIBRARY)
 endif # end of BUILD_WIDEVINE_CLASSIC_FROM_SOURCE=y
-endif # end of ANDROID_SUPPORTS_WIDEVINE=y
+endif # end of ANDROID_SUPPORTS_WIDEVINE=n

@@ -65,17 +65,12 @@ using namespace android;
 // cursor surface is behaving slightly differently than
 // other gpx (or mm) ones and may lead to a lot of false
 // alarm logs.
-#define HWC_CURSOR_SURFACE_VERBOSE   0
 #define HWC_CURSOR_SURFACE_SUPPORTED 0
-
-#define HWC_DISPLAY_FENCE_VERBOSE    0
-
-#define HWC_SURFACE_LIFE_CYCLE_ERROR 0
 
 #define HWC_SB_NO_ALLOC_SURF_CLI     1
 #define HWC_MM_NO_ALLOC_SURF_CLI     1
 
-#define HWC_REFRESH_HACK             1
+#define HWC_REFRESH_HACK             0
 
 #define HWC_NUM_DISP_BUFFERS         3
 
@@ -102,11 +97,13 @@ using namespace android;
 #define GPX_CLIENT_ZORDER            (SUBTITLE_CLIENT_ZORDER+1)
 #define CURSOR_CLIENT_ZORDER         (GPX_CLIENT_ZORDER+1)
 
-#define GPX_SURFACE_STACK            3
 #define DUMP_BUFFER_SIZE             1024
 
 #define DISPLAY_SUPPORTED            2
+#define HWC_PRIMARY_IX               0
+#define HWC_VIRTUAL_IX               1
 #define NEXUS_DISPLAY_OBJECTS        4
+#define HWC_SET_COMP_THRESHOLD       2
 
 /* note: matching other parts of the integration, we
  *       want to default product resolution to 1080p.
@@ -133,16 +130,18 @@ using namespace android;
 #define HWC_DEFAULT_ENABLED          "1"
 
 #define HWC_GLES_VIRTUAL_PROP        "ro.hwc.gles.virtual"
-#define HWC_SW_SYNC_PROP             "ro.hwc.sw_sync"
 #define HWC_DUMP_LAYER_PROP          "ro.hwc.dump.layer"
 #define HWC_DUMP_VSYNC_PROP          "ro.hwc.dump.vsync"
 #define HWC_NSC_COPY_PROP            "ro.hwc.nsc.copy"
 #define HWC_TRACK_BUFFER_PROP        "ro.hwc.track.buffer"
 #define HWC_DUMP_VIRT_PROP           "ro.hwc.dump.virt"
 #define HWC_DUMP_MMA_OPS_PROP        "ro.hwc.dump.mma"
+#define HWC_DUMP_FENCE_PROP          "ro.hwc.dump.fence"
 #define HWC_SKIP_DUP_PROP            "ro.hwc.skip.dup"
-
+#define HWC_WITH_FENCE_PROP          "ro.v3d.fence.expose"
 #define HWC_USES_MMA_PROP            "ro.nx.mma"
+#define HWC_TRACK_COMP_TIME          "ro.hwc.track.comptime"
+#define HWC_TRACK_COMP_CHATTY        "ro.hwc.track.chatty"
 
 #define HWC_CHECKPOINT_TIMEOUT       (5000)
 
@@ -251,7 +250,6 @@ typedef struct {
     int layer_flags;
     int layer_id;
     int plane_alpha;
-    NEXUS_SurfaceHandle active_surface;
     bool skip_set;
 
 } GPX_CLIENT_INFO;
@@ -277,18 +275,12 @@ typedef struct {
     int layer_subtype;
     nsecs_t refresh;
 
-    double fps_max;
-    double fps_now;
-    unsigned long long last_set;
-    int64_t last_tick;
-
 } VSYNC_CLIENT_INFO;
 
 typedef struct {
     COMMON_CLIENT_INFO ncci;
     buffer_handle_t grhdl;
     NEXUS_SurfaceComposition composition;
-    NEXUS_SurfaceHandle active_surface;
 
 } VD_CLIENT_INFO;
 
@@ -432,15 +424,33 @@ void HwcBinder::notify(int msg, struct hwc_notification_info &ntfy)
 }
 
 struct hwc_display_stats {
-    unsigned long long prepare_call;
-    unsigned long long prepare_skipped;
-    unsigned long long set_call;
-    unsigned long long set_skipped;
+   unsigned long long prepare_call;
+   unsigned long long prepare_skipped;
+   unsigned long long set_call;
+   unsigned long long set_skipped;
+   unsigned long long composed;
+};
+
+struct hwc_time_track_stats {
+   unsigned long long tracked;
+   unsigned long long ontime;
+   unsigned long long slow;
+   long double fastest;
+   long double slowest;
+   long double cumul;
 };
 
 struct hwc_display_cfg {
-    int width;
-    int height;
+   int width;
+   int height;
+};
+
+struct hwc_work_item {
+   struct hwc_work_item *next;
+   unsigned long long comp_ix;
+   int64_t tick_queued;
+   NEXUS_SurfaceComposition comp[NSC_GPX_CLIENTS_NUMBER];
+   hwc_display_contents_1_t content;
 };
 
 struct hwc_context_t {
@@ -448,6 +458,7 @@ struct hwc_context_t {
 
     struct hwc_display_stats stats[DISPLAY_SUPPORTED];
     struct hwc_display_cfg cfg[DISPLAY_SUPPORTED];
+    struct hwc_time_track_stats time_track[DISPLAY_SUPPORTED];
 
     /* our private state goes below here */
     NexusIPCClientBase *pIpcClient;
@@ -487,12 +498,18 @@ struct hwc_context_t {
 
     HwcBinder_wrap *hwc_binder;
 
-    NEXUS_Graphics2DHandle hwc_2dg;
+    NEXUS_Graphics2DHandle hwc_g2d;
+    BKNI_MutexHandle g2d_mutex;
     NEXUS_Graphics2DCapabilities gfxCaps;
     BKNI_EventHandle checkpoint_event;
 
-    int sync_timeline;
-    unsigned int sync_timeline_inc;
+    BKNI_EventHandle composer_event[DISPLAY_SUPPORTED];
+    BKNI_EventHandle composer_event_sync[DISPLAY_SUPPORTED];
+    BKNI_EventHandle composer_event_forced[DISPLAY_SUPPORTED];
+    pthread_t composer_thread[DISPLAY_SUPPORTED];
+    int composer_thread_run[DISPLAY_SUPPORTED];
+    int composer_ret_timeline[DISPLAY_SUPPORTED];
+    struct hwc_work_item *composer_work_list[DISPLAY_SUPPORTED];
 
     bool display_dump_layer;
     bool display_dump_vsync;
@@ -500,19 +517,37 @@ struct hwc_context_t {
     bool track_buffer;
     bool skip_dup;
     bool display_dump_virt;
+    bool fence_support;
 
     int hwc_with_mma;
-    int dump_mma;
+    bool dump_mma;
+    bool dump_fence;
+
+    bool track_comp_time;
+    bool track_comp_chatty;
 
     bool alpha_hole_background;
 };
 
+static void *hwc_compose_task_primary(void *argv);
+static void *hwc_compose_task_virtual(void *argv);
+static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* list,
+   int *overlay_seen, int *fb_target_seen);
+static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* list,
+   int *overlay_seen, int *fb_target_seen);
+
+typedef void * (*HWC_COMPOSE_FPTR)(void *argv);
+static HWC_COMPOSE_FPTR hwc_compose_task_item[DISPLAY_SUPPORTED] = {
+   &hwc_compose_task_primary,
+   &hwc_compose_task_virtual,
+};
+
 static void hwc_device_cleanup(struct hwc_context_t* ctx);
-static int hwc_device_open(const struct hw_module_t* module, const char* name,
-        struct hw_device_t** device);
+static int hwc_device_open(const struct hw_module_t* module,
+   const char* name, struct hw_device_t** device);
 
 static struct hw_module_methods_t hwc_module_methods = {
-    open: hwc_device_open
+   open: hwc_device_open
 };
 
 static void hwc_nsc_recycled_cb(void *context, int param);
@@ -530,7 +565,8 @@ static void hwc_nsc_prepare_layer(struct hwc_context_t* dev, hwc_layer_1_t *laye
 static void hwc_binder_advertise_video_surface(struct hwc_context_t* dev);
 
 static void hwc_checkpoint_callback(void *pParam, int param2);
-static int hwc_checkpoint(struct hwc_context_t *dev);
+static int hwc_checkpoint(struct hwc_context_t *ctx);
+static int hwc_checkpoint_locked(struct hwc_context_t *ctx);
 
 hwc_module_t HAL_MODULE_INFO_SYM = {
     common: {
@@ -585,6 +621,14 @@ static const char *nsc_layer_type[] =
    "VS", // NEXUS_VIDEO_SIDEBAND
 };
 
+static int64_t hwc_tick(void)
+{
+    struct timespec t;
+    t.tv_sec = t.tv_nsec = 0;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (int64_t)(t.tv_sec) * 1000000000LL + t.tv_nsec;
+}
+
 static unsigned int hwc_android_blend_to_nsc_blend(unsigned int android_blend)
 {
    switch (android_blend) {
@@ -637,9 +681,16 @@ static NEXUS_PixelFormat gralloc_to_nexus_pixel_format(int format)
 }
 
 static int hwc_mem_lock_phys(struct hwc_context_t *ctx, unsigned handle, NEXUS_Addr *paddr) {
+   NEXUS_Error rc;
    if (handle && ctx->hwc_with_mma) {
       NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
-      NEXUS_MemoryBlock_LockOffset(block_handle, paddr);
+      rc = NEXUS_MemoryBlock_LockOffset(block_handle, paddr);
+
+      if (ctx->dump_mma) {
+         ALOGI("mma-lock-phys: %p -> %p", handle, *paddr);
+      } else if (rc) {
+         ALOGW("mma-lock-phys: %p -> invalid!?!", handle);
+      }
    } else if (handle) {
       *paddr = (NEXUS_Addr)handle;
    } else {
@@ -657,13 +708,16 @@ static int hwc_mem_unlock_phys(struct hwc_context_t *ctx, unsigned handle) {
 }
 
 static int hwc_mem_lock(struct hwc_context_t *ctx, unsigned handle, void **addr, bool lock) {
+   NEXUS_Error rc;
    if (handle && ctx->hwc_with_mma) {
       if (lock) {
          NEXUS_MemoryBlockHandle block_handle = (NEXUS_MemoryBlockHandle) handle;
-         NEXUS_MemoryBlock_Lock(block_handle, addr);
+         rc = NEXUS_MemoryBlock_Lock(block_handle, addr);
 
          if (ctx->dump_mma) {
             ALOGI("mma-lock: %p -> %p", handle, *addr);
+         } else if (rc) {
+            ALOGW("mma-lock: %p -> invalid!?!", handle);
          }
       }
    } else if (handle) {
@@ -1018,22 +1072,13 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
        }
     }
     if (capacity) {
-       write = snprintf(buff + index, capacity, "\tfps::max:%.3f::now:%.3f\n",
-           ctx->syn_cli.fps_max,
-           ctx->syn_cli.fps_now);
-       if (write > 0) {
-           capacity = (capacity > write) ? (capacity - write) : 0;
-           index += write;
-       }
-       write = snprintf(buff + index, capacity, "\tprepare:{%llu,%llu}::set:{%llu,%llu}::gles-fbk:%s::gles-alw:%s::gles-virt:%s::sync:%d\n",
-           ctx->stats[0].prepare_call,
-           ctx->stats[0].prepare_skipped,
-           ctx->stats[0].set_call,
-           ctx->stats[0].set_skipped,
-           ctx->display_gles_fallback ? "enabled" : "disabled",
-           ctx->display_gles_always ? "enabled" : "disabled",
-           ctx->display_gles_virtual ? "enabled" : "disabled",
-           ctx->sync_timeline);
+       write = snprintf(buff + index, capacity, "\tprepare:{%llu,%llu}::set:{%llu,%llu}::comp:%llu::sync-ret:%d\n",
+           ctx->stats[HWC_PRIMARY_IX].prepare_call,
+           ctx->stats[HWC_PRIMARY_IX].prepare_skipped,
+           ctx->stats[HWC_PRIMARY_IX].set_call,
+           ctx->stats[HWC_PRIMARY_IX].set_skipped,
+           ctx->stats[HWC_PRIMARY_IX].composed,
+           ctx->composer_ret_timeline[HWC_PRIMARY_IX]);
        if (write > 0) {
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
@@ -1042,14 +1087,25 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            ctx->pIpcClient,
            ctx->pNexusClientContext,
            ctx->vsync_callback_enabled ? "enabled" : "disabled",
-           ctx->cfg[0].width,
-           ctx->cfg[0].height,
+           ctx->cfg[HWC_PRIMARY_IX].width,
+           ctx->cfg[HWC_PRIMARY_IX].height,
            hwc_power_mode[ctx->power_mode],
            ctx->nsc_copy ? "oui" : "non",
            ctx->overscan_position.x,
            ctx->overscan_position.y,
            ctx->overscan_position.w,
            ctx->overscan_position.h);
+       if (write > 0) {
+           capacity = (capacity > write) ? (capacity - write) : 0;
+           index += write;
+       }
+       write = snprintf(buff + index, capacity, "\tcomp:%llu:{%llu,%llu}::slow:%.3f::fast:%.3f::avg:%.3f\n",
+           ctx->time_track[HWC_PRIMARY_IX].tracked,
+           ctx->time_track[HWC_PRIMARY_IX].slow,
+           ctx->time_track[HWC_PRIMARY_IX].ontime,
+           ctx->time_track[HWC_PRIMARY_IX].slowest,
+           ctx->time_track[HWC_PRIMARY_IX].fastest,
+           ctx->time_track[HWC_PRIMARY_IX].cumul/ctx->time_track[HWC_PRIMARY_IX].tracked);
        if (write > 0) {
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
@@ -1063,13 +1119,26 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
        }
     }
     if (capacity) {
-       write = snprintf(buff + index, capacity, "\tprepare:{%llu,%llu}::set:{%llu,%llu}::d:{%d,%d}\n",
-           ctx->stats[1].prepare_call,
-           ctx->stats[1].prepare_skipped,
-           ctx->stats[1].set_call,
-           ctx->stats[1].set_skipped,
-           ctx->cfg[1].width,
-           ctx->cfg[1].height);
+       write = snprintf(buff + index, capacity, "\tprepare:{%llu,%llu}::set:{%llu,%llu}::comp:%llu::d:{%d,%d}::sync-ret:%d\n",
+           ctx->stats[HWC_VIRTUAL_IX].prepare_call,
+           ctx->stats[HWC_VIRTUAL_IX].prepare_skipped,
+           ctx->stats[HWC_VIRTUAL_IX].set_call,
+           ctx->stats[HWC_VIRTUAL_IX].set_skipped,
+           ctx->stats[HWC_VIRTUAL_IX].composed,
+           ctx->cfg[HWC_VIRTUAL_IX].width,
+           ctx->cfg[HWC_VIRTUAL_IX].height,
+           ctx->composer_ret_timeline[HWC_VIRTUAL_IX]);
+       if (write > 0) {
+           capacity = (capacity > write) ? (capacity - write) : 0;
+           index += write;
+       }
+       write = snprintf(buff + index, capacity, "\tcomp:%llu:{%llu,%llu}::slow:%.3f::fast:%.3f::avg:%.3f\n",
+           ctx->time_track[HWC_VIRTUAL_IX].tracked,
+           ctx->time_track[HWC_VIRTUAL_IX].slow,
+           ctx->time_track[HWC_VIRTUAL_IX].ontime,
+           ctx->time_track[HWC_VIRTUAL_IX].slowest,
+           ctx->time_track[HWC_VIRTUAL_IX].fastest,
+           ctx->time_track[HWC_VIRTUAL_IX].cumul/ctx->time_track[HWC_VIRTUAL_IX].tracked);
        if (write > 0) {
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
@@ -1188,18 +1257,18 @@ static void hwc_binder_notify(int dev, int msg, struct hwc_notification_info &nt
             {
                 NEXUS_Error rc;
                 NEXUS_SurfaceComposition composition;
-                NxClient_GetSurfaceClientComposition(ctx->disp_cli[0].sccid, &composition);
-                composition.virtualDisplay.width = ctx->cfg[0].width;
-                composition.virtualDisplay.height = ctx->cfg[0].height;
+                NxClient_GetSurfaceClientComposition(ctx->disp_cli[HWC_PRIMARY_IX].sccid, &composition);
+                composition.virtualDisplay.width = ctx->cfg[HWC_PRIMARY_IX].width;
+                composition.virtualDisplay.height = ctx->cfg[HWC_PRIMARY_IX].height;
                 composition.position.x = ctx->overscan_position.x;
                 composition.position.y = ctx->overscan_position.y;
-                composition.position.width = (int)ctx->cfg[0].width + ctx->overscan_position.w;
-                composition.position.height = (int)ctx->cfg[0].height + ctx->overscan_position.h;
+                composition.position.width = (int)ctx->cfg[HWC_PRIMARY_IX].width + ctx->overscan_position.w;
+                composition.position.height = (int)ctx->cfg[HWC_PRIMARY_IX].height + ctx->overscan_position.h;
                 composition.zorder = GPX_CLIENT_ZORDER;
                 composition.visible = true;
                 composition.colorBlend = colorBlendingEquation[BLENDIND_TYPE_SRC_OVER];
                 composition.alphaBlend = alphaBlendingEquation[BLENDIND_TYPE_SRC_OVER];
-                rc = NxClient_SetSurfaceClientComposition(ctx->disp_cli[0].sccid, &composition);
+                rc = NxClient_SetSurfaceClientComposition(ctx->disp_cli[HWC_PRIMARY_IX].sccid, &composition);
                 if ( rc ) {
                     ALOGW("%s: Unable to set client composition for overscan adjustment %d", __FUNCTION__, rc);
                 }
@@ -1236,6 +1305,10 @@ static bool is_video_layer(struct hwc_context_t *ctx, hwc_layer_1_t *layer, int 
             private_handle_t *gr_buffer = (private_handle_t *)layer->handle;
             hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
             PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
+            if (pSharedData == NULL) {
+               hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+               goto out;
+            }
             index = android_atomic_acquire_load(&pSharedData->videoWindow.windowIdPlusOne);
             if (index > 0) {
                 client_context = reinterpret_cast<NexusClientContext *>(pSharedData->videoWindow.nexusClientContext);
@@ -1265,6 +1338,7 @@ static bool is_video_layer(struct hwc_context_t *ctx, hwc_layer_1_t *layer, int 
        layer->hints |= HWC_HINT_CLEAR_FB;
        ALOGV("%s: found on layer %d.", __FUNCTION__, layer_id);
     }
+out:
     return rc;
 }
 
@@ -1283,6 +1357,10 @@ static bool split_layer_scaling(struct hwc_context_t *ctx, hwc_layer_1_t *layer)
                                 (uint16_t)((int)layer->sourceCropf.bottom - (int)layer->sourceCropf.top)};
 
     if (!layer->handle) {
+        goto out;
+    }
+
+    if (pSharedData == NULL) {
         goto out;
     }
 
@@ -1309,10 +1387,9 @@ out:
     return ret;
 }
 
-static bool hwc_can_layer_init_display(struct hwc_context_t* ctx, int layer_id,
-                                      NEXUS_SurfaceHandle display_surface, bool is_virtual)
+static bool hwc_can_layer_init_display(struct hwc_context_t* ctx, int layer_id, NEXUS_SurfaceComposition *pComp,
+                                       NEXUS_SurfaceHandle outputHdl, bool is_virtual)
 {
-    NEXUS_SurfaceComposition *pComp;
     NEXUS_SurfaceCreateSettings settings;
 
     if (is_virtual) {
@@ -1323,7 +1400,6 @@ static bool hwc_can_layer_init_display(struct hwc_context_t* ctx, int layer_id,
        return true;
     }
 
-    pComp = &ctx->gpx_cli[layer_id].composition;
     if ((memcmp(&pComp->colorBlend, &colorBlendingEquation[BLENDIND_TYPE_SRC_OVER], sizeof(pComp->colorBlend)) != 0) &&
        (memcmp(&pComp->colorBlend, &colorBlendingEquation[BLENDIND_TYPE_SRC], sizeof(pComp->colorBlend)) != 0)) {
        return false;
@@ -1333,7 +1409,7 @@ static bool hwc_can_layer_init_display(struct hwc_context_t* ctx, int layer_id,
        return false;
     }
 
-    NEXUS_Surface_GetCreateSettings(display_surface, &settings);
+    NEXUS_Surface_GetCreateSettings(outputHdl, &settings);
     if ((pComp->clipRect.x == 0) && (pComp->clipRect.y == 0) &&
        (pComp->clipRect.width == settings.width) &&
        (pComp->clipRect.height == settings.height)) {
@@ -1356,8 +1432,9 @@ static void hwc_set_layer_blending(struct hwc_context_t* ctx, int layer_id, int 
 
 bool hwc_compose_gralloc_buffer(
    struct hwc_context_t* ctx, int layer_id, PSHARED_DATA pSharedData,
-   private_handle_t *gr_buffer, NEXUS_SurfaceHandle display_surface, bool is_virtual,
-   bool check_transparency, bool *skip_set)
+   private_handle_t *gr_buffer, NEXUS_SurfaceHandle outputHdl, bool is_virtual,
+   bool check_transparency, bool *skip_set, NEXUS_SurfaceHandle *pActSurf,
+   NEXUS_SurfaceComposition *pComp)
 {
     bool composed = false;
     bool is_cursor_layer = false;
@@ -1368,8 +1445,6 @@ bool hwc_compose_gralloc_buffer(
     void *slock;
     NEXUS_PixelFormat pixel_format = NEXUS_PixelFormat_eUnknown;
     NEXUS_SurfaceCreateSettings displaySurfaceSettings;
-    NEXUS_SurfaceComposition *pComp;
-    NEXUS_SurfaceHandle *pActSurf;
 
     if (!is_virtual) {
        if (ctx->gpx_cli[layer_id].skip_set) {
@@ -1379,12 +1454,7 @@ bool hwc_compose_gralloc_buffer(
           ALOGV("%s: willingly skipping layer: %d\n", __FUNCTION__, layer_id);
           goto out;
        }
-       pComp = &ctx->gpx_cli[layer_id].composition;
-       pActSurf = &ctx->gpx_cli[layer_id].active_surface;
        is_cursor_layer = (ctx->gpx_cli[layer_id].layer_flags & HWC_IS_CURSOR_LAYER) ? true : false;
-    } else {
-       pComp = &ctx->vd_cli[layer_id].composition;
-       pActSurf = &ctx->vd_cli[layer_id].active_surface;
     }
 
     if (pSharedData->planes[DEFAULT_PLANE].format == HAL_PIXEL_FORMAT_YV12) {
@@ -1414,7 +1484,7 @@ bool hwc_compose_gralloc_buffer(
         goto out_unlock;
     }
 
-    NEXUS_Surface_GetCreateSettings(display_surface, &displaySurfaceSettings);
+    NEXUS_Surface_GetCreateSettings(outputHdl, &displaySurfaceSettings);
     if ((is_virtual && ctx->display_dump_virt) ||
         (!is_virtual && ctx->display_dump_layer)) {
        ALOGI("%s: layer %u vis %u pf %u %ux%u (%ux%u@%u,%u) to %ux%u@%u,%u",
@@ -1462,8 +1532,8 @@ bool hwc_compose_gralloc_buffer(
 
             blitSettings.source.surface = *pActSurf;
             blitSettings.source.rect = pComp->clipRect;
-            blitSettings.dest.surface = display_surface;
-            blitSettings.output.surface = display_surface;
+            blitSettings.dest.surface = outputHdl;
+            blitSettings.output.surface = outputHdl;
             blitSettings.output.rect = pComp->position;
             blitSettings.colorOp = NEXUS_BlitColorOp_eUseBlendEquation;
             blitSettings.alphaOp = NEXUS_BlitAlphaOp_eUseBlendEquation;
@@ -1498,20 +1568,25 @@ bool hwc_compose_gralloc_buffer(
             if ( blitSettings.output.rect.width > 0 && blitSettings.output.rect.height > 0 &&
                  blitSettings.source.rect.width > 0 && blitSettings.source.rect.height  > 0 ) {
 
-                blitSettings.dest.rect = blitSettings.output.rect;
-                rc = NEXUS_Graphics2D_Blit(ctx->hwc_2dg, &blitSettings);
-                if (rc == NEXUS_GRAPHICS2D_QUEUE_FULL) {
-                    rc = hwc_checkpoint(ctx);
-                    if (rc)  {
-                        ALOGW("Checkpoint timeout composing layer %u", __FUNCTION__, layer_id);
-                    }
-                    rc = NEXUS_Graphics2D_Blit(ctx->hwc_2dg, &blitSettings);
-                }
-                if (rc) {
-                    ALOGE("%s: Unable to blit layer %u", __FUNCTION__, layer_id);
-                } else {
-                    composed = true;
-                }
+               blitSettings.dest.rect = blitSettings.output.rect;
+               if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+                  ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
+               } else {
+                  rc = NEXUS_Graphics2D_Blit(ctx->hwc_g2d, &blitSettings);
+                  if (rc == NEXUS_GRAPHICS2D_QUEUE_FULL) {
+                      rc = hwc_checkpoint_locked(ctx);
+                      if (rc)  {
+                         ALOGW("Checkpoint timeout composing layer %u", __FUNCTION__, layer_id);
+                      }
+                      rc = NEXUS_Graphics2D_Blit(ctx->hwc_g2d, &blitSettings);
+                  }
+                  if (rc) {
+                     ALOGE("%s: Unable to blit layer %u", __FUNCTION__, layer_id);
+                  } else {
+                     composed = true;
+                  }
+                  BKNI_ReleaseMutex(ctx->g2d_mutex);
+               }
             }
         }
     }
@@ -1570,7 +1645,7 @@ static bool primary_need_nsc_layer(struct hwc_context_t *ctx, hwc_layer_1_t *lay
 out:
 
     if (!rc && (total_layers == 1) && ctx->display_dump_layer) {
-       ALOGI("comp: %llu - skip-single - reason %d", ctx->stats[0].prepare_call, skip_layer);
+       ALOGI("comp: %llu - skip-single - reason %d", ctx->stats[HWC_PRIMARY_IX].prepare_call, skip_layer);
     }
     return rc;
 }
@@ -1610,6 +1685,10 @@ static void hwc_prepare_gpx_layer(
     gr_buffer = (private_handle_t *)layer->handle;
     hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
     PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
+    if (pSharedData == NULL) {
+        ALOGE("%s: invalid buffer on layer_id %d", __FUNCTION__, layer_id);
+        goto out;
+    }
     hwc_get_buffer_sizes(pSharedData, &cur_width, &cur_height);
     cur_blending_type = hwc_android_blend_to_nsc_blend(layer->blending);
 
@@ -1697,7 +1776,8 @@ static void primary_composition_setup(struct hwc_context_t *ctx, hwc_display_con
     bool has_video = false;
 
     if (ctx->display_dump_layer) {
-       ALOGI("comp: %llu - classifying %d layers", ctx->stats[0].prepare_call, list->numHwLayers);
+       ALOGI("comp: %llu - classify: %d, geom: %d",
+          ctx->stats[HWC_PRIMARY_IX].prepare_call, list->numHwLayers, (bool)(list->flags & HWC_GEOMETRY_CHANGED));
     }
 
     ctx->needs_fb_target = false;
@@ -1786,11 +1866,11 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
     unsigned int skip_set = 0;
     size_t overlay_layers = 0;
 
-    ctx->stats[0].prepare_call += 1;
+    ctx->stats[HWC_PRIMARY_IX].prepare_call += 1;
 
     if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
         ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
-        ctx->stats[0].prepare_skipped += 1;
+        ctx->stats[HWC_PRIMARY_IX].prepare_skipped += 1;
         goto out;
     }
 
@@ -1822,7 +1902,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
                       handle_dump = (unsigned)pAddr;
                       hwc_mem_unlock_phys(ctx, (unsigned)gr_buffer->sharedData);
                    }
-                   ALOGI("comp: %llu - show - sf:%d (%d) - hdl:0x%x", ctx->stats[0].prepare_call, (int)i, (int)layer->compositionType, handle_dump);
+                   ALOGI("comp: %llu - show - sf:%d (%d) - hdl:0x%x", ctx->stats[HWC_PRIMARY_IX].prepare_call, (int)i, (int)layer->compositionType, handle_dump);
                 }
                 hwc_nsc_prepare_layer(ctx, layer, (int)i,
                                       (bool)(list->flags & HWC_GEOMETRY_CHANGED),
@@ -1831,7 +1911,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
                                       &skip_set);
             } else {
                 if (ctx->display_dump_layer) {
-                   ALOGI("comp: %llu - hiding - sf:%d (%d)", ctx->stats[0].prepare_call, (int)i, (int)layer->compositionType);
+                   ALOGI("comp: %llu - hiding - sf:%d (%d)", ctx->stats[HWC_PRIMARY_IX].prepare_call, (int)i, (int)layer->compositionType);
                 }
                 hwc_hide_unused_gpx_layer(ctx, i);
             }
@@ -1845,7 +1925,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
               }
               BKNI_ReleaseMutex(ctx->mutex);
            } else {
-              ALOGE("comp: %llu - failed hidding skip", ctx->stats[0].prepare_call);
+              ALOGE("comp: %llu - failed hidding skip", ctx->stats[HWC_PRIMARY_IX].prepare_call);
            }
         }
 
@@ -1855,7 +1935,7 @@ static int hwc_prepare_primary(hwc_composer_device_1_t *dev, hwc_display_content
         }
     }
     else {
-        ctx->stats[0].prepare_skipped += 1;
+        ctx->stats[HWC_PRIMARY_IX].prepare_skipped += 1;
         BKNI_ReleaseMutex(ctx->power_mutex);
     }
 
@@ -1876,10 +1956,10 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
     int virt_w = -1, virt_h = -1;
 
     if (list) {
-       ctx->stats[1].prepare_call += 1;
+       ctx->stats[HWC_VIRTUAL_IX].prepare_call += 1;
 
        if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-           ctx->stats[1].prepare_skipped += 1;
+           ctx->stats[HWC_VIRTUAL_IX].prepare_skipped += 1;
            goto out;
        }
 
@@ -1887,8 +1967,8 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
            ctx->vd_cli[i].composition.visible = false;
        }
 
-       ctx->cfg[1].width = -1;
-       ctx->cfg[1].height = -1;
+       ctx->cfg[HWC_VIRTUAL_IX].width = -1;
+       ctx->cfg[HWC_VIRTUAL_IX].height = -1;
        if (list->outbuf != NULL) {
           void *pAddr;
           private_handle_t *gr_buffer = (private_handle_t *)list->outbuf;
@@ -1896,14 +1976,14 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
           PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
           if (pSharedData != NULL) {
              hwc_get_buffer_sizes(pSharedData, &virt_w, &virt_h);
-             ctx->cfg[1].width = virt_w;
-             ctx->cfg[1].height = virt_h;
+             ctx->cfg[HWC_VIRTUAL_IX].width = virt_w;
+             ctx->cfg[HWC_VIRTUAL_IX].height = virt_h;
           }
           hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
        }
 
        if (ctx->display_gles_always || ctx->display_gles_virtual ||
-           (ctx->cfg[1].width == -1 && ctx->cfg[1].height == -1)) {
+           (ctx->cfg[HWC_VIRTUAL_IX].width == -1 && ctx->cfg[HWC_VIRTUAL_IX].height == -1)) {
           goto out_unlock;
        }
 
@@ -1911,7 +1991,7 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
           layer = &list->hwLayers[i];
           if (ctx->display_dump_virt) {
              ALOGI("vcmp: %llu - %dx%d, layer: %d, kind: %d",
-                   ctx->stats[1].prepare_call, virt_w, virt_h, i, layer->compositionType);
+                   ctx->stats[HWC_VIRTUAL_IX].prepare_call, virt_w, virt_h, i, layer->compositionType);
           }
           if ((layer->compositionType == HWC_FRAMEBUFFER) || (layer->compositionType == HWC_OVERLAY)) {
              hwc_prepare_gpx_layer(ctx, layer, layer_id, false /*don't care*/, true, true, NULL);
@@ -1921,7 +2001,7 @@ static int hwc_prepare_virtual(hwc_composer_device_1_t *dev, hwc_display_content
        }
 
        if (ctx->display_dump_virt) {
-          ALOGI("vcmp: %llu - %dx%d, composing %d layers", ctx->stats[1].prepare_call, virt_w, virt_h, layer_id);
+          ALOGI("vcmp: %llu - %dx%d, composing %d layers", ctx->stats[HWC_VIRTUAL_IX].prepare_call, virt_w, virt_h, layer_id);
        }
     }
 
@@ -1966,15 +2046,15 @@ out:
 
 static void hwc_put_disp_surface(struct hwc_context_t *ctx, int disp_ix, NEXUS_SurfaceHandle surface)
 {
-    if (disp_ix > (DISPLAY_SUPPORTED-1)) {
-       return;
-    }
+   if (disp_ix > (DISPLAY_SUPPORTED-1)) {
+      return;
+   }
 
-    if (surface) {
-        NEXUS_SurfaceHandle *pSurface = BFIFO_WRITE(&ctx->disp_cli[disp_ix].display_fifo);
-        *pSurface = surface;
-        BFIFO_WRITE_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
-    }
+   if (surface) {
+      NEXUS_SurfaceHandle *pSurface = BFIFO_WRITE(&ctx->disp_cli[disp_ix].display_fifo);
+      *pSurface = surface;
+      BFIFO_WRITE_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
+   }
 }
 
 static void hwc_seed_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle surface)
@@ -1986,376 +2066,687 @@ static void hwc_seed_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
       fillSettings.color = 0;
       fillSettings.colorOp = NEXUS_FillOp_eCopy;
       fillSettings.alphaOp = NEXUS_FillOp_eCopy;
-      NEXUS_Graphics2D_Fill(ctx->hwc_2dg, &fillSettings);
+      if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+         ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
+         return;
+      }
+      NEXUS_Graphics2D_Fill(ctx->hwc_g2d, &fillSettings);
+      BKNI_ReleaseMutex(ctx->g2d_mutex);
    }
 }
 
+#define HWC_SURFACE_WAIT_TIMEOUT 50
+#define HWC_SURFACE_WAIT_ATTEMPT 4
 static NEXUS_SurfaceHandle hwc_get_disp_surface(struct hwc_context_t *ctx, int disp_ix)
 {
-    NEXUS_SurfaceHandle surfaces[HWC_NUM_DISP_BUFFERS];
-    size_t numSurfaces, i;
-    NEXUS_Error rc;
-    NEXUS_SurfaceHandle surface = NULL;
+    int no_surface_count = 0;
 
     if (disp_ix > (DISPLAY_SUPPORTED-1)) {
-       return surface;
+       return NULL;
     }
 
-    for (;;) {
-        if (BFIFO_READ_PEEK(&ctx->disp_cli[disp_ix].display_fifo)) {
-           NEXUS_SurfaceHandle *pSurface = BFIFO_READ(&ctx->disp_cli[disp_ix].display_fifo);
-           BFIFO_READ_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
-           surface = *pSurface;
-        }
-
-        if (surface) {
-           return surface;
-        }
-        else {
-            numSurfaces=0;
-            rc = NEXUS_SurfaceClient_RecycleSurface(ctx->disp_cli[disp_ix].schdl, surfaces, HWC_NUM_DISP_BUFFERS, &numSurfaces);
-            if ( rc ) {
-                ALOGW("%s: Recycle Surface Error %#x %d", __FUNCTION__, ctx->disp_cli[disp_ix].schdl, rc);
-            } else if ( numSurfaces > 0 ) {
-                for ( i = 0; i < numSurfaces; i++ ) {
-                    NEXUS_SurfaceHandle *pHandle = BFIFO_WRITE(&ctx->disp_cli[disp_ix].display_fifo);
-                    *pHandle = surfaces[i];
-                    BFIFO_WRITE_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
-                }
-            }
-            if (numSurfaces == 0) {
-                if (BKNI_WaitForEvent(ctx->recycle_event, 150)) {
-                    ALOGW("%s: warning no surface received in 150ms", __FUNCTION__);
-                }
-            }
-        }
+    while (BFIFO_READ_PEEK(&ctx->disp_cli[disp_ix].display_fifo) == 0) {
+       if (BKNI_WaitForEvent(ctx->recycle_event, HWC_SURFACE_WAIT_TIMEOUT)) {
+          no_surface_count++;
+          if (no_surface_count == HWC_SURFACE_WAIT_ATTEMPT) {
+             ALOGW("%s: warning no surface received in %d ms", __FUNCTION__,
+                   HWC_SURFACE_WAIT_TIMEOUT*HWC_SURFACE_WAIT_ATTEMPT);
+             return NULL;
+          }
+       }
     }
+
+    NEXUS_SurfaceHandle *pSurface = BFIFO_READ(&ctx->disp_cli[disp_ix].display_fifo);
+    BFIFO_READ_COMMIT(&ctx->disp_cli[disp_ix].display_fifo, 1);
+    return *pSurface;
+}
+
+static int hwc_retire_fence(struct hwc_context_t *ctx, int index)
+{
+   struct sync_fence_info_data info;
+   int sw_timeline, fence;
+
+   if (index != HWC_PRIMARY_IX && index != HWC_VIRTUAL_IX) {
+      goto out_err;
+   }
+
+   sw_timeline = ctx->composer_ret_timeline[index];
+   if (sw_timeline == INVALID_FENCE) {
+      goto out_err;
+   }
+
+   snprintf(info.name, sizeof(info.name), "hwc_%d_RET_%llu", index, ctx->stats[index].set_call);
+   fence = sw_sync_fence_create(sw_timeline, info.name, ctx->stats[index].set_call);
+   if (fence < 0) {
+      goto out_err;
+   }
+
+   ALOGV("%s: %s:%s -> %d/%d", __FUNCTION__, (index == HWC_PRIMARY_IX) ? "prim" : "virt",
+         info.name, sw_timeline, fence);
+   return fence;
+
+out_err:
+   ALOGW("%s: %s: failed RET fence %llu", __FUNCTION__, (index == HWC_PRIMARY_IX) ? "prim" : "virt",
+         ctx->stats[index].set_call);
+   return INVALID_FENCE;
+}
+
+static void hwc_inc_retire_timeline(struct hwc_context_t *ctx, int index, int inc, bool err)
+{
+   if (ctx->dump_fence) {
+      ALOGI("%s: %llu - retire[%d]-inc: %d, on-err: %d\n",
+            (index == HWC_PRIMARY_IX) ? "fence" : "vfence",
+            ctx->stats[index].set_call, ctx->composer_ret_timeline[index], inc, err);
+   }
+
+   if (ctx->composer_ret_timeline[index] != INVALID_FENCE) {
+      sw_sync_timeline_inc(ctx->composer_ret_timeline[index], (unsigned) inc);
+   }
+}
+
+static int hwc_release_timeline_with_fence(struct hwc_context_t *ctx, int index, int layer, int *fence)
+{
+   struct sync_fence_info_data info;
+   int sw_timeline;
+
+   if (fence == NULL) {
+      goto out_err;
+   }
+
+   if (index != HWC_PRIMARY_IX && index != HWC_VIRTUAL_IX) {
+      goto out_err;
+   }
+
+   sw_timeline = sw_sync_timeline_create();
+   if (sw_timeline < 0) {
+      goto out_err;
+   }
+
+   snprintf(info.name, sizeof(info.name), "hwc_%d_REL_%llu_%u", index, ctx->stats[index].set_call, layer);
+   *fence = sw_sync_fence_create(sw_timeline, info.name, 1);
+   if (*fence < 0) {
+      goto out_err;
+   }
+
+   ALOGV("%s: %s:%s -> %d/%d", __FUNCTION__, (index == HWC_PRIMARY_IX) ? "prim" : "virt",
+         info.name, sw_timeline, *fence);
+   return sw_timeline;
+
+out_err:
+   ALOGW("%s: %s: failed REL fence %llu/%d, timeline %d", __FUNCTION__, (index == HWC_PRIMARY_IX) ? "prim" : "virt",
+         ctx->stats[index].set_call, layer, sw_timeline);
+   *fence = INVALID_FENCE;
+   if (sw_timeline >= 0) {
+     close(sw_timeline);
+   }
+   return INVALID_FENCE;
 }
 
 static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* list)
 {
+    size_t hwc_work_item_size = 0;
+    struct hwc_work_item *this_frame = NULL;
     size_t i;
-    NEXUS_Error rc;
-    bool is_sideband = false;
-    bool is_yuv = false;
-    bool is_video = false;
-    bool has_video = false;
-    int overlay_seen = 0;
-    int fb_target_seen = 0;
-    int fence_id = INVALID_FENCE;
-    struct sync_fence_info_data fence;
-    int layer_composed = 0;
-    NEXUS_SurfaceHandle display_surface = NULL;
-    bool display_surface_seeded = false, skip_set = false;
 
-    if (!list)
+    if (!list) {
        return -EINVAL;
-
-    ctx->stats[0].set_call += 1;
-
-    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-        ctx->stats[0].set_skipped += 1;
-        goto out;
     }
 
-    display_surface = hwc_get_disp_surface(ctx, 0);
-    if ( NULL == display_surface ) {
-        ALOGE("%s: No display surface available", __FUNCTION__);
-        goto out_mutex;
+    ctx->stats[HWC_PRIMARY_IX].set_call += 1;
+
+    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+        ctx->stats[HWC_PRIMARY_IX].set_skipped += 1;
+        goto out_close_fence;
     }
 
     if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
         ALOGE("%s: Could not acquire power_mutex!!!", __FUNCTION__);
-        ctx->stats[0].set_skipped += 1;
+        ctx->stats[HWC_PRIMARY_IX].set_skipped += 1;
         goto out_mutex;
     }
+
     if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
         BKNI_ReleaseMutex(ctx->power_mutex);
 
-        if (ctx->sync_timeline != INVALID_FENCE) {
-           snprintf(fence.name, sizeof(fence.name), "hwc_prim_%llu", ctx->stats[0].set_call);
-           fence_id = sw_sync_fence_create(ctx->sync_timeline, fence.name, ++ctx->sync_timeline_inc);
-           if (fence_id < 0) {
-              ALOGW("%s: failed composition sync fence: %s", __FUNCTION__, fence.name);
-           } else if (HWC_DISPLAY_FENCE_VERBOSE) {
-              ALOGI("%s: composition sync fence: %s, fence: %d", __FUNCTION__, fence.name, fence_id);
-           }
+        hwc_work_item_size = sizeof(hwc_work_item) + (list->numHwLayers * sizeof(hwc_layer_1_t));
+        this_frame = (struct hwc_work_item *) calloc(1, hwc_work_item_size);
+        if (this_frame == NULL) {
+           goto out_mutex;
         }
-        list->retireFenceFd = fence_id;
-
+        memcpy(&this_frame->content, list,
+               sizeof(hwc_display_contents_1_t) + (list->numHwLayers * sizeof(hwc_layer_1_t)));
         for (i = 0; i < list->numHwLayers; i++) {
-            list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
-            //
-            // video layers have a no-op 'hidden' gpx layer association, so this check is valid
-            // for all since gpx layers > mm layers.
-            //
-            if (i > NSC_GPX_CLIENTS_NUMBER-1) {
-                ALOGE("Exceedeed max number of accounted layers\n");
-                break;
-            }
-            void *pAddr;
-            private_handle_t *gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
-            if (gr_buffer == NULL) {
-               // invalid layer handle, just skip it.
-               continue;
-            }
-            //
-            // video layer: signal the buffer to be displayed, drop duplicates.
-            //
-            hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
-            PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
-            is_video = is_video_layer(ctx, &list->hwLayers[i], -1, &is_sideband, &is_yuv);
-            if (is_video && !is_yuv) {
-                has_video = true;
-                if (!is_sideband) {
-                    if (ctx->hwc_binder) {
-                        // TODO: currently only one video window exposed.
-                        if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
-                            ctx->mm_cli[0].last_ping_frame_id = pSharedData->videoFrame.status.serialNumber;
-                            ctx->hwc_binder->setframe(ctx->mm_cli[0].id, ctx->mm_cli[0].last_ping_frame_id);
-                        }
-                    }
-                }
-            }
-            //
-            // gpx layer: use the 'cached' visibility that was assigned during 'prepare'.
-            //
-            else if (ctx->gpx_cli[i].composition.visible) {
-                if (list->hwLayers[i].compositionType == HWC_OVERLAY) {
-                   overlay_seen++;
-                } else if (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET) {
-                   fb_target_seen++;
-                }
-                if ((list->hwLayers[i].compositionType == HWC_OVERLAY) ||
-                    (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET)) {
-                   fence_id = INVALID_FENCE;
-                   if (ctx->sync_timeline != INVALID_FENCE) {
-                      snprintf(fence.name, sizeof(fence.name), "hwc_prim_%llu_%d", ctx->stats[0].set_call, i);
-                      fence_id = sw_sync_fence_create(ctx->sync_timeline, fence.name, ctx->sync_timeline_inc);
-                      if (fence_id < 0) {
-                         ALOGW("%s: failed layer sync fence: %s", __FUNCTION__, fence.name);
-                      } else if (HWC_DISPLAY_FENCE_VERBOSE) {
-                         ALOGI("%s: layer sync fence: %s, fence: %d", __FUNCTION__, fence.name, fence_id);
-                      }
-                   }
-                   list->hwLayers[i].releaseFenceFd = fence_id;
-                }
-
-                if (!layer_composed) {
-                   bool can_skip_fill = has_video && hwc_can_layer_init_display(ctx, i, display_surface, false);
-                   if (!can_skip_fill) {
-                      display_surface_seeded = true;
-                      hwc_seed_disp_surface(ctx, display_surface);
-                   }
-                   else {
-                      hwc_set_layer_blending(ctx, i, BLENDIND_TYPE_SRC);
-                   }
-                }
-
-                if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, display_surface, false, has_video, &skip_set)) {
-                   layer_composed++;
-                }
-                ctx->gpx_cli[i].last.grhdl = (buffer_handle_t)gr_buffer;
-                ctx->gpx_cli[i].last.comp_ix = ctx->stats[0].set_call;
-
-                if (list->hwLayers[i].releaseFenceFd != INVALID_FENCE) {
-                   close(list->hwLayers[i].releaseFenceFd);
-                   list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
-                }
-            }
-
-            hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+           memcpy(&this_frame->comp[i], &ctx->gpx_cli[i].composition, sizeof(NEXUS_SurfaceComposition));
+        }
+        this_frame->comp_ix = ctx->stats[HWC_PRIMARY_IX].set_call;
+        this_frame->next = NULL;
+        if (ctx->composer_work_list[HWC_PRIMARY_IX] == NULL) {
+           ctx->composer_work_list[HWC_PRIMARY_IX] = this_frame;
+        } else {
+           struct hwc_work_item *item, *last;
+           last = ctx->composer_work_list[HWC_PRIMARY_IX];
+           while (last != NULL) { item = last; last = last->next; }
+           item->next = this_frame;
         }
 
-        if (layer_composed == 0) {
-           if (list->retireFenceFd != INVALID_FENCE) {
-              sw_sync_timeline_inc(ctx->sync_timeline, 1);
-              close(list->retireFenceFd);
-              list->retireFenceFd = INVALID_FENCE;
-           }
-           if (has_video && !ctx->alpha_hole_background) {
-              if (skip_set) {
-                 hwc_put_disp_surface(ctx, 0, display_surface);
-              } else {
-                 if (!display_surface_seeded) {
-                    hwc_seed_disp_surface(ctx, display_surface);
-                 }
-                 rc = hwc_checkpoint(ctx);
-                 if (rc) {
-                    ALOGW("%s: checkpoint timeout", __FUNCTION__);
-                 } else {
-                    rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[0].schdl, display_surface, NULL, false);
-                    if (rc) {
-                       ALOGW("%s: Unable to push surface to client (%d)", __FUNCTION__, rc);
-                    } else {
-                       ctx->alpha_hole_background = true;
-                    }
-                 }
-              }
-           } else {
-              hwc_put_disp_surface(ctx, 0, display_surface);
+        if (ctx->track_comp_time) {
+          this_frame->tick_queued = hwc_tick();
+        }
+
+        if (!ctx->fence_support) {
+           list->retireFenceFd = INVALID_FENCE;
+           this_frame->content.retireFenceFd = INVALID_FENCE;
+           for (i = 0; i < list->numHwLayers; i++) {
+              list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
+              this_frame->content.hwLayers[i].releaseFenceFd = INVALID_FENCE;
            }
         } else {
-           ctx->alpha_hole_background = false;
-           rc = hwc_checkpoint(ctx);
-           if ( rc )  {
-               ALOGW("%s: checkpoint timeout", __FUNCTION__);
-           } else {
-               rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[0].schdl, display_surface, NULL, false);
-               if ( rc ) {
-                  ALOGW("%s: Unable to push surface to client (%d)", __FUNCTION__, rc);
-               }
+           list->retireFenceFd = hwc_retire_fence(ctx, HWC_PRIMARY_IX);
+           this_frame->content.retireFenceFd = list->retireFenceFd;
+           if (ctx->dump_fence) {
+              ALOGI("fence: %llu/%d - retire: %d\n",
+                 ctx->stats[HWC_PRIMARY_IX].set_call, i, list->retireFenceFd);
            }
            for (i = 0; i < list->numHwLayers; i++) {
-              if (ctx->gpx_cli[i].active_surface) {
-                 NEXUS_Surface_Destroy(ctx->gpx_cli[i].active_surface);
-                 ctx->gpx_cli[i].active_surface = NULL;
+              if (((list->hwLayers[i].compositionType == HWC_OVERLAY) ||
+                   (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET)) &&
+                   ctx->gpx_cli[i].composition.visible) {
+                 this_frame->content.hwLayers[i].releaseFenceFd =
+                     hwc_release_timeline_with_fence(ctx, HWC_PRIMARY_IX, i, &list->hwLayers[i].releaseFenceFd);
+                 if (ctx->dump_fence) {
+                    ALOGI("fence: %llu/%d - timeline: %d -> fence: %d\n",
+                       ctx->stats[HWC_PRIMARY_IX].set_call, i,
+                       this_frame->content.hwLayers[i].releaseFenceFd, list->hwLayers[i].releaseFenceFd);
+                 }
               }
            }
         }
-    } else {
-        ctx->stats[0].set_skipped += 1;
-        BKNI_ReleaseMutex(ctx->power_mutex);
-        hwc_put_disp_surface(ctx, 0, display_surface);
-    }
 
-    if (ctx->display_dump_layer) {
-       ALOGI("comp: %llu (%llu): ov:%d, fb:%d, composed:%d\n",
-             ctx->stats[0].set_call, ctx->stats[0].prepare_call, overlay_seen,
-             fb_target_seen, layer_composed);
+        if (ctx->display_dump_layer) {
+           ALOGI("comp: %llu (%llu) - queued\n",
+                 ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].prepare_call);
+        }
+
+        if (!ctx->fence_support) {
+           BKNI_ReleaseMutex(ctx->mutex);
+           BKNI_SetEvent(ctx->composer_event[HWC_PRIMARY_IX]);
+           BKNI_WaitForEvent(ctx->composer_event_sync[HWC_PRIMARY_IX], BKNI_INFINITE);
+           goto out_close_fence;
+        } else {
+           BKNI_ReleaseMutex(ctx->mutex);
+           BKNI_SetEvent(ctx->composer_event[HWC_PRIMARY_IX]);
+           if (ctx->stats[HWC_PRIMARY_IX].set_call >= ctx->stats[HWC_PRIMARY_IX].composed + HWC_SET_COMP_THRESHOLD) {
+              BKNI_WaitForEvent(ctx->composer_event_forced[HWC_PRIMARY_IX], BKNI_INFINITE);
+           }
+           goto out;
+        }
     }
 
 out_mutex:
     BKNI_ReleaseMutex(ctx->mutex);
+out_close_fence:
+    for (i = 0; i < list->numHwLayers; i++) {
+       if (list->hwLayers[i].acquireFenceFd >= 0) {
+          close(list->hwLayers[i].acquireFenceFd);
+          if (ctx->dump_fence) {
+             ALOGI("fence: %llu/%d - acquire: %d -> err+close\n",
+                   ctx->stats[HWC_PRIMARY_IX].set_call, i,
+                   list->hwLayers[i].acquireFenceFd);
+          }
+       }
+    }
 out:
     return 0;
 }
 
+static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, int *overlay_seen, int *fb_target_seen)
+{
+   int layer_composed = 0;
+   NEXUS_SurfaceHandle outputHdl = NULL;
+   size_t i;
+   NEXUS_Error rc;
+   bool is_sideband = false, is_yuv = false, has_video = false, oob_video = false;
+   bool display_surface_seeded, skip_set;
+   hwc_display_contents_1_t* list = &item->content;
+   NEXUS_SurfaceHandle surface[NSC_GPX_CLIENTS_NUMBER];
+
+   memset(surface, 0, sizeof(surface));
+
+   if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+       if (list->retireFenceFd != INVALID_FENCE) {
+          hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, true);
+       }
+       goto out;
+   }
+   outputHdl = hwc_get_disp_surface(ctx, HWC_PRIMARY_IX);
+   if (outputHdl == NULL) {
+      ALOGE("%s: no display surface available", __FUNCTION__);
+      BKNI_ReleaseMutex(ctx->mutex);
+      if (list->retireFenceFd != INVALID_FENCE) {
+         hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, true);
+      }
+      goto out;
+   }
+   BKNI_ReleaseMutex(ctx->mutex);
+
+   for (i = 0; i < list->numHwLayers; i++) {
+      if (list->hwLayers[i].handle &&
+          private_handle_t::validate(list->hwLayers[i].handle) != 0) {
+         ALOGW("comp: %llu/%llu - layer: %d - invalid for comp (%d)\n",
+               ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed,
+               i, list->hwLayers[i].acquireFenceFd);
+      }
+      if (i > NSC_GPX_CLIENTS_NUMBER-1) {
+         ALOGE("Exceedeed max number of accounted layers\n");
+         break;
+      }
+      void *pAddr;
+      private_handle_t *gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
+      if (gr_buffer == NULL) {
+         continue;
+      }
+      hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+      PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
+      has_video = is_video_layer(ctx, &list->hwLayers[i], -1, &is_sideband, &is_yuv);
+      if (has_video && !is_yuv) {
+         oob_video = true;
+         if (!is_sideband) {
+            if (ctx->hwc_binder) {
+               // TODO: currently only one video window exposed.
+               if (ctx->mm_cli[0].last_ping_frame_id != pSharedData->videoFrame.status.serialNumber) {
+                  ctx->mm_cli[0].last_ping_frame_id = pSharedData->videoFrame.status.serialNumber;
+                  ctx->hwc_binder->setframe(ctx->mm_cli[0].id, ctx->mm_cli[0].last_ping_frame_id);
+               }
+            }
+         }
+      } else if (item->comp[i].visible) {
+         if (list->hwLayers[i].compositionType == HWC_OVERLAY) {
+            *overlay_seen += 1;
+         } else if (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET) {
+            *fb_target_seen += 1;
+         }
+         if (!layer_composed) {
+            bool can_skip_fill = oob_video && hwc_can_layer_init_display(ctx, i, &item->comp[i], outputHdl, false);
+            if (!can_skip_fill) {
+               display_surface_seeded = true;
+               hwc_seed_disp_surface(ctx, outputHdl);
+            } else {
+               hwc_set_layer_blending(ctx, i, BLENDIND_TYPE_SRC);
+            }
+         }
+         if (list->hwLayers[i].acquireFenceFd >= 0) {
+            if (!ctx->fence_support) {
+               ALOGI("fence: %llu/%d - fd:%d -> wait+close in sync mode!?! check platform setup.\n",
+                     ctx->stats[HWC_PRIMARY_IX].set_call, i,
+                     list->hwLayers[i].acquireFenceFd);
+            }
+            sync_wait(list->hwLayers[i].acquireFenceFd, BKNI_INFINITE);
+            close(list->hwLayers[i].acquireFenceFd);
+            list->hwLayers[i].acquireFenceFd = INVALID_FENCE;
+            if (ctx->dump_fence) {
+               ALOGI("fence: %llu/%d - acquire: %d -> wait+close\n",
+                     ctx->stats[HWC_PRIMARY_IX].set_call, i,
+                     list->hwLayers[i].acquireFenceFd);
+            }
+         }
+         if (pSharedData != NULL) {
+            if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, outputHdl, false,
+                                           oob_video, &skip_set, &surface[i], &item->comp[i])) {
+               layer_composed++;
+            }
+            ctx->gpx_cli[i].last.grhdl = (buffer_handle_t)gr_buffer;
+            ctx->gpx_cli[i].last.comp_ix = item->comp_ix;
+         }
+      }
+      hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+   }
+
+   if (layer_composed == 0) {
+      if (has_video && !ctx->alpha_hole_background) {
+         if (skip_set) {
+            BKNI_AcquireMutex(ctx->mutex);
+            hwc_put_disp_surface(ctx, 0, outputHdl);
+            BKNI_ReleaseMutex(ctx->mutex);
+            if (list->retireFenceFd != INVALID_FENCE) {
+               hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, false);
+            }
+         } else {
+            if (!display_surface_seeded) {
+               hwc_seed_disp_surface(ctx, outputHdl);
+            }
+            rc = hwc_checkpoint(ctx);
+            if (rc) {
+               ALOGW("%s: checkpoint timeout", __FUNCTION__);
+            } else {
+               rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, outputHdl, NULL, false);
+               if (rc) {
+                  ALOGW("%s: failed to push surface to client (%d)", __FUNCTION__, rc);
+                  if (list->retireFenceFd != INVALID_FENCE) {
+                     hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, true);
+                  }
+               } else {
+                  ctx->alpha_hole_background = true;
+               }
+            }
+         }
+      } else {
+         BKNI_AcquireMutex(ctx->mutex);
+         hwc_put_disp_surface(ctx, 0, outputHdl);
+         BKNI_ReleaseMutex(ctx->mutex);
+         if (list->retireFenceFd != INVALID_FENCE) {
+            hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, false);
+         }
+      }
+   } else {
+      ctx->alpha_hole_background = false;
+      rc = hwc_checkpoint(ctx);
+      if (rc) {
+         ALOGW("%s: checkpoint timeout", __FUNCTION__);
+      } else {
+         rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, outputHdl, NULL, false);
+         if (rc) {
+            ALOGW("%s: failed to push surface to client (%d)", __FUNCTION__, rc);
+            if (list->retireFenceFd != INVALID_FENCE) {
+               hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, 1, true);
+            }
+         }
+      }
+   }
+
+   if (ctx->display_dump_layer) {
+      ALOGI("comp: %llu (%llu,%llu): ov:%d, fb:%d - composed:%d (%c%c%c)\n",
+            ctx->stats[HWC_PRIMARY_IX].composed, ctx->stats[HWC_PRIMARY_IX].prepare_call,
+            ctx->stats[HWC_PRIMARY_IX].set_call, *overlay_seen, *fb_target_seen, layer_composed,
+            is_yuv?'y':'-', oob_video?'o':'-', is_sideband?'s':'-');
+   }
+
+out:
+   for (i = 0; i < list->numHwLayers; i++) {
+      if (surface[i]) {
+         NEXUS_Surface_Destroy(surface[i]);
+      }
+      if (list->hwLayers[i].acquireFenceFd != INVALID_FENCE) {
+         close(list->hwLayers[i].acquireFenceFd);
+         if (ctx->dump_fence) {
+            ALOGI("fence: %llu/%d - acquire: %d -> comp+err+close\n",
+                  ctx->stats[HWC_PRIMARY_IX].set_call, i,
+                  list->hwLayers[i].acquireFenceFd);
+         }
+      }
+      if (list->hwLayers[i].releaseFenceFd != INVALID_FENCE) {
+         sw_sync_timeline_inc(list->hwLayers[i].releaseFenceFd, 1);
+         close(list->hwLayers[i].releaseFenceFd);
+         if (ctx->dump_fence) {
+            ALOGI("fence: %llu/%d - timeline: %d -> inc+close\n",
+                  ctx->stats[HWC_PRIMARY_IX].set_call, i,
+                  list->hwLayers[i].releaseFenceFd);
+         }
+      }
+   }
+   return layer_composed;
+}
+
 static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* list)
 {
-    NEXUS_Error rc;
+    size_t hwc_work_item_size = 0;
+    struct hwc_work_item *this_frame = NULL;
     size_t i;
-    hwc_layer_1_t *layer;
-    int layer_count = 0;
-    void *pAddr;
-    int layer_composed = 0, overlay_seen = 0, fb_target_seen = 0;
-    NEXUS_SurfaceHandle display_surface = NULL;
 
-    if (list) {
+    if (!list) {
+       /* !!not an error, just nothing to do.*/
+       return 0;
+    }
 
-       ctx->stats[1].set_call += 1;
+    ctx->stats[HWC_VIRTUAL_IX].set_call += 1;
 
-       if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
-          ctx->stats[1].set_skipped += 1;
-          goto out;
+    if (BKNI_AcquireMutex(ctx->mutex) != BERR_SUCCESS) {
+       ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
+       goto out_close_fence;
+    }
+
+    if (ctx->display_gles_always || ctx->display_gles_virtual ||
+        (ctx->cfg[HWC_VIRTUAL_IX].width == -1 && ctx->cfg[HWC_VIRTUAL_IX].height == -1)) {
+       list->retireFenceFd = list->outbufAcquireFenceFd;
+       goto out_mutex;
+    }
+
+    if (list->outbuf == NULL) {
+      ALOGE("vcmp: %llu - unexpected null output target", ctx->stats[HWC_VIRTUAL_IX].set_call);
+      ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
+      goto out_mutex;
+    }
+
+    if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+       ALOGE("%s: could not acquire power_mutex!!!", __FUNCTION__);
+       ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
+       goto out_mutex;
+    }
+
+    if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
+       BKNI_ReleaseMutex(ctx->power_mutex);
+
+       hwc_work_item_size = sizeof(hwc_work_item) + (list->numHwLayers * sizeof(hwc_layer_1_t));
+       this_frame = (struct hwc_work_item *) calloc(1, hwc_work_item_size);
+       if (this_frame == NULL) {
+          goto out_mutex;
+       }
+       memcpy(&this_frame->content, list,
+              sizeof(hwc_display_contents_1_t) + (list->numHwLayers * sizeof(hwc_layer_1_t)));
+       for (i = 0; i < list->numHwLayers; i++) {
+          memcpy(&this_frame->comp[i], &ctx->vd_cli[i].composition, sizeof(NEXUS_SurfaceComposition));
+       }
+       this_frame->comp_ix = ctx->stats[HWC_VIRTUAL_IX].set_call;
+       this_frame->next = NULL;
+       if (ctx->composer_work_list[HWC_VIRTUAL_IX] == NULL) {
+          ctx->composer_work_list[HWC_VIRTUAL_IX] = this_frame;
+       } else {
+          struct hwc_work_item *item, *last;
+          last = ctx->composer_work_list[HWC_VIRTUAL_IX];
+          while (last != NULL) { item = last; last = last->next; }
+          item->next = this_frame;
        }
 
-       if (ctx->display_gles_always || ctx->display_gles_virtual ||
-           (ctx->cfg[1].width == -1 && ctx->cfg[1].height == -1)) {
-          list->retireFenceFd = list->outbufAcquireFenceFd;
-         goto out_unlock;
+       if (ctx->track_comp_time) {
+          this_frame->tick_queued = hwc_tick();
        }
 
-       if (list->outbuf == NULL) {
-         ALOGE("vcmp: %llu - unexpected null output target", ctx->stats[1].set_call);
-         ctx->stats[1].set_skipped += 1;
-         goto out_unlock;
-       }
-
-       if (list->outbufAcquireFenceFd != -1) {
-          if (ctx->display_dump_virt) {
-             ALOGI("vcmp: %llu: outbuf-fence:%d\n", ctx->stats[1].set_call, list->outbufAcquireFenceFd);
-          }
-       }
-
-       list->retireFenceFd = -1;
-
-       if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
-          ALOGE("%s: could not acquire power_mutex!!!", __FUNCTION__);
-          ctx->stats[1].set_skipped += 1;
-          goto out_unlock;
-       }
-
-       if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
-          BKNI_ReleaseMutex(ctx->power_mutex);
-
-          private_handle_t *gr_out_buffer = (private_handle_t *)list->outbuf;
-          hwc_mem_lock(ctx, (unsigned)gr_out_buffer->sharedData, &pAddr, true);
-          PSHARED_DATA pOutSharedData = (PSHARED_DATA) pAddr;
-          if (pOutSharedData == NULL) {
-             ALOGE("vcmp: %llu (%p) - invalid output buffer?", ctx->stats[1].set_call, gr_out_buffer->sharedData);
-             ctx->stats[1].set_skipped += 1;
-             hwc_mem_unlock(ctx, (unsigned)gr_out_buffer->sharedData, true);
-             goto out_unlock;
-          }
-          display_surface = hwc_to_nsc_surface(pOutSharedData->planes[DEFAULT_PLANE].width,
-                                               pOutSharedData->planes[DEFAULT_PLANE].height,
-                                               pOutSharedData->planes[DEFAULT_PLANE].stride,
-                                               gralloc_to_nexus_pixel_format(pOutSharedData->planes[DEFAULT_PLANE].format),
-                                               ctx->hwc_with_mma,
-                                               pOutSharedData->planes[DEFAULT_PLANE].physAddr,
-                                               (uint8_t *)pAddr);
-          if (display_surface == NULL) {
-             ALOGE("vcmp: %llu (%p) - no display surface available", ctx->stats[1].set_call, gr_out_buffer->sharedData);
-             ctx->stats[1].set_skipped += 1;
-             hwc_mem_unlock(ctx, (unsigned)gr_out_buffer->sharedData, true);
-             goto out_unlock;
-          }
-
+       if (!ctx->fence_support) {
+          list->retireFenceFd = INVALID_FENCE;
+          this_frame->content.retireFenceFd = INVALID_FENCE;
           for (i = 0; i < list->numHwLayers; i++) {
-             if (list->hwLayers[i].compositionType == HWC_OVERLAY) {
-                overlay_seen++;
-                list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
-             } else if (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET) {
-                fb_target_seen++;
-                list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
-             }
-             if ((list->hwLayers[i].compositionType == HWC_OVERLAY) && ctx->vd_cli[i].composition.visible) {
-                if (i > HWC_VD_CLIENTS_NUMBER) {
-                    break;
-                }
-                private_handle_t *gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
-                if (gr_buffer == NULL) {
-                   continue;
-                }
-                hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
-                PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
-                if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, display_surface, true, false, NULL)) {
-                   layer_composed++;
-                }
-                hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
-             }
+             list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
+             this_frame->content.hwLayers[i].releaseFenceFd = INVALID_FENCE;
           }
-
-          if (layer_composed) {
-             rc = hwc_checkpoint(ctx);
-             if (rc)  {
-                ALOGW("vcmp: checkpoint timeout");
-             }
-
-             for (i = 0; i < list->numHwLayers; i++) {
-                if (ctx->vd_cli[i].active_surface) {
-                   NEXUS_Surface_Destroy(ctx->vd_cli[i].active_surface);
-                   ctx->vd_cli[i].active_surface = NULL;
+       } else {
+          list->retireFenceFd = hwc_retire_fence(ctx, HWC_VIRTUAL_IX);
+          this_frame->content.retireFenceFd = list->retireFenceFd;
+          if (ctx->dump_fence) {
+             ALOGI("vfence: %llu/%d - retire: %d\n",
+                ctx->stats[HWC_VIRTUAL_IX].set_call, i, list->retireFenceFd);
+          }
+          for (i = 0; i < list->numHwLayers; i++) {
+             if (ctx->vd_cli[i].composition.visible &&
+                 ((list->hwLayers[i].compositionType == HWC_OVERLAY) ||
+                  (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET))) {
+                this_frame->content.hwLayers[i].releaseFenceFd =
+                    hwc_release_timeline_with_fence(ctx, HWC_VIRTUAL_IX, i, &list->hwLayers[i].releaseFenceFd);
+                if (ctx->dump_fence) {
+                   ALOGI("vfence: %llu/%d - timeline: %d -> fence: %d\n",
+                      ctx->stats[HWC_VIRTUAL_IX].set_call, i,
+                      this_frame->content.hwLayers[i].releaseFenceFd, list->hwLayers[i].releaseFenceFd);
                 }
              }
           }
-
-          hwc_mem_unlock(ctx, (unsigned)gr_out_buffer->sharedData, true);
-          NEXUS_Surface_Destroy(display_surface);
        }
 
        if (ctx->display_dump_virt) {
-          ALOGI("vcmp: %llu (%llu): ov:%d, fb:%d - composed:%d\n",
-                ctx->stats[1].set_call, ctx->stats[1].prepare_call,
-                overlay_seen, fb_target_seen, layer_composed);
+          ALOGI("vcmp: %llu (%llu) - queued\n",
+                ctx->stats[HWC_VIRTUAL_IX].set_call, ctx->stats[HWC_VIRTUAL_IX].prepare_call);
+       }
+
+       if (!ctx->fence_support) {
+          BKNI_ReleaseMutex(ctx->mutex);
+          BKNI_SetEvent(ctx->composer_event[HWC_VIRTUAL_IX]);
+          BKNI_WaitForEvent(ctx->composer_event_sync[HWC_VIRTUAL_IX], BKNI_INFINITE);
+          goto out_close_fence;
+       } else {
+          BKNI_ReleaseMutex(ctx->mutex);
+          BKNI_SetEvent(ctx->composer_event[HWC_VIRTUAL_IX]);
+          goto out;
        }
     }
 
-out_unlock:
+out_mutex:
     BKNI_ReleaseMutex(ctx->mutex);
+out_close_fence:
+    for (i = 0; i < list->numHwLayers; i++) {
+       if (list->hwLayers[i].acquireFenceFd >= 0) {
+          close(list->hwLayers[i].acquireFenceFd);
+          if (ctx->dump_fence) {
+             ALOGI("vfence: %llu/%d - acquire: %d -> err+close\n",
+                   ctx->stats[HWC_VIRTUAL_IX].set_call, i,
+                   list->hwLayers[i].acquireFenceFd);
+          }
+       }
+    }
 out:
     return 0;
+}
+
+static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, int *overlay_seen, int *fb_target_seen)
+{
+   int layer_composed = 0;
+   NEXUS_SurfaceHandle outputHdl = NULL;
+   NEXUS_Error rc;
+   size_t i;
+   void *pAddr;
+   hwc_display_contents_1_t* list = &item->content;
+   NEXUS_SurfaceHandle surface[NSC_GPX_CLIENTS_NUMBER];
+
+   memset(surface, 0, sizeof(surface));
+
+   private_handle_t *gr_out_buffer = (private_handle_t *)list->outbuf;
+   hwc_mem_lock(ctx, (unsigned)gr_out_buffer->sharedData, &pAddr, true);
+   PSHARED_DATA pOutSharedData = (PSHARED_DATA) pAddr;
+   if (pOutSharedData == NULL) {
+      ALOGE("vcmp: %llu (%p) - invalid output buffer?", ctx->stats[HWC_VIRTUAL_IX].set_call, gr_out_buffer->sharedData);
+      ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
+      hwc_mem_unlock(ctx, (unsigned)gr_out_buffer->sharedData, true);
+      goto out;
+   }
+   outputHdl = hwc_to_nsc_surface(pOutSharedData->planes[DEFAULT_PLANE].width,
+                                  pOutSharedData->planes[DEFAULT_PLANE].height,
+                                  pOutSharedData->planes[DEFAULT_PLANE].stride,
+                                  gralloc_to_nexus_pixel_format(pOutSharedData->planes[DEFAULT_PLANE].format),
+                                  ctx->hwc_with_mma,
+                                  pOutSharedData->planes[DEFAULT_PLANE].physAddr,
+                                  (uint8_t *)pAddr);
+   if (outputHdl == NULL) {
+      ALOGE("vcmp: %llu (%p) - no display surface available", ctx->stats[HWC_VIRTUAL_IX].set_call, gr_out_buffer->sharedData);
+      ctx->stats[HWC_VIRTUAL_IX].set_skipped += 1;
+      hwc_mem_unlock(ctx, (unsigned)gr_out_buffer->sharedData, true);
+      goto out;
+   }
+
+   for (i = 0; i < list->numHwLayers; i++) {
+      if (list->hwLayers[i].compositionType == HWC_OVERLAY) {
+         *overlay_seen += 1;
+      } else if (list->hwLayers[i].compositionType == HWC_FRAMEBUFFER_TARGET) {
+         *fb_target_seen += 1;
+      }
+      if (item->comp[i].visible) {
+         if (i > HWC_VD_CLIENTS_NUMBER) {
+            break;
+         }
+         private_handle_t *gr_buffer = (private_handle_t *)list->hwLayers[i].handle;
+         if (gr_buffer == NULL) {
+            continue;
+         }
+         hwc_mem_lock(ctx, (unsigned)gr_buffer->sharedData, &pAddr, true);
+         PSHARED_DATA pSharedData = (PSHARED_DATA) pAddr;
+         if (list->hwLayers[i].acquireFenceFd >= 0) {
+            if (!ctx->fence_support) {
+               ALOGI("vfence: %llu/%d - fd:%d -> wait+close in sync mode!?! check platform setup.\n",
+                     ctx->stats[HWC_VIRTUAL_IX].set_call, i,
+                     list->hwLayers[i].acquireFenceFd);
+            }
+            sync_wait(list->hwLayers[i].acquireFenceFd, BKNI_INFINITE);
+            close(list->hwLayers[i].acquireFenceFd);
+            list->hwLayers[i].acquireFenceFd = INVALID_FENCE;
+            if (ctx->dump_fence) {
+               ALOGI("vfence: %llu/%d - acquire: %d -> wait+close\n",
+                     ctx->stats[HWC_VIRTUAL_IX].set_call, i,
+                     list->hwLayers[i].acquireFenceFd);
+            }
+         }
+         if (pSharedData == NULL) {
+            hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+            continue;
+         }
+         if (hwc_compose_gralloc_buffer(ctx, i, pSharedData, gr_buffer, outputHdl,
+                                        true, false, NULL, &surface[i], &item->comp[i])) {
+            layer_composed++;
+         }
+         hwc_mem_unlock(ctx, (unsigned)gr_buffer->sharedData, true);
+      }
+   }
+
+   if (layer_composed) {
+      if (ctx->fence_support && (list->outbufAcquireFenceFd >= 0)) {
+         sync_wait(list->outbufAcquireFenceFd, BKNI_INFINITE);
+         close(list->outbufAcquireFenceFd);
+         list->outbufAcquireFenceFd = INVALID_FENCE;
+      }
+      rc = hwc_checkpoint(ctx);
+      if (rc)  {
+         ALOGW("vcmp: checkpoint timeout");
+      }
+      for (i = 0; i < list->numHwLayers; i++) {
+         if (surface[i]) {
+            NEXUS_Surface_Destroy(surface[i]);
+         }
+      }
+   }
+   hwc_mem_unlock(ctx, (unsigned)gr_out_buffer->sharedData, true);
+   if (outputHdl) {
+      NEXUS_Surface_Destroy(outputHdl);
+   }
+
+   if (ctx->display_dump_virt) {
+      ALOGI("vcmp: %llu (%llu,%llu): ov:%d, fb:%d - composed:%d\n",
+            ctx->stats[HWC_VIRTUAL_IX].composed, ctx->stats[HWC_VIRTUAL_IX].prepare_call,
+            ctx->stats[HWC_VIRTUAL_IX].set_call, *overlay_seen, *fb_target_seen, layer_composed);
+   }
+
+out:
+   if (list->outbufAcquireFenceFd >= 0) {
+      close(list->outbufAcquireFenceFd);
+      list->outbufAcquireFenceFd = INVALID_FENCE;
+   }
+   for (i = 0; i < list->numHwLayers; i++) {
+      if (list->hwLayers[i].acquireFenceFd != INVALID_FENCE) {
+         close(list->hwLayers[i].acquireFenceFd);
+         if (ctx->dump_fence) {
+            ALOGI("vfence: %llu/%d - acquire: %d -> comp+err+close\n",
+                  ctx->stats[HWC_VIRTUAL_IX].set_call, i,
+                  list->hwLayers[i].acquireFenceFd);
+         }
+      }
+      if (list->hwLayers[i].releaseFenceFd != INVALID_FENCE) {
+         sw_sync_timeline_inc(list->hwLayers[i].releaseFenceFd, 1);
+         close(list->hwLayers[i].releaseFenceFd);
+         if (ctx->dump_fence) {
+            ALOGI("vfence: %llu/%d - timeline: %d -> inc+close\n",
+                  ctx->stats[HWC_VIRTUAL_IX].set_call, i,
+                  list->hwLayers[i].releaseFenceFd);
+         }
+      }
+   }
+   if (list->retireFenceFd != INVALID_FENCE) {
+      hwc_inc_retire_timeline(ctx, HWC_VIRTUAL_IX, 1, false);
+   }
+
+   return layer_composed;
 }
 
 static int hwc_set(hwc_composer_device_1_t *dev,
@@ -2417,8 +2808,23 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         }
 
         for (i = 0; i < DISPLAY_SUPPORTED; i++) {
+           ctx->composer_thread_run[i] = 0;
            if (ctx->disp_cli[i].schdl) {
               NEXUS_SurfaceClient_Release(ctx->disp_cli[i].schdl);
+           }
+           pthread_join(ctx->composer_thread[i], NULL);
+           if (ctx->composer_event[i]) {
+              BKNI_DestroyEvent(ctx->composer_event[i]);
+           }
+           if (ctx->composer_event_sync[i]) {
+              BKNI_DestroyEvent(ctx->composer_event_sync[i]);
+           }
+           if (ctx->composer_event_forced[i]) {
+              BKNI_DestroyEvent(ctx->composer_event_forced[i]);
+           }
+           if (ctx->composer_ret_timeline[i] != INVALID_FENCE) {
+              close(ctx->composer_ret_timeline[i]);
+              ctx->composer_ret_timeline[i] = INVALID_FENCE;
            }
         }
         if (ctx->recycle_event) {
@@ -2431,20 +2837,17 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         BKNI_DestroyMutex(ctx->mutex);
         BKNI_DestroyMutex(ctx->power_mutex);
         BKNI_DestroyMutex(ctx->dev_mutex);
+        BKNI_DestroyMutex(ctx->g2d_mutex);
 
         if (ctx->hwc_binder) {
            delete ctx->hwc_binder;
         }
 
-        if (ctx->hwc_2dg) {
-           NEXUS_Graphics2D_Close(ctx->hwc_2dg);
+        if (ctx->hwc_g2d) {
+           NEXUS_Graphics2D_Close(ctx->hwc_g2d);
         }
         if (ctx->checkpoint_event) {
            BKNI_DestroyEvent(ctx->checkpoint_event);
-        }
-
-        if (ctx->sync_timeline != INVALID_FENCE) {
-           close(ctx->sync_timeline);
         }
     }
 }
@@ -2495,7 +2898,6 @@ static int hwc_device_setPowerMode(struct hwc_composer_device_1* dev, int disp, 
        }
        if (ctx->power_mode != mode) {
           ctx->power_mode = mode;
-          ctx->syn_cli.last_tick = -1;
        }
        BKNI_ReleaseMutex(ctx->power_mutex);
        rc = 0;
@@ -2608,10 +3010,10 @@ static int hwc_device_getDisplayAttributes(struct hwc_composer_device_1* dev, in
                       values[i] = (int32_t)ctx->syn_cli.refresh;
                    break;
                    case HWC_DISPLAY_WIDTH:
-                      values[i] = ctx->cfg[0].width;
+                      values[i] = ctx->cfg[HWC_PRIMARY_IX].width;
                    break;
                    case HWC_DISPLAY_HEIGHT:
-                      values[i] = ctx->cfg[0].height;
+                      values[i] = ctx->cfg[HWC_PRIMARY_IX].height;
                    break;
                    case HWC_DISPLAY_DPI_X:
                    case HWC_DISPLAY_DPI_Y:
@@ -2693,23 +3095,12 @@ static int hwc_device_setCursorPositionAsync(struct hwc_composer_device_1 *dev, 
     return 0;
 }
 
-
-/*****************************************************************************/
-
-static int64_t VsyncSystemTime(void)
-{
-    struct timespec t;
-    t.tv_sec = t.tv_nsec = 0;
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    return (int64_t)(t.tv_sec) * 1000000000LL + t.tv_nsec;
-}
-
 #define VSYNC_HACK_REFRESH_COUNT 10
 static void * hwc_vsync_task(void *argv)
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)argv;
     const double nsec_to_msec = 1.0 / 1000000.0;
-    int64_t vsync_system_time = VsyncSystemTime();
+    int64_t vsync_system_time;
     unsigned int vsync_hack_count = 0;
     unsigned long long vsync_hack_count_last_tick = 0;
     unsigned long long vsync_hack_count_expected_tick = 0;
@@ -2724,54 +3115,49 @@ static void * hwc_vsync_task(void *argv)
           BKNI_ReleaseMutex(ctx->power_mutex);
           BKNI_WaitForEvent(ctx->syn_cli.vsync_event, BKNI_INFINITE);
 
-          vsync_system_time = VsyncSystemTime();
-
-          if (ctx->syn_cli.last_tick != -1 && (ctx->stats[0].set_call != ctx->syn_cli.last_set)) {
-             ctx->syn_cli.fps_now = (float)(ctx->stats[0].set_call - ctx->syn_cli.last_set) /
-                                    (nsec_to_msec * (float)(vsync_system_time - ctx->syn_cli.last_tick));
-             ctx->syn_cli.fps_now *= 1000.0;
-             if (ctx->syn_cli.fps_now > ctx->syn_cli.fps_max) {
-                ctx->syn_cli.fps_max = ctx->syn_cli.fps_now;
-             }
-          }
-          if ((ctx->syn_cli.last_tick != -1) || (ctx->stats[0].set_call != ctx->syn_cli.last_set)) {
-             ctx->syn_cli.last_tick = vsync_system_time;
-             ctx->syn_cli.last_set = ctx->stats[0].set_call;
-          }
+          vsync_system_time = hwc_tick();
 
           if (HWC_REFRESH_HACK) {
              vsync_hack_count++;
-             if (vsync_hack_count == VSYNC_HACK_REFRESH_COUNT/2) {
-                vsync_hack_count_last_tick = ctx->stats[0].set_call;
-                if (vsync_hack_count_expected_tick == vsync_hack_count_last_tick) {
+             if (vsync_hack_count_expected_tick == 0) {
+                vsync_hack_count_expected_tick = ctx->stats[HWC_PRIMARY_IX].composed + 1;
+             }
+             if (vsync_hack_count >= VSYNC_HACK_REFRESH_COUNT/2) {
+                vsync_hack_count_last_tick = ctx->stats[HWC_PRIMARY_IX].composed;
+                if (vsync_hack_count_expected_tick <= vsync_hack_count_last_tick) {
                    vsync_hack_count = 0; /* reset */
+                   vsync_hack_count_expected_tick = ctx->stats[HWC_PRIMARY_IX].composed + 1;
                 }
-             } else if (vsync_hack_count == VSYNC_HACK_REFRESH_COUNT) {
+             } else if (vsync_hack_count >= VSYNC_HACK_REFRESH_COUNT) {
                  vsync_hack_count = 0;
-                 if (vsync_hack_count_last_tick == ctx->stats[0].set_call) {
-                    vsync_hack_count_expected_tick = ctx->stats[0].set_call + 1;
-                    ALOGV("hack-refresh: tick %d", vsync_hack_count_expected_tick);
+                 if (vsync_hack_count_last_tick == ctx->stats[HWC_PRIMARY_IX].composed) {
+                    ALOGV("hack-refresh: tick %llu", vsync_hack_count_expected_tick);
                     if (ctx->procs->invalidate != NULL) {
                        ctx->procs->invalidate(const_cast<hwc_procs_t *>(ctx->procs));
                     }
+                    vsync_hack_count_expected_tick = 0;
                  }
              }
          }
+
+         if (BKNI_AcquireMutex(ctx->vsync_callback_enabled_mutex) == BERR_SUCCESS) {
+            if (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) {
+               BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
+               ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, vsync_system_time);
+               if (ctx->display_dump_vsync) {
+                  ALOGI("vsync-pushed: @ %lld", vsync_system_time);
+               }
+            } else {
+               BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
+               if (ctx->display_dump_vsync) {
+                  ALOGI("vsync-ticked: @ %lld", vsync_system_time);
+               }
+            }
+         }
+
       } else {
          BKNI_ReleaseMutex(ctx->power_mutex);
          BKNI_Sleep(16);
-      }
-
-      if (BKNI_AcquireMutex(ctx->vsync_callback_enabled_mutex) == BERR_SUCCESS) {
-         if (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) {
-            ctx->procs->vsync(const_cast<hwc_procs_t *>(ctx->procs), 0, vsync_system_time);
-         }
-         if (ctx->display_dump_vsync) {
-            ALOGI("vsync-%s: @ %lld",
-                  (ctx->vsync_callback_enabled && ctx->procs->vsync != NULL) ? "pushed" : "ticked",
-                  vsync_system_time);
-         }
-         BKNI_ReleaseMutex(ctx->vsync_callback_enabled_mutex);
       }
 
    } while(ctx->vsync_thread_run);
@@ -2797,6 +3183,175 @@ out:
     return standby;
 }
 
+static void hwc_collect_composer(struct hwc_context_t *ctx, struct hwc_work_item *this_frame,
+   int index, int overlay_seen, int fb_target_seen, int layer_composed)
+{
+   const long double nsec_to_msec = 1.0 / 1000000.0;
+   long double comp_time;
+
+   if (this_frame->tick_queued) {
+      int64_t tick_composed = hwc_tick();
+
+      comp_time = nsec_to_msec * (tick_composed - this_frame->tick_queued);
+
+      if (ctx->display_dump_layer ||
+          (ctx->track_comp_chatty && ((tick_composed - this_frame->tick_queued) > VSYNC_CLIENT_REFRESH))) {
+         ALOGI("%s: %llu: ov:%d, fb:%d, comp:%d, time:%.3f msecs => %s\n",
+               (index == HWC_PRIMARY_IX) ? "comp" : "vcmp",
+               this_frame->comp_ix, overlay_seen, fb_target_seen, layer_composed,
+               comp_time, ((tick_composed - this_frame->tick_queued) > VSYNC_CLIENT_REFRESH) ? "slow" : "on-time");
+      }
+
+      if (layer_composed) {
+         ctx->time_track[index].tracked++;
+         if ((tick_composed - this_frame->tick_queued) > VSYNC_CLIENT_REFRESH) {
+            ctx->time_track[index].slow++;
+         } else {
+            ctx->time_track[index].ontime++;
+         }
+         if ((comp_time > 0) && (comp_time > ctx->time_track[index].slowest)) {
+            ctx->time_track[index].slowest = comp_time;
+         }
+         if (ctx->time_track[index].fastest == 0) {
+            ctx->time_track[index].fastest = comp_time;
+         }
+         if ((comp_time > 0) && (comp_time < ctx->time_track[index].fastest)) {
+            ctx->time_track[index].fastest = comp_time;
+         }
+         ctx->time_track[index].cumul += comp_time;
+      }
+   }
+}
+
+static void * hwc_compose_task_primary(void *argv)
+{
+   struct hwc_context_t* ctx = (struct hwc_context_t*)argv;
+   struct hwc_work_item *this_frame = NULL;
+   int layer_composed, overlay_seen, fb_target_seen;
+
+   ALOGI("%s: starting primary composer loop.", __FUNCTION__);
+
+   do
+   {
+      if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+         ALOGE("%s: could not acquire power_mutex!!!", __FUNCTION__);
+         goto out;
+      }
+      if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
+         BKNI_ReleaseMutex(ctx->power_mutex);
+         BKNI_WaitForEvent(ctx->composer_event[HWC_PRIMARY_IX], BKNI_INFINITE);
+         bool try_compose = true, release_forced = false;
+
+         do {
+            this_frame = NULL;
+            if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+               this_frame = ctx->composer_work_list[HWC_PRIMARY_IX];
+               if (this_frame == NULL) {
+                  try_compose = false;
+               } else {
+                  ctx->composer_work_list[HWC_PRIMARY_IX] = this_frame->next;
+                  if (ctx->stats[HWC_PRIMARY_IX].set_call >= ctx->stats[HWC_PRIMARY_IX].composed + HWC_SET_COMP_THRESHOLD) {
+                     release_forced = true;
+                  }
+                  ctx->stats[HWC_PRIMARY_IX].composed++;
+               }
+               BKNI_ReleaseMutex(ctx->mutex);
+            } else {
+               ALOGE("%s: could not acquire mutex!!!", __FUNCTION__);
+               try_compose = false;
+            }
+
+            if (this_frame != NULL) {
+               overlay_seen = 0; fb_target_seen = 0;
+               layer_composed = hwc_compose_primary(ctx, this_frame, &overlay_seen, &fb_target_seen);
+               hwc_collect_composer(ctx, this_frame, HWC_PRIMARY_IX, overlay_seen, fb_target_seen, layer_composed);
+               free(this_frame);
+               this_frame = NULL;
+            }
+
+            if (release_forced) {
+               release_forced = false;
+               BKNI_SetEvent(ctx->composer_event_forced[HWC_PRIMARY_IX]);
+            }
+
+         } while (try_compose);
+
+         if (!ctx->fence_support) {
+            BKNI_SetEvent(ctx->composer_event_sync[HWC_PRIMARY_IX]);
+         }
+
+      } else {
+         BKNI_ReleaseMutex(ctx->power_mutex);
+         BKNI_Sleep(16);
+      }
+
+   } while(ctx->composer_thread_run[HWC_PRIMARY_IX]);
+
+out:
+   ALOGE("%s: primary composer loop - EXIT!", __FUNCTION__);
+   return NULL;
+}
+
+static void * hwc_compose_task_virtual(void *argv)
+{
+   struct hwc_context_t* ctx = (struct hwc_context_t*)argv;
+   struct hwc_work_item *this_frame = NULL;
+   int layer_composed, overlay_seen, fb_target_seen;
+
+   ALOGI("%s: starting virtual composer loop.", __FUNCTION__);
+
+   do
+   {
+      if (BKNI_AcquireMutex(ctx->power_mutex) != BERR_SUCCESS) {
+         ALOGE("%s: could not acquire power_mutex!!!", __FUNCTION__);
+         goto out;
+      }
+      if ((ctx->power_mode != HWC_POWER_MODE_OFF) && (ctx->power_mode != HWC_POWER_MODE_DOZE_SUSPEND)) {
+         BKNI_ReleaseMutex(ctx->power_mutex);
+         BKNI_WaitForEvent(ctx->composer_event[HWC_VIRTUAL_IX], BKNI_INFINITE);
+         bool try_compose = true;
+
+         do {
+            this_frame = NULL;
+            if (BKNI_AcquireMutex(ctx->mutex) == BERR_SUCCESS) {
+               this_frame = ctx->composer_work_list[HWC_VIRTUAL_IX];
+               if (this_frame == NULL) {
+                  try_compose = false;
+               } else {
+                  ctx->composer_work_list[HWC_VIRTUAL_IX] = this_frame->next;
+                  ctx->stats[HWC_VIRTUAL_IX].composed++;
+               }
+               BKNI_ReleaseMutex(ctx->mutex);
+            } else {
+               ALOGE("%s: could not acquire mutex!!!", __FUNCTION__);
+               try_compose = false;
+            }
+
+            if (this_frame != NULL) {
+               overlay_seen = 0; fb_target_seen = 0;
+               layer_composed = hwc_compose_virtual(ctx, this_frame, &overlay_seen, &fb_target_seen);
+               hwc_collect_composer(ctx, this_frame, HWC_VIRTUAL_IX, overlay_seen, fb_target_seen, layer_composed);
+               free(this_frame);
+               this_frame = NULL;
+            }
+         } while (try_compose);
+
+         if (!ctx->fence_support) {
+            BKNI_SetEvent(ctx->composer_event_sync[HWC_VIRTUAL_IX]);
+         }
+
+      } else {
+         BKNI_ReleaseMutex(ctx->power_mutex);
+         BKNI_Sleep(16);
+      }
+
+   } while(ctx->composer_thread_run[HWC_VIRTUAL_IX]);
+
+out:
+   ALOGE("%s: virtual composer loop - EXIT!", __FUNCTION__);
+   return NULL;
+}
+
 static void hwc_read_dev_props(struct hwc_context_t* dev)
 {
    char value[PROPERTY_VALUE_MAX];
@@ -2805,11 +3360,11 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
       return;
    }
 
-   dev->cfg[0].width = property_get_int32(GRAPHICS_RES_WIDTH_PROP, GRAPHICS_RES_WIDTH_DEFAULT);
-   dev->cfg[0].height = property_get_int32(GRAPHICS_RES_HEIGHT_PROP, GRAPHICS_RES_HEIGHT_DEFAULT);
+   dev->cfg[HWC_PRIMARY_IX].width = property_get_int32(GRAPHICS_RES_WIDTH_PROP, GRAPHICS_RES_WIDTH_DEFAULT);
+   dev->cfg[HWC_PRIMARY_IX].height = property_get_int32(GRAPHICS_RES_HEIGHT_PROP, GRAPHICS_RES_HEIGHT_DEFAULT);
 
-   dev->cfg[1].width = -1;
-   dev->cfg[1].height = -1;
+   dev->cfg[HWC_VIRTUAL_IX].width = -1;
+   dev->cfg[HWC_VIRTUAL_IX].height = -1;
 
    dev->alpha_hole_background = false;
 
@@ -2849,24 +3404,25 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
    }
 
    if (property_get(HWC_DUMP_MMA_OPS_PROP, value, HWC_DEFAULT_DISABLED)) {
-      dev->dump_mma = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
+      dev->dump_mma = (strtoul(value, NULL, 10) > 0) ? true : false;
+   }
+
+   if (property_get(HWC_DUMP_FENCE_PROP, value, HWC_DEFAULT_DISABLED)) {
+      dev->dump_fence = (strtoul(value, NULL, 10) > 0) ? true : false;
    }
 
    if (property_get(HWC_SKIP_DUP_PROP, value, HWC_DEFAULT_DISABLED)) {
       dev->skip_dup = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
    }
 
-   if (property_get(HWC_SW_SYNC_PROP, value, HWC_DEFAULT_DISABLED)) {
-      if (strtoul(value, NULL, 10) == 0) {
-         ALOGI("%s: sync timeline disabled", __FUNCTION__);
-         dev->sync_timeline = INVALID_FENCE;
-      } else {
-         dev->sync_timeline = sw_sync_timeline_create();
-         if (dev->sync_timeline < 0) {
-            ALOGW("%s: failed to create sync timeline, not using fences", __FUNCTION__);
-            dev->sync_timeline = INVALID_FENCE;
-         }
-      }
+   dev->fence_support = property_get_bool(HWC_WITH_FENCE_PROP, 0);
+
+   if (property_get(HWC_TRACK_COMP_TIME, value, HWC_DEFAULT_ENABLED)) {
+      dev->track_comp_time = (strtoul(value, NULL, 10) > 0) ? true : false;
+   }
+
+   if (property_get(HWC_TRACK_COMP_CHATTY, value, HWC_DEFAULT_DISABLED)) {
+      dev->track_comp_chatty = (strtoul(value, NULL, 10) > 0) ? true : false;
    }
 }
 
@@ -2879,11 +3435,14 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
     NEXUS_SurfaceClientSettings client_settings;
     NEXUS_SurfaceComposition composition;
     NEXUS_ClientConfiguration clientConfig;
+    int i, j;
 
     if (!strcmp(name, HWC_HARDWARE_COMPOSER)) {
         NEXUS_Error rc = NEXUS_SUCCESS;
         NEXUS_Graphics2DSettings gfxSettings;
         pthread_attr_t attr;
+        int thread_policy;
+        struct sched_param thread_sched_param;
         dev = (struct hwc_context_t*)calloc(1, sizeof(*dev));
 
         if (dev == NULL) {
@@ -2894,7 +3453,22 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         hwc_read_dev_props(dev);
 
         if ( BKNI_CreateEvent(&dev->recycle_event) ) {
-           goto out;
+           goto clean_up;
+        }
+        if (BKNI_CreateMutex(&dev->vsync_callback_enabled_mutex) == BERR_OS_ERROR) {
+           goto clean_up;
+        }
+        if (BKNI_CreateMutex(&dev->mutex) == BERR_OS_ERROR) {
+           goto clean_up;
+        }
+        if (BKNI_CreateMutex(&dev->dev_mutex) == BERR_OS_ERROR) {
+           goto clean_up;
+        }
+        if (BKNI_CreateMutex(&dev->power_mutex) == BERR_OS_ERROR) {
+           goto clean_up;
+        }
+        if (BKNI_CreateMutex(&dev->g2d_mutex) == BERR_OS_ERROR) {
+           goto clean_up;
         }
 
         NEXUS_Platform_GetClientConfiguration(&clientConfig);
@@ -2903,18 +3477,41 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         rc = NxClient_Alloc(&nxAllocSettings, &dev->nxAllocResults);
         if (rc) {
            ALOGE("%s: failed NxClient_Alloc (rc=%d)!", __FUNCTION__, rc);
-           goto out;
+           goto clean_up;
         }
 
-        for (int i = 0; i < DISPLAY_SUPPORTED; i++) {
+        for (i = 0; i < DISPLAY_SUPPORTED; i++) {
             dev->disp_cli[i].sccid = dev->nxAllocResults.surfaceClient[i].id;
+            dev->composer_thread_run[i] = 1;
+            dev->composer_work_list[i] = NULL;
+            if (dev->fence_support) {
+               dev->composer_ret_timeline[i] = sw_sync_timeline_create();
+               if (dev->composer_ret_timeline[i] < 0) {
+                  dev->composer_ret_timeline[i] = INVALID_FENCE;
+               }
+            }
+            rc = BKNI_CreateEvent(&dev->composer_event[i]);
+            if (rc) {
+               ALOGE("%s: unable to create composer event", __FUNCTION__, i);
+               goto clean_up;
+            }
+            rc = BKNI_CreateEvent(&dev->composer_event_sync[i]);
+            if (rc) {
+               ALOGE("%s: unable to create composer sync event", __FUNCTION__, i);
+               goto clean_up;
+            }
+            rc = BKNI_CreateEvent(&dev->composer_event_forced[i]);
+            if (rc) {
+               ALOGE("%s: unable to create composer forced event", __FUNCTION__, i);
+               goto clean_up;
+            }
         }
 
-        for (int i = 0; i < (DISPLAY_SUPPORTED-1); i++) {
+        for (i = 0; i < (DISPLAY_SUPPORTED-1); i++) {
             dev->disp_cli[i].schdl = NEXUS_SurfaceClient_Acquire(dev->disp_cli[i].sccid);
             if (NULL == dev->disp_cli[i].schdl) {
                ALOGE("%s: unable to allocate surface client", __FUNCTION__);
-               goto out;
+               goto clean_up;
             }
             NEXUS_SurfaceClient_GetSettings(dev->disp_cli[i].schdl, &client_settings);
             client_settings.recycled.callback = hwc_nsc_recycled_cb;
@@ -2922,7 +3519,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             rc = NEXUS_SurfaceClient_SetSettings(dev->disp_cli[i].schdl, &client_settings);
             if (rc) {
                ALOGE("%s: unable to setup surface client", __FUNCTION__);
-               goto out;
+               goto clean_up;
             }
             NxClient_GetSurfaceClientComposition(dev->disp_cli[i].sccid, &composition);
             composition.virtualDisplay.width = dev->cfg[i].width;
@@ -2938,9 +3535,9 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             rc = NxClient_SetSurfaceClientComposition(dev->disp_cli[i].sccid, &composition);
             if (rc) {
                ALOGE("%s: unable to set client composition %d", __FUNCTION__, rc);
-               goto out;
+               goto clean_up;
             }
-            for ( int j = 0; j < HWC_NUM_DISP_BUFFERS; j++ ) {
+            for (j = 0; j < HWC_NUM_DISP_BUFFERS; j++) {
                NEXUS_SurfaceCreateSettings surfaceCreateSettings;
                NEXUS_Surface_GetDefaultCreateSettings(&surfaceCreateSettings);
                surfaceCreateSettings.width = dev->cfg[i].width;
@@ -2951,7 +3548,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                }
                dev->disp_cli[i].display_buffers[j] = hwc_surface_create(&surfaceCreateSettings, dev->hwc_with_mma);
                if (dev->disp_cli[i].display_buffers[j] == NULL) {
-                  goto out;
+                  goto clean_up;
                }
             }
             BFIFO_INIT(&dev->disp_cli[i].display_fifo, dev->disp_cli[i].display_buffers, HWC_NUM_DISP_BUFFERS);
@@ -2963,14 +3560,14 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         dev->syn_cli.ncci.type     = NEXUS_CLIENT_VSYNC;
         dev->syn_cli.ncci.parent   = (void *)dev;
 
-        for (int i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++) {
+        for (i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++) {
             dev->gpx_cli[i].ncci.parent = (void *)dev;
             dev->gpx_cli[i].layer_id = i;
             dev->gpx_cli[i].ncci.type = NEXUS_CLIENT_GPX;
-            NxClient_GetSurfaceClientComposition(dev->disp_cli[0].sccid, &dev->gpx_cli[i].composition);
+            NxClient_GetSurfaceClientComposition(dev->disp_cli[HWC_PRIMARY_IX].sccid, &dev->gpx_cli[i].composition);
         }
 
-        for (int i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
+        for (i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
             dev->mm_cli[i].root.ncci.parent = (void *)dev;
             dev->mm_cli[i].root.layer_id = i;
             dev->mm_cli[i].root.ncci.type = NEXUS_CLIENT_MM;
@@ -2984,7 +3581,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             }
         }
 
-        for (int i = 0; i < NSC_SB_CLIENTS_NUMBER; i++) {
+        for (i = 0; i < NSC_SB_CLIENTS_NUMBER; i++) {
             dev->sb_cli[i].root.ncci.parent = (void *)dev;
             dev->sb_cli[i].root.layer_id = i;
             dev->sb_cli[i].root.ncci.type = NEXUS_CLIENT_SB;
@@ -2997,10 +3594,14 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             }
         }
 
-        for (int i = 0; i < HWC_VD_CLIENTS_NUMBER; i++) {
+        for (i = 0; i < HWC_VD_CLIENTS_NUMBER; i++) {
             dev->vd_cli[i].ncci.parent = (void *)dev;
             dev->vd_cli[i].ncci.type = NEXUS_CLIENT_VD;
-            NxClient_GetSurfaceClientComposition(dev->disp_cli[1].sccid, &dev->vd_cli[i].composition);
+            NxClient_GetSurfaceClientComposition(dev->disp_cli[HWC_VIRTUAL_IX].sccid, &dev->vd_cli[i].composition);
+            if (!i) {
+               dev->vd_cli[i].composition.visible = false;
+               NxClient_SetSurfaceClientComposition(dev->disp_cli[HWC_VIRTUAL_IX].sccid, &dev->vd_cli[i].composition);
+            }
         }
 
         dev->device.common.tag                     = HARDWARE_DEVICE_TAG;
@@ -3020,19 +3621,6 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         dev->device.getActiveConfig                = hwc_device_getActiveConfig;
         dev->device.setActiveConfig                = hwc_device_setActiveConfig;
         dev->device.setCursorPositionAsync         = hwc_device_setCursorPositionAsync;
-
-        if (BKNI_CreateMutex(&dev->vsync_callback_enabled_mutex) == BERR_OS_ERROR) {
-           goto clean_up;
-        }
-        if (BKNI_CreateMutex(&dev->mutex) == BERR_OS_ERROR) {
-           goto clean_up;
-        }
-        if (BKNI_CreateMutex(&dev->power_mutex) == BERR_OS_ERROR) {
-           goto clean_up;
-        }
-        if (BKNI_CreateMutex(&dev->dev_mutex) == BERR_OS_ERROR) {
-           goto clean_up;
-        }
 
         dev->vsync_thread_run = 1;
         dev->display_handle = NULL;
@@ -3067,10 +3655,33 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         }
 
         pthread_attr_init(&attr);
+        attr.sched_policy = SCHED_FIFO;
+        attr.sched_priority = sched_get_priority_max(SCHED_FIFO);
         if (pthread_create(&dev->vsync_callback_thread, &attr, hwc_vsync_task, (void *)dev) != 0) {
+            ALOGE("%s: unable to create vsync thread", __FUNCTION__, i);
             goto clean_up;
         }
         pthread_attr_destroy(&attr);
+        pthread_setname_np(dev->vsync_callback_thread, "nx_sync_cb");
+        status = pthread_getschedparam(dev->vsync_callback_thread, &thread_policy, &thread_sched_param);
+        ALOGI("%s: pthread_getschedparam(%d,%d) on vsync thread: %d", __FUNCTION__,
+              thread_policy, thread_sched_param.sched_priority, status);
+
+        for (i = 0; i < DISPLAY_SUPPORTED; i++) {
+            pthread_attr_init(&attr);
+            attr.sched_policy = SCHED_FIFO;
+            attr.sched_priority = sched_get_priority_max(SCHED_FIFO);
+            if (pthread_create(&dev->composer_thread[i], &attr, hwc_compose_task_item[i], (void *)dev) != 0) {
+                ALOGE("%s: unable to create composer thread", __FUNCTION__, i);
+                goto clean_up;
+            }
+            pthread_attr_destroy(&attr);
+            pthread_setname_np(dev->composer_thread[i], (i==0)?"hwc_comp_prim":"hwc_comp_virt");
+            pthread_getschedparam(dev->composer_thread[i], &thread_policy, &thread_sched_param);
+            status = pthread_getschedparam(dev->composer_thread[i], &thread_policy, &thread_sched_param);
+            ALOGI("%s: pthread_getschedparam(%d,%d) on %s composer thread: %d", __FUNCTION__,
+                  thread_policy, thread_sched_param.sched_priority, (i==0)?"primary":"virtual", status);
+        }
 
         dev->hwc_binder = new HwcBinder_wrap;
         if (dev->hwc_binder == NULL) {
@@ -3081,27 +3692,27 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         }
 
         rc = BKNI_CreateEvent(&dev->checkpoint_event);
-        if ( rc ) {
-          ALOGE(("Unable to create checkpoint event"));
+        if (rc) {
+          ALOGE("%s: unable to create checkpoint event", __FUNCTION__);
           goto clean_up;
         }
 
         NEXUS_Graphics2DOpenSettings g2dOpenSettings;
         NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
         g2dOpenSettings.compatibleWithSurfaceCompaction = false;
-        dev->hwc_2dg = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &g2dOpenSettings);
-        if (dev->hwc_2dg == NULL) {
-           ALOGE("%s: failed to create hwc_2dg, conversion services will not work!", __FUNCTION__);
+        dev->hwc_g2d = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &g2dOpenSettings);
+        if (dev->hwc_g2d == NULL) {
+           ALOGE("%s: failed to create hwc_g2d, composition will not work!", __FUNCTION__);
         } else {
-           NEXUS_Graphics2D_GetSettings(dev->hwc_2dg, &gfxSettings);
+           NEXUS_Graphics2D_GetSettings(dev->hwc_g2d, &gfxSettings);
            gfxSettings.pollingCheckpoint = false;
            gfxSettings.checkpointCallback.callback = hwc_checkpoint_callback;
            gfxSettings.checkpointCallback.context = (void *)dev;
-           rc = NEXUS_Graphics2D_SetSettings(dev->hwc_2dg, &gfxSettings);
+           rc = NEXUS_Graphics2D_SetSettings(dev->hwc_g2d, &gfxSettings);
            if (rc) {
-              ALOGE("%s: failed to setup hwc_2dg checkpoint, conversion services will not work!", __FUNCTION__);
+              ALOGE("%s: failed to setup hwc_g2d checkpoint, composition will not work!", __FUNCTION__);
            }
-           NEXUS_Graphics2D_GetCapabilities(dev->hwc_2dg, &dev->gfxCaps);
+           NEXUS_Graphics2D_GetCapabilities(dev->hwc_g2d, &dev->gfxCaps);
            ALOGI("%s: gfx caps: h-down-scale: %d, v-down-scale: %d", __FUNCTION__,
                  dev->gfxCaps.maxHorizontalDownScale, dev->gfxCaps.maxVerticalDownScale);
         }
@@ -3129,9 +3740,24 @@ static void hw_vsync_cb(void *context, int param)
 static void hwc_nsc_recycled_cb(void *context, int param)
 {
     struct hwc_context_t *ctx = (struct hwc_context_t *)context;
+    NEXUS_SurfaceHandle surfaces[HWC_NUM_DISP_BUFFERS];
+    NEXUS_Error rc;
+    size_t numSurfaces, i;
 
     BSTD_UNUSED(param);
+    numSurfaces = 0;
+    rc = NEXUS_SurfaceClient_RecycleSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, surfaces, HWC_NUM_DISP_BUFFERS, &numSurfaces);
+    if (rc) {
+       ALOGW("%s: recycle Surface Error %#x %d", __FUNCTION__, ctx->disp_cli[HWC_PRIMARY_IX].schdl, rc);
+    } else if ( numSurfaces > 0 ) {
+       for (i = 0; i < numSurfaces; i++) {
+          NEXUS_SurfaceHandle *pHandle = BFIFO_WRITE(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo);
+          *pHandle = surfaces[i];
+          BFIFO_WRITE_COMMIT(&ctx->disp_cli[HWC_PRIMARY_IX].display_fifo, 1);
+       }
+    }
 
+    hwc_inc_retire_timeline(ctx, HWC_PRIMARY_IX, (int)numSurfaces, false);
     BKNI_SetEvent(ctx->recycle_event);
 }
 
@@ -3163,12 +3789,12 @@ static void hwc_prepare_mm_layer(
     // Factor in overscan adjustments
     disp_position.x += ctx->overscan_position.x;
     disp_position.y += ctx->overscan_position.y;
-    disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[0].width);
-    disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[0].height);
+    disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
+    disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
     clip_position.x += ctx->overscan_position.x;
     clip_position.y += ctx->overscan_position.y;
-    clip_position.width = (int)clip_position.width + (((int)clip_position.width * (int)ctx->overscan_position.w)/ctx->cfg[0].width);
-    clip_position.height = (int)clip_position.height + (((int)clip_position.height * (int)ctx->overscan_position.h)/ctx->cfg[0].height);
+    clip_position.width = (int)clip_position.width + (((int)clip_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
+    clip_position.height = (int)clip_position.height + (((int)clip_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
 
     // make the gpx corresponding layer non-visible in the layer stack.
     if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
@@ -3201,12 +3827,12 @@ static void hwc_prepare_mm_layer(
       ctx->mm_cli[vid_layer_id].root.composition.clipRect.y            = clip_position.y;
       ctx->mm_cli[vid_layer_id].root.composition.clipRect.width        = clip_position.width;
       ctx->mm_cli[vid_layer_id].root.composition.clipRect.height       = clip_position.height;
-      ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.width  = ctx->cfg[0].width;
-      ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.height = ctx->cfg[0].height;
+      ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.width  = ctx->cfg[HWC_PRIMARY_IX].width;
+      ctx->mm_cli[vid_layer_id].root.composition.virtualDisplay.height = ctx->cfg[HWC_PRIMARY_IX].height;
 
       ctx->mm_cli[vid_layer_id].settings.composition.contentMode           = NEXUS_VideoWindowContentMode_eFull;
-      ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.width  = ctx->cfg[0].width;
-      ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.height = ctx->cfg[0].height;
+      ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.width  = ctx->cfg[HWC_PRIMARY_IX].width;
+      ctx->mm_cli[vid_layer_id].settings.composition.virtualDisplay.height = ctx->cfg[HWC_PRIMARY_IX].height;
       ctx->mm_cli[vid_layer_id].settings.composition.position.x            = disp_position.x;
       ctx->mm_cli[vid_layer_id].settings.composition.position.y            = disp_position.y;
       ctx->mm_cli[vid_layer_id].settings.composition.position.width        = disp_position.width;
@@ -3265,12 +3891,12 @@ static void hwc_prepare_sb_layer(
     // Factor in overscan adjustments
     disp_position.x += ctx->overscan_position.x;
     disp_position.y += ctx->overscan_position.y;
-    disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[0].width);
-    disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[0].height);
+    disp_position.width = (int)disp_position.width + (((int)disp_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
+    disp_position.height = (int)disp_position.height + (((int)disp_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
     clip_position.x += ctx->overscan_position.x;
     clip_position.y += ctx->overscan_position.y;
-    clip_position.width = (int)clip_position.width + (((int)clip_position.width * (int)ctx->overscan_position.w)/ctx->cfg[0].width);
-    clip_position.height = (int)clip_position.height + (((int)clip_position.height * (int)ctx->overscan_position.h)/ctx->cfg[0].height);
+    clip_position.width = (int)clip_position.width + (((int)clip_position.width * (int)ctx->overscan_position.w)/ctx->cfg[HWC_PRIMARY_IX].width);
+    clip_position.height = (int)clip_position.height + (((int)clip_position.height * (int)ctx->overscan_position.h)/ctx->cfg[HWC_PRIMARY_IX].height);
 
     // make the gpx corresponding layer non-visible in the layer stack.
     if (ctx->gpx_cli[gpx_layer_id].composition.visible) {
@@ -3304,8 +3930,8 @@ static void hwc_prepare_sb_layer(
         ctx->sb_cli[sb_layer_id].root.composition.clipRect.y            = clip_position.y;
         ctx->sb_cli[sb_layer_id].root.composition.clipRect.width        = clip_position.width;
         ctx->sb_cli[sb_layer_id].root.composition.clipRect.height       = clip_position.height;
-        ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.width  = ctx->cfg[0].width;
-        ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.height = ctx->cfg[0].height;
+        ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.width  = ctx->cfg[HWC_PRIMARY_IX].width;
+        ctx->sb_cli[sb_layer_id].root.composition.virtualDisplay.height = ctx->cfg[HWC_PRIMARY_IX].height;
     }
 
     if (layer_updated && ctx->hwc_binder) {
@@ -3448,13 +4074,13 @@ static void hwc_binder_advertise_video_surface(struct hwc_context_t* ctx)
     // TODO: for the time being, only advertize one.
     if (ctx->nsc_video_changed && ctx->hwc_binder) {
        ctx->hwc_binder->setvideo(0, ctx->mm_cli[0].id,
-                                 ctx->cfg[0].width, ctx->cfg[0].height);
+                                 ctx->cfg[HWC_PRIMARY_IX].width, ctx->cfg[HWC_PRIMARY_IX].height);
        ctx->nsc_video_changed = false;
     }
 
     if (ctx->nsc_sideband_changed && ctx->hwc_binder) {
        ctx->hwc_binder->setsideband(0, ctx->sb_cli[0].id,
-                                    ctx->cfg[0].width, ctx->cfg[0].height);
+                                    ctx->cfg[HWC_PRIMARY_IX].width, ctx->cfg[HWC_PRIMARY_IX].height);
        ctx->nsc_sideband_changed = false;
     }
 
@@ -3466,30 +4092,41 @@ out:
 
 static void hwc_checkpoint_callback(void *pParam, int param2)
 {
-    struct hwc_context_t *dev = (struct hwc_context_t *)pParam;
+    struct hwc_context_t *ctx = (struct hwc_context_t *)pParam;
     (void)param2;
-    BKNI_SetEvent(dev->checkpoint_event);
+    BKNI_SetEvent(ctx->checkpoint_event);
 }
 
-static int hwc_checkpoint(struct hwc_context_t *dev)
+static int hwc_checkpoint(struct hwc_context_t *ctx)
+{
+    int rc;
+
+    if (BKNI_AcquireMutex(ctx->g2d_mutex) != BERR_SUCCESS) {
+        ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
+        return -1;
+    }
+    rc = hwc_checkpoint_locked(ctx);
+    BKNI_ReleaseMutex(ctx->g2d_mutex);
+    return rc;
+}
+
+static int hwc_checkpoint_locked(struct hwc_context_t *ctx)
 {
     NEXUS_Error rc;
 
-    rc = NEXUS_Graphics2D_Checkpoint(dev->hwc_2dg, NULL);
-    switch ( rc )
-    {
+    rc = NEXUS_Graphics2D_Checkpoint(ctx->hwc_g2d, NULL);
+    switch (rc) {
     case NEXUS_SUCCESS:
       break;
     case NEXUS_GRAPHICS2D_QUEUED:
-      rc = BKNI_WaitForEvent(dev->checkpoint_event, HWC_CHECKPOINT_TIMEOUT);
-      if ( rc )
-      {
-          ALOGW("Checkpoint Timeout");
+      rc = BKNI_WaitForEvent(ctx->checkpoint_event, HWC_CHECKPOINT_TIMEOUT);
+      if (rc) {
+          ALOGW("%s: checkpoint timeout", __FUNCTION__);
           return -1;
       }
       break;
     default:
-      ALOGE("Checkpoint Error");
+      ALOGE("%s: checkpoint error (%d)", __FUNCTION__, rc);
       return -1;
     }
 

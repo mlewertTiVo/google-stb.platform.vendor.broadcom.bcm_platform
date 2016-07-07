@@ -72,6 +72,13 @@
 #include "namevalue.h"
 #include "nx_ashmem.h"
 
+#include "nexus_security.h"
+#include "nexus_bsp_config.h"
+#include "nexus_base_mmap.h"
+
+#define DHD_SECDMA_PROP                "ro.dhd.secdma"
+#define DHD_SECDMA_PARAMS_PATH          "/data/nexus/secdma"
+
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 #define APP_MAX_CLIENTS                (64)
 #define MB                             (1024*1024)
@@ -122,7 +129,10 @@
 
 #define NX_HEAP_DYN_FREE_THRESHOLD     (1920*1080*4) /* one 1080p RGBA. */
 
-/* begnine trimming config - not needed for ATV experience. */
+#define NX_PROP_ENABLED                "1"
+#define NX_PROP_DISABLED               "0"
+
+/* begnine trimming config - not needed for ATV experience - default ENABLED. */
 #define NX_TRIM_VC1                    "ro.nx.trim.vc1"
 #define NX_TRIM_PIP                    "ro.nx.trim.pip"
 #define NX_TRIM_MOSAIC                 "ro.nx.trim.mosaic"
@@ -130,7 +140,8 @@
 #define NX_TRIM_MINFMT                 "ro.nx.trim.minfmt"
 #define NX_TRIM_DISP                   "ro.nx.trim.disp"
 #define NX_TRIM_VIDIN                  "ro.nx.trim.vidin"
-/* destructive trimming config - feature set limitation. */
+#define NX_TRIM_MTG                    "ro.nx.trim.mtg"
+/* destructive trimming config - feature set limitation - default DISABLED. */
 #define NX_TRIM_VP9                    "ro.nx.trim.vp9"
 #define NX_TRIM_4KDEC                  "ro.nx.trim.4kdec"
 #define NX_TRIM_10BCOL                 "ro.nx.trim.10bcol"
@@ -403,7 +414,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    int dec_used = 0;
 
    /* 1. additional display(s). */
-   if (property_get(NX_TRIM_DISP, value, NULL)) {
+   if (property_get(NX_TRIM_DISP, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          /* start index -> 1 */
          for (i = 1; i < NEXUS_MAX_DISPLAYS; i++) {
@@ -415,8 +426,19 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
 
+   /* 1.5. mtg. */
+   if (property_get(NX_TRIM_MTG, value, NX_PROP_ENABLED)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         for (i =0; i < NEXUS_MAX_DISPLAYS; i++) {
+            for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
+               pMemConfigSettings->display[i].window[j].mtg = false;
+            }
+         }
+      }
+   }
+
    /* 2. video input. */
-   if (property_get(NX_TRIM_VIDIN, value, NULL)) {
+   if (property_get(NX_TRIM_VIDIN, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          pMemConfigSettings->videoInputs.hdDvi = false;
          pMemConfigSettings->videoInputs.ccir656 = false;
@@ -429,7 +451,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 4. vc1 decoder. */
-   if (property_get(NX_TRIM_VC1, value, NULL)) {
+   if (property_get(NX_TRIM_VC1, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
             pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVc1] = false;
@@ -441,7 +463,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 5. stills decoder. */
-   if (property_get(NX_TRIM_STILLS, value, NULL)) {
+   if (property_get(NX_TRIM_STILLS, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          for (i = 0 ; i < NEXUS_MAX_STILL_DECODERS ; i++) {
             pMemConfigSettings->stillDecoder[i].used = false;
@@ -450,7 +472,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    }
 
    /* 6. mosaic video. */
-   if (property_get(NX_TRIM_MOSAIC, value, NULL)) {
+   if (property_get(NX_TRIM_MOSAIC, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          pMemConfigSettings->videoDecoder[0].mosaic.maxNumber = 0;
          pMemConfigSettings->videoDecoder[0].mosaic.maxHeight = 0;
@@ -465,7 +487,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          ++dec_used;
       }
    }
-   if (property_get(NX_TRIM_PIP, value, NULL)) {
+   if (property_get(NX_TRIM_PIP, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          if (dec_used > MIN_PLATFORM_DEC) {
             pMemConfigSettings->videoDecoder[1].used = false;
@@ -477,7 +499,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    /* 8. *** TEMPORARY *** force lowest format for mandated transcode decoder until
     *    we can instantiate an encoder without decoder back-end (architectural change).
     */
-   if (property_get(NX_TRIM_MINFMT, value, NULL)) {
+   if (property_get(NX_TRIM_MINFMT, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          /* start index -> 1.  beware interaction with pip above. */
          for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
@@ -805,6 +827,60 @@ static void uninit_nxserver(nxserver_t server)
     NEXUS_Platform_Uninit();
 }
 
+static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
+{
+    NEXUS_Error rc = NEXUS_SUCCESS;
+    NEXUS_Addr secdmaPhysicalOffset = 0;
+    uint32_t secdmaMemSize;
+    char value[PROPERTY_VALUE_MAX];
+    char secdma_param_file[PROPERTY_VALUE_MAX];
+    FILE *pFile;
+
+    memset (value, 0, sizeof(value));
+
+    if (property_get(DHD_SECDMA_PROP, value, NULL))
+    {
+        secdmaMemSize = strtoul(value, NULL, 0);
+        if (strlen(value) && (secdmaMemSize > 0)) {
+            sprintf(secdma_param_file, "%s/stbpriv.txt", DHD_SECDMA_PARAMS_PATH);
+            pFile = fopen(secdma_param_file, "w");
+            if (pFile == NULL) {
+                ALOGE("couldn't open %s", secdma_param_file);
+            } else {
+                *hMemoryBlock = NEXUS_MemoryBlock_Allocate(NEXUS_MEMC0_MAIN_HEAP, secdmaMemSize, 0x1000, NULL);
+                if (*hMemoryBlock == NULL) {
+                    ALOGE("NEXUS_MemoryBlock_Allocate failed");
+                    fclose(pFile);
+                    return;
+                }
+                rc = NEXUS_MemoryBlock_LockOffset(*hMemoryBlock, &secdmaPhysicalOffset);
+                if (rc != NEXUS_SUCCESS) {
+                    ALOGE("NEXUS_MemoryBlock_LockOffset returned %d", rc);
+                    NEXUS_MemoryBlock_Free(*hMemoryBlock);
+                    *hMemoryBlock = NULL;
+                    fclose(pFile);
+                    return;
+                }
+                ALOGV("secdmaPhysicalOffset 0x%x secdmaMemSize 0x%x", (unsigned)secdmaPhysicalOffset, secdmaMemSize);
+                rc = NEXUS_Security_SetPciERestrictedRange( secdmaPhysicalOffset, (size_t) secdmaMemSize, (unsigned)0 );
+                if (rc != NEXUS_SUCCESS) {
+                    ALOGE("NEXUS_Security_SetPciERestrictedRange returned %d", rc);
+                    NEXUS_MemoryBlock_Unlock(*hMemoryBlock);
+                    NEXUS_MemoryBlock_Free(*hMemoryBlock);
+                    *hMemoryBlock = NULL;
+                    fclose(pFile);
+                    return;
+                }
+                fprintf(pFile, "secdma_cma_addr=0x%x secdma_cma_size=0x%x\n", secdmaPhysicalOffset, secdmaMemSize);
+                fclose(pFile);
+            }
+        } else {
+            ALOGE("secdma size not set");
+        }
+    }
+}
+
+
 int main(void)
 {
     struct timespec t;
@@ -816,6 +892,7 @@ int main(void)
     char device[PROPERTY_VALUE_MAX];
     char name[PROPERTY_VALUE_MAX];
     int memCfgFd = -1;
+    NEXUS_MemoryBlockHandle hSecDmaMemoryBlock = NULL;
 
     memset(&g_app, 0, sizeof(g_app));
 
@@ -879,6 +956,8 @@ int main(void)
     }
     pthread_attr_destroy(&attr);
 
+    alloc_secdma(&hSecDmaMemoryBlock);
+
     ALOGI("trigger nexus waiters now.");
     property_set("hw.nexus.platforminit", "on");
 
@@ -921,6 +1000,11 @@ int main(void)
        BKNI_Sleep(SEC_TO_MSEC * RUNNER_SEC_THRESHOLD);
        BKNI_SetEvent(g_app.proactive_runner.runner_run);
        if (g_exit) break;
+    }
+
+    if(hSecDmaMemoryBlock != NULL) {
+       NEXUS_MemoryBlock_Unlock(hSecDmaMemoryBlock);
+       NEXUS_MemoryBlock_Free(hSecDmaMemoryBlock);
     }
 
     ALOGI("terminating nxserver.");

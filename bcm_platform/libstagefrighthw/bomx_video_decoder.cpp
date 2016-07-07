@@ -263,7 +263,7 @@ static void BOMX_VideoDecoder_OutputFrameEvent(void *pParam)
 static void BOMX_VideoDecoder_InputBuffersTimer(void *pParam)
 {
     BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
-    ALOGW("%s: Run out of input buffers. Returning all completed buffers...", __FUNCTION__);
+    ALOGV("%s: Run out of input buffers. Returning all completed buffers...", __FUNCTION__);
     pDecoder->InputBufferTimeoutCallback();
 }
 
@@ -843,6 +843,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         }
     }
 
+    ALOGV("max decoder height:%u width:%u", m_maxDecoderHeight, m_maxDecoderWidth);
     NxClient_ConnectSettings connectSettings;
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleVideoDecoder[0].id = m_allocResults.simpleVideoDecoder[0].id;
@@ -1695,6 +1696,16 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         {
             OMX_PARAM_PORTDEFINITIONTYPE portDef;
             m_pVideoPorts[1]->GetDefinition(&portDef);
+            // Validate portdef width/height against their counterpart platform maximum values
+            if ((portDef.format.video.nFrameWidth > m_maxDecoderWidth)
+                    || (portDef.format.video.nFrameHeight > m_maxDecoderHeight))
+            {
+                ALOGE("Video stream exceeds decoder capabilities, w:%u,h:%u,maxW:%u,maxH:%u",
+                        portDef.format.video.nFrameWidth, portDef.format.video.nFrameHeight,
+                        m_maxDecoderWidth, m_maxDecoderHeight);
+                return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+            }
+
             // Ensure crop reports buffer width/height
             m_outputWidth = portDef.format.video.nFrameWidth;
             m_outputHeight = portDef.format.video.nFrameHeight;
