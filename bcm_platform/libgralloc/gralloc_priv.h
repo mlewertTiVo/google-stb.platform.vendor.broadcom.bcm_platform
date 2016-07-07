@@ -50,6 +50,9 @@ extern "C" {
 #define EXTRA_PLANE             1
 #define GL_PLANE                2
 
+#define GR_MGMT_MODE_LOCKED     1
+#define GR_MGMT_MODE_UNLOCKED   2
+
 #define CHECKPOINT_TIMEOUT      (5000)
 
 /*****************************************************************************/
@@ -124,9 +127,10 @@ struct private_handle_t {
 /*10.*/       unsigned    nxSurfaceAddress;
 /*11.*/       int         is_mma;
 /*12.*/       int         alignment;
+/*13.*/       int         mgmt_mode;
 
 #ifdef __cplusplus
-    static const int sNumInts = 12;
+    static const int sNumInts = 13;
     static const int sNumFds = 4;
     static const int sMagic = 0x3141592;
 
@@ -134,7 +138,7 @@ struct private_handle_t {
         fd(fd), fd2(fd2), fd3(fd3), fd4(fd4), magic(sMagic), flags(flags),
         pid(getpid()), oglStride(0), oglFormat(0), oglSize(0),
         sharedData(0), usage(0), nxSurfacePhysicalAddress(0),
-        nxSurfaceAddress(0), is_mma(0), alignment(0)
+        nxSurfaceAddress(0), is_mma(0), alignment(0), mgmt_mode(GR_MGMT_MODE_LOCKED)
     {
         version = sizeof(native_handle);
         numInts = sNumInts;

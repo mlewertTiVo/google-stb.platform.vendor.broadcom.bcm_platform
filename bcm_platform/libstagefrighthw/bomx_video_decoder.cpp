@@ -40,6 +40,7 @@
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_decoder"
 
+#include <fcntl.h>
 #include <cutils/log.h>
 
 #include "bomx_video_decoder.h"
@@ -50,6 +51,7 @@
 #include "nexus_video_decoder.h"
 #include "nexus_core_utils.h"
 #include "bomx_vp9_parser.h"
+#include "nx_ashmem.h"
 
 #define BOMX_INPUT_MSG(x)
 
@@ -58,6 +60,7 @@
 #define B_PROPERTY_INPUT_DEBUG ("media.brcm.vdec_input_debug")
 #define B_PROPERTY_TRIM_VP9 ("ro.nx.trim.vp9")
 #define B_PROPERTY_MMA ("ro.nx.mma")
+#define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE (1024*1024)  // Taken from soft HEVC decoder (worst case)
@@ -558,25 +561,56 @@ static void BOMX_VideoDecoder_MemUnlock(private_handle_t *pPrivateHandle)
    }
 }
 
-static NEXUS_SurfaceHandle BOMX_VideoDecoder_SurfaceAlloc(const NEXUS_SurfaceCreateSettings *pCreateSettings, int isMma)
+static NEXUS_MemoryBlockHandle BOMX_VideoDecoder_AllocatePixelMemoryBlk(const NEXUS_SurfaceCreateSettings *pCreateSettings, int *pMemBlkFd)
 {
-   NEXUS_SurfaceHandle surface = NULL;
+   NEXUS_MemoryBlockHandle hMemBlk = NULL;
+   int memBlkFd = -1;
+   char device[PROPERTY_VALUE_MAX];
+   char name[PROPERTY_VALUE_MAX];
 
-   surface = NEXUS_Surface_Create(pCreateSettings);
-   if (isMma && surface == NULL) {
-      /* default assumption: allocation failed due to memory, try to grow the heap.
-       */
-      if (NxClient_GrowHeap(NXCLIENT_DYNAMIC_HEAP) == NEXUS_SUCCESS) {
-         surface = NEXUS_Surface_Create(pCreateSettings);
-         if (surface == NULL) {
-            ALOGE("%s: out-of-memory for surface %dx%d, st:%d, fmt:%d", __FUNCTION__,
-                  pCreateSettings->width, pCreateSettings->height,
-                  pCreateSettings->pitch, pCreateSettings->pixelFormat);
+   if (pCreateSettings && pMemBlkFd) {
+      property_get(B_PROPERTY_MEMBLK_ALLOC, device, NULL);
+      if (strlen(device)) {
+         strcpy(name, "/dev/");
+         strcat(name, device);
+         memBlkFd = open(name, O_RDWR, 0);
+         if (memBlkFd >= 0) {
+            struct nx_ashmem_alloc ashmem_alloc;
+            ashmem_alloc.size = pCreateSettings->height * pCreateSettings->pitch;
+            ashmem_alloc.align = 4096;
+            int ret = ioctl(memBlkFd, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+            if (ret < 0) {
+               close(memBlkFd);
+               memBlkFd = -1;
+            } else {
+               hMemBlk = (NEXUS_MemoryBlockHandle)ioctl(memBlkFd, NX_ASHMEM_GETMEM);
+               if (hMemBlk == NULL) {
+                  close(memBlkFd);
+                  memBlkFd = -1;
+               }
+            }
          }
       }
+
+      *pMemBlkFd = memBlkFd;
    }
 
-   return surface;
+   return hMemBlk;
+}
+
+static void BOMX_VideoDecoder_SurfaceDestroy(int *pMemBlkFd, NEXUS_SurfaceHandle surface)
+{
+   if (surface != NULL) {
+      NEXUS_Surface_Unlock(surface);
+      NEXUS_Surface_Destroy(surface);
+   }
+
+   if (pMemBlkFd && (*pMemBlkFd >= 0)) {
+      close(*pMemBlkFd);
+      *pMemBlkFd = -1;
+   }
+
+   return;
 }
 
 BOMX_VideoDecoder::BOMX_VideoDecoder(
@@ -1048,6 +1082,7 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     }
     if ( m_hPlaypump )
     {
+        ClosePidChannel();
         NEXUS_Playpump_Close(m_hPlaypump);
     }
     if ( m_hVideoClient )
@@ -1438,7 +1473,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
         // Flag this as a HW video decoder allocation to gralloc
-        pUsage->nUsage = 0;//GRALLOC_USAGE_PRIVATE_0; -- TODO: This causes Dequeue buffer to fail and playback stops.
+        pUsage->nUsage = 0; //GRALLOC_USAGE_PRIVATE_0 -- TODO: This causes Dequeue buffer to fail and playback stops.
         return OMX_ErrorNone;
     }
     case OMX_IndexParamDescribeColorFormat:
@@ -2572,18 +2607,29 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             NEXUS_Platform_GetClientConfiguration(&clientConfig);
 
 #if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
+            pInfo->typeInfo.standard.yMemBlkFd = -1;
+            pInfo->typeInfo.standard.crMemBlkFd = -1;
+            pInfo->typeInfo.standard.cbMemBlkFd = -1;
+
             NEXUS_Surface_GetDefaultCreateSettings(&surfaceSettings);
             surfaceSettings.pixelFormat = NEXUS_PixelFormat_eY8;
             surfaceSettings.width = pPortDef->format.video.nFrameWidth;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight;
             surfaceSettings.pitch = pPortDef->format.video.nStride;
-            if ( isMma )
+            if (isMma)
             {
-                surfaceSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
+                surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.yMemBlkFd);
+                if (surfaceSettings.pixelMemory != NULL) {
+                   pInfo->typeInfo.standard.hSurfaceY = NEXUS_Surface_Create(&surfaceSettings);
+                } else {
+                   pInfo->typeInfo.standard.hSurfaceY = NULL;
+                }
+            } else {
+                pInfo->typeInfo.standard.hSurfaceY = NEXUS_Surface_Create(&surfaceSettings);
             }
-            pInfo->typeInfo.standard.hSurfaceY = BOMX_VideoDecoder_SurfaceAlloc(&surfaceSettings, isMma);
             if ( NULL == pInfo->typeInfo.standard.hSurfaceY )
             {
+                BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.yMemBlkFd, NULL);
                 delete pInfo;
                 return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
             }
@@ -2594,45 +2640,68 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             surfaceSettings.width = pPortDef->format.video.nFrameWidth/2;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight/2;
             surfaceSettings.pitch = pPortDef->format.video.nStride/2;
-            if ( isMma )
+            if (isMma)
             {
-                surfaceSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
+                surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.cbMemBlkFd);
+                if (surfaceSettings.pixelMemory != NULL) {
+                   pInfo->typeInfo.standard.hSurfaceCb = NEXUS_Surface_Create(&surfaceSettings);
+                } else {
+                   pInfo->typeInfo.standard.hSurfaceCb = NULL;
+                }
+            } else {
+               pInfo->typeInfo.standard.hSurfaceCb = NEXUS_Surface_Create(&surfaceSettings);
             }
-            pInfo->typeInfo.standard.hSurfaceCb = BOMX_VideoDecoder_SurfaceAlloc(&surfaceSettings, isMma);
             if ( NULL == pInfo->typeInfo.standard.hSurfaceCb )
             {
-                NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceY);
+                BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.cbMemBlkFd, NULL);
+                BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.yMemBlkFd, pInfo->typeInfo.standard.hSurfaceY);
                 delete pInfo;
                 return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
             }
             NEXUS_Surface_Lock(pInfo->typeInfo.standard.hSurfaceCb, &pMemory);    // Pin the surface in memory so we can flush at the correct time without extra locks
             surfaceSettings.pixelFormat = NEXUS_PixelFormat_eCr8;
-            if ( isMma )
+            if (isMma)
             {
-                surfaceSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
+                surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.crMemBlkFd);
+                if (surfaceSettings.pixelMemory != NULL) {
+                   pInfo->typeInfo.standard.hSurfaceCr = NEXUS_Surface_Create(&surfaceSettings);
+                } else {
+                   pInfo->typeInfo.standard.hSurfaceCr = NULL;
+                }
+            } else {
+                pInfo->typeInfo.standard.hSurfaceCr = NEXUS_Surface_Create(&surfaceSettings);
             }
-            pInfo->typeInfo.standard.hSurfaceCr = BOMX_VideoDecoder_SurfaceAlloc(&surfaceSettings, isMma);
             if ( NULL == pInfo->typeInfo.standard.hSurfaceCr )
             {
-                NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceCb);
-                NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceY);
+                BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.crMemBlkFd, NULL);
+                BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.cbMemBlkFd, pInfo->typeInfo.standard.hSurfaceCb);
+                BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.yMemBlkFd, pInfo->typeInfo.standard.hSurfaceY);
                 delete pInfo;
                 return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
             }
             NEXUS_Surface_Lock(pInfo->typeInfo.standard.hSurfaceCr, &pMemory);    // Pin the surface in memory so we can flush at the correct time without extra locks
 #else
+            pInfo->typeInfo.standard.destripeMemBlkFd = -1;
+
             NEXUS_Surface_GetDefaultCreateSettings(&surfaceSettings);
             surfaceSettings.pixelFormat = NEXUS_PixelFormat_eCr8_Y18_Cb8_Y08;
             surfaceSettings.width = pPortDef->format.video.nFrameWidth;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight;
             surfaceSettings.pitch = 2*surfaceSettings.width;
-            if ( isMma )
+            if (isMma)
             {
-                surfaceSettings.heap = clientConfig.heap[NXCLIENT_DYNAMIC_HEAP];
+                surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.destripeMemBlkFd);
+                if (surfaceSettings.pixelMemory != NULL) {
+                   pInfo->typeInfo.standard.hDestripeSurface = NEXUS_Surface_Create(&surfaceSettings);
+                } else {
+                   pInfo->typeInfo.standard.hDestripeSurface = NULL;
+                }
+            } else {
+                pInfo->typeInfo.standard.hDestripeSurface = NEXUS_Surface_Create(&surfaceSettings);
             }
-            pInfo->typeInfo.standard.hDestripeSurface = BOMX_VideoDecoder_SurfaceAlloc(&surfaceSettings, isMma);
             if ( NULL == pInfo->typeInfo.standard.hDestripeSurface )
             {
+                BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.destripeMemBlkFd, NULL);
                 delete pInfo;
                 return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
             }
@@ -2652,11 +2721,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
         {
         case BOMX_VideoDecoderOutputBufferType_eStandard:
 #if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
-            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceCr);
-            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceCb);
-            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceY);
+            BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.crMemBlkFd, pInfo->typeInfo.standard.hSurfaceCr);
+            BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.cbMemBlkFd, pInfo->typeInfo.standard.hSurfaceCb);
+            BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.yMemBlkFd, pInfo->typeInfo.standard.hSurfaceY);
 #else
-            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hDestripeSurface);
+            BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.destripeMemBlkFd, pInfo->typeInfo.standard.hDestripeSurface);
 #endif
             break;
         default:
@@ -2985,11 +3054,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
         case BOMX_VideoDecoderOutputBufferType_eStandard:
             pFrameBuffer = pInfo->pFrameBuffer;
 #if BOMX_VIDEO_DECODER_DESTRIPE_PLANAR
-            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceCr);
-            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceCb);
-            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hSurfaceY);
+            BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.crMemBlkFd, pInfo->typeInfo.standard.hSurfaceCr);
+            BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.cbMemBlkFd, pInfo->typeInfo.standard.hSurfaceCb);
+            BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.yMemBlkFd, pInfo->typeInfo.standard.hSurfaceY);
 #else
-            NEXUS_Surface_Destroy(pInfo->typeInfo.standard.hDestripeSurface);
+            BOMX_VideoDecoder_SurfaceDestroy(&pInfo->typeInfo.standard.destripeMemBlkFd, pInfo->typeInfo.standard.hDestripeSurface);
 #endif
             break;
         case BOMX_VideoDecoderOutputBufferType_eNative:

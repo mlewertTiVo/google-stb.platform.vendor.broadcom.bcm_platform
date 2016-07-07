@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2010-2014 Broadcom Corporation
+ *    (c)2010-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -393,7 +393,7 @@ void NexusNxService::platformInit()
 
     NxClient_GetDefaultJoinSettings(&joinSettings);
     strncpy(joinSettings.name, "config", NXCLIENT_MAX_NAME);
-
+    joinSettings.ignoreStandbyRequest = true;
     do {
         rc = NxClient_Join(&joinSettings);
 

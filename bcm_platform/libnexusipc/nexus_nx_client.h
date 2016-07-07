@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2014 Broadcom Corporation
+ *    (c)2011-2015 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -74,11 +74,7 @@ public:
             STATE_RUNNING
         };
 
-        StandbyMonitorThread(b_refsw_client_standby_monitor_callback callback, b_refsw_client_standby_monitor_context context) :
-            state(STATE_STOPPED), mCallback(callback), mContext(context), name(NULL) {
-            ALOGD("%s: called", __PRETTY_FUNCTION__);
-        }
-
+        StandbyMonitorThread(b_refsw_client_standby_monitor_callback callback, b_refsw_client_standby_monitor_context context);
         virtual ~StandbyMonitorThread();
 
         virtual android::status_t run( const char* name = 0,
@@ -96,6 +92,7 @@ public:
         b_refsw_client_standby_monitor_callback mCallback;
         b_refsw_client_standby_monitor_context  mContext;
         char *name;
+        unsigned mStandbyId;
         bool threadLoop();
 
         /* Disallow copy constructor and copy operator... */
