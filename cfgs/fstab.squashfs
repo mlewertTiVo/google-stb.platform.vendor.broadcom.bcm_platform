@@ -1,6 +1,6 @@
 *sdhci/mmc_host/mmc0*           auto            auto     defaults voldmanaged=sdcard1:auto,encryptable=userdata
 */block/sd*                     auto            auto     defaults voldmanaged=usb:auto,encryptable=userdata
 /dev/block/by-name/system       /system         squashfs ro wait
-/dev/block/by-name/userdata     /data           ext4     noatime,nosuid,nodev,barrier=1,data=ordered,nomblk_io_submit,noauto_da_alloc,errors=panic wait,check
+/dev/block/by-name/userdata     /data           ext4     noatime,nosuid,nodev,nomblk_io_submit,errors=panic wait,check,forceencrypt=/dev/block/by-name/metadata
 /dev/block/by-name/cache        /cache          ext4     noatime,nosuid,nodev,barrier=1,data=ordered,nomblk_io_submit,noauto_da_alloc,errors=panic wait,check
 /dev/block/by-name/hwcfg        /hwcfg          cramfs   ro,relatime,barrier=1 wait
