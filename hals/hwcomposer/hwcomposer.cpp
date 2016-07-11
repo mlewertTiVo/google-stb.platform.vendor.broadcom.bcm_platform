@@ -3549,9 +3549,6 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          }
       }
    }
-   if (*overlay_seen > item->video_layers) {
-      *overlay_seen -= item->video_layers;
-   }
    if (video_seen) {
       for (i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
          if (ctx->mm_cli[i].last_ping_frame_id == LAST_PING_FRAME_ID_RESET) {
@@ -3674,7 +3671,11 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             }
             if (layer_seeds_output) {
                if (ctx->smart_background) {
-                  hwc_set_layer_blending(ctx, i, BLENDIND_TYPE_SRC);
+                  if (has_video && !is_yuv && (*overlay_seen > 1)) {
+                     ctx->flush_background = true;
+                  } else {
+                     hwc_set_layer_blending(ctx, i, BLENDIND_TYPE_SRC);
+                  }
                }
             }
          } else {
