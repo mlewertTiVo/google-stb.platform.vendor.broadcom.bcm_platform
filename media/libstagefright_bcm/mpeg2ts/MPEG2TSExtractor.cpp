@@ -331,8 +331,15 @@ status_t MPEG2TSExtractor::seek(int64_t seekTimeUs,
             break;
     }
     if (!shouldSeekBeyond || mOffset <= mSeekSyncPoints->valueAt(index)) {
-        int64_t actualSeekTimeUs = mSeekSyncPoints->keyAt(index);
-        mOffset = mSeekSyncPoints->valueAt(index);
+        int64_t actualSeekTimeUs;
+        if (seekTimeUs == 0) {
+            mOffset = 0;
+            actualSeekTimeUs = 0;
+        }
+        else {
+            mOffset = mSeekSyncPoints->valueAt(index);
+            actualSeekTimeUs = mSeekSyncPoints->keyAt(index);
+        }
         status_t err = queueDiscontinuityForSeek(actualSeekTimeUs);
         if (err != OK) {
             return err;
