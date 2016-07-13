@@ -28,7 +28,7 @@ LOCAL_SHARED_LIBRARIES := \
    libnexusipcclient
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusservice \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform//libnexusipc
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/libnexusipc
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -Wno-multichar -DLOGD=ALOGD -DLOGE=ALOGE -DLOGW=ALOGW -DLOGI=ALOGI -DLOGV=ALOGV
