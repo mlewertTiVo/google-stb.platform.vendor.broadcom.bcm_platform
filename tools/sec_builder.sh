@@ -59,7 +59,7 @@ oops="oops"
 security_root="security"
 playready_root="playready"
 show_tree_depth=3
-BCM_VENDOR_STB_ROOT="vendor/broadcom/stb"
+BCM_VENDOR_STB_ROOT="vendor/broadcom"
 
 plat_legacy_tgt="97252 D0 C"
 plat_legacy_pro="BCM97252CSECU"
@@ -172,7 +172,6 @@ function rejouez {
 function ou_suis_je {
 	la=$(cd $(dirname $0) && pwd)
 	# cheat - we know where we 'should be' in relation to root, go there.
-	la=$(dirname $la)
 	la=$(dirname $la)
 	la=$(dirname $la)
 	la=$(dirname $la)

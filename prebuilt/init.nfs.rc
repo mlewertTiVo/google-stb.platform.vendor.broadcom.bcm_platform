@@ -1,3 +1,0 @@
-on post-fs
-   # NFS/USB boot - need to remount (again) in RW the rootfs.
-   mount rootfs rootfs / rw remount

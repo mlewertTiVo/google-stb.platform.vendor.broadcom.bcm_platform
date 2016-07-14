@@ -1,9 +1,7 @@
-vendor/broadcom/stb/bcm_platform/tools/release/exclude.txt
-vendor/broadcom/stb/bcm_platform/not_for_release
-vendor/broadcom/stb/bcm_platform/libsecurity/sage
-vendor/broadcom/stb/bcm_platform/libsecurity/playreadydrmplugin
-vendor/broadcom/stb/bcm_platform/libsecurity/playreadypk
-device/broadcom/custom/97252D0C/fbx1
-device/broadcom/custom/97252D0C/fbx2
+vendor/broadcom/bcm_platform/tools/release/exclude.txt
+device/broadcom/bcm_platform/custom/97252D0C/fbx1
+device/broadcom/bcm_platform/custom/97252D0C/fbx2
 vendor/widevine
-device/freebox
+vendor/playready
+vendor/broadcom/release_prebuilts/user/libcmndrmprdy.so
+vendor/broadcom/release_prebuilts/userdebug/libcmndrmprdy.so
