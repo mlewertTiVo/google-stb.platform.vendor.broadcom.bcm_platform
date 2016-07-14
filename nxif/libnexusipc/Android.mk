@@ -46,11 +46,7 @@ LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusipceventli
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
                     $(TOP)/frameworks/native/include
 
-#
-# Switch between the NXclient APIs or the local server APIs
-# 
 LOCAL_SRC_FILES := nexus_ipc_client_factory.cpp nexus_ipc_client_base.cpp nexus_ipc_client.cpp nexus_nx_client.cpp
-
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libnexusipcclient
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
@@ -62,6 +58,25 @@ LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_SHARED_LIBRARIES += libnxclient
 
 include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_PRELINK_MODULE := false
+LOCAL_SHARED_LIBRARIES := liblog libcutils libutils libbinder libnexusipceventlistener libnexus
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
+                    $(TOP)/frameworks/native/include
+
+LOCAL_SRC_FILES := nexus_ipc_client_factory.cpp nexus_ipc_client_base.cpp nexus_ipc_client.cpp nexus_nx_client.cpp
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE := libnexusipcclient
+LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
+# fix warnings!
+LOCAL_CFLAGS += -Werror
+
+LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
+LOCAL_STATIC_LIBRARIES += libnxclient
+
+include $(BUILD_STATIC_LIBRARY)
 
 #----------------------
 # libnexuseglclient 
