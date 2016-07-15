@@ -16,6 +16,10 @@
             <intent-filter>
                  <action android:name="android.intent.action.GLOBAL_BUTTON" />
             </intent-filter>
+            <intent-filter>
+                 <action android:name="com.google.android.leanbacklauncher.action.PARTNER_CUSTOMIZATION" />
+                 <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </receiver>
     </application>
 
