@@ -44,10 +44,19 @@
 #define LOG_TAG "NexusIR"
 #include <cutils/log.h>
 #include <cutils/properties.h>
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
 
 /* Override for the hardcoded repeatTimeout values in bkir module */
 #define PROPERTY_IR_INITIAL_TIMEOUT "ro.ir_remote.initial_timeout"
 #define PROPERTY_IR_TIMEOUT "ro.ir_remote.timeout"
+
+#define PROPERTY_BOOT_REASON "ro.boot.bootreason"
+#define BOOT_FROM_DEEP_SLEEP "s3_wakeup"
+
+#define PROPERTY_IR_WAKEUP_BOOT "dyn.nx.boot.wakeup"
+#define PROPERTY_BOOT_COMPLETED "sys.boot_completed"
 
 NexusIrInput::NexusIrInput() :
         m_handle(0),
@@ -55,7 +64,8 @@ NexusIrInput::NexusIrInput() :
         m_power_key(NEXUSIRINPUT_NO_KEY),
         m_power_key_two(NEXUSIRINPUT_NO_KEY),
         m_mask(0),
-        m_mask_two(0)
+        m_mask_two(0),
+        m_clear_on_boot(false)
 {
 }
 
@@ -87,6 +97,18 @@ bool NexusIrInput::start(NEXUS_IrInputMode mode,
         ALOGE("NexusIrInput start failed!");
     }
     else {
+        /* Determine if the system is woken up by the wakeup key */
+        char value[PROPERTY_VALUE_MAX];
+        property_get(PROPERTY_BOOT_REASON, value, "");
+        if (strlen(value) > 0 && !strncmp(value, BOOT_FROM_DEEP_SLEEP, strlen(value))) {
+            NEXUS_IrInputEvent event;
+            if (NEXUS_IrInput_ReadEvent(m_handle, &event) == NEXUS_SUCCESS && event.code == m_power_key_two) {
+                ALOGV("Woken up by wakeup key");
+                property_set(PROPERTY_IR_WAKEUP_BOOT, "1");
+                m_clear_on_boot = true;
+            }
+        }
+
         NEXUS_IrInputDataFilter irPattern;
 
         NEXUS_IrInput_GetDefaultDataFilter(&irPattern );
@@ -149,6 +171,16 @@ void NexusIrInput::dataReady()
     size_t numEvents = 1;
     NEXUS_Error rc = 0;
     bool overflow;
+
+    if (m_clear_on_boot) {
+        /* Clear the dynamic system property after boot completed assuming the key interceptor
+         * has already serviced the wakeup key */
+        if (property_get_int32(PROPERTY_BOOT_COMPLETED, 0)) {
+            ALOGV("Clearing wakeup property");
+            property_set(PROPERTY_IR_WAKEUP_BOOT, NULL);
+            m_clear_on_boot = false;
+        }
+    }
 
     while (numEvents && !rc)
     {
