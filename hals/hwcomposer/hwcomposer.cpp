@@ -3671,7 +3671,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
             }
             if (layer_seeds_output) {
                if (ctx->smart_background) {
-                  if (has_video && !is_yuv && (*overlay_seen > 1)) {
+                  if (item->video_layers && !is_yuv && (*overlay_seen > 1)) {
                      ctx->flush_background = true;
                   } else {
                      hwc_set_layer_blending(ctx, i, BLENDIND_TYPE_SRC);
