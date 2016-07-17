@@ -118,6 +118,7 @@
 #define NX_CAPABLE_COMP_BYPASS         "ro.nx.capable.cb"
 #define NX_COMP_VIDEO                  "ro.nx.cvbs"
 #define NX_CAPABLE_FRONT_END           "ro.nx.capable.fe"
+#define NX_OUTPUT_VIDEO                "ro.nx.output.dis"
 
 #define NX_HDMI_DRM_KEY                "ro.nx.hdmi_drm"
 
@@ -862,6 +863,11 @@ static nxserver_t init_nxserver(void)
     if (settings.session[0].audioPlaybacks > 0) {
        /* Reserve one for the decoder instead of playback */
        settings.session[0].audioPlaybacks--;
+    }
+    if (property_get_int32(NX_OUTPUT_VIDEO, 0)) {
+       settings.display.hdmiPreferences.enabled = false;
+       settings.display.componentPreferences.enabled = false;
+       settings.display.compositePreferences.enabled = false;
     }
 
     settings.allowCompositionBypass = property_get_int32(NX_CAPABLE_COMP_BYPASS, 0) ? true : false;
