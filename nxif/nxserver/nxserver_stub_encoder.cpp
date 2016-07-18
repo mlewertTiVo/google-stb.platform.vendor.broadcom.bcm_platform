@@ -70,10 +70,9 @@ void trim_encoder_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettin
    (void)pMemConfigSettings;
 }
 
-bool keep_display_for_encoder(int disp_ix, int enc_ix, NEXUS_PlatformCapabilities *pPlatformCap)
+bool keep_display_for_encoder(int disp_ix, NEXUS_PlatformCapabilities *pPlatformCap)
 {
    (void)disp_ix;
-   (void)enc_ix;
    (void)pPlatformCap;
 
    return false;

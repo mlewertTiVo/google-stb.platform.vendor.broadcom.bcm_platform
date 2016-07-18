@@ -69,37 +69,58 @@
 #define ENCODER_RES_HEIGHT_DEFAULT     (720)
 #define ENCODER_RES_WIDTH_PROP         "ro.nx.enc.max.width"
 #define ENCODER_RES_HEIGHT_PROP        "ro.nx.enc.max.height"
+#define ENCODER_ENABLE_ALL             "ro.nx.enc.all"
 
 void trim_encoder_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
 {
    int i = 0;
 
-   /* *** HARDCODE *** only request a single encoder and limit its capabilities. */
-   for (i = 1; i < NEXUS_MAX_VIDEO_ENCODERS; i++) {
-      pMemConfigSettings->videoEncoder[i].used = false;
+   /* only use a single one unless we have special needs for
+    * more (all of them): typically in headless mode.
+    */
+   bool all = (property_get_int32(ENCODER_ENABLE_ALL, 0) > 0) ? true : false;
+   if (!all) {
+      for (i = 1; i < NEXUS_MAX_VIDEO_ENCODERS; i++) {
+         pMemConfigSettings->videoEncoder[i].used = false;
+      }
    }
-   if (NEXUS_MAX_VIDEO_ENCODERS) {
-      pMemConfigSettings->videoEncoder[0].maxWidth =
-         property_get_int32(ENCODER_RES_WIDTH_PROP , ENCODER_RES_WIDTH_DEFAULT);
-      pMemConfigSettings->videoEncoder[0].maxHeight =
-         property_get_int32(ENCODER_RES_HEIGHT_PROP, ENCODER_RES_HEIGHT_DEFAULT);
+   for (i = 0; i < NEXUS_MAX_VIDEO_ENCODERS; i++) {
+      if (pMemConfigSettings->videoEncoder[i].used) {
+         pMemConfigSettings->videoEncoder[i].maxWidth =
+            property_get_int32(ENCODER_RES_WIDTH_PROP , ENCODER_RES_WIDTH_DEFAULT);
+         pMemConfigSettings->videoEncoder[i].maxHeight =
+            property_get_int32(ENCODER_RES_HEIGHT_PROP, ENCODER_RES_HEIGHT_DEFAULT);
+      }
    }
 }
 
-bool keep_display_for_encoder(int disp_ix, int enc_ix, NEXUS_PlatformCapabilities *pPlatformCap)
+bool keep_display_for_encoder(int disp_ix, NEXUS_PlatformCapabilities *pPlatformCap)
 {
-   if (pPlatformCap->display[disp_ix].supported &&
-       pPlatformCap->display[disp_ix].encoder &&
-       pPlatformCap->videoEncoder[enc_ix].supported &&
-       (pPlatformCap->videoEncoder[enc_ix].displayIndex == (unsigned int)disp_ix)) {
-      return true;
-   } else {
-      return false;
+   int i = 0;
+   bool all = (property_get_int32(ENCODER_ENABLE_ALL, 0) > 0) ? true : false;
+
+   if (pPlatformCap->display[disp_ix].supported && pPlatformCap->display[disp_ix].encoder) {
+      if (all) {
+         for (i = 0; i < NEXUS_MAX_VIDEO_ENCODERS; i++) {
+            if (pPlatformCap->videoEncoder[i].supported &&
+                (pPlatformCap->videoEncoder[i].displayIndex == (unsigned int)disp_ix)) {
+               return true;
+            }
+         }
+      } else {
+         /* only encoder 0 is of interest. */
+         if (pPlatformCap->videoEncoder[0].supported &&
+             (pPlatformCap->videoEncoder[0].displayIndex == (unsigned int)disp_ix)) {
+            return true;
+         }
+      }
    }
+
+
+   return false;
 }
 
 void defer_init_encoder(NEXUS_PlatformSettings *pPlatformSettings, bool defer)
 {
    pPlatformSettings->videoEncoderSettings.deferInit = defer;
 }
-

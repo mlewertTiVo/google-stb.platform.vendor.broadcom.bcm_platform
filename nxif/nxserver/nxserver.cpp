@@ -171,9 +171,9 @@
 
 typedef enum {
    SVP_MODE_NONE,
+   SVP_MODE_NONE_TRANSCODE,
    SVP_MODE_PLAYBACK,
    SVP_MODE_PLAYBACK_TRANSCODE,
-
 } SVP_MODE_T;
 
 typedef struct {
@@ -583,9 +583,14 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    char value[PROPERTY_VALUE_MAX];
    int dec_used = 0;
    NEXUS_PlatformCapabilities platformCap;
-   bool transcode = (svp == SVP_MODE_PLAYBACK_TRANSCODE) ? true : false;
+   bool transcode = false;
    bool cvbs = property_get_int32(NX_COMP_VIDEO, 0) ? true : false;
    NEXUS_GetPlatformCapabilities(&platformCap);
+
+   if ((svp == SVP_MODE_PLAYBACK_TRANSCODE) || (svp == SVP_MODE_NONE_TRANSCODE)) {
+      ALOGI("transcode is enabled.");
+      transcode = true;
+   }
 
    /* 1. encoder configuration. */
    trim_encoder_mem_config(pMemConfigSettings);
@@ -595,15 +600,15 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          /* start index -> 1 */
          for (i = 1; i < NEXUS_MAX_DISPLAYS; i++) {
-            /* keep display associated with encoder if transcode wanted. */
-            if (keep_display_for_encoder(i, 0, &platformCap)) {
+            /* keep display associated with encoder(s) if transcode wanted. */
+            if (keep_display_for_encoder(i, &platformCap)) {
                if (transcode) {
-                  ALOGI("keeping display %d for transcode session on encoder %d", i, 0);
+                  ALOGI("keeping display %d for transcode session on encoder", i);
                   for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
                      pMemConfigSettings->display[i].window[j].secure = NEXUS_SecureVideo_eUnsecure;
                   }
                } else {
-                  ALOGI("encoder %d using display %d: disable display, windows and deinterlacer", 0, i);
+                  ALOGI("encoder using display %d: disable display, windows and deinterlacer", i);
                   pMemConfigSettings->display[i].maxFormat = NEXUS_VideoFormat_eUnknown;
                   for (j = 0; j < NEXUS_MAX_VIDEO_WINDOWS; j++) {
                      pMemConfigSettings->display[i].window[j].deinterlacer = NEXUS_DeinterlacerMode_eNone;
@@ -997,15 +1002,17 @@ static nxserver_t init_nxserver(void)
     memset(value, 0, sizeof(value));
     property_get(NX_SVP, value, "play");
     svp = SVP_MODE_PLAYBACK;
-    if (!strncmp(value, "none", strlen("none"))) {
+    if (!strncmp(value, "none-trans", strlen("none-trans"))) {
+       svp = SVP_MODE_NONE_TRANSCODE;
+    } else if (!strncmp(value, "none", strlen("none"))) {
        svp = SVP_MODE_NONE;
     } else if (!strncmp(value, "play-trans", strlen("play-trans"))) {
        svp = SVP_MODE_PLAYBACK_TRANSCODE;
     }
-    if (svp != SVP_MODE_NONE) {
+    if (!((svp == SVP_MODE_NONE) || (svp == SVP_MODE_NONE_TRANSCODE))) {
        settings.svp = nxserverlib_svp_type_cdb_urr;
     }
-    ALOGI("%s: svp-mode: \'%s\'", __FUNCTION__, value);
+    ALOGI("%s: svp-mode: \'%s\' (%d)", __FUNCTION__, value, svp);
 
     rc = nxserver_modify_platform_settings(&settings, &cmdline_settings, &platformSettings, &memConfigSettings);
     if (rc) {
