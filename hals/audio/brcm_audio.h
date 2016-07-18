@@ -189,6 +189,9 @@ struct brcm_stream_out {
     struct audio_config config;
     uint32_t frameSize;
     uint32_t framesPlayed;
+    bool bytesOffsetInitd;
+    uint64_t bytesOffset;
+    uint64_t bytesWritten;
     size_t buffer_size;
     bool started;
     bool suspended;
