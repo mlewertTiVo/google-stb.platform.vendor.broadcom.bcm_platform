@@ -854,7 +854,9 @@ static nxserver_t init_nxserver(void)
     settings.grab = 0;
     /* -sd off (unless composite video enabled) */
     if (!cvbs) {
-       settings.session[0].output.sd = (property_get_int32(NX_NO_OUTPUT_VIDEO, 0) > 0) ? false : true;;
+       settings.session[0].output.sd = false;
+    } else {
+       settings.session[0].output.sd = (property_get_int32(NX_NO_OUTPUT_VIDEO, 0) > 0) ? false : true;
     }
     settings.session[0].output.encode = false;
     settings.session[0].output.hd = (property_get_int32(NX_NO_OUTPUT_VIDEO, 0) > 0) ? false : true;
