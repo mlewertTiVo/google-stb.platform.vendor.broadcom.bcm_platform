@@ -118,7 +118,7 @@
 #define NX_CAPABLE_COMP_BYPASS         "ro.nx.capable.cb"
 #define NX_COMP_VIDEO                  "ro.nx.cvbs"
 #define NX_CAPABLE_FRONT_END           "ro.nx.capable.fe"
-#define NX_OUTPUT_VIDEO                "ro.nx.output.dis"
+#define NX_NO_OUTPUT_VIDEO             "ro.nx.output.dis"
 
 #define NX_HDMI_DRM_KEY                "ro.nx.hdmi_drm"
 
@@ -854,17 +854,17 @@ static nxserver_t init_nxserver(void)
     settings.grab = 0;
     /* -sd off (unless composite video enabled) */
     if (!cvbs) {
-       settings.session[0].output.sd = false;
+       settings.session[0].output.sd = (property_get_int32(NX_NO_OUTPUT_VIDEO, 0) > 0) ? false : true;;
     }
     settings.session[0].output.encode = false;
-    settings.session[0].output.hd = true;
+    settings.session[0].output.hd = (property_get_int32(NX_NO_OUTPUT_VIDEO, 0) > 0) ? false : true;
     /* -enablePassthroughBuffer */
     settings.audioDecoder.enablePassthroughBuffer = true;
     if (settings.session[0].audioPlaybacks > 0) {
        /* Reserve one for the decoder instead of playback */
        settings.session[0].audioPlaybacks--;
     }
-    if (property_get_int32(NX_OUTPUT_VIDEO, 0)) {
+    if (property_get_int32(NX_NO_OUTPUT_VIDEO, 0)) {
        settings.display.hdmiPreferences.enabled = false;
        settings.display.componentPreferences.enabled = false;
        settings.display.compositePreferences.enabled = false;
