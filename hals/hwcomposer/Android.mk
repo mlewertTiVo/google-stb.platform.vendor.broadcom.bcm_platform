@@ -152,10 +152,14 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusserv
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-hwc\"
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
+
+ifeq ($(LOCAL_DEVICE_TYPE),blemmyes)
+LOCAL_SRC_FILES := hwcomposer.blemmyes.cpp
+else
 # fix warnings!
 LOCAL_CFLAGS += -Werror
-
 LOCAL_SRC_FILES := hwcomposer.cpp
+endif
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := hwcomposer.$(TARGET_BOARD_PLATFORM)
 
