@@ -854,7 +854,7 @@ static nxserver_t init_nxserver(void)
        settings.display.hdmiPreferences.followPreferredFormat = false;
     }
     /* -transcode off */
-    settings.transcode = false;
+    settings.transcode = nxserver_settings::nxserver_transcode_off;
     /* -grab off */
     settings.grab = 0;
     /* -sd off (unless composite video enabled) */
