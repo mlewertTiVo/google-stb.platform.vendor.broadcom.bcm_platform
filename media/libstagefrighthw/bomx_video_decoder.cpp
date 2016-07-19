@@ -143,6 +143,7 @@ enum BOMX_VideoDecoderEventType
     BOMX_VideoDecoderEventType_ePlaypump=0,
     BOMX_VideoDecoderEventType_eDataReady,
     BOMX_VideoDecoderEventType_eCheckpoint,
+    BOMX_VideoDecoderEventType_eSourceChanged,
     BOMX_VideoDecoderEventType_eMax
 };
 
@@ -306,7 +307,8 @@ static void BOMX_VideoDecoder_EventCallback(void *pParam, int param)
     static const char *pEventMsg[BOMX_VideoDecoderEventType_eMax] = {
         "Playpump",
         "Data Ready",
-        "Checkpoint"
+        "Checkpoint",
+        "SourceChanged"
     };
 
     hEvent = static_cast <B_EventHandle> (pParam);
@@ -330,6 +332,15 @@ static void BOMX_VideoDecoder_OutputFrameEvent(void *pParam)
     ALOGV("OutputFrameEvent");
 
     pDecoder->OutputFrameEvent();
+}
+
+static void BOMX_VideoDecoder_SourceChangedEvent(void *pParam)
+{
+    BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
+
+    ALOGV("SourceChangedEvent");
+
+    pDecoder->SourceChangedEvent();
 }
 
 static void BOMX_VideoDecoder_InputBuffersTimer(void *pParam)
@@ -822,6 +833,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_playpumpTimerId(NULL),
     m_hOutputFrameEvent(NULL),
     m_outputFrameEventId(NULL),
+    m_hSourceChangedEvent(NULL),
+    m_sourceChangedEventId(NULL),
     m_hDisplayFrameEvent(NULL),
     m_displayFrameEventId(NULL),
     m_hDisplayMutex(NULL),
@@ -1002,6 +1015,22 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_outputFrameEventId )
     {
         ALOGW("Unable to register output frame event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_hSourceChangedEvent = B_Event_Create(NULL);
+    if ( NULL == m_hSourceChangedEvent )
+    {
+        ALOGW("Unable to create source changed event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_sourceChangedEventId = this->RegisterEvent(m_hSourceChangedEvent, BOMX_VideoDecoder_SourceChangedEvent, static_cast <void *> (this));
+    if ( NULL == m_sourceChangedEventId )
+    {
+        ALOGW("Unable to register source changed event");
         this->Invalidate(OMX_ErrorUndefined);
         return;
     }
@@ -1428,6 +1457,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         UnregisterEvent(m_outputFrameEventId);
     }
+    if ( m_sourceChangedEventId )
+    {
+        UnregisterEvent(m_sourceChangedEventId);
+    }
     if ( m_displayFrameEventId )
     {
         UnregisterEvent(m_displayFrameEventId);
@@ -1439,6 +1472,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     if ( m_hOutputFrameEvent )
     {
         B_Event_Destroy(m_hOutputFrameEvent);
+    }
+    if ( m_hSourceChangedEvent )
+    {
+        B_Event_Destroy(m_hSourceChangedEvent);
     }
     if ( m_hDisplayFrameEvent )
     {
@@ -2316,6 +2353,14 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             if ( NULL == m_hSimpleVideoDecoder )
             {
                 return BOMX_BERR_TRACE(BERR_UNKNOWN);
+            }
+
+            if (m_tunnelMode) {
+                NEXUS_SimpleVideoDecoder_GetSettings(m_hSimpleVideoDecoder, &vdecSettings);
+                vdecSettings.sourceChanged.callback = BOMX_VideoDecoder_EventCallback;
+                vdecSettings.sourceChanged.context = (void *)m_hSourceChangedEvent;
+                vdecSettings.sourceChanged.param = (int)BOMX_VideoDecoderEventType_eSourceChanged;
+                NEXUS_SimpleVideoDecoder_SetSettings(m_hSimpleVideoDecoder, &vdecSettings);
             }
 
             NEXUS_SimpleVideoDecoder_GetExtendedSettings(m_hSimpleVideoDecoder, &extSettings);
@@ -4408,47 +4453,45 @@ void BOMX_VideoDecoder::InputBufferTimeoutCallback()
     ReturnInputBuffers(0, InputReturnMode_eTimeout);
 }
 
-#if 0  /* Source Changed Event is not required in non-tunneled. */
 void BOMX_VideoDecoder::SourceChangedEvent()
 {
     NEXUS_VideoDecoderStatus vdecStatus;
-    NEXUS_VideoDecoderExtendedStatus vdecExtStatus;
     OMX_PARAM_PORTDEFINITIONTYPE portDef;
     BOMX_Port *pPort = FindPortByIndex(m_videoPortBase+1);
+    OMX_CONFIG_RECTTYPE cropRect;
 
     if ( m_hSimpleVideoDecoder )
     {
         (void)NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &vdecStatus);
-        (void)NEXUS_SimpleVideoDecoder_GetExtendedStatus(m_hSimpleVideoDecoder, &vdecExtStatus);
         if ( vdecStatus.started && vdecStatus.numDecoded > 0 )
         {
-            OMX_U32 xFramerate;
-            bool formatChanged=false;
-            xFramerate = (OMX_U32)(65536.0 * BOMX_NexusFramerateValue(vdecStatus.frameRate));
+            bool formatChanged = false;
             pPort->GetDefinition(&portDef);
             if ( portDef.format.video.nFrameWidth != vdecStatus.display.width ||
-                 portDef.format.video.nFrameHeight != vdecStatus.display.height ||
-                 portDef.format.video.xFramerate != xFramerate )
+                 portDef.format.video.nFrameHeight != vdecStatus.display.height )
             {
                 portDef.format.video.nFrameWidth = vdecStatus.display.width;
                 portDef.format.video.nFrameHeight = vdecStatus.display.height;
+                m_outputWidth = portDef.format.video.nFrameWidth;
+                m_outputHeight = portDef.format.video.nFrameHeight;
                 formatChanged=true;
             }
-            portDef.format.video.xFramerate = xFramerate;
-            pPort->SetDefinition(&portDef);
-            if ( formatChanged )
-            {
-                PortFormatChanged(pPort);
-            }
-            if ( m_eosPending && vdecExtStatus.lastPictureFlag && pPort->IsTunneled() )
-            {
-                m_eosPending = false;
-                HandleEOS();
+
+            if (formatChanged) {
+                pPort->SetDefinition(&portDef);
+                BOMX_STRUCT_INIT(&cropRect);
+                cropRect.nLeft = 0;
+                cropRect.nTop = 0;
+                cropRect.nWidth = m_outputWidth;
+                cropRect.nHeight = m_outputHeight;
+                if ( m_callbacks.EventHandler )
+                {
+                    (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventPortSettingsChanged, m_videoPortBase+1, OMX_IndexConfigCommonOutputCrop, &cropRect);
+                }
             }
         }
     }
 }
-#endif
 
 void BOMX_VideoDecoder::OutputFrameEvent()
 {
