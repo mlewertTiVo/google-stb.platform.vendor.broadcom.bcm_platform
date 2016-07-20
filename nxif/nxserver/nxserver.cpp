@@ -839,7 +839,8 @@ static nxserver_t init_nxserver(void)
        android device, longer term, we want more flexibility. */
 
     /* -ir none */
-    settings.session[0].ir_input_mode = NEXUS_IrInputMode_eMax;
+    settings.session[0].ir_input.mode[0] = NEXUS_IrInputMode_eMax;
+    settings.session[0].ir_input.mode[1] = NEXUS_IrInputMode_eMax;
     /* -fbsize w,h */
     settings.fbsize.width = property_get_int32(
         GRAPHICS_RES_WIDTH_PROP, GRAPHICS_RES_WIDTH_DEFAULT);
