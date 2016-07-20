@@ -153,7 +153,7 @@ static int nexus_tunnel_bout_get_presentation_position(struct brcm_stream_out *b
     }
 
     *frames = (uint64_t)(bout->framesPlayed + (status.numBytesDecoded - bout->bytesOffset)/bout->frameSize);
-    ALOGV("%s: frames:%" PRIu64 " framesPlayed:" PRIu64 "bytes decoded: " PRIu64,
+    ALOGV("%s: frames:%" PRIu64 " framesPlayed:%" PRIu32 "bytes decoded:%" PRIu64,
         __FUNCTION__, *frames, bout->framesPlayed, status.numBytesDecoded);
 
     return 0;
