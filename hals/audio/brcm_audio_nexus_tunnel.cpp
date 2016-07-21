@@ -37,7 +37,6 @@
  *
  *****************************************************************************/
 
-//#define LOG_NDEBUG 0
 #include "brcm_audio.h"
 #include "OMX_Types.h"
 #include "bomx_utils.h"
@@ -112,18 +111,7 @@ static int nexus_tunnel_bout_get_render_position(struct brcm_stream_out *bout, u
       return 0;
     }
 
-    if (!bout->bytesOffsetInitd) {
-      bout->bytesOffsetInitd = true;
-      // Use the current number of decoded bytes as a base
-      if (status.numBytesDecoded > bout->bytesWritten) {
-        bout->bytesOffset = status.numBytesDecoded;
-      }
-    }
-
-    *dsp_frames = (uint32_t)((status.numBytesDecoded - bout->bytesOffset)/(bout->frameSize));
-    ALOGV("%s: frames:%" PRIu32 " bytesDecoded:%" PRIu64 " bytesWritten:%" PRIu64 " bytesOffset:%" PRIu64,
-        __FUNCTION__, *dsp_frames, status.numBytesDecoded, bout->bytesWritten, bout->bytesOffset);
-
+    *dsp_frames = (uint32_t)(status.numBytesDecoded/bout->frameSize);
     return 0;
 }
 
@@ -140,22 +128,11 @@ static int nexus_tunnel_bout_get_presentation_position(struct brcm_stream_out *b
     }
 
     if (!status.started || status.numBytesDecoded == 0) {
-      *frames = (uint32_t)bout->framesPlayed;
+      *frames = (uint64_t)bout->framesPlayed;
       return 0;
     }
 
-    if (!bout->bytesOffsetInitd) {
-      bout->bytesOffsetInitd = true;
-      // Use the current number of decoded bytes as a base
-      if (status.numBytesDecoded > bout->bytesWritten) {
-        bout->bytesOffset = status.numBytesDecoded;
-      }
-    }
-
-    *frames = (uint64_t)(bout->framesPlayed + (status.numBytesDecoded - bout->bytesOffset)/bout->frameSize);
-    ALOGV("%s: frames:%" PRIu64 " framesPlayed:%" PRIu32 "bytes decoded:%" PRIu64,
-        __FUNCTION__, *frames, bout->framesPlayed, status.numBytesDecoded);
-
+    *frames = (uint64_t)(bout->framesPlayed + status.numBytesDecoded/bout->frameSize);
     return 0;
 }
 
@@ -232,9 +209,6 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
             bout->framesPlayed += status.numBytesDecoded/bout->frameSize;
         }
         NEXUS_SimpleAudioDecoder_Stop(audio_decoder);
-        bout->bytesWritten = 0;
-        bout->bytesOffsetInitd = false;
-        bout->bytesOffset = 0;
     }
 
     if (playpump) {
@@ -576,7 +550,6 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
     }
     bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
 
-    bout->bytesWritten += bytes_written;
     return bytes_written;
 }
 
@@ -633,9 +606,6 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     config->format = NEXUS_OUT_DEFAULT_FORMAT;
 
     bout->framesPlayed = 0;
-    bout->bytesWritten = 0;
-    bout->bytesOffsetInitd = false;
-    bout->bytesOffset = 0;
     bout->frameSize = audio_bytes_per_sample(config->format) * popcount(config->channel_mask);
     bout->buffer_size = get_brcm_audio_buffer_size(config->sample_rate,
                                    config->format,
