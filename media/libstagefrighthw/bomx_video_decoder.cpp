@@ -5718,7 +5718,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
 {
    OMX_ERRORTYPE errCode = OMX_ErrorUndefined;
    NEXUS_SurfaceHandle hSurfaceY = NULL, hSurfaceCb = NULL, hSurfaceCr = NULL;
-   NEXUS_SurfaceCreateSettings surfaceSettings;
+   NEXUS_StripedSurfaceCreateSettings surfaceSettings;
    NEXUS_Graphics2DDestripeBlitSettings destripeSettings;
    NEXUS_MemoryBlockHandle block_handle = NULL;
    void *slock;
@@ -5789,8 +5789,13 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
    destripeSettings.verticalFilter = NEXUS_Graphics2DFilterCoeffs_ePointSample;
    destripeSettings.chromaFilter = false;  // Maintain pixel accuracy as if it came directly from the decoder
    destripeSettings.source.stripedSurface = hStripedSurface;
-
    destripeSettings.output.surface = hSurfaceY;
+   NEXUS_StripedSurface_GetCreateSettings(hStripedSurface, &surfaceSettings);
+   destripeSettings.output.rect.x = 0;
+   destripeSettings.output.rect.y = 0;
+   destripeSettings.output.rect.width = surfaceSettings.imageWidth;
+   destripeSettings.output.rect.height = surfaceSettings.imageHeight;
+
    nxCode = NEXUS_Graphics2D_DestripeBlit(m_hGraphics2d, &destripeSettings);
    if (nxCode) {
       ALOGE("DestripeToYV12: failed destripe to Y surface");
@@ -5798,6 +5803,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
       goto err_destripe;
    }
    destripeSettings.output.surface = hSurfaceCb;
+   destripeSettings.output.rect.x = 0;
+   destripeSettings.output.rect.y = 0;
+   destripeSettings.output.rect.width = surfaceSettings.imageWidth/2;
+   destripeSettings.output.rect.height = surfaceSettings.imageHeight/2;
    nxCode = NEXUS_Graphics2D_DestripeBlit(m_hGraphics2d, &destripeSettings);
    if (nxCode) {
       ALOGE("DestripeToYV12: failed destripe to Cb surface");
@@ -5805,6 +5814,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
       goto err_destripe;
    }
    destripeSettings.output.surface = hSurfaceCr;
+   destripeSettings.output.rect.x = 0;
+   destripeSettings.output.rect.y = 0;
+   destripeSettings.output.rect.width = surfaceSettings.imageWidth/2;
+   destripeSettings.output.rect.height = surfaceSettings.imageHeight/2;
    nxCode = NEXUS_Graphics2D_DestripeBlit(m_hGraphics2d, &destripeSettings);
    if (nxCode) {
       ALOGE("DestripeToYV12: failed destripe to Cr surface");
