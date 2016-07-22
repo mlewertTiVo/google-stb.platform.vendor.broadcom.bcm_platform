@@ -56,15 +56,15 @@ rm -rf $TMP_DIR
 echo "staging playready prebuilts..."
 mkdir -p $TMP_DIR/$VENDOR_BRCM/$RP/$VAR;
 while read line; do
-  if [ ! -e $line ]; then
-    echo -e "!!! MISSING prebuilt libraries for release packaging: $line"
-  else
+  if ls $line 1> /dev/null 2>&1; then
     IS_PREBUILT_LIB=$(echo $line | awk -F/ '{print $1}')
     if [[ "$IS_PREBUILT_LIB" == "out" ]]; then
       cp $line $TMP_DIR/$VENDOR_BRCM/$RP/$VAR;
     else
       cp -r --parents $line $TMP_DIR;
     fi
+  else
+    echo -e "!!! MISSING prebuilt libraries for release packaging: $line"
   fi
 done < $SCRIPT_DIR/playready_prebuilts.txt
 tar -C $TMP_DIR -zcvf $OUTPUT/playready_prebuilts_$VAR.tgz ./

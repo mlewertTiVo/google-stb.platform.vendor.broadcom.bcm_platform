@@ -1,3 +1,5 @@
 vendor/playready/Android.mk
 vendor/playready/lib/
 out/target/product/bcm_platform/system/lib/libcmndrmprdy.so
+vendor/broadcom/refsw/BSEAV/lib/security/sage/bin/*/sage_ta_playready_30.bin
+vendor/broadcom/refsw/BSEAV/lib/security/sage/bin/*/dev/sage_ta_playready_30_dev.bin
