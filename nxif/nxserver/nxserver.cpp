@@ -586,6 +586,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    bool transcode = false;
    bool cvbs = property_get_int32(NX_COMP_VIDEO, 0) ? true : false;
    NEXUS_GetPlatformCapabilities(&platformCap);
+   bool pip = false;
 
    if ((svp == SVP_MODE_PLAYBACK_TRANSCODE) || (svp == SVP_MODE_NONE_TRANSCODE)) {
       ALOGI("transcode is enabled.");
@@ -691,11 +692,16 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       }
    }
    if (property_get(NX_TRIM_PIP, value, NX_PROP_ENABLED)) {
-      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         if (dec_used > MIN_PLATFORM_DEC) {
-            pMemConfigSettings->videoDecoder[1].used = false;
+      if (strlen(value)) {
+         if (strtoul(value, NULL, 0) > 0) {
+            pip = false;
+            if (dec_used > MIN_PLATFORM_DEC) {
+               pMemConfigSettings->videoDecoder[1].used = false;
+            }
+            pMemConfigSettings->display[0].window[1].used = false;
+         } else {
+            pip = true;
          }
-         pMemConfigSettings->display[0].window[1].used = false;
       }
    }
 
@@ -713,6 +719,9 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
             /* start index -> 1.  beware interaction with pip above. */
             for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+               if (i == 1 && pip) {
+                  continue;
+               }
                if (pMemConfigSettings->videoDecoder[i].used) {
                   pMemConfigSettings->videoDecoder[i].maxFormat = NEXUS_VideoFormat_eNtsc;
                }
