@@ -38,6 +38,9 @@
  *****************************************************************************/
 
 #include "brcm_audio.h"
+#include "brcm_audio_nexus_hdmi.h"
+
+using namespace android;
 
 #define NEXUS_OUT_DEFAULT_SAMPLE_RATE   48000
 #define NEXUS_OUT_DEFAULT_CHANNELS      AUDIO_CHANNEL_OUT_STEREO
@@ -100,30 +103,35 @@ static int nexus_direct_bout_get_presentation_position(struct brcm_stream_out *b
     }
     return 0;
 }
+
+
 static char *nexus_direct_bout_get_parameters (struct brcm_stream_out *bout, const char *keys)
 {
     struct str_parms *query = str_parms_create_str(keys);
     struct str_parms *result = str_parms_create();
+    String8 rates_str, channels_str, formats_str;
     char* result_str;
 
     pthread_mutex_lock(&bout->lock);
     /* Get real parameters here!!! */
+    nexus_get_hdmi_parameters(rates_str, channels_str, formats_str);
+
     /* supported sample rates */
     if (str_parms_has_key(query, AUDIO_PARAMETER_STREAM_SUP_SAMPLING_RATES)) {
         str_parms_add_str(result, AUDIO_PARAMETER_STREAM_SUP_SAMPLING_RATES,
-                          "48000");
+                          rates_str.isEmpty()?"48000":rates_str.string());
     }
 
     /* supported channel counts */
     if (str_parms_has_key(query, AUDIO_PARAMETER_STREAM_SUP_CHANNELS)) {
         str_parms_add_str(result, AUDIO_PARAMETER_STREAM_SUP_CHANNELS,
-                          "AUDIO_CHANNEL_OUT_STEREO");
+                          channels_str.isEmpty()?"AUDIO_CHANNEL_OUT_STEREO":channels_str.string());
     }
 
     /* supported sample formats */
     if (str_parms_has_key(query, AUDIO_PARAMETER_STREAM_SUP_FORMATS)) {
         str_parms_add_str(result, AUDIO_PARAMETER_STREAM_SUP_FORMATS,
-                          "AUDIO_FORMAT_PCM_16_BIT");
+                          formats_str.isEmpty()?"AUDIO_FORMAT_PCM_16_BIT":formats_str.string());
     }
     pthread_mutex_unlock(&bout->lock);
 
@@ -153,7 +161,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
     NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
 
     start_settings.passthroughBuffer.enabled = true;
-    start_settings.passthroughBuffer.sampleRate = 48000;
+    start_settings.passthroughBuffer.sampleRate = bout->config.sample_rate;
     start_settings.passthroughBuffer.dataCallback.callback = nexus_direct_bout_data_callback;
     start_settings.passthroughBuffer.dataCallback.context = bout;
     start_settings.passthroughBuffer.dataCallback.param = (int)event;
@@ -179,6 +187,14 @@ static int nexus_direct_bout_stop(struct brcm_stream_out *bout)
         bout->framesPlayed += status.numBytesDecoded/bout->frameSize;
         ALOGV("%s: setting framesPlayed to %u", __FUNCTION__, bout->framesPlayed);
     }
+    return 0;
+}
+
+static int nexus_direct_bout_flush(struct brcm_stream_out *bout)
+{
+    ALOGV("%s, %p", __FUNCTION__, bout);
+    nexus_direct_bout_stop(bout);
+    nexus_direct_bout_start(bout);
     return 0;
 }
 
@@ -304,10 +320,39 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     uint32_t audioDecoderId;
     int i, ret = 0;
 
-    /* Check if sample rate is supported */
-    config->sample_rate = NEXUS_OUT_DEFAULT_SAMPLE_RATE;
-    config->channel_mask = NEXUS_OUT_DEFAULT_CHANNELS;
-    config->format = NEXUS_OUT_DEFAULT_FORMAT;
+    if (config->sample_rate == 0)
+        config->sample_rate = NEXUS_OUT_DEFAULT_SAMPLE_RATE;
+    if (config->channel_mask == 0)
+        config->channel_mask = NEXUS_OUT_DEFAULT_CHANNELS;
+    if (config->format == 0)
+        config->format = NEXUS_OUT_DEFAULT_FORMAT;
+
+    switch (config->format) {
+    case AUDIO_FORMAT_PCM_16_BIT:
+        /* Check if sample rate is supported */
+        if ((config->sample_rate != 48000) && (config->sample_rate != 192000) &&
+            (config->sample_rate != 44100) && (config->sample_rate != 176400))
+            return -EINVAL;
+
+        if (config->channel_mask != AUDIO_CHANNEL_OUT_STEREO)
+            return -EINVAL;
+        break;
+    case AUDIO_FORMAT_AC3:
+        /* Suggest PCM wrapped format */
+        config->channel_mask = AUDIO_CHANNEL_OUT_STEREO;
+        config->format = AUDIO_FORMAT_PCM_16_BIT;
+        return -EINVAL;
+        break;
+    case AUDIO_FORMAT_E_AC3:
+        /* Suggest PCM wrapped format */
+        config->channel_mask = AUDIO_CHANNEL_OUT_STEREO;
+        config->format = AUDIO_FORMAT_PCM_16_BIT;
+        config->sample_rate = 192000;
+        return -EINVAL;
+        break;
+    default:
+        return -EINVAL;
+    }
 
     bout->framesPlayed = 0;
     bout->frameSize = audio_bytes_per_sample(config->format) * popcount(config->channel_mask);
@@ -425,5 +470,5 @@ struct brcm_stream_out_ops nexus_direct_bout_ops = {
     .do_bout_pause = NULL,
     .do_bout_resume = NULL,
     .do_bout_drain = NULL,
-    .do_bout_flush = NULL,
+    .do_bout_flush = nexus_direct_bout_flush,
 };
