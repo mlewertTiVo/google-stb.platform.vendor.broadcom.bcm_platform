@@ -463,7 +463,7 @@ static int bout_pause(struct audio_stream_out *aout)
     struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
     int ret;
 
-    if (!bout->tunneled) {
+    if (!bout->ops.do_bout_pause) {
        return -ENOSYS;
     }
 
@@ -479,7 +479,7 @@ static int bout_resume(struct audio_stream_out *aout)
     struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
     int ret;
 
-    if (!bout->tunneled) {
+    if (!bout->ops.do_bout_resume) {
        return -ENOSYS;
     }
 
@@ -495,7 +495,7 @@ static int bout_drain(struct audio_stream_out *aout, audio_drain_type_t type)
     struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
     int ret;
 
-    if (!bout->tunneled) {
+    if (!bout->ops.do_bout_drain) {
        return -ENOSYS;
     }
 
@@ -511,7 +511,7 @@ static int bout_flush(struct audio_stream_out *aout)
     struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
     int ret;
 
-    if (!bout->tunneled) {
+    if (!bout->ops.do_bout_flush) {
        return -ENOSYS;
     }
 
