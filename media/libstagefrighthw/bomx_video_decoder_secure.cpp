@@ -96,13 +96,91 @@ extern "C" const char *BOMX_VideoDecoder_Secure_GetRole(unsigned roleIndex)
     return BOMX_VideoDecoder_GetRole(roleIndex);
 }
 
+OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Common(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks,
+    bool tunnelMode)
+{
+    static const BOMX_VideoDecoderRole vp9Role = {"video_decoder.vp9", OMX_VIDEO_CodingVP9};
+    BOMX_VideoDecoder *pVideoDecoder;
+    unsigned i;
+    bool vp9Supported = false;
+    NEXUS_VideoDecoderCapabilities caps;
+
+    // Check if the platform supports VP9
+    NEXUS_GetVideoDecoderCapabilities(&caps);
+    for ( i = 0; i < caps.numVideoDecoders; i++ )
+    {
+        if ( caps.memory[i].supportedCodecs[NEXUS_VideoCodec_eVp9] )
+        {
+            vp9Supported = true;
+            break;
+        }
+    }
+
+    if ( !vp9Supported )
+    {
+        ALOGW("VP9 hardware support is not available");
+        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+    }
+
+    // VP9 can be disabled by this property
+    if ( property_get_int32(B_PROPERTY_TRIM_VP9, 0) )
+    {
+        ALOGW("VP9 hardware support is available but disabled (ro.nx.trim.vp9=1)");
+        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+    }
+
+    pVideoDecoder = new BOMX_VideoDecoder_Secure(pComponentTpe, pName, pAppData, pCallbacks, tunnelMode, 1, &vp9Role, BOMX_VideoDecoder_GetRoleVp9);
+    if ( NULL == pVideoDecoder )
+    {
+        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+    }
+    else
+    {
+        OMX_ERRORTYPE constructorError = pVideoDecoder->IsValid();
+        if ( constructorError == OMX_ErrorNone )
+        {
+            return OMX_ErrorNone;
+        }
+        else
+        {
+            delete pVideoDecoder;
+            return BOMX_ERR_TRACE(constructorError);
+        }
+    }
+}
+
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Tunnel(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    return BOMX_VideoDecoder_Secure_CreateVp9Common(pComponentTpe, pName, pAppData, pCallbacks, true);
+}
+
+extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    return BOMX_VideoDecoder_Secure_CreateVp9Common(pComponentTpe, pName, pAppData, pCallbacks, false);
+}
+
 BOMX_VideoDecoder_Secure::BOMX_VideoDecoder_Secure(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks,
-    bool tunnel)
-    :BOMX_VideoDecoder(pComponentType, pName, pAppData, pCallbacks, true, tunnel)
+    bool tunnel,
+    unsigned numRoles,
+    const BOMX_VideoDecoderRole *pRoles,
+    const char *(*pGetRole)(unsigned roleIndex))
+    :BOMX_VideoDecoder(pComponentType, pName, pAppData, pCallbacks, true, tunnel, numRoles, pRoles, pGetRole)
     ,m_Sage_PlatformHandle(NULL),
     m_Sagelib_Container(NULL)
 {
