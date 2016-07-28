@@ -4338,12 +4338,6 @@ void BOMX_VideoDecoder::PlaypumpEvent()
             ALOGV("Data still pending in RAVE.  Starting Timer.");
             m_playpumpTimerId = StartTimer(BOMX_VideoDecoder_GetFrameInterval(m_frameRate), BOMX_VideoDecoder_PlaypumpEvent, static_cast<void *>(this));
         }
-
-        if ( m_tunnelMode )
-        {
-            // Return the input buffers as fast as possible
-            ReturnInputBuffers(0, InputReturnMode_eAll);
-        }
     }
 }
 
@@ -4431,7 +4425,7 @@ void BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMode m
         }
     }
 
-    ALOGV("%s: returned %u buffers, %u available", __FUNCTION__, count, m_AvailInputBuffers);
+    ALOGV("%s: returned %u buffers, %u available, mode %u", __FUNCTION__, count, m_AvailInputBuffers, mode);
 }
 
 bool BOMX_VideoDecoder::ReturnInputPortBuffer(BOMX_Buffer *pBuffer)
@@ -4671,6 +4665,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
 {
     NEXUS_VideoDecoderFrameStatus frameStatus[B_MAX_DECODED_FRAMES], *pFrameStatus;
     BOMX_VideoDecoderFrameBuffer *pBuffer;
+    NEXUS_VideoDecoderStatus status;
     NEXUS_Error errCode;
     unsigned numFrames=0;
     unsigned i;
@@ -4678,6 +4673,13 @@ void BOMX_VideoDecoder::PollDecodedFrames()
     if ( NULL == m_hSimpleVideoDecoder )
     {
         return;
+    }
+
+    errCode = NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &status);
+    if (m_frameRate == NEXUS_VideoFrameRate_eUnknown && errCode == NEXUS_SUCCESS && status.started)
+    {
+        ALOGV_IF(m_frameRate != status.frameRate, "Frame rate %d->%d", m_frameRate, status.frameRate);
+        m_frameRate = status.frameRate;
     }
 
     // In tunnel mode, there is no output port populated on the omx component and we do not expect
@@ -4705,7 +4707,11 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             m_tunnelCurrentPts = status.pts;
 
             (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventOutputRendered, 1, 0, &renderEvent);
-            ALOGV("Rendering ts=%lld pts=%u now=%lld", omxHeader.nTimeStamp, status.pts, now);
+            ALOGV("Rendering ts=%lld pts=%u now=%lld",
+                    omxHeader.nTimeStamp, status.pts, now);
+
+            // Use this event to return input buffers
+            ReturnInputBuffers(omxHeader.nTimeStamp, InputReturnMode_eTimestamp);
         }
 
         return;
@@ -5123,15 +5129,6 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
        // we can skip this.
        return;
     }
-
-    NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &status);
-    if ( !status.started )
-    {
-        m_frameRate = NEXUS_VideoFrameRate_eUnknown;
-        return;
-    }
-    ALOGV_IF(m_frameRate != status.frameRate, "Frame rate %d->%d", m_frameRate, status.frameRate);
-    m_frameRate = status.frameRate;
 
     // Skip pending invalidated frames
     for ( pBuffer = BLST_Q_FIRST(&m_frameBufferAllocList);
