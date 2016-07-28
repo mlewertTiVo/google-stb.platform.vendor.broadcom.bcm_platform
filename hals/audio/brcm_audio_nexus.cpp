@@ -436,6 +436,9 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
         NEXUS_SimpleAudioPlaybackStatus status;
 
         NEXUS_SimpleAudioPlayback_GetStatus(simple_playback, &status);
+        if (!status.started) {
+            break;
+        }
         if (status.queuedBytes < bout->buffer_size * 4) {
             break;
         }
