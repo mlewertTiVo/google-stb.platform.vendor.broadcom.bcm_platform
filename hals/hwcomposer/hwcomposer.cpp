@@ -1673,6 +1673,10 @@ static DISPLAY_CLIENT_MODE hwc_fb_mode_for_format(struct hwc_context_t* ctx, NxC
     case NEXUS_VideoFormat_e720p24hz:
     case NEXUS_VideoFormat_ePal:
     case NEXUS_VideoFormat_eSecam:
+    case NEXUS_VideoFormat_eVesa640x480p60hz:
+    case NEXUS_VideoFormat_eVesa800x600p60hz:
+    case NEXUS_VideoFormat_eVesa1024x768p60hz:
+    case NEXUS_VideoFormat_eVesa1280x768p60hz:
        mode = CLIENT_MODE_NSC_FRAMEBUFFER;
     break;
     default:
