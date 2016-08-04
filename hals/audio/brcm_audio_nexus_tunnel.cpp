@@ -38,9 +38,13 @@
  *****************************************************************************/
 
 #include "brcm_audio.h"
+#include "brcm_audio_nexus_hdmi.h"
 #include "OMX_Types.h"
 #include "bomx_utils.h"
 #include <inttypes.h>
+
+#define STRINGIFY(x)                    #x
+#define TOSTRING(x)                     STRINGIFY(x)
 
 #define NEXUS_OUT_DEFAULT_SAMPLE_RATE   44100
 #define NEXUS_OUT_DEFAULT_CHANNELS      AUDIO_CHANNEL_OUT_STEREO
@@ -68,6 +72,8 @@ const static uint32_t nexus_out_sample_rates[] = {
 #define NEXUS_OUT_SAMPLE_RATE_COUNT                     \
     (sizeof(nexus_out_sample_rates) / sizeof(uint32_t))
 
+#define BRCM_AUDIO_TUNNEL_PROPERTY_PES_DEBUG    "media.brcm.aout_t_pes_debug"
+
 #define BRCM_AUDIO_NXCLIENT_NAME                "BrcmAudioOutTunnel"
 
 #define BRCM_AUDIO_STREAM_ID                    (0xC0)
@@ -75,6 +81,12 @@ const static uint32_t nexus_out_sample_rates[] = {
 #define BRCM_AUDIO_TUNNEL_DURATION_MS           (5)
 #define BRCM_AUDIO_TUNNEL_HALF_DURATION_US      (BRCM_AUDIO_TUNNEL_DURATION_MS * 500)
 #define BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS  (300)
+
+#define BRCM_AUDIO_TUNNEL_COMP_BUFFER_SIZE      (2048)
+#define BRCM_AUDIO_TUNNEL_COMP_FRAME_QUEUED     (100)
+#define BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US   (50000)
+/* Drain delay x retries = 500ms */
+#define BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_MAX  (10)
 
 /*
  * Function declarations
@@ -85,6 +97,18 @@ static int nexus_tunnel_bout_resume(struct brcm_stream_out *bout);
 /*
  * Operation Functions
  */
+static NEXUS_AudioCodec nexus_tunnel_bout_get_codec(struct brcm_stream_out *bout)
+{
+    struct audio_config *config = &bout->config;
+    switch (config->format) {
+        case AUDIO_FORMAT_AC3:      return NEXUS_AudioCodec_eAc3;
+        case AUDIO_FORMAT_E_AC3:    return NEXUS_AudioCodec_eAc3Plus;
+        case AUDIO_FORMAT_DTS:      return NEXUS_AudioCodec_eDts;
+        case AUDIO_FORMAT_DTS_HD:   return NEXUS_AudioCodec_eDtsHd;
+        default:                    break; /* Assuming PCM, fall thru */
+    }
+    return NEXUS_AudioCodec_ePcmWav;
+}
 
 static int nexus_tunnel_bout_set_volume(struct brcm_stream_out *bout,
                                  float left, float right)
@@ -97,6 +121,11 @@ static int nexus_tunnel_bout_set_volume(struct brcm_stream_out *bout,
 static int nexus_tunnel_bout_get_render_position(struct brcm_stream_out *bout, uint32_t *dsp_frames)
 {
     NEXUS_Error ret;
+
+    if (bout->frameSize == 0) {
+        *dsp_frames = 0;
+        return 0;
+    }
 
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_AudioDecoderStatus status;
@@ -113,6 +142,11 @@ static int nexus_tunnel_bout_get_render_position(struct brcm_stream_out *bout, u
 static int nexus_tunnel_bout_get_presentation_position(struct brcm_stream_out *bout, uint64_t *frames)
 {
     NEXUS_Error ret;
+
+    if (bout->frameSize == 0) {
+        *frames = (uint64_t)(bout->framesPlayed);
+        return 0;
+    }
 
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_AudioDecoderStatus status;
@@ -156,13 +190,14 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
     }
 
     NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
-    start_settings.primary.codec = NEXUS_AudioCodec_ePcmWav;
+    start_settings.primary.codec = nexus_tunnel_bout_get_codec(bout);
     start_settings.primary.pidChannel = bout->nexus.tunnel.pid_channel;
     ret = NEXUS_SimpleAudioDecoder_Start(audio_decoder, &start_settings);
     if (ret != NEXUS_SUCCESS) {
         ALOGE("%s: Start audio decoder failed, ret = %d", __FUNCTION__, ret);
         return -ENOSYS;
     }
+    ALOGV("%s: Audio decoder started (0x%x:%d)", __FUNCTION__, bout->config.format, start_settings.primary.codec);
 
     nexus_tunnel_bout_debounce_reset(bout);
     bout->nexus.tunnel.last_write_time = 0;
@@ -190,13 +225,15 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
     NEXUS_PlaypumpHandle playpump = bout->nexus.tunnel.playpump;
 
     if (audio_decoder) {
-        NEXUS_AudioDecoderStatus status;
-        ret = NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &status);
-        if (ret != NEXUS_SUCCESS) {
-            ALOGE("%s: Update frame played failed, ret=%d", __FUNCTION__, ret);
-        }
-        else {
-            bout->framesPlayed += status.numBytesDecoded/bout->frameSize;
+        if (bout->frameSize > 0) {
+            NEXUS_AudioDecoderStatus status;
+            ret = NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &status);
+            if (ret != NEXUS_SUCCESS) {
+                ALOGE("%s: Update frame played failed, ret=%d", __FUNCTION__, ret);
+            }
+            else {
+                bout->framesPlayed += status.numBytesDecoded/bout->frameSize;
+            }
         }
         NEXUS_SimpleAudioDecoder_Stop(audio_decoder);
     }
@@ -381,6 +418,52 @@ static int nexus_tunnel_bout_flush(struct brcm_stream_out *bout)
     return 0;
 }
 
+// Table copied from AC3FrameScanner.h. It contains the number of 16-bit words in an AC3 frame.
+#define AC3_MAX_FRAME_SIZE      38
+#define AC3_MAX_SAMPLE_RATE     3
+const static uint16_t dd_frame_size_table[AC3_MAX_FRAME_SIZE][AC3_MAX_SAMPLE_RATE] = {
+    { 64, 69, 96 },
+    { 64, 70, 96 },
+    { 80, 87, 120 },
+    { 80, 88, 120 },
+    { 96, 104, 144 },
+    { 96, 105, 144 },
+    { 112, 121, 168 },
+    { 112, 122, 168 },
+    { 128, 139, 192 },
+    { 128, 140, 192 },
+    { 160, 174, 240 },
+    { 160, 175, 240 },
+    { 192, 208, 288 },
+    { 192, 209, 288 },
+    { 224, 243, 336 },
+    { 224, 244, 336 },
+    { 256, 278, 384 },
+    { 256, 279, 384 },
+    { 320, 348, 480 },
+    { 320, 349, 480 },
+    { 384, 417, 576 },
+    { 384, 418, 576 },
+    { 448, 487, 672 },
+    { 448, 488, 672 },
+    { 512, 557, 768 },
+    { 512, 558, 768 },
+    { 640, 696, 960 },
+    { 640, 697, 960 },
+    { 768, 835, 1152 },
+    { 768, 836, 1152 },
+    { 896, 975, 1344 },
+    { 896, 976, 1344 },
+    { 1024, 1114, 1536 },
+    { 1024, 1115, 1536 },
+    { 1152, 1253, 1728 },
+    { 1152, 1254, 1728 },
+    { 1280, 1393, 1920 },
+    { 1280, 1394, 1920 }
+};
+
+#define DTS_MIN_FRAME_SIZE      95
+
 const static uint8_t av_sync_marker[] = {0x55, 0x55, 0x00, 0x01};
 #define HW_AV_SYNC_HDR_LEN 16
 static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
@@ -423,6 +506,50 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 ALOGV("%s: av-sync header, ts=%" PRIu64 " pts=%" PRIu32 ", size=%zu, payload=%zu", __FUNCTION__, timestamp, pts, frameBytes, bytes);
                 bytes -= HW_AV_SYNC_HDR_LEN;
                 buffer = (void *)((uint8_t *)buffer + HW_AV_SYNC_HDR_LEN);
+
+                // For compressed audio, apparently we assume the frame size stays constant throughout
+                // the entire playback. Will make use of the status from the audio decoder once the
+                // audio decoder is able to return the number decoded frames.
+                if (bout->frameSize == 0) {
+                    const uint8_t *syncFrame = (const uint8_t *)buffer;
+                    switch (bout->config.format) {
+                        case AUDIO_FORMAT_AC3:
+                        case AUDIO_FORMAT_E_AC3:
+                        {
+                            if (bytes >= 5 && syncFrame[0] == 0x0B && syncFrame[1] == 0x77) {
+                                if (bout->config.format == AUDIO_FORMAT_E_AC3) {
+                                    uint32_t frmsiz = ((syncFrame[2] & 0x07) << 8) + syncFrame[3];
+                                    bout->frameSize = (frmsiz + 1) * sizeof(uint16_t);
+                                }
+                                else { // AUDIO_FORMAT_AC3
+                                    uint32_t fscod = syncFrame[4] >> 6;
+                                    uint32_t frmsizcod = syncFrame[4] & 0x3F;
+                                    if (fscod < AC3_MAX_SAMPLE_RATE && frmsizcod < AC3_MAX_FRAME_SIZE) {
+                                        bout->frameSize = dd_frame_size_table[frmsizcod][fscod] * sizeof(uint16_t);
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                        case AUDIO_FORMAT_DTS:
+                        case AUDIO_FORMAT_DTS_HD:
+                        {
+                            if (bytes >= 8 && syncFrame[0] == 0x7F && syncFrame[1] == 0xFE && syncFrame[2] == 0x80 && syncFrame[3] == 0x01) {
+                                uint32_t fsize = ((syncFrame[5] & 0x03) << 12) + (syncFrame[6] << 4) + (syncFrame[7] & 0xF0);
+                                if (fsize >= DTS_MIN_FRAME_SIZE) {
+                                    bout->frameSize = fsize + 1;
+                                }
+                            }
+                            break;
+                        }
+                        default:
+                        {
+                            ALOGE("%s: Unexpected compressed audio format 0x%08x", __FUNCTION__, bout->config.format);
+                            break;
+                        }
+                    }
+                    ALOGV("%s: Frame size %lu for audio format 0x%08x", __FUNCTION__, bout->frameSize, bout->config.format);
+                }
             }
             else
             {
@@ -441,7 +568,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
         {
             bmedia_pes_info pes;
             size_t used, waveformat_size;
-            size_t spaceRequired;
+            size_t spaceRequired, length;
 
             ret = NEXUS_Playpump_GetBuffer(playpump, &nexus_buffer, &nexus_space);
             if (ret) {
@@ -451,7 +578,10 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
 
             spaceRequired = (frameBytes >= bytes) ? frameBytes : bytes;
             if ( writeHeader ) {
-                spaceRequired += BMEDIA_PES_HEADER_MAX_SIZE + BMEDIA_WAVEFORMATEX_BASE_SIZE + bmedia_frame_bcma.len + 4;
+                spaceRequired += BMEDIA_PES_HEADER_MAX_SIZE;
+                if (bout->nexus.tunnel.pcm_format) {
+                    spaceRequired += BMEDIA_WAVEFORMATEX_BASE_SIZE + bmedia_frame_bcma.len + 4;
+                }
             }
             if (nexus_space >= spaceRequired) {
                 used = 0;
@@ -459,16 +589,22 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                     // Format PES
                     BMEDIA_PES_INFO_INIT(&pes, BRCM_AUDIO_STREAM_ID);
                     BMEDIA_PES_SET_PTS(&pes, pts);
-                    used += bmedia_pes_header_init((uint8_t *)nexus_buffer, frameBytes + BMEDIA_WAVEFORMATEX_BASE_SIZE + bmedia_frame_bcma.len + 4, &pes);
-                    BKNI_Memcpy((uint8_t *)nexus_buffer + used, bmedia_frame_bcma.base, bmedia_frame_bcma.len);
-                    used += bmedia_frame_bcma.len;
-                    B_MEDIA_SAVE_UINT32_BE((uint8_t *)nexus_buffer + used, frameBytes);
-                    used += sizeof(uint32_t);
+                    length = frameBytes;
+                    if (bout->nexus.tunnel.pcm_format) {
+                        length += BMEDIA_WAVEFORMATEX_BASE_SIZE + bmedia_frame_bcma.len + 4;
+                    }
+                    used += bmedia_pes_header_init((uint8_t *)nexus_buffer, length, &pes);
+                    if (bout->nexus.tunnel.pcm_format) {
+                        BKNI_Memcpy((uint8_t *)nexus_buffer + used, bmedia_frame_bcma.base, bmedia_frame_bcma.len);
+                        used += bmedia_frame_bcma.len;
+                        B_MEDIA_SAVE_UINT32_BE((uint8_t *)nexus_buffer + used, frameBytes);
+                        used += sizeof(uint32_t);
 
-                    // Format WAV header
-                    waveformat_size = bmedia_write_waveformatex((uint8_t *)nexus_buffer + used, &bout->nexus.tunnel.wave_fmt);
-                    ALOG_ASSERT(waveformat_size == BMEDIA_WAVEFORMATEX_BASE_SIZE);
-                    used += waveformat_size;
+                        // Format WAV header
+                        waveformat_size = bmedia_write_waveformatex((uint8_t *)nexus_buffer + used, &bout->nexus.tunnel.wave_fmt);
+                        ALOG_ASSERT(waveformat_size == BMEDIA_WAVEFORMATEX_BASE_SIZE);
+                        used += waveformat_size;
+                    }
 
                     // Header may indicate more data in frame than was passed in write()
                     if ( frameBytes > bytes ) {
@@ -479,6 +615,10 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 BKNI_Memcpy((uint8_t *)nexus_buffer + used, buffer, frameBytes);
                 used += frameBytes;
                 BDBG_ASSERT(used <= nexus_space);
+
+                if (bout->nexus.tunnel.pes_debug != NULL) {
+                    fwrite(nexus_buffer, 1, used, bout->nexus.tunnel.pes_debug);
+                }
                 ret = NEXUS_Playpump_WriteComplete(playpump, 0, used);
                 if (ret) {
                     ALOGE("%s:%d playpump write failed, ret=%d", __FUNCTION__, __LINE__, ret);
@@ -532,13 +672,31 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
     }
 
     // Throttle the output to prevent audio underruns
-    nsecs_t delta = systemTime(SYSTEM_TIME_MONOTONIC) - bout->nexus.tunnel.last_write_time;
-    int32_t throttle_us = BRCM_AUDIO_TUNNEL_HALF_DURATION_US - (delta / 1000);
-    if (throttle_us <= BRCM_AUDIO_TUNNEL_HALF_DURATION_US && throttle_us > 0) {
-        ALOGV("%s: throttle %ld us", __FUNCTION__, throttle_us);
-        usleep(throttle_us);
+    if (bout->nexus.tunnel.pcm_format) {
+        nsecs_t delta = systemTime(SYSTEM_TIME_MONOTONIC) - bout->nexus.tunnel.last_write_time;
+        int32_t throttle_us = BRCM_AUDIO_TUNNEL_HALF_DURATION_US - (delta / 1000);
+        if (throttle_us <= BRCM_AUDIO_TUNNEL_HALF_DURATION_US && throttle_us > 0) {
+            ALOGV("%s: throttle %ld us", __FUNCTION__, throttle_us);
+            usleep(throttle_us);
+        }
+        bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
     }
-    bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
+    else {
+        NEXUS_Error rc;
+        NEXUS_AudioDecoderStatus status;
+        uint32_t i;
+        for (i = 0; i < BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_MAX; i++) {
+            rc = NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &status);
+            if (rc != NEXUS_SUCCESS) {
+                break;
+            }
+            if (status.queuedFrames < BRCM_AUDIO_TUNNEL_COMP_FRAME_QUEUED) {
+                break;
+            }
+            usleep(BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US);
+        }
+        ALOGV_IF(i > 0, "%s: throttle %ld us queued %u frames", __FUNCTION__, i * BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US, status.queuedFrames);
+    }
 
     return bytes_written;
 }
@@ -579,7 +737,6 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     uint32_t audioResourceId;
     int i, ret = 0;
     NEXUS_PlaypumpStatus playpumpStatus;
-    bmedia_waveformatex_header *wave_fmt = &bout->nexus.tunnel.wave_fmt;
 
     /* Check if sample rate is supported */
     for (i = 0; i < (int)NEXUS_OUT_SAMPLE_RATE_COUNT; i++) {
@@ -591,16 +748,25 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
         config->sample_rate = NEXUS_OUT_DEFAULT_SAMPLE_RATE;
     }
 
-    /* Only allow default config for others */
-    config->channel_mask = NEXUS_OUT_DEFAULT_CHANNELS;
-    config->format = NEXUS_OUT_DEFAULT_FORMAT;
+    if (config->channel_mask == 0) {
+        config->channel_mask = NEXUS_OUT_DEFAULT_CHANNELS;
+    }
+    if (config->format == AUDIO_FORMAT_DEFAULT) {
+        config->format = NEXUS_OUT_DEFAULT_FORMAT;
+    }
 
     bout->framesPlayed = 0;
-    bout->frameSize = audio_bytes_per_sample(config->format) * popcount(config->channel_mask);
-    bout->buffer_size = get_brcm_audio_buffer_size(config->sample_rate,
+
+    /* Frame size should be single byte long for compressed audio formats */
+    size_t bytes_per_sample = audio_bytes_per_sample(config->format);
+    bout->nexus.tunnel.pcm_format = (bytes_per_sample == 0) ? false : true;
+    bout->frameSize = bout->nexus.tunnel.pcm_format ? bytes_per_sample * popcount(config->channel_mask) : 0;
+    bout->buffer_size = bout->nexus.tunnel.pcm_format ?
+                                get_brcm_audio_buffer_size(config->sample_rate,
                                    config->format,
                                    popcount(config->channel_mask),
-                                   BRCM_AUDIO_TUNNEL_DURATION_MS);
+                                   BRCM_AUDIO_TUNNEL_DURATION_MS) :
+                                BRCM_AUDIO_TUNNEL_COMP_BUFFER_SIZE;
 
     ALOGV("%s: sample_rate=%" PRIu32 " frameSize=%" PRIu32 " buffer_size=%zu",
             __FUNCTION__, config->sample_rate, bout->frameSize, bout->buffer_size);
@@ -714,21 +880,45 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
        NEXUS_SimpleAudioDecoder_SetStcChannel(bout->nexus.tunnel.audio_decoder, bout->nexus.tunnel.stc_channel);
     }
 
-    // Initialize WAV format parameters
-    bmedia_init_waveformatex(wave_fmt);
-    wave_fmt->wFormatTag = 0x0001;  // PCM
-    wave_fmt->nChannels = popcount(bout->config.channel_mask);
-    wave_fmt->nSamplesPerSec = bout->config.sample_rate;
-    wave_fmt->wBitsPerSample = audio_bytes_per_sample(bout->config.format) * 8;
-    wave_fmt->nBlockAlign = (wave_fmt->nChannels * wave_fmt->wBitsPerSample) / 8;
-    wave_fmt->cbSize = 0;
-    wave_fmt->nAvgBytesPerSec = (wave_fmt->wBitsPerSample * wave_fmt->nSamplesPerSec * wave_fmt->nChannels) / 8;
-    ALOGV("%s: wave_fmt channel=%d sample_rate=%" PRId32 " bit_per_sample=%d align=%d avg_bytes_rate=%" PRId32 "",
-            __FUNCTION__, wave_fmt->nChannels, wave_fmt->nSamplesPerSec, wave_fmt->wBitsPerSample,
-            wave_fmt->nBlockAlign, wave_fmt->nAvgBytesPerSec);
+    if (bout->nexus.tunnel.pcm_format) {
+        // Initialize WAV format parameters
+        bmedia_waveformatex_header *wave_fmt = &bout->nexus.tunnel.wave_fmt;
+        bmedia_init_waveformatex(wave_fmt);
+        wave_fmt->wFormatTag = 0x0001;  // PCM
+        wave_fmt->nChannels = popcount(bout->config.channel_mask);
+        wave_fmt->nSamplesPerSec = bout->config.sample_rate;
+        wave_fmt->wBitsPerSample = audio_bytes_per_sample(bout->config.format) * 8;
+        wave_fmt->nBlockAlign = (wave_fmt->nChannels * wave_fmt->wBitsPerSample) / 8;
+        wave_fmt->cbSize = 0;
+        wave_fmt->nAvgBytesPerSec = (wave_fmt->wBitsPerSample * wave_fmt->nSamplesPerSec * wave_fmt->nChannels) / 8;
+        ALOGV("%s: wave_fmt channel=%d sample_rate=%" PRId32 " bit_per_sample=%d align=%d avg_bytes_rate=%" PRId32 "",
+                __FUNCTION__, wave_fmt->nChannels, wave_fmt->nSamplesPerSec, wave_fmt->wBitsPerSample,
+                wave_fmt->nBlockAlign, wave_fmt->nAvgBytesPerSec);
+    }
 
     bout->nexus.event = event;
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
+
+    if (property_get_int32(BRCM_AUDIO_TUNNEL_PROPERTY_PES_DEBUG, 0)) {
+        time_t rawtime;
+        struct tm * timeinfo;
+        char fname[100];
+
+        // Generate unique filename
+        time(&rawtime);
+        timeinfo = localtime(&rawtime);
+        snprintf(fname, sizeof(fname), "/data/nxmedia/aout-tunnel-dev_%u-", bout->devices);
+        strftime(fname+strlen(fname), sizeof(fname)-strlen(fname), "%F_%H_%M_%S.pes", timeinfo);
+        ALOGD("Tunneled audio PES debug output file:%s", fname);
+        bout->nexus.tunnel.pes_debug = fopen(fname, "wb+");
+        if (bout->nexus.tunnel.pes_debug == NULL) {
+            ALOGW("Error creating tunneled audio PES output debug file %s (%s)", fname, strerror(errno));
+            // Just keep going without debug
+        }
+    }
+    else {
+        bout->nexus.tunnel.pes_debug = NULL;
+    }
 
     return 0;
 
@@ -801,6 +991,11 @@ static int nexus_tunnel_bout_close(struct brcm_stream_out *bout)
     NxClient_Uninit();
     bout->nexus.state = BRCM_NEXUS_STATE_DESTROYED;
 
+    if (bout->nexus.tunnel.pes_debug) {
+        fclose(bout->nexus.tunnel.pes_debug);
+        bout->nexus.tunnel.pes_debug = NULL;
+    }
+
     return 0;
 }
 
@@ -808,12 +1003,34 @@ static char *nexus_tunnel_bout_get_parameters (struct brcm_stream_out *bout, con
 {
     struct str_parms *query = str_parms_create_str(keys);
     struct str_parms *result = str_parms_create();
+    String8 rates_str, channels_str, formats_str;
     char* result_str;
+
+    /* Get connected HDMI status */
+    nexus_get_hdmi_parameters(rates_str, channels_str, formats_str);
 
     pthread_mutex_lock(&bout->lock);
     if (str_parms_has_key(query, AUDIO_PARAMETER_STREAM_HW_AV_SYNC)) {
         str_parms_add_int(result, AUDIO_PARAMETER_STREAM_HW_AV_SYNC,
                           (int)(intptr_t)bout->nexus.tunnel.stc_channel);
+    }
+
+    /* Supported sample rates */
+    if (str_parms_has_key(query, AUDIO_PARAMETER_STREAM_SUP_SAMPLING_RATES)) {
+        str_parms_add_str(result, AUDIO_PARAMETER_STREAM_SUP_SAMPLING_RATES,
+                          rates_str.isEmpty() ? TOSTRING(NEXUS_OUT_DEFAULT_SAMPLE_RATE) : rates_str.string());
+    }
+
+    /* Supported channel counts */
+    if (str_parms_has_key(query, AUDIO_PARAMETER_STREAM_SUP_CHANNELS)) {
+        str_parms_add_str(result, AUDIO_PARAMETER_STREAM_SUP_CHANNELS,
+                          channels_str.isEmpty() ? TOSTRING(NEXUS_OUT_DEFAULT_CHANNELS) : channels_str.string());
+    }
+
+    /* Supported sample formats */
+    if (str_parms_has_key(query, AUDIO_PARAMETER_STREAM_SUP_FORMATS)) {
+        str_parms_add_str(result, AUDIO_PARAMETER_STREAM_SUP_FORMATS,
+                          formats_str.isEmpty() ? TOSTRING(NEXUS_OUT_DEFAULT_FORMAT) : formats_str.string());
     }
     pthread_mutex_unlock(&bout->lock);
 

@@ -221,6 +221,8 @@ struct brcm_stream_out {
                     bool debounce_expired;
                     bool debounce_stopping;
                     pthread_t debounce_thread;
+                    bool pcm_format;
+                    FILE *pes_debug;
                 } tunnel;
             };
             BKNI_EventHandle event;
