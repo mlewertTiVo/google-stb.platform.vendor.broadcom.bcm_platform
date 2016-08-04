@@ -643,7 +643,7 @@ static void power_init(struct power_module *module __unused)
             gPowerFd = -1;
         }
         else {
-            gNexusPower = NexusPower::instantiate(gPowerFd);
+            gNexusPower = NexusPower::instantiate();
 
             if (gNexusPower.get() == NULL) {
                 ALOGE("%s: failed!!!", __FUNCTION__);
