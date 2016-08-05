@@ -643,10 +643,15 @@ static void power_init(struct power_module *module __unused)
             gPowerFd = -1;
         }
         else {
+            b_powerState state = ePowerState_S0;
+
             gNexusPower = NexusPower::instantiate();
 
             if (gNexusPower.get() == NULL) {
                 ALOGE("%s: failed!!!", __FUNCTION__);
+            }
+            else if (gNexusPower->initialiseGpios(state) != NO_ERROR) {
+                ALOGE("%s: Could not initialise GPIO's!!!", __FUNCTION__);
             }
             else {
                 struct sigevent se;
@@ -664,7 +669,6 @@ static void power_init(struct power_module *module __unused)
             }
         }
     }
-
 }
 
 static status_t power_set_pmlibservice_state(b_powerState state)
