@@ -99,6 +99,8 @@ class NexusPower : public android::RefBase {
         static int const NUM_OUT_PARAMETERS = MAX_POWER_STATES + 1; // gpio mode + S0 through to S5 output values
         static int const MIN_PARAMETERS = MIN_INP_PARAMETERS;
         static int const MAX_PARAMETERS = NUM_OUT_PARAMETERS;
+        static int const DISABLE_KEYEVENT = 0;
+        static int const ENABLE_KEYEVENT = 1;
         static unsigned mInstances;
 
         // Public methods...

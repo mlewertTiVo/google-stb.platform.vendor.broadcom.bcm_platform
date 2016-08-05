@@ -251,9 +251,10 @@ status_t NexusPower::getPowerStatus(b_powerStatus *pPowerStatus)
     return ret;
 }
 
-void NexusPower::NexusGpio::gpioCallback(void *context, int param __unused)
+void NexusPower::NexusGpio::gpioCallback(void *context, int param)
 {
     NexusPower::NexusGpio *pNexusGpio = reinterpret_cast<NexusPower::NexusGpio *>(context);
+    bool enableKeyEvent = !!param;
 
     if (pNexusGpio != NULL) {
         NEXUS_GpioStatus gpioStatus;
@@ -264,7 +265,7 @@ void NexusPower::NexusGpio::gpioCallback(void *context, int param __unused)
             NEXUS_Gpio_ClearInterrupt(pNexusGpio->getHandle());
 
             // toggle the configured key, if any
-            if (pNexusGpio->mUInput != NULL && pNexusGpio->mKeyEvent) {
+            if (enableKeyEvent && pNexusGpio->mUInput != NULL && pNexusGpio->mKeyEvent) {
                 ALOGD("%s: AON GPIO wakeup detected - spoofing wakeup key event...",
                       __FUNCTION__);
                 // release->press->release will guarantee that the press event takes place
@@ -589,7 +590,7 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(String8& pinName,
         settings.maskEdgeInterrupts = true;
         settings.interrupt.callback = NexusPower::NexusGpio::gpioCallback;
         settings.interrupt.context  = gpio.get();
-        settings.interrupt.param    = pin;
+        settings.interrupt.param    = NexusGpio::ENABLE_KEYEVENT;
 
         handle = NEXUS_Gpio_Open(pinType, pin, &settings);
         if (handle != NULL) {
@@ -848,6 +849,29 @@ status_t NexusPower::setGpios(b_powerState state)
     status_t status = NO_ERROR;
     NEXUS_Error rc;
     sp<NexusGpio> pNexusGpio;
+
+    // Run through the list of GPIO inputs first, as we may need to disable the
+    // interrupt prior to setting a GPIO output that could trigger it.
+    if (state == ePowerState_S5) {
+        for (unsigned gpio = 0; gpio < NexusGpio::MAX_INSTANCES; gpio++) {
+            pNexusGpio = gpios[gpio];
+            if (pNexusGpio.get() != NULL && pNexusGpio->getPinMode() == NEXUS_GpioMode_eInput) {
+                NEXUS_GpioSettings gpioSettings;
+
+                NEXUS_Gpio_GetSettings(pNexusGpio->getHandle(), &gpioSettings);
+                gpioSettings.interrupt.param = NexusGpio::DISABLE_KEYEVENT;
+                rc = NEXUS_Gpio_SetSettings(pNexusGpio->getHandle(), &gpioSettings);
+
+                if (rc != NEXUS_SUCCESS) {
+                    ALOGE("%s: Could not disable interrupt callback for %s [rc=%d]!!!", __FUNCTION__, pNexusGpio->getPinName().string(), rc);
+                    status = INVALID_OPERATION;
+                }
+                else {
+                    ALOGV("%s: Successfully disabled interrupt callback for %s", __FUNCTION__, pNexusGpio->getPinName().string());
+                }
+            }
+        }
+    }
 
     for (unsigned gpio = 0; gpio < NexusGpio::MAX_INSTANCES; gpio++) {
         pNexusGpio = gpios[gpio];
