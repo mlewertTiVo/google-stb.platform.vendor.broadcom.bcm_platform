@@ -371,13 +371,13 @@ status_t NexusPower::NexusGpio::parseGpioKey(String8& keyString, unsigned *pKey)
     string.toLower();
 
     if (string == "none") {
-        *pKey = 0;
+        *pKey = KEY_RESERVED;
     }
     else if (string == "wakeup") {
         *pKey = KEY_WAKEUP;
     }
     else {
-        *pKey = 0;
+        *pKey = KEY_RESERVED;
         status = BAD_VALUE;
     }
     return status;
@@ -663,7 +663,7 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::initialise(b_powerState state, 
                 status = BAD_VALUE;
             }
             else {
-                unsigned key;
+                unsigned key = KEY_RESERVED;
                 NEXUS_GpioInterrupt gpioInterruptMode;
                 status = NexusGpio::parseGpioInterruptMode(gpioParameters[1], &gpioInterruptMode);
                 if (status != NO_ERROR) {
