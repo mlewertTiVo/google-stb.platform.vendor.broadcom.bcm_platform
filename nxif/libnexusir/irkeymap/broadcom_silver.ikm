@@ -40,7 +40,7 @@
 0xe619ff00 REWIND
 0xa659ff00 FASTFORWARD
 0xab54ff00 RECORD
-0xbb44ff00 PLAYPAUSE	# Freeze button
+#0xbb44ff00 PLAYPAUSE	# Freeze button
 0xfa05ff00 SOUND	# Music button
 0xb44bff00 TV
 0xff00ff00 SLEEP
