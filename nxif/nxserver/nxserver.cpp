@@ -881,11 +881,9 @@ static nxserver_t init_nxserver(void)
        /* Reserve one for the decoder instead of playback */
        settings.session[0].audioPlaybacks--;
     }
-    if (property_get_int32(NX_NO_OUTPUT_VIDEO, 0)) {
-       settings.display.hdmiPreferences.enabled = false;
-       settings.display.componentPreferences.enabled = false;
-       settings.display.compositePreferences.enabled = false;
-    }
+    settings.display.hdmiPreferences.enabled = false;
+    settings.display.componentPreferences.enabled = false;
+    settings.display.compositePreferences.enabled = false;
 
     settings.allowCompositionBypass = property_get_int32(NX_CAPABLE_COMP_BYPASS, 0) ? true : false;
     if (cvbs) {
@@ -1148,6 +1146,46 @@ static void sigterm_signal_handler(int signal) {
     sem_post(&g_app.sigterm.catcher_run);
 }
 
+static bool is_wakeup_only_from_alarm_timer()
+{
+    NEXUS_Error rc = NEXUS_SUCCESS;
+    NxClient_StandbyStatus standbyStatus;
+
+   rc = NxClient_GetStandbyStatus(&standbyStatus);
+   return (rc==0 && standbyStatus.status.wakeupStatus.timeout &&
+          !(standbyStatus.status.wakeupStatus.ir ||
+            standbyStatus.status.wakeupStatus.uhf ||
+            standbyStatus.status.wakeupStatus.keypad ||
+            standbyStatus.status.wakeupStatus.gpio ||
+            standbyStatus.status.wakeupStatus.cec ||
+            standbyStatus.status.wakeupStatus.transport));
+}
+
+static int set_video_outputs_state(bool enabled)
+{
+    NEXUS_Error rc = NEXUS_SUCCESS;
+    NxClient_DisplaySettings displaySettings;
+
+    do {
+        NxClient_GetDisplaySettings(&displaySettings);
+
+        if (displaySettings.hdmiPreferences.enabled != enabled) {
+            displaySettings.hdmiPreferences.enabled      = enabled;
+            displaySettings.componentPreferences.enabled = enabled;
+            displaySettings.compositePreferences.enabled = enabled;
+            rc = NxClient_SetDisplaySettings(&displaySettings);
+        }
+
+        if (rc) {
+            ALOGE("%s: Could not set display settings [rc=%d]!!!", __FUNCTION__, rc);
+        }
+        else {
+            ALOGV("%s: %s Video outputs...", __FUNCTION__, enabled ? "Enabling" : "Disabling");
+        }
+    } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
+    return rc;
+}
+
 int main(void)
 {
     struct timespec t;
@@ -1311,6 +1349,15 @@ int main(void)
           g_app.standby_monitor.running = 0;
        }
        pthread_attr_destroy(&attr);
+
+       // Re-enable A/V outputs if we did not power-up solely due to an
+       // alarm timer event and we are not in headless mode...
+       if (!property_get_bool(NX_NO_OUTPUT_VIDEO, 0) && !is_wakeup_only_from_alarm_timer()) {
+           rc = set_video_outputs_state(true);
+           if (rc) {
+               ALOGE("could not enable video outputs!");
+           }
+       }
     }
 
     ALOGI("init done.");

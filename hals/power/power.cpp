@@ -47,6 +47,10 @@ static bool wakeLockAcquired = false;
 // Indicates whether we have begun a shut-down sequence
 static bool shutdownStarted = false;
 
+// Lid Switch boolean states
+static const bool SW_LID_STATE_DOWN = true;
+static const bool SW_LID_STATE_UP = false;
+
 // Maximum length of character buffer
 static const int BUF_SIZE = 64;
 
@@ -91,6 +95,7 @@ static const char * SOPASS_KEY_FILE_PATH                  = "/data/misc/nexus/so
 // Sysfs paths
 static const char * SYS_MAP_MEM_TO_S2                     = "/sys/devices/platform/droid_pm/map_mem_to_s2";
 static const char * SYS_FULL_WOL_WAKEUP                   = "/sys/devices/platform/droid_pm/full_wol_wakeup";
+static const char * SYS_SW_LID                            = "/sys/devices/platform/droid_pm/sw_lid";
 static const char * SYS_CLASS_NET                         = "/sys/class/net";
 
 // This is the default WoL monitor timeout in seconds.
@@ -150,6 +155,7 @@ static const eventfd_t POWER_MONITOR_EVENT_INTERACTIVE_ON  = (POWER_MONITOR_EVEN
 Mutex gLock("PowerHAL Lock");
 
 // Prototype declarations...
+static status_t power_set_pmlibservice_state(b_powerState state);
 static status_t power_create_thread(const char *name, void *(*pthread_function)(void*));
 static void *power_event_monitor_thread(void *arg);
 
@@ -601,6 +607,40 @@ static status_t power_set_wol_mode()
     return power_create_thread("WoL monitor", power_wol_monitor_thread);
 }
 
+static status_t power_get_sw_lid_state(bool *down)
+{
+    status_t status;
+    unsigned state;
+
+    status = sysfs_get(SYS_SW_LID, &state);
+    if (status == NO_ERROR) {
+        *down = !!state;
+        ALOGI("%s: Successfully got lid switch state %s", __FUNCTION__, state ? "down":"up");
+    }
+    else {
+        ALOGE("%s: Could not get lid switch state!!!", __FUNCTION__);
+    }
+    return status;
+}
+
+static status_t power_set_sw_lid_state(bool down)
+{
+    status_t status;
+    bool currentLidState;
+
+    status = power_get_sw_lid_state(&currentLidState);
+    if (status == NO_ERROR && currentLidState != down) {
+        status = sysfs_set(SYS_SW_LID, down);
+        if (status == NO_ERROR) {
+            ALOGI("%s: Successfully set lid switch state to %s", __FUNCTION__, down ? "down":"up");
+        }
+        else {
+            ALOGE("%s: Could not set lid switch state to %s !!!", __FUNCTION__, down ? "down":"up");
+        }
+    }
+    return status;
+}
+
 static void power_init(struct power_module *module __unused)
 {
     char buf[BUF_SIZE];
@@ -608,7 +648,8 @@ static void power_init(struct power_module *module __unused)
     struct sigevent se;
     unsigned int wol_en;
     bool gpios_initialised = false;
-    b_powerState state = ePowerState_S0;
+    b_powerStatus powerStatus;
+    b_powerState state;
 
     if (!devname) devname = "/dev/wake0";
     gPowerFd = open(devname, O_RDONLY);
@@ -644,6 +685,27 @@ static void power_init(struct power_module *module __unused)
     if (gNexusPower.get() == NULL) {
         ALOGE("%s: failed!!!", __FUNCTION__);
         goto power_init_fail;
+    }
+
+    // Must initialise pmlib state to S0 initially...
+    if (power_set_pmlibservice_state(ePowerState_S0) != NO_ERROR) {
+        ALOGE("%s: Could not set pmlib state to S0!!!", __FUNCTION__);
+        goto power_init_fail;
+    }
+
+    // If we have powered up only from an alarm timer, then it means we have woken up from S5 and
+    // we need to remain in a standby state (e.g. S0.5 or S2).  We do this by using the
+    // Android framework's ability to power-up in to standby if a lid switch is set (i.e. down).
+    if (gNexusPower->getPowerStatus(&powerStatus) == NO_ERROR && powerStatus.wakeupStatus.timeout &&
+        !(powerStatus.wakeupStatus.ir || powerStatus.wakeupStatus.uhf || powerStatus.wakeupStatus.keypad ||
+          powerStatus.wakeupStatus.gpio || powerStatus.wakeupStatus.cec || powerStatus.wakeupStatus.transport)) {
+
+        state = ePowerState_S05;
+        power_set_sw_lid_state(SW_LID_STATE_DOWN);
+    }
+    else {
+        state = ePowerState_S0;
+        power_set_sw_lid_state(SW_LID_STATE_UP);
     }
 
     if (gNexusPower->initialiseGpios(state) != NO_ERROR) {
@@ -1039,35 +1101,41 @@ static status_t power_finish_set_no_interactive()
 static status_t power_finish_set_interactive()
 {
     status_t status = NO_ERROR;
+    static bool calledDuringBoot = true;
 
     ALOGV("%s: entered", __FUNCTION__);
 
-    if (gDozeTimer) {
-        struct itimerspec ts;
-        timer_gettime(gDozeTimer, &ts);
+    if (!calledDuringBoot) {
+        if (gDozeTimer) {
+            struct itimerspec ts;
+            timer_gettime(gDozeTimer, &ts);
 
-        if (ts.it_value.tv_sec > 0 || ts.it_value.tv_nsec > 0) {
-            // Disarm the doze timer...
-            ts.it_value.tv_sec = 0;
-            ts.it_value.tv_nsec = 0;
-            ts.it_interval.tv_sec = 0;
-            ts.it_interval.tv_nsec = 0;
-            timer_settime(gDozeTimer, 0, &ts, NULL);
+            if (ts.it_value.tv_sec > 0 || ts.it_value.tv_nsec > 0) {
+                // Disarm the doze timer...
+                ts.it_value.tv_sec = 0;
+                ts.it_value.tv_nsec = 0;
+                ts.it_interval.tv_sec = 0;
+                ts.it_interval.tv_nsec = 0;
+                timer_settime(gDozeTimer, 0, &ts, NULL);
+            }
         }
+
+        status = power_set_state(ePowerState_S0);
+
+        if (status == NO_ERROR) {
+            status = power_set_interactivity_state(true);
+        }
+
+        if (gNexusPower.get()) {
+            gNexusPower->setVideoOutputsState(ePowerState_S0);
+        }
+
+        // Release the CPU wakelock as the system should be back up now...
+        releaseWakeLock();
     }
-
-    status = power_set_state(ePowerState_S0);
-
-    if (status == NO_ERROR) {
-        status = power_set_interactivity_state(true);
+    else {
+        calledDuringBoot = false;
     }
-
-    if (gNexusPower.get()) {
-        gNexusPower->setVideoOutputsState(ePowerState_S0);
-    }
-
-    // Release the CPU wakelock as the system should be back up now...
-    releaseWakeLock();
     return status;
 }
 
@@ -1276,7 +1344,16 @@ static void power_hint(struct power_module *module __unused, power_hint_t hint, 
             ALOGV("%s: POWER_HINT_VSYNC received", __FUNCTION__);
             break;
         case POWER_HINT_INTERACTION:
+            static bool firstInteraction = true;
             ALOGV("%s: POWER_HINT_INTERACTION received", __FUNCTION__);
+            if (firstInteraction) {
+                firstInteraction = false;
+            }
+            else if (!shutdownStarted) {
+                // Make sure that the Android framework does not try to remain in a suspended state
+                // due to the lid switch being activate (i.e. down).
+                power_set_sw_lid_state(SW_LID_STATE_UP);
+            }
             break;
         case POWER_HINT_VIDEO_ENCODE:
             ALOGV("%s: POWER_HINT_VIDEO_ENCODE received", __FUNCTION__);

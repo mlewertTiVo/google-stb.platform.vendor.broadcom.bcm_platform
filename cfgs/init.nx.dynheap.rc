@@ -23,6 +23,7 @@ on boot
    #
    insmod /system/vendor/drivers/droid_pm.ko devname="mali0"
    chown system system /sys/devices/platform/droid_pm/full_wol_wakeup
+   chown system system /sys/devices/platform/droid_pm/sw_lid
    setprop ro.nx.msg_modules ""
    insmod /system/vendor/drivers/nexus.ko devname="mali" config="auto_subindex=true"
 
