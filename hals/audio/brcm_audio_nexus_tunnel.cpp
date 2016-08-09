@@ -558,7 +558,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                             break;
                         }
                     }
-                    ALOGV("%s: Frame size %lu for audio format 0x%08x", __FUNCTION__, bout->frameSize, bout->config.format);
+                    ALOGV("%s: Frame size %u for audio format 0x%08x", __FUNCTION__, bout->frameSize, bout->config.format);
                 }
             }
             else
@@ -686,7 +686,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
         nsecs_t delta = systemTime(SYSTEM_TIME_MONOTONIC) - bout->nexus.tunnel.last_write_time;
         int32_t throttle_us = BRCM_AUDIO_TUNNEL_HALF_DURATION_US - (delta / 1000);
         if (throttle_us <= BRCM_AUDIO_TUNNEL_HALF_DURATION_US && throttle_us > 0) {
-            ALOGV("%s: throttle %ld us", __FUNCTION__, throttle_us);
+            ALOGV("%s: throttle %d us", __FUNCTION__, throttle_us);
             usleep(throttle_us);
         }
         bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
