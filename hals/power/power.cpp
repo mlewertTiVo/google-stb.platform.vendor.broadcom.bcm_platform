@@ -19,9 +19,9 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <poll.h>
 #include <string.h>
 #include <sys/eventfd.h>
+#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -44,6 +44,7 @@ using namespace android;
 static const char *WAKE_LOCK_ID = "PowerHAL";
 static bool wakeLockAcquired = false;
 
+// Indicates whether we have begun a shut-down sequence
 static bool shutdownStarted = false;
 
 // Maximum length of character buffer
@@ -112,6 +113,13 @@ static const int DEFAULT_WAKE_TIMEOUT = 10;
 // PM kernel driver for an indication that the system is about to suspend/resume/shutdown.
 static const int DEFAULT_EVENT_MONITOR_THREAD_TIMEOUT_MS = 1000;
 
+// This is the maximum number of event file descriptors that can be epolled.
+static const int MAX_NUM_EVENT_FILE_DESCRIPTORS = 2;
+
+// This is the maximum number of events that can be received and queued in
+// the event monitor thread.
+static const int MAX_NUM_EVENT_MONITOR_THREAD_EVENTS = 2;
+
 // The doze timer will be used only if the platform has be configured to
 // enter an intermediate "doze" mode, prior to entering the off state.
 static timer_t gDozeTimer = NULL;
@@ -122,33 +130,51 @@ static sp<NexusPower> gNexusPower;
 // Power device driver file descriptor.
 static int gPowerFd = -1;
 
-// Event file descriptor for reading back events from the power driver
+// Event file descriptors for reading back events from the power driver and HAL.
 static int gPowerEventFd = -1;
+static int gPowerEventMonitorFd = -1;
 
-// Flags to signal when to exit and exited the event monitor thread.
-static volatile bool gPowerEventMonitorThreadExit = false;
-static volatile bool gPowerEventMonitorThreadExited = true;
-
-// Event monitor thread synchronisation primitives.
-static pthread_mutex_t gPowerEventMonitorThreadMutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t  gPowerEventMonitorThreadCond  = PTHREAD_COND_INITIALIZER;
+// Power HAL monitor thread events.
+//
+// NOTE: we set the values to be the maximum possible eventfd_t values that can
+// be passed in to allow the eventfd_write() call to block if we attempt to
+// dispatch multiple events before eventfd_read() is called.  This ensures
+// that the interactive state is dispatched and acted upon and that we don't
+// miss an event.
+static const eventfd_t POWER_MONITOR_EVENT_OVFLOW          = (UINT64_MAX);
+static const eventfd_t POWER_MONITOR_EVENT_MAX             = (POWER_MONITOR_EVENT_OVFLOW-1);
+static const eventfd_t POWER_MONITOR_EVENT_INTERACTIVE_OFF = (POWER_MONITOR_EVENT_MAX-1);
+static const eventfd_t POWER_MONITOR_EVENT_INTERACTIVE_ON  = (POWER_MONITOR_EVENT_MAX-2);
 
 // Global Power HAL Mutex
 Mutex gLock("PowerHAL Lock");
 
-typedef status_t (*powerFinishFunction_t)(void);
-
 // Prototype declarations...
-static status_t power_set_state(b_powerState toState);
-static status_t power_set_poweroff_state();
-static status_t power_finish_set_interactive();
-static void power_finish_set_no_interactive();
-static void releaseWakeLock();
-static void *power_s5_shutdown(void *arg);
-static status_t power_create_thread(void *(pthread_function)(void*));
-static status_t power_set_doze_state(int timeout);
+static status_t power_create_thread(const char *name, void *(*pthread_function)(void*));
 static void *power_event_monitor_thread(void *arg);
 
+
+static void acquireWakeLock()
+{
+    Mutex::Autolock autoLock(gLock);
+
+    if (wakeLockAcquired == false) {
+        ALOGV("%s: Acquiring \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
+        acquire_wake_lock(PARTIAL_WAKE_LOCK, WAKE_LOCK_ID);
+        wakeLockAcquired = true;
+    }
+}
+
+static void releaseWakeLock()
+{
+    Mutex::Autolock autoLock(gLock);
+
+    if (wakeLockAcquired == true && shutdownStarted == false) {
+        ALOGV("%s: Releasing \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
+        release_wake_lock(WAKE_LOCK_ID);
+        wakeLockAcquired = false;
+    }
+}
 
 static status_t sysfs_get(const char *path, unsigned int *out)
 {
@@ -295,28 +321,6 @@ static void dozeTimerCallback(union sigval val __unused)
     // Ensure we release a wake-lock to allow the system to begin suspending.  We then
     // use this notification to place Nexus in to standby (suspend in S2/S3 modes only).
     releaseWakeLock();
-}
-
-static void acquireWakeLock()
-{
-    Mutex::Autolock autoLock(gLock);
-
-    if (wakeLockAcquired == false) {
-        ALOGV("%s: Acquiring \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
-        acquire_wake_lock(PARTIAL_WAKE_LOCK, WAKE_LOCK_ID);
-        wakeLockAcquired = true;
-    }
-}
-
-static void releaseWakeLock()
-{
-    Mutex::Autolock autoLock(gLock);
-
-    if (wakeLockAcquired == true && shutdownStarted == false) {
-        ALOGV("%s: Releasing \"%s\" wake lock...", __FUNCTION__, WAKE_LOCK_ID);
-        release_wake_lock(WAKE_LOCK_ID);
-        wakeLockAcquired = false;
-    }
 }
 
 static status_t power_parse_wolopts(char *optstr, uint32_t *data)
@@ -567,10 +571,7 @@ static void * power_wol_monitor_thread(void * arg __unused)
 
 static status_t power_set_wol_mode()
 {
-    status_t status;
     unsigned int full_wol_en;
-    pthread_t thread;
-    pthread_attr_t attr;
 
     // Handle Android WoLAN enable/disable property
     // If enabled, a WoLAN event will wake up Android
@@ -597,27 +598,17 @@ static status_t power_set_wol_mode()
     }
 
     // Create a monitor thread to poll when the network interface is UP...
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-
-    if (pthread_create(&thread, &attr, power_wol_monitor_thread, NULL) == 0) {
-        ALOGV("%s: Successfully created a WoL monitor thread!", __FUNCTION__);
-        status = NO_ERROR;
-    }
-    else {
-        ALOGE("%s: Could not create a WoL monitor thread!!!", __FUNCTION__);
-        status = UNKNOWN_ERROR;
-    }
-    pthread_attr_destroy(&attr);
-
-    return status;
+    return power_create_thread("WoL monitor", power_wol_monitor_thread);
 }
 
 static void power_init(struct power_module *module __unused)
 {
     char buf[BUF_SIZE];
     const char *devname = getenv("NEXUS_WAKE_DEVICE_NODE");
+    struct sigevent se;
     unsigned int wol_en;
+    bool gpios_initialised = false;
+    b_powerState state = ePowerState_S0;
 
     if (!devname) devname = "/dev/wake0";
     gPowerFd = open(devname, O_RDONLY);
@@ -625,49 +616,81 @@ static void power_init(struct power_module *module __unused)
     if (gPowerFd < 0) {
         strerror_r(errno, buf, sizeof(buf));
         ALOGE("%s: Could not open %s PM driver [%s]!!!", __FUNCTION__, devname, buf);
+        goto power_init_fail;
     }
-    else {
-        // Create an eventfd for monitoring events received from our PM driver...
-        gPowerEventFd = eventfd(0, 0);
-        if (gPowerEventFd < 0) {
-            strerror_r(errno, buf, sizeof(buf));
-            ALOGE("%s: Could not create an event fd [%s]!!!", __FUNCTION__, buf);
-            close(gPowerFd);
-        }
-        else if (ioctl(gPowerFd, BRCM_IOCTL_REGISTER_EVENTS, &gPowerEventFd) != NO_ERROR) {
-            strerror_r(errno, buf, sizeof(buf));
-            ALOGE("%s: Could not register PowerHAL with %s PM driver [%s]!!!", __FUNCTION__, devname, buf);
-            close(gPowerEventFd);
-            gPowerEventFd = -1;
-            close(gPowerFd);
-            gPowerFd = -1;
-        }
-        else {
-            b_powerState state = ePowerState_S0;
 
-            gNexusPower = NexusPower::instantiate();
+    // Create an eventfd for monitoring events received from our PM driver...
+    gPowerEventFd = eventfd(0, 0);
+    if (gPowerEventFd < 0) {
+        strerror_r(errno, buf, sizeof(buf));
+        ALOGE("%s: Could not create an event fd [%s]!!!", __FUNCTION__, buf);
+        goto power_init_fail;
+    }
 
-            if (gNexusPower.get() == NULL) {
-                ALOGE("%s: failed!!!", __FUNCTION__);
-            }
-            else if (gNexusPower->initialiseGpios(state) != NO_ERROR) {
-                ALOGE("%s: Could not initialise GPIO's!!!", __FUNCTION__);
-            }
-            else {
-                struct sigevent se;
+    if (ioctl(gPowerFd, BRCM_IOCTL_REGISTER_EVENTS, &gPowerEventFd) != NO_ERROR) {
+        strerror_r(errno, buf, sizeof(buf));
+        ALOGE("%s: Could not register PowerHAL with %s PM driver [%s]!!!", __FUNCTION__, devname, buf);
+        goto power_init_fail;
+    }
 
-                // Create the doze timer...
-                se.sigev_value.sival_int = 0;
-                se.sigev_notify = SIGEV_THREAD;
-                se.sigev_notify_function = dozeTimerCallback;
-                se.sigev_notify_attributes = NULL;
-                if (timer_create(CLOCK_MONOTONIC, &se, &gDozeTimer) != 0) {
-                    ALOGE("%s: Could not create doze timer!!!", __FUNCTION__);
-                }
-                // Setup WoLAN mode...
-                power_set_wol_mode();
-            }
+    gPowerEventMonitorFd = eventfd(0, 0);
+    if (gPowerEventMonitorFd < 0) {
+        strerror_r(errno, buf, sizeof(buf));
+        ALOGE("%s: Could not create an event monitor fd [%s]!!!", __FUNCTION__, buf);
+        goto power_init_fail;
+    }
+
+    gNexusPower = NexusPower::instantiate();
+    if (gNexusPower.get() == NULL) {
+        ALOGE("%s: failed!!!", __FUNCTION__);
+        goto power_init_fail;
+    }
+
+    if (gNexusPower->initialiseGpios(state) != NO_ERROR) {
+        ALOGE("%s: Could not initialise GPIO's!!!", __FUNCTION__);
+        goto power_init_fail;
+    }
+
+    gpios_initialised = true;
+
+    // Create the doze timer...
+    se.sigev_value.sival_int = 0;
+    se.sigev_notify = SIGEV_THREAD;
+    se.sigev_notify_function = dozeTimerCallback;
+    se.sigev_notify_attributes = NULL;
+    if (timer_create(CLOCK_MONOTONIC, &se, &gDozeTimer) != 0) {
+        ALOGE("%s: Could not create doze timer!!!", __FUNCTION__);
+        goto power_init_fail;
+    }
+
+    // Setup WoLAN mode...
+    power_set_wol_mode();
+
+    // Start the power event monitor thread...
+    if (power_create_thread("power event monitor", power_event_monitor_thread) != NO_ERROR) {
+        goto power_init_fail;
+    }
+
+    return;
+
+power_init_fail:
+    if (gNexusPower.get()) {
+        if (gpios_initialised) {
+            gNexusPower->uninitialiseGpios();
         }
+        gNexusPower = NULL;
+    }
+    if (gPowerEventMonitorFd >= 0) {
+        close(gPowerEventMonitorFd);
+        gPowerEventMonitorFd = -1;
+    }
+    if (gPowerEventFd >= 0) {
+        close(gPowerEventFd);
+        gPowerEventFd = -1;
+    }
+    if (gPowerFd >= 0) {
+        close(gPowerFd);
+        gPowerFd = -1;
     }
 }
 
@@ -865,6 +888,13 @@ static status_t power_set_state_s2_s3(b_powerState toState)
     return status;
 }
 
+static void *power_s5_shutdown(void *arg __unused)
+{
+    shutdownStarted = true;
+    system("/system/bin/svc power shutdown");
+    return NULL;
+}
+
 static status_t power_set_state_s5()
 {
     // When offstate is S5, we wait until the kernel starts to suspend before
@@ -874,14 +904,7 @@ static status_t power_set_state_s5()
     // Don't kill the current event monitor thread.
     // Spawn a thread to call the blocking shutdown interface
     // We can't block or we will miss the shutdown notification
-    return power_create_thread(power_s5_shutdown);
-}
-
-static void *power_s5_shutdown(void *arg __unused)
-{
-    shutdownStarted = true;
-    system("/system/bin/svc power shutdown");
-    return NULL;
+    return power_create_thread("S5 shutdown", power_s5_shutdown);
 }
 
 static status_t power_set_state(b_powerState toState)
@@ -933,20 +956,6 @@ static status_t power_set_poweroff_state()
     return power_set_state(powerOffState);
 }
 
-static void *power_doze_monitor_thread(void *arg __unused)
-{
-    status_t status = NO_ERROR;
-    int dozeTimeout = property_get_int32(PROPERTY_SYS_POWER_DOZE_TIMEOUT,
-                                         DEFAULT_DOZE_TIMEOUT);
-
-    ALOGV("%s: entered", __FUNCTION__);
-
-    power_set_doze_state(dozeTimeout);
-
-    // Monitor for suspend and shutdown events
-    return power_event_monitor_thread(NULL);
-}
-
 static status_t power_set_doze_state(int timeout)
 {
     status_t status;
@@ -987,160 +996,51 @@ static status_t power_set_doze_state(int timeout)
     return status;
 }
 
-static void *power_event_monitor_thread(void *arg __unused)
-{
-    int ret;
-    struct pollfd pollFd;
-    char buf[BUF_SIZE];
-    int wakeTimeout = property_get_int32(PROPERTY_SYS_POWER_WAKE_TIMEOUT,
-                                         DEFAULT_WAKE_TIMEOUT);
-
-    pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
-    gPowerEventMonitorThreadExit = false;
-    gPowerEventMonitorThreadExited = false;
-    pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
-
-    ALOGV("%s: Starting power event monitor thread...", __FUNCTION__);
-
-    pollFd.fd = gPowerEventFd;
-    pollFd.events = POLLIN | POLLRDNORM;
-
-    while (gPowerEventFd >= 0) {
-        pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
-        if (gPowerEventMonitorThreadExit) {
-            pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
-            break;
-        }
-        pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
-        ret = poll(&pollFd, 1, DEFAULT_EVENT_MONITOR_THREAD_TIMEOUT_MS);
-        if (ret == 0) {
-            ALOGV("%s: Timed out waiting for event - retrying...", __FUNCTION__);
-        }
-        else if (ret < 0) {
-            strerror_r(errno, buf, sizeof(buf));
-            ALOGE("%s: Error polling event fd [%s]!!!", __FUNCTION__, buf);
-            break;
-        }
-        else if (pollFd.revents & (POLLIN | POLLRDNORM)) {
-            eventfd_t event;
-
-            ret = eventfd_read(pollFd.fd, &event);
-            if (ret < 0) {
-                strerror_r(errno, buf, sizeof(buf));
-                ALOGE("%s: Could not read event [%s]!!!", __FUNCTION__, buf);
-            }
-            else {
-                // Event received from droid_pm - now find out which one...
-                ALOGV("%s: Received power event %" PRIu64 "", __FUNCTION__, event);
-                if (event == DROID_PM_EVENT_SUSPENDING) {
-                    ret = power_set_poweroff_state();
-                    if (ret == NO_ERROR) {
-                        ALOGD("%s: Successfully finished setting power off state.", __FUNCTION__);
-                        // Wait for suspend to complete
-                        ret = power_prepare_suspend();
-                        if (ret != NO_ERROR && ret != NO_INIT) {
-                            ALOGE("%s: Error trying to enter suspend!!!", __FUNCTION__);
-                        }
-                        // Suspend complete, back to doze
-                        power_set_doze_state(wakeTimeout);
-                    }
-                }
-
-                else if (event == DROID_PM_EVENT_SHUTDOWN) {
-                    if (gNexusPower.get()) {
-                        ret = gNexusPower->setPowerState(ePowerState_S5);
-                    }
-                    if (ret != NO_ERROR)
-                        ALOGE("%s: Error trying to enter S5!!!", __FUNCTION__);
-                    else
-                        ALOGD("%s: Entered S5", __FUNCTION__);
-
-                    // Acknowledge shutdown message and wait, shouldn't return
-                    power_prepare_suspend();
-                }
-                else if (event == DROID_PM_EVENT_RESUMED_WAKEUP) {
-                    ALOGV("%s: Received an unexpected wakeup event", __FUNCTION__);
-                }
-            }
-        }
-        else {
-            ALOGW("%s: Not ready to suspend/shutdown - retrying...", __FUNCTION__);
-        }
-    }
-    ALOGV("%s: Exiting power event monitor thread...", __FUNCTION__);
-    pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
-    gPowerEventMonitorThreadExited = true;
-    pthread_cond_signal(&gPowerEventMonitorThreadCond);
-    pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
-    return NULL;
-}
-
-static void *power_standby_finish_thread(void *arg __unused)
+static status_t power_set_interactivity_state(bool on)
 {
     status_t status = NO_ERROR;
 
-    ALOGV("%s: entered", __FUNCTION__);
-
-    status = power_set_state(ePowerState_S0);
-
-    if (gNexusPower.get()) {
-        gNexusPower->setVideoOutputsState(ePowerState_S0);
-    }
-
-    // Monitor for shutdown events
-    return power_event_monitor_thread(NULL);
-}
-
-static void power_kill_thread()
-{
-    // If the event monitor thread is running, then terminate it...
-    pthread_mutex_lock(&gPowerEventMonitorThreadMutex);
-    if (!gPowerEventMonitorThreadExited) {
-        // Signal Event Monitor Thread to exit...
-        gPowerEventMonitorThreadExit = true;
-        // and wait for it to exit...
-        while (!gPowerEventMonitorThreadExited) {
-            pthread_cond_wait(&gPowerEventMonitorThreadCond, &gPowerEventMonitorThreadMutex);
+    if (gPowerFd >= 0) {
+        ALOGV("%s: Set interactive %s with droid_pm driver...", __FUNCTION__, on ? "on" : "off");
+        if (ioctl(gPowerFd, BRCM_IOCTL_SET_INTERACTIVE, &on)) {
+            status = errno;
+            ALOGE("%s: Error trying to set interactive state in droid_pm driver [%s] !!!", __FUNCTION__, strerror(status));
         }
     }
-    pthread_mutex_unlock(&gPowerEventMonitorThreadMutex);
-}
-
-static status_t power_create_thread(void *(pthread_function)(void*))
-{
-    status_t status;
-    pthread_t thread;
-    pthread_attr_t attr;
-
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-
-    if (pthread_create(&thread, &attr, pthread_function, NULL) == 0) {
-        ALOGV("%s: Successfully created a power thread!", __FUNCTION__);
-        status = NO_ERROR;
-    }
     else {
-        ALOGE("%s: Could not create a power thread!!!", __FUNCTION__);
-        status = UNKNOWN_ERROR;
+        status = NO_INIT;
     }
-    pthread_attr_destroy(&attr);
     return status;
 }
 
-static void power_finish_set_no_interactive()
+static status_t power_finish_set_no_interactive()
 {
+    status_t status = NO_ERROR;
+    b_powerState dozeState = power_get_property_doze_state();
+    int dozeTimeout = property_get_int32(PROPERTY_SYS_POWER_DOZE_TIMEOUT,
+                                         DEFAULT_DOZE_TIMEOUT);
+
+    ALOGV("%s: entered", __FUNCTION__);
+
     // Ensure we acquire a wake-lock to prevent the system from suspending *BEFORE* we have
     // placed Nexus in to standby (we should not suspend in S0.5/S1/S5 modes anyway).
     acquireWakeLock();
 
-    // Listen for standby and suspend messages
-    power_kill_thread();
-    power_create_thread(power_doze_monitor_thread);
+    if (gNexusPower.get()) {
+        gNexusPower->setVideoOutputsState(dozeState);
+    }
+
+    status = power_set_interactivity_state(false);
+
+    power_set_doze_state(dozeTimeout);
+    return status;
 }
 
 static status_t power_finish_set_interactive()
 {
     status_t status = NO_ERROR;
+
+    ALOGV("%s: entered", __FUNCTION__);
 
     if (gDozeTimer) {
         struct itimerspec ts;
@@ -1156,40 +1056,217 @@ static status_t power_finish_set_interactive()
         }
     }
 
-    power_kill_thread();
-    power_create_thread(power_standby_finish_thread);
+    status = power_set_state(ePowerState_S0);
+
+    if (status == NO_ERROR) {
+        status = power_set_interactivity_state(true);
+    }
+
+    if (gNexusPower.get()) {
+        gNexusPower->setVideoOutputsState(ePowerState_S0);
+    }
 
     // Release the CPU wakelock as the system should be back up now...
     releaseWakeLock();
     return status;
 }
 
+static void *power_event_monitor_thread(void *arg __unused)
+{
+    int ret;
+    int epoll_fd;
+    char buf[BUF_SIZE];
+    int wakeTimeout = property_get_int32(PROPERTY_SYS_POWER_WAKE_TIMEOUT,
+                                         DEFAULT_WAKE_TIMEOUT);
+
+    ALOGV("%s: Starting power event monitor thread...", __FUNCTION__);
+
+    epoll_fd = epoll_create(MAX_NUM_EVENT_FILE_DESCRIPTORS);
+    if (epoll_fd < 0) {
+        strerror_r(errno, buf, sizeof(buf));
+        ALOGE("%s: Error creating polling set [%s]!!!", __FUNCTION__, buf);
+    }
+    else {
+        struct epoll_event ev = epoll_event();
+        struct epoll_event ev2 = epoll_event();
+
+        ev.events = EPOLLIN;
+        ev.data.fd = gPowerEventFd;
+        ev2.events = EPOLLIN;
+        ev2.data.fd = gPowerEventMonitorFd;
+
+        ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, gPowerEventFd, &ev);
+        if (ret < 0) {
+            ALOGE("%s: Error adding power event fd to polling set [%s]!!!", __FUNCTION__, buf);
+            goto fail_add_eventfd;
+        }
+        ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, gPowerEventMonitorFd, &ev2);
+        if (ret < 0) {
+            ALOGE("%s: Error adding power event monitor fd to polling set [%s]!!!", __FUNCTION__, buf);
+            goto fail_add_eventfd2;
+        }
+
+        while (gPowerEventFd >= 0 && gPowerEventMonitorFd >= 0) {
+            struct epoll_event out_evs[MAX_NUM_EVENT_MONITOR_THREAD_EVENTS];
+
+            ret = epoll_wait(epoll_fd, out_evs, MAX_NUM_EVENT_MONITOR_THREAD_EVENTS, DEFAULT_EVENT_MONITOR_THREAD_TIMEOUT_MS);
+            if (ret == 0) {
+                ALOGV("%s: Timed out waiting for events - retrying...", __FUNCTION__);
+            }
+            else if (ret < 0) {
+                strerror_r(errno, buf, sizeof(buf));
+                ALOGE("%s: Error polling for events [%s]!!!", __FUNCTION__, buf);
+                break;
+            }
+            else {
+                int numEvents = ret;
+                eventfd_t event;
+
+                for (int i = 0, ret = 0; i < numEvents; i++) {
+                    int fd = out_evs[i].data.fd;
+                    uint32_t epollEvents = out_evs[i].events;
+
+                    if (fd == gPowerEventMonitorFd) {
+                        if (epollEvents & (EPOLLIN | EPOLLERR)) {
+                            ret = eventfd_read(gPowerEventMonitorFd, &event);
+                            if (ret < 0) {
+                                strerror_r(errno, buf, sizeof(buf));
+                                ALOGE("%s: Could not read monitor event [%s]!!!", __FUNCTION__, buf);
+                            }
+                            else {
+                                // Event received from Power HAL - now find out which one...
+                                ALOGV("%s: Received power monitor event %" PRIu64 "", __FUNCTION__, event);
+                                if (event == POWER_MONITOR_EVENT_INTERACTIVE_ON) {
+                                    if (power_finish_set_interactive() != NO_ERROR) {
+                                        ALOGE("%s: Could not set interactive state!!!", __FUNCTION__);
+                                    }
+                                }
+                                else if (event == POWER_MONITOR_EVENT_INTERACTIVE_OFF) {
+                                    if (power_finish_set_no_interactive() != NO_ERROR) {
+                                        ALOGE("%s: Could not set non-interactive state!!!", __FUNCTION__);
+                                    }
+                                }
+                                else if (event == POWER_MONITOR_EVENT_OVFLOW) {
+                                    ALOGE("%s: Overflow detected reading monitor event!!!", __FUNCTION__);
+                                }
+                            }
+                        }
+                    }
+                    else if (fd == gPowerEventFd) {
+                        if (epollEvents & EPOLLIN) {
+                            ret = eventfd_read(gPowerEventFd, &event);
+                            if (ret < 0) {
+                                strerror_r(errno, buf, sizeof(buf));
+                                ALOGE("%s: Could not read event [%s]!!!", __FUNCTION__, buf);
+                            }
+                            else {
+                                // Event received from droid_pm - now find out which one...
+                                ALOGV("%s: Received power event %" PRIu64 "", __FUNCTION__, event);
+                                if (event == DROID_PM_EVENT_SUSPENDING) {
+                                    ret = power_set_poweroff_state();
+                                    if (ret == NO_ERROR) {
+                                        ALOGD("%s: Successfully finished setting power off state.", __FUNCTION__);
+                                        // Wait for suspend to complete
+                                        ret = power_prepare_suspend();
+                                        if (ret != NO_ERROR && ret != NO_INIT) {
+                                            ALOGE("%s: Error trying to enter suspend!!!", __FUNCTION__);
+                                        }
+                                        if (!shutdownStarted) {
+                                            // Suspend complete, back to doze
+                                            power_set_doze_state(wakeTimeout);
+                                        }
+                                    }
+                                }
+                                else if (event == DROID_PM_EVENT_SHUTDOWN) {
+                                    if (gNexusPower.get()) {
+                                        ret = gNexusPower->setPowerState(ePowerState_S5);
+                                    }
+                                    if (ret != NO_ERROR)
+                                        ALOGE("%s: Error trying to enter S5!!!", __FUNCTION__);
+                                    else
+                                        ALOGD("%s: Entered S5", __FUNCTION__);
+
+                                    // Acknowledge shutdown message and wait, shouldn't return
+                                    power_prepare_suspend();
+                                }
+                                else if (event == DROID_PM_EVENT_RESUMED_WAKEUP) {
+                                    ALOGV("%s: Received an unexpected wakeup event", __FUNCTION__);
+                                }
+                            }
+                        }
+                        else {
+                            ALOGW("%s: Not ready to suspend/shutdown - retrying...", __FUNCTION__);
+                        }
+                    }
+                    else {
+                        ALOGE("%s: Unknown event fd received!!!", __FUNCTION__);
+                    }
+                }
+            }
+        }
+    }
+exit_thread:
+    ret = epoll_ctl(epoll_fd, EPOLL_CTL_DEL, gPowerEventMonitorFd, NULL);
+    if (ret < 0) {
+        strerror_r(errno, buf, sizeof(buf));
+        ALOGE("%s: Error removing epoll events for event monitor fd [%s]!!!", __FUNCTION__, buf);
+    }
+fail_add_eventfd2:
+    ret = epoll_ctl(epoll_fd, EPOLL_CTL_DEL, gPowerEventFd, NULL);
+    if (ret < 0) {
+        strerror_r(errno, buf, sizeof(buf));
+        ALOGE("%s: Error removing epoll events for event fd [%s]!!!", __FUNCTION__, buf);
+    }
+fail_add_eventfd:
+    ALOGV("%s: Exiting power event monitor thread...", __FUNCTION__);
+    if (epoll_fd >= 0) {
+        close(epoll_fd);
+    }
+    return NULL;
+}
+
+static status_t power_create_thread(const char *name, void *(*pthread_function)(void*))
+{
+    status_t status;
+    pthread_t thread;
+    pthread_attr_t attr;
+
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+    if (pthread_create(&thread, &attr, pthread_function, NULL) == 0) {
+        ALOGV("%s: Successfully created %s thread.", __FUNCTION__, name);
+        status = NO_ERROR;
+    }
+    else {
+        ALOGE("%s: Could not create %s thread!!!", __FUNCTION__, name);
+        status = UNKNOWN_ERROR;
+    }
+    pthread_attr_destroy(&attr);
+    return status;
+}
+
+static void power_dispatch_event(int fd, eventfd_t event)
+{
+    if (fd >= 0) {
+        if (eventfd_write(fd, event) < 0) {
+            ALOGE("%s: Cannot signal event %d to monitor thread [%s]!!!", __FUNCTION__, event, strerror(errno));
+        }
+    }
+    else {
+        ALOGE("%s: Invalid event fd!!!", __FUNCTION__);
+    }
+}
+
 static void power_set_interactive(struct power_module *module __unused, int on)
 {
     ALOGI("%s: %s", __FUNCTION__, on ? "ON" : "OFF");
 
-    if (on) {
-        if (shutdownStarted) {
-            ALOGI("%s: Ignoring interaction, shutdown in progress.", __FUNCTION__);
-            return;
-        }
-        power_finish_set_interactive();
+    if (shutdownStarted) {
+        ALOGI("%s: Ignoring interaction, shutdown in progress.", __FUNCTION__);
     }
     else {
-        b_powerState dozeState = power_get_property_doze_state();
-
-        if (gNexusPower.get()) {
-            gNexusPower->setVideoOutputsState(dozeState);
-        }
-
-        power_finish_set_no_interactive();
-    }
-
-    if (gPowerFd != -1) {
-        ALOGV("%s: Set interactive %s with droid_pm driver...", __FUNCTION__, on ? "on" : "off");
-        if (ioctl(gPowerFd, BRCM_IOCTL_SET_INTERACTIVE, &on)) {
-            ALOGE("%s: Error trying to set interactive state in droid_pm driver !!!", __FUNCTION__);
-        }
+        power_dispatch_event(gPowerEventMonitorFd, on ? POWER_MONITOR_EVENT_INTERACTIVE_ON : POWER_MONITOR_EVENT_INTERACTIVE_OFF);
     }
 }
 
