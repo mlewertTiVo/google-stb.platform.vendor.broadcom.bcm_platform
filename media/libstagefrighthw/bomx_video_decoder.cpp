@@ -2800,7 +2800,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
         else
         {
             // Output port
-            if ( m_pVideoPorts[1]->IsEnabled() && m_pVideoPorts[1]->IsPopulated() && m_hSimpleVideoDecoder != NULL )
+            if ( (m_tunnelMode || (m_pVideoPorts[1]->IsEnabled() && m_pVideoPorts[1]->IsPopulated())) && m_hSimpleVideoDecoder != NULL )
             {
                 m_outputFlushing = true;
 
