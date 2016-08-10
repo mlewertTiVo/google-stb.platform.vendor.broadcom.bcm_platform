@@ -1318,7 +1318,7 @@ static void power_dispatch_event(int fd, eventfd_t event)
 {
     if (fd >= 0) {
         if (eventfd_write(fd, event) < 0) {
-            ALOGE("%s: Cannot signal event %d to monitor thread [%s]!!!", __FUNCTION__, event, strerror(errno));
+            ALOGE("%s: Cannot signal event %llu to monitor thread [%s]!!!", __FUNCTION__, event, strerror(errno));
         }
     }
     else {
