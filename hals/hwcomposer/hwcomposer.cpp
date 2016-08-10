@@ -153,6 +153,7 @@ using namespace android;
 #define HWC_TICKER                   "dyn.nx.hwc.ticker"
 #define HWC_FB_MODE                  "dyn.nx.hwc.fbmode"
 #define HWC_IGNORE_CURSOR            "dyn.nx.hwc.nocursor"
+#define HWC_BLANK_VIDEO              "dyn.nx.hwc.vid.blank"
 
 #define HWC_GLES_VIRTUAL_PROP        "ro.hwc.gles.virtual"
 #define HWC_WITH_V3D_FENCE_PROP      "ro.v3d.fence.expose"
@@ -766,6 +767,7 @@ struct hwc_context_t {
     bool track_comp_time;
     bool track_comp_chatty;
     bool ticker;
+    bool blank_video;
 
     bool alpha_hole_background;
     bool flush_background;
@@ -977,6 +979,7 @@ static void hwc_setup_props_locked(struct hwc_context_t* ctx)
    ctx->dump_fence           = property_get_int32(HWC_DUMP_FENCE_PROP, 0);
    ctx->track_comp_chatty    = property_get_bool(HWC_TRACK_COMP_CHATTY, 0);
    ctx->ticker               = property_get_bool(HWC_TICKER, 0);
+   ctx->blank_video          = property_get_bool(HWC_BLANK_VIDEO, 0);
 }
 
 static int hwc_setup_framebuffer_mode(struct hwc_context_t* dev, int disp_ix, DISPLAY_CLIENT_MODE mode)
@@ -2066,6 +2069,55 @@ static void hwc_tick_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
       hwc_checkpoint_locked(ctx);
    }
    pthread_mutex_unlock(&ctx->g2d_mutex);
+}
+
+static uint32_t blank_color[2] = {0xFF00FF00, 0xFFFF00FF};
+static void hwc_blank_video_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle surface)
+{
+   int i;
+   NEXUS_Error rc;
+   NEXUS_Graphics2DFillSettings fillSettings;
+   NEXUS_Graphics2D_GetDefaultFillSettings(&fillSettings);
+   fillSettings.surface     = surface;
+   fillSettings.colorOp     = NEXUS_FillOp_eCopy;
+   fillSettings.alphaOp     = NEXUS_FillOp_eCopy;
+
+   for (i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
+      if (ctx->mm_cli[i].root.composition.visible) {
+         fillSettings.rect.x      = ctx->mm_cli[i].root.composition.position.x;
+         fillSettings.rect.y      = ctx->mm_cli[i].root.composition.position.y;
+         fillSettings.rect.width  = ctx->mm_cli[i].root.composition.position.width;
+         fillSettings.rect.height = ctx->mm_cli[i].root.composition.position.height;
+         fillSettings.color       = blank_color[0];
+         if (pthread_mutex_lock(&ctx->g2d_mutex)) {
+            ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
+            return;
+         }
+         rc = NEXUS_Graphics2D_Fill(ctx->hwc_g2d, &fillSettings);
+         if (rc == NEXUS_SUCCESS) {
+            hwc_checkpoint_locked(ctx);
+         }
+         pthread_mutex_unlock(&ctx->g2d_mutex);
+      }
+   }
+   for (i = 0; i < NSC_SB_CLIENTS_NUMBER; i++) {
+      if (ctx->sb_cli[i].root.composition.visible) {
+         fillSettings.rect.x      = ctx->sb_cli[i].root.composition.position.x;
+         fillSettings.rect.y      = ctx->sb_cli[i].root.composition.position.y;
+         fillSettings.rect.width  = ctx->sb_cli[i].root.composition.position.width;
+         fillSettings.rect.height = ctx->sb_cli[i].root.composition.position.height;
+         fillSettings.color       = blank_color[0];
+         if (pthread_mutex_lock(&ctx->g2d_mutex)) {
+            ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
+            return;
+         }
+         rc = NEXUS_Graphics2D_Fill(ctx->hwc_g2d, &fillSettings);
+         if (rc == NEXUS_SUCCESS) {
+            hwc_checkpoint_locked(ctx);
+         }
+         pthread_mutex_unlock(&ctx->g2d_mutex);
+      }
+   }
 }
 
 static void hwc_rel_tl_inc(struct hwc_context_t *ctx, int index, int layer)
@@ -3764,6 +3816,9 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                if (ctx->ticker) {
                   hwc_tick_disp_surface(ctx, outputHdl);
                }
+               if (ctx->blank_video) {
+                  hwc_blank_video_surface(ctx, outputHdl);
+               }
                rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, outputHdl, NULL, false);
                if (rc) {
                   ALOGW("%s: failed to push surface to client (%d)", __FUNCTION__, rc);
@@ -3795,6 +3850,9 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       } else {
          if (ctx->ticker) {
             hwc_tick_disp_surface(ctx, outputHdl);
+         }
+         if (ctx->blank_video) {
+            hwc_blank_video_surface(ctx, outputHdl);
          }
          rc = NEXUS_SurfaceClient_PushSurface(ctx->disp_cli[HWC_PRIMARY_IX].schdl, outputHdl, NULL, false);
          if (rc) {
