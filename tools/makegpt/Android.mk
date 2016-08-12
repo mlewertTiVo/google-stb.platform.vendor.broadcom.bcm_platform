@@ -31,5 +31,6 @@ include $(CLEAR_VARS)
 LOCAL_MODULE := gptbin
 LOCAL_MODULE_TAGS := optional
 LOCAL_REQUIRED_MODULES := makegpt
+LOCAL_ADDITIONAL_DEPENDENCIES := $(_gpt.bin)
 
 include $(BUILD_PHONY_PACKAGE)
