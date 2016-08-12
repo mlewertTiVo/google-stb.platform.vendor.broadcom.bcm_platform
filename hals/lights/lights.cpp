@@ -95,7 +95,7 @@ static int lights_set_light_backlight(struct light_device_t *dev,
         return -EINVAL;
     }
 
-    ALOGI("requested color: 0x%08x", state->color);
+    ALOGV("requested color: 0x%08x", state->color);
 
     // calculate luminance
     double r = ((state->color >> 16) & 0xff) / 255.0;
