@@ -615,7 +615,7 @@ static status_t power_get_sw_lid_state(bool *down)
     status = sysfs_get(SYS_SW_LID, &state);
     if (status == NO_ERROR) {
         *down = !!state;
-        ALOGI("%s: Successfully got lid switch state %s", __FUNCTION__, state ? "down":"up");
+        ALOGV("%s: Successfully got lid switch state %s", __FUNCTION__, state ? "down":"up");
     }
     else {
         ALOGE("%s: Could not get lid switch state!!!", __FUNCTION__);
