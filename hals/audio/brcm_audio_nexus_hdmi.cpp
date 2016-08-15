@@ -129,10 +129,9 @@ void nexus_get_hdmi_parameters(String8& rates, String8& channels, String8& forma
                 }
             }
 
-            /* TODO: Supported rates is not returned from HDMI status.
-             * Assume basic 44.1kHz and 48kHz and 4x multiples if
-             * compressed codec supported */
-            rates.append("44100|48000");
+            /* Advertise the standard sampling rates and let Nexus do upsampling if necessary.
+             * Add the 4K multiples of 44.1KHz and 48Khz if compressed codec is supported */
+            rates.append("8000|11025|16000|22050|32000|44100|48000");
             if (compressed)
                 rates.append("|176400|192000");
 
