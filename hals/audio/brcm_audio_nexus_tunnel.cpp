@@ -195,6 +195,7 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
     ret = NEXUS_SimpleAudioDecoder_Start(audio_decoder, &start_settings);
     if (ret != NEXUS_SUCCESS) {
         ALOGE("%s: Start audio decoder failed, ret = %d", __FUNCTION__, ret);
+        NEXUS_Playpump_Stop(bout->nexus.tunnel.playpump);
         return -ENOSYS;
     }
     ALOGV("%s: Audio decoder started (0x%x:%d)", __FUNCTION__, bout->config.format, start_settings.primary.codec);

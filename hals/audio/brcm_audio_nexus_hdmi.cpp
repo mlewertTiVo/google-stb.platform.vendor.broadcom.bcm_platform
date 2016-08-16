@@ -131,7 +131,7 @@ void nexus_get_hdmi_parameters(String8& rates, String8& channels, String8& forma
 
             /* Advertise the standard sampling rates and let Nexus do upsampling if necessary.
              * Add the 4K multiples of 44.1KHz and 48Khz if compressed codec is supported */
-            rates.append("8000|11025|16000|22050|32000|44100|48000");
+            rates.append("8000|11025|12000|16000|22050|24000|32000|44100|48000");
             if (compressed)
                 rates.append("|176400|192000");
 
