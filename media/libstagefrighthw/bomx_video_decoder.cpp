@@ -842,7 +842,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_eosPending(false),
     m_eosDelivered(false),
     m_eosReceived(false),
-    m_formatChangePending(false),
+    m_formatChangeState(FCState_eNone),
     m_nativeGraphicsEnabled(false),
     m_metadataEnabled(false),
     m_adaptivePlaybackEnabled(false),
@@ -867,6 +867,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_displayFrameAvailable(false),
     m_displayThreadStop(false),
     m_hDisplayThread(0),
+    m_lastReturnedSerial(0),
     m_droppedFrames(0),
     m_consecDroppedFrames(0),
     m_maxConsecDroppedFrames(0),
@@ -2304,6 +2305,8 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             BOMX_VIDEO_STATS_PRINT_DETAILED;
             BOMX_VIDEO_STATS_RESET;
             m_droppedFrames = m_earlyDroppedFrames = m_consecDroppedFrames = m_maxConsecDroppedFrames = 0;
+            m_lastReturnedSerial = 0;
+            m_formatChangeState = FCState_eNone;
         }
     }
     else
@@ -2571,11 +2574,11 @@ NEXUS_Error BOMX_VideoDecoder::SetOutputPortState(OMX_STATETYPE newState)
         CancelTimerId(m_inputBuffersTimerId);
 
         // Update output port format on a port re-enable.
-        if ( m_formatChangePending )
+        if ( m_formatChangeState == FCState_eProcessCallback )
         {
             m_outputWidth = m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth;
             m_outputHeight = m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight;
-            m_formatChangePending = false;
+            m_formatChangeState = FCState_eNone;
         }
         // Return all pending buffers to the client
         ReturnPortBuffers(m_pVideoPorts[1]);
@@ -4787,7 +4790,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             //ALOGV("Skip buffer %u State %u", pBuffer->frameStatus.serialNumber, pBuffer->state);
         }
         // Loop through remaining buffers
-        while ( NULL != pBuffer && !m_formatChangePending && !m_eosDelivered )
+        while ( NULL != pBuffer && (m_formatChangeState != FCState_eWaitForSerial) && !m_eosDelivered )
         {
             BOMX_Buffer *pOmxBuffer;
             pOmxBuffer = m_pVideoPorts[1]->GetBuffer();
@@ -4885,15 +4888,25 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             m_eosDelivered = prevEosDelivered;
 
                             // Send port format change and stop processing frames until reset
-                            m_formatChangePending = true;
-                            m_pVideoPorts[1]->GetDefinition(&portDefs);
-                            portDefs.format.video.nFrameWidth = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
-                            portDefs.format.video.nFrameHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
-                            portDefs.format.video.nStride = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
-                            portDefs.format.video.nSliceHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
-                            portDefs.nBufferSize = ComputeBufferSize(portDefs.format.video.nStride, portDefs.format.video.nSliceHeight);
-                            m_pVideoPorts[1]->SetDefinition(&portDefs);
-                            PortFormatChanged(m_pVideoPorts[1]);
+                            if ((m_formatChangeState == FCState_eNone)
+                                    && (pBuffer->frameStatus.serialNumber > (m_lastReturnedSerial + 1)))
+                            {
+                                m_formatChangeState = FCState_eWaitForSerial;
+                                m_formatChangeSerial = pBuffer->frameStatus.serialNumber;
+                                ALOGV("Defer port format change, formatChangeSerial:%u, lastReturnedSerial:%u",
+                                        m_formatChangeSerial, m_lastReturnedSerial);
+                            } else {
+                                ALOGV("Process port format change, formatChangeSerial:%u, lastReturnedSerial:%u",
+                                        m_formatChangeSerial, m_lastReturnedSerial);
+                                m_pVideoPorts[1]->GetDefinition(&portDefs);
+                                portDefs.format.video.nFrameWidth = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
+                                portDefs.format.video.nFrameHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
+                                portDefs.format.video.nStride = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
+                                portDefs.format.video.nSliceHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
+                                portDefs.nBufferSize = ComputeBufferSize(portDefs.format.video.nStride, portDefs.format.video.nSliceHeight);
+                                m_pVideoPorts[1]->SetDefinition(&portDefs);
+                                PortFormatChanged(m_pVideoPorts[1]);
+                            }
                             return;
                         }
                         else
@@ -5304,6 +5317,13 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             {
                 BOMX_BERR_TRACE(errCode);
                 // Not much else we can do
+            }
+
+            m_lastReturnedSerial = pLast->frameStatus.serialNumber;
+            if ((m_formatChangeState == FCState_eWaitForSerial) && (m_formatChangeSerial == (m_lastReturnedSerial + 1))) {
+                ALOGV("%s: processing format change, m_formatChangeSerial:%u", __FUNCTION__, m_formatChangeSerial);
+                m_formatChangeState = FCState_eProcessCallback;
+                OutputFrameEvent();
             }
         }
     }

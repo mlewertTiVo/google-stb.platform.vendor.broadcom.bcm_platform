@@ -311,7 +311,14 @@ protected:
     bool m_eosPending;
     bool m_eosDelivered;
     bool m_eosReceived;
-    bool m_formatChangePending;
+    enum FormatChangeState
+    {
+        FCState_eNone,
+        FCState_eWaitForSerial,
+        FCState_eProcessCallback
+    };
+    FormatChangeState m_formatChangeState;
+    unsigned m_formatChangeSerial;
     bool m_nativeGraphicsEnabled;
     bool m_metadataEnabled;
     bool m_adaptivePlaybackEnabled;
@@ -351,6 +358,7 @@ protected:
     bool m_displayFrameAvailable;
     bool m_displayThreadStop;
     pthread_t m_hDisplayThread;
+    unsigned m_lastReturnedSerial;
 
     size_t m_droppedFrames;
     size_t m_consecDroppedFrames;
