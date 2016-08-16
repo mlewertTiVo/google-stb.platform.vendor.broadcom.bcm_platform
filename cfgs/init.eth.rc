@@ -11,11 +11,3 @@ service dhcpcd_gphy /system/bin/dhcpcd -dABKL
    group dhcp
    disabled
    oneshot
-
-service netcoal /system/bin/netcoal eth0
-   class late_start
-   oneshot
-   disabled
-
-on property:dyn.nx.netcoal.set=*
-   start netcoal
