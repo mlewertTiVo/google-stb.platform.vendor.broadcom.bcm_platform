@@ -767,7 +767,7 @@ struct hwc_context_t {
     bool track_comp_time;
     bool track_comp_chatty;
     bool ticker;
-    bool blank_video;
+    int  blank_video;
 
     bool alpha_hole_background;
     bool flush_background;
@@ -979,7 +979,7 @@ static void hwc_setup_props_locked(struct hwc_context_t* ctx)
    ctx->dump_fence           = property_get_int32(HWC_DUMP_FENCE_PROP, 0);
    ctx->track_comp_chatty    = property_get_bool(HWC_TRACK_COMP_CHATTY, 0);
    ctx->ticker               = property_get_bool(HWC_TICKER, 0);
-   ctx->blank_video          = property_get_bool(HWC_BLANK_VIDEO, 0);
+   ctx->blank_video          = property_get_int32(HWC_BLANK_VIDEO, 0);
 }
 
 static int hwc_setup_framebuffer_mode(struct hwc_context_t* dev, int disp_ix, DISPLAY_CLIENT_MODE mode)
@@ -2071,7 +2071,7 @@ static void hwc_tick_disp_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle
    pthread_mutex_unlock(&ctx->g2d_mutex);
 }
 
-static uint32_t blank_color[2] = {0xFF00FF00, 0xFFFF00FF};
+static uint32_t blank_color[2] = {0xFF00FF00, 0x80FF00FF};
 static void hwc_blank_video_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHandle surface)
 {
    int i;
@@ -2081,6 +2081,7 @@ static void hwc_blank_video_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHand
    fillSettings.surface     = surface;
    fillSettings.colorOp     = NEXUS_FillOp_eCopy;
    fillSettings.alphaOp     = NEXUS_FillOp_eCopy;
+   int blanking = (ctx->blank_video > 1) ? 1 : 0;
 
    for (i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
       if (ctx->mm_cli[i].root.composition.visible) {
@@ -2088,7 +2089,7 @@ static void hwc_blank_video_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHand
          fillSettings.rect.y      = ctx->mm_cli[i].root.composition.position.y;
          fillSettings.rect.width  = ctx->mm_cli[i].root.composition.position.width;
          fillSettings.rect.height = ctx->mm_cli[i].root.composition.position.height;
-         fillSettings.color       = blank_color[0];
+         fillSettings.color       = blank_color[blanking];
          if (pthread_mutex_lock(&ctx->g2d_mutex)) {
             ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
             return;
@@ -2106,7 +2107,7 @@ static void hwc_blank_video_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHand
          fillSettings.rect.y      = ctx->sb_cli[i].root.composition.position.y;
          fillSettings.rect.width  = ctx->sb_cli[i].root.composition.position.width;
          fillSettings.rect.height = ctx->sb_cli[i].root.composition.position.height;
-         fillSettings.color       = blank_color[0];
+         fillSettings.color       = blank_color[blanking];
          if (pthread_mutex_lock(&ctx->g2d_mutex)) {
             ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
             return;
