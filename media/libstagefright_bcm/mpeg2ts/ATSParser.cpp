@@ -43,7 +43,9 @@
 namespace {
 enum {
   REGISTRATION_DESCRIPTOR = 0x05,
-  FORMAT_IDENTIFIER_HEVC = 0x48455643 /* "HEVC" */,
+  AC3_DESCRIPTOR = 0x6a, /* See ETSI EN 300 468 specification */
+  FORMAT_IDENTIFIER_AC3 = 0x41432d33, /* AC-3 */
+  FORMAT_IDENTIFIER_HEVC = 0x48455643, /* "HEVC" */
 };
 }
 
@@ -362,6 +364,7 @@ bool ATSParser::Program::switchPIDs(const Vector<StreamInfo> &infos) {
 }
 
 status_t ATSParser::Program::parseProgramMap(ABitReader *br) {
+
     unsigned table_id = br->getBits(8);
     ALOGV("  table_id = %u", table_id);
     if (table_id != 0x02u) {
@@ -436,15 +439,20 @@ status_t ATSParser::Program::parseProgramMap(ABitReader *br) {
 
             // REGISTRATION descriptor
             if (tag == REGISTRATION_DESCRIPTOR && streamType == STREAMTYPE_PRIVATE) {
-              formatIdentifier = br->getBits(32);
-              ALOGV("      FormatIdentifier = %u", formatIdentifier);
-              if (descLength > 6) {
-                br->skipBits((descLength - 6) * 8);
-              }
+                formatIdentifier = br->getBits(32);
+                ALOGV("      FormatIdentifier = %u", formatIdentifier);
+                if (descLength > 6) {
+                    br->skipBits((descLength - 6) * 8);
+                }
+            }
+            else if (tag == AC3_DESCRIPTOR && streamType == STREAMTYPE_PRIVATE) {
+                formatIdentifier = FORMAT_IDENTIFIER_AC3;
+                ALOGV("      FormatIdentifier = %u", formatIdentifier);
+                br->skipBits(descLength * 8);
             }
             // other descriptor
             else {
-              br->skipBits(descLength * 8);
+                br->skipBits(descLength * 8);
             }
             temp -= descLength + 2;
         }
@@ -619,6 +627,7 @@ ATSParser::Stream::Stream(
       mEOSReached(false),
       mPrevPTS(0),
       mQueue(NULL) {
+
     switch (mStreamType) {
         case STREAMTYPE_H264:
             mQueue = new ElementaryStreamQueue(
@@ -626,9 +635,11 @@ ATSParser::Stream::Stream(
                     (mProgram->parserFlags() & ALIGNED_VIDEO_DATA)
                         ? ElementaryStreamQueue::kFlag_AlignedData : 0);
             break;
+
         case STREAMTYPE_MPEG2_AUDIO_ADTS:
             mQueue = new ElementaryStreamQueue(ElementaryStreamQueue::AAC);
             break;
+
         case STREAMTYPE_MPEG1_AUDIO:
         case STREAMTYPE_MPEG2_AUDIO:
             mQueue = new ElementaryStreamQueue(
@@ -645,10 +656,12 @@ ATSParser::Stream::Stream(
             mQueue = new ElementaryStreamQueue(
                     ElementaryStreamQueue::MPEG4_VIDEO);
             break;
+
         case STREAMTYPE_PCM_AUDIO:
             mQueue = new ElementaryStreamQueue(
                     ElementaryStreamQueue::PCM_AUDIO);
             break;
+
         case STREAMTYPE_H265:
             mQueue = new ElementaryStreamQueue(
                     ElementaryStreamQueue::H265,
@@ -666,12 +679,17 @@ ATSParser::Stream::Stream(
             mQueue = new ElementaryStreamQueue(
                     ElementaryStreamQueue::METADATA);
             break;
+
         case STREAMTYPE_PRIVATE:
             if (mFormatId == FORMAT_IDENTIFIER_HEVC) {
               mQueue = new ElementaryStreamQueue(
                     ElementaryStreamQueue::H265,
                     (mProgram->parserFlags() & ALIGNED_VIDEO_DATA)
                     ? ElementaryStreamQueue::kFlag_AlignedData : 0);
+            }
+            if (mFormatId == FORMAT_IDENTIFIER_AC3) {
+               mQueue = new ElementaryStreamQueue(
+                       ElementaryStreamQueue::AC3);
             }
             break;
         default:
@@ -796,7 +814,8 @@ bool ATSParser::Stream::isAudio() const {
         case STREAMTYPE_AC3:
         case STREAMTYPE_PCM_AUDIO:
             return true;
-
+        case STREAMTYPE_PRIVATE:
+            return mFormatId == FORMAT_IDENTIFIER_AC3;
         default:
             return false;
     }
