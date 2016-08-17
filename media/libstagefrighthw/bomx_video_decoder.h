@@ -309,7 +309,8 @@ protected:
     {
         FCState_eNone,
         FCState_eWaitForSerial,
-        FCState_eProcessCallback
+        FCState_eProcessCallback,
+        FCState_eWaitForPortReconfig
     };
     FormatChangeState m_formatChangeState;
     unsigned m_formatChangeSerial;

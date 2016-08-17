@@ -2565,15 +2565,16 @@ NEXUS_Error BOMX_VideoDecoder::SetOutputPortState(OMX_STATETYPE newState)
     {
         CancelTimerId(m_inputBuffersTimerId);
 
+        // Return all pending buffers to the client
+        ReturnPortBuffers(m_pVideoPorts[1]);
+
         // Update output port format on a port re-enable.
-        if ( m_formatChangeState == FCState_eProcessCallback )
+        if ( m_formatChangeState == FCState_eWaitForPortReconfig )
         {
             m_outputWidth = m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth;
             m_outputHeight = m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight;
             m_formatChangeState = FCState_eNone;
         }
-        // Return all pending buffers to the client
-        ReturnPortBuffers(m_pVideoPorts[1]);
     }
     else
     {
@@ -4782,7 +4783,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             //ALOGV("Skip buffer %u State %u", pBuffer->frameStatus.serialNumber, pBuffer->state);
         }
         // Loop through remaining buffers
-        while ( NULL != pBuffer && (m_formatChangeState != FCState_eWaitForSerial) && !m_eosDelivered )
+        while ( NULL != pBuffer && !m_eosDelivered &&
+                (m_formatChangeState == FCState_eNone || m_formatChangeState == FCState_eProcessCallback) )
         {
             BOMX_Buffer *pOmxBuffer;
             pOmxBuffer = m_pVideoPorts[1]->GetBuffer();
@@ -4853,10 +4855,11 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         OMX_PARAM_PORTDEFINITIONTYPE portDefs;
                         bool portReset;
 
-                        ALOGI("Video output format change %ux%u -> %lux%lu [max %ux%u] on frame %u", m_outputWidth, m_outputHeight,
-                            pBuffer->frameStatus.surfaceCreateSettings.imageWidth, pBuffer->frameStatus.surfaceCreateSettings.imageHeight,
-                            m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth, m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight,
-                            pBuffer->frameStatus.serialNumber);
+                        if (m_formatChangeState == FCState_eNone)
+                            ALOGI("Video output format change %ux%u -> %lux%lu [max %ux%u] on frame %u", m_outputWidth, m_outputHeight,
+                                pBuffer->frameStatus.surfaceCreateSettings.imageWidth, pBuffer->frameStatus.surfaceCreateSettings.imageHeight,
+                                m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth, m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight,
+                                pBuffer->frameStatus.serialNumber);
 
                         if ( m_outputMode == BOMX_VideoDecoderOutputBufferType_eMetadata || m_adaptivePlaybackEnabled )
                         {
@@ -4872,7 +4875,6 @@ void BOMX_VideoDecoder::PollDecodedFrames()
 
                         if ( portReset )
                         {
-                            ALOGI("Output port will reset");
                             // Push this entry back into the PTS tracker and reset any changes to EOS state
                             uint32_t temp;
                             m_pBufferTracker->Add(pHeader, &temp);
@@ -4883,6 +4885,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             if ((m_formatChangeState == FCState_eNone)
                                     && (pBuffer->frameStatus.serialNumber > (m_lastReturnedSerial + 1)))
                             {
+                                ALOGI("Output port will reset");
                                 m_formatChangeState = FCState_eWaitForSerial;
                                 m_formatChangeSerial = pBuffer->frameStatus.serialNumber;
                                 ALOGV("Defer port format change, formatChangeSerial:%u, lastReturnedSerial:%u",
@@ -4898,6 +4901,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 portDefs.nBufferSize = ComputeBufferSize(portDefs.format.video.nStride, portDefs.format.video.nSliceHeight);
                                 m_pVideoPorts[1]->SetDefinition(&portDefs);
                                 PortFormatChanged(m_pVideoPorts[1]);
+                                m_formatChangeState = FCState_eWaitForPortReconfig;
                             }
                             return;
                         }
