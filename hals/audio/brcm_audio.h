@@ -105,6 +105,9 @@ extern "C" {
 #define BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE ("media.brcm.hw_sync.fake")
 #define DUMMY_HW_SYNC   0xCAFEBABE
 
+/* Special parameter for enabling EAC3 passthrough with tunnel video decoder */
+#define AUDIO_PARAMETER_HW_AV_SYNC_EAC3 "HwAvSyncEAC3Supported"
+
 typedef enum {
     BRCM_DEVICE_OUT_NEXUS = 0,
     BRCM_DEVICE_OUT_NEXUS_DIRECT,
