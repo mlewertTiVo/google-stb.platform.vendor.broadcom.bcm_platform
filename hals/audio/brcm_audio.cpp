@@ -38,6 +38,7 @@
  *****************************************************************************/
 
 #include "brcm_audio.h"
+#include "brcm_audio_nexus_hdmi.h"
 #include <inttypes.h>
 #include "bomx_utils.h"
 
@@ -943,6 +944,16 @@ static char *bdev_get_parameters(const struct audio_hw_device *adev,
        }
 
        str_parms_add_int(result, AUDIO_PARAMETER_HW_AV_SYNC, hw_sync_id);
+    }
+
+    if (str_parms_has_key(query, AUDIO_PARAMETER_HW_AV_SYNC_EAC3)) {
+        String8 rates_str, channels_str, formats_str;
+
+        /* Get connected HDMI status */
+        nexus_get_hdmi_parameters(rates_str, channels_str, formats_str);
+        if (formats_str.find("AUDIO_FORMAT_E_AC3") != -1) {
+            str_parms_add_str(result, AUDIO_PARAMETER_HW_AV_SYNC_EAC3, "true");
+        }
     }
 
     result_str = str_parms_to_str(result);
