@@ -1065,8 +1065,9 @@ static status_t power_set_interactivity_state(bool on)
     status_t status = NO_ERROR;
 
     if (gPowerFd >= 0) {
+        int onOff = on;
         ALOGV("%s: Set interactive %s with droid_pm driver...", __FUNCTION__, on ? "on" : "off");
-        if (ioctl(gPowerFd, BRCM_IOCTL_SET_INTERACTIVE, &on)) {
+        if (ioctl(gPowerFd, BRCM_IOCTL_SET_INTERACTIVE, &onOff)) {
             status = errno;
             ALOGE("%s: Error trying to set interactive state in droid_pm driver [%s] !!!", __FUNCTION__, strerror(status));
         }
