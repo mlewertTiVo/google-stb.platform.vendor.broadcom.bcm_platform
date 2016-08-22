@@ -154,6 +154,7 @@ using namespace android;
 #define HWC_FB_MODE                  "dyn.nx.hwc.fbmode"
 #define HWC_IGNORE_CURSOR            "dyn.nx.hwc.nocursor"
 #define HWC_BLANK_VIDEO              "dyn.nx.hwc.vid.blank"
+#define HWC_UPSIDE_DOWN              "dyn.nx.hwc.comp.updwn"
 
 #define HWC_GLES_VIRTUAL_PROP        "ro.hwc.gles.virtual"
 #define HWC_WITH_V3D_FENCE_PROP      "ro.v3d.fence.expose"
@@ -768,6 +769,7 @@ struct hwc_context_t {
     bool track_comp_chatty;
     bool ticker;
     int  blank_video;
+    bool upside_down;
 
     bool alpha_hole_background;
     bool flush_background;
@@ -980,6 +982,7 @@ static void hwc_setup_props_locked(struct hwc_context_t* ctx)
    ctx->track_comp_chatty    = property_get_bool(HWC_TRACK_COMP_CHATTY, 0);
    ctx->ticker               = property_get_bool(HWC_TICKER, 0);
    ctx->blank_video          = property_get_int32(HWC_BLANK_VIDEO, 0);
+   ctx->upside_down          = property_get_bool(HWC_UPSIDE_DOWN, 0);
 }
 
 static int hwc_setup_framebuffer_mode(struct hwc_context_t* dev, int disp_ix, DISPLAY_CLIENT_MODE mode)
@@ -3635,7 +3638,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       }
    }
 
-   for (i = 0; i < list->numHwLayers; i++) {
+   for (i = ctx->upside_down?list->numHwLayers-1:0; i < list->numHwLayers; ctx->upside_down?i--:i++) {
       lrc = NEXUS_OS_ERROR;
       memset(&video, 0, sizeof(VIDEO_LAYER_VALIDATION));
       video.scope = HWC_SCOPE_COMP;
