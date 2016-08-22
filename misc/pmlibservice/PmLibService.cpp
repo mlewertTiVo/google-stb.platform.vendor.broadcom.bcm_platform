@@ -130,18 +130,23 @@ status_t PmLibService::setState(pmlib_state_t *state)
 
         if (pmState.sata_status != BRCM_PM_UNDEF) {
             pmState.sata_status = state->sata_en;
+            ALOGV("%s: %s SATA", __FUNCTION__, state->sata_en ? "Enable" : "Disable");
         }
         if (pmState.tp1_status != BRCM_PM_UNDEF) {
             pmState.tp1_status = state->tp1_en;
+            ALOGV("%s: %s CPU1", __FUNCTION__, state->tp1_en ? "Enable" : "Disable");
         }
         if (pmState.tp2_status != BRCM_PM_UNDEF) {
             pmState.tp2_status = state->tp2_en;
+            ALOGV("%s: %s CPU2", __FUNCTION__, state->tp2_en ? "Enable" : "Disable");
         }
         if (pmState.tp3_status != BRCM_PM_UNDEF) {
             pmState.tp3_status = state->tp3_en;
+            ALOGV("%s: %s CPU3", __FUNCTION__, state->tp3_en ? "Enable" : "Disable");
         }
         if (pmState.srpd_status != BRCM_PM_UNDEF) {
             pmState.srpd_status = state->ddr_pm_en ? 64 : 0;
+            ALOGV("%s: %s DDR self-refresh", __FUNCTION__, state->ddr_pm_en ? "Enable" : "Disable");
         }
 
         // TODO add support for CPU frequency scaling
