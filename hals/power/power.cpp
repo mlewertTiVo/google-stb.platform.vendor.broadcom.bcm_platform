@@ -766,6 +766,8 @@ static status_t power_set_pmlibservice_state(b_powerState state)
     sp<IBinder> binder = defaultServiceManager()->getService(IPmLibService::descriptor);
     sp<IPmLibService> service = interface_cast<IPmLibService>(binder);
 
+    ALOGV("%s: Setting power state to %s...", __FUNCTION__, NexusIPCClientBase::getPowerString(state));
+
     if (service.get() == NULL) {
         ALOGE("%s: Cannot get \"PmLibService\" service!!!", __FUNCTION__);
         return NO_INIT;
@@ -798,8 +800,8 @@ static status_t power_set_pmlibservice_state(b_powerState state)
         /* tp3_en == true means leave CPU thread 3 ON during standby */
         bool tp3_en = property_get_bool(PROPERTY_PM_TP3_EN, DEFAULT_PROPERTY_PM_TP3_EN);
 
-        /* ddr_pm_en == true means enable DDR power management during standby */
-        bool ddr_pm_en = property_get_bool(PROPERTY_PM_DDR_PM_EN, DEFAULT_PROPERTY_PM_DDR_PM_EN);
+        /* ddr_pm_en == true means enable DDR power management during true standby */
+        bool ddr_pm_en = property_get_bool(PROPERTY_PM_DDR_PM_EN, DEFAULT_PROPERTY_PM_DDR_PM_EN) && (state != ePowerState_S05);
 
         /* cpufreq_scale_en == true means enable CPU frequency scaling during standby */
         bool cpufreq_scale_en = property_get_bool(PROPERTY_PM_CPU_FREQ_SCALE_EN, DEFAULT_PROPERTY_PM_CPU_FREQ_SCALE_EN);
