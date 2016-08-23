@@ -1,6 +1,7 @@
 ifneq ($(filter bcm_% fbx6lc avko banff,$(TARGET_DEVICE)),)
 
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/audio/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/boot_control/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/camera2/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/consumerir/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc/Android.mk
