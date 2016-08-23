@@ -18,7 +18,7 @@ include $(CLEAR_VARS)
 
 # fix warnings!
 LOCAL_CFLAGS := -Werror
-LOCAL_MODULE := consumerir.default
+LOCAL_MODULE := consumerir.$(TARGET_BOARD_PLATFORM)
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_SRC_FILES := consumerir.c
 LOCAL_SHARED_LIBRARIES := liblog libcutils
