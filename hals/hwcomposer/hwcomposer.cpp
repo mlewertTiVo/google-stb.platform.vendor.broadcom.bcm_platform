@@ -143,6 +143,7 @@ using namespace android;
 #define HWC_CAPABLE_BACKGROUND       "ro.nx.capable.bg"
 #define HWC_CAPABLE_TOGGLE_MODE      "ro.nx.capable.tm"
 #define HWC_CAPABLE_SIGNAL_OOB_IL    "ro.nx.capable.si"
+#define HWC_CAPABLE_SIDEBAND_HOLE    "ro.nx.capable.sh"
 #define HWC_COMP_VIDEO               "ro.nx.cvbs"
 
 #define HWC_DUMP_LAYER_PROP          "dyn.nx.hwc.dump.layer"
@@ -780,6 +781,7 @@ struct hwc_context_t {
     bool signal_oob_inline;
     int prepare_video;
     int prepare_sideband;
+    int sb_hole_threshold;
 };
 
 static void *hwc_compose_task_primary(void *argv);
@@ -2116,6 +2118,39 @@ static void hwc_blank_video_surface(struct hwc_context_t *ctx, NEXUS_SurfaceHand
             return;
          }
          rc = NEXUS_Graphics2D_Fill(ctx->hwc_g2d, &fillSettings);
+         if (rc == NEXUS_SUCCESS) {
+            hwc_checkpoint_locked(ctx);
+         }
+         pthread_mutex_unlock(&ctx->g2d_mutex);
+      }
+   }
+}
+
+static void hwc_sideband_alpha_hole(struct hwc_context_t *ctx, NEXUS_SurfaceHandle surface, OPS_COUNT *ops_count)
+{
+   int i;
+   NEXUS_Error rc;
+   NEXUS_Graphics2DFillSettings fillSettings;
+   NEXUS_Graphics2D_GetDefaultFillSettings(&fillSettings);
+   fillSettings.surface     = surface;
+   fillSettings.colorOp     = NEXUS_FillOp_eCopy;
+   fillSettings.alphaOp     = NEXUS_FillOp_eCopy;
+
+   for (i = 0; i < NSC_SB_CLIENTS_NUMBER; i++) {
+      if (ctx->sb_cli[i].root.composition.visible) {
+         fillSettings.rect.x      = ctx->sb_cli[i].root.composition.position.x;
+         fillSettings.rect.y      = ctx->sb_cli[i].root.composition.position.y;
+         fillSettings.rect.width  = ctx->sb_cli[i].root.composition.position.width;
+         fillSettings.rect.height = ctx->sb_cli[i].root.composition.position.height;
+         fillSettings.color       = 0x00000000;
+         if (pthread_mutex_lock(&ctx->g2d_mutex)) {
+            ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
+            return;
+         }
+         rc = NEXUS_Graphics2D_Fill(ctx->hwc_g2d, &fillSettings);
+         if (ops_count) {
+            ops_count->fill += 1;
+         }
          if (rc == NEXUS_SUCCESS) {
             hwc_checkpoint_locked(ctx);
          }
@@ -3592,6 +3627,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    int64_t tick_now = 0;
    VIDEO_LAYER_VALIDATION video;
    OPS_COUNT ops_count;
+   bool sideband_alpha_hole = false;
 
    memset(surface, 0, sizeof(surface));
    memset(&ops_count, 0, sizeof(ops_count));
@@ -3725,6 +3761,9 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                      ctx->hwc_binder->setgeometry(HWC_BINDER_SDB, 0, frame, clipped, SB_CLIENT_ZORDER, 1);
                      ALOGI("comp: sdb-0: {%d,%d,%dx%d} -> {%d,%d,%dx%d}", frame.x, frame.y, frame.w, frame.h, clipped.x, clipped.y, clipped.w, clipped.h);
                      ctx->sb_cli[0].geometry_updated = false;
+                     if (ctx->sb_hole_threshold < *overlay_seen) {
+                        sideband_alpha_hole = true;
+                     }
                   }
                   pthread_mutex_unlock(&ctx->mutex);
                }
@@ -3820,6 +3859,9 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                if (ctx->ticker) {
                   hwc_tick_disp_surface(ctx, outputHdl);
                }
+               if (sideband_alpha_hole) {
+                  hwc_sideband_alpha_hole(ctx, outputHdl, &ops_count);
+               }
                if (ctx->blank_video) {
                   hwc_blank_video_surface(ctx, outputHdl);
                }
@@ -3854,6 +3896,9 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
       } else {
          if (ctx->ticker) {
             hwc_tick_disp_surface(ctx, outputHdl);
+         }
+         if (sideband_alpha_hole) {
+            hwc_sideband_alpha_hole(ctx, outputHdl, &ops_count);
          }
          if (ctx->blank_video) {
             hwc_blank_video_surface(ctx, outputHdl);
@@ -4937,17 +4982,18 @@ static void hwc_read_dev_props(struct hwc_context_t* dev)
 
    hwc_setup_props_locked(dev);
 
-   dev->display_gles_virtual = property_get_bool(HWC_GLES_VIRTUAL_PROP,     1);
-   dev->fence_support        = property_get_bool(HWC_WITH_V3D_FENCE_PROP,   0);
-   dev->fence_retire         = property_get_bool(HWC_WITH_DSP_FENCE_PROP,   0);
-   dev->track_comp_time      = property_get_bool(HWC_TRACK_COMP_TIME,       1);
-   dev->g2d_allow_simult     = property_get_bool(HWC_G2D_SIM_OPS_PROP,      0);
-   dev->smart_background     = property_get_bool(HWC_CAPABLE_BACKGROUND,    1);
-   dev->toggle_fb_mode       = property_get_bool(HWC_CAPABLE_TOGGLE_MODE,   1);
-   dev->ignore_cursor        = property_get_bool(HWC_IGNORE_CURSOR,         HWC_CURSOR_SURFACE_SUPPORTED ? 1 : 0);
-   dev->hack_sync_refresh    = property_get_bool(HWC_HACK_SYNC_REFRESH,     0);
-   dev->comp_bypass          = property_get_bool(HWC_CAPABLE_COMP_BYPASS,   0);
-   dev->signal_oob_inline    = property_get_bool(HWC_CAPABLE_SIGNAL_OOB_IL, 0);
+   dev->display_gles_virtual = property_get_bool(HWC_GLES_VIRTUAL_PROP,      1);
+   dev->fence_support        = property_get_bool(HWC_WITH_V3D_FENCE_PROP,    0);
+   dev->fence_retire         = property_get_bool(HWC_WITH_DSP_FENCE_PROP,    0);
+   dev->track_comp_time      = property_get_bool(HWC_TRACK_COMP_TIME,        1);
+   dev->g2d_allow_simult     = property_get_bool(HWC_G2D_SIM_OPS_PROP,       0);
+   dev->smart_background     = property_get_bool(HWC_CAPABLE_BACKGROUND,     1);
+   dev->toggle_fb_mode       = property_get_bool(HWC_CAPABLE_TOGGLE_MODE,    1);
+   dev->ignore_cursor        = property_get_bool(HWC_IGNORE_CURSOR,          HWC_CURSOR_SURFACE_SUPPORTED ? 1 : 0);
+   dev->hack_sync_refresh    = property_get_bool(HWC_HACK_SYNC_REFRESH,      0);
+   dev->comp_bypass          = property_get_bool(HWC_CAPABLE_COMP_BYPASS,    0);
+   dev->signal_oob_inline    = property_get_bool(HWC_CAPABLE_SIGNAL_OOB_IL,  0);
+   dev->sb_hole_threshold    = property_get_int32(HWC_CAPABLE_SIDEBAND_HOLE, 1);
 
    if (property_get_bool(HWC_COMP_VIDEO, 0)) {
       dev->comp_bypass = false;
