@@ -31,6 +31,8 @@
 #include <linux/socket.h>
 
 #include <cutils/properties.h>
+#include <utils/Condition.h>
+#include <utils/Mutex.h>
 #include <utils/Timers.h>
 #include <hardware/hardware.h>
 #include <hardware/power.h>
@@ -154,10 +156,14 @@ static const eventfd_t POWER_MONITOR_EVENT_INTERACTIVE_ON  = (POWER_MONITOR_EVEN
 // Global Power HAL Mutex
 Mutex gLock("PowerHAL Lock");
 
+// Global Power HAL Condition variable
+Condition gCondition(android::Condition::WAKE_UP_ONE);
+
 // Prototype declarations...
 static status_t power_set_pmlibservice_state(b_powerState state);
 static status_t power_create_thread(const char *name, void *(*pthread_function)(void*));
 static void *power_event_monitor_thread(void *arg);
+static void *power_s5_shutdown(void *arg);
 
 
 static void acquireWakeLock()
@@ -733,6 +739,10 @@ static void power_init(struct power_module *module __unused)
         goto power_init_fail;
     }
 
+    // Spawn the S5 shutdown thread...
+    if (power_create_thread("S5 shutdown", power_s5_shutdown) != NO_ERROR) {
+        goto power_init_fail;
+    }
     return;
 
 power_init_fail:
@@ -837,7 +847,7 @@ static status_t power_set_pmlibservice_state(b_powerState state)
     return status;
 }
 
-static status_t power_prepare_suspend()
+static status_t power_ack_suspend_shutdown()
 {
     int ret;
     status_t status = NO_ERROR;
@@ -954,7 +964,11 @@ static status_t power_set_state_s2_s3(b_powerState toState)
 
 static void *power_s5_shutdown(void *arg __unused)
 {
-    shutdownStarted = true;
+    {
+        Mutex::Autolock autoLock(gLock);
+        gCondition.wait(gLock);
+        shutdownStarted = true;
+    }
     system("/system/bin/svc power shutdown");
     return NULL;
 }
@@ -964,11 +978,7 @@ static status_t power_set_state_s5()
     // When offstate is S5, we wait until the kernel starts to suspend before
     // invoking the shutdown. Prevent us from suspending by taking a wakelock.
     acquireWakeLock();
-
-    // Don't kill the current event monitor thread.
-    // Spawn a thread to call the blocking shutdown interface
-    // We can't block or we will miss the shutdown notification
-    return power_create_thread("S5 shutdown", power_s5_shutdown);
+    return NO_ERROR;
 }
 
 static status_t power_set_state(b_powerState toState)
@@ -1013,13 +1023,6 @@ static status_t power_set_state(b_powerState toState)
     return status;
 }
 
-static status_t power_set_poweroff_state()
-{
-    b_powerState powerOffState = power_get_off_state();
-
-    return power_set_state(powerOffState);
-}
-
 static status_t power_set_doze_state(int timeout)
 {
     status_t status;
@@ -1057,6 +1060,33 @@ static status_t power_set_doze_state(int timeout)
         releaseWakeLock();
 
     status = power_set_state(dozeState);
+    return status;
+}
+
+static status_t power_enter_suspend_state()
+{
+    b_powerState powerOffState = power_get_off_state();
+
+    return power_set_state(powerOffState);
+}
+
+static status_t power_exit_suspend_state()
+{
+    status_t status = NO_ERROR;
+    b_powerState powerOffState = power_get_off_state();
+
+    if (powerOffState == ePowerState_S5) {
+        // Signal to the S5 shutdown thread to begin
+        Mutex::Autolock autoLock(gLock);
+        ALOGV("%s: Signalling to wake-up S5 shutdown thread...", __FUNCTION__);
+        gCondition.signal();
+    }
+    else {
+        int wakeTimeout = property_get_int32(PROPERTY_SYS_POWER_WAKE_TIMEOUT,
+                                             DEFAULT_WAKE_TIMEOUT);
+        // Suspend complete, back to doze
+        status = power_set_doze_state(wakeTimeout);
+    }
     return status;
 }
 
@@ -1147,8 +1177,6 @@ static void *power_event_monitor_thread(void *arg __unused)
     int ret;
     int epoll_fd;
     char buf[BUF_SIZE];
-    int wakeTimeout = property_get_int32(PROPERTY_SYS_POWER_WAKE_TIMEOUT,
-                                         DEFAULT_WAKE_TIMEOUT);
 
     ALOGV("%s: Starting power event monitor thread...", __FUNCTION__);
 
@@ -1234,17 +1262,19 @@ static void *power_event_monitor_thread(void *arg __unused)
                                 // Event received from droid_pm - now find out which one...
                                 ALOGV("%s: Received power event %" PRIu64 "", __FUNCTION__, event);
                                 if (event == DROID_PM_EVENT_SUSPENDING) {
-                                    ret = power_set_poweroff_state();
+                                    ret = power_enter_suspend_state();
                                     if (ret == NO_ERROR) {
-                                        ALOGD("%s: Successfully finished setting power off state.", __FUNCTION__);
                                         // Wait for suspend to complete
-                                        ret = power_prepare_suspend();
+                                        ret = power_ack_suspend_shutdown();
                                         if (ret != NO_ERROR && ret != NO_INIT) {
                                             ALOGE("%s: Error trying to enter suspend!!!", __FUNCTION__);
                                         }
-                                        if (!shutdownStarted) {
-                                            // Suspend complete, back to doze
-                                            power_set_doze_state(wakeTimeout);
+                                        else {
+                                            ALOGV("%s: Successfully entered suspend state.", __FUNCTION__);
+                                        }
+                                        ret = power_exit_suspend_state();
+                                        if (ret == NO_ERROR) {
+                                            ALOGV("%s: Successfully exited suspend state.", __FUNCTION__);
                                         }
                                     }
                                 }
@@ -1258,7 +1288,7 @@ static void *power_event_monitor_thread(void *arg __unused)
                                         ALOGD("%s: Entered S5", __FUNCTION__);
 
                                     // Acknowledge shutdown message and wait, shouldn't return
-                                    power_prepare_suspend();
+                                    power_ack_suspend_shutdown();
                                 }
                                 else if (event == DROID_PM_EVENT_RESUMED_WAKEUP) {
                                     ALOGV("%s: Received an unexpected wakeup event", __FUNCTION__);
@@ -1336,8 +1366,11 @@ static void power_set_interactive(struct power_module *module __unused, int on)
     if (shutdownStarted) {
         ALOGI("%s: Ignoring interaction, shutdown in progress.", __FUNCTION__);
     }
-    else {
+    else if (gPowerEventMonitorFd >= 0) {
         power_dispatch_event(gPowerEventMonitorFd, on ? POWER_MONITOR_EVENT_INTERACTIVE_ON : POWER_MONITOR_EVENT_INTERACTIVE_OFF);
+    }
+    else {
+        ALOGE("%s: *** Power HAL not initialised!!! ***", __FUNCTION__);
     }
 }
 
