@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+ifeq ($(HW_AB_UPDATE_SUPPORT),y)
+
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
-LOCAL_MODULE := boot_control.$(TARGET_BOARD_PLATFORM)
+LOCAL_MODULE := bootctrl.$(TARGET_BOARD_PLATFORM)
 
 LOCAL_PRELINK_MODULE := false
 ifeq ($(TARGET_2ND_ARCH),arm)
@@ -25,10 +27,17 @@ else
 endif
 LOCAL_SHARED_LIBRARIES := libcutils \
                           liblog
+LOCAL_STATIC_LIBRARIES := libfs_mgr
+
+LOCAL_C_INCLUDES := system/core/fs_mgr/include \
 
 # fix warnings!
 LOCAL_CFLAGS += -Werror
+LOCAL_CFLAGS += -DLOG_TAG=\"bcm-bootc\"
 LOCAL_SRC_FILES := boot_control.cpp
 
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)
+
+endif
+

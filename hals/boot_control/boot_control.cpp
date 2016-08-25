@@ -17,46 +17,204 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include <cutils/properties.h>
+#include <cutils/log.h>
 #include <hardware/hardware.h>
 #include <hardware/boot_control.h>
 #include <inttypes.h>
 
+#include <fs_mgr.h>
+#include "eio_boot.h"
+
+// local copy loaded on 'init', gets data from bootloader.
+static struct eio_boot bc_eio;
+
+static void wait_for_device(const char* fn) {
+   int tries = 0;
+   int ret;
+   do {
+      ++tries;
+      struct stat buf;
+      ret = stat(fn, &buf);
+      if (ret == -1) {
+         ALOGE("failed to stat \"%s\" try %d: %s", fn, tries, strerror(errno));
+         sleep(1);
+      }
+   } while (ret && tries < 10);
+
+   if (ret) {
+      ALOGE("failed to stat \"%s\"", fn);
+   }
+}
+
+static int write_device(struct eio_boot *bc_eio) {
+   char fstab_name[2*PROPERTY_VALUE_MAX];
+   char hardware[PROPERTY_VALUE_MAX];
+   property_get("ro.hardware", hardware, "");
+   sprintf(fstab_name, "/fstab.%s", hardware);
+   struct fstab *fstab = fs_mgr_read_fstab(fstab_name);
+   if (fstab == nullptr) {
+      ALOGE("failed to read fstab (%s)", fstab_name);
+      return -EINVAL;
+   }
+   struct fstab_rec *v = fs_mgr_get_entry_for_mount_point(fstab, "/eio");
+   if (v == nullptr) {
+      ALOGE("failed to load partition /eio!");
+      return -EINVAL;
+   }
+   if (strcmp(v->fs_type, "emmc") == 0) {
+      wait_for_device(v->blk_device);
+      FILE* f = fopen(v->blk_device, "wb");
+      if (f == nullptr) {
+        ALOGE("failed to open-wb \"%s\": %s", v->blk_device, strerror(errno));
+        return -EIO;
+      }
+      int count = fwrite(bc_eio, sizeof(struct eio_boot), 1, f);
+      if (count != 1) {
+        ALOGE("failed to write \"%s\": %s", v->blk_device, strerror(errno));
+        return -EIO;
+      }
+      if (fclose(f) != 0) {
+        ALOGE("failed to close \"%s\": %s", v->blk_device, strerror(errno));
+        return -EIO;
+      }
+      return 0;
+   }
+   ALOGE("unknown eio partition fs_type \"%s\"", v->fs_type);
+   return -EINVAL;
+}
+
 static void init(struct boot_control_module *module __unused) {
+   memset(&bc_eio, 0, sizeof(bc_eio));
+   char fstab_name[2*PROPERTY_VALUE_MAX];
+   char hardware[PROPERTY_VALUE_MAX];
+   property_get("ro.hardware", hardware, "");
+   sprintf(fstab_name, "/fstab.%s", hardware);
+   struct fstab *fstab = fs_mgr_read_fstab(fstab_name);
+   if (fstab == nullptr) {
+      ALOGE("failed to read fstab (%s)", fstab_name);
+      return;
+   }
+   struct fstab_rec *v = fs_mgr_get_entry_for_mount_point(fstab, "/eio");
+   if (v == nullptr) {
+      ALOGE("failed to load partition /eio!");
+      return;
+   }
+   if (strcmp(v->fs_type, "emmc") == 0) {
+      wait_for_device(v->blk_device);
+      FILE* f = fopen(v->blk_device, "rb");
+      if (f == nullptr) {
+        ALOGE("failed to open-rb \"%s\": %s", v->blk_device, strerror(errno));
+        return;
+      }
+      struct eio_boot temp;
+      int count = fread(&temp, sizeof(temp), 1, f);
+      if (count != 1) {
+        ALOGE("failed to read \"%s\": %s", v->blk_device, strerror(errno));
+        return;
+      }
+      if (fclose(f) != 0) {
+        ALOGE("failed to close \"%s\": %s", v->blk_device, strerror(errno));
+        return;
+      }
+      memcpy(&bc_eio, &temp, sizeof(temp));
+      ALOGI("init: read magic (%x)", bc_eio.magic);
+      return;
+   }
+   ALOGE("unknown eio partition fs_type \"%s\"", v->fs_type);
    return;
 }
 
 static unsigned getNumberSlots(struct boot_control_module *module __unused) {
-   return 0;
+   if (bc_eio.magic != EIO_BOOT_MAGIC) {
+      ALOGE("getNumberSlots: bad magic (%x), not setup?", bc_eio.magic);
+      return 0;
+   }
+   // if setup; we always guarantee the proper number as bootloader would have
+   // asserted the correct partitions set are available for each slot based
+   // partitions.
+   return EIO_BOOT_NUM_ALT_PART;
 }
 
 static unsigned getCurrentSlot(struct boot_control_module *module __unused) {
-   return 0;
+   if (bc_eio.magic != EIO_BOOT_MAGIC) {
+      ALOGE("getCurrentSlot: bad magic (%x), not setup?", bc_eio.magic);
+      return EIO_BOOT_NUM_ALT_PART;
+   }
+   return bc_eio.current;
 }
 
 static int markBootSuccessful(struct boot_control_module *module __unused) {
-   return 0;
+   if (bc_eio.magic != EIO_BOOT_MAGIC) {
+      ALOGE("markBootSuccessful: bad magic (%x), not setup?", bc_eio.magic);
+      return 0;
+   }
+   bc_eio.slot[bc_eio.current].boot_ok = 1;
+   return write_device(&bc_eio);
 }
 
-static int setActiveBootSlot(struct boot_control_module *module __unused, unsigned slot __unused) {
-   return 0;
+static int setActiveBootSlot(struct boot_control_module *module __unused, unsigned slot) {
+   if (bc_eio.magic != EIO_BOOT_MAGIC) {
+      ALOGE("setActiveBootSlot: bad magic (%x), not setup?", bc_eio.magic);
+      return 0;
+   }
+   if (slot >= EIO_BOOT_NUM_ALT_PART) {
+      ALOGE("setActiveBootSlot: bad slot index (%u)", slot);
+      return -EINVAL;
+   }
+   bc_eio.current = slot;
+   return write_device(&bc_eio);
 }
 
-static int setSlotAsUnbootable(struct boot_control_module *module __unused, unsigned slot __unused) {
-   return 0;
+static int setSlotAsUnbootable(struct boot_control_module *module __unused, unsigned slot) {
+   if (bc_eio.magic != EIO_BOOT_MAGIC) {
+      ALOGE("setSlotAsUnbootable: bad magic (%x), not setup?", bc_eio.magic);
+      return 0;
+   }
+   if (slot >= EIO_BOOT_NUM_ALT_PART) {
+      ALOGE("setSlotAsUnbootable: bad slot index (%u)", slot);
+      return -EINVAL;
+   }
+   bc_eio.slot[slot].boot_fail = 1;
+   return write_device(&bc_eio);
 }
 
 static int isSlotBootable(struct boot_control_module *module __unused, unsigned slot __unused) {
-   return 0;
+   if (bc_eio.magic != EIO_BOOT_MAGIC) {
+      ALOGE("isSlotBootable: bad magic (%x), not setup?", bc_eio.magic);
+      return 0;
+   }
+   if (slot >= EIO_BOOT_NUM_ALT_PART) {
+      ALOGE("setSlotAsUnbootable: bad slot index (%u)", slot);
+      return -EINVAL;
+   }
+   return bc_eio.slot[slot].boot_try;
 }
 
-static const char* getSuffix(struct boot_control_module *module __unused, unsigned slot __unused) {
-   return NULL;
+static const char* getSuffix(struct boot_control_module *module __unused, unsigned slot) {
+   if (bc_eio.magic != EIO_BOOT_MAGIC) {
+      ALOGE("getSuffix: bad magic (%x), not setup?", bc_eio.magic);
+      return NULL;
+   }
+   if (slot >= EIO_BOOT_NUM_ALT_PART) {
+      ALOGE("getSuffix: bad slot: %u", slot);
+      return NULL;
+   }
+   return bc_eio.slot[slot].suffix;
 }
 
-static int isSlotMarkedSuccessful(struct boot_control_module *module __unused, unsigned slot __unused) {
-   return 0;
+static int isSlotMarkedSuccessful(struct boot_control_module *module __unused, unsigned slot) {
+   if (bc_eio.magic != EIO_BOOT_MAGIC) {
+      ALOGE("isSlotMarkedSuccessful: bad magic (%x), not setup?", bc_eio.magic);
+      return -ENOMEM;
+   }
+   if (slot >= EIO_BOOT_NUM_ALT_PART) {
+      ALOGE("isSlotMarkedSuccessful: bad slot index (%u)", slot);
+      return -EINVAL;
+   }
+   return bc_eio.slot[slot].boot_ok;
 }
 
 static struct hw_module_methods_t boot_control_module_methods = {
