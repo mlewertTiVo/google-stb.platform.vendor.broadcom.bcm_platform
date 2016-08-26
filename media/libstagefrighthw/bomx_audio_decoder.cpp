@@ -80,6 +80,7 @@
 #define B_DATA_BUFFER_SIZE (8192)       // Taken from SoftAAC decoder - large enough for AC3/MP3 as well
 #define B_OUTPUT_BUFFER_SIZE (2048*2*8) // 16-bit 5.1 with 2048 samples/frame for AAC
 #define B_NUM_BUFFERS (6)
+#define B_NUM_INPUT_BUFFERS_SECURE (4)
 #define B_STREAM_ID 0xc0
 #define B_FRAME_TIMER_INTERVAL (32)
 #define B_INPUT_BUFFERS_RETURN_INTERVAL (5000)
@@ -435,7 +436,8 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
 
     SetRole(m_pRoles[0].name);
     m_numAudioPorts = 0;
-    m_pAudioPorts[0] = new BOMX_AudioPort(m_audioPortBase, OMX_DirInput, B_NUM_BUFFERS, B_DATA_BUFFER_SIZE, false, 0, &portDefs, portFormats, numRoles);
+    unsigned numInputBuffers = m_secureDecoder ? B_NUM_INPUT_BUFFERS_SECURE : B_NUM_BUFFERS;
+    m_pAudioPorts[0] = new BOMX_AudioPort(m_audioPortBase, OMX_DirInput, numInputBuffers, B_DATA_BUFFER_SIZE, false, 0, &portDefs, portFormats, numRoles);
     if ( NULL == m_pAudioPorts[0] )
     {
         ALOGW("Unable to create audio input port");
