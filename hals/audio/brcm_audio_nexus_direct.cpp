@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2015 Broadcom Corporation
+ *    (c)2015-2016 Broadcom Corporation
  *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -50,15 +50,22 @@ using namespace android;
 
 #define BRCM_AUDIO_DIRECT_NXCLIENT_NAME "BrcmAudioOutDirect"
 
+#define BRCM_PROPERTY_AUDIO_OUTPUT_DIRECT_SPDIF_EAC3_TO_AC3 "media.brcm.direct_spdif_eac3"
+
+#define BRCM_AUDIO_STREAM_ID                    (0xC0)
+#define BRCM_AUDIO_DIRECT_COMP_BUFFER_SIZE      (2048)
+
+#define NEXUS_PCM_FRAMES_PER_EAC3_FRAME 1536
+
 /*
  * Utility Functions
  */
 
-static void nexus_direct_bout_data_callback(void *param1, int param2)
+static void nexus_direct_bout_data_callback(void *context, int param)
 {
-    UNUSED(param1);
-
-    BKNI_SetEvent((BKNI_EventHandle)(intptr_t)param2);
+    struct brcm_stream_out *bout = (struct brcm_stream_out *)context;
+    ALOG_ASSERT(bout->nexus.event == (BKNI_EventHandle)(intptr_t)param);
+    BKNI_SetEvent((BKNI_EventHandle)(intptr_t)param);
 }
 
 /*
@@ -76,12 +83,23 @@ static int nexus_direct_bout_set_volume(struct brcm_stream_out *bout,
 
 static int nexus_direct_bout_get_render_position(struct brcm_stream_out *bout, uint32_t *dsp_frames)
 {
-    NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.simple_decoder;
+    NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
     NEXUS_AudioDecoderStatus status;
+    NEXUS_Error ret;
 
     if (simple_decoder) {
-       NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &status);
-       *dsp_frames = status.numBytesDecoded/bout->frameSize;
+        ret = NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &status);
+        if (ret != NEXUS_SUCCESS) {
+            ALOGE("%s: Get render position failed, ret = %d", __FUNCTION__, ret);
+            return -ENOSYS;
+        }
+
+        if (bout->nexus.direct.playpump_mode) {
+            *dsp_frames = status.framesDecoded * NEXUS_PCM_FRAMES_PER_EAC3_FRAME +
+                (NEXUS_PCM_FRAMES_PER_EAC3_FRAME / 2);
+        } else {
+            *dsp_frames = status.numBytesDecoded/bout->frameSize;
+        }
     } else {
        *dsp_frames = 0;
     }
@@ -91,12 +109,23 @@ static int nexus_direct_bout_get_render_position(struct brcm_stream_out *bout, u
 
 static int nexus_direct_bout_get_presentation_position(struct brcm_stream_out *bout, uint64_t *frames)
 {
-    NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.simple_decoder;
+    NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
     NEXUS_AudioDecoderStatus status;
+    NEXUS_Error ret;
 
     if (simple_decoder) {
-       NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &status);
-       *frames = (uint64_t)(bout->framesPlayed + status.numBytesDecoded/bout->frameSize);
+        ret = NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &status);
+        if (ret != NEXUS_SUCCESS) {
+            ALOGE("%s: Get presentation position failed, ret = %d", __FUNCTION__, ret);
+            return -ENOSYS;
+        }
+
+        if (bout->nexus.direct.playpump_mode) {
+            *frames = (uint64_t)((bout->framesPlayed + status.framesDecoded) * NEXUS_PCM_FRAMES_PER_EAC3_FRAME +
+                    (NEXUS_PCM_FRAMES_PER_EAC3_FRAME / 2));
+        } else {
+            *frames = (uint64_t)(bout->framesPlayed + status.numBytesDecoded/bout->frameSize);
+        }
     } else {
        *frames =0;
     }
@@ -145,69 +174,151 @@ static char *nexus_direct_bout_get_parameters (struct brcm_stream_out *bout, con
 
 static int nexus_direct_bout_start(struct brcm_stream_out *bout)
 {
-    NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.simple_decoder;
+    NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
+    NEXUS_PlaypumpHandle playpump = bout->nexus.direct.playpump;
     NEXUS_SimpleAudioDecoderStartSettings start_settings;
     BKNI_EventHandle event = bout->nexus.event;
     struct audio_config *config = &bout->config;
     int ret = 0;
 
-    if (bout->suspended || !simple_decoder) {
-        ALOGE("%s: at %d, device not open\n",
+    if (bout->suspended || !simple_decoder || (bout->nexus.direct.playpump_mode && !playpump)) {
+        ALOGE("%s: at %d, device not open",
              __FUNCTION__, __LINE__);
         return -ENOSYS;
     }
 
-    NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
+    ALOGV("%s, %p", __FUNCTION__, bout);
 
-    start_settings.passthroughBuffer.enabled = true;
-    start_settings.passthroughBuffer.sampleRate = bout->config.sample_rate;
-    start_settings.passthroughBuffer.dataCallback.callback = nexus_direct_bout_data_callback;
-    start_settings.passthroughBuffer.dataCallback.context = bout;
-    start_settings.passthroughBuffer.dataCallback.param = (int)(intptr_t)event;
+    if (bout->nexus.direct.playpump_mode) {
+        NEXUS_SimpleAudioDecoderSettings settings;
 
-    ret = NEXUS_SimpleAudioDecoder_Start(simple_decoder,
-                                          &start_settings);
+        // Start play pump
+        ret = NEXUS_Playpump_Start(playpump);
+        if (ret) {
+            ALOGE("%s: Start playpump failed, ret = %d", __FUNCTION__, ret);
+            return -ENOSYS;
+        }
+
+        // Configure audio decoder fifo threshold and pid channel
+        NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &settings);
+        ALOGI("Primary fifoThreshold %d", settings.primary.fifoThreshold);
+        settings.primary.fifoThreshold = BRCM_AUDIO_DIRECT_COMP_BUFFER_SIZE * 2;
+        ALOGI("Primary fifoThreshold set to %d", settings.primary.fifoThreshold);
+        NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &settings);
+
+        NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
+        start_settings.primary.codec = brcm_audio_get_codec_from_format(bout->config.format);
+        start_settings.primary.pidChannel = bout->nexus.direct.pid_channel;
+
+    } else {
+        NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
+        start_settings.passthroughBuffer.enabled = true;
+        start_settings.passthroughBuffer.sampleRate = bout->config.sample_rate;
+        start_settings.passthroughBuffer.dataCallback.callback = nexus_direct_bout_data_callback;
+        start_settings.passthroughBuffer.dataCallback.context = bout;
+        start_settings.passthroughBuffer.dataCallback.param = (int)(intptr_t)event;
+    }
+
+    // Start decoder
+    ret = NEXUS_SimpleAudioDecoder_Start(simple_decoder, &start_settings);
     if (ret) {
-        ALOGE("%s: at %d, start decoder failed, ret = %d\n",
+        ALOGE("%s: at %d, start decoder failed, ret = %d",
              __FUNCTION__, __LINE__, ret);
+        NEXUS_Playpump_Stop(playpump);
         return -ENOSYS;
     }
+
     return 0;
 }
 
 static int nexus_direct_bout_stop(struct brcm_stream_out *bout)
 {
-    NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.simple_decoder;
+    NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
+    NEXUS_PlaypumpHandle playpump = bout->nexus.direct.playpump;
 
     if (simple_decoder) {
         NEXUS_SimpleAudioDecoder_Stop(simple_decoder);
         NEXUS_AudioDecoderStatus status;
         NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &status);
-        bout->framesPlayed += status.numBytesDecoded/bout->frameSize;
+        if (bout->nexus.direct.playpump_mode)
+            bout->framesPlayed += status.framesDecoded;
+        else
+            bout->framesPlayed += status.numBytesDecoded/bout->frameSize;
         ALOGV("%s: setting framesPlayed to %u", __FUNCTION__, bout->framesPlayed);
+    }
+
+    if (bout->nexus.direct.playpump_mode && playpump) {
+        NEXUS_Playpump_Stop(playpump);
+    }
+    return 0;
+}
+
+static int nexus_direct_bout_pause(struct brcm_stream_out *bout)
+{
+    NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
+    NEXUS_PlaypumpHandle playpump = bout->nexus.direct.playpump;
+
+    if (bout->suspended || !simple_decoder || (bout->nexus.direct.playpump_mode && !playpump)) {
+        ALOGE("%s: at %d, device not open",
+             __FUNCTION__, __LINE__);
+        return -ENOSYS;
+    }
+
+    if (bout->nexus.direct.playpump_mode && playpump) {
+        NEXUS_Playpump_SetPause(playpump, true);
+        ALOGV("%s, %p", __FUNCTION__, bout);
+    }
+    return 0;
+}
+
+static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
+{
+    NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
+    NEXUS_PlaypumpHandle playpump = bout->nexus.direct.playpump;
+
+    if (bout->suspended || !simple_decoder || (bout->nexus.direct.playpump_mode && !playpump)) {
+        ALOGE("%s: at %d, device not open",
+             __FUNCTION__, __LINE__);
+        return -ENOSYS;
+    }
+
+    if (bout->nexus.direct.playpump_mode && playpump) {
+        NEXUS_Playpump_SetPause(playpump, false);
+        ALOGV("%s, %p", __FUNCTION__, bout);
     }
     return 0;
 }
 
 static int nexus_direct_bout_flush(struct brcm_stream_out *bout)
 {
-    ALOGV("%s, %p", __FUNCTION__, bout);
-    nexus_direct_bout_stop(bout);
-    nexus_direct_bout_start(bout);
+    NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
+    NEXUS_PlaypumpHandle playpump = bout->nexus.direct.playpump;
+
+    if (bout->suspended || !simple_decoder || (bout->nexus.direct.playpump_mode && !playpump)) {
+        ALOGE("%s: at %d, device not open",
+             __FUNCTION__, __LINE__);
+        return -ENOSYS;
+    }
+
+    ALOGV("%s, %p, started=%s", __FUNCTION__, bout, bout->started?"true":"false");
+    if (bout->started) {
+        nexus_direct_bout_stop(bout);
+        nexus_direct_bout_start(bout);
+    }
     return 0;
 }
 
 static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                             const void* buffer, size_t bytes)
 {
-    NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.simple_decoder;
+    NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
+    NEXUS_PlaypumpHandle playpump = bout->nexus.direct.playpump;
     BKNI_EventHandle event = bout->nexus.event;
     size_t bytes_written = 0;
     int ret = 0;
 
-    if (bout->suspended || !simple_decoder) {
-        ALOGE("%s: at %d, device not open\n",
-             __FUNCTION__, __LINE__);
+    if (bout->suspended || !simple_decoder || (bout->nexus.direct.playpump_mode && !playpump)) {
+        ALOGE("%s: not ready to output audio samples", __FUNCTION__);
         return -ENOSYS;
     }
 
@@ -215,11 +326,20 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
         void *nexus_buffer;
         size_t nexus_space;
 
-        ret = NEXUS_SimpleAudioDecoder_GetPassthroughBuffer(simple_decoder,
-                                                  &nexus_buffer, &nexus_space);
+        if (bout->nexus.direct.playpump_mode) {
+            ALOGVV("%s: at %d, Playpump_GetBuffer", __FUNCTION__, __LINE__);
+            ret = NEXUS_Playpump_GetBuffer(playpump, &nexus_buffer, &nexus_space);
+            ALOGVV("%s: at %d, Playpump_GetBuffer got %d bytes", __FUNCTION__, __LINE__, nexus_space);
+        } else {
+            ALOGVV("%s: at %d, getPassthroughBuffer", __FUNCTION__, __LINE__);
+            ret = NEXUS_SimpleAudioDecoder_GetPassthroughBuffer(simple_decoder,
+                                                      &nexus_buffer, &nexus_space);
+            ALOGVV("%s: at %d, getPassthroughBuffer got %d bytes", __FUNCTION__, __LINE__, nexus_space);
+        }
         if (ret) {
-            ALOGE("%s: at %d, get decoder passthrough buffer failed, ret = %d\n",
+            ALOGE("%s: at %d, get buffer failed, ret = %d",
                  __FUNCTION__, __LINE__, ret);
+            ret = -ENOSYS;
             break;
         }
 
@@ -231,10 +351,13 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                    (void *)((int)(intptr_t)buffer + bytes_written),
                    bytes_to_copy);
 
-            ret = NEXUS_SimpleAudioDecoder_PassthroughWriteComplete(simple_decoder,
-                                                          bytes_to_copy);
+            if (bout->nexus.direct.playpump_mode)
+                ret = NEXUS_Playpump_WriteComplete(playpump, 0, bytes_to_copy);
+            else
+                ret = NEXUS_SimpleAudioDecoder_PassthroughWriteComplete(simple_decoder,
+                                                              bytes_to_copy);
             if (ret) {
-                ALOGE("%s: at %d, commit decoder passthrough buffer failed, ret = %d\n",
+                ALOGE("%s: at %d, commit buffer failed, ret = %d",
                      __FUNCTION__, __LINE__, ret);
                 break;
             }
@@ -243,23 +366,31 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
         }
         else {
             NEXUS_SimpleAudioDecoderHandle prev_simple_decoder = simple_decoder;
+            NEXUS_PlaypumpHandle prev_playpump = playpump;
 
             pthread_mutex_unlock(&bout->lock);
             ret = BKNI_WaitForEvent(event, 500);
             pthread_mutex_lock(&bout->lock);
 
             // Sanity check when relocking
-            simple_decoder = bout->nexus.simple_decoder;
+            simple_decoder = bout->nexus.direct.simple_decoder;
             ALOG_ASSERT(simple_decoder == prev_simple_decoder);
+            if (bout->nexus.direct.playpump_mode) {
+                playpump = bout->nexus.direct.playpump;
+                ALOG_ASSERT(playpump == prev_playpump);
+            }
             ALOG_ASSERT(!bout->suspended);
 
-            if (ret) {
-                ALOGE("%s: at %d, decoder timeout, ret = %d\n",
+            if (ret != BERR_SUCCESS) {
+                ALOGE("%s: at %d, decoder timeout, ret = %d",
                      __FUNCTION__, __LINE__, ret);
 
                 /* Stop decoder */
+                if (bout->nexus.direct.playpump_mode)
+                    NEXUS_Playpump_Stop(playpump);
                 NEXUS_SimpleAudioDecoder_Stop(simple_decoder);
                 bout->started = false;
+                ret = -ENOSYS;
                 break;
             }
         }
@@ -270,16 +401,6 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
         return ret;
     }
 
-    /* Remove audio delay */
-    for (;;) {
-        NEXUS_AudioDecoderStatus status;
-
-        NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &status);
-        if (status.queuedFrames == 0) {
-            break;
-        }
-        BKNI_Sleep(10);
-    }
     return bytes_written;
 }
 
@@ -310,6 +431,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 {
     struct audio_config *config = &bout->config;
     NEXUS_SimpleAudioDecoderHandle simple_decoder;
+    NEXUS_PlaypumpHandle playpump;
     NEXUS_Error rc;
     android::status_t status;
     NxClient_AllocSettings allocSettings;
@@ -325,6 +447,8 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         config->channel_mask = NEXUS_OUT_DEFAULT_CHANNELS;
     if (config->format == 0)
         config->format = NEXUS_OUT_DEFAULT_FORMAT;
+
+    bout->nexus.direct.playpump_mode = false;
 
     switch (config->format) {
     case AUDIO_FORMAT_PCM_16_BIT:
@@ -343,23 +467,41 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         return -EINVAL;
         break;
     case AUDIO_FORMAT_E_AC3:
-        /* Suggest PCM wrapped format */
-        config->channel_mask = AUDIO_CHANNEL_OUT_STEREO;
-        config->format = AUDIO_FORMAT_PCM_16_BIT;
-        config->sample_rate = 192000;
-        return -EINVAL;
+        if (property_get_bool(BRCM_PROPERTY_AUDIO_OUTPUT_DIRECT_SPDIF_EAC3_TO_AC3, true)) {
+            NEXUS_AudioCapabilities audioCaps;
+
+            NEXUS_GetAudioCapabilities(&audioCaps);
+            if (audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode) {
+                ALOGI("Enable play pump mode");
+                bout->nexus.direct.playpump_mode = true;
+            }
+        }
+
+        if (!bout->nexus.direct.playpump_mode) {
+            /* Suggest PCM wrapped format */
+            config->channel_mask = AUDIO_CHANNEL_OUT_STEREO;
+            config->format = AUDIO_FORMAT_PCM_16_BIT;
+            config->sample_rate = config->sample_rate * 4;
+            return -EINVAL;
+        }
         break;
     default:
         return -EINVAL;
     }
 
     bout->framesPlayed = 0;
-    bout->frameSize = audio_bytes_per_sample(config->format) * popcount(config->channel_mask);
-    bout->buffer_size =
-        get_brcm_audio_buffer_size(config->sample_rate,
-                                   config->format,
-                                   popcount(config->channel_mask),
-                                   NEXUS_OUT_BUFFER_DURATION_MS);
+    if (config->format == AUDIO_FORMAT_PCM_16_BIT) {
+        bout->frameSize = audio_bytes_per_sample(config->format) * popcount(config->channel_mask);
+        bout->buffer_size =
+            get_brcm_audio_buffer_size(config->sample_rate,
+                                       config->format,
+                                       popcount(config->channel_mask),
+                                       NEXUS_OUT_BUFFER_DURATION_MS);
+    } else {
+        /* Frame size should be single byte long for compressed audio formats */
+        bout->frameSize = 1;
+        bout->buffer_size = BRCM_AUDIO_DIRECT_COMP_BUFFER_SIZE;
+    }
 
     /* Open Nexus simple decoder */
     rc = brcm_audio_client_join(BRCM_AUDIO_DIRECT_NXCLIENT_NAME);
@@ -381,7 +523,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     audioDecoderId = bout->nexus.allocResults.simpleAudioDecoder.id;
     simple_decoder = NEXUS_SimpleAudioDecoder_Acquire(audioDecoderId);
     if (!simple_decoder) {
-        ALOGE("%s: at %d, acquire Nexus simple decoder handle failed\n",
+        ALOGE("%s: at %d, acquire Nexus simple decoder handle failed",
              __FUNCTION__, __LINE__);
         ret = -ENOSYS;
         goto err_acquire;
@@ -398,7 +540,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
     ret = BKNI_CreateEvent(&event);
     if (ret) {
-        ALOGE("%s: at %d, create event failed, ret = %d\n",
+        ALOGE("%s: at %d, create event failed, ret = %d",
              __FUNCTION__, __LINE__, ret);
         ret = -ENOSYS;
         goto err_event;
@@ -412,12 +554,61 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         goto err_callback;
     }
 
-    bout->nexus.simple_decoder = simple_decoder;
+    // Open play pump
+    if (bout->nexus.direct.playpump_mode) {
+        NEXUS_PlaypumpOpenSettings playpumpOpenSettings;
+        NEXUS_PlaypumpSettings playpumpSettings;
+        NEXUS_PlaypumpOpenPidChannelSettings pidSettings;
+        NEXUS_PidChannelHandle pid_channel;
+
+        NEXUS_Playpump_GetDefaultOpenSettings(&playpumpOpenSettings);
+        playpumpOpenSettings.fifoSize = BRCM_AUDIO_DIRECT_COMP_BUFFER_SIZE * 2;
+        playpump = NEXUS_Playpump_Open(NEXUS_ANY_ID, &playpumpOpenSettings);
+
+        if (!playpump) {
+            ALOGE("%s: Error opening playpump", __FUNCTION__);
+            ret = -ENOMEM;
+            goto err_playpump;
+        }
+
+        NEXUS_Playpump_GetSettings(playpump, &playpumpSettings);
+        playpumpSettings.transportType = NEXUS_TransportType_eEs;
+        playpumpSettings.dataCallback.callback = nexus_direct_bout_data_callback;
+        playpumpSettings.dataCallback.context = bout;
+        playpumpSettings.dataCallback.param = (int)(intptr_t)event;
+        ret = NEXUS_Playpump_SetSettings(playpump, &playpumpSettings);
+        if (ret) {
+            ALOGE("%s: Error setting playpump settings, ret = %d", __FUNCTION__, ret);
+            ret = -ENOSYS;
+            goto err_playpump_set;
+        }
+
+        NEXUS_Playpump_GetDefaultOpenPidChannelSettings(&pidSettings);
+        pidSettings.pidType = NEXUS_PidType_eAudio;
+        pid_channel = NEXUS_Playpump_OpenPidChannel(playpump, BRCM_AUDIO_STREAM_ID, &pidSettings);
+        if (!pid_channel) {
+            ALOGE("%s: Error openning pid channel", __FUNCTION__);
+            ret = -ENOMEM;
+            goto err_pid;
+        }
+
+        bout->nexus.direct.playpump = playpump;
+        bout->nexus.direct.pid_channel = pid_channel;
+    }
+
+    bout->nexus.direct.simple_decoder = simple_decoder;
     bout->nexus.event = event;
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
 
     return 0;
 
+err_pid:
+err_playpump_set:
+    if (bout->nexus.direct.playpump_mode) {
+        NEXUS_Playpump_Close(playpump);
+    }
+err_playpump:
+    bout->bdev->standbyThread->UnregisterCallback(bout->standbyCallback);
 err_callback:
     BKNI_DestroyEvent(event);
 err_event:
@@ -438,6 +629,19 @@ static int nexus_direct_bout_close(struct brcm_stream_out *bout)
         return 0;
     }
 
+    if (bout->nexus.direct.playpump_mode) {
+        if ( bout->nexus.direct.pid_channel) {
+            ALOG_ASSERT(bout->nexus.direct.playpump != NULL);
+            NEXUS_Playpump_ClosePidChannel(bout->nexus.direct.playpump, bout->nexus.direct.pid_channel);
+            bout->nexus.direct.pid_channel = NULL;
+        }
+
+        if (bout->nexus.direct.playpump) {
+            NEXUS_Playpump_Close(bout->nexus.direct.playpump);
+            bout->nexus.direct.playpump = NULL;
+        }
+    }
+
     nexus_direct_bout_stop(bout);
 
     if (event) {
@@ -445,7 +649,7 @@ static int nexus_direct_bout_close(struct brcm_stream_out *bout)
     }
 
     bout->bdev->standbyThread->UnregisterCallback(bout->standbyCallback);
-    bout->nexus.simple_decoder = NULL;
+    bout->nexus.direct.simple_decoder = NULL;
 
     NxClient_Disconnect(bout->nexus.connectId);
     NxClient_Free(&(bout->nexus.allocResults));
@@ -466,8 +670,8 @@ struct brcm_stream_out_ops nexus_direct_bout_ops = {
     .do_bout_get_presentation_position = nexus_direct_bout_get_presentation_position,
     .do_bout_dump = NULL,
     .do_bout_get_parameters = nexus_direct_bout_get_parameters,
-    .do_bout_pause = NULL,
-    .do_bout_resume = NULL,
+    .do_bout_pause = nexus_direct_bout_pause,
+    .do_bout_resume = nexus_direct_bout_resume,
     .do_bout_drain = NULL,
     .do_bout_flush = nexus_direct_bout_flush,
 };
