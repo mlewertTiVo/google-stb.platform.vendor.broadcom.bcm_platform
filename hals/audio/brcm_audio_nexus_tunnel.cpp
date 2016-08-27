@@ -97,19 +97,6 @@ static int nexus_tunnel_bout_resume(struct brcm_stream_out *bout);
 /*
  * Operation Functions
  */
-static NEXUS_AudioCodec nexus_tunnel_bout_get_codec(struct brcm_stream_out *bout)
-{
-    struct audio_config *config = &bout->config;
-    switch (config->format) {
-        case AUDIO_FORMAT_AC3:      return NEXUS_AudioCodec_eAc3;
-        case AUDIO_FORMAT_E_AC3:    return NEXUS_AudioCodec_eAc3Plus;
-        case AUDIO_FORMAT_DTS:      return NEXUS_AudioCodec_eDts;
-        case AUDIO_FORMAT_DTS_HD:   return NEXUS_AudioCodec_eDtsHd;
-        default:                    break; /* Assuming PCM, fall thru */
-    }
-    return NEXUS_AudioCodec_ePcmWav;
-}
-
 static int nexus_tunnel_bout_set_volume(struct brcm_stream_out *bout,
                                  float left, float right)
 {
@@ -190,7 +177,7 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
     }
 
     NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
-    start_settings.primary.codec = nexus_tunnel_bout_get_codec(bout);
+    start_settings.primary.codec = brcm_audio_get_codec_from_format(bout->config.format);
     start_settings.primary.pidChannel = bout->nexus.tunnel.pid_channel;
     ret = NEXUS_SimpleAudioDecoder_Start(audio_decoder, &start_settings);
     if (ret != NEXUS_SUCCESS) {
@@ -573,6 +560,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
             ret = NEXUS_Playpump_GetBuffer(playpump, &nexus_buffer, &nexus_space);
             if (ret) {
                 ALOGE("%s: get playpump buffer failed, ret=%d", __FUNCTION__, ret);
+                ret = -ENOSYS;
                 break;
             }
 
@@ -658,8 +646,9 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 ALOG_ASSERT(playpump == prev_playpump);
                 ALOG_ASSERT(!bout->suspended);
 
-                if (ret) {
+                if (ret != BERR_SUCCESS) {
                     ALOGE("%s: playpump write timeout, ret=%d", __FUNCTION__, ret);
+                    ret = -ENOSYS;
                     break;
                 }
             }
@@ -790,7 +779,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
 
     audioResourceId = bout->nexus.allocResults.simpleAudioDecoder.id;
     bout->nexus.tunnel.audio_decoder = NEXUS_SimpleAudioDecoder_Acquire(audioResourceId);
-    if (!bout->nexus.simple_decoder) {
+    if (!bout->nexus.tunnel.audio_decoder) {
         ALOGE("%s: at %d, acquire Nexus simple audio decoder handle failed\n",
              __FUNCTION__, __LINE__);
         ret = -ENOMEM;
