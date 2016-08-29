@@ -46,6 +46,15 @@ public class BcmKeyInterceptorReceiver extends BroadcastReceiver {
     private static final String TV_SETTING_PACKAGE = "com.android.tv.settings";
     private static final String TV_SETTING_WPS_ACTIVITY = "com.android.tv.settings.connectivity.WpsConnectionActivity";
 
+    private static final String BRCM_SPLASH_PACKAGE = "com.broadcom.BcmSplash";
+    private static final String BRCM_SPLASH_ACTIVITY = "com.broadcom.BcmSplash.BcmSplashActivity";
+    private static final String BRCM_SPLASH_EXTRA_TEXT = "text";
+    private static final String BRCM_SPLASH_EXTRA_BC_INTENT = "broadcast_intent";
+    private static final String BRCM_SPLASH_EXTRA_BC_PERMISSION = "broadcast_permission";
+    private static final String BRCM_SPLASH_EXTRA_BC_WAIT_BOOTUP = "broadcast_wait_bootup";
+    private static final String BRCM_SPLASH_EXTRA_BC_DELAY = "broadcast_delay";
+    private static final long BRCM_SPLASH_BC_DELAY_MS = 7000;
+
     private static final String ACTION_NETFLIX_KEY = "com.netflix.ninja.intent.action.NETFLIX_KEY";
     private static final String NETFLIX_KEY_PERMISSION = "com.netflix.ninja.permission.NETFLIX_KEY";
     private static final String NETFLIX_KEY_POWER_MODE = "power_on";
@@ -54,15 +63,35 @@ public class BcmKeyInterceptorReceiver extends BroadcastReceiver {
 
     private static final boolean DEBUG = true;
 
-    private void launchNetflix(Context context) {
-        Intent localIntent = new Intent();
-        localIntent.setAction(ACTION_NETFLIX_KEY);
+    private Intent createNetflixIntent() {
+        Intent res = new Intent();
+        res.setAction(ACTION_NETFLIX_KEY);
         // all Netflix key presses resulted in device power on (via WAKEUP input event)
-        localIntent.putExtra(NETFLIX_KEY_POWER_MODE, true);
-        localIntent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
+        res.putExtra(NETFLIX_KEY_POWER_MODE, true);
+        res.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
+
+        return res;
+    }
+
+    private void launchNetflix(Context context) {
+        Intent localIntent = createNetflixIntent();
 
         if (DEBUG) Log.d(TAG, "localIntent: " + localIntent);
         context.sendBroadcast(localIntent, NETFLIX_KEY_PERMISSION);
+    }
+
+    private void launchNetflixSplash(Context context, boolean waitBootup, long delayMs) {
+        Intent localIntent = new Intent();
+        localIntent.setComponent(new ComponentName(BRCM_SPLASH_PACKAGE, BRCM_SPLASH_ACTIVITY));
+        localIntent.putExtra(BRCM_SPLASH_EXTRA_TEXT, "Starting up Netflix...");
+        localIntent.putExtra(BRCM_SPLASH_EXTRA_BC_INTENT, createNetflixIntent());
+        localIntent.putExtra(BRCM_SPLASH_EXTRA_BC_PERMISSION, NETFLIX_KEY_PERMISSION);
+        localIntent.putExtra(BRCM_SPLASH_EXTRA_BC_WAIT_BOOTUP, waitBootup);
+        localIntent.putExtra(BRCM_SPLASH_EXTRA_BC_DELAY, delayMs);
+        localIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+        if (DEBUG) Log.d(TAG, "waitBootup: " + waitBootup + " localIntent: " + localIntent);
+        context.startActivity(localIntent);
     }
 
     @Override
@@ -74,8 +103,8 @@ public class BcmKeyInterceptorReceiver extends BroadcastReceiver {
             if (DEBUG) Log.d(TAG, "Got Intent " + intent.getAction());
 
             if (SystemProperties.getBoolean(SYSPROP_BOOT_WAKEUP, false)) {
-                Log.i(TAG, "Launching Netflix upon wakeup");
-                launchNetflix(context);
+                Log.i(TAG, "Launching Netflix from power on");
+                launchNetflixSplash(context, true, 0);
             }
         }
         else if (ACTION_GLOBAL_BUTTON.equals(intent.getAction())) {
@@ -114,7 +143,14 @@ public class BcmKeyInterceptorReceiver extends BroadcastReceiver {
             } else if (localKeyCode == KeyEvent.KEYCODE_BUTTON_16 && localAction == KeyEvent.ACTION_UP) {
                 /* Start Netflix activity */
                 if (DEBUG) Log.d(TAG, "Got Netflix key");
-                launchNetflix(context);
+
+                if (SystemProperties.getBoolean(SYSPROP_BOOT_WAKEUP, false)) {
+                    Log.i(TAG, "Launching Netflix from resume");
+                    launchNetflixSplash(context, false, BRCM_SPLASH_BC_DELAY_MS);
+                }
+                else {
+                    launchNetflix(context);
+                }
             }
         }
     }
