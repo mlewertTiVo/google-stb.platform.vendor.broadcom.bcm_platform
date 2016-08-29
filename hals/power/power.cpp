@@ -76,6 +76,7 @@ static const char * PROPERTY_PM_DDR_PM_EN                 = "ro.pm.ddr_pm_en";
 static const char * PROPERTY_PM_CPU_FREQ_SCALE_EN         = "ro.pm.cpufreq_scale_en";
 static const char * PROPERTY_PM_WOL_EN                    = "ro.pm.wol.en";
 static const char * PROPERTY_PM_WOL_OPTS                  = "ro.pm.wol.opts";
+static const char * PROPERTY_NX_BOOT_WAKEUP               = "dyn.nx.boot.wakeup";
 
 // Property defaults
 static const char * DEFAULT_PROPERTY_SYS_POWER_DOZESTATE  = "S0.5";
@@ -1016,6 +1017,13 @@ static status_t power_set_state(b_powerState toState)
 
     if (status == NO_ERROR) {
         ALOGI("%s: Successfully set power state %s", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
+
+        /* Mark the system has been suspended so we know whether we need to launch any splash screen when
+         * woken up by the wakeup button
+         */
+        if (toState != ePowerState_S0) {
+            property_set(PROPERTY_NX_BOOT_WAKEUP, "1");
+        }
     }
     else {
         ALOGE("%s: Could not set power state %s!!!", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
