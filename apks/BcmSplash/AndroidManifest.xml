@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          android:sharedUserId="android.uid.system"
+          package="com.broadcom.BcmSplash">
+
+    <uses-permission android:name="com.netflix.ninja.permission.NETFLIX_KEY"/>
+
+    <application android:label="@string/app_name">
+        <activity android:name=".BcmSplashActivity"
+                  android:label="@string/app_name"
+                  android:noHistory="true"
+                  android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+        </activity>
+    </application>
+</manifest>
