@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2015 Broadcom Corporation
+ *    (c)2011-2016 Broadcom Corporation
  *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -207,7 +207,13 @@ struct brcm_stream_out {
             NxClient_AllocResults allocResults;
             union {
                 NEXUS_SimpleAudioPlaybackHandle simple_playback;
-                NEXUS_SimpleAudioDecoderHandle simple_decoder;
+                struct {
+                    NEXUS_SimpleAudioDecoderHandle simple_decoder;
+                    bool playpump_mode;
+                    NEXUS_PlaypumpHandle playpump;
+                    NEXUS_PidChannelHandle pid_channel;
+                    struct timespec start_ts;
+                } direct;
                 struct {
                     NEXUS_SimpleAudioDecoderHandle audio_decoder;
                     NEXUS_PlaypumpHandle playpump;
@@ -311,6 +317,7 @@ extern void brcm_audio_set_master_volume(float volume);
 extern float brcm_audio_get_master_volume(void);
 extern NEXUS_Error brcm_audio_client_join(const char *name);
 extern void brcm_audio_set_audio_volume(float leftVol, float rightVol);
+extern NEXUS_AudioCodec brcm_audio_get_codec_from_format(audio_format_t format);
 
 /* Thread to monitor standby */
 #define MAX_STANDBY_MONITOR_CALLBACKS 3

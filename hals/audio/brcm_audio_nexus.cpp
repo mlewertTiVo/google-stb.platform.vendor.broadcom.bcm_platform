@@ -272,6 +272,19 @@ float brcm_audio_get_master_volume(void)
     return master_volume;
 }
 
+NEXUS_AudioCodec brcm_audio_get_codec_from_format(audio_format_t format)
+{
+    switch (format & AUDIO_FORMAT_MAIN_MASK) {
+        case AUDIO_FORMAT_PCM:      return NEXUS_AudioCodec_ePcmWav;
+        case AUDIO_FORMAT_AC3:      return NEXUS_AudioCodec_eAc3;
+        case AUDIO_FORMAT_E_AC3:    return NEXUS_AudioCodec_eAc3Plus;
+        case AUDIO_FORMAT_DTS:      return NEXUS_AudioCodec_eDts;
+        case AUDIO_FORMAT_DTS_HD:   return NEXUS_AudioCodec_eDtsHd;
+        default:                    break;
+    }
+    return NEXUS_AudioCodec_eUnknown;
+}
+
 /*
  * Operation Functions
  */
@@ -397,6 +410,7 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
             if (ret) {
                 ALOGE("%s: at %d, commit playback buffer failed, ret = %d\n",
                      __FUNCTION__, __LINE__, ret);
+                ret = -ENOSYS;
                 break;
             }
             bytes_written += bytes_to_copy;
@@ -414,13 +428,14 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
             ALOG_ASSERT(simple_playback == prev_simple_playback);
             ALOG_ASSERT(!bout->suspended);
  
-            if (ret) {
+            if (ret != BERR_SUCCESS) {
                 ALOGE("%s: at %d, playback timeout, ret = %d\n",
                      __FUNCTION__, __LINE__, ret);
 
                 /* Stop playback */
                 NEXUS_SimpleAudioPlayback_Stop(simple_playback);
                 bout->started = false;
+                ret = -ENOSYS;
                 break;
             }
         }
