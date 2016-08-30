@@ -197,7 +197,7 @@ void MPEG2TSExtractor::init() {
         size_t prevSyncSize = 1;
         int64_t durationUs = -1;
         List<int64_t> durations;
-        // Estimate duration --- stabilize until you get <50ms deviation.
+        // Estimate duration --- stabilize until you get <500ms deviation.
         while (feedMore() == OK
                 && ALooper::GetNowUs() - startTime <= 2000000ll) {
 
@@ -217,7 +217,6 @@ void MPEG2TSExtractor::init() {
                         minOffset = mSeekSyncPoints->valueAt(i);
                     }
                 }
-
                 off64_t diffOffset = maxOffset - minOffset;
                 durationUs = size * diffUs / diffOffset;
                 durations.push_back(durationUs);
@@ -235,7 +234,7 @@ void MPEG2TSExtractor::init() {
                             max = *i;
                         }
                     }
-                    if (max - min < 50 * 1000) {
+                    if (max - min < 500 * 1000) {
                         break;
                     }
                 }
