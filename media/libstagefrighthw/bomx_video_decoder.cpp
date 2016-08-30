@@ -4890,7 +4890,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             m_eosDelivered = prevEosDelivered;
 
                             // Send port format change and stop processing frames until reset
-                            if ((m_formatChangeState == FCState_eNone)
+                            if ((m_formatChangeState == FCState_eNone) && (m_lastReturnedSerial > 0)
                                     && (pBuffer->frameStatus.serialNumber > (m_lastReturnedSerial + 1)))
                             {
                                 ALOGI("Output port will reset");
