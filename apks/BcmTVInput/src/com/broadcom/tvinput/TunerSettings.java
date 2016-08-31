@@ -134,8 +134,9 @@ public class TunerSettings extends Activity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.tuner_settings);
-		Log.e(TAG, "onCreate - Enter...");
+        Log.d(TAG, "onCreate - Enter...");
 
+        Log.e(TAG, "onCreate -" );
         String inputId;
 
         mTvInputManager = (TvInputManager) this.getSystemService(Context.TV_INPUT_SERVICE);
@@ -151,13 +152,10 @@ public class TunerSettings extends Activity {
     public void startStopScan(View v) {
         ToggleButton start_stop = (ToggleButton)v;
         if (start_stop.isChecked()) {
-            ScanParams sp = new ScanParams();
-            sp.deliverySystem = ScanParams.DeliverySystem.Dvbt;
-            sp.scanMode = ScanParams.ScanMode.Blind;
-            Bundle b = new Bundle();
-            b.setClassLoader(ScanParams.class.getClassLoader());
-            b.putParcelable("scanParams", sp);
-            mSession.sendAppPrivateCommand("startScan", b);
+                Bundle b = getIntent().getExtras();
+                if(b != null) {
+                    mSession.sendAppPrivateCommand("startScan", b);
+                }
         }
         else {
             mSession.sendAppPrivateCommand("stopScan", null);

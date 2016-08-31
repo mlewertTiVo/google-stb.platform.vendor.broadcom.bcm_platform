@@ -15,5 +15,5 @@
 -->
 
 <tv-input xmlns:android="http://schemas.android.com/apk/res/android"
-    android:settingsActivity="com.broadcom.tvinput.TunerSettings"
-    android:setupActivity="com.broadcom.tvinput.TunerSettings" />
+    android:settingsActivity="com.broadcom.tvinput.MainActivity"
+    android:setupActivity="com.broadcom.tvinput.MainActivity" />

@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_height="wrap_content"
+    android:layout_width="match_parent"
+    android:orientation="vertical" >
+
+    <TextView
+
+        android:text="@string/sat_tuning_param_string"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:layout_marginLeft="50dp"
+        android:layout_marginBottom="10dp"
+        android:textAppearance="?android:attr/textAppearanceMedium"/>
+
+    <TableLayout android:layout_height="wrap_content"
+        android:layout_width="wrap_content"
+        android:layout_marginLeft="240dp">
+
+        <TableRow android:layout_height="wrap_content"
+            android:layout_width="match_parent"
+            android:layout_marginBottom="40dp">
+
+            <TextView android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:text="@string/satellite_mode_string"
+                android:textAppearance="?android:attr/textAppearanceMedium">
+            </TextView>
+
+            <RadioGroup android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:id="@+id/satModeId" >
+
+                <RadioButton android:id="@+id/sat_mode_choice1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/dvbs_string"
+                    android:checked="true"
+                    android:textAppearance="?android:attr/textAppearanceMedium"/>
+
+                <RadioButton android:id="@+id/sat_mode_choice2"
+                    android:layout_height="wrap_content"
+                    android:text="@string/dvbs2_string"
+                    android:textAppearance="?android:attr/textAppearanceMedium"/>
+
+            </RadioGroup>
+        </TableRow>
+
+
+        <TableRow android:layout_height="wrap_content"
+            android:layout_width="wrap_content"
+            android:layout_marginBottom="40dp">
+
+            <TextView android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="20dp"
+                android:text="@string/freq_string"
+                android:textAppearance="?android:attr/textAppearanceMedium">
+            </TextView>
+
+            <TableLayout android:layout_height="wrap_content"
+                android:layout_width="wrap_content">
+
+                <TableRow android:layout_height="wrap_content"
+                    android:layout_width="wrap_content"
+                    android:layout_marginBottom="10dp">
+
+                    <EditText android:id="@+id/transFreqId"
+                    android:layout_height="25dp"
+                    android:layout_width="55dp"
+                    android:hint="@string/enter_freq_hint"
+                    android:textColorHint="#8899aa"
+                    android:inputType="numberDecimal"
+
+                    android:paddingRight="3dp"
+                    android:paddingLeft="3dp"
+                    android:gravity="right"
+                    android:background="@drawable/roundedcorner_bg"
+                    android:textAppearance="?android:attr/textAppearanceMedium">
+                    </EditText>
+
+            <TextView android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/Mhz_string"
+                android:gravity="left"
+                android:paddingLeft="4dp"
+                android:textAppearance="?android:attr/textAppearanceMedium">
+            </TextView>
+                </TableRow>
+            </TableLayout>
+        </TableRow>
+
+
+
+    <TableRow android:layout_height="wrap_content"
+        android:layout_width="match_parent"
+        android:layout_marginBottom="40dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:text="@string/pol_string"
+
+            android:textAppearance="?android:attr/textAppearanceMedium">
+        </TextView>
+
+        <RadioGroup android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:id="@+id/polarId">
+
+            <RadioButton android:id="@+id/pol_choice1"
+                android:layout_height="wrap_content"
+                android:text="@string/vert_pol_string"
+                android:checked="true"
+                android:textAppearance="?android:attr/textAppearanceMedium"/>
+
+            <RadioButton android:id="@+id/pol_choice2"
+                android:layout_height="wrap_content"
+                android:text="@string/horiz_pol_string"
+                android:textAppearance="?android:attr/textAppearanceMedium"/>
+
+        </RadioGroup>
+    </TableRow>
+
+
+    <TableRow android:layout_height="wrap_content"
+        android:layout_width="wrap_content"
+        android:layout_marginBottom="40dp">
+        <TextView android:layout_height="wrap_content"
+            android:text="@string/symbol_rate_string"
+            android:textAppearance="?android:attr/textAppearanceMedium">
+        </TextView>
+
+        <TableLayout android:layout_height="wrap_content"
+            android:layout_width="wrap_content">
+            <TableRow android:layout_height="wrap_content"
+                android:layout_width="wrap_content">
+
+                <EditText android:id="@+id/symRateId"
+                    android:layout_height="25dp"
+                    android:layout_width="55dp"
+                    android:hint="@string/enter_symbol_hint"
+                    android:textColorHint="#8899aa"
+                    android:inputType="numberDecimal"
+                    android:background="@drawable/roundedcorner_bg"
+                    android:gravity="end"
+                    android:paddingRight="3dp"
+                    android:paddingLeft="3dp"
+                    android:textAppearance="?android:attr/textAppearanceMedium">
+                </EditText>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/symbol_sec_string"
+                    android:gravity="left"
+                    android:paddingLeft="4dp"
+                    android:textAppearance="?android:attr/textAppearanceMedium">
+                </TextView>
+            </TableRow>
+        </TableLayout>
+    </TableRow>
+
+    <TableRow android:layout_height="wrap_content"
+        android:layout_width="match_parent"
+        android:layout_marginBottom="30dp">
+
+        <TextView android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:text="@string/search_type_string"
+            android:textAppearance="?android:attr/textAppearanceMedium">
+        </TextView>
+
+        <RadioGroup android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:id="@+id/search_type_Id">
+
+            <RadioButton android:id="@+id/search_type_choice1"
+                android:layout_height="wrap_content"
+                android:text="@string/search_type_fta"
+                android:checked="true"
+                android:textAppearance="?android:attr/textAppearanceMedium"/>
+
+            <RadioButton android:id="@+id/search_type_choice2"
+                android:layout_height="wrap_content"
+                android:text="@string/search_type_all"
+                android:textAppearance="?android:attr/textAppearanceMedium"/>
+
+
+        </RadioGroup>
+    </TableRow>
+
+
+        <TableRow android:layout_height="wrap_content"
+            android:layout_width="wrap_content">
+            <TableLayout android:layout_height="wrap_content"
+                android:layout_width="wrap_content"
+                android:layout_column="1">
+                <TableRow android:layout_height="wrap_content"
+                    android:layout_width="wrap_content">
+                    <Button android:id="@+id/next_button"
+                        android:background="@drawable/roundedcorner_bg"
+                        android:text="@string/next_string"
+                        android:layout_height="30dp"
+                        android:layout_width="50dp"
+                        android:onClick="startFrequencyScan">
+                    </Button>
+                </TableRow>
+            </TableLayout>
+        </TableRow>
+
+    </TableLayout>
+
+</LinearLayout>

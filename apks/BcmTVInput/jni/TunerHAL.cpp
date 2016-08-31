@@ -52,10 +52,10 @@
 #include <cutils/log.h>
 
 // Enable this for debug prints
-#define DEBUG_JNI
+//#define DEBUG_JNI
 
 #ifdef DEBUG_JNI
-#define TV_LOG	ALOGE
+#define TV_LOG ALOGE
 #else
 #define TV_LOG
 #endif
@@ -88,34 +88,34 @@
 #define SCANPARAMSOFDMMODE_SIG  "L" SCANPARAMSOFDMMODE_CLASS ";"
 
 
-// All globals must be JNI primitives, any other data type 
+// All globals must be JNI primitives, any other data type
 // will fail to hold its value across different JNI methods
 void *j_main;
 static Tuner_Data *g_pTD;
 
 // The signature syntax is: Native-method-name, signature & fully-qualified-name
-static JNINativeMethod gMethods[] = 
+static JNINativeMethod gMethods[] =
 {
     {"initialize",     "(Ljava/lang/Object;)I",     (void *)Java_com_broadcom_tvinput_TunerHAL_initialize},
-    {"startScan",      "(Lcom/broadcom/tvinput/ScanParams;)I",      (void *)Java_com_broadcom_tvinput_TunerHAL_startScan},  
-    {"stopScan",       "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stopScan},  
+    {"startScan",      "(Lcom/broadcom/tvinput/ScanParams;)I",      (void *)Java_com_broadcom_tvinput_TunerHAL_startScan},
+    {"stopScan",       "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stopScan},
     {"tune",           "(Ljava/lang/String;)I",     (void *)Java_com_broadcom_tvinput_TunerHAL_tune},
     {"getChannelList", "()[Lcom/broadcom/tvinput/ChannelInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getChannelList},
     {"getProgramList", "(Ljava/lang/String;)[Lcom/broadcom/tvinput/ProgramInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getProgramList},
     {"getProgramUpdateList", "(I)[Lcom/broadcom/tvinput/ProgramUpdateInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getProgramUpdateList},
     {"getScanInfo",    "()Lcom/broadcom/tvinput/ScanInfo;",     (void *)Java_com_broadcom_tvinput_TunerHAL_getScanInfo},
-    {"getUtcTime",     "()J",      (void *)Java_com_broadcom_tvinput_TunerHAL_getUtcTime},  
-    {"stop",           "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stop},  
-    {"release",        "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_release},  
-    {"setSurface",     "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_setSurface},  
-    {"getTrackInfoList", "()[Lcom/broadcom/tvinput/TrackInfo;", (void *)Java_com_broadcom_tvinput_TunerHAL_getTrackInfoList},  
-    {"selectTrack",    "(ILjava/lang/String;)I", (void *)Java_com_broadcom_tvinput_TunerHAL_selectTrack},  
+    {"getUtcTime",     "()J",      (void *)Java_com_broadcom_tvinput_TunerHAL_getUtcTime},
+    {"stop",           "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_stop},
+    {"release",        "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_release},
+    {"setSurface",     "()I",      (void *)Java_com_broadcom_tvinput_TunerHAL_setSurface},
+    {"getTrackInfoList", "()[Lcom/broadcom/tvinput/TrackInfo;", (void *)Java_com_broadcom_tvinput_TunerHAL_getTrackInfoList},
+    {"selectTrack",    "(ILjava/lang/String;)I", (void *)Java_com_broadcom_tvinput_TunerHAL_selectTrack},
     {"setCaptionEnabled", "(Z)V", (void *)Java_com_broadcom_tvinput_TunerHAL_setCaptionEnabled},
 };
 
 const String16 INexusTunerService::descriptor(TUNER_INTERFACE_NAME);
 
-String16 INexusTunerService::getInterfaceDescriptor() 
+String16 INexusTunerService::getInterfaceDescriptor()
 {
     return INexusTunerService::descriptor;
 }
@@ -125,7 +125,7 @@ NexusTunerService::NexusTunerService()
     ALOGE("NexusTunerService created");
 }
 
-void NexusTunerService::instantiate() 
+void NexusTunerService::instantiate()
 {
     NexusTunerService *pNTS = new NexusTunerService();
 
@@ -164,22 +164,22 @@ status_t NexusTunerService::onTransact(uint32_t code, const Parcel &data, Parcel
 static int registerNativeMethods(JNIEnv* env, const char* className, JNINativeMethod* pMethods, int numMethods)
 {
     jclass clazz;
-	int i;
+    int i;
 
     clazz = env->FindClass(className);
-    if (clazz == NULL) 
+    if (clazz == NULL)
     {
         TV_LOG("%s: Native registration unable to find class '%s'", __FUNCTION__, className);
         return JNI_FALSE;
     }
 
     TV_LOG("libbcmtv_jni: numMethods = %d", numMethods);
-	for (i = 0; i < numMethods; i++)
-	{
-		TV_LOG("%s: pMethods[%d]: %s, %s, %p", __FUNCTION__, i, pMethods[i].name, pMethods[i].signature, pMethods[i].fnPtr);
-	}
+    for (i = 0; i < numMethods; i++)
+    {
+        TV_LOG("%s: pMethods[%d]: %s, %s, %p", __FUNCTION__, i, pMethods[i].name, pMethods[i].signature, pMethods[i].fnPtr);
+    }
 
-    if (env->RegisterNatives(clazz, pMethods, numMethods) < 0) 
+    if (env->RegisterNatives(clazz, pMethods, numMethods) < 0)
     {
         TV_LOG("%s: RegisterNatives failed for '%s'", __FUNCTION__, className);
         return JNI_FALSE;
@@ -193,7 +193,7 @@ jint JNI_OnLoad(JavaVM* vm, void* /*reserved*/)
     JNIEnv* env = NULL;
     jint result = -1;
 
-    if (vm->GetEnv((void**) &env, JNI_VERSION_1_4) != JNI_OK) 
+    if (vm->GetEnv((void**) &env, JNI_VERSION_1_4) != JNI_OK)
     {
         TV_LOG("%s: GetEnv failed", __FUNCTION__);
         return result;
@@ -214,7 +214,7 @@ jint JNI_OnLoad(JavaVM* vm, void* /*reserved*/)
     g_pTD = (Tuner_Data *) calloc(1, sizeof(Tuner_Data));
     g_pTD->vm = vm;
 
-	// Launch the binder service
+    // Launch the binder service
     NexusTunerService::instantiate();
     ALOGE("%s: NexusTunerService is now ready", __FUNCTION__);
 //    IPCThreadState::self()->joinThreadPool();
@@ -331,7 +331,6 @@ void BcmSidebandBinder::notify(int msg, struct hwc_notification_info &ntfy)
 }
 
 #define LOCKHAL { \
-ALOGE("%s: LOCKHAL", __FUNCTION__); \
 BKNI_AcquireMutex(g_pTD->mutex); \
 struct timespec startts, endts; \
 clock_gettime(CLOCK_MONOTONIC, &startts);
@@ -342,7 +341,6 @@ clock_gettime(CLOCK_MONOTONIC, &endts); \
 if (endts.tv_sec > startts.tv_sec) { \
     endts.tv_nsec += 1000000000 * (endts.tv_sec - startts.tv_sec); \
 } \
-ALOGE("%s: UNLOCKHAL %d", __FUNCTION__, (endts.tv_nsec - startts.tv_nsec) / 1000000); \
 BKNI_ReleaseMutex(g_pTD->mutex); \
 }
 
@@ -375,7 +373,7 @@ static void TunerHALSidebandBinderNotify(void * cb_data, int msg, struct hwc_not
        }
        if (g_pTD->driver.SetGeometry) {
            LOCKHAL
-           g_pTD->driver.SetGeometry(position, clip, ntfy.display_width, ntfy.display_height, ntfy.zorder, true); 
+           g_pTD->driver.SetGeometry(position, clip, ntfy.display_width, ntfy.display_height, ntfy.zorder, true);
            UNLOCKHAL
        }
     }
@@ -443,11 +441,11 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_tune(JNIEnv *env, jcla
     }
     else {
         LOCKHAL
-        rv = (*g_pTD->driver.Tune)(String8(s8id)); 
+        rv = (*g_pTD->driver.Tune)(String8(s8id));
         UNLOCKHAL
     }
 
-    env->ReleaseStringUTFChars(id, s8id);   
+    env->ReleaseStringUTFChars(id, s8id);
     return rv;
 }
 
@@ -483,10 +481,10 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getChannelList
     }
 
     LOCKHAL
-    civ = (*g_pTD->driver.GetChannelList)(); 
+    civ = (*g_pTD->driver.GetChannelList)();
     UNLOCKHAL
 
-    jclass cls = env->FindClass("com/broadcom/tvinput/ChannelInfo"); 
+    jclass cls = env->FindClass("com/broadcom/tvinput/ChannelInfo");
     if (cls == 0) {
         ALOGE("%s: could not find class", __FUNCTION__);
         return 0;
@@ -596,7 +594,7 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramList(JNIEnv *env, jclass /*thiz*/, 
 
     env->ReleaseStringUTFChars(id, s8id);
      
-    jclass cls = env->FindClass("com/broadcom/tvinput/ProgramInfo"); 
+    jclass cls = env->FindClass("com/broadcom/tvinput/ProgramInfo");
     if (cls == 0) {
         ALOGE("%s: could not find class", __FUNCTION__);
         return 0;
@@ -631,7 +629,7 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramList(JNIEnv *env, jclass /*thiz*/, 
     }
     jobjectArray rv = env->NewObjectArray(piv.size(), cls, NULL);
     for (unsigned i = 0; i < piv.size(); i++) {
-        jobject o = env->NewObject(cls, cID); 
+        jobject o = env->NewObject(cls, cID);
         setStringField(env, o, idID, piv[i].id);
         setStringField(env, o, channelIdID, piv[i].channel_id);
         setStringField(env, o, titleID, piv[i].title);
@@ -680,7 +678,7 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramUpdateList(JNIEnv *env, jclass /*th
     puiv = (*g_pTD->driver.GetProgramUpdateList)(limit);
     UNLOCKHAL
 
-    jclass cls = env->FindClass("com/broadcom/tvinput/ProgramUpdateInfo"); 
+    jclass cls = env->FindClass("com/broadcom/tvinput/ProgramUpdateInfo");
     if (cls == 0) {
         ALOGE("%s: could not find class", __FUNCTION__);
         return 0;
@@ -721,7 +719,7 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramUpdateList(JNIEnv *env, jclass /*th
 
     jobjectArray rv = env->NewObjectArray(puiv.size(), cls, NULL);
     for (unsigned i = 0; i < puiv.size(); i++) {
-        jobject o = env->NewObject(cls, cID); 
+        jobject o = env->NewObject(cls, cID);
         setStringField(env, o, idID, puiv[i].id);
         setStringField(env, o, channelIdID, puiv[i].channel_id);
         setStringField(env, o, titleID, puiv[i].title);
@@ -738,7 +736,7 @@ Java_com_broadcom_tvinput_TunerHAL_getProgramUpdateList(JNIEnv *env, jclass /*th
         env->SetObjectArrayElement(rv, i, o);
         env->DeleteLocalRef(o);
     }
-    ALOGE("%s: complete", __FUNCTION__);
+    TV_LOG("%s: complete", __FUNCTION__);
     return rv;
 }
 
@@ -760,7 +758,7 @@ Java_com_broadcom_tvinput_TunerHAL_getScanInfo(JNIEnv *env, jclass /*thiz*/)
         UNLOCKHAL
     }
      
-    jclass cls = env->FindClass("com/broadcom/tvinput/ScanInfo"); 
+    jclass cls = env->FindClass("com/broadcom/tvinput/ScanInfo");
     if (cls == 0) {
         ALOGE("%s: could not find class", __FUNCTION__);
         return 0;
@@ -780,11 +778,11 @@ Java_com_broadcom_tvinput_TunerHAL_getScanInfo(JNIEnv *env, jclass /*thiz*/)
     shortField(signalStrengthPercent)
     shortField(signalQualityPercent)
 
-    jobject o = env->NewObject(cls, cID); 
+    jobject o = env->NewObject(cls, cID);
     env->SetBooleanField(o, busyID, si.busy);
     env->SetBooleanField(o, validID, si.valid);
     if (si.valid) {
-        env->SetShortField(o, progressID, si.progress); 
+        env->SetShortField(o, progressID, si.progress);
         env->SetShortField(o, channelsID, si.channels);
         env->SetShortField(o, TVChannelsID, si.TVChannels);
         env->SetShortField(o, dataChannelsID, si.dataChannels);
@@ -992,7 +990,7 @@ JNIEXPORT jint JNICALL Java_com_broadcom_tvinput_TunerHAL_startScan(JNIEnv *env,
     }
     else {
         BroadcastScanParams bsp;
-        jclass cls = env->FindClass("com/broadcom/tvinput/ScanParams"); 
+        jclass cls = env->FindClass("com/broadcom/tvinput/ScanParams");
         if (cls == 0) {
             ALOGE("%s: could not find class", __FUNCTION__);
             return -1;
@@ -1150,10 +1148,10 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getTrackInfoLi
     }
 
     LOCKHAL
-    vtiv = (*g_pTD->driver.GetTrackInfoList)(); 
+    vtiv = (*g_pTD->driver.GetTrackInfoList)();
     UNLOCKHAL
 
-    jclass cls = env->FindClass("com/broadcom/tvinput/TrackInfo"); 
+    jclass cls = env->FindClass("com/broadcom/tvinput/TrackInfo");
     if (cls == 0) {
         ALOGE("%s: could not find class", __FUNCTION__);
         return 0;
@@ -1175,7 +1173,7 @@ JNIEXPORT jobjectArray JNICALL Java_com_broadcom_tvinput_TunerHAL_getTrackInfoLi
     jobjectArray rv = env->NewObjectArray(vtiv.size(), cls, NULL);
     for (unsigned i = 0; i < vtiv.size(); i++) {
         jobject o = env->NewObject(cls, cID);
-        env->SetShortField(o, typeID, vtiv[i].type); 
+        env->SetShortField(o, typeID, vtiv[i].type);
         setStringField(env, o, idID, vtiv[i].id);
         setStringField(env, o, langID, vtiv[i].lang);
         env->SetShortField(o, squarePixelWidthID, vtiv[i].squarePixelWidth);
@@ -1258,7 +1256,7 @@ TunerHAL_onBroadcastEvent(BroadcastEvent e, jint param, const String8 *s)
         jstring js;
 
         const char *event = eventName(e);
-        ALOGI("%s: %s", __FUNCTION__, event ? event : "<unknown>");
+        TV_LOG("%s: %s", __FUNCTION__, event ? event : "<unknown>");
 
         g_pTD->vm->AttachCurrentThread(&env, NULL);
         jclass cls = env->GetObjectClass(g_pTD->tunerService);

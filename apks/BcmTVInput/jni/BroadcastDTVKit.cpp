@@ -15,8 +15,11 @@ extern "C" {
 #include "stbheap.h"
 #include "stbvtc.h"
 #include "stbdsapi.h"
-#include "dtvkit_platform.h"
+#include "hal_platform.h"
+#include "stbhwtun.h"
 };
+
+//#define LOG_NDEBUG 0
 
 #undef LOG_TAG
 #define LOG_TAG "BroadcastDTVKit"
@@ -52,6 +55,7 @@ public:
         epg.mutex = STB_OSCreateMutex();
         epg.backlog = 0;
 #endif
+        tunerType = SIGNAL_NONE;
     };
     void *scanner_mutex;
 
@@ -113,41 +117,55 @@ public:
         int backlog;
     } epg;
 #endif
+    E_STB_DP_SIGNAL_TYPE tunerType;
 };
 
 static BroadcastDTVKit_Context *pSelf;
 
 static int BroadcastDTVKit_Stop()
 {
-    ALOGE("%s: Enter", __FUNCTION__);
+    ALOGD("%s: Enter", __FUNCTION__);
 
     /* Turn off subtitle display and processing */
     if(ACTL_AreSubtitlesStarted())
     {
-        ALOGE("%s: Stopping subtitles", __FUNCTION__);
+        ALOGI("%s: Stopping subtitles", __FUNCTION__);
         ACTL_StopSubtitles();
     }
 
     if (pSelf->path != INVALID_RES_ID) {
-        ALOGE("%s: Stopping", __FUNCTION__);
+        ALOGI("%s: Stopping", __FUNCTION__);
         pSelf->s_ptr = 0;
         ACTL_DecodeOff(pSelf->path);
     }
-    ALOGE("%s: Exit", __FUNCTION__);
+    ALOGD("%s: Exit", __FUNCTION__);
 
     return -1;
 }
 
+int BroadcastDTVKit_DetectFrontendType()
+{
+    ALOGD("%s: Enter", __FUNCTION__);
+    for(int i=0; i<STB_HWGetTunerPaths(); i++) {
+        if(STB_TuneGetSignalType(i))
+        {
+            ALOGI("i: %d TunerType %d:", i,STB_TuneGetSignalType(i));
+            return STB_TuneGetSignalType(i);  /*detected a tuner*/
+        }
+    }
+    ALOGE("TunerType NONE");
+    return -1;
+}
 /*
     U8BIT progress = ACTL_GetSearchProgress();
-    ALOGE("%s:# progress %d%%", __FUNCTION__, progress);
+    ALOGI("%s:# progress %d%%", __FUNCTION__, progress);
     if (ACTL_IsSearchComplete()) {
         pSelf->scanning = false;
         if (ACTL_IsTargetRegionRequired()) {
             ALOGE("%s: target region required", __FUNCTION__);
         }
         ACTL_CompleteServiceSearch();
-        ALOGE("%s: scan complete", __FUNCTION__);
+        ALOGI("%s: scan complete", __FUNCTION__);
         TunerHAL_onBroadcastEvent(0);
         TunerHAL_onBroadcastEvent(200);
     }
@@ -211,7 +229,12 @@ scannerUpdateUnderLock(bool stop)
         if (ACTL_IsTargetRegionRequired()) {
             printf("target region required\n");
         }
-        ACTL_CompleteServiceSearch();
+
+        ADB_AllocateLcns(pSelf->tunerType);
+        ADB_ReleaseDatabaseSearchData();
+        /* Save the database */
+        ADB_SaveDatabase();
+
         pSelf->tot_search_active = ACTL_StartTotSearch();
         onScanComplete();
     }
@@ -241,7 +264,7 @@ static void setScanEncrypted(bool scan_encrypted)
 }
 
 static bool
-startBlindScan(bool scan_encrypted)
+startNetworkScan(bool scan_encrypted,BroadcastScanParams::DeliverySystem deliverySystem)
 {
     if (pSelf->tot_search_active) {
         ACTL_StopTotSearch();
@@ -257,9 +280,9 @@ startBlindScan(bool scan_encrypted)
     // manual scan with network
     static const BOOLEAN retune = TRUE;
     static const BOOLEAN manual_search = FALSE;
-    ADB_PrepareDatabaseForSearch(SIGNAL_COFDM, NULL, retune, manual_search);
+    ADB_PrepareDatabaseForSearch(deliverySystem == BroadcastScanParams::DeliverySystem_Dvbs ? SIGNAL_QPSK:SIGNAL_COFDM, NULL, retune, manual_search);
     setScanEncrypted(scan_encrypted);
-    if (!ACTL_StartServiceSearch(SIGNAL_COFDM, ACTL_FREQ_SEARCH)) {
+    if (!ACTL_StartServiceSearch(deliverySystem == BroadcastScanParams::DeliverySystem_Dvbs ? SIGNAL_QPSK:SIGNAL_COFDM, ACTL_FREQ_SEARCH)) {
         STB_OSMutexUnlock(pSelf->scanner_mutex);
         return false;
     }
@@ -294,11 +317,20 @@ satelliteTuningParamsToDTVKit(BroadcastScanParams *pParams, S_MANUAL_TUNING_PARA
                 (int)pParams->codeRateNumerator,
                 (int)pParams->codeRateDenominator);
         return false;
-    }; 
+    };
     switch (pParams->satelliteMode) {
-    case BroadcastScanParams::SatelliteMode_SatQpskLdpc: dtvkitParams.u.sat.dvb_s2 = true; dtvkitParams.u.sat.modulation = MOD_QPSK; break;
-    case BroadcastScanParams::SatelliteMode_Sat8pskLdpc: dtvkitParams.u.sat.dvb_s2 = true; dtvkitParams.u.sat.modulation = MOD_8PSK; break;
-    case BroadcastScanParams::SatelliteMode_SatDvb: dtvkitParams.u.sat.dvb_s2 = false; dtvkitParams.u.sat.modulation = MOD_QPSK; break;
+    case BroadcastScanParams::SatelliteMode_SatQpskLdpc:
+        dtvkitParams.u.sat.dvb_s2 = false;
+        dtvkitParams.u.sat.modulation = MOD_QPSK;
+        break;
+    case BroadcastScanParams::SatelliteMode_Sat8pskLdpc:
+        dtvkitParams.u.sat.dvb_s2 = true;
+        dtvkitParams.u.sat.modulation = MOD_8PSK;
+        break;
+    case BroadcastScanParams::SatelliteMode_SatDvb:
+        dtvkitParams.u.sat.dvb_s2 = false;
+        dtvkitParams.u.sat.modulation = MOD_QPSK;
+        break;
     default:
         ALOGE("%s: Unsupported satellite mode: %d", __FUNCTION__,
                 (int)pParams->satelliteMode);
@@ -378,7 +410,7 @@ startManualScan(BroadcastScanParams *pParams)
     S_MANUAL_TUNING_PARAMS dtvkitParams;
     E_STB_DP_SIGNAL_TYPE tunerType;
 
-    ALOGI("%s: Enter", __FUNCTION__);
+    ALOGD("%s: Enter", __FUNCTION__);
 
     if (!tuningParamsToDTVKit(pParams, tunerType, dtvkitParams)) {
         ALOGE("%s: Exit - unable to convert parameters", __FUNCTION__);
@@ -397,7 +429,9 @@ startManualScan(BroadcastScanParams *pParams)
         ALOGE("%s: Exit - unable to init scanner", __FUNCTION__);
         return false;
     }
-
+    ALOGI("ScanParams freq: %d, pol: %d, symK: %d, fec: %d, dvb_s2: %d, modl: %d",
+        dtvkitParams.freq,dtvkitParams.u.sat.polarity,dtvkitParams.u.sat.symbol_rate,
+        dtvkitParams.u.sat.fec,dtvkitParams.u.sat.dvb_s2,dtvkitParams.u.sat.modulation);
     // manual scan with network
     static const BOOLEAN retune = pParams->scanMode != BroadcastScanParams::ScanMode_Single;
     static const BOOLEAN manual_search = TRUE;
@@ -419,12 +453,27 @@ startManualScan(BroadcastScanParams *pParams)
 static int BroadcastDTVKit_StartScan(BroadcastScanParams *pParams)
 {
     int rv = -1;
-    ALOGE("%s: Enter", __FUNCTION__); 
+    ALOGD("%s: Enter", __FUNCTION__);
 
-    if (pParams == 0 || (pParams->deliverySystem == BroadcastScanParams::DeliverySystem_Dvbt && pParams->scanMode == BroadcastScanParams::ScanMode_Blind)) {
-        ALOGI("%s: DVB-T blind scan", __FUNCTION__);
+    switch (pParams->deliverySystem) {
+    case BroadcastScanParams::DeliverySystem_Dvbt:
+        pSelf->tunerType = SIGNAL_COFDM;
+        break;
+    case BroadcastScanParams::DeliverySystem_Dvbs:
+        pSelf->tunerType = SIGNAL_QPSK;
+        break;
+    case BroadcastScanParams::DeliverySystem_Dvbc:
+        pSelf->tunerType = SIGNAL_QAM;
+        break;
+    default:
+        pSelf->tunerType = SIGNAL_NONE;
+        break;
+    }
+
+    if (pParams == 0 || ((pParams->deliverySystem == BroadcastScanParams::DeliverySystem_Dvbt  ) && pParams->scanMode == BroadcastScanParams::ScanMode_Home)) {
+        ALOGI("%s: network scan", __FUNCTION__);
         bool scan_encrypted = pParams ? pParams->encrypted : false;
-        startBlindScan(scan_encrypted);
+        startNetworkScan(scan_encrypted,pParams->deliverySystem);
         rv = 0;
     }
     else if (pParams->scanMode == BroadcastScanParams::ScanMode_Blind) {
@@ -437,14 +486,14 @@ static int BroadcastDTVKit_StartScan(BroadcastScanParams *pParams)
             rv = 0;
         }
     }
-    ALOGE("%s: Exit", __FUNCTION__); 
+    ALOGD("%s: Exit", __FUNCTION__);
     return rv;
 }
 
 static int BroadcastDTVKit_StopScan()
 {
     int rv = -1;
-    ALOGE("%s: Enter", __FUNCTION__); 
+    ALOGD("%s: Enter", __FUNCTION__);
 
     STB_OSMutexLock(pSelf->scanner_mutex);
 
@@ -453,7 +502,7 @@ static int BroadcastDTVKit_StopScan()
     }
 
     STB_OSMutexUnlock(pSelf->scanner_mutex);
-    ALOGE("%s: Exit", __FUNCTION__);
+    ALOGD("%s: Exit", __FUNCTION__);
     return rv;
 }
 
@@ -474,14 +523,14 @@ static int BroadcastDTVKit_Tune(String8 s8id)
 {
     int rv = -1;
 
-    ALOGE("%s: Enter", __FUNCTION__);
+    ALOGD("%s: Enter", __FUNCTION__);
 
     if (pSelf->tot_search_active) {
         ACTL_StopTotSearch();
         pSelf->tot_search_active = false;
     }
 
-    U16BIT lcn = strtoul(s8id.string(), 0, 0); 
+    U16BIT lcn = strtoul(s8id.string(), 0, 0);
     void *s_ptr = ADB_FindServiceByLcn(ADB_SERVICE_LIST_TV | ADB_SERVICE_LIST_RADIO, lcn, TRUE);
     pSelf->s_ptr = s_ptr;
     resetDecodeState();
@@ -491,7 +540,7 @@ static int BroadcastDTVKit_Tune(String8 s8id)
             ALOGE("%s: Invalid resource", __FUNCTION__);
         }
         else {
-            ALOGE("%s: Tuning", __FUNCTION__);
+            ALOGI("%s: Tuning", __FUNCTION__);
             TunerHAL_onBroadcastEvent(VIDEO_AVAILABLE, 0, 0);
             rv = 0;
 
@@ -508,7 +557,7 @@ static int BroadcastDTVKit_Tune(String8 s8id)
         ALOGE("%s: LCN %d not found", __FUNCTION__, lcn);
     }
 
-    ALOGE("%s: Exit", __FUNCTION__);
+    ALOGD("%s: Exit", __FUNCTION__);
 
     return rv;
 }
@@ -570,7 +619,7 @@ utf8tostringstrippingdvbcodes(U8BIT *p)
         return s;
     }
     if (*p == 0x15) {
-        p++; 
+        p++;
     }
     do {
         int32_t code = 0;
@@ -736,7 +785,7 @@ static Vector<BroadcastChannelInfo> BroadcastDTVKit_GetChannelList()
 {
     Vector<BroadcastChannelInfo> civ;
 
-    ALOGE("%s: Enter", __FUNCTION__);
+    ALOGD("%s: Enter", __FUNCTION__);
 
     void **slist;
     U16BIT num_entries;
@@ -745,7 +794,7 @@ static Vector<BroadcastChannelInfo> BroadcastDTVKit_GetChannelList()
         for (unsigned i = 0; i < num_entries; i++) {
             BroadcastChannelInfo ci;
             void *t_ptr;
-             
+
             ci.id = String8::format("%u", ADB_GetServiceLcn(slist[i]));
 
             U8BIT *name = ADB_GetServiceFullName(slist[i], FALSE);
@@ -782,13 +831,13 @@ static Vector<BroadcastChannelInfo> BroadcastDTVKit_GetChannelList()
                     break;
                 }
             }
-            ci.logoUrl = ""; 
+            ci.logoUrl = "";
             if (ci.onid == 9018) {
                 for (int li = 0; freeviewLogoMap[li].display_name != 0; li++) {
                     if (ci.name == freeviewLogoMap[li].display_name) {
                         if (freeviewLogoMap[li].url != 0) {
-                            ALOGE("%s: %s matches %d %s", __FUNCTION__, ci.name.string(), li, freeviewLogoMap[li].url);
-                            ci.logoUrl = freeviewLogoMap[li].url; 
+                            ALOGI("%s: %s matches %d %s", __FUNCTION__, ci.name.string(), li, freeviewLogoMap[li].url);
+                            ci.logoUrl = freeviewLogoMap[li].url;
                         }
                         break;
                     }
@@ -800,7 +849,7 @@ static Vector<BroadcastChannelInfo> BroadcastDTVKit_GetChannelList()
         ADB_ReleaseServiceList(slist, num_entries);
     }
 
-    ALOGE("%s: Exit", __FUNCTION__);
+    ALOGD("%s: Exit", __FUNCTION__);
     return civ;
 }
 
@@ -841,7 +890,7 @@ static Vector<BroadcastProgramInfo> BroadcastDTVKit_GetProgramList(String8 s8id)
 {
     Vector<BroadcastProgramInfo> piv;
 
-    ALOGE("%s: Enter", __FUNCTION__);
+    ALOGD("%s: Enter", __FUNCTION__);
 
     U16BIT lcn = strtoul(s8id.string(), 0, 0);
     void *s_ptr = ADB_FindServiceByLcn(ADB_SERVICE_LIST_TV | ADB_SERVICE_LIST_RADIO, lcn, TRUE);
@@ -863,7 +912,7 @@ static Vector<BroadcastProgramInfo> BroadcastDTVKit_GetProgramList(String8 s8id)
 #endif
     }
 
-    ALOGE("%s: Exit", __FUNCTION__);
+    ALOGD("%s: Exit", __FUNCTION__);
     return piv;
 }
 
@@ -872,7 +921,7 @@ static Vector<BroadcastProgramUpdateInfo> BroadcastDTVKit_GetProgramUpdateList(j
 {
     Vector<BroadcastProgramUpdateInfo> puiv;
 
-    ALOGE("%s: Enter", __FUNCTION__);
+    ALOGD("%s: Enter", __FUNCTION__);
     BroadcastProgramUpdateInfo pui;
     UpdateRecord ur;
     bool valid;
@@ -881,7 +930,7 @@ static Vector<BroadcastProgramUpdateInfo> BroadcastDTVKit_GetProgramUpdateList(j
     int found = 0;
     do {
         STB_OSMutexLock(pSelf->epg.mutex);
-        empty = pSelf->epg.queue.empty(); 
+        empty = pSelf->epg.queue.empty();
         if (!empty) {
             ur = *pSelf->epg.queue.begin();
             pSelf->epg.queue.erase(pSelf->epg.queue.begin());
@@ -894,7 +943,7 @@ static Vector<BroadcastProgramUpdateInfo> BroadcastDTVKit_GetProgramUpdateList(j
         }
         STB_OSMutexUnlock(pSelf->epg.mutex);
         if (valid) {
-            ALOGE("%s: pop %d %d %d [%d]", __FUNCTION__, ur.type, ur.lcn, ur.event_id, backlog);
+            ALOGV("%s: pop %d %d %d [%d]", __FUNCTION__, ur.type, ur.lcn, ur.event_id, backlog);
             pui.type = ur.type;
             switch (ur.type) {
             case BroadcastProgramUpdateInfo::ClearAll:
@@ -913,7 +962,7 @@ static Vector<BroadcastProgramUpdateInfo> BroadcastDTVKit_GetProgramUpdateList(j
                 if (s_ptr) {
                     void *e_ptr = ADB_GetEvent(s_ptr, ur.event_id);
                     if (e_ptr) {
-                        buildprog(pui, e_ptr, s_ptr); 
+                        buildprog(pui, e_ptr, s_ptr);
                     }
                     else {
                         valid = false;
@@ -930,11 +979,11 @@ static Vector<BroadcastProgramUpdateInfo> BroadcastDTVKit_GetProgramUpdateList(j
             }
             if (valid) {
                 puiv.push_back(pui);
-                found++; 
+                found++;
             }
         }
     } while (!empty && (!limit || (found < limit)));
-    ALOGE("%s: Exit", __FUNCTION__);
+    ALOGD("%s: Exit", __FUNCTION__);
     return puiv;
 }
 
@@ -955,7 +1004,7 @@ PushUpdate(E_APP_SI_EIT_JOURNAL_TYPE type, BOOLEAN isSchedule, U16BIT allocated_
         default:
             return;
         }
-        ALOGE("%s: %d %d %d", __FUNCTION__, ur.type, allocated_lcn, event_id);
+        ALOGV("%s: %d %d %d", __FUNCTION__, ur.type, allocated_lcn, event_id);
         STB_OSMutexLock(pSelf->epg.mutex);
         empty = pSelf->epg.queue.empty();
         pSelf->epg.queue.push_back(ur);
@@ -970,7 +1019,7 @@ PushUpdate(E_APP_SI_EIT_JOURNAL_TYPE type, BOOLEAN isSchedule, U16BIT allocated_
 
 static int BroadcastDTVKit_Release()
 {
-    ALOGE("%s: Enter", __FUNCTION__);
+    ALOGD("%s: Enter", __FUNCTION__);
 
     if (pSelf->path != INVALID_RES_ID) {
         BroadcastDTVKit_Stop();
@@ -978,7 +1027,7 @@ static int BroadcastDTVKit_Release()
         pSelf->path = INVALID_RES_ID;
     }
 
-    ALOGE("%s: Exit", __FUNCTION__);
+    ALOGD("%s: Exit", __FUNCTION__);
     return 0;
 }
 
@@ -990,7 +1039,7 @@ evcname(unsigned c, unsigned t)
     switch (c) {
     case EV_CLASS_HSET: return "EV_CLASS_HSET";
     case EV_CLASS_KEYP: return "EV_CLASS_KEYP";
-    case EV_CLASS_TUNE: 
+    case EV_CLASS_TUNE:
         switch(t) {
         case EV_TYPE_LOCKED: return "STB_EVENT_TUNE_LOCKED";
         case EV_TYPE_NOTLOCKED: return "STB_EVENT_TUNE_NOTLOCKED";
@@ -1309,7 +1358,7 @@ event_handler(U32BIT event, void *event_data, U32BIT /*data_size*/)
         int videoStarted = 0;
         int update = 0;
 #ifdef DEBUG_EVENTS
-        ALOGE("%s: ev %s(%d)/%d", __FUNCTION__, evcname(EVENT_CLASS(event), EVENT_TYPE(event)), EVENT_CLASS(event), EVENT_TYPE(event));
+        ALOGI("%s: ev %s(%d)/%d", __FUNCTION__, evcname(EVENT_CLASS(event), EVENT_TYPE(event)), EVENT_CLASS(event), EVENT_TYPE(event));
 #endif
         if (event == EVENT_CODE(EV_CLASS_UI, EV_TYPE_UPDATE)) {
             scannerUpdate();
@@ -1443,7 +1492,7 @@ BroadcastDTVKit_GetUtcTime()
         return 0;
     }
     now = STB_GCConvertToTimestamp(STB_GCNowDHMSGmt());
-    ALOGE("%s: %d", __FUNCTION__, now);
+    ALOGD("%s: %d", __FUNCTION__, now);
     return (jlong)now;
 }
 
@@ -1454,11 +1503,11 @@ BroadcastDTVKit_SetGeometry(BroadcastRect position, BroadcastRect /*clipRect*/,
 {
     if ((position.y == 0 && position.h == gfxHeight) || (position.x == 0 && position.w == gfxWidth)) {
         // fullscreen - let DTVKit choose the window - hopefully it gets the same answer
-        ALOGE("%s: fullscreen", __FUNCTION__);
-        ACTL_SetVideoWindow(0, 0, 0, 0); 
+        ALOGI("%s: fullscreen", __FUNCTION__);
+        ACTL_SetVideoWindow(0, 0, 0, 0);
     }
     else {
-        ALOGE("%s: app scaling", __FUNCTION__);
+        ALOGI("%s: app scaling", __FUNCTION__);
         ACTL_SetVideoWindow(position.x, position.y, position.w, position.h);
     }
     return 0;
@@ -1473,7 +1522,7 @@ BroadcastDTVKit_GetTrackInfoList()
         BroadcastTrackInfo info;
         info.type = 1;
         info.id = String8::format("%u", pSelf->vpid);
-        info.squarePixelHeight = pSelf->h; 
+        info.squarePixelHeight = pSelf->h;
         info.squarePixelWidth = pSelf->w;
         switch (0) {
         case NEXUS_VideoFrameRate_e23_976:  info.frameRate = 23.976; break;
@@ -1493,12 +1542,12 @@ BroadcastDTVKit_GetTrackInfoList()
         default:                            info.frameRate = 0; break;
         }
 
-        ALOGE("%s: (%dx%d)", __FUNCTION__, info.squarePixelWidth, info.squarePixelHeight);
+        ALOGI("%s: (%dx%d)", __FUNCTION__, info.squarePixelWidth, info.squarePixelHeight);
         v.push_back(info);
     }
     v.appendVector(pSelf->batil);
     v.appendVector(pSelf->bstil);
-    return v; 
+    return v;
 }
 
 static int
@@ -1535,7 +1584,7 @@ BroadcastDTVKit_SelectAudioTrack(int uid)
 static int
 BroadcastDTVKit_SelectSubtitleTrack(int uid)
 {
-    ALOGE("%s: pid %d", __FUNCTION__, uid);
+    ALOGD("%s: pid %d", __FUNCTION__, uid);
     if (uid < 0) {
         ADB_SetReqdSubtitleStreamSettings(pSelf->s_ptr, FALSE, 0, ADB_SUBTITLE_TYPE_DVB);
         void ACTL_PauseSubtitles(void);
@@ -1551,7 +1600,7 @@ BroadcastDTVKit_SelectSubtitleTrack(int uid)
             }
         }
         if (i < num_entries) {
-            ALOGE("%s: pid %d found, selecting", __FUNCTION__, uid);
+            ALOGI("%s: pid %d found, selecting", __FUNCTION__, uid);
             ADB_SetReqdSubtitleStreamSettings(pSelf->s_ptr, TRUE,
                 ADB_GetSubtitleStreamLangCode(streamlist[i]),
                 ADB_GetSubtitleStreamType(streamlist[i]));
@@ -1603,15 +1652,16 @@ BroadcastDTVKit_SetCaptionEnabled(bool enabled)
 int
 Broadcast_Initialize(BroadcastDriver *pD)
 {
-    ALOGE("%s: Enter", __FUNCTION__);
+    ALOGD("%s: Enter", __FUNCTION__);
 
     pSelf = new BroadcastDTVKit_Context;
 
     DTVKitPlatform_SetNVMBasePath("/data/data/com.broadcom.tvinput");
-    if (!APP_InitialiseDVB(event_handler)) {
+    if (!APP_InitialiseDVB(event_handler,DVB_INIT_NO_TELETEXT_OR_SUBTITLES)) {
         ALOGE("%s: Failed to initialise the DVB stack", __FUNCTION__);
         return -1;
     }
+
 #ifdef JOURNAL
     ASI_SetEITScheduleLimit(2 * 24);
 #else
@@ -1620,7 +1670,7 @@ Broadcast_Initialize(BroadcastDriver *pD)
 
     U16BIT services = ADB_GetNumServicesInList(ADB_SERVICE_LIST_ALL, true);
     if (services == 0) {
-        ACFG_SetCountry(COUNTRY_CODE_UK); 
+        ACFG_SetCountry(COUNTRY_CODE_UK);
     }
     else {
         pSelf->tot_search_active = ACTL_StartTotSearch();
@@ -1647,7 +1697,9 @@ Broadcast_Initialize(BroadcastDriver *pD)
     BDBG_SetModuleLevel("stbhwav", BDBG_eMsg);
     //BDBG_SetModuleLevel("stbhwosd", BDBG_eMsg);
     //BDBG_SetModuleLevel("stbhwosd_nsc", BDBG_eMsg);
-    ALOGE("%s: Exit", __FUNCTION__);
-    return 0;
+    BDBG_SetModuleLevel("stbhwtun", BDBG_eMsg);
+    BDBG_SetModuleLevel("nexusshim_nxc", BDBG_eMsg);
+    ALOGD("%s: Exit", __FUNCTION__);
+    return (BroadcastDTVKit_DetectFrontendType());
 }
 

@@ -20,6 +20,17 @@ include $(CLEAR_VARS)
 LOCAL_CERTIFICATE := $(BCM_VENDOR_STB_ROOT)/bcm_platform/signing/bcmstb
 
 LOCAL_SRC_FILES := $(call all-java-files-under, src)
+
+# Leanback support
+LOCAL_STATIC_JAVA_LIBRARIES += android-support-v4
+LOCAL_STATIC_JAVA_LIBRARIES += android-support-v7-recyclerview
+LOCAL_STATIC_JAVA_LIBRARIES += android-support-v17-leanback
+LOCAL_RESOURCE_DIR := $(TOP)/frameworks/support/v17/leanback/res
+LOCAL_RESOURCE_DIR += $(BCM_VENDOR_STB_ROOT)/bcm_platform/tools/brand/res
+LOCAL_RESOURCE_DIR += $(LOCAL_PATH)/res
+LOCAL_AAPT_FLAGS := --auto-add-overlay
+LOCAL_AAPT_FLAGS += --extra-packages android.support.v17.leanback
+
 LOCAL_JNI_SHARED_LIBRARIES := libjni_tuner
 
 LOCAL_PACKAGE_NAME := BcmTVInput

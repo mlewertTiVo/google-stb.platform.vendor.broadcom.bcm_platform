@@ -4,6 +4,12 @@ import android.os.Parcelable;
 import android.os.Parcel;
 
 public class ScanParams implements Parcelable {
+    public enum FrontendType {
+        Undefined,
+        Terrestrial,
+        Satellite,
+        Cable
+    };
     public enum DeliverySystem {
         Undefined,
         Dvbt,
@@ -54,6 +60,7 @@ public class ScanParams implements Parcelable {
         OfdmDvbt2
     };
     /* All */
+    public FrontendType frontendType;
     public DeliverySystem deliverySystem;
     public ScanMode scanMode;
     public int freqKHz;
@@ -73,6 +80,7 @@ public class ScanParams implements Parcelable {
     public OfdmMode ofdmMode;
     public short plpId;
     public ScanParams() {
+        frontendType = frontendType.Undefined;
         deliverySystem = DeliverySystem.Undefined;
         scanMode = ScanMode.Undefined;
         freqKHz = 0;
@@ -96,6 +104,7 @@ public class ScanParams implements Parcelable {
 
     @Override
     public void writeToParcel(Parcel out, int flags) {
+        out.writeSerializable(frontendType);
         out.writeSerializable(deliverySystem);
         out.writeSerializable(scanMode);
         out.writeInt(freqKHz);
@@ -113,6 +122,7 @@ public class ScanParams implements Parcelable {
     }
 
     private ScanParams(Parcel in) {
+        frontendType = (FrontendType)in.readSerializable();
         deliverySystem = (DeliverySystem)in.readSerializable();
         scanMode = (ScanMode)in.readSerializable();
         freqKHz = in.readInt();

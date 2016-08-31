@@ -27,4 +27,30 @@
     <string name="tv_channels_label">TV: </string>
     <string name="radio_channels_label">Radio: </string>
     <string name="data_channels_label">Data: </string>
+
+
+    <string name="sat_tuning_param_string">TUNING PARAMETERS</string>
+    <string name="freq_string">Transponder Frequency</string>
+    <string name="Mhz_string">MHz</string>
+    <string name="enter_freq_hint">11627</string>
+    <string name="vert_pol_string">Vertical</string>
+    <string name="horiz_pol_string">Horizontal</string>
+    <string name="pol_string">Polarization</string>
+    <string name="symbol_rate_string">Symbol Rate</string>
+    <string name="symbol_sec_string">Sym/Sec</string>
+    <string name="enter_symbol_hint">22000</string>
+
+    <string name="satellite_mode_string">Satellite Mode</string>
+    <string name="dvbs2_string">DVB-S2</string>
+    <string name="dvbs_string">DVB-S</string>
+    <string name="next_string">NEXT</string>
+
+    <string name="modulation_string">Modulation</string>
+    <string name="mod_auto_string">AUTO</string>
+    <string name="mod_qpsk_string">QPSK</string>
+    <string name="mod_8psk_string">8PSK</string>
+
+    <string name="search_type_string">Search Type</string>
+    <string name="search_type_fta">FTA</string>
+    <string name="search_type_all">All</string>
 </resources>

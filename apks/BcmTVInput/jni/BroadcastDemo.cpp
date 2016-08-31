@@ -15,6 +15,8 @@
 #define LOG_TAG "BroadcastDemo"
 #include <cutils/log.h>
 
+#define TUNE_SIGNAL_COFDM 2
+
 static const NEXUS_AudioCodec audio_codec = NEXUS_AudioCodec_eMpeg;
 static const NEXUS_VideoCodec video_codec = NEXUS_VideoCodec_eMpeg2;
 static const int audio_channels = 2;
@@ -967,6 +969,6 @@ Broadcast_Initialize(BroadcastDriver *pD)
     pD->SetCaptionEnabled = BroadcastDemo_SetCaptionEnabled;
 
     ALOGE("%s: Exit", __FUNCTION__);
-    return 0;
+    return TUNE_SIGNAL_COFDM; /*return the tuner type*/
 }
 

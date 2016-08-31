@@ -68,7 +68,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * TV-Input service for Broadcom's Tuner
- * 
+ *
  */
 
 public class TunerService extends TvInputService {
@@ -94,6 +94,8 @@ public class TunerService extends TvInputService {
     private TvInputManager mManager = null;
     private ResolveInfo mResolveInfo;
     private Handler mMainLoopHandler;
+
+    public static int frontendType = 0; /*used by MainActivity to distinguish different FEs*/
 
     private static ContentValues buildProgramValues(long channelId, ProgramInfo program, boolean insert) {
         ContentValues prog_values = new ContentValues();
@@ -148,11 +150,13 @@ public class TunerService extends TvInputService {
     private void forgeTime() {
         long t = TunerHAL.getUtcTime();
         if (t != 0) {
-            Log.e(TAG, "forgeTime::Got time " + t);
+            if (DEBUG)
+                Log.d(TAG, "forgeTime::Got time " + t);
             t *= 1000;
             if (Math.abs(t - System.currentTimeMillis()) >= 10000) {
-                Log.e(TAG, "forgeTime::Calling setTime with " + t); 
-                AlarmManager am = (AlarmManager)TunerService.this.getSystemService(Context.ALARM_SERVICE); 
+                if (DEBUG)
+                    Log.d(TAG, "forgeTime::Calling setTime with " + t);
+                AlarmManager am = (AlarmManager)TunerService.this.getSystemService(Context.ALARM_SERVICE);
                 am.setTime(t);
             }
         }
@@ -227,8 +231,8 @@ public class TunerService extends TvInputService {
 
             private void download(LogoJob job) {
                 try {
-                    URL url = new URL(job.urlString); 
-                    HttpURLConnection urlConnection = (HttpURLConnection)url.openConnection(); 
+                    URL url = new URL(job.urlString);
+                    HttpURLConnection urlConnection = (HttpURLConnection)url.openConnection();
                     insertStream(job.contentUri, urlConnection.getInputStream());
                 }
                 catch (IOException e) {
@@ -239,20 +243,20 @@ public class TunerService extends TvInputService {
             @Override
             public void run() {
                 SystemClock.sleep(30000);
-                lock.lock(); 
+                lock.lock();
                 while (true) {
                     LogoJob job = queue.poll();
                     if (job != null) {
                         lock.unlock();
                         // process download
                         Log.d(TAG, "LogoLoaderTask::processing " + job.urlString + " to " + job.contentUri.toString());
-                        download(job); 
+                        download(job);
                         lock.lock();
                     }
                     else {
                         Log.d(TAG, "LogoLoaderTask::waiting");
                         try {
-                            syncRequired.await(); 
+                            syncRequired.await();
                         } catch (InterruptedException e) {
                             Log.d(TAG, "LogoLoaderTask::exiting");
                             return;
@@ -530,13 +534,14 @@ public class TunerService extends TvInputService {
             {
                 if (ops.size() <= 0)
                     return; //nothing to do
-
-                Log.i(TAG, "applying batch of " + ops.size() + " operations");
+                if (DEBUG)
+                    Log.i(TAG, "applying batch of " + ops.size() + " operations");
                 try {
                     ContentProviderResult[] results;
                     results = getContentResolver().applyBatch(
                             TvContract.AUTHORITY, ops);
-                    Log.d(TAG, "applied " + Integer.valueOf(ops.size()) +
+                    if (DEBUG)
+                        Log.d(TAG, "applied " + Integer.valueOf(ops.size()) +
                             "ops, got " + results.length + " results");
                     addMappings(keys, results);
                     ops.clear();
@@ -552,7 +557,8 @@ public class TunerService extends TvInputService {
                 ArrayList<Pair<String, String>> keys = new ArrayList<>();
                 ProgramUpdateInfo puiv[] = TunerHAL.getProgramUpdateList(BATCH_MAX_SIZE);
                 for (ProgramUpdateInfo pui : puiv) {
-                    Log.i(TAG, "DatabaseSyncTask::Got programUpdate " +
+                    if (DEBUG)
+                        Log.i(TAG, "DatabaseSyncTask::Got programUpdate " +
                             pui.type + " " + pui.channel_id + " " + pui.id);
                     switch (pui.type) {
                     case ADD:
@@ -626,9 +632,10 @@ public class TunerService extends TvInputService {
                         }
                     }
                     else {
-                        Log.d(TAG, "DatabaseSyncTask::waiting");
+                        if (DEBUG)
+                            Log.d(TAG, "DatabaseSyncTask::waiting");
                         try {
-                            syncRequired.await(); 
+                            syncRequired.await();
                         } catch (InterruptedException e) {
                             Log.d(TAG, "DatabaseSyncTask::exiting");
                             return;
@@ -664,13 +671,13 @@ public class TunerService extends TvInputService {
         }
         Method m;
         try {
-            m = c.getMethod("notifySessionEvent", new Class[] { String.class, Bundle.class }); 
+            m = c.getMethod("notifySessionEvent", new Class[] { String.class, Bundle.class });
         } catch (NoSuchMethodException e) {
             Log.d(TAG, "reflectedNotifySessionEvent: did not find method");
             return;
         }
         try {
-            m.invoke(s, new Object[] { event, args }); 
+            m.invoke(s, new Object[] { event, args });
         } catch (IllegalAccessException e) {
             Log.d(TAG, "reflectedNotifySessionEvent: IllegalAccessException");
         } catch (InvocationTargetException e) {
@@ -722,7 +729,7 @@ public class TunerService extends TvInputService {
     {
         TrackInfo vtia[] = TunerHAL.getTrackInfoList();
         if (vtia.length > 0) {
-            List<TvTrackInfo> tracks = new ArrayList<>(); 
+            List<TvTrackInfo> tracks = new ArrayList<>();
             for (TrackInfo vti : vtia) {
                 TvTrackInfo info;
                 if (vti.type == TvTrackInfo.TYPE_VIDEO) {
@@ -778,7 +785,7 @@ public class TunerService extends TvInputService {
     }
 
     public void onBroadcastEvent(BroadcastEvent e, final int param, final String s) {
-        Log.e(TAG, "Broadcast event: " + e + " " + param + " " + s);
+        Log.d(TAG, "Broadcast event: " + e + " " + param + " " + s);
         switch (e) {
             case CHANNEL_LIST_CHANGED:
             dbsync.setChannelListChanged();
@@ -829,8 +836,8 @@ public class TunerService extends TvInputService {
 
     @Override
     public void onCreate() {
-        if (DEBUG) 
-			Log.d(TAG, "TunerService::onCreate()");
+        if (DEBUG)
+           Log.d(TAG, "TunerService::onCreate()");
 
         super.onCreate();
 
@@ -844,8 +851,8 @@ public class TunerService extends TvInputService {
 
     @Override
     public Session onCreateSession(String inputId) {
-        if (DEBUG) 
-			Log.d(TAG, "TunerService::onCreateSession(), inputId = " +inputId);
+        if (DEBUG)
+            Log.d(TAG, "TunerService::onCreateSession(), inputId = " +inputId);
 
         // Lookup TvInputInfo from inputId
         TvInputInfo info = mInputMap.get(inputId);
@@ -853,7 +860,7 @@ public class TunerService extends TvInputService {
         TunerTvInputSessionImpl newSession = new TunerTvInputSessionImpl(this, info);
         if (newSession != null) {
             sessionSet.add(newSession);
-            if (DEBUG) 
+            if (DEBUG)
                 Log.d(TAG, "TunerService::onCreateSession(), sessions = " + sessionSet.size());
         }
         return newSession;
@@ -861,29 +868,32 @@ public class TunerService extends TvInputService {
 
     @Override
     public TvInputInfo onHardwareAdded(TvInputHardwareInfo hardwareInfo) {
-        if (DEBUG) 
-			Log.d(TAG, "TunerService::onHardwareAdded()");
-		
-		int type = hardwareInfo.getType();
+        if (DEBUG)
+            Log.d(TAG, "TunerService::onHardwareAdded()");
+
+        int type = hardwareInfo.getType();
 
         if (type != TvInputHardwareInfo.TV_INPUT_TYPE_TUNER) {
-			Log.d(TAG, "TunerService::onHardwareAdded(), returning as the type is not tuner, type = " +type);
+            Log.d(TAG, "TunerService::onHardwareAdded(), returning as the type is not tuner, type = " +type);
             return null;
         }
 
         int deviceId = hardwareInfo.getDeviceId();
-		Log.d(TAG, "TunerService::onHardwareAdded(), deviceId = " +deviceId);
+        Log.d(TAG, "TunerService::onHardwareAdded(), deviceId = " +deviceId);
 
         if (mInputIdMap.indexOfKey(deviceId) >= 0) {
             Log.e(TAG, "Already created TvInputInfo for deviceId=" + deviceId);
             return null;
         }
 
-        Log.e(TAG, "Calling TunerHAL.initialize!!");
-        if (TunerHAL.initialize(this) < 0) {
-            Log.e(TAG, "TunerHAL.initialize failed!!");
+        Log.e(TAG, "Calling TunerHAL.initialize !");
+        frontendType = TunerHAL.initialize(this);
+        if (frontendType <  0) {
+            Log.e(TAG, "TuneHAL.initialize failed!!");
+
             return null;
         }
+        Log.e(TAG, "frontendType: " + frontendType);
 
         TvInputInfo info = null;
         try {
@@ -902,9 +912,9 @@ public class TunerService extends TvInputService {
         // Save mapping between inputId and deviceId
         mDeviceIdMap.put(info.getId(), deviceId);
 
-        if (DEBUG) 
-			Log.d(TAG, "onHardwareAdded returns " + info);
-        Log.d(TAG, "kicking off sync task");
+        if (DEBUG)
+            Log.d(TAG, "onHardwareAdded returns " + info);
+        Log.e(TAG, "kicking off sync task");
         dbsync = new DatabaseSync(info.getId());
         dbsync.setChannelListChanged();
         logoLoader = new LogoLoader();
@@ -913,8 +923,8 @@ public class TunerService extends TvInputService {
 
     @Override
     public String onHardwareRemoved(TvInputHardwareInfo hardwareInfo) {
-        if (DEBUG) 
-			Log.d(TAG, "TunerService::onHardwareRemoved()");
+        if (DEBUG)
+            Log.d(TAG, "TunerService::onHardwareRemoved()");
 
         int deviceId = hardwareInfo.getDeviceId();
         String inputId = mInputIdMap.get(deviceId);
@@ -923,13 +933,13 @@ public class TunerService extends TvInputService {
         mDeviceIdMap.remove(inputId);
         mInputMap.remove(inputId);
 
-        if (DEBUG) 
-			Log.d(TAG, "onHardwareRemoved returns " + deviceId);
-        
+        if (DEBUG)
+            Log.d(TAG, "onHardwareRemoved returns " + deviceId);
+
         return inputId;
     }
 
-    public void addChannel(Context context, String inputId, ChannelInfo channel) 
+    public void addChannel(Context context, String inputId, ChannelInfo channel)
     {
         ContentValues channel_values = new ContentValues();
 
@@ -961,13 +971,13 @@ public class TunerService extends TvInputService {
 
         // Initialize the Programs class
         //ProgramInfo programs[] = TunerHAL.getProgramList(channel.id);
-        //for (ProgramInfo program : programs) 
+        //for (ProgramInfo program : programs)
         //{
         //    insertProgram(context, channelId, program);
         //}
     }
 
-    public boolean sameChannelInfo(ChannelInfo a, ChannelInfo b) 
+    public boolean sameChannelInfo(ChannelInfo a, ChannelInfo b)
     {
         if (!a.id.equals(b.id)) {
             return false;
@@ -987,7 +997,7 @@ public class TunerService extends TvInputService {
         if (a.sid != b.sid) {
             return false;
         }
-        return true; 
+        return true;
     }
 
     private void updateChannels(Context context, String inputId, ChannelInfo channels[]) {
@@ -1013,7 +1023,7 @@ public class TunerService extends TvInputService {
         }
 
         if (channels.length > 0) {
-            Cursor channelcursor = getContentResolver().query(uri, channelprojection, null, null, null); 
+            Cursor channelcursor = getContentResolver().query(uri, channelprojection, null, null, null);
             if (channelcursor != null) {
                 List<Pair<Long, String>> zapList = new ArrayList<>();
                 boolean databaseEmpty = true;
@@ -1070,7 +1080,7 @@ public class TunerService extends TvInputService {
         getContentResolver().delete(TvContract.Programs.CONTENT_URI, null, null);
         mBroadcastProgramIdMap.clear();
 
-        for (ChannelInfo channel : channels) 
+        for (ChannelInfo channel : channels)
         {
             if (!skipList.contains(channel.id)) {
                 Log.d(TAG, "updateChannels: adding " + channel.id + " (" + channel.name + ")");
@@ -1084,7 +1094,7 @@ public class TunerService extends TvInputService {
             Log.d(TAG, "--- updateChannels end ---");
     }
 
-    private class TunerTvInputSessionImpl extends Session 
+    private class TunerTvInputSessionImpl extends Session
     {
         protected final TvInputInfo mInfo;
         protected final int mDeviceId;
@@ -1092,34 +1102,35 @@ public class TunerService extends TvInputService {
         private TvInputManager.Hardware mHardware;
         private TvStreamConfig[] mStreamConfigs = EMPTY_STREAM_CONFIGS;
 
-        TunerTvInputSessionImpl(Context context, TvInputInfo info) 
+        TunerTvInputSessionImpl(Context context, TvInputInfo info)
         {
             super(context);
 
             mInfo = info;
             mDeviceId = mDeviceIdMap.get(info.getId());
-			Log.d(TAG, "TunerTvInputSessionImpl,  mDeviceId = " +mDeviceId);
+            if (DEBUG)
+                Log.d(TAG, "TunerTvInputSessionImpl,  mDeviceId = " +mDeviceId);
 
             acquireHardware();
         }
 
-        private void acquireHardware() 
+        private void acquireHardware()
         {
-            if (mHardware != null) 
+            if (mHardware != null)
             {
                 return;
             }
 
-            TvInputManager.HardwareCallback callback = new TvInputManager.HardwareCallback() 
+            TvInputManager.HardwareCallback callback = new TvInputManager.HardwareCallback()
             {
                 @Override
-                public void onReleased() 
+                public void onReleased()
                 {
                     mHardware = null;
                 }
 
                 @Override
-                public void onStreamConfigChanged(TvStreamConfig[] configs) 
+                public void onStreamConfigChanged(TvStreamConfig[] configs)
                 {
                     for (TvStreamConfig x: configs)
                     {
@@ -1149,7 +1160,8 @@ public class TunerService extends TvInputService {
         // to be visible.
         protected boolean setSurfaceLocal(Surface surface)
         {
-			Log.d(TAG, "setSurface (local),  Enter...");
+            if (DEBUG)
+                Log.d(TAG, "setSurface (local),  Enter...");
 
             // Inform that we don't have the video yet
             notifyVideoUnavailable(TvInputManager.VIDEO_UNAVAILABLE_REASON_TUNING);
@@ -1187,44 +1199,44 @@ public class TunerService extends TvInputService {
         }
 
         @Override
-        public boolean onSetSurface(Surface surface) 
+        public boolean onSetSurface(Surface surface)
         {
-            if (DEBUG) 
-				Log.d(TAG, "onSetSurface surface:" + surface);
+            if (DEBUG)
+                Log.d(TAG, "onSetSurface surface:" + surface);
 
             return setSurfaceLocal(surface);
         }
 
         @Override
-        public void onRelease() 
+        public void onRelease()
         {
-            if (DEBUG) 
+            if (DEBUG)
                 Log.d(TAG, "onRelease()");
 
             if (sessionSet.size() == 1) {
                 TunerHAL.release();
             }
 
-            if (mHardware != null) 
+            if (mHardware != null)
             {
                 mManager.releaseTvInputHardware(mDeviceId, mHardware);
                 mHardware = null;
             }
             sessionSet.remove(this);
 
-            if (DEBUG) 
+            if (DEBUG)
                 Log.d(TAG, "onRelease(), sessions = " + sessionSet.size());
         }
 
         @Override
-        public void onSetStreamVolume(float volume) 
+        public void onSetStreamVolume(float volume)
         {
-			Log.d(TAG, "onSetStreamVolume,  Enter...");
+            Log.d(TAG, "onSetStreamVolume,  Enter...");
             // No-op
         }
 
         @Override
-        public boolean onTune(Uri channelUri) 
+        public boolean onTune(Uri channelUri)
         {
             if (channelUri == null) {
                 return false;
@@ -1264,19 +1276,18 @@ public class TunerService extends TvInputService {
                 // Update the current id
                 mCurrentChannelId = id;
             }
-                        
             return true;
         }
 
         @Override
-        public void onSetCaptionEnabled(boolean enabled) 
+        public void onSetCaptionEnabled(boolean enabled)
         {
             Log.d(TAG, "onSetCaptionEnabled " + enabled);
             TunerHAL.setCaptionEnabled(enabled);
         }
 
         @Override
-        public void onAppPrivateCommand(String action, Bundle data) 
+        public void onAppPrivateCommand(String action, Bundle data)
         {
             Log.d(TAG, "onAppPrivateCommand: " + action);
             if (action.equals("startScan")) {
@@ -1288,7 +1299,7 @@ public class TunerService extends TvInputService {
                 TunerHAL.startScan(sp);
             }
             else if (action.equals("scanStatus")) {
-                sendScanStatusToAllSessions(); 
+                sendScanStatusToAllSessions();
             }
             else if (action.equals("stopScan")) {
                 TunerHAL.stopScan();
@@ -1299,7 +1310,6 @@ public class TunerService extends TvInputService {
             else if (action.equals("broadcastTime")) {
                 sendBroadcastTimeToAllSessions();
             }
-
         }
 
         @Override
@@ -1307,6 +1317,5 @@ public class TunerService extends TvInputService {
             Log.d(TAG, "onSelectTrack: " + type + " " + trackId);
             return TunerHAL.selectTrack(type, trackId) == 0;
         }
-
     }
 }
