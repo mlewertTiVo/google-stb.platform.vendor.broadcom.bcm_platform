@@ -135,6 +135,9 @@ static timer_t gDozeTimer = NULL;
 // Global instance of the NexusPower class.
 static sp<NexusPower> gNexusPower;
 
+// Global power state
+static b_powerState gPowerState;
+
 // Power device driver file descriptor.
 static int gPowerFd = -1;
 
@@ -656,7 +659,6 @@ static void power_init(struct power_module *module __unused)
     unsigned int wol_en;
     bool gpios_initialised = false;
     b_powerStatus powerStatus;
-    b_powerState state;
 
     if (!devname) devname = "/dev/wake0";
     gPowerFd = open(devname, O_RDONLY);
@@ -707,15 +709,15 @@ static void power_init(struct power_module *module __unused)
         !(powerStatus.wakeupStatus.ir || powerStatus.wakeupStatus.uhf || powerStatus.wakeupStatus.keypad ||
           powerStatus.wakeupStatus.gpio || powerStatus.wakeupStatus.cec || powerStatus.wakeupStatus.transport)) {
 
-        state = ePowerState_S05;
+        gPowerState = ePowerState_S05;
         power_set_sw_lid_state(SW_LID_STATE_DOWN);
     }
     else {
-        state = ePowerState_S0;
+        gPowerState = ePowerState_S0;
         power_set_sw_lid_state(SW_LID_STATE_UP);
     }
 
-    if (gNexusPower->initialiseGpios(state) != NO_ERROR) {
+    if (gNexusPower->initialiseGpios(gPowerState) != NO_ERROR) {
         ALOGE("%s: Could not initialise GPIO's!!!", __FUNCTION__);
         goto power_init_fail;
     }
@@ -870,44 +872,6 @@ static status_t power_ack_suspend_shutdown()
             strerror_r(status, buf, sizeof(buf));
             ALOGE("%s: Error trying to acknowledge suspend [%s]!!!", __FUNCTION__, buf);
         }
-        else {
-            eventfd_t event;
-
-            // Ready to suspend. Block and wait for a resume indication to exit suspend
-            ret = eventfd_read(gPowerEventFd, &event);
-            if (ret < 0) {
-                status = errno;
-                strerror_r(status, buf, sizeof(buf));
-                ALOGE("%s: Failed to read event(s) [%s]!!!", __FUNCTION__, buf);
-            }
-            else {
-                ALOGV("%s: Event %" PRIu64 " received", __FUNCTION__, event);
-
-                if (event == DROID_PM_EVENT_RESUMED ||
-                    event == DROID_PM_EVENT_RESUMED_PARTIAL ||
-                    event == DROID_PM_EVENT_RESUMED_WAKEUP) {
-                    if (event == DROID_PM_EVENT_RESUMED_WAKEUP) {
-                        ALOGV("%s: Received a valid wakeup event", __FUNCTION__);
-                    }
-                    else if (event == DROID_PM_EVENT_RESUMED_PARTIAL) {
-                        ALOGV("%s: Received a valid partial wakeup event", __FUNCTION__);
-                    }
-                    else {
-                        if (gNexusPower.get()) {
-                            b_powerStatus powerStatus;
-
-                            if ((gNexusPower->getPowerStatus(&powerStatus) == NO_ERROR) && powerStatus.wakeupStatus.timeout) {
-                                ALOGV("%s: Woke up from timer event", __FUNCTION__);
-                            }
-                        }
-                    }
-                }
-                else {
-                    ALOGW("%s: Invalid state to receive event %" PRIu64 "!", __FUNCTION__, event);
-                    status = BAD_VALUE;
-                }
-            }
-        }
     }
     return status;
 }
@@ -1024,6 +988,7 @@ static status_t power_set_state(b_powerState toState)
         if (toState != ePowerState_S0) {
             property_set(PROPERTY_NX_BOOT_WAKEUP, "1");
         }
+        gPowerState = toState;
     }
     else {
         ALOGE("%s: Could not set power state %s!!!", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
@@ -1275,14 +1240,10 @@ static void *power_event_monitor_thread(void *arg __unused)
                                         // Wait for suspend to complete
                                         ret = power_ack_suspend_shutdown();
                                         if (ret != NO_ERROR && ret != NO_INIT) {
-                                            ALOGE("%s: Error trying to enter suspend!!!", __FUNCTION__);
+                                            ALOGE("%s: Error trying to ack suspend!!!", __FUNCTION__);
                                         }
                                         else {
-                                            ALOGV("%s: Successfully entered suspend state.", __FUNCTION__);
-                                        }
-                                        ret = power_exit_suspend_state();
-                                        if (ret == NO_ERROR) {
-                                            ALOGV("%s: Successfully exited suspend state.", __FUNCTION__);
+                                            ALOGV("%s: Successfully ack suspend.", __FUNCTION__);
                                         }
                                     }
                                 }
@@ -1298,8 +1259,41 @@ static void *power_event_monitor_thread(void *arg __unused)
                                     // Acknowledge shutdown message and wait, shouldn't return
                                     power_ack_suspend_shutdown();
                                 }
-                                else if (event == DROID_PM_EVENT_RESUMED_WAKEUP) {
-                                    ALOGV("%s: Received an unexpected wakeup event", __FUNCTION__);
+                                if (event == DROID_PM_EVENT_RESUMED_WAKEUP) {
+                                    ALOGV("%s: Received a valid wakeup event", __FUNCTION__);
+                                    ret = power_exit_suspend_state();
+                                    if (ret == NO_ERROR) {
+                                        ALOGV("%s: Successfully exited suspend state.", __FUNCTION__);
+                                    }
+                                }
+                                else if (event == DROID_PM_EVENT_RESUMED_PARTIAL) {
+                                    ALOGV("%s: Received a valid partial wakeup event", __FUNCTION__);
+                                    ret = power_exit_suspend_state();
+                                    if (ret == NO_ERROR) {
+                                        ALOGV("%s: Successfully exited suspend state.", __FUNCTION__);
+                                    }
+                                }
+                                else if (event == DROID_PM_EVENT_RESUMED) {
+                                    if (gNexusPower.get()) {
+                                        b_powerStatus powerStatus;
+
+                                        if ((gNexusPower->getPowerStatus(&powerStatus) == NO_ERROR) && powerStatus.wakeupStatus.timeout) {
+                                            ALOGV("%s: Woke up from timer event", __FUNCTION__);
+                                        }
+                                        ret = power_exit_suspend_state();
+                                        if (ret == NO_ERROR) {
+                                            ALOGV("%s: Successfully exited suspend state.", __FUNCTION__);
+                                        }
+                                    }
+                                }
+                                else if (event == DROID_PM_EVENT_BT_WAKE_ON) {
+                                    ALOGV("%s: Received a BT_WAKE Asserted event", __FUNCTION__);
+                                    if (gNexusPower.get()) {
+                                        gNexusPower->setGpiosInterruptWakeManager(gPowerState, NexusPower::NexusGpio::GpioInterruptWakeManager_eBt, true);
+                                    }
+                                }
+                                else if (event == DROID_PM_EVENT_BT_WAKE_OFF) {
+                                    ALOGV("%s: Received a BT_WAKE Deasserted event", __FUNCTION__);
                                 }
                             }
                         }

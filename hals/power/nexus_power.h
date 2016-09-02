@@ -70,16 +70,6 @@ using namespace android;
 class NexusPower : public android::RefBase {
 
     public:
-    static sp<NexusPower> instantiate();
-    status_t setPowerState(b_powerState state);
-    status_t getPowerStatus(b_powerStatus *pPowerStatus);
-    status_t setVideoOutputsState(b_powerState state);
-    status_t initialiseGpios(b_powerState state);
-    void uninitialiseGpios();
-    status_t setGpios(b_powerState state);
-    status_t clearGpios();
-    ~NexusPower();
-
     // LinuxUInput class with refcount
     class LinuxUInputRef : public LinuxUInput, public android::RefBase {
         public:
@@ -93,15 +83,21 @@ class NexusPower : public android::RefBase {
     class NexusGpio : public android::RefBase {
         public:
         static int const MAX_INSTANCES = 8;
-        static int const MAX_POWER_STATES = 7;  // S0 through to S5
+        static int const MAX_POWER_STATES = 7;   // S0 through to S5
         static int const MIN_INP_PARAMETERS = 2; // gpio mode + interrupt mode
-        static int const MAX_INP_PARAMETERS = 3; // gpio mode + interrupt mode + key
+        static int const MAX_INP_PARAMETERS = 4; // gpio mode + interrupt mode + key + interrupt wake manager
         static int const NUM_OUT_PARAMETERS = MAX_POWER_STATES + 1; // gpio mode + S0 through to S5 output values
         static int const MIN_PARAMETERS = MIN_INP_PARAMETERS;
         static int const MAX_PARAMETERS = NUM_OUT_PARAMETERS;
         static int const DISABLE_KEYEVENT = 0;
         static int const ENABLE_KEYEVENT = 1;
         static unsigned mInstances;
+
+        enum GpioInterruptWakeManager {
+            GpioInterruptWakeManager_eNone,  // Enable the GPIO interrupt Wakeup immediately by the Power HAL
+            GpioInterruptWakeManager_eBt,    // Enable the GPIO interrupt Wakeup by the BT stack
+            GpioInterruptWakeManager_eMax
+        };
 
         // Public methods...
         static sp<NexusGpio> initialise(b_powerState state, String8& gpioName, String8& gpioValue, int pin, unsigned pinType, sp<LinuxUInputRef> uInput);
@@ -115,9 +111,11 @@ class NexusPower : public android::RefBase {
         unsigned getInstance() { return mInstance; }
         NEXUS_GpioMode getPinMode() { return mPinMode; }
         NEXUS_GpioInterrupt getPinInterruptMode() { return mPinInterruptMode; }
+        enum GpioInterruptWakeManager getPinInterruptWakeManager() { return mPinInterruptWakeManager; }
         NEXUS_GpioValue getPinOutputValue(b_powerState state) { return mPinOutputValues[state]; }
         NEXUS_GpioHandle getHandle() { return mHandle; }
         void setHandle(NEXUS_GpioHandle handle) { mHandle = handle; }
+        unsigned getKeyEvent() { return mKeyEvent; }
         void setKeyEvent(unsigned key) { mKeyEvent = key; }
         ~NexusGpio();
 
@@ -128,6 +126,7 @@ class NexusPower : public android::RefBase {
         unsigned mPinType;
         NEXUS_GpioMode mPinMode;
         NEXUS_GpioInterrupt mPinInterruptMode;
+        enum GpioInterruptWakeManager mPinInterruptWakeManager;
         NEXUS_GpioValue mPinOutputValues[MAX_POWER_STATES];
         NEXUS_GpioHandle mHandle;
         sp<LinuxUInputRef> mUInput;
@@ -136,11 +135,13 @@ class NexusPower : public android::RefBase {
         // Private methods...
         static sp<NexusGpio> instantiate(String8& pinName, unsigned pin, unsigned pinType,
                                          NEXUS_GpioMode pinMode,  NEXUS_GpioInterrupt interruptMode,
+                                         enum GpioInterruptWakeManager interruptWakeManager,
                                          sp<LinuxUInputRef> uInput, unsigned key);
         static sp<NexusGpio> instantiate(b_powerState state, String8& pinName, unsigned pin, unsigned pinType,
                                          NEXUS_GpioMode pinMode, NEXUS_GpioValue *pOutputValues);
         static status_t parseGpioMode(String8& modeString, NEXUS_GpioMode *pMode);
         static status_t parseGpioInterruptMode(String8& interruptModeString, NEXUS_GpioInterrupt *pInterruptMode);
+        static status_t parseGpioInterruptWakeManager(String8& inString, enum GpioInterruptWakeManager *pInterruptWakeManager);
         static status_t parseGpioKey(String8& inString, unsigned *key);
         static status_t parseGpioOutputValue(String8& outputValueString, NEXUS_GpioValue *pOutputValue);
         static status_t parseGpioParameters(String8& inString, size_t *pNumParameters, String8 parameters[]);
@@ -149,11 +150,23 @@ class NexusPower : public android::RefBase {
         // Disallow constructor and copy constructor...
         NexusGpio();
         NexusGpio(String8& pinName, unsigned pin, unsigned pinType, NEXUS_GpioMode mode,
-                  NEXUS_GpioInterrupt interruptMode, sp<LinuxUInputRef> uInput, unsigned key);
+                  NEXUS_GpioInterrupt interruptMode, GpioInterruptWakeManager interruptWakeManager, sp<LinuxUInputRef> uInput, unsigned key);
         NexusGpio(String8& pinName, unsigned pin, unsigned pinType, NEXUS_GpioMode mode,
                   NEXUS_GpioValue *pOutputValues);
         NexusGpio &operator=(const NexusGpio &);
     };
+
+    public:
+    static sp<NexusPower> instantiate();
+    status_t setPowerState(b_powerState state);
+    status_t getPowerStatus(b_powerStatus *pPowerStatus);
+    status_t setVideoOutputsState(b_powerState state);
+    status_t initialiseGpios(b_powerState state);
+    void     uninitialiseGpios();
+    status_t setGpios(b_powerState state);
+    status_t clearGpios();
+    status_t setGpiosInterruptWakeManager(b_powerState state, enum NexusGpio::GpioInterruptWakeManager wakeManager, bool enable);
+    ~NexusPower();
 
     private:
     b_cecDeviceType mCecDeviceType;
@@ -161,6 +174,7 @@ class NexusPower : public android::RefBase {
     NexusClientContext *mClientContext;
     sp<NexusGpio> gpios[NexusGpio::MAX_INSTANCES];
     sp<LinuxUInputRef> mUInput;
+    DefaultKeyedVector<enum NexusGpio::GpioInterruptWakeManager, bool> mInterruptWakeManagers;
 
     // Disallow constructor and copy constructor...
     NexusPower();

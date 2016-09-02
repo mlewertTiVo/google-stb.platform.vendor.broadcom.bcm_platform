@@ -96,12 +96,18 @@ NexusPower::LinuxUInputRef::~LinuxUInputRef()
     close();
 }
 
-NexusPower::NexusPower() : mCecDeviceType(eCecDeviceType_eInvalid), mIpcClient(NULL), mClientContext(NULL)
+NexusPower::NexusPower() : mCecDeviceType(eCecDeviceType_eInvalid),
+                           mIpcClient(NULL),
+                           mClientContext(NULL),
+                           mInterruptWakeManagers(false)
 {
     ALOGV("%s: Called", __PRETTY_FUNCTION__);
 }
 
-NexusPower::NexusPower(NexusIPCClientBase *pIpcClient, NexusClientContext *pClientContext) : mIpcClient(pIpcClient), mClientContext(pClientContext)
+NexusPower::NexusPower(NexusIPCClientBase *pIpcClient, NexusClientContext *pClientContext) :
+                           mIpcClient(pIpcClient),
+                           mClientContext(pClientContext),
+                           mInterruptWakeManagers(false)
 {
     ALOGV("%s: pIpcClient=%p, pClientContext=%p", __PRETTY_FUNCTION__, (void *)pIpcClient, (void *)pClientContext);
     mCecDeviceType = mIpcClient->getCecDeviceType();
@@ -438,6 +444,26 @@ status_t NexusPower::NexusGpio::parseGpioInterruptMode(String8& interruptModeStr
     return status;
 }
 
+status_t NexusPower::NexusGpio::parseGpioInterruptWakeManager(String8& interruptWakeManagerString, enum GpioInterruptWakeManager *pPinInterruptWakeManager)
+{
+    status_t status = NO_ERROR;
+    String8 string(interruptWakeManagerString);
+
+    string.toLower();
+
+    if (string == "none") {
+        *pPinInterruptWakeManager = NexusGpio::GpioInterruptWakeManager_eNone;
+    }
+    else if (string == "bt") {
+        *pPinInterruptWakeManager = NexusGpio::GpioInterruptWakeManager_eBt;
+    }
+    else {
+        *pPinInterruptWakeManager = NexusGpio::GpioInterruptWakeManager_eNone;
+        status = BAD_VALUE;
+    }
+    return status;
+}
+
 status_t NexusPower::NexusGpio::parseGpioOutputValue(String8& outputValueString, NEXUS_GpioValue *pPinOutputValue)
 {
     status_t status = NO_ERROR;
@@ -522,18 +548,20 @@ NexusPower::NexusGpio::NexusGpio(String8& pinName,
                                  unsigned pinType,
                                  NEXUS_GpioMode pinMode,
                                  NEXUS_GpioInterrupt pinInterruptMode,
+                                 enum GpioInterruptWakeManager pinInterruptWakeManager,
                                  sp<LinuxUInputRef> uInput,
                                  unsigned key) : mPinName(pinName),
                                                  mPin(pin),
                                                  mPinType(pinType),
                                                  mPinMode(pinMode),
                                                  mPinInterruptMode(pinInterruptMode),
+                                                 mPinInterruptWakeManager(pinInterruptWakeManager),
                                                  mUInput(uInput),
                                                  mKeyEvent(key)
 {
     mInstance = mInstances++;
-    ALOGV("%s: instance %d: pin=%d, type=%d, pin mode=%d, interrupt mode=%d, key=%d",
-          __PRETTY_FUNCTION__, mInstance, pin, pinType, pinMode, pinInterruptMode, key);
+    ALOGV("%s: instance %d: pin=%d, type=%d, pin mode=%d, interrupt mode=%d, interrupt wake manager=%d, key=%d",
+          __PRETTY_FUNCTION__, mInstance, pin, pinType, pinMode, pinInterruptMode, pinInterruptWakeManager, key);
 }
 
 // Constructor for a GPIO output...
@@ -570,10 +598,11 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(String8& pinName,
                                                              unsigned pinType,
                                                              NEXUS_GpioMode pinMode,
                                                              NEXUS_GpioInterrupt pinInterruptMode,
+                                                             enum GpioInterruptWakeManager pinInterruptWakeManager,
                                                              sp<LinuxUInputRef> uInput,
                                                              unsigned key)
 {
-    sp<NexusPower::NexusGpio> gpio = new NexusGpio(pinName, pin, pinType, pinMode, pinInterruptMode, uInput, key);
+    sp<NexusPower::NexusGpio> gpio = new NexusGpio(pinName, pin, pinType, pinMode, pinInterruptMode, pinInterruptWakeManager, uInput, key);
 
     if (gpio.get() != NULL) {
         NEXUS_GpioSettings settings;
@@ -585,7 +614,7 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(String8& pinName,
         settings.maskEdgeInterrupts = true;
         settings.interrupt.callback = NexusPower::NexusGpio::gpioCallback;
         settings.interrupt.context  = gpio.get();
-        settings.interrupt.param    = NexusGpio::ENABLE_KEYEVENT;
+        settings.interrupt.param    = NexusGpio::DISABLE_KEYEVENT;
 
         handle = NEXUS_Gpio_Open(pinType, pin, &settings);
         if (handle != NULL) {
@@ -665,6 +694,8 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::initialise(b_powerState state, 
             else {
                 unsigned key = KEY_RESERVED;
                 NEXUS_GpioInterrupt gpioInterruptMode;
+                enum NexusGpio::GpioInterruptWakeManager gpioInterruptWakeManager = GpioInterruptWakeManager_eNone;
+
                 status = NexusGpio::parseGpioInterruptMode(gpioParameters[1], &gpioInterruptMode);
                 if (status != NO_ERROR) {
                     ALOGE("%s: Could not parse %s interrupt mode!!!", __FUNCTION__, gpioName.string());
@@ -676,9 +707,17 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::initialise(b_powerState state, 
                               __FUNCTION__, gpioName.string());
                         status = BAD_VALUE;
                     }
+                    else if (numGpioParameters > (NexusGpio::MIN_INP_PARAMETERS+1)) {
+                        status = NexusGpio::parseGpioInterruptWakeManager(gpioParameters[3], &gpioInterruptWakeManager);
+                        if (status != NO_ERROR) {
+                            ALOGE("%s: Could not parse %s interrupt wake manager!!!",
+                                  __FUNCTION__, gpioName.string());
+                            status = BAD_VALUE;
+                        }
+                    }
                 }
                 if (status == NO_ERROR) {
-                    gpio = NexusGpio::instantiate(gpioName, pin, pinType, gpioMode, gpioInterruptMode, uInput, key);
+                    gpio = NexusGpio::instantiate(gpioName, pin, pinType, gpioMode, gpioInterruptMode, gpioInterruptWakeManager, uInput, key);
                     if (gpio.get() == NULL) {
                         ALOGE("%s: Could not instantiate %s!!!", __FUNCTION__, gpioName.string());
                         status = NO_INIT;
@@ -846,45 +885,68 @@ status_t NexusPower::setGpios(b_powerState state)
     status_t status = NO_ERROR;
     NEXUS_Error rc;
     sp<NexusGpio> pNexusGpio;
+    bool enableKeyEvent;
 
-    // Run through the list of GPIO inputs first, as we may need to disable the
-    // interrupt prior to setting a GPIO output that could trigger it.
-    if (state == ePowerState_S5) {
-        for (unsigned gpio = 0; gpio < NexusGpio::MAX_INSTANCES; gpio++) {
-            pNexusGpio = gpios[gpio];
-            if (pNexusGpio.get() != NULL && pNexusGpio->getPinMode() == NEXUS_GpioMode_eInput) {
-                NEXUS_GpioSettings gpioSettings;
-
-                NEXUS_Gpio_GetSettings(pNexusGpio->getHandle(), &gpioSettings);
-                gpioSettings.interrupt.param = NexusGpio::DISABLE_KEYEVENT;
-                rc = NEXUS_Gpio_SetSettings(pNexusGpio->getHandle(), &gpioSettings);
-
-                if (rc != NEXUS_SUCCESS) {
-                    ALOGE("%s: Could not disable interrupt callback for %s [rc=%d]!!!", __FUNCTION__, pNexusGpio->getPinName().string(), rc);
-                    status = INVALID_OPERATION;
-                }
-                else {
-                    ALOGV("%s: Successfully disabled interrupt callback for %s", __FUNCTION__, pNexusGpio->getPinName().string());
-                }
-            }
-        }
-    }
+    ALOGV("%s: Setting GPIOs for PowerState %s...", __FUNCTION__, NexusIPCClientBase::getPowerString(state));
 
     for (unsigned gpio = 0; gpio < NexusGpio::MAX_INSTANCES; gpio++) {
+        NEXUS_GpioSettings gpioSettings;
         pNexusGpio = gpios[gpio];
-        if (pNexusGpio.get() != NULL && pNexusGpio->getPinMode() != NEXUS_GpioMode_eInput) {
-            NEXUS_GpioSettings gpioSettings;
 
-            NEXUS_Gpio_GetSettings(pNexusGpio->getHandle(), &gpioSettings);
-            gpioSettings.value = pNexusGpio->getPinOutputValue(state);
-            rc = NEXUS_Gpio_SetSettings(pNexusGpio->getHandle(), &gpioSettings);
-            if (rc != NEXUS_SUCCESS) {
-                ALOGE("%s: Could not set %s [rc=%d]!!!", __FUNCTION__, pNexusGpio->getPinName().string(), rc);
-                status = INVALID_OPERATION;
+        if (pNexusGpio.get() != NULL) {
+            if (pNexusGpio->getPinMode() == NEXUS_GpioMode_eInput) {
+                if (pNexusGpio->getKeyEvent() != KEY_RESERVED) {
+                    // Always ensure that the WAKE generation is disabled when entering S0 or S5 states
+                    // as we don't want to inject a WAKEUP keyevent in to the input sub-system.
+                    if (state == ePowerState_S0 || state == ePowerState_S5) {
+                        enableKeyEvent = false;
+                    }
+                    else {
+                        enum NexusGpio::GpioInterruptWakeManager wakeManager = pNexusGpio->getPinInterruptWakeManager();
+
+                        // If we have configured a GPIO input wake-up pin to be managed by
+                        // another software module (e.g. BT), then then we only enable the
+                        // wakeup generation when the manager has enabled it.
+                        if (wakeManager == NexusGpio::GpioInterruptWakeManager_eNone) {
+                            enableKeyEvent = true;
+                        }
+                        else {
+                            enableKeyEvent = mInterruptWakeManagers.valueFor(wakeManager);
+                        }
+                    }
+
+                    NEXUS_Gpio_GetSettings(pNexusGpio->getHandle(), &gpioSettings);
+                    gpioSettings.interrupt.param = enableKeyEvent ?
+                        NexusGpio::ENABLE_KEYEVENT : NexusGpio::DISABLE_KEYEVENT;
+                    rc = NEXUS_Gpio_SetSettings(pNexusGpio->getHandle(), &gpioSettings);
+
+                    if (rc == NEXUS_SUCCESS) {
+                        ALOGV("%s: Successfully %s wake generation for %s", __FUNCTION__,
+                               (enableKeyEvent == NexusGpio::ENABLE_KEYEVENT) ? "enabled" : "disabled",
+                               pNexusGpio->getPinName().string());
+                    }
+                    else {
+                        ALOGE("%s: Could not %s wake generation for %s [rc=%d]!!!", __FUNCTION__,
+                               (enableKeyEvent == NexusGpio::ENABLE_KEYEVENT) ? "enable" : "disable",
+                               pNexusGpio->getPinName().string(), rc);
+                        status = INVALID_OPERATION;
+                        break;
+                    }
+                }
             }
             else {
-                ALOGV("%s: Successfully set %s to %s", __FUNCTION__, pNexusGpio->getPinName().string(),
-                      (gpioSettings.value == NEXUS_GpioValue_eLow) ? "LOW" : "HIGH");
+                NEXUS_Gpio_GetSettings(pNexusGpio->getHandle(), &gpioSettings);
+                gpioSettings.value = pNexusGpio->getPinOutputValue(state);
+                rc = NEXUS_Gpio_SetSettings(pNexusGpio->getHandle(), &gpioSettings);
+                if (rc != NEXUS_SUCCESS) {
+                    ALOGE("%s: Could not set %s [rc=%d]!!!", __FUNCTION__, pNexusGpio->getPinName().string(), rc);
+                    status = INVALID_OPERATION;
+                    break;
+                }
+                else {
+                    ALOGV("%s: Successfully set %s to %s", __FUNCTION__, pNexusGpio->getPinName().string(),
+                          (gpioSettings.value == NEXUS_GpioValue_eLow) ? "LOW" : "HIGH");
+                }
             }
         }
     }
@@ -911,6 +973,25 @@ status_t NexusPower::clearGpios()
                 ALOGV("%s: Successfully cleared %s", __FUNCTION__, pNexusGpio->getPinName().string());
             }
         }
+    }
+    return status;
+}
+
+status_t NexusPower::setGpiosInterruptWakeManager(b_powerState state, enum NexusGpio::GpioInterruptWakeManager wakeManager, bool enable)
+{
+    status_t status = NO_ERROR;
+
+    if (wakeManager >= NexusGpio::GpioInterruptWakeManager_eMax) {
+        ALOGE("%s: Invalid GPIO interrupt wake manager %d!!!", __FUNCTION__, wakeManager);
+        status = BAD_VALUE;
+    }
+    else {
+        ALOGV("%s: %s interrupt wake manager %d...", __FUNCTION__, enable ? "Enabling" : "Disabling", wakeManager);
+        mInterruptWakeManagers.replaceValueFor(wakeManager, enable);
+        if (mInterruptWakeManagers.isEmpty()) {
+            ALOGE("%s: Could not add interrupt wake manager %d!!!", __FUNCTION__, wakeManager);
+        }
+        setGpios(state);
     }
     return status;
 }
