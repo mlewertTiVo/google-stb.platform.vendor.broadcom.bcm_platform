@@ -1256,7 +1256,6 @@ static void *power_event_monitor_thread(void *arg __unused)
                                     else
                                         ALOGD("%s: Entered S5", __FUNCTION__);
 
-                                    // Acknowledge shutdown message and wait, shouldn't return
                                     power_ack_suspend_shutdown();
                                 }
                                 if (event == DROID_PM_EVENT_RESUMED_WAKEUP) {

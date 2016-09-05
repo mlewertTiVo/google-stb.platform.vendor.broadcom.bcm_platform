@@ -986,12 +986,22 @@ status_t NexusPower::setGpiosInterruptWakeManager(b_powerState state, enum Nexus
         status = BAD_VALUE;
     }
     else {
-        ALOGV("%s: %s interrupt wake manager %d...", __FUNCTION__, enable ? "Enabling" : "Disabling", wakeManager);
-        mInterruptWakeManagers.replaceValueFor(wakeManager, enable);
-        if (mInterruptWakeManagers.isEmpty()) {
-            ALOGE("%s: Could not add interrupt wake manager %d!!!", __FUNCTION__, wakeManager);
+        bool update = false;
+
+        // The first time we set a GPIO interrupt wake manager, we need to set the GPIO's...
+        if (mInterruptWakeManagers.indexOfKey(wakeManager) < 0) {
+            update = true;
         }
-        setGpios(state);
+        // or if the GPIO interrupt wake manager state changes, we need to set the GPIO's...
+        else if (mInterruptWakeManagers.valueFor(wakeManager) != enable) {
+            update = true;
+        }
+        
+        if (update) {
+            ALOGV("%s: %s interrupt wake manager %d...", __FUNCTION__, enable ? "Enabling" : "Disabling", wakeManager);
+            mInterruptWakeManagers.replaceValueFor(wakeManager, enable);
+            setGpios(state);
+        }
     }
     return status;
 }
