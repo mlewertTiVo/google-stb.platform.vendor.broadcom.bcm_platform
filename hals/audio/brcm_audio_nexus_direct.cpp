@@ -50,8 +50,6 @@ using namespace android;
 
 #define BRCM_AUDIO_DIRECT_NXCLIENT_NAME "BrcmAudioOutDirect"
 
-#define BRCM_PROPERTY_AUDIO_OUTPUT_DIRECT_SPDIF_EAC3_TO_AC3 "media.brcm.direct_spdif_eac3"
-
 #define BRCM_AUDIO_STREAM_ID                    (0xC0)
 #define BRCM_AUDIO_DIRECT_COMP_BUFFER_SIZE      (2048)
 
@@ -467,14 +465,9 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         return -EINVAL;
         break;
     case AUDIO_FORMAT_E_AC3:
-        if (property_get_bool(BRCM_PROPERTY_AUDIO_OUTPUT_DIRECT_SPDIF_EAC3_TO_AC3, true)) {
-            NEXUS_AudioCapabilities audioCaps;
-
-            NEXUS_GetAudioCapabilities(&audioCaps);
-            if (audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode) {
-                ALOGI("Enable play pump mode");
-                bout->nexus.direct.playpump_mode = true;
-            }
+        if (property_get_bool(BRCM_PROPERTY_AUDIO_OUTPUT_ENABLE_SPDIF_DOLBY, false)) {
+            ALOGI("Enable play pump mode");
+            bout->nexus.direct.playpump_mode = true;
         }
 
         if (!bout->nexus.direct.playpump_mode) {
