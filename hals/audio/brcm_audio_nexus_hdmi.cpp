@@ -90,6 +90,14 @@ static struct hdmi_audio_format_map_t formatMap[] =
 
 static int num_codecs = sizeof(formatMap)/sizeof(formatMap[0]);
 
+static void property_append (String8& camels_back, const char *straw) {
+    if (!camels_back.contains(straw)) {
+        if (!camels_back.isEmpty())
+            camels_back.append("|");
+        camels_back.append(straw);
+    }
+}
+
 void nexus_get_hdmi_parameters(String8& rates, String8& channels, String8& formats)
 {
     NEXUS_HdmiOutputHandle hdmiHandle;
@@ -140,6 +148,23 @@ void nexus_get_hdmi_parameters(String8& rates, String8& channels, String8& forma
                 channels.append("|AUDIO_CHANNEL_OUT_5POINT1");
             if (channels_7_1)
                 channels.append("|AUDIO_CHANNEL_OUT_7POINT1");
+        }
+    }
+
+    /* Add 5.1 and AC3/E-AC3 support if Dolby output enabled on SPDIF */
+    if (property_get_bool(BRCM_PROPERTY_AUDIO_OUTPUT_ENABLE_SPDIF_DOLBY, false)) {
+
+        NEXUS_AudioCapabilities audioCaps;
+
+        property_append(rates, "44100");
+        property_append(rates, "48000");
+        property_append(channels, "AUDIO_CHANNEL_OUT_5POINT1");
+        property_append(formats, "AUDIO_FORMAT_AC3");
+
+        NEXUS_GetAudioCapabilities(&audioCaps);
+        if (audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode) {
+            property_append(channels, "AUDIO_CHANNEL_OUT_7POINT1");
+            property_append(formats, "AUDIO_FORMAT_E_AC3");
         }
     }
 }
