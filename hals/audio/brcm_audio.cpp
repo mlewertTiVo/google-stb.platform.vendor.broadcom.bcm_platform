@@ -450,9 +450,18 @@ static int bout_get_presentation_position(const struct audio_stream_out *aout,
         return ret;
     }
 
+    if (*frames == bout->last_pres_frame) {
+        *timestamp = bout->last_pres_ts;
+    }
+    else {
+        clock_gettime(CLOCK_MONOTONIC, timestamp);
+
+        bout->last_pres_frame = *frames;
+        bout->last_pres_ts = *timestamp;
+    }
+
     pthread_mutex_unlock(&bout->lock);
 
-    clock_gettime(CLOCK_MONOTONIC, timestamp);
     ALOGV("%s: frames:%" PRIu64 ", timestamp(%ld.%06ld)", __FUNCTION__, *frames,
           timestamp->tv_sec, timestamp->tv_nsec);
 
@@ -504,6 +513,7 @@ static int bout_drain(struct audio_stream_out *aout, audio_drain_type_t type)
     ret = bout->ops.do_bout_drain(bout, (int)type);
     pthread_mutex_unlock(&bout->lock);
 
+    ALOGV("%s: type=%d res=%d", __FUNCTION__, type, ret);
     return ret;
 }
 
@@ -520,6 +530,7 @@ static int bout_flush(struct audio_stream_out *aout)
     ret = bout->ops.do_bout_flush(bout);
     pthread_mutex_unlock(&bout->lock);
 
+    ALOGV("%s: res=%d", __FUNCTION__, ret);
     return ret;
 }
 
@@ -1130,6 +1141,8 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
         ret = -EBUSY;
         goto err_lock;
     }
+    bout->last_pres_frame = 0;
+    clock_gettime(CLOCK_MONOTONIC, &bout->last_pres_ts);
 
     if (bdev->bouts[bdevices]) {
         ALOGE("%s: at %d, output is already opened %d\n",
