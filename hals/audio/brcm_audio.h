@@ -198,6 +198,8 @@ struct brcm_stream_out {
     bool tunneled;
     int standbyCallback;
     FILE *outDebugFile;
+    uint64_t last_pres_frame;
+    struct timespec last_pres_ts;
 
     union {
         /* nexus specific */

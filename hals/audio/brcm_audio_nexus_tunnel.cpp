@@ -483,6 +483,12 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
         {
             if ( buffer == pts_buffer )
             {
+                if (bytes < HW_AV_SYNC_HDR_LEN)
+                {
+                    ALOGV("%s: av-sync header with no payload (%zu)", __FUNCTION__, bytes);
+                    break;
+                }
+
                 // frame header is at payload start, write the header
                 writeHeader = true;
                 frameBytes = B_MEDIA_LOAD_UINT32_BE(pts_buffer, sizeof(uint32_t));
@@ -620,6 +626,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                         writeHeader = false;
                     }
                     buffer = (void *)((uint8_t *)buffer + frameBytes);
+                    ALOG_ASSERT(bytes >= frameBytes);
                     bytes -= frameBytes;
                     frameBytes = 0;
                 }
@@ -974,6 +981,7 @@ static int nexus_tunnel_bout_close(struct brcm_stream_out *bout)
 
     if (bout->nexus.tunnel.audio_decoder) {
         NEXUS_SimpleAudioDecoder_Release(bout->nexus.tunnel.audio_decoder);
+        bout->nexus.tunnel.audio_decoder = NULL;
     }
 
     NxClient_Disconnect(bout->nexus.connectId);
