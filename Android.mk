@@ -37,6 +37,7 @@ include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
 #include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
 include ${BCM_APPS_PATH}/BcmKeyInterceptor/Android.mk
 include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
+include ${BCM_APPS_PATH}/BcmSpdifSetting/Android.mk
 include ${BCM_APPS_PATH}/BcmSplash/Android.mk
 ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
