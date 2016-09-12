@@ -51,7 +51,7 @@ include ${BCM_APPS_PATH}/LeanbackBcmCustom/Android.mk
 
 # additional tools, not needed for default integration.
 ifneq ($(TARGET_BUILD_PDK),true)
-#include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bsysperf/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/calcfb/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/cec/Android.mk

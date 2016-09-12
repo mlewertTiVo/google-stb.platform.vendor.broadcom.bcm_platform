@@ -21,8 +21,8 @@ LOCAL_SRC_FILES := \
    $(BMEM_PERF_SRC_ROOT)/common/bmemperf_lib.c \
    bmemperf_info.auto.c
 
-BCHP_VER_LOWER = $(shell awk 'BEGIN{print tolower("$(BCHP_VER)")}')
-BOXMODE_FILES = $(shell ls -1v $(NEXUS_TOP)/../magnum/commonutils/box/src/$(BCHP_CHIP)/$(BCHP_VER_LOWER)/bbox_memc_box*_config.c)
+BCHP_VER_LOWER := $(shell echo ${BCHP_VER} | tr [:upper:] [:lower:])
+BOXMODE_FILES := $(shell ls -1v $(NEXUS_TOP)/../magnum/commonutils/box/src/$(BCHP_CHIP)/$(BCHP_VER_LOWER)/bbox_memc_box*_config.c)
 
 define generate-player-info-module
 	awk -f $(NEXUS_TOP)/../BSEAV/tools/bmemperf/include/bmemperf_info_pre.awk $(NEXUS_TOP)/../BSEAV/tools/bmemperf/player/Makefile > $(NEXUS_TOP)/../../bcm_platform/tools/bmem/player/bmemperf_info.auto.c
