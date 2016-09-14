@@ -55,6 +55,9 @@
 extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_AudioDecoder_GetRoleAc3(unsigned roleIndex);
 
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateEAc3(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" const char *BOMX_AudioDecoder_GetRoleEAc3(unsigned roleIndex);
+
 extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateMp3(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_AudioDecoder_GetRoleMp3(unsigned roleIndex);
 
@@ -87,6 +90,7 @@ struct BOMX_AudioDecoderRole
 };
 
 const BOMX_AudioDecoderRole g_ac3Role[] = {{"audio_decoder.ac3", OMX_AUDIO_CodingAndroidAC3}};
+const BOMX_AudioDecoderRole g_eac3Role[] = {{"audio_decoder.eac3", OMX_AUDIO_CodingAndroidEAC3}};
 const BOMX_AudioDecoderRole g_mp3Role[] = {{"audio_decoder.mp3", OMX_AUDIO_CodingMP3}};
 const BOMX_AudioDecoderRole g_aacRole[] = {{"audio_decoder.aac", OMX_AUDIO_CodingAAC}};
 #define BOMX_AUDIO_GET_ROLE_COUNT(roleArray) (sizeof(roleArray)/sizeof(BOMX_AudioDecoderRole))

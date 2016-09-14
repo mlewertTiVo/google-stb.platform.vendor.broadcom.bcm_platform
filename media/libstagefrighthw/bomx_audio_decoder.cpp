@@ -77,8 +77,8 @@
 #define B_DRC_TO_NEXUS(cutboost) (((cutboost)*100)/127)
 #define B_DRC_FROM_NEXUS(cutboost) (((cutboost)*127)/100)
 
-#define B_DATA_BUFFER_SIZE (8192)       // Taken from SoftAAC decoder - large enough for AC3/MP3 as well
-#define B_OUTPUT_BUFFER_SIZE (2048*2*8) // 16-bit 5.1 with 2048 samples/frame for AAC
+#define B_DATA_BUFFER_SIZE (12288)       // Value may be large for aac/mp3 but it's needed to accommodate high bitrates for eac3
+#define B_OUTPUT_BUFFER_SIZE (2048*2*8) // 16-bit 5.1 with 2048 samples/frame for AAC, also fits 7.1 with 1536 samples/frame (ac3/eac3)
 #define B_NUM_BUFFERS (6)
 #define B_NUM_INPUT_BUFFERS_SECURE (4)
 #define B_STREAM_ID 0xc0
@@ -151,6 +151,47 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(
 extern "C" const char *BOMX_AudioDecoder_GetRoleAc3(unsigned roleIndex)
 {
     return BOMX_AUDIO_GET_ROLE_NAME(g_ac3Role, roleIndex);
+}
+
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateEAc3(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    NEXUS_AudioCapabilities audioCaps;
+
+    NEXUS_GetAudioCapabilities(&audioCaps);
+    if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
+         !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
+    {
+        ALOGW("AC3 hardware support is not available");
+        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+    }
+
+    BOMX_AudioDecoder *pAudioDecoder = new BOMX_AudioDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, BOMX_AUDIO_GET_ROLE_COUNT(g_eac3Role), g_eac3Role, BOMX_AudioDecoder_GetRoleEAc3);
+    if ( NULL == pAudioDecoder )
+    {
+        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+    }
+    else
+    {
+        OMX_ERRORTYPE constructorError = pAudioDecoder->IsValid();
+        if ( constructorError == OMX_ErrorNone )
+        {
+            return OMX_ErrorNone;
+        }
+        else
+        {
+            delete pAudioDecoder;
+            return BOMX_ERR_TRACE(constructorError);
+        }
+    }
+}
+
+extern "C" const char *BOMX_AudioDecoder_GetRoleEAc3(unsigned roleIndex)
+{
+    return BOMX_AUDIO_GET_ROLE_NAME(g_eac3Role, roleIndex);
 }
 
 extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateMp3(
@@ -296,6 +337,9 @@ static OMX_ERRORTYPE BOMX_AudioDecoder_InitMimeType(OMX_AUDIO_CODINGTYPE eCompre
     {
     case OMX_AUDIO_CodingAndroidAC3:
         pMimeTypeStr = "audio/ac3";
+        break;
+    case OMX_AUDIO_CodingAndroidEAC3:
+        pMimeTypeStr = "audio/eac3";
         break;
     case OMX_AUDIO_CodingMP3:
         pMimeTypeStr = "audio/mp3";
@@ -605,10 +649,14 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
         if ( !strcmp(property, "line") )
         {
             codecSettings.codecSettings.aac.drcMode = NEXUS_AudioDecoderDolbyPulseDrcMode_eLine;
+            codecSettings.codecSettings.ac3.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eLine;
+            codecSettings.codecSettings.ac3Plus.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eLine;
         }
         else
         {
             codecSettings.codecSettings.aac.drcMode = NEXUS_AudioDecoderDolbyPulseDrcMode_eRf;
+            codecSettings.codecSettings.ac3.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eRf;
+            codecSettings.codecSettings.ac3Plus.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eRf;
         }
     }
     codecSettings.codecSettings.aac.cut = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
@@ -623,6 +671,10 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     {
         codecSettings.codecSettings.aac.drcDefaultLevel = B_DRC_DEFAULT_REF_LEVEL;
     }
+    codecSettings.codecSettings.ac3.cut = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
+    codecSettings.codecSettings.ac3.boost = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
+    codecSettings.codecSettings.ac3Plus.cut = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
+    codecSettings.codecSettings.ac3Plus.boost = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
 
     errCode = NEXUS_AudioDecoder_SetCodecSettings(m_hAudioDecoder, &codecSettings);
     if ( errCode )
@@ -811,45 +863,64 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetParameter(
     switch ( (int)nParamIndex )
     {
     case OMX_IndexParamAudioAndroidAc3:
+    case OMX_IndexParamAudioAndroidEac3:
         {
-            OMX_AUDIO_PARAM_ANDROID_AC3TYPE *pAc3 = (OMX_AUDIO_PARAM_ANDROID_AC3TYPE *)pComponentParameterStructure;
+            OMX_AUDIO_PARAM_ANDROID_AC3TYPE *pAc3 = NULL;
+            OMX_AUDIO_PARAM_ANDROID_EAC3TYPE *pEAc3 = NULL;
+            unsigned nChannels = 0;
             NEXUS_AudioDecoderStatus decStatus;
-            ALOGV("GetParameter OMX_IndexParamAudioAndroidAc3");
-            BOMX_STRUCT_VALIDATE(pAc3);
-            if ( pAc3->nPortIndex != m_audioPortBase )
-            {
-                return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+            if ((int)nParamIndex == OMX_IndexParamAudioAndroidAc3) {
+                pAc3 = (OMX_AUDIO_PARAM_ANDROID_AC3TYPE *)pComponentParameterStructure;
+                BOMX_STRUCT_VALIDATE(pAc3);
+                if ( pAc3->nPortIndex != m_audioPortBase )
+                {
+                    return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+                }
+            } else {
+                pEAc3 = (OMX_AUDIO_PARAM_ANDROID_EAC3TYPE *)pComponentParameterStructure;
+                BOMX_STRUCT_VALIDATE(pEAc3);
+                if ( pEAc3->nPortIndex != m_audioPortBase )
+                {
+                    return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+                }
             }
+            ALOGV("GetParameter %d", nParamIndex);
             NEXUS_AudioDecoder_GetStatus(m_hAudioDecoder, &decStatus);
             switch ( decStatus.codecStatus.ac3.acmod )
             {
             default:
-                pAc3->nChannels = 0;
+                nChannels = 0;
                 break;
             case NEXUS_AudioAc3Acmod_eOneCenter_1_0_C:
-                pAc3->nChannels = 1;
+                nChannels = 1;
                 break;
             case NEXUS_AudioAc3Acmod_eTwoMono_1_ch1_ch2:
             case NEXUS_AudioAc3Acmod_eTwoChannel_2_0_L_R:
-                pAc3->nChannels = 2;
+                nChannels = 2;
                 break;
              case NEXUS_AudioAc3Acmod_eThreeChannel_3_0_L_C_R:
              case NEXUS_AudioAc3Acmod_eThreeChannel_2_1_L_R_S:
-                pAc3->nChannels = 3;
+                nChannels = 3;
                 break;
             case NEXUS_AudioAc3Acmod_eFourChannel_3_1_L_C_R_S:
             case NEXUS_AudioAc3Acmod_eFourChannel_2_2_L_R_SL_SR:
-                pAc3->nChannels = 4;
+                nChannels = 4;
                 break;
             case NEXUS_AudioAc3Acmod_eFiveChannel_3_2_L_C_R_SL_SR:
-                pAc3->nChannels = 5;
+                nChannels = 5;
                 break;
             }
             if ( decStatus.codecStatus.ac3.lfe )
             {
-                pAc3->nChannels++;
+                nChannels++;
             }
-            pAc3->nSampleRate = decStatus.sampleRate;
+            if ((int)nParamIndex == OMX_IndexParamAudioAndroidAc3) {
+                pAc3->nChannels = nChannels;
+                pAc3->nSampleRate = decStatus.sampleRate;
+            } else {
+                pEAc3->nChannels = nChannels;
+                pEAc3->nSampleRate = decStatus.sampleRate;
+            }
             return OMX_ErrorNone;
         }
     case OMX_IndexParamAudioMp3:
@@ -1245,7 +1316,6 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
     case OMX_IndexParamAudioAndroidAc3:
         {
             OMX_AUDIO_PARAM_ANDROID_AC3TYPE *pAc3 = (OMX_AUDIO_PARAM_ANDROID_AC3TYPE *)pComponentParameterStructure;
-            NEXUS_AudioDecoderStatus decStatus;
             ALOGV("SetParameter OMX_IndexParamAudioAndroidAc3");
             BOMX_STRUCT_VALIDATE(pAc3);
             if ( pAc3->nPortIndex != m_audioPortBase )
@@ -1255,10 +1325,21 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
             // Do nothing, just make android happy we accepted it.
             return OMX_ErrorNone;
         }
+    case OMX_IndexParamAudioAndroidEac3:
+        {
+            OMX_AUDIO_PARAM_ANDROID_EAC3TYPE *pEAc3 = (OMX_AUDIO_PARAM_ANDROID_EAC3TYPE *)pComponentParameterStructure;
+            ALOGV("SetParameter OMX_IndexParamAudioAndroidEAc3");
+            BOMX_STRUCT_VALIDATE(pEAc3);
+            if ( pEAc3->nPortIndex != m_audioPortBase )
+            {
+                return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+            }
+            // Do nothing, just make android happy we accepted it.`
+            return OMX_ErrorNone;
+        }
     case OMX_IndexParamAudioAac:
         {
             OMX_AUDIO_PARAM_AACPROFILETYPE *pAac = (OMX_AUDIO_PARAM_AACPROFILETYPE *)pComponentParameterStructure;
-            NEXUS_AudioDecoderStatus decStatus;
             ALOGV("SetParameter OMX_IndexParamAudioAac");
             BOMX_STRUCT_VALIDATE(pAac);
             if ( pAac->nPortIndex != m_audioPortBase )
@@ -1327,6 +1408,8 @@ NEXUS_AudioCodec BOMX_AudioDecoder::GetNexusCodec(OMX_AUDIO_CODINGTYPE omxType)
     {
     case OMX_AUDIO_CodingAndroidAC3:
         return NEXUS_AudioCodec_eAc3;
+    case OMX_AUDIO_CodingAndroidEAC3:
+        return NEXUS_AudioCodec_eAc3Plus;
     case OMX_AUDIO_CodingMP3:
         return NEXUS_AudioCodec_eMp3;
     case OMX_AUDIO_CodingAAC:
