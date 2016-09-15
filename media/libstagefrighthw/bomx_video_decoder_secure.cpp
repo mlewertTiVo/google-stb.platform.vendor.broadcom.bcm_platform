@@ -58,7 +58,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateCommon(
     OMX_IN OMX_CALLBACKTYPE *pCallbacks,
     bool tunnelMode)
 {
-    BOMX_VideoDecoder_Secure *pVideoDecoder = new BOMX_VideoDecoder_Secure(pComponentTpe, pName, pAppData, pCallbacks, tunnelMode);
+    BOMX_VideoDecoder_Secure *pVideoDecoder = new BOMX_VideoDecoder_Secure(pComponentTpe, pName, pAppData, pCallbacks, NULL, NULL, tunnelMode);
     if ( NULL == pVideoDecoder )
     {
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
@@ -113,35 +113,51 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Common(
     unsigned i;
     bool vp9Supported = false;
     NEXUS_VideoDecoderCapabilities caps;
+    NexusIPCClientBase *pIpcClient = NULL;
+    NexusClientContext *pNexusClient = NULL;
 
-    // Check if the platform supports VP9
-    NEXUS_GetVideoDecoderCapabilities(&caps);
-    for ( i = 0; i < caps.numVideoDecoders; i++ )
+    pIpcClient = NexusIPCClientFactory::getClient(pName);
+    if (pIpcClient)
     {
-        if ( caps.memory[i].supportedCodecs[NEXUS_VideoCodec_eVp9] )
+        pNexusClient = pIpcClient->createClientContext();
+    }
+    if (pNexusClient == NULL)
+    {
+        ALOGW("Unable to determine presence of VP9 hardware!");
+    }
+    else
+    {
+        // Check if the platform supports VP9
+        NEXUS_GetVideoDecoderCapabilities(&caps);
+        for ( i = 0; i < caps.numVideoDecoders; i++ )
         {
-            vp9Supported = true;
-            break;
+            if ( caps.memory[i].supportedCodecs[NEXUS_VideoCodec_eVp9] )
+            {
+                vp9Supported = true;
+                break;
+            }
         }
     }
 
     if ( !vp9Supported )
     {
         ALOGW("VP9 hardware support is not available");
-        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+        goto error;
     }
 
     // VP9 can be disabled by this property
     if ( property_get_int32(B_PROPERTY_TRIM_VP9, 0) )
     {
         ALOGW("VP9 hardware support is available but disabled (ro.nx.trim.vp9=1)");
-        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+        goto error;
     }
 
-    pVideoDecoder = new BOMX_VideoDecoder_Secure(pComponentTpe, pName, pAppData, pCallbacks, tunnelMode, 1, &vp9Role, BOMX_VideoDecoder_GetRoleVp9);
+    pVideoDecoder = new BOMX_VideoDecoder_Secure(pComponentTpe, pName, pAppData, pCallbacks,
+                                                 pIpcClient, pNexusClient,
+                                                 tunnelMode, 1, &vp9Role, BOMX_VideoDecoder_GetRoleVp9);
     if ( NULL == pVideoDecoder )
     {
-        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+        goto error;
     }
     else
     {
@@ -156,6 +172,17 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Common(
             return BOMX_ERR_TRACE(constructorError);
         }
     }
+
+error:
+    if (pIpcClient)
+    {
+        if (pNexusClient)
+        {
+            pIpcClient->destroyClientContext(pNexusClient);
+        }
+        delete pIpcClient;
+    }
+    return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Tunnel(
@@ -181,11 +208,13 @@ BOMX_VideoDecoder_Secure::BOMX_VideoDecoder_Secure(
     const OMX_STRING pName,
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks,
+    NexusIPCClientBase *pIpcClient,
+    NexusClientContext *pNexusClient,
     bool tunnel,
     unsigned numRoles,
     const BOMX_VideoDecoderRole *pRoles,
     const char *(*pGetRole)(unsigned roleIndex))
-    :BOMX_VideoDecoder(pComponentType, pName, pAppData, pCallbacks, true, tunnel, numRoles, pRoles, pGetRole)
+    :BOMX_VideoDecoder(pComponentType, pName, pAppData, pCallbacks, pIpcClient, pNexusClient, true, tunnel, numRoles, pRoles, pGetRole)
 {
     ALOGV("%s", __FUNCTION__);
 }

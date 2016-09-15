@@ -56,21 +56,39 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAac(
     OMX_IN OMX_CALLBACKTYPE *pCallbacks)
 {
     NEXUS_AudioCapabilities audioCaps;
+    NexusIPCClientBase *pIpcClient = NULL;
+    NexusClientContext *pNexusClient = NULL;
+    BOMX_AudioDecoder_Secure *pAudioDecoderSec = NULL;
 
-    NEXUS_GetAudioCapabilities(&audioCaps);
-    if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacAdts].decode &&
-         !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacPlusAdts].decode )
+    pIpcClient = NexusIPCClientFactory::getClient(pName);
+    if (pIpcClient)
     {
-        ALOGW("AAC hardware support is not available");
-        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+        pNexusClient = pIpcClient->createClientContext();
+    }
+    if (pNexusClient == NULL)
+    {
+        ALOGW("Unable to determine presence of AAC hardware!");
+    }
+    else
+    {
+        NEXUS_GetAudioCapabilities(&audioCaps);
+        if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacAdts].decode &&
+             !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacPlusAdts].decode )
+        {
+            ALOGW("AAC hardware support is not available");
+            goto error;
+        }
     }
 
-    BOMX_AudioDecoder_Secure *pAudioDecoderSec = new BOMX_AudioDecoder_Secure(
-                                            pComponentTpe, pName, pAppData, pCallbacks, BOMX_AUDIO_GET_ROLE_COUNT(g_aacRole),
-                                            g_aacRole, BOMX_AudioDecoder_GetRoleAac);
+    pAudioDecoderSec = new BOMX_AudioDecoder_Secure(
+                              pComponentTpe, pName, pAppData, pCallbacks,
+                              pIpcClient, pNexusClient,
+                              BOMX_AUDIO_GET_ROLE_COUNT(g_aacRole),
+                              g_aacRole, BOMX_AudioDecoder_GetRoleAac);
+
     if ( NULL == pAudioDecoderSec )
     {
-        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+        goto error;
     }
     else
     {
@@ -85,6 +103,17 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAac(
             return BOMX_ERR_TRACE(constructorError);
         }
     }
+
+error:
+    if (pIpcClient)
+    {
+        if (pNexusClient)
+        {
+            pIpcClient->destroyClientContext(pNexusClient);
+        }
+        delete pIpcClient;
+    }
+    return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
 
 BOMX_AudioDecoder_Secure::BOMX_AudioDecoder_Secure(
@@ -92,10 +121,12 @@ BOMX_AudioDecoder_Secure::BOMX_AudioDecoder_Secure(
     const OMX_STRING pName,
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks,
+    NexusIPCClientBase *pIpcClient,
+    NexusClientContext *pNexusClient,
     unsigned numRoles,
     const BOMX_AudioDecoderRole *pRoles,
     const char *(*pGetRole)(unsigned roleIndex))
-    :BOMX_AudioDecoder(pComponentType, pName, pAppData, pCallbacks, true, numRoles, pRoles, pGetRole)
+    :BOMX_AudioDecoder(pComponentType, pName, pAppData, pCallbacks, pIpcClient, pNexusClient, true, numRoles, pRoles, pGetRole)
 {
     ALOGV("%s", __FUNCTION__);
 }

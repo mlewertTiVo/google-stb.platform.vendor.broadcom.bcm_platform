@@ -60,6 +60,8 @@ public:
         const OMX_STRING pName,
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
+        NexusIPCClientBase *pIpcClient=NULL,
+        NexusClientContext *pNexusClient=NULL,
         bool tunnel=false,
         unsigned numRoles=0,
         const BOMX_VideoDecoderRole *pRoles=NULL,

@@ -154,7 +154,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateCommon(
     OMX_IN OMX_CALLBACKTYPE *pCallbacks,
     bool tunnelMode)
 {
-    BOMX_VideoDecoder *pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, tunnelMode);
+    BOMX_VideoDecoder *pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks,
+                                                             NULL, NULL, false, tunnelMode);
     if ( NULL == pVideoDecoder )
     {
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
@@ -204,35 +205,51 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
     unsigned i;
     bool vp9Supported = false;
     NEXUS_VideoDecoderCapabilities caps;
+    NexusIPCClientBase *pIpcClient = NULL;
+    NexusClientContext *pNexusClient = NULL;
 
-    // Check if the platform supports VP9
-    NEXUS_GetVideoDecoderCapabilities(&caps);
-    for ( i = 0; i < caps.numVideoDecoders; i++ )
+    pIpcClient = NexusIPCClientFactory::getClient(pName);
+    if (pIpcClient)
     {
-        if ( caps.memory[i].supportedCodecs[NEXUS_VideoCodec_eVp9] )
+        pNexusClient = pIpcClient->createClientContext();
+    }
+    if (pNexusClient == NULL)
+    {
+        ALOGW("Unable to determine presence of VP9 hardware!");
+    }
+    else
+    {
+        // Check if the platform supports VP9
+        NEXUS_GetVideoDecoderCapabilities(&caps);
+        for ( i = 0; i < caps.numVideoDecoders; i++ )
         {
-            vp9Supported = true;
-            break;
+            if ( caps.memory[i].supportedCodecs[NEXUS_VideoCodec_eVp9] )
+            {
+                vp9Supported = true;
+                break;
+            }
         }
     }
 
     if ( !vp9Supported )
     {
         ALOGW("VP9 hardware support is not available");
-        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+        goto error;
     }
 
     // VP9 can be disabled by this property
     if ( property_get_int32(B_PROPERTY_TRIM_VP9, 0) )
     {
         ALOGW("VP9 hardware support is available but disabled (ro.nx.trim.vp9=1)");
-        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+        goto error;
     }
 
-    pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks, false, tunnelMode, 1, &vp9Role, BOMX_VideoDecoder_GetRoleVp9);
+    pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks,
+                                          pIpcClient, pNexusClient,
+                                          false, tunnelMode, 1, &vp9Role, BOMX_VideoDecoder_GetRoleVp9);
     if ( NULL == pVideoDecoder )
     {
-        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+        goto error;
     }
     else
     {
@@ -247,6 +264,17 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
             return BOMX_ERR_TRACE(constructorError);
         }
     }
+
+error:
+    if (pIpcClient)
+    {
+        if (pNexusClient)
+        {
+            pIpcClient->destroyClientContext(pNexusClient);
+        }
+        delete pIpcClient;
+    }
+    return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
 
 extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Tunnel(
@@ -818,6 +846,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     const OMX_STRING pName,
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks,
+    NexusIPCClientBase *pIpcClient,
+    NexusClientContext *pNexusClient,
     bool secure,
     bool tunnel,
     unsigned numRoles,
@@ -845,8 +875,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pBufferTracker(NULL),
     m_AvailInputBuffers(0),
     m_frameRate(NEXUS_VideoFrameRate_eUnknown),
-    m_pIpcClient(NULL),
-    m_pNexusClient(NULL),
+    m_pIpcClient(pIpcClient),
+    m_pNexusClient(pNexusClient),
     m_nxClientId(NXCLIENT_INVALID_ID),
     m_hSurfaceClient(NULL),
     m_hVideoClient(NULL),
@@ -1059,20 +1089,26 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
 
-    m_pIpcClient = NexusIPCClientFactory::getClient(pName);
-    if ( NULL == m_pIpcClient )
+    if (m_pIpcClient == NULL)
     {
-        ALOGW("Unable to create client factory");
-        this->Invalidate(OMX_ErrorUndefined);
-        return;
+        m_pIpcClient = NexusIPCClientFactory::getClient(pName);
+        if ( NULL == m_pIpcClient )
+        {
+            ALOGW("Unable to create client factory");
+            this->Invalidate(OMX_ErrorUndefined);
+            return;
+        }
     }
 
-    m_pNexusClient = m_pIpcClient->createClientContext();
     if (m_pNexusClient == NULL)
     {
-        ALOGW("Unable to create nexus client context");
-        this->Invalidate(OMX_ErrorUndefined);
-        return;
+        m_pNexusClient = m_pIpcClient->createClientContext();
+        if (m_pNexusClient == NULL)
+        {
+            ALOGW("Unable to create nexus client context");
+            this->Invalidate(OMX_ErrorUndefined);
+            return;
+        }
     }
 
     if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))

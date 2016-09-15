@@ -117,28 +117,45 @@ extern "C" OMX_ERRORTYPE BOMX_VideoEncoder_Create(
     unsigned i;
     bool encodeSupported = false;
     NEXUS_VideoEncoderCapabilities caps;
+    NexusIPCClientBase *pIpcClient = NULL;
+    NexusClientContext *pNexusClient = NULL;
+    BOMX_VideoEncoder *pVideoEncoder = NULL;
 
-    /* check if encoder is supported by Nexus */
-    NEXUS_GetVideoEncoderCapabilities(&caps);
-    for ( i = 0; i < NEXUS_MAX_VIDEO_ENCODERS; i++ )
+    pIpcClient = NexusIPCClientFactory::getClient(pName);
+    if (pIpcClient)
     {
-        if ( caps.videoEncoder[i].supported && caps.videoEncoder[i].memory.used )
+        pNexusClient = pIpcClient->createClientContext();
+    }
+    if (pNexusClient == NULL)
+    {
+        ALOGW("Unable to determine presence of encoder hardware!");
+    }
+    else
+    {
+        /* check if encoder is supported by Nexus */
+        NEXUS_GetVideoEncoderCapabilities(&caps);
+        for ( i = 0; i < NEXUS_MAX_VIDEO_ENCODERS; i++ )
         {
-            encodeSupported = true;
-            break;
+            if ( caps.videoEncoder[i].supported && caps.videoEncoder[i].memory.used )
+            {
+                encodeSupported = true;
+                break;
+            }
         }
     }
 
     if ( !encodeSupported )
     {
         ALOGW("HW encode support is not available");
-        return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+        goto error;
     }
 
-    BOMX_VideoEncoder *pVideoEncoder = new BOMX_VideoEncoder(pComponentTpe, pName, pAppData, pCallbacks);
+    pVideoEncoder = new BOMX_VideoEncoder(pComponentTpe, pName, pAppData, pCallbacks,
+                                          pIpcClient, pNexusClient);
+
     if ( NULL == pVideoEncoder )
     {
-        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+        goto error;
     }
     else
     {
@@ -153,6 +170,17 @@ extern "C" OMX_ERRORTYPE BOMX_VideoEncoder_Create(
             return BOMX_ERR_TRACE(constructorError);
         }
     }
+
+error:
+    if (pIpcClient)
+    {
+        if (pNexusClient)
+        {
+            pIpcClient->destroyClientContext(pNexusClient);
+        }
+        delete pIpcClient;
+    }
+    return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
 
 extern "C" const char *BOMX_VideoEncoder_GetRole(unsigned roleIndex)
@@ -297,10 +325,12 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
     const OMX_PTR pAppData,
-    const OMX_CALLBACKTYPE *pCallbacks) :
+    const OMX_CALLBACKTYPE *pCallbacks,
+    NexusIPCClientBase *pIpcClient,
+    NexusClientContext *pNexusClient) :
     BOMX_Component(pComponentType, pName, pAppData, pCallbacks, BOMX_VideoEncoder_GetRole),
-    m_pIpcClient(NULL),
-    m_pNexusClient(NULL),
+    m_pIpcClient(pIpcClient),
+    m_pNexusClient(pNexusClient),
     m_nxClientId(NXCLIENT_INVALID_ID),
     m_hSimpleVideoDecoder(NULL),
     m_hSimpleEncoder(NULL),
@@ -508,22 +538,29 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
         return;
     }
 
-    /* create Nexus IPC client */
-    m_pIpcClient = NexusIPCClientFactory::getClient(pName);
-    if ( NULL == m_pIpcClient )
+
+    if (m_pIpcClient == NULL)
     {
-        ALOGE("Unable to create client factory");
-        this->Invalidate(OMX_ErrorUndefined);
-        return;
+        /* create Nexus IPC client */
+        m_pIpcClient = NexusIPCClientFactory::getClient(pName);
+        if ( NULL == m_pIpcClient )
+        {
+            ALOGE("Unable to create client factory");
+            this->Invalidate(OMX_ErrorUndefined);
+            return;
+        }
     }
 
-    /* create Nexus client */
-    m_pNexusClient = m_pIpcClient->createClientContext();
     if (m_pNexusClient == NULL)
     {
-        ALOGE("Unable to create nexus client context");
-        this->Invalidate(OMX_ErrorUndefined);
-        return;
+        /* create Nexus client */
+        m_pNexusClient = m_pIpcClient->createClientContext();
+        if (m_pNexusClient == NULL)
+        {
+            ALOGE("Unable to create nexus client context");
+            this->Invalidate(OMX_ErrorUndefined);
+            return;
+        }
     }
 
     m_hCheckpointEvent = B_Event_Create(NULL);

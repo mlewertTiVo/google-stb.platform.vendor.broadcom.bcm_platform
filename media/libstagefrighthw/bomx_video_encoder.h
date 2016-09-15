@@ -142,7 +142,9 @@ public:
         OMX_COMPONENTTYPE *pComponentType,
         const OMX_STRING pName,
         const OMX_PTR pAppData,
-        const OMX_CALLBACKTYPE *pCallbacks);
+        const OMX_CALLBACKTYPE *pCallbacks,
+        NexusIPCClientBase *pIpcClient=NULL,
+        NexusClientContext *pNexusClient=NULL);
 
     virtual ~BOMX_VideoEncoder();
 

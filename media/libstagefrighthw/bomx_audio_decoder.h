@@ -112,6 +112,8 @@ public:
         const OMX_STRING pName,
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
+        NexusIPCClientBase *pIpcClient,
+        NexusClientContext *pNexusClient,
         bool secure,
         unsigned numRoles,
         const BOMX_AudioDecoderRole *pRoles,
