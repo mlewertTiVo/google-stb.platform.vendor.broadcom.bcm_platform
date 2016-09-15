@@ -3762,7 +3762,13 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                      ALOGI("comp: sdb-0: {%d,%d,%dx%d} -> {%d,%d,%dx%d}", frame.x, frame.y, frame.w, frame.h, clipped.x, clipped.y, clipped.w, clipped.h);
                      ctx->sb_cli[0].geometry_updated = false;
                      if (ctx->sb_hole_threshold < *overlay_seen) {
-                        sideband_alpha_hole = true;
+                        if (!clipped.x && !clipped.y && !clipped.w && !clipped.h &&
+                            !frame.x && !frame.y && frame.w == ctx->cfg[HWC_PRIMARY_IX].width
+                            && frame.h == ctx->cfg[HWC_PRIMARY_IX].height) {
+                           ALOGV("comp: sdb-0: skip sdb alpha hole.");
+                        } else {
+                           sideband_alpha_hole = true;
+                        }
                      }
                   }
                   pthread_mutex_unlock(&ctx->mutex);
