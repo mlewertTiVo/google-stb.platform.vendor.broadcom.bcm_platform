@@ -15,9 +15,6 @@ on early-init
    mount debugfs debugfs /sys/kernel/debug mode=0755
 
 on init
-   mkdir /hwcfg 0555 root root
-   symlink /hwcfg /mnt/hwcfg
-
    # Support legacy paths
    symlink /sdcard /mnt/sdcard
    symlink /sdcard /storage/sdcard0
@@ -39,8 +36,8 @@ on post-fs
 
    setprop ro.nx.v3d.no_map_lock 0
    setprop dyn.nx.state none
-   setprop ro.nexus.nxserver.hdcp1x_keys /mnt/hwcfg/drm_hdcp1x.bin
-   setprop ro.nexus.nxserver.hdcp2x_keys /mnt/hwcfg/drm.bin
+   setprop ro.nexus.nxserver.hdcp1x_keys /hwcfg/drm_hdcp1x.bin
+   setprop ro.nexus.nxserver.hdcp2x_keys /hwcfg/drm.bin
 
    # Eliminate writable file in /sys to pass android.permission CTS
    chmod 0664 /sys/kernel/wakeup_reasons/last_resume_reason
