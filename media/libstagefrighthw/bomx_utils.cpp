@@ -220,8 +220,12 @@ float BOMX_NexusFramerateValue(NEXUS_VideoFrameRate framerate)
     case NEXUS_VideoFrameRate_e119_88: return 119.88;
     case NEXUS_VideoFrameRate_e120:    return 120.0;
     case NEXUS_VideoFrameRate_e19_98:  return 19.98;
+    case NEXUS_VideoFrameRate_e7_5:    return 7.5;
+    case NEXUS_VideoFrameRate_e12:     return 12;
+    case NEXUS_VideoFrameRate_e11_988: return 11.988;
+    case NEXUS_VideoFrameRate_e9_99:   return 9.99;
     default:
-        BDBG_CASSERT(NEXUS_VideoFrameRate_eMax == 19);
+        BDBG_CASSERT(NEXUS_VideoFrameRate_eMax == 23);
         ALOGE("Unhandled NEXUS_VideoFrameRate (%d).", framerate);
         break;
     }
