@@ -193,7 +193,7 @@ struct brcm_stream_out {
     audio_output_flags_t flags;
     struct audio_config config;
     uint32_t frameSize;
-    uint32_t framesPlayed;
+    uint64_t framesPlayed;
     size_t buffer_size;
     bool started;
     bool suspended;
@@ -210,13 +210,17 @@ struct brcm_stream_out {
             uint32_t connectId;
             NxClient_AllocResults allocResults;
             union {
-                NEXUS_SimpleAudioPlaybackHandle simple_playback;
+                struct {
+                    NEXUS_SimpleAudioPlaybackHandle simple_playback;
+                    size_t lastPlayedBytes;
+                } primary;
                 struct {
                     NEXUS_SimpleAudioDecoderHandle simple_decoder;
                     bool playpump_mode;
                     NEXUS_PlaypumpHandle playpump;
                     NEXUS_PidChannelHandle pid_channel;
                     struct timespec start_ts;
+                    size_t lastCount;
                 } direct;
                 struct {
                     NEXUS_SimpleAudioDecoderHandle audio_decoder;
