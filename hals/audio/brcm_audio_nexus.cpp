@@ -299,27 +299,31 @@ static int nexus_bout_set_volume(struct brcm_stream_out *bout,
 
 static int nexus_bout_get_render_position(struct brcm_stream_out *bout, uint32_t *dsp_frames)
 {
-    NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.simple_playback;
+    NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.primary.simple_playback;
     NEXUS_SimpleAudioPlaybackStatus status;
     NEXUS_SimpleAudioPlayback_GetStatus(simple_playback, &status);
-    *dsp_frames = status.playedBytes/bout->frameSize;
+    bout->framesPlayed += (status.playedBytes - bout->nexus.primary.lastPlayedBytes) / bout->frameSize;
+    bout->nexus.primary.lastPlayedBytes = status.playedBytes;
+    *dsp_frames = (uint32_t)bout->framesPlayed;
     return 0;
 }
 
 
 static int nexus_bout_get_presentation_position(struct brcm_stream_out *bout, uint64_t *frames)
 {
-    NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.simple_playback;
+    NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.primary.simple_playback;
     NEXUS_SimpleAudioPlaybackStatus status;
 
     NEXUS_SimpleAudioPlayback_GetStatus(simple_playback, &status);
-    *frames = (uint64_t)(bout->framesPlayed + status.playedBytes/bout->frameSize);
+    bout->framesPlayed += (status.playedBytes - bout->nexus.primary.lastPlayedBytes) / bout->frameSize;
+    bout->nexus.primary.lastPlayedBytes = status.playedBytes;
+    *frames = bout->framesPlayed;
     return 0;
 }
 
 static int nexus_bout_start(struct brcm_stream_out *bout)
 {
-    NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.simple_playback;
+    NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.primary.simple_playback;
     NEXUS_SimpleAudioPlaybackStartSettings start_settings;
     BKNI_EventHandle event = bout->nexus.event;
     struct audio_config *config = &bout->config;
@@ -354,18 +358,20 @@ static int nexus_bout_start(struct brcm_stream_out *bout)
              __FUNCTION__, __LINE__, ret);
         return -ENOSYS;
     }
+    bout->nexus.primary.lastPlayedBytes = 0;
     return 0;
 }
 
 static int nexus_bout_stop(struct brcm_stream_out *bout)
 {
-    NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.simple_playback;
+    NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.primary.simple_playback;
 
     if (simple_playback) {
         NEXUS_SimpleAudioPlayback_Stop(simple_playback);
         NEXUS_SimpleAudioPlaybackStatus status;
         NEXUS_SimpleAudioPlayback_GetStatus(simple_playback, &status);
-        bout->framesPlayed += status.playedBytes/bout->frameSize;
+        bout->framesPlayed += (status.playedBytes - bout->nexus.primary.lastPlayedBytes) / bout->frameSize;
+        bout->nexus.primary.lastPlayedBytes = status.playedBytes;
         ALOGV("%s: setting framesPlayed to %u", __FUNCTION__, bout->framesPlayed);
     }
     return 0;
@@ -374,7 +380,7 @@ static int nexus_bout_stop(struct brcm_stream_out *bout)
 static int nexus_bout_write(struct brcm_stream_out *bout,
                             const void* buffer, size_t bytes)
 {
-    NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.simple_playback;
+    NEXUS_SimpleAudioPlaybackHandle simple_playback = bout->nexus.primary.simple_playback;
     BKNI_EventHandle event = bout->nexus.event;
     size_t bytes_written = 0;
     int ret = 0;
@@ -424,7 +430,7 @@ static int nexus_bout_write(struct brcm_stream_out *bout,
             pthread_mutex_lock(&bout->lock);
 
             // Sanity check when relocking
-            simple_playback = bout->nexus.simple_playback;
+            simple_playback = bout->nexus.primary.simple_playback;
             ALOG_ASSERT(simple_playback == prev_simple_playback);
             ALOG_ASSERT(!bout->suspended);
 
@@ -571,7 +577,8 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
         goto err_callback;
     }
 
-    bout->nexus.simple_playback = simple_playback;
+    bout->nexus.primary.simple_playback = simple_playback;
+    bout->nexus.primary.lastPlayedBytes = 0;
     bout->nexus.event = event;
 
     return 0;
