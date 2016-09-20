@@ -239,7 +239,7 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
     if (playpump) {
         NEXUS_Playpump_Stop(playpump);
     }
-    ALOGV("%s: setting framesPlayed to %u", __FUNCTION__, bout->framesPlayed);
+    ALOGV("%s: setting framesPlayed to %llu", __FUNCTION__, bout->framesPlayed);
 
     return 0;
 }

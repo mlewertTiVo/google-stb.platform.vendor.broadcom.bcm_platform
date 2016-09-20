@@ -257,7 +257,7 @@ static int nexus_direct_bout_stop(struct brcm_stream_out *bout)
             bout->framesPlayed += ((size_t)status.numBytesDecoded - bout->nexus.direct.lastCount) / bout->frameSize;
             bout->nexus.direct.lastCount = status.numBytesDecoded;
         }
-        ALOGV("%s: setting framesPlayed to %u", __FUNCTION__, bout->framesPlayed);
+        ALOGV("%s: setting framesPlayed to %llu", __FUNCTION__, bout->framesPlayed);
     }
 
     if (bout->nexus.direct.playpump_mode && playpump) {
