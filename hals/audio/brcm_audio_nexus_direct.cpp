@@ -316,6 +316,7 @@ static int nexus_direct_bout_flush(struct brcm_stream_out *bout)
     ALOGV("%s, %p, started=%s", __FUNCTION__, bout, bout->started?"true":"false");
     if (bout->started) {
         nexus_direct_bout_stop(bout);
+        bout->framesPlayed = 0;
         nexus_direct_bout_start(bout);
     }
     return 0;
