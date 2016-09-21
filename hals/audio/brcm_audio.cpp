@@ -94,12 +94,15 @@ static brcm_devices_out_t get_brcm_devices_out(audio_devices_t devices, bool tun
 {
     switch (devices) {
     case AUDIO_DEVICE_OUT_SPEAKER:
-        return BRCM_DEVICE_OUT_NEXUS;
     case AUDIO_DEVICE_OUT_AUX_DIGITAL:
         if (tunneled) {
            return BRCM_DEVICE_OUT_NEXUS_TUNNEL;
         } else {
-           return BRCM_DEVICE_OUT_NEXUS_DIRECT;
+            if (devices == AUDIO_DEVICE_OUT_SPEAKER) {
+                return BRCM_DEVICE_OUT_NEXUS;
+            } else { // AUDIO_DEVICE_OUT_AUX_DIGITAL
+                return BRCM_DEVICE_OUT_NEXUS_DIRECT;
+            }
         }
     default:
         return BRCM_DEVICE_OUT_MAX;
