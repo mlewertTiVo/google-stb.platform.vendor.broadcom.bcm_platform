@@ -66,6 +66,7 @@
 #include <inttypes.h>
 #include <sys/prctl.h>
 #include <semaphore.h>
+#include <linux/watchdog.h>
 
 #include <binder/IPCThreadState.h>
 #include <binder/ProcessState.h>
@@ -119,6 +120,8 @@
 #define NX_COMP_VIDEO                  "ro.nx.cvbs"
 #define NX_CAPABLE_FRONT_END           "ro.nx.capable.fe"
 #define NX_NO_OUTPUT_VIDEO             "ro.nx.output.dis"
+#define NX_WD_TIMEOUT                  "ro.nx.wd.timeout"
+#define NX_WD_TIMEOUT_DEF              40
 
 #define NX_ODV                         "ro.nx.odv"
 #define NX_ODV_ALT_THRESHOLD           "ro.nx.odv.use.alt"
@@ -479,6 +482,11 @@ skip_lmk:
                     if (rc != NEXUS_SUCCESS) {
                        NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
                        g_app.wdog.nx = NULL;
+                    }
+                    int timeout = property_get_int32(NX_WD_TIMEOUT, NX_WD_TIMEOUT_DEF);
+                    int ret = ioctl(g_app.wdog.fd, WDIOC_SETTIMEOUT, &timeout);
+                    if (ret != 0) {
+                        ALOGW("unable to set watchdog timeout (%s)!", strerror(errno));
                     }
                     g_app.wdog.init = true;
                  } else {
