@@ -57,6 +57,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/sysinfo.h>
 #include <sys/sysmacros.h>
 #include <sys/mman.h>
 #include <linux/kdev_t.h>
@@ -92,6 +93,7 @@
 #define RUNNER_SEC_THRESHOLD           (10)
 #define RUNNER_GC_THRESHOLD            (3)
 #define RUNNER_LMK_THRESHOLD           (10)
+#define RUNNER_LKGTIME_THRESHOLD       (6)
 #define NUM_NX_OBJS                    (128)
 #define MAX_NX_OBJS                    (2048)
 #define MIN_PLATFORM_DEC               (2)
@@ -143,6 +145,8 @@
 #define NX_LOGGER_SIZE                 "ro.nx.logger_size"
 #define NX_AUDIO_LOG                   "ro.nx.audio_log"
 
+#define NX_LKG_TIME                    "ro.nx.lkg_time"
+
 #define NX_HEAP_DYN_FREE_THRESHOLD     (1920*1080*4) /* one 1080p RGBA. */
 
 #define NX_PROP_ENABLED                "1"
@@ -192,11 +196,20 @@ typedef struct {
         NxClient_JoinSettings joinSettings;
     } clients[APP_MAX_CLIENTS];
     int watchdogFd;
+    bool lkgtime;
 
 } NX_SERVER_T;
 
 static NX_SERVER_T g_app;
 static bool g_exit = false;
+
+/* list of files that we use to keep track of time */
+static const char * timestore_files[] = {
+   "/data/mediadrm/nx-time.txt",
+   "/data/mediadrm/UsageTable.dat",
+   "/data/mediadrm/UsageTable.bkp"
+};
+static const int timestore_files_count = sizeof(timestore_files) / sizeof(const char *);
 
 static unsigned calc_heap_size(const char *value)
 {
@@ -283,6 +296,7 @@ static void *proactive_runner_task(void *argv)
     int active_gc, active_lmk, active_gs, active_wd;
     int gc_tick = 0;
     int lmk_tick = 0;
+    int lkgtime_tick = 0, fd;
     char value[PROPERTY_VALUE_MAX];
     bool needs_growth;
     int i, j;
@@ -332,6 +346,9 @@ static void *proactive_runner_task(void *argv)
         *    which will stop the device. If not kicked within 30 seconds, the watchdog
         *    will expire and trigger a system reset.
         *
+        * 5) keep a record of the last known system time, so that on power lost we
+        *    would come back with a better time in corner situation when NTP is not
+        *    readily available.
         */
 
         if (++lmk_tick > RUNNER_LMK_THRESHOLD) {
@@ -374,6 +391,14 @@ skip_lmk:
 
         if (g_app.watchdogFd >= 0) {
             watchdogWrite(WATCHDOG_TERMINATE);
+        }
+
+        /* keep a record of current time */
+        if (g_app.lkgtime && ++lkgtime_tick > RUNNER_LKGTIME_THRESHOLD) {
+            lkgtime_tick = 0;
+            fd = open(timestore_files[0], O_WRONLY|O_CREAT|O_TRUNC, 0);
+            fsync(fd);
+            close(fd);
         }
 
     } while(nx_server->proactive_runner.running);
@@ -991,6 +1016,66 @@ static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
     }
 }
 
+static time_t get_file_time(const char *filename)
+{
+    struct stat fst;
+
+    if (stat(filename, &fst) != 0) {
+        ALOGV("%s not found", filename);
+        return 0;
+    } else {
+        ALOGV("%s last modified %s", filename, ctime(&fst.st_mtime));
+        return fst.st_mtime;
+    }
+}
+
+static void update_time(void)
+{
+    struct timeval ct;
+    struct sysinfo info;
+    time_t lkg_time, tmp_time;
+    int i;
+
+    g_app.lkgtime = property_get_int32(NX_LKG_TIME, 1);
+    if (!g_app.lkgtime) return;
+
+    /* Get last modified time within our time files and add system up time on
+     * top.  If the current system time is behind, we advance the time to this
+     * better time as our time estimate.
+     */
+
+    lkg_time = 0;
+    for (i = 0; i < timestore_files_count; i++) {
+        time_t tmp = get_file_time(timestore_files[i]);
+        if (tmp > lkg_time) {
+            lkg_time = tmp;
+        }
+    }
+    ALOGI("Last known good time: %s", ctime(&lkg_time));
+
+    /* Do not attempt to set time if we do not have an estimate */
+    if (lkg_time != 0) {
+        /* Add system up-time */
+        if (sysinfo(&info) == -1) {
+            ALOGE("Error getting system info");
+            info.uptime = 0;
+        }
+        lkg_time += (time_t)info.uptime;
+
+        if (gettimeofday(&ct, NULL) != 0) {
+            ALOGE("Error getting current system time");
+        } else {
+            ALOGV("Current time: %s", ctime(&ct.tv_sec));
+            if (lkg_time > ct.tv_sec) {
+                ct.tv_sec = lkg_time;
+                ct.tv_usec = 0;
+                settimeofday(&ct, NULL);
+                ALOGI("Setting system time: %s", ctime(&ct.tv_sec));
+            }
+        }
+    }
+}
+
 int main(void)
 {
     struct timespec t;
@@ -1010,6 +1095,9 @@ int main(void)
 
     setpriority(PRIO_PROCESS, 0, PRIORITY_URGENT_DISPLAY);
     set_sched_policy(0, SP_FOREGROUND);
+
+    /* make an effort to come up with the last known system time */
+    update_time();
 
     const char *devName = getenv("NEXUS_DEVICE_NODE");
     if (!devName) {
