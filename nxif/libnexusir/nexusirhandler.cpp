@@ -53,6 +53,8 @@
 #define DEFAULT_TIMEOUT MS_TO_NS(250)
 
 #define WAKEUP_KEY "ro.ir_remote.wakeup.button"
+#define IR_NAME_NEXUS_REMOTE "Nexus Remote"
+#define IR_NAME "ro.ir_remote.name"
 
 NexusIrHandler::NexusIrHandler() :
         m_mode(NEXUS_IrInputMode_eRemoteA),
@@ -89,6 +91,9 @@ bool NexusIrHandler::start(NEXUS_IrInputMode mode,
     uint32_t power_key_two = NEXUSIRINPUT_NO_KEY;
 
     unsigned wakeup_key = property_get_int32(WAKEUP_KEY, 0);
+    char ir_name[PROPERTY_VALUE_MAX];
+
+    property_get(IR_NAME, ir_name, IR_NAME_NEXUS_REMOTE);
 
     for (size_t i = 0; success && (i < size); ++i)
     {
@@ -106,7 +111,7 @@ bool NexusIrHandler::start(NEXUS_IrInputMode mode,
         //Note: success == false breaks the loop
     }
     success = success
-            && m_uinput.start("NexusIrHandler", id)
+            && m_uinput.start(ir_name, id)
             && m_ir.start(m_mode, *this, power_key, mask, power_key_two, mask_two);
 
     m_key_thread.setMap(map);
