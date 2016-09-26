@@ -61,6 +61,7 @@
 #include <sys/sysmacros.h>
 #include <sys/mman.h>
 #include <linux/kdev_t.h>
+#include <linux/watchdog.h>
 #include <sched.h>
 #include <sys/resource.h>
 #include <cutils/sched_policy.h>
@@ -120,6 +121,8 @@
 #define NX_AUDIO_LOUDNESS              "ro.nx.audio_loudness"
 #define NX_CAPABLE_COMP_BYPASS         "ro.nx.capable.cb"
 #define NX_COMP_VIDEO                  "ro.nx.cvbs"
+#define NX_WD_TIMEOUT                  "ro.nx.wd.timeout"
+#define NX_WD_TIMEOUT_DEF              40
 
 #define NX_HDMI_DRM_KEY                "ro.nx.hdmi_drm"
 
@@ -1142,6 +1145,12 @@ int main(void)
        g_app.watchdogFd = open("/dev/watchdog", O_WRONLY);
        if (g_app.watchdogFd < 0) {
           ALOGE("Failed to start reset watchdog timer(reason:%s)!", strerror(errno));
+       } else {
+          int timeout = property_get_int32(NX_WD_TIMEOUT, NX_WD_TIMEOUT_DEF);
+          int ret = ioctl(g_app.watchdogFd, WDIOC_SETTIMEOUT, &timeout);
+          if (ret != 0) {
+             ALOGW("unable to set watchdog timeout (%s)!", strerror(errno));
+          }
        }
     } else {
        g_app.watchdogFd = -1;
