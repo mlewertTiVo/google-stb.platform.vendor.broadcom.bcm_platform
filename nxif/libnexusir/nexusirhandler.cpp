@@ -53,7 +53,7 @@
 #define DEFAULT_TIMEOUT MS_TO_NS(250)
 
 #define WAKEUP_KEY "ro.ir_remote.wakeup.button"
-#define IR_NAME_NEXUS_REMOTE "Nexus Remote"
+#define IR_NAME_NEXUS_REMOTE "mtkinp"
 #define IR_NAME "ro.ir_remote.name"
 
 NexusIrHandler::NexusIrHandler() :
