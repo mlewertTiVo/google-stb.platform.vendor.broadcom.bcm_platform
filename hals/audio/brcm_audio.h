@@ -108,6 +108,12 @@ extern "C" {
 #define BRCM_PROPERTY_AUDIO_OUTPUT_ENABLE_SPDIF_DOLBY ("persist.nx.spdif.enable_dolby")
 #define BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY ("ro.nx.eac3.trans_latency")
 
+#define BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DECODE         ("media.brcm.direct_dolby_decode")
+#define BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DECODE_PERSIST ("persist.nx.direct_dolby_decode")
+
+#define BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM         ("media.brcm.direct_force_pcm")
+#define BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM_PERSIST ("persist.nx.direct_force_pcm")
+
 /* Special parameter for enabling EAC3 passthrough with tunnel video decoder */
 #define AUDIO_PARAMETER_HW_AV_SYNC_EAC3 "HwAvSyncEAC3Supported"
 
@@ -225,6 +231,8 @@ struct brcm_stream_out {
                     struct timespec start_ts;
                     size_t lastCount;
                     uint32_t transcode_latency;
+                    NxClient_AudioOutputMode savedHDMIOutputMode;
+                    NxClient_AudioOutputMode savedSPDIFOutputMode;
                 } direct;
                 struct {
                     NEXUS_SimpleAudioDecoderHandle audio_decoder;

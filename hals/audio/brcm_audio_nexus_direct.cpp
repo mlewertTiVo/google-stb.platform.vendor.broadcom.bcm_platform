@@ -57,8 +57,78 @@ using namespace android;
 #define NEXUS_PCM_FRAMES_PER_EAC3_FRAME 1536
 
 /*
+ * Runtime Properties
+ */
+#define BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DRC_MODE ("media.brcm.direct_drc_mode")
+#define BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_STEREO_DOWNMIX_MODE ("media.brcm.direct_stereo_mode")
+
+typedef struct {
+    const char *key;
+    int value;
+} property_str_map;
+
+static const property_str_map drc_mode_map[] = {
+    {
+        .key = "line",
+        .value = NEXUS_AudioDecoderDolbyDrcMode_eLine,
+    },
+    {
+        .key = "rf",
+        .value = NEXUS_AudioDecoderDolbyDrcMode_eRf,
+    },
+    {
+        .key = "customA",
+        .value = NEXUS_AudioDecoderDolbyDrcMode_eCustomA,
+    },
+    {
+        .key = "customD",
+        .value = NEXUS_AudioDecoderDolbyDrcMode_eCustomD,
+    },
+    {
+        .key = "off",
+        .value = NEXUS_AudioDecoderDolbyDrcMode_eOff,
+    },
+    {
+        .key = NULL,
+        .value = -1,
+    }
+};
+
+static const property_str_map stereo_downmix_mode_map[] = {
+    {
+        .key = "auto",
+        .value = NEXUS_AudioDecoderDolbyStereoDownmixMode_eAutomatic,
+    },
+    {
+        .key = "LtRt",
+        .value = NEXUS_AudioDecoderDolbyStereoDownmixMode_eDolbySurroundCompatible,
+    },
+    {
+        .key = "LoRo",
+        .value = NEXUS_AudioDecoderDolbyStereoDownmixMode_eStandard,
+    },
+    {
+        .key = NULL,
+        .value = -1,
+    }
+};
+
+
+/*
  * Utility Functions
  */
+static int get_property_value(const char *str_value, const property_str_map *map)
+{
+    if (!map)
+        return -1;
+
+    while (map->key != NULL) {
+        if (strncmp(str_value, map->key, strlen(map->key)) == 0)
+            return map->value;
+        map++;
+    }
+    return -1;
+}
 
 static void nexus_direct_bout_data_callback(void *context, int param)
 {
@@ -228,6 +298,61 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
         NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
         start_settings.primary.codec = brcm_audio_get_codec_from_format(bout->config.format);
         start_settings.primary.pidChannel = bout->nexus.direct.pid_channel;
+        // Set Dolby DRC and downmix modes
+        if ((start_settings.primary.codec == NEXUS_AudioCodec_eAc3) ||
+            (start_settings.primary.codec == NEXUS_AudioCodec_eAc3Plus)) {
+            NEXUS_AudioDecoderCodecSettings codecSettings;
+            NEXUS_AudioDecoderDolbySettings *dolbySettings;
+            char property[PROPERTY_VALUE_MAX];
+            int value;
+            bool changed = false;
+
+            // Get default settings
+            NEXUS_SimpleAudioDecoder_GetCodecSettings(simple_decoder,
+                    NEXUS_SimpleAudioDecoderSelector_ePrimary, start_settings.primary.codec, &codecSettings);
+            if (codecSettings.codec != start_settings.primary.codec) {
+                ALOGE("%s: Codec mismatch %d != %d", __FUNCTION__,
+                        codecSettings.codec, start_settings.primary.codec);
+                NEXUS_Playpump_Stop(playpump);
+                return -ENOSYS;
+            }
+
+            // Override settings
+            dolbySettings = (codecSettings.codec == NEXUS_AudioCodec_eAc3)?
+                                &codecSettings.codecSettings.ac3:
+                                &codecSettings.codecSettings.ac3Plus;
+
+            if (property_get(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DRC_MODE, property, "")) {
+                value = get_property_value(property, drc_mode_map);
+                if (value != -1) {
+                    ALOGI("%s: Setting Dolby DRC mode to %d", __FUNCTION__, value);
+                    dolbySettings->drcMode = (NEXUS_AudioDecoderDolbyDrcMode)value;
+                    dolbySettings->drcModeDownmix = (NEXUS_AudioDecoderDolbyDrcMode)value;
+                    changed = true;
+                }
+            }
+            if (property_get(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_STEREO_DOWNMIX_MODE, property, "")) {
+                value = get_property_value(property, stereo_downmix_mode_map);
+                if (value != -1) {
+                    ALOGI("%s: Setting Dolby stereo downmix mode to %d", __FUNCTION__, value);
+                    dolbySettings->stereoDownmixMode = (NEXUS_AudioDecoderDolbyStereoDownmixMode)value;
+                    changed = true;
+                }
+            }
+
+            // Apply settings
+            if (changed) {
+                ret = NEXUS_SimpleAudioDecoder_SetCodecSettings(simple_decoder,
+                        NEXUS_SimpleAudioDecoderSelector_ePrimary, &codecSettings);
+                if (ret) {
+                    ALOGE("%s: Unable to set codec %d settings, ret = %d", __FUNCTION__,
+                            start_settings.primary.codec, ret);
+                    NEXUS_Playpump_Stop(playpump);
+                    return -ENOSYS;
+                }
+            }
+        }
+
     } else {
         NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
         start_settings.passthroughBuffer.enabled = true;
@@ -486,18 +611,38 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
             return -EINVAL;
         break;
     case AUDIO_FORMAT_AC3:
-        /* Suggest PCM wrapped format */
-        config->channel_mask = AUDIO_CHANNEL_OUT_STEREO;
-        config->format = AUDIO_FORMAT_PCM_16_BIT;
-        return -EINVAL;
+        if (property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DECODE, false) ||
+            property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DECODE_PERSIST, false)) {
+            NEXUS_AudioCapabilities audioCaps;
+
+            NEXUS_GetAudioCapabilities(&audioCaps);
+            if (audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode) {
+                ALOGI("Enable play pump mode");
+                bout->nexus.direct.playpump_mode = true;
+            }
+        }
+
+        if (!bout->nexus.direct.playpump_mode) {
+            /* Suggest PCM wrapped format */
+            config->channel_mask = AUDIO_CHANNEL_OUT_STEREO;
+            config->format = AUDIO_FORMAT_PCM_16_BIT;
+            return -EINVAL;
+        }
         break;
     case AUDIO_FORMAT_E_AC3:
-        if (property_get_bool(BRCM_PROPERTY_AUDIO_OUTPUT_ENABLE_SPDIF_DOLBY, false)) {
-            ALOGI("Enable play pump mode");
-            bout->nexus.direct.playpump_mode = true;
-            bout->nexus.direct.transcode_latency = property_get_int32(
-                            BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY,
-                            BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY);
+        if (property_get_bool(BRCM_PROPERTY_AUDIO_OUTPUT_ENABLE_SPDIF_DOLBY, false) ||
+            property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DECODE, false) ||
+            property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DECODE_PERSIST, false)) {
+            NEXUS_AudioCapabilities audioCaps;
+
+            NEXUS_GetAudioCapabilities(&audioCaps);
+            if (audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode) {
+                ALOGI("Enable play pump mode");
+                bout->nexus.direct.playpump_mode = true;
+                bout->nexus.direct.transcode_latency = property_get_int32(
+                                BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY,
+                                BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY);
+            }
         }
 
         if (!bout->nexus.direct.playpump_mode) {
@@ -577,6 +722,9 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         goto err_callback;
     }
 
+    bout->nexus.direct.savedHDMIOutputMode = NxClient_AudioOutputMode_eMax;
+    bout->nexus.direct.savedSPDIFOutputMode = NxClient_AudioOutputMode_eMax;
+
     // Open play pump
     if (bout->nexus.direct.playpump_mode) {
         NEXUS_PlaypumpOpenSettings playpumpOpenSettings;
@@ -617,6 +765,23 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
         bout->nexus.direct.playpump = playpump;
         bout->nexus.direct.pid_channel = pid_channel;
+
+        // Force PCM mode if necessary
+        if (property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM, false) ||
+            property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM_PERSIST, false)) {
+            NxClient_AudioSettings audioSettings;
+
+            ALOGI("Force PCM output");
+            NxClient_GetAudioSettings(&audioSettings);
+            bout->nexus.direct.savedHDMIOutputMode = audioSettings.hdmi.outputMode;
+            bout->nexus.direct.savedSPDIFOutputMode = audioSettings.spdif.outputMode;
+            audioSettings.hdmi.outputMode = NxClient_AudioOutputMode_ePcm;
+            audioSettings.spdif.outputMode = NxClient_AudioOutputMode_ePcm;
+            ret = NxClient_SetAudioSettings(&audioSettings);
+            if (ret) {
+                ALOGE("%s: Error setting PCM mode, ret = %d", __FUNCTION__, ret);
+            }
+        }
     }
 
     bout->nexus.direct.simple_decoder = simple_decoder;
@@ -651,6 +816,22 @@ static int nexus_direct_bout_close(struct brcm_stream_out *bout)
 
     if (bout->nexus.state == BRCM_NEXUS_STATE_DESTROYED) {
         return 0;
+    }
+
+    // Restore output  mode if necessary
+    if ((bout->nexus.direct.savedHDMIOutputMode != NxClient_AudioOutputMode_eMax) ||
+        (bout->nexus.direct.savedSPDIFOutputMode != NxClient_AudioOutputMode_eMax))
+    {
+        NxClient_AudioSettings audioSettings;
+
+        NxClient_GetAudioSettings(&audioSettings);
+        if (bout->nexus.direct.savedHDMIOutputMode != NxClient_AudioOutputMode_eMax)
+            audioSettings.hdmi.outputMode = bout->nexus.direct.savedHDMIOutputMode;
+        if (bout->nexus.direct.savedSPDIFOutputMode != NxClient_AudioOutputMode_eMax)
+            audioSettings.spdif.outputMode = bout->nexus.direct.savedSPDIFOutputMode;
+
+        ALOGI("Restore audio output mode");
+        NxClient_SetAudioSettings(&audioSettings);
     }
 
     if (bout->nexus.direct.playpump_mode) {
