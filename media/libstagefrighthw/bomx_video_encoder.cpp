@@ -62,16 +62,18 @@
 #define B_NUM_OF_IN_BUFFERS (5)
 
 #define Q16_SCALE_FACTOR 65536.0
-#define B_DEFAULT_INPUT_FRAMERATE (Q16_SCALE_FACTOR * 15.0)
-#define B_DEFAULT_INPUT_NEXUS_FRAMERATE (NEXUS_VideoFrameRate_e15)
+#define B_DEFAULT_OUTPUT_FRAMERATE (Q16_SCALE_FACTOR * 15.0)
+#define B_DEFAULT_OUTPUT_NEXUS_FRAMERATE (NEXUS_VideoFrameRate_e15)
+#define B_DEFAULT_VIDEO_REFRESH_RATE 60000
+#define B_DEFAULT_INPUT_NEXUS_FRAMERATE (NEXUS_VideoFrameRate_e30)
 
 #define B_DEFAULT_MAX_FRAME_WIDTH   1280
 #define B_DEFAULT_MAX_FRAME_HEIGHT  720
 #define B_MAX_FRAME_RATE            NEXUS_VideoFrameRate_e30
 #define B_MAX_FRAME_RATE_F          30.0f
 #define B_MAX_FRAME_RATE_Q16        (Q16_SCALE_FACTOR*30)
-#define B_MIN_FRAME_RATE            NEXUS_VideoFrameRate_e15
-#define B_MIN_FRAME_RATE_Q16        (Q16_SCALE_FACTOR*15)
+#define B_MIN_FRAME_RATE            NEXUS_VideoFrameRate_e10
+#define B_MIN_FRAME_RATE_Q16        (Q16_SCALE_FACTOR*10)
 #define B_RATE_BUFFER_DELAY_MS      1500
 
 #define NAL_UNIT_TYPE_SPS  7
@@ -411,7 +413,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     portDefs.nFrameHeight = m_maxFrameHeight;
     portDefs.nStride = portDefs.nFrameWidth;
     portDefs.nSliceHeight = portDefs.nFrameHeight;
-    portDefs.xFramerate = (OMX_U32)B_DEFAULT_INPUT_FRAMERATE;
+    portDefs.xFramerate = (OMX_U32)B_DEFAULT_OUTPUT_FRAMERATE;
     for ( i = 0; i < MAX_INPUT_PORT_FORMATS; i++ )
     {
         memset(&portFormats[i], 0, sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE));
@@ -2370,13 +2372,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildDummyFrame()
 
     surfSettings.pts = 0;
     surfSettings.ptsValid = true;
-    surfSettings.frameRate = MapOMXFrameRateToNexus(pPortDef->format.video.xFramerate);
-    if (surfSettings.frameRate == NEXUS_VideoFrameRate_eUnknown)
-    {
-        surfSettings.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
-    }
-
-    ALOGV("Push dummy surface setting: pts:%d, frameRate:%g", surfSettings.pts, BOMX_NexusFramerateValue(surfSettings.frameRate));
+    surfSettings.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
 
     if (NEXUS_SUCCESS != ExtractNexusBuffer((uint8_t *)pBuffer, width, height, pNode->hSurface))
     {
@@ -2440,13 +2436,9 @@ OMX_ERRORTYPE BOMX_VideoEncoder::BuildInputFrame(OMX_BUFFERHEADERTYPE *pBufferHe
 
         surfSettings.pts = pInfo->pts;
         surfSettings.ptsValid = true;
-        surfSettings.frameRate = MapOMXFrameRateToNexus(pPortDef->format.video.xFramerate);
-        if (surfSettings.frameRate == NEXUS_VideoFrameRate_eUnknown)
-        {
-            surfSettings.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
-        }
+        surfSettings.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
 
-        ALOGV("Push surface setting: pts:%d, frameRate:%g", surfSettings.pts, BOMX_NexusFramerateValue(surfSettings.frameRate));
+        ALOGV("Push surface setting: pts:%d", surfSettings.pts);
 
         /* do color format conversion */
         if (!ConvertOMXPixelFormatToCrYCbY(pBufferHeader, pNode->hSurface))
@@ -2685,7 +2677,7 @@ void BOMX_VideoEncoder::PrintVideoEncoderStatus(void *pBufferBase)
     NEXUS_SimpleEncoderStatus EncSts;
     NEXUS_SimpleEncoder_GetStatus(m_hSimpleEncoder,&EncSts);
 
-    ALOGI("pBaseAddr:%p picturesReceived:%d picturesEncoded:%d picturesDroppedFRC:%d picturesDroppedHRD:%d picturesDroppedErrors:%d pictureIdLastEncoded:%d",
+    ALOGV("pBaseAddr:%p picturesReceived:%d picturesEncoded:%d picturesDroppedFRC:%d picturesDroppedHRD:%d picturesDroppedErrors:%d pictureIdLastEncoded:%d",
           pBufferBase,
           EncSts.video.picturesReceived,
           EncSts.video.picturesEncoded,
@@ -3531,7 +3523,6 @@ void BOMX_VideoEncoder::DestroyImageSurfaces()
     m_nImageSurfacePushedListLen = 0;
 }
 
-
 NEXUS_VideoFrameRate BOMX_VideoEncoder::MapOMXFrameRateToNexus(OMX_U32 omxFR)
 {
     NEXUS_VideoFrameRate eFrameRate;
@@ -3569,11 +3560,26 @@ NEXUS_VideoFrameRate BOMX_VideoEncoder::MapOMXFrameRateToNexus(OMX_U32 omxFR)
     case (OMX_U32)(Q16_SCALE_FACTOR * 14.985):
         eFrameRate = NEXUS_VideoFrameRate_e14_985;
         break;
+    case (OMX_U32)(Q16_SCALE_FACTOR * 10):
+        eFrameRate = NEXUS_VideoFrameRate_e10;
+        break;
     case (OMX_U32)(Q16_SCALE_FACTOR * 15.0):
         eFrameRate = NEXUS_VideoFrameRate_e15;
         break;
     case (OMX_U32)(Q16_SCALE_FACTOR * 20.0):
         eFrameRate = NEXUS_VideoFrameRate_e20;
+        break;
+    case (OMX_U32)(Q16_SCALE_FACTOR * 12.5):
+        eFrameRate = NEXUS_VideoFrameRate_e12_5;
+        break;
+    case (OMX_U32)(Q16_SCALE_FACTOR * 19.98):
+        eFrameRate = NEXUS_VideoFrameRate_e19_98;
+        break;
+    case (OMX_U32)(Q16_SCALE_FACTOR * 12):
+        eFrameRate = NEXUS_VideoFrameRate_e12;
+        break;
+    case (OMX_U32)(Q16_SCALE_FACTOR * 11.988):
+        eFrameRate = NEXUS_VideoFrameRate_e11_988;
         break;
     default:
         eFrameRate = NEXUS_VideoFrameRate_eUnknown;
@@ -4471,7 +4477,7 @@ NEXUS_Error BOMX_VideoEncoder::UpdateEncoderSettings(void)
 
     encoderSettings.video.width = pPortDef->format.video.nFrameWidth;;
     encoderSettings.video.height = pPortDef->format.video.nFrameHeight;
-    encoderSettings.video.refreshRate = 60000;
+    encoderSettings.video.refreshRate = B_DEFAULT_VIDEO_REFRESH_RATE;
 
     encoderSettings.videoEncoder.bitrateMax = m_sVideoBitrateParams.nTargetBitrate;
     switch ( m_sVideoBitrateParams.eControlRate )
@@ -4518,7 +4524,7 @@ NEXUS_Error BOMX_VideoEncoder::UpdateEncoderSettings(void)
     {
         ALOGW("Unknown encoder frame rate %u. Use variable frame rate...", pPortDef->format.video.xFramerate);
 
-        encoderSettings.videoEncoder.frameRate = B_DEFAULT_INPUT_NEXUS_FRAMERATE;
+        encoderSettings.videoEncoder.frameRate = B_DEFAULT_OUTPUT_NEXUS_FRAMERATE;
         encoderSettings.videoEncoder.variableFrameRate = true;
     }
 

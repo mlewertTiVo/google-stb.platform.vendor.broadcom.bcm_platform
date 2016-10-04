@@ -3531,10 +3531,25 @@ OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
             }
             break;
         case BOMX_VideoDecoderOutputBufferType_eNone:
-            return OMX_ErrorNone;
+            {
+                /* Cannot return error to the frameworks even though no output buffer should be needed in
+                 * tunneled playback. This is to satisfy the frameworks without causing an assertion by still
+                 * returning the buffer header.
+                 */
+                OMX_BUFFERHEADERTYPE *pHeader = new OMX_BUFFERHEADERTYPE;
+
+                memset(pHeader, 0, sizeof(OMX_BUFFERHEADERTYPE));
+                BOMX_STRUCT_INIT(pHeader);
+                pHeader->pBuffer = pBuffer;
+                pHeader->nAllocLen = nSizeBytes;
+                pHeader->pAppPrivate = pAppPrivate;
+                pHeader->pPlatformPrivate = static_cast <OMX_PTR> (this);
+                *ppBufferHdr = pHeader;
+
+                return OMX_ErrorNone;
+            }
             break;
         default:
-            // TODO: Handle metadata
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
     }
@@ -3634,6 +3649,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
     }
     else
     {
+        if ( m_outputMode == BOMX_VideoDecoderOutputBufferType_eNone )
+        {
+            delete pBufferHeader;
+            return OMX_ErrorNone;
+        }
+
         BOMX_VideoDecoderOutputBufferInfo *pInfo;
         BOMX_VideoDecoderFrameBuffer *pFrameBuffer=NULL;
         pInfo = (BOMX_VideoDecoderOutputBufferInfo *)pBuffer->GetComponentPrivate();
