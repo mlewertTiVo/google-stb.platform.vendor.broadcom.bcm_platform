@@ -107,53 +107,62 @@ static int nexus_tunnel_bout_set_volume(struct brcm_stream_out *bout,
 
 static int nexus_tunnel_bout_get_render_position(struct brcm_stream_out *bout, uint32_t *dsp_frames)
 {
-    NEXUS_Error ret;
-
-    if (bout->frameSize == 0) {
-        *dsp_frames = 0;
-        return 0;
-    }
-
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_AudioDecoderStatus status;
-    ret = NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &status);
-    if (ret != NEXUS_SUCCESS) {
-        ALOGE("%s: Get render position failed, ret = %d", __FUNCTION__, ret);
-        return -ENOSYS;
+    NEXUS_Error ret;
+
+    if (audio_decoder) {
+        ret = NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &status);
+        if (ret != NEXUS_SUCCESS) {
+            ALOGE("%s: Get render position failed, ret = %d", __FUNCTION__, ret);
+            return -ENOSYS;
+        }
+
+        if (!status.started) {
+            *dsp_frames = 0;
+        }
+        else if (bout->nexus.tunnel.pcm_format) {
+            *dsp_frames = (uint32_t)(status.numBytesDecoded/bout->frameSize);
+        }
+        else {
+            *dsp_frames = (uint32_t)(status.framesDecoded * NEXUS_PCM_FRAMES_PER_EAC3_FRAME +
+                  (NEXUS_PCM_FRAMES_PER_EAC3_FRAME / 2));
+        }
+    }
+    else {
+        *dsp_frames = 0;
     }
 
-    if (!status.started || status.numBytesDecoded == 0) {
-      *dsp_frames = 0;
-      return 0;
-    }
-
-    *dsp_frames = (uint32_t)(status.numBytesDecoded/bout->frameSize);
     return 0;
 }
 
 static int nexus_tunnel_bout_get_presentation_position(struct brcm_stream_out *bout, uint64_t *frames)
 {
-    NEXUS_Error ret;
-
-    if (bout->frameSize == 0) {
-        *frames = (uint64_t)(bout->framesPlayed);
-        return 0;
-    }
-
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_AudioDecoderStatus status;
-    ret = NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &status);
-    if (ret != NEXUS_SUCCESS) {
-        ALOGE("%s: Get presentation position failed, ret = %d", __FUNCTION__, ret);
-        return -ENOSYS;
-    }
+    NEXUS_Error ret;
 
-    if (!status.started || status.numBytesDecoded == 0) {
-      *frames = (uint64_t)bout->framesPlayed;
-      return 0;
-    }
+    if (audio_decoder) {
+        ret = NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &status);
+        if (ret != NEXUS_SUCCESS) {
+            ALOGE("%s: Get presentation position failed, ret = %d", __FUNCTION__, ret);
+            return -ENOSYS;
+        }
 
-    *frames = (uint64_t)(bout->framesPlayed + status.numBytesDecoded/bout->frameSize);
+        if (!status.started) {
+            *frames = bout->framesPlayed;
+        }
+        else if (bout->nexus.tunnel.pcm_format) {
+            *frames = (uint64_t)(bout->framesPlayed + status.numBytesDecoded/bout->frameSize);
+        }
+        else {
+            *frames = (uint64_t)((bout->framesPlayed + status.framesDecoded) * NEXUS_PCM_FRAMES_PER_EAC3_FRAME +
+                    (NEXUS_PCM_FRAMES_PER_EAC3_FRAME / 2));
+        }
+    }
+    else {
+        *frames = 0;
+    }
     return 0;
 }
 
@@ -223,17 +232,21 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
     NEXUS_PlaypumpHandle playpump = bout->nexus.tunnel.playpump;
 
     if (audio_decoder) {
-        if (bout->frameSize > 0) {
-            NEXUS_AudioDecoderStatus status;
-            ret = NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &status);
-            if (ret != NEXUS_SUCCESS) {
-                ALOGE("%s: Update frame played failed, ret=%d", __FUNCTION__, ret);
-            }
-            else {
+        NEXUS_SimpleAudioDecoder_Stop(audio_decoder);
+
+        NEXUS_AudioDecoderStatus status;
+        ret = NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &status);
+        if (ret != NEXUS_SUCCESS) {
+            ALOGE("%s: Update frame played failed, ret=%d", __FUNCTION__, ret);
+        }
+        else {
+            if (bout->nexus.tunnel.pcm_format) {
                 bout->framesPlayed += status.numBytesDecoded/bout->frameSize;
             }
+            else {
+                bout->framesPlayed += status.framesDecoded;
+            }
         }
-        NEXUS_SimpleAudioDecoder_Stop(audio_decoder);
     }
 
     if (playpump) {
@@ -345,6 +358,7 @@ static int nexus_tunnel_bout_pause(struct brcm_stream_out *bout)
        NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
        return -ENOMEM;
     }
+    ALOGV("%s", __FUNCTION__);
 
     return 0;
 }
@@ -383,6 +397,7 @@ static int nexus_tunnel_bout_resume(struct brcm_stream_out *bout)
        NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.tunnel.audio_decoder, &trickState);
        return -ENOMEM;
     }
+    ALOGV("%s", __FUNCTION__);
 
     return 0;
 }
@@ -415,52 +430,6 @@ static int nexus_tunnel_bout_flush(struct brcm_stream_out *bout)
 
     return 0;
 }
-
-// Table copied from AC3FrameScanner.h. It contains the number of 16-bit words in an AC3 frame.
-#define AC3_MAX_FRAME_SIZE      38
-#define AC3_MAX_SAMPLE_RATE     3
-const static uint16_t dd_frame_size_table[AC3_MAX_FRAME_SIZE][AC3_MAX_SAMPLE_RATE] = {
-    { 64, 69, 96 },
-    { 64, 70, 96 },
-    { 80, 87, 120 },
-    { 80, 88, 120 },
-    { 96, 104, 144 },
-    { 96, 105, 144 },
-    { 112, 121, 168 },
-    { 112, 122, 168 },
-    { 128, 139, 192 },
-    { 128, 140, 192 },
-    { 160, 174, 240 },
-    { 160, 175, 240 },
-    { 192, 208, 288 },
-    { 192, 209, 288 },
-    { 224, 243, 336 },
-    { 224, 244, 336 },
-    { 256, 278, 384 },
-    { 256, 279, 384 },
-    { 320, 348, 480 },
-    { 320, 349, 480 },
-    { 384, 417, 576 },
-    { 384, 418, 576 },
-    { 448, 487, 672 },
-    { 448, 488, 672 },
-    { 512, 557, 768 },
-    { 512, 558, 768 },
-    { 640, 696, 960 },
-    { 640, 697, 960 },
-    { 768, 835, 1152 },
-    { 768, 836, 1152 },
-    { 896, 975, 1344 },
-    { 896, 976, 1344 },
-    { 1024, 1114, 1536 },
-    { 1024, 1115, 1536 },
-    { 1152, 1253, 1728 },
-    { 1152, 1254, 1728 },
-    { 1280, 1393, 1920 },
-    { 1280, 1394, 1920 }
-};
-
-#define DTS_MIN_FRAME_SIZE      95
 
 const static uint8_t av_sync_marker[] = {0x55, 0x55, 0x00, 0x01};
 #define HW_AV_SYNC_HDR_LEN 16
@@ -510,50 +479,6 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 ALOGV("%s: av-sync header, ts=%" PRIu64 " pts=%" PRIu32 ", size=%zu, payload=%zu", __FUNCTION__, timestamp, pts, frameBytes, bytes);
                 bytes -= HW_AV_SYNC_HDR_LEN;
                 buffer = (void *)((uint8_t *)buffer + HW_AV_SYNC_HDR_LEN);
-
-                // For compressed audio, apparently we assume the frame size stays constant throughout
-                // the entire playback. Will make use of the status from the audio decoder once the
-                // audio decoder is able to return the number decoded frames.
-                if (bout->frameSize == 0) {
-                    const uint8_t *syncFrame = (const uint8_t *)buffer;
-                    switch (bout->config.format) {
-                        case AUDIO_FORMAT_AC3:
-                        case AUDIO_FORMAT_E_AC3:
-                        {
-                            if (bytes >= 5 && syncFrame[0] == 0x0B && syncFrame[1] == 0x77) {
-                                if (bout->config.format == AUDIO_FORMAT_E_AC3) {
-                                    uint32_t frmsiz = ((syncFrame[2] & 0x07) << 8) + syncFrame[3];
-                                    bout->frameSize = (frmsiz + 1) * sizeof(uint16_t);
-                                }
-                                else { // AUDIO_FORMAT_AC3
-                                    uint32_t fscod = syncFrame[4] >> 6;
-                                    uint32_t frmsizcod = syncFrame[4] & 0x3F;
-                                    if (fscod < AC3_MAX_SAMPLE_RATE && frmsizcod < AC3_MAX_FRAME_SIZE) {
-                                        bout->frameSize = dd_frame_size_table[frmsizcod][fscod] * sizeof(uint16_t);
-                                    }
-                                }
-                            }
-                            break;
-                        }
-                        case AUDIO_FORMAT_DTS:
-                        case AUDIO_FORMAT_DTS_HD:
-                        {
-                            if (bytes >= 8 && syncFrame[0] == 0x7F && syncFrame[1] == 0xFE && syncFrame[2] == 0x80 && syncFrame[3] == 0x01) {
-                                uint32_t fsize = ((syncFrame[5] & 0x03) << 12) + (syncFrame[6] << 4) + (syncFrame[7] & 0xF0);
-                                if (fsize >= DTS_MIN_FRAME_SIZE) {
-                                    bout->frameSize = fsize + 1;
-                                }
-                            }
-                            break;
-                        }
-                        default:
-                        {
-                            ALOGE("%s: Unexpected compressed audio format 0x%08x", __FUNCTION__, bout->config.format);
-                            break;
-                        }
-                    }
-                    ALOGV("%s: Frame size %u for audio format 0x%08x", __FUNCTION__, bout->frameSize, bout->config.format);
-                }
             }
             else
             {
@@ -764,16 +689,20 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
 
     bout->framesPlayed = 0;
 
-    /* Frame size should be single byte long for compressed audio formats */
     size_t bytes_per_sample = audio_bytes_per_sample(config->format);
     bout->nexus.tunnel.pcm_format = (bytes_per_sample == 0) ? false : true;
-    bout->frameSize = bout->nexus.tunnel.pcm_format ? bytes_per_sample * popcount(config->channel_mask) : 0;
-    bout->buffer_size = bout->nexus.tunnel.pcm_format ?
-                                get_brcm_audio_buffer_size(config->sample_rate,
-                                   config->format,
-                                   popcount(config->channel_mask),
-                                   BRCM_AUDIO_TUNNEL_DURATION_MS) :
-                                BRCM_AUDIO_TUNNEL_COMP_BUFFER_SIZE;
+    if (bout->nexus.tunnel.pcm_format) {
+        bout->frameSize = bytes_per_sample * popcount(config->channel_mask);
+        bout->buffer_size = get_brcm_audio_buffer_size(config->sample_rate,
+                                                       config->format,
+                                                       popcount(config->channel_mask),
+                                                       BRCM_AUDIO_TUNNEL_DURATION_MS);
+    }
+    else {
+        /* Frame size should be single byte long for compressed audio formats */
+        bout->frameSize = 1;
+        bout->buffer_size = BRCM_AUDIO_TUNNEL_COMP_BUFFER_SIZE;
+    }
 
     ALOGV("%s: sample_rate=%" PRIu32 " frameSize=%" PRIu32 " buffer_size=%zu",
             __FUNCTION__, config->sample_rate, bout->frameSize, bout->buffer_size);

@@ -110,6 +110,8 @@ extern "C" {
 /* Special parameter for enabling EAC3 passthrough with tunnel video decoder */
 #define AUDIO_PARAMETER_HW_AV_SYNC_EAC3 "HwAvSyncEAC3Supported"
 
+#define NEXUS_PCM_FRAMES_PER_EAC3_FRAME 1536
+
 typedef enum {
     BRCM_DEVICE_OUT_NEXUS = 0,
     BRCM_DEVICE_OUT_NEXUS_DIRECT,

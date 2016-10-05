@@ -53,8 +53,6 @@ using namespace android;
 #define BRCM_AUDIO_STREAM_ID                    (0xC0)
 #define BRCM_AUDIO_DIRECT_COMP_BUFFER_SIZE      (2048)
 
-#define NEXUS_PCM_FRAMES_PER_EAC3_FRAME 1536
-
 /*
  * Utility Functions
  */
