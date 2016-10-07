@@ -80,6 +80,8 @@ const static uint32_t nexus_out_sample_rates[] = {
 
 #define BRCM_AUDIO_TUNNEL_DURATION_MS           (5)
 #define BRCM_AUDIO_TUNNEL_HALF_DURATION_US      (BRCM_AUDIO_TUNNEL_DURATION_MS * 500)
+#define BRCM_AUDIO_TUNNEL_FIFO_DURATION_MS      (200)
+#define BRCM_AUDIO_TUNNEL_FIFO_MULTIPLIER       (BRCM_AUDIO_TUNNEL_FIFO_DURATION_MS / BRCM_AUDIO_TUNNEL_DURATION_MS)
 #define BRCM_AUDIO_TUNNEL_DEBOUNCE_DURATION_MS  (300)
 
 #define BRCM_AUDIO_TUNNEL_COMP_BUFFER_SIZE      (2048)
@@ -182,6 +184,7 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
 
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_SimpleAudioDecoderStartSettings start_settings;
+    NEXUS_SimpleAudioDecoderSettings settings;
 
     if (bout->suspended || !audio_decoder) {
         ALOGE("%s: at %d, device not open\n",
@@ -194,6 +197,12 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
         ALOGE("%s: Start playpump failed, ret = %d", __FUNCTION__, ret);
         return -ENOSYS;
     }
+
+    unsigned threshold = bout->buffer_size * BRCM_AUDIO_TUNNEL_FIFO_MULTIPLIER;
+    NEXUS_SimpleAudioDecoder_GetSettings(audio_decoder, &settings);
+    ALOGV("Primary fifoThreshold %u->%u", settings.primary.fifoThreshold, threshold);
+    settings.primary.fifoThreshold = threshold;
+    NEXUS_SimpleAudioDecoder_SetSettings(audio_decoder, &settings);
 
     NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
     start_settings.primary.codec = brcm_audio_get_codec_from_format(bout->config.format);
@@ -422,7 +431,7 @@ static int nexus_tunnel_bout_flush(struct brcm_stream_out *bout)
 
     res = NEXUS_Playpump_Flush(playpump);
     if (res != NEXUS_SUCCESS) {
-       ALOGI("%s: Error flushing playpump %u", __FUNCTION__, res);
+       ALOGE("%s: Error flushing playpump %u", __FUNCTION__, res);
        return -ENOMEM;
     }
 
@@ -506,7 +515,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 break;
             }
 
-            spaceRequired = (frameBytes >= bytes) ? frameBytes : bytes;
+            spaceRequired = (frameBytes >= bytes) ? bytes : frameBytes;
             if ( writeHeader ) {
                 spaceRequired += BMEDIA_PES_HEADER_MAX_SIZE;
                 if (bout->nexus.tunnel.pcm_format) {
@@ -567,16 +576,27 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 }
             }
             else if ((uint8_t *)nexus_buffer + nexus_space >= bout->nexus.tunnel.pp_buffer_end) {
-                // Look for a complete contiguous buffer
-                ret = NEXUS_Playpump_WriteComplete(playpump, nexus_space, 0);
-                if (ret) {
-                    ALOGE("%s:%d playpump write failed, ret=%d", __FUNCTION__, __LINE__, ret);
-                    break;
+                if (nexus_space > 0) {
+                    // Look for a complete contiguous buffer
+                    ret = NEXUS_Playpump_WriteComplete(playpump, nexus_space, 0);
+                    if (ret) {
+                        ALOGE("%s:%d playpump write failed, ret=%d", __FUNCTION__, __LINE__, ret);
+                        break;
+                    }
                 }
             }
             else {
                 NEXUS_SimpleAudioDecoderHandle prev_audio_decoder = audio_decoder;
                 NEXUS_PlaypumpHandle prev_playpump = playpump;
+
+                if (nexus_space > 0) {
+                    // Look for a complete contiguous buffer
+                    ret = NEXUS_Playpump_WriteComplete(playpump, nexus_space, 0);
+                    if (ret) {
+                        ALOGE("%s:%d playpump write failed, ret=%d", __FUNCTION__, __LINE__, ret);
+                        break;
+                    }
+                }
 
                 pthread_mutex_unlock(&bout->lock);
                 ret = BKNI_WaitForEvent(event, 500);
@@ -595,6 +615,11 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                     break;
                 }
             }
+        }
+
+        if ((ret != 0) && writeHeader) {
+            bytes += HW_AV_SYNC_HDR_LEN;
+            buffer = (void *)((uint8_t *)buffer - HW_AV_SYNC_HDR_LEN);
         }
     }
 
@@ -758,7 +783,13 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
         goto err_callback;
     }
 
-    bout->nexus.tunnel.playpump = NEXUS_Playpump_Open(NEXUS_ANY_ID, NULL);
+    size_t fifoSize;
+    NEXUS_PlaypumpOpenSettings playpumpOpenSettings;
+    NEXUS_Playpump_GetDefaultOpenSettings(&playpumpOpenSettings);
+    fifoSize = bout->buffer_size * BRCM_AUDIO_TUNNEL_FIFO_MULTIPLIER;
+    ALOGV("Playpump fifo size %u->%u", playpumpOpenSettings.fifoSize, fifoSize);
+    playpumpOpenSettings.fifoSize = fifoSize;
+    bout->nexus.tunnel.playpump = NEXUS_Playpump_Open(NEXUS_ANY_ID, &playpumpOpenSettings);
     if (!bout->nexus.tunnel.playpump) {
         ALOGE("%s: Error opening playpump", __FUNCTION__);
         ret = -ENOMEM;
