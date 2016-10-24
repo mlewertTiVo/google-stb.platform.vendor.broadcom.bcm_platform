@@ -151,7 +151,9 @@ static int markBootSuccessful(struct boot_control_module *module __unused) {
       ALOGE("markBootSuccessful: bad magic (%x), not setup?", bc_eio.magic);
       return 0;
    }
-   bc_eio.slot[bc_eio.current].boot_ok = 1;
+   bc_eio.slot[bc_eio.current].boot_ok   = 1;
+   bc_eio.slot[bc_eio.current].boot_fail = 0;
+   bc_eio.slot[bc_eio.current].boot_try  = 0;
    return write_device(&bc_eio);
 }
 
