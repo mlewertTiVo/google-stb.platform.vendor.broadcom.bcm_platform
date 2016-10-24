@@ -74,6 +74,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/prdy_pes_playback/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/secboot/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/setdisplay/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/streamer/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/trellis/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/yv12torgba/Android.mk
 endif
 
