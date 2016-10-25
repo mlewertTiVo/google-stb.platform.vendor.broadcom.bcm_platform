@@ -799,9 +799,25 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     codecSettings.codecSettings.ac3.boost = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
     codecSettings.codecSettings.ac3Plus.cut = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
     codecSettings.codecSettings.ac3Plus.boost = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
-    codecSettings.codecSettings.mpeg.attenuateMonoToStereo = false;
-    codecSettings.codecSettings.mp3.attenuateMonoToStereo = false;
 
+    errCode = NEXUS_AudioDecoder_SetCodecSettings(m_hAudioDecoder, &codecSettings);
+    if ( errCode )
+    {
+        // Report and keep going
+        (void)BOMX_BERR_TRACE(errCode);
+    }
+
+    // Disable mono stream attenuations
+    NEXUS_AudioDecoder_GetCodecSettings(m_hAudioDecoder, NEXUS_AudioCodec_eMpeg, &codecSettings);
+    codecSettings.codecSettings.mpeg.attenuateMonoToStereo = false;
+    errCode = NEXUS_AudioDecoder_SetCodecSettings(m_hAudioDecoder, &codecSettings);
+    if ( errCode )
+    {
+        // Report and keep going
+        (void)BOMX_BERR_TRACE(errCode);
+    }
+    NEXUS_AudioDecoder_GetCodecSettings(m_hAudioDecoder, NEXUS_AudioCodec_eMp3, &codecSettings);
+    codecSettings.codecSettings.mp3.attenuateMonoToStereo = false;
     errCode = NEXUS_AudioDecoder_SetCodecSettings(m_hAudioDecoder, &codecSettings);
     if ( errCode )
     {
