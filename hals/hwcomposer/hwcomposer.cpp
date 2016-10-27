@@ -246,7 +246,7 @@ const NEXUS_BlendEquation nexusColorSrcOverConstAlpha = {
         NEXUS_BlendFactor_eConstantAlpha,
         false,
         NEXUS_BlendFactor_eDestinationColor,
-        NEXUS_BlendFactor_eInverseSourceAlpha,
+        NEXUS_BlendFactor_eInverseConstantAlpha,
         false,
         NEXUS_BlendFactor_eZero
 };
@@ -286,7 +286,7 @@ const NEXUS_BlendEquation nexusAlphaSrcOverConstAlpha = {
         NEXUS_BlendFactor_eConstantAlpha,
         false,
         NEXUS_BlendFactor_eDestinationAlpha,
-        NEXUS_BlendFactor_eInverseSourceAlpha,
+        NEXUS_BlendFactor_eInverseConstantAlpha,
         false,
         NEXUS_BlendFactor_eZero
 };
@@ -2617,35 +2617,20 @@ bool hwc_compose_gralloc_buffer(
               blitSettings.colorBlend     = pComp->colorBlend;
               blitSettings.alphaBlend     = pComp->alphaBlend;
               blitSettings.dest.rect      = blitSettings.output.rect;
+              blitSettings.constantColor  = pComp->constantColor;
 
               if (!already_comp) {
                  if (!ctx->smart_background) {
                     hwc_seed_disp_surface(ctx, outputHdl, q_ops, ops_count, HWC_TRANSPARENT);
                  } else {
-                    NEXUS_SurfaceComposition composition;
-                    NxClient_GetSurfaceClientComposition(ctx->disp_cli[HWC_PRIMARY_IX].sccid, &composition);
-                    if (!video_layer) {
-                       composition.colorBlend = nexusColorBlendingEquation[BLENDIND_TYPE_SRC];
-                       composition.alphaBlend = nexusAlphaBlendingEquation[BLENDIND_TYPE_SRC];
-                    } else {
-                       composition.colorBlend = nexusColorBlendingEquation[BLENDIND_TYPE_SRC_OVER];
-                       composition.alphaBlend = nexusAlphaBlendingEquation[BLENDIND_TYPE_SRC_OVER];
-                    }
-                    NxClient_SetSurfaceClientComposition(ctx->disp_cli[HWC_PRIMARY_IX].sccid, &composition);
-
                     if (!layer_seeds_output || (ctx->flush_background && video_layer)) {
                        hwc_seed_disp_surface(ctx, outputHdl, q_ops, ops_count,
                                              video_layer?HWC_TRANSPARENT:HWC_OPAQUE);
                        if (ctx->flush_background) {
                           ctx->flush_background = false;
                        }
-                    } else if (!video_layer) {
-                       blitSettings.constantColor = HWC_OPAQUE;
-                       blitSettings.alphaOp       = NEXUS_BlitAlphaOp_eCopyConstant;
                     }
                  }
-              } else {
-                 blitSettings.constantColor = pComp->constantColor;
               }
 
               if (pthread_mutex_lock(&ctx->g2d_mutex)) {
