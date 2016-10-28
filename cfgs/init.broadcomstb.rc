@@ -44,6 +44,8 @@ on post-fs
    # Allow Launcher wallpaper picker to use landscape mode
    setprop log.tag.launcher_force_rotate VERBOSE
 
+   mount tracefs tracefs /sys/kernel/debug/tracing remount mode=755
+
 on post-fs-data
    mkdir /data/media 0770 media_rw media_rw
    mkdir /data/nxmedia 0770 media media
