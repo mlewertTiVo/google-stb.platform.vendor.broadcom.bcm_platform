@@ -2243,12 +2243,13 @@ bool hwc_compose_gralloc_buffer(
     NEXUS_Surface_GetCreateSettings(outputHdl, &displaySurfaceSettings);
     if ((is_virtual && (ctx->display_dump_virt & HWC_DUMP_LEVEL_COMPOSE)) ||
         (!is_virtual && (ctx->display_dump_layer & (HWC_DUMP_LEVEL_COMPOSE|HWC_DUMP_LEVEL_QOPS)))) {
-       ALOGI("%s: %llu/%d - v:%u::f:%u::so:%s %ux%u (%ux%u@%u,%u) -> %ux%u@%u,%u",
+       ALOGI("%s: %llu/%d - v:%u::f:%u::so:%s::al:0x%08x::bl:%x %ux%u (%ux%u@%u,%u) -> %ux%u@%u,%u",
              is_virtual ? "vcmp" : "comp",
              ctx->stats[stats_ix].set_call, layer_id,
              (unsigned)pComp->visible,
              gralloc_to_nexus_pixel_format(pSharedData->container.format),
              layer_seeds_output ? "yes" : "no",
+             pComp->constantColor, ctx->gpx_cli[layer_id].blending_type,
              pSharedData->container.width, pSharedData->container.height,
              pComp->clipRect.width, pComp->clipRect.height, pComp->clipRect.x, pComp->clipRect.y,
              pComp->position.width, pComp->position.height, pComp->position.x, pComp->position.y);
