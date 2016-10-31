@@ -246,7 +246,7 @@ const NEXUS_BlendEquation nexusColorSrcOverConstAlpha = {
         NEXUS_BlendFactor_eConstantAlpha,
         false,
         NEXUS_BlendFactor_eDestinationColor,
-        NEXUS_BlendFactor_eInverseConstantAlpha,
+        NEXUS_BlendFactor_eInverseSourceAlpha,
         false,
         NEXUS_BlendFactor_eZero
 };
@@ -286,7 +286,7 @@ const NEXUS_BlendEquation nexusAlphaSrcOverConstAlpha = {
         NEXUS_BlendFactor_eConstantAlpha,
         false,
         NEXUS_BlendFactor_eDestinationAlpha,
-        NEXUS_BlendFactor_eInverseConstantAlpha,
+        NEXUS_BlendFactor_eInverseSourceAlpha,
         false,
         NEXUS_BlendFactor_eZero
 };
@@ -2216,7 +2216,7 @@ bool hwc_compose_gralloc_buffer(
    PSHARED_DATA pSharedData, private_handle_t *gr_buffer, NEXUS_SurfaceHandle outputHdl,
    bool is_virtual, bool skip_comp, NEXUS_SurfaceHandle *pActSurf,
    NEXUS_SurfaceComposition *pComp, bool layer_seeds_output, int already_comp,
-   bool *q_ops, OPS_COUNT *ops_count, int video_layer)
+   bool *q_ops, OPS_COUNT *ops_count, int video_layer, int prior_bl)
 {
     bool composed = false, blit_yv12, is_cursor_layer = false;
     NEXUS_Error rc;
@@ -2607,6 +2607,11 @@ bool hwc_compose_gralloc_buffer(
                                        0);
 
            if (*pActSurf != NULL) {
+              if (ctx->gpx_cli[layer_id].blending_type == BLENDIND_TYPE_SRC_OVER &&
+                  (prior_bl == BLENDIND_TYPE_SRC_OVER || prior_bl == BLENDIND_TYPE_LAST)) {
+                 pComp->colorBlend.d = NEXUS_BlendFactor_eInverseConstantAlpha;
+                 pComp->alphaBlend.d = NEXUS_BlendFactor_eInverseConstantAlpha;
+              }
               NEXUS_Graphics2D_GetDefaultBlitSettings(&blitSettings);
               blitSettings.source.surface = *pActSurf;
               blitSettings.source.rect    = srcAdj;
@@ -3614,6 +3619,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
    VIDEO_LAYER_VALIDATION video;
    OPS_COUNT ops_count;
    bool sideband_alpha_hole = false;
+   unsigned int prior_bl = BLENDIND_TYPE_LAST;
 
    memset(surface, 0, sizeof(surface));
    memset(&ops_count, 0, sizeof(ops_count));
@@ -3817,10 +3823,11 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
          if (hwc_compose_gralloc_buffer(ctx, list, i, pSharedData, gr_buffer, outputHdl,
                                         false, item->skip_set[i], &surface[i], &item->comp[i],
                                         layer_seeds_output, layer_composed, &q_ops, &ops_count,
-                                        video_seen)) {
+                                        video_seen, prior_bl)) {
             layer_composed++;
             ctx->gpx_cli[i].last.grhdl = (buffer_handle_t)gr_buffer;
             ctx->gpx_cli[i].last.comp_ix = item->comp_ix;
+            prior_bl = ctx->gpx_cli[i].blending_type;
          }
          if (ctx->track_comp_time) {
             item->comp_wait += (hwc_tick() - tick_now);
@@ -4168,7 +4175,8 @@ static int hwc_compose_virtual(struct hwc_context_t *ctx, hwc_work_item *item, i
          }
          if (hwc_compose_gralloc_buffer(ctx, list, i, pSharedData, gr_buffer, outputHdl,
                                         true, false, &surface[i], &item->comp[i],
-                                        false, layer_composed, &q_ops, &ops_count, 0)) {
+                                        false, layer_composed, &q_ops, &ops_count,
+                                        0, BLENDIND_TYPE_LAST)) {
             layer_composed++;
          }
          if (!lrcs) hwc_mem_unlock(ctx, block_handle, true);
