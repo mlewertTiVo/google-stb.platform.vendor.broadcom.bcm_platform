@@ -1119,13 +1119,24 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     // server overwrite.  this scenario typically happens on boot up, so good enough for now.
     if ((bdevices == BRCM_DEVICE_OUT_NEXUS_TUNNEL && bdev->bouts[BRCM_DEVICE_OUT_NEXUS_DIRECT] != NULL) ||
         (bdevices == BRCM_DEVICE_OUT_NEXUS_DIRECT && bdev->bouts[BRCM_DEVICE_OUT_NEXUS_TUNNEL] != NULL)) {
-       struct brcm_stream_out *bout_close =
-          (bdevices == BRCM_DEVICE_OUT_NEXUS_TUNNEL) ? bdev->bouts[BRCM_DEVICE_OUT_NEXUS_DIRECT] :
-                                                       bdev->bouts[BRCM_DEVICE_OUT_NEXUS_TUNNEL];
-       ALOGI("%s: nexus resources swap %p -> %p (%d)", __FUNCTION__, bout_close, bout, bdevices);
+       brcm_devices_out_t idx_close =
+          (bdevices == BRCM_DEVICE_OUT_NEXUS_TUNNEL) ? BRCM_DEVICE_OUT_NEXUS_DIRECT : BRCM_DEVICE_OUT_NEXUS_TUNNEL;
+       struct brcm_stream_out *bout_close = bdev->bouts[idx_close];
+
        pthread_mutex_lock(&bout_close->lock);
-       bout_close->ops.do_bout_close(bout_close);
+       if (bout_close->started) {
+          ALOGW("%s: Nexus resource in use %p (%d)", __FUNCTION__, bout_close, idx_close);
+          ret = -EBUSY;
+       }
+       else {
+          ALOGW("%s: Nexus resources swap %p -> %p (%d)", __FUNCTION__, bout_close, bout, bdevices);
+          bout_close->ops.do_bout_close(bout_close);
+          bdev->bouts[idx_close] = NULL;
+       }
        pthread_mutex_unlock(&bout_close->lock);
+       if (ret) {
+          goto err_lock;
+       }
     }
 
     if (bdevices == BRCM_DEVICE_OUT_NEXUS_TUNNEL) {
@@ -1135,6 +1146,13 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
        } else {
           bout->nexus.tunnel.stc_channel_owner = BRCM_OWNER_OUTPUT;
        }
+    }
+
+    if (bdev->bouts[bdevices]) {
+        ALOGE("%s: at %d, output is already opened %d\n",
+             __FUNCTION__, __LINE__, devices);
+        ret = -EBUSY;
+        goto err_lock;
     }
 
     ret = bout->ops.do_bout_open(bout);
@@ -1147,12 +1165,6 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     bout->last_pres_frame = 0;
     clock_gettime(CLOCK_MONOTONIC, &bout->last_pres_ts);
 
-    if (bdev->bouts[bdevices]) {
-        ALOGE("%s: at %d, output is already opened %d\n",
-             __FUNCTION__, __LINE__, devices);
-        ret = -EBUSY;
-        goto err_lock;
-    }
     bdev->bouts[bdevices] = bout;
 
     pthread_mutex_unlock(&bdev->lock);
