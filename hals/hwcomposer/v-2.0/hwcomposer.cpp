@@ -40,10 +40,18 @@
 #include "nxclient.h"
 #include "nxclient_config.h"
 #include "bfifo.h"
-#include "hwc2.h"
 /* sync framework/fences. */
 #include "sync/sync.h"
 #include "sw_sync.h"
+/* binder integration.*/
+#include "HwcCommon.h"
+#include "Hwc.h"
+#include "HwcListener.h"
+#include "IHwc.h"
+#include "HwcSvc.h"
+/* last but not least... */
+#include "hwcutils.h"
+#include "hwc2.h"
 
 const NEXUS_BlendEquation hwc2_color_pre_multi = {
    NEXUS_BlendFactor_eSourceColor,
@@ -86,6 +94,7 @@ struct hwc2_bcm_device_t {
 
    Hwc2HP_sp            *hp;
    Hwc2DC_sp            *dc;
+   HwcBinder_wrap       *hb;
 
    NexusIPCClientBase   *nxipc;
    NexusClientContext   *nxcc;
@@ -138,6 +147,14 @@ status_t Hwc2DC::onDisplaySettingsChangedEventReceived(
       cb(cb_data);
    }
    return NO_ERROR;
+}
+
+void HwcBinder::notify(
+   int msg,
+   struct hwc_notification_info &ntfy) {
+
+   if (cb)
+      cb(cb_data, msg, ntfy);
 }
 
 static int64_t hwc2_tick(void) {
@@ -254,6 +271,150 @@ static void hwc2_recycle_cb(
    BKNI_SetEvent(hwc2->recycle);
 }
 
+static void hwc2_vsync_cb(
+   void *context,
+   int param) {
+   struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)context;
+   BSTD_UNUSED(param);
+   BKNI_SetEvent(hwc2->vsync);
+}
+
+static void hwc2_ext_fbs(
+   struct hwc2_bcm_device_t *hwc2,
+   enum hwc2_cbs_e cb) {
+   NEXUS_Error rc;
+   NEXUS_ClientConfiguration cCli;
+   NEXUS_SurfaceClientSettings sCli;
+   int i;
+
+   NEXUS_Platform_GetClientConfiguration(&cCli);
+
+   if (hwc2->ext->u.ext.cb != cb) {
+      if (hwc2->ext->u.ext.bfb) {
+         hwc2->ext->u.ext.bfb = false;
+         pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
+         for (i = 0; i < HWC2_FBS_NUM; i++) {
+            if (hwc2->ext->u.ext.fbs[i].fd != HWC2_INVALID) {
+               close(hwc2->ext->u.ext.fbs[i].fd);
+               hwc2->ext->u.ext.fbs[i].fd = HWC2_INVALID;
+            }
+            if (hwc2->ext->u.ext.fbs[i].s) {
+               NEXUS_Surface_Destroy(hwc2->ext->u.ext.fbs[i].s);
+            }
+         }
+         pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
+      }
+      NEXUS_SurfaceClient_GetSettings(hwc2->ext->u.ext.sch, &sCli);
+      sCli.recycled.callback      = hwc2_recycle_cb;
+      sCli.recycled.context       = (void *)hwc2;
+      sCli.vsync.callback         = hwc2_vsync_cb;
+      sCli.vsync.context          = (void *)hwc2;
+      sCli.allowCompositionBypass = cb;
+      NEXUS_SurfaceClient_SetSettings(hwc2->ext->u.ext.sch, &sCli);
+   }
+
+   for (i = 0; i < HWC2_FBS_NUM; i++) {
+      NEXUS_SurfaceCreateSettings scs;
+      NEXUS_MemoryBlockHandle bh = NULL;
+      bool dh = false;
+      NEXUS_Surface_GetDefaultCreateSettings(&scs);
+      scs.width       = hwc2->ext->cfgs->w;
+      scs.height      = hwc2->ext->cfgs->h;
+      scs.pitch       = scs.width * 4;
+      scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
+      if (cb) {
+         scs.heap = NEXUS_Platform_GetFramebufferHeap(0);
+      } else {
+         scs.heap = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
+         dh = true;
+      }
+      hwc2->ext->u.ext.fbs[i].s = NULL;
+      bh = hwc_block_create(&scs, hwc2->memif, dh, &hwc2->ext->u.ext.fbs[i].fd);
+      if (bh != NULL) {
+         scs.pixelMemory = bh;
+         scs.heap = NULL;
+         hwc2->ext->u.ext.fbs[i].s = hwc_surface_create(&scs, dh);
+      }
+      ALOGI("[ext]: fb:%d::%dx%d::%s -> %p (%d::%p)",
+            i, scs.width, scs.height, dh?"d-cma":"gfx",
+            hwc2->ext->u.ext.fbs[i].s, hwc2->ext->u.ext.fbs[i].fd, bh);
+   }
+   hwc2->ext->u.ext.bfb = true;
+
+   pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
+   BFIFO_INIT(&hwc2->ext->u.ext.fb, hwc2->ext->u.ext.fbs, HWC2_FBS_NUM);
+   BFIFO_WRITE_COMMIT(&hwc2->ext->u.ext.fb, HWC2_FBS_NUM);
+   pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
+   hwc2->ext->u.ext.cb = cb;
+}
+
+static int hwc2_ext_fb_valid_l(
+   struct hwc2_bcm_device_t *hwc2,
+   NEXUS_SurfaceHandle s) {
+
+   int i;
+   for (i = 0; i < HWC2_FBS_NUM; i++) {
+      if (hwc2->ext->u.ext.fbs[i].s == s) {
+         return hwc2->ext->u.ext.fbs[i].fd;
+      }
+   }
+   return HWC2_INVALID;
+}
+
+static int32_t hwc2_ret_fence(
+   struct hwc2_dsp_t *dsp) {
+
+   struct sync_fence_info_data info;
+   int fence = HWC2_INVALID;
+
+   if (dsp->cmp_tl == HWC2_INVALID) {
+      return fence;
+   }
+
+   snprintf(info.name, sizeof(info.name), "hwc2_%s_%llu", dsp->name, dsp->pres);
+   fence = sw_sync_fence_create(dsp->cmp_tl, info.name, dsp->pres);
+   if (fence < 0) {
+      return HWC2_INVALID;
+   }
+   return fence;
+}
+
+static void hwc2_ret_inc(
+   struct hwc2_dsp_t *dsp,
+   unsigned int inc) {
+
+   if (dsp->cmp_tl == HWC2_INVALID) {
+      return;
+   }
+   sw_sync_timeline_inc(dsp->cmp_tl, inc);
+}
+
+static void hwc2_recycle(
+   struct hwc2_bcm_device_t *hwc2) {
+
+   NEXUS_SurfaceHandle s[HWC2_FBS_NUM];
+   NEXUS_Error rc;
+   int fd;
+   size_t ns = 0, i;
+
+   NEXUS_SurfaceClient_RecycleSurface(hwc2->ext->u.ext.sch, s, HWC2_FBS_NUM, &ns);
+   if (ns) {
+      pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
+      for (i = 0; i < ns; i++) {
+         fd = hwc2_ext_fb_valid_l(hwc2, s[i]);
+         if (fd != HWC2_INVALID) {
+            struct hwc2_fb_t *e = BFIFO_WRITE(&hwc2->ext->u.ext.fb);
+            e->s  = s[i];
+            e->fd = fd;
+            BFIFO_WRITE_COMMIT(&hwc2->ext->u.ext.fb, 1);
+         }
+      }
+      pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
+   }
+
+   hwc2_ret_inc(hwc2->ext, (unsigned int)ns);
+}
+
 static void *hwc2_recycle_task(
    void *argv) {
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)argv;
@@ -261,19 +422,11 @@ static void *hwc2_recycle_task(
    hwc2->recycle_exit = 0;
    do {
       BKNI_WaitForEvent(hwc2->recycle, BKNI_INFINITE);
-      // hwc2_recycle(hwc2);  pierre
+      hwc2_recycle(hwc2);
       BKNI_SetEvent(hwc2->recycled);
    } while(!hwc2->recycle_exit);
 
    return NULL;
-}
-
-static void hwc2_vsync_cb(
-   void *context,
-   int param) {
-   struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)context;
-   BSTD_UNUSED(param);
-   BKNI_SetEvent(hwc2->vsync);
 }
 
 static void *hwc2_vsync_task(
@@ -303,6 +456,40 @@ static void *hwc2_vsync_task(
    } while(!hwc2->vsync_exit);
 
    return NULL;
+}
+
+static NEXUS_SurfaceHandle hwc2_ext_fb_get(
+   struct hwc2_bcm_device_t *hwc2) {
+   int nsc = 0;
+   struct hwc2_fb_t *e = NULL;
+
+   while (true) {
+      pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
+      if (BFIFO_READ_PEEK(&hwc2->ext->u.ext.fb) != 0) {
+         pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
+         goto out_read;
+      } else {
+         pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
+         hwc2_recycle(hwc2);
+         if (BFIFO_READ_PEEK(&hwc2->ext->u.ext.fb) != 0) {
+            goto out_read;
+         }
+      }
+      if (BKNI_WaitForEvent(hwc2->recycled, HWC2_FB_WAIT_TO)) {
+         nsc++;
+         if (nsc == HWC2_FB_RETRY) {
+            return NULL;
+         }
+      }
+   }
+
+out_read:
+   pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
+   e = BFIFO_READ(&hwc2->ext->u.ext.fb);
+   BFIFO_READ_COMMIT(&hwc2->ext->u.ext.fb, 1);
+   pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
+out:
+   return (e != NULL ? e->s : NULL);
 }
 
 static hwc2_lyr_t *hwc2_hnd2lyr(
@@ -361,6 +548,20 @@ static int32_t hwc2_regCb(
    hwc2->regCb[descriptor-1].func = pointer;
    hwc2->regCb[descriptor-1].data = callbackData;
 
+   /* report initial state of the hot-plug-able display. */
+   if (descriptor == HWC2_CALLBACK_HOTPLUG) {
+      NEXUS_HdmiOutputHandle hdmi;
+      NEXUS_HdmiOutputStatus hstatus;
+      hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
+      NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
+      if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
+         HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
+         f_hp(hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].data,
+              (hwc2_display_t)(intptr_t)hwc2->ext,
+              hstatus.connected?(int)HWC2_CONNECTION_CONNECTED:(int)HWC2_CONNECTION_DISCONNECTED);
+      }
+   }
+
 out:
    return ret;
 }
@@ -390,7 +591,7 @@ static int32_t hwc2_dzSup(
 
    if (display == HWC2_DISPLAY_TYPE_PHYSICAL) {
       if (outSupport != NULL) {
-         *outSupport = 0; /* do not support DOZE - initially (TODO). */
+         *outSupport = 0; /* TODO: support DOZE. */
       } else {
          ret = HWC2_ERROR_BAD_PARAMETER;
       }
@@ -1966,24 +2167,6 @@ out:
    return ret;
 }
 
-static int32_t hwc2_ret_fence(
-   struct hwc2_dsp_t *dsp) {
-
-   struct sync_fence_info_data info;
-   int fence = HWC2_INVALID;
-
-   if (dsp->cmp_tl == HWC2_INVALID) {
-      return fence;
-   }
-
-   snprintf(info.name, sizeof(info.name), "hwc2_%s_%llu", dsp->name, dsp->pres);
-   fence = sw_sync_fence_create(dsp->cmp_tl, info.name, dsp->pres);
-   if (fence < 0) {
-      return HWC2_INVALID;
-   }
-   return fence;
-}
-
 static int32_t hwc2_preDsp(
    hwc2_device_t* device,
    hwc2_display_t display,
@@ -2156,10 +2339,12 @@ static void hwc2_bcm_close(
             lyr = lyr2;
          }
       }
-      NxClient_Free(&hwc2->ext->u.ext.nx_alloc);
+      NEXUS_SurfaceClient_Release(hwc2->ext->u.ext.sch);
+      NxClient_Free(&hwc2->ext->u.ext.nxa);
       hwc2->ext->cmp_active = 0;
       pthread_join(hwc2->ext->cmp, NULL);
       pthread_mutex_destroy(&hwc2->ext->mtx_cmp_wl);
+      pthread_mutex_destroy(&hwc2->ext->u.ext.mtx_fbs);
       free(hwc2->ext);
    }
 
@@ -2188,6 +2373,9 @@ static void hwc2_bcm_close(
       delete hwc2->dc;
    }
    delete hwc2->nxipc;
+   if (hwc2->hb) {
+      delete hwc2->hb;
+   }
 
    hwc2_close_memif(hwc2);
 }
@@ -2282,11 +2470,35 @@ static void *hwc2_ext_cmp(
          } while (composing);
       } else {
          pthread_mutex_unlock(&hwc2->mtx_pwr);
-         BKNI_Sleep(16); /* hacky. */
+         BKNI_Sleep(16); /* pas beau. */
       }
    } while(hwc2->ext->cmp_active);
 
    return NULL;
+}
+
+static enum hwc2_cbs_e hwc2_want_comp_bypass(
+   NxClient_DisplaySettings *settings) {
+
+   NxClient_GetDisplaySettings(settings);
+   switch (settings->format) {
+   case NEXUS_VideoFormat_e720p:
+   case NEXUS_VideoFormat_e720p50hz:
+   case NEXUS_VideoFormat_e720p30hz:
+   case NEXUS_VideoFormat_e720p25hz:
+   case NEXUS_VideoFormat_e720p24hz:
+   case NEXUS_VideoFormat_ePal:
+   case NEXUS_VideoFormat_eSecam:
+   case NEXUS_VideoFormat_eVesa640x480p60hz:
+   case NEXUS_VideoFormat_eVesa800x600p60hz:
+   case NEXUS_VideoFormat_eVesa1024x768p60hz:
+   case NEXUS_VideoFormat_eVesa1280x768p60hz:
+      return hwc2_cbs_e::cbs_e_nscfb;
+   break;
+   default:
+   break;
+   }
+   return hwc2_cbs_e::cbs_e_bypass;
 }
 
 static void hwc2_setup_ext(
@@ -2301,6 +2513,8 @@ static void hwc2_setup_ext(
    NEXUS_InterfaceName interfaceName;
    NEXUS_PlatformObjectInstance objects[HWC2_NX_DSP_OBJ];
    size_t num = HWC2_NX_DSP_OBJ;
+   NEXUS_HdmiOutputHandle hdmi;
+   NEXUS_HdmiOutputStatus hstatus;
 
    ext = (struct hwc2_dsp_t *)malloc(sizeof(*ext));
    if (ext == NULL) {
@@ -2312,22 +2526,32 @@ static void hwc2_setup_ext(
 
    snprintf(hwc2->ext->name, strlen(hwc2->ext->name), "stbHD0");
    hwc2->ext->type    = HWC2_DISPLAY_TYPE_PHYSICAL;
-   hwc2->ext->u.ext.w = 1920; /* hardcode 1080p */
-   hwc2->ext->u.ext.w = 1080; /* hardcode 1080p */
+
+   hwc2->ext->cfgs = (struct hwc2_dsp_cfg_t *)malloc(sizeof(struct hwc2_dsp_cfg_t));
+   if (hwc2->ext->cfgs) {
+      hwc2->ext->cfgs->next  = NULL;
+      hwc2->ext->cfgs->w     = 1920; /* hardcode 1080p */
+      hwc2->ext->cfgs->h     = 1080; /* hardcode 1080p */
+      hwc2->ext->cfgs->vsync = 16666667; /* hardcode 60fps */
+      hwc2->ext->cfgs->xdp   = 0;
+      hwc2->ext->cfgs->ydp   = 0;
+   }
 
    NxClient_GetDefaultAllocSettings(&alloc);
    alloc.surfaceClient = 1; /* single surface client for 'ext' display. */
-   rc = NxClient_Alloc(&alloc, &hwc2->ext->u.ext.nx_alloc);
+   rc = NxClient_Alloc(&alloc, &hwc2->ext->u.ext.nxa);
    if (rc) {
       LOG_ALWAYS_FATAL("failed to allocate external display (nexus resources).");
       return;
    }
+   hwc2->ext->u.ext.sch = NEXUS_SurfaceClient_Acquire(hwc2->ext->u.ext.nxa.surfaceClient[0].id);
 
    BKNI_CreateEvent(&hwc2->ext->cmp_evt);
    hwc2->ext->cmp_active = 1;
    hwc2->ext->cmp_wl = NULL;
    pthread_mutexattr_init(&mattr);
    pthread_mutex_init(&hwc2->ext->mtx_cmp_wl, &mattr);
+   pthread_mutex_init(&hwc2->ext->u.ext.mtx_fbs, &mattr);
    pthread_mutexattr_destroy(&mattr);
    pthread_attr_init(&attr);
    pthread_create(&hwc2->ext->cmp, &attr, hwc2_ext_cmp, (void *)hwc2);
@@ -2339,9 +2563,9 @@ static void hwc2_setup_ext(
       hwc2->ext->cmp_tl = HWC2_INVALID;
    }
 
-   NxClient_GetSurfaceClientComposition(hwc2->ext->u.ext.nx_alloc.surfaceClient[0].id, &composition);
-   composition.virtualDisplay.width  = hwc2->ext->u.ext.w;
-   composition.virtualDisplay.height = hwc2->ext->u.ext.h;
+   NxClient_GetSurfaceClientComposition(hwc2->ext->u.ext.nxa.surfaceClient[0].id, &composition);
+   composition.virtualDisplay.width  = hwc2->ext->cfgs->w;
+   composition.virtualDisplay.height = hwc2->ext->cfgs->h;
    composition.position.x            = 0;
    composition.position.y            = 0;
    composition.position.width        = composition.virtualDisplay.width;
@@ -2350,45 +2574,59 @@ static void hwc2_setup_ext(
    composition.visible               = true;
    composition.colorBlend            = hwc2_color_pre_multi;
    composition.alphaBlend            = hwc2_alpha_pre_multi;
-   NxClient_SetSurfaceClientComposition(hwc2->ext->u.ext.nx_alloc.surfaceClient[0].id, &composition);
+   NxClient_SetSurfaceClientComposition(hwc2->ext->u.ext.nxa.surfaceClient[0].id, &composition);
 
    strcpy(interfaceName.name, "NEXUS_Display");
    rc = NEXUS_Platform_GetObjects(&interfaceName, &objects[0], num, &num);
    if (!rc) {
       hwc2->ext->u.ext.hdsp = (NEXUS_DisplayHandle)objects[0].object;
    }
+
+   hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
+   NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
+   if (hstatus.connected) {
+      NxClient_DisplaySettings settings;
+      enum hwc2_cbs_e wcb = hwc2_want_comp_bypass(&settings);
+      hwc2_ext_fbs(hwc2, wcb);
+      if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
+         HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
+         f_hp(hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].data,
+              (hwc2_display_t)(intptr_t)hwc2->ext,
+              (int)HWC2_CONNECTION_CONNECTED);
+      }
+   }
 }
 
-static bool hwc2_want_comp_bypass(
-   NxClient_DisplaySettings *settings) {
-   NxClient_GetDisplaySettings(settings);
+static void hwc2_hb_ntfy(
+   void *dev,
+   int msg,
+   struct hwc_notification_info &ntfy) {
+   struct hwc2_bcm_device_t* hwc2 = (struct hwc2_bcm_device_t *)(dev);
 
-   switch (settings->format) {
-   case NEXUS_VideoFormat_e720p:
-   case NEXUS_VideoFormat_e720p50hz:
-   case NEXUS_VideoFormat_e720p30hz:
-   case NEXUS_VideoFormat_e720p25hz:
-   case NEXUS_VideoFormat_e720p24hz:
-   case NEXUS_VideoFormat_ePal:
-   case NEXUS_VideoFormat_eSecam:
-   case NEXUS_VideoFormat_eVesa640x480p60hz:
-   case NEXUS_VideoFormat_eVesa800x600p60hz:
-   case NEXUS_VideoFormat_eVesa1024x768p60hz:
-   case NEXUS_VideoFormat_eVesa1280x768p60hz:
-      return false;
+   switch (msg) {
+   case HWC_BINDER_NTFY_CONNECTED:
+       hwc2->hb->connected(true);
+   break;
+   case HWC_BINDER_NTFY_DISCONNECTED:
+       hwc2->hb->connected(false);
+   break;
+   case HWC_BINDER_NTFY_VIDEO_SURFACE_ACQUIRED:
+   case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
+      (void)ntfy;
+   break;
+   case HWC_BINDER_NTFY_OVERSCAN:
    break;
    default:
    break;
    }
-   return true;
 }
 
 static void hwc2_dc_ntfy(
    void *dev) {
    struct hwc2_bcm_device_t* hwc2 = (struct hwc2_bcm_device_t *)(dev);
    NxClient_DisplaySettings settings;
-   bool wcb = hwc2_want_comp_bypass(&settings);
 
+   enum hwc2_cbs_e wcb = hwc2_want_comp_bypass(&settings);
    if (wcb != hwc2->ext->u.ext.cb) {
       hwc2->ext->u.ext.cbs = true;
    } else {
@@ -2404,7 +2642,7 @@ static void hwc2_hp_ntfy(
    NxClient_DisplaySettings settings;
 
    if (connected) {
-      bool wcb = hwc2_want_comp_bypass(&settings);
+      enum hwc2_cbs_e wcb = hwc2_want_comp_bypass(&settings);
       NEXUS_HdmiOutputHandle handle;
       NEXUS_HdmiOutputBasicEdidData edid;
       NEXUS_VideoFormatInfo info;
@@ -2437,12 +2675,12 @@ static void hwc2_hp_ntfy(
          errCode = NEXUS_HdmiOutput_GetBasicEdidData(handle, &edid);
          if (!errCode) {
             NEXUS_VideoFormat_GetInfo(settings.format, &info);
-            int w = hwc2->ext->u.ext.w;
-            int h = hwc2->ext->u.ext.h;
+            int w = hwc2->ext->cfgs->w;
+            int h = hwc2->ext->cfgs->h;
             float xdp = edid.maxHorizSize ? (w * 1000.0 / ((float)edid.maxHorizSize * 0.39370)) : 0.0;
             float ydp = edid.maxVertSize  ? (h * 1000.0 / ((float)edid.maxVertSize * 0.39370)) : 0.0;
-            hwc2->ext->u.ext.xdp = (int)xdp;
-            hwc2->ext->u.ext.ydp = (int)ydp;
+            hwc2->ext->cfgs->xdp = (int)xdp;
+            hwc2->ext->cfgs->ydp = (int)ydp;
          }
       }
    } else /* disconnected */ {
@@ -2504,6 +2742,10 @@ static void hwc2_bcm_open(
    if (hwc2->dc != NULL) {
       hwc2->dc->get()->register_notify(&hwc2_dc_ntfy, (void *)hwc2);
    }
+   hwc2->hb = new HwcBinder_wrap;
+   if (hwc2->hb != NULL) {
+      hwc2->hb->get()->register_notify(&hwc2_hb_ntfy, (void *)hwc2);
+   }
 
    hwc2->nxipc = NexusIPCClientFactory::getClient("hwc2");
    if (hwc2->nxipc == NULL) {
@@ -2518,11 +2760,14 @@ static void hwc2_bcm_open(
       LOG_ALWAYS_FATAL("failed to instantiate nexus client context.");
       return;
    }
+
+   hwc2_setup_ext(hwc2);
+
    if (hwc2->hp) {
-      hwc2->nxipc->addHdmiHotplugEventListener(0 /* monitor display 0 */, hwc2->hp->get());
+      hwc2->nxipc->addHdmiHotplugEventListener(0, hwc2->hp->get());
    }
    if (hwc2->dc) {
-      hwc2->nxipc->addDisplaySettingsChangedEventListener(0 /* monitor display 0 */, hwc2->dc->get());
+      hwc2->nxipc->addDisplaySettingsChangedEventListener(0, hwc2->dc->get());
    }
 
    BKNI_CreateEvent(&hwc2->g2dchk);
@@ -2543,9 +2788,6 @@ static void hwc2_bcm_open(
       return;
    }
    NEXUS_Graphics2D_GetCapabilities(hwc2->hg2d, &hwc2->g2dc);
-
-   /* create external (main) display.  virtual display is runtime. */
-   hwc2_setup_ext(hwc2);
 }
 
 static int hwc2_open(
