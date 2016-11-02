@@ -108,7 +108,7 @@ LOCAL_C_INCLUDES := \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc \
-        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/blib \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc

@@ -7,7 +7,6 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/consumerir/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hdmi_cec/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer2/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/lights/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/memtrack/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/power/Android.mk

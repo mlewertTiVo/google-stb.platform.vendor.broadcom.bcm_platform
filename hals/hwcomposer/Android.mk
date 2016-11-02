@@ -14,6 +14,12 @@
 
 LOCAL_PATH := $(call my-dir)
 
+# hwc version: 1.x (default) for pre-N android; 2.0 starting with N.
+# in N, both v-1.x and v-2.0 continue to be supported.
+ifeq ($(HAL_HWC_VERSION),)
+HAL_HWC_VERSION := v-1.x
+endif
+
 # set to 'true' to avoid stripping symbols during build.
 HWC_DEBUG_SYMBOLS := false
 
@@ -22,11 +28,11 @@ HWC_DEBUG_SYMBOLS := false
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
-   blib/IHwc.cpp \
-   blib/Hwc.cpp \
-   blib/IHwcListener.cpp \
-   blib/HwcListener.cpp \
-   blib/HwcSvc.cpp
+   common/blib/IHwc.cpp \
+   common/blib/Hwc.cpp \
+   common/blib/IHwcListener.cpp \
+   common/blib/HwcListener.cpp \
+   common/blib/HwcSvc.cpp
 
 ifeq ($(HWC_DEBUG_SYMBOLS),true)
 LOCAL_STRIP_MODULE := false
@@ -42,7 +48,7 @@ LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libnativehelper
 LOCAL_SHARED_LIBRARIES += libutils
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/blib
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib
 
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libhwcbinder
@@ -54,7 +60,7 @@ include $(BUILD_SHARED_LIBRARY)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
-   bexe/main.cpp
+   common/bexe/main.cpp
 
 ifeq ($(HWC_DEBUG_SYMBOLS),true)
 LOCAL_STRIP_MODULE := false
@@ -70,12 +76,12 @@ LOCAL_SHARED_LIBRARIES += libutils
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/blib
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib
 
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := hwcbinder
 
-LOCAL_INIT_RC := hwcbinder.rc
+LOCAL_INIT_RC := common/hwcbinder.rc
 
 include $(BUILD_EXECUTABLE)
 
@@ -143,7 +149,7 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusserv
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc \
                     $(NXCLIENT_INCLUDES) \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/blib \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/utils \
                     $(TOP)/system/core/libsync \
                     $(TOP)/system/core/libsync/include \
@@ -154,11 +160,11 @@ LOCAL_CFLAGS += -DLOG_TAG=\"bcm-hwc\"
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 
 ifeq ($(LOCAL_DEVICE_TYPE),blemmyes)
-LOCAL_SRC_FILES := hwcomposer.blemmyes.cpp
+LOCAL_SRC_FILES := $(BCM_HWC_VERSION)/hwcomposer.blemmyes.cpp
 else
 # fix warnings!
 LOCAL_CFLAGS += -Werror
-LOCAL_SRC_FILES := hwcomposer.cpp
+LOCAL_SRC_FILES := $(HAL_HWC_VERSION)/hwcomposer.cpp
 endif
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := hwcomposer.$(TARGET_BOARD_PLATFORM)
