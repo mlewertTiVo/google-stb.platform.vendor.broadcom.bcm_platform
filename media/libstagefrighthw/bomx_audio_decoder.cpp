@@ -64,16 +64,19 @@
 #define B_PROPERTY_AAC_DELAY ("media.brcm.adec_aac_delay")
 #define B_PROPERTY_ADEC_ENABLED ("media.brcm.adec_enabled")
 #define B_PROPERTY_ADEC_DRC_MODE ("media.brcm.adec_drc_mode")           // Can be set to "rf" or "line"
+#define B_PROPERTY_ADEC_DRC_MODE_DD ("media.brcm.adec_drc_mode_dd")     // Can be set to "rf", "rf_23", "rf_24", or "line"
 #define B_PROPERTY_ADEC_DRC_REF_LEVEL ("media.brcm.adec_drc_ref_level") // Specified in -.25 dB units - e.g. 64 = -16dB.
 #define B_PROPERTY_ADEC_DRC_CUT ("media.brcm.adec_drc_cut")             // 0..127 where 127=maximum compression
 #define B_PROPERTY_ADEC_DRC_BOOST ("media.brcm.adec_drc_boost")         // 0..127 where 127=maximum compression
 #define B_PROPERTY_ADEC_DRC_ENC_LEVEL ("media.brcm.adec_drc_enc_level") // -1 default or 0..127 in -.25 dB units
 
 #define B_DRC_DEFAULT_MODE ("rf")
+#define B_DRC_DEFAULT_MODE_DD ("rf_23")
 #define B_DRC_DEFAULT_REF_LEVEL (92)    // -23dB - SW decoder targets -16dB with higher compression for mobile devices but this leaves enough headroom to avoid saturation
 #define B_DRC_DEFAULT_CUT (127)         // Max
 #define B_DRC_DEFAULT_BOOST (127)       // Max
 #define B_DRC_DEFAULT_ENC_LEVEL -1      // Unknown
+
 #define B_DRC_TO_NEXUS(cutboost) (((cutboost)*100)/127)
 #define B_DRC_FROM_NEXUS(cutboost) (((cutboost)*127)/100)
 
@@ -773,14 +776,10 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
         if ( !strcmp(property, "line") )
         {
             codecSettings.codecSettings.aac.drcMode = NEXUS_AudioDecoderDolbyPulseDrcMode_eLine;
-            codecSettings.codecSettings.ac3.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eLine;
-            codecSettings.codecSettings.ac3Plus.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eLine;
         }
         else
         {
             codecSettings.codecSettings.aac.drcMode = NEXUS_AudioDecoderDolbyPulseDrcMode_eRf;
-            codecSettings.codecSettings.ac3.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eRf;
-            codecSettings.codecSettings.ac3Plus.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eRf;
         }
     }
     codecSettings.codecSettings.aac.cut = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
@@ -795,8 +794,74 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     {
         codecSettings.codecSettings.aac.drcDefaultLevel = B_DRC_DEFAULT_REF_LEVEL;
     }
+
+    errCode = NEXUS_AudioDecoder_SetCodecSettings(m_hAudioDecoder, &codecSettings);
+    if ( errCode )
+    {
+        // Report and keep going
+        (void)BOMX_BERR_TRACE(errCode);
+    }
+
+    // Set AC3 DRC defaults
+    NEXUS_AudioDecoder_GetCodecSettings(m_hAudioDecoder, NEXUS_AudioCodec_eAc3, &codecSettings);
+    if ( property_get(B_PROPERTY_ADEC_DRC_MODE_DD, property, B_DRC_DEFAULT_MODE_DD) )
+    {
+        if ( !strcmp(property, "line") )
+        {
+            codecSettings.codecSettings.ac3.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eLine;
+        }
+        else if ( !strcmp(property, "rf_23") )
+        {
+            codecSettings.codecSettings.ac3.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eCustomTarget;
+            codecSettings.codecSettings.ac3.customTargetLevel = 23;
+            codecSettings.codecSettings.ac3.customTargetLevelDownmix = 23;
+        }
+        else if ( !strcmp(property, "rf_24") )
+        {
+            codecSettings.codecSettings.ac3.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eCustomTarget;
+            codecSettings.codecSettings.ac3.customTargetLevel = 24;
+            codecSettings.codecSettings.ac3.customTargetLevelDownmix = 24;
+        }
+        else
+        {
+            codecSettings.codecSettings.ac3.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eRf;
+        }
+    }
     codecSettings.codecSettings.ac3.cut = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
     codecSettings.codecSettings.ac3.boost = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
+
+    errCode = NEXUS_AudioDecoder_SetCodecSettings(m_hAudioDecoder, &codecSettings);
+    if ( errCode )
+    {
+        // Report and keep going
+        (void)BOMX_BERR_TRACE(errCode);
+    }
+
+    // Set AC3+ DRC defaults
+    NEXUS_AudioDecoder_GetCodecSettings(m_hAudioDecoder, NEXUS_AudioCodec_eAc3Plus, &codecSettings);
+    if ( property_get(B_PROPERTY_ADEC_DRC_MODE_DD, property, B_DRC_DEFAULT_MODE_DD) )
+    {
+        if ( !strcmp(property, "line") )
+        {
+            codecSettings.codecSettings.ac3Plus.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eLine;
+        }
+        else if ( !strcmp(property, "rf_23") )
+        {
+            codecSettings.codecSettings.ac3Plus.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eCustomTarget;
+            codecSettings.codecSettings.ac3Plus.customTargetLevel = 23;
+            codecSettings.codecSettings.ac3Plus.customTargetLevelDownmix = 23;
+        }
+        else if ( !strcmp(property, "rf_24") )
+        {
+            codecSettings.codecSettings.ac3Plus.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eCustomTarget;
+            codecSettings.codecSettings.ac3Plus.customTargetLevel = 24;
+            codecSettings.codecSettings.ac3Plus.customTargetLevelDownmix = 24;
+        }
+        else
+        {
+            codecSettings.codecSettings.ac3Plus.drcMode = NEXUS_AudioDecoderDolbyDrcMode_eRf;
+        }
+    }
     codecSettings.codecSettings.ac3Plus.cut = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_CUT, B_DRC_DEFAULT_CUT));
     codecSettings.codecSettings.ac3Plus.boost = B_DRC_TO_NEXUS(property_get_int32(B_PROPERTY_ADEC_DRC_BOOST, B_DRC_DEFAULT_BOOST));
 
