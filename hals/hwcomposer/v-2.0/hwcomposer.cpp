@@ -103,9 +103,9 @@ struct hwc2_bcm_device_t {
    struct hwc2_dsp_t    *vd;
    struct hwc2_dsp_t    *ext;
 
-   BKNI_EventHandle     g2dchk;
-   NEXUS_Graphics2DHandle hg2d;
-   pthread_mutex_t      mtx_g2d;
+   BKNI_EventHandle             g2dchk;
+   NEXUS_Graphics2DHandle       hg2d;
+   pthread_mutex_t              mtx_g2d;
    NEXUS_Graphics2DCapabilities g2dc;
 };
 
@@ -365,18 +365,18 @@ static int32_t hwc2_ret_fence(
    struct hwc2_dsp_t *dsp) {
 
    struct sync_fence_info_data info;
-   int fence = HWC2_INVALID;
+   int f = HWC2_INVALID;
 
    if (dsp->cmp_tl == HWC2_INVALID) {
-      return fence;
+      return HWC2_INVALID;
    }
 
    snprintf(info.name, sizeof(info.name), "hwc2_%s_%llu", dsp->name, dsp->pres);
-   fence = sw_sync_fence_create(dsp->cmp_tl, info.name, dsp->pres);
-   if (fence < 0) {
+   f = sw_sync_fence_create(dsp->cmp_tl, info.name, dsp->pres);
+   if (f < 0) {
       return HWC2_INVALID;
    }
-   return fence;
+   return f;
 }
 
 static void hwc2_ret_inc(
@@ -753,6 +753,90 @@ out:
    return ret;
 }
 
+static void hwc2_lyr_tl_set(
+   struct hwc2_dsp_t *dsp,
+   uint32_t kind,
+   struct hwc2_lyr_t *lyr) {
+
+   size_t num;
+   int free = HWC2_INVALID;
+   if (kind == HWC2_DSP_EXT) {
+      for (num = 0 ; num < HWC2_MAX_TL ; num++) {
+         if (free == HWC2_INVALID &&
+             dsp->u.ext.rtl[num].hdl == NULL &&
+             dsp->u.ext.rtl[num].tl != HWC2_INVALID) {
+            free = (int)num;
+         }
+         if (dsp->u.ext.rtl[num].hdl == lyr) {
+            return;
+         }
+      }
+
+      if (free != HWC2_INVALID) {
+         dsp->u.ext.rtl[free].hdl = lyr;
+      }
+   }
+}
+
+static void hwc2_lyr_tl_unset(
+   struct hwc2_dsp_t *dsp,
+   uint32_t kind,
+   struct hwc2_lyr_t *lyr) {
+
+   size_t num;
+   if (kind == HWC2_DSP_EXT) {
+      for (num = 0 ; num < HWC2_MAX_TL ; num++) {
+         if (dsp->u.ext.rtl[num].hdl == lyr) {
+            dsp->u.ext.rtl[num].hdl = NULL;
+         }
+      }
+   }
+}
+
+static int32_t hwc2_lyr_tl_add(
+   struct hwc2_dsp_t *dsp,
+   uint32_t kind,
+   struct hwc2_lyr_t *lyr) {
+
+   int32_t f = HWC2_INVALID;
+   struct sync_fence_info_data info;
+   size_t num;
+   if (kind == HWC2_DSP_EXT) {
+      for (num = 0 ; num < HWC2_MAX_TL ; num++) {
+         if (dsp->u.ext.rtl[num].hdl == lyr) {
+            dsp->u.ext.rtl[num].ix++;
+            snprintf(info.name, sizeof(info.name),
+                     "hwc2_%p_ext_%llu", (void *)lyr, dsp->u.ext.rtl[num].ix);
+            f = sw_sync_fence_create(dsp->u.ext.rtl[num].tl,
+                                     info.name,
+                                     dsp->u.ext.rtl[num].ix);
+            if (f < 0) {
+               f = HWC2_INVALID;
+            }
+            return f;
+         }
+      }
+   }
+
+   return HWC2_INVALID;
+}
+
+static void hwc2_lyr_tl_inc(
+   struct hwc2_dsp_t *dsp,
+   uint32_t kind,
+   struct hwc2_lyr_t *lyr) {
+
+   size_t num;
+   if (kind == HWC2_DSP_EXT) {
+      for (num = 0 ; num < HWC2_MAX_TL ; num++) {
+         if (dsp->u.ext.rtl[num].hdl == lyr) {
+            sw_sync_timeline_inc(dsp->u.ext.rtl[num].tl, 1);
+            return;
+         }
+      }
+   }
+}
+
 static int32_t hwc2_lyrAdd(
    hwc2_device_t* device,
    hwc2_display_t display,
@@ -782,6 +866,8 @@ static int32_t hwc2_lyrAdd(
       goto out;
    }
    memset(lyr, 0, sizeof(*lyr));
+
+   hwc2_lyr_tl_set(dsp, kind, lyr);
 
    nxt = dsp->lyr;
    if (nxt == NULL) {
@@ -844,6 +930,7 @@ static int32_t hwc2_lyrRem(
       prv->next = lyr->next;
    }
    lyr->next = NULL;
+   hwc2_lyr_tl_unset(dsp, kind, lyr);
    free(lyr);
    lyr = NULL;
 
@@ -968,17 +1055,26 @@ static int32_t hwc2_dspcSupp(
 }
 
 static int32_t hwc2_sclSupp(
+   struct hwc2_bcm_device_t *hwc2,
    struct hwc2_dsp_t *dsp,
    uint32_t width,
    uint32_t height) {
 
    hwc2_error_t ret = HWC2_ERROR_NONE;
 
-   (void)dsp;
-   (void)width;
-   (void)height;
+   if (dsp->aCfg &&
+       dsp->aCfg->w &&
+       width &&
+       (dsp->aCfg->w / width) >= hwc2->g2dc.maxHorizontalDownScale) {
+      ret = HWC2_ERROR_UNSUPPORTED;
+   }
 
-   // TODO - check maximum scale factor supported.
+   if (dsp->aCfg &&
+       dsp->aCfg->h &&
+       height &&
+       (dsp->aCfg->h / height) >= hwc2->g2dc.maxVerticalDownScale) {
+      ret = HWC2_ERROR_UNSUPPORTED;
+   }
 
    return ret;
 }
@@ -1022,7 +1118,7 @@ static int32_t hwc2_ackCliTgt(
    if (ret != HWC2_ERROR_NONE) {
       goto out;
    }
-   ret = (hwc2_error_t)hwc2_sclSupp(dsp, width, height);
+   ret = (hwc2_error_t)hwc2_sclSupp(hwc2, dsp, width, height);
    if (ret != HWC2_ERROR_NONE) {
       goto out;
    }
@@ -2030,6 +2126,7 @@ static int32_t hwc2_relFences(
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
    struct hwc2_lyr_t *lyr = NULL;
+   size_t num;
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -2045,19 +2142,22 @@ static int32_t hwc2_relFences(
    if (outLayers == NULL || outFences == NULL) {
       *outNumElements = 0;
       lyr = dsp->lyr;
-      if (lyr->cDev == HWC2_COMPOSITION_DEVICE) {
-         *outNumElements += 1;
-      }
       while (lyr != NULL) {
+         if (lyr->cDev == HWC2_COMPOSITION_DEVICE) {
+            *outNumElements += 1;
+         }
          lyr = lyr->next;
       }
    } else {
+      num = 0;
       lyr = dsp->lyr;
-      if (lyr->cDev == HWC2_COMPOSITION_DEVICE) {
-         // TODO: create the actual fence.
-         lyr->rf = -1;
-      }
       while (lyr != NULL) {
+         if (lyr->cDev == HWC2_COMPOSITION_DEVICE) {
+            lyr->rf = hwc2_lyr_tl_add(dsp, kind, lyr);
+            outLayers[num] = (hwc2_layer_t)(intptr_t)lyr;
+            outFences[num] = lyr->rf;
+            num++;
+         }
          lyr = lyr->next;
       }
    }
@@ -2167,6 +2267,20 @@ out:
    return ret;
 }
 
+static int32_t hwc2_cntLyr(
+   struct hwc2_dsp_t *dsp) {
+
+   int cnt = 0;
+   struct hwc2_lyr_t *lyr = NULL;
+
+   lyr = dsp->lyr;
+   while (lyr != NULL) {
+      lyr = lyr->next;
+   };
+
+   return cnt;
+}
+
 static int32_t hwc2_preDsp(
    hwc2_device_t* device,
    hwc2_display_t display,
@@ -2177,6 +2291,9 @@ static int32_t hwc2_preDsp(
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
    struct hwc2_lyr_t *lyr = NULL;
+   int32_t frame_size, cnt;
+
+   *outRetireFence = -1;
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -2202,14 +2319,66 @@ static int32_t hwc2_preDsp(
    dsp->pres++;
 
    if (kind == HWC2_DSP_EXT) {
-      // pierre - copy frame to be displayed an send it to composer task
+      struct hwc2_frame_t *frame = NULL;
+      struct hwc2_lyr_t *clyr = NULL;
+
+      pthread_mutex_lock(&hwc2->mtx_pwr);
+      if (hwc2->ext->pmode == HWC2_POWER_MODE_OFF) {
+         pthread_mutex_unlock(&hwc2->mtx_pwr);
+         goto out_error;
+      }
+      pthread_mutex_unlock(&hwc2->mtx_pwr);
+
+      cnt = hwc2_cntLyr(dsp);
+      frame_size = sizeof(struct hwc2_frame_t) + (cnt * sizeof(struct hwc2_lyr_t));
+      frame = (struct hwc2_frame_t *) calloc(1, frame_size);
+      if (frame == NULL) {
+         goto out_error;
+      }
+      frame->pres = dsp->pres;
+      frame->cnt  = cnt;
+      lyr = dsp->lyr;
+      clyr = &frame->lyr[0];
+      for (frame_size = 0 ; frame_size < cnt ; frame_size++) {
+         memcpy(clyr, lyr, sizeof(struct hwc2_lyr_t));
+         lyr = lyr->next;
+         clyr->next = &frame->lyr[frame_size+1];
+         clyr = &frame->lyr[frame_size+1];
+      }
+      if (!pthread_mutex_lock(&dsp->mtx_cmp_wl)) {
+         if (dsp->cmp_wl == NULL) {
+            dsp->cmp_wl = frame;
+         } else {
+            struct hwc2_frame_t *item, *last;
+            last = dsp->cmp_wl;
+            while (last != NULL) { item = last; last = last->next; }
+            item->next = frame;
+         }
+         pthread_mutex_unlock(&dsp->mtx_cmp_wl);
+      } else {
+         free(frame);
+         goto out_error;
+      }
 
       *outRetireFence = hwc2_ret_fence(dsp);
       BKNI_SetEvent(dsp->cmp_evt);
+      goto out;
    } else if (kind == HWC2_DSP_VD) {
       *outRetireFence = -1;
+      goto out;
    }
 
+out_error:
+   if (kind == HWC2_DSP_EXT) {
+      cnt = hwc2_cntLyr(dsp);
+      lyr = dsp->lyr;
+      for (frame_size = 0 ; frame_size < cnt ; frame_size++) {
+         if (lyr->rf != HWC2_INVALID) {
+            hwc2_lyr_tl_inc(dsp, kind, lyr);
+         }
+         lyr = lyr->next;
+      }
+   }
 out:
    return ret;
 }
@@ -2301,6 +2470,7 @@ static void hwc2_bcm_close(
 
    struct hwc2_lyr_t *lyr, *lyr2 = NULL;
    struct hwc2_dsp_cfg_t *cfg, *cfg2 = NULL;
+   size_t num;
 
    if (hwc2->vd) {
       if (hwc2->vd->cfgs) {
@@ -2345,6 +2515,9 @@ static void hwc2_bcm_close(
       pthread_join(hwc2->ext->cmp, NULL);
       pthread_mutex_destroy(&hwc2->ext->mtx_cmp_wl);
       pthread_mutex_destroy(&hwc2->ext->u.ext.mtx_fbs);
+      for (num = 0 ; num < HWC2_MAX_TL ; num++) {
+         close(hwc2->ext->u.ext.rtl[num].tl);
+      }
       free(hwc2->ext);
    }
 
@@ -2426,6 +2599,36 @@ out:
    return hwc2->memfd;
 }
 
+//pierre
+static void hwc2_ext_cmp_frame(
+   struct hwc2_bcm_device_t* hwc2,
+   struct hwc2_frame_t *f) {
+
+   NEXUS_SurfaceHandle d = NULL;
+
+   /* setup and grab a destination buffer for this frame. */
+   if (hwc2->ext->u.ext.cbs) {
+      enum hwc2_cbs_e wcb = hwc2->ext->u.ext.cb;
+      if (wcb == cbs_e_none || wcb == cbs_e_nscfb) {
+         wcb = cbs_e_bypass;
+      } else {
+         wcb = cbs_e_nscfb;
+      }
+      hwc2_ext_fbs(hwc2, wcb);
+      hwc2->ext->u.ext.cbs = false;
+   }
+   d = hwc2_ext_fb_get(hwc2);
+   if (d == NULL) {
+      hwc2_ret_inc(hwc2->ext, 1);
+      return;
+   }
+
+   /* compose the layers from the frame into the destination; wait on fence as needed. */
+   (void) f;
+
+   return;
+}
+
 static void *hwc2_ext_cmp(
    void *argv) {
    struct hwc2_bcm_device_t* hwc2 = (struct hwc2_bcm_device_t *)(argv);
@@ -2463,7 +2666,7 @@ static void *hwc2_ext_cmp(
             }
 
             if (frame != NULL) {
-               // hwc2_ext_cmp_frame(hwc2, frame);  pierre
+               hwc2_ext_cmp_frame(hwc2, frame);
                free(frame);
                frame = NULL;
             }
@@ -2594,6 +2797,15 @@ static void hwc2_setup_ext(
               (hwc2_display_t)(intptr_t)hwc2->ext,
               (int)HWC2_CONNECTION_CONNECTED);
       }
+   }
+
+   for (num = 0 ; num < HWC2_MAX_TL ; num++) {
+      hwc2->ext->u.ext.rtl[num].tl = sw_sync_timeline_create();
+      if (hwc2->ext->u.ext.rtl[num].tl < 0) {
+         hwc2->ext->u.ext.rtl[num].tl = HWC2_INVALID;
+      }
+      hwc2->ext->u.ext.rtl[num].hdl = NULL;
+      hwc2->ext->u.ext.rtl[num].ix = 0;
    }
 }
 

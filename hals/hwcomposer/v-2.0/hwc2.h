@@ -31,6 +31,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_FBS_NUM    3
 #define HWC2_FB_WAIT_TO 50
 #define HWC2_FB_RETRY   4
+#define HWC2_MAX_TL     10
 
 #define HWC2_DSP_NAME   32
 #define HWC2_DSP_EXT    2001
@@ -126,13 +127,6 @@ public:
    }
 };
 
-/* unit of work for composition. */
-struct hwc2_frame_t {
-   struct hwc2_frame_t *next;
-   unsigned long long  comp_ix;
-
-};
-
 /* callbacks into client registered on launch. */
 struct hwc2_reg_cb_t {
    hwc2_callback_descriptor_t desc;
@@ -152,11 +146,11 @@ struct hwc2_dsp_cfg_t {
 
 /* display context target. */
 struct hwc2_dsp_ct_t {
-   buffer_handle_t tgt;
-   int32_t rdf;
+   buffer_handle_t     tgt;
+   int32_t             rdf;
    android_dataspace_t dsp;
-   size_t dmg_n;
-   hwc_rect_t dmg_r;
+   size_t              dmg_n;
+   hwc_rect_t          dmg_r;
 };
 
 /* layer unit. */
@@ -185,10 +179,19 @@ struct hwc2_lyr_t {
    int32_t            rf; /* release fence for this layer current buffer */
 };
 
+/* unit of work for composition. */
+struct hwc2_frame_t {
+   struct hwc2_frame_t *next;
+
+   unsigned long long  pres;
+   int32_t             cnt;
+   struct hwc2_lyr_t   lyr[0];
+};
+
 /* color matrix unit. */
 struct hwc2_cm_t {
    android_color_transform_t type;
-   float mtx[HWC2_CM_SIZE];
+   float                     mtx[HWC2_CM_SIZE];
 };
 
 /* virtual display specific information. */
@@ -207,21 +210,27 @@ struct hwc2_fb_t {
    NEXUS_SurfaceHandle s;
 };
 
+/* composition mode. */
 enum hwc2_cbs_e {
-   cbs_e_none = 0,
-   cbs_e_bypass,
-   cbs_e_nscfb,
+   cbs_e_none = 0,   /* not yet setup (no output) */
+   cbs_e_bypass,     /* bypass client - optimal mode. */
+   cbs_e_nscfb,      /* compositor framebuffer middle man. */
+};
+
+/* layer release timeline unit. */
+struct hwc2_lyr_tl_t {
+   struct hwc2_lyr_t *hdl;
+   int               tl;
+   uint64_t          ix;
 };
 
 /* external (ie hdmi) display specific information. */
 struct hwc2_ext_t {
-   hwc2_vsync_t  vsync;
-   hwc2_cm_t     cm;
-   hwc2_dsp_ct_t ct;
-
-   NxClient_AllocResults     nxa;
-   NEXUS_SurfaceClientHandle sch;
-
+   hwc2_vsync_t                        vsync;
+   hwc2_cm_t                           cm;
+   hwc2_dsp_ct_t                       ct;
+   NxClient_AllocResults               nxa;
+   NEXUS_SurfaceClientHandle           sch;
    enum hwc2_cbs_e                     cb;
    bool                                cbs;
    NEXUS_DisplayHandle                 hdsp;
@@ -229,6 +238,7 @@ struct hwc2_ext_t {
    struct hwc2_fb_t                    fbs[HWC2_FBS_NUM];
    pthread_mutex_t                     mtx_fbs;
    bool                                bfb;
+   struct hwc2_lyr_tl_t                rtl[HWC2_MAX_TL];
 };
 
 /* display unit. */
