@@ -2603,12 +2603,8 @@ NEXUS_Error BOMX_VideoDecoder::SetOutputPortState(OMX_STATETYPE newState)
 
         // Return all pending buffers to the client
         ReturnPortBuffers(m_pVideoPorts[1]);
-
-        // Update output port format on a port re-enable.
         if ( m_formatChangeState == FCState_eWaitForPortReconfig )
         {
-            m_outputWidth = m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth;
-            m_outputHeight = m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight;
             m_formatChangeState = FCState_eNone;
         }
     }
@@ -4957,6 +4953,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 portDefs.format.video.nSliceHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
                                 portDefs.nBufferSize = ComputeBufferSize(portDefs.format.video.nStride, portDefs.format.video.nSliceHeight);
                                 m_pVideoPorts[1]->SetDefinition(&portDefs);
+                                m_outputWidth = portDefs.format.video.nFrameWidth;
+                                m_outputHeight = portDefs.format.video.nFrameHeight;
                                 PortFormatChanged(m_pVideoPorts[1]);
                                 m_formatChangeState = FCState_eWaitForPortReconfig;
                             }
