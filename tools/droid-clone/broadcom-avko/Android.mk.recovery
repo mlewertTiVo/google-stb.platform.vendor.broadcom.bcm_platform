@@ -46,7 +46,6 @@ EXTRA_SYSTEM_BIN_FILES := \
    ${SAGE_APP_BINARY_PATH}/sage_ta_antirollback.bin \
    ${SAGE_APP_BINARY_PATH}/sage_ta_common_drm.bin \
    ${SAGE_APP_BINARY_PATH}/sage_ta_hdcp22.bin \
-   ${SAGE_APP_BINARY_PATH}/sage_ta_playready_30.bin \
    ${SAGE_APP_BINARY_PATH}/sage_ta_secure_video.bin \
    ${SAGE_APP_BINARY_PATH}/sage_ta_utility.bin \
    \
@@ -55,9 +54,13 @@ EXTRA_SYSTEM_BIN_FILES := \
    ${SAGE_APP_BINARY_PATH}/dev/sage_ta_antirollback_dev.bin \
    ${SAGE_APP_BINARY_PATH}/dev/sage_ta_common_drm_dev.bin \
    ${SAGE_APP_BINARY_PATH}/dev/sage_ta_hdcp22_dev.bin \
-   ${SAGE_APP_BINARY_PATH}/dev/sage_ta_playready_30_dev.bin \
    ${SAGE_APP_BINARY_PATH}/dev/sage_ta_secure_video_dev.bin \
    ${SAGE_APP_BINARY_PATH}/dev/sage_ta_utility_dev.bin
+ifeq ($(ANDROID_SUPPORTS_PLAYREADY),y)
+EXTRA_SYSTEM_BIN_FILES += \
+   ${SAGE_APP_BINARY_PATH}/sage_ta_playready_30.bin \
+   ${SAGE_APP_BINARY_PATH}/dev/sage_ta_playready_30_dev.bin
+endif
 endif
 
 define copy-recovery-extra-files
