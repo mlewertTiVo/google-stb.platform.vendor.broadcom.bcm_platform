@@ -3504,7 +3504,6 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
               while (last != NULL) { item = last; last = last->next; }
               item->next = this_frame;
            }
-           pthread_mutex_unlock(&ctx->comp_work_list_mutex[HWC_PRIMARY_IX]);
         } else {
            ALOGE("comp: %llu: unable to post (%llu)", ctx->stats[HWC_PRIMARY_IX].set_call, ctx->stats[HWC_PRIMARY_IX].composed);
            ctx->stats[HWC_PRIMARY_IX].composed++;
@@ -3523,6 +3522,7 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
               list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
               this_frame->content.hwLayers[i].releaseFenceFd = INVALID_FENCE;
            }
+           pthread_mutex_unlock(&ctx->comp_work_list_mutex[HWC_PRIMARY_IX]);
         } else {
            int installed = 0;
            for (i = 0; i < list->numHwLayers; i++) {
@@ -3550,6 +3550,8 @@ static int hwc_set_primary(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
               list->retireFenceFd = INVALID_FENCE;
               this_frame->content.retireFenceFd = INVALID_FENCE;
            }
+           pthread_mutex_unlock(&ctx->comp_work_list_mutex[HWC_PRIMARY_IX]);
+
            if (ctx->dump_fence & HWC_DUMP_FENCE_SUMMARY) {
               ALOGI("comp: %llu - installed %d fences (retire: %d) for %zu layers\n",
                     ctx->stats[HWC_PRIMARY_IX].set_call,
@@ -4011,7 +4013,6 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
              while (last != NULL) { item = last; last = last->next; }
              item->next = this_frame;
           }
-          pthread_mutex_unlock(&ctx->comp_work_list_mutex[HWC_VIRTUAL_IX]);
        } else {
           ALOGE("vcmp: %llu: unable to post (%llu)", ctx->stats[HWC_VIRTUAL_IX].set_call, ctx->stats[HWC_VIRTUAL_IX].composed);
           ctx->stats[HWC_VIRTUAL_IX].composed++;
@@ -4030,6 +4031,7 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
              list->hwLayers[i].releaseFenceFd = INVALID_FENCE;
              this_frame->content.hwLayers[i].releaseFenceFd = INVALID_FENCE;
           }
+          pthread_mutex_unlock(&ctx->comp_work_list_mutex[HWC_VIRTUAL_IX]);
        } else {
           for (i = 0; i < list->numHwLayers; i++) {
              if (ctx->vd_cli[i].composition.visible &&
@@ -4056,6 +4058,7 @@ static int hwc_set_virtual(struct hwc_context_t *ctx, hwc_display_contents_1_t* 
              list->retireFenceFd = INVALID_FENCE;
              this_frame->content.retireFenceFd = INVALID_FENCE;
           }
+          pthread_mutex_unlock(&ctx->comp_work_list_mutex[HWC_VIRTUAL_IX]);
        }
 
        if (ctx->display_dump_virt & HWC_DUMP_LEVEL_SET) {
