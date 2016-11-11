@@ -34,6 +34,9 @@ $(_hwcfg_dhd_nvram_file): $(PRODUCT_OUT_FROM_TOP)/hwcfg ${BRCM_NIC_NVRAM_DIR}/${
 endif
 endif
 else
+ifeq ($(HW_WIFI_NIC_DUAL_SUPPORT),y)
+_hwcfg_dhd_nvram_file :=
+else
 ifneq ($(wildcard $(BRCM_DHD_NVRAM_DIR)/$(BRCM_DHD_NVRAM_NAME)),)
 _hwcfg_dhd_nvram_file := $(PRODUCT_OUT_FROM_TOP)/hwcfg/nvm.txt
 
@@ -45,6 +48,7 @@ else
 $(_hwcfg_dhd_nvram_file): $(PRODUCT_OUT_FROM_TOP)/hwcfg ${BRCM_DHD_NVRAM_DIR}/${BRCM_DHD_NVRAM_NAME}
 	cp ${BRCM_DHD_NVRAM_DIR}/${BRCM_DHD_NVRAM_NAME} $@
 	@echo "Could not find $(ANDROID_TOP)/hwcfg/wifimac.txt, nvm.txt will contain default mac address"
+endif
 endif
 endif
 endif

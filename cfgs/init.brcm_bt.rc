@@ -1,2 +1,0 @@
-on post-fs
-   chown bluetooth bluetooth /sys/class/rfkill/rfkill0/state
