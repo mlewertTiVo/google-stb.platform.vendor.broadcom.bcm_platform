@@ -16,6 +16,8 @@ B_REFSW_OS ?= linuxuser
 include $(NEXUS_TOP)/lib/bip/bip_lib.inc
 LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw
 LOCAL_SRC_FILES := $(subst $(NEXUS_TOP),nexus,$(BIP_BASE_LIB_SOURCES))
+LOCAL_SRC_FILES := $(subst nexus/lib/../../,,$(LOCAL_SRC_FILES))
+LOCAL_SRC_FILES := $(subst nexus/../,,$(LOCAL_SRC_FILES))
 
 LOCAL_C_INCLUDES += $(subst $(B_LIB_TOP),$(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/lib,$(BIP_BASE_LIB_PUBLIC_INCLUDES) $(BIP_BASE_LIB_PRIVATE_INCLUDES))
 LOCAL_CFLAGS += -DLINUX
@@ -52,6 +54,8 @@ B_REFSW_OS ?= linuxuser
 include $(NEXUS_TOP)/lib/bip/bip_lib.inc
 LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw
 LOCAL_SRC_FILES := $(subst $(NEXUS_TOP),nexus,$(BIP_CLIENT_LIB_SOURCES))
+LOCAL_SRC_FILES := $(subst nexus/lib/../../,,$(LOCAL_SRC_FILES))
+LOCAL_SRC_FILES := $(subst nexus/../,,$(LOCAL_SRC_FILES))
 
 LOCAL_C_INCLUDES += $(subst $(B_LIB_TOP),$(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/lib,$(BIP_CLIENT_LIB_PUBLIC_INCLUDES) $(BIP_CLIENT_LIB_PRIVATE_INCLUDES))
 LOCAL_CFLAGS += -DLINUX
@@ -89,6 +93,8 @@ B_REFSW_OS ?= linuxuser
 include $(NEXUS_TOP)/lib/bip/bip_lib.inc
 LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw
 LOCAL_SRC_FILES := $(subst $(NEXUS_TOP),nexus,$(BIP_SERVER_LIB_SOURCES))
+LOCAL_SRC_FILES := $(subst nexus/lib/../../,,$(LOCAL_SRC_FILES))
+LOCAL_SRC_FILES := $(subst nexus/../,,$(LOCAL_SRC_FILES))
 
 LOCAL_C_INCLUDES += $(subst $(B_LIB_TOP),$(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/lib,$(BIP_SERVER_LIB_PUBLIC_INCLUDES) $(BIP_SERVER_LIB_PRIVATE_INCLUDES))
 LOCAL_CFLAGS += -DLINUX
