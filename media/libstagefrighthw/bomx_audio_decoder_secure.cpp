@@ -185,12 +185,12 @@ OMX_ERRORTYPE BOMX_AudioDecoder_Secure::EmptyThisBuffer(OMX_IN OMX_BUFFERHEADERT
         }
         OMX_U8 *clearBuffer = (OMX_U8*)secInputBuff + secInputBuff->clearBuffOffset;
         pBufferHeader->pBuffer = clearBuffer;
-        ALOGV("%s: replaced codec config buffer, ptr:%p, size:%d",
+        ALOGV("%s: replaced codec config buffer, ptr:%p, size:%zu",
                 __FUNCTION__, clearBuffer, secInputBuff->clearBuffSize);
     } else if ( pBufferHeader->nFilledLen > 0 ) {
         // Replace the input buffer with the secure buffer
         pBufferHeader->pBuffer = (OMX_U8*)secInputBuff->pSecureBuff;
-        ALOGV("%s: replaced input buffer, size:%d", __FUNCTION__, secInputBuff->clearBuffSize);
+        ALOGV("%s: replaced input buffer, size:%zu", __FUNCTION__, secInputBuff->clearBuffSize);
     }
 
     omx_err = BOMX_AudioDecoder::EmptyThisBuffer(pBufferHeader);

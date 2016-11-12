@@ -45,6 +45,7 @@
 #include <cutils/sched_policy.h>
 #include <cutils/compiler.h>
 #include <sys/resource.h>
+#include <inttypes.h>
 
 #include "bomx_video_decoder.h"
 #include "nexus_platform.h"
@@ -2338,7 +2339,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             else
             {
                 // Exclude early frame drops from total tally
-                ALOGD("stats df:%d edf:%d mcdf:%d",
+                ALOGD("stats df:%zu edf:%zu mcdf:%zu",
                    m_droppedFrames - m_earlyDroppedFrames, m_earlyDroppedFrames, m_maxConsecDroppedFrames);
             }
 
@@ -4764,7 +4765,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
             m_tunnelCurrentPts = status.pts;
 
             (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventOutputRendered, 1, 0, &renderEvent);
-            ALOGV("Rendering ts=%lld pts=%u now=%lld",
+            ALOGV("Rendering ts=%lld pts=%u now=%" PRIu64 "",
                     omxHeader.nTimeStamp, status.pts, now);
 
             // Use this event to return input buffers

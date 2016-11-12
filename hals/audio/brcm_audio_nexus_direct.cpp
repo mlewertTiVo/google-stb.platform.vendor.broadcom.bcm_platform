@@ -39,6 +39,7 @@
 
 #include "brcm_audio.h"
 #include "brcm_audio_nexus_hdmi.h"
+#include <inttypes.h>
 
 using namespace android;
 
@@ -255,7 +256,7 @@ static int nexus_direct_bout_stop(struct brcm_stream_out *bout)
             bout->framesPlayed += ((size_t)status.numBytesDecoded - bout->nexus.direct.lastCount) / bout->frameSize;
             bout->nexus.direct.lastCount = status.numBytesDecoded;
         }
-        ALOGV("%s: setting framesPlayed to %llu", __FUNCTION__, bout->framesPlayed);
+        ALOGV("%s: setting framesPlayed to %" PRIu64 "", __FUNCTION__, bout->framesPlayed);
     }
 
     if (bout->nexus.direct.playpump_mode && playpump) {

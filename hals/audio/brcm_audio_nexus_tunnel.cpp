@@ -261,7 +261,7 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
     if (playpump) {
         NEXUS_Playpump_Stop(playpump);
     }
-    ALOGV("%s: setting framesPlayed to %llu", __FUNCTION__, bout->framesPlayed);
+    ALOGV("%s: setting framesPlayed to %" PRIu64 "", __FUNCTION__, bout->framesPlayed);
 
     return 0;
 }
@@ -787,7 +787,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     NEXUS_PlaypumpOpenSettings playpumpOpenSettings;
     NEXUS_Playpump_GetDefaultOpenSettings(&playpumpOpenSettings);
     fifoSize = bout->buffer_size * BRCM_AUDIO_TUNNEL_FIFO_MULTIPLIER;
-    ALOGV("Playpump fifo size %u->%u", playpumpOpenSettings.fifoSize, fifoSize);
+    ALOGV("Playpump fifo size %zu->%zu", playpumpOpenSettings.fifoSize, fifoSize);
     playpumpOpenSettings.fifoSize = fifoSize;
     bout->nexus.tunnel.playpump = NEXUS_Playpump_Open(NEXUS_ANY_ID, &playpumpOpenSettings);
     if (!bout->nexus.tunnel.playpump) {

@@ -38,6 +38,7 @@
  *****************************************************************************/
 
 #include "brcm_audio.h"
+#include <inttypes.h>
 
 #define NEXUS_OUT_DEFAULT_SAMPLE_RATE   44100
 #define NEXUS_OUT_DEFAULT_CHANNELS      AUDIO_CHANNEL_OUT_STEREO
@@ -372,7 +373,7 @@ static int nexus_bout_stop(struct brcm_stream_out *bout)
         NEXUS_SimpleAudioPlayback_GetStatus(simple_playback, &status);
         bout->framesPlayed += (status.playedBytes - bout->nexus.primary.lastPlayedBytes) / bout->frameSize;
         bout->nexus.primary.lastPlayedBytes = status.playedBytes;
-        ALOGV("%s: setting framesPlayed to %llu", __FUNCTION__, bout->framesPlayed);
+        ALOGV("%s: setting framesPlayed to %" PRIu64 "", __FUNCTION__, bout->framesPlayed);
     }
     return 0;
 }
