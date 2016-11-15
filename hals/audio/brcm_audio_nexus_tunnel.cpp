@@ -124,7 +124,9 @@ static int nexus_tunnel_bout_get_render_position(struct brcm_stream_out *bout, u
             *dsp_frames = 0;
         }
         else if (bout->nexus.tunnel.pcm_format) {
-            *dsp_frames = (uint32_t)(status.numBytesDecoded/bout->frameSize);
+            uint64_t bytes = status.numBytesDecoded -
+               (status.framesDecoded * (BMEDIA_WAVEFORMATEX_BASE_SIZE + bmedia_frame_bcma.len + 4));
+            *dsp_frames = (uint32_t)(bytes/bout->frameSize);
         }
         else {
             *dsp_frames = (uint32_t)(status.framesDecoded * NEXUS_PCM_FRAMES_PER_EAC3_FRAME +
@@ -155,7 +157,9 @@ static int nexus_tunnel_bout_get_presentation_position(struct brcm_stream_out *b
             *frames = bout->framesPlayed;
         }
         else if (bout->nexus.tunnel.pcm_format) {
-            *frames = (uint64_t)(bout->framesPlayed + status.numBytesDecoded/bout->frameSize);
+            uint64_t bytes = status.numBytesDecoded -
+               (status.framesDecoded * (BMEDIA_WAVEFORMATEX_BASE_SIZE + bmedia_frame_bcma.len + 4));
+            *frames = (uint64_t)(bout->framesPlayed + bytes/bout->frameSize);
         }
         else {
             *frames = (uint64_t)((bout->framesPlayed + status.framesDecoded) * NEXUS_PCM_FRAMES_PER_EAC3_FRAME +
