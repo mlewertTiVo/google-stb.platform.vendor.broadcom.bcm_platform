@@ -25,15 +25,23 @@ LOCAL_SHARED_LIBRARIES := liblog \
                           libnexus \
                           libnxclient
 
-LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) $(NEXUS_TOP)/platforms/common/src/linuxuser.proxy $(NEXUS_TOP)/platforms/common/src/linuxkernel/common $(NEXUS_TOP)/base/include
+LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
+LOCAL_C_INCLUDES += $(NEXUS_TOP)/platforms/common/src/linuxuser.proxy
+LOCAL_C_INCLUDES += $(NEXUS_TOP)/platforms/common/src/linuxkernel/common
+LOCAL_C_INCLUDES += $(NEXUS_TOP)/base/include
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
+LOCAL_C_INCLUDES += $(B_REFSW_OBJ_ROOT_1ST_ARCH)/nexus/core/syncthunk
 
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 
-LOCAL_SRC_FILES := nxlogger.cpp
+_nexus.dobuild := $(B_REFSW_OBJ_ROOT_1ST_ARCH)/_nexus.dobuild
+$(_nexus.dobuild): nexus_build
+	echo "forcing nexus build now..."
 
-LOCAL_MODULE := nxlogger
+LOCAL_ADDITIONAL_DEPENDENCIES := $(_nexus.dobuild)
+LOCAL_SRC_FILES := nxlogger.cpp
 LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE := nxlogger
 include $(BUILD_EXECUTABLE)
