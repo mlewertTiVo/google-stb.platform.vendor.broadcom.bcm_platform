@@ -130,7 +130,7 @@ static BERR_Code get_driver_log_message(int device_fd, PROXY_NEXUS_Log_Instance 
 
     dequeue.instance    = *pProxyInstance;
     dequeue.buffer_size = bufLen-1;
-    dequeue.buffer      = pBuf;
+    dequeue.buffer      = (uint64_t)(intptr_t)pBuf;
     dequeue.timeout     = 0;
     urc = ioctl(device_fd, IOCTL_PROXY_NEXUS_Log_Dequeue, &dequeue);
     if(urc!=0) {
