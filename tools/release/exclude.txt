@@ -1,6 +1,5 @@
 vendor/broadcom/bcm_platform/tools/release/exclude.txt
-device/broadcom/bcm_platform/custom/97252D0C/fbx1
-device/broadcom/bcm_platform/custom/97252D0C/fbx2
+device/broadcom/cboards
 vendor/widevine
 vendor/playready
 vendor/broadcom/release_prebuilts/user/libcmndrmprdy.so
