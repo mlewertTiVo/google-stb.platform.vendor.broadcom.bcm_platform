@@ -42,6 +42,9 @@
 #include "OMX_Types.h"
 #include "bomx_utils.h"
 #include <inttypes.h>
+#include "nexus_base_mmap.h"
+#include "nexus_platform.h"
+#include "nxclient.h"
 
 #define STRINGIFY(x)                    #x
 #define TOSTRING(x)                     STRINGIFY(x)
@@ -196,6 +199,10 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
         return -ENOSYS;
     }
 
+    // defer start until first write request
+    if (!bout->nexus.tunnel.first_write)
+        return 0;
+
     ret = NEXUS_Playpump_Start(bout->nexus.tunnel.playpump);
     if (ret != NEXUS_SUCCESS) {
         ALOGE("%s: Start playpump failed, ret = %d", __FUNCTION__, ret);
@@ -266,6 +273,7 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
         NEXUS_Playpump_Stop(playpump);
     }
     ALOGV("%s: setting framesPlayed to %" PRIu64 "", __FUNCTION__, bout->framesPlayed);
+    bout->nexus.tunnel.first_write = false;
 
     return 0;
 }
@@ -455,6 +463,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
     uint32_t pts=0;
     size_t nexus_space;
     BKNI_EventHandle event = bout->nexus.event;
+    bool init_stc = false;
 
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_PlaypumpHandle playpump = bout->nexus.tunnel.playpump;
@@ -462,6 +471,17 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
     if (bout->suspended || !audio_decoder || !playpump) {
         ALOGE("%s: not ready to output audio samples", __FUNCTION__);
         return -ENOSYS;
+    }
+
+    if (!bout->nexus.tunnel.first_write && (bytes > 0)) {
+        bout->nexus.tunnel.first_write = true;
+        ret = nexus_tunnel_bout_start(bout);
+        if (ret != 0) {
+            ALOGE("%s: failed to start, ret:%d", __FUNCTION__, ret);
+            return -ENOSYS;
+        }
+        // init stc with the first audio timestamp
+        init_stc = true;
     }
 
     while ( bytes > 0 )
@@ -490,6 +510,9 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 timestamp /= 1000; // Convert ns -> us
                 pts = BOMX_TickToPts((OMX_TICKS *)&timestamp);
                 ALOGV("%s: av-sync header, ts=%" PRIu64 " pts=%" PRIu32 ", size=%zu, payload=%zu", __FUNCTION__, timestamp, pts, frameBytes, bytes);
+                if (init_stc) {
+                    NEXUS_SimpleStcChannel_SetStc(bout->nexus.tunnel.stc_channel_sync, pts);
+                }
                 bytes -= HW_AV_SYNC_HDR_LEN;
                 buffer = (void *)((uint8_t *)buffer + HW_AV_SYNC_HDR_LEN);
             }
@@ -659,6 +682,12 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
         ALOGV_IF(i > 0, "%s: throttle %ld us queued %u frames", __FUNCTION__, i * BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US, status.queuedFrames);
     }
 
+    if (init_stc) {
+        uint32_t stc;
+        NEXUS_SimpleStcChannel_GetStc(bout->nexus.tunnel.stc_channel, &stc);
+        ALOGV("%s: resuming stc:%u", __FUNCTION__, stc);
+    }
+
     return bytes_written;
 }
 
@@ -717,6 +746,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     }
 
     bout->framesPlayed = 0;
+    bout->nexus.tunnel.first_write = false;
 
     size_t bytes_per_sample = audio_bytes_per_sample(config->format);
     bout->nexus.tunnel.pcm_format = (bytes_per_sample == 0) ? false : true;
@@ -824,16 +854,23 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
         if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
            bout->nexus.tunnel.stc_channel = (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC;
         } else {
-           NEXUS_SimpleStcChannelSettings stcChannelSettings;
-           NEXUS_SimpleStcChannel_GetDefaultSettings(&stcChannelSettings);
-           stcChannelSettings.modeSettings.Auto.behavior = NEXUS_StcChannelAutoModeBehavior_eAudioMaster;
-           bout->nexus.tunnel.stc_channel = NEXUS_SimpleStcChannel_Create(&stcChannelSettings);
-           if (!bout->nexus.tunnel.stc_channel) {
-              ALOGE("%s: Error creating STC channel", __FUNCTION__);
-              ret = -ENOMEM;
-              goto err_playpump_set;
+           stc_channel_st *stc_st = NULL;
+           rc = nexus_tunnel_alloc_stc_mem_hdl(&bout->nexus.tunnel.stc_channel_mem_hdl);
+           if (rc != NEXUS_SUCCESS) {
+               ALOGE("%s: Error creating stc channels, rc:%d", __FUNCTION__, rc);
+               ret = -ENOMEM;
+               goto err_playpump_set;
            }
-           NEXUS_Platform_SetSharedHandle(bout->nexus.tunnel.stc_channel, true);
+           nexus_tunnel_lock_stc_mem_hdl(bout->nexus.tunnel.stc_channel_mem_hdl, &stc_st);
+           if (stc_st == NULL) {
+               ALOGE("%s: Error locking stc channel hdl", __FUNCTION__);
+               ret = -ENOMEM;
+               nexus_tunnel_release_stc_mem_hdl(&bout->nexus.tunnel.stc_channel_mem_hdl);
+               goto err_playpump_set;
+           }
+           bout->nexus.tunnel.stc_channel = stc_st->stc_channel;
+           bout->nexus.tunnel.stc_channel_sync = stc_st->stc_channel_sync;
+           nexus_tunnel_unlock_stc_mem_hdl(bout->nexus.tunnel.stc_channel_mem_hdl);
         }
     }
 
@@ -896,8 +933,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
 err_pid:
     if (bout->nexus.tunnel.stc_channel_owner == BRCM_OWNER_OUTPUT) {
        if (bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC) {
-          NEXUS_Platform_SetSharedHandle(bout->nexus.tunnel.stc_channel, false);
-          NEXUS_SimpleStcChannel_Destroy(bout->nexus.tunnel.stc_channel);
+          nexus_tunnel_release_stc_mem_hdl(&bout->nexus.tunnel.stc_channel_mem_hdl);
        }
        bout->nexus.tunnel.stc_channel = NULL;
     }
@@ -937,7 +973,7 @@ static int nexus_tunnel_bout_close(struct brcm_stream_out *bout)
     if ((bout->nexus.tunnel.stc_channel_owner == BRCM_OWNER_OUTPUT) &&
         (bout->nexus.tunnel.stc_channel != NULL)) {
        if (bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC) {
-          NEXUS_SimpleStcChannel_Destroy(bout->nexus.tunnel.stc_channel);
+          nexus_tunnel_release_stc_mem_hdl(&bout->nexus.tunnel.stc_channel_mem_hdl);
        }
        bout->nexus.tunnel.stc_channel = NULL;
     }
@@ -1046,3 +1082,110 @@ struct brcm_stream_out_ops nexus_tunnel_bout_ops = {
     .do_bout_drain = nexus_tunnel_bout_drain,
     .do_bout_flush = nexus_tunnel_bout_flush,
 };
+
+
+NEXUS_Error nexus_tunnel_alloc_stc_mem_hdl(NEXUS_MemoryBlockHandle *hdl)
+{
+    NEXUS_Error nx_rc;
+    NEXUS_ClientConfiguration client_config;
+    NEXUS_HeapHandle global_heap;
+    NEXUS_MemoryBlockHandle mem_block_hdl = NULL;
+    void *memory_ptr;
+    stc_channel_st *channel_st_ptr;
+    NEXUS_SimpleStcChannelSettings stc_channel_settings;
+
+    NEXUS_Platform_GetClientConfiguration(&client_config);
+    global_heap = client_config.heap[NXCLIENT_FULL_HEAP];
+    if (global_heap == NULL) {
+        ALOGE("%s: error accessing main heap", __FUNCTION__);
+        return NEXUS_OUT_OF_DEVICE_MEMORY;
+    }
+    mem_block_hdl = NEXUS_MemoryBlock_Allocate(global_heap, sizeof(stc_channel_st), 16, NULL);
+    if (mem_block_hdl == NULL) {
+        ALOGE("%s: unable to allocate memory block", __FUNCTION__);
+        return NEXUS_OUT_OF_DEVICE_MEMORY;
+    }
+    memory_ptr = NULL;
+    nx_rc = NEXUS_MemoryBlock_Lock(mem_block_hdl, &memory_ptr);
+    if (nx_rc || memory_ptr == NULL) {
+        ALOGE("%s: unable to lock global memory block", __FUNCTION__);
+        if (!nx_rc)
+            nx_rc = NEXUS_OUT_OF_DEVICE_MEMORY;
+        NEXUS_MemoryBlock_Free(mem_block_hdl);
+        return nx_rc;
+    }
+
+    channel_st_ptr = (stc_channel_st*)memory_ptr;
+    memset(channel_st_ptr, 0, sizeof(*channel_st_ptr));
+
+    // create stc channels
+    NEXUS_SimpleStcChannel_GetDefaultSettings(&stc_channel_settings);
+    stc_channel_settings.modeSettings.Auto.behavior = NEXUS_StcChannelAutoModeBehavior_eAudioMaster;
+    channel_st_ptr->stc_channel = NEXUS_SimpleStcChannel_Create(&stc_channel_settings);
+    NEXUS_Platform_SetSharedHandle(channel_st_ptr->stc_channel, true);
+
+    NEXUS_SimpleStcChannel_GetDefaultSettings(&stc_channel_settings);
+    stc_channel_settings.mode = NEXUS_StcChannelMode_eHost;
+    channel_st_ptr->stc_channel_sync = NEXUS_SimpleStcChannel_Create(&stc_channel_settings);
+    NEXUS_Platform_SetSharedHandle(channel_st_ptr->stc_channel_sync, true);
+    NEXUS_SimpleStcChannel_SetStc(channel_st_ptr->stc_channel_sync, 0);
+    ALOGV("%s: stc-channels: [%p %p]", __FUNCTION__,
+            channel_st_ptr->stc_channel, channel_st_ptr->stc_channel_sync);
+
+    *hdl = mem_block_hdl;
+    NEXUS_MemoryBlock_Unlock(mem_block_hdl);
+    return NEXUS_SUCCESS;
+}
+
+void nexus_tunnel_release_stc_mem_hdl(NEXUS_MemoryBlockHandle *hdl)
+{
+    void *memory_ptr;
+    NEXUS_Error nx_rc;
+    stc_channel_st *channel_st_ptr;
+
+    if (*hdl == NULL)
+        return;
+
+    memory_ptr = NULL;
+    nx_rc = NEXUS_MemoryBlock_Lock(*hdl, &memory_ptr);
+    if (nx_rc || memory_ptr == NULL) {
+        ALOGW("%s: unable to lock handle", __FUNCTION__);
+        NEXUS_MemoryBlock_Free(*hdl);
+        *hdl = NULL;
+        return;
+    }
+    channel_st_ptr = (stc_channel_st*)memory_ptr;
+    NEXUS_Platform_SetSharedHandle(channel_st_ptr->stc_channel, false);
+    NEXUS_SimpleStcChannel_Destroy(channel_st_ptr->stc_channel);
+    NEXUS_Platform_SetSharedHandle(channel_st_ptr->stc_channel_sync, false);
+    NEXUS_SimpleStcChannel_Destroy(channel_st_ptr->stc_channel_sync);
+
+    NEXUS_MemoryBlock_Unlock(*hdl);
+    NEXUS_MemoryBlock_Free(*hdl);
+    *hdl = NULL;
+}
+
+void nexus_tunnel_lock_stc_mem_hdl(NEXUS_MemoryBlockHandle hdl, stc_channel_st **stc_st)
+{
+    void *memory_ptr;
+    NEXUS_Error nx_rc;
+    stc_channel_st *channel_st_ptr;
+
+    if (hdl == NULL)
+        return;
+
+    memory_ptr = NULL;
+    *stc_st = NULL;
+    nx_rc = NEXUS_MemoryBlock_Lock(hdl, &memory_ptr);
+    if (nx_rc || memory_ptr == NULL) {
+        ALOGW("%s: unable to lock handle", __FUNCTION__);
+        return;
+    }
+    channel_st_ptr = (stc_channel_st*)memory_ptr;
+    *stc_st = channel_st_ptr;
+}
+
+void nexus_tunnel_unlock_stc_mem_hdl(NEXUS_MemoryBlockHandle hdl)
+{
+    NEXUS_MemoryBlock_Unlock(hdl);
+}

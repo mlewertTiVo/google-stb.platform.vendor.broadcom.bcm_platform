@@ -326,6 +326,9 @@ protected:
     bool m_tunnelHfr;
     native_handle_t *m_pTunnelNativeHandle;
     uint32_t m_tunnelCurrentPts;
+    bool m_waitingForStc;
+    nsecs_t m_flushTime;
+    unsigned m_stcSyncValue;
     unsigned m_outputWidth;
     unsigned m_outputHeight;
     unsigned m_maxDecoderWidth;
@@ -368,6 +371,7 @@ protected:
     nsecs_t m_startTime;
 
     NEXUS_SimpleStcChannelHandle m_tunnelStcChannel;
+    NEXUS_SimpleStcChannelHandle m_tunnelStcChannelSync;
 
     bool m_inputFlushing;
     bool m_outputFlushing;

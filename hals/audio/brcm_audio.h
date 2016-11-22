@@ -151,7 +151,7 @@ struct brcm_device {
     struct brcm_stream_out *bouts[BRCM_DEVICE_OUT_MAX];
     struct brcm_stream_in *bins[BRCM_DEVICE_IN_MAX];
     struct StandbyMonitorThread *standbyThread;
-    NEXUS_SimpleStcChannelHandle hw_sync_id;
+    NEXUS_MemoryBlockHandle stc_channel_mem_hdl;
 };
 
 struct brcm_stream_out_ops {
@@ -227,7 +227,9 @@ struct brcm_stream_out {
                 struct {
                     NEXUS_SimpleAudioDecoderHandle audio_decoder;
                     NEXUS_PlaypumpHandle playpump;
+                    NEXUS_MemoryBlockHandle stc_channel_mem_hdl;
                     NEXUS_SimpleStcChannelHandle stc_channel;
+                    NEXUS_SimpleStcChannelHandle stc_channel_sync;
                     brcm_owner_t stc_channel_owner;
                     NEXUS_PidChannelHandle pid_channel;
                     const uint8_t *pp_buffer_end;
@@ -239,6 +241,7 @@ struct brcm_stream_out {
                     bool debounce_more;
                     bool debounce_expired;
                     bool debounce_stopping;
+                    bool first_write;
                     pthread_t debounce_thread;
                     bool pcm_format;
                     FILE *pes_debug;
@@ -328,6 +331,17 @@ extern float brcm_audio_get_master_volume(void);
 extern NEXUS_Error brcm_audio_client_join(const char *name);
 extern void brcm_audio_set_audio_volume(float leftVol, float rightVol);
 extern NEXUS_AudioCodec brcm_audio_get_codec_from_format(audio_format_t format);
+
+// Utility functions to wrap the stc channels into a Nexus memory block
+typedef struct stc_channel_st {
+   NEXUS_SimpleStcChannelHandle stc_channel;
+   NEXUS_SimpleStcChannelHandle stc_channel_sync;
+} stc_channel_st;
+
+extern NEXUS_Error nexus_tunnel_alloc_stc_mem_hdl(NEXUS_MemoryBlockHandle *hdl);
+extern void nexus_tunnel_release_stc_mem_hdl(NEXUS_MemoryBlockHandle *hdl);
+extern void nexus_tunnel_lock_stc_mem_hdl(NEXUS_MemoryBlockHandle hdl, stc_channel_st **stc_st);
+extern void nexus_tunnel_unlock_stc_mem_hdl(NEXUS_MemoryBlockHandle hdl);
 
 /* Thread to monitor standby */
 #define MAX_STANDBY_MONITOR_CALLBACKS 3

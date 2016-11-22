@@ -278,9 +278,9 @@ static int bout_set_parameters(struct audio_stream *stream,
         } else {
            ret = str_parms_get_int(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC, &hw_sync_id);
            if (!ret) {
-              if (bout->tunneled && bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)hw_sync_id) {
+              if (bout->tunneled && bout->nexus.tunnel.stc_channel_mem_hdl != (NEXUS_MemoryBlockHandle)(intptr_t)hw_sync_id) {
                  ALOGW("%s: hw_sync_id 0x%X - stc_channel %p - mismatch.",
-                       __FUNCTION__, hw_sync_id, bout->nexus.tunnel.stc_channel);
+                       __FUNCTION__, hw_sync_id, bout->nexus.tunnel.stc_channel_mem_hdl);
                  ret = -EINVAL;
               } else if (!bout->tunneled) {
                  ALOGW("%s: hw_sync_id 0x%X - invalid for non tunnel output.",
@@ -934,25 +934,22 @@ static char *bdev_get_parameters(const struct audio_hw_device *adev,
           if (bout_tunnel != NULL) {
              // tunnel output exists, use the stc-channel from it.
              pthread_mutex_lock(&bout_tunnel->lock);
-             hw_sync_id = (int)(intptr_t)bout_tunnel->nexus.tunnel.stc_channel;
+             hw_sync_id = (int)(intptr_t)bout_tunnel->nexus.tunnel.stc_channel_mem_hdl;
              pthread_mutex_unlock(&bout_tunnel->lock);
              ALOGV("%s: at %d, tunnel exists, using stc-channel 0x%X\n", __FUNCTION__, __LINE__, hw_sync_id);
           } else {
-             NEXUS_SimpleStcChannelSettings stcChannelSettings;
-             NEXUS_SimpleStcChannel_GetDefaultSettings(&stcChannelSettings);
-             stcChannelSettings.modeSettings.Auto.behavior = NEXUS_StcChannelAutoModeBehavior_eAudioMaster;
-             // tunnel output does not yet exists, create a stc-channel that will be used for it.
-             if (bdev->hw_sync_id != NULL) {
-                NEXUS_Platform_SetSharedHandle(bdev->hw_sync_id, false);
-                NEXUS_SimpleStcChannel_Destroy(bdev->hw_sync_id);
+             if (bdev->stc_channel_mem_hdl != NULL) {
+                nexus_tunnel_release_stc_mem_hdl(&bdev->stc_channel_mem_hdl);
              }
-             bdev->hw_sync_id = NEXUS_SimpleStcChannel_Create(&stcChannelSettings);
-             NEXUS_Platform_SetSharedHandle(bdev->hw_sync_id, true);
-             ALOGV("%s: at %d, allocate stc-channel %p\n", __FUNCTION__, __LINE__, bdev->hw_sync_id);
-             if (bdev->hw_sync_id == NULL) {
+
+             NEXUS_Error err = nexus_tunnel_alloc_stc_mem_hdl(&bdev->stc_channel_mem_hdl);
+             if (err != NEXUS_SUCCESS) {
+                ALOGE("%s: error allocating stc hdl", __FUNCTION__);
+             }
+             if (bdev->stc_channel_mem_hdl == NULL) {
                 hw_sync_id = AUDIO_HW_SYNC_INVALID;
              } else {
-                hw_sync_id = (int)(intptr_t)bdev->hw_sync_id;
+                hw_sync_id = (int)(intptr_t)bdev->stc_channel_mem_hdl;
              }
           }
        }
@@ -1140,9 +1137,14 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     }
 
     if (bdevices == BRCM_DEVICE_OUT_NEXUS_TUNNEL) {
-       if (bdev->hw_sync_id != NULL) {
-          bout->nexus.tunnel.stc_channel = bdev->hw_sync_id;
+       if (bdev->stc_channel_mem_hdl != NULL) {
+          stc_channel_st *stc_st = NULL;
+          bout->nexus.tunnel.stc_channel_mem_hdl = bdev->stc_channel_mem_hdl;
           bout->nexus.tunnel.stc_channel_owner = BRCM_OWNER_DEVICE;
+          nexus_tunnel_lock_stc_mem_hdl(bdev->stc_channel_mem_hdl, &stc_st);
+          bout->nexus.tunnel.stc_channel = stc_st->stc_channel;
+          bout->nexus.tunnel.stc_channel_sync = stc_st->stc_channel_sync;
+          nexus_tunnel_unlock_stc_mem_hdl(bdev->stc_channel_mem_hdl);
        } else {
           bout->nexus.tunnel.stc_channel_owner = BRCM_OWNER_OUTPUT;
        }

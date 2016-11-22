@@ -86,7 +86,7 @@
 #define B_SECURE_QUERY_MAX_RETRIES (10)
 #define B_SECURE_QUERY_SLEEP_INTERVAL_US (200000)
 #define B_STAT_EARLYDROP_THRESHOLD_MS (5000)
-
+#define B_WAIT_FOR_STC_SYNC_TIMEOUT_MS (10000)
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
  * [PES Header] [Codec Config Data] [Codec Header] [Payload] = 4 descriptors
@@ -946,6 +946,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_tunnelHfr(false),
     m_pTunnelNativeHandle(NULL),
     m_tunnelCurrentPts(0),
+    m_waitingForStc(false),
+    m_flushTime(0),
+    m_stcSyncValue(0),
     m_outputWidth(1920),
     m_outputHeight(1080),
     m_maxDecoderWidth(1920),
@@ -971,6 +974,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_earlyDropThresholdMs(0),
     m_startTime(-1),
     m_tunnelStcChannel(NULL),
+    m_tunnelStcChannelSync(NULL),
     m_inputFlushing(false),
     m_outputFlushing(false),
     m_ptsReceived(false)
@@ -2362,10 +2366,24 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
-        if ( pTunnel->bTunneled )
+        if ( pTunnel->bTunneled && pTunnel->nAudioHwSync > 0)
         {
-            m_tunnelStcChannel = (NEXUS_SimpleStcChannelHandle)(intptr_t)pTunnel->nAudioHwSync;
-            ALOGV("OMX_IndexParamConfigureVideoTunnelMode - stc-channel %p", m_tunnelStcChannel);
+            // A pair of stc channel handles are wrapped by the audio hal in a global memory block
+            typedef struct stc_channel_st {
+               NEXUS_SimpleStcChannelHandle stc_channel;
+               NEXUS_SimpleStcChannelHandle stc_channel_sync;
+            } stc_channel_st;
+            NEXUS_MemoryBlockHandle hdl = (NEXUS_MemoryBlockHandle)(intptr_t)pTunnel->nAudioHwSync;
+            void *pMemory = NULL;
+            stc_channel_st *stcChannelSt = NULL;
+            if ((NEXUS_MemoryBlock_Lock(hdl, &pMemory) == NEXUS_SUCCESS) && (pMemory != NULL)) {
+                stcChannelSt = (stc_channel_st*)pMemory;
+                m_tunnelStcChannel = stcChannelSt->stc_channel;
+                m_tunnelStcChannelSync = stcChannelSt->stc_channel_sync;
+                NEXUS_MemoryBlock_Unlock(hdl);
+            }
+            ALOGV("OMX_IndexParamConfigureVideoTunnelMode - stc-channels %p %p",
+                    m_tunnelStcChannel, m_tunnelStcChannelSync);
         }
 
         return OMX_ErrorNone;
@@ -2460,6 +2478,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_droppedFrames = m_earlyDroppedFrames = m_consecDroppedFrames = m_maxConsecDroppedFrames = 0;
             m_lastReturnedSerial = 0;
             m_formatChangeState = FCState_eNone;
+            m_waitingForStc = false;
         }
     }
     else
@@ -2962,6 +2981,37 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                 B_Mutex_Unlock(m_hDisplayMutex);
 
                 m_outputFlushing = false;
+                // Handle possible timestamp discontinuity (seeking) after a flush command
+                if ( m_tunnelMode && (m_tunnelStcChannel != NULL ))
+                {
+                    NEXUS_VideoDecoderTrickState vdecTrickState;
+                    NEXUS_Error errCode;
+
+                    m_waitingForStc = true;
+                    m_flushTime = systemTime(SYSTEM_TIME_MONOTONIC);
+
+                    // Pause decoder until a valid stc is available
+                    NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                    vdecTrickState.rate = 0;
+                    errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                    if (errCode != NEXUS_SUCCESS)
+                        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+
+                    // Pause and invalidate stc
+                    errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 0, 1);
+                    if (errCode != NEXUS_SUCCESS)
+                        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+
+                    errCode = NEXUS_SimpleStcChannel_Invalidate(m_tunnelStcChannel);
+                    if (errCode != NEXUS_SUCCESS)
+                        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
+
+                    // Reset stc sync only if it hasn't changed its last value.
+                    uint32_t stcSync;
+                    NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
+                    if (stcSync == m_stcSyncValue) 
+                        NEXUS_SimpleStcChannel_SetStc(m_tunnelStcChannelSync, 0);
+                }
             }
             ReturnPortBuffers(m_pVideoPorts[1]);
         }
@@ -4862,31 +4912,71 @@ void BOMX_VideoDecoder::PollDecodedFrames()
     if (m_tunnelMode)
     {
         // Report the current rendering timestamp back to the framework
-        NEXUS_VideoDecoderStatus status;
-        if ( m_callbacks.EventHandler != NULL &&
-             NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &status) == NEXUS_SUCCESS &&
-             status.pts != m_tunnelCurrentPts )
+        if ( m_callbacks.EventHandler != NULL && errCode == NEXUS_SUCCESS )
         {
             OMX_BUFFERHEADERTYPE omxHeader;
             nsecs_t now = systemTime(SYSTEM_TIME_MONOTONIC);
 
-            if ( !m_pBufferTracker->Remove(status.pts, &omxHeader) )
-            {
-                ALOGI("Unable to find tracker entry for pts %#x", status.pts);
-                BOMX_PtsToTick(status.pts, &omxHeader.nTimeStamp);
+            if (m_waitingForStc) {
+                bool resumeDecoder = false;
+                uint32_t stcSync;
+
+                NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
+                ALOGV("%s: stcSync:%u",  __FUNCTION__, stcSync);
+                if (stcSync != 0) {
+                    resumeDecoder = true;
+                    m_stcSyncValue = stcSync;
+                } else if (toMillisecondTimeoutDelay(m_flushTime, now) > B_WAIT_FOR_STC_SYNC_TIMEOUT_MS) {
+                    ALOGW("%s: timeout waiting for stc", __FUNCTION__);
+                    resumeDecoder = true;
+                }
+
+                if (resumeDecoder) {
+                   m_waitingForStc = false;
+                   NEXUS_VideoDecoderTrickState vdecTrickState;
+
+                   NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                   vdecTrickState.rate = NEXUS_NORMAL_DECODE_RATE;
+                   errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                   if (errCode != NEXUS_SUCCESS)
+                       ALOGE("%s: error setting trick state", __FUNCTION__);
+
+                   if (stcSync != 0) {
+                       errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, stcSync);
+                       ALOGV("%s: setting startPts:%u", __FUNCTION__, stcSync);
+                       if (errCode != NEXUS_SUCCESS)
+                           ALOGE("%s: error setting start pts", __FUNCTION__);
+                   }
+
+                   // resume stc
+                   errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
+                   if (errCode != NEXUS_SUCCESS)
+                       ALOGE("%s: error setting stc rate", __FUNCTION__);
+                }
             }
 
-            OMX_VIDEO_RENDEREVENTTYPE renderEvent;
-            renderEvent.nMediaTimeUs = omxHeader.nTimeStamp;
-            renderEvent.nSystemTimeNs = now;
-            m_tunnelCurrentPts = status.pts;
+            bool reportRenderedFrame = false;
+            if (status.pts != 0 && m_tunnelCurrentPts != status.pts) {
+                if ( !m_pBufferTracker->Remove(status.pts, &omxHeader) )
+                {
+                    ALOGI("Unable to find tracker entry for pts %#x", status.pts);
+                    BOMX_PtsToTick(status.pts, &omxHeader.nTimeStamp);
+                }
+                m_tunnelCurrentPts = status.pts;
+                reportRenderedFrame = true;
+            }
 
-            (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventOutputRendered, 1, 0, &renderEvent);
-            ALOGV("Rendering ts=%lld pts=%u now=%" PRIu64 "",
-                    omxHeader.nTimeStamp, status.pts, now);
+            if (reportRenderedFrame) {
+                OMX_VIDEO_RENDEREVENTTYPE renderEvent;
+                renderEvent.nSystemTimeNs = now;
+                renderEvent.nMediaTimeUs = omxHeader.nTimeStamp;
+                (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventOutputRendered, 1, 0, &renderEvent);
+                ALOGV("Rendering ts=%lld pts=%u now=%" PRIu64 "",
+                        omxHeader.nTimeStamp, status.pts, now);
 
-            // Use this event to return input buffers
-            ReturnInputBuffers(omxHeader.nTimeStamp, InputReturnMode_eTimestamp);
+                // Use this event to return input buffers
+                ReturnInputBuffers(omxHeader.nTimeStamp, InputReturnMode_eTimestamp);
+            }
         }
 
         return;
