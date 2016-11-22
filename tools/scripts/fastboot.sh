@@ -47,7 +47,7 @@ fi
 
 #flag to check if any of the $update_* variables are set
 update_something=0
-while getopts "hgbdcuw:zD:i:" tag; do
+while getopts "hgbdcusw:zD:i:" tag; do
 	case $tag in
 	g)
 		update_gpt=1
@@ -141,13 +141,13 @@ if [ $update_hwcfg -gt 0 ]; then
 	echo "     hwcfg ($hwcfg_img)"
 fi
 if [ $update_bl -gt 0 ]; then
-	echo "     bsu"
+	echo "     bootloader"
 fi
 echo ""
 
 sleep 2
 
-echo "running fastboot against $fastboot_target $fastboot_cmd"
+echo "running fastboot against $fastboot_target ($fastboot_cmd)"
 # always update the gpt first if user wants to update gpt partition
 if [ $update_gpt -gt 0 ]; then
 	$fastboot_cmd flash gpt $img_src/gpt.bin
