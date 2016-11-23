@@ -333,7 +333,7 @@ protected:
     #define BOMX_BCMV_HEADER_SIZE (10)
     uint8_t m_pBcmvHeader[BOMX_BCMV_HEADER_SIZE];
 
-    #define BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE (2048)
+    #define BOMX_VIDEO_CODEC_CONFIG_BUFFER_SIZE (4096)
     void *m_pConfigBuffer;
     ConfigBufferState m_configBufferState;
     size_t m_configBufferSize;
