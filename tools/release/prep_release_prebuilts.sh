@@ -44,6 +44,7 @@ fi
 echo "staging release_prebuilts..."
 mkdir -p $TMP_DIR/$RP/$VAR;
 while read line; do
+  line=$(eval echo $line)
   if [ ! -e $line ]; then
     echo -e "!!! MISSING prebuilt libraries for release packaging: $line"
   else
@@ -56,6 +57,7 @@ rm -rf $TMP_DIR
 echo "staging playready prebuilts..."
 mkdir -p $TMP_DIR/$VENDOR_BRCM/$RP/$VAR;
 while read line; do
+  line=$(eval echo $line)
   if ls $line 1> /dev/null 2>&1; then
     IS_PREBUILT_LIB=$(echo $line | awk -F/ '{print $1}')
     if [[ "$IS_PREBUILT_LIB" == "out" ]]; then
