@@ -71,25 +71,26 @@ endif
 include $(BUILD_PREBUILT)
 else
 # compile library from source
-LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC30
+LOCAL_PATH := $(TOP)/vendor/widevine
 
 # add SAGElib related includes
 include ${REFSW_BASE_DIR}/magnum/syslib/sagelib/bsagelib_public.inc
 
 LOCAL_SRC_FILES := \
     brcm_oemcrypto_L1/src/oemcrypto_brcm_TL.cpp\
-    core/src/string_conversions.cpp\
-    core/src/properties.cpp \
-    cdm/src/log.cpp \
-    third_party/stringencoders/src/modp_b64w.cpp
+    libwvdrmengine/cdm/core/src/string_conversions.cpp\
+    libwvdrmengine/cdm/core/src/properties.cpp \
+    libwvdrmengine/cdm/src/log.cpp \
+    libwvdrmengine/third_party/stringencoders/src/modp_b64.cpp \
+    libwvdrmengine/third_party/stringencoders/src/modp_b64w.cpp \
+
 
 LOCAL_C_INCLUDES := \
     $(TOP)/bionic \
     $(TOP)/external/boringssl/include \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
-    ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC30/brcm_oemcrypto_L1/include \
-    ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC30/core/include \
-    ${REFSW_BASE_DIR}/BSEAV/lib/security/third_party/widevine/CENC30/third_party/stringencoders/src \
+    $(TOP)/vendor/widevine/libwvdrmengine/oemcrypto/include \
+    $(TOP)/vendor/widevine/libwvdrmengine/cdm/core/include \
+    $(TOP)/vendor/widevine/libwvdrmengine/third_party/stringencoders/src \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include/tl \
@@ -100,13 +101,6 @@ LOCAL_C_INCLUDES := \
 LOCAL_CFLAGS += -DNDEBUG -DBRCM_IMPL
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -DUSE_UNIFIED_COMMON_DRM
-
-# Enable warning and error logs by default
-LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1
-ifneq ($(TARGET_BUILD_TYPE),debug)
-# Enable error logs for non debug build
-LOCAL_CFLAGS += -DBDBG_NO_WRN=1
-endif
 
 LOCAL_MULTILIB := 32
 # LOCAL_MULTILIB := both
