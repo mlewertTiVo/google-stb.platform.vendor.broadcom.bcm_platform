@@ -14,3 +14,11 @@
 # 'untrusted_app' policy allowing verified access to nexus services in particular, also allowing access to the cramfs file
 # system for multimedia applications in need of drm access, etc...
 #
+#
+#
+# the verity development key is a 'der' formatted x509 key based off the default android security 'pem' formatted x509 key
+# found here (in AOSP): "build/target/product/security/verity.x509.pem"
+#
+# pem to der conversion is done using this: "openssl x509 -in verity.x509.pem -outform der -out verity.x509.der"
+#
+
