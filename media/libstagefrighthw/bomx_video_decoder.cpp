@@ -65,6 +65,7 @@
 #define B_PROPERTY_PES_DEBUG ("media.brcm.vdec_pes_debug")
 #define B_PROPERTY_INPUT_DEBUG ("media.brcm.vdec_input_debug")
 #define B_PROPERTY_ENABLE_METADATA ("media.brcm.vdec_enable_metadata")
+#define B_PROPERTY_TUNNELED_HFRVIDEO ("media.brcm.vdec_hfrvideo_tunnel")
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
 #define B_PROPERTY_SVP ("ro.nx.svp")
 #define B_PROPERTY_COALESCE ("dyn.nx.netcoal.set")
@@ -896,6 +897,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_adaptivePlaybackEnabled(false),
     m_secureDecoder(secure),
     m_tunnelMode(tunnel),
+    m_tunnelHfr(false),
     m_pTunnelNativeHandle(NULL),
     m_tunnelCurrentPts(0),
     m_outputWidth(1920),
@@ -1392,6 +1394,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
        m_pTunnelNativeHandle->data[1] = sidebandId;
 
        m_outputMode = BOMX_VideoDecoderOutputBufferType_eNone;
+
+       m_tunnelHfr = ( property_get_int32(B_PROPERTY_TUNNELED_HFRVIDEO, 0) != 0 );
     }
     else
     {
@@ -1459,9 +1463,16 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
         property_set(B_PROPERTY_COALESCE, "default");
-        if ( !m_tunnelMode )
+        if ( m_tunnelMode )
         {
-            property_set(B_PROPERTY_HFRVIDEO, "default");
+            if ( m_tunnelHfr )
+            {
+                property_set(B_PROPERTY_HFRVIDEO, "default-t");
+            }
+        }
+        else
+        {
+            property_set(B_PROPERTY_HFRVIDEO, "default-v");
         }
     }
     if ( m_hPlaypump )
@@ -2490,9 +2501,16 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 m_displayFrameAvailable = false;
                 B_Mutex_Unlock(m_hDisplayMutex);
                 property_set(B_PROPERTY_COALESCE, "default");
-                if ( !m_tunnelMode )
+                if ( m_tunnelMode )
                 {
-                    property_set(B_PROPERTY_HFRVIDEO, "default");
+                    if ( m_tunnelHfr )
+                    {
+                        property_set(B_PROPERTY_HFRVIDEO, "default-t");
+                    }
+                }
+                else
+                {
+                    property_set(B_PROPERTY_HFRVIDEO, "default-v");
                 }
             }
             break;
@@ -2521,7 +2539,14 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 vdecStartSettings.maxHeight = m_maxDecoderHeight;
                 ALOGV("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec);
                 property_set(B_PROPERTY_COALESCE, "vmode");
-                if ( !m_tunnelMode )
+                if ( m_tunnelMode )
+                {
+                    if ( m_tunnelHfr )
+                    {
+                        property_set(B_PROPERTY_HFRVIDEO, "tunneled");
+                    }
+                }
+                else
                 {
                     property_set(B_PROPERTY_HFRVIDEO, "vmode");
                 }
@@ -2552,9 +2577,16 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                     m_eosReceived = false;
                     m_ptsReceived = false;
                     property_set(B_PROPERTY_COALESCE, "default");
-                    if ( !m_tunnelMode )
+                    if ( m_tunnelMode )
                     {
-                        property_set(B_PROPERTY_HFRVIDEO, "default");
+                        if ( m_tunnelHfr )
+                        {
+                            property_set(B_PROPERTY_HFRVIDEO, "default-t");
+                        }
+                    }
+                    else
+                    {
+                        property_set(B_PROPERTY_HFRVIDEO, "default-v");
                     }
                     return BOMX_BERR_TRACE(errCode);
                 }

@@ -60,12 +60,20 @@
 #define ALOGVV(a...) do { } while(0)
 #endif
 
-#define HFR_VIDEO_ENABLE         "ro.nx.hfrvideo.mode"
-#define HFR_VIDEO_ENABLE_DEF     (1)
+#define HFR_VIDEO_ENABLE                "ro.nx.hfrvideo.mode"
+#define HFR_VIDEO_ENABLE_DEF            (1)
 
-#define HFR_VIDEO_MODE           "dyn.nx.hfrvideo.set"
-#define HFR_VIDEO_DEFAULT        "default"
-#define HFR_VIDEO_USEVAL         "vmode"
+#define HFR_VIDEO_MODE                  "dyn.nx.hfrvideo.set"
+#define HFR_VIDEO_VMODE                 "vmode"
+#define HFR_VIDEO_VMODE_DEF             "default-v"
+#define HFR_VIDEO_TUNNELED              "tunneled"
+#define HFR_VIDEO_TUNNELED_DEF          "default-t"
+
+#define HFR_VIDEO_MODE_VMODE            (0)
+#define HFR_VIDEO_MODE_VMODE_DEF        (1)
+#define HFR_VIDEO_MODE_TUNNELED         (2)
+#define HFR_VIDEO_MODE_TUNNELED_DEF     (3)
+#define HFR_VIDEO_MODE_INVALID          (-1)
 
 #define MAX_NAME_LEN 1024
 #define MAX_THREADS 100
@@ -91,8 +99,8 @@ const int nxserver_prio_map[NICE_LEVELS] = {
 
 const int mediaserver_prio_map[NICE_LEVELS] = {
    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, /* -20..-11 */
-   1, 1, 1, 0, 0, 0, 0, 0, 0, 0, /* -10..-1  */
-   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*   0..9   */
+   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* -10..-1  */
+   1, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*   0..9   */
    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*  10..19  */
 };
 
@@ -119,7 +127,7 @@ struct process_entity {
    struct thread_entity threads[MAX_THREADS];
 };
 
-static struct process_entity key_process_list[] = {
+static struct process_entity key_process_list_vmode[] = {
    {
       .name = "surfaceflinger",
       .thread_keep_filter = NULL,
@@ -163,8 +171,39 @@ static struct process_entity key_process_list[] = {
       .map = hwcbinder_prio_map,
    },
 };
-static const int num_key_processes = sizeof(key_process_list)/sizeof(key_process_list[0]);
+static const int num_key_processes_vmode = sizeof(key_process_list_vmode)/sizeof(key_process_list_vmode[0]);
 
+static struct process_entity key_process_list_tunneled[] = {
+   {
+      .name = "nxserver",
+      .thread_keep_filter = NULL,
+      .thread_ignore_filter = "Binder",
+      .pid = 0,
+      .map = nxserver_prio_map,
+   },
+   {
+      .name = "mediaserver",
+      .thread_keep_filter = "OMX.broadcom.vi",
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .map = mediaserver_prio_map,
+   },
+   {
+      .name = "mediaserver",
+      .thread_keep_filter = "wv_decrypt_thre",
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .map = mediaserver_prio_map,
+   },
+   {
+      .name = "mediaserver",
+      .thread_keep_filter = "Binder_",
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .map = mediaserver_prio_map,
+   },
+};
+static const int num_key_processes_tunneled = sizeof(key_process_list_tunneled)/sizeof(key_process_list_tunneled[0]);
 
 static ssize_t get_comm_from_pid (pid_t pid, char *comm, int len)
 {
@@ -233,15 +272,41 @@ static int find_threads (pid_t pid, const char *keep, const char *ignore, struct
 
    closedir(d);
    if (found == MAX_THREADS)
-      ALOGE("Too many threads found for %d\n", pid);
+      ALOGE("Too many threads found for %d", pid);
 
    return found;
 }
 
-/* Look for processes whose priority need to be elevated during video playback */
-static int find_key_processes (void)
+static int get_key_process_list (int mode, struct process_entity **list, int *size)
 {
-   int rc = -1;
+   switch (mode) {
+       case HFR_VIDEO_MODE_VMODE:
+       case HFR_VIDEO_MODE_VMODE_DEF:
+       {
+           *list = key_process_list_vmode;
+           *size = num_key_processes_vmode;
+           break;
+       }
+       case HFR_VIDEO_MODE_TUNNELED:
+       case HFR_VIDEO_MODE_TUNNELED_DEF:
+       {
+           *list = key_process_list_tunneled;
+           *size = num_key_processes_tunneled;
+           break;
+       }
+       default:
+       {
+           ALOGE("Invalid mode %d", mode);
+           return -1;
+       }
+   }
+
+   return 0;
+}
+
+/* Look for processes whose priority need to be elevated during video playback */
+static int find_key_processes (struct process_entity *key_process_list, int num_key_processes)
+{
    DIR *d;
    struct dirent *de;
    pid_t pid;
@@ -262,7 +327,7 @@ static int find_key_processes (void)
             if (key_process_list[i].pid == 0) {
                if (strncmp (key_process_list[i].name, comm, strlen(key_process_list[i].name)) == 0) {
                   key_process_list[i].pid = pid;
-                  ALOGV("Found %s with pid %d\n", comm, pid);
+                  ALOGV("Found %s with pid %d", comm, pid);
                   find_threads(pid,
                         key_process_list[i].thread_keep_filter,
                         key_process_list[i].thread_ignore_filter,
@@ -270,7 +335,7 @@ static int find_key_processes (void)
                   {
                      int j;
                      for (j = 0; (j < MAX_THREADS) && key_process_list[i].threads[j].tid; j++) {
-                        ALOGVV("   Thread %d at %d:%d:%d\n",
+                        ALOGVV("   Thread %d at %d:%d:%d",
                               key_process_list[i].threads[j].tid,
                               key_process_list[i].threads[j].policy,
                               key_process_list[i].threads[j].priority,
@@ -289,7 +354,7 @@ static int find_key_processes (void)
    return found;
 }
 
-static void elevate_priority (void)
+static void elevate_priority (struct process_entity *key_process_list, int num_key_processes)
 {
    int i, j;
    struct sched_param param;
@@ -307,17 +372,17 @@ static void elevate_priority (void)
 
          if (param.sched_priority > 0) {
             if (threads[j].policy != SCHED_OTHER) {
-               ALOGV("%d already at %d:%d:%d\n", threads[j].tid, threads[j].policy, threads[j].priority, threads[j].niceness);
+               ALOGV("%d already at %d:%d:%d", threads[j].tid, threads[j].policy, threads[j].priority, threads[j].niceness);
                continue;
             }
             sched_setscheduler(threads[j].tid, SCHED_FIFO, &param);
-            ALOGV("%d elevated to %d:%d:%d\n", threads[j].tid, SCHED_FIFO, param.sched_priority, threads[j].niceness);
+            ALOGV("%d elevated to %d:%d:%d", threads[j].tid, SCHED_FIFO, param.sched_priority, threads[j].niceness);
          }
       }
    }
 }
 
-static void restore_priority (void)
+static void restore_priority (struct process_entity *key_process_list, int num_key_processes)
 {
    int i, j;
    struct sched_param param;
@@ -335,12 +400,12 @@ static void restore_priority (void)
 
          if (param.sched_priority > 0) {
             if (threads[j].policy == SCHED_OTHER) {
-               ALOGV("%d already at %d:%d:%d\n", threads[j].tid, threads[j].policy, threads[j].priority, threads[j].niceness);
+               ALOGV("%d already at %d:%d:%d", threads[j].tid, threads[j].policy, threads[j].priority, threads[j].niceness);
                continue;
             }
             param.sched_priority = 0;
             sched_setscheduler(threads[j].tid, SCHED_OTHER, &param);
-            ALOGV("%d restored to %d:%d:%d\n", threads[j].tid, SCHED_OTHER, param.sched_priority, threads[j].niceness);
+            ALOGV("%d restored to %d:%d:%d", threads[j].tid, SCHED_OTHER, param.sched_priority, threads[j].niceness);
          }
       }
    }
@@ -349,9 +414,10 @@ static void restore_priority (void)
 int main (void)
 {
    char value[PROPERTY_VALUE_MAX];
-   int force_value = 0;
-   int use_default = 0;
+   int video_mode = HFR_VIDEO_MODE_INVALID;
    int rc = 0;
+   int num_key_processes;
+   struct process_entity *key_process_list = NULL;
 
    if (property_get_int32(HFR_VIDEO_ENABLE, HFR_VIDEO_ENABLE_DEF) != 1) {
       ALOGV("hfrvideo mode not enabled.");
@@ -359,34 +425,59 @@ int main (void)
    }
 
    if (property_get(HFR_VIDEO_MODE, value, NULL)) {
+        ALOGV("mode=%s", value);
       if (strlen(value)) {
-         if (!strncmp(value, HFR_VIDEO_DEFAULT, strlen(HFR_VIDEO_DEFAULT))) {
-            use_default = 1;
-         } else if (!strncmp(value, HFR_VIDEO_USEVAL, strlen(HFR_VIDEO_USEVAL))) {
-            force_value = 1;
+         if (!strncmp(value, HFR_VIDEO_VMODE_DEF, strlen(HFR_VIDEO_VMODE_DEF))) {
+            video_mode = HFR_VIDEO_MODE_VMODE_DEF;
+         } else if (!strncmp(value, HFR_VIDEO_VMODE, strlen(HFR_VIDEO_VMODE))) {
+            video_mode = HFR_VIDEO_MODE_VMODE;
+         } else if (!strncmp(value, HFR_VIDEO_TUNNELED_DEF, strlen(HFR_VIDEO_TUNNELED_DEF))) {
+            video_mode = HFR_VIDEO_MODE_TUNNELED_DEF;
+         } else if (!strncmp(value, HFR_VIDEO_TUNNELED, strlen(HFR_VIDEO_TUNNELED))) {
+            video_mode = HFR_VIDEO_MODE_TUNNELED;
          }
       }
    }
 
-   if (!use_default && !force_value) {
+   if (video_mode == HFR_VIDEO_MODE_INVALID) {
       ALOGV("ignoring invalid request.");
       return -EINVAL;
    }
 
-   rc = find_key_processes();
+   ALOGV("Video mode %d", video_mode);
+   rc = get_key_process_list(video_mode, &key_process_list, &num_key_processes);
    if (rc < 0)
       return rc;
 
-   ALOGV("Found %d processes\n", rc);
+   rc = find_key_processes(key_process_list, num_key_processes);
+   if (rc < 0)
+      return rc;
+
+   ALOGV("Found %d processes", rc);
    if (rc != num_key_processes) {
-      ALOGE("Only found %d/%d key processes\n", rc, num_key_processes);
+      ALOGE("Only found %d/%d key processes", rc, num_key_processes);
    }
 
-   /* Elevate priorities */
-   if (force_value)
-      elevate_priority();
-   else if (use_default)
-      restore_priority();
+   switch (video_mode) {
+      case HFR_VIDEO_MODE_VMODE:
+      case HFR_VIDEO_MODE_TUNNELED:
+      {
+         /* Elevate priorities */
+         elevate_priority(key_process_list, num_key_processes);
+         break;
+      }
+      case HFR_VIDEO_MODE_VMODE_DEF:
+      case HFR_VIDEO_MODE_TUNNELED_DEF:
+      {
+         restore_priority(key_process_list, num_key_processes);
+         break;
+      }
+      default:
+      {
+          ALOGE("Invalid request");
+          return -EINVAL;
+      }
+   }
 
    return 0;
 }

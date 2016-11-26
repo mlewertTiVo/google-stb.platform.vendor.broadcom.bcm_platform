@@ -321,6 +321,7 @@ protected:
     bool m_adaptivePlaybackEnabled;
     bool m_secureDecoder;
     bool m_tunnelMode;
+    bool m_tunnelHfr;
     native_handle_t *m_pTunnelNativeHandle;
     uint32_t m_tunnelCurrentPts;
     unsigned m_outputWidth;
