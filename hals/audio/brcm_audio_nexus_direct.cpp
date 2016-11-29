@@ -398,12 +398,19 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                 ALOGE("%s: at %d, decoder timeout, ret = %d",
                      __FUNCTION__, __LINE__, ret);
 
-                /* Stop decoder */
-                if (bout->nexus.direct.playpump_mode)
-                    NEXUS_Playpump_Stop(playpump);
-                NEXUS_SimpleAudioDecoder_Stop(simple_decoder);
-                bout->started = false;
-                ret = -ENOSYS;
+                if (ret != BERR_TIMEOUT) {
+                    /* Stop decoder */
+                    if (bout->nexus.direct.playpump_mode) {
+                        NEXUS_Playpump_Stop(playpump);
+                    }
+                    NEXUS_SimpleAudioDecoder_Stop(simple_decoder);
+                    bout->started = false;
+                    ret = -ENOSYS;
+                }
+                else {
+                    /* Give decoder more time to free space */
+                    ret = 0;
+                }
                 break;
             }
         }
@@ -467,7 +474,8 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     case AUDIO_FORMAT_PCM_16_BIT:
         /* Check if sample rate is supported */
         if ((config->sample_rate != 48000) && (config->sample_rate != 192000) &&
-            (config->sample_rate != 44100) && (config->sample_rate != 176400))
+            (config->sample_rate != 44100) && (config->sample_rate != 176400) &&
+            (config->sample_rate != 32000))
             return -EINVAL;
 
         if (config->channel_mask != AUDIO_CHANNEL_OUT_STEREO)
