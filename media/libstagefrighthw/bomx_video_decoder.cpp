@@ -70,7 +70,8 @@
 #define B_PROPERTY_EARLYDROP_THRESHOLD ("media.brcm.stat.earlydrop_thres")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
-#define B_DATA_BUFFER_SIZE (1536*1536)  // 1024 * 1024 from soft decoder is not big enough for some HEVC streams
+#define B_DATA_BUFFER_SIZE_DEFAULT (1536*1536)
+#define B_DATA_BUFFER_SIZE_HIGHRES (3*1024*1024)
 #define B_NUM_BUFFERS (12)
 #define B_STREAM_ID 0xe0
 #define B_MAX_FRAMES (12)
@@ -92,7 +93,7 @@
  * For VP9, a BPP packet for end of chunk is added at the end of the chunk
  * payload so the firmware can parse the chunk for super-frames.
 *****************************************************************************/
-#define B_MAX_DESCRIPTORS_PER_BUFFER (4+1+(2*(B_DATA_BUFFER_SIZE/(B_MAX_PES_PACKET_LENGTH-(B_PES_HEADER_LENGTH_WITHOUT_PTS-B_PES_HEADER_START_BYTES)))))
+#define B_MAX_DESCRIPTORS_PER_BUFFER(buffer_size) (4+1+(2*((buffer_size)/(B_MAX_PES_PACKET_LENGTH-(B_PES_HEADER_LENGTH_WITHOUT_PTS-B_PES_HEADER_START_BYTES)))))
 
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
@@ -825,6 +826,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_hCheckpointEvent(NULL),
     m_hGraphics2d(NULL),
     m_submittedDescriptors(0),
+    m_maxDescriptorsPerBuffer(0),
+    m_pPlaypumpDescList(NULL),
     m_pBufferTracker(NULL),
     m_AvailInputBuffers(0),
     m_frameRate(NEXUS_VideoFrameRate_eUnknown),
@@ -933,8 +936,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
 
     SetRole(m_pRoles[0].name);
+    m_maxDescriptorsPerBuffer = B_MAX_DESCRIPTORS_PER_BUFFER(B_DATA_BUFFER_SIZE_DEFAULT);
     m_numVideoPorts = 0;
-    m_pVideoPorts[0] = new BOMX_VideoPort(m_videoPortBase, OMX_DirInput, B_NUM_BUFFERS, B_DATA_BUFFER_SIZE, false, 0, &portDefs, portFormats, numRoles);
+    m_pVideoPorts[0] = new BOMX_VideoPort(m_videoPortBase, OMX_DirInput, B_NUM_BUFFERS, B_DATA_BUFFER_SIZE_DEFAULT, false, 0, &portDefs, portFormats, numRoles);
     if ( NULL == m_pVideoPorts[0] )
     {
         ALOGW("Unable to create video input port");
@@ -1467,6 +1471,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     if ( m_hCheckpointEvent )
     {
         B_Event_Destroy(m_hCheckpointEvent);
+    }
+    if (m_pPlaypumpDescList)
+    {
+        delete [] m_pPlaypumpDescList;
     }
     for ( i = 0; i < m_numVideoPorts; i++ )
     {
@@ -2016,6 +2024,26 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
                 {
                     return BOMX_ERR_TRACE(err);
                 }
+
+                if (GetNexusCodec() == NEXUS_VideoCodec_eH265)
+                {
+                    // Use a larger input buffer for hevc
+                    OMX_PARAM_PORTDEFINITIONTYPE portDef;
+                    m_pVideoPorts[0]->GetDefinition(&portDef);
+                    portDef.nBufferSize = B_DATA_BUFFER_SIZE_HIGHRES;
+                    m_maxDescriptorsPerBuffer = B_MAX_DESCRIPTORS_PER_BUFFER(B_DATA_BUFFER_SIZE_HIGHRES);
+                    err = m_pVideoPorts[0]->SetDefinition(&portDef);
+                    if ( err )
+                    {
+                        return BOMX_ERR_TRACE(err);
+                    }
+                    // force re-allocation in case descriptor size changed
+                    if (m_pPlaypumpDescList != NULL)
+                    {
+                       delete [] m_pPlaypumpDescList;
+                       m_pPlaypumpDescList = NULL;
+                    }
+                }
             }
             else
             {
@@ -2389,7 +2417,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             NEXUS_Playpump_GetDefaultOpenSettings(&playpumpOpenSettings);
             playpumpOpenSettings.fifoSize = 0;
             playpumpOpenSettings.dataNotCpuAccessible = true;
-            playpumpOpenSettings.numDescriptors = 1+(B_MAX_DESCRIPTORS_PER_BUFFER*m_pVideoPorts[0]->GetDefinition()->nBufferCountActual);   // Extra 1 is for EOS
+            playpumpOpenSettings.numDescriptors = 1+(m_maxDescriptorsPerBuffer*m_pVideoPorts[0]->GetDefinition()->nBufferCountActual);   // Extra 1 is for EOS
             m_hPlaypump = NEXUS_Playpump_Open(NEXUS_ANY_ID, &playpumpOpenSettings);
             if ( NULL == m_hPlaypump )
             {
@@ -3067,7 +3095,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddInputPortBuffer(
         break;
     }
     // To avoid unbounded PES, create enough headers to fit each input buffer into individual PES packets.  Subsequent PES packets will not have a timestamp so they are only 9 bytes.
-    headerBufferSize += B_PES_HEADER_LENGTH_WITHOUT_PTS * ((B_MAX_DESCRIPTORS_PER_BUFFER-4)/2);
+    headerBufferSize += B_PES_HEADER_LENGTH_WITHOUT_PTS * ((m_maxDescriptorsPerBuffer-4)/2);
     pInfo->maxHeaderLen = headerBufferSize;
 
     errCode = NEXUS_Memory_Allocate(headerBufferSize, &memorySettings, &pInfo->pHeader);
@@ -3930,7 +3958,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     BOMX_VideoDecoderInputBufferInfo *pInfo;
     size_t payloadLen;
     void *pPayload;
-    NEXUS_PlaypumpScatterGatherDescriptor desc[B_MAX_DESCRIPTORS_PER_BUFFER];
+    NEXUS_PlaypumpScatterGatherDescriptor *desc;
     NEXUS_Error errCode;
     size_t numConsumed, numRequested;
     uint8_t *pCodecHeader = NULL;
@@ -3960,6 +3988,13 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
     {
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
+    if (m_pPlaypumpDescList == NULL)
+    {
+       m_pPlaypumpDescList = new NEXUS_PlaypumpScatterGatherDescriptor[m_maxDescriptorsPerBuffer];
+       if (m_pPlaypumpDescList == NULL)
+           return BOMX_ERR_TRACE(OMX_ErrorInsufficientResources);
+    }
+    desc = m_pPlaypumpDescList;
     pInfo->numDescriptors = 0;
     pInfo->complete = false;
 
@@ -4049,12 +4084,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::EmptyThisBuffer(
         }
 
         // Build up descriptor list
-        err = BuildInputFrame(pBufferHeader, true, frameLength, pInfo->pts, pCodecHeader, codecHeaderLength, desc, B_MAX_DESCRIPTORS_PER_BUFFER-1, &numRequested);
+        err = BuildInputFrame(pBufferHeader, true, frameLength, pInfo->pts, pCodecHeader, codecHeaderLength, desc, m_maxDescriptorsPerBuffer-1, &numRequested);
         if ( err != OMX_ErrorNone )
         {
             return BOMX_ERR_TRACE(err);
         }
-        ALOG_ASSERT(numRequested <= (B_MAX_DESCRIPTORS_PER_BUFFER-1));
+        ALOG_ASSERT(numRequested <= (m_maxDescriptorsPerBuffer-1));
 
         if ( numRequested > 0 )
         {

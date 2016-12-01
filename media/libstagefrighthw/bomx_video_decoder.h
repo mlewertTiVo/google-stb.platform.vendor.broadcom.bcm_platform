@@ -286,6 +286,8 @@ protected:
     B_EventHandle m_hCheckpointEvent;
     NEXUS_Graphics2DHandle m_hGraphics2d;
     unsigned m_submittedDescriptors;
+    unsigned m_maxDescriptorsPerBuffer;
+    NEXUS_PlaypumpScatterGatherDescriptor *m_pPlaypumpDescList;
 
     BOMX_BufferTracker *m_pBufferTracker;
     unsigned m_AvailInputBuffers;
