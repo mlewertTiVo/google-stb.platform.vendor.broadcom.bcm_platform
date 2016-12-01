@@ -140,6 +140,49 @@ static const BOMX_VideoDecodeFrameInterval g_inFrameIntervals[] = {{NEXUS_VideoF
                                                                    {NEXUS_VideoFrameRate_e12_5,     80}};
 static const unsigned g_numInFrameIntervals = sizeof(g_inFrameIntervals)/sizeof(BOMX_VideoDecodeFrameInterval);
 
+static const NEXUS_VideoFormat g_standardFrVideoFmts[] = {NEXUS_VideoFormat_e1080p24hz,       /* HD 1080 Progressive, 24hz */
+                                                          NEXUS_VideoFormat_e1080p25hz,       /* HD 1080 Progressive, 25hz */
+                                                          NEXUS_VideoFormat_e1080p30hz,       /* HD 1080 Progressive, 30hz */
+                                                          NEXUS_VideoFormat_e720p24hz,        /* HD 720p 24hz */
+                                                          NEXUS_VideoFormat_e720p25hz,        /* HD 720p 25hz */
+                                                          NEXUS_VideoFormat_e720p30hz,        /* HD 720p 30hz */
+                                                          NEXUS_VideoFormat_e3840x2160p24hz,  /* UHD 3840x2160 24Hz */
+                                                          NEXUS_VideoFormat_e3840x2160p25hz,  /* UHD 3840x2160 25Hz */
+                                                          NEXUS_VideoFormat_e3840x2160p30hz,  /* UHD 3840x2160 30Hz */
+                                                          NEXUS_VideoFormat_e4096x2160p24hz,  /* UHD 4096x2160 24Hz */
+                                                          NEXUS_VideoFormat_e4096x2160p25hz,  /* UHD 4096x2160 25Hz */
+                                                          NEXUS_VideoFormat_e4096x2160p30hz,  /* UHD 4096x2160 30Hz */
+                                                          NEXUS_VideoFormat_e720p30hz_3DOU_AS,/* HD 3D 720p30 */
+                                                          NEXUS_VideoFormat_e720p24hz_3DOU_AS,/* HD 3D 720p24 */
+                                                          NEXUS_VideoFormat_e1080p24hz_3DOU_AS,/* HD 1080p 24Hz, 2750 sample per line, SMPTE 274M-1998 */
+                                                          NEXUS_VideoFormat_e1080p30hz_3DOU_AS,/* HD 1080p 30Hz, 2200 sample per line, SMPTE 274M-1998 */
+                                                          NEXUS_VideoFormat_eCustom_3D_720p_30hz,
+                                                          NEXUS_VideoFormat_eCustom_3D_720p_24hz,
+                                                          NEXUS_VideoFormat_eCustom_3D_1080p_24hz,
+                                                          NEXUS_VideoFormat_eCustom_3D_1080p_30hz};
+static const unsigned g_numStandardFrVideoFmts = sizeof(g_standardFrVideoFmts)/sizeof(NEXUS_VideoFormat);
+
+static const OMX_VIDEO_HEVCLEVELTYPE g_hevcLevels[] = {OMX_VIDEO_HEVCMainTierLevel1,
+                                                       OMX_VIDEO_HEVCMainTierLevel2,
+                                                       OMX_VIDEO_HEVCMainTierLevel21,
+                                                       OMX_VIDEO_HEVCMainTierLevel3,
+                                                       OMX_VIDEO_HEVCMainTierLevel31,
+                                                       OMX_VIDEO_HEVCMainTierLevel4,
+                                                       OMX_VIDEO_HEVCMainTierLevel41,
+                                                       OMX_VIDEO_HEVCMainTierLevel5,
+                                                       OMX_VIDEO_HEVCMainTierLevel51};
+static const unsigned g_numHevcLevels = sizeof(g_hevcLevels)/sizeof(OMX_VIDEO_HEVCLEVELTYPE);
+
+static const OMX_VIDEO_HEVCLEVELTYPE g_hevcStandardLevels[] = {OMX_VIDEO_HEVCMainTierLevel1,
+                                                               OMX_VIDEO_HEVCMainTierLevel2,
+                                                               OMX_VIDEO_HEVCMainTierLevel21,
+                                                               OMX_VIDEO_HEVCMainTierLevel3,
+                                                               OMX_VIDEO_HEVCMainTierLevel31,
+                                                               OMX_VIDEO_HEVCMainTierLevel4,
+                                                               OMX_VIDEO_HEVCMainTierLevel41,
+                                                               OMX_VIDEO_HEVCMainTierLevel5};
+static const unsigned g_numHevcStandardLevels = sizeof(g_hevcStandardLevels)/sizeof(OMX_VIDEO_HEVCLEVELTYPE);
+
 enum BOMX_VideoDecoderEventType
 {
     BOMX_VideoDecoderEventType_ePlaypump=0,
@@ -1740,6 +1783,21 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
             {
                 return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
             }
+
+            // Query the connected display refresh rate info
+            bool bStandardFrameRate = false;
+            NxClient_DisplaySettings settings;
+            NxClient_GetDisplaySettings(&settings);
+
+            for ( unsigned i = 0; i < g_numStandardFrVideoFmts; i++ )
+            {
+                if ( settings.format == g_standardFrVideoFmts[i] )
+                {
+                    bStandardFrameRate = true;
+                    break;
+                }
+            }
+
             switch ( (int)GetCodec() )
             {
             case OMX_VIDEO_CodingMPEG2:
@@ -1786,15 +1844,15 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 {
                 case 0:
                     pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileBaseline;
-                    pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_AVCLevel42;
+                    pProfileLevel->eLevel = bStandardFrameRate ? (OMX_U32)OMX_VIDEO_AVCLevel41 : (OMX_U32)OMX_VIDEO_AVCLevel42;
                     break;
                 case 1:
                     pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileMain;
-                    pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_AVCLevel42;
+                    pProfileLevel->eLevel = bStandardFrameRate ? (OMX_U32)OMX_VIDEO_AVCLevel41 : (OMX_U32)OMX_VIDEO_AVCLevel42;
                     break;
                 case 2:
                     pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_AVCProfileHigh;
-                    pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_AVCLevel42;
+                    pProfileLevel->eLevel = bStandardFrameRate ? (OMX_U32)OMX_VIDEO_AVCLevel41 : (OMX_U32)OMX_VIDEO_AVCLevel42;
                     break;
                 default:
                     return OMX_ErrorNoMore;
@@ -1812,16 +1870,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
             case OMX_VIDEO_CodingHEVC:
             {
                 // Return all combinations of profiles/levels supported
-                OMX_VIDEO_HEVCLEVELTYPE levels[] = {OMX_VIDEO_HEVCMainTierLevel1,
-                                                    OMX_VIDEO_HEVCMainTierLevel2,
-                                                    OMX_VIDEO_HEVCMainTierLevel21,
-                                                    OMX_VIDEO_HEVCMainTierLevel3,
-                                                    OMX_VIDEO_HEVCMainTierLevel31,
-                                                    OMX_VIDEO_HEVCMainTierLevel4,
-                                                    OMX_VIDEO_HEVCMainTierLevel41,
-                                                    OMX_VIDEO_HEVCMainTierLevel5,
-                                                    OMX_VIDEO_HEVCMainTierLevel51};
-                size_t countLevels = sizeof(levels)/sizeof(levels[0]);
+                const OMX_VIDEO_HEVCLEVELTYPE *levels = bStandardFrameRate ? g_hevcStandardLevels : g_hevcLevels;
+                const size_t countLevels = bStandardFrameRate ? g_numHevcStandardLevels : g_numHevcLevels;
                 if (pProfileLevel->nProfileIndex >= 2*countLevels)
                     return OMX_ErrorNoMore;
                 pProfileLevel->eProfile = (OMX_U32)(pProfileLevel->nProfileIndex < countLevels  ?
