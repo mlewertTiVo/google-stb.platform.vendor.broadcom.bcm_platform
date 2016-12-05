@@ -1069,6 +1069,46 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetParameter(
 {
     switch ( (int)nParamIndex )
     {
+    case OMX_IndexParamAudioProfileQuerySupported:
+        {
+            OMX_AUDIO_PARAM_ANDROID_PROFILETYPE *pProfile = (OMX_AUDIO_PARAM_ANDROID_PROFILETYPE *)pComponentParameterStructure;
+            ALOGV("GetParameter OMX_IndexParamAudioProfileQuerySupported");
+            BOMX_STRUCT_VALIDATE(pProfile);
+            if ( pProfile->nPortIndex != m_videoPortBase )
+            {
+                return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+            }
+
+            switch ( (int)GetCodec() )
+            {
+            case OMX_AUDIO_CodingAAC:
+                switch ( pProfile->nProfileIndex )
+                {
+                case 0:
+                    pProfile->eProfile = (OMX_U32)OMX_AUDIO_AACObjectMain;
+                    break;
+                case 1:
+                    pProfile->eProfile = (OMX_U32)OMX_AUDIO_AACObjectLC;
+                    break;
+                case 2:
+                    pProfile->eProfile = (OMX_U32)OMX_AUDIO_AACObjectSSR;
+                    break;
+                case 3:
+                    pProfile->eProfile = (OMX_U32)OMX_AUDIO_AACObjectLTP;
+                    break;
+                case 4:
+                    pProfile->eProfile = (OMX_U32)OMX_AUDIO_AACObjectHE;
+                    break;
+                default:
+                    return OMX_ErrorNoMore;
+                }
+                break;
+            default:
+                // Only certain codecs support this interface
+                return OMX_ErrorNoMore;
+            }
+            return OMX_ErrorNone;
+        }
     case OMX_IndexParamAudioAndroidAc3:
     case OMX_IndexParamAudioAndroidEac3:
         {
