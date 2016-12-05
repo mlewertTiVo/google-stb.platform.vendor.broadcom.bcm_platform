@@ -169,15 +169,19 @@ bool BOMX_AAC_ParseASC(const uint8_t *pData, size_t length, BOMX_AAC_ASCInfo *pI
 
     batom_bitstream_init(&bs, cursor);
     pInfo->profile = batom_bitstream_bits(&bs,5);
+    if (pInfo->profile == 31)
+    {
+        // Escaped object type
+        pInfo->profile = 32 + batom_bitstream_bits(&bs,6);
+    }
     pInfo->samplingFrequencyIndex = batom_bitstream_bits(&bs,4);
 
     if (pInfo->samplingFrequencyIndex == 0x0F)
     {
-        ALOGW("BOMX_AAC_ParseASC: AudioSpecificConfig not supported samplingFrequencyIndex %#x, try basic parse", pInfo->samplingFrequencyIndex);
-        goto basic_parse;
+        unsigned sampling_frequency;
+        sampling_frequency = batom_bitstream_bits(&bs,24);
     }
     pInfo->channelConfiguration = batom_bitstream_bits(&bs,4);
-
 
     if (pInfo->profile == 5)
     {

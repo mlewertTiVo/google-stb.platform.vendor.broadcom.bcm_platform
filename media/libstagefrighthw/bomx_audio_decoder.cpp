@@ -1252,12 +1252,16 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetParameter(
             pPcm->nBitPerSample = decSettings.bitsPerSample;
             pPcm->nSamplingRate = m_sampleRate;
             pPcm->ePCMMode = OMX_AUDIO_PCMModeLinear;
-            pPcm->nChannels = decSettings.numPcmChannels;
+            pPcm->nChannels = m_numPcmChannels;
             for ( unsigned i = 0; i < OMX_AUDIO_MAXCHANNELS; i++ )
             {
-                if ( i >= NEXUS_AudioChannel_eMax || i >= decSettings.numPcmChannels )
+                if ( i >= NEXUS_AudioChannel_eMax || i >= m_numPcmChannels )
                 {
                     pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelNone;
+                }
+                else if ( i == 0 && m_numPcmChannels == 1 )
+                {
+                    pPcm->eChannelMapping[i] = OMX_AUDIO_ChannelCF;
                 }
                 else
                 {
@@ -1517,7 +1521,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
             }
             m_sampleRate = pPcm->nSamplingRate;
             m_bitsPerSample = decSettings.bitsPerSample;
-            m_numPcmChannels = decSettings.numPcmChannels;
+            m_numPcmChannels = pPcm->nChannels;
             return OMX_ErrorNone;
         }
     case OMX_IndexParamAudioAndroidAc3:
@@ -3492,8 +3496,6 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                 pInfo->nexusOwned = false;
 
                 pHeader = pBuffer->GetHeader();
-                bool prevEosPending = m_eosPending;
-                bool prevEosDelivered = m_eosDelivered;
                 pHeader->nOffset = 0;
 
                 if ( !m_pBufferTracker->Remove(m_pFrameStatus[i].pts, pHeader) )
@@ -3514,16 +3516,35 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                     pHeader->nFlags |= OMX_BUFFERFLAG_EOS;
                 }
 
-                if ( m_pFrameStatus[i].filledBytes > 0 )
+                size_t filledBytes = m_pFrameStatus[i].filledBytes;
+
+                if ( filledBytes > 0 && NULL != pInfo->pClientMemory )
                 {
-                    NEXUS_FlushCache(pInfo->pNexusMemory, m_pFrameStatus[i].filledBytes);
-                    if ( NULL != pInfo->pClientMemory )
+                    NEXUS_FlushCache(pInfo->pNexusMemory, filledBytes);
+                    if ( m_numPcmChannels > 1)
                     {
                         BKNI_Memcpy(pInfo->pClientMemory, pInfo->pNexusMemory, m_pFrameStatus[i].filledBytes);
                     }
+                    else
+                    {
+                        // Mono has been forced to output stereo. Need to downmix back to mono here.
+                        unsigned frameSizeBytes = m_bitsPerSample / 4;
+                        size_t numFrames = filledBytes / frameSizeBytes;
+                        uint8_t *pDest = (uint8_t *)(pInfo->pClientMemory);
+                        uint8_t *pSrc = (uint8_t *)(pInfo->pNexusMemory);
+
+                        for ( size_t k = 0; k < numFrames; k++ )
+                        {
+                            BKNI_Memcpy(pDest, pSrc, frameSizeBytes);
+                            pDest += frameSizeBytes;
+                            pSrc += (2 * frameSizeBytes);
+                        }
+
+                        filledBytes >>= 1;
+                    }
                 }
 
-                if ( m_pFrameStatus[i].filledBytes > 0 )
+                if ( filledBytes > 0 )
                 {
                     int delaySamples = GetCodecDelay();
 
@@ -3531,7 +3552,7 @@ void BOMX_AudioDecoder::PollDecodedFrames()
 
                     if ( delaySamples > 0 )
                     {
-                        int frameSamples = m_pFrameStatus[i].filledBytes / ((m_bitsPerSample/8) * m_numPcmChannels);
+                        int frameSamples = filledBytes / ((m_bitsPerSample/8) * m_numPcmChannels);
 
                         if ( delaySamples > frameSamples )
                         {
@@ -3539,15 +3560,15 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                         }
 
                         pHeader->nOffset = delaySamples * (m_bitsPerSample/8) * m_numPcmChannels;
-                        if ( pHeader->nOffset > m_pFrameStatus[i].filledBytes )
+                        if ( pHeader->nOffset > filledBytes )
                         {
-                            pHeader->nOffset = m_pFrameStatus[i].filledBytes;
+                            pHeader->nOffset = filledBytes;
                         }
                         m_codecDelayAdjusted += delaySamples;
                     }
                 }
 
-                pHeader->nFilledLen = m_pFrameStatus[i].filledBytes - pHeader->nOffset;
+                pHeader->nFilledLen = filledBytes - pHeader->nOffset;
                 if ( NULL != m_pOutputFile && pHeader->nFilledLen > 0 )
                 {
                     fwrite(pHeader->pBuffer + pHeader->nOffset, pHeader->nFilledLen, 1, m_pOutputFile);
