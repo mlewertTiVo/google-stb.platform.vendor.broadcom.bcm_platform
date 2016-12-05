@@ -104,6 +104,7 @@ LOCAL_C_INCLUDES := \
         $(TOP)/frameworks/native/include/media/openmax \
         $(TOP)/frameworks/native/include/utils \
         $(TOP)/frameworks/native/include/ui  \
+        $(TOP)/frameworks/av/media/libstagefright \
         $(TOP)/hardware/libhardware/include/hardware \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
@@ -131,6 +132,7 @@ LOCAL_SHARED_LIBRARIES :=         \
         libnexusipcclient         \
         libnxclient               \
         libstagefright_foundation \
+        libstagefright_omx        \
         libui                     \
         libutils
 

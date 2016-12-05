@@ -48,7 +48,7 @@ namespace android {
 struct BOMX_AndroidPlugin : public OMXPluginBase {
     BOMX_AndroidPlugin();
 	virtual ~BOMX_AndroidPlugin();
-    
+
     virtual OMX_ERRORTYPE makeComponentInstance(
             const char *name,
             const OMX_CALLBACKTYPE *callbacks,
@@ -68,6 +68,18 @@ struct BOMX_AndroidPlugin : public OMXPluginBase {
             Vector<String8> *roles);
 
 private:
+    OMX_ERRORTYPE allocateSoftAAC(
+            const char *name,
+            const OMX_CALLBACKTYPE *callbacks,
+            OMX_PTR appData,
+            OMX_COMPONENTTYPE **component);
+
+    OMX_ERRORTYPE deAllocateSoftAAC(
+            OMX_COMPONENTTYPE *component);
+
+    OMX_ERRORTYPE getRolesSoftAAC(
+            const char *name,
+            Vector<String8> *roles);
 };
 
 }  // namespace android

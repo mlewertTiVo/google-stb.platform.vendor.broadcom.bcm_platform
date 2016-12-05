@@ -47,8 +47,10 @@
 
 #include <media/stagefright/foundation/ADebug.h>
 #include <utils/Log.h>
+#include "include/SoftOMXComponent.h"
 
 #include <media/openmax/OMX_Core.h>
+#include <dlfcn.h>
 
 namespace android {
 
@@ -65,7 +67,7 @@ BOMX_AndroidPlugin::BOMX_AndroidPlugin()
     ALOGI("OMX_Init\n");
     omxErr = OMX_Init();
     if ( OMX_ErrorNone != omxErr )
-    {        
+    {
         ALOGE("OMX_Init failed!");
     }
 }
@@ -85,6 +87,9 @@ OMX_ERRORTYPE BOMX_AndroidPlugin::makeComponentInstance(
     OMX_ERRORTYPE omxErr;
 
     ALOGV("OMX_GetHandle(%s)", name);
+    if (strcmp(name, "OMX.broadcom.audio_decoder.aac") == 0) {
+        return allocateSoftAAC(name, callbacks, appData, component);
+    }
 
     omxErr = OMX_GetHandle(reinterpret_cast<OMX_HANDLETYPE *>(component), const_cast<char *>(name), appData, const_cast<OMX_CALLBACKTYPE *>(callbacks));
     if ( OMX_ErrorNone != omxErr )
@@ -98,8 +103,27 @@ OMX_ERRORTYPE BOMX_AndroidPlugin::destroyComponentInstance(
         OMX_COMPONENTTYPE *component)
 {
     OMX_ERRORTYPE omxErr;
+    char componentName[OMX_MAX_STRINGNAME_SIZE];
+    OMX_VERSIONTYPE componentVersion;
+    OMX_VERSIONTYPE specVersion;
+    OMX_UUIDTYPE componentUUID;
 
     ALOGV("OMX_FreeHandle(%p)", component);
+    // Revise this later. We use the weak assumption that the softaac
+    // decoder doesn't implement this function and bcm decoders do.
+    if (component->GetComponentVersion == NULL) {
+        return deAllocateSoftAAC(component);
+    }
+
+    strcpy(componentName, "");
+    omxErr =  component->GetComponentVersion(component, componentName, &componentVersion, &specVersion, &componentUUID);
+    if (omxErr != OMX_ErrorNone) {
+        ALOGE("Error retrieving component name");
+        return omxErr;
+    }
+    if (strcmp(componentName, "OMX.broadcom.audio_decoder.aac") == 0) {
+        return deAllocateSoftAAC(component);
+    }
 
     omxErr = OMX_FreeHandle(reinterpret_cast<OMX_HANDLETYPE *>(component));
     if ( OMX_ErrorNone != omxErr )
@@ -136,6 +160,10 @@ OMX_ERRORTYPE BOMX_AndroidPlugin::getRolesOfComponent(
 
     OMX_U32 numRoles = 0;
     ALOGV("getRolesOfComponent: %s", name);
+    if (strcmp(name, "OMX.broadcom.audio_decoder.aac") == 0) {
+        return getRolesSoftAAC(name, roles);
+    }
+
     OMX_ERRORTYPE err = OMX_GetRolesOfComponent(const_cast<OMX_STRING>(name), &numRoles, NULL);
 
     if (err != OMX_ErrorNone)
@@ -171,6 +199,91 @@ OMX_ERRORTYPE BOMX_AndroidPlugin::getRolesOfComponent(
         array = NULL;
     }
 
+    return OMX_ErrorNone;
+}
+
+OMX_ERRORTYPE BOMX_AndroidPlugin::allocateSoftAAC(
+        const char *name,
+        const OMX_CALLBACKTYPE *callbacks,
+        OMX_PTR appData,
+        OMX_COMPONENTTYPE **component)
+{
+    AString libName = "libstagefright_soft_aacdec.so";
+    void *libHandle = dlopen(libName.c_str(), RTLD_NOW);
+
+    if (libHandle == NULL) {
+        ALOGE("unable to dlopen %s: %s", libName.c_str(), dlerror());
+        return OMX_ErrorComponentNotFound;
+    }
+
+    typedef SoftOMXComponent *(*CreateSoftOMXComponentFunc)(
+            const char *, const OMX_CALLBACKTYPE *,
+            OMX_PTR, OMX_COMPONENTTYPE **);
+
+    CreateSoftOMXComponentFunc createSoftOMXComponent =
+        (CreateSoftOMXComponentFunc)dlsym(
+                libHandle,
+                "_Z22createSoftOMXComponentPKcPK16OMX_CALLBACKTYPE"
+                "PvPP17OMX_COMPONENTTYPE");
+
+    if (createSoftOMXComponent == NULL) {
+        dlclose(libHandle);
+        libHandle = NULL;
+        return OMX_ErrorComponentNotFound;
+    }
+
+    sp<SoftOMXComponent> codec =
+        (*createSoftOMXComponent)(name, callbacks, appData, component);
+
+    if (codec == NULL) {
+        dlclose(libHandle);
+        libHandle = NULL;
+
+        return OMX_ErrorInsufficientResources;
+    }
+
+    OMX_ERRORTYPE err = codec->initCheck();
+    if (err != OMX_ErrorNone) {
+        dlclose(libHandle);
+        libHandle = NULL;
+
+        return err;
+    }
+
+    codec->incStrong(this);
+    codec->setLibHandle(libHandle);
+
+    return OMX_ErrorNone;
+}
+
+OMX_ERRORTYPE BOMX_AndroidPlugin::deAllocateSoftAAC(
+        OMX_COMPONENTTYPE *component)
+{
+    SoftOMXComponent *me =
+        (SoftOMXComponent *)
+            ((OMX_COMPONENTTYPE *)component)->pComponentPrivate;
+
+    me->prepareForDestruction();
+
+    void *libHandle = me->libHandle();
+
+    CHECK_EQ(me->getStrongCount(), 1);
+    me->decStrong(this);
+    me = NULL;
+
+    dlclose(libHandle);
+    libHandle = NULL;
+
+    return OMX_ErrorNone;
+}
+
+OMX_ERRORTYPE BOMX_AndroidPlugin::getRolesSoftAAC(
+        const char *name,
+        Vector<String8> *roles)
+{
+    (void) name;
+    roles->clear();
+    roles->push(String8("audio_decoder.aac"));
     return OMX_ErrorNone;
 }
 
