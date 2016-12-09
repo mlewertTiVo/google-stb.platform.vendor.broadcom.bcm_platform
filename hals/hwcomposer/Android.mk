@@ -160,7 +160,7 @@ LOCAL_CFLAGS += -DLOG_TAG=\"bcm-hwc\"
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 
 ifeq ($(LOCAL_DEVICE_TYPE),blemmyes)
-LOCAL_SRC_FILES := $(BCM_HWC_VERSION)/hwcomposer.blemmyes.cpp
+LOCAL_SRC_FILES := $(HAL_HWC_VERSION)/hwcomposer.blemmyes.cpp
 else
 # fix warnings!
 LOCAL_CFLAGS += -Werror
