@@ -459,6 +459,8 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     NxClient_ConnectSettings connectSettings;
     BKNI_EventHandle event;
     uint32_t audioDecoderId;
+    String8 rates_str, channels_str, formats_str;
+    char config_rate_str[11];
     int i, ret = 0;
 
     if (config->sample_rate == 0)
@@ -472,11 +474,13 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
     switch (config->format) {
     case AUDIO_FORMAT_PCM_16_BIT:
+        nexus_get_hdmi_parameters(rates_str, channels_str, formats_str);
+        snprintf(config_rate_str, 11, "%u", config->sample_rate);
+
         /* Check if sample rate is supported */
-        if ((config->sample_rate != 48000) && (config->sample_rate != 192000) &&
-            (config->sample_rate != 44100) && (config->sample_rate != 176400) &&
-            (config->sample_rate != 32000))
+        if (!rates_str.contains(config_rate_str)) {
             return -EINVAL;
+        }
 
         if (config->channel_mask != AUDIO_CHANNEL_OUT_STEREO)
             return -EINVAL;
