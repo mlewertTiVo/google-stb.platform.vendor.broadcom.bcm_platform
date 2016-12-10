@@ -2029,19 +2029,18 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
                 {
                     // Use a larger input buffer for hevc
                     OMX_PARAM_PORTDEFINITIONTYPE portDef;
+
                     m_pVideoPorts[0]->GetDefinition(&portDef);
                     portDef.nBufferSize = B_DATA_BUFFER_SIZE_HIGHRES;
-                    m_maxDescriptorsPerBuffer = B_MAX_DESCRIPTORS_PER_BUFFER(B_DATA_BUFFER_SIZE_HIGHRES);
                     err = m_pVideoPorts[0]->SetDefinition(&portDef);
-                    if ( err )
+                    if (err )
                     {
                         return BOMX_ERR_TRACE(err);
                     }
-                    // force re-allocation in case descriptor size changed
-                    if (m_pPlaypumpDescList != NULL)
+                    err = VerifyInputPortBuffers();
+                    if ( err )
                     {
-                       delete [] m_pPlaypumpDescList;
-                       m_pPlaypumpDescList = NULL;
+                        return BOMX_ERR_TRACE(err);
                     }
                 }
             }
@@ -2118,6 +2117,14 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             portDef.nBufferSize = ComputeBufferSize(portDef.format.video.nStride, portDef.format.video.nSliceHeight);
             err = m_pVideoPorts[1]->SetDefinition(&portDef);
             if ( err )
+            {
+                return BOMX_ERR_TRACE(err);
+            }
+        }
+        else if ( pDef->nPortIndex == m_videoPortBase )
+        {
+            err = VerifyInputPortBuffers();
+            if (err)
             {
                 return BOMX_ERR_TRACE(err);
             }
@@ -4324,6 +4331,49 @@ void BOMX_VideoDecoder::CancelTimerId(B_SchedulerTimerId& timerId)
         CancelTimer(timerId);
         timerId = NULL;
     }
+}
+
+OMX_ERRORTYPE BOMX_VideoDecoder::VerifyInputPortBuffers()
+{
+    OMX_PARAM_PORTDEFINITIONTYPE portDef;
+    bool updatePortDef = false;
+    OMX_ERRORTYPE err = OMX_ErrorNone;
+
+    m_pVideoPorts[0]->GetDefinition(&portDef);
+    // Check if we have to recalculate the number of input buffers
+    if (portDef.nBufferSize > B_DATA_BUFFER_SIZE_HIGHRES) {
+        size_t maxInputBuffMem = B_DATA_BUFFER_SIZE_HIGHRES * B_NUM_BUFFERS;
+        size_t newBufferCount = maxInputBuffMem / portDef.nBufferSize;
+        ALOGV("%s: setting input buffer count to:%zu", __FUNCTION__, newBufferCount);
+        if (newBufferCount < 2)
+        {
+            ALOGE("%s: input buffer size:%zu is too large", __FUNCTION__, portDef.nBufferSize);
+            return OMX_ErrorInsufficientResources;
+        }
+        portDef.nBufferCountActual = newBufferCount;
+        updatePortDef = true;
+    }
+
+    if (portDef.nBufferSize < B_DATA_BUFFER_SIZE_DEFAULT) {
+        portDef.nBufferSize = B_DATA_BUFFER_SIZE_DEFAULT;
+        updatePortDef = true;
+    }
+
+    if (updatePortDef) {
+        err = m_pVideoPorts[0]->SetDefinition(&portDef);
+        if (err)
+            return err;
+    }
+
+    // Update variables dependent on input buffer size
+    m_maxDescriptorsPerBuffer = B_MAX_DESCRIPTORS_PER_BUFFER(portDef.nBufferSize);
+    if (m_pPlaypumpDescList != NULL)
+    {
+       delete [] m_pPlaypumpDescList;
+       m_pPlaypumpDescList = NULL;
+    }
+
+    return OMX_ErrorNone;
 }
 
 void BOMX_VideoDecoder::PlaypumpEvent()
