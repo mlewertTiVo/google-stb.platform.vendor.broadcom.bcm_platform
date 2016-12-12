@@ -99,6 +99,33 @@ const static uint32_t nexus_out_sample_rates[] = {
 static int nexus_tunnel_bout_pause(struct brcm_stream_out *bout);
 static int nexus_tunnel_bout_resume(struct brcm_stream_out *bout);
 
+const static uint8_t av_sync_marker[] = {0x55, 0x55, 0x00, 0x01};
+#define HW_AV_SYNC_HDR_LEN 16
+
+struct av_header_t {
+    inline uint8_t *buffer() {
+        return &buff[0];
+    }
+    inline size_t len() {
+        return length;
+    }
+    inline void setlen(size_t sz) {
+        length = sz;
+    }
+    inline bool isEmpty() {
+        return (length == 0);
+    }
+    inline bool isFull() {
+        return (length == HW_AV_SYNC_HDR_LEN);
+    }
+    inline void reset() {
+        length = 0;
+    }
+private:
+    size_t length;
+    uint8_t buff[HW_AV_SYNC_HDR_LEN];
+} av_header;
+
 /*
  * Operation Functions
  */
@@ -248,6 +275,7 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
        ALOGV("%s:      ... done", __FUNCTION__);
     }
 
+    av_header.reset();
     NEXUS_SimpleAudioDecoderHandle audio_decoder = bout->nexus.tunnel.audio_decoder;
     NEXUS_PlaypumpHandle playpump = bout->nexus.tunnel.playpump;
 
@@ -452,8 +480,6 @@ static int nexus_tunnel_bout_flush(struct brcm_stream_out *bout)
     return 0;
 }
 
-const static uint8_t av_sync_marker[] = {0x55, 0x55, 0x00, 0x01};
-#define HW_AV_SYNC_HDR_LEN 16
 static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                             const void* buffer, size_t bytes)
 {
@@ -484,20 +510,44 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
         init_stc = true;
     }
 
+    if (!av_header.isEmpty() && !av_header.isFull()) {
+        ALOGV("%s: av_header.len:%zu, bytes:%zu", __FUNCTION__, av_header.len(), bytes);
+        size_t headerInBuffer = HW_AV_SYNC_HDR_LEN - av_header.len();
+        if (bytes < headerInBuffer)
+            headerInBuffer = bytes;
+        memcpy(av_header.buffer() + av_header.len(), buffer, headerInBuffer);
+        av_header.setlen(av_header.len() + headerInBuffer);
+        bytes_written += headerInBuffer;
+        bytes -= headerInBuffer;
+        buffer = (void *)((uint8_t *)buffer + headerInBuffer);
+    }
+
     while ( bytes > 0 )
     {
         bool writeHeader = false;
         size_t frameBytes;
+        bool partial_header = false;
 
+        ALOG_ASSERT(av_header.isEmpty() || av_header.isFull());
         // Search for next packet header
-        pts_buffer = memmem(buffer, bytes, av_sync_marker, sizeof(av_sync_marker));
+        if (av_header.isFull()) {
+            pts_buffer = av_header.buffer();
+            partial_header = true;
+        } else {
+            pts_buffer = memmem(buffer, bytes, av_sync_marker, sizeof(av_sync_marker));
+        }
+
         if ( NULL != pts_buffer )
         {
-            if ( buffer == pts_buffer )
+            if ((buffer == pts_buffer) || partial_header)
             {
-                if (bytes < HW_AV_SYNC_HDR_LEN)
+                if ((buffer == pts_buffer) && (bytes < HW_AV_SYNC_HDR_LEN))
                 {
                     ALOGV("%s: av-sync header with no payload (%zu)", __FUNCTION__, bytes);
+                    memcpy(av_header.buffer(), pts_buffer, bytes);
+                    av_header.setlen(bytes);
+                    bytes_written += bytes;
+                    bytes = 0;
                     break;
                 }
 
@@ -513,8 +563,10 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 if (init_stc) {
                     NEXUS_SimpleStcChannel_SetStc(bout->nexus.tunnel.stc_channel_sync, pts);
                 }
-                bytes -= HW_AV_SYNC_HDR_LEN;
-                buffer = (void *)((uint8_t *)buffer + HW_AV_SYNC_HDR_LEN);
+                if (!partial_header) {
+                    bytes -= HW_AV_SYNC_HDR_LEN;
+                    buffer = (void *)((uint8_t *)buffer + HW_AV_SYNC_HDR_LEN);
+                }
             }
             else
             {
@@ -593,8 +645,13 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 else {
                     bytes_written += frameBytes;
                     if ( writeHeader ) {
-                        bytes_written += HW_AV_SYNC_HDR_LEN;
                         writeHeader = false;
+                        if (!partial_header) {
+                            bytes_written += HW_AV_SYNC_HDR_LEN;
+                        }
+                        else {
+                            av_header.reset();
+                        }
                     }
                     buffer = (void *)((uint8_t *)buffer + frameBytes);
                     ALOG_ASSERT(bytes >= frameBytes);
@@ -906,6 +963,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
 
     bout->nexus.event = event;
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
+    av_header.reset();
 
     if (property_get_int32(BRCM_AUDIO_TUNNEL_PROPERTY_PES_DEBUG, 0)) {
         time_t rawtime;
