@@ -622,6 +622,7 @@ static int nexus_bout_dump(struct brcm_stream_out *bout, int fd)
 struct brcm_stream_out_ops nexus_bout_ops = {
     .do_bout_open = nexus_bout_open,
     .do_bout_close = nexus_bout_close,
+    .do_bout_get_latency = NULL,
     .do_bout_start = nexus_bout_start,
     .do_bout_stop = nexus_bout_stop,
     .do_bout_write = nexus_bout_write,

@@ -333,12 +333,19 @@ static int bout_remove_audio_effect(const struct audio_stream *stream,
 
 static uint32_t bout_get_latency(const struct audio_stream_out *aout)
 {
-    UNUSED(aout);
+    uint32_t latency = 0;
+    struct brcm_stream_out *bout = (struct brcm_stream_out *)aout;
 
     ALOGV("%s: at %d, stream = 0x%X\n",
          __FUNCTION__, __LINE__, (uint32_t)aout);
 
-    return 0;
+    pthread_mutex_lock(&bout->lock);
+    if (bout->ops.do_bout_get_latency) {
+        latency = bout->ops.do_bout_get_latency(bout);
+    }
+    pthread_mutex_unlock(&bout->lock);
+
+    return latency;
 }
 
 static int bout_set_volume(struct audio_stream_out *aout,

@@ -52,6 +52,7 @@ using namespace android;
 
 #define BRCM_AUDIO_STREAM_ID                    (0xC0)
 #define BRCM_AUDIO_DIRECT_COMP_BUFFER_SIZE      (2048)
+#define BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY    (128)
 
 #define NEXUS_PCM_FRAMES_PER_EAC3_FRAME 1536
 
@@ -79,6 +80,18 @@ static int nexus_direct_bout_set_volume(struct brcm_stream_out *bout,
     return 0;
 }
 
+static uint32_t nexus_direct_bout_get_latency(struct brcm_stream_out *bout)
+{
+    (void)bout;
+
+    // Estimated experimental value
+    if (bout->nexus.direct.playpump_mode) {
+        return bout->nexus.direct.transcode_latency;
+    }
+
+    return 0;
+}
+
 static int nexus_direct_bout_get_render_position(struct brcm_stream_out *bout, uint32_t *dsp_frames)
 {
     NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
@@ -95,8 +108,7 @@ static int nexus_direct_bout_get_render_position(struct brcm_stream_out *bout, u
         if (bout->nexus.direct.playpump_mode) {
             bout->framesPlayed += status.framesDecoded - bout->nexus.direct.lastCount;
             bout->nexus.direct.lastCount = status.framesDecoded;
-            *dsp_frames = bout->framesPlayed * NEXUS_PCM_FRAMES_PER_EAC3_FRAME +
-                (NEXUS_PCM_FRAMES_PER_EAC3_FRAME / 2);
+            *dsp_frames = bout->framesPlayed * NEXUS_PCM_FRAMES_PER_EAC3_FRAME;
         } else {
             /* numBytesDecoded for passthrough mode returns the underlying playback playedBytes, which is of type size_t */
             bout->framesPlayed += ((size_t)status.numBytesDecoded - bout->nexus.direct.lastCount) / bout->frameSize;
@@ -126,8 +138,7 @@ static int nexus_direct_bout_get_presentation_position(struct brcm_stream_out *b
         if (bout->nexus.direct.playpump_mode) {
             bout->framesPlayed += status.framesDecoded - bout->nexus.direct.lastCount;
             bout->nexus.direct.lastCount = status.framesDecoded;
-            *frames = bout->framesPlayed * NEXUS_PCM_FRAMES_PER_EAC3_FRAME +
-                (NEXUS_PCM_FRAMES_PER_EAC3_FRAME / 2);
+            *frames = bout->framesPlayed * NEXUS_PCM_FRAMES_PER_EAC3_FRAME;
         } else {
             /* numBytesDecoded for passthrough mode returns the underlying playback playedBytes, which is of type size_t */
             bout->framesPlayed += ((size_t)status.numBytesDecoded - bout->nexus.direct.lastCount) / bout->frameSize;
@@ -210,14 +221,13 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
         // Configure audio decoder fifo threshold and pid channel
         NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &settings);
         ALOGI("Primary fifoThreshold %d", settings.primary.fifoThreshold);
-        settings.primary.fifoThreshold = BRCM_AUDIO_DIRECT_COMP_BUFFER_SIZE * 2;
+        settings.primary.fifoThreshold = BRCM_AUDIO_DIRECT_COMP_BUFFER_SIZE * 16;
         ALOGI("Primary fifoThreshold set to %d", settings.primary.fifoThreshold);
         NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &settings);
 
         NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
         start_settings.primary.codec = brcm_audio_get_codec_from_format(bout->config.format);
         start_settings.primary.pidChannel = bout->nexus.direct.pid_channel;
-
     } else {
         NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
         start_settings.passthroughBuffer.enabled = true;
@@ -463,6 +473,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         config->format = NEXUS_OUT_DEFAULT_FORMAT;
 
     bout->nexus.direct.playpump_mode = false;
+    bout->nexus.direct.transcode_latency = 0;
 
     switch (config->format) {
     case AUDIO_FORMAT_PCM_16_BIT:
@@ -484,6 +495,9 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         if (property_get_bool(BRCM_PROPERTY_AUDIO_OUTPUT_ENABLE_SPDIF_DOLBY, false)) {
             ALOGI("Enable play pump mode");
             bout->nexus.direct.playpump_mode = true;
+            bout->nexus.direct.transcode_latency = property_get_int32(
+                            BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY,
+                            BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY);
         }
 
         if (!bout->nexus.direct.playpump_mode) {
@@ -672,6 +686,7 @@ static int nexus_direct_bout_close(struct brcm_stream_out *bout)
 struct brcm_stream_out_ops nexus_direct_bout_ops = {
     .do_bout_open = nexus_direct_bout_open,
     .do_bout_close = nexus_direct_bout_close,
+    .do_bout_get_latency = nexus_direct_bout_get_latency,
     .do_bout_start = nexus_direct_bout_start,
     .do_bout_stop = nexus_direct_bout_stop,
     .do_bout_write = nexus_direct_bout_write,
