@@ -106,6 +106,7 @@ extern "C" {
 #define DUMMY_HW_SYNC   0xCAFEBABE
 
 #define BRCM_PROPERTY_AUDIO_OUTPUT_ENABLE_SPDIF_DOLBY ("persist.nx.spdif.enable_dolby")
+#define BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY ("ro.nx.eac3.trans_latency")
 
 /* Special parameter for enabling EAC3 passthrough with tunnel video decoder */
 #define AUDIO_PARAMETER_HW_AV_SYNC_EAC3 "HwAvSyncEAC3Supported"
@@ -158,6 +159,8 @@ struct brcm_stream_out_ops {
     int (*do_bout_open)(struct brcm_stream_out *bout);
 
     int (*do_bout_close)(struct brcm_stream_out *bout);
+
+    uint32_t (*do_bout_get_latency)(struct brcm_stream_out *bout);
 
     int (*do_bout_start)(struct brcm_stream_out *bout);
 
@@ -223,6 +226,7 @@ struct brcm_stream_out {
                     NEXUS_PidChannelHandle pid_channel;
                     struct timespec start_ts;
                     size_t lastCount;
+                    uint32_t transcode_latency;
                 } direct;
                 struct {
                     NEXUS_SimpleAudioDecoderHandle audio_decoder;
