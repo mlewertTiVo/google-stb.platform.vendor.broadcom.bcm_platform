@@ -2607,8 +2607,9 @@ bool hwc_compose_gralloc_buffer(
                                        0);
 
            if (*pActSurf != NULL) {
-              if (ctx->gpx_cli[layer_id].blending_type == BLENDIND_TYPE_SRC_OVER &&
-                  (prior_bl == BLENDIND_TYPE_SRC_OVER || prior_bl == BLENDIND_TYPE_LAST)) {
+              if ((ctx->gpx_cli[layer_id].blending_type == BLENDIND_TYPE_SRC_OVER) &&
+                  (prior_bl == BLENDIND_TYPE_SRC_OVER || prior_bl == BLENDIND_TYPE_LAST) &&
+                  (pComp->constantColor != HWC_OPAQUE)) {
                  pComp->colorBlend.d = NEXUS_BlendFactor_eInverseConstantAlpha;
                  pComp->alphaBlend.d = NEXUS_BlendFactor_eInverseConstantAlpha;
               }
