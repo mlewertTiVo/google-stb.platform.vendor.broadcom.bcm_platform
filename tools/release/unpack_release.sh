@@ -80,11 +80,13 @@ fi
 
 # Apply aosp patches, use 'git am' if possible to retain history
 cd $DST_DIR
-while read line; do
-  cd $line
-  git am $DST_DIR/$TMP_DIR/$line/* > /dev/null 2>&1 || git apply $DST_DIR/$TMP_DIR/$line/*
-  cd $DST_DIR
-done < $DST_DIR/$AOSP_LIST
+if [ -f $DST_DIR/$AOSP_LIST ]; then
+  while read line; do
+    cd $line
+    git am $DST_DIR/$TMP_DIR/$line/* > /dev/null 2>&1 || git apply $DST_DIR/$TMP_DIR/$line/*
+    cd $DST_DIR
+  done < $DST_DIR/$AOSP_LIST
+fi
 
 if [ -f $DST_DIR/$PR_PATCH_USER ]; then
   tar -zxvf $DST_DIR/$PR_PATCH_USER
