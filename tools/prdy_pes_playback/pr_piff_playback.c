@@ -53,6 +53,7 @@
 #if defined(ANDROID) && !(USE_BDBG_LOGGING)
 #define LOG_NDEBUG 0
 #include <utils/Log.h>
+#undef LOG_TAG
 #define LOG_TAG "pr_piff_playback"
 #define LOGV(x) ALOGV x
 #define LOGD(x) ALOGD x
@@ -869,7 +870,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
     CommonCryptoHandle commonCryptoHandle = NULL;
     CommonCryptoSettings  cmnCryptoSettings;
 
-    NEXUS_DisplayHandle display;
+    NEXUS_DisplayHandle display = NULL;
     NEXUS_PidChannelHandle videoPidChannel = NULL;
     BKNI_EventHandle event = NULL;
     NEXUS_PlaypumpHandle videoPlaypump = NULL;
@@ -1132,7 +1133,7 @@ void playback_piff( NEXUS_SimpleVideoDecoderHandle videoDecoder,
     pCh_data[ chLen ] = 0;
 
     if(DRM_Prdy_http_client_license_post_soap(pCh_url, pCh_data, 1,
-        150, (unsigned char **)&pResponse, &respOffset, &respLen) != 0) {
+        150, (unsigned char **)&pResponse, sizeof(resp_buffer), &respOffset, &respLen) != 0) {
         LOGE(("DRM_Prdy_http_client_license_post_soap() failed, exiting"));
         goto clean_exit;
     }
@@ -1241,6 +1242,7 @@ clean_exit:
 }
 
 void intHandler(int dummy) {
+   BSTD_UNUSED(dummy);
    exit_flag = 1;
 }
 
@@ -1341,10 +1343,11 @@ int main(int argc, char* argv[])
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleVideoDecoder[0].id = allocResults.simpleVideoDecoder[0].id;
     connectSettings.simpleVideoDecoder[0].surfaceClientId = allocResults.surfaceClient[0].id;
+    connectSettings.simpleVideoDecoder[0].decoderCapabilities.secureVideo = true;
 
     // Check the decoder capabilities for the highest resolution.
     NEXUS_GetVideoDecoderCapabilities(&caps);
-    for ( i = 0; i < caps.numVideoDecoders; i++ )
+    for ( i = 0; i < (int)caps.numVideoDecoders; i++ )
     {
         NEXUS_VideoFormat_GetInfo(caps.memory[i].maxFormat, &videoInfo);
         if ( videoInfo.width > maxDecoderWidth ) {
