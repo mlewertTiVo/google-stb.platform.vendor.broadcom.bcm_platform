@@ -1,6 +1,7 @@
 service hfrvideo /system/bin/hfrvideo
    class late_start
    oneshot
+   group root readproc
    disabled
 
 on property:dyn.nx.hfrvideo.set=*
