@@ -2,25 +2,23 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES := \
-    pr_piff_playback.c \
-    bpiff.c \
-    piff_parser.c
-
-LOCAL_C_INCLUDES := \
-    bionic
+include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 LOCAL_SHARED_LIBRARIES += \
-    liblog \
-    libutils \
+    libcutils \
     libnexus \
-    libcmndrmprdy \
     libnxclient \
-    libsrai
+    libsrai \
+    libcmndrmprdy
 
-LOCAL_MODULE := prdy_pes_playback_nxclient
+LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/apps/utils \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/utils
 
-LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
+LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
+LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
+LOCAL_CFLAGS += -DLINUX -DB_REFSW_ANDROID
+
 LOCAL_CFLAGS += -DDRM_INLINING_SUPPORTED=1 -DDRM_BUILD_PROFILE=900 -DTARGET_LITTLE_ENDIAN=1 -DTARGET_SUPPORTS_UNALIGNED_DWORD_POINTERS=0
 LOCAL_CFLAGS += -I$(ANDROID_BUILD_TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/extensions/security/usercmd/include/40nm
 LOCAL_CFLAGS += -I$(ANDROID_BUILD_TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/extensions/security/otpmsp/include/40nm
@@ -45,6 +43,12 @@ LOCAL_CFLAGS += -I$(ANDROID_BUILD_TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/me
 # nxclient.h
 LOCAL_CFLAGS += -I$(ANDROID_BUILD_TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include
 
+LOCAL_SRC_FILES := \
+    pr_piff_playback.c \
+    bpiff.c \
+    piff_parser.c
+
+LOCAL_MODULE := prdy_pes_playback_nxclient
 LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_EXECUTABLE)

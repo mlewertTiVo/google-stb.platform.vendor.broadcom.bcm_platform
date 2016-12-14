@@ -272,6 +272,7 @@ int bpiff_parse_stsd(batom_cursor *cursor, bmp4_box *pBox, bpiff_trackInfo *pTra
 
     BDBG_ASSERT(cursor != NULL);
     BDBG_ASSERT(pBox->type == BMP4_SAMPLEDESCRIPTION);
+    BSTD_UNUSED(pBox);
 
     if(!bmp4_parse_fullbox(cursor, &fullbox)) {
         return -1;
@@ -702,6 +703,7 @@ int bpiff_parse_traf(bpiff_mp4_headers *header, bpiff_mp4_frag_headers *frag_hea
                     BDBG_ERR(("%s: Invalid fragment track ID in movie information header \n",
                         __func__));
                     skip_frag = true;
+                    break;
                 }
 
                 if (trackType != BMP4_SAMPLE_ENCRYPTED_VIDEO &&
