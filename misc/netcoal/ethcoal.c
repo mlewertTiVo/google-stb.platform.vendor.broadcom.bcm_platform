@@ -129,8 +129,8 @@ static int set_irq_affinity (int irq, int set)
          ALOGE("Failed to open affinity file");
          return errno;
       }
-      fprintf(file, "%d", new_affinity);
-      ALOGI("irq %d affinity: %d->%d", irq, old_affinity, new_affinity);
+      fprintf(file, "%x", new_affinity);
+      ALOGI("irq %d affinity: 0x%x->0x%x", irq, old_affinity, new_affinity);
       fclose(file);
    }
    return 0;
