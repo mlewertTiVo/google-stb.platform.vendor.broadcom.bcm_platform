@@ -81,6 +81,8 @@
 #define ETH_COALESCE_RX_USECS_DEF   (0)
 #define ETH_IRQ_BALANCE             "ro.nx.eth.irq_balance"
 #define ETH_IRQ_BALANCE_VAL         (1)
+/*                                  "default:vmode" */
+#define ETH_IRQ_BALANCE_MODE        "ro.nx.eth.irq_mode_mask"
 
 #define ETH_COALESCE_MODE           "dyn.nx.netcoal.set"
 #define ETH_COALESCE_DEFAULT        "default"
@@ -95,6 +97,8 @@ static int set_irq_affinity (int irq, int set)
    int old_affinity, new_affinity = 0;
    char name[MAX_LINE_LEN];
    char line[MAX_LINE_LEN];
+   char value[PROPERTY_VALUE_MAX];
+   char *p = NULL;
 
    rc = snprintf(name, MAX_LINE_LEN, "/proc/irq/%d/smp_affinity", irq);
    if (rc < 0 || rc >= MAX_LINE_LEN)
@@ -105,39 +109,30 @@ static int set_irq_affinity (int irq, int set)
       return errno;
    fgets (line, sizeof(line), file);
    fclose(file);
-   new_affinity = old_affinity = strtol(line, NULL, 10);
+   new_affinity = old_affinity = strtol(line, NULL, 16);
 
-   if (!old_affinity) {
-      ALOGE("Invalid IRQ %d affinity", irq);
+   if (property_get(ETH_IRQ_BALANCE_MODE, value, NULL)) {
+      p = strchr(value, ':');
+      if (strlen(value) && (p != NULL)) {
+         if (set) {
+            new_affinity = strtol(p+1, NULL, 16);
+         } else {
+            *p = '\0';
+            new_affinity = strtol(value, NULL, 16);
+         }
+      }
    }
 
-   if (set) {
-      if (old_affinity == 1) {
-         ALOGE("Cannot clear only CPU in IRQ %d affinity", irq);
-         return -EINVAL;
+   if (new_affinity != old_affinity) {
+      file = fopen(name, "w");
+      if (!file) {
+         ALOGE("Failed to open affinity file");
+         return errno;
       }
-      if (!(old_affinity & 1)) {
-         ALOGV("CPU 0 already cleared in IRQ %d affinity", irq);
-         return 0;
-      }
-      new_affinity &= ~1;
-   } else {
-      if (old_affinity & 1) {
-         ALOGV("CPU 0 already set in IRQ %d affinity", irq);
-         return 0;
-      }
-      new_affinity |= 1;
+      fprintf(file, "%d", new_affinity);
+      ALOGI("irq %d affinity: %d->%d", irq, old_affinity, new_affinity);
+      fclose(file);
    }
-
-   file = fopen(name, "w");
-   if (!file) {
-      ALOGE("Failed to open affinity file");
-      return errno;
-   }
-   fprintf(file, "%d", new_affinity);
-   ALOGI("irq %d affinity: %d->%d", irq, old_affinity, new_affinity);
-
-   fclose(file);
    return 0;
 }
 
