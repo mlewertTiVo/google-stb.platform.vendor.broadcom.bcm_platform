@@ -953,6 +953,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_waitingForStc(false),
     m_flushTime(0),
     m_stcSyncValue(0),
+    m_stcResumePending(false),
     m_outputWidth(1920),
     m_outputHeight(1080),
     m_maxDecoderWidth(1920),
@@ -3003,6 +3004,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
 
                     m_waitingForStc = true;
                     m_flushTime = systemTime(SYSTEM_TIME_MONOTONIC);
+                    m_stcResumePending = false;
 
                     // Pause decoder until a valid stc is available
                     NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
@@ -4996,10 +4998,10 @@ void BOMX_VideoDecoder::PollDecodedFrames()
         {
             OMX_BUFFERHEADERTYPE omxHeader;
             nsecs_t now = systemTime(SYSTEM_TIME_MONOTONIC);
+            uint32_t stcSync;
 
             if (m_waitingForStc) {
                 bool resumeDecoder = false;
-                uint32_t stcSync;
 
                 NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
                 ALOGV("%s: stcSync:%u",  __FUNCTION__, stcSync);
@@ -5013,13 +5015,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
 
                 if (resumeDecoder) {
                    m_waitingForStc = false;
+                   m_stcResumePending = true;
                    NEXUS_VideoDecoderTrickState vdecTrickState;
-
-                   NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-                   vdecTrickState.rate = NEXUS_NORMAL_DECODE_RATE;
-                   errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
-                   if (errCode != NEXUS_SUCCESS)
-                       ALOGE("%s: error setting trick state", __FUNCTION__);
 
                    if (stcSync != 0) {
                        errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, stcSync);
@@ -5028,11 +5025,25 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                            ALOGE("%s: error setting start pts", __FUNCTION__);
                    }
 
-                   // resume stc
+                   NEXUS_SimpleVideoDecoder_GetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                   vdecTrickState.rate = NEXUS_NORMAL_DECODE_RATE;
+                   errCode = NEXUS_SimpleVideoDecoder_SetTrickState(m_hSimpleVideoDecoder, &vdecTrickState);
+                   if (errCode != NEXUS_SUCCESS)
+                       ALOGE("%s: error setting trick state", __FUNCTION__);
+                }
+            }
+
+            if (m_stcResumePending) {
+               NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
+               if (status.pts >= stcSync) {
                    errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
                    if (errCode != NEXUS_SUCCESS)
                        ALOGE("%s: error setting stc rate", __FUNCTION__);
-                }
+                   else {
+                       m_stcResumePending = false;
+                       ALOGV("%s: resumed stc", __FUNCTION__);
+                   }
+               }
             }
 
             bool reportRenderedFrame = false;
@@ -5044,6 +5055,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 }
                 m_tunnelCurrentPts = status.pts;
                 reportRenderedFrame = true;
+            } else {
+                ALOGV("%s: status.pts:%u, m_tunneledCurrentPts:%u", __FUNCTION__, status.pts, m_tunnelCurrentPts);
             }
 
             if (reportRenderedFrame) {
@@ -5056,6 +5069,10 @@ void BOMX_VideoDecoder::PollDecodedFrames()
 
                 // Use this event to return input buffers
                 ReturnInputBuffers(omxHeader.nTimeStamp, InputReturnMode_eTimestamp);
+            } else if ((m_waitingForStc || m_stcResumePending) && (m_AvailInputBuffers == 0)) {
+                // when we're in the process of dropping frames to reach the start pts, return as many
+                // input buffers as possible to speed up the task
+                ReturnInputBuffers(0, InputReturnMode_eAll);
             }
         }
 

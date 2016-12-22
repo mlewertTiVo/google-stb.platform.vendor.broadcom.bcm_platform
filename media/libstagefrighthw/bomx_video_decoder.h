@@ -330,6 +330,7 @@ protected:
     bool m_waitingForStc;
     nsecs_t m_flushTime;
     unsigned m_stcSyncValue;
+    bool m_stcResumePending;
     unsigned m_outputWidth;
     unsigned m_outputHeight;
     unsigned m_maxDecoderWidth;
