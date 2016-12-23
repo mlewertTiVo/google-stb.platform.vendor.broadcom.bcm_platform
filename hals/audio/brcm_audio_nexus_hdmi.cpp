@@ -152,7 +152,9 @@ void nexus_get_hdmi_parameters(String8& rates, String8& channels, String8& forma
     }
 
     /* Add 5.1 and AC3/E-AC3 support if Dolby output enabled on SPDIF */
-    if (property_get_bool(BRCM_PROPERTY_AUDIO_OUTPUT_ENABLE_SPDIF_DOLBY, false)) {
+    if (property_get_bool(BRCM_PROPERTY_AUDIO_OUTPUT_ENABLE_SPDIF_DOLBY, false) ||
+        property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DECODE, false) ||
+        property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DECODE_PERSIST, false)) {
 
         NEXUS_AudioCapabilities audioCaps;
 
