@@ -12,6 +12,7 @@ LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/utils \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/bcmplayer/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/magnum/commonutils/vlc \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/glob \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/tshdrbuilder
 
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
@@ -35,6 +36,7 @@ NXCLIENT_APPS_UTILS_SRC := \
    refsw/nexus/utils/namevalue.c \
    refsw/nexus/nxclient/apps/utils/nxapps_cmdline.c \
    refsw/nexus/nxclient/apps/utils/picdecoder.c \
+   refsw/BSEAV/lib/glob/glob.c \
    refsw/BSEAV/lib/tshdrbuilder/tshdrbuilder.c \
    refsw/nexus/nxclient/apps/utils/tspsimgr3.c \
    refsw/nexus/nxclient/apps/utils/wav_file.c
