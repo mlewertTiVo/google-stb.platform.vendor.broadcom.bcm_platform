@@ -4534,7 +4534,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::VerifyInputPortBuffers()
         ALOGV("%s: setting input buffer count to:%zu", __FUNCTION__, newBufferCount);
         if (newBufferCount < 2)
         {
-            ALOGE("%s: input buffer size:%zu is too large", __FUNCTION__, portDef.nBufferSize);
+            ALOGE("%s: input buffer size:%u is too large", __FUNCTION__, portDef.nBufferSize);
             return OMX_ErrorInsufficientResources;
         }
         portDef.nBufferCountActual = newBufferCount;
