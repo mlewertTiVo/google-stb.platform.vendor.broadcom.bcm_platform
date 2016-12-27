@@ -234,7 +234,7 @@ public:
     // End OMX Command Handlers
 
     // Local Event Handlers
-    void PlaypumpEvent();
+    unsigned PlaypumpEvent(bool bTimeout = false);
     void PlaypumpTimer();
     void OutputFrameEvent();
     void SourceChangedEvent();
@@ -284,6 +284,7 @@ protected:
     unsigned m_submittedDescriptors;
     unsigned m_maxDescriptorsPerBuffer;
     NEXUS_PlaypumpScatterGatherDescriptor *m_pPlaypumpDescList;
+    unsigned m_completedInputBuffers;
 
     BOMX_BufferTracker *m_pBufferTracker;
     unsigned m_AvailInputBuffers;
@@ -444,7 +445,7 @@ protected:
     void InputBufferNew();
     void InputBufferReturned();
     void InputBufferCounterReset();
-    void ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMode mode);
+    uint32_t ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMode mode);
     bool ReturnInputPortBuffer(BOMX_Buffer *pBuffer);
 
     // The functions below allow derived classes to override them
