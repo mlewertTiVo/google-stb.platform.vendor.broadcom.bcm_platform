@@ -346,6 +346,7 @@ static int nexus_bout_start(struct brcm_stream_out *bout)
         (config->channel_mask == AUDIO_CHANNEL_OUT_MONO) ? false : true;
     start_settings.sampleRate = config->sample_rate;
 
+    NEXUS_CallbackDesc_Init(&start_settings.dataCallback);
     start_settings.dataCallback.callback = nexus_bout_data_callback;
     start_settings.dataCallback.context = bout;
     start_settings.dataCallback.param = (int)(intptr_t)event;

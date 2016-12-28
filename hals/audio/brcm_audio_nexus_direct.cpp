@@ -229,8 +229,10 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
         start_settings.primary.pidChannel = bout->nexus.direct.pid_channel;
     } else {
         NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
+
         start_settings.passthroughBuffer.enabled = true;
         start_settings.passthroughBuffer.sampleRate = bout->config.sample_rate;
+        NEXUS_CallbackDesc_Init(&start_settings.passthroughBuffer.dataCallback);
         start_settings.passthroughBuffer.dataCallback.callback = nexus_direct_bout_data_callback;
         start_settings.passthroughBuffer.dataCallback.context = bout;
         start_settings.passthroughBuffer.dataCallback.param = (int)(intptr_t)event;
