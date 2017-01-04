@@ -801,6 +801,25 @@ static NEXUS_VideoFormat forced_output_format(void)
    return forced_format;
 }
 
+static void wait_for_data_available(void)
+{
+   char prop[PROPERTY_VALUE_MAX];
+   int state = 0;
+
+   while (1) {
+      state = property_get("vold.decrypt", prop, NULL);
+      if (state) {
+         if ((strncmp(prop, "trigger_restart_min_framework", state) == 0) ||
+             (strncmp(prop, "trigger_restart_framework", state) == 0)) {
+            return;
+         }
+      }
+      /* arbitrary wait... */
+      BKNI_Sleep(100);
+      ALOGI("waiting 100 msecs for cryptfs sync...");
+   }
+}
+
 static nxserver_t init_nxserver(void)
 {
     NEXUS_Error rc;
@@ -1099,6 +1118,7 @@ static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
 
     if (property_get(DHD_SECDMA_PROP, value, NULL))
     {
+        wait_for_data_available();
         secdmaMemSize = strtoul(value, NULL, 0);
         if (strlen(value) && (secdmaMemSize > 0)) {
             sprintf(secdma_param_file, "%s/stbpriv.txt", DHD_SECDMA_PARAMS_PATH);
