@@ -164,7 +164,7 @@ NexusClientContext * NexusIPCClient::createClientContext(const b_refsw_client_cl
         cmd.param.createClientContext.in.clientPid = getClientPid();
         iNC->api_over_binder(&cmd);
 
-        client = cmd.param.createClientContext.out.client;
+        client = (NexusClientContext *)(cmd.param.createClientContext.out.client);
     }
 
     if (client == NULL) {
@@ -179,7 +179,7 @@ void NexusIPCClient::destroyClientContext(NexusClientContext * client)
 
     BKNI_Memset(&cmd, 0, sizeof(cmd));
     cmd.api = api_destroyClientContext;
-    cmd.param.destroyClientContext.in.client = client;
+    cmd.param.destroyClientContext.in.client = (uint64_t)(client);
     iNC->api_over_binder(&cmd);
 
     clientUninit();
