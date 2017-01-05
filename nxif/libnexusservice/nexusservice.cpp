@@ -1012,13 +1012,14 @@ status_t NexusService::onTransact(uint32_t code,
         {
             case api_createClientContext:
             {
-                cmd.param.createClientContext.out.client = createClientContext(&cmd.param.createClientContext.in.clientName,
-                                                                                cmd.param.createClientContext.in.clientPid);
+                cmd.param.createClientContext.out.client =
+                   (uint64_t)(createClientContext(&cmd.param.createClientContext.in.clientName,
+                                                  cmd.param.createClientContext.in.clientPid));
                 break;
             }
             case api_destroyClientContext:
             {
-                destroyClientContext(cmd.param.destroyClientContext.in.client);
+                destroyClientContext((NexusClientContext *)(cmd.param.destroyClientContext.in.client));
                 break;
             }
             case api_setPowerState:
