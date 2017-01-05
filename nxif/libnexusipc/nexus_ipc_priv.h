@@ -65,17 +65,17 @@ typedef union api_param
     struct {
         struct {
             b_refsw_client_client_name clientName;
-            unsigned                   clientPid;
+            uint16_t                   clientPid;
         } in;
 
         struct {
-            NexusClientContext *client;
+            uint64_t client;
         } out;
     } createClientContext;
 
     struct {
         struct {
-            NexusClientContext *client;
+            uint64_t client;
         } in;
 
         struct {
@@ -137,7 +137,7 @@ typedef union api_param
             uint32_t cecId;
             uint8_t  srcAddr;
             uint8_t  destAddr;
-            size_t   length;
+            uint32_t length;
             uint8_t  message[NEXUS_CEC_MESSAGE_DATA_SIZE];
             uint8_t  maxRetries;
         } in;
