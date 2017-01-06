@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#define LOG_NDEBUG 0
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <inttypes.h>
@@ -27,6 +29,7 @@
 #include <sys/resource.h>
 #include <utils/threads.h>
 #include <cutils/sched_policy.h>
+#include <inttypes.h>
 /* hwc2 - including string functions. */
 #define HWC2_INCLUDE_STRINGIFICATION
 #define HWC2_USE_CPP11
@@ -187,8 +190,10 @@ static int32_t hwc2_pwrMode(
 
    if (kind == HWC2_DSP_EXT) {
       if (!pthread_mutex_lock(&hwc2->mtx_pwr)) {
-         ALOGI("[ext]: pmode %s -> %s",
-               getPowerModeName(dsp->pmode), getPowerModeName((hwc2_power_mode_t)mode));
+         ALOGI("[ext][%" PRIu64 "]: pmode %s -> %s",
+               display,
+               getPowerModeName(dsp->pmode),
+               getPowerModeName((hwc2_power_mode_t)mode));
          dsp->pmode = (hwc2_power_mode_t)mode;
          pthread_mutex_unlock(&hwc2->mtx_pwr);
       }
@@ -548,17 +553,20 @@ static int32_t hwc2_regCb(
    hwc2->regCb[descriptor-1].func = pointer;
    hwc2->regCb[descriptor-1].data = callbackData;
 
-   /* report initial state of the hot-plug-able display. */
+   /* report initial state of the hotplug-able display. */
    if (descriptor == HWC2_CALLBACK_HOTPLUG) {
-      NEXUS_HdmiOutputHandle hdmi;
-      NEXUS_HdmiOutputStatus hstatus;
-      hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
-      NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
-      if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
-         HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
-         f_hp(hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].data,
-              (hwc2_display_t)(intptr_t)hwc2->ext,
-              hstatus.connected?(int)HWC2_CONNECTION_CONNECTED:(int)HWC2_CONNECTION_DISCONNECTED);
+      if (hwc2->ext != NULL) {
+         NEXUS_HdmiOutputHandle hdmi;
+         NEXUS_HdmiOutputStatus hstatus;
+         hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
+         NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
+         if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
+            ALOGV("[ext]: report hotplug %s\n", hstatus.connected?"CONNECTED":"DISCONNECTED");
+            HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
+            f_hp(hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].data,
+                 (hwc2_display_t)(intptr_t)hwc2->ext,
+                 hstatus.connected?(int)HWC2_CONNECTION_CONNECTED:(int)HWC2_CONNECTION_DISCONNECTED);
+         }
       }
    }
 
@@ -618,6 +626,9 @@ static int32_t hwc2_vdAdd(
    hwc2_error_t ret = HWC2_ERROR_NONE;
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)device;
 
+   ALOGV("-> %s\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_CREATE_VIRTUAL_DISPLAY));
+
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_NO_RESOURCES;
       goto out;
@@ -648,6 +659,9 @@ static int32_t hwc2_vdAdd(
    *outDisplay = (hwc2_display_t)(intptr_t)hwc2->vd;
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_CREATE_VIRTUAL_DISPLAY),
+      *outDisplay, getErrorName(ret));
    return ret;
 }
 
@@ -657,6 +671,10 @@ static int32_t hwc2_vdRem(
 
    hwc2_error_t ret = HWC2_ERROR_NONE;
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)device;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_DESTROY_VIRTUAL_DISPLAY),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -671,6 +689,9 @@ static int32_t hwc2_vdRem(
    hwc2->vd = NULL;
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_DESTROY_VIRTUAL_DISPLAY),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -726,6 +747,10 @@ static int32_t hwc2_dspAckChg(
    uint32_t kind;
    struct hwc2_lyr_t *lyr = NULL;
 
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_ACCEPT_DISPLAY_CHANGES),
+     display);
+
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
       goto out;
@@ -750,6 +775,9 @@ static int32_t hwc2_dspAckChg(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_ACCEPT_DISPLAY_CHANGES),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -849,6 +877,10 @@ static int32_t hwc2_lyrAdd(
    struct hwc2_lyr_t *lnk = NULL, *nxt = NULL;
    uint32_t kind;
 
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_CREATE_LAYER),
+     display);
+
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
       goto out;
@@ -882,6 +914,9 @@ static int32_t hwc2_lyrAdd(
    *outLayer = (hwc2_layer_t)(intptr_t)lyr;
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s) -> %" PRIu64 "\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_CREATE_LAYER),
+      display, getErrorName(ret), *outLayer);
    return ret;
 }
 
@@ -896,6 +931,10 @@ static int32_t hwc2_lyrRem(
    struct hwc2_lyr_t *lyr = NULL;
    struct hwc2_lyr_t *prv = NULL, *nxt = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_DESTROY_LAYER),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -935,6 +974,9 @@ static int32_t hwc2_lyrRem(
    lyr = NULL;
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s):%" PRIu64 "\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_DESTROY_LAYER),
+      display, getErrorName(ret), layer);
    return ret;
 }
 
@@ -947,6 +989,10 @@ static int32_t hwc2_gActCfg(
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)device;
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_GET_ACTIVE_CONFIG),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -968,6 +1014,9 @@ static int32_t hwc2_gActCfg(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s) -> %u\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_GET_ACTIVE_CONFIG),
+      display, getErrorName(ret), *outConfig);
    return ret;
 }
 
@@ -983,6 +1032,10 @@ static int32_t hwc2_getDevCmp(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_GET_CHANGED_COMPOSITION_TYPES),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1013,6 +1066,9 @@ static int32_t hwc2_getDevCmp(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_GET_CHANGED_COMPOSITION_TYPES),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -1092,6 +1148,10 @@ static int32_t hwc2_ackCliTgt(
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
 
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_GET_CLIENT_TARGET_SUPPORT),
+     display);
+
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
       goto out;
@@ -1124,6 +1184,9 @@ static int32_t hwc2_ackCliTgt(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_GET_CLIENT_TARGET_SUPPORT),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -1137,6 +1200,10 @@ static int32_t hwc2_clrMds(
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)device;
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_GET_COLOR_MODES),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1155,6 +1222,9 @@ static int32_t hwc2_clrMds(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_GET_COLOR_MODES),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -1170,6 +1240,10 @@ static int32_t hwc2_dspAttr(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_dsp_cfg_t *cfg = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%u:%s\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_ATTRIBUTE),
+     display, config, getAttributeName((hwc2_attribute_t)attribute));
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1198,6 +1272,9 @@ static int32_t hwc2_dspAttr(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%u:%s (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_ATTRIBUTE),
+      display, config, getAttributeName((hwc2_attribute_t)attribute), getErrorName(ret));
    return ret;
 }
 
@@ -1214,6 +1291,10 @@ static int32_t hwc2_hdrCap(
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)device;
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_GET_HDR_CAPABILITIES),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1235,6 +1316,9 @@ static int32_t hwc2_hdrCap(
    (void)outMinLuminance;
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_GET_HDR_CAPABILITIES),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -1249,6 +1333,10 @@ static int32_t hwc2_dspCfg(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_dsp_cfg_t *cfg = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_CONFIGS),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1272,6 +1360,9 @@ static int32_t hwc2_dspCfg(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_CONFIGS),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -1285,6 +1376,10 @@ static int32_t hwc2_dspName(
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)device;
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_NAME),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1303,6 +1398,9 @@ static int32_t hwc2_dspName(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_NAME),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -1316,6 +1414,10 @@ static int32_t hwc2_dspType(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_dsp_cfg_t *cfg = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_TYPE),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1331,6 +1433,9 @@ static int32_t hwc2_dspType(
    *outType = dsp->type;
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_TYPE),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -1345,6 +1450,10 @@ static int32_t hwc2_lyrBlend(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_BLEND_MODE),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1371,6 +1480,9 @@ static int32_t hwc2_lyrBlend(
    lyr->bm = (hwc2_blend_mode_t)mode;
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_BLEND_MODE),
+      display, layer, getErrorName(ret));
    return ret;
 }
 
@@ -1386,6 +1498,10 @@ static int32_t hwc2_lyrBuf(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_BUFFER),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1416,6 +1532,9 @@ static int32_t hwc2_lyrBuf(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_BUFFER),
+      display, layer, getErrorName(ret));
    return ret;
 }
 
@@ -1430,6 +1549,10 @@ static int32_t hwc2_lyrCol(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_COLOR),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1455,6 +1578,9 @@ static int32_t hwc2_lyrCol(
    memcpy(&lyr->sc, &color, sizeof(color));
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_COLOR),
+      display, layer, getErrorName(ret));
    return ret;
 }
 
@@ -1469,6 +1595,10 @@ static int32_t hwc2_lyrComp(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_COMPOSITION_TYPE),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1500,6 +1630,9 @@ static int32_t hwc2_lyrComp(
    lyr->cCli = (hwc2_composition_t)type;
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_COMPOSITION_TYPE),
+      display, layer, getErrorName(ret));
    return ret;
 }
 
@@ -1514,6 +1647,10 @@ static int32_t hwc2_lyrDSpace(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_DATASPACE),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1535,6 +1672,9 @@ static int32_t hwc2_lyrDSpace(
    lyr->dsp = dataspace;
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_DATASPACE),
+      display, layer, getErrorName(ret));
    return ret;
 }
 
@@ -1549,6 +1689,10 @@ static int32_t hwc2_lyrFrame(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_DISPLAY_FRAME),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1570,6 +1714,9 @@ static int32_t hwc2_lyrFrame(
    memcpy(&lyr->fr, &frame, sizeof(frame));
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_DISPLAY_FRAME),
+      display, layer, getErrorName(ret));
    return ret;
 }
 
@@ -1584,6 +1731,10 @@ static int32_t hwc2_lyrAlpha(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_PLANE_ALPHA),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1605,6 +1756,9 @@ static int32_t hwc2_lyrAlpha(
    lyr->al = alpha;
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_PLANE_ALPHA),
+      display, layer, getErrorName(ret));
    return ret;
 }
 
@@ -1619,6 +1773,10 @@ static int32_t hwc2_lyrSbStr(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_SIDEBAND_STREAM),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1649,6 +1807,9 @@ static int32_t hwc2_lyrSbStr(
    lyr->sbh = (native_handle_t*)stream;
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_SIDEBAND_STREAM),
+      display, layer, getErrorName(ret));
    return ret;
 }
 
@@ -1663,6 +1824,10 @@ static int32_t hwc2_lyrCrop(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_SOURCE_CROP),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1687,6 +1852,9 @@ static int32_t hwc2_lyrCrop(
    lyr->crp.bottom = (int) floorf(crop.bottom);
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_SOURCE_CROP),
+      display, layer, getErrorName(ret));
    return ret;
 }
 
@@ -1702,6 +1870,10 @@ static int32_t hwc2_lyrSfcDam(
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
    hwc_rect_t empty;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_SURFACE_DAMAGE),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1734,6 +1906,9 @@ static int32_t hwc2_lyrSfcDam(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_SURFACE_DAMAGE),
+      display, layer, getErrorName(ret));
    return ret;
 }
 
@@ -1748,6 +1923,10 @@ static int32_t hwc2_lyrTrans(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_TRANSFORM),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1769,6 +1948,9 @@ static int32_t hwc2_lyrTrans(
    lyr->tr = (hwc_transform_t)transform;
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_TRANSFORM),
+      display, layer, getErrorName(ret));
    return ret;
 }
 
@@ -1783,6 +1965,10 @@ static int32_t hwc2_lyrRegion(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_VISIBLE_REGION),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1811,6 +1997,9 @@ static int32_t hwc2_lyrRegion(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_VISIBLE_REGION),
+      display, layer, getErrorName(ret));
    return ret;
 }
 
@@ -1825,6 +2014,10 @@ static int32_t hwc2_lyrZ(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_Z_ORDER),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1846,6 +2039,9 @@ static int32_t hwc2_lyrZ(
    lyr->z = z;
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_Z_ORDER),
+      display, layer, getErrorName(ret));
    return ret;
 }
 
@@ -1859,6 +2055,10 @@ static int32_t hwc2_outBuf(
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)device;
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_OUTPUT_BUFFER),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1882,6 +2082,9 @@ static int32_t hwc2_outBuf(
    dsp->u.vd.wrFence = releaseFence;
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_OUTPUT_BUFFER),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -1894,6 +2097,10 @@ static int32_t hwc2_vsyncSet(
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)device;
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%s\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_VSYNC_ENABLED),
+     display, getVsyncName((hwc2_vsync_t)enabled));
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1919,6 +2126,9 @@ static int32_t hwc2_vsyncSet(
    dsp->u.ext.vsync = (hwc2_vsync_t)enabled;
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_VSYNC_ENABLED),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -1934,6 +2144,10 @@ static int32_t hwc2_cursorPos(
    struct hwc2_dsp_t *dsp = NULL;
    struct hwc2_lyr_t *lyr = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_CURSOR_POSITION),
+     display, layer);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -1961,6 +2175,9 @@ static int32_t hwc2_cursorPos(
    lyr->cy = y;
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_CURSOR_POSITION),
+      display, layer, getErrorName(ret));
    return ret;
 }
 
@@ -1974,6 +2191,10 @@ static int32_t hwc2_clrTrs(
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)device;
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_COLOR_TRANSFORM),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -2001,6 +2222,9 @@ static int32_t hwc2_clrTrs(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_COLOR_TRANSFORM),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -2013,6 +2237,10 @@ static int32_t hwc2_clrMode(
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)device;
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_COLOR_MODE),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -2030,6 +2258,9 @@ static int32_t hwc2_clrMode(
    (void)mode;
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_COLOR_MODE),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -2045,6 +2276,10 @@ static int32_t hwc2_cliTgt(
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)device;
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_CLIENT_TARGET),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -2062,16 +2297,31 @@ static int32_t hwc2_cliTgt(
       dsp->u.vd.ct.rdf = acquireFence;
       dsp->u.vd.ct.dsp = (android_dataspace_t)dataspace;
       dsp->u.vd.ct.dmg_n = damage.numRects;
-      memcpy(&dsp->u.vd.ct.dmg_r, damage.rects, sizeof(dsp->u.vd.ct.dmg_r));
+      if (dsp->u.vd.ct.dmg_n) {
+         if (dsp->u.vd.ct.dmg_n > 1) {
+            ALOGW("[vd]: client target with more than one damage region.\n");
+         } else {
+            memcpy(&dsp->u.vd.ct.dmg_r, damage.rects, sizeof(dsp->u.vd.ct.dmg_r));
+         }
+      }
    } else {
       dsp->u.ext.ct.tgt = target;
       dsp->u.ext.ct.rdf = acquireFence;
       dsp->u.ext.ct.dsp = (android_dataspace_t)dataspace;
       dsp->u.ext.ct.dmg_n = damage.numRects;
-      memcpy(&dsp->u.ext.ct.dmg_r, damage.rects, sizeof(dsp->u.ext.ct.dmg_r));
+      if (dsp->u.ext.ct.dmg_n) {
+         if (dsp->u.ext.ct.dmg_n > 1) {
+            ALOGW("[ext]: client target with more than one damage region.\n");
+         } else {
+            memcpy(&dsp->u.ext.ct.dmg_r, damage.rects, sizeof(dsp->u.ext.ct.dmg_r));
+         }
+      }
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_CLIENT_TARGET),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -2085,6 +2335,10 @@ static int32_t hwc2_sActCfg(
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
    struct hwc2_dsp_cfg_t *cfg = NULL;
+
+   ALOGV("-> %s:%" PRIu64 ":%u\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_SET_ACTIVE_CONFIG),
+     display, config);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -2111,6 +2365,9 @@ static int32_t hwc2_sActCfg(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 ":%u (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_ACTIVE_CONFIG),
+      display, config, getErrorName(ret));
    return ret;
 }
 
@@ -2127,6 +2384,10 @@ static int32_t hwc2_relFences(
    uint32_t kind;
    struct hwc2_lyr_t *lyr = NULL;
    size_t num;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_GET_RELEASE_FENCES),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -2163,6 +2424,9 @@ static int32_t hwc2_relFences(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_GET_RELEASE_FENCES),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -2180,6 +2444,10 @@ static int32_t hwc2_dspReqs(
    uint32_t kind;
    struct hwc2_lyr_t *lyr = NULL;
    int32_t i = 0;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_REQUESTS),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -2221,6 +2489,9 @@ static int32_t hwc2_dspReqs(
    }
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_REQUESTS),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -2235,6 +2506,10 @@ static int32_t hwc2_valDsp(
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
    struct hwc2_lyr_t *lyr = NULL;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_VALIDATE_DISPLAY),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_DISPLAY;
@@ -2264,6 +2539,9 @@ static int32_t hwc2_valDsp(
    dsp->validated = true;
 
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_VALIDATE_DISPLAY),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -2292,6 +2570,10 @@ static int32_t hwc2_preDsp(
    uint32_t kind;
    struct hwc2_lyr_t *lyr = NULL;
    int32_t frame_size, cnt;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_PRESENT_DISPLAY),
+     display);
 
    *outRetireFence = -1;
 
@@ -2380,6 +2662,9 @@ out_error:
       }
    }
 out:
+   ALOGV("<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_PRESENT_DISPLAY),
+      display, getErrorName(ret));
    return ret;
 }
 
@@ -2739,6 +3024,7 @@ static void hwc2_setup_ext(
       hwc2->ext->cfgs->xdp   = 0;
       hwc2->ext->cfgs->ydp   = 0;
    }
+   hwc2->ext->aCfg = hwc2->ext->cfgs;
 
    NxClient_GetDefaultAllocSettings(&alloc);
    alloc.surfaceClient = 1; /* single surface client for 'ext' display. */
@@ -2792,6 +3078,7 @@ static void hwc2_setup_ext(
       enum hwc2_cbs_e wcb = hwc2_want_comp_bypass(&settings);
       hwc2_ext_fbs(hwc2, wcb);
       if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
+         ALOGV("[ext]: initial hotplug CONNECTED\n");
          HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
          f_hp(hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].data,
               (hwc2_display_t)(intptr_t)hwc2->ext,
@@ -2867,6 +3154,7 @@ static void hwc2_hp_ntfy(
       }
 
       if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
+         ALOGV("[ext]: notify hotplug CONNECTED\n");
          HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
          f_hp(hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].data,
               (hwc2_display_t)(intptr_t)hwc2->ext,
@@ -2897,6 +3185,7 @@ static void hwc2_hp_ntfy(
       }
    } else /* disconnected */ {
       if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
+         ALOGV("[ext]: notify hotplug DISCONNECTED\n");
          HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
          f_hp(hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].data,
               (hwc2_display_t)(intptr_t)hwc2->ext,
@@ -3043,7 +3332,7 @@ hwc2_module_t HAL_MODULE_INFO_SYM = {
       .hal_api_version    = HARDWARE_HAL_API_VERSION,
       .id                 = HWC_HARDWARE_MODULE_ID,
       .name               = "hwcomposer2 for set-top-box platforms",
-      .author             = "Broadcom",
+      .author             = "broadcom",
       .methods            = &hwc2_mod_fncs,
       .dso                = 0,
       .reserved           = {0}
