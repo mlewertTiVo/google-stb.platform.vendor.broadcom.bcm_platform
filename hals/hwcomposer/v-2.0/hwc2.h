@@ -31,7 +31,14 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_FBS_NUM    3
 #define HWC2_FB_WAIT_TO 50
 #define HWC2_FB_RETRY   4
-#define HWC2_MAX_TL     10
+#define HWC2_ASHIFT     24
+#define HWC2_RLPF       0xCAFEBAAD
+
+/* timeline creation/destruction are expensive operations; we use
+ * a pool which recycles yet keeps sufficient depth to allow layers
+ * to come and go in sync between device and client.
+ */
+#define HWC2_MAX_TL     15
 
 #define HWC2_DSP_NAME   32
 #define HWC2_DSP_EXT    2001
@@ -40,6 +47,9 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_VD_MAX_NUM 1
 #define HWC2_VD_MAX_W   1920
 #define HWC2_VD_MAX_H   1080
+
+#define HWC2_OPQ        0xFF000000
+#define HWC2_TRS        0x00000000
 
 #define HWC2_MEMIF_DEV  "ro.nexus.ashmem.devname"
 
@@ -156,6 +166,7 @@ struct hwc2_dsp_ct_t {
 /* layer unit. */
 struct hwc2_lyr_t {
    struct hwc2_lyr_t  *next;
+   uint64_t           hdl;
 
    hwc2_composition_t cCli; /* offered */
    hwc2_composition_t cDev; /* wanted  */
@@ -177,6 +188,7 @@ struct hwc2_lyr_t {
    int32_t            cx; /* cursor x-position */
    int32_t            cy; /* cursor y-position */
    int32_t            rf; /* release fence for this layer current buffer */
+   uint64_t           lpf; /* last pinged frame (oob-video) */
 };
 
 /* unit of work for composition. */
@@ -185,6 +197,8 @@ struct hwc2_frame_t {
 
    unsigned long long  pres;
    int32_t             cnt;
+   int32_t             scnt;
+   int32_t             vcnt;
    struct hwc2_lyr_t   lyr[0];
 };
 
@@ -219,9 +233,12 @@ enum hwc2_cbs_e {
 
 /* layer release timeline unit. */
 struct hwc2_lyr_tl_t {
-   struct hwc2_lyr_t *hdl;
+   uint64_t          hdl;
    int               tl;
    uint64_t          ix;
+
+   uint64_t          pt;
+   uint64_t          si;
 };
 
 /* external (ie hdmi) display specific information. */

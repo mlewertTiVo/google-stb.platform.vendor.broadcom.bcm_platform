@@ -14,7 +14,13 @@
  * limitations under the License.
  */
 
-#define LOG_NDEBUG 0
+// #define LOG_NDEBUG 0
+#define LOG_FENCE_DEBUG 0
+#define LOG_AR_DEBUG    0
+#define LOG_SEED_DEBUG  0
+#define LOG_YV12_DEBUG  0
+#define LOG_COMP_DEBUG  1
+#define LOG_RGBA_DEBUG  0
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -29,7 +35,6 @@
 #include <sys/resource.h>
 #include <utils/threads.h>
 #include <cutils/sched_policy.h>
-#include <inttypes.h>
 /* hwc2 - including string functions. */
 #define HWC2_INCLUDE_STRINGIFICATION
 #define HWC2_USE_CPP11
@@ -52,28 +57,41 @@
 #include "HwcListener.h"
 #include "IHwc.h"
 #include "HwcSvc.h"
+/* buffer memory interface. */
+#include "gralloc_priv.h"
+#include "nx_ashmem.h"
 /* last but not least... */
 #include "hwcutils.h"
 #include "hwc2.h"
 
-const NEXUS_BlendEquation hwc2_color_pre_multi = {
-   NEXUS_BlendFactor_eSourceColor,
-   NEXUS_BlendFactor_eOne,
-   false,
-   NEXUS_BlendFactor_eDestinationColor,
-   NEXUS_BlendFactor_eInverseSourceAlpha,
-   false,
-   NEXUS_BlendFactor_eZero
+const NEXUS_BlendEquation hwc2_a2n_col_be[4 /*hwc2_blend_mode_t*/] = {
+   /* HWC2_BLEND_MODE_INVALID */ {NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
+                                  NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
+                                  NEXUS_BlendFactor_eZero},
+   /* HWC2_BLEND_MODE_NONE */ {NEXUS_BlendFactor_eSourceColor, NEXUS_BlendFactor_eOne, false,
+                               NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
+                               NEXUS_BlendFactor_eZero},
+   /* HWC2_BLEND_MODE_PREMULTIPLIED */ {NEXUS_BlendFactor_eSourceColor, NEXUS_BlendFactor_eOne, false,
+                                        NEXUS_BlendFactor_eDestinationColor, NEXUS_BlendFactor_eInverseSourceAlpha, false,
+                                        NEXUS_BlendFactor_eZero},
+   /* HWC2_BLEND_MODE_COVERAGE */ {NEXUS_BlendFactor_eSourceColor, NEXUS_BlendFactor_eSourceAlpha, false,
+                                   NEXUS_BlendFactor_eDestinationColor, NEXUS_BlendFactor_eInverseSourceAlpha, false,
+                                   NEXUS_BlendFactor_eZero}
 };
 
-const NEXUS_BlendEquation hwc2_alpha_pre_multi = {
-   NEXUS_BlendFactor_eSourceAlpha,
-   NEXUS_BlendFactor_eOne,
-   false,
-   NEXUS_BlendFactor_eDestinationAlpha,
-   NEXUS_BlendFactor_eInverseSourceAlpha,
-   false,
-   NEXUS_BlendFactor_eZero
+const NEXUS_BlendEquation hwc2_a2n_al_be[4 /*hwc2_blend_mode_t*/] = {
+   /* HWC2_BLEND_MODE_INVALID */ {NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
+                                  NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
+                                  NEXUS_BlendFactor_eZero},
+   /* HWC2_BLEND_MODE_NONE */ {NEXUS_BlendFactor_eSourceAlpha, NEXUS_BlendFactor_eOne, false,
+                               NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
+                               NEXUS_BlendFactor_eZero},
+   /* HWC2_BLEND_MODE_PREMULTIPLIED */ {NEXUS_BlendFactor_eSourceAlpha, NEXUS_BlendFactor_eOne, false,
+                                        NEXUS_BlendFactor_eDestinationAlpha, NEXUS_BlendFactor_eInverseSourceAlpha, false,
+                                        NEXUS_BlendFactor_eZero},
+   /* HWC2_BLEND_MODE_COVERAGE */ {NEXUS_BlendFactor_eSourceAlpha, NEXUS_BlendFactor_eOne, false,
+                                   NEXUS_BlendFactor_eDestinationAlpha, NEXUS_BlendFactor_eInverseSourceAlpha, false,
+                                   NEXUS_BlendFactor_eZero}
 };
 
 struct hwc2_bcm_device_t {
@@ -83,6 +101,7 @@ struct hwc2_bcm_device_t {
 
    char                 memif[PROPERTY_VALUE_MAX];
    int                  memfd;
+   bool                 rlpf;
 
    BKNI_EventHandle     recycle;  /* from nexus */
    BKNI_EventHandle     recycled; /* to waiter, after recycling */
@@ -111,6 +130,24 @@ struct hwc2_bcm_device_t {
    pthread_mutex_t              mtx_g2d;
    NEXUS_Graphics2DCapabilities g2dc;
 };
+
+static NEXUS_PixelFormat gr2nx_pixel(
+   int gr) {
+
+   switch (gr) {
+   case HAL_PIXEL_FORMAT_RGBA_8888: return NEXUS_PixelFormat_eA8_B8_G8_R8;
+   case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED: /* fall through. */
+   case HAL_PIXEL_FORMAT_RGBX_8888: return NEXUS_PixelFormat_eX8_B8_G8_R8;
+   case HAL_PIXEL_FORMAT_RGB_888:   return NEXUS_PixelFormat_eX8_B8_G8_R8;
+   case HAL_PIXEL_FORMAT_RGB_565:   return NEXUS_PixelFormat_eR5_G6_B5;
+   case HAL_PIXEL_FORMAT_YV12: /* fall-thru */
+   case HAL_PIXEL_FORMAT_YCbCr_420_888: return NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8;
+   default:                         break;
+   }
+
+   ALOGE("[gr2nx]: unsupported format %d", gr);
+   return NEXUS_PixelFormat_eUnknown;
+}
 
 static hwc2_dsp_t *hwc2_hnd2dsp(
    struct hwc2_bcm_device_t *hwc2,
@@ -381,6 +418,8 @@ static int32_t hwc2_ret_fence(
    if (f < 0) {
       return HWC2_INVALID;
    }
+   ALOGI_IF(LOG_FENCE_DEBUG, "[rel-add]:%" PRIu64 ":%d:'%s'\n",
+         (uint64_t)(intptr_t)dsp, dsp->cmp_tl, info.name);
    return f;
 }
 
@@ -392,6 +431,8 @@ static void hwc2_ret_inc(
       return;
    }
    sw_sync_timeline_inc(dsp->cmp_tl, inc);
+   ALOGI_IF(LOG_FENCE_DEBUG, "[rel-inc]:%" PRIu64 ":%d:%d\n",
+         (uint64_t)(intptr_t)dsp, dsp->cmp_tl, inc);
 }
 
 static void hwc2_recycle(
@@ -416,8 +457,6 @@ static void hwc2_recycle(
       }
       pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
    }
-
-   hwc2_ret_inc(hwc2->ext, (unsigned int)ns);
 }
 
 static void *hwc2_recycle_task(
@@ -495,6 +534,27 @@ out_read:
    pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
 out:
    return (e != NULL ? e->s : NULL);
+}
+
+static void hwc2_ext_fb_put(
+   struct hwc2_bcm_device_t *hwc2,
+   NEXUS_SurfaceHandle s) {
+
+   int fd;
+   if (s) {
+      if (!pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs)) {
+         fd = hwc2_ext_fb_valid_l(hwc2, s);
+         if (fd != HWC2_INVALID) {
+            struct hwc2_fb_t *e = BFIFO_WRITE(&hwc2->ext->u.ext.fb);
+            e->s  = s;
+            e->fd = fd;
+            BFIFO_WRITE_COMMIT(&hwc2->ext->u.ext.fb, 1);
+         }
+         pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
+      } else {
+         ALOGW("[ext]: leaked surface %p!", s);
+      }
+   }
 }
 
 static hwc2_lyr_t *hwc2_hnd2lyr(
@@ -651,7 +711,7 @@ static int32_t hwc2_vdAdd(
       ret = HWC2_ERROR_NO_RESOURCES;
       goto out;
    }
-   snprintf(hwc2->vd->name, strlen(hwc2->vd->name), "stbVD0");
+   snprintf(hwc2->vd->name, sizeof(hwc2->vd->name), "stbVD0");
    hwc2->vd->type = HWC2_DISPLAY_TYPE_VIRTUAL;
    hwc2->vd->u.vd.w = width;
    hwc2->vd->u.vd.h = height;
@@ -768,7 +828,8 @@ static int32_t hwc2_dspAckChg(
 
    lyr = dsp->lyr;
    while (lyr != NULL) {
-      if (lyr->cCli != lyr->cDev) {
+      if ((lyr->cDev != HWC2_COMPOSITION_INVALID) &&
+          (lyr->cCli != lyr->cDev)) {
          lyr->cCli = lyr->cDev;
       }
       lyr = lyr->next;
@@ -784,24 +845,28 @@ out:
 static void hwc2_lyr_tl_set(
    struct hwc2_dsp_t *dsp,
    uint32_t kind,
-   struct hwc2_lyr_t *lyr) {
+   uint64_t hdl) {
 
    size_t num;
    int free = HWC2_INVALID;
    if (kind == HWC2_DSP_EXT) {
       for (num = 0 ; num < HWC2_MAX_TL ; num++) {
          if (free == HWC2_INVALID &&
-             dsp->u.ext.rtl[num].hdl == NULL &&
+             dsp->u.ext.rtl[num].hdl == 0 &&
              dsp->u.ext.rtl[num].tl != HWC2_INVALID) {
             free = (int)num;
          }
-         if (dsp->u.ext.rtl[num].hdl == lyr) {
+         if (dsp->u.ext.rtl[num].hdl == hdl) {
             return;
          }
       }
 
       if (free != HWC2_INVALID) {
-         dsp->u.ext.rtl[free].hdl = lyr;
+         dsp->u.ext.rtl[free].hdl = hdl;
+         dsp->u.ext.rtl[free].pt  = 0;
+         dsp->u.ext.rtl[free].si  = 0;
+      } else {
+         ALOGE("[tl-set]:%" PRIu64 ":no resources!\n", hdl);
       }
    }
 }
@@ -809,13 +874,20 @@ static void hwc2_lyr_tl_set(
 static void hwc2_lyr_tl_unset(
    struct hwc2_dsp_t *dsp,
    uint32_t kind,
-   struct hwc2_lyr_t *lyr) {
+   uint64_t hdl) {
 
-   size_t num;
+   size_t num, si;
    if (kind == HWC2_DSP_EXT) {
       for (num = 0 ; num < HWC2_MAX_TL ; num++) {
-         if (dsp->u.ext.rtl[num].hdl == lyr) {
-            dsp->u.ext.rtl[num].hdl = NULL;
+         if (dsp->u.ext.rtl[num].hdl == hdl) {
+            if (dsp->u.ext.rtl[num].pt != dsp->u.ext.rtl[num].si) {
+               ALOGI("[tl-uset]:%" PRIu64 ":free orphan on %" PRIu64 ":%" PRIu64 "\n", hdl,
+                     dsp->u.ext.rtl[num].si, dsp->u.ext.rtl[num].pt);
+               for (si = 0 ; si < dsp->u.ext.rtl[num].pt - dsp->u.ext.rtl[num].si ; si++) {
+                  sw_sync_timeline_inc(dsp->u.ext.rtl[num].tl, 1);
+               }
+            }
+            dsp->u.ext.rtl[num].hdl = 0;
          }
       }
    }
@@ -824,26 +896,31 @@ static void hwc2_lyr_tl_unset(
 static int32_t hwc2_lyr_tl_add(
    struct hwc2_dsp_t *dsp,
    uint32_t kind,
-   struct hwc2_lyr_t *lyr) {
+   uint64_t hdl) {
 
    int32_t f = HWC2_INVALID;
    struct sync_fence_info_data info;
    size_t num;
    if (kind == HWC2_DSP_EXT) {
       for (num = 0 ; num < HWC2_MAX_TL ; num++) {
-         if (dsp->u.ext.rtl[num].hdl == lyr) {
+         if (dsp->u.ext.rtl[num].hdl == hdl) {
             dsp->u.ext.rtl[num].ix++;
             snprintf(info.name, sizeof(info.name),
-                     "hwc2_%p_ext_%llu", (void *)lyr, dsp->u.ext.rtl[num].ix);
+                     "hwc2_%zu_ext_%llu", num, dsp->u.ext.rtl[num].ix);
             f = sw_sync_fence_create(dsp->u.ext.rtl[num].tl,
                                      info.name,
                                      dsp->u.ext.rtl[num].ix);
             if (f < 0) {
                f = HWC2_INVALID;
+            } else {
+               dsp->u.ext.rtl[num].pt++;
             }
+            ALOGI_IF(LOG_FENCE_DEBUG, "[tl-add]:%" PRIu64 ":%d:'%s'\n",
+                  dsp->u.ext.rtl[num].hdl, dsp->u.ext.rtl[num].tl, info.name);
             return f;
          }
       }
+      ALOGE("[tl-add]:%" PRIu64 ":orphaned, failed to create\n", hdl);
    }
 
    return HWC2_INVALID;
@@ -852,13 +929,16 @@ static int32_t hwc2_lyr_tl_add(
 static void hwc2_lyr_tl_inc(
    struct hwc2_dsp_t *dsp,
    uint32_t kind,
-   struct hwc2_lyr_t *lyr) {
+   uint64_t hdl) {
 
    size_t num;
    if (kind == HWC2_DSP_EXT) {
       for (num = 0 ; num < HWC2_MAX_TL ; num++) {
-         if (dsp->u.ext.rtl[num].hdl == lyr) {
+         if (dsp->u.ext.rtl[num].hdl == hdl) {
+            ALOGI_IF(LOG_FENCE_DEBUG, "[tl-inc]:%" PRIu64 ":%d:1\n",
+                  dsp->u.ext.rtl[num].hdl, dsp->u.ext.rtl[num].tl);
             sw_sync_timeline_inc(dsp->u.ext.rtl[num].tl, 1);
+            dsp->u.ext.rtl[num].si++;
             return;
          }
       }
@@ -876,6 +956,7 @@ static int32_t hwc2_lyrAdd(
    struct hwc2_lyr_t *lyr = NULL;
    struct hwc2_lyr_t *lnk = NULL, *nxt = NULL;
    uint32_t kind;
+   size_t cnt = 0;
 
    ALOGV("-> %s:%" PRIu64 "\n",
      getFunctionDescriptorName(HWC2_FUNCTION_CREATE_LAYER),
@@ -898,8 +979,9 @@ static int32_t hwc2_lyrAdd(
       goto out;
    }
    memset(lyr, 0, sizeof(*lyr));
-
-   hwc2_lyr_tl_set(dsp, kind, lyr);
+   lyr->hdl = (uint64_t)(intptr_t)lyr;
+   lyr->rf = HWC2_INVALID;
+   hwc2_lyr_tl_set(dsp, kind, lyr->hdl);
 
    nxt = dsp->lyr;
    if (nxt == NULL) {
@@ -907,11 +989,14 @@ static int32_t hwc2_lyrAdd(
    } else {
       while (nxt != NULL) {
          lnk = nxt;
-         nxt = lnk->next;
+         nxt = nxt->next;
+         cnt++;
       }
-      lnk = lyr;
+      lnk->next = lyr;
    }
    *outLayer = (hwc2_layer_t)(intptr_t)lyr;
+   cnt++;
+   ALOGI_IF(LOG_AR_DEBUG, "[add]:%" PRIu64 ": %zu layers\n", lyr->hdl, cnt);
 
 out:
    ALOGV("<- %s:%" PRIu64 " (%s) -> %" PRIu64 "\n",
@@ -931,6 +1016,7 @@ static int32_t hwc2_lyrRem(
    struct hwc2_lyr_t *lyr = NULL;
    struct hwc2_lyr_t *prv = NULL, *nxt = NULL;
    uint32_t kind;
+   uint64_t hdl;
 
    ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
      getFunctionDescriptorName(HWC2_FUNCTION_DESTROY_LAYER),
@@ -963,15 +1049,18 @@ static int32_t hwc2_lyrRem(
       goto out;
    }
 
+   hdl = lyr->hdl;
    if (prv == NULL) {
       dsp->lyr = lyr->next;
    } else {
       prv->next = lyr->next;
    }
    lyr->next = NULL;
-   hwc2_lyr_tl_unset(dsp, kind, lyr);
+   hwc2_lyr_tl_unset(dsp, kind, lyr->hdl);
    free(lyr);
    lyr = NULL;
+
+   ALOGI_IF(LOG_AR_DEBUG, "[rem]:%" PRIu64 " \n", hdl);
 
 out:
    ALOGV("<- %s:%" PRIu64 " (%s):%" PRIu64 "\n",
@@ -1055,7 +1144,8 @@ static int32_t hwc2_getDevCmp(
    *outNumElements = 0;
    lyr = dsp->lyr;
    while (lyr != NULL) {
-      if (lyr->cDev != lyr->cCli) {
+      if ((lyr->cDev != HWC2_COMPOSITION_INVALID) &&
+          (lyr->cCli != lyr->cDev)) {
          if (outLayers != NULL && outTypes != NULL) {
             outLayers[*outNumElements] = (hwc2_layer_t)(intptr_t)lyr;
             outTypes[*outNumElements] = lyr->cDev;
@@ -1112,23 +1202,29 @@ static int32_t hwc2_dspcSupp(
 
 static int32_t hwc2_sclSupp(
    struct hwc2_bcm_device_t *hwc2,
-   struct hwc2_dsp_t *dsp,
-   uint32_t width,
-   uint32_t height) {
+   hwc_rect_t *src,
+   hwc_rect_t *dst) {
 
+   NEXUS_Rect s, d;
    hwc2_error_t ret = HWC2_ERROR_NONE;
 
-   if (dsp->aCfg &&
-       dsp->aCfg->w &&
-       width &&
-       (dsp->aCfg->w / width) >= hwc2->g2dc.maxHorizontalDownScale) {
+   s.x = (int16_t)src->left;
+   s.y = (int16_t)src->top;
+   s.width = (uint16_t)(src->right - src->left);
+   s.height = (uint16_t)(src->bottom - src->top);
+
+   d.x = (int16_t)dst->left;
+   d.y = (int16_t)dst->top;
+   d.width = (uint16_t)(dst->right - dst->left);
+   d.height = (uint16_t)(dst->bottom - dst->top);
+
+   if (s.width && d.width &&
+       (s.width / d.width) >= hwc2->g2dc.maxHorizontalDownScale) {
       ret = HWC2_ERROR_UNSUPPORTED;
    }
 
-   if (dsp->aCfg &&
-       dsp->aCfg->h &&
-       height &&
-       (dsp->aCfg->h / height) >= hwc2->g2dc.maxVerticalDownScale) {
+   if (s.height && d.height &&
+       (s.height / d.height) >= hwc2->g2dc.maxVerticalDownScale) {
       ret = HWC2_ERROR_UNSUPPORTED;
    }
 
@@ -1175,10 +1271,6 @@ static int32_t hwc2_ackCliTgt(
       goto out;
    }
    ret = (hwc2_error_t)hwc2_dspcSupp(dataspace);
-   if (ret != HWC2_ERROR_NONE) {
-      goto out;
-   }
-   ret = (hwc2_error_t)hwc2_sclSupp(hwc2, dsp, width, height);
    if (ret != HWC2_ERROR_NONE) {
       goto out;
    }
@@ -1520,13 +1612,12 @@ static int32_t hwc2_lyrBuf(
       goto out;
    }
 
-   if (lyr->cDev == HWC2_COMPOSITION_SOLID_COLOR ||
-       lyr->cDev == HWC2_COMPOSITION_SIDEBAND ||
-       lyr->cDev == HWC2_COMPOSITION_CLIENT) {
+   if (lyr->cCli == HWC2_COMPOSITION_SOLID_COLOR ||
+       lyr->cCli == HWC2_COMPOSITION_SIDEBAND ||
+       lyr->cCli == HWC2_COMPOSITION_CLIENT) {
       lyr->bh = NULL;
       lyr->af = HWC2_INVALID;
    } else {
-      // TODO: validate buffer handle?
       lyr->bh = buffer;
       lyr->af = acquireFence;
    }
@@ -1627,7 +1718,10 @@ static int32_t hwc2_lyrComp(
       goto out;
    }
 
+   /* composition type offered by surface flinger. */
    lyr->cCli = (hwc2_composition_t)type;
+   /* ...reset our prefered composition type for this layer. */
+   lyr->cDev = HWC2_COMPOSITION_INVALID;
 
 out:
    ALOGV("<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
@@ -1795,7 +1889,7 @@ static int32_t hwc2_lyrSbStr(
       goto out;
    }
 
-   if (lyr->cDev != HWC2_COMPOSITION_SIDEBAND) {
+   if (lyr->cCli != HWC2_COMPOSITION_SIDEBAND) {
       goto out;
    }
 
@@ -2076,8 +2170,6 @@ static int32_t hwc2_outBuf(
       goto out;
    }
 
-   // TODO: validate buffer is proper.
-
    dsp->u.vd.output = buffer;
    dsp->u.vd.wrFence = releaseFence;
 
@@ -2292,6 +2384,13 @@ static int32_t hwc2_cliTgt(
       goto out;
    }
 
+   /* valid to have a NULL client target when there is no
+    * HWC2_COMPOSITION_CLIENT layer.
+    */
+   if (target == NULL) {
+      goto out;
+   }
+
    if (kind == HWC2_DSP_VD) {
       dsp->u.vd.ct.tgt = target;
       dsp->u.vd.ct.rdf = acquireFence;
@@ -2404,7 +2503,9 @@ static int32_t hwc2_relFences(
       *outNumElements = 0;
       lyr = dsp->lyr;
       while (lyr != NULL) {
-         if (lyr->cDev == HWC2_COMPOSITION_DEVICE) {
+         if (((lyr->cDev == HWC2_COMPOSITION_INVALID) &&
+               (lyr->cCli == HWC2_COMPOSITION_DEVICE)) ||
+             (lyr->cDev == HWC2_COMPOSITION_DEVICE)) {
             *outNumElements += 1;
          }
          lyr = lyr->next;
@@ -2413,11 +2514,15 @@ static int32_t hwc2_relFences(
       num = 0;
       lyr = dsp->lyr;
       while (lyr != NULL) {
-         if (lyr->cDev == HWC2_COMPOSITION_DEVICE) {
-            lyr->rf = hwc2_lyr_tl_add(dsp, kind, lyr);
+         if (((lyr->cDev == HWC2_COMPOSITION_INVALID) &&
+               (lyr->cCli == HWC2_COMPOSITION_DEVICE)) ||
+             (lyr->cDev == HWC2_COMPOSITION_DEVICE)) {
+            lyr->rf = hwc2_lyr_tl_add(dsp, kind, lyr->hdl);
             outLayers[num] = (hwc2_layer_t)(intptr_t)lyr;
             outFences[num] = lyr->rf;
             num++;
+         } else {
+            lyr->rf = HWC2_INVALID;
          }
          lyr = lyr->next;
       }
@@ -2495,6 +2600,34 @@ out:
    return ret;
 }
 
+static void hwc2_comp_validate(
+   struct hwc2_bcm_device_t *hwc2,
+   struct hwc2_dsp_t *dsp) {
+
+   struct hwc2_lyr_t *lyr = NULL;
+
+   lyr = dsp->lyr;
+   while (lyr != NULL) {
+
+      if (lyr->cCli == HWC2_COMPOSITION_CURSOR) {
+         ALOGI("lyr[%" PRIu64 "]:%s->%s (cursor not supported)", lyr->hdl,
+               getCompositionName(HWC2_COMPOSITION_CURSOR),
+               getCompositionName(HWC2_COMPOSITION_DEVICE));
+         lyr->cDev = HWC2_COMPOSITION_DEVICE;
+      } else if (lyr->cCli == HWC2_COMPOSITION_DEVICE) {
+         hwc2_error_t ret = (hwc2_error_t)hwc2_sclSupp(hwc2, &lyr->crp, &lyr->fr);
+         if (ret != HWC2_ERROR_NONE) {
+            ALOGI("lyr[%" PRIu64 "]:%s->%s (scaling out of bounds)", lyr->hdl,
+                  getCompositionName(HWC2_COMPOSITION_DEVICE),
+                  getCompositionName(HWC2_COMPOSITION_CLIENT));
+            lyr->cDev = HWC2_COMPOSITION_DEVICE;
+         }
+      }
+
+      lyr = lyr->next;
+   };
+}
+
 static int32_t hwc2_valDsp(
    hwc2_device_t* device,
    hwc2_display_t display,
@@ -2522,6 +2655,11 @@ static int32_t hwc2_valDsp(
       goto out;
    }
 
+   /* internal validation, this is where we may change the
+    * layer composition associated with each layers to be composed.
+    */
+   hwc2_comp_validate(hwc2, dsp);
+
    lyr = dsp->lyr;
    *outNumTypes = 0;
    *outNumRequests = 0;
@@ -2530,7 +2668,8 @@ static int32_t hwc2_valDsp(
       if (lyr->rp) {
          *outNumRequests += 1;
       }
-      if (lyr->cCli != lyr->cDev) {
+      if ((lyr->cDev != HWC2_COMPOSITION_INVALID) &&
+          (lyr->cCli != lyr->cDev)) {
          *outNumTypes += 1;
       }
       lyr = lyr->next;
@@ -2553,10 +2692,161 @@ static int32_t hwc2_cntLyr(
 
    lyr = dsp->lyr;
    while (lyr != NULL) {
+      cnt++;
       lyr = lyr->next;
    };
 
    return cnt;
+}
+
+static void hwc2_setup_memif(
+   struct hwc2_bcm_device_t *hwc2)
+{
+   char device[PROPERTY_VALUE_MAX];
+
+   if (strlen(hwc2->memif) == 0) {
+      memset(device, 0, sizeof(device));
+      memset(hwc2->memif, 0, sizeof(hwc2->memif));
+
+      property_get(HWC2_MEMIF_DEV, device, NULL);
+      if (strlen(device)) {
+         strcpy(hwc2->memif, "/dev/");
+         strcat(hwc2->memif, device);
+      }
+   }
+}
+
+static int hwc2_open_memif(
+   struct hwc2_bcm_device_t *hwc2)
+{
+   int fd = HWC2_INVALID;
+
+   if (hwc2->memfd >= 0) {
+      goto out;
+   }
+   hwc2_setup_memif(hwc2);
+   hwc2->memfd = open(hwc2->memif, O_RDWR, 0);
+
+out:
+   return hwc2->memfd;
+}
+
+static void hwc2_close_memif(
+   struct hwc2_bcm_device_t *hwc2)
+{
+   if (hwc2->memfd != HWC2_INVALID) {
+      close(hwc2->memfd);
+      hwc2->memfd = HWC2_INVALID;
+   }
+}
+
+static NEXUS_Error hwc2_ext_refcnt(
+   struct hwc2_bcm_device_t* hwc2,
+   NEXUS_MemoryBlockHandle bh,
+   int cnt) {
+
+   int mem_if = hwc2_open_memif(hwc2);
+   if (mem_if != HWC2_INVALID) {
+      struct nx_ashmem_ext_refcnt ashmem_ext_refcnt;
+      memset(&ashmem_ext_refcnt, 0, sizeof(struct nx_ashmem_ext_refcnt));
+      ashmem_ext_refcnt.hdl = (__u64)bh;
+      ashmem_ext_refcnt.cnt = cnt;
+      int ret = ioctl(mem_if, NX_ASHMEM_EXT_REFCNT, &ashmem_ext_refcnt);
+      if (ret < 0) {
+         ALOGE("[refcnt]: failed (%d) for %p, count:0x%x", ret, bh, cnt);
+         hwc2_close_memif(hwc2);
+         return NEXUS_OS_ERROR;
+      }
+   } else {
+      return NEXUS_INVALID_PARAMETER;
+   }
+   return NEXUS_SUCCESS;
+}
+
+static int hwc2_mem_lock(
+   struct hwc2_bcm_device_t* hwc2,
+   NEXUS_MemoryBlockHandle bh,
+   void **addr,
+   bool lock) {
+
+   NEXUS_Error rc = NEXUS_SUCCESS;
+   NEXUS_Error ext = NEXUS_SUCCESS;
+
+   if (bh) {
+      if (lock) {
+         ext = hwc2_ext_refcnt(hwc2, bh, NX_ASHMEM_REFCNT_ADD);
+         if (ext == NEXUS_SUCCESS) {
+            rc = NEXUS_MemoryBlock_Lock(bh, addr);
+            if (rc != NEXUS_SUCCESS) {
+               hwc2_ext_refcnt(hwc2, bh, NX_ASHMEM_REFCNT_REM);
+               if (rc == BERR_NOT_SUPPORTED) {
+                  NEXUS_MemoryBlock_Unlock(bh);
+               }
+            }
+         } else {
+            rc = NEXUS_OS_ERROR;
+         }
+
+         if (rc) {
+            *addr = NULL;
+            return (int)rc;
+         }
+      } else {
+        return NEXUS_SUCCESS;
+      }
+   } else {
+      *addr = NULL;
+   }
+   return 0;
+}
+
+static int hwc2_mem_unlock(
+   struct hwc2_bcm_device_t* hwc2,
+   NEXUS_MemoryBlockHandle bh,
+   bool lock) {
+
+   if (bh) {
+      if (lock) {
+         NEXUS_MemoryBlock_Unlock(bh);
+         hwc2_ext_refcnt(hwc2, bh, NX_ASHMEM_REFCNT_REM);
+      }
+   }
+   return 0;
+}
+
+static bool hwc2_is_video(
+   struct hwc2_bcm_device_t *hwc2,
+   struct hwc2_lyr_t *lyr) {
+
+   bool video = false;
+   NEXUS_Error lrc = NEXUS_SUCCESS;
+   NEXUS_MemoryBlockHandle bh = NULL;
+   PSHARED_DATA shared = NULL;
+   void *map = NULL;
+   int index = -1;
+
+   if (lyr->bh == NULL) {
+      return video;
+   }
+
+   private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
+   lrc = hwc2_mem_lock(hwc2, bh, &map, true);
+   shared = (PSHARED_DATA) map;
+   if (lrc || shared == NULL) {
+      goto out;
+   }
+   index = android_atomic_acquire_load(&(shared->videoWindow.windowIdPlusOne));
+   if (index > 0) {
+      if (reinterpret_cast<NexusClientContext *>(shared->videoWindow.nexusClientContext) != NULL) {
+         video = true;
+      }
+   }
+
+out:
+   if (lrc == NEXUS_SUCCESS) {
+      hwc2_mem_unlock(hwc2, bh, true);
+   }
+   return video;
 }
 
 static int32_t hwc2_preDsp(
@@ -2569,7 +2859,7 @@ static int32_t hwc2_preDsp(
    struct hwc2_dsp_t *dsp = NULL;
    uint32_t kind;
    struct hwc2_lyr_t *lyr = NULL;
-   int32_t frame_size, cnt;
+   int32_t frame_size, cnt, vcnt = 0, scnt = 0;
 
    ALOGV("-> %s:%" PRIu64 "\n",
      getFunctionDescriptorName(HWC2_FUNCTION_PRESENT_DISPLAY),
@@ -2622,10 +2912,50 @@ static int32_t hwc2_preDsp(
       lyr = dsp->lyr;
       clyr = &frame->lyr[0];
       for (frame_size = 0 ; frame_size < cnt ; frame_size++) {
+         if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
+            lyr->bh = hwc2->ext->u.ext.ct.tgt;
+            lyr->af = hwc2->ext->u.ext.ct.rdf;
+         } else if (lyr->cCli == HWC2_COMPOSITION_SIDEBAND) {
+            scnt++;
+         } else if (hwc2_is_video(hwc2, lyr)) {
+            vcnt++;
+            /* signal to the video display the frame to be presented. */
+            if (hwc2->hb) {
+               NEXUS_Error lrc = NEXUS_SUCCESS;
+               NEXUS_MemoryBlockHandle bh = NULL;
+               PSHARED_DATA shared = NULL;
+               void *map = NULL;
+               private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
+               lrc = hwc2_mem_lock(hwc2, bh, &map, true);
+               shared = (PSHARED_DATA) map;
+               if ((lrc == NEXUS_SUCCESS) && (shared != NULL)) {
+                  if (hwc2->rlpf) {
+                     lyr->lpf = HWC2_RLPF;
+                  }
+                  if (lyr->lpf != shared->videoFrame.status.serialNumber) {
+                     lyr->lpf = shared->videoFrame.status.serialNumber;
+                     hwc2->hb->setframe(0, lyr->lpf);
+                  }
+               }
+               if (lyr->rf != HWC2_INVALID) {
+                  hwc2_lyr_tl_inc(dsp, kind, lyr->hdl);
+                  lyr->rf = HWC2_INVALID;
+               }
+               if (lrc == NEXUS_SUCCESS) {
+                  hwc2_mem_unlock(hwc2, bh, true);
+               }
+            }
+         }
+         /* modification to the layer content may take place prior to copy. */
          memcpy(clyr, lyr, sizeof(struct hwc2_lyr_t));
          lyr = lyr->next;
          clyr->next = &frame->lyr[frame_size+1];
          clyr = &frame->lyr[frame_size+1];
+      }
+      frame->vcnt = vcnt;
+      frame->scnt = scnt;
+      if (hwc2->rlpf && vcnt) {
+         hwc2->rlpf = false;
       }
       if (!pthread_mutex_lock(&dsp->mtx_cmp_wl)) {
          if (dsp->cmp_wl == NULL) {
@@ -2646,7 +2976,7 @@ static int32_t hwc2_preDsp(
       BKNI_SetEvent(dsp->cmp_evt);
       goto out;
    } else if (kind == HWC2_DSP_VD) {
-      *outRetireFence = -1;
+      *outRetireFence = HWC2_INVALID;
       goto out;
    }
 
@@ -2656,7 +2986,7 @@ out_error:
       lyr = dsp->lyr;
       for (frame_size = 0 ; frame_size < cnt ; frame_size++) {
          if (lyr->rf != HWC2_INVALID) {
-            hwc2_lyr_tl_inc(dsp, kind, lyr);
+            hwc2_lyr_tl_inc(dsp, kind, lyr->hdl);
          }
          lyr = lyr->next;
       }
@@ -2739,15 +3069,6 @@ static hwc2_function_pointer_t hwc2_getFncs(
    }
 
    return NULL;
-}
-
-static void hwc2_close_memif(
-   struct hwc2_bcm_device_t *hwc2)
-{
-   if (hwc2->memfd != HWC2_INVALID) {
-      close(hwc2->memfd);
-      hwc2->memfd = HWC2_INVALID;
-   }
 }
 
 static void hwc2_bcm_close(
@@ -2852,44 +3173,371 @@ static int hwc2_close(
    return 0;
 }
 
-static void hwc2_setup_memif(
-   struct hwc2_bcm_device_t *hwc2)
+static void hwc2_ext_fb_seed(
+   struct hwc2_bcm_device_t* hwc2,
+   NEXUS_SurfaceHandle s,
+   uint32_t color)
 {
-   char device[PROPERTY_VALUE_MAX];
-
-   if (strlen(hwc2->memif) == 0) {
-      memset(device, 0, sizeof(device));
-      memset(hwc2->memif, 0, sizeof(hwc2->memif));
-
-      property_get(HWC2_MEMIF_DEV, device, NULL);
-      if (strlen(device)) {
-         strcpy(hwc2->memif, "/dev/");
-         strcat(hwc2->memif, device);
+   NEXUS_Error rc;
+   if (s) {
+      NEXUS_Graphics2DFillSettings fs;
+      NEXUS_Graphics2D_GetDefaultFillSettings(&fs);
+      fs.surface = s;
+      fs.color   = color;
+      fs.colorOp = NEXUS_FillOp_eCopy;
+      fs.alphaOp = NEXUS_FillOp_eCopy;
+      if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
+         return;
       }
+      NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
+      pthread_mutex_unlock(&hwc2->mtx_g2d);
+      ALOGI_IF(LOG_SEED_DEBUG, "[seed]: %p with color %08x\n", s, color);
    }
 }
 
-static int hwc2_open_memif(
-   struct hwc2_bcm_device_t *hwc2)
+#define SHIFT_FACTOR 10
+static NEXUS_Graphics2DColorMatrix g_hwc2_ai32_Matrix_YCbCrtoRGB =
 {
-   int fd = HWC2_INVALID;
-
-   if (hwc2->memfd >= 0) {
-      goto out;
+   SHIFT_FACTOR,
+   {
+      (int32_t) ( 1.164f * (1 << SHIFT_FACTOR)),   /*  Y factor for R */
+      (int32_t) 0,                                 /* Cb factor for R */
+      (int32_t) ( 1.596f * (1 << SHIFT_FACTOR)),   /* Cr factor for R */
+      (int32_t) 0,                                 /*  A factor for R */
+      (int32_t) (-223 * (1 << SHIFT_FACTOR)),      /* Increment for R */
+      (int32_t) ( 1.164f * (1 << SHIFT_FACTOR)),   /*  Y factor for G */
+      (int32_t) (-0.391f * (1 << SHIFT_FACTOR)),   /* Cb factor for G */
+      (int32_t) (-0.813f * (1 << SHIFT_FACTOR)),   /* Cr factor for G */
+      (int32_t) 0,                                 /*  A factor for G */
+      (int32_t) (134 * (1 << SHIFT_FACTOR)),       /* Increment for G */
+      (int32_t) ( 1.164f * (1 << SHIFT_FACTOR)),   /*  Y factor for B */
+      (int32_t) ( 2.018f * (1 << SHIFT_FACTOR)),   /* Cb factor for B */
+      (int32_t) 0,                                 /* Cr factor for B */
+      (int32_t) 0,                                 /*  A factor for B */
+      (int32_t) (-277 * (1 << SHIFT_FACTOR)),      /* Increment for B */
+      (int32_t) 0,                                 /*  Y factor for A */
+      (int32_t) 0,                                 /* Cb factor for A */
+      (int32_t) 0,                                 /* Cr factor for A */
+      (int32_t) (1 << SHIFT_FACTOR),               /*  A factor for A */
+      (int32_t) 0,                                 /* Increment for A */
    }
-   hwc2_setup_memif(hwc2);
-   hwc2->memfd = open(hwc2->memif, O_RDWR, 0);
+};
 
-out:
-   return hwc2->memfd;
+static void hwc2_blit_yv12(
+   struct hwc2_bcm_device_t* hwc2,
+   NEXUS_SurfaceHandle d,
+   struct hwc2_lyr_t *lyr,
+   PSHARED_DATA shared,
+   unsigned long long f) {
+
+   NEXUS_SurfaceHandle cb, cr, y, yuv;
+   void *buffer, *next, *slock;
+   BM2MC_PACKET_Plane pcb, pcr, py, pycbcr, prgba;
+   size_t size;
+   unsigned int cs = 0, cr_o = 0, cb_o = 0;
+   NEXUS_Rect c, p, oa;
+   NEXUS_Error rc;
+
+   BM2MC_PACKET_Blend cbClr = {BM2MC_PACKET_BlendFactor_eSourceColor, BM2MC_PACKET_BlendFactor_eOne, false,
+                               BM2MC_PACKET_BlendFactor_eDestinationColor, BM2MC_PACKET_BlendFactor_eOne, false,
+                               BM2MC_PACKET_BlendFactor_eZero};
+   BM2MC_PACKET_Blend cpClr = {BM2MC_PACKET_BlendFactor_eSourceColor, BM2MC_PACKET_BlendFactor_eOne, false,
+                               BM2MC_PACKET_BlendFactor_eZero, BM2MC_PACKET_BlendFactor_eZero, false,
+                               BM2MC_PACKET_BlendFactor_eZero};
+   BM2MC_PACKET_Blend cpAlp = {BM2MC_PACKET_BlendFactor_eSourceAlpha, BM2MC_PACKET_BlendFactor_eOne, false,
+                               BM2MC_PACKET_BlendFactor_eZero, BM2MC_PACKET_BlendFactor_eZero, false,
+                               BM2MC_PACKET_BlendFactor_eZero};
+
+   c = {(int16_t)lyr->crp.left,
+        (int16_t)lyr->crp.top,
+        (uint16_t)(lyr->crp.right - lyr->crp.left),
+        (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
+   p = {(int16_t)lyr->fr.left,
+        (int16_t)lyr->fr.top,
+        (uint16_t)(lyr->fr.right - lyr->fr.left),
+        (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+
+   oa = p;
+
+   y = hwc_to_nsc_surface(shared->container.width, shared->container.height,
+                          shared->container.stride, NEXUS_PixelFormat_eY8,
+                          shared->container.block, 0);
+   NEXUS_Surface_Lock(y, &slock);
+   NEXUS_Surface_Flush(y);
+
+   cs = (shared->container.stride/2 + (((private_handle_t *)lyr->bh)->alignment-1))
+        & ~(((private_handle_t *)lyr->bh)->alignment-1);
+   cr_o = shared->container.stride * shared->container.height;
+   cb_o = cr_o + ((shared->container.height/2) * ((shared->container.stride/2 + (((private_handle_t *)lyr->bh)->alignment-1))
+                 & ~(((private_handle_t *)lyr->bh)->alignment-1)));
+
+   cr = hwc_to_nsc_surface(shared->container.width/2, shared->container.height/2,
+                           cs, NEXUS_PixelFormat_eCr8,
+                           shared->container.block, cr_o);
+   NEXUS_Surface_Lock(cr, &slock);
+   NEXUS_Surface_Flush(cr);
+
+   cb = hwc_to_nsc_surface(shared->container.width/2, shared->container.height/2,
+                           cs, NEXUS_PixelFormat_eCb8,
+                           shared->container.block, cb_o);
+   NEXUS_Surface_Lock(cb, &slock);
+   NEXUS_Surface_Flush(cb);
+
+   yuv = hwc_to_nsc_surface(shared->container.width, shared->container.height,
+                            shared->container.width * shared->container.bpp, NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8,
+                            0, 0);
+   NEXUS_Surface_Lock(yuv, &slock);
+   NEXUS_Surface_Flush(yuv);
+
+   if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
+      ALOGE("[yv12]:%" PRIu64 ":%llu: failed g2d (packet buffer).\n", lyr->hdl, f);
+   } else {
+      NEXUS_Graphics2D_GetPacketBuffer(hwc2->hg2d, &buffer, &size, 1024);
+      pthread_mutex_unlock(&hwc2->mtx_g2d);
+
+      NEXUS_Surface_LockPlaneAndPalette(y,   &py,     NULL);
+      NEXUS_Surface_LockPlaneAndPalette(cb,  &pcb,    NULL);
+      NEXUS_Surface_LockPlaneAndPalette(cr,  &pcr,    NULL);
+      NEXUS_Surface_LockPlaneAndPalette(yuv, &pycbcr, NULL);
+      NEXUS_Surface_LockPlaneAndPalette(d,   &prgba,  NULL);
+
+      next = buffer;
+      {
+      BM2MC_PACKET_PacketFilterEnable *pPacket = (BM2MC_PACKET_PacketFilterEnable *)next;
+      BM2MC_PACKET_INIT(pPacket, FilterEnable, false );
+      pPacket->enable          = 0;
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketSourceFeeders *pPacket = (BM2MC_PACKET_PacketSourceFeeders *)next;
+      BM2MC_PACKET_INIT(pPacket, SourceFeeders, false );
+      pPacket->plane0          = pcb;
+      pPacket->plane1          = pcr;
+      pPacket->color           = 0;
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketDestinationFeeder *pPacket = (BM2MC_PACKET_PacketDestinationFeeder *)next;
+      BM2MC_PACKET_INIT(pPacket, DestinationFeeder, false );
+      pPacket->plane           = py;
+      pPacket->color           = 0;
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketOutputFeeder *pPacket = (BM2MC_PACKET_PacketOutputFeeder *)next;
+      BM2MC_PACKET_INIT(pPacket, OutputFeeder, false);
+      pPacket->plane           = pycbcr;
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketBlend *pPacket = (BM2MC_PACKET_PacketBlend *)next;
+      BM2MC_PACKET_INIT( pPacket, Blend, false );
+      pPacket->color_blend     = cbClr;
+      pPacket->alpha_blend     = cpAlp;
+      pPacket->color           = 0;
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketScaleBlendBlit *pPacket = (BM2MC_PACKET_PacketScaleBlendBlit *)next;
+      BM2MC_PACKET_INIT(pPacket, ScaleBlendBlit, true);
+      pPacket->src_rect.x      = 0;
+      pPacket->src_rect.y      = 0;
+      pPacket->src_rect.width  = pcb.width;
+      pPacket->src_rect.height = pcb.height;
+      pPacket->out_rect.x      = 0;
+      pPacket->out_rect.y      = 0;
+      pPacket->out_rect.width  = pycbcr.width;
+      pPacket->out_rect.height = pycbcr.height;
+      pPacket->dst_point.x     = 0;
+      pPacket->dst_point.y     = 0;
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketSourceFeeder *pPacket = (BM2MC_PACKET_PacketSourceFeeder *)next;
+      BM2MC_PACKET_INIT(pPacket, SourceFeeder, false );
+      pPacket->plane           = pycbcr;
+      pPacket->color           = 0xFF000000; /* add alpha, opaque. */
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketSourceControl *pPacket = (BM2MC_PACKET_PacketSourceControl *)next;
+      BM2MC_PACKET_INIT(pPacket, SourceControl, false);
+      pPacket->chroma_filter   = true;
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketDestinationNone *pPacket = (BM2MC_PACKET_PacketDestinationNone *)next;
+      BM2MC_PACKET_INIT(pPacket, DestinationNone, false);
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketOutputFeeder *pPacket = (BM2MC_PACKET_PacketOutputFeeder *)next;
+      BM2MC_PACKET_INIT(pPacket, OutputFeeder, false);
+      pPacket->plane           = prgba;
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketOutputControl *pPacket = (BM2MC_PACKET_PacketOutputControl *)next;
+      BM2MC_PACKET_INIT(pPacket, OutputControl, false);
+      pPacket->chroma_filter    = true;
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketBlend *pPacket = (BM2MC_PACKET_PacketBlend *)next;
+      BM2MC_PACKET_INIT(pPacket, Blend, false );
+      pPacket->color_blend     = cpClr;
+      pPacket->alpha_blend     = cpAlp;
+      pPacket->color           = 0;
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketFilterEnable *pPacket = (BM2MC_PACKET_PacketFilterEnable *)next;
+      BM2MC_PACKET_INIT(pPacket, FilterEnable, false);
+      pPacket->enable          = 1;
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketSourceColorMatrixEnable *pPacket = (BM2MC_PACKET_PacketSourceColorMatrixEnable *)next;
+      BM2MC_PACKET_INIT(pPacket, SourceColorMatrixEnable, false);
+      pPacket->enable          = 1;
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketSourceColorMatrix *pPacket = (BM2MC_PACKET_PacketSourceColorMatrix *)next;
+      BM2MC_PACKET_INIT(pPacket, SourceColorMatrix, false);
+      NEXUS_Graphics2D_ConvertColorMatrix(&g_hwc2_ai32_Matrix_YCbCrtoRGB, &pPacket->matrix);
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketScaleBlit *pPacket = (BM2MC_PACKET_PacketScaleBlit *)next;
+      BM2MC_PACKET_INIT(pPacket, ScaleBlit, true);
+      pPacket->src_rect.x       = 0;
+      pPacket->src_rect.y       = 0;
+      pPacket->src_rect.width   = pycbcr.width;
+      pPacket->src_rect.height  = pycbcr.height;
+      pPacket->out_rect.x       = oa.x;
+      pPacket->out_rect.y       = oa.y;
+      pPacket->out_rect.width   = oa.width;
+      pPacket->out_rect.height  = oa.height;
+      next = ++pPacket;
+      }{
+      BM2MC_PACKET_PacketSourceColorMatrixEnable *pPacket = (BM2MC_PACKET_PacketSourceColorMatrixEnable *)next;
+      BM2MC_PACKET_INIT(pPacket, SourceColorMatrixEnable, false);
+      pPacket->enable          = 0;
+      next = ++pPacket;
+      }
+
+      if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
+         ALOGE("[yv12]:%" PRIu64 ":%llu: failed g2d (complete).\n", lyr->hdl, f);
+      } else {
+         rc = NEXUS_Graphics2D_PacketWriteComplete(hwc2->hg2d, (uint8_t*)next - (uint8_t*)buffer);
+         rc = hwc2_chkpt_l(hwc2);
+         pthread_mutex_unlock(&hwc2->mtx_g2d);
+      }
+
+      NEXUS_Surface_UnlockPlaneAndPalette(cb);
+      NEXUS_Surface_UnlockPlaneAndPalette(cr);
+      NEXUS_Surface_UnlockPlaneAndPalette(y);
+      NEXUS_Surface_UnlockPlaneAndPalette(yuv);
+      NEXUS_Surface_UnlockPlaneAndPalette(d);
+   }
+
+   if (cb != NULL) {
+      NEXUS_Surface_Unlock(cb);
+      NEXUS_Surface_Destroy(cb);
+   }
+   if (cr != NULL) {
+      NEXUS_Surface_Unlock(cr);
+      NEXUS_Surface_Destroy(cr);
+   }
+   if (y != NULL) {
+      NEXUS_Surface_Unlock(y);
+      NEXUS_Surface_Destroy(y);
+   }
+   if (yuv != NULL) {
+      NEXUS_Surface_Unlock(yuv);
+      NEXUS_Surface_Destroy(yuv);
+   }
 }
 
-//pierre
+static void hwc2_blit_gpx(
+   struct hwc2_bcm_device_t* hwc2,
+   NEXUS_SurfaceHandle d,
+   struct hwc2_lyr_t *lyr,
+   PSHARED_DATA shared,
+   hwc2_blend_mode_t lbm,
+   unsigned long long f) {
+
+   NEXUS_SurfaceHandle s = NULL;
+   NEXUS_Graphics2DBlitSettings bs;
+   NEXUS_Rect c, p, sa, oa;
+   NEXUS_Error rc;
+   uint32_t al;
+
+   float fa = fmax(0.0, fmin(1.0, lyr->al));
+   al = floor(fa == 1.0 ? 255 : fa * 256.0);
+
+   s = hwc_to_nsc_surface(
+         shared->container.width, shared->container.height,
+         ((private_handle_t *)lyr->bh)->oglStride, gr2nx_pixel(shared->container.format),
+         shared->container.block, 0);
+   if (s == NULL) {
+      ALOGE("[blit]:%" PRIu64 ":%llu: failed to get surface.\n", lyr->hdl, f);
+   }
+
+   c = {(int16_t)lyr->crp.left,
+        (int16_t)lyr->crp.top,
+        (uint16_t)(lyr->crp.right - lyr->crp.left),
+        (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
+   p = {(int16_t)lyr->fr.left,
+        (int16_t)lyr->fr.top,
+        (uint16_t)(lyr->fr.right - lyr->fr.left),
+        (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+
+   sa = c;
+   oa = p;
+
+   ALOGI_IF(LOG_RGBA_DEBUG, "[blit]:%" PRIu64 ":%llu: {%d,%08x} {%d,%d,%dx%d,%p} out:{%d,%d,%dx%d,%p}\n",
+            f, lyr->hdl, lyr->bm, al<<HWC2_ASHIFT,
+            sa.x, sa.y, sa.width, sa.height, s,
+            oa.x, oa.y, oa.width, oa.height, d);
+
+   NEXUS_Graphics2D_GetDefaultBlitSettings(&bs);
+   bs.source.surface = s;
+   bs.source.rect    = sa;
+   bs.dest.surface   = d;
+   bs.output.surface = d;
+   bs.output.rect    = oa;
+   bs.colorOp        = NEXUS_BlitColorOp_eUseBlendEquation;
+   bs.alphaOp        = NEXUS_BlitAlphaOp_eUseBlendEquation;
+   bs.colorBlend     = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? hwc2_a2n_col_be[HWC2_BLEND_MODE_NONE] : hwc2_a2n_col_be[lyr->bm];
+   bs.alphaBlend     = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? hwc2_a2n_al_be[HWC2_BLEND_MODE_NONE] : hwc2_a2n_al_be[lyr->bm];
+   bs.dest.rect      = bs.output.rect;
+   bs.constantColor  = (NEXUS_Pixel)al<<HWC2_ASHIFT;
+
+   if ((lyr->bm == HWC2_BLEND_MODE_PREMULTIPLIED) &&
+       (lbm == HWC2_BLEND_MODE_PREMULTIPLIED || lbm == HWC2_BLEND_MODE_INVALID) &&
+       (bs.constantColor != HWC2_OPQ)) {
+      bs.colorBlend.d = NEXUS_BlendFactor_eInverseConstantAlpha;
+      bs.alphaBlend.d = NEXUS_BlendFactor_eInverseConstantAlpha;
+   }
+
+   if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
+      ALOGE("[blit]:%" PRIu64 ":%llu: failed g2d mutex.\n", lyr->hdl, f);
+   } else {
+      rc = NEXUS_Graphics2D_Blit(hwc2->hg2d, &bs);
+      if (rc == NEXUS_GRAPHICS2D_QUEUE_FULL) {
+         rc = hwc2_chkpt_l(hwc2);
+         if (!rc) {
+            rc = NEXUS_Graphics2D_Blit(hwc2->hg2d, &bs);
+         }
+      } else {
+         rc = hwc2_chkpt_l(hwc2);
+      }
+      if (rc) {
+         ALOGE("[blit]:%" PRIu64 ":%llu failure to blit.\n", lyr->hdl, f);
+      }
+      pthread_mutex_unlock(&hwc2->mtx_g2d);
+   }
+
+   NEXUS_Surface_Destroy(s);
+   s = NULL;
+}
+
 static void hwc2_ext_cmp_frame(
    struct hwc2_bcm_device_t* hwc2,
    struct hwc2_frame_t *f) {
 
    NEXUS_SurfaceHandle d = NULL;
+   int32_t i, c = 0;
+   struct hwc2_lyr_t *lyr;
+   bool is_video;
+   hwc2_blend_mode_t lbm = HWC2_BLEND_MODE_INVALID;
 
    /* setup and grab a destination buffer for this frame. */
    if (hwc2->ext->u.ext.cbs) {
@@ -2905,12 +3553,145 @@ static void hwc2_ext_cmp_frame(
    d = hwc2_ext_fb_get(hwc2);
    if (d == NULL) {
       hwc2_ret_inc(hwc2->ext, 1);
+      for (i = 0; i < f->cnt; i++) {
+         lyr = &f->lyr[i];
+         if (lyr->af != HWC2_INVALID) {
+            close(lyr->af);
+         }
+         if (lyr->rf != HWC2_INVALID) {
+            hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl);
+         }
+      }
       return;
    }
 
-   /* compose the layers from the frame into the destination; wait on fence as needed. */
-   (void) f;
+   // TODO: optimize seeding background.
+   hwc2_ext_fb_seed(hwc2, d, (f->vcnt || f->scnt) ? HWC2_TRS : HWC2_OPQ);
 
+   for (i = 0; i < f->cnt; i++) {
+      lyr = &f->lyr[i];
+      is_video = hwc2_is_video(hwc2, lyr);
+      if (is_video && lyr->af != HWC2_INVALID) {
+         close(lyr->af);
+      }
+      /* [i]. wait as needed.
+       */
+      if (lyr->cCli == HWC2_COMPOSITION_SOLID_COLOR ||
+          lyr->cCli == HWC2_COMPOSITION_SIDEBAND) {
+         /* ...no wait on those layers. */
+      } else if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
+         /* ...wait on fence as needed.
+          * note: this is the client target, so the fence comes from the
+          *       display client target and not the layer buffer.
+          */
+         if (lyr->bh == NULL && lyr->af != HWC2_INVALID) {
+            close(lyr->af);
+         } else if (lyr->af != HWC2_INVALID) {
+            sync_wait(lyr->af, BKNI_INFINITE);
+            close(lyr->af);
+         }
+      } else if (!is_video) {
+         /* ...wait on fence as needed. */
+         if (lyr->bh == NULL && lyr->af != HWC2_INVALID) {
+            close(lyr->af);
+         } else if (lyr->af != HWC2_INVALID) {
+            sync_wait(lyr->af, BKNI_INFINITE);
+            close(lyr->af);
+         }
+      }
+      /* [ii]. compose.
+       */
+      switch(lyr->cCli) {
+      case HWC2_COMPOSITION_SOLID_COLOR:
+         hwc2_ext_fb_seed(hwc2, d, (lyr->sc.a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b));
+         hwc2_chkpt(hwc2);
+         /* [iii]. count of composed layers. */
+         c++;
+      break;
+      case HWC2_COMPOSITION_CLIENT:
+      case HWC2_COMPOSITION_DEVICE:
+         if (lyr->bh == NULL) {
+            ALOGE("%" PRIu64 ":%s (no valid buffer)\n", lyr->hdl, getCompositionName(lyr->cCli));
+            break;
+         }
+         if (is_video) {
+            /* offlined video pipeline through bvn, nothing to do as we signalled already
+             * the frame expected to be released on display.
+             */
+            break;
+         } else {
+            /* graphics or yv12 layer. */
+            NEXUS_Error lrc = NEXUS_SUCCESS, lrcp = NEXUS_SUCCESS;
+            NEXUS_MemoryBlockHandle bh = NULL, bhp = NULL;
+            PSHARED_DATA shared = NULL;
+            void *map = NULL;
+            bool yv12 = false;
+
+            private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
+            lrc = hwc2_mem_lock(hwc2, bh, &map, true);
+            shared = (PSHARED_DATA) map;
+            if (lrc || shared == NULL) {
+               ALOGE("%" PRIu64 ":%llu (invalid dev-shared data)\n", lyr->hdl, f->pres);
+               break;
+            }
+            if (((private_handle_t *)lyr->bh)->fmt_set != GR_NONE) {
+               bhp = (NEXUS_MemoryBlockHandle)shared->container.block;
+               lrcp = hwc2_mem_lock(hwc2, bhp, &map, true);
+               if (lrcp || map == NULL) {
+                  ALOGE("%" PRIu64 ":%llu (invalid dev-physical data)\n", lyr->hdl, f->pres);
+                  break;
+               }
+            } else {
+               lrcp = NEXUS_NOT_INITIALIZED;
+            }
+
+            yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
+                    (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
+            if (yv12) {
+               if (c == 0) {
+                  /* flush background to prevent mix blit types. */
+                  hwc2_chkpt(hwc2);
+               }
+               hwc2_blit_yv12(hwc2, d, lyr, shared, f->pres);
+            } else {
+               hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, f->pres);
+               lbm = lyr->bm;
+            }
+
+            if (lrcp == NEXUS_SUCCESS) {
+               hwc2_mem_unlock(hwc2, bhp, true);
+            }
+            if (lrc == NEXUS_SUCCESS) {
+               hwc2_mem_unlock(hwc2, bh, true);
+            }
+            /* [iii]. count of composed layers. */
+            c++;
+         }
+      break;
+      case HWC2_COMPOSITION_SIDEBAND:
+         ALOGW("%" PRIu64 ":%s (SIDEBAND INTEGRATION!!)\n", lyr->hdl, getCompositionName(lyr->cCli));
+      break;
+      case HWC2_COMPOSITION_CURSOR:
+      default:
+         ALOGW("%" PRIu64 ":%s (composition not handled!)\n", lyr->hdl, getCompositionName(lyr->cCli));
+      break;
+      }
+
+      if (lyr->rf != HWC2_INVALID) {
+         hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl);
+      }
+   }
+
+   if (c > 0) {
+      /* [iv]. push composition to display. */
+      NEXUS_SurfaceClient_PushSurface(hwc2->ext->u.ext.sch, d, NULL, false);
+      ALOGI_IF(LOG_COMP_DEBUG, "[frame]:%llu:%zu layer%scomposed\n", f->pres, c, c>1?"s ":" ");
+   } else {
+      /* [iv]. ... or re-queue if nothing took place. */
+      hwc2_ext_fb_put(hwc2, d);
+      ALOGI_IF(LOG_COMP_DEBUG, "[frame]:%llu:no composition\n", f->pres);
+   }
+   hwc2_ret_inc(hwc2->ext, 1);
    return;
 }
 
@@ -3011,9 +3792,8 @@ static void hwc2_setup_ext(
    }
    memset(ext, 0, sizeof(*ext));
    hwc2->ext = ext;
-
-   snprintf(hwc2->ext->name, strlen(hwc2->ext->name), "stbHD0");
-   hwc2->ext->type    = HWC2_DISPLAY_TYPE_PHYSICAL;
+   snprintf(hwc2->ext->name, sizeof(hwc2->ext->name), "stbHD0");
+   hwc2->ext->type = HWC2_DISPLAY_TYPE_PHYSICAL;
 
    hwc2->ext->cfgs = (struct hwc2_dsp_cfg_t *)malloc(sizeof(struct hwc2_dsp_cfg_t));
    if (hwc2->ext->cfgs) {
@@ -3061,8 +3841,8 @@ static void hwc2_setup_ext(
    composition.position.height       = composition.virtualDisplay.height;
    composition.zorder                = 5; /* above any video or sideband layer(s). */
    composition.visible               = true;
-   composition.colorBlend            = hwc2_color_pre_multi;
-   composition.alphaBlend            = hwc2_alpha_pre_multi;
+   composition.colorBlend            = hwc2_a2n_col_be[HWC2_BLEND_MODE_PREMULTIPLIED];
+   composition.alphaBlend            = hwc2_a2n_al_be[HWC2_BLEND_MODE_PREMULTIPLIED];
    NxClient_SetSurfaceClientComposition(hwc2->ext->u.ext.nxa.surfaceClient[0].id, &composition);
 
    strcpy(interfaceName.name, "NEXUS_Display");
@@ -3091,7 +3871,7 @@ static void hwc2_setup_ext(
       if (hwc2->ext->u.ext.rtl[num].tl < 0) {
          hwc2->ext->u.ext.rtl[num].tl = HWC2_INVALID;
       }
-      hwc2->ext->u.ext.rtl[num].hdl = NULL;
+      hwc2->ext->u.ext.rtl[num].hdl = 0;
       hwc2->ext->u.ext.rtl[num].ix = 0;
    }
 }
@@ -3110,6 +3890,8 @@ static void hwc2_hb_ntfy(
        hwc2->hb->connected(false);
    break;
    case HWC_BINDER_NTFY_VIDEO_SURFACE_ACQUIRED:
+       hwc2->rlpf = true;
+   break;
    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
       (void)ntfy;
    break;
