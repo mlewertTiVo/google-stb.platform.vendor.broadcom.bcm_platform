@@ -122,6 +122,7 @@
 #define NX_NO_OUTPUT_VIDEO             "ro.nx.output.dis"
 #define NX_WD_TIMEOUT                  "ro.nx.wd.timeout"
 #define NX_WD_TIMEOUT_DEF              40
+#define NX_CAPABLE_DTU                 "ro.nx.capable.dtu"
 
 #define NX_ODV                         "ro.nx.odv"
 #define NX_ODV_ALT_THRESHOLD           "ro.nx.odv.use.alt"
@@ -848,6 +849,7 @@ static nxserver_t init_nxserver(void)
 
     memset(&cmdline_settings, 0, sizeof(cmdline_settings));
     cmdline_settings.frontend = property_get_bool(NX_CAPABLE_FRONT_END, 0);
+    cmdline_settings.dtu = property_get_bool(NX_CAPABLE_DTU, 0);
 
     nxserver_get_default_settings(&settings);
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
