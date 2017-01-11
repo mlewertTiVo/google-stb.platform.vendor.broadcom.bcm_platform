@@ -21,6 +21,7 @@
 #define LOG_YV12_DEBUG  0
 #define LOG_COMP_DEBUG  1
 #define LOG_RGBA_DEBUG  0
+#define LOG_DIM_DEBUG   0
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -3173,11 +3174,10 @@ static int hwc2_close(
    return 0;
 }
 
-static void hwc2_ext_fb_seed(
+static void hwc2_fb_seed(
    struct hwc2_bcm_device_t* hwc2,
    NEXUS_SurfaceHandle s,
-   uint32_t color)
-{
+   uint32_t color) {
    NEXUS_Error rc;
    if (s) {
       NEXUS_Graphics2DFillSettings fs;
@@ -3195,31 +3195,52 @@ static void hwc2_ext_fb_seed(
    }
 }
 
+static void hwc2_dim(
+   struct hwc2_bcm_device_t* hwc2,
+   NEXUS_SurfaceHandle s,
+   struct hwc2_lyr_t *lyr) {
+   NEXUS_Error rc;
+   if (s) {
+      NEXUS_Graphics2DFillSettings fs;
+      float fa = fmax(0.0, fmin(1.0, lyr->al));
+      uint32_t al = floor(fa == 1.0 ? 255 : fa * 256.0);
+      NEXUS_Graphics2D_GetDefaultFillSettings(&fs);
+      fs.surface = s;
+      fs.color   = (NEXUS_Pixel)al<<HWC2_ASHIFT;
+      fs.colorOp = NEXUS_FillOp_eBlend;
+      fs.alphaOp = NEXUS_FillOp_eIgnore;
+      if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
+         return;
+      }
+      NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
+      pthread_mutex_unlock(&hwc2->mtx_g2d);
+      ALOGI_IF(LOG_DIM_DEBUG, "[dim]: %p with color %08x\n", s, fs.color);
+   }
+}
+
 #define SHIFT_FACTOR 10
-static NEXUS_Graphics2DColorMatrix g_hwc2_ai32_Matrix_YCbCrtoRGB =
-{
-   SHIFT_FACTOR,
-   {
-      (int32_t) ( 1.164f * (1 << SHIFT_FACTOR)),   /*  Y factor for R */
-      (int32_t) 0,                                 /* Cb factor for R */
-      (int32_t) ( 1.596f * (1 << SHIFT_FACTOR)),   /* Cr factor for R */
-      (int32_t) 0,                                 /*  A factor for R */
-      (int32_t) (-223 * (1 << SHIFT_FACTOR)),      /* Increment for R */
-      (int32_t) ( 1.164f * (1 << SHIFT_FACTOR)),   /*  Y factor for G */
-      (int32_t) (-0.391f * (1 << SHIFT_FACTOR)),   /* Cb factor for G */
-      (int32_t) (-0.813f * (1 << SHIFT_FACTOR)),   /* Cr factor for G */
-      (int32_t) 0,                                 /*  A factor for G */
-      (int32_t) (134 * (1 << SHIFT_FACTOR)),       /* Increment for G */
-      (int32_t) ( 1.164f * (1 << SHIFT_FACTOR)),   /*  Y factor for B */
-      (int32_t) ( 2.018f * (1 << SHIFT_FACTOR)),   /* Cb factor for B */
-      (int32_t) 0,                                 /* Cr factor for B */
-      (int32_t) 0,                                 /*  A factor for B */
-      (int32_t) (-277 * (1 << SHIFT_FACTOR)),      /* Increment for B */
-      (int32_t) 0,                                 /*  Y factor for A */
-      (int32_t) 0,                                 /* Cb factor for A */
-      (int32_t) 0,                                 /* Cr factor for A */
-      (int32_t) (1 << SHIFT_FACTOR),               /*  A factor for A */
-      (int32_t) 0,                                 /* Increment for A */
+static NEXUS_Graphics2DColorMatrix g_hwc2_ai32_Matrix_YCbCrtoRGB = {
+   SHIFT_FACTOR, {
+   (int32_t) ( 1.164f * (1 << SHIFT_FACTOR)),   /*  Y factor for R */
+   (int32_t) 0,                                 /* Cb factor for R */
+   (int32_t) ( 1.596f * (1 << SHIFT_FACTOR)),   /* Cr factor for R */
+   (int32_t) 0,                                 /*  A factor for R */
+   (int32_t) (-223 * (1 << SHIFT_FACTOR)),      /* Increment for R */
+   (int32_t) ( 1.164f * (1 << SHIFT_FACTOR)),   /*  Y factor for G */
+   (int32_t) (-0.391f * (1 << SHIFT_FACTOR)),   /* Cb factor for G */
+   (int32_t) (-0.813f * (1 << SHIFT_FACTOR)),   /* Cr factor for G */
+   (int32_t) 0,                                 /*  A factor for G */
+   (int32_t) (134 * (1 << SHIFT_FACTOR)),       /* Increment for G */
+   (int32_t) ( 1.164f * (1 << SHIFT_FACTOR)),   /*  Y factor for B */
+   (int32_t) ( 2.018f * (1 << SHIFT_FACTOR)),   /* Cb factor for B */
+   (int32_t) 0,                                 /* Cr factor for B */
+   (int32_t) 0,                                 /*  A factor for B */
+   (int32_t) (-277 * (1 << SHIFT_FACTOR)),      /* Increment for B */
+   (int32_t) 0,                                 /*  Y factor for A */
+   (int32_t) 0,                                 /* Cb factor for A */
+   (int32_t) 0,                                 /* Cr factor for A */
+   (int32_t) (1 << SHIFT_FACTOR),               /*  A factor for A */
+   (int32_t) 0,                                 /* Increment for A */
    }
 };
 
@@ -3457,10 +3478,9 @@ static void hwc2_blit_gpx(
    NEXUS_Graphics2DBlitSettings bs;
    NEXUS_Rect c, p, sa, oa;
    NEXUS_Error rc;
-   uint32_t al;
 
    float fa = fmax(0.0, fmin(1.0, lyr->al));
-   al = floor(fa == 1.0 ? 255 : fa * 256.0);
+   uint32_t al = floor(fa == 1.0 ? 255 : fa * 256.0);
 
    s = hwc_to_nsc_surface(
          shared->container.width, shared->container.height,
@@ -3529,6 +3549,35 @@ static void hwc2_blit_gpx(
    s = NULL;
 }
 
+static void hwc2_sdb(
+   struct hwc2_bcm_device_t* hwc2,
+   struct hwc2_lyr_t *lyr) {
+
+   NEXUS_Rect c, p;
+   struct hwc_position fr, cl;
+
+   c = {(int16_t)lyr->crp.left,
+        (int16_t)lyr->crp.top,
+        (uint16_t)(lyr->crp.right - lyr->crp.left),
+        (uint16_t)(lyr->crp.bottom - lyr->crp.top)};
+   p = {(int16_t)lyr->fr.left,
+        (int16_t)lyr->fr.top,
+        (uint16_t)(lyr->fr.right - lyr->fr.left),
+        (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+
+   fr.x = p.x;
+   fr.y = p.y;
+   fr.w = p.width;
+   fr.h = p.height;
+
+   cl.x = c.x;
+   cl.y = c.y;
+   cl.w = c.width == (uint16_t)HWC2_INVALID ? 0 : c.width;
+   cl.h = c.height == (uint16_t)HWC2_INVALID ? 0 : c.height;
+
+   hwc2->hb->setgeometry(HWC_BINDER_SDB, 0, fr, cl, 4 /*i.e. (5-1)*/, 1);
+}
+
 static void hwc2_ext_cmp_frame(
    struct hwc2_bcm_device_t* hwc2,
    struct hwc2_frame_t *f) {
@@ -3566,7 +3615,7 @@ static void hwc2_ext_cmp_frame(
    }
 
    // TODO: optimize seeding background.
-   hwc2_ext_fb_seed(hwc2, d, (f->vcnt || f->scnt) ? HWC2_TRS : HWC2_OPQ);
+   hwc2_fb_seed(hwc2, d, (f->vcnt || f->scnt) ? HWC2_TRS : HWC2_OPQ);
 
    for (i = 0; i < f->cnt; i++) {
       lyr = &f->lyr[i];
@@ -3603,12 +3652,27 @@ static void hwc2_ext_cmp_frame(
        */
       switch(lyr->cCli) {
       case HWC2_COMPOSITION_SOLID_COLOR:
-         hwc2_ext_fb_seed(hwc2, d, (lyr->sc.a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b));
+         hwc2_fb_seed(hwc2, d, (lyr->sc.a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b));
          hwc2_chkpt(hwc2);
          /* [iii]. count of composed layers. */
          c++;
       break;
       case HWC2_COMPOSITION_CLIENT:
+         if (lyr->crp.left == 0 &&
+             lyr->crp.top == 0 &&
+             (uint16_t)(lyr->crp.right - lyr->crp.left) == (uint16_t)HWC2_INVALID &&
+             (uint16_t)(lyr->crp.bottom - lyr->crp.top) == (uint16_t)HWC2_INVALID) {
+            /* dim layer. */
+            hwc2_dim(hwc2, d, lyr);
+            hwc2_chkpt(hwc2);
+            /* [iii]. count of composed layers. */
+            c++;
+            break;
+         }
+         /* some valid content, compose as any other graphics.
+          *
+          * *** FALL THROUGH.
+          */
       case HWC2_COMPOSITION_DEVICE:
          if (lyr->bh == NULL) {
             ALOGE("%" PRIu64 ":%s (no valid buffer)\n", lyr->hdl, getCompositionName(lyr->cCli));
@@ -3669,7 +3733,9 @@ static void hwc2_ext_cmp_frame(
          }
       break;
       case HWC2_COMPOSITION_SIDEBAND:
-         ALOGW("%" PRIu64 ":%s (SIDEBAND INTEGRATION!!)\n", lyr->hdl, getCompositionName(lyr->cCli));
+         if (hwc2->hb) {
+            hwc2_sdb(hwc2, lyr);
+         }
       break;
       case HWC2_COMPOSITION_CURSOR:
       default:
