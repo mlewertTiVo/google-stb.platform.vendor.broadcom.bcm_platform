@@ -57,15 +57,15 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAac(
 {
     NEXUS_AudioCapabilities audioCaps;
     NexusIPCClientBase *pIpcClient = NULL;
-    NexusClientContext *pNexusClient = NULL;
+    uint64_t nexusClient = 0;
     BOMX_AudioDecoder_Secure *pAudioDecoderSec = NULL;
 
     pIpcClient = NexusIPCClientFactory::getClient(pName);
     if (pIpcClient)
     {
-        pNexusClient = pIpcClient->createClientContext();
+        nexusClient = pIpcClient->createClientContext();
     }
-    if (pNexusClient == NULL)
+    if (!nexusClient)
     {
         ALOGW("Unable to determine presence of AAC hardware!");
     }
@@ -82,7 +82,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAac(
 
     pAudioDecoderSec = new BOMX_AudioDecoder_Secure(
                               pComponentTpe, pName, pAppData, pCallbacks,
-                              pIpcClient, pNexusClient,
+                              pIpcClient, nexusClient,
                               BOMX_AUDIO_GET_ROLE_COUNT(g_aacRole),
                               g_aacRole, BOMX_AudioDecoder_GetRoleAac);
 
@@ -107,9 +107,9 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAac(
 error:
     if (pIpcClient)
     {
-        if (pNexusClient)
+        if (nexusClient)
         {
-            pIpcClient->destroyClientContext(pNexusClient);
+            pIpcClient->destroyClientContext(nexusClient);
         }
         delete pIpcClient;
     }
@@ -122,11 +122,11 @@ BOMX_AudioDecoder_Secure::BOMX_AudioDecoder_Secure(
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks,
     NexusIPCClientBase *pIpcClient,
-    NexusClientContext *pNexusClient,
+    uint64_t nexusClient,
     unsigned numRoles,
     const BOMX_AudioDecoderRole *pRoles,
     const char *(*pGetRole)(unsigned roleIndex))
-    :BOMX_AudioDecoder(pComponentType, pName, pAppData, pCallbacks, pIpcClient, pNexusClient, true, numRoles, pRoles, pGetRole)
+    :BOMX_AudioDecoder(pComponentType, pName, pAppData, pCallbacks, pIpcClient, nexusClient, true, numRoles, pRoles, pGetRole)
 {
     ALOGV("%s", __FUNCTION__);
 }

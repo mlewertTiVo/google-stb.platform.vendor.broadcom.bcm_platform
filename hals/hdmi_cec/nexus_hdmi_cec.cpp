@@ -547,7 +547,7 @@ bool NexusHdmiCecDevice::standbyMonitor(void *ctx)
 NexusHdmiCecDevice::NexusHdmiCecDevice(int cecId) : mCecId(cecId), mCecLogicalAddr(UNDEFINED_LOGICAL_ADDRESS),
                                                     mCecPhysicalAddr(UNDEFINED_PHYSICAL_ADDRESS), mCecVendorId(UNKNOWN_VENDOR_ID), mCecEnable(false),
                                                     mCecSystemControlEnable(true), mCecViewOnCmdPending(false), mStandby(false),
-                                                    mHotplugConnected(-1), pIpcClient(NULL), pNexusClientContext(NULL), mCallback(NULL),
+                                                    mHotplugConnected(-1), pIpcClient(NULL), nexusClientContext(0), mCallback(NULL),
                                                     mHdmiCecDevice(NULL), mHdmiCecMessageEventListener(NULL), mHdmiHotplugEventListener(NULL),
                                                     mHdmiCecRxMessageHandler(NULL), mHdmiCecRxMessageLooper(NULL)
 {
@@ -578,8 +578,8 @@ status_t NexusHdmiCecDevice::initialise()
         clientConfig.standbyMonitorCallback = standbyMonitor;
         clientConfig.standbyMonitorContext  = this;
 
-        pNexusClientContext = pIpcClient->createClientContext(&clientConfig);
-        if (pNexusClientContext == NULL) {
+        nexusClientContext = pIpcClient->createClientContext(&clientConfig);
+        if (!nexusClientContext) {
             ALOGE("%s: Could not create Nexus Client Context!!!", __PRETTY_FUNCTION__);
             goto fail_create_client_context;
         }
@@ -689,8 +689,8 @@ fail_add_hotplug_listener:
 fail_create_hotplug_listener:
     mUInput = NULL;
 fail_create_uinput_device:
-    pIpcClient->destroyClientContext(pNexusClientContext);
-    pNexusClientContext = NULL;
+    pIpcClient->destroyClientContext(nexusClientContext);
+    nexusClientContext = 0;
 fail_create_client_context:
     delete pIpcClient;
     pIpcClient = NULL;
@@ -725,9 +725,9 @@ status_t NexusHdmiCecDevice::uninitialise()
             mUInput = NULL;
         }
 
-        if (pNexusClientContext != NULL) {
-            pIpcClient->destroyClientContext(pNexusClientContext);
-            pNexusClientContext = NULL;
+        if (nexusClientContext) {
+            pIpcClient->destroyClientContext(nexusClientContext);
+            nexusClientContext = 0;
         }
         delete pIpcClient;
         pIpcClient = NULL;

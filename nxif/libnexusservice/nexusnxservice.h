@@ -61,8 +61,8 @@ public:
     virtual void binderDied(const wp<IBinder>& who);
 
     /* These API's require a Nexus Client Context as they handle per client resources... */
-    virtual NexusClientContext * createClientContext(const b_refsw_client_client_name *pClientName, unsigned clientPid);
-    virtual void destroyClientContext(NexusClientContext * client);
+    virtual uint64_t createClientContext(const b_refsw_client_client_name *pClientName, unsigned clientPid);
+    virtual void destroyClientContext(uint64_t client);
 
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/
     virtual status_t addHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener);

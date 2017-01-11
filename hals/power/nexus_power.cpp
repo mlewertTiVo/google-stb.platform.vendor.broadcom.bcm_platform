@@ -52,6 +52,7 @@
 #include <string.h>
 #include <utils/Errors.h>
 #include <hardware_legacy/power.h>
+#include <inttypes.h>
 
 unsigned NexusPower::NexusGpio::mInstances = 0;
 
@@ -98,18 +99,18 @@ NexusPower::LinuxUInputRef::~LinuxUInputRef()
 
 NexusPower::NexusPower() : mCecDeviceType(eCecDeviceType_eInvalid),
                            mIpcClient(NULL),
-                           mClientContext(NULL),
+                           mClientContext(0),
                            mInterruptWakeManagers(false)
 {
     ALOGV("%s: Called", __PRETTY_FUNCTION__);
 }
 
-NexusPower::NexusPower(NexusIPCClientBase *pIpcClient, NexusClientContext *pClientContext) :
+NexusPower::NexusPower(NexusIPCClientBase *pIpcClient, uint64_t clientContext) :
                            mIpcClient(pIpcClient),
-                           mClientContext(pClientContext),
+                           mClientContext(clientContext),
                            mInterruptWakeManagers(false)
 {
-    ALOGV("%s: pIpcClient=%p, pClientContext=%p", __PRETTY_FUNCTION__, (void *)pIpcClient, (void *)pClientContext);
+    ALOGV("%s: pIpcClient=%p, mClientContext=%" PRIu64 "", __PRETTY_FUNCTION__, (void *)pIpcClient, clientContext);
     mCecDeviceType = mIpcClient->getCecDeviceType();
 
     mUInput = NexusPower::LinuxUInputRef::instantiate();
@@ -120,9 +121,9 @@ NexusPower::~NexusPower()
     ALOGV("%s: Called", __PRETTY_FUNCTION__);
 
     if (mIpcClient != NULL) {
-        if (mClientContext != NULL) {
+        if (mClientContext) {
             mIpcClient->destroyClientContext(mClientContext);
-            mClientContext = NULL;
+            mClientContext = 0;
         }
         delete mIpcClient;
         mIpcClient = NULL;
@@ -142,14 +143,14 @@ sp<NexusPower> NexusPower::instantiate()
         ALOGE("%s: Could not create Nexux Client!!!", __FUNCTION__);
     }
     else {
-        NexusClientContext *pClientContext = pIpcClient->createClientContext();
+        uint64_t clientContext = pIpcClient->createClientContext();
 
-        if (pClientContext == NULL) {
+        if (!clientContext) {
             ALOGE("%s: Could not create Nexus Client Context!!!", __FUNCTION__);
             delete pIpcClient;
         }
         else {
-            np = new NexusPower(pIpcClient, pClientContext);
+            np = new NexusPower(pIpcClient, clientContext);
             if (np != NULL) {
                 ALOGV("%s: Successfully instantiated NexusPower.", __FUNCTION__);
             }

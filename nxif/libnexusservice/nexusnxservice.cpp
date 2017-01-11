@@ -717,7 +717,7 @@ NexusNxService::~NexusNxService()
     server = NULL;
 }
 
-NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_client_name *pClientName, unsigned clientPid)
+uint64_t NexusNxService::createClientContext(const b_refsw_client_client_name *pClientName, unsigned clientPid)
 {
     NexusClientContext * client;
     NEXUS_ClientSettings clientSettings;
@@ -728,7 +728,7 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
     client = (NexusClientContext *)BKNI_Malloc(sizeof(NexusClientContext));
     if (client==NULL) {
         (void)BERR_TRACE(BERR_OUT_OF_SYSTEM_MEMORY);
-        return NULL;
+        return 0;
     }
 
     BKNI_Memset(client, 0, sizeof(*client));
@@ -755,22 +755,22 @@ NexusClientContext * NexusNxService::createClientContext(const b_refsw_client_cl
     }
 
     client->ipc.nexusClient = getNexusClient(client->clientPid);
-    return client;
+    return (uint64_t)(intptr_t)client;
 
 err_client:
     /* todo fix cleanup */
-    return NULL;
+    return 0;
 }
 
-void NexusNxService::destroyClientContext(NexusClientContext * client)
+void NexusNxService::destroyClientContext(uint64_t client)
 {
-    BDBG_OBJECT_ASSERT(client, NexusClientContext);
-    void *res;
+    NexusClientContext *nxclient = (NexusClientContext *)(intptr_t)client;
+    BDBG_OBJECT_ASSERT(nxclient, NexusClientContext);
 
     Mutex::Autolock autoLock(server->mLock);
 
-    BDBG_OBJECT_DESTROY(client, NexusClientContext);
-    BKNI_Free(client);
+    BDBG_OBJECT_DESTROY(nxclient, NexusClientContext);
+    BKNI_Free(nxclient);
 }
 
 static const NxClient_VideoWindowType videoWindowTypeConversion[] =

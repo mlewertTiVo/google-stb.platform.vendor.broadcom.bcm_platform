@@ -148,10 +148,10 @@ void NexusIPCClient::unbindNexusService()
     }
 }
 
-NexusClientContext * NexusIPCClient::createClientContext(const b_refsw_client_client_configuration *config)
+uint64_t NexusIPCClient::createClientContext(const b_refsw_client_client_configuration *config)
 {
     NEXUS_Error rc;
-    NexusClientContext *client = NULL;
+    uint64_t client = 0;
     api_data cmd;
 
     rc = clientJoin(config);
@@ -164,22 +164,22 @@ NexusClientContext * NexusIPCClient::createClientContext(const b_refsw_client_cl
         cmd.param.createClientContext.in.clientPid = getClientPid();
         iNC->api_over_binder(&cmd);
 
-        client = (NexusClientContext *)(cmd.param.createClientContext.out.client);
+        client = cmd.param.createClientContext.out.client;
     }
 
-    if (client == NULL) {
+    if (!client) {
         ALOGE("%s: Could not create client \"%s\" context!!!", __PRETTY_FUNCTION__, getClientName());
     }
     return client;
 }
 
-void NexusIPCClient::destroyClientContext(NexusClientContext * client)
+void NexusIPCClient::destroyClientContext(uint64_t client)
 {
     api_data cmd;
 
     BKNI_Memset(&cmd, 0, sizeof(cmd));
     cmd.api = api_destroyClientContext;
-    cmd.param.destroyClientContext.in.client = (uint64_t)(client);
+    cmd.param.destroyClientContext.in.client = client;
     iNC->api_over_binder(&cmd);
 
     clientUninit();

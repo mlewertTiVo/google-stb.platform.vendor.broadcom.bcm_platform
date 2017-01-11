@@ -181,7 +181,7 @@ class NexusHdmiCecDevice : public RefBase
         int                             mHotplugConnected;
         Mutex                           mStandbyLock;
         NexusIPCClientBase*             pIpcClient;
-        NexusClientContext*             pNexusClientContext;
+        uint64_t                        nexusClientContext;
         hdmi_port_info                  mPortInfo[NexusIPCCommon::MAX_NUM_CEC_PORTS];
         event_callback_t                mCallback;
         void*                           mCallbackArg;
