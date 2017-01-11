@@ -699,7 +699,7 @@ struct hwc_context_t {
 
     /* our private state goes below here */
     NexusIPCClientBase *pIpcClient;
-    NexusClientContext *pNexusClientContext;
+    uint64_t nexusClientContext;
     NxClient_AllocResults nxAllocResults;
     pthread_mutex_t dev_mutex;
 
@@ -1450,9 +1450,9 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
        }
-       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%p::d:{%d,%d}::pm:%s::fm:%s::oscan:{%d,%d:%d,%d}\n",
+       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%" PRIu64 "::d:{%d,%d}::pm:%s::fm:%s::oscan:{%d,%d:%d,%d}\n",
            ctx->pIpcClient,
-           ctx->pNexusClientContext,
+           ctx->nexusClientContext,
            ctx->cfg[HWC_PRIMARY_IX].width,
            ctx->cfg[HWC_PRIMARY_IX].height,
            hwc_power_mode[ctx->power_mode],
@@ -4330,8 +4330,8 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         pthread_join(ctx->recycle_callback_thread, NULL);
 
         if (ctx->pIpcClient != NULL) {
-            if (ctx->pNexusClientContext != NULL) {
-                ctx->pIpcClient->destroyClientContext(ctx->pNexusClientContext);
+            if (ctx->nexusClientContext) {
+                ctx->pIpcClient->destroyClientContext(ctx->nexusClientContext);
             }
             if (ctx->hwc_hp) {
                 ctx->pIpcClient->removeHdmiHotplugEventListener(0, ctx->hwc_hp->get());
@@ -5285,8 +5285,8 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
             clientConfig.standbyMonitorCallback = hwc_standby_monitor;
             clientConfig.standbyMonitorContext  = dev;
 
-            dev->pNexusClientContext = dev->pIpcClient->createClientContext(&clientConfig);
-            if (dev->pNexusClientContext == NULL) {
+            dev->nexusClientContext = dev->pIpcClient->createClientContext(&clientConfig);
+            if (!dev->nexusClientContext) {
                ALOGE("%s: failed createClientContext", __FUNCTION__);
             } else {
                NEXUS_InterfaceName interfaceName;

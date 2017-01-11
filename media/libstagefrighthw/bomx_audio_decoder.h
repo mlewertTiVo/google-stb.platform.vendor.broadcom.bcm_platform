@@ -113,7 +113,7 @@ public:
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
         NexusIPCClientBase *pIpcClient,
-        NexusClientContext *pNexusClient,
+        uint64_t nexusClient,
         bool secure,
         unsigned numRoles,
         const BOMX_AudioDecoderRole *pRoles,
@@ -216,7 +216,7 @@ protected:
     unsigned m_AvailInputBuffers;
 
     NexusIPCClientBase              *m_pIpcClient;
-    NexusClientContext              *m_pNexusClient;
+    uint64_t                        m_nexusClient;
     FILE                            *m_pPesFile;
     FILE                            *m_pInputFile;
     FILE                            *m_pOutputFile;

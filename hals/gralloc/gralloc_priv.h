@@ -71,7 +71,7 @@ struct private_module_t {
 typedef struct __SHARED_DATA_ {
    struct {
       volatile int32_t windowIdPlusOne;
-      void *           nexusClientContext;
+      uint64_t         nexusClientContext;
    } videoWindow;
 
    //Metadata For Video Buffers

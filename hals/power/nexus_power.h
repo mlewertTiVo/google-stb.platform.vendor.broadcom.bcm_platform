@@ -171,14 +171,14 @@ class NexusPower : public android::RefBase {
     private:
     b_cecDeviceType mCecDeviceType;
     NexusIPCClientBase *mIpcClient;
-    NexusClientContext *mClientContext;
+    uint64_t mClientContext;
     sp<NexusGpio> gpios[NexusGpio::MAX_INSTANCES];
     sp<LinuxUInputRef> mUInput;
     DefaultKeyedVector<enum NexusGpio::GpioInterruptWakeManager, bool> mInterruptWakeManagers;
 
     // Disallow constructor and copy constructor...
     NexusPower();
-    NexusPower(NexusIPCClientBase *pIpcClient, NexusClientContext *pClientContext);
+    NexusPower(NexusIPCClientBase *pIpcClient, uint64_t clientContext);
     NexusPower &operator=(const NexusPower &);
 };
 
