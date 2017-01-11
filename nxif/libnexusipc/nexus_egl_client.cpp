@@ -59,14 +59,14 @@ public:
 
 void* nexus_egl_client::IEGL_nexus_join()
 {
-     NexusClientContext *nexus_client=NULL;
+     uint64_t nexus_client = 0;
      uint32_t w, h;
 
      NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("Android-EGL");
 
      if (pIpcClient != NULL) {
          nexus_client = pIpcClient->createClientContext();
-         if (nexus_client == NULL) {
+         if (!nexus_client) {
             ALOGE("%s: Client \"%s\" could NOT be created!", __FUNCTION__, pIpcClient->getClientName());
          }
          delete pIpcClient;
@@ -81,7 +81,7 @@ void nexus_egl_client::IEGL_nexus_unjoin(void *nexus_client)
 {
     NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("Android-EGL");
 
-    pIpcClient->destroyClientContext((reinterpret_cast<NexusClientContext *>(nexus_client)));
+    pIpcClient->destroyClientContext((reinterpret_cast<uint64_t>(nexus_client)));
     delete pIpcClient;
     return;
 }

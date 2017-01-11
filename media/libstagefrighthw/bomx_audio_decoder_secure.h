@@ -52,7 +52,7 @@ public:
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
         NexusIPCClientBase *pIpcClient,
-        NexusClientContext *pNexusClient,
+        uint64_t nexusClient,
         unsigned numRoles,
         const BOMX_AudioDecoderRole *pRoles,
         const char *(*pGetRole)(unsigned roleIndex));

@@ -120,15 +120,15 @@ extern "C" OMX_ERRORTYPE BOMX_VideoEncoder_Create(
     bool encodeSupported = false;
     NEXUS_VideoEncoderCapabilities caps;
     NexusIPCClientBase *pIpcClient = NULL;
-    NexusClientContext *pNexusClient = NULL;
+    uint64_t nexusClient = 0;
     BOMX_VideoEncoder *pVideoEncoder = NULL;
 
     pIpcClient = NexusIPCClientFactory::getClient(pName);
     if (pIpcClient)
     {
-        pNexusClient = pIpcClient->createClientContext();
+        nexusClient = pIpcClient->createClientContext();
     }
-    if (pNexusClient == NULL)
+    if (!nexusClient)
     {
         ALOGW("Unable to determine presence of encoder hardware!");
     }
@@ -153,7 +153,7 @@ extern "C" OMX_ERRORTYPE BOMX_VideoEncoder_Create(
     }
 
     pVideoEncoder = new BOMX_VideoEncoder(pComponentTpe, pName, pAppData, pCallbacks,
-                                          pIpcClient, pNexusClient);
+                                          pIpcClient, nexusClient);
 
     if ( NULL == pVideoEncoder )
     {
@@ -176,9 +176,9 @@ extern "C" OMX_ERRORTYPE BOMX_VideoEncoder_Create(
 error:
     if (pIpcClient)
     {
-        if (pNexusClient)
+        if (nexusClient)
         {
-            pIpcClient->destroyClientContext(pNexusClient);
+            pIpcClient->destroyClientContext(nexusClient);
         }
         delete pIpcClient;
     }
@@ -329,10 +329,10 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks,
     NexusIPCClientBase *pIpcClient,
-    NexusClientContext *pNexusClient) :
+    uint64_t nexusClient) :
     BOMX_Component(pComponentType, pName, pAppData, pCallbacks, BOMX_VideoEncoder_GetRole),
     m_pIpcClient(pIpcClient),
-    m_pNexusClient(pNexusClient),
+    m_nexusClient(nexusClient),
     m_nxClientId(NXCLIENT_INVALID_ID),
     m_hSimpleVideoDecoder(NULL),
     m_hSimpleEncoder(NULL),
@@ -553,11 +553,11 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
         }
     }
 
-    if (m_pNexusClient == NULL)
+    if (!m_nexusClient)
     {
         /* create Nexus client */
-        m_pNexusClient = m_pIpcClient->createClientContext();
-        if (m_pNexusClient == NULL)
+        m_nexusClient = m_pIpcClient->createClientContext();
+        if (!m_nexusClient)
         {
             ALOGE("Unable to create nexus client context");
             this->Invalidate(OMX_ErrorUndefined);
@@ -699,9 +699,9 @@ BOMX_VideoEncoder::~BOMX_VideoEncoder()
     /* delete Nexus IPC client */
     if ( m_pIpcClient )
     {
-        if ( m_pNexusClient )
+        if ( m_nexusClient )
         {
-            m_pIpcClient->destroyClientContext(m_pNexusClient);
+            m_pIpcClient->destroyClientContext(m_nexusClient);
         }
         delete m_pIpcClient;
     }

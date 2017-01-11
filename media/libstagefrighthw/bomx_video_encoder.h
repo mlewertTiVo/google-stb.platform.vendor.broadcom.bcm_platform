@@ -144,7 +144,7 @@ public:
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
         NexusIPCClientBase *pIpcClient=NULL,
-        NexusClientContext *pNexusClient=NULL);
+        uint64_t nexusClient=0);
 
     virtual ~BOMX_VideoEncoder();
 
@@ -226,7 +226,7 @@ protected:
 
 
     NexusIPCClientBase              *m_pIpcClient;
-    NexusClientContext              *m_pNexusClient;
+    uint64_t                         m_nexusClient;
     NxClient_AllocResults            m_allocResults;
     unsigned                         m_nxClientId;
 

@@ -13,7 +13,7 @@ using namespace android;
 
 struct bcmsideband_ctx {
     NexusIPCClientBase *ipc_client;
-    NexusClientContext *nexus_client;
+    uint64_t nexus_client;
     ANativeWindow *native_window;
     native_handle_t *native_handle;
     BcmSidebandBinder_wrap *bcmSidebandHwcBinder;
@@ -86,9 +86,9 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband(ANativeWindow *native_wind
     ctx->bcmSidebandHwcBinder->get()->register_notify(&BcmSidebandBinderNotify, (void *)ctx);
     ctx->bcmSidebandHwcBinder->getsideband(0, ctx->surfaceClientId);
 
-    NexusClientContext *nexus_client = ipc_client->createClientContext();
+    uint64_t nexus_client = ipc_client->createClientContext();
 
-    if (nexus_client == NULL) {
+    if (!nexus_client) {
         delete ipc_client;
         free(ctx);
         ALOGE("createClientContext failed");
@@ -143,9 +143,9 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband_tif(native_handle_t **p_na
     ctx->bcmSidebandHwcBinder->get()->register_notify(&BcmSidebandBinderNotify, (void *)ctx);
     ctx->bcmSidebandHwcBinder->getsideband(0, ctx->surfaceClientId);
 
-    NexusClientContext *nexus_client = ipc_client->createClientContext();
+    uint64_t nexus_client = ipc_client->createClientContext();
 
-    if (nexus_client == NULL) {
+    if (!nexus_client) {
         delete ipc_client;
         free(ctx);
         ALOGE("createClientContext failed");

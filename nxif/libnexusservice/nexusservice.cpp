@@ -603,12 +603,12 @@ NexusService::~NexusService()
     server = NULL;
 }
 
-NexusClientContext * NexusService::createClientContext(const b_refsw_client_client_name *pClientName __unused, unsigned clientPid __unused)
+uint64_t NexusService::createClientContext(const b_refsw_client_client_name *pClientName __unused, unsigned clientPid __unused)
 {
-   return NULL;
+   return 0;
 }
 
-void NexusService::destroyClientContext(NexusClientContext * client __unused)
+void NexusService::destroyClientContext(uint64_t client __unused)
 {
    return;
 }
@@ -1013,13 +1013,13 @@ status_t NexusService::onTransact(uint32_t code,
             case api_createClientContext:
             {
                 cmd.param.createClientContext.out.client =
-                   (uint64_t)(createClientContext(&cmd.param.createClientContext.in.clientName,
-                                                  cmd.param.createClientContext.in.clientPid));
+                   createClientContext(&cmd.param.createClientContext.in.clientName,
+                                       cmd.param.createClientContext.in.clientPid);
                 break;
             }
             case api_destroyClientContext:
             {
-                destroyClientContext((NexusClientContext *)(cmd.param.destroyClientContext.in.client));
+                destroyClientContext(cmd.param.destroyClientContext.in.client);
                 break;
             }
             case api_setPowerState:

@@ -207,21 +207,20 @@ static const b_video_window_type videoWindowTypeConversion[] =
 };
 
 /* Client side implementation of the APIs that are transferred to the server process over binder */
-NexusClientContext * NexusNxClient::createClientContext(const b_refsw_client_client_configuration *config)
+uint64_t NexusNxClient::createClientContext(const b_refsw_client_client_configuration *config)
 {
-    NexusClientContext *client;
-
+    uint64_t client;
     /* Call parent class to do the Binder IPC work... */
     client = NexusIPCClient::createClientContext(config);
 
-    if (client != NULL && config != NULL && config->standbyMonitorCallback != NULL) {
+    if (client && config != NULL && config->standbyMonitorCallback != NULL) {
         mStandbyMonitorThread = new NexusNxClient::StandbyMonitorThread(config->standbyMonitorCallback, config->standbyMonitorContext);
         mStandbyMonitorThread->run(getClientName(), ANDROID_PRIORITY_NORMAL);
     }
     return client;
 }
 
-void NexusNxClient::destroyClientContext(NexusClientContext * client)
+void NexusNxClient::destroyClientContext(uint64_t client)
 {
     /* Cancel the standby monitor thread... */
     if (mStandbyMonitorThread != NULL && mStandbyMonitorThread->isRunning()) {

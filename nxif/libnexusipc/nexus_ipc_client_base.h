@@ -66,7 +66,7 @@ public:
 
     const char *getClientName();
     unsigned getClientPid();
-    virtual NexusClientContext * createClientContext(const b_refsw_client_client_configuration *config = NULL) = 0;
+    virtual uint64_t createClientContext(const b_refsw_client_client_configuration *config = NULL) = 0;
 
     static const char *getPowerString(b_powerState pmState);
 

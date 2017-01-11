@@ -119,7 +119,7 @@ struct hwc2_bcm_device_t {
    HwcBinder_wrap       *hb;
 
    NexusIPCClientBase   *nxipc;
-   NexusClientContext   *nxcc;
+   uint64_t             nxcc;
 
    struct hwc2_reg_cb_t regCb[HWC2_MAX_REG_CB];
    struct hwc2_dsp_t    *vd;
@@ -4039,7 +4039,7 @@ static void hwc2_bcm_open(
    cliCfg.standbyMonitorCallback = hwc2_stdby_mon;
    cliCfg.standbyMonitorContext  = (void *)hwc2;
    hwc2->nxcc = hwc2->nxipc->createClientContext(&cliCfg);
-   if (hwc2->nxcc == NULL) {
+   if (!hwc2->nxcc) {
       LOG_ALWAYS_FATAL("failed to instantiate nexus client context.");
       return;
    }
