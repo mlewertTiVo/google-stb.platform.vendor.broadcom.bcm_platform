@@ -111,6 +111,8 @@
 #define OMX_IndexParamDescribeColorFormat                    0x7F000006
 #define OMX_IndexParamConfigureVideoTunnelMode               0x7F000007
 #define OMX_IndexParamPrepareForAdaptivePlayback             0x7F000008
+#define OMX_IndexParamDescribeHdrColorInfo                   0x7F000009
+#define OMX_IndexParamDescribeColorAspects                   0x7F00000A
 
 using namespace android;
 
@@ -193,6 +195,7 @@ enum BOMX_VideoDecoderEventType
     BOMX_VideoDecoderEventType_eDataReady,
     BOMX_VideoDecoderEventType_eCheckpoint,
     BOMX_VideoDecoderEventType_eSourceChanged,
+    BOMX_VideoDecoderEventType_eStreamChanged,
     BOMX_VideoDecoderEventType_eMax
 };
 
@@ -385,7 +388,9 @@ static void BOMX_VideoDecoder_EventCallback(void *pParam, int param)
         "Playpump",
         "Data Ready",
         "Checkpoint",
-        "SourceChanged"
+        "SourceChanged",
+        "StreamChanged"
+
     };
 
     hEvent = static_cast <B_EventHandle> (pParam);
@@ -418,6 +423,15 @@ static void BOMX_VideoDecoder_SourceChangedEvent(void *pParam)
     ALOGV("SourceChangedEvent");
 
     pDecoder->SourceChangedEvent();
+}
+
+static void BOMX_VideoDecoder_StreamChangedEvent(void *pParam)
+{
+    BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
+
+    ALOGV("StreamChangedEvent");
+
+    pDecoder->StreamChangedEvent();
 }
 
 static void BOMX_VideoDecoder_InputBuffersTimer(void *pParam)
@@ -914,6 +928,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_outputFrameEventId(NULL),
     m_hSourceChangedEvent(NULL),
     m_sourceChangedEventId(NULL),
+    m_hStreamChangedEvent(NULL),
+    m_streamChangedEventId(NULL),
     m_hDisplayFrameEvent(NULL),
     m_displayFrameEventId(NULL),
     m_hDisplayMutex(NULL),
@@ -982,7 +998,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_tunnelStcChannelSync(NULL),
     m_inputFlushing(false),
     m_outputFlushing(false),
-    m_ptsReceived(false)
+    m_ptsReceived(false),
+    m_hdrStaticInfoSet(false),
+    m_colorAspectsSet(false)
 {
     unsigned i;
     NEXUS_Error errCode;
@@ -1121,6 +1139,22 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     if ( NULL == m_sourceChangedEventId )
     {
         ALOGW("Unable to register source changed event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_hStreamChangedEvent = B_Event_Create(NULL);
+    if ( NULL == m_hStreamChangedEvent )
+    {
+        ALOGW("Unable to create stream changed event");
+        this->Invalidate(OMX_ErrorUndefined);
+        return;
+    }
+
+    m_streamChangedEventId = this->RegisterEvent(m_hStreamChangedEvent, BOMX_VideoDecoder_StreamChangedEvent, static_cast <void *> (this));
+    if ( NULL == m_streamChangedEventId )
+    {
+        ALOGW("Unable to register stream changed event");
         this->Invalidate(OMX_ErrorUndefined);
         return;
     }
@@ -1459,6 +1493,9 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         m_omxHwcBinder->getvideo(0, surfaceClientId);
     }
 
+    m_videoStreamInfo.valid = false;
+    m_hdrStaticInfoSet = false;
+    m_colorAspectsSet = false;
     // Threshold that we consider a drop as early for stat tracking purpose.
     m_earlyDropThresholdMs = property_get_int32(B_PROPERTY_EARLYDROP_THRESHOLD, B_STAT_EARLYDROP_THRESHOLD_MS);
 
@@ -1566,6 +1603,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         UnregisterEvent(m_sourceChangedEventId);
     }
+    if ( m_streamChangedEventId )
+    {
+        UnregisterEvent(m_streamChangedEventId);
+    }
     if ( m_displayFrameEventId )
     {
         UnregisterEvent(m_displayFrameEventId);
@@ -1581,6 +1622,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     if ( m_hSourceChangedEvent )
     {
         B_Event_Destroy(m_hSourceChangedEvent);
+    }
+    if ( m_hStreamChangedEvent )
+    {
+        B_Event_Destroy(m_hStreamChangedEvent);
     }
     if ( m_hDisplayFrameEvent )
     {
@@ -1889,10 +1934,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 // Return all combinations of profiles/levels supported
                 const OMX_VIDEO_HEVCLEVELTYPE *levels = bStandardFrameRate ? g_hevcStandardLevels : g_hevcLevels;
                 const size_t countLevels = bStandardFrameRate ? g_numHevcStandardLevels : g_numHevcLevels;
-                if (pProfileLevel->nProfileIndex >= 2*countLevels)
+                unsigned numProfiles = (m_tunnelMode) ? 3 : 2;
+                if (pProfileLevel->nProfileIndex >= numProfiles*countLevels)
                     return OMX_ErrorNoMore;
-                pProfileLevel->eProfile = (OMX_U32)(pProfileLevel->nProfileIndex < countLevels  ?
-                                          OMX_VIDEO_HEVCProfileMain : OMX_VIDEO_HEVCProfileMain10);
+                const OMX_VIDEO_HEVCPROFILETYPE supportedHdrProfiles[] = {OMX_VIDEO_HEVCProfileMain,
+                                                OMX_VIDEO_HEVCProfileMain10, OMX_VIDEO_HEVCProfileMain10HDR10};
+                pProfileLevel->eProfile = (OMX_U32) supportedHdrProfiles[pProfileLevel->nProfileIndex/countLevels];
                 pProfileLevel->eLevel = (OMX_U32) levels[pProfileLevel->nProfileIndex % countLevels];
                 break;
             }
@@ -2084,6 +2131,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
 
         return OMX_ErrorNone;
     }
+
     default:
         ALOGV("GetParameter %#x Deferring to base class", nParamIndex);
         return BOMX_ERR_TRACE(BOMX_Component::GetParameter(nParamIndex, pComponentParameterStructure));
@@ -2492,6 +2540,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_lastReturnedSerial = 0;
             m_formatChangeState = FCState_eNone;
             m_waitingForStc = false;
+            m_videoStreamInfo.valid = false;
         }
     }
     else
@@ -2521,6 +2570,9 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 vdecSettings.sourceChanged.callback = BOMX_VideoDecoder_EventCallback;
                 vdecSettings.sourceChanged.context = (void *)m_hSourceChangedEvent;
                 vdecSettings.sourceChanged.param = (int)BOMX_VideoDecoderEventType_eSourceChanged;
+                vdecSettings.streamChanged.callback = BOMX_VideoDecoder_EventCallback;
+                vdecSettings.streamChanged.context = (void *)m_hStreamChangedEvent;
+                vdecSettings.streamChanged.param = (int)BOMX_VideoDecoderEventType_eStreamChanged;
                 NEXUS_SimpleVideoDecoder_SetSettings(m_hSimpleVideoDecoder, &vdecSettings);
             }
 
@@ -4794,6 +4846,156 @@ void BOMX_VideoDecoder::SourceChangedEvent()
     }
 }
 
+void BOMX_VideoDecoder::StreamChangedEvent()
+{
+    NEXUS_VideoDecoderStreamInformation streamInfo;
+
+    if ( m_hSimpleVideoDecoder )
+    {
+        NEXUS_SimpleVideoDecoder_GetStreamInformation(m_hSimpleVideoDecoder, &streamInfo);
+        if (!streamInfo.valid)
+        {
+            ALOGV("%s: invalid stream information", __FUNCTION__);
+            return;
+        }
+
+        ALOGV("%s: stream information", __FUNCTION__);
+        ALOGV("eotf:%u", streamInfo.eotf);
+        ALOGV("transferCharacteristics:%u", streamInfo.transferCharacteristics);
+        ALOGV("color depth:%u", streamInfo.colorDepth);
+        ALOGV("input content light level: (%u, %u)",
+                streamInfo.contentLightLevel.max,
+                streamInfo.contentLightLevel.maxFrameAverage);
+
+        ALOGV("red (%u, %u)",
+                streamInfo.masteringDisplayColorVolume.redPrimary.x,
+                streamInfo.masteringDisplayColorVolume.redPrimary.y);
+        ALOGV("green (%u, %u)",
+                streamInfo.masteringDisplayColorVolume.greenPrimary.x,
+                streamInfo.masteringDisplayColorVolume.greenPrimary.y);
+        ALOGV("blue (%u, %u)",
+                streamInfo.masteringDisplayColorVolume.bluePrimary.x,
+                streamInfo.masteringDisplayColorVolume.bluePrimary.y);
+        ALOGV("white (%u, %u)",
+                streamInfo.masteringDisplayColorVolume.whitePoint.x,
+                streamInfo.masteringDisplayColorVolume.whitePoint.y);
+        ALOGV("luma (%u, %u)",
+                streamInfo.masteringDisplayColorVolume.luminance.max,
+                streamInfo.masteringDisplayColorVolume.luminance.min);
+       m_videoStreamInfo = streamInfo;
+
+       // Trigger event for framework to update both HDR and ColorAspects information
+       if ( m_callbacks.EventHandler )
+       {
+           (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventPortSettingsChanged, m_videoPortBase+1, OMX_IndexParamDescribeHdrColorInfo, NULL);
+       }
+    }
+}
+
+void BOMX_VideoDecoder::ColorAspectsFromNexusStreamInfo(ColorAspects *colorAspects)
+{
+    // TODO: Range needs to come from hdmi output, which we don't have at this time
+    colorAspects->mRange = ColorAspects::RangeUnspecified;
+
+    // Primaries
+    switch (m_videoStreamInfo.colorPrimaries)
+    {
+    case NEXUS_ColorPrimaries_eItu_R_BT_709:
+        colorAspects->mPrimaries = ColorAspects::PrimariesBT709_5;
+        break;
+    case NEXUS_ColorPrimaries_eUnknown:
+        colorAspects->mPrimaries = ColorAspects::PrimariesUnspecified;
+        break;
+    case NEXUS_ColorPrimaries_eItu_R_BT_470_2_M:
+    case NEXUS_ColorPrimaries_eItu_R_BT_470_2_BG:
+    case NEXUS_ColorPrimaries_eSmpte_170M:
+    case NEXUS_ColorPrimaries_eSmpte_240M:
+        colorAspects->mPrimaries = ColorAspects::PrimariesOther;
+        break;
+    case NEXUS_ColorPrimaries_eGenericFilm:
+        colorAspects->mPrimaries = ColorAspects::PrimariesGenericFilm;
+        break;
+    case NEXUS_ColorPrimaries_eItu_R_BT_2020:
+        colorAspects->mPrimaries = ColorAspects::PrimariesBT2020;
+        break;
+    default:
+        colorAspects->mPrimaries = ColorAspects::PrimariesUnspecified;
+        break;
+    }
+
+    // Transfer
+    switch (m_videoStreamInfo.transferCharacteristics)
+    {
+    case NEXUS_TransferCharacteristics_eUnknown:
+        colorAspects->mTransfer = ColorAspects::TransferUnspecified;
+        break;
+    case NEXUS_TransferCharacteristics_eItu_R_BT_470_2_M:
+        colorAspects->mTransfer = ColorAspects::TransferGamma22;
+        break;
+    case NEXUS_TransferCharacteristics_eItu_R_BT_470_2_BG:
+        colorAspects->mTransfer = ColorAspects::TransferGamma28;
+        break;
+    case NEXUS_TransferCharacteristics_eItu_R_BT_709:
+    case NEXUS_TransferCharacteristics_eSmpte_170M:
+        colorAspects->mTransfer = ColorAspects::TransferSMPTE170M;
+        break;
+    case NEXUS_TransferCharacteristics_eLinear:
+        colorAspects->mTransfer = ColorAspects::TransferLinear;
+        break;
+    case NEXUS_TransferCharacteristics_eSmpte_240M:
+    case NEXUS_TransferCharacteristics_eIec_61966_2_4:
+    case NEXUS_TransferCharacteristics_eItu_R_BT_2020_10bit:
+    case NEXUS_TransferCharacteristics_eItu_R_BT_2020_12bit:
+        colorAspects->mTransfer = ColorAspects::TransferOther;
+        break;
+    case NEXUS_TransferCharacteristics_eSmpte_ST_2084:
+        colorAspects->mTransfer = ColorAspects::TransferST2084;
+        break;
+    case NEXUS_TransferCharacteristics_eArib_STD_B67:
+        colorAspects->mTransfer = ColorAspects::TransferHLG;
+        break;
+    case NEXUS_TransferCharacteristics_eMax:
+    default:
+        colorAspects->mTransfer = ColorAspects::TransferUnspecified;
+        break;
+    }
+
+    // Matrix coefficients
+    switch (m_videoStreamInfo.matrixCoefficients)
+    {
+    case NEXUS_MatrixCoefficients_eItu_R_BT_709:
+        colorAspects->mMatrixCoeffs = ColorAspects::MatrixBT709_5;
+        break;
+    case NEXUS_MatrixCoefficients_eUnknown:
+        colorAspects->mMatrixCoeffs = ColorAspects::MatrixUnspecified;
+        break;
+    case NEXUS_MatrixCoefficients_eSmpte_240M:
+        colorAspects->mMatrixCoeffs = ColorAspects::MatrixSMPTE240M;
+        break;
+    case NEXUS_MatrixCoefficients_eItu_R_BT_2020_NCL:
+        colorAspects->mMatrixCoeffs = ColorAspects::MatrixBT2020;
+        break;
+    case NEXUS_MatrixCoefficients_eItu_R_BT_2020_CL:
+        colorAspects->mMatrixCoeffs = ColorAspects::MatrixBT2020Constant;
+        break;
+    case NEXUS_MatrixCoefficients_eHdmi_RGB:
+    case NEXUS_MatrixCoefficients_eDvi_Full_Range_RGB:
+    case NEXUS_MatrixCoefficients_eFCC:
+    case NEXUS_MatrixCoefficients_eItu_R_BT_470_2_BG:
+    case NEXUS_MatrixCoefficients_eSmpte_170M:
+    case NEXUS_MatrixCoefficients_eXvYCC_709:
+    case NEXUS_MatrixCoefficients_eXvYCC_601:
+    case NEXUS_MatrixCoefficients_eHdmi_Full_Range_YCbCr:
+        colorAspects->mMatrixCoeffs = ColorAspects::MatrixOther;
+        break;
+    case NEXUS_MatrixCoefficients_eMax:
+    default:
+        colorAspects->mMatrixCoeffs = ColorAspects::MatrixUnspecified;
+        break;
+    }
+}
+
+
 void BOMX_VideoDecoder::OutputFrameEvent()
 {
     // Check for new frames
@@ -4840,6 +5042,8 @@ static const struct {
     {"OMX.google.android.index.storeMetaDataInBuffers", (int)OMX_IndexParamStoreMetaDataInBuffers},
     {"OMX.google.android.index.prepareForAdaptivePlayback", (int)OMX_IndexParamPrepareForAdaptivePlayback},
     {"OMX.google.android.index.configureVideoTunnelMode", (int)OMX_IndexParamConfigureVideoTunnelMode},
+    {"OMX.google.android.index.describeHDRStaticInfo", (int)OMX_IndexParamDescribeHdrColorInfo},
+    {"OMX.google.android.index.describeColorAspects", (int)OMX_IndexParamDescribeColorAspects},
     {NULL, 0}
 };
 
@@ -4866,6 +5070,13 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetExtensionIndex(
                 // Drop out here to reduce spam in logcat
                 return OMX_ErrorUnsupportedIndex;
             }
+            else if ( !m_tunnelMode && ((g_extensions[i].index == OMX_IndexParamDescribeHdrColorInfo)
+                                    ||  (g_extensions[i].index == OMX_IndexParamDescribeColorAspects)) )
+            {
+                ALOGD("Interface %s not supported in non-tunneled mode", g_extensions[i].pName);
+                return OMX_ErrorUnsupportedIndex;
+
+            }
             else
             {
                 *pIndexType = (OMX_INDEXTYPE)g_extensions[i].index;
@@ -4882,7 +5093,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
         OMX_IN  OMX_INDEXTYPE nIndex,
         OMX_INOUT OMX_PTR pComponentConfigStructure)
 {
-    BSTD_UNUSED(pComponentConfigStructure);
     switch ( (int)nIndex )
     {
     case OMX_IndexConfigCommonOutputCrop:
@@ -4903,6 +5113,84 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
         ALOGV("Returning crop %ux%u @ %u,%u", pRect->nWidth, pRect->nHeight, pRect->nLeft, pRect->nTop);
         return OMX_ErrorNone;
     }
+    case OMX_IndexParamDescribeHdrColorInfo:
+    {
+        DescribeHDRStaticInfoParams *pHDRStaticInfo = (DescribeHDRStaticInfoParams *)pComponentConfigStructure;
+        BOMX_STRUCT_VALIDATE(pHDRStaticInfo);
+        ALOGV("GetConfig OMX_IndexParamDescribeHdrColorInfo");
+        if ( pHDRStaticInfo->nPortIndex != m_videoPortBase+1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+
+        if (!m_tunnelMode)
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
+        // Initialize with values provided by the framework (if any)
+        if (m_hdrStaticInfoSet)
+        {
+            pHDRStaticInfo->sInfo = m_hdrStaticInfo;
+        }
+        // Overwrite parameters with existing stream information
+        if (m_videoStreamInfo.valid)
+        {
+            HDRStaticInfo *sInfo = &pHDRStaticInfo->sInfo;
+            sInfo->sType1.mR.x = m_videoStreamInfo.masteringDisplayColorVolume.redPrimary.x;
+            sInfo->sType1.mR.y = m_videoStreamInfo.masteringDisplayColorVolume.redPrimary.y;
+            sInfo->sType1.mG.x = m_videoStreamInfo.masteringDisplayColorVolume.greenPrimary.x;
+            sInfo->sType1.mG.y = m_videoStreamInfo.masteringDisplayColorVolume.greenPrimary.y;
+            sInfo->sType1.mB.x = m_videoStreamInfo.masteringDisplayColorVolume.bluePrimary.x;
+            sInfo->sType1.mB.y = m_videoStreamInfo.masteringDisplayColorVolume.bluePrimary.y;
+            sInfo->sType1.mW.x = m_videoStreamInfo.masteringDisplayColorVolume.whitePoint.x;
+            sInfo->sType1.mW.y = m_videoStreamInfo.masteringDisplayColorVolume.whitePoint.x;
+            sInfo->sType1.mMaxContentLightLevel =  m_videoStreamInfo.contentLightLevel.max;
+            sInfo->sType1.mMaxFrameAverageLightLevel = m_videoStreamInfo.contentLightLevel.maxFrameAverage;
+            // TODO: Currently not exposed, 'zero' is a valid value.
+            sInfo->sType1.mMaxDisplayLuminance = 0;
+            sInfo->sType1.mMinDisplayLuminance = 0;
+        }
+
+        return OMX_ErrorNone;
+    }
+    case OMX_IndexParamDescribeColorAspects:
+    {
+        DescribeColorAspectsParams *pColorAspects = (DescribeColorAspectsParams *)pComponentConfigStructure;
+        BOMX_STRUCT_VALIDATE(pColorAspects);
+        ALOGV("GetConfig OMX_IndexParamDescribeColorAspects");
+        if ( pColorAspects->nPortIndex != m_videoPortBase+1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+        if (!m_tunnelMode)
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
+
+        // TODO: Look into implementing this request
+        if (pColorAspects->bRequestingDataSpace || pColorAspects->bDataSpaceChanged)
+        {
+            ALOGW("%s: requestingDataSpace:%u, dataSpaceChanged:%u",
+                    __FUNCTION__, pColorAspects->bRequestingDataSpace, pColorAspects->bDataSpaceChanged);
+            return OMX_ErrorUnsupportedSetting;
+        }
+
+        if (m_colorAspectsSet)
+        {
+            pColorAspects->sAspects = m_colorAspects;
+        }
+
+        if (m_videoStreamInfo.valid)
+        {
+            // overwrite fields obtained from the stream
+            ColorAspectsFromNexusStreamInfo(&pColorAspects->sAspects);
+            ColorAspects *pAspects = &pColorAspects->sAspects;
+            ALOGV("ColorAspects from stream [(R:%u, P:%u, M:%u, T:%u]",
+                pAspects->mRange, pAspects->mPrimaries, pAspects->mMatrixCoeffs, pAspects->mTransfer);
+        }
+
+        return OMX_ErrorNone;
+    }
     default:
         ALOGW("Config index %#x is not supported", nIndex);
         return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
@@ -4913,9 +5201,52 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetConfig(
         OMX_IN  OMX_INDEXTYPE nIndex,
         OMX_IN  OMX_PTR pComponentConfigStructure)
 {
-    BSTD_UNUSED(pComponentConfigStructure);
     switch ( (int)nIndex )
     {
+    case OMX_IndexParamDescribeHdrColorInfo:
+    {
+        DescribeHDRStaticInfoParams *pHDRStaticInfo = (DescribeHDRStaticInfoParams *)pComponentConfigStructure;
+        BOMX_STRUCT_VALIDATE(pHDRStaticInfo);
+        ALOGD("SetConfig OMX_IndexParamDescribeHdrColorInfo");
+        if ( pHDRStaticInfo->nPortIndex != m_videoPortBase+1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+
+        if (!m_tunnelMode)
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
+        m_hdrStaticInfo = pHDRStaticInfo->sInfo;
+        m_hdrStaticInfoSet = true;
+        HDRStaticInfo *sInfo = &m_hdrStaticInfo;
+        ALOGD("HDR params from framework [r:(%u %u),g:(%u %u),b:(%u %u),w:(%u %u),mcll:%u,mall:%u,madl:%u,midl:%u",
+            sInfo->sType1.mR.x, sInfo->sType1.mR.y, sInfo->sType1.mG.x, sInfo->sType1.mG.y, sInfo->sType1.mB.x,
+            sInfo->sType1.mB.y, sInfo->sType1.mW.x, sInfo->sType1.mW.y, sInfo->sType1.mMaxContentLightLevel,
+            sInfo->sType1.mMaxFrameAverageLightLevel, sInfo->sType1.mMaxDisplayLuminance, sInfo->sType1.mMinDisplayLuminance);
+
+        return OMX_ErrorNone;
+    }
+    case OMX_IndexParamDescribeColorAspects:
+    {
+        DescribeColorAspectsParams *pColorAspects = (DescribeColorAspectsParams *)pComponentConfigStructure;
+        BOMX_STRUCT_VALIDATE(pColorAspects);
+        ALOGD("SetConfig OMX_IndexParamDescribeColorAspects");
+        if ( pColorAspects->nPortIndex != m_videoPortBase+1 )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+
+        if (!m_tunnelMode)
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
+        m_colorAspectsSet = true;
+        m_colorAspects = pColorAspects->sAspects;
+        ALOGD("ColorAspects from framework [(R:%u, P:%u, M:%u, T:%u]",
+            m_colorAspects.mRange, m_colorAspects.mPrimaries, m_colorAspects.mMatrixCoeffs, m_colorAspects.mTransfer);
+        return OMX_ErrorNone;
+    }
     default:
         ALOGW("Config index %#x is not supported", nIndex);
         return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
