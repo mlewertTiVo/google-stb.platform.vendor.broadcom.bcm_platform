@@ -238,6 +238,7 @@ public:
     void PlaypumpTimer();
     void OutputFrameEvent();
     void SourceChangedEvent();
+    void StreamChangedEvent();
 
     void SetVideoGeometry(NEXUS_Rect *pPosition, NEXUS_Rect *pClipRect, unsigned serialNumber, unsigned gfxWidth, unsigned gfxHeight, unsigned zorder, bool visible);
     void DisplayFrameEvent();
@@ -275,6 +276,8 @@ protected:
     B_SchedulerEventId m_outputFrameEventId;
     B_EventHandle m_hSourceChangedEvent;
     B_SchedulerEventId m_sourceChangedEventId;
+    B_EventHandle m_hStreamChangedEvent;
+    B_SchedulerEventId m_streamChangedEventId;
     BKNI_EventHandle m_hDisplayFrameEvent;
     B_SchedulerEventId m_displayFrameEventId;
     B_MutexHandle m_hDisplayMutex;
@@ -377,12 +380,18 @@ protected:
 
     bool m_inputFlushing;
     bool m_outputFlushing;
-
     bool m_ptsReceived;
+
+    NEXUS_VideoDecoderStreamInformation m_videoStreamInfo;
+    HDRStaticInfo m_hdrStaticInfo;
+    bool m_hdrStaticInfoSet;
+    ColorAspects m_colorAspects;
+    bool m_colorAspectsSet;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
     NEXUS_VideoCodec GetNexusCodec(OMX_VIDEO_CODINGTYPE omxType);
+    void ColorAspectsFromNexusStreamInfo(ColorAspects *colorAspects);
 
     NEXUS_Error SetInputPortState(OMX_STATETYPE newState);
     NEXUS_Error SetOutputPortState(OMX_STATETYPE newState);
