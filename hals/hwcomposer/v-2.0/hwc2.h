@@ -188,6 +188,7 @@ struct hwc2_lyr_t {
    int32_t            cx; /* cursor x-position */
    int32_t            cy; /* cursor y-position */
    int32_t            rf; /* release fence for this layer current buffer */
+   bool               oob; /* is oob-video */
    uint64_t           lpf; /* last pinged frame (oob-video) */
 };
 
@@ -195,7 +196,6 @@ struct hwc2_lyr_t {
 struct hwc2_frame_t {
    struct hwc2_frame_t *next;
 
-   unsigned long long  pres;
    int32_t             cnt;
    int32_t             scnt;
    int32_t             vcnt;
@@ -280,6 +280,7 @@ struct hwc2_dsp_t {
    pthread_mutex_t       mtx_cmp_wl;
 
    uint64_t              pres;
+   uint64_t              post;
 };
 
 /* hwc binder. do not use directly, use the strong pointer wrap
