@@ -17,11 +17,13 @@
 // #define LOG_NDEBUG 0
 #define LOG_FENCE_DEBUG 0
 #define LOG_AR_DEBUG    0
+
 #define LOG_SEED_DEBUG  0
 #define LOG_YV12_DEBUG  0
-#define LOG_COMP_DEBUG  1
 #define LOG_RGBA_DEBUG  0
 #define LOG_DIM_DEBUG   0
+
+#define LOG_COMP_DEBUG  0
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -2838,8 +2840,9 @@ static bool hwc2_is_video(
    }
    index = android_atomic_acquire_load(&(shared->videoWindow.windowIdPlusOne));
    if (index > 0) {
-      if (reinterpret_cast<NexusClientContext *>(shared->videoWindow.nexusClientContext) != NULL) {
+      if (shared->videoWindow.nexusClientContext) {
          video = true;
+         lyr->oob = true;
       }
    }
 
@@ -2908,11 +2911,11 @@ static int32_t hwc2_preDsp(
       if (frame == NULL) {
          goto out_error;
       }
-      frame->pres = dsp->pres;
       frame->cnt  = cnt;
       lyr = dsp->lyr;
       clyr = &frame->lyr[0];
       for (frame_size = 0 ; frame_size < cnt ; frame_size++) {
+         lyr->oob = false;
          if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
             lyr->bh = hwc2->ext->u.ext.ct.tgt;
             lyr->af = hwc2->ext->u.ext.ct.rdf;
@@ -2975,6 +2978,7 @@ static int32_t hwc2_preDsp(
 
       *outRetireFence = hwc2_ret_fence(dsp);
       BKNI_SetEvent(dsp->cmp_evt);
+
       goto out;
    } else if (kind == HWC2_DSP_VD) {
       *outRetireFence = HWC2_INVALID;
@@ -3249,7 +3253,7 @@ static void hwc2_blit_yv12(
    NEXUS_SurfaceHandle d,
    struct hwc2_lyr_t *lyr,
    PSHARED_DATA shared,
-   unsigned long long f) {
+   struct hwc2_dsp_t *dsp) {
 
    NEXUS_SurfaceHandle cb, cr, y, yuv;
    void *buffer, *next, *slock;
@@ -3305,13 +3309,15 @@ static void hwc2_blit_yv12(
    NEXUS_Surface_Flush(cb);
 
    yuv = hwc_to_nsc_surface(shared->container.width, shared->container.height,
-                            shared->container.width * shared->container.bpp, NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8,
+                            shared->container.width * shared->container.bpp,
+                            NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8,
                             0, 0);
    NEXUS_Surface_Lock(yuv, &slock);
    NEXUS_Surface_Flush(yuv);
 
    if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
-      ALOGE("[yv12]:%" PRIu64 ":%llu: failed g2d (packet buffer).\n", lyr->hdl, f);
+      ALOGE("[yv12]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failed g2d (packet buffer).\n",
+            lyr->hdl, dsp->pres, dsp->post);
    } else {
       NEXUS_Graphics2D_GetPacketBuffer(hwc2->hg2d, &buffer, &size, 1024);
       pthread_mutex_unlock(&hwc2->mtx_g2d);
@@ -3434,7 +3440,8 @@ static void hwc2_blit_yv12(
       }
 
       if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
-         ALOGE("[yv12]:%" PRIu64 ":%llu: failed g2d (complete).\n", lyr->hdl, f);
+         ALOGE("[yv12]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failed g2d (complete).\n",
+               lyr->hdl, dsp->pres, dsp->post);
       } else {
          rc = NEXUS_Graphics2D_PacketWriteComplete(hwc2->hg2d, (uint8_t*)next - (uint8_t*)buffer);
          rc = hwc2_chkpt_l(hwc2);
@@ -3472,7 +3479,7 @@ static void hwc2_blit_gpx(
    struct hwc2_lyr_t *lyr,
    PSHARED_DATA shared,
    hwc2_blend_mode_t lbm,
-   unsigned long long f) {
+   struct hwc2_dsp_t *dsp) {
 
    NEXUS_SurfaceHandle s = NULL;
    NEXUS_Graphics2DBlitSettings bs;
@@ -3487,7 +3494,8 @@ static void hwc2_blit_gpx(
          ((private_handle_t *)lyr->bh)->oglStride, gr2nx_pixel(shared->container.format),
          shared->container.block, 0);
    if (s == NULL) {
-      ALOGE("[blit]:%" PRIu64 ":%llu: failed to get surface.\n", lyr->hdl, f);
+      ALOGE("[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failed to get surface.\n",
+            lyr->hdl, dsp->pres, dsp->post);
    }
 
    c = {(int16_t)lyr->crp.left,
@@ -3502,8 +3510,9 @@ static void hwc2_blit_gpx(
    sa = c;
    oa = p;
 
-   ALOGI_IF(LOG_RGBA_DEBUG, "[blit]:%" PRIu64 ":%llu: {%d,%08x} {%d,%d,%dx%d,%p} out:{%d,%d,%dx%d,%p}\n",
-            f, lyr->hdl, lyr->bm, al<<HWC2_ASHIFT,
+   ALOGI_IF(LOG_RGBA_DEBUG, "[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": {%d,%08x} {%d,%d,%dx%d,%p} out:{%d,%d,%dx%d,%p}\n",
+            lyr->hdl, dsp->pres, dsp->post,
+            lyr->bm, al<<HWC2_ASHIFT,
             sa.x, sa.y, sa.width, sa.height, s,
             oa.x, oa.y, oa.width, oa.height, d);
 
@@ -3528,7 +3537,8 @@ static void hwc2_blit_gpx(
    }
 
    if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
-      ALOGE("[blit]:%" PRIu64 ":%llu: failed g2d mutex.\n", lyr->hdl, f);
+      ALOGE("[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failed g2d mutex.\n",
+            lyr->hdl, dsp->pres, dsp->post);
    } else {
       rc = NEXUS_Graphics2D_Blit(hwc2->hg2d, &bs);
       if (rc == NEXUS_GRAPHICS2D_QUEUE_FULL) {
@@ -3540,7 +3550,8 @@ static void hwc2_blit_gpx(
          rc = hwc2_chkpt_l(hwc2);
       }
       if (rc) {
-         ALOGE("[blit]:%" PRIu64 ":%llu failure to blit.\n", lyr->hdl, f);
+         ALOGE("[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failure to blit.\n",
+               lyr->hdl, dsp->pres, dsp->post);
       }
       pthread_mutex_unlock(&hwc2->mtx_g2d);
    }
@@ -3587,6 +3598,7 @@ static void hwc2_ext_cmp_frame(
    struct hwc2_lyr_t *lyr;
    bool is_video;
    hwc2_blend_mode_t lbm = HWC2_BLEND_MODE_INVALID;
+   struct hwc2_dsp_t *dsp = hwc2->ext;
 
    /* setup and grab a destination buffer for this frame. */
    if (hwc2->ext->u.ext.cbs) {
@@ -3616,10 +3628,12 @@ static void hwc2_ext_cmp_frame(
 
    // TODO: optimize seeding background.
    hwc2_fb_seed(hwc2, d, (f->vcnt || f->scnt) ? HWC2_TRS : HWC2_OPQ);
+   ALOGI_IF(LOG_COMP_DEBUG, "[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
+            dsp->pres, dsp->post, (f->vcnt || f->scnt) ? "transparent" : "opaque");
 
    for (i = 0; i < f->cnt; i++) {
       lyr = &f->lyr[i];
-      is_video = hwc2_is_video(hwc2, lyr);
+      is_video = lyr->oob;
       if (is_video && lyr->af != HWC2_INVALID) {
          close(lyr->af);
       }
@@ -3656,6 +3670,8 @@ static void hwc2_ext_cmp_frame(
          hwc2_chkpt(hwc2);
          /* [iii]. count of composed layers. */
          c++;
+         ALOGI_IF(LOG_COMP_DEBUG, "[frame]:%" PRIu64 ":%" PRIu64 ": solid color (%zu)\n",
+                  dsp->pres, dsp->post, c);
       break;
       case HWC2_COMPOSITION_CLIENT:
          if (lyr->crp.left == 0 &&
@@ -3667,6 +3683,8 @@ static void hwc2_ext_cmp_frame(
             hwc2_chkpt(hwc2);
             /* [iii]. count of composed layers. */
             c++;
+            ALOGI_IF(LOG_COMP_DEBUG, "[frame]:%" PRIu64 ":%" PRIu64 ": dim layer (%zu)\n",
+                     dsp->pres, dsp->post, c);
             break;
          }
          /* some valid content, compose as any other graphics.
@@ -3674,16 +3692,19 @@ static void hwc2_ext_cmp_frame(
           * *** FALL THROUGH.
           */
       case HWC2_COMPOSITION_DEVICE:
-         if (lyr->bh == NULL) {
-            ALOGE("%" PRIu64 ":%s (no valid buffer)\n", lyr->hdl, getCompositionName(lyr->cCli));
-            break;
-         }
          if (is_video) {
             /* offlined video pipeline through bvn, nothing to do as we signalled already
              * the frame expected to be released on display.
              */
+            ALOGI_IF(LOG_COMP_DEBUG, "[frame]:%" PRIu64 ":%" PRIu64 ": oob video (%zu)\n",
+                     dsp->pres, dsp->post, c);
             break;
          } else {
+            if (lyr->bh == NULL) {
+               ALOGE("%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%s (no valid buffer)\n",
+                     lyr->hdl, dsp->pres, dsp->post, getCompositionName(lyr->cCli));
+               break;
+            }
             /* graphics or yv12 layer. */
             NEXUS_Error lrc = NEXUS_SUCCESS, lrcp = NEXUS_SUCCESS;
             NEXUS_MemoryBlockHandle bh = NULL, bhp = NULL;
@@ -3695,14 +3716,16 @@ static void hwc2_ext_cmp_frame(
             lrc = hwc2_mem_lock(hwc2, bh, &map, true);
             shared = (PSHARED_DATA) map;
             if (lrc || shared == NULL) {
-               ALOGE("%" PRIu64 ":%llu (invalid dev-shared data)\n", lyr->hdl, f->pres);
+               ALOGE("%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared.\n",
+                     lyr->hdl, dsp->pres, dsp->post);
                break;
             }
             if (((private_handle_t *)lyr->bh)->fmt_set != GR_NONE) {
                bhp = (NEXUS_MemoryBlockHandle)shared->container.block;
                lrcp = hwc2_mem_lock(hwc2, bhp, &map, true);
                if (lrcp || map == NULL) {
-                  ALOGE("%" PRIu64 ":%llu (invalid dev-physical data)\n", lyr->hdl, f->pres);
+                  ALOGE("%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-phys.\n",
+                        lyr->hdl, dsp->pres, dsp->post);
                   break;
                }
             } else {
@@ -3716,10 +3739,10 @@ static void hwc2_ext_cmp_frame(
                   /* flush background to prevent mix blit types. */
                   hwc2_chkpt(hwc2);
                }
-               hwc2_blit_yv12(hwc2, d, lyr, shared, f->pres);
+               hwc2_blit_yv12(hwc2, d, lyr, shared, dsp);
             } else {
-               hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, f->pres);
-               lbm = lyr->bm;
+               hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp);
+               lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
             }
 
             if (lrcp == NEXUS_SUCCESS) {
@@ -3730,16 +3753,21 @@ static void hwc2_ext_cmp_frame(
             }
             /* [iii]. count of composed layers. */
             c++;
+            ALOGI_IF(LOG_COMP_DEBUG, "[frame]:%" PRIu64 ":%" PRIu64 ": %s layer (%zu)\n",
+                     dsp->pres, dsp->post, yv12?"yv12":"rgba", c);
          }
       break;
       case HWC2_COMPOSITION_SIDEBAND:
          if (hwc2->hb) {
             hwc2_sdb(hwc2, lyr);
+            ALOGI_IF(LOG_COMP_DEBUG, "[frame]:%" PRIu64 ":%" PRIu64 ": sideband layer (%zu)\n",
+                     dsp->pres, dsp->post, c);
          }
       break;
       case HWC2_COMPOSITION_CURSOR:
       default:
-         ALOGW("%" PRIu64 ":%s (composition not handled!)\n", lyr->hdl, getCompositionName(lyr->cCli));
+         ALOGW("%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%s - not handled!\n",
+               lyr->hdl, dsp->pres, dsp->post, getCompositionName(lyr->cCli));
       break;
       }
 
@@ -3751,11 +3779,13 @@ static void hwc2_ext_cmp_frame(
    if (c > 0) {
       /* [iv]. push composition to display. */
       NEXUS_SurfaceClient_PushSurface(hwc2->ext->u.ext.sch, d, NULL, false);
-      ALOGI_IF(LOG_COMP_DEBUG, "[frame]:%llu:%zu layer%scomposed\n", f->pres, c, c>1?"s ":" ");
+      ALOGI_IF(LOG_COMP_DEBUG, "[frame]:%" PRIu64 ":%" PRIu64 ":%zu layer%scomposed\n",
+               dsp->pres, dsp->post, c, c>1?"s ":" ");
    } else {
       /* [iv]. ... or re-queue if nothing took place. */
       hwc2_ext_fb_put(hwc2, d);
-      ALOGI_IF(LOG_COMP_DEBUG, "[frame]:%llu:no composition\n", f->pres);
+      ALOGI_IF(LOG_COMP_DEBUG, "[frame]:%" PRIu64 ":%" PRIu64 ":no composition\n",
+               dsp->pres, dsp->post);
    }
    hwc2_ret_inc(hwc2->ext, 1);
    return;
@@ -3798,6 +3828,7 @@ static void *hwc2_ext_cmp(
             }
 
             if (frame != NULL) {
+               hwc2->ext->post++;
                hwc2_ext_cmp_frame(hwc2, frame);
                free(frame);
                frame = NULL;
