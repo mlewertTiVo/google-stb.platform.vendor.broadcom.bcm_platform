@@ -75,8 +75,9 @@ size_t get_brcm_audio_buffer_size(unsigned int sample_rate,
              __FUNCTION__, __LINE__, format);
         return 0;
     }
-    if (channel_count != 1 &&
-        channel_count != 2) {
+    // only validate that falls within the theoretical max (7.1)
+    if (channel_count < 1 ||
+        channel_count > 8) {
         ALOGW("%s: %d, bad channel count %d",
              __FUNCTION__, __LINE__, channel_count);
         return 0;
