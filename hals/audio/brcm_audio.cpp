@@ -343,11 +343,11 @@ static uint32_t bout_get_latency(const struct audio_stream_out *aout)
     ALOGV("%s: at %d, stream = %p\n",
          __FUNCTION__, __LINE__, aout);
 
-    pthread_mutex_lock(&bout->lock);
     if (bout->ops.do_bout_get_latency) {
+        pthread_mutex_lock(&bout->lock);
         latency = bout->ops.do_bout_get_latency(bout);
+        pthread_mutex_unlock(&bout->lock);
     }
-    pthread_mutex_unlock(&bout->lock);
 
     return latency;
 }
