@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2015-2016 Broadcom Corporation
+ *    (c)2015-2017 Broadcom Corporation
  *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -53,6 +53,8 @@ using namespace android;
 
 #define BRCM_AUDIO_STREAM_ID                    (0xC0)
 #define BRCM_AUDIO_DIRECT_COMP_BUFFER_SIZE      (2048)
+#define BRCM_AUDIO_DIRECT_PLAYPUMP_FIFO_SIZE    (32768)
+#define BRCM_AUDIO_DIRECT_DECODER_FIFO_SIZE     (16384)
 #define BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY    (128)
 
 /*
@@ -178,6 +180,9 @@ static int nexus_direct_bout_get_render_position(struct brcm_stream_out *bout, u
             bout->framesPlayed += status.framesDecoded - bout->nexus.direct.lastCount;
             bout->nexus.direct.lastCount = status.framesDecoded;
             *dsp_frames = bout->framesPlayed * NEXUS_PCM_FRAMES_PER_EAC3_FRAME;
+            if (bout->framesPlayed)
+                *dsp_frames += (NEXUS_PCM_FRAMES_PER_EAC3_FRAME / 2);
+
         } else {
             /* numBytesDecoded for passthrough mode returns the underlying playback playedBytes, which is of type size_t */
             bout->framesPlayed += ((size_t)status.numBytesDecoded - bout->nexus.direct.lastCount) / bout->frameSize;
@@ -208,6 +213,8 @@ static int nexus_direct_bout_get_presentation_position(struct brcm_stream_out *b
             bout->framesPlayed += status.framesDecoded - bout->nexus.direct.lastCount;
             bout->nexus.direct.lastCount = status.framesDecoded;
             *frames = bout->framesPlayed * NEXUS_PCM_FRAMES_PER_EAC3_FRAME;
+            if (bout->framesPlayed)
+                *frames += (NEXUS_PCM_FRAMES_PER_EAC3_FRAME / 2);
         } else {
             /* numBytesDecoded for passthrough mode returns the underlying playback playedBytes, which is of type size_t */
             bout->framesPlayed += ((size_t)status.numBytesDecoded - bout->nexus.direct.lastCount) / bout->frameSize;
@@ -290,7 +297,7 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
         // Configure audio decoder fifo threshold and pid channel
         NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &settings);
         ALOGI("Primary fifoThreshold %d", settings.primary.fifoThreshold);
-        settings.primary.fifoThreshold = BRCM_AUDIO_DIRECT_COMP_BUFFER_SIZE * 16;
+        settings.primary.fifoThreshold = BRCM_AUDIO_DIRECT_DECODER_FIFO_SIZE;
         ALOGI("Primary fifoThreshold set to %d", settings.primary.fifoThreshold);
         NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &settings);
 
@@ -373,6 +380,23 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
     }
     bout->nexus.direct.lastCount = 0;
 
+    if (bout->nexus.direct.playpump_mode) {
+        NEXUS_AudioDecoderTrickState trickState;
+        NEXUS_Error res;
+
+        ALOGV("%s: pausing to prime decoder", __FUNCTION__);
+
+        NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.direct.simple_decoder, &trickState);
+        trickState.rate = 0;
+        res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.direct.simple_decoder, &trickState);
+        if (res == NEXUS_SUCCESS) {
+            bout->nexus.direct.priming = true;
+        } else {
+            bout->nexus.direct.priming = false;
+            ALOGE("%s: Error pausing audio decoder %u", __FUNCTION__, res);
+        }
+    }
+
     return 0;
 }
 
@@ -414,9 +438,27 @@ static int nexus_direct_bout_pause(struct brcm_stream_out *bout)
     }
 
     if (bout->nexus.direct.playpump_mode && playpump) {
-        NEXUS_Playpump_SetPause(playpump, true);
-        ALOGV("%s, %p", __FUNCTION__, bout);
+        if (!bout->nexus.direct.priming) {
+            NEXUS_AudioDecoderTrickState trickState;
+            NEXUS_Error res;
+
+            ALOGV("%s, %p", __FUNCTION__, bout);
+
+            NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.direct.simple_decoder, &trickState);
+            if (trickState.rate != 0) {
+                trickState.rate = 0;
+                ALOGV("%s, %p pause decoder", __FUNCTION__, bout);
+                res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.direct.simple_decoder, &trickState);
+                if (res != NEXUS_SUCCESS) {
+                    ALOGE("%s: Error pausing audio decoder %u", __FUNCTION__, res);
+                }
+            }
+        } else {
+            ALOGV("%s, %p stop priming", __FUNCTION__, bout);
+            bout->nexus.direct.priming = false;
+        }
     }
+
     return 0;
 }
 
@@ -432,8 +474,18 @@ static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
     }
 
     if (bout->nexus.direct.playpump_mode && playpump) {
-        NEXUS_Playpump_SetPause(playpump, false);
-        ALOGV("%s, %p", __FUNCTION__, bout);
+        /* Prime again only if not yet resumed */
+        if (!bout->nexus.direct.priming) {
+            NEXUS_AudioDecoderTrickState trickState;
+
+            ALOGV("%s, %p", __FUNCTION__, bout);
+
+            NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.direct.simple_decoder, &trickState);
+            if (trickState.rate == 0) {
+                ALOGV("%s: priming decoder for resume", __FUNCTION__);
+                bout->nexus.direct.priming = true;
+            }
+        }
     }
     return 0;
 }
@@ -515,6 +567,22 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
             bytes -= bytes_to_copy;
         }
         else {
+            /* Unpause decoder after priming is done */
+            if (bout->nexus.direct.playpump_mode && bout->nexus.direct.priming) {
+                NEXUS_Error res;
+                NEXUS_AudioDecoderTrickState trickState;
+
+                ALOGV("%s: finished priming decoder", __FUNCTION__);
+                NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.direct.simple_decoder, &trickState);
+                trickState.rate = NEXUS_NORMAL_DECODE_RATE;
+                res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.direct.simple_decoder, &trickState);
+                if (res == NEXUS_SUCCESS) {
+                    bout->nexus.direct.priming = false;
+                    continue;
+                } else {
+                    ALOGE("%s: Error resuming audio decoder %u", __FUNCTION__, res);
+                }
+            }
             NEXUS_SimpleAudioDecoderHandle prev_simple_decoder = simple_decoder;
             NEXUS_PlaypumpHandle prev_playpump = playpump;
 
@@ -749,7 +817,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         NEXUS_PidChannelHandle pid_channel;
 
         NEXUS_Playpump_GetDefaultOpenSettings(&playpumpOpenSettings);
-        playpumpOpenSettings.fifoSize = BRCM_AUDIO_DIRECT_COMP_BUFFER_SIZE * 2;
+        playpumpOpenSettings.fifoSize = BRCM_AUDIO_DIRECT_PLAYPUMP_FIFO_SIZE;
         playpump = NEXUS_Playpump_Open(NEXUS_ANY_ID, &playpumpOpenSettings);
 
         if (!playpump) {
