@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2016 Broadcom Corporation
+ *    (c)2011-2017 Broadcom Corporation
  *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -233,6 +233,7 @@ struct brcm_stream_out {
                     uint32_t transcode_latency;
                     NxClient_AudioOutputMode savedHDMIOutputMode;
                     NxClient_AudioOutputMode savedSPDIFOutputMode;
+                    bool priming;
                 } direct;
                 struct {
                     NEXUS_SimpleAudioDecoderHandle audio_decoder;
