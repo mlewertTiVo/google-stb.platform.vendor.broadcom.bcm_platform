@@ -21,6 +21,7 @@ typedef void (* HWC2_DC_NTFY_CB)(void *);
 typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &);
 
 #define HWC2_MAGIC      0xBC353C02
+#define HWC2_VID_MAGIC  0x00E33200
 
 #define HWC2_INVALID    -1
 #define HWC2_MAX_REG_CB 3
@@ -33,12 +34,14 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_FB_RETRY   4
 #define HWC2_ASHIFT     24
 #define HWC2_RLPF       0xCAFEBAAD
+#define HWC2_COMP_RUN   2
+#define HWC2_VID_WIN    1
 
 /* timeline creation/destruction are expensive operations; we use
  * a pool which recycles yet keeps sufficient depth to allow layers
  * to come and go in sync between device and client.
  */
-#define HWC2_MAX_TL     15
+#define HWC2_MAX_TL     10
 
 #define HWC2_DSP_NAME   32
 #define HWC2_DSP_EXT    2001
@@ -189,7 +192,7 @@ struct hwc2_lyr_t {
    int32_t            cy; /* cursor y-position */
    int32_t            rf; /* release fence for this layer current buffer */
    bool               oob; /* is oob-video */
-   uint64_t           lpf; /* last pinged frame (oob-video) */
+   uint32_t           lpf; /* last pinged frame (oob-video) */
 };
 
 /* unit of work for composition. */
@@ -241,6 +244,12 @@ struct hwc2_lyr_tl_t {
    uint64_t          si;
 };
 
+/* video layer (oob|sideband) information. */
+struct hwc2_lyr_vid_t {
+   hwc_rect_t        fr;
+   hwc_rect_t        crp;
+};
+
 /* external (ie hdmi) display specific information. */
 struct hwc2_ext_t {
    hwc2_vsync_t                        vsync;
@@ -256,6 +265,7 @@ struct hwc2_ext_t {
    pthread_mutex_t                     mtx_fbs;
    bool                                bfb;
    struct hwc2_lyr_tl_t                rtl[HWC2_MAX_TL];
+   struct hwc2_lyr_vid_t               vid[HWC2_VID_WIN];
 };
 
 /* display unit. */
@@ -273,6 +283,7 @@ struct hwc2_dsp_t {
    struct hwc2_dsp_cfg_t *cfgs;
 
    BKNI_EventHandle      cmp_evt;
+   BKNI_EventHandle      cmp_syn;
    pthread_t             cmp;
    int                   cmp_active;
    int                   cmp_tl;
