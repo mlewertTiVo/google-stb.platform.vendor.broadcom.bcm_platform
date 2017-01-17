@@ -399,7 +399,7 @@ static void hwc2_ext_fbs(
          scs.heap = NULL;
          hwc2->ext->u.ext.fbs[i].s = hwc_surface_create(&scs, dh);
       }
-      ALOGI("[ext]: fb:%d::%dx%d::%s:%s -> %p (%d::%p)",
+      ALOGI("[ext]:fb:%d::%dx%d::%s:%s -> %p (%d::%p)",
             i, scs.width, scs.height, dh?"d-cma":"gfx",
             hwc2_enabled(hwc2_tweak_fb_compressed)?"comp":"full",
             hwc2->ext->u.ext.fbs[i].s, hwc2->ext->u.ext.fbs[i].fd, bh);
@@ -783,16 +783,36 @@ static size_t hwc2_dump_gen(
 
    size_t max = sizeof(hwc2->dump);
    size_t current = 0;
+   struct hwc2_dsp_t *dsp;
+   struct hwc2_lyr_t *lyr;
 
    memset((void *)hwc2->dump, 0, sizeof(hwc2->dump));
 
-   current += snprintf(hwc2->dump, max-current, "hwc2-bcm\n");
+   current += snprintf(&hwc2->dump[current], max-current, "hwc2-bcm\n");
    if (hwc2->vd != NULL) {
+      dsp = hwc2->vd;
       if (max-current > 0) {
-         current += snprintf(hwc2->dump, max-current, "\tvd:%" PRIu32 "x%" PRIu32 "\n", hwc2->vd->u.vd.w, hwc2->vd->u.vd.h);
+         current += snprintf(&hwc2->dump[current], max-current, "\t[vd]:%" PRIu32 "x%" PRIu32 "\n", dsp->u.vd.w, dsp->u.vd.h);
       }
    }
-   // TODO: add more dump data.
+   if (hwc2->ext != NULL) {
+      dsp = hwc2->ext;
+      if (max-current > 0) {
+         current += snprintf(&hwc2->dump[current], max-current, "\t[ext]:%s:%" PRIu32 "x%" PRIu32 ":%" PRIu64 ":%" PRIu64 "\n",
+            dsp->name, dsp->aCfg->w, dsp->aCfg->h, dsp->pres, dsp->post);
+      }
+
+      lyr = dsp->lyr;
+      while (lyr != NULL) {
+         if (max-current > 0) {
+            current += snprintf(&hwc2->dump[current], max-current, "\t[lyr]:%" PRIu64 "{%d,%d,%.02f}:{%d,%d,%dx%d}:{%d,%d,%dx%d}\n",
+               lyr->hdl, lyr->bm, lyr->cCli, lyr->al,
+               lyr->crp.left, lyr->crp.top, (lyr->crp.right - lyr->crp.left), (lyr->crp.bottom - lyr->crp.top),
+               lyr->fr.left, lyr->fr.top, (lyr->fr.right - lyr->fr.left), (lyr->fr.bottom - lyr->fr.top));
+         }
+         lyr = lyr->next;
+      }
+   }
 
    return current;
 }
@@ -3737,12 +3757,17 @@ static void hwc2_ext_cmp_frame(
        */
       switch(lyr->cCli) {
       case HWC2_COMPOSITION_SOLID_COLOR:
-         hwc2_fb_seed(hwc2, d, (lyr->sc.a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b));
-         hwc2_chkpt(hwc2);
-         /* [iii]. count of composed layers. */
-         c++;
-         ALOGI_IF(LOG_COMP_DEBUG, "[frame]:%" PRIu64 ":%" PRIu64 ": solid color (%zu)\n",
-                  dsp->pres, dsp->post, c);
+         {
+            uint32_t color = (lyr->sc.a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b);
+            if (color != HWC2_TRS || color != HWC2_OPQ) {
+               hwc2_fb_seed(hwc2, d, color);
+               hwc2_chkpt(hwc2);
+               /* [iii]. count of composed layers. */
+               c++;
+            }
+            ALOGI_IF(LOG_COMP_DEBUG, "[frame]:%" PRIu64 ":%" PRIu64 ": solid color (%02x:%02x:%02x:%02x):%08x (%zu)\n",
+                     dsp->pres, dsp->post, lyr->sc.r, lyr->sc.g, lyr->sc.b, lyr->sc.a, color, c);
+         }
       break;
       case HWC2_COMPOSITION_CLIENT:
          if (lyr->crp.left == 0 &&
