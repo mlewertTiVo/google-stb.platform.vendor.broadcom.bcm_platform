@@ -59,8 +59,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 /* wrapper around nexus hotplug event listener binder. do
  * not use directly, use the strong pointer wrap instead.
  */
-class Hwc2HP : public BnNexusHdmiHotplugEventListener
-{
+class Hwc2HP : public BnNexusHdmiHotplugEventListener {
 public:
 
     Hwc2HP() {};
@@ -78,8 +77,7 @@ private:
 };
 
 /* strong pointer wrap of Hwc2HP for use by hwc2. */
-class Hwc2HP_sp
-{
+class Hwc2HP_sp {
 private:
 
    sp<Hwc2HP> ihwc;
@@ -101,8 +99,7 @@ public:
 /* wrapper around nexus display changed event listener binder. do
  * not use directly, use the strong pointer wrap instead.
  */
-class Hwc2DC : public BnNexusDisplaySettingsChangedEventListener
-{
+class Hwc2DC : public BnNexusDisplaySettingsChangedEventListener {
 public:
 
     Hwc2DC() {};
@@ -120,8 +117,7 @@ private:
 };
 
 /* strong pointer wrap of Hwc2DC for use by hwc2. */
-class Hwc2DC_sp
-{
+class Hwc2DC_sp {
 private:
 
    sp<Hwc2DC> ihwc;
@@ -297,8 +293,7 @@ struct hwc2_dsp_t {
 /* hwc binder. do not use directly, use the strong pointer wrap
  * instead.
  */
-class HwcBinder : public HwcListener
-{
+class HwcBinder : public HwcListener {
 public:
 
    HwcBinder() : cb(NULL), cb_data(0) {};
@@ -349,8 +344,7 @@ private:
 };
 
 /* strong pointer wrap of HwcBinder for use by hwc2. */
-class HwcBinder_wrap
-{
+class HwcBinder_wrap {
 private:
    sp<HwcBinder> ihwc;
    bool iconnected;
@@ -399,5 +393,8 @@ public:
    }
 };
 
-#endif
+enum hwc2_tweaks_e {
+   hwc2_tweak_fb_compressed = 0,
+};
 
+#endif

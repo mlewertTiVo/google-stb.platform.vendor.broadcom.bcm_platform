@@ -136,6 +136,21 @@ struct hwc2_bcm_device_t {
    NEXUS_Graphics2DCapabilities g2dc;
 };
 
+static bool hwc2_enabled(enum hwc2_tweaks_e tweak) {
+
+   bool r = false;
+
+   switch (tweak) {
+   case hwc2_tweak_fb_compressed:
+      r = (bool)property_get_bool("ro.nx.hwc2.tweak.fbcomp", 0);
+   break;
+   default:
+   break;
+   }
+
+   return r;
+}
+
 static NEXUS_PixelFormat gr2nx_pixel(
    int gr) {
 
@@ -368,7 +383,9 @@ static void hwc2_ext_fbs(
       scs.width       = hwc2->ext->cfgs->w;
       scs.height      = hwc2->ext->cfgs->h;
       scs.pitch       = scs.width * 4;
-      scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
+      scs.pixelFormat = hwc2_enabled(hwc2_tweak_fb_compressed)?
+                           NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8:
+                           NEXUS_PixelFormat_eA8_B8_G8_R8;
       if (cb) {
          scs.heap = NEXUS_Platform_GetFramebufferHeap(0);
       } else {
@@ -382,8 +399,9 @@ static void hwc2_ext_fbs(
          scs.heap = NULL;
          hwc2->ext->u.ext.fbs[i].s = hwc_surface_create(&scs, dh);
       }
-      ALOGI("[ext]: fb:%d::%dx%d::%s -> %p (%d::%p)",
+      ALOGI("[ext]: fb:%d::%dx%d::%s:%s -> %p (%d::%p)",
             i, scs.width, scs.height, dh?"d-cma":"gfx",
+            hwc2_enabled(hwc2_tweak_fb_compressed)?"comp":"full",
             hwc2->ext->u.ext.fbs[i].s, hwc2->ext->u.ext.fbs[i].fd, bh);
    }
    hwc2->ext->u.ext.bfb = true;
