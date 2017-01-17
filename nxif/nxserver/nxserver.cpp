@@ -171,6 +171,8 @@
 #define NX_TRIM_4KDEC                  "ro.nx.trim.4kdec"
 #define NX_TRIM_10BCOL                 "ro.nx.trim.10bcol"
 
+#define NX_HWC2_FBCOMP                 "ro.nx.hwc2.tweak.fbcomp"
+
 typedef enum {
    SVP_MODE_NONE,
    SVP_MODE_NONE_TRANSCODE,
@@ -917,6 +919,8 @@ static nxserver_t init_nxserver(void)
        settings.allowCompositionBypass = false;
     }
     settings.framebuffers = NSC_FB_NUMBER;
+    settings.pixelFormat = property_get_bool(NX_HWC2_FBCOMP ,0) ?
+       NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8 : NEXUS_PixelFormat_eA8_R8_G8_B8;
 
     settings.videoDecoder.dynamicPictureBuffers = property_get_int32(NX_ODV, 0) ? true : false;
     if (settings.videoDecoder.dynamicPictureBuffers) {
