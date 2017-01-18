@@ -1,17 +1,11 @@
 How to use pack_release.sh
 --------------------------
 
-1. Create a fresh lollipop tree from internal git repos as usual.
+1. Create a fresh x-n-rel tree from internal git repos as usual.
 
-2. Run plat-droid.py to generate the intended supported platform(s).
+2. [OPTIONAL] Create a folder called "release_prebuilts" in vendor/broadcom/ from the root of tree and copy the needed prebuilt binaries as listed in ./vendor/broadcom/bcm_platform/tools/release/release_prebuilts.txt to it.  Preferrably, use the -p option to specify the staging workspace where the prebuilt binaries will be copied from, in which case the step can be skipped entirely.
 
-Note: Unfortunately at the moment plat-droid.py looks for a script in refsw
-that is not included as part of refsw release, so need to run this prior to
-packing.
-
-3. [OPTIONAL] Create a folder called "release_prebuilts" in vendor/broadcom/ from the root of tree and copy the needed prebuilt binaries as listed in ./vendor/broadcom/bcm_platform/tools/release/release_prebuilts.txt to it.  Preferrably, use the -p option to specify the staging workspace where the prebuilt binaries will be copied from, in which case the step can be skipped entirely. 
-
-4. Run pack_release.sh from the root of tree, e.g.:
+3. Run pack_release.sh from the root of tree, e.g.:
 
 ./vendor/broadcom/bcm_platform/tools/release/pack_release.sh -p /home/user/release_staging_dir android5.1_15.2take1.tgz
 
@@ -29,13 +23,13 @@ Note 3: If you include -t in addition to -r and -s in the example given above in
 How to use unpack_release.sh
 ----------------------------
 
-1. Check out a vanilla Android L aosp tree.  Run the "repo init" command.
+1. Check out a vanilla Android aosp tree.  Run the "repo init" command.
 
-2. "repo sync -j8" to fetch the aosp tree.
+2. "repo sync -jN" to fetch the aosp tree.
 
 3. Run unpack_release.sh by specifying the aosp tree location and the release
 tarball name, e.g.:
-unpack_release.sh android5.0_14.4take1.tgz ~/projects/l-aosp
+unpack_release.sh android5.0_14.4take1.tgz ~/projects/aosp
 
 Note: The script will check if aosp tree location has been preloaded with a version of refsw code base in vendor/broadcom/refsw. If it doesn't, the script would then check if a version of refsw source is included in the release tarball and use it if one exists.  If the script can't locate a version of refsw source in the expected location nor can it find a copy of refsw source code in the release tarball, the script will bail and the user is expected to source a version of URSR release that works with the given Android release and populate the AOSP code tree acccordingly. 
 
