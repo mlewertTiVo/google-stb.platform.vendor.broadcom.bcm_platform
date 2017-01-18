@@ -16,11 +16,10 @@ function HELP {
   echo "     -s     : The SHA in the URSR official branch that the release is based on."
   echo "     -t     : Include this option if you want to package the refsw baseline in the release"
   echo "     -a     : AOSP baseline tag where patches is generated from; if not specified,"
-  echo "     -p     : Path to the prebuilt binary tarballs created by the prep_release_prebuilts.sh"
   echo "              revision from default manifest will be used."
+  echo "     -p     : Path to the prebuilt binary tarballs created by the prep_release_prebuilts.sh"
   exit 1
 }
-
 
 # The current directory should be the top of tree.  If not the script would
 # bail at one point.
@@ -46,6 +45,9 @@ REFSW_PATCH="$TMP_DIR/refsw_patch.txt"
 WHITE_LIST="$TMP_DIR/white_list.txt"
 BLACK_LIST="$TMP_DIR/black_list.txt"
 AOSP_NAME_LIST="$TMP_DIR/aosp_override_list.txt"
+DEVICE_GOOGLE_REF_LIST="$TMP_DIR/addon_device_google_list.txt"
+DEVICE_CBOARDS_LIST="$TMP_DIR/addon_device_cboards_list.txt"
+DEVICE_EBOARDS_LIST="$TMP_DIR/addon_device_eboards_list.txt"
 
 # Parse input arguments and options
 while getopts :r:s:a:p:t opt; do
@@ -170,8 +172,6 @@ fi
 mkdir -p $TMP_DIR
 mkdir -p $ADDON_DIR
 mkdir -p $PLAYREADY_DIR
-echo "$ADDON_DIR" >> $BLACK_LIST
-echo "$PLAYREADY_DIR" >> $BLACK_LIST
 
 # Check if the required prebuilt libraries tarballs are already provided by the user
 if [ -d $PREBUILT_BINS_DIR ]; then
@@ -247,13 +247,22 @@ if [ -f $BCG_XML ]; then
   extract_path_from_xml name android/kernel-toolchains >> $WHITE_LIST
 
   # Android aosp overrides, generate patches from a given baseline
+  # If there is none, the list would be empty
   create_patches_for_all_aosp_overrides
 
-  # Misc tools
-  extract_path_from_xml name android/busybox >> $WHITE_LIST
+  # Google reference devices, cboards, eboards
+  extract_path_from_xml name android/device/google/avko >> $DEVICE_GOOGLE_REF_LIST
+  extract_path_from_xml name android/device/google/banff >> $DEVICE_GOOGLE_REF_LIST
+  extract_path_from_xml name android/device/google/cypress >> $DEVICE_GOOGLE_REF_LIST
+  extract_path_from_xml name android/device/google/dawson >> $DEVICE_GOOGLE_REF_LIST
+  extract_path_from_xml name android/device/google/elfin >> $DEVICE_GOOGLE_REF_LIST
 
-  # Reference devices
-  extract_path_from_xml name android/device/google/avko >> $WHITE_LIST
+  # cboards - WARNING: this is primarily for internal consumption.  Customer releases
+  # must be carefully reviewed.
+  extract_path_from_xml name android/device/broadcom/cboards >> $DEVICE_CBOARDS_LIST
+
+  # eboards
+  extract_path_from_xml name android/device/broadcom/eboards >> $DEVICE_EBOARDS_LIST
 
 else
   echo "$BCG_XML not found, exiting..."
@@ -306,10 +315,20 @@ if [ -f $SCRIPT_DIR/exclude.txt ]; then
   done < "$SCRIPT_DIR/exclude.txt"
 fi
 
-# Tar up the entire temp directory except the white/black lists
+# Tar up the entire temp directory except the filter lists and addons
 echo $TMP_DIR >> $WHITE_LIST
 echo $WHITE_LIST >> $BLACK_LIST
 echo $BLACK_LIST >> $BLACK_LIST
+echo $DEVICE_GOOGLE_REF_LIST >> $BLACK_LIST
+echo $DEVICE_CBOARDS_LIST >> $BLACK_LIST
+echo $DEVICE_EBOARDS_LIST >> $BLACK_LIST
+echo "$ADDON_DIR" >> $BLACK_LIST
+echo "$PLAYREADY_DIR" >> $BLACK_LIST
+
+# Tar up addons individually - Google devices, cboards, and eboards
+tar --exclude=*.git* -cvzf $ADDON_DIR/device_google_ref.tgz --files-from=$DEVICE_GOOGLE_REF_LIST
+tar --exclude=*.git* -cvzf $ADDON_DIR/device_cboards.tgz --files-from=$DEVICE_CBOARDS_LIST
+tar --exclude=*.git* -cvzf $ADDON_DIR/device_eboards.tgz --files-from=$DEVICE_EBOARDS_LIST
 
 # Tar up everything
 tar --exclude=*.git* --exclude-from=$BLACK_LIST -cvzf $1.tgz --files-from=$WHITE_LIST
