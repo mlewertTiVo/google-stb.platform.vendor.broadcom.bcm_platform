@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 The Android Open Source Project
+ * Copyright 2016-2017 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -186,6 +186,38 @@ static hwc2_dsp_t *hwc2_hnd2dsp(
    }
 
    return NULL;
+}
+
+static void hwc2_hdmi_collect(
+   struct hwc2_dsp_t *dsp,
+   NEXUS_HdmiOutputHandle hdmi,
+   NxClient_DisplaySettings *s) {
+
+   NEXUS_HdmiOutputBasicEdidData bedid;
+   NEXUS_HdmiOutputEdidData edid;
+   NEXUS_VideoFormatInfo i;
+   NEXUS_Error e;
+
+   e = NEXUS_HdmiOutput_GetBasicEdidData(hdmi, &bedid);
+   if (!e) {
+      NEXUS_VideoFormat_GetInfo(s->format, &i);
+      int w = dsp->cfgs->w;
+      int h = dsp->cfgs->h;
+      float xdp = bedid.maxHorizSize ? (w * 1000.0 / ((float)bedid.maxHorizSize * 0.39370)) : 0.0;
+      float ydp = bedid.maxVertSize  ? (h * 1000.0 / ((float)bedid.maxVertSize * 0.39370)) : 0.0;
+      dsp->cfgs->xdp = (int)xdp;
+      dsp->cfgs->ydp = (int)ydp;
+   }
+
+   e = NEXUS_HdmiOutput_GetEdidData(hdmi, &edid);
+   dsp->cfgs->hdr10 = false;
+   dsp->cfgs->hlg = false;
+   if (!e) {
+      if (edid.valid && edid.hdrdb.valid) {
+         dsp->cfgs->hdr10 = edid.hdrdb.eotfSupported[NEXUS_VideoEotf_eHdr10];
+         dsp->cfgs->hlg = edid.hdrdb.eotfSupported[NEXUS_VideoEotf_eHlg];
+      }
+   }
 }
 
 status_t Hwc2HP::onHdmiHotplugEventReceived(
@@ -614,6 +646,30 @@ static void hwc2_getCaps(
    return;
 }
 
+static enum hwc2_cbs_e hwc2_want_comp_bypass(
+   NxClient_DisplaySettings *settings) {
+
+   NxClient_GetDisplaySettings(settings);
+   switch (settings->format) {
+   case NEXUS_VideoFormat_e720p:
+   case NEXUS_VideoFormat_e720p50hz:
+   case NEXUS_VideoFormat_e720p30hz:
+   case NEXUS_VideoFormat_e720p25hz:
+   case NEXUS_VideoFormat_e720p24hz:
+   case NEXUS_VideoFormat_ePal:
+   case NEXUS_VideoFormat_eSecam:
+   case NEXUS_VideoFormat_eVesa640x480p60hz:
+   case NEXUS_VideoFormat_eVesa800x600p60hz:
+   case NEXUS_VideoFormat_eVesa1024x768p60hz:
+   case NEXUS_VideoFormat_eVesa1280x768p60hz:
+      return hwc2_cbs_e::cbs_e_nscfb;
+   break;
+   default:
+   break;
+   }
+   return hwc2_cbs_e::cbs_e_bypass;
+}
+
 static int32_t hwc2_regCb(
    hwc2_device_t* device,
    int32_t /*hwc2_callback_descriptor_t*/ descriptor,
@@ -643,6 +699,11 @@ static int32_t hwc2_regCb(
          NEXUS_HdmiOutputStatus hstatus;
          hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
          NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
+         if (hstatus.connected) {
+            NxClient_DisplaySettings settings;
+            hwc2_want_comp_bypass(&settings);
+            hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
+         }
          if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
             ALOGV("[ext]: report hotplug %s\n", hstatus.connected?"CONNECTED":"DISCONNECTED");
             HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
@@ -792,14 +853,17 @@ static size_t hwc2_dump_gen(
    if (hwc2->vd != NULL) {
       dsp = hwc2->vd;
       if (max-current > 0) {
-         current += snprintf(&hwc2->dump[current], max-current, "\t[vd]:%" PRIu32 "x%" PRIu32 "\n", dsp->u.vd.w, dsp->u.vd.h);
+         current += snprintf(&hwc2->dump[current], max-current, "\t[vd]:%" PRIu32 "x%" PRIu32 "\n",
+            dsp->u.vd.w, dsp->u.vd.h);
       }
    }
    if (hwc2->ext != NULL) {
       dsp = hwc2->ext;
       if (max-current > 0) {
-         current += snprintf(&hwc2->dump[current], max-current, "\t[ext]:%s:%" PRIu32 "x%" PRIu32 ":%" PRIu64 ":%" PRIu64 "\n",
-            dsp->name, dsp->aCfg->w, dsp->aCfg->h, dsp->pres, dsp->post);
+         current += snprintf(&hwc2->dump[current], max-current,
+            "\t[ext]:%s:%" PRIu32 "x%" PRIu32 ":%" PRIu32 ",%" PRIu32 ":hdr-%c,hlg-%c:%" PRIu64 ":%" PRIu64 "\n",
+            dsp->name, dsp->aCfg->w, dsp->aCfg->h, dsp->aCfg->xdp, dsp->aCfg->ydp,
+            dsp->aCfg->hdr10?'o':'x', dsp->aCfg->hlg?'o':'x', dsp->pres, dsp->post);
       }
 
       lyr = dsp->lyr;
@@ -1026,6 +1090,7 @@ static int32_t hwc2_lyrAdd(
    lyr->rf = HWC2_INVALID;
    hwc2_lyr_tl_set(dsp, kind, lyr->hdl);
 
+   pthread_mutex_lock(&dsp->mtx_lyr);
    nxt = dsp->lyr;
    if (nxt == NULL) {
       dsp->lyr = lyr;
@@ -1037,6 +1102,8 @@ static int32_t hwc2_lyrAdd(
       }
       lnk->next = lyr;
    }
+   pthread_mutex_unlock(&dsp->mtx_lyr);
+
    *outLayer = (hwc2_layer_t)(intptr_t)lyr;
    cnt++;
    ALOGI_IF(LOG_AR_DEBUG, "[add]:%" PRIu64 ": %zu layers\n", lyr->hdl, cnt);
@@ -1078,6 +1145,7 @@ static int32_t hwc2_lyrRem(
       goto out;
    }
 
+   pthread_mutex_lock(&dsp->mtx_lyr);
    nxt = dsp->lyr;
    prv = NULL;
    while (nxt != NULL) {
@@ -1090,6 +1158,7 @@ static int32_t hwc2_lyrRem(
       }
    }
    if (lyr == NULL) {
+      pthread_mutex_unlock(&dsp->mtx_lyr);
       ret = HWC2_ERROR_BAD_LAYER;
       goto out;
    }
@@ -1104,6 +1173,7 @@ static int32_t hwc2_lyrRem(
    hwc2_lyr_tl_unset(dsp, kind, lyr->hdl);
    free(lyr);
    lyr = NULL;
+   pthread_mutex_unlock(&dsp->mtx_lyr);
 
    ALOGI_IF(LOG_AR_DEBUG, "[rem]:%" PRIu64 " \n", hdl);
 
@@ -1446,13 +1516,27 @@ static int32_t hwc2_hdrCap(
       goto out;
    }
 
-   // TODO - HDR caps hook up.
-   *outNumTypes = 0;
+   /* 'zero' value is legal, we do not have the actual data exposed through
+    * the middleware anyways to calculate that from the edid.
+    */
+   *outMaxLuminance = 0;
+   *outMaxAverageLuminance = 0;
+   *outMinLuminance = 0;
 
-   (void)outTypes;
-   (void)outMaxLuminance;
-   (void)outMaxAverageLuminance;
-   (void)outMinLuminance;
+   /* at the present time, we only care about hdr10 support, thus we
+    * limit ourselves to that.
+    */
+   if (!dsp->aCfg->hdr10) {
+      *outNumTypes = 0;
+      goto out;
+   } else {
+      if (outTypes == NULL) {
+         *outNumTypes = 1;
+      } else {
+         *outNumTypes = 1;
+         outTypes[0] = HAL_HDR_HDR10;
+      }
+   }
 
 out:
    ALOGV("<- %s:%" PRIu64 " (%s)\n",
@@ -3214,6 +3298,7 @@ static void hwc2_bcm_close(
       hwc2->ext->cmp_active = 0;
       pthread_join(hwc2->ext->cmp, NULL);
       pthread_mutex_destroy(&hwc2->ext->mtx_cmp_wl);
+      pthread_mutex_destroy(&hwc2->ext->mtx_lyr);
       pthread_mutex_destroy(&hwc2->ext->u.ext.mtx_fbs);
       BKNI_DestroyEvent(hwc2->ext->cmp_evt);
       BKNI_DestroyEvent(hwc2->ext->cmp_syn);
@@ -3940,30 +4025,6 @@ static void *hwc2_ext_cmp(
    return NULL;
 }
 
-static enum hwc2_cbs_e hwc2_want_comp_bypass(
-   NxClient_DisplaySettings *settings) {
-
-   NxClient_GetDisplaySettings(settings);
-   switch (settings->format) {
-   case NEXUS_VideoFormat_e720p:
-   case NEXUS_VideoFormat_e720p50hz:
-   case NEXUS_VideoFormat_e720p30hz:
-   case NEXUS_VideoFormat_e720p25hz:
-   case NEXUS_VideoFormat_e720p24hz:
-   case NEXUS_VideoFormat_ePal:
-   case NEXUS_VideoFormat_eSecam:
-   case NEXUS_VideoFormat_eVesa640x480p60hz:
-   case NEXUS_VideoFormat_eVesa800x600p60hz:
-   case NEXUS_VideoFormat_eVesa1024x768p60hz:
-   case NEXUS_VideoFormat_eVesa1280x768p60hz:
-      return hwc2_cbs_e::cbs_e_nscfb;
-   break;
-   default:
-   break;
-   }
-   return hwc2_cbs_e::cbs_e_bypass;
-}
-
 static void hwc2_setup_ext(
    struct hwc2_bcm_device_t *hwc2) {
 
@@ -4016,6 +4077,7 @@ static void hwc2_setup_ext(
    pthread_mutexattr_init(&mattr);
    pthread_mutex_init(&hwc2->ext->mtx_cmp_wl, &mattr);
    pthread_mutex_init(&hwc2->ext->u.ext.mtx_fbs, &mattr);
+   pthread_mutex_init(&hwc2->ext->mtx_lyr, &mattr);
    pthread_mutexattr_destroy(&mattr);
    pthread_attr_init(&attr);
    pthread_create(&hwc2->ext->cmp, &attr, hwc2_ext_cmp, (void *)hwc2);
@@ -4052,6 +4114,7 @@ static void hwc2_setup_ext(
       NxClient_DisplaySettings settings;
       enum hwc2_cbs_e wcb = hwc2_want_comp_bypass(&settings);
       hwc2_ext_fbs(hwc2, wcb);
+      hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
       if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
          ALOGV("[ext]: initial hotplug CONNECTED\n");
          HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
@@ -4119,10 +4182,7 @@ static void hwc2_hp_ntfy(
 
    if (connected) {
       enum hwc2_cbs_e wcb = hwc2_want_comp_bypass(&settings);
-      NEXUS_HdmiOutputHandle handle;
-      NEXUS_HdmiOutputBasicEdidData edid;
-      NEXUS_VideoFormatInfo info;
-      NEXUS_Error errCode;
+      NEXUS_HdmiOutputHandle hdmi;
 
       if (wcb != hwc2->ext->u.ext.cb) {
          hwc2->ext->u.ext.cbs = true;
@@ -4144,22 +4204,8 @@ static void hwc2_hp_ntfy(
                    (hwc2_display_t)(intptr_t)hwc2->ext);
       }
 
-      NEXUS_PlatformConfiguration *pConfig = (NEXUS_PlatformConfiguration *)BKNI_Malloc(sizeof(*pConfig));
-      if (pConfig) {
-         NEXUS_Platform_GetConfiguration(pConfig);
-         handle = pConfig->outputs.hdmi[0]; /* always first output. */
-         BKNI_Free(pConfig);
-         errCode = NEXUS_HdmiOutput_GetBasicEdidData(handle, &edid);
-         if (!errCode) {
-            NEXUS_VideoFormat_GetInfo(settings.format, &info);
-            int w = hwc2->ext->cfgs->w;
-            int h = hwc2->ext->cfgs->h;
-            float xdp = edid.maxHorizSize ? (w * 1000.0 / ((float)edid.maxHorizSize * 0.39370)) : 0.0;
-            float ydp = edid.maxVertSize  ? (h * 1000.0 / ((float)edid.maxVertSize * 0.39370)) : 0.0;
-            hwc2->ext->cfgs->xdp = (int)xdp;
-            hwc2->ext->cfgs->ydp = (int)ydp;
-         }
-      }
+      hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
+      hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
    } else /* disconnected */ {
       if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
          ALOGV("[ext]: notify hotplug DISCONNECTED\n");
