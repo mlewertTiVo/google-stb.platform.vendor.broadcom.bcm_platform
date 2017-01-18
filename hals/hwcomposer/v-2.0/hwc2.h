@@ -151,6 +151,9 @@ struct hwc2_dsp_cfg_t {
    uint32_t              vsync;
    uint32_t              xdp;
    uint32_t              ydp;
+
+   bool                  hdr10;
+   bool                  hlg;
 };
 
 /* display context target. */
@@ -285,6 +288,7 @@ struct hwc2_dsp_t {
    int                   cmp_tl;
    struct hwc2_frame_t   *cmp_wl;
    pthread_mutex_t       mtx_cmp_wl;
+   pthread_mutex_t       mtx_lyr;
 
    uint64_t              pres;
    uint64_t              post;
