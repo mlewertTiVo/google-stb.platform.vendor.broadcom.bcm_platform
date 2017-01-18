@@ -1,5 +1,12 @@
 vendor/broadcom/bcm_platform/tools/release/exclude.txt
+vendor/broadcom/bcm_platform/tools/release/pack_release.sh
 device/broadcom/cboards
+device/broadcom/eboards
+device/broadcom/avko
+device/broadcom/banff
+device/broadcom/cypress
+device/broadcom/dawson
+device/broadcom/elfin
 vendor/widevine
 vendor/playready
 vendor/broadcom/release_prebuilts/user/libcmndrmprdy.so

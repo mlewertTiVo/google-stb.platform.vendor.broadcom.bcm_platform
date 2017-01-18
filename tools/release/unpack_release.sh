@@ -6,7 +6,7 @@ if [ $# -lt 2 ]; then
   echo "Usage: $(basename $0) <src_file> <dst_dir> <addon_dir>"
   echo "      src_file  : Release package to be unpacked"
   echo "      dst_dir   : Destination where the release package is unpacked"
-  echo "      addon_dir : Add-on folder in which additional packages are supplied"
+  echo "      addon_dir : Add-on directory in which additional packages are supplied"
   exit 0
 fi
 
@@ -22,10 +22,12 @@ if [ ! -d $2 ]; then
 fi
 
 # Check if Add-on directory is provided
-if [ ! -d $3 ]; then
-  echo "Add-on folder isn't specified..."
+if [ $# -lt 3 ] || [ ! -d $3 ]; then
+  ADDON_DIR=""
+  echo "No add-ons"
 else
   ADDON_DIR="$(cd $3 && pwd)"
+  echo "Add-on directory: $ADDON_DIR"
 fi
 
 # Abort on error
@@ -42,7 +44,6 @@ BOLT_VER="$TMP_DIR/bolt_version.txt"
 BOLT_DIR="$TMP_DIR/bolt_dir.txt"
 REFSW_DIR="vendor/broadcom/refsw"
 REFSW_PATCH="$TMP_DIR/refsw_patch.txt"
-PR_TARBALL="$ADDON_DIR/playready_prebuilts.tgz"
 
 # Untar release
 tar -xvf $1 --directory $DST_DIR
@@ -53,12 +54,16 @@ if [ -f $DST_DIR/$REFSW_DIR_FILE ]; then
 fi
 
 # Untar add-ons
-if [ -f $REFSW_TARBALL ]; then
-  mkdir -p $DST_DIR/$REFSW_DIR;
-  tar -C $DST_DIR/$REFSW_DIR -zxvf $REFSW_TARBALL
-fi
-if [ -f $PR_TARBALL ]; then
-  tar -C $DST_DIR -zxvf $PR_TARBALL
+if [ ! -z $ADDON_DIR ]; then
+  for file in $ADDON_DIR/*.tgz; do
+    echo "Untar add-on $file..."
+    if [ $file == $REFSW_TARBALL ]; then
+      mkdir -p $DST_DIR/$REFSW_DIR;
+      tar -C $DST_DIR/$REFSW_DIR -zxvf $file
+    else
+      tar -C $DST_DIR -zxvf $file
+    fi
+  done
 fi
 
 cd $DST_DIR
