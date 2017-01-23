@@ -2159,6 +2159,39 @@ static void hwc_sideband_alpha_hole(struct hwc_context_t *ctx, NEXUS_SurfaceHand
    }
 }
 
+static void hwc_pip_alpha_hole(struct hwc_context_t *ctx, NEXUS_SurfaceHandle surface, OPS_COUNT *ops_count)
+{
+   int i;
+   NEXUS_Error rc;
+   NEXUS_Graphics2DFillSettings fillSettings;
+   NEXUS_Graphics2D_GetDefaultFillSettings(&fillSettings);
+   fillSettings.surface     = surface;
+   fillSettings.colorOp     = NEXUS_FillOp_eBlend;
+   fillSettings.alphaOp     = NEXUS_FillOp_eCopy;
+
+   for (i = 0; i < NSC_MM_CLIENTS_NUMBER; i++) {
+      if (ctx->mm_cli[i].root.composition.visible) {
+         fillSettings.rect.x      = ctx->mm_cli[i].root.composition.position.x;
+         fillSettings.rect.y      = ctx->mm_cli[i].root.composition.position.y;
+         fillSettings.rect.width  = ctx->mm_cli[i].root.composition.position.width;
+         fillSettings.rect.height = ctx->mm_cli[i].root.composition.position.height;
+         fillSettings.color       = 0x00000000;
+         if (pthread_mutex_lock(&ctx->g2d_mutex)) {
+            ALOGE("%s: failed g2d_mutex!", __FUNCTION__);
+            return;
+         }
+         rc = NEXUS_Graphics2D_Fill(ctx->hwc_g2d, &fillSettings);
+         if (ops_count) {
+            ops_count->fill += 1;
+         }
+         if (rc == NEXUS_SUCCESS) {
+            hwc_checkpoint_locked(ctx);
+         }
+         pthread_mutex_unlock(&ctx->g2d_mutex);
+      }
+   }
+}
+
 static void hwc_rel_tl_inc(struct hwc_context_t *ctx, int index, int layer)
 {
    int sw_timeline = INVALID_FENCE;
@@ -2287,7 +2320,7 @@ bool hwc_compose_gralloc_buffer(
 
         if (!(outAdj.width > 0 && outAdj.height > 0 &&
               srcAdj.width > 0 && srcAdj.height > 0)) {
-           ALOGE("%s: %llu/%d - invalid, skipping src{%d,%d} -> dst{%d,%d}\n",
+           ALOGV("%s: %llu/%d - invalid, skipping src{%d,%d} -> dst{%d,%d}\n",
                  is_virtual ? "vcmp" : "comp",
                  ctx->stats[stats_ix].set_call, layer_id,
                  srcAdj.width, srcAdj.height, outAdj.width, outAdj.height);
@@ -3739,6 +3772,15 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                }
                pinged_frame = ctx->mm_cli[0].last_ping_frame_id;
             }
+            if (*overlay_seen > 2) {
+               struct hwc_position frame;
+               frame.w = ctx->mm_cli[0].root.composition.position.width;
+               frame.h = ctx->mm_cli[0].root.composition.position.height;
+               if (frame.w <= ctx->cfg[HWC_PRIMARY_IX].width/4 &&
+                   frame.h <= ctx->cfg[HWC_PRIMARY_IX].height/4) {
+                  hwc_pip_alpha_hole(ctx, outputHdl, &ops_count);
+               }
+            }
          } else {
             is_sideband = true;
             if (ctx->hwc_binder) {
@@ -3754,7 +3796,7 @@ static int hwc_compose_primary(struct hwc_context_t *ctx, hwc_work_item *item, i
                      clipped.w = (ctx->sb_cli[0].root.composition.clipRect.width == 0xFFFF) ? 0 : ctx->sb_cli[0].root.composition.clipRect.width;
                      clipped.h = (ctx->sb_cli[0].root.composition.clipRect.height == 0xFFFF) ? 0 : ctx->sb_cli[0].root.composition.clipRect.height;
                      ctx->hwc_binder->setgeometry(HWC_BINDER_SDB, 0, frame, clipped, SB_CLIENT_ZORDER, 1);
-                     ALOGI("comp: sdb-0: {%d,%d,%dx%d} -> {%d,%d,%dx%d}", frame.x, frame.y, frame.w, frame.h, clipped.x, clipped.y, clipped.w, clipped.h);
+                     ALOGV("comp: sdb-0: {%d,%d,%dx%d} -> {%d,%d,%dx%d}", frame.x, frame.y, frame.w, frame.h, clipped.x, clipped.y, clipped.w, clipped.h);
                      ctx->sb_cli[0].geometry_updated = false;
                      if (ctx->sb_hole_threshold < *overlay_seen) {
                         if (!clipped.x && !clipped.y && !clipped.w && !clipped.h &&
