@@ -202,6 +202,13 @@ static struct process_entity key_process_list_tunneled[] = {
       .pid = 0,
       .map = mediaserver_prio_map,
    },
+   {
+      .name = "mediaserver",
+      .thread_keep_filter = "AudioOut_",
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .map = mediaserver_prio_map,
+   },
 };
 static const int num_key_processes_tunneled = sizeof(key_process_list_tunneled)/sizeof(key_process_list_tunneled[0]);
 
