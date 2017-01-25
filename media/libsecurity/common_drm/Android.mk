@@ -30,7 +30,11 @@ LOCAL_SRC_FILES_arm64 := lib/arm64/libcmndrm.so
 LOCAL_SRC_FILES_arm := lib/arm/libcmndrm.so
 else
 LOCAL_MODULE_TARGET_ARCH := arm
+ifeq ($(SAGE_VERSION),2x)
+LOCAL_SRC_FILES_arm := lib/arm/s2x/libcmndrm.so
+else
 LOCAL_SRC_FILES_arm := lib/arm/libcmndrm.so
+endif
 endif
 include $(BUILD_PREBUILT)
 
