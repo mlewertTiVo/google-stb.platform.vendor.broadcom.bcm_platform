@@ -98,7 +98,8 @@ ifneq ($(TARGET_BUILD_TYPE),debug)
 LOCAL_CFLAGS += -DBDBG_NO_WRN=1
 endif
 
-LOCAL_SHARED_LIBRARIES := liblog libnexus libnxclient libplayreadypk_host libdrmrootfs
+LOCAL_SHARED_LIBRARIES := liblog libnexus libnxclient libdrmrootfs libsrai libcmndrm_tl
+LOCAL_STATIC_LIBRARIES := libplayreadypk_host
 
 LOCAL_MULTILIB := 32
 # LOCAL_MULTILIB := both
