@@ -32,7 +32,11 @@ LOCAL_SRC_FILES_arm64 := lib/arm64/liboemcrypto.a
 LOCAL_SRC_FILES_arm := lib/arm/liboemcrypto.a
 else
 LOCAL_MODULE_TARGET_ARCH := arm
+ifeq ($(SAGE_VERSION),2x)
+LOCAL_SRC_FILES_arm := lib/arm/s2x/liboemcrypto.a
+else
 LOCAL_SRC_FILES_arm := lib/arm/liboemcrypto.a
+endif
 endif
 include $(BUILD_PREBUILT)
 endif
