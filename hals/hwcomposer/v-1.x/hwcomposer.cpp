@@ -1788,7 +1788,7 @@ static void hwc_hotplug_notify(void *dev)
 static bool is_video_layer_locked(VIDEO_LAYER_VALIDATION *data)
 {
    bool rc = false;
-   NexusClientContext *client_context = NULL;
+   uint64_t client_context;
 
    if (data->layer->compositionType == HWC_OVERLAY) {
       int index = -1;
@@ -1798,8 +1798,8 @@ static bool is_video_layer_locked(VIDEO_LAYER_VALIDATION *data)
       }
       index = android_atomic_acquire_load(&(data->sharedData->videoWindow.windowIdPlusOne));
       if (index > 0) {
-         client_context = reinterpret_cast<NexusClientContext *>(data->sharedData->videoWindow.nexusClientContext);
-         if (client_context != NULL) {
+         client_context = data->sharedData->videoWindow.nexusClientContext;
+         if (client_context) {
             rc = true;
         }
       } else if (((data->sharedData->container.format == HAL_PIXEL_FORMAT_YV12) ||
@@ -1810,8 +1810,8 @@ static bool is_video_layer_locked(VIDEO_LAYER_VALIDATION *data)
       }
    } else if (data->layer->compositionType == HWC_SIDEBAND) {
       if (data->scope == HWC_SCOPE_PREP) {
-         client_context = (NexusClientContext*)(intptr_t)data->layer->sidebandStream->data[1];
-         if (client_context != NULL) {
+         client_context = (uint64_t)(intptr_t)data->layer->sidebandStream->data[1];
+         if (client_context) {
             rc = true;
          }
       } else if (data->scope == HWC_SCOPE_COMP) {
