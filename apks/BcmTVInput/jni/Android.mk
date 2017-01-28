@@ -45,6 +45,8 @@ else
 LOCAL_SRC_FILES += BroadcastDemo.cpp
 endif
 
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
+
 LOCAL_MODULE := libjni_tuner
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)

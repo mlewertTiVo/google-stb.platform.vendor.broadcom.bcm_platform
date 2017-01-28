@@ -27,6 +27,7 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/magnum/syslib/sagelib/in
 LOCAL_SHARED_LIBRARIES += libsrai
 LOCAL_CFLAGS += -DSECURITY_SUPPORT
 endif
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_SRC_FILES := memcpy.c
 LOCAL_MODULE := testmemcpy

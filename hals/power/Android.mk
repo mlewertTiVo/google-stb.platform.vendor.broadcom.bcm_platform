@@ -44,6 +44,7 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusserv
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/linux/driver \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/modules/gpio/include
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 # fix warnings!
