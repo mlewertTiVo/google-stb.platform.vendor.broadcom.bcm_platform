@@ -27,7 +27,9 @@ LOCAL_C_INCLUDES := \
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -fshort-wchar
+ifeq ($(SAGE_VERSION),2x)
 LOCAL_CFLAGS += -DUSE_UNIFIED_COMMON_DRM
+endif
 
 LOCAL_LDFLAGS := -Wl,--no-fatal-warnings
 
