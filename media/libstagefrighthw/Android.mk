@@ -71,6 +71,7 @@ endif
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 # fix warnings!
@@ -116,6 +117,7 @@ include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/lib/os/include $(NEXUS_TOP)/lib/os/include/linuxuser
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 # fix warnings!

@@ -5,6 +5,7 @@ include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/tools/bmemperf/include
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)

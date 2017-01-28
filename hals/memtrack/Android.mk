@@ -15,6 +15,7 @@ LOCAL_CFLAGS += -Werror
 LOCAL_C_INCLUDES += $(TOP)/hardware/libhardware/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem \
                     $(NXCLIENT_INCLUDES)
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_SHARED_LIBRARIES += libbinder
 LOCAL_SHARED_LIBRARIES += libcutils

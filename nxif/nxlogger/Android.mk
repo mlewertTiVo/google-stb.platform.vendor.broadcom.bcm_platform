@@ -31,6 +31,7 @@ LOCAL_C_INCLUDES += $(NEXUS_TOP)/platforms/common/src/linuxkernel/common
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/base/include
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
 LOCAL_C_INCLUDES += $(B_REFSW_OBJ_ROOT_1ST_ARCH)/nexus/core/syncthunk
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 # fix warnings!

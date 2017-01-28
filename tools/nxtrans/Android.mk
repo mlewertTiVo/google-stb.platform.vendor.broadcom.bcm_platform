@@ -14,6 +14,7 @@ LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/magnum/commonutils/vlc \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/glob \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/tshdrbuilder
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
