@@ -76,6 +76,7 @@ include $(BUILD_PREBUILT)
 else
 # compile library from source
 LOCAL_PATH := $(TOP)/vendor/widevine
+LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
 
 # add SAGElib related includes
 include ${REFSW_BASE_DIR}/magnum/syslib/sagelib/bsagelib_public.inc
@@ -101,6 +102,7 @@ LOCAL_C_INCLUDES := \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/srai/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/sage/platforms/include \
     $(BSAGELIB_INCLUDES)
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS += -DNDEBUG -DBRCM_IMPL
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)

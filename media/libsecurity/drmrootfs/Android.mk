@@ -16,6 +16,7 @@
 # libdrmrootfs.so
 #----------------
 LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/drmrootfs
+LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
 
 include $(CLEAR_VARS)
 
@@ -24,6 +25,7 @@ LOCAL_SRC_FILES := drm_data.c
 
 LOCAL_C_INCLUDES := \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -fshort-wchar

@@ -16,6 +16,7 @@
 # libbcrypt.so
 #-------------
 LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/src
+LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
 
 include $(CLEAR_VARS)
 
@@ -45,6 +46,7 @@ LOCAL_C_INCLUDES := \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libsecurity/bdbg2alog \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/bcrypt/include \
     $(TOP)/external/boringssl/include
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 ifeq ($(ANDROID_USES_BORINGSSL),y)

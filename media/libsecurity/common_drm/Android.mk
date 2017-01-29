@@ -73,6 +73,7 @@ include $(BUILD_PREBUILT)
 else
 # compile library from source
 LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm
+LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
 include $(LOCAL_PATH)/drm/playready/playready.inc
 LOCAL_SRC_FILES := ${PLAYREADY_SOURCES}
 
@@ -83,6 +84,7 @@ LOCAL_C_INCLUDES := \
     ${REFSW_BASE_DIR}/BSEAV/lib/drmrootfs \
     ${REFSW_BASE_DIR}/BSEAV/lib/playready/2.5/inc \
     ${REFSW_BASE_DIR}/nexus/nxclient/include
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 DRM_BUILD_PROFILE := 900
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
@@ -115,7 +117,7 @@ ifeq ($(SAGE_SUPPORT), y)
 # libcmndrm_tl.so for Modular DRM
 #---------------
 LOCAL_PATH := ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm
-
+LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
 include $(CLEAR_VARS)
 
 # add SAGElib related includes
@@ -177,6 +179,7 @@ LOCAL_C_INCLUDES := \
     ${REFSW_BASE_DIR}/BSEAV/lib/drmrootfs \
     $(BSAGELIB_INCLUDES) \
     $(TOP)/external/boringssl/include
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(COMMON_DRM_TL_DEFINES)
