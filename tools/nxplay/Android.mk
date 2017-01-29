@@ -1,5 +1,6 @@
 LOCAL_PATH := $(NEXUS_TOP)
 include $(CLEAR_VARS)
+LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 LOCAL_PRELINK_MODULE := false
