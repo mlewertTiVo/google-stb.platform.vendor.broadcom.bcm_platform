@@ -42,6 +42,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
  * to come and go in sync between device and client.
  */
 #define HWC2_MAX_TL     10
+#define HWC2_MAX_VTL    4
 
 #define HWC2_DSP_NAME   32
 #define HWC2_DSP_EXT    2001
@@ -198,6 +199,9 @@ struct hwc2_lyr_t {
 struct hwc2_frame_t {
    struct hwc2_frame_t *next;
 
+   buffer_handle_t     tgt;  /* target buffer for frame composition. */
+   int32_t             wrf;  /* target buffer write fence waiter. */
+
    int32_t             cnt;
    int32_t             scnt;
    int32_t             vcnt;
@@ -210,14 +214,23 @@ struct hwc2_cm_t {
    float                     mtx[HWC2_CM_SIZE];
 };
 
+/* layer release timeline unit. */
+struct hwc2_lyr_tl_t {
+   uint64_t          hdl;
+   int               tl;
+   uint64_t          ix;
+
+   uint64_t          pt;
+   uint64_t          si;
+};
+
 /* virtual display specific information. */
 struct hwc2_vd_t {
-   uint32_t        w;
-   uint32_t        h;
-   buffer_handle_t output;
-   int32_t         wrFence;
-   hwc2_cm_t       cm;
-   hwc2_dsp_ct_t   ct;
+   buffer_handle_t                     output;
+   int32_t                             wrFence;
+   hwc2_cm_t                           cm;
+   hwc2_dsp_ct_t                       ct;
+   struct hwc2_lyr_tl_t                rtl[HWC2_MAX_VTL];
 };
 
 /* framebuffer unit. */
@@ -231,16 +244,6 @@ enum hwc2_cbs_e {
    cbs_e_none = 0,   /* not yet setup (no output) */
    cbs_e_bypass,     /* bypass client - optimal mode. */
    cbs_e_nscfb,      /* compositor framebuffer middle man. */
-};
-
-/* layer release timeline unit. */
-struct hwc2_lyr_tl_t {
-   uint64_t          hdl;
-   int               tl;
-   uint64_t          ix;
-
-   uint64_t          pt;
-   uint64_t          si;
 };
 
 /* video layer (oob|sideband) information. */
