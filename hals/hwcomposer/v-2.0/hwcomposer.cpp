@@ -355,10 +355,12 @@ static int hwc2_chkpt_l(
    case NEXUS_GRAPHICS2D_QUEUED:
       rc = BKNI_WaitForEvent(hwc2->g2dchk, HWC2_CHKPT_TO);
       if (rc) {
+         ALOGE("[chpt]: time out waiting for %d ms", HWC2_CHKPT_TO);
          return -1;
       }
    break;
    default:
+      ALOGE("[chpt]: checkpoint error: %d", rc);
    return -1;
    }
    return 0;
@@ -4250,6 +4252,7 @@ static void hwc2_ext_cmp_frame(
 
    // TODO: optimize seeding background.
    hwc2_fb_seed(hwc2, d, (f->vcnt || f->scnt) ? HWC2_TRS : HWC2_OPQ);
+   hwc2_chkpt(hwc2);
    ALOGI_IF(LOG_COMP_DEBUG, "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
             dsp->pres, dsp->post, (f->vcnt || f->scnt) ? "transparent" : "opaque");
 
@@ -4362,10 +4365,6 @@ static void hwc2_ext_cmp_frame(
             yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
                     (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
             if (yv12) {
-               if (c == 0) {
-                  /* flush background to prevent mix blit types. */
-                  hwc2_chkpt(hwc2);
-               }
                hwc2_blit_yv12(hwc2, d, lyr, shared, dsp);
             } else {
                hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp);
