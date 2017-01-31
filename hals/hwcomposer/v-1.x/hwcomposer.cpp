@@ -1737,7 +1737,7 @@ static void hwc_hotplug_notify(void *dev)
           }
        }
 
-       if (ctx->procs && ctx->procs->invalidate != NULL) {
+       if (ctx->stats[HWC_PRIMARY_IX].composed && ctx->procs && ctx->procs->invalidate != NULL) {
           if (!pthread_mutex_lock(&ctx->mutex)) {
              for (i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++) {
                 ctx->gpx_cli[i].last.layerhdl = NULL;
