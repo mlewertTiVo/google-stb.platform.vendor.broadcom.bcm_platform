@@ -1514,9 +1514,9 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
             {
                 return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
             }
-            if ( pPcm->nSamplingRate % 8000 && pPcm->nSamplingRate % 11025 )
+            if ( pPcm->nSamplingRate % 8000 && pPcm->nSamplingRate % 11025 && pPcm->nSamplingRate % 12000 )
             {
-                // Only multiples of 8kHz and 11025kHz are supported
+                // Only multiples of 8kHz, 11.025kHz, 12kHz are supported
                 return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
             }
             if ( pPcm->nSamplingRate > 48000 )
@@ -3569,15 +3569,17 @@ void BOMX_AudioDecoder::PollDecodedFrames()
                     {
                         // Mono has been forced to output stereo. Need to downmix back to mono here.
                         unsigned frameSizeBytes = m_bitsPerSample / 4;
+                        unsigned halfFrameSizeBytes = frameSizeBytes / 2;
                         size_t numFrames = filledBytes / frameSizeBytes;
+                        size_t numHalfFrames = numFrames * 2;
                         uint8_t *pDest = (uint8_t *)(pInfo->pClientMemory);
                         uint8_t *pSrc = (uint8_t *)(pInfo->pNexusMemory);
 
-                        for ( size_t k = 0; k < numFrames; k++ )
+                        for ( size_t k = 0; k < numHalfFrames; k++ )
                         {
-                            BKNI_Memcpy(pDest, pSrc, frameSizeBytes);
-                            pDest += frameSizeBytes;
-                            pSrc += (2 * frameSizeBytes);
+                            BKNI_Memcpy(pDest, pSrc, halfFrameSizeBytes);
+                            pDest += halfFrameSizeBytes;
+                            pSrc += frameSizeBytes;
                         }
 
                         filledBytes >>= 1;
