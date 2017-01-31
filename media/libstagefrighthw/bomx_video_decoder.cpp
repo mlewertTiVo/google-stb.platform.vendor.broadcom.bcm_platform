@@ -116,12 +116,19 @@
 
 using namespace android;
 
+#if defined(LEGACY_DECODER_ON)
 static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
                                                        {"video_decoder.h263", OMX_VIDEO_CodingH263},
                                                        {"video_decoder.avc", OMX_VIDEO_CodingAVC},
                                                        {"video_decoder.mpeg4", OMX_VIDEO_CodingMPEG4},
                                                        {"video_decoder.hevc", OMX_VIDEO_CodingHEVC},
                                                        {"video_decoder.vp8", OMX_VIDEO_CodingVP8}};
+#else
+static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
+                                                       {"video_decoder.avc", OMX_VIDEO_CodingAVC},
+                                                       {"video_decoder.hevc", OMX_VIDEO_CodingHEVC}};
+#endif
+
 static const unsigned g_numDefaultRoles = sizeof(g_defaultRoles)/sizeof(BOMX_VideoDecoderRole);
 
 struct BOMX_VideoDecodeFrameInterval

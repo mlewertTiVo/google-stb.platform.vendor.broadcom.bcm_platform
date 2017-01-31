@@ -155,6 +155,10 @@ LOCAL_SHARED_LIBRARIES += libsrai libbomx_secbuff
 LOCAL_CFLAGS += -DSECURE_DECODER_ON
 endif
 
+ifneq ($(HW_DECODER_LEGACY_SUPPORT),n)
+LOCAL_CFLAGS += -DLEGACY_DECODER_ON
+endif
+
 LOCAL_MODULE := libstagefrighthw
 
 include $(BUILD_SHARED_LIBRARY)
