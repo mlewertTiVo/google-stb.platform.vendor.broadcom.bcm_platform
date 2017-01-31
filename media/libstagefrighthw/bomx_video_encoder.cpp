@@ -57,6 +57,8 @@
 // Runtime Properties (note: set selinux to permissive mode)
 #define B_PROPERTY_ITB_DESC_DEBUG ("media.brcm.venc_itb_desc_debug")
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
+#define B_PROPERTY_ENC_MAX_WIDTH ("ro.nx.enc.max.width")
+#define B_PROPERTY_ENC_MAX_HEIGHT ("ro.nx.enc.max.height")
 
 #define B_NUM_OF_OUT_BUFFERS (10)
 #define B_NUM_OF_IN_BUFFERS (5)
@@ -3363,6 +3365,10 @@ NEXUS_Error BOMX_VideoEncoder::AllocateEncoderResource()
     connectSettings.simpleEncoder[0].nonRealTime = true;
     connectSettings.simpleEncoder[0].audio.cpuAccessible = true;
     connectSettings.simpleEncoder[0].video.cpuAccessible = true;
+    connectSettings.simpleEncoder[0].encoderCapabilities.maxWidth =
+       property_get_int32(B_PROPERTY_ENC_MAX_WIDTH, B_DEFAULT_MAX_FRAME_WIDTH);
+    connectSettings.simpleEncoder[0].encoderCapabilities.maxHeight =
+       property_get_int32(B_PROPERTY_ENC_MAX_HEIGHT, B_DEFAULT_MAX_FRAME_HEIGHT);
     rc = NxClient_Connect(&connectSettings, &m_nxClientId);
     if ( rc )
     {
