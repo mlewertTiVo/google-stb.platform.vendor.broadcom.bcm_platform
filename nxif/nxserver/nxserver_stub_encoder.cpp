@@ -65,6 +65,10 @@
 #include "nxserver.h"
 #include "nxclient.h"
 
+bool has_encoder(void) {
+   return false;
+}
+
 void trim_encoder_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
 {
    (void)pMemConfigSettings;

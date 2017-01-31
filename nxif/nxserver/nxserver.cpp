@@ -688,9 +688,11 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    /* 7. mosaic video. */
    if (property_get(NX_TRIM_MOSAIC, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
-         pMemConfigSettings->videoDecoder[0].mosaic.maxNumber = 0;
-         pMemConfigSettings->videoDecoder[0].mosaic.maxHeight = 0;
-         pMemConfigSettings->videoDecoder[0].mosaic.maxWidth = 0;
+         for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+            pMemConfigSettings->videoDecoder[i].mosaic.maxNumber = 0;
+            pMemConfigSettings->videoDecoder[i].mosaic.maxHeight = 0;
+            pMemConfigSettings->videoDecoder[i].mosaic.maxWidth = 0;
+         }
       }
    }
 
@@ -704,7 +706,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
       if (strlen(value)) {
          if (strtoul(value, NULL, 0) > 0) {
             pip = false;
-            if (dec_used > MIN_PLATFORM_DEC) {
+            if (!has_encoder() || (dec_used > MIN_PLATFORM_DEC)) {
                pMemConfigSettings->videoDecoder[1].used = false;
             }
             pMemConfigSettings->display[0].window[1].used = false;
@@ -719,6 +721,14 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          if (pMemConfigSettings->videoDecoder[i].used) {
              pMemConfigSettings->videoDecoder[i].secure = NEXUS_SecureVideo_eUnsecure;
          }
+      }
+   } else if (!has_encoder()) {
+      for (i = 1; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+         /* start index -> 1.  beware interaction with pip above. */
+         if (i == 1 && pip) {
+            continue;
+         }
+         pMemConfigSettings->videoDecoder[i].used = false;
       }
    } else {
      /* 9. *** TEMPORARY *** force lowest format for mandated transcode decoder until
