@@ -71,6 +71,10 @@
 #define ENCODER_RES_HEIGHT_PROP        "ro.nx.enc.max.height"
 #define ENCODER_ENABLE_ALL             "ro.nx.enc.all"
 
+bool has_encoder(void) {
+   return true;
+}
+
 void trim_encoder_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings)
 {
    int i = 0;
