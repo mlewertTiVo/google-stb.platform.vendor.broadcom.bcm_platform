@@ -178,7 +178,7 @@ public class HdmiTvInputService extends TvInputService {
                         mStreamConfigs = configs;
                 }
             };
-            mHardware = mManager.acquireTvInputHardware(mHardwareDeviceId, callback, mInfo);
+            mHardware = mManager.acquireTvInputHardware(mHardwareDeviceId, mInfo, callback);
             if (DEBUG) Log.d(TAG, "acquireHardware() mHardware=" + mHardware);
         }
 
