@@ -659,6 +659,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     NEXUS_PlaypumpHandle playpump;
     NEXUS_Error rc;
     android::status_t status;
+    NEXUS_AudioCapabilities audioCaps;
     NxClient_AllocSettings allocSettings;
     NEXUS_SurfaceComposition surfSettings;
     NxClient_ConnectSettings connectSettings;
@@ -692,18 +693,13 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
             return -EINVAL;
         break;
     case AUDIO_FORMAT_AC3:
-        if (property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DECODE, false) ||
-            property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DECODE_PERSIST, false)) {
-            NEXUS_AudioCapabilities audioCaps;
-
-            NEXUS_GetAudioCapabilities(&audioCaps);
-            if (audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode) {
-                ALOGI("Enable play pump mode");
-                bout->nexus.direct.playpump_mode = true;
-                bout->nexus.direct.transcode_latency = property_get_int32(
-                                BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY,
-                                BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY);
-            }
+        NEXUS_GetAudioCapabilities(&audioCaps);
+        if (audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode) {
+            ALOGI("Enable play pump mode");
+            bout->nexus.direct.playpump_mode = true;
+            bout->nexus.direct.transcode_latency = property_get_int32(
+                            BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY,
+                            BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY);
         }
 
         if (!bout->nexus.direct.playpump_mode) {
@@ -714,19 +710,13 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         }
         break;
     case AUDIO_FORMAT_E_AC3:
-        if (property_get_bool(BRCM_PROPERTY_AUDIO_OUTPUT_ENABLE_SPDIF_DOLBY, false) ||
-            property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DECODE, false) ||
-            property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DECODE_PERSIST, false)) {
-            NEXUS_AudioCapabilities audioCaps;
-
-            NEXUS_GetAudioCapabilities(&audioCaps);
-            if (audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode) {
-                ALOGI("Enable play pump mode");
-                bout->nexus.direct.playpump_mode = true;
-                bout->nexus.direct.transcode_latency = property_get_int32(
-                                BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY,
-                                BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY);
-            }
+        NEXUS_GetAudioCapabilities(&audioCaps);
+        if (audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode) {
+            ALOGI("Enable play pump mode");
+            bout->nexus.direct.playpump_mode = true;
+            bout->nexus.direct.transcode_latency = property_get_int32(
+                            BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY,
+                            BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY);
         }
 
         if (!bout->nexus.direct.playpump_mode) {
