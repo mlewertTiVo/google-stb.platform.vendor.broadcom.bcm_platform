@@ -105,11 +105,7 @@ extern "C" {
 #define BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE ("media.brcm.hw_sync.fake")
 #define DUMMY_HW_SYNC   0xCAFEBABE
 
-#define BRCM_PROPERTY_AUDIO_OUTPUT_ENABLE_SPDIF_DOLBY ("persist.nx.spdif.enable_dolby")
 #define BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY ("ro.nx.eac3.trans_latency")
-
-#define BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DECODE         ("media.brcm.direct_dolby_decode")
-#define BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DECODE_PERSIST ("persist.nx.direct_dolby_decode")
 
 #define BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM         ("media.brcm.direct_force_pcm")
 #define BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM_PERSIST ("persist.nx.direct_force_pcm")
