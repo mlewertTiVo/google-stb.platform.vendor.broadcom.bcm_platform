@@ -1,7 +1,7 @@
 /******************************************************************************
- *    (c)2010-2013 Broadcom Corporation
+ * (c) 2017 Broadcom
  *
- * This program is the proprietary software of Broadcom Corporation and/or its licensors,
+ * This program is the proprietary software of Broadcom and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
  * (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
@@ -36,51 +36,40 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
-#ifndef BOMX_VIDEO_DECODER_SECURE_H__
-#define BOMX_VIDEO_DECODER_SECURE_H__
+#ifndef _NXWRAP_COMMON__H_
+#define _NXWRAP_COMMON__H_
 
-#include "bomx_video_decoder.h"
+#define NXWRAP_NAME_MAX                         (32)
+#define NXCLIENT_SERVER_TIMEOUT_IN_MS           (500)
+#define NXCLIENT_PM_TIMEOUT_IN_MS               (5000)
+#define NXCLIENT_PM_TIMEOUT_COUNT               (20)
+#define NXCLIENT_STANDBY_MONITOR_TIMEOUT_IN_MS  (1000)
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateTunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" const char *BOMX_VideoDecoder_Secure_GetRole(unsigned roleIndex);
+typedef enum {
+   ePowerState_S0, // Power on
+   ePowerState_S05,// Standby 0.5 = power on but with HDMI output disconnected
+   ePowerState_S1, // Standby S1
+   ePowerState_S2, // Standby S2
+   ePowerState_S3, // Standby S3 (deep sleep - aka suspend to ram)
+   ePowerState_S4, // Suspend to disk (not implemented on our kernels)
+   ePowerState_S5, // Poweroff (aka S3 cold boot)
+   ePowerState_Max
+} nxwrap_pwr_state;
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Tunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-
-class BOMX_VideoDecoder_Secure : public BOMX_VideoDecoder
-{
-public:
-    BOMX_VideoDecoder_Secure(
-        OMX_COMPONENTTYPE *pComponentType,
-        const OMX_STRING pName,
-        const OMX_PTR pAppData,
-        const OMX_CALLBACKTYPE *pCallbacks,
-        NxWrap *pNxWrap,
-        bool tunnel=false,
-        unsigned numRoles=0,
-        const BOMX_VideoDecoderRole *pRoles=NULL,
-        const char *(*pGetRole)(unsigned roleIndex)=NULL);
+typedef struct {
+   bool ir;
+   bool uhf;
+   bool keypad;
+   bool gpio;
+   bool nmi;
+   bool cec;
+   bool transport;
+   bool timeout;
+} nxwrap_wake_status;
 
 
-    virtual ~BOMX_VideoDecoder_Secure();
+extern "C" const char *nxwrap_get_power_string(nxwrap_pwr_state state);
+extern "C" bool nxwrap_get_pwr_info(nxwrap_pwr_state *state, nxwrap_wake_status *wake);
+extern "C" bool nxwrap_set_power_state(nxwrap_pwr_state state, bool cec_wake);
 
-protected:
-    virtual OMX_ERRORTYPE EmptyThisBuffer( OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
-    virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
-    virtual void FreeInputBuffer(void*& pBuffer);
-    virtual NEXUS_Error AllocateConfigBuffer(uint32_t nSize, void*& pBuffer);
-    virtual void FreeConfigBuffer(void*& pBuffer);
-    virtual OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
-    virtual NEXUS_Error OpenPidChannel(uint32_t pid);
-    virtual void ClosePidChannel();
-
-private:
-    NEXUS_Error SecureCopy(void *pDest, const void *pSrc, size_t nSize);
-};
-
-#endif //BOMX_VIDEO_DECODER_SECURE_H__
+#endif

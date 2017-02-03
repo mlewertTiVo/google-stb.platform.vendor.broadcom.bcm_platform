@@ -1,7 +1,7 @@
 /******************************************************************************
- *    (c)2011-2016 Broadcom Corporation
- * 
- * This program is the proprietary software of Broadcom Corporation and/or its licensors,
+ * (c) 2011-2017 Broadcom
+ *
+ * This program is the proprietary software of Broadcom and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
  * (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
@@ -9,42 +9,32 @@
  * Software, and Broadcom expressly reserves all rights in and to the Software and all
  * intellectual property rights therein.  IF YOU HAVE NO AUTHORIZED LICENSE, THEN YOU
  * HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY WAY, AND SHOULD IMMEDIATELY
- * NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.  
- *  
+ * NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.
+ *
  * Except as expressly set forth in the Authorized License,
- *  
+ *
  * 1.     This program, including its structure, sequence and organization, constitutes the valuable trade
  * secrets of Broadcom, and you shall use all reasonable efforts to protect the confidentiality thereof,
  * and to use this information only in connection with your use of Broadcom integrated circuit products.
- *  
- * 2.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS" 
- * AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR 
- * WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT TO 
- * THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED WARRANTIES 
- * OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A PARTICULAR PURPOSE, 
- * LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET ENJOYMENT, QUIET POSSESSION 
- * OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME THE ENTIRE RISK ARISING OUT OF 
+ *
+ * 2.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS"
+ * AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR
+ * WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT TO
+ * THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED WARRANTIES
+ * OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A PARTICULAR PURPOSE,
+ * LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET ENJOYMENT, QUIET POSSESSION
+ * OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME THE ENTIRE RISK ARISING OUT OF
  * USE OR PERFORMANCE OF THE SOFTWARE.
- * 
- * 3.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS 
- * LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT, OR 
- * EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO YOUR 
- * USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN ADVISED OF 
- * THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS OF THE AMOUNT 
- * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE 
- * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
+ *
+ * 3.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS
+ * LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT, OR
+ * EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO YOUR
+ * USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN ADVISED OF
+ * THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS OF THE AMOUNT
+ * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE
+ * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
  *
- * $brcm_Workfile: $
- * $brcm_Revision: $
- * $brcm_Date: $
- * 
- * Module Description:
- * Header file to complement nexus_power.cpp
- * 
- * Revision History:
- * 
- * $brcm_Log: $
  *****************************************************************************/
 #ifndef _NEXUS_POWER_H_
 #define _NEXUS_POWER_H_
@@ -59,11 +49,12 @@
 
 #include "nexus_types.h"
 #include "nexus_platform_features.h"
-#include "nexus_ipc_client_factory.h"
 #include "nxclient.h"
 #include <nexus_gpio.h>
 #include "linuxuinput.h"
 #include "droid_pm.h"
+#include <nxwrap.h>
+#include <nxcec.h>
 
 using namespace android;
 
@@ -100,7 +91,7 @@ class NexusPower : public android::RefBase {
         };
 
         // Public methods...
-        static sp<NexusGpio> initialise(b_powerState state, String8& gpioName, String8& gpioValue, int pin, unsigned pinType, sp<LinuxUInputRef> uInput);
+        static sp<NexusGpio> initialise(nxwrap_pwr_state state, String8& gpioName, String8& gpioValue, int pin, unsigned pinType, sp<LinuxUInputRef> uInput);
         static String8  getConfigurationFilePath();
         static status_t loadConfigurationFile(String8 path, PropertyMap **configuration);
         static unsigned getInstances() { return mInstances; }
@@ -112,7 +103,7 @@ class NexusPower : public android::RefBase {
         NEXUS_GpioMode getPinMode() { return mPinMode; }
         NEXUS_GpioInterrupt getPinInterruptMode() { return mPinInterruptMode; }
         enum GpioInterruptWakeManager getPinInterruptWakeManager() { return mPinInterruptWakeManager; }
-        NEXUS_GpioValue getPinOutputValue(b_powerState state) { return mPinOutputValues[state]; }
+        NEXUS_GpioValue getPinOutputValue(nxwrap_pwr_state state) { return mPinOutputValues[state]; }
         NEXUS_GpioHandle getHandle() { return mHandle; }
         void setHandle(NEXUS_GpioHandle handle) { mHandle = handle; }
         unsigned getKeyEvent() { return mKeyEvent; }
@@ -137,7 +128,7 @@ class NexusPower : public android::RefBase {
                                          NEXUS_GpioMode pinMode,  NEXUS_GpioInterrupt interruptMode,
                                          enum GpioInterruptWakeManager interruptWakeManager,
                                          sp<LinuxUInputRef> uInput, unsigned key);
-        static sp<NexusGpio> instantiate(b_powerState state, String8& pinName, unsigned pin, unsigned pinType,
+        static sp<NexusGpio> instantiate(nxwrap_pwr_state state, String8& pinName, unsigned pin, unsigned pinType,
                                          NEXUS_GpioMode pinMode, NEXUS_GpioValue *pOutputValues);
         static status_t parseGpioMode(String8& modeString, NEXUS_GpioMode *pMode);
         static status_t parseGpioInterruptMode(String8& interruptModeString, NEXUS_GpioInterrupt *pInterruptMode);
@@ -158,27 +149,26 @@ class NexusPower : public android::RefBase {
 
     public:
     static sp<NexusPower> instantiate();
-    status_t setPowerState(b_powerState state);
-    status_t getPowerStatus(b_powerStatus *pPowerStatus);
-    status_t setVideoOutputsState(b_powerState state);
-    status_t initialiseGpios(b_powerState state);
+    status_t setPowerState(nxwrap_pwr_state state);
+    status_t getPowerStatus(nxwrap_pwr_state *pState, nxwrap_wake_status *pWake);
+    status_t setVideoOutputsState(nxwrap_pwr_state state);
+    status_t initialiseGpios(nxwrap_pwr_state state);
     void     uninitialiseGpios();
-    status_t setGpios(b_powerState state);
+    status_t setGpios(nxwrap_pwr_state state);
     status_t clearGpios();
-    status_t setGpiosInterruptWakeManager(b_powerState state, enum NexusGpio::GpioInterruptWakeManager wakeManager, bool enable);
+    status_t setGpiosInterruptWakeManager(nxwrap_pwr_state state, enum NexusGpio::GpioInterruptWakeManager wakeManager, bool enable);
     ~NexusPower();
 
     private:
-    b_cecDeviceType mCecDeviceType;
-    NexusIPCClientBase *mIpcClient;
-    uint64_t mClientContext;
+    nxcec_cec_device_type mCecDeviceType;
+    NxWrap *mNxWrap;
     sp<NexusGpio> gpios[NexusGpio::MAX_INSTANCES];
     sp<LinuxUInputRef> mUInput;
     DefaultKeyedVector<enum NexusGpio::GpioInterruptWakeManager, bool> mInterruptWakeManagers;
 
     // Disallow constructor and copy constructor...
     NexusPower();
-    NexusPower(NexusIPCClientBase *pIpcClient, uint64_t clientContext);
+    NexusPower(NxWrap *pNxWrap);
     NexusPower &operator=(const NexusPower &);
 };
 

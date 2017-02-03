@@ -1,7 +1,7 @@
 /******************************************************************************
- *    (c)2010-2013 Broadcom Corporation
+ * (c) 2017 Broadcom
  *
- * This program is the proprietary software of Broadcom Corporation and/or its licensors,
+ * This program is the proprietary software of Broadcom and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
  * (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
@@ -36,51 +36,69 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
-#ifndef BOMX_VIDEO_DECODER_SECURE_H__
-#define BOMX_VIDEO_DECODER_SECURE_H__
+#define LOG_TAG "nxcec"
+//#define LOG_NDEBUG 0
 
-#include "bomx_video_decoder.h"
+#include <utils/Log.h>
+#include <string.h>
+#include <cutils/atomic.h>
+#include <utils/Errors.h>
+#include "cutils/properties.h"
+#include <nxcec.h>
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateTunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" const char *BOMX_VideoDecoder_Secure_GetRole(unsigned roleIndex);
+extern "C" nxcec_cec_device_type nxcec_to_cec_device_type(const char *device) {
+   int type = atoi(device);
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Tunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+   switch (type) {
+   case -1: return eCecDeviceType_eInactive; break;
+   case  0: return eCecDeviceType_eTv; break;
+   case  1: return eCecDeviceType_eRecordingDevice; break;
+   case  2: return eCecDeviceType_eReserved; break;
+   case  3: return eCecDeviceType_eTuner; break;
+   case  4: return eCecDeviceType_ePlaybackDevice; break;
+   case  5: return eCecDeviceType_eAudioSystem; break;
+   case  6: return eCecDeviceType_ePureCecSwitch; break;
+   case  7: return eCecDeviceType_eVideoProcessor; break;
+   default: return eCecDeviceType_eInvalid;
+   }
+}
 
-class BOMX_VideoDecoder_Secure : public BOMX_VideoDecoder
-{
-public:
-    BOMX_VideoDecoder_Secure(
-        OMX_COMPONENTTYPE *pComponentType,
-        const OMX_STRING pName,
-        const OMX_PTR pAppData,
-        const OMX_CALLBACKTYPE *pCallbacks,
-        NxWrap *pNxWrap,
-        bool tunnel=false,
-        unsigned numRoles=0,
-        const BOMX_VideoDecoderRole *pRoles=NULL,
-        const char *(*pGetRole)(unsigned roleIndex)=NULL);
+extern "C" nxcec_cec_device_type nxcec_get_cec_device_type() {
+   char value[PROPERTY_VALUE_MAX];
+   nxcec_cec_device_type type = eCecDeviceType_eInvalid;
 
+   if (property_get("ro.hdmi.device_type", value, NULL)) {
+      type = nxcec_to_cec_device_type(value);
+   }
+   return type;
+}
 
-    virtual ~BOMX_VideoDecoder_Secure();
+extern "C" bool nxcec_is_cec_enabled() {
+   return property_get_bool(PROPERTY_HDMI_ENABLE_CEC,
+                            DEFAULT_PROPERTY_HDMI_ENABLE_CEC);
+}
 
-protected:
-    virtual OMX_ERRORTYPE EmptyThisBuffer( OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
-    virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
-    virtual void FreeInputBuffer(void*& pBuffer);
-    virtual NEXUS_Error AllocateConfigBuffer(uint32_t nSize, void*& pBuffer);
-    virtual void FreeConfigBuffer(void*& pBuffer);
-    virtual OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
-    virtual NEXUS_Error OpenPidChannel(uint32_t pid);
-    virtual void ClosePidChannel();
+extern "C" bool nxcec_get_cec_xmit_stdby() {
+   return property_get_bool(PROPERTY_HDMI_TX_STANDBY_CEC,
+                            DEFAULT_PROPERTY_HDMI_TX_STANDBY_CEC);
+}
 
-private:
-    NEXUS_Error SecureCopy(void *pDest, const void *pSrc, size_t nSize);
-};
+extern "C" bool nxcec_get_cec_xmit_viewon() {
+   return property_get_bool(PROPERTY_HDMI_TX_VIEW_ON_CEC,
+                            DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC);
+}
 
-#endif //BOMX_VIDEO_DECODER_SECURE_H__
+extern "C" bool nxcec_is_cec_autowake_enabled() {
+   return property_get_bool(PROPERTY_HDMI_AUTO_WAKEUP_CEC,
+                            DEFAULT_PROPERTY_HDMI_AUTO_WAKEUP_CEC);
+}
+
+extern "C" bool nxcec_set_cec_autowake_enabled(bool enabled) {
+   char value[PROPERTY_VALUE_MAX];
+   snprintf(value, PROPERTY_VALUE_MAX, "%d", enabled);
+   if (property_set(PROPERTY_HDMI_AUTO_WAKEUP_CEC, value) != 0) {
+      return false;
+   } else {
+      return true;
+   }
+}

@@ -265,21 +265,17 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
     unsigned i;
     bool vp9Supported = false;
     NEXUS_VideoDecoderCapabilities caps;
-    NexusIPCClientBase *pIpcClient = NULL;
-    uint64_t nexusClient = 0;
+    NxWrap *pNxWrap = NULL;
 
-    pIpcClient = NexusIPCClientFactory::getClient(pName);
-    if (pIpcClient)
-    {
-        nexusClient = pIpcClient->createClientContext();
-    }
-    if (!nexusClient)
+    pNxWrap = new NxWrap(pName);
+    if (pNxWrap == NULL)
     {
         ALOGW("Unable to determine presence of VP9 hardware!");
     }
     else
     {
         // Check if the platform supports VP9
+        pNxWrap->join();
         NEXUS_GetVideoDecoderCapabilities(&caps);
         for ( i = 0; i < caps.numVideoDecoders; i++ )
         {
@@ -305,7 +301,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
     }
 
     pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks,
-                                          pIpcClient, nexusClient,
+                                          pNxWrap,
                                           false, tunnelMode, 1, &vp9Role, BOMX_VideoDecoder_GetRoleVp9);
     if ( NULL == pVideoDecoder )
     {
@@ -326,13 +322,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateVp9Common(
     }
 
 error:
-    if (pIpcClient)
+    if (pNxWrap)
     {
-        if (nexusClient)
-        {
-            pIpcClient->destroyClientContext(nexusClient);
-        }
-        delete pIpcClient;
+        pNxWrap->leave();
+        delete pNxWrap;
     }
     return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
@@ -917,8 +910,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     const OMX_STRING pName,
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks,
-    NexusIPCClientBase *pIpcClient,
-    uint64_t nexusClient,
+    NxWrap *pNxWrap,
     bool secure,
     bool tunnel,
     unsigned numRoles,
@@ -951,8 +943,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pBufferTracker(NULL),
     m_AvailInputBuffers(0),
     m_frameRate(NEXUS_VideoFrameRate_eUnknown),
-    m_pIpcClient(pIpcClient),
-    m_nexusClient(nexusClient),
+    m_pNxWrap(pNxWrap),
     m_nxClientId(NXCLIENT_INVALID_ID),
     m_hSurfaceClient(NULL),
     m_hVideoClient(NULL),
@@ -1190,25 +1181,18 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
 
-    if (m_pIpcClient == NULL)
+    if (m_pNxWrap)
     {
-        m_pIpcClient = NexusIPCClientFactory::getClient(pName);
-        if ( NULL == m_pIpcClient )
+        m_pNxWrap = new NxWrap(pName);
+        if ( NULL == m_pNxWrap )
         {
-            ALOGW("Unable to create client factory");
+            ALOGW("Unable to create client wrap");
             this->Invalidate(OMX_ErrorUndefined);
             return;
         }
-    }
-
-    if (!m_nexusClient)
-    {
-        m_nexusClient = m_pIpcClient->createClientContext();
-        if (!m_nexusClient)
+        else
         {
-            ALOGW("Unable to create nexus client context");
-            this->Invalidate(OMX_ErrorUndefined);
-            return;
+            m_pNxWrap->join();
         }
     }
 
@@ -1681,13 +1665,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         FreeConfigBuffer(m_pConfigBuffer);
     }
-    if ( m_pIpcClient )
+    if ( m_pNxWrap )
     {
-        if ( m_nexusClient )
-        {
-            m_pIpcClient->destroyClientContext(m_nexusClient);
-        }
-        delete m_pIpcClient;
+        m_pNxWrap->leave();
+        delete m_pNxWrap;
     }
     if ( m_pBufferTracker )
     {
@@ -3616,7 +3597,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
        pInfo->typeInfo.native.pSharedData = (PSHARED_DATA)pMemory;
     }
     // Setup window parameters for display
-    pInfo->typeInfo.native.pSharedData->videoWindow.nexusClientContext = m_nexusClient;
+    pInfo->typeInfo.native.pSharedData->videoWindow.nexusClientContext = m_pNxWrap->client();
     android_atomic_release_store(1, &pInfo->typeInfo.native.pSharedData->videoWindow.windowIdPlusOne);
 
     err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, ComputeBufferSize(pPort->GetDefinition()->format.video.nStride, pPort->GetDefinition()->format.video.nSliceHeight), (OMX_U8 *)pPrivateHandle, pInfo, false);
@@ -5755,7 +5736,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 pSharedData = (PSHARED_DATA)pMemory;
 
                                 // Setup window parameters for display and provide buffer status
-                                pSharedData->videoWindow.nexusClientContext = m_nexusClient;
+                                pSharedData->videoWindow.nexusClientContext = m_pNxWrap->client();
                                 android_atomic_release_store(1, &pSharedData->videoWindow.windowIdPlusOne);
                                 pSharedData->videoFrame.status = pBuffer->frameStatus;
                                 // Don't allow gralloc_lock to destripe in metadata mode.  We won't know when it's safe to destroy the striped surface.

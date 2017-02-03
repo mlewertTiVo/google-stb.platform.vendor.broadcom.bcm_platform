@@ -56,21 +56,17 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAac(
     OMX_IN OMX_CALLBACKTYPE *pCallbacks)
 {
     NEXUS_AudioCapabilities audioCaps;
-    NexusIPCClientBase *pIpcClient = NULL;
-    uint64_t nexusClient = 0;
+    NxWrap *pNxWrap = NULL;
     BOMX_AudioDecoder_Secure *pAudioDecoderSec = NULL;
 
-    pIpcClient = NexusIPCClientFactory::getClient(pName);
-    if (pIpcClient)
-    {
-        nexusClient = pIpcClient->createClientContext();
-    }
-    if (!nexusClient)
+    pNxWrap = new NxWrap(pName);
+    if (pNxWrap == NULL)
     {
         ALOGW("Unable to determine presence of AAC hardware!");
     }
     else
     {
+        pNxWrap->join();
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacAdts].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacPlusAdts].decode )
@@ -82,7 +78,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAac(
 
     pAudioDecoderSec = new BOMX_AudioDecoder_Secure(
                               pComponentTpe, pName, pAppData, pCallbacks,
-                              pIpcClient, nexusClient,
+                              pNxWrap,
                               BOMX_AUDIO_GET_ROLE_COUNT(g_aacRole),
                               g_aacRole, BOMX_AudioDecoder_GetRoleAac);
 
@@ -105,13 +101,10 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAac(
     }
 
 error:
-    if (pIpcClient)
+    if (pNxWrap)
     {
-        if (nexusClient)
-        {
-            pIpcClient->destroyClientContext(nexusClient);
-        }
-        delete pIpcClient;
+        pNxWrap->leave();
+        delete pNxWrap;
     }
     return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
@@ -121,12 +114,11 @@ BOMX_AudioDecoder_Secure::BOMX_AudioDecoder_Secure(
     const OMX_STRING pName,
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks,
-    NexusIPCClientBase *pIpcClient,
-    uint64_t nexusClient,
+    NxWrap *pNxWrap,
     unsigned numRoles,
     const BOMX_AudioDecoderRole *pRoles,
     const char *(*pGetRole)(unsigned roleIndex))
-    :BOMX_AudioDecoder(pComponentType, pName, pAppData, pCallbacks, pIpcClient, nexusClient, true, numRoles, pRoles, pGetRole)
+    :BOMX_AudioDecoder(pComponentType, pName, pAppData, pCallbacks, pNxWrap, true, numRoles, pRoles, pGetRole)
 {
     ALOGV("%s", __FUNCTION__);
 }

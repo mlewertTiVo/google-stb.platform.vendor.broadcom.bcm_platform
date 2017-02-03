@@ -61,12 +61,12 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 /* wrapper around nexus hotplug event listener binder. do
  * not use directly, use the strong pointer wrap instead.
  */
-class Hwc2HP : public BnNexusHdmiHotplugEventListener {
+class Hwc2HP : public BnNxHpdEvtSrc {
 public:
 
     Hwc2HP() {};
     ~Hwc2HP() {};
-    virtual status_t onHdmiHotplugEventReceived(int32_t portId, bool connected);
+    virtual status_t onHpd(bool connected);
 
     void register_notify(HWC2_HP_NTFY_CB callback, void *data) {
        cb = callback;
@@ -101,12 +101,12 @@ public:
 /* wrapper around nexus display changed event listener binder. do
  * not use directly, use the strong pointer wrap instead.
  */
-class Hwc2DC : public BnNexusDisplaySettingsChangedEventListener {
+class Hwc2DC : public BnNxDspEvtSrc {
 public:
 
     Hwc2DC() {};
     ~Hwc2DC() {};
-    virtual status_t onDisplaySettingsChangedEventReceived(int32_t portId);
+    virtual status_t onDsp();
 
     void register_notify(HWC2_DC_NTFY_CB callback, void *data) {
        cb = callback;

@@ -25,7 +25,6 @@
 
 #include "nexus_types.h"
 #include "nexus_platform.h"
-#include "nexus_ipc_client_factory.h"
 #include "nexus_playback.h"
 #include "nexus_base_mmap.h"
 #include "nxclient.h"
@@ -39,38 +38,9 @@
 #include <stdio.h>
 #include <string.h>
 
-// Binder related headers
-#include <binder/IInterface.h>
-#include <binder/Parcel.h>
-#include <binder/IServiceManager.h>
-#include <binder/IPCThreadState.h>
-#include <binder/ProcessState.h>
-#include <utils/KeyedVector.h>
-#include <utils/RefBase.h>
-#include <utils/String16.h>
-#include <TunerInterface.h>
-
 #define DEVICE_ID_TUNER 0
 #define DEVICE_ID_HDMI 1
 extern tv_input_module_t hdmi_module;
-
-using namespace android;
-
-// Binder class for interaction with Tuner-HAL
-class BpNexusTunerClient: public BpInterface<INexusTunerClient>
-{
-public:
-    BpNexusTunerClient(const sp<IBinder>& impl)
-        : BpInterface<INexusTunerClient>(impl)
-    {
-    }
-
-    IBinder* get_remote()
-    {
-        return remote();
-    }
-};
-android_IMPLEMENT_META_INTERFACE(NexusTunerClient, TUNER_INTERFACE_NAME)
 
 /*****************************************************************************/
 typedef struct tv_input_private {
@@ -82,9 +52,6 @@ typedef struct tv_input_private {
 
     int iNumConfigs;
     tv_stream_config_t *s_config;
-
-    sp<INexusTunerClient> mNTC;
-    NexusClientContext *nexus_client;
 
     tv_input_device_t      *hdmi_dev;
     struct tv_input_device *hdmi_ops;
@@ -196,33 +163,12 @@ static int tv_input_open_stream(struct tv_input_device *dev, int dev_id, tv_stre
     if (dev_id == DEVICE_ID_HDMI)
         return priv->hdmi_ops->open_stream(priv->hdmi_dev, dev_id, pTVStream);
 
-    sp<IServiceManager> sm = defaultServiceManager();
-    sp<IBinder> binder;
-    do {
-        binder = sm->getService(String16(TUNER_INTERFACE_NAME));
-        if (binder != 0) {
-            break;
-        }
-
-        ALOGI("%s: TV-HAL is waiting for TunerService...", __FUNCTION__);
-        usleep(500000);
-    } while(true);
-
-    ALOGI("%s: TV-HAL acquired TunerService...", __FUNCTION__);
-    priv->mNTC = interface_cast<INexusTunerClient>(binder);
-
-    Parcel data, reply;
-    data.writeInterfaceToken(android::String16(TUNER_INTERFACE_NAME));
-    priv->mNTC->get_remote()->transact(GET_TUNER_CONTEXT, data, &reply);
-    priv->nexus_client = (NexusClientContext *)(intptr_t)reply.readInt32();
-    ALOGI("%s: nexus_client = %p", __FUNCTION__, priv->nexus_client);
-
     // Create a native handle
     pTVStream->sideband_stream_source_handle = native_handle_create(NUM_FD, NUM_INT);
 
     // Setup the native handle data
     pTVStream->sideband_stream_source_handle->data[0] = 1;
-    pTVStream->sideband_stream_source_handle->data[1] = (intptr_t)(priv->nexus_client);
+    pTVStream->sideband_stream_source_handle->data[1] = (intptr_t)(0);
     pTVStream->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
 
     return 0;

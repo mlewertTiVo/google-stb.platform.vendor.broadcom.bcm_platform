@@ -29,16 +29,21 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libdl \
                           liblog \
                           libnexus \
-                          libnexusipcclient \
+                          libnxwrap \
+                          libnxbinder \
+                          libnxcec \
+                          libnxevtsrc \
                           libnexusir \
                           libnxclient \
                           libpmlibservice \
                           libpower \
                           libutils
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxcec \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/droid_pm \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/linux/driver \

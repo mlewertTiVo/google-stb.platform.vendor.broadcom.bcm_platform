@@ -1,4 +1,4 @@
-# Copyright (C) 2014 The Android Open Source Project
+# Copyright (C) 2017 Broadcom Canada
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,30 +14,27 @@
 
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
-include $(NEXUS_TOP)/nxclient/include/nxclient.inc
+include $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include/nxclient.inc
 
-LOCAL_MODULE_RELATIVE_PATH := hw
+LOCAL_SHARED_LIBRARIES := liblog \
+                          libcutils \
+                          libbinder \
+                          libutils \
+                          libnexus \
+                          libnexusir \
+                          libnxclient \
+                          libnxbinder
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libbcmsideband/include
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/utils
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
-LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 
-LOCAL_SHARED_LIBRARIES := libcutils liblog libutils libnexus
-LOCAL_SHARED_LIBRARIES += libnxclient libbinder
-LOCAL_SHARED_LIBRARIES += libbcmsideband
+LOCAL_SRC_FILES := nxcec.cpp
 
-LOCAL_SRC_FILES := tv_input.cpp
-ifneq ($(NEXUS_HDMI_INPUT_SUPPORT),n)
-LOCAL_SRC_FILES += hdmi_tv_input.cpp
-else
-LOCAL_SRC_FILES += hdmi_tv_input_stub.cpp
-endif
-
-LOCAL_MODULE := tv_input.$(TARGET_BOARD_PLATFORM)
+LOCAL_MODULE := libnxcec
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)

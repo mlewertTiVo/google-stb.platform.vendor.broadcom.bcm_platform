@@ -20,12 +20,9 @@ LOCAL_SHARED_LIBRARIES := libnexus \
                           liblog \
                           libcutils \
                           libutils \
-                          libnexusipcclient \
                           libnxclient \
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
@@ -47,13 +44,10 @@ LOCAL_SHARED_LIBRARIES := libnexus \
                           liblog \
                           libcutils \
                           libutils \
-                          libnexusipcclient \
                           libnxclient \
                           libsrai
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES) \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/sage/srai/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/magnum/syslib/sagelib/include \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/security/common_crypto/include

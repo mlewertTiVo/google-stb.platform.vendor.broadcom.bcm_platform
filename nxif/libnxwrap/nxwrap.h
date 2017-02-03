@@ -1,7 +1,7 @@
 /******************************************************************************
- *    (c)2010-2013 Broadcom Corporation
+ * (c) 2017 Broadcom
  *
- * This program is the proprietary software of Broadcom Corporation and/or its licensors,
+ * This program is the proprietary software of Broadcom and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
  * (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
@@ -36,51 +36,81 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
-#ifndef BOMX_VIDEO_DECODER_SECURE_H__
-#define BOMX_VIDEO_DECODER_SECURE_H__
+#ifndef _NXWRAP__H_
+#define _NXWRAP__H_
 
-#include "bomx_video_decoder.h"
+#include <utils/threads.h>
+#include <utils/Errors.h>
+#include "nxclient.h"
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateTunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" const char *BOMX_VideoDecoder_Secure_GetRole(unsigned roleIndex);
+#include "NxServer.h"
+#include "INxServer.h"
+#include "NxServerSvc.h"
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Tunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+#include "nxwrap_common.h"
 
-class BOMX_VideoDecoder_Secure : public BOMX_VideoDecoder
-{
+using namespace android;
+
+typedef bool (*StdbyMonCb)(void *ctx);
+
+// basic wrap around nexus client support, allowing any android client
+// to extend into being a nexus client for middleware support.
+//
+// provides a nexus standby monitor integration for clients who require such,
+// usually limited to clients which may have async access to nexus hardware.
+//
+class NxWrap {
 public:
-    BOMX_VideoDecoder_Secure(
-        OMX_COMPONENTTYPE *pComponentType,
-        const OMX_STRING pName,
-        const OMX_PTR pAppData,
-        const OMX_CALLBACKTYPE *pCallbacks,
-        NxWrap *pNxWrap,
-        bool tunnel=false,
-        unsigned numRoles=0,
-        const BOMX_VideoDecoderRole *pRoles=NULL,
-        const char *(*pGetRole)(unsigned roleIndex)=NULL);
+   NxWrap();
+   NxWrap(const char *name);
+   virtual ~NxWrap() {};
 
-
-    virtual ~BOMX_VideoDecoder_Secure();
+   // connect to middleware, optionally instantiating a standby monitor process.
+   int join();
+   int join(StdbyMonCb cb, void *ctx);
+   // disconnect from middleware.
+   void leave();
+   // get the identification of the middleware client from server, can be used to
+   // pass around android clients if needed.
+   uint64_t client();
+   // register|unregister from hpd event source.
+   void regHpdEvt(const sp<INxHpdEvtSrc> &listener);
+   void unregHpdEvt(const sp<INxHpdEvtSrc> &listener);
+   // register|unregister from display event source.
+   void regDspEvt(const sp<INxDspEvtSrc> &listener);
+   void unregDspEvt(const sp<INxDspEvtSrc> &listener);
 
 protected:
-    virtual OMX_ERRORTYPE EmptyThisBuffer( OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
-    virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
-    virtual void FreeInputBuffer(void*& pBuffer);
-    virtual NEXUS_Error AllocateConfigBuffer(uint32_t nSize, void*& pBuffer);
-    virtual void FreeConfigBuffer(void*& pBuffer);
-    virtual OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
-    virtual NEXUS_Error OpenPidChannel(uint32_t pid);
-    virtual void ClosePidChannel();
+   struct StdbyMon: public Thread {
+      enum State {
+         STATE_UNKNOWN,
+         STATE_STOPPED,
+         STATE_RUNNING
+      };
+      StdbyMon(StdbyMonCb cb, void *ctx);
+      virtual ~StdbyMon();
+
+      virtual status_t run(const char* name = 0,
+                           int32_t priority = PRIORITY_DEFAULT,
+                           size_t stack = 0);
+
+      virtual void stop() {mState = STATE_STOPPED;}
+      bool isRunning() {return (mState == STATE_RUNNING);}
+      private:
+         State mState;
+         StdbyMonCb mCb;
+         void *mCtx;
+         unsigned mStdbyId;
+         bool threadLoop();
+
+         StdbyMon(const StdbyMon &);
+         StdbyMon &operator=(const StdbyMon &);
+   };
 
 private:
-    NEXUS_Error SecureCopy(void *pDest, const void *pSrc, size_t nSize);
+   sp<NxWrap::StdbyMon> mStdbyMon;
+   char mName[NXWRAP_NAME_MAX];
+   static Mutex mLck;
 };
 
-#endif //BOMX_VIDEO_DECODER_SECURE_H__
+#endif

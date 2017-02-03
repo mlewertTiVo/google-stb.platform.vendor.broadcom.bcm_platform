@@ -34,7 +34,6 @@
 #include <hardware/hwcomposer.h>
 
 #include <EGL/egl.h>
-#include "nexus_ipc_client_factory.h"
 #include "gralloc_priv.h"
 
 #include "nexus_base_mmap.h"
@@ -63,6 +62,10 @@
 #include "nx_ashmem.h"
 
 #include <inttypes.h>
+
+#include "nexus_platform.h"
+#include "nexus_display.h"
+#include <nxwrap.h>
 
 using namespace android;
 
@@ -534,13 +537,13 @@ void HwcBinder::notify(int msg, struct hwc_notification_info &ntfy)
       cb(cb_data, msg, ntfy);
 }
 
-class HwcHotPlug : public BnNexusHdmiHotplugEventListener
+class HwcHotPlug : public BnNxHpdEvtSrc
 {
 public:
 
     HwcHotPlug() {};
     ~HwcHotPlug() {};
-    virtual status_t onHdmiHotplugEventReceived(int32_t portId, bool connected);
+    virtual status_t onHpd(bool connected);
 
     void register_notify(HWC_HOTPLUG_NTFY_CB callback, void *data) {
        cb = callback;
@@ -574,11 +577,9 @@ public:
    }
 };
 
-status_t HwcHotPlug::onHdmiHotplugEventReceived(int32_t portId, bool connected)
+status_t HwcHotPlug::onHpd(bool connected)
 {
-   (void) portId;
-
-   ALOGD( "%s: hotplug-%d -> %s", __FUNCTION__, portId, connected ? "connected" : "disconnected");
+   ALOGD( "%s: hotplug -> %s", __FUNCTION__, connected ? "connected" : "disconnected");
 
    if (connected && cb)
       cb(cb_data);
@@ -586,13 +587,13 @@ status_t HwcHotPlug::onHdmiHotplugEventReceived(int32_t portId, bool connected)
    return NO_ERROR;
 }
 
-class HwcDisplayChanged : public BnNexusDisplaySettingsChangedEventListener
+class HwcDisplayChanged : public BnNxDspEvtSrc
 {
 public:
 
     HwcDisplayChanged() {};
     ~HwcDisplayChanged() {};
-    virtual status_t onDisplaySettingsChangedEventReceived(int32_t portId);
+    virtual status_t onDsp();
 
     void register_notify(HWC_DISPLAY_CHANGED_NTFY_CB callback, void *data) {
        cb = callback;
@@ -626,11 +627,9 @@ public:
    }
 };
 
-status_t HwcDisplayChanged::onDisplaySettingsChangedEventReceived(int32_t portId)
+status_t HwcDisplayChanged::onDsp()
 {
-   (void) portId;
-
-   ALOGD( "%s: display-%d -> changed", __FUNCTION__, portId);
+   ALOGD( "%s: display -> changed", __FUNCTION__);
 
    if (cb)
       cb(cb_data);
@@ -698,8 +697,7 @@ struct hwc_context_t {
     struct hwc_time_on_display_stats on_display;
 
     /* our private state goes below here */
-    NexusIPCClientBase *pIpcClient;
-    uint64_t nexusClientContext;
+    NxWrap *pNx;
     NxClient_AllocResults nxAllocResults;
     pthread_mutex_t dev_mutex;
 
@@ -1450,9 +1448,8 @@ static void hwc_device_dump(struct hwc_composer_device_1* dev, char *buff, int b
            capacity = (capacity > write) ? (capacity - write) : 0;
            index += write;
        }
-       write = snprintf(buff + index, capacity, "\tipc:%p::ncc:%" PRIu64 "::d:{%d,%d}::pm:%s::fm:%s::oscan:{%d,%d:%d,%d}\n",
-           ctx->pIpcClient,
-           ctx->nexusClientContext,
+       write = snprintf(buff + index, capacity, "\tipc:%p::d:{%d,%d}::pm:%s::fm:%s::oscan:{%d,%d:%d,%d}\n",
+           ctx->pNx,
            ctx->cfg[HWC_PRIMARY_IX].width,
            ctx->cfg[HWC_PRIMARY_IX].height,
            hwc_power_mode[ctx->power_mode],
@@ -4329,19 +4326,17 @@ static void hwc_device_cleanup(struct hwc_context_t* ctx)
         ctx->recycle_thread_run = 0;
         pthread_join(ctx->recycle_callback_thread, NULL);
 
-        if (ctx->pIpcClient != NULL) {
-            if (ctx->nexusClientContext) {
-                ctx->pIpcClient->destroyClientContext(ctx->nexusClientContext);
-            }
+        if (ctx->pNx != NULL) {
             if (ctx->hwc_hp) {
-                ctx->pIpcClient->removeHdmiHotplugEventListener(0, ctx->hwc_hp->get());
+                ctx->pNx->unregHpdEvt(ctx->hwc_hp->get());
                 delete ctx->hwc_hp;
             }
             if (ctx->hwc_dc) {
-                ctx->pIpcClient->removeDisplaySettingsChangedEventListener(0, ctx->hwc_dc->get());
+                ctx->pNx->unregDspEvt(ctx->hwc_dc->get());
                 delete ctx->hwc_dc;
             }
-            delete ctx->pIpcClient;
+            ctx->pNx->leave();
+            delete ctx->pNx;
         }
 
         for (i = 0; i < NSC_GPX_CLIENTS_NUMBER; i++) {
@@ -5275,20 +5270,13 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
            ALOGI("%s: created hwc-display-changed (%p)", __FUNCTION__, dev->hwc_dc);
         }
 
-        dev->pIpcClient = NexusIPCClientFactory::getClient("hwc");
-        if (dev->pIpcClient == NULL) {
-            ALOGE("%s: failed NexusIPCClientFactory::getClient", __FUNCTION__);
+        dev->pNx = new NxWrap("hwc");
+        if (dev->pNx == NULL) {
+            ALOGE("%s: failed NxWrap", __FUNCTION__);
         } else {
-            b_refsw_client_client_configuration clientConfig;
 
-            memset(&clientConfig, 0, sizeof(clientConfig));
-            clientConfig.standbyMonitorCallback = hwc_standby_monitor;
-            clientConfig.standbyMonitorContext  = dev;
-
-            dev->nexusClientContext = dev->pIpcClient->createClientContext(&clientConfig);
-            if (!dev->nexusClientContext) {
-               ALOGE("%s: failed createClientContext", __FUNCTION__);
-            } else {
+            dev->pNx->join(hwc_standby_monitor, (void *)dev);
+            {
                NEXUS_InterfaceName interfaceName;
                NEXUS_PlatformObjectInstance objects[NEXUS_DISPLAY_OBJECTS]; /* won't overflow. */
                size_t num = NEXUS_DISPLAY_OBJECTS;
@@ -5303,14 +5291,8 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
                }
             }
 
-            ret = dev->pIpcClient->addHdmiHotplugEventListener(0, dev->hwc_hp->get());
-            if (ret != NO_ERROR) {
-               ALOGE("%s: failed to get register hotplug listener: %d.", __FUNCTION__, ret);
-            }
-            ret = dev->pIpcClient->addDisplaySettingsChangedEventListener(0, dev->hwc_dc->get());
-            if (ret != NO_ERROR) {
-               ALOGE("%s: failed to get register display-changed listener: %d.", __FUNCTION__, ret);
-            }
+            dev->pNx->regHpdEvt(dev->hwc_hp->get());
+            dev->pNx->regDspEvt(dev->hwc_dc->get());
         }
 
         pthread_attr_init(&attr);

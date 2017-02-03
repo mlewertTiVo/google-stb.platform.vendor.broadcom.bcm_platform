@@ -42,6 +42,7 @@
 
 #include <fcntl.h>
 #include <cutils/log.h>
+#include <cutils/properties.h>
 
 #include "bomx_audio_decoder.h"
 #include "nexus_platform.h"
@@ -122,21 +123,17 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(
     OMX_IN OMX_CALLBACKTYPE *pCallbacks)
 {
     NEXUS_AudioCapabilities audioCaps;
-    NexusIPCClientBase *pIpcClient = NULL;
-    uint64_t nexusClient = 0;
+    NxWrap *pNxWrap = NULL;
     BOMX_AudioDecoder *pAudioDecoder = NULL;
 
-    pIpcClient = NexusIPCClientFactory::getClient(pName);
-    if (pIpcClient)
-    {
-        nexusClient = pIpcClient->createClientContext();
-    }
-    if (!nexusClient)
+    pNxWrap = new NxWrap(pName);
+    if (pNxWrap == NULL)
     {
         ALOGW("Unable to determine presence of AC3 hardware!");
     }
     else
     {
+        pNxWrap->join();
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
@@ -147,7 +144,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(
     }
 
     pAudioDecoder = new BOMX_AudioDecoder(pComponentTpe, pName, pAppData, pCallbacks,
-                                          pIpcClient, nexusClient,
+                                          pNxWrap,
                                           false, BOMX_AUDIO_GET_ROLE_COUNT(g_ac3Role), g_ac3Role,
                                           BOMX_AudioDecoder_GetRoleAc3);
     if ( NULL == pAudioDecoder )
@@ -169,13 +166,10 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(
     }
 
 error:
-    if (pIpcClient)
+    if (pNxWrap)
     {
-        if (nexusClient)
-        {
-            pIpcClient->destroyClientContext(nexusClient);
-        }
-        delete pIpcClient;
+        pNxWrap->leave();
+        delete pNxWrap;
     }
     return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
@@ -192,21 +186,17 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateEAc3(
     OMX_IN OMX_CALLBACKTYPE *pCallbacks)
 {
     NEXUS_AudioCapabilities audioCaps;
-    NexusIPCClientBase *pIpcClient = NULL;
-    uint64_t nexusClient = 0;
+    NxWrap *pNxWrap = NULL;
     BOMX_AudioDecoder *pAudioDecoder = NULL;
 
-    pIpcClient = NexusIPCClientFactory::getClient(pName);
-    if (pIpcClient)
-    {
-        nexusClient = pIpcClient->createClientContext();
-    }
-    if (!nexusClient)
+    pNxWrap = new NxWrap(pName);
+    if (pNxWrap == NULL)
     {
         ALOGW("Unable to determine presence of AC3 hardware!");
     }
     else
     {
+        pNxWrap->join();
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
@@ -217,7 +207,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateEAc3(
     }
 
     pAudioDecoder = new BOMX_AudioDecoder(pComponentTpe, pName, pAppData, pCallbacks,
-                                          pIpcClient, nexusClient,
+                                          pNxWrap,
                                           false, BOMX_AUDIO_GET_ROLE_COUNT(g_eac3Role), g_eac3Role,
                                           BOMX_AudioDecoder_GetRoleEAc3);
     if ( NULL == pAudioDecoder )
@@ -239,13 +229,10 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateEAc3(
     }
 
 error:
-    if (pIpcClient)
+    if (pNxWrap)
     {
-        if (nexusClient)
-        {
-            pIpcClient->destroyClientContext(nexusClient);
-        }
-        delete pIpcClient;
+        pNxWrap->leave();
+        delete pNxWrap;
     }
     return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
@@ -262,21 +249,17 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateMp3(
     OMX_IN OMX_CALLBACKTYPE *pCallbacks)
 {
     NEXUS_AudioCapabilities audioCaps;
-    NexusIPCClientBase *pIpcClient = NULL;
-    uint64_t nexusClient = 0;
+    NxWrap *pNxWrap = NULL;
     BOMX_AudioDecoder *pAudioDecoder = NULL;
 
-    pIpcClient = NexusIPCClientFactory::getClient(pName);
-    if (pIpcClient)
-    {
-        nexusClient = pIpcClient->createClientContext();
-    }
-    if (!nexusClient)
+    pNxWrap = new NxWrap(pName);
+    if (pNxWrap == NULL)
     {
         ALOGW("Unable to determine presence of MP3 hardware!");
     }
     else
     {
+        pNxWrap->join();
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eMp3].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eMpeg].decode )
@@ -287,7 +270,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateMp3(
     }
 
     pAudioDecoder = new BOMX_AudioDecoder(pComponentTpe, pName, pAppData, pCallbacks,
-                                          pIpcClient, nexusClient,
+                                          pNxWrap,
                                           false, BOMX_AUDIO_GET_ROLE_COUNT(g_mp3Role), g_mp3Role,
                                           BOMX_AudioDecoder_GetRoleMp3);
     if ( NULL == pAudioDecoder )
@@ -309,13 +292,10 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateMp3(
     }
 
 error:
-    if (pIpcClient)
+    if (pNxWrap)
     {
-        if (nexusClient)
-        {
-            pIpcClient->destroyClientContext(nexusClient);
-        }
-        delete pIpcClient;
+        pNxWrap->leave();
+        delete pNxWrap;
     }
     return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
@@ -332,21 +312,17 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAac(
     OMX_IN OMX_CALLBACKTYPE *pCallbacks)
 {
     NEXUS_AudioCapabilities audioCaps;
-    NexusIPCClientBase *pIpcClient = NULL;
-    uint64_t nexusClient = 0;
+    NxWrap *pNxWrap = NULL;
     BOMX_AudioDecoder *pAudioDecoder = NULL;
 
-    pIpcClient = NexusIPCClientFactory::getClient(pName);
-    if (pIpcClient)
-    {
-        nexusClient = pIpcClient->createClientContext();
-    }
-    if (!nexusClient)
+    pNxWrap = new NxWrap(pName);
+    if (pNxWrap == NULL)
     {
         ALOGW("Unable to determine presence of AAC hardware!");
     }
     else
     {
+        pNxWrap->join();
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacAdts].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAacPlusAdts].decode )
@@ -357,7 +333,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAac(
     }
 
     pAudioDecoder = new BOMX_AudioDecoder(pComponentTpe, pName, pAppData, pCallbacks,
-                                          pIpcClient, nexusClient,
+                                          pNxWrap,
                                           false, BOMX_AUDIO_GET_ROLE_COUNT(g_aacRole), g_aacRole,
                                           BOMX_AudioDecoder_GetRoleAac);
     if ( NULL == pAudioDecoder )
@@ -379,13 +355,10 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAac(
     }
 
 error:
-    if (pIpcClient)
+    if (pNxWrap)
     {
-        if (nexusClient)
-        {
-            pIpcClient->destroyClientContext(nexusClient);
-        }
-        delete pIpcClient;
+        pNxWrap->leave();
+        delete pNxWrap;
     }
     return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
@@ -484,8 +457,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     const OMX_STRING pName,
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks,
-    NexusIPCClientBase *pIpcClient,
-    uint64_t nexusClient,
+    NxWrap *pNxWrap,
     bool secure,
     unsigned numRoles,
     const BOMX_AudioDecoderRole *pRoles,
@@ -505,8 +477,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_decoderState(BOMX_AudioDecoderState_eStopped),
     m_pBufferTracker(NULL),
     m_AvailInputBuffers(0),
-    m_pIpcClient(pIpcClient),
-    m_nexusClient(nexusClient),
+    m_pNxWrap(pNxWrap),
     m_pPesFile(NULL),
     m_pInputFile(NULL),
     m_pOutputFile(NULL),
@@ -685,25 +656,18 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
         return;
     }
 
-    if (m_pIpcClient == NULL)
+    if (m_pNxWrap == NULL)
     {
-        m_pIpcClient = NexusIPCClientFactory::getClient(pName);
-        if ( NULL == m_pIpcClient )
+        m_pNxWrap = new NxWrap(pName);
+        if ( NULL == m_pNxWrap )
         {
-            ALOGW("Unable to create client factory");
+            ALOGW("Unable to create client wrap");
             this->Invalidate(OMX_ErrorUndefined);
             return;
         }
-    }
-
-    if (!m_nexusClient)
-    {
-        m_nexusClient = m_pIpcClient->createClientContext();
-        if (!m_nexusClient)
+        else
         {
-            ALOGW("Unable to create nexus client context");
-            this->Invalidate(OMX_ErrorUndefined);
-            return;
+            m_pNxWrap->join();
         }
     }
 
@@ -1033,13 +997,10 @@ BOMX_AudioDecoder::~BOMX_AudioDecoder()
     {
         NEXUS_Memory_Free(m_pConfigBuffer);
     }
-    if ( m_pIpcClient )
+    if ( m_pNxWrap )
     {
-        if ( m_nexusClient )
-        {
-            m_pIpcClient->destroyClientContext(m_nexusClient);
-        }
-        delete m_pIpcClient;
+        m_pNxWrap->leave();
+        delete m_pNxWrap;
     }
     if ( m_pBufferTracker )
     {

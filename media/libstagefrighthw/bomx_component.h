@@ -54,8 +54,8 @@
 #include "bomx_port.h"
 #include "b_os_lib.h"
 #include "bfifo.h"
-#include "nexus_ipc_client_factory.h"
 #include "nexus_simple_stc_channel.h"
+#include <nxwrap.h>
 
 #define BOMX_MAX_ROLES_PER_COMPONENT (16)
 #define BOMX_COMPONENT_MAX_MSGS (16)
@@ -99,11 +99,11 @@ struct BOMX_ComponentResources
     BOMX_ComponentArray componentArray;
     unsigned connectId;
     bool allocated[BOMX_MAX_COMPONENTS_IN_ARRAY];
-#if 0 /* Only required for tunneled mode */    
+#if 0 /* Only required for tunneled mode */
     NxClient_AllocSettings allocSettings;
     NxClient_AllocResults allocResults;
     NxClient_ConnectSettings connectSettings;
-#endif    
+#endif
 };
 
 OMX_ERRORTYPE BOMX_InitComponentResourceList();
@@ -270,13 +270,13 @@ protected:
     // NxClient Resources
     NEXUS_Error AllocateResources();
     void ReleaseResources();
-#if 0 /* Only required for tunneled mode */    
+#if 0 /* Only required for tunneled mode */
     virtual void GetNxClientAllocSettings(NxClient_AllocSettings *pSettings);
     virtual void GetNxClientConnectSettings(NxClient_ConnectSettings *pSettings);
 
     NxClient_AllocSettings m_nxClientAllocSettings;
     NxClient_AllocResults m_nxClientAllocResults;
-#endif    
+#endif
     BOMX_ComponentResources *m_pResources;
 
     // Event Routines

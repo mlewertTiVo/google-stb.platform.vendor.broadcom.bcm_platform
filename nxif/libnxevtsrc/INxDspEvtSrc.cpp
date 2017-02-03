@@ -1,7 +1,7 @@
 /******************************************************************************
- *    (c)2010-2013 Broadcom Corporation
+ *    (c)2017 Broadcom
  *
- * This program is the proprietary software of Broadcom Corporation and/or its licensors,
+ * This program is the proprietary software of Broadcom and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
  * (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
@@ -36,51 +36,43 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
-#ifndef BOMX_VIDEO_DECODER_SECURE_H__
-#define BOMX_VIDEO_DECODER_SECURE_H__
+#define LOG_TAG "INxDspEvtSrc"
+#include <utils/Log.h>
 
-#include "bomx_video_decoder.h"
+#include "INxDspEvtSrc.h"
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateTunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" const char *BOMX_VideoDecoder_Secure_GetRole(unsigned roleIndex);
+using namespace android;
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Tunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-
-class BOMX_VideoDecoder_Secure : public BOMX_VideoDecoder
-{
-public:
-    BOMX_VideoDecoder_Secure(
-        OMX_COMPONENTTYPE *pComponentType,
-        const OMX_STRING pName,
-        const OMX_PTR pAppData,
-        const OMX_CALLBACKTYPE *pCallbacks,
-        NxWrap *pNxWrap,
-        bool tunnel=false,
-        unsigned numRoles=0,
-        const BOMX_VideoDecoderRole *pRoles=NULL,
-        const char *(*pGetRole)(unsigned roleIndex)=NULL);
-
-
-    virtual ~BOMX_VideoDecoder_Secure();
-
-protected:
-    virtual OMX_ERRORTYPE EmptyThisBuffer( OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
-    virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
-    virtual void FreeInputBuffer(void*& pBuffer);
-    virtual NEXUS_Error AllocateConfigBuffer(uint32_t nSize, void*& pBuffer);
-    virtual void FreeConfigBuffer(void*& pBuffer);
-    virtual OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
-    virtual NEXUS_Error OpenPidChannel(uint32_t pid);
-    virtual void ClosePidChannel();
-
-private:
-    NEXUS_Error SecureCopy(void *pDest, const void *pSrc, size_t nSize);
+enum {
+   ON_DSP = IBinder::FIRST_CALL_TRANSACTION,
 };
 
-#endif //BOMX_VIDEO_DECODER_SECURE_H__
+class BpNxDspEvtSrc : public BpInterface<INxDspEvtSrc> {
+public:
+   BpNxDspEvtSrc(const sp<IBinder>& impl) : BpInterface<INxDspEvtSrc>(impl) { }
+   virtual status_t onDsp();
+};
+
+status_t BpNxDspEvtSrc::onDsp() {
+   Parcel data, reply;
+   data.writeInterfaceToken(INxDspEvtSrc::getInterfaceDescriptor());
+   return remote()->transact(ON_DSP, data, &reply);
+}
+
+IMPLEMENT_META_INTERFACE(NxDspEvtSrc, "broadcom.dspevt");
+
+status_t BnNxDspEvtSrc::onTransact(uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags) {
+   status_t ret;
+
+   switch (code) {
+   case ON_DSP: {
+      CHECK_INTERFACE(INxDspEvtSrc, data, reply);
+      ret = onDsp();
+   }
+   break;
+   default:
+      ret = BBinder::onTransact(code, data, reply, flags);
+   }
+   return ret;
+}
+

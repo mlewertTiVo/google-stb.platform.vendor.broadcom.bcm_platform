@@ -38,7 +38,7 @@
  *****************************************************************************/
 
 #include "brcm_audio.h"
-#include "nexus_ipc_client_factory.h"
+#include <nxwrap_common.h>
 
 StandbyMonitorThread::StandbyMonitorThread() : mMutex("BrcmAudio::StandbyMonitorThread::mMutex")
 {

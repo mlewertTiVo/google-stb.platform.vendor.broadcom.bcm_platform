@@ -46,9 +46,9 @@
 
 #include "nexus_types.h"
 #include "nexus_platform.h"
-#include "nexus_ipc_client_factory.h"
 #include "nxclient.h"
 #include "nxclient_config.h"
+#include <nxwrap.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -60,8 +60,7 @@
 
 struct private_device_t {
     struct light_device_t light;
-    NexusIPCClientBase *pIpcClient;
-    NexusClientContext *pClientCxt;
+    NxWrap *pNxWrap;
     NEXUS_DisplayHandle dispHandle;
 };
 
@@ -122,11 +121,9 @@ static int lights_device_close(struct hw_device_t *dev)
     struct private_device_t *priv_dev = reinterpret_cast<struct private_device_t *>(dev);
 
     if (priv_dev) {
-        if (priv_dev->pIpcClient) {
-            if (priv_dev->pClientCxt) {
-                priv_dev->pIpcClient->destroyClientContext(priv_dev->pClientCxt);
-            }
-            delete priv_dev->pIpcClient;
+        if (priv_dev->pNxWrap) {
+            priv_dev->pNxWrap->leave();
+            delete priv_dev->pNxWrap;
         }
         free(priv_dev);
     }
@@ -152,17 +149,12 @@ static int lights_device_open(const struct hw_module_t *module,
         /* initialize our state here */
         memset(dev, 0, sizeof(*dev));
 
-        dev->pIpcClient = NexusIPCClientFactory::getClient("lights");
-        if (!dev->pIpcClient) {
-            ALOGE("%s: failed NexusIPCClientFactory::getClient", __FUNCTION__);
+        dev->pNxWrap = new NxWrap("lights");
+        if (!dev->pNxWrap) {
+            ALOGE("%s: failed NxWrap", __FUNCTION__);
             goto out;
         }
-
-        dev->pClientCxt = dev->pIpcClient->createClientContext();
-        if (!dev->pClientCxt) {
-            ALOGE("%s: failed createClientContext", __FUNCTION__);
-            goto out;
-        }
+        dev->pNxWrap->join();
 
         /* retrieve Nexus display handle */
         strcpy(interfaceName.name, "NEXUS_Display");

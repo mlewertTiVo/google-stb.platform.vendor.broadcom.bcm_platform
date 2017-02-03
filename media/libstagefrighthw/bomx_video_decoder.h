@@ -161,8 +161,7 @@ public:
         const OMX_STRING pName,
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
-        NexusIPCClientBase *pIpcClient=NULL,
-        uint64_t nexusClient=0,
+        NxWrap *pNxWrap,
         bool secure=false,
         bool tunnel=false,
         unsigned numRoles=0,
@@ -293,8 +292,7 @@ protected:
     unsigned m_AvailInputBuffers;
     NEXUS_VideoFrameRate m_frameRate;
 
-    NexusIPCClientBase              *m_pIpcClient;
-    uint64_t                         m_nexusClient;
+    NxWrap                           *m_pNxWrap;
     NxClient_AllocResults            m_allocResults;
     unsigned                         m_nxClientId;
     NEXUS_SurfaceClientHandle        m_hSurfaceClient;

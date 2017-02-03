@@ -1,7 +1,7 @@
 /******************************************************************************
- *    (c)2010-2013 Broadcom Corporation
+ * (c) 2017 Broadcom
  *
- * This program is the proprietary software of Broadcom Corporation and/or its licensors,
+ * This program is the proprietary software of Broadcom and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
  * (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
@@ -36,51 +36,50 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
-#ifndef BOMX_VIDEO_DECODER_SECURE_H__
-#define BOMX_VIDEO_DECODER_SECURE_H__
+#ifndef _NXCEC__H_
+#define _NXCEC__H_
 
-#include "bomx_video_decoder.h"
+#include <utils/threads.h>
+#include <utils/Errors.h>
+#include "nxclient.h"
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_Create(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateTunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" const char *BOMX_VideoDecoder_Secure_GetRole(unsigned roleIndex);
+typedef enum {
+   eCecDeviceType_eInactive = -1,
+   eCecDeviceType_eTv = 0,
+   eCecDeviceType_eRecordingDevice,
+   eCecDeviceType_eReserved,
+   eCecDeviceType_eTuner,
+   eCecDeviceType_ePlaybackDevice,
+   eCecDeviceType_eAudioSystem,
+   eCecDeviceType_ePureCecSwitch,
+   eCecDeviceType_eVideoProcessor,
+   eCecDeviceType_eInvalid,
+   eCecDeviceType_eMax = eCecDeviceType_eInvalid
+} nxcec_cec_device_type;
 
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
-extern "C" OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Tunnel(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING,
-                                                         OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+#define PROPERTY_HDMI_ENABLE_CEC                "persist.sys.hdmi.enable_cec"
+#define DEFAULT_PROPERTY_HDMI_ENABLE_CEC        1
+#define PROPERTY_HDMI_TX_STANDBY_CEC            "persist.sys.hdmi.tx_standby_cec"
+#define DEFAULT_PROPERTY_HDMI_TX_STANDBY_CEC    0
+#define PROPERTY_HDMI_TX_VIEW_ON_CEC            "persist.sys.hdmi.tx_view_on_cec"
+#define DEFAULT_PROPERTY_HDMI_TX_VIEW_ON_CEC    0
+#define PROPERTY_HDMI_AUTO_WAKEUP_CEC           "persist.sys.hdmi.auto_wake_cec"
+#define DEFAULT_PROPERTY_HDMI_AUTO_WAKEUP_CEC   1
+#define PROPERTY_HDMI_HOTPLUG_WAKEUP            "ro.hdmi.wake_on_hotplug"
+#define DEFAULT_PROPERTY_HDMI_HOTPLUG_WAKEUP    0
+#define PROPERTY_HDMI_CEC_VENDOR_ID             "ro.sys.hdmi.cec_vendor_id"
+#define DEFAULT_PROPERTY_HDMI_CEC_VENDOR_ID     0x18C086
 
-class BOMX_VideoDecoder_Secure : public BOMX_VideoDecoder
-{
-public:
-    BOMX_VideoDecoder_Secure(
-        OMX_COMPONENTTYPE *pComponentType,
-        const OMX_STRING pName,
-        const OMX_PTR pAppData,
-        const OMX_CALLBACKTYPE *pCallbacks,
-        NxWrap *pNxWrap,
-        bool tunnel=false,
-        unsigned numRoles=0,
-        const BOMX_VideoDecoderRole *pRoles=NULL,
-        const char *(*pGetRole)(unsigned roleIndex)=NULL);
+#define HDMI_CEC_MESSAGE_BODY_MAX_LENGTH        16
 
+extern "C" nxcec_cec_device_type nxcec_get_cec_device_type();
+extern "C" bool nxcec_is_cec_enabled();
+extern "C" bool nxcec_get_cec_xmit_stdby();
+extern "C" bool nxcec_get_cec_xmit_viewon();
+extern "C" bool nxcec_is_cec_autowake_enabled();
+extern "C" bool nxcec_set_cec_autowake_enabled(bool enabled);
 
-    virtual ~BOMX_VideoDecoder_Secure();
+using namespace android;
 
-protected:
-    virtual OMX_ERRORTYPE EmptyThisBuffer( OMX_IN  OMX_BUFFERHEADERTYPE* pBuffer);
-    virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);
-    virtual void FreeInputBuffer(void*& pBuffer);
-    virtual NEXUS_Error AllocateConfigBuffer(uint32_t nSize, void*& pBuffer);
-    virtual void FreeConfigBuffer(void*& pBuffer);
-    virtual OMX_ERRORTYPE ConfigBufferAppend(const void *pBuffer, size_t length);
-    virtual NEXUS_Error OpenPidChannel(uint32_t pid);
-    virtual void ClosePidChannel();
+#endif
 
-private:
-    NEXUS_Error SecureCopy(void *pDest, const void *pSrc, size_t nSize);
-};
-
-#endif //BOMX_VIDEO_DECODER_SECURE_H__

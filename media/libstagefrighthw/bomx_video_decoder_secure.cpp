@@ -113,21 +113,17 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Common(
     unsigned i;
     bool vp9Supported = false;
     NEXUS_VideoDecoderCapabilities caps;
-    NexusIPCClientBase *pIpcClient = NULL;
-    uint64_t nexusClient = 0;
+    NxWrap *pNxWrap = NULL;
 
-    pIpcClient = NexusIPCClientFactory::getClient(pName);
-    if (pIpcClient)
-    {
-        nexusClient = pIpcClient->createClientContext();
-    }
-    if (!nexusClient)
+    pNxWrap = new NxWrap(pName);
+    if (pNxWrap == NULL)
     {
         ALOGW("Unable to determine presence of VP9 hardware!");
     }
     else
     {
         // Check if the platform supports VP9
+        pNxWrap->join();
         NEXUS_GetVideoDecoderCapabilities(&caps);
         for ( i = 0; i < caps.numVideoDecoders; i++ )
         {
@@ -153,7 +149,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Common(
     }
 
     pVideoDecoder = new BOMX_VideoDecoder_Secure(pComponentTpe, pName, pAppData, pCallbacks,
-                                                 pIpcClient, nexusClient,
+                                                 pNxWrap,
                                                  tunnelMode, 1, &vp9Role, BOMX_VideoDecoder_GetRoleVp9);
     if ( NULL == pVideoDecoder )
     {
@@ -174,13 +170,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateVp9Common(
     }
 
 error:
-    if (pIpcClient)
+    if (pNxWrap)
     {
-        if (nexusClient)
-        {
-            pIpcClient->destroyClientContext(nexusClient);
-        }
-        delete pIpcClient;
+        pNxWrap->leave();
+        delete pNxWrap;
     }
     return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
@@ -208,13 +201,12 @@ BOMX_VideoDecoder_Secure::BOMX_VideoDecoder_Secure(
     const OMX_STRING pName,
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks,
-    NexusIPCClientBase *pIpcClient,
-    uint64_t nexusClient,
+    NxWrap *pNxWrap,
     bool tunnel,
     unsigned numRoles,
     const BOMX_VideoDecoderRole *pRoles,
     const char *(*pGetRole)(unsigned roleIndex))
-    :BOMX_VideoDecoder(pComponentType, pName, pAppData, pCallbacks, pIpcClient, nexusClient, true, tunnel, numRoles, pRoles, pGetRole)
+    :BOMX_VideoDecoder(pComponentType, pName, pAppData, pCallbacks, pNxWrap, true, tunnel, numRoles, pRoles, pGetRole)
 {
     ALOGV("%s", __FUNCTION__);
 }

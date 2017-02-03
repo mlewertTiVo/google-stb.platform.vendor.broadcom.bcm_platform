@@ -136,7 +136,7 @@ static timer_t gDozeTimer = NULL;
 static sp<NexusPower> gNexusPower;
 
 // Global power state
-static b_powerState gPowerState;
+static nxwrap_pwr_state gPowerState;
 
 // Power device driver file descriptor.
 static int gPowerFd = -1;
@@ -164,7 +164,7 @@ Mutex gLock("PowerHAL Lock");
 Condition gCondition(android::Condition::WAKE_UP_ONE);
 
 // Prototype declarations...
-static status_t power_set_pmlibservice_state(b_powerState state);
+static status_t power_set_pmlibservice_state(nxwrap_pwr_state state);
 static status_t power_create_thread(const char *name, void *(*pthread_function)(void*));
 static void *power_event_monitor_thread(void *arg);
 static void *power_s5_shutdown(void *arg);
@@ -248,9 +248,9 @@ static status_t sysfs_set(const char *path, unsigned int in)
     return status;
 }
 
-static b_powerState power_get_state_from_string(char *value)
+static nxwrap_pwr_state power_get_state_from_string(char *value)
 {
-    b_powerState powerOffState = ePowerState_Max;
+    nxwrap_pwr_state powerOffState = ePowerState_Max;
 
     if (strcasecmp(value, "0") == 0 || strcasecmp(value, "s0") == 0) {
         powerOffState = ePowerState_S0;
@@ -273,9 +273,9 @@ static b_powerState power_get_state_from_string(char *value)
     return powerOffState;
 }
 
-static b_powerState power_get_property_off_state()
+static nxwrap_pwr_state power_get_property_off_state()
 {
-    b_powerState offState;
+    nxwrap_pwr_state offState;
     char value[PROPERTY_VALUE_MAX] = "";
 
     property_get(PROPERTY_SYS_POWER_OFFSTATE, value, DEFAULT_PROPERTY_SYS_POWER_OFFSTATE);
@@ -284,9 +284,9 @@ static b_powerState power_get_property_off_state()
     return offState;
 }
 
-static b_powerState power_get_property_doze_state()
+static nxwrap_pwr_state power_get_property_doze_state()
 {
-    b_powerState dozeState;
+    nxwrap_pwr_state dozeState;
     char value[PROPERTY_VALUE_MAX] = "";
 
     property_get(PROPERTY_SYS_POWER_DOZESTATE, value, DEFAULT_PROPERTY_SYS_POWER_DOZESTATE);
@@ -312,9 +312,9 @@ static int power_get_property_wol_opts(char *opts)
     return len;
 }
 
-static b_powerState power_get_off_state()
+static nxwrap_pwr_state power_get_off_state()
 {
-    b_powerState offState;
+    nxwrap_pwr_state offState;
 
     offState = power_get_property_off_state();
 
@@ -658,7 +658,8 @@ static void power_init(struct power_module *module __unused)
     struct sigevent se;
     unsigned int wol_en;
     bool gpios_initialised = false;
-    b_powerStatus powerStatus;
+    nxwrap_pwr_state power;
+    nxwrap_wake_status wake;
 
     if (!devname) devname = "/dev/wake0";
     gPowerFd = open(devname, O_RDONLY);
@@ -705,9 +706,8 @@ static void power_init(struct power_module *module __unused)
     // If we have powered up only from an alarm timer, then it means we have woken up from S5 and
     // we need to remain in a standby state (e.g. S0.5 or S2).  We do this by using the
     // Android framework's ability to power-up in to standby if a lid switch is set (i.e. down).
-    if (gNexusPower->getPowerStatus(&powerStatus) == NO_ERROR && powerStatus.wakeupStatus.timeout &&
-        !(powerStatus.wakeupStatus.ir || powerStatus.wakeupStatus.uhf || powerStatus.wakeupStatus.keypad ||
-          powerStatus.wakeupStatus.gpio || powerStatus.wakeupStatus.cec || powerStatus.wakeupStatus.transport)) {
+    if (gNexusPower->getPowerStatus(&power, &wake) == NO_ERROR && wake.timeout &&
+        !(wake.ir || wake.uhf || wake.keypad || wake.gpio || wake.cec || wake.transport)) {
 
         gPowerState = ePowerState_S05;
         power_set_sw_lid_state(SW_LID_STATE_DOWN);
@@ -769,7 +769,7 @@ power_init_fail:
     }
 }
 
-static status_t power_set_pmlibservice_state(b_powerState state)
+static status_t power_set_pmlibservice_state(nxwrap_pwr_state state)
 {
     status_t status;
     static bool init_S0_state = true;
@@ -779,7 +779,7 @@ static status_t power_set_pmlibservice_state(b_powerState state)
     sp<IBinder> binder = defaultServiceManager()->getService(IPmLibService::descriptor);
     sp<IPmLibService> service = interface_cast<IPmLibService>(binder);
 
-    ALOGV("%s: Setting power state to %s...", __FUNCTION__, NexusIPCClientBase::getPowerString(state));
+    ALOGV("%s: Setting power state to %s...", __FUNCTION__, nxwrap_get_power_string(state));
 
     if (service.get() == NULL) {
         ALOGE("%s: Cannot get \"PmLibService\" service!!!", __FUNCTION__);
@@ -917,7 +917,7 @@ static status_t power_set_state_s1()
     return status;
 }
 
-static status_t power_set_state_s2_s3(b_powerState toState)
+static status_t power_set_state_s2_s3(nxwrap_pwr_state toState)
 {
     status_t status = NO_ERROR;
 
@@ -946,7 +946,7 @@ static status_t power_set_state_s5()
     return NO_ERROR;
 }
 
-static status_t power_set_state(b_powerState toState)
+static status_t power_set_state(nxwrap_pwr_state toState)
 {
     volatile status_t status = NO_ERROR;
 
@@ -980,7 +980,7 @@ static status_t power_set_state(b_powerState toState)
     }
 
     if (status == NO_ERROR) {
-        ALOGI("%s: Successfully set power state %s", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
+        ALOGI("%s: Successfully set power state %s", __FUNCTION__, nxwrap_get_power_string(toState));
 
         /* Mark the system has been suspended so we know whether we need to launch any splash screen when
          * woken up by the wakeup button
@@ -991,7 +991,7 @@ static status_t power_set_state(b_powerState toState)
         gPowerState = toState;
     }
     else {
-        ALOGE("%s: Could not set power state %s!!!", __FUNCTION__, NexusIPCClientBase::getPowerString(toState));
+        ALOGE("%s: Could not set power state %s!!!", __FUNCTION__, nxwrap_get_power_string(toState));
     }
     return status;
 }
@@ -1000,8 +1000,8 @@ static status_t power_set_doze_state(int timeout)
 {
     status_t status;
     struct itimerspec ts;
-    b_powerState dozeState = power_get_property_doze_state();
-    b_powerState powerOffState = power_get_off_state();
+    nxwrap_pwr_state dozeState = power_get_property_doze_state();
+    nxwrap_pwr_state powerOffState = power_get_off_state();
 
     if (powerOffState != ePowerState_S2 &&
         powerOffState != ePowerState_S3 &&
@@ -1012,14 +1012,14 @@ static status_t power_set_doze_state(int timeout)
 
     if (timeout < 0) {
         ALOGI("%s: Dozing in power state %s indefinitely...",
-              __FUNCTION__, NexusIPCClientBase::getPowerString(dozeState));
+              __FUNCTION__, nxwrap_get_power_string(dozeState));
     }
     else if (timeout >= 0 && gDozeTimer) {
         timer_gettime(gDozeTimer, &ts);
 
         // Arm the doze timer...
         ALOGI("%s: Dozing in power state %s for at least %ds...",
-              __FUNCTION__, NexusIPCClientBase::getPowerString(dozeState), timeout);
+              __FUNCTION__, nxwrap_get_power_string(dozeState), timeout);
         ts.it_value.tv_sec = timeout;
         ts.it_value.tv_nsec = 0;
         ts.it_interval.tv_sec = 0;
@@ -1038,7 +1038,7 @@ static status_t power_set_doze_state(int timeout)
 
 static status_t power_enter_suspend_state()
 {
-    b_powerState powerOffState = power_get_off_state();
+    nxwrap_pwr_state powerOffState = power_get_off_state();
 
     return power_set_state(powerOffState);
 }
@@ -1046,7 +1046,7 @@ static status_t power_enter_suspend_state()
 static status_t power_exit_suspend_state()
 {
     status_t status = NO_ERROR;
-    b_powerState powerOffState = power_get_off_state();
+    nxwrap_pwr_state powerOffState = power_get_off_state();
 
     if (powerOffState == ePowerState_S5) {
         // Signal to the S5 shutdown thread to begin
@@ -1084,7 +1084,7 @@ static status_t power_set_interactivity_state(bool on)
 static status_t power_finish_set_no_interactive()
 {
     status_t status = NO_ERROR;
-    b_powerState dozeState = power_get_property_doze_state();
+    nxwrap_pwr_state dozeState = power_get_property_doze_state();
     int dozeTimeout = property_get_int32(PROPERTY_SYS_POWER_DOZE_TIMEOUT,
                                          DEFAULT_DOZE_TIMEOUT);
 
@@ -1274,9 +1274,9 @@ static void *power_event_monitor_thread(void *arg __unused)
                                 }
                                 else if (event == DROID_PM_EVENT_RESUMED) {
                                     if (gNexusPower.get()) {
-                                        b_powerStatus powerStatus;
-
-                                        if ((gNexusPower->getPowerStatus(&powerStatus) == NO_ERROR) && powerStatus.wakeupStatus.timeout) {
+                                        nxwrap_pwr_state state;
+                                        nxwrap_wake_status wake;
+                                        if ((gNexusPower->getPowerStatus(&state, &wake) == NO_ERROR) && wake.timeout) {
                                             ALOGV("%s: Woke up from timer event", __FUNCTION__);
                                         }
                                         ret = power_exit_suspend_state();

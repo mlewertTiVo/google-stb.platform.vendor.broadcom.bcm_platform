@@ -54,12 +54,14 @@
 #undef HWC2_INCLUDE_STRINGIFICATION
 #undef HWC2_USE_CPP11
 /* nexus integration. */
-#include "nexus_ipc_client_factory.h"
+#include "nxwrap.h"
 #include "nexus_surface_client.h"
 #include "nexus_core_utils.h"
 #include "nxclient.h"
 #include "nxclient_config.h"
 #include "bfifo.h"
+#include "INxHpdEvtSrc.h"
+#include "INxDspEvtSrc.h"
 /* sync framework/fences. */
 #include "sync/sync.h"
 #include "sw_sync.h"
@@ -131,8 +133,7 @@ struct hwc2_bcm_device_t {
    HwcBinder_wrap       *hb;
    bool                 con;
 
-   NexusIPCClientBase   *nxipc;
-   uint64_t             nxcc;
+   NxWrap               *nxipc;
 
    struct hwc2_reg_cb_t regCb[HWC2_MAX_REG_CB];
    struct hwc2_dsp_t    *vd;
@@ -245,10 +246,8 @@ static void hwc2_hdmi_collect(
    }
 }
 
-status_t Hwc2HP::onHdmiHotplugEventReceived(
-   int32_t portId,
+status_t Hwc2HP::onHpd(
    bool connected) {
-   (void) portId;
 
    if (cb) {
       cb(cb_data, connected);
@@ -256,9 +255,7 @@ status_t Hwc2HP::onHdmiHotplugEventReceived(
    return NO_ERROR;
 }
 
-status_t Hwc2DC::onDisplaySettingsChangedEventReceived(
-   int32_t portId) {
-   (void) portId;
+status_t Hwc2DC::onDsp() {
 
    if (cb) {
       cb(cb_data);
@@ -3964,15 +3961,15 @@ static void hwc2_bcm_close(
    pthread_mutex_destroy(&hwc2->mtx_pwr);
    pthread_mutex_destroy(&hwc2->mtx_g2d);
 
-   hwc2->nxipc->destroyClientContext(hwc2->nxcc);
    if (hwc2->hp) {
-      hwc2->nxipc->removeHdmiHotplugEventListener(0, hwc2->hp->get());
+      hwc2->nxipc->unregHpdEvt(hwc2->hp->get());
       delete hwc2->hp;
    }
    if (hwc2->dc) {
-      hwc2->nxipc->removeDisplaySettingsChangedEventListener(0, hwc2->dc->get());
+      hwc2->nxipc->unregDspEvt(hwc2->dc->get());
       delete hwc2->dc;
    }
+   hwc2->nxipc->leave();
    delete hwc2->nxipc;
    if (hwc2->hb) {
       delete hwc2->hb;
@@ -4951,7 +4948,6 @@ static void hwc2_bcm_open(
    NEXUS_MemoryStatus status;
    NEXUS_ClientConfiguration nxCliCfg;
    char buf[128];
-   b_refsw_client_client_configuration cliCfg;
    NEXUS_Graphics2DOpenSettings g2dOCfg;
    NEXUS_Graphics2DSettings g2dCfg;
    NEXUS_Error rc;
@@ -4997,28 +4993,21 @@ static void hwc2_bcm_open(
       hwc2->hb->get()->register_notify(&hwc2_hb_ntfy, (void *)hwc2);
    }
 
-   hwc2->nxipc = NexusIPCClientFactory::getClient("hwc2");
+   hwc2->nxipc = new NxWrap("hwc2");
    if (hwc2->nxipc == NULL) {
-      LOG_ALWAYS_FATAL("failed to instantiate nexus ipc.");
+      LOG_ALWAYS_FATAL("failed to instantiate nexus wrap.");
       return;
    }
-   memset(&cliCfg, 0, sizeof(cliCfg));
-   cliCfg.standbyMonitorCallback = hwc2_stdby_mon;
-   cliCfg.standbyMonitorContext  = (void *)hwc2;
-   hwc2->nxcc = hwc2->nxipc->createClientContext(&cliCfg);
-   if (!hwc2->nxcc) {
-      LOG_ALWAYS_FATAL("failed to instantiate nexus client context.");
-      return;
-   }
+   hwc2->nxipc->join(hwc2_stdby_mon, (void *)hwc2);
 
    hwc2_setup_ext(hwc2);
 
    if (hwc2->hp) {
-      hwc2->nxipc->addHdmiHotplugEventListener(0, hwc2->hp->get());
+      hwc2->nxipc->regHpdEvt(hwc2->hp->get());
       hwc2->con = false;
    }
    if (hwc2->dc) {
-      hwc2->nxipc->addDisplaySettingsChangedEventListener(0, hwc2->dc->get());
+      hwc2->nxipc->regDspEvt(hwc2->dc->get());
    }
 
    BKNI_CreateEvent(&hwc2->g2dchk);

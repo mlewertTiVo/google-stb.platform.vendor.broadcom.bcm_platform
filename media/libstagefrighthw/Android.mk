@@ -107,8 +107,10 @@ LOCAL_C_INCLUDES := \
         $(TOP)/frameworks/native/include/ui  \
         $(TOP)/frameworks/av/media/libstagefright \
         $(TOP)/hardware/libhardware/include/hardware \
-        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
-        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
@@ -131,7 +133,9 @@ LOCAL_SHARED_LIBRARIES :=         \
         libdl                     \
         libhwcbinder              \
         libnexus                  \
-        libnexusipcclient         \
+        libnxwrap                 \
+        libnxbinder               \
+        libnxevtsrc               \
         libnxclient               \
         libstagefright_foundation \
         libstagefright_omx        \

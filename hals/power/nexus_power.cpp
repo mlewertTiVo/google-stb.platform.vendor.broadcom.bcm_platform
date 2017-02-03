@@ -1,7 +1,7 @@
 /******************************************************************************
- *    (c)2011-2016 Broadcom Corporation
- * 
- * This program is the proprietary software of Broadcom Corporation and/or its licensors,
+ * (c) 2011-2017 Broadcom
+ *
+ * This program is the proprietary software of Broadcom and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
  * (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
@@ -9,43 +9,32 @@
  * Software, and Broadcom expressly reserves all rights in and to the Software and all
  * intellectual property rights therein.  IF YOU HAVE NO AUTHORIZED LICENSE, THEN YOU
  * HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY WAY, AND SHOULD IMMEDIATELY
- * NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.  
- *  
+ * NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.
+ *
  * Except as expressly set forth in the Authorized License,
- *  
+ *
  * 1.     This program, including its structure, sequence and organization, constitutes the valuable trade
  * secrets of Broadcom, and you shall use all reasonable efforts to protect the confidentiality thereof,
  * and to use this information only in connection with your use of Broadcom integrated circuit products.
- *  
- * 2.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS" 
- * AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR 
- * WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT TO 
- * THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED WARRANTIES 
- * OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A PARTICULAR PURPOSE, 
- * LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET ENJOYMENT, QUIET POSSESSION 
- * OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME THE ENTIRE RISK ARISING OUT OF 
+ *
+ * 2.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS"
+ * AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS OR
+ * WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH RESPECT TO
+ * THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL IMPLIED WARRANTIES
+ * OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR A PARTICULAR PURPOSE,
+ * LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET ENJOYMENT, QUIET POSSESSION
+ * OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME THE ENTIRE RISK ARISING OUT OF
  * USE OR PERFORMANCE OF THE SOFTWARE.
- * 
- * 3.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS 
- * LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT, OR 
- * EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO YOUR 
- * USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN ADVISED OF 
- * THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS OF THE AMOUNT 
- * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE 
- * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF 
+ *
+ * 3.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM OR ITS
+ * LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL, INDIRECT, OR
+ * EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY RELATING TO YOUR
+ * USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM HAS BEEN ADVISED OF
+ * THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN EXCESS OF THE AMOUNT
+ * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE
+ * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
  *
- * $brcm_Workfile: $
- * $brcm_Revision: $
- * $brcm_Date: $
- * 
- * Module Description:
- * This file contains functions to make Nexus IPC calls to the Nexus service
- * in order to set the power state and retrieve the power state.
- * 
- * Revision History:
- * 
- * $brcm_Log: $
  *****************************************************************************/
 #include "nexus_power.h"
 
@@ -55,7 +44,6 @@
 #include <inttypes.h>
 
 unsigned NexusPower::NexusGpio::mInstances = 0;
-
 
 sp<NexusPower::LinuxUInputRef> NexusPower::LinuxUInputRef::instantiate()
 {
@@ -98,21 +86,17 @@ NexusPower::LinuxUInputRef::~LinuxUInputRef()
 }
 
 NexusPower::NexusPower() : mCecDeviceType(eCecDeviceType_eInvalid),
-                           mIpcClient(NULL),
-                           mClientContext(0),
+                           mNxWrap(NULL),
                            mInterruptWakeManagers(false)
 {
     ALOGV("%s: Called", __PRETTY_FUNCTION__);
 }
 
-NexusPower::NexusPower(NexusIPCClientBase *pIpcClient, uint64_t clientContext) :
-                           mIpcClient(pIpcClient),
-                           mClientContext(clientContext),
+NexusPower::NexusPower(NxWrap *pNxWrap) :
+                           mNxWrap(pNxWrap),
                            mInterruptWakeManagers(false)
 {
-    ALOGV("%s: pIpcClient=%p, mClientContext=%" PRIu64 "", __PRETTY_FUNCTION__, (void *)pIpcClient, clientContext);
-    mCecDeviceType = mIpcClient->getCecDeviceType();
-
+    mCecDeviceType = nxcec_get_cec_device_type();
     mUInput = NexusPower::LinuxUInputRef::instantiate();
 }
 
@@ -120,13 +104,10 @@ NexusPower::~NexusPower()
 {
     ALOGV("%s: Called", __PRETTY_FUNCTION__);
 
-    if (mIpcClient != NULL) {
-        if (mClientContext) {
-            mIpcClient->destroyClientContext(mClientContext);
-            mClientContext = 0;
-        }
-        delete mIpcClient;
-        mIpcClient = NULL;
+    if (mNxWrap != NULL) {
+       mNxWrap->leave();
+       delete mNxWrap;
+       mNxWrap = NULL;
     }
 
     mUInput = NULL;
@@ -134,32 +115,22 @@ NexusPower::~NexusPower()
 
 sp<NexusPower> NexusPower::instantiate()
 {
-    NexusIPCClientBase *pIpcClient;
+    NxWrap *pNxWrap;
     sp<NexusPower> np;
 
-    pIpcClient = NexusIPCClientFactory::getClient("Android-Power");
+    pNxWrap = new NxWrap("Android-Power");
 
-    if (pIpcClient == NULL) {
+    if (pNxWrap == NULL) {
         ALOGE("%s: Could not create Nexux Client!!!", __FUNCTION__);
+        return NULL;
     }
-    else {
-        uint64_t clientContext = pIpcClient->createClientContext();
 
-        if (!clientContext) {
-            ALOGE("%s: Could not create Nexus Client Context!!!", __FUNCTION__);
-            delete pIpcClient;
-        }
-        else {
-            np = new NexusPower(pIpcClient, clientContext);
-            if (np != NULL) {
-                ALOGV("%s: Successfully instantiated NexusPower.", __FUNCTION__);
-            }
-        }
-    }
+    pNxWrap->join();
+    np = new NexusPower(pNxWrap);
     return np;
 }
 
-status_t NexusPower::setVideoOutputsState(b_powerState state)
+status_t NexusPower::setVideoOutputsState(nxwrap_pwr_state state)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
     NxClient_DisplaySettings displaySettings;
@@ -183,7 +154,7 @@ status_t NexusPower::setVideoOutputsState(b_powerState state)
     return (rc == NEXUS_SUCCESS) ? NO_ERROR : UNKNOWN_ERROR;
 }
 
-status_t NexusPower::setPowerState(b_powerState state)
+status_t NexusPower::setPowerState(nxwrap_pwr_state state)
 {
     status_t ret = NO_ERROR;
     const uint32_t cecId = 0;   // Hardcoded CEC id to 0
@@ -195,25 +166,31 @@ status_t NexusPower::setPowerState(b_powerState state)
         ret = setGpios(state);
 
         if (ret != NO_ERROR) {
-            ALOGE("%s: Could not set GPIO's for PowerState %s!!!", __FUNCTION__, NexusIPCClientBase::getPowerString(state));
+            ALOGE("%s: Could not set GPIO's for PowerState %s!!!", __FUNCTION__, nxwrap_get_power_string(state));
         }
-        else if (mIpcClient->setPowerState(state) != true) {
-            ALOGE("%s: Could not set PowerState %s!", __FUNCTION__, NexusIPCClientBase::getPowerString(state));
+        else if (!nxwrap_set_power_state(state,
+                     (nxcec_is_cec_enabled() && nxcec_is_cec_autowake_enabled()))) {
+            ALOGE("%s: Could not set PowerState %s!", __FUNCTION__, nxwrap_get_power_string(state));
             ret = INVALID_OPERATION;
         }
-        else if (mCecDeviceType == eCecDeviceType_eInvalid && NexusIPCCommon::isCecEnabled(cecId) && NexusIPCCommon::getCecTransmitViewOn() == true &&
-                                     mIpcClient->setCecPowerState(cecId, state) != true) {
-            ALOGW("%s: Could not set CEC%d PowerState %s!", __FUNCTION__, cecId, NexusIPCClientBase::getPowerString(state));
+        else if (mCecDeviceType == eCecDeviceType_eInvalid
+                 && nxcec_is_cec_enabled()
+                 && nxcec_get_cec_xmit_viewon()
+                 /* TODO && mIpcClient->setCecPowerState(cecId, state) != true */) {
+            ALOGW("%s: Could not set CEC%d PowerState %s!", __FUNCTION__, cecId, nxwrap_get_power_string(state));
         }
     }
     else {
-        if (mCecDeviceType == eCecDeviceType_eInvalid && NexusIPCCommon::isCecEnabled(cecId) && NexusIPCCommon::getCecTransmitStandby() == true &&
-                                mIpcClient->setCecPowerState(cecId, state) != true) {
-            ALOGW("%s: Could not set CEC%d PowerState %s!", __FUNCTION__, cecId, NexusIPCClientBase::getPowerString(state));
+        if (mCecDeviceType == eCecDeviceType_eInvalid
+            && nxcec_is_cec_enabled()
+            && nxcec_get_cec_xmit_stdby()
+            /* TODO && mIpcClient->setCecPowerState(cecId, state) != true */) {
+            ALOGW("%s: Could not set CEC%d PowerState %s!", __FUNCTION__, cecId, nxwrap_get_power_string(state));
         }
 
-        if (mIpcClient->setPowerState(state) != true) {
-            ALOGE("%s: Could not set PowerState %s!", __FUNCTION__, NexusIPCClientBase::getPowerString(state));
+        if (!nxwrap_set_power_state(state,
+                (nxcec_is_cec_enabled() && nxcec_is_cec_autowake_enabled()))) {
+            ALOGE("%s: Could not set PowerState %s!", __FUNCTION__, nxwrap_get_power_string(state));
             ret = INVALID_OPERATION;
         }
         else {
@@ -235,20 +212,14 @@ status_t NexusPower::setPowerState(b_powerState state)
     return ret;
 }
 
-status_t NexusPower::getPowerStatus(b_powerStatus *pPowerStatus)
+status_t NexusPower::getPowerStatus(nxwrap_pwr_state *pState, nxwrap_wake_status *pWake)
 {
     status_t ret = NO_ERROR;
-
-    if (pPowerStatus == NULL) {
-        ALOGE("%s: invalid parameter \"pPowerStatus\"!", __FUNCTION__);
-        ret = BAD_VALUE;
-    }
-    else if (!mIpcClient->getPowerStatus(pPowerStatus)) {
-        ret = UNKNOWN_ERROR;
-        ALOGE("%s: Could not get power status!", __FUNCTION__);
-    }
-    else {
-        ALOGD("%s: Power state = %s", __FUNCTION__, NexusIPCClientBase::getPowerString(pPowerStatus->pmState));
+    if (!nxwrap_get_pwr_info(pState, pWake)) {
+       ret = UNKNOWN_ERROR;
+       ALOGE("%s: Could not get power status!", __FUNCTION__);
+    } else {
+       ALOGD("%s: Power state = %s", __FUNCTION__, nxwrap_get_power_string(*pState));
     }
     return ret;
 }
@@ -631,7 +602,7 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(String8& pinName,
 }
 
 // Factory method for instantiating an output GPIO...
-sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(b_powerState state, String8& pinName, unsigned pin, unsigned pinType,
+sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(nxwrap_pwr_state state, String8& pinName, unsigned pin, unsigned pinType,
                                                              NEXUS_GpioMode pinMode, NEXUS_GpioValue *pPinOutputValues)
 {
     sp<NexusPower::NexusGpio> gpio = new NexusGpio(pinName, pin, pinType, pinMode, pPinOutputValues);
@@ -647,19 +618,19 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::instantiate(b_powerState state,
         handle = NEXUS_Gpio_Open(pinType, pin, &settings);
         if (handle != NULL) {
             ALOGV("%s: Successfully opened %s as %s output for PowerState %s", __FUNCTION__, pinName.string(),
-                   (settings.value==NEXUS_GpioValue_eLow) ? "LOW" : "HIGH", NexusIPCClientBase::getPowerString(state));
+                   (settings.value==NEXUS_GpioValue_eLow) ? "LOW" : "HIGH", nxwrap_get_power_string(state));
             gpio->setHandle(handle);
         }
         else {
             ALOGE("%s: Could not open %s as %s output for PowerState %s!!!", __FUNCTION__, pinName.string(),
-                   (settings.value==NEXUS_GpioValue_eLow) ? "LOW" : "HIGH", NexusIPCClientBase::getPowerString(state));
+                   (settings.value==NEXUS_GpioValue_eLow) ? "LOW" : "HIGH", nxwrap_get_power_string(state));
             gpio = NULL;
         }
     }
     return gpio;
 }
 
-sp<NexusPower::NexusGpio> NexusPower::NexusGpio::initialise(b_powerState state, String8& gpioName, String8& gpioValue, int pin,
+sp<NexusPower::NexusGpio> NexusPower::NexusGpio::initialise(nxwrap_pwr_state state, String8& gpioName, String8& gpioValue, int pin,
                                                             unsigned pinType, sp<LinuxUInputRef> uInput)
 {
     status_t status;
@@ -762,7 +733,7 @@ sp<NexusPower::NexusGpio> NexusPower::NexusGpio::initialise(b_powerState state, 
     return gpio;
 }
 
-status_t NexusPower::initialiseGpios(b_powerState state)
+status_t NexusPower::initialiseGpios(nxwrap_pwr_state state)
 {
     status_t status;
     String8 path;
@@ -881,14 +852,14 @@ void NexusPower::uninitialiseGpios()
     }
 }
 
-status_t NexusPower::setGpios(b_powerState state)
+status_t NexusPower::setGpios(nxwrap_pwr_state state)
 {
     status_t status = NO_ERROR;
     NEXUS_Error rc;
     sp<NexusGpio> pNexusGpio;
     bool enableKeyEvent;
 
-    ALOGV("%s: Setting GPIOs for PowerState %s...", __FUNCTION__, NexusIPCClientBase::getPowerString(state));
+    ALOGV("%s: Setting GPIOs for PowerState %s...", __FUNCTION__, nxwrap_get_power_string(state));
 
     for (unsigned gpio = 0; gpio < NexusGpio::MAX_INSTANCES; gpio++) {
         NEXUS_GpioSettings gpioSettings;
@@ -978,7 +949,7 @@ status_t NexusPower::clearGpios()
     return status;
 }
 
-status_t NexusPower::setGpiosInterruptWakeManager(b_powerState state, enum NexusGpio::GpioInterruptWakeManager wakeManager, bool enable)
+status_t NexusPower::setGpiosInterruptWakeManager(nxwrap_pwr_state state, enum NexusGpio::GpioInterruptWakeManager wakeManager, bool enable)
 {
     status_t status = NO_ERROR;
 
@@ -997,7 +968,7 @@ status_t NexusPower::setGpiosInterruptWakeManager(b_powerState state, enum Nexus
         else if (mInterruptWakeManagers.valueFor(wakeManager) != enable) {
             update = true;
         }
-        
+
         if (update) {
             ALOGV("%s: %s interrupt wake manager %d...", __FUNCTION__, enable ? "Enabling" : "Disabling", wakeManager);
             mInterruptWakeManagers.replaceValueFor(wakeManager, enable);

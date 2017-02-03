@@ -27,12 +27,9 @@ LOCAL_SHARED_LIBRARIES := libnexus \
                           libcutils \
                           libbinder \
                           libutils \
-                          libnexusipcclient \
                           libdl
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
 ifeq ($(V3D_VARIANT),)
 V3D_VARIANT := v3d
 endif

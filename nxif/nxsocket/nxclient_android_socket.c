@@ -58,7 +58,7 @@ int b_nxclient_client_connect(void)
    if (fd < 0) {
       ALOGE("%s: FAILED connecting to socket '%s'.", __FUNCTION__, NXSERVER_SOCKET_NAME);
    } else {
-      ALOGI("%s: connecting to socket '%s' via %d.", __FUNCTION__, NXSERVER_SOCKET_NAME, fd);
+      ALOGV("%s: connecting to socket '%s' via %d.", __FUNCTION__, NXSERVER_SOCKET_NAME, fd);
    }
 
    return fd;
@@ -73,6 +73,6 @@ int b_nxclient_socket_listen(void)
       ALOGE("%s: failed to get socket '%s'", __FUNCTION__, NXSERVER_SOCKET_NAME);
    }
 
-   ALOGI("%s: server socket '%s', listen on %d", __FUNCTION__, NXSERVER_SOCKET_NAME, listen_fd);
+   ALOGV("%s: server socket '%s', listen on %d", __FUNCTION__, NXSERVER_SOCKET_NAME, listen_fd);
    return listen_fd;
 }

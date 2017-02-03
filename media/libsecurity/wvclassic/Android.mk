@@ -33,7 +33,7 @@ else
 endif
 LOCAL_MODULE_TAGS := optional
 LOCAL_STATIC_LIBRARIES := liboemcrypto
-LOCAL_SHARED_LIBRARIES += libnexus libcmndrm libnexusipcclient
+LOCAL_SHARED_LIBRARIES += libnexus libcmndrm libnxwrap libnxbinder libnxevtsrc
 LOCAL_PRELINK_MODULE := false
 # LOCAL_MULTILIB := both
 LOCAL_MULTILIB := 32

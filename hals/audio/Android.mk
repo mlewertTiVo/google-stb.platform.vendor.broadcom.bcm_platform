@@ -59,8 +59,7 @@ LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/BSEAV/lib/media
 LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/BSEAV/lib/utils
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/include/media/openmax
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libstagefrighthw
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 include $(BUILD_SHARED_LIBRARY)

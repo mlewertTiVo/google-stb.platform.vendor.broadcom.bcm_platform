@@ -29,15 +29,21 @@ LOCAL_SHARED_LIBRARIES := \
     libdl \
     libbinder \
     libutils \
-    libnexusipcclient \
-    libnexusipceventlistener \
     libnexusir \
+    libnxcec \
+    libnxwrap \
+    libnxbinder \
+    libnxevtsrc \
     libstagefright_foundation \
     libnexus
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc \
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxcec \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
+LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 # fix warnings!

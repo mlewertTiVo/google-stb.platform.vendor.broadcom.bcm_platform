@@ -112,8 +112,7 @@ public:
         const OMX_STRING pName,
         const OMX_PTR pAppData,
         const OMX_CALLBACKTYPE *pCallbacks,
-        NexusIPCClientBase *pIpcClient,
-        uint64_t nexusClient,
+        NxWrap *pNxWrap,
         bool secure,
         unsigned numRoles,
         const BOMX_AudioDecoderRole *pRoles,
@@ -215,8 +214,7 @@ protected:
     BOMX_BufferTracker *m_pBufferTracker;
     unsigned m_AvailInputBuffers;
 
-    NexusIPCClientBase              *m_pIpcClient;
-    uint64_t                        m_nexusClient;
+    NxWrap                          *m_pNxWrap;
     FILE                            *m_pPesFile;
     FILE                            *m_pInputFile;
     FILE                            *m_pOutputFile;

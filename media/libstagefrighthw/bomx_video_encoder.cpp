@@ -42,6 +42,7 @@
 
 #include <fcntl.h>
 #include <cutils/log.h>
+#include <cutils/properties.h>
 
 #include "bomx_video_encoder.h"
 #include "nexus_platform.h"
@@ -121,21 +122,17 @@ extern "C" OMX_ERRORTYPE BOMX_VideoEncoder_Create(
     unsigned i;
     bool encodeSupported = false;
     NEXUS_VideoEncoderCapabilities caps;
-    NexusIPCClientBase *pIpcClient = NULL;
-    uint64_t nexusClient = 0;
+    NxWrap *pNxWrap = NULL;
     BOMX_VideoEncoder *pVideoEncoder = NULL;
 
-    pIpcClient = NexusIPCClientFactory::getClient(pName);
-    if (pIpcClient)
-    {
-        nexusClient = pIpcClient->createClientContext();
-    }
-    if (!nexusClient)
+    pNxWrap = new NxWrap(pName);
+    if (pNxWrap == NULL)
     {
         ALOGW("Unable to determine presence of encoder hardware!");
     }
     else
     {
+        pNxWrap->join();
         /* check if encoder is supported by Nexus */
         NEXUS_GetVideoEncoderCapabilities(&caps);
         for ( i = 0; i < NEXUS_MAX_VIDEO_ENCODERS; i++ )
@@ -154,8 +151,7 @@ extern "C" OMX_ERRORTYPE BOMX_VideoEncoder_Create(
         goto error;
     }
 
-    pVideoEncoder = new BOMX_VideoEncoder(pComponentTpe, pName, pAppData, pCallbacks,
-                                          pIpcClient, nexusClient);
+    pVideoEncoder = new BOMX_VideoEncoder(pComponentTpe, pName, pAppData, pCallbacks, pNxWrap);
 
     if ( NULL == pVideoEncoder )
     {
@@ -176,13 +172,10 @@ extern "C" OMX_ERRORTYPE BOMX_VideoEncoder_Create(
     }
 
 error:
-    if (pIpcClient)
+    if (pNxWrap)
     {
-        if (nexusClient)
-        {
-            pIpcClient->destroyClientContext(nexusClient);
-        }
-        delete pIpcClient;
+        pNxWrap->leave();
+        delete pNxWrap;
     }
     return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
@@ -330,11 +323,9 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     const OMX_STRING pName,
     const OMX_PTR pAppData,
     const OMX_CALLBACKTYPE *pCallbacks,
-    NexusIPCClientBase *pIpcClient,
-    uint64_t nexusClient) :
+    NxWrap *pNxWrap ) :
     BOMX_Component(pComponentType, pName, pAppData, pCallbacks, BOMX_VideoEncoder_GetRole),
-    m_pIpcClient(pIpcClient),
-    m_nexusClient(nexusClient),
+    m_pNxWrap(pNxWrap),
     m_nxClientId(NXCLIENT_INVALID_ID),
     m_hSimpleVideoDecoder(NULL),
     m_hSimpleEncoder(NULL),
@@ -542,28 +533,18 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
         return;
     }
 
-
-    if (m_pIpcClient == NULL)
+    if (m_pNxWrap == NULL)
     {
-        /* create Nexus IPC client */
-        m_pIpcClient = NexusIPCClientFactory::getClient(pName);
-        if ( NULL == m_pIpcClient )
+        m_pNxWrap = new NxWrap(pName);
+        if ( NULL == m_pNxWrap )
         {
-            ALOGE("Unable to create client factory");
+            ALOGE("Unable to create client wrap");
             this->Invalidate(OMX_ErrorUndefined);
             return;
         }
-    }
-
-    if (!m_nexusClient)
-    {
-        /* create Nexus client */
-        m_nexusClient = m_pIpcClient->createClientContext();
-        if (!m_nexusClient)
+        else
         {
-            ALOGE("Unable to create nexus client context");
-            this->Invalidate(OMX_ErrorUndefined);
-            return;
+            m_pNxWrap->join();
         }
     }
 
@@ -698,14 +679,10 @@ BOMX_VideoEncoder::~BOMX_VideoEncoder()
         }
     }
 
-    /* delete Nexus IPC client */
-    if ( m_pIpcClient )
+    if ( m_pNxWrap )
     {
-        if ( m_nexusClient )
-        {
-            m_pIpcClient->destroyClientContext(m_nexusClient);
-        }
-        delete m_pIpcClient;
+        m_pNxWrap->leave();
+        delete m_pNxWrap;
     }
 
     /* delete buffer tracker */

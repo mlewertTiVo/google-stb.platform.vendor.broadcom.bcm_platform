@@ -75,7 +75,6 @@
 #include "nxclient.h"
 #include "nxserverlib.h"
 #include "nxserverlib_impl.h"
-#include "nexusnxservice.h"
 #include "namevalue.h"
 #include "nx_ashmem.h"
 
@@ -85,6 +84,8 @@
 #include "nexus_watchdog.h"
 
 #include "PmLibService.h"
+#include "NxServer.h"
+#include "nxwrap_common.h"
 
 #define DHD_SECDMA_PROP                "ro.dhd.secdma"
 #define DHD_SECDMA_PARAMS_PATH         "/data/nexus/secdma"
@@ -229,6 +230,7 @@ typedef struct {
     } clients[APP_MAX_CLIENTS];
     WDOG_T wdog;
     CATCHER_T sigterm;
+    NxServer *nxb;
 } NX_SERVER_T;
 
 static NX_SERVER_T g_app;
@@ -285,7 +287,7 @@ static void *binder_task(void *argv)
 
     do {
        android::ProcessState::self()->startThreadPool();
-       NexusNxService::instantiate();
+       nx_server->nxb = NxServer::instantiate();
        PmLibService::instantiate();
        android::IPCThreadState::self()->joinThreadPool();
 
@@ -1319,6 +1321,23 @@ int main(void)
     }
     pthread_attr_destroy(&attr);
 
+    ALOGI("connecting ourselves.");
+    NxClient_GetDefaultJoinSettings(&joinSettings);
+    rc = NxClient_Join(&joinSettings);
+    if (rc != NEXUS_SUCCESS) {
+       ALOGE("failed to join the server!");
+    } else {
+       ALOGI("starting standby-monitor.");
+       g_app.standby_monitor.running = 1;
+       pthread_attr_init(&attr);
+       if (pthread_create(&g_app.standby_monitor.runner, &attr,
+                          standby_monitor_task, (void *)&g_app) != 0) {
+          ALOGE("failed standby monitor start, ignoring...");
+          g_app.standby_monitor.running = 0;
+       }
+       pthread_attr_destroy(&attr);
+    }
+
     ALOGI("starting binder-ipc.");
     g_app.binder.running = 1;
     pthread_attr_init(&attr);
@@ -1368,29 +1387,10 @@ int main(void)
        }
     }
 
-    ALOGI("connecting ourselves.");
-    NxClient_GetDefaultJoinSettings(&joinSettings);
-    rc = NxClient_Join(&joinSettings);
-    if (rc != NEXUS_SUCCESS) {
-       ALOGE("failed to join the server - some features will not work!");
-    } else {
-       ALOGI("starting standby-monitor.");
-       g_app.standby_monitor.running = 1;
-       pthread_attr_init(&attr);
-       if (pthread_create(&g_app.standby_monitor.runner, &attr,
-                          standby_monitor_task, (void *)&g_app) != 0) {
-          ALOGE("failed standby monitor start, ignoring...");
-          g_app.standby_monitor.running = 0;
-       }
-       pthread_attr_destroy(&attr);
-
-       // Re-enable A/V outputs if we did not power-up solely due to an
-       // alarm timer event and we are not in headless mode...
-       if (!property_get_bool(NX_NO_OUTPUT_VIDEO, 0) && !is_wakeup_only_from_alarm_timer()) {
-           rc = set_video_outputs_state(true);
-           if (rc) {
-               ALOGE("could not enable video outputs!");
-           }
+    if (!property_get_bool(NX_NO_OUTPUT_VIDEO, 0) && !is_wakeup_only_from_alarm_timer()) {
+       rc = set_video_outputs_state(true);
+       if (rc) {
+          ALOGE("could not enable video outputs!");
        }
     }
 
@@ -1434,6 +1434,7 @@ int main(void)
     }
     BKNI_DestroyEvent(g_app.proactive_runner.runner_run);
 
+    g_app.nxb->terminate();
     if (g_app.binder.running) {
        g_app.binder.running = 0;
        pthread_join(g_app.binder.runner, NULL);

@@ -55,14 +55,15 @@ void __attribute__ ((destructor)) gralloc_explicit_unload(void);
 #if defined(V3D_VARIANT_v3d)
 static void (* dyn_BEGLint_BufferGetRequirements)(BEGL_PixmapInfo *, BEGL_BufferSettings *);
 #endif
-static void * (* dyn_EGL_nexus_join)(char *client_process_name);
-static void (* dyn_EGL_nexus_unjoin)(void *nexus_client);
+static void * (* dyn_nxwrap_create_client)(void **wrap);
+static void (* dyn_nxwrap_destroy_client)(void *wrap);
 #define LOAD_FN(lib, name) \
 if (!(dyn_ ## name = (typeof(dyn_ ## name)) dlsym(lib, #name))) \
    ALOGV("failed resolving '%s'", #name); \
 else \
    ALOGV("resolved '%s' to %p", #name, dyn_ ## name);
 static void *gl_dyn_lib;
+static void *nxwrap = NULL;
 static void *nexus_client = NULL;
 static int gralloc_mgmt_mode = -1;
 static int gralloc_default_align = 0;
@@ -110,18 +111,18 @@ static void gralloc_load_lib(void)
 #if defined(V3D_VARIANT_v3d)
    LOAD_FN(gl_dyn_lib, BEGLint_BufferGetRequirements);
 #endif
-   LOAD_FN(gl_dyn_lib, EGL_nexus_join);
-   LOAD_FN(gl_dyn_lib, EGL_nexus_unjoin);
+   LOAD_FN(gl_dyn_lib, nxwrap_create_client);
+   LOAD_FN(gl_dyn_lib, nxwrap_destroy_client);
 
-   if (dyn_EGL_nexus_join) {
-      nexus_client = dyn_EGL_nexus_join((char *)NEXUS_JOIN_CLIENT_PROCESS);
+   if (dyn_nxwrap_create_client) {
+      nexus_client = dyn_nxwrap_create_client(&nxwrap);
       if (nexus_client == NULL) {
          ALOGE("%s: failed joining nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
       } else {
          ALOGV("%s: joined nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
       }
    } else {
-      ALOGE("%s: dyn_EGL_nexus_join unavailable, something will break!", __FUNCTION__);
+      ALOGE("%s: dyn_xxx unavailable, something will break!", __FUNCTION__);
    }
 
    if (property_get(NX_MMA_MGMT_MODE, value, NX_MMA_MGMT_MODE_DEF)) {
@@ -192,9 +193,10 @@ void gralloc_explicit_load(void)
 
 void gralloc_explicit_unload(void)
 {
-   if (nexus_client && dyn_EGL_nexus_unjoin) {
-      dyn_EGL_nexus_unjoin(nexus_client);
+   if (nxwrap && dyn_nxwrap_destroy_client) {
+      dyn_nxwrap_destroy_client(nxwrap);
       nexus_client = NULL;
+      nxwrap = NULL;
    }
 
    dlclose(gl_dyn_lib);
