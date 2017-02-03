@@ -43,7 +43,6 @@ endif
 include ${BCM_APPS_PATH}/BcmSpdifSetting/Android.mk
 include ${BCM_APPS_PATH}/BcmSplash/Android.mk
 ifneq ($(TARGET_BUILD_PDK),true)
-#include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 endif
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
@@ -54,7 +53,6 @@ ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bsysperf/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/calcfb/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/cec/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/clipping/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/fbtest/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/joinstress/Android.mk
