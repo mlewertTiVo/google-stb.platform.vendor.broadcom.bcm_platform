@@ -110,6 +110,3 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxcec/Android.mk
-
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice/Android.mk
