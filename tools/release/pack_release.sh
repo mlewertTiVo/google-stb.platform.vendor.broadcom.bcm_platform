@@ -36,7 +36,6 @@ DFT_XML="$TOP_DIR/.repo/manifests/default.xml"
 BCG_XML="$TOP_DIR/.repo/manifests/bcg.xml"
 REFSW_DIR="$TMP_DIR/refsw_dir.txt"
 BOLT_DIR="$TMP_DIR/bolt_dir.txt"
-BOLT_VER="$TMP_DIR/bolt_version.txt"
 REFSW_TARBALL="$ADDON_DIR/refsw_rel_src.tgz"
 AOSP_LIST="$TMP_DIR/aosp_patches.txt"
 REFSW_PATCH="$TMP_DIR/refsw_patch.txt"
@@ -160,10 +159,12 @@ extract_patches_from_aosp()
 create_patches_for_all_aosp_overrides()
 {
   extract_remove_project_name_from_xml
-  while read line; do
-    echo "Creating patches for $line..."
-    extract_patches_from_aosp $line
-  done < $AOSP_LIST
+  if [ -f $AOSP_LIST ]; then
+    while read line; do
+      echo "Creating patches for $line..."
+      extract_patches_from_aosp $line
+    done < $AOSP_LIST
+  fi
 }
 
 if [ -d $TMP_DIR ]; then
@@ -235,12 +236,18 @@ if [ -f $BCG_XML ]; then
   # Broadcom specifics
   extract_path_from_xml groups bcm >> $WHITE_LIST
 
-  # bolt, save its version for unpack
+  # Find the path to bolt, package it up, and filter out the unreleased platforms.
+  # For convenience, rename the generated bolt package to a generic name (bolt-customer.tgz).
+  # Only the filtered source tarball is kept.
   extract_path_from_xml groups bolt >> $BOLT_DIR
-  cat $BOLT_DIR >> $WHITE_LIST
-  cd $(cat $BOLT_DIR)
-  echo -n "$(git describe --dirty || git rev-parse --short HEAD)" >> $TOP_DIR/$BOLT_VER
-  cd $TOP_DIR
+  (export PATH=${TOP_DIR}/prebuilts/gcc/linux-x86/arm/stb/stbgcc-4.8-1.5/bin:${PATH} && perl ./$(cat $BOLT_DIR)/scripts/release.pl /tmp $TOP_DIR/$TMP_DIR)
+  BOLT_NAME=$(cat $TMP_DIR/.bolt-package-name)
+  ./$(cat $BOLT_DIR)/scripts/fstrip.sh $TMP_DIR/${BOLT_NAME}.tgz $(cat $SCRIPT_DIR/bolt_exclude_family.txt)
+  mv $TMP_DIR/${BOLT_NAME}-customer.tgz $TMP_DIR/bolt-customer.tgz
+  echo $TMP_DIR/$BOLT_NAME >> $BLACK_LIST
+  echo $TMP_DIR/${BOLT_NAME}.tgz >> $BLACK_LIST
+  echo $TMP_DIR/${BOLT_NAME}-binary*.tgz >> $BLACK_LIST
+  echo $TMP_DIR/.bolt-package-name >> $BLACK_LIST
 
   # kernel
   extract_path_from_xml groups kernel >> $WHITE_LIST
