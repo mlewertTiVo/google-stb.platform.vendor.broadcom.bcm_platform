@@ -40,7 +40,7 @@ TMP_DIR="tmp_bcmrel"
 REFSW_TARBALL="$ADDON_DIR/refsw_rel_src.tgz"
 REFSW_DIR_FILE="$TMP_DIR/refsw_dir.txt"
 AOSP_LIST="$TMP_DIR/aosp_patches.txt"
-BOLT_VER="$TMP_DIR/bolt_version.txt"
+BOLT_TARBALL="$TMP_DIR/bolt-customer.tgz"
 BOLT_DIR="$TMP_DIR/bolt_dir.txt"
 REFSW_DIR="vendor/broadcom/refsw"
 REFSW_PATCH="$TMP_DIR/refsw_patch.txt"
@@ -100,8 +100,9 @@ if [ -f $DST_DIR/$PR_PATCH_USERDBG ]; then
   tar -zxvf $DST_DIR/$PR_PATCH_USERDBG 
 fi
 
-# Copy version file
-cp $BOLT_VER $(cat $BOLT_DIR)/version
+# Unpack bolt and move it to the destination
+tar -C $TMP_DIR -zxvf $DST_DIR/$BOLT_TARBALL
+mv $TMP_DIR/bolt-v* $(cat $BOLT_DIR)
 
 echo "Release tarball unpacked to $DST_DIR"
 
