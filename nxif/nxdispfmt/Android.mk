@@ -3,6 +3,7 @@ include $(CLEAR_VARS)
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 LOCAL_SHARED_LIBRARIES += libcutils
+LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient
 

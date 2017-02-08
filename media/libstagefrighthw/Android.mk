@@ -140,7 +140,8 @@ LOCAL_SHARED_LIBRARIES :=         \
         libstagefright_foundation \
         libstagefright_omx        \
         libui                     \
-        libutils
+        libutils                  \
+        liblog
 
 # encoder has dependencies on nexus
 ifneq ($(HW_ENCODER_SUPPORT),n)

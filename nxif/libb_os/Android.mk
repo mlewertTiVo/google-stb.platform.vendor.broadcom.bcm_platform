@@ -60,7 +60,8 @@ LOCAL_CFLAGS += -Werror
 
 LOCAL_SHARED_LIBRARIES :=         \
         libcutils                 \
-        libutils
+        libutils                  \
+        liblog
 
 LOCAL_MODULE := libb_os
 include $(BUILD_SHARED_LIBRARY)

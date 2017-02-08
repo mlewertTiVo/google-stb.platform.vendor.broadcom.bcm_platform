@@ -29,15 +29,14 @@ endif
 LOCAL_STRIP_MODULE := false
 
 LOCAL_SHARED_LIBRARIES := \
+    libmedia_helper \
+    liblog \
     libutils \
     libcutils \
     libmedia \
     libnexus \
     libnxclient \
     libbomx_util
-
-LOCAL_STATIC_LIBRARIES := \
-    libmedia_helper
 
 LOCAL_SRC_FILES += \
 	brcm_audio.cpp \
@@ -72,6 +71,8 @@ LOCAL_SRC_FILES := \
     BrcmAudioPolicyManager.cpp
 
 LOCAL_SHARED_LIBRARIES := \
+    libmedia_helper \
+    liblog \
     libcutils \
     liblog \
     libutils \
@@ -111,6 +112,8 @@ LOCAL_C_INCLUDES := \
     $(call include-path-for, audio-utils)
 
 LOCAL_SHARED_LIBRARIES := \
+    libmedia_helper \
+    liblog \
     libcutils \
     liblog \
     libutils \
@@ -120,8 +123,6 @@ LOCAL_SHARED_LIBRARIES := \
 
 # fix warnings!
 LOCAL_CFLAGS += -Werror
-
-LOCAL_STATIC_LIBRARIES += libmedia_helper
 
 LOCAL_MODULE := audio.atvr.default
 LOCAL_MODULE_RELATIVE_PATH := hw
