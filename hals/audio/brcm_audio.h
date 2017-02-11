@@ -195,6 +195,7 @@ struct brcm_stream_out {
     struct audio_config config;
     uint32_t frameSize;
     uint64_t framesPlayed;
+    uint64_t framesPlayedTotal;
     size_t buffer_size;
     bool started;
     bool suspended;
@@ -245,6 +246,7 @@ struct brcm_stream_out {
                     bool first_write;
                     pthread_t debounce_thread;
                     bool pcm_format;
+                    size_t lastCount;
                     FILE *pes_debug;
                 } tunnel;
             };
