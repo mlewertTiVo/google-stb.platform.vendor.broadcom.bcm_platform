@@ -56,8 +56,6 @@ using namespace android;
 #define BRCM_AUDIO_DIRECT_DECODER_FIFO_SIZE     (16384)
 #define BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY    (128)
 
-#define NEXUS_PCM_FRAMES_PER_EAC3_FRAME 1536
-
 /*
  * Runtime Properties
  */

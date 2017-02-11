@@ -117,6 +117,8 @@ extern "C" {
 /* Special parameter for enabling EAC3 passthrough with tunnel video decoder */
 #define AUDIO_PARAMETER_HW_AV_SYNC_EAC3 "HwAvSyncEAC3Supported"
 
+#define NEXUS_PCM_FRAMES_PER_EAC3_FRAME (1536)
+
 typedef enum {
     BRCM_DEVICE_OUT_NEXUS = 0,
     BRCM_DEVICE_OUT_NEXUS_DIRECT,
@@ -203,6 +205,7 @@ struct brcm_stream_out {
     struct audio_config config;
     uint32_t frameSize;
     uint64_t framesPlayed;
+    uint64_t framesPlayedTotal;
     size_t buffer_size;
     bool started;
     bool suspended;
@@ -252,6 +255,7 @@ struct brcm_stream_out {
                     bool debounce_stopping;
                     pthread_t debounce_thread;
                     bool pcm_format;
+                    size_t lastCount;
                     FILE *pes_debug;
                 } tunnel;
             };

@@ -121,7 +121,30 @@ static int nexus_tunnel_bout_get_render_position(struct brcm_stream_out *bout, u
         ALOGE("%s: Get render position failed, ret = %d", __FUNCTION__, ret);
         return -ENOSYS;
     }
-    *dsp_frames = status.numBytesDecoded/bout->frameSize;
+
+    if (bout->nexus.tunnel.pcm_format) {
+        // Non-compressed PCM. Use the number of bytes directly.
+        *dsp_frames = status.numBytesDecoded/bout->frameSize;
+    }
+    else {
+        bout->framesPlayed += status.framesDecoded - bout->nexus.tunnel.lastCount;
+        bout->nexus.tunnel.lastCount = status.framesDecoded;
+        switch (bout->config.format) {
+            case AUDIO_FORMAT_AC3:
+            case AUDIO_FORMAT_E_AC3:
+            {
+                *dsp_frames = (uint32_t)(bout->framesPlayed * NEXUS_PCM_FRAMES_PER_EAC3_FRAME);
+                break;
+            }
+            case AUDIO_FORMAT_DTS:
+            case AUDIO_FORMAT_DTS_HD:
+            default:
+            {
+                *dsp_frames = (uint32_t)bout->framesPlayed;
+                break;
+            }
+        }
+    }
 
     return 0;
 }
@@ -131,7 +154,7 @@ static int nexus_tunnel_bout_get_presentation_position(struct brcm_stream_out *b
     NEXUS_Error ret;
 
     if (bout->frameSize == 0) {
-        *frames = (uint64_t)(bout->framesPlayed);
+        *frames = (uint64_t)(bout->framesPlayedTotal);
         return 0;
     }
 
@@ -142,7 +165,30 @@ static int nexus_tunnel_bout_get_presentation_position(struct brcm_stream_out *b
         ALOGE("%s: Get presentation position failed, ret = %d", __FUNCTION__, ret);
         return -ENOSYS;
     }
-    *frames = (uint64_t)(bout->framesPlayed + status.numBytesDecoded/bout->frameSize);
+
+    if (bout->nexus.tunnel.pcm_format) {
+        // Non-compressed PCM. Use the number of bytes directly.
+        *frames = (uint64_t)(bout->framesPlayedTotal + status.numBytesDecoded/bout->frameSize);
+    }
+    else {
+        bout->framesPlayed += status.framesDecoded - bout->nexus.tunnel.lastCount;
+        bout->nexus.tunnel.lastCount = status.framesDecoded;
+        switch (bout->config.format) {
+            case AUDIO_FORMAT_AC3:
+            case AUDIO_FORMAT_E_AC3:
+            {
+                *frames = (uint64_t)((bout->framesPlayedTotal + bout->framesPlayed) * NEXUS_PCM_FRAMES_PER_EAC3_FRAME);
+                break;
+            }
+            case AUDIO_FORMAT_DTS:
+            case AUDIO_FORMAT_DTS_HD:
+            default:
+            {
+                *frames = (uint64_t)(bout->framesPlayedTotal + bout->framesPlayed);
+                break;
+            }
+        }
+    }
 
     return 0;
 }
@@ -190,6 +236,9 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
     nexus_tunnel_bout_debounce_reset(bout);
     bout->nexus.tunnel.last_write_time = 0;
 
+    bout->nexus.tunnel.lastCount = 0;
+    bout->framesPlayed = 0;
+
     return 0;
 }
 
@@ -220,7 +269,14 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
                 ALOGE("%s: Update frame played failed, ret=%d", __FUNCTION__, ret);
             }
             else {
-                bout->framesPlayed += status.numBytesDecoded/bout->frameSize;
+                if (bout->nexus.tunnel.pcm_format) {
+                    bout->framesPlayedTotal += status.numBytesDecoded/bout->frameSize;
+                }
+                else {
+                    bout->framesPlayed += status.framesDecoded - bout->nexus.tunnel.lastCount;
+                    bout->nexus.tunnel.lastCount = status.framesDecoded;
+                    bout->framesPlayedTotal += bout->framesPlayed;
+                }
             }
         }
         NEXUS_SimpleAudioDecoder_Stop(audio_decoder);
@@ -229,7 +285,11 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
     if (playpump) {
         NEXUS_Playpump_Stop(playpump);
     }
-    ALOGV("%s: setting framesPlayed to %u", __FUNCTION__, bout->framesPlayed);
+
+    bout->nexus.tunnel.lastCount = 0;
+    bout->framesPlayed = 0;
+
+    ALOGV("%s: setting framesPlayedTotal to %u", __FUNCTION__, bout->framesPlayedTotal);
 
     return 0;
 }
@@ -402,6 +462,10 @@ static int nexus_tunnel_bout_flush(struct brcm_stream_out *bout)
     }
 
     NEXUS_SimpleAudioDecoder_Flush(audio_decoder);
+
+    bout->framesPlayed = 0;
+    bout->framesPlayedTotal = 0;
+    bout->nexus.tunnel.lastCount = 0;
 
     return 0;
 }
@@ -752,7 +816,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
         config->format = NEXUS_OUT_DEFAULT_FORMAT;
     }
 
-    bout->framesPlayed = 0;
+    bout->framesPlayedTotal = 0;
 
     /* Frame size should be single byte long for compressed audio formats */
     size_t bytes_per_sample = audio_bytes_per_sample(config->format);
