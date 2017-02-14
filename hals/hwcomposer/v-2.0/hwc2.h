@@ -268,6 +268,7 @@ struct hwc2_ext_t {
    bool                                bfb;
    struct hwc2_lyr_tl_t                rtl[HWC2_MAX_TL];
    struct hwc2_lyr_vid_t               vid[HWC2_VID_WIN];
+   bool                                rhpd;
 };
 
 /* display unit. */
