@@ -2214,9 +2214,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
                     return BOMX_ERR_TRACE(err);
                 }
 
-                if (GetNexusCodec() == NEXUS_VideoCodec_eH265)
+                NEXUS_VideoCodec currentCodec = GetNexusCodec();
+                if ((currentCodec == NEXUS_VideoCodec_eH265) || (currentCodec == NEXUS_VideoCodec_eVp9))
                 {
-                    // Use a larger input buffer for hevc
+                    // Increase input buffer size for hevc/vp9 decoding to handle 4K streams
                     OMX_PARAM_PORTDEFINITIONTYPE portDef;
 
                     m_pVideoPorts[0]->GetDefinition(&portDef);
