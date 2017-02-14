@@ -858,6 +858,9 @@ static int32_t hwc2_regCb(
             hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
          }
          if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
+            if (!hwc2->ext->u.ext.rhpd) {
+               hstatus.connected = true;
+            }
             ALOGV("[ext]: report hotplug %s\n", hstatus.connected?"CONNECTED":"DISCONNECTED");
             HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
             f_hp(hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].data,
@@ -4511,6 +4514,7 @@ static void hwc2_setup_ext(
    size_t num = HWC2_NX_DSP_OBJ;
    NEXUS_HdmiOutputHandle hdmi;
    NEXUS_HdmiOutputStatus hstatus;
+   NxClient_DisplaySettings settings;
 
    ext = (struct hwc2_dsp_t *)malloc(sizeof(*ext));
    if (ext == NULL) {
@@ -4580,21 +4584,24 @@ static void hwc2_setup_ext(
       hwc2->ext->u.ext.hdsp = (NEXUS_DisplayHandle)objects[0].object;
    }
 
+   /* always setup the default configuration to run hwc properly regardless
+    * of the connected display.
+    */
+   enum hwc2_cbs_e wcb = hwc2_want_comp_bypass(&settings);
+   hwc2_ext_fbs(hwc2, wcb);
    hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
    NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
    if (hstatus.connected) {
-      NxClient_DisplaySettings settings;
-      enum hwc2_cbs_e wcb = hwc2_want_comp_bypass(&settings);
-      hwc2_ext_fbs(hwc2, wcb);
       hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
-      if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
-         ALOGV("[ext]: initial hotplug CONNECTED\n");
-         HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
-         f_hp(hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].data,
-              (hwc2_display_t)(intptr_t)hwc2->ext,
-              (int)HWC2_CONNECTION_CONNECTED);
-      }
    }
+   if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
+      ALOGV("[ext]: initial hotplug CONNECTED\n");
+      HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
+      f_hp(hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].data,
+           (hwc2_display_t)(intptr_t)hwc2->ext,
+           (int)HWC2_CONNECTION_CONNECTED);
+   }
+   hwc2->ext->u.ext.rhpd = false;
 
    for (num = 0 ; num < HWC2_MAX_TL ; num++) {
       hwc2->ext->u.ext.rtl[num].tl = sw_sync_timeline_create();
@@ -4662,7 +4669,8 @@ static void hwc2_hp_ntfy(
          hwc2->ext->u.ext.cbs = false;
       }
 
-      if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
+      if (hwc2->ext->u.ext.rhpd &&
+          hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
          ALOGV("[ext]: notify hotplug CONNECTED\n");
          HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
          f_hp(hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].data,
@@ -4679,7 +4687,8 @@ static void hwc2_hp_ntfy(
       hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
       hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
    } else /* disconnected */ {
-      if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
+      if (hwc2->ext->u.ext.rhpd &&
+          hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
          ALOGV("[ext]: notify hotplug DISCONNECTED\n");
          HWC2_PFN_HOTPLUG f_hp = (HWC2_PFN_HOTPLUG) hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func;
          f_hp(hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].data,
