@@ -2319,7 +2319,7 @@ static int32_t hwc2_lyrCol(
       goto out;
    }
 
-   if (lyr->cDev != HWC2_COMPOSITION_SOLID_COLOR) {
+   if (lyr->cCli != HWC2_COMPOSITION_SOLID_COLOR) {
       goto out;
    }
 
@@ -4323,7 +4323,7 @@ static void hwc2_ext_cmp_frame(
       case HWC2_COMPOSITION_SOLID_COLOR:
          {
             uint32_t color = (lyr->sc.a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b);
-            if (color != HWC2_TRS || color != HWC2_OPQ) {
+            if (color != HWC2_TRS && color != HWC2_OPQ) {
                hwc2_fb_seed(hwc2, d, color);
                hwc2_chkpt(hwc2);
                /* [iii]. count of composed layers. */
