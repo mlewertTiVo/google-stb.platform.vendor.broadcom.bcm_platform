@@ -16,7 +16,6 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
-LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/nxbinder
@@ -34,4 +33,8 @@ LOCAL_SHARED_LIBRARIES += libnxclient libnxwrap libbinder
 LOCAL_SRC_FILES := lights.cpp
 LOCAL_MODULE := lights.$(TARGET_BOARD_PLATFORM)
 LOCAL_MODULE_TAGS := optional
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+LOCAL_MODULE_RELATIVE_PATH := hw
+
 include $(BUILD_SHARED_LIBRARY)

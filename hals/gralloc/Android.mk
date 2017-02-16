@@ -16,11 +16,9 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_PRELINK_MODULE := false
-ifeq ($(TARGET_2ND_ARCH),arm)
-  LOCAL_MODULE_RELATIVE_PATH := hw
-else
-  LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
-endif
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+LOCAL_MODULE_RELATIVE_PATH := hw
 
 LOCAL_SHARED_LIBRARIES := libnexus \
                           liblog \
@@ -42,12 +40,12 @@ LOCAL_CFLAGS += -DV3D_VARIANT_$(V3D_VARIANT)
 LOCAL_CFLAGS += -Werror
 ifeq ($(LOCAL_ARM_AARCH64),y)
 ifeq ($(LOCAL_ARM_AARCH64_NOT_ABI_COMPATIBLE),y)
-LOCAL_CFLAGS += -DV3D_DLOPEN_PATH=\"/system/lib/egl/\"
+LOCAL_CFLAGS += -DV3D_DLOPEN_PATH=\"/vendor/lib/egl/\"
 else
-LOCAL_CFLAGS += -DV3D_DLOPEN_PATH=\"/system/lib64/egl/\"
+LOCAL_CFLAGS += -DV3D_DLOPEN_PATH=\"/vendor/lib64/egl/\"
 endif
 else
-LOCAL_CFLAGS += -DV3D_DLOPEN_PATH=\"/system/lib/egl/\"
+LOCAL_CFLAGS += -DV3D_DLOPEN_PATH=\"/vendor/lib/egl/\"
 endif
 
 LOCAL_SRC_FILES := \

@@ -1,4 +1,4 @@
-# Copyright (C) 2008 The Android Open Source Project
+# Copyright (C) 2008-2017 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,6 +53,9 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/c
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libhwcbinder
 
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+
 include $(BUILD_SHARED_LIBRARY)
 
 # build the hwcbinder service
@@ -82,6 +85,9 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := hwcbinder
 
 LOCAL_INIT_RC := common/hwcbinder.rc
+
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := EXECUTABLES
 
 include $(BUILD_EXECUTABLE)
 
@@ -116,6 +122,9 @@ LOCAL_CFLAGS += -Werror
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := libhwcutils
 
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+
 include $(BUILD_SHARED_LIBRARY)
 
 # build the hwcomposer for the device.
@@ -127,11 +136,10 @@ ifeq ($(HWC_DEBUG_SYMBOLS),true)
 LOCAL_STRIP_MODULE := false
 endif
 LOCAL_PRELINK_MODULE := false
-ifeq ($(TARGET_2ND_ARCH),arm)
-  LOCAL_MODULE_RELATIVE_PATH := hw
-else
-  LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
-endif
+
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+LOCAL_MODULE_RELATIVE_PATH := hw
 
 LOCAL_SHARED_LIBRARIES += libbinder
 LOCAL_SHARED_LIBRARIES += libcutils

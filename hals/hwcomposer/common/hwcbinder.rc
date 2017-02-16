@@ -1,4 +1,4 @@
-service hwcbinder /system/bin/hwcbinder
+service hwcbinder /vendor/bin/hwcbinder
    class pre_core
    user root
    group system media

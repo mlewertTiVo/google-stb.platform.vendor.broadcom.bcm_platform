@@ -27,9 +27,6 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-media.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/hfrvideo/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/netcoal/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice/Android.mk
-ifeq ($(ANDROID_SUPPORTS_DTVKIT),y)
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/dtvkit/Android.mk
-endif
 
 # apk's released.
 BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/apks

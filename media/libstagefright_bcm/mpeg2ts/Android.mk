@@ -19,6 +19,9 @@ LOCAL_CLANG := true
 
 LOCAL_MODULE:= libstagefright_mpeg2ts_bcm
 
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+
 ifeq ($(TARGET_ARCH),arm)
     LOCAL_CFLAGS += -Wno-psabi
 endif

@@ -65,5 +65,8 @@ LOCAL_SHARED_LIBRARIES := liblog libssl libcrypto libnexus
 LOCAL_MODULE := libbcrypt
 LOCAL_MODULE_TAGS := optional
 
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+
 include $(BUILD_SHARED_LIBRARY)
 

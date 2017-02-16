@@ -17,7 +17,7 @@ on post-fs-data
     mkdir /data/misc/android 0770 wifi wifi
 
 on property:dyn.nx.state=loaded
-    insmod /system/vendor/broadcom/nic/driver/wl.ko
+    insmod /vendor/lib/modules/wl.ko
     setprop wifi.interface wlan0
     setprop wlan.driver.status "ok"
 

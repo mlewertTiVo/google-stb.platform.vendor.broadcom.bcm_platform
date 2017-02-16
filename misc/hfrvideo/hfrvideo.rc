@@ -1,4 +1,4 @@
-service hfrvideo /system/bin/hfrvideo
+service hfrvideo /vendor/bin/hfrvideo
    class late_start
    oneshot
    group root readproc

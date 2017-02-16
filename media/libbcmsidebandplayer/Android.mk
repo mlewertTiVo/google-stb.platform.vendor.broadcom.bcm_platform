@@ -57,6 +57,9 @@ LOCAL_SRC_FILES := \
     $(PATH_TO_NEXUS)/utils/namevalue.c \
     $(PATH_TO_BSEAV)/lib/glob/glob.c
 
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+
 LOCAL_MODULE := libbcmsidebandplayer
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)

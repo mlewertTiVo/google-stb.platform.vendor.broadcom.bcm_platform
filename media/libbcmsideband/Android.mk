@@ -21,4 +21,7 @@ LOCAL_MODULE:= libbcmsideband
 LOCAL_SRC_FILES:= bcmsideband.cpp
 LOCAL_SHARED_LIBRARIES := libutils libnxwrap libcutils libhwcbinder libbinder liblog
 
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+
 include $(BUILD_SHARED_LIBRARY)

@@ -38,6 +38,7 @@ else
 LOCAL_SRC_FILES_arm := lib/arm/liboemcrypto.a
 endif
 endif
+LOCAL_PROPRIETARY_MODULE := true
 include $(BUILD_PREBUILT)
 endif
 
@@ -61,6 +62,7 @@ ifneq (,$(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/$(LOCAL_MO
 # use prebuilt library if one exists
 LOCAL_MODULE_SUFFIX := .so
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+LOCAL_PROPRIETARY_MODULE := true
 ifeq ($(TARGET_2ND_ARCH),arm)
 LOCAL_MULTILIB := 32
 # LOCAL_MULTILIB := both

@@ -35,5 +35,8 @@ endif
 
 LOCAL_LDFLAGS := -Wl,--no-fatal-warnings
 
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+
 include $(BUILD_SHARED_LIBRARY)
 

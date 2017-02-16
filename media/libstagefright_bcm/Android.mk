@@ -63,6 +63,9 @@ LOCAL_SHARED_LIBRARIES += \
 
 LOCAL_MODULE := libstagefright_bcm
 
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+
 include $(BUILD_SHARED_LIBRARY)
 
 include $(call all-makefiles-under,$(LOCAL_PATH))

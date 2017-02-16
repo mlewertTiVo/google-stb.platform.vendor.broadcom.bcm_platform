@@ -20,11 +20,11 @@ LOCAL_MODULE := libpmlibservice
 
 LOCAL_PRELINK_MODULE := false
 
-LOCAL_SHARED_LIBRARIES := liblog libcutils libdl libbinder libutils 
+LOCAL_SHARED_LIBRARIES := liblog libcutils libdl libbinder libutils
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/glob \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/pmlib/$(PMLIB_DIR)
-                    
+
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(PMLIB_CFLAGS)
 
@@ -49,4 +49,7 @@ LOCAL_SRC_FILES := bcm_platform/misc/pmlibservice/IPmLibService.cpp \
                    refsw/BSEAV/lib/pmlib/$(PMLIB_DIR)/pmlib.c
 
 LOCAL_MODULE_TAGS := optional
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+
 include $(BUILD_SHARED_LIBRARY)

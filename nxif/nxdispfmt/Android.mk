@@ -25,5 +25,8 @@ LOCAL_INIT_RC := bcm_platform/nxif/nxdispfmt/nxdispfmt.rc
 LOCAL_MODULE := nxdispfmt
 
 LOCAL_MODULE_TAGS := optional
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := EXECUTABLES
+
 include $(BUILD_EXECUTABLE)
 
