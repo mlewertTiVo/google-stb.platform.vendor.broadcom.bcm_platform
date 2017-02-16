@@ -62,6 +62,8 @@
 #include "bfifo.h"
 #include "INxHpdEvtSrc.h"
 #include "INxDspEvtSrc.h"
+#include "nexus_platform_client.h"
+#include "nexus_platform.h"
 /* sync framework/fences. */
 #include "sync/sync.h"
 #include "sw_sync.h"
