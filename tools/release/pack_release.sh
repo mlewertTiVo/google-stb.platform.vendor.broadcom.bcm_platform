@@ -240,7 +240,7 @@ if [ -f $BCG_XML ]; then
   # For convenience, rename the generated bolt package to a generic name (bolt-customer.tgz).
   # Only the filtered source tarball is kept.
   extract_path_from_xml groups bolt >> $BOLT_DIR
-  (export PATH=${TOP_DIR}/prebuilts/gcc/linux-x86/arm/stb/stbgcc-4.8-1.5/bin:${PATH} && perl ./$(cat $BOLT_DIR)/scripts/release.pl /tmp $TOP_DIR/$TMP_DIR)
+  (export PATH=${TOP_DIR}/prebuilts/gcc/linux-x86/arm/stb/stbgcc-4.8-1.6/bin:${PATH} && perl ./$(cat $BOLT_DIR)/scripts/release.pl /tmp $TOP_DIR/$TMP_DIR)
   BOLT_NAME=$(cat $TMP_DIR/.bolt-package-name)
   ./$(cat $BOLT_DIR)/scripts/fstrip.sh $TMP_DIR/${BOLT_NAME}.tgz $(cat $SCRIPT_DIR/bolt_exclude_family.txt)
   mv $TMP_DIR/${BOLT_NAME}-customer.tgz $TMP_DIR/bolt-customer.tgz
