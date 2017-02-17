@@ -3163,7 +3163,9 @@ static int32_t hwc2_relFences(
          if (((lyr->cDev == HWC2_COMPOSITION_INVALID) &&
                (lyr->cCli == HWC2_COMPOSITION_DEVICE)) ||
              (lyr->cDev == HWC2_COMPOSITION_DEVICE)) {
-            *outNumElements += 1;
+            if (!lyr->oob) {
+               *outNumElements += 1;
+            }
          }
          lyr = lyr->next;
       }
@@ -3174,10 +3176,11 @@ static int32_t hwc2_relFences(
          if (((lyr->cDev == HWC2_COMPOSITION_INVALID) &&
                (lyr->cCli == HWC2_COMPOSITION_DEVICE)) ||
              (lyr->cDev == HWC2_COMPOSITION_DEVICE)) {
-            lyr->rf = hwc2_lyr_tl_add(dsp, kind, lyr->hdl);
-            outLayers[num] = (hwc2_layer_t)(intptr_t)lyr;
-            outFences[num] = lyr->rf;
-            num++;
+            if (!lyr->oob) {
+               outLayers[num] = (hwc2_layer_t)(intptr_t)lyr;
+               outFences[num] = lyr->rf;
+               num++;
+            }
          } else {
             lyr->rf = HWC2_INVALID;
          }
@@ -3562,13 +3565,19 @@ static int32_t hwc2_preDsp(
                               dsp->pres, dsp->post, lyr->lpf, shared->videoFrame.status.serialNumber);
                   }
                }
-               if (lyr->rf != HWC2_INVALID) {
-                  hwc2_lyr_tl_inc(dsp, kind, lyr->hdl);
-                  lyr->rf = HWC2_INVALID;
-               }
                if (lrc == NEXUS_SUCCESS) {
                   hwc2_mem_unlock(hwc2, bh, true);
                }
+            }
+         }
+         lyr->rf = HWC2_INVALID;
+         if (((lyr->cDev == HWC2_COMPOSITION_INVALID) &&
+               (lyr->cCli == HWC2_COMPOSITION_DEVICE)) ||
+             (lyr->cDev == HWC2_COMPOSITION_DEVICE)) {
+            if (lyr->oob) {
+               lyr->rf = HWC2_INVALID;
+            } else {
+               lyr->rf = hwc2_lyr_tl_add(dsp, kind, lyr->hdl);
             }
          }
          /* modification to the layer content may take place prior to copy. */
@@ -3620,6 +3629,7 @@ static int32_t hwc2_preDsp(
       frame->tgt = dsp->u.vd.output;
       frame->wrf = dsp->u.vd.wrFence;
       lyr = dsp->lyr;
+      lyr->rf = hwc2_lyr_tl_add(dsp, kind, lyr->hdl);
       clyr = &frame->lyr[0];
       for (frame_size = 0 ; frame_size < cnt ; frame_size++) {
          memcpy(clyr, lyr, sizeof(struct hwc2_lyr_t));
