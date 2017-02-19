@@ -22,7 +22,7 @@ LOCAL_PRELINK_MODULE := false
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/nxclient/apps/utils
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
-LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/glob
+LOCAL_C_INCLUDES += $(BSEAV_TOP)/opensource/glob
 LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/tshdrbuilder
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
@@ -55,7 +55,7 @@ LOCAL_SRC_FILES := \
     $(PATH_TO_NEXUS)/nxclient/apps/utils/bfont.c \
     $(PATH_TO_NEXUS)/nxclient/apps/utils/bgui.c \
     $(PATH_TO_NEXUS)/utils/namevalue.c \
-    $(PATH_TO_BSEAV)/lib/glob/glob.c
+    $(PATH_TO_BSEAV)/opensource/glob/glob.c
 
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES

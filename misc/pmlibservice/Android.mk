@@ -22,7 +22,7 @@ LOCAL_PRELINK_MODULE := false
 
 LOCAL_SHARED_LIBRARIES := liblog libcutils libdl libbinder libutils
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/glob \
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/opensource/glob \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/pmlib/$(PMLIB_DIR)
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
@@ -45,7 +45,7 @@ endif
 LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/
 LOCAL_SRC_FILES := bcm_platform/misc/pmlibservice/IPmLibService.cpp \
                    bcm_platform/misc/pmlibservice/PmLibService.cpp \
-                   refsw/BSEAV/lib/glob/glob.c \
+                   refsw/BSEAV/opensource/glob/glob.c \
                    refsw/BSEAV/lib/pmlib/$(PMLIB_DIR)/pmlib.c
 
 LOCAL_MODULE_TAGS := optional
