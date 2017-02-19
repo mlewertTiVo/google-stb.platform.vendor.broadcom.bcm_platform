@@ -35,6 +35,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_ASHIFT     24
 #define HWC2_RLPF       0xCAFEBAAD
 #define HWC2_COMP_RUN   2
+#define HWC2_VOMP_RUN   1
 #define HWC2_VID_WIN    1
 
 /* timeline creation/destruction are expensive operations; we use
@@ -157,13 +158,24 @@ struct hwc2_dsp_cfg_t {
    bool                  hlg;
 };
 
+/* layer release timeline unit. */
+struct hwc2_lyr_tl_t {
+   uint64_t          hdl;
+   int               tl;
+   uint64_t          ix;
+
+   uint64_t          pt;
+   uint64_t          si;
+};
+
 /* display context target. */
 struct hwc2_dsp_ct_t {
-   buffer_handle_t     tgt;
-   int32_t             rdf;
-   android_dataspace_t dsp;
-   size_t              dmg_n;
-   hwc_rect_t          dmg_r;
+   buffer_handle_t      tgt;
+   int32_t              rdf;
+   struct hwc2_lyr_tl_t rtl;
+   android_dataspace_t  dsp;
+   size_t               dmg_n;
+   hwc_rect_t           dmg_r;
 };
 
 /* layer unit. */
@@ -200,7 +212,7 @@ struct hwc2_frame_t {
    struct hwc2_frame_t *next;
 
    buffer_handle_t     tgt;  /* target buffer for frame composition. */
-   int32_t             wrf;  /* target buffer write fence waiter. */
+   int32_t             ftgt;  /* target buffer fence waiter (read|write depending on target). */
 
    int32_t             cnt;
    int32_t             scnt;
@@ -212,16 +224,6 @@ struct hwc2_frame_t {
 struct hwc2_cm_t {
    android_color_transform_t type;
    float                     mtx[HWC2_CM_SIZE];
-};
-
-/* layer release timeline unit. */
-struct hwc2_lyr_tl_t {
-   uint64_t          hdl;
-   int               tl;
-   uint64_t          ix;
-
-   uint64_t          pt;
-   uint64_t          si;
 };
 
 /* virtual display specific information. */
@@ -263,6 +265,7 @@ struct hwc2_ext_t {
    bool                                cbs;
    NEXUS_DisplayHandle                 hdsp;
    BFIFO_HEAD(ExtFB, struct hwc2_fb_t) fb;
+   struct hwc2_fb_t                    fbs_c[HWC2_FBS_NUM];
    struct hwc2_fb_t                    fbs[HWC2_FBS_NUM];
    pthread_mutex_t                     mtx_fbs;
    bool                                bfb;
