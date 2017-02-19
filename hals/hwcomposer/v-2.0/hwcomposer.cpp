@@ -16,19 +16,21 @@
 
 // #define LOG_NDEBUG 0
 #define LOG_FENCE_DEBUG 0
-#define LOG_AR_DEBUG    1
+#define LOG_FENCE_VEBUG 1
+#define LOG_AR_DEBUG    0
 
 #define LOG_SEED_DEBUG  0
-#define LOG_YV12_DEBUG  0
-#define LOG_YV12_VEBUG  0
 #define LOG_RGBA_DEBUG  0
 #define LOG_RGBA_VEBUG  0
 #define LOG_DIM_DEBUG   0
 #define LOG_OOB_DEBUG   0
-#define LOG_Z_DEBUG     1
+#define LOG_Z_DEBUG     0
 
 #define LOG_COMP_DEBUG  0
 #define LOG_COMP_VEBUG  0
+
+/* TODO: do we need this?  does it work properly? */
+#define HWC2_MEMC_ROT   0
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -140,14 +142,14 @@ struct hwc2_bcm_device_t {
    NEXUS_Graphics2DCapabilities g2dc;
 };
 
-static void hwc2_blit_yv12(
+static int hwc2_blit_yv12(
    struct hwc2_bcm_device_t* hwc2,
    NEXUS_SurfaceHandle d,
    struct hwc2_lyr_t *lyr,
    PSHARED_DATA shared,
    struct hwc2_dsp_t *dsp);
 
-static void hwc2_blit_gpx(
+static int hwc2_blit_gpx(
    struct hwc2_bcm_device_t* hwc2,
    NEXUS_SurfaceHandle d,
    struct hwc2_lyr_t *lyr,
@@ -417,6 +419,7 @@ static void hwc2_ext_fbs(
             }
             if (hwc2->ext->u.ext.fbs[i].s) {
                NEXUS_Surface_Destroy(hwc2->ext->u.ext.fbs[i].s);
+               hwc2->ext->u.ext.fbs[i].s = NULL;
             }
          }
          pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
@@ -454,7 +457,7 @@ static void hwc2_ext_fbs(
          scs.heap = NULL;
          hwc2->ext->u.ext.fbs[i].s = hwc_surface_create(&scs, dh);
       }
-      ALOGI("[ext]:fb:%d::%dx%d::%s:%s -> %p (%d::%p)",
+      ALOGI("[ext]:fb:%d::%dx%d::%s:%s -> %p::%d (b:%p)",
             i, scs.width, scs.height, dh?"d-cma":"gfx",
             hwc2_enabled(hwc2_tweak_fb_compressed)?"comp":"full",
             hwc2->ext->u.ext.fbs[i].s, hwc2->ext->u.ext.fbs[i].fd, bh);
@@ -462,7 +465,9 @@ static void hwc2_ext_fbs(
    hwc2->ext->u.ext.bfb = true;
 
    pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
-   BFIFO_INIT(&hwc2->ext->u.ext.fb, hwc2->ext->u.ext.fbs, HWC2_FBS_NUM);
+   /* bfifo uses the cached version to preserve the original mapping correctly. */
+   memcpy(&hwc2->ext->u.ext.fbs_c, &hwc2->ext->u.ext.fbs, sizeof(hwc2->ext->u.ext.fbs_c));
+   BFIFO_INIT(&hwc2->ext->u.ext.fb, hwc2->ext->u.ext.fbs_c, HWC2_FBS_NUM);
    BFIFO_WRITE_COMMIT(&hwc2->ext->u.ext.fb, HWC2_FBS_NUM);
    pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
    hwc2->ext->u.ext.cb = cb;
@@ -478,6 +483,7 @@ static int hwc2_ext_fb_valid_l(
          return hwc2->ext->u.ext.fbs[i].fd;
       }
    }
+   ALOGW("[ext]:[inv-fb]: surface %p\n", s);
    return HWC2_INVALID;
 }
 
@@ -494,10 +500,15 @@ static int32_t hwc2_ret_fence(
    snprintf(info.name, sizeof(info.name), "hwc2_%s_%llu", dsp->name, dsp->pres);
    f = sw_sync_fence_create(dsp->cmp_tl, info.name, dsp->pres);
    if (f < 0) {
+      ALOGW("[%s]:[inv-rel-add]:%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+            (uint64_t)(intptr_t)dsp, dsp->cmp_tl, info.name, hwc2_tick());
       return HWC2_INVALID;
    }
-   ALOGI_IF(LOG_FENCE_DEBUG, "[rel-add]:%" PRIu64 ":%d:'%s'\n",
-         (uint64_t)(intptr_t)dsp, dsp->cmp_tl, info.name);
+   ALOGI_IF((dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?LOG_FENCE_VEBUG:LOG_FENCE_DEBUG,
+            "[%s]:[rel-add]:%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+            (uint64_t)(intptr_t)dsp, dsp->cmp_tl, info.name, hwc2_tick());
    return f;
 }
 
@@ -509,8 +520,10 @@ static void hwc2_ret_inc(
       return;
    }
    sw_sync_timeline_inc(dsp->cmp_tl, inc);
-   ALOGI_IF(LOG_FENCE_DEBUG, "[rel-inc]:%" PRIu64 ":%d:%d\n",
-         (uint64_t)(intptr_t)dsp, dsp->cmp_tl, inc);
+   ALOGI_IF((dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?LOG_FENCE_VEBUG:LOG_FENCE_DEBUG,
+            "[%s]:[rel-inc]:%" PRIu64 ":%d:%d @%" PRId64 "\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+            (uint64_t)(intptr_t)dsp, dsp->cmp_tl, inc, hwc2_tick());
 }
 
 static void hwc2_recycle(
@@ -531,6 +544,8 @@ static void hwc2_recycle(
             e->s  = s[i];
             e->fd = fd;
             BFIFO_WRITE_COMMIT(&hwc2->ext->u.ext.fb, 1);
+         } else {
+            ALOGW("[ext]: invalid recycled surface %p!", s[i]);
          }
       }
       pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
@@ -620,18 +635,18 @@ static void hwc2_ext_fb_put(
 
    int fd;
    if (s) {
-      if (!pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs)) {
-         fd = hwc2_ext_fb_valid_l(hwc2, s);
-         if (fd != HWC2_INVALID) {
-            struct hwc2_fb_t *e = BFIFO_WRITE(&hwc2->ext->u.ext.fb);
-            e->s  = s;
-            e->fd = fd;
-            BFIFO_WRITE_COMMIT(&hwc2->ext->u.ext.fb, 1);
-         }
-         pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
+      pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
+      fd = hwc2_ext_fb_valid_l(hwc2, s);
+      if (fd != HWC2_INVALID) {
+         struct hwc2_fb_t *e = BFIFO_WRITE(&hwc2->ext->u.ext.fb);
+         e->s  = s;
+         e->fd = fd;
+         BFIFO_WRITE_COMMIT(&hwc2->ext->u.ext.fb, 1);
+         ALOGV("[ext]: put unused surface %p::%d", s, fd);
       } else {
-         ALOGW("[ext]: leaked surface %p!", s);
+         ALOGW("[ext]: invalid put surface %p!", s);
       }
+      pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
    }
 }
 
@@ -924,25 +939,57 @@ static void hwc2_lyr_tl_inc(
 
    size_t num;
    if (kind == HWC2_DSP_EXT) {
-      for (num = 0 ; num < HWC2_MAX_TL ; num++) {
-         if (dsp->u.ext.rtl[num].hdl == hdl) {
-            ALOGI_IF(LOG_FENCE_DEBUG, "[ext]:[tl-inc]:%" PRIu64 ":%d:1\n",
-                  dsp->u.ext.rtl[num].hdl, dsp->u.ext.rtl[num].tl);
-            sw_sync_timeline_inc(dsp->u.ext.rtl[num].tl, 1);
-            dsp->u.ext.rtl[num].si++;
-            return;
+      if (hdl == HWC2_MAGIC) {
+         ALOGI_IF(LOG_FENCE_DEBUG,
+                  "[ext]:[dsp-tl-inc]:%" PRIu64 ":%d:1 @%" PRId64 "\n",
+                  dsp->u.ext.ct.rtl.hdl, dsp->u.ext.ct.rtl.tl, hwc2_tick());
+         sw_sync_timeline_inc(dsp->u.ext.ct.rtl.tl, 1);
+         dsp->u.ext.ct.rtl.si++;
+      } else {
+         for (num = 0 ; num < HWC2_MAX_TL ; num++) {
+            if (dsp->u.ext.rtl[num].hdl == hdl) {
+               ALOGI_IF(LOG_FENCE_DEBUG,
+                        "[ext]:[tl-inc]:%" PRIu64 ":%d:1 @%" PRId64 "\n",
+                        dsp->u.ext.rtl[num].hdl, dsp->u.ext.rtl[num].tl, hwc2_tick());
+               sw_sync_timeline_inc(dsp->u.ext.rtl[num].tl, 1);
+               dsp->u.ext.rtl[num].si++;
+               return;
+            }
          }
       }
    } else if (kind == HWC2_DSP_VD) {
       for (num = 0 ; num < HWC2_MAX_VTL ; num++) {
          if (dsp->u.vd.rtl[num].hdl == hdl) {
-            ALOGI_IF(LOG_FENCE_DEBUG, "[vd]:[tl-inc]:%" PRIu64 ":%d:1\n",
-                  dsp->u.vd.rtl[num].hdl, dsp->u.vd.rtl[num].tl);
+            ALOGI_IF(LOG_FENCE_VEBUG,
+                     "[vd]:[tl-inc]:%" PRIu64 ":%d:1 @%" PRId64 "\n",
+                     dsp->u.vd.rtl[num].hdl, dsp->u.vd.rtl[num].tl, hwc2_tick());
             sw_sync_timeline_inc(dsp->u.vd.rtl[num].tl, 1);
             dsp->u.vd.rtl[num].si++;
             return;
          }
       }
+   }
+}
+
+static void hwc2_fb_seed(
+   struct hwc2_bcm_device_t* hwc2,
+   NEXUS_SurfaceHandle s,
+   uint32_t color) {
+   NEXUS_Error rc;
+   if (s) {
+      NEXUS_Graphics2DFillSettings fs;
+      NEXUS_Graphics2D_GetDefaultFillSettings(&fs);
+      fs.surface = s;
+      fs.color   = color;
+      fs.colorOp = NEXUS_FillOp_eCopy;
+      fs.alphaOp = NEXUS_FillOp_eCopy;
+      if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
+         return;
+      }
+      NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
+      pthread_mutex_unlock(&hwc2->mtx_g2d);
+      ALOGI_IF(LOG_SEED_DEBUG,
+               "[seed]: %p with color %08x\n", s, color);
    }
 }
 
@@ -960,6 +1007,7 @@ static void hwc2_vd_cmp_frame(
    NEXUS_MemoryBlockHandle dbh = NULL, dbhp = NULL;
    PSHARED_DATA dshared = NULL;
    void *dmap = NULL;
+   int blt;
 
    /* setup destination buffer for this frame. */
    private_handle_t::get_block_handles((private_handle_t *)f->tgt, &dbh, NULL);
@@ -988,13 +1036,15 @@ static void hwc2_vd_cmp_frame(
          ((private_handle_t *)f->tgt)->oglStride, gr2nx_pixel(dshared->container.format),
          dshared->container.block, 0);
    if (d == NULL) {
+      ALOGE("[vd]:[out]:%" PRIu64 ":%" PRIu64 ": cannot associate output surface.\n",
+             dsp->pres, dsp->post);
       goto out_error;
    }
 
    /* wait for output buffer to be ready to compose into. */
-   if (f->wrf != HWC2_INVALID) {
-      sync_wait(f->wrf, BKNI_INFINITE);
-      close(f->wrf);
+   if (f->ftgt != HWC2_INVALID) {
+      sync_wait(f->ftgt, BKNI_INFINITE);
+      close(f->ftgt);
    }
 
    for (i = 0; i < f->cnt; i++) {
@@ -1008,6 +1058,20 @@ static void hwc2_vd_cmp_frame(
       /* [ii]. compose.
        */
       switch(lyr->cCli) {
+      case HWC2_COMPOSITION_SOLID_COLOR:
+         {
+            uint32_t color = (lyr->sc.a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b);
+            if (color != HWC2_TRS) {
+               hwc2_fb_seed(hwc2, d, color);
+               hwc2_chkpt(hwc2);
+               /* [iii]. count of composed layers. */
+               c++;
+            }
+            ALOGI_IF(LOG_COMP_VEBUG,
+                     "[vd]:[frame]:%" PRIu64 ":%" PRIu64 ": solid color (%02x:%02x:%02x:%02x):%08x (%zu)\n",
+                     dsp->pres, dsp->post, lyr->sc.r, lyr->sc.g, lyr->sc.b, lyr->sc.a, color, c);
+         }
+      break;
       case HWC2_COMPOSITION_DEVICE:
       {
          if (lyr->bh == NULL) {
@@ -1045,10 +1109,12 @@ static void hwc2_vd_cmp_frame(
          yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
                  (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
          if (yv12) {
-            hwc2_blit_yv12(hwc2, d, lyr, shared, dsp);
+            blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp);
          } else {
-            hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp);
-            lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
+            blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp);
+            if (!blt) {
+               lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
+            }
          }
 
          if (lrcp == NEXUS_SUCCESS) {
@@ -1058,8 +1124,9 @@ static void hwc2_vd_cmp_frame(
             hwc2_mem_unlock(hwc2, bh, true);
          }
          /* [iii]. count of composed layers. */
-         c++;
-         ALOGI_IF(LOG_COMP_VEBUG, "[vd]:[frame]:%" PRIu64 ":%" PRIu64 ": %s layer (%zu)\n",
+         if (!blt) c++;
+         ALOGI_IF(!blt && LOG_COMP_VEBUG,
+                  "[vd]:[frame]:%" PRIu64 ":%" PRIu64 ": %s layer (%zu)\n",
                   dsp->pres, dsp->post, yv12?"yv12":"rgba", c);
       }
       break;
@@ -1072,6 +1139,12 @@ static void hwc2_vd_cmp_frame(
       if (lyr->rf != HWC2_INVALID) {
          hwc2_lyr_tl_inc(hwc2->vd, HWC2_DSP_VD, lyr->hdl);
       }
+   }
+
+   if (c > 0) {
+      ALOGI_IF(LOG_COMP_VEBUG,
+               "[vd]:[frame]:%" PRIu64 ":%" PRIu64 ":%zu layer%scomposed\n",
+               dsp->pres, dsp->post, c, c>1?"s ":" ");
    }
 
 out_error:
@@ -1107,7 +1180,7 @@ static void *hwc2_vd_cmp(
             if (frame == NULL) {
                composing = false;
             } else {
-               if (hwc2->vd->pres >= (hwc2->vd->post + HWC2_COMP_RUN)) {
+               if (hwc2->vd->pres >= (hwc2->vd->post + HWC2_VOMP_RUN)) {
                   syn = true;
                }
                hwc2->vd->cmp_wl = frame->next;
@@ -1188,9 +1261,15 @@ static void hwc2_setup_vd(
    pthread_setname_np(hwc2->vd->cmp, "hwc2_vd_cmp");
 
    hwc2->vd->cmp_tl = sw_sync_timeline_create();
+   if (hwc2->vd->cmp_tl == 0) {
+      int fd = sw_sync_timeline_create();
+      close(hwc2->vd->cmp_tl);
+      hwc2->vd->cmp_tl = fd;
+   }
    if (hwc2->vd->cmp_tl < 0) {
       hwc2->vd->cmp_tl = HWC2_INVALID;
    }
+   ALOGI("[vd]: completion timeline: %d\n", hwc2->vd->cmp_tl);
 
    for (num = 0 ; num < HWC2_MAX_VTL ; num++) {
       hwc2->vd->u.vd.rtl[num].tl = sw_sync_timeline_create();
@@ -1199,6 +1278,7 @@ static void hwc2_setup_vd(
       }
       hwc2->vd->u.vd.rtl[num].hdl = 0;
       hwc2->vd->u.vd.rtl[num].ix = 0;
+      ALOGI("[vd]: layer completion timeline (%d): %d\n", num, hwc2->vd->u.vd.rtl[num].tl);
    }
 }
 
@@ -1265,7 +1345,8 @@ static int32_t hwc2_vdAdd(
       ret = HWC2_ERROR_NO_RESOURCES;
       goto out;
    }
-   if (width > HWC2_VD_MAX_W || height > HWC2_VD_MAX_H) {
+   if (((width > height) && (width > HWC2_VD_MAX_W || height > HWC2_VD_MAX_H)) ||
+       ((width < height) && (width > HWC2_VD_MAX_H || height > HWC2_VD_MAX_W))) {
       ret = HWC2_ERROR_UNSUPPORTED;
       goto out;
    }
@@ -1282,8 +1363,8 @@ static int32_t hwc2_vdAdd(
    hwc2->vd->cfgs = (struct hwc2_dsp_cfg_t *)malloc(sizeof(struct hwc2_dsp_cfg_t));
    if (hwc2->vd->cfgs != NULL) {
       hwc2->vd->cfgs->next  = NULL;
-      hwc2->vd->cfgs->w     = width;
-      hwc2->vd->cfgs->h     = height;
+      hwc2->vd->cfgs->w     = (width > height) ? width : height;
+      hwc2->vd->cfgs->h     = (width > height) ? height : width;
       hwc2->vd->cfgs->vsync = 16666667; /* hardcode 60fps */
       hwc2->vd->cfgs->xdp   = 0;
       hwc2->vd->cfgs->ydp   = 0;
@@ -1305,9 +1386,9 @@ static int32_t hwc2_vdAdd(
    *outDisplay = (hwc2_display_t)(intptr_t)hwc2->vd;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu32 "x%" PRIu32 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_CREATE_VIRTUAL_DISPLAY),
-      *outDisplay, getErrorName(ret));
+      width, height, *outDisplay, getErrorName(ret));
    return ret;
 }
 
@@ -1368,8 +1449,8 @@ static size_t hwc2_dump_gen(
       lyr = dsp->lyr;
       while (lyr != NULL) {
          if (max-current > 0) {
-            current += snprintf(&hwc2->dump[current], max-current, "\t[lyr]:%" PRIu64 "{%u,%d,%d,%.02f}:{%d,%d,%dx%d}:{%d,%d,%dx%d}\n",
-               lyr->hdl, lyr->z, lyr->bm, lyr->cCli, lyr->al,
+            current += snprintf(&hwc2->dump[current], max-current, "\t[lyr]:%" PRIu64 "{%u,%d,%d,%.02f,%d}:{%d,%d,%dx%d}:{%d,%d,%dx%d}\n",
+               lyr->hdl, lyr->z, lyr->bm, lyr->cCli, lyr->al, lyr->tr,
                lyr->crp.left, lyr->crp.top, (lyr->crp.right - lyr->crp.left), (lyr->crp.bottom - lyr->crp.top),
                lyr->fr.left, lyr->fr.top, (lyr->fr.right - lyr->fr.left), (lyr->fr.bottom - lyr->fr.top));
          }
@@ -1389,8 +1470,8 @@ static size_t hwc2_dump_gen(
       lyr = dsp->lyr;
       while (lyr != NULL) {
          if (max-current > 0) {
-            current += snprintf(&hwc2->dump[current], max-current, "\t[lyr]:%" PRIu64 "{%u,%d,%d,%.02f}:{%d,%d,%dx%d}:{%d,%d,%dx%d}\n",
-               lyr->hdl, lyr->z, lyr->bm, lyr->cCli, lyr->al,
+            current += snprintf(&hwc2->dump[current], max-current, "\t[lyr]:%" PRIu64 "{%u,%d,%d,%.02f,%d}:{%d,%d,%dx%d}:{%d,%d,%dx%d}\n",
+               lyr->hdl, lyr->z, lyr->bm, lyr->cCli, lyr->al, lyr->tr,
                lyr->crp.left, lyr->crp.top, (lyr->crp.right - lyr->crp.left), (lyr->crp.bottom - lyr->crp.top),
                lyr->fr.left, lyr->fr.top, (lyr->fr.right - lyr->fr.left), (lyr->fr.bottom - lyr->fr.top));
          }
@@ -1530,22 +1611,41 @@ static int32_t hwc2_lyr_tl_add(
    struct sync_fence_info_data info;
    size_t num;
    if (kind == HWC2_DSP_EXT) {
-      for (num = 0 ; num < HWC2_MAX_TL ; num++) {
-         if (dsp->u.ext.rtl[num].hdl == hdl) {
-            dsp->u.ext.rtl[num].ix++;
-            snprintf(info.name, sizeof(info.name),
-                     "hwc2_%zu_ext_%llu", num, dsp->u.ext.rtl[num].ix);
-            f = sw_sync_fence_create(dsp->u.ext.rtl[num].tl,
-                                     info.name,
-                                     dsp->u.ext.rtl[num].ix);
-            if (f < 0) {
-               f = HWC2_INVALID;
-            } else {
-               dsp->u.ext.rtl[num].pt++;
+      if (hdl == HWC2_MAGIC) {
+         dsp->u.ext.ct.rtl.ix++;
+         snprintf(info.name, sizeof(info.name),
+                  "hwc2_dsp_ext_%llu", dsp->u.ext.ct.rtl.ix);
+         f = sw_sync_fence_create(dsp->u.ext.ct.rtl.tl,
+                                  info.name,
+                                  dsp->u.ext.ct.rtl.ix);
+         if (f < 0) {
+            f = HWC2_INVALID;
+         } else {
+            dsp->u.ext.ct.rtl.pt++;
+         }
+         ALOGI_IF(LOG_FENCE_DEBUG,
+                  "[ext]:[dsp-tl-add]:%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
+                  dsp->u.ext.ct.rtl.hdl, dsp->u.ext.ct.rtl.tl, info.name, hwc2_tick());
+         return f;
+      } else {
+         for (num = 0 ; num < HWC2_MAX_TL ; num++) {
+            if (dsp->u.ext.rtl[num].hdl == hdl) {
+               dsp->u.ext.rtl[num].ix++;
+               snprintf(info.name, sizeof(info.name),
+                        "hwc2_%zu_ext_%llu", num, dsp->u.ext.rtl[num].ix);
+               f = sw_sync_fence_create(dsp->u.ext.rtl[num].tl,
+                                        info.name,
+                                        dsp->u.ext.rtl[num].ix);
+               if (f < 0) {
+                  f = HWC2_INVALID;
+               } else {
+                  dsp->u.ext.rtl[num].pt++;
+               }
+               ALOGI_IF(LOG_FENCE_DEBUG,
+                        "[ext]:[tl-add]:%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
+                        dsp->u.ext.rtl[num].hdl, dsp->u.ext.rtl[num].tl, info.name, hwc2_tick());
+               return f;
             }
-            ALOGI_IF(LOG_FENCE_DEBUG, "[ext]:[tl-add]:%" PRIu64 ":%d:'%s'\n",
-                  dsp->u.ext.rtl[num].hdl, dsp->u.ext.rtl[num].tl, info.name);
-            return f;
          }
       }
       ALOGE("[ext]:[tl-add]:%" PRIu64 ":orphaned, failed to create\n", hdl);
@@ -1563,12 +1663,13 @@ static int32_t hwc2_lyr_tl_add(
             } else {
                dsp->u.vd.rtl[num].pt++;
             }
-            ALOGI_IF(LOG_FENCE_DEBUG, "[vd]:[tl-add]:%" PRIu64 ":%d:'%s'\n",
-                  dsp->u.vd.rtl[num].hdl, dsp->u.vd.rtl[num].tl, info.name);
+            ALOGI_IF(LOG_FENCE_VEBUG,
+                     "[vd]:[tl-add]:%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
+                     dsp->u.vd.rtl[num].hdl, dsp->u.vd.rtl[num].tl, info.name, hwc2_tick());
             return f;
          }
       }
-      ALOGE("[cd]:[tl-add]:%" PRIu64 ":orphaned, failed to create\n", hdl);
+      ALOGE("[vd]:[tl-add]:%" PRIu64 ":orphaned, failed to create\n", hdl);
    }
 
    return HWC2_INVALID;
@@ -1628,7 +1729,8 @@ static int32_t hwc2_lyrAdd(
 
    *outLayer = (hwc2_layer_t)(intptr_t)lyr;
    cnt++;
-   ALOGI_IF(LOG_AR_DEBUG, "[%s]:[lyr+]:%" PRIu64 ": %zu layers\n",
+   ALOGI_IF(LOG_AR_DEBUG,
+            "[%s]:[lyr+]:%" PRIu64 ": %zu layers\n",
             (kind==HWC2_DSP_VD)?"vd":"ext", lyr->hdl, cnt);
 
    /* change in layer, invalidate current display. */
@@ -1653,6 +1755,7 @@ static int32_t hwc2_lyrRem(
    struct hwc2_lyr_t *prv = NULL, *nxt = NULL;
    uint32_t kind;
    uint64_t hdl;
+   size_t cnt = 0;
 
    ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
      getFunctionDescriptorName(HWC2_FUNCTION_DESTROY_LAYER),
@@ -1697,10 +1800,17 @@ static int32_t hwc2_lyrRem(
    hwc2_lyr_tl_unset(dsp, kind, lyr->hdl);
    free(lyr);
    lyr = NULL;
+
+   lyr = dsp->lyr;
+   while (lyr != NULL) {
+      cnt++;
+      lyr = lyr->next;
+   }
    pthread_mutex_unlock(&dsp->mtx_lyr);
 
-   ALOGI_IF(LOG_AR_DEBUG, "[%s]:[lyr-]:%" PRIu64 " \n",
-            (kind==HWC2_DSP_VD)?"vd":"ext", hdl);
+   ALOGI_IF(LOG_AR_DEBUG,
+            "[%s]:[lyr-]:%" PRIu64 ": %zu layers\n",
+            (kind==HWC2_DSP_VD)?"vd":"ext", hdl, cnt);
 
    /* change in layer, invalidate current display. */
    dsp->validated = false;
@@ -1863,11 +1973,13 @@ static int32_t hwc2_sclSupp(
 
    if (s.width && d.width &&
        (s.width / d.width) >= hwc2->g2dc.maxHorizontalDownScale) {
+      ALOGW("horizontal:%d->%d::max:%d", s.width, d.width, hwc2->g2dc.maxHorizontalDownScale);
       ret = HWC2_ERROR_UNSUPPORTED;
    }
 
    if (s.height && d.height &&
        (s.height / d.height) >= hwc2->g2dc.maxVerticalDownScale) {
+      ALOGW("horizontal:%d->%d::max:%d", s.height, d.height, hwc2->g2dc.maxVerticalDownScale);
       ret = HWC2_ERROR_UNSUPPORTED;
    }
 
@@ -2697,6 +2809,11 @@ static int32_t hwc2_lyrTrans(
    }
 
    lyr->tr = (hwc_transform_t)transform;
+   if (lyr->tr) {
+      ALOGV("[%s]:[xform]:%" PRIu64 ":%s",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+            lyr->hdl, getTransformName(lyr->tr));
+   }
 
 out:
    ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
@@ -3166,6 +3283,10 @@ static int32_t hwc2_relFences(
             if (!lyr->oob) {
                *outNumElements += 1;
             }
+         } else if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
+            if (lyr->rf != HWC2_INVALID) {
+               *outNumElements += 1;
+            }
          }
          lyr = lyr->next;
       }
@@ -3181,8 +3302,12 @@ static int32_t hwc2_relFences(
                outFences[num] = lyr->rf;
                num++;
             }
-         } else {
-            lyr->rf = HWC2_INVALID;
+         } else if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
+            if (lyr->rf != HWC2_INVALID) {
+               outLayers[num] = (hwc2_layer_t)(intptr_t)lyr;
+               outFences[num] = lyr->rf;
+               num++;
+            }
          }
          lyr = lyr->next;
       }
@@ -3278,10 +3403,10 @@ static uint32_t hwc2_comp_validate(
       } else if (lyr->cCli == HWC2_COMPOSITION_DEVICE) {
          hwc2_error_t ret = (hwc2_error_t)hwc2_sclSupp(hwc2, &lyr->crp, &lyr->fr);
          if (ret != HWC2_ERROR_NONE) {
-            ALOGI("lyr[%" PRIu64 "]:%s->%s (scaling out of bounds)", lyr->hdl,
+            ALOGW("lyr[%" PRIu64 "]:%s->%s (scaling out of bounds)", lyr->hdl,
                   getCompositionName(HWC2_COMPOSITION_DEVICE),
                   getCompositionName(HWC2_COMPOSITION_CLIENT));
-            lyr->cDev = HWC2_COMPOSITION_DEVICE;
+            lyr->cDev = HWC2_COMPOSITION_CLIENT;
          }
       }
       lyr = lyr->next;
@@ -3316,7 +3441,8 @@ static void hwc2_z_order(
    for (i = 0 ; i < cnt ; i++) {
       for (j = i+1 ; j < cnt ; j++) {
          if (lyr[i]->z > lyr[j]->z) {
-            ALOGI_IF(LOG_Z_DEBUG, "[%s]:[z-swap]:%" PRIu64 ":%u && %" PRIu64 ":%u",
+            ALOGI_IF(LOG_Z_DEBUG,
+                     "[%s]:[z-swap]:%" PRIu64 ":%u && %" PRIu64 ":%u",
                      (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
                      lyr[i]->hdl, lyr[i]->z, lyr[j]->hdl, lyr[j]->z);
             cur =  lyr[i];
@@ -3456,6 +3582,7 @@ static int32_t hwc2_preDsp(
    uint32_t kind;
    struct hwc2_lyr_t *lyr = NULL;
    int32_t frame_size, cnt = 0, vcnt = 0, scnt = 0;
+   int ccli = 0;
 
    ALOGV("-> %s:%" PRIu64 "\n",
      getFunctionDescriptorName(HWC2_FUNCTION_PRESENT_DISPLAY),
@@ -3493,6 +3620,7 @@ static int32_t hwc2_preDsp(
       pthread_mutex_lock(&hwc2->mtx_pwr);
       if (hwc2->ext->pmode == HWC2_POWER_MODE_OFF) {
          pthread_mutex_unlock(&hwc2->mtx_pwr);
+         ret = HWC2_ERROR_NO_RESOURCES;
          goto out_error;
       }
       pthread_mutex_unlock(&hwc2->mtx_pwr);
@@ -3504,6 +3632,7 @@ static int32_t hwc2_preDsp(
       frame_size = sizeof(struct hwc2_frame_t) + (cnt * sizeof(struct hwc2_lyr_t));
       frame = (struct hwc2_frame_t *) calloc(1, frame_size);
       if (frame == NULL) {
+         ret = HWC2_ERROR_NO_RESOURCES;
          goto out_error;
       }
       frame->cnt  = cnt;
@@ -3512,8 +3641,15 @@ static int32_t hwc2_preDsp(
       for (frame_size = 0 ; frame_size < cnt ; frame_size++) {
          lyr->oob = false;
          if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
-            lyr->bh = hwc2->ext->u.ext.ct.tgt;
-            lyr->af = hwc2->ext->u.ext.ct.rdf;
+            if (!ccli) {
+               if (hwc2->ext->u.ext.ct.tgt) {
+                  frame->tgt = hwc2->ext->u.ext.ct.tgt;
+               } else {
+                  frame->tgt = NULL;
+               }
+               frame->ftgt = hwc2->ext->u.ext.ct.rdf;
+            }
+            ccli++;
          } else if (lyr->cCli == HWC2_COMPOSITION_SIDEBAND) {
             scnt++;
          } else if (hwc2_is_video(hwc2, lyr)) {
@@ -3555,13 +3691,15 @@ static int32_t hwc2_preDsp(
                      cl.w = c.width == (uint16_t)HWC2_INVALID ? 0 : c.width;
                      cl.h = c.height == (uint16_t)HWC2_INVALID ? 0 : c.height;
                      hwc2->hb->setgeometry(HWC_BINDER_OMX, 0, fr, cl, 3 /* i.e. 5-2 */, 1);
-                     ALOGI_IF(LOG_OOB_DEBUG, "[oob]:%" PRIu64 ":%" PRIu64 ": geometry {%d,%d,%dx%d}, {%d,%d,%dx%d}\n",
+                     ALOGI_IF(LOG_OOB_DEBUG,
+                              "[oob]:%" PRIu64 ":%" PRIu64 ": geometry {%d,%d,%dx%d}, {%d,%d,%dx%d}\n",
                               dsp->pres, dsp->post, fr.x, fr.y, fr.w, fr.h, cl.x, cl.y, cl.w, cl.h);
                   }
                   if (lyr->lpf != shared->videoFrame.status.serialNumber) {
                      lyr->lpf = shared->videoFrame.status.serialNumber;
                      hwc2->hb->setframe(HWC2_VID_MAGIC, lyr->lpf);
-                     ALOGI_IF(LOG_OOB_DEBUG, "[oob]:%" PRIu64 ":%" PRIu64 ": signal-frame %" PRIu32 " (%" PRIu32 ")\n",
+                     ALOGI_IF(LOG_OOB_DEBUG,
+                              "[oob]:%" PRIu64 ":%" PRIu64 ": signal-frame %" PRIu32 " (%" PRIu32 ")\n",
                               dsp->pres, dsp->post, lyr->lpf, shared->videoFrame.status.serialNumber);
                   }
                }
@@ -3578,6 +3716,10 @@ static int32_t hwc2_preDsp(
                lyr->rf = HWC2_INVALID;
             } else {
                lyr->rf = hwc2_lyr_tl_add(dsp, kind, lyr->hdl);
+            }
+         } else if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
+            if (frame->tgt != NULL && ccli == 1) {
+               lyr->rf = hwc2_lyr_tl_add(dsp, kind, HWC2_MAGIC);
             }
          }
          /* modification to the layer content may take place prior to copy. */
@@ -3603,6 +3745,7 @@ static int32_t hwc2_preDsp(
          pthread_mutex_unlock(&dsp->mtx_cmp_wl);
       } else {
          free(frame);
+         ret = HWC2_ERROR_NO_RESOURCES;
          goto out_error;
       }
 
@@ -3623,15 +3766,22 @@ static int32_t hwc2_preDsp(
       frame_size = sizeof(struct hwc2_frame_t) + (cnt * sizeof(struct hwc2_lyr_t));
       frame = (struct hwc2_frame_t *) calloc(1, frame_size);
       if (frame == NULL) {
+         ret = HWC2_ERROR_NO_RESOURCES;
          goto out_error;
       }
       frame->cnt = cnt;
       frame->tgt = dsp->u.vd.output;
-      frame->wrf = dsp->u.vd.wrFence;
+      frame->ftgt = dsp->u.vd.wrFence;
       lyr = dsp->lyr;
-      lyr->rf = hwc2_lyr_tl_add(dsp, kind, lyr->hdl);
       clyr = &frame->lyr[0];
       for (frame_size = 0 ; frame_size < cnt ; frame_size++) {
+         lyr->rf = HWC2_INVALID;
+         if (((lyr->cDev == HWC2_COMPOSITION_INVALID) &&
+               (lyr->cCli == HWC2_COMPOSITION_DEVICE)) ||
+             (lyr->cDev == HWC2_COMPOSITION_DEVICE)) {
+            lyr->rf = hwc2_lyr_tl_add(dsp, kind, lyr->hdl);
+         }
+         /* modification to the layer content may take place prior to copy. */
          memcpy(clyr, lyr, sizeof(struct hwc2_lyr_t));
          lyr = lyr->next;
          clyr->next = &frame->lyr[frame_size+1];
@@ -3649,12 +3799,13 @@ static int32_t hwc2_preDsp(
          pthread_mutex_unlock(&dsp->mtx_cmp_wl);
       } else {
          free(frame);
+         ret = HWC2_ERROR_NO_RESOURCES;
          goto out_error;
       }
 
       *outRetireFence = hwc2_ret_fence(dsp);
       BKNI_SetEvent(dsp->cmp_evt);
-      if (dsp->pres >= (dsp->post + HWC2_COMP_RUN)) {
+      if (dsp->pres >= (dsp->post + HWC2_VOMP_RUN)) {
          BKNI_WaitForEvent(dsp->cmp_syn, BKNI_INFINITE);
       }
       goto out;
@@ -3665,7 +3816,11 @@ out_error:
    lyr = dsp->lyr;
    for (frame_size = 0 ; frame_size < cnt ; frame_size++) {
       if (lyr->rf != HWC2_INVALID) {
-         hwc2_lyr_tl_inc(dsp, kind, lyr->hdl);
+         if ((kind == HWC2_DSP_EXT) && (lyr->cCli == HWC2_COMPOSITION_CLIENT)) {
+            hwc2_lyr_tl_inc(dsp, kind, HWC2_MAGIC);
+         } else {
+            hwc2_lyr_tl_inc(dsp, kind, lyr->hdl);
+         }
       }
       lyr = lyr->next;
    }
@@ -3791,6 +3946,7 @@ static void hwc2_bcm_close(
       for (num = 0 ; num < HWC2_MAX_TL ; num++) {
          close(hwc2->ext->u.ext.rtl[num].tl);
       }
+      close(hwc2->ext->u.ext.ct.rtl.tl);
       close(hwc2->ext->cmp_tl);
       free(hwc2->ext);
    }
@@ -3841,27 +3997,6 @@ static int hwc2_close(
    return 0;
 }
 
-static void hwc2_fb_seed(
-   struct hwc2_bcm_device_t* hwc2,
-   NEXUS_SurfaceHandle s,
-   uint32_t color) {
-   NEXUS_Error rc;
-   if (s) {
-      NEXUS_Graphics2DFillSettings fs;
-      NEXUS_Graphics2D_GetDefaultFillSettings(&fs);
-      fs.surface = s;
-      fs.color   = color;
-      fs.colorOp = NEXUS_FillOp_eCopy;
-      fs.alphaOp = NEXUS_FillOp_eCopy;
-      if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
-         return;
-      }
-      NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
-      pthread_mutex_unlock(&hwc2->mtx_g2d);
-      ALOGI_IF(LOG_SEED_DEBUG, "[seed]: %p with color %08x\n", s, color);
-   }
-}
-
 static void hwc2_dim(
    struct hwc2_bcm_device_t* hwc2,
    NEXUS_SurfaceHandle s,
@@ -3881,7 +4016,8 @@ static void hwc2_dim(
       }
       NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
       pthread_mutex_unlock(&hwc2->mtx_g2d);
-      ALOGI_IF(LOG_DIM_DEBUG, "[dim]: %p with color %08x\n", s, fs.color);
+      ALOGI_IF(LOG_DIM_DEBUG,
+               "[dim]: %p with color %08x\n", s, fs.color);
    }
 }
 
@@ -3911,7 +4047,7 @@ static NEXUS_Graphics2DColorMatrix g_hwc2_ai32_Matrix_YCbCrtoRGB = {
    }
 };
 
-void hwc2_blit_yv12(
+int hwc2_blit_yv12(
    struct hwc2_bcm_device_t* hwc2,
    NEXUS_SurfaceHandle d,
    struct hwc2_lyr_t *lyr,
@@ -3925,6 +4061,7 @@ void hwc2_blit_yv12(
    unsigned int cs = 0, cr_o = 0, cb_o = 0;
    NEXUS_Rect c, p, oa;
    NEXUS_Error rc;
+   int blt = 0;
 
    BM2MC_PACKET_Blend cbClr = {BM2MC_PACKET_BlendFactor_eSourceColor, BM2MC_PACKET_BlendFactor_eOne, false,
                                BM2MC_PACKET_BlendFactor_eDestinationColor, BM2MC_PACKET_BlendFactor_eOne, false,
@@ -3981,6 +4118,8 @@ void hwc2_blit_yv12(
    if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
       ALOGE("[%s]:[yv12]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failed g2d (packet buffer).\n",
             (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post);
+      blt = HWC2_INVALID;
+      goto out;
    } else {
       NEXUS_Graphics2D_GetPacketBuffer(hwc2->hg2d, &buffer, &size, 1024);
       pthread_mutex_unlock(&hwc2->mtx_g2d);
@@ -4105,12 +4244,18 @@ void hwc2_blit_yv12(
       if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
          ALOGE("[%s]:[yv12]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failed g2d (complete).\n",
                (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post);
+         NEXUS_Surface_UnlockPlaneAndPalette(cb);
+         NEXUS_Surface_UnlockPlaneAndPalette(cr);
+         NEXUS_Surface_UnlockPlaneAndPalette(y);
+         NEXUS_Surface_UnlockPlaneAndPalette(yuv);
+         NEXUS_Surface_UnlockPlaneAndPalette(d);
+         blt = HWC2_INVALID;
+         goto out;
       } else {
          rc = NEXUS_Graphics2D_PacketWriteComplete(hwc2->hg2d, (uint8_t*)next - (uint8_t*)buffer);
          rc = hwc2_chkpt_l(hwc2);
          pthread_mutex_unlock(&hwc2->mtx_g2d);
       }
-
       NEXUS_Surface_UnlockPlaneAndPalette(cb);
       NEXUS_Surface_UnlockPlaneAndPalette(cr);
       NEXUS_Surface_UnlockPlaneAndPalette(y);
@@ -4118,6 +4263,7 @@ void hwc2_blit_yv12(
       NEXUS_Surface_UnlockPlaneAndPalette(d);
    }
 
+out:
    if (cb != NULL) {
       NEXUS_Surface_Unlock(cb);
       NEXUS_Surface_Destroy(cb);
@@ -4134,9 +4280,10 @@ void hwc2_blit_yv12(
       NEXUS_Surface_Unlock(yuv);
       NEXUS_Surface_Destroy(yuv);
    }
+   return blt;
 }
 
-void hwc2_blit_gpx(
+int hwc2_blit_gpx(
    struct hwc2_bcm_device_t* hwc2,
    NEXUS_SurfaceHandle d,
    struct hwc2_lyr_t *lyr,
@@ -4145,21 +4292,16 @@ void hwc2_blit_gpx(
    struct hwc2_dsp_t *dsp) {
 
    NEXUS_SurfaceHandle s = NULL;
+   NEXUS_SurfaceStatus ds;
    NEXUS_Graphics2DBlitSettings bs;
    NEXUS_Rect c, p, sa, oa;
    NEXUS_Error rc;
+   int blt = 0;
 
    float fa = fmax(0.0, fmin(1.0, lyr->al));
    uint32_t al = floor(fa == 1.0 ? 255 : fa * 256.0);
 
-   s = hwc_to_nsc_surface(
-         shared->container.width, shared->container.height,
-         ((private_handle_t *)lyr->bh)->oglStride, gr2nx_pixel(shared->container.format),
-         shared->container.block, 0);
-   if (s == NULL) {
-      ALOGE("[%s]:[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failed to get surface.\n",
-            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post);
-   }
+   NEXUS_Surface_GetStatus(d, &ds);
 
    c = {(int16_t)lyr->crp.left,
         (int16_t)lyr->crp.top,
@@ -4173,12 +4315,36 @@ void hwc2_blit_gpx(
    sa = c;
    oa = p;
 
-   ALOGI_IF((dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?LOG_RGBA_VEBUG:LOG_RGBA_DEBUG,
-            "[%s]:[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": {%d,%08x} {%d,%d,%dx%d,%p} out:{%d,%d,%dx%d,%p}\n",
+   if (sa.x + sa.width > (int16_t)shared->container.width ||
+       sa.y + sa.height > (int16_t)shared->container.height) {
+      ALOGE("[%s]:[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": rejecting {%d,%d:%d}{%d,%d:%d}.\n",
             (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
-            lyr->bm, al<<HWC2_ASHIFT,
+            sa.x, sa.width, shared->container.width,
+            sa.y, sa.height, shared->container.height);
+      blt = HWC2_INVALID;
+      goto out;
+   }
+
+   s = hwc_to_nsc_surface(
+         shared->container.width,
+         shared->container.height,
+         ((private_handle_t *)lyr->bh)->oglStride,
+         gr2nx_pixel(shared->container.format),
+         shared->container.block, 0);
+   if (s == NULL) {
+      ALOGE("[%s]:[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failed to get surface.\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post);
+      blt = HWC2_INVALID;
+      goto out;
+   }
+
+   ALOGI_IF((dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?LOG_RGBA_VEBUG:LOG_RGBA_DEBUG,
+            "[%s]:[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": {%d,%08x,%s} {%d,%d,%dx%d,%p} out:{%d,%d,%dx%d,%p} dst:{%d,%d}\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
+            lyr->bm, al<<HWC2_ASHIFT, getTransformName(lyr->tr),
             sa.x, sa.y, sa.width, sa.height, s,
-            oa.x, oa.y, oa.width, oa.height, d);
+            oa.x, oa.y, oa.width, oa.height, d,
+            ds.width, ds.height);
 
    NEXUS_Graphics2D_GetDefaultBlitSettings(&bs);
    bs.source.surface = s;
@@ -4192,6 +4358,13 @@ void hwc2_blit_gpx(
    bs.alphaBlend     = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? hwc2_a2n_al_be[HWC2_BLEND_MODE_NONE] : hwc2_a2n_al_be[lyr->bm];
    bs.dest.rect      = bs.output.rect;
    bs.constantColor  = (NEXUS_Pixel)al<<HWC2_ASHIFT;
+   if (HWC2_MEMC_ROT) {
+      if (lyr->tr == HWC_TRANSFORM_ROT_180 || lyr->tr == HWC_TRANSFORM_ROT_270) {
+         bs.mirrorOutputVertically = true;
+      } else if (lyr->tr == HWC_TRANSFORM_ROT_90) {
+         bs.mirrorOutputHorizontally = true;
+      }
+   }
 
    if ((lyr->bm == HWC2_BLEND_MODE_PREMULTIPLIED) &&
        (lbm == HWC2_BLEND_MODE_PREMULTIPLIED || lbm == HWC2_BLEND_MODE_INVALID) &&
@@ -4203,6 +4376,8 @@ void hwc2_blit_gpx(
    if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
       ALOGE("[%s]:[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failed g2d mutex.\n",
             (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post);
+      blt = HWC2_INVALID;
+      goto out;
    } else {
       rc = NEXUS_Graphics2D_Blit(hwc2->hg2d, &bs);
       if (rc == NEXUS_GRAPHICS2D_QUEUE_FULL) {
@@ -4216,12 +4391,17 @@ void hwc2_blit_gpx(
       if (rc) {
          ALOGE("[%s]:[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failure to blit.\n",
                (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post);
+         blt = HWC2_INVALID;
       }
       pthread_mutex_unlock(&hwc2->mtx_g2d);
    }
 
-   NEXUS_Surface_Destroy(s);
-   s = NULL;
+out:
+   if (s) {
+      NEXUS_Surface_Destroy(s);
+      s = NULL;
+   }
+   return blt;
 }
 
 static void hwc2_sdb(
@@ -4257,12 +4437,15 @@ static void hwc2_ext_cmp_frame(
    struct hwc2_bcm_device_t* hwc2,
    struct hwc2_frame_t *f) {
 
+   NEXUS_Error nx;
    NEXUS_SurfaceHandle d = NULL;
    int32_t i, c = 0;
    struct hwc2_lyr_t *lyr;
    bool is_video;
    hwc2_blend_mode_t lbm = HWC2_BLEND_MODE_INVALID;
    struct hwc2_dsp_t *dsp = hwc2->ext;
+   int blt;
+   size_t ccli = 0;
 
    /* setup and grab a destination buffer for this frame. */
    if (hwc2->ext->u.ext.cbs) {
@@ -4274,6 +4457,8 @@ static void hwc2_ext_cmp_frame(
       }
       hwc2_ext_fbs(hwc2, wcb);
       hwc2->ext->u.ext.cbs = false;
+      ALOGI("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":switching into '%s' mode\n",
+            dsp->pres, dsp->post, (wcb==cbs_e_bypass)?"bypass":"ncsfb");
    }
    d = hwc2_ext_fb_get(hwc2);
    if (d == NULL) {
@@ -4284,16 +4469,24 @@ static void hwc2_ext_cmp_frame(
             close(lyr->af);
          }
          if (lyr->rf != HWC2_INVALID) {
-            hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl);
+            if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
+               hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, HWC2_MAGIC);
+            } else {
+               hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl);
+            }
          }
       }
+      /* should this be fatal? */
+      ALOGE("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":grabbing framebuffer FAILED!\n",
+            dsp->pres, dsp->post);
       return;
    }
 
    // TODO: optimize seeding background.
    hwc2_fb_seed(hwc2, d, (f->vcnt || f->scnt) ? HWC2_TRS : HWC2_OPQ);
    hwc2_chkpt(hwc2);
-   ALOGI_IF(LOG_COMP_DEBUG, "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
+   ALOGI_IF(LOG_COMP_DEBUG,
+            "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
             dsp->pres, dsp->post, (f->vcnt || f->scnt) ? "transparent" : "opaque");
 
    for (i = 0; i < f->cnt; i++) {
@@ -4312,11 +4505,12 @@ static void hwc2_ext_cmp_frame(
           * note: this is the client target, so the fence comes from the
           *       display client target and not the layer buffer.
           */
-         if (lyr->bh == NULL && lyr->af != HWC2_INVALID) {
-            close(lyr->af);
-         } else if (lyr->af != HWC2_INVALID) {
-            sync_wait(lyr->af, BKNI_INFINITE);
-            close(lyr->af);
+         if (f->tgt == NULL && f->ftgt != HWC2_INVALID) {
+            close(f->ftgt);
+         } else if (f->ftgt != HWC2_INVALID) {
+            sync_wait(f->ftgt, BKNI_INFINITE);
+            close(f->ftgt);
+            f->ftgt = HWC2_INVALID;
          }
       } else if (!is_video) {
          /* ...wait on fence as needed. */
@@ -4339,34 +4533,49 @@ static void hwc2_ext_cmp_frame(
                /* [iii]. count of composed layers. */
                c++;
             }
-            ALOGI_IF(LOG_COMP_DEBUG, "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": solid color (%02x:%02x:%02x:%02x):%08x (%zu)\n",
+            ALOGI_IF(LOG_COMP_DEBUG,
+                     "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": solid color (%02x:%02x:%02x:%02x):%08x (%zu)\n",
                      dsp->pres, dsp->post, lyr->sc.r, lyr->sc.g, lyr->sc.b, lyr->sc.a, color, c);
          }
       break;
       case HWC2_COMPOSITION_CLIENT:
-         if (lyr->crp.left == 0 &&
-             lyr->crp.top == 0 &&
-             (uint16_t)(lyr->crp.right - lyr->crp.left) == (uint16_t)HWC2_INVALID &&
-             (uint16_t)(lyr->crp.bottom - lyr->crp.top) == (uint16_t)HWC2_INVALID) {
+         if (f->tgt != NULL) {
+            if (ccli == 0) {
+               /* client target is valid and we have not composed it yet...
+                *
+                * FALL THROUGH. */
+               lyr->bh = f->tgt;
+               ccli++;
+            } else {
+               ccli++;
+               break;
+            }
+         } else if (lyr->crp.left == 0 &&
+                    lyr->crp.top == 0 &&
+                    lyr->crp.right == HWC2_INVALID &&
+                    lyr->crp.bottom == HWC2_INVALID) {
             /* dim layer. */
             hwc2_dim(hwc2, d, lyr);
             hwc2_chkpt(hwc2);
             /* [iii]. count of composed layers. */
             c++;
-            ALOGI_IF(LOG_COMP_DEBUG, "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": dim layer (%zu)\n",
+            ALOGI_IF(LOG_COMP_DEBUG,
+                     "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": dim layer (%zu)\n",
                      dsp->pres, dsp->post, c);
             break;
+         } else {
+            ccli++;
+            ALOGW("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": unhandled HWC2_COMPOSITION_CLIENT\n",
+                  dsp->pres, dsp->post);
+            break;
          }
-         /* some valid content, compose as any other graphics.
-          *
-          * *** FALL THROUGH.
-          */
       case HWC2_COMPOSITION_DEVICE:
          if (is_video) {
             /* offlined video pipeline through bvn, nothing to do as we signalled already
              * the frame expected to be released on display.
              */
-            ALOGI_IF(LOG_COMP_DEBUG, "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": oob video (%zu)\n",
+            ALOGI_IF(LOG_COMP_DEBUG,
+                     "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": oob video (%zu)\n",
                      dsp->pres, dsp->post, c);
             break;
          } else {
@@ -4405,10 +4614,12 @@ static void hwc2_ext_cmp_frame(
             yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
                     (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
             if (yv12) {
-               hwc2_blit_yv12(hwc2, d, lyr, shared, dsp);
+               blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp);
             } else {
-               hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp);
-               lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
+               blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp);
+               if (!blt) {
+                  lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
+               }
             }
 
             if (lrcp == NEXUS_SUCCESS) {
@@ -4418,15 +4629,17 @@ static void hwc2_ext_cmp_frame(
                hwc2_mem_unlock(hwc2, bh, true);
             }
             /* [iii]. count of composed layers. */
-            c++;
-            ALOGI_IF(LOG_COMP_DEBUG, "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": %s layer (%zu)\n",
+            if (!blt) c++;
+            ALOGI_IF(!blt && LOG_COMP_DEBUG,
+                     "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": %s layer (%zu)\n",
                      dsp->pres, dsp->post, yv12?"yv12":"rgba", c);
          }
       break;
       case HWC2_COMPOSITION_SIDEBAND:
          if (hwc2->hb) {
             hwc2_sdb(hwc2, lyr);
-            ALOGI_IF(LOG_COMP_DEBUG, "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": sideband layer (%zu)\n",
+            ALOGI_IF(LOG_COMP_DEBUG,
+                     "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": sideband layer (%zu)\n",
                      dsp->pres, dsp->post, c);
          }
       break;
@@ -4438,19 +4651,34 @@ static void hwc2_ext_cmp_frame(
       }
 
       if (lyr->rf != HWC2_INVALID) {
-         hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl);
+         if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
+            if (ccli == 1) {
+               hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, HWC2_MAGIC);
+            }
+         } else {
+            hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl);
+         }
       }
    }
 
    if (c > 0) {
       /* [iv]. push composition to display. */
-      NEXUS_SurfaceClient_PushSurface(hwc2->ext->u.ext.sch, d, NULL, false);
-      ALOGI_IF(LOG_COMP_DEBUG, "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":%zu layer%scomposed\n",
-               dsp->pres, dsp->post, c, c>1?"s ":" ");
+      nx = NEXUS_SurfaceClient_PushSurface(hwc2->ext->u.ext.sch, d, NULL, false);
+      if (nx) {
+         hwc2_ext_fb_put(hwc2, d);
+         /* should this be fatal? */
+         ALOGE("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":push to display FAILED (%d)!\n",
+               dsp->pres, dsp->post, nx);
+      } else {
+         ALOGI_IF(LOG_COMP_DEBUG,
+                  "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":%zu layer%scomposed\n",
+                  dsp->pres, dsp->post, c, c>1?"s ":" ");
+      }
    } else {
       /* [iv]. ... or re-queue if nothing took place. */
       hwc2_ext_fb_put(hwc2, d);
-      ALOGI_IF(LOG_COMP_DEBUG, "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":no composition\n",
+      ALOGI_IF(LOG_COMP_DEBUG,
+               "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":no composition\n",
                dsp->pres, dsp->post);
    }
    hwc2_ret_inc(hwc2->ext, 1);
@@ -4574,6 +4802,7 @@ static void hwc2_setup_ext(
    if (hwc2->ext->cmp_tl < 0) {
       hwc2->ext->cmp_tl = HWC2_INVALID;
    }
+   ALOGI("[ext]: completion timeline: %d\n", hwc2->ext->cmp_tl);
 
    NxClient_GetSurfaceClientComposition(hwc2->ext->u.ext.nxa.surfaceClient[0].id, &composition);
    composition.virtualDisplay.width  = hwc2->ext->cfgs->w;
@@ -4613,6 +4842,13 @@ static void hwc2_setup_ext(
    }
    hwc2->ext->u.ext.rhpd = false;
 
+   hwc2->ext->u.ext.ct.rtl.tl = sw_sync_timeline_create();
+   if (hwc2->ext->u.ext.ct.rtl.tl < 0) {
+      hwc2->ext->u.ext.ct.rtl.tl = HWC2_INVALID;
+   }
+   hwc2->ext->u.ext.ct.rtl.hdl = (uint64_t)(intptr_t)hwc2->ext;
+   hwc2->ext->u.ext.ct.rtl.ix = 0;
+   ALOGI("[ext]: client target completion timeline: %d\n", hwc2->ext->u.ext.ct.rtl.tl);
    for (num = 0 ; num < HWC2_MAX_TL ; num++) {
       hwc2->ext->u.ext.rtl[num].tl = sw_sync_timeline_create();
       if (hwc2->ext->u.ext.rtl[num].tl < 0) {
@@ -4620,6 +4856,7 @@ static void hwc2_setup_ext(
       }
       hwc2->ext->u.ext.rtl[num].hdl = 0;
       hwc2->ext->u.ext.rtl[num].ix = 0;
+      ALOGI("[ext]: layer completion timeline (%d): %d\n", num, hwc2->ext->u.ext.rtl[num].tl);
    }
 }
 
