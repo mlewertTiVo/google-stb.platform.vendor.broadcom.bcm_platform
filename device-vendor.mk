@@ -31,7 +31,6 @@ PRODUCT_COPY_FILES += \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libdrmwvmplugin.so:system/lib/drm/libdrmwvmplugin.so:widevine \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvdrm_L3.so:system/vendor/lib/libwvdrm_L3.so:widevine \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvm.so:system/vendor/lib/libwvm.so:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libWVStreamControlAPI_L3.so:system/vendor/lib/libWVStreamControlAPI_L3.so:widevine \
     $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvdrmengine.so:system/vendor/lib/mediadrm/libwvdrmengine.so:widevine
 
 # no prebuilt binaries included, build from source if we have it
