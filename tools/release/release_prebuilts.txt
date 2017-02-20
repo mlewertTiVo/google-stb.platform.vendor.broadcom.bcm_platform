@@ -5,5 +5,4 @@ out/target/product/$TARGET_PRODUCT/system/lib/libdrmdecrypt.so
 out/target/product/$TARGET_PRODUCT/system/lib/drm/libdrmwvmplugin.so
 out/target/product/$TARGET_PRODUCT/system/vendor/lib/libwvdrm_L3.so
 out/target/product/$TARGET_PRODUCT/system/vendor/lib/libwvm.so
-out/target/product/$TARGET_PRODUCT/system/vendor/lib/libWVStreamControlAPI_L3.so
 out/target/product/$TARGET_PRODUCT/system/vendor/lib/mediadrm/libwvdrmengine.so
