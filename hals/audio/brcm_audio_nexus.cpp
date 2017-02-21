@@ -318,7 +318,7 @@ static int nexus_bout_get_presentation_position(struct brcm_stream_out *bout, ui
     NEXUS_SimpleAudioPlayback_GetStatus(simple_playback, &status);
     bout->framesPlayed += (status.playedBytes - bout->nexus.primary.lastPlayedBytes) / bout->frameSize;
     bout->nexus.primary.lastPlayedBytes = status.playedBytes;
-    *frames = bout->framesPlayed;
+    *frames = bout->framesPlayedTotal + bout->framesPlayed;
     return 0;
 }
 
@@ -361,6 +361,8 @@ static int nexus_bout_start(struct brcm_stream_out *bout)
         return -ENOSYS;
     }
     bout->nexus.primary.lastPlayedBytes = 0;
+    bout->framesPlayed = 0;
+
     return 0;
 }
 
@@ -374,8 +376,13 @@ static int nexus_bout_stop(struct brcm_stream_out *bout)
         NEXUS_SimpleAudioPlayback_GetStatus(simple_playback, &status);
         bout->framesPlayed += (status.playedBytes - bout->nexus.primary.lastPlayedBytes) / bout->frameSize;
         bout->nexus.primary.lastPlayedBytes = status.playedBytes;
-        ALOGV("%s: setting framesPlayed to %" PRIu64 "", __FUNCTION__, bout->framesPlayed);
+        bout->framesPlayedTotal += bout->framesPlayed;
+        ALOGV("%s: setting framesPlayedTotal to %" PRIu64 "", __FUNCTION__, bout->framesPlayedTotal);
     }
+
+    bout->nexus.primary.lastPlayedBytes = 0;
+    bout->framesPlayed = 0;
+
     return 0;
 }
 
@@ -520,7 +527,7 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
     config->channel_mask = NEXUS_OUT_DEFAULT_CHANNELS;
     config->format = NEXUS_OUT_DEFAULT_FORMAT;
 
-    bout->framesPlayed = 0;
+    bout->framesPlayedTotal = 0;
     bout->frameSize = audio_bytes_per_sample(config->format) * popcount(config->channel_mask);
     bout->buffer_size =
         get_brcm_audio_buffer_size(config->sample_rate,
