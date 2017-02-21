@@ -135,12 +135,6 @@ typedef enum {
     BRCM_NEXUS_STATE_DESTROYED,
 } brcm_nexus_state_t;
 
-typedef enum {
-    BRCM_OWNER_NULL = 0,
-    BRCM_OWNER_DEVICE,
-    BRCM_OWNER_OUTPUT,
-} brcm_owner_t;
-
 struct StandbyMonitorThread;
 
 struct brcm_device {
@@ -236,10 +230,8 @@ struct brcm_stream_out {
                 struct {
                     NEXUS_SimpleAudioDecoderHandle audio_decoder;
                     NEXUS_PlaypumpHandle playpump;
-                    NEXUS_MemoryBlockHandle stc_channel_mem_hdl;
                     NEXUS_SimpleStcChannelHandle stc_channel;
                     NEXUS_SimpleStcChannelHandle stc_channel_sync;
-                    brcm_owner_t stc_channel_owner;
                     NEXUS_PidChannelHandle pid_channel;
                     const uint8_t *pp_buffer_end;
                     bmedia_waveformatex_header wave_fmt;

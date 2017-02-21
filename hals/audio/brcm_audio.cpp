@@ -279,9 +279,9 @@ static int bout_set_parameters(struct audio_stream *stream,
         } else {
            ret = str_parms_get_int(parms, AUDIO_PARAMETER_STREAM_HW_AV_SYNC, &hw_sync_id);
            if (!ret) {
-              if (bout->tunneled && bout->nexus.tunnel.stc_channel_mem_hdl != (NEXUS_MemoryBlockHandle)(intptr_t)hw_sync_id) {
+              if (bout->tunneled && bout->bdev->stc_channel_mem_hdl != (NEXUS_MemoryBlockHandle)(intptr_t)hw_sync_id) {
                  ALOGW("%s: hw_sync_id 0x%X - stc_channel %p - mismatch.",
-                       __FUNCTION__, hw_sync_id, bout->nexus.tunnel.stc_channel_mem_hdl);
+                       __FUNCTION__, hw_sync_id, bout->bdev->stc_channel_mem_hdl);
                  ret = -EINVAL;
               } else if (!bout->tunneled) {
                  ALOGW("%s: hw_sync_id 0x%X - invalid for non tunnel output.",
@@ -938,27 +938,16 @@ static char *bdev_get_parameters(const struct audio_hw_device *adev,
        if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
           hw_sync_id = DUMMY_HW_SYNC;
        } else {
-          struct brcm_stream_out *bout_tunnel = bdev->bouts[BRCM_DEVICE_OUT_NEXUS_TUNNEL];
-          if (bout_tunnel != NULL) {
-             // tunnel output exists, use the stc-channel from it.
-             pthread_mutex_lock(&bout_tunnel->lock);
-             hw_sync_id = (int)(intptr_t)bout_tunnel->nexus.tunnel.stc_channel_mem_hdl;
-             pthread_mutex_unlock(&bout_tunnel->lock);
-             ALOGV("%s: at %d, tunnel exists, using stc-channel 0x%X\n", __FUNCTION__, __LINE__, hw_sync_id);
-          } else {
-             if (bdev->stc_channel_mem_hdl != NULL) {
-                nexus_tunnel_release_stc_mem_hdl(&bdev->stc_channel_mem_hdl);
-             }
-
+          if (bdev->stc_channel_mem_hdl == NULL) {
              NEXUS_Error err = nexus_tunnel_alloc_stc_mem_hdl(&bdev->stc_channel_mem_hdl);
              if (err != NEXUS_SUCCESS) {
                 ALOGE("%s: error allocating stc hdl", __FUNCTION__);
              }
-             if (bdev->stc_channel_mem_hdl == NULL) {
-                hw_sync_id = AUDIO_HW_SYNC_INVALID;
-             } else {
-                hw_sync_id = (int)(intptr_t)bdev->stc_channel_mem_hdl;
-             }
+          }
+          if (bdev->stc_channel_mem_hdl == NULL) {
+             hw_sync_id = AUDIO_HW_SYNC_INVALID;
+          } else {
+             hw_sync_id = (int)(intptr_t)bdev->stc_channel_mem_hdl;
           }
        }
 
@@ -1145,17 +1134,18 @@ static int bdev_open_output_stream(struct audio_hw_device *adev,
     }
 
     if (bdevices == BRCM_DEVICE_OUT_NEXUS_TUNNEL) {
-       if (bdev->stc_channel_mem_hdl != NULL) {
-          stc_channel_st *stc_st = NULL;
-          bout->nexus.tunnel.stc_channel_mem_hdl = bdev->stc_channel_mem_hdl;
-          bout->nexus.tunnel.stc_channel_owner = BRCM_OWNER_DEVICE;
-          nexus_tunnel_lock_stc_mem_hdl(bdev->stc_channel_mem_hdl, &stc_st);
-          bout->nexus.tunnel.stc_channel = stc_st->stc_channel;
-          bout->nexus.tunnel.stc_channel_sync = stc_st->stc_channel_sync;
-          nexus_tunnel_unlock_stc_mem_hdl(bdev->stc_channel_mem_hdl);
-       } else {
-          bout->nexus.tunnel.stc_channel_owner = BRCM_OWNER_OUTPUT;
+       if (bdev->stc_channel_mem_hdl == NULL) {
+          NEXUS_Error err = nexus_tunnel_alloc_stc_mem_hdl(&bdev->stc_channel_mem_hdl);
+          if (err != NEXUS_SUCCESS) {
+             ALOGE("%s: error allocating stc hdl", __FUNCTION__);
+             goto err_lock;
+          }
        }
+       stc_channel_st *stc_st = NULL;
+       nexus_tunnel_lock_stc_mem_hdl(bdev->stc_channel_mem_hdl, &stc_st);
+       bout->nexus.tunnel.stc_channel = stc_st->stc_channel;
+       bout->nexus.tunnel.stc_channel_sync = stc_st->stc_channel_sync;
+       nexus_tunnel_unlock_stc_mem_hdl(bdev->stc_channel_mem_hdl);
     }
 
     if (bdev->bouts[bdevices]) {
@@ -1433,6 +1423,10 @@ static int bdev_close(hw_device_t *dev)
         if (bin) {
             bdev_close_input_stream(&bdev->adev, &bin->ain);
         }
+    }
+
+    if (bdev->stc_channel_mem_hdl != NULL) {
+        nexus_tunnel_release_stc_mem_hdl(&bdev->stc_channel_mem_hdl);
     }
 
     pthread_mutex_destroy(&bdev->lock);
