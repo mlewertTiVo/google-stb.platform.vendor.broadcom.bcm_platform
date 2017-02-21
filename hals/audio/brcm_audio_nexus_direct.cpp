@@ -179,7 +179,7 @@ static int nexus_direct_bout_get_render_position(struct brcm_stream_out *bout, u
         if (bout->nexus.direct.playpump_mode) {
             bout->framesPlayed += status.framesDecoded - bout->nexus.direct.lastCount;
             bout->nexus.direct.lastCount = status.framesDecoded;
-            *dsp_frames = bout->framesPlayed * NEXUS_PCM_FRAMES_PER_EAC3_FRAME;
+            *dsp_frames = (uint32_t)(bout->framesPlayed * NEXUS_PCM_FRAMES_PER_EAC3_FRAME);
             if (bout->framesPlayed)
                 *dsp_frames += (NEXUS_PCM_FRAMES_PER_EAC3_FRAME / 2);
 
@@ -212,14 +212,14 @@ static int nexus_direct_bout_get_presentation_position(struct brcm_stream_out *b
         if (bout->nexus.direct.playpump_mode) {
             bout->framesPlayed += status.framesDecoded - bout->nexus.direct.lastCount;
             bout->nexus.direct.lastCount = status.framesDecoded;
-            *frames = bout->framesPlayed * NEXUS_PCM_FRAMES_PER_EAC3_FRAME;
-            if (bout->framesPlayed)
+            *frames = (bout->framesPlayedTotal + bout->framesPlayed) * NEXUS_PCM_FRAMES_PER_EAC3_FRAME;
+            if (*frames)
                 *frames += (NEXUS_PCM_FRAMES_PER_EAC3_FRAME / 2);
         } else {
             /* numBytesDecoded for passthrough mode returns the underlying playback playedBytes, which is of type size_t */
             bout->framesPlayed += ((size_t)status.numBytesDecoded - bout->nexus.direct.lastCount) / bout->frameSize;
             bout->nexus.direct.lastCount = status.numBytesDecoded;
-            *frames = bout->framesPlayed;
+            *frames = bout->framesPlayedTotal + bout->framesPlayed;
         }
     } else {
        *frames =0;
@@ -378,7 +378,6 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
         NEXUS_Playpump_Stop(playpump);
         return -ENOSYS;
     }
-    bout->nexus.direct.lastCount = 0;
 
     if (bout->nexus.direct.playpump_mode) {
         NEXUS_AudioDecoderTrickState trickState;
@@ -396,6 +395,9 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
             ALOGE("%s: Error pausing audio decoder %u", __FUNCTION__, res);
         }
     }
+
+    bout->nexus.direct.lastCount = 0;
+    bout->framesPlayed = 0;
 
     return 0;
 }
@@ -417,12 +419,17 @@ static int nexus_direct_bout_stop(struct brcm_stream_out *bout)
             bout->framesPlayed += ((size_t)status.numBytesDecoded - bout->nexus.direct.lastCount) / bout->frameSize;
             bout->nexus.direct.lastCount = status.numBytesDecoded;
         }
-        ALOGV("%s: setting framesPlayed to %" PRIu64 "", __FUNCTION__, bout->framesPlayed);
+        bout->framesPlayedTotal += bout->framesPlayed;
+        ALOGV("%s: setting framesPlayedTotal to %" PRIu64 "", __FUNCTION__, bout->framesPlayedTotal);
     }
 
     if (bout->nexus.direct.playpump_mode && playpump) {
         NEXUS_Playpump_Stop(playpump);
     }
+
+    bout->nexus.direct.lastCount = 0;
+    bout->framesPlayed = 0;
+
     return 0;
 }
 
@@ -504,9 +511,13 @@ static int nexus_direct_bout_flush(struct brcm_stream_out *bout)
     ALOGV("%s, %p, started=%s", __FUNCTION__, bout, bout->started?"true":"false");
     if (bout->started) {
         nexus_direct_bout_stop(bout);
-        bout->framesPlayed = 0;
         nexus_direct_bout_start(bout);
     }
+
+    bout->framesPlayed = 0;
+    bout->framesPlayedTotal = 0;
+    bout->nexus.direct.lastCount = 0;
+
     return 0;
 }
 
@@ -731,7 +742,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         return -EINVAL;
     }
 
-    bout->framesPlayed = 0;
+    bout->framesPlayedTotal = 0;
     if (config->format == AUDIO_FORMAT_PCM_16_BIT) {
         bout->frameSize = audio_bytes_per_sample(config->format) * popcount(config->channel_mask);
         bout->buffer_size =
