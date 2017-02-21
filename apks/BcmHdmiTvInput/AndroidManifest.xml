@@ -18,6 +18,7 @@
     package="com.broadcom.tvinput.hdmiservice">
 
     <uses-permission android:name="android.permission.TV_INPUT_HARDWARE" />
+    <uses-permission android:name="com.android.tv.permission.RECEIVE_INPUT_EVENT" />
     <uses-permission android:name="android.permission.HDMI_CEC" />
     <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
 
