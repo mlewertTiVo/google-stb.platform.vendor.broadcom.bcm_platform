@@ -93,6 +93,7 @@ const static uint32_t nexus_out_sample_rates[] = {
 /* Drain delay x retries = 500ms */
 #define BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_MAX  (10)
 
+#define BRCM_AUDIO_TUNNEL_STC_SYNC_INVALID      (0xFFFFFFFF)
 /*
  * Function declarations
  */
@@ -300,6 +301,15 @@ static int nexus_tunnel_bout_stop(struct brcm_stream_out *bout)
     if (playpump) {
         NEXUS_Playpump_Stop(playpump);
     }
+
+    // In case stc channel was left frozen by the previous output stream (during seeking)
+    ret = NEXUS_SimpleStcChannel_Freeze(bout->nexus.tunnel.stc_channel, false);
+    if (ret != NEXUS_SUCCESS) {
+       ALOGE("%s: Error starting STC %d", __FUNCTION__, ret);
+       NEXUS_Playpump_Stop(bout->nexus.tunnel.playpump);
+       return -ENOSYS;
+    }
+
     ALOGV("%s: setting framesPlayed to %" PRIu64 "", __FUNCTION__, bout->framesPlayed);
     bout->nexus.tunnel.first_write = false;
 
@@ -541,7 +551,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
         {
             if ((buffer == pts_buffer) || partial_header)
             {
-                if ((buffer == pts_buffer) && (bytes < HW_AV_SYNC_HDR_LEN))
+                if ((buffer == pts_buffer) && (bytes <= HW_AV_SYNC_HDR_LEN))
                 {
                     ALOGV("%s: av-sync header with no payload (%zu)", __FUNCTION__, bytes);
                     memcpy(av_header.buffer(), pts_buffer, bytes);
@@ -694,14 +704,17 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 ALOG_ASSERT(!bout->suspended);
 
                 if (ret != BERR_SUCCESS) {
-                    ALOGE("%s: playpump write timeout, ret=%d", __FUNCTION__, ret);
+                    NEXUS_PlaypumpStatus status;
+                    NEXUS_Playpump_GetStatus(playpump, &status);
+                    ALOGE("%s: playpump write timeout, ret=%d, ns:%d, fifoS:%zu fifoD:%zu",
+                            __FUNCTION__, ret, nexus_space, status.fifoSize, status.fifoDepth);
                     ret = -ENOSYS;
                     break;
                 }
             }
         }
 
-        if ((ret != 0) && writeHeader) {
+        if ((ret != 0) && writeHeader && !partial_header) {
             bytes += HW_AV_SYNC_HDR_LEN;
             buffer = (void *)((uint8_t *)buffer - HW_AV_SYNC_HDR_LEN);
         }
@@ -736,7 +749,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
             }
             usleep(BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US);
         }
-        ALOGV_IF(i > 0, "%s: throttle %ld us queued %u frames", __FUNCTION__, i * BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US, status.queuedFrames);
+        ALOGV_IF(i > 0, "%s: throttle %d us queued %u frames", __FUNCTION__, i * BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US, status.queuedFrames);
     }
 
     if (init_stc) {
@@ -907,28 +920,8 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     }
     bout->nexus.tunnel.pp_buffer_end = (uint8_t *)playpumpStatus.bufferBase + playpumpStatus.fifoDepth;
 
-    if (bout->nexus.tunnel.stc_channel_owner == BRCM_OWNER_OUTPUT) {
-        if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
-           bout->nexus.tunnel.stc_channel = (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC;
-        } else {
-           stc_channel_st *stc_st = NULL;
-           rc = nexus_tunnel_alloc_stc_mem_hdl(&bout->nexus.tunnel.stc_channel_mem_hdl);
-           if (rc != NEXUS_SUCCESS) {
-               ALOGE("%s: Error creating stc channels, rc:%d", __FUNCTION__, rc);
-               ret = -ENOMEM;
-               goto err_playpump_set;
-           }
-           nexus_tunnel_lock_stc_mem_hdl(bout->nexus.tunnel.stc_channel_mem_hdl, &stc_st);
-           if (stc_st == NULL) {
-               ALOGE("%s: Error locking stc channel hdl", __FUNCTION__);
-               ret = -ENOMEM;
-               nexus_tunnel_release_stc_mem_hdl(&bout->nexus.tunnel.stc_channel_mem_hdl);
-               goto err_playpump_set;
-           }
-           bout->nexus.tunnel.stc_channel = stc_st->stc_channel;
-           bout->nexus.tunnel.stc_channel_sync = stc_st->stc_channel_sync;
-           nexus_tunnel_unlock_stc_mem_hdl(bout->nexus.tunnel.stc_channel_mem_hdl);
-        }
+    if (property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE, 0)) {
+       bout->nexus.tunnel.stc_channel = (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC;
     }
 
     NEXUS_Playpump_GetDefaultOpenPidChannelSettings(&pidSettings);
@@ -989,12 +982,7 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     return 0;
 
 err_pid:
-    if (bout->nexus.tunnel.stc_channel_owner == BRCM_OWNER_OUTPUT) {
-       if (bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC) {
-          nexus_tunnel_release_stc_mem_hdl(&bout->nexus.tunnel.stc_channel_mem_hdl);
-       }
-       bout->nexus.tunnel.stc_channel = NULL;
-    }
+    bout->nexus.tunnel.stc_channel = NULL;
 err_playpump_set:
     NEXUS_Playpump_Close(bout->nexus.tunnel.playpump);
     bout->nexus.tunnel.playpump = NULL;
@@ -1026,14 +1014,6 @@ static int nexus_tunnel_bout_close(struct brcm_stream_out *bout)
         ALOG_ASSERT(bout->nexus.tunnel.playpump != NULL);
         NEXUS_Playpump_ClosePidChannel(bout->nexus.tunnel.playpump, bout->nexus.tunnel.pid_channel);
         bout->nexus.tunnel.pid_channel = NULL;
-    }
-
-    if ((bout->nexus.tunnel.stc_channel_owner == BRCM_OWNER_OUTPUT) &&
-        (bout->nexus.tunnel.stc_channel != NULL)) {
-       if (bout->nexus.tunnel.stc_channel != (NEXUS_SimpleStcChannelHandle)(intptr_t)DUMMY_HW_SYNC) {
-          nexus_tunnel_release_stc_mem_hdl(&bout->nexus.tunnel.stc_channel_mem_hdl);
-       }
-       bout->nexus.tunnel.stc_channel = NULL;
     }
 
     if (bout->nexus.tunnel.playpump) {
@@ -1187,7 +1167,7 @@ NEXUS_Error nexus_tunnel_alloc_stc_mem_hdl(NEXUS_MemoryBlockHandle *hdl)
     stc_channel_settings.mode = NEXUS_StcChannelMode_eHost;
     channel_st_ptr->stc_channel_sync = NEXUS_SimpleStcChannel_Create(&stc_channel_settings);
     NEXUS_Platform_SetSharedHandle(channel_st_ptr->stc_channel_sync, true);
-    NEXUS_SimpleStcChannel_SetStc(channel_st_ptr->stc_channel_sync, 0);
+    NEXUS_SimpleStcChannel_SetStc(channel_st_ptr->stc_channel_sync, BRCM_AUDIO_TUNNEL_STC_SYNC_INVALID);
     ALOGV("%s: stc-channels: [%p %p]", __FUNCTION__,
             channel_st_ptr->stc_channel, channel_st_ptr->stc_channel_sync);
 

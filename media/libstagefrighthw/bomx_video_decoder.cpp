@@ -90,6 +90,7 @@
 #define B_SECURE_QUERY_SLEEP_INTERVAL_US (200000)
 #define B_STAT_EARLYDROP_THRESHOLD_MS (5000)
 #define B_WAIT_FOR_STC_SYNC_TIMEOUT_MS (10000)
+#define B_STC_SYNC_INVALID_VALUE (0xFFFFFFFF)
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
  * [PES Header] [Codec Config Data] [Codec Header] [Payload] = 4 descriptors
@@ -975,7 +976,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_tunnelCurrentPts(0),
     m_waitingForStc(false),
     m_flushTime(0),
-    m_stcSyncValue(0),
+    m_stcSyncValue(B_STC_SYNC_INVALID_VALUE),
     m_stcResumePending(false),
     m_outputWidth(1920),
     m_outputHeight(1080),
@@ -3086,7 +3087,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                     uint32_t stcSync;
                     NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
                     if (stcSync == m_stcSyncValue) 
-                        NEXUS_SimpleStcChannel_SetStc(m_tunnelStcChannelSync, 0);
+                        NEXUS_SimpleStcChannel_SetStc(m_tunnelStcChannelSync, B_STC_SYNC_INVALID_VALUE);
                 }
             }
             ReturnPortBuffers(m_pVideoPorts[1]);
@@ -5344,7 +5345,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
 
                 NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
                 ALOGV("%s: stcSync:%u",  __FUNCTION__, stcSync);
-                if (stcSync != 0) {
+                if (stcSync != B_STC_SYNC_INVALID_VALUE) {
                     resumeDecoder = true;
                     m_stcSyncValue = stcSync;
                 } else if (toMillisecondTimeoutDelay(m_flushTime, now) > B_WAIT_FOR_STC_SYNC_TIMEOUT_MS) {
