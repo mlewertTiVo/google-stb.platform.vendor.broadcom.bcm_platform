@@ -32,6 +32,7 @@ import android.util.Log;
 import android.util.SparseArray;
 import android.util.SparseIntArray;
 import android.view.Surface;
+import android.view.KeyEvent;
 
 import org.xmlpull.v1.XmlPullParserException;
 
@@ -45,7 +46,7 @@ import java.util.Map;
  */
 public class HdmiTvInputService extends TvInputService {
     private static final boolean DEBUG = false;
-    private static final String TAG = HdmiTvInputService.class.getSimpleName();
+    private static final String TAG = "HdmiTvInputService";
 
     private static final TvStreamConfig[] EMPTY_STREAM_CONFIGS = {};
 
@@ -77,7 +78,8 @@ public class HdmiTvInputService extends TvInputService {
     }
 
     @Override
-    public Session onCreateSession(String inputId) {
+    public TvInputService.Session onCreateSession(String inputId) {
+        if (DEBUG) Log.e(TAG, "onCreateSession");
         TvInputInfo info = mInputMap.get(inputId);
         if (info == null) {
             throw new IllegalArgumentException("Unknown inputId: " + inputId
@@ -90,6 +92,7 @@ public class HdmiTvInputService extends TvInputService {
 
     @Override
     public TvInputInfo onHardwareAdded(TvInputHardwareInfo hardwareInfo) {
+        if (DEBUG) Log.e(TAG, "onHardwareAdded: " + hardwareInfo.toString());
         if (hardwareInfo.getType() != TvInputHardwareInfo.TV_INPUT_TYPE_HDMI) {
             return null;
         }
@@ -144,7 +147,7 @@ public class HdmiTvInputService extends TvInputService {
         return inputId;
     }
 
-    private class HdmiInputSessionImpl extends Session {
+    private class HdmiInputSessionImpl extends TvInputService.Session{
         protected final TvInputInfo mInfo;
         protected final int mHardwareDeviceId;
         protected final int mPortId;
@@ -249,6 +252,17 @@ public class HdmiTvInputService extends TvInputService {
         @Override
         public void onSetCaptionEnabled(boolean enabled) {
             // No-op
+        }
+
+        @Override
+        public boolean onKeyDown(int keyCode, KeyEvent event) {
+            if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
+                Intent i = new Intent(Intent.ACTION_MAIN);
+                i.addCategory(Intent.CATEGORY_HOME);
+                startActivity(i);
+                return true;
+            }
+            return false;
         }
     }
 }
