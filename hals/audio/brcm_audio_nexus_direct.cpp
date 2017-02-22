@@ -60,6 +60,7 @@ using namespace android;
 /*
  * Runtime Properties
  */
+#define BRCM_PROPERTY_AUDIO_DIRECT_DISABLE_AC3_PASSTHROUGH ("media.brcm.disable_ac3_passthrough")
 #define BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DRC_MODE ("media.brcm.direct_drc_mode")
 #define BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_STEREO_DOWNMIX_MODE ("media.brcm.direct_stereo_mode")
 
@@ -671,6 +672,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     NEXUS_Error rc;
     android::status_t status;
     NEXUS_AudioCapabilities audioCaps;
+    bool disable_ac3_passthrough;
     NxClient_AllocSettings allocSettings;
     NEXUS_SurfaceComposition surfSettings;
     NxClient_ConnectSettings connectSettings;
@@ -705,7 +707,8 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         break;
     case AUDIO_FORMAT_AC3:
         NEXUS_GetAudioCapabilities(&audioCaps);
-        if (audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode) {
+        disable_ac3_passthrough = property_get_bool(BRCM_PROPERTY_AUDIO_DIRECT_DISABLE_AC3_PASSTHROUGH, false);
+        if (disable_ac3_passthrough && audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode) {
             ALOGI("Enable play pump mode");
             bout->nexus.direct.playpump_mode = true;
             bout->nexus.direct.transcode_latency = property_get_int32(
