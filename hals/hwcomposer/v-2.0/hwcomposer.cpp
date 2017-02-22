@@ -15,19 +15,21 @@
  */
 
 // #define LOG_NDEBUG 0
-#define LOG_FENCE_DEBUG 0
-#define LOG_FENCE_VEBUG 1
-#define LOG_AR_DEBUG    0
+#define LOG_FENCE_DEBUG     0
+#define LOG_FENCE_VEBUG     0
+#define LOG_AR_DEBUG        0
 
-#define LOG_SEED_DEBUG  0
-#define LOG_RGBA_DEBUG  0
-#define LOG_RGBA_VEBUG  0
-#define LOG_DIM_DEBUG   0
-#define LOG_OOB_DEBUG   0
-#define LOG_Z_DEBUG     0
+#define LOG_SEED_DEBUG      0
+#define LOG_RGBA_DEBUG      0
+#define LOG_RGBA_VEBUG      0
+#define LOG_DIM_DEBUG       0
+#define LOG_OOB_DEBUG       0
+#define LOG_Z_DEBUG         0
 
-#define LOG_COMP_DEBUG  0
-#define LOG_COMP_VEBUG  0
+#define LOG_COMP_DEBUG      0
+#define LOG_COMP_SUM_DEBUG  0
+#define LOG_COMP_VEBUG      0
+#define LOG_COMP_SUM_VEBUG  0
 
 /* TODO: do we need this?  does it work properly? */
 #define HWC2_MEMC_ROT   0
@@ -1142,7 +1144,7 @@ static void hwc2_vd_cmp_frame(
    }
 
    if (c > 0) {
-      ALOGI_IF(LOG_COMP_VEBUG,
+      ALOGI_IF(LOG_COMP_SUM_VEBUG,
                "[vd]:[frame]:%" PRIu64 ":%" PRIu64 ":%zu layer%scomposed\n",
                dsp->pres, dsp->post, c, c>1?"s ":" ");
    }
@@ -3277,16 +3279,8 @@ static int32_t hwc2_relFences(
       *outNumElements = 0;
       lyr = dsp->lyr;
       while (lyr != NULL) {
-         if (((lyr->cDev == HWC2_COMPOSITION_INVALID) &&
-               (lyr->cCli == HWC2_COMPOSITION_DEVICE)) ||
-             (lyr->cDev == HWC2_COMPOSITION_DEVICE)) {
-            if (!lyr->oob) {
-               *outNumElements += 1;
-            }
-         } else if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
-            if (lyr->rf != HWC2_INVALID) {
-               *outNumElements += 1;
-            }
+         if (lyr->rf != HWC2_INVALID) {
+            *outNumElements += 1;
          }
          lyr = lyr->next;
       }
@@ -3294,20 +3288,10 @@ static int32_t hwc2_relFences(
       num = 0;
       lyr = dsp->lyr;
       while (lyr != NULL) {
-         if (((lyr->cDev == HWC2_COMPOSITION_INVALID) &&
-               (lyr->cCli == HWC2_COMPOSITION_DEVICE)) ||
-             (lyr->cDev == HWC2_COMPOSITION_DEVICE)) {
-            if (!lyr->oob) {
-               outLayers[num] = (hwc2_layer_t)(intptr_t)lyr;
-               outFences[num] = lyr->rf;
-               num++;
-            }
-         } else if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
-            if (lyr->rf != HWC2_INVALID) {
-               outLayers[num] = (hwc2_layer_t)(intptr_t)lyr;
-               outFences[num] = lyr->rf;
-               num++;
-            }
+         if (lyr->rf != HWC2_INVALID) {
+            outLayers[num] = (hwc2_layer_t)(intptr_t)lyr;
+            outFences[num] = lyr->rf;
+            num++;
          }
          lyr = lyr->next;
       }
@@ -3621,6 +3605,7 @@ static int32_t hwc2_preDsp(
       if (hwc2->ext->pmode == HWC2_POWER_MODE_OFF) {
          pthread_mutex_unlock(&hwc2->mtx_pwr);
          ret = HWC2_ERROR_NO_RESOURCES;
+         dsp->post++;
          goto out_error;
       }
       pthread_mutex_unlock(&hwc2->mtx_pwr);
@@ -3628,11 +3613,15 @@ static int32_t hwc2_preDsp(
       cnt = hwc2_cntLyr(dsp);
       if (cnt == 0) {
          ALOGW("[ext]:[pres]:%" PRIu64 ":%" PRIu64 ": no layer to compose", dsp->pres, dsp->post);
+         dsp->post++;
+         *outRetireFence = hwc2_ret_fence(dsp);
+         goto out_signal;
       }
       frame_size = sizeof(struct hwc2_frame_t) + (cnt * sizeof(struct hwc2_lyr_t));
       frame = (struct hwc2_frame_t *) calloc(1, frame_size);
       if (frame == NULL) {
          ret = HWC2_ERROR_NO_RESOURCES;
+         dsp->post++;
          goto out_error;
       }
       frame->cnt  = cnt;
@@ -3746,6 +3735,7 @@ static int32_t hwc2_preDsp(
       } else {
          free(frame);
          ret = HWC2_ERROR_NO_RESOURCES;
+         dsp->post++;
          goto out_error;
       }
 
@@ -3762,11 +3752,15 @@ static int32_t hwc2_preDsp(
       cnt = hwc2_cntLyr(dsp);
       if (cnt == 0) {
          ALOGW("[vd]:[pres]:%" PRIu64 ":%" PRIu64 ": no layer to compose", dsp->pres, dsp->post);
+         dsp->post++;
+         *outRetireFence = hwc2_ret_fence(dsp);
+         goto out_signal;
       }
       frame_size = sizeof(struct hwc2_frame_t) + (cnt * sizeof(struct hwc2_lyr_t));
       frame = (struct hwc2_frame_t *) calloc(1, frame_size);
       if (frame == NULL) {
          ret = HWC2_ERROR_NO_RESOURCES;
+         dsp->post++;
          goto out_error;
       }
       frame->cnt = cnt;
@@ -3800,6 +3794,7 @@ static int32_t hwc2_preDsp(
       } else {
          free(frame);
          ret = HWC2_ERROR_NO_RESOURCES;
+         dsp->post++;
          goto out_error;
       }
 
@@ -3824,6 +3819,9 @@ out_error:
       }
       lyr = lyr->next;
    }
+   goto out;
+out_signal:
+   hwc2_ret_inc(dsp, 1);
 out:
    ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_PRESENT_DISPLAY),
@@ -4670,14 +4668,14 @@ static void hwc2_ext_cmp_frame(
          ALOGE("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":push to display FAILED (%d)!\n",
                dsp->pres, dsp->post, nx);
       } else {
-         ALOGI_IF(LOG_COMP_DEBUG,
+         ALOGI_IF(LOG_COMP_SUM_DEBUG,
                   "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":%zu layer%scomposed\n",
                   dsp->pres, dsp->post, c, c>1?"s ":" ");
       }
    } else {
       /* [iv]. ... or re-queue if nothing took place. */
       hwc2_ext_fb_put(hwc2, d);
-      ALOGI_IF(LOG_COMP_DEBUG,
+      ALOGI_IF(LOG_COMP_SUM_DEBUG,
                "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":no composition\n",
                dsp->pres, dsp->post);
    }

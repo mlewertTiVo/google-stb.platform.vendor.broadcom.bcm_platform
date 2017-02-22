@@ -35,7 +35,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_ASHIFT     24
 #define HWC2_RLPF       0xCAFEBAAD
 #define HWC2_COMP_RUN   2
-#define HWC2_VOMP_RUN   1
+#define HWC2_VOMP_RUN   2
 #define HWC2_VID_WIN    1
 
 /* timeline creation/destruction are expensive operations; we use
