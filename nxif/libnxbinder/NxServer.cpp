@@ -230,7 +230,7 @@ static bool parseNexusIrMode(const char *name, NEXUS_IrInputMode *mode)
 }
 
 bool NxServer::init_ir(void) {
-   static const char * ir_map_path = "/system/usr/irkeymap";
+   static const char * ir_map_path = "/vendor/usr/irkeymap";
    static const char * ir_map_ext = ".ikm";
    static const NEXUS_IrInputMode ir_mode_default_enum = NEXUS_IrInputMode_eCirNec;
    static const char * ir_mode_default = "CirNec";
