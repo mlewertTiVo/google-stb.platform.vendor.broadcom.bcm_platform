@@ -19,9 +19,10 @@
 
 #define EIO_BOOT_MAGIC        0x331100BB
 #define EIO_BOOT_NUM_ALT_PART 2
+#define EIO_BOOT_SUFFIX_LEN   8
 
 struct eio_boot_slot {
-   char suffix[8];
+   char suffix[EIO_BOOT_SUFFIX_LEN];
    int  valid;
    int  boot_try;
    int  boot_ok;
