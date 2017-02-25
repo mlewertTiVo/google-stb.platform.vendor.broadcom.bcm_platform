@@ -30,6 +30,7 @@
 
 // local copy loaded on 'init', gets data from bootloader.
 static struct eio_boot bc_eio;
+static char suffix[EIO_BOOT_SUFFIX_LEN+1];
 
 static void wait_for_device(const char* fn) {
    int tries = 0;
@@ -196,6 +197,7 @@ static int isSlotBootable(struct boot_control_module *module __unused, unsigned 
 }
 
 static const char* getSuffix(struct boot_control_module *module __unused, unsigned slot) {
+   int i = 0;
    if (bc_eio.magic != EIO_BOOT_MAGIC) {
       ALOGE("getSuffix: bad magic (%x), not setup?", bc_eio.magic);
       return NULL;
@@ -204,7 +206,13 @@ static const char* getSuffix(struct boot_control_module *module __unused, unsign
       ALOGE("getSuffix: bad slot: %u", slot);
       return NULL;
    }
-   return bc_eio.slot[slot].suffix;
+   memset(suffix, 0, EIO_BOOT_SUFFIX_LEN+1);
+   if (bc_eio.slot[slot].suffix[0] != '_') {
+      suffix[0] = '_';
+      i = 1;
+   }
+   snprintf(&suffix[i], EIO_BOOT_SUFFIX_LEN, "%s", bc_eio.slot[slot].suffix);
+   return suffix;
 }
 
 static int isSlotMarkedSuccessful(struct boot_control_module *module __unused, unsigned slot) {
