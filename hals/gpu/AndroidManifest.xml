@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+   package="com.broadcom.generic.gfxdriver.default">
+
+   <application
+       android:label="gpu driver for broadcom stb"
+       android:hasCode="false"
+       android:extractNativeLibs="false"
+       android:multiArch="true">
+   </application>
+</manifest>
+
