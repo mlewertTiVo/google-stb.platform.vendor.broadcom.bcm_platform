@@ -35,7 +35,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_ASHIFT     24
 #define HWC2_RLPF       0xCAFEBAAD
 #define HWC2_COMP_RUN   2
-#define HWC2_VOMP_RUN   2
+#define HWC2_VOMP_RUN   0
 #define HWC2_VID_WIN    1
 
 /* timeline creation/destruction are expensive operations; we use
@@ -43,7 +43,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
  * to come and go in sync between device and client.
  */
 #define HWC2_MAX_TL     10
-#define HWC2_MAX_VTL    4
+#define HWC2_MAX_VTL    10
 
 #define HWC2_DSP_NAME   32
 #define HWC2_DSP_EXT    2001
@@ -211,8 +211,11 @@ struct hwc2_lyr_t {
 struct hwc2_frame_t {
    struct hwc2_frame_t *next;
 
-   buffer_handle_t     tgt;  /* target buffer for frame composition. */
-   int32_t             ftgt;  /* target buffer fence waiter (read|write depending on target). */
+   buffer_handle_t     tgt;  /* target client buffer for frame composition. */
+   int32_t             ftgt;  /* target client buffer fence waiter. */
+
+   buffer_handle_t     otgt;  /* target output buffer for frame composition. */
+   int32_t             oftgt;  /* target output buffer fence waiter. */
 
    int32_t             cnt;
    int32_t             scnt;

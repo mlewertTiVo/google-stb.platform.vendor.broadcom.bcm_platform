@@ -1010,9 +1010,10 @@ static void hwc2_vd_cmp_frame(
    PSHARED_DATA dshared = NULL;
    void *dmap = NULL;
    int blt;
+   size_t ccli = 0;
 
    /* setup destination buffer for this frame. */
-   private_handle_t::get_block_handles((private_handle_t *)f->tgt, &dbh, NULL);
+   private_handle_t::get_block_handles((private_handle_t *)f->otgt, &dbh, NULL);
    dlrc = hwc2_mem_lock(hwc2, dbh, &dmap, true);
    dshared = (PSHARED_DATA) dmap;
    if (dlrc || dshared == NULL) {
@@ -1020,7 +1021,7 @@ static void hwc2_vd_cmp_frame(
             dsp->pres, dsp->post);
       goto out;
    }
-   if (((private_handle_t *)f->tgt)->fmt_set != GR_NONE) {
+   if (((private_handle_t *)f->otgt)->fmt_set != GR_NONE) {
       dbhp = (NEXUS_MemoryBlockHandle)dshared->container.block;
       dlrcp = hwc2_mem_lock(hwc2, dbhp, &dmap, true);
       if (dlrcp || dmap == NULL) {
@@ -1035,7 +1036,7 @@ static void hwc2_vd_cmp_frame(
 
    d = hwc_to_nsc_surface(
          dshared->container.width, dshared->container.height,
-         ((private_handle_t *)f->tgt)->oglStride, gr2nx_pixel(dshared->container.format),
+         ((private_handle_t *)f->otgt)->oglStride, gr2nx_pixel(dshared->container.format),
          dshared->container.block, 0);
    if (d == NULL) {
       ALOGE("[vd]:[out]:%" PRIu64 ":%" PRIu64 ": cannot associate output surface.\n",
@@ -1044,16 +1045,28 @@ static void hwc2_vd_cmp_frame(
    }
 
    /* wait for output buffer to be ready to compose into. */
-   if (f->ftgt != HWC2_INVALID) {
-      sync_wait(f->ftgt, BKNI_INFINITE);
-      close(f->ftgt);
+   if (f->oftgt != HWC2_INVALID) {
+      sync_wait(f->oftgt, BKNI_INFINITE);
+      close(f->oftgt);
    }
 
    for (i = 0; i < f->cnt; i++) {
       lyr = &f->lyr[i];
       /* [i]. wait as needed.
        */
-      if (lyr->af != HWC2_INVALID) {
+      if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
+         /* ...wait on fence as needed.
+          * note: this is the client target, so the fence comes from the
+          *       display client target and not the layer buffer.
+          */
+         if (f->tgt == NULL && f->ftgt != HWC2_INVALID) {
+            close(f->ftgt);
+         } else if (f->ftgt != HWC2_INVALID) {
+            sync_wait(f->ftgt, BKNI_INFINITE);
+            close(f->ftgt);
+            f->ftgt = HWC2_INVALID;
+         }
+      } else if (lyr->af != HWC2_INVALID) {
          sync_wait(lyr->af, BKNI_INFINITE);
          close(lyr->af);
       }
@@ -1074,6 +1087,24 @@ static void hwc2_vd_cmp_frame(
                      dsp->pres, dsp->post, lyr->sc.r, lyr->sc.g, lyr->sc.b, lyr->sc.a, color, c);
          }
       break;
+      case HWC2_COMPOSITION_CLIENT:
+         if (f->tgt != NULL) {
+            if (ccli == 0) {
+               /* client target is valid and we have not composed it yet...
+                *
+                * FALL THROUGH. */
+               lyr->bh = f->tgt;
+               ccli++;
+            } else {
+               ccli++;
+               break;
+            }
+         } else {
+            ccli++;
+            ALOGW("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": unhandled HWC2_COMPOSITION_CLIENT\n",
+                  dsp->pres, dsp->post);
+            break;
+         }
       case HWC2_COMPOSITION_DEVICE:
       {
          if (lyr->bh == NULL) {
@@ -1169,7 +1200,7 @@ static void *hwc2_vd_cmp(
    struct hwc2_bcm_device_t* hwc2 = (struct hwc2_bcm_device_t *)(argv);
    struct hwc2_frame_t *frame = NULL;
 
-   setpriority(PRIO_PROCESS, 0, PRIORITY_URGENT_DISPLAY + 2*PRIORITY_MORE_FAVORABLE);
+   setpriority(PRIO_PROCESS, 0, PRIORITY_URGENT_DISPLAY + 3*PRIORITY_MORE_FAVORABLE);
    set_sched_policy(0, SP_FOREGROUND);
 
    do {
@@ -1199,6 +1230,7 @@ static void *hwc2_vd_cmp(
          }
          if (syn) {
             syn = false;
+            composing = false;
             BKNI_SetEvent(hwc2->vd->cmp_syn);
          }
       } while (composing);
@@ -1384,7 +1416,8 @@ static int32_t hwc2_vdAdd(
    /* only support this format as output. */
    *format = HAL_PIXEL_FORMAT_RGBA_8888;
 
-   ALOGI("[vd]:[new]:%" PRIu64 ": created\n", (hwc2_display_t)(intptr_t)hwc2->vd);
+   ALOGI("[vd]:[new]:%" PRIu64 ": created:%" PRIu32 "x%" PRIu32 "\n",
+         (hwc2_display_t)(intptr_t)hwc2->vd, hwc2->vd->aCfg->w, hwc2->vd->aCfg->h);
    *outDisplay = (hwc2_display_t)(intptr_t)hwc2->vd;
 
 out:
@@ -2492,7 +2525,11 @@ static int32_t hwc2_lyrComp(
    /* composition type offered by surface flinger. */
    lyr->cCli = (hwc2_composition_t)type;
    /* ...reset our prefered composition type for this layer. */
-   lyr->cDev = HWC2_COMPOSITION_INVALID;
+   if (dsp->type == HWC2_DISPLAY_TYPE_VIRTUAL) {
+      lyr->cDev = HWC2_COMPOSITION_CLIENT;
+   } else {
+      lyr->cDev = HWC2_COMPOSITION_INVALID;
+   }
 
 out:
    ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
@@ -3764,11 +3801,22 @@ static int32_t hwc2_preDsp(
          goto out_error;
       }
       frame->cnt = cnt;
-      frame->tgt = dsp->u.vd.output;
-      frame->ftgt = dsp->u.vd.wrFence;
+      frame->otgt = dsp->u.vd.output;
+      frame->oftgt = dsp->u.vd.wrFence;
       lyr = dsp->lyr;
       clyr = &frame->lyr[0];
       for (frame_size = 0 ; frame_size < cnt ; frame_size++) {
+         if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
+            if (!ccli) {
+               if (hwc2->vd->u.vd.ct.tgt) {
+                  frame->tgt = hwc2->vd->u.vd.ct.tgt;
+               } else {
+                  frame->tgt = NULL;
+               }
+               frame->ftgt = hwc2->vd->u.vd.ct.rdf;
+            }
+            ccli++;
+         }
          lyr->rf = HWC2_INVALID;
          if (((lyr->cDev == HWC2_COMPOSITION_INVALID) &&
                (lyr->cCli == HWC2_COMPOSITION_DEVICE)) ||
@@ -4313,8 +4361,9 @@ int hwc2_blit_gpx(
    sa = c;
    oa = p;
 
-   if (sa.x + sa.width > (int16_t)shared->container.width ||
-       sa.y + sa.height > (int16_t)shared->container.height) {
+   if ((dsp->type != HWC2_DISPLAY_TYPE_VIRTUAL) &&
+       (sa.x + sa.width > (int16_t)shared->container.width ||
+        sa.y + sa.height > (int16_t)shared->container.height)) {
       ALOGE("[%s]:[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": rejecting {%d,%d:%d}{%d,%d:%d}.\n",
             (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
             sa.x, sa.width, shared->container.width,
