@@ -16,8 +16,8 @@
 
 // #define LOG_NDEBUG 0
 #define LOG_FENCE_DEBUG     0
-#define LOG_FENCE_VEBUG     0
-#define LOG_AR_DEBUG        0
+#define LOG_FENCE_VEBUG     1
+#define LOG_AR_DEBUG        1
 
 #define LOG_SEED_DEBUG      0
 #define LOG_RGBA_DEBUG      0
@@ -1045,7 +1045,7 @@ static void hwc2_vd_cmp_frame(
    }
 
    /* wait for output buffer to be ready to compose into. */
-   if (f->oftgt != HWC2_INVALID) {
+   if (f->oftgt >= 0) {
       sync_wait(f->oftgt, BKNI_INFINITE);
       close(f->oftgt);
    }
@@ -1059,14 +1059,14 @@ static void hwc2_vd_cmp_frame(
           * note: this is the client target, so the fence comes from the
           *       display client target and not the layer buffer.
           */
-         if (f->tgt == NULL && f->ftgt != HWC2_INVALID) {
+         if (f->tgt == NULL && f->ftgt >= 0) {
             close(f->ftgt);
-         } else if (f->ftgt != HWC2_INVALID) {
+         } else if (f->ftgt >= 0) {
             sync_wait(f->ftgt, BKNI_INFINITE);
             close(f->ftgt);
             f->ftgt = HWC2_INVALID;
          }
-      } else if (lyr->af != HWC2_INVALID) {
+      } else if (lyr->af >= 0) {
          sync_wait(lyr->af, BKNI_INFINITE);
          close(lyr->af);
       }
@@ -1282,37 +1282,41 @@ static void hwc2_setup_vd(
    pthread_mutexattr_t mattr;
    int num;
 
-   BKNI_CreateEvent(&hwc2->vd->cmp_evt);
-   BKNI_CreateEvent(&hwc2->vd->cmp_syn);
-   hwc2->vd->cmp_active = 1;
-   hwc2->vd->cmp_wl = NULL;
-   pthread_mutexattr_init(&mattr);
-   pthread_mutex_init(&hwc2->vd->mtx_cmp_wl, &mattr);
-   pthread_mutexattr_destroy(&mattr);
-   pthread_attr_init(&attr);
-   pthread_create(&hwc2->vd->cmp, &attr, hwc2_vd_cmp, (void *)hwc2);
-   pthread_attr_destroy(&attr);
-   pthread_setname_np(hwc2->vd->cmp, "hwc2_vd_cmp");
+   if (!HWC2_VD_GLES) {
+      BKNI_CreateEvent(&hwc2->vd->cmp_evt);
+      BKNI_CreateEvent(&hwc2->vd->cmp_syn);
+      hwc2->vd->cmp_active = 1;
+      hwc2->vd->cmp_wl = NULL;
+      pthread_mutexattr_init(&mattr);
+      pthread_mutex_init(&hwc2->vd->mtx_cmp_wl, &mattr);
+      pthread_mutexattr_destroy(&mattr);
+      pthread_attr_init(&attr);
+      pthread_create(&hwc2->vd->cmp, &attr, hwc2_vd_cmp, (void *)hwc2);
+      pthread_attr_destroy(&attr);
+      pthread_setname_np(hwc2->vd->cmp, "hwc2_vd_cmp");
 
-   hwc2->vd->cmp_tl = sw_sync_timeline_create();
-   if (hwc2->vd->cmp_tl == 0) {
-      int fd = sw_sync_timeline_create();
-      close(hwc2->vd->cmp_tl);
-      hwc2->vd->cmp_tl = fd;
-   }
-   if (hwc2->vd->cmp_tl < 0) {
-      hwc2->vd->cmp_tl = HWC2_INVALID;
-   }
-   ALOGI("[vd]: completion timeline: %d\n", hwc2->vd->cmp_tl);
-
-   for (num = 0 ; num < HWC2_MAX_VTL ; num++) {
-      hwc2->vd->u.vd.rtl[num].tl = sw_sync_timeline_create();
-      if (hwc2->vd->u.vd.rtl[num].tl < 0) {
-         hwc2->vd->u.vd.rtl[num].tl = HWC2_INVALID;
+      hwc2->vd->cmp_tl = sw_sync_timeline_create();
+      if (hwc2->vd->cmp_tl == 0) {
+         int fd = sw_sync_timeline_create();
+         close(hwc2->vd->cmp_tl);
+         hwc2->vd->cmp_tl = fd;
       }
-      hwc2->vd->u.vd.rtl[num].hdl = 0;
-      hwc2->vd->u.vd.rtl[num].ix = 0;
-      ALOGI("[vd]: layer completion timeline (%d): %d\n", num, hwc2->vd->u.vd.rtl[num].tl);
+      if (hwc2->vd->cmp_tl < 0) {
+         hwc2->vd->cmp_tl = HWC2_INVALID;
+      }
+      ALOGI("[vd]: completion timeline: %d\n", hwc2->vd->cmp_tl);
+
+      for (num = 0 ; num < HWC2_MAX_VTL ; num++) {
+         hwc2->vd->u.vd.rtl[num].tl = sw_sync_timeline_create();
+         if (hwc2->vd->u.vd.rtl[num].tl < 0) {
+            hwc2->vd->u.vd.rtl[num].tl = HWC2_INVALID;
+         }
+         hwc2->vd->u.vd.rtl[num].hdl = 0;
+         hwc2->vd->u.vd.rtl[num].ix = 0;
+         ALOGI("[vd]: layer completion timeline (%d): %d\n", num, hwc2->vd->u.vd.rtl[num].tl);
+      }
+   } else {
+      hwc2->vd->cmp_tl = HWC2_INVALID;
    }
 }
 
@@ -1324,10 +1328,13 @@ static void hwc2_destroy_vd(
    struct hwc2_dsp_cfg_t *cfg, *cfg2 = NULL;
 
    hwc2->vd->cmp_active = 0;
-   pthread_join(hwc2->vd->cmp, NULL);
-   pthread_mutex_destroy(&hwc2->vd->mtx_cmp_wl);
-   BKNI_DestroyEvent(hwc2->vd->cmp_evt);
-   BKNI_DestroyEvent(hwc2->vd->cmp_syn);
+   if (!HWC2_VD_GLES) {
+      BKNI_SetEvent(hwc2->vd->cmp_evt);
+      pthread_join(hwc2->vd->cmp, NULL);
+      pthread_mutex_destroy(&hwc2->vd->mtx_cmp_wl);
+      BKNI_DestroyEvent(hwc2->vd->cmp_evt);
+      BKNI_DestroyEvent(hwc2->vd->cmp_syn);
+   }
 
    if (hwc2->vd->cfgs) {
       cfg = hwc2->vd->cfgs;
@@ -1342,15 +1349,17 @@ static void hwc2_destroy_vd(
       lyr = hwc2->vd->lyr;
       while (lyr != NULL) {
          lyr2 = lyr->next;
-         hwc2_lyr_tl_unset(hwc2->vd, HWC2_DSP_VD, lyr->hdl);
+         if (!HWC2_VD_GLES) hwc2_lyr_tl_unset(hwc2->vd, HWC2_DSP_VD, lyr->hdl);
          free(lyr);
          lyr = lyr2;
       }
    }
 
-   close(hwc2->vd->cmp_tl);
-   for (num = 0 ; num < HWC2_MAX_VTL ; num++) {
-      close(hwc2->vd->u.vd.rtl[num].tl);
+   if (!HWC2_VD_GLES) {
+      close(hwc2->vd->cmp_tl);
+      for (num = 0 ; num < HWC2_MAX_VTL ; num++) {
+         close(hwc2->vd->u.vd.rtl[num].tl);
+      }
    }
 }
 
@@ -1379,8 +1388,7 @@ static int32_t hwc2_vdAdd(
       ret = HWC2_ERROR_NO_RESOURCES;
       goto out;
    }
-   if (((width > height) && (width > HWC2_VD_MAX_W || height > HWC2_VD_MAX_H)) ||
-       ((width < height) && (width > HWC2_VD_MAX_H || height > HWC2_VD_MAX_W))) {
+   if (width > HWC2_VD_MAX_SZ || height > HWC2_VD_MAX_SZ) {
       ret = HWC2_ERROR_UNSUPPORTED;
       goto out;
    }
@@ -1397,8 +1405,8 @@ static int32_t hwc2_vdAdd(
    hwc2->vd->cfgs = (struct hwc2_dsp_cfg_t *)malloc(sizeof(struct hwc2_dsp_cfg_t));
    if (hwc2->vd->cfgs != NULL) {
       hwc2->vd->cfgs->next  = NULL;
-      hwc2->vd->cfgs->w     = (width > height) ? width : height;
-      hwc2->vd->cfgs->h     = (width > height) ? height : width;
+      hwc2->vd->cfgs->w     = width;
+      hwc2->vd->cfgs->h     = height;
       hwc2->vd->cfgs->vsync = 16666667; /* hardcode 60fps */
       hwc2->vd->cfgs->xdp   = 0;
       hwc2->vd->cfgs->ydp   = 0;
@@ -1416,8 +1424,9 @@ static int32_t hwc2_vdAdd(
    /* only support this format as output. */
    *format = HAL_PIXEL_FORMAT_RGBA_8888;
 
-   ALOGI("[vd]:[new]:%" PRIu64 ": created:%" PRIu32 "x%" PRIu32 "\n",
-         (hwc2_display_t)(intptr_t)hwc2->vd, hwc2->vd->aCfg->w, hwc2->vd->aCfg->h);
+   ALOGI("[vd]:[new]:%" PRIu64 ": created[%s]:%" PRIu32 "x%" PRIu32 "\n",
+         (hwc2_display_t)(intptr_t)hwc2->vd, HWC2_VD_GLES?"gl":"m2m",
+         hwc2->vd->aCfg->w, hwc2->vd->aCfg->h);
    *outDisplay = (hwc2_display_t)(intptr_t)hwc2->vd;
 
 out:
@@ -1746,7 +1755,10 @@ static int32_t hwc2_lyrAdd(
    memset(lyr, 0, sizeof(*lyr));
    lyr->hdl = (uint64_t)(intptr_t)lyr;
    lyr->rf = HWC2_INVALID;
-   hwc2_lyr_tl_set(dsp, kind, lyr->hdl);
+   if ((kind != HWC2_DSP_VD) ||
+       ((kind == HWC2_DSP_VD) && !HWC2_VD_GLES)) {
+      hwc2_lyr_tl_set(dsp, kind, lyr->hdl);
+   }
 
    pthread_mutex_lock(&dsp->mtx_lyr);
    nxt = dsp->lyr;
@@ -1832,7 +1844,10 @@ static int32_t hwc2_lyrRem(
       prv->next = lyr->next;
    }
    lyr->next = NULL;
-   hwc2_lyr_tl_unset(dsp, kind, lyr->hdl);
+   if ((kind != HWC2_DSP_VD) ||
+       ((kind == HWC2_DSP_VD) && !HWC2_VD_GLES)) {
+      hwc2_lyr_tl_unset(dsp, kind, lyr->hdl);
+   }
    free(lyr);
    lyr = NULL;
 
@@ -2430,6 +2445,11 @@ out:
    ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_BUFFER),
       display, layer, getErrorName(ret));
+   if (ret != HWC2_ERROR_NONE) {
+      if (acquireFence >= 0) {
+         close(acquireFence);
+      }
+   }
    return ret;
 }
 
@@ -2990,6 +3010,11 @@ out:
    ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_OUTPUT_BUFFER),
       display, getErrorName(ret));
+   if (ret != HWC2_ERROR_NONE) {
+      if (releaseFence >= 0) {
+         close(releaseFence);
+      }
+   }
    return ret;
 }
 
@@ -3234,6 +3259,11 @@ out:
    ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_CLIENT_TARGET),
       display, getErrorName(ret));
+   if (ret != HWC2_ERROR_NONE) {
+      if (acquireFence >= 0) {
+         close(acquireFence);
+      }
+   }
    return ret;
 }
 
@@ -3376,26 +3406,30 @@ static int32_t hwc2_dspReqs(
       goto out;
    }
 
-   lyr = dsp->lyr;
-   *outDisplayRequests = HWC2_DISPLAY_REQUEST_FLIP_CLIENT_TARGET;
-
-   if (outLayers == NULL || outLayerRequests == NULL) {
+   if (dsp->type == HWC2_DISPLAY_TYPE_VIRTUAL) {
+      *outDisplayRequests = HWC2_DISPLAY_REQUEST_WRITE_CLIENT_TARGET_TO_OUTPUT;
       *outNumElements = 0;
-      while (lyr != NULL) {
-         if (lyr->rp) {
-            *outNumElements += 1;
-         }
-         lyr = lyr->next;
-      }
    } else {
-      while (lyr != NULL) {
-         if (lyr->rp) {
-            *(outLayers+i) = (hwc2_layer_t)(intptr_t)lyr;
-            *(outLayerRequests+i) = HWC2_LAYER_REQUEST_CLEAR_CLIENT_TARGET;
-            lyr->rp = false;
-            i++;
+      *outDisplayRequests = HWC2_DISPLAY_REQUEST_FLIP_CLIENT_TARGET;
+      lyr = dsp->lyr;
+      if (outLayers == NULL || outLayerRequests == NULL) {
+         *outNumElements = 0;
+         while (lyr != NULL) {
+            if (lyr->rp) {
+               *outNumElements += 1;
+            }
+            lyr = lyr->next;
          }
-         lyr = lyr->next;
+      } else {
+         while (lyr != NULL) {
+            if (lyr->rp) {
+               *(outLayers+i) = (hwc2_layer_t)(intptr_t)lyr;
+               *(outLayerRequests+i) = HWC2_LAYER_REQUEST_CLEAR_CLIENT_TARGET;
+               lyr->rp = false;
+               i++;
+            }
+            lyr = lyr->next;
+         }
       }
    }
 
@@ -3786,6 +3820,30 @@ static int32_t hwc2_preDsp(
       struct hwc2_frame_t *frame = NULL;
       struct hwc2_lyr_t *clyr = NULL;
 
+      if (HWC2_VD_GLES) {
+         *outRetireFence = -1;
+         if (dsp->u.vd.wrFence >= 0) {
+            close(dsp->u.vd.wrFence);
+            dsp->u.vd.wrFence = HWC2_INVALID;
+         }
+         if (hwc2->vd->u.vd.ct.rdf >= 0) {
+            close(hwc2->vd->u.vd.ct.rdf);
+            hwc2->vd->u.vd.ct.rdf = HWC2_INVALID;
+         }
+         cnt = hwc2_cntLyr(dsp);
+         lyr = dsp->lyr;
+         for (frame_size = 0 ; frame_size < cnt ; frame_size++) {
+            lyr->rf = HWC2_INVALID;
+            if (lyr->af >= 0) {
+               close(lyr->af);
+               lyr->af = HWC2_INVALID;
+            }
+            lyr = lyr->next;
+         }
+         dsp->post++;
+         goto out;
+      }
+
       cnt = hwc2_cntLyr(dsp);
       if (cnt == 0) {
          ALOGW("[vd]:[pres]:%" PRIu64 ":%" PRIu64 ": no layer to compose", dsp->pres, dsp->post);
@@ -3958,11 +4016,16 @@ static void hwc2_bcm_close(
    size_t num;
 
    if (hwc2->vd) {
+      ALOGW("[hwc2]: removing virtual-display: %" PRIu64 "\n",
+            (hwc2_display_t)(intptr_t)hwc2->vd);
       hwc2_destroy_vd(hwc2);
       free(hwc2->vd);
    }
 
    if (hwc2->ext) {
+      ALOGW("[hwc2]: removing external-display: %" PRIu64 "\n",
+            (hwc2_display_t)(intptr_t)hwc2->vd);
+
       if (hwc2->ext->cfgs) {
          cfg = hwc2->ext->cfgs;
          while (cfg != NULL) {
@@ -3983,6 +4046,7 @@ static void hwc2_bcm_close(
       NEXUS_SurfaceClient_Release(hwc2->ext->u.ext.sch);
       NxClient_Free(&hwc2->ext->u.ext.nxa);
       hwc2->ext->cmp_active = 0;
+      BKNI_SetEvent(hwc2->ext->cmp_evt);
       pthread_join(hwc2->ext->cmp, NULL);
       pthread_mutex_destroy(&hwc2->ext->mtx_cmp_wl);
       pthread_mutex_destroy(&hwc2->ext->mtx_lyr);
@@ -4512,7 +4576,7 @@ static void hwc2_ext_cmp_frame(
       hwc2_ret_inc(hwc2->ext, 1);
       for (i = 0; i < f->cnt; i++) {
          lyr = &f->lyr[i];
-         if (lyr->af != HWC2_INVALID) {
+         if (lyr->af >= 0) {
             close(lyr->af);
          }
          if (lyr->rf != HWC2_INVALID) {
@@ -4539,7 +4603,7 @@ static void hwc2_ext_cmp_frame(
    for (i = 0; i < f->cnt; i++) {
       lyr = &f->lyr[i];
       is_video = lyr->oob;
-      if (is_video && lyr->af != HWC2_INVALID) {
+      if (is_video && lyr->af >= 0) {
          close(lyr->af);
       }
       /* [i]. wait as needed.
@@ -4552,18 +4616,18 @@ static void hwc2_ext_cmp_frame(
           * note: this is the client target, so the fence comes from the
           *       display client target and not the layer buffer.
           */
-         if (f->tgt == NULL && f->ftgt != HWC2_INVALID) {
+         if (f->tgt == NULL && f->ftgt >= 0) {
             close(f->ftgt);
-         } else if (f->ftgt != HWC2_INVALID) {
+         } else if (f->ftgt >= 0) {
             sync_wait(f->ftgt, BKNI_INFINITE);
             close(f->ftgt);
             f->ftgt = HWC2_INVALID;
          }
       } else if (!is_video) {
          /* ...wait on fence as needed. */
-         if (lyr->bh == NULL && lyr->af != HWC2_INVALID) {
+         if (lyr->bh == NULL && lyr->af >= 0) {
             close(lyr->af);
-         } else if (lyr->af != HWC2_INVALID) {
+         } else if (lyr->af >= 0) {
             sync_wait(lyr->af, BKNI_INFINITE);
             close(lyr->af);
          }
