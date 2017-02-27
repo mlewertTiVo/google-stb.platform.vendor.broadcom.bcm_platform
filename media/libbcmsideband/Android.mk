@@ -11,6 +11,7 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/utils
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/arect/include
+LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/nativewindow/include
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)

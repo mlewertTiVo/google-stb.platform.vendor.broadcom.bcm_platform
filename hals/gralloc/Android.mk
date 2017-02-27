@@ -33,6 +33,7 @@ V3D_VARIANT := v3d
 endif
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/gpu/$(V3D_VARIANT)/driver/interface/khronos/include
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/arect/include
+LOCAL_C_INCLUDES += $(TOP)/frameworks/native/libs/nativewindow/include
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -DLOG_TAG=\"bcm-gr\"
