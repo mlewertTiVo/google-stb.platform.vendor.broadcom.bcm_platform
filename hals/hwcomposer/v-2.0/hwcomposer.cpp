@@ -16,8 +16,8 @@
 
 // #define LOG_NDEBUG 0
 #define LOG_FENCE_DEBUG     0
-#define LOG_FENCE_VEBUG     1
-#define LOG_AR_DEBUG        1
+#define LOG_FENCE_VEBUG     0
+#define LOG_AR_DEBUG        0
 
 #define LOG_SEED_DEBUG      0
 #define LOG_RGBA_DEBUG      0
@@ -4687,6 +4687,8 @@ static void hwc2_ext_cmp_frame(
             ALOGI_IF(LOG_COMP_DEBUG,
                      "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": oob video (%zu)\n",
                      dsp->pres, dsp->post, c);
+
+
             break;
          } else {
             if (lyr->bh == NULL) {
@@ -4771,6 +4773,13 @@ static void hwc2_ext_cmp_frame(
       }
    }
 
+   /* video present, make sure we seed background. */
+   if (c == 0 && (f->vcnt || f->scnt)) {
+      if (dsp->u.ext.bg == HWC2_OPQ) {
+         c++;
+      }
+   }
+
    if (c > 0) {
       /* [iv]. push composition to display. */
       nx = NEXUS_SurfaceClient_PushSurface(hwc2->ext->u.ext.sch, d, NULL, false);
@@ -4780,6 +4789,7 @@ static void hwc2_ext_cmp_frame(
          ALOGE("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":push to display FAILED (%d)!\n",
                dsp->pres, dsp->post, nx);
       } else {
+         dsp->u.ext.bg = (f->vcnt || f->scnt) ? HWC2_TRS : HWC2_OPQ;
          ALOGI_IF(LOG_COMP_SUM_DEBUG,
                   "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":%zu layer%scomposed\n",
                   dsp->pres, dsp->post, c, c>1?"s ":" ");
