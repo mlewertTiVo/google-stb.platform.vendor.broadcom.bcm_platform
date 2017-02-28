@@ -8,15 +8,19 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-sdk android:minSdkVersion="12" />
 
-    <application android:icon="@drawable/ic_launcher" android:label="@string/app_name">
+    <application android:icon="@drawable/ic_launcher"
+                 android:banner="@drawable/ic_ota_updater_banner"
+                 android:label="@string/app_name">
         <activity android:name=".BcmOtaUpdater"
                   android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
 
     </application>
-
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 </manifest>
