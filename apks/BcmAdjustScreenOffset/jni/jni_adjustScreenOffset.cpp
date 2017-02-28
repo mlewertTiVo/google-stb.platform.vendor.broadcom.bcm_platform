@@ -143,14 +143,14 @@ void HwcAppBinder::notify(int msg, struct hwc_notification_info &ntfy)
 
 HwcAppBinder_wrap *m_appHwcBinder;
 
-JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset(JNIEnv *env, jobject thisobj, jobject offset);
-JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_getScreenOffset(JNIEnv *env, jobject thisobj, jobject offset);
-JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_resetScreenOffset(JNIEnv *env, jobject thisobj);
+JNIEXPORT void JNICALL Java_com_broadcom_BcmAdjustScreenOffset_native_1adjustScreenOffset_setScreenOffset(JNIEnv *env, jobject thisobj, jobject offset);
+JNIEXPORT void JNICALL Java_com_broadcom_BcmAdjustScreenOffset_native_1adjustScreenOffset_getScreenOffset(JNIEnv *env, jobject thisobj, jobject offset);
+JNIEXPORT void JNICALL Java_com_broadcom_BcmAdjustScreenOffset_native_1adjustScreenOffset_resetScreenOffset(JNIEnv *env, jobject thisobj);
 
 static JNINativeMethod gMethods[] = {
-    {"setScreenOffset", "(Landroid/graphics/Rect;)V", (void *)Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset},
-    {"getScreenOffset", "(Landroid/graphics/Rect;)V", (void *)Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_getScreenOffset},
-    {"resetScreenOffset", "()V", (void *)Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_resetScreenOffset}
+    {"setScreenOffset", "(Landroid/graphics/Rect;)V", (void *)Java_com_broadcom_BcmAdjustScreenOffset_native_1adjustScreenOffset_setScreenOffset},
+    {"getScreenOffset", "(Landroid/graphics/Rect;)V", (void *)Java_com_broadcom_BcmAdjustScreenOffset_native_1adjustScreenOffset_getScreenOffset},
+    {"resetScreenOffset", "()V", (void *)Java_com_broadcom_BcmAdjustScreenOffset_native_1adjustScreenOffset_resetScreenOffset}
 };
 
 static int registerNativeMethods(JNIEnv* env, const char* className,
@@ -173,7 +173,7 @@ static int registerNativeMethods(JNIEnv* env, const char* className,
 
 static int register_adjustScreenOffset_jni(JNIEnv *env)
 {
-    return registerNativeMethods(env,"com/android/adjustScreenOffset/native_adjustScreenOffset", gMethods, NELEM(gMethods));
+    return registerNativeMethods(env,"com/broadcom/BcmAdjustScreenOffset/native_adjustScreenOffset", gMethods, NELEM(gMethods));
 }
 
 jint JNI_OnLoad(JavaVM* vm, void* reserved)
@@ -209,7 +209,7 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
     return result;
 }
 
-JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_setScreenOffset
+JNIEXPORT void JNICALL Java_com_broadcom_BcmAdjustScreenOffset_native_1adjustScreenOffset_setScreenOffset
   (JNIEnv *env, jobject thisobj, jobject offset)
 {
     (void)thisobj;
@@ -248,7 +248,7 @@ JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenO
     m_appHwcBinder->setoverscan(position);
 }
 
-JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_getScreenOffset
+JNIEXPORT void JNICALL Java_com_broadcom_BcmAdjustScreenOffset_native_1adjustScreenOffset_getScreenOffset
   (JNIEnv *env, jobject thisobj, jobject offset)
 {
     (void)thisobj;
@@ -284,7 +284,7 @@ JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenO
     env->SetIntField(offset, bottom_id, bottom);
 }
 
-JNIEXPORT void JNICALL Java_com_android_adjustScreenOffset_native_1adjustScreenOffset_resetScreenOffset
+JNIEXPORT void JNICALL Java_com_broadcom_BcmAdjustScreenOffset_native_1adjustScreenOffset_resetScreenOffset
   (JNIEnv *env, jobject thisobj)
 {
     (void)thisobj;

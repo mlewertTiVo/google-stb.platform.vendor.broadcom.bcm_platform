@@ -31,8 +31,8 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice/Android.mk
 # apk's released.
 BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/apks
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
+include ${BCM_APPS_PATH}/BcmCustomizer/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
-include ${BCM_APPS_PATH}/BcmKeyInterceptor/Android.mk
 include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
 ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
@@ -43,7 +43,6 @@ ifneq ($(TARGET_BUILD_PDK),true)
 endif
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
-include ${BCM_APPS_PATH}/LeanbackBcmCustom/Android.mk
 
 # additional tools, not needed for default integration.
 ifneq ($(TARGET_BUILD_PDK),true)
