@@ -203,7 +203,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateEAc3(
     }
     if (!nexusClient)
     {
-        ALOGW("Unable to determine presence of AC3 hardware!");
+        ALOGW("Unable to determine presence of EAC3 hardware!");
     }
     else
     {
@@ -211,7 +211,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateEAc3(
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
         {
-            ALOGW("AC3 hardware support is not available");
+            ALOGW("EAC3 hardware support is not available");
             goto error;
         }
     }

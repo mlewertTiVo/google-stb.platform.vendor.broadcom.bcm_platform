@@ -42,6 +42,8 @@
 #include "bomx_audio_decoder.h"
 
 extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAac(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAc3(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateEAc3(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 
 class BOMX_AudioDecoder_Secure : public BOMX_AudioDecoder
 {
