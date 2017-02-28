@@ -28,11 +28,9 @@
 // Bionic's copy of asound.h contains references to these kernel macros.
 // They need to be removed in order to include the file from userland.
 #define __force
-#define __bitwise
 #define __user
 #include <sound/asound.h>
 #undef __force
-#undef __bitwise
 #undef __user
 
 #include <utils/misc.h>
