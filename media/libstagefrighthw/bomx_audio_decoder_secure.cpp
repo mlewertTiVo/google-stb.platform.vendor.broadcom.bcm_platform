@@ -109,6 +109,140 @@ error:
     return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
 
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAc3(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    NEXUS_AudioCapabilities audioCaps;
+    NexusIPCClientBase *pIpcClient = NULL;
+    uint64_t nexusClient = 0;
+    BOMX_AudioDecoder_Secure *pAudioDecoderSec = NULL;
+
+    pIpcClient = NexusIPCClientFactory::getClient(pName);
+    if (pIpcClient)
+    {
+        nexusClient = pIpcClient->createClientContext();
+    }
+    if (!nexusClient)
+    {
+        ALOGW("Unable to determine presence of AC3 hardware!");
+    }
+    else
+    {
+        NEXUS_GetAudioCapabilities(&audioCaps);
+        if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
+             !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
+        {
+            ALOGW("AC3 hardware support is not available");
+            goto error;
+        }
+    }
+
+    pAudioDecoderSec = new BOMX_AudioDecoder_Secure(
+                              pComponentTpe, pName, pAppData, pCallbacks,
+                              pIpcClient, nexusClient,
+                              BOMX_AUDIO_GET_ROLE_COUNT(g_ac3Role),
+                              g_ac3Role, BOMX_AudioDecoder_GetRoleAc3);
+
+    if ( NULL == pAudioDecoderSec )
+    {
+        goto error;
+    }
+    else
+    {
+        OMX_ERRORTYPE constructorError = pAudioDecoderSec->IsValid();
+        if ( constructorError == OMX_ErrorNone )
+        {
+            return OMX_ErrorNone;
+        }
+        else
+        {
+            delete pAudioDecoderSec;
+            return BOMX_ERR_TRACE(constructorError);
+        }
+    }
+
+error:
+    if (pIpcClient)
+    {
+        if (nexusClient)
+        {
+            pIpcClient->destroyClientContext(nexusClient);
+        }
+        delete pIpcClient;
+    }
+    return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+}
+
+extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateEAc3(
+    OMX_COMPONENTTYPE *pComponentTpe,
+    OMX_IN OMX_STRING pName,
+    OMX_IN OMX_PTR pAppData,
+    OMX_IN OMX_CALLBACKTYPE *pCallbacks)
+{
+    NEXUS_AudioCapabilities audioCaps;
+    NexusIPCClientBase *pIpcClient = NULL;
+    uint64_t nexusClient = 0;
+    BOMX_AudioDecoder_Secure *pAudioDecoderSec = NULL;
+
+    pIpcClient = NexusIPCClientFactory::getClient(pName);
+    if (pIpcClient)
+    {
+        nexusClient = pIpcClient->createClientContext();
+    }
+    if (!nexusClient)
+    {
+        ALOGW("Unable to determine presence of EAC3 hardware!");
+    }
+    else
+    {
+        NEXUS_GetAudioCapabilities(&audioCaps);
+        if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
+             !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
+        {
+            ALOGW("EAC3 hardware support is not available");
+            goto error;
+        }
+    }
+
+    pAudioDecoderSec = new BOMX_AudioDecoder_Secure(
+                              pComponentTpe, pName, pAppData, pCallbacks,
+                              pIpcClient, nexusClient,
+                              BOMX_AUDIO_GET_ROLE_COUNT(g_eac3Role),
+                              g_eac3Role, BOMX_AudioDecoder_GetRoleEAc3);
+
+    if ( NULL == pAudioDecoderSec )
+    {
+        goto error;
+    }
+    else
+    {
+        OMX_ERRORTYPE constructorError = pAudioDecoderSec->IsValid();
+        if ( constructorError == OMX_ErrorNone )
+        {
+            return OMX_ErrorNone;
+        }
+        else
+        {
+            delete pAudioDecoderSec;
+            return BOMX_ERR_TRACE(constructorError);
+        }
+    }
+
+error:
+    if (pIpcClient)
+    {
+        if (nexusClient)
+        {
+            pIpcClient->destroyClientContext(nexusClient);
+        }
+        delete pIpcClient;
+    }
+    return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
+}
+
 BOMX_AudioDecoder_Secure::BOMX_AudioDecoder_Secure(
     OMX_COMPONENTTYPE *pComponentType,
     const OMX_STRING pName,
