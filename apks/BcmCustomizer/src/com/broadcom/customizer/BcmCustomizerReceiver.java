@@ -28,6 +28,7 @@ import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.SystemProperties;
 import android.util.Log;
 import android.view.KeyEvent;
 
@@ -106,12 +107,12 @@ public class BcmCustomizerReceiver extends BroadcastReceiver {
         String action = intent.getAction();
         if (Intent.ACTION_PACKAGE_ADDED.equals(action) ||
                 Intent.ACTION_PACKAGE_REMOVED.equals(action)) {
-            if (launchNetflixAutomatically()) {
+            postNotification(getPackageName(intent));
+        } else if (ACTION_PARTNER_CUSTOMIZATION.equals(action)) {
+            if (SystemProperties.getBoolean(SYSPROP_BOOT_WAKEUP, false)) {
                 Log.i(TAG, "Launching Netflix from power on");
                 launchNetflixSplash(context, true, 0);
             }
-            postNotification(getPackageName(intent));
-        } else if (ACTION_PARTNER_CUSTOMIZATION.equals(action)) {
             mRowCutoff = intent.getIntExtra(EXTRA_ROW_WRAPPING_CUTOFF, 0);
             postNotification(BCM_SIDEBAND_VIEWER_PKG_NAME);
             postNotification(BCM_OTA_UPDATER_PKG_NAME);
@@ -150,7 +151,7 @@ public class BcmCustomizerReceiver extends BroadcastReceiver {
                     localAction == KeyEvent.ACTION_UP) {
                 /* Start Netflix activity */
                 if (DEBUG) Log.d(TAG, "Got Netflix key");
-                if (launchNetflixAutomatically()) {
+                if (SystemProperties.getBoolean(SYSPROP_BOOT_WAKEUP, false)) {
                     Log.i(TAG, "Launching Netflix from resume");
                     launchNetflixSplash(context, false, BRCM_SPLASH_BC_DELAY_MS);
                 } else {
@@ -273,9 +274,5 @@ public class BcmCustomizerReceiver extends BroadcastReceiver {
 
         if (DEBUG) Log.d(TAG, "waitBootup: " + waitBootup + " localIntent: " + localIntent);
         context.startActivity(localIntent);
-    }
-
-    private boolean launchNetflixAutomatically() {
-        return Boolean.parseBoolean(System.getProperty(SYSPROP_BOOT_WAKEUP, "false"));
     }
 }
