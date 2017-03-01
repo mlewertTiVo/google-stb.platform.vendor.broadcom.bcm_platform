@@ -95,6 +95,8 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAac(
         }
         else
         {
+            pNxWrap->leave();
+            delete pNxWrap;
             delete pAudioDecoderSec;
             return BOMX_ERR_TRACE(constructorError);
         }
@@ -116,21 +118,17 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAc3(
     OMX_IN OMX_CALLBACKTYPE *pCallbacks)
 {
     NEXUS_AudioCapabilities audioCaps;
-    NexusIPCClientBase *pIpcClient = NULL;
-    uint64_t nexusClient = 0;
+    NxWrap *pNxWrap = NULL;
     BOMX_AudioDecoder_Secure *pAudioDecoderSec = NULL;
 
-    pIpcClient = NexusIPCClientFactory::getClient(pName);
-    if (pIpcClient)
+    pNxWrap = new NxWrap(pName);
+    if (pNxWrap == NULL)
     {
-        nexusClient = pIpcClient->createClientContext();
-    }
-    if (!nexusClient)
-    {
-        ALOGW("Unable to determine presence of AC3 hardware!");
+        ALOGW("Unable to determine presence of AAC hardware!");
     }
     else
     {
+        pNxWrap->join();
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
@@ -142,7 +140,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAc3(
 
     pAudioDecoderSec = new BOMX_AudioDecoder_Secure(
                               pComponentTpe, pName, pAppData, pCallbacks,
-                              pIpcClient, nexusClient,
+                              pNxWrap,
                               BOMX_AUDIO_GET_ROLE_COUNT(g_ac3Role),
                               g_ac3Role, BOMX_AudioDecoder_GetRoleAc3);
 
@@ -159,19 +157,18 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateAc3(
         }
         else
         {
+            pNxWrap->leave();
+            delete pNxWrap;
             delete pAudioDecoderSec;
             return BOMX_ERR_TRACE(constructorError);
         }
     }
 
 error:
-    if (pIpcClient)
+    if (pNxWrap)
     {
-        if (nexusClient)
-        {
-            pIpcClient->destroyClientContext(nexusClient);
-        }
-        delete pIpcClient;
+        pNxWrap->leave();
+        delete pNxWrap;
     }
     return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
@@ -183,21 +180,17 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateEAc3(
     OMX_IN OMX_CALLBACKTYPE *pCallbacks)
 {
     NEXUS_AudioCapabilities audioCaps;
-    NexusIPCClientBase *pIpcClient = NULL;
-    uint64_t nexusClient = 0;
+    NxWrap *pNxWrap = NULL;
     BOMX_AudioDecoder_Secure *pAudioDecoderSec = NULL;
 
-    pIpcClient = NexusIPCClientFactory::getClient(pName);
-    if (pIpcClient)
+    pNxWrap = new NxWrap(pName);
+    if (pNxWrap == NULL)
     {
-        nexusClient = pIpcClient->createClientContext();
-    }
-    if (!nexusClient)
-    {
-        ALOGW("Unable to determine presence of EAC3 hardware!");
+        ALOGW("Unable to determine presence of AAC hardware!");
     }
     else
     {
+        pNxWrap->join();
         NEXUS_GetAudioCapabilities(&audioCaps);
         if ( !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3].decode &&
              !audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode )
@@ -209,7 +202,7 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateEAc3(
 
     pAudioDecoderSec = new BOMX_AudioDecoder_Secure(
                               pComponentTpe, pName, pAppData, pCallbacks,
-                              pIpcClient, nexusClient,
+                              pNxWrap,
                               BOMX_AUDIO_GET_ROLE_COUNT(g_eac3Role),
                               g_eac3Role, BOMX_AudioDecoder_GetRoleEAc3);
 
@@ -226,19 +219,18 @@ extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_Secure_CreateEAc3(
         }
         else
         {
+            pNxWrap->leave();
+            delete pNxWrap;
             delete pAudioDecoderSec;
             return BOMX_ERR_TRACE(constructorError);
         }
     }
 
 error:
-    if (pIpcClient)
+    if (pNxWrap)
     {
-        if (nexusClient)
-        {
-            pIpcClient->destroyClientContext(nexusClient);
-        }
-        delete pIpcClient;
+        pNxWrap->leave();
+        delete pNxWrap;
     }
     return BOMX_ERR_TRACE(OMX_ErrorNotImplemented);
 }
