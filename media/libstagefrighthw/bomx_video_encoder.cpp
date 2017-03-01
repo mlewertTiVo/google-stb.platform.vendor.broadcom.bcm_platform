@@ -42,6 +42,8 @@
 
 #include <fcntl.h>
 #include <cutils/log.h>
+#include <math.h>
+#include <cmath>
 
 #include "bomx_video_encoder.h"
 #include "nexus_platform.h"
@@ -2658,10 +2660,21 @@ void BOMX_VideoEncoder::InputBufferProcess()
         if ( OMX_ErrorNone == err  )
         {
             nPushed++;
+            m_frameRateTracker.NewTimestamp(pBufferHeader->nTimeStamp);
         }
         else
         {
             break;
+        }
+    }
+
+    OMX_U32 newFrameRate = 0;
+    if (m_frameRateTracker.CheckForNewFrameRate(newFrameRate)) {
+        OMX_PARAM_PORTDEFINITIONTYPE *pPortDef = (OMX_PARAM_PORTDEFINITIONTYPE *)m_pVideoPorts[0]->GetDefinition();
+        pPortDef->format.video.xFramerate = (OMX_U32)(Q16_SCALE_FACTOR * newFrameRate);
+        NEXUS_Error rc = UpdateEncoderSettings();
+        if (rc != NEXUS_SUCCESS) {
+            ALOGE("Failed to update encoder frame-rate, ret:%d", rc);
         }
     }
 
@@ -3032,6 +3045,8 @@ void BOMX_VideoEncoder::StopEncoder(void)
         UnregisterEvent(m_ImageInputEventId);
         m_ImageInputEventId = NULL;
     }
+
+    m_frameRateTracker.Reset();
 }
 
 NEXUS_Error BOMX_VideoEncoder::StartOutput(void)
@@ -3333,6 +3348,12 @@ NEXUS_Error BOMX_VideoEncoder::StartInput()
     }
 
     ALOGV("Image input event registered");
+
+    // start frame-rate tracker if possible
+    unsigned framerate = pPortDef->format.video.xFramerate / Q16_SCALE_FACTOR;
+    if (framerate > 0) {
+        m_frameRateTracker.Start(framerate);
+    }
 
     return NEXUS_SUCCESS;
 }
@@ -4548,4 +4569,112 @@ NEXUS_Error BOMX_VideoEncoder::UpdateEncoderSettings(void)
     ALOGV("configured Nexus encoder");
 
     return NEXUS_SUCCESS;
+}
+
+
+
+BOMX_FrameRateTracker::BOMX_FrameRateTracker():
+m_indexTracker(NULL),
+m_bStarted(false)
+{
+}
+
+void BOMX_FrameRateTracker::Start(OMX_U32 frameRate)
+{
+    ALOG_ASSERT(frameRate > 0);
+    m_bStarted = true;
+    m_currentFrameRate = frameRate;
+}
+
+void BOMX_FrameRateTracker::NewTimestamp(OMX_TICKS ts)
+{
+    if (!m_bStarted) return;
+    if (m_trackerList.size() == maxTrackerListSize) {
+        if (++m_indexTracker == m_trackerList.end())
+            m_indexTracker = m_trackerList.begin();
+        *m_indexTracker = ts;
+    } else {
+        m_trackerList.push_back(ts);
+        m_indexTracker = (m_indexTracker == NULL) ?
+                          m_trackerList.begin() : m_trackerList.begin() + m_trackerList.size() - 1;
+    }
+}
+
+void BOMX_FrameRateTracker::Reset()
+{
+    m_bStarted = false;
+    m_trackerList.clear();
+    m_indexTracker = NULL;
+}
+
+bool BOMX_FrameRateTracker::CheckForNewFrameRate(OMX_U32& newFrameRate)
+{
+    newFrameRate = 0;
+    bool ret = EstimateFrameRate(newFrameRate);
+    if (ret && newFrameRate != 0 && newFrameRate != m_currentFrameRate) {
+        m_currentFrameRate = newFrameRate;
+        return true;
+    }
+
+    return false;
+}
+
+bool BOMX_FrameRateTracker::EstimateFrameRate(OMX_U32& estimatedFrameRate)
+{
+    if (!m_bStarted || m_trackerList.size() < maxTrackerListSize) {
+        ALOGW("Framerate tracker not ready");
+        return false;
+    }
+    // point an iterator to the oldest ts
+    Vector<OMX_TICKS>::iterator it = m_indexTracker;
+    if (++it == m_trackerList.end())
+        it = m_trackerList.begin();
+
+    // Temporary list to save estimated rates
+    Vector<OMX_U32> estimatedRatesList;
+    size_t iterCount = 0;
+    OMX_TICKS prevTs = 0;
+    while (iterCount < maxTrackerListSize) {
+        if (iterCount++ == 0) {
+            prevTs = *it;
+        } else {
+            if (*it <= prevTs) {
+                ALOGW("%s: timestamp should be incremental", __FUNCTION__);
+                return false;
+            }
+            float frate = float(OMX_TICKS_PER_SECOND)/float(*it - prevTs);
+            frate = roundf(frate);
+            estimatedRatesList.push_back((OMX_U32)frate);
+            prevTs = *it;
+        }
+        if (++it == m_trackerList.end())
+            it = m_trackerList.begin();
+    }
+
+    // Find out if there's a change on frame-rate
+    Vector<OMX_U32>::iterator it2 = estimatedRatesList.begin();
+    OMX_U32 candidateRate = 0;
+    for (; it2 != estimatedRatesList.end(); ++it2) {
+        if (it2 == estimatedRatesList.begin())
+            candidateRate = *it2;
+        else if (*it2 != candidateRate)
+            break;
+    }
+
+    if (it2 == estimatedRatesList.end()) {
+        // estimated rate is constant
+        if (std::abs(float(candidateRate - m_currentFrameRate)/m_currentFrameRate) <
+            frameRatePercentTolerance/100) {
+            // no change in frame-rate
+            ALOGV("No change in frame-rate:%u", candidateRate);
+        } else {
+            ALOGI("Detected frame-rate change [%u -> %u]", m_currentFrameRate, candidateRate);
+            estimatedFrameRate = candidateRate;
+        }
+        return true;
+    } else {
+        ALOGV("Non-constant frame-rate, perhaps in the process of changing");
+    }
+
+    return false;
 }
