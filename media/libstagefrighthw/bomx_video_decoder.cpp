@@ -1181,7 +1181,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
 
-    if (m_pNxWrap)
+    if ( NULL == m_pNxWrap )
     {
         m_pNxWrap = new NxWrap(pName);
         if ( NULL == m_pNxWrap )
