@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 The Android Open Source Project
+ * Copyright 2016-2017 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,33 @@
  */
 #ifndef HWC2_INCLUDED
 #define HWC2_INCLUDED
+
+/* log usage: runtime enable via setting the property and causing a
+ *            dumpsys SurfaceFlinger to trigger log mask evaluation.
+ *            for each wanted category, issue a 'setprop <name> <value>'
+ *            where value is 0 to reset and >0 otherwise as listed.
+ *
+ * log masks: generic to hwc2 (all displays).
+ */
+#define HWC2_LOG_GLB        "dyn.nx.hwc2.log.mask"
+#define LOG_AR_DEBUG        (1<<0)  /* layer add|removal. */
+#define LOG_Z_DEBUG         (1<<1)  /* z-based reordering of layer stack. */
+#define LOG_SEED_DEBUG      (1<<2)  /* seed background (internal). */
+#define LOG_DIM_DEBUG       (1<<3)  /* dim layer from surface-flinger. */
+#define LOG_OOB_DEBUG       (1<<4)  /* out-of-bounds video layer. */
+/*
+ * log masks: specific to 'external' display (i.e. main display for stb).
+ */
+#define HWC2_LOG_EXT        "dyn.nx.hwc2.log.ext.mask"
+#define LOG_FENCE_DEBUG     (1<<0)  /* fence add|signal. */
+#define LOG_RGBA_DEBUG      (1<<1)  /* rgba layer composition (i.e. device overlay). */
+#define LOG_COMP_DEBUG      (1<<2)  /* composition stack for all layers. */
+#define LOG_COMP_SUM_DEBUG  (1<<3)  /* summary only of composition stack passed to nsc. */
+/*
+ * log masks: specific to 'virtual' display (same categories as external unless noted).
+ */
+#define HWC2_LOG_VD         "dyn.nx.hwc2.log.vd.mask"
+
 
 typedef void (* HWC2_HP_NTFY_CB)(void *, bool);
 typedef void (* HWC2_DC_NTFY_CB)(void *);
@@ -37,6 +64,10 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_COMP_RUN   2
 #define HWC2_VOMP_RUN   0
 #define HWC2_VID_WIN    1
+#define HWC2_MEMC_ROT   0 /* m2mc supports flip, but no 90-rot. */
+#define HWC2_OPQ        0xFF000000
+#define HWC2_TRS        0x00000000
+#define HWC2_MEMIF_DEV  "ro.nexus.ashmem.devname"
 
 /* timeline creation/destruction are expensive operations; we use
  * a pool which recycles yet keeps sufficient depth to allow layers
@@ -51,13 +82,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 
 #define HWC2_VD_MAX_NUM 1
 #define HWC2_VD_MAX_SZ  2048
-
-#define HWC2_VD_GLES    1
-
-#define HWC2_OPQ        0xFF000000
-#define HWC2_TRS        0x00000000
-
-#define HWC2_MEMIF_DEV  "ro.nexus.ashmem.devname"
+#define HWC2_VD_GLES    1 /* vd uses gles only for now. */
 
 /* wrapper around nexus hotplug event listener binder. do
  * not use directly, use the strong pointer wrap instead.
@@ -301,6 +326,8 @@ struct hwc2_dsp_t {
    struct hwc2_frame_t   *cmp_wl;
    pthread_mutex_t       mtx_cmp_wl;
    pthread_mutex_t       mtx_lyr;
+
+   int32_t               lm;
 
    uint64_t              pres;
    uint64_t              post;

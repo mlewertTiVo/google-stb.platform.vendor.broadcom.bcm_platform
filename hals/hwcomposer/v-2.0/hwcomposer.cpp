@@ -15,24 +15,6 @@
  */
 
 // #define LOG_NDEBUG 0
-#define LOG_FENCE_DEBUG     0
-#define LOG_FENCE_VEBUG     0
-#define LOG_AR_DEBUG        0
-
-#define LOG_SEED_DEBUG      0
-#define LOG_RGBA_DEBUG      0
-#define LOG_RGBA_VEBUG      0
-#define LOG_DIM_DEBUG       0
-#define LOG_OOB_DEBUG       0
-#define LOG_Z_DEBUG         0
-
-#define LOG_COMP_DEBUG      0
-#define LOG_COMP_SUM_DEBUG  0
-#define LOG_COMP_VEBUG      0
-#define LOG_COMP_SUM_VEBUG  0
-
-/* TODO: do we need this?  does it work properly? */
-#define HWC2_MEMC_ROT   0
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -119,6 +101,8 @@ struct hwc2_bcm_device_t {
    int                  memfd;
    bool                 rlpf;
 
+   int32_t              lm;
+
    BKNI_EventHandle     recycle;  /* from nexus */
    BKNI_EventHandle     recycled; /* to waiter, after recycling */
    pthread_t            recycle_task;
@@ -162,7 +146,23 @@ static int hwc2_blit_gpx(
    hwc2_blend_mode_t lbm,
    struct hwc2_dsp_t *dsp);
 
-static bool hwc2_enabled(enum hwc2_tweaks_e tweak) {
+static void hwc2_eval_log(
+   struct hwc2_bcm_device_t *hwc2) {
+
+  if (hwc2) {
+     hwc2->lm = property_get_int32(HWC2_LOG_GLB, 0);
+  }
+  if (hwc2->ext) {
+     hwc2->ext->lm = property_get_int32(HWC2_LOG_EXT, 0);
+  }
+  if (hwc2->vd) {
+     hwc2->vd->lm = property_get_int32(HWC2_LOG_VD, 0);
+  }
+  return;
+}
+
+static bool hwc2_enabled(
+   enum hwc2_tweaks_e tweak) {
 
    bool r = false;
 
@@ -506,7 +506,7 @@ static int32_t hwc2_ret_fence(
             (uint64_t)(intptr_t)dsp, dsp->cmp_tl, info.name, hwc2_tick());
       return HWC2_INVALID;
    }
-   ALOGI_IF((dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?LOG_FENCE_VEBUG:LOG_FENCE_DEBUG,
+   ALOGI_IF((dsp->lm & LOG_FENCE_DEBUG),
             "[%s]:[rel-add]:%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
             (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
             (uint64_t)(intptr_t)dsp, dsp->cmp_tl, info.name, hwc2_tick());
@@ -521,7 +521,7 @@ static void hwc2_ret_inc(
       return;
    }
    sw_sync_timeline_inc(dsp->cmp_tl, inc);
-   ALOGI_IF((dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?LOG_FENCE_VEBUG:LOG_FENCE_DEBUG,
+   ALOGI_IF((dsp->lm & LOG_FENCE_DEBUG),
             "[%s]:[rel-inc]:%" PRIu64 ":%d:%d @%" PRId64 "\n",
             (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
             (uint64_t)(intptr_t)dsp, dsp->cmp_tl, inc, hwc2_tick());
@@ -941,7 +941,7 @@ static void hwc2_lyr_tl_inc(
    size_t num;
    if (kind == HWC2_DSP_EXT) {
       if (hdl == HWC2_MAGIC) {
-         ALOGI_IF(LOG_FENCE_DEBUG,
+         ALOGI_IF((dsp->lm & LOG_FENCE_DEBUG),
                   "[ext]:[dsp-tl-inc]:%" PRIu64 ":%d:1 @%" PRId64 "\n",
                   dsp->u.ext.ct.rtl.hdl, dsp->u.ext.ct.rtl.tl, hwc2_tick());
          sw_sync_timeline_inc(dsp->u.ext.ct.rtl.tl, 1);
@@ -949,7 +949,7 @@ static void hwc2_lyr_tl_inc(
       } else {
          for (num = 0 ; num < HWC2_MAX_TL ; num++) {
             if (dsp->u.ext.rtl[num].hdl == hdl) {
-               ALOGI_IF(LOG_FENCE_DEBUG,
+               ALOGI_IF((dsp->lm & LOG_FENCE_DEBUG),
                         "[ext]:[tl-inc]:%" PRIu64 ":%d:1 @%" PRId64 "\n",
                         dsp->u.ext.rtl[num].hdl, dsp->u.ext.rtl[num].tl, hwc2_tick());
                sw_sync_timeline_inc(dsp->u.ext.rtl[num].tl, 1);
@@ -961,7 +961,7 @@ static void hwc2_lyr_tl_inc(
    } else if (kind == HWC2_DSP_VD) {
       for (num = 0 ; num < HWC2_MAX_VTL ; num++) {
          if (dsp->u.vd.rtl[num].hdl == hdl) {
-            ALOGI_IF(LOG_FENCE_VEBUG,
+            ALOGI_IF((dsp->lm & LOG_FENCE_DEBUG),
                      "[vd]:[tl-inc]:%" PRIu64 ":%d:1 @%" PRId64 "\n",
                      dsp->u.vd.rtl[num].hdl, dsp->u.vd.rtl[num].tl, hwc2_tick());
             sw_sync_timeline_inc(dsp->u.vd.rtl[num].tl, 1);
@@ -989,7 +989,7 @@ static void hwc2_fb_seed(
       }
       NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
       pthread_mutex_unlock(&hwc2->mtx_g2d);
-      ALOGI_IF(LOG_SEED_DEBUG,
+      ALOGI_IF((hwc2->lm & LOG_SEED_DEBUG),
                "[seed]: %p with color %08x\n", s, color);
    }
 }
@@ -1081,7 +1081,7 @@ static void hwc2_vd_cmp_frame(
                /* [iii]. count of composed layers. */
                c++;
             }
-            ALOGI_IF(LOG_COMP_VEBUG,
+            ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                      "[vd]:[frame]:%" PRIu64 ":%" PRIu64 ": solid color (%02x:%02x:%02x:%02x):%08x (%zu)\n",
                      dsp->pres, dsp->post, lyr->sc.r, lyr->sc.g, lyr->sc.b, lyr->sc.a, color, c);
          }
@@ -1157,7 +1157,7 @@ static void hwc2_vd_cmp_frame(
          }
          /* [iii]. count of composed layers. */
          if (!blt) c++;
-         ALOGI_IF(!blt && LOG_COMP_VEBUG,
+         ALOGI_IF(!blt && (dsp->lm & LOG_COMP_DEBUG),
                   "[vd]:[frame]:%" PRIu64 ":%" PRIu64 ": %s layer (%zu)\n",
                   dsp->pres, dsp->post, yv12?"yv12":"rgba", c);
       }
@@ -1174,7 +1174,7 @@ static void hwc2_vd_cmp_frame(
    }
 
    if (c > 0) {
-      ALOGI_IF(LOG_COMP_SUM_VEBUG,
+      ALOGI_IF((dsp->lm & LOG_COMP_SUM_DEBUG),
                "[vd]:[frame]:%" PRIu64 ":%" PRIu64 ":%zu layer%scomposed\n",
                dsp->pres, dsp->post, c, c>1?"s ":" ");
    }
@@ -1280,6 +1280,8 @@ static void hwc2_setup_vd(
    pthread_attr_t attr;
    pthread_mutexattr_t mattr;
    int num;
+
+   hwc2->vd->lm = property_get_int32(HWC2_LOG_VD, 0);
 
    if (!HWC2_VD_GLES) {
       BKNI_CreateEvent(&hwc2->vd->cmp_evt);
@@ -1476,6 +1478,8 @@ static size_t hwc2_dump_gen(
    struct hwc2_dsp_t *dsp;
    struct hwc2_lyr_t *lyr;
 
+   hwc2_eval_log(hwc2);
+
    memset((void *)hwc2->dump, 0, sizeof(hwc2->dump));
 
    current += snprintf(&hwc2->dump[current], max-current, "hwc2-bcm\n");
@@ -1666,7 +1670,7 @@ static int32_t hwc2_lyr_tl_add(
          } else {
             dsp->u.ext.ct.rtl.pt++;
          }
-         ALOGI_IF(LOG_FENCE_DEBUG,
+         ALOGI_IF((dsp->lm & LOG_FENCE_DEBUG),
                   "[ext]:[dsp-tl-add]:%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
                   dsp->u.ext.ct.rtl.hdl, dsp->u.ext.ct.rtl.tl, info.name, hwc2_tick());
          return f;
@@ -1684,7 +1688,7 @@ static int32_t hwc2_lyr_tl_add(
                } else {
                   dsp->u.ext.rtl[num].pt++;
                }
-               ALOGI_IF(LOG_FENCE_DEBUG,
+               ALOGI_IF((dsp->lm & LOG_FENCE_DEBUG),
                         "[ext]:[tl-add]:%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
                         dsp->u.ext.rtl[num].hdl, dsp->u.ext.rtl[num].tl, info.name, hwc2_tick());
                return f;
@@ -1706,7 +1710,7 @@ static int32_t hwc2_lyr_tl_add(
             } else {
                dsp->u.vd.rtl[num].pt++;
             }
-            ALOGI_IF(LOG_FENCE_VEBUG,
+            ALOGI_IF((dsp->lm & LOG_FENCE_DEBUG),
                      "[vd]:[tl-add]:%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
                      dsp->u.vd.rtl[num].hdl, dsp->u.vd.rtl[num].tl, info.name, hwc2_tick());
             return f;
@@ -1775,7 +1779,7 @@ static int32_t hwc2_lyrAdd(
 
    *outLayer = (hwc2_layer_t)(intptr_t)lyr;
    cnt++;
-   ALOGI_IF(LOG_AR_DEBUG,
+   ALOGI_IF((hwc2->lm & LOG_AR_DEBUG),
             "[%s]:[lyr+]:%" PRIu64 ": %zu layers\n",
             (kind==HWC2_DSP_VD)?"vd":"ext", lyr->hdl, cnt);
 
@@ -1857,7 +1861,7 @@ static int32_t hwc2_lyrRem(
    }
    pthread_mutex_unlock(&dsp->mtx_lyr);
 
-   ALOGI_IF(LOG_AR_DEBUG,
+   ALOGI_IF((hwc2->lm & LOG_AR_DEBUG),
             "[%s]:[lyr-]:%" PRIu64 ": %zu layers\n",
             (kind==HWC2_DSP_VD)?"vd":"ext", hdl, cnt);
 
@@ -3470,6 +3474,7 @@ static uint32_t hwc2_comp_validate(
 }
 
 static void hwc2_z_order(
+   struct hwc2_bcm_device_t *hwc2,
    struct hwc2_dsp_t *dsp,
    uint32_t cnt) {
 
@@ -3495,7 +3500,7 @@ static void hwc2_z_order(
    for (i = 0 ; i < cnt ; i++) {
       for (j = i+1 ; j < cnt ; j++) {
          if (lyr[i]->z > lyr[j]->z) {
-            ALOGI_IF(LOG_Z_DEBUG,
+            ALOGI_IF((hwc2->lm & LOG_Z_DEBUG),
                      "[%s]:[z-swap]:%" PRIu64 ":%u && %" PRIu64 ":%u",
                      (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
                      lyr[i]->hdl, lyr[i]->z, lyr[j]->hdl, lyr[j]->z);
@@ -3562,7 +3567,7 @@ static int32_t hwc2_valDsp(
    hwc2_connect(hwc2, dsp);
    cnt = hwc2_comp_validate(hwc2, dsp);
    if (cnt > 1) {
-      hwc2_z_order(dsp, cnt);
+      hwc2_z_order(hwc2, dsp, cnt);
    }
 
    lyr = dsp->lyr;
@@ -3750,14 +3755,14 @@ static int32_t hwc2_preDsp(
                      cl.w = c.width == (uint16_t)HWC2_INVALID ? 0 : c.width;
                      cl.h = c.height == (uint16_t)HWC2_INVALID ? 0 : c.height;
                      hwc2->hb->setgeometry(HWC_BINDER_OMX, 0, fr, cl, 3 /* i.e. 5-2 */, 1);
-                     ALOGI_IF(LOG_OOB_DEBUG,
+                     ALOGI_IF((hwc2->lm & LOG_OOB_DEBUG),
                               "[oob]:%" PRIu64 ":%" PRIu64 ": geometry {%d,%d,%dx%d}, {%d,%d,%dx%d}\n",
                               dsp->pres, dsp->post, fr.x, fr.y, fr.w, fr.h, cl.x, cl.y, cl.w, cl.h);
                   }
                   if (lyr->lpf != shared->videoFrame.status.serialNumber) {
                      lyr->lpf = shared->videoFrame.status.serialNumber;
                      hwc2->hb->setframe(HWC2_VID_MAGIC, lyr->lpf);
-                     ALOGI_IF(LOG_OOB_DEBUG,
+                     ALOGI_IF((hwc2->lm & LOG_OOB_DEBUG),
                               "[oob]:%" PRIu64 ":%" PRIu64 ": signal-frame %" PRIu32 " (%" PRIu32 ")\n",
                               dsp->pres, dsp->post, lyr->lpf, shared->videoFrame.status.serialNumber);
                   }
@@ -3915,6 +3920,10 @@ out_error:
    cnt = hwc2_cntLyr(dsp);
    lyr = dsp->lyr;
    for (frame_size = 0 ; frame_size < cnt ; frame_size++) {
+      if (lyr->af >= 0) {
+         close(lyr->af);
+         lyr->af = HWC2_INVALID;
+      }
       if (lyr->rf != HWC2_INVALID) {
          if ((kind == HWC2_DSP_EXT) && (lyr->cCli == HWC2_COMPOSITION_CLIENT)) {
             hwc2_lyr_tl_inc(dsp, kind, HWC2_MAGIC);
@@ -4125,7 +4134,7 @@ static void hwc2_dim(
       }
       NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
       pthread_mutex_unlock(&hwc2->mtx_g2d);
-      ALOGI_IF(LOG_DIM_DEBUG,
+      ALOGI_IF((hwc2->lm & LOG_DIM_DEBUG),
                "[dim]: %p with color %08x\n", s, fs.color);
    }
 }
@@ -4448,7 +4457,7 @@ int hwc2_blit_gpx(
       goto out;
    }
 
-   ALOGI_IF((dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?LOG_RGBA_VEBUG:LOG_RGBA_DEBUG,
+   ALOGI_IF((dsp->lm & LOG_RGBA_DEBUG),
             "[%s]:[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": {%d,%08x,%s} {%d,%d,%dx%d,%p} out:{%d,%d,%dx%d,%p} dst:{%d,%d}\n",
             (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
             lyr->bm, al<<HWC2_ASHIFT, getTransformName(lyr->tr),
@@ -4595,7 +4604,7 @@ static void hwc2_ext_cmp_frame(
    // TODO: optimize seeding background.
    hwc2_fb_seed(hwc2, d, (f->vcnt || f->scnt) ? HWC2_TRS : HWC2_OPQ);
    hwc2_chkpt(hwc2);
-   ALOGI_IF(LOG_COMP_DEBUG,
+   ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
             "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
             dsp->pres, dsp->post, (f->vcnt || f->scnt) ? "transparent" : "opaque");
 
@@ -4615,6 +4624,9 @@ static void hwc2_ext_cmp_frame(
           * note: this is the client target, so the fence comes from the
           *       display client target and not the layer buffer.
           */
+         if (lyr->af >= 0) {
+            close(lyr->af);
+         }
          if (f->tgt == NULL && f->ftgt >= 0) {
             close(f->ftgt);
          } else if (f->ftgt >= 0) {
@@ -4643,7 +4655,7 @@ static void hwc2_ext_cmp_frame(
                /* [iii]. count of composed layers. */
                c++;
             }
-            ALOGI_IF(LOG_COMP_DEBUG,
+            ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                      "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": solid color (%02x:%02x:%02x:%02x):%08x (%zu)\n",
                      dsp->pres, dsp->post, lyr->sc.r, lyr->sc.g, lyr->sc.b, lyr->sc.a, color, c);
          }
@@ -4669,7 +4681,7 @@ static void hwc2_ext_cmp_frame(
             hwc2_chkpt(hwc2);
             /* [iii]. count of composed layers. */
             c++;
-            ALOGI_IF(LOG_COMP_DEBUG,
+            ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                      "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": dim layer (%zu)\n",
                      dsp->pres, dsp->post, c);
             break;
@@ -4684,7 +4696,7 @@ static void hwc2_ext_cmp_frame(
             /* offlined video pipeline through bvn, nothing to do as we signalled already
              * the frame expected to be released on display.
              */
-            ALOGI_IF(LOG_COMP_DEBUG,
+            ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                      "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": oob video (%zu)\n",
                      dsp->pres, dsp->post, c);
 
@@ -4742,7 +4754,7 @@ static void hwc2_ext_cmp_frame(
             }
             /* [iii]. count of composed layers. */
             if (!blt) c++;
-            ALOGI_IF(!blt && LOG_COMP_DEBUG,
+            ALOGI_IF(!blt && (dsp->lm & LOG_COMP_DEBUG),
                      "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": %s layer (%zu)\n",
                      dsp->pres, dsp->post, yv12?"yv12":"rgba", c);
          }
@@ -4750,7 +4762,7 @@ static void hwc2_ext_cmp_frame(
       case HWC2_COMPOSITION_SIDEBAND:
          if (hwc2->hb) {
             hwc2_sdb(hwc2, lyr);
-            ALOGI_IF(LOG_COMP_DEBUG,
+            ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                      "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": sideband layer (%zu)\n",
                      dsp->pres, dsp->post, c);
          }
@@ -4790,14 +4802,14 @@ static void hwc2_ext_cmp_frame(
                dsp->pres, dsp->post, nx);
       } else {
          dsp->u.ext.bg = (f->vcnt || f->scnt) ? HWC2_TRS : HWC2_OPQ;
-         ALOGI_IF(LOG_COMP_SUM_DEBUG,
+         ALOGI_IF((dsp->lm & LOG_COMP_SUM_DEBUG),
                   "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":%zu layer%scomposed\n",
                   dsp->pres, dsp->post, c, c>1?"s ":" ");
       }
    } else {
       /* [iv]. ... or re-queue if nothing took place. */
       hwc2_ext_fb_put(hwc2, d);
-      ALOGI_IF(LOG_COMP_SUM_DEBUG,
+      ALOGI_IF((dsp->lm & LOG_COMP_SUM_DEBUG),
                "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":no composition\n",
                dsp->pres, dsp->post);
    }
@@ -4883,6 +4895,7 @@ static void hwc2_setup_ext(
    hwc2->ext = ext;
    snprintf(hwc2->ext->name, sizeof(hwc2->ext->name), "stbHD0");
    hwc2->ext->type = HWC2_DISPLAY_TYPE_PHYSICAL;
+   hwc2->ext->lm = property_get_int32(HWC2_LOG_EXT, 0);
 
    hwc2->ext->cfgs = (struct hwc2_dsp_cfg_t *)malloc(sizeof(struct hwc2_dsp_cfg_t));
    if (hwc2->ext->cfgs) {
@@ -5172,6 +5185,7 @@ static int hwc2_open(
       dev->base.getFunction     = hwc2_getFncs;
       dev->magic                = HWC2_MAGIC;
 
+      dev->lm = property_get_int32(HWC2_LOG_GLB, 0);
       hwc2_bcm_open(dev);
 
       *device = &dev->base.common;
