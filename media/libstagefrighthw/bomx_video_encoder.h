@@ -135,6 +135,29 @@ struct BOMX_VideoEncoderOutputBufferInfo
     BOMX_VideoEncoderOutputBufferType type;
 };
 
+class BOMX_FrameRateTracker
+{
+public:
+    const size_t maxTrackerListSize = 5;
+    const float  frameRatePercentTolerance = 10;
+
+    BOMX_FrameRateTracker();
+    ~BOMX_FrameRateTracker() {};
+    void Start(OMX_U32 frameRate);
+    void NewTimestamp(OMX_TICKS ts);
+    bool CheckForNewFrameRate(OMX_U32& newFrameRate);
+    void Reset();
+
+private:
+    bool EstimateFrameRate(OMX_U32& estimatedFrameRate);
+
+private:
+    OMX_U32 m_currentFrameRate;
+    Vector<OMX_TICKS> m_trackerList;
+    Vector<OMX_TICKS>::iterator m_indexTracker;
+    bool m_bStarted;
+};
+
 class BOMX_VideoEncoder : public BOMX_Component
 {
 public:
@@ -285,6 +308,7 @@ protected:
 
     FILE *m_pITBDescDumpFile;
     int m_memTracker;
+    BOMX_FrameRateTracker m_frameRateTracker;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {
         return m_pVideoPorts[1]->GetDefinition()->format.video.eCompressionFormat;
