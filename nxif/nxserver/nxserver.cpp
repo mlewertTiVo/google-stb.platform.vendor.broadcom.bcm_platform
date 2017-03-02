@@ -179,6 +179,8 @@ typedef enum {
    SVP_MODE_NONE_TRANSCODE,
    SVP_MODE_PLAYBACK,
    SVP_MODE_PLAYBACK_TRANSCODE,
+   SVP_MODE_DTU,
+   SVP_MODE_DTU_TRANSCODE,
 } SVP_MODE_T;
 
 typedef struct {
@@ -599,7 +601,9 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    NEXUS_GetPlatformCapabilities(&platformCap);
    bool pip = false;
 
-   if ((svp == SVP_MODE_PLAYBACK_TRANSCODE) || (svp == SVP_MODE_NONE_TRANSCODE)) {
+   if ((svp == SVP_MODE_PLAYBACK_TRANSCODE) ||
+       (svp == SVP_MODE_NONE_TRANSCODE) ||
+       (svp == SVP_MODE_DTU_TRANSCODE)) {
       ALOGI("transcode is enabled.");
       transcode = true;
    }
@@ -1043,16 +1047,27 @@ static nxserver_t init_nxserver(void)
 
     /* svp configuration. */
     memset(value, 0, sizeof(value));
-    property_get(NX_SVP, value, "play");
-    svp = SVP_MODE_PLAYBACK;
-    if (!strncmp(value, "none-trans", strlen("none-trans"))) {
-       svp = SVP_MODE_NONE_TRANSCODE;
-    } else if (!strncmp(value, "none", strlen("none"))) {
-       svp = SVP_MODE_NONE;
-    } else if (!strncmp(value, "play-trans", strlen("play-trans"))) {
-       svp = SVP_MODE_PLAYBACK_TRANSCODE;
+    if (cmdline_settings.dtu) {
+       property_get(NX_SVP, value, "dtu");
+       svp = SVP_MODE_DTU;
+       if (strstr(value, "trans") != NULL) {
+          sprintf(value, "dtu-trans");
+          svp = SVP_MODE_DTU_TRANSCODE;
+       }
+    } else {
+       property_get(NX_SVP, value, "play");
+       svp = SVP_MODE_PLAYBACK;
+       if (!strncmp(value, "none-trans", strlen("none-trans"))) {
+          svp = SVP_MODE_NONE_TRANSCODE;
+       } else if (!strncmp(value, "none", strlen("none"))) {
+          svp = SVP_MODE_NONE;
+       } else if (!strncmp(value, "play-trans", strlen("play-trans"))) {
+          svp = SVP_MODE_PLAYBACK_TRANSCODE;
+       }
     }
-    if (!((svp == SVP_MODE_NONE) || (svp == SVP_MODE_NONE_TRANSCODE))) {
+    if ((svp == SVP_MODE_DTU) || (svp == SVP_MODE_DTU_TRANSCODE)) {
+       settings.svp = nxserverlib_svp_type_cdb;
+    } else if (!((svp == SVP_MODE_NONE) || (svp == SVP_MODE_NONE_TRANSCODE))) {
        settings.svp = nxserverlib_svp_type_cdb_urr;
     }
     ALOGI("%s: svp-mode: \'%s\' (%d)", __FUNCTION__, value, svp);
