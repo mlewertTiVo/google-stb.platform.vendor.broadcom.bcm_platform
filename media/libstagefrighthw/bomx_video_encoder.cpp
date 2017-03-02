@@ -2869,15 +2869,11 @@ bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInB
         private_handle_t *pPrivateHandle = pInfo->typeInfo.native.pPrivateHandle;
 
         ALOGV("InputBufferType_eNative: pPrivateHandle:%p", pPrivateHandle);
-        ALOGV("--->phandle:%p magic=%x, flags=%x, pid=%x, stride=%x, format=%x, size=%x, usage=%x, aligment=%x", pPrivateHandle,
+        ALOGV("--->phandle:%p magic=%x, pid=%x, stride=%x, size=%x", pPrivateHandle,
               pPrivateHandle->magic,
-              pPrivateHandle->flags,
               pPrivateHandle->pid,
               pPrivateHandle->oglStride,
-              pPrivateHandle->oglFormat,
-              pPrivateHandle->oglSize,
-              pPrivateHandle->usage,
-              pPrivateHandle->alignment);
+              pPrivateHandle->oglSize);
 
         if (NEXUS_SUCCESS != ExtractGrallocBuffer(pPrivateHandle, hDst))
         {
@@ -2897,15 +2893,11 @@ bool BOMX_VideoEncoder::ConvertOMXPixelFormatToCrYCbY(OMX_BUFFERHEADERTYPE *pInB
             return false;
         }
 
-        ALOGV("--->phandle:%p magic=%x, flags=%x, pid=%x, stride=%x, format=%x, size=%x, usage=%x, aligment=%x", pPrivateHandle,
+        ALOGV("--->phandle:%p magic=%x, pid=%x, stride=%x, size=%x", pPrivateHandle,
               pPrivateHandle->magic,
-              pPrivateHandle->flags,
               pPrivateHandle->pid,
               pPrivateHandle->oglStride,
-              pPrivateHandle->oglFormat,
-              pPrivateHandle->oglSize,
-              pPrivateHandle->usage,
-              pPrivateHandle->alignment);
+              pPrivateHandle->oglSize);
 
         if (NEXUS_SUCCESS != ExtractGrallocBuffer(pPrivateHandle, hDst))
         {
@@ -4305,7 +4297,7 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         NEXUS_SurfaceHandle srcCb, srcCr, srcY;
         void *slock;
         size_t size;
-        int alignment = handle->alignment;
+        int alignment = 16; /* hardcoded for this format. */
 
         stride = (width + (alignment-1)) & ~(alignment-1);
         cstride = (stride/2 + (alignment-1)) & ~(alignment-1),

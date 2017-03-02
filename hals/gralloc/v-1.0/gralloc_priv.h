@@ -17,10 +17,6 @@
 #ifndef GRALLOC1_PRIV_H_
 #define GRALLOC1_PRIV_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdint.h>
 #include <limits.h>
 #include <sys/cdefs.h>
@@ -29,6 +25,7 @@ extern "C" {
 #include <errno.h>
 #include <unistd.h>
 #include <cutils/native_handle.h>
+#include <cutils/atomic.h>
 #include "nexus_base_mmap.h"
 #include "nexus_video_decoder_types.h"
 #include "nexus_striped_surface.h"
@@ -44,12 +41,19 @@ extern "C" {
 
 #define CHECKPOINT_TIMEOUT      (5000)
 
+/* TODO: backward compatibility with 0.x, remove later.
+ */
+#define GR_NONE                 (1<<0)
+#define GR_STANDARD             (1<<1)
+#define GR_YV12                 (1<<2)
+#define GR_HWTEX                (1<<3)
+
 struct gr1_priv_t;
 
 typedef struct __SHARED_DATA_ {
    struct {
       volatile int32_t windowIdPlusOne;
-      void *           nexusClientContext;
+      uint64_t         nexusClientContext;
    } videoWindow;
 
    struct {
@@ -61,6 +65,7 @@ typedef struct __SHARED_DATA_ {
 
    struct {
       int      sfhdl;
+      NEXUS_MemoryBlockHandle block; /* TODO: backward compatibility with 0.x, remove later. */
       int32_t  format;
       uint32_t width;
       uint32_t height;
@@ -92,6 +97,8 @@ struct gr1_priv_t {
    int         oglSize;
    uint64_t    nxSurfaceAddress __attribute__((aligned(8)));
    uint64_t    nxSurfacePhysicalAddress __attribute__((aligned(8)));
+   // TODO: backward compatibility with v-0.x, remove later.
+   int         fmt_set;
 
 #ifdef __cplusplus
     static const int sNumFds = 1;
@@ -108,7 +115,8 @@ struct gr1_priv_t {
         oglStride(0),
         oglSize(0),
         nxSurfaceAddress(0),
-        nxSurfacePhysicalAddress(0) {
+        nxSurfacePhysicalAddress(0),
+        fmt_set (0) {
         version = sizeof(native_handle);
         numInts = sNumInts();
         numFds = sNumFds;
@@ -128,11 +136,96 @@ struct gr1_priv_t {
         return 0;
     }
 
+    static int get_block_handles(gr1_priv_t *h,
+       NEXUS_MemoryBlockHandle *shdl, NEXUS_MemoryBlockHandle *phdl) {
+       if (shdl != NULL) {
+          *shdl = (NEXUS_MemoryBlockHandle)(intptr_t)h->descriptor;
+       } else {
+          return -EINVAL;
+       }
+       /* never used currently, so ignore. */
+       if (phdl != NULL) {
+          *phdl = 0;
+       }
+       return 0;
+    }
+
+    static int lock_video_frame(gr1_priv_t *hdl, int timeoutMs) {
+        PSHARED_DATA pSharedData = NULL;
+        NEXUS_Error lrc = NEXUS_SUCCESS;
+        NEXUS_MemoryBlockHandle block_handle = NULL;
+        int rc = 0;
+        void *pMemory;
+
+        get_block_handles(hdl, &block_handle, NULL);
+        lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+        if (lrc == BERR_NOT_SUPPORTED) {
+           NEXUS_MemoryBlock_Unlock(block_handle);
+        }
+        pSharedData = (PSHARED_DATA) pMemory;
+
+        struct timespec ts_end, ts_now;
+        if (NULL == pSharedData) {
+          rc = -EINVAL;
+          goto out;
+        }
+        clock_gettime(CLOCK_MONOTONIC, &ts_end);
+        ts_end.tv_sec += timeoutMs/1000;
+        ts_end.tv_nsec += (timeoutMs%1000)*1000000;
+        if (ts_end.tv_nsec >= 1000000000) {
+            ts_end.tv_sec++;
+            ts_end.tv_nsec -= 1000000000;
+        }
+        while (android_atomic_acquire_cas(0, 1, &pSharedData->videoFrame.locked)) {
+            BKNI_Sleep(1);
+            clock_gettime(CLOCK_MONOTONIC, &ts_now);
+            if (ts_now.tv_sec < ts_end.tv_sec) {
+                continue;
+            }
+            if (ts_now.tv_sec > ts_end.tv_sec || ts_now.tv_nsec > ts_end.tv_nsec) {
+                rc = -EBUSY;
+                goto out;
+            }
+        }
+
+out:
+        if (block_handle) {
+           if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
+        }
+        return rc;
+    }
+
+    static void unlock_video_frame(gr1_priv_t *hdl) {
+        PSHARED_DATA pSharedData = NULL;
+        NEXUS_MemoryBlockHandle block_handle = NULL;
+        NEXUS_Error lrc = NEXUS_SUCCESS;
+        int rc = 0;
+        void *pMemory;
+
+        get_block_handles(hdl, &block_handle, NULL);
+        lrc = NEXUS_MemoryBlock_Lock(block_handle, &pMemory);
+        if (lrc == BERR_NOT_SUPPORTED) {
+           NEXUS_MemoryBlock_Unlock(block_handle);
+        }
+        pSharedData = (PSHARED_DATA) pMemory;
+
+        if (NULL == pSharedData) {
+          goto out;
+        }
+        rc = android_atomic_release_cas(1, 0, &pSharedData->videoFrame.locked);
+        assert(rc);
+
+out:
+        if (block_handle) {
+           if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
+        }
+    }
+
 #endif
 };
 
-#ifdef __cplusplus
-}
-#endif
+/* TODO: backward compatibility with 0.x for external to gralloc code.
+ */
+typedef struct gr1_priv_t private_handle_t;
 
 #endif /* GRALLOC1_PRIV_H_ */

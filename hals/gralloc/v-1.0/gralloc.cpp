@@ -207,7 +207,7 @@ static int32_t gr1_debDesc(
    pSharedData->container.sfhdl = sdata;
    if (!lrc) NEXUS_MemoryBlock_Unlock(dstore_hdl);
 
-   *outDescriptor = (gralloc1_buffer_descriptor_t)dstore_hdl;
+   *outDescriptor = (gralloc1_buffer_descriptor_t)(intptr_t)dstore_hdl;
 
    if (gr1_log) {
       NEXUS_Addr dstorePhys;
@@ -952,6 +952,7 @@ static gralloc1_error_t gr1_allocOneBuf(
          }
 
          pstore_hdl = (NEXUS_MemoryBlockHandle)(intptr_t)ashmem_getmem.hdl;
+         pSharedData->container.block = pstore_hdl;
          gr1_bzero(pSharedData, pstore_hdl);
 
          hnd->pfhdl     = pdata;

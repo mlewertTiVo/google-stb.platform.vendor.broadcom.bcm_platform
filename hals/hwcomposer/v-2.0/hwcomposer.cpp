@@ -4180,6 +4180,7 @@ int hwc2_blit_yv12(
    NEXUS_Rect c, p, oa;
    NEXUS_Error rc;
    int blt = 0;
+   int align = 16; /* hardcoded for format. */
 
    BM2MC_PACKET_Blend cbClr = {BM2MC_PACKET_BlendFactor_eSourceColor, BM2MC_PACKET_BlendFactor_eOne, false,
                                BM2MC_PACKET_BlendFactor_eDestinationColor, BM2MC_PACKET_BlendFactor_eOne, false,
@@ -4208,11 +4209,9 @@ int hwc2_blit_yv12(
    NEXUS_Surface_Lock(y, &slock);
    NEXUS_Surface_Flush(y);
 
-   cs = (shared->container.stride/2 + (((private_handle_t *)lyr->bh)->alignment-1))
-        & ~(((private_handle_t *)lyr->bh)->alignment-1);
+   cs = (shared->container.stride/2 + (align-1)) & ~(align-1);
    cr_o = shared->container.stride * shared->container.height;
-   cb_o = cr_o + ((shared->container.height/2) * ((shared->container.stride/2 + (((private_handle_t *)lyr->bh)->alignment-1))
-                 & ~(((private_handle_t *)lyr->bh)->alignment-1)));
+   cb_o = cr_o + ((shared->container.height/2) * ((shared->container.stride/2 + (align-1)) & ~(align-1)));
 
    cr = hwc_to_nsc_surface(shared->container.width/2, shared->container.height/2,
                            cs, NEXUS_PixelFormat_eCr8,
