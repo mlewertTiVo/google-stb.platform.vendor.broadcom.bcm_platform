@@ -73,6 +73,7 @@
 #define B_PROPERTY_HW_SYNC_FAKE ("media.brcm.hw_sync.fake")
 #define B_PROPERTY_EARLYDROP_THRESHOLD ("media.brcm.stat.earlydrop_thres")
 #define B_PROPERTY_DISABLE_RUNTIME_HEAPS ("ro.nx.rth.disable")
+#define B_PROPERTY_DTU ("ro.nx.capable.dtu")
 
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE_DEFAULT (1536*1536)
@@ -1212,15 +1213,23 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         }
     }
 
-    if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))
+    if (property_get_int32(B_PROPERTY_DTU, 0))
     {
-       BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
-       // failed, so forced to assume picture buffer heaps are secured.
-       m_secureRuntimeHeaps = true;
+       // guaranteed by the dtu.
+       m_secureRuntimeHeaps = m_secureDecoder;
     }
     else
     {
-       m_secureRuntimeHeaps = m_secureDecoder;
+       if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))
+       {
+          BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
+          // failed, so forced to assume picture buffer heaps are secured.
+          m_secureRuntimeHeaps = true;
+       }
+       else
+       {
+          m_secureRuntimeHeaps = m_secureDecoder;
+       }
     }
 
     NxClient_AllocSettings nxAllocSettings;
