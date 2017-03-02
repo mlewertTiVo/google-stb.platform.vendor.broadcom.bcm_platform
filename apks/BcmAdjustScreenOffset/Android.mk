@@ -1,6 +1,8 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
+ifeq ($(HAL_HWC_VERSION),v-1.x)
+
 LOCAL_MODULE_TAGS := optional
 LOCAL_SRC_FILES := $(call all-java-files-under, src)
 
@@ -15,3 +17,6 @@ LOCAL_CERTIFICATE := $(BCM_VENDOR_STB_ROOT)/bcm_platform/signing/bcmstb
 include $(BUILD_PACKAGE)
 
 include $(LOCAL_PATH)/jni/Android.mk
+
+endif
+
