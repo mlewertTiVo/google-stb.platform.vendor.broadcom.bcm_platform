@@ -57,7 +57,6 @@ extern "C" {
 /*****************************************************************************/
 
 struct private_module_t;
-struct private_handle_t;
 
 struct private_module_t {
    gralloc_module_t base;
@@ -96,9 +95,9 @@ typedef struct __SHARED_DATA_ {
 } SHARED_DATA, *PSHARED_DATA;
 
 #ifdef __cplusplus
-struct private_handle_t : public native_handle {
+struct private_handle_int_t : public native_handle {
 #else
-struct private_handle_t {
+struct private_handle_int_t {
    struct native_handle nativeHandle;
 #endif
    // file descriptors
@@ -122,11 +121,11 @@ struct private_handle_t {
 #ifdef __cplusplus
     static const int sNumFds = 2;
     static inline int sNumInts() {
-       return ((sizeof(private_handle_t) - sizeof(native_handle_t)) / sizeof(int)) - sNumFds;
+       return ((sizeof(private_handle_int_t) - sizeof(native_handle_t)) / sizeof(int)) - sNumFds;
     }
     static const int sMagic = 0x4F77656E;
 
-    private_handle_t(int pdata, int sdata, int flags) :
+    private_handle_int_t(int pdata, int sdata, int flags) :
         pdata(pdata), sdata(sdata), magic(sMagic), flags(flags),
         pid(getpid()), oglStride(0), oglFormat(0), oglSize(0),
         usage(0), alignment(0),
@@ -138,14 +137,14 @@ struct private_handle_t {
         numFds = sNumFds;
     }
 
-    ~private_handle_t()
+    ~private_handle_int_t()
     {
         magic = 0;
     }
 
     static int validate(const native_handle* h)
     {
-        const private_handle_t* hnd = (const private_handle_t*)h;
+        const private_handle_int_t* hnd = (const private_handle_int_t*)h;
         if (!h || h->version != sizeof(native_handle) ||
             h->numInts != sNumInts() || h->numFds != sNumFds ||
             hnd->magic != sMagic)
@@ -155,7 +154,7 @@ struct private_handle_t {
         return 0;
     }
 
-    static int get_block_handles(private_handle_t *pHandle, NEXUS_MemoryBlockHandle *sdata, NEXUS_MemoryBlockHandle *pdata)
+    static int get_block_handles(private_handle_int_t *pHandle, NEXUS_MemoryBlockHandle *sdata, NEXUS_MemoryBlockHandle *pdata)
     {
        int rc;
        struct nx_ashmem_getmem getmem;
@@ -181,7 +180,7 @@ struct private_handle_t {
        return 0;
     }
 
-    static int lock_video_frame(private_handle_t *pHandle, int timeoutMs)
+    static int lock_video_frame(private_handle_int_t *pHandle, int timeoutMs)
     {
         PSHARED_DATA pSharedData = NULL;
         NEXUS_Error lrc = NEXUS_SUCCESS;
@@ -230,7 +229,7 @@ out:
         return rc;
     }
 
-    static void unlock_video_frame(private_handle_t *pHandle)
+    static void unlock_video_frame(private_handle_int_t *pHandle)
     {
         PSHARED_DATA pSharedData = NULL;
         NEXUS_MemoryBlockHandle block_handle = NULL;
@@ -259,6 +258,8 @@ out:
 
 #endif
 };
+
+typedef struct private_handle_int_t private_handle_t;
 
 #ifdef __cplusplus
 }
