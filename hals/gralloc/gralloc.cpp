@@ -875,7 +875,7 @@ static int gralloc_alloc(alloc_device_t* dev,
    err = gralloc_alloc_buffer(dev, w, h, format, usage, pHandle, pStride);
 
    if (usage & GRALLOC_USAGE_HW_FB) {
-      ALOGI("alloc: fb::w:%d::h:%d::fmt:%d::usage:0x%08x::hdl:%p", w, h, format, usage, pHandle);
+      ALOGI("alloc: fb::w:%d::h:%d::fmt:%d::usage:0x%08x::hdl:%p", w, h, format, usage, *pHandle);
    }
 
    if (err < 0) {
