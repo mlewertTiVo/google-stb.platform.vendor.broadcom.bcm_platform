@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#define LOG_NDEBUG 0
+
 #include <fcntl.h>
 #include <dlfcn.h>
 #include <errno.h>
@@ -37,8 +39,8 @@
 void __attribute__ ((constructor)) gr1_load(void);
 void __attribute__ ((destructor)) gr1_unload(void);
 
-static void * (* dyn_EGL_nexus_join)(char *client);
-static void (* dyn_EGL_nexus_unjoin)(void *client);
+static void * (* dyn_nxwrap_create_client)(void **wrap);
+static void (* dyn_nxwrap_destroy_client)(void *wrap);
 #define LOAD_FN(lib, name) \
 if (!(dyn_ ## name = (typeof(dyn_ ## name)) dlsym(lib, #name))) \
    ALOGV("failed resolving '%s'", #name); \
@@ -46,6 +48,7 @@ else \
    ALOGV("resolved '%s' to %p", #name, dyn_ ## name);
 
 static void *gl_dyn_lib;
+static void *nxwrap = NULL;
 static void *gr1_nx = NULL;
 static int gr1_log = 0;
 static int gr1_bug_align = 256;
@@ -68,16 +71,14 @@ static void gr1_load_lib(
       }
    }
 
-   LOAD_FN(gl_dyn_lib, EGL_nexus_join);
-   LOAD_FN(gl_dyn_lib, EGL_nexus_unjoin);
+   LOAD_FN(gl_dyn_lib, nxwrap_create_client);
+   LOAD_FN(gl_dyn_lib, nxwrap_destroy_client);
 
-   if (dyn_EGL_nexus_join) {
-      gr1_nx = dyn_EGL_nexus_join((char *)"bcm-gr");
+   if (dyn_nxwrap_create_client) {
+      gr1_nx = dyn_nxwrap_create_client(&nxwrap);
    }
 
-   if (property_get(GR_LOG_MAP, value, "0")) {
-      gr1_log = (strtoul(value, NULL, 10) > 0) ? 1 : 0;
-   }
+   gr1_log = property_get_bool(GR_LOG_MAP, 1);
 }
 
 static void gr1_gfx_cb(
@@ -120,10 +121,13 @@ void gr1_load(
 
 void gr1_unload(
    void) {
-   if (gr1_nx && dyn_EGL_nexus_unjoin) {
-      dyn_EGL_nexus_unjoin(gr1_nx);
+
+   if (nxwrap && dyn_nxwrap_destroy_client) {
+      dyn_nxwrap_destroy_client(nxwrap);
       gr1_nx = NULL;
+      nxwrap = NULL;
    }
+
    dlclose(gl_dyn_lib);
 
    if (gr1_gfx) {
@@ -136,6 +140,29 @@ void gr1_unload(
    }
 }
 
+static int32_t gr1_dump(
+   gralloc1_device_t* device,
+   uint32_t* outSize,
+   char* outBuffer) {
+
+   gralloc1_error_t ret = GRALLOC1_ERROR_NONE;
+
+   if (device == NULL) {
+      ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
+      goto out;
+   }
+
+   if (outSize != NULL) {
+      *outSize = 0;
+   }
+
+   // TODO: dump local view of gralloc buffers?
+   (void)outBuffer;
+
+out:
+   return ret;
+}
+
 static void gr1_getCaps(
    struct gralloc1_device* device,
    uint32_t* outCount,
@@ -146,10 +173,10 @@ static void gr1_getCaps(
    }
 
    if (outCount != NULL) {
-      *outCount = 1;
+      *outCount = 0;
    }
    if (outCapabilities != NULL) {
-      outCapabilities[0] = GRALLOC1_CAPABILITY_TEST_ALLOCATE;
+      // TODO: outCapabilities[0] = GRALLOC1_CAPABILITY_TEST_ALLOCATE;
    }
    return;
 }
@@ -169,6 +196,9 @@ static int32_t gr1_debDesc(
    struct nx_ashmem_alloc ashmem_alloc;
    struct nx_ashmem_getmem ashmem_getmem;
    void *pMemory;
+
+   ALOGV("-> %s \n",
+      __FUNCTION__);
 
    if (device == NULL || outDescriptor == NULL) {
       ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
@@ -204,7 +234,7 @@ static int32_t gr1_debDesc(
       goto error;
    }
    memset(pSharedData, 0, sizeof(SHARED_DATA));
-   pSharedData->container.sfhdl = sdata;
+   pSharedData->container.dhdl = sdata;
    if (!lrc) NEXUS_MemoryBlock_Unlock(dstore_hdl);
 
    *outDescriptor = (gralloc1_buffer_descriptor_t)(intptr_t)dstore_hdl;
@@ -229,6 +259,8 @@ error:
    }
    ret = GRALLOC1_ERROR_NO_RESOURCES;
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, *outDescriptor, ret);
    return ret;
 }
 
@@ -241,6 +273,9 @@ static int32_t gr1_finDesc(
    PSHARED_DATA pSharedData = NULL;
    NEXUS_Error lrc;
    void *pMemory;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, descriptor);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
@@ -260,10 +295,10 @@ static int32_t gr1_finDesc(
                dstorePhys);
          NEXUS_MemoryBlock_UnlockOffset(dstore_hdl);
       }
-      if (!lrc) NEXUS_MemoryBlock_Unlock(dstore_hdl);
-      if (pSharedData->container.sfhdl >= 0) {
-          close(pSharedData->container.sfhdl);
+      if (pSharedData->container.dhdl >= 0) {
+          close(pSharedData->container.dhdl);
       }
+      if (!lrc) NEXUS_MemoryBlock_Unlock(dstore_hdl);
       dstore_hdl = NULL;
    } else {
       ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
@@ -273,6 +308,8 @@ static int32_t gr1_finDesc(
    }
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, descriptor, ret);
    return ret;
 }
 
@@ -286,6 +323,9 @@ static int32_t gr1_setDesc(
    PSHARED_DATA pSharedData = NULL;
    NEXUS_Error lrc;
    void *pMemory;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, descriptor);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
@@ -305,6 +345,8 @@ static int32_t gr1_setDesc(
    }
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, descriptor, ret);
    return ret;
 }
 
@@ -319,6 +361,9 @@ static int32_t gr1_setDims(
    PSHARED_DATA pSharedData = NULL;
    NEXUS_Error lrc;
    void *pMemory;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, descriptor);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
@@ -339,6 +384,8 @@ static int32_t gr1_setDims(
    }
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, descriptor, ret);
    return ret;
 }
 
@@ -413,7 +460,7 @@ static void gr1_getLayout(
       case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
       case HAL_PIXEL_FORMAT_RGB_565:
          *alignment = 1;
-         *stride = ((width*bpp + (*alignment-1)) & ~(*alignment-1)) / bpp;
+         *stride = ((width*bpp + (*alignment-1)) & ~(*alignment-1));
          *size = ((width*bpp + (*alignment-1)) & ~(*alignment-1)) * height;
       break;
       case HAL_PIXEL_FORMAT_YV12:
@@ -425,6 +472,8 @@ static void gr1_getLayout(
       default:
       break;
    }
+
+   ALOGV("[layout]:%ux%u:%d:%d => %u:%u:%u", width, height, bpp, format, *alignment, *stride, *size);
 }
 
 static int32_t gr1_setFmt(
@@ -437,6 +486,9 @@ static int32_t gr1_setFmt(
    PSHARED_DATA pSharedData = NULL;
    NEXUS_Error lrc;
    void *pMemory;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, descriptor);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
@@ -461,6 +513,8 @@ static int32_t gr1_setFmt(
    }
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, descriptor, ret);
    return ret;
 }
 
@@ -474,6 +528,9 @@ static int32_t gr1_setProd(
    PSHARED_DATA pSharedData = NULL;
    NEXUS_Error lrc;
    void *pMemory;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, descriptor);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
@@ -493,6 +550,8 @@ static int32_t gr1_setProd(
    }
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, descriptor, ret);
    return ret;
 }
 
@@ -506,6 +565,9 @@ static int32_t gr1_getBack(
    NEXUS_MemoryBlockHandle pstore_hdl = NULL;
    gr1_priv_t const *hnd = NULL;
    struct nx_ashmem_getmem ashmem_getmem;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_HANDLE;
@@ -531,6 +593,8 @@ static int32_t gr1_getBack(
    }
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer, ret);
    return ret;
 }
 
@@ -545,6 +609,9 @@ static int32_t gr1_getCons(
    NEXUS_Error lrc;
    void *pMemory;
    gr1_priv_t const *hnd = NULL;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_HANDLE;
@@ -570,6 +637,8 @@ static int32_t gr1_getCons(
    }
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer, ret);
    return ret;
 }
 
@@ -585,6 +654,9 @@ static int32_t gr1_getDims(
    NEXUS_Error lrc;
    void *pMemory;
    gr1_priv_t const *hnd = NULL;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_HANDLE;
@@ -611,6 +683,8 @@ static int32_t gr1_getDims(
    }
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer, ret);
    return ret;
 }
 
@@ -625,6 +699,9 @@ static int32_t gr1_getFmt(
    NEXUS_Error lrc;
    void *pMemory;
    gr1_priv_t const *hnd = NULL;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_HANDLE;
@@ -650,6 +727,8 @@ static int32_t gr1_getFmt(
    }
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer, ret);
    return ret;
 }
 
@@ -664,6 +743,9 @@ static int32_t gr1_getProd(
    NEXUS_Error lrc;
    void *pMemory;
    gr1_priv_t const *hnd = NULL;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_HANDLE;
@@ -689,6 +771,8 @@ static int32_t gr1_getProd(
    }
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer, ret);
    return ret;
 }
 
@@ -703,6 +787,9 @@ static int32_t gr1_getStrd(
    NEXUS_Error lrc;
    void *pMemory;
    gr1_priv_t const *hnd = NULL;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_HANDLE;
@@ -728,6 +815,8 @@ static int32_t gr1_getStrd(
    }
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer, ret);
    return ret;
 }
 
@@ -876,11 +965,10 @@ out:
     return;
 }
 
-static gralloc1_error_t gr1_allocOneBuf(
+static buffer_handle_t gr1_allocOneBuf(
    const gralloc1_buffer_descriptor_t descriptor,
-   buffer_handle_t* outBuffer) {
+   gralloc1_error_t *ret) {
 
-   gralloc1_error_t ret = GRALLOC1_ERROR_NONE;
    NEXUS_MemoryBlockHandle dstore_hdl = (NEXUS_MemoryBlockHandle)descriptor;
    NEXUS_MemoryBlockHandle pstore_hdl = NULL;
    gr1_priv_t *hnd = NULL;
@@ -894,10 +982,13 @@ static gralloc1_error_t gr1_allocOneBuf(
    NEXUS_Error lrc;
    void *pMemory;
    NEXUS_Addr physAddr;
+   buffer_handle_t buffer = NULL;
+
+   *ret = GRALLOC1_ERROR_NONE;
 
    hnd = new gr1_priv_t(descriptor);
    if (hnd == NULL) {
-      ret = GRALLOC1_ERROR_NO_RESOURCES;
+      *ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
       goto out;
    }
 
@@ -906,7 +997,7 @@ static gralloc1_error_t gr1_allocOneBuf(
    strcat(value2, value);
    pdata = open(value2, O_RDWR, 0);
    if (pdata < 0) {
-      ret = GRALLOC1_ERROR_NO_RESOURCES;
+      *ret = GRALLOC1_ERROR_NO_RESOURCES;
       goto error;
    }
    lrc = NEXUS_MemoryBlock_Lock(dstore_hdl, &pMemory);
@@ -917,7 +1008,7 @@ static gralloc1_error_t gr1_allocOneBuf(
       gr1_fmt2PrivFmt(pSharedData->container.format, &nxfmt, &pSharedData->container.bpp);
       if (nxfmt == NEXUS_PixelFormat_eUnknown) {
          if (!lrc) NEXUS_MemoryBlock_Unlock(dstore_hdl);
-         ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
+         *ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
          goto error;
       }
       gr1_getLayout(pSharedData->container.width, pSharedData->container.height,
@@ -926,7 +1017,7 @@ static gralloc1_error_t gr1_allocOneBuf(
                     &pSharedData->container.size);
       if (!pSharedData->container.stride || !pSharedData->container.size) {
          if (!lrc) NEXUS_MemoryBlock_Unlock(dstore_hdl);
-         ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
+         *ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
          goto error;
       }
       if (gr1_needPstore(pSharedData->container.format,
@@ -944,10 +1035,10 @@ static gralloc1_error_t gr1_allocOneBuf(
             memset(&ashmem_refcnt, 0, sizeof(struct nx_ashmem_refcnt));
             ashmem_refcnt.hdl = ashmem_getmem.hdl;
             ashmem_refcnt.cnt = NX_ASHMEM_REFCNT_ADD;
-            rc = ioctl(hnd->pfhdl, NX_ASHMEM_REFCNT, &ashmem_getmem);
+            rc = ioctl(pdata, NX_ASHMEM_REFCNT, &ashmem_refcnt);
          }
          if (rc < 0) {
-            ret = GRALLOC1_ERROR_NO_RESOURCES;
+            *ret = GRALLOC1_ERROR_NO_RESOURCES;
             goto error;
          }
 
@@ -956,6 +1047,8 @@ static gralloc1_error_t gr1_allocOneBuf(
          gr1_bzero(pSharedData, pstore_hdl);
 
          hnd->pfhdl     = pdata;
+         hnd->sfhdl     = pSharedData->container.dhdl;
+         pSharedData->container.dhdl = -1;
          hnd->oglStride = pSharedData->container.stride;
          hnd->oglSize   = pSharedData->container.size;
          /* gpu cache - default lock. */
@@ -964,12 +1057,10 @@ static gralloc1_error_t gr1_allocOneBuf(
          pMemory = NULL;
          NEXUS_MemoryBlock_Lock(pstore_hdl, &pMemory);
          hnd->nxSurfaceAddress = (uint64_t)pMemory;
+
       }
    } else {
-      ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
-   }
-   if (dstore_hdl) {
-      if (!lrc) NEXUS_MemoryBlock_Unlock(dstore_hdl);
+      *ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
    }
 
    if (gr1_log) {
@@ -990,10 +1081,14 @@ static gralloc1_error_t gr1_allocOneBuf(
       NEXUS_MemoryBlock_UnlockOffset(pstore_hdl);
    }
 
-   if (ret == GRALLOC1_ERROR_NONE) {
-      *outBuffer = (buffer_handle_t)(hnd);
+   if (dstore_hdl) {
+      if (!lrc) NEXUS_MemoryBlock_Unlock(dstore_hdl);
+   }
+
+   if (*ret == GRALLOC1_ERROR_NONE) {
+      buffer = (buffer_handle_t)(intptr_t)hnd;
    } else {
-      *outBuffer = NULL;
+      buffer = NULL;
    }
    goto out;
 
@@ -1005,7 +1100,7 @@ error:
       close(pdata);
    }
 out:
-   return ret;
+   return buffer;
 }
 
 static int32_t gr1_allocBuf(
@@ -1015,7 +1110,11 @@ static int32_t gr1_allocBuf(
    buffer_handle_t* outBuffers) {
 
    uint32_t i, j;
-   gralloc1_error_t ret = GRALLOC1_ERROR_NONE, alloc;
+   gralloc1_error_t ret = GRALLOC1_ERROR_NONE;
+   buffer_handle_t buffer = NULL;
+
+   ALOGV("-> %s\n",
+      __FUNCTION__);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
@@ -1027,17 +1126,16 @@ static int32_t gr1_allocBuf(
    }
 
    for (i = 0 ; i < numDescriptors ; i++) {
-      alloc = gr1_allocOneBuf(descriptors[i], &outBuffers[i]);
-      if (alloc != GRALLOC1_ERROR_NONE) {
-         if (alloc == GRALLOC1_ERROR_BAD_DESCRIPTOR) {
-            ret = alloc;
-         } else {
-            ret = GRALLOC1_ERROR_NO_RESOURCES;
-         }
+      buffer = gr1_allocOneBuf(*(descriptors+i), &ret);
+      if (buffer == NULL) {
          for (j = 0 ; j < i ; j++) {
             // TODO gr1_relOneBuf(outBuffers[j]);
          }
          goto out;
+      } else {
+         *(outBuffers+i) = buffer;
+         ALOGI("abuf: desc:%" PRIu64 ":alloc:%p",
+               *(descriptors+i), *(outBuffers+i));
       }
    }
 
@@ -1046,6 +1144,8 @@ static int32_t gr1_allocBuf(
    }
 
 out:
+   ALOGE_IF(!((ret==GRALLOC1_ERROR_NONE)||(ret==GRALLOC1_ERROR_NOT_SHARED)),
+            "<- %s: (%d)\n", __FUNCTION__, ret);
    return ret;
 }
 
@@ -1061,6 +1161,9 @@ static int32_t gr1_retBuf(
    gr1_priv_t *hnd = NULL;
    void *pMemory = NULL;
    NEXUS_Addr physAddr;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_HANDLE;
@@ -1081,7 +1184,7 @@ static int32_t gr1_retBuf(
    memset(&ashmem_refcnt, 0, sizeof(struct nx_ashmem_refcnt));
    ashmem_refcnt.hdl = ashmem_getmem.hdl;
    ashmem_refcnt.cnt = NX_ASHMEM_REFCNT_ADD;
-   rc = ioctl(hnd->pfhdl, NX_ASHMEM_REFCNT, &ashmem_getmem);
+   rc = ioctl(hnd->pfhdl, NX_ASHMEM_REFCNT, &ashmem_refcnt);
    if (rc < 0) {
       ret = GRALLOC1_ERROR_NO_RESOURCES;
       goto out;
@@ -1110,6 +1213,8 @@ static int32_t gr1_retBuf(
    }
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer, ret);
    return ret;
 }
 
@@ -1123,6 +1228,9 @@ static int32_t gr1_relBuf(
    struct nx_ashmem_getmem ashmem_getmem;
    struct nx_ashmem_refcnt ashmem_refcnt;
    gr1_priv_t *hnd = NULL;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_HANDLE;
@@ -1143,7 +1251,7 @@ static int32_t gr1_relBuf(
    memset(&ashmem_refcnt, 0, sizeof(struct nx_ashmem_refcnt));
    ashmem_refcnt.hdl = ashmem_getmem.hdl;
    ashmem_refcnt.cnt = NX_ASHMEM_REFCNT_REM;
-   rc = ioctl(hnd->pfhdl, NX_ASHMEM_REFCNT, &ashmem_getmem);
+   rc = ioctl(hnd->pfhdl, NX_ASHMEM_REFCNT, &ashmem_refcnt);
    if (rc < 0) {
       ret = GRALLOC1_ERROR_BAD_HANDLE;
       goto out;
@@ -1169,6 +1277,7 @@ static int32_t gr1_relBuf(
       NEXUS_MemoryBlock_UnlockOffset(pstore_hdl);
       NEXUS_MemoryBlock_CheckIfLocked(pstore_hdl);
       close(hnd->pfhdl);
+      close(hnd->sfhdl);
       delete hnd;
    } else {
       if (gr1_log) {
@@ -1189,6 +1298,8 @@ static int32_t gr1_relBuf(
    }
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer, ret);
    return ret;
 }
 
@@ -1203,6 +1314,9 @@ static int32_t gr1_numPlanes(
    void *pMemory = NULL;
    PSHARED_DATA pSharedData = NULL;
    NEXUS_Error dlrc;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_HANDLE;
@@ -1234,6 +1348,8 @@ static int32_t gr1_numPlanes(
    }
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer, ret);
    return ret;
 }
 
@@ -1254,6 +1370,9 @@ static int32_t gr1_lckBuf(
    struct nx_ashmem_getmem ashmem_getmem;
    int rc;
    gr1_priv_t const *hnd = NULL;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_HANDLE;
@@ -1345,6 +1464,8 @@ static int32_t gr1_lckBuf(
    if (!dlrc) NEXUS_MemoryBlock_Unlock(dstore_hdl);
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer, ret);
    return ret;
 }
 
@@ -1359,6 +1480,9 @@ static int32_t gr1_lckFlex(
 
    gralloc1_error_t ret = GRALLOC1_ERROR_NONE;
    gr1_priv_t const *hnd = NULL;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_HANDLE;
@@ -1403,6 +1527,8 @@ static int32_t gr1_lckFlex(
    (void)acquireFence;
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer, ret);
    return ret;
 }
 
@@ -1419,6 +1545,9 @@ static int32_t gr1_ulckBuf(
    void *pMemory;
    struct nx_ashmem_getmem ashmem_getmem;
    int rc;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer);
 
    if (device == NULL) {
       ret = GRALLOC1_ERROR_BAD_HANDLE;
@@ -1479,6 +1608,90 @@ static int32_t gr1_ulckBuf(
    if (!dlrc) NEXUS_MemoryBlock_Unlock(dstore_hdl);
 
 out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer, ret);
+   return ret;
+}
+
+static int32_t gr1_setLyrCnt(
+   gralloc1_device_t* device,
+   gralloc1_buffer_descriptor_t descriptor,
+   uint32_t layerCount) {
+
+   gralloc1_error_t ret = GRALLOC1_ERROR_NONE;
+   NEXUS_MemoryBlockHandle dstore_hdl = (NEXUS_MemoryBlockHandle)descriptor;
+   PSHARED_DATA pSharedData = NULL;
+   NEXUS_Error lrc;
+   void *pMemory;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, descriptor);
+
+   if (device == NULL) {
+      ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
+      goto out;
+   }
+
+   lrc = NEXUS_MemoryBlock_Lock(dstore_hdl, &pMemory);
+   if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(dstore_hdl);
+   pSharedData = (PSHARED_DATA) pMemory;
+   if (!pSharedData) {
+      ret = GRALLOC1_ERROR_BAD_DESCRIPTOR;
+   }
+   if (layerCount != GR1_SINGLE_LAYER_DESCRIPTOR) {
+      ret = GRALLOC1_ERROR_BAD_VALUE;
+   }
+   if (dstore_hdl) {
+      if (!lrc) NEXUS_MemoryBlock_Unlock(dstore_hdl);
+   }
+
+out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, descriptor, ret);
+   return ret;
+}
+
+static int32_t gr1_getLyrCnt(
+   gralloc1_device_t* device,
+   buffer_handle_t buffer,
+   uint32_t* outLayerCount) {
+
+   gralloc1_error_t ret = GRALLOC1_ERROR_NONE;
+   NEXUS_MemoryBlockHandle dstore_hdl = NULL;
+   PSHARED_DATA pSharedData = NULL;
+   NEXUS_Error lrc;
+   void *pMemory;
+   gr1_priv_t const *hnd = NULL;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer);
+
+   if (device == NULL) {
+      ret = GRALLOC1_ERROR_BAD_HANDLE;
+      goto out;
+   }
+   if (gr1_priv_t::validate(buffer) < 0) {
+      ret = GRALLOC1_ERROR_BAD_HANDLE;
+      goto out;
+   }
+   hnd = reinterpret_cast<gr1_priv_t const*>(buffer);
+   dstore_hdl = (NEXUS_MemoryBlockHandle)(intptr_t)hnd->descriptor;
+
+   lrc = NEXUS_MemoryBlock_Lock(dstore_hdl, &pMemory);
+   if (lrc == BERR_NOT_SUPPORTED) NEXUS_MemoryBlock_Unlock(dstore_hdl);
+   pSharedData = (PSHARED_DATA) pMemory;
+   if (pSharedData) {
+      *outLayerCount = GR1_SINGLE_LAYER_DESCRIPTOR;
+   } else {
+      ret = GRALLOC1_ERROR_UNSUPPORTED;
+   }
+   if (dstore_hdl) {
+      if (!lrc) NEXUS_MemoryBlock_Unlock(dstore_hdl);
+   }
+
+out:
+   ALOGE_IF((ret!=GRALLOC1_ERROR_NONE),"<- %s:%" PRIu64 " (%d)\n",
+      __FUNCTION__, (uint64_t)(intptr_t)buffer, ret);
    return ret;
 }
 
@@ -1488,6 +1701,7 @@ typedef struct gr1_fncElem {
 } gr1_fncElem_t;
 
 static gr1_fncElem_t gr1_fncsMap[] = {
+   {GRALLOC1_FUNCTION_DUMP,                (gralloc1_function_pointer_t)&gr1_dump},
    {GRALLOC1_FUNCTION_CREATE_DESCRIPTOR,   (gralloc1_function_pointer_t)&gr1_debDesc},
    {GRALLOC1_FUNCTION_DESTROY_DESCRIPTOR,  (gralloc1_function_pointer_t)&gr1_finDesc},
    {GRALLOC1_FUNCTION_SET_CONSUMER_USAGE,  (gralloc1_function_pointer_t)&gr1_setDesc},
@@ -1507,6 +1721,8 @@ static gr1_fncElem_t gr1_fncsMap[] = {
    {GRALLOC1_FUNCTION_LOCK,                (gralloc1_function_pointer_t)&gr1_lckBuf},
    {GRALLOC1_FUNCTION_LOCK_FLEX,           (gralloc1_function_pointer_t)&gr1_lckFlex},
    {GRALLOC1_FUNCTION_UNLOCK,              (gralloc1_function_pointer_t)&gr1_ulckBuf},
+   {GRALLOC1_FUNCTION_SET_LAYER_COUNT,     (gralloc1_function_pointer_t)&gr1_setLyrCnt},
+   {GRALLOC1_FUNCTION_GET_LAYER_COUNT,     (gralloc1_function_pointer_t)&gr1_getLyrCnt},
 
    {GRALLOC1_FUNCTION_INVALID,             (gralloc1_function_pointer_t)NULL},
 };

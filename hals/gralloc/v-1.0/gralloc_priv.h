@@ -39,7 +39,8 @@
 #include <assert.h>
 #include "nx_ashmem.h"
 
-#define CHECKPOINT_TIMEOUT      (5000)
+#define CHECKPOINT_TIMEOUT          (5000)
+#define GR1_SINGLE_LAYER_DESCRIPTOR (1)
 
 /* TODO: backward compatibility with 0.x, remove later.
  */
@@ -64,7 +65,7 @@ typedef struct __SHARED_DATA_ {
    } videoFrame;
 
    struct {
-      int      sfhdl;
+      int      dhdl;
       NEXUS_MemoryBlockHandle block; /* TODO: backward compatibility with 0.x, remove later. */
       int32_t  format;
       uint32_t width;
@@ -88,6 +89,7 @@ struct gr1_priv_t {
 #endif
    // fd's
    int         pfhdl;
+   int         sfhdl;
    // int's
    int         magic;
    int         pid;
@@ -101,7 +103,7 @@ struct gr1_priv_t {
    int         fmt_set;
 
 #ifdef __cplusplus
-    static const int sNumFds = 1;
+    static const int sNumFds = 2;
     static inline int sNumInts() {
        return ((sizeof(gr1_priv_t) - sizeof(native_handle_t)) / sizeof(int)) - sNumFds;
     }
