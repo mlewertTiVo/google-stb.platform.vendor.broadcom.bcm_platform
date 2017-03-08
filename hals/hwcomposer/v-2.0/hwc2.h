@@ -61,7 +61,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_FB_RETRY   4
 #define HWC2_ASHIFT     24
 #define HWC2_RLPF       0xCAFEBAAD
-#define HWC2_COMP_RUN   2
+#define HWC2_COMP_RUN   1
 #define HWC2_VOMP_RUN   0
 #define HWC2_VID_WIN    1
 #define HWC2_MEMC_ROT   0 /* m2mc supports flip, but no 90-rot. */
