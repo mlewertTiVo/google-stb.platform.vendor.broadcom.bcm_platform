@@ -1069,6 +1069,7 @@ static void hwc2_vd_cmp_frame(
       } else if (lyr->af >= 0) {
          sync_wait(lyr->af, BKNI_INFINITE);
          close(lyr->af);
+         lyr->af = HWC2_INVALID;
       }
       /* [ii]. compose.
        */
@@ -4587,6 +4588,7 @@ static void hwc2_ext_cmp_frame(
          lyr = &f->lyr[i];
          if (lyr->af >= 0) {
             close(lyr->af);
+            lyr->af = HWC2_INVALID;
          }
          if (lyr->rf != HWC2_INVALID) {
             if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
@@ -4614,6 +4616,7 @@ static void hwc2_ext_cmp_frame(
       is_video = lyr->oob;
       if (is_video && lyr->af >= 0) {
          close(lyr->af);
+         lyr->af = HWC2_INVALID;
       }
       /* [i]. wait as needed.
        */
@@ -4624,12 +4627,13 @@ static void hwc2_ext_cmp_frame(
          /* ...wait on fence as needed.
           * note: this is the client target, so the fence comes from the
           *       display client target and not the layer buffer.
+          * note: when a device composition is turned into client composition,
+          *       we may see some 'rogue' acquire fence set for the layer,
+          *       ignore those.
           */
-         if (lyr->af >= 0) {
-            close(lyr->af);
-         }
          if (f->tgt == NULL && f->ftgt >= 0) {
             close(f->ftgt);
+            f->ftgt = HWC2_INVALID;
          } else if (f->ftgt >= 0) {
             sync_wait(f->ftgt, BKNI_INFINITE);
             close(f->ftgt);
@@ -4639,9 +4643,11 @@ static void hwc2_ext_cmp_frame(
          /* ...wait on fence as needed. */
          if (lyr->bh == NULL && lyr->af >= 0) {
             close(lyr->af);
+            lyr->af = HWC2_INVALID;
          } else if (lyr->af >= 0) {
             sync_wait(lyr->af, BKNI_INFINITE);
             close(lyr->af);
+            lyr->af = HWC2_INVALID;
          }
       }
       /* [ii]. compose.
