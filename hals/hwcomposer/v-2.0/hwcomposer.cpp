@@ -749,52 +749,47 @@ static NEXUS_Error hwc2_ext_refcnt(
 static int hwc2_mem_lock(
    struct hwc2_bcm_device_t* hwc2,
    NEXUS_MemoryBlockHandle bh,
-   void **addr,
-   bool lock) {
+   void **addr) {
 
    NEXUS_Error rc = NEXUS_SUCCESS;
    NEXUS_Error ext = NEXUS_SUCCESS;
 
    if (bh) {
-      if (lock) {
-         ext = hwc2_ext_refcnt(hwc2, bh, NX_ASHMEM_REFCNT_ADD);
-         if (ext == NEXUS_SUCCESS) {
-            rc = NEXUS_MemoryBlock_Lock(bh, addr);
-            if (rc != NEXUS_SUCCESS) {
-               hwc2_ext_refcnt(hwc2, bh, NX_ASHMEM_REFCNT_REM);
-               if (rc == BERR_NOT_SUPPORTED) {
-                  NEXUS_MemoryBlock_Unlock(bh);
-               }
+      ext = hwc2_ext_refcnt(hwc2, bh, NX_ASHMEM_REFCNT_ADD);
+      if (ext == NEXUS_SUCCESS) {
+         rc = NEXUS_MemoryBlock_Lock(bh, addr);
+         if (rc != NEXUS_SUCCESS) {
+            hwc2_ext_refcnt(hwc2, bh, NX_ASHMEM_REFCNT_REM);
+            /* unlock only if needed. */
+            if (rc == BERR_NOT_SUPPORTED) {
+               NEXUS_MemoryBlock_Unlock(bh);
             }
-         } else {
-            rc = NEXUS_OS_ERROR;
-         }
-
-         if (rc) {
-            *addr = NULL;
-            return (int)rc;
+            /* return generic error to caller. */
+            rc = NEXUS_NOT_INITIALIZED;
          }
       } else {
-        return NEXUS_SUCCESS;
+         /* lock never took place, no unlock needed. */
+         rc = NEXUS_NOT_INITIALIZED;
+      }
+      if (rc != NEXUS_SUCCESS) {
+         *addr = NULL;
       }
    } else {
       *addr = NULL;
+      rc = NEXUS_NOT_INITIALIZED;
    }
-   return 0;
+   return (int)rc;
 }
 
 static int hwc2_mem_unlock(
    struct hwc2_bcm_device_t* hwc2,
-   NEXUS_MemoryBlockHandle bh,
-   bool lock) {
+   NEXUS_MemoryBlockHandle bh) {
 
    if (bh) {
-      if (lock) {
-         NEXUS_MemoryBlock_Unlock(bh);
-         hwc2_ext_refcnt(hwc2, bh, NX_ASHMEM_REFCNT_REM);
-      }
+      NEXUS_MemoryBlock_Unlock(bh);
+      hwc2_ext_refcnt(hwc2, bh, NX_ASHMEM_REFCNT_REM);
    }
-   return 0;
+   return (int)NEXUS_SUCCESS;
 }
 
 static void hwc2_getCaps(
@@ -1004,7 +999,7 @@ static void hwc2_vd_cmp_frame(
    bool is_video;
    hwc2_blend_mode_t lbm = HWC2_BLEND_MODE_INVALID;
    struct hwc2_dsp_t *dsp = hwc2->vd;
-   NEXUS_Error dlrc = NEXUS_SUCCESS, dlrcp = NEXUS_SUCCESS;
+   NEXUS_Error dlrc = NEXUS_NOT_INITIALIZED, dlrcp = NEXUS_NOT_INITIALIZED;
    NEXUS_MemoryBlockHandle dbh = NULL, dbhp = NULL;
    PSHARED_DATA dshared = NULL;
    void *dmap = NULL;
@@ -1013,24 +1008,33 @@ static void hwc2_vd_cmp_frame(
 
    /* setup destination buffer for this frame. */
    private_handle_t::get_block_handles((private_handle_t *)f->otgt, &dbh, NULL);
-   dlrc = hwc2_mem_lock(hwc2, dbh, &dmap, true);
+   dlrc = hwc2_mem_lock(hwc2, dbh, &dmap);
    dshared = (PSHARED_DATA) dmap;
    if (dlrc || dshared == NULL) {
       ALOGE("[vd]:[out]:%" PRIu64 ":%" PRIu64 ": invalid dev-shared.\n",
             dsp->pres, dsp->post);
+      if (dlrc == NEXUS_SUCCESS) {
+         hwc2_mem_lock(hwc2, dbh, &dmap);
+         dlrc = NEXUS_NOT_INITIALIZED;
+      }
       goto out;
    }
    if (((private_handle_t *)f->otgt)->fmt_set != GR_NONE) {
       dbhp = (NEXUS_MemoryBlockHandle)dshared->container.block;
-      dlrcp = hwc2_mem_lock(hwc2, dbhp, &dmap, true);
+      dlrcp = hwc2_mem_lock(hwc2, dbhp, &dmap);
       if (dlrcp || dmap == NULL) {
          ALOGE("[vd]:[out]:%" PRIu64 ":%" PRIu64 ": invalid dev-phys.\n",
                dsp->pres, dsp->post);
-         hwc2_mem_unlock(hwc2, dbh, true);
+         if (dlrc == NEXUS_SUCCESS) {
+            hwc2_mem_unlock(hwc2, dbh);
+            dlrc = NEXUS_NOT_INITIALIZED;
+         }
+         if (dlrcp == NEXUS_SUCCESS) {
+            hwc2_mem_unlock(hwc2, dbhp);
+            dlrcp = NEXUS_NOT_INITIALIZED;
+         }
          goto out;
       }
-   } else {
-      dlrcp = NEXUS_NOT_INITIALIZED;
    }
 
    d = hwc_to_nsc_surface(
@@ -1112,30 +1116,40 @@ static void hwc2_vd_cmp_frame(
             break;
          }
          /* graphics or yv12 layer. */
-         NEXUS_Error lrc = NEXUS_SUCCESS, lrcp = NEXUS_SUCCESS;
+         NEXUS_Error lrc = NEXUS_NOT_INITIALIZED, lrcp = NEXUS_NOT_INITIALIZED;
          NEXUS_MemoryBlockHandle bh = NULL, bhp = NULL;
          PSHARED_DATA shared = NULL;
          void *map = NULL;
          bool yv12 = false;
 
          private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
-         lrc = hwc2_mem_lock(hwc2, bh, &map, true);
+         lrc = hwc2_mem_lock(hwc2, bh, &map);
          shared = (PSHARED_DATA) map;
          if (lrc || shared == NULL) {
             ALOGE("[vd]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared.\n",
                   lyr->hdl, dsp->pres, dsp->post);
+            if (lrc == NEXUS_SUCCESS) {
+               hwc2_mem_unlock(hwc2, bh);
+               lrc = NEXUS_NOT_INITIALIZED;
+            }
             break;
          }
          if (((private_handle_t *)lyr->bh)->fmt_set != GR_NONE) {
             bhp = (NEXUS_MemoryBlockHandle)shared->container.block;
-            lrcp = hwc2_mem_lock(hwc2, bhp, &map, true);
+            lrcp = hwc2_mem_lock(hwc2, bhp, &map);
             if (lrcp || map == NULL) {
                ALOGE("[vd]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-phys.\n",
                      lyr->hdl, dsp->pres, dsp->post);
+               if (lrcp == NEXUS_SUCCESS) {
+                  hwc2_mem_unlock(hwc2, bhp);
+                  lrcp = NEXUS_NOT_INITIALIZED;
+               }
+               if (lrc == NEXUS_SUCCESS) {
+                  hwc2_mem_unlock(hwc2, bh);
+                  lrc = NEXUS_NOT_INITIALIZED;
+               }
                break;
             }
-         } else {
-            lrcp = NEXUS_NOT_INITIALIZED;
          }
 
          yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
@@ -1150,10 +1164,10 @@ static void hwc2_vd_cmp_frame(
          }
 
          if (lrcp == NEXUS_SUCCESS) {
-            hwc2_mem_unlock(hwc2, bhp, true);
+            hwc2_mem_unlock(hwc2, bhp);
          }
          if (lrc == NEXUS_SUCCESS) {
-            hwc2_mem_unlock(hwc2, bh, true);
+            hwc2_mem_unlock(hwc2, bh);
          }
          /* [iii]. count of composed layers. */
          if (!blt) c++;
@@ -1181,10 +1195,10 @@ static void hwc2_vd_cmp_frame(
 
 out_error:
    if (dlrcp == NEXUS_SUCCESS) {
-      hwc2_mem_unlock(hwc2, dbhp, true);
+      hwc2_mem_unlock(hwc2, dbhp);
    }
    if (dlrc == NEXUS_SUCCESS) {
-      hwc2_mem_unlock(hwc2, dbh, true);
+      hwc2_mem_unlock(hwc2, dbh);
    }
 out:
    if (d != NULL) {
@@ -3599,7 +3613,7 @@ static bool hwc2_is_video(
    struct hwc2_lyr_t *lyr) {
 
    bool video = false;
-   NEXUS_Error lrc = NEXUS_SUCCESS;
+   NEXUS_Error lrc = NEXUS_NOT_INITIALIZED;
    NEXUS_MemoryBlockHandle bh = NULL;
    PSHARED_DATA shared = NULL;
    void *map = NULL;
@@ -3610,7 +3624,7 @@ static bool hwc2_is_video(
    }
 
    private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
-   lrc = hwc2_mem_lock(hwc2, bh, &map, true);
+   lrc = hwc2_mem_lock(hwc2, bh, &map);
    shared = (PSHARED_DATA) map;
    if (lrc || shared == NULL) {
       goto out;
@@ -3625,7 +3639,7 @@ static bool hwc2_is_video(
 
 out:
    if (lrc == NEXUS_SUCCESS) {
-      hwc2_mem_unlock(hwc2, bh, true);
+      hwc2_mem_unlock(hwc2, bh);
    }
    return video;
 }
@@ -3720,14 +3734,14 @@ static int32_t hwc2_preDsp(
             vcnt++;
             /* signal to the video display the frame to be presented. */
             if (hwc2->hb) {
-               NEXUS_Error lrc = NEXUS_SUCCESS;
+               NEXUS_Error lrc = NEXUS_NOT_INITIALIZED;
                NEXUS_MemoryBlockHandle bh = NULL;
                NEXUS_Rect c, p;
                struct hwc_position fr, cl;
                PSHARED_DATA shared = NULL;
                void *map = NULL;
                private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
-               lrc = hwc2_mem_lock(hwc2, bh, &map, true);
+               lrc = hwc2_mem_lock(hwc2, bh, &map);
                shared = (PSHARED_DATA) map;
                if ((lrc == NEXUS_SUCCESS) && (shared != NULL)) {
                   if (hwc2->rlpf) {
@@ -3768,7 +3782,8 @@ static int32_t hwc2_preDsp(
                   }
                }
                if (lrc == NEXUS_SUCCESS) {
-                  hwc2_mem_unlock(hwc2, bh, true);
+                  hwc2_mem_unlock(hwc2, bh);
+                  lrc = NEXUS_NOT_INITIALIZED;
                }
             }
          }
@@ -4708,30 +4723,40 @@ static void hwc2_ext_cmp_frame(
                break;
             }
             /* graphics or yv12 layer. */
-            NEXUS_Error lrc = NEXUS_SUCCESS, lrcp = NEXUS_SUCCESS;
+            NEXUS_Error lrc = NEXUS_NOT_INITIALIZED, lrcp = NEXUS_NOT_INITIALIZED;
             NEXUS_MemoryBlockHandle bh = NULL, bhp = NULL;
             PSHARED_DATA shared = NULL;
             void *map = NULL;
             bool yv12 = false;
 
             private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
-            lrc = hwc2_mem_lock(hwc2, bh, &map, true);
+            lrc = hwc2_mem_lock(hwc2, bh, &map);
             shared = (PSHARED_DATA) map;
             if (lrc || shared == NULL) {
                ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared.\n",
                      lyr->hdl, dsp->pres, dsp->post);
+               if (lrc == NEXUS_SUCCESS) {
+                  hwc2_mem_unlock(hwc2, bh);
+                  lrc = NEXUS_NOT_INITIALIZED;
+               }
                break;
             }
             if (((private_handle_t *)lyr->bh)->fmt_set != GR_NONE) {
                bhp = (NEXUS_MemoryBlockHandle)shared->container.block;
-               lrcp = hwc2_mem_lock(hwc2, bhp, &map, true);
+               lrcp = hwc2_mem_lock(hwc2, bhp, &map);
                if (lrcp || map == NULL) {
                   ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-phys.\n",
                         lyr->hdl, dsp->pres, dsp->post);
+                  if (lrcp == NEXUS_SUCCESS) {
+                     hwc2_mem_unlock(hwc2, bhp);
+                     lrcp = NEXUS_NOT_INITIALIZED;
+                  }
+                  if (lrc == NEXUS_SUCCESS) {
+                     hwc2_mem_unlock(hwc2, bh);
+                     lrc = NEXUS_NOT_INITIALIZED;
+                  }
                   break;
                }
-            } else {
-               lrcp = NEXUS_NOT_INITIALIZED;
             }
 
             yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
@@ -4746,10 +4771,12 @@ static void hwc2_ext_cmp_frame(
             }
 
             if (lrcp == NEXUS_SUCCESS) {
-               hwc2_mem_unlock(hwc2, bhp, true);
+               hwc2_mem_unlock(hwc2, bhp);
+               lrcp = NEXUS_NOT_INITIALIZED;
             }
             if (lrc == NEXUS_SUCCESS) {
-               hwc2_mem_unlock(hwc2, bh, true);
+               hwc2_mem_unlock(hwc2, bh);
+               lrc = NEXUS_NOT_INITIALIZED;
             }
             /* [iii]. count of composed layers. */
             if (!blt) c++;
