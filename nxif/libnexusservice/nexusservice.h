@@ -154,6 +154,7 @@ protected:
     virtual void platformUninit();
     virtual NEXUS_ClientHandle getNexusClient(unsigned pid);
     static NEXUS_VideoFormat getForcedOutputFormat(void);
+    static int getForcedHdcp(void);
 
     static const char *getPowerString(b_powerState pmState);
 

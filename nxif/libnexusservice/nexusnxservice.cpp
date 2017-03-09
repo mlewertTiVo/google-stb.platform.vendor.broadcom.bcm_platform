@@ -296,7 +296,11 @@ void NexusNxService::handleHdmiOutputHotplugCallback(int port, hdmi_state isConn
         NxClient_HdcpLevel hdcp = settings.hdmiPreferences.hdcp;
 
         if (status.hdmi.status.connected && status.hdmi.status.rxPowered) {
-            settings.hdmiPreferences.hdcp = NxClient_HdcpLevel_eOptional;
+            settings.hdmiPreferences.hdcp =
+               (getForcedHdcp() == 0) ? NxClient_HdcpLevel_eNone : NxClient_HdcpLevel_eOptional;
+            if (getForcedHdcp() == 0) {
+               ALOGW("%s: HDCP disabled by run-time, some features may not work.", __PRETTY_FUNCTION__);
+            }
         }
         else {
             settings.hdmiPreferences.hdcp = NxClient_HdcpLevel_eNone;

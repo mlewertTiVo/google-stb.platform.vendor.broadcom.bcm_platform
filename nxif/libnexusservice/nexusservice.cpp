@@ -86,6 +86,7 @@ extern "C" {
 #endif
 
 #define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
+#define NX_HDCP_TOGGLE                 "nx.hdcp.force" /* needs prefixing. */
 
 BDBG_OBJECT_ID(NexusClientContext);
 
@@ -528,6 +529,19 @@ NEXUS_VideoFormat NexusService::getForcedOutputFormat(void)
    }
 
    return forced_format;
+}
+
+int NexusService::getForcedHdcp(void)
+{
+   char name[PROPERTY_VALUE_MAX];
+#if ANDROID_ENABLE_HDMI_HDCP
+   int def_val = 1;
+#else
+   int def_val = 0;
+#endif
+
+   sprintf(name, "dyn.%s", NX_HDCP_TOGGLE);
+   return property_get_bool(name, def_val);
 }
 
 void NexusService::platformInit()
