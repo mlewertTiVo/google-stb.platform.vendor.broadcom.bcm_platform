@@ -1064,7 +1064,7 @@ static nxserver_t init_nxserver(void)
        }
     }
     if ((svp == SVP_MODE_DTU) || (svp == SVP_MODE_DTU_TRANSCODE)) {
-       settings.svp = nxserverlib_svp_type_cdb;
+       /* keep default, does not matter as [-dtu] option prevails. */
     } else if (!((svp == SVP_MODE_NONE) || (svp == SVP_MODE_NONE_TRANSCODE))) {
        settings.svp = nxserverlib_svp_type_cdb_urr;
     }
