@@ -216,7 +216,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_CreateCommon(
     bool tunnelMode)
 {
     BOMX_VideoDecoder *pVideoDecoder = new BOMX_VideoDecoder(pComponentTpe, pName, pAppData, pCallbacks,
-                                                             NULL, 0, false, tunnelMode);
+                                                             NULL, false, tunnelMode);
     if ( NULL == pVideoDecoder )
     {
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
