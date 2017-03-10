@@ -41,6 +41,11 @@ LOCAL_SRC_FILES += nxmini_with_encoder.cpp
 else
 LOCAL_SRC_FILES += nxmini_stub_encoder.cpp
 endif
+ifneq ($(HW_DTU_SUPPORT),n)
+LOCAL_SRC_FILES += nxmini_with_dtu.cpp
+else
+LOCAL_SRC_FILES += nxmini_stub_dtu.cpp
+endif
 
 LOCAL_MODULE := nxmini
 LOCAL_MODULE_TAGS := optional
