@@ -1425,8 +1425,8 @@ static int32_t hwc2_vdAdd(
       hwc2->vd->cfgs->w     = width;
       hwc2->vd->cfgs->h     = height;
       hwc2->vd->cfgs->vsync = 16666667; /* hardcode 60fps */
-      hwc2->vd->cfgs->xdp   = 0;
-      hwc2->vd->cfgs->ydp   = 0;
+      hwc2->vd->cfgs->xdp   = 160;
+      hwc2->vd->cfgs->ydp   = 160;
    } else {
       free(hwc2->vd);
       hwc2->vd = NULL;
@@ -4937,8 +4937,8 @@ static void hwc2_setup_ext(
       hwc2->ext->cfgs->w     = 1920; /* hardcode 1080p */
       hwc2->ext->cfgs->h     = 1080; /* hardcode 1080p */
       hwc2->ext->cfgs->vsync = 16666667; /* hardcode 60fps */
-      hwc2->ext->cfgs->xdp   = 0;
-      hwc2->ext->cfgs->ydp   = 0;
+      hwc2->ext->cfgs->xdp   = 160; /* default if not connected. */
+      hwc2->ext->cfgs->ydp   = 160; /* default if not connected. */
    }
    hwc2->ext->aCfg = hwc2->ext->cfgs;
 
