@@ -122,7 +122,7 @@
 #define NX_CAPABLE_FRONT_END           "ro.nx.capable.fe"
 #define NX_NO_OUTPUT_VIDEO             "ro.nx.output.dis"
 #define NX_WD_TIMEOUT                  "ro.nx.wd.timeout"
-#define NX_WD_TIMEOUT_DEF              40
+#define NX_WD_TIMEOUT_DEF              60
 #define NX_CAPABLE_DTU                 "ro.nx.capable.dtu"
 
 #define NX_ODV                         "ro.nx.odv"
@@ -207,7 +207,6 @@ typedef struct {
 typedef struct {
     int fd;
     NEXUS_WatchdogCallbackHandle nx;
-    bool nxAcked;
     bool inStandby;
     BKNI_MutexHandle lock;
     bool init;
@@ -275,7 +274,6 @@ static void nx_wdog_midpoint(void *context, int param)
    BSTD_UNUSED(param);
 
    if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
-      nx_server->wdog.nxAcked = true;
       NEXUS_Watchdog_StartTimer();
       BKNI_ReleaseMutex(nx_server->wdog.lock);
    }
@@ -316,7 +314,7 @@ static void *standby_monitor_task(void *argv)
           rc = NxClient_GetStandbyStatus(&nx_server->standbyState);
           if (rc == NEXUS_SUCCESS) {
              if (nx_server->standbyState.transition == NxClient_StandbyTransition_eAckNeeded) {
-                ALOGD("nxserver: Acknowledge state %d\n", nx_server->standbyState.settings.mode);
+                ALOGD("nxserver: ack state %d\n", nx_server->standbyState.settings.mode);
                 NxClient_AcknowledgeStandby(nx_server->standbyId);
                 if (nx_server->wdog.nx != NULL) {
                    NEXUS_Watchdog_StopTimer();
@@ -327,7 +325,6 @@ static void *standby_monitor_task(void *argv)
                       prevStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn &&
                       nx_server->wdog.nx != NULL) {
                 if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
-                   nx_server->wdog.nxAcked = true;
                    nx_server->wdog.inStandby = false;
                    NEXUS_Watchdog_StartTimer();
                    BKNI_ReleaseMutex(nx_server->wdog.lock);
@@ -471,49 +468,55 @@ skip_lmk:
            }
         }
 
-        if (!g_app.wdog.init && g_app.wdog.want) {
+        if (!g_app.wdog.init) {
            if (property_get(NX_ANDROID_BOOTCOMPLETE, value, NULL)) {
               if (strlen(value) && !strncmp(value, NX_PROP_ENABLED, strlen(value))) {
-                 ALOGI("%s: sys.boot_completed detected, launching wdog processing", __FUNCTION__);
-                 g_app.wdog.fd = open("/dev/watchdog", O_WRONLY);
-                 if (g_app.wdog.fd >= 0) {
-                    NEXUS_Error rc;
-                    NEXUS_WatchdogCallbackSettings wdogSettings;
-                    NEXUS_WatchdogCallback_GetDefaultSettings(&wdogSettings);
-                    wdogSettings.midpointCallback.callback = nx_wdog_midpoint;
-                    wdogSettings.midpointCallback.context = (void *)&g_app;
-                    g_app.wdog.nx = NEXUS_WatchdogCallback_Create(&wdogSettings);
-                    g_app.wdog.inStandby = false;
-                    NEXUS_Watchdog_SetTimeout((RUNNER_SEC_THRESHOLD-1)*2);
-                    rc = NEXUS_Watchdog_StartTimer();
-                    if (rc != NEXUS_SUCCESS) {
-                       NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
+                 if (g_app.wdog.want) {
+                    int wdog_timeout = property_get_int32(NX_WD_TIMEOUT, NX_WD_TIMEOUT_DEF);
+                    g_app.wdog.fd = open("/dev/watchdog", O_WRONLY);
+                    if (g_app.wdog.fd >= 0 && wdog_timeout) {
+                       ALOGI("sys.boot_completed detected, launching wdog processing (to=%ds)", wdog_timeout);
+                       NEXUS_Error rc;
+                       NEXUS_WatchdogCallbackSettings wdogSettings;
+                       watchdogWrite(WATCHDOG_TERMINATE);
+                       NEXUS_WatchdogCallback_GetDefaultSettings(&wdogSettings);
+                       wdogSettings.midpointCallback.callback = nx_wdog_midpoint;
+                       wdogSettings.midpointCallback.context = (void *)&g_app;
+                       g_app.wdog.nx = NEXUS_WatchdogCallback_Create(&wdogSettings);
+                       g_app.wdog.inStandby = false;
+                       NEXUS_Watchdog_SetTimeout(wdog_timeout);
+                       rc = NEXUS_Watchdog_StartTimer();
+                       if (rc != NEXUS_SUCCESS) {
+                          NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
+                          g_app.wdog.nx = NULL;
+                          ALOGE("unable to create nexus watchdog support (reason:%d)!", rc);
+                          watchdogWrite(WATCHDOG_TERMINATE);
+                          close(g_app.wdog.fd);
+                          g_app.wdog.fd = NX_INVALID;
+                       }
+                       g_app.wdog.init = true;
+                    } else if (g_app.wdog.fd >= 0 && !wdog_timeout) {
+                       ALOGI("wdog disabled on sys.boot_completed");
+                       watchdogWrite(WATCHDOG_TERMINATE);
+                       close(g_app.wdog.fd);
+                       g_app.wdog.fd = NX_INVALID;
+                       g_app.wdog.init = true;
+                    } else {
+                       ALOGE("unable to create watchdog support (reason:%s)!", strerror(errno));
+                       g_app.wdog.fd = NX_INVALID;
                        g_app.wdog.nx = NULL;
+                       g_app.wdog.want = false;
                     }
-                    int timeout = property_get_int32(NX_WD_TIMEOUT, NX_WD_TIMEOUT_DEF);
-                    int ret = ioctl(g_app.wdog.fd, WDIOC_SETTIMEOUT, &timeout);
-                    if (ret != 0) {
-                        ALOGW("unable to set watchdog timeout (%s)!", strerror(errno));
+                 } else {
+                    g_app.wdog.fd = open("/dev/watchdog", O_WRONLY);
+                    if (g_app.wdog.fd >= 0) {
+                       watchdogWrite(WATCHDOG_TERMINATE);
+                       close(g_app.wdog.fd);
+                       g_app.wdog.fd = NX_INVALID;
                     }
                     g_app.wdog.init = true;
-                 } else {
-                    ALOGE("unable to create watchdog support (reason:%s)!", strerror(errno));
-                    g_app.wdog.fd = NX_INVALID;
-                    g_app.wdog.nx = NULL;
-                    g_app.wdog.want = false;
                  }
               }
-           }
-        }
-        if (g_app.wdog.init &&
-            g_app.wdog.fd != NX_INVALID &&
-            g_app.wdog.nx != NULL) {
-           if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
-              if (nx_server->wdog.nxAcked || nx_server->wdog.inStandby) {
-                 watchdogWrite(WATCHDOG_KICK);
-                 nx_server->wdog.nxAcked = false;
-              }
-              BKNI_ReleaseMutex(nx_server->wdog.lock);
            }
         }
 
