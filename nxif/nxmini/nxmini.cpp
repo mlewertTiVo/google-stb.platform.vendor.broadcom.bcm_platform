@@ -63,6 +63,7 @@
 
 #include "nxmini.h"
 #include "nxserverlib.h"
+#include "nexus_watchdog.h"
 
 #define MB (1024*1024)
 #define KB (1024)
@@ -82,13 +83,55 @@
 #define NX_HEAP_DRV_MANAGED        1
 #define NX_HEAP_DRV_MANAGED_VALUE  "4m"
 
-static struct {
+#define NX_INVALID -1
+
+typedef struct {
+    int fd;
+    NEXUS_WatchdogCallbackHandle nx;
+    BKNI_MutexHandle lock;
+    bool init;
+} WDOG_T;
+
+typedef struct {
     BKNI_MutexHandle lock;
     nxserver_t server;
     unsigned refcnt;
-} g_app;
+    WDOG_T wdog;
+} NX_SERVER_T;
 
+static NX_SERVER_T g_app;
 static bool g_exit = false;
+
+static const char WATCHDOG_TERMINATE[] = "V";
+static const char WATCHDOG_KICK[]      = "\0";
+static void watchdogWrite(const char *msg)
+{
+    int ret, retries = 3;
+
+    do {
+        ret = write(g_app.wdog.fd, msg, 1);
+        if (ret != 1) {
+            ALOGE("could not write to watchdog, retrying...");
+        } else {
+            break;
+        }
+    } while(retries--);
+
+    if (retries <= 0 && ret != 1) {
+        ALOGE("watchdog write failed, platform will reboot!!!");
+    }
+}
+
+static void nx_wdog_midpoint(void *context, int param)
+{
+   NX_SERVER_T *nx_server = (NX_SERVER_T *)context;
+   BSTD_UNUSED(param);
+
+   if (BKNI_AcquireMutex(nx_server->wdog.lock) == BERR_SUCCESS) {
+      NEXUS_Watchdog_StartTimer();
+      BKNI_ReleaseMutex(nx_server->wdog.lock);
+   }
+}
 
 static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned heapType)
 {
@@ -278,6 +321,7 @@ static nxserver_t init_nxserver(void)
        return NULL;
     }
 
+    BKNI_CreateMutex(&g_app.wdog.lock);
     g_app.refcnt++;
     return g_app.server;
 }
@@ -290,6 +334,7 @@ static void uninit_nxserver(nxserver_t server)
     nxserver_ipc_uninit();
     nxserverlib_uninit(server);
     BKNI_DestroyMutex(g_app.lock);
+    BKNI_DestroyMutex(g_app.wdog.lock);
     NEXUS_Platform_Uninit();
 }
 
@@ -312,8 +357,56 @@ int main(void)
     /* loop forever. */
     while (1) {
        BKNI_Sleep(1000);
+
+       if (!g_app.wdog.init) {
+          int wdog_timeout = WDOG_TIMEOUT;
+          g_app.wdog.fd = open("/dev/watchdog", O_WRONLY);
+          if (g_app.wdog.fd >= 0 && wdog_timeout) {
+             ALOGI("launching wdog processing (to=%ds)", wdog_timeout);
+             NEXUS_Error rc;
+             NEXUS_WatchdogCallbackSettings wdogSettings;
+             watchdogWrite(WATCHDOG_TERMINATE);
+             NEXUS_WatchdogCallback_GetDefaultSettings(&wdogSettings);
+             wdogSettings.midpointCallback.callback = nx_wdog_midpoint;
+             wdogSettings.midpointCallback.context = (void *)&g_app;
+             g_app.wdog.nx = NEXUS_WatchdogCallback_Create(&wdogSettings);
+             NEXUS_Watchdog_SetTimeout(wdog_timeout);
+             rc = NEXUS_Watchdog_StartTimer();
+             if (rc != NEXUS_SUCCESS) {
+                NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
+                g_app.wdog.nx = NULL;
+                ALOGE("unable to create nexus watchdog support (reason:%d)!", rc);
+                watchdogWrite(WATCHDOG_TERMINATE);
+                close(g_app.wdog.fd);
+                g_app.wdog.fd = NX_INVALID;
+             }
+             g_app.wdog.init = true;
+          } else if (g_app.wdog.fd >= 0 && !wdog_timeout) {
+             ALOGI("wdog disabled on init");
+             watchdogWrite(WATCHDOG_TERMINATE);
+             close(g_app.wdog.fd);
+             g_app.wdog.fd = NX_INVALID;
+             g_app.wdog.init = true;
+          } else {
+             ALOGE("unable to create watchdog support (reason:%s)!", strerror(errno));
+             g_app.wdog.fd = NX_INVALID;
+             g_app.wdog.nx = NULL;
+          }
+       }
+
        if (g_exit) break;
     }
+
+    if (g_app.wdog.nx) {
+       NEXUS_Watchdog_StopTimer();
+       NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
+       g_app.wdog.nx = NULL;
+    }
+    if (g_app.wdog.fd != NX_INVALID) {
+        watchdogWrite(WATCHDOG_TERMINATE);
+        close(g_app.wdog.fd);
+    }
+    g_app.wdog.init = false;
 
     uninit_nxserver(nx_srv);
     return 0;
