@@ -332,10 +332,13 @@ echo $DEVICE_EBOARDS_LIST >> $BLACK_LIST
 echo "$ADDON_DIR" >> $BLACK_LIST
 echo "$PLAYREADY_DIR" >> $BLACK_LIST
 
-# Tar up addons individually - Google devices, cboards, and eboards
+# Tar up addons individually -
+# Google devices, cboards, and eboards
 tar --exclude=*.git* -cvzf $ADDON_DIR/device_google_ref.tgz --files-from=$DEVICE_GOOGLE_REF_LIST
 tar --exclude=*.git* -cvzf $ADDON_DIR/device_cboards.tgz --files-from=$DEVICE_CBOARDS_LIST
 tar --exclude=*.git* -cvzf $ADDON_DIR/device_eboards.tgz --files-from=$DEVICE_EBOARDS_LIST
+# WLAN add-on
+tar --exclude=*.git* -cvzf $ADDON_DIR/refsw_wlan.tgz $(cat $REFSW_DIR)/BSEAV/connectivity/wlan/*
 
 # Tar up everything
 tar --exclude=*.git* --exclude-from=$BLACK_LIST -cvzf $1.tgz --files-from=$WHITE_LIST
