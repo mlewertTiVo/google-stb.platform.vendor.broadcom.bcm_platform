@@ -55,6 +55,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/fbtest/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/joinstress/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/lmkstats/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/load/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makeblimg/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makegpt/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makehwcfg/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/memcpy/Android.mk
