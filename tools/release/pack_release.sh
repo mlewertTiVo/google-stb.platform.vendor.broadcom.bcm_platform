@@ -339,6 +339,10 @@ tar --exclude=*.git* -cvzf $ADDON_DIR/device_cboards.tgz --files-from=$DEVICE_CB
 tar --exclude=*.git* -cvzf $ADDON_DIR/device_eboards.tgz --files-from=$DEVICE_EBOARDS_LIST
 # WLAN add-on
 tar --exclude=*.git* -cvzf $ADDON_DIR/refsw_wlan.tgz $(cat $REFSW_DIR)/BSEAV/connectivity/wlan/*
+# SAGE widevine add-on
+tar --exclude=*.git* -cvzf $ADDON_DIR/refsw_sage_wv.tgz \
+   $(cat $REFSW_DIR)/BSEAV/lib/security/sage/bin/*/sage_ta_widevine.bin \
+   $(cat $REFSW_DIR)/BSEAV/lib/security/sage/bin/*/dev/sage_ta_widevine_dev.bin
 
 # Tar up everything
 tar --exclude=*.git* --exclude-from=$BLACK_LIST -cvzf $1.tgz --files-from=$WHITE_LIST
