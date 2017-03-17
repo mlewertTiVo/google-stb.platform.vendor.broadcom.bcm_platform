@@ -25,7 +25,8 @@ LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_MODULE_RELATIVE_PATH := hw
 
 LOCAL_SHARED_LIBRARIES := libcutils \
-                          liblog
+                          liblog \
+                          libbase
 LOCAL_STATIC_LIBRARIES := libfs_mgr
 
 LOCAL_C_INCLUDES := system/core/fs_mgr/include \
