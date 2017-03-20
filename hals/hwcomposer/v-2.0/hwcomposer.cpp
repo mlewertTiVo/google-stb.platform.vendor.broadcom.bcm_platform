@@ -4615,6 +4615,10 @@ static void hwc2_ext_cmp_frame(
       return;
    }
 
+   ALOGI_IF((hwc2->lm & LOG_GLOB_COMP_DEBUG),
+            "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": new frame composition (f:%d, v:%s::%d:%d)\n",
+            dsp->pres, dsp->post, f->cnt, (f->vcnt || f->scnt) ? "yes" : "no", f->vcnt, f->scnt);
+
    // TODO: optimize seeding background.
    hwc2_fb_seed(hwc2, d, (f->vcnt || f->scnt) ? HWC2_TRS : HWC2_OPQ);
    hwc2_chkpt(hwc2);
