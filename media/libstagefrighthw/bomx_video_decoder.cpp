@@ -2458,6 +2458,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
                 stcChannelSt = (stc_channel_st*)pMemory;
                 m_tunnelStcChannel = stcChannelSt->stc_channel;
                 m_tunnelStcChannelSync = stcChannelSt->stc_channel_sync;
+                NEXUS_SimpleStcChannel_SetStc(m_tunnelStcChannelSync, B_STC_SYNC_INVALID_VALUE);
                 NEXUS_MemoryBlock_Unlock(hdl);
             }
             ALOGV("OMX_IndexParamConfigureVideoTunnelMode - stc-channels %p %p",
@@ -2558,6 +2559,12 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_lastReturnedSerial = 0;
             m_formatChangeState = FCState_eNone;
             m_waitingForStc = false;
+            if (m_stcResumePending) {
+                // resume stc if we left it paused
+                m_stcResumePending = false;
+                ALOGV("Restoring stc channel");
+                NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
+            }
             m_videoStreamInfo.valid = false;
         }
     }
@@ -3067,7 +3074,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
 
                 m_outputFlushing = false;
                 // Handle possible timestamp discontinuity (seeking) after a flush command
-                if ( m_tunnelMode && (m_tunnelStcChannel != NULL ))
+                if ( m_tunnelMode && (m_tunnelStcChannel != NULL ) && !m_waitingForStc)
                 {
                     NEXUS_VideoDecoderTrickState vdecTrickState;
                     NEXUS_Error errCode;
@@ -3083,20 +3090,14 @@ OMX_ERRORTYPE BOMX_VideoDecoder::CommandFlush(
                     if (errCode != NEXUS_SUCCESS)
                         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
 
-                    // Pause and invalidate stc
-                    errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 0, 1);
-                    if (errCode != NEXUS_SUCCESS)
-                        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
-
-                    errCode = NEXUS_SimpleStcChannel_Invalidate(m_tunnelStcChannel);
-                    if (errCode != NEXUS_SUCCESS)
-                        return BOMX_ERR_TRACE(OMX_ErrorUndefined);
-
                     // Reset stc sync only if it hasn't changed its last value.
                     uint32_t stcSync;
                     NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
-                    if (stcSync == m_stcSyncValue) 
+                    ALOGV("Flush request, stcSync read:%u value:%u, ", stcSync, m_stcSyncValue);
+                    if (stcSync == m_stcSyncValue) {
                         NEXUS_SimpleStcChannel_SetStc(m_tunnelStcChannelSync, B_STC_SYNC_INVALID_VALUE);
+                        ALOGV("Setting sync stc to invalid value");
+                    }
                 }
             }
             ReturnPortBuffers(m_pVideoPorts[1]);
@@ -5353,13 +5354,14 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 bool resumeDecoder = false;
 
                 NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
-                ALOGV("%s: stcSync:%u",  __FUNCTION__, stcSync);
                 if (stcSync != B_STC_SYNC_INVALID_VALUE) {
                     resumeDecoder = true;
                     m_stcSyncValue = stcSync;
+                    ALOGV("%s: Resume decoder on stcSync:%u",  __FUNCTION__, stcSync);
                 } else if (toMillisecondTimeoutDelay(m_flushTime, now) > B_WAIT_FOR_STC_SYNC_TIMEOUT_MS) {
                     ALOGW("%s: timeout waiting for stc", __FUNCTION__);
                     resumeDecoder = true;
+                    m_stcSyncValue = B_STC_SYNC_INVALID_VALUE;
                 }
 
                 if (resumeDecoder) {
@@ -5367,7 +5369,10 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                    m_stcResumePending = true;
                    NEXUS_VideoDecoderTrickState vdecTrickState;
 
-                   if (stcSync != 0) {
+                   errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 0, 1);
+                   if (errCode != NEXUS_SUCCESS)
+                       ALOGE("%s: error setting stc rate to 0", __FUNCTION__);
+                   if (stcSync != B_STC_SYNC_INVALID_VALUE) {
                        errCode = NEXUS_SimpleVideoDecoder_SetStartPts(m_hSimpleVideoDecoder, stcSync);
                        ALOGV("%s: setting startPts:%u", __FUNCTION__, stcSync);
                        if (errCode != NEXUS_SUCCESS)
@@ -5384,13 +5389,13 @@ void BOMX_VideoDecoder::PollDecodedFrames()
 
             if (m_stcResumePending) {
                NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
+               ALOGV("Trying to resume, pts:%u, stc:%u", status.pts, stcSync);
                if (status.pts >= stcSync) {
                    errCode = NEXUS_SimpleStcChannel_SetRate(m_tunnelStcChannel, 1, 0);
                    if (errCode != NEXUS_SUCCESS)
-                       ALOGE("%s: error setting stc rate", __FUNCTION__);
+                       ALOGE("%s: error setting stc rate to 1", __FUNCTION__);
                    else {
                        m_stcResumePending = false;
-                       ALOGV("%s: resumed stc", __FUNCTION__);
                    }
                }
             }
@@ -5422,6 +5427,12 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 // when we're in the process of dropping frames to reach the start pts, return as many
                 // input buffers as possible to speed up the task
                 ReturnInputBuffers(0, InputReturnMode_eAll);
+            }
+
+            if (!m_waitingForStc && !m_stcResumePending && (m_stcSyncValue == B_STC_SYNC_INVALID_VALUE)) {
+                NEXUS_SimpleStcChannel_GetStc(m_tunnelStcChannelSync, &stcSync);
+                m_stcSyncValue = stcSync;
+                ALOGV("%s: initializing stcSync:%u",  __FUNCTION__, stcSync);
             }
         }
 
