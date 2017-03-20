@@ -10,7 +10,7 @@ LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 
-BOA_SRC_ROOT := ../../../../refsw/BSEAV/lib/boa/
+BOA_SRC_ROOT := ../../../../refsw/BSEAV/opensource/boa/
 LOCAL_SRC_FILES := \
    $(BOA_SRC_ROOT)/index.c
 
