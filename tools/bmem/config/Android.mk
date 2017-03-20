@@ -20,16 +20,20 @@ LOCAL_CFLAGS += -DBMEMCONFIG_READ32_SUPPORTED
 BMEM_CONFIG_SRC_ROOT := ../../../../refsw/BSEAV/tools/bmemconfig
 BMEM_PERF_SRC_ROOT := ../../../../refsw/BSEAV/tools/bmemperf
 LOCAL_SRC_FILES := \
+   bmemconfig_box_info.auto.c \
    $(BMEM_CONFIG_SRC_ROOT)/bmemconfig.c \
    $(BMEM_CONFIG_SRC_ROOT)/${NEXUS_PLATFORM}/boxmodes.c \
    $(BMEM_CONFIG_SRC_ROOT)/memusage.c \
    $(BMEM_PERF_SRC_ROOT)/common/bmemperf_utils.c \
-   $(BMEM_PERF_SRC_ROOT)/common/bmemperf_lib.c \
-   bmemconfig_box_info.auto.c
+   $(BMEM_PERF_SRC_ROOT)/common/bmemperf_lib.c
 
 
 BCHP_VER_LOWER := $(shell echo ${BCHP_VER} | tr [:upper:] [:lower:])
 BOXMODE_FILES := $(shell ls -1v $(NEXUS_TOP)/../magnum/commonutils/box/src/$(BCHP_CHIP)/$(BCHP_VER_LOWER)/bbox_memc_box*_config.c)
+
+define generate-config-audio-types
+	awk -f ${NEXUS_TOP}/../BSEAV/tools/bmemconfig/bmemconfig_nexus_audio_types.awk ${NEXUS_TOP}/modules/core/include/nexus_audio_types.h > $(NEXUS_TOP)/../../bcm_platform/tools/bmem/config/bmemconfig_nexus_audio_types.h
+endef
 
 define generate-config-box-info-module
 	awk -f $(NEXUS_TOP)/../BSEAV/tools/bmemconfig/bmemconfig_box_info_pre.awk $(NEXUS_TOP)/../BSEAV/tools/bmemconfig/Makefile > $(NEXUS_TOP)/../../bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.c
@@ -42,8 +46,8 @@ define generate-config-box-info-module
 endef
 
 $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/config/bmemconfig_box_info.auto.c:
+	$(hide) $(call generate-config-audio-types)
 	$(hide) $(call generate-config-box-info-module)
-
 
 LOCAL_MODULE := bmemconfig
 LOCAL_MODULE_SUFFIX := .cgi

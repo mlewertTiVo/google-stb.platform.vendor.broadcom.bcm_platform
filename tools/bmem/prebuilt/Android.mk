@@ -98,7 +98,7 @@ include $(BUILD_PREBUILT)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := index.html
-LOCAL_SRC_FILES := ../../../../refsw/BSEAV/lib/boa/index.html
+LOCAL_SRC_FILES := ../../../../refsw/BSEAV/opensource/boa/index.html
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_PATH := $(TARGET_OUT_DATA)/nexus/bmem
 LOCAL_MODULE_CLASS := ETC
@@ -106,7 +106,7 @@ include $(BUILD_PREBUILT)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := index.js
-LOCAL_SRC_FILES := ../../../../refsw/BSEAV/lib/boa/index.js
+LOCAL_SRC_FILES := ../../../../refsw/BSEAV/opensource/boa/index.js
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_PATH := $(TARGET_OUT_DATA)/nexus/bmem
 LOCAL_MODULE_CLASS := ETC
@@ -114,7 +114,7 @@ include $(BUILD_PREBUILT)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := favicon.ico
-LOCAL_SRC_FILES := ../../../../refsw/BSEAV/lib/boa/favicon.ico
+LOCAL_SRC_FILES := ../../../../refsw/BSEAV/opensource/boa/favicon.ico
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_PATH := $(TARGET_OUT_DATA)/nexus/bmem
 LOCAL_MODULE_CLASS := ETC
@@ -122,7 +122,7 @@ include $(BUILD_PREBUILT)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := brcm-logo-white.jpg
-LOCAL_SRC_FILES := ../../../../refsw/BSEAV/lib/boa/brcm-logo-white.jpg
+LOCAL_SRC_FILES := ../../../../refsw/BSEAV/opensource/boa/brcm-logo-white.jpg
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_PATH := $(TARGET_OUT_DATA)/nexus/bmem
 LOCAL_MODULE_CLASS := ETC
