@@ -4631,13 +4631,64 @@ static void hwc2_ext_cmp_frame(
             dsp->pres, dsp->post, (f->vcnt || f->scnt) ? "transparent" : "opaque");
 
    for (i = 0; i < f->cnt; i++) {
+      NEXUS_Error lrc = NEXUS_NOT_INITIALIZED, lrcp = NEXUS_NOT_INITIALIZED;
+      NEXUS_MemoryBlockHandle bh = NULL, bhp = NULL;
+      PSHARED_DATA shared = NULL;
+      void *map = NULL;
+
       lyr = &f->lyr[i];
       is_video = lyr->oob;
       if (is_video && lyr->af >= 0) {
          close(lyr->af);
          lyr->af = HWC2_INVALID;
       }
-      /* [i]. wait as needed.
+      /* [i]. validate buffer as needed.
+       */
+      if (lyr->cCli == HWC2_COMPOSITION_DEVICE && !is_video) {
+         bool lyr_err = false;
+         if (lyr->bh == NULL) {
+            ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%s (no valid buffer)\n",
+                  lyr->hdl, dsp->pres, dsp->post, getCompositionName(lyr->cCli));
+            continue;
+         }
+         private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
+         lrc = hwc2_mem_lock(hwc2, bh, &map);
+         shared = (PSHARED_DATA) map;
+         if (lrc || shared == NULL) {
+            ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared.\n",
+                  lyr->hdl, dsp->pres, dsp->post);
+            if (lrc == NEXUS_SUCCESS) {
+               hwc2_mem_unlock(hwc2, bh);
+               lrc = NEXUS_NOT_INITIALIZED;
+            }
+            lyr_err = true;
+         }
+         if (!lyr_err && (((private_handle_t *)lyr->bh)->fmt_set != GR_NONE)) {
+            bhp = (NEXUS_MemoryBlockHandle)shared->container.block;
+            lrcp = hwc2_mem_lock(hwc2, bhp, &map);
+            if (lrcp || map == NULL) {
+               ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-phys.\n",
+                     lyr->hdl, dsp->pres, dsp->post);
+               if (lrcp == NEXUS_SUCCESS) {
+                  hwc2_mem_unlock(hwc2, bhp);
+                  lrcp = NEXUS_NOT_INITIALIZED;
+               }
+               if (lrc == NEXUS_SUCCESS) {
+                  hwc2_mem_unlock(hwc2, bh);
+                  lrc = NEXUS_NOT_INITIALIZED;
+               }
+               lyr_err = true;
+            }
+         }
+         if (lyr_err) {
+            if (lyr->af >= 0) {
+               close(lyr->af);
+               lyr->af = HWC2_INVALID;
+            }
+            continue;
+         }
+      }
+      /* [ii]. wait as needed.
        */
       if (lyr->cCli == HWC2_COMPOSITION_SOLID_COLOR ||
           lyr->cCli == HWC2_COMPOSITION_SIDEBAND) {
@@ -4669,7 +4720,7 @@ static void hwc2_ext_cmp_frame(
             lyr->af = HWC2_INVALID;
          }
       }
-      /* [ii]. compose.
+      /* [iii]. compose.
        */
       switch(lyr->cCli) {
       case HWC2_COMPOSITION_SOLID_COLOR:
@@ -4678,7 +4729,7 @@ static void hwc2_ext_cmp_frame(
             if (color != HWC2_TRS && color != HWC2_OPQ) {
                hwc2_fb_seed(hwc2, d, color);
                hwc2_chkpt(hwc2);
-               /* [iii]. count of composed layers. */
+               /* [iv]. count of composed layers. */
                c++;
             }
             ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
@@ -4705,7 +4756,7 @@ static void hwc2_ext_cmp_frame(
             /* dim layer. */
             hwc2_dim(hwc2, d, lyr);
             hwc2_chkpt(hwc2);
-            /* [iii]. count of composed layers. */
+            /* [iv]. count of composed layers. */
             c++;
             ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                      "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": dim layer (%zu)\n",
@@ -4729,48 +4780,8 @@ static void hwc2_ext_cmp_frame(
 
             break;
          } else {
-            if (lyr->bh == NULL) {
-               ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%s (no valid buffer)\n",
-                     lyr->hdl, dsp->pres, dsp->post, getCompositionName(lyr->cCli));
-               break;
-            }
             /* graphics or yv12 layer. */
-            NEXUS_Error lrc = NEXUS_NOT_INITIALIZED, lrcp = NEXUS_NOT_INITIALIZED;
-            NEXUS_MemoryBlockHandle bh = NULL, bhp = NULL;
-            PSHARED_DATA shared = NULL;
-            void *map = NULL;
             bool yv12 = false;
-
-            private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
-            lrc = hwc2_mem_lock(hwc2, bh, &map);
-            shared = (PSHARED_DATA) map;
-            if (lrc || shared == NULL) {
-               ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared.\n",
-                     lyr->hdl, dsp->pres, dsp->post);
-               if (lrc == NEXUS_SUCCESS) {
-                  hwc2_mem_unlock(hwc2, bh);
-                  lrc = NEXUS_NOT_INITIALIZED;
-               }
-               break;
-            }
-            if (((private_handle_t *)lyr->bh)->fmt_set != GR_NONE) {
-               bhp = (NEXUS_MemoryBlockHandle)shared->container.block;
-               lrcp = hwc2_mem_lock(hwc2, bhp, &map);
-               if (lrcp || map == NULL) {
-                  ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-phys.\n",
-                        lyr->hdl, dsp->pres, dsp->post);
-                  if (lrcp == NEXUS_SUCCESS) {
-                     hwc2_mem_unlock(hwc2, bhp);
-                     lrcp = NEXUS_NOT_INITIALIZED;
-                  }
-                  if (lrc == NEXUS_SUCCESS) {
-                     hwc2_mem_unlock(hwc2, bh);
-                     lrc = NEXUS_NOT_INITIALIZED;
-                  }
-                  break;
-               }
-            }
-
             yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
                     (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
             if (yv12) {
@@ -4781,7 +4792,6 @@ static void hwc2_ext_cmp_frame(
                   lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
                }
             }
-
             if (lrcp == NEXUS_SUCCESS) {
                hwc2_mem_unlock(hwc2, bhp);
                lrcp = NEXUS_NOT_INITIALIZED;
@@ -4790,7 +4800,7 @@ static void hwc2_ext_cmp_frame(
                hwc2_mem_unlock(hwc2, bh);
                lrc = NEXUS_NOT_INITIALIZED;
             }
-            /* [iii]. count of composed layers. */
+            /* [iv]. count of composed layers. */
             if (!blt) c++;
             ALOGI_IF(!blt && (dsp->lm & LOG_COMP_DEBUG),
                      "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": %s layer (%zu)\n",
@@ -4831,7 +4841,7 @@ static void hwc2_ext_cmp_frame(
    }
 
    if (c > 0) {
-      /* [iv]. push composition to display. */
+      /* [v]. push composition to display. */
       nx = NEXUS_SurfaceClient_PushSurface(hwc2->ext->u.ext.sch, d, NULL, false);
       if (nx) {
          hwc2_ext_fb_put(hwc2, d);
@@ -4845,7 +4855,7 @@ static void hwc2_ext_cmp_frame(
                   dsp->pres, dsp->post, c, c>1?"s ":" ");
       }
    } else {
-      /* [iv]. ... or re-queue if nothing took place. */
+      /* [v]. ... or re-queue if nothing took place. */
       hwc2_ext_fb_put(hwc2, d);
       ALOGI_IF((dsp->lm & LOG_COMP_SUM_DEBUG),
                "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":no composition\n",
