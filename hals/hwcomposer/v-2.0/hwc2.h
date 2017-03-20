@@ -29,6 +29,7 @@
 #define LOG_SEED_DEBUG      (1<<2)  /* seed background (internal). */
 #define LOG_DIM_DEBUG       (1<<3)  /* dim layer from surface-flinger. */
 #define LOG_OOB_DEBUG       (1<<4)  /* out-of-bounds video layer. */
+#define LOG_GLOB_COMP_DEBUG (1<<5)  /* global composition information. */
 /*
  * log masks: specific to 'external' display (i.e. main display for stb).
  */
