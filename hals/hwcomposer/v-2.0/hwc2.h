@@ -85,6 +85,8 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_VD_MAX_SZ  2048
 #define HWC2_VD_GLES    1 /* vd uses gles only for now. */
 
+#define HWC2_EXT_GLES   "ro.nx.hwc2.ext.gles"
+
 /* wrapper around nexus hotplug event listener binder. do
  * not use directly, use the strong pointer wrap instead.
  */
@@ -303,6 +305,7 @@ struct hwc2_ext_t {
    struct hwc2_lyr_vid_t               vid[HWC2_VID_WIN];
    bool                                rhpd;
    uint32_t                            bg;
+   bool                                gles;
 };
 
 /* display unit. */

@@ -1501,7 +1501,8 @@ static size_t hwc2_dump_gen(
       dsp = hwc2->vd;
       if (max-current > 0) {
          current += snprintf(&hwc2->dump[current], max-current,
-            "\t[vd]:%" PRIu64 ":%s:%" PRIu32 "x%" PRIu32 ":%" PRIu64 ":%" PRIu64 "\n",
+            "\t[vd][%s]:%" PRIu64 ":%s:%" PRIu32 "x%" PRIu32 ":%" PRIu64 ":%" PRIu64 "\n",
+            HWC2_VD_GLES?"gles":"m2mc",
             (hwc2_display_t)(intptr_t)dsp, dsp->name,
             dsp->aCfg->w, dsp->aCfg->h,
             dsp->pres, dsp->post);
@@ -1522,7 +1523,8 @@ static size_t hwc2_dump_gen(
       dsp = hwc2->ext;
       if (max-current > 0) {
          current += snprintf(&hwc2->dump[current], max-current,
-            "\t[ext]:%" PRIu64 ":%s:%" PRIu32 "x%" PRIu32 ":%" PRIu32 ",%" PRIu32 ":hdr-%c,hlg-%c:%" PRIu64 ":%" PRIu64 "\n",
+            "\t[ext][%s]:%" PRIu64 ":%s:%" PRIu32 "x%" PRIu32 ":%" PRIu32 ",%" PRIu32 ":hdr-%c,hlg-%c:%" PRIu64 ":%" PRIu64 "\n",
+            dsp->u.ext.gles?"gles":"m2mc",
             (hwc2_display_t)(intptr_t)dsp, dsp->name,
             dsp->aCfg->w, dsp->aCfg->h, dsp->aCfg->xdp, dsp->aCfg->ydp,
             dsp->aCfg->hdr10?'o':'x', dsp->aCfg->hlg?'o':'x', dsp->pres, dsp->post);
@@ -2565,7 +2567,11 @@ static int32_t hwc2_lyrComp(
    if (dsp->type == HWC2_DISPLAY_TYPE_VIRTUAL) {
       lyr->cDev = HWC2_COMPOSITION_CLIENT;
    } else {
-      lyr->cDev = HWC2_COMPOSITION_INVALID;
+      if (dsp->u.ext.gles) {
+         lyr->cDev = HWC2_COMPOSITION_CLIENT;
+      } else {
+         lyr->cDev = HWC2_COMPOSITION_INVALID;
+      }
    }
 
 out:
@@ -4970,6 +4976,10 @@ static void hwc2_setup_ext(
    snprintf(hwc2->ext->name, sizeof(hwc2->ext->name), "stbHD0");
    hwc2->ext->type = HWC2_DISPLAY_TYPE_PHYSICAL;
    hwc2->ext->lm = property_get_int32(HWC2_LOG_EXT, 0);
+   hwc2->ext->u.ext.gles = property_get_bool(HWC2_EXT_GLES, 0);
+   if (hwc2->ext->u.ext.gles) {
+      ALOGI("[ext]: fallback to gles composition\n");
+   }
 
    hwc2->ext->cfgs = (struct hwc2_dsp_cfg_t *)malloc(sizeof(struct hwc2_dsp_cfg_t));
    if (hwc2->ext->cfgs) {
