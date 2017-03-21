@@ -4732,11 +4732,45 @@ static void hwc2_ext_cmp_frame(
       case HWC2_COMPOSITION_CLIENT:
          if (f->tgt != NULL) {
             if (ccli == 0) {
+               bool lyr_err = false;
                /* client target is valid and we have not composed it yet...
                 *
                 * FALL THROUGH. */
                lyr->bh = f->tgt;
                ccli++;
+
+               private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
+               lrc = hwc2_mem_lock(hwc2, bh, &map);
+               shared = (PSHARED_DATA) map;
+               if (lrc || shared == NULL) {
+                  ALOGE("[ext][ccli]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared.\n",
+                        lyr->hdl, dsp->pres, dsp->post);
+                  if (lrc == NEXUS_SUCCESS) {
+                     hwc2_mem_unlock(hwc2, bh);
+                     lrc = NEXUS_NOT_INITIALIZED;
+                  }
+                  lyr_err = true;
+               }
+               if (!lyr_err && (((private_handle_t *)lyr->bh)->fmt_set != GR_NONE)) {
+                  bhp = (NEXUS_MemoryBlockHandle)shared->container.block;
+                  lrcp = hwc2_mem_lock(hwc2, bhp, &map);
+                  if (lrcp || map == NULL) {
+                     ALOGE("[ext][ccli]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-phys.\n",
+                           lyr->hdl, dsp->pres, dsp->post);
+                     if (lrcp == NEXUS_SUCCESS) {
+                        hwc2_mem_unlock(hwc2, bhp);
+                        lrcp = NEXUS_NOT_INITIALIZED;
+                     }
+                     if (lrc == NEXUS_SUCCESS) {
+                        hwc2_mem_unlock(hwc2, bh);
+                        lrc = NEXUS_NOT_INITIALIZED;
+                     }
+                     lyr_err = true;
+                  }
+               }
+               if (lyr_err) {
+                  break;
+               }
             } else {
                ccli++;
                break;
