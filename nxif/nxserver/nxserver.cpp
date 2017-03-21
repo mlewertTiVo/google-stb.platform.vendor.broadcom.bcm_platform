@@ -123,6 +123,7 @@
 #define NX_WD_TIMEOUT                  "ro.nx.wd.timeout"
 #define NX_WD_TIMEOUT_DEF              60
 #define NX_CAPABLE_DTU                 "ro.nx.capable.dtu"
+#define NX_DOLBY_MS                    "ro.nx.dolby.ms"
 
 #define NX_ODV                         "ro.nx.odv"
 #define NX_ODV_ALT_THRESHOLD           "ro.nx.odv.use.alt"
@@ -857,6 +858,7 @@ static nxserver_t init_nxserver(void)
     NEXUS_VideoFormat forced_format;
     SVP_MODE_T svp;
     bool cvbs = property_get_int32(NX_COMP_VIDEO, 0) ? true : false;
+    int32_t dolby = 0;
 
     if (g_app.refcnt == 1) {
         g_app.refcnt++;
@@ -888,6 +890,22 @@ static nxserver_t init_nxserver(void)
         } else if ( strcmp(value, "disabled") ) {
             ALOGE("Unrecognized value '%s' for %s - expected disabled, atsc, or ebu", value, NX_AUDIO_LOUDNESS);
         }
+    }
+
+    dolby = property_get_int32(NX_DOLBY_MS,0);
+    switch (dolby) {
+    case 11:
+       ALOGI("enabling dolby-ms11");
+       settings.session[0].dolbyMs = nxserverlib_dolby_ms_type_ms11;
+    break;
+    case 12:
+       ALOGI("enabling dolby-ms12");
+       settings.session[0].dolbyMs = nxserverlib_dolby_ms_type_ms12;
+       /* enable unconditionally when using MS12 until needed otherwise. */
+       settings.session[0].persistentDecoderSupport = true;
+    break;
+    default:
+    break;
     }
 
     /* setup the configuration we want for the device.  right now, hardcoded for a generic
