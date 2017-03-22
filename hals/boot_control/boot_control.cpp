@@ -31,6 +31,7 @@
 // local copy loaded on 'init', gets data from bootloader.
 static struct eio_boot bc_eio;
 static char suffix[EIO_BOOT_SUFFIX_LEN+1];
+static int verbose = 0;
 
 static void wait_for_device(const char* fn) {
    int tries = 0;
@@ -136,6 +137,7 @@ static unsigned getNumberSlots(struct boot_control_module *module __unused) {
    // if setup; we always guarantee the proper number as bootloader would have
    // asserted the correct partitions set are available for each slot based
    // partitions.
+   ALOGI_IF(verbose, "getNumberSlots(%d)", EIO_BOOT_NUM_ALT_PART);
    return EIO_BOOT_NUM_ALT_PART;
 }
 
@@ -144,6 +146,7 @@ static unsigned getCurrentSlot(struct boot_control_module *module __unused) {
       ALOGE("getCurrentSlot: bad magic (%x), not setup?", bc_eio.magic);
       return EIO_BOOT_NUM_ALT_PART;
    }
+   ALOGI_IF(verbose, "getCurrentSlot(%d)", bc_eio.current);
    return bc_eio.current;
 }
 
@@ -155,6 +158,7 @@ static int markBootSuccessful(struct boot_control_module *module __unused) {
    bc_eio.slot[bc_eio.current].boot_ok   = 1;
    bc_eio.slot[bc_eio.current].boot_fail = 0;
    bc_eio.slot[bc_eio.current].boot_try  = 0;
+   ALOGI_IF(verbose, "markBootSuccessful(%d)", bc_eio.current);
    return write_device(&bc_eio);
 }
 
@@ -167,7 +171,15 @@ static int setActiveBootSlot(struct boot_control_module *module __unused, unsign
       ALOGE("setActiveBootSlot: bad slot index (%u)", slot);
       return -EINVAL;
    }
+   /* application wants us to boot into this new slot.
+    */
    bc_eio.current = slot;
+   /* reset prior settings for the slot; it gets a clean start.
+    */
+   bc_eio.slot[bc_eio.current].boot_ok   = 0;
+   bc_eio.slot[bc_eio.current].boot_fail = 0;
+   bc_eio.slot[bc_eio.current].boot_try  = 0;
+   ALOGI_IF(verbose, "setActiveBootSlot(%d): reset stats", bc_eio.current);
    return write_device(&bc_eio);
 }
 
@@ -180,7 +192,11 @@ static int setSlotAsUnbootable(struct boot_control_module *module __unused, unsi
       ALOGE("setSlotAsUnbootable: bad slot index (%u)", slot);
       return -EINVAL;
    }
+   /* typically happens at onset of update to prevent using the slot until
+    * update process completes.
+    */
    bc_eio.slot[slot].boot_fail = 1;
+   ALOGI_IF(verbose, "setSlotAsUnbootable(%d,current:%d)", slot, bc_eio.current);
    return write_device(&bc_eio);
 }
 
@@ -193,6 +209,7 @@ static int isSlotBootable(struct boot_control_module *module __unused, unsigned 
       ALOGE("setSlotAsUnbootable: bad slot index (%u)", slot);
       return -EINVAL;
    }
+   ALOGI_IF(verbose, "isSlotBootable(%d,current:%d)=%d", slot, bc_eio.current, bc_eio.slot[slot].boot_try);
    return bc_eio.slot[slot].boot_try;
 }
 
@@ -224,6 +241,7 @@ static int isSlotMarkedSuccessful(struct boot_control_module *module __unused, u
       ALOGE("isSlotMarkedSuccessful: bad slot index (%u)", slot);
       return -EINVAL;
    }
+   ALOGI_IF(verbose, "isSlotMarkedSuccessful(%d,current:%d)=%d", slot, bc_eio.current, bc_eio.slot[slot].boot_ok);
    return bc_eio.slot[slot].boot_ok;
 }
 
