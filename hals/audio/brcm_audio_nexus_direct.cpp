@@ -60,7 +60,7 @@ using namespace android;
 /*
  * Runtime Properties
  */
-#define BRCM_PROPERTY_AUDIO_DIRECT_DISABLE_AC3_PASSTHROUGH ("media.brcm.disable_ac3_passthrough")
+#define BRCM_PROPERTY_AUDIO_DIRECT_DISABLE_AC3_PASSTHROUGH ("media.brcm.disable_ac3_passthru")
 #define BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_DRC_MODE ("media.brcm.direct_drc_mode")
 #define BRCM_PROPERTY_AUDIO_DIRECT_DOLBY_STEREO_DOWNMIX_MODE ("media.brcm.direct_stereo_mode")
 
