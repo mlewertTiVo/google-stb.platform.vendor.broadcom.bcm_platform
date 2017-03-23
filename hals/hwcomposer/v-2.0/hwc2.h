@@ -81,7 +81,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_DSP_EXT    2001
 #define HWC2_DSP_VD     3001
 
-#define HWC2_VD_MAX_NUM 1
+#define HWC2_VD_MAX_NUM 0
 #define HWC2_VD_MAX_SZ  2048
 #define HWC2_VD_GLES    1 /* vd uses gles only for now. */
 
