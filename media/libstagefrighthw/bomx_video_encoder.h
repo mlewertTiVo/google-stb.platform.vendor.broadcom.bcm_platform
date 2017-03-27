@@ -138,7 +138,7 @@ struct BOMX_VideoEncoderOutputBufferInfo
 class BOMX_FrameRateTracker
 {
 public:
-    const size_t maxTrackerListSize = 5;
+    const size_t maxTrackerListSize = 4;
     const float  frameRatePercentTolerance = 10;
 
     BOMX_FrameRateTracker();
