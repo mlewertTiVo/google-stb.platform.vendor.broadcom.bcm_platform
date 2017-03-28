@@ -107,7 +107,7 @@ static NEXUS_Error initializeHdmiInputHdcpSettings(tv_input_private_t* priv)
     char tmp[8];
 
     ALOGD("Read HDCP 1.x Rx Keys");
-    fileFd = open("/hwcfg/drm_hdcp1x.bin", O_RDONLY);
+    fileFd = open("/etc/hdcp1xRxKeys.bin", O_RDONLY);
     if (fileFd < 0) {
         ALOGE("Open error %d for HDCP 1.x Rx Key file", fileFd);
         return NEXUS_UNKNOWN;
@@ -621,7 +621,7 @@ static int tv_input_initialize(struct tv_input_device* dev,
     NEXUS_HdmiInputSettings hdmiInputSettings;
     NEXUS_HdmiInput_GetDefaultSettings(&hdmiInputSettings);
     hdmiInputSettings.frontend.hpdDisconnected = false;
-    hdmiInputSettings.secureVideo = false;
+    hdmiInputSettings.secureVideo = true;
     hdmiInputSettings.sourceChanged.callback = source_changed;
     hdmiInputSettings.sourceChanged.context = priv;
     priv->hdmiInput = NEXUS_HdmiInput_Open(HDMI_PORT_ID-1, &hdmiInputSettings);
