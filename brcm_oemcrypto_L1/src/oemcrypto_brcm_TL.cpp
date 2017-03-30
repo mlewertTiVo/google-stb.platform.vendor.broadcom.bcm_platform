@@ -976,7 +976,7 @@ OEMCryptoResult OEMCrypto_DeactivateUsageEntry(const uint8_t *pst, size_t pst_le
  *   This method changed in API version 9.
  */
 OEMCryptoResult OEMCrypto_ReportUsage(OEMCrypto_SESSION session,
-    const uint8_t *pst, size_t pst_length, OEMCrypto_PST_Report *buffer,
+    const uint8_t *pst, size_t pst_length, uint8_t *buffer,
     size_t *buffer_length)
 {
     OEMCryptoResult wvRc = OEMCrypto_SUCCESS;
