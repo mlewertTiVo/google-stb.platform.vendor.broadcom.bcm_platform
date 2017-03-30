@@ -86,6 +86,10 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_VD_GLES    1 /* vd uses gles only for now. */
 
 #define HWC2_EXT_GLES   "ro.nx.hwc2.ext.gles"
+#define HWC2_EXT_AFB_W  "ro.nx.hwc2.afb.w"
+#define HWC2_EXT_AFB_H  "ro.nx.hwc2.afb.h"
+#define HWC2_EXT_NFB_W  "ro.nx.hwc2.nfb.w"
+#define HWC2_EXT_NFB_H  "ro.nx.hwc2.nfb.h"
 
 /* wrapper around nexus hotplug event listener binder. do
  * not use directly, use the strong pointer wrap instead.

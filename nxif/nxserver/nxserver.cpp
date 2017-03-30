@@ -105,8 +105,8 @@
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
 #define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
-#define GRAPHICS_RES_WIDTH_PROP        "ro.graphics_resolution.width"
-#define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
+#define GRAPHICS_RES_WIDTH_PROP        "ro.nx.hwc2.nfb.w"
+#define GRAPHICS_RES_HEIGHT_PROP       "ro.nx.hwc2.nfb.h"
 
 #define NX_ACT_GC                      "ro.nx.act.gc"
 #define NX_ACT_GS                      "ro.nx.act.gs"

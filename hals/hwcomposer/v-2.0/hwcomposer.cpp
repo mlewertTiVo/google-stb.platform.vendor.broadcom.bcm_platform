@@ -440,8 +440,8 @@ static void hwc2_ext_fbs(
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = false;
       NEXUS_Surface_GetDefaultCreateSettings(&scs);
-      scs.width       = hwc2->ext->cfgs->w;
-      scs.height      = hwc2->ext->cfgs->h;
+      scs.width       = property_get_int32(HWC2_EXT_NFB_W, 1920);
+      scs.height      = property_get_int32(HWC2_EXT_NFB_H, 1080);
       scs.pitch       = scs.width * 4;
       scs.pixelFormat = hwc2_enabled(hwc2_tweak_fb_compressed)?
                            NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8:
@@ -4435,7 +4435,7 @@ int hwc2_blit_gpx(
    NEXUS_SurfaceHandle s = NULL;
    NEXUS_SurfaceStatus ds;
    NEXUS_Graphics2DBlitSettings bs;
-   NEXUS_Rect c, p, sa, oa;
+   NEXUS_Rect c, p, sa, da, oa;
    NEXUS_Error rc;
    int blt = 0;
 
@@ -4452,9 +4452,13 @@ int hwc2_blit_gpx(
         (int16_t)lyr->fr.top,
         (uint16_t)(lyr->fr.right - lyr->fr.left),
         (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+   oa = {(int16_t)0,  /* use 0's to mean 'whole surface'. */
+         (int16_t)0,
+         (uint16_t)0,
+         (uint16_t)0};
 
    sa = c;
-   oa = p;
+   da = p;
 
    if ((dsp->type != HWC2_DISPLAY_TYPE_VIRTUAL) &&
        (sa.x + sa.width > (int16_t)shared->container.width ||
@@ -4492,13 +4496,13 @@ int hwc2_blit_gpx(
    bs.source.surface = s;
    bs.source.rect    = sa;
    bs.dest.surface   = d;
+   bs.dest.rect      = da;
    bs.output.surface = d;
    bs.output.rect    = oa;
    bs.colorOp        = NEXUS_BlitColorOp_eUseBlendEquation;
    bs.alphaOp        = NEXUS_BlitAlphaOp_eUseBlendEquation;
    bs.colorBlend     = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? hwc2_a2n_col_be[HWC2_BLEND_MODE_NONE] : hwc2_a2n_col_be[lyr->bm];
    bs.alphaBlend     = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? hwc2_a2n_al_be[HWC2_BLEND_MODE_NONE] : hwc2_a2n_al_be[lyr->bm];
-   bs.dest.rect      = bs.output.rect;
    bs.constantColor  = (NEXUS_Pixel)al<<HWC2_ASHIFT;
    if (HWC2_MEMC_ROT) {
       if (lyr->tr == HWC_TRANSFORM_ROT_180 || lyr->tr == HWC_TRANSFORM_ROT_270) {
@@ -4992,8 +4996,8 @@ static void hwc2_setup_ext(
    hwc2->ext->cfgs = (struct hwc2_dsp_cfg_t *)malloc(sizeof(struct hwc2_dsp_cfg_t));
    if (hwc2->ext->cfgs) {
       hwc2->ext->cfgs->next  = NULL;
-      hwc2->ext->cfgs->w     = 1920; /* hardcode 1080p */
-      hwc2->ext->cfgs->h     = 1080; /* hardcode 1080p */
+      hwc2->ext->cfgs->w     = property_get_int32(HWC2_EXT_AFB_W, 1920);
+      hwc2->ext->cfgs->h     = property_get_int32(HWC2_EXT_AFB_H, 1080);
       hwc2->ext->cfgs->vsync = 16666667; /* hardcode 60fps */
       hwc2->ext->cfgs->xdp   = 160; /* default if not connected. */
       hwc2->ext->cfgs->ydp   = 160; /* default if not connected. */
@@ -5030,8 +5034,8 @@ static void hwc2_setup_ext(
    ALOGI("[ext]: completion timeline: %d\n", hwc2->ext->cmp_tl);
 
    NxClient_GetSurfaceClientComposition(hwc2->ext->u.ext.nxa.surfaceClient[0].id, &composition);
-   composition.virtualDisplay.width  = hwc2->ext->cfgs->w;
-   composition.virtualDisplay.height = hwc2->ext->cfgs->h;
+   composition.virtualDisplay.width  = property_get_int32(HWC2_EXT_NFB_W, 1920);
+   composition.virtualDisplay.height = property_get_int32(HWC2_EXT_NFB_W, 1080);
    composition.position.x            = 0;
    composition.position.y            = 0;
    composition.position.width        = composition.virtualDisplay.width;
