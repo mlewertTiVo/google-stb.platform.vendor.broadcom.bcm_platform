@@ -5035,7 +5035,7 @@ static void hwc2_setup_ext(
 
    NxClient_GetSurfaceClientComposition(hwc2->ext->u.ext.nxa.surfaceClient[0].id, &composition);
    composition.virtualDisplay.width  = property_get_int32(HWC2_EXT_NFB_W, 1920);
-   composition.virtualDisplay.height = property_get_int32(HWC2_EXT_NFB_W, 1080);
+   composition.virtualDisplay.height = property_get_int32(HWC2_EXT_NFB_H, 1080);
    composition.position.x            = 0;
    composition.position.y            = 0;
    composition.position.width        = composition.virtualDisplay.width;
