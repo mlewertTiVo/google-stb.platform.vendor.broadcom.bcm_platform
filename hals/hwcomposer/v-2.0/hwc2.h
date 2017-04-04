@@ -310,6 +310,7 @@ struct hwc2_ext_t {
    bool                                rhpd;
    uint32_t                            bg;
    bool                                gles;
+   struct hwc2_fb_t                    yvi;
 };
 
 /* display unit. */

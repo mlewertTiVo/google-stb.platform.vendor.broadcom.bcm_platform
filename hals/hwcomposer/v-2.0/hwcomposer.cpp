@@ -466,6 +466,29 @@ static void hwc2_ext_fbs(
    }
    hwc2->ext->u.ext.bfb = true;
 
+   if (hwc2_enabled(hwc2_tweak_fb_compressed)) {
+      NEXUS_SurfaceCreateSettings scs;
+      NEXUS_MemoryBlockHandle bh = NULL;
+      bool dh = true;
+      NEXUS_Surface_GetDefaultCreateSettings(&scs);
+      scs.width       = property_get_int32(HWC2_EXT_NFB_W, 1920);
+      scs.height      = property_get_int32(HWC2_EXT_NFB_H, 1080);
+      scs.pitch       = scs.width * 4;
+      scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
+      scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
+
+      hwc2->ext->u.ext.yvi.s = NULL;
+      bh = hwc_block_create(&scs, hwc2->memif, dh, &hwc2->ext->u.ext.yvi.fd);
+      if (bh != NULL) {
+         scs.pixelMemory = bh;
+         scs.heap = NULL;
+         hwc2->ext->u.ext.yvi.s = hwc_surface_create(&scs, dh);
+      }
+      ALOGI("[ext]:yvi::%dx%d::%s -> %p::%d (b:%p)",
+            scs.width, scs.height, dh?"d-cma":"gfx",
+            hwc2->ext->u.ext.yvi.s, hwc2->ext->u.ext.yvi.fd, bh);
+   }
+
    pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
    /* bfifo uses the cached version to preserve the original mapping correctly. */
    memcpy(&hwc2->ext->u.ext.fbs_c, &hwc2->ext->u.ext.fbs, sizeof(hwc2->ext->u.ext.fbs_c));
@@ -4089,6 +4112,14 @@ static void hwc2_bcm_close(
       }
       close(hwc2->ext->u.ext.ct.rtl.tl);
       close(hwc2->ext->cmp_tl);
+      for (num = 0 ; num < HWC2_FBS_NUM ; num++) {
+         close(hwc2->ext->u.ext.fbs[num].fd);
+         NEXUS_Surface_Destroy(hwc2->ext->u.ext.fbs[num].s);
+      }
+      if (hwc2_enabled(hwc2_tweak_fb_compressed)) {
+         close(hwc2->ext->u.ext.yvi.fd);
+         NEXUS_Surface_Destroy(hwc2->ext->u.ext.yvi.s);
+      }
       free(hwc2->ext);
    }
 
@@ -4195,7 +4226,7 @@ int hwc2_blit_yv12(
    PSHARED_DATA shared,
    struct hwc2_dsp_t *dsp) {
 
-   NEXUS_SurfaceHandle cb, cr, y, yuv;
+   NEXUS_SurfaceHandle cb, cr, y, yuv, rgba;
    void *buffer, *next, *slock;
    BM2MC_PACKET_Plane pcb, pcr, py, pycbcr, prgba;
    size_t size;
@@ -4203,6 +4234,7 @@ int hwc2_blit_yv12(
    NEXUS_Rect c, p, oa;
    NEXUS_Error rc;
    int blt = 0;
+   NEXUS_SurfaceStatus ss;
 
    BM2MC_PACKET_Blend cbClr = {BM2MC_PACKET_BlendFactor_eSourceColor, BM2MC_PACKET_BlendFactor_eOne, false,
                                BM2MC_PACKET_BlendFactor_eDestinationColor, BM2MC_PACKET_BlendFactor_eOne, false,
@@ -4224,6 +4256,12 @@ int hwc2_blit_yv12(
         (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
 
    oa = p;
+
+   rgba = d;
+   NEXUS_Surface_GetStatus(rgba, &ss);
+   if (ss.pixelFormat == NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8) {
+      rgba = hwc2->ext->u.ext.yvi.s;
+   }
 
    y = hwc_to_nsc_surface(shared->container.width, shared->container.height,
                           shared->container.stride, NEXUS_PixelFormat_eY8,
@@ -4265,11 +4303,11 @@ int hwc2_blit_yv12(
       NEXUS_Graphics2D_GetPacketBuffer(hwc2->hg2d, &buffer, &size, 1024);
       pthread_mutex_unlock(&hwc2->mtx_g2d);
 
-      NEXUS_Surface_LockPlaneAndPalette(y,   &py,     NULL);
-      NEXUS_Surface_LockPlaneAndPalette(cb,  &pcb,    NULL);
-      NEXUS_Surface_LockPlaneAndPalette(cr,  &pcr,    NULL);
-      NEXUS_Surface_LockPlaneAndPalette(yuv, &pycbcr, NULL);
-      NEXUS_Surface_LockPlaneAndPalette(d,   &prgba,  NULL);
+      NEXUS_Surface_LockPlaneAndPalette(y,    &py,     NULL);
+      NEXUS_Surface_LockPlaneAndPalette(cb,   &pcb,    NULL);
+      NEXUS_Surface_LockPlaneAndPalette(cr,   &pcr,    NULL);
+      NEXUS_Surface_LockPlaneAndPalette(yuv,  &pycbcr, NULL);
+      NEXUS_Surface_LockPlaneAndPalette(rgba, &prgba,  NULL);
 
       next = buffer;
       {
@@ -4389,19 +4427,28 @@ int hwc2_blit_yv12(
          NEXUS_Surface_UnlockPlaneAndPalette(cr);
          NEXUS_Surface_UnlockPlaneAndPalette(y);
          NEXUS_Surface_UnlockPlaneAndPalette(yuv);
-         NEXUS_Surface_UnlockPlaneAndPalette(d);
+         NEXUS_Surface_UnlockPlaneAndPalette(rgba);
          blt = HWC2_INVALID;
          goto out;
       } else {
          rc = NEXUS_Graphics2D_PacketWriteComplete(hwc2->hg2d, (uint8_t*)next - (uint8_t*)buffer);
          rc = hwc2_chkpt_l(hwc2);
+         if (rgba != d) {
+            NEXUS_Graphics2DBlitSettings bs;
+            NEXUS_Graphics2D_GetDefaultBlitSettings(&bs);
+            bs.source.surface = rgba;
+            bs.dest.surface   = d;
+            bs.output.surface = d;
+            rc = NEXUS_Graphics2D_Blit(hwc2->hg2d, &bs);
+            rc = hwc2_chkpt_l(hwc2);
+         }
          pthread_mutex_unlock(&hwc2->mtx_g2d);
       }
       NEXUS_Surface_UnlockPlaneAndPalette(cb);
       NEXUS_Surface_UnlockPlaneAndPalette(cr);
       NEXUS_Surface_UnlockPlaneAndPalette(y);
       NEXUS_Surface_UnlockPlaneAndPalette(yuv);
-      NEXUS_Surface_UnlockPlaneAndPalette(d);
+      NEXUS_Surface_UnlockPlaneAndPalette(rgba);
    }
 
 out:
