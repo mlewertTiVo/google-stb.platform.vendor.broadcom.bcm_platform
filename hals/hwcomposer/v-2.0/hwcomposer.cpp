@@ -4459,6 +4459,9 @@ int hwc2_blit_gpx(
 
    sa = c;
    da = p;
+   if (!dsp->sfb) {
+      oa = da;
+   }
 
    if ((dsp->type != HWC2_DISPLAY_TYPE_VIRTUAL) &&
        (sa.x + sa.width > (int16_t)shared->container.width ||
@@ -5045,6 +5048,13 @@ static void hwc2_setup_ext(
    composition.colorBlend            = hwc2_a2n_col_be[HWC2_BLEND_MODE_PREMULTIPLIED];
    composition.alphaBlend            = hwc2_a2n_al_be[HWC2_BLEND_MODE_PREMULTIPLIED];
    NxClient_SetSurfaceClientComposition(hwc2->ext->u.ext.nxa.surfaceClient[0].id, &composition);
+
+   if ((composition.virtualDisplay.width != hwc2->ext->aCfg->w) &&
+       (composition.virtualDisplay.height != hwc2->ext->aCfg->h)) {
+      hwc2->ext->sfb = true;
+   } else {
+      hwc2->ext->sfb = false;
+   }
 
    strcpy(interfaceName.name, "NEXUS_Display");
    rc = NEXUS_Platform_GetObjects(&interfaceName, &objects[0], num, &num);

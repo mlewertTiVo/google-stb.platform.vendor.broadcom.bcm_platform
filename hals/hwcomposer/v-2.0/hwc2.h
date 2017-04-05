@@ -336,6 +336,7 @@ struct hwc2_dsp_t {
    pthread_mutex_t       mtx_lyr;
 
    int32_t               lm;
+   bool                  sfb;
 
    uint64_t              pres;
    uint64_t              post;
