@@ -4438,6 +4438,7 @@ int hwc2_blit_gpx(
    NEXUS_Rect c, p, sa, da, oa;
    NEXUS_Error rc;
    int blt = 0;
+   NEXUS_SurfaceStatus ss;
 
    float fa = fmax(0.0, fmin(1.0, lyr->al));
    uint32_t al = floor(fa == 1.0 ? 255 : fa * 256.0);
@@ -4463,10 +4464,20 @@ int hwc2_blit_gpx(
       oa = da;
    }
 
-   if ((dsp->type != HWC2_DISPLAY_TYPE_VIRTUAL) &&
-       (sa.x + sa.width > (int16_t)shared->container.width ||
-        sa.y + sa.height > (int16_t)shared->container.height)) {
+   if (sa.x+sa.width > (int16_t)shared->container.width ||
+       sa.y+sa.height > (int16_t)shared->container.height) {
       ALOGE("[%s]:[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": rejecting {%d,%d:%d}{%d,%d:%d}.\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
+            sa.x, sa.width, shared->container.width,
+            sa.y, sa.height, shared->container.height);
+      blt = HWC2_INVALID;
+      goto out;
+   }
+
+   NEXUS_Surface_GetStatus(d, &ss);
+   if ((ss.pixelFormat == NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8) &&
+       (((sa.x+sa.width)<=1) || ((sa.y+sa.height)<=1))) {
+      ALOGW("[%s]:[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": ignoring {%d,%d:%d}{%d,%d:%d}.\n",
             (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
             sa.x, sa.width, shared->container.width,
             sa.y, sa.height, shared->container.height);
