@@ -238,7 +238,7 @@ static void hwc2_hdmi_collect(
    dsp->cfgs->hdr10 = false;
    dsp->cfgs->hlg = false;
    if (!e) {
-      if (edid.valid && edid.hdrdb.valid) {
+      if (edid.hdrdb.valid) {
          dsp->cfgs->hdr10 = edid.hdrdb.eotfSupported[NEXUS_VideoEotf_eHdr10];
          dsp->cfgs->hlg = edid.hdrdb.eotfSupported[NEXUS_VideoEotf_eHlg];
       }
