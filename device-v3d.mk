@@ -33,11 +33,7 @@ V3D_ANDROID_LD_1ST_ARCH := -target arm-linux-androideabi -B${B_REFSW_CROSS_COMPI
 endif
 endif
 
-ifeq ($(B_REFSW_DEBUG), n)
-V3D_DEBUG := n
-else
 V3D_DEBUG := y
-endif
 
 export V3D_ANDROID_DEFINES_1ST_ARCH V3D_ANDROID_LD_1ST_ARCH
 export V3D_ANDROID_DEFINES_2ND_ARCH V3D_ANDROID_LD_2ND_ARCH
