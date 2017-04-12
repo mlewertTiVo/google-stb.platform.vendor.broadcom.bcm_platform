@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2016 Broadcom Corporation
+ *    (c)2011-2017 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -908,11 +908,13 @@ status_t NexusPower::setGpios(b_powerState state)
                         // If we have configured a GPIO input wake-up pin to be managed by
                         // another software module (e.g. BT), then then we only enable the
                         // wakeup generation when the manager has enabled it.
-                        if (wakeManager == NexusGpio::GpioInterruptWakeManager_eNone) {
-                            enableKeyEvent = true;
+                        if (wakeManager == NexusGpio::GpioInterruptWakeManager_eBt) {
+                            // Suppress wakeup key for BT in S0.5, they happen when WoBLE is disabled
+                            enableKeyEvent = (state == ePowerState_S05) ?
+                                   false : mInterruptWakeManagers.valueFor(wakeManager);
                         }
                         else {
-                            enableKeyEvent = mInterruptWakeManagers.valueFor(wakeManager);
+                            enableKeyEvent = true;
                         }
                     }
 
