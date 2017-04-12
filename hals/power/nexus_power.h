@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2011-2016 Broadcom Corporation
+ *    (c)2011-2017 Broadcom Corporation
  * 
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -118,6 +118,7 @@ class NexusPower : public android::RefBase {
         unsigned getKeyEvent() { return mKeyEvent; }
         void setKeyEvent(unsigned key) { mKeyEvent = key; }
         ~NexusGpio();
+        static void gpioCallback(void *context, int param);
 
         private:
         String8 mPinName;
@@ -145,7 +146,6 @@ class NexusPower : public android::RefBase {
         static status_t parseGpioKey(String8& inString, unsigned *key);
         static status_t parseGpioOutputValue(String8& outputValueString, NEXUS_GpioValue *pOutputValue);
         static status_t parseGpioParameters(String8& inString, size_t *pNumParameters, String8 parameters[]);
-        static void gpioCallback(void *context, int param);
 
         // Disallow constructor and copy constructor...
         NexusGpio();
