@@ -4903,7 +4903,7 @@ void BOMX_VideoDecoder::InputBufferTimeoutCallback()
     {
         // Retry returning the input buffers again by marking all the
         // input buffers in RAVE as completed.
-        if ( PlaypumpEvent(true) == 0 || ReturnInputBuffers(0, InputReturnMode_eAll) == 0 )
+        if ( PlaypumpEvent(true) == 0 )
         {
             ALOGV("Keep retrying to return input buffers after timeout");
 
