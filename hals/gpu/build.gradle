@@ -1,6 +1,17 @@
 android {
+    signingConfigs {
+        release {
+            storeFile file(gfxdriver-bcmstb.jks)
+            storePassword "broadcom"
+            keyAlias "gfxdriver-key"
+            keyPassword "broadcom"
+        }
+    }
     defaultConfig {
-        versionCode 1
-        versionName "1.0"
+        versionCode 1000000
+        versionName "initial"
+        signingConfig signingConfigs.release
+        minSdkVersion 25
+        targetSdkVersion 25
     }
 }

@@ -47,5 +47,6 @@
 #include "nexus_graphics2d.h"
 
 void trim_encoder_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings);
+int with_dtu(void);
 
 #endif

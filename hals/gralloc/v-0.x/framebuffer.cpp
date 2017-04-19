@@ -44,8 +44,8 @@ using android::Vector;
  */
 #define GRAPHICS_RES_WIDTH_DEFAULT  1920
 #define GRAPHICS_RES_HEIGHT_DEFAULT 1080
-#define GRAPHICS_RES_WIDTH_PROP     "ro.graphics_resolution.width"
-#define GRAPHICS_RES_HEIGHT_PROP    "ro.graphics_resolution.height"
+#define GRAPHICS_RES_WIDTH_PROP     "ro.nx.hwc2.afb.w"
+#define GRAPHICS_RES_HEIGHT_PROP    "ro.nx.hwc2.afb.h"
 
 struct fb_context_t {
    framebuffer_device_t device;

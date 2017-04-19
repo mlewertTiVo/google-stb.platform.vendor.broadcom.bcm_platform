@@ -109,6 +109,7 @@ class NexusPower : public android::RefBase {
         unsigned getKeyEvent() { return mKeyEvent; }
         void setKeyEvent(unsigned key) { mKeyEvent = key; }
         ~NexusGpio();
+        static void gpioCallback(void *context, int param);
 
         private:
         String8 mPinName;
@@ -136,7 +137,6 @@ class NexusPower : public android::RefBase {
         static status_t parseGpioKey(String8& inString, unsigned *key);
         static status_t parseGpioOutputValue(String8& outputValueString, NEXUS_GpioValue *pOutputValue);
         static status_t parseGpioParameters(String8& inString, size_t *pNumParameters, String8 parameters[]);
-        static void gpioCallback(void *context, int param);
 
         // Disallow constructor and copy constructor...
         NexusGpio();

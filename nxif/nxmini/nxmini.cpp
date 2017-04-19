@@ -233,7 +233,11 @@ static nxserver_t init_nxserver(void)
     NEXUS_Platform_GetDefaultSettings(&platformSettings);
     NEXUS_GetDefaultMemoryConfigurationSettings(&memConfigSettings);
 
-    settings.svp = nxserverlib_svp_type_cdb_urr;
+    cmdline_settings.dtu = with_dtu();
+    if (!cmdline_settings.dtu) {
+       settings.svp = nxserverlib_svp_type_cdb_urr;
+    }
+
     settings.session[0].ir_input.mode[0] = NEXUS_IrInputMode_eMax;
     settings.session[0].ir_input.mode[1] = NEXUS_IrInputMode_eMax;
     settings.transcode = nxserver_settings::nxserver_transcode_off;

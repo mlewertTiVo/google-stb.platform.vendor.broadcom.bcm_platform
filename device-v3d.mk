@@ -33,6 +33,7 @@ V3D_ANDROID_LD_1ST_ARCH := -target arm-linux-androideabi -B${B_REFSW_CROSS_COMPI
 endif
 endif
 
+# do not strip symbols.
 V3D_DEBUG := y
 
 export V3D_ANDROID_DEFINES_1ST_ARCH V3D_ANDROID_LD_1ST_ARCH

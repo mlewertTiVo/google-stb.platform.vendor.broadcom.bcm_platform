@@ -84,7 +84,7 @@
 #define B_MAX_DECODED_FRAMES (16)
 #define B_MAX_INPUT_TIMEOUT_RETURN (2)
 #define B_MAX_INPUT_COMPLETED_COUNT (5)
-#define B_INPUT_RETURN_SPEEDUP_THRES_INTERVAL (20)  // 50fps - frame interval threshold to speed up returning of input buffers
+#define B_INPUT_RETURN_SPEEDUP_THRES_INTERVAL (20)  // 50fps - frame interval threshold to speed up returning of input buffers 
 #define B_INPUT_RETURN_SPEEDUP_THRES_HEIGHT (2160)  // Minimum height for 4K
 #define B_CHECKPOINT_TIMEOUT (5000)
 #define B_SECURE_QUERY_MAX_RETRIES (10)
@@ -118,17 +118,17 @@
 
 using namespace android;
 
-#if defined(LEGACY_DECODER_ON)
+#if defined(HW_HVD_REVISION_S)
+static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
+                                                       {"video_decoder.avc", OMX_VIDEO_CodingAVC},
+                                                       {"video_decoder.hevc", OMX_VIDEO_CodingHEVC}};
+#else
 static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
                                                        {"video_decoder.h263", OMX_VIDEO_CodingH263},
                                                        {"video_decoder.avc", OMX_VIDEO_CodingAVC},
                                                        {"video_decoder.mpeg4", OMX_VIDEO_CodingMPEG4},
                                                        {"video_decoder.hevc", OMX_VIDEO_CodingHEVC},
                                                        {"video_decoder.vp8", OMX_VIDEO_CodingVP8}};
-#else
-static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
-                                                       {"video_decoder.avc", OMX_VIDEO_CodingAVC},
-                                                       {"video_decoder.hevc", OMX_VIDEO_CodingHEVC}};
 #endif
 
 static const unsigned g_numDefaultRoles = sizeof(g_defaultRoles)/sizeof(BOMX_VideoDecoderRole);
@@ -197,6 +197,29 @@ static const OMX_VIDEO_HEVCLEVELTYPE g_hevcStandardLevels[] = {OMX_VIDEO_HEVCMai
                                                                OMX_VIDEO_HEVCMainTierLevel41,
                                                                OMX_VIDEO_HEVCMainTierLevel5};
 static const unsigned g_numHevcStandardLevels = sizeof(g_hevcStandardLevels)/sizeof(OMX_VIDEO_HEVCLEVELTYPE);
+
+static const OMX_VIDEO_VP9LEVELTYPE g_vp9Levels[] =   {OMX_VIDEO_VP9Level1,
+                                                       OMX_VIDEO_VP9Level11,
+                                                       OMX_VIDEO_VP9Level2,
+                                                       OMX_VIDEO_VP9Level21,
+                                                       OMX_VIDEO_VP9Level3,
+                                                       OMX_VIDEO_VP9Level31,
+                                                       OMX_VIDEO_VP9Level4,
+                                                       OMX_VIDEO_VP9Level41,
+                                                       OMX_VIDEO_VP9Level5,
+                                                       OMX_VIDEO_VP9Level51};
+static const size_t g_numVp9Levels = sizeof(g_vp9Levels)/sizeof(OMX_VIDEO_VP9LEVELTYPE);
+
+static const OMX_VIDEO_VP9LEVELTYPE g_vp9StandardLevels[] =  {OMX_VIDEO_VP9Level1,
+                                                              OMX_VIDEO_VP9Level11,
+                                                              OMX_VIDEO_VP9Level2,
+                                                              OMX_VIDEO_VP9Level21,
+                                                              OMX_VIDEO_VP9Level3,
+                                                              OMX_VIDEO_VP9Level31,
+                                                              OMX_VIDEO_VP9Level4,
+                                                              OMX_VIDEO_VP9Level41,
+                                                              OMX_VIDEO_VP9Level5};
+static const size_t g_numVp9StandardLevels = sizeof(g_vp9StandardLevels)/sizeof(OMX_VIDEO_VP9LEVELTYPE);
 
 enum BOMX_VideoDecoderEventType
 {
@@ -600,6 +623,7 @@ static OMX_VIDEO_HEVCPROFILETYPE BOMX_HevcProfileFromNexus(NEXUS_VideoProtocolPr
     {
     default:
     case NEXUS_VideoProtocolProfile_eMain:     return OMX_VIDEO_HEVCProfileMain;
+    case NEXUS_VideoProtocolProfile_eMain10:   return OMX_VIDEO_HEVCProfileMain10;
     }
 }
 
@@ -640,6 +664,35 @@ static OMX_VIDEO_VP8LEVELTYPE BOMX_VP8LevelFromNexus(NEXUS_VideoProtocolLevel ne
     case NEXUS_VideoProtocolLevel_e20: return OMX_VIDEO_VP8Level_Version2;
     case NEXUS_VideoProtocolLevel_e30: return OMX_VIDEO_VP8Level_Version3;
     default:                           return OMX_VIDEO_VP8LevelUnknown;
+    }
+}
+
+static OMX_VIDEO_VP9PROFILETYPE BOMX_VP9ProfileFromNexus(NEXUS_VideoProtocolProfile nexusProfile)
+{
+    switch ( nexusProfile )
+    {
+    default:
+    case NEXUS_VideoProtocolProfile_eSimple:
+    case NEXUS_VideoProtocolProfile_eMain:   return OMX_VIDEO_VP9Profile0;
+    case NEXUS_VideoProtocolProfile_eHigh:   return OMX_VIDEO_VP9Profile2;
+    }
+}
+
+static OMX_VIDEO_VP9LEVELTYPE BOMX_VP9LevelFromNexus(NEXUS_VideoProtocolLevel nexusLevel)
+{
+    switch ( nexusLevel )
+    {
+    default: return OMX_VIDEO_VP9LevelUnknown;
+    case NEXUS_VideoProtocolLevel_e10: return OMX_VIDEO_VP9Level1;
+    case NEXUS_VideoProtocolLevel_e11: return OMX_VIDEO_VP9Level11;
+    case NEXUS_VideoProtocolLevel_e20: return OMX_VIDEO_VP9Level2;
+    case NEXUS_VideoProtocolLevel_e21: return OMX_VIDEO_VP9Level21;
+    case NEXUS_VideoProtocolLevel_e30: return OMX_VIDEO_VP9Level3;
+    case NEXUS_VideoProtocolLevel_e31: return OMX_VIDEO_VP9Level31;
+    case NEXUS_VideoProtocolLevel_e40: return OMX_VIDEO_VP9Level4;
+    case NEXUS_VideoProtocolLevel_e41: return OMX_VIDEO_VP9Level41;
+    case NEXUS_VideoProtocolLevel_e50: return OMX_VIDEO_VP9Level5;
+    case NEXUS_VideoProtocolLevel_e51: return OMX_VIDEO_VP9Level51;
     }
 }
 
@@ -1926,7 +1979,25 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 pProfileLevel->eProfile = (OMX_U32)OMX_VIDEO_VP8ProfileMain;
                 pProfileLevel->eLevel = (OMX_U32)OMX_VIDEO_VP8Level_Version3;   // ?
                 break;
-            // TODO: Add supported profiles/levels for OMX_VIDEO_CodingVP9 after Android has defined them in the frameworks
+
+            case OMX_VIDEO_CodingVP9:
+            {
+                const OMX_VIDEO_VP9LEVELTYPE *levels = bStandardFrameRate ? g_vp9StandardLevels : g_vp9Levels;
+                const size_t countLevels = bStandardFrameRate ? g_numVp9StandardLevels : g_numVp9Levels;
+                bool supportsProfile2 = false;
+#ifdef HW_HVD_REVISION_S
+                supportsProfile2 = true;
+#endif
+                size_t numProfiles = !supportsProfile2 ? 1 : m_tunnelMode? 3 : 2;
+                if (pProfileLevel->nProfileIndex >= numProfiles*countLevels)
+                    return OMX_ErrorNoMore;
+                const OMX_VIDEO_VP9PROFILETYPE supportedVp9Profiles[] = {OMX_VIDEO_VP9Profile0,
+                                                OMX_VIDEO_VP9Profile2, OMX_VIDEO_VP9Profile2HDR};
+                pProfileLevel->eProfile = (OMX_U32) supportedVp9Profiles[pProfileLevel->nProfileIndex/countLevels];
+                pProfileLevel->eLevel = (OMX_U32) levels[pProfileLevel->nProfileIndex % countLevels];
+                break;
+            }
+
             case OMX_VIDEO_CodingHEVC:
             {
                 // Return all combinations of profiles/levels supported
@@ -1987,6 +2058,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 case OMX_VIDEO_CodingVP8:
                     pProfileLevel->eProfile = (OMX_U32)BOMX_VP8ProfileFromNexus(vdecStatus.protocolProfile);
                     pProfileLevel->eLevel = (OMX_U32)BOMX_VP8LevelFromNexus(vdecStatus.protocolLevel);
+                    break;
+                case OMX_VIDEO_CodingVP9:
+                    pProfileLevel->eProfile = (OMX_U32)BOMX_VP9ProfileFromNexus(vdecStatus.protocolProfile);
+                    pProfileLevel->eLevel = (OMX_U32)BOMX_VP9LevelFromNexus(vdecStatus.protocolLevel);
                     break;
                 case OMX_VIDEO_CodingHEVC:
                     pProfileLevel->eProfile = (OMX_U32)BOMX_HevcProfileFromNexus(vdecStatus.protocolProfile);

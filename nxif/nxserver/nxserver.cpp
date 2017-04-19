@@ -106,8 +106,8 @@
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
 #define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
-#define GRAPHICS_RES_WIDTH_PROP        "ro.graphics_resolution.width"
-#define GRAPHICS_RES_HEIGHT_PROP       "ro.graphics_resolution.height"
+#define GRAPHICS_RES_WIDTH_PROP        "ro.nx.hwc2.nfb.w"
+#define GRAPHICS_RES_HEIGHT_PROP       "ro.nx.hwc2.nfb.h"
 
 #define NX_ACT_GC                      "ro.nx.act.gc"
 #define NX_ACT_GS                      "ro.nx.act.gs"
@@ -539,7 +539,10 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
         if (!g_app.clients[i].client) {
             g_app.clients[i].client = client;
             g_app.clients[i].joinSettings = *pJoinSettings;
-            ALOGV("client_connect(%d): '%s'::%p", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client);
+            ALOGE("client_connect(%d): '%s'::%p::%d", i,
+                  g_app.clients[i].joinSettings.name,
+                  g_app.clients[i].client,
+                  g_app.clients[i].joinSettings.mode);
             break;
         }
     }
@@ -1170,8 +1173,7 @@ static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
 
     memset (value, 0, sizeof(value));
 
-    if (property_get(DHD_SECDMA_PROP, value, NULL))
-    {
+    if (property_get(DHD_SECDMA_PROP, value, NULL)) {
         wait_for_data_available();
         secdmaMemSize = strtoul(value, NULL, 0);
         if (strlen(value) && (secdmaMemSize > 0)) {
@@ -1384,10 +1386,8 @@ int main(void)
     }
     pthread_attr_destroy(&attr);
 
-    alloc_secdma(&hSecDmaMemoryBlock);
-
-    ALOGI("trigger nexus waiters now.");
-    property_set(NX_STATE, "loaded");
+    ALOGI("trigger memory configuration setup.");
+    property_set(NX_STATE, "memcfg");
 
     struct nx_ashmem_mgr_cfg ashmem_mgr_cfg;
     memset(&ashmem_mgr_cfg, 0, sizeof(struct nx_ashmem_mgr_cfg));
@@ -1422,6 +1422,11 @@ int main(void)
           continue;
        }
     }
+
+    alloc_secdma(&hSecDmaMemoryBlock);
+
+    ALOGI("trigger nexus waiters now.");
+    property_set(NX_STATE, "loaded");
 
     if (!property_get_bool(NX_NO_OUTPUT_VIDEO, 0) && !is_wakeup_only_from_alarm_timer()) {
        rc = set_video_outputs_state(true);

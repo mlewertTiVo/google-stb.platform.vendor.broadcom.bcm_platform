@@ -23,6 +23,7 @@ LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/nxclient/apps/utils
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
 LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/glob
+LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/bcmplayer/include
 LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/tshdrbuilder
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))

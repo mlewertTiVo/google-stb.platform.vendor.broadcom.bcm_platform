@@ -622,6 +622,8 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 ALOGV("%s: av-sync header, ts=%" PRIu64 " pts=%" PRIu32 ", size=%zu, payload=%zu", __FUNCTION__, timestamp, pts, frameBytes, bytes);
                 if (init_stc) {
                     NEXUS_SimpleStcChannel_SetStc(bout->nexus.tunnel.stc_channel_sync, pts);
+                    ALOGV("%s: stc-sync initialized to:%u", __FUNCTION__, pts);
+                    init_stc = false;
                 }
                 if (!partial_header) {
                     bytes -= HW_AV_SYNC_HDR_LEN;
@@ -800,12 +802,6 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
             usleep(BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US);
         }
         ALOGV_IF(i > 0, "%s: throttle %d us queued %u frames", __FUNCTION__, i * BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US, status.queuedFrames);
-    }
-
-    if (init_stc) {
-        uint32_t stc;
-        NEXUS_SimpleStcChannel_GetStc(bout->nexus.tunnel.stc_channel, &stc);
-        ALOGV("%s: resuming stc:%u", __FUNCTION__, stc);
     }
 
     return bytes_written;

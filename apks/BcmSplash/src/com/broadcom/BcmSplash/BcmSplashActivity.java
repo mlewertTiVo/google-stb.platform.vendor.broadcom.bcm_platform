@@ -57,14 +57,14 @@ public class BcmSplashActivity extends Activity {
     private static final String EXTRA_BROADCAST_WAIT_BOOTUP = "broadcast_wait_bootup";
     private static final String EXTRA_BROADCAST_DELAY = "broadcast_delay";
 
-    private static final String ACTION_BOOT_COMPLETED = "android.intent.action.BOOT_COMPLETED";
-
     private TextView mTextToDisplay;
     private Intent mIntent;
     private boolean mBroadcastAfterBootup;
-    private BroadcastReceiver mBroadcastReceiver = null;
     private long mBroadcastDelay;
     private Handler mBroadcastDelayHandler = new Handler();
+    private boolean mHasBooted = false;
+
+    public static BcmSplashActivity splashActivity = null;
 
     private final Runnable mBroadcastRunnable = new Runnable() {
         @Override
@@ -78,10 +78,19 @@ public class BcmSplashActivity extends Activity {
         }
     };
 
+    public void onBootComplete() {
+        mHasBooted = true;
+        if (mBroadcastAfterBootup) {
+             mBroadcastDelayHandler.postDelayed(mBroadcastRunnable, mBroadcastDelay);
+        }
+    }
+
     /** Called when the activity is first created. */
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        splashActivity = this;
 
         setContentView(R.layout.main);
         mTextToDisplay = (TextView)findViewById(R.id.fullscreen_content);
@@ -96,19 +105,12 @@ public class BcmSplashActivity extends Activity {
         /* Set broadcast delay if specified */
         mBroadcastDelay = mIntent.getLongExtra(EXTRA_BROADCAST_DELAY, 0);
 
-        /* Set up broadcast receiver for bootup notification */
-        if (mIntent.getBooleanExtra(EXTRA_BROADCAST_WAIT_BOOTUP, false)) {
-            mBroadcastReceiver = new BroadcastReceiver() {
-                @Override
-                public void onReceive(Context context, Intent intent) {
-                    if (mBroadcastAfterBootup) {
-                        mBroadcastDelayHandler.postDelayed(mBroadcastRunnable, mBroadcastDelay);
-                        mBroadcastAfterBootup = false;
-                    }
-                }
-            };
-            this.registerReceiver(mBroadcastReceiver, new IntentFilter(ACTION_BOOT_COMPLETED));
+        if (BcmSplashReceiver.receivedBootupIntent()) {
+            mHasBooted = true;
+        }
 
+        /* Set to broadcast after boot up if required */
+        if (mIntent.getBooleanExtra(EXTRA_BROADCAST_WAIT_BOOTUP, false) && !mHasBooted) {
             mBroadcastAfterBootup = true;
         }
         else {

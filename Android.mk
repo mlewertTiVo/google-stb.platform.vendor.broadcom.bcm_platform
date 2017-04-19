@@ -25,6 +25,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/device-media.mk
 
 # unclassified.
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/hfrvideo/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/libsmt/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/netcoal/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice/Android.mk
 
@@ -65,6 +66,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxheaps/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxmem/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxplay/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxpsi/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxsmt/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxthumb/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxtrans/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/otpgetchipid/Android.mk

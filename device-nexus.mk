@@ -79,10 +79,10 @@ ifeq ($(TARGET_2ND_ARCH),arm)
 LOCAL_MULTILIB := both
 LOCAL_MODULE_TARGET_ARCH := arm arm64
 LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxclient.so
-LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_2ND_ARCH}/libnxclient.so
+LOCAL_SRC_FILES_arm   := ${NEXUS_BIN_DIR_2ND_ARCH}/libnxclient.so
 else
 LOCAL_MODULE_TARGET_ARCH := arm
-LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxclient.so
+LOCAL_SRC_FILES_arm   := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxclient.so
 endif
 include $(BUILD_PREBUILT)
 
@@ -97,10 +97,10 @@ ifeq ($(TARGET_2ND_ARCH),arm)
 LOCAL_MULTILIB := both
 LOCAL_MODULE_TARGET_ARCH := arm arm64
 LOCAL_SRC_FILES_arm64 := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxclient_static.a
-LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_2ND_ARCH}/libnxclient_static.a
+LOCAL_SRC_FILES_arm   := ${NEXUS_BIN_DIR_2ND_ARCH}/libnxclient_static.a
 else
 LOCAL_MODULE_TARGET_ARCH := arm
-LOCAL_SRC_FILES_arm := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxclient_static.a
+LOCAL_SRC_FILES_arm   := ${NEXUS_BIN_DIR_1ST_ARCH}/libnxclient_static.a
 endif
 include $(BUILD_PREBUILT)
 

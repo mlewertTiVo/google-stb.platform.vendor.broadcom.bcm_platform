@@ -24,30 +24,18 @@ endif
 
 ifneq ($(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvm.so),)
 
-PRODUCT_COPY_FILES += \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/com.google.widevine.software.drm.xml:system/etc/permissions/com.google.widevine.software.drm.xml:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/com.google.widevine.software.drm.jar:system/framework/com.google.widevine.software.drm.jar:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libdrmdecrypt.so:system/lib/libdrmdecrypt.so:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libdrmwvmplugin.so:system/lib/drm/libdrmwvmplugin.so:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvdrm_L3.so:vendor/lib/libwvdrm_L3.so:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvm.so:vendor/lib/libwvm.so:widevine \
-    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvdrmengine.so:vendor/lib/mediadrm/libwvdrmengine.so:widevine
+# TBD.
+#
+# PRODUCT_COPY_FILES +=
 
 # no prebuilt binaries included, build from source if we have it
 #
 else ifneq ($(wildcard vendor/widevine/Android.mk),)
 
-export BUILD_WIDEVINE_CLASSIC_FROM_SOURCE := y
 export BUILD_WIDEVINE_FROM_SOURCE := y
 
-PRODUCT_COPY_FILES += \
-    vendor/widevine/proprietary/drmwvmplugin/com.google.widevine.software.drm.xml:system/etc/permissions/com.google.widevine.software.drm.xml:widevine
-
-PRODUCT_PACKAGES += \
-    libdrmwvmplugin \
-    libwvm \
-    libdrmdecrypt \
-    com.google.widevine.software.drm
+PRODUCT_PACKAGES += libwvdrmengine
+PRODUCT_PACKAGES += libwvhidl
 
 $(call first-makefiles-under, vendor/widevine)
 

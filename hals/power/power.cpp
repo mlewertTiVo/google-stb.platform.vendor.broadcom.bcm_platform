@@ -985,7 +985,10 @@ static status_t power_set_state(nxwrap_pwr_state toState)
         /* Mark the system has been suspended so we know whether we need to launch any splash screen when
          * woken up by the wakeup button
          */
-        if (toState != ePowerState_S0) {
+        if (toState == ePowerState_S0) {
+            property_set(PROPERTY_NX_BOOT_WAKEUP, "0");
+        }
+        else {
             property_set(PROPERTY_NX_BOOT_WAKEUP, "1");
         }
         gPowerState = toState;

@@ -42,6 +42,8 @@
 
 #include <fcntl.h>
 #include <cutils/log.h>
+#include <math.h>
+#include <cmath>
 #include <cutils/properties.h>
 #include <math.h>
 #include <cmath>

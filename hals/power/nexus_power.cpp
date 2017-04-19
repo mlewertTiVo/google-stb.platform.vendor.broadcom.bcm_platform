@@ -867,6 +867,30 @@ status_t NexusPower::setGpios(nxwrap_pwr_state state)
 
         if (pNexusGpio.get() != NULL) {
             if (pNexusGpio->getPinMode() == NEXUS_GpioMode_eInput) {
+
+                // BEGIN workaround for SWSTB-4801
+                // Close and open input GPIO to avoid delayed interrupts
+                NEXUS_GpioHandle handle;
+
+                NEXUS_Gpio_Close(pNexusGpio->getHandle());
+                NEXUS_Gpio_GetDefaultSettings((NEXUS_GpioType)pNexusGpio->getPinType(), &gpioSettings);
+                gpioSettings.mode = pNexusGpio->getPinMode();
+                gpioSettings.interruptMode = pNexusGpio->getPinInterruptMode();
+                gpioSettings.maskEdgeInterrupts = true;
+                gpioSettings.interrupt.callback = NexusPower::NexusGpio::gpioCallback;
+                gpioSettings.interrupt.context  = pNexusGpio.get();
+                gpioSettings.interrupt.param    = NexusGpio::DISABLE_KEYEVENT;
+
+                handle = NEXUS_Gpio_Open(pNexusGpio->getPinType(), pNexusGpio->getPin(), &gpioSettings);
+                if (handle != NULL) {
+                    pNexusGpio->setHandle(handle);
+                }
+                else {
+                    ALOGE("%s: Could not open pin as an input!!!", __FUNCTION__);
+                    pNexusGpio->setHandle(NULL);
+                }
+                // End workaround for SWSTB-4801
+
                 if (pNexusGpio->getKeyEvent() != KEY_RESERVED) {
                     // Always ensure that the WAKE generation is disabled when entering S0 or S5 states
                     // as we don't want to inject a WAKEUP keyevent in to the input sub-system.
@@ -879,11 +903,13 @@ status_t NexusPower::setGpios(nxwrap_pwr_state state)
                         // If we have configured a GPIO input wake-up pin to be managed by
                         // another software module (e.g. BT), then then we only enable the
                         // wakeup generation when the manager has enabled it.
-                        if (wakeManager == NexusGpio::GpioInterruptWakeManager_eNone) {
-                            enableKeyEvent = true;
+                        if (wakeManager == NexusGpio::GpioInterruptWakeManager_eBt) {
+                            // Suppress wakeup key for BT in S0.5, they happen when WoBLE is disabled
+                            enableKeyEvent = (state == ePowerState_S05) ?
+                                   false : mInterruptWakeManagers.valueFor(wakeManager);
                         }
                         else {
-                            enableKeyEvent = mInterruptWakeManagers.valueFor(wakeManager);
+                            enableKeyEvent = true;
                         }
                     }
 

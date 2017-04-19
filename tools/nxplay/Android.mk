@@ -8,8 +8,9 @@ LOCAL_PRELINK_MODULE := false
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/nxclient/apps/utils
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
+LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/bcmplayer/include
 LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/tshdrbuilder
-LOCAL_C_INCLUDES += $(BSEAV_TOP)/opensource/glob
+LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/glob
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
@@ -34,7 +35,7 @@ NXCLIENT_APPS_UTILS_SRC := \
    refsw/nexus/nxclient/apps/utils/media_probe.c \
    refsw/nexus/utils/namevalue.c \
    refsw/nexus/nxclient/apps/utils/nxapps_cmdline.c \
-   refsw/BSEAV/opensource/glob/glob.c
+   refsw/BSEAV/lib/glob/glob.c
 
 LOCAL_SRC_FILES := refsw/nexus/nxclient/apps/play.c
 LOCAL_SRC_FILES += $(NXCLIENT_APPS_UTILS_SRC)

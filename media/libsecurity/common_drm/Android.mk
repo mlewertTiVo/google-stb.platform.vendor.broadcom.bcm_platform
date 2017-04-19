@@ -84,9 +84,7 @@ LOCAL_C_INCLUDES := \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_drm/include \
     ${REFSW_BASE_DIR}/BSEAV/lib/drmrootfs \
-    ${REFSW_BASE_DIR}/BSEAV/lib/playready/2.5/inc \
     ${REFSW_BASE_DIR}/nexus/nxclient/include
-LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 DRM_BUILD_PROFILE := 900
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
@@ -96,7 +94,11 @@ LOCAL_CFLAGS += -DCMD_DRM_PLAYREADY_SAGE_IMPL
 LOCAL_CFLAGS += -DPLAYREADY_HOST_IMPL
 ifeq ($(SAGE_VERSION),2x)
 LOCAL_CFLAGS += -DUSE_UNIFIED_COMMON_DRM
+LOCAL_C_INCLUDES += ${REFSW_BASE_DIR}/BSEAV/thirdparty/playready/2.5/inc/2x
+else
+LOCAL_C_INCLUDES += ${REFSW_BASE_DIR}/BSEAV/thirdparty/playready/2.5/inc
 endif
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 # Enable warning and error logs by default
 LOCAL_CFLAGS += -DBDBG2ALOG_ENABLE_LOGS=1 -DBDBG_NO_MSG=1 -DBDBG_NO_LOG=1

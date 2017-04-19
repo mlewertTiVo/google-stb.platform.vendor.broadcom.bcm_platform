@@ -956,10 +956,13 @@ static char *bdev_get_parameters(const struct audio_hw_device *adev,
 
     if (str_parms_has_key(query, AUDIO_PARAMETER_HW_AV_SYNC_EAC3)) {
         String8 rates_str, channels_str, formats_str;
+        NEXUS_AudioCapabilities audioCaps;
 
-        /* Get connected HDMI status */
+        /* Report E-AC3 support from HDMI or decoder */
         nexus_get_hdmi_parameters(rates_str, channels_str, formats_str);
-        if (formats_str.find("AUDIO_FORMAT_E_AC3") != -1) {
+        NEXUS_GetAudioCapabilities(&audioCaps);
+        if ((formats_str.find("AUDIO_FORMAT_E_AC3") != -1) ||
+            (audioCaps.dsp.codecs[NEXUS_AudioCodec_eAc3Plus].decode)) {
             str_parms_add_str(result, AUDIO_PARAMETER_HW_AV_SYNC_EAC3, "true");
         }
     }

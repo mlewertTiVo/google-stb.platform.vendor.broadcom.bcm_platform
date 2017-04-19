@@ -21,4 +21,6 @@
 #
 # pem to der conversion is done using this: "openssl x509 -in verity.x509.pem -outform der -out verity.x509.der"
 #
+#
+# keystore password is "broadcom".
 
