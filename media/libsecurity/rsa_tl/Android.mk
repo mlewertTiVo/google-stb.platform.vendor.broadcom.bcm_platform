@@ -19,6 +19,8 @@ LOCAL_PATH := ${REFSW_BASE_DIR}
 include $(CLEAR_VARS)
 LOCAL_PATH := $(subst ${ANDROID}/,,$(LOCAL_PATH))
 
+ifeq ($(SAGE_SUPPORT),y)
+
 # add SAGElib related includes
 include $(LOCAL_PATH)/magnum/syslib/sagelib/bsagelib_public.inc
 
@@ -54,4 +56,5 @@ LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 
 include $(BUILD_SHARED_LIBRARY)
+endif
 

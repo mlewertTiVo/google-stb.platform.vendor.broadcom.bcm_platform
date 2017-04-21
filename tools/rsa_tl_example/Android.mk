@@ -1,6 +1,7 @@
 LOCAL_PATH := $(call my-dir)
 
 LOCAL_PATH := ${REFSW_BASE_DIR}
+ifeq ($(SAGE_SUPPORT),y)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := \
@@ -35,3 +36,4 @@ LOCAL_CFLAGS += -I$(ANDROID_BUILD_TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclie
 LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_EXECUTABLE)
+endif

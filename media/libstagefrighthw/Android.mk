@@ -61,6 +61,7 @@ LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 include $(BUILD_SHARED_LIBRARY)
 
 
+ifeq ($(SAGE_SUPPORT),y)
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES := \
         bomx_secure_buff.cpp
@@ -93,6 +94,7 @@ LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 
 include $(BUILD_SHARED_LIBRARY)
+endif
 
 include $(CLEAR_VARS)
 # Core component framework
