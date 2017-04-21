@@ -1,5 +1,6 @@
 LOCAL_PATH := $(call my-dir)
 
+ifneq ($(ANDROID_SUPPORTS_PLAYREADY), n)
 include $(CLEAR_VARS)
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
@@ -54,3 +55,4 @@ LOCAL_MODULE := prdy_pes_playback_nxclient
 LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_EXECUTABLE)
+endif
