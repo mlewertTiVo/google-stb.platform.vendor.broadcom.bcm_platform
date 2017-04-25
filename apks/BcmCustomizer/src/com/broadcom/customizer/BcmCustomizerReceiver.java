@@ -74,6 +74,7 @@ public class BcmCustomizerReceiver extends BroadcastReceiver {
     private static final String ACTION_CONNECT_INPUT = "com.google.android.intent.action.CONNECT_INPUT";
     private static final String INTENT_EXTRA_NO_INPUT_MODE = "no_input_mode";
 
+    private static final String SYSPROP_BOOT_KEY_TWO = "dyn.nx.boot.key2";
     private static final String SYSPROP_BOOT_WAKEUP = "dyn.nx.boot.wakeup";
 
     private static final String TV_SETTING_PACKAGE = "com.android.tv.settings";
@@ -109,7 +110,7 @@ public class BcmCustomizerReceiver extends BroadcastReceiver {
                 Intent.ACTION_PACKAGE_REMOVED.equals(action)) {
             postNotification(getPackageName(intent));
         } else if (ACTION_PARTNER_CUSTOMIZATION.equals(action)) {
-            if (SystemProperties.getBoolean(SYSPROP_BOOT_WAKEUP, false)) {
+            if (SystemProperties.getBoolean(SYSPROP_BOOT_KEY_TWO, false)) {
                 Log.i(TAG, "Launching Netflix from power on");
                 launchNetflixSplash(context, true, 0);
             }
@@ -245,18 +246,20 @@ public class BcmCustomizerReceiver extends BroadcastReceiver {
         return pkg;
     }
 
-    private Intent createNetflixIntent() {
+    private Intent createNetflixIntent(boolean powerOn) {
         Intent res = new Intent();
         res.setAction(ACTION_NETFLIX_KEY);
-        // all Netflix key presses resulted in device power on (via WAKEUP input event)
-        res.putExtra(NETFLIX_KEY_POWER_MODE, true);
+        if (powerOn) {
+            // Netflix key press resulted in device power on (via WAKEUP input event)
+            res.putExtra(NETFLIX_KEY_POWER_MODE, true);
+        }
         res.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
 
         return res;
     }
 
     private void launchNetflix(Context context) {
-        Intent localIntent = createNetflixIntent();
+        Intent localIntent = createNetflixIntent(false);
 
         if (DEBUG) Log.d(TAG, "localIntent: " + localIntent);
         context.sendBroadcast(localIntent, NETFLIX_KEY_PERMISSION);
@@ -266,7 +269,7 @@ public class BcmCustomizerReceiver extends BroadcastReceiver {
         Intent localIntent = new Intent();
         localIntent.setComponent(new ComponentName(BRCM_SPLASH_PACKAGE, BRCM_SPLASH_ACTIVITY));
         localIntent.putExtra(BRCM_SPLASH_EXTRA_TEXT, "Starting up Netflix...");
-        localIntent.putExtra(BRCM_SPLASH_EXTRA_BC_INTENT, createNetflixIntent());
+        localIntent.putExtra(BRCM_SPLASH_EXTRA_BC_INTENT, createNetflixIntent(true));
         localIntent.putExtra(BRCM_SPLASH_EXTRA_BC_PERMISSION, NETFLIX_KEY_PERMISSION);
         localIntent.putExtra(BRCM_SPLASH_EXTRA_BC_WAIT_BOOTUP, waitBootup);
         localIntent.putExtra(BRCM_SPLASH_EXTRA_BC_DELAY, delayMs);

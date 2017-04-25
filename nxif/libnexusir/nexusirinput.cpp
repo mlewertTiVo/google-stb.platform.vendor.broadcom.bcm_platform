@@ -55,7 +55,7 @@
 #define PROPERTY_BOOT_REASON "ro.boot.bootreason"
 #define BOOT_FROM_DEEP_SLEEP "s3_wakeup"
 
-#define PROPERTY_NX_WAKEUP_BOOT "dyn.nx.boot.wakeup"
+#define PROPERTY_NX_BOOT_KEY_TWO "dyn.nx.boot.key2"
 #define PROPERTY_BOOT_COMPLETED "sys.boot_completed"
 
 NexusIrInput::NexusIrInput() :
@@ -64,8 +64,7 @@ NexusIrInput::NexusIrInput() :
         m_power_key(NEXUSIRINPUT_NO_KEY),
         m_power_key_two(NEXUSIRINPUT_NO_KEY),
         m_mask(0),
-        m_mask_two(0),
-        m_clear_on_boot(false)
+        m_mask_two(0)
 {
 }
 
@@ -103,9 +102,8 @@ bool NexusIrInput::start(NEXUS_IrInputMode mode,
         if (strlen(value) > 0 && !strncmp(value, BOOT_FROM_DEEP_SLEEP, strlen(value))) {
             NEXUS_IrInputEvent event;
             if (NEXUS_IrInput_ReadEvent(m_handle, &event) == NEXUS_SUCCESS && event.code == m_power_key_two) {
-                ALOGV("Woken up by wakeup key");
-                property_set(PROPERTY_NX_WAKEUP_BOOT, "1");
-                m_clear_on_boot = true;
+                ALOGV("Woken up by power key two");
+                property_set(PROPERTY_NX_BOOT_KEY_TWO, "1");
             }
         }
 
@@ -171,7 +169,6 @@ void NexusIrInput::dataReady()
     size_t numEvents = 1;
     NEXUS_Error rc = 0;
     bool overflow;
-    bool wakeupKeyReceived = false;
 
     while (numEvents && !rc)
     {
@@ -186,21 +183,6 @@ void NexusIrInput::dataReady()
                irEvent.interval);
             m_observer->onIrInput(irEvent.code & ~m_mask, irEvent.repeat,
                     irEvent.interval);
-
-            if (irEvent.code == m_power_key || irEvent.code == m_power_key_two) {
-                wakeupKeyReceived = true;
-                if (irEvent.code == m_power_key) {
-                    m_clear_on_boot = true;
-                }
-            }
         }
-    }
-
-    /* Clear the dynamic system property after boot completed assuming the key interceptor
-     * has already serviced the wakeup key */
-    if (m_clear_on_boot && !wakeupKeyReceived && property_get_int32(PROPERTY_BOOT_COMPLETED, 0)) {
-        ALOGV("Clearing wakeup property");
-        property_set(PROPERTY_NX_WAKEUP_BOOT, NULL);
-        m_clear_on_boot = false;
     }
 }
