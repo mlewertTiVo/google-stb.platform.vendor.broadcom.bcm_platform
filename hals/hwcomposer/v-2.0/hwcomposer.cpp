@@ -4654,6 +4654,8 @@ static void hwc2_ext_cmp_frame(
    int blt;
    size_t ccli = 0;
 
+   bool c_rgba = false; /* TODO: workaround for bgrc lockup. */
+
    /* setup and grab a destination buffer for this frame. */
    if (hwc2->ext->u.ext.cbs) {
       enum hwc2_cbs_e wcb = hwc2->ext->u.ext.cb;
@@ -4892,9 +4894,18 @@ static void hwc2_ext_cmp_frame(
             if (yv12) {
                blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp);
             } else {
+               if (!c_rgba) {
+                  NEXUS_SurfaceStatus ss;
+                  NEXUS_Surface_GetStatus(d, &ss);
+                  if ((ss.pixelFormat == NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8) &&
+                      (lyr->bm >= HWC2_BLEND_MODE_NONE)) {
+                     lyr->bm = HWC2_BLEND_MODE_INVALID;
+                  }
+               }
                blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp);
                if (!blt) {
                   lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
+                  c_rgba = true;
                }
             }
             if (lrcp == NEXUS_SUCCESS) {
