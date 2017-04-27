@@ -114,7 +114,11 @@ extern "C" {
 /* Special parameter for enabling EAC3 passthrough with tunnel video decoder */
 #define AUDIO_PARAMETER_HW_AV_SYNC_EAC3 "HwAvSyncEAC3Supported"
 
-#define NEXUS_PCM_FRAMES_PER_EAC3_FRAME 1536
+#define NEXUS_PCM_FRAMES_PER_AC3_AUDIO_BLOCK 256
+#define NEXUS_PCM_FRAMES_PER_AC3_FRAME 1536     // Always 6 audio blocks per AC-3 frame
+
+#define NEXUS_PCM_FRAMES_PER_DTS_SAMPLE_BLOCK 32
+#define NEXUS_PCM_FRAMES_PER_DTS_FRAME 512      // Assuming 16 sample blocks by default
 
 typedef enum {
     BRCM_DEVICE_OUT_NEXUS = 0,
@@ -224,6 +228,8 @@ struct brcm_stream_out {
                     NEXUS_PidChannelHandle pid_channel;
                     struct timespec start_ts;
                     size_t lastCount;
+                    unsigned audioblocks_per_frame;
+                    unsigned frame_multiplier;
                     uint32_t transcode_latency;
                     NxClient_AudioOutputMode savedHDMIOutputMode;
                     NxClient_AudioOutputMode savedSPDIFOutputMode;
@@ -248,6 +254,8 @@ struct brcm_stream_out {
                     pthread_t debounce_thread;
                     bool pcm_format;
                     size_t lastCount;
+                    unsigned audioblocks_per_frame;
+                    unsigned frame_multiplier;
                     FILE *pes_debug;
                 } tunnel;
             };
