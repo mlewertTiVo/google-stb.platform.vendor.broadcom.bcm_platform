@@ -417,7 +417,6 @@ void Hwc::setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int 
         if ((client.binder.get() == listener->asBinder(listener).get()) &&
             (client.kind == HWC_BINDER_HWC)) {
            mSidebandSurface[index].surface = value;
-           mSidebandSurface[index].listener = 0;
            mSidebandSurface[index].disp_w = disp_w;
            mSidebandSurface[index].disp_h = disp_h;
            break;

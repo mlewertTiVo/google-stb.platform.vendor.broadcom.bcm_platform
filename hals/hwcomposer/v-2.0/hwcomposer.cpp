@@ -4613,7 +4613,8 @@ out:
 
 static void hwc2_sdb(
    struct hwc2_bcm_device_t* hwc2,
-   struct hwc2_lyr_t *lyr) {
+   struct hwc2_lyr_t *lyr,
+   struct hwc2_dsp_t *dsp) {
 
    NEXUS_Rect c, p;
    struct hwc_position fr, cl;
@@ -4637,6 +4638,13 @@ static void hwc2_sdb(
    cl.w = c.width == (uint16_t)HWC2_INVALID ? 0 : c.width;
    cl.h = c.height == (uint16_t)HWC2_INVALID ? 0 : c.height;
 
+   ALOGI_IF((dsp->lm & LOG_SDB_DEBUG),
+            "[%s]:[sdb]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": c:{%d,%d,%dx%d} f:{%d,%d,%dx%d}\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
+            c.x, c.y, c.width, c.height,
+            p.x, p.y, p.width, p.height);
+
+   hwc2->hb->setsideband(0, 0, dsp->aCfg->w, dsp->aCfg->h);
    hwc2->hb->setgeometry(HWC_BINDER_SDB, 0, fr, cl, 3 /*i.e. (5-2)*/, 1);
 }
 
@@ -4925,7 +4933,7 @@ static void hwc2_ext_cmp_frame(
       break;
       case HWC2_COMPOSITION_SIDEBAND:
          if (hwc2->hb) {
-            hwc2_sdb(hwc2, lyr);
+            hwc2_sdb(hwc2, lyr, dsp);
             ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                      "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": sideband layer (%zu)\n",
                      dsp->pres, dsp->post, c);

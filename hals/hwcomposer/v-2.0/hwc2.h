@@ -38,6 +38,7 @@
 #define LOG_RGBA_DEBUG      (1<<1)  /* rgba layer composition (i.e. device overlay). */
 #define LOG_COMP_DEBUG      (1<<2)  /* composition stack for all layers. */
 #define LOG_COMP_SUM_DEBUG  (1<<3)  /* summary only of composition stack passed to nsc. */
+#define LOG_SDB_DEBUG       (1<<4)  /* sideband layer composition (location). */
 /*
  * log masks: specific to 'virtual' display (same categories as external unless noted).
  */
