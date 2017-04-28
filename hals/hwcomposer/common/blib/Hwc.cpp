@@ -406,7 +406,7 @@ void Hwc::setDisplayFrameId(const sp<IHwcListener>& listener, int handle, int fr
 
 void Hwc::setSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int value, int disp_w, int disp_h)
 {
-    ALOGD("%s: %p, index %d, value %x", __FUNCTION__,
+    ALOGV("%s: %p, index %d, value %x", __FUNCTION__,
           listener->asBinder(listener).get(), index, value);
 
     Mutex::Autolock _l(mLock);

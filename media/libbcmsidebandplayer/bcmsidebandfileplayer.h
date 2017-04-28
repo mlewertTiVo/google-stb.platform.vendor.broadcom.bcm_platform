@@ -41,21 +41,21 @@
 
 #include <bcmsidebandplayer.h>
 #include <pthread.h>
+#include <utils/Thread.h>
 
 struct client_state;
 
-class BcmSidebandFilePlayer : public BcmSidebandPlayerImpl {
+class BcmSidebandFilePlayer : public BcmSidebandPlayerImpl, public android::Thread {
 public:
     BcmSidebandFilePlayer(const char* path);
     virtual ~BcmSidebandFilePlayer();
     int start(int x, int y, int w, int h);
     void stop();
 private:
-    void reset();
-
     char* mPath;
     struct client_state *client;
-    enum {gui_no_alpha_hole, gui_off, gui_on} gui;
-    pthread_t standby_thread_id;
+    int mStartX, mStartY, mStartW, mStartH;
+    virtual bool threadLoop();
+    int play_main(int argc, const char **argv);
 };
 #endif // BCM_SIDEBAND_FILE_PLAYER_H

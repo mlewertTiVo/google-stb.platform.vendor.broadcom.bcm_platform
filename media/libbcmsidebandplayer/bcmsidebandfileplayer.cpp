@@ -1,7 +1,7 @@
 /******************************************************************************
- *    (c)2010-2016 Broadcom Corporation
+ * Copyright (C) 2017 Broadcom.  The term "Broadcom" refers to Broadcom Limited and/or its subsidiaries.
  *
- * This program is the proprietary software of Broadcom Corporation and/or its licensors,
+ * This program is the proprietary software of Broadcom and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
  * (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
@@ -34,7 +34,6 @@
  * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
- *
  *****************************************************************************/
 #include "bcmsidebandfileplayer.h"
 
@@ -98,30 +97,43 @@ static void print_usage(const struct nxapps_cmdline *cmdline)
     "  -audio_primers           use primers for fast resumption of pcm and compressed audio\n"
     "  -initial_audio_primers   if audio decoder already in use, use primers\n"
     "  -timeshift               file is being recorded; playback will wait at end of file for more data to arrive.\n"
+    "  -pacing\n"
     );
     printf(
     "  -stcTrick off            use decoder trick modes\n"
     "  -startPaused\n"
     "  -dqtFrameReverse #       number of pictures per GOP for DQT frame reverse\n"
     );
-    print_list_option("format",g_videoFormatStrs);
-    print_list_option("ar",g_contentModeStrs);
-    print_list_option("sync",g_syncModeStrs);
-    print_list_option("crypto",g_securityAlgoStrs);
+    print_list_option(
+    "  -format                  max source format", g_videoFormatStrs);
+    print_list_option(
+    "  -ar                      aspect ratio of source", g_contentModeStrs);
+    print_list_option(
+    "  -sync                    sync_channel mode", g_syncModeStrs);
+    print_list_option(
+    "  -crypto                  decrypt stream", g_securityAlgoStrs);
     print_list_option("dolby_drc_mode",g_dolbyDrcModeStrs);
     nxapps_cmdline_print_usage(cmdline);
     printf(
     "  -scrtext SCRIPT          run --help-script to learn script commands\n"
     "  -script SCRIPTFILE       run --help-script to learn script commands\n"
     "  -video PID               override media probe. use 0 for no video.\n"
-    "  -video_type CODEC        override media probe.\n"
+    );
+    print_list_option(
+    "  -video_type              override media probe", g_videoCodecStrs);
+    printf(
     "  -video_cdb MBytes        size of compressed video buffer, in MBytes, decimal allowed\n"
     "  -audio PID               override media probe. use 0 for no audio.\n"
-    "  -audio_type CODEC        override media probe.\n"
     );
-    print_list_option("mpeg_type",g_transportTypeStrs);
+    print_list_option(
+    "  -audio_type              override media probe", g_audioCodecStrs);
+    print_list_option(
+    "  -mpeg_type               override media probe", g_transportTypeStrs);
     printf(
     "  -secure                  use SVP secure picture buffers\n"
+    "  -astm\n"
+    "  -scan 1080p\n"
+    "  -chunk                   chunked playback, size and first chunk is autodetected\n"
     );
 }
 
@@ -156,8 +168,8 @@ BcmSidebandFilePlayer::BcmSidebandFilePlayer(const char*path)
 BcmSidebandFilePlayer::~BcmSidebandFilePlayer()
 {
     ALOGV("%s", __FUNCTION__);
-    free(mPath);
     delete client;
+    free(mPath);
 }
 
 static void complete(void *context)
@@ -174,6 +186,7 @@ static void complete2(void *context, int param)
 static int gui_init(struct client_state *client, bool gui);
 static int gui_set_pos(struct client_state *client, unsigned position, unsigned first, unsigned last);
 static void gui_uninit(struct client_state *client);
+static void gui_draw_bar(struct client_state *client);
 
 #include <sys/time.h>
 static unsigned b_get_time(void)
@@ -185,11 +198,13 @@ static unsigned b_get_time(void)
 
 static void process_input(struct client_state *client, b_remote_key key, bool repeat)
 {
+    int rate = client->rate;
+    int rc = 0;
     /* only allow repeats for frame advance/reverse */
     switch (key) {
     case b_remote_key_rewind:
     case b_remote_key_fast_forward:
-        if (client->rate == 0) {
+        if (rate == 0) {
             break;
         }
         /* fall through */
@@ -199,66 +214,66 @@ static void process_input(struct client_state *client, b_remote_key key, bool re
 
     switch (key) {
     case b_remote_key_play:
-        client->rate = NEXUS_NORMAL_DECODE_RATE;
+        rate = NEXUS_NORMAL_DECODE_RATE;
         ALOGW("play");
-        media_player_trick(client->player, client->rate);
+        rc = media_player_trick(client->player, rate);
         break;
     case b_remote_key_pause:
-        if (client->rate) {
-            client->rate = 0;
+        if (rate) {
+            rate = 0;
             ALOGW("pause");
         }
         else {
-            client->rate = NEXUS_NORMAL_DECODE_RATE;
+            rate = NEXUS_NORMAL_DECODE_RATE;
             ALOGW("play");
         }
-        media_player_trick(client->player, client->rate);
+        rc = media_player_trick(client->player, rate);
         break;
     case b_remote_key_fast_forward:
-        if (client->rate == 0) {
+        if (rate == 0) {
             media_player_frame_advance(client->player, true);
         }
         else {
-            client->rate += NEXUS_NORMAL_DECODE_RATE;
-            if (client->rate == 0) {
-                client->rate = NEXUS_NORMAL_DECODE_RATE;
+            rate += NEXUS_NORMAL_DECODE_RATE;
+            if (rate == 0) {
+                rate = NEXUS_NORMAL_DECODE_RATE;
             }
-            if (client->rate == NEXUS_NORMAL_DECODE_RATE) {
+            if (rate == NEXUS_NORMAL_DECODE_RATE) {
                 ALOGW("play");
             }
             else {
-                ALOGW("%dx trick", client->rate/NEXUS_NORMAL_DECODE_RATE);
+                ALOGW("%dx trick", rate/NEXUS_NORMAL_DECODE_RATE);
             }
-            media_player_trick(client->player, client->rate);
+            rc = media_player_trick(client->player, rate);
         }
         break;
     case b_remote_key_rewind:
-        if (client->rate == 0) {
+        if (rate == 0) {
             media_player_frame_advance(client->player, false);
         }
         else {
-            client->rate -= NEXUS_NORMAL_DECODE_RATE;
-            if (client->rate == 0) {
-                client->rate = -1*NEXUS_NORMAL_DECODE_RATE;
+            rate -= NEXUS_NORMAL_DECODE_RATE;
+            if (rate == 0) {
+                rate = -1*NEXUS_NORMAL_DECODE_RATE;
             }
-            if (client->rate == NEXUS_NORMAL_DECODE_RATE) {
+            if (rate == NEXUS_NORMAL_DECODE_RATE) {
                 ALOGW("play");
             }
             else {
-                ALOGW("%dx trick", client->rate/NEXUS_NORMAL_DECODE_RATE);
+                ALOGW("%dx trick", rate/NEXUS_NORMAL_DECODE_RATE);
             }
-            media_player_trick(client->player, client->rate);
+            rc = media_player_trick(client->player, rate);
         }
         break;
     case b_remote_key_right:
         media_player_seek(client->player, 30 * 1000, SEEK_CUR);
-        if (client->rate == 0) {
+        if (rate == 0) {
             media_player_frame_advance(client->player, true);
         }
         break;
     case b_remote_key_left:
         media_player_seek(client->player, -30 * 1000, SEEK_CUR);
-        if (client->rate == 0) {
+        if (rate == 0) {
             media_player_frame_advance(client->player, true);
         }
         break;
@@ -268,9 +283,24 @@ static void process_input(struct client_state *client, b_remote_key key, bool re
         client->stopped = true;
         /* can't call media_player_stop here because we're in a callback */
         break;
+    case b_remote_key_chan_down: /* AC4 status */
+        media_player_ac4_status(client->player, 1);
+        break;
+    case b_remote_key_chan_up: /* AC4 presentation id increment */
+        media_player_ac4_status(client->player, 2);
+        break;
+    case b_remote_key_up: /* AC4 dialog enhancement level increment */
+        media_player_ac4_status(client->player, 3);
+        break;
+    case b_remote_key_down: /* AC4 dialog enhancement level decrement */
+        media_player_ac4_status(client->player, 4);
+        break;
     default:
         ALOGI("unknown key %#x", key);
         break;
+    }
+    if (!rc) {
+        client->rate = rate;
     }
 }
 
@@ -280,8 +310,6 @@ static void *standby_monitor(void *context)
     NEXUS_Error rc;
     NxClient_StandbyStatus standbyStatus, prevStatus;
 
-    BSTD_UNUSED(context);
-
     rc = NxClient_GetStandbyStatus(&prevStatus);
     ALOG_ASSERT(!rc);
 
@@ -289,46 +317,74 @@ static void *standby_monitor(void *context)
         rc = NxClient_GetStandbyStatus(&standbyStatus);
         ALOG_ASSERT(!rc);
 
-        if (rc == NEXUS_SUCCESS) {
-            if (standbyStatus.transition == NxClient_StandbyTransition_eAckNeeded) {
-                printf("'play' acknowledges standby state: %s\n", lookup_name(g_platformStandbyModeStrs, standbyStatus.settings.mode));
-                media_player_stop(client->player);
-                NxClient_AcknowledgeStandby(true);
-            } else if (standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn && prevStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn) {
-                media_player_start(client->player, &client->start_settings);
-            }
-            prevStatus = standbyStatus;
+        if(standbyStatus.transition == NxClient_StandbyTransition_eAckNeeded) {
+            printf("'play' acknowledges standby state: %s\n", lookup_name(g_platformStandbyModeStrs, standbyStatus.settings.mode));
+            media_player_stop(client->player);
+            NxClient_AcknowledgeStandby(true);
+        } else {
+            if(standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn && prevStatus.settings.mode != NEXUS_PlatformStandbyMode_eOn)
+            media_player_start(client->player, &client->start_settings);
         }
+
+        prevStatus = standbyStatus;
         BKNI_Sleep(100);
     }
+
     return NULL;
 }
 
 int BcmSidebandFilePlayer::start(int x, int y, int w, int h)
 {
+    if (!client->stopped) {
+        return -1;
+    }
+    mStartX = x;
+    mStartY = y;
+    mStartW = w;
+    mStartH = h;
+    android::status_t status = run("BcmSidebandFilePlayer");
+    if (status != android::OK) {
+        ALOGE("%s: error starting playback thread", __FUNCTION__);
+        return -ENOSYS;
+    }
+    return 0;
+}
+
+bool BcmSidebandFilePlayer::threadLoop()
+{
     ALOGV("%s", __FUNCTION__);
     char argv0[] = LOG_TAG;
     char argv1[] = "-rect";
     char argv2[100];
-    sprintf(argv2, "%d,%d,%d,%d", x, y, w, h);
+    sprintf(argv2, "%d,%d,%d,%d", mStartX, mStartY, mStartW, mStartH);
     char argv3[] = "-gui";
     char argv4[] = "off";
     char argv5[256];
     sprintf(argv5, "%s", mPath);
     const char *argv[] = {&argv0[0], &argv1[0], &argv2[0], &argv3[0], &argv4[0], &argv5[0], NULL};
     int argc = ARRAY_SIZE(argv) - 1;
+    int status = play_main(argc, argv);
+    if (status) {
+        ALOGE("%s: play_main returned %d", __FUNCTION__, status);
+    }
+    return false; // thread will exit upon return
+}
+
+/* Keep in sync with nxclient/apps/play.c */
+int BcmSidebandFilePlayer::play_main(int argc, const char **argv)  {
+    ALOGV("%s", __FUNCTION__);
     NEXUS_Error rc = 0;
     unsigned timeout = 0;
     int curarg = 1;
     //struct client_state context, *client = &context;
     media_player_create_settings create_settings;
     media_player_start_settings start_settings;
-    NxClient_JoinSettings joinSettings;
+    //NxClient_JoinSettings joinSettings;
     NxClient_AllocSettings allocSettings;
     NxClient_AllocResults allocResults;
-    gui = gui_off;
+    enum {gui_no_alpha_hole, gui_off, gui_on} gui = gui_on;
     unsigned starttime;
-    //pthread_t standby_thread_id;
+    pthread_t standby_thread_id;
     NEXUS_VideoWindowContentMode contentMode = NEXUS_VideoWindowContentMode_eMax;
     struct b_pig_inc pig_inc;
     bool manual_4x3_box = false;
@@ -340,6 +396,8 @@ int BcmSidebandFilePlayer::start(int x, int y, int w, int h)
     struct nxapps_cmdline cmdline;
     int n;
     struct binput_settings input_settings;
+    bool hdcp_flag = false;
+    bool hdcp_version_flag = false;
 
     memset(&pig_inc, 0, sizeof(pig_inc));
     memset(client, 0, sizeof(*client));
@@ -433,11 +491,32 @@ int BcmSidebandFilePlayer::start(int x, int y, int w, int h)
         }
         else if (!strcmp(argv[curarg], "-hdcp") && curarg+1 < argc) {
             curarg++;
+            hdcp_flag = true;
             if (argv[curarg][0] == 'm') {
                 start_settings.hdcp = NxClient_HdcpLevel_eMandatory;
             }
             else if (argv[curarg][0] == 'o') {
                 start_settings.hdcp = NxClient_HdcpLevel_eOptional;
+            }
+            else {
+                print_usage(&cmdline);
+                return -1;
+            }
+        }
+        else if (!strcmp(argv[curarg], "-hdcp_version") && curarg+1 < argc) {
+            curarg++;
+            hdcp_version_flag = true;
+            if (!strcmp(argv[curarg],"auto")) {
+                start_settings.hdcp_version = NxClient_HdcpVersion_eAuto;
+            }
+            else if (!strcmp(argv[curarg],"follow")) {
+                start_settings.hdcp_version = NxClient_HdcpVersion_eFollow;
+            }
+            else if (!strcmp(argv[curarg],"hdcp1x")) {
+                start_settings.hdcp_version = NxClient_HdcpVersion_eHdcp1x;
+            }
+            else if (!strcmp(argv[curarg],"hdcp22")) {
+                start_settings.hdcp_version = NxClient_HdcpVersion_eHdcp22;
             }
             else {
                 print_usage(&cmdline);
@@ -471,6 +550,9 @@ int BcmSidebandFilePlayer::start(int x, int y, int w, int h)
         }
         else if (!strcmp(argv[curarg], "-timeshift")) {
             start_settings.loopMode = NEXUS_PlaybackLoopMode_ePlay;
+        }
+        else if (!strcmp(argv[curarg], "-pacing")) {
+            start_settings.pacing = true;
         }
         else if (!strcmp(argv[curarg], "-stcTrick") && curarg+1 < argc) {
             start_settings.stcTrick = strcmp(argv[++curarg], "off");
@@ -514,6 +596,15 @@ int BcmSidebandFilePlayer::start(int x, int y, int w, int h)
         else if (!strcmp(argv[curarg], "-secure")) {
             start_settings.video.secure = true;
         }
+        else if (!strcmp(argv[curarg], "-astm")) {
+            start_settings.astm = true;
+        }
+        else if (!strcmp(argv[curarg], "-scan") && argc>curarg+1) {
+            start_settings.video.scanMode = !strcmp(argv[++curarg], "1080p") ? NEXUS_VideoDecoderScanMode_e1080p : NEXUS_VideoDecoderScanMode_eAuto;
+        }
+        else if (!strcmp(argv[curarg], "-chunk")) {
+            start_settings.chunked = true;
+        }
         else if ((n = nxapps_cmdline_parse(curarg, argc, argv, &cmdline))) {
             if (n < 0) {
                 print_usage(&cmdline);
@@ -537,12 +628,12 @@ int BcmSidebandFilePlayer::start(int x, int y, int w, int h)
         print_usage(&cmdline);
         return -1;
     }
-
+/*
     NxClient_GetDefaultJoinSettings(&joinSettings);
     snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "%s %s", argv[0], start_settings.stream_url);
     rc = NxClient_Join(&joinSettings);
     if (rc) return -1;
-
+*/
     BKNI_CreateEvent(&client->endOfStreamEvent);
     BKNI_CreateEvent(&client->displayedEvent);
     BKNI_CreateEvent(&client->windowMovedEvent);
@@ -595,6 +686,17 @@ int BcmSidebandFilePlayer::start(int x, int y, int w, int h)
         }
         if (pig_inc.x) {
             b_pig_init(video_sc);
+        }
+    }
+
+    if (!hdcp_flag || !hdcp_version_flag) {
+        NxClient_DisplaySettings displaySettings;
+        NxClient_GetDisplaySettings(&displaySettings);
+        if (hdcp_flag == false) {
+            start_settings.hdcp = displaySettings.hdmiPreferences.hdcp;
+        }
+        if (hdcp_version_flag == false) {
+            start_settings.hdcp_version = displaySettings.hdmiPreferences.version;
         }
     }
 
@@ -654,17 +756,47 @@ int BcmSidebandFilePlayer::start(int x, int y, int w, int h)
     }
 
     starttime = b_get_time();
-    mState = STATE_PLAYING;
-    return rc;
+    while (!client->stopped && !exitPending()) {
+        bool displayed = false;
+        if (gui == gui_on) {
+            NEXUS_PlaybackStatus status;
+            media_player_get_playback_status(client->player, &status);
+            displayed = !gui_set_pos(client, status.position, status.first, status.last);
+        }
+        if (pig_inc.x) {
+            b_pig_move(video_sc, &pig_inc);
+        }
+        else {
+            b_remote_key key;
+            bool repeat;
+            if (!binput_read(client->input, &key, &repeat)) {
+                process_input(client, key, repeat);
+                gui_draw_bar(client);
+            }
+            else {
+                binput_wait(client->input, 100);
+            }
+        }
+        /* don't wait until after other NxClient calls that may results in SurfaceCompositor work. This avoids an extra vsync of delay. */
+        if (displayed) {
+            rc = BKNI_WaitForEvent(client->displayedEvent, 5000);
+            if (rc) BERR_TRACE(rc);
+        }
+        else if (pig_inc.x) {
+            rc = BKNI_WaitForEvent(client->windowMovedEvent, 5000);
+            if (rc) BERR_TRACE(rc);
+        }
 
-err_start:
-    reset();
-    return rc;
-}
+        if (start_settings.loopMode == NEXUS_PlaybackLoopMode_ePause) {
+            if (BKNI_WaitForEvent(client->endOfStreamEvent, 0) == 0) {
+                break;
+            }
+        }
 
-void BcmSidebandFilePlayer::stop()
-{
-    ALOGV("%s", __FUNCTION__);
+        if (timeout && (b_get_time() - starttime) / 1000 > timeout) {
+            break;
+        }
+    }
     client->stopped = true;
 
     if (gui) {
@@ -672,24 +804,33 @@ void BcmSidebandFilePlayer::stop()
     }
     pthread_join(standby_thread_id, NULL);
 
+    media_player_stop(client->player);
+err_start:
 #if B_REFSW_TR69C_SUPPORT
     b_tr69c_uninit(tr69c);
 #endif
-
-    media_player_stop(client->player);
-    reset();
-}
-
-void BcmSidebandFilePlayer::reset()
-{
-    ALOGV("%s", __FUNCTION__);
+    media_player_destroy(client->player);
+    mSurfaceClientId = 0xdeadbeef;
+    NEXUS_SurfaceClient_Release(client->surfaceClient);
     binput_close(client->input);
+    NxClient_Free(&allocResults);
     BKNI_DestroyEvent(client->endOfStreamEvent);
     BKNI_DestroyEvent(client->displayedEvent);
     BKNI_DestroyEvent(client->windowMovedEvent);
-    media_player_destroy(client->player);
-    NxClient_Uninit();
-    mState = STATE_IDLE;
+    //NxClient_Uninit();
+    return rc;
+}
+
+void BcmSidebandFilePlayer::stop()
+{
+    ALOGV("%s", __FUNCTION__);
+    if (!client->stopped) {
+        client->stopped = true;
+        android::status_t status = join();
+        if (status != android::OK) {
+            ALOGE("%s: error stopping playback thread", __FUNCTION__);
+        }
+    }
 }
 
 /* simple DVR GUI */
@@ -700,8 +841,6 @@ void BcmSidebandFilePlayer::reset()
 #define CURSOR_COLOR 0xFFBBBBBB
 #define CURSOR_WIDTH 4
 #define CURSOR_HEIGHT 20
-
-static void gui_draw_bar(struct client_state *client);
 
 static void checkpoint(struct client_state *client)
 {
@@ -774,6 +913,25 @@ static int gui_init(struct client_state *client, bool gui)
     return 0;
 }
 
+static void b_print_trickmode(char *buf, unsigned bufsize, const NEXUS_PlaybackTrickModeSettings *trickMode)
+{
+    if (trickMode->mode == NEXUS_PlaybackHostTrickMode_ePlayBrcm) {
+        snprintf(buf, bufsize, "BRCM -1x");
+    }
+    else if (trickMode->mode == NEXUS_PlaybackHostTrickMode_ePlayMultiPassDqtIP) {
+        snprintf(buf, bufsize, "Multipass DQT");
+    }
+    else if (trickMode->rate == NEXUS_NORMAL_PLAY_SPEED) {
+        snprintf(buf, bufsize, "Play");
+    }
+    else if (trickMode->rate == 0) {
+        snprintf(buf, bufsize, "Pause");
+    }
+    else {
+        snprintf(buf, bufsize, "%dx", trickMode->rate/NEXUS_NORMAL_PLAY_SPEED);
+    }
+}
+
 static void gui_draw_bar(struct client_state *client)
 {
     NEXUS_Graphics2DFillSettings fillSettings;
@@ -804,18 +962,30 @@ static void gui_draw_bar(struct client_state *client)
         char duration[32];
         NEXUS_PlaybackStatus status;
         int text_limit_width = (textrect.width * 80)/100;
+        const char *text;
+        char trickmode_text[64];
+
+        if (client->rate == NEXUS_NORMAL_DECODE_RATE) {
+            text = client->start_settings.stream_url;
+        }
+        else {
+            NEXUS_PlaybackTrickModeSettings trickMode;
+            media_player_get_trick_mode(client->player, &trickMode);
+            b_print_trickmode(trickmode_text, sizeof(trickmode_text), &trickMode);
+            text = trickmode_text;
+        }
 
         textrect.y = textrect.y + client->timeline_rect.height - client->font_height;
         textrect.height = client->font_height;
-        bfont_measure_text(client->font, client->start_settings.stream_url, -1, &width, &height, &base);
+        bfont_measure_text(client->font, text, -1, &width, &height, &base);
         if(width && width < text_limit_width) {
-            bfont_draw_aligned_text(&client->desc, client->font, &textrect, client->start_settings.stream_url, -1, 0xFFCCCCCC, bfont_valign_center, bfont_halign_left);
+            bfont_draw_aligned_text(&client->desc, client->font, &textrect, text, -1, 0xFFCCCCCC, bfont_valign_center, bfont_halign_left);
         } else {
             char truncated[128];
-            size_t len = strlen(client->start_settings.stream_url);
+            size_t len = strlen(text);
             size_t limit = (text_limit_width*len)/width;
 
-            BKNI_Snprintf(truncated, sizeof(truncated), "... %s", client->start_settings.stream_url + (len - limit));
+            BKNI_Snprintf(truncated, sizeof(truncated), "... %s", text + (len - limit));
             bfont_draw_aligned_text(&client->desc, client->font, &textrect, truncated, -1, 0xFFCCCCCC, bfont_valign_center, bfont_halign_left);
         }
 
@@ -842,7 +1012,7 @@ static int gui_set_pos(struct client_state *client, unsigned position, unsigned 
     position -= first;
     last -= first;
     if (position >= last) position = last;
-    if (!last) return 0;
+    if (!last) return -1;
 
     if (client->start_settings.loopMode == NEXUS_PlaybackLoopMode_ePlay) {
         /* have to redraw each time because time updates */
