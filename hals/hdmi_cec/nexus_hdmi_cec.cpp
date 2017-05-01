@@ -265,9 +265,8 @@ status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::processCecMessage(cec_mess
 
     if (sendMessage) {
         ret = mNexusHdmiCecDevice->sendCecMessage(&txMessage, NexusIPCCommon::DEFAULT_MAX_CEC_RETRIES);
-
         if (ret != NO_ERROR) {
-            ALOGE("%s: Could not send CEC message opcode=0x%02x on CEC port %d!!!", __PRETTY_FUNCTION__, txMessage.body[0], portId);
+            ALOGE("%s: Could not send CEC message opcode=0x%02x on CEC port %d (err=%d)!!!", __PRETTY_FUNCTION__, txMessage.body[0], portId, ret);
         }
     }
     return ret;
@@ -969,6 +968,7 @@ status_t NexusHdmiCecDevice::sendCecMessage(const cec_message_t *message, uint8_
 {
     HDMI_CEC_TRACE_ENTER;
 
+    status_t err = NO_ERROR;
     if (mCecEnable) {
         if (pIpcClient == NULL) {
             ALOGE("%s: NexusIPCClient has been instantiated!!!", __PRETTY_FUNCTION__);
@@ -978,9 +978,10 @@ status_t NexusHdmiCecDevice::sendCecMessage(const cec_message_t *message, uint8_
         uint8_t srcAddr = (uint8_t)message->initiator;
         uint8_t destAddr = (uint8_t)message->destination;
 
-        if (pIpcClient->sendCecMessage(mCecId, srcAddr, destAddr, message->length, const_cast<uint8_t *>(message->body), maxRetries) != true) {
-            ALOGE("%s: cannot send CEC message!!!", __PRETTY_FUNCTION__);
-            return UNKNOWN_ERROR;
+        err = pIpcClient->sendCecMessage(mCecId, srcAddr, destAddr, message->length, const_cast<uint8_t *>(message->body), maxRetries);
+        if (err != OK) {
+            ALOGE("%s: cannot send CEC message (err=%d)!!!", __PRETTY_FUNCTION__, err);
+            return err;
         }
     }
     return NO_ERROR;

@@ -195,15 +195,15 @@ int parseArgs(int argc, char *argv[], uint8_t *pCecId, uint8_t *pSrcAddr, uint8_
    return 0;
 }
 
-bool sendCecMessage(uint8_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage)
+status_t sendCecMessage(uint8_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage)
 {
-    bool success;
+    status_t err = OK;
     NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("send_cec");
 
-    success = pIpcClient->sendCecMessage(cecId, srcAddr, destAddr, length, pMessage);
+    err = pIpcClient->sendCecMessage(cecId, srcAddr, destAddr, length, pMessage);
     delete pIpcClient;
 
-    return success;
+    return err;
 }
 
 int main(int argc, char** argv)
@@ -222,7 +222,7 @@ int main(int argc, char** argv)
             fprintf(stderr, "ERROR: Invalid message length %d!\n", length);
             return -1;
         }
-        if (sendCecMessage(cecId, srcAddr, destAddr, length, message) == false) {
+        if (sendCecMessage(cecId, srcAddr, destAddr, length, message) != OK) {
             fprintf(stderr, "ERROR: Cannot send CEC%d message with optcode 0x%02X!\n", cecId, message[0]);
             return -1;
         }

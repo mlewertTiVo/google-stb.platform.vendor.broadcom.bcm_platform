@@ -827,18 +827,18 @@ bool NexusService::getHdmiOutputStatus(uint32_t portId, b_hdmiOutputStatus *pHdm
     return (rc == NEXUS_SUCCESS);
 }
 
-bool NexusService::sendCecMessage(unsigned cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage, uint8_t maxRetries)
+status_t NexusService::sendCecMessage(unsigned cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage, uint8_t maxRetries)
 {
-    bool success = false;
+    status_t err = OK;
 
     if (mCecServiceManager[cecId].get() != NULL && mCecServiceManager[cecId]->isPlatformInitialised()) {
-        success = (mCecServiceManager[cecId]->sendCecMessage(srcAddr, destAddr, length, pMessage, maxRetries) == OK) ? true : false;
+        err = mCecServiceManager[cecId]->sendCecMessage(srcAddr, destAddr, length, pMessage, maxRetries);
     }
 
-    if (!success) {
+    if (err) {
         ALOGE("%s: Could not send CEC%d message opcode: 0x%02X!", __PRETTY_FUNCTION__, cecId, *pMessage);
     }
-    return success;
+    return (int)err;
 }
 
 bool NexusService::setPowerState(b_powerState pmState)

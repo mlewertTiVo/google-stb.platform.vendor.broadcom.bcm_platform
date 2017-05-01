@@ -323,10 +323,12 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
     size_t  length;
     int32_t maxRetries;
     int     retryCount;
+    int     noAckCount, getCecStatus;
     uint8_t *pBuffer;
     sp<ABuffer> params;
     char msgBuffer[3*(NEXUS_CEC_MESSAGE_DATA_SIZE +1)];
     NEXUS_CecMessage transmitMessage;
+    status_t err = OK;
 
     if (!msg->findInt32("srcaddr", &srcaddr)) {
         ALOGE("%s: Could not find \"srcaddr\" in CEC%d message!", __PRETTY_FUNCTION__, cecId);
@@ -380,6 +382,8 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
         }
     }
 
+    noAckCount = 0;
+    getCecStatus = 0;
     for (retryCount = 0; retryCount <= maxRetries; retryCount++) {
         NEXUS_Error rc;
         unsigned long timeoutInMs = 0;
@@ -403,12 +407,14 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
                 b_cecStatus cecStatus;
 
                 if (mCecServiceManager->getCecStatus(&cecStatus) == true) {
+                    getCecStatus++;
                     if (cecStatus.txMessageAck == true) {
                         ALOGV("%s: Successfully sent CEC%d message: opcode=0x%02X.", __PRETTY_FUNCTION__, cecId, opcode);
-                        break;
+                        goto out;
                     }
                     else {
                         ALOGW("%s: Sent CEC%d message: opcode=0x%02X, but no ACK received!", __PRETTY_FUNCTION__, cecId, opcode);
+                        noAckCount++;
                     }
                 }
                 else {
@@ -426,12 +432,19 @@ status_t NexusService::CecServiceManager::CecTxMessageHandler::outputCecMessage(
             mCecServiceManager->mCecMessageTransmittedLock.unlock();
             ALOGE("%s: ERROR sending CEC%d message: opcode=0x%02X [rc=%d]%s", __PRETTY_FUNCTION__, cecId, opcode, rc,
                   (retryCount < maxRetries) ? " - retrying..." : "!!!");
-
             timeoutInMs = 500;
         }
     }
 
-    return (retryCount <= maxRetries) ? OK : UNKNOWN_ERROR;
+    if (retryCount >= maxRetries) {
+       if (getCecStatus == noAckCount) {
+          err = FAILED_TRANSACTION;
+       } else {
+          err = UNKNOWN_ERROR;
+       }
+    }
+out:
+    return err;
 }
 
 void NexusService::CecServiceManager::CecTxMessageHandler::onMessageReceived(const sp<AMessage> &msg)

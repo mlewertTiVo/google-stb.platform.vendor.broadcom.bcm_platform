@@ -304,7 +304,7 @@ bool NexusIPCClient::getCecStatus(uint32_t cecId, b_cecStatus *pCecStatus)
     return cmd.param.getCecStatus.out.status;
 }
 
-bool NexusIPCClient::sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage, uint8_t maxRetries)
+status_t NexusIPCClient::sendCecMessage(uint32_t cecId, uint8_t srcAddr, uint8_t destAddr, size_t length, uint8_t *pMessage, uint8_t maxRetries)
 {
     api_data cmd;
     BKNI_Memset(&cmd, 0, sizeof(cmd));

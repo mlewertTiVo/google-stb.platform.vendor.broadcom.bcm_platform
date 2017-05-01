@@ -143,7 +143,7 @@ typedef union api_param
         } in;
 
         struct {
-            bool status;
+            status_t status;
         } out;
     } sendCecMessage;
 
