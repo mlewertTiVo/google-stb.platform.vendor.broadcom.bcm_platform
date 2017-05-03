@@ -35,7 +35,8 @@ endif
 # apk's released.
 BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/apks
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
-include ${BCM_APPS_PATH}/BcmCustomizer/Android.mk
+include ${BCM_APPS_PATH}/BcmCustomizer/base/Android.mk
+include ${BCM_APPS_PATH}/BcmCustomizer/ext/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
 include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
 ifneq ($(TARGET_BUILD_PDK),true)
