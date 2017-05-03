@@ -39,6 +39,7 @@
 #define LOG_COMP_DEBUG      (1<<2)  /* composition stack for all layers. */
 #define LOG_COMP_SUM_DEBUG  (1<<3)  /* summary only of composition stack passed to nsc. */
 #define LOG_SDB_DEBUG       (1<<4)  /* sideband layer composition (location). */
+#define LOG_PAH_DEBUG       (1<<5)  /* pip-alpha-hole punch-thru. */
 /*
  * log masks: specific to 'virtual' display (same categories as external unless noted).
  */
@@ -70,6 +71,8 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_OPQ        0xFF000000
 #define HWC2_TRS        0x00000000
 #define HWC2_MEMIF_DEV  "ro.nexus.ashmem.devname"
+#define HWC2_PAH        1
+#define HWC2_PAH_DIV    4
 
 /* timeline creation/destruction are expensive operations; we use
  * a pool which recycles yet keeps sufficient depth to allow layers
@@ -449,6 +452,7 @@ public:
 
 enum hwc2_tweaks_e {
    hwc2_tweak_fb_compressed = 0,
+   hwc2_tweak_pip_alpha_hole,
 };
 
 #endif

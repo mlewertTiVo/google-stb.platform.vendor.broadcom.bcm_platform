@@ -167,6 +167,9 @@ static bool hwc2_enabled(
    case hwc2_tweak_fb_compressed:
       r = (bool)property_get_bool("ro.nx.hwc2.tweak.fbcomp", 0);
    break;
+   case hwc2_tweak_pip_alpha_hole:
+      r = !!HWC2_PAH;
+   break;
    default:
    break;
    }
@@ -4193,6 +4196,29 @@ static void hwc2_dim(
    }
 }
 
+static void hwc2_pah(
+   struct hwc2_bcm_device_t* hwc2,
+   NEXUS_SurfaceHandle s,
+   NEXUS_Rect *pah) {
+   if (s) {
+      NEXUS_Graphics2DFillSettings fs;
+      NEXUS_Graphics2D_GetDefaultFillSettings(&fs);
+      fs.surface = s;
+      fs.colorOp = NEXUS_FillOp_eBlend;
+      fs.alphaOp = NEXUS_FillOp_eCopy;
+      fs.color   = HWC2_TRS;
+      fs.rect.x  = pah->x;
+      fs.rect.y  = pah->y;
+      fs.rect.width  = pah->width;
+      fs.rect.height = pah->height;
+      if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
+         return;
+      }
+      NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
+      pthread_mutex_unlock(&hwc2->mtx_g2d);
+   }
+}
+
 #define SHIFT_FACTOR 10
 static NEXUS_Graphics2DColorMatrix g_hwc2_ai32_Matrix_YCbCrtoRGB = {
    SHIFT_FACTOR, {
@@ -4661,6 +4687,7 @@ static void hwc2_ext_cmp_frame(
    struct hwc2_dsp_t *dsp = hwc2->ext;
    int blt;
    size_t ccli = 0;
+   NEXUS_Rect pah = {0,0,0,0};
 
    bool c_rgba = false; /* TODO: workaround for bgrc lockup. */
 
@@ -4888,11 +4915,21 @@ static void hwc2_ext_cmp_frame(
             /* offlined video pipeline through bvn, nothing to do as we signalled already
              * the frame expected to be released on display.
              */
+            if (hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
+               if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= dsp->aCfg->w/HWC2_PAH_DIV &&
+                   (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= dsp->aCfg->h/HWC2_PAH_DIV) {
+                  pah = {(int16_t)lyr->fr.left,
+                         (int16_t)lyr->fr.top,
+                         (uint16_t)(lyr->fr.right - lyr->fr.left),
+                         (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+                  ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
+                           "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
+                           dsp->pres, dsp->post, dsp->aCfg->w/HWC2_PAH_DIV, dsp->aCfg->h/HWC2_PAH_DIV);
+               }
+            }
             ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                      "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": oob video (%zu)\n",
                      dsp->pres, dsp->post, c);
-
-
             break;
          } else {
             /* graphics or yv12 layer. */
@@ -4957,10 +4994,20 @@ static void hwc2_ext_cmp_frame(
       }
    }
 
-   /* video present, make sure we seed background. */
-   if (c == 0 && (f->vcnt || f->scnt)) {
-      if (dsp->u.ext.bg == HWC2_OPQ) {
+   /* video present */
+   if (f->vcnt || f->scnt) {
+      /* ... make sure we seed background. */
+      if (!c && dsp->u.ext.bg == HWC2_OPQ) {
          c++;
+      /* ... need to punch alpha hole for pip? */
+      } else if ((c > 1) &&
+                 hwc2_enabled(hwc2_tweak_pip_alpha_hole) &&
+                 (pah.width && pah.height)) {
+         hwc2_pah(hwc2, d, &pah);
+         hwc2_chkpt(hwc2);
+         ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
+                  "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ":@{%d,%d,%dx%d}\n",
+                  dsp->pres, dsp->post, pah.x, pah.y, pah.width, pah.height);
       }
    }
 
