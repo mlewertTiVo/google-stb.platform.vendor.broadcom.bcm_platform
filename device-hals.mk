@@ -10,6 +10,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/lights/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/memtrack/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/power/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/thermal/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/tv_input/Android.mk
 
 endif
