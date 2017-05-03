@@ -14,23 +14,16 @@
 
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
-include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 LOCAL_MODULE_RELATIVE_PATH := hw
-LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusipc
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusservice
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
-LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
-LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 
-LOCAL_SHARED_LIBRARIES := libcutils liblog libutils libnexus
-LOCAL_SHARED_LIBRARIES += libnxclient libnexusipcclient libbinder
+LOCAL_SHARED_LIBRARIES := libcutils liblog libutils
 
-LOCAL_SRC_FILES := lights.cpp
+LOCAL_SRC_FILES := wifi-lights.cpp
 LOCAL_MODULE := lights.$(TARGET_BOARD_PLATFORM)
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)
