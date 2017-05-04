@@ -3576,6 +3576,7 @@ static void hwc2_connect(
       if (hwc2->hb) {
          hwc2->hb->connect();
          hwc2->hb->setvideo(0, HWC2_VID_MAGIC, dsp->aCfg->w, dsp->aCfg->h);
+         hwc2->hb->setvideo(1, HWC2_VID_MAGIC+1, dsp->aCfg->w, dsp->aCfg->h);
          hwc2->con = true;
       }
    }
@@ -3644,15 +3645,16 @@ out:
 
 static bool hwc2_is_video(
    struct hwc2_bcm_device_t *hwc2,
-   struct hwc2_lyr_t *lyr) {
+   struct hwc2_lyr_t *lyr,
+   int *vid) {
 
    bool video = false;
    NEXUS_Error lrc = NEXUS_NOT_INITIALIZED;
    NEXUS_MemoryBlockHandle bh = NULL;
    PSHARED_DATA shared = NULL;
    void *map = NULL;
-   int index = -1;
 
+   *vid = -1;
    if (lyr->bh == NULL) {
       return video;
    }
@@ -3663,8 +3665,8 @@ static bool hwc2_is_video(
    if (lrc || shared == NULL) {
       goto out;
    }
-   index = android_atomic_acquire_load(&(shared->videoWindow.windowIdPlusOne));
-   if (index > 0) {
+   *vid = android_atomic_acquire_load(&(shared->videoWindow.windowIdPlusOne));
+   if (*vid > 0) {
       if (shared->videoWindow.nexusClientContext) {
          video = true;
          lyr->oob = true;
@@ -3689,7 +3691,7 @@ static int32_t hwc2_preDsp(
    uint32_t kind;
    struct hwc2_lyr_t *lyr = NULL;
    int32_t frame_size, cnt = 0, vcnt = 0, scnt = 0;
-   int ccli = 0;
+   int ccli = 0, vid = -1;
 
    ALOGV("-> %s:%" PRIu64 "\n",
      getFunctionDescriptorName(HWC2_FUNCTION_PRESENT_DISPLAY),
@@ -3764,7 +3766,7 @@ static int32_t hwc2_preDsp(
             ccli++;
          } else if (lyr->cCli == HWC2_COMPOSITION_SIDEBAND) {
             scnt++;
-         } else if (hwc2_is_video(hwc2, lyr)) {
+         } else if (hwc2_is_video(hwc2, lyr, &vid)) {
             vcnt++;
             /* signal to the video display the frame to be presented. */
             if (hwc2->hb) {
@@ -3772,6 +3774,7 @@ static int32_t hwc2_preDsp(
                NEXUS_MemoryBlockHandle bh = NULL;
                NEXUS_Rect c, p;
                struct hwc_position fr, cl;
+               int z = 0;
                PSHARED_DATA shared = NULL;
                void *map = NULL;
                private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
@@ -3802,17 +3805,20 @@ static int32_t hwc2_preDsp(
                      cl.y = c.y;
                      cl.w = c.width == (uint16_t)HWC2_INVALID ? 0 : c.width;
                      cl.h = c.height == (uint16_t)HWC2_INVALID ? 0 : c.height;
-                     hwc2->hb->setgeometry(HWC_BINDER_OMX, 0, fr, cl, 3 /* i.e. 5-2 */, 1);
+                     // TODO: associate relative z-order from android z-layer.
+                     z = (vid==1)?2:(vid==2)?3:1; /* main is on 5-3, pip is on 5-2, others on 1. */
+                     hwc2->hb->setgeometry(HWC_BINDER_OMX, vid-1, fr, cl, z, 1);
                      ALOGI_IF((hwc2->lm & LOG_OOB_DEBUG),
                               "[oob]:%" PRIu64 ":%" PRIu64 ": geometry {%d,%d,%dx%d}, {%d,%d,%dx%d}\n",
                               dsp->pres, dsp->post, fr.x, fr.y, fr.w, fr.h, cl.x, cl.y, cl.w, cl.h);
                   }
                   if (lyr->lpf != shared->videoFrame.status.serialNumber) {
                      lyr->lpf = shared->videoFrame.status.serialNumber;
-                     hwc2->hb->setframe(HWC2_VID_MAGIC, lyr->lpf);
+                     /* vid - 1 for main, 2 for pip, other not assigned yet. */
+                     hwc2->hb->setframe(HWC2_VID_MAGIC+(vid-1), lyr->lpf);
                      ALOGI_IF((hwc2->lm & LOG_OOB_DEBUG),
-                              "[oob]:%" PRIu64 ":%" PRIu64 ": signal-frame %" PRIu32 " (%" PRIu32 ")\n",
-                              dsp->pres, dsp->post, lyr->lpf, shared->videoFrame.status.serialNumber);
+                              "[oob]:[%s]:%" PRIu64 ":%" PRIu64 ": signal-frame %" PRIu32 " (%" PRIu32 ")\n",
+                              (vid==1)?"full":(vid==2)?"pip":"mos", dsp->pres, dsp->post, lyr->lpf, shared->videoFrame.status.serialNumber);
                   }
                }
                if (lrc == NEXUS_SUCCESS) {
