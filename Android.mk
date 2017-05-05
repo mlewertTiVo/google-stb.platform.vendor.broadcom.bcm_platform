@@ -43,7 +43,6 @@ ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
 endif
 include ${BCM_APPS_PATH}/BcmSpdifSetting/Android.mk
-include ${BCM_APPS_PATH}/BcmSplash/Android.mk
 ifneq ($(TARGET_BUILD_PDK),true)
 #include ${BCM_APPS_PATH}/BcmTVInput/Android.mk
 endif

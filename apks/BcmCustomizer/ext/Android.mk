@@ -11,6 +11,7 @@ LOCAL_RESOURCE_DIR += $(LOCAL_PATH)/res
 
 LOCAL_SRC_FILES := $(call all-java-files-under, src)
 LOCAL_SRC_FILES += ../base/src/com/broadcom/customizer/BcmCustomizerReceiverBase.java
+LOCAL_SRC_FILES += ../base/src/com/broadcom/customizer/BcmSplashActivity.java
 
 LOCAL_PACKAGE_NAME := BcmCustomizer
 

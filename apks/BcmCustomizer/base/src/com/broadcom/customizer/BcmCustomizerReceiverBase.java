@@ -49,8 +49,13 @@ public class BcmCustomizerReceiverBase extends BroadcastReceiver {
     private static final String TV_SETTING_PACKAGE = "com.android.tv.settings";
     private static final String TV_SETTING_WPS_ACTIVITY = "com.android.tv.settings.connectivity.WpsConnectionActivity";
 
-    private static final String BRCM_SPLASH_PACKAGE = "com.broadcom.BcmSplash";
-    private static final String BRCM_SPLASH_ACTIVITY = "com.broadcom.BcmSplash.BcmSplashActivity";
+    private static final String ACTION_BOOTED = "android.intent.action.BOOT_COMPLETED";
+    private static boolean mBootCompleted = false;
+
+    private static final String ACTION_SPLASH_COMPLETED = "com.broadcom.customizer.SPLASH_COMPLETED";
+
+    private static final String BRCM_SPLASH_PACKAGE = "com.broadcom.customizer";
+    private static final String BRCM_SPLASH_ACTIVITY = "com.broadcom.customizer.BcmSplashActivity";
     private static final String BRCM_SPLASH_EXTRA_TEXT = "text";
     private static final String BRCM_SPLASH_EXTRA_BC_INTENT = "broadcast_intent";
     private static final String BRCM_SPLASH_EXTRA_BC_PERMISSION = "broadcast_permission";
@@ -63,6 +68,8 @@ public class BcmCustomizerReceiverBase extends BroadcastReceiver {
     private static final String NETFLIX_KEY_POWER_MODE = "power_on";
 
     private static final boolean DEBUG = false;
+
+    private static boolean mWaitForSplashCompleted = false;
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -108,13 +115,33 @@ public class BcmCustomizerReceiverBase extends BroadcastReceiver {
                 /* Start Netflix activity */
                 if (DEBUG) Log.d(TAG, "Got Netflix key");
                 if (SystemProperties.getBoolean(SYSPROP_BOOT_WAKEUP, false)) {
-                    Log.i(TAG, "Launching Netflix from resume");
-                    launchNetflixSplash(context, false, BRCM_SPLASH_BC_DELAY_MS);
+                    if (mWaitForSplashCompleted) {
+                        Log.i(TAG, "Waiting for splash to complete.");
+                    } else {
+                        Log.i(TAG, "Launching Netflix from resume");
+                        launchNetflixSplash(context, false, BRCM_SPLASH_BC_DELAY_MS);
+                    }
                 } else {
-                    launchNetflix(context);
+                    if (mWaitForSplashCompleted) {
+                        Log.i(TAG, "Waiting for splash to complete.");
+                    } else {
+                        launchNetflix(context);
+                    }
                 }
             }
+        } else if (ACTION_SPLASH_COMPLETED.equals(action)) {
+            Log.i(TAG, "Splash completed");
+            mWaitForSplashCompleted = false;
+        } else if (ACTION_BOOTED.equals(action)) {
+            mBootCompleted = true;
+            if (BcmSplashActivity.splashActivity != null) {
+                BcmSplashActivity.splashActivity.onBootComplete();
+            }
         }
+    }
+
+    public static boolean receivedBootupIntent() {
+        return mBootCompleted;
     }
 
     private Intent createNetflixIntent(boolean powerOn) {
@@ -138,6 +165,8 @@ public class BcmCustomizerReceiverBase extends BroadcastReceiver {
 
     private void launchNetflixSplash(Context context, boolean waitBootup, long delayMs) {
         Intent localIntent = new Intent();
+
+        mWaitForSplashCompleted = true;
         localIntent.setComponent(new ComponentName(BRCM_SPLASH_PACKAGE, BRCM_SPLASH_ACTIVITY));
         localIntent.putExtra(BRCM_SPLASH_EXTRA_TEXT, "Starting up Netflix...");
         localIntent.putExtra(BRCM_SPLASH_EXTRA_BC_INTENT, createNetflixIntent(true));

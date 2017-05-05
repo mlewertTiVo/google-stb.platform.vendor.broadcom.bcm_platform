@@ -26,6 +26,10 @@
             <intent-filter>
                 <action android:name="android.intent.action.GLOBAL_BUTTON" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="com.broadcom.customizer.SPLASH_COMPLETED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
         </receiver>
         <receiver android:name=".ClockWidgetProvider" >
             <intent-filter>
@@ -39,6 +43,11 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/clock_widget_info" />
         </receiver>
-
+        <activity android:name=".BcmSplashActivity"
+                  android:label="@string/app_label"
+                  android:excludeFromRecents="true"
+                  android:noHistory="true"
+                  android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+        </activity>
     </application>
 </manifest>

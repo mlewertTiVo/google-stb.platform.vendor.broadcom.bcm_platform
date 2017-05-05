@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c)2016 Broadcom Corporation
+ *    (c)2017 Broadcom Corporation
  *
  * This program is the proprietary software of Broadcom Corporation and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -35,7 +35,7 @@
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
  *****************************************************************************/
-package com.broadcom.BcmSplash;
+package com.broadcom.customizer;
 
 import android.app.Activity;
 import android.content.BroadcastReceiver;
@@ -57,6 +57,8 @@ public class BcmSplashActivity extends Activity {
     private static final String EXTRA_BROADCAST_WAIT_BOOTUP = "broadcast_wait_bootup";
     private static final String EXTRA_BROADCAST_DELAY = "broadcast_delay";
 
+    private static final String ACTION_SPLASH_COMPLETED = "com.broadcom.customizer.SPLASH_COMPLETED";
+
     private TextView mTextToDisplay;
     private Intent mIntent;
     private boolean mBroadcastAfterBootup;
@@ -74,6 +76,10 @@ public class BcmSplashActivity extends Activity {
                 Intent intent = (Intent)mIntent.getParcelableExtra(EXTRA_BROADCAST_INTENT);
                 String permission = mIntent.getStringExtra(EXTRA_BROADCAST_PERMISSION);
                 sendBroadcast(intent, permission);
+
+                // Tell BcmCustomizer splash has finished
+                Intent splashCompletedIntent = new Intent(ACTION_SPLASH_COMPLETED);
+                sendBroadcast(splashCompletedIntent);
             }
         }
     };
@@ -92,7 +98,7 @@ public class BcmSplashActivity extends Activity {
 
         splashActivity = this;
 
-        setContentView(R.layout.main);
+        setContentView(R.layout.splash);
         mTextToDisplay = (TextView)findViewById(R.id.fullscreen_content);
 
         mIntent = new Intent(getIntent());
@@ -105,7 +111,7 @@ public class BcmSplashActivity extends Activity {
         /* Set broadcast delay if specified */
         mBroadcastDelay = mIntent.getLongExtra(EXTRA_BROADCAST_DELAY, 0);
 
-        if (BcmSplashReceiver.receivedBootupIntent()) {
+        if (BcmCustomizerReceiver.receivedBootupIntent()) {
             mHasBooted = true;
         }
 
