@@ -247,6 +247,7 @@ public:
 
     inline OmxBinder_wrap *omxHwcBinder(void) { return m_omxHwcBinder; };
     void InputBufferTimeoutCallback();
+    void FormatChangeTimeoutCallback();
 
 protected:
 
@@ -321,6 +322,7 @@ protected:
         FCState_eWaitForPortReconfig
     };
     FormatChangeState m_formatChangeState;
+    B_SchedulerTimerId m_formatChangeTimerId;
     unsigned m_formatChangeSerial;
     bool m_nativeGraphicsEnabled;
     bool m_metadataEnabled;
