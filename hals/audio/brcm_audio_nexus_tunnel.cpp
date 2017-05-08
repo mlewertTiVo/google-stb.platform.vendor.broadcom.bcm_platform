@@ -758,7 +758,7 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
                 if (ret != BERR_SUCCESS) {
                     NEXUS_PlaypumpStatus status;
                     NEXUS_Playpump_GetStatus(playpump, &status);
-                    ALOGE("%s: playpump write timeout, ret=%d, ns:%d, fifoS:%zu fifoD:%zu",
+                    ALOGE("%s: playpump write timeout, ret=%d, ns:%zu, fifoS:%zu fifoD:%zu",
                             __FUNCTION__, ret, nexus_space, status.fifoSize, status.fifoDepth);
                     ret = -ENOSYS;
                     break;

@@ -525,7 +525,7 @@ static int32_t hwc2_ret_fence(
       return HWC2_INVALID;
    }
 
-   snprintf(info.name, sizeof(info.name), "hwc2_%s_%llu", dsp->name, dsp->pres);
+   snprintf(info.name, sizeof(info.name), "hwc2_%s_%" PRIu64 "", dsp->name, dsp->pres);
    f = sw_sync_fence_create(dsp->cmp_tl, info.name, dsp->pres);
    if (f < 0) {
       ALOGW("[%s]:[inv-rel-add]:%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
@@ -1021,7 +1021,8 @@ static void hwc2_vd_cmp_frame(
    struct hwc2_frame_t *f) {
 
    NEXUS_SurfaceHandle d = NULL;
-   int32_t i, c = 0;
+   int32_t i;
+   size_t c = 0;
    struct hwc2_lyr_t *lyr;
    bool is_video;
    hwc2_blend_mode_t lbm = HWC2_BLEND_MODE_INVALID;
@@ -1706,7 +1707,7 @@ static int32_t hwc2_lyr_tl_add(
       if (hdl == HWC2_MAGIC) {
          dsp->u.ext.ct.rtl.ix++;
          snprintf(info.name, sizeof(info.name),
-                  "hwc2_dsp_ext_%llu", dsp->u.ext.ct.rtl.ix);
+                  "hwc2_dsp_ext_%" PRIu64 "", dsp->u.ext.ct.rtl.ix);
          f = sw_sync_fence_create(dsp->u.ext.ct.rtl.tl,
                                   info.name,
                                   dsp->u.ext.ct.rtl.ix);
@@ -1724,7 +1725,7 @@ static int32_t hwc2_lyr_tl_add(
             if (dsp->u.ext.rtl[num].hdl == hdl) {
                dsp->u.ext.rtl[num].ix++;
                snprintf(info.name, sizeof(info.name),
-                        "hwc2_%zu_ext_%llu", num, dsp->u.ext.rtl[num].ix);
+                        "hwc2_%zu_ext_%" PRIu64 "", num, dsp->u.ext.rtl[num].ix);
                f = sw_sync_fence_create(dsp->u.ext.rtl[num].tl,
                                         info.name,
                                         dsp->u.ext.rtl[num].ix);
@@ -1746,7 +1747,7 @@ static int32_t hwc2_lyr_tl_add(
          if (dsp->u.vd.rtl[num].hdl == hdl) {
             dsp->u.vd.rtl[num].ix++;
             snprintf(info.name, sizeof(info.name),
-                     "hwc2_%zu_vd_%llu", num, dsp->u.vd.rtl[num].ix);
+                     "hwc2_%zu_vd_%" PRIu64 "", num, dsp->u.vd.rtl[num].ix);
             f = sw_sync_fence_create(dsp->u.vd.rtl[num].tl,
                                      info.name,
                                      dsp->u.vd.rtl[num].ix);
@@ -4767,7 +4768,8 @@ static void hwc2_ext_cmp_frame(
 
    NEXUS_Error nx;
    NEXUS_SurfaceHandle d = NULL;
-   int32_t i, c = 0;
+   int32_t i;
+   size_t c = 0;
    struct hwc2_lyr_t *lyr;
    bool is_video;
    hwc2_blend_mode_t lbm = HWC2_BLEND_MODE_INVALID;
@@ -5306,7 +5308,7 @@ static void hwc2_setup_ext(
       }
       hwc2->ext->u.ext.rtl[num].hdl = 0;
       hwc2->ext->u.ext.rtl[num].ix = 0;
-      ALOGI("[ext]: layer completion timeline (%d): %d\n", num, hwc2->ext->u.ext.rtl[num].tl);
+      ALOGI("[ext]: layer completion timeline (%zu): %d\n", num, hwc2->ext->u.ext.rtl[num].tl);
    }
 }
 
