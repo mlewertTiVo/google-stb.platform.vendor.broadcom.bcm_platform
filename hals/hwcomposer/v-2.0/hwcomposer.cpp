@@ -449,7 +449,7 @@ static void hwc2_ext_fbs(
       scs.pixelFormat = hwc2_enabled(hwc2_tweak_fb_compressed)?
                            NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8:
                            NEXUS_PixelFormat_eA8_B8_G8_R8;
-      if (cb) {
+      if (cb == cbs_e_bypass) {
          scs.heap = NEXUS_Platform_GetFramebufferHeap(0);
       } else {
          scs.heap = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
