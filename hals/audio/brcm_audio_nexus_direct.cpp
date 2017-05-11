@@ -39,6 +39,7 @@
 
 #include "brcm_audio.h"
 #include "brcm_audio_nexus_hdmi.h"
+#include "brcm_audio_nexus_parser.h"
 #include <inttypes.h>
 
 using namespace android;
@@ -115,7 +116,6 @@ static const property_str_map stereo_downmix_mode_map[] = {
     }
 };
 
-
 /*
  * Utility Functions
  */
@@ -164,6 +164,33 @@ static uint32_t nexus_direct_bout_get_latency(struct brcm_stream_out *bout)
     return 0;
 }
 
+static unsigned nexus_direct_bout_get_frame_multipler(struct brcm_stream_out *bout)
+{
+    unsigned res = 1;
+
+    switch (bout->config.format) {
+        case AUDIO_FORMAT_AC3:
+        {
+            res = NEXUS_PCM_FRAMES_PER_AC3_FRAME;
+            break;
+        }
+        case AUDIO_FORMAT_E_AC3:
+        {
+            res = (bout->nexus.direct.audioblocks_per_frame > 0) ?
+                                        (bout->nexus.direct.audioblocks_per_frame * NEXUS_PCM_FRAMES_PER_AC3_AUDIO_BLOCK) :
+                                        NEXUS_PCM_FRAMES_PER_AC3_FRAME; // Assuming 6 by default
+            break;
+        }
+        default:
+        {
+            // Return the default value of 1
+            break;
+        }
+    }
+
+    return res;
+}
+
 static int nexus_direct_bout_get_render_position(struct brcm_stream_out *bout, uint32_t *dsp_frames)
 {
     NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
@@ -180,10 +207,7 @@ static int nexus_direct_bout_get_render_position(struct brcm_stream_out *bout, u
         if (bout->nexus.direct.playpump_mode) {
             bout->framesPlayed += status.framesDecoded - bout->nexus.direct.lastCount;
             bout->nexus.direct.lastCount = status.framesDecoded;
-            *dsp_frames = (uint32_t)(bout->framesPlayed * NEXUS_PCM_FRAMES_PER_EAC3_FRAME);
-            if (bout->framesPlayed)
-                *dsp_frames += (NEXUS_PCM_FRAMES_PER_EAC3_FRAME / 2);
-
+            *dsp_frames = (uint32_t)(bout->framesPlayed * bout->nexus.direct.frame_multiplier);
         } else {
             /* numBytesDecoded for passthrough mode returns the underlying playback playedBytes, which is of type size_t */
             bout->framesPlayed += ((size_t)status.numBytesDecoded - bout->nexus.direct.lastCount) / bout->frameSize;
@@ -213,9 +237,7 @@ static int nexus_direct_bout_get_presentation_position(struct brcm_stream_out *b
         if (bout->nexus.direct.playpump_mode) {
             bout->framesPlayed += status.framesDecoded - bout->nexus.direct.lastCount;
             bout->nexus.direct.lastCount = status.framesDecoded;
-            *frames = (bout->framesPlayedTotal + bout->framesPlayed) * NEXUS_PCM_FRAMES_PER_EAC3_FRAME;
-            if (*frames)
-                *frames += (NEXUS_PCM_FRAMES_PER_EAC3_FRAME / 2);
+            *frames = (bout->framesPlayedTotal + bout->framesPlayed) * bout->nexus.direct.frame_multiplier;
         } else {
             /* numBytesDecoded for passthrough mode returns the underlying playback playedBytes, which is of type size_t */
             bout->framesPlayed += ((size_t)status.numBytesDecoded - bout->nexus.direct.lastCount) / bout->frameSize;
@@ -398,6 +420,8 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
     }
 
     bout->nexus.direct.lastCount = 0;
+    bout->nexus.direct.audioblocks_per_frame = 0;
+    bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
     bout->framesPlayed = 0;
 
     return 0;
@@ -429,6 +453,8 @@ static int nexus_direct_bout_stop(struct brcm_stream_out *bout)
     }
 
     bout->nexus.direct.lastCount = 0;
+    bout->nexus.direct.audioblocks_per_frame = 0;
+    bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
     bout->framesPlayed = 0;
 
     return 0;
@@ -518,6 +544,8 @@ static int nexus_direct_bout_flush(struct brcm_stream_out *bout)
     bout->framesPlayed = 0;
     bout->framesPlayedTotal = 0;
     bout->nexus.direct.lastCount = 0;
+    bout->nexus.direct.audioblocks_per_frame = 0;
+    bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
 
     return 0;
 }
@@ -534,6 +562,22 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
     if (bout->suspended || !simple_decoder || (bout->nexus.direct.playpump_mode && !playpump)) {
         ALOGE("%s: not ready to output audio samples", __FUNCTION__);
         return -ENOSYS;
+    }
+
+    // For E-AC3, parse the frame header to determine the number of PCM samples per frame
+    if (bout->nexus.direct.playpump_mode && bout->nexus.direct.audioblocks_per_frame == 0 && bout->config.format == AUDIO_FORMAT_E_AC3) {
+        const uint8_t *syncframe = (const uint8_t *)memmem(buffer, bytes, g_nexus_parse_eac3_syncword, sizeof(g_nexus_parse_eac3_syncword));
+        if (syncframe != NULL) {
+            eac3_frame_hdr_info info;
+            if (nexus_parse_eac3_frame_hdr(syncframe, bytes - (syncframe - (const uint8_t *)buffer), &info)) {
+                bout->nexus.direct.audioblocks_per_frame = info.num_audio_blks;
+                bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
+            }
+            else {
+                ALOGV("%s: Error parsing E-AC3 sync frame", __FUNCTION__);
+            }
+            ALOGI_IF(bout->nexus.direct.audioblocks_per_frame > 0, "%s: %u blocks detected, mpy:%u", __FUNCTION__, bout->nexus.direct.audioblocks_per_frame, bout->nexus.direct.frame_multiplier);
+        }
     }
 
     while (bytes > 0) {
@@ -874,6 +918,8 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
     bout->nexus.direct.simple_decoder = simple_decoder;
     bout->nexus.direct.lastCount = 0;
+    bout->nexus.direct.audioblocks_per_frame = 0;
+    bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
     bout->nexus.event = event;
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
 

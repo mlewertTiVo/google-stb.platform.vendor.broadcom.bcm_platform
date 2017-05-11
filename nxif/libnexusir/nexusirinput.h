@@ -120,8 +120,6 @@ private:
     uint32_t m_power_key_two;
     uint64_t m_mask;
     uint64_t m_mask_two;
-
-    bool m_clear_on_boot;
 };
 
 #endif /* _NEXUS_IR_INPUT_H_ */

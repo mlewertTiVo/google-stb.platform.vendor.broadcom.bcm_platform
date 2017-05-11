@@ -3,6 +3,8 @@
 
     <string name="app_label">BcmCustomizer</string>
 
+    <string name="text_to_display">Starting up...</string>
+
     <string name="partner_row_title">Test Apps</string>
 
     <!-- Content description for Broadcom Test Apps -->

@@ -170,6 +170,9 @@ static bool hwc2_enabled(
    case hwc2_tweak_fb_compressed:
       r = (bool)property_get_bool("ro.nx.hwc2.tweak.fbcomp", 0);
    break;
+   case hwc2_tweak_pip_alpha_hole:
+      r = !!HWC2_PAH;
+   break;
    default:
    break;
    }
@@ -445,7 +448,7 @@ static void hwc2_ext_fbs(
       scs.pixelFormat = hwc2_enabled(hwc2_tweak_fb_compressed)?
                            NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8:
                            NEXUS_PixelFormat_eA8_B8_G8_R8;
-      if (cb) {
+      if (cb == cbs_e_bypass) {
          scs.heap = NEXUS_Platform_GetFramebufferHeap(0);
       } else {
          scs.heap = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
@@ -521,7 +524,7 @@ static int32_t hwc2_ret_fence(
       return HWC2_INVALID;
    }
 
-   snprintf(info.name, sizeof(info.name), "hwc2_%s_%llu", dsp->name, dsp->pres);
+   snprintf(info.name, sizeof(info.name), "hwc2_%s_%" PRIu64 "", dsp->name, dsp->pres);
    f = sw_sync_fence_create(dsp->cmp_tl, info.name, dsp->pres);
    if (f < 0) {
       ALOGW("[%s]:[inv-rel-add]:%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
@@ -1017,7 +1020,8 @@ static void hwc2_vd_cmp_frame(
    struct hwc2_frame_t *f) {
 
    NEXUS_SurfaceHandle d = NULL;
-   int32_t i, c = 0;
+   int32_t i;
+   size_t c = 0;
    struct hwc2_lyr_t *lyr;
    bool is_video;
    hwc2_blend_mode_t lbm = HWC2_BLEND_MODE_INVALID;
@@ -1701,7 +1705,7 @@ static int32_t hwc2_lyr_tl_add(
       if (hdl == HWC2_MAGIC) {
          dsp->u.ext.ct.rtl.ix++;
          snprintf(info.name, sizeof(info.name),
-                  "hwc2_dsp_ext_%llu", dsp->u.ext.ct.rtl.ix);
+                  "hwc2_dsp_ext_%" PRIu64 "", dsp->u.ext.ct.rtl.ix);
          f = sw_sync_fence_create(dsp->u.ext.ct.rtl.tl,
                                   info.name,
                                   dsp->u.ext.ct.rtl.ix);
@@ -1719,7 +1723,7 @@ static int32_t hwc2_lyr_tl_add(
             if (dsp->u.ext.rtl[num].hdl == hdl) {
                dsp->u.ext.rtl[num].ix++;
                snprintf(info.name, sizeof(info.name),
-                        "hwc2_%zu_ext_%llu", num, dsp->u.ext.rtl[num].ix);
+                        "hwc2_%zu_ext_%" PRIu64 "", num, dsp->u.ext.rtl[num].ix);
                f = sw_sync_fence_create(dsp->u.ext.rtl[num].tl,
                                         info.name,
                                         dsp->u.ext.rtl[num].ix);
@@ -1741,7 +1745,7 @@ static int32_t hwc2_lyr_tl_add(
          if (dsp->u.vd.rtl[num].hdl == hdl) {
             dsp->u.vd.rtl[num].ix++;
             snprintf(info.name, sizeof(info.name),
-                     "hwc2_%zu_vd_%llu", num, dsp->u.vd.rtl[num].ix);
+                     "hwc2_%zu_vd_%" PRIu64 "", num, dsp->u.vd.rtl[num].ix);
             f = sw_sync_fence_create(dsp->u.vd.rtl[num].tl,
                                      info.name,
                                      dsp->u.vd.rtl[num].ix);
@@ -3572,6 +3576,7 @@ static void hwc2_connect(
       if (hwc2->hb) {
          hwc2->hb->connect();
          hwc2->hb->setvideo(0, HWC2_VID_MAGIC, dsp->aCfg->w, dsp->aCfg->h);
+         hwc2->hb->setvideo(1, HWC2_VID_MAGIC+1, dsp->aCfg->w, dsp->aCfg->h);
          hwc2->con = true;
       }
    }
@@ -3640,15 +3645,16 @@ out:
 
 static bool hwc2_is_video(
    struct hwc2_bcm_device_t *hwc2,
-   struct hwc2_lyr_t *lyr) {
+   struct hwc2_lyr_t *lyr,
+   int *vid) {
 
    bool video = false;
    NEXUS_Error lrc = NEXUS_NOT_INITIALIZED;
    NEXUS_MemoryBlockHandle bh = NULL;
    PSHARED_DATA shared = NULL;
    void *map = NULL;
-   int index = -1;
 
+   *vid = -1;
    if (lyr->bh == NULL) {
       return video;
    }
@@ -3659,8 +3665,8 @@ static bool hwc2_is_video(
    if (lrc || shared == NULL) {
       goto out;
    }
-   index = android_atomic_acquire_load(&(shared->videoWindow.windowIdPlusOne));
-   if (index > 0) {
+   *vid = android_atomic_acquire_load(&(shared->videoWindow.windowIdPlusOne));
+   if (*vid > 0) {
       if (shared->videoWindow.nexusClientContext) {
          video = true;
          lyr->oob = true;
@@ -3685,7 +3691,7 @@ static int32_t hwc2_preDsp(
    uint32_t kind;
    struct hwc2_lyr_t *lyr = NULL;
    int32_t frame_size, cnt = 0, vcnt = 0, scnt = 0;
-   int ccli = 0;
+   int ccli = 0, vid = -1;
 
    ALOGV("-> %s:%" PRIu64 "\n",
      getFunctionDescriptorName(HWC2_FUNCTION_PRESENT_DISPLAY),
@@ -3760,7 +3766,7 @@ static int32_t hwc2_preDsp(
             ccli++;
          } else if (lyr->cCli == HWC2_COMPOSITION_SIDEBAND) {
             scnt++;
-         } else if (hwc2_is_video(hwc2, lyr)) {
+         } else if (hwc2_is_video(hwc2, lyr, &vid)) {
             vcnt++;
             /* signal to the video display the frame to be presented. */
             if (hwc2->hb) {
@@ -3768,6 +3774,7 @@ static int32_t hwc2_preDsp(
                NEXUS_MemoryBlockHandle bh = NULL;
                NEXUS_Rect c, p;
                struct hwc_position fr, cl;
+               int z = 0;
                PSHARED_DATA shared = NULL;
                void *map = NULL;
                private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
@@ -3798,17 +3805,20 @@ static int32_t hwc2_preDsp(
                      cl.y = c.y;
                      cl.w = c.width == (uint16_t)HWC2_INVALID ? 0 : c.width;
                      cl.h = c.height == (uint16_t)HWC2_INVALID ? 0 : c.height;
-                     hwc2->hb->setgeometry(HWC_BINDER_OMX, 0, fr, cl, 3 /* i.e. 5-2 */, 1);
+                     // TODO: associate relative z-order from android z-layer.
+                     z = (vid==1)?2:(vid==2)?3:1; /* main is on 5-3, pip is on 5-2, others on 1. */
+                     hwc2->hb->setgeometry(HWC_BINDER_OMX, vid-1, fr, cl, z, 1);
                      ALOGI_IF((hwc2->lm & LOG_OOB_DEBUG),
                               "[oob]:%" PRIu64 ":%" PRIu64 ": geometry {%d,%d,%dx%d}, {%d,%d,%dx%d}\n",
                               dsp->pres, dsp->post, fr.x, fr.y, fr.w, fr.h, cl.x, cl.y, cl.w, cl.h);
                   }
                   if (lyr->lpf != shared->videoFrame.status.serialNumber) {
                      lyr->lpf = shared->videoFrame.status.serialNumber;
-                     hwc2->hb->setframe(HWC2_VID_MAGIC, lyr->lpf);
+                     /* vid - 1 for main, 2 for pip, other not assigned yet. */
+                     hwc2->hb->setframe(HWC2_VID_MAGIC+(vid-1), lyr->lpf);
                      ALOGI_IF((hwc2->lm & LOG_OOB_DEBUG),
-                              "[oob]:%" PRIu64 ":%" PRIu64 ": signal-frame %" PRIu32 " (%" PRIu32 ")\n",
-                              dsp->pres, dsp->post, lyr->lpf, shared->videoFrame.status.serialNumber);
+                              "[oob]:[%s]:%" PRIu64 ":%" PRIu64 ": signal-frame %" PRIu32 " (%" PRIu32 ")\n",
+                              (vid==1)?"full":(vid==2)?"pip":"mos", dsp->pres, dsp->post, lyr->lpf, shared->videoFrame.status.serialNumber);
                   }
                }
                if (lrc == NEXUS_SUCCESS) {
@@ -4189,6 +4199,29 @@ static void hwc2_dim(
       pthread_mutex_unlock(&hwc2->mtx_g2d);
       ALOGI_IF((hwc2->lm & LOG_DIM_DEBUG),
                "[dim]: %p with color %08x\n", s, fs.color);
+   }
+}
+
+static void hwc2_pah(
+   struct hwc2_bcm_device_t* hwc2,
+   NEXUS_SurfaceHandle s,
+   NEXUS_Rect *pah) {
+   if (s) {
+      NEXUS_Graphics2DFillSettings fs;
+      NEXUS_Graphics2D_GetDefaultFillSettings(&fs);
+      fs.surface = s;
+      fs.colorOp = NEXUS_FillOp_eBlend;
+      fs.alphaOp = NEXUS_FillOp_eCopy;
+      fs.color   = HWC2_TRS;
+      fs.rect.x  = pah->x;
+      fs.rect.y  = pah->y;
+      fs.rect.width  = pah->width;
+      fs.rect.height = pah->height;
+      if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
+         return;
+      }
+      NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
+      pthread_mutex_unlock(&hwc2->mtx_g2d);
    }
 }
 
@@ -4611,7 +4644,8 @@ out:
 
 static void hwc2_sdb(
    struct hwc2_bcm_device_t* hwc2,
-   struct hwc2_lyr_t *lyr) {
+   struct hwc2_lyr_t *lyr,
+   struct hwc2_dsp_t *dsp) {
 
    NEXUS_Rect c, p;
    struct hwc_position fr, cl;
@@ -4635,6 +4669,13 @@ static void hwc2_sdb(
    cl.w = c.width == (uint16_t)HWC2_INVALID ? 0 : c.width;
    cl.h = c.height == (uint16_t)HWC2_INVALID ? 0 : c.height;
 
+   ALOGI_IF((dsp->lm & LOG_SDB_DEBUG),
+            "[%s]:[sdb]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": c:{%d,%d,%dx%d} f:{%d,%d,%dx%d}\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
+            c.x, c.y, c.width, c.height,
+            p.x, p.y, p.width, p.height);
+
+   hwc2->hb->setsideband(0, 0, dsp->aCfg->w, dsp->aCfg->h);
    hwc2->hb->setgeometry(HWC_BINDER_SDB, 0, fr, cl, 3 /*i.e. (5-2)*/, 1);
 }
 
@@ -4644,13 +4685,17 @@ static void hwc2_ext_cmp_frame(
 
    NEXUS_Error nx;
    NEXUS_SurfaceHandle d = NULL;
-   int32_t i, c = 0;
+   int32_t i;
+   size_t c = 0;
    struct hwc2_lyr_t *lyr;
    bool is_video;
    hwc2_blend_mode_t lbm = HWC2_BLEND_MODE_INVALID;
    struct hwc2_dsp_t *dsp = hwc2->ext;
    int blt;
    size_t ccli = 0;
+   NEXUS_Rect pah = {0,0,0,0};
+
+   bool c_rgba = false; /* TODO: workaround for bgrc lockup. */
 
    /* setup and grab a destination buffer for this frame. */
    if (hwc2->ext->u.ext.cbs) {
@@ -4876,11 +4921,21 @@ static void hwc2_ext_cmp_frame(
             /* offlined video pipeline through bvn, nothing to do as we signalled already
              * the frame expected to be released on display.
              */
+            if (hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
+               if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= dsp->aCfg->w/HWC2_PAH_DIV &&
+                   (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= dsp->aCfg->h/HWC2_PAH_DIV) {
+                  pah = {(int16_t)lyr->fr.left,
+                         (int16_t)lyr->fr.top,
+                         (uint16_t)(lyr->fr.right - lyr->fr.left),
+                         (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+                  ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
+                           "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
+                           dsp->pres, dsp->post, dsp->aCfg->w/HWC2_PAH_DIV, dsp->aCfg->h/HWC2_PAH_DIV);
+               }
+            }
             ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                      "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": oob video (%zu)\n",
                      dsp->pres, dsp->post, c);
-
-
             break;
          } else {
             /* graphics or yv12 layer. */
@@ -4890,9 +4945,18 @@ static void hwc2_ext_cmp_frame(
             if (yv12) {
                blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp);
             } else {
+               if (!c_rgba) {
+                  NEXUS_SurfaceStatus ss;
+                  NEXUS_Surface_GetStatus(d, &ss);
+                  if ((ss.pixelFormat == NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8) &&
+                      (lyr->bm >= HWC2_BLEND_MODE_NONE)) {
+                     lyr->bm = HWC2_BLEND_MODE_INVALID;
+                  }
+               }
                blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp);
                if (!blt) {
                   lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
+                  c_rgba = true;
                }
             }
             if (lrcp == NEXUS_SUCCESS) {
@@ -4912,7 +4976,7 @@ static void hwc2_ext_cmp_frame(
       break;
       case HWC2_COMPOSITION_SIDEBAND:
          if (hwc2->hb) {
-            hwc2_sdb(hwc2, lyr);
+            hwc2_sdb(hwc2, lyr, dsp);
             ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                      "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": sideband layer (%zu)\n",
                      dsp->pres, dsp->post, c);
@@ -4936,10 +5000,20 @@ static void hwc2_ext_cmp_frame(
       }
    }
 
-   /* video present, make sure we seed background. */
-   if (c == 0 && (f->vcnt || f->scnt)) {
-      if (dsp->u.ext.bg == HWC2_OPQ) {
+   /* video present */
+   if (f->vcnt || f->scnt) {
+      /* ... make sure we seed background. */
+      if (!c && dsp->u.ext.bg == HWC2_OPQ) {
          c++;
+      /* ... need to punch alpha hole for pip? */
+      } else if ((c > 1) &&
+                 hwc2_enabled(hwc2_tweak_pip_alpha_hole) &&
+                 (pah.width && pah.height)) {
+         hwc2_pah(hwc2, d, &pah);
+         hwc2_chkpt(hwc2);
+         ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
+                  "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ":@{%d,%d,%dx%d}\n",
+                  dsp->pres, dsp->post, pah.x, pah.y, pah.width, pah.height);
       }
    }
 
@@ -5151,7 +5225,7 @@ static void hwc2_setup_ext(
       }
       hwc2->ext->u.ext.rtl[num].hdl = 0;
       hwc2->ext->u.ext.rtl[num].ix = 0;
-      ALOGI("[ext]: layer completion timeline (%d): %d\n", num, hwc2->ext->u.ext.rtl[num].tl);
+      ALOGI("[ext]: layer completion timeline (%zu): %d\n", num, hwc2->ext->u.ext.rtl[num].tl);
    }
 }
 

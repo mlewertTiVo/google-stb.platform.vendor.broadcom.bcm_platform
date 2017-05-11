@@ -251,7 +251,7 @@ status_t NexusHdmiCecDevice::HdmiCecRxMessageHandler::processCecMessage(cec_mess
     if (sendMessage) {
         ret = mNexusHdmiCecDevice->sendCecMessage(&txMessage, DEFAULT_MAX_CEC_RETRIES);
         if (ret != NO_ERROR) {
-            ALOGE("%s: Could not send CEC message opcode=0x%02x on CEC.", __PRETTY_FUNCTION__, txMessage.body[0]);
+            ALOGE("%s: Could not send CEC message opcode=0x%02x on CEC (err=%d).", __PRETTY_FUNCTION__, txMessage.body[0], ret);
         }
     }
     return ret;
@@ -914,10 +914,10 @@ status_t NexusHdmiCecDevice::getCecVendorId(uint32_t* vendor_id)
 
 status_t NexusHdmiCecDevice::sendCecMessage(const cec_message_t *message, uint8_t maxRetries)
 {
+   status_t err = NO_ERROR;
    (void)message;
    (void)maxRetries;
 #if 0
-pierre
     if (mCecEnable) {
         if (pIpcClient == NULL) {
             ALOGE("%s: NexusIPCClient has been instantiated!!!", __PRETTY_FUNCTION__);
@@ -933,7 +933,7 @@ pierre
         }
     }
 #endif
-    return NO_ERROR;
+    return err;
 }
 
 status_t NexusHdmiCecDevice::getCecPortInfo(struct hdmi_port_info* list[], int* total)

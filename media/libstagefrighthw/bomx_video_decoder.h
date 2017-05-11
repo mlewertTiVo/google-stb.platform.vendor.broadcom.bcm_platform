@@ -246,6 +246,7 @@ public:
 
     inline OmxBinder_wrap *omxHwcBinder(void) { return m_omxHwcBinder; };
     void InputBufferTimeoutCallback();
+    void FormatChangeTimeoutCallback();
 
 protected:
 
@@ -292,6 +293,11 @@ protected:
     unsigned m_AvailInputBuffers;
     NEXUS_VideoFrameRate m_frameRate;
 
+    bool m_frEstimated;
+    unsigned m_frStableCount;
+    OMX_TICKS m_deltaUs;
+    OMX_TICKS m_lastTsUs;
+
     NxWrap                           *m_pNxWrap;
     NxClient_AllocResults            m_allocResults;
     unsigned                         m_nxClientId;
@@ -319,6 +325,7 @@ protected:
         FCState_eWaitForPortReconfig
     };
     FormatChangeState m_formatChangeState;
+    B_SchedulerTimerId m_formatChangeTimerId;
     unsigned m_formatChangeSerial;
     bool m_nativeGraphicsEnabled;
     bool m_metadataEnabled;
@@ -385,6 +392,8 @@ protected:
     bool m_hdrStaticInfoSet;
     ColorAspects m_colorAspects;
     bool m_colorAspectsSet;
+
+    bool m_redux;
 
     OMX_VIDEO_CODINGTYPE GetCodec() {return m_pVideoPorts[0]->GetDefinition()->format.video.eCompressionFormat;}
     NEXUS_VideoCodec GetNexusCodec();
@@ -455,6 +464,10 @@ protected:
     void InputBufferCounterReset();
     uint32_t ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMode mode);
     bool ReturnInputPortBuffer(BOMX_Buffer *pBuffer);
+
+    // These functions are used for frame rate estimation
+    void ResetEstimation();
+    void EstimateFrameRate(OMX_TICKS tsUs);
 
     // The functions below allow derived classes to override them
     virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);

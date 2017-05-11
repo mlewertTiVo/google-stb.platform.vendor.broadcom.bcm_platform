@@ -33,6 +33,7 @@ import android.util.SparseArray;
 import android.util.SparseIntArray;
 import android.view.Surface;
 import android.view.KeyEvent;
+import android.os.Handler;
 
 import org.xmlpull.v1.XmlPullParserException;
 
@@ -236,8 +237,8 @@ public class HdmiTvInputService extends TvInputService {
                 /* I know, not the most intuitive place fo this, but when
                    launching from "am start", this is the only callback we
                    get after onTune() */
-                notifyVideoAvailable();
                 mWillNotifyVideoAvailable = false;
+                notifyVideoAvailable();
             }
         }
 
@@ -246,6 +247,19 @@ public class HdmiTvInputService extends TvInputService {
             if (DEBUG) Log.d(TAG, "onTune channelUri=" + channelUri);
             notifyVideoUnavailable(VIDEO_UNAVAILABLE_REASON_TUNING);
             mWillNotifyVideoAvailable = true;
+
+            final Handler handler = new Handler();
+            handler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (DEBUG) Log.e(TAG, "notifyVideoAvailable=" + mWillNotifyVideoAvailable);
+                    if(mWillNotifyVideoAvailable){
+                        mWillNotifyVideoAvailable = false;
+                        notifyVideoAvailable();
+                    }
+                }
+            }, 100);
+
             return true;
         }
 

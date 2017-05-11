@@ -170,6 +170,10 @@ endif
 
 ifeq ($(HW_HVD_REVISION),S)
 LOCAL_CFLAGS += -DHW_HVD_REVISION_S
+# only enable redux hw-decoder on newer platforms.
+ifeq ($(HW_HVD_REDUX),y)
+LOCAL_CFLAGS += -DHW_HVD_REDUX
+endif
 endif
 
 LOCAL_MODULE := libstagefrighthw

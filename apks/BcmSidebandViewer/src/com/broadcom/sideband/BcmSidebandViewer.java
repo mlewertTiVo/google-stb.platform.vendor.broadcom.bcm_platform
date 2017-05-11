@@ -1,10 +1,7 @@
 package com.broadcom.sideband;
 
 import android.app.Activity;
-import android.graphics.Canvas;
-import android.graphics.Color;
 import android.os.Bundle;
-import android.os.Environment;
 import android.util.Log;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
@@ -76,6 +73,7 @@ public class BcmSidebandViewer extends Activity implements SurfaceHolder.Callbac
         View view = findViewById(R.id.bannerView);
         if (hasFocus && view.getAnimation() == null) {
             Log.d(TAG, "Starting Animation");
+            view.setVisibility(View.VISIBLE);
             Animation animation;
             animation = AnimationUtils.loadAnimation(this, R.anim.bounce);
             view.startAnimation(animation);
@@ -232,7 +230,6 @@ public class BcmSidebandViewer extends Activity implements SurfaceHolder.Callbac
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
         Log.d(TAG, "surfaceCreated");
-        tryDrawing(holder);
         if (!start_sideband(holder.getSurface())) {
             Log.w(TAG, "Unable to register the sideband");
         }
@@ -253,19 +250,7 @@ public class BcmSidebandViewer extends Activity implements SurfaceHolder.Callbac
     @Override
     public void surfaceChanged(SurfaceHolder holder, int frmt, int w, int h) {
         Log.d(TAG, "surfaceChanged: w=" + w + " h=" + h);
-        tryDrawing(holder);
-    }
-
-    private void tryDrawing(SurfaceHolder holder) {
-        Log.d(TAG, "tryDrawing");
-        Canvas canvas = holder.lockCanvas();
-        if (canvas == null) {
-            Log.e(TAG, "Cannot draw onto the canvas as it's null");
-        } else {
-            Log.d(TAG, "Drawing an alpha hole");
-            canvas.drawColor(Color.argb(0, 255, 255, 255));
-            holder.unlockCanvasAndPost(canvas);
-        }
+        /* Can't lock sideband surface canvas. */
     }
 
     /**

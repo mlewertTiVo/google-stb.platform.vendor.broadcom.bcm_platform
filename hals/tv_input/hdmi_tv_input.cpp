@@ -622,8 +622,6 @@ static int tv_input_initialize(struct tv_input_device* dev,
     NEXUS_HdmiInput_GetDefaultSettings(&hdmiInputSettings);
     hdmiInputSettings.frontend.hpdDisconnected = false;
     hdmiInputSettings.secureVideo = true;
-    hdmiInputSettings.sourceChanged.callback = source_changed;
-    hdmiInputSettings.sourceChanged.context = priv;
     priv->hdmiInput = NEXUS_HdmiInput_Open(HDMI_PORT_ID-1, &hdmiInputSettings);
     if (!priv->hdmiInput) {
         ALOGE("HdmiInput %d not available", HDMI_PORT_ID-1);
@@ -640,16 +638,6 @@ static int tv_input_initialize(struct tv_input_device* dev,
     }
 
     initializeHdmiInputHdcpSettings(priv);
-
-    NEXUS_HdmiInput_GetSettings(priv->hdmiInput, &hdmiInputSettings);
-    hdmiInputSettings.sourceChanged.callback = source_changed;
-    hdmiInputSettings.sourceChanged.context = priv;
-    rc = NEXUS_HdmiInput_SetSettings(priv->hdmiInput, &hdmiInputSettings);
-    if (rc) {
-        ALOGE("NEXUS_HdmiInput_SetSettings failed (%d)", rc);
-        err = -ENODEV;
-        goto failed_hdmiinput_source;
-    }
 
     NEXUS_HdmiInputHdcpSettings hdmiInputHdcpSettings;
     NEXUS_HdmiInput_HdcpGetDefaultSettings(priv->hdmiInput, &hdmiInputHdcpSettings);

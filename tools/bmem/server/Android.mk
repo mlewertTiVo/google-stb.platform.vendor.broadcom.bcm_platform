@@ -18,6 +18,7 @@ LOCAL_CFLAGS += -DB_ANDROID_BUILD
 
 BMEM_PERF_SRC_ROOT := ../../../../refsw/BSEAV/tools/bmemperf
 LOCAL_SRC_FILES := \
+   $(BMEM_PERF_SRC_ROOT)/server/bmemperf_powerprobe.c \
    $(BMEM_PERF_SRC_ROOT)/server/bmemperf_server.c \
    $(BMEM_PERF_SRC_ROOT)/common/bmemperf_api.c \
    $(BMEM_PERF_SRC_ROOT)/common/bmemperf_utils.c \

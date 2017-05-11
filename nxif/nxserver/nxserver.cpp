@@ -140,6 +140,7 @@
 #define NX_HEAP_GROW                   "ro.nx.heap.grow"
 #define NX_SVP                         "ro.nx.svp"
 #define NX_SPLASH                      "ro.nx.splash"
+#define NX_HDCP_MODE                   "ro.nx.hdcp.mode"
 
 #define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
 #define NX_HDCP1X_KEY                  "ro.nexus.nxserver.hdcp1x_keys"
@@ -532,20 +533,31 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
     unsigned i;
     BSTD_UNUSED(pClientSettings);
     if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
-        ALOGE("failed to add client %p", client);
+        ALOGE("failed to add nx-client %p", client);
         goto out;
+    }
+    for (i = 0; i < APP_MAX_CLIENTS; i++) {
+        if (g_app.clients[i].client &&
+            g_app.clients[i].client == client) {
+            ALOGW("nx-RE.connect(%d): '%s'::%p::%d", i,
+                  g_app.clients[i].joinSettings.name,
+                  g_app.clients[i].client,
+                  g_app.clients[i].joinSettings.mode);
+            goto out_lock;
+        }
     }
     for (i = 0; i < APP_MAX_CLIENTS; i++) {
         if (!g_app.clients[i].client) {
             g_app.clients[i].client = client;
             g_app.clients[i].joinSettings = *pJoinSettings;
-            ALOGE("client_connect(%d): '%s'::%p::%d", i,
+            ALOGV("nx-connect(%d): '%s'::%p::%d", i,
                   g_app.clients[i].joinSettings.name,
                   g_app.clients[i].client,
                   g_app.clients[i].joinSettings.mode);
             break;
         }
     }
+out_lock:
     BKNI_ReleaseMutex(g_app.clients_lock);
 out:
     return 0;
@@ -561,7 +573,7 @@ static void client_disconnect(nxclient_t client, const NxClient_JoinSettings *pJ
     }
     for (i=0;i<APP_MAX_CLIENTS;i++) {
         if (g_app.clients[i].client == client) {
-            ALOGV("client_disconnect(%d): '%s'::%p", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client);
+            ALOGV("nx-disconnect(%d): '%s'::%p", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client);
             g_app.clients[i].client = NULL;
             break;
         }
@@ -842,7 +854,7 @@ static void wait_for_data_available(void)
       }
       /* arbitrary wait... */
       BKNI_Sleep(100);
-      ALOGI("waiting 100 msecs for cryptfs sync...");
+      ALOGV("waiting 100 msecs for cryptfs sync...");
    }
 }
 
@@ -1066,6 +1078,7 @@ static nxserver_t init_nxserver(void)
     if (strlen(key_hdcp2x)) {
        settings.hdcp.hdcp2xBinFile = key_hdcp2x;
     }
+    settings.hdcp.versionSelect = (NxClient_HdcpVersion)property_get_int32(NX_HDCP_MODE, 0);
 
     pre_trim_mem_config(&memConfigSettings, cvbs);
 
@@ -1170,11 +1183,20 @@ static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
     char value[PROPERTY_VALUE_MAX];
     char secdma_param_file[PROPERTY_VALUE_MAX];
     FILE *pFile;
+    char nx_key[PROPERTY_VALUE_MAX];
+    NxClient_ClientModeSettings ms;
 
     memset (value, 0, sizeof(value));
 
     if (property_get(DHD_SECDMA_PROP, value, NULL)) {
+        /* wait for data (re)mount, trigger nexus authentication. */
         wait_for_data_available();
+        sprintf(nx_key, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
+        nxserver_parse_password_file(g_app.server, nx_key);
+        NxClient_GetDefaultClientModeSettings(&ms);
+        NxClient_SetClientMode(&ms);
+        ALOGW("force nexus re-authentication with '%s'", nx_key);
+
         secdmaMemSize = strtoul(value, NULL, 0);
         if (strlen(value) && (secdmaMemSize > 0)) {
             sprintf(secdma_param_file, "%s/stbpriv.txt", DHD_SECDMA_PARAMS_PATH);
@@ -1423,17 +1445,17 @@ int main(void)
        }
     }
 
-    alloc_secdma(&hSecDmaMemoryBlock);
-
-    ALOGI("trigger nexus waiters now.");
-    property_set(NX_STATE, "loaded");
-
     if (!property_get_bool(NX_NO_OUTPUT_VIDEO, 0) && !is_wakeup_only_from_alarm_timer()) {
        rc = set_video_outputs_state(true);
        if (rc) {
           ALOGE("could not enable video outputs!");
        }
     }
+
+    alloc_secdma(&hSecDmaMemoryBlock);
+
+    ALOGI("trigger nexus waiters now.");
+    property_set(NX_STATE, "loaded");
 
     ALOGI("init done.");
     while (1) {

@@ -3357,6 +3357,15 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetConfig(
     BSTD_UNUSED(pComponentConfigStructure);
     switch ( (int)nIndex )
     {
+    case OMX_IndexConfigAndroidVendorExtension:
+    {
+        OMX_CONFIG_ANDROID_VENDOR_EXTENSIONTYPE *pAndroidVendorExtensionType =
+            (OMX_CONFIG_ANDROID_VENDOR_EXTENSIONTYPE *)pComponentConfigStructure;
+        BOMX_STRUCT_VALIDATE(pAndroidVendorExtensionType);
+        ALOGV("GetConfig OMX_IndexConfigAndroidVendorExtension");
+        pAndroidVendorExtensionType->nParamCount = 0;
+        return OMX_ErrorNoMore;
+    }
     default:
         ALOGW("Config index %#x is not supported", nIndex);
         return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
@@ -3370,6 +3379,15 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetConfig(
     BSTD_UNUSED(pComponentConfigStructure);
     switch ( (int)nIndex )
     {
+    case OMX_IndexConfigAndroidVendorExtension:
+    {
+        OMX_CONFIG_ANDROID_VENDOR_EXTENSIONTYPE *pAndroidVendorExtensionType =
+            (OMX_CONFIG_ANDROID_VENDOR_EXTENSIONTYPE *)pComponentConfigStructure;
+        BOMX_STRUCT_VALIDATE(pAndroidVendorExtensionType);
+        ALOGV("SetConfig OMX_IndexConfigAndroidVendorExtension");
+        ALOGW("ConfigAndroidVendorExtension: ignoring...");
+        return OMX_ErrorUnsupportedIndex;
+    }
     default:
         ALOGW("Config index %#x is not supported", nIndex);
         return BOMX_ERR_TRACE(OMX_ErrorUnsupportedIndex);
