@@ -4939,7 +4939,7 @@ static void hwc2_ext_cmp_frame(
             if (yv12) {
                blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp);
             } else {
-               if (!c_rgba) {
+               if (!c_rgba && !c) {
                   NEXUS_SurfaceStatus ss;
                   NEXUS_Surface_GetStatus(d, &ss);
                   if ((ss.pixelFormat == NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8) &&
