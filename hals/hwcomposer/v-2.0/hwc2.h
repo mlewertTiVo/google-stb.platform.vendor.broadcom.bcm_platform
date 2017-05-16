@@ -456,4 +456,10 @@ enum hwc2_tweaks_e {
    hwc2_tweak_pip_alpha_hole,
 };
 
+enum hwc2_seeding_e {
+   hwc2_seeding_none = 0,
+   hwc2_seeding_gfx,
+   hwc2_seeding_vid,
+};
+
 #endif

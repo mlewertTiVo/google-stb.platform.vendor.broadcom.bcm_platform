@@ -133,7 +133,8 @@ static int hwc2_blit_yv12(
    NEXUS_SurfaceHandle d,
    struct hwc2_lyr_t *lyr,
    PSHARED_DATA shared,
-   struct hwc2_dsp_t *dsp);
+   struct hwc2_dsp_t *dsp,
+   enum hwc2_seeding_e *ms);
 
 static int hwc2_blit_gpx(
    struct hwc2_bcm_device_t* hwc2,
@@ -141,7 +142,8 @@ static int hwc2_blit_gpx(
    struct hwc2_lyr_t *lyr,
    PSHARED_DATA shared,
    hwc2_blend_mode_t lbm,
-   struct hwc2_dsp_t *dsp);
+   struct hwc2_dsp_t *dsp,
+   enum hwc2_seeding_e *ms);
 
 static void hwc2_eval_log(
    struct hwc2_bcm_device_t *hwc2) {
@@ -1033,6 +1035,7 @@ static void hwc2_vd_cmp_frame(
    void *dmap = NULL;
    int blt;
    size_t ccli = 0;
+   enum hwc2_seeding_e ms = hwc2_seeding_none;
 
    /* setup destination buffer for this frame. */
    private_handle_t::get_block_handles((private_handle_t *)f->otgt, &dbh, NULL);
@@ -1184,9 +1187,9 @@ static void hwc2_vd_cmp_frame(
          yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
                  (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
          if (yv12) {
-            blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp);
+            blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
          } else {
-            blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp);
+            blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp, &ms);
             if (!blt) {
                lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
             }
@@ -4329,7 +4332,8 @@ int hwc2_blit_yv12(
    NEXUS_SurfaceHandle d,
    struct hwc2_lyr_t *lyr,
    PSHARED_DATA shared,
-   struct hwc2_dsp_t *dsp) {
+   struct hwc2_dsp_t *dsp,
+   enum hwc2_seeding_e *ms) {
 
    NEXUS_SurfaceHandle cb = NULL, cr = NULL, y = NULL, yuv = NULL, rgba;
    void *buffer, *next, *slock;
@@ -4372,6 +4376,21 @@ int hwc2_blit_yv12(
       goto out;
    }
    oa = p;
+
+   /* first blit check if we need to seed. */
+   if (*ms != hwc2_seeding_none) {
+      if (!dsp->sfb) {
+         if ((oa.x+oa.width < ss.width) || (oa.y+oa.height < ss.height)) {
+            hwc2_fb_seed(hwc2, d, (*ms == hwc2_seeding_vid) ? HWC2_TRS : HWC2_OPQ);
+            hwc2_chkpt(hwc2);
+            ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
+                     "[%s]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
+                     (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+                     dsp->pres, dsp->post, (*ms == hwc2_seeding_vid) ? "transparent" : "opaque");
+         }
+      }
+      *ms = hwc2_seeding_none;
+   }
 
    y = hwc_to_nsc_surface(shared->container.width, shared->container.height,
                           shared->container.stride, NEXUS_PixelFormat_eY8,
@@ -4587,7 +4606,8 @@ int hwc2_blit_gpx(
    struct hwc2_lyr_t *lyr,
    PSHARED_DATA shared,
    hwc2_blend_mode_t lbm,
-   struct hwc2_dsp_t *dsp) {
+   struct hwc2_dsp_t *dsp,
+   enum hwc2_seeding_e *ms) {
 
    NEXUS_SurfaceHandle s = NULL;
    NEXUS_SurfaceStatus ds;
@@ -4622,6 +4642,21 @@ int hwc2_blit_gpx(
    da = p;
    if (!dsp->sfb) {
       oa = da;
+   }
+
+   /* first blit check if we need to seed. */
+   if (*ms != hwc2_seeding_none) {
+      if (!dsp->sfb) {
+         if ((oa.x+oa.width < ds.width) || (oa.y+oa.height < ds.height)) {
+            hwc2_fb_seed(hwc2, d, (*ms == hwc2_seeding_vid) ? HWC2_TRS : HWC2_OPQ);
+            hwc2_chkpt(hwc2);
+            ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
+                     "[%s]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
+                     (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+                     dsp->pres, dsp->post, (*ms == hwc2_seeding_vid) ? "transparent" : "opaque");
+         }
+      }
+      *ms = hwc2_seeding_none;
    }
 
    if (sa.x+sa.width > (int16_t)shared->container.width ||
@@ -4777,6 +4812,7 @@ static void hwc2_ext_cmp_frame(
    int blt;
    size_t ccli = 0;
    NEXUS_Rect pah = {0,0,0,0};
+   enum hwc2_seeding_e ms = hwc2_seeding_none;
 
    bool c_rgba = false; /* TODO: workaround for bgrc lockup. */
 
@@ -4820,12 +4856,10 @@ static void hwc2_ext_cmp_frame(
             "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": new frame composition (f:%d, v:%s::%d:%d)\n",
             dsp->pres, dsp->post, f->cnt, (f->vcnt || f->scnt) ? "yes" : "no", f->vcnt, f->scnt);
 
-   // TODO: optimize seeding background.
-   hwc2_fb_seed(hwc2, d, (f->vcnt || f->scnt) ? HWC2_TRS : HWC2_OPQ);
-   hwc2_chkpt(hwc2);
-   ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
-            "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
-            dsp->pres, dsp->post, (f->vcnt || f->scnt) ? "transparent" : "opaque");
+   /* may have to seed background. */
+   if (f->cnt > (f->vcnt + f->scnt)) {
+      ms = (f->vcnt + f->scnt) ? hwc2_seeding_vid : hwc2_seeding_gfx;
+   }
 
    for (i = 0; i < f->cnt; i++) {
       NEXUS_Error lrc = NEXUS_NOT_INITIALIZED, lrcp = NEXUS_NOT_INITIALIZED;
@@ -4927,6 +4961,7 @@ static void hwc2_ext_cmp_frame(
                hwc2_fb_seed(hwc2, d, color);
                hwc2_chkpt(hwc2);
                /* [iv]. count of composed layers. */
+               ms = hwc2_seeding_none;
                c++;
             }
             ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
@@ -4988,6 +5023,7 @@ static void hwc2_ext_cmp_frame(
             hwc2_dim(hwc2, d, lyr);
             hwc2_chkpt(hwc2);
             /* [iv]. count of composed layers. */
+            ms = hwc2_seeding_none;
             c++;
             ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                      "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": dim layer (%zu)\n",
@@ -5026,7 +5062,7 @@ static void hwc2_ext_cmp_frame(
             yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
                     (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
             if (yv12) {
-               blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp);
+               blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
             } else {
                if (!c_rgba && !c) {
                   NEXUS_SurfaceStatus ss;
@@ -5036,7 +5072,7 @@ static void hwc2_ext_cmp_frame(
                      lyr->bm = HWC2_BLEND_MODE_INVALID;
                   }
                }
-               blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp);
+               blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp, &ms);
                if (!blt) {
                   lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
                   c_rgba = true;
@@ -5086,7 +5122,12 @@ static void hwc2_ext_cmp_frame(
    /* video present */
    if (f->vcnt || f->scnt) {
       /* ... make sure we seed background. */
-      if (!c && dsp->u.ext.bg == HWC2_OPQ) {
+      if (!c && (dsp->u.ext.bg == HWC2_OPQ)) {
+         hwc2_fb_seed(hwc2, d, HWC2_TRS);
+         hwc2_chkpt(hwc2);
+         ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
+                  "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
+                  dsp->pres, dsp->post, "transparent");
          c++;
       /* ... need to punch alpha hole for pip? */
       } else if ((c > 1) &&
