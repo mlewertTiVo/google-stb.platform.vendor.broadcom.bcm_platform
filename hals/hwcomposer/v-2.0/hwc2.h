@@ -330,6 +330,7 @@ struct hwc2_dsp_t {
    struct hwc2_lyr_t     *lyr;
    struct hwc2_dsp_cfg_t *aCfg;
    struct hwc2_dsp_cfg_t *cfgs;
+   struct hwc_position   op;
 
    BKNI_EventHandle      cmp_evt;
    BKNI_EventHandle      cmp_syn;
