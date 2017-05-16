@@ -95,7 +95,7 @@ struct hwc2_bcm_device_t {
 
    char                 memif[PROPERTY_VALUE_MAX];
    int                  memfd;
-   bool                 rlpf;
+   bool                 rlpf[HWC2_VID_WIN];
 
    int32_t              lm;
 
@@ -3750,6 +3750,7 @@ static int32_t hwc2_preDsp(
    struct hwc2_lyr_t *lyr = NULL;
    int32_t frame_size, cnt = 0, vcnt = 0, scnt = 0;
    int ccli = 0, vid = -1;
+   bool ivid;
 
    ALOGV("-> %s:%" PRIu64 "\n",
      getFunctionDescriptorName(HWC2_FUNCTION_PRESENT_DISPLAY),
@@ -3826,8 +3827,15 @@ static int32_t hwc2_preDsp(
             scnt++;
          } else if (hwc2_is_video(hwc2, lyr, &vid)) {
             vcnt++;
+            if ((vid <= 0) || (vid > HWC2_VID_WIN)) {
+               ivid = true;
+               ALOGW("[oob]:[pres]:%" PRIu64 ":%" PRIu64 ": invalid vid=%d, skip!",
+                     dsp->pres, dsp->post, vid);
+            } else {
+               ivid = false;
+            }
             /* signal to the video display the frame to be presented. */
-            if (hwc2->hb) {
+            if (!ivid && hwc2->hb) {
                NEXUS_Error lrc = NEXUS_NOT_INITIALIZED;
                NEXUS_MemoryBlockHandle bh = NULL;
                NEXUS_Rect c, p;
@@ -3839,7 +3847,7 @@ static int32_t hwc2_preDsp(
                lrc = hwc2_mem_lock(hwc2, bh, &map);
                shared = (PSHARED_DATA) map;
                if ((lrc == NEXUS_SUCCESS) && (shared != NULL)) {
-                  if (hwc2->rlpf) {
+                  if (hwc2->rlpf[vid-1]) {
                      lyr->lpf = HWC2_RLPF;
                   }
                   c = {(int16_t)lyr->crp.left,
@@ -3851,10 +3859,10 @@ static int32_t hwc2_preDsp(
                        (uint16_t)(lyr->fr.right - lyr->fr.left),
                        (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
                   if ((lyr->lpf == HWC2_RLPF) ||
-                      memcmp((void *)&lyr->crp, (void *)&dsp->u.ext.vid[0].crp, sizeof(dsp->u.ext.vid[0].crp)) != 0 ||
-                      memcmp((void *)&lyr->fr, (void *)&dsp->u.ext.vid[0].fr, sizeof(dsp->u.ext.vid[0].fr)) != 0) {
-                     memcpy((void *)&dsp->u.ext.vid[0].fr, (void *)&lyr->fr, sizeof(dsp->u.ext.vid[0].fr));
-                     memcpy((void *)&dsp->u.ext.vid[0].crp, (void *)&lyr->crp, sizeof(dsp->u.ext.vid[0].crp));
+                      memcmp((void *)&lyr->crp, (void *)&dsp->u.ext.vid[vid-1].crp, sizeof(dsp->u.ext.vid[vid-1].crp)) != 0 ||
+                      memcmp((void *)&lyr->fr, (void *)&dsp->u.ext.vid[vid-1].fr, sizeof(dsp->u.ext.vid[vid-1].fr)) != 0) {
+                     memcpy((void *)&dsp->u.ext.vid[vid-1].fr, (void *)&lyr->fr, sizeof(dsp->u.ext.vid[vid-1].fr));
+                     memcpy((void *)&dsp->u.ext.vid[vid-1].crp, (void *)&lyr->crp, sizeof(dsp->u.ext.vid[vid-1].crp));
                      hwc2_lyr_adj(dsp, &c, &p, NULL);
                      fr.x = p.x;
                      fr.y = p.y;
@@ -3908,8 +3916,13 @@ static int32_t hwc2_preDsp(
       }
       frame->vcnt = vcnt;
       frame->scnt = scnt;
-      if (hwc2->rlpf && vcnt) {
-         hwc2->rlpf = false;
+      if (vcnt) {
+         int i;
+         for (i = 0; i < HWC2_VID_WIN; i++) {
+            if (hwc2->rlpf[i]) {
+               hwc2->rlpf[i] = false;
+            }
+         }
       }
       if (!pthread_mutex_lock(&dsp->mtx_cmp_wl)) {
          if (dsp->cmp_wl == NULL) {
@@ -5340,8 +5353,12 @@ static void hwc2_hb_ntfy(
    case HWC_BINDER_NTFY_DISCONNECTED:
       hwc2->hb->connected(false);
    break;
-   case HWC_BINDER_NTFY_VIDEO_SURFACE_ACQUIRED:
-      hwc2->rlpf = true;
+   case HWC_BINDER_NTFY_VIDEO_SURFACE_ACQUIRED: {
+      int i = (ntfy.surface_hdl-HWC2_VID_MAGIC);
+      if (i < 0 || i >= HWC2_VID_WIN) {
+         hwc2->rlpf[i] = true;
+      }
+   }
    break;
    case HWC_BINDER_NTFY_OVERSCAN:
       hwc2_op(hwc2->ext, &ntfy);
