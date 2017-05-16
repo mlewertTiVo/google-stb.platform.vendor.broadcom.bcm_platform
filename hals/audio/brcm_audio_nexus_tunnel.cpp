@@ -536,6 +536,7 @@ static int nexus_tunnel_bout_flush(struct brcm_stream_out *bout)
     bout->framesPlayed = 0;
     bout->framesPlayedTotal = 0;
     bout->nexus.tunnel.lastCount = 0;
+    bout->nexus.tunnel.first_write = false;
 
     return 0;
 }
@@ -548,6 +549,8 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
     void *nexus_buffer, *pts_buffer;
     uint32_t pts=0;
     size_t nexus_space;
+    NEXUS_Error rc;
+    NEXUS_AudioDecoderStatus decStatus;
     BKNI_EventHandle event = bout->nexus.event;
     bool init_stc = false;
 
@@ -560,11 +563,19 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
     }
 
     if (!bout->nexus.tunnel.first_write && (bytes > 0)) {
-        bout->nexus.tunnel.first_write = true;
-        ret = nexus_tunnel_bout_start(bout);
-        if (ret != 0) {
-            ALOGE("%s: failed to start, ret:%d", __FUNCTION__, ret);
+        rc = NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &decStatus);
+        if (rc != NEXUS_SUCCESS) {
+            ALOGE("%s: failed to get status, ret:%d", __FUNCTION__, rc);
             return -ENOSYS;
+        }
+        bout->nexus.tunnel.first_write = true;
+        if (!decStatus.started) {
+            ret = nexus_tunnel_bout_start(bout);
+            if (ret != 0) {
+                ALOGE("%s: failed to start, ret:%d", __FUNCTION__, ret);
+                bout->nexus.tunnel.first_write = false;
+                return -ENOSYS;
+            }
         }
         // init stc with the first audio timestamp
         init_stc = true;
@@ -788,20 +799,18 @@ static int nexus_tunnel_bout_write(struct brcm_stream_out *bout,
         bout->nexus.tunnel.last_write_time = systemTime(SYSTEM_TIME_MONOTONIC);
     }
     else {
-        NEXUS_Error rc;
-        NEXUS_AudioDecoderStatus status;
         uint32_t i;
         for (i = 0; i < BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_MAX; i++) {
-            rc = NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &status);
+            rc = NEXUS_SimpleAudioDecoder_GetStatus(audio_decoder, &decStatus);
             if (rc != NEXUS_SUCCESS) {
                 break;
             }
-            if (status.queuedFrames < BRCM_AUDIO_TUNNEL_COMP_FRAME_QUEUED) {
+            if (decStatus.queuedFrames < BRCM_AUDIO_TUNNEL_COMP_FRAME_QUEUED) {
                 break;
             }
             usleep(BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US);
         }
-        ALOGV_IF(i > 0, "%s: throttle %d us queued %u frames", __FUNCTION__, i * BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US, status.queuedFrames);
+        ALOGV_IF(i > 0, "%s: throttle %d us queued %u frames", __FUNCTION__, i * BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_US, decStatus.queuedFrames);
     }
 
     return bytes_written;
