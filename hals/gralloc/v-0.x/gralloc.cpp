@@ -279,6 +279,7 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
         pthread_mutex_lock(pMutex);
         switch (pSharedData->container.format) {
         case HAL_PIXEL_FORMAT_YV12:
+        case HAL_PIXEL_FORMAT_YUV420P:
         case HAL_PIXEL_FORMAT_YCbCr_420_888:
            errCode = 0;
         break;
@@ -441,6 +442,7 @@ NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt, int *bpp)
          pf = NEXUS_PixelFormat_eR5_G6_B5;
       break;
       case HAL_PIXEL_FORMAT_YV12:
+      case HAL_PIXEL_FORMAT_YUV420P:
       case HAL_PIXEL_FORMAT_YCbCr_420_888:
          /* no native nexus support, return the 'converted for nexus consumption'. */
          b = 2;
@@ -473,6 +475,7 @@ BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt)
          pf = BM2MC_PACKET_PixelFormat_eR5_G6_B5;
       break;
       case HAL_PIXEL_FORMAT_YV12:
+      case HAL_PIXEL_FORMAT_YUV420P:
       case HAL_PIXEL_FORMAT_YCbCr_420_888:
          /* no native bm2mc support, return the 'converted for bm2mc consumption'. */
          pf = BM2MC_PACKET_PixelFormat_eY08_Cb8_Y18_Cr8;
@@ -512,6 +515,7 @@ static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pS
          bufferRequirements.format = BEGL_BufferFormat_eR5G6B5;
       break;
       case HAL_PIXEL_FORMAT_YV12:
+      case HAL_PIXEL_FORMAT_YUV420P:
       case HAL_PIXEL_FORMAT_YCbCr_420_888:
 #if defined(V3D_VARIANT_v3d)
          bufferRequirements.format = BEGL_BufferFormat_eYV12_Texture;
@@ -573,6 +577,7 @@ static void getBufferDataFromFormat(int *alignment, int w, int h, int bpp, int f
          *size = ((w*bpp + (*alignment-1)) & ~(*alignment-1)) * h;
       break;
       case HAL_PIXEL_FORMAT_YV12:
+      case HAL_PIXEL_FORMAT_YUV420P:
       case HAL_PIXEL_FORMAT_YCbCr_420_888:
          // force alignment according to (android) format definition.
          *alignment = 16;
@@ -692,14 +697,20 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       goto alloc_failed;
    }
 
-   if (format != HAL_PIXEL_FORMAT_YV12 && format != HAL_PIXEL_FORMAT_YCbCr_420_888) {
+   if (format != HAL_PIXEL_FORMAT_YV12 &&
+       format != HAL_PIXEL_FORMAT_YCbCr_420_888 &&
+       format != HAL_PIXEL_FORMAT_YUV420P) {
       fmt_set |= GR_STANDARD;
    } else if (usage & GRALLOC_USAGE_PROTECTED) {
       fmt_set |= GR_NONE;
-   } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
+   } else if (((format == HAL_PIXEL_FORMAT_YV12) ||
+               (format == HAL_PIXEL_FORMAT_YCbCr_420_888) ||
+               (format == HAL_PIXEL_FORMAT_YUV420P))
               && !(usage & GRALLOC_USAGE_PRIVATE_0)) {
       fmt_set |= GR_YV12;
-   } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
+   } else if (((format == HAL_PIXEL_FORMAT_YV12) ||
+               (format == HAL_PIXEL_FORMAT_YCbCr_420_888) ||
+               (format == HAL_PIXEL_FORMAT_YUV420P))
               && (usage & GRALLOC_USAGE_PRIVATE_0)) {
       if ((usage & GRALLOC_USAGE_SW_READ_OFTEN) || (usage & GRALLOC_USAGE_HW_TEXTURE)) {
          // private multimedia buffer, we only need a yv12 plane in case cpu is intending to read

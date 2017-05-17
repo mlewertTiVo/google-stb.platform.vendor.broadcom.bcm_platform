@@ -231,7 +231,8 @@ int gralloc_lock_ycbcr(gralloc_module_t const* module,
    // native HAL_PIXEL_FORMAT_YCbCr_420_888 flex-yuv buffer and native HAL_PIXEL_FORMAT_YV12
    // multimedia only can be locked using the lock_ycbcr interface.  they are morevover the
    // same internal format in our integration.
-   if (!((pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) ||
+   if (!((pSharedData->container.format == HAL_PIXEL_FORMAT_YUV420P) ||
+         (pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) ||
          (pSharedData->container.format == HAL_PIXEL_FORMAT_YV12))) {
       ALOGE("%s : invalid call for NON flex-YUV buffer (0x%x)", __FUNCTION__, pSharedData->container.format);
       return -EINVAL;
@@ -259,7 +260,8 @@ int gralloc_lock_ycbcr(gralloc_module_t const* module,
       ALOGE("no default plane on s-blk:%p", shared_block_handle);
    }
 
-   if (pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) {
+   if ((pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) ||
+       (pSharedData->container.format == HAL_PIXEL_FORMAT_YUV420P)) {
       // locking a flexible YUV means we are doing mainly SW decode since our
       // HW decoder reports YV12 for native format.
    } else if (pSharedData->container.format == HAL_PIXEL_FORMAT_YV12) {
