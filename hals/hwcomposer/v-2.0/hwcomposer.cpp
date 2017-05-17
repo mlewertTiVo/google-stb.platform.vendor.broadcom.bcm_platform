@@ -4568,8 +4568,10 @@ int hwc2_blit_yv12(
             NEXUS_Graphics2DBlitSettings bs;
             NEXUS_Graphics2D_GetDefaultBlitSettings(&bs);
             bs.source.surface = rgba;
+            bs.source.rect    = oa;
             bs.dest.surface   = d;
             bs.output.surface = d;
+            bs.output.rect    = oa;
             rc = NEXUS_Graphics2D_Blit(hwc2->hg2d, &bs);
             rc = hwc2_chkpt_l(hwc2);
          }
