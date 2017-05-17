@@ -172,6 +172,9 @@ static bool hwc2_enabled(
    case hwc2_tweak_pip_alpha_hole:
       r = !!HWC2_PAH;
    break;
+   case hwc2_tweak_bypass_disable:
+      r = (bool)property_get_bool("ro.nx.hwc2.tweak.nocb", 0);
+   break;
    default:
    break;
    }
@@ -436,12 +439,13 @@ static void hwc2_ext_fbs(
       sCli.recycled.context       = (void *)hwc2;
       sCli.vsync.callback         = hwc2_vsync_cb;
       sCli.vsync.context          = (void *)hwc2;
-      sCli.allowCompositionBypass = cb;
+      sCli.allowCompositionBypass = (cb == cbs_e_bypass) ? true : false;
       NEXUS_SurfaceClient_SetSettings(hwc2->ext->u.ext.sch, &sCli);
    }
 
    for (i = 0; i < HWC2_FBS_NUM; i++) {
       NEXUS_SurfaceCreateSettings scs;
+      NEXUS_HeapHandle ch = NULL;
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = false;
       NEXUS_Surface_GetDefaultCreateSettings(&scs);
@@ -457,6 +461,7 @@ static void hwc2_ext_fbs(
          scs.heap = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
          dh = true;
       }
+      ch = scs.heap;
       hwc2->ext->u.ext.fbs[i].s = NULL;
       bh = hwc_block_create(&scs, hwc2->memif, dh, &hwc2->ext->u.ext.fbs[i].fd);
       if (bh != NULL) {
@@ -464,8 +469,8 @@ static void hwc2_ext_fbs(
          scs.heap = NULL;
          hwc2->ext->u.ext.fbs[i].s = hwc_surface_create(&scs, dh);
       }
-      ALOGI("[ext]:fb:%d::%dx%d::%s:%s -> %p::%d (b:%p)",
-            i, scs.width, scs.height, dh?"d-cma":"gfx",
+      ALOGI("[ext]:fb:%d::%dx%d::%s:%p:%s -> %p::%d (b:%p)",
+            i, scs.width, scs.height, dh?"d-cma":"gfx", ch,
             hwc2_enabled(hwc2_tweak_fb_compressed)?"comp":"full",
             hwc2->ext->u.ext.fbs[i].s, hwc2->ext->u.ext.fbs[i].fd, bh);
    }
@@ -860,7 +865,8 @@ static enum hwc2_cbs_e hwc2_want_comp_bypass(
    default:
    break;
    }
-   return hwc2_cbs_e::cbs_e_bypass;
+   return hwc2_enabled(hwc2_tweak_bypass_disable) ?
+             hwc2_cbs_e::cbs_e_nscfb : hwc2_cbs_e::cbs_e_bypass;
 }
 
 static int32_t hwc2_regCb(
