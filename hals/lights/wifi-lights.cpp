@@ -62,13 +62,16 @@ static int g_haveRedLed = 1;
 static int g_haveGreenLed = 1;
 static int g_haveBlueLed = 1;
 static int g_haveYellowLed = 1;
-static struct light_state_t g_ledState;
+static int g_havePowerLed = 1;
+static struct light_state_t g_wifiLedState;
+static struct light_state_t g_powerLedState;
 
 
 const char *RED_FILE="/sys/class/leds/wifi-red/brightness";
 const char *GREEN_FILE="/sys/class/leds/wifi-green/brightness";
 const char *BLUE_FILE="/sys/class/leds/wifi-blue/brightness";
 const char *YELLOW_FILE="/sys/class/leds/wifi-yellow/brightness";
+const char *POWER_FILE="/sys/class/leds/power/brightness";
 
 void init_globals(void)
 {
@@ -80,9 +83,11 @@ void init_globals(void)
     g_haveGreenLed = (access(GREEN_FILE, W_OK) == 0) ? 1 : 0;
     g_haveBlueLed = (access(BLUE_FILE, W_OK) == 0) ? 1 : 0;
     g_haveYellowLed = (access(YELLOW_FILE, W_OK) == 0) ? 1 : 0;
+    g_havePowerLed = (access(POWER_FILE, W_OK) == 0) ? 1 : 0;
 
     // Set to an unlikely state
-    memset(&g_ledState, 0xf, sizeof(g_ledState));
+    memset(&g_wifiLedState, 0xf, sizeof(g_wifiLedState));
+    memset(&g_powerLedState, 0xf, sizeof(g_powerLedState));
 
 }
 
@@ -106,21 +111,19 @@ static int
 set_wifi_light_locked(struct light_device_t* ,
         struct light_state_t const* state)
 {
-    int len;
-    int alpha, red, green, blue, yellow;
-    int blink;
+    int red, green, blue, yellow;
     unsigned int colorRGB;
 
     /* Don't disturb if no change */
-    if (!memcmp(state, &g_ledState, sizeof(g_ledState)))
+    if (!memcmp(state, &g_wifiLedState, sizeof(g_wifiLedState)))
         return 0;
 
-    g_ledState = *state;
+    g_wifiLedState = *state;
 
     colorRGB = state->color;
 
 #if BRCM_LOG
-    ALOGD("set_led_state colorRGB=%08X\n", colorRGB);
+    ALOGD("set_wifi_light_locked colorRGB=%08X\n", colorRGB);
 #endif
 
     red = (colorRGB >> 16) & 0xFF;
@@ -168,11 +171,56 @@ set_wifi_light_locked(struct light_device_t* ,
 }
 
 static int
+set_power_light_locked(struct light_device_t* ,
+        struct light_state_t const* state)
+{
+    int red, green, blue, power;
+    unsigned int colorRGB;
+
+    /* Don't disturb if no change */
+    if (!memcmp(state, &g_powerLedState, sizeof(g_powerLedState)))
+        return 0;
+
+    g_powerLedState = *state;
+
+    colorRGB = state->color;
+
+#if BRCM_LOG
+    ALOGD("set_power_light_locked colorRGB=%08X\n", colorRGB);
+#endif
+
+    red = (colorRGB >> 16) & 0xFF;
+    green = (colorRGB >> 8) & 0xFF;
+    blue = colorRGB & 0xFF;
+
+    // Android provides red, green, and blue signals, pick the brightest
+
+    power = max(red, green);
+    power = max(power, blue);
+
+    if (g_havePowerLed) {
+        write_int(POWER_FILE, power);
+    }
+
+    return 0;
+}
+
+static int
 set_light_wifi(struct light_device_t* dev,
         struct light_state_t const* state)
 {
     pthread_mutex_lock(&g_lock);
     set_wifi_light_locked(dev, state);
+    pthread_mutex_unlock(&g_lock);
+    return 0;
+}
+
+static int
+set_light_power(struct light_device_t* dev,
+        struct light_state_t const* state)
+{
+    pthread_mutex_lock(&g_lock);
+    set_power_light_locked(dev, state);
     pthread_mutex_unlock(&g_lock);
     return 0;
 }
@@ -197,6 +245,10 @@ static int open_lights(const struct hw_module_t* module, char const* name,
 
     if (0 == strcmp(LIGHT_ID_WIFI, name)) {
         set_light = set_light_wifi;
+    }
+    // Lights API doesn't have a power light defined, so use buttons light ID
+    else if (0 == strcmp(LIGHT_ID_BUTTONS, name)) {
+        set_light = set_light_power;
     }
     else {
         return -EINVAL;
