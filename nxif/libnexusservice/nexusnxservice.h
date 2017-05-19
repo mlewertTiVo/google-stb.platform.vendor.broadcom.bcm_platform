@@ -87,6 +87,7 @@ private:
     void handleDisplaySettingsChangedCallback(int port);
     static void displaySettingsChangedCallback(void *context, int param);
     static NEXUS_VideoFormat getBestOutputFormat(NEXUS_HdmiOutputStatus *status);
+    static bool getLimitedColorSettings(unsigned& limitedColorDepth, NEXUS_ColorSpace& limitedColorSpace);
 
     bool platformInitIR();
     void platformUninitIR();
