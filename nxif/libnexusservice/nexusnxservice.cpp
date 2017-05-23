@@ -71,6 +71,8 @@
 #define UINT32_C(x)  (x ## U)
 #endif
 
+#define NX_HD_OUT_COLOR_DEPTH_10B      "ro.nx.colordepth10b.force"
+
 typedef struct NexusClientContext {
     BDBG_OBJECT(NexusClientContext)
     BLST_D_ENTRY(NexusClientContext) link;
@@ -226,6 +228,37 @@ NEXUS_VideoFormat NexusNxService::getBestOutputFormat(NEXUS_HdmiOutputStatus *st
    return format;
 }
 
+bool NexusNxService::getLimitedColorSettings(unsigned& limitedColorDepth, NEXUS_ColorSpace& limitedColorSpace)
+{
+   NEXUS_HdmiOutputHandle hdmiOutput;
+   NEXUS_HdmiOutputEdidData edid;
+   NEXUS_Error errCode;
+
+   if (!property_get_bool(NX_HD_OUT_COLOR_DEPTH_10B, 0))
+      return false;
+
+   // Force 10bpp color-depth only if the hdmi Rx supports 12bits or higher
+   // and if it supports color space 4:2:0. Using 10bpp and 4:2:0 color space
+   // reduces the hdmi TMDS clock rate, giving more stability to the hdmi
+   // connection on some TV's.
+   hdmiOutput = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
+   errCode = NEXUS_HdmiOutput_GetEdidData(hdmiOutput, &edid);
+   if (errCode) {
+       ALOGW("%s: Unable to read edid, err:%d", __FUNCTION__, errCode);
+       return false;
+   }
+
+   if (edid.hdmiVsdb.valid && edid.hdmiVsdb.deepColor30bit &&
+      (edid.hdmiVsdb.deepColor36bit || edid.hdmiVsdb.deepColor48bit)
+      && edid.hdmiForumVsdb.deepColor420_30bit) {
+       limitedColorDepth = 10;
+       limitedColorSpace = NEXUS_ColorSpace_eYCbCr420;
+       return true;
+   }
+
+   return false;
+}
+
 void NexusNxService::handleHdmiOutputHotplugCallback(int port, hdmi_state isConnected)
 {
 #if NEXUS_HAS_HDMI_OUTPUT
@@ -288,6 +321,15 @@ void NexusNxService::handleHdmiOutputHotplugCallback(int port, hdmi_state isConn
            if ((format != NEXUS_VideoFormat_eUnknown) && (settings.format != format)) {
               settings.format = format;
               update = true;
+           }
+           unsigned limitedColorDepth;
+           NEXUS_ColorSpace limitedColorSpace;
+           bool limitedColorSettings = getLimitedColorSettings(limitedColorDepth, limitedColorSpace);
+           if (limitedColorSettings && ((limitedColorDepth != status.hdmi.status.colorDepth)
+                || (limitedColorSpace != status.hdmi.status.colorSpace))) {
+               settings.hdmiPreferences.colorDepth = limitedColorDepth;
+               settings.hdmiPreferences.colorSpace = limitedColorSpace;
+               update = true;
            }
         }
 
