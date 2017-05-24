@@ -78,6 +78,8 @@ private:
    NEXUS_VideoFormat forcedOutputFmt();
    NEXUS_VideoFormat bestOutputFmt(NEXUS_HdmiOutputStatus *status);
    void cbDisplayAction();
+   bool getLimitedColorSettings(unsigned &limitedColorDepth,
+                                NEXUS_ColorSpace &limitedColorSpace);
 
    bool init_ir();
    void deinit_ir();

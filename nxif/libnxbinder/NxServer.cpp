@@ -40,6 +40,7 @@
 #include "namevalue.inc"
 
 #define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
+#define NX_HD_OUT_COLOR_DEPTH_10B      "ro.nx.colordepth10b.force"
 
 using namespace android;
 
@@ -349,6 +350,9 @@ void NxServer::cbHpdAction(hdmi_state state) {
    bool update;
    NEXUS_Error rc;
    Vector<sp<INxHpdEvtSrc>>::const_iterator it;
+   unsigned limitedColorDepth;
+   NEXUS_ColorSpace limitedColorSpace;
+   bool limitedColorSettings;
 
    rc = NxClient_GetDisplayStatus(&status);
    if (rc) {
@@ -369,6 +373,14 @@ void NxServer::cbHpdAction(hdmi_state state) {
          }
          if ((format != NEXUS_VideoFormat_eUnknown) && (settings.format != format)) {
             settings.format = format;
+            update = true;
+         }
+         limitedColorSettings = getLimitedColorSettings(limitedColorDepth, limitedColorSpace);
+         if (limitedColorSettings &&
+             ((limitedColorDepth != status.hdmi.status.colorDepth)
+             || (limitedColorSpace != status.hdmi.status.colorSpace))) {
+            settings.hdmiPreferences.colorDepth = limitedColorDepth;
+            settings.hdmiPreferences.colorSpace = limitedColorSpace;
             update = true;
          }
       }
@@ -484,6 +496,37 @@ NEXUS_VideoFormat NxServer::bestOutputFmt(NEXUS_HdmiOutputStatus *status) {
    }
 
    return format;
+}
+
+bool NxServer::getLimitedColorSettings(unsigned &limitedColorDepth,
+   NEXUS_ColorSpace &limitedColorSpace) {
+   NEXUS_HdmiOutputHandle hdmiOutput;
+   NEXUS_HdmiOutputEdidData edid;
+   NEXUS_Error errCode;
+
+   if (!property_get_bool(NX_HD_OUT_COLOR_DEPTH_10B, 0))
+      return false;
+
+   // Force 10bpp color-depth only if the hdmi Rx supports 12bits or higher
+   // and if it supports color space 4:2:0. Using 10bpp and 4:2:0 color space
+   // reduces the hdmi TMDS clock rate, giving more stability to the hdmi
+   // connection on some TV's.
+   hdmiOutput = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
+   errCode = NEXUS_HdmiOutput_GetEdidData(hdmiOutput, &edid);
+   if (errCode) {
+       ALOGW("%s: Unable to read edid, err:%d", __FUNCTION__, errCode);
+       return false;
+   }
+
+   if (edid.hdmiVsdb.valid && edid.hdmiVsdb.deepColor30bit &&
+      (edid.hdmiVsdb.deepColor36bit || edid.hdmiVsdb.deepColor48bit)
+      && edid.hdmiForumVsdb.deepColor420_30bit) {
+       limitedColorDepth = 10;
+       limitedColorSpace = NEXUS_ColorSpace_eYCbCr420;
+       return true;
+   }
+
+   return false;
 }
 
 void NxServer::cbDisplay(void *context, int param __unused) {

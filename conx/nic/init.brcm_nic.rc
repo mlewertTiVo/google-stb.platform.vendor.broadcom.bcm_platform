@@ -22,7 +22,7 @@ on property:dyn.nx.state=loaded
     setprop wlan.driver.status "ok"
 
 on boot
-service p2p_supplicant /system/bin/wpa_supplicant \
+service p2p_supplicant /vendor/bin/hw/wpa_supplicant \
     -iwlan0 -Dnl80211 -c/data/misc/wifi/wpa_supplicant.conf \
     -I/system/etc/wifi/p2p_supplicant_overlay.conf \
     -O/data/misc/wifi/sockets \
@@ -36,7 +36,7 @@ service p2p_supplicant /system/bin/wpa_supplicant \
     socket wpa_wlan0 dgram 660 wifi wifi
     disabled
     oneshot
-service wpa_supplicant /system/bin/wpa_supplicant \
+service wpa_supplicant /vendor/bin/hw/wpa_supplicant \
     -iwlan0 -Dnl80211 -c/data/misc/wifi/wpa_supplicant.conf \
     -I/system/etc/wifi/wpa_supplicant_overlay.conf \
     -O/data/misc/wifi/sockets \
@@ -50,22 +50,22 @@ service wpa_supplicant /system/bin/wpa_supplicant \
     disabled
     oneshot
 
-service dhcpcd_wlan0 /system/bin/dhcpcd -aABDKL
+service dhcpcd_wlan0 /vendor/bin/hw/dhcpcd -aABDKL
     class main
     disabled
     oneshot
 
-service dhcpcd_p2p /system/bin/dhcpcd -aABKL
+service dhcpcd_p2p /vendor/bin/hw/dhcpcd -aABKL
     class main
     disabled
     oneshot
 
-service iprenew_wlan0 /system/bin/dhcpcd -n
+service iprenew_wlan0 /vendor/bin/hw/dhcpcd -n
     class main
     disabled
     oneshot
 
-service iprenew_p2p /system/bin/dhcpcd -n
+service iprenew_p2p /vendor/bin/hw/dhcpcd -n
     class main
     disabled
     oneshot
