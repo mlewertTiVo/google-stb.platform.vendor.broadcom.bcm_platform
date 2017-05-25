@@ -52,6 +52,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 
 #define HWC2_MAGIC      0xBC353C02
 #define HWC2_VID_MAGIC  0x00E33200
+#define HWC2_SDB_MAGIC  0x51DEBA00
 
 #define HWC2_INVALID    -1
 #define HWC2_MAX_REG_CB 3

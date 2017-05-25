@@ -2777,7 +2777,8 @@ static int32_t hwc2_lyrSbStr(
       goto out;
    }
 
-   if (stream->data[1] == 0) {
+   if ((stream->data[1] < HWC2_SDB_MAGIC) ||
+       (stream->data[1] >= HWC2_SDB_MAGIC+HWC_BINDER_SIDEBAND_SURFACE_SIZE)) {
       ret = HWC2_ERROR_BAD_PARAMETER;
       goto out;
    }
@@ -3577,11 +3578,17 @@ static void hwc2_connect(
    struct hwc2_bcm_device_t *hwc2,
    struct hwc2_dsp_t *dsp) {
 
+   size_t i;
+
    if (!hwc2->con) {
       if (hwc2->hb) {
          hwc2->hb->connect();
-         hwc2->hb->setvideo(0, HWC2_VID_MAGIC, dsp->aCfg->w, dsp->aCfg->h);
-         hwc2->hb->setvideo(1, HWC2_VID_MAGIC+1, dsp->aCfg->w, dsp->aCfg->h);
+         for (i = 0; i < HWC_BINDER_VIDEO_SURFACE_SIZE; i++) {
+            hwc2->hb->setvideo(i, HWC2_VID_MAGIC+i, dsp->aCfg->w, dsp->aCfg->h);
+         }
+         for (i = 0; i < HWC_BINDER_SIDEBAND_SURFACE_SIZE; i++) {
+            hwc2->hb->setsideband(i, HWC2_SDB_MAGIC+i, dsp->aCfg->w, dsp->aCfg->h);
+         }
          hwc2->con = true;
       }
    }
@@ -4771,6 +4778,17 @@ static void hwc2_sdb(
 
    NEXUS_Rect c, p;
    struct hwc_position fr, cl;
+   int index = -1;
+   native_handle_t *nh = lyr->sbh;
+
+   if (nh) {
+      index = (nh->data[1] - HWC2_SDB_MAGIC);
+   }
+   if (index < 0 || index >= HWC_BINDER_SIDEBAND_SURFACE_SIZE) {
+      ALOGE("[%s]:[sdb]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid stream index: %d.\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post, index);
+      return;
+   }
 
    c = {(int16_t)lyr->crp.left,
         (int16_t)lyr->crp.top,
@@ -4794,13 +4812,12 @@ static void hwc2_sdb(
    cl.h = c.height == (uint16_t)HWC2_INVALID ? 0 : c.height;
 
    ALOGI_IF((dsp->lm & LOG_SDB_DEBUG),
-            "[%s]:[sdb]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": c:{%d,%d,%dx%d} f:{%d,%d,%dx%d}\n",
-            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
+            "[%s]:[sdb:%d]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": c:{%d,%d,%dx%d} f:{%d,%d,%dx%d}\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", index, lyr->hdl, dsp->pres, dsp->post,
             c.x, c.y, c.width, c.height,
             p.x, p.y, p.width, p.height);
 
-   hwc2->hb->setsideband(0, 0, dsp->aCfg->w, dsp->aCfg->h);
-   hwc2->hb->setgeometry(HWC_BINDER_SDB, 0, fr, cl, 3 /*i.e. (5-2)*/, 1);
+   hwc2->hb->setgeometry(HWC_BINDER_SDB, index, fr, cl, 3 /*i.e. (5-2)*/, 1);
 }
 
 static void hwc2_ext_cmp_frame(
