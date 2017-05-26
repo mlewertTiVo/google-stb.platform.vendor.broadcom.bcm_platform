@@ -52,6 +52,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 
 #define HWC2_MAGIC      0xBC353C02
 #define HWC2_VID_MAGIC  0x00E33200
+#define HWC2_SDB_MAGIC  0x51DEBA00
 
 #define HWC2_INVALID    -1
 #define HWC2_MAX_REG_CB 3
@@ -66,7 +67,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_RLPF       0xCAFEBAAD
 #define HWC2_COMP_RUN   1
 #define HWC2_VOMP_RUN   0
-#define HWC2_VID_WIN    1
+#define HWC2_VID_WIN    2
 #define HWC2_MEMC_ROT   0 /* m2mc supports flip, but no 90-rot. */
 #define HWC2_OPQ        0xFF000000
 #define HWC2_TRS        0x00000000
@@ -330,6 +331,7 @@ struct hwc2_dsp_t {
    struct hwc2_lyr_t     *lyr;
    struct hwc2_dsp_cfg_t *aCfg;
    struct hwc2_dsp_cfg_t *cfgs;
+   struct hwc_position   op;
 
    BKNI_EventHandle      cmp_evt;
    BKNI_EventHandle      cmp_syn;
@@ -453,6 +455,12 @@ public:
 enum hwc2_tweaks_e {
    hwc2_tweak_fb_compressed = 0,
    hwc2_tweak_pip_alpha_hole,
+};
+
+enum hwc2_seeding_e {
+   hwc2_seeding_none = 0,
+   hwc2_seeding_gfx,
+   hwc2_seeding_vid,
 };
 
 #endif
