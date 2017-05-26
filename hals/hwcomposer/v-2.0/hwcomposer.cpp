@@ -4854,21 +4854,31 @@ static void hwc2_ext_cmp_frame(
    }
    d = hwc2_ext_fb_get(hwc2);
    if (d == NULL) {
-      hwc2_ret_inc(hwc2->ext, 1);
       for (i = 0; i < f->cnt; i++) {
          lyr = &f->lyr[i];
-         if (lyr->af >= 0) {
-            close(lyr->af);
-            lyr->af = HWC2_INVALID;
+         if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
+            if (f->ftgt >= 0) {
+               close(f->ftgt);
+               f->ftgt = HWC2_INVALID;
+            }
+         } else if (lyr->cCli == HWC2_COMPOSITION_DEVICE) {
+            if (lyr->af >= 0) {
+               close(lyr->af);
+               lyr->af = HWC2_INVALID;
+            }
          }
          if (lyr->rf != HWC2_INVALID) {
             if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
-               hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, HWC2_MAGIC);
+               ccli++;
+               if (ccli == 0) {
+                  hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, HWC2_MAGIC);
+               }
             } else {
                hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl);
             }
          }
       }
+      hwc2_ret_inc(hwc2->ext, 1);
       /* should this be fatal? */
       ALOGE("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":grabbing framebuffer FAILED!\n",
             dsp->pres, dsp->post);
