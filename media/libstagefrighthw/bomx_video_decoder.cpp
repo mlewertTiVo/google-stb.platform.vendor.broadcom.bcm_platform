@@ -91,6 +91,7 @@
 #define B_SECURE_QUERY_SLEEP_INTERVAL_US (200000)
 #define B_STAT_EARLYDROP_THRESHOLD_MS (5000)
 #define B_WAIT_FOR_STC_SYNC_TIMEOUT_MS (10000)
+#define B_WAIT_FOR_FORMAT_CHANGE_TIMEOUT_MS (500)
 #define B_STC_SYNC_INVALID_VALUE (0xFFFFFFFF)
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
@@ -471,6 +472,13 @@ static void BOMX_VideoDecoder_InputBuffersTimer(void *pParam)
     BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
     ALOGV("%s: Run out of input buffers. Returning all completed buffers...", __FUNCTION__);
     pDecoder->InputBufferTimeoutCallback();
+}
+
+static void BOMX_VideoDecoder_FormatChangeTimer(void *pParam)
+{
+    BOMX_VideoDecoder *pDecoder = static_cast <BOMX_VideoDecoder *> (pParam);
+    ALOGI("%s: Format change deferral timeout", __FUNCTION__);
+    pDecoder->FormatChangeTimeoutCallback();
 }
 
 static OMX_ERRORTYPE BOMX_VideoDecoder_InitMimeType(OMX_VIDEO_CODINGTYPE eCompressionFormat, char *pMimeType)
@@ -1020,6 +1028,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_eosDelivered(false),
     m_eosReceived(false),
     m_formatChangeState(FCState_eNone),
+    m_formatChangeTimerId(NULL),
     m_nativeGraphicsEnabled(false),
     m_metadataEnabled(false),
     m_adaptivePlaybackEnabled(false),
@@ -1681,10 +1690,10 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         UnregisterEvent(m_displayFrameEventId);
     }
-    if ( m_inputBuffersTimerId )
-    {
-        CancelTimer(m_inputBuffersTimerId);
-    }
+
+    CancelTimerId(m_inputBuffersTimerId);
+    CancelTimerId(m_formatChangeTimerId);
+
     if ( m_hOutputFrameEvent )
     {
         B_Event_Destroy(m_hOutputFrameEvent);
@@ -2633,6 +2642,7 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
             m_droppedFrames = m_earlyDroppedFrames = m_consecDroppedFrames = m_maxConsecDroppedFrames = 0;
             m_lastReturnedSerial = 0;
             m_formatChangeState = FCState_eNone;
+            CancelTimerId(m_formatChangeTimerId);
             m_waitingForStc = false;
             if (m_stcResumePending) {
                 // resume stc if we left it paused
@@ -2897,6 +2907,7 @@ NEXUS_Error BOMX_VideoDecoder::SetOutputPortState(OMX_STATETYPE newState)
     if ( newState == OMX_StateLoaded )
     {
         CancelTimerId(m_inputBuffersTimerId);
+        CancelTimerId(m_formatChangeTimerId);
 
         // Return all pending buffers to the client
         ReturnPortBuffers(m_pVideoPorts[1]);
@@ -4900,6 +4911,14 @@ void BOMX_VideoDecoder::InputBufferTimeoutCallback()
     }
 }
 
+void BOMX_VideoDecoder::FormatChangeTimeoutCallback()
+{
+    // Timed out waiting for the output buffers to come back. Send format change notification immediately.
+    CancelTimerId(m_formatChangeTimerId);
+    m_formatChangeState = FCState_eProcessCallback;
+    OutputFrameEvent();
+}
+
 void BOMX_VideoDecoder::SourceChangedEvent()
 {
     NEXUS_VideoDecoderStatus vdecStatus;
@@ -5649,10 +5668,12 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                         bool portReset;
 
                         if (m_formatChangeState == FCState_eNone)
+                        {
                             ALOGI("Video output format change %ux%u -> %lux%lu [max %ux%u] on frame %u", m_outputWidth, m_outputHeight,
                                 pBuffer->frameStatus.surfaceCreateSettings.imageWidth, pBuffer->frameStatus.surfaceCreateSettings.imageHeight,
                                 m_pVideoPorts[1]->GetDefinition()->format.video.nFrameWidth, m_pVideoPorts[1]->GetDefinition()->format.video.nFrameHeight,
                                 pBuffer->frameStatus.serialNumber);
+                        }
 
                         if ( m_outputMode == BOMX_VideoDecoderOutputBufferType_eMetadata || m_adaptivePlaybackEnabled )
                         {
@@ -5681,6 +5702,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 ALOGI("Output port will reset");
                                 m_formatChangeState = FCState_eWaitForSerial;
                                 m_formatChangeSerial = pBuffer->frameStatus.serialNumber;
+                                CancelTimerId(m_formatChangeTimerId);
+                                m_formatChangeTimerId = StartTimer(B_WAIT_FOR_FORMAT_CHANGE_TIMEOUT_MS, BOMX_VideoDecoder_FormatChangeTimer, static_cast<void *>(this));
                                 ALOGV("Defer port format change, formatChangeSerial:%u, lastReturnedSerial:%u",
                                         m_formatChangeSerial, m_lastReturnedSerial);
                             } else {
@@ -6113,6 +6136,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
             m_lastReturnedSerial = pLast->frameStatus.serialNumber;
             if ((m_formatChangeState == FCState_eWaitForSerial) && (m_formatChangeSerial == (m_lastReturnedSerial + 1))) {
                 ALOGV("%s: processing format change, m_formatChangeSerial:%u", __FUNCTION__, m_formatChangeSerial);
+                CancelTimerId(m_formatChangeTimerId);
                 m_formatChangeState = FCState_eProcessCallback;
                 OutputFrameEvent();
             }

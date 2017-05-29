@@ -29,8 +29,8 @@
 #include <binder/Binder.h>
 #include "HwcSvc.h"
 
-#define HWC_BINDER_VIDEO_SURFACE_SIZE 3
-#define HWC_BINDER_SIDEBAND_SURFACE_SIZE 2
+#define HWC_BINDER_VIDEO_SURFACE_SIZE    (2)
+#define HWC_BINDER_SIDEBAND_SURFACE_SIZE (4)
 
 using namespace android;
 

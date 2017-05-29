@@ -109,7 +109,8 @@ int gralloc_register_buffer(gralloc_module_t const* module,
       if (gralloc_log_mapper()) {
          NEXUS_Addr sPhysAddr, pPhysAddr;
          NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
-         NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);
+         if (pSharedData->container.block) {NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);}
+         else {pPhysAddr = 0;}
          ALOGI("  reg (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
                hnd->pid,
@@ -124,7 +125,7 @@ int gralloc_register_buffer(gralloc_module_t const* module,
                pSharedData->container.format,
                getpid());
          NEXUS_MemoryBlock_UnlockOffset(block_handle);
-         NEXUS_MemoryBlock_UnlockOffset(pSharedData->container.block);
+         if (pSharedData->container.block) {NEXUS_MemoryBlock_UnlockOffset(pSharedData->container.block);}
       }
    }
    if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
@@ -161,7 +162,8 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
       if (gralloc_log_mapper()) {
          NEXUS_Addr sPhysAddr, pPhysAddr;
          NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
-         NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);
+         if (pSharedData->container.block) {NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);}
+         else {pPhysAddr = 0;}
          ALOGI("unreg (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
                hnd->pid,
@@ -176,7 +178,7 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
                pSharedData->container.format,
                getpid());
          NEXUS_MemoryBlock_UnlockOffset(block_handle);
-         NEXUS_MemoryBlock_UnlockOffset(pSharedData->container.block);
+         if (pSharedData->container.block) {NEXUS_MemoryBlock_UnlockOffset(pSharedData->container.block);}
       }
 
       if ((hnd->mgmt_mode == GR_MGMT_MODE_LOCKED) && pSharedData->container.block) {
