@@ -1183,11 +1183,20 @@ static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
     char value[PROPERTY_VALUE_MAX];
     char secdma_param_file[PROPERTY_VALUE_MAX];
     FILE *pFile;
+    char nx_key[PROPERTY_VALUE_MAX];
+    NxClient_ClientModeSettings ms;
 
     memset (value, 0, sizeof(value));
 
     if (property_get(DHD_SECDMA_PROP, value, NULL)) {
+        /* wait for data (re)mount, trigger nexus authentication. */
         wait_for_data_available();
+        sprintf(nx_key, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
+        nxserver_parse_password_file(g_app.server, nx_key);
+        NxClient_GetDefaultClientModeSettings(&ms);
+        NxClient_SetClientMode(&ms);
+        ALOGW("force nexus re-authentication with '%s'", nx_key);
+
         secdmaMemSize = strtoul(value, NULL, 0);
         if (strlen(value) && (secdmaMemSize > 0)) {
             sprintf(secdma_param_file, "%s/stbpriv.txt", DHD_SECDMA_PARAMS_PATH);
