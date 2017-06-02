@@ -1130,6 +1130,20 @@ static nxserver_t init_nxserver(void)
        return NULL;
     }
 
+    /* With MS12, SPDIF output needs to be clocked from different PLL to avoid conflict
+     * with the DSP mixer.
+     */
+    if (settings.session[0].dolbyMs == nxserverlib_dolby_ms_type_ms12) {
+       NEXUS_PlatformConfiguration platformConfig;
+       NEXUS_AudioOutputSettings outputSettings;
+
+       NEXUS_Platform_GetConfiguration(&platformConfig);
+       NEXUS_AudioOutput_GetSettings(NEXUS_SpdifOutput_GetConnector(platformConfig.outputs.spdif[0]), &outputSettings);
+       ALOGI("SPDIF PLL %d -> %d", outputSettings.pll, NEXUS_AudioOutputPll_e1);
+       outputSettings.pll = NEXUS_AudioOutputPll_e1;
+       NEXUS_AudioOutput_SetSettings(NEXUS_SpdifOutput_GetConnector(platformConfig.outputs.spdif[0]), &outputSettings);
+    }
+
     rc = nxserver_ipc_init(g_app.server, g_app.lock);
     if (rc) {
        ALOGE("FATAL: failed nxserver_ipc_init");
