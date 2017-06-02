@@ -766,7 +766,8 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    if (gralloc_log_mapper()) {
       NEXUS_Addr sPhysAddr, pPhysAddr;
       NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
-      NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);
+      if (pSharedData->container.block) {NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);}
+      else {pPhysAddr = 0;}
       ALOGI("alloc (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
             getpid(),
@@ -780,7 +781,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
             hnd->usage,
             pSharedData->container.format);
       NEXUS_MemoryBlock_UnlockOffset(block_handle);
-      NEXUS_MemoryBlock_UnlockOffset(pSharedData->container.block);
+      if (pSharedData->container.block) {NEXUS_MemoryBlock_UnlockOffset(pSharedData->container.block);}
    }
 
    if ((fmt_set != GR_NONE) && pSharedData->container.block == 0) {
@@ -837,7 +838,8 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
          unsigned planeHeight = pSharedData->container.height;
          unsigned format = pSharedData->container.format;
          NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
-         NEXUS_MemoryBlock_LockOffset(planeHandle, &pPhysAddr);
+         if (planeHandle) {NEXUS_MemoryBlock_LockOffset(planeHandle, &pPhysAddr);}
+         else {pPhysAddr = 0;}
          ALOGI(" free (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
                hnd->pid,
@@ -851,7 +853,7 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
                hnd->usage,
                format);
          NEXUS_MemoryBlock_UnlockOffset(block_handle);
-         NEXUS_MemoryBlock_UnlockOffset(planeHandle);
+         if (planeHandle) {NEXUS_MemoryBlock_UnlockOffset(planeHandle);}
       }
    }
 

@@ -97,7 +97,14 @@ const int nxserver_prio_map[NICE_LEVELS] = {
    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*  10..19  */
 };
 
-const int mediaserver_prio_map[NICE_LEVELS] = {
+const int mediadrmserver_prio_map[NICE_LEVELS] = {
+   2, 2, 2, 2, 2, 2, 2, 2, 2, 2, /* -20..-11 */
+   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* -10..-1  */
+   1, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*   0..9   */
+   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*  10..19  */
+};
+
+const int mediacodec_prio_map[NICE_LEVELS] = {
    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, /* -20..-11 */
    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* -10..-1  */
    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*   0..9   */
@@ -106,6 +113,13 @@ const int mediaserver_prio_map[NICE_LEVELS] = {
 
 const int hwcbinder_prio_map[NICE_LEVELS] = {
    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* -20..-11 */
+   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* -10..-1  */
+   1, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*   0..9   */
+   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*  10..19  */
+};
+
+const int audioserver_prio_map[NICE_LEVELS] = {
+   2, 2, 2, 2, 2, 2, 2, 2, 2, 2, /* -20..-11 */
    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* -10..-1  */
    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*   0..9   */
    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*  10..19  */
@@ -143,25 +157,39 @@ static struct process_entity key_process_list_vmode[] = {
       .map = nxserver_prio_map,
    },
    {
-      .name = "mediaserver",
+      .name = "mediacodec",
       .thread_keep_filter = "OMX.broadcom.vi",
       .thread_ignore_filter = NULL,
       .pid = 0,
-      .map = mediaserver_prio_map,
+      .map = mediacodec_prio_map,
    },
    {
-      .name = "mediaserver",
-      .thread_keep_filter = "wv_decrypt_thre",
+      .name = "mediacodec",
+      .thread_keep_filter = "Binder",
       .thread_ignore_filter = NULL,
       .pid = 0,
-      .map = mediaserver_prio_map,
+      .map = mediacodec_prio_map,
    },
    {
-      .name = "mediaserver",
+      .name = "mediacodec",
       .thread_keep_filter = "bomx_display",
       .thread_ignore_filter = NULL,
       .pid = 0,
-      .map = mediaserver_prio_map,
+      .map = mediacodec_prio_map,
+   },
+   {
+      .name = "mediadrmserver",
+      .thread_keep_filter = "wv_decrypt_thre",
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .map = mediadrmserver_prio_map,
+   },
+   {
+      .name = "mediadrmserver",
+      .thread_keep_filter = "Binder",
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .map = mediadrmserver_prio_map,
    },
    {
       .name = "hwcbinder",
@@ -182,32 +210,39 @@ static struct process_entity key_process_list_tunneled[] = {
       .map = nxserver_prio_map,
    },
    {
-      .name = "mediaserver",
+      .name = "mediacodec",
       .thread_keep_filter = "OMX.broadcom.vi",
       .thread_ignore_filter = NULL,
       .pid = 0,
-      .map = mediaserver_prio_map,
+      .map = mediacodec_prio_map,
    },
    {
-      .name = "mediaserver",
+      .name = "mediacodec",
+      .thread_keep_filter = "Binder",
+      .thread_ignore_filter = NULL,
+      .pid = 0,
+      .map = mediacodec_prio_map,
+   },
+   {
+      .name = "mediadrmserver",
       .thread_keep_filter = "wv_decrypt_thre",
       .thread_ignore_filter = NULL,
       .pid = 0,
-      .map = mediaserver_prio_map,
+      .map = mediadrmserver_prio_map,
    },
    {
-      .name = "mediaserver",
-      .thread_keep_filter = "Binder_",
+      .name = "mediadrmserver",
+      .thread_keep_filter = "Binder",
       .thread_ignore_filter = NULL,
       .pid = 0,
-      .map = mediaserver_prio_map,
+      .map = mediadrmserver_prio_map,
    },
    {
-      .name = "mediaserver",
+      .name = "audioserver",
       .thread_keep_filter = "AudioOut_",
       .thread_ignore_filter = NULL,
       .pid = 0,
-      .map = mediaserver_prio_map,
+      .map = audioserver_prio_map,
    },
 };
 static const int num_key_processes_tunneled = sizeof(key_process_list_tunneled)/sizeof(key_process_list_tunneled[0]);

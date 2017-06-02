@@ -13,6 +13,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/memtrack/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/power/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/thermal/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/tv_input/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/vulkan/Android.mk
 
 endif
 

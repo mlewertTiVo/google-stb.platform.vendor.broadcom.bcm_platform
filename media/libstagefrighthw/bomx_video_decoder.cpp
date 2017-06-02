@@ -1362,16 +1362,20 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     NEXUS_VideoFormatInfo videoInfo;
     NEXUS_VideoDecoderCapabilities caps;
 
-    // Check the decoder capabilities for the highest resolution.
-    NEXUS_GetVideoDecoderCapabilities(&caps);
-    for ( i = 0; i < caps.numVideoDecoders; i++ )
+    // Check the decoder capabilities for the highest resolution if not using
+    // redux decoder.
+    if (!m_redux)
     {
-        NEXUS_VideoFormat_GetInfo(caps.memory[i].maxFormat, &videoInfo);
-        if ( videoInfo.width > m_maxDecoderWidth ) {
-            m_maxDecoderWidth = videoInfo.width;
-        }
-        if ( videoInfo.height > m_maxDecoderHeight ) {
-            m_maxDecoderHeight = videoInfo.height;
+        NEXUS_GetVideoDecoderCapabilities(&caps);
+        for ( i = 0; i < caps.numVideoDecoders; i++ )
+        {
+            NEXUS_VideoFormat_GetInfo(caps.memory[i].maxFormat, &videoInfo);
+            if ( videoInfo.width > m_maxDecoderWidth ) {
+                m_maxDecoderWidth = videoInfo.width;
+            }
+            if ( videoInfo.height > m_maxDecoderHeight ) {
+                m_maxDecoderHeight = videoInfo.height;
+            }
         }
     }
 
