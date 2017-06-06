@@ -1462,6 +1462,12 @@ static int bdev_open(const hw_module_t *module, const char *name,
 
     pthread_mutex_init(&bdev->lock, NULL);
 
+    if (brcm_audio_client_join() != NEXUS_SUCCESS) {
+        ALOGE("%s: at %d, brcm_audio_client_join failed\n",
+             __FUNCTION__, __LINE__);
+        return -ENOMEM;
+    }
+
     brcm_audio_set_audio_clock_accuracy();
 
     bdev->adev.common.tag = HARDWARE_DEVICE_TAG;

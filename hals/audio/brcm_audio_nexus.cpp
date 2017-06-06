@@ -104,7 +104,7 @@ static void nexus_bout_data_callback(void *param1, int param2)
     BKNI_SetEvent((BKNI_EventHandle)(intptr_t)param2);
 }
 
-NEXUS_Error brcm_audio_client_join(const char *name)
+NEXUS_Error brcm_audio_client_join(void)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;
     NxClient_JoinSettings joinSettings;
@@ -118,7 +118,7 @@ NEXUS_Error brcm_audio_client_join(const char *name)
             usleep(NXCLIENT_SERVER_TIMEOUT_IN_MS * 1000);
         }
         else {
-            ALOGD("%s: NxClient_Join succeeded for client \"%s\".", __FUNCTION__, name);
+            ALOGD("%s: NxClient_Join succeeded.", __FUNCTION__);
         }
     } while (rc != NEXUS_SUCCESS);
 
@@ -147,22 +147,13 @@ void brcm_audio_set_audio_volume(float leftVol, float rightVol)
     if (rightVolume < AUDIO_VOLUME_SETTING_MIN)
         rightVolume = AUDIO_VOLUME_SETTING_MIN;
 
-    rc = brcm_audio_client_join(BRCM_AUDIO_NXCLIENT_NAME);
-
-    if (rc == NEXUS_SUCCESS) {
-        do {
-            NxClient_GetAudioSettings(&settings);
-            settings.volumeType = NEXUS_AudioVolumeType_eDecibel;
-            settings.leftVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-leftVolume];
-            settings.rightVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-rightVolume];
-            rc = NxClient_SetAudioSettings(&settings);
-        } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
-
-        NxClient_Uninit();
-    }
-    else {
-        ALOGE("%s: Could not join client", __FUNCTION__);
-    }
+    do {
+        NxClient_GetAudioSettings(&settings);
+        settings.volumeType = NEXUS_AudioVolumeType_eDecibel;
+        settings.leftVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-leftVolume];
+        settings.rightVolume = -Gemini_VolTable[AUDIO_VOLUME_SETTING_MAX-rightVolume];
+        rc = NxClient_SetAudioSettings(&settings);
+    } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
 }
 
 static int brcm_audio_lookup_db_ix(uint32_t volume, int index, int min, int max)
@@ -199,38 +190,20 @@ void brcm_audio_set_mute_state(bool mute)
 
     ALOGV("nexus_nx_client %s:%d mute=%s\n",__PRETTY_FUNCTION__,__LINE__,mute ? "true":"false");
 
-    rc = brcm_audio_client_join(BRCM_AUDIO_NXCLIENT_NAME);
-
-    if (rc == NEXUS_SUCCESS) {
-        do {
-            NxClient_GetAudioSettings(&settings);
-            settings.muted = mute;
-            rc = NxClient_SetAudioSettings(&settings);
-        } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
-
-        NxClient_Uninit();
-    }
-    else {
-        ALOGE("%s: Could not join client", __FUNCTION__);
-    }
+    do {
+        NxClient_GetAudioSettings(&settings);
+        settings.muted = mute;
+        rc = NxClient_SetAudioSettings(&settings);
+    } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
 }
 
 bool brcm_audio_get_mute_state(void)
 {
-    NEXUS_Error rc;
     NxClient_AudioSettings settings;
     bool mute = false;
 
-    rc = brcm_audio_client_join(BRCM_AUDIO_NXCLIENT_NAME);
-
-    if (rc == NEXUS_SUCCESS) {
-        NxClient_GetAudioSettings(&settings);
-        mute = settings.muted;
-        NxClient_Uninit();
-    }
-    else {
-        ALOGE("%s: Could not join client", __FUNCTION__);
-    }
+    NxClient_GetAudioSettings(&settings);
+    mute = settings.muted;
 
     return mute;
 }
@@ -242,31 +215,21 @@ void brcm_audio_set_master_volume(float volume)
 
 float brcm_audio_get_master_volume(void)
 {
-    NEXUS_Error rc;
     NxClient_AudioSettings settings;
     float master_volume = 0;
     int volume_index;
 
-    rc = brcm_audio_client_join(BRCM_AUDIO_NXCLIENT_NAME);
+    NxClient_GetAudioSettings(&settings);
 
-    if (rc == NEXUS_SUCCESS) {
-        NxClient_GetAudioSettings(&settings);
+    /* volume type must be decibel and left/right volume must be equal */
+    if (settings.volumeType == NEXUS_AudioVolumeType_eDecibel &&
+        settings.leftVolume == settings.rightVolume)
+    {
+        /* convert from decibel to range from 0-99 */
+        volume_index = brcm_audio_lookup_db_ix(-settings.leftVolume, AUDIO_VOLUME_SETTING_MAX/2, 0, AUDIO_VOLUME_SETTING_MAX);
 
-        /* volume type must be decibel and left/right volume must be equal */
-        if (settings.volumeType == NEXUS_AudioVolumeType_eDecibel &&
-            settings.leftVolume == settings.rightVolume)
-        {
-            /* convert from decibel to range from 0-99 */
-            volume_index = brcm_audio_lookup_db_ix(-settings.leftVolume, AUDIO_VOLUME_SETTING_MAX/2, 0, AUDIO_VOLUME_SETTING_MAX);
-
-            /* normalize between 0 to 1.0 */
-            master_volume = ((float)(AUDIO_VOLUME_SETTING_MAX - volume_index))/AUDIO_VOLUME_SETTING_MAX;
-        }
-
-        NxClient_Uninit();
-    }
-    else {
-        ALOGE("%s: Could not join client", __FUNCTION__);
+        /* normalize between 0 to 1.0 */
+        master_volume = ((float)(AUDIO_VOLUME_SETTING_MAX - volume_index))/AUDIO_VOLUME_SETTING_MAX;
     }
 
     ALOGV("%s: master_volume=%f", __FUNCTION__, master_volume);
@@ -555,13 +518,6 @@ static int nexus_bout_open(struct brcm_stream_out *bout)
                                    popcount(config->channel_mask),
                                    NEXUS_OUT_BUFFER_DURATION_MS);
 
-    /* Open Nexus simple playback */
-    rc = brcm_audio_client_join(BRCM_AUDIO_NXCLIENT_NAME);
-    if (rc != NEXUS_SUCCESS) {
-        ALOGE("%s: brcm_audio_client_join error, rc:%d", __FUNCTION__, rc);
-        return -ENOSYS;
-    }
-
     /* Allocate simpleAudioPlayback */
     NxClient_GetDefaultAllocSettings(&allocSettings);
     allocSettings.simpleAudioPlayback = 1;
@@ -619,8 +575,6 @@ err_event:
 err_acquire:
     NxClient_Free(&(bout->nexus.allocResults));
 err_alloc:
-    NxClient_Uninit();
-
     return ret;
 }
 
@@ -638,7 +592,6 @@ static int nexus_bout_close(struct brcm_stream_out *bout)
 
     NxClient_Disconnect(bout->nexus.connectId);
     NxClient_Free(&(bout->nexus.allocResults));
-    NxClient_Uninit();
 
     return 0;
 }
