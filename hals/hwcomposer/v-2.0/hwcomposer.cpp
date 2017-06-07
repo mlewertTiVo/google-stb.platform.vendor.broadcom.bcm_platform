@@ -2972,10 +2972,14 @@ static int32_t hwc2_lyrRegion(
    }
 
    if (visible.numRects > 1) {
-      ret = HWC2_ERROR_BAD_PARAMETER;
-      goto out;
+      ALOGV("-> %s:%" PRIu64 ":%" PRIu64 "\n",
+        getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_VISIBLE_REGION),
+        display, layer);
+      // ret = HWC2_ERROR_BAD_PARAMETER;
+      // goto out;
    }
 
+   // TODO: support more than first one...
    if (visible.numRects) {
       memcpy(&lyr->vis, visible.rects, sizeof(lyr->vis));
    }
@@ -4623,7 +4627,7 @@ int hwc2_blit_gpx(
    NEXUS_SurfaceHandle s = NULL;
    NEXUS_SurfaceStatus ds;
    NEXUS_Graphics2DBlitSettings bs;
-   NEXUS_Rect c, p, sa, da, oa;
+   NEXUS_Rect c, p, sa, da, oa, n;
    NEXUS_Error rc;
    int blt = 0;
 
@@ -4644,6 +4648,10 @@ int hwc2_blit_gpx(
          (int16_t)0,
          (uint16_t)0,
          (uint16_t)0};
+   n = {(int16_t)0,
+        (int16_t)0,
+        (uint16_t)0,
+        (uint16_t)0};
 
    if (!hwc2_lyr_adj(dsp, &c, &p, &ds)) {
       blt = HWC2_INVALID;
@@ -4670,6 +4678,13 @@ int hwc2_blit_gpx(
          }
       }
       *ms = hwc2_seeding_none;
+   }
+
+   if (!memcmp(&sa, &n, sizeof(n)) &&
+       !memcmp(&da, &n, sizeof(n))) {
+      /* don't blit anything if passed in 0's. */
+      blt = HWC2_INVALID;
+      goto out;
    }
 
    if (sa.x+sa.width > (int16_t)shared->container.width ||
