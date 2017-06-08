@@ -4830,7 +4830,8 @@ uint32_t BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMo
 
         if ( BOMX_VideoDecoder_GetFrameInterval(m_frameRate) <= B_INPUT_RETURN_SPEEDUP_THRES_INTERVAL &&
              m_outputHeight >= B_INPUT_RETURN_SPEEDUP_THRES_HEIGHT &&
-             m_completedInputBuffers > B_MAX_INPUT_COMPLETED_COUNT )
+             m_completedInputBuffers > B_MAX_INPUT_COMPLETED_COUNT &&
+             !m_tunnelMode )
         {
             pReturnBuffer = pBuffer;
         }
