@@ -218,31 +218,34 @@ struct hwc2_dsp_ct_t {
 
 /* layer unit. */
 struct hwc2_lyr_t {
-   struct hwc2_lyr_t  *next;
-   uint64_t           hdl;
+   struct hwc2_lyr_t       *next;
+   uint64_t                hdl;
 
-   hwc2_composition_t cCli; /* offered */
-   hwc2_composition_t cDev; /* wanted  */
-   bool               rp; /* request wanted (not composition type) */
+   hwc2_composition_t      cCli; /* offered */
+   hwc2_composition_t      cDev; /* wanted  */
+   bool                    rp; /* request wanted (not composition type) */
 
-   hwc2_blend_mode_t  bm; /* blend mode */
-   buffer_handle_t    bh; /* buffer handle */
-   int32_t            af; /* acquire fence for buffer 'bh' */
-   hwc_color_t        sc; /* solid color */
-   int32_t            dsp; /* dataspace */
-   hwc_rect_t         fr; /* frame */
-   hwc_rect_t         crp; /* source crop (we rounded float to int) */
-   float              al; /* alpha */
-   native_handle_t    *sbh; /* sideband layer native handle */
-   bool               sfd; /* surface damage (false means no change) */
-   hwc_transform_t    tr; /* transform - unused */
-   hwc_rect_t         vis; /* visible region */
-   uint32_t           z; /* z-order */
-   int32_t            cx; /* cursor x-position */
-   int32_t            cy; /* cursor y-position */
-   int32_t            rf; /* release fence for this layer current buffer */
-   bool               oob; /* is oob-video */
-   uint32_t           lpf; /* last pinged frame (oob-video) */
+   hwc2_blend_mode_t       bm; /* blend mode */
+   buffer_handle_t         bh; /* buffer handle */
+   int32_t                 af; /* acquire fence for buffer 'bh' */
+   hwc_color_t             sc; /* solid color */
+   int32_t                 dsp; /* dataspace */
+   hwc_rect_t              fr; /* frame */
+   hwc_rect_t              crp; /* source crop (we rounded float to int) */
+   float                   al; /* alpha */
+   native_handle_t         *sbh; /* sideband layer native handle */
+   bool                    sfd; /* surface damage (false means no change) */
+   hwc_transform_t         tr; /* transform - unused */
+   hwc_rect_t              vis; /* visible region */
+   uint32_t                z; /* z-order */
+   int32_t                 cx; /* cursor x-position */
+   int32_t                 cy; /* cursor y-position */
+   int32_t                 rf; /* release fence for this layer current buffer */
+   bool                    oob; /* is oob-video */
+   uint32_t                lpf; /* last pinged frame (oob-video) */
+   bool                    scmp; /* can skip composition */
+   NEXUS_MemoryBlockHandle lblk; /* previous block buffer set */
+
 };
 
 /* unit of work for composition. */
