@@ -37,7 +37,7 @@ static jboolean start_sideband(JNIEnv *env, jobject /*thizvoid*/, jobject jsurfa
     if (sidebandContext == NULL) {
         native_window = ANativeWindow_fromSurface(env, jsurface);
         ALOGV("About to initialize sideband");
-        sidebandContext = libbcmsideband_init_sideband(native_window, &video_id, &audio_id, &surface_id, &sb_geometry_update);
+        sidebandContext = libbcmsideband_init_sideband(0, native_window, &video_id, &audio_id, &surface_id, &sb_geometry_update);
         if (!sidebandContext) {
             ALOGE("Unable to initalize the sideband");
             return JNI_FALSE;
