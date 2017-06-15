@@ -1111,7 +1111,7 @@ static void hwc2_vd_cmp_frame(
       case HWC2_COMPOSITION_SOLID_COLOR:
          {
             uint32_t color = (lyr->sc.a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b);
-            if (color != HWC2_TRS) {
+            if ((color != HWC2_TRS) && ((color != HWC2_OPQ) || (c > 0))) {
                hwc2_fb_seed(hwc2, d, color);
                hwc2_chkpt(hwc2);
                /* [iii]. count of composed layers. */
@@ -5005,7 +5005,7 @@ static void hwc2_ext_cmp_frame(
       case HWC2_COMPOSITION_SOLID_COLOR:
          {
             uint32_t color = (lyr->sc.a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b);
-            if (color != HWC2_TRS && color != HWC2_OPQ) {
+            if ((color != HWC2_TRS) && ((color != HWC2_OPQ) || (c > 0))) {
                hwc2_fb_seed(hwc2, d, color);
                hwc2_chkpt(hwc2);
                /* [iv]. count of composed layers. */
