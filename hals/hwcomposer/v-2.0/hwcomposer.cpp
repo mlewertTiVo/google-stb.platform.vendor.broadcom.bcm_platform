@@ -5446,7 +5446,7 @@ static void hwc2_hb_ntfy(
    break;
    case HWC_BINDER_NTFY_VIDEO_SURFACE_ACQUIRED: {
       int i = (ntfy.surface_hdl-HWC2_VID_MAGIC);
-      if (i < 0 || i >= HWC2_VID_WIN) {
+      if (i >= 0 && i < HWC2_VID_WIN) {
          hwc2->rlpf[i] = true;
       }
    }
