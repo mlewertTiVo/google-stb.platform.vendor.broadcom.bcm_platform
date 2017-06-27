@@ -4773,7 +4773,7 @@ int hwc2_blit_gpx(
       goto out;
    }
 
-   ALOGI_IF(1 /*(dsp->lm & LOG_RGBA_DEBUG)*/,
+   ALOGI_IF((dsp->lm & LOG_RGBA_DEBUG),
             "[%s]:[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": {%d,%08x,%s} {%d,%d,%dx%d,%p} out:{%d,%d,%dx%d,%p} dst:{%d,%d} blk:%p::p-blk:%p\n",
             (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
             lyr->bm, al<<HWC2_ASHIFT, getTransformName(lyr->tr),
