@@ -807,6 +807,13 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          }
       }
    }
+
+   /* 13. extra picture buffers for VP9 worst-case decode */
+   for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+      if ( pMemConfigSettings->videoDecoder[i].used && pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVp9] ) {
+         pMemConfigSettings->videoDecoder[i].extraPictureBuffers = 2;
+      }
+   }
 }
 
 static NEXUS_VideoFormat forced_output_format(void)
