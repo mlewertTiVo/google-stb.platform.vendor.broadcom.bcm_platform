@@ -5292,9 +5292,9 @@ static void hwc2_ext_cmp_frame(
             }
          } else {
             hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
+            hwc2_lyr_tl_dequeued(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
          }
       }
-      hwc2_lyr_tl_dequeued(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
    }
 
    /* video present */
