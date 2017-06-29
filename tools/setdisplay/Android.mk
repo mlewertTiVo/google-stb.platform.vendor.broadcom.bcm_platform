@@ -15,14 +15,13 @@ LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 
-LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/
-LOCAL_SRC_FILES := bcm_platform/tools/setdisplay/setdisplay.c \
-                   refsw/nexus/nxclient/apps/utils/nxapps_cmdline.c \
-                   refsw/nexus/utils/namevalue.c
+PREFIX_RELATIVE_PATH := ../../../
+LOCAL_SRC_FILES := setdisplay.c \
+                   $(PREFIX_RELATIVE_PATH)refsw/nexus/nxclient/apps/utils/nxapps_cmdline.c \
+                   $(PREFIX_RELATIVE_PATH)refsw/nexus/utils/namevalue.c
 
 LOCAL_MODULE := nxsetdisp
 LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR_OPTIONAL_EXECUTABLES)
-
+LOCAL_PROPRIETARY_MODULE := true
 include $(BUILD_EXECUTABLE)
 

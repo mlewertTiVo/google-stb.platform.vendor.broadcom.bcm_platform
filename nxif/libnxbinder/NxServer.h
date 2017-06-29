@@ -33,6 +33,7 @@
 #include <INxHpdEvtSrc.h>
 #include <INxDspEvtSrc.h>
 #include "nexus_hdmi_output.h"
+#include "nexus_display.h"
 #include <fcntl.h>
 
 using namespace android;
@@ -76,10 +77,11 @@ private:
    void deinit_hdmi_out();
    void cbHpdAction(hdmi_state state);
    NEXUS_VideoFormat forcedOutputFmt();
-   NEXUS_VideoFormat bestOutputFmt(NEXUS_HdmiOutputStatus *status);
+   NEXUS_VideoFormat bestOutputFmt(NEXUS_HdmiOutputStatus *status, NEXUS_DisplayCapabilities *caps);
    void cbDisplayAction();
    bool getLimitedColorSettings(unsigned &limitedColorDepth,
                                 NEXUS_ColorSpace &limitedColorSpace);
+   bool getForcedHdcp(void);
 
    bool init_ir();
    void deinit_ir();

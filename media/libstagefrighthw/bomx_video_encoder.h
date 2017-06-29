@@ -307,6 +307,7 @@ protected:
     NEXUS_SimpleEncoderStatus m_videoEncStatus;
 
     FILE *m_pITBDescDumpFile;
+    FILE *m_pInputDumpFile;
     int m_memTracker;
     BOMX_FrameRateTracker m_frameRateTracker;
 

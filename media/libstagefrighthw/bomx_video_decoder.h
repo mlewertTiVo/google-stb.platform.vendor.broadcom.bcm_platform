@@ -307,6 +307,7 @@ protected:
     bool                             m_setSurface;
     FILE                            *m_pPesFile;
     FILE                            *m_pInputFile;
+    FILE                            *m_pOutputFile;
     BOMX_PesFormatter               *m_pPes;
 
     char m_inputMimeType[OMX_MAX_STRINGNAME_SIZE];

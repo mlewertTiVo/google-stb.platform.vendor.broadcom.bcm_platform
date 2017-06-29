@@ -51,8 +51,17 @@ LOCAL_SRC_FILES += nxserver_with_encoder.cpp
 else
 LOCAL_SRC_FILES += nxserver_stub_encoder.cpp
 endif
+ifeq ($(NEXUS_SECURITY_SUPPORT),n)
+LOCAL_SRC_FILES += nxserver_stub_security.cpp
+else
+LOCAL_SRC_FILES += nxserver_with_security.cpp
+endif
 
+ifeq ($(LOCAL_NVI_LAYOUT),y)
+LOCAL_INIT_RC := nxserver.nvi.rc
+else
 LOCAL_INIT_RC := nxserver.rc
+endif
 
 LOCAL_MODULE := nxserver
 LOCAL_MODULE_TAGS := optional

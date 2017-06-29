@@ -18,10 +18,11 @@ LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_CFLAGS += -DUSE_NXCLIENT=1
 
-LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}
-LOCAL_SRC_FILES := refsw/BSEAV/lib/security/sage/manufacturing/app/sage_manufacturing_tool.c
+PREFIX_RELATIVE_PATH := ../../../
+LOCAL_SRC_FILES := $(PREFIX_RELATIVE_PATH)refsw/BSEAV/lib/security/sage/manufacturing/app/sage_manufacturing_tool.c
 
 LOCAL_MODULE := nxsmt
+LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_EXECUTABLE)
 

@@ -339,7 +339,7 @@ extern void brcm_audio_set_mute_state(bool mute);
 extern bool brcm_audio_get_mute_state(void);
 extern void brcm_audio_set_master_volume(float volume);
 extern float brcm_audio_get_master_volume(void);
-extern NEXUS_Error brcm_audio_client_join(const char *name);
+extern NEXUS_Error brcm_audio_client_join(void);
 extern void brcm_audio_set_audio_volume(float leftVol, float rightVol);
 extern NEXUS_AudioCodec brcm_audio_get_codec_from_format(audio_format_t format);
 

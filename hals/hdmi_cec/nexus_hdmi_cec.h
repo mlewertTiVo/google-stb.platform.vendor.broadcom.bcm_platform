@@ -145,6 +145,26 @@ class NexusHdmiCecDevice : public RefBase
                 LinuxUInputRef();
         };
 
+        class HdmiCecTxMessageHandler : public AHandler {
+            public:
+                static sp<HdmiCecTxMessageHandler> instantiate(sp<NexusHdmiCecDevice> device) { return new HdmiCecTxMessageHandler(device); }
+                ~HdmiCecTxMessageHandler();
+
+                enum {
+                    kWhatSend =  0x01,
+                };
+            protected:
+                HdmiCecTxMessageHandler(sp<NexusHdmiCecDevice> device);
+            private:
+                sp<NexusHdmiCecDevice> mNexusHdmiCecDevice;
+
+                virtual void onMessageReceived(const sp<AMessage> &msg);
+                virtual status_t outputCecMessage(const sp<AMessage> &msg);
+
+                HdmiCecTxMessageHandler(const HdmiCecTxMessageHandler &);
+                HdmiCecTxMessageHandler &operator=(const HdmiCecTxMessageHandler &);
+        };
+
     private:
         uint8_t                         mCecLogicalAddr;
         uint16_t                        mCecPhysicalAddr;
@@ -164,6 +184,8 @@ class NexusHdmiCecDevice : public RefBase
         sp<HdmiCecRxMessageHandler>     mHdmiCecRxMessageHandler;
         sp<ALooper>                     mHdmiCecRxMessageLooper;
         sp<LinuxUInputRef>              mUInput;
+        sp<HdmiCecTxMessageHandler>     mHdmiCecTxMessageHandler;
+        sp<ALooper>                     mHdmiCecTxMessageLooper;
         NEXUS_CecHandle                 mCecHandle;
         NEXUS_HdmiOutputHandle          mHdmiHandle;
         uint8_t                         mLogicalAddress;

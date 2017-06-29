@@ -61,6 +61,9 @@
 
 // Runtime Properties (note: set selinux to permissive mode)
 #define B_PROPERTY_ITB_DESC_DEBUG ("media.brcm.venc_itb_desc_debug")
+#define B_PROPERTY_INPUT_DEBUG ("media.brcm.venc_input_debug")      // WARNING: Enabling this feature would save raw input to the
+                                                                    //      userdata partition. Make sure there is enough space for
+                                                                    //      storing the captures.
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
 #define B_PROPERTY_ENC_MAX_WIDTH ("ro.nx.enc.max.width")
 #define B_PROPERTY_ENC_MAX_HEIGHT ("ro.nx.enc.max.height")
@@ -359,6 +362,7 @@ BOMX_VideoEncoder::BOMX_VideoEncoder(
     m_lastOutputFrameTicks(0),
     m_inputMode(BOMX_VideoEncoderInputBufferType_eStandard),
     m_pITBDescDumpFile(NULL),
+    m_pInputDumpFile(NULL),
     m_memTracker(-1)
 {
     unsigned i;
@@ -2230,7 +2234,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::EmptyThisBuffer(
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
 
-    ALOGV("comp:%s, buff:%p len:%d ts:%llu flags:%x", GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
+    ALOGI("comp:%s, buff:%p len:%d ts:%llu flags:%x", GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
 
     if(pBufferHeader->nFlags & ( OMX_BUFFERFLAG_DATACORRUPT | OMX_BUFFERFLAG_EXTRADATA | OMX_BUFFERFLAG_CODECCONFIG ))
     {
@@ -3438,6 +3442,26 @@ NEXUS_Error BOMX_VideoEncoder::AllocateEncoderResource()
             // Just keep going without debug
         }
     }
+    // Setup file to debug input frames if required
+    if ( property_get_int32(B_PROPERTY_INPUT_DEBUG, 0) )
+    {
+        time_t rawtime;
+        struct tm * timeinfo;
+        char fname[100];
+
+        // Generate unique file name
+        time(&rawtime);
+        timeinfo = localtime(&rawtime);
+        strftime(fname, sizeof(fname), "/data/nxmedia/venc-%F_%H_%M_%S.input", timeinfo);
+        ALOGD("Encoder input debug file:%s", fname);
+        m_pInputDumpFile = fopen(fname, "wb+");
+        if ( NULL == m_pInputDumpFile )
+        {
+            ALOGW("Error creating input dump file %s (%s)", fname, strerror(errno));
+            // Just keep going without debug
+        }
+    }
+
     return NEXUS_SUCCESS;
 }
 
@@ -3467,6 +3491,12 @@ void BOMX_VideoEncoder::ReleaseEncoderResource()
         NxClient_Disconnect(m_nxClientId);
         NxClient_Free(&m_allocResults);
         m_nxClientId = NXCLIENT_INVALID_ID;
+    }
+
+    if ( m_pInputDumpFile )
+    {
+        fclose(m_pInputDumpFile);
+        m_pInputDumpFile = NULL;
     }
 
     if ( m_pITBDescDumpFile )
@@ -4206,8 +4236,6 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
     NEXUS_SurfaceHandle srcCb, srcCr, srcY;
     void *slock;
     size_t size;
-    NEXUS_MemoryBlockHandle block_handle = NULL;
-    PSHARED_DATA pSharedData;
 
     stride = (width + (alignment-1)) & ~(alignment-1);
     cstride = (stride/2 + (alignment-1)) & ~(alignment-1),
@@ -4220,6 +4248,11 @@ NEXUS_Error BOMX_VideoEncoder::ExtractNexusBuffer(uint8_t *pSrcBuf, unsigned int
 
     ALOGV("%s: yv12 (%d,%d):%d: cr-off:%u, cb-off:%u\n", __FUNCTION__,
           width, height, stride, cr_offset, cb_offset);
+
+    if ( NULL != m_pInputDumpFile )
+    {
+        fwrite(pSrcBuf, cb_offset + (cstride * height), 1, m_pInputDumpFile);
+    }
 
     srcY = CreateSurface(width, height, stride, NEXUS_PixelFormat_eY8, 0, 0, y_addr, NULL);
     if (NULL == srcY)
@@ -4330,6 +4363,15 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
         ALOGV("%s: yv12 (%d,%d):%d: cr-off:%u, cb-off:%u\n", __FUNCTION__,
               width, height, stride, cr_offset, cb_offset);
 
+        if ( NULL != m_pInputDumpFile )
+        {
+            void *pInputMem;
+            rc = NEXUS_MemoryBlock_Lock(planeHandle, &pInputMem);
+            ALOG_ASSERT(!rc);
+            fwrite(pInputMem, cr_offset + (cstride * height), 1, m_pInputDumpFile);
+            NEXUS_MemoryBlock_Unlock(planeHandle);
+        }
+
         srcY = CreateSurface(width, height, stride, NEXUS_PixelFormat_eY8, planeHandle, 0, NULL, NULL);
         if (NULL == srcY)
         {
@@ -4386,6 +4428,38 @@ NEXUS_Error BOMX_VideoEncoder::ExtractGrallocBuffer(private_handle_t *handle, NE
     {
         NEXUS_Graphics2DBlitSettings blitSettings;
         NEXUS_PixelFormat pixelFormat;
+
+        if ( NULL != m_pInputDumpFile )
+        {
+            unsigned size;
+
+            switch (cFormat) {
+            case HAL_PIXEL_FORMAT_RGBA_8888:
+            case HAL_PIXEL_FORMAT_RGBX_8888:
+            case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
+                size = 32 * width * height;
+                break;
+            case HAL_PIXEL_FORMAT_RGB_888:
+                size = 24 * width * height;
+                break;
+            case HAL_PIXEL_FORMAT_RGB_565:
+                size = 16 * width * height;
+                break;
+            default:
+                // Skip unknown format
+                size = 0;
+                break;
+            }
+
+            if ( size > 0 )
+            {
+                void *pInputMem;
+                rc = NEXUS_MemoryBlock_Lock(planeHandle, &pInputMem);
+                ALOG_ASSERT(!rc);
+                fwrite(pInputMem, size, 1, m_pInputDumpFile);
+                NEXUS_MemoryBlock_Unlock(planeHandle);
+            }
+        }
 
         switch (cFormat) {
         case HAL_PIXEL_FORMAT_RGBA_8888:

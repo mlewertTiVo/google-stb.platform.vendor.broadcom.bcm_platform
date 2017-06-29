@@ -40,6 +40,7 @@
 #include "namevalue.inc"
 
 #define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
+#define NX_HDCP_TOGGLE                 "nx.hdcp.force" /* needs prefixing. */
 #define NX_HD_OUT_COLOR_DEPTH_10B      "ro.nx.colordepth10b.force"
 
 using namespace android;
@@ -161,7 +162,7 @@ void NxServer::getNxClient(int pid, uint64_t &client)
    client = (uint64_t)(intptr_t)nexusClient;
 
 out:
-   ALOGI("process: %d -> associated with nexus client: %" PRIu64 "", pid, client);
+   ALOGV("process: %d -> associated with nexus client: %" PRIu64 "", pid, client);
    return;
 }
 
@@ -303,7 +304,7 @@ void NxServer::init_hdmi_out() {
 
    cbHotplug(this, 0);
 #if ANDROID_ENABLE_HDMI_HDCP
-   cbHdcpState(this, 0);
+   cbHdcp(this, 0);
 #endif
 }
 
@@ -353,6 +354,7 @@ void NxServer::cbHpdAction(hdmi_state state) {
    unsigned limitedColorDepth;
    NEXUS_ColorSpace limitedColorSpace;
    bool limitedColorSettings;
+   NEXUS_DisplayCapabilities caps;
 
    rc = NxClient_GetDisplayStatus(&status);
    if (rc) {
@@ -363,13 +365,15 @@ void NxServer::cbHpdAction(hdmi_state state) {
       update = false;
       // check if we need to change the output format.
       NxClient_GetDisplaySettings(&settings);
+      NEXUS_GetDisplayCapabilities(&caps);
       if (state == HDMI_PLUGGED) {
          format = forcedOutputFmt();
-         if (!status.hdmi.status.videoFormatSupported[format]) {
+         if (!status.hdmi.status.videoFormatSupported[format] ||
+             !caps.displayFormatSupported[format]) {
             format = NEXUS_VideoFormat_eUnknown;
          }
          if (format == NEXUS_VideoFormat_eUnknown) {
-            format = bestOutputFmt(&status.hdmi.status);
+            format = bestOutputFmt(&status.hdmi.status, &caps);
          }
          if ((format != NEXUS_VideoFormat_eUnknown) && (settings.format != format)) {
             settings.format = format;
@@ -388,7 +392,11 @@ void NxServer::cbHpdAction(hdmi_state state) {
       // check if we need  to re-enable hdcp.
       NxClient_HdcpLevel hdcp = settings.hdmiPreferences.hdcp;
       if (status.hdmi.status.connected && status.hdmi.status.rxPowered) {
-         settings.hdmiPreferences.hdcp = NxClient_HdcpLevel_eOptional;
+         settings.hdmiPreferences.hdcp =
+            (getForcedHdcp() == 0) ? NxClient_HdcpLevel_eNone : NxClient_HdcpLevel_eOptional;
+            if (getForcedHdcp() == 0) {
+               ALOGW("%s: HDCP disabled by run-time, some features may not work.", __PRETTY_FUNCTION__);
+            }
       } else {
          settings.hdmiPreferences.hdcp = NxClient_HdcpLevel_eNone;
       }
@@ -457,7 +465,7 @@ NEXUS_VideoFormat NxServer::forcedOutputFmt(void) {
    return forced_format;
 }
 
-NEXUS_VideoFormat NxServer::bestOutputFmt(NEXUS_HdmiOutputStatus *status) {
+NEXUS_VideoFormat NxServer::bestOutputFmt(NEXUS_HdmiOutputStatus *status, NEXUS_DisplayCapabilities *caps) {
    int i;
    NEXUS_VideoFormat format = NEXUS_VideoFormat_eUnknown;
    NEXUS_VideoFormat ordered_list[] = {
@@ -489,13 +497,27 @@ NEXUS_VideoFormat NxServer::bestOutputFmt(NEXUS_HdmiOutputStatus *status) {
    };
 
    for (i = 0 ; ordered_list[i] != NEXUS_VideoFormat_eUnknown; i++) {
-      if (status->videoFormatSupported[ordered_list[i]]) {
+      if (status->videoFormatSupported[ordered_list[i]] &&
+          caps->displayFormatSupported[ordered_list[i]]) {
          format = ordered_list[i];
          break;
       }
    }
 
    return format;
+}
+
+bool NxServer::getForcedHdcp(void)
+{
+   char name[PROPERTY_VALUE_MAX];
+#if ANDROID_ENABLE_HDMI_HDCP
+   int def_val = 1;
+#else
+   int def_val = 0;
+#endif
+
+   sprintf(name, "dyn.%s", NX_HDCP_TOGGLE);
+   return property_get_bool(name, def_val);
 }
 
 bool NxServer::getLimitedColorSettings(unsigned &limitedColorDepth,
@@ -558,6 +580,8 @@ void NxServer::cbHdcp(void *context, int param) {
    NxClient_StandbyStatus standbyStatus;
    NxServer *pNxServer = reinterpret_cast<NxServer *>(context);
    Mutex::Autolock autoLock(pNxServer->mLock);
+
+   (void)param;
 
    rc = NxClient_GetStandbyStatus(&standbyStatus);
    if (rc != NEXUS_SUCCESS) {

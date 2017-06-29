@@ -20,7 +20,12 @@ LOCAL_CFLAGS += -Werror
 LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/
 LOCAL_SRC_FILES := bcm_platform/nxif/nxdispfmt/nxdispfmt.c \
                    refsw/nexus/utils/namevalue.c
+
+ifeq ($(LOCAL_NVI_LAYOUT),y)
+LOCAL_INIT_RC := bcm_platform/nxif/nxdispfmt/nxdispfmt.nvi.rc
+else
 LOCAL_INIT_RC := bcm_platform/nxif/nxdispfmt/nxdispfmt.rc
+endif
 
 LOCAL_MODULE := nxdispfmt
 

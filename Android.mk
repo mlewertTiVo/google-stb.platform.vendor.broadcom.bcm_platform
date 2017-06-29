@@ -39,7 +39,6 @@ include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
 ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
 endif
-include ${BCM_APPS_PATH}/BcmSpdifSetting/Android.mk
 ifneq ($(TARGET_BUILD_PDK),true)
 endif
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk

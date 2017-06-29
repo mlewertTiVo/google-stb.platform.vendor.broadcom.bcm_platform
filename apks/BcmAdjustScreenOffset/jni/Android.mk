@@ -17,4 +17,5 @@ LOCAL_SRC_FILES := jni_adjustScreenOffset.cpp
 
 LOCAL_MODULE := libjni_adjustScreenOffset
 LOCAL_MODULE_TAGS := optional
+LOCAL_PROPRIETARY_MODULE := true
 include $(BUILD_SHARED_LIBRARY)

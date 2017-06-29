@@ -64,6 +64,10 @@
 // Runtime Properties
 #define B_PROPERTY_PES_DEBUG ("media.brcm.vdec_pes_debug")
 #define B_PROPERTY_INPUT_DEBUG ("media.brcm.vdec_input_debug")
+#define B_PROPERTY_OUTPUT_DEBUG ("media.brcm.vdec_output_debug")    // Available for non-secure decoding in standard/metadata mode.
+                                                                    // WARNING: Enabling this feature would save raw YUV decoded output
+                                                                    //    to the userdata partition. Make sure there is enough space for
+                                                                    //    storing the captures.
 #define B_PROPERTY_ENABLE_METADATA ("media.brcm.vdec_enable_metadata")
 #define B_PROPERTY_TUNNELED_HFRVIDEO ("media.brcm.vdec_hfrvideo_tunnel")
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
@@ -110,6 +114,8 @@
 #define B_FR_EST_NUM_STABLE_DELTA_NEEDED (8)
 #define B_FR_EST_STABLE_DELTA_THRESHOLD (2000)          // in micro-seconds
 
+#define B_YV12_ALIGNMENT (16)
+
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
 #define OMX_IndexParamStoreMetaDataInBuffers                 0x7F000003
@@ -123,7 +129,7 @@
 
 using namespace android;
 
-#if defined(HW_HVD_REVISION_S)
+#if defined(HW_HVD_REVISION__GT_OR_EQ__S)
 static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
                                                        {"video_decoder.avc", OMX_VIDEO_CodingAVC},
                                                        {"video_decoder.hevc", OMX_VIDEO_CodingHEVC}};
@@ -1074,6 +1080,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_setSurface(false),
     m_pPesFile(NULL),
     m_pInputFile(NULL),
+    m_pOutputFile(NULL),
     m_pPes(NULL),
     m_pEosBuffer(NULL),
     m_eosPending(false),
@@ -1558,11 +1565,12 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pBcmvHeader[2] = 'M';
     m_pBcmvHeader[3] = 'V';
 
-    int32_t pesDebug, inputDebug;
+    int32_t pesDebug, inputDebug, outputDebug;
     pesDebug = property_get_int32(B_PROPERTY_PES_DEBUG, 0);
     inputDebug = property_get_int32(B_PROPERTY_INPUT_DEBUG, 0);
-    // Setup file to debug input or PES data packing if required
-    if ( pesDebug || inputDebug )
+    outputDebug = property_get_int32(B_PROPERTY_OUTPUT_DEBUG, 0);
+    // Setup file to debug input, output, or PES data packing if required
+    if ( pesDebug || inputDebug || outputDebug )
     {
         time_t rawtime;
         struct tm * timeinfo;
@@ -1590,6 +1598,17 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
             if ( NULL == m_pInputFile )
             {
                 ALOGW("Error creating input debug file %s (%s)", fname, strerror(errno));
+                // Just keep going without debug
+            }
+        }
+        if ( outputDebug )
+        {
+            strftime(fname, sizeof(fname), "/data/nxmedia/vdec-%F_%H_%M_%S.output", timeinfo);
+            ALOGD("Output debug output file:%s", fname);
+            m_pOutputFile = fopen(fname, "wb+");
+            if ( NULL == m_pOutputFile )
+            {
+                ALOGW("Error creating output debug file %s (%s)", fname, strerror(errno));
                 // Just keep going without debug
             }
         }
@@ -1674,6 +1693,12 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         fclose(m_pPesFile);
         m_pPesFile = NULL;
+    }
+
+    if ( m_pOutputFile )
+    {
+        fclose(m_pOutputFile);
+        m_pOutputFile = NULL;
     }
 
     if ( m_pInputFile )
@@ -2067,7 +2092,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 const OMX_VIDEO_VP9LEVELTYPE *levels = bStandardFrameRate ? g_vp9StandardLevels : g_vp9Levels;
                 const size_t countLevels = bStandardFrameRate ? g_numVp9StandardLevels : g_numVp9Levels;
                 bool supportsProfile2 = false;
-#ifdef HW_HVD_REVISION_S
+#if defined(HW_HVD_REVISION__GT_OR_EQ__S)
                 supportsProfile2 = true;
 #endif
                 size_t numProfiles = !supportsProfile2 ? 1 : m_tunnelMode? 3 : 2;
@@ -2208,7 +2233,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     {
         DescribeColorFormatParams *pColorFormat = (DescribeColorFormatParams *)pComponentParameterStructure;
         BOMX_STRUCT_VALIDATE(pColorFormat);
-        ALOGV("GetParameter OMX_IndexParamDescribeColorFormat eColorFormat=%d", (int)pColorFormat->eColorFormat);
+        ALOGI("GetParameter OMX_IndexParamDescribeColorFormat eColorFormat=%d", (int)pColorFormat->eColorFormat);
         switch ( (int)pColorFormat->eColorFormat )
         {
             case HAL_PIXEL_FORMAT_YV12:
@@ -2216,8 +2241,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
                 // YV12 is Y/Cr/Cb
                 size_t yAlign, cAlign;
 
-                yAlign = (pColorFormat->nStride + (16-1)) & ~(16-1);
-                cAlign = ((pColorFormat->nStride/2) + (16-1)) & ~(16-1);
+                yAlign = (pColorFormat->nStride + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1);
+                cAlign = ((pColorFormat->nStride/2) + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1);
                 pColorFormat->sMediaImage.mPlane[MediaImage::Y].mRowInc = yAlign;
                 pColorFormat->sMediaImage.mPlane[MediaImage::V].mRowInc = cAlign;
                 pColorFormat->sMediaImage.mPlane[MediaImage::U].mRowInc = cAlign;
@@ -3869,22 +3894,22 @@ OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
         // come first.  It's always safe to do it here.
         if ( m_tunnelMode )
         {
-            ALOGV("Selecting no output mode for output buffer %p", (void*)pBuffer);
+            ALOGI("Selecting no output mode for output buffer %p", (void*)pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eNone;
         }
         else if ( m_metadataEnabled )
         {
-            ALOGV("Selecting metadata output mode for output buffer %p", (void*)pBuffer);
+            ALOGI("Selecting metadata output mode for output buffer %p", (void*)pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eMetadata;
         }
         else if ( m_nativeGraphicsEnabled )
         {
-            ALOGV("Selecting native graphics output mode for output buffer %p", (void*)pBuffer);
+            ALOGI("Selecting native graphics output mode for output buffer %p", (void*)pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eNative;
         }
         else
         {
-            ALOGV("Selecting standard buffer output mode for output buffer %p", (void*)pBuffer);
+            ALOGI("Selecting standard buffer output mode for output buffer %p", (void*)pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eStandard;
         }
         switch ( m_outputMode )
@@ -4884,7 +4909,8 @@ uint32_t BOMX_VideoDecoder::ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMo
 
         if ( BOMX_VideoDecoder_GetFrameInterval(m_frameRate) <= B_INPUT_RETURN_SPEEDUP_THRES_INTERVAL &&
              m_outputHeight >= B_INPUT_RETURN_SPEEDUP_THRES_HEIGHT &&
-             m_completedInputBuffers > B_MAX_INPUT_COMPLETED_COUNT )
+             m_completedInputBuffers > B_MAX_INPUT_COMPLETED_COUNT &&
+             !m_tunnelMode )
         {
             pReturnBuffer = pBuffer;
         }
@@ -5284,7 +5310,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
     {
         DescribeHDRStaticInfoParams *pHDRStaticInfo = (DescribeHDRStaticInfoParams *)pComponentConfigStructure;
         BOMX_STRUCT_VALIDATE(pHDRStaticInfo);
-        ALOGV("GetConfig OMX_IndexParamDescribeHdrColorInfo");
+        ALOGI("GetConfig OMX_IndexParamDescribeHdrColorInfo");
         if ( pHDRStaticInfo->nPortIndex != m_videoPortBase+1 )
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -5324,7 +5350,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
     {
         DescribeColorAspectsParams *pColorAspects = (DescribeColorAspectsParams *)pComponentConfigStructure;
         BOMX_STRUCT_VALIDATE(pColorAspects);
-        ALOGV("GetConfig OMX_IndexParamDescribeColorAspects");
+        ALOGI("GetConfig OMX_IndexParamDescribeColorAspects");
         if ( pColorAspects->nPortIndex != m_videoPortBase+1 )
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -5352,7 +5378,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
             // overwrite fields obtained from the stream
             ColorAspectsFromNexusStreamInfo(&pColorAspects->sAspects);
             ColorAspects *pAspects = &pColorAspects->sAspects;
-            ALOGV("ColorAspects from stream [(R:%u, P:%u, M:%u, T:%u]",
+            ALOGI("ColorAspects from stream [(R:%u, P:%u, M:%u, T:%u]",
                 pAspects->mRange, pAspects->mPrimaries, pAspects->mMatrixCoeffs, pAspects->mTransfer);
         }
 
@@ -5959,6 +5985,10 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     if ( pInfo->typeInfo.standard.pClientMemory )
                                     {
                                         CopySurfaceToClient(pInfo);
+                                        if ( NULL != m_pOutputFile && !m_secureDecoder )
+                                        {
+                                            fwrite(pInfo->typeInfo.standard.pClientMemory, pHeader->nFilledLen, 1, m_pOutputFile);
+                                        }
                                     }
                                 }
                                 else
@@ -6029,6 +6059,21 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                             (void)BOMX_ERR_TRACE(res);
                                             destripedSuccess = false;
                                             pSharedData->videoFrame.destripeComplete = true;
+                                        }
+                                        else
+                                        {
+                                            if ( NULL != m_pOutputFile && !m_secureDecoder )
+                                            {
+                                                void *pDestripedMemory;
+                                                NEXUS_MemoryBlockHandle handle = (NEXUS_MemoryBlockHandle)pSharedData->container.block;
+                                                if ((NEXUS_MemoryBlock_Lock(handle, &pDestripedMemory) == NEXUS_SUCCESS) && (pDestripedMemory != NULL))
+                                                {
+                                                    unsigned ySize = pSharedData->container.stride * pSharedData->container.height;
+                                                    unsigned cSize = ((pSharedData->container.height/2) * ((pSharedData->container.stride/2 + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1)));
+                                                    fwrite(pDestripedMemory, ySize + cSize * 2, 1, m_pOutputFile);
+                                                    NEXUS_MemoryBlock_Unlock(handle);
+                                                }
+                                            }
                                         }
 
                                         private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
@@ -6697,7 +6742,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
    NEXUS_MemoryBlockHandle block_handle = NULL;
    void *slock;
    NEXUS_Error nxCode;
-   int yv12_alignment = 16;
 
    if (m_hGraphics2d == NULL) {
       ALOGE("DestripeToYV12: no gfx2d.");
@@ -6729,7 +6773,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
    hSurfaceCr = BOMX_VideoDecoder_ToNexusSurface(
                               pSharedData->container.width/2,
                               pSharedData->container.height/2,
-                              (pSharedData->container.stride/2 + (yv12_alignment-1)) & ~(yv12_alignment-1),
+                              (pSharedData->container.stride/2 + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1),
                               NEXUS_PixelFormat_eCr8,
                               pSharedData->container.block,
                               pSharedData->container.stride * pSharedData->container.height);
@@ -6744,11 +6788,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::DestripeToYV12(SHARED_DATA *pSharedData, NEXUS_
    hSurfaceCb = BOMX_VideoDecoder_ToNexusSurface(
                               pSharedData->container.width/2,
                               pSharedData->container.height/2,
-                              (pSharedData->container.stride/2 + (yv12_alignment-1)) & ~(yv12_alignment-1),
+                              (pSharedData->container.stride/2 + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1),
                               NEXUS_PixelFormat_eCb8,
                               pSharedData->container.block,
                               (pSharedData->container.stride * pSharedData->container.height) +
-                              ((pSharedData->container.height/2) * ((pSharedData->container.stride/2 + (yv12_alignment-1)) & ~(yv12_alignment-1))));
+                              ((pSharedData->container.height/2) * ((pSharedData->container.stride/2 + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1))));
    if (hSurfaceCb == NULL) {
       ALOGE("DestripeToYV12: invalid plane Cb");
       errCode = OMX_ErrorInsufficientResources;

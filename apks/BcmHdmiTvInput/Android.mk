@@ -24,7 +24,7 @@ LOCAL_PACKAGE_NAME := BcmHdmiTvInput
 LOCAL_PRIVILEGED_MODULE := true
 
 LOCAL_MODULE_TAGS := optional
-
+LOCAL_PROPRIETARY_MODULE := true
 LOCAL_SDK_VERSION := system_current
 
 include $(BUILD_PACKAGE)

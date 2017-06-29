@@ -44,7 +44,7 @@ LOCAL_SRC_FILES := \
 
 LOCAL_C_INCLUDES := $(TOP)/frameworks/native/include/media/openmax
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/utils
- 
+
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
@@ -168,8 +168,8 @@ LOCAL_SHARED_LIBRARIES += libsrai libbomx_secbuff
 LOCAL_CFLAGS += -DSECURE_DECODER_ON
 endif
 
-ifeq ($(HW_HVD_REVISION),S)
-LOCAL_CFLAGS += -DHW_HVD_REVISION_S
+ifeq ($(filter $(HW_HVD_REVISION),S T),$(HW_HVD_REVISION))
+LOCAL_CFLAGS += -DHW_HVD_REVISION__GT_OR_EQ__S
 # only enable redux hw-decoder on newer platforms.
 ifeq ($(HW_HVD_REDUX),y)
 LOCAL_CFLAGS += -DHW_HVD_REDUX

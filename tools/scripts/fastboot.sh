@@ -2,7 +2,7 @@
 set -e
 
 function usage {
-   echo "$0 [-g] [-b] [-s] [-d] [-c] [-u] [-w <name>] [-z] [-D <ip-address|device-id>] [-i <image_src>]"
+   echo "$0 [-g] [-b] [-s] [-d] [-c] [-u] [-w <name>] [-z] [-v] [-D <ip-address|device-id>] [-i <image_src>]"
    echo ""
    echo "list partitions to update via fastboot. partitions in:"
    echo ""
@@ -14,6 +14,7 @@ function usage {
    echo "     '-u': bootloader"
    echo "     '-w <name>': hwcfg image name"
    echo "     '-z': recovery"
+   echo "     '-v': vendor"
    echo ""
    echo "'-D' - to flash on a specific device (when multiple devices are connected) otherwise"
 	echo "       fastboot over usb would be used'"
@@ -37,6 +38,7 @@ update_recovery=0
 update_gpt=0
 update_hwcfg=0
 update_bl=0
+update_vendor=0
 selinux=0
 img_src='.'
 if [ $# -gt 0 ]; then
@@ -47,7 +49,7 @@ fi
 
 #flag to check if any of the $update_* variables are set
 update_something=0
-while getopts "hgbdcusw:zD:i:" tag; do
+while getopts "hgbdcusw:zvD:i:" tag; do
 	case $tag in
 	g)
 		update_gpt=1
@@ -80,6 +82,10 @@ while getopts "hgbdcusw:zD:i:" tag; do
 		;;
 	z)
 		update_recovery=1
+		update_something=1
+		;;
+	v)
+		update_vendor=1
 		update_something=1
 		;;
 	D)
@@ -143,6 +149,9 @@ fi
 if [ $update_bl -gt 0 ]; then
 	echo "     bootloader"
 fi
+if [ $update_vendor -gt 0 ]; then
+	echo "     vendor"
+fi
 echo ""
 
 sleep 2
@@ -174,6 +183,9 @@ if [ $update_userdata -gt 0 ]; then
 fi
 if [ $update_cache -gt 0 ]; then
 	$fastboot_cmd flash cache $img_src/cache.img
+fi
+if [ $update_vendor -gt 0 ]; then
+	$fastboot_cmd flash vendor $img_src/vendor.img
 fi
 $fastboot_cmd reboot
 echo "done!!!"

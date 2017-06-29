@@ -84,7 +84,11 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/c
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := hwcbinder
 
+ifeq ($(LOCAL_NVI_LAYOUT),y)
+LOCAL_INIT_RC := common/hwcbinder.nvi.rc
+else
 LOCAL_INIT_RC := common/hwcbinder.rc
+endif
 
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_CLASS := EXECUTABLES

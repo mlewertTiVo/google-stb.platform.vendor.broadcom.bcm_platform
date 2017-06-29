@@ -50,8 +50,6 @@ using namespace android;
 
 #define NEXUS_OUT_BUFFER_DURATION_MS    10
 
-#define BRCM_AUDIO_DIRECT_NXCLIENT_NAME "BrcmAudioOutDirect"
-
 #define BRCM_AUDIO_STREAM_ID                    (0xC0)
 #define BRCM_AUDIO_DIRECT_COMP_BUFFER_SIZE      (2048)
 #define BRCM_AUDIO_DIRECT_PLAYPUMP_FIFO_SIZE    (32768)
@@ -803,13 +801,6 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
         bout->buffer_size = BRCM_AUDIO_DIRECT_COMP_BUFFER_SIZE;
     }
 
-    /* Open Nexus simple decoder */
-    rc = brcm_audio_client_join(BRCM_AUDIO_DIRECT_NXCLIENT_NAME);
-    if (rc != NEXUS_SUCCESS) {
-        ALOGE("%s: brcm_audio_client_join error, rc:%d", __FUNCTION__, rc);
-        return -ENOSYS;
-    }
-
     /* Allocate simpleAudioDecoder */
     NxClient_GetDefaultAllocSettings(&allocSettings);
     allocSettings.simpleAudioDecoder = 1;
@@ -939,8 +930,6 @@ err_event:
 err_acquire:
     NxClient_Free(&(bout->nexus.allocResults));
 err_alloc:
-    NxClient_Uninit();
-
     return ret;
 }
 
@@ -992,7 +981,6 @@ static int nexus_direct_bout_close(struct brcm_stream_out *bout)
 
     NxClient_Disconnect(bout->nexus.connectId);
     NxClient_Free(&(bout->nexus.allocResults));
-    NxClient_Uninit();
     bout->nexus.state = BRCM_NEXUS_STATE_DESTROYED;
 
     return 0;

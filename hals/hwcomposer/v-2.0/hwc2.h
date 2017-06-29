@@ -53,6 +53,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_MAGIC      0xBC353C02
 #define HWC2_VID_MAGIC  0x00E33200
 #define HWC2_SDB_MAGIC  0x51DEBA00
+#define HWC2_TLM_MAGIC  0xBAAD1DEA
 
 #define HWC2_INVALID    -1
 #define HWC2_MAX_REG_CB 3
@@ -204,6 +205,10 @@ struct hwc2_lyr_tl_t {
 
    uint64_t          pt;
    uint64_t          si;
+
+   pthread_mutex_t   mtx_lc;
+   bool              que;
+   bool              rem;
 };
 
 /* display context target. */
@@ -218,31 +223,34 @@ struct hwc2_dsp_ct_t {
 
 /* layer unit. */
 struct hwc2_lyr_t {
-   struct hwc2_lyr_t  *next;
-   uint64_t           hdl;
+   struct hwc2_lyr_t       *next;
+   uint64_t                hdl;
 
-   hwc2_composition_t cCli; /* offered */
-   hwc2_composition_t cDev; /* wanted  */
-   bool               rp; /* request wanted (not composition type) */
+   hwc2_composition_t      cCli; /* offered */
+   hwc2_composition_t      cDev; /* wanted  */
+   bool                    rp; /* request wanted (not composition type) */
 
-   hwc2_blend_mode_t  bm; /* blend mode */
-   buffer_handle_t    bh; /* buffer handle */
-   int32_t            af; /* acquire fence for buffer 'bh' */
-   hwc_color_t        sc; /* solid color */
-   int32_t            dsp; /* dataspace */
-   hwc_rect_t         fr; /* frame */
-   hwc_rect_t         crp; /* source crop (we rounded float to int) */
-   float              al; /* alpha */
-   native_handle_t    *sbh; /* sideband layer native handle */
-   bool               sfd; /* surface damage (false means no change) */
-   hwc_transform_t    tr; /* transform - unused */
-   hwc_rect_t         vis; /* visible region */
-   uint32_t           z; /* z-order */
-   int32_t            cx; /* cursor x-position */
-   int32_t            cy; /* cursor y-position */
-   int32_t            rf; /* release fence for this layer current buffer */
-   bool               oob; /* is oob-video */
-   uint32_t           lpf; /* last pinged frame (oob-video) */
+   hwc2_blend_mode_t       bm; /* blend mode */
+   buffer_handle_t         bh; /* buffer handle */
+   int32_t                 af; /* acquire fence for buffer 'bh' */
+   hwc_color_t             sc; /* solid color */
+   int32_t                 dsp; /* dataspace */
+   hwc_rect_t              fr; /* frame */
+   hwc_rect_t              crp; /* source crop (we rounded float to int) */
+   float                   al; /* alpha */
+   native_handle_t         *sbh; /* sideband layer native handle */
+   bool                    sfd; /* surface damage (false means no change) */
+   hwc_transform_t         tr; /* transform - unused */
+   hwc_rect_t              vis; /* visible region */
+   uint32_t                z; /* z-order */
+   int32_t                 cx; /* cursor x-position */
+   int32_t                 cy; /* cursor y-position */
+   int32_t                 rf; /* release fence for this layer current buffer */
+   bool                    oob; /* is oob-video */
+   uint32_t                lpf; /* last pinged frame (oob-video) */
+   bool                    scmp; /* can skip composition */
+   NEXUS_MemoryBlockHandle lblk; /* previous block buffer set */
+   uint64_t                thdl; /* layer timeline handle. */
 };
 
 /* unit of work for composition. */
@@ -344,6 +352,7 @@ struct hwc2_dsp_t {
 
    int32_t               lm;
    bool                  sfb;
+   uint64_t              tlm;
 
    uint64_t              pres;
    uint64_t              post;
