@@ -960,6 +960,7 @@ out:
 static void hwc2_lyr_tl_inc(
    struct hwc2_dsp_t *dsp,
    uint32_t kind,
+   uint64_t lyr,
    uint64_t hdl) {
 
    size_t num;
@@ -974,8 +975,8 @@ static void hwc2_lyr_tl_inc(
          for (num = 0 ; num < HWC2_MAX_TL ; num++) {
             if (dsp->u.ext.rtl[num].hdl == hdl) {
                ALOGI_IF((dsp->lm & LOG_FENCE_DEBUG),
-                        "[ext]:[tl-inc]:%" PRIu64 ":%d:1 @%" PRId64 "\n",
-                        dsp->u.ext.rtl[num].hdl, dsp->u.ext.rtl[num].tl, hwc2_tick());
+                        "[ext]:[tl-inc]:%" PRIu64 ":%" PRIu64 ":%d:1 @%" PRId64 "\n",
+                        lyr, dsp->u.ext.rtl[num].hdl, dsp->u.ext.rtl[num].tl, hwc2_tick());
                sw_sync_timeline_inc(dsp->u.ext.rtl[num].tl, 1);
                dsp->u.ext.rtl[num].si++;
                return;
@@ -986,8 +987,8 @@ static void hwc2_lyr_tl_inc(
       for (num = 0 ; num < HWC2_MAX_VTL ; num++) {
          if (dsp->u.vd.rtl[num].hdl == hdl) {
             ALOGI_IF((dsp->lm & LOG_FENCE_DEBUG),
-                     "[vd]:[tl-inc]:%" PRIu64 ":%d:1 @%" PRId64 "\n",
-                     dsp->u.vd.rtl[num].hdl, dsp->u.vd.rtl[num].tl, hwc2_tick());
+                     "[vd]:[tl-inc]:%" PRIu64 ":%" PRIu64 ":%d:1 @%" PRId64 "\n",
+                     lyr, dsp->u.vd.rtl[num].hdl, dsp->u.vd.rtl[num].tl, hwc2_tick());
             sw_sync_timeline_inc(dsp->u.vd.rtl[num].tl, 1);
             dsp->u.vd.rtl[num].si++;
             return;
@@ -1215,7 +1216,7 @@ static void hwc2_vd_cmp_frame(
       }
 
       if (lyr->rf != HWC2_INVALID) {
-         hwc2_lyr_tl_inc(hwc2->vd, HWC2_DSP_VD, lyr->hdl);
+         hwc2_lyr_tl_inc(hwc2->vd, HWC2_DSP_VD, lyr->hdl, lyr->thdl);
       }
    }
 
@@ -1285,36 +1286,92 @@ static void *hwc2_vd_cmp(
    return NULL;
 }
 
+static void hwc2_lyr_tl_queued(
+   struct hwc2_dsp_t *dsp,
+   uint32_t kind,
+   uint64_t lyr,
+   uint64_t hdl) {
+
+   (void)lyr;
+
+   size_t num;
+   if (kind == HWC2_DSP_EXT) {
+      for (num = 0 ; num < HWC2_MAX_TL ; num++) {
+         if (dsp->u.ext.rtl[num].hdl == hdl) {
+            pthread_mutex_lock(&dsp->u.ext.rtl[num].mtx_lc);
+            dsp->u.ext.rtl[num].que = true;
+            pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
+         }
+      }
+   }
+}
+
 static void hwc2_lyr_tl_unset(
    struct hwc2_dsp_t *dsp,
    uint32_t kind,
+   uint64_t lyr,
    uint64_t hdl) {
 
    size_t num, si;
    if (kind == HWC2_DSP_EXT) {
       for (num = 0 ; num < HWC2_MAX_TL ; num++) {
          if (dsp->u.ext.rtl[num].hdl == hdl) {
-            if (dsp->u.ext.rtl[num].pt != dsp->u.ext.rtl[num].si) {
-               ALOGI("[ext]:[tl-uset]:%" PRIu64 ":free orphan on %" PRIu64 ":%" PRIu64 "\n", hdl,
-                     dsp->u.ext.rtl[num].si, dsp->u.ext.rtl[num].pt);
-               for (si = 0 ; si < dsp->u.ext.rtl[num].pt - dsp->u.ext.rtl[num].si ; si++) {
-                  sw_sync_timeline_inc(dsp->u.ext.rtl[num].tl, 1);
+            pthread_mutex_lock(&dsp->u.ext.rtl[num].mtx_lc);
+            if (dsp->u.ext.rtl[num].que) {
+               dsp->u.ext.rtl[num].rem = true;
+               pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
+               ALOGI("[ext]:[tl-uset]:%" PRIu64 ":%" PRIu64 ":delay queued\n", lyr, hdl);
+            } else {
+               pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
+               if (dsp->u.ext.rtl[num].pt != dsp->u.ext.rtl[num].si) {
+                  ALOGI("[ext]:[tl-uset]:%" PRIu64 ":%" PRIu64 ":free orphan on %" PRIu64 ":%" PRIu64 "\n",
+                        lyr, hdl,
+                        dsp->u.ext.rtl[num].si, dsp->u.ext.rtl[num].pt);
+                  for (si = 0 ; si < dsp->u.ext.rtl[num].pt - dsp->u.ext.rtl[num].si ; si++) {
+                     sw_sync_timeline_inc(dsp->u.ext.rtl[num].tl, 1);
+                  }
                }
+               dsp->u.ext.rtl[num].hdl = 0;
             }
-            dsp->u.ext.rtl[num].hdl = 0;
          }
       }
    } else if (kind == HWC2_DSP_VD) {
       for (num = 0 ; num < HWC2_MAX_VTL ; num++) {
          if (dsp->u.vd.rtl[num].hdl == hdl) {
             if (dsp->u.vd.rtl[num].pt != dsp->u.vd.rtl[num].si) {
-               ALOGI("[vd]:[tl-uset]:%" PRIu64 ":free orphan on %" PRIu64 ":%" PRIu64 "\n", hdl,
+               ALOGI("[vd]:[tl-uset]:%" PRIu64 ":%" PRIu64 ":free orphan on %" PRIu64 ":%" PRIu64 "\n",
+                     lyr, hdl,
                      dsp->u.vd.rtl[num].si, dsp->u.vd.rtl[num].pt);
                for (si = 0 ; si < dsp->u.vd.rtl[num].pt - dsp->u.vd.rtl[num].si ; si++) {
                   sw_sync_timeline_inc(dsp->u.vd.rtl[num].tl, 1);
                }
             }
             dsp->u.vd.rtl[num].hdl = 0;
+         }
+      }
+   }
+}
+
+static void hwc2_lyr_tl_dequeued(
+   struct hwc2_dsp_t *dsp,
+   uint32_t kind,
+   uint64_t lyr,
+   uint64_t hdl) {
+
+   size_t num;
+   if (kind == HWC2_DSP_EXT) {
+      for (num = 0 ; num < HWC2_MAX_TL ; num++) {
+         if (dsp->u.ext.rtl[num].hdl == hdl) {
+            pthread_mutex_lock(&dsp->u.ext.rtl[num].mtx_lc);
+            dsp->u.ext.rtl[num].que = false;
+            if (dsp->u.ext.rtl[num].rem) {
+               dsp->u.ext.rtl[num].rem = false;
+               pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
+               ALOGI("[ext]:[tl-dque]:%" PRIu64 ":%" PRIu64 ":delayed removal\n", lyr, hdl);
+               hwc2_lyr_tl_unset(dsp, kind, lyr, hdl);
+            } else {
+               pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
+            }
          }
       }
    }
@@ -1328,6 +1385,7 @@ static void hwc2_setup_vd(
    int num;
 
    hwc2->vd->lm = property_get_int32(HWC2_LOG_VD, 0);
+   hwc2->vd->tlm = HWC2_TLM_MAGIC;
 
    if (!HWC2_VD_GLES) {
       BKNI_CreateEvent(&hwc2->vd->cmp_evt);
@@ -1396,7 +1454,7 @@ static void hwc2_destroy_vd(
       lyr = hwc2->vd->lyr;
       while (lyr != NULL) {
          lyr2 = lyr->next;
-         if (!HWC2_VD_GLES) hwc2_lyr_tl_unset(hwc2->vd, HWC2_DSP_VD, lyr->hdl);
+         if (!HWC2_VD_GLES) hwc2_lyr_tl_unset(hwc2->vd, HWC2_DSP_VD, lyr->hdl, lyr->thdl);
          free(lyr);
          lyr = lyr2;
       }
@@ -1653,6 +1711,7 @@ out:
 static void hwc2_lyr_tl_set(
    struct hwc2_dsp_t *dsp,
    uint32_t kind,
+   uint64_t lyr,
    uint64_t hdl) {
 
    size_t num;
@@ -1673,8 +1732,10 @@ static void hwc2_lyr_tl_set(
          dsp->u.ext.rtl[free].hdl = hdl;
          dsp->u.ext.rtl[free].pt  = 0;
          dsp->u.ext.rtl[free].si  = 0;
+         dsp->u.ext.rtl[free].que  = false;
+         dsp->u.ext.rtl[free].rem  = false;
       } else {
-         ALOGE("[tl-set]:%" PRIu64 ":no resources!\n", hdl);
+         ALOGE("[tl-set]:%" PRIu64 ":no resources!\n", lyr);
       }
    } else if (kind == HWC2_DSP_VD) {
       for (num = 0 ; num < HWC2_MAX_VTL ; num++) {
@@ -1693,7 +1754,7 @@ static void hwc2_lyr_tl_set(
          dsp->u.vd.rtl[free].pt  = 0;
          dsp->u.vd.rtl[free].si  = 0;
       } else {
-         ALOGE("[vd]:[tl-set]:%" PRIu64 ":no resources!\n", hdl);
+         ALOGE("[vd]:[tl-set]:%" PRIu64 ":no resources!\n", lyr);
       }
    }
 }
@@ -1701,6 +1762,7 @@ static void hwc2_lyr_tl_set(
 static int32_t hwc2_lyr_tl_add(
    struct hwc2_dsp_t *dsp,
    uint32_t kind,
+   uint64_t lyr,
    uint64_t hdl) {
 
    int32_t f = HWC2_INVALID;
@@ -1720,8 +1782,8 @@ static int32_t hwc2_lyr_tl_add(
             dsp->u.ext.ct.rtl.pt++;
          }
          ALOGI_IF((dsp->lm & LOG_FENCE_DEBUG),
-                  "[ext]:[dsp-tl-add]:%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
-                  dsp->u.ext.ct.rtl.hdl, dsp->u.ext.ct.rtl.tl, info.name, hwc2_tick());
+                  "[ext]:[dsp-tl-add]:%" PRIu64 ":%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
+                  lyr, dsp->u.ext.ct.rtl.hdl, dsp->u.ext.ct.rtl.tl, info.name, hwc2_tick());
          return f;
       } else {
          for (num = 0 ; num < HWC2_MAX_TL ; num++) {
@@ -1738,13 +1800,13 @@ static int32_t hwc2_lyr_tl_add(
                   dsp->u.ext.rtl[num].pt++;
                }
                ALOGI_IF((dsp->lm & LOG_FENCE_DEBUG),
-                        "[ext]:[tl-add]:%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
-                        dsp->u.ext.rtl[num].hdl, dsp->u.ext.rtl[num].tl, info.name, hwc2_tick());
+                        "[ext]:[tl-add]:%" PRIu64 ":%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
+                        lyr, dsp->u.ext.rtl[num].hdl, dsp->u.ext.rtl[num].tl, info.name, hwc2_tick());
                return f;
             }
          }
       }
-      ALOGE("[ext]:[tl-add]:%" PRIu64 ":orphaned, failed to create\n", hdl);
+      ALOGE("[ext]:[tl-add]:%" PRIu64 ":orphaned, failed to create\n", lyr);
    } else if (kind == HWC2_DSP_VD) {
       for (num = 0 ; num < HWC2_MAX_VTL ; num++) {
          if (dsp->u.vd.rtl[num].hdl == hdl) {
@@ -1760,12 +1822,12 @@ static int32_t hwc2_lyr_tl_add(
                dsp->u.vd.rtl[num].pt++;
             }
             ALOGI_IF((dsp->lm & LOG_FENCE_DEBUG),
-                     "[vd]:[tl-add]:%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
-                     dsp->u.vd.rtl[num].hdl, dsp->u.vd.rtl[num].tl, info.name, hwc2_tick());
+                     "[vd]:[tl-add]:%" PRIu64 ":%" PRIu64 ":%d:'%s' @%" PRId64 "\n",
+                     lyr, dsp->u.vd.rtl[num].hdl, dsp->u.vd.rtl[num].tl, info.name, hwc2_tick());
             return f;
          }
       }
-      ALOGE("[vd]:[tl-add]:%" PRIu64 ":orphaned, failed to create\n", hdl);
+      ALOGE("[vd]:[tl-add]:%" PRIu64 ":orphaned, failed to create\n", lyr);
    }
 
    return HWC2_INVALID;
@@ -1809,7 +1871,13 @@ static int32_t hwc2_lyrAdd(
    lyr->rf = HWC2_INVALID;
    if ((kind != HWC2_DSP_VD) ||
        ((kind == HWC2_DSP_VD) && !HWC2_VD_GLES)) {
-      hwc2_lyr_tl_set(dsp, kind, lyr->hdl);
+      if (dsp->tlm < (uint64_t)HWC2_TLM_MAGIC+0x1000ULL) {
+         dsp->tlm++;
+      } else {
+         dsp->tlm = (uint64_t)HWC2_TLM_MAGIC;
+      }
+      lyr->thdl = dsp->tlm;
+      hwc2_lyr_tl_set(dsp, kind, lyr->hdl, lyr->thdl);
    }
 
    pthread_mutex_lock(&dsp->mtx_lyr);
@@ -1898,7 +1966,7 @@ static int32_t hwc2_lyrRem(
    lyr->next = NULL;
    if ((kind != HWC2_DSP_VD) ||
        ((kind == HWC2_DSP_VD) && !HWC2_VD_GLES)) {
-      hwc2_lyr_tl_unset(dsp, kind, lyr->hdl);
+      hwc2_lyr_tl_unset(dsp, kind, lyr->hdl, lyr->thdl);
    }
    free(lyr);
    lyr = NULL;
@@ -3960,14 +4028,18 @@ static int32_t hwc2_preDsp(
             if (lyr->oob) {
                lyr->rf = HWC2_INVALID;
             } else {
-               lyr->rf = hwc2_lyr_tl_add(dsp, kind, lyr->hdl);
+               lyr->rf = hwc2_lyr_tl_add(dsp, kind, lyr->hdl, lyr->thdl);
             }
          } else if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
             if (frame->tgt != NULL && ccli == 1) {
-               lyr->rf = hwc2_lyr_tl_add(dsp, kind, HWC2_MAGIC);
+               lyr->rf = hwc2_lyr_tl_add(dsp, kind, lyr->hdl, HWC2_MAGIC);
             }
          }
          /* modification to the layer content may take place prior to copy. */
+         if ((lyr->rf != HWC2_INVALID) &&
+             (lyr->cCli != HWC2_COMPOSITION_CLIENT)) {
+            hwc2_lyr_tl_queued(dsp, kind, lyr->hdl, lyr->thdl);
+         }
          memcpy(clyr, lyr, sizeof(struct hwc2_lyr_t));
          lyr = lyr->next;
          clyr->next = &frame->lyr[frame_size+1];
@@ -4072,7 +4144,7 @@ static int32_t hwc2_preDsp(
          if (((lyr->cDev == HWC2_COMPOSITION_INVALID) &&
                (lyr->cCli == HWC2_COMPOSITION_DEVICE)) ||
              (lyr->cDev == HWC2_COMPOSITION_DEVICE)) {
-            lyr->rf = hwc2_lyr_tl_add(dsp, kind, lyr->hdl);
+            lyr->rf = hwc2_lyr_tl_add(dsp, kind, lyr->hdl, lyr->thdl);
          }
          /* modification to the layer content may take place prior to copy. */
          memcpy(clyr, lyr, sizeof(struct hwc2_lyr_t));
@@ -4115,9 +4187,10 @@ out_error:
       }
       if (lyr->rf != HWC2_INVALID) {
          if ((kind == HWC2_DSP_EXT) && (lyr->cCli == HWC2_COMPOSITION_CLIENT)) {
-            hwc2_lyr_tl_inc(dsp, kind, HWC2_MAGIC);
+            hwc2_lyr_tl_inc(dsp, kind, lyr->hdl, HWC2_MAGIC);
          } else {
-            hwc2_lyr_tl_inc(dsp, kind, lyr->hdl);
+            hwc2_lyr_tl_inc(dsp, kind, lyr->hdl, lyr->thdl);
+            hwc2_lyr_tl_dequeued(dsp, kind, lyr->hdl, lyr->thdl);
          }
       }
       lyr = lyr->next;
@@ -4235,7 +4308,7 @@ static void hwc2_bcm_close(
          lyr = hwc2->ext->lyr;
          while (lyr != NULL) {
             lyr2 = lyr->next;
-            hwc2_lyr_tl_unset(hwc2->vd, HWC2_DSP_EXT, lyr->hdl);
+            hwc2_lyr_tl_unset(hwc2->vd, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
             free(lyr);
             lyr = lyr2;
          }
@@ -4251,6 +4324,7 @@ static void hwc2_bcm_close(
       BKNI_DestroyEvent(hwc2->ext->cmp_evt);
       BKNI_DestroyEvent(hwc2->ext->cmp_syn);
       for (num = 0 ; num < HWC2_MAX_TL ; num++) {
+         pthread_mutex_destroy(&hwc2->ext->u.ext.rtl[num].mtx_lc);
          close(hwc2->ext->u.ext.rtl[num].tl);
       }
       close(hwc2->ext->u.ext.ct.rtl.tl);
@@ -4940,10 +5014,11 @@ static void hwc2_ext_cmp_frame(
             if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
                ccli++;
                if (ccli == 0) {
-                  hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, HWC2_MAGIC);
+                  hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, HWC2_MAGIC);
                }
             } else {
-               hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl);
+               hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
+               hwc2_lyr_tl_dequeued(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
             }
          }
       }
@@ -5213,10 +5288,11 @@ static void hwc2_ext_cmp_frame(
       if (lyr->rf != HWC2_INVALID) {
          if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
             if (ccli == 1) {
-               hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, HWC2_MAGIC);
+               hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, HWC2_MAGIC);
             }
          } else {
-            hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl);
+            hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
+            hwc2_lyr_tl_dequeued(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
          }
       }
    }
@@ -5347,6 +5423,7 @@ static void hwc2_setup_ext(
    memset(ext, 0, sizeof(*ext));
    hwc2->ext = ext;
    snprintf(hwc2->ext->name, sizeof(hwc2->ext->name), "stbHD0");
+   hwc2->ext->tlm = HWC2_TLM_MAGIC;
    hwc2->ext->type = HWC2_DISPLAY_TYPE_PHYSICAL;
    hwc2->ext->lm = property_get_int32(HWC2_LOG_EXT, 0);
    hwc2->ext->u.ext.gles = property_get_bool(HWC2_EXT_GLES, 0);
@@ -5453,6 +5530,9 @@ static void hwc2_setup_ext(
       }
       hwc2->ext->u.ext.rtl[num].hdl = 0;
       hwc2->ext->u.ext.rtl[num].ix = 0;
+      pthread_mutexattr_init(&mattr);
+      pthread_mutex_init(&hwc2->ext->u.ext.rtl[num].mtx_lc, &mattr);
+      pthread_mutexattr_destroy(&mattr);
       ALOGI("[ext]: layer completion timeline (%zu): %d\n", num, hwc2->ext->u.ext.rtl[num].tl);
    }
 }
