@@ -51,6 +51,7 @@
 #include "bomx_pes_formatter.h"
 #include "bomx_aac_parser.h"
 #include <stdio.h>
+#include <media/hardware/HardwareAPI.h>
 
 extern "C" OMX_ERRORTYPE BOMX_AudioDecoder_CreateAc3(OMX_COMPONENTTYPE *, OMX_IN OMX_STRING, OMX_IN OMX_PTR, OMX_IN OMX_CALLBACKTYPE*);
 extern "C" const char *BOMX_AudioDecoder_GetRoleAc3(unsigned roleIndex);
@@ -234,6 +235,7 @@ protected:
     OMX_TICKS m_eosTimeStamp;
     bool m_formatChangePending;
     bool m_secureDecoder;
+    bool m_allocNativeHandle;
     BOMX_AudioDecoderRole *m_pRoles;
     unsigned m_numRoles;
     NEXUS_AudioDecoderFrameStatus *m_pFrameStatus;

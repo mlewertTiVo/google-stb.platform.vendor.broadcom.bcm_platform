@@ -103,6 +103,8 @@
 #define B_MAX_EXTRAFRAMES_PER_BUFFER (0)
 #define B_MAX_DESCRIPTORS_PER_BUFFER (4+(B_MAX_EXTRAFRAMES_PER_BUFFER*3)+(2*(B_DATA_BUFFER_SIZE/(B_MAX_PES_PACKET_LENGTH-(B_PES_HEADER_LENGTH_WITHOUT_PTS-B_PES_HEADER_START_BYTES)))))
 
+#define OMX_IndexParamAllocNativeHandle                      0x7F00000B
+
 using namespace android;
 
 enum BOMX_AudioDecoderEventType
@@ -491,6 +493,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_eosTimeStamp(0),
     m_formatChangePending(false),
     m_secureDecoder(secure),
+    m_allocNativeHandle(secure),
     m_pRoles(NULL),
     m_numRoles(0),
     m_pFrameStatus(NULL),
@@ -1282,6 +1285,20 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetParameter(
             }
             return OMX_ErrorNone;
         }
+    case OMX_IndexParamAllocNativeHandle:
+        {
+            AllocateNativeHandleParams* allocateNativeHandleParams = (AllocateNativeHandleParams *) pComponentParameterStructure;
+            BOMX_STRUCT_VALIDATE(allocateNativeHandleParams);
+            ALOGV("GetParameter OMX_IndexParamAllocNativeHandle %u", allocateNativeHandleParams->enable);
+
+            if ( allocateNativeHandleParams->nPortIndex != m_audioPortBase )
+            {
+                return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+            }
+            allocateNativeHandleParams->enable = m_allocNativeHandle ? OMX_TRUE : OMX_FALSE;
+
+            return OMX_ErrorNone;
+        }
     default:
         ALOGV("GetParameter %#x Deferring to base class", nParamIndex);
         return BOMX_ERR_TRACE(BOMX_Component::GetParameter(nParamIndex, pComponentParameterStructure));
@@ -1601,6 +1618,24 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
                 ALOGW("Unable to update AAC presentation settings");
                 // ACodec will assert if this actually fails so just warn.
             }
+            return OMX_ErrorNone;
+        }
+    case OMX_IndexParamAllocNativeHandle:
+        {
+            AllocateNativeHandleParams* allocateNativeHandleParams = (AllocateNativeHandleParams *) pComponentParameterStructure;
+            BOMX_STRUCT_VALIDATE(allocateNativeHandleParams);
+            ALOGV("SetParameter OMX_IndexParamAllocNativeHandle %u", allocateNativeHandleParams->enable);
+
+            if ( allocateNativeHandleParams->nPortIndex != m_audioPortBase )
+            {
+                return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+            }
+            if (allocateNativeHandleParams->enable == OMX_TRUE && !m_secureDecoder)
+            {
+                ALOGE("OMX_IndexParamAllocNativeHandle cannot enable with non-secure decoder");
+                return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+            }
+            m_allocNativeHandle = allocateNativeHandleParams->enable == OMX_TRUE;
             return OMX_ErrorNone;
         }
     default:
@@ -3321,7 +3356,8 @@ static const struct {
     int index;
 } g_extensions[] =
 {
-    {NULL, 0}
+    {"OMX.google.android.index.allocateNativeHandle", (int)OMX_IndexParamAllocNativeHandle},
+    {NULL,0}
 };
 
 OMX_ERRORTYPE BOMX_AudioDecoder::GetExtensionIndex(
@@ -3341,8 +3377,16 @@ OMX_ERRORTYPE BOMX_AudioDecoder::GetExtensionIndex(
     {
         if ( !strcmp(g_extensions[i].pName, cParameterName) )
         {
-            *pIndexType = (OMX_INDEXTYPE)g_extensions[i].index;
-            return OMX_ErrorNone;
+            if ( !m_secureDecoder && (g_extensions[i].index == OMX_IndexParamAllocNativeHandle) )
+            {
+                ALOGD("Interface %s not supported in non secure decoder", g_extensions[i].pName);
+                return OMX_ErrorUnsupportedIndex;
+            }
+            else
+            {
+                *pIndexType = (OMX_INDEXTYPE)g_extensions[i].index;
+                return OMX_ErrorNone;
+            }
         }
     }
 

@@ -126,6 +126,7 @@
 #define OMX_IndexParamPrepareForAdaptivePlayback             0x7F000008
 #define OMX_IndexParamDescribeHdrColorInfo                   0x7F000009
 #define OMX_IndexParamDescribeColorAspects                   0x7F00000A
+#define OMX_IndexParamAllocNativeHandle                      0x7F00000B
 
 using namespace android;
 
@@ -1092,6 +1093,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_metadataEnabled(false),
     m_adaptivePlaybackEnabled(false),
     m_secureDecoder(secure),
+    m_allocNativeHandle(secure),
     m_tunnelMode(tunnel),
     m_tunnelHfr(false),
     m_pTunnelNativeHandle(NULL),
@@ -2311,7 +2313,20 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
 
         return OMX_ErrorNone;
     }
+    case OMX_IndexParamAllocNativeHandle:
+    {
+        AllocateNativeHandleParams* allocateNativeHandleParams = (AllocateNativeHandleParams *) pComponentParameterStructure;
+        BOMX_STRUCT_VALIDATE(allocateNativeHandleParams);
+        ALOGV("GetParameter OMX_IndexParamAllocNativeHandle %u", allocateNativeHandleParams->enable);
 
+        if ( allocateNativeHandleParams->nPortIndex != m_videoPortBase )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+        allocateNativeHandleParams->enable = m_allocNativeHandle ? OMX_TRUE : OMX_FALSE;
+
+        return OMX_ErrorNone;
+    }
     default:
         ALOGV("GetParameter %#x Deferring to base class", nParamIndex);
         return BOMX_ERR_TRACE(BOMX_Component::GetParameter(nParamIndex, pComponentParameterStructure));
@@ -2627,6 +2642,25 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             ALOGV("OMX_IndexParamConfigureVideoTunnelMode - stc-channels %p %p",
                     m_tunnelStcChannel, m_tunnelStcChannelSync);
         }
+
+        return OMX_ErrorNone;
+    }
+    case OMX_IndexParamAllocNativeHandle:
+    {
+        AllocateNativeHandleParams* allocateNativeHandleParams = (AllocateNativeHandleParams *) pComponentParameterStructure;
+        BOMX_STRUCT_VALIDATE(allocateNativeHandleParams);
+        ALOGV("SetParameter OMX_IndexParamAllocNativeHandle %u", allocateNativeHandleParams->enable);
+
+        if ( allocateNativeHandleParams->nPortIndex != m_videoPortBase )
+        {
+            return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
+        }
+        if (allocateNativeHandleParams->enable == OMX_TRUE && !m_secureDecoder)
+        {
+            ALOGE("OMX_IndexParamAllocNativeHandle cannot enable with non-secure decoder");
+            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+        }
+        m_allocNativeHandle = allocateNativeHandleParams->enable == OMX_TRUE;
 
         return OMX_ErrorNone;
     }
@@ -5237,6 +5271,7 @@ static const struct {
     {"OMX.google.android.index.configureVideoTunnelMode", (int)OMX_IndexParamConfigureVideoTunnelMode},
     {"OMX.google.android.index.describeHDRStaticInfo", (int)OMX_IndexParamDescribeHdrColorInfo},
     {"OMX.google.android.index.describeColorAspects", (int)OMX_IndexParamDescribeColorAspects},
+    {"OMX.google.android.index.allocateNativeHandle", (int)OMX_IndexParamAllocNativeHandle},
     {NULL, 0}
 };
 
@@ -5269,6 +5304,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetExtensionIndex(
                 ALOGD("Interface %s not supported in non-tunneled mode", g_extensions[i].pName);
                 return OMX_ErrorUnsupportedIndex;
 
+            }
+            else if ( !m_secureDecoder && (g_extensions[i].index == OMX_IndexParamAllocNativeHandle) )
+            {
+                ALOGD("Interface %s not supported in non secure decoder", g_extensions[i].pName);
+                return OMX_ErrorUnsupportedIndex;
             }
             else
             {
