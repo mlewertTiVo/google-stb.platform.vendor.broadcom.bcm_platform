@@ -1003,6 +1003,28 @@ static void hwc2_lyr_tl_inc(
    }
 }
 
+static void hwc2_fill_blend(
+   struct hwc2_bcm_device_t* hwc2,
+   NEXUS_SurfaceHandle s,
+   uint32_t color) {
+   NEXUS_Error rc;
+   if (s) {
+      NEXUS_Graphics2DFillSettings fs;
+      NEXUS_Graphics2D_GetDefaultFillSettings(&fs);
+      fs.surface = s;
+      fs.color   = color;
+      fs.colorOp = NEXUS_FillOp_eBlend;
+      fs.alphaOp = NEXUS_FillOp_eIgnore;
+      if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
+         return;
+      }
+      NEXUS_Graphics2D_Fill(hwc2->hg2d, &fs);
+      pthread_mutex_unlock(&hwc2->mtx_g2d);
+      ALOGI_IF((hwc2->lm & LOG_SEED_DEBUG),
+               "[seed]: %p fill/blend with color %08x\n", s, color);
+   }
+}
+
 static void hwc2_fb_seed(
    struct hwc2_bcm_device_t* hwc2,
    NEXUS_SurfaceHandle s,
@@ -1117,9 +1139,15 @@ static void hwc2_vd_cmp_frame(
       switch(lyr->cCli) {
       case HWC2_COMPOSITION_SOLID_COLOR:
          {
-            uint32_t color = (lyr->sc.a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b);
+            uint8_t a = lyr->sc.a;
+            if (lyr->al != 1.0) {
+               float fa = fmax(0.0, fmin(1.0, lyr->al));
+               uint32_t al = floor(fa == 1.0 ? 255 : fa * 256.0);
+               a = (uint8_t)al;
+            }
+            uint32_t color = (a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b);
             if ((color != HWC2_TRS) && ((color != HWC2_OPQ) || (c > 0))) {
-               hwc2_fb_seed(hwc2, d, color);
+               hwc2_fill_blend(hwc2, d, color);
                hwc2_chkpt(hwc2);
                /* [iii]. count of composed layers. */
                c++;
@@ -1876,6 +1904,7 @@ static int32_t hwc2_lyrAdd(
    memset(lyr, 0, sizeof(*lyr));
    lyr->hdl = (uint64_t)(intptr_t)lyr;
    lyr->rf = HWC2_INVALID;
+   lyr->al = 1.0;
    if ((kind != HWC2_DSP_VD) ||
        ((kind == HWC2_DSP_VD) && !HWC2_VD_GLES)) {
       if (dsp->tlm < (uint64_t)HWC2_TLM_MAGIC+0x1000ULL) {
@@ -5138,9 +5167,15 @@ static void hwc2_ext_cmp_frame(
       switch(lyr->cCli) {
       case HWC2_COMPOSITION_SOLID_COLOR:
          {
-            uint32_t color = (lyr->sc.a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b);
+            uint8_t a = lyr->sc.a;
+            if (lyr->al != 1.0) {
+               float fa = fmax(0.0, fmin(1.0, lyr->al));
+               uint32_t al = floor(fa == 1.0 ? 255 : fa * 256.0);
+               a = (uint8_t)al;
+            }
+            uint32_t color = (a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b);
             if ((color != HWC2_TRS) && ((color != HWC2_OPQ) || (c > 0))) {
-               hwc2_fb_seed(hwc2, d, color);
+               hwc2_fill_blend(hwc2, d, color);
                hwc2_chkpt(hwc2);
                /* [iv]. count of composed layers. */
                ms = hwc2_seeding_none;
