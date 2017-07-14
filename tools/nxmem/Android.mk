@@ -4,6 +4,7 @@ include $(CLEAR_VARS)
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
 LOCAL_SHARED_LIBRARIES += libcutils
+LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient
 
@@ -18,7 +19,6 @@ LOCAL_SRC_FILES := nxmem.c
 
 LOCAL_MODULE := nxmem
 LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR_OPTIONAL_EXECUTABLES)
-
+LOCAL_PROPRIETARY_MODULE := true
 include $(BUILD_EXECUTABLE)
 

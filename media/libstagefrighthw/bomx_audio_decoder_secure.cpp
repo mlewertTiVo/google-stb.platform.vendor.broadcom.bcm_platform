@@ -41,6 +41,7 @@
 #define LOG_TAG "bomx_audio_decoder_secure"
 
 #include <cutils/log.h>
+#include <cutils/native_handle.h>
 
 #include "bomx_audio_decoder_secure.h"
 #include "nexus_platform.h"
@@ -264,15 +265,29 @@ NEXUS_Error BOMX_AudioDecoder_Secure::AllocateInputBuffer(uint32_t nSize, void*&
     }
 
     ALOGV("%s: allocated handle:%p", __FUNCTION__, inputBuffHandle);
-    pBuffer = (void*)inputBuffHandle;
+    if ( m_allocNativeHandle ) {
+        native_handle_t *nativeHandle = native_handle_create(0,1);
+        nativeHandle->data[0] = (uint32_t)inputBuffHandle;
+        pBuffer = nativeHandle;
+    } else {
+        pBuffer = (void*)inputBuffHandle;
+    }
     return NEXUS_SUCCESS;
 }
 
 void BOMX_AudioDecoder_Secure::FreeInputBuffer(void*& pBuffer)
 {
     NEXUS_MemoryBlockHandle inputBuffHandle;
-    inputBuffHandle = (NEXUS_MemoryBlockHandle)pBuffer;
-    BOMX_FreeSecureBuffer(inputBuffHandle);
+    if ( m_allocNativeHandle ) {
+        native_handle_t *nativeBuffHandle = static_cast<native_handle_t *>(pBuffer);
+        inputBuffHandle = (NEXUS_MemoryBlockHandle)(nativeBuffHandle->data[0]);
+        BOMX_FreeSecureBuffer(inputBuffHandle);
+        native_handle_delete(nativeBuffHandle);
+    } else {
+        inputBuffHandle = (NEXUS_MemoryBlockHandle)pBuffer;
+        BOMX_FreeSecureBuffer(inputBuffHandle);
+    }
+
     pBuffer = NULL;
 }
 
@@ -280,13 +295,19 @@ OMX_ERRORTYPE BOMX_AudioDecoder_Secure::EmptyThisBuffer(OMX_IN OMX_BUFFERHEADERT
 {
     BOMX_SecBufferSt *secInputBuff;
     NEXUS_MemoryBlockHandle inputBuffHandle;
+    native_handle_t *nativeBuffHandle;
     OMX_ERRORTYPE omx_err;
     NEXUS_Error err;
 
     if (( NULL == pBufferHeader || pBufferHeader->pBuffer == NULL))
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
 
-    inputBuffHandle = (NEXUS_MemoryBlockHandle) pBufferHeader->pBuffer;
+    if ( m_allocNativeHandle ) {
+        nativeBuffHandle = static_cast<native_handle_t *>((void*)pBufferHeader->pBuffer);
+        inputBuffHandle = (NEXUS_MemoryBlockHandle)(nativeBuffHandle->data[0]);
+    } else {
+        inputBuffHandle = (NEXUS_MemoryBlockHandle) pBufferHeader->pBuffer;
+    }
     err = BOMX_LockSecureBuffer(inputBuffHandle, &secInputBuff);
     if (err != NEXUS_SUCCESS) {
         ALOGE("%s: bufferHandle:%p", __FUNCTION__, inputBuffHandle);
@@ -312,7 +333,11 @@ OMX_ERRORTYPE BOMX_AudioDecoder_Secure::EmptyThisBuffer(OMX_IN OMX_BUFFERHEADERT
     }
 
     omx_err = BOMX_AudioDecoder::EmptyThisBuffer(pBufferHeader);
-    pBufferHeader->pBuffer = (OMX_U8*) inputBuffHandle;
+    if ( m_allocNativeHandle ) {
+        pBufferHeader->pBuffer = (OMX_U8*) nativeBuffHandle;
+    } else {
+        pBufferHeader->pBuffer = (OMX_U8*) inputBuffHandle;
+    }
     ALOGV("%s: restored input buffer:%p", __FUNCTION__, pBufferHeader->pBuffer);
 
     BOMX_UnlockSecureBuffer(inputBuffHandle);

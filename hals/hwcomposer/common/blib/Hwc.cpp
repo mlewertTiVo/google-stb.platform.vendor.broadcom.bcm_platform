@@ -437,6 +437,12 @@ void Hwc::getSidebandSurfaceId(const sp<IHwcListener>& listener, int index, int 
        // notify of changes.  we are not responsible for managing
        // contention, we are just a pass through service.
        mSidebandSurface[index].listener = (void *)listener->asBinder(listener).get();
+       // reset sideband surface information for new listener.
+       memset(&mSidebandSurface[index].frame, 0, sizeof(struct hwc_position));
+       memset(&mSidebandSurface[index].clipped, 0, sizeof(struct hwc_position));
+       mSidebandSurface[index].zorder = 0;
+       mSidebandSurface[index].visible = 0;
+
        value = mSidebandSurface[index].surface;
        ALOGD("%s: %p, index %d, value %x", __FUNCTION__,
              listener->asBinder(listener).get(), index, value);

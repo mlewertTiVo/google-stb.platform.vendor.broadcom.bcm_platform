@@ -21,6 +21,7 @@ LOCAL_PROGUARD_ENABLED := disabled
 LOCAL_PACKAGE_NAME := BcmSidebandViewer
 LOCAL_MODULE_TAGS := optional
 LOCAL_CERTIFICATE := $(BCM_VENDOR_STB_ROOT)/bcm_platform/signing/bcmstb
+LOCAL_PROPRIETARY_MODULE := true
 
 include $(BUILD_PACKAGE)
 include $(call all-makefiles-under,$(LOCAL_PATH))

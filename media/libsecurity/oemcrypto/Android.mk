@@ -95,7 +95,7 @@ LOCAL_SRC_FILES := \
 LOCAL_C_INCLUDES := \
     $(TOP)/bionic \
     $(TOP)/external/boringssl/include \
-    $(TOP)/vendor/widevine/libwvdrmengine/oemcrypto/include \
+    $(TOP)/vendor/widevine/brcm_oemcrypto_L1/include \
     $(TOP)/vendor/widevine/libwvdrmengine/cdm/core/include \
     $(TOP)/vendor/widevine/libwvdrmengine/third_party/stringencoders/src \
     ${REFSW_BASE_DIR}/BSEAV/lib/security/common_crypto/include \

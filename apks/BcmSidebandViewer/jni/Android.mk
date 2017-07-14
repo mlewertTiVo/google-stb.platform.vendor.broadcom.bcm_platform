@@ -13,4 +13,6 @@ LOCAL_SHARED_LIBRARIES := \
     libcutils \
     libbcmsideband \
     libbcmsidebandplayer
+
+LOCAL_PROPRIETARY_MODULE := true
 include $(BUILD_SHARED_LIBRARY)

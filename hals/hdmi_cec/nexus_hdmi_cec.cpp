@@ -103,14 +103,181 @@ NexusHdmiCecDevice::LinuxUInputRef::~LinuxUInputRef()
 }
 
 /******************************************************************************
-  HdmiCecRxMessageHandler methods
+  HdmiCecTxMessageHandler methods
 ******************************************************************************/
-NexusHdmiCecDevice::HdmiCecRxMessageHandler::HdmiCecRxMessageHandler(sp<NexusHdmiCecDevice> device) : AHandler(), mNexusHdmiCecDevice(device)
-{
+NexusHdmiCecDevice::HdmiCecTxMessageHandler::HdmiCecTxMessageHandler(sp<NexusHdmiCecDevice> device) :
+   AHandler(), mNexusHdmiCecDevice(device) {
 }
 
-NexusHdmiCecDevice::HdmiCecRxMessageHandler::~HdmiCecRxMessageHandler()
+NexusHdmiCecDevice::HdmiCecTxMessageHandler::~HdmiCecTxMessageHandler() {
+}
+
+status_t NexusHdmiCecDevice::HdmiCecTxMessageHandler::outputCecMessage(const sp<AMessage> &msg)
 {
+    int32_t srcaddr;
+    int32_t destaddr;
+    int32_t opcode;
+    size_t  length;
+    int32_t maxRetries;
+    int     retryCount;
+    int     noAckCount, getCecStatus;
+    uint8_t *pBuffer;
+    sp<ABuffer> params;
+    char msgBuffer[3*(NEXUS_CEC_MESSAGE_DATA_SIZE +1)];
+    NEXUS_CecMessage transmitMessage;
+    status_t err = OK;
+
+    if (!msg->findInt32("srcaddr", &srcaddr)) {
+        ALOGE("%s: Could not find \"srcaddr\" in CEC message!", __PRETTY_FUNCTION__);
+        return FAILED_TRANSACTION;
+    }
+    if (!msg->findInt32("destaddr", &destaddr)) {
+        ALOGE("%s: Could not find \"destaddr\" in CEC message!", __PRETTY_FUNCTION__);
+        return FAILED_TRANSACTION;
+    }
+    if (!msg->findInt32("opcode", &opcode)) {
+        ALOGE("%s: Could not find \"opcode\" in CEC message!", __PRETTY_FUNCTION__);
+        return FAILED_TRANSACTION;
+    }
+    if (!msg->findSize("length", &length)) {
+        ALOGE("%s: Could not find \"length\" in CEC message!", __PRETTY_FUNCTION__);
+        return FAILED_TRANSACTION;
+    }
+    if (!msg->findInt32("maxRetries", &maxRetries)) {
+        ALOGE("%s: Could not find \"maxRetries\" in CEC message!", __PRETTY_FUNCTION__);
+        return FAILED_TRANSACTION;
+    }
+
+    if (mNexusHdmiCecDevice->mCecHandle == NULL) {
+        ALOGE("%s: ERROR: cecHandle is NULL!!!", __PRETTY_FUNCTION__);
+        return DEAD_OBJECT;
+    }
+
+    NEXUS_Cec_GetDefaultMessageData(&transmitMessage);
+    transmitMessage.initiatorAddr = srcaddr;
+    transmitMessage.destinationAddr = destaddr;
+    transmitMessage.length = length;
+    transmitMessage.buffer[0] = opcode;
+
+    msgBuffer[0] = '\0';
+
+    if (length > 1) {
+        if (!msg->findBuffer("params", &params)) {
+            ALOGE("%s: Could not find \"params\" in CEC message!", __PRETTY_FUNCTION__);
+            return FAILED_TRANSACTION;
+        }
+
+        if (params != NULL) {
+            unsigned i, j;
+
+            pBuffer = params->base();
+
+            for (i = 0, j = 0; i < length-1 && j<(sizeof(msgBuffer)-1); i++) {
+                transmitMessage.buffer[i+1] = *pBuffer;
+                j += BKNI_Snprintf(msgBuffer + j, sizeof(msgBuffer)-j, "%02X ", *pBuffer++);
+            }
+        }
+    }
+
+    noAckCount = 0;
+    getCecStatus = 0;
+    for (retryCount = 0; retryCount <= maxRetries; retryCount++) {
+        NEXUS_Error rc;
+        unsigned long timeoutInMs = 0;
+
+        usleep(timeoutInMs * 1000);
+
+        ALOGD("%s: Outputting CEC message: src addr=0x%02X dest addr=0x%02X opcode=0x%02X length=%zu params=\'%s\' [thread %d]", __PRETTY_FUNCTION__,
+              srcaddr, destaddr, opcode, length, msgBuffer, gettid());
+
+        mNexusHdmiCecDevice->mCecMessageTransmittedLock.lock();
+        rc = NEXUS_Cec_TransmitMessage(mNexusHdmiCecDevice->mCecHandle, &transmitMessage);
+        if (rc == NEXUS_SUCCESS) {
+            status_t status;
+
+            ALOGV("%s: Waiting for CEC message to be transmitted...", __PRETTY_FUNCTION__);
+            // Now wait up to 500ms for message to be transmitted...
+            status = mNexusHdmiCecDevice->mCecMessageTransmittedCondition.waitRelative(mNexusHdmiCecDevice->mCecMessageTransmittedLock, 500*1000*1000);
+            mNexusHdmiCecDevice->mCecMessageTransmittedLock.unlock();
+            if (status == OK) {
+                NEXUS_CecStatus cec_status;
+                rc = NEXUS_Cec_GetStatus(mNexusHdmiCecDevice->mCecHandle, &cec_status);
+                if (!rc) {
+                    getCecStatus++;
+                    if (cec_status.transmitMessageAcknowledged) {
+                        ALOGV("%s: Successfully sent CEC message: opcode=0x%02X.", __PRETTY_FUNCTION__, opcode);
+                        goto out;
+                    }
+                    else {
+                        ALOGW("%s: Sent CEC message: opcode=0x%02X, but no ACK received!", __PRETTY_FUNCTION__, opcode);
+                        noAckCount++;
+                    }
+                }
+                else {
+                    ALOGE("%s: Could not get CEC status!!!", __PRETTY_FUNCTION__);
+                }
+            }
+            else {
+                ALOGW("%s: Timed out waiting for CEC message be transmitted%s", __PRETTY_FUNCTION__,
+                      (retryCount < maxRetries) ? " - retrying..." : "!");
+            }
+            // Always wait 35ms for (start + header block) and (25ms x length) + 25ms between transmitting messages...
+            timeoutInMs = 60 + 25*length;
+        }
+        else {
+            mNexusHdmiCecDevice->mCecMessageTransmittedLock.unlock();
+            ALOGE("%s: ERROR sending CEC message: opcode=0x%02X [rc=%d]%s", __PRETTY_FUNCTION__, opcode, rc,
+                  (retryCount < maxRetries) ? " - retrying..." : "!!!");
+            timeoutInMs = 500;
+        }
+    }
+
+    if (retryCount >= maxRetries) {
+       if (getCecStatus == noAckCount) {
+          err = FAILED_TRANSACTION;
+       } else {
+          err = UNKNOWN_ERROR;
+       }
+    }
+out:
+    return err;
+}
+
+void NexusHdmiCecDevice::HdmiCecTxMessageHandler::onMessageReceived(const sp<AMessage> &msg)
+{
+    switch (msg->what())
+    {
+        case kWhatSend:
+        {
+            status_t err;
+            sp<AReplyToken> replyID;
+
+            ALOGV("%s: Sending CEC message...", __PRETTY_FUNCTION__);
+            err = outputCecMessage(msg);
+
+            if (!msg->senderAwaitsResponse(&replyID)) {
+                ALOGE("%s: ERROR awaiting response!", __PRETTY_FUNCTION__);
+            }
+            else {
+                sp<AMessage> response = new AMessage;
+                response->setInt32("err", (int32_t)err);
+                response->postReply(replyID);
+            }
+            break;
+        }
+        default:
+            ALOGE("%s: Invalid message received - ignoring!", __PRETTY_FUNCTION__);
+    }
+}
+
+/******************************************************************************
+  HdmiCecRxMessageHandler methods
+******************************************************************************/
+NexusHdmiCecDevice::HdmiCecRxMessageHandler::HdmiCecRxMessageHandler(sp<NexusHdmiCecDevice> device) :
+   AHandler(), mNexusHdmiCecDevice(device) {
+}
+
+NexusHdmiCecDevice::HdmiCecRxMessageHandler::~HdmiCecRxMessageHandler() {
 }
 
 bool NexusHdmiCecDevice::HdmiCecRxMessageHandler::isValidWakeupCecMessage(cec_message_t *message)
@@ -483,16 +650,23 @@ bool NexusHdmiCecDevice::standbyMonitor(void *ctx)
 }
 
 NexusHdmiCecDevice::NexusHdmiCecDevice() : mCecLogicalAddr(UNDEFINED_LOGICAL_ADDRESS),
-                                           mCecPhysicalAddr(UNDEFINED_PHYSICAL_ADDRESS), mCecVendorId(UNKNOWN_VENDOR_ID), mCecEnable(false),
-                                           mCecSystemControlEnable(true), mCecViewOnCmdPending(false), mStandby(false),
-                                           mHotplugConnected(-1), mNxWrap(NULL), mCallback(NULL),
-                                           mHdmiCecDevice(NULL), mHdmiHotplugEventListener(NULL),
-                                           mHdmiCecRxMessageHandler(NULL), mHdmiCecRxMessageLooper(NULL), mCecHandle(NULL)
-{
+                                           mCecPhysicalAddr(UNDEFINED_PHYSICAL_ADDRESS),
+                                           mCecVendorId(UNKNOWN_VENDOR_ID),
+                                           mCecEnable(false),
+                                           mCecSystemControlEnable(true),
+                                           mCecViewOnCmdPending(false),
+                                           mStandby(false),
+                                           mHotplugConnected(-1),
+                                           mNxWrap(NULL),
+                                           mCallback(NULL),
+                                           mHdmiCecDevice(NULL),
+                                           mHdmiHotplugEventListener(NULL),
+                                           mHdmiCecRxMessageHandler(NULL), mHdmiCecRxMessageLooper(NULL),
+                                           mHdmiCecTxMessageHandler(NULL), mHdmiCecTxMessageLooper(NULL),
+                                           mCecHandle(NULL) {
 }
 
-NexusHdmiCecDevice::~NexusHdmiCecDevice()
-{
+NexusHdmiCecDevice::~NexusHdmiCecDevice() {
 }
 
 void NexusHdmiCecDevice::cecMsgReceivedCb(void *context, int param) {
@@ -641,20 +815,34 @@ status_t NexusHdmiCecDevice::initialise()
     }
     mLogicalAddress = cecStatus.logicalAddress;
     if (cecStatus.ready) {
-       char looperName[] = "Hdmi Cec Rx Message Looper";
+       char looperName[] = "Hdmi Cec  x Message Looper";
 
+       looperName[9] = 'R';
        mHdmiCecRxMessageLooper = new ALooper;
        if (mHdmiCecRxMessageLooper.get() == NULL) {
-           goto out_error;
+          goto out_error;
        }
        mHdmiCecRxMessageLooper->setName(looperName);
        mHdmiCecRxMessageLooper->start();
        mHdmiCecRxMessageHandler = HdmiCecRxMessageHandler::instantiate(this);
-
        if (mHdmiCecRxMessageHandler.get() == NULL) {
           goto out_error;
        }
        mHdmiCecRxMessageLooper->registerHandler(mHdmiCecRxMessageHandler);
+
+       looperName[9] = 'T';
+       mHdmiCecTxMessageLooper = new ALooper;
+       if (mHdmiCecTxMessageLooper.get() == NULL) {
+          goto out_error;
+       }
+       mHdmiCecTxMessageLooper->setName(looperName);
+       mHdmiCecTxMessageLooper->start();
+       mHdmiCecTxMessageHandler = HdmiCecTxMessageHandler::instantiate(this);
+       if (mHdmiCecTxMessageHandler.get() == NULL) {
+          goto out_error;
+       }
+       mHdmiCecTxMessageLooper->registerHandler(mHdmiCecTxMessageHandler);
+
        mCecEnable = nxcec_is_cec_enabled();
     }
     return NO_ERROR;
@@ -672,6 +860,14 @@ out_error:
     }
     mHdmiCecRxMessageHandler = NULL;
     mHdmiCecRxMessageLooper = NULL;
+    if (mHdmiCecTxMessageLooper != NULL) {
+        mHdmiCecTxMessageLooper->unregisterHandler(mHdmiCecTxMessageHandler->id());
+    }
+    if (mHdmiCecTxMessageHandler != NULL) {
+        mHdmiCecTxMessageLooper->stop();
+    }
+    mHdmiCecTxMessageHandler = NULL;
+    mHdmiCecTxMessageLooper = NULL;
     mHdmiHotplugEventListener = NULL;
     mUInput = NULL;
     if (mNxWrap) {
@@ -690,6 +886,12 @@ status_t NexusHdmiCecDevice::uninitialise()
           mHdmiCecRxMessageLooper->stop();
           mHdmiCecRxMessageHandler = NULL;
           mHdmiCecRxMessageLooper = NULL;
+       }
+       if (mHdmiCecTxMessageHandler.get() != NULL && mHdmiCecTxMessageLooper.get() != NULL) {
+          mHdmiCecTxMessageLooper->unregisterHandler(mHdmiCecTxMessageHandler->id());
+          mHdmiCecTxMessageLooper->stop();
+          mHdmiCecTxMessageHandler = NULL;
+          mHdmiCecTxMessageLooper = NULL;
        }
        if (mHdmiHotplugEventListener.get() != NULL) {
           mNxWrap->unregHpdEvt(mHdmiHotplugEventListener);
@@ -915,25 +1117,55 @@ status_t NexusHdmiCecDevice::getCecVendorId(uint32_t* vendor_id)
 status_t NexusHdmiCecDevice::sendCecMessage(const cec_message_t *message, uint8_t maxRetries)
 {
    status_t err = NO_ERROR;
-   (void)message;
-   (void)maxRetries;
-#if 0
-    if (mCecEnable) {
-        if (pIpcClient == NULL) {
-            ALOGE("%s: NexusIPCClient has been instantiated!!!", __PRETTY_FUNCTION__);
-            return NO_INIT;
-        }
+   uint8_t retries = maxRetries;
 
-        uint8_t srcAddr = (uint8_t)message->initiator;
-        uint8_t destAddr = (uint8_t)message->destination;
+   if (mCecEnable) {
+      sp<AMessage> msg = new AMessage;
+      sp<ABuffer> buf = new ABuffer(message->length);
 
-        if (pIpcClient->sendCecMessage(0, srcAddr, destAddr, message->length, const_cast<uint8_t *>(message->body), maxRetries) != true) {
-            ALOGE("%s: cannot send CEC message!!!", __PRETTY_FUNCTION__);
-            return UNKNOWN_ERROR;
-        }
-    }
-#endif
-    return err;
+      msg->setInt32("srcaddr", message->initiator);
+      msg->setInt32("destaddr", message->destination);
+      msg->setInt32("opcode", message->body[0]);
+      msg->setSize("length", message->length);
+
+      if (message->initiator == message->destination) {
+         if (nxcec_get_cec_device_type() == eCecDeviceType_eInvalid) {
+            retries = 1;
+         } else {
+            retries = 0;
+         }
+      } else if (mCecLogicalAddr == 0xFF) {
+         // If we are not sending a polling message, then check to make sure that the
+         // logical address has been set prior to sending the message.
+         ALOGW("%s: CEC logical address not initialised!", __PRETTY_FUNCTION__);
+         err = NO_INIT;
+      }
+      if (err == NO_ERROR) {
+         msg->setInt32("maxRetries", retries);
+         if (message->length > 1) {
+            buf->setRange(0, 0);
+            memcpy(buf->data(), &message->body[1], message->length-1);
+            buf->setRange(0, message->length-1);
+            msg->setBuffer("params", buf);
+         }
+         msg->setWhat(HdmiCecTxMessageHandler::kWhatSend);
+         msg->setTarget(mHdmiCecTxMessageHandler);
+
+         ALOGV("%s: Posting message to looper...", __PRETTY_FUNCTION__);
+         sp<AMessage> response;
+         err = msg->postAndAwaitResponse(&response);
+
+         if (err != OK) {
+             ALOGE("%s: ERROR posting message (err=%d)!!!", __PRETTY_FUNCTION__, err);
+         } else {
+             ALOGV("%s: Returned from posting message to looper.", __PRETTY_FUNCTION__);
+             if (!response->findInt32("err", &err)) {
+                err = OK;
+             }
+         }
+      }
+   }
+   return err;
 }
 
 status_t NexusHdmiCecDevice::getCecPortInfo(struct hdmi_port_info* list[], int* total)

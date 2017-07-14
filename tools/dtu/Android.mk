@@ -12,12 +12,13 @@ LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 
 LOCAL_SHARED_LIBRARIES := libnexus
 
-LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}
-LOCAL_SRC_FILES := refsw/rockford/applications/dtu/dtutool.c
-LOCAL_SRC_FILES += refsw/magnum/basemodules/dtu/src/bdtu.c
-LOCAL_SRC_FILES += refsw/magnum/basemodules/reg/breg_mem.c
+PREFIX_RELATIVE_PATH := ../../../
+LOCAL_SRC_FILES := $(PREFIX_RELATIVE_PATH)refsw/rockford/applications/dtu/dtutool.c
+LOCAL_SRC_FILES += $(PREFIX_RELATIVE_PATH)refsw/magnum/basemodules/dtu/src/bdtu.c
+LOCAL_SRC_FILES += $(PREFIX_RELATIVE_PATH)refsw/magnum/basemodules/reg/breg_mem.c
 
 LOCAL_MODULE := dtutool
 LOCAL_MODULE_TAGS := optional
+LOCAL_PROPRIETARY_MODULE := true
 include $(BUILD_EXECUTABLE)
 

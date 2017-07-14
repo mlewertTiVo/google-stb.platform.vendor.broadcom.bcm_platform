@@ -45,10 +45,12 @@
 #include "nexus_platform.h"
 #include "nexus_display.h"
 #include "nexus_graphics2d.h"
+#include "nxserverlib.h"
 
 void trim_encoder_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings);
 bool keep_display_for_encoder(int disp_ix, NEXUS_PlatformCapabilities *pPlatformCap);
 void defer_init_encoder(NEXUS_PlatformSettings *pPlatformSettings, bool defer);
 bool has_encoder(void);
+void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock, nxserver_t server);
 
 #endif

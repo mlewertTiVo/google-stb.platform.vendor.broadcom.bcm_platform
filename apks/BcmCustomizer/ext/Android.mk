@@ -14,7 +14,7 @@ LOCAL_SRC_FILES += ../base/src/com/broadcom/customizer/BcmCustomizerReceiverBase
 LOCAL_SRC_FILES += ../base/src/com/broadcom/customizer/BcmSplashActivity.java
 
 LOCAL_PACKAGE_NAME := BcmCustomizer
-
+LOCAL_PROPRIETARY_MODULE := true
 LOCAL_CERTIFICATE := platform
 
 include $(BUILD_PACKAGE)

@@ -152,6 +152,7 @@ typedef app_ctx * app_ctx_t;
 static int video_decode_hdr;
 
 static int gui_init( NEXUS_SurfaceClientHandle surfaceClient );
+static bool setupRuntimeHeaps( bool secureDecoder, bool secureHeap );
 
 static int piff_playback_dma_buffer(CommonCryptoHandle commonCryptoHandle, void *dst,
         void *src, size_t size, bool flush)
@@ -1294,6 +1295,9 @@ int main(int argc, char* argv[])
     if (rc)
         return -1;
 
+    /* Request for Secure heap for secure decoder */
+    (void)setupRuntimeHeaps( true, true );
+
     NxClient_GetDefaultAllocSettings(&allocSettings);
     allocSettings.simpleVideoDecoder = 1;
     allocSettings.simpleAudioDecoder = 1;
@@ -1437,3 +1441,50 @@ static int gui_init( NEXUS_SurfaceClientHandle surfaceClient )
     return 0;
 }
 
+static bool setupRuntimeHeaps( bool secureDecoder, bool secureHeap )
+{
+    unsigned i;
+    NEXUS_Error errCode;
+    NEXUS_PlatformConfiguration platformConfig;
+    NEXUS_PlatformSettings platformSettings;
+    NEXUS_MemoryStatus memoryStatus;
+
+    NEXUS_Platform_GetConfiguration(&platformConfig);
+    for (i = 0; i < NEXUS_MAX_HEAPS ; i++)
+    {
+       if (platformConfig.heap[i] != NULL)
+       {
+          errCode = NEXUS_Heap_GetStatus(platformConfig.heap[i], &memoryStatus);
+          if (!errCode && (memoryStatus.heapType & NEXUS_HEAP_TYPE_PICTURE_BUFFERS))
+          {
+             NEXUS_HeapRuntimeSettings settings;
+             bool origin, wanted;
+             NEXUS_Platform_GetHeapRuntimeSettings(platformConfig.heap[i], &settings);
+             origin = settings.secure;
+             wanted = secureHeap ? true : false;
+             if (origin != wanted)
+             {
+                settings.secure = wanted;
+                errCode = NEXUS_Platform_SetHeapRuntimeSettings(platformConfig.heap[i], &settings);
+                if (errCode)
+                {
+                   BDBG_ERR(("NEXUS_Platform_SetHeapRuntimeSettings(%i:%p, %s) on decoder %s -> failed: %d",
+                            i, platformConfig.heap[i], settings.secure?"secure":"open",
+                            secureDecoder?"secure":"open", errCode));
+                   /* Continue anyways, something may still work... */
+                   if (origin && !wanted)
+                   {
+                      BDBG_ERR(("origin %d, wanted %d combination unexpected, continue anyways", origin, wanted));
+                      return false;
+                   }
+                }
+                else
+                {
+                   BDBG_LOG(("NEXUS_Platform_SetHeapRuntimeSettings(%i:%p, %s) on decoder %s -> success", i, platformConfig.heap[i], settings.secure?"secure":"open", secureDecoder?"secure":"open"));
+                }
+             }
+          }
+       }
+    }
+    return true;
+}

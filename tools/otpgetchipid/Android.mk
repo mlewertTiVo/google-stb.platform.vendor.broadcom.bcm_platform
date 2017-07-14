@@ -17,6 +17,6 @@ LOCAL_SRC_FILES := otpgetchipid.c
 
 LOCAL_MODULE := otpgetchipid
 LOCAL_MODULE_TAGS := optional
-
+LOCAL_PROPRIETARY_MODULE := true
 include $(BUILD_EXECUTABLE)
 

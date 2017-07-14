@@ -78,8 +78,6 @@ const static uint32_t nexus_out_sample_rates[] = {
 
 #define BRCM_AUDIO_TUNNEL_PROPERTY_PES_DEBUG    "media.brcm.aout_t_pes_debug"
 
-#define BRCM_AUDIO_NXCLIENT_NAME                "BrcmAudioOutTunnel"
-
 #define BRCM_AUDIO_STREAM_ID                    (0xC0)
 
 #define BRCM_AUDIO_TUNNEL_DURATION_MS           (5)
@@ -930,13 +928,6 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
     ALOGV("%s: sample_rate=%" PRIu32 " frameSize=%" PRIu32 " buffer_size=%zu",
             __FUNCTION__, config->sample_rate, bout->frameSize, bout->buffer_size);
 
-    /* Open Nexus simple playback */
-    rc = brcm_audio_client_join(BRCM_AUDIO_NXCLIENT_NAME);
-    if (rc != NEXUS_SUCCESS) {
-        ALOGE("%s: brcm_audio_client_join error, rc:%d", __FUNCTION__, rc);
-        return -ENOSYS;
-    }
-
     /* Allocate simpleAudioPlayback */
     NxClient_GetDefaultAllocSettings(&allocSettings);
     allocSettings.simpleAudioDecoder = 1;
@@ -1089,8 +1080,6 @@ err_event:
 err_acquire:
     NxClient_Free(&(bout->nexus.allocResults));
 err_alloc:
-    NxClient_Uninit();
-
     return ret;
 }
 
@@ -1128,7 +1117,6 @@ static int nexus_tunnel_bout_close(struct brcm_stream_out *bout)
 
     NxClient_Disconnect(bout->nexus.connectId);
     NxClient_Free(&(bout->nexus.allocResults));
-    NxClient_Uninit();
     bout->nexus.state = BRCM_NEXUS_STATE_DESTROYED;
 
     if (bout->nexus.tunnel.pes_debug) {

@@ -4,9 +4,9 @@ include $(CLEAR_VARS)
 LOCAL_SHARED_LIBRARIES += libcutils
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/linux/driver/fbdev/utils/fbtest/include
+LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
-LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/
-FBDEV_SRC_ROOT := refsw/BSEAV/linux/driver/fbdev/utils/fbtest
+FBDEV_SRC_ROOT := ../../../refsw/BSEAV/linux/driver/fbdev/utils/fbtest
 
 LOCAL_SRC_FILES := \
    $(FBDEV_SRC_ROOT)/util.c \
@@ -54,7 +54,5 @@ LOCAL_SRC_FILES := \
 
 LOCAL_MODULE := fbtest
 LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR_OPTIONAL_EXECUTABLES)
-
+LOCAL_PROPRIETARY_MODULE := true
 include $(BUILD_EXECUTABLE)
-

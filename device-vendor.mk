@@ -22,11 +22,11 @@ else
 RELEASE_PREBUILTS := release_prebuilts/userdebug
 endif
 
-ifneq ($(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvm.so),)
+ifneq ($(wildcard $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvdrmengine.so),)
 
-# TBD.
-#
-# PRODUCT_COPY_FILES +=
+PRODUCT_COPY_FILES += \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvdrmengine.so:vendor/lib/mediadrm/libwvdrmengine.so:widevine \
+    $(TOP)/${BCM_VENDOR_STB_ROOT}/$(RELEASE_PREBUILTS)/libwvhidl.so:vendor/lib/libwvhidl.so:widevine
 
 # no prebuilt binaries included, build from source if we have it
 #

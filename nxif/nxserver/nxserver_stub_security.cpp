@@ -1,7 +1,7 @@
 /******************************************************************************
- *    (c)2016 Broadcom Corporation
+ *    (c) 2017 Broadcom
  *
- * This program is the proprietary software of Broadcom Corporation and/or its licensors,
+ * This program is the proprietary software of Broadcom and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
  * conditions of a separate, written license agreement executed between you and Broadcom
  * (an "Authorized License").  Except as set forth in an Authorized License, Broadcom grants
@@ -34,32 +34,18 @@
  * ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1, WHICHEVER IS GREATER. THESE
  * LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY FAILURE OF ESSENTIAL PURPOSE OF
  * ANY LIMITED REMEDY.
+ *
  *****************************************************************************/
-package com.broadcom.BcmSplash;
 
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.util.Log;
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
 
-public class BcmSplashReceiver extends BroadcastReceiver {
+#include "nxserver.h"
+#include "nxclient.h"
 
-    private static final String TAG = "BcmSplashReceiver";
-    private static final String ACTION_BOOTED = "android.intent.action.BOOT_COMPLETED";
-    private static boolean mBootCompleted = false;
-
-    @Override
-    public void onReceive(Context context, Intent intent) {
-
-        if (ACTION_BOOTED.equals(intent.getAction())) {
-            mBootCompleted = true;
-            if (BcmSplashActivity.splashActivity != null) {
-                BcmSplashActivity.splashActivity.onBootComplete();
-            }
-        }
-    }
-
-    public static boolean receivedBootupIntent() {
-        return mBootCompleted;
-    }
+void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock, nxserver_t server)
+{
+   (void)hMemoryBlock;
+   (void)server;
 }

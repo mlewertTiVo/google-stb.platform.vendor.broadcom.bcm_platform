@@ -17,7 +17,8 @@ include $(CLEAR_VARS)
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 LOCAL_SHARED_LIBRARIES := libnexus \
-                          libnxclient
+                          libnxclient \
+                          liblog
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
@@ -31,5 +32,6 @@ LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_SRC_FILES := memcpy.c
 LOCAL_MODULE := testmemcpy
+LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_EXECUTABLE)

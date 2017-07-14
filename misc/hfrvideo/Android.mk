@@ -20,9 +20,14 @@ LOCAL_SHARED_LIBRARIES := liblog \
                           libutils
 LOCAL_SRC_FILES := hfrvideo.c
 LOCAL_MODULE := hfrvideo
-LOCAL_INIT_RC := hfrvideo.rc
 LOCAL_MODULE_TAGS := optional
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_CLASS := EXECUTABLES
+
+ifeq ($(LOCAL_NVI_LAYOUT),y)
+LOCAL_INIT_RC := hfrvideo.nvi.rc
+else
+LOCAL_INIT_RC := hfrvideo.rc
+endif
 
 include $(BUILD_EXECUTABLE)

@@ -34,11 +34,11 @@ LOCAL_SRC_FILES := \
 
 LOCAL_MODULE := testload
 LOCAL_MODULE_TAGS := optional
+LOCAL_PROPRIETARY_MODULE := true
 include $(BUILD_EXECUTABLE)
 
 
 include $(CLEAR_VARS)
-
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 LOCAL_SHARED_LIBRARIES := libnexus \
                           liblog \
@@ -59,4 +59,5 @@ LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 LOCAL_SRC_FILES := testdma.c
 LOCAL_MODULE := testdma
 LOCAL_MODULE_TAGS := optional
+LOCAL_PROPRIETARY_MODULE := true
 include $(BUILD_EXECUTABLE)

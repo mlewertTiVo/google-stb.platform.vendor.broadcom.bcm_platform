@@ -1,0 +1,6 @@
+service hwcbinder /system/vendor/bin/hwcbinder
+   class pre_core
+   user root
+   group system media
+   critical
+

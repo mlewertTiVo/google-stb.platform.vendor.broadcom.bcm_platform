@@ -100,7 +100,9 @@ static void BcmSidebandBinderNotify(void *cb_data, int msg, struct hwc_notificat
     }
 }
 
-struct bcmsideband_ctx * libbcmsideband_init_sideband(ANativeWindow *native_window, int */*video_id*/, int */*audio_id*/, int */*surface_id*/, sb_geometry_cb cb)
+struct bcmsideband_ctx * libbcmsideband_init_sideband(int index, /* index in [0..HWC_BINDER_SIDEBAND_SURFACE_SIZE[ must be managed by user. */
+    ANativeWindow *native_window, int */*video_id*/, int */*audio_id*/, int */*surface_id*/,
+    sb_geometry_cb cb)
 {
     struct bcmsideband_ctx *ctx;
 
@@ -124,7 +126,7 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband(ANativeWindow *native_wind
         return NULL;
     }
     ctx->bcmSidebandHwcBinder->get()->register_notify(&BcmSidebandBinderNotify, (void *)ctx);
-    ctx->bcmSidebandHwcBinder->getsideband(0, ctx->surfaceClientId);
+    ctx->bcmSidebandHwcBinder->getsideband(index, ctx->surfaceClientId);
 
     uint64_t nexus_client = pNxWrap->client();
     if (!nexus_client) {
@@ -145,8 +147,8 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband(ANativeWindow *native_wind
         return NULL;
     }
 
-    native_handle->data[0] = 1;
-    native_handle->data[1] = (intptr_t)nexus_client;
+    native_handle->data[0] = 2;
+    native_handle->data[1] = ctx->surfaceClientId;
     native_window_set_sideband_stream(native_window, native_handle);
 
     ctx->native_window = native_window;
@@ -158,7 +160,9 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband(ANativeWindow *native_wind
     return ctx;
 }
 
-struct bcmsideband_ctx * libbcmsideband_init_sideband_tif(native_handle_t **p_native_handle, int */*video_id*/, int */*audio_id*/, int */*surface_id*/, sb_geometry_cb cb, void *cb_ctx)
+struct bcmsideband_ctx * libbcmsideband_init_sideband_tif(int index, /* index in [0..HWC_BINDER_SIDEBAND_SURFACE_SIZE[ must be managed by user. */
+    native_handle_t **p_native_handle, int */*video_id*/, int */*audio_id*/, int */*surface_id*/,
+    sb_geometry_cb cb, void *cb_ctx)
 {
     struct bcmsideband_ctx *ctx;
 
@@ -181,7 +185,7 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband_tif(native_handle_t **p_na
         return NULL;
     }
     ctx->bcmSidebandHwcBinder->get()->register_notify(&BcmSidebandBinderNotify, (void *)ctx);
-    ctx->bcmSidebandHwcBinder->getsideband(0, ctx->surfaceClientId);
+    ctx->bcmSidebandHwcBinder->getsideband(index, ctx->surfaceClientId);
 
     uint64_t nexus_client = pNxWrap->client();
     if (!nexus_client) {
@@ -202,8 +206,8 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband_tif(native_handle_t **p_na
         return NULL;
     }
 
-    native_handle->data[0] = 1;
-    native_handle->data[1] = (intptr_t)nexus_client;
+    native_handle->data[0] = 2;
+    native_handle->data[1] = ctx->surfaceClientId;
 
     ctx->native_window = NULL;
     ctx->native_handle = native_handle;

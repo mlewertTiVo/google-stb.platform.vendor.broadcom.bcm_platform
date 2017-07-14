@@ -1,5 +1,5 @@
 /******************************************************************************
- *    (c) 2015-2016 Broadcom
+ *    (c) 2015-2017 Broadcom
  *
  * This program is the proprietary software of Broadcom and/or its licensors,
  * and may only be used, duplicated, modified or distributed pursuant to the terms and
@@ -78,17 +78,12 @@
 #include "namevalue.h"
 #include "nx_ashmem.h"
 
-#include "nexus_security.h"
-#include "nexus_bsp_config.h"
 #include "nexus_base_mmap.h"
 #include "nexus_watchdog.h"
 
 #include "PmLibService.h"
 #include "NxServer.h"
 #include "nxwrap_common.h"
-
-#define DHD_SECDMA_PROP                "ro.dhd.secdma"
-#define DHD_SECDMA_PARAMS_PATH         "/data/nexus/secdma"
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 #define NEXUS_LOGGER_DATA_PATH         "disabled" // Disable logger use of filesystem
@@ -137,6 +132,7 @@
 #define NX_HEAP_VIDEO_SECURE           "ro.nx.heap.video_secure"
 #define NX_HEAP_HIGH_MEM               "ro.nx.heap.highmem"
 #define NX_HEAP_DRV_MANAGED            "ro.nx.heap.drv_managed"
+#define NX_HEAP_XRR                    "ro.nx.heap.export"
 #define NX_HEAP_GROW                   "ro.nx.heap.grow"
 #define NX_SVP                         "ro.nx.svp"
 #define NX_SPLASH                      "ro.nx.splash"
@@ -583,11 +579,12 @@ out:
     return;
 }
 
-static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned heapType)
+static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned heapType, bool nullsized = false)
 {
     unsigned i;
     for (i=0;i<NEXUS_MAX_HEAPS;i++) {
-        if (pPlatformSettings->heap[i].size && pPlatformSettings->heap[i].heapType & heapType) return i;
+        if (nullsized && (pPlatformSettings->heap[i].heapType & heapType)) return i;
+        if (!nullsized && pPlatformSettings->heap[i].size && (pPlatformSettings->heap[i].heapType & heapType)) return i;
     }
     return -1;
 }
@@ -839,25 +836,6 @@ static NEXUS_VideoFormat forced_output_format(void)
    return forced_format;
 }
 
-static void wait_for_data_available(void)
-{
-   char prop[PROPERTY_VALUE_MAX];
-   int state = 0;
-
-   while (1) {
-      state = property_get("vold.decrypt", prop, NULL);
-      if (state) {
-         if ((strncmp(prop, "trigger_restart_min_framework", state) == 0) ||
-             (strncmp(prop, "trigger_restart_framework", state) == 0)) {
-            return;
-         }
-      }
-      /* arbitrary wait... */
-      BKNI_Sleep(100);
-      ALOGV("waiting 100 msecs for cryptfs sync...");
-   }
-}
-
 static nxserver_t init_nxserver(void)
 {
     NEXUS_Error rc;
@@ -1012,6 +990,14 @@ static nxserver_t init_nxserver(void)
        }
     }
 
+    if (property_get(NX_HEAP_XRR, value, NULL)) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_EXPORT_REGION, true);
+       if (strlen(value) && (index != -1)) {
+          /* -heap export,XXy */
+          platformSettings.heap[index].size = calc_heap_size(value);
+       }
+    }
+
     if (property_get(NX_HEAP_MAIN, value, NULL)) {
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_MAIN);
        if (strlen(value) && (index != -1)) {
@@ -1148,6 +1134,20 @@ static nxserver_t init_nxserver(void)
        return NULL;
     }
 
+    /* With MS12, SPDIF output needs to be clocked from different PLL to avoid conflict
+     * with the DSP mixer.
+     */
+    if (settings.session[0].dolbyMs == nxserverlib_dolby_ms_type_ms12) {
+       NEXUS_PlatformConfiguration platformConfig;
+       NEXUS_AudioOutputSettings outputSettings;
+
+       NEXUS_Platform_GetConfiguration(&platformConfig);
+       NEXUS_AudioOutput_GetSettings(NEXUS_SpdifOutput_GetConnector(platformConfig.outputs.spdif[0]), &outputSettings);
+       ALOGI("SPDIF PLL %d -> %d", outputSettings.pll, NEXUS_AudioOutputPll_e1);
+       outputSettings.pll = NEXUS_AudioOutputPll_e1;
+       NEXUS_AudioOutput_SetSettings(NEXUS_SpdifOutput_GetConnector(platformConfig.outputs.spdif[0]), &outputSettings);
+    }
+
     rc = nxserver_ipc_init(g_app.server, g_app.lock);
     if (rc) {
        ALOGE("FATAL: failed nxserver_ipc_init");
@@ -1173,68 +1173,6 @@ static void uninit_nxserver(nxserver_t server)
     BKNI_DestroyMutex(g_app.standby_lock);
     BKNI_DestroyMutex(g_app.wdog.lock);
     NEXUS_Platform_Uninit();
-}
-
-static void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock)
-{
-    NEXUS_Error rc = NEXUS_SUCCESS;
-    NEXUS_Addr secdmaPhysicalOffset = 0;
-    uint32_t secdmaMemSize;
-    char value[PROPERTY_VALUE_MAX];
-    char secdma_param_file[PROPERTY_VALUE_MAX];
-    FILE *pFile;
-    char nx_key[PROPERTY_VALUE_MAX];
-    NxClient_ClientModeSettings ms;
-
-    memset (value, 0, sizeof(value));
-
-    if (property_get(DHD_SECDMA_PROP, value, NULL)) {
-        /* wait for data (re)mount, trigger nexus authentication. */
-        wait_for_data_available();
-        sprintf(nx_key, "%s/nx_key", NEXUS_TRUSTED_DATA_PATH);
-        nxserver_parse_password_file(g_app.server, nx_key);
-        NxClient_GetDefaultClientModeSettings(&ms);
-        NxClient_SetClientMode(&ms);
-        ALOGW("force nexus re-authentication with '%s'", nx_key);
-
-        secdmaMemSize = strtoul(value, NULL, 0);
-        if (strlen(value) && (secdmaMemSize > 0)) {
-            sprintf(secdma_param_file, "%s/stbpriv.txt", DHD_SECDMA_PARAMS_PATH);
-            pFile = fopen(secdma_param_file, "w");
-            if (pFile == NULL) {
-                ALOGE("couldn't open %s", secdma_param_file);
-            } else {
-                *hMemoryBlock = NEXUS_MemoryBlock_Allocate(NEXUS_MEMC0_MAIN_HEAP, secdmaMemSize, 0x1000, NULL);
-                if (*hMemoryBlock == NULL) {
-                    ALOGE("NEXUS_MemoryBlock_Allocate failed");
-                    fclose(pFile);
-                    return;
-                }
-                rc = NEXUS_MemoryBlock_LockOffset(*hMemoryBlock, &secdmaPhysicalOffset);
-                if (rc != NEXUS_SUCCESS) {
-                    ALOGE("NEXUS_MemoryBlock_LockOffset returned %d", rc);
-                    NEXUS_MemoryBlock_Free(*hMemoryBlock);
-                    *hMemoryBlock = NULL;
-                    fclose(pFile);
-                    return;
-                }
-                ALOGV("secdmaPhysicalOffset 0x%" PRIX64 " secdmaMemSize 0x%x", secdmaPhysicalOffset, secdmaMemSize);
-                rc = NEXUS_Security_SetPciERestrictedRange( secdmaPhysicalOffset, (size_t) secdmaMemSize, (unsigned)0 );
-                if (rc != NEXUS_SUCCESS) {
-                    ALOGE("NEXUS_Security_SetPciERestrictedRange returned %d", rc);
-                    NEXUS_MemoryBlock_Unlock(*hMemoryBlock);
-                    NEXUS_MemoryBlock_Free(*hMemoryBlock);
-                    *hMemoryBlock = NULL;
-                    fclose(pFile);
-                    return;
-                }
-                fprintf(pFile, "secdma_cma_addr=0x%" PRIX64 " secdma_cma_size=0x%x\n", secdmaPhysicalOffset, secdmaMemSize);
-                fclose(pFile);
-            }
-        } else {
-            ALOGE("secdma size not set");
-        }
-    }
 }
 
 static void sigterm_signal_handler(int signal) {
@@ -1452,7 +1390,7 @@ int main(void)
        }
     }
 
-    alloc_secdma(&hSecDmaMemoryBlock);
+    alloc_secdma(&hSecDmaMemoryBlock, g_app.server);
 
     ALOGI("trigger nexus waiters now.");
     property_set(NX_STATE, "loaded");

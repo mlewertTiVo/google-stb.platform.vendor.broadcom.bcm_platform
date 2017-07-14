@@ -1,0 +1,8 @@
+on property:dyn.nx.vidout.set=1
+   start nxdispfmt
+
+service nxdispfmt /system/vendor/bin/nxdispfmt
+   class late_start
+   oneshot
+   disabled
+
