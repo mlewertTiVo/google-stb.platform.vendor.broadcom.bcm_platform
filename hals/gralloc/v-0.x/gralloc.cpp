@@ -75,8 +75,14 @@ static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
 static NEXUS_Graphics2DHandle hGraphics = NULL;
 static BKNI_EventHandle hCheckpointEvent = NULL;
 
-#define DATA_PLANE_MAX_WIDTH    1920
-#define DATA_PLANE_MAX_HEIGHT   1200
+// allow qhd for 360 video.
+#if defined(V3D_VARIANT_v3d)
+#define DATA_PLANE_MAX_WIDTH    2048 /*TODO*/
+#define DATA_PLANE_MAX_HEIGHT   1440
+#else
+#define DATA_PLANE_MAX_WIDTH    2560
+#define DATA_PLANE_MAX_HEIGHT   1440
+#endif
 
 /* default alignment for gralloc buffers:
  *
