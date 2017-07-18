@@ -20,10 +20,14 @@ include $(CLEAR_VARS)
 LOCAL_PRELINK_MODULE := false
 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
+LOCAL_C_INCLUDES += $(NEXUS_TOP)/nxclient/include
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/nxclient/apps/utils
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
 LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/glob
+LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/utils
+LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/media
 LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/tshdrbuilder
+LOCAL_C_INCLUDES += $(BSEAV_TOP)/lib/mpeg2_ts_parse
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 

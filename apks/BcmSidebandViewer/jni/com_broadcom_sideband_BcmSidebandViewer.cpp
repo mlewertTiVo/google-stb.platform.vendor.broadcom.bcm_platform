@@ -6,6 +6,7 @@
 #include <system/window.h>
 #include <android/native_window_jni.h>
 #include <utils/Log.h>
+#include <utils/Mutex.h>
 #include <errno.h>
 #include <string.h>
 
@@ -14,12 +15,14 @@
 
 namespace android {
 
+Mutex lock;
 BcmSidebandPlayer *sidebandPlayer = NULL;
 struct bcmsideband_ctx *sidebandContext = NULL;
 
 static void sb_geometry_update(void *, unsigned int x, unsigned int y, unsigned int width, unsigned int height)
 {
     ALOGV("%s", __FUNCTION__);
+    AutoMutex _l(lock);
     if (sidebandPlayer)
         sidebandPlayer->setWindowPosition(x, y, width, height);
 }
@@ -30,9 +33,11 @@ static jboolean start_sideband(JNIEnv *env, jobject /*thizvoid*/, jobject jsurfa
     int video_id = -1, audio_id = -1, surface_id = -1;
 
     ALOGV("%s", __FUNCTION__);
+    AutoMutex _l(lock);
     if (sidebandContext == NULL) {
         native_window = ANativeWindow_fromSurface(env, jsurface);
-        sidebandContext = libbcmsideband_init_sideband(native_window, &video_id, &audio_id, &surface_id, &sb_geometry_update);
+        ALOGV("About to initialize sideband");
+        sidebandContext = libbcmsideband_init_sideband(0, native_window, &video_id, &audio_id, &surface_id, &sb_geometry_update);
         if (!sidebandContext) {
             ALOGE("Unable to initalize the sideband");
             return JNI_FALSE;
@@ -45,7 +50,9 @@ static jboolean start_sideband(JNIEnv *env, jobject /*thizvoid*/, jobject jsurfa
 static void stop_sideband(JNIEnv */*env*/, jobject /*thizvoid*/)
 {
     ALOGV("%s", __FUNCTION__);
+    AutoMutex _l(lock);
     if (sidebandContext != NULL) {
+        ALOGV("About to release sideband");
         libbcmsideband_release(sidebandContext);
         sidebandContext = NULL;
     }
@@ -54,8 +61,10 @@ static void stop_sideband(JNIEnv */*env*/, jobject /*thizvoid*/)
 static jboolean start_file_player(JNIEnv *env, jobject /*thizvoid*/, jint x, jint y, jint w, jint h, jstring path)
 {
     ALOGV("%s", __FUNCTION__);
+    AutoMutex _l(lock);
     if (sidebandPlayer == NULL) {
         const char* cpath = env->GetStringUTFChars(path, NULL);
+        ALOGV("About to create player");
         BcmSidebandPlayer* player = BcmSidebandPlayerFactory::createFilePlayer(cpath);
         env->ReleaseStringUTFChars(path, cpath);
         if (player == NULL) {
@@ -63,6 +72,7 @@ static jboolean start_file_player(JNIEnv *env, jobject /*thizvoid*/, jint x, jin
             return JNI_FALSE;
         }
         int err;
+        ALOGV("About to start player");
         err = player->start(x, y, w, h);
         if (err) {
             ALOGE("Unable to start sideband player (%d)", err);
@@ -77,10 +87,11 @@ static jboolean start_file_player(JNIEnv *env, jobject /*thizvoid*/, jint x, jin
 static void stop_player(JNIEnv */*env*/, jobject /*thizvoid*/)
 {
     ALOGV("%s", __FUNCTION__);
+    AutoMutex _l(lock);
     if (sidebandPlayer != NULL) {
+        ALOGV("About to stop player");
         sidebandPlayer->stop();
-        delete sidebandPlayer;
-        sidebandPlayer = NULL;
+        sidebandPlayer = NULL; /* Inherits from Thread, strong pointer will delete itself */
     }
 }
 

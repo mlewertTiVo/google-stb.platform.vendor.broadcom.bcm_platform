@@ -75,5 +75,6 @@
         android:id="@+id/bannerView"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:src="@+drawable/banner" />
+        android:src="@+drawable/ic_sideband_viewer_banner"
+        android:visibility="gone" />
 </FrameLayout>

@@ -755,7 +755,7 @@ static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_s
     }
     stream->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
     priv->sidebandContext = libbcmsideband_init_sideband_tif(
-        &stream->sideband_stream_source_handle, NULL, NULL, NULL, NULL, priv);
+        0, &stream->sideband_stream_source_handle, NULL, NULL, NULL, NULL, priv);
     if (!priv->sidebandContext) {
         ALOGE("Unable to initalize the sideband");
         err = -ENODEV;
