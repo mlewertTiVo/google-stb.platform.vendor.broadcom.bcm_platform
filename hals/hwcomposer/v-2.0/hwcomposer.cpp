@@ -195,7 +195,6 @@ static NEXUS_PixelFormat gr2nx_pixel(
    case HAL_PIXEL_FORMAT_RGB_888:   return NEXUS_PixelFormat_eX8_B8_G8_R8;
    case HAL_PIXEL_FORMAT_RGB_565:   return NEXUS_PixelFormat_eR5_G6_B5;
    case HAL_PIXEL_FORMAT_YV12: /* fall-thru */
-   case HAL_PIXEL_FORMAT_YUV420P: /* fall-thru */
    case HAL_PIXEL_FORMAT_YCbCr_420_888: return NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8;
    default:                         break;
    }
@@ -1220,7 +1219,6 @@ static void hwc2_vd_cmp_frame(
          }
 
          yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
-                 (shared->container.format == HAL_PIXEL_FORMAT_YUV420P) ||
                  (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
          if (yv12) {
             blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
@@ -2133,7 +2131,6 @@ static int32_t hwc2_fmtSupp(
    case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
    case HAL_PIXEL_FORMAT_RGB_565:
    case HAL_PIXEL_FORMAT_YV12:
-   case HAL_PIXEL_FORMAT_YUV420P:
    case HAL_PIXEL_FORMAT_YCbCr_420_888:
    break;
    default:
@@ -5277,7 +5274,6 @@ static void hwc2_ext_cmp_frame(
             /* graphics or yv12 layer. */
             bool yv12 = false;
             yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
-                    (shared->container.format == HAL_PIXEL_FORMAT_YUV420P) ||
                     (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
             if (yv12) {
                blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
