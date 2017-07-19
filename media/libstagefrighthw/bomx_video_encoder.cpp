@@ -2234,7 +2234,7 @@ OMX_ERRORTYPE BOMX_VideoEncoder::EmptyThisBuffer(
         return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
     }
 
-    ALOGI("comp:%s, buff:%p len:%d ts:%llu flags:%x", GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
+    ALOGV("comp:%s, buff:%p len:%d ts:%llu flags:%x", GetName(), pBufferHeader->pBuffer, pBufferHeader->nFilledLen, pBufferHeader->nTimeStamp, pBufferHeader->nFlags);
 
     if(pBufferHeader->nFlags & ( OMX_BUFFERFLAG_DATACORRUPT | OMX_BUFFERFLAG_EXTRADATA | OMX_BUFFERFLAG_CODECCONFIG ))
     {

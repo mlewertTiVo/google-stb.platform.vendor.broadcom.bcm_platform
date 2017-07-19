@@ -182,6 +182,18 @@ OMX_ERRORTYPE BOMX_VideoPort::SetPortFormat(
     return OMX_ErrorNone;
 }
 
+bool BOMX_VideoPort::SetPortFormat(unsigned index, OMX_COLOR_FORMATTYPE colorFormat)
+{
+    if ( index >= m_numPortFormats )
+    {
+        ALOGW("Invalid port format index %u", index);
+        return false;
+    }
+
+    m_pPortFormats[index].eColorFormat = colorFormat;
+    return true;
+}
+
 BOMX_ImagePort::BOMX_ImagePort(
         unsigned index,
         OMX_DIRTYPE dir,

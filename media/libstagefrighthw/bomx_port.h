@@ -199,9 +199,10 @@ public:
     OMX_ERRORTYPE SetPortFormat(
         const OMX_VIDEO_PARAM_PORTFORMATTYPE *pFormat,
         const OMX_VIDEO_PORTDEFINITIONTYPE *pDefaults);
+    bool SetPortFormat(unsigned index, OMX_COLOR_FORMATTYPE colorFormat);
 
 protected:
-    const OMX_VIDEO_PARAM_PORTFORMATTYPE *m_pPortFormats;
+    OMX_VIDEO_PARAM_PORTFORMATTYPE *m_pPortFormats;
 
 private:
 };
