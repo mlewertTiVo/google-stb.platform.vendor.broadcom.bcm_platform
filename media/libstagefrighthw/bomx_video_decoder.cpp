@@ -1275,25 +1275,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         }
     }
 
-    if (property_get_int32(B_PROPERTY_DTU, 0))
-    {
-       // guaranteed by the dtu.
-       m_secureRuntimeHeaps = m_secureDecoder;
-    }
-    else
-    {
-       if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))
-       {
-          BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
-          // failed, so forced to assume picture buffer heaps are secured.
-          m_secureRuntimeHeaps = true;
-       }
-       else
-       {
-          m_secureRuntimeHeaps = m_secureDecoder;
-       }
-    }
-
     NxClient_AllocSettings nxAllocSettings;
     NxClient_GetDefaultAllocSettings(&nxAllocSettings);
     nxAllocSettings.simpleVideoDecoder = 1;
@@ -1370,6 +1351,26 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         this->Invalidate(OMX_ErrorUndefined);
         return;
     }
+
+    if (property_get_int32(B_PROPERTY_DTU, 0))
+    {
+       // guaranteed by the dtu.
+       m_secureRuntimeHeaps = m_secureDecoder;
+    }
+    else
+    {
+       if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))
+       {
+          BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
+          // failed, so forced to assume picture buffer heaps are secured.
+          m_secureRuntimeHeaps = true;
+       }
+       else
+       {
+          m_secureRuntimeHeaps = m_secureDecoder;
+       }
+    }
+
     // Initialize video window to full screen
     NEXUS_SurfaceClientSettings videoClientSettings;
     NEXUS_SurfaceClient_GetSettings(m_hVideoClient, &videoClientSettings);
