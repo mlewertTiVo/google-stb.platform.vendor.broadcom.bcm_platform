@@ -657,7 +657,7 @@ OEMCryptoResult OEMCrypto_DeriveKeysFromSessionKey(
 
 uint32_t OEMCrypto_APIVersion()
 {
-    return 11;
+    return 12;
 }
 
 const char* OEMCrypto_SecurityLevel()
@@ -1305,5 +1305,54 @@ OEMCryptoResult OEMCrypto_DecryptCENC(OEMCrypto_SESSION session,
     dump_hex((const char*)"out_buffer->buffer.clear.address", out_buffer->buffer.clear.address, 256);
 
     return wvRc;
+}
+
+/*
+ * OEMCrypto_GetProvisioningMethod
+ *
+ * Introduced in version 12
+ */
+OEMCrypto_ProvisioningMethod OEMCrypto_GetProvisioningMethod()
+{
+    return OEMCrypto_Keybox;
+}
+
+/*
+ * OEMCrypto_GetOEMPublicCertificate
+ *
+ * Introduced in version 12
+ */
+OEMCryptoResult OEMCrypto_GetOEMPublicCertificate(OEMCrypto_SESSION session,
+                                                  uint8_t* public_cert,
+                                                  size_t* public_cert_length)
+{
+    (void)session;
+    (void)public_cert;
+    (void)public_cert_length;
+    return OEMCrypto_ERROR_NOT_IMPLEMENTED;
+}
+
+/*
+ * OEMCrypto_RewrapDeviceRSAKey30
+ *
+ * Introduced in version 12
+ */
+OEMCryptoResult OEMCrypto_RewrapDeviceRSAKey30(
+    OEMCrypto_SESSION session, const uint32_t* nonce,
+    const uint8_t* encrypted_message_key, size_t encrypted_message_key_length,
+    const uint8_t* enc_rsa_key, size_t enc_rsa_key_length,
+    const uint8_t* enc_rsa_key_iv, uint8_t* wrapped_rsa_key,
+    size_t* wrapped_rsa_key_length)
+{
+    (void)session;
+    (void)nonce;
+    (void)encrypted_message_key;
+    (void)encrypted_message_key_length;
+    (void)enc_rsa_key;
+    (void)enc_rsa_key_length;
+    (void)enc_rsa_key_iv;
+    (void)wrapped_rsa_key;
+    (void)wrapped_rsa_key_length;
+    return OEMCrypto_ERROR_NOT_IMPLEMENTED;
 }
 
