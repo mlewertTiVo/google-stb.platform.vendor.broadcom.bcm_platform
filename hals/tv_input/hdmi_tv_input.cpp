@@ -23,6 +23,7 @@
 #include <cutils/log.h>
 #include <cutils/native_handle.h>
 #include <cutils/properties.h>
+#include <system/window.h>
 
 #include <hardware/tv_input.h>
 
