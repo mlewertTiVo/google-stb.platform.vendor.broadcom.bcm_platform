@@ -43,6 +43,8 @@
 #include <hardware_legacy/power.h>
 #include <inttypes.h>
 
+#include <hdmi_ext.h>
+
 unsigned NexusPower::NexusGpio::mInstances = 0;
 
 sp<NexusPower::LinuxUInputRef> NexusPower::LinuxUInputRef::instantiate()
@@ -176,7 +178,7 @@ status_t NexusPower::setPowerState(nxwrap_pwr_state state)
         else if (mCecDeviceType == eCecDeviceType_eInvalid
                  && nxcec_is_cec_enabled()
                  && nxcec_get_cec_xmit_viewon()
-                 /* TODO && mIpcClient->setCecPowerState(cecId, state) != true */) {
+                 && !hdmi_ext__cec_viewon()) {
             ALOGW("%s: Could not set CEC%d PowerState %s!", __FUNCTION__, cecId, nxwrap_get_power_string(state));
         }
     }
@@ -184,7 +186,7 @@ status_t NexusPower::setPowerState(nxwrap_pwr_state state)
         if (mCecDeviceType == eCecDeviceType_eInvalid
             && nxcec_is_cec_enabled()
             && nxcec_get_cec_xmit_stdby()
-            /* TODO && mIpcClient->setCecPowerState(cecId, state) != true */) {
+            && !hdmi_ext__cec_standby()) {
             ALOGW("%s: Could not set CEC%d PowerState %s!", __FUNCTION__, cecId, nxwrap_get_power_string(state));
         }
 
