@@ -47,7 +47,7 @@
 
 #include <media/stagefright/foundation/ADebug.h>
 #include <utils/Log.h>
-#include "include/SoftOMXComponent.h"
+#include <media/stagefright/omx/SoftOMXComponent.h>
 
 #include <media/openmax/OMX_Core.h>
 #include <dlfcn.h>
