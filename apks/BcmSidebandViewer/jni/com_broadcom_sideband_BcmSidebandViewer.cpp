@@ -1,7 +1,7 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "BcmSidebandViewer-JNI"
 
-#include <JNIHelp.h>
+#include <nativehelper/JNIHelp.h>
 
 #include <system/window.h>
 #include <android/native_window_jni.h>
