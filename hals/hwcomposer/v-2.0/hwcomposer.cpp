@@ -5320,6 +5320,19 @@ static void hwc2_ext_cmp_frame(
          }
       break;
       case HWC2_COMPOSITION_SIDEBAND:
+         if (hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
+            if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= dsp->aCfg->w/HWC2_PAH_DIV &&
+                (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= dsp->aCfg->h/HWC2_PAH_DIV) {
+               pah = {(int16_t)lyr->fr.left,
+                      (int16_t)lyr->fr.top,
+                      (uint16_t)(lyr->fr.right - lyr->fr.left),
+                      (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+               ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
+                        "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
+                        dsp->pres, dsp->post, dsp->aCfg->w/HWC2_PAH_DIV, dsp->aCfg->h/HWC2_PAH_DIV);
+            }
+         }
+
          if (hwc2->hb) {
             hwc2_sdb(hwc2, lyr, dsp);
             ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
