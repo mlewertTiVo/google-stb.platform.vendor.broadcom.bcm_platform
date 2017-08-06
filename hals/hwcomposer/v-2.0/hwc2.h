@@ -465,6 +465,7 @@ enum hwc2_tweaks_e {
    hwc2_tweak_fb_compressed = 0,
    hwc2_tweak_pip_alpha_hole,
    hwc2_tweak_bypass_disable,
+   hwc2_tweak_plm,
 };
 
 enum hwc2_seeding_e {
