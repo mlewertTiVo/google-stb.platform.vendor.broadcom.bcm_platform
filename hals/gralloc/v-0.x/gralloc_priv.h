@@ -53,6 +53,7 @@ extern "C" {
 #define GR_STANDARD             (1<<1)
 #define GR_YV12                 (1<<2)
 #define GR_HWTEX                (1<<3)
+#define GR_BLOB                 (1<<4)
 
 /*****************************************************************************/
 

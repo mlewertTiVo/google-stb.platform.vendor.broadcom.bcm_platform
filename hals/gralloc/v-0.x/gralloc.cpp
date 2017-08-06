@@ -286,6 +286,7 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
         switch (pSharedData->container.format) {
         case HAL_PIXEL_FORMAT_YV12:
         case HAL_PIXEL_FORMAT_YCbCr_420_888:
+        case HAL_PIXEL_FORMAT_BLOB:
            errCode = 0;
         break;
         default:
@@ -452,6 +453,10 @@ NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt, int *bpp)
          b = 2;
          pf = NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8;
       break;
+      case HAL_PIXEL_FORMAT_BLOB:
+         b = 1;
+         pf = NEXUS_PixelFormat_ePalette1;
+      break;
       default:
          b = 0;
          pf = NEXUS_PixelFormat_eUnknown;
@@ -482,6 +487,9 @@ BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt)
       case HAL_PIXEL_FORMAT_YCbCr_420_888:
          /* no native bm2mc support, return the 'converted for bm2mc consumption'. */
          pf = BM2MC_PACKET_PixelFormat_eY08_Cb8_Y18_Cr8;
+      break;
+      case HAL_PIXEL_FORMAT_BLOB:
+         pf = BM2MC_PACKET_PixelFormat_eP1;
       break;
       default:
          pf = BM2MC_PACKET_PixelFormat_eUnknown;
@@ -525,6 +533,9 @@ static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pS
          bufferRequirements.format = BEGL_BufferFormat_eYV12;
 #endif
       break;
+      case HAL_PIXEL_FORMAT_BLOB:
+         bufferRequirements.format = BEGL_BufferFormat_INVALID;
+      break;
       default:
       break;
    }
@@ -534,6 +545,9 @@ static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pS
          hnd->oglStride = 0;
          hnd->oglFormat = 0;
          hnd->oglSize   = 0;
+         if (pSharedData->container.format == HAL_PIXEL_FORMAT_BLOB) {
+            rc = 0;
+         }
       break;
 #if defined(V3D_VARIANT_v3d)
       case BEGL_BufferFormat_eYV12_Texture:
@@ -586,6 +600,10 @@ static void getBufferDataFromFormat(int *alignment, int w, int h, int bpp, int f
          *pStride = (w + (*alignment-1)) & ~(*alignment-1);
          // size: y-stride * h + 2 * (c-stride * h/2), with c-stride: ALIGN(y-stride/2, 16)
          *size = (*pStride * h) + 2 * ((h/2) * ((*pStride/2 + (*alignment-1)) & ~(*alignment-1)));
+      break;
+      case HAL_PIXEL_FORMAT_BLOB:
+         *pStride = 1;
+         *size = w;
       break;
       default:
          *pStride = 0;
@@ -700,6 +718,9 @@ gralloc_alloc_buffer(alloc_device_t* dev,
 
    if (format != HAL_PIXEL_FORMAT_YV12 && format != HAL_PIXEL_FORMAT_YCbCr_420_888) {
       fmt_set |= GR_STANDARD;
+      if (format == HAL_PIXEL_FORMAT_BLOB) {
+         fmt_set |= GR_BLOB;
+      }
    } else if (usage & GRALLOC_USAGE_PROTECTED) {
       fmt_set |= GR_NONE;
    } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
@@ -728,8 +749,10 @@ gralloc_alloc_buffer(alloc_device_t* dev,
             }
          }
       } else {
-         pSharedData->container.allocSize = hnd->oglSize;
-         pSharedData->container.stride = hnd->oglStride;
+         if (!(fmt_set & GR_BLOB)) {
+            pSharedData->container.allocSize = hnd->oglSize;
+            pSharedData->container.stride = hnd->oglStride;
+         }
          ashmem_alloc.size = pSharedData->container.allocSize;
       }
       ret = ioctl(hnd->pdata, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
@@ -764,7 +787,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       if (pSharedData->container.block) {NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);}
       else {pPhysAddr = 0;}
       ALOGI("alloc (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
-            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
             getpid(),
             block_handle,
             sPhysAddr,
@@ -836,7 +859,7 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
          if (planeHandle) {NEXUS_MemoryBlock_LockOffset(planeHandle, &pPhysAddr);}
          else {pPhysAddr = 0;}
          ALOGI(" free (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
-               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
                hnd->pid,
                block_handle,
                sPhysAddr,
