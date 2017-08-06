@@ -53,7 +53,7 @@ void __attribute__ ((constructor)) gralloc_explicit_load(void);
 void __attribute__ ((destructor)) gralloc_explicit_unload(void);
 
 #if defined(V3D_VARIANT_v3d)
-static void (* dyn_BEGLint_BufferGetRequirements)(BEGL_PixmapInfo *, BEGL_BufferSettings *);
+static void (* dyn_BEGLint_BufferGetRequirements)(BEGL_PixmapInfoEXT *, BEGL_BufferSettings *);
 #endif
 static void * (* dyn_nxwrap_create_client)(void **wrap);
 static void (* dyn_nxwrap_destroy_client)(void *wrap);
@@ -494,13 +494,13 @@ BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt)
 
 static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pSharedData)
 {
-   BEGL_PixmapInfo bufferRequirements;
+   BEGL_PixmapInfoEXT bufferRequirements;
 #if defined(V3D_VARIANT_v3d)
    BEGL_BufferSettings bufferConstrainedRequirements;
 #endif
    int rc = -EINVAL;
 
-   memset(&bufferRequirements, 0, sizeof(BEGL_PixmapInfo));
+   memset(&bufferRequirements, 0, sizeof(BEGL_PixmapInfoEXT));
    bufferRequirements.width = pSharedData->container.width;
    bufferRequirements.height = pSharedData->container.height;
    bufferRequirements.format = BEGL_BufferFormat_INVALID;
