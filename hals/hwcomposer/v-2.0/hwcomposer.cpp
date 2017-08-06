@@ -5043,10 +5043,10 @@ static void hwc2_ext_cmp_frame(
          }
          if (lyr->rf != HWC2_INVALID) {
             if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
-               ccli++;
                if (ccli == 0) {
                   hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, HWC2_MAGIC);
                }
+               ccli++;
             } else {
                hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
                hwc2_lyr_tl_dequeued(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
