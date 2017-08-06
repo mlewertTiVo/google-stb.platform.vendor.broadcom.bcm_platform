@@ -112,7 +112,7 @@ int gralloc_register_buffer(gralloc_module_t const* module,
          if (pSharedData->container.block) {NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);}
          else {pPhysAddr = 0;}
          ALOGI("  reg (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
-               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
                hnd->pid,
                block_handle,
                sPhysAddr,
@@ -165,7 +165,7 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
          if (pSharedData->container.block) {NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);}
          else {pPhysAddr = 0;}
          ALOGI("unreg (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
-               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
                hnd->pid,
                block_handle,
                sPhysAddr,
@@ -313,7 +313,7 @@ out_video_failed:
       NEXUS_MemoryBlock_LockOffset(shared_block_handle, &sPhysAddr);
       NEXUS_MemoryBlock_LockOffset(block_handle, &pPhysAddr);
       ALOGI(" lock_ycbcr (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::vaddr:%p::act:%d",
-            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
             hnd->pid,
             shared_block_handle,
             sPhysAddr,
@@ -451,7 +451,7 @@ out_video_failed:
       NEXUS_MemoryBlock_LockOffset(shared_block_handle, &sPhysAddr);
       NEXUS_MemoryBlock_LockOffset(block_handle, &pPhysAddr);
       ALOGI(" lock (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::vaddr:%p::act:%d",
-            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
             hnd->pid,
             shared_block_handle,
             sPhysAddr,
@@ -521,7 +521,7 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       NEXUS_MemoryBlock_LockOffset(shared_block_handle, &sPhysAddr);
       NEXUS_MemoryBlock_LockOffset(block_handle, &pPhysAddr);
       ALOGI("ulock (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
-            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
             hnd->pid,
             shared_block_handle,
             sPhysAddr,
