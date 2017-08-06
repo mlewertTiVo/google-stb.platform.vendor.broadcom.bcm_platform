@@ -32,7 +32,9 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libnxclient \
                           libpmlibservice \
                           libpower \
-                          libutils
+                          libutils \
+                          libhdmiext \
+                          libhdmicec
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
@@ -42,7 +44,8 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/droid_pm \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/linux/driver \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/modules/gpio/include
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/modules/gpio/include \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hdmi_cec
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
