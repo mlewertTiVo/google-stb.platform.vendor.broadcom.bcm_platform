@@ -1186,3 +1186,58 @@ status_t NexusHdmiCecDevice::getCecPortInfo(struct hdmi_port_info* list[], int* 
     return ret;
 }
 
+status_t NexusHdmiCecDevice::viewOn()
+{
+   status_t err = NO_ERROR;
+   NEXUS_CecStatus cec_status;
+   cec_message_t txMessage;
+
+   if (NEXUS_Cec_GetStatus(mCecHandle, &cec_status) != NEXUS_SUCCESS) {
+      // ignore request...
+      goto out;
+   }
+
+   txMessage.initiator   = (cec_logical_address_t)mLogicalAddress;
+   txMessage.destination = (cec_logical_address_t)0;
+   txMessage.length      = 1;
+   txMessage.body[0]     = NEXUS_CEC_OpImageViewOn;
+   err = sendCecMessage(&txMessage, DEFAULT_MAX_CEC_RETRIES);
+   if (err != OK) {
+      goto out;
+   }
+   txMessage.destination = (cec_logical_address_t)0xF;
+   txMessage.length      = 3;
+   txMessage.body[0]     = NEXUS_CEC_OpActiveSource;
+   txMessage.body[1]     = cec_status.physicalAddress[0];
+   txMessage.body[2]     = cec_status.physicalAddress[1];
+   err = sendCecMessage(&txMessage, DEFAULT_MAX_CEC_RETRIES);
+out:
+   return err;
+}
+
+#define SYS_SHUTDOWN_REQUESTED "sys.shutdown.requested"
+status_t NexusHdmiCecDevice::standBy()
+{
+   status_t err = NO_ERROR;
+   NEXUS_CecStatus cec_status;
+   cec_message_t txMessage;
+   char value[PROPERTY_VALUE_MAX];
+
+   property_get(SYS_SHUTDOWN_REQUESTED, value, NULL);
+   if (value[0] == '1') {
+      goto out;
+   }
+
+   if (NEXUS_Cec_GetStatus(mCecHandle, &cec_status) != NEXUS_SUCCESS) {
+      // ignore request...
+      goto out;
+   }
+
+   txMessage.initiator   = (cec_logical_address_t)mLogicalAddress;
+   txMessage.destination = (cec_logical_address_t)0;
+   txMessage.length      = 1;
+   txMessage.body[0]     = NEXUS_CEC_OpStandby;
+   err = sendCecMessage(&txMessage, DEFAULT_MAX_CEC_RETRIES);
+out:
+   return err;
+}

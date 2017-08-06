@@ -96,6 +96,8 @@ class NexusHdmiCecDevice : public RefBase
         status_t getCecVendorId(uint32_t* vendor_id);
         status_t sendCecMessage(const cec_message_t*, uint8_t maxRetries=NexusHdmiCecDevice::DEFAULT_CEC_RETRIES);
         status_t getCecPortInfo(struct hdmi_port_info* list[], int* total);
+        status_t viewOn();
+        status_t standBy();
 
     protected:
         NexusHdmiCecDevice();
