@@ -39,6 +39,7 @@
 #include <hardware_legacy/power.h>
 #include "PmLibService.h"
 #include <inttypes.h>
+#include <arpa/inet.h>
 
 using namespace android;
 
@@ -76,6 +77,7 @@ static const char * PROPERTY_PM_DDR_PM_EN                 = "ro.pm.ddr_pm_en";
 static const char * PROPERTY_PM_CPU_FREQ_SCALE_EN         = "ro.pm.cpufreq_scale_en";
 static const char * PROPERTY_PM_WOL_EN                    = "ro.pm.wol.en";
 static const char * PROPERTY_PM_WOL_OPTS                  = "ro.pm.wol.opts";
+static const char * PROPERTY_PM_WOL_MDNS_EN               = "ro.pm.wol.mdns.en";
 static const char * PROPERTY_NX_BOOT_WAKEUP               = "dyn.nx.boot.wakeup";
 
 // Property defaults
@@ -90,6 +92,7 @@ static const int8_t DEFAULT_PROPERTY_PM_TP3_EN            = 0;     // Disable CP
 static const int8_t DEFAULT_PROPERTY_PM_DDR_PM_EN         = 1;     // Enabled DDR power management during standby
 static const int8_t DEFAULT_PROPERTY_PM_CPU_FREQ_SCALE_EN = 1;     // Enable CPU frequency scaling during standby
 static const int8_t DEFAULT_PROPERTY_PM_WOL_EN            = 0;     // Disable Android wake up by the WoLAN event
+static const int8_t DEFAULT_PROPERTY_PM_WOL_MDNS_EN       = 1;     // Enable wake by mDNS
 static const char * DEFAULT_PROPERTY_PM_WOL_OPTS          = "s";   // Enable WoL for MAGIC SECURE packet
 
 // SecureOn(TM) password file path.
@@ -300,6 +303,11 @@ static bool power_get_property_wol_en()
     return property_get_bool(PROPERTY_PM_WOL_EN, DEFAULT_PROPERTY_PM_WOL_EN);
 }
 
+static bool power_get_property_wol_mdns_en()
+{
+    return property_get_bool(PROPERTY_PM_WOL_MDNS_EN, DEFAULT_PROPERTY_PM_WOL_MDNS_EN);
+}
+
 static int power_get_property_wol_opts(char *opts)
 {
     int len;
@@ -483,6 +491,26 @@ static status_t power_set_enet_wol()
         }
     }
 
+    // Enable wake on mDNS packet detection
+    if (status == NO_ERROR && power_get_property_wol_mdns_en()) {
+        struct ethtool_rxnfc rxnfc;
+
+        memset(&rxnfc, 0, sizeof(rxnfc));
+
+        rxnfc.cmd = ETHTOOL_SRXCLSRLINS;
+        rxnfc.fs.flow_type = IPV4_USER_FLOW;
+        rxnfc.fs.h_u.usr_ip4_spec.ip_ver = ETH_RX_NFC_IP4;
+        rxnfc.fs.h_u.usr_ip4_spec.ip4dst = ntohl(0xE00000FB); /* 224.0.0.251 */
+        rxnfc.fs.m_u.usr_ip4_spec.ip4dst = ~0;
+
+        ifr.ifr_data = (void *)&rxnfc;
+        status = ioctl(fd, SIOCETHTOOL, &ifr);
+        if (status != NO_ERROR) {
+            ALOGD("%s: Error setting mDNS filter for %s, status=%d",
+                  __FUNCTION__, ifr.ifr_name, status);
+        }
+    }
+
     if (status == NO_ERROR) {
         struct ethtool_wolinfo wolinfo;
         char wol_opts[PROPERTY_VALUE_MAX] = "";
@@ -554,13 +582,13 @@ static status_t power_set_enet_wol()
             ifr.ifr_data = (void *)&wolinfo;
             status = ioctl(fd, SIOCETHTOOL, &ifr);
         }
+    }
 
-        if (status == NO_ERROR) {
-            ALOGD("%s: Successfully set WoL settings for %s", __FUNCTION__, ifr.ifr_name);
-        }
-        else {
-            ALOGW("%s: Could not set WoL settings for %s!", __FUNCTION__, ifr.ifr_name);
-        }
+    if (status == NO_ERROR) {
+        ALOGD("%s: Successfully set WoL settings for %s", __FUNCTION__, ifr.ifr_name);
+    }
+    else {
+        ALOGW("%s: Could not set WoL settings for %s!", __FUNCTION__, ifr.ifr_name);
     }
 
     if (fd >= 0) {
