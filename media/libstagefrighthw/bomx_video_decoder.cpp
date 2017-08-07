@@ -836,9 +836,27 @@ static void *BOMX_DisplayThread(void *pParam)
     return NULL;
 }
 
-static size_t ComputeBufferSize(unsigned stride, unsigned height)
+static size_t ComputeBufferSize(OMX_COLOR_FORMATTYPE colorFmt, unsigned stride, unsigned height)
 {
+    if ( colorFmt == (OMX_COLOR_FORMATTYPE)((int)HAL_PIXEL_FORMAT_YV12) )
+    {
+        unsigned cStride = (stride/2 + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1);
+        unsigned cSize = cStride * height / 2;
+        return stride * height + cSize * 2;
+    }
+
+    // Assume YUV 420P
     return (stride * height * 3) / 2;
+}
+
+static OMX_S32 ComputeStride(OMX_COLOR_FORMATTYPE colorFmt, OMX_U32 width)
+{
+    if ( colorFmt == (OMX_COLOR_FORMATTYPE)((int)HAL_PIXEL_FORMAT_YV12) )
+    {
+        return (width + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1);
+    }
+
+    return (OMX_S32)width;
 }
 
 static void BOMX_VideoDecoder_MemLock(private_handle_t *pPrivateHandle, void **addr)
@@ -1213,7 +1231,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     portDefs.cMIMEType = m_outputMimeType;
     portDefs.nFrameWidth = m_outputWidth;
     portDefs.nFrameHeight = m_outputHeight;
-    portDefs.nStride = portDefs.nFrameWidth;
+    portDefs.nStride = ComputeStride(portDefs.eColorFormat, portDefs.nFrameWidth);
     portDefs.nSliceHeight = portDefs.nFrameHeight;
     for ( i = 0; i < MAX_OUTPUT_PORT_FORMATS; i++ )
     {
@@ -1233,7 +1251,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
             break;
         }
     }
-    m_pVideoPorts[1] = new BOMX_VideoPort(m_videoPortBase+1, OMX_DirOutput, B_MAX_FRAMES, ComputeBufferSize(portDefs.nStride, portDefs.nSliceHeight), false, 0, &portDefs, portFormats, MAX_OUTPUT_PORT_FORMATS);
+    m_pVideoPorts[1] = new BOMX_VideoPort(m_videoPortBase+1, OMX_DirOutput, B_MAX_FRAMES, ComputeBufferSize(portDefs.eColorFormat, portDefs.nStride, portDefs.nSliceHeight), false, 0, &portDefs, portFormats, MAX_OUTPUT_PORT_FORMATS);
     if ( NULL == m_pVideoPorts[1] )
     {
         ALOGW("Unable to create video output port");
@@ -2492,8 +2510,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
             m_outputHeight = portDef.format.video.nFrameHeight;
             // Ensure slice height and stride match frame width/height and update buffer size
             portDef.format.video.nSliceHeight = portDef.format.video.nFrameHeight;
-            portDef.format.video.nStride = portDef.format.video.nFrameWidth;
-            portDef.nBufferSize = ComputeBufferSize(portDef.format.video.nStride, portDef.format.video.nSliceHeight);
+            portDef.format.video.nStride = ComputeStride(portDef.format.video.eColorFormat, portDef.format.video.nFrameWidth);
+            portDef.nBufferSize = ComputeBufferSize(portDef.format.video.eColorFormat, portDef.format.video.nStride, portDef.format.video.nSliceHeight);
             err = m_pVideoPorts[1]->SetDefinition(&portDef);
             if ( err )
             {
@@ -2591,8 +2609,8 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         portDef.format.video.nFrameWidth = m_outputWidth;
         portDef.format.video.nFrameHeight = m_outputHeight;
         portDef.format.video.nSliceHeight = m_outputHeight;
-        portDef.format.video.nStride = m_outputWidth;
-        portDef.nBufferSize = ComputeBufferSize(portDef.format.video.nStride, portDef.format.video.nSliceHeight);
+        portDef.format.video.nStride = ComputeStride(portDef.format.video.eColorFormat, m_outputWidth);
+        portDef.nBufferSize = ComputeBufferSize(portDef.format.video.eColorFormat, portDef.format.video.nStride, portDef.format.video.nSliceHeight);
         err = m_pVideoPorts[1]->SetDefinition(&portDef);
         if ( err )
         {
@@ -3645,9 +3663,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
 
             /* Check buffer size */
             pPortDef = pPort->GetDefinition();
-            if ( nSizeBytes < ComputeBufferSize(pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight) )
+            if ( nSizeBytes < ComputeBufferSize(pPortDef->format.video.eColorFormat, pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight) )
             {
-                ALOGE("Outbuffer size is not sufficient - must be at least %u bytes ((3*%u*%u)/2) got %u [eColorFormat %#x]", (unsigned int)ComputeBufferSize(pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight),
+                ALOGE("Outbuffer size is not sufficient - must be at least %u bytes ((3*%u*%u)/2) got %u [eColorFormat %#x]", (unsigned int)ComputeBufferSize(pPortDef->format.video.eColorFormat, pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight),
                     pPortDef->format.video.nStride, pPortDef->format.video.nSliceHeight, nSizeBytes, pPortDef->format.video.eColorFormat);
                 delete pInfo;
                 return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
@@ -3696,7 +3714,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
             surfaceSettings.pixelFormat = NEXUS_PixelFormat_eCb8;
             surfaceSettings.width = pPortDef->format.video.nFrameWidth/2;
             surfaceSettings.height = pPortDef->format.video.nFrameHeight/2;
-            surfaceSettings.pitch = pPortDef->format.video.nStride/2;
+            surfaceSettings.pitch = (pPortDef->format.video.eColorFormat == (OMX_COLOR_FORMATTYPE)((int)HAL_PIXEL_FORMAT_YV12)) ? (pPortDef->format.video.nStride/2 + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1) : pPortDef->format.video.nStride/2;
             surfaceSettings.pixelMemory = BOMX_VideoDecoder_AllocatePixelMemoryBlk(&surfaceSettings, &pInfo->typeInfo.standard.cbMemBlkFd);
             if (surfaceSettings.pixelMemory != NULL) {
                pInfo->typeInfo.standard.hSurfaceCb = NEXUS_Surface_Create(&surfaceSettings);
@@ -3839,7 +3857,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     pInfo->typeInfo.native.pSharedData->videoWindow.nexusClientContext = m_pNxWrap->client();
     android_atomic_release_store(m_redux ? 2 : 1, /* hwc index linked + 1. */
                                  &pInfo->typeInfo.native.pSharedData->videoWindow.windowIdPlusOne /* window-id always 0 */);
-    err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, ComputeBufferSize(pPort->GetDefinition()->format.video.nStride, pPort->GetDefinition()->format.video.nSliceHeight), (OMX_U8 *)pPrivateHandle, pInfo, false);
+    err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, ComputeBufferSize(pPort->GetDefinition()->format.video.eColorFormat, pPort->GetDefinition()->format.video.nStride, pPort->GetDefinition()->format.video.nSliceHeight), (OMX_U8 *)pPrivateHandle, pInfo, false);
     if ( OMX_ErrorNone != err )
     {
         delete pInfo;
@@ -5920,9 +5938,9 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 m_pVideoPorts[1]->GetDefinition(&portDefs);
                                 portDefs.format.video.nFrameWidth = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
                                 portDefs.format.video.nFrameHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
-                                portDefs.format.video.nStride = pBuffer->frameStatus.surfaceCreateSettings.imageWidth;
+                                portDefs.format.video.nStride = ComputeStride(portDefs.format.video.eColorFormat, pBuffer->frameStatus.surfaceCreateSettings.imageWidth);
                                 portDefs.format.video.nSliceHeight = pBuffer->frameStatus.surfaceCreateSettings.imageHeight;
-                                portDefs.nBufferSize = ComputeBufferSize(portDefs.format.video.nStride, portDefs.format.video.nSliceHeight);
+                                portDefs.nBufferSize = ComputeBufferSize(portDefs.format.video.eColorFormat, portDefs.format.video.nStride, portDefs.format.video.nSliceHeight);
                                 m_pVideoPorts[1]->SetDefinition(&portDefs);
                                 m_outputWidth = portDefs.format.video.nFrameWidth;
                                 m_outputHeight = portDefs.format.video.nFrameHeight;
@@ -6019,7 +6037,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 }
 #endif
                             }
-                            pHeader->nFilledLen = ComputeBufferSize(m_pVideoPorts[1]->GetDefinition()->format.video.nStride, m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight);
+                            pHeader->nFilledLen = ComputeBufferSize(m_pVideoPorts[1]->GetDefinition()->format.video.eColorFormat, m_pVideoPorts[1]->GetDefinition()->format.video.nStride, m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight);
                             // Wait for the blit to complete before delivering in case CPU will access it quickly
                             if ( destripedSuccess )
                             {
@@ -6054,7 +6072,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     case BOMX_VideoDecoderOutputBufferType_eNative:
                         {
                             int rc;
-                            pHeader->nFilledLen = ComputeBufferSize(m_pVideoPorts[1]->GetDefinition()->format.video.nStride, m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight);
+                            pHeader->nFilledLen = ComputeBufferSize(m_pVideoPorts[1]->GetDefinition()->format.video.eColorFormat, m_pVideoPorts[1]->GetDefinition()->format.video.nStride, m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight);
                             pInfo->typeInfo.native.pSharedData->videoFrame.status = pBuffer->frameStatus;
                             pBuffer->pPrivateHandle = pInfo->typeInfo.native.pPrivateHandle;
                             rc = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 100);
