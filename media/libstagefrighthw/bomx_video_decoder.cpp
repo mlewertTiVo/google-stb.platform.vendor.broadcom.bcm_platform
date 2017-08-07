@@ -2236,7 +2236,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetParameter(
     {
         DescribeColorFormatParams *pColorFormat = (DescribeColorFormatParams *)pComponentParameterStructure;
         BOMX_STRUCT_VALIDATE(pColorFormat);
-        ALOGI("GetParameter OMX_IndexParamDescribeColorFormat eColorFormat=%d", (int)pColorFormat->eColorFormat);
+        ALOGV("GetParameter OMX_IndexParamDescribeColorFormat eColorFormat=%d", (int)pColorFormat->eColorFormat);
         switch ( (int)pColorFormat->eColorFormat )
         {
             case HAL_PIXEL_FORMAT_YV12:
@@ -2370,7 +2370,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
                     return OMX_ErrorNone;
                 }
             }
-            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+            return BOMX_ERR_TRACE(OMX_ErrorComponentNotFound);
         }
     case OMX_IndexParamVideoPortFormat:
         {
@@ -2531,13 +2531,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         if ( m_nativeGraphicsEnabled )
         {
             // In this mode, the output color format should be an android HAL format.
-            portFormat.nIndex = 1;  // The second port format is the native format
             portFormat.eColorFormat = (OMX_COLOR_FORMATTYPE)((int)HAL_PIXEL_FORMAT_YV12);
         }
         else
         {
             // In this mode, use an OMX color format
-            portFormat.nIndex = 0;  // The first port format is the traditional omx buffer format
             portFormat.eColorFormat = OMX_COLOR_FormatYUV420Planar;
         }
         // Update port format to appropriate value for native vs. non-native output.
@@ -2546,6 +2544,18 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         {
             m_nativeGraphicsEnabled = oldValue;
             return BOMX_ERR_TRACE(err);
+        }
+
+        // Re-order the supported output port formats to advertise the preferred color format.
+        if ( m_nativeGraphicsEnabled )
+        {
+            m_pVideoPorts[1]->SetPortFormat(0, (OMX_COLOR_FORMATTYPE)((int)HAL_PIXEL_FORMAT_YV12));
+            m_pVideoPorts[1]->SetPortFormat(1, OMX_COLOR_FormatYUV420Planar);
+        }
+        else
+        {
+            m_pVideoPorts[1]->SetPortFormat(0, OMX_COLOR_FormatYUV420Planar);
+            m_pVideoPorts[1]->SetPortFormat(1, (OMX_COLOR_FORMATTYPE)((int)HAL_PIXEL_FORMAT_YV12));
         }
         return OMX_ErrorNone;
     }
@@ -3929,22 +3939,22 @@ OMX_ERRORTYPE BOMX_VideoDecoder::UseBuffer(
         // come first.  It's always safe to do it here.
         if ( m_tunnelMode )
         {
-            ALOGI("Selecting no output mode for output buffer %p", (void*)pBuffer);
+            ALOGV("Selecting no output mode for output buffer %p", (void*)pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eNone;
         }
         else if ( m_metadataEnabled )
         {
-            ALOGI("Selecting metadata output mode for output buffer %p", (void*)pBuffer);
+            ALOGV("Selecting metadata output mode for output buffer %p", (void*)pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eMetadata;
         }
         else if ( m_nativeGraphicsEnabled )
         {
-            ALOGI("Selecting native graphics output mode for output buffer %p", (void*)pBuffer);
+            ALOGV("Selecting native graphics output mode for output buffer %p", (void*)pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eNative;
         }
         else
         {
-            ALOGI("Selecting standard buffer output mode for output buffer %p", (void*)pBuffer);
+            ALOGV("Selecting standard buffer output mode for output buffer %p", (void*)pBuffer);
             m_outputMode = BOMX_VideoDecoderOutputBufferType_eStandard;
         }
         switch ( m_outputMode )
@@ -5351,7 +5361,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
     {
         DescribeHDRStaticInfoParams *pHDRStaticInfo = (DescribeHDRStaticInfoParams *)pComponentConfigStructure;
         BOMX_STRUCT_VALIDATE(pHDRStaticInfo);
-        ALOGI("GetConfig OMX_IndexParamDescribeHdrColorInfo");
+        ALOGV("GetConfig OMX_IndexParamDescribeHdrColorInfo");
         if ( pHDRStaticInfo->nPortIndex != m_videoPortBase+1 )
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -5391,7 +5401,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
     {
         DescribeColorAspectsParams *pColorAspects = (DescribeColorAspectsParams *)pComponentConfigStructure;
         BOMX_STRUCT_VALIDATE(pColorAspects);
-        ALOGI("GetConfig OMX_IndexParamDescribeColorAspects");
+        ALOGV("GetConfig OMX_IndexParamDescribeColorAspects");
         if ( pColorAspects->nPortIndex != m_videoPortBase+1 )
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
@@ -5419,7 +5429,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
             // overwrite fields obtained from the stream
             ColorAspectsFromNexusStreamInfo(&pColorAspects->sAspects);
             ColorAspects *pAspects = &pColorAspects->sAspects;
-            ALOGI("ColorAspects from stream [(R:%u, P:%u, M:%u, T:%u]",
+            ALOGV("ColorAspects from stream [(R:%u, P:%u, M:%u, T:%u]",
                 pAspects->mRange, pAspects->mPrimaries, pAspects->mMatrixCoeffs, pAspects->mTransfer);
         }
 

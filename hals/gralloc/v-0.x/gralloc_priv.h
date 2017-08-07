@@ -47,14 +47,13 @@ extern "C" {
 #define GR_MGMT_MODE_LOCKED     1
 #define GR_MGMT_MODE_UNLOCKED   2
 
-#define HAL_PIXEL_FORMAT_YUV420P 19 /* OMX_COLOR_FormatYUV420Planar */
-
 #define CHECKPOINT_TIMEOUT      (5000)
 
 #define GR_NONE                 (1<<0)
 #define GR_STANDARD             (1<<1)
 #define GR_YV12                 (1<<2)
 #define GR_HWTEX                (1<<3)
+#define GR_BLOB                 (1<<4)
 
 /*****************************************************************************/
 

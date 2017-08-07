@@ -112,7 +112,7 @@ int gralloc_register_buffer(gralloc_module_t const* module,
          if (pSharedData->container.block) {NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);}
          else {pPhysAddr = 0;}
          ALOGI("  reg (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
-               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
                hnd->pid,
                block_handle,
                sPhysAddr,
@@ -165,7 +165,7 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
          if (pSharedData->container.block) {NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);}
          else {pPhysAddr = 0;}
          ALOGI("unreg (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
-               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
                hnd->pid,
                block_handle,
                sPhysAddr,
@@ -233,8 +233,7 @@ int gralloc_lock_ycbcr(gralloc_module_t const* module,
    // native HAL_PIXEL_FORMAT_YCbCr_420_888 flex-yuv buffer and native HAL_PIXEL_FORMAT_YV12
    // multimedia only can be locked using the lock_ycbcr interface.  they are morevover the
    // same internal format in our integration.
-   if (!((pSharedData->container.format == HAL_PIXEL_FORMAT_YUV420P) ||
-         (pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) ||
+   if (!((pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) ||
          (pSharedData->container.format == HAL_PIXEL_FORMAT_YV12))) {
       ALOGE("%s : invalid call for NON flex-YUV buffer (0x%x)", __FUNCTION__, pSharedData->container.format);
       return -EINVAL;
@@ -262,8 +261,7 @@ int gralloc_lock_ycbcr(gralloc_module_t const* module,
       ALOGE("no default plane on s-blk:%p", shared_block_handle);
    }
 
-   if ((pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) ||
-       (pSharedData->container.format == HAL_PIXEL_FORMAT_YUV420P)) {
+   if (pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) {
       // locking a flexible YUV means we are doing mainly SW decode since our
       // HW decoder reports YV12 for native format.
    } else if (pSharedData->container.format == HAL_PIXEL_FORMAT_YV12) {
@@ -315,7 +313,7 @@ out_video_failed:
       NEXUS_MemoryBlock_LockOffset(shared_block_handle, &sPhysAddr);
       NEXUS_MemoryBlock_LockOffset(block_handle, &pPhysAddr);
       ALOGI(" lock_ycbcr (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::vaddr:%p::act:%d",
-            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
             hnd->pid,
             shared_block_handle,
             sPhysAddr,
@@ -453,7 +451,7 @@ out_video_failed:
       NEXUS_MemoryBlock_LockOffset(shared_block_handle, &sPhysAddr);
       NEXUS_MemoryBlock_LockOffset(block_handle, &pPhysAddr);
       ALOGI(" lock (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::vaddr:%p::act:%d",
-            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
             hnd->pid,
             shared_block_handle,
             sPhysAddr,
@@ -523,7 +521,7 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       NEXUS_MemoryBlock_LockOffset(shared_block_handle, &sPhysAddr);
       NEXUS_MemoryBlock_LockOffset(block_handle, &pPhysAddr);
       ALOGI("ulock (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
-            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
             hnd->pid,
             shared_block_handle,
             sPhysAddr,

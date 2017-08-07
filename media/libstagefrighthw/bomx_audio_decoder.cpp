@@ -1342,7 +1342,7 @@ OMX_ERRORTYPE BOMX_AudioDecoder::SetParameter(
                     return OMX_ErrorNone;
                 }
             }
-            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+            return BOMX_ERR_TRACE(OMX_ErrorComponentNotFound);
         }
     case OMX_IndexParamAudioPortFormat:
         {

@@ -178,6 +178,9 @@ static bool hwc2_enabled(
    case hwc2_tweak_bypass_disable:
       r = (bool)property_get_bool("ro.nx.hwc2.tweak.nocb", 0);
    break;
+   case hwc2_tweak_plm:
+      r = (bool)property_get_bool("ro.nx.hwc2.tweak.plm", 0);
+   break;
    default:
    break;
    }
@@ -195,7 +198,6 @@ static NEXUS_PixelFormat gr2nx_pixel(
    case HAL_PIXEL_FORMAT_RGB_888:   return NEXUS_PixelFormat_eX8_B8_G8_R8;
    case HAL_PIXEL_FORMAT_RGB_565:   return NEXUS_PixelFormat_eR5_G6_B5;
    case HAL_PIXEL_FORMAT_YV12: /* fall-thru */
-   case HAL_PIXEL_FORMAT_YUV420P: /* fall-thru */
    case HAL_PIXEL_FORMAT_YCbCr_420_888: return NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8;
    default:                         break;
    }
@@ -253,6 +255,23 @@ static void hwc2_hdmi_collect(
       if (edid.hdrdb.valid) {
          dsp->cfgs->hdr10 = edid.hdrdb.eotfSupported[NEXUS_VideoEotf_eHdr10];
          dsp->cfgs->hlg = edid.hdrdb.eotfSupported[NEXUS_VideoEotf_eHlg];
+      }
+   }
+}
+
+static void hwc2_plm(
+   struct hwc2_dsp_t *dsp,
+   NEXUS_HdmiOutputHandle hdmi) {
+
+   NEXUS_HdmiOutputExtraSettings s;
+   NEXUS_Error e;
+
+   if (hwc2_enabled(hwc2_tweak_plm)) {
+      NEXUS_HdmiOutput_GetExtraSettings(hdmi, &s);
+      if (dsp->cfgs->hdr10) {
+         s.overrideDynamicRangeMasteringInfoFrame = true;
+         s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
+         e = NEXUS_HdmiOutput_SetExtraSettings(hdmi, &s);
       }
    }
 }
@@ -902,6 +921,7 @@ static int32_t hwc2_regCb(
             NxClient_DisplaySettings settings;
             hwc2_want_comp_bypass(&settings);
             hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
+            hwc2_plm(hwc2->ext, hdmi);
          }
          if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
             if (!hwc2->ext->u.ext.rhpd) {
@@ -1220,7 +1240,6 @@ static void hwc2_vd_cmp_frame(
          }
 
          yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
-                 (shared->container.format == HAL_PIXEL_FORMAT_YUV420P) ||
                  (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
          if (yv12) {
             blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
@@ -2133,7 +2152,6 @@ static int32_t hwc2_fmtSupp(
    case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
    case HAL_PIXEL_FORMAT_RGB_565:
    case HAL_PIXEL_FORMAT_YV12:
-   case HAL_PIXEL_FORMAT_YUV420P:
    case HAL_PIXEL_FORMAT_YCbCr_420_888:
    break;
    default:
@@ -5046,10 +5064,10 @@ static void hwc2_ext_cmp_frame(
          }
          if (lyr->rf != HWC2_INVALID) {
             if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
-               ccli++;
                if (ccli == 0) {
                   hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, HWC2_MAGIC);
                }
+               ccli++;
             } else {
                hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
                hwc2_lyr_tl_dequeued(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
@@ -5277,7 +5295,6 @@ static void hwc2_ext_cmp_frame(
             /* graphics or yv12 layer. */
             bool yv12 = false;
             yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
-                    (shared->container.format == HAL_PIXEL_FORMAT_YUV420P) ||
                     (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
             if (yv12) {
                blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
@@ -5538,6 +5555,7 @@ static void hwc2_setup_ext(
    NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
    if (hstatus.connected) {
       hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
+      hwc2_plm(hwc2->ext, hdmi);
    }
    if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
       ALOGV("[ext]: initial hotplug CONNECTED\n");
@@ -5675,6 +5693,7 @@ static void hwc2_hp_ntfy(
 
       hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
       hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
+      hwc2_plm(hwc2->ext, hdmi);
    } else /* disconnected */ {
       if (hwc2->ext->u.ext.rhpd &&
           hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {

@@ -53,7 +53,7 @@ void __attribute__ ((constructor)) gralloc_explicit_load(void);
 void __attribute__ ((destructor)) gralloc_explicit_unload(void);
 
 #if defined(V3D_VARIANT_v3d)
-static void (* dyn_BEGLint_BufferGetRequirements)(BEGL_PixmapInfo *, BEGL_BufferSettings *);
+static void (* dyn_BEGLint_BufferGetRequirements)(BEGL_PixmapInfoEXT *, BEGL_BufferSettings *);
 #endif
 static void * (* dyn_nxwrap_create_client)(void **wrap);
 static void (* dyn_nxwrap_destroy_client)(void *wrap);
@@ -285,8 +285,8 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
         pthread_mutex_lock(pMutex);
         switch (pSharedData->container.format) {
         case HAL_PIXEL_FORMAT_YV12:
-        case HAL_PIXEL_FORMAT_YUV420P:
         case HAL_PIXEL_FORMAT_YCbCr_420_888:
+        case HAL_PIXEL_FORMAT_BLOB:
            errCode = 0;
         break;
         default:
@@ -448,11 +448,14 @@ NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt, int *bpp)
          pf = NEXUS_PixelFormat_eR5_G6_B5;
       break;
       case HAL_PIXEL_FORMAT_YV12:
-      case HAL_PIXEL_FORMAT_YUV420P:
       case HAL_PIXEL_FORMAT_YCbCr_420_888:
          /* no native nexus support, return the 'converted for nexus consumption'. */
          b = 2;
          pf = NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8;
+      break;
+      case HAL_PIXEL_FORMAT_BLOB:
+         b = 1;
+         pf = NEXUS_PixelFormat_ePalette1;
       break;
       default:
          b = 0;
@@ -481,10 +484,12 @@ BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt)
          pf = BM2MC_PACKET_PixelFormat_eR5_G6_B5;
       break;
       case HAL_PIXEL_FORMAT_YV12:
-      case HAL_PIXEL_FORMAT_YUV420P:
       case HAL_PIXEL_FORMAT_YCbCr_420_888:
          /* no native bm2mc support, return the 'converted for bm2mc consumption'. */
          pf = BM2MC_PACKET_PixelFormat_eY08_Cb8_Y18_Cr8;
+      break;
+      case HAL_PIXEL_FORMAT_BLOB:
+         pf = BM2MC_PACKET_PixelFormat_eP1;
       break;
       default:
          pf = BM2MC_PACKET_PixelFormat_eUnknown;
@@ -497,13 +502,13 @@ BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt)
 
 static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pSharedData)
 {
-   BEGL_PixmapInfo bufferRequirements;
+   BEGL_PixmapInfoEXT bufferRequirements;
 #if defined(V3D_VARIANT_v3d)
    BEGL_BufferSettings bufferConstrainedRequirements;
 #endif
    int rc = -EINVAL;
 
-   memset(&bufferRequirements, 0, sizeof(BEGL_PixmapInfo));
+   memset(&bufferRequirements, 0, sizeof(BEGL_PixmapInfoEXT));
    bufferRequirements.width = pSharedData->container.width;
    bufferRequirements.height = pSharedData->container.height;
    bufferRequirements.format = BEGL_BufferFormat_INVALID;
@@ -521,13 +526,15 @@ static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pS
          bufferRequirements.format = BEGL_BufferFormat_eR5G6B5;
       break;
       case HAL_PIXEL_FORMAT_YV12:
-      case HAL_PIXEL_FORMAT_YUV420P:
       case HAL_PIXEL_FORMAT_YCbCr_420_888:
 #if defined(V3D_VARIANT_v3d)
          bufferRequirements.format = BEGL_BufferFormat_eYV12_Texture;
 #else
          bufferRequirements.format = BEGL_BufferFormat_eYV12;
 #endif
+      break;
+      case HAL_PIXEL_FORMAT_BLOB:
+         bufferRequirements.format = BEGL_BufferFormat_INVALID;
       break;
       default:
       break;
@@ -538,6 +545,9 @@ static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pS
          hnd->oglStride = 0;
          hnd->oglFormat = 0;
          hnd->oglSize   = 0;
+         if (pSharedData->container.format == HAL_PIXEL_FORMAT_BLOB) {
+            rc = 0;
+         }
       break;
 #if defined(V3D_VARIANT_v3d)
       case BEGL_BufferFormat_eYV12_Texture:
@@ -583,7 +593,6 @@ static void getBufferDataFromFormat(int *alignment, int w, int h, int bpp, int f
          *size = ((w*bpp + (*alignment-1)) & ~(*alignment-1)) * h;
       break;
       case HAL_PIXEL_FORMAT_YV12:
-      case HAL_PIXEL_FORMAT_YUV420P:
       case HAL_PIXEL_FORMAT_YCbCr_420_888:
          // force alignment according to (android) format definition.
          *alignment = 16;
@@ -591,6 +600,10 @@ static void getBufferDataFromFormat(int *alignment, int w, int h, int bpp, int f
          *pStride = (w + (*alignment-1)) & ~(*alignment-1);
          // size: y-stride * h + 2 * (c-stride * h/2), with c-stride: ALIGN(y-stride/2, 16)
          *size = (*pStride * h) + 2 * ((h/2) * ((*pStride/2 + (*alignment-1)) & ~(*alignment-1)));
+      break;
+      case HAL_PIXEL_FORMAT_BLOB:
+         *pStride = 1;
+         *size = w;
       break;
       default:
          *pStride = 0;
@@ -703,20 +716,17 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       goto alloc_failed;
    }
 
-   if (format != HAL_PIXEL_FORMAT_YV12 &&
-       format != HAL_PIXEL_FORMAT_YCbCr_420_888 &&
-       format != HAL_PIXEL_FORMAT_YUV420P) {
+   if (format != HAL_PIXEL_FORMAT_YV12 && format != HAL_PIXEL_FORMAT_YCbCr_420_888) {
       fmt_set |= GR_STANDARD;
+      if (format == HAL_PIXEL_FORMAT_BLOB) {
+         fmt_set |= GR_BLOB;
+      }
    } else if (usage & GRALLOC_USAGE_PROTECTED) {
       fmt_set |= GR_NONE;
-   } else if (((format == HAL_PIXEL_FORMAT_YV12) ||
-               (format == HAL_PIXEL_FORMAT_YCbCr_420_888) ||
-               (format == HAL_PIXEL_FORMAT_YUV420P))
+   } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
               && !(usage & GRALLOC_USAGE_PRIVATE_0)) {
       fmt_set |= GR_YV12;
-   } else if (((format == HAL_PIXEL_FORMAT_YV12) ||
-               (format == HAL_PIXEL_FORMAT_YCbCr_420_888) ||
-               (format == HAL_PIXEL_FORMAT_YUV420P))
+   } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
               && (usage & GRALLOC_USAGE_PRIVATE_0)) {
       if ((usage & GRALLOC_USAGE_SW_READ_OFTEN) || (usage & GRALLOC_USAGE_HW_TEXTURE)) {
          // private multimedia buffer, we only need a yv12 plane in case cpu is intending to read
@@ -739,8 +749,10 @@ gralloc_alloc_buffer(alloc_device_t* dev,
             }
          }
       } else {
-         pSharedData->container.allocSize = hnd->oglSize;
-         pSharedData->container.stride = hnd->oglStride;
+         if (!(fmt_set & GR_BLOB)) {
+            pSharedData->container.allocSize = hnd->oglSize;
+            pSharedData->container.stride = hnd->oglStride;
+         }
          ashmem_alloc.size = pSharedData->container.allocSize;
       }
       ret = ioctl(hnd->pdata, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
@@ -775,7 +787,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       if (pSharedData->container.block) {NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);}
       else {pPhysAddr = 0;}
       ALOGI("alloc (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
-            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+            (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
             getpid(),
             block_handle,
             sPhysAddr,
@@ -847,7 +859,7 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
          if (planeHandle) {NEXUS_MemoryBlock_LockOffset(planeHandle, &pPhysAddr);}
          else {pPhysAddr = 0;}
          ALOGI(" free (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
-               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : "ST",
+               (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
                hnd->pid,
                block_handle,
                sPhysAddr,
