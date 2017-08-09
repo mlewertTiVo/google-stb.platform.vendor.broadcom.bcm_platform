@@ -195,6 +195,7 @@ struct hwc2_dsp_cfg_t {
 
    bool                  hdr10;
    bool                  hlg;
+   bool                  plm;
 };
 
 /* layer release timeline unit. */

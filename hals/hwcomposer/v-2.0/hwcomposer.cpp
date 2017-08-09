@@ -195,13 +195,59 @@ static bool hwc2_enabled(
       r = (bool)property_get_bool("ro.nx.hwc2.tweak.nocb", 0);
    break;
    case hwc2_tweak_plm:
-      r = (bool)property_get_bool("ro.nx.hwc2.tweak.plm", 0);
+      r = (bool)property_get_bool("dyn.nx.hwc2.tweak.plm", 0);
    break;
    default:
    break;
    }
 
    return r;
+}
+
+static void hwc2_plm(
+   struct hwc2_dsp_t *dsp) {
+
+   NEXUS_HdmiOutputExtraSettings s;
+   NEXUS_PlatformConfiguration p;
+   NEXUS_Error e;
+   NEXUS_HdmiOutputHandle hdmi;
+   bool plm = hwc2_enabled(hwc2_tweak_plm);
+
+   NEXUS_Platform_GetConfiguration(&p);
+   hdmi = p.outputs.hdmi[0];
+   if (!hdmi) {
+      ALOGE("[plm]: invalid hdmi output.");
+      return;
+   }
+
+   if (dsp->cfgs->hdr10) {
+      NEXUS_HdmiOutput_GetExtraSettings(hdmi, &s);
+      if (plm && !dsp->cfgs->plm) {
+         ALOGI("[plm]: enable hdr10 mode.");
+         dsp->cfgs->plm = true;
+         s.overrideDynamicRangeMasteringInfoFrame = true;
+         s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
+         e = NEXUS_HdmiOutput_SetExtraSettings(hdmi, &s);
+      } else if (!plm && dsp->cfgs->plm) {
+         ALOGI("[plm]: disable hdr10 mode.");
+         dsp->cfgs->plm = false;
+         s.overrideDynamicRangeMasteringInfoFrame = false;
+         s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eInvalid;
+         e = NEXUS_HdmiOutput_SetExtraSettings(hdmi, &s);
+      } else {
+         ALOGI("[plm]: no mode change.");
+      }
+   }
+}
+
+static void hwc2_eval_plm(
+   struct hwc2_bcm_device_t *hwc2) {
+
+   struct hwc2_dsp_t *dsp;
+   dsp = hwc2->ext;
+   if (dsp != NULL) {
+      hwc2_plm(dsp);
+   }
 }
 
 static NEXUS_PixelFormat gr2nx_pixel(
@@ -271,30 +317,6 @@ static void hwc2_hdmi_collect(
       if (edid.hdrdb.valid) {
          dsp->cfgs->hdr10 = edid.hdrdb.eotfSupported[NEXUS_VideoEotf_eHdr10];
          dsp->cfgs->hlg = edid.hdrdb.eotfSupported[NEXUS_VideoEotf_eHlg];
-      }
-   }
-}
-
-static void hwc2_plm(
-   struct hwc2_dsp_t *dsp) {
-
-   NEXUS_HdmiOutputExtraSettings s;
-   NEXUS_PlatformConfiguration p;
-   NEXUS_Error e;
-   NEXUS_HdmiOutputHandle hdmi;
-
-   if (hwc2_enabled(hwc2_tweak_plm)) {
-      NEXUS_Platform_GetConfiguration(&p);
-      hdmi = p.outputs.hdmi[0];
-      if (!hdmi) {
-         ALOGE("[plm]: invalid hdmi output.");
-         return;
-      }
-      NEXUS_HdmiOutput_GetExtraSettings(hdmi, &s);
-      if (dsp->cfgs->hdr10) {
-         s.overrideDynamicRangeMasteringInfoFrame = true;
-         s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
-         e = NEXUS_HdmiOutput_SetExtraSettings(hdmi, &s);
       }
    }
 }
@@ -1666,6 +1688,7 @@ static size_t hwc2_dump_gen(
    struct hwc2_lyr_t *lyr;
 
    hwc2_eval_log(hwc2);
+   hwc2_eval_plm(hwc2);
 
    memset((void *)hwc2->dump, 0, sizeof(hwc2->dump));
 
@@ -1705,8 +1728,8 @@ static size_t hwc2_dump_gen(
             dsp->pres, dsp->post);
          NEXUS_Display_GetGraphicsDynamicRangeProcessingSettings(&d);
          current += snprintf(&hwc2->dump[current], max-current,
-            "\t[ext]:hdr-%c,hlg-%c:[dyn]:plm-%c,dbv-%c,tch-%c\n",
-            dsp->aCfg->hdr10?'o':'x', dsp->aCfg->hlg?'o':'x',
+            "\t[ext]:hdr-%c,hlg-%c,plm-%c:[dyn]:plm-%c,dbv-%c,tch-%c\n",
+            dsp->aCfg->hdr10?'o':'x', dsp->aCfg->hlg?'o':'x', dsp->aCfg->plm?'o':'x',
             d.processingModes[NEXUS_DynamicRangeProcessingType_ePlm] == NEXUS_DynamicRangeProcessingMode_eOff?'x':'o',
             d.processingModes[NEXUS_DynamicRangeProcessingType_eDolbyVision] == NEXUS_DynamicRangeProcessingMode_eOff?'x':'o',
             d.processingModes[NEXUS_DynamicRangeProcessingType_eTechnicolorPrime] == NEXUS_DynamicRangeProcessingMode_eOff?'x':'o');
