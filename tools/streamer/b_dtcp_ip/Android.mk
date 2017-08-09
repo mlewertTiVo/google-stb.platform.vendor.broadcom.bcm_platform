@@ -10,25 +10,36 @@ LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 
 B_LIB_TOP := $(NEXUS_TOP)/lib
 B_REFSW_OS ?= linuxuser
+
+ifeq ($(DTCP_IP_SAGE_SUPPORT),y)
+include $(NEXUS_TOP)/lib/dtcp_ip_sage/dtcp_ip_lib.inc
+else ifeq ($(DTCP_IP_SUPPORT),y)
 include $(NEXUS_TOP)/lib/dtcp_ip/dtcp_ip_lib.inc
+endif
+
 LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw
 LOCAL_SRC_FILES := $(subst $(NEXUS_TOP),nexus,$(B_DTCP_IP_LIB_SOURCES))
 
-LOCAL_C_INCLUDES += $(subst $(B_LIB_TOP),$(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/lib,$(B_DTCP_IP_LIB_PUBLIC_INCLUDES) $(B_DTCP_IP_LIB_PRIVATE_INCLUDES))
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
+LOCAL_C_INCLUDES += $(subst $(B_LIB_TOP),$(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/lib,$(B_DTCP_IP_LIB_PUBLIC_INCLUDES) $(B_DTCP_IP_LIB_PRIVATE_INCLUDES))
+
 LOCAL_CFLAGS += -DLINUX
 LOCAL_CFLAGS += $(addprefix -D,$(B_DTCP_IP_LIB_DEFINES))
 
 LOCAL_SHARED_LIBRARIES :=         \
         libb_os                   \
-        libcrypto                 \
         libcutils                 \
         libutils                  \
         libnexus                  \
-        libssl                    \
+        libnxclient               \
         libbcrypt                 \
         libcmndrm
 
+ifeq ($(DTCP_IP_SAGE_SUPPORT),y)
+LOCAL_SHARED_LIBRARIES += libsrai libcmndrm_tl libdrmrootfs libbcrypt
+else ifeq ($(DTCP_IP_SUPPORT),y)
+LOCAL_SHARED_LIBRARIES += libcrypto libssl
+endif
 
 LOCAL_MODULE := libb_dtcp_ip
 include $(BUILD_SHARED_LIBRARY)
