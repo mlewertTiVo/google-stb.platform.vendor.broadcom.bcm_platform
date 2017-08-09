@@ -46,6 +46,7 @@
 #include "INxDspEvtSrc.h"
 #include "nexus_platform_client.h"
 #include "nexus_platform.h"
+#include "nexus_display_dynrng.h"
 /* sync framework/fences. */
 #include "sync/sync.h"
 #include "sw_sync.h"
@@ -1694,13 +1695,21 @@ static size_t hwc2_dump_gen(
    if (hwc2->ext != NULL) {
       dsp = hwc2->ext;
       if (max-current > 0) {
+         NEXUS_DynamicRangeProcessingSettings d;
          current += snprintf(&hwc2->dump[current], max-current,
-            "\t[ext][%s]:%" PRIu64 ":%s:%" PRIu32 "x%" PRIu32 ":%" PRIu32 ",%" PRIu32 ":op{%d,%d,%dx%d}:hdr-%c,hlg-%c:%" PRIu64 ":%" PRIu64 "\n",
+            "\t[ext][%s]:%" PRIu64 ":%s:%" PRIu32 "x%" PRIu32 ":%" PRIu32 ",%" PRIu32 ":op{%d,%d,%dx%d}:%" PRIu64 ":%" PRIu64 "\n",
             dsp->u.ext.gles?"gles":"m2mc",
             (hwc2_display_t)(intptr_t)dsp, dsp->name,
             dsp->aCfg->w, dsp->aCfg->h, dsp->aCfg->xdp, dsp->aCfg->ydp,
             hwc2->ext->op.x, hwc2->ext->op.y, hwc2->ext->op.w, hwc2->ext->op.h,
-            dsp->aCfg->hdr10?'o':'x', dsp->aCfg->hlg?'o':'x', dsp->pres, dsp->post);
+            dsp->pres, dsp->post);
+         NEXUS_Display_GetGraphicsDynamicRangeProcessingSettings(&d);
+         current += snprintf(&hwc2->dump[current], max-current,
+            "\t[ext]:hdr-%c,hlg-%c:[dyn]:plm-%c,dbv-%c,tch-%c\n",
+            dsp->aCfg->hdr10?'o':'x', dsp->aCfg->hlg?'o':'x',
+            d.processingModes[NEXUS_DynamicRangeProcessingType_ePlm] == NEXUS_DynamicRangeProcessingMode_eOff?'x':'o',
+            d.processingModes[NEXUS_DynamicRangeProcessingType_eDolbyVision] == NEXUS_DynamicRangeProcessingMode_eOff?'x':'o',
+            d.processingModes[NEXUS_DynamicRangeProcessingType_eTechnicolorPrime] == NEXUS_DynamicRangeProcessingMode_eOff?'x':'o');
       }
 
       lyr = dsp->lyr;
