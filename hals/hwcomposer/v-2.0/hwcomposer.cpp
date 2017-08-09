@@ -275,13 +275,20 @@ static void hwc2_hdmi_collect(
 }
 
 static void hwc2_plm(
-   struct hwc2_dsp_t *dsp,
-   NEXUS_HdmiOutputHandle hdmi) {
+   struct hwc2_dsp_t *dsp) {
 
    NEXUS_HdmiOutputExtraSettings s;
+   NEXUS_PlatformConfiguration p;
    NEXUS_Error e;
+   NEXUS_HdmiOutputHandle hdmi;
 
    if (hwc2_enabled(hwc2_tweak_plm)) {
+      NEXUS_Platform_GetConfiguration(&p);
+      hdmi = p.outputs.hdmi[0];
+      if (!hdmi) {
+         ALOGE("[plm]: invalid hdmi output.");
+         return;
+      }
       NEXUS_HdmiOutput_GetExtraSettings(hdmi, &s);
       if (dsp->cfgs->hdr10) {
          s.overrideDynamicRangeMasteringInfoFrame = true;
@@ -930,13 +937,17 @@ static int32_t hwc2_regCb(
       if (hwc2->ext != NULL) {
          NEXUS_HdmiOutputHandle hdmi;
          NEXUS_HdmiOutputStatus hstatus;
+         hstatus.connected = false;
          hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
-         NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
-         if (hstatus.connected) {
-            NxClient_DisplaySettings settings;
-            hwc2_want_comp_bypass(&settings);
-            hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
-            hwc2_plm(hwc2->ext, hdmi);
+         if (hdmi) {
+            NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
+            if (hstatus.connected) {
+               NxClient_DisplaySettings settings;
+               hwc2_want_comp_bypass(&settings);
+               hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
+               hwc2_plm(hwc2->ext);
+            }
+            NEXUS_HdmiOutput_Close(hdmi);
          }
          if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
             if (!hwc2->ext->u.ext.rhpd) {
@@ -5582,10 +5593,13 @@ static void hwc2_setup_ext(
    enum hwc2_cbs_e wcb = hwc2_want_comp_bypass(&settings);
    hwc2_ext_fbs(hwc2, wcb);
    hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
-   NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
-   if (hstatus.connected) {
-      hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
-      hwc2_plm(hwc2->ext, hdmi);
+   if (hdmi) {
+      NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
+      if (hstatus.connected) {
+         hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
+         hwc2_plm(hwc2->ext);
+      }
+      NEXUS_HdmiOutput_Close(hdmi);
    }
    if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
       ALOGV("[ext]: initial hotplug CONNECTED\n");
@@ -5722,8 +5736,11 @@ static void hwc2_hp_ntfy(
       }
 
       hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
-      hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
-      hwc2_plm(hwc2->ext, hdmi);
+      if (hdmi) {
+         hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
+         hwc2_plm(hwc2->ext);
+         NEXUS_HdmiOutput_Close(hdmi);
+      }
    } else /* disconnected */ {
       if (hwc2->ext->u.ext.rhpd &&
           hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
