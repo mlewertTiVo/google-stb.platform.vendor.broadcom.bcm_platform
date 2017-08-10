@@ -15,7 +15,7 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
-LOCAL_SHARED_LIBRARIES := libbcmvulkan_icd libcutils liblog libutils libnexus
+LOCAL_SHARED_LIBRARIES := libcutils liblog libutils libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient libnxwrap libbinder
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
