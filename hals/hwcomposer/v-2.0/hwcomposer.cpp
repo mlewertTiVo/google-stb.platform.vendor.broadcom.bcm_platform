@@ -88,6 +88,21 @@ const NEXUS_BlendEquation hwc2_a2n_al_be[4 /*hwc2_blend_mode_t*/] = {
                                    NEXUS_BlendFactor_eZero}
 };
 
+const NEXUS_BlendEquation hwc2_a2n_fal_be[4 /*hwc2_blend_mode_t*/] = {
+   /* HWC2_BLEND_MODE_INVALID */ {NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
+                                  NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
+                                  NEXUS_BlendFactor_eZero},
+   /* HWC2_BLEND_MODE_NONE */ {NEXUS_BlendFactor_eConstantAlpha, NEXUS_BlendFactor_eOne, false,
+                               NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
+                               NEXUS_BlendFactor_eZero},
+   /* HWC2_BLEND_MODE_PREMULTIPLIED */ {NEXUS_BlendFactor_eConstantAlpha, NEXUS_BlendFactor_eOne, false,
+                                        NEXUS_BlendFactor_eDestinationAlpha, NEXUS_BlendFactor_eInverseConstantAlpha, false,
+                                        NEXUS_BlendFactor_eZero},
+   /* HWC2_BLEND_MODE_COVERAGE */ {NEXUS_BlendFactor_eConstantAlpha, NEXUS_BlendFactor_eOne, false,
+                                   NEXUS_BlendFactor_eSourceAlpha, NEXUS_BlendFactor_eInverseConstantAlpha, false,
+                                   NEXUS_BlendFactor_eZero}
+};
+
 struct hwc2_bcm_device_t {
    hwc2_device_t        base;
    uint32_t             magic;
@@ -1006,7 +1021,8 @@ static void hwc2_lyr_tl_inc(
 static void hwc2_fill_blend(
    struct hwc2_bcm_device_t* hwc2,
    NEXUS_SurfaceHandle s,
-   uint32_t color) {
+   uint32_t color,
+   hwc2_blend_mode_t bm) {
    NEXUS_Error rc;
    if (s) {
       NEXUS_Graphics2DFillSettings fs;
@@ -1014,7 +1030,8 @@ static void hwc2_fill_blend(
       fs.surface = s;
       fs.color   = color;
       fs.colorOp = NEXUS_FillOp_eBlend;
-      fs.alphaOp = NEXUS_FillOp_eIgnore;
+      fs.alphaOp        = NEXUS_FillOp_eUseBlendEquation;
+      fs.alphaBlend     = (bm == HWC2_BLEND_MODE_INVALID) ? hwc2_a2n_fal_be[HWC2_BLEND_MODE_NONE] : hwc2_a2n_fal_be[bm];
       if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
          return;
       }
@@ -1147,7 +1164,7 @@ static void hwc2_vd_cmp_frame(
             }
             uint32_t color = (a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b);
             if ((color != HWC2_TRS) && ((color != HWC2_OPQ) || (c > 0))) {
-               hwc2_fill_blend(hwc2, d, color);
+               hwc2_fill_blend(hwc2, d, color, lyr->bm);
                hwc2_chkpt(hwc2);
                /* [iii]. count of composed layers. */
                c++;
@@ -5176,7 +5193,7 @@ static void hwc2_ext_cmp_frame(
             }
             uint32_t color = (a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b);
             if ((color != HWC2_TRS) && ((color != HWC2_OPQ) || (c > 0))) {
-               hwc2_fill_blend(hwc2, d, color);
+               hwc2_fill_blend(hwc2, d, color, lyr->bm);
                hwc2_chkpt(hwc2);
                /* [iv]. count of composed layers. */
                ms = hwc2_seeding_none;
