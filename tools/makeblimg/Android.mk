@@ -19,6 +19,14 @@ _bootloader.img := $(PRODUCT_OUT)/bootloader.img
 $(_bootloader.img): build_bootloaderimg
 	echo "creating bootloader image";
 
+_bootloader.dev.img := $(PRODUCT_OUT)/bootloader.dev.img
+$(_bootloader.dev.img): build_bootloaderimg
+	echo "creating bootloader (dev) image";
+
+_bootloader.prod.img := $(PRODUCT_OUT)/bootloader.prod.img
+$(_bootloader.prod.img): build_bootloaderimg
+	echo "creating bootloader (prod) image";
+
 include $(CLEAR_VARS)
 LOCAL_MODULE := blimg
 LOCAL_MODULE_TAGS := optional
