@@ -196,6 +196,7 @@ struct hwc2_dsp_cfg_t {
    bool                  hdr10;
    bool                  hlg;
    bool                  plm;
+   int                   eotf;
 };
 
 /* layer release timeline unit. */
@@ -463,10 +464,13 @@ public:
 };
 
 enum hwc2_tweaks_e {
+   /* boolean. */
    hwc2_tweak_fb_compressed = 0,
    hwc2_tweak_pip_alpha_hole,
    hwc2_tweak_bypass_disable,
-   hwc2_tweak_plm,
+   hwc2_tweak_plm_off,
+   /* settings. */
+   hwc2_tweak_eotf,
 };
 
 enum hwc2_seeding_e {
