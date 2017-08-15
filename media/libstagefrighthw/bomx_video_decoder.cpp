@@ -1734,6 +1734,8 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         m_pPes = NULL;
     }
 
+    ClosePidChannel();
+
     if ( m_hSimpleVideoDecoder )
     {
         NEXUS_SimpleVideoDecoder_Release(m_hSimpleVideoDecoder);
@@ -1752,7 +1754,6 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     }
     if ( m_hPlaypump )
     {
-        ClosePidChannel();
         NEXUS_Playpump_Close(m_hPlaypump);
     }
     if ( m_hVideoClient )
@@ -1855,7 +1856,7 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         FreeConfigBuffer(m_pConfigBuffer);
     }
-    if ( m_pNxWrap )
+    if ( IsValid() == OMX_ErrorNone && m_pNxWrap )
     {
         m_pNxWrap->leave();
         delete m_pNxWrap;
