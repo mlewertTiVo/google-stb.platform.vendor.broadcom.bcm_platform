@@ -91,6 +91,7 @@
 #define B_AAC_ADTS_HEADER_LEN (7)
 
 #define B_MAX_AUDIO_DECODERS (2)
+#define B_MAX_SECURE_AUDIO_DECODERS (1)
 
 /****************************************************************************
  * The descriptors used per-frame are laid out as follows:
@@ -485,6 +486,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_pOutputFile(NULL),
     m_pPes(NULL),
     m_instanceNum(0),
+    m_pEosBuffer(NULL),
     m_eosPending(false),
     m_eosDelivered(false),
     m_eosReceived(false),
@@ -523,7 +525,7 @@ BOMX_AudioDecoder::BOMX_AudioDecoder(
     m_audioPortBase = 0;    // Android seems to require this - was: BOMX_COMPONENT_PORT_BASE(BOMX_ComponentId_eAudioDecoder, OMX_PortDomainAudio);
     m_instanceNum = android_atomic_inc(&g_instanceNum);
 
-    if(android_atomic_inc(&g_activeInstancesNum) >= B_MAX_AUDIO_DECODERS)
+    if ( android_atomic_inc(&g_activeInstancesNum) >= (m_secureDecoder ? B_MAX_SECURE_AUDIO_DECODERS : B_MAX_AUDIO_DECODERS) )
     {
         ALOGE("Max Audio Decoders currently exsist");
         this->Invalidate(OMX_ErrorInsufficientResources);
@@ -946,13 +948,14 @@ BOMX_AudioDecoder::~BOMX_AudioDecoder()
         m_pPes = NULL;
     }
 
+    ClosePidChannel();
+
     if ( m_hAudioDecoder )
     {
         NEXUS_AudioDecoder_Close(m_hAudioDecoder);
     }
     if ( m_hPlaypump )
     {
-        ClosePidChannel();
         NEXUS_Playpump_Close(m_hPlaypump);
     }
     if ( m_playpumpEventId )
@@ -1000,7 +1003,7 @@ BOMX_AudioDecoder::~BOMX_AudioDecoder()
     {
         NEXUS_Memory_Free(m_pConfigBuffer);
     }
-    if ( m_pNxWrap )
+    if ( IsValid() == OMX_ErrorNone && m_pNxWrap )
     {
         m_pNxWrap->leave();
         delete m_pNxWrap;
