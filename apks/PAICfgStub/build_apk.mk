@@ -3,7 +3,7 @@ LOCAL_SDK_VERSION := current
 
 LOCAL_FULL_MANIFEST_FILE := $(LOCAL_PATH)/stub/AndroidManifest.xml
 ifeq ($(apk_variant),)
-  LOCAL_PACKAGE_NAME := PlayAutoInstallConfig
+  LOCAL_PACKAGE_NAME := BcmPlayAutoInstallConfig
   LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res
 else
   LOCAL_PACKAGE_NAME := PlayAutoInstallConfig-$(apk_variant)
