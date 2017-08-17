@@ -1,0 +1,15 @@
+<install>
+    <backgroundautoinstall
+        className="com.test.headlesstestqa.MainActivity"
+        packageName="com.test.headlesstestqa" 
+        requiredPreload="false"
+        installByDefault="true"
+        groupId="2" />
+
+    <!-- Group Index Mapping -->
+    <autoinstallgrouplist>
+      <installgroup groupId="1" type="OEM" />
+      <installgroup groupId="2" type="CARRIER" />
+      <installgroup groupId="0" type="GOOGLE" />
+    </autoinstallgrouplist>
+</install>
