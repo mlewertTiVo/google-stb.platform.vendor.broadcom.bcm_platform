@@ -43,6 +43,7 @@ ifneq ($(TARGET_BUILD_PDK),true)
 endif
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
+include ${BCM_APPS_PATH}/PAICfgStub/Android.mk
 
 # additional tools, not needed for default integration.
 ifneq ($(TARGET_BUILD_PDK),true)
