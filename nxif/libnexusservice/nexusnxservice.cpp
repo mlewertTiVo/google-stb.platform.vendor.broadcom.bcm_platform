@@ -249,11 +249,15 @@ bool NexusNxService::getLimitedColorSettings(unsigned& limitedColorDepth, NEXUS_
    }
 
    if (edid.hdmiVsdb.valid && edid.hdmiVsdb.deepColor30bit &&
-      (edid.hdmiVsdb.deepColor36bit || edid.hdmiVsdb.deepColor48bit)
-      && edid.hdmiForumVsdb.deepColor420_30bit) {
-       limitedColorDepth = 10;
-       limitedColorSpace = NEXUS_ColorSpace_eYCbCr420;
-       return true;
+         (edid.hdmiVsdb.deepColor36bit || edid.hdmiVsdb.deepColor48bit)
+         && edid.hdmiForumVsdb.deepColor420_30bit) {
+      limitedColorDepth = 10;
+      limitedColorSpace = NEXUS_ColorSpace_eYCbCr420;
+      return true;
+   } else {
+      limitedColorDepth = 0;
+      limitedColorSpace = NEXUS_ColorSpace_eAuto;
+      return true;
    }
 
    return false;
