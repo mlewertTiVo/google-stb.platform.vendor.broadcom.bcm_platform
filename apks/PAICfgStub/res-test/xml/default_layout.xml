@@ -1,0 +1,211 @@
+<workspace>
+
+    <!-- Google folder -->
+    <!-- Google, Maps, Gmail, G+, Calendar, Photos, YouTube, News & Weather, Duo, Hangouts -->
+
+    <folder
+        screen="0"
+        title="@string/google_folder_title"
+        x="0"
+        y="4" >
+        <appicon
+            className="com.google.android.googlequicksearchbox.SearchActivity"
+            packageName="com.google.android.googlequicksearchbox" />
+        <appicon
+            className="com.google.android.maps.MapsActivity"
+            packageName="com.google.android.apps.maps" />
+        <appicon
+            className="com.google.android.gm.ConversationListActivityGmail"
+            packageName="com.google.android.gm" />
+        <autoinstall
+            className="com.google.android.apps.plus.phone.HomeActivity"
+            packageName="com.google.android.apps.plus" 
+	    requiredPreload="false"
+            installByDefault="true"
+            groupId="0" />
+        <appicon
+            className="com.android.calendar.AllInOneActivity"
+            packageName="com.google.android.calendar" />
+        <appicon
+            className="com.google.android.apps.photos.home.HomeActivity"
+            packageName="com.google.android.apps.photos" />
+        <appicon
+            className="com.google.android.youtube.app.honeycomb.Shell$HomeActivity"
+            packageName="com.google.android.youtube" />
+        <autoinstall
+            className="com.google.android.apps.genie.geniewidget.activities.NewsActivity"
+            packageName="com.google.android.apps.genie.geniewidget" 
+	    requiredPreload="true"
+            installByDefault="true"
+            groupId="0" />
+        <autoinstall
+            className="com.google.android.apps.tachyon.MainActivity"
+            packageName="com.google.android.apps.tachyon" 
+	    requiredPreload="true"
+            installByDefault="true"
+            groupId="0" />
+        <autoinstall
+            className="com.google.android.talk.SigningInActivity"
+            packageName="com.google.android.talk" 
+	    requiredPreload="false"
+            installByDefault="true"
+            groupId="0" />
+    </folder>
+
+    <!-- Create folder -->
+    <!-- Docs, Sheets, Slides, Drive, Keep -->
+
+    <folder
+        screen="0"
+        title="@string/create_folder_title"
+        x="1"
+        y="4" >
+        <autoinstall
+            className="com.google.android.apps.docs.app.NewMainProxyActivity"
+            packageName="com.google.android.apps.docs.editors.docs" 
+	    requiredPreload="false"
+            installByDefault="true"
+            groupId="0" />
+        <autoinstall
+            className="com.google.android.apps.docs.app.NewMainProxyActivity"
+            packageName="com.google.android.apps.docs.editors.sheets" 
+	    requiredPreload="false"
+            installByDefault="true"
+            groupId="0" />
+        <autoinstall
+            className="com.google.android.apps.docs.app.NewMainProxyActivity"
+            packageName="com.google.android.apps.docs.editors.slides" 
+	    requiredPreload="false"
+            installByDefault="true"
+            groupId="0" />
+        <appicon
+            className="com.google.android.apps.docs.app.NewMainProxyActivity"
+            packageName="com.google.android.apps.docs" />
+        <autoinstall
+            className="com.google.android.keep.activities.BrowseActivity"
+            packageName="com.google.android.keep"
+	    requiredPreload="false"
+            installByDefault="true"
+            groupId="0" />
+    </folder>
+
+    <!-- Play folder -->
+    <!-- Movies, Music, Games, Books, Newsstand -->
+
+    <folder
+        screen="0"
+        title="@string/play_folder_title"
+        x="3"
+        y="4" >
+        <appicon
+            className="com.android.music.activitymanagement.TopLevelActivity"
+            packageName="com.google.android.music" />
+        <appicon
+            className="com.google.android.youtube.videos.EntryPoint"
+            packageName="com.google.android.videos" />
+        <autoinstall
+            className="com.google.android.gms.games.ui.destination.main.MainActivity"
+            packageName="com.google.android.play.games" 
+	    requiredPreload="false"
+            installByDefault="true"
+            groupId="0" />
+        <autoinstall
+            className="com.google.android.apps.books.app.BooksActivity"
+            packageName="com.google.android.apps.books"
+	    requiredPreload="false"
+            installByDefault="true"
+            groupId="0" />
+        <autoinstall
+            className="com.google.apps.dots.android.app.activity.CurrentsStartActivity"
+            packageName="com.google.android.apps.magazines" 
+	    requiredPreload="false"
+            installByDefault="true"
+            groupId="0" />
+    </folder>
+
+    <appicon
+        className="com.android.vending.AssetBrowserActivity"
+        packageName="com.android.vending"
+        screen="0"
+        x="4"
+        y="4" />
+
+
+    <!-- OEM PAI folder -->
+    <folder
+        screen="0"
+        title="@string/pai_folder_title"
+        x="2"
+        y="4" >
+        <autoinstall
+            className="com.pandora.android.Main"
+            packageName="com.pandora.android"
+            requiredPreload="false"
+            installByDefault="true"
+            groupId="1" />
+        <autoinstall
+            className="com.spotify.music.main"
+            packageName="com.spotify.music"
+	    requiredPreload="false"
+            installByDefault="true"
+            groupId="1" />
+        <autoinstall
+            className="com.whatsapp.Main"
+            packageName="com.whatsapp"
+            requiredPreload="false"
+            installByDefault="true"
+            groupId="1" />
+
+        <!-- Bookmark -->
+        <shortcut
+            icon="@drawable/ic_bookmark"
+            title="@string/link_wiki"
+            url="http://www.wikipedia.org/" />
+
+    </folder>
+
+    <!-- Carrier PAI -->
+    <autoinstall
+        className="com.att.myWireless.activity.login.SplashScreenActivity"
+        packageName="com.att.myWireless" 
+        requiredPreload="true"
+        installByDefault="true"
+        screen="0"
+        x="3"
+        y="4"
+        groupId="2" />
+
+    <!-- App Widgets -->
+    <appwidget
+        packageName="com.pandora.android"
+        className="com.pandora.android.widget.Widget"
+        screen="0"
+        x="0"
+        y="1"
+        spanX="4"
+        spanY="1" 
+        groupId="1" />
+
+    <!-- Hotseat icons -->
+    <appicon
+        className="com.google.android.dialer.extensions.GoogleDialtactsActivity"
+        container="hotseat"
+        packageName="com.google.android.dialer"
+        rank="0" />
+    <appicon
+        className="com.google.android.apps.messaging.ui.ConversationListActivity"
+        container="hotseat"
+        packageName="com.google.android.apps.messaging"
+        rank="1" />
+    <appicon
+        className="com.google.android.apps.chrome.Main"
+        container="hotseat"
+        packageName="com.android.chrome"
+        rank="2" />
+    <appicon
+        className="com.android.camera.CameraLauncher"
+        container="hotseat"
+        packageName="com.google.android.GoogleCamera"
+        rank="3" />
+
+</workspace>

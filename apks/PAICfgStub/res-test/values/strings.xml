@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Name of the configuration APK used to setup the homescreen and initial set of apps on a new device. [MAX CHARS=20] -->
+    <string name="app_name">Device configuration</string>
+
+    <!-- Name of the Google folder, a default folder of shortcuts in the Google Launcher. [MAX CHARS=10] -->
+    <string name="google_folder_title" translatable="false">Google</string>
+
+    <!-- Name of the Create folder, a default folder of shortcuts in the Google Launcher. [MAX CHARS=10] -->
+    <string name="create_folder_title">Create</string>
+
+    <!-- Name of the Play folder, a default folder of shortcuts in the Google Launcher. [MAX CHARS=10] -->
+    <string name="play_folder_title" translatable="false">Play</string>
+
+    <!-- Test strings -->
+    <!-- Name of the PAI folder, a default folder of shortcuts in the Google Launcher. [MAX CHARS=10] -->
+    <string name="pai_folder_title" translatable="false">PAI</string>
+
+    <string name="link_wiki" translatable="false">Wikipedia</string>
+
+</resources>
