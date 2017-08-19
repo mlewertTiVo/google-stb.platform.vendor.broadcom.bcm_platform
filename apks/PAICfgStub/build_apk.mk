@@ -6,7 +6,7 @@ ifeq ($(apk_variant),)
   LOCAL_PACKAGE_NAME := BcmPlayAutoInstallConfig
   LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res
 else
-  LOCAL_PACKAGE_NAME := PlayAutoInstallConfig-$(apk_variant)
+  LOCAL_PACKAGE_NAME := BcmPlayAutoInstallConfig-$(apk_variant)
   LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res-$(apk_variant)
 endif
 
