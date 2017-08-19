@@ -951,6 +951,11 @@ static void hwc2_getCaps(
       return;
    }
 
+   // HWC2_CAPABILITY_SIDEBAND_STREAM               -> SUPPORTED.
+   // HWC2_CAPABILITY_SKIP_CLIENT_COLOR_TRANSFORM   -> TODO??
+   // HWC2_CAPABILITY_PRESENT_FENCE_IS_NOT_RELIABLE -> DO NOT USE.
+   // HWC2_CAPABILITY_SKIP_VALIDATE                 -> NOT REALLY.
+
    if (outCount != NULL) {
       *outCount = 1;
    }
@@ -1692,7 +1697,8 @@ static int32_t hwc2_vdAdd(
    *outDisplay = (hwc2_display_t)(intptr_t)hwc2->vd;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu32 "x%" PRIu32 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu32 "x%" PRIu32 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_CREATE_VIRTUAL_DISPLAY),
       width, height, *outDisplay, getErrorName(ret));
    return ret;
@@ -1725,7 +1731,8 @@ static int32_t hwc2_vdRem(
    hwc2->vd = NULL;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_DESTROY_VIRTUAL_DISPLAY),
       display, getErrorName(ret));
    return ret;
@@ -1868,7 +1875,8 @@ static int32_t hwc2_dspAckChg(
    dsp->validated = true;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE), "<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_ACCEPT_DISPLAY_CHANGES),
       display, getErrorName(ret));
    return ret;
@@ -2071,7 +2079,8 @@ static int32_t hwc2_lyrAdd(
    dsp->validated = false;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s) -> %" PRIu64 "\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s) -> %" PRIu64 "\n",
       getFunctionDescriptorName(HWC2_FUNCTION_CREATE_LAYER),
       display, getErrorName(ret), *outLayer);
    return ret;
@@ -2153,7 +2162,8 @@ static int32_t hwc2_lyrRem(
    dsp->validated = false;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s):%" PRIu64 "\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s):%" PRIu64 "\n",
       getFunctionDescriptorName(HWC2_FUNCTION_DESTROY_LAYER),
       display, getErrorName(ret), layer);
    return ret;
@@ -2193,7 +2203,8 @@ static int32_t hwc2_gActCfg(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s) -> %u\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s) -> %u\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_ACTIVE_CONFIG),
       display, getErrorName(ret), *outConfig);
    return ret;
@@ -2246,7 +2257,8 @@ static int32_t hwc2_getDevCmp(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_CHANGED_COMPOSITION_TYPES),
       display, getErrorName(ret));
    return ret;
@@ -2370,7 +2382,8 @@ static int32_t hwc2_ackCliTgt(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_CLIENT_TARGET_SUPPORT),
       display, getErrorName(ret));
    return ret;
@@ -2408,7 +2421,8 @@ static int32_t hwc2_clrMds(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_COLOR_MODES),
       display, getErrorName(ret));
    return ret;
@@ -2458,7 +2472,8 @@ static int32_t hwc2_dspAttr(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%u:%s (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%u:%s (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_ATTRIBUTE),
       display, config, getAttributeName((hwc2_attribute_t)attribute), getErrorName(ret));
    return ret;
@@ -2516,7 +2531,8 @@ static int32_t hwc2_hdrCap(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_HDR_CAPABILITIES),
       display, getErrorName(ret));
    return ret;
@@ -2560,7 +2576,8 @@ static int32_t hwc2_dspCfg(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_CONFIGS),
       display, getErrorName(ret));
    return ret;
@@ -2598,7 +2615,8 @@ static int32_t hwc2_dspName(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_NAME),
       display, getErrorName(ret));
    return ret;
@@ -2633,7 +2651,8 @@ static int32_t hwc2_dspType(
    *outType = dsp->type;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_TYPE),
       display, getErrorName(ret));
    return ret;
@@ -2680,7 +2699,8 @@ static int32_t hwc2_lyrBlend(
    lyr->bm = (hwc2_blend_mode_t)mode;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_BLEND_MODE),
       display, layer, getErrorName(ret));
    return ret;
@@ -2773,7 +2793,8 @@ static int32_t hwc2_lyrBuf(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_BUFFER),
       display, layer, getErrorName(ret));
    if (ret != HWC2_ERROR_NONE) {
@@ -2824,7 +2845,8 @@ static int32_t hwc2_lyrCol(
    memcpy(&lyr->sc, &color, sizeof(color));
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_COLOR),
       display, layer, getErrorName(ret));
    return ret;
@@ -2887,7 +2909,8 @@ static int32_t hwc2_lyrComp(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_COMPOSITION_TYPE),
       display, layer, getErrorName(ret));
    return ret;
@@ -2929,7 +2952,8 @@ static int32_t hwc2_lyrDSpace(
    lyr->dsp = dataspace;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_DATASPACE),
       display, layer, getErrorName(ret));
    return ret;
@@ -2971,7 +2995,8 @@ static int32_t hwc2_lyrFrame(
    memcpy(&lyr->fr, &frame, sizeof(frame));
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_DISPLAY_FRAME),
       display, layer, getErrorName(ret));
    return ret;
@@ -3013,7 +3038,8 @@ static int32_t hwc2_lyrAlpha(
    lyr->al = alpha;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_PLANE_ALPHA),
       display, layer, getErrorName(ret));
    return ret;
@@ -3065,7 +3091,8 @@ static int32_t hwc2_lyrSbStr(
    lyr->sbh = (native_handle_t*)stream;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_SIDEBAND_STREAM),
       display, layer, getErrorName(ret));
    return ret;
@@ -3110,7 +3137,8 @@ static int32_t hwc2_lyrCrop(
    lyr->crp.bottom = (int) floorf(crop.bottom);
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_SOURCE_CROP),
       display, layer, getErrorName(ret));
    return ret;
@@ -3164,7 +3192,8 @@ static int32_t hwc2_lyrSfcDam(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_SURFACE_DAMAGE),
       display, layer, getErrorName(ret));
    return ret;
@@ -3211,7 +3240,8 @@ static int32_t hwc2_lyrTrans(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_TRANSFORM),
       display, layer, getErrorName(ret));
    return ret;
@@ -3264,7 +3294,8 @@ static int32_t hwc2_lyrRegion(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_VISIBLE_REGION),
       display, layer, getErrorName(ret));
    return ret;
@@ -3306,7 +3337,8 @@ static int32_t hwc2_lyrZ(
    lyr->z = z;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_Z_ORDER),
       display, layer, getErrorName(ret));
    return ret;
@@ -3347,7 +3379,8 @@ static int32_t hwc2_outBuf(
    dsp->u.vd.wrFence = releaseFence;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_OUTPUT_BUFFER),
       display, getErrorName(ret));
    if (ret != HWC2_ERROR_NONE) {
@@ -3396,7 +3429,8 @@ static int32_t hwc2_vsyncSet(
    dsp->u.ext.vsync = (hwc2_vsync_t)enabled;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_VSYNC_ENABLED),
       display, getErrorName(ret));
    return ret;
@@ -3445,7 +3479,8 @@ static int32_t hwc2_cursorPos(
    lyr->cy = y;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_CURSOR_POSITION),
       display, layer, getErrorName(ret));
    return ret;
@@ -3492,7 +3527,8 @@ static int32_t hwc2_clrTrs(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_COLOR_TRANSFORM),
       display, getErrorName(ret));
    return ret;
@@ -3528,7 +3564,8 @@ static int32_t hwc2_clrMode(
    (void)mode;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_COLOR_MODE),
       display, getErrorName(ret));
    return ret;
@@ -3596,7 +3633,8 @@ static int32_t hwc2_cliTgt(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_CLIENT_TARGET),
       display, getErrorName(ret));
    if (ret != HWC2_ERROR_NONE) {
@@ -3647,7 +3685,8 @@ static int32_t hwc2_sActCfg(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%u (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%u (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_ACTIVE_CONFIG),
       display, config, getErrorName(ret));
    return ret;
@@ -3705,7 +3744,8 @@ static int32_t hwc2_relFences(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_RELEASE_FENCES),
       display, getErrorName(ret));
    return ret;
@@ -3774,7 +3814,8 @@ static int32_t hwc2_dspReqs(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_REQUESTS),
       display, getErrorName(ret));
    return ret;
@@ -3938,7 +3979,7 @@ static int32_t hwc2_valDsp(
    dsp->validated = true;
 
 out:
-   ALOGE_IF(!((ret==HWC2_ERROR_NONE)||(ret==HWC2_ERROR_HAS_CHANGES)),
+   ALOGE_IF(!((ret==HWC2_ERROR_NONE)||(ret==HWC2_ERROR_HAS_CHANGES))||HWC2_LOGRET_ALWAYS,
       "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_VALIDATE_DISPLAY),
       display, getErrorName(ret));
@@ -4375,7 +4416,8 @@ out_error:
 out_signal:
    hwc2_ret_inc(dsp, 1);
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_PRESENT_DISPLAY),
       display, getErrorName(ret));
    return ret;
