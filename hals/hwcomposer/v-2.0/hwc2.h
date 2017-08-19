@@ -30,6 +30,7 @@
 #define LOG_DIM_DEBUG       (1<<3)  /* dim layer from surface-flinger. */
 #define LOG_OOB_DEBUG       (1<<4)  /* out-of-bounds video layer. */
 #define LOG_GLOB_COMP_DEBUG (1<<5)  /* global composition information. */
+#define LOG_OFFLD_DEBUG     (1<<6)  /* offloading to gles information. */
 /*
  * log masks: specific to 'external' display (i.e. main display for stb).
  */
