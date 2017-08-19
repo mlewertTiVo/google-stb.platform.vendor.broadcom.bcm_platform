@@ -287,6 +287,8 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
         case HAL_PIXEL_FORMAT_YV12:
         case HAL_PIXEL_FORMAT_YCbCr_420_888:
         case HAL_PIXEL_FORMAT_BLOB:
+        case HAL_PIXEL_FORMAT_RGBA_FP16:
+        case HAL_PIXEL_FORMAT_RGBA_1010102:
            errCode = 0;
         break;
         default:
@@ -457,6 +459,15 @@ NEXUS_PixelFormat getNexusPixelFormat(int pixelFmt, int *bpp)
          b = 1;
          pf = NEXUS_PixelFormat_ePalette1;
       break;
+      case HAL_PIXEL_FORMAT_RGBA_FP16:
+         b = 8;
+         /* no better nexus format. */
+         pf = NEXUS_PixelFormat_eA8_B8_G8_R8;
+      break;
+      case HAL_PIXEL_FORMAT_RGBA_1010102:
+         b = 4;
+         pf = NEXUS_PixelFormat_eA8_B8_G8_R8;
+      break;
       default:
          b = 0;
          pf = NEXUS_PixelFormat_eUnknown;
@@ -490,6 +501,11 @@ BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt)
       break;
       case HAL_PIXEL_FORMAT_BLOB:
          pf = BM2MC_PACKET_PixelFormat_eP1;
+      break;
+      case HAL_PIXEL_FORMAT_RGBA_1010102:
+      case HAL_PIXEL_FORMAT_RGBA_FP16:
+         /* no native bm2mc support, return something valid. */
+         pf = BM2MC_PACKET_PixelFormat_eX8_R8_G8_B8;
       break;
       default:
          pf = BM2MC_PACKET_PixelFormat_eUnknown;
@@ -534,6 +550,8 @@ static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pS
 #endif
       break;
       case HAL_PIXEL_FORMAT_BLOB:
+      case HAL_PIXEL_FORMAT_RGBA_1010102:
+      case HAL_PIXEL_FORMAT_RGBA_FP16:
          bufferRequirements.format = BEGL_BufferFormat_INVALID;
       break;
       default:
@@ -545,7 +563,9 @@ static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pS
          hnd->oglStride = 0;
          hnd->oglFormat = 0;
          hnd->oglSize   = 0;
-         if (pSharedData->container.format == HAL_PIXEL_FORMAT_BLOB) {
+         if (pSharedData->container.format == HAL_PIXEL_FORMAT_BLOB ||
+             pSharedData->container.format == HAL_PIXEL_FORMAT_RGBA_1010102 ||
+             pSharedData->container.format == HAL_PIXEL_FORMAT_RGBA_FP16) {
             rc = 0;
          }
       break;
@@ -589,6 +609,8 @@ static void getBufferDataFromFormat(int *alignment, int w, int h, int bpp, int f
       case HAL_PIXEL_FORMAT_RGB_888:
       case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
       case HAL_PIXEL_FORMAT_RGB_565:
+      case HAL_PIXEL_FORMAT_RGBA_1010102:
+      case HAL_PIXEL_FORMAT_RGBA_FP16:
          *pStride = ((w*bpp + (*alignment-1)) & ~(*alignment-1)) / bpp;
          *size = ((w*bpp + (*alignment-1)) & ~(*alignment-1)) * h;
       break;
@@ -721,6 +743,9 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       if (format == HAL_PIXEL_FORMAT_BLOB) {
          fmt_set |= GR_BLOB;
       }
+      if (format == HAL_PIXEL_FORMAT_RGBA_1010102 || format == HAL_PIXEL_FORMAT_RGBA_FP16) {
+         fmt_set |= GR_FP;
+      }
    } else if (usage & GRALLOC_USAGE_PROTECTED) {
       fmt_set |= GR_NONE;
    } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
@@ -749,7 +774,7 @@ gralloc_alloc_buffer(alloc_device_t* dev,
             }
          }
       } else {
-         if (!(fmt_set & GR_BLOB)) {
+         if (!((fmt_set & GR_BLOB) || (fmt_set & GR_FP))) {
             pSharedData->container.allocSize = hnd->oglSize;
             pSharedData->container.stride = hnd->oglStride;
          }
