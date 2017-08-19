@@ -260,11 +260,11 @@ void brcm_audio_set_audio_clock_accuracy(void)
 
     do {
         NxClient_GetAudioSettings(&settings);
-        if ((settings.hdmi.channelStatusInfo.clockAccuracy == value) &&
-            (settings.spdif.channelStatusInfo.clockAccuracy == value))
+        if ((settings.hdmi.channelStatusInfo.clockAccuracy == (NEXUS_AudioChannelStatusClockAccuracy)value) &&
+            (settings.spdif.channelStatusInfo.clockAccuracy == (NEXUS_AudioChannelStatusClockAccuracy)value))
             return;
-        settings.hdmi.channelStatusInfo.clockAccuracy = value;
-        settings.spdif.channelStatusInfo.clockAccuracy = value;
+        settings.hdmi.channelStatusInfo.clockAccuracy = (NEXUS_AudioChannelStatusClockAccuracy)value;
+        settings.spdif.channelStatusInfo.clockAccuracy = (NEXUS_AudioChannelStatusClockAccuracy)value;
         rc = NxClient_SetAudioSettings(&settings);
     } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
 }
