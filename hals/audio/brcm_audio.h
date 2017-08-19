@@ -106,6 +106,7 @@ extern "C" {
 #define DUMMY_HW_SYNC   0xCAFEBABE
 
 #define BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY ("ro.nx.eac3.trans_latency")
+#define BRCM_PROPERTY_AUDIO_OUTPUT_CLOCK_ACCURACY ("ro.nx.audio.clock_acc")
 
 #define BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM         ("media.brcm.direct_force_pcm")
 #define BRCM_PROPERTY_AUDIO_DIRECT_FORCE_PCM_PERSIST ("persist.nx.direct_force_pcm")
@@ -334,6 +335,7 @@ extern float brcm_audio_get_master_volume(void);
 extern NEXUS_Error brcm_audio_client_join(const char *name);
 extern void brcm_audio_set_audio_volume(float leftVol, float rightVol);
 extern NEXUS_AudioCodec brcm_audio_get_codec_from_format(audio_format_t format);
+extern void brcm_audio_set_audio_clock_accuracy(void);
 
 // Utility functions to wrap the stc channels into a Nexus memory block
 typedef struct stc_channel_st {

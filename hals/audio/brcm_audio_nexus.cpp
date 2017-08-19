@@ -286,6 +286,26 @@ NEXUS_AudioCodec brcm_audio_get_codec_from_format(audio_format_t format)
     return NEXUS_AudioCodec_eUnknown;
 }
 
+void brcm_audio_set_audio_clock_accuracy(void)
+{
+    NEXUS_Error rc;
+    NxClient_AudioSettings settings;
+    int32_t value;
+    value = property_get_int32(BRCM_PROPERTY_AUDIO_OUTPUT_CLOCK_ACCURACY, 0);
+
+    ALOGV("nexus_nx_client %s:%d clock_acc=%d\n",__PRETTY_FUNCTION__,__LINE__,value);
+
+    do {
+        NxClient_GetAudioSettings(&settings);
+        if ((settings.hdmi.channelStatusInfo.clockAccuracy == value) &&
+            (settings.spdif.channelStatusInfo.clockAccuracy == value))
+            return;
+        settings.hdmi.channelStatusInfo.clockAccuracy = value;
+        settings.spdif.channelStatusInfo.clockAccuracy = value;
+        rc = NxClient_SetAudioSettings(&settings);
+    } while (rc == NXCLIENT_BAD_SEQUENCE_NUMBER);
+}
+
 /*
  * Operation Functions
  */
