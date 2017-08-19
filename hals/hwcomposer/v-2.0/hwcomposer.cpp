@@ -981,6 +981,8 @@ static enum hwc2_cbs_e hwc2_want_comp_bypass(
    case NEXUS_VideoFormat_eVesa800x600p60hz:
    case NEXUS_VideoFormat_eVesa1024x768p60hz:
    case NEXUS_VideoFormat_eVesa1280x768p60hz:
+   case NEXUS_VideoFormat_e480p:
+   case NEXUS_VideoFormat_e576p:
       return hwc2_cbs_e::cbs_e_nscfb;
    break;
    default:
