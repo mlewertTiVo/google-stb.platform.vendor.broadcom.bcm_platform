@@ -16,6 +16,7 @@
 #ifndef HWC2_INCLUDED
 #define HWC2_INCLUDED
 
+#define HWC2_LOGRET_ALWAYS  0
 /* log usage: runtime enable via setting the property and causing a
  *            dumpsys SurfaceFlinger to trigger log mask evaluation.
  *            for each wanted category, issue a 'setprop <name> <value>'
@@ -30,6 +31,7 @@
 #define LOG_DIM_DEBUG       (1<<3)  /* dim layer from surface-flinger. */
 #define LOG_OOB_DEBUG       (1<<4)  /* out-of-bounds video layer. */
 #define LOG_GLOB_COMP_DEBUG (1<<5)  /* global composition information. */
+#define LOG_OFFLD_DEBUG     (1<<6)  /* offloading to gles information. */
 /*
  * log masks: specific to 'external' display (i.e. main display for stb).
  */
@@ -195,6 +197,8 @@ struct hwc2_dsp_cfg_t {
 
    bool                  hdr10;
    bool                  hlg;
+   bool                  plm;
+   int                   eotf;
 };
 
 /* layer release timeline unit. */
@@ -462,10 +466,13 @@ public:
 };
 
 enum hwc2_tweaks_e {
+   /* boolean. */
    hwc2_tweak_fb_compressed = 0,
    hwc2_tweak_pip_alpha_hole,
    hwc2_tweak_bypass_disable,
-   hwc2_tweak_plm,
+   hwc2_tweak_plm_off,
+   /* settings. */
+   hwc2_tweak_eotf,
 };
 
 enum hwc2_seeding_e {

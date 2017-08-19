@@ -19,20 +19,24 @@
 
 #define EIO_BOOT_MAGIC        0x331100BB
 #define EIO_BOOT_NUM_ALT_PART 2
+
 #define EIO_BOOT_SUFFIX_LEN   8
 
 struct eio_boot_slot {
-   char suffix[EIO_BOOT_SUFFIX_LEN];
-   int  valid;
-   int  boot_try;
-   int  boot_ok;
-   int  boot_fail;
+   char     suffix[EIO_BOOT_SUFFIX_LEN];
+   int32_t  valid;
+   int32_t  boot_try;
+   int32_t  boot_ok;
+   int32_t  boot_fail;
+   int32_t  dmv_corrupt;
+   int32_t  spare[128];
 };
 
 struct eio_boot {
-   int    magic;
-   int    current;
-   struct eio_boot_slot slot[EIO_BOOT_NUM_ALT_PART];
+   int32_t  magic;
+   int32_t  version;
+   int32_t  current;
+   struct   eio_boot_slot slot[EIO_BOOT_NUM_ALT_PART];
 };
 
 #endif /* EIO_BOOT__H */

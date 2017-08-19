@@ -807,6 +807,13 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
          }
       }
    }
+
+   /* 13. extra picture buffers for VP9 worst-case decode */
+   for (i = 0; i < NEXUS_MAX_VIDEO_DECODERS; i++) {
+      if ( pMemConfigSettings->videoDecoder[i].used && pMemConfigSettings->videoDecoder[i].supportedCodecs[NEXUS_VideoCodec_eVp9] ) {
+         pMemConfigSettings->videoDecoder[i].extraPictureBuffers = 2;
+      }
+   }
 }
 
 static NEXUS_VideoFormat forced_output_format(void)
@@ -1056,13 +1063,13 @@ static nxserver_t init_nxserver(void)
     memset(key_hdcp1x, 0, sizeof(key_hdcp1x));
     property_get(NX_HDCP1X_KEY, key_hdcp1x, NULL);
     if (strlen(key_hdcp1x)) {
-       settings.hdcp.hdcp1xBinFile = key_hdcp1x;
+       strncpy(settings.hdcp.hdcp1xBinFile, key_hdcp1x, strlen(key_hdcp1x));
     }
     /* -hdcp2x_keys some-key-file */
     memset(key_hdcp2x, 0, sizeof(key_hdcp2x));
     property_get(NX_HDCP2X_KEY, key_hdcp2x, NULL);
     if (strlen(key_hdcp2x)) {
-       settings.hdcp.hdcp2xBinFile = key_hdcp2x;
+       strncpy(settings.hdcp.hdcp2xBinFile, key_hdcp2x, strlen(key_hdcp2x));
     }
     settings.hdcp.versionSelect = (NxClient_HdcpVersion)property_get_int32(NX_HDCP_MODE, 0);
 

@@ -46,6 +46,7 @@
 #include "INxDspEvtSrc.h"
 #include "nexus_platform_client.h"
 #include "nexus_platform.h"
+#include "nexus_display_dynrng.h"
 /* sync framework/fences. */
 #include "sync/sync.h"
 #include "sw_sync.h"
@@ -193,14 +194,112 @@ static bool hwc2_enabled(
    case hwc2_tweak_bypass_disable:
       r = (bool)property_get_bool("ro.nx.hwc2.tweak.nocb", 0);
    break;
-   case hwc2_tweak_plm:
-      r = (bool)property_get_bool("ro.nx.hwc2.tweak.plm", 0);
+   case hwc2_tweak_plm_off:
+      r = (bool)property_get_bool("dyn.nx.hwc2.tweak.plmoff", 0);
    break;
    default:
    break;
    }
 
    return r;
+}
+
+static int32_t hwc2_setting(
+   enum hwc2_tweaks_e tweak) {
+
+   int32_t r = 0;
+
+   switch (tweak) {
+   case hwc2_tweak_eotf:
+      r = property_get_int32("dyn.nx.hwc2.tweak.eotf", 0);
+   break;
+   default:
+   break;
+   }
+
+   return r;
+}
+
+static void hwc2_eotf(
+   struct hwc2_dsp_t *dsp) {
+
+   NEXUS_HdmiOutputExtraSettings s;
+   NEXUS_PlatformConfiguration p;
+   NEXUS_Error e;
+   NEXUS_HdmiOutputHandle hdmi;
+   int32_t eotf = hwc2_setting(hwc2_tweak_eotf);
+
+   if (!eotf) {
+      return;
+   }
+
+   NEXUS_Platform_GetConfiguration(&p);
+   hdmi = p.outputs.hdmi[0];
+   if (!hdmi) {
+      ALOGE("[eotf]: invalid hdmi output.");
+      return;
+   }
+
+   if (dsp->aCfg->hdr10) {
+      NEXUS_HdmiOutput_GetExtraSettings(hdmi, &s);
+      switch (eotf) {
+         case 1:
+            ALOGI("[eotf]: hdr10.");
+            s.overrideDynamicRangeMasteringInfoFrame = true;
+            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
+         break;
+         case 2:
+            ALOGI("[eotf]: sdr.");
+            s.overrideDynamicRangeMasteringInfoFrame = true;
+            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eSdr;
+         break;
+         case 3:
+         default:
+            ALOGI("[eotf]: non-specific.");
+            s.overrideDynamicRangeMasteringInfoFrame = false;
+            s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eInvalid;
+         break;
+      }
+      e = NEXUS_HdmiOutput_SetExtraSettings(hdmi, &s);
+   }
+}
+
+static void hwc2_eval_plm(
+   struct hwc2_bcm_device_t *hwc2) {
+
+   struct hwc2_dsp_t *dsp;
+   dsp = hwc2->ext;
+   if (dsp != NULL) {
+      NEXUS_DynamicRangeProcessingSettings d;
+      bool noplm = hwc2_enabled(hwc2_tweak_plm_off);
+      if (noplm != dsp->aCfg->plm) {
+         dsp->aCfg->plm = noplm;
+         NEXUS_Display_GetGraphicsDynamicRangeProcessingSettings(&d);
+         d.processingModes[NEXUS_DynamicRangeProcessingType_ePlm] =
+            noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
+         d.processingModes[NEXUS_DynamicRangeProcessingType_eDolbyVision] =
+            noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
+         d.processingModes[NEXUS_DynamicRangeProcessingType_eTechnicolorPrime] =
+            noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
+         NEXUS_Display_SetGraphicsDynamicRangeProcessingSettings(&d);
+         NEXUS_VideoWindow_GetDynamicRangeProcessingSettings(0, &d);
+         d.processingModes[NEXUS_DynamicRangeProcessingType_ePlm] =
+            noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
+         d.processingModes[NEXUS_DynamicRangeProcessingType_eDolbyVision] =
+            noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
+         d.processingModes[NEXUS_DynamicRangeProcessingType_eTechnicolorPrime] =
+            noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
+         NEXUS_VideoWindow_SetDynamicRangeProcessingSettings(0, &d);
+         NEXUS_VideoWindow_GetDynamicRangeProcessingSettings(1, &d);
+         d.processingModes[NEXUS_DynamicRangeProcessingType_ePlm] =
+            noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
+         d.processingModes[NEXUS_DynamicRangeProcessingType_eDolbyVision] =
+            noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
+         d.processingModes[NEXUS_DynamicRangeProcessingType_eTechnicolorPrime] =
+            noplm ? NEXUS_DynamicRangeProcessingMode_eOff : NEXUS_DynamicRangeProcessingMode_eAuto;
+         NEXUS_VideoWindow_SetDynamicRangeProcessingSettings(1, &d);
+      }
+   }
 }
 
 static NEXUS_PixelFormat gr2nx_pixel(
@@ -270,23 +369,6 @@ static void hwc2_hdmi_collect(
       if (edid.hdrdb.valid) {
          dsp->cfgs->hdr10 = edid.hdrdb.eotfSupported[NEXUS_VideoEotf_eHdr10];
          dsp->cfgs->hlg = edid.hdrdb.eotfSupported[NEXUS_VideoEotf_eHlg];
-      }
-   }
-}
-
-static void hwc2_plm(
-   struct hwc2_dsp_t *dsp,
-   NEXUS_HdmiOutputHandle hdmi) {
-
-   NEXUS_HdmiOutputExtraSettings s;
-   NEXUS_Error e;
-
-   if (hwc2_enabled(hwc2_tweak_plm)) {
-      NEXUS_HdmiOutput_GetExtraSettings(hdmi, &s);
-      if (dsp->cfgs->hdr10) {
-         s.overrideDynamicRangeMasteringInfoFrame = true;
-         s.dynamicRangeMasteringInfoFrame.eotf = NEXUS_VideoEotf_eHdr10;
-         e = NEXUS_HdmiOutput_SetExtraSettings(hdmi, &s);
       }
    }
 }
@@ -869,6 +951,11 @@ static void hwc2_getCaps(
       return;
    }
 
+   // HWC2_CAPABILITY_SIDEBAND_STREAM               -> SUPPORTED.
+   // HWC2_CAPABILITY_SKIP_CLIENT_COLOR_TRANSFORM   -> TODO??
+   // HWC2_CAPABILITY_PRESENT_FENCE_IS_NOT_RELIABLE -> DO NOT USE.
+   // HWC2_CAPABILITY_SKIP_VALIDATE                 -> NOT REALLY.
+
    if (outCount != NULL) {
       *outCount = 1;
    }
@@ -894,6 +981,8 @@ static enum hwc2_cbs_e hwc2_want_comp_bypass(
    case NEXUS_VideoFormat_eVesa800x600p60hz:
    case NEXUS_VideoFormat_eVesa1024x768p60hz:
    case NEXUS_VideoFormat_eVesa1280x768p60hz:
+   case NEXUS_VideoFormat_e480p:
+   case NEXUS_VideoFormat_e576p:
       return hwc2_cbs_e::cbs_e_nscfb;
    break;
    default:
@@ -930,13 +1019,17 @@ static int32_t hwc2_regCb(
       if (hwc2->ext != NULL) {
          NEXUS_HdmiOutputHandle hdmi;
          NEXUS_HdmiOutputStatus hstatus;
+         hstatus.connected = false;
          hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
-         NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
-         if (hstatus.connected) {
-            NxClient_DisplaySettings settings;
-            hwc2_want_comp_bypass(&settings);
-            hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
-            hwc2_plm(hwc2->ext, hdmi);
+         if (hdmi) {
+            NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
+            if (hstatus.connected) {
+               NxClient_DisplaySettings settings;
+               hwc2_want_comp_bypass(&settings);
+               hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
+               hwc2_eotf(hwc2->ext);
+            }
+            NEXUS_HdmiOutput_Close(hdmi);
          }
          if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
             if (!hwc2->ext->u.ext.rhpd) {
@@ -1606,7 +1699,8 @@ static int32_t hwc2_vdAdd(
    *outDisplay = (hwc2_display_t)(intptr_t)hwc2->vd;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu32 "x%" PRIu32 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu32 "x%" PRIu32 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_CREATE_VIRTUAL_DISPLAY),
       width, height, *outDisplay, getErrorName(ret));
    return ret;
@@ -1639,7 +1733,8 @@ static int32_t hwc2_vdRem(
    hwc2->vd = NULL;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_DESTROY_VIRTUAL_DISPLAY),
       display, getErrorName(ret));
    return ret;
@@ -1654,6 +1749,7 @@ static size_t hwc2_dump_gen(
    struct hwc2_lyr_t *lyr;
 
    hwc2_eval_log(hwc2);
+   hwc2_eval_plm(hwc2);
 
    memset((void *)hwc2->dump, 0, sizeof(hwc2->dump));
 
@@ -1683,13 +1779,21 @@ static size_t hwc2_dump_gen(
    if (hwc2->ext != NULL) {
       dsp = hwc2->ext;
       if (max-current > 0) {
+         NEXUS_DynamicRangeProcessingSettings d;
          current += snprintf(&hwc2->dump[current], max-current,
-            "\t[ext][%s]:%" PRIu64 ":%s:%" PRIu32 "x%" PRIu32 ":%" PRIu32 ",%" PRIu32 ":op{%d,%d,%dx%d}:hdr-%c,hlg-%c:%" PRIu64 ":%" PRIu64 "\n",
+            "\t[ext][%s]:%" PRIu64 ":%s:%" PRIu32 "x%" PRIu32 ":%" PRIu32 ",%" PRIu32 ":op{%d,%d,%dx%d}:%" PRIu64 ":%" PRIu64 "\n",
             dsp->u.ext.gles?"gles":"m2mc",
             (hwc2_display_t)(intptr_t)dsp, dsp->name,
             dsp->aCfg->w, dsp->aCfg->h, dsp->aCfg->xdp, dsp->aCfg->ydp,
             hwc2->ext->op.x, hwc2->ext->op.y, hwc2->ext->op.w, hwc2->ext->op.h,
-            dsp->aCfg->hdr10?'o':'x', dsp->aCfg->hlg?'o':'x', dsp->pres, dsp->post);
+            dsp->pres, dsp->post);
+         NEXUS_Display_GetGraphicsDynamicRangeProcessingSettings(&d);
+         current += snprintf(&hwc2->dump[current], max-current,
+            "\t[ext]:hdr-%c,hlg-%c:eotf:%d:[dyn]:plm-%c,dbv-%c,tch-%c\n",
+            dsp->aCfg->hdr10?'o':'x', dsp->aCfg->hlg?'o':'x', dsp->aCfg->eotf,
+            d.processingModes[NEXUS_DynamicRangeProcessingType_ePlm] == NEXUS_DynamicRangeProcessingMode_eOff?'x':'o',
+            d.processingModes[NEXUS_DynamicRangeProcessingType_eDolbyVision] == NEXUS_DynamicRangeProcessingMode_eOff?'x':'o',
+            d.processingModes[NEXUS_DynamicRangeProcessingType_eTechnicolorPrime] == NEXUS_DynamicRangeProcessingMode_eOff?'x':'o');
       }
 
       lyr = dsp->lyr;
@@ -1773,7 +1877,8 @@ static int32_t hwc2_dspAckChg(
    dsp->validated = true;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE), "<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_ACCEPT_DISPLAY_CHANGES),
       display, getErrorName(ret));
    return ret;
@@ -1976,7 +2081,8 @@ static int32_t hwc2_lyrAdd(
    dsp->validated = false;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s) -> %" PRIu64 "\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s) -> %" PRIu64 "\n",
       getFunctionDescriptorName(HWC2_FUNCTION_CREATE_LAYER),
       display, getErrorName(ret), *outLayer);
    return ret;
@@ -2058,7 +2164,8 @@ static int32_t hwc2_lyrRem(
    dsp->validated = false;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s):%" PRIu64 "\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s):%" PRIu64 "\n",
       getFunctionDescriptorName(HWC2_FUNCTION_DESTROY_LAYER),
       display, getErrorName(ret), layer);
    return ret;
@@ -2098,7 +2205,8 @@ static int32_t hwc2_gActCfg(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s) -> %u\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s) -> %u\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_ACTIVE_CONFIG),
       display, getErrorName(ret), *outConfig);
    return ret;
@@ -2151,7 +2259,8 @@ static int32_t hwc2_getDevCmp(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_CHANGED_COMPOSITION_TYPES),
       display, getErrorName(ret));
    return ret;
@@ -2215,13 +2324,15 @@ static int32_t hwc2_sclSupp(
 
    if (s.width && d.width &&
        (s.width / d.width) >= hwc2->g2dc.maxHorizontalDownScale) {
-      ALOGW("horizontal:%d->%d::max:%d", s.width, d.width, hwc2->g2dc.maxHorizontalDownScale);
+      ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG), "horizontal:%d->%d::max:%d",
+               s.width, d.width, hwc2->g2dc.maxHorizontalDownScale);
       ret = HWC2_ERROR_UNSUPPORTED;
    }
 
    if (s.height && d.height &&
        (s.height / d.height) >= hwc2->g2dc.maxVerticalDownScale) {
-      ALOGW("horizontal:%d->%d::max:%d", s.height, d.height, hwc2->g2dc.maxVerticalDownScale);
+      ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG), "vertical:%d->%d::max:%d",
+               s.height, d.height, hwc2->g2dc.maxVerticalDownScale);
       ret = HWC2_ERROR_UNSUPPORTED;
    }
 
@@ -2273,7 +2384,8 @@ static int32_t hwc2_ackCliTgt(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_CLIENT_TARGET_SUPPORT),
       display, getErrorName(ret));
    return ret;
@@ -2311,7 +2423,8 @@ static int32_t hwc2_clrMds(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_COLOR_MODES),
       display, getErrorName(ret));
    return ret;
@@ -2361,7 +2474,8 @@ static int32_t hwc2_dspAttr(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%u:%s (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%u:%s (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_ATTRIBUTE),
       display, config, getAttributeName((hwc2_attribute_t)attribute), getErrorName(ret));
    return ret;
@@ -2419,7 +2533,8 @@ static int32_t hwc2_hdrCap(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_HDR_CAPABILITIES),
       display, getErrorName(ret));
    return ret;
@@ -2463,7 +2578,8 @@ static int32_t hwc2_dspCfg(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_CONFIGS),
       display, getErrorName(ret));
    return ret;
@@ -2501,7 +2617,8 @@ static int32_t hwc2_dspName(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_NAME),
       display, getErrorName(ret));
    return ret;
@@ -2536,7 +2653,8 @@ static int32_t hwc2_dspType(
    *outType = dsp->type;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_TYPE),
       display, getErrorName(ret));
    return ret;
@@ -2583,7 +2701,8 @@ static int32_t hwc2_lyrBlend(
    lyr->bm = (hwc2_blend_mode_t)mode;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_BLEND_MODE),
       display, layer, getErrorName(ret));
    return ret;
@@ -2676,7 +2795,8 @@ static int32_t hwc2_lyrBuf(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_BUFFER),
       display, layer, getErrorName(ret));
    if (ret != HWC2_ERROR_NONE) {
@@ -2727,7 +2847,8 @@ static int32_t hwc2_lyrCol(
    memcpy(&lyr->sc, &color, sizeof(color));
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_COLOR),
       display, layer, getErrorName(ret));
    return ret;
@@ -2790,7 +2911,8 @@ static int32_t hwc2_lyrComp(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_COMPOSITION_TYPE),
       display, layer, getErrorName(ret));
    return ret;
@@ -2832,7 +2954,8 @@ static int32_t hwc2_lyrDSpace(
    lyr->dsp = dataspace;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_DATASPACE),
       display, layer, getErrorName(ret));
    return ret;
@@ -2874,7 +2997,8 @@ static int32_t hwc2_lyrFrame(
    memcpy(&lyr->fr, &frame, sizeof(frame));
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_DISPLAY_FRAME),
       display, layer, getErrorName(ret));
    return ret;
@@ -2916,7 +3040,8 @@ static int32_t hwc2_lyrAlpha(
    lyr->al = alpha;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_PLANE_ALPHA),
       display, layer, getErrorName(ret));
    return ret;
@@ -2968,7 +3093,8 @@ static int32_t hwc2_lyrSbStr(
    lyr->sbh = (native_handle_t*)stream;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_SIDEBAND_STREAM),
       display, layer, getErrorName(ret));
    return ret;
@@ -3013,7 +3139,8 @@ static int32_t hwc2_lyrCrop(
    lyr->crp.bottom = (int) floorf(crop.bottom);
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_SOURCE_CROP),
       display, layer, getErrorName(ret));
    return ret;
@@ -3067,7 +3194,8 @@ static int32_t hwc2_lyrSfcDam(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_SURFACE_DAMAGE),
       display, layer, getErrorName(ret));
    return ret;
@@ -3114,7 +3242,8 @@ static int32_t hwc2_lyrTrans(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_TRANSFORM),
       display, layer, getErrorName(ret));
    return ret;
@@ -3167,7 +3296,8 @@ static int32_t hwc2_lyrRegion(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_VISIBLE_REGION),
       display, layer, getErrorName(ret));
    return ret;
@@ -3209,7 +3339,8 @@ static int32_t hwc2_lyrZ(
    lyr->z = z;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_Z_ORDER),
       display, layer, getErrorName(ret));
    return ret;
@@ -3250,7 +3381,8 @@ static int32_t hwc2_outBuf(
    dsp->u.vd.wrFence = releaseFence;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_OUTPUT_BUFFER),
       display, getErrorName(ret));
    if (ret != HWC2_ERROR_NONE) {
@@ -3299,7 +3431,8 @@ static int32_t hwc2_vsyncSet(
    dsp->u.ext.vsync = (hwc2_vsync_t)enabled;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_VSYNC_ENABLED),
       display, getErrorName(ret));
    return ret;
@@ -3348,7 +3481,8 @@ static int32_t hwc2_cursorPos(
    lyr->cy = y;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_CURSOR_POSITION),
       display, layer, getErrorName(ret));
    return ret;
@@ -3395,7 +3529,8 @@ static int32_t hwc2_clrTrs(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_COLOR_TRANSFORM),
       display, getErrorName(ret));
    return ret;
@@ -3431,7 +3566,8 @@ static int32_t hwc2_clrMode(
    (void)mode;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_COLOR_MODE),
       display, getErrorName(ret));
    return ret;
@@ -3499,7 +3635,8 @@ static int32_t hwc2_cliTgt(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_CLIENT_TARGET),
       display, getErrorName(ret));
    if (ret != HWC2_ERROR_NONE) {
@@ -3550,7 +3687,8 @@ static int32_t hwc2_sActCfg(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 ":%u (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 ":%u (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_SET_ACTIVE_CONFIG),
       display, config, getErrorName(ret));
    return ret;
@@ -3608,7 +3746,8 @@ static int32_t hwc2_relFences(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_RELEASE_FENCES),
       display, getErrorName(ret));
    return ret;
@@ -3677,7 +3816,8 @@ static int32_t hwc2_dspReqs(
    }
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_GET_DISPLAY_REQUESTS),
       display, getErrorName(ret));
    return ret;
@@ -3694,16 +3834,18 @@ static uint32_t hwc2_comp_validate(
    while (lyr != NULL) {
       cnt++;
       if (lyr->cCli == HWC2_COMPOSITION_CURSOR) {
-         ALOGI("lyr[%" PRIu64 "]:%s->%s (cursor not supported)", lyr->hdl,
+         ALOGW("lyr[%" PRIu64 "]:%s->%s (cursor not supported)", lyr->hdl,
                getCompositionName(HWC2_COMPOSITION_CURSOR),
                getCompositionName(HWC2_COMPOSITION_DEVICE));
          lyr->cDev = HWC2_COMPOSITION_DEVICE;
       } else if (lyr->cCli == HWC2_COMPOSITION_DEVICE) {
          hwc2_error_t ret = (hwc2_error_t)hwc2_sclSupp(hwc2, &lyr->crp, &lyr->fr);
          if (ret != HWC2_ERROR_NONE) {
-            ALOGW("lyr[%" PRIu64 "]:%s->%s (scaling out of bounds)", lyr->hdl,
-                  getCompositionName(HWC2_COMPOSITION_DEVICE),
-                  getCompositionName(HWC2_COMPOSITION_CLIENT));
+            ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG),
+               "lyr[%" PRIu64 "]:%s->%s (scaling out of bounds)",
+               lyr->hdl,
+               getCompositionName(HWC2_COMPOSITION_DEVICE),
+               getCompositionName(HWC2_COMPOSITION_CLIENT));
             lyr->cDev = HWC2_COMPOSITION_CLIENT;
          }
       }
@@ -3832,10 +3974,15 @@ static int32_t hwc2_valDsp(
       lyr = lyr->next;
    }
 
+   if (*outNumTypes > 0) {
+      ret = HWC2_ERROR_HAS_CHANGES;
+   }
+
    dsp->validated = true;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF(!((ret==HWC2_ERROR_NONE)||(ret==HWC2_ERROR_HAS_CHANGES))||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_VALIDATE_DISPLAY),
       display, getErrorName(ret));
    return ret;
@@ -4271,7 +4418,8 @@ out_error:
 out_signal:
    hwc2_ret_inc(dsp, 1);
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_PRESENT_DISPLAY),
       display, getErrorName(ret));
    return ret;
@@ -4819,7 +4967,7 @@ int hwc2_blit_gpx(
    NEXUS_SurfaceHandle s = NULL;
    NEXUS_SurfaceStatus ds;
    NEXUS_Graphics2DBlitSettings bs;
-   NEXUS_Rect c, p, sa, da, oa, n;
+   NEXUS_Rect c, p, sa, da, oa, n, ct;
    NEXUS_Error rc;
    int blt = 0;
 
@@ -4859,6 +5007,16 @@ int hwc2_blit_gpx(
       /* don't blit anything if we can skip this layer. */
       blt = HWC2_INVALID;
       goto out;
+   }
+
+   if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
+      ct = {(int16_t)0,
+            (int16_t)0,
+            (uint16_t)shared->container.width,
+            (uint16_t)shared->container.height};
+      sa = ct;
+      da = ct;
+      oa = ct;
    }
 
    /* first blit check if we need to seed. */
@@ -5582,10 +5740,13 @@ static void hwc2_setup_ext(
    enum hwc2_cbs_e wcb = hwc2_want_comp_bypass(&settings);
    hwc2_ext_fbs(hwc2, wcb);
    hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
-   NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
-   if (hstatus.connected) {
-      hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
-      hwc2_plm(hwc2->ext, hdmi);
+   if (hdmi) {
+      NEXUS_HdmiOutput_GetStatus(hdmi, &hstatus);
+      if (hstatus.connected) {
+         hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
+         hwc2_eotf(hwc2->ext);
+      }
+      NEXUS_HdmiOutput_Close(hdmi);
    }
    if (hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
       ALOGV("[ext]: initial hotplug CONNECTED\n");
@@ -5722,8 +5883,11 @@ static void hwc2_hp_ntfy(
       }
 
       hdmi = NEXUS_HdmiOutput_Open(0+NEXUS_ALIAS_ID, NULL);
-      hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
-      hwc2_plm(hwc2->ext, hdmi);
+      if (hdmi) {
+         hwc2_hdmi_collect(hwc2->ext, hdmi, &settings);
+         hwc2_eotf(hwc2->ext);
+         NEXUS_HdmiOutput_Close(hdmi);
+      }
    } else /* disconnected */ {
       if (hwc2->ext->u.ext.rhpd &&
           hwc2->regCb[HWC2_CALLBACK_HOTPLUG-1].func != NULL) {
