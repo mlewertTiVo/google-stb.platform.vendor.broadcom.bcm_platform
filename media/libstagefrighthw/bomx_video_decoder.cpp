@@ -2983,6 +2983,13 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 {
                     return BOMX_BERR_TRACE(errCode);
                 }
+                if (!property_get_int32(B_PROPERTY_DTU, 0))
+                {
+                   NEXUS_SimpleVideoDecoderClientSettings videoDecoderClientsettings;
+                   NEXUS_SimpleVideoDecoder_GetClientSettings(m_hSimpleVideoDecoder, &videoDecoderClientsettings);
+                   videoDecoderClientsettings.cache.timeout = 0;
+                   NEXUS_SimpleVideoDecoder_SetClientSettings(m_hSimpleVideoDecoder, &videoDecoderClientsettings);
+                }
                 m_submittedDescriptors = 0;
                 m_completedInputBuffers = 0;
                 errCode = NEXUS_Playpump_Start(m_hPlaypump);
