@@ -19,6 +19,7 @@
 
 #define EIO_BOOT_MAGIC        0x331100BB
 #define EIO_BOOT_NUM_ALT_PART 2
+
 #define EIO_BOOT_SUFFIX_LEN   8
 
 struct eio_boot_slot {
@@ -27,10 +28,13 @@ struct eio_boot_slot {
    int  boot_try;
    int  boot_ok;
    int  boot_fail;
+   int  dmv_corrupt;
+   int  spare[128];
 };
 
 struct eio_boot {
    int    magic;
+   int    version;
    int    current;
    struct eio_boot_slot slot[EIO_BOOT_NUM_ALT_PART];
 };
