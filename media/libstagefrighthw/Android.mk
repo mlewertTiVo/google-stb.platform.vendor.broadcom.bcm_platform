@@ -116,6 +116,7 @@ LOCAL_C_INCLUDES := \
         $(TOP)/frameworks/native/include/utils \
         $(TOP)/frameworks/native/include/ui  \
         $(TOP)/frameworks/av/media/libstagefright \
+        $(TOP)/frameworks/av/media/libstagefright/omx/include \
         $(TOP)/hardware/libhardware/include/hardware \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
