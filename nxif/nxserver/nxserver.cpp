@@ -903,6 +903,7 @@ static nxserver_t init_nxserver(void)
        settings.session[0].dolbyMs = nxserverlib_dolby_ms_type_ms12;
        /* enable unconditionally when using MS12 until needed otherwise. */
        settings.session[0].persistentDecoderSupport = true;
+       settings.audioDecoder.audioDescription = true;
     break;
     default:
     break;
