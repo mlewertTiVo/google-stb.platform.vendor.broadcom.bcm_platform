@@ -1,0 +1,9 @@
+service togplm /vendor/bin/togplm
+   class late_start
+   oneshot
+   group root
+   disabled
+
+on property:dyn.nx.tog.plm=toggle
+   start togplm
+
