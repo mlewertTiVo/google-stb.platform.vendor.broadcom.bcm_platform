@@ -397,8 +397,6 @@ void NxServer::cbHpdAction(hdmi_state state) {
             if (getForcedHdcp() == 0) {
                ALOGW("%s: HDCP disabled by run-time, some features may not work.", __PRETTY_FUNCTION__);
             }
-      } else {
-         settings.hdmiPreferences.hdcp = NxClient_HdcpLevel_eNone;
       }
       if (hdcp != settings.hdmiPreferences.hdcp) {
          update = true;
