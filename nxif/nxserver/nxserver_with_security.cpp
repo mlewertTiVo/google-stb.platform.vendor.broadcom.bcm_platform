@@ -36,6 +36,7 @@
  * ANY LIMITED REMEDY.
  *
  *****************************************************************************/
+#define LOG_TAG "nxserver"
 
 #include "bstd.h"
 #include "berr.h"
@@ -88,6 +89,13 @@ static void wait_for_data_available(void)
              (strncmp(prop, "trigger_restart_framework", state) == 0)) {
             return;
          }
+      } else {
+         state = property_get("ro.crypto.state", prop, NULL);
+         if (state) {
+            if (strncmp(prop, "unsupported", state) == 0) {
+               return;
+            }
+         }
       }
       /* arbitrary wait... */
       BKNI_Sleep(100);
@@ -138,7 +146,7 @@ void alloc_secdma(NEXUS_MemoryBlockHandle *hMemoryBlock, nxserver_t server)
                     fclose(pFile);
                     return;
                 }
-                ALOGV("secdmaPhysicalOffset 0x%" PRIX64 " secdmaMemSize 0x%x", secdmaPhysicalOffset, secdmaMemSize);
+                ALOGI("secdmaPhysicalOffset 0x%" PRIX64 " secdmaMemSize 0x%x", secdmaPhysicalOffset, secdmaMemSize);
                 rc = NEXUS_Security_SetPciERestrictedRange( secdmaPhysicalOffset, (size_t) secdmaMemSize, (unsigned)0 );
                 if (rc != NEXUS_SUCCESS) {
                     ALOGE("NEXUS_Security_SetPciERestrictedRange returned %d", rc);
