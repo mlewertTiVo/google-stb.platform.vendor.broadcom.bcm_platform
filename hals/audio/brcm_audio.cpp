@@ -1468,6 +1468,8 @@ static int bdev_open(const hw_module_t *module, const char *name,
         return -ENOMEM;
     }
 
+    brcm_audio_set_audio_clock_accuracy();
+
     bdev->adev.common.tag = HARDWARE_DEVICE_TAG;
     bdev->adev.common.version = AUDIO_DEVICE_API_VERSION_2_0;
     bdev->adev.common.module = (struct hw_module_t *)module;
