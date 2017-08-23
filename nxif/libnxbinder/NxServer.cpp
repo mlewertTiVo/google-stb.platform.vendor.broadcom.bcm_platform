@@ -397,8 +397,6 @@ void NxServer::cbHpdAction(hdmi_state state) {
             if (getForcedHdcp() == 0) {
                ALOGW("%s: HDCP disabled by run-time, some features may not work.", __PRETTY_FUNCTION__);
             }
-      } else {
-         settings.hdmiPreferences.hdcp = NxClient_HdcpLevel_eNone;
       }
       if (hdcp != settings.hdmiPreferences.hdcp) {
          update = true;
@@ -541,11 +539,15 @@ bool NxServer::getLimitedColorSettings(unsigned &limitedColorDepth,
    }
 
    if (edid.hdmiVsdb.valid && edid.hdmiVsdb.deepColor30bit &&
-      (edid.hdmiVsdb.deepColor36bit || edid.hdmiVsdb.deepColor48bit)
-      && edid.hdmiForumVsdb.deepColor420_30bit) {
-       limitedColorDepth = 10;
-       limitedColorSpace = NEXUS_ColorSpace_eYCbCr420;
-       return true;
+         (edid.hdmiVsdb.deepColor36bit || edid.hdmiVsdb.deepColor48bit)
+         && edid.hdmiForumVsdb.deepColor420_30bit) {
+      limitedColorDepth = 10;
+      limitedColorSpace = NEXUS_ColorSpace_eYCbCr420;
+      return true;
+   } else {
+      limitedColorDepth = 0;
+      limitedColorSpace = NEXUS_ColorSpace_eAuto;
+      return true;
    }
 
    return false;

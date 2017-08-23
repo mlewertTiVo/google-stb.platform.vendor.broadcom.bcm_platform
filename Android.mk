@@ -28,6 +28,7 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/hfrvideo/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/libsmt/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/netcoal/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/togplm/Android.mk
 
 # apk's released.
 BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/apks

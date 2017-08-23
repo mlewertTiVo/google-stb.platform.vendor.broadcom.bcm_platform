@@ -45,6 +45,7 @@ public class BcmCustomizerReceiverBase extends BroadcastReceiver {
 
     private static final String SYSPROP_BOOT_KEY_TWO = "dyn.nx.boot.key2";
     private static final String SYSPROP_BOOT_WAKEUP = "dyn.nx.boot.wakeup";
+    private static final String SYSPROP_TOGGLE_PLM = "dyn.nx.tog.plm";
 
     private static final String TV_SETTING_PACKAGE = "com.android.tv.settings";
     private static final String TV_SETTING_WPS_ACTIVITY = "com.android.tv.settings.connectivity.WpsConnectionActivity";
@@ -128,6 +129,11 @@ public class BcmCustomizerReceiverBase extends BroadcastReceiver {
                         launchNetflix(context);
                     }
                 }
+            } else if (localKeyCode == KeyEvent.KEYCODE_BUTTON_15 &&
+                    localAction == KeyEvent.ACTION_UP) {
+                /* trigger plm toggle demo function. */
+                if (DEBUG) Log.d(TAG, "Got PLM toggle key");
+                SystemProperties.set(SYSPROP_TOGGLE_PLM, "toggle");
             }
         } else if (ACTION_SPLASH_COMPLETED.equals(action)) {
             Log.i(TAG, "Splash completed");
