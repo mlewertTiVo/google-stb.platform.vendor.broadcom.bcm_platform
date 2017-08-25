@@ -136,6 +136,7 @@
 #define NX_HEAP_VIDEO_SECURE           "ro.nx.heap.video_secure"
 #define NX_HEAP_HIGH_MEM               "ro.nx.heap.highmem"
 #define NX_HEAP_DRV_MANAGED            "ro.nx.heap.drv_managed"
+#define NX_HEAP_XRR                    "ro.nx.heap.export"
 #define NX_HEAP_GROW                   "ro.nx.heap.grow"
 #define NX_SVP                         "ro.nx.svp"
 #define NX_SPLASH                      "ro.nx.splash"
@@ -566,11 +567,12 @@ out:
     return;
 }
 
-static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned heapType)
+static int lookup_heap_type(const NEXUS_PlatformSettings *pPlatformSettings, unsigned heapType, bool nullsized = false)
 {
     unsigned i;
     for (i=0;i<NEXUS_MAX_HEAPS;i++) {
-        if (pPlatformSettings->heap[i].size && pPlatformSettings->heap[i].heapType & heapType) return i;
+        if (nullsized && (pPlatformSettings->heap[i].heapType & heapType)) return i;
+        if (!nullsized && pPlatformSettings->heap[i].size && (pPlatformSettings->heap[i].heapType & heapType)) return i;
     }
     return -1;
 }
@@ -992,6 +994,14 @@ static nxserver_t init_nxserver(void)
        int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_COMPRESSED_RESTRICTED_REGION);
        if (strlen(value) && (index != -1)) {
           /* -heap video_secure,XXy */
+          platformSettings.heap[index].size = calc_heap_size(value);
+       }
+    }
+
+    if (property_get(NX_HEAP_XRR, value, NULL)) {
+       int index = lookup_heap_type(&platformSettings, NEXUS_HEAP_TYPE_EXPORT_REGION, true);
+       if (strlen(value) && (index != -1)) {
+          /* -heap export,XXy */
           platformSettings.heap[index].size = calc_heap_size(value);
        }
     }
