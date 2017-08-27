@@ -37,15 +37,21 @@ LOCAL_CFLAGS += $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE := nxlogger
+LOCAL_PROPRIETARY_MODULE := true
+LOCAL_MODULE_CLASS := EXECUTABLES
+
+ifneq ($(BCM_DIST_KNLIMG_BINS),y)
 _nexus.dobuild := $(B_REFSW_OBJ_ROOT_1ST_ARCH)/_nexus.dobuild
 $(_nexus.dobuild): nexus_build
 	echo "forcing nexus build now..."
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(_nexus.dobuild)
 LOCAL_SRC_FILES := nxlogger.cpp
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE := nxlogger
-LOCAL_PROPRIETARY_MODULE := true
-LOCAL_MODULE_CLASS := EXECUTABLES
-
 include $(BUILD_EXECUTABLE)
+else
+LOCAL_PATH :=
+LOCAL_SRC_FILES := ${BINDIST_BIN_DIR_1ST_ARCH}/nxlogger
+include $(BUILD_PREBUILT)
+endif
