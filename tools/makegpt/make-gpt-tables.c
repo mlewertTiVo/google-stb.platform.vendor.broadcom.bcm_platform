@@ -47,6 +47,7 @@ static void Usage(void)
     PRINT( "  -a                  generate alternate GPT table instead\n");
     PRINT( "  -o  outputfile      output file (mandatory)\n");
     PRINT( "  -v  level           turns on verbose mode. 0=off, 1=normal, 2=debug, 3=noisy\n");
+    PRINT( "  -c                  generate c friendly module of the gpt\n");
     PRINT( "  -h                  prints this help\n");
     PRINT( "\n");
     PRINT( "  startaddr can be '-' to guess based on previous startaddr+size.\n");
@@ -72,6 +73,7 @@ int main(int argc, char **argv)
     int arg;
     int verbose = V_NORMAL;
     char fspec[256] = "";
+    char fspec_gen[256] = "";
     efi_legacy_mbr_t pmbr;
     efi_gpt_header_t gpt;
     efi_gpt_header_t agpt;
@@ -85,13 +87,18 @@ int main(int argc, char **argv)
     int part_guess_size[64];
     uint64_t agpt_reserved_size;
     uint64_t size;
+    int cGen = 0;
+    FILE *ifp = NULL;
+    char cspec[256] = "";
+    struct stat ifs;
+    uint8_t one;
 
     memset(&pmbr, 0, sizeof(pmbr));
     memset(&gpt, 0, sizeof(gpt));
     memset(&agpt, 0, sizeof(agpt));
     memset(&zero_pad, 0, sizeof(zero_pad));
 
-    while ((arg = getopt(argc, argv, "b:s:ao:hv:")) != -1)
+    while ((arg = getopt(argc, argv, "b:s:ao:hv:c")) != -1)
     {
         switch (arg)
         {
@@ -101,6 +108,7 @@ int main(int argc, char **argv)
 
             case 'o':
                 strncpy(fspec, optarg, sizeof(fspec) - 1);
+                strncpy(fspec_gen, optarg, sizeof(fspec_gen) - 1);
                 break;
 
             case 'v':
@@ -113,6 +121,10 @@ int main(int argc, char **argv)
 
             case 'b':
                 base_address = (uint64_t) strtoull(optarg, NULL, 0);
+                break;
+
+            case 'c':
+                cGen = 1;
                 break;
 
             case 'h':
@@ -364,5 +376,36 @@ int main(int argc, char **argv)
     }
 
     fclose(ofp);
+
+    strcat(fspec_gen, ".gen.c");
+    ofp = fopen(fspec_gen, "w+");
+    fprintf(ofp, "/* THIS FILE IS AUTO-GENERATED, DO NOT EDIT */\n\n");
+    fprintf(ofp, "#include \"android_types.h\"\n\n");
+    if (cGen)
+    {
+       stat(fspec, &ifs);
+       ifp = fopen(fspec, "r");
+       fprintf(ofp, "const uint32_t gpt_4_blimg_size = %d;\n", ifs.st_size);
+       fprintf(ofp, "const uint8_t  gpt_4_blimg_data[] = {\n");
+       fprintf(ofp, "\t");
+       for (i = 1 ; i <= ifs.st_size ; i++)
+       {
+          fread(&one, sizeof(uint8_t), 1, ifp);
+          fprintf(ofp, "0x%02x,", one);
+          if ((i % 16) == 0)
+          {
+             fprintf(ofp, "\n\t");
+          }
+       }
+       fprintf(ofp, "\n};");
+       fclose(ifp);
+    }
+    else
+    {
+       fprintf(ofp, "const uint32_t gpt_4_blimg_size = 0;\n");
+       fprintf(ofp, "const uint8_t  gpt_4_blimg_data[] = {0x00};");
+    }
+    fclose(ofp);
+
     return 0;
 }
