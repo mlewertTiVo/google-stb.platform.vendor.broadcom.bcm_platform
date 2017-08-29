@@ -14,7 +14,9 @@
 
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
-include $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/pmlib/pmlib.inc
+#include $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/pmlib/pmlib.inc
+PMLIB_DIR    := 314
+PMLIB_CFLAGS := -DPMLIB_VER=$(PMLIB_DIR)
 
 LOCAL_MODULE := libpmlibservice
 
