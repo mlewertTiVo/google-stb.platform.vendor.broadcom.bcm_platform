@@ -40,6 +40,7 @@
 #include "namevalue.inc"
 
 #define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
+#define NX_HD_OUT_OBR                  "ro.nx.vidout.obr" /* obr - order by resolution, as opposed to by framerate. */
 #define NX_HDCP_TOGGLE                 "nx.hdcp.force" /* needs prefixing. */
 #define NX_HD_OUT_COLOR_DEPTH_10B      "ro.nx.colordepth10b.force"
 
@@ -466,7 +467,8 @@ NEXUS_VideoFormat NxServer::forcedOutputFmt(void) {
 NEXUS_VideoFormat NxServer::bestOutputFmt(NEXUS_HdmiOutputStatus *status, NEXUS_DisplayCapabilities *caps) {
    int i;
    NEXUS_VideoFormat format = NEXUS_VideoFormat_eUnknown;
-   NEXUS_VideoFormat ordered_list[] = {
+
+   NEXUS_VideoFormat ordered_res_list[] = {
       NEXUS_VideoFormat_e4096x2160p60hz,
       NEXUS_VideoFormat_e3840x2160p60hz,
       NEXUS_VideoFormat_e4096x2160p50hz,
@@ -494,10 +496,42 @@ NEXUS_VideoFormat NxServer::bestOutputFmt(NEXUS_HdmiOutputStatus *status, NEXUS_
       NEXUS_VideoFormat_eUnknown,
    };
 
-   for (i = 0 ; ordered_list[i] != NEXUS_VideoFormat_eUnknown; i++) {
-      if (status->videoFormatSupported[ordered_list[i]] &&
-          caps->displayFormatSupported[ordered_list[i]]) {
-         format = ordered_list[i];
+   NEXUS_VideoFormat ordered_fps_list[] = {
+      NEXUS_VideoFormat_e4096x2160p60hz,
+      NEXUS_VideoFormat_e3840x2160p60hz,
+      NEXUS_VideoFormat_e4096x2160p50hz,
+      NEXUS_VideoFormat_e3840x2160p50hz,
+      NEXUS_VideoFormat_e1080p,
+      NEXUS_VideoFormat_e1080p50hz,
+      NEXUS_VideoFormat_e720p,
+      NEXUS_VideoFormat_e720p50hz,
+      NEXUS_VideoFormat_e4096x2160p30hz,
+      NEXUS_VideoFormat_e3840x2160p30hz,
+      NEXUS_VideoFormat_e4096x2160p25hz,
+      NEXUS_VideoFormat_e3840x2160p25hz,
+      NEXUS_VideoFormat_e4096x2160p24hz,
+      NEXUS_VideoFormat_e3840x2160p24hz,
+      NEXUS_VideoFormat_e1080p30hz,
+      NEXUS_VideoFormat_e1080p25hz,
+      NEXUS_VideoFormat_e1080p24hz,
+      NEXUS_VideoFormat_e1080i,
+      NEXUS_VideoFormat_e1080i50hz,
+      NEXUS_VideoFormat_e720p30hz,
+      NEXUS_VideoFormat_e720p25hz,
+      NEXUS_VideoFormat_e720p24hz,
+      NEXUS_VideoFormat_ePal,
+      NEXUS_VideoFormat_eSecam,
+      NEXUS_VideoFormat_eUnknown,
+   };
+
+   NEXUS_VideoFormat *ordered_list;
+   ordered_list = property_get_bool(NX_HD_OUT_OBR, 0) ?
+      &ordered_res_list[0] : &ordered_fps_list[0];
+
+   for (i = 0 ; *(ordered_list+i) != NEXUS_VideoFormat_eUnknown; i++) {
+      if (status->videoFormatSupported[*(ordered_list+i)] &&
+          caps->displayFormatSupported[*(ordered_list+i)]) {
+         format = *(ordered_list+i);
          break;
       }
    }
