@@ -13,7 +13,7 @@
 # limitations under the License.
 
 LOCAL_PATH:= $(call my-dir)
-ifneq ($(BCM_DIST_BLIM_BINS),y)
+ifneq ($(BCM_DIST_BLIMG_BINS),y)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := efi_crc32.c efi.c make-gpt-tables.c
