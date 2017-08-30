@@ -143,56 +143,42 @@ struct process_entity {
 
 static struct process_entity key_process_list_vmode[] = {
    {
-      .name = "surfaceflinger",
+      .name = "system/bin/surfaceflinger",
       .thread_keep_filter = NULL,
       .thread_ignore_filter = "Binder",
       .pid = 0,
       .map = surfaceflinger_prio_map,
    },
    {
-      .name = "nxserver",
+      .name = "vendor/bin/nxserver",
       .thread_keep_filter = NULL,
       .thread_ignore_filter = "Binder",
       .pid = 0,
       .map = nxserver_prio_map,
    },
    {
-      .name = "mediacodec",
+      .name = "media.codec",
       .thread_keep_filter = "OMX.broadcom.vi",
       .thread_ignore_filter = NULL,
       .pid = 0,
       .map = mediacodec_prio_map,
    },
    {
-      .name = "mediacodec",
-      .thread_keep_filter = "Binder",
-      .thread_ignore_filter = NULL,
-      .pid = 0,
-      .map = mediacodec_prio_map,
-   },
-   {
-      .name = "mediacodec",
+      .name = "media.codec",
       .thread_keep_filter = "bomx_display",
       .thread_ignore_filter = NULL,
       .pid = 0,
       .map = mediacodec_prio_map,
    },
    {
-      .name = "mediadrmserver",
+      .name = "system/bin/mediadrmserver",
       .thread_keep_filter = "wv_decrypt_thre",
       .thread_ignore_filter = NULL,
       .pid = 0,
       .map = mediadrmserver_prio_map,
    },
    {
-      .name = "mediadrmserver",
-      .thread_keep_filter = "Binder",
-      .thread_ignore_filter = NULL,
-      .pid = 0,
-      .map = mediadrmserver_prio_map,
-   },
-   {
-      .name = "hwcbinder",
+      .name = "vendor/bin/hwcbinder",
       .thread_keep_filter = NULL,
       .thread_ignore_filter = NULL,
       .pid = 0,
@@ -203,42 +189,28 @@ static const int num_key_processes_vmode = sizeof(key_process_list_vmode)/sizeof
 
 static struct process_entity key_process_list_tunneled[] = {
    {
-      .name = "nxserver",
+      .name = "vendor/bin/nxserver",
       .thread_keep_filter = NULL,
       .thread_ignore_filter = "Binder",
       .pid = 0,
       .map = nxserver_prio_map,
    },
    {
-      .name = "mediacodec",
+      .name = "media.codec",
       .thread_keep_filter = "OMX.broadcom.vi",
       .thread_ignore_filter = NULL,
       .pid = 0,
       .map = mediacodec_prio_map,
    },
    {
-      .name = "mediacodec",
-      .thread_keep_filter = "Binder",
-      .thread_ignore_filter = NULL,
-      .pid = 0,
-      .map = mediacodec_prio_map,
-   },
-   {
-      .name = "mediadrmserver",
+      .name = "system/bin/mediadrmserver",
       .thread_keep_filter = "wv_decrypt_thre",
       .thread_ignore_filter = NULL,
       .pid = 0,
       .map = mediadrmserver_prio_map,
    },
    {
-      .name = "mediadrmserver",
-      .thread_keep_filter = "Binder",
-      .thread_ignore_filter = NULL,
-      .pid = 0,
-      .map = mediadrmserver_prio_map,
-   },
-   {
-      .name = "audioserver",
+      .name = "system/bin/audioserver",
       .thread_keep_filter = "AudioOut_",
       .thread_ignore_filter = NULL,
       .pid = 0,
@@ -257,11 +229,38 @@ static ssize_t get_comm_from_pid (pid_t pid, char *comm, int len)
    fd = open(comm_file, O_RDONLY);
    if (fd < 0)
       return fd;
+
+   comm[0] = '\0';
    rc = read(fd, comm, len);
    if (rc >= 0) {
       if (comm[rc - 1] == '\n')
          rc--;
       comm[rc] = '\0';
+   }
+   close(fd);
+   return rc;
+}
+
+static ssize_t get_cmdline_from_pid (pid_t pid, char *cmdline, int len)
+{
+   int fd;
+   int rc = 0;
+   char cmdline_file[MAX_NAME_LEN];
+
+   snprintf(cmdline_file, MAX_NAME_LEN, "/proc/%d/cmdline", pid);
+   fd = open(cmdline_file, O_RDONLY);
+   if (fd < 0)
+      return fd;
+
+   cmdline[0] = '\0';
+   rc = read(fd, cmdline, len);
+   if (rc >= 0) {
+      if (rc < len) {
+         cmdline[rc] = '\0';
+      }
+      else {
+         cmdline[rc-1] = '\0';
+      }
    }
    close(fd);
    return rc;
@@ -352,7 +351,7 @@ static int find_key_processes (struct process_entity *key_process_list, int num_
    DIR *d;
    struct dirent *de;
    pid_t pid;
-   char comm[MAX_NAME_LEN];
+   char cmdline[MAX_NAME_LEN];
    int i, found = 0;
 
    d = opendir("/proc");
@@ -363,13 +362,13 @@ static int find_key_processes (struct process_entity *key_process_list, int num_
 
       if (isdigit(de->d_name[0]) &&
           (pid = (pid_t)strtol(de->d_name, NULL, 10)) &&
-          (get_comm_from_pid(pid, comm, sizeof(comm)) > 0)) {
+          (get_cmdline_from_pid(pid, cmdline, sizeof(cmdline)) > 0)) {
 
          for (i = 0, found = 0; i < num_key_processes; i++) {
             if (key_process_list[i].pid == 0) {
-               if (strncmp (key_process_list[i].name, comm, strlen(key_process_list[i].name)) == 0) {
+               if (strstr (cmdline, key_process_list[i].name) != NULL) {
                   key_process_list[i].pid = pid;
-                  ALOGV("Found %s with pid %d", comm, pid);
+                  ALOGV("Found %s with pid %d", cmdline, pid);
                   find_threads(pid,
                         key_process_list[i].thread_keep_filter,
                         key_process_list[i].thread_ignore_filter,
@@ -401,7 +400,7 @@ static void elevate_priority (struct process_entity *key_process_list, int num_k
    int i, j;
    struct sched_param param;
 
-   memset(&param, sizeof(param), 0);
+   memset(&param, 0, sizeof(param));
    for (i = 0; i < num_key_processes; i++) {
       const int *map = key_process_list[i].map;
       struct thread_entity *threads = key_process_list[i].threads;
@@ -429,7 +428,7 @@ static void restore_priority (struct process_entity *key_process_list, int num_k
    int i, j;
    struct sched_param param;
 
-   memset(&param, sizeof(param), 0);
+   memset(&param, 0, sizeof(param));
    for (i = 0; i < num_key_processes; i++) {
       const int *map = key_process_list[i].map;
       struct thread_entity *threads = key_process_list[i].threads;
