@@ -1,3 +1,19 @@
+ifeq ($(BCM_PAI_BUILD_FROM_SOURCE), n)
+
+LOCAL_PATH:= $(call my-dir)
+include $(CLEAR_VARS)
+LOCAL_MODULE := BcmPlayAutoInstallConfig
+LOCAL_SRC_FILES := bin/BcmPlayAutoInstallConfig.apk
+LOCAL_MODULE_CLASS := APPS
+LOCAL_MODULE_SUFFIX := .apk
+LOCAL_BUILT_MODULE_STEM := package.apk
+LOCAL_MODULE_TARGET_ARCH := arm
+LOCAL_CERTIFICATE := PRESIGNED
+LOCAL_PRIVILEGED_MODULE := true
+include $(BUILD_PREBUILT)
+
+else
+
 LOCAL_MODULE_TAGS := optional
 LOCAL_SDK_VERSION := current
 
@@ -17,3 +33,6 @@ LOCAL_CERTIFICATE := $(BCM_VENDOR_STB_ROOT)/bcm_platform/signing/bcmstb
 
 LOCAL_AAPT_FLAGS += --version-name $(APK_VERSION) --version-code $(APK_VERSION)
 include $(BUILD_PACKAGE)
+
+endif
+
