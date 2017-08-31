@@ -5412,13 +5412,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetExtensionIndex(
                 // Drop out here to reduce spam in logcat
                 return OMX_ErrorUnsupportedIndex;
             }
-            else if ( !m_tunnelMode && ((g_extensions[i].index == OMX_IndexParamDescribeHdrColorInfo)
-                                    ||  (g_extensions[i].index == OMX_IndexParamDescribeColorAspects)) )
-            {
-                ALOGD("Interface %s not supported in non-tunneled mode", g_extensions[i].pName);
-                return OMX_ErrorUnsupportedIndex;
-
-            }
             else if ( !m_secureDecoder && (g_extensions[i].index == OMX_IndexParamAllocNativeHandle) )
             {
                 ALOGD("Interface %s not supported in non secure decoder", g_extensions[i].pName);
@@ -5470,10 +5463,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
 
-        if (!m_tunnelMode)
-        {
-            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-        }
         // Initialize with values provided by the framework (if any)
         if (m_hdrStaticInfoSet)
         {
@@ -5508,10 +5497,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
-        if (!m_tunnelMode)
-        {
-            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-        }
 
         // TODO: Look into implementing this request
         if (pColorAspects->bRequestingDataSpace || pColorAspects->bDataSpaceChanged)
@@ -5531,7 +5516,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
             // overwrite fields obtained from the stream
             ColorAspectsFromNexusStreamInfo(&pColorAspects->sAspects);
             ColorAspects *pAspects = &pColorAspects->sAspects;
-            ALOGV("ColorAspects from stream [(R:%u, P:%u, M:%u, T:%u]",
+            ALOGV("ColorAspects from stream [R:%u, P:%u, M:%u, T:%u]",
                 pAspects->mRange, pAspects->mPrimaries, pAspects->mMatrixCoeffs, pAspects->mTransfer);
         }
 
@@ -5568,10 +5553,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetConfig(
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
 
-        if (!m_tunnelMode)
-        {
-            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-        }
         m_hdrStaticInfo = pHDRStaticInfo->sInfo;
         m_hdrStaticInfoSet = true;
         HDRStaticInfo *sInfo = &m_hdrStaticInfo;
@@ -5592,10 +5573,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetConfig(
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
 
-        if (!m_tunnelMode)
-        {
-            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-        }
         m_colorAspectsSet = true;
         m_colorAspects = pColorAspects->sAspects;
         ALOGD("ColorAspects from framework [R:%u, P:%u, M:%u, T:%u]",
