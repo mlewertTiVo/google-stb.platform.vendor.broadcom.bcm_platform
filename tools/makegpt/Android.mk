@@ -13,6 +13,7 @@
 # limitations under the License.
 
 LOCAL_PATH:= $(call my-dir)
+ifneq ($(BCM_DIST_BLIM_BINS),y)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := efi_crc32.c efi.c make-gpt-tables.c
@@ -34,3 +35,5 @@ LOCAL_REQUIRED_MODULES := makegpt
 LOCAL_ADDITIONAL_DEPENDENCIES := $(_gpt.bin)
 
 include $(BUILD_PHONY_PACKAGE)
+endif
+
