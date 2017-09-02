@@ -1,6 +1,18 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
+ifeq ($(DTCP_IP_SAGE_SUPPORT),y)
+DTCP_ENABLED := y
+$(info Building with DTCP_IP_SAGE_SUPPORT)
+else ifeq ($(DTCP_IP_SUPPORT),y)
+DTCP_ENABLED := y
+$(info Building with DTCP_IP_SUPPORT)
+else
+DTCP_ENABLED := n
+$(warning DTCP_IP_SUPPORT or DTCP_IP_SAGE_SUPPORT not enabled, skipping)
+endif
+
+ifeq ($(DTCP_ENABLED),y)
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/lib/os/include \
@@ -43,3 +55,5 @@ endif
 
 LOCAL_MODULE := libb_dtcp_ip
 include $(BUILD_SHARED_LIBRARY)
+
+endif #ifeq ($(DTCP_ENABLED),y)
