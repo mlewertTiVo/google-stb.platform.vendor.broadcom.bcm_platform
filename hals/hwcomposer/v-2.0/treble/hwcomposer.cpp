@@ -42,8 +42,8 @@
 #include "nxclient.h"
 #include "nxclient_config.h"
 #include "bfifo.h"
-#include "INxHpdEvtSrc.h"
-#include "INxDspEvtSrc.h"
+//#include "INxHpdEvtSrc.h"
+//#include "INxDspEvtSrc.h"
 #include "nexus_platform_client.h"
 #include "nexus_platform.h"
 #include "nexus_display_dynrng.h"
@@ -61,7 +61,7 @@
 #include "nx_ashmem.h"
 /* last but not least... */
 #include "hwcutils.h"
-#include "hwc2.h"
+#include "treble/hwc2.h"
 
 const NEXUS_BlendEquation hwc2_a2n_col_be[4 /*hwc2_blend_mode_t*/] = {
    /* HWC2_BLEND_MODE_INVALID */ {NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
@@ -142,12 +142,12 @@ struct hwc2_bcm_device_t {
 
    pthread_mutex_t      mtx_pwr;
 
-   Hwc2HP_sp            *hp;
-   Hwc2DC_sp            *dc;
+//   Hwc2HP_sp            *hp;
+//   Hwc2DC_sp            *dc;
    HwcBinder_wrap       *hb;
    bool                 con;
 
-   NxWrap               *nxipc;
+   NxWrap               *nxi;
 
    struct hwc2_reg_cb_t regCb[HWC2_MAX_REG_CB];
    struct hwc2_dsp_t    *vd;
@@ -463,23 +463,6 @@ static void hwc2_hdmi_collect(
          dsp->cfgs->hlg = edid.hdrdb.eotfSupported[NEXUS_VideoEotf_eHlg];
       }
    }
-}
-
-status_t Hwc2HP::onHpd(
-   bool connected) {
-
-   if (cb) {
-      cb(cb_data, connected);
-   }
-   return NO_ERROR;
-}
-
-status_t Hwc2DC::onDsp() {
-
-   if (cb) {
-      cb(cb_data);
-   }
-   return NO_ERROR;
 }
 
 void HwcBinder::notify(
@@ -1087,8 +1070,6 @@ static enum hwc2_cbs_e hwc2_want_comp_bypass(
 
    NxClient_GetDisplaySettings(settings);
    switch (settings->format) {
-   case NEXUS_VideoFormat_e1080i:
-   case NEXUS_VideoFormat_e1080i50hz:
    case NEXUS_VideoFormat_e720p:
    case NEXUS_VideoFormat_e720p50hz:
    case NEXUS_VideoFormat_e720p30hz:
@@ -1322,7 +1303,7 @@ static void hwc2_vd_cmp_frame(
       ALOGE("[vd]:[out]:%" PRIu64 ":%" PRIu64 ": invalid dev-shared (obh:%p:dbh:%p)\n",
             dsp->pres, dsp->post, (private_handle_t *)f->otgt, dbh);
       if (dlrc == NEXUS_SUCCESS) {
-         hwc2_mem_unlock(hwc2, dbh);
+         hwc2_mem_lock(hwc2, dbh, &dmap);
          dlrc = NEXUS_NOT_INITIALIZED;
       }
       goto out;
@@ -4583,12 +4564,6 @@ out_error:
 out_signal:
    hwc2_ret_inc(dsp, 1);
 out:
-   cnt = hwc2_cntLyr(dsp);
-   lyr = dsp->lyr;
-   for (frame_size = 0 ; frame_size < cnt ; frame_size++) {
-      lyr->af = HWC2_INVALID;
-      lyr = lyr->next;
-   }
    ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
       "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_PRESENT_DISPLAY),
@@ -4675,6 +4650,7 @@ static void hwc2_bcm_close(
    struct hwc2_lyr_t *lyr, *lyr2 = NULL;
    struct hwc2_dsp_cfg_t *cfg, *cfg2 = NULL;
    size_t num;
+   uint64_t c;
 
    if (hwc2->vd) {
       ALOGW("[hwc2]: removing virtual-display: %" PRIu64 "\n",
@@ -4748,16 +4724,11 @@ static void hwc2_bcm_close(
    pthread_mutex_destroy(&hwc2->mtx_pwr);
    pthread_mutex_destroy(&hwc2->mtx_g2d);
 
-   if (hwc2->hp) {
-      hwc2->nxipc->unregHpdEvt(hwc2->hp->get());
-      delete hwc2->hp;
-   }
-   if (hwc2->dc) {
-      hwc2->nxipc->unregDspEvt(hwc2->dc->get());
-      delete hwc2->dc;
-   }
-   hwc2->nxipc->leave();
-   delete hwc2->nxipc;
+   c = hwc2->nxi->client();
+   hwc2->nxi->regHp(c, NULL, (void *)hwc2);
+   hwc2->nxi->regDc(c, NULL, (void *)hwc2);
+   hwc2->nxi->leave();
+   delete hwc2->nxi;
    if (hwc2->hb) {
       delete hwc2->hb;
    }
@@ -6201,8 +6172,16 @@ static void hwc2_bcm_open(
    NEXUS_Graphics2DOpenSettings g2dOCfg;
    NEXUS_Graphics2DSettings g2dCfg;
    NEXUS_Error rc;
+   uint64_t c;
 
    hwc2_setup_memif(hwc2);
+
+   hwc2->nxi = new NxWrap("hwc2");
+   if (hwc2->nxi == NULL) {
+      LOG_ALWAYS_FATAL("failed to instantiate nexus wrap.");
+      return;
+   }
+   hwc2->nxi->join(hwc2_stdby_mon, (void *)hwc2);
 
    NEXUS_Platform_GetClientConfiguration(&nxCliCfg);
    NEXUS_Heap_GetStatus(NEXUS_Platform_GetFramebufferHeap(0), &status);
@@ -6230,35 +6209,17 @@ static void hwc2_bcm_open(
    pthread_attr_destroy(&attr);
    pthread_setname_np(hwc2->vsync_task, "hwc2_syn");
 
-   hwc2->hp = new Hwc2HP_sp;
-   if (hwc2->hp != NULL) {
-      hwc2->hp->get()->register_notify(&hwc2_hp_ntfy, (void *)hwc2);
-   }
-   hwc2->dc = new Hwc2DC_sp;
-   if (hwc2->dc != NULL) {
-      hwc2->dc->get()->register_notify(&hwc2_dc_ntfy, (void *)hwc2);
-   }
    hwc2->hb = new HwcBinder_wrap;
    if (hwc2->hb != NULL) {
       hwc2->hb->get()->register_notify(&hwc2_hb_ntfy, (void *)hwc2);
    }
 
-   hwc2->nxipc = new NxWrap("hwc2");
-   if (hwc2->nxipc == NULL) {
-      LOG_ALWAYS_FATAL("failed to instantiate nexus wrap.");
-      return;
-   }
-   hwc2->nxipc->join(hwc2_stdby_mon, (void *)hwc2);
-
    hwc2_setup_ext(hwc2);
 
-   if (hwc2->hp) {
-      hwc2->nxipc->regHpdEvt(hwc2->hp->get());
-      hwc2->con = false;
-   }
-   if (hwc2->dc) {
-      hwc2->nxipc->regDspEvt(hwc2->dc->get());
-   }
+   c = hwc2->nxi->client();
+   hwc2->nxi->regHp(c, &hwc2_hp_ntfy, (void *)hwc2);
+   hwc2->con = false;
+   hwc2->nxi->regDc(c, &hwc2_dc_ntfy, (void *)hwc2);
 
    BKNI_CreateEvent(&hwc2->g2dchk);
    NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOCfg);

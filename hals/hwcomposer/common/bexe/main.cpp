@@ -28,13 +28,16 @@ int main( int argc, char** argv )
     (void) argc;
     (void) argv;
 
+#if defined(BCM_FULL_TREBLE)
+    ProcessState::initWithDriver("/dev/vndbinder");
+#endif
+
     // binder threads limit: 3 x video window (max) + 1 hwc.
     ProcessState::self()->setThreadPoolMaxThreadCount(4);
 
     setpriority(PRIO_PROCESS, 0, PRIORITY_URGENT_DISPLAY);
     set_sched_policy(0, SP_FOREGROUND);
 
-    sp<ProcessState> proc(ProcessState::self());
     ProcessState::self()->startThreadPool();
 
     // init and publish the interface.

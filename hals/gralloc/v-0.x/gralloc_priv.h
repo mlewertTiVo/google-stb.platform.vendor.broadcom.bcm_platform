@@ -30,6 +30,7 @@ extern "C" {
 #include <errno.h>
 #include <unistd.h>
 #include <cutils/native_handle.h>
+#include <cutils/atomic.h>
 #include <linux/fb.h>
 #include "nexus_base_mmap.h"
 #include "nexus_video_decoder_types.h"

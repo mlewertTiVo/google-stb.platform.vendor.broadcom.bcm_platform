@@ -1,0 +1,26 @@
+package bcm.hardware.nexus@1.0;
+
+import INexusHpdCb;
+import INexusDspCb;
+
+interface INexus {
+    /**
+     * get nexus client identifier for this user (process).
+     *
+     */
+    client(int32_t pid) generates (uint64_t cId);
+
+    /**
+     * register client cId for hot-plug callback, pass NULL to unregister.
+     *
+     */
+    registerHpdCb(uint64_t cId, INexusHpdCb cb) generates (NexusStatus s);
+
+    /**
+     * register client cId for display event callback, pass NULL to unregister.
+     *
+     */
+    registerDspCb(uint64_t cId, INexusDspCb cb) generates (NexusStatus s);
+};
+
+

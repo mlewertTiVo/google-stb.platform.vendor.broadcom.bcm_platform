@@ -43,6 +43,7 @@
 #include <fcntl.h>
 #include <cutils/log.h>
 #include <cutils/properties.h>
+#include <cutils/atomic.h>
 
 #include "bomx_audio_decoder.h"
 #include "nexus_platform.h"

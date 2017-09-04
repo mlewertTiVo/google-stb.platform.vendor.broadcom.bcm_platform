@@ -18,6 +18,7 @@
 
 #include <utils/Log.h>
 #include <binder/IServiceManager.h>
+#include <binder/ProcessState.h>
 #include "IHwc.h"
 #include "Hwc.h"
 
@@ -40,6 +41,10 @@ uint32_t attempt_count = 0;
 const sp<IHwc>& get_hwc(bool retry)
 {
    Mutex::Autolock _l(gLock);
+
+#if defined(BCM_FULL_TREBLE)
+   ProcessState::initWithDriver("/dev/vndbinder");
+#endif
 
    if (gHwc.get() == 0) {
       attempt_count = 0;
