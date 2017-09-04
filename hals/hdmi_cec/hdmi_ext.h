@@ -39,7 +39,11 @@
 #ifndef _HDMI_EXT__H
 #define _HDMI_EXT__H
 
-#include "nexus_hdmi_cec.h"
+#if defined(BCM_FULL_TREBLE)
+#include "treble/nexus_hdmi_cec.h"
+#else
+#include "legacy/nexus_hdmi_cec.h"
+#endif
 
 extern "C" int hdmi_ext__set(sp<NexusHdmiCecDevice> dev);
 extern "C" int hdmi_ext__cec_viewon();

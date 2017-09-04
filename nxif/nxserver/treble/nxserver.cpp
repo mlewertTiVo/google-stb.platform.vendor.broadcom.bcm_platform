@@ -68,9 +68,6 @@
 #include <semaphore.h>
 #include <linux/watchdog.h>
 
-#include <binder/IPCThreadState.h>
-#include <binder/ProcessState.h>
-
 #include "nxserver.h"
 #include "nxclient.h"
 #include "nxserverlib.h"
@@ -82,8 +79,8 @@
 #include "nexus_watchdog.h"
 
 #include "PmLibService.h"
-#include "NxServer.h"
-#include "nxwrap_common.h"
+#include "nxinexus.h"
+#include <hidl/HidlTransportSupport.h>
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 #define NEXUS_LOGGER_DATA_PATH         "disabled" // Disable logger use of filesystem
@@ -230,7 +227,7 @@ typedef struct {
     } clients[APP_MAX_CLIENTS];
     WDOG_T wdog;
     CATCHER_T sigterm;
-    NxServer *nxb;
+    NexusImpl *nxi;
 } NX_SERVER_T;
 
 static NX_SERVER_T g_app;
@@ -278,21 +275,23 @@ static void nx_wdog_midpoint(void *context, int param)
    }
 }
 
-static void *binder_task(void *argv)
+static void *inexus_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
 
     prctl(PR_SET_NAME, "nxserver.binder");
 
     do {
-       android::ProcessState::self()->startThreadPool();
-       nx_server->nxb = NxServer::instantiate();
+       configureRpcThreadpool(1, true /* callerWillJoin */);
+       nx_server->nxi = new NexusImpl();
+       if (nx_server->nxi != NULL) {
+          ALOGI("nxi: start middleware, register hwservice.");
+          nx_server->nxi->start_middleware();
+          nx_server->nxi->registerAsService();
+       }
        PmLibService::instantiate();
-       android::IPCThreadState::self()->joinThreadPool();
-
+       joinRpcThreadpool();
     } while(nx_server->binder.running);
-
-done:
     return NULL;
 }
 
@@ -348,7 +347,7 @@ static void *sigterm_catcher_task(void *argv)
     prctl(PR_SET_NAME, "nxserver.sigterm");
 
     set_sched_policy(0, SP_BACKGROUND);
-    setpriority(PRIO_PROCESS, 0, ANDROID_PRIORITY_BACKGROUND);
+    setpriority(PRIO_PROCESS, 0, PRIORITY_BACKGROUND);
 
     do
     {
@@ -1353,12 +1352,12 @@ int main(void)
        pthread_attr_destroy(&attr);
     }
 
-    ALOGI("starting binder-ipc.");
-    g_app.binder.running = 1;
+    ALOGI("starting i-nexus.");
     pthread_attr_init(&attr);
+    g_app.binder.running = 1;
     if (pthread_create(&g_app.binder.runner, &attr,
-                       binder_task, (void *)&g_app) != 0) {
-        ALOGE("failed binder start, ignoring...");
+                       inexus_task, (void *)&g_app) != 0) {
+        ALOGE("failed i-nexus start, ignoring...");
         g_app.binder.running = 0;
     }
     pthread_attr_destroy(&attr);
@@ -1428,6 +1427,18 @@ int main(void)
 
     property_set(NX_STATE, "ended");
 
+    if (g_app.nxi != NULL) {
+       g_app.nxi->stop_middleware();
+    }
+    if (g_app.binder.running) {
+       g_app.binder.running = 0;
+       pthread_join(g_app.binder.runner, NULL);
+    }
+    if (g_app.nxi != NULL) {
+       delete g_app.nxi;
+       g_app.nxi = NULL;
+    }
+
     if (g_app.wdog.nx) {
        NEXUS_Watchdog_StopTimer();
        NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
@@ -1451,12 +1462,6 @@ int main(void)
        pthread_join(g_app.proactive_runner.runner, NULL);
     }
     BKNI_DestroyEvent(g_app.proactive_runner.runner_run);
-
-    g_app.nxb->terminate();
-    if (g_app.binder.running) {
-       g_app.binder.running = 0;
-       pthread_join(g_app.binder.runner, NULL);
-    }
 
     if (g_app.sigterm.running) {
        g_app.sigterm.running = 0;

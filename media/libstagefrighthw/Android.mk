@@ -117,13 +117,19 @@ LOCAL_C_INCLUDES := \
         $(TOP)/frameworks/native/include/ui  \
         $(TOP)/frameworks/av/media/libstagefright \
         $(TOP)/hardware/libhardware/include/hardware \
-        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
-        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
-        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc/${HAL_GR_VERSION} \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib \
         $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_C_INCLUDES += \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
+else
+LOCAL_C_INCLUDES += \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
+        $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
+endif
 
 include $(NEXUS_TOP)/nxclient/include/nxclient.inc
 
@@ -136,22 +142,29 @@ LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += -Werror
 
 LOCAL_SHARED_LIBRARIES :=         \
-        libbinder                 \
         libbomx_util              \
         libb_os                   \
         libcutils                 \
         libdl                     \
         libhwcbinder              \
         libnexus                  \
-        libnxwrap                 \
-        libnxbinder               \
-        libnxevtsrc               \
         libnxclient               \
         libstagefright_foundation \
         libstagefright_omx        \
         libui                     \
         libutils                  \
-        liblog
+        liblog                    \
+        libnxwrap                 \
+        libbinder
+
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_SHARED_LIBRARIES += \
+        bcm.hardware.nexus@1.0-impl
+else
+LOCAL_SHARED_LIBRARIES += \
+        libnxbinder \
+        libnxevtsrc
+endif
 
 # encoder has dependencies on nexus
 ifneq ($(HW_ENCODER_SUPPORT),n)

@@ -66,6 +66,9 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libstagefri
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
 LOCAL_C_INCLUDES += $(call include-path-for, audio-utils)
 LOCAL_C_INCLUDES += external/tinyalsa/include
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
+endif
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 include $(BUILD_SHARED_LIBRARY)
@@ -84,8 +87,12 @@ LOCAL_SHARED_LIBRARIES := \
     liblog \
     libutils \
     libmedia \
-    libbinder \
     libaudiopolicymanagerdefault
+
+ifneq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_SHARED_LIBRARIES += \
+    libnxbinder
+endif
 
 LOCAL_C_INCLUDES := \
     external/tinyalsa/include \

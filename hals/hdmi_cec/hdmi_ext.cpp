@@ -37,7 +37,11 @@
  *
  *****************************************************************************/
 
-#include "nexus_hdmi_cec.h"
+#if defined(BCM_FULL_TREBLE)
+#include "treble/nexus_hdmi_cec.h"
+#else
+#include "legacy/nexus_hdmi_cec.h"
+#endif
 
 using namespace android;
 sp<NexusHdmiCecDevice> device;
