@@ -136,6 +136,8 @@
 
 using namespace android;
 
+static volatile int32_t g_clearDecActive = 0;
+
 #if defined(HW_HVD_REVISION__GT_OR_EQ__S)
 static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
                                                        {"video_decoder.avc", OMX_VIDEO_CodingAVC},
@@ -1361,6 +1363,37 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         }
     }
 
+    if (property_get_int32(B_PROPERTY_DTU, 0))
+    {
+        // guaranteed by the dtu.
+        m_secureRuntimeHeaps = m_secureDecoder;
+    }
+    else
+    {
+        if ( m_secureDecoder && android_atomic_acquire_load(&g_clearDecActive) )
+        {
+            ALOGW("Unable to set up runtime heap while decoder still active");
+            this->Invalidate(OMX_ErrorUndefined);
+            return;
+        }
+
+        if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))
+        {
+            BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
+            // failed, so forced to assume picture buffer heaps are secured.
+            m_secureRuntimeHeaps = true;
+        }
+        else
+        {
+            m_secureRuntimeHeaps = m_secureDecoder;
+        }
+
+        if ( !m_secureRuntimeHeaps )
+        {
+            android_atomic_release_store(1, &g_clearDecActive);
+        }
+    }
+
     NxClient_AllocSettings nxAllocSettings;
     NxClient_GetDefaultAllocSettings(&nxAllocSettings);
     nxAllocSettings.simpleVideoDecoder = 1;
@@ -1372,7 +1405,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         this->Invalidate(OMX_ErrorInsufficientResources);
         return;
     }
-
 
     NEXUS_VideoFormatInfo videoInfo;
     NEXUS_VideoDecoderCapabilities caps;
@@ -1443,25 +1475,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
 
     m_showDestripeDelay = property_get_int32(B_PROPERTY_SHOW_DESTRIPE_DELAY, 0);
-
-    if (property_get_int32(B_PROPERTY_DTU, 0))
-    {
-       // guaranteed by the dtu.
-       m_secureRuntimeHeaps = m_secureDecoder;
-    }
-    else
-    {
-       if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))
-       {
-          BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
-          // failed, so forced to assume picture buffer heaps are secured.
-          m_secureRuntimeHeaps = true;
-       }
-       else
-       {
-          m_secureRuntimeHeaps = m_secureDecoder;
-       }
-    }
 
     // Initialize video window to full screen
     NEXUS_SurfaceClientSettings videoClientSettings;
@@ -1900,6 +1913,11 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         native_handle_delete(m_pTunnelNativeHandle);
         m_pTunnelNativeHandle = NULL;
+    }
+
+    if ( !m_secureRuntimeHeaps && android_atomic_acquire_load(&g_clearDecActive) )
+    {
+        android_atomic_release_store(0, &g_clearDecActive);
     }
 
     BOMX_VIDEO_STATS_RESET;
