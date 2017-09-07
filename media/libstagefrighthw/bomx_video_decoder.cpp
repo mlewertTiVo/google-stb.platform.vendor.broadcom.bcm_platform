@@ -70,6 +70,7 @@
                                                                     //    storing the captures.
 #define B_PROPERTY_ENABLE_METADATA ("media.brcm.vdec_enable_metadata")
 #define B_PROPERTY_TUNNELED_HFRVIDEO ("media.brcm.vdec_hfrvideo_tunnel")
+#define B_PROPERTY_SHOW_DESTRIPE_DELAY ("media.brcm.vdec_show_destripe_delay")
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
 #define B_PROPERTY_SVP ("ro.nx.svp")
 #define B_PROPERTY_COALESCE ("dyn.nx.netcoal.set")
@@ -115,6 +116,11 @@
 #define B_FR_EST_STABLE_DELTA_THRESHOLD (2000)          // in micro-seconds
 
 #define B_YV12_ALIGNMENT (16)
+
+// Allow QHD for 360 video
+#define B_SKIP_DESTRIPE_WIDTH       (2560)
+#define B_SKIP_DESTRIPE_HEIGHT      (1440)
+#define B_SKIP_DESTRIPE_FRAMERATE   (30.0)
 
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
@@ -1114,6 +1120,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_allocNativeHandle(secure),
     m_tunnelMode(tunnel),
     m_tunnelHfr(false),
+    m_showDestripeDelay(0),
     m_pTunnelNativeHandle(NULL),
     m_tunnelCurrentPts(0),
     m_waitingForStc(false),
@@ -1434,6 +1441,8 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         this->Invalidate(OMX_ErrorUndefined);
         return;
     }
+
+    m_showDestripeDelay = property_get_int32(B_PROPERTY_SHOW_DESTRIPE_DELAY, 0);
 
     if (property_get_int32(B_PROPERTY_DTU, 0))
     {
@@ -5991,10 +6000,17 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                          ( pInfo->type != BOMX_VideoDecoderOutputBufferType_eMetadata ||
                            ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX) ) )
                     {
-                        pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&(pBuffer->frameStatus.surfaceCreateSettings));
-                        if ( NULL == pBuffer->hStripedSurface )
+                        // Skip destriping frames with resolution beyond QHD at HFR
+                        if ( !(pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata &&
+                               pBuffer->frameStatus.surfaceCreateSettings.imageWidth > B_SKIP_DESTRIPE_WIDTH &&
+                               pBuffer->frameStatus.surfaceCreateSettings.imageHeight > B_SKIP_DESTRIPE_HEIGHT &&
+                               BOMX_NexusFramerateValue(m_frameRate) > B_SKIP_DESTRIPE_FRAMERATE) )
                         {
-                            (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
+                            pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&(pBuffer->frameStatus.surfaceCreateSettings));
+                            if ( NULL == pBuffer->hStripedSurface )
+                            {
+                                (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
+                            }
                         }
                     }
 
@@ -6127,9 +6143,13 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     }
                                     else
                                     {
+                                        nsecs_t tStart;
+                                        if (m_showDestripeDelay) { tStart = systemTime(SYSTEM_TIME_MONOTONIC); }
                                         Unlock();
                                         OMX_ERRORTYPE res = DestripeToYV12(pSharedData, pBuffer->hStripedSurface);
                                         Lock();
+                                        if (m_showDestripeDelay) { ALOGI("%lux%lu took %dms", pBuffer->frameStatus.surfaceCreateSettings.imageWidth, pBuffer->frameStatus.surfaceCreateSettings.imageHeight, toMillisecondTimeoutDelay(tStart, systemTime(SYSTEM_TIME_MONOTONIC))); }
+
                                         if ( res != OMX_ErrorNone )
                                         {
                                             ALOGE("Unable to destripe to YV12 - %d", res);
