@@ -5371,7 +5371,7 @@ static void hwc2_ext_cmp_frame(
             }
             uint32_t color = (a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b);
             if ((color != HWC2_TRS) &&
-                   ((!c && (color == HWC2_OPQ)) /* background seeding. */
+                   ((!c && (color == HWC2_OPQ) && !f->scnt) /* background seeding. */
                  || (c && (color != HWC2_OPQ))) /* shading. */
                ) {
                hwc2_fill_blend(hwc2, d, color, lyr->bm);

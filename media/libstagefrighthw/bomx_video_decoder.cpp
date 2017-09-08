@@ -70,6 +70,7 @@
                                                                     //    storing the captures.
 #define B_PROPERTY_ENABLE_METADATA ("media.brcm.vdec_enable_metadata")
 #define B_PROPERTY_TUNNELED_HFRVIDEO ("media.brcm.vdec_hfrvideo_tunnel")
+#define B_PROPERTY_SHOW_DESTRIPE_DELAY ("media.brcm.vdec_show_destripe_delay")
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
 #define B_PROPERTY_SVP ("ro.nx.svp")
 #define B_PROPERTY_COALESCE ("dyn.nx.netcoal.set")
@@ -116,6 +117,11 @@
 
 #define B_YV12_ALIGNMENT (16)
 
+// Allow QHD for 360 video
+#define B_SKIP_DESTRIPE_WIDTH       (2560)
+#define B_SKIP_DESTRIPE_HEIGHT      (1440)
+#define B_SKIP_DESTRIPE_FRAMERATE   (30.0)
+
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
 #define OMX_IndexParamStoreMetaDataInBuffers                 0x7F000003
@@ -129,6 +135,8 @@
 #define OMX_IndexParamAllocNativeHandle                      0x7F00000B
 
 using namespace android;
+
+static volatile int32_t g_clearDecActive = 0;
 
 #if defined(HW_HVD_REVISION__GT_OR_EQ__S)
 static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
@@ -1114,6 +1122,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_allocNativeHandle(secure),
     m_tunnelMode(tunnel),
     m_tunnelHfr(false),
+    m_showDestripeDelay(0),
     m_pTunnelNativeHandle(NULL),
     m_tunnelCurrentPts(0),
     m_waitingForStc(false),
@@ -1354,6 +1363,37 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         }
     }
 
+    if (property_get_int32(B_PROPERTY_DTU, 0))
+    {
+        // guaranteed by the dtu.
+        m_secureRuntimeHeaps = m_secureDecoder;
+    }
+    else
+    {
+        if ( m_secureDecoder && android_atomic_acquire_load(&g_clearDecActive) )
+        {
+            ALOGW("Unable to set up runtime heap while decoder still active");
+            this->Invalidate(OMX_ErrorUndefined);
+            return;
+        }
+
+        if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))
+        {
+            BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
+            // failed, so forced to assume picture buffer heaps are secured.
+            m_secureRuntimeHeaps = true;
+        }
+        else
+        {
+            m_secureRuntimeHeaps = m_secureDecoder;
+        }
+
+        if ( !m_secureRuntimeHeaps )
+        {
+            android_atomic_release_store(1, &g_clearDecActive);
+        }
+    }
+
     NxClient_AllocSettings nxAllocSettings;
     NxClient_GetDefaultAllocSettings(&nxAllocSettings);
     nxAllocSettings.simpleVideoDecoder = 1;
@@ -1365,7 +1405,6 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         this->Invalidate(OMX_ErrorInsufficientResources);
         return;
     }
-
 
     NEXUS_VideoFormatInfo videoInfo;
     NEXUS_VideoDecoderCapabilities caps;
@@ -1435,24 +1474,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
         return;
     }
 
-    if (property_get_int32(B_PROPERTY_DTU, 0))
-    {
-       // guaranteed by the dtu.
-       m_secureRuntimeHeaps = m_secureDecoder;
-    }
-    else
-    {
-       if (!BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, m_secureDecoder))
-       {
-          BOMX_VideoDecoder_SetupRuntimeHeaps(m_secureDecoder, true);
-          // failed, so forced to assume picture buffer heaps are secured.
-          m_secureRuntimeHeaps = true;
-       }
-       else
-       {
-          m_secureRuntimeHeaps = m_secureDecoder;
-       }
-    }
+    m_showDestripeDelay = property_get_int32(B_PROPERTY_SHOW_DESTRIPE_DELAY, 0);
 
     // Initialize video window to full screen
     NEXUS_SurfaceClientSettings videoClientSettings;
@@ -1891,6 +1913,11 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
     {
         native_handle_delete(m_pTunnelNativeHandle);
         m_pTunnelNativeHandle = NULL;
+    }
+
+    if ( !m_secureRuntimeHeaps && android_atomic_acquire_load(&g_clearDecActive) )
+    {
+        android_atomic_release_store(0, &g_clearDecActive);
     }
 
     BOMX_VIDEO_STATS_RESET;
@@ -5991,10 +6018,17 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                          ( pInfo->type != BOMX_VideoDecoderOutputBufferType_eMetadata ||
                            ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX) ) )
                     {
-                        pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&(pBuffer->frameStatus.surfaceCreateSettings));
-                        if ( NULL == pBuffer->hStripedSurface )
+                        // Skip destriping frames with resolution beyond QHD at HFR
+                        if ( !(pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata &&
+                               pBuffer->frameStatus.surfaceCreateSettings.imageWidth > B_SKIP_DESTRIPE_WIDTH &&
+                               pBuffer->frameStatus.surfaceCreateSettings.imageHeight > B_SKIP_DESTRIPE_HEIGHT &&
+                               BOMX_NexusFramerateValue(m_frameRate) > B_SKIP_DESTRIPE_FRAMERATE) )
                         {
-                            (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
+                            pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&(pBuffer->frameStatus.surfaceCreateSettings));
+                            if ( NULL == pBuffer->hStripedSurface )
+                            {
+                                (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
+                            }
                         }
                     }
 
@@ -6127,9 +6161,13 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     }
                                     else
                                     {
+                                        nsecs_t tStart;
+                                        if (m_showDestripeDelay) { tStart = systemTime(SYSTEM_TIME_MONOTONIC); }
                                         Unlock();
                                         OMX_ERRORTYPE res = DestripeToYV12(pSharedData, pBuffer->hStripedSurface);
                                         Lock();
+                                        if (m_showDestripeDelay) { ALOGI("%lux%lu took %dms", pBuffer->frameStatus.surfaceCreateSettings.imageWidth, pBuffer->frameStatus.surfaceCreateSettings.imageHeight, toMillisecondTimeoutDelay(tStart, systemTime(SYSTEM_TIME_MONOTONIC))); }
+
                                         if ( res != OMX_ErrorNone )
                                         {
                                             ALOGE("Unable to destripe to YV12 - %d", res);
