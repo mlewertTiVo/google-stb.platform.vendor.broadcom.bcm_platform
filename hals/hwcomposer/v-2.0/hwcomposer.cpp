@@ -5381,33 +5381,42 @@ static void hwc2_ext_cmp_frame(
       /* ... make sure we seed background. */
       if (!c && (dsp->u.ext.bg == HWC2_OPQ)) {
          hwc2_fb_seed(hwc2, d, HWC2_TRS);
+         dsp->u.ext.bg = HWC2_TRS;
          hwc2_chkpt(hwc2);
          ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                   "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
                   dsp->pres, dsp->post, "transparent");
          c++;
-      /* ... need to punch alpha hole for pip? */
-      } else if ((c > 1) &&
-                 hwc2_enabled(hwc2_tweak_pip_alpha_hole) &&
-                 (pah.width && pah.height)) {
-         hwc2_pah(hwc2, d, &pah);
-         hwc2_chkpt(hwc2);
-         ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
-                  "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ":@{%d,%d,%dx%d}\n",
-                  dsp->pres, dsp->post, pah.x, pah.y, pah.width, pah.height);
+      } else {
+         /* ... cannot assume composition preserved background. */
+         if (c) {
+            dsp->u.ext.bg = HWC2_OPQ;
+         }
+         /* ... need to punch alpha hole for pip? */
+         if ((c > 1) &&
+              hwc2_enabled(hwc2_tweak_pip_alpha_hole) &&
+              (pah.width && pah.height)) {
+            hwc2_pah(hwc2, d, &pah);
+            hwc2_chkpt(hwc2);
+            ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
+                     "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ":@{%d,%d,%dx%d}\n",
+                     dsp->pres, dsp->post, pah.x, pah.y, pah.width, pah.height);
+         }
       }
+   } else {
+      dsp->u.ext.bg = HWC2_OPQ;
    }
 
    if (c > 0) {
       /* [v]. push composition to display. */
       nx = NEXUS_SurfaceClient_PushSurface(hwc2->ext->u.ext.sch, d, NULL, false);
       if (nx) {
+         dsp->u.ext.bg = HWC2_OPQ;
          hwc2_ext_fb_put(hwc2, d);
          /* should this be fatal? */
          ALOGE("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":push to display FAILED (%d)!\n",
                dsp->pres, dsp->post, nx);
       } else {
-         dsp->u.ext.bg = (f->vcnt || f->scnt) ? HWC2_TRS : HWC2_OPQ;
          ALOGI_IF((dsp->lm & LOG_COMP_SUM_DEBUG),
                   "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":%zu layer%scomposed\n",
                   dsp->pres, dsp->post, c, c>1?"s ":" ");
