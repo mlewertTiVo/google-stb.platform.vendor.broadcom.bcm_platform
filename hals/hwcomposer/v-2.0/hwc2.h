@@ -78,6 +78,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_MEMIF_DEV  "ro.nexus.ashmem.devname"
 #define HWC2_PAH        1
 #define HWC2_PAH_DIV    4
+#define HWC2_SYNC_TO    3500 /* slightly more than android timeout. */
 
 /* timeline creation/destruction are expensive operations; we use
  * a pool which recycles yet keeps sufficient depth to allow layers
