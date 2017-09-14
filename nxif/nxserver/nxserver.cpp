@@ -169,6 +169,8 @@
 #define NX_TRIM_VP9                    "ro.nx.trim.vp9"
 #define NX_TRIM_4KDEC                  "ro.nx.trim.4kdec"
 #define NX_TRIM_10BCOL                 "ro.nx.trim.10bcol"
+#define NX_TRIM_DCAP                   "ro.nx.trim.dcap"
+#define NX_TRIM_D0HD                   "ro.nx.trim.d0hd"
 
 #define NX_HWC2_FBCOMP                 "ro.nx.hwc2.tweak.fbcomp"
 
@@ -601,6 +603,14 @@ static int lookup_heap_memory_type(const NEXUS_PlatformSettings *pPlatformSettin
 
 static void pre_trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings, bool cvbs)
 {
+   char value[PROPERTY_VALUE_MAX];
+
+   if (property_get(NX_TRIM_D0HD, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         pMemConfigSettings->display[0].maxFormat = NEXUS_VideoFormat_e1080p;
+      }
+   }
+
    if (!cvbs) {
       pMemConfigSettings->display[1].maxFormat = NEXUS_VideoFormat_eUnknown;
    }
@@ -627,7 +637,7 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
    /* 1. encoder configuration. */
    trim_encoder_mem_config(pMemConfigSettings);
 
-   /* 2. additional display(s). */
+   /* 2.a. additional display(s) (but display 0). */
    if (property_get(NX_TRIM_DISP, value, NX_PROP_ENABLED)) {
       if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
          /* start index -> 1 */
@@ -660,6 +670,13 @@ static void trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSetting
                }
             }
          }
+      }
+   }
+   /* 2.b. further reduce display 0. */
+   if (property_get(NX_TRIM_DCAP, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         pMemConfigSettings->display[0].window[0].capture = false;
+         pMemConfigSettings->display[0].window[1].used = false;
       }
    }
 
