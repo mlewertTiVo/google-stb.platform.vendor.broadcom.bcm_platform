@@ -353,6 +353,7 @@ struct hwc2_ext_t {
    uint32_t                            bg;
    bool                                gles;
    struct hwc2_fb_t                    yvi;
+   struct hwc2_fb_t                    icb;
 };
 
 enum hwc2_record_dump_e {
