@@ -88,6 +88,21 @@ const NEXUS_BlendEquation hwc2_a2n_al_be[4 /*hwc2_blend_mode_t*/] = {
                                    NEXUS_BlendFactor_eZero}
 };
 
+const NEXUS_BlendEquation hwc2_a2n_fal_be[4 /*hwc2_blend_mode_t*/] = {
+   /* HWC2_BLEND_MODE_INVALID */ {NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
+                                  NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
+                                  NEXUS_BlendFactor_eZero},
+   /* HWC2_BLEND_MODE_NONE */ {NEXUS_BlendFactor_eConstantAlpha, NEXUS_BlendFactor_eOne, false,
+                               NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
+                               NEXUS_BlendFactor_eZero},
+   /* HWC2_BLEND_MODE_PREMULTIPLIED */ {NEXUS_BlendFactor_eConstantAlpha, NEXUS_BlendFactor_eOne, false,
+                                        NEXUS_BlendFactor_eDestinationAlpha, NEXUS_BlendFactor_eInverseConstantAlpha, false,
+                                        NEXUS_BlendFactor_eZero},
+   /* HWC2_BLEND_MODE_COVERAGE */ {NEXUS_BlendFactor_eConstantAlpha, NEXUS_BlendFactor_eOne, false,
+                                   NEXUS_BlendFactor_eSourceAlpha, NEXUS_BlendFactor_eInverseConstantAlpha, false,
+                                   NEXUS_BlendFactor_eZero}
+};
+
 struct hwc2_bcm_device_t {
    hwc2_device_t        base;
    uint32_t             magic;
@@ -860,6 +875,8 @@ static enum hwc2_cbs_e hwc2_want_comp_bypass(
    case NEXUS_VideoFormat_eVesa800x600p60hz:
    case NEXUS_VideoFormat_eVesa1024x768p60hz:
    case NEXUS_VideoFormat_eVesa1280x768p60hz:
+   case NEXUS_VideoFormat_e480p:
+   case NEXUS_VideoFormat_e576p:
       return hwc2_cbs_e::cbs_e_nscfb;
    break;
    default:
@@ -1006,7 +1023,8 @@ static void hwc2_lyr_tl_inc(
 static void hwc2_fill_blend(
    struct hwc2_bcm_device_t* hwc2,
    NEXUS_SurfaceHandle s,
-   uint32_t color) {
+   uint32_t color,
+   hwc2_blend_mode_t bm) {
    NEXUS_Error rc;
    if (s) {
       NEXUS_Graphics2DFillSettings fs;
@@ -1014,7 +1032,8 @@ static void hwc2_fill_blend(
       fs.surface = s;
       fs.color   = color;
       fs.colorOp = NEXUS_FillOp_eBlend;
-      fs.alphaOp = NEXUS_FillOp_eIgnore;
+      fs.alphaOp        = NEXUS_FillOp_eUseBlendEquation;
+      fs.alphaBlend     = (bm == HWC2_BLEND_MODE_INVALID) ? hwc2_a2n_fal_be[HWC2_BLEND_MODE_NONE] : hwc2_a2n_fal_be[bm];
       if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
          return;
       }
@@ -1146,8 +1165,11 @@ static void hwc2_vd_cmp_frame(
                a = (uint8_t)al;
             }
             uint32_t color = (a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b);
-            if ((color != HWC2_TRS) && ((color != HWC2_OPQ) || (c > 0))) {
-               hwc2_fill_blend(hwc2, d, color);
+            if ((color != HWC2_TRS) &&
+                   ((!c && (color == HWC2_OPQ)) /* background seeding. */
+                 || (c && (color != HWC2_OPQ))) /* shading. */
+               ) {
+               hwc2_fill_blend(hwc2, d, color, lyr->bm);
                hwc2_chkpt(hwc2);
                /* [iii]. count of composed layers. */
                c++;
@@ -5175,8 +5197,11 @@ static void hwc2_ext_cmp_frame(
                a = (uint8_t)al;
             }
             uint32_t color = (a<<24 | lyr->sc.r<<16 | lyr->sc.g<<8 | lyr->sc.b);
-            if ((color != HWC2_TRS) && ((color != HWC2_OPQ) || (c > 0))) {
-               hwc2_fill_blend(hwc2, d, color);
+            if ((color != HWC2_TRS) &&
+                   ((!c && (color == HWC2_OPQ)) /* background seeding. */
+                 || (c && (color != HWC2_OPQ))) /* shading. */
+               ) {
+               hwc2_fill_blend(hwc2, d, color, lyr->bm);
                hwc2_chkpt(hwc2);
                /* [iv]. count of composed layers. */
                ms = hwc2_seeding_none;
@@ -5312,6 +5337,19 @@ static void hwc2_ext_cmp_frame(
          }
       break;
       case HWC2_COMPOSITION_SIDEBAND:
+         if (hwc2_enabled(hwc2_tweak_pip_alpha_hole)) {
+            if ((uint16_t)(lyr->fr.right - lyr->fr.left) <= dsp->aCfg->w/HWC2_PAH_DIV &&
+                (uint16_t)(lyr->fr.bottom - lyr->fr.top) <= dsp->aCfg->h/HWC2_PAH_DIV) {
+               pah = {(int16_t)lyr->fr.left,
+                      (int16_t)lyr->fr.top,
+                      (uint16_t)(lyr->fr.right - lyr->fr.left),
+                      (uint16_t)(lyr->fr.bottom - lyr->fr.top)};
+               ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
+                        "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ": below threshold (%dx%d)\n",
+                        dsp->pres, dsp->post, dsp->aCfg->w/HWC2_PAH_DIV, dsp->aCfg->h/HWC2_PAH_DIV);
+            }
+         }
+
          if (hwc2->hb) {
             hwc2_sdb(hwc2, lyr, dsp);
             ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
@@ -5343,33 +5381,42 @@ static void hwc2_ext_cmp_frame(
       /* ... make sure we seed background. */
       if (!c && (dsp->u.ext.bg == HWC2_OPQ)) {
          hwc2_fb_seed(hwc2, d, HWC2_TRS);
+         dsp->u.ext.bg = HWC2_TRS;
          hwc2_chkpt(hwc2);
          ALOGI_IF((dsp->lm & LOG_COMP_DEBUG),
                   "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": seed (%s)\n",
                   dsp->pres, dsp->post, "transparent");
          c++;
-      /* ... need to punch alpha hole for pip? */
-      } else if ((c > 1) &&
-                 hwc2_enabled(hwc2_tweak_pip_alpha_hole) &&
-                 (pah.width && pah.height)) {
-         hwc2_pah(hwc2, d, &pah);
-         hwc2_chkpt(hwc2);
-         ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
-                  "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ":@{%d,%d,%dx%d}\n",
-                  dsp->pres, dsp->post, pah.x, pah.y, pah.width, pah.height);
+      } else {
+         /* ... cannot assume composition preserved background. */
+         if (c) {
+            dsp->u.ext.bg = HWC2_OPQ;
+         }
+         /* ... need to punch alpha hole for pip? */
+         if ((c > 1) &&
+              hwc2_enabled(hwc2_tweak_pip_alpha_hole) &&
+              (pah.width && pah.height)) {
+            hwc2_pah(hwc2, d, &pah);
+            hwc2_chkpt(hwc2);
+            ALOGI_IF((dsp->lm & LOG_PAH_DEBUG),
+                     "[ext]:[pip-alpha-hole]:%" PRIu64 ":%" PRIu64 ":@{%d,%d,%dx%d}\n",
+                     dsp->pres, dsp->post, pah.x, pah.y, pah.width, pah.height);
+         }
       }
+   } else {
+      dsp->u.ext.bg = HWC2_OPQ;
    }
 
    if (c > 0) {
       /* [v]. push composition to display. */
       nx = NEXUS_SurfaceClient_PushSurface(hwc2->ext->u.ext.sch, d, NULL, false);
       if (nx) {
+         dsp->u.ext.bg = HWC2_OPQ;
          hwc2_ext_fb_put(hwc2, d);
          /* should this be fatal? */
          ALOGE("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":push to display FAILED (%d)!\n",
                dsp->pres, dsp->post, nx);
       } else {
-         dsp->u.ext.bg = (f->vcnt || f->scnt) ? HWC2_TRS : HWC2_OPQ;
          ALOGI_IF((dsp->lm & LOG_COMP_SUM_DEBUG),
                   "[ext]:[frame]:%" PRIu64 ":%" PRIu64 ":%zu layer%scomposed\n",
                   dsp->pres, dsp->post, c, c>1?"s ":" ");

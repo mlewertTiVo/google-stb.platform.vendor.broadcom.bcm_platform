@@ -294,6 +294,11 @@ protected:
     unsigned m_AvailInputBuffers;
     NEXUS_VideoFrameRate m_frameRate;
 
+    bool m_frEstimated;
+    unsigned m_frStableCount;
+    OMX_TICKS m_deltaUs;
+    OMX_TICKS m_lastTsUs;
+
     NexusIPCClientBase              *m_pIpcClient;
     uint64_t                         m_nexusClient;
     NxClient_AllocResults            m_allocResults;
@@ -459,6 +464,10 @@ protected:
     void InputBufferCounterReset();
     uint32_t ReturnInputBuffers(OMX_TICKS decodeTs, InputReturnMode mode);
     bool ReturnInputPortBuffer(BOMX_Buffer *pBuffer);
+
+    // These functions are used for frame rate estimation
+    void ResetEstimation();
+    void EstimateFrameRate(OMX_TICKS tsUs);
 
     // The functions below allow derived classes to override them
     virtual NEXUS_Error AllocateInputBuffer(uint32_t nSize, void*& pBuffer);

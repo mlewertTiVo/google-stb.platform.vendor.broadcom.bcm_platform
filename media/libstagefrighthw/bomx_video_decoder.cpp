@@ -106,6 +106,10 @@
 *****************************************************************************/
 #define B_MAX_DESCRIPTORS_PER_BUFFER(buffer_size) (4+1+(2*((buffer_size)/(B_MAX_PES_PACKET_LENGTH-(B_PES_HEADER_LENGTH_WITHOUT_PTS-B_PES_HEADER_START_BYTES)))))
 
+#define B_TIMESTAMP_INVALID (-1)
+#define B_FR_EST_NUM_STABLE_DELTA_NEEDED (8)
+#define B_FR_EST_STABLE_DELTA_THRESHOLD (2000)          // in micro-seconds
+
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
 #define OMX_IndexParamStoreMetaDataInBuffers                 0x7F000003
@@ -134,27 +138,36 @@ static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", O
 
 static const unsigned g_numDefaultRoles = sizeof(g_defaultRoles)/sizeof(BOMX_VideoDecoderRole);
 
-struct BOMX_VideoDecodeFrameInterval
+struct BOMX_VideoFrameRateInfo
 {
     NEXUS_VideoFrameRate rate;
+    const char *str;
     int interval;
 };
-static const BOMX_VideoDecodeFrameInterval g_inFrameIntervals[] = {{NEXUS_VideoFrameRate_eUnknown,  17},    // Worst case
-                                                                   {NEXUS_VideoFrameRate_e23_976,   42},
-                                                                   {NEXUS_VideoFrameRate_e24,       42},
-                                                                   {NEXUS_VideoFrameRate_e25,       40},
-                                                                   {NEXUS_VideoFrameRate_e29_97,    34},
-                                                                   {NEXUS_VideoFrameRate_e30,       34},
-                                                                   {NEXUS_VideoFrameRate_e50,       20},
-                                                                   {NEXUS_VideoFrameRate_e59_94,    17},
-                                                                   {NEXUS_VideoFrameRate_e60,       17},
-                                                                   {NEXUS_VideoFrameRate_e14_985,   67},
-                                                                   {NEXUS_VideoFrameRate_e7_493,    134},
-                                                                   {NEXUS_VideoFrameRate_e10,       100},
-                                                                   {NEXUS_VideoFrameRate_e15,       67},
-                                                                   {NEXUS_VideoFrameRate_e20,       50},
-                                                                   {NEXUS_VideoFrameRate_e12_5,     80}};
-static const unsigned g_numInFrameIntervals = sizeof(g_inFrameIntervals)/sizeof(BOMX_VideoDecodeFrameInterval);
+static const BOMX_VideoFrameRateInfo g_frameRateInfo[] = {{NEXUS_VideoFrameRate_eUnknown,   "0",          17},    // Worst case
+                                                          {NEXUS_VideoFrameRate_e23_976,    "23.976",     42},
+                                                          {NEXUS_VideoFrameRate_e24,        "24",         42},
+                                                          {NEXUS_VideoFrameRate_e25,        "25",         40},
+                                                          {NEXUS_VideoFrameRate_e29_97,     "29.97",      34},
+                                                          {NEXUS_VideoFrameRate_e30,        "30",         34},
+                                                          {NEXUS_VideoFrameRate_e50,        "50",         20},
+                                                          {NEXUS_VideoFrameRate_e59_94,     "59.94",      17},
+                                                          {NEXUS_VideoFrameRate_e60,        "60",         17},
+                                                          {NEXUS_VideoFrameRate_e14_985,    "14.985",     67},
+                                                          {NEXUS_VideoFrameRate_e7_493,     "7.493",      134},
+                                                          {NEXUS_VideoFrameRate_e10,        "10",         100},
+                                                          {NEXUS_VideoFrameRate_e15,        "15",         67},
+                                                          {NEXUS_VideoFrameRate_e20,        "20",         50},
+                                                          {NEXUS_VideoFrameRate_e12_5,      "12.5",       80},
+                                                          {NEXUS_VideoFrameRate_e100,       "100",        10},
+                                                          {NEXUS_VideoFrameRate_e119_88,    "119.88",     9},
+                                                          {NEXUS_VideoFrameRate_e120,       "120",        9},
+                                                          {NEXUS_VideoFrameRate_e19_98,     "19.98",      50},
+                                                          {NEXUS_VideoFrameRate_e7_5,       "7.5",        134},
+                                                          {NEXUS_VideoFrameRate_e12,        "12",         84},
+                                                          {NEXUS_VideoFrameRate_e11_988,    "11.988",     84},
+                                                          {NEXUS_VideoFrameRate_e9_99,      "9.99",       100}};
+static const unsigned g_numFrameRateInfos = sizeof(g_frameRateInfo)/sizeof(BOMX_VideoFrameRateInfo);
 
 static const NEXUS_VideoFormat g_standardFrVideoFmts[] = {NEXUS_VideoFormat_e1080p24hz,       /* HD 1080 Progressive, 24hz */
                                                           NEXUS_VideoFormat_e1080p25hz,       /* HD 1080 Progressive, 25hz */
@@ -711,21 +724,65 @@ static OMX_VIDEO_VP9LEVELTYPE BOMX_VP9LevelFromNexus(NEXUS_VideoProtocolLevel ne
     }
 }
 
+static NEXUS_VideoFrameRate BOMX_FrameRateToNexus(OMX_TICKS intervalUs)
+{
+    if ( intervalUs <= 0 )                  return NEXUS_VideoFrameRate_eUnknown;
+
+    if ( intervalUs <= 8335 )               return NEXUS_VideoFrameRate_e120;
+    else if ( intervalUs <= 8345 )          return NEXUS_VideoFrameRate_e119_88;
+    else if ( intervalUs <= 16670 )         return NEXUS_VideoFrameRate_e60;
+    else if ( intervalUs <= 16685 )         return NEXUS_VideoFrameRate_e59_94;
+    else if ( intervalUs <= 20001 )         return NEXUS_VideoFrameRate_e50;
+    else if ( intervalUs <= 33335 )         return NEXUS_VideoFrameRate_e30;
+    else if ( intervalUs <= 33368 )         return NEXUS_VideoFrameRate_e29_97;
+    else if ( intervalUs <= 40001 )         return NEXUS_VideoFrameRate_e25;
+    else if ( intervalUs <= 41670 )         return NEXUS_VideoFrameRate_e24;
+    else if ( intervalUs <= 41710 )         return NEXUS_VideoFrameRate_e23_976;
+    else if ( intervalUs <= 50001 )         return NEXUS_VideoFrameRate_e20;
+    else if ( intervalUs <= 50055 )         return NEXUS_VideoFrameRate_e19_98;
+    else if ( intervalUs <= 66670 )         return NEXUS_VideoFrameRate_e15;
+    else if ( intervalUs <= 66735 )         return NEXUS_VideoFrameRate_e14_985;
+    else if ( intervalUs <= 80001 )         return NEXUS_VideoFrameRate_e12_5;
+    else if ( intervalUs <= 83335 )         return NEXUS_VideoFrameRate_e12;
+    else if ( intervalUs <= 83420 )         return NEXUS_VideoFrameRate_e11_988;
+    else if ( intervalUs <= 100001 )        return NEXUS_VideoFrameRate_e10;
+    else if ( intervalUs <= 101015 )        return NEXUS_VideoFrameRate_e9_99;
+    else if ( intervalUs <= 133335 )        return NEXUS_VideoFrameRate_e7_5;
+    else if ( intervalUs <= 133460 )        return NEXUS_VideoFrameRate_e7_493;
+
+    return NEXUS_VideoFrameRate_eUnknown;
+}
+
 static int BOMX_VideoDecoder_GetFrameInterval(NEXUS_VideoFrameRate frameRate)
 {
     unsigned i;
-    for ( i = 0; i < g_numInFrameIntervals; i++ )
+    for ( i = 0; i < g_numFrameRateInfos; i++ )
     {
-        if ( g_inFrameIntervals[i].rate == frameRate )
+        if ( g_frameRateInfo[i].rate == frameRate )
         {
-            return g_inFrameIntervals[i].interval;
+            return g_frameRateInfo[i].interval;
         }
     }
 
     ALOGW("WARNING: Unknown NEXUS frame rate enum %d", frameRate);
 
-    ALOG_ASSERT(g_inFrameIntervals[0].rate == NEXUS_VideoFrameRate_eUnknown);
-    return g_inFrameIntervals[0].interval;
+    ALOG_ASSERT(g_frameRateInfo[0].rate == NEXUS_VideoFrameRate_eUnknown);
+    return g_frameRateInfo[0].interval;
+}
+
+static const char *BOMX_VideoDecoder_GetFrameString(NEXUS_VideoFrameRate frameRate)
+{
+    unsigned i;
+    for ( i = 0; i < g_numFrameRateInfos; i++ )
+    {
+        if ( g_frameRateInfo[i].rate == frameRate )
+        {
+            return g_frameRateInfo[i].str;
+        }
+    }
+
+    ALOGW("WARNING: Unknown NEXUS frame rate enum %d", frameRate);
+    return "unknown";
 }
 
 void OmxBinder::notify(int msg, struct hwc_notification_info &ntfy)
@@ -1013,6 +1070,10 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_pBufferTracker(NULL),
     m_AvailInputBuffers(0),
     m_frameRate(NEXUS_VideoFrameRate_eUnknown),
+    m_frEstimated(false),
+    m_frStableCount(0),
+    m_deltaUs(0),
+    m_lastTsUs(B_TIMESTAMP_INVALID),
     m_pIpcClient(pIpcClient),
     m_nexusClient(nexusClient),
     m_nxClientId(NXCLIENT_INVALID_ID),
@@ -4792,8 +4853,8 @@ void BOMX_VideoDecoder::InputBufferNew()
     ALOG_ASSERT(m_AvailInputBuffers > 0);
     --m_AvailInputBuffers;
     if (m_AvailInputBuffers == 0) {
-        ALOGV("%s: reached zero input buffers, m_inputBuffersTimerId:%p",
-              __FUNCTION__, m_inputBuffersTimerId);
+        ALOGV("%s: reached zero input buffers, m_inputBuffersTimerId:%p rate:%s",
+              __FUNCTION__, m_inputBuffersTimerId, BOMX_VideoDecoder_GetFrameString(m_frameRate));
         CancelTimerId(m_inputBuffersTimerId);
         m_inputBuffersTimerId = StartTimer(BOMX_VideoDecoder_GetFrameInterval(m_frameRate)*2, BOMX_VideoDecoder_InputBuffersTimer, static_cast<void *>(this));
     }
@@ -4903,7 +4964,7 @@ void BOMX_VideoDecoder::InputBufferTimeoutCallback()
     {
         // Retry returning the input buffers again by marking all the
         // input buffers in RAVE as completed.
-        if ( PlaypumpEvent(true) == 0 || ReturnInputBuffers(0, InputReturnMode_eAll) == 0 )
+        if ( PlaypumpEvent(true) == 0 )
         {
             ALOGV("Keep retrying to return input buffers after timeout");
 
@@ -5414,6 +5475,60 @@ void BOMX_VideoDecoder::InvalidateDecodedFrames()
     }
 }
 
+void BOMX_VideoDecoder::ResetEstimation()
+{
+    m_deltaUs = 0;
+    m_frStableCount = 0;
+}
+
+void BOMX_VideoDecoder::EstimateFrameRate(OMX_TICKS tsUs)
+{
+    // Estimate frame rate when the video decoder cannot provide a known frame rate.
+    // If the frame rate has been estimated, continue the estimation for possible VFR streams
+    // until the video decoder can provide a known frame rate.
+    if ( m_frameRate == NEXUS_VideoFrameRate_eUnknown || m_frEstimated )
+    {
+        if ( m_lastTsUs != B_TIMESTAMP_INVALID && tsUs > m_lastTsUs )
+        {
+            OMX_TICKS deltaUs = tsUs - m_lastTsUs;
+            if ( m_frStableCount == 0 )
+            {
+                m_deltaUs = deltaUs;
+                m_frStableCount++;
+            }
+            else
+            {
+                if ( llabs(m_deltaUs - deltaUs) > B_FR_EST_STABLE_DELTA_THRESHOLD )
+                {
+                    ResetEstimation();
+                }
+                else
+                {
+                    m_frStableCount++;
+                }
+
+                if ( m_frStableCount == B_FR_EST_NUM_STABLE_DELTA_NEEDED )
+                {
+                    NEXUS_VideoFrameRate rate = BOMX_FrameRateToNexus(m_deltaUs);
+                    if ( m_frameRate != rate )
+                    {
+                        ALOGI("Estimated frame rate %s -> %s", BOMX_VideoDecoder_GetFrameString(m_frameRate), BOMX_VideoDecoder_GetFrameString(rate));
+
+                        m_frameRate = rate;
+                        m_frEstimated = true;
+                    }
+                }
+            }
+        }
+        else
+        {
+            ResetEstimation();
+        }
+
+        m_lastTsUs = tsUs;
+    }
+}
+
 void BOMX_VideoDecoder::PollDecodedFrames()
 {
     NEXUS_VideoDecoderFrameStatus frameStatus[B_MAX_DECODED_FRAMES], *pFrameStatus;
@@ -5429,10 +5544,13 @@ void BOMX_VideoDecoder::PollDecodedFrames()
     }
 
     errCode = NEXUS_SimpleVideoDecoder_GetStatus(m_hSimpleVideoDecoder, &status);
-    if (m_frameRate == NEXUS_VideoFrameRate_eUnknown && errCode == NEXUS_SUCCESS && status.started)
+    if ( errCode == NEXUS_SUCCESS && status.started && status.frameRate != NEXUS_VideoFrameRate_eUnknown && m_frameRate != status.frameRate )
     {
-        ALOGV_IF(m_frameRate != status.frameRate, "Frame rate %d->%d", m_frameRate, status.frameRate);
+        ALOGI("Detected frame rate %s -> %s", BOMX_VideoDecoder_GetFrameString(m_frameRate), BOMX_VideoDecoder_GetFrameString(status.frameRate));
         m_frameRate = status.frameRate;
+        m_frEstimated = false;
+        m_lastTsUs = B_TIMESTAMP_INVALID;
+        ResetEstimation();
     }
 
     // In tunnel mode, there is no output port populated on the omx component and we do not expect
@@ -5506,7 +5624,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 m_tunnelCurrentPts = status.pts;
                 reportRenderedFrame = true;
             } else {
-                ALOGV("%s: status.pts:%u, m_tunneledCurrentPts:%u", __FUNCTION__, status.pts, m_tunnelCurrentPts);
+                ALOGV("%s: status.pts:%u, m_tunnelCurrentPts:%u", __FUNCTION__, status.pts, m_tunnelCurrentPts);
             }
 
             if (reportRenderedFrame) {
@@ -5516,6 +5634,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 (void)m_callbacks.EventHandler((OMX_HANDLETYPE)m_pComponentType, m_pComponentType->pApplicationPrivate, OMX_EventOutputRendered, 1, 0, &renderEvent);
                 ALOGV("Rendering ts=%lld pts=%u now=%" PRIu64 "",
                         omxHeader.nTimeStamp, status.pts, now);
+
+                EstimateFrameRate(omxHeader.nTimeStamp);
 
                 // Use this event to return input buffers
                 ReturnInputBuffers(omxHeader.nTimeStamp, InputReturnMode_eTimestamp);
@@ -5919,6 +6039,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                 pInfo->pFrameBuffer = pBuffer;
                 pBuffer->pBufferInfo = pInfo;
                 ALOGV("Returning Port Buffer ts %lld us serial %u pInfo %p FB %p HDR %p flags %#x", pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber, pInfo, pInfo->pFrameBuffer, pHeader, pHeader->nFlags);
+
+                EstimateFrameRate(pHeader->nTimeStamp);
                 {
                     unsigned queueDepthBefore = m_pVideoPorts[1]->QueueDepth();
                     BOMX_VIDEO_STATS_ADD_EVENT(BOMX_VD_Stats::OUTPUT_FRAME, pHeader->nTimeStamp, pBuffer->frameStatus.serialNumber);
