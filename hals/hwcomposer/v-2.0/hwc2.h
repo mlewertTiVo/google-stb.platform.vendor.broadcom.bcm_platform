@@ -17,6 +17,7 @@
 #define HWC2_INCLUDED
 
 #define HWC2_LOGRET_ALWAYS  0
+#define HWC2_INBOUND_DBG    0
 /* log usage: runtime enable via setting the property and causing a
  *            dumpsys SurfaceFlinger to trigger log mask evaluation.
  *            for each wanted category, issue a 'setprop <name> <value>'
