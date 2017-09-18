@@ -100,6 +100,29 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_EXT_NFB_W  "ro.nx.hwc2.nfb.w"
 #define HWC2_EXT_NFB_H  "ro.nx.hwc2.nfb.h"
 
+/* dump frames content for each composition, requires:
+ *
+ *   # mkdir -p /data/nxmedia/hwc2
+ *   # chmod 777 /data/nxmedia/hwc2
+ *   # setprop dyn.nx.hwc2.dump.data <dump>
+ *   # dumpsys SurfaceFlinger
+ *
+ * <dump> is 'hwc2_record_dump_e'
+ *
+ * then to control dump on/off (for capturing on a test as
+ * example):
+ *
+ *   # setprop dyn.nx.hwc2.dump.this <what>
+ *   # <test>
+ *   # setprop dyn.nx.hwc2.dump.this 0
+ *   # ls -l /data/nxmedia/hwc2
+ *
+ * <what> is: 0 (nothing), 1 (header), 2 (content), 3 (filter).
+ */
+#define HWC2_DUMP_SET   "dyn.nx.hwc2.dump.data"
+#define HWC2_DUMP_NOW   "dyn.nx.hwc2.dump.this"
+#define HWC2_DUMP_LOC   "/data/nxmedia/hwc2"
+
 /* wrapper around nexus hotplug event listener binder. do
  * not use directly, use the strong pointer wrap instead.
  */
@@ -331,36 +354,44 @@ struct hwc2_ext_t {
    struct hwc2_fb_t                    yvi;
 };
 
+enum hwc2_record_dump_e {
+   hwc2_record_dump_none = 0,
+   hwc2_record_dump_inter,
+   hwc2_record_dump_final,
+   hwc2_record_dump_both,
+};
+
 /* display unit. */
 struct hwc2_dsp_t {
-   hwc2_display_type_t   type;
-   char                  name[HWC2_DSP_NAME];
-   bool                  validated;
-   hwc2_power_mode_t     pmode;
+   hwc2_display_type_t     type;
+   char                    name[HWC2_DSP_NAME];
+   bool                    validated;
+   hwc2_power_mode_t       pmode;
    union {
-      struct hwc2_vd_t   vd;
-      struct hwc2_ext_t  ext;
+      struct hwc2_vd_t     vd;
+      struct hwc2_ext_t    ext;
    } u;
-   struct hwc2_lyr_t     *lyr;
-   struct hwc2_dsp_cfg_t *aCfg;
-   struct hwc2_dsp_cfg_t *cfgs;
-   struct hwc_position   op;
+   struct hwc2_lyr_t       *lyr;
+   struct hwc2_dsp_cfg_t   *aCfg;
+   struct hwc2_dsp_cfg_t   *cfgs;
+   struct hwc_position     op;
 
-   BKNI_EventHandle      cmp_evt;
-   BKNI_EventHandle      cmp_syn;
-   pthread_t             cmp;
-   int                   cmp_active;
-   int                   cmp_tl;
-   struct hwc2_frame_t   *cmp_wl;
-   pthread_mutex_t       mtx_cmp_wl;
-   pthread_mutex_t       mtx_lyr;
+   BKNI_EventHandle        cmp_evt;
+   BKNI_EventHandle        cmp_syn;
+   pthread_t               cmp;
+   int                     cmp_active;
+   int                     cmp_tl;
+   struct hwc2_frame_t     *cmp_wl;
+   pthread_mutex_t         mtx_cmp_wl;
+   pthread_mutex_t         mtx_lyr;
 
-   int32_t               lm;
-   bool                  sfb;
-   uint64_t              tlm;
+   int32_t                 lm;
+   bool                    sfb;
+   uint64_t                tlm;
+   enum hwc2_record_dump_e dmp;
 
-   uint64_t              pres;
-   uint64_t              post;
+   uint64_t                pres;
+   uint64_t                post;
 };
 
 /* hwc binder. do not use directly, use the strong pointer wrap
@@ -472,8 +503,11 @@ enum hwc2_tweaks_e {
    hwc2_tweak_pip_alpha_hole,
    hwc2_tweak_bypass_disable,
    hwc2_tweak_plm_off,
+   hwc2_tweak_dump_enabled,
+   hwc2_tweak_scale_gles,
    /* settings. */
    hwc2_tweak_eotf,
+   hwc2_tweak_dump_this,
 };
 
 enum hwc2_seeding_e {
