@@ -145,6 +145,18 @@ struct hwc2_bcm_device_t {
    NEXUS_Graphics2DHandle       hg2d;
    pthread_mutex_t              mtx_g2d;
    NEXUS_Graphics2DCapabilities g2dc;
+   bool                         sgl;
+};
+
+struct hwc2_dump_data_t {
+   uint64_t          cmp;
+   bool              final;
+   int               lyr;
+   uint16_t          h;
+   uint16_t          w;
+   NEXUS_PixelFormat fmt;
+   uint8_t           *ptr;
+   size_t            size;
 };
 
 static int hwc2_blit_yv12(
@@ -162,7 +174,8 @@ static int hwc2_blit_gpx(
    PSHARED_DATA shared,
    hwc2_blend_mode_t lbm,
    struct hwc2_dsp_t *dsp,
-   enum hwc2_seeding_e *ms);
+   enum hwc2_seeding_e *ms,
+   size_t cnt);
 
 static void hwc2_eval_log(
    struct hwc2_bcm_device_t *hwc2) {
@@ -197,6 +210,9 @@ static bool hwc2_enabled(
    case hwc2_tweak_plm_off:
       r = (bool)property_get_bool("dyn.nx.hwc2.tweak.plmoff", 0);
    break;
+   case hwc2_tweak_scale_gles:
+      r = (bool)property_get_bool("dyn.nx.hwc2.tweak.sgles", 0);
+   break;
    default:
    break;
    }
@@ -213,11 +229,76 @@ static int32_t hwc2_setting(
    case hwc2_tweak_eotf:
       r = property_get_int32("dyn.nx.hwc2.tweak.eotf", 0);
    break;
+   case hwc2_tweak_dump_enabled:
+      r = property_get_int32(HWC2_DUMP_SET, 0);
+   break;
+   case hwc2_tweak_dump_this:
+      r = property_get_int32(HWC2_DUMP_NOW, 0);
+   break;
    default:
    break;
    }
 
    return r;
+}
+
+static int nx2hu_bpp(
+   NEXUS_PixelFormat nx) {
+
+   switch (nx) {
+   case NEXUS_PixelFormat_eA8_B8_G8_R8: /* fall-thru */
+   case NEXUS_PixelFormat_eX8_B8_G8_R8: return 32;
+   case NEXUS_PixelFormat_eR5_G6_B5: /* fall-thru */
+   case NEXUS_PixelFormat_eY08_Cb8_Y18_Cr8: return 16;
+   default: break;
+   }
+
+   return 0;
+}
+
+static void hwc2_dump_content(
+   struct hwc2_dump_data_t *dump) {
+
+   FILE *f = NULL;
+   char name[512];
+   /* what - 0 (default): skip.
+    *        1 record only file title.
+    *        2 record all.
+    *        3 record only if filter match.
+    */
+   int32_t what = hwc2_setting(hwc2_tweak_dump_this);
+
+   if (!what) {
+      return;
+   }
+
+   if (dump->final) {
+      sprintf(name, "%s/hwc2_%" PRIu64 "_fin__w%d_h%d_b%d.raw",
+         HWC2_DUMP_LOC,
+         dump->cmp,
+         dump->w,
+         dump->h,
+         nx2hu_bpp(dump->fmt));
+	} else {
+      sprintf(name, "%s/hwc2_%" PRIu64 "_l%d__w%d_h%d_b%d.raw",
+         HWC2_DUMP_LOC,
+         dump->cmp,
+         dump->lyr,
+         dump->w,
+         dump->h,
+         nx2hu_bpp(dump->fmt));
+   }
+
+   f = fopen(name, "wb+");
+
+   if (f != NULL) {
+      if (what > 1) {
+         if (dump->ptr != NULL && dump->size) {
+            fwrite(dump->ptr, sizeof(uint8_t), dump->size, f);
+         }
+      }
+      fclose(f);
+   }
 }
 
 static void hwc2_eotf(
@@ -567,10 +648,11 @@ static void hwc2_ext_fbs(
       NEXUS_Surface_GetDefaultCreateSettings(&scs);
       scs.width       = property_get_int32(HWC2_EXT_NFB_W, 1920);
       scs.height      = property_get_int32(HWC2_EXT_NFB_H, 1080);
-      scs.pitch       = scs.width * 4;
       scs.pixelFormat = hwc2_enabled(hwc2_tweak_fb_compressed)?
                            NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8:
                            NEXUS_PixelFormat_eA8_B8_G8_R8;
+      scs.pitch       = (scs.pixelFormat == NEXUS_PixelFormat_eA8_B8_G8_R8) ?
+                           scs.width * 4 : ((scs.width + 3) / 4) * 8;
       if (cb == cbs_e_bypass) {
          scs.heap = NEXUS_Platform_GetFramebufferHeap(0);
       } else {
@@ -1357,7 +1439,7 @@ static void hwc2_vd_cmp_frame(
          if (yv12) {
             blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
          } else {
-            blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp, &ms);
+            blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp, &ms, c);
             if (!blt) {
                lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
             }
@@ -1751,8 +1833,13 @@ static size_t hwc2_dump_gen(
    struct hwc2_dsp_t *dsp;
    struct hwc2_lyr_t *lyr;
 
+   hwc2->sgl = hwc2_enabled(hwc2_tweak_scale_gles);
    hwc2_eval_log(hwc2);
    hwc2_eval_plm(hwc2);
+   if (hwc2->ext != NULL) {
+      hwc2->ext->dmp =
+         (enum hwc2_record_dump_e)hwc2_setting(hwc2_tweak_dump_enabled);
+   }
 
    memset((void *)hwc2->dump, 0, sizeof(hwc2->dump));
 
@@ -2325,18 +2412,36 @@ static int32_t hwc2_sclSupp(
    d.width = (uint16_t)(dst->right - dst->left);
    d.height = (uint16_t)(dst->bottom - dst->top);
 
+   /* forcing gles composition if we cannot handle scaling in g2d (would
+    * require intermediate buffer and 2-steps composition).
+    */
    if (s.width && d.width &&
        (s.width / d.width) >= hwc2->g2dc.maxHorizontalDownScale) {
       ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG), "horizontal:%d->%d::max:%d",
                s.width, d.width, hwc2->g2dc.maxHorizontalDownScale);
       ret = HWC2_ERROR_UNSUPPORTED;
    }
-
+   /* forcing gles composition if we cannot handle scaling in g2d (would
+    * require intermediate buffer and 2-steps composition).
+    */
    if (s.height && d.height &&
        (s.height / d.height) >= hwc2->g2dc.maxVerticalDownScale) {
       ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG), "vertical:%d->%d::max:%d",
                s.height, d.height, hwc2->g2dc.maxVerticalDownScale);
       ret = HWC2_ERROR_UNSUPPORTED;
+   }
+   /* forced gles composition if scaling involved (debug tweak). */
+   if (hwc2->sgl) {
+      if (s.width && d.width && (s.width != d.width)) {
+         ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG), "horizontal:%d->%d::forced",
+                  s.width, d.width);
+         ret = HWC2_ERROR_UNSUPPORTED;
+      }
+      if (s.height && d.height && (s.height != d.height)) {
+         ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG), "vertical:%d->%d::forced",
+                  s.height, d.height);
+         ret = HWC2_ERROR_UNSUPPORTED;
+      }
    }
 
    return ret;
@@ -4977,7 +5082,8 @@ int hwc2_blit_gpx(
    PSHARED_DATA shared,
    hwc2_blend_mode_t lbm,
    struct hwc2_dsp_t *dsp,
-   enum hwc2_seeding_e *ms) {
+   enum hwc2_seeding_e *ms,
+   size_t cnt) {
 
    NEXUS_SurfaceHandle s = NULL;
    NEXUS_SurfaceStatus ds;
@@ -5089,6 +5195,26 @@ int hwc2_blit_gpx(
             (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post);
       blt = HWC2_INVALID;
       goto out;
+   }
+
+   if (hwc2->ext->dmp == hwc2_record_dump_inter ||
+       hwc2->ext->dmp == hwc2_record_dump_both) {
+      NEXUS_SurfaceStatus ss;
+      void *vaddr;
+      struct hwc2_dump_data_t dmp;
+
+      NEXUS_Surface_GetStatus(s, &ss);
+      dmp.final = false;
+      dmp.lyr   = cnt+1;
+      dmp.cmp   = dsp->post;
+      dmp.w     = ss.width;
+      dmp.h     = ss.height;
+      dmp.fmt   = ss.pixelFormat;
+      dmp.size  = (size_t)(ss.height*ss.pitch);
+      NEXUS_MemoryBlock_Lock(shared->container.block, &vaddr);
+      dmp.ptr   = (uint8_t *)vaddr;
+      hwc2_dump_content(&dmp);
+      NEXUS_MemoryBlock_Unlock(shared->container.block);
    }
 
    ALOGI_IF((dsp->lm & LOG_RGBA_DEBUG),
@@ -5492,7 +5618,7 @@ static void hwc2_ext_cmp_frame(
             if (yv12) {
                blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
             } else {
-               blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp, &ms);
+               blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp, &ms, c);
                if (!blt) {
                   lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
                }
@@ -5576,6 +5702,24 @@ static void hwc2_ext_cmp_frame(
 
    if (c > 0) {
       /* [v]. push composition to display. */
+      if (hwc2->ext->dmp == hwc2_record_dump_final ||
+          hwc2->ext->dmp == hwc2_record_dump_both) {
+         NEXUS_SurfaceStatus ss;
+         NEXUS_SurfaceMemory sm;
+         struct hwc2_dump_data_t dmp;
+
+         NEXUS_Surface_GetStatus(d, &ss);
+         dmp.final = true;
+         dmp.cmp   = dsp->post;
+         dmp.w     = ss.width;
+         dmp.h     = ss.height;
+         dmp.fmt   = ss.pixelFormat;
+         dmp.size  = (size_t)(ss.height*ss.pitch);
+         NEXUS_Surface_GetMemory(d, &sm);
+         dmp.ptr   = (uint8_t *)sm.buffer;
+         NEXUS_Surface_Flush(d);
+         hwc2_dump_content(&dmp);
+      }
       nx = NEXUS_SurfaceClient_PushSurface(hwc2->ext->u.ext.sch, d, NULL, false);
       if (nx) {
          hwc2_ext_fb_put(hwc2, d);
