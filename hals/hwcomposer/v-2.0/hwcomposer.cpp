@@ -103,6 +103,18 @@ const NEXUS_BlendEquation hwc2_a2n_fal_be[4 /*hwc2_blend_mode_t*/] = {
                                    NEXUS_BlendFactor_eZero}
 };
 
+const NEXUS_BlendEquation hwc2_apmc_be = {
+   NEXUS_BlendFactor_eSourceColor, NEXUS_BlendFactor_eConstantAlpha, false,
+   NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
+   NEXUS_BlendFactor_eZero
+};
+
+const NEXUS_BlendEquation hwc2_apma_be = {
+   NEXUS_BlendFactor_eSourceAlpha , NEXUS_BlendFactor_eConstantAlpha, false,
+   NEXUS_BlendFactor_eZero, NEXUS_BlendFactor_eZero, false,
+   NEXUS_BlendFactor_eZero
+};
+
 struct hwc2_bcm_device_t {
    hwc2_device_t        base;
    uint32_t             magic;
@@ -156,7 +168,6 @@ static int hwc2_blit_gpx(
    NEXUS_SurfaceHandle d,
    struct hwc2_lyr_t *lyr,
    PSHARED_DATA shared,
-   hwc2_blend_mode_t lbm,
    struct hwc2_dsp_t *dsp,
    enum hwc2_seeding_e *ms);
 
@@ -512,6 +523,29 @@ static void hwc2_ext_fbs(
       ALOGI("[ext]:yvi::%dx%d::%s -> %p::%d (b:%p)",
             scs.width, scs.height, dh?"d-cma":"gfx",
             hwc2->ext->u.ext.yvi.s, hwc2->ext->u.ext.yvi.fd, bh);
+   }
+
+   {
+      NEXUS_SurfaceCreateSettings scs;
+      NEXUS_MemoryBlockHandle bh = NULL;
+      bool dh = true;
+      NEXUS_Surface_GetDefaultCreateSettings(&scs);
+      scs.width       = property_get_int32(HWC2_EXT_NFB_W, 1920);
+      scs.height      = property_get_int32(HWC2_EXT_NFB_H, 1080);
+      scs.pitch       = scs.width * 4;
+      scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
+      scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
+
+      hwc2->ext->u.ext.icb.s = NULL;
+      bh = hwc_block_create(&scs, hwc2->memif, dh, &hwc2->ext->u.ext.icb.fd);
+      if (bh != NULL) {
+         scs.pixelMemory = bh;
+         scs.heap = NULL;
+         hwc2->ext->u.ext.icb.s = hwc_surface_create(&scs, dh);
+      }
+      ALOGI("[ext]:icb::%dx%d::%s -> %p::%d (b:%p)",
+            scs.width, scs.height, dh?"d-cma":"gfx",
+            hwc2->ext->u.ext.icb.s, hwc2->ext->u.ext.icb.fd, bh);
    }
 
    pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
@@ -1029,11 +1063,11 @@ static void hwc2_fill_blend(
    if (s) {
       NEXUS_Graphics2DFillSettings fs;
       NEXUS_Graphics2D_GetDefaultFillSettings(&fs);
-      fs.surface = s;
-      fs.color   = color;
-      fs.colorOp = NEXUS_FillOp_eBlend;
-      fs.alphaOp        = NEXUS_FillOp_eUseBlendEquation;
-      fs.alphaBlend     = (bm == HWC2_BLEND_MODE_INVALID) ? hwc2_a2n_fal_be[HWC2_BLEND_MODE_NONE] : hwc2_a2n_fal_be[bm];
+      fs.surface    = s;
+      fs.color      = color;
+      fs.colorOp    = NEXUS_FillOp_eBlend;
+      fs.alphaOp    = NEXUS_FillOp_eUseBlendEquation;
+      fs.alphaBlend = (bm == HWC2_BLEND_MODE_INVALID) ? hwc2_a2n_fal_be[HWC2_BLEND_MODE_NONE] : hwc2_a2n_fal_be[bm];
       if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
          return;
       }
@@ -1075,13 +1109,12 @@ static void hwc2_vd_cmp_frame(
    size_t c = 0;
    struct hwc2_lyr_t *lyr;
    bool is_video;
-   hwc2_blend_mode_t lbm = HWC2_BLEND_MODE_INVALID;
    struct hwc2_dsp_t *dsp = hwc2->vd;
    NEXUS_Error dlrc = NEXUS_NOT_INITIALIZED, dlrcp = NEXUS_NOT_INITIALIZED;
    NEXUS_MemoryBlockHandle dbh = NULL, dbhp = NULL;
    PSHARED_DATA dshared = NULL;
    void *dmap = NULL;
-   int blt;
+   int blt, vl = 0;
    size_t ccli = 0;
    enum hwc2_seeding_e ms = hwc2_seeding_none;
 
@@ -1128,11 +1161,18 @@ static void hwc2_vd_cmp_frame(
 
    /* wait for output buffer to be ready to compose into. */
    if (f->oftgt >= 0) {
-      sync_wait(f->oftgt, BKNI_INFINITE);
+      vl = sync_wait(f->oftgt, HWC2_SYNC_TO);
       close(f->oftgt);
+      f->oftgt = HWC2_INVALID;
+   }
+   if (vl == HWC2_INVALID) {
+      ALOGE("[vd]:[out]:%" PRIu64 ":%" PRIu64 ": sync_wait error on output buffer.",
+             dsp->pres, dsp->post);
+      goto out_error;
    }
 
    for (i = 0; i < f->cnt; i++) {
+      vl = 0;
       lyr = &f->lyr[i];
       /* [i]. wait as needed.
        */
@@ -1144,12 +1184,12 @@ static void hwc2_vd_cmp_frame(
          if (f->tgt == NULL && f->ftgt >= 0) {
             close(f->ftgt);
          } else if (f->ftgt >= 0) {
-            sync_wait(f->ftgt, BKNI_INFINITE);
+            vl = sync_wait(f->ftgt, HWC2_SYNC_TO);
             close(f->ftgt);
             f->ftgt = HWC2_INVALID;
          }
       } else if (lyr->af >= 0) {
-         sync_wait(lyr->af, BKNI_INFINITE);
+         vl = sync_wait(lyr->af, HWC2_SYNC_TO);
          close(lyr->af);
          lyr->af = HWC2_INVALID;
       }
@@ -1243,12 +1283,15 @@ static void hwc2_vd_cmp_frame(
 
          yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
                  (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
-         if (yv12) {
-            blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
+         if (vl != 0) {
+            ALOGW("[vd]:[frame]:%" PRIu64 ":%" PRIu64 ": skip layer on sync error.",
+                  dsp->pres, dsp->post);
+            blt = HWC2_INVALID;
          } else {
-            blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp, &ms);
-            if (!blt) {
-               lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
+            if (yv12) {
+               blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
+            } else {
+               blt = hwc2_blit_gpx(hwc2, d, lyr, shared, dsp, &ms);
             }
          }
 
@@ -4394,6 +4437,8 @@ static void hwc2_bcm_close(
          close(hwc2->ext->u.ext.yvi.fd);
          NEXUS_Surface_Destroy(hwc2->ext->u.ext.yvi.s);
       }
+      close(hwc2->ext->u.ext.icb.fd);
+      NEXUS_Surface_Destroy(hwc2->ext->u.ext.icb.s);
       free(hwc2->ext);
    }
 
@@ -4793,16 +4838,78 @@ out:
    return blt;
 }
 
+int hwc2_blit_gpx_pm(
+   struct hwc2_bcm_device_t* hwc2,
+   NEXUS_SurfaceHandle s,
+   NEXUS_SurfaceHandle d,
+   struct hwc2_lyr_t *lyr,
+   struct hwc2_dsp_t *dsp,
+   NEXUS_Rect sa,
+   uint32_t al) {
+
+   int blt = 0;
+   NEXUS_Error rc;
+   NEXUS_Graphics2DBlitSettings bs;
+
+   ALOGI_IF((dsp->lm & LOG_ICB_DEBUG),
+            "[%s]:[blit-pm]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": {%d,%08x} {%d,%d,%dx%d,%p} out:{%p}\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
+            lyr->bm, al<<HWC2_ASHIFT,
+            sa.x, sa.y, sa.width, sa.height, s, d);
+
+   NEXUS_Graphics2D_GetDefaultBlitSettings(&bs);
+   bs.source.surface = s;
+   bs.source.rect    = sa;
+   bs.dest.surface   = d;
+   bs.dest.rect      = sa;
+   bs.output.surface = d;
+   bs.output.rect    = sa;
+   bs.alphaOp        = NEXUS_BlitAlphaOp_eUseBlendEquation;
+   bs.alphaBlend     = hwc2_apma_be;
+   bs.constantColor  = (NEXUS_Pixel)al<<HWC2_ASHIFT;
+   if (lyr->bm == HWC2_BLEND_MODE_PREMULTIPLIED) {
+      bs.colorOp     = NEXUS_BlitColorOp_eUseBlendEquation;
+      bs.colorBlend  = hwc2_apmc_be;
+   } else {
+      bs.colorOp     = NEXUS_BlitColorOp_eCopySource;
+   }
+
+   if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
+      ALOGE("[%s]:[blit-pm]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failed g2d mutex.\n",
+            (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post);
+      blt = HWC2_INVALID;
+      goto out;
+   } else {
+      rc = NEXUS_Graphics2D_Blit(hwc2->hg2d, &bs);
+      if (rc == NEXUS_GRAPHICS2D_QUEUE_FULL) {
+         rc = hwc2_chkpt_l(hwc2);
+         if (!rc) {
+            rc = NEXUS_Graphics2D_Blit(hwc2->hg2d, &bs);
+         }
+      } else {
+         rc = hwc2_chkpt_l(hwc2);
+      }
+      if (rc) {
+         ALOGE("[%s]:[blit-pm]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": failure to blit.\n",
+               (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post);
+         blt = HWC2_INVALID;
+      }
+      pthread_mutex_unlock(&hwc2->mtx_g2d);
+   }
+
+out:
+   return blt;
+}
+
 int hwc2_blit_gpx(
    struct hwc2_bcm_device_t* hwc2,
    NEXUS_SurfaceHandle d,
    struct hwc2_lyr_t *lyr,
    PSHARED_DATA shared,
-   hwc2_blend_mode_t lbm,
    struct hwc2_dsp_t *dsp,
    enum hwc2_seeding_e *ms) {
 
-   NEXUS_SurfaceHandle s = NULL;
+   NEXUS_SurfaceHandle s = NULL, icb = NULL;
    NEXUS_SurfaceStatus ds;
    NEXUS_Graphics2DBlitSettings bs;
    NEXUS_Rect c, p, sa, da, oa, n;
@@ -4904,17 +5011,25 @@ int hwc2_blit_gpx(
       goto out;
    }
 
+   if (al<<HWC2_ASHIFT != HWC2_OPQ) {
+      icb = hwc2->ext->u.ext.icb.s;
+      blt = hwc2_blit_gpx_pm(hwc2, s, icb, lyr, dsp, sa, al);
+      if (blt == HWC2_INVALID) {
+         icb = NULL;
+      }
+   }
+
    ALOGI_IF((dsp->lm & LOG_RGBA_DEBUG),
             "[%s]:[blit]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": {%d,%08x,%s} {%d,%d,%dx%d,%p} out:{%d,%d,%dx%d,%p} dst:{%d,%d} blk:%p::p-blk:%p\n",
             (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext", lyr->hdl, dsp->pres, dsp->post,
             lyr->bm, al<<HWC2_ASHIFT, getTransformName(lyr->tr),
-            sa.x, sa.y, sa.width, sa.height, s,
+            sa.x, sa.y, sa.width, sa.height, icb?icb:s,
             oa.x, oa.y, oa.width, oa.height, d,
             ds.width, ds.height,
             lyr->bh, shared->container.block);
 
    NEXUS_Graphics2D_GetDefaultBlitSettings(&bs);
-   bs.source.surface = s;
+   bs.source.surface = icb?icb:s;
    bs.source.rect    = sa;
    bs.dest.surface   = d;
    bs.dest.rect      = da;
@@ -4924,20 +5039,12 @@ int hwc2_blit_gpx(
    bs.alphaOp        = NEXUS_BlitAlphaOp_eUseBlendEquation;
    bs.colorBlend     = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? hwc2_a2n_col_be[HWC2_BLEND_MODE_NONE] : hwc2_a2n_col_be[lyr->bm];
    bs.alphaBlend     = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? hwc2_a2n_al_be[HWC2_BLEND_MODE_NONE] : hwc2_a2n_al_be[lyr->bm];
-   bs.constantColor  = (NEXUS_Pixel)al<<HWC2_ASHIFT;
    if (HWC2_MEMC_ROT) {
       if (lyr->tr == HWC_TRANSFORM_ROT_180 || lyr->tr == HWC_TRANSFORM_ROT_270) {
          bs.mirrorOutputVertically = true;
       } else if (lyr->tr == HWC_TRANSFORM_ROT_90) {
          bs.mirrorOutputHorizontally = true;
       }
-   }
-
-   if ((lyr->bm == HWC2_BLEND_MODE_PREMULTIPLIED) &&
-       (lbm == HWC2_BLEND_MODE_PREMULTIPLIED || lbm == HWC2_BLEND_MODE_INVALID) &&
-       (bs.constantColor != HWC2_OPQ)) {
-      bs.colorBlend.d = NEXUS_BlendFactor_eInverseConstantAlpha;
-      bs.alphaBlend.d = NEXUS_BlendFactor_eInverseConstantAlpha;
    }
 
    if (pthread_mutex_lock(&hwc2->mtx_g2d)) {
@@ -5032,7 +5139,7 @@ static void hwc2_ext_cmp_frame(
    bool is_video;
    hwc2_blend_mode_t lbm = HWC2_BLEND_MODE_INVALID;
    struct hwc2_dsp_t *dsp = hwc2->ext;
-   int blt;
+   int blt, vl = 0;
    size_t ccli = 0;
    NEXUS_Rect pah = {0,0,0,0};
    enum hwc2_seeding_e ms = hwc2_seeding_none;
@@ -5103,6 +5210,7 @@ static void hwc2_ext_cmp_frame(
 
       lyr = &f->lyr[i];
       is_video = lyr->oob;
+      vl = 0;
       if (is_video && lyr->af >= 0) {
          close(lyr->af);
          lyr->af = HWC2_INVALID;
@@ -5170,7 +5278,7 @@ static void hwc2_ext_cmp_frame(
             close(f->ftgt);
             f->ftgt = HWC2_INVALID;
          } else if (f->ftgt >= 0) {
-            sync_wait(f->ftgt, BKNI_INFINITE);
+            vl = sync_wait(f->ftgt, HWC2_SYNC_TO);
             close(f->ftgt);
             f->ftgt = HWC2_INVALID;
          }
@@ -5180,7 +5288,7 @@ static void hwc2_ext_cmp_frame(
             close(lyr->af);
             lyr->af = HWC2_INVALID;
          } else if (lyr->af >= 0) {
-            sync_wait(lyr->af, BKNI_INFINITE);
+            vl = sync_wait(lyr->af, HWC2_SYNC_TO);
             close(lyr->af);
             lyr->af = HWC2_INVALID;
          }
@@ -5304,21 +5412,27 @@ static void hwc2_ext_cmp_frame(
             bool yv12 = false;
             yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
                     (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
-            if (yv12) {
-               blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
+            if (vl != 0) {
+               blt = HWC2_INVALID;
+               ALOGW("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": skip on sync_wait failure.",
+                     dsp->pres, dsp->post);
             } else {
-               if (!c_rgba && !c) {
-                  NEXUS_SurfaceStatus ss;
-                  NEXUS_Surface_GetStatus(d, &ss);
-                  if ((ss.pixelFormat == NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8) &&
-                      (lyr->bm >= HWC2_BLEND_MODE_NONE)) {
-                     lyr->bm = HWC2_BLEND_MODE_INVALID;
+               if (yv12) {
+                  blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
+               } else {
+                  if (!c_rgba && !c) {
+                     NEXUS_SurfaceStatus ss;
+                     NEXUS_Surface_GetStatus(d, &ss);
+                     if ((ss.pixelFormat == NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8) &&
+                         (lyr->bm >= HWC2_BLEND_MODE_NONE)) {
+                        lyr->bm = HWC2_BLEND_MODE_INVALID;
+                     }
                   }
-               }
-               blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp, &ms);
-               if (!blt) {
-                  lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
-                  c_rgba = true;
+                  blt = hwc2_blit_gpx(hwc2, d, lyr, shared, dsp, &ms);
+                  if (!blt) {
+                     lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
+                     c_rgba = true;
+                  }
                }
             }
             if (lrcp == NEXUS_SUCCESS) {
