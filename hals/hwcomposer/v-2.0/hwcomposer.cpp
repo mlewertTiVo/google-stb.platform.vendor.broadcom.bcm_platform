@@ -2997,6 +2997,12 @@ static int32_t hwc2_lyrFrame(
       goto out;
    }
 
+   ALOGI_IF(HWC2_INBOUND_DBG,
+      "%s:%" PRIu64 ":%" PRIu64 " cmp:%" PRIu64 ":%" PRIu64 ": frame:{%d,%d,%d,%d}",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_DISPLAY_FRAME),
+      display, layer, dsp->pres, dsp->post,
+      frame.left, frame.top, frame.right, frame.bottom);
+
    memcpy(&lyr->fr, &frame, sizeof(frame));
 
 out:
@@ -3140,6 +3146,12 @@ static int32_t hwc2_lyrCrop(
    lyr->crp.top    = (int) ceilf(crop.top);
    lyr->crp.right  = (int) floorf(crop.right);
    lyr->crp.bottom = (int) floorf(crop.bottom);
+
+   ALOGI_IF(HWC2_INBOUND_DBG,
+      "%s:%" PRIu64 ":%" PRIu64 " cmp:%" PRIu64 ":%" PRIu64 ": crop:{%f,%f,%f,%f}",
+      getFunctionDescriptorName(HWC2_FUNCTION_SET_LAYER_SOURCE_CROP),
+      display, layer, dsp->pres, dsp->post,
+      crop.left, crop.top, crop.right, crop.bottom);
 
 out:
    ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
