@@ -927,8 +927,8 @@ static nxserver_t init_nxserver(void)
        /* -display_format XX */
        settings.display.format = forced_format;
        ALOGI("%s: display format = %s", __FUNCTION__, lookup_name(g_videoFormatStrs, settings.display.format));
-       /* -ignore_edid */
-       settings.display.hdmiPreferences.followPreferredFormat = false;
+       /* -ignore_video_edid */
+       settings.hdmi.ignoreVideoEdid = true;
     }
     /* -transcode off */
     settings.transcode = nxserver_settings::nxserver_transcode_off;
