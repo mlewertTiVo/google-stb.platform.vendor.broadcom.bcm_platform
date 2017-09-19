@@ -2980,6 +2980,56 @@ NEXUS_Error BOMX_VideoDecoder::SetInputPortState(OMX_STATETYPE newState)
                 vdecStartSettings.settings.codec = GetNexusCodec();
                 vdecStartSettings.maxWidth = m_maxDecoderWidth;     // Always request the max dimension for allowing decoder not waiting for output buffer
                 vdecStartSettings.maxHeight = m_maxDecoderHeight;
+                // setting up hdr from framework; currently only for vp9 (offlined from extractor), but we reserve the right to
+                // possibly do this for other codecs too...
+                if (m_hdrStaticInfoSet)
+                {
+                   ALOGI("%s HDRStaticInfo from framework [r:(%u %u),g:(%u %u),b:(%u %u),w:(%u %u),mcll:%u,mall:%u,madl:%u,midl:%u]",
+                          (int)GetCodec() == OMX_VIDEO_CodingVP9 ? "Configuring decoder" : "Skipping",
+                          m_hdrStaticInfo.sType1.mR.x, m_hdrStaticInfo.sType1.mR.y,
+                          m_hdrStaticInfo.sType1.mG.x, m_hdrStaticInfo.sType1.mG.y,
+                          m_hdrStaticInfo.sType1.mB.x, m_hdrStaticInfo.sType1.mB.y,
+                          m_hdrStaticInfo.sType1.mW.x, m_hdrStaticInfo.sType1.mW.y,
+                          m_hdrStaticInfo.sType1.mMaxContentLightLevel, m_hdrStaticInfo.sType1.mMaxFrameAverageLightLevel,
+                          m_hdrStaticInfo.sType1.mMaxDisplayLuminance, m_hdrStaticInfo.sType1.mMinDisplayLuminance);
+                   if ((int)GetCodec() == OMX_VIDEO_CodingVP9)
+                   {
+                      vdecStartSettings.settings.masteringDisplayColorVolume.redPrimary.x   = m_hdrStaticInfo.sType1.mR.x;
+                      vdecStartSettings.settings.masteringDisplayColorVolume.redPrimary.y   = m_hdrStaticInfo.sType1.mR.y;
+                      vdecStartSettings.settings.masteringDisplayColorVolume.greenPrimary.x = m_hdrStaticInfo.sType1.mG.x;
+                      vdecStartSettings.settings.masteringDisplayColorVolume.greenPrimary.y = m_hdrStaticInfo.sType1.mG.y;
+                      vdecStartSettings.settings.masteringDisplayColorVolume.bluePrimary.x  = m_hdrStaticInfo.sType1.mB.x;
+                      vdecStartSettings.settings.masteringDisplayColorVolume.bluePrimary.y  = m_hdrStaticInfo.sType1.mB.y;
+                      vdecStartSettings.settings.masteringDisplayColorVolume.whitePoint.x   = m_hdrStaticInfo.sType1.mW.x;
+                      vdecStartSettings.settings.masteringDisplayColorVolume.whitePoint.y   = m_hdrStaticInfo.sType1.mW.y;
+                      vdecStartSettings.settings.masteringDisplayColorVolume.luminance.max  = m_hdrStaticInfo.sType1.mMaxDisplayLuminance;
+                      vdecStartSettings.settings.masteringDisplayColorVolume.luminance.min  = m_hdrStaticInfo.sType1.mMinDisplayLuminance;
+                      vdecStartSettings.settings.contentLightLevel.max                      = m_hdrStaticInfo.sType1.mMaxContentLightLevel;
+                      vdecStartSettings.settings.contentLightLevel.maxFrameAverage          = m_hdrStaticInfo.sType1.mMaxFrameAverageLightLevel;
+                   }
+                }
+                if (m_colorAspectsSet)
+                {
+                   ALOGI("%s ColorAspects from framework [R:%u, P:%u, M:%u, T:%u]",
+                          (int)GetCodec() == OMX_VIDEO_CodingVP9 ? "Configuring decoder" : "Skipping",
+                          m_colorAspects.mRange, m_colorAspects.mPrimaries, m_colorAspects.mMatrixCoeffs, m_colorAspects.mTransfer);
+                   if ((int)GetCodec() == OMX_VIDEO_CodingVP9)
+                   {
+                      // the only settings we need here is the transfer function mapping.
+                      switch(m_colorAspects.mTransfer)
+                      {
+                      case ColorAspects::Transfer::TransferST2084:
+                         vdecStartSettings.settings.eotf = NEXUS_VideoEotf_eHdr10;
+                      break;
+                      case ColorAspects::Transfer::TransferHLG:
+                         vdecStartSettings.settings.eotf = NEXUS_VideoEotf_eHlg;
+                      break;
+                      default:
+                         vdecStartSettings.settings.eotf = NEXUS_VideoEotf_eSdr;
+                      break;
+                      }
+                   }
+                }
                 ALOGV("Start Decoder display %u appDM %u codec %u", vdecStartSettings.displayEnabled, vdecStartSettings.settings.appDisplayManagement, vdecStartSettings.settings.codec);
                 property_set(B_PROPERTY_COALESCE, "vmode");
                 if ( m_tunnelMode )
@@ -5362,13 +5412,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetExtensionIndex(
                 // Drop out here to reduce spam in logcat
                 return OMX_ErrorUnsupportedIndex;
             }
-            else if ( !m_tunnelMode && ((g_extensions[i].index == OMX_IndexParamDescribeHdrColorInfo)
-                                    ||  (g_extensions[i].index == OMX_IndexParamDescribeColorAspects)) )
-            {
-                ALOGD("Interface %s not supported in non-tunneled mode", g_extensions[i].pName);
-                return OMX_ErrorUnsupportedIndex;
-
-            }
             else if ( !m_secureDecoder && (g_extensions[i].index == OMX_IndexParamAllocNativeHandle) )
             {
                 ALOGD("Interface %s not supported in non secure decoder", g_extensions[i].pName);
@@ -5420,10 +5463,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
 
-        if (!m_tunnelMode)
-        {
-            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-        }
         // Initialize with values provided by the framework (if any)
         if (m_hdrStaticInfoSet)
         {
@@ -5440,12 +5479,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
             sInfo->sType1.mB.x = m_videoStreamInfo.masteringDisplayColorVolume.bluePrimary.x;
             sInfo->sType1.mB.y = m_videoStreamInfo.masteringDisplayColorVolume.bluePrimary.y;
             sInfo->sType1.mW.x = m_videoStreamInfo.masteringDisplayColorVolume.whitePoint.x;
-            sInfo->sType1.mW.y = m_videoStreamInfo.masteringDisplayColorVolume.whitePoint.x;
+            sInfo->sType1.mW.y = m_videoStreamInfo.masteringDisplayColorVolume.whitePoint.y;
+            sInfo->sType1.mMaxDisplayLuminance = m_videoStreamInfo.masteringDisplayColorVolume.luminance.max;
+            sInfo->sType1.mMinDisplayLuminance = m_videoStreamInfo.masteringDisplayColorVolume.luminance.min;
             sInfo->sType1.mMaxContentLightLevel =  m_videoStreamInfo.contentLightLevel.max;
             sInfo->sType1.mMaxFrameAverageLightLevel = m_videoStreamInfo.contentLightLevel.maxFrameAverage;
-            // TODO: Currently not exposed, 'zero' is a valid value.
-            sInfo->sType1.mMaxDisplayLuminance = 0;
-            sInfo->sType1.mMinDisplayLuminance = 0;
         }
 
         return OMX_ErrorNone;
@@ -5458,10 +5496,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
         if ( pColorAspects->nPortIndex != m_videoPortBase+1 )
         {
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
-        }
-        if (!m_tunnelMode)
-        {
-            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
         }
 
         // TODO: Look into implementing this request
@@ -5482,7 +5516,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetConfig(
             // overwrite fields obtained from the stream
             ColorAspectsFromNexusStreamInfo(&pColorAspects->sAspects);
             ColorAspects *pAspects = &pColorAspects->sAspects;
-            ALOGV("ColorAspects from stream [(R:%u, P:%u, M:%u, T:%u]",
+            ALOGV("ColorAspects from stream [R:%u, P:%u, M:%u, T:%u]",
                 pAspects->mRange, pAspects->mPrimaries, pAspects->mMatrixCoeffs, pAspects->mTransfer);
         }
 
@@ -5519,14 +5553,10 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetConfig(
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
 
-        if (!m_tunnelMode)
-        {
-            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-        }
         m_hdrStaticInfo = pHDRStaticInfo->sInfo;
         m_hdrStaticInfoSet = true;
         HDRStaticInfo *sInfo = &m_hdrStaticInfo;
-        ALOGD("HDR params from framework [r:(%u %u),g:(%u %u),b:(%u %u),w:(%u %u),mcll:%u,mall:%u,madl:%u,midl:%u",
+        ALOGD("HDR params from framework [r:(%u %u),g:(%u %u),b:(%u %u),w:(%u %u),mcll:%u,mall:%u,madl:%u,midl:%u]",
             sInfo->sType1.mR.x, sInfo->sType1.mR.y, sInfo->sType1.mG.x, sInfo->sType1.mG.y, sInfo->sType1.mB.x,
             sInfo->sType1.mB.y, sInfo->sType1.mW.x, sInfo->sType1.mW.y, sInfo->sType1.mMaxContentLightLevel,
             sInfo->sType1.mMaxFrameAverageLightLevel, sInfo->sType1.mMaxDisplayLuminance, sInfo->sType1.mMinDisplayLuminance);
@@ -5543,13 +5573,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetConfig(
             return BOMX_ERR_TRACE(OMX_ErrorBadPortIndex);
         }
 
-        if (!m_tunnelMode)
-        {
-            return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
-        }
         m_colorAspectsSet = true;
         m_colorAspects = pColorAspects->sAspects;
-        ALOGD("ColorAspects from framework [(R:%u, P:%u, M:%u, T:%u]",
+        ALOGD("ColorAspects from framework [R:%u, P:%u, M:%u, T:%u]",
             m_colorAspects.mRange, m_colorAspects.mPrimaries, m_colorAspects.mMatrixCoeffs, m_colorAspects.mTransfer);
         return OMX_ErrorNone;
     }
