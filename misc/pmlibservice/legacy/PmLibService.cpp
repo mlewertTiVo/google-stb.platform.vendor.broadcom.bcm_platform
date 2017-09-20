@@ -45,7 +45,7 @@
 #define LOG_TAG "PmLibService"
 #include <utils/Log.h>
 
-#include "PmLibService.h"
+#include "legacy/PmLibService.h"
 
 #include "nexus_platform_features.h"
 

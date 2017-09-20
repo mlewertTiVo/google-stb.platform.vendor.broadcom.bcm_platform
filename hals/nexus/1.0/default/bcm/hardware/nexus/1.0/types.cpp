@@ -70,6 +70,61 @@ std::string toString(NexusStatus o) {
     return os;
 }
 
+std::string toString(const NexusPowerState& o) {
+    using ::android::hardware::toString;
+    std::string os;
+    os += "{";
+    os += ".enet_en = ";
+    os += ::android::hardware::toString(o.enet_en);
+    os += ", .moca_en = ";
+    os += ::android::hardware::toString(o.moca_en);
+    os += ", .sata_en = ";
+    os += ::android::hardware::toString(o.sata_en);
+    os += ", .tp1_en = ";
+    os += ::android::hardware::toString(o.tp1_en);
+    os += ", .tp2_en = ";
+    os += ::android::hardware::toString(o.tp2_en);
+    os += ", .tp3_en = ";
+    os += ::android::hardware::toString(o.tp3_en);
+    os += ", .cpufreq_scale_en = ";
+    os += ::android::hardware::toString(o.cpufreq_scale_en);
+    os += ", .ddr_pm_en = ";
+    os += ::android::hardware::toString(o.ddr_pm_en);
+    os += "}"; return os;
+}
+
+bool operator==(const NexusPowerState& lhs, const NexusPowerState& rhs) {
+    if (lhs.enet_en != rhs.enet_en) {
+        return false;
+    }
+    if (lhs.moca_en != rhs.moca_en) {
+        return false;
+    }
+    if (lhs.sata_en != rhs.sata_en) {
+        return false;
+    }
+    if (lhs.tp1_en != rhs.tp1_en) {
+        return false;
+    }
+    if (lhs.tp2_en != rhs.tp2_en) {
+        return false;
+    }
+    if (lhs.tp3_en != rhs.tp3_en) {
+        return false;
+    }
+    if (lhs.cpufreq_scale_en != rhs.cpufreq_scale_en) {
+        return false;
+    }
+    if (lhs.ddr_pm_en != rhs.ddr_pm_en) {
+        return false;
+    }
+    return true;
+}
+
+bool operator!=(const NexusPowerState& lhs,const NexusPowerState& rhs){
+    return !(lhs == rhs);
+}
+
 static_assert(sizeof(::android::hardware::MQDescriptor<char, ::android::hardware::kSynchronizedReadWrite>) == 32, "wrong size");
 static_assert(sizeof(::android::hardware::hidl_handle) == 16, "wrong size");
 static_assert(sizeof(::android::hardware::hidl_memory) == 40, "wrong size");

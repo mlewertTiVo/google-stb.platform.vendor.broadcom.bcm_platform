@@ -76,8 +76,13 @@ public:
    // register a dc (display changed) event callback through middleware interface (null to
    // unregister).
    int regDc(uint64_t cid, DcNtfyCb cb, void *ctx);
+   // set power state to middleware.
+   void setPwr(struct pmlib_state_t *s);
+   // get power state from middleware.
+   void getPwr(struct pmlib_state_t *s);
 
    static Mutex mLck;
+
    void actHp(bool connected);
    void actDc();
 

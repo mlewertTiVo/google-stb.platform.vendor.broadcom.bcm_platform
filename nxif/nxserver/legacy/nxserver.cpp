@@ -81,7 +81,7 @@
 #include "nexus_base_mmap.h"
 #include "nexus_watchdog.h"
 
-#include "PmLibService.h"
+#include "legacy/PmLibService.h"
 #include "NxServer.h"
 #include "nxwrap_common.h"
 
