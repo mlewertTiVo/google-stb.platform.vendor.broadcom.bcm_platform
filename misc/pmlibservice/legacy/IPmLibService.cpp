@@ -40,7 +40,7 @@
 #define LOG_TAG "IPmLibService"
 #include <utils/Log.h>
 
-#include "IPmLibService.h"
+#include "legacy/IPmLibService.h"
 
 using namespace android;
 

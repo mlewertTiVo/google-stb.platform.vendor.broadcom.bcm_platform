@@ -7,3 +7,14 @@ enum NexusStatus : uint32_t {
     UNKNOWN,
 };
 
+struct NexusPowerState {
+    bool enet_en;
+    bool moca_en;
+    bool sata_en;
+    bool tp1_en;
+    bool tp2_en;
+    bool tp3_en;
+    bool cpufreq_scale_en;
+    bool ddr_pm_en;
+};
+

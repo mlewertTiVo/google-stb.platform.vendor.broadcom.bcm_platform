@@ -47,6 +47,8 @@ __attribute__((destructor))static void static_destructor() {
 // no default implementation for: ::android::hardware::Return<uint64_t> INexus::client(int32_t pid)
 // no default implementation for: ::android::hardware::Return<NexusStatus> INexus::registerHpdCb(uint64_t cId, const ::android::sp<INexusHpdCb>& cb)
 // no default implementation for: ::android::hardware::Return<NexusStatus> INexus::registerDspCb(uint64_t cId, const ::android::sp<INexusDspCb>& cb)
+// no default implementation for: ::android::hardware::Return<void> INexus::getPwr(getPwr_cb _hidl_cb)
+// no default implementation for: ::android::hardware::Return<NexusStatus> INexus::setPwr(const NexusPowerState& p)
 
 // Methods from ::android::hidl::base::V1_0::IBase follow.
 ::android::hardware::Return<void> INexus::interfaceChain(interfaceChain_cb _hidl_cb){
@@ -67,7 +69,7 @@ __attribute__((destructor))static void static_destructor() {
 
 ::android::hardware::Return<void> INexus::getHashChain(getHashChain_cb _hidl_cb){
     _hidl_cb({
-        (uint8_t[32]){196,144,154,170,60,50,243,241,15,5,79,90,171,195,207,253,61,97,179,111,149,208,235,80,12,218,206,129,221,63,200,235} /* c4909aaa3c32f3f10f054f5aabc3cffd3d61b36f95d0eb500cdace81dd3fc8eb */,
+        (uint8_t[32]){53,114,82,157,233,35,18,57,49,176,89,149,226,221,164,6,93,104,10,38,186,11,210,49,98,143,0,161,181,189,109,197} /* 3572529de923123931b05995e2dda4065d680a26ba0bd231628f00a1b5bd6dc5 */,
         (uint8_t[32]){189,218,182,24,77,122,52,109,166,160,125,192,130,140,241,154,105,111,76,170,54,17,197,31,46,20,86,90,20,180,15,217} /* bddab6184d7a346da6a07dc0828cf19a696f4caa3611c51f2e14565a14b40fd9 */});
     return ::android::hardware::Void();
 }
@@ -304,6 +306,123 @@ _hidl_error:
         _hidl_args.push_back((void *)&_hidl_out_s);
         for (const auto &callback: mInstrumentationCallbacks) {
             callback(InstrumentationEvent::CLIENT_API_EXIT, "bcm.hardware.nexus", "1.0", "INexus", "registerDspCb", &_hidl_args);
+        }
+    }
+    #endif // __ANDROID_DEBUGGABLE__
+
+    _hidl_status.setFromStatusT(_hidl_err);
+    return ::android::hardware::Return<NexusStatus>(_hidl_out_s);
+
+_hidl_error:
+    _hidl_status.setFromStatusT(_hidl_err);
+    return ::android::hardware::Return<NexusStatus>(_hidl_status);
+}
+
+::android::hardware::Return<void> BpHwNexus::getPwr(getPwr_cb _hidl_cb) {
+    if (_hidl_cb == nullptr) {
+        return ::android::hardware::Status::fromExceptionCode(
+                ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
+    }
+
+    atrace_begin(ATRACE_TAG_HAL, "HIDL::INexus::getPwr::client");
+    #ifdef __ANDROID_DEBUGGABLE__
+    if (UNLIKELY(mEnableInstrumentation)) {
+        std::vector<void *> _hidl_args;
+        for (const auto &callback: mInstrumentationCallbacks) {
+            callback(InstrumentationEvent::CLIENT_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexus", "getPwr", &_hidl_args);
+        }
+    }
+    #endif // __ANDROID_DEBUGGABLE__
+
+    ::android::hardware::Parcel _hidl_data;
+    ::android::hardware::Parcel _hidl_reply;
+    ::android::status_t _hidl_err;
+    ::android::hardware::Status _hidl_status;
+
+    const NexusPowerState* _hidl_out_p;
+
+    _hidl_err = _hidl_data.writeInterfaceToken(INexus::descriptor);
+    if (_hidl_err != ::android::OK) { goto _hidl_error; }
+
+    _hidl_err = remote()->transact(4 /* getPwr */, _hidl_data, &_hidl_reply);
+    if (_hidl_err != ::android::OK) { goto _hidl_error; }
+
+    _hidl_err = ::android::hardware::readFromParcel(&_hidl_status, _hidl_reply);
+    if (_hidl_err != ::android::OK) { goto _hidl_error; }
+
+    if (!_hidl_status.isOk()) { return _hidl_status; }
+
+    size_t _hidl__hidl_out_p_parent;
+
+    _hidl_err = _hidl_reply.readBuffer(sizeof(*_hidl_out_p), &_hidl__hidl_out_p_parent,  reinterpret_cast<const void **>(&_hidl_out_p));
+    if (_hidl_err != ::android::OK) { goto _hidl_error; }
+
+    _hidl_cb(*_hidl_out_p);
+
+    atrace_end(ATRACE_TAG_HAL);
+    #ifdef __ANDROID_DEBUGGABLE__
+    if (UNLIKELY(mEnableInstrumentation)) {
+        std::vector<void *> _hidl_args;
+        _hidl_args.push_back((void *)_hidl_out_p);
+        for (const auto &callback: mInstrumentationCallbacks) {
+            callback(InstrumentationEvent::CLIENT_API_EXIT, "bcm.hardware.nexus", "1.0", "INexus", "getPwr", &_hidl_args);
+        }
+    }
+    #endif // __ANDROID_DEBUGGABLE__
+
+    _hidl_status.setFromStatusT(_hidl_err);
+    return ::android::hardware::Return<void>();
+
+_hidl_error:
+    _hidl_status.setFromStatusT(_hidl_err);
+    return ::android::hardware::Return<void>(_hidl_status);
+}
+
+::android::hardware::Return<NexusStatus> BpHwNexus::setPwr(const NexusPowerState& p) {
+    atrace_begin(ATRACE_TAG_HAL, "HIDL::INexus::setPwr::client");
+    #ifdef __ANDROID_DEBUGGABLE__
+    if (UNLIKELY(mEnableInstrumentation)) {
+        std::vector<void *> _hidl_args;
+        _hidl_args.push_back((void *)&p);
+        for (const auto &callback: mInstrumentationCallbacks) {
+            callback(InstrumentationEvent::CLIENT_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexus", "setPwr", &_hidl_args);
+        }
+    }
+    #endif // __ANDROID_DEBUGGABLE__
+
+    ::android::hardware::Parcel _hidl_data;
+    ::android::hardware::Parcel _hidl_reply;
+    ::android::status_t _hidl_err;
+    ::android::hardware::Status _hidl_status;
+
+    NexusStatus _hidl_out_s;
+
+    _hidl_err = _hidl_data.writeInterfaceToken(INexus::descriptor);
+    if (_hidl_err != ::android::OK) { goto _hidl_error; }
+
+    size_t _hidl_p_parent;
+
+    _hidl_err = _hidl_data.writeBuffer(&p, sizeof(p), &_hidl_p_parent);
+    if (_hidl_err != ::android::OK) { goto _hidl_error; }
+
+    _hidl_err = remote()->transact(5 /* setPwr */, _hidl_data, &_hidl_reply);
+    if (_hidl_err != ::android::OK) { goto _hidl_error; }
+
+    _hidl_err = ::android::hardware::readFromParcel(&_hidl_status, _hidl_reply);
+    if (_hidl_err != ::android::OK) { goto _hidl_error; }
+
+    if (!_hidl_status.isOk()) { return _hidl_status; }
+
+    _hidl_err = _hidl_reply.readUint32((uint32_t *)&_hidl_out_s);
+    if (_hidl_err != ::android::OK) { goto _hidl_error; }
+
+    atrace_end(ATRACE_TAG_HAL);
+    #ifdef __ANDROID_DEBUGGABLE__
+    if (UNLIKELY(mEnableInstrumentation)) {
+        std::vector<void *> _hidl_args;
+        _hidl_args.push_back((void *)&_hidl_out_s);
+        for (const auto &callback: mInstrumentationCallbacks) {
+            callback(InstrumentationEvent::CLIENT_API_EXIT, "bcm.hardware.nexus", "1.0", "INexus", "setPwr", &_hidl_args);
         }
     }
     #endif // __ANDROID_DEBUGGABLE__
@@ -1004,6 +1123,106 @@ BnHwNexus::BnHwNexus(const ::android::sp<INexus> &_hidl_impl)
                 _hidl_args.push_back((void *)&_hidl_out_s);
                 for (const auto &callback: mInstrumentationCallbacks) {
                     callback(InstrumentationEvent::SERVER_API_EXIT, "bcm.hardware.nexus", "1.0", "INexus", "registerDspCb", &_hidl_args);
+                }
+            }
+            #endif // __ANDROID_DEBUGGABLE__
+
+            _hidl_cb(*_hidl_reply);
+            break;
+        }
+
+        case 4 /* getPwr */:
+        {
+            if (!_hidl_data.enforceInterface(INexus::descriptor)) {
+                _hidl_err = ::android::BAD_TYPE;
+                break;
+            }
+
+            atrace_begin(ATRACE_TAG_HAL, "HIDL::INexus::getPwr::server");
+            #ifdef __ANDROID_DEBUGGABLE__
+            if (UNLIKELY(mEnableInstrumentation)) {
+                std::vector<void *> _hidl_args;
+                for (const auto &callback: mInstrumentationCallbacks) {
+                    callback(InstrumentationEvent::SERVER_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexus", "getPwr", &_hidl_args);
+                }
+            }
+            #endif // __ANDROID_DEBUGGABLE__
+
+            bool _hidl_callbackCalled = false;
+
+            _hidl_mImpl->getPwr([&](const auto &_hidl_out_p) {
+                if (_hidl_callbackCalled) {
+                    LOG_ALWAYS_FATAL("getPwr: _hidl_cb called a second time, but must be called once.");
+                }
+                _hidl_callbackCalled = true;
+
+                ::android::hardware::writeToParcel(::android::hardware::Status::ok(), _hidl_reply);
+
+                size_t _hidl__hidl_out_p_parent;
+
+                _hidl_err = _hidl_reply->writeBuffer(&_hidl_out_p, sizeof(_hidl_out_p), &_hidl__hidl_out_p_parent);
+                /* _hidl_err ignored! */
+
+                atrace_end(ATRACE_TAG_HAL);
+                #ifdef __ANDROID_DEBUGGABLE__
+                if (UNLIKELY(mEnableInstrumentation)) {
+                    std::vector<void *> _hidl_args;
+                    _hidl_args.push_back((void *)&_hidl_out_p);
+                    for (const auto &callback: mInstrumentationCallbacks) {
+                        callback(InstrumentationEvent::SERVER_API_EXIT, "bcm.hardware.nexus", "1.0", "INexus", "getPwr", &_hidl_args);
+                    }
+                }
+                #endif // __ANDROID_DEBUGGABLE__
+
+                _hidl_cb(*_hidl_reply);
+            });
+
+            if (!_hidl_callbackCalled) {
+                LOG_ALWAYS_FATAL("getPwr: _hidl_cb not called, but must be called once.");
+            }
+
+            break;
+        }
+
+        case 5 /* setPwr */:
+        {
+            if (!_hidl_data.enforceInterface(INexus::descriptor)) {
+                _hidl_err = ::android::BAD_TYPE;
+                break;
+            }
+
+            const NexusPowerState* p;
+
+            size_t _hidl_p_parent;
+
+            _hidl_err = _hidl_data.readBuffer(sizeof(*p), &_hidl_p_parent,  reinterpret_cast<const void **>(&p));
+            if (_hidl_err != ::android::OK) { break; }
+
+            atrace_begin(ATRACE_TAG_HAL, "HIDL::INexus::setPwr::server");
+            #ifdef __ANDROID_DEBUGGABLE__
+            if (UNLIKELY(mEnableInstrumentation)) {
+                std::vector<void *> _hidl_args;
+                _hidl_args.push_back((void *)p);
+                for (const auto &callback: mInstrumentationCallbacks) {
+                    callback(InstrumentationEvent::SERVER_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexus", "setPwr", &_hidl_args);
+                }
+            }
+            #endif // __ANDROID_DEBUGGABLE__
+
+            NexusStatus _hidl_out_s = _hidl_mImpl->setPwr(*p);
+
+            ::android::hardware::writeToParcel(::android::hardware::Status::ok(), _hidl_reply);
+
+            _hidl_err = _hidl_reply->writeUint32((uint32_t)_hidl_out_s);
+            /* _hidl_err ignored! */
+
+            atrace_end(ATRACE_TAG_HAL);
+            #ifdef __ANDROID_DEBUGGABLE__
+            if (UNLIKELY(mEnableInstrumentation)) {
+                std::vector<void *> _hidl_args;
+                _hidl_args.push_back((void *)&_hidl_out_s);
+                for (const auto &callback: mInstrumentationCallbacks) {
+                    callback(InstrumentationEvent::SERVER_API_EXIT, "bcm.hardware.nexus", "1.0", "INexus", "setPwr", &_hidl_args);
                 }
             }
             #endif // __ANDROID_DEBUGGABLE__

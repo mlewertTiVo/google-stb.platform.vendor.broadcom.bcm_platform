@@ -29,6 +29,11 @@ struct INexus : public ::android::hidl::base::V1_0::IBase {
 
     virtual ::android::hardware::Return<NexusStatus> registerDspCb(uint64_t cId, const ::android::sp<INexusDspCb>& cb) = 0;
 
+    using getPwr_cb = std::function<void(const NexusPowerState& p)>;
+    virtual ::android::hardware::Return<void> getPwr(getPwr_cb _hidl_cb) = 0;
+
+    virtual ::android::hardware::Return<NexusStatus> setPwr(const NexusPowerState& p) = 0;
+
     using interfaceChain_cb = std::function<void(const ::android::hardware::hidl_vec<::android::hardware::hidl_string>& descriptors)>;
     virtual ::android::hardware::Return<void> interfaceChain(interfaceChain_cb _hidl_cb) override;
 

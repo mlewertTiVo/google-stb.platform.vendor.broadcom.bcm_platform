@@ -78,7 +78,6 @@
 #include "nexus_base_mmap.h"
 #include "nexus_watchdog.h"
 
-#include "PmLibService.h"
 #include "nxinexus.h"
 #include <hidl/HidlTransportSupport.h>
 
@@ -289,7 +288,6 @@ static void *inexus_task(void *argv)
           nx_server->nxi->start_middleware();
           nx_server->nxi->registerAsService();
        }
-       PmLibService::instantiate();
        joinRpcThreadpool();
     } while(nx_server->binder.running);
     return NULL;

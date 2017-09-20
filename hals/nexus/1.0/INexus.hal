@@ -21,6 +21,18 @@ interface INexus {
      *
      */
     registerDspCb(uint64_t cId, INexusDspCb cb) generates (NexusStatus s);
+
+    /**
+     * get power state information from middleware.
+     *
+     */
+    getPwr() generates (NexusPowerState p);
+
+    /**
+     * set power state information to middleware.
+     *
+     */
+    setPwr(NexusPowerState p) generates (NexusStatus s);
 };
 
 

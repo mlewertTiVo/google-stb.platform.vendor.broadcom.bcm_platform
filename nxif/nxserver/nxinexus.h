@@ -51,6 +51,7 @@
 #include <cutils/properties.h>
 #include <private/android_filesystem_config.h>
 #include <utils/Vector.h>
+#include "PmLibService.h"
 
 using namespace android;
 using namespace android::hardware;
@@ -73,6 +74,8 @@ public:
    Return<uint64_t> client(int32_t pid);
    Return<NexusStatus> registerHpdCb(uint64_t cId, const ::android::sp<INexusHpdCb>& cb);
    Return<NexusStatus> registerDspCb(uint64_t cId, const ::android::sp<INexusDspCb>& cb);
+   Return<NexusStatus> setPwr(const NexusPowerState& p);
+   Return<void> getPwr(getPwr_cb _hidl_cb);
 
    void start_middleware();
    void stop_middleware();
@@ -85,6 +88,7 @@ private:
    hdmi_state mHpd;
    Vector<struct HpdCb> mHpdCb;
    Vector<struct DspCb> mDspCb;
+   PmLibService mPmLib;
 
    void init_hdmi_out();
    void deinit_hdmi_out();
