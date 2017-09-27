@@ -43,6 +43,7 @@
 #define LOG_COMP_SUM_DEBUG  (1<<3)  /* summary only of composition stack passed to nsc. */
 #define LOG_SDB_DEBUG       (1<<4)  /* sideband layer composition (location). */
 #define LOG_PAH_DEBUG       (1<<5)  /* pip-alpha-hole punch-thru. */
+#define LOG_ICB_DEBUG       (1<<6)  /* use of intermediate composition buffer for blit ops. */
 /*
  * log masks: specific to 'virtual' display (same categories as external unless noted).
  */
@@ -78,6 +79,7 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_MEMIF_DEV  "ro.nexus.ashmem.devname"
 #define HWC2_PAH        1
 #define HWC2_PAH_DIV    4
+#define HWC2_SYNC_TO    3500 /* slightly more than android timeout. */
 
 /* timeline creation/destruction are expensive operations; we use
  * a pool which recycles yet keeps sufficient depth to allow layers
@@ -352,6 +354,7 @@ struct hwc2_ext_t {
    uint32_t                            bg;
    bool                                gles;
    struct hwc2_fb_t                    yvi;
+   struct hwc2_fb_t                    icb;
 };
 
 enum hwc2_record_dump_e {
