@@ -1274,7 +1274,7 @@ static void hwc2_vd_cmp_frame(
    NEXUS_MemoryBlockHandle dbh = NULL, dbhp = NULL;
    PSHARED_DATA dshared = NULL;
    void *dmap = NULL;
-   int blt;
+   int blt, vl = 0;
    size_t ccli = 0;
    enum hwc2_seeding_e ms = hwc2_seeding_none;
 
@@ -1321,11 +1321,18 @@ static void hwc2_vd_cmp_frame(
 
    /* wait for output buffer to be ready to compose into. */
    if (f->oftgt >= 0) {
-      sync_wait(f->oftgt, BKNI_INFINITE);
+      vl = sync_wait(f->oftgt, HWC2_SYNC_TO);
       close(f->oftgt);
+      f->oftgt = HWC2_INVALID;
+   }
+   if (vl == HWC2_INVALID) {
+      ALOGE("[vd]:[out]:%" PRIu64 ":%" PRIu64 ": sync_wait error on output buffer.",
+             dsp->pres, dsp->post);
+      goto out_error;
    }
 
    for (i = 0; i < f->cnt; i++) {
+      vl = 0;
       lyr = &f->lyr[i];
       /* [i]. wait as needed.
        */
@@ -1337,12 +1344,12 @@ static void hwc2_vd_cmp_frame(
          if (f->tgt == NULL && f->ftgt >= 0) {
             close(f->ftgt);
          } else if (f->ftgt >= 0) {
-            sync_wait(f->ftgt, BKNI_INFINITE);
+            vl = sync_wait(f->ftgt, HWC2_SYNC_TO);
             close(f->ftgt);
             f->ftgt = HWC2_INVALID;
          }
       } else if (lyr->af >= 0) {
-         sync_wait(lyr->af, BKNI_INFINITE);
+         vl = sync_wait(lyr->af, HWC2_SYNC_TO);
          close(lyr->af);
          lyr->af = HWC2_INVALID;
       }
@@ -1436,12 +1443,18 @@ static void hwc2_vd_cmp_frame(
 
          yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
                  (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
-         if (yv12) {
-            blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
+         if (vl != 0) {
+            ALOGW("[vd]:[frame]:%" PRIu64 ":%" PRIu64 ": skip layer on sync error.",
+                  dsp->pres, dsp->post);
+            blt = HWC2_INVALID;
          } else {
-            blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp, &ms, c);
-            if (!blt) {
-               lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
+            if (yv12) {
+               blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
+            } else {
+               blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp, &ms, c);
+               if (!blt) {
+                  lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
+               }
             }
          }
 
@@ -5345,7 +5358,7 @@ static void hwc2_ext_cmp_frame(
    bool is_video;
    hwc2_blend_mode_t lbm = HWC2_BLEND_MODE_INVALID;
    struct hwc2_dsp_t *dsp = hwc2->ext;
-   int blt;
+   int blt, vl = 0;
    size_t ccli = 0;
    NEXUS_Rect pah = {0,0,0,0};
    enum hwc2_seeding_e ms = hwc2_seeding_none;
@@ -5414,6 +5427,7 @@ static void hwc2_ext_cmp_frame(
 
       lyr = &f->lyr[i];
       is_video = lyr->oob;
+      vl = 0;
       if (is_video && lyr->af >= 0) {
          close(lyr->af);
          lyr->af = HWC2_INVALID;
@@ -5481,7 +5495,7 @@ static void hwc2_ext_cmp_frame(
             close(f->ftgt);
             f->ftgt = HWC2_INVALID;
          } else if (f->ftgt >= 0) {
-            sync_wait(f->ftgt, BKNI_INFINITE);
+            vl = sync_wait(f->ftgt, HWC2_SYNC_TO);
             close(f->ftgt);
             f->ftgt = HWC2_INVALID;
          }
@@ -5491,7 +5505,7 @@ static void hwc2_ext_cmp_frame(
             close(lyr->af);
             lyr->af = HWC2_INVALID;
          } else if (lyr->af >= 0) {
-            sync_wait(lyr->af, BKNI_INFINITE);
+            vl = sync_wait(lyr->af, HWC2_SYNC_TO);
             close(lyr->af);
             lyr->af = HWC2_INVALID;
          }
@@ -5615,12 +5629,18 @@ static void hwc2_ext_cmp_frame(
             bool yv12 = false;
             yv12 = ((shared->container.format == HAL_PIXEL_FORMAT_YV12) ||
                     (shared->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888)) ? true : false;
-            if (yv12) {
-               blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
+            if (vl != 0) {
+               blt = HWC2_INVALID;
+               ALOGW("[ext]:[frame]:%" PRIu64 ":%" PRIu64 ": skip on sync_wait failure.",
+                     dsp->pres, dsp->post);
             } else {
-               blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp, &ms, c);
-               if (!blt) {
-                  lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
+               if (yv12) {
+                  blt = hwc2_blit_yv12(hwc2, d, lyr, shared, dsp, &ms);
+               } else {
+                  blt = hwc2_blit_gpx(hwc2, d, lyr, shared, lbm, dsp, &ms, c);
+                  if (!blt) {
+                     lbm = (lyr->bm == HWC2_BLEND_MODE_INVALID) ? HWC2_BLEND_MODE_NONE : lyr->bm;
+                  }
                }
             }
             if (lrcp == NEXUS_SUCCESS) {
