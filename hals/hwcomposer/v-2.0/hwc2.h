@@ -43,6 +43,7 @@
 #define LOG_COMP_SUM_DEBUG  (1<<3)  /* summary only of composition stack passed to nsc. */
 #define LOG_SDB_DEBUG       (1<<4)  /* sideband layer composition (location). */
 #define LOG_PAH_DEBUG       (1<<5)  /* pip-alpha-hole punch-thru. */
+#define LOG_ICB_DEBUG       (1<<6)  /* use of intermediate composition buffer for blit ops. */
 /*
  * log masks: specific to 'virtual' display (same categories as external unless noted).
  */
