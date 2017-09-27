@@ -143,7 +143,7 @@ void nexus_get_hdmi_parameters(String8& rates, String8& channels, String8& forma
             if (compressed)
                 rates.append("|176400|192000");
 
-            channels.append("AUDIO_CHANNEL_OUT_STEREO");
+            channels.append("AUDIO_CHANNEL_OUT_MONO|AUDIO_CHANNEL_OUT_STEREO");
             if (channels_5_1)
                 channels.append("|AUDIO_CHANNEL_OUT_5POINT1");
             if (channels_7_1)
