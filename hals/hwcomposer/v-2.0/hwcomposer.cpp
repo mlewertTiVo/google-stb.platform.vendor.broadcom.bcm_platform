@@ -697,6 +697,29 @@ static void hwc2_ext_fbs(
             hwc2->ext->u.ext.yvi.s, hwc2->ext->u.ext.yvi.fd, bh);
    }
 
+   {
+      NEXUS_SurfaceCreateSettings scs;
+      NEXUS_MemoryBlockHandle bh = NULL;
+      bool dh = true;
+      NEXUS_Surface_GetDefaultCreateSettings(&scs);
+      scs.width       = property_get_int32(HWC2_EXT_NFB_W, 1920);
+      scs.height      = property_get_int32(HWC2_EXT_NFB_H, 1080);
+      scs.pitch       = scs.width * 4;
+      scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
+      scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
+
+      hwc2->ext->u.ext.icb.s = NULL;
+      bh = hwc_block_create(&scs, hwc2->memif, dh, &hwc2->ext->u.ext.icb.fd);
+      if (bh != NULL) {
+         scs.pixelMemory = bh;
+         scs.heap = NULL;
+         hwc2->ext->u.ext.icb.s = hwc_surface_create(&scs, dh);
+      }
+      ALOGI("[ext]:icb::%dx%d::%s -> %p::%d (b:%p)",
+            scs.width, scs.height, dh?"d-cma":"gfx",
+            hwc2->ext->u.ext.icb.s, hwc2->ext->u.ext.icb.fd, bh);
+   }
+
    pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
    /* bfifo uses the cached version to preserve the original mapping correctly. */
    memcpy(&hwc2->ext->u.ext.fbs_c, &hwc2->ext->u.ext.fbs, sizeof(hwc2->ext->u.ext.fbs_c));
@@ -4690,6 +4713,8 @@ static void hwc2_bcm_close(
          close(hwc2->ext->u.ext.yvi.fd);
          NEXUS_Surface_Destroy(hwc2->ext->u.ext.yvi.s);
       }
+      close(hwc2->ext->u.ext.icb.fd);
+      NEXUS_Surface_Destroy(hwc2->ext->u.ext.icb.s);
       free(hwc2->ext);
    }
 
