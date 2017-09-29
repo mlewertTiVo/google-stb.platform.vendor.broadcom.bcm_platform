@@ -59,7 +59,7 @@ struct INexusHpdCb : public ::android::hidl::base::V1_0::IBase {
     static ::android::sp<INexusHpdCb> getService(const char serviceName[], bool getStub=false)  { std::string str(serviceName ? serviceName : "");      return getService(str, getStub); }
     static ::android::sp<INexusHpdCb> getService(const ::android::hardware::hidl_string& serviceName, bool getStub=false)  { std::string str(serviceName.c_str());      return getService(str, getStub); }
     static ::android::sp<INexusHpdCb> getService(bool getStub) { return getService("default", getStub); }
-    ::android::status_t registerAsService(const std::string &serviceName="default");
+    __attribute__ ((warn_unused_result))::android::status_t registerAsService(const std::string &serviceName="default");
     static bool registerForNotifications(
             const std::string &serviceName,
             const ::android::sp<::android::hidl::manager::V1_0::IServiceNotification> &notification);
