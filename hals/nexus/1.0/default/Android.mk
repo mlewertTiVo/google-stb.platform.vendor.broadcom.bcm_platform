@@ -27,8 +27,7 @@ LOCAL_SHARED_LIBRARIES := \
    libhwbinder \
    liblog \
    libutils \
-   libcutils \
-   android.hidl.base@1.0
+   libcutils
 
 LOCAL_MODULE := bcm.hardware.nexus@1.0-impl
 LOCAL_PROPRIETARY_MODULE := true
