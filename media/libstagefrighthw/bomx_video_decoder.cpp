@@ -6337,7 +6337,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
         while ( pBuffer != pEnd && numFrames < B_MAX_DECODED_FRAMES )
         {
             BOMX_VideoDecoderFrameBuffer *pNext = BLST_Q_NEXT(pBuffer, node);
-            //NEXUS_VideoDecoder_GetDefaultReturnFrameSettings(&returnSettings[numFrames]); Intentionally skipped - there is only one field to set anyway
+            NEXUS_VideoDecoder_GetDefaultReturnFrameSettings(&returnSettings[numFrames]);
             if ( pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered )
             {
                 if ( m_outputFlushing )
