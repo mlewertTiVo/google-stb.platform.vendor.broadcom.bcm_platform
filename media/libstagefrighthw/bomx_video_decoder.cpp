@@ -83,6 +83,8 @@
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE_DEFAULT (1536*1536)
 #define B_DATA_BUFFER_SIZE_HIGHRES (3*1024*1024)
+#define B_DATA_BUFFER_HEIGHT_HIGHRES (3840)
+#define B_DATA_BUFFER_WIDTH_HIGHRES (2160)
 #define B_NUM_BUFFERS (12)
 #define B_STREAM_ID 0xe0
 #define B_MAX_FRAMES (12)
@@ -2450,7 +2452,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
                 }
 
                 NEXUS_VideoCodec currentCodec = GetNexusCodec();
-                if ((currentCodec == NEXUS_VideoCodec_eH265) || (currentCodec == NEXUS_VideoCodec_eVp9))
+                if ((currentCodec == NEXUS_VideoCodec_eH265 || currentCodec == NEXUS_VideoCodec_eVp9) &&
+                    (m_maxDecoderWidth >= B_DATA_BUFFER_WIDTH_HIGHRES ||
+                     m_maxDecoderHeight >= B_DATA_BUFFER_HEIGHT_HIGHRES))
                 {
                     // Increase input buffer size for hevc/vp9 decoding to handle 4K streams
                     OMX_PARAM_PORTDEFINITIONTYPE portDef;
