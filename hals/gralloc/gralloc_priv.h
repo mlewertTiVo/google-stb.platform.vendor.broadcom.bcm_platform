@@ -43,6 +43,7 @@ extern "C" {
 #include <linux/time.h>
 #include <assert.h>
 #include "nx_ashmem.h"
+#include <cutils/log.h>
 
 #define GR_MGMT_MODE_LOCKED     1
 #define GR_MGMT_MODE_UNLOCKED   2
@@ -160,11 +161,25 @@ struct private_handle_t {
        int rc;
        struct nx_ashmem_getmem getmem;
 
+       if (sdata != NULL) {
+          *sdata = 0;
+       }
+       if (pdata != NULL) {
+          *pdata = 0;
+       }
+
+       if (pHandle->magic != sMagic) {
+          ALOGE("gbh(%p)::deleted", pHandle);
+          return -1;
+       }
+
        if ((sdata != NULL) && (pHandle->sdata >= 0)) {
           rc = ioctl(pHandle->sdata, NX_ASHMEM_GET_BLK, &getmem);
           if (rc >= 0) {
              *sdata = (NEXUS_MemoryBlockHandle)getmem.hdl;
           } else {
+             int err = errno;
+             ALOGE("sdata:gbh(fd:%d)::fail:%d::errno=%d", pHandle->sdata, rc, err);
              return rc;
           }
        }
@@ -174,6 +189,8 @@ struct private_handle_t {
           if (rc >= 0) {
              *pdata = (NEXUS_MemoryBlockHandle)getmem.hdl;
           } else {
+             int err = errno;
+             ALOGE("pdata:gbh(fd:%d)::fail:%d:errno=%d", pHandle->pdata, rc, err);
              return rc;
           }
        }
