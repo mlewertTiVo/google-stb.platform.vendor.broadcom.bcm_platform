@@ -55,6 +55,8 @@ using namespace android;
 #define BRCM_AUDIO_DIRECT_DECODER_FIFO_SIZE     (16384)
 #define BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY    (128)
 
+#define BITRATE_TO_BYTES_PER_125_MS(bitrate)    (bitrate * 1024/8/8)
+
 /*
  * Runtime Properties
  */
@@ -482,14 +484,38 @@ static int nexus_direct_bout_resume(struct brcm_stream_out *bout)
     if (bout->nexus.direct.playpump_mode && playpump) {
         /* Prime again only if not yet resumed */
         if (!bout->nexus.direct.priming) {
+            NEXUS_AudioDecoderStatus decoderStatus;
+            NEXUS_PlaypumpStatus playpumpStatus;
             NEXUS_AudioDecoderTrickState trickState;
+            NEXUS_Error res;
+
+            NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &decoderStatus);
+            NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
+
+            ALOGVV("%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u", __FUNCTION__,
+                decoderStatus.codecStatus.ac3.bitrate,
+                decoderStatus.fifoDepth,
+                decoderStatus.fifoSize,
+                playpumpStatus.fifoDepth,
+                playpumpStatus.fifoSize);
 
             ALOGV("%s, %p", __FUNCTION__, bout);
 
             NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.direct.simple_decoder, &trickState);
             if (trickState.rate == 0) {
-                ALOGV("%s: priming decoder for resume", __FUNCTION__);
-                bout->nexus.direct.priming = true;
+                if ( decoderStatus.codecStatus.ac3.bitrate &&
+                     (decoderStatus.fifoDepth + playpumpStatus.fifoDepth) >=
+                         BITRATE_TO_BYTES_PER_125_MS(decoderStatus.codecStatus.ac3.bitrate) ) {
+                    ALOGV("%s: at %d, Already have enough data.  No need to prime.", __FUNCTION__, __LINE__);
+                    trickState.rate = NEXUS_NORMAL_DECODE_RATE;
+                    res = NEXUS_SimpleAudioDecoder_SetTrickState(simple_decoder, &trickState);
+                    if (res != NEXUS_SUCCESS) {
+                        ALOGE("%s: Error resuming audio decoder %u", __FUNCTION__, res);
+                    }
+                } else {
+                    ALOGV("%s: priming decoder for resume", __FUNCTION__);
+                    bout->nexus.direct.priming = true;
+                }
             }
         }
     }
@@ -539,6 +565,38 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
         size_t nexus_space;
 
         if (bout->nexus.direct.playpump_mode) {
+            NEXUS_AudioDecoderStatus decoderStatus;
+            NEXUS_PlaypumpStatus playpumpStatus;
+            NEXUS_SimpleAudioDecoderSettings settings;
+            NEXUS_AudioDecoderTrickState trickState;
+
+            NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &decoderStatus);
+            NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
+            NEXUS_SimpleAudioDecoder_GetTrickState(simple_decoder, &trickState);
+            ALOGVV("%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u, trick=%u", __FUNCTION__,
+                decoderStatus.codecStatus.ac3.bitrate,
+                decoderStatus.fifoDepth,
+                decoderStatus.fifoSize,
+                playpumpStatus.fifoDepth,
+                playpumpStatus.fifoSize,
+                trickState.rate);
+
+            /* If not priming nor paused, do not buffer too much data */
+            if ( !bout->nexus.direct.priming && trickState.rate && decoderStatus.codecStatus.ac3.bitrate &&
+                 (decoderStatus.fifoDepth + playpumpStatus.fifoDepth) >=
+                     BITRATE_TO_BYTES_PER_125_MS(decoderStatus.codecStatus.ac3.bitrate) ) {
+                ALOGV("%s: at %d, Already have enough data.", __FUNCTION__, __LINE__);
+                pthread_mutex_unlock(&bout->lock);
+                ret = BKNI_WaitForEvent(event, 50);
+                pthread_mutex_lock(&bout->lock);
+                if (ret == BERR_TIMEOUT) {
+                    return bytes_written;
+                } else {
+                    ALOGVV("%s: at %d, Check for more room.", __FUNCTION__, __LINE__);
+                    continue;
+                }
+            }
+
             ALOGVV("%s: at %d, Playpump_GetBuffer", __FUNCTION__, __LINE__);
             ret = NEXUS_Playpump_GetBuffer(playpump, &nexus_buffer, &nexus_space);
             ALOGVV("%s: at %d, Playpump_GetBuffer got %d bytes", __FUNCTION__, __LINE__, nexus_space);
@@ -575,17 +633,18 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
             }
             bytes_written += bytes_to_copy;
             bytes -= bytes_to_copy;
+            nexus_space -= bytes_to_copy;
         }
-        else {
+        if (!nexus_space) {
             /* Unpause decoder after priming is done */
             if (bout->nexus.direct.playpump_mode && bout->nexus.direct.priming) {
                 NEXUS_Error res;
                 NEXUS_AudioDecoderTrickState trickState;
 
                 ALOGV("%s: finished priming decoder", __FUNCTION__);
-                NEXUS_SimpleAudioDecoder_GetTrickState(bout->nexus.direct.simple_decoder, &trickState);
+                NEXUS_SimpleAudioDecoder_GetTrickState(simple_decoder, &trickState);
                 trickState.rate = NEXUS_NORMAL_DECODE_RATE;
-                res = NEXUS_SimpleAudioDecoder_SetTrickState(bout->nexus.direct.simple_decoder, &trickState);
+                res = NEXUS_SimpleAudioDecoder_SetTrickState(simple_decoder, &trickState);
                 if (res == NEXUS_SUCCESS) {
                     bout->nexus.direct.priming = false;
                     continue;
