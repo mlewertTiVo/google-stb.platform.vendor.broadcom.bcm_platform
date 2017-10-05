@@ -811,8 +811,9 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
       if (pSharedData->container.block) {NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);}
       else {pPhysAddr = 0;}
-      ALOGI("alloc (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
+      ALOGI("alloc (%s:%p): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
+            hnd,
             getpid(),
             block_handle,
             sPhysAddr,
@@ -848,8 +849,8 @@ alloc_failed:
    }
 error:
    *pHandle = NULL;
-   if (pdata >= 0) close(pdata);
-   if (sdata >= 0) close(sdata);
+   if (pdata >= 0) { close(pdata); hnd->pdata = -1; }
+   if (sdata >= 0) { close(sdata); hnd->sdata = -1; }
    delete hnd;
    return err;
 }
@@ -883,8 +884,9 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
          NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
          if (planeHandle) {NEXUS_MemoryBlock_LockOffset(planeHandle, &pPhysAddr);}
          else {pPhysAddr = 0;}
-         ALOGI(" free (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
+         ALOGI(" free (%s:%p): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
+               hnd,
                hnd->pid,
                block_handle,
                sPhysAddr,
@@ -912,8 +914,8 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
       if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
    }
 
-   if (hnd->pdata >= 0) close(hnd->pdata);
-   if (hnd->sdata >= 0) close(hnd->sdata);
+   if (hnd->pdata >= 0) { close(hnd->pdata); hnd->pdata = -1; }
+   if (hnd->sdata >= 0) { close(hnd->sdata); hnd->sdata = -1; }
    delete hnd;
    return 0;
 }
