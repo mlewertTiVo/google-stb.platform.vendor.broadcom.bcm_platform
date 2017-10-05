@@ -1296,7 +1296,7 @@ int main(void)
     if (loggerDisabled) {
         setenv("nexus_logger", "disabled", 1);
     } else {
-        setenv("nexus_logger", "/vendor/bin/nxlogger", 1);
+        setenv("nexus_logger", "/vendor/bin/nxserver", 1);
         setenv("nexus_logger_file", NEXUS_LOGGER_DATA_PATH, 1);
     }
     char loggerSize[PROPERTY_VALUE_MAX];
