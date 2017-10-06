@@ -61,7 +61,8 @@ LOCAL_CFLAGS += -Werror
 LOCAL_SHARED_LIBRARIES :=         \
         libcutils                 \
         libutils                  \
-        liblog
+        liblog                    \
+        libnexus
 
 LOCAL_MODULE := libb_os
 LOCAL_PROPRIETARY_MODULE := true
