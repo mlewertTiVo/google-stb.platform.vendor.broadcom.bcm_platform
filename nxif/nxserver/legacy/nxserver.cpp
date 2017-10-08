@@ -169,6 +169,7 @@
 #define NX_TRIM_VP9                    "ro.nx.trim.vp9"
 #define NX_TRIM_4KDEC                  "ro.nx.trim.4kdec"
 #define NX_TRIM_10BCOL                 "ro.nx.trim.10bcol"
+#define NX_TRIM_D0HD                   "ro.nx.trim.d0hd"
 
 #define NX_HWC2_FBCOMP                 "ro.nx.hwc2.tweak.fbcomp"
 
@@ -601,6 +602,14 @@ static int lookup_heap_memory_type(const NEXUS_PlatformSettings *pPlatformSettin
 
 static void pre_trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings, bool cvbs)
 {
+   char value[PROPERTY_VALUE_MAX];
+
+   if (property_get(NX_TRIM_D0HD, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         pMemConfigSettings->display[0].maxFormat = NEXUS_VideoFormat_e1080p;
+      }
+   }
+
    if (!cvbs) {
       pMemConfigSettings->display[1].maxFormat = NEXUS_VideoFormat_eUnknown;
    }
@@ -1287,7 +1296,7 @@ int main(void)
     if (loggerDisabled) {
         setenv("nexus_logger", "disabled", 1);
     } else {
-        setenv("nexus_logger", "/vendor/bin/nxlogger", 1);
+        setenv("nexus_logger", "/vendor/bin/nxserver", 1);
         setenv("nexus_logger_file", NEXUS_LOGGER_DATA_PATH, 1);
     }
     char loggerSize[PROPERTY_VALUE_MAX];
