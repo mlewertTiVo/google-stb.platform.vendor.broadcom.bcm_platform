@@ -43,6 +43,7 @@
 #include <utils/Errors.h>
 #include "nxclient.h"
 #include "nxwrap_common.h"
+#include "treble/PmLibService.h"
 
 using namespace android;
 
