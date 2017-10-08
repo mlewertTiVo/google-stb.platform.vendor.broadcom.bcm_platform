@@ -65,6 +65,7 @@ LOCAL_CFLAGS += -Werror
 
 LOCAL_SRC_FILES := nexus_power.cpp
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_CFLAGS += -DBCM_FULL_TREBLE
 LOCAL_SRC_FILES += treble/power.cpp
 else
 LOCAL_SRC_FILES += legacy/power.cpp
