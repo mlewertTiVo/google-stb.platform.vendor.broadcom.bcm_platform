@@ -1087,6 +1087,8 @@ static enum hwc2_cbs_e hwc2_want_comp_bypass(
 
    NxClient_GetDisplaySettings(settings);
    switch (settings->format) {
+   case NEXUS_VideoFormat_e1080i:
+   case NEXUS_VideoFormat_e1080i50hz:
    case NEXUS_VideoFormat_e720p:
    case NEXUS_VideoFormat_e720p50hz:
    case NEXUS_VideoFormat_e720p30hz:
