@@ -53,6 +53,9 @@ void NxServer::binderDied(const wp<IBinder>& who) {
 
    Mutex::Autolock _l(mLock);
    IBinder *binder = who.unsafe_get();
+
+   ALOGE("NxServer::binderDied: %p", binder);
+
    if (binder != NULL) {
       {
       Vector<sp<INxHpdEvtSrc>>::iterator it;
@@ -110,10 +113,11 @@ void NxServer::terminate()
 void NxServer::getNxClient(int pid, uint64_t &client)
 {
    Mutex::Autolock _l(mLock);
+
    NEXUS_PlatformObjectInstance *objects = NULL;
    NEXUS_ClientHandle nexusClient = NULL;
    NEXUS_InterfaceName interfaceName;
-   size_t num = 16; /* starting size. */
+   size_t num = 64; /* starting size. */
    size_t max_num = 1024; /* some big value. */
    size_t i, cached_num;
    NEXUS_Error rc;
@@ -125,9 +129,9 @@ void NxServer::getNxClient(int pid, uint64_t &client)
    do {
       cached_num = num;
       if (objects != NULL) {
-         BKNI_Free(objects);
+         free(objects);
       }
-      objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
+      objects = (NEXUS_PlatformObjectInstance *) malloc(num*sizeof(NEXUS_PlatformObjectInstance));
       if (objects == NULL) {
          ALOGE("failed allocation of %zu nexus platform objects!!!", num);
          goto out;
@@ -138,6 +142,7 @@ void NxServer::getNxClient(int pid, uint64_t &client)
             rc = NEXUS_SUCCESS;
             num = 0;
             ALOGW("NEXUS_Platform_GetObjects overflowed - giving up...");
+            free(objects);
             goto out;
          } else if (num <= cached_num) {
             num = 2 * cached_num;
@@ -157,7 +162,7 @@ void NxServer::getNxClient(int pid, uint64_t &client)
    }
 
    if (objects != NULL) {
-      BKNI_Free(objects);
+      free(objects);
    }
 
    client = (uint64_t)(intptr_t)nexusClient;

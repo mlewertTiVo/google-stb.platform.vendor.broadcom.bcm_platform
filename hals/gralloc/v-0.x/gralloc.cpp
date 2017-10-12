@@ -52,17 +52,18 @@ static BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt);
 void __attribute__ ((constructor)) gralloc_explicit_load(void);
 void __attribute__ ((destructor)) gralloc_explicit_unload(void);
 
+extern "C" void *nxwrap_create_client(void **wrap);
+extern "C" void nxwrap_destroy_client(void *wrap);
+
 #if defined(V3D_VARIANT_v3d)
+static void *gl_dyn_lib;
 static void (* dyn_BEGLint_BufferGetRequirements)(BEGL_PixmapInfoEXT *, BEGL_BufferSettings *);
 #endif
-static void * (* dyn_nxwrap_create_client)(void **wrap);
-static void (* dyn_nxwrap_destroy_client)(void *wrap);
 #define LOAD_FN(lib, name) \
 if (!(dyn_ ## name = (typeof(dyn_ ## name)) dlsym(lib, #name))) \
    ALOGV("failed resolving '%s'", #name); \
 else \
    ALOGV("resolved '%s' to %p", #name, dyn_ ## name);
-static void *gl_dyn_lib;
 static void *nxwrap = NULL;
 static void *nexus_client = NULL;
 static int gralloc_mgmt_mode = -1;
@@ -102,6 +103,8 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 static void gralloc_load_lib(void)
 {
    char value[PROPERTY_VALUE_MAX];
+
+#if defined(V3D_VARIANT_v3d)
    snprintf(value, PROPERTY_VALUE_MAX, "%slibGLES_nexus.so", V3D_DLOPEN_PATH);
    gl_dyn_lib = dlopen(value, RTLD_LAZY | RTLD_LOCAL);
    if (!gl_dyn_lib) {
@@ -112,23 +115,13 @@ static void gralloc_load_lib(void)
          ALOGE("failed loading essential GLES library '%s': <%s>!", value, dlerror());
       }
    }
-
    // load wanted functions from the library now.
-#if defined(V3D_VARIANT_v3d)
    LOAD_FN(gl_dyn_lib, BEGLint_BufferGetRequirements);
 #endif
-   LOAD_FN(gl_dyn_lib, nxwrap_create_client);
-   LOAD_FN(gl_dyn_lib, nxwrap_destroy_client);
 
-   if (dyn_nxwrap_create_client) {
-      nexus_client = dyn_nxwrap_create_client(&nxwrap);
-      if (nexus_client == NULL) {
-         ALOGE("%s: failed joining nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
-      } else {
-         ALOGV("%s: joined nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
-      }
-   } else {
-      ALOGE("%s: dyn_xxx unavailable, something will break!", __FUNCTION__);
+   nexus_client = nxwrap_create_client(&nxwrap);
+   if (nexus_client == NULL) {
+      ALOGE("%s: failed joining nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
    }
 
    if (property_get(NX_MMA_MGMT_MODE, value, NX_MMA_MGMT_MODE_DEF)) {
@@ -199,13 +192,15 @@ void gralloc_explicit_load(void)
 
 void gralloc_explicit_unload(void)
 {
-   if (nxwrap && dyn_nxwrap_destroy_client) {
-      dyn_nxwrap_destroy_client(nxwrap);
+   if (nxwrap) {
+      nxwrap_destroy_client(nxwrap);
       nexus_client = NULL;
       nxwrap = NULL;
    }
 
+#if defined(V3D_VARIANT_v3d)
    dlclose(gl_dyn_lib);
+#endif
 
    if (hGraphics) {
       NEXUS_Graphics2D_Close(hGraphics);

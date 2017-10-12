@@ -176,6 +176,7 @@ struct bcmsideband_ctx * libbcmsideband_init_sideband_tif(int index, /* index in
         ALOGE("cannot create NxWrap!");
         return NULL;
     }
+    pNxWrap->join();
 
     // connect to the HWC binder.
     ctx->bcmSidebandHwcBinder = new BcmSidebandBinder_wrap;
