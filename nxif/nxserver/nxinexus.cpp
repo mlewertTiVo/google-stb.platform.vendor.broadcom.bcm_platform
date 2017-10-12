@@ -56,6 +56,7 @@
 
 Return<uint64_t> NexusImpl::client(int32_t pid) {
    Mutex::Autolock _l(mLock);
+
    NEXUS_PlatformObjectInstance *objects = NULL;
    NEXUS_ClientHandle nexusClient = NULL;
    NEXUS_InterfaceName interfaceName;
@@ -71,9 +72,9 @@ Return<uint64_t> NexusImpl::client(int32_t pid) {
    do {
       cached_num = num;
       if (objects != NULL) {
-         BKNI_Free(objects);
+         free(objects);
       }
-      objects = (NEXUS_PlatformObjectInstance *)BKNI_Malloc(num*sizeof(NEXUS_PlatformObjectInstance));
+      objects = (NEXUS_PlatformObjectInstance *) malloc(num*sizeof(NEXUS_PlatformObjectInstance));
       if (objects == NULL) {
          ALOGE("failed allocation of %zu nexus platform objects!!!", num);
          goto out;
@@ -83,6 +84,7 @@ Return<uint64_t> NexusImpl::client(int32_t pid) {
          if (num > max_num) {
             rc = NEXUS_SUCCESS;
             num = 0;
+            free(objects);
             ALOGW("NEXUS_Platform_GetObjects overflowed - giving up...");
             goto out;
          } else if (num <= cached_num) {
@@ -103,7 +105,7 @@ Return<uint64_t> NexusImpl::client(int32_t pid) {
    }
 
    if (objects != NULL) {
-      BKNI_Free(objects);
+      free(objects);
    }
 
    client = (uint64_t)(intptr_t)nexusClient;
