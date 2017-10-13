@@ -4268,7 +4268,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FreeBuffer(
             {
                 // Drop the buffer in the decoder
                 ALOGV("Dropping frame %u on FreeBuffer", pFrameBuffer->frameStatus.serialNumber);
-                pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDropReady;
+                pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eReturned;
                 ReturnDecodedFrames();
             }
             else if ( pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered ||
@@ -4817,7 +4817,6 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
     // Determine what to do with the buffer
     if ( pFrameBuffer )
     {
-        bool dropFrame = true;
         if ( pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eInvalid )
         {
             // The frame has been flushed while the app owned it.  Move it back to the free list silently.
@@ -4830,32 +4829,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder::FillThisBuffer(
         {
             // Any state other than delivered and we've done something horribly wrong.
             ALOG_ASSERT(pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered);
-            // Need to check if this buffer is the same as the frame waiting to be displayed
-            B_Mutex_Lock(m_hDisplayMutex);
-            if (m_displayFrameAvailable && pFrameBuffer->frameStatus.serialNumber == m_frameSerial) {
-                ALOGV("%s: Don't drop frame ready to be displayed!, serial:%d", __FUNCTION__, m_frameSerial);
-                dropFrame = false;
-            }
-            B_Mutex_Unlock(m_hDisplayMutex);
-            if (dropFrame) {
-                pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDropReady;
-                switch ( pInfo->type )
-                {
-                case BOMX_VideoDecoderOutputBufferType_eStandard:
-                    ALOGV("Standard Buffer - Drop");
-                    break;
-                case BOMX_VideoDecoderOutputBufferType_eNative:
-                    ALOGV("Native Buffer %u - Drop", pInfo->typeInfo.native.pSharedData->videoFrame.status.serialNumber);
-                    break;
-                case BOMX_VideoDecoderOutputBufferType_eMetadata:
-                    ALOGV("Metadata Buffer %u - Drop", pFrameBuffer->frameStatus.serialNumber);
-                    break;
-                default:
-                    break;
-                }
-            }
-        }
-        if (dropFrame) {
+            pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eReturned;
             pFrameBuffer->pBufferInfo = NULL;
             pFrameBuffer->pPrivateHandle = NULL;
         }
@@ -5858,6 +5832,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                     BLST_Q_REMOVE_HEAD(&m_frameBufferFreeList, node);
                     pBuffer->frameStatus = *pFrameStatus;
                     pBuffer->state = BOMX_VideoDecoderFrameBufferState_eReady;
+                    pBuffer->display = false;
                     BLST_Q_INSERT_TAIL(&m_frameBufferAllocList, pBuffer, node);
                     pFrameStatus++;
                     numFrames--;
@@ -6309,8 +6284,8 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
         {
             switch ( pBuffer->state )
             {
-            case BOMX_VideoDecoderFrameBufferState_eDisplayReady:
-            case BOMX_VideoDecoderFrameBufferState_eDropReady:
+            case BOMX_VideoDecoderFrameBufferState_eDelivered:
+            case BOMX_VideoDecoderFrameBufferState_eReturned:
                 pEnd = pBuffer;
                break;
             default:
@@ -6335,47 +6310,34 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 if ( m_outputFlushing )
                 {
                     ALOGW("Dropping outstanding frame %u still owned by client - flushing", pBuffer->frameStatus.serialNumber);
+                    returnSettings[numFrames].recycle = true;
+                    returnSettings[numFrames].display = false;
+                    pBuffer->state = BOMX_VideoDecoderFrameBufferState_eInvalid;
                 }
                 else
                 {
-                    ALOGW("Dropping outstanding frame %u still owned by client - a later frame (%u) was returned already", pBuffer->frameStatus.serialNumber, pLast->frameStatus.serialNumber);
+                    // Leave frame outstanding
+                    returnSettings[numFrames].recycle = false;
+                    returnSettings[numFrames].display = pBuffer->display;
                 }
-                pBuffer->state = BOMX_VideoDecoderFrameBufferState_eInvalid;
-                returnSettings[numFrames].display = false;
             }
             else
             {
                 PSHARED_DATA pSharedData = NULL;
                 void *pMemory;
-                // Display only the last frame we're returning if the app is falling behind.
-                if ( pNext == pEnd )
+
+                returnSettings[numFrames].display = pBuffer->display;
+                returnSettings[numFrames].recycle = true;
+
+                if ( m_outputFlushing )
                 {
-                    returnSettings[numFrames].display = (pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDisplayReady) ? true : false;
-                    if (!returnSettings[numFrames].display)
-                    {
-                        if ( m_outputFlushing )
-                        {
-                            ALOGW("Dropping outstanding frame %u - flushing", pBuffer->frameStatus.serialNumber);
-                        }
-                        else
-                        {
-                            ALOGW("Dropping outstanding frame %u - state is [%d] %s", pBuffer->frameStatus.serialNumber, pBuffer->state,
-                                  pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDropReady ? "eDropReady" : "???");
-                        }
-                    }
+                    ALOGW("Recycling outstanding frame %u - flushing", pBuffer->frameStatus.serialNumber);
                 }
                 else
                 {
-                    returnSettings[numFrames].display = false;
-                    if ( m_outputFlushing )
-                    {
-                        ALOGW("Dropping outstanding frame %u - flushing", pBuffer->frameStatus.serialNumber);
-                    }
-                    else
-                    {
-                        ALOGW("Dropping outstanding frame %u - falling behind", pBuffer->frameStatus.serialNumber);
-                    }
+                    ALOGW("Recycling outstanding frame %u, state %d", pBuffer->frameStatus.serialNumber, pBuffer->state);
                 }
+
                 if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata && pBuffer->pPrivateHandle )
                 {
                     BOMX_VideoDecoder_MemLock(pBuffer->pPrivateHandle, &pMemory);
@@ -6420,7 +6382,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                 currentPlayTime = toMillisecondTimeoutDelay(m_startTime, systemTime(CLOCK_MONOTONIC));
             }
             for (uint32_t j=0; j < numFrames; ++j) {
-                if (!returnSettings[j].display) {
+                if (!returnSettings[j].display && returnSettings[j].recycle) {
                     ++m_droppedFrames;
                     if (m_startTime != -1) {
                         if (currentPlayTime < m_earlyDropThresholdMs) {
@@ -6714,11 +6676,7 @@ void BOMX_VideoDecoder::DisplayFrame_locked(unsigned serialNumber)
         if ( pFrameBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered )
         {
             // Mark buffer as ready to display
-            pFrameBuffer->state = BOMX_VideoDecoderFrameBufferState_eDisplayReady;
-            // Break linkage between omx output buffer and frame buffer
-            pFrameBuffer->pPrivateHandle = NULL;
-            pFrameBuffer->pBufferInfo->pFrameBuffer = NULL;
-            pFrameBuffer->pBufferInfo = NULL;
+            pFrameBuffer->display = true;
             // Return frames to nexus decoder
             ReturnDecodedFrames();
             // We just returned something to nexus, kick off the output frame thread
