@@ -83,8 +83,7 @@ enum BOMX_VideoDecoderFrameBufferState
 {
     BOMX_VideoDecoderFrameBufferState_eReady,           // Frame decoded and ready to be delivered to client
     BOMX_VideoDecoderFrameBufferState_eDelivered,       // Frame delivered to client
-    BOMX_VideoDecoderFrameBufferState_eDisplayReady,    // Frame returned from client and ready to display
-    BOMX_VideoDecoderFrameBufferState_eDropReady,       // Frame returned from client and ready to drop
+    BOMX_VideoDecoderFrameBufferState_eReturned,        // Frame returned from client and ready to recycle
     BOMX_VideoDecoderFrameBufferState_eInvalid,         // Frame has been invalidated or is not yet decoded
     BOMX_VideoDecoderFrameBufferState_eMax
 };
@@ -143,6 +142,7 @@ struct BOMX_VideoDecoderFrameBuffer
     NEXUS_StripedSurfaceHandle hStripedSurface;
     private_handle_t *pPrivateHandle;
     BOMX_VideoDecoderOutputBufferInfo *pBufferInfo;
+    bool display;
 };
 
 struct BOMX_VideoDecoderRole
