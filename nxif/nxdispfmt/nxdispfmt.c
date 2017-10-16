@@ -108,6 +108,8 @@ int main(int argc, char **argv)
    NxClient_DisplaySettings displaySettings;
    NxClient_DisplayStatus status;
    NEXUS_VideoFormat format, old_format;
+   NEXUS_DisplayCapabilities caps;
+   int i;
 
    (void)argc;
    (void)argv;
@@ -122,17 +124,27 @@ int main(int argc, char **argv)
       return err;
    }
 
-   format = forced_output_format();
-   if (format == NEXUS_VideoFormat_eUnknown) {
-      err = -1;
-      ALOGE("no valid configured format.");
-      goto out;
-   }
-
    rc = NxClient_GetDisplayStatus(&status);
    if (rc) {
       err = -1;
       ALOGE("failed to get display status.");
+      goto out;
+   }
+   NEXUS_GetDisplayCapabilities(&caps);
+
+   i = 0;
+   do {
+     ALOGI("format\t%s\t>>>>\t%s",
+           g_videoFormatStrs[i].name,
+           (status.hdmi.status.videoFormatSupported[g_videoFormatStrs[i].value] &&
+            caps.displayFormatSupported[g_videoFormatStrs[i].value]) ? "SUPPORTED" : "NOT-AVAILABLE");
+     i++;
+   } while (g_videoFormatStrs[i].name != NULL);
+
+   format = forced_output_format();
+   if (format == NEXUS_VideoFormat_eUnknown) {
+      err = -1;
+      ALOGE("no valid configured format selection.");
       goto out;
    }
 
