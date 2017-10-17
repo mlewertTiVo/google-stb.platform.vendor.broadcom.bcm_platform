@@ -6346,11 +6346,11 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
 
                 if ( m_outputFlushing )
                 {
-                    ALOGW("Recycling outstanding frame %u - flushing", pBuffer->frameStatus.serialNumber);
+                    ALOGV("Recycling outstanding frame %u - flushing", pBuffer->frameStatus.serialNumber);
                 }
                 else
                 {
-                    ALOGW("Recycling outstanding frame %u, state %d", pBuffer->frameStatus.serialNumber, pBuffer->state);
+                    ALOGV("Recycling outstanding frame %u, state %d", pBuffer->frameStatus.serialNumber, pBuffer->state);
                 }
 
                 if ( m_outputMode != BOMX_VideoDecoderOutputBufferType_eMetadata && pBuffer->pPrivateHandle )
