@@ -328,6 +328,10 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
         start_settings.primary.codec = brcm_audio_get_codec_from_format(bout->config.format);
         start_settings.primary.pidChannel = bout->nexus.direct.pid_channel;
 
+        if (bout->nexus.direct.playpump_mode && bout->dolbyMs) {
+            start_settings.primary.mixingMode = NEXUS_AudioDecoderMixingMode_eStandalone;
+        }
+
         // Set Dolby DRC and downmix modes
         if ((start_settings.primary.codec == NEXUS_AudioCodec_eAc3) ||
             (start_settings.primary.codec == NEXUS_AudioCodec_eAc3Plus)) {
@@ -881,6 +885,11 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
 
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleAudioDecoder.id = audioDecoderId;
+
+    if (bout->nexus.direct.playpump_mode && bout->dolbyMs) {
+        connectSettings.simpleAudioDecoder.decoderCapabilities.type = NxClient_AudioDecoderType_ePersistent;
+    }
+
     rc = NxClient_Connect(&connectSettings, &(bout->nexus.connectId));
     if (rc) {
         ALOGE("%s: error calling NxClient_Connect, rc:%d", __FUNCTION__, rc);
