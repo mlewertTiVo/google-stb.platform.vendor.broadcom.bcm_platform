@@ -1322,7 +1322,7 @@ static void hwc2_vd_cmp_frame(
       ALOGE("[vd]:[out]:%" PRIu64 ":%" PRIu64 ": invalid dev-shared (obh:%p:dbh:%p)\n",
             dsp->pres, dsp->post, (private_handle_t *)f->otgt, dbh);
       if (dlrc == NEXUS_SUCCESS) {
-         hwc2_mem_lock(hwc2, dbh, &dmap);
+         hwc2_mem_unlock(hwc2, dbh);
          dlrc = NEXUS_NOT_INITIALIZED;
       }
       goto out;
