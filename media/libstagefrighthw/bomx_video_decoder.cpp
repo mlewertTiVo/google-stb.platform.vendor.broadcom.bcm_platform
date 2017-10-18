@@ -999,6 +999,7 @@ static NEXUS_SurfaceHandle BOMX_VideoDecoder_ToNexusSurface(int width, int heigh
 static void BOMX_VideoDecoder_StripedSurfaceDestroy(BOMX_VideoDecoderFrameBuffer *pFrameBuffer)
 {
    if (pFrameBuffer->hStripedSurface) {
+      NEXUS_Platform_SetSharedHandle(pFrameBuffer->hStripedSurface, false);
       NEXUS_StripedSurface_Destroy(pFrameBuffer->hStripedSurface);
       pFrameBuffer->hStripedSurface = NULL;
    }
@@ -6084,7 +6085,11 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                            ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX) ) )
                     {
                         pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&(pBuffer->frameStatus.surfaceCreateSettings));
-                        if ( NULL == pBuffer->hStripedSurface )
+                        if ( pBuffer->hStripedSurface )
+                        {
+                            NEXUS_Platform_SetSharedHandle(pBuffer->hStripedSurface, true);
+                        }
+                        else
                         {
                             (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
                         }
@@ -6207,50 +6212,17 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 android_atomic_release_store(m_redux ? 2 : 1, /* hwc index linked + 1. */
                                                              &pSharedData->videoWindow.windowIdPlusOne /* window-id always 0 */);
                                 pSharedData->videoFrame.status = pBuffer->frameStatus;
-                                // Don't allow gralloc_lock to destripe in metadata mode.  We won't know when it's safe to destroy the striped surface.
+
                                 pSharedData->videoFrame.hStripedSurface = NULL;
-
-                                if ( pBuffer->hStripedSurface )
+                                int err = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 100);
+                                if ( err )
                                 {
-                                    int err = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 100);
-                                    if ( err )
-                                    {
-                                        ALOGW("Timeout locking video frame in metadata mode - %d", err);
-                                    }
-                                    else
-                                    {
-                                        nsecs_t tStart;
-                                        if (m_showDestripeDelay) { tStart = systemTime(SYSTEM_TIME_MONOTONIC); }
-                                        Unlock();
-                                        OMX_ERRORTYPE res = DestripeToYV12(pSharedData, pBuffer->hStripedSurface);
-                                        Lock();
-                                        if (m_showDestripeDelay) { ALOGI("%lux%lu took %dms", pBuffer->frameStatus.surfaceCreateSettings.imageWidth, pBuffer->frameStatus.surfaceCreateSettings.imageHeight, toMillisecondTimeoutDelay(tStart, systemTime(SYSTEM_TIME_MONOTONIC))); }
-
-                                        if ( res != OMX_ErrorNone )
-                                        {
-                                            ALOGE("Unable to destripe to YV12 - %d", res);
-                                            (void)BOMX_ERR_TRACE(res);
-                                            destripedSuccess = false;
-                                            pSharedData->videoFrame.destripeComplete = true;
-                                        }
-                                        else
-                                        {
-                                            if ( NULL != m_pOutputFile && !m_secureDecoder )
-                                            {
-                                                void *pDestripedMemory;
-                                                NEXUS_MemoryBlockHandle handle = (NEXUS_MemoryBlockHandle)pSharedData->container.block;
-                                                if ((NEXUS_MemoryBlock_Lock(handle, &pDestripedMemory) == NEXUS_SUCCESS) && (pDestripedMemory != NULL))
-                                                {
-                                                    unsigned ySize = pSharedData->container.stride * pSharedData->container.height;
-                                                    unsigned cSize = ((pSharedData->container.height/2) * ((pSharedData->container.stride/2 + (B_YV12_ALIGNMENT-1)) & ~(B_YV12_ALIGNMENT-1)));
-                                                    fwrite(pDestripedMemory, ySize + cSize * 2, 1, m_pOutputFile);
-                                                    NEXUS_MemoryBlock_Unlock(handle);
-                                                }
-                                            }
-                                        }
-
-                                        private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
-                                    }
+                                    ALOGW("Timeout locking video frame in metadata mode - %d", err);
+                                }
+                                else
+                                {
+                                    pSharedData->videoFrame.hStripedSurface = pBuffer->hStripedSurface;
+                                    private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
                                 }
                             }
                             pHeader->nFilledLen = sizeof(VideoDecoderOutputMetaData);
