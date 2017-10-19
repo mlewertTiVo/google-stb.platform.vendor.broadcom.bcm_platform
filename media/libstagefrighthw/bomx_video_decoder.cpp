@@ -119,11 +119,6 @@
 
 #define B_YV12_ALIGNMENT (16)
 
-// Allow QHD for 360 video
-#define B_SKIP_DESTRIPE_WIDTH       (2560)
-#define B_SKIP_DESTRIPE_HEIGHT      (1440)
-#define B_SKIP_DESTRIPE_FRAMERATE   (30.0)
-
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
 #define OMX_IndexParamStoreMetaDataInBuffers                 0x7F000003
@@ -6048,17 +6043,10 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                          ( pInfo->type != BOMX_VideoDecoderOutputBufferType_eMetadata ||
                            ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX) ) )
                     {
-                        // Skip destriping frames with resolution beyond QHD at HFR
-                        if ( !(pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata &&
-                               pBuffer->frameStatus.surfaceCreateSettings.imageWidth > B_SKIP_DESTRIPE_WIDTH &&
-                               pBuffer->frameStatus.surfaceCreateSettings.imageHeight > B_SKIP_DESTRIPE_HEIGHT &&
-                               BOMX_NexusFramerateValue(m_frameRate) > B_SKIP_DESTRIPE_FRAMERATE) )
+                        pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&(pBuffer->frameStatus.surfaceCreateSettings));
+                        if ( NULL == pBuffer->hStripedSurface )
                         {
-                            pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&(pBuffer->frameStatus.surfaceCreateSettings));
-                            if ( NULL == pBuffer->hStripedSurface )
-                            {
-                                (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
-                            }
+                            (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
                         }
                     }
 
