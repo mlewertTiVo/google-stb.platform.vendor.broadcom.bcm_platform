@@ -738,27 +738,27 @@ static NEXUS_VideoFrameRate BOMX_FrameRateToNexus(OMX_TICKS intervalUs)
 {
     if ( intervalUs <= 0 )                  return NEXUS_VideoFrameRate_eUnknown;
 
-    if ( intervalUs <= 8335 )               return NEXUS_VideoFrameRate_e120;
-    else if ( intervalUs <= 8345 )          return NEXUS_VideoFrameRate_e119_88;
-    else if ( intervalUs <= 16670 )         return NEXUS_VideoFrameRate_e60;
-    else if ( intervalUs <= 16685 )         return NEXUS_VideoFrameRate_e59_94;
-    else if ( intervalUs <= 20001 )         return NEXUS_VideoFrameRate_e50;
-    else if ( intervalUs <= 33335 )         return NEXUS_VideoFrameRate_e30;
-    else if ( intervalUs <= 33368 )         return NEXUS_VideoFrameRate_e29_97;
-    else if ( intervalUs <= 40001 )         return NEXUS_VideoFrameRate_e25;
-    else if ( intervalUs <= 41670 )         return NEXUS_VideoFrameRate_e24;
-    else if ( intervalUs <= 41710 )         return NEXUS_VideoFrameRate_e23_976;
-    else if ( intervalUs <= 50001 )         return NEXUS_VideoFrameRate_e20;
-    else if ( intervalUs <= 50055 )         return NEXUS_VideoFrameRate_e19_98;
-    else if ( intervalUs <= 66670 )         return NEXUS_VideoFrameRate_e15;
-    else if ( intervalUs <= 66735 )         return NEXUS_VideoFrameRate_e14_985;
-    else if ( intervalUs <= 80001 )         return NEXUS_VideoFrameRate_e12_5;
-    else if ( intervalUs <= 83335 )         return NEXUS_VideoFrameRate_e12;
-    else if ( intervalUs <= 83420 )         return NEXUS_VideoFrameRate_e11_988;
-    else if ( intervalUs <= 100001 )        return NEXUS_VideoFrameRate_e10;
-    else if ( intervalUs <= 101015 )        return NEXUS_VideoFrameRate_e9_99;
-    else if ( intervalUs <= 133335 )        return NEXUS_VideoFrameRate_e7_5;
-    else if ( intervalUs <= 133460 )        return NEXUS_VideoFrameRate_e7_493;
+    if ( intervalUs <= 9001 )               return NEXUS_VideoFrameRate_e120;
+    else if ( intervalUs <= 10001 )         return NEXUS_VideoFrameRate_e119_88;
+    else if ( intervalUs <= 17001 )         return NEXUS_VideoFrameRate_e60;
+    else if ( intervalUs <= 18001 )         return NEXUS_VideoFrameRate_e59_94;
+    else if ( intervalUs <= 21001 )         return NEXUS_VideoFrameRate_e50;
+    else if ( intervalUs <= 34001 )         return NEXUS_VideoFrameRate_e30;
+    else if ( intervalUs <= 35001 )         return NEXUS_VideoFrameRate_e29_97;
+    else if ( intervalUs <= 41001 )         return NEXUS_VideoFrameRate_e25;
+    else if ( intervalUs <= 42001 )         return NEXUS_VideoFrameRate_e24;
+    else if ( intervalUs <= 43001 )         return NEXUS_VideoFrameRate_e23_976;
+    else if ( intervalUs <= 51001 )         return NEXUS_VideoFrameRate_e20;
+    else if ( intervalUs <= 52001 )         return NEXUS_VideoFrameRate_e19_98;
+    else if ( intervalUs <= 67001 )         return NEXUS_VideoFrameRate_e15;
+    else if ( intervalUs <= 68001 )         return NEXUS_VideoFrameRate_e14_985;
+    else if ( intervalUs <= 81001 )         return NEXUS_VideoFrameRate_e12_5;
+    else if ( intervalUs <= 84001 )         return NEXUS_VideoFrameRate_e12;
+    else if ( intervalUs <= 85001 )         return NEXUS_VideoFrameRate_e11_988;
+    else if ( intervalUs <= 101001 )        return NEXUS_VideoFrameRate_e10;
+    else if ( intervalUs <= 102001 )        return NEXUS_VideoFrameRate_e9_99;
+    else if ( intervalUs <= 134001 )        return NEXUS_VideoFrameRate_e7_5;
+    else if ( intervalUs <= 135001 )        return NEXUS_VideoFrameRate_e7_493;
 
     return NEXUS_VideoFrameRate_eUnknown;
 }
