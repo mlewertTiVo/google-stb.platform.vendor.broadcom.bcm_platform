@@ -475,9 +475,12 @@ skip_lmk:
                        NEXUS_Error rc;
                        NEXUS_WatchdogCallbackSettings wdogSettings;
                        watchdogWrite(WATCHDOG_TERMINATE);
+                       close(g_app.wdog.fd);
+                       g_app.wdog.fd = NX_INVALID;
                        NEXUS_WatchdogCallback_GetDefaultSettings(&wdogSettings);
                        wdogSettings.midpointCallback.callback = nx_wdog_midpoint;
                        wdogSettings.midpointCallback.context = (void *)&g_app;
+                       wdogSettings.stopTimerOnDestroy = false;
                        g_app.wdog.nx = NEXUS_WatchdogCallback_Create(&wdogSettings);
                        g_app.wdog.inStandby = false;
                        NEXUS_Watchdog_SetTimeout(wdog_timeout);
@@ -486,9 +489,6 @@ skip_lmk:
                           NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
                           g_app.wdog.nx = NULL;
                           ALOGE("unable to create nexus watchdog support (reason:%d)!", rc);
-                          watchdogWrite(WATCHDOG_TERMINATE);
-                          close(g_app.wdog.fd);
-                          g_app.wdog.fd = NX_INVALID;
                        }
                        g_app.wdog.init = true;
                     } else if (g_app.wdog.fd >= 0 && !wdog_timeout) {
@@ -1441,10 +1441,6 @@ int main(void)
        NEXUS_Watchdog_StopTimer();
        NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
        g_app.wdog.nx = NULL;
-    }
-    if (g_app.wdog.fd != NX_INVALID) {
-        watchdogWrite(WATCHDOG_TERMINATE);
-        close(g_app.wdog.fd);
     }
     g_app.wdog.init = false;
     g_app.wdog.want = false;
