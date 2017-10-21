@@ -4583,6 +4583,12 @@ out_error:
 out_signal:
    hwc2_ret_inc(dsp, 1);
 out:
+   cnt = hwc2_cntLyr(dsp);
+   lyr = dsp->lyr;
+   for (frame_size = 0 ; frame_size < cnt ; frame_size++) {
+      lyr->af = HWC2_INVALID;
+      lyr = lyr->next;
+   }
    ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
       "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_PRESENT_DISPLAY),
