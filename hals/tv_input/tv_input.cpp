@@ -20,6 +20,7 @@
 #define LOG_TAG "tv_input"
 #include <cutils/log.h>
 #include <cutils/native_handle.h>
+#include <android/native_window.h>
 
 #include <hardware/tv_input.h>
 
