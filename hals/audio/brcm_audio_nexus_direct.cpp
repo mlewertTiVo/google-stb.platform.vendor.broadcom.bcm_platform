@@ -146,9 +146,27 @@ static void nexus_direct_bout_data_callback(void *context, int param)
 static int nexus_direct_bout_set_volume(struct brcm_stream_out *bout,
                                  float left, float right)
 {
-    (void)bout;
-    (void)left;
-    (void)right;
+    NEXUS_SimpleAudioDecoderHandle simple_decoder = bout->nexus.direct.simple_decoder;
+
+    if (left != right) {
+        ALOGV("%s: Left and Right volumes must be equal, cannot change volume", __FUNCTION__);
+        return 0;
+    }
+    if (left > 1.0) {
+        ALOGV("%s: Volume: %f exceeds max volume of 1.0", __FUNCTION__, left);
+        return 0;
+    }
+
+
+    if (bout->nexus.direct.playpump_mode && bout->dolbyMs) {
+        NEXUS_SimpleAudioDecoderSettings audioSettings;
+        NEXUS_SimpleAudioDecoder_GetSettings(simple_decoder, &audioSettings);
+        ALOGV("%s: Setting fade level to: %d", __FUNCTION__, (int)(left * 100));
+        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = left * 100;
+        audioSettings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 5; //ms
+        NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &audioSettings);
+    }
+
     return 0;
 }
 
@@ -322,6 +340,12 @@ static int nexus_direct_bout_start(struct brcm_stream_out *bout)
         ALOGI("Primary fifoThreshold %d", settings.primary.fifoThreshold);
         settings.primary.fifoThreshold = BRCM_AUDIO_DIRECT_DECODER_FIFO_SIZE;
         ALOGI("Primary fifoThreshold set to %d", settings.primary.fifoThreshold);
+
+        if (bout->nexus.direct.playpump_mode && bout->dolbyMs) {
+            settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.connected = true;
+            settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.level = 100;
+            settings.processorSettings[NEXUS_SimpleAudioDecoderSelector_ePrimary].fade.settings.duration = 0;
+        }
         NEXUS_SimpleAudioDecoder_SetSettings(simple_decoder, &settings);
 
         NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
