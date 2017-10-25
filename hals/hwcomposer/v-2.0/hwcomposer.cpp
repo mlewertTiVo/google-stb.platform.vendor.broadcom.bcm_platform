@@ -1002,7 +1002,8 @@ static NEXUS_Error hwc2_ext_refcnt(
       ashmem_ext_refcnt.cnt = cnt;
       int ret = ioctl(mem_if, NX_ASHMEM_EXT_REFCNT, &ashmem_ext_refcnt);
       if (ret < 0) {
-         ALOGE("[refcnt]: failed (%d) for %p, count:0x%x", ret, bh, cnt);
+         int err = errno;
+         ALOGE("[refcnt]: failed (%d:%d) for %p, count:0x%x", ret, err, bh, cnt);
          hwc2_close_memif(hwc2);
          return NEXUS_OS_ERROR;
       }
@@ -1086,6 +1087,8 @@ static enum hwc2_cbs_e hwc2_want_comp_bypass(
 
    NxClient_GetDisplaySettings(settings);
    switch (settings->format) {
+   case NEXUS_VideoFormat_e1080i:
+   case NEXUS_VideoFormat_e1080i50hz:
    case NEXUS_VideoFormat_e720p:
    case NEXUS_VideoFormat_e720p50hz:
    case NEXUS_VideoFormat_e720p30hz:
@@ -1316,10 +1319,10 @@ static void hwc2_vd_cmp_frame(
    dlrc = hwc2_mem_lock(hwc2, dbh, &dmap);
    dshared = (PSHARED_DATA) dmap;
    if (dlrc || dshared == NULL) {
-      ALOGE("[vd]:[out]:%" PRIu64 ":%" PRIu64 ": invalid dev-shared.\n",
-            dsp->pres, dsp->post);
+      ALOGE("[vd]:[out]:%" PRIu64 ":%" PRIu64 ": invalid dev-shared (obh:%p:dbh:%p)\n",
+            dsp->pres, dsp->post, (private_handle_t *)f->otgt, dbh);
       if (dlrc == NEXUS_SUCCESS) {
-         hwc2_mem_lock(hwc2, dbh, &dmap);
+         hwc2_mem_unlock(hwc2, dbh);
          dlrc = NEXUS_NOT_INITIALIZED;
       }
       goto out;
@@ -1328,8 +1331,8 @@ static void hwc2_vd_cmp_frame(
       dbhp = (NEXUS_MemoryBlockHandle)dshared->container.block;
       dlrcp = hwc2_mem_lock(hwc2, dbhp, &dmap);
       if (dlrcp || dmap == NULL) {
-         ALOGE("[vd]:[out]:%" PRIu64 ":%" PRIu64 ": invalid dev-phys.\n",
-               dsp->pres, dsp->post);
+         ALOGE("[vd]:[out]:%" PRIu64 ":%" PRIu64 ": invalid dev-phys (obh:%p:dbh:%p:dbhp:%p)\n",
+               dsp->pres, dsp->post, (private_handle_t *)f->otgt, dbh, dbhp);
          if (dlrc == NEXUS_SUCCESS) {
             hwc2_mem_unlock(hwc2, dbh);
             dlrc = NEXUS_NOT_INITIALIZED;
@@ -1448,8 +1451,8 @@ static void hwc2_vd_cmp_frame(
          lrc = hwc2_mem_lock(hwc2, bh, &map);
          shared = (PSHARED_DATA) map;
          if (lrc || shared == NULL) {
-            ALOGE("[vd]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared.\n",
-                  lyr->hdl, dsp->pres, dsp->post);
+            ALOGE("[vd]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared (lbh:%p:bh:%p)\n",
+                  lyr->hdl, dsp->pres, dsp->post, (private_handle_t *)lyr->bh, bh);
             if (lrc == NEXUS_SUCCESS) {
                hwc2_mem_unlock(hwc2, bh);
                lrc = NEXUS_NOT_INITIALIZED;
@@ -1460,8 +1463,8 @@ static void hwc2_vd_cmp_frame(
             bhp = (NEXUS_MemoryBlockHandle)shared->container.block;
             lrcp = hwc2_mem_lock(hwc2, bhp, &map);
             if (lrcp || map == NULL) {
-               ALOGE("[vd]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-phys.\n",
-                     lyr->hdl, dsp->pres, dsp->post);
+               ALOGE("[vd]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-phys (lbh:%p:bh:%p:bhp:%p)\n",
+                     lyr->hdl, dsp->pres, dsp->post, (private_handle_t *)lyr->bh, bh, bhp);
                if (lrcp == NEXUS_SUCCESS) {
                   hwc2_mem_unlock(hwc2, bhp);
                   lrcp = NEXUS_NOT_INITIALIZED;
@@ -2930,14 +2933,13 @@ static int32_t hwc2_lyrBuf(
       lyr->bh = NULL;
       lyr->af = HWC2_INVALID;
    } else {
-      NEXUS_MemoryBlockHandle blk;
+      NEXUS_MemoryBlockHandle blk = NULL;
       lyr->bh = buffer;
       lyr->af = acquireFence;
-      hwc2_bh_block(hwc2, lyr, &blk);
-      if (lyr->lblk == blk) {
-          // TODO: finish off.
-          // lyr->scmp = true;
-          lyr->scmp = false;
+      // TODO: experimental: to be continued.
+      // hwc2_bh_block(hwc2, lyr, &blk);
+      if (blk && (lyr->lblk == blk)) {
+          lyr->scmp = true;
           lyr->lblk = blk;
       } else {
           lyr->scmp = false;
@@ -5539,8 +5541,8 @@ static void hwc2_ext_cmp_frame(
          lrc = hwc2_mem_lock(hwc2, bh, &map);
          shared = (PSHARED_DATA) map;
          if (lrc || shared == NULL) {
-            ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared.\n",
-                  lyr->hdl, dsp->pres, dsp->post);
+            ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared (lbh:%p:bh:%p)\n",
+                  lyr->hdl, dsp->pres, dsp->post, (private_handle_t *)lyr->bh, bh);
             if (lrc == NEXUS_SUCCESS) {
                hwc2_mem_unlock(hwc2, bh);
                lrc = NEXUS_NOT_INITIALIZED;
@@ -5551,8 +5553,8 @@ static void hwc2_ext_cmp_frame(
             bhp = (NEXUS_MemoryBlockHandle)shared->container.block;
             lrcp = hwc2_mem_lock(hwc2, bhp, &map);
             if (lrcp || map == NULL) {
-               ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-phys.\n",
-                     lyr->hdl, dsp->pres, dsp->post);
+               ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-phys (lbh:%p:bh:%p:bhp:%p)\n",
+                     lyr->hdl, dsp->pres, dsp->post, (private_handle_t *)lyr->bh, bh, bhp);
                if (lrcp == NEXUS_SUCCESS) {
                   hwc2_mem_unlock(hwc2, bhp);
                   lrcp = NEXUS_NOT_INITIALIZED;
@@ -5645,8 +5647,8 @@ static void hwc2_ext_cmp_frame(
                lrc = hwc2_mem_lock(hwc2, bh, &map);
                shared = (PSHARED_DATA) map;
                if (lrc || shared == NULL) {
-                  ALOGE("[ext][ccli]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared.\n",
-                        lyr->hdl, dsp->pres, dsp->post);
+                  ALOGE("[ext][ccli]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared (lbh:%p:bh:%p)\n",
+                        lyr->hdl, dsp->pres, dsp->post, (private_handle_t *)lyr->bh, bh);
                   if (lrc == NEXUS_SUCCESS) {
                      hwc2_mem_unlock(hwc2, bh);
                      lrc = NEXUS_NOT_INITIALIZED;
@@ -5657,8 +5659,8 @@ static void hwc2_ext_cmp_frame(
                   bhp = (NEXUS_MemoryBlockHandle)shared->container.block;
                   lrcp = hwc2_mem_lock(hwc2, bhp, &map);
                   if (lrcp || map == NULL) {
-                     ALOGE("[ext][ccli]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-phys.\n",
-                           lyr->hdl, dsp->pres, dsp->post);
+                     ALOGE("[ext][ccli]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-phys (lbh:%p:bh:%p:bhp:%p)\n",
+                           lyr->hdl, dsp->pres, dsp->post, (private_handle_t *)lyr->bh, bh, bhp);
                      if (lrcp == NEXUS_SUCCESS) {
                         hwc2_mem_unlock(hwc2, bhp);
                         lrcp = NEXUS_NOT_INITIALIZED;

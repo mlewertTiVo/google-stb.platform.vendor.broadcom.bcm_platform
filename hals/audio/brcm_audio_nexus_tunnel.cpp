@@ -93,6 +93,7 @@ const static uint32_t nexus_out_sample_rates[] = {
 #define BRCM_AUDIO_TUNNEL_COMP_DRAIN_DELAY_MAX  (10)
 
 #define BRCM_AUDIO_TUNNEL_STC_SYNC_INVALID      (0xFFFFFFFF)
+
 /*
  * Function declarations
  */
@@ -288,6 +289,10 @@ static int nexus_tunnel_bout_start(struct brcm_stream_out *bout)
     NEXUS_SimpleAudioDecoder_GetDefaultStartSettings(&start_settings);
     start_settings.primary.codec = brcm_audio_get_codec_from_format(bout->config.format);
     start_settings.primary.pidChannel = bout->nexus.tunnel.pid_channel;
+
+    if (bout->dolbyMs) {
+        start_settings.primary.mixingMode = NEXUS_AudioDecoderMixingMode_eStandalone;
+    }
     ret = NEXUS_SimpleAudioDecoder_Start(audio_decoder, &start_settings);
     if (ret != NEXUS_SUCCESS) {
         ALOGE("%s: Start audio decoder failed, ret = %d", __FUNCTION__, ret);
@@ -949,6 +954,11 @@ static int nexus_tunnel_bout_open(struct brcm_stream_out *bout)
 
     NxClient_GetDefaultConnectSettings(&connectSettings);
     connectSettings.simpleAudioDecoder.id = audioResourceId;
+
+    if (bout->dolbyMs) {
+        connectSettings.simpleAudioDecoder.decoderCapabilities.type = NxClient_AudioDecoderType_ePersistent;
+    }
+
     rc = NxClient_Connect(&connectSettings, &(bout->nexus.connectId));
     if (rc) {
         ALOGE("%s: error calling NxClient_Connect, rc:%d", __FUNCTION__, rc);

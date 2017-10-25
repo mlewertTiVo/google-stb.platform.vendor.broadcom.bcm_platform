@@ -101,7 +101,18 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
 
    if (!module) {
        ALOGE("%s: invalid module.", __FUNCTION__);
+       rc = -EINVAL;
        goto exit;
+   }
+
+   if (type != MEMTRACK_TYPE_GRAPHICS) {
+       rc = -EINVAL;
+       goto exit;
+   }
+
+   if (!*num_records) {
+      *num_records = MEMTRACK_HAL_NUM_RECORDS_MAX;
+      goto exit;
    }
 
    NxClient_GetDefaultJoinSettings(&joinSettings);
@@ -116,11 +127,6 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
    if (client == NULL) {
       ALOGV("%s: failed getting nexus client for pid %d", __FUNCTION__, pid);
       rc = -EINVAL;
-      goto exit_clean;
-   }
-
-   if (!*num_records) {
-      *num_records = MEMTRACK_HAL_NUM_RECORDS_MAX;
       goto exit_clean;
    }
 
