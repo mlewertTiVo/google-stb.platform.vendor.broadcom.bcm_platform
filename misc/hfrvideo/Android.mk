@@ -18,6 +18,10 @@ include $(CLEAR_VARS)
 LOCAL_SHARED_LIBRARIES := liblog \
                           libcutils \
                           libutils
+
+# fix warnings!
+LOCAL_CFLAGS += -Werror
+
 LOCAL_SRC_FILES := hfrvideo.c
 LOCAL_MODULE := hfrvideo
 LOCAL_MODULE_TAGS := optional
