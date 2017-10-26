@@ -1168,21 +1168,33 @@ static int32_t hwc2_dzSup(
    hwc2_display_t display,
    int32_t* outSupport) {
 
+   struct hwc2_dsp_t *dsp = NULL;
+   uint32_t kind;
    hwc2_error_t ret = HWC2_ERROR_NONE;
    struct hwc2_bcm_device_t *hwc2 = (struct hwc2_bcm_device_t *)device;
+
+   ALOGV("-> %s:%" PRIu64 "\n",
+     getFunctionDescriptorName(HWC2_FUNCTION_GET_DOZE_SUPPORT),
+     display);
 
    if (device == NULL || hwc2->magic != HWC2_MAGIC) {
       ret = HWC2_ERROR_BAD_PARAMETER;
       goto out;
    }
 
-   if (display == HWC2_DISPLAY_TYPE_PHYSICAL) {
+   dsp = hwc2_hnd2dsp(hwc2, display, &kind);
+   if (dsp == NULL) {
+      ret = HWC2_ERROR_BAD_DISPLAY;
+      goto out;
+   }
+
+   if (dsp->type == HWC2_DISPLAY_TYPE_PHYSICAL) {
       if (outSupport != NULL) {
          *outSupport = 0; /* TODO: support DOZE. */
       } else {
          ret = HWC2_ERROR_BAD_PARAMETER;
       }
-   } else if (display == HWC2_DISPLAY_TYPE_VIRTUAL) {
+   } else if (dsp->type == HWC2_DISPLAY_TYPE_VIRTUAL) {
       if (outSupport != NULL) {
          *outSupport = 0;
       } else {
@@ -1193,6 +1205,10 @@ static int32_t hwc2_dzSup(
    }
 
 out:
+   ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,
+      "<- %s:%" PRIu64 " (%s)\n",
+      getFunctionDescriptorName(HWC2_FUNCTION_GET_DOZE_SUPPORT),
+      display, getErrorName(ret));
    return ret;
 }
 
