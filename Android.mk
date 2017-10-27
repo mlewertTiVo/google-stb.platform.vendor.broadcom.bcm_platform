@@ -30,23 +30,22 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/netcoal/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/togplm/Android.mk
 
-# apk's released.
 BCM_APPS_PATH := ${BCM_VENDOR_STB_ROOT}/bcm_platform/apks
+ifneq ($(TARGET_BUILD_PDK),true)
+# apk's released.
 include ${BCM_APPS_PATH}/BcmAdjustScreenOffset/Android.mk
 include ${BCM_APPS_PATH}/BcmCustomizer/base/Android.mk
 include ${BCM_APPS_PATH}/BcmCustomizer/ext/Android.mk
 include ${BCM_APPS_PATH}/BcmHdmiTvInput/Android.mk
 include ${BCM_APPS_PATH}/BcmOtaUpdater/Android.mk
-ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_APPS_PATH}/BcmSidebandViewer/Android.mk
-endif
-ifneq ($(TARGET_BUILD_PDK),true)
-endif
 include ${BCM_APPS_PATH}/BcmTvSettingsLauncher/Android.mk
 include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
+endif
 include ${BCM_APPS_PATH}/PAICfgStub/Android.mk
 
 # additional tools, not needed for default integration.
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makegpt/Android.mk
 ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bsysperf/Android.mk
@@ -58,7 +57,6 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/joinstress/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/lmkstats/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/load/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makeblimg/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makegpt/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makehwcfg/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/memcpy/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxblk/Android.mk
