@@ -158,6 +158,7 @@ static int markBootSuccessful(struct boot_control_module *module __unused) {
    bc_eio.slot[bc_eio.current].boot_ok   = 1;
    bc_eio.slot[bc_eio.current].boot_fail = 0;
    bc_eio.slot[bc_eio.current].boot_try  = 0;
+   bc_eio.slot[bc_eio.current].dmv_corrupt = 0;
    ALOGI_IF(verbose, "markBootSuccessful(%d)", bc_eio.current);
    return write_device(&bc_eio);
 }
@@ -179,6 +180,7 @@ static int setActiveBootSlot(struct boot_control_module *module __unused, unsign
    bc_eio.slot[bc_eio.current].boot_ok   = 0;
    bc_eio.slot[bc_eio.current].boot_fail = 0;
    bc_eio.slot[bc_eio.current].boot_try  = 0;
+   bc_eio.slot[bc_eio.current].dmv_corrupt = 0;
    ALOGI_IF(verbose, "setActiveBootSlot(%d): reset stats", bc_eio.current);
    return write_device(&bc_eio);
 }

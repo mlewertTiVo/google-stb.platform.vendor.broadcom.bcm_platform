@@ -83,6 +83,8 @@
 #define B_HEADER_BUFFER_SIZE (32+BOMX_BCMV_HEADER_SIZE)
 #define B_DATA_BUFFER_SIZE_DEFAULT (1536*1536)
 #define B_DATA_BUFFER_SIZE_HIGHRES (3*1024*1024)
+#define B_DATA_BUFFER_HEIGHT_HIGHRES (3840)
+#define B_DATA_BUFFER_WIDTH_HIGHRES (2160)
 #define B_NUM_BUFFERS (12)
 #define B_STREAM_ID 0xe0
 #define B_MAX_FRAMES (12)
@@ -116,11 +118,6 @@
 #define B_FR_EST_STABLE_DELTA_THRESHOLD (2000)          // in micro-seconds
 
 #define B_YV12_ALIGNMENT (16)
-
-// Allow QHD for 360 video
-#define B_SKIP_DESTRIPE_WIDTH       (2560)
-#define B_SKIP_DESTRIPE_HEIGHT      (1440)
-#define B_SKIP_DESTRIPE_FRAMERATE   (30.0)
 
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
@@ -736,27 +733,27 @@ static NEXUS_VideoFrameRate BOMX_FrameRateToNexus(OMX_TICKS intervalUs)
 {
     if ( intervalUs <= 0 )                  return NEXUS_VideoFrameRate_eUnknown;
 
-    if ( intervalUs <= 8335 )               return NEXUS_VideoFrameRate_e120;
-    else if ( intervalUs <= 8345 )          return NEXUS_VideoFrameRate_e119_88;
-    else if ( intervalUs <= 16670 )         return NEXUS_VideoFrameRate_e60;
-    else if ( intervalUs <= 16685 )         return NEXUS_VideoFrameRate_e59_94;
-    else if ( intervalUs <= 20001 )         return NEXUS_VideoFrameRate_e50;
-    else if ( intervalUs <= 33335 )         return NEXUS_VideoFrameRate_e30;
-    else if ( intervalUs <= 33368 )         return NEXUS_VideoFrameRate_e29_97;
-    else if ( intervalUs <= 40001 )         return NEXUS_VideoFrameRate_e25;
-    else if ( intervalUs <= 41670 )         return NEXUS_VideoFrameRate_e24;
-    else if ( intervalUs <= 41710 )         return NEXUS_VideoFrameRate_e23_976;
-    else if ( intervalUs <= 50001 )         return NEXUS_VideoFrameRate_e20;
-    else if ( intervalUs <= 50055 )         return NEXUS_VideoFrameRate_e19_98;
-    else if ( intervalUs <= 66670 )         return NEXUS_VideoFrameRate_e15;
-    else if ( intervalUs <= 66735 )         return NEXUS_VideoFrameRate_e14_985;
-    else if ( intervalUs <= 80001 )         return NEXUS_VideoFrameRate_e12_5;
-    else if ( intervalUs <= 83335 )         return NEXUS_VideoFrameRate_e12;
-    else if ( intervalUs <= 83420 )         return NEXUS_VideoFrameRate_e11_988;
-    else if ( intervalUs <= 100001 )        return NEXUS_VideoFrameRate_e10;
-    else if ( intervalUs <= 101015 )        return NEXUS_VideoFrameRate_e9_99;
-    else if ( intervalUs <= 133335 )        return NEXUS_VideoFrameRate_e7_5;
-    else if ( intervalUs <= 133460 )        return NEXUS_VideoFrameRate_e7_493;
+    if ( intervalUs <= 9001 )               return NEXUS_VideoFrameRate_e120;
+    else if ( intervalUs <= 10001 )         return NEXUS_VideoFrameRate_e119_88;
+    else if ( intervalUs <= 17001 )         return NEXUS_VideoFrameRate_e60;
+    else if ( intervalUs <= 18001 )         return NEXUS_VideoFrameRate_e59_94;
+    else if ( intervalUs <= 21001 )         return NEXUS_VideoFrameRate_e50;
+    else if ( intervalUs <= 34001 )         return NEXUS_VideoFrameRate_e30;
+    else if ( intervalUs <= 35001 )         return NEXUS_VideoFrameRate_e29_97;
+    else if ( intervalUs <= 41001 )         return NEXUS_VideoFrameRate_e25;
+    else if ( intervalUs <= 42001 )         return NEXUS_VideoFrameRate_e24;
+    else if ( intervalUs <= 43001 )         return NEXUS_VideoFrameRate_e23_976;
+    else if ( intervalUs <= 51001 )         return NEXUS_VideoFrameRate_e20;
+    else if ( intervalUs <= 52001 )         return NEXUS_VideoFrameRate_e19_98;
+    else if ( intervalUs <= 67001 )         return NEXUS_VideoFrameRate_e15;
+    else if ( intervalUs <= 68001 )         return NEXUS_VideoFrameRate_e14_985;
+    else if ( intervalUs <= 81001 )         return NEXUS_VideoFrameRate_e12_5;
+    else if ( intervalUs <= 84001 )         return NEXUS_VideoFrameRate_e12;
+    else if ( intervalUs <= 85001 )         return NEXUS_VideoFrameRate_e11_988;
+    else if ( intervalUs <= 101001 )        return NEXUS_VideoFrameRate_e10;
+    else if ( intervalUs <= 102001 )        return NEXUS_VideoFrameRate_e9_99;
+    else if ( intervalUs <= 134001 )        return NEXUS_VideoFrameRate_e7_5;
+    else if ( intervalUs <= 135001 )        return NEXUS_VideoFrameRate_e7_493;
 
     return NEXUS_VideoFrameRate_eUnknown;
 }
@@ -2450,7 +2447,9 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
                 }
 
                 NEXUS_VideoCodec currentCodec = GetNexusCodec();
-                if ((currentCodec == NEXUS_VideoCodec_eH265) || (currentCodec == NEXUS_VideoCodec_eVp9))
+                if ((currentCodec == NEXUS_VideoCodec_eH265 || currentCodec == NEXUS_VideoCodec_eVp9) &&
+                    (m_maxDecoderWidth >= B_DATA_BUFFER_WIDTH_HIGHRES ||
+                     m_maxDecoderHeight >= B_DATA_BUFFER_HEIGHT_HIGHRES))
                 {
                     // Increase input buffer size for hevc/vp9 decoding to handle 4K streams
                     OMX_PARAM_PORTDEFINITIONTYPE portDef;
@@ -6044,17 +6043,10 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                          ( pInfo->type != BOMX_VideoDecoderOutputBufferType_eMetadata ||
                            ((pBuffer->pPrivateHandle->fmt_set & GR_HWTEX) == GR_HWTEX) ) )
                     {
-                        // Skip destriping frames with resolution beyond QHD at HFR
-                        if ( !(pInfo->type == BOMX_VideoDecoderOutputBufferType_eMetadata &&
-                               pBuffer->frameStatus.surfaceCreateSettings.imageWidth > B_SKIP_DESTRIPE_WIDTH &&
-                               pBuffer->frameStatus.surfaceCreateSettings.imageHeight > B_SKIP_DESTRIPE_HEIGHT &&
-                               BOMX_NexusFramerateValue(m_frameRate) > B_SKIP_DESTRIPE_FRAMERATE) )
+                        pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&(pBuffer->frameStatus.surfaceCreateSettings));
+                        if ( NULL == pBuffer->hStripedSurface )
                         {
-                            pBuffer->hStripedSurface = NEXUS_StripedSurface_Create(&(pBuffer->frameStatus.surfaceCreateSettings));
-                            if ( NULL == pBuffer->hStripedSurface )
-                            {
-                                (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
-                            }
+                            (void)BOMX_BERR_TRACE(BERR_UNKNOWN);
                         }
                     }
 
@@ -6337,7 +6329,7 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
         while ( pBuffer != pEnd && numFrames < B_MAX_DECODED_FRAMES )
         {
             BOMX_VideoDecoderFrameBuffer *pNext = BLST_Q_NEXT(pBuffer, node);
-            //NEXUS_VideoDecoder_GetDefaultReturnFrameSettings(&returnSettings[numFrames]); Intentionally skipped - there is only one field to set anyway
+            NEXUS_VideoDecoder_GetDefaultReturnFrameSettings(&returnSettings[numFrames]);
             if ( pBuffer->state == BOMX_VideoDecoderFrameBufferState_eDelivered )
             {
                 if ( m_outputFlushing )

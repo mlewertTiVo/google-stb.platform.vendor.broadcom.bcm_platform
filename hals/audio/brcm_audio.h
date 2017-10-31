@@ -205,6 +205,7 @@ struct brcm_stream_out {
     bool started;
     bool suspended;
     bool tunneled;
+    bool dolbyMs;
     int standbyCallback;
     FILE *outDebugFile;
     uint64_t last_pres_frame;
