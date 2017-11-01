@@ -59,7 +59,7 @@ OMX_ERRORTYPE BOMX_VideoDecoder_Secure_CreateCommon(
     OMX_IN OMX_CALLBACKTYPE *pCallbacks,
     bool tunnelMode)
 {
-    BOMX_VideoDecoder_Secure *pVideoDecoder = new BOMX_VideoDecoder_Secure(pComponentTpe, pName, pAppData, pCallbacks, NULL, 0, tunnelMode);
+    BOMX_VideoDecoder_Secure *pVideoDecoder = new BOMX_VideoDecoder_Secure(pComponentTpe, pName, pAppData, pCallbacks, NULL, tunnelMode);
     if ( NULL == pVideoDecoder )
     {
         return BOMX_ERR_TRACE(OMX_ErrorUndefined);
