@@ -76,12 +76,13 @@ static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
 static NEXUS_Graphics2DHandle hGraphics = NULL;
 static BKNI_EventHandle hCheckpointEvent = NULL;
 
+/* yt360: qHD minimum; cert: qHD and above. */
 #if defined(V3D_VARIANT_v3d)
-#define DATA_PLANE_MAX_WIDTH    1920
-#define DATA_PLANE_MAX_HEIGHT   1080
+#define DATA_PLANE_MAX_WIDTH    2048 /*TODO*/
+#define DATA_PLANE_MAX_HEIGHT   1440
 #else
-#define DATA_PLANE_MAX_WIDTH    1920
-#define DATA_PLANE_MAX_HEIGHT   1080
+#define DATA_PLANE_MAX_WIDTH    4096
+#define DATA_PLANE_MAX_HEIGHT   2160
 #endif
 
 /* default alignment for gralloc buffers:
@@ -225,6 +226,11 @@ int gralloc_timestamp_conversion(void)
 int gralloc_boom_check(void)
 {
    return gralloc_boom_chk;
+}
+
+int gralloc_align(void)
+{
+   return gralloc_default_align;
 }
 
 void * gralloc_v3d_get_nexus_client_context(void)
@@ -739,10 +745,11 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       fmt_set |= GR_YV12;
    } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
               && (usage & GRALLOC_USAGE_PRIVATE_0)) {
-      if ((usage & GRALLOC_USAGE_SW_READ_OFTEN) || (usage & GRALLOC_USAGE_HW_TEXTURE)) {
+      if ((usage & GRALLOC_USAGE_SW_READ_OFTEN)) {
          // private multimedia buffer, we only need a yv12 plane in case cpu is intending to read
-         // the content, eg decode->encode type of scenario or if texture usage is specified;
-         // yv12 data is produced during lock.
+         // the content, eg decode->encode type of scenario yv12 data is produced during lock.
+         fmt_set |= (GR_YV12|GR_YV12_SW);
+      } else if (usage & GRALLOC_USAGE_HW_TEXTURE) {
          fmt_set |= GR_YV12;
       } else {
          fmt_set = GR_NONE;
@@ -752,11 +759,18 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
       ashmem_alloc.align = gralloc_default_align;
       if ((fmt_set & GR_YV12) == GR_YV12) {
-         ashmem_alloc.size = size;
+         bool skip_alloc = true;
+         if ((fmt_set & GR_YV12_SW) == GR_YV12_SW) {
+            if (w <= DATA_PLANE_MAX_WIDTH && h <= DATA_PLANE_MAX_HEIGHT) {
+               skip_alloc = false;
+            }
+         }
          if (usage & GRALLOC_USAGE_HW_TEXTURE) {
-            if ((w <= DATA_PLANE_MAX_WIDTH &&
-                 h <= DATA_PLANE_MAX_HEIGHT)) {
-               fmt_set |= GR_HWTEX;
+            fmt_set |= GR_HWTEX;
+            if (skip_alloc) {
+               ashmem_alloc.size = 0; // do not allocate yet.
+            } else {
+               ashmem_alloc.size = pSharedData->container.allocSize;
             }
          }
       } else {
@@ -766,15 +780,17 @@ gralloc_alloc_buffer(alloc_device_t* dev,
          }
          ashmem_alloc.size = pSharedData->container.allocSize;
       }
-      ret = ioctl(hnd->pdata, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
-      if (ret >= 0) {
-         memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
-         ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
-         if (ret < 0) {
-            err = -ENOMEM;
-            goto alloc_failed;
-         } else {
-            pSharedData->container.block = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
+      if (ashmem_alloc.size > 0) {
+         ret = ioctl(hnd->pdata, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+         if (ret >= 0) {
+            memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
+            ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            if (ret < 0) {
+               err = -ENOMEM;
+               goto alloc_failed;
+            } else {
+               pSharedData->container.block = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
+            }
          }
       }
    }
@@ -815,9 +831,19 @@ gralloc_alloc_buffer(alloc_device_t* dev,
    }
 
    if ((fmt_set != GR_NONE) && pSharedData->container.block == 0) {
-      ALOGE("%s: failed to allocate plane (%d,%d), size %d", __FUNCTION__, w, h, size);
-      err = -ENOMEM;
-      goto alloc_failed;
+      if (((hnd->fmt_set & GR_YV12) == GR_YV12) &&
+          ((hnd->fmt_set & GR_HWTEX) == GR_HWTEX) &&
+          !(hnd->fmt_set & GR_YV12_SW)) {
+         ALOGI("%s: dropping data plane in favor of hw-texture (%d,%d), size %d", __FUNCTION__, w, h, size);
+         if (!(w <= DATA_PLANE_MAX_WIDTH && h <= DATA_PLANE_MAX_HEIGHT)) {
+            pSharedData->container.size = 0;
+            pSharedData->container.allocSize = 0;
+         }
+      } else {
+         ALOGE("%s: failed to allocate plane (%d,%d), size %d", __FUNCTION__, w, h, size);
+         err = -ENOMEM;
+         goto alloc_failed;
+      }
    } else if (pSharedData->container.block) {
        gralloc_bzero(pSharedData);
    }
