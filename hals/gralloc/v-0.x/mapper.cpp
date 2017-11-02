@@ -111,8 +111,9 @@ int gralloc_register_buffer(gralloc_module_t const* module,
          NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
          if (pSharedData->container.block) {NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);}
          else {pPhysAddr = 0;}
-         ALOGI("  reg (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
+         ALOGI("  reg (%s:%p): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
+               hnd,
                hnd->pid,
                block_handle,
                sPhysAddr,
@@ -129,6 +130,8 @@ int gralloc_register_buffer(gralloc_module_t const* module,
       }
    }
    if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
+   /* mark the block as valid. */
+   hnd->magic = 0x4F77656E;
 
    return 0;
 }
@@ -164,8 +167,9 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
          NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
          if (pSharedData->container.block) {NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);}
          else {pPhysAddr = 0;}
-         ALOGI("unreg (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
+         ALOGI("unreg (%s:%p): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
+               hnd,
                hnd->pid,
                block_handle,
                sPhysAddr,
@@ -193,7 +197,8 @@ int gralloc_unregister_buffer(gralloc_module_t const* module,
    if (gralloc_boom_check()) {
       NEXUS_MemoryBlock_CheckIfLocked(block_handle);
    }
-
+   /* prevent use after un-registration. */
+   hnd->magic = 0;
    return 0;
 }
 
@@ -235,6 +240,7 @@ int gralloc_lock_ycbcr(gralloc_module_t const* module,
    // same internal format in our integration.
    if (!((pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) ||
          (pSharedData->container.format == HAL_PIXEL_FORMAT_YV12))) {
+      if (!lrc) NEXUS_MemoryBlock_Unlock(shared_block_handle);
       ALOGE("%s : invalid call for NON flex-YUV buffer (0x%x)", __FUNCTION__, pSharedData->container.format);
       return -EINVAL;
    }
@@ -247,10 +253,10 @@ int gralloc_lock_ycbcr(gralloc_module_t const* module,
    block_handle = pSharedData->container.block;
    if (block_handle) {
       NEXUS_MemoryBlock_Lock(block_handle, &ycbcr->y);
+      hnd->nxSurfaceAddress = (uint64_t)&ycbcr->y;
       if (hnd->mgmt_mode != GR_MGMT_MODE_LOCKED) {
          NEXUS_Addr physAddr;
-         NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &physAddr);
-         hnd->nxSurfaceAddress = (uint64_t)&ycbcr->y;
+         NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
          hnd->nxSurfacePhysicalAddress = (uint64_t)physAddr;
       }
       ycbcr->cr = (void *) ((uint8_t *)ycbcr->y + (pSharedData->container.stride * pSharedData->container.height));
@@ -312,8 +318,9 @@ out_video_failed:
       NEXUS_Addr sPhysAddr, pPhysAddr;
       NEXUS_MemoryBlock_LockOffset(shared_block_handle, &sPhysAddr);
       NEXUS_MemoryBlock_LockOffset(block_handle, &pPhysAddr);
-      ALOGI(" lock_ycbcr (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::vaddr:%p::act:%d",
+      ALOGI(" lock_ycbcr (%s:%p): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::vaddr:%p::act:%d",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
+            hnd,
             hnd->pid,
             shared_block_handle,
             sPhysAddr,
@@ -381,16 +388,17 @@ int gralloc_lock(gralloc_module_t const* module,
       return -EINVAL;
    }
    if (pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) {
+      if (!lrc) NEXUS_MemoryBlock_Unlock(shared_block_handle);
       ALOGE("%s : invalid call for HAL_PIXEL_FORMAT_YCbCr_420_888 buffer", __FUNCTION__);
       return -EINVAL;
    }
    block_handle = pSharedData->container.block;
    if (block_handle) {
       NEXUS_MemoryBlock_Lock(block_handle, vaddr);
+      hnd->nxSurfaceAddress = (uint64_t)vaddr;
       if (hnd->mgmt_mode != GR_MGMT_MODE_LOCKED) {
          NEXUS_Addr physAddr;
-         NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &physAddr);
-         hnd->nxSurfaceAddress = (uint64_t)vaddr;
+         NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
          hnd->nxSurfacePhysicalAddress = (uint64_t)physAddr;
       }
    } else {
@@ -450,8 +458,9 @@ out_video_failed:
       NEXUS_Addr sPhysAddr, pPhysAddr;
       NEXUS_MemoryBlock_LockOffset(shared_block_handle, &sPhysAddr);
       NEXUS_MemoryBlock_LockOffset(block_handle, &pPhysAddr);
-      ALOGI(" lock (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::vaddr:%p::act:%d",
+      ALOGI(" lock (%s:%p): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::vaddr:%p::act:%d",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
+            hnd,
             hnd->pid,
             shared_block_handle,
             sPhysAddr,
@@ -504,10 +513,8 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
 
    if (hnd->usage & GRALLOC_USAGE_SW_WRITE_MASK) {
       void *vaddr;
-      if (!pSharedData->container.block) {
-         if (shared_block_handle) {
-            NEXUS_MemoryBlock_Unlock(shared_block_handle);
-         }
+      if (!block_handle) {
+         if (!lrc) NEXUS_MemoryBlock_Unlock(shared_block_handle);
          return -EINVAL;
       }
 
@@ -520,8 +527,9 @@ int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle)
       NEXUS_Addr sPhysAddr, pPhysAddr;
       NEXUS_MemoryBlock_LockOffset(shared_block_handle, &sPhysAddr);
       NEXUS_MemoryBlock_LockOffset(block_handle, &pPhysAddr);
-      ALOGI("ulock (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
+      ALOGI("ulock (%s:%p): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x::act:%d",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
+            hnd,
             hnd->pid,
             shared_block_handle,
             sPhysAddr,

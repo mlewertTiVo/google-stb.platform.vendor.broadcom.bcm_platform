@@ -20,6 +20,7 @@
 #define LOG_TAG "tv_input"
 #include <cutils/log.h>
 #include <cutils/native_handle.h>
+#include <android/native_window.h>
 
 #include <hardware/tv_input.h>
 
@@ -37,6 +38,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include "nexus_surface_client.h"
+#include <bcmsideband.h>
 
 #define DEVICE_ID_TUNER 0
 #define DEVICE_ID_HDMI 1
@@ -55,6 +58,7 @@ typedef struct tv_input_private {
 
     tv_input_device_t      *hdmi_dev;
     struct tv_input_device *hdmi_ops;
+    struct bcmsideband_ctx *sidebandContext;
 } tv_input_private_t;
 
 static int tv_input_device_open(const struct hw_module_t* module,
@@ -78,10 +82,6 @@ tv_input_module_t HAL_MODULE_INFO_SYM = {
    }
 };
 
-// native_handle_t related
-#define NUM_FD      0
-#define NUM_INT     2
-
 /*****************************************************************************/
 
 static int tv_input_initialize(struct tv_input_device* dev, const tv_input_callback_ops_t* callback, void* data)
@@ -99,10 +99,10 @@ static int tv_input_initialize(struct tv_input_device* dev, const tv_input_callb
     if (priv->callback != NULL) {
         return -EEXIST;
     }
-
     // Setup the callback stuff
     priv->callback = callback;
     priv->callback_data = data;
+    priv->sidebandContext = NULL;
 
     tuner_event.type = TV_INPUT_EVENT_DEVICE_AVAILABLE;
     tuner_event.device_info.type = TV_INPUT_TYPE_TUNER;
@@ -163,13 +163,17 @@ static int tv_input_open_stream(struct tv_input_device *dev, int dev_id, tv_stre
     if (dev_id == DEVICE_ID_HDMI)
         return priv->hdmi_ops->open_stream(priv->hdmi_dev, dev_id, pTVStream);
 
-    // Create a native handle
-    pTVStream->sideband_stream_source_handle = native_handle_create(NUM_FD, NUM_INT);
+    if (priv->sidebandContext) {
+        return -EEXIST;
+    }
 
-    // Setup the native handle data
-    pTVStream->sideband_stream_source_handle->data[0] = 1;
-    pTVStream->sideband_stream_source_handle->data[1] = (intptr_t)(0);
+    // Create a native handle
     pTVStream->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
+    priv->sidebandContext = libbcmsideband_init_sideband_tif(0, &pTVStream->sideband_stream_source_handle, NULL, NULL, NULL, NULL, NULL);
+    if (!priv->sidebandContext) {
+        ALOGE("Unable to initalize the sideband");
+        return -ENODEV;
+    }
 
     return 0;
 }
@@ -180,6 +184,8 @@ static int tv_input_close_stream(struct tv_input_device *dev, int dev_id, int st
     if (dev_id == DEVICE_ID_HDMI)
         return priv->hdmi_ops->close_stream(priv->hdmi_dev, dev_id, stream_id);
     ALOGV("%s: Enter", __FUNCTION__);
+    libbcmsideband_release(priv->sidebandContext);
+    priv->sidebandContext = NULL;
     return 0;
 }
 

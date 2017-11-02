@@ -52,17 +52,18 @@ static BM2MC_PACKET_PixelFormat getBm2mcPixelFormat(int pixelFmt);
 void __attribute__ ((constructor)) gralloc_explicit_load(void);
 void __attribute__ ((destructor)) gralloc_explicit_unload(void);
 
+extern "C" void *nxwrap_create_client(void **wrap);
+extern "C" void nxwrap_destroy_client(void *wrap);
+
 #if defined(V3D_VARIANT_v3d)
+static void *gl_dyn_lib;
 static void (* dyn_BEGLint_BufferGetRequirements)(BEGL_PixmapInfoEXT *, BEGL_BufferSettings *);
 #endif
-static void * (* dyn_nxwrap_create_client)(void **wrap);
-static void (* dyn_nxwrap_destroy_client)(void *wrap);
 #define LOAD_FN(lib, name) \
 if (!(dyn_ ## name = (typeof(dyn_ ## name)) dlsym(lib, #name))) \
    ALOGV("failed resolving '%s'", #name); \
 else \
    ALOGV("resolved '%s' to %p", #name, dyn_ ## name);
-static void *gl_dyn_lib;
 static void *nxwrap = NULL;
 static void *nexus_client = NULL;
 static int gralloc_mgmt_mode = -1;
@@ -75,13 +76,13 @@ static pthread_mutex_t moduleLock = PTHREAD_MUTEX_INITIALIZER;
 static NEXUS_Graphics2DHandle hGraphics = NULL;
 static BKNI_EventHandle hCheckpointEvent = NULL;
 
-// 360 video: uses QHD, allow UHD for certification.
+// allow qhd for 360 video.
 #if defined(V3D_VARIANT_v3d)
 #define DATA_PLANE_MAX_WIDTH    2048 /*TODO*/
 #define DATA_PLANE_MAX_HEIGHT   1440
 #else
-#define DATA_PLANE_MAX_WIDTH    4096
-#define DATA_PLANE_MAX_HEIGHT   2160
+#define DATA_PLANE_MAX_WIDTH    2560
+#define DATA_PLANE_MAX_HEIGHT   1440
 #endif
 
 /* default alignment for gralloc buffers:
@@ -102,6 +103,8 @@ static BKNI_EventHandle hCheckpointEvent = NULL;
 static void gralloc_load_lib(void)
 {
    char value[PROPERTY_VALUE_MAX];
+
+#if defined(V3D_VARIANT_v3d)
    snprintf(value, PROPERTY_VALUE_MAX, "%slibGLES_nexus.so", V3D_DLOPEN_PATH);
    gl_dyn_lib = dlopen(value, RTLD_LAZY | RTLD_LOCAL);
    if (!gl_dyn_lib) {
@@ -112,23 +115,13 @@ static void gralloc_load_lib(void)
          ALOGE("failed loading essential GLES library '%s': <%s>!", value, dlerror());
       }
    }
-
    // load wanted functions from the library now.
-#if defined(V3D_VARIANT_v3d)
    LOAD_FN(gl_dyn_lib, BEGLint_BufferGetRequirements);
 #endif
-   LOAD_FN(gl_dyn_lib, nxwrap_create_client);
-   LOAD_FN(gl_dyn_lib, nxwrap_destroy_client);
 
-   if (dyn_nxwrap_create_client) {
-      nexus_client = dyn_nxwrap_create_client(&nxwrap);
-      if (nexus_client == NULL) {
-         ALOGE("%s: failed joining nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
-      } else {
-         ALOGV("%s: joined nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
-      }
-   } else {
-      ALOGE("%s: dyn_xxx unavailable, something will break!", __FUNCTION__);
+   nexus_client = nxwrap_create_client(&nxwrap);
+   if (nexus_client == NULL) {
+      ALOGE("%s: failed joining nexus client '%s'!", __FUNCTION__, NEXUS_JOIN_CLIENT_PROCESS);
    }
 
    if (property_get(NX_MMA_MGMT_MODE, value, NX_MMA_MGMT_MODE_DEF)) {
@@ -199,13 +192,15 @@ void gralloc_explicit_load(void)
 
 void gralloc_explicit_unload(void)
 {
-   if (nxwrap && dyn_nxwrap_destroy_client) {
-      dyn_nxwrap_destroy_client(nxwrap);
+   if (nxwrap) {
+      nxwrap_destroy_client(nxwrap);
       nexus_client = NULL;
       nxwrap = NULL;
    }
 
+#if defined(V3D_VARIANT_v3d)
    dlclose(gl_dyn_lib);
+#endif
 
    if (hGraphics) {
       NEXUS_Graphics2D_Close(hGraphics);
@@ -811,8 +806,9 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
       if (pSharedData->container.block) {NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &pPhysAddr);}
       else {pPhysAddr = 0;}
-      ALOGI("alloc (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
+      ALOGI("alloc (%s:%p): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
             (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
+            hnd,
             getpid(),
             block_handle,
             sPhysAddr,
@@ -848,8 +844,8 @@ alloc_failed:
    }
 error:
    *pHandle = NULL;
-   if (pdata >= 0) close(pdata);
-   if (sdata >= 0) close(sdata);
+   if (pdata >= 0) { close(pdata); hnd->pdata = -1; }
+   if (sdata >= 0) { close(sdata); hnd->sdata = -1; }
    delete hnd;
    return err;
 }
@@ -883,8 +879,9 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
          NEXUS_MemoryBlock_LockOffset(block_handle, &sPhysAddr);
          if (planeHandle) {NEXUS_MemoryBlock_LockOffset(planeHandle, &pPhysAddr);}
          else {pPhysAddr = 0;}
-         ALOGI(" free (%s): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
+         ALOGI(" free (%s:%p): owner:%d::s-blk:%p::s-addr:%" PRIu64 "::p-blk:%p::p-addr:%" PRIu64 "::%dx%d::sz:%d::use:0x%x:0x%x",
                (hnd->fmt_set & GR_YV12) == GR_YV12 ? "MM" : (hnd->fmt_set & GR_BLOB) ? "BL" : "ST",
+               hnd,
                hnd->pid,
                block_handle,
                sPhysAddr,
@@ -912,8 +909,8 @@ gralloc_free_buffer(alloc_device_t* dev, private_handle_t *hnd)
       if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
    }
 
-   if (hnd->pdata >= 0) close(hnd->pdata);
-   if (hnd->sdata >= 0) close(hnd->sdata);
+   if (hnd->pdata >= 0) { close(hnd->pdata); hnd->pdata = -1; }
+   if (hnd->sdata >= 0) { close(hnd->sdata); hnd->sdata = -1; }
    delete hnd;
    return 0;
 }
