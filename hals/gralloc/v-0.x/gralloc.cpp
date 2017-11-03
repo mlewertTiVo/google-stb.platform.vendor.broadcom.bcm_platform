@@ -537,11 +537,7 @@ static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pS
       break;
       case HAL_PIXEL_FORMAT_YV12:
       case HAL_PIXEL_FORMAT_YCbCr_420_888:
-#if defined(V3D_VARIANT_v3d)
-         bufferRequirements.format = BEGL_BufferFormat_eYV12_Texture;
-#else
          bufferRequirements.format = BEGL_BufferFormat_eYV12;
-#endif
       break;
       case HAL_PIXEL_FORMAT_BLOB:
       case HAL_PIXEL_FORMAT_RGBA_1010102:
@@ -563,11 +559,7 @@ static unsigned int setupGLSuitableBuffer(private_handle_t *hnd, PSHARED_DATA pS
             rc = 0;
          }
       break;
-#if defined(V3D_VARIANT_v3d)
-      case BEGL_BufferFormat_eYV12_Texture:
-#else
       case BEGL_BufferFormat_eYV12:
-#endif
          hnd->oglStride = pSharedData->container.stride;
          hnd->oglFormat = bufferRequirements.format;
          hnd->oglSize   = pSharedData->container.size;
