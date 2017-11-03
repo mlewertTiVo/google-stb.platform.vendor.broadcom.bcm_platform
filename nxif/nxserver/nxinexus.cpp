@@ -116,6 +116,7 @@ out:
 }
 
 Return<NexusStatus> NexusImpl::registerHpdCb(uint64_t cId, const ::android::sp<INexusHpdCb>& cb) {
+   Mutex::Autolock _l(mLock);
    Vector<struct HpdCb>::iterator v;
    for (v = mHpdCb.begin(); v != mHpdCb.end(); ++v) {
       if ((*v).cId == cId) {
@@ -142,6 +143,7 @@ Return<NexusStatus> NexusImpl::registerHpdCb(uint64_t cId, const ::android::sp<I
 }
 
 Return<NexusStatus> NexusImpl::registerDspCb(uint64_t cId, const ::android::sp<INexusDspCb>& cb) {
+   Mutex::Autolock _l(mLock);
    Vector<struct DspCb>::iterator v;
    for (v = mDspCb.begin(); v != mDspCb.end(); ++v) {
       if ((*v).cId == cId) {
@@ -343,15 +345,13 @@ void NexusImpl::cbHotplug(void *context, int param __unused) {
    if (standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
       hdmi_state isConnected;
       NxClient_DisplayStatus status;
-
       rc = NxClient_GetDisplayStatus(&status);
       if (rc) {
          return;
       }
-
       isConnected = (status.hdmi.status.connected) ? HDMI_PLUGGED : HDMI_UNPLUGGED;
-
-      if (isConnected == pNexusImpl->mHpd && isConnected == HDMI_PLUGGED) {
+      if ((isConnected == pNexusImpl->mHpd) &&
+          (isConnected == HDMI_PLUGGED)) {
          pNexusImpl->cbHpdAction(HDMI_UNPLUGGED);
       }
       pNexusImpl->mHpd = isConnected;
@@ -619,6 +619,19 @@ void NexusImpl::cbDisplay(void *context, int param __unused) {
    }
 
    if (standbyStatus.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
+      // check for connected status change that was not caught, typically
+      // on bootup or reset.
+      hdmi_state isConnected;
+      NxClient_DisplayStatus status;
+      rc = NxClient_GetDisplayStatus(&status);
+      if (!rc) {
+         isConnected = (status.hdmi.status.connected) ? HDMI_PLUGGED : HDMI_UNPLUGGED;
+         if ((isConnected != pNexusImpl->mHpd) &&
+             (isConnected == HDMI_PLUGGED)) {
+            pNexusImpl->mHpd = isConnected;
+            pNexusImpl->cbHpdAction(isConnected);
+         }
+      }
       pNexusImpl->cbDisplayAction();
    }
 }
