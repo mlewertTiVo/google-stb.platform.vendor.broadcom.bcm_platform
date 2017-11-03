@@ -62,6 +62,11 @@ LOCAL_CFLAGS += -Werror
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SRC_FILES := treble/nxserver.cpp
 LOCAL_SRC_FILES += nxinexus.cpp
+ifneq ($(ANDROID_ENABLE_HDMI_HDCP),n)
+LOCAL_CFLAGS += -DANDROID_ENABLE_HDMI_HDCP=1
+else
+LOCAL_CFLAGS += -DANDROID_ENABLE_HDMI_HDCP=0
+endif
 else
 LOCAL_SRC_FILES := legacy/nxserver.cpp
 endif
