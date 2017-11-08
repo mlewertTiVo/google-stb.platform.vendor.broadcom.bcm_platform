@@ -253,10 +253,10 @@ int gralloc_lock_ycbcr(gralloc_module_t const* module,
    block_handle = pSharedData->container.block;
    if (block_handle) {
       NEXUS_MemoryBlock_Lock(block_handle, &ycbcr->y);
-      hnd->nxSurfaceAddress = (uint64_t)&ycbcr->y;
       if (hnd->mgmt_mode != GR_MGMT_MODE_LOCKED) {
          NEXUS_Addr physAddr;
          NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+         hnd->nxSurfaceAddress = (uint64_t)&ycbcr->y;
          hnd->nxSurfacePhysicalAddress = (uint64_t)physAddr;
       }
       ycbcr->cr = (void *) ((uint8_t *)ycbcr->y + (pSharedData->container.stride * pSharedData->container.height));
@@ -395,10 +395,10 @@ int gralloc_lock(gralloc_module_t const* module,
    block_handle = pSharedData->container.block;
    if (block_handle) {
       NEXUS_MemoryBlock_Lock(block_handle, vaddr);
-      hnd->nxSurfaceAddress = (uint64_t)vaddr;
       if (hnd->mgmt_mode != GR_MGMT_MODE_LOCKED) {
          NEXUS_Addr physAddr;
          NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+         hnd->nxSurfaceAddress = (uint64_t)vaddr;
          hnd->nxSurfacePhysicalAddress = (uint64_t)physAddr;
       }
    } else {
