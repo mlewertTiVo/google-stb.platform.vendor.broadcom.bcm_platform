@@ -20,8 +20,7 @@ LOCAL_FORCE_STATIC_EXECUTABLE := true
 
 LOCAL_WHOLE_STATIC_LIBRARIES := libcutils \
                                 liblog
-LOCAL_STATIC_LIBRARIES := libstdc++ \
-                          libm \
+LOCAL_STATIC_LIBRARIES := libm \
                           libc \
                           libnxserver \
                           libnexus_static
