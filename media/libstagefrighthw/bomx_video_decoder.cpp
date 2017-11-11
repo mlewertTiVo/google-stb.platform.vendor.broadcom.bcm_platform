@@ -86,6 +86,8 @@
 #define B_DATA_BUFFER_HEIGHT_HIGHRES (3840)
 #define B_DATA_BUFFER_WIDTH_HIGHRES (2160)
 #define B_NUM_BUFFERS (12)
+#define B_MIN_DECODER_WIDTH (128)           // Minimum dimension required by Nexus AVD
+#define B_MIN_DECODER_HEIGHT (64)
 #define B_STREAM_ID 0xe0
 #define B_MAX_FRAMES (12)
 #define B_MAX_DECODED_FRAMES (16)
@@ -2528,13 +2530,21 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         {
             OMX_PARAM_PORTDEFINITIONTYPE portDef;
             m_pVideoPorts[1]->GetDefinition(&portDef);
-            // Validate portdef width/height against their counterpart platform maximum values
+            // Validate portdef width/height against their counterpart platform min/max values
             if ((portDef.format.video.nFrameWidth > m_maxDecoderWidth)
                     || (portDef.format.video.nFrameHeight > m_maxDecoderHeight))
             {
                 ALOGE("Video stream exceeds decoder capabilities, w:%u,h:%u,maxW:%u,maxH:%u",
                         portDef.format.video.nFrameWidth, portDef.format.video.nFrameHeight,
                         m_maxDecoderWidth, m_maxDecoderHeight);
+                return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+            }
+            if ((portDef.format.video.nFrameWidth < B_MIN_DECODER_WIDTH)
+                    || (portDef.format.video.nFrameHeight < B_MIN_DECODER_HEIGHT))
+            {
+                ALOGE("Video stream doesn't have minimum required dimensions w:%u,h:%u,minW:%u,minH:%u",
+                        portDef.format.video.nFrameWidth, portDef.format.video.nFrameHeight,
+                        B_MIN_DECODER_WIDTH, B_MIN_DECODER_HEIGHT);
                 return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
             }
 
