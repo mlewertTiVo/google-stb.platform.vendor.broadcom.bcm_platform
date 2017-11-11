@@ -33,6 +33,7 @@
 #define LOG_OOB_DEBUG       (1<<4)  /* out-of-bounds video layer. */
 #define LOG_GLOB_COMP_DEBUG (1<<5)  /* global composition information. */
 #define LOG_OFFLD_DEBUG     (1<<6)  /* offloading to gles information. */
+#define LOG_CFGS_DEBUG      (1<<7)  /* display configuration information. */
 /*
  * log masks: specific to 'external' display (i.e. main display for stb).
  */
@@ -224,7 +225,6 @@ struct hwc2_dsp_cfg_t {
    bool                  hdr10;
    bool                  hlg;
    bool                  plm;
-   int                   eotf;
 };
 
 /* layer release timeline unit. */
@@ -377,6 +377,7 @@ struct hwc2_dsp_t {
    struct hwc2_lyr_t       *lyr;
    struct hwc2_dsp_cfg_t   *aCfg;
    struct hwc2_dsp_cfg_t   *cfgs;
+   pthread_mutex_t         mtx_cfg;
    struct hwc_position     op;
 
    BKNI_EventHandle        cmp_evt;
