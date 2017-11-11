@@ -110,6 +110,10 @@
 #define B_FR_EST_NUM_STABLE_DELTA_NEEDED (8)
 #define B_FR_EST_STABLE_DELTA_THRESHOLD (2000)          // in micro-seconds
 
+#define B_DEC_ACTIVE_STATE_INACTIVE                         (0)
+#define B_DEC_ACTIVE_STATE_ACTIVE_CLEAR                     (1)
+#define B_DEC_ACTIVE_STATE_ACTIVE_SECURE                    (2)
+
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
 #define OMX_IndexParamGetAndroidNativeBufferUsage            0x7F000002
 #define OMX_IndexParamStoreMetaDataInBuffers                 0x7F000003
@@ -123,7 +127,7 @@
 
 using namespace android;
 
-static volatile int32_t g_clearDecActive = 0;
+static volatile int32_t g_decActiveState = B_DEC_ACTIVE_STATE_INACTIVE;
 
 #if defined(HW_HVD_REVISION_S)
 static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
@@ -1345,9 +1349,12 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
     else
     {
-       if ( m_secureDecoder && android_atomic_acquire_load(&g_clearDecActive) )
+       int32_t decActiveState = android_atomic_acquire_load(&g_decActiveState);
+
+       if ( (m_secureDecoder && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_CLEAR) ||
+            (!m_secureDecoder && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_SECURE) )
        {
-           ALOGW("Unable to set up runtime heap while decoder still active");
+           ALOGW("Unable to set up runtime heap while %s decoder still active", m_secureDecoder ? "non-secure" : "secure");
            this->Invalidate(OMX_ErrorUndefined);
            return;
        }
@@ -1363,10 +1370,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
            m_secureRuntimeHeaps = m_secureDecoder;
        }
 
-       if ( !m_secureRuntimeHeaps )
-       {
-           android_atomic_release_store(1, &g_clearDecActive);
-       }
+       android_atomic_release_store(m_secureRuntimeHeaps ? B_DEC_ACTIVE_STATE_ACTIVE_SECURE : B_DEC_ACTIVE_STATE_ACTIVE_CLEAR, &g_decActiveState);
     }
 
     NxClient_AllocSettings nxAllocSettings;
@@ -1868,9 +1872,11 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         m_pTunnelNativeHandle = NULL;
     }
 
-    if ( !m_secureRuntimeHeaps && android_atomic_acquire_load(&g_clearDecActive) )
+    int32_t decActiveState = android_atomic_acquire_load(&g_decActiveState);
+    if ( (!m_secureRuntimeHeaps && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_CLEAR) ||
+         (m_secureRuntimeHeaps && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_SECURE) )
     {
-        android_atomic_release_store(0, &g_clearDecActive);
+        android_atomic_release_store(B_DEC_ACTIVE_STATE_INACTIVE, &g_decActiveState);
     }
 
     BOMX_VIDEO_STATS_RESET;
