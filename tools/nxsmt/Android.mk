@@ -1,3 +1,5 @@
+ifeq ($(SAGE_SUPPORT),y)
+
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
@@ -26,3 +28,4 @@ LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_EXECUTABLE)
 
+endif
