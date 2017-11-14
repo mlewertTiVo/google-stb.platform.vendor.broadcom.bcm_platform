@@ -80,6 +80,9 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_PAH_DIV    2
 #define HWC2_SYNC_TO    3500 /* slightly more than android timeout. */
 
+#define HWC2_FB_MAX_W   1920
+#define HWC2_FB_MAX_H   1080
+
 /* timeline creation/destruction are expensive operations; we use
  * a pool which recycles yet keeps sufficient depth to allow layers
  * to come and go in sync between device and client.
@@ -140,6 +143,8 @@ struct hwc2_dsp_cfg_t {
    uint32_t              xdp;
    uint32_t              ydp;
 
+   uint32_t              ew;
+   uint32_t              eh;
    bool                  hdr10;
    bool                  hlg;
    bool                  plm;

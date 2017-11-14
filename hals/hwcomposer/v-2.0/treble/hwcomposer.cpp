@@ -517,18 +517,20 @@ static void hwc2_cfg_collect(
    if (cfg) {
       NEXUS_VideoFormat_GetInfo(s->format, &vi);
       cfg->next  = NULL;
-      cfg->w     = vi.width;
-      cfg->h     = vi.height;
+      cfg->w     = (vi.width > HWC2_FB_MAX_W) ? HWC2_FB_MAX_W : vi.width;
+      cfg->ew    = vi.width;
+      cfg->h     = (vi.height > HWC2_FB_MAX_H) ? HWC2_FB_MAX_H : vi.height;
+      cfg->eh    = vi.height;
       cfg->vsync = hwc2_fps2vsync(vi.verticalFreq/100);
 
       dsp->cfgs = cfg;
       dsp->aCfg = dsp->cfgs;
 
       ALOGI_IF((dsp->lm & LOG_CFGS_DEBUG),
-               "[%s]:[acfg]:%" PRIu64 ":%ux%u:%ufps\n",
+               "[%s]:[acfg]:%" PRIu64 ":%ux%u:(%ux%u):%ufps\n",
                (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
                (uint64_t)(intptr_t)dsp,
-               cfg->w, cfg->h, hwc2_vsync2fps(cfg->vsync));
+               cfg->w, cfg->h, cfg->ew, cfg->eh, hwc2_vsync2fps(cfg->vsync));
    }
    cfg_c = dsp->cfgs;
 
@@ -545,15 +547,17 @@ static void hwc2_cfg_collect(
             NEXUS_VideoFormat_GetInfo(ordered_fps[i], &vi);
             j++;
             cfg->next  = NULL;
-            cfg->w     = vi.width;
-            cfg->h     = vi.height;
+            cfg->w     = (vi.width > HWC2_FB_MAX_W) ? HWC2_FB_MAX_W : vi.width;
+            cfg->ew    = vi.width;
+            cfg->h     = (vi.height > HWC2_FB_MAX_H) ? HWC2_FB_MAX_H : vi.height;
+            cfg->eh    = vi.height;
             cfg->vsync = hwc2_fps2vsync(vi.verticalFreq/100);
 
             ALOGI_IF((dsp->lm & LOG_CFGS_DEBUG),
-                     "[%s]:[cfg:%d]:%" PRIu64 ":%ux%u:%ufps\n",
+                     "[%s]:[cfg:%d]:%" PRIu64 ":%ux%u:(%ux%u):%ufps\n",
                      (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
                      j, (uint64_t)(intptr_t)dsp,
-                     cfg->w, cfg->h, hwc2_vsync2fps(cfg->vsync));
+                     cfg->w, cfg->h, cfg->ew, cfg->eh, hwc2_vsync2fps(cfg->vsync));
 
             cfg_c->next = cfg;
             cfg_c = cfg;
@@ -788,8 +792,8 @@ static void hwc2_ext_fbs(
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = false;
       NEXUS_Surface_GetDefaultCreateSettings(&scs);
-      scs.width       = property_get_int32(HWC2_EXT_NFB_W, 1920);
-      scs.height      = property_get_int32(HWC2_EXT_NFB_H, 1080);
+      scs.width       = property_get_int32(HWC2_EXT_NFB_W, HWC2_FB_MAX_W);
+      scs.height      = property_get_int32(HWC2_EXT_NFB_H, HWC2_FB_MAX_H);
       scs.pixelFormat = hwc2_enabled(hwc2_tweak_fb_compressed)?
                            NEXUS_PixelFormat_eCompressed_A8_R8_G8_B8:
                            NEXUS_PixelFormat_eA8_B8_G8_R8;
@@ -821,8 +825,8 @@ static void hwc2_ext_fbs(
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = true;
       NEXUS_Surface_GetDefaultCreateSettings(&scs);
-      scs.width       = property_get_int32(HWC2_EXT_NFB_W, 1920);
-      scs.height      = property_get_int32(HWC2_EXT_NFB_H, 1080);
+      scs.width       = property_get_int32(HWC2_EXT_NFB_W, HWC2_FB_MAX_W);
+      scs.height      = property_get_int32(HWC2_EXT_NFB_H, HWC2_FB_MAX_H);
       scs.pitch       = scs.width * 4;
       scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
       scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
@@ -844,8 +848,8 @@ static void hwc2_ext_fbs(
       NEXUS_MemoryBlockHandle bh = NULL;
       bool dh = true;
       NEXUS_Surface_GetDefaultCreateSettings(&scs);
-      scs.width       = property_get_int32(HWC2_EXT_NFB_W, 1920);
-      scs.height      = property_get_int32(HWC2_EXT_NFB_H, 1080);
+      scs.width       = property_get_int32(HWC2_EXT_NFB_W, HWC2_FB_MAX_W);
+      scs.height      = property_get_int32(HWC2_EXT_NFB_H, HWC2_FB_MAX_H);
       scs.pitch       = scs.width * 4;
       scs.pixelFormat = NEXUS_PixelFormat_eA8_B8_G8_R8;
       scs.heap        = cCli.heap[NXCLIENT_DYNAMIC_HEAP];
@@ -2151,10 +2155,10 @@ static size_t hwc2_dump_gen(
       if (max-current > 0) {
          NEXUS_DynamicRangeProcessingSettings d;
          current += snprintf(&hwc2->dump[current], max-current,
-            "\t[ext][%s]:%" PRIu64 ":%s:%" PRIu32 "x%" PRIu32 ":%" PRIu32 ",%" PRIu32 ":op{%d,%d,%dx%d}:%" PRIu64 ":%" PRIu64 "\n",
+            "\t[ext][%s]:%" PRIu64 ":%s:%" PRIu32 "x%" PRIu32 ":(%" PRIu32 "x%" PRIu32 "):%" PRIu32 ",%" PRIu32 ":op{%d,%d,%dx%d}:%" PRIu64 ":%" PRIu64 "\n",
             dsp->u.ext.gles?"gles":"m2mc",
             (hwc2_display_t)(intptr_t)dsp, dsp->name,
-            dsp->aCfg->w, dsp->aCfg->h, dsp->aCfg->xdp, dsp->aCfg->ydp,
+            dsp->aCfg->w, dsp->aCfg->h, dsp->aCfg->ew, dsp->aCfg->eh, dsp->aCfg->xdp, dsp->aCfg->ydp,
             hwc2->ext->op.x, hwc2->ext->op.y, hwc2->ext->op.w, hwc2->ext->op.h,
             dsp->pres, dsp->post);
          NEXUS_Display_GetGraphicsDynamicRangeProcessingSettings(&d);
@@ -2773,13 +2777,16 @@ static int32_t hwc2_ackCliTgt(
    }
 
    if (!pthread_mutex_lock(&dsp->mtx_cfg)) {
+      uint32_t w, h;
       if (dsp->aCfg == NULL) {
          pthread_mutex_unlock(&dsp->mtx_cfg);
          ret = HWC2_ERROR_BAD_DISPLAY;
          goto out;
       }
-      if (dsp->aCfg->w == width &&
-          dsp->aCfg->h == height &&
+      w = (dsp->aCfg->w > HWC2_FB_MAX_W) ? HWC2_FB_MAX_W : dsp->aCfg->w;
+      h = (dsp->aCfg->h > HWC2_FB_MAX_H) ? HWC2_FB_MAX_H : dsp->aCfg->h;
+      if (w == width &&
+          h == height &&
           format == HAL_PIXEL_FORMAT_RGBA_8888 &&
           dataspace == HAL_DATASPACE_UNKNOWN) {
          pthread_mutex_unlock(&dsp->mtx_cfg);
@@ -4360,8 +4367,8 @@ static void hwc2_connect(
       if (hwc2->hb) {
          int w = 0, h = 0;
          if (!pthread_mutex_lock(&dsp->mtx_cfg)) {
-            w = dsp->aCfg->w;
-            h = dsp->aCfg->h;
+            w = (dsp->aCfg->w > HWC2_FB_MAX_W) ? HWC2_FB_MAX_W : (int)dsp->aCfg->w;
+            h = (dsp->aCfg->h > HWC2_FB_MAX_H) ? HWC2_FB_MAX_H : (int)dsp->aCfg->h;
             pthread_mutex_unlock(&dsp->mtx_cfg);
          }
          hwc2->hb->connect();
@@ -4490,8 +4497,8 @@ static bool hwc2_lyr_adj(
    int w = 0, h = 0;
 
    if (!pthread_mutex_lock(&dsp->mtx_cfg)) {
-      w = (int)dsp->aCfg->w;
-      h = (int)dsp->aCfg->h;
+      w = (dsp->aCfg->w > HWC2_FB_MAX_W) ? HWC2_FB_MAX_W : (int)dsp->aCfg->w;
+      h = (dsp->aCfg->h > HWC2_FB_MAX_H) ? HWC2_FB_MAX_H : (int)dsp->aCfg->h;
       pthread_mutex_unlock(&dsp->mtx_cfg);
    }
    if (!w && !h) {
@@ -5826,8 +5833,8 @@ static void hwc2_ext_cmp_frame(
    }
 
    if (!pthread_mutex_lock(&dsp->mtx_cfg)) {
-      aw = (int)dsp->aCfg->w;
-      ah = (int)dsp->aCfg->h;
+      aw = (dsp->aCfg->w > HWC2_FB_MAX_W) ? HWC2_FB_MAX_W : (int)dsp->aCfg->w;
+      ah = (dsp->aCfg->h > HWC2_FB_MAX_H) ? HWC2_FB_MAX_H : (int)dsp->aCfg->h;
       pthread_mutex_unlock(&dsp->mtx_cfg);
    }
 
@@ -6251,6 +6258,7 @@ static void hwc2_setup_ext(
    NEXUS_HdmiOutputHandle hdmi;
    NEXUS_HdmiOutputStatus hstatus;
    NxClient_DisplaySettings settings;
+   uint32_t cw, ch;
 
    ext = (struct hwc2_dsp_t *)malloc(sizeof(*ext));
    if (ext == NULL) {
@@ -6271,8 +6279,8 @@ static void hwc2_setup_ext(
    hwc2->ext->cfgs = (struct hwc2_dsp_cfg_t *)malloc(sizeof(struct hwc2_dsp_cfg_t));
    if (hwc2->ext->cfgs) {
       hwc2->ext->cfgs->next  = NULL;
-      hwc2->ext->cfgs->w     = property_get_int32(HWC2_EXT_AFB_W, 1920);
-      hwc2->ext->cfgs->h     = property_get_int32(HWC2_EXT_AFB_H, 1080);
+      hwc2->ext->cfgs->w     = property_get_int32(HWC2_EXT_AFB_W, HWC2_FB_MAX_W);
+      hwc2->ext->cfgs->h     = property_get_int32(HWC2_EXT_AFB_H, HWC2_FB_MAX_H);
       hwc2->ext->cfgs->vsync = hwc2_fps2vsync(60); /* hardcode 60fps */
       hwc2->ext->cfgs->xdp   = 160; /* default if not connected. */
       hwc2->ext->cfgs->ydp   = 160; /* default if not connected. */
@@ -6310,8 +6318,8 @@ static void hwc2_setup_ext(
    ALOGI("[ext]: completion timeline: %d\n", hwc2->ext->cmp_tl);
 
    NxClient_GetSurfaceClientComposition(hwc2->ext->u.ext.nxa.surfaceClient[0].id, &c);
-   c.virtualDisplay.width  = property_get_int32(HWC2_EXT_NFB_W, 1920);
-   c.virtualDisplay.height = property_get_int32(HWC2_EXT_NFB_H, 1080);
+   c.virtualDisplay.width  = property_get_int32(HWC2_EXT_NFB_W, HWC2_FB_MAX_W);
+   c.virtualDisplay.height = property_get_int32(HWC2_EXT_NFB_H, HWC2_FB_MAX_H);
    c.position.x            = 0;
    c.position.y            = 0;
    c.position.width        = c.virtualDisplay.width;
@@ -6322,8 +6330,10 @@ static void hwc2_setup_ext(
    c.alphaBlend            = hwc2_a2n_al_be[HWC2_BLEND_MODE_PREMULTIPLIED];
    NxClient_SetSurfaceClientComposition(hwc2->ext->u.ext.nxa.surfaceClient[0].id, &c);
 
-   if ((c.virtualDisplay.width != hwc2->ext->aCfg->w) &&
-       (c.virtualDisplay.height != hwc2->ext->aCfg->h)) {
+   cw = (hwc2->ext->aCfg->w > HWC2_FB_MAX_W) ? HWC2_FB_MAX_W : (int)hwc2->ext->aCfg->w;
+   ch = (hwc2->ext->aCfg->h > HWC2_FB_MAX_H) ? HWC2_FB_MAX_H : (int)hwc2->ext->aCfg->h;
+   if ((c.virtualDisplay.width != cw) &&
+       (c.virtualDisplay.height != ch)) {
       hwc2->ext->sfb = true;
    } else {
       hwc2->ext->sfb = false;
@@ -6398,8 +6408,8 @@ static void hwc2_op(
 
       w = h = 0;
       if (!pthread_mutex_lock(&dsp->mtx_cfg)) {
-         w = dsp->aCfg->w;
-         h = dsp->aCfg->h;
+         w = (dsp->aCfg->w > HWC2_FB_MAX_W) ? HWC2_FB_MAX_W : (int)dsp->aCfg->w;
+         h = (dsp->aCfg->h > HWC2_FB_MAX_H) ? HWC2_FB_MAX_H : (int)dsp->aCfg->h;
          pthread_mutex_unlock(&dsp->mtx_cfg);
       }
 
