@@ -2,6 +2,7 @@
 
 filegroup {
     name: "bcm.hardware.nexus@1.0_hal",
+    owner: "broadcom",
     srcs: [
         "types.hal",
         "INexus.hal",
@@ -12,6 +13,7 @@ filegroup {
 
 genrule {
     name: "bcm.hardware.nexus@1.0_genc++",
+    owner: "broadcom",
     tools: ["hidl-gen"],
     cmd: "$(location hidl-gen) -o $(genDir) -Lc++-sources -randroid.hidl:system/libhidl/transport -rbcm.hardware:vendor/broadcom/bcm_platform/hals bcm.hardware.nexus@1.0",
     srcs: [
@@ -27,6 +29,7 @@ genrule {
 
 genrule {
     name: "bcm.hardware.nexus@1.0_genc++_headers",
+    owner: "broadcom",
     tools: ["hidl-gen"],
     cmd: "$(location hidl-gen) -o $(genDir) -Lc++-headers -randroid.hidl:system/libhidl/transport -rbcm.hardware:vendor/broadcom/bcm_platform/hals bcm.hardware.nexus@1.0",
     srcs: [
@@ -55,6 +58,7 @@ genrule {
 
 cc_library {
     name: "bcm.hardware.nexus@1.0",
+    owner: "broadcom",
     defaults: ["hidl-module-defaults"],
     generated_sources: ["bcm.hardware.nexus@1.0_genc++"],
     generated_headers: ["bcm.hardware.nexus@1.0_genc++_headers"],
@@ -81,6 +85,7 @@ cc_library {
 
 cc_library {
     name: "bcm.hardware.nexus@1.0_vendor",
+    owner: "broadcom",
     defaults: ["hidl-module-defaults"],
     generated_sources: ["bcm.hardware.nexus@1.0_genc++"],
     generated_headers: ["bcm.hardware.nexus@1.0_genc++_headers"],
