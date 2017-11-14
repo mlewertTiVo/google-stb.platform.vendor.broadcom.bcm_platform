@@ -134,6 +134,71 @@ struct BsNexus : INexus, ::android::hardware::details::HidlInstrumentor {
 
         return _hidl_return;
     }
+    ::android::hardware::Return<void> getPwr(getPwr_cb _hidl_cb) {
+        if (_hidl_cb == nullptr) {
+            return ::android::hardware::Status::fromExceptionCode(
+                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
+        }
+
+        atrace_begin(ATRACE_TAG_HAL, "HIDL::INexus::getPwr::passthrough");
+        #ifdef __ANDROID_DEBUGGABLE__
+        if (UNLIKELY(mEnableInstrumentation)) {
+            std::vector<void *> _hidl_args;
+            for (const auto &callback: mInstrumentationCallbacks) {
+                callback(InstrumentationEvent::PASSTHROUGH_ENTRY, "bcm.hardware.nexus", "1.0", "INexus", "getPwr", &_hidl_args);
+            }
+        }
+        #endif // __ANDROID_DEBUGGABLE__
+
+        auto _hidl_error = ::android::hardware::Void();
+        auto _hidl_return = mImpl->getPwr([&](const auto &_hidl_out_p) {
+            atrace_end(ATRACE_TAG_HAL);
+            #ifdef __ANDROID_DEBUGGABLE__
+            if (UNLIKELY(mEnableInstrumentation)) {
+                std::vector<void *> _hidl_args;
+                _hidl_args.push_back((void *)&_hidl_out_p);
+                for (const auto &callback: mInstrumentationCallbacks) {
+                    callback(InstrumentationEvent::PASSTHROUGH_EXIT, "bcm.hardware.nexus", "1.0", "INexus", "getPwr", &_hidl_args);
+                }
+            }
+            #endif // __ANDROID_DEBUGGABLE__
+
+            _hidl_cb(_hidl_out_p);
+        });
+
+        return _hidl_return;
+    }
+    ::android::hardware::Return<NexusStatus> setPwr(const NexusPowerState& p) {
+        atrace_begin(ATRACE_TAG_HAL, "HIDL::INexus::setPwr::passthrough");
+        #ifdef __ANDROID_DEBUGGABLE__
+        if (UNLIKELY(mEnableInstrumentation)) {
+            std::vector<void *> _hidl_args;
+            _hidl_args.push_back((void *)&p);
+            for (const auto &callback: mInstrumentationCallbacks) {
+                callback(InstrumentationEvent::PASSTHROUGH_ENTRY, "bcm.hardware.nexus", "1.0", "INexus", "setPwr", &_hidl_args);
+            }
+        }
+        #endif // __ANDROID_DEBUGGABLE__
+
+        auto _hidl_error = ::android::hardware::Void();
+        auto _hidl_return = mImpl->setPwr(p);
+
+        #ifdef __ANDROID_DEBUGGABLE__
+        NexusStatus _hidl_out_s = _hidl_return;
+        #endif // __ANDROID_DEBUGGABLE__
+        atrace_end(ATRACE_TAG_HAL);
+        #ifdef __ANDROID_DEBUGGABLE__
+        if (UNLIKELY(mEnableInstrumentation)) {
+            std::vector<void *> _hidl_args;
+            _hidl_args.push_back((void *)&_hidl_out_s);
+            for (const auto &callback: mInstrumentationCallbacks) {
+                callback(InstrumentationEvent::PASSTHROUGH_EXIT, "bcm.hardware.nexus", "1.0", "INexus", "setPwr", &_hidl_args);
+            }
+        }
+        #endif // __ANDROID_DEBUGGABLE__
+
+        return _hidl_return;
+    }
 
     // Methods from ::android::hidl::base::V1_0::IBase follow.
     ::android::hardware::Return<void> interfaceChain(interfaceChain_cb _hidl_cb) {

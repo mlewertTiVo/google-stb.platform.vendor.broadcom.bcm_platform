@@ -165,6 +165,22 @@ Return<NexusStatus> NexusImpl::registerDspCb(uint64_t cId, const ::android::sp<I
    }
 }
 
+Return<NexusStatus> NexusImpl::setPwr(const NexusPowerState& p) {
+   struct pmlib_state_t s;
+   memcpy(&s, &p, sizeof(struct pmlib_state_t));
+   mPmLib.setState(&s);
+   return NexusStatus::SUCCESS;
+}
+
+Return<void> NexusImpl::getPwr(getPwr_cb _hidl_cb) {
+   struct pmlib_state_t s;
+   NexusPowerState p;
+   mPmLib.getState(&s);
+   memcpy(&p, &s, sizeof(struct pmlib_state_t));
+   _hidl_cb(p);
+   return Void();
+}
+
 void NexusImpl::start_middleware() {
    init_hdmi_out();
    init_ir();

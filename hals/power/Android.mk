@@ -48,7 +48,8 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/droid_pm \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/linux/driver \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/modules/gpio/include \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hdmi_cec
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hdmi_cec \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/power
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
@@ -62,8 +63,12 @@ LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 
-LOCAL_SRC_FILES := power.cpp \
-                   nexus_power.cpp
+LOCAL_SRC_FILES := nexus_power.cpp
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_SRC_FILES += treble/power.cpp
+else
+LOCAL_SRC_FILES += legacy/power.cpp
+endif
 
 LOCAL_MODULE_TAGS := optional
 LOCAL_PROPRIETARY_MODULE := true

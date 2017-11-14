@@ -25,8 +25,8 @@ LOCAL_PRELINK_MODULE := false
 LOCAL_SHARED_LIBRARIES := liblog libcutils libdl libbinder libutils
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/opensource/glob \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/pmlib/$(PMLIB_DIR)
-
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/BSEAV/lib/pmlib/$(PMLIB_DIR) \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 LOCAL_CFLAGS += $(PMLIB_CFLAGS)
 
@@ -45,10 +45,14 @@ LOCAL_CFLAGS += -DIP_CTRL_CMD_FOR_SDK=\"ifconfig\"
 endif
 
 LOCAL_PATH := $(TOP)/${BCM_VENDOR_STB_ROOT}/
-LOCAL_SRC_FILES := bcm_platform/misc/pmlibservice/IPmLibService.cpp \
-                   bcm_platform/misc/pmlibservice/PmLibService.cpp \
-                   refsw/BSEAV/opensource/glob/glob.c \
+LOCAL_SRC_FILES := refsw/BSEAV/opensource/glob/glob.c \
                    refsw/BSEAV/lib/pmlib/$(PMLIB_DIR)/pmlib.c
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_SRC_FILES += bcm_platform/misc/pmlibservice/treble/PmLibService.cpp
+else
+LOCAL_SRC_FILES += bcm_platform/misc/pmlibservice/legacy/IPmLibService.cpp \
+                   bcm_platform/misc/pmlibservice/legacy/PmLibService.cpp
+endif
 
 LOCAL_MODULE_TAGS := optional
 LOCAL_PROPRIETARY_MODULE := true

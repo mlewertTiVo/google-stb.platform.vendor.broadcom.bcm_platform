@@ -19,6 +19,8 @@ struct BpHwNexus : public ::android::hardware::BpInterface<INexus>, public ::and
     ::android::hardware::Return<uint64_t> client(int32_t pid) override;
     ::android::hardware::Return<NexusStatus> registerHpdCb(uint64_t cId, const ::android::sp<INexusHpdCb>& cb) override;
     ::android::hardware::Return<NexusStatus> registerDspCb(uint64_t cId, const ::android::sp<INexusDspCb>& cb) override;
+    ::android::hardware::Return<void> getPwr(getPwr_cb _hidl_cb) override;
+    ::android::hardware::Return<NexusStatus> setPwr(const NexusPowerState& p) override;
 
     // Methods from ::android::hidl::base::V1_0::IBase follow.
     ::android::hardware::Return<void> interfaceChain(interfaceChain_cb _hidl_cb) override;

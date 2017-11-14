@@ -54,6 +54,7 @@ using namespace android::hardware;
 using namespace bcm::hardware::nexus::V1_0;
 
 Mutex NxWrap::mLck("NxWrap-Lock");
+static struct pmlib_state_t gPm;
 
 class NxWrapHpd : public INexusHpdCb {
 public:
@@ -191,6 +192,24 @@ uint64_t NxWrap::client() {
       client = nxi()->client(getpid());
    }
    return client;
+}
+
+void NxWrap::setPwr(struct pmlib_state_t *s) {
+   NexusPowerState p;
+   memcpy(&p, s, sizeof(struct pmlib_state_t));
+   if (nxi() != NULL) {
+      nxi()->setPwr(p);
+   }
+}
+
+void getPwr_cb(const NexusPowerState p) {
+   memcpy(&gPm, &p, sizeof(struct pmlib_state_t));
+}
+void NxWrap::getPwr(struct pmlib_state_t *s) {
+   if (nxi() != NULL) {
+      nxi()->getPwr(getPwr_cb);
+   }
+   memcpy(s, &gPm, sizeof(struct pmlib_state_t));
 }
 
 int NxWrap::regHp(uint64_t cid, HpNtfyCb cb, void *ctx) {
