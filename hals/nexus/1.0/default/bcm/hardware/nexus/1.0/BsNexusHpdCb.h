@@ -1,6 +1,7 @@
 #ifndef HIDL_GENERATED_BCM_HARDWARE_NEXUS_V1_0_BSNEXUSHPDCB_H
 #define HIDL_GENERATED_BCM_HARDWARE_NEXUS_V1_0_BSNEXUSHPDCB_H
 
+#include <android-base/macros.h>
 #include <cutils/trace.h>
 #include <future>
 #include <bcm/hardware/nexus/1.0/INexusHpdCb.h>
@@ -14,6 +15,9 @@ namespace V1_0 {
 
 struct BsNexusHpdCb : INexusHpdCb, ::android::hardware::details::HidlInstrumentor {
     explicit BsNexusHpdCb(const ::android::sp<INexusHpdCb> impl);
+
+    typedef INexusHpdCb Pure;
+
     // Methods from INexusHpdCb follow.
     ::android::hardware::Return<void> onHpd(bool connected) {
         atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusHpdCb::onHpd::passthrough");
@@ -28,7 +32,11 @@ struct BsNexusHpdCb : INexusHpdCb, ::android::hardware::details::HidlInstrumento
         #endif // __ANDROID_DEBUGGABLE__
 
         auto _hidl_error = ::android::hardware::Void();
-        auto _hidl_return = addOnewayTask([mImpl = this->mImpl, mEnableInstrumentation = this->mEnableInstrumentation, mInstrumentationCallbacks = this->mInstrumentationCallbacks, &_hidl_error, connected] {
+        auto _hidl_return = addOnewayTask([mImpl = this->mImpl
+        #ifdef __ANDROID_DEBUGGABLE__
+        , mEnableInstrumentation = this->mEnableInstrumentation, mInstrumentationCallbacks = this->mInstrumentationCallbacks
+        #endif // __ANDROID_DEBUGGABLE__
+        , connected] {
             mImpl->onHpd(connected);
 
             atrace_end(ATRACE_TAG_HAL);
@@ -49,7 +57,8 @@ struct BsNexusHpdCb : INexusHpdCb, ::android::hardware::details::HidlInstrumento
     ::android::hardware::Return<void> interfaceChain(interfaceChain_cb _hidl_cb) {
         if (_hidl_cb == nullptr) {
             return ::android::hardware::Status::fromExceptionCode(
-                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
+                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT,
+                    "Null synchronous callback passed.");
         }
 
         atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusHpdCb::interfaceChain::passthrough");
@@ -111,7 +120,8 @@ struct BsNexusHpdCb : INexusHpdCb, ::android::hardware::details::HidlInstrumento
     ::android::hardware::Return<void> interfaceDescriptor(interfaceDescriptor_cb _hidl_cb) {
         if (_hidl_cb == nullptr) {
             return ::android::hardware::Status::fromExceptionCode(
-                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
+                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT,
+                    "Null synchronous callback passed.");
         }
 
         atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusHpdCb::interfaceDescriptor::passthrough");
@@ -145,7 +155,8 @@ struct BsNexusHpdCb : INexusHpdCb, ::android::hardware::details::HidlInstrumento
     ::android::hardware::Return<void> getHashChain(getHashChain_cb _hidl_cb) {
         if (_hidl_cb == nullptr) {
             return ::android::hardware::Status::fromExceptionCode(
-                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
+                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT,
+                    "Null synchronous callback passed.");
         }
 
         atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusHpdCb::getHashChain::passthrough");
@@ -242,7 +253,8 @@ struct BsNexusHpdCb : INexusHpdCb, ::android::hardware::details::HidlInstrumento
     ::android::hardware::Return<void> getDebugInfo(getDebugInfo_cb _hidl_cb) {
         if (_hidl_cb == nullptr) {
             return ::android::hardware::Status::fromExceptionCode(
-                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
+                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT,
+                    "Null synchronous callback passed.");
         }
 
         atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusHpdCb::getDebugInfo::passthrough");
@@ -285,7 +297,11 @@ struct BsNexusHpdCb : INexusHpdCb, ::android::hardware::details::HidlInstrumento
         #endif // __ANDROID_DEBUGGABLE__
 
         auto _hidl_error = ::android::hardware::Void();
-        auto _hidl_return = addOnewayTask([mImpl = this->mImpl, mEnableInstrumentation = this->mEnableInstrumentation, mInstrumentationCallbacks = this->mInstrumentationCallbacks, &_hidl_error] {
+        auto _hidl_return = addOnewayTask([mImpl = this->mImpl
+        #ifdef __ANDROID_DEBUGGABLE__
+        , mEnableInstrumentation = this->mEnableInstrumentation, mInstrumentationCallbacks = this->mInstrumentationCallbacks
+        #endif // __ANDROID_DEBUGGABLE__
+        ] {
             mImpl->notifySyspropsChanged();
 
             atrace_end(ATRACE_TAG_HAL);

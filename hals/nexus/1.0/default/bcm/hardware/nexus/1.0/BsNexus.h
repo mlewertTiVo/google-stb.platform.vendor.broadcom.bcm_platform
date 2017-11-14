@@ -1,6 +1,7 @@
 #ifndef HIDL_GENERATED_BCM_HARDWARE_NEXUS_V1_0_BSNEXUS_H
 #define HIDL_GENERATED_BCM_HARDWARE_NEXUS_V1_0_BSNEXUS_H
 
+#include <android-base/macros.h>
 #include <cutils/trace.h>
 #include <future>
 #include <bcm/hardware/nexus/1.0/INexus.h>
@@ -14,6 +15,9 @@ namespace V1_0 {
 
 struct BsNexus : INexus, ::android::hardware::details::HidlInstrumentor {
     explicit BsNexus(const ::android::sp<INexus> impl);
+
+    typedef INexus Pure;
+
     // Methods from INexus follow.
     ::android::hardware::Return<uint64_t> client(int32_t pid) {
         atrace_begin(ATRACE_TAG_HAL, "HIDL::INexus::client::passthrough");
@@ -137,7 +141,8 @@ struct BsNexus : INexus, ::android::hardware::details::HidlInstrumentor {
     ::android::hardware::Return<void> getPwr(getPwr_cb _hidl_cb) {
         if (_hidl_cb == nullptr) {
             return ::android::hardware::Status::fromExceptionCode(
-                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
+                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT,
+                    "Null synchronous callback passed.");
         }
 
         atrace_begin(ATRACE_TAG_HAL, "HIDL::INexus::getPwr::passthrough");
@@ -204,7 +209,8 @@ struct BsNexus : INexus, ::android::hardware::details::HidlInstrumentor {
     ::android::hardware::Return<void> interfaceChain(interfaceChain_cb _hidl_cb) {
         if (_hidl_cb == nullptr) {
             return ::android::hardware::Status::fromExceptionCode(
-                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
+                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT,
+                    "Null synchronous callback passed.");
         }
 
         atrace_begin(ATRACE_TAG_HAL, "HIDL::INexus::interfaceChain::passthrough");
@@ -266,7 +272,8 @@ struct BsNexus : INexus, ::android::hardware::details::HidlInstrumentor {
     ::android::hardware::Return<void> interfaceDescriptor(interfaceDescriptor_cb _hidl_cb) {
         if (_hidl_cb == nullptr) {
             return ::android::hardware::Status::fromExceptionCode(
-                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
+                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT,
+                    "Null synchronous callback passed.");
         }
 
         atrace_begin(ATRACE_TAG_HAL, "HIDL::INexus::interfaceDescriptor::passthrough");
@@ -300,7 +307,8 @@ struct BsNexus : INexus, ::android::hardware::details::HidlInstrumentor {
     ::android::hardware::Return<void> getHashChain(getHashChain_cb _hidl_cb) {
         if (_hidl_cb == nullptr) {
             return ::android::hardware::Status::fromExceptionCode(
-                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
+                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT,
+                    "Null synchronous callback passed.");
         }
 
         atrace_begin(ATRACE_TAG_HAL, "HIDL::INexus::getHashChain::passthrough");
@@ -397,7 +405,8 @@ struct BsNexus : INexus, ::android::hardware::details::HidlInstrumentor {
     ::android::hardware::Return<void> getDebugInfo(getDebugInfo_cb _hidl_cb) {
         if (_hidl_cb == nullptr) {
             return ::android::hardware::Status::fromExceptionCode(
-                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
+                    ::android::hardware::Status::EX_ILLEGAL_ARGUMENT,
+                    "Null synchronous callback passed.");
         }
 
         atrace_begin(ATRACE_TAG_HAL, "HIDL::INexus::getDebugInfo::passthrough");
@@ -440,7 +449,11 @@ struct BsNexus : INexus, ::android::hardware::details::HidlInstrumentor {
         #endif // __ANDROID_DEBUGGABLE__
 
         auto _hidl_error = ::android::hardware::Void();
-        auto _hidl_return = addOnewayTask([mImpl = this->mImpl, mEnableInstrumentation = this->mEnableInstrumentation, mInstrumentationCallbacks = this->mInstrumentationCallbacks, &_hidl_error] {
+        auto _hidl_return = addOnewayTask([mImpl = this->mImpl
+        #ifdef __ANDROID_DEBUGGABLE__
+        , mEnableInstrumentation = this->mEnableInstrumentation, mInstrumentationCallbacks = this->mInstrumentationCallbacks
+        #endif // __ANDROID_DEBUGGABLE__
+        ] {
             mImpl->notifySyspropsChanged();
 
             atrace_end(ATRACE_TAG_HAL);

@@ -5,7 +5,6 @@
 #include <hidl/HidlTransportSupport.h>
 
 #include <android/hidl/manager/1.0/IServiceManager.h>
-#include <hidl/LegacySupport.h>
 #include <bcm/hardware/nexus/1.0/BpHwNexusDspCb.h>
 #include <bcm/hardware/nexus/1.0/BnHwNexusDspCb.h>
 #include <bcm/hardware/nexus/1.0/BsNexusDspCb.h>
@@ -109,7 +108,7 @@ __attribute__((destructor))static void static_destructor() {
 
 // static 
 ::android::hardware::Return<::android::sp<INexusDspCb>> INexusDspCb::castFrom(const ::android::sp<::android::hidl::base::V1_0::IBase>& parent, bool emitError) {
-    return ::android::hardware::details::castInterface<INexusDspCb, ::android::hidl::base::V1_0::IBase, BpHwNexusDspCb, ::android::hidl::base::V1_0::BpHwBase>(
+    return ::android::hardware::details::castInterface<INexusDspCb, ::android::hidl::base::V1_0::IBase, BpHwNexusDspCb>(
             parent, "bcm.hardware.nexus@1.0::INexusDspCb", emitError);
 }
 
@@ -119,7 +118,13 @@ BpHwNexusDspCb::BpHwNexusDspCb(const ::android::sp<::android::hardware::IBinder>
 }
 
 // Methods from INexusDspCb follow.
-::android::hardware::Return<void> BpHwNexusDspCb::onDsp() {
+::android::hardware::Return<void> BpHwNexusDspCb::_hidl_onDsp(::android::hardware::IInterface *_hidl_this, ::android::hardware::details::HidlInstrumentor *_hidl_this_instrumentor) {
+    #ifdef __ANDROID_DEBUGGABLE__
+    bool mEnableInstrumentation = _hidl_this_instrumentor->isInstrumentationEnabled();
+    const auto &mInstrumentationCallbacks = _hidl_this_instrumentor->getInstrumentationCallbacks();
+    #else
+    (void) _hidl_this_instrumentor;
+    #endif // __ANDROID_DEBUGGABLE__
     atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::onDsp::client");
     #ifdef __ANDROID_DEBUGGABLE__
     if (UNLIKELY(mEnableInstrumentation)) {
@@ -135,10 +140,10 @@ BpHwNexusDspCb::BpHwNexusDspCb(const ::android::sp<::android::hardware::IBinder>
     ::android::status_t _hidl_err;
     ::android::hardware::Status _hidl_status;
 
-    _hidl_err = _hidl_data.writeInterfaceToken(INexusDspCb::descriptor);
+    _hidl_err = _hidl_data.writeInterfaceToken(BpHwNexusDspCb::descriptor);
     if (_hidl_err != ::android::OK) { goto _hidl_error; }
 
-    _hidl_err = remote()->transact(1 /* onDsp */, _hidl_data, &_hidl_reply, ::android::hardware::IBinder::FLAG_ONEWAY);
+    _hidl_err = ::android::hardware::IInterface::asBinder(_hidl_this)->transact(1 /* onDsp */, _hidl_data, &_hidl_reply, ::android::hardware::IBinder::FLAG_ONEWAY);
     if (_hidl_err != ::android::OK) { goto _hidl_error; }
 
     atrace_end(ATRACE_TAG_HAL);
@@ -160,346 +165,46 @@ _hidl_error:
 }
 
 
+// Methods from INexusDspCb follow.
+::android::hardware::Return<void> BpHwNexusDspCb::onDsp(){
+    ::android::hardware::Return<void>  _hidl_out = ::bcm::hardware::nexus::V1_0::BpHwNexusDspCb::_hidl_onDsp(this, this);
+
+    return _hidl_out;
+}
+
+
 // Methods from ::android::hidl::base::V1_0::IBase follow.
-::android::hardware::Return<void> BpHwNexusDspCb::interfaceChain(interfaceChain_cb _hidl_cb) {
-    if (_hidl_cb == nullptr) {
-        return ::android::hardware::Status::fromExceptionCode(
-                ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
-    }
+::android::hardware::Return<void> BpHwNexusDspCb::interfaceChain(interfaceChain_cb _hidl_cb){
+    ::android::hardware::Return<void>  _hidl_out = ::android::hidl::base::V1_0::BpHwBase::_hidl_interfaceChain(this, this, _hidl_cb);
 
-    atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::interfaceChain::client");
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "interfaceChain", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
-
-    ::android::hardware::Parcel _hidl_data;
-    ::android::hardware::Parcel _hidl_reply;
-    ::android::status_t _hidl_err;
-    ::android::hardware::Status _hidl_status;
-
-    const ::android::hardware::hidl_vec<::android::hardware::hidl_string>* _hidl_out_descriptors;
-
-    _hidl_err = _hidl_data.writeInterfaceToken(::android::hidl::base::V1_0::IBase::descriptor);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = remote()->transact(256067662 /* interfaceChain */, _hidl_data, &_hidl_reply);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = ::android::hardware::readFromParcel(&_hidl_status, _hidl_reply);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    if (!_hidl_status.isOk()) { return _hidl_status; }
-
-    size_t _hidl__hidl_out_descriptors_parent;
-
-    _hidl_err = _hidl_reply.readBuffer(sizeof(*_hidl_out_descriptors), &_hidl__hidl_out_descriptors_parent,  reinterpret_cast<const void **>(&_hidl_out_descriptors));
-
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    size_t _hidl__hidl_out_descriptors_child;
-
-    _hidl_err = ::android::hardware::readEmbeddedFromParcel(
-            const_cast<::android::hardware::hidl_vec<::android::hardware::hidl_string> &>(*_hidl_out_descriptors),
-            _hidl_reply,
-            _hidl__hidl_out_descriptors_parent,
-            0 /* parentOffset */, &_hidl__hidl_out_descriptors_child);
-
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    for (size_t _hidl_index_0 = 0; _hidl_index_0 < _hidl_out_descriptors->size(); ++_hidl_index_0) {
-        _hidl_err = ::android::hardware::readEmbeddedFromParcel(
-                const_cast<::android::hardware::hidl_string &>((*_hidl_out_descriptors)[_hidl_index_0]),
-                _hidl_reply,
-                _hidl__hidl_out_descriptors_child,
-                _hidl_index_0 * sizeof(::android::hardware::hidl_string));
-
-        if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    }
-
-    _hidl_cb(*_hidl_out_descriptors);
-
-    atrace_end(ATRACE_TAG_HAL);
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        _hidl_args.push_back((void *)_hidl_out_descriptors);
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "interfaceChain", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
-
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>();
-
-_hidl_error:
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>(_hidl_status);
+    return _hidl_out;
 }
 
-::android::hardware::Return<void> BpHwNexusDspCb::debug(const ::android::hardware::hidl_handle& fd, const ::android::hardware::hidl_vec<::android::hardware::hidl_string>& options) {
-    atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::debug::client");
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        _hidl_args.push_back((void *)&fd);
-        _hidl_args.push_back((void *)&options);
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "debug", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
+::android::hardware::Return<void> BpHwNexusDspCb::debug(const ::android::hardware::hidl_handle& fd, const ::android::hardware::hidl_vec<::android::hardware::hidl_string>& options){
+    ::android::hardware::Return<void>  _hidl_out = ::android::hidl::base::V1_0::BpHwBase::_hidl_debug(this, this, fd, options);
 
-    ::android::hardware::Parcel _hidl_data;
-    ::android::hardware::Parcel _hidl_reply;
-    ::android::status_t _hidl_err;
-    ::android::hardware::Status _hidl_status;
-
-    _hidl_err = _hidl_data.writeInterfaceToken(::android::hidl::base::V1_0::IBase::descriptor);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = _hidl_data.writeNativeHandleNoDup(fd);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    size_t _hidl_options_parent;
-
-    _hidl_err = _hidl_data.writeBuffer(&options, sizeof(options), &_hidl_options_parent);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    size_t _hidl_options_child;
-
-    _hidl_err = ::android::hardware::writeEmbeddedToParcel(
-            options,
-            &_hidl_data,
-            _hidl_options_parent,
-            0 /* parentOffset */, &_hidl_options_child);
-
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    for (size_t _hidl_index_0 = 0; _hidl_index_0 < options.size(); ++_hidl_index_0) {
-        _hidl_err = ::android::hardware::writeEmbeddedToParcel(
-                options[_hidl_index_0],
-                &_hidl_data,
-                _hidl_options_child,
-                _hidl_index_0 * sizeof(::android::hardware::hidl_string));
-
-        if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    }
-
-    _hidl_err = remote()->transact(256131655 /* debug */, _hidl_data, &_hidl_reply);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = ::android::hardware::readFromParcel(&_hidl_status, _hidl_reply);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    if (!_hidl_status.isOk()) { return _hidl_status; }
-
-    atrace_end(ATRACE_TAG_HAL);
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "debug", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
-
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>();
-
-_hidl_error:
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>(_hidl_status);
+    return _hidl_out;
 }
 
-::android::hardware::Return<void> BpHwNexusDspCb::interfaceDescriptor(interfaceDescriptor_cb _hidl_cb) {
-    if (_hidl_cb == nullptr) {
-        return ::android::hardware::Status::fromExceptionCode(
-                ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
-    }
+::android::hardware::Return<void> BpHwNexusDspCb::interfaceDescriptor(interfaceDescriptor_cb _hidl_cb){
+    ::android::hardware::Return<void>  _hidl_out = ::android::hidl::base::V1_0::BpHwBase::_hidl_interfaceDescriptor(this, this, _hidl_cb);
 
-    atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::interfaceDescriptor::client");
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "interfaceDescriptor", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
-
-    ::android::hardware::Parcel _hidl_data;
-    ::android::hardware::Parcel _hidl_reply;
-    ::android::status_t _hidl_err;
-    ::android::hardware::Status _hidl_status;
-
-    const ::android::hardware::hidl_string* _hidl_out_descriptor;
-
-    _hidl_err = _hidl_data.writeInterfaceToken(::android::hidl::base::V1_0::IBase::descriptor);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = remote()->transact(256136003 /* interfaceDescriptor */, _hidl_data, &_hidl_reply);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = ::android::hardware::readFromParcel(&_hidl_status, _hidl_reply);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    if (!_hidl_status.isOk()) { return _hidl_status; }
-
-    size_t _hidl__hidl_out_descriptor_parent;
-
-    _hidl_err = _hidl_reply.readBuffer(sizeof(*_hidl_out_descriptor), &_hidl__hidl_out_descriptor_parent,  reinterpret_cast<const void **>(&_hidl_out_descriptor));
-
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = ::android::hardware::readEmbeddedFromParcel(
-            const_cast<::android::hardware::hidl_string &>(*_hidl_out_descriptor),
-            _hidl_reply,
-            _hidl__hidl_out_descriptor_parent,
-            0 /* parentOffset */);
-
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_cb(*_hidl_out_descriptor);
-
-    atrace_end(ATRACE_TAG_HAL);
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        _hidl_args.push_back((void *)_hidl_out_descriptor);
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "interfaceDescriptor", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
-
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>();
-
-_hidl_error:
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>(_hidl_status);
+    return _hidl_out;
 }
 
-::android::hardware::Return<void> BpHwNexusDspCb::getHashChain(getHashChain_cb _hidl_cb) {
-    if (_hidl_cb == nullptr) {
-        return ::android::hardware::Status::fromExceptionCode(
-                ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
-    }
+::android::hardware::Return<void> BpHwNexusDspCb::getHashChain(getHashChain_cb _hidl_cb){
+    ::android::hardware::Return<void>  _hidl_out = ::android::hidl::base::V1_0::BpHwBase::_hidl_getHashChain(this, this, _hidl_cb);
 
-    atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::getHashChain::client");
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "getHashChain", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
-
-    ::android::hardware::Parcel _hidl_data;
-    ::android::hardware::Parcel _hidl_reply;
-    ::android::status_t _hidl_err;
-    ::android::hardware::Status _hidl_status;
-
-    const ::android::hardware::hidl_vec<::android::hardware::hidl_array<uint8_t, 32>>* _hidl_out_hashchain;
-
-    _hidl_err = _hidl_data.writeInterfaceToken(::android::hidl::base::V1_0::IBase::descriptor);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = remote()->transact(256398152 /* getHashChain */, _hidl_data, &_hidl_reply);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = ::android::hardware::readFromParcel(&_hidl_status, _hidl_reply);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    if (!_hidl_status.isOk()) { return _hidl_status; }
-
-    size_t _hidl__hidl_out_hashchain_parent;
-
-    _hidl_err = _hidl_reply.readBuffer(sizeof(*_hidl_out_hashchain), &_hidl__hidl_out_hashchain_parent,  reinterpret_cast<const void **>(&_hidl_out_hashchain));
-
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    size_t _hidl__hidl_out_hashchain_child;
-
-    _hidl_err = ::android::hardware::readEmbeddedFromParcel(
-            const_cast<::android::hardware::hidl_vec<::android::hardware::hidl_array<uint8_t, 32>> &>(*_hidl_out_hashchain),
-            _hidl_reply,
-            _hidl__hidl_out_hashchain_parent,
-            0 /* parentOffset */, &_hidl__hidl_out_hashchain_child);
-
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_cb(*_hidl_out_hashchain);
-
-    atrace_end(ATRACE_TAG_HAL);
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        _hidl_args.push_back((void *)_hidl_out_hashchain);
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "getHashChain", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
-
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>();
-
-_hidl_error:
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>(_hidl_status);
+    return _hidl_out;
 }
 
-::android::hardware::Return<void> BpHwNexusDspCb::setHALInstrumentation() {
-    atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::setHALInstrumentation::client");
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "setHALInstrumentation", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
+::android::hardware::Return<void> BpHwNexusDspCb::setHALInstrumentation(){
+    ::android::hardware::Return<void>  _hidl_out = ::android::hidl::base::V1_0::BpHwBase::_hidl_setHALInstrumentation(this, this);
 
-    ::android::hardware::Parcel _hidl_data;
-    ::android::hardware::Parcel _hidl_reply;
-    ::android::status_t _hidl_err;
-    ::android::hardware::Status _hidl_status;
-
-    _hidl_err = _hidl_data.writeInterfaceToken(::android::hidl::base::V1_0::IBase::descriptor);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = remote()->transact(256462420 /* setHALInstrumentation */, _hidl_data, &_hidl_reply, ::android::hardware::IBinder::FLAG_ONEWAY);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    atrace_end(ATRACE_TAG_HAL);
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "setHALInstrumentation", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
-
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>();
-
-_hidl_error:
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>(_hidl_status);
+    return _hidl_out;
 }
 
-::android::hardware::Return<bool> BpHwNexusDspCb::linkToDeath(const ::android::sp<::android::hardware::hidl_death_recipient>& recipient, uint64_t cookie) {
+::android::hardware::Return<bool> BpHwNexusDspCb::linkToDeath(const ::android::sp<::android::hardware::hidl_death_recipient>& recipient, uint64_t cookie){
     ::android::hardware::ProcessState::self()->startThreadPool();
     ::android::hardware::hidl_binder_death_recipient *binder_recipient = new ::android::hardware::hidl_binder_death_recipient(recipient, cookie, this);
     std::unique_lock<std::mutex> lock(_hidl_mMutex);
@@ -507,152 +212,25 @@ _hidl_error:
     return (remote()->linkToDeath(binder_recipient) == ::android::OK);
 }
 
-::android::hardware::Return<void> BpHwNexusDspCb::ping() {
-    atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::ping::client");
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "ping", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
+::android::hardware::Return<void> BpHwNexusDspCb::ping(){
+    ::android::hardware::Return<void>  _hidl_out = ::android::hidl::base::V1_0::BpHwBase::_hidl_ping(this, this);
 
-    ::android::hardware::Parcel _hidl_data;
-    ::android::hardware::Parcel _hidl_reply;
-    ::android::status_t _hidl_err;
-    ::android::hardware::Status _hidl_status;
-
-    _hidl_err = _hidl_data.writeInterfaceToken(::android::hidl::base::V1_0::IBase::descriptor);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = remote()->transact(256921159 /* ping */, _hidl_data, &_hidl_reply);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = ::android::hardware::readFromParcel(&_hidl_status, _hidl_reply);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    if (!_hidl_status.isOk()) { return _hidl_status; }
-
-    atrace_end(ATRACE_TAG_HAL);
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "ping", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
-
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>();
-
-_hidl_error:
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>(_hidl_status);
+    return _hidl_out;
 }
 
-::android::hardware::Return<void> BpHwNexusDspCb::getDebugInfo(getDebugInfo_cb _hidl_cb) {
-    if (_hidl_cb == nullptr) {
-        return ::android::hardware::Status::fromExceptionCode(
-                ::android::hardware::Status::EX_ILLEGAL_ARGUMENT);
-    }
+::android::hardware::Return<void> BpHwNexusDspCb::getDebugInfo(getDebugInfo_cb _hidl_cb){
+    ::android::hardware::Return<void>  _hidl_out = ::android::hidl::base::V1_0::BpHwBase::_hidl_getDebugInfo(this, this, _hidl_cb);
 
-    atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::getDebugInfo::client");
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "getDebugInfo", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
-
-    ::android::hardware::Parcel _hidl_data;
-    ::android::hardware::Parcel _hidl_reply;
-    ::android::status_t _hidl_err;
-    ::android::hardware::Status _hidl_status;
-
-    const ::android::hidl::base::V1_0::DebugInfo* _hidl_out_info;
-
-    _hidl_err = _hidl_data.writeInterfaceToken(::android::hidl::base::V1_0::IBase::descriptor);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = remote()->transact(257049926 /* getDebugInfo */, _hidl_data, &_hidl_reply);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = ::android::hardware::readFromParcel(&_hidl_status, _hidl_reply);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    if (!_hidl_status.isOk()) { return _hidl_status; }
-
-    size_t _hidl__hidl_out_info_parent;
-
-    _hidl_err = _hidl_reply.readBuffer(sizeof(*_hidl_out_info), &_hidl__hidl_out_info_parent,  reinterpret_cast<const void **>(&_hidl_out_info));
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_cb(*_hidl_out_info);
-
-    atrace_end(ATRACE_TAG_HAL);
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        _hidl_args.push_back((void *)_hidl_out_info);
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "getDebugInfo", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
-
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>();
-
-_hidl_error:
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>(_hidl_status);
+    return _hidl_out;
 }
 
-::android::hardware::Return<void> BpHwNexusDspCb::notifySyspropsChanged() {
-    atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::notifySyspropsChanged::client");
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "notifySyspropsChanged", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
+::android::hardware::Return<void> BpHwNexusDspCb::notifySyspropsChanged(){
+    ::android::hardware::Return<void>  _hidl_out = ::android::hidl::base::V1_0::BpHwBase::_hidl_notifySyspropsChanged(this, this);
 
-    ::android::hardware::Parcel _hidl_data;
-    ::android::hardware::Parcel _hidl_reply;
-    ::android::status_t _hidl_err;
-    ::android::hardware::Status _hidl_status;
-
-    _hidl_err = _hidl_data.writeInterfaceToken(::android::hidl::base::V1_0::IBase::descriptor);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    _hidl_err = remote()->transact(257120595 /* notifySyspropsChanged */, _hidl_data, &_hidl_reply, ::android::hardware::IBinder::FLAG_ONEWAY);
-    if (_hidl_err != ::android::OK) { goto _hidl_error; }
-
-    atrace_end(ATRACE_TAG_HAL);
-    #ifdef __ANDROID_DEBUGGABLE__
-    if (UNLIKELY(mEnableInstrumentation)) {
-        std::vector<void *> _hidl_args;
-        for (const auto &callback: mInstrumentationCallbacks) {
-            callback(InstrumentationEvent::CLIENT_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "notifySyspropsChanged", &_hidl_args);
-        }
-    }
-    #endif // __ANDROID_DEBUGGABLE__
-
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>();
-
-_hidl_error:
-    _hidl_status.setFromStatusT(_hidl_err);
-    return ::android::hardware::Return<void>(_hidl_status);
+    return _hidl_out;
 }
 
-::android::hardware::Return<bool> BpHwNexusDspCb::unlinkToDeath(const ::android::sp<::android::hardware::hidl_death_recipient>& recipient) {
+::android::hardware::Return<bool> BpHwNexusDspCb::unlinkToDeath(const ::android::sp<::android::hardware::hidl_death_recipient>& recipient){
     std::unique_lock<std::mutex> lock(_hidl_mMutex);
     for (auto it = _hidl_mDeathRecipients.begin();it != _hidl_mDeathRecipients.end();++it) {
         if ((*it)->getRecipient() == recipient) {
@@ -671,6 +249,57 @@ BnHwNexusDspCb::BnHwNexusDspCb(const ::android::sp<INexusDspCb> &_hidl_impl)
             mSchedPolicy = prio.sched_policy;
             mSchedPriority = prio.prio;
 }
+
+BnHwNexusDspCb::~BnHwNexusDspCb() {
+    ::android::hardware::details::gBnMap.eraseIfEqual(_hidl_mImpl.get(), this);
+}
+
+// Methods from INexusDspCb follow.
+::android::status_t BnHwNexusDspCb::_hidl_onDsp(
+        ::android::hidl::base::V1_0::BnHwBase* _hidl_this,
+        const ::android::hardware::Parcel &_hidl_data,
+        ::android::hardware::Parcel *_hidl_reply,
+        TransactCallback _hidl_cb) {
+    #ifdef __ANDROID_DEBUGGABLE__
+    bool mEnableInstrumentation = _hidl_this->isInstrumentationEnabled();
+    const auto &mInstrumentationCallbacks = _hidl_this->getInstrumentationCallbacks();
+    #endif // __ANDROID_DEBUGGABLE__
+
+    ::android::status_t _hidl_err = ::android::OK;
+    if (!_hidl_data.enforceInterface(BnHwNexusDspCb::Pure::descriptor)) {
+        _hidl_err = ::android::BAD_TYPE;
+        return _hidl_err;
+    }
+
+    atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::onDsp::server");
+    #ifdef __ANDROID_DEBUGGABLE__
+    if (UNLIKELY(mEnableInstrumentation)) {
+        std::vector<void *> _hidl_args;
+        for (const auto &callback: mInstrumentationCallbacks) {
+            callback(InstrumentationEvent::SERVER_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "onDsp", &_hidl_args);
+        }
+    }
+    #endif // __ANDROID_DEBUGGABLE__
+
+    static_cast<BnHwNexusDspCb*>(_hidl_this)->_hidl_mImpl->onDsp();
+
+    (void) _hidl_cb;
+
+    atrace_end(ATRACE_TAG_HAL);
+    #ifdef __ANDROID_DEBUGGABLE__
+    if (UNLIKELY(mEnableInstrumentation)) {
+        std::vector<void *> _hidl_args;
+        for (const auto &callback: mInstrumentationCallbacks) {
+            callback(InstrumentationEvent::SERVER_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "onDsp", &_hidl_args);
+        }
+    }
+    #endif // __ANDROID_DEBUGGABLE__
+
+    ::android::hardware::writeToParcel(::android::hardware::Status::ok(), _hidl_reply);
+
+    return _hidl_err;
+}
+
 
 // Methods from INexusDspCb follow.
 
@@ -702,306 +331,31 @@ BnHwNexusDspCb::BnHwNexusDspCb(const ::android::sp<INexusDspCb> &_hidl_impl)
     switch (_hidl_code) {
         case 1 /* onDsp */:
         {
-            if (!_hidl_data.enforceInterface(INexusDspCb::descriptor)) {
-                _hidl_err = ::android::BAD_TYPE;
-                break;
-            }
-
-            atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::onDsp::server");
-            #ifdef __ANDROID_DEBUGGABLE__
-            if (UNLIKELY(mEnableInstrumentation)) {
-                std::vector<void *> _hidl_args;
-                for (const auto &callback: mInstrumentationCallbacks) {
-                    callback(InstrumentationEvent::SERVER_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "onDsp", &_hidl_args);
-                }
-            }
-            #endif // __ANDROID_DEBUGGABLE__
-
-            _hidl_mImpl->onDsp();
-
-            atrace_end(ATRACE_TAG_HAL);
-            #ifdef __ANDROID_DEBUGGABLE__
-            if (UNLIKELY(mEnableInstrumentation)) {
-                std::vector<void *> _hidl_args;
-                for (const auto &callback: mInstrumentationCallbacks) {
-                    callback(InstrumentationEvent::SERVER_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "onDsp", &_hidl_args);
-                }
-            }
-            #endif // __ANDROID_DEBUGGABLE__
-
-            ::android::hardware::writeToParcel(::android::hardware::Status::ok(), _hidl_reply);
-
+            _hidl_err = ::bcm::hardware::nexus::V1_0::BnHwNexusDspCb::_hidl_onDsp(this, _hidl_data, _hidl_reply, _hidl_cb);
             break;
         }
 
         case 256067662 /* interfaceChain */:
         {
-            if (!_hidl_data.enforceInterface(::android::hidl::base::V1_0::IBase::descriptor)) {
-                _hidl_err = ::android::BAD_TYPE;
-                break;
-            }
-
-            atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::interfaceChain::server");
-            #ifdef __ANDROID_DEBUGGABLE__
-            if (UNLIKELY(mEnableInstrumentation)) {
-                std::vector<void *> _hidl_args;
-                for (const auto &callback: mInstrumentationCallbacks) {
-                    callback(InstrumentationEvent::SERVER_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "interfaceChain", &_hidl_args);
-                }
-            }
-            #endif // __ANDROID_DEBUGGABLE__
-
-            bool _hidl_callbackCalled = false;
-
-            _hidl_mImpl->interfaceChain([&](const auto &_hidl_out_descriptors) {
-                if (_hidl_callbackCalled) {
-                    LOG_ALWAYS_FATAL("interfaceChain: _hidl_cb called a second time, but must be called once.");
-                }
-                _hidl_callbackCalled = true;
-
-                ::android::hardware::writeToParcel(::android::hardware::Status::ok(), _hidl_reply);
-
-                size_t _hidl__hidl_out_descriptors_parent;
-
-                _hidl_err = _hidl_reply->writeBuffer(&_hidl_out_descriptors, sizeof(_hidl_out_descriptors), &_hidl__hidl_out_descriptors_parent);
-                /* _hidl_err ignored! */
-
-                size_t _hidl__hidl_out_descriptors_child;
-
-                _hidl_err = ::android::hardware::writeEmbeddedToParcel(
-                        _hidl_out_descriptors,
-                        _hidl_reply,
-                        _hidl__hidl_out_descriptors_parent,
-                        0 /* parentOffset */, &_hidl__hidl_out_descriptors_child);
-
-                /* _hidl_err ignored! */
-
-                for (size_t _hidl_index_0 = 0; _hidl_index_0 < _hidl_out_descriptors.size(); ++_hidl_index_0) {
-                    _hidl_err = ::android::hardware::writeEmbeddedToParcel(
-                            _hidl_out_descriptors[_hidl_index_0],
-                            _hidl_reply,
-                            _hidl__hidl_out_descriptors_child,
-                            _hidl_index_0 * sizeof(::android::hardware::hidl_string));
-
-                    /* _hidl_err ignored! */
-
-                }
-
-                atrace_end(ATRACE_TAG_HAL);
-                #ifdef __ANDROID_DEBUGGABLE__
-                if (UNLIKELY(mEnableInstrumentation)) {
-                    std::vector<void *> _hidl_args;
-                    _hidl_args.push_back((void *)&_hidl_out_descriptors);
-                    for (const auto &callback: mInstrumentationCallbacks) {
-                        callback(InstrumentationEvent::SERVER_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "interfaceChain", &_hidl_args);
-                    }
-                }
-                #endif // __ANDROID_DEBUGGABLE__
-
-                _hidl_cb(*_hidl_reply);
-            });
-
-            if (!_hidl_callbackCalled) {
-                LOG_ALWAYS_FATAL("interfaceChain: _hidl_cb not called, but must be called once.");
-            }
-
+            _hidl_err = ::android::hidl::base::V1_0::BnHwBase::_hidl_interfaceChain(this, _hidl_data, _hidl_reply, _hidl_cb);
             break;
         }
 
         case 256131655 /* debug */:
         {
-            if (!_hidl_data.enforceInterface(::android::hidl::base::V1_0::IBase::descriptor)) {
-                _hidl_err = ::android::BAD_TYPE;
-                break;
-            }
-
-            ::android::hardware::hidl_handle fd;
-            const ::android::hardware::hidl_vec<::android::hardware::hidl_string>* options;
-
-            const native_handle_t *fd_ptr;
-
-            _hidl_err = _hidl_data.readNullableNativeHandleNoDup(&fd_ptr);
-
-            if (_hidl_err != ::android::OK) { break; }
-
-            fd = fd_ptr;
-            size_t _hidl_options_parent;
-
-            _hidl_err = _hidl_data.readBuffer(sizeof(*options), &_hidl_options_parent,  reinterpret_cast<const void **>(&options));
-
-            if (_hidl_err != ::android::OK) { break; }
-
-            size_t _hidl_options_child;
-
-            _hidl_err = ::android::hardware::readEmbeddedFromParcel(
-                    const_cast<::android::hardware::hidl_vec<::android::hardware::hidl_string> &>(*options),
-                    _hidl_data,
-                    _hidl_options_parent,
-                    0 /* parentOffset */, &_hidl_options_child);
-
-            if (_hidl_err != ::android::OK) { break; }
-
-            for (size_t _hidl_index_0 = 0; _hidl_index_0 < options->size(); ++_hidl_index_0) {
-                _hidl_err = ::android::hardware::readEmbeddedFromParcel(
-                        const_cast<::android::hardware::hidl_string &>((*options)[_hidl_index_0]),
-                        _hidl_data,
-                        _hidl_options_child,
-                        _hidl_index_0 * sizeof(::android::hardware::hidl_string));
-
-                if (_hidl_err != ::android::OK) { break; }
-
-            }
-
-            atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::debug::server");
-            #ifdef __ANDROID_DEBUGGABLE__
-            if (UNLIKELY(mEnableInstrumentation)) {
-                std::vector<void *> _hidl_args;
-                _hidl_args.push_back((void *)&fd);
-                _hidl_args.push_back((void *)options);
-                for (const auto &callback: mInstrumentationCallbacks) {
-                    callback(InstrumentationEvent::SERVER_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "debug", &_hidl_args);
-                }
-            }
-            #endif // __ANDROID_DEBUGGABLE__
-
-            _hidl_mImpl->debug(fd, *options);
-
-            atrace_end(ATRACE_TAG_HAL);
-            #ifdef __ANDROID_DEBUGGABLE__
-            if (UNLIKELY(mEnableInstrumentation)) {
-                std::vector<void *> _hidl_args;
-                for (const auto &callback: mInstrumentationCallbacks) {
-                    callback(InstrumentationEvent::SERVER_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "debug", &_hidl_args);
-                }
-            }
-            #endif // __ANDROID_DEBUGGABLE__
-
-            ::android::hardware::writeToParcel(::android::hardware::Status::ok(), _hidl_reply);
-
+            _hidl_err = ::android::hidl::base::V1_0::BnHwBase::_hidl_debug(this, _hidl_data, _hidl_reply, _hidl_cb);
             break;
         }
 
         case 256136003 /* interfaceDescriptor */:
         {
-            if (!_hidl_data.enforceInterface(::android::hidl::base::V1_0::IBase::descriptor)) {
-                _hidl_err = ::android::BAD_TYPE;
-                break;
-            }
-
-            atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::interfaceDescriptor::server");
-            #ifdef __ANDROID_DEBUGGABLE__
-            if (UNLIKELY(mEnableInstrumentation)) {
-                std::vector<void *> _hidl_args;
-                for (const auto &callback: mInstrumentationCallbacks) {
-                    callback(InstrumentationEvent::SERVER_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "interfaceDescriptor", &_hidl_args);
-                }
-            }
-            #endif // __ANDROID_DEBUGGABLE__
-
-            bool _hidl_callbackCalled = false;
-
-            _hidl_mImpl->interfaceDescriptor([&](const auto &_hidl_out_descriptor) {
-                if (_hidl_callbackCalled) {
-                    LOG_ALWAYS_FATAL("interfaceDescriptor: _hidl_cb called a second time, but must be called once.");
-                }
-                _hidl_callbackCalled = true;
-
-                ::android::hardware::writeToParcel(::android::hardware::Status::ok(), _hidl_reply);
-
-                size_t _hidl__hidl_out_descriptor_parent;
-
-                _hidl_err = _hidl_reply->writeBuffer(&_hidl_out_descriptor, sizeof(_hidl_out_descriptor), &_hidl__hidl_out_descriptor_parent);
-                /* _hidl_err ignored! */
-
-                _hidl_err = ::android::hardware::writeEmbeddedToParcel(
-                        _hidl_out_descriptor,
-                        _hidl_reply,
-                        _hidl__hidl_out_descriptor_parent,
-                        0 /* parentOffset */);
-
-                /* _hidl_err ignored! */
-
-                atrace_end(ATRACE_TAG_HAL);
-                #ifdef __ANDROID_DEBUGGABLE__
-                if (UNLIKELY(mEnableInstrumentation)) {
-                    std::vector<void *> _hidl_args;
-                    _hidl_args.push_back((void *)&_hidl_out_descriptor);
-                    for (const auto &callback: mInstrumentationCallbacks) {
-                        callback(InstrumentationEvent::SERVER_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "interfaceDescriptor", &_hidl_args);
-                    }
-                }
-                #endif // __ANDROID_DEBUGGABLE__
-
-                _hidl_cb(*_hidl_reply);
-            });
-
-            if (!_hidl_callbackCalled) {
-                LOG_ALWAYS_FATAL("interfaceDescriptor: _hidl_cb not called, but must be called once.");
-            }
-
+            _hidl_err = ::android::hidl::base::V1_0::BnHwBase::_hidl_interfaceDescriptor(this, _hidl_data, _hidl_reply, _hidl_cb);
             break;
         }
 
         case 256398152 /* getHashChain */:
         {
-            if (!_hidl_data.enforceInterface(::android::hidl::base::V1_0::IBase::descriptor)) {
-                _hidl_err = ::android::BAD_TYPE;
-                break;
-            }
-
-            atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::getHashChain::server");
-            #ifdef __ANDROID_DEBUGGABLE__
-            if (UNLIKELY(mEnableInstrumentation)) {
-                std::vector<void *> _hidl_args;
-                for (const auto &callback: mInstrumentationCallbacks) {
-                    callback(InstrumentationEvent::SERVER_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "getHashChain", &_hidl_args);
-                }
-            }
-            #endif // __ANDROID_DEBUGGABLE__
-
-            bool _hidl_callbackCalled = false;
-
-            _hidl_mImpl->getHashChain([&](const auto &_hidl_out_hashchain) {
-                if (_hidl_callbackCalled) {
-                    LOG_ALWAYS_FATAL("getHashChain: _hidl_cb called a second time, but must be called once.");
-                }
-                _hidl_callbackCalled = true;
-
-                ::android::hardware::writeToParcel(::android::hardware::Status::ok(), _hidl_reply);
-
-                size_t _hidl__hidl_out_hashchain_parent;
-
-                _hidl_err = _hidl_reply->writeBuffer(&_hidl_out_hashchain, sizeof(_hidl_out_hashchain), &_hidl__hidl_out_hashchain_parent);
-                /* _hidl_err ignored! */
-
-                size_t _hidl__hidl_out_hashchain_child;
-
-                _hidl_err = ::android::hardware::writeEmbeddedToParcel(
-                        _hidl_out_hashchain,
-                        _hidl_reply,
-                        _hidl__hidl_out_hashchain_parent,
-                        0 /* parentOffset */, &_hidl__hidl_out_hashchain_child);
-
-                /* _hidl_err ignored! */
-
-                atrace_end(ATRACE_TAG_HAL);
-                #ifdef __ANDROID_DEBUGGABLE__
-                if (UNLIKELY(mEnableInstrumentation)) {
-                    std::vector<void *> _hidl_args;
-                    _hidl_args.push_back((void *)&_hidl_out_hashchain);
-                    for (const auto &callback: mInstrumentationCallbacks) {
-                        callback(InstrumentationEvent::SERVER_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "getHashChain", &_hidl_args);
-                    }
-                }
-                #endif // __ANDROID_DEBUGGABLE__
-
-                _hidl_cb(*_hidl_reply);
-            });
-
-            if (!_hidl_callbackCalled) {
-                LOG_ALWAYS_FATAL("getHashChain: _hidl_cb not called, but must be called once.");
-            }
-
+            _hidl_err = ::android::hidl::base::V1_0::BnHwBase::_hidl_getHashChain(this, _hidl_data, _hidl_reply, _hidl_cb);
             break;
         }
 
@@ -1018,122 +372,19 @@ BnHwNexusDspCb::BnHwNexusDspCb(const ::android::sp<INexusDspCb> &_hidl_impl)
 
         case 256921159 /* ping */:
         {
-            if (!_hidl_data.enforceInterface(::android::hidl::base::V1_0::IBase::descriptor)) {
-                _hidl_err = ::android::BAD_TYPE;
-                break;
-            }
-
-            atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::ping::server");
-            #ifdef __ANDROID_DEBUGGABLE__
-            if (UNLIKELY(mEnableInstrumentation)) {
-                std::vector<void *> _hidl_args;
-                for (const auto &callback: mInstrumentationCallbacks) {
-                    callback(InstrumentationEvent::SERVER_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "ping", &_hidl_args);
-                }
-            }
-            #endif // __ANDROID_DEBUGGABLE__
-
-            this->ping();
-
-            atrace_end(ATRACE_TAG_HAL);
-            #ifdef __ANDROID_DEBUGGABLE__
-            if (UNLIKELY(mEnableInstrumentation)) {
-                std::vector<void *> _hidl_args;
-                for (const auto &callback: mInstrumentationCallbacks) {
-                    callback(InstrumentationEvent::SERVER_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "ping", &_hidl_args);
-                }
-            }
-            #endif // __ANDROID_DEBUGGABLE__
-
-            ::android::hardware::writeToParcel(::android::hardware::Status::ok(), _hidl_reply);
-
+            _hidl_err = ::android::hidl::base::V1_0::BnHwBase::_hidl_ping(this, _hidl_data, _hidl_reply, _hidl_cb);
             break;
         }
 
         case 257049926 /* getDebugInfo */:
         {
-            if (!_hidl_data.enforceInterface(::android::hidl::base::V1_0::IBase::descriptor)) {
-                _hidl_err = ::android::BAD_TYPE;
-                break;
-            }
-
-            atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::getDebugInfo::server");
-            #ifdef __ANDROID_DEBUGGABLE__
-            if (UNLIKELY(mEnableInstrumentation)) {
-                std::vector<void *> _hidl_args;
-                for (const auto &callback: mInstrumentationCallbacks) {
-                    callback(InstrumentationEvent::SERVER_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "getDebugInfo", &_hidl_args);
-                }
-            }
-            #endif // __ANDROID_DEBUGGABLE__
-
-            bool _hidl_callbackCalled = false;
-
-            this->getDebugInfo([&](const auto &_hidl_out_info) {
-                if (_hidl_callbackCalled) {
-                    LOG_ALWAYS_FATAL("getDebugInfo: _hidl_cb called a second time, but must be called once.");
-                }
-                _hidl_callbackCalled = true;
-
-                ::android::hardware::writeToParcel(::android::hardware::Status::ok(), _hidl_reply);
-
-                size_t _hidl__hidl_out_info_parent;
-
-                _hidl_err = _hidl_reply->writeBuffer(&_hidl_out_info, sizeof(_hidl_out_info), &_hidl__hidl_out_info_parent);
-                /* _hidl_err ignored! */
-
-                atrace_end(ATRACE_TAG_HAL);
-                #ifdef __ANDROID_DEBUGGABLE__
-                if (UNLIKELY(mEnableInstrumentation)) {
-                    std::vector<void *> _hidl_args;
-                    _hidl_args.push_back((void *)&_hidl_out_info);
-                    for (const auto &callback: mInstrumentationCallbacks) {
-                        callback(InstrumentationEvent::SERVER_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "getDebugInfo", &_hidl_args);
-                    }
-                }
-                #endif // __ANDROID_DEBUGGABLE__
-
-                _hidl_cb(*_hidl_reply);
-            });
-
-            if (!_hidl_callbackCalled) {
-                LOG_ALWAYS_FATAL("getDebugInfo: _hidl_cb not called, but must be called once.");
-            }
-
+            _hidl_err = ::android::hidl::base::V1_0::BnHwBase::_hidl_getDebugInfo(this, _hidl_data, _hidl_reply, _hidl_cb);
             break;
         }
 
         case 257120595 /* notifySyspropsChanged */:
         {
-            if (!_hidl_data.enforceInterface(::android::hidl::base::V1_0::IBase::descriptor)) {
-                _hidl_err = ::android::BAD_TYPE;
-                break;
-            }
-
-            atrace_begin(ATRACE_TAG_HAL, "HIDL::INexusDspCb::notifySyspropsChanged::server");
-            #ifdef __ANDROID_DEBUGGABLE__
-            if (UNLIKELY(mEnableInstrumentation)) {
-                std::vector<void *> _hidl_args;
-                for (const auto &callback: mInstrumentationCallbacks) {
-                    callback(InstrumentationEvent::SERVER_API_ENTRY, "bcm.hardware.nexus", "1.0", "INexusDspCb", "notifySyspropsChanged", &_hidl_args);
-                }
-            }
-            #endif // __ANDROID_DEBUGGABLE__
-
-            _hidl_mImpl->notifySyspropsChanged();
-
-            atrace_end(ATRACE_TAG_HAL);
-            #ifdef __ANDROID_DEBUGGABLE__
-            if (UNLIKELY(mEnableInstrumentation)) {
-                std::vector<void *> _hidl_args;
-                for (const auto &callback: mInstrumentationCallbacks) {
-                    callback(InstrumentationEvent::SERVER_API_EXIT, "bcm.hardware.nexus", "1.0", "INexusDspCb", "notifySyspropsChanged", &_hidl_args);
-                }
-            }
-            #endif // __ANDROID_DEBUGGABLE__
-
-            ::android::hardware::writeToParcel(::android::hardware::Status::ok(), _hidl_reply);
-
+            _hidl_err = ::android::hidl::base::V1_0::BnHwBase::_hidl_notifySyspropsChanged(this, _hidl_data, _hidl_reply, _hidl_cb);
             break;
         }
 
@@ -1163,7 +414,8 @@ BsNexusDspCb::BsNexusDspCb(const ::android::sp<INexusDspCb> impl) : ::android::h
 ::android::hardware::Return<void> BsNexusDspCb::addOnewayTask(std::function<void(void)> fun) {
     if (!mOnewayQueue.push(fun)) {
         return ::android::hardware::Status::fromExceptionCode(
-                ::android::hardware::Status::EX_TRANSACTION_FAILED);
+                ::android::hardware::Status::EX_TRANSACTION_FAILED,
+                "Passthrough oneway function queue exceeds maximum size.");
     }
     return ::android::hardware::Status();
 }
@@ -1199,12 +451,16 @@ BsNexusDspCb::BsNexusDspCb(const ::android::sp<INexusDspCb> impl) : ::android::h
 
     #ifdef __ANDROID_DEBUGGABLE__
     const char* env = std::getenv("TREBLE_TESTING_OVERRIDE");
-    const bool vintfLegacy = (transport == Transport::EMPTY) && env && !strcmp(env, "true");
+    const bool trebleTestingOverride =  env && !strcmp(env, "true");
+    const bool vintfLegacy = (transport == Transport::EMPTY) && trebleTestingOverride;
     #else // __ANDROID_TREBLE__ but not __ANDROID_DEBUGGABLE__
+    const bool trebleTestingOverride = false;
     const bool vintfLegacy = false;
     #endif // __ANDROID_DEBUGGABLE__
 
     #else // not __ANDROID_TREBLE__
+    const char* env = std::getenv("TREBLE_TESTING_OVERRIDE");
+    const bool trebleTestingOverride =  env && !strcmp(env, "true");
     const bool vintfLegacy = (transport == Transport::EMPTY);
 
     #endif // __ANDROID_TREBLE__
@@ -1247,7 +503,10 @@ BsNexusDspCb::BsNexusDspCb(const ::android::sp<INexusDspCb> impl) : ::android::h
             if (ret.isOk()) {
                 sp<::android::hidl::base::V1_0::IBase> baseInterface = ret;
                 if (baseInterface != nullptr) {
-                    iface = new BsNexusDspCb(INexusDspCb::castFrom(baseInterface));
+                    iface = INexusDspCb::castFrom(baseInterface);
+                    if (!getStub || trebleTestingOverride) {
+                        iface = new BsNexusDspCb(iface);
+                    }
                 }
             }
         }
@@ -1286,12 +545,16 @@ BsNexusDspCb::BsNexusDspCb(const ::android::sp<INexusDspCb> impl) : ::android::h
 
     #ifdef __ANDROID_DEBUGGABLE__
     const char* env = std::getenv("TREBLE_TESTING_OVERRIDE");
-    const bool vintfLegacy = (transport == Transport::EMPTY) && env && !strcmp(env, "true");
+    const bool trebleTestingOverride =  env && !strcmp(env, "true");
+    const bool vintfLegacy = (transport == Transport::EMPTY) && trebleTestingOverride;
     #else // __ANDROID_TREBLE__ but not __ANDROID_DEBUGGABLE__
+    const bool trebleTestingOverride = false;
     const bool vintfLegacy = false;
     #endif // __ANDROID_DEBUGGABLE__
 
     #else // not __ANDROID_TREBLE__
+    const char* env = std::getenv("TREBLE_TESTING_OVERRIDE");
+    const bool trebleTestingOverride =  env && !strcmp(env, "true");
     const bool vintfLegacy = (transport == Transport::EMPTY);
 
     #endif // __ANDROID_TREBLE__
@@ -1341,7 +604,10 @@ BsNexusDspCb::BsNexusDspCb(const ::android::sp<INexusDspCb> impl) : ::android::h
             if (ret.isOk()) {
                 sp<::android::hidl::base::V1_0::IBase> baseInterface = ret;
                 if (baseInterface != nullptr) {
-                    iface = new BsNexusDspCb(INexusDspCb::castFrom(baseInterface));
+                    iface = INexusDspCb::castFrom(baseInterface);
+                    if (!getStub || trebleTestingOverride) {
+                        iface = new BsNexusDspCb(iface);
+                    }
                 }
             }
         }

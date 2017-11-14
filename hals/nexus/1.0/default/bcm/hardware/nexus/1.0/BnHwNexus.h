@@ -12,6 +12,8 @@ struct BnHwNexus : public ::android::hidl::base::V1_0::BnHwBase {
     explicit BnHwNexus(const ::android::sp<INexus> &_hidl_impl);
     explicit BnHwNexus(const ::android::sp<INexus> &_hidl_impl, const std::string& HidlInstrumentor_package, const std::string& HidlInstrumentor_interface);
 
+    virtual ~BnHwNexus();
+
     ::android::status_t onTransact(
             uint32_t _hidl_code,
             const ::android::hardware::Parcel &_hidl_data,
@@ -19,7 +21,47 @@ struct BnHwNexus : public ::android::hidl::base::V1_0::BnHwBase {
             uint32_t _hidl_flags = 0,
             TransactCallback _hidl_cb = nullptr) override;
 
+
+    typedef INexus Pure;
+
     ::android::sp<INexus> getImpl() { return _hidl_mImpl; };
+    // Methods from INexus follow.
+    static ::android::status_t _hidl_client(
+            ::android::hidl::base::V1_0::BnHwBase* _hidl_this,
+            const ::android::hardware::Parcel &_hidl_data,
+            ::android::hardware::Parcel *_hidl_reply,
+            TransactCallback _hidl_cb);
+
+
+    static ::android::status_t _hidl_registerHpdCb(
+            ::android::hidl::base::V1_0::BnHwBase* _hidl_this,
+            const ::android::hardware::Parcel &_hidl_data,
+            ::android::hardware::Parcel *_hidl_reply,
+            TransactCallback _hidl_cb);
+
+
+    static ::android::status_t _hidl_registerDspCb(
+            ::android::hidl::base::V1_0::BnHwBase* _hidl_this,
+            const ::android::hardware::Parcel &_hidl_data,
+            ::android::hardware::Parcel *_hidl_reply,
+            TransactCallback _hidl_cb);
+
+
+    static ::android::status_t _hidl_getPwr(
+            ::android::hidl::base::V1_0::BnHwBase* _hidl_this,
+            const ::android::hardware::Parcel &_hidl_data,
+            ::android::hardware::Parcel *_hidl_reply,
+            TransactCallback _hidl_cb);
+
+
+    static ::android::status_t _hidl_setPwr(
+            ::android::hidl::base::V1_0::BnHwBase* _hidl_this,
+            const ::android::hardware::Parcel &_hidl_data,
+            ::android::hardware::Parcel *_hidl_reply,
+            TransactCallback _hidl_cb);
+
+
+
 private:
     // Methods from INexus follow.
 

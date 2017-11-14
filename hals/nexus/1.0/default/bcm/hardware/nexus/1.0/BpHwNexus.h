@@ -13,7 +13,16 @@ namespace V1_0 {
 struct BpHwNexus : public ::android::hardware::BpInterface<INexus>, public ::android::hardware::details::HidlInstrumentor {
     explicit BpHwNexus(const ::android::sp<::android::hardware::IBinder> &_hidl_impl);
 
+    typedef INexus Pure;
+
     virtual bool isRemote() const override { return true; }
+
+    // Methods from INexus follow.
+    static ::android::hardware::Return<uint64_t>  _hidl_client(::android::hardware::IInterface* _hidl_this, ::android::hardware::details::HidlInstrumentor *_hidl_this_instrumentor, int32_t pid);
+    static ::android::hardware::Return<NexusStatus>  _hidl_registerHpdCb(::android::hardware::IInterface* _hidl_this, ::android::hardware::details::HidlInstrumentor *_hidl_this_instrumentor, uint64_t cId, const ::android::sp<INexusHpdCb>& cb);
+    static ::android::hardware::Return<NexusStatus>  _hidl_registerDspCb(::android::hardware::IInterface* _hidl_this, ::android::hardware::details::HidlInstrumentor *_hidl_this_instrumentor, uint64_t cId, const ::android::sp<INexusDspCb>& cb);
+    static ::android::hardware::Return<void>  _hidl_getPwr(::android::hardware::IInterface* _hidl_this, ::android::hardware::details::HidlInstrumentor *_hidl_this_instrumentor, getPwr_cb _hidl_cb);
+    static ::android::hardware::Return<NexusStatus>  _hidl_setPwr(::android::hardware::IInterface* _hidl_this, ::android::hardware::details::HidlInstrumentor *_hidl_this_instrumentor, const NexusPowerState& p);
 
     // Methods from INexus follow.
     ::android::hardware::Return<uint64_t> client(int32_t pid) override;

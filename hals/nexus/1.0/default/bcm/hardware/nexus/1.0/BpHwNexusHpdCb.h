@@ -13,7 +13,12 @@ namespace V1_0 {
 struct BpHwNexusHpdCb : public ::android::hardware::BpInterface<INexusHpdCb>, public ::android::hardware::details::HidlInstrumentor {
     explicit BpHwNexusHpdCb(const ::android::sp<::android::hardware::IBinder> &_hidl_impl);
 
+    typedef INexusHpdCb Pure;
+
     virtual bool isRemote() const override { return true; }
+
+    // Methods from INexusHpdCb follow.
+    static ::android::hardware::Return<void>  _hidl_onHpd(::android::hardware::IInterface* _hidl_this, ::android::hardware::details::HidlInstrumentor *_hidl_this_instrumentor, bool connected);
 
     // Methods from INexusHpdCb follow.
     ::android::hardware::Return<void> onHpd(bool connected) override;

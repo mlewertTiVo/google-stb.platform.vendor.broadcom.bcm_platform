@@ -13,7 +13,12 @@ namespace V1_0 {
 struct BpHwNexusDspCb : public ::android::hardware::BpInterface<INexusDspCb>, public ::android::hardware::details::HidlInstrumentor {
     explicit BpHwNexusDspCb(const ::android::sp<::android::hardware::IBinder> &_hidl_impl);
 
+    typedef INexusDspCb Pure;
+
     virtual bool isRemote() const override { return true; }
+
+    // Methods from INexusDspCb follow.
+    static ::android::hardware::Return<void>  _hidl_onDsp(::android::hardware::IInterface* _hidl_this, ::android::hardware::details::HidlInstrumentor *_hidl_this_instrumentor);
 
     // Methods from INexusDspCb follow.
     ::android::hardware::Return<void> onDsp() override;
