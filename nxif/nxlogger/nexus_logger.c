@@ -58,7 +58,7 @@
 #include <sched.h>
 #include <cutils/properties.h>
 
-BDBG_MODULE(logger);
+BDBG_FILE_MODULE(logger);
 
 #define PROP_LOGGER_PRIORITY "sys.nx.logger_priority"
 
@@ -134,7 +134,6 @@ static BERR_Code get_driver_log_message(int device_fd, PROXY_NEXUS_Log_Instance 
     dequeue.timeout     = 0;
     urc = ioctl(device_fd, IOCTL_PROXY_NEXUS_Log_Dequeue, &dequeue);
     if(urc!=0) {
-        BDBG_MSG(("Can't read data from the driver"));
         *pMsgLen = 0;
         BERR_TRACE(urc);
         return BERR_UNKNOWN;
