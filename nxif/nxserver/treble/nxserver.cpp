@@ -282,10 +282,8 @@ static void *inexus_task(void *argv)
 
     do {
        configureRpcThreadpool(1, true /* callerWillJoin */);
-       nx_server->nxi = new NexusImpl();
        if (nx_server->nxi != NULL) {
           ALOGI("nxi: start middleware, register hwservice.");
-          nx_server->nxi->start_middleware();
           nx_server->nxi->registerAsService();
        }
        joinRpcThreadpool();
@@ -1351,14 +1349,20 @@ int main(void)
     }
 
     ALOGI("starting i-nexus.");
-    pthread_attr_init(&attr);
-    g_app.binder.running = 1;
-    if (pthread_create(&g_app.binder.runner, &attr,
-                       inexus_task, (void *)&g_app) != 0) {
-        ALOGE("failed i-nexus start, ignoring...");
-        g_app.binder.running = 0;
+    g_app.nxi = new NexusImpl();
+    if (g_app.nxi != NULL) {
+       g_app.nxi->start_middleware();
+       pthread_attr_init(&attr);
+       g_app.binder.running = 1;
+       if (pthread_create(&g_app.binder.runner, &attr,
+                          inexus_task, (void *)&g_app) != 0) {
+           ALOGE("failed i-nexus start, ignoring (but not looking good)...");
+           g_app.binder.running = 0;
+       }
+       pthread_attr_destroy(&attr);
+    } else {
+       ALOGE("failed i-nexus creation, ignoring (but not looking good)...");
     }
-    pthread_attr_destroy(&attr);
 
     ALOGI("trigger memory configuration setup.");
     property_set(NX_STATE, "memcfg");
