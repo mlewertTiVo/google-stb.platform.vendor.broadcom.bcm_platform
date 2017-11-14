@@ -42,8 +42,6 @@
 #include "nxclient.h"
 #include "nxclient_config.h"
 #include "bfifo.h"
-//#include "INxHpdEvtSrc.h"
-//#include "INxDspEvtSrc.h"
 #include "nexus_platform_client.h"
 #include "nexus_platform.h"
 #include "nexus_display_dynrng.h"
@@ -142,8 +140,6 @@ struct hwc2_bcm_device_t {
 
    pthread_mutex_t      mtx_pwr;
 
-//   Hwc2HP_sp            *hp;
-//   Hwc2DC_sp            *dc;
    HwcBinder_wrap       *hb;
    bool                 con;
 
@@ -612,18 +608,19 @@ static void hwc2_ext_fbs(
    if (hwc2->ext->u.ext.cb != cb) {
       if (hwc2->ext->u.ext.bfb) {
          hwc2->ext->u.ext.bfb = false;
-         pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
-         for (i = 0; i < HWC2_FBS_NUM; i++) {
-            if (hwc2->ext->u.ext.fbs[i].fd != HWC2_INVALID) {
-               close(hwc2->ext->u.ext.fbs[i].fd);
-               hwc2->ext->u.ext.fbs[i].fd = HWC2_INVALID;
+         if (!pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs)) {
+            for (i = 0; i < HWC2_FBS_NUM; i++) {
+               if (hwc2->ext->u.ext.fbs[i].fd != HWC2_INVALID) {
+                  close(hwc2->ext->u.ext.fbs[i].fd);
+                  hwc2->ext->u.ext.fbs[i].fd = HWC2_INVALID;
+               }
+               if (hwc2->ext->u.ext.fbs[i].s) {
+                  NEXUS_Surface_Destroy(hwc2->ext->u.ext.fbs[i].s);
+                  hwc2->ext->u.ext.fbs[i].s = NULL;
+               }
             }
-            if (hwc2->ext->u.ext.fbs[i].s) {
-               NEXUS_Surface_Destroy(hwc2->ext->u.ext.fbs[i].s);
-               hwc2->ext->u.ext.fbs[i].s = NULL;
-            }
+            pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
          }
-         pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
       }
       NEXUS_SurfaceClient_GetSettings(hwc2->ext->u.ext.sch, &sCli);
       sCli.recycled.callback      = hwc2_recycle_cb;
@@ -714,12 +711,13 @@ static void hwc2_ext_fbs(
             hwc2->ext->u.ext.icb.s, hwc2->ext->u.ext.icb.fd, bh);
    }
 
-   pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
-   /* bfifo uses the cached version to preserve the original mapping correctly. */
-   memcpy(&hwc2->ext->u.ext.fbs_c, &hwc2->ext->u.ext.fbs, sizeof(hwc2->ext->u.ext.fbs_c));
-   BFIFO_INIT(&hwc2->ext->u.ext.fb, hwc2->ext->u.ext.fbs_c, HWC2_FBS_NUM);
-   BFIFO_WRITE_COMMIT(&hwc2->ext->u.ext.fb, HWC2_FBS_NUM);
-   pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
+   if (!pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs)) {
+      /* bfifo uses the cached version to preserve the original mapping correctly. */
+      memcpy(&hwc2->ext->u.ext.fbs_c, &hwc2->ext->u.ext.fbs, sizeof(hwc2->ext->u.ext.fbs_c));
+      BFIFO_INIT(&hwc2->ext->u.ext.fb, hwc2->ext->u.ext.fbs_c, HWC2_FBS_NUM);
+      BFIFO_WRITE_COMMIT(&hwc2->ext->u.ext.fb, HWC2_FBS_NUM);
+      pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
+   }
    hwc2->ext->u.ext.cb = cb;
 }
 
@@ -786,19 +784,20 @@ static void hwc2_recycle(
 
    NEXUS_SurfaceClient_RecycleSurface(hwc2->ext->u.ext.sch, s, HWC2_FBS_NUM, &ns);
    if (ns) {
-      pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
-      for (i = 0; i < ns; i++) {
-         fd = hwc2_ext_fb_valid_l(hwc2, s[i]);
-         if (fd != HWC2_INVALID) {
-            struct hwc2_fb_t *e = BFIFO_WRITE(&hwc2->ext->u.ext.fb);
-            e->s  = s[i];
-            e->fd = fd;
-            BFIFO_WRITE_COMMIT(&hwc2->ext->u.ext.fb, 1);
-         } else {
-            ALOGW("[ext]: invalid recycled surface %p!", s[i]);
+      if (!pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs)) {
+         for (i = 0; i < ns; i++) {
+            fd = hwc2_ext_fb_valid_l(hwc2, s[i]);
+            if (fd != HWC2_INVALID) {
+               struct hwc2_fb_t *e = BFIFO_WRITE(&hwc2->ext->u.ext.fb);
+               e->s  = s[i];
+               e->fd = fd;
+               BFIFO_WRITE_COMMIT(&hwc2->ext->u.ext.fb, 1);
+            } else {
+               ALOGW("[ext]: invalid recycled surface %p!", s[i]);
+            }
          }
+         pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
       }
-      pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
    }
 }
 
@@ -825,20 +824,21 @@ static void *hwc2_vsync_task(
       /* this sync event applies to the 'ext' display only. */
       if (hwc2->ext == NULL)
          continue;
-      pthread_mutex_lock(&hwc2->mtx_pwr);
-      if (hwc2->ext->pmode != HWC2_POWER_MODE_OFF) {
-         pthread_mutex_unlock(&hwc2->mtx_pwr);
-         BKNI_WaitForEvent(hwc2->vsync, BKNI_INFINITE);
-         if ((hwc2->ext->u.ext.vsync == HWC2_VSYNC_ENABLE) &&
-             (hwc2->regCb[HWC2_CALLBACK_VSYNC-1].func != NULL)) {
-            HWC2_PFN_VSYNC f_vsync = (HWC2_PFN_VSYNC) hwc2->regCb[HWC2_CALLBACK_VSYNC-1].func;
-            f_vsync(hwc2->regCb[HWC2_CALLBACK_VSYNC-1].data,
-                    (hwc2_display_t)(intptr_t)hwc2->ext,
-                    hwc2_tick());
+      if (!pthread_mutex_lock(&hwc2->mtx_pwr)) {
+         if (hwc2->ext->pmode != HWC2_POWER_MODE_OFF) {
+            pthread_mutex_unlock(&hwc2->mtx_pwr);
+            BKNI_WaitForEvent(hwc2->vsync, BKNI_INFINITE);
+            if ((hwc2->ext->u.ext.vsync == HWC2_VSYNC_ENABLE) &&
+                (hwc2->regCb[HWC2_CALLBACK_VSYNC-1].func != NULL)) {
+               HWC2_PFN_VSYNC f_vsync = (HWC2_PFN_VSYNC) hwc2->regCb[HWC2_CALLBACK_VSYNC-1].func;
+               f_vsync(hwc2->regCb[HWC2_CALLBACK_VSYNC-1].data,
+                       (hwc2_display_t)(intptr_t)hwc2->ext,
+                       hwc2_tick());
+            }
+         } else {
+            pthread_mutex_unlock(&hwc2->mtx_pwr);
+            BKNI_Sleep(16); /* pas beau. */
          }
-      } else {
-         pthread_mutex_unlock(&hwc2->mtx_pwr);
-         BKNI_Sleep(16); /* pas beau. */
       }
    } while(!hwc2->vsync_exit);
 
@@ -851,30 +851,34 @@ static NEXUS_SurfaceHandle hwc2_ext_fb_get(
    struct hwc2_fb_t *e = NULL;
 
    while (true) {
-      pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
-      if (BFIFO_READ_PEEK(&hwc2->ext->u.ext.fb) != 0) {
-         pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
-         goto out_read;
-      } else {
-         pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
-         hwc2_recycle(hwc2);
+      if (!pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs)) {
          if (BFIFO_READ_PEEK(&hwc2->ext->u.ext.fb) != 0) {
+            pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
             goto out_read;
+         } else {
+            pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
+            hwc2_recycle(hwc2);
+            if (BFIFO_READ_PEEK(&hwc2->ext->u.ext.fb) != 0) {
+               goto out_read;
+            }
          }
-      }
-      if (BKNI_WaitForEvent(hwc2->recycled, HWC2_FB_WAIT_TO)) {
-         nsc++;
-         if (nsc == HWC2_FB_RETRY) {
-            return NULL;
+         if (BKNI_WaitForEvent(hwc2->recycled, HWC2_FB_WAIT_TO)) {
+            nsc++;
+            if (nsc == HWC2_FB_RETRY) {
+               return NULL;
+            }
          }
+      } else {
+         return NULL;
       }
    }
 
 out_read:
-   pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
-   e = BFIFO_READ(&hwc2->ext->u.ext.fb);
-   BFIFO_READ_COMMIT(&hwc2->ext->u.ext.fb, 1);
-   pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
+   if (!pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs)) {
+      e = BFIFO_READ(&hwc2->ext->u.ext.fb);
+      BFIFO_READ_COMMIT(&hwc2->ext->u.ext.fb, 1);
+      pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
+   }
 out:
    return (e != NULL ? e->s : NULL);
 }
@@ -885,18 +889,19 @@ static void hwc2_ext_fb_put(
 
    int fd;
    if (s) {
-      pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs);
-      fd = hwc2_ext_fb_valid_l(hwc2, s);
-      if (fd != HWC2_INVALID) {
-         struct hwc2_fb_t *e = BFIFO_WRITE(&hwc2->ext->u.ext.fb);
-         e->s  = s;
-         e->fd = fd;
-         BFIFO_WRITE_COMMIT(&hwc2->ext->u.ext.fb, 1);
-         ALOGV("[ext]: put unused surface %p::%d", s, fd);
-      } else {
-         ALOGW("[ext]: invalid put surface %p!", s);
+      if (!pthread_mutex_lock(&hwc2->ext->u.ext.mtx_fbs)) {
+         fd = hwc2_ext_fb_valid_l(hwc2, s);
+         if (fd != HWC2_INVALID) {
+            struct hwc2_fb_t *e = BFIFO_WRITE(&hwc2->ext->u.ext.fb);
+            e->s  = s;
+            e->fd = fd;
+            BFIFO_WRITE_COMMIT(&hwc2->ext->u.ext.fb, 1);
+            ALOGV("[ext]: put unused surface %p::%d", s, fd);
+         } else {
+            ALOGW("[ext]: invalid put surface %p!", s);
+         }
+         pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
       }
-      pthread_mutex_unlock(&hwc2->ext->u.ext.mtx_fbs);
    }
 }
 
@@ -1574,9 +1579,10 @@ static void hwc2_lyr_tl_queued(
    if (kind == HWC2_DSP_EXT) {
       for (num = 0 ; num < HWC2_MAX_TL ; num++) {
          if (dsp->u.ext.rtl[num].hdl == hdl) {
-            pthread_mutex_lock(&dsp->u.ext.rtl[num].mtx_lc);
-            dsp->u.ext.rtl[num].que = true;
-            pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
+            if(!pthread_mutex_lock(&dsp->u.ext.rtl[num].mtx_lc)) {
+               dsp->u.ext.rtl[num].que = true;
+               pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
+            }
          }
       }
    }
@@ -1592,22 +1598,23 @@ static void hwc2_lyr_tl_unset(
    if (kind == HWC2_DSP_EXT) {
       for (num = 0 ; num < HWC2_MAX_TL ; num++) {
          if (dsp->u.ext.rtl[num].hdl == hdl) {
-            pthread_mutex_lock(&dsp->u.ext.rtl[num].mtx_lc);
-            if (dsp->u.ext.rtl[num].que) {
-               dsp->u.ext.rtl[num].rem = true;
-               pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
-               ALOGI("[ext]:[tl-uset]:%" PRIu64 ":%" PRIu64 ":delay queued\n", lyr, hdl);
-            } else {
-               pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
-               if (dsp->u.ext.rtl[num].pt != dsp->u.ext.rtl[num].si) {
-                  ALOGI("[ext]:[tl-uset]:%" PRIu64 ":%" PRIu64 ":free orphan on %" PRIu64 ":%" PRIu64 "\n",
-                        lyr, hdl,
-                        dsp->u.ext.rtl[num].si, dsp->u.ext.rtl[num].pt);
-                  for (si = 0 ; si < dsp->u.ext.rtl[num].pt - dsp->u.ext.rtl[num].si ; si++) {
-                     sw_sync_timeline_inc(dsp->u.ext.rtl[num].tl, 1);
+            if (!pthread_mutex_lock(&dsp->u.ext.rtl[num].mtx_lc)) {
+               if (dsp->u.ext.rtl[num].que) {
+                  dsp->u.ext.rtl[num].rem = true;
+                  pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
+                  ALOGI("[ext]:[tl-uset]:%" PRIu64 ":%" PRIu64 ":delay queued\n", lyr, hdl);
+               } else {
+                  pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
+                  if (dsp->u.ext.rtl[num].pt != dsp->u.ext.rtl[num].si) {
+                     ALOGI("[ext]:[tl-uset]:%" PRIu64 ":%" PRIu64 ":free orphan on %" PRIu64 ":%" PRIu64 "\n",
+                           lyr, hdl,
+                           dsp->u.ext.rtl[num].si, dsp->u.ext.rtl[num].pt);
+                     for (si = 0 ; si < dsp->u.ext.rtl[num].pt - dsp->u.ext.rtl[num].si ; si++) {
+                        sw_sync_timeline_inc(dsp->u.ext.rtl[num].tl, 1);
+                     }
                   }
+                  dsp->u.ext.rtl[num].hdl = 0;
                }
-               dsp->u.ext.rtl[num].hdl = 0;
             }
          }
       }
@@ -1638,15 +1645,16 @@ static void hwc2_lyr_tl_dequeued(
    if (kind == HWC2_DSP_EXT) {
       for (num = 0 ; num < HWC2_MAX_TL ; num++) {
          if (dsp->u.ext.rtl[num].hdl == hdl) {
-            pthread_mutex_lock(&dsp->u.ext.rtl[num].mtx_lc);
-            dsp->u.ext.rtl[num].que = false;
-            if (dsp->u.ext.rtl[num].rem) {
-               dsp->u.ext.rtl[num].rem = false;
-               pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
-               ALOGI("[ext]:[tl-dque]:%" PRIu64 ":%" PRIu64 ":delayed removal\n", lyr, hdl);
-               hwc2_lyr_tl_unset(dsp, kind, lyr, hdl);
-            } else {
-               pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
+            if (!pthread_mutex_lock(&dsp->u.ext.rtl[num].mtx_lc)) {
+               dsp->u.ext.rtl[num].que = false;
+               if (dsp->u.ext.rtl[num].rem) {
+                  dsp->u.ext.rtl[num].rem = false;
+                  pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
+                  ALOGI("[ext]:[tl-dque]:%" PRIu64 ":%" PRIu64 ":delayed removal\n", lyr, hdl);
+                  hwc2_lyr_tl_unset(dsp, kind, lyr, hdl);
+               } else {
+                  pthread_mutex_unlock(&dsp->u.ext.rtl[num].mtx_lc);
+               }
             }
          }
       }
@@ -2174,19 +2182,24 @@ static int32_t hwc2_lyrAdd(
       hwc2_lyr_tl_set(dsp, kind, lyr->hdl, lyr->thdl);
    }
 
-   pthread_mutex_lock(&dsp->mtx_lyr);
-   nxt = dsp->lyr;
-   if (nxt == NULL) {
-      dsp->lyr = lyr;
-   } else {
-      while (nxt != NULL) {
-         lnk = nxt;
-         nxt = nxt->next;
-         cnt++;
+   if (!pthread_mutex_lock(&dsp->mtx_lyr)) {
+      nxt = dsp->lyr;
+      if (nxt == NULL) {
+         dsp->lyr = lyr;
+      } else {
+         while (nxt != NULL) {
+            lnk = nxt;
+            nxt = nxt->next;
+            cnt++;
+         }
+         lnk->next = lyr;
       }
-      lnk->next = lyr;
+      pthread_mutex_unlock(&dsp->mtx_lyr);
+   } else {
+      free(lyr);
+      ret = HWC2_ERROR_NO_RESOURCES;
+      goto out;
    }
-   pthread_mutex_unlock(&dsp->mtx_lyr);
 
    *outLayer = (hwc2_layer_t)(intptr_t)lyr;
    cnt++;
@@ -2234,44 +2247,48 @@ static int32_t hwc2_lyrRem(
       goto out;
    }
 
-   pthread_mutex_lock(&dsp->mtx_lyr);
-   nxt = dsp->lyr;
-   prv = NULL;
-   while (nxt != NULL) {
-      if (nxt == (struct hwc2_lyr_t *)(intptr_t)layer) {
-         lyr = nxt;
-         break;
-      } else {
-         prv = nxt;
-         nxt = nxt->next;
+   if (!pthread_mutex_lock(&dsp->mtx_lyr)) {
+      nxt = dsp->lyr;
+      prv = NULL;
+      while (nxt != NULL) {
+         if (nxt == (struct hwc2_lyr_t *)(intptr_t)layer) {
+            lyr = nxt;
+            break;
+         } else {
+            prv = nxt;
+            nxt = nxt->next;
+         }
       }
-   }
-   if (lyr == NULL) {
+      if (lyr == NULL) {
+         pthread_mutex_unlock(&dsp->mtx_lyr);
+         ret = HWC2_ERROR_BAD_LAYER;
+         goto out;
+      }
+
+      hdl = lyr->hdl;
+      if (prv == NULL) {
+         dsp->lyr = lyr->next;
+      } else {
+         prv->next = lyr->next;
+      }
+      lyr->next = NULL;
+      if ((kind != HWC2_DSP_VD) ||
+          ((kind == HWC2_DSP_VD) && !HWC2_VD_GLES)) {
+         hwc2_lyr_tl_unset(dsp, kind, lyr->hdl, lyr->thdl);
+      }
+      free(lyr);
+      lyr = NULL;
+
+      lyr = dsp->lyr;
+      while (lyr != NULL) {
+         cnt++;
+         lyr = lyr->next;
+      }
       pthread_mutex_unlock(&dsp->mtx_lyr);
+   } else {
       ret = HWC2_ERROR_BAD_LAYER;
       goto out;
    }
-
-   hdl = lyr->hdl;
-   if (prv == NULL) {
-      dsp->lyr = lyr->next;
-   } else {
-      prv->next = lyr->next;
-   }
-   lyr->next = NULL;
-   if ((kind != HWC2_DSP_VD) ||
-       ((kind == HWC2_DSP_VD) && !HWC2_VD_GLES)) {
-      hwc2_lyr_tl_unset(dsp, kind, lyr->hdl, lyr->thdl);
-   }
-   free(lyr);
-   lyr = NULL;
-
-   lyr = dsp->lyr;
-   while (lyr != NULL) {
-      cnt++;
-      lyr = lyr->next;
-   }
-   pthread_mutex_unlock(&dsp->mtx_lyr);
 
    ALOGI_IF((hwc2->lm & LOG_AR_DEBUG),
             "[%s]:[lyr-]:%" PRIu64 ": %zu layers\n",
@@ -4276,9 +4293,15 @@ static int32_t hwc2_preDsp(
       struct hwc2_frame_t *frame = NULL;
       struct hwc2_lyr_t *clyr = NULL;
 
-      pthread_mutex_lock(&hwc2->mtx_pwr);
+      if (pthread_mutex_lock(&hwc2->mtx_pwr)) {
+         ALOGW("[ext]:[pres]:%" PRIu64 ":%" PRIu64 ": failed to acquire power mutex", dsp->pres, dsp->post);
+         ret = HWC2_ERROR_NO_RESOURCES;
+         dsp->post++;
+         goto out_error;
+      }
       if (hwc2->ext->pmode == HWC2_POWER_MODE_OFF) {
          pthread_mutex_unlock(&hwc2->mtx_pwr);
+         ALOGW("[ext]:[pres]:%" PRIu64 ":%" PRIu64 ": invalid composition while power-off", dsp->pres, dsp->post);
          ret = HWC2_ERROR_NO_RESOURCES;
          dsp->post++;
          goto out_error;
