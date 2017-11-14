@@ -30,15 +30,15 @@ LOCAL_SHARED_LIBRARIES := libnexus \
                           liblog \
                           libcutils \
                           libutils \
-                          libdl \
                           libnxwrap \
-                          libnxbinder \
-                          libnxevtsrc \
-                          libnxclient
+                          libnxclient \
+                          libdl
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_SHARED_LIBRARIES += libhwbinder
 else
-LOCAL_SHARED_LIBRARIES += libbinder
+LOCAL_SHARED_LIBRARIES += libbinder \
+                          libnxbinder \
+                          libnxevtsrc
 endif
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
