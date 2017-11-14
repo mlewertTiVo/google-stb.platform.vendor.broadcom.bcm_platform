@@ -50,7 +50,6 @@
 #include <dlfcn.h>
 
 #include <cutils/log.h>
-#include <nxwrap.h>
 
 static void *vk_icd_dyn_lib;
 
@@ -58,7 +57,8 @@ PFN_vkEnumerateInstanceExtensionProperties enumerateInstanceExtensionProperties;
 PFN_vkCreateInstance createInstance;
 PFN_vkGetInstanceProcAddr getInstanceProcAddr;
 
-static NxWrap *nxWrap = NULL;
+static void *nxwrap = NULL;
+static void *nexus_client = NULL;
 
 static int vulkan_device_open(const struct hw_module_t *module,
         const char *name, struct hw_device_t **device);
@@ -66,6 +66,9 @@ static int vulkan_device_open(const struct hw_module_t *module,
 static struct hw_module_methods_t vulkan_module_methods = {
       .open = vulkan_device_open
 };
+
+extern "C" void* nxwrap_create_client(void **wrap);
+extern "C" void nxwrap_destroy_client(void *wrap);
 
 // The vulkan module
 struct hw_module_t HAL_MODULE_INFO_SYM = {
@@ -84,10 +87,9 @@ static int vulkan_device_close(struct hw_device_t *dev)
 {
    struct hwvulkan_device_t *hwvk_dev = reinterpret_cast<struct hwvulkan_device_t *>(dev);
 
-   if (nxWrap != NULL) {
-      nxWrap->leave();
-      delete nxWrap;
-      nxWrap = NULL;
+   if (nxwrap != NULL) {
+      nxwrap_destroy_client(nxwrap);
+      nxwrap = NULL;
    }
    free(hwvk_dev);
 
@@ -107,16 +109,16 @@ static int vulkan_device_open(const struct hw_module_t *module,
 
       struct hwvulkan_device_t *hwvk_dev = (struct hwvulkan_device_t *)malloc(sizeof(*hwvk_dev));
 
-      if (nxWrap != NULL) {
-         nxWrap->leave();
-         delete nxWrap;
+      if (nxwrap != NULL) {
+         nxwrap_destroy_client(nxwrap);
       }
-      nxWrap = new NxWrap("nxVkHal");
-      if (nxWrap == NULL) {
+
+      nexus_client = nxwrap_create_client(&nxwrap);
+
+      if (nexus_client == NULL) {
          ALOGE("%s: Could not create Nexux Client!!!", __FUNCTION__);
          goto out;
       }
-      nxWrap->join();
 
       *device = reinterpret_cast<hw_device_t *>(hwvk_dev);
 
