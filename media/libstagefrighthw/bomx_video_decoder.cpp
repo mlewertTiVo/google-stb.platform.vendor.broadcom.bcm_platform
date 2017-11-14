@@ -71,6 +71,7 @@
 #define B_PROPERTY_ENABLE_METADATA ("media.brcm.vdec_enable_metadata")
 #define B_PROPERTY_TUNNELED_HFRVIDEO ("media.brcm.vdec_hfrvideo_tunnel")
 #define B_PROPERTY_SHOW_DESTRIPE_DELAY ("media.brcm.vdec_show_destripe_delay")
+#define B_PROPERTY_ENABLE_HDR_FOR_NON_VP9 ("media.brcm.vdec_enable_hdr_for_non_vp9")    // Enable HDR for non-VP9 codecs in non-tunneled mode
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
 #define B_PROPERTY_SVP ("ro.nx.svp")
 #define B_PROPERTY_COALESCE ("dyn.nx.netcoal.set")
@@ -1126,6 +1127,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_tunnelMode(tunnel),
     m_tunnelHfr(false),
     m_showDestripeDelay(0),
+    m_enableHdrForNonVp9(0),
     m_pTunnelNativeHandle(NULL),
     m_tunnelCurrentPts(0),
     m_waitingForStc(false),
@@ -1478,6 +1480,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
 
     m_showDestripeDelay = property_get_int32(B_PROPERTY_SHOW_DESTRIPE_DELAY, 0);
+    m_enableHdrForNonVp9 = property_get_int32(B_PROPERTY_ENABLE_HDR_FOR_NON_VP9, 0);
 
     // Initialize video window to full screen
     NEXUS_SurfaceClientSettings videoClientSettings;
@@ -5399,6 +5402,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetExtensionIndex(
             {
                 ALOGD("Metadata output disabled");
                 // Drop out here to reduce spam in logcat
+                return OMX_ErrorUnsupportedIndex;
+            }
+            else if ( !m_tunnelMode && (m_enableHdrForNonVp9 || (int)GetCodec() != OMX_VIDEO_CodingVP9) &&
+                        ((g_extensions[i].index == OMX_IndexParamDescribeHdrColorInfo) || (g_extensions[i].index == OMX_IndexParamDescribeColorAspects)) )
+            {
+                ALOGD("Interface %s not supported in non-tunneled codec %d", g_extensions[i].pName, (int)GetCodec());
                 return OMX_ErrorUnsupportedIndex;
             }
             else if ( !m_secureDecoder && (g_extensions[i].index == OMX_IndexParamAllocNativeHandle) )
