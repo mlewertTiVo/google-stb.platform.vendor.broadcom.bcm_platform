@@ -51,7 +51,7 @@
 #include <cutils/properties.h>
 #include <private/android_filesystem_config.h>
 #include <utils/Vector.h>
-#include "PmLibService.h"
+#include "treble/PmLibService.h"
 
 using namespace android;
 using namespace android::hardware;

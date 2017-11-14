@@ -49,11 +49,7 @@ LOCAL_SHARED_LIBRARIES += libcutils
 LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libnativehelper
 LOCAL_SHARED_LIBRARIES += libutils
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-LOCAL_SHARED_LIBRARIES += libhwbinder
-else
 LOCAL_SHARED_LIBRARIES += libbinder
-endif
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib
 
