@@ -58,6 +58,9 @@ LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/BSEAV/lib/utils
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/include/media/openmax
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libstagefrighthw
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default
+endif
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 include $(BUILD_SHARED_LIBRARY)
@@ -76,8 +79,12 @@ LOCAL_SHARED_LIBRARIES := \
     liblog \
     libutils \
     libmedia \
-    libbinder \
     libaudiopolicymanagerdefault
+
+ifneq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_SHARED_LIBRARIES += \
+    libnxbinder
+endif
 
 LOCAL_C_INCLUDES := \
     external/tinyalsa/include \

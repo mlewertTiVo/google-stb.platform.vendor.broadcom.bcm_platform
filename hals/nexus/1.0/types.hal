@@ -1,0 +1,9 @@
+package bcm.hardware.nexus@1.0;
+
+enum NexusStatus : uint32_t {
+    SUCCESS,
+    ALREADY_REGISTERED,
+    BAD_VALUE,
+    UNKNOWN,
+};
+
