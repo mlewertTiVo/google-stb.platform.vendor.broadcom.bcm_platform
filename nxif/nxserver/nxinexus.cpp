@@ -60,7 +60,7 @@ Return<uint64_t> NexusImpl::client(int32_t pid) {
    NEXUS_PlatformObjectInstance *objects = NULL;
    NEXUS_ClientHandle nexusClient = NULL;
    NEXUS_InterfaceName interfaceName;
-   size_t num = 16; /* starting size. */
+   size_t num = 64; /* starting size. */
    size_t max_num = 1024; /* some big value. */
    size_t i, cached_num;
    NEXUS_Error rc;
