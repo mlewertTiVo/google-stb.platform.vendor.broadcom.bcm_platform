@@ -186,6 +186,17 @@ void NexusIPCClient::destroyClientContext(uint64_t client)
     return;
 }
 
+void NexusIPCClient::trimCmaFromClientContext(uint64_t client)
+{
+    api_data cmd;
+
+    BKNI_Memset(&cmd, 0, sizeof(cmd));
+    cmd.api = api_trimCmaFromClientContext;
+    cmd.param.trimCmaFromClientContext.in.client = client;
+    iNC->api_over_binder(&cmd);
+    return;
+}
+
 bool NexusIPCClient::setPowerState(b_powerState pmState)
 {
     api_data cmd;

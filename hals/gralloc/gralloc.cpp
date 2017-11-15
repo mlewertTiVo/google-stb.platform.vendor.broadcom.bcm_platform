@@ -57,6 +57,7 @@ static void (* dyn_BEGLint_BufferGetRequirements)(BEGL_PixmapInfo *, BEGL_Buffer
 #endif
 static void * (* dyn_EGL_nexus_join)(char *client_process_name);
 static void (* dyn_EGL_nexus_unjoin)(void *nexus_client);
+static void (* dyn_EGL_nexus_trim_cma)(void *nexus_client);
 #define LOAD_FN(lib, name) \
 if (!(dyn_ ## name = (typeof(dyn_ ## name)) dlsym(lib, #name))) \
    ALOGV("failed resolving '%s'", #name); \
@@ -112,6 +113,7 @@ static void gralloc_load_lib(void)
 #endif
    LOAD_FN(gl_dyn_lib, EGL_nexus_join);
    LOAD_FN(gl_dyn_lib, EGL_nexus_unjoin);
+   LOAD_FN(gl_dyn_lib, EGL_nexus_trim_cma);
 
    if (dyn_EGL_nexus_join) {
       nexus_client = dyn_EGL_nexus_join((char *)NEXUS_JOIN_CLIENT_PROCESS);
@@ -728,6 +730,16 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       if (ret >= 0) {
          memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
          ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+         if (ret < 0) {
+            /* give another try after asking to trim some existing memory, if trim
+             * fails, or if not enough memory could be freed up, that's game over.
+             */
+            if (nexus_client && dyn_EGL_nexus_trim_cma) {
+               dyn_EGL_nexus_trim_cma(nexus_client); // TODO: pass in how much is needed?
+               BKNI_Sleep(5); /* give settling time for memory killing. */
+               ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            }
+         }
          if (ret < 0) {
             err = -ENOMEM;
             goto alloc_failed;

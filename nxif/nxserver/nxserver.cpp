@@ -289,6 +289,11 @@ static void nx_wdog_midpoint(void *context, int param)
    }
 }
 
+static void nx_trim_cma(int caller)
+{
+   ALOGE("nxserver: trim cma now from pid %d", caller);
+}
+
 static void *binder_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
@@ -297,7 +302,7 @@ static void *binder_task(void *argv)
 
     do {
        android::ProcessState::self()->startThreadPool();
-       NexusNxService::instantiate();
+       NexusNxService::instantiate(&nx_trim_cma);
        PmLibService::instantiate();
        android::IPCThreadState::self()->joinThreadPool();
 

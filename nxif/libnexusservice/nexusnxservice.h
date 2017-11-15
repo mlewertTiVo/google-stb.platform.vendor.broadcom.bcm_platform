@@ -52,10 +52,12 @@
 #include "nexusservice.h"
 #include "nexusirhandler.h"
 
+typedef void (*trimCmaFromPid)(int caller);
+
 class NexusNxService : public NexusService
 {
 public:
-    static void instantiate();
+    static void instantiate(trimCmaFromPid trimFnc);
     virtual ~NexusNxService();
 
     virtual void binderDied(const wp<IBinder>& who);
@@ -63,6 +65,7 @@ public:
     /* These API's require a Nexus Client Context as they handle per client resources... */
     virtual uint64_t createClientContext(const b_refsw_client_client_name *pClientName, unsigned clientPid);
     virtual void destroyClientContext(uint64_t client);
+    virtual void trimCmaFromClientContext(uint64_t client);
 
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/
     virtual status_t addHdmiHotplugEventListener(uint32_t portId, const sp<INexusHdmiHotplugEventListener> &listener);
@@ -74,7 +77,7 @@ public:
 
 protected:
     struct CecServiceManager;
-    NexusNxService();
+    NexusNxService() {};
     virtual void platformInit();
     virtual void platformUninit();
 

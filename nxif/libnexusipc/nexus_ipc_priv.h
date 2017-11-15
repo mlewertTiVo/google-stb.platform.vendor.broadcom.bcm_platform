@@ -49,6 +49,7 @@
 enum api_name{
     api_createClientContext,
     api_destroyClientContext,
+    api_trimCmaFromClientContext,
     api_setPowerState,
     api_getPowerStatus,
     api_setCecPowerState,
@@ -81,6 +82,15 @@ typedef union api_param
         struct {
         } out;
     } destroyClientContext;
+
+    struct {
+        struct {
+            uint64_t client;
+        } in;
+
+        struct {
+        } out;
+    } trimCmaFromClientContext;
 
     struct {
         struct {
