@@ -1309,7 +1309,7 @@ static void hwc2_set_acfg_l(
    };
 
    int ifps = hwc2_fps2igrp(dsp->aCfg->vsync);
-   switch (AJOUTE_W_H(dsp->aCfg->w, dsp->aCfg->h)) {
+   switch (AJOUTE_W_H(dsp->aCfg->ew, dsp->aCfg->eh)) {
    case AJOUTE_W_H(1280,720): fmt = ordered_720_grp[ifps]; break;
    case AJOUTE_W_H(1920,1280): fmt = ordered_1080_grp[ifps]; break;
    case AJOUTE_W_H(3840,2160): fmt = ordered_2160_grp[ifps]; break;
