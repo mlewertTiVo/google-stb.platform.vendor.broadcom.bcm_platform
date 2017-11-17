@@ -47,6 +47,7 @@ extern const uint8_t g_nexus_parse_eac3_syncword[2];
 
 typedef struct {
     unsigned num_audio_blks;    // numblkscod
+    unsigned bitrate;
 } eac3_frame_hdr_info;
 
 bool nexus_parse_eac3_frame_hdr(const uint8_t *data, size_t len, eac3_frame_hdr_info *info);

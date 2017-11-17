@@ -229,7 +229,7 @@ struct brcm_stream_out {
                     NEXUS_PidChannelHandle pid_channel;
                     struct timespec start_ts;
                     size_t lastCount;
-                    unsigned audioblocks_per_frame;
+                    unsigned bitrate;
                     unsigned frame_multiplier;
                     uint32_t transcode_latency;
                     NxClient_AudioOutputMode savedHDMIOutputMode;
