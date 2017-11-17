@@ -45,6 +45,9 @@ include ${BCM_APPS_PATH}/BcmUriPlayer/Android.mk
 include ${BCM_APPS_PATH}/PAICfgStub/Android.mk
 
 # additional tools, not needed for default integration.
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makeblimg/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makegpt/Android.mk
+include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makehwcfg/Android.mk
 ifneq ($(TARGET_BUILD_PDK),true)
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bmem/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/bsysperf/Android.mk
@@ -55,9 +58,6 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/fbtest/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/joinstress/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/lmkstats/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/load/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makeblimg/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makegpt/Android.mk
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/makehwcfg/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/memcpy/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxblk/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/tools/nxcfg/Android.mk
