@@ -46,12 +46,13 @@
 using namespace android;
 
 const uint8_t g_nexus_parse_eac3_syncword[2] = { 0x0B, 0x77 };
+#define AC3_MISC_LEN (B_AC3_SYNC_LEN+3+2)
 
 bool nexus_parse_eac3_frame_hdr(const uint8_t *data, size_t len, eac3_frame_hdr_info *info)
 {
     batom_vec vec;
     batom_cursor curs, *cursor = &curs;
-    bmedia_probe_audio dummy;
+    bmedia_probe_audio probe;
     uint16_t syncword;
     unsigned num_blocks;
     size_t res;
@@ -71,13 +72,16 @@ bool nexus_parse_eac3_frame_hdr(const uint8_t *data, size_t len, eac3_frame_hdr_
         return false;
     }
 
-    res = b_ac3_probe_parse_header(cursor, &dummy, &num_blocks);
+    res = b_ac3_probe_parse_header(cursor, &probe, &num_blocks);
     if (res == 0) {
         ALOGW("Error parsing E-AC3 header");
         return false;
     }
+    ALOGVV("res:%u codec:%u ch:%u sample_size:%u bitrate:%u sample_rate:%u",
+        res, probe.codec, probe.channel_count, probe.sample_size, probe.bitrate, probe.sample_rate);
 
     info->num_audio_blks = num_blocks;
+    info->bitrate = ((res + AC3_MISC_LEN) * 8 * probe.sample_rate) / ((num_blocks * 256) * 1000);
 
     return true;
 }
