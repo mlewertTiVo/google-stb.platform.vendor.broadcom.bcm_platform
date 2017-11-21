@@ -1252,9 +1252,9 @@ static enum hwc2_cbs_e hwc2_want_comp_bypass(
              hwc2_cbs_e::cbs_e_nscfb : hwc2_cbs_e::cbs_e_bypass;
 }
 
-static int hwc2_fps2igrp(
-   uint32_t fps) {
-   switch (fps) {
+static int hwc2_vsync2igrp(
+   uint32_t vsync) {
+   switch (hwc2_vsync2fps(vsync)) {
    case 60: return 0;
    case 50: return 1;
    case 30: return 2;
@@ -1308,10 +1308,10 @@ static void hwc2_set_acfg_l(
       NEXUS_VideoFormat_eUnknown,
    };
 
-   int ifps = hwc2_fps2igrp(dsp->aCfg->vsync);
+   int ifps = hwc2_vsync2igrp(dsp->aCfg->vsync);
    switch (AJOUTE_W_H(dsp->aCfg->ew, dsp->aCfg->eh)) {
    case AJOUTE_W_H(1280,720): fmt = ordered_720_grp[ifps]; break;
-   case AJOUTE_W_H(1920,1280): fmt = ordered_1080_grp[ifps]; break;
+   case AJOUTE_W_H(1920,1080): fmt = ordered_1080_grp[ifps]; break;
    case AJOUTE_W_H(3840,2160): fmt = ordered_2160_grp[ifps]; break;
    case AJOUTE_W_H(4096,2160): fmt = ordered_4k_grp[ifps]; break;
    default: break;
