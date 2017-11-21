@@ -471,8 +471,9 @@ static void hwc2_cfg_collect(
    NEXUS_DisplayCapabilities caps;
    NxClient_DisplayStatus status;
    NEXUS_VideoFormatInfo vi;
-   struct hwc2_dsp_cfg_t *cfg, *cfg_c = NULL;
+   struct hwc2_dsp_cfg_t *cfg, *cfg_c = NULL, *cfg_s = NULL;
    int i, j;
+   bool skip;
 
    NEXUS_VideoFormat ordered_fps[] = {
       NEXUS_VideoFormat_e4096x2160p60hz,
@@ -530,7 +531,7 @@ static void hwc2_cfg_collect(
       dsp->cfgs = cfg;
       dsp->aCfg = dsp->cfgs;
 
-      ALOGI_IF((dsp->lm & LOG_CFGS_DEBUG),
+      ALOGI_IF(HWC2_DUMP_CFG || (dsp->lm & LOG_CFGS_DEBUG),
                "[%s]:[acfg]:%" PRIu64 ":%ux%u:(%ux%u):%ufps\n",
                (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
                (uint64_t)(intptr_t)dsp,
@@ -546,9 +547,30 @@ static void hwc2_cfg_collect(
       if (status.hdmi.status.videoFormatSupported[ordered_fps[i]] &&
           caps.displayFormatSupported[ordered_fps[i]] &&
           ordered_fps[i] != s->format) {
+         NEXUS_VideoFormat_GetInfo(ordered_fps[i], &vi);
+         skip = false;
+         cfg_s = dsp->cfgs;
+         while (cfg_s != NULL) {
+            if (cfg_s->vsync == hwc2_fps2vsync(vi.verticalFreq/100) &&
+                (vi.width >= HWC2_FB_MAX_W) && (cfg_s->ew >= HWC2_FB_MAX_W) &&
+                (vi.height >= HWC2_FB_MAX_H) && (cfg_s->eh >= HWC2_FB_MAX_H)) {
+               skip = true;
+               ALOGI_IF((dsp->lm & LOG_CFGS_DEBUG),
+                        "[%s]:[skip]:%" PRIu64 ":%ux%u,%ufps::use:%ux%u,%ufps\n",
+                        (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
+                        (uint64_t)(intptr_t)dsp,
+                        vi.width, vi.height, vi.verticalFreq/100,
+                        cfg_s->ew, cfg_s->eh, hwc2_vsync2fps(cfg_s->vsync));
+            }
+            cfg_s = skip ? NULL : cfg_s->next;
+         };
+         if (skip) {
+            i++;
+            continue;
+         }
+
          cfg = (struct hwc2_dsp_cfg_t *)malloc(sizeof(struct hwc2_dsp_cfg_t));
          if (cfg) {
-            NEXUS_VideoFormat_GetInfo(ordered_fps[i], &vi);
             j++;
             cfg->next  = NULL;
             cfg->w     = (vi.width > HWC2_FB_MAX_W) ? HWC2_FB_MAX_W : vi.width;
@@ -557,7 +579,7 @@ static void hwc2_cfg_collect(
             cfg->eh    = vi.height;
             cfg->vsync = hwc2_fps2vsync(vi.verticalFreq/100);
 
-            ALOGI_IF((dsp->lm & LOG_CFGS_DEBUG),
+            ALOGI_IF(HWC2_DUMP_CFG || (dsp->lm & LOG_CFGS_DEBUG),
                      "[%s]:[cfg:%d]:%" PRIu64 ":%ux%u:(%ux%u):%ufps\n",
                      (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
                      j, (uint64_t)(intptr_t)dsp,
