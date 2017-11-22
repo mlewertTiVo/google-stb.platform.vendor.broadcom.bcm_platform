@@ -130,6 +130,8 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_DUMP_NOW   "dyn.nx.hwc2.dump.this"
 #define HWC2_DUMP_LOC   "/data/nxmedia/hwc2"
 
+#define HWC2_VIDOUT_FMT "dyn.nx.vidout.hwc"
+
 /* wrapper around nexus hotplug event listener binder. do
  * not use directly, use the strong pointer wrap instead.
  */
