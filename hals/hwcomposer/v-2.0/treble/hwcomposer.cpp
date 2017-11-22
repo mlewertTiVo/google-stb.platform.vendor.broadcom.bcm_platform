@@ -1287,7 +1287,7 @@ static int hwc2_vsync2igrp(
 }
 
 #define AJOUTE_W_H(w,h) ((w)+(h))
-static void hwc2_set_acfg_l(
+static void hwc2_set_acfg(
    struct hwc2_dsp_t *dsp) {
    NxClient_DisplaySettings settings;
 
@@ -1330,6 +1330,9 @@ static void hwc2_set_acfg_l(
       NEXUS_VideoFormat_eUnknown,
    };
 
+   if (pthread_mutex_lock(&dsp->mtx_cfg)) {
+      return;
+   }
    int ifps = hwc2_vsync2igrp(dsp->aCfg->vsync);
    switch (AJOUTE_W_H(dsp->aCfg->ew, dsp->aCfg->eh)) {
    case AJOUTE_W_H(1280,720): fmt = ordered_720_grp[ifps]; break;
@@ -1338,12 +1341,18 @@ static void hwc2_set_acfg_l(
    case AJOUTE_W_H(4096,2160): fmt = ordered_4k_grp[ifps]; break;
    default: break;
    }
+   pthread_mutex_unlock(&dsp->mtx_cfg);
 
    if (fmt != NEXUS_VideoFormat_eUnknown && settings.format != fmt) {
+      char fmt_str[32];
       ALOGI("[%s]:display-format::%d->%d",
          (dsp->type==HWC2_DISPLAY_TYPE_VIRTUAL)?"vd":"ext",
          settings.format, fmt);
       settings.format = fmt;
+      /* prevent automatic selection of 'better' display resolution.
+       */
+      sprintf(fmt_str, "%d", fmt);
+      property_set(HWC2_VIDOUT_FMT, fmt_str);
       NxClient_SetDisplaySettings(&settings);
       /* the resulting display change callback should take care of updating
        * the composition mode.
@@ -2177,10 +2186,13 @@ static size_t hwc2_dump_gen(
       if (max-current > 0) {
          NEXUS_DynamicRangeProcessingSettings d;
          current += snprintf(&hwc2->dump[current], max-current,
-            "\t[ext][%s]:%" PRIu64 ":%s:%" PRIu32 "x%" PRIu32 ":(%" PRIu32 "x%" PRIu32 "):%" PRIu32 ",%" PRIu32 ":op{%d,%d,%dx%d}:%" PRIu64 ":%" PRIu64 "\n",
+            "\t[ext][%s]:%" PRIu64 ":%s:%" PRIu32 "x%" PRIu32 ":(%" PRIu32 "x%" PRIu32 "):%ufps:%" PRIu32 ",%" PRIu32 ":op{%d,%d,%dx%d}:%" PRIu64 ":%" PRIu64 "\n",
             dsp->u.ext.gles?"gles":"m2mc",
             (hwc2_display_t)(intptr_t)dsp, dsp->name,
-            dsp->aCfg->w, dsp->aCfg->h, dsp->aCfg->ew, dsp->aCfg->eh, dsp->aCfg->xdp, dsp->aCfg->ydp,
+            dsp->aCfg->w, dsp->aCfg->h,
+            dsp->aCfg->ew, dsp->aCfg->eh,
+            hwc2_vsync2fps(dsp->aCfg->vsync),
+            dsp->aCfg->xdp, dsp->aCfg->ydp,
             hwc2->ext->op.x, hwc2->ext->op.y, hwc2->ext->op.w, hwc2->ext->op.h,
             dsp->pres, dsp->post);
          NEXUS_Display_GetGraphicsDynamicRangeProcessingSettings(&d);
@@ -4155,13 +4167,14 @@ static int32_t hwc2_sActCfg(
    };
    if (cfg == NULL) {
       ret = HWC2_ERROR_BAD_PARAMETER;
+      pthread_mutex_unlock(&dsp->mtx_cfg);
       goto out;
    } else {
       dsp->aCfg = cfg;
+      pthread_mutex_unlock(&dsp->mtx_cfg);
       /* act on the new configuration requested. */
-      hwc2_set_acfg_l(dsp);
+      hwc2_set_acfg(dsp);
    }
-   pthread_mutex_unlock(&dsp->mtx_cfg);
 
 out:
    ALOGE_IF((ret!=HWC2_ERROR_NONE)||HWC2_LOGRET_ALWAYS,

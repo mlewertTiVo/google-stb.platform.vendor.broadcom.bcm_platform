@@ -128,6 +128,8 @@ typedef void (* HWC_BINDER_NTFY_CB)(void *, int, struct hwc_notification_info &)
 #define HWC2_DUMP_NOW   "dyn.nx.hwc2.dump.this"
 #define HWC2_DUMP_LOC   "/data/nxmedia/hwc2"
 
+#define HWC2_VIDOUT_FMT "dyn.nx.vidout.hwc"
+
 /* callbacks into client registered on launch. */
 struct hwc2_reg_cb_t {
    hwc2_callback_descriptor_t desc;
