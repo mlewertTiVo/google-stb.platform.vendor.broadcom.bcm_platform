@@ -612,17 +612,165 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
 
     // For playpump mode, parse the frame header to determine the bitrate
     if (bout->nexus.direct.playpump_mode && bout->nexus.direct.bitrate == 0 ) {
-        const uint8_t *syncframe = (const uint8_t *)memmem(buffer, bytes, g_nexus_parse_eac3_syncword, sizeof(g_nexus_parse_eac3_syncword));
-        if (syncframe != NULL) {
+        if (bout->config.format == AUDIO_FORMAT_AC3) {
+            // For AC3, get bitrate from the header
+            const uint8_t *syncframe;
             eac3_frame_hdr_info info;
-            if (nexus_parse_eac3_frame_hdr(syncframe, bytes - (syncframe - (const uint8_t *)buffer), &info)) {
-                bout->nexus.direct.bitrate = info.bitrate;
-                bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
+
+            syncframe = nexus_find_ac3_sync_frame((uint8_t *)buffer, bytes, &info);
+            if (syncframe == NULL) {
+                // Do not fill playpump until first sync frame is found
+                ALOGE("%s: Sync frame not found", __FUNCTION__);
+                return bytes;
             }
-            else {
-                ALOGV("%s: Error parsing E-AC3 sync frame", __FUNCTION__);
+            if (syncframe != buffer) {
+                ALOGE("%s: Stream not starting with sync frame", __FUNCTION__);
             }
-            ALOGI_IF(bout->nexus.direct.bitrate > 0, "%s: %u Kbps detected, mpy:%u", __FUNCTION__, bout->nexus.direct.bitrate, bout->nexus.direct.frame_multiplier);
+
+            bout->nexus.direct.bitrate = info.bitrate;
+            bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
+            ALOGI("%s: %u Kbps AC3 detected, mpy:%u", __FUNCTION__,
+                    bout->nexus.direct.bitrate, bout->nexus.direct.frame_multiplier);
+
+        } else if (bout->config.format == AUDIO_FORMAT_E_AC3) {
+            // For E-AC3, get bitrate from frame sizes of all dependent frames
+            const uint8_t *syncframe = NULL;
+            size_t bytes_to_copy = 0;
+            eac3_frame_hdr_info info;
+
+            if (bout->nexus.direct.eac3.syncframe_len == 0) {
+                // Look for first syncframe of independent substream 0 to determine frameszie
+                syncframe = nexus_find_eac3_independent_frame((uint8_t *)buffer, bytes, 0, &info);
+                if (syncframe == NULL) {
+                    // Do not fill playpump until first sync frame is found
+                    ALOGE("%s: Sync frame not found", __FUNCTION__);
+                    return bytes;
+                }
+                if (syncframe != buffer) {
+                    bytes_written = (syncframe - (const uint8_t *)buffer);
+                    bytes -= bytes_written;
+                    ALOGE("%s: Stream not starting with sync frame.  Skipping %u bytes", __FUNCTION__, bytes_written);
+                }
+
+                // Save buffer
+                bytes_to_copy = bytes;
+            } else {
+                // Save as much as we can into sync frame buffer
+                syncframe = (const uint8_t *)buffer;
+                bytes_to_copy = bytes;
+            }
+
+            if (bytes_to_copy > (NEXUS_EAC3_SYNCFRAME_BUFFER_SIZE - bout->nexus.direct.eac3.syncframe_len)) {
+                bytes_to_copy = (NEXUS_EAC3_SYNCFRAME_BUFFER_SIZE - bout->nexus.direct.eac3.syncframe_len);
+            }
+            ALOGVV("%s: Copy %u bytes from %p to %p:%u %p", __FUNCTION__,
+            bytes_to_copy, syncframe,
+            bout->nexus.direct.eac3.syncframe, bout->nexus.direct.eac3.syncframe_len,
+            bout->nexus.direct.eac3.syncframe + bout->nexus.direct.eac3.syncframe_len);
+            memcpy(bout->nexus.direct.eac3.syncframe + bout->nexus.direct.eac3.syncframe_len, syncframe, bytes_to_copy);
+            bout->nexus.direct.eac3.syncframe_len += bytes_to_copy;
+            bytes_written += bytes_to_copy;
+            bytes -= bytes_to_copy;
+
+            // Look for next syncframe of independent substream 0 to determine frameszie
+            syncframe = nexus_find_eac3_independent_frame(bout->nexus.direct.eac3.syncframe + 2,
+                    bout->nexus.direct.eac3.syncframe_len - 2, 0, &info);
+            if (syncframe) {
+                size_t frame_size = syncframe - bout->nexus.direct.eac3.syncframe;
+                bout->nexus.direct.bitrate = (frame_size * 8 * info.sample_rate) / (info.num_audio_blks * 256 * 1000);
+            }
+
+            if (!bout->nexus.direct.bitrate && bytes) {
+                ALOGE("%s: Cannot determine bitrate of EAC3.  Assuming 384 kbps", __FUNCTION__);
+                bout->nexus.direct.bitrate = 384;
+            }
+
+            if (bout->nexus.direct.bitrate) {
+                ALOGI("%s: %u Kbps EAC3 detected, mpy:%u", __FUNCTION__, bout->nexus.direct.bitrate, bout->nexus.direct.frame_multiplier);
+                size_t syncframe_bytes_written = 0;
+                size_t bytes_to_copy = 0;
+                NEXUS_AudioDecoderStatus decoderStatus;
+                NEXUS_PlaypumpStatus playpumpStatus;
+                NEXUS_AudioDecoderTrickState trickState;
+
+                NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &decoderStatus);
+                NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
+                NEXUS_SimpleAudioDecoder_GetTrickState(simple_decoder, &trickState);
+                ALOGVV("%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u, trick=%u", __FUNCTION__,
+                    decoderStatus.codecStatus.ac3.bitrate,
+                    decoderStatus.fifoDepth,
+                    decoderStatus.fifoSize,
+                    playpumpStatus.fifoDepth,
+                    playpumpStatus.fifoSize,
+                    trickState.rate);
+
+                ALOG_ASSERT(bout->nexus.direct.priming);
+                ALOG_ASSERT(!trickState.rate);
+
+                // Write saved syncframes to playpump
+                while (bout->nexus.direct.eac3.syncframe_len) {
+                    void *nexus_buffer;
+                    size_t nexus_space;
+
+                    ALOGVV("%s: at %d, Playpump_GetBuffer", __FUNCTION__, __LINE__);
+                    ret = NEXUS_Playpump_GetBuffer(playpump, &nexus_buffer, &nexus_space);
+                    ALOGVV("%s: at %d, Playpump_GetBuffer got %d bytes", __FUNCTION__, __LINE__, nexus_space);
+                    if (ret) {
+                        ALOGE("%s: at %d, get buffer failed, ret = %d",
+                             __FUNCTION__, __LINE__, ret);
+                        return -ENOSYS;
+                    }
+                    if (nexus_space) {
+                        bytes_to_copy = (bout->nexus.direct.eac3.syncframe_len <= nexus_space) ?
+                           bout->nexus.direct.eac3.syncframe_len : nexus_space;
+                        memcpy(nexus_buffer,
+                               (void *)(bout->nexus.direct.eac3.syncframe + syncframe_bytes_written),
+                               bytes_to_copy);
+
+                        ret = NEXUS_Playpump_WriteComplete(playpump, 0, bytes_to_copy);
+                        if (ret) {
+                            ALOGE("%s: at %d, commit buffer failed, ret = %d",
+                                 __FUNCTION__, __LINE__, ret);
+                            return -ENOSYS;
+                        }
+                        syncframe_bytes_written += bytes_to_copy;
+                        bout->nexus.direct.eac3.syncframe_len -= bytes_to_copy;
+                    } else {
+                        ALOGE("%s: at %d, unable to get space from playpump.", __FUNCTION__, __LINE__);
+                        return -ENOMEM;
+                    }
+                }
+
+                // Finish priming playpump if enough data
+                if (bout->nexus.direct.playpump_mode && bout->nexus.direct.priming && bout->nexus.direct.bitrate) {
+                    NEXUS_SimpleAudioDecoder_GetStatus(simple_decoder, &decoderStatus);
+                    NEXUS_Playpump_GetStatus(playpump, &playpumpStatus);
+                    ALOGVV("%s: AC3 bitrate = %u, decoder = %u/%u, playpump = %u/%u, trick=%u", __FUNCTION__,
+                        decoderStatus.codecStatus.ac3.bitrate,
+                        decoderStatus.fifoDepth,
+                        decoderStatus.fifoSize,
+                        playpumpStatus.fifoDepth,
+                        playpumpStatus.fifoSize,
+                        trickState.rate);
+
+                    if ((decoderStatus.fifoDepth + playpumpStatus.fifoDepth) >=
+                            BITRATE_TO_BYTES_PER_125_MS(bout->nexus.direct.bitrate)) {
+                        NEXUS_Error res;
+
+                        ALOGV("%s: at %d, Already have enough data.  Finished priming.", __FUNCTION__, __LINE__);
+                        trickState.rate = NEXUS_NORMAL_DECODE_RATE;
+                        res = NEXUS_SimpleAudioDecoder_SetTrickState(simple_decoder, &trickState);
+                        if (res == NEXUS_SUCCESS) {
+                            bout->nexus.direct.priming = false;
+                        } else {
+                            ALOGE("%s: Error resuming audio decoder %u", __FUNCTION__, res);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Should never get here
+            ALOG_ASSERT(0);
         }
     }
 
@@ -913,6 +1061,16 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
             bout->nexus.direct.transcode_latency = property_get_int32(
                             BRCM_PROPERTY_AUDIO_OUTPUT_EAC3_TRANS_LATENCY,
                             BRCM_AUDIO_DIRECT_EAC3_TRANS_LATENCY);
+            if (bout->nexus.direct.eac3.syncframe) {
+                free(bout->nexus.direct.eac3.syncframe);
+                bout->nexus.direct.eac3.syncframe = NULL;
+            }
+            bout->nexus.direct.eac3.syncframe = (uint8_t *)malloc(NEXUS_EAC3_SYNCFRAME_BUFFER_SIZE);
+            if (!bout->nexus.direct.eac3.syncframe) {
+                ALOGE("%s: Failed to allocate sync frame buffer", __FUNCTION__);
+                return -ENOMEM;
+            }
+            bout->nexus.direct.eac3.syncframe_len = 0;
         }
 
         if (!bout->nexus.direct.playpump_mode) {
@@ -1055,6 +1213,7 @@ static int nexus_direct_bout_open(struct brcm_stream_out *bout)
     bout->nexus.direct.simple_decoder = simple_decoder;
     bout->nexus.direct.lastCount = 0;
     bout->nexus.direct.bitrate = 0;
+    bout->nexus.direct.eac3.syncframe_len = 0;
     bout->nexus.direct.frame_multiplier = nexus_direct_bout_get_frame_multipler(bout);
     bout->nexus.event = event;
     bout->nexus.state = BRCM_NEXUS_STATE_CREATED;
@@ -1131,6 +1290,22 @@ static int nexus_direct_bout_close(struct brcm_stream_out *bout)
     return 0;
 }
 
+static int nexus_direct_bout_dump(struct brcm_stream_out *bout, int fd)
+{
+   dprintf(fd, "\nnexus_direct_bout_dump:\n"
+            "\tpid-channel = %p\n"
+            "\tplaypump    = %p (%s)\n"
+            "\tdecoder     = %p\n"
+            "\tbitrate     = %u\n",
+            (void *)bout->nexus.direct.pid_channel,
+            (void *)bout->nexus.direct.playpump,
+            bout->nexus.direct.playpump_mode?"enabled":"disabled",
+            (void *)bout->nexus.direct.simple_decoder,
+            bout->nexus.direct.bitrate);
+
+   return 0;
+}
+
 struct brcm_stream_out_ops nexus_direct_bout_ops = {
     .do_bout_open = nexus_direct_bout_open,
     .do_bout_close = nexus_direct_bout_close,
@@ -1141,7 +1316,7 @@ struct brcm_stream_out_ops nexus_direct_bout_ops = {
     .do_bout_set_volume = nexus_direct_bout_set_volume,
     .do_bout_get_render_position = nexus_direct_bout_get_render_position,
     .do_bout_get_presentation_position = nexus_direct_bout_get_presentation_position,
-    .do_bout_dump = NULL,
+    .do_bout_dump = nexus_direct_bout_dump,
     .do_bout_get_parameters = nexus_direct_bout_get_parameters,
     .do_bout_pause = nexus_direct_bout_pause,
     .do_bout_resume = nexus_direct_bout_resume,
