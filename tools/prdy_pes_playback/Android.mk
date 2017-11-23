@@ -51,6 +51,8 @@ LOCAL_SRC_FILES := \
     bpiff.c \
     piff_parser.c
 
+LOCAL_MULTILIB := 32
+# LOCAL_MULTILIB := both
 LOCAL_MODULE := prdy_pes_playback_nxclient
 LOCAL_MODULE_TAGS := optional
 

@@ -651,7 +651,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                 if (bout->nexus.direct.bitrate &&
                     (decoderStatus.fifoDepth + playpumpStatus.fifoDepth) >=
                          BITRATE_TO_BYTES_PER_125_MS(bout->nexus.direct.bitrate)) {
-                    ALOGV("%s: at %d, Already have enough data %u/%u.", __FUNCTION__, __LINE__,
+                    ALOGV("%s: at %d, Already have enough data %zu/%u.", __FUNCTION__, __LINE__,
                           (decoderStatus.fifoDepth + playpumpStatus.fifoDepth),
                            BITRATE_TO_BYTES_PER_125_MS(decoderStatus.codecStatus.ac3.bitrate));
                     pthread_mutex_unlock(&bout->lock);
