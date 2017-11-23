@@ -46,7 +46,71 @@
 using namespace android;
 
 const uint8_t g_nexus_parse_eac3_syncword[2] = { 0x0B, 0x77 };
-#define AC3_MISC_LEN (B_AC3_SYNC_LEN+3+2)
+
+#define EAC3_HEADER_LEN         (sizeof(g_nexus_parse_eac3_syncword) + 3)
+
+#define EAC3_STRMTYP_MASK       0x03
+#define EAC3_STRMTYP_SHIFT      6
+#define EAC3_SUBSTREAMID_MASK   0x07
+#define EAC3_SUBSTREAMID_SHIFT  3
+#define EAC3_FRMSIZ_MASK        0x07
+#define EAC3_FRMSIZ_SHIFT       0
+
+#define EAC3_STRMTYP_0 0
+#define EAC3_STRMTYP_2 2
+
+const uint8_t *nexus_find_ac3_sync_frame(const uint8_t *data, size_t len, eac3_frame_hdr_info *info)
+{
+    const uint8_t *syncframe = NULL;
+
+    ALOG_ASSERT(data != NULL && info != NULL);
+
+    syncframe = (const uint8_t *)memmem(data, len, g_nexus_parse_eac3_syncword, sizeof(g_nexus_parse_eac3_syncword));
+
+    if (!syncframe)
+        return NULL;
+
+    if (nexus_parse_eac3_frame_hdr(syncframe, len - (syncframe - data), info))
+        return syncframe;
+
+    ALOGV("%s: Error parsing AC3 sync frame", __FUNCTION__);
+    return NULL;
+}
+
+const uint8_t *nexus_find_eac3_independent_frame(const uint8_t *data, size_t len, unsigned substream, eac3_frame_hdr_info *info)
+{
+    const uint8_t *syncframe = NULL;
+    uint8_t strmtyp;
+    uint8_t substreamid;
+    uint16_t frmsiz;
+
+    ALOG_ASSERT(data != NULL && info != NULL);
+
+    while (len >= EAC3_HEADER_LEN) {
+        syncframe = (const uint8_t *)memmem(data, len, g_nexus_parse_eac3_syncword, sizeof(g_nexus_parse_eac3_syncword));
+        if (!syncframe)
+            return NULL;
+
+        strmtyp = (syncframe[2] >> EAC3_STRMTYP_SHIFT) & EAC3_STRMTYP_MASK;
+        substreamid = (syncframe[2] >> EAC3_SUBSTREAMID_SHIFT) & EAC3_SUBSTREAMID_MASK;
+        frmsiz = ((uint16_t)((syncframe[2] >> EAC3_FRMSIZ_SHIFT) & EAC3_FRMSIZ_MASK) << 8) + (uint16_t)syncframe[3];
+
+        if (((strmtyp == EAC3_STRMTYP_0) || (strmtyp == EAC3_STRMTYP_2)) &&
+            (substreamid == substream)) {
+            if (nexus_parse_eac3_frame_hdr(syncframe, len - (syncframe - data), info))
+                return syncframe;
+            ALOGV("%s: Error parsing EAC3 sync frame", __FUNCTION__);
+        }
+
+        // Not found, skip over just the sync word and look for next one
+        len -= ((syncframe - data) + sizeof(g_nexus_parse_eac3_syncword));
+        data = syncframe + sizeof(g_nexus_parse_eac3_syncword);
+    }
+
+    // No more syncwords found
+    return NULL;
+}
+
 
 bool nexus_parse_eac3_frame_hdr(const uint8_t *data, size_t len, eac3_frame_hdr_info *info)
 {
@@ -74,14 +138,15 @@ bool nexus_parse_eac3_frame_hdr(const uint8_t *data, size_t len, eac3_frame_hdr_
 
     res = b_ac3_probe_parse_header(cursor, &probe, &num_blocks);
     if (res == 0) {
-        ALOGW("Error parsing E-AC3 header");
+        ALOGW("Error parsing AC3 header");
         return false;
     }
     ALOGVV("res:%u codec:%u ch:%u sample_size:%u bitrate:%u sample_rate:%u",
         res, probe.codec, probe.channel_count, probe.sample_size, probe.bitrate, probe.sample_rate);
 
     info->num_audio_blks = num_blocks;
-    info->bitrate = ((res + AC3_MISC_LEN) * 8 * probe.sample_rate) / ((num_blocks * 256) * 1000);
+    info->sample_rate = probe.sample_rate;
+    info->bitrate = probe.bitrate;
 
     return true;
 }
