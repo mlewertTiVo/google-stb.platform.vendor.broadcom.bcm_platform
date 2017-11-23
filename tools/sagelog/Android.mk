@@ -51,6 +51,8 @@ LOCAL_CFLAGS += $(NXCLIENT_CFLAGS)
 
 LOCAL_SHARED_LIBRARIES := libnexus libsrai libsageseclog libcutils libnxclient
 
+LOCAL_MULTILIB := 32
+# LOCAL_MULTILIB := both
 LOCAL_MODULE := sageseclog
 LOCAL_MODULE_TAGS := optional
 LOCAL_PROPRIETARY_MODULE := true

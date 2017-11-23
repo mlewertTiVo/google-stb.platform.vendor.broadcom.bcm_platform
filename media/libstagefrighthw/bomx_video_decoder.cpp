@@ -1102,7 +1102,7 @@ void BOMX_InputDataTracker::SetLastReturnedPts(unsigned pts)
     }
 
     if (erasedFrames >= 2) {
-      ALOGV("Erased more than one frame:%u, pts:%u, size:%u",
+      ALOGV("Erased more than one frame:%u, pts:%u, size:%zu",
           erasedFrames, pts, m_ptsTracker.size());
       m_numNotRetBuffers += erasedFrames - 1;
     }
@@ -5079,7 +5079,7 @@ void BOMX_VideoDecoder::ProcessFifoData(bool *pendingData)
             }
         }
 
-        ALOGV("%s: submitted:%u pfifo:%u decoder fifo ts [%d %u %u], queued:%u",
+        ALOGV("%s: submitted:%u pfifo:%zu decoder fifo ts [%d %u %u], queued:%zu",
            __FUNCTION__, m_submittedDescriptors, playpumpStatus.descFifoDepth,
             fifoStatus.pts.valid, fifoStatus.pts.leastRecent, fifoStatus.pts.mostRecent,
             m_inputDataTracker.GetNumEntries());
