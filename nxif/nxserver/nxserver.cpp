@@ -114,6 +114,8 @@
 #define GRAPHICS_RES_WIDTH_PROP        "ro.nx.hwc2.nfb.w"
 #define GRAPHICS_RES_HEIGHT_PROP       "ro.nx.hwc2.nfb.h"
 
+#define NX_LMK_BG                      "ro.nx.lmk.bg"
+#define NX_LMK_TA                      "ro.nx.lmk.ta"
 #define NX_ACT_GC                      "ro.nx.act.gc"
 #define NX_ACT_GS                      "ro.nx.act.gs"
 #define NX_ACT_LMK                     "ro.nx.act.lmk"
@@ -436,9 +438,11 @@ out:
 static void nx_trim_cma(int caller)
 {
    int candidate = NX_INVALID;
+   int lmk;
    ALOGI("nx_trim_cma(%d): trim cma now.", caller);
 
-   gather_memory_stats_per_process(OOM_THRESHOLD_AGRESSIVE, &candidate);
+   lmk = property_get_int32(NX_LMK_TA, OOM_THRESHOLD_AGRESSIVE);
+   gather_memory_stats_per_process(lmk, &candidate);
    /* aggressive lmk'ing of the background processes. */
    if (candidate != NX_INVALID) {
       if (candidate == caller) {
@@ -472,7 +476,7 @@ static void *proactive_runner_task(void *argv)
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
     unsigned gfx_heap_grow_size = 0;
     unsigned gfx_heap_shrink_threshold = 0;
-    int active_gc, active_lmk, active_gs, active_wd;
+    int active_gc, active_lmk, active_gs, active_wd, active_lmk_bg;
     int gc_tick = 0;
     int lmk_tick = 0;
     char value[PROPERTY_VALUE_MAX];
@@ -495,6 +499,7 @@ static void *proactive_runner_task(void *argv)
     active_gs  = property_get_int32(NX_ACT_GS,  1);
     active_lmk = property_get_int32(NX_ACT_LMK, 1);
     active_wd  = property_get_int32(NX_ACT_WD,  1);
+    active_lmk_bg = property_get_int32(NX_LMK_BG, OOM_CONSUME_MAX);
 
     ALOGI("%s: launching, gpx-grow: %u, gpx-shrink: %u, active-gc: %c, active-gs: %c, active-lmk: %c, active-wd: %c",
           __FUNCTION__, gfx_heap_grow_size, gfx_heap_shrink_threshold,
@@ -522,7 +527,7 @@ static void *proactive_runner_task(void *argv)
         *
         */
         if (active_lmk) {
-           gather_memory_stats_per_process(OOM_CONSUME_MAX, &candidate);
+           gather_memory_stats_per_process(active_lmk_bg, &candidate);
            // aggressive lmk'ing of the background processes using more than threshold memory.
            // this requires some further tune up.
            if (candidate != NX_INVALID) {
