@@ -5230,19 +5230,21 @@ static void hwc2_ext_cmp_frame(
          if (lyr->bh == NULL) {
             ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%s (no valid buffer)\n",
                   lyr->hdl, dsp->pres, dsp->post, getCompositionName(lyr->cCli));
-            continue;
-         }
-         private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
-         lrc = hwc2_mem_lock(hwc2, bh, &map);
-         shared = (PSHARED_DATA) map;
-         if (lrc || shared == NULL) {
-            ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared (lbh:%p:bh:%p)\n",
-                  lyr->hdl, dsp->pres, dsp->post, (private_handle_t *)lyr->bh, bh);
-            if (lrc == NEXUS_SUCCESS) {
-               hwc2_mem_unlock(hwc2, bh);
-               lrc = NEXUS_NOT_INITIALIZED;
-            }
             lyr_err = true;
+         }
+         if (!lyr_err) {
+            private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
+            lrc = hwc2_mem_lock(hwc2, bh, &map);
+            shared = (PSHARED_DATA) map;
+            if (lrc || shared == NULL) {
+               ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared (lbh:%p:bh:%p)\n",
+                     lyr->hdl, dsp->pres, dsp->post, (private_handle_t *)lyr->bh, bh);
+               if (lrc == NEXUS_SUCCESS) {
+                  hwc2_mem_unlock(hwc2, bh);
+                  lrc = NEXUS_NOT_INITIALIZED;
+               }
+               lyr_err = true;
+            }
          }
          if (!lyr_err && (((private_handle_t *)lyr->bh)->fmt_set != GR_NONE)) {
             bhp = (NEXUS_MemoryBlockHandle)shared->container.block;
@@ -5265,6 +5267,16 @@ static void hwc2_ext_cmp_frame(
             if (lyr->af >= 0) {
                close(lyr->af);
                lyr->af = HWC2_INVALID;
+            }
+            if (lyr->rf != HWC2_INVALID) {
+               if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
+                  if (ccli == 1) {
+                     hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, HWC2_MAGIC);
+                  }
+               } else {
+                  hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
+                  hwc2_lyr_tl_dequeued(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
+               }
             }
             continue;
          }
