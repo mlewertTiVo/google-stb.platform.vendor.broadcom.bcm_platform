@@ -46,6 +46,7 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <inttypes.h>
 
 #include <string.h>
 #include <cutils/atomic.h>
@@ -125,6 +126,8 @@ typedef struct NexusNxServerContext : public NexusServerContext {
         StandbyMonitorThread &operator=(const StandbyMonitorThread &);
     };
     android::sp<NexusNxServerContext::StandbyMonitorThread> mStandbyMonitorThread;
+    trimCmaFromPid mTrimCma;
+
 } NexusNxServerContext;
 
 NexusNxServerContext::StandbyMonitorThread::StandbyMonitorThread(NexusNxServerContext *pNexusNxServerContext) :
@@ -732,7 +735,7 @@ void NexusNxService::platformUninit()
     NxClient_Uninit();
 }
 
-void NexusNxService::instantiate()
+void NexusNxService::instantiate(trimCmaFromPid trimFnc)
 {
     NexusNxServerContext *server = new NexusNxServerContext();
 
@@ -743,6 +746,7 @@ void NexusNxService::instantiate()
 
     NexusNxService *nexusservice = new NexusNxService();
     if (nexusservice != NULL) {
+        server->mTrimCma = trimFnc;
         nexusservice->server = server;
 
         nexusservice->platformInit();
@@ -753,10 +757,6 @@ void NexusNxService::instantiate()
     else {
         ALOGE("%s: Could not instantiate NexusNxService!!!", __PRETTY_FUNCTION__);
     }
-}
-
-NexusNxService::NexusNxService()
-{
 }
 
 NexusNxService::~NexusNxService()
@@ -821,6 +821,19 @@ void NexusNxService::destroyClientContext(uint64_t client)
 
     BDBG_OBJECT_DESTROY(nxclient, NexusClientContext);
     BKNI_Free(nxclient);
+}
+
+void NexusNxService::trimCmaFromClientContext(uint64_t client)
+{
+    NexusClientContext *nxclient = (NexusClientContext *)(intptr_t)client;
+    BDBG_OBJECT_ASSERT(nxclient, NexusClientContext);
+
+    Mutex::Autolock autoLock(server->mLock);
+
+    NexusNxServerContext *nxServer = static_cast<NexusNxServerContext *>(server);
+    if (nxServer->mTrimCma) {
+       nxServer->mTrimCma(nxclient->clientPid);
+    }
 }
 
 static const NxClient_VideoWindowType videoWindowTypeConversion[] =

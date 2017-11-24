@@ -85,13 +85,16 @@
 #include "nexus_watchdog.h"
 
 #include "PmLibService.h"
+#include <linux/brcmstb/proc_info_proxy.h>
+
+#define NX_CLIENT_USAGE_LOG            0
 
 #define DHD_SECDMA_PROP                "ro.dhd.secdma"
 #define DHD_SECDMA_PARAMS_PATH         "/data/nexus/secdma"
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 #define NEXUS_LOGGER_DATA_PATH         "disabled" // Disable logger use of filesystem
-#define APP_MAX_CLIENTS                (64)
+#define APP_MAX_CLIENTS                (72)
 #define MB                             (1024*1024)
 #define KB                             (1024)
 #define SEC_TO_MSEC                    (1000LL)
@@ -102,12 +105,17 @@
 #define MAX_NX_OBJS                    (2048)
 #define MIN_PLATFORM_DEC               (2)
 #define NSC_FB_NUMBER                  (3)
+#define OOM_SCORE_IGNORE               (-16)
+#define OOM_CONSUME_MAX                (48)
+#define OOM_THRESHOLD_AGRESSIVE        (16)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
 #define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
 #define GRAPHICS_RES_WIDTH_PROP        "ro.nx.hwc2.nfb.w"
 #define GRAPHICS_RES_HEIGHT_PROP       "ro.nx.hwc2.nfb.h"
 
+#define NX_LMK_BG                      "ro.nx.lmk.bg"
+#define NX_LMK_TA                      "ro.nx.lmk.ta"
 #define NX_ACT_GC                      "ro.nx.act.gc"
 #define NX_ACT_GS                      "ro.nx.act.gs"
 #define NX_ACT_LMK                     "ro.nx.act.lmk"
@@ -229,7 +237,12 @@ typedef struct {
     struct {
         nxclient_t client;
         NxClient_JoinSettings joinSettings;
+        unsigned pid;
+        NEXUS_ClientHandle handle;
+        unsigned gfxmem;
+        int score;
     } clients[APP_MAX_CLIENTS];
+    unsigned connected;
     WDOG_T wdog;
     CATCHER_T sigterm;
 } NX_SERVER_T;
@@ -277,24 +290,6 @@ static void nx_wdog_midpoint(void *context, int param)
       NEXUS_Watchdog_StartTimer();
       BKNI_ReleaseMutex(nx_server->wdog.lock);
    }
-}
-
-static void *binder_task(void *argv)
-{
-    NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
-
-    prctl(PR_SET_NAME, "nxserver.binder");
-
-    do {
-       android::ProcessState::self()->startThreadPool();
-       NexusNxService::instantiate();
-       PmLibService::instantiate();
-       android::IPCThreadState::self()->joinThreadPool();
-
-    } while(nx_server->binder.running);
-
-done:
-    return NULL;
 }
 
 static void *standby_monitor_task(void *argv)
@@ -364,17 +359,129 @@ done:
     return NULL;
 }
 
+// devices with v3d mmu have a gem driver which logs data to the
+// dri debugfs, we gather the information fro there.  legacy devices
+// without v3d mmu do not have this information and will work as before
+// for the moment.
+#define NX_DRM_ROOT "/sys/kernel/debug/dri/0/"
+static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) {
+    unsigned i, memory = 0;
+    char memstats[128];
+    int fd, pip, selected;
+    int rc;
+
+    *candidate = NX_INVALID;
+    selected = NX_INVALID;
+
+    if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
+        goto out;
+    }
+    pip = open("/dev/bcmpip", O_RDWR);
+    for (i = 0; i < APP_MAX_CLIENTS; i++) {
+        if (g_app.clients[i].client && g_app.clients[i].pid) {
+            sprintf(memstats, "%s/%d/rawcma", NX_DRM_ROOT, g_app.clients[i].pid);
+            fd = open(memstats, O_RDONLY);
+            if (fd >= 0) {
+               memset(memstats, 0, sizeof(memstats));
+               rc = read(fd, memstats, sizeof(memstats));
+               close(fd);
+               g_app.clients[i].gfxmem = strtoul(memstats, NULL, 10);
+            } else {
+               g_app.clients[i].gfxmem = 0;
+            }
+            g_app.clients[i].score = OOM_SCORE_IGNORE;
+            if (g_app.clients[i].gfxmem) {
+               struct proxy_info_oomadj oomadj;
+               oomadj.pid = g_app.clients[i].pid;
+               if (pip >= 0) {
+                  rc = ioctl(pip, PROC_INFO_IOCTL_PROXY_GET_OOMADJ, &oomadj);
+                  if (rc >= 0) {
+                     g_app.clients[i].score = oomadj.score;
+                  }
+               }
+            }
+
+            ALOGI_IF(NX_CLIENT_USAGE_LOG && g_app.clients[i].gfxmem,
+               "client[%u]:%u::cma:%uMB::score:%d", i,
+               g_app.clients[i].pid,
+               g_app.clients[i].gfxmem,
+               g_app.clients[i].score);
+
+            if (g_app.clients[i].gfxmem >= threshold &&
+                g_app.clients[i].score > 0) {
+                if (selected == NX_INVALID) {
+                   selected = i;
+                   break;
+                }
+                if (g_app.clients[i].score > g_app.clients[selected].score) {
+                   selected = i;
+                }
+            }
+        }
+    }
+    if (selected != NX_INVALID) {
+       *candidate = g_app.clients[selected].pid;
+       ALOGI("oom-kill[%u]:%u::cma:%uMB::score:%d", selected,
+          *candidate,
+          g_app.clients[selected].gfxmem,
+          g_app.clients[selected].score);
+    }
+    if (pip >= 0) {
+       close(pip);
+    }
+    BKNI_ReleaseMutex(g_app.clients_lock);
+out:
+    return;
+
+}
+
+static void nx_trim_cma(int caller)
+{
+   int candidate = NX_INVALID;
+   int lmk;
+   ALOGI("nx_trim_cma(%d): trim cma now.", caller);
+
+   lmk = property_get_int32(NX_LMK_TA, OOM_THRESHOLD_AGRESSIVE);
+   gather_memory_stats_per_process(lmk, &candidate);
+   /* aggressive lmk'ing of the background processes. */
+   if (candidate != NX_INVALID) {
+      if (candidate == caller) {
+         ALOGW("nx_trim_cma(%d): FIXME! not suicidal...", caller);
+      } else {
+         kill(candidate, SIGKILL);
+      }
+   }
+}
+
+static void *binder_task(void *argv)
+{
+    NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
+
+    prctl(PR_SET_NAME, "nxserver.binder");
+
+    do {
+       android::ProcessState::self()->startThreadPool();
+       NexusNxService::instantiate(&nx_trim_cma);
+       PmLibService::instantiate();
+       android::IPCThreadState::self()->joinThreadPool();
+
+    } while(nx_server->binder.running);
+
+done:
+    return NULL;
+}
+
 static void *proactive_runner_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
     unsigned gfx_heap_grow_size = 0;
     unsigned gfx_heap_shrink_threshold = 0;
-    int active_gc, active_lmk, active_gs, active_wd;
+    int active_gc, active_lmk, active_gs, active_wd, active_lmk_bg;
     int gc_tick = 0;
     int lmk_tick = 0;
     char value[PROPERTY_VALUE_MAX];
     bool needs_growth;
-    int i, j;
+    int i, j, candidate = NX_INVALID;
 
     prctl(PR_SET_NAME, "nxserver.proac");
 
@@ -390,8 +497,9 @@ static void *proactive_runner_task(void *argv)
     }
     active_gc  = property_get_int32(NX_ACT_GC,  1);
     active_gs  = property_get_int32(NX_ACT_GS,  1);
-    active_lmk = property_get_int32(NX_ACT_LMK, 0);
+    active_lmk = property_get_int32(NX_ACT_LMK, 1);
     active_wd  = property_get_int32(NX_ACT_WD,  1);
+    active_lmk_bg = property_get_int32(NX_LMK_BG, OOM_CONSUME_MAX);
 
     ALOGI("%s: launching, gpx-grow: %u, gpx-shrink: %u, active-gc: %c, active-gs: %c, active-lmk: %c, active-wd: %c",
           __FUNCTION__, gfx_heap_grow_size, gfx_heap_shrink_threshold,
@@ -417,20 +525,16 @@ static void *proactive_runner_task(void *argv)
         * 3) proactive LMK on behalf of android for nexus managed memory not seen in
         *    standard LMK.
         *
-        * 4) kick the platform's reset watchdog timer. The watchdog can be kicked by
-        *    writing any single character to the watchdog device. On a normal exit, the
-        *    magic letter 'V' must be written to the watchdog before closing the file,
-        *    which will stop the device. If not kicked within 30 seconds, the watchdog
-        *    will expire and trigger a system reset.
-        *
         */
-
-        if (++lmk_tick > RUNNER_LMK_THRESHOLD) {
-           if (!active_lmk) {
-              goto skip_lmk;
+        if (active_lmk) {
+           gather_memory_stats_per_process(active_lmk_bg, &candidate);
+           // aggressive lmk'ing of the background processes using more than threshold memory.
+           // this requires some further tune up.
+           if (candidate != NX_INVALID) {
+              kill(candidate, SIGKILL);
            }
         }
-skip_lmk:
+
         if (gfx_heap_grow_size) {
            if (BKNI_AcquireMutex(g_app.standby_lock) == BERR_SUCCESS) {
               if (g_app.standbyState.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
@@ -458,7 +562,7 @@ skip_lmk:
                  }
 
                  if (active_gs && needs_growth) {
-                    ALOGI("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
+                    ALOGV("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
                     NEXUS_Platform_GrowHeap(
                        platformConfig.heap[g_app.dcma_index],
                        (size_t)gfx_heap_grow_size);
@@ -529,6 +633,8 @@ done:
 static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinSettings, NEXUS_ClientSettings *pClientSettings)
 {
     unsigned i;
+    struct nxclient_status status;
+    nxclient_get_status(client, &status);
     BSTD_UNUSED(pClientSettings);
     if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
         ALOGE("failed to add client %p", client);
@@ -536,9 +642,21 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
     }
     for (i = 0; i < APP_MAX_CLIENTS; i++) {
         if (!g_app.clients[i].client) {
-            g_app.clients[i].client = client;
+            g_app.clients[i].client       = client;
+            g_app.clients[i].pid          = status.pid;
+            g_app.clients[i].handle       = status.handle;
             g_app.clients[i].joinSettings = *pJoinSettings;
-            ALOGV("client_connect(%d): '%s'::%p", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client);
+            g_app.connected++;
+            if (g_app.connected >= APP_MAX_CLIENTS) {
+               ALOGE("INSUFFICIENT CLIENT CACHE BLOCKS!");
+               g_app.connected = APP_MAX_CLIENTS;
+            }
+            ALOGI_IF(NX_CLIENT_USAGE_LOG,
+               "connect[%u]:%u::%p::'%s'::%p", i,
+               g_app.clients[i].pid,
+               g_app.clients[i].handle,
+               g_app.clients[i].joinSettings.name,
+               g_app.clients[i].client);
             break;
         }
     }
@@ -557,8 +675,17 @@ static void client_disconnect(nxclient_t client, const NxClient_JoinSettings *pJ
     }
     for (i=0;i<APP_MAX_CLIENTS;i++) {
         if (g_app.clients[i].client == client) {
-            ALOGV("client_disconnect(%d): '%s'::%p", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client);
+            ALOGI_IF(NX_CLIENT_USAGE_LOG,
+               "disconnect[%u]:%u::%p::%p", i,
+               g_app.clients[i].pid,
+               g_app.clients[i].handle,
+               g_app.clients[i].client);
             g_app.clients[i].client = NULL;
+            g_app.clients[i].pid    = 0;
+            g_app.clients[i].handle = NULL;
+            if (g_app.connected > 0) {
+               g_app.connected--;
+            }
             break;
         }
     }

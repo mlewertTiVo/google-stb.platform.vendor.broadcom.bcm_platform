@@ -234,6 +234,12 @@ void NexusNxClient::destroyClientContext(uint64_t client)
     return;
 }
 
+void NexusNxClient::trimCmaFromClientContext(uint64_t client)
+{
+    NexusIPCClient::trimCmaFromClientContext(client);
+    return;
+}
+
 bool NexusNxClient::setPowerState(b_powerState pmState)
 {
     NEXUS_Error rc = NEXUS_SUCCESS;

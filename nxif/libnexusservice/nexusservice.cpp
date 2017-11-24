@@ -627,6 +627,11 @@ void NexusService::destroyClientContext(uint64_t client __unused)
    return;
 }
 
+void NexusService::trimCmaFromClientContext(uint64_t client __unused)
+{
+   return;
+}
+
 bool NexusService::setCecAutoWakeupEnabled(uint32_t cecId __unused, bool enabled)
 {
     bool success = true;
@@ -1034,6 +1039,11 @@ status_t NexusService::onTransact(uint32_t code,
             case api_destroyClientContext:
             {
                 destroyClientContext(cmd.param.destroyClientContext.in.client);
+                break;
+            }
+            case api_trimCmaFromClientContext:
+            {
+                trimCmaFromClientContext(cmd.param.trimCmaFromClientContext.in.client);
                 break;
             }
             case api_setPowerState:

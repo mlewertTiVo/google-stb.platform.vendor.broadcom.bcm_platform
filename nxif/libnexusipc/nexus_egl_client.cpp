@@ -55,12 +55,12 @@ class nexus_egl_client : public NexusIPCClientBase
 public:
       static void* IEGL_nexus_join();
       static void IEGL_nexus_unjoin(void *nexus_client);
+      static void IEGL_nexus_trim_cma(void *nexus_client);
 };
 
 void* nexus_egl_client::IEGL_nexus_join()
 {
      uint64_t nexus_client = 0;
-     uint32_t w, h;
 
      NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("Android-EGL");
 
@@ -86,8 +86,17 @@ void nexus_egl_client::IEGL_nexus_unjoin(void *nexus_client)
     return;
 }
 
+void nexus_egl_client::IEGL_nexus_trim_cma(void *nexus_client)
+{
+    NexusIPCClientBase *pIpcClient = NexusIPCClientFactory::getClient("Android-EGL");
+
+    pIpcClient->trimCmaFromClientContext((reinterpret_cast<uint64_t>(nexus_client)));
+    return;
+}
+
 extern "C" void* EGL_nexus_join(char *client_process_name);
 extern "C" void EGL_nexus_unjoin(void *nexus_client);
+extern "C" void EGL_nexus_trim_cma(void *nexus_client);
 
 void* EGL_nexus_join(char *client_process_name __unused)
 {
@@ -109,5 +118,11 @@ void* EGL_nexus_join(char *client_process_name __unused)
 void EGL_nexus_unjoin(void *nexus_client)
 {
     nexus_egl_client::IEGL_nexus_unjoin(nexus_client);
+    return;
+}
+
+void EGL_nexus_trim_cma(void *nexus_client)
+{
+    nexus_egl_client::IEGL_nexus_trim_cma(nexus_client);
     return;
 }

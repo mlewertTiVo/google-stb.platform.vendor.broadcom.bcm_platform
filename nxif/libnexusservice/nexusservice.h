@@ -126,6 +126,7 @@ public:
        because NexusClientContext cannot be referenced between implementations. */
     virtual uint64_t createClientContext(const b_refsw_client_client_name *pClientName, unsigned clientPid);
     virtual void destroyClientContext(uint64_t client);
+    virtual void trimCmaFromClientContext(uint64_t client);
 
     /* These API's do NOT require a Nexus Client Context as they handle global resources...*/
     virtual status_t setHdmiCecMessageEventListener(uint32_t cecId, const sp<INexusHdmiCecMessageEventListener> &listener);

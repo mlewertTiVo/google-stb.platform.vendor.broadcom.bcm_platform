@@ -103,6 +103,7 @@ public:
     /* These API's require a Nexus Client Context as they handle per client resources... */
     virtual uint64_t createClientContext(const b_refsw_client_client_configuration *config = NULL);
     virtual void destroyClientContext(uint64_t client);
+    virtual void trimCmaFromClientContext(uint64_t client);
 
     virtual bool setPowerState(b_powerState pmState);
     virtual bool getPowerStatus(b_powerStatus *pPowerStatus);
