@@ -2246,13 +2246,15 @@ static int32_t hwc2_sclSupp(
 
    if (s.width && d.width &&
        (s.width / d.width) >= hwc2->g2dc.maxHorizontalDownScale) {
-      ALOGW("horizontal:%d->%d::max:%d", s.width, d.width, hwc2->g2dc.maxHorizontalDownScale);
+      ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG), "horizontal:%d->%d::max:%d",
+               s.width, d.width, hwc2->g2dc.maxHorizontalDownScale);
       ret = HWC2_ERROR_UNSUPPORTED;
    }
 
    if (s.height && d.height &&
        (s.height / d.height) >= hwc2->g2dc.maxVerticalDownScale) {
-      ALOGW("horizontal:%d->%d::max:%d", s.height, d.height, hwc2->g2dc.maxVerticalDownScale);
+      ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG), "vertical:%d->%d::max:%d",
+               s.height, d.height, hwc2->g2dc.maxVerticalDownScale);
       ret = HWC2_ERROR_UNSUPPORTED;
    }
 
@@ -3724,16 +3726,18 @@ static uint32_t hwc2_comp_validate(
    while (lyr != NULL) {
       cnt++;
       if (lyr->cCli == HWC2_COMPOSITION_CURSOR) {
-         ALOGI("lyr[%" PRIu64 "]:%s->%s (cursor not supported)", lyr->hdl,
+         ALOGW("lyr[%" PRIu64 "]:%s->%s (cursor not supported)", lyr->hdl,
                getCompositionName(HWC2_COMPOSITION_CURSOR),
                getCompositionName(HWC2_COMPOSITION_DEVICE));
          lyr->cDev = HWC2_COMPOSITION_DEVICE;
       } else if (lyr->cCli == HWC2_COMPOSITION_DEVICE) {
          hwc2_error_t ret = (hwc2_error_t)hwc2_sclSupp(hwc2, &lyr->crp, &lyr->fr);
          if (ret != HWC2_ERROR_NONE) {
-            ALOGW("lyr[%" PRIu64 "]:%s->%s (scaling out of bounds)", lyr->hdl,
-                  getCompositionName(HWC2_COMPOSITION_DEVICE),
-                  getCompositionName(HWC2_COMPOSITION_CLIENT));
+            ALOGI_IF((hwc2->lm & LOG_OFFLD_DEBUG),
+               "lyr[%" PRIu64 "]:%s->%s (scaling out of bounds)",
+               lyr->hdl,
+               getCompositionName(HWC2_COMPOSITION_DEVICE),
+               getCompositionName(HWC2_COMPOSITION_CLIENT));
             lyr->cDev = HWC2_COMPOSITION_CLIENT;
          }
       }
@@ -3862,10 +3866,15 @@ static int32_t hwc2_valDsp(
       lyr = lyr->next;
    }
 
+   if (*outNumTypes > 0) {
+      ret = HWC2_ERROR_HAS_CHANGES;
+   }
+
    dsp->validated = true;
 
 out:
-   ALOGE_IF((ret!=HWC2_ERROR_NONE),"<- %s:%" PRIu64 " (%s)\n",
+   ALOGE_IF(!((ret==HWC2_ERROR_NONE)||(ret==HWC2_ERROR_HAS_CHANGES)),
+      "<- %s:%" PRIu64 " (%s)\n",
       getFunctionDescriptorName(HWC2_FUNCTION_VALIDATE_DISPLAY),
       display, getErrorName(ret));
    return ret;
@@ -4920,7 +4929,7 @@ int hwc2_blit_gpx(
    NEXUS_SurfaceHandle s = NULL, icb = NULL;
    NEXUS_SurfaceStatus ds;
    NEXUS_Graphics2DBlitSettings bs;
-   NEXUS_Rect c, p, sa, da, oa, n;
+   NEXUS_Rect c, p, sa, da, oa, n, ct;
    NEXUS_Error rc;
    int blt = 0;
 
@@ -4960,6 +4969,16 @@ int hwc2_blit_gpx(
       /* don't blit anything if we can skip this layer. */
       blt = HWC2_INVALID;
       goto out;
+   }
+
+   if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
+      ct = {(int16_t)0,
+            (int16_t)0,
+            (uint16_t)shared->container.width,
+            (uint16_t)shared->container.height};
+      sa = ct;
+      da = ct;
+      oa = ct;
    }
 
    /* first blit check if we need to seed. */
@@ -5230,19 +5249,21 @@ static void hwc2_ext_cmp_frame(
          if (lyr->bh == NULL) {
             ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%s (no valid buffer)\n",
                   lyr->hdl, dsp->pres, dsp->post, getCompositionName(lyr->cCli));
-            continue;
-         }
-         private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
-         lrc = hwc2_mem_lock(hwc2, bh, &map);
-         shared = (PSHARED_DATA) map;
-         if (lrc || shared == NULL) {
-            ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared (lbh:%p:bh:%p)\n",
-                  lyr->hdl, dsp->pres, dsp->post, (private_handle_t *)lyr->bh, bh);
-            if (lrc == NEXUS_SUCCESS) {
-               hwc2_mem_unlock(hwc2, bh);
-               lrc = NEXUS_NOT_INITIALIZED;
-            }
             lyr_err = true;
+         }
+         if (!lyr_err) {
+            private_handle_t::get_block_handles((private_handle_t *)lyr->bh, &bh, NULL);
+            lrc = hwc2_mem_lock(hwc2, bh, &map);
+            shared = (PSHARED_DATA) map;
+            if (lrc || shared == NULL) {
+               ALOGE("[ext]:%" PRIu64 ":%" PRIu64 ":%" PRIu64 ": invalid dev-shared (lbh:%p:bh:%p)\n",
+                     lyr->hdl, dsp->pres, dsp->post, (private_handle_t *)lyr->bh, bh);
+               if (lrc == NEXUS_SUCCESS) {
+                  hwc2_mem_unlock(hwc2, bh);
+                  lrc = NEXUS_NOT_INITIALIZED;
+               }
+               lyr_err = true;
+            }
          }
          if (!lyr_err && (((private_handle_t *)lyr->bh)->fmt_set != GR_NONE)) {
             bhp = (NEXUS_MemoryBlockHandle)shared->container.block;
@@ -5265,6 +5286,16 @@ static void hwc2_ext_cmp_frame(
             if (lyr->af >= 0) {
                close(lyr->af);
                lyr->af = HWC2_INVALID;
+            }
+            if (lyr->rf != HWC2_INVALID) {
+               if (lyr->cCli == HWC2_COMPOSITION_CLIENT) {
+                  if (ccli == 1) {
+                     hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, HWC2_MAGIC);
+                  }
+               } else {
+                  hwc2_lyr_tl_inc(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
+                  hwc2_lyr_tl_dequeued(hwc2->ext, HWC2_DSP_EXT, lyr->hdl, lyr->thdl);
+               }
             }
             continue;
          }
