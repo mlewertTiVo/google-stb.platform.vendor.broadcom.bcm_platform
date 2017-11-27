@@ -649,7 +649,7 @@ static int nexus_direct_bout_write(struct brcm_stream_out *bout,
                 if (syncframe != buffer) {
                     bytes_written = (syncframe - (const uint8_t *)buffer);
                     bytes -= bytes_written;
-                    ALOGE("%s: Stream not starting with sync frame.  Skipping %u bytes", __FUNCTION__, bytes_written);
+                    ALOGE("%s: Stream not starting with sync frame.  Skipping %zu bytes", __FUNCTION__, bytes_written);
                 }
 
                 // Save buffer
