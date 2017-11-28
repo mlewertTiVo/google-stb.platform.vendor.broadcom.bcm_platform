@@ -5315,6 +5315,15 @@ int hwc2_blit_yv12(
       pPacket->enable          = 0;
       next = ++pPacket;
       }{
+#if defined(BGRCPKT_PLANES_3)
+      BM2MC_PACKET_PacketThreeSourceFeeders *pPacket = (BM2MC_PACKET_PacketThreeSourceFeeders *)next;
+      BM2MC_PACKET_INIT(pPacket, ThreeSourceFeeders, false );
+      pPacket->plane0          = py;
+      pPacket->plane1          = pcb;
+      pPacket->plane2          = pcr;
+      pPacket->color           = 0;
+      next = ++pPacket;
+#else
       BM2MC_PACKET_PacketSourceFeeders *pPacket = (BM2MC_PACKET_PacketSourceFeeders *)next;
       BM2MC_PACKET_INIT(pPacket, SourceFeeders, false );
       pPacket->plane0          = pcb;
@@ -5327,6 +5336,7 @@ int hwc2_blit_yv12(
       pPacket->plane           = py;
       pPacket->color           = 0;
       next = ++pPacket;
+#endif
       }{
       BM2MC_PACKET_PacketOutputFeeder *pPacket = (BM2MC_PACKET_PacketOutputFeeder *)next;
       BM2MC_PACKET_INIT(pPacket, OutputFeeder, false);
