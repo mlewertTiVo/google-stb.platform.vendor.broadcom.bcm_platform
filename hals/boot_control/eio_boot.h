@@ -37,6 +37,8 @@ struct eio_boot {
    int32_t  version;
    int32_t  current;
    struct   eio_boot_slot slot[EIO_BOOT_NUM_ALT_PART];
+   int32_t  onboot;
+   int32_t  spare[255];
 };
 
 #endif /* EIO_BOOT__H */
