@@ -37,6 +37,7 @@
  *
  *****************************************************************************/
 //#define LOG_NDEBUG 0
+#define LOG_SAND_TO_HWTEX 1
 #undef LOG_TAG
 #define LOG_TAG "bomx_video_decoder"
 
@@ -999,7 +1000,13 @@ static NEXUS_SurfaceHandle BOMX_VideoDecoder_ToNexusSurface(int width, int heigh
 static void BOMX_VideoDecoder_StripedSurfaceDestroy(BOMX_VideoDecoderFrameBuffer *pFrameBuffer)
 {
    if (pFrameBuffer->hStripedSurface) {
+      NEXUS_StripedSurfaceCreateSettings cs;
+      NEXUS_StripedSurface_GetCreateSettings(pFrameBuffer->hStripedSurface, &cs);
+      NEXUS_Platform_SetSharedHandle(cs.lumaBuffer, false);
+      NEXUS_Platform_SetSharedHandle(cs.chromaBuffer, false);
       NEXUS_Platform_SetSharedHandle(pFrameBuffer->hStripedSurface, false);
+      ALOGI_IF(LOG_SAND_TO_HWTEX, "[sand2tex-del]:ss:%p",
+         pFrameBuffer->hStripedSurface);
       NEXUS_StripedSurface_Destroy(pFrameBuffer->hStripedSurface);
       pFrameBuffer->hStripedSurface = NULL;
    }
@@ -6215,6 +6222,10 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     NEXUS_MemoryBlock_UnlockOffset(cs.lumaBuffer);
                                     NEXUS_MemoryBlock_LockOffset(cs.chromaBuffer, &csAddr);
                                     NEXUS_MemoryBlock_UnlockOffset(cs.chromaBuffer);
+
+                                    NEXUS_Platform_SetSharedHandle(cs.lumaBuffer, true);
+                                    NEXUS_Platform_SetSharedHandle(cs.chromaBuffer, true);
+
                                     pSharedData->container.vBackingUpdated =
                                        (pSharedData->container.vLumaAddr     != lsAddr ||
                                         pSharedData->container.vLumaOffset   != cs.lumaBufferOffset ||
@@ -6234,7 +6245,8 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                     pSharedData->container.vImageHeight   = cs.imageHeight;
                                     pSharedData->container.stripedSurface = pBuffer->hStripedSurface;
 
-                                    ALOGV("f:%u::gr:%p::ss:%p::%ux%u::%u-buf:%" PRIx64 "::lo:%x::%" PRIx64 "::co:%x::%d,%d,%d::%d-bit",
+                                    ALOGI_IF(LOG_SAND_TO_HWTEX,
+                                       "[sand2tex-set]:f:%u::gr:%p::ss:%p::%ux%u::%u-buf:%" PRIx64 "::lo:%x:%p::%" PRIx64 "::co:%x:%p::%d,%d,%d::%d-bit",
                                        pBuffer->frameStatus.serialNumber,
                                        pBuffer->pPrivateHandle,
                                        pBuffer->hStripedSurface,
@@ -6243,8 +6255,10 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                        pSharedData->container.vBackingUpdated,
                                        pSharedData->container.vLumaAddr,
                                        pSharedData->container.vLumaOffset,
+                                       pSharedData->container.vLumaBlock,
                                        pSharedData->container.vChromaAddr,
                                        pSharedData->container.vChromaOffset,
+                                       pSharedData->container.vChromaBlock,
                                        pSharedData->container.vsWidth,
                                        pSharedData->container.vsLumaHeight,
                                        pSharedData->container.vsChromaHeight,
