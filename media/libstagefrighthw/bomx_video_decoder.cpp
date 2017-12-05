@@ -1000,13 +1000,8 @@ static NEXUS_SurfaceHandle BOMX_VideoDecoder_ToNexusSurface(int width, int heigh
 static void BOMX_VideoDecoder_StripedSurfaceDestroy(BOMX_VideoDecoderFrameBuffer *pFrameBuffer)
 {
    if (pFrameBuffer->hStripedSurface) {
-      NEXUS_StripedSurfaceCreateSettings cs;
-      NEXUS_StripedSurface_GetCreateSettings(pFrameBuffer->hStripedSurface, &cs);
-      NEXUS_Platform_SetSharedHandle(cs.lumaBuffer, false);
-      NEXUS_Platform_SetSharedHandle(cs.chromaBuffer, false);
       NEXUS_Platform_SetSharedHandle(pFrameBuffer->hStripedSurface, false);
-      ALOGI_IF(LOG_SAND_TO_HWTEX, "[sand2tex-del]:ss:%p",
-         pFrameBuffer->hStripedSurface);
+      ALOGI_IF(LOG_SAND_TO_HWTEX, "[sand2tex-del]:ss:%p", pFrameBuffer->hStripedSurface);
       NEXUS_StripedSurface_Destroy(pFrameBuffer->hStripedSurface);
       pFrameBuffer->hStripedSurface = NULL;
    }
