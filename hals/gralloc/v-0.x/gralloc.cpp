@@ -159,34 +159,23 @@ static void gralloc_checkpoint_callback(void *pParam, int param)
 void gralloc_explicit_load(void)
 {
    NEXUS_Error rc;
-   NEXUS_Graphics2DOpenSettings g2dOpenSettings;
 
    gralloc_load_lib();
 
    rc = BKNI_CreateEvent(&hCheckpointEvent);
    if (rc) {
-      ALOGE("Unable to create checkpoint event");
       hCheckpointEvent = NULL;
       hGraphics = NULL;
+   }
+}
+
+void gralloc_g2d_hdl_end(void)
+{
+   if (hGraphics == NULL) {
+      return;
    } else {
-      NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
-      g2dOpenSettings.compatibleWithSurfaceCompaction = false;
-      hGraphics = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &g2dOpenSettings);
-      if (!hGraphics) {
-         ALOGW("Unable to open Graphics2D.  HW/SW access format conversions will fail...");
-      } else {
-         NEXUS_Graphics2DSettings gfxSettings;
-         NEXUS_Graphics2D_GetSettings(hGraphics, &gfxSettings);
-         gfxSettings.pollingCheckpoint = false;
-         gfxSettings.checkpointCallback.callback = gralloc_checkpoint_callback;
-         gfxSettings.checkpointCallback.context = (void *)hCheckpointEvent;
-         rc = NEXUS_Graphics2D_SetSettings(hGraphics, &gfxSettings);
-         if ( rc ) {
-            ALOGW("Unable to set Graphics2D Settings");
-            NEXUS_Graphics2D_Close(hGraphics);
-            hGraphics = NULL;
-         }
-      }
+      NEXUS_Graphics2D_Close(hGraphics);
+      hGraphics = NULL;
    }
 }
 
@@ -202,15 +191,11 @@ void gralloc_explicit_unload(void)
    dlclose(gl_dyn_lib);
 #endif
 
-   if (hGraphics) {
-      NEXUS_Graphics2D_Close(hGraphics);
-      hGraphics = NULL;
-   }
-
    if (hCheckpointEvent) {
       BKNI_DestroyEvent(hCheckpointEvent);
       hCheckpointEvent = NULL;
    }
+   gralloc_g2d_hdl_end();
 }
 
 int gralloc_log_mapper(void)
@@ -245,6 +230,32 @@ pthread_mutex_t *gralloc_g2d_lock(void)
 
 NEXUS_Graphics2DHandle gralloc_g2d_hdl(void)
 {
+   NEXUS_Error rc;
+   NEXUS_Graphics2DOpenSettings g2dOpenSettings;
+
+   if (hCheckpointEvent == NULL) {
+      hGraphics = NULL;
+      return NULL;
+   }
+   if (hGraphics != NULL) {
+      return hGraphics;
+   } else {
+      NEXUS_Graphics2D_GetDefaultOpenSettings(&g2dOpenSettings);
+      g2dOpenSettings.compatibleWithSurfaceCompaction = false;
+      hGraphics = NEXUS_Graphics2D_Open(NEXUS_ANY_ID, &g2dOpenSettings);
+      if (hGraphics) {
+         NEXUS_Graphics2DSettings gfxSettings;
+         NEXUS_Graphics2D_GetSettings(hGraphics, &gfxSettings);
+         gfxSettings.pollingCheckpoint = false;
+         gfxSettings.checkpointCallback.callback = gralloc_checkpoint_callback;
+         gfxSettings.checkpointCallback.context = (void *)hCheckpointEvent;
+         rc = NEXUS_Graphics2D_SetSettings(hGraphics, &gfxSettings);
+         if (rc) {
+            NEXUS_Graphics2D_Close(hGraphics);
+            hGraphics = NULL;
+         }
+      }
+   }
    return hGraphics;
 }
 
@@ -304,22 +315,19 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
                  pPacket->plane.width   = pSharedData->container.width;
                  pPacket->plane.height  = pSharedData->container.height;
                  next = ++pPacket;
-              }
-              {
+              }{
                  BM2MC_PACKET_PacketBlend *pPacket = (BM2MC_PACKET_PacketBlend *)next;
                  BM2MC_PACKET_INIT( pPacket, Blend, false );
                  pPacket->color_blend   = copyColor;
                  pPacket->alpha_blend   = copyAlpha;
                  pPacket->color         = 0;
                  next = ++pPacket;
-              }
-              {
+              }{
                  BM2MC_PACKET_PacketSourceColor *pPacket = (BM2MC_PACKET_PacketSourceColor *)next;
                  BM2MC_PACKET_INIT(pPacket, SourceColor, false );
                  pPacket->color         = 0x00000000;
                  next = ++pPacket;
-              }
-              {
+              }{
                  BM2MC_PACKET_PacketFillBlit *pPacket = (BM2MC_PACKET_PacketFillBlit *)next;
                  BM2MC_PACKET_INIT(pPacket, FillBlit, true);
                  pPacket->rect.x        = 0;
@@ -334,7 +342,7 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
                  if (errCode == NEXUS_GRAPHICS2D_QUEUED) {
                     errCode = BKNI_WaitForEvent(event, CHECKPOINT_TIMEOUT);
                     if (errCode) {
-                       ALOGW("Timeout zeroing gralloc buffer");
+                       ALOGW("timeout null'ing gralloc buffer");
                     }
                  }
               }
@@ -357,6 +365,9 @@ out_release:
        if (!lrc)  NEXUS_MemoryBlock_Unlock(block_handle);
     }
 out:
+    if (gfx != NULL) {
+       gralloc_g2d_hdl_end();
+    }
     return;
 }
 
