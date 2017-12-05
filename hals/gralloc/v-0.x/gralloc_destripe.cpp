@@ -72,8 +72,9 @@ int gralloc_destripe_yv12(
    NEXUS_MemoryBlockHandle block_handle = NULL;
    PSHARED_DATA pSharedData;
    void *slock, *pMemory;
+   NEXUS_Graphics2DHandle gfx = gralloc_g2d_hdl();
 
-   if (gralloc_g2d_hdl() == NULL) {
+   if (gfx == NULL) {
       ALOGE("gralloc_destripe_yv12: no gfx2d.");
       errCode = NEXUS_INVALID_PARAMETER;
       goto err_gfx2d;
@@ -142,22 +143,22 @@ int gralloc_destripe_yv12(
    destripeSettings.chromaFilter = false;  // The data will be internally upconverted to 4:4:4 but we convert back to 4:2:0 so don't filter and just repeat samples
    destripeSettings.source.stripedSurface = hStripedSurface;
    destripeSettings.output.surface = hSurfaceY;
-   errCode = NEXUS_Graphics2D_DestripeBlit(gralloc_g2d_hdl(), &destripeSettings);
+   errCode = NEXUS_Graphics2D_DestripeBlit(gfx, &destripeSettings);
    if (errCode) {
       goto err_destripe;
    }
    destripeSettings.output.surface = hSurfaceCb;
-   errCode = NEXUS_Graphics2D_DestripeBlit(gralloc_g2d_hdl(), &destripeSettings);
+   errCode = NEXUS_Graphics2D_DestripeBlit(gfx, &destripeSettings);
    if (errCode) {
       goto err_destripe;
    }
    destripeSettings.output.surface = hSurfaceCr;
-   errCode = NEXUS_Graphics2D_DestripeBlit(gralloc_g2d_hdl(), &destripeSettings);
+   errCode = NEXUS_Graphics2D_DestripeBlit(gfx, &destripeSettings);
    if (errCode) {
       goto err_destripe;
    }
 
-   errCode = NEXUS_Graphics2D_Checkpoint(gralloc_g2d_hdl(), NULL);
+   errCode = NEXUS_Graphics2D_Checkpoint(gfx, NULL);
    switch (errCode) {
    case NEXUS_SUCCESS:
       break;
@@ -195,6 +196,9 @@ err_surfaces:
 err_shared_data:
    if (block_handle) {
       if (!lrc) NEXUS_MemoryBlock_Unlock(block_handle);
+   }
+   if (gfx != NULL) {
+      gralloc_g2d_hdl_end();
    }
 err_gfx2d:
     return errCode;
