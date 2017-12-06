@@ -101,7 +101,10 @@ int brcm_memtrack_get_memory(const struct memtrack_module *module,
 
 exit_early:
    records[0].size_in_bytes = total;
-   records[0].flags = MEMTRACK_FLAG_SHARED | MEMTRACK_FLAG_DEDICATED | MEMTRACK_FLAG_NONSECURE;
+   records[0].flags = MEMTRACK_FLAG_SMAPS_ACCOUNTED |
+                      MEMTRACK_FLAG_SHARED |
+                      MEMTRACK_FLAG_DEDICATED |
+                      MEMTRACK_FLAG_NONSECURE;
 exit:
    return rc;
 }
