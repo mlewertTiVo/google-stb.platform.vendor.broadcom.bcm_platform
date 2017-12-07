@@ -1,16 +1,18 @@
 # the 'bcmstb' key is a development key for broadcom home grown applications.
+# the 'platform', 'teskey', 'shared' and 'media' keys are equivalent of google's default test keys.
 #
-# generated like so, without password.
+# all keys are generated like so, without password.
 #
-#    make_key bcmstb '/C=CA/ST=British Columbia/L=Vancouver/O=BcmSTB/OU=BcmSTB/CN=BcmSTB/emailAddress=pierre@broadcom.com' rsa
+#    make_key <name> '/C=CA/ST=BritishColumbia/L=Vancouver/O=BcmSTB/OU=BcmSTB/CN=BcmSTB/emailAddress=pierre@broadcom.com' rsa
 #
 #
-# use it to sign your APK by adding this LOCAL_CERTIFICATE into the Android.mk of the APK.
+#
+# use 'bcmstb' to sign your APK by adding this LOCAL_CERTIFICATE into the Android.mk of the APK.
 #
 #    LOCAL_CERTIFICATE := $(BCM_VENDOR_STB_ROOT)/bcm_platform/signing/bcmstb
 #
 #
-# apps signed with this key are automatically associated with the bcmstb_app.se selinux policy context which is an improved
+# apps signed with 'bcmstb' key are automatically associated with the bcmstb_app.se selinux policy context which is an improved
 # 'untrusted_app' policy allowing verified access to nexus services in particular, also allowing access to the cramfs file
 # system for multimedia applications in need of drm access, etc...
 #

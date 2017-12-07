@@ -18,25 +18,46 @@ include $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include/nxclient.inc
 
 LOCAL_SHARED_LIBRARIES := liblog \
                           libcutils \
-                          libbinder \
                           libutils \
                           libnexus \
                           libnexusir \
-                          libnxclient \
+                          libnxclient
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_SHARED_LIBRARIES += \
+                          libhidlbase \
+                          libhidltransport \
+                          libhwbinder \
+                          bcm.hardware.nexus@1.0-impl
+else
+LOCAL_SHARED_LIBRARIES += \
+                          libbinder \
                           libnxbinder
+endif
 
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/utils
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
+else
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
+endif
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_CFLAGS += -DBCM_FULL_TREBLE
+endif
 
-LOCAL_SRC_FILES := nxwrap.cpp
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_SRC_FILES := treble/nxwrap.cpp
+else
+LOCAL_SRC_FILES := legacy/nxwrap.cpp
+endif
 
 LOCAL_MODULE := libnxwrap
 LOCAL_MODULE_TAGS := optional

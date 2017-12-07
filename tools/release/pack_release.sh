@@ -291,7 +291,7 @@ if [ -n "$REFSW_BASELINE" ]; then
 fi
 # Create a refsw src tarball and put it in add-on if -t is set
 if [ -n "$REFSW_SRC" ]; then
-  tar --exclude=*.git* --exclude-from=rockford/release/exclude.txt -cvzf $TOP_DIR/$REFSW_TARBALL *
+  tar --exclude=*.git* -cvzf $TOP_DIR/$REFSW_TARBALL *
 fi
 
 # clean up refsw residual branches created if any

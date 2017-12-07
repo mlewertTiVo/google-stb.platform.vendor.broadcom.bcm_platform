@@ -1,0 +1,20 @@
+package bcm.hardware.nexus@1.0;
+
+enum NexusStatus : uint32_t {
+    SUCCESS,
+    ALREADY_REGISTERED,
+    BAD_VALUE,
+    UNKNOWN,
+};
+
+struct NexusPowerState {
+    bool enet_en;
+    bool moca_en;
+    bool sata_en;
+    bool tp1_en;
+    bool tp2_en;
+    bool tp3_en;
+    bool cpufreq_scale_en;
+    bool ddr_pm_en;
+};
+

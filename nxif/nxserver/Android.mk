@@ -19,33 +19,57 @@ include $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/include/nxclient.inc
 LOCAL_PRELINK_MODULE := false
 LOCAL_SHARED_LIBRARIES := liblog \
                           libcutils \
-                          libbinder \
                           libutils \
-                          libnxbinder \
-                          libnxevtsrc \
                           libnexus \
+                          libnexusir \
                           libnxclient \
                           libpmlibservice
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0-impl \
+                          libhidlbase \
+                          libhidltransport \
+                          libhwbinder
+else
+LOCAL_SHARED_LIBRARIES += libbinder \
+                          libnxbinder \
+                          libnxevtsrc
+endif
 
 LOCAL_STATIC_LIBRARIES := libnxserver
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/utils
 LOCAL_C_INCLUDES += $(NXCLIENT_INCLUDES)
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/refsw/nexus/nxclient/server
 LOCAL_C_INCLUDES += $(NEXUS_TOP)/utils
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
+LOCAL_C_INCLUDES += $(TOP)/system/core/base/include
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
+else
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
+endif
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
 # fix warnings!
 LOCAL_CFLAGS += -Werror
 
-LOCAL_SRC_FILES := nxserver.cpp
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_SRC_FILES := treble/nxserver.cpp
+LOCAL_SRC_FILES += nxinexus.cpp
+ifneq ($(ANDROID_ENABLE_HDMI_HDCP),n)
+LOCAL_CFLAGS += -DANDROID_ENABLE_HDMI_HDCP=1
+else
+LOCAL_CFLAGS += -DANDROID_ENABLE_HDMI_HDCP=0
+endif
+else
+LOCAL_SRC_FILES := legacy/nxserver.cpp
+endif
 ifneq ($(HW_ENCODER_SUPPORT),n)
 LOCAL_SRC_FILES += nxserver_with_encoder.cpp
 else

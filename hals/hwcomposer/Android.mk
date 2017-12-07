@@ -41,12 +41,15 @@ LOCAL_PRELINK_MODULE := false
 
 # fix warnings!
 LOCAL_CFLAGS += -Werror
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_CFLAGS += -DBCM_FULL_TREBLE
+endif
 
-LOCAL_SHARED_LIBRARIES += libbinder
 LOCAL_SHARED_LIBRARIES += libcutils
 LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libnativehelper
 LOCAL_SHARED_LIBRARIES += libutils
+LOCAL_SHARED_LIBRARIES += libbinder
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib
 
@@ -78,6 +81,9 @@ LOCAL_SHARED_LIBRARIES += libutils
 
 # fix warnings!
 LOCAL_CFLAGS += -Werror
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_CFLAGS += -DBCM_FULL_TREBLE
+endif
 
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/common/blib
 
@@ -152,16 +158,18 @@ LOCAL_SHARED_LIBRARIES += libhwcbinder
 LOCAL_SHARED_LIBRARIES += libhwcutils
 LOCAL_SHARED_LIBRARIES += liblog
 LOCAL_SHARED_LIBRARIES += libnexus
-LOCAL_SHARED_LIBRARIES += libnxevtsrc
-LOCAL_SHARED_LIBRARIES += libnxbinder
-LOCAL_SHARED_LIBRARIES += libnxwrap
 LOCAL_SHARED_LIBRARIES += libnxclient
 LOCAL_SHARED_LIBRARIES += libutils
 LOCAL_SHARED_LIBRARIES += libsync
+LOCAL_SHARED_LIBRARIES += libnxwrap
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0-impl
+else
+LOCAL_SHARED_LIBRARIES += libnxbinder
+LOCAL_SHARED_LIBRARIES += libnxevtsrc
+endif
 
-LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnexusir \
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/gralloc/${HAL_GR_VERSION} \
                     $(NXCLIENT_INCLUDES) \
@@ -169,7 +177,15 @@ LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder 
                     $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/utils \
                     $(TOP)/system/core/libsync \
                     $(TOP)/system/core/libsync/include \
-                    $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/drivers/nx_ashmem \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/hwcomposer/$(HAL_HWC_VERSION)
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/misc/pmlibservice
+else
+LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxbinder \
+                    $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxevtsrc
+endif
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 LOCAL_CFLAGS := $(NEXUS_APP_CFLAGS)
@@ -181,7 +197,16 @@ LOCAL_SRC_FILES := $(HAL_HWC_VERSION)/hwcomposer.blemmyes.cpp
 else
 # fix warnings!
 LOCAL_CFLAGS += -Werror
+ifneq ($(HAL_HWC_VERSION),v-1.x)
+ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
+LOCAL_CFLAGS += -DBCM_FULL_TREBLE
+LOCAL_SRC_FILES := $(HAL_HWC_VERSION)/treble/hwcomposer.cpp
+else
+LOCAL_SRC_FILES := $(HAL_HWC_VERSION)/legacy/hwcomposer.cpp
+endif
+else
 LOCAL_SRC_FILES := $(HAL_HWC_VERSION)/hwcomposer.cpp
+endif
 endif
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE := hwcomposer.$(TARGET_BOARD_PLATFORM)

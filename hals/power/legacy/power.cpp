@@ -37,7 +37,7 @@
 #include <hardware/hardware.h>
 #include <hardware/power.h>
 #include <hardware_legacy/power.h>
-#include "PmLibService.h"
+#include "legacy/PmLibService.h"
 #include <inttypes.h>
 #include <arpa/inet.h>
 

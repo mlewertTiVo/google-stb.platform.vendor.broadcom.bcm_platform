@@ -81,7 +81,7 @@
 #include "nexus_base_mmap.h"
 #include "nexus_watchdog.h"
 
-#include "PmLibService.h"
+#include "legacy/PmLibService.h"
 #include "NxServer.h"
 #include "nxwrap_common.h"
 
@@ -169,6 +169,7 @@
 #define NX_TRIM_VP9                    "ro.nx.trim.vp9"
 #define NX_TRIM_4KDEC                  "ro.nx.trim.4kdec"
 #define NX_TRIM_10BCOL                 "ro.nx.trim.10bcol"
+#define NX_TRIM_D0HD                   "ro.nx.trim.d0hd"
 
 #define NX_HWC2_FBCOMP                 "ro.nx.hwc2.tweak.fbcomp"
 
@@ -477,9 +478,12 @@ skip_lmk:
                        NEXUS_Error rc;
                        NEXUS_WatchdogCallbackSettings wdogSettings;
                        watchdogWrite(WATCHDOG_TERMINATE);
+                       close(g_app.wdog.fd);
+                       g_app.wdog.fd = NX_INVALID;
                        NEXUS_WatchdogCallback_GetDefaultSettings(&wdogSettings);
                        wdogSettings.midpointCallback.callback = nx_wdog_midpoint;
                        wdogSettings.midpointCallback.context = (void *)&g_app;
+                       wdogSettings.stopTimerOnDestroy = false;
                        g_app.wdog.nx = NEXUS_WatchdogCallback_Create(&wdogSettings);
                        g_app.wdog.inStandby = false;
                        NEXUS_Watchdog_SetTimeout(wdog_timeout);
@@ -488,9 +492,6 @@ skip_lmk:
                           NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
                           g_app.wdog.nx = NULL;
                           ALOGE("unable to create nexus watchdog support (reason:%d)!", rc);
-                          watchdogWrite(WATCHDOG_TERMINATE);
-                          close(g_app.wdog.fd);
-                          g_app.wdog.fd = NX_INVALID;
                        }
                        g_app.wdog.init = true;
                     } else if (g_app.wdog.fd >= 0 && !wdog_timeout) {
@@ -601,6 +602,14 @@ static int lookup_heap_memory_type(const NEXUS_PlatformSettings *pPlatformSettin
 
 static void pre_trim_mem_config(NEXUS_MemoryConfigurationSettings *pMemConfigSettings, bool cvbs)
 {
+   char value[PROPERTY_VALUE_MAX];
+
+   if (property_get(NX_TRIM_D0HD, value, NULL)) {
+      if (strlen(value) && (strtoul(value, NULL, 0) > 0)) {
+         pMemConfigSettings->display[0].maxFormat = NEXUS_VideoFormat_e1080p;
+      }
+   }
+
    if (!cvbs) {
       pMemConfigSettings->display[1].maxFormat = NEXUS_VideoFormat_eUnknown;
    }
@@ -1287,7 +1296,7 @@ int main(void)
     if (loggerDisabled) {
         setenv("nexus_logger", "disabled", 1);
     } else {
-        setenv("nexus_logger", "/vendor/bin/nxlogger", 1);
+        setenv("nexus_logger", "/vendor/bin/nxserver", 1);
         setenv("nexus_logger_file", NEXUS_LOGGER_DATA_PATH, 1);
     }
     char loggerSize[PROPERTY_VALUE_MAX];
@@ -1423,10 +1432,6 @@ int main(void)
        NEXUS_Watchdog_StopTimer();
        NEXUS_WatchdogCallback_Destroy(g_app.wdog.nx);
        g_app.wdog.nx = NULL;
-    }
-    if (g_app.wdog.fd != NX_INVALID) {
-        watchdogWrite(WATCHDOG_TERMINATE);
-        close(g_app.wdog.fd);
     }
     g_app.wdog.init = false;
     g_app.wdog.want = false;

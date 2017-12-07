@@ -58,9 +58,15 @@
 #include <sched.h>
 #include <cutils/properties.h>
 
-BDBG_MODULE(logger);
+BDBG_FILE_MODULE(logger);
 
-#define PROP_LOGGER_PRIORITY "sys.nx.logger_priority"
+#define PROP_LOGGER_PRIORITY        "sys.nx.logger_priority"
+
+#define PROP_LOGGER_UNKNOWN_AS_INFO "ro.nx.logger.u2i"
+#define PROP_LOGGER_LOG_AS_DEBUG    "ro.nx.logger.l2d"
+
+static bool log_u2i = false;
+static bool log_l2d = false;
 
 #define PRIORITY_REFRESH_INTERVAL 300
 
@@ -134,7 +140,6 @@ static BERR_Code get_driver_log_message(int device_fd, PROXY_NEXUS_Log_Instance 
     dequeue.timeout     = 0;
     urc = ioctl(device_fd, IOCTL_PROXY_NEXUS_Log_Dequeue, &dequeue);
     if(urc!=0) {
-        BDBG_MSG(("Can't read data from the driver"));
         *pMsgLen = 0;
         BERR_TRACE(urc);
         return BERR_UNKNOWN;
@@ -207,8 +212,24 @@ static BERR_Code print_log_message(BDBG_FifoReader_Handle logReader, int deviceF
         case BDBG_eErr:
             ALOGE("%s", pMsgBuf);
             break;
-        default:
+        case BDBG_eLog:
+            if (log_l2d) {
+               ALOGD("%s", pMsgBuf);
+            } else {
+               ALOGV("%s", pMsgBuf);
+            }
+            break;
+        case BDBG_eMsg:
             ALOGI("%s", pMsgBuf);
+            break;
+        case BDBG_P_eUnknown:
+            if (log_u2i) {
+               ALOGI("%s", pMsgBuf);
+               break;
+            }
+        case BDBG_eTrace:
+        default:
+            ALOGV("%s", pMsgBuf);
             break;
         }
     }
@@ -246,6 +267,9 @@ int main(int argc, const char *argv[])
     BDBG_ASSERT(rc==BERR_SUCCESS);
     rc = BDBG_Init();
     BDBG_ASSERT(rc==BERR_SUCCESS);
+
+    log_u2i = property_get_bool(PROP_LOGGER_UNKNOWN_AS_INFO, 0);
+    log_l2d = property_get_bool(PROP_LOGGER_LOG_AS_DEBUG, 0);
 
     priority = property_get_int32(PROP_LOGGER_PRIORITY, 0);
     if ( priority > 0 )
