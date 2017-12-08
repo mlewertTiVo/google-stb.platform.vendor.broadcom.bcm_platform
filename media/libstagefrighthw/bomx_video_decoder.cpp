@@ -6208,6 +6208,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 android_atomic_release_store(m_redux ? 2 : 1, /* hwc index linked + 1. */
                                                              &pSharedData->videoWindow.windowIdPlusOne /* window-id always 0 */);
                                 pSharedData->videoFrame.status = pBuffer->frameStatus;
+                                if (pBuffer->hStripedSurface)
                                 {
                                     NEXUS_StripedSurfaceCreateSettings cs;
                                     NEXUS_Addr csAddr, lsAddr;
