@@ -3961,7 +3961,11 @@ OMX_ERRORTYPE BOMX_VideoDecoder::AddOutputPortBuffer(
     pInfo->typeInfo.native.pSharedData->videoWindow.nexusClientContext = m_pNxWrap->client();
     android_atomic_release_store(m_redux ? 2 : 1, /* hwc index linked + 1. */
                                  &pInfo->typeInfo.native.pSharedData->videoWindow.windowIdPlusOne /* window-id always 0 */);
-    err = pPort->AddBuffer(ppBufferHdr, pAppPrivate, ComputeBufferSize(pPort->GetDefinition()->format.video.eColorFormat, pPort->GetDefinition()->format.video.nStride, pPort->GetDefinition()->format.video.nSliceHeight), (OMX_U8 *)pPrivateHandle, pInfo, false);
+    err = pPort->AddBuffer(ppBufferHdr, pAppPrivate,
+             ComputeBufferSize(pPort->GetDefinition()->format.video.eColorFormat,
+             pPort->GetDefinition()->format.video.nStride,
+             pPort->GetDefinition()->format.video.nSliceHeight),
+             (OMX_U8 *)pPrivateHandle, pInfo, false);
     if ( OMX_ErrorNone != err )
     {
         delete pInfo;
@@ -6140,17 +6144,7 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                             pHeader->nFilledLen = ComputeBufferSize(m_pVideoPorts[1]->GetDefinition()->format.video.eColorFormat, m_pVideoPorts[1]->GetDefinition()->format.video.nStride, m_pVideoPorts[1]->GetDefinition()->format.video.nSliceHeight);
                             pInfo->typeInfo.native.pSharedData->videoFrame.status = pBuffer->frameStatus;
                             pBuffer->pPrivateHandle = pInfo->typeInfo.native.pPrivateHandle;
-                            rc = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 100);
-                            if ( 0 == rc )
-                            {
-                                pInfo->typeInfo.native.pSharedData->videoFrame.hStripedSurface = pBuffer->hStripedSurface;
-                                pInfo->typeInfo.native.pSharedData->videoFrame.destripeComplete = 0;
-                                private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
-                            }
-                            else
-                            {
-                                ALOGW("Timeout locking video frame");
-                            }
+                            pInfo->typeInfo.native.pSharedData->container.stripedSurface = pBuffer->hStripedSurface;
                         }
                         break;
                     case BOMX_VideoDecoderOutputBufferType_eMetadata:
@@ -6172,17 +6166,49 @@ void BOMX_VideoDecoder::PollDecodedFrames()
                                 android_atomic_release_store(m_redux ? 2 : 1, /* hwc index linked + 1. */
                                                              &pSharedData->videoWindow.windowIdPlusOne /* window-id always 0 */);
                                 pSharedData->videoFrame.status = pBuffer->frameStatus;
+                                {
+                                    NEXUS_StripedSurfaceCreateSettings cs;
+                                    NEXUS_Addr csAddr, lsAddr;
+                                    unsigned current = pSharedData->container.vBackingUpdated; //TODO: wrap?
+                                    NEXUS_StripedSurface_GetCreateSettings(pBuffer->hStripedSurface, &cs);
+                                    NEXUS_MemoryBlock_LockOffset(cs.lumaBuffer, &lsAddr);
+                                    NEXUS_MemoryBlock_UnlockOffset(cs.lumaBuffer);
+                                    NEXUS_MemoryBlock_LockOffset(cs.chromaBuffer, &csAddr);
+                                    NEXUS_MemoryBlock_UnlockOffset(cs.chromaBuffer);
+                                    pSharedData->container.vBackingUpdated =
+                                       (pSharedData->container.vLumaAddr     != lsAddr ||
+                                        pSharedData->container.vLumaOffset   != cs.lumaBufferOffset ||
+                                        pSharedData->container.vChromaAddr   != csAddr ||
+                                        pSharedData->container.vChromaOffset != cs.chromaBufferOffset) ? ++current : current;
+                                    pSharedData->container.vLumaBlock     = cs.lumaBuffer;
+                                    pSharedData->container.vLumaAddr      = lsAddr;
+                                    pSharedData->container.vLumaOffset    = cs.lumaBufferOffset;
+                                    pSharedData->container.vChromaBlock   = cs.chromaBuffer;
+                                    pSharedData->container.vChromaAddr    = csAddr;
+                                    pSharedData->container.vChromaOffset  = cs.chromaBufferOffset;
+                                    pSharedData->container.vsWidth        = cs.stripedWidth;
+                                    pSharedData->container.vsLumaHeight   = cs.lumaStripedHeight;
+                                    pSharedData->container.vsChromaHeight = cs.chromaStripedHeight;
+                                    pSharedData->container.vDepth         = (cs.lumaPixelFormat == NEXUS_PixelFormat_eY10) ? 10 : 8;
+                                    pSharedData->container.vImageWidth    = cs.imageWidth;
+                                    pSharedData->container.vImageHeight   = cs.imageHeight;
+                                    pSharedData->container.stripedSurface = pBuffer->hStripedSurface;
 
-                                pSharedData->videoFrame.hStripedSurface = NULL;
-                                int err = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 100);
-                                if ( err )
-                                {
-                                    ALOGW("Timeout locking video frame in metadata mode - %d", err);
-                                }
-                                else
-                                {
-                                    pSharedData->videoFrame.hStripedSurface = pBuffer->hStripedSurface;
-                                    private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
+                                    ALOGV("f:%u::gr:%p::ss:%p::%ux%u::%u-buf:%" PRIx64 "::lo:%x::%" PRIx64 "::co:%x::%d,%d,%d::%d-bit",
+                                       pBuffer->frameStatus.serialNumber,
+                                       pBuffer->pPrivateHandle,
+                                       pBuffer->hStripedSurface,
+                                       pSharedData->container.vImageWidth,
+                                       pSharedData->container.vImageHeight,
+                                       pSharedData->container.vBackingUpdated,
+                                       pSharedData->container.vLumaAddr,
+                                       pSharedData->container.vLumaOffset,
+                                       pSharedData->container.vChromaAddr,
+                                       pSharedData->container.vChromaOffset,
+                                       pSharedData->container.vsWidth,
+                                       pSharedData->container.vsLumaHeight,
+                                       pSharedData->container.vsChromaHeight,
+                                       pSharedData->container.vDepth);
                                 }
                             }
                             pHeader->nFilledLen = sizeof(VideoDecoderOutputMetaData);
@@ -6342,21 +6368,13 @@ void BOMX_VideoDecoder::ReturnDecodedFrames()
                     {
                         pSharedData = (PSHARED_DATA)pMemory;
                     }
-                    if ( pSharedData && pSharedData->videoFrame.hStripedSurface )
+                    if ( pSharedData && pSharedData->container.stripedSurface )
                     {
                         NEXUS_StripedSurfaceHandle hStripedSurface;
                         int rc;
 
-                        // Lock the video frame to try and avoid problems with gralloc still using this handle.
-                        // If we timeout, we still have to return the frame to nexus so too bad...
-
-                        rc = private_handle_t::lock_video_frame(pBuffer->pPrivateHandle, 250);
-                        hStripedSurface = pSharedData->videoFrame.hStripedSurface;
-                        pSharedData->videoFrame.hStripedSurface = NULL;
-                        if ( 0 == rc )
-                        {
-                            private_handle_t::unlock_video_frame(pBuffer->pPrivateHandle);
-                        }
+                        hStripedSurface = pSharedData->container.stripedSurface;
+                        pSharedData->container.stripedSurface = NULL;
                     }
                     BOMX_VideoDecoder_MemUnlock(pBuffer->pPrivateHandle);
                 }
