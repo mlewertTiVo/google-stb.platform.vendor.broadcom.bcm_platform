@@ -40,6 +40,7 @@
 #include "namevalue.inc"
 
 #define NX_HD_OUT_FMT                  "nx.vidout.force" /* needs prefixing. */
+#define NX_HD_OUT_HWC                  "dyn.nx.vidout.hwc"
 #define NX_HD_OUT_OBR                  "ro.nx.vidout.obr" /* obr - order by resolution, as opposed to by framerate. */
 #define NX_HDCP_TOGGLE                 "nx.hdcp.force" /* needs prefixing. */
 #define NX_HD_OUT_COLOR_DEPTH_10B      "ro.nx.colordepth10b.force"
@@ -448,11 +449,16 @@ NEXUS_VideoFormat NxServer::forcedOutputFmt(void) {
    char value[PROPERTY_VALUE_MAX];
    char name[PROPERTY_VALUE_MAX];
 
-   memset(value, 0, sizeof(value));
-   sprintf(name, "persist.%s", NX_HD_OUT_FMT);
-   if (property_get(name, value, "")) {
-      if (strlen(value)) {
-         forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
+   forced_format =
+      (NEXUS_VideoFormat) property_get_int32(NX_HD_OUT_HWC, (int)NEXUS_VideoFormat_eUnknown);
+
+   if ((forced_format == NEXUS_VideoFormat_eUnknown) || (forced_format >= NEXUS_VideoFormat_eMax)) {
+      memset(value, 0, sizeof(value));
+      sprintf(name, "persist.%s", NX_HD_OUT_FMT);
+      if (property_get(name, value, "")) {
+         if (strlen(value)) {
+            forced_format = (NEXUS_VideoFormat)lookup(g_videoFormatStrs, value);
+         }
       }
    }
 
@@ -504,25 +510,25 @@ NEXUS_VideoFormat NxServer::bestOutputFmt(NEXUS_HdmiOutputStatus *status, NEXUS_
    NEXUS_VideoFormat ordered_fps_list[] = {
       NEXUS_VideoFormat_e4096x2160p60hz,
       NEXUS_VideoFormat_e3840x2160p60hz,
+      NEXUS_VideoFormat_e1080p,
+      NEXUS_VideoFormat_e1080i,
+      NEXUS_VideoFormat_e720p,
       NEXUS_VideoFormat_e4096x2160p50hz,
       NEXUS_VideoFormat_e3840x2160p50hz,
-      NEXUS_VideoFormat_e1080p,
       NEXUS_VideoFormat_e1080p50hz,
-      NEXUS_VideoFormat_e720p,
+      NEXUS_VideoFormat_e1080i50hz,
       NEXUS_VideoFormat_e720p50hz,
       NEXUS_VideoFormat_e4096x2160p30hz,
       NEXUS_VideoFormat_e3840x2160p30hz,
+      NEXUS_VideoFormat_e1080p30hz,
+      NEXUS_VideoFormat_e720p30hz,
       NEXUS_VideoFormat_e4096x2160p25hz,
       NEXUS_VideoFormat_e3840x2160p25hz,
+      NEXUS_VideoFormat_e1080p25hz,
+      NEXUS_VideoFormat_e720p25hz,
       NEXUS_VideoFormat_e4096x2160p24hz,
       NEXUS_VideoFormat_e3840x2160p24hz,
-      NEXUS_VideoFormat_e1080p30hz,
-      NEXUS_VideoFormat_e1080p25hz,
       NEXUS_VideoFormat_e1080p24hz,
-      NEXUS_VideoFormat_e1080i,
-      NEXUS_VideoFormat_e1080i50hz,
-      NEXUS_VideoFormat_e720p30hz,
-      NEXUS_VideoFormat_e720p25hz,
       NEXUS_VideoFormat_e720p24hz,
       NEXUS_VideoFormat_ePal,
       NEXUS_VideoFormat_eSecam,

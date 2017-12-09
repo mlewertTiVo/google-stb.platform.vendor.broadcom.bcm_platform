@@ -47,8 +47,12 @@ extern const uint8_t g_nexus_parse_eac3_syncword[2];
 
 typedef struct {
     unsigned num_audio_blks;    // numblkscod
+    unsigned sample_rate;
+    unsigned bitrate;
 } eac3_frame_hdr_info;
 
+const uint8_t *nexus_find_ac3_sync_frame(const uint8_t *data, size_t len, eac3_frame_hdr_info *info);
+const uint8_t *nexus_find_eac3_independent_frame(const uint8_t *data, size_t len, unsigned substream, eac3_frame_hdr_info *info);
 bool nexus_parse_eac3_frame_hdr(const uint8_t *data, size_t len, eac3_frame_hdr_info *info);
 
 #endif // BRCM_AUDIO_NEXUS_PARSER_H

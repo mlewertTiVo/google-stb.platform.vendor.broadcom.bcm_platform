@@ -71,6 +71,7 @@
 #define B_PROPERTY_ENABLE_METADATA ("media.brcm.vdec_enable_metadata")
 #define B_PROPERTY_TUNNELED_HFRVIDEO ("media.brcm.vdec_hfrvideo_tunnel")
 #define B_PROPERTY_SHOW_DESTRIPE_DELAY ("media.brcm.vdec_show_destripe_delay")
+#define B_PROPERTY_ENABLE_HDR_FOR_NON_VP9 ("media.brcm.vdec_enable_hdr_for_non_vp9")    // Enable HDR for non-VP9 codecs in non-tunneled mode
 #define B_PROPERTY_MEMBLK_ALLOC ("ro.nexus.ashmem.devname")
 #define B_PROPERTY_SVP ("ro.nx.svp")
 #define B_PROPERTY_COALESCE ("dyn.nx.netcoal.set")
@@ -86,6 +87,8 @@
 #define B_DATA_BUFFER_HEIGHT_HIGHRES (3840)
 #define B_DATA_BUFFER_WIDTH_HIGHRES (2160)
 #define B_NUM_BUFFERS (12)
+#define B_MIN_DECODER_WIDTH (128)           // Minimum dimension required by Nexus AVD
+#define B_MIN_DECODER_HEIGHT (64)
 #define B_STREAM_ID 0xe0
 #define B_MAX_FRAMES (12)
 #define B_MAX_DECODED_FRAMES (16)
@@ -117,6 +120,10 @@
 #define B_FR_EST_NUM_STABLE_DELTA_NEEDED (8)
 #define B_FR_EST_STABLE_DELTA_THRESHOLD (2000)          // in micro-seconds
 
+#define B_DEC_ACTIVE_STATE_INACTIVE                         (0)
+#define B_DEC_ACTIVE_STATE_ACTIVE_CLEAR                     (1)
+#define B_DEC_ACTIVE_STATE_ACTIVE_SECURE                    (2)
+
 #define B_YV12_ALIGNMENT (16)
 
 #define OMX_IndexParamEnableAndroidNativeGraphicsBuffer      0x7F000001
@@ -133,7 +140,7 @@
 
 using namespace android;
 
-static volatile int32_t g_clearDecActive = 0;
+static volatile int32_t g_decActiveState = B_DEC_ACTIVE_STATE_INACTIVE;
 
 #if defined(HW_HVD_REVISION__GT_OR_EQ__S)
 static const BOMX_VideoDecoderRole g_defaultRoles[] = {{"video_decoder.mpeg2", OMX_VIDEO_CodingMPEG2},
@@ -1120,6 +1127,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     m_tunnelMode(tunnel),
     m_tunnelHfr(false),
     m_showDestripeDelay(0),
+    m_enableHdrForNonVp9(0),
     m_pTunnelNativeHandle(NULL),
     m_tunnelCurrentPts(0),
     m_waitingForStc(false),
@@ -1367,9 +1375,12 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
     else
     {
-        if ( m_secureDecoder && android_atomic_acquire_load(&g_clearDecActive) )
+        int32_t decActiveState = android_atomic_acquire_load(&g_decActiveState);
+
+        if ( (m_secureDecoder && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_CLEAR) ||
+             (!m_secureDecoder && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_SECURE) )
         {
-            ALOGW("Unable to set up runtime heap while decoder still active");
+            ALOGW("Unable to set up runtime heap while %s decoder still active", m_secureDecoder ? "non-secure" : "secure");
             this->Invalidate(OMX_ErrorUndefined);
             return;
         }
@@ -1385,10 +1396,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
             m_secureRuntimeHeaps = m_secureDecoder;
         }
 
-        if ( !m_secureRuntimeHeaps )
-        {
-            android_atomic_release_store(1, &g_clearDecActive);
-        }
+        android_atomic_release_store(m_secureRuntimeHeaps ? B_DEC_ACTIVE_STATE_ACTIVE_SECURE : B_DEC_ACTIVE_STATE_ACTIVE_CLEAR, &g_decActiveState);
     }
 
     NxClient_AllocSettings nxAllocSettings;
@@ -1472,6 +1480,7 @@ BOMX_VideoDecoder::BOMX_VideoDecoder(
     }
 
     m_showDestripeDelay = property_get_int32(B_PROPERTY_SHOW_DESTRIPE_DELAY, 0);
+    m_enableHdrForNonVp9 = property_get_int32(B_PROPERTY_ENABLE_HDR_FOR_NON_VP9, 0);
 
     // Initialize video window to full screen
     NEXUS_SurfaceClientSettings videoClientSettings;
@@ -1912,9 +1921,11 @@ BOMX_VideoDecoder::~BOMX_VideoDecoder()
         m_pTunnelNativeHandle = NULL;
     }
 
-    if ( !m_secureRuntimeHeaps && android_atomic_acquire_load(&g_clearDecActive) )
+    int32_t decActiveState = android_atomic_acquire_load(&g_decActiveState);
+    if ( (!m_secureRuntimeHeaps && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_CLEAR) ||
+         (m_secureRuntimeHeaps && decActiveState == B_DEC_ACTIVE_STATE_ACTIVE_SECURE) )
     {
-        android_atomic_release_store(0, &g_clearDecActive);
+        android_atomic_release_store(B_DEC_ACTIVE_STATE_INACTIVE, &g_decActiveState);
     }
 
     BOMX_VIDEO_STATS_RESET;
@@ -2522,13 +2533,21 @@ OMX_ERRORTYPE BOMX_VideoDecoder::SetParameter(
         {
             OMX_PARAM_PORTDEFINITIONTYPE portDef;
             m_pVideoPorts[1]->GetDefinition(&portDef);
-            // Validate portdef width/height against their counterpart platform maximum values
+            // Validate portdef width/height against their counterpart platform min/max values
             if ((portDef.format.video.nFrameWidth > m_maxDecoderWidth)
                     || (portDef.format.video.nFrameHeight > m_maxDecoderHeight))
             {
                 ALOGE("Video stream exceeds decoder capabilities, w:%u,h:%u,maxW:%u,maxH:%u",
                         portDef.format.video.nFrameWidth, portDef.format.video.nFrameHeight,
                         m_maxDecoderWidth, m_maxDecoderHeight);
+                return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
+            }
+            if ((portDef.format.video.nFrameWidth < B_MIN_DECODER_WIDTH)
+                    || (portDef.format.video.nFrameHeight < B_MIN_DECODER_HEIGHT))
+            {
+                ALOGE("Video stream doesn't have minimum required dimensions w:%u,h:%u,minW:%u,minH:%u",
+                        portDef.format.video.nFrameWidth, portDef.format.video.nFrameHeight,
+                        B_MIN_DECODER_WIDTH, B_MIN_DECODER_HEIGHT);
                 return BOMX_ERR_TRACE(OMX_ErrorBadParameter);
             }
 
@@ -5383,6 +5402,12 @@ OMX_ERRORTYPE BOMX_VideoDecoder::GetExtensionIndex(
             {
                 ALOGD("Metadata output disabled");
                 // Drop out here to reduce spam in logcat
+                return OMX_ErrorUnsupportedIndex;
+            }
+            else if ( !m_tunnelMode && (m_enableHdrForNonVp9 || (int)GetCodec() != OMX_VIDEO_CodingVP9) &&
+                        ((g_extensions[i].index == OMX_IndexParamDescribeHdrColorInfo) || (g_extensions[i].index == OMX_IndexParamDescribeColorAspects)) )
+            {
+                ALOGD("Interface %s not supported in non-tunneled codec %d", g_extensions[i].pName, (int)GetCodec());
                 return OMX_ErrorUnsupportedIndex;
             }
             else if ( !m_secureDecoder && (g_extensions[i].index == OMX_IndexParamAllocNativeHandle) )
