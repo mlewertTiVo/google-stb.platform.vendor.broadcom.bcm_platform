@@ -38,10 +38,12 @@
 #include "bkni.h"
 #include "gralloc_destripe.h"
 #include <inttypes.h>
+#include "nx_ashmem.h"
 
 extern int gralloc_log_mapper();
 extern int gralloc_boom_check();
 extern int gralloc_timestamp_conversion();
+extern int gralloc_align();
 
 static int64_t gralloc_tick(void)
 {
@@ -208,12 +210,13 @@ int gralloc_lock_ycbcr(gralloc_module_t const* module,
         struct android_ycbcr *ycbcr)
 {
    int64_t tick_start, tick_end;
-   int err = 0;
+   int err = 0, ret;
    NEXUS_Error lrc;
-   bool hwConverted=false;
    NEXUS_MemoryBlockHandle block_handle = NULL, shared_block_handle = NULL;
    PSHARED_DATA pSharedData = NULL;
    private_module_t* pModule = (private_module_t *)module;
+   struct nx_ashmem_alloc ashmem_alloc;
+   struct nx_ashmem_getmem ashmem_getmem;
 
    (void)l;
    (void)t;
@@ -264,53 +267,92 @@ int gralloc_lock_ycbcr(gralloc_module_t const* module,
                             ((pSharedData->container.height/2) *
                              ((pSharedData->container.stride/2 + (hnd->alignment-1)) & ~(hnd->alignment-1))));
    } else {
-      ALOGE("no default plane on s-blk:%p", shared_block_handle);
+      // if first time use, allocate the backing.
+      if (!pSharedData->container.destriped && !pSharedData->container.block && pSharedData->container.size) {
+         memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
+         ashmem_alloc.align = gralloc_align();
+         ashmem_alloc.size = pSharedData->container.allocSize;
+         ret = ioctl(hnd->pdata, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+         if (ret >= 0) {
+            memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
+            ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            if (ret < 0) {
+               err = -ENOMEM;
+               ALOGE("failed alloc destripe plane for s-blk:%p", shared_block_handle);
+            } else {
+               pSharedData->container.block = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
+            }
+         }
+         block_handle = pSharedData->container.block;
+         if (block_handle) {
+            NEXUS_Addr physAddr;
+            NEXUS_MemoryBlock_Lock(block_handle, &ycbcr->y);
+            NEXUS_MemoryBlock_LockOffset(pSharedData->container.block, &physAddr);
+            hnd->nxSurfacePhysicalAddress = (uint64_t)physAddr;
+            hnd->nxSurfaceAddress = (uint64_t)&ycbcr->y;
+            ycbcr->cr = (void *) ((uint8_t *)ycbcr->y + (pSharedData->container.stride * pSharedData->container.height));
+            ycbcr->cb = (void *) ((uint8_t *)ycbcr->cr +
+                                  ((pSharedData->container.height/2) *
+                                   ((pSharedData->container.stride/2 + (hnd->alignment-1)) & ~(hnd->alignment-1))));
+         }
+      }
+      if (block_handle == NULL) {
+         ALOGE("no default plane on s-blk:%p", shared_block_handle);
+      }
    }
 
    if (pSharedData->container.format == HAL_PIXEL_FORMAT_YCbCr_420_888) {
       // locking a flexible YUV means we are doing mainly SW decode since our
       // HW decoder reports YV12 for native format.
-   } else if (pSharedData->container.format == HAL_PIXEL_FORMAT_YV12) {
+   } else if (pSharedData->container.format == HAL_PIXEL_FORMAT_YV12 &&
+              pSharedData->container.block &&
+              !pSharedData->container.destriped) {
       pthread_mutex_lock(gralloc_g2d_lock());
-      err = private_handle_t::lock_video_frame(hnd, 250);
-      if (err) {
-         ALOGE("Unable to lock video frame data (timeout)");
-         pthread_mutex_unlock(gralloc_g2d_lock());
-         goto out_video_failed;
-      }
-      if (pSharedData->videoFrame.hStripedSurface) {
+      if (pSharedData->container.stripedSurface) {
          if (usage & GRALLOC_USAGE_SW_WRITE_MASK) {
             ALOGE("invalid lock of stripped buffers for SW_WRITE");
-            private_handle_t::unlock_video_frame(hnd);
             pthread_mutex_unlock(gralloc_g2d_lock());
             err = -EINVAL;
             goto out_video_failed;
          }
          if (usage & GRALLOC_USAGE_SW_READ_MASK) {
-            if (!pSharedData->videoFrame.destripeComplete) {
-               if (gralloc_timestamp_conversion()) {
-                  tick_start = gralloc_tick();
-               }
-               err = gralloc_destripe_yv12(hnd, pSharedData->videoFrame.hStripedSurface);
-               if (err) {
-                  private_handle_t::unlock_video_frame(hnd);
-                  pthread_mutex_unlock(gralloc_g2d_lock());
-                  goto out_video_failed;
-               }
-               if (gralloc_timestamp_conversion()) {
-                  tick_end = gralloc_tick();
-               }
-               pSharedData->videoFrame.destripeComplete = true;
-               hwConverted = true;
+            if (gralloc_timestamp_conversion()) {
+               tick_start = gralloc_tick();
             }
+
+            ALOGV("[destripe-lock-ycbcr]:gr:%p::ss:%p::%ux%u::%u-buf:%" PRIx64 "::lo:%x::%" PRIx64 "::co:%x::%d,%d,%d::%d-bit",
+               hnd,
+               pSharedData->container.stripedSurface,
+               pSharedData->container.vImageWidth,
+               pSharedData->container.vImageHeight,
+               pSharedData->container.vBackingUpdated,
+               pSharedData->container.vLumaAddr,
+               pSharedData->container.vLumaOffset,
+               pSharedData->container.vChromaAddr,
+               pSharedData->container.vChromaOffset,
+               pSharedData->container.vsWidth,
+               pSharedData->container.vsLumaHeight,
+               pSharedData->container.vsChromaHeight,
+               pSharedData->container.vDepth);
+
+            err = gralloc_destripe_yv12(hnd, pSharedData->container.stripedSurface);
+            if (err) {
+               pthread_mutex_unlock(gralloc_g2d_lock());
+               goto out_video_failed;
+            }
+            if (gralloc_timestamp_conversion()) {
+               tick_end = gralloc_tick();
+            }
+            pSharedData->container.destriped = true;
          }
       }
-      private_handle_t::unlock_video_frame(hnd);
       pthread_mutex_unlock(gralloc_g2d_lock());
    }
 
 out_video_failed:
-   if ((usage & (GRALLOC_USAGE_SW_READ_MASK|GRALLOC_USAGE_SW_WRITE_MASK)) && !hwConverted) {
+   if ((usage & (GRALLOC_USAGE_SW_READ_MASK|GRALLOC_USAGE_SW_WRITE_MASK)) &&
+       pSharedData->container.block &&
+       !pSharedData->container.destriped) {
       NEXUS_FlushCache(ycbcr->y, pSharedData->container.allocSize);
    }
 
@@ -337,7 +379,7 @@ out_video_failed:
       NEXUS_MemoryBlock_UnlockOffset(block_handle);
    }
 
-   if (hwConverted && gralloc_timestamp_conversion()) {
+   if (pSharedData->container.destriped && gralloc_timestamp_conversion()) {
       gralloc_conv_print(pSharedData->container.width,
                          pSharedData->container.height,
                          CONV_DESTRIPE, tick_start, tick_end);
@@ -359,12 +401,13 @@ int gralloc_lock(gralloc_module_t const* module,
    void** vaddr)
 {
    int64_t tick_start, tick_end;
-   int err = 0;
+   int err = 0, ret;
    NEXUS_Error lrc;
-   bool hwConverted=false;
    NEXUS_MemoryBlockHandle block_handle = NULL, shared_block_handle = NULL;
    PSHARED_DATA pSharedData = NULL;
    private_module_t* pModule = (private_module_t *)module;
+   struct nx_ashmem_alloc ashmem_alloc;
+   struct nx_ashmem_getmem ashmem_getmem;
 
    (void)l;
    (void)t;
@@ -402,55 +445,90 @@ int gralloc_lock(gralloc_module_t const* module,
          hnd->nxSurfacePhysicalAddress = (uint64_t)physAddr;
       }
    } else {
-      ALOGE("no default plane on s-blk:%p", shared_block_handle);
-      *vaddr = NULL;
+      // if first time use, allocate the backing.
+      if (!pSharedData->container.destriped && !pSharedData->container.block && pSharedData->container.size) {
+         memset(&ashmem_alloc, 0, sizeof(struct nx_ashmem_alloc));
+         ashmem_alloc.align = gralloc_align();
+         ashmem_alloc.size = pSharedData->container.allocSize;
+         ret = ioctl(hnd->pdata, NX_ASHMEM_SET_SIZE, &ashmem_alloc);
+         if (ret >= 0) {
+            memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
+            ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            if (ret < 0) {
+               err = -ENOMEM;
+               ALOGE("failed alloc destripe plane for s-blk:%p", shared_block_handle);
+            } else {
+               pSharedData->container.block = (NEXUS_MemoryBlockHandle)ashmem_getmem.hdl;
+            }
+         }
+         block_handle = pSharedData->container.block;
+         if (block_handle) {
+            NEXUS_Addr physAddr;
+            NEXUS_MemoryBlock_Lock(block_handle, vaddr);
+            NEXUS_MemoryBlock_LockOffset(block_handle, &physAddr);
+            hnd->nxSurfaceAddress = (uint64_t)vaddr;
+            hnd->nxSurfacePhysicalAddress = (uint64_t)physAddr;
+         }
+      }
+      if (block_handle == NULL) {
+         ALOGE("no default plane on s-blk:%p", shared_block_handle);
+         *vaddr = NULL;
+      }
    }
 
-   if (pSharedData->container.format == HAL_PIXEL_FORMAT_YV12) {
+   if (pSharedData->container.format == HAL_PIXEL_FORMAT_YV12 &&
+       pSharedData->container.block &&
+       !pSharedData->container.destriped) {
       pthread_mutex_lock(gralloc_g2d_lock());
-      err = private_handle_t::lock_video_frame(hnd, 250);
-      if (err) {
-         ALOGE("Unable to lock video frame data (timeout)");
-         pthread_mutex_unlock(gralloc_g2d_lock());
-         goto out_video_failed;
-      }
-      if (pSharedData->videoFrame.hStripedSurface) {
+      if (pSharedData->container.stripedSurface) {
          if (usage & GRALLOC_USAGE_SW_WRITE_MASK) {
             ALOGE("invalid lock of stripped buffers for SW_WRITE");
-            private_handle_t::unlock_video_frame(hnd);
             pthread_mutex_unlock(gralloc_g2d_lock());
             err = -EINVAL;
             goto out_video_failed;
          }
          if (usage & GRALLOC_USAGE_SW_READ_MASK) {
-            if (!pSharedData->videoFrame.destripeComplete) {
-               if (gralloc_timestamp_conversion()) {
-                  tick_start = gralloc_tick();
-               }
-               err = gralloc_destripe_yv12(hnd, pSharedData->videoFrame.hStripedSurface);
-               if (err) {
-                  private_handle_t::unlock_video_frame(hnd);
-                  pthread_mutex_unlock(gralloc_g2d_lock());
-                  goto out_video_failed;
-               }
-               if (gralloc_timestamp_conversion()) {
-                  tick_end = gralloc_tick();
-               }
-               pSharedData->videoFrame.destripeComplete = true;
-               hwConverted = true;
+            if (gralloc_timestamp_conversion()) {
+               tick_start = gralloc_tick();
             }
+
+            ALOGV("[destripe-lock]:gr:%p::ss:%p::%ux%u::%u-buf:%" PRIx64 "::lo:%x::%" PRIx64 "::co:%x::%d,%d,%d::%d-bit",
+               hnd,
+               pSharedData->container.stripedSurface,
+               pSharedData->container.vImageWidth,
+               pSharedData->container.vImageHeight,
+               pSharedData->container.vBackingUpdated,
+               pSharedData->container.vLumaAddr,
+               pSharedData->container.vLumaOffset,
+               pSharedData->container.vChromaAddr,
+               pSharedData->container.vChromaOffset,
+               pSharedData->container.vsWidth,
+               pSharedData->container.vsLumaHeight,
+               pSharedData->container.vsChromaHeight,
+               pSharedData->container.vDepth);
+
+            err = gralloc_destripe_yv12(hnd, pSharedData->container.stripedSurface);
+            if (err) {
+               pthread_mutex_unlock(gralloc_g2d_lock());
+               goto out_video_failed;
+            }
+            if (gralloc_timestamp_conversion()) {
+               tick_end = gralloc_tick();
+            }
+            pSharedData->container.destriped = true;
          }
       } else if ((hnd->fmt_set & GR_HWTEX) == GR_HWTEX) {
          /* TODO: add behavior for metadata buffer mode processing of stripped
           *       surface as needed...
           */
       }
-      private_handle_t::unlock_video_frame(hnd);
       pthread_mutex_unlock(gralloc_g2d_lock());
    }
 
 out_video_failed:
-   if ((usage & (GRALLOC_USAGE_SW_READ_MASK|GRALLOC_USAGE_SW_WRITE_MASK)) && !hwConverted) {
+   if ((usage & (GRALLOC_USAGE_SW_READ_MASK|GRALLOC_USAGE_SW_WRITE_MASK)) &&
+       pSharedData->container.block &&
+       !pSharedData->container.destriped) {
       NEXUS_FlushCache(*vaddr, pSharedData->container.allocSize);
    }
 
@@ -477,7 +555,7 @@ out_video_failed:
       NEXUS_MemoryBlock_UnlockOffset(block_handle);
    }
 
-   if (hwConverted && gralloc_timestamp_conversion()) {
+   if (pSharedData->container.destriped && gralloc_timestamp_conversion()) {
       gralloc_conv_print(pSharedData->container.width,
                          pSharedData->container.height,
                          CONV_DESTRIPE, tick_start, tick_end);
