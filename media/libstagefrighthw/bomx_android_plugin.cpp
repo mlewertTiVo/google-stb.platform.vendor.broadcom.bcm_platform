@@ -179,7 +179,7 @@ OMX_ERRORTYPE BOMX_AndroidPlugin::getRolesOfComponent(
             array[i] = new OMX_U8[OMX_MAX_STRINGNAME_SIZE];
         }
 
-        OMX_U32 numRoles2 = 0;
+        OMX_U32 numRoles2 = numRoles;
         err = OMX_GetRolesOfComponent(const_cast<OMX_STRING>(name), &numRoles2, array);
 
         CHECK_EQ(err, OMX_ErrorNone);
