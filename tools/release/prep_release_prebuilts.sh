@@ -18,7 +18,7 @@ function HELP {
   echo "                        Specify if the workspace contains binaries"
   echo "                        from a 'user' image or a 'userdebug/eng' image"
   echo "                        For user image, use the 'user' option, otherwise"
-  echo "                        userdebug and eng image, use the 'userdebug' option.
+  echo "                        userdebug and eng image, use the 'userdebug' option."
   echo "                        Append '_treble' for full treble enabled targets."
   exit 1
 }
