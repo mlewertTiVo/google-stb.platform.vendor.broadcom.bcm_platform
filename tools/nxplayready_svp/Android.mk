@@ -1,3 +1,5 @@
+ifneq ($(ANDROID_SUPPORTS_PLAYREADY), n)
+
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
@@ -57,3 +59,6 @@ LOCAL_MODULE := nxplayready_svp
 LOCAL_MODULE_TAGS := optional
 LOCAL_PROPRIETARY_MODULE := true
 include $(BUILD_EXECUTABLE)
+
+endif
+
