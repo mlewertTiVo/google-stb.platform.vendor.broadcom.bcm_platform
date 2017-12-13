@@ -239,6 +239,8 @@ typedef struct {
         NxClient_JoinSettings joinSettings;
         unsigned pid;
         NEXUS_ClientHandle handle;
+        unsigned mmumem;
+        unsigned nxmem;
         unsigned gfxmem;
         int score;
     } clients[APP_MAX_CLIENTS];
@@ -367,8 +369,10 @@ done:
 static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) {
     unsigned i, memory = 0;
     char memstats[128];
-    int fd, pip, selected;
+    int fd, pip, nxm, selected;
     int rc;
+    struct nx_ashmem_pidalloc pidalloc;
+    struct proxy_info_memtrack memtrack;
 
     *candidate = NX_INVALID;
     selected = NX_INVALID;
@@ -376,7 +380,9 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
     if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
         goto out;
     }
+
     pip = open("/dev/bcmpip", O_RDWR);
+    nxm = open("/dev/ion", O_RDWR);
     for (i = 0; i < APP_MAX_CLIENTS; i++) {
         if (g_app.clients[i].client && g_app.clients[i].pid) {
             sprintf(memstats, "%s/%d/rawcma", NX_DRM_ROOT, g_app.clients[i].pid);
@@ -385,29 +391,46 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
                memset(memstats, 0, sizeof(memstats));
                rc = read(fd, memstats, sizeof(memstats));
                close(fd);
-               g_app.clients[i].gfxmem = strtoul(memstats, NULL, 10);
+               g_app.clients[i].mmumem = strtoul(memstats, NULL, 10);
+            } else {
+               g_app.clients[i].mmumem = 0;
+            }
+            pidalloc.pid = g_app.clients[i].pid;
+            pidalloc.alloc = 0;
+            rc = ioctl(nxm, NX_ASHMEM_ALLOC_PER_PID, &pidalloc);
+            if (rc >= 0) {
+               g_app.clients[i].nxmem = pidalloc.alloc / (1024*1024);
+            } else {
+               g_app.clients[i].nxmem = 0;
+            }
+            memtrack.pid = g_app.clients[i].pid;
+            memtrack.size = 0;
+            rc = ioctl(pip, PROC_INFO_IOCTL_PROXY_GET_MEMTRACK, &memtrack);
+            if (rc >= 0) {
+               g_app.clients[i].gfxmem = memtrack.size / (1024*1024);
             } else {
                g_app.clients[i].gfxmem = 0;
             }
             g_app.clients[i].score = OOM_SCORE_IGNORE;
-            if (g_app.clients[i].gfxmem) {
+            if ((g_app.clients[i].mmumem+g_app.clients[i].nxmem+g_app.clients[i].gfxmem)) {
                struct proxy_info_oomadj oomadj;
                oomadj.pid = g_app.clients[i].pid;
-               if (pip >= 0) {
-                  rc = ioctl(pip, PROC_INFO_IOCTL_PROXY_GET_OOMADJ, &oomadj);
-                  if (rc >= 0) {
-                     g_app.clients[i].score = oomadj.score;
-                  }
+               rc = ioctl(pip, PROC_INFO_IOCTL_PROXY_GET_OOMADJ, &oomadj);
+               if (rc >= 0) {
+                  g_app.clients[i].score = oomadj.score;
                }
             }
 
-            ALOGI_IF(NX_CLIENT_USAGE_LOG && g_app.clients[i].gfxmem,
-               "client[%u]:%u::cma:%uMB::score:%d", i,
+            ALOGI_IF(NX_CLIENT_USAGE_LOG &&
+                     (g_app.clients[i].mmumem+g_app.clients[i].nxmem+g_app.clients[i].gfxmem),
+               "client[%u]:%u::mmu:%uMB::nxmem:%uMB::gfxo:%uMB::score:%d", i,
                g_app.clients[i].pid,
+               g_app.clients[i].mmumem,
+               g_app.clients[i].nxmem,
                g_app.clients[i].gfxmem,
                g_app.clients[i].score);
 
-            if (g_app.clients[i].gfxmem >= threshold &&
+            if ((g_app.clients[i].mmumem+g_app.clients[i].nxmem+g_app.clients[i].gfxmem) >= threshold &&
                 g_app.clients[i].score > 0) {
                 if (selected == NX_INVALID) {
                    selected = i;
@@ -421,13 +444,18 @@ static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) 
     }
     if (selected != NX_INVALID) {
        *candidate = g_app.clients[selected].pid;
-       ALOGI("oom-kill[%u]:%u::cma:%uMB::score:%d", selected,
+       ALOGI("oom-kill[%u]:%u::mmu:%uMB::nxmem:%uMB::gfxo:%uMB::score:%d", selected,
           *candidate,
+          g_app.clients[selected].mmumem,
+          g_app.clients[selected].nxmem,
           g_app.clients[selected].gfxmem,
           g_app.clients[selected].score);
     }
     if (pip >= 0) {
        close(pip);
+    }
+    if (nxm >= 0) {
+       close(nxm);
     }
     BKNI_ReleaseMutex(g_app.clients_lock);
 out:
