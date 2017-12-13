@@ -175,14 +175,14 @@ static int setActiveBootSlot(struct boot_control_module *module __unused, unsign
    }
    /* application wants us to boot into this new slot.
     */
-   bc_eio.onboot = slot;
+   bc_eio.onboot                          = slot;
    /* reset prior settings for the slot; it gets a clean start.
     */
-   bc_eio.slot[bc_eio.current].boot_ok     = 0;
-   bc_eio.slot[bc_eio.current].boot_fail   = 0;
-   bc_eio.slot[bc_eio.current].boot_try    = 0;
-   bc_eio.slot[bc_eio.current].dmv_corrupt = 0;
-   ALOGI_IF(verbose, "setActiveBootSlot(%d): reset stats", bc_eio.current);
+   bc_eio.slot[bc_eio.onboot].boot_ok     = 0;
+   bc_eio.slot[bc_eio.onboot].boot_fail   = 0;
+   bc_eio.slot[bc_eio.onboot].boot_try    = 0;
+   bc_eio.slot[bc_eio.onboot].dmv_corrupt = 0;
+   ALOGI_IF(verbose, "setActiveBootSlot(%d): reset stats", bc_eio.onboot);
    return write_device(&bc_eio);
 }
 
