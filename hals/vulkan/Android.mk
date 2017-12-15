@@ -18,7 +18,7 @@ include $(CLEAR_VARS)
 LOCAL_SHARED_LIBRARIES := libcutils liblog libutils libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient libnxwrap
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0-impl
+LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
 else
 LOCAL_SHARED_LIBRARIES += libbinder
 endif
