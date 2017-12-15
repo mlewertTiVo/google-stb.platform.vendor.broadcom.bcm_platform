@@ -13,9 +13,6 @@ include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/power/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/thermal/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/tv_input/Android.mk
 include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/vulkan/Android.mk
-ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-include ${BCM_VENDOR_STB_ROOT}/bcm_platform/hals/nexus/1.0/default/Android.mk
-endif
 
 endif
 

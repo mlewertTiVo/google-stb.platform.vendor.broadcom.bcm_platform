@@ -27,7 +27,7 @@ LOCAL_SHARED_LIBRARIES += \
                           libhidlbase \
                           libhidltransport \
                           libhwbinder \
-                          bcm.hardware.nexus@1.0-impl
+                          bcm.hardware.nexus@1.0
 else
 LOCAL_SHARED_LIBRARIES += \
                           libbinder \
