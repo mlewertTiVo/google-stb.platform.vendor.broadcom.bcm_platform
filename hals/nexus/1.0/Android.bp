@@ -63,30 +63,6 @@ cc_library {
     generated_sources: ["bcm.hardware.nexus@1.0_genc++"],
     generated_headers: ["bcm.hardware.nexus@1.0_genc++_headers"],
     export_generated_headers: ["bcm.hardware.nexus@1.0_genc++_headers"],
-    vendor_available: true,
-    shared_libs: [
-        "libhidlbase",
-        "libhidltransport",
-        "libhwbinder",
-        "liblog",
-        "libutils",
-        "libcutils",
-    ],
-    export_shared_lib_headers: [
-        "libhidlbase",
-        "libhidltransport",
-        "libhwbinder",
-        "libutils",
-    ],
-}
-
-cc_library {
-    name: "bcm.hardware.nexus@1.0_vendor",
-    owner: "broadcom",
-    defaults: ["hidl-module-defaults"],
-    generated_sources: ["bcm.hardware.nexus@1.0_genc++"],
-    generated_headers: ["bcm.hardware.nexus@1.0_genc++_headers"],
-    export_generated_headers: ["bcm.hardware.nexus@1.0_genc++_headers"],
     vendor: true,
     shared_libs: [
         "libhidlbase",
