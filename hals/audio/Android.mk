@@ -34,7 +34,12 @@ LOCAL_SHARED_LIBRARIES := \
     libmedia \
     libnexus \
     libnxclient \
-    libbomx_util
+    libbomx_util \
+    libtinyalsa \
+    libaudioutils
+
+LOCAL_STATIC_LIBRARIES := \
+    audio.atvr.default
 
 LOCAL_SRC_FILES += \
 	brcm_audio.cpp \
@@ -44,6 +49,7 @@ LOCAL_SRC_FILES += \
 	brcm_audio_nexus_parser.cpp \
 	brcm_audio_nexus_tunnel.cpp \
 	brcm_audio_builtin.cpp \
+	brcm_audio_atvr.cpp \
 	brcm_audio_dummy.cpp \
 	StandbyMonitorThread.cpp \
 
@@ -58,6 +64,8 @@ LOCAL_C_INCLUDES += $(REFSW_BASE_DIR)/BSEAV/lib/utils
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/include/media/openmax
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/media/libstagefrighthw
 LOCAL_C_INCLUDES += $(TOP)/${BCM_VENDOR_STB_ROOT}/bcm_platform/nxif/libnxwrap
+LOCAL_C_INCLUDES += $(call include-path-for, audio-utils)
+LOCAL_C_INCLUDES += external/tinyalsa/include
 LOCAL_C_INCLUDES := $(subst ${ANDROID}/,,$(LOCAL_C_INCLUDES))
 
 include $(BUILD_SHARED_LIBRARY)
@@ -105,7 +113,6 @@ LOCAL_SRC_FILES := \
     AudioHardwareInput.cpp \
     AudioStreamIn.cpp \
     AudioHotplugThread.cpp \
-    audio_hal_hooks.c \
     audio_hal_thunks.cpp
 
 LOCAL_C_INCLUDES := \
@@ -116,7 +123,6 @@ LOCAL_SHARED_LIBRARIES := \
     libmedia_helper \
     liblog \
     libcutils \
-    liblog \
     libutils \
     libmedia \
     libtinyalsa \
@@ -128,7 +134,5 @@ LOCAL_CFLAGS += -Werror
 LOCAL_MODULE := audio.atvr.default
 LOCAL_MODULE_TAGS := optional
 LOCAL_PROPRIETARY_MODULE := true
-LOCAL_MODULE_CLASS := SHARED_LIBRARIES
-LOCAL_MODULE_RELATIVE_PATH := hw
 
-include $(BUILD_SHARED_LIBRARY)
+include $(BUILD_STATIC_LIBRARY)
