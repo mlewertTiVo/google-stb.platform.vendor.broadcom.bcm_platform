@@ -30,7 +30,7 @@ LOCAL_SRC_FILES:= bcmsideband.cpp
 LOCAL_SHARED_LIBRARIES := libutils libcutils libhwcbinder liblog libnxwrap libbinder
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
 LOCAL_CFLAGS += -DBCM_FULL_TREBLE
-LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0-impl
+LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
 else
 LOCAL_SHARED_LIBRARIES += libnxbinder libnxevtsrc liblog
 endif

@@ -24,7 +24,7 @@ LOCAL_SHARED_LIBRARIES := liblog \
                           libnexusir \
                           libnxclient
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
-LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0-impl
+LOCAL_SHARED_LIBRARIES += bcm.hardware.nexus@1.0
 else
 LOCAL_SHARED_LIBRARIES += libnxbinder
 endif
