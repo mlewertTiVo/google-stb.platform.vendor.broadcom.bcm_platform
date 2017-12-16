@@ -79,6 +79,8 @@ public:
    // register|unregister from display event source.
    void regDspEvt(const sp<INxDspEvtSrc> &listener);
    void unregDspEvt(const sp<INxDspEvtSrc> &listener);
+   // rmlmk
+   void rmlmk(uint64_t client);
 
 protected:
    struct StdbyMon: public Thread {

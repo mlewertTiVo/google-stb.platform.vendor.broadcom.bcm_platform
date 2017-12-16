@@ -33,6 +33,12 @@ interface INexus {
      *
      */
     setPwr(NexusPowerState p) generates (NexusStatus s);
+
+    /**
+     * rmlmk call to trim memory for re-attempting allocation.
+     *
+     */
+    rmlmk(uint64_t cId) generates (NexusStatus s);
 };
 
 

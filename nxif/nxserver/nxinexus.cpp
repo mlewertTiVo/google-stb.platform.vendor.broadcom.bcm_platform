@@ -55,6 +55,14 @@
 #define NX_HDCP_TOGGLE            "nx.hdcp.force"
 #define NX_HD_OUT_COLOR_DEPTH_10B "ro.nx.colordepth10b.force"
 
+Return<NexusStatus> NexusImpl::rmlmk(uint64_t cid) {
+   Mutex::Autolock _l(mLock);
+   ALOGW("rmlmk:client: %" PRIu64 "", cid);
+   if (mRmlmkCb)
+      mRmlmkCb(cid);
+   return NexusStatus::SUCCESS;
+}
+
 Return<uint64_t> NexusImpl::client(int32_t pid) {
    Mutex::Autolock _l(mLock);
 
@@ -194,6 +202,11 @@ void NexusImpl::start_middleware() {
 void NexusImpl::stop_middleware() {
    deinit_ir();
    deinit_hdmi_out();
+}
+
+void NexusImpl::rmlmk_callback(::rmlmk cb) {
+   // can be NULL for stopping callback.
+   mRmlmkCb = cb;
 }
 
 static bool parseNexusIrMode(const char *name, NEXUS_IrInputMode *mode)

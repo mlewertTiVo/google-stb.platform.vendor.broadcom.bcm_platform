@@ -27,6 +27,7 @@ enum {
    UNREG_HPD_LISTENER,
    REG_DSP_LISTENER,
    UNREG_DSP_LISTENER,
+   RMLMK_CLIENT,
 };
 
 class BpNxServer : public BpInterface<INxServer>
@@ -73,6 +74,13 @@ public:
        remote()->transact(UNREG_DSP_LISTENER, data, &reply);
        return reply.readInt32();
     }
+
+    void rmlmk(uint64_t client) {
+       Parcel data, reply;
+       data.writeInterfaceToken(INxServer::getInterfaceDescriptor());
+       data.writeUint64(client);
+       remote()->transact(RMLMK_CLIENT, data, &reply);
+    }
 };
 
 IMPLEMENT_META_INTERFACE(NxServer, "broadcom.nxserver");
@@ -114,6 +122,14 @@ status_t BnNxServer::onTransact(
          CHECK_INTERFACE(INxServer, data, reply);
          sp<INxDspEvtSrc> listener = interface_cast<INxDspEvtSrc>(data.readStrongBinder());
          return reply->writeInt32(unregDspEvt(listener));
+      }
+      break;
+
+      case RMLMK_CLIENT: {
+         CHECK_INTERFACE(INxServer, data, reply);
+         uint64_t client = data.readUint64();
+         rmlmk(client);
+         return NO_ERROR;
       }
       break;
 
