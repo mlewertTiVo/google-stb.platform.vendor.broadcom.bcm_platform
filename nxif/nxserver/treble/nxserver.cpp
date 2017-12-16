@@ -82,7 +82,7 @@
 #include <hidl/HidlTransportSupport.h>
 #include <linux/brcmstb/proc_info_proxy.h>
 
-#define NX_CLIENT_USAGE_LOG            1
+#define NX_CLIENT_USAGE_LOG            0
 
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 #define NEXUS_LOGGER_DATA_PATH         "disabled" // Disable logger use of filesystem
@@ -98,6 +98,7 @@
 #define MIN_PLATFORM_DEC               (2)
 #define NSC_FB_NUMBER                  (3)
 #define OOM_SCORE_IGNORE               (-16)
+#define OOM_CONSUME_MAX                (48)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
 #define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
@@ -372,11 +373,15 @@ done:
 // without v3d mmu do not have this information and will work as before
 // for the moment.
 #define NX_DRM_ROOT "/sys/kernel/debug/dri/0/"
-static void gather_memory_stats_per_process(void) {
+static void gather_memory_stats_per_process(int *candidate) {
     unsigned i, memory = 0;
     char memstats[128];
-    int fd, pip;
+    int fd, pip, selected;
     int rc;
+
+    *candidate = NX_INVALID;
+    selected = NX_INVALID;
+
     if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
         goto out;
     }
@@ -404,12 +409,31 @@ static void gather_memory_stats_per_process(void) {
                   }
                }
             }
+
             ALOGI_IF(NX_CLIENT_USAGE_LOG && g_app.clients[i].gfxmem,
                "client[%u]:%u::cma:%uMB::score:%d", i,
                g_app.clients[i].pid,
                g_app.clients[i].gfxmem,
                g_app.clients[i].score);
+
+            if (g_app.clients[i].gfxmem >= OOM_CONSUME_MAX &&
+                g_app.clients[i].score > 0) {
+                if (selected == NX_INVALID) {
+                   selected = i;
+                   break;
+                }
+                if (g_app.clients[i].score > g_app.clients[selected].score) {
+                   selected = i;
+                }
+            }
         }
+    }
+    if (selected != NX_INVALID) {
+       *candidate = g_app.clients[selected].pid;
+       ALOGI("oom-kill[%u]:%u::cma:%uMB::score:%d", selected,
+          *candidate,
+          g_app.clients[selected].gfxmem,
+          g_app.clients[selected].score);
     }
     if (pip >= 0) {
        close(pip);
@@ -430,7 +454,7 @@ static void *proactive_runner_task(void *argv)
     int lmk_tick = 0;
     char value[PROPERTY_VALUE_MAX];
     bool needs_growth;
-    int i, j;
+    int i, j, candidate;
 
     prctl(PR_SET_NAME, "nxserver.proac");
 
@@ -446,7 +470,7 @@ static void *proactive_runner_task(void *argv)
     }
     active_gc  = property_get_int32(NX_ACT_GC,  1);
     active_gs  = property_get_int32(NX_ACT_GS,  1);
-    active_lmk = property_get_int32(NX_ACT_LMK, 0);
+    active_lmk = property_get_int32(NX_ACT_LMK, 1);
     active_wd  = property_get_int32(NX_ACT_WD,  1);
 
     ALOGI("%s: launching, gpx-grow: %u, gpx-shrink: %u, active-gc: %c, active-gs: %c, active-lmk: %c, active-wd: %c",
@@ -474,7 +498,14 @@ static void *proactive_runner_task(void *argv)
         *    standard LMK.
         *
         */
-        gather_memory_stats_per_process();
+        if (active_lmk) {
+           gather_memory_stats_per_process(&candidate);
+           // aggressive lmk'ing of the background processes using more than threshold memory.
+           // this requires some further tune up.
+           if (candidate != NX_INVALID) {
+              kill(candidate, SIGKILL);
+           }
+        }
 
         if (gfx_heap_grow_size) {
            if (BKNI_AcquireMutex(g_app.standby_lock) == BERR_SUCCESS) {
@@ -503,7 +534,7 @@ static void *proactive_runner_task(void *argv)
                  }
 
                  if (active_gs && needs_growth) {
-                    ALOGI("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
+                    ALOGV("%s: proactive allocation %u", __FUNCTION__, gfx_heap_grow_size);
                     NEXUS_Platform_GrowHeap(
                        platformConfig.heap[g_app.dcma_index],
                        (size_t)gfx_heap_grow_size);
