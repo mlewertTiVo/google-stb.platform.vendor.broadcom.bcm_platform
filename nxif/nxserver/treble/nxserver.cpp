@@ -81,9 +81,11 @@
 #include "nxinexus.h"
 #include <hidl/HidlTransportSupport.h>
 
+#define NX_CLIENT_USAGE_LOG            1
+
 #define NEXUS_TRUSTED_DATA_PATH        "/data/misc/nexus"
 #define NEXUS_LOGGER_DATA_PATH         "disabled" // Disable logger use of filesystem
-#define APP_MAX_CLIENTS                (64)
+#define APP_MAX_CLIENTS                (72)
 #define MB                             (1024*1024)
 #define KB                             (1024)
 #define SEC_TO_MSEC                    (1000LL)
@@ -223,7 +225,11 @@ typedef struct {
     struct {
         nxclient_t client;
         NxClient_JoinSettings joinSettings;
+        unsigned pid;
+        NEXUS_ClientHandle handle;
+        unsigned gfxmem;
     } clients[APP_MAX_CLIENTS];
+    unsigned connected;
     WDOG_T wdog;
     CATCHER_T sigterm;
     NexusImpl *nxi;
@@ -358,6 +364,43 @@ done:
     return NULL;
 }
 
+// devices with v3d mmu have a gem driver which logs data to the
+// dri debugfs, we gather the information fro there.  legacy devices
+// without v3d mmu do not have this information and will work as before
+// for the moment.
+#define NX_DRM_ROOT "/sys/kernel/debug/dri/0/"
+static void gather_memory_stats_per_process(void) {
+    unsigned i, memory = 0;
+    char memstats[128];
+    int fd;
+    int rc;
+    if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
+        goto out;
+    }
+    for (i = 0; i < g_app.connected; i++) {
+        if (g_app.clients[i].client && g_app.clients[i].pid) {
+            sprintf(memstats, "%s/%d/rawcma", NX_DRM_ROOT, g_app.clients[i].pid);
+            fd = open(memstats, O_RDONLY);
+            if (fd >= 0) {
+               memset(memstats, 0, sizeof(memstats));
+               rc = read(fd, memstats, sizeof(memstats));
+               close(fd);
+               g_app.clients[i].gfxmem = strtoul(memstats, NULL, 10);
+            } else {
+               g_app.clients[i].gfxmem = 0;
+            }
+            ALOGI_IF(NX_CLIENT_USAGE_LOG && g_app.clients[i].gfxmem,
+               "client[%u]:%u::cma:%uMB", i,
+               g_app.clients[i].pid,
+               g_app.clients[i].gfxmem);
+        }
+    }
+    BKNI_ReleaseMutex(g_app.clients_lock);
+out:
+    return;
+
+}
+
 static void *proactive_runner_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
@@ -411,20 +454,9 @@ static void *proactive_runner_task(void *argv)
         * 3) proactive LMK on behalf of android for nexus managed memory not seen in
         *    standard LMK.
         *
-        * 4) kick the platform's reset watchdog timer. The watchdog can be kicked by
-        *    writing any single character to the watchdog device. On a normal exit, the
-        *    magic letter 'V' must be written to the watchdog before closing the file,
-        *    which will stop the device. If not kicked within 30 seconds, the watchdog
-        *    will expire and trigger a system reset.
-        *
         */
+        gather_memory_stats_per_process();
 
-        if (++lmk_tick > RUNNER_LMK_THRESHOLD) {
-           if (!active_lmk) {
-              goto skip_lmk;
-           }
-        }
-skip_lmk:
         if (gfx_heap_grow_size) {
            if (BKNI_AcquireMutex(g_app.standby_lock) == BERR_SUCCESS) {
               if (g_app.standbyState.settings.mode == NEXUS_PlatformStandbyMode_eOn) {
@@ -523,6 +555,8 @@ done:
 static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinSettings, NEXUS_ClientSettings *pClientSettings)
 {
     unsigned i;
+    struct nxclient_status status;
+    nxclient_get_status(client, &status);
     BSTD_UNUSED(pClientSettings);
     if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
         ALOGE("failed to add nx-client %p", client);
@@ -540,12 +574,21 @@ static int client_connect(nxclient_t client, const NxClient_JoinSettings *pJoinS
     }
     for (i = 0; i < APP_MAX_CLIENTS; i++) {
         if (!g_app.clients[i].client) {
-            g_app.clients[i].client = client;
+            g_app.clients[i].client       = client;
+            g_app.clients[i].pid          = status.pid;
+            g_app.clients[i].handle       = status.handle;
             g_app.clients[i].joinSettings = *pJoinSettings;
-            ALOGV("nx-connect(%d): '%s'::%p::%d", i,
-                  g_app.clients[i].joinSettings.name,
-                  g_app.clients[i].client,
-                  g_app.clients[i].joinSettings.mode);
+            g_app.connected++;
+            if (g_app.connected >= APP_MAX_CLIENTS) {
+               ALOGE("INSUFFICIENT CLIENT CACHE BLOCKS!");
+               g_app.connected = APP_MAX_CLIENTS;
+            }
+            ALOGI_IF(NX_CLIENT_USAGE_LOG,
+               "connect[%u]:%u::%p::'%s'::%p", i,
+               g_app.clients[i].pid,
+               g_app.clients[i].handle,
+               g_app.clients[i].joinSettings.name,
+               g_app.clients[i].client);
             break;
         }
     }
@@ -565,8 +608,17 @@ static void client_disconnect(nxclient_t client, const NxClient_JoinSettings *pJ
     }
     for (i=0;i<APP_MAX_CLIENTS;i++) {
         if (g_app.clients[i].client == client) {
-            ALOGV("nx-disconnect(%d): '%s'::%p", i, g_app.clients[i].joinSettings.name, g_app.clients[i].client);
+            ALOGI_IF(NX_CLIENT_USAGE_LOG,
+               "disconnect[%u]:%u::%p::%p", i,
+               g_app.clients[i].pid,
+               g_app.clients[i].handle,
+               g_app.clients[i].client);
             g_app.clients[i].client = NULL;
+            g_app.clients[i].pid    = 0;
+            g_app.clients[i].handle = NULL;
+            if (g_app.connected > 0) {
+               g_app.connected--;
+            }
             break;
         }
     }
