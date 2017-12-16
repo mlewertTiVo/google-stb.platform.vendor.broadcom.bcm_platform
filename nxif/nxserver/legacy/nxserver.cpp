@@ -84,6 +84,7 @@
 #include "legacy/PmLibService.h"
 #include "NxServer.h"
 #include "nxwrap_common.h"
+#include <linux/brcmstb/proc_info_proxy.h>
 
 #define NX_CLIENT_USAGE_LOG            1
 
@@ -100,6 +101,7 @@
 #define MAX_NX_OBJS                    (2048)
 #define MIN_PLATFORM_DEC               (2)
 #define NSC_FB_NUMBER                  (3)
+#define OOM_SCORE_IGNORE               (-16)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
 #define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
@@ -232,6 +234,7 @@ typedef struct {
         unsigned pid;
         NEXUS_ClientHandle handle;
         unsigned gfxmem;
+        int score;
     } clients[APP_MAX_CLIENTS];
     unsigned connected;
     WDOG_T wdog;
@@ -377,12 +380,13 @@ done:
 static void gather_memory_stats_per_process(void) {
     unsigned i, memory = 0;
     char memstats[128];
-    int fd;
+    int fd, pip;
     int rc;
     if (BKNI_AcquireMutex(g_app.clients_lock) != BERR_SUCCESS) {
         goto out;
     }
-    for (i = 0; i < g_app.connected; i++) {
+    pip = open("/dev/bcmpip", O_RDWR);
+    for (i = 0; i < APP_MAX_CLIENTS; i++) {
         if (g_app.clients[i].client && g_app.clients[i].pid) {
             sprintf(memstats, "%s/%d/rawcma", NX_DRM_ROOT, g_app.clients[i].pid);
             fd = open(memstats, O_RDONLY);
@@ -394,11 +398,26 @@ static void gather_memory_stats_per_process(void) {
             } else {
                g_app.clients[i].gfxmem = 0;
             }
+            g_app.clients[i].score = OOM_SCORE_IGNORE;
+            if (g_app.clients[i].gfxmem) {
+               struct proxy_info_oomadj oomadj;
+               oomadj.pid = g_app.clients[i].pid;
+               if (pip >= 0) {
+                  rc = ioctl(pip, PROC_INFO_IOCTL_PROXY_GET_OOMADJ, &oomadj);
+                  if (rc >= 0) {
+                     g_app.clients[i].score = oomadj.score;
+                  }
+               }
+            }
             ALOGI_IF(NX_CLIENT_USAGE_LOG && g_app.clients[i].gfxmem,
-               "client[%u]:%u::cma:%uMB", i,
+               "client[%u]:%u::cma:%uMB::score:%d", i,
                g_app.clients[i].pid,
-               g_app.clients[i].gfxmem);
+               g_app.clients[i].gfxmem,
+               g_app.clients[i].score);
         }
+    }
+    if (pip >= 0) {
+       close(pip);
     }
     BKNI_ReleaseMutex(g_app.clients_lock);
 out:
