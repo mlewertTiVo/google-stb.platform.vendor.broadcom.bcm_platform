@@ -54,6 +54,7 @@ void __attribute__ ((destructor)) gralloc_explicit_unload(void);
 
 extern "C" void *nxwrap_create_client(void **wrap);
 extern "C" void nxwrap_destroy_client(void *wrap);
+extern "C" void nxwrap_rmlmk(void *wrap);
 
 #if defined(V3D_VARIANT_v3d)
 static void *gl_dyn_lib;
@@ -795,6 +796,15 @@ gralloc_alloc_buffer(alloc_device_t* dev,
          if (ret >= 0) {
             memset(&ashmem_getmem, 0, sizeof(struct nx_ashmem_getmem));
             ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            if (ret < 0) {
+               /* give another try after attempting a round of rmlmk, if
+                * rmlmk fails (e.g. not enough memory could be freed up),
+                * that's game over.
+                */
+               nxwrap_rmlmk(nxwrap);
+               BKNI_Sleep(5); /* give settling time for rmlmk. */
+               ret = ioctl(hnd->pdata, NX_ASHMEM_GETMEM, &ashmem_getmem);
+            }
             if (ret < 0) {
                err = -ENOMEM;
                goto alloc_failed;

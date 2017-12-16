@@ -47,7 +47,8 @@
 
 using namespace android;
 
-NxServer::NxServer() : BnNxServer() {
+NxServer::NxServer(::rmlmk cb) : BnNxServer() {
+   mRmlmkCb = cb;
 }
 
 void NxServer::binderDied(const wp<IBinder>& who) {
@@ -84,9 +85,9 @@ status_t NxServer::onTransact( uint32_t code, const Parcel& data, Parcel* reply,
    return BnNxServer::onTransact(code, data, reply, flags);
 }
 
-NxServer* NxServer::instantiate()
+NxServer* NxServer::instantiate(::rmlmk cb)
 {
-   NxServer *server = new NxServer();
+   NxServer *server = new NxServer(cb);
 
    if (server != NULL) {
       server->mWhoami = server;
@@ -171,6 +172,14 @@ void NxServer::getNxClient(int pid, uint64_t &client)
 out:
    ALOGV("process: %d -> associated with nexus client: %" PRIu64 "", pid, client);
    return;
+}
+
+void NxServer::rmlmk(uint64_t client)
+{
+   Mutex::Autolock _l(mLock);
+   ALOGW("rmlmk:client: %" PRIu64 "", client);
+   if (mRmlmkCb)
+      mRmlmkCb(client);
 }
 
 void NxServer::start_middleware() {

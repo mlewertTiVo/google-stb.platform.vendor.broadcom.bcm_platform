@@ -57,6 +57,8 @@ using namespace android;
 using namespace android::hardware;
 using namespace bcm::hardware::nexus::V1_0;
 
+typedef void (*rmlmk)(uint64_t client);
+
 struct HpdCb {
    uint64_t cId;
    sp<INexusHpdCb> cb;
@@ -76,9 +78,12 @@ public:
    Return<NexusStatus> registerDspCb(uint64_t cId, const ::android::sp<INexusDspCb>& cb);
    Return<NexusStatus> setPwr(const NexusPowerState& p);
    Return<void> getPwr(getPwr_cb _hidl_cb);
+   Return<NexusStatus> rmlmk(uint64_t cId);
 
    void start_middleware();
    void stop_middleware();
+
+   void rmlmk_callback(::rmlmk cb);
 
    virtual ~NexusImpl() {};
 
@@ -89,6 +94,7 @@ private:
    Vector<struct HpdCb> mHpdCb;
    Vector<struct DspCb> mDspCb;
    PmLibService mPmLib;
+   ::rmlmk mRmlmkCb;
 
    void init_hdmi_out();
    void deinit_hdmi_out();

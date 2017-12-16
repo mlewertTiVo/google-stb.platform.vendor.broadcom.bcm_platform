@@ -38,10 +38,12 @@
 
 using namespace android;
 
+typedef void (*rmlmk)(uint64_t client);
+
 class NxServer: public BnNxServer, public IBinder::DeathRecipient
 {
 public:
-   static NxServer *instantiate();
+   static NxServer *instantiate(::rmlmk cb);
    void terminate();
 
    virtual void getNxClient(int pid, uint64_t &client);
@@ -52,13 +54,15 @@ public:
    virtual status_t regDspEvt(const sp<INxDspEvtSrc> &listener);
    virtual status_t unregDspEvt(const sp<INxDspEvtSrc> &listener);
 
+   virtual void rmlmk(uint64_t client);
+
    virtual status_t onTransact(uint32_t code,
                                const Parcel& data,
                                Parcel* reply,
                                uint32_t flags);
 
 private:
-   NxServer();
+   NxServer(::rmlmk cb);
    virtual ~NxServer() {};
 
    NxServer *mWhoami;
@@ -67,6 +71,7 @@ private:
    hdmi_state mHpd;
    Vector<sp<INxHpdEvtSrc>> mHpdEvtListener;
    Vector<sp<INxDspEvtSrc>> mDspEvtListener;
+   ::rmlmk mRmlmkCb;
 
    void binderDied(const wp<IBinder>& who);
 

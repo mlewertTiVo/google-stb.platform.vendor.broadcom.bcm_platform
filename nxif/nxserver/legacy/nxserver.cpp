@@ -288,6 +288,11 @@ static void nx_wdog_midpoint(void *context, int param)
    }
 }
 
+static void nxserver_rmlmk(uint64_t client)
+{
+   ALOGE("nxserver: rmlmk now from client %" PRIu64 "", client);
+}
+
 static void *binder_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
@@ -296,7 +301,7 @@ static void *binder_task(void *argv)
 
     do {
        android::ProcessState::self()->startThreadPool();
-       nx_server->nxb = NxServer::instantiate();
+       nx_server->nxb = NxServer::instantiate(&nxserver_rmlmk);
        PmLibService::instantiate();
        android::IPCThreadState::self()->joinThreadPool();
 

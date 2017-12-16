@@ -1336,6 +1336,11 @@ static int set_video_outputs_state(bool enabled)
     return rc;
 }
 
+static void nxserver_rmlmk(uint64_t client)
+{
+   ALOGE("nxserver: rmlmk now from client %" PRIu64 "", client);
+}
+
 int main(void)
 {
     struct timespec t;
@@ -1455,6 +1460,7 @@ int main(void)
     ALOGI("starting i-nexus.");
     g_app.nxi = new NexusImpl();
     if (g_app.nxi != NULL) {
+       g_app.nxi->rmlmk_callback(&nxserver_rmlmk);
        g_app.nxi->start_middleware();
        pthread_attr_init(&attr);
        g_app.binder.running = 1;

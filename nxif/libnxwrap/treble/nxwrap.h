@@ -81,6 +81,8 @@ public:
    void setPwr(struct pmlib_state_t *s);
    // get power state from middleware.
    void getPwr(struct pmlib_state_t *s);
+   // invoke rmlmk.
+   void rmlmk(uint64_t cid);
 
    static Mutex mLck;
 
