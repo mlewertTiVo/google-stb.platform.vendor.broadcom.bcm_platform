@@ -103,6 +103,7 @@
 #define NSC_FB_NUMBER                  (3)
 #define OOM_SCORE_IGNORE               (-16)
 #define OOM_CONSUME_MAX                (48)
+#define OOM_THRESHOLD_AGRESSIVE        (16)
 
 #define GRAPHICS_RES_WIDTH_DEFAULT     (1920)
 #define GRAPHICS_RES_HEIGHT_DEFAULT    (1080)
@@ -288,29 +289,6 @@ static void nx_wdog_midpoint(void *context, int param)
    }
 }
 
-static void nxserver_rmlmk(uint64_t client)
-{
-   ALOGE("nxserver: rmlmk now from client %" PRIu64 "", client);
-}
-
-static void *binder_task(void *argv)
-{
-    NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
-
-    prctl(PR_SET_NAME, "nxserver.binder");
-
-    do {
-       android::ProcessState::self()->startThreadPool();
-       nx_server->nxb = NxServer::instantiate(&nxserver_rmlmk);
-       PmLibService::instantiate();
-       android::IPCThreadState::self()->joinThreadPool();
-
-    } while(nx_server->binder.running);
-
-done:
-    return NULL;
-}
-
 static void *standby_monitor_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
@@ -383,7 +361,7 @@ done:
 // without v3d mmu do not have this information and will work as before
 // for the moment.
 #define NX_DRM_ROOT "/sys/kernel/debug/dri/0/"
-static void gather_memory_stats_per_process(int *candidate) {
+static void gather_memory_stats_per_process(uint32_t threshold, int *candidate) {
     unsigned i, memory = 0;
     char memstats[128];
     int fd, pip, selected;
@@ -426,7 +404,7 @@ static void gather_memory_stats_per_process(int *candidate) {
                g_app.clients[i].gfxmem,
                g_app.clients[i].score);
 
-            if (g_app.clients[i].gfxmem >= OOM_CONSUME_MAX &&
+            if (g_app.clients[i].gfxmem >= threshold &&
                 g_app.clients[i].score > 0) {
                 if (selected == NX_INVALID) {
                    selected = i;
@@ -454,6 +432,36 @@ out:
 
 }
 
+static void nxserver_rmlmk(uint64_t client)
+{
+   int candidate = NX_INVALID;
+   ALOGI("nxserver_rmlmk(%" PRIu64 "): trim cma now.", client);
+
+   gather_memory_stats_per_process(OOM_THRESHOLD_AGRESSIVE, &candidate);
+   /* aggressive lmk'ing of the background processes. */
+   if (candidate != NX_INVALID) {
+      kill(candidate, SIGKILL);
+   }
+}
+
+static void *binder_task(void *argv)
+{
+    NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
+
+    prctl(PR_SET_NAME, "nxserver.binder");
+
+    do {
+       android::ProcessState::self()->startThreadPool();
+       nx_server->nxb = NxServer::instantiate(&nxserver_rmlmk);
+       PmLibService::instantiate();
+       android::IPCThreadState::self()->joinThreadPool();
+
+    } while(nx_server->binder.running);
+
+done:
+    return NULL;
+}
+
 static void *proactive_runner_task(void *argv)
 {
     NX_SERVER_T *nx_server = (NX_SERVER_T *)argv;
@@ -464,7 +472,7 @@ static void *proactive_runner_task(void *argv)
     int lmk_tick = 0;
     char value[PROPERTY_VALUE_MAX];
     bool needs_growth;
-    int i, j, candidate;
+    int i, j, candidate = NX_INVALID;
 
     prctl(PR_SET_NAME, "nxserver.proac");
 
@@ -509,7 +517,7 @@ static void *proactive_runner_task(void *argv)
         *
         */
         if (active_lmk) {
-           gather_memory_stats_per_process(&candidate);
+           gather_memory_stats_per_process(OOM_CONSUME_MAX, &candidate);
            // aggressive lmk'ing of the background processes using more than threshold memory.
            // this requires some further tune up.
            if (candidate != NX_INVALID) {
