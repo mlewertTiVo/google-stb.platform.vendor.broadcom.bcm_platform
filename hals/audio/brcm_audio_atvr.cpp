@@ -40,7 +40,7 @@
 #include "brcm_audio.h"
 #include "AudioHardwareInput.h"
 #include "AudioStreamIn.h"
-#include "AudioParameter.h"
+#include <media/AudioParameter.h>
 
 #undef LOG_TAG
 #define LOG_TAG "BrcmAudioAtvr"
