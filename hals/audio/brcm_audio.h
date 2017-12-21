@@ -100,7 +100,7 @@ extern "C" {
 #endif
 
 #define DUMMY_AUDIO_OUT 0
-#define DUMMY_AUDIO_IN  1
+#define DUMMY_AUDIO_IN  0
 
 #define BRCM_PROPERTY_AUDIO_OUTPUT_HW_SYNC_FAKE ("media.brcm.hw_sync.fake")
 #define DUMMY_HW_SYNC   0xCAFEBABE
@@ -131,6 +131,7 @@ typedef enum {
 typedef enum {
     BRCM_DEVICE_IN_BUILTIN = 0,
     BRCM_DEVICE_IN_USB,
+    BRCM_DEVICE_IN_ATVR,
     BRCM_DEVICE_IN_MAX
 } brcm_devices_in_t;
 
@@ -141,6 +142,11 @@ typedef enum {
 } brcm_nexus_state_t;
 
 struct StandbyMonitorThread;
+
+namespace android {
+    class AudioStreamIn;
+    class AudioHardwareInput;
+};
 
 struct brcm_device {
     struct audio_hw_device adev;
@@ -154,6 +160,7 @@ struct brcm_device {
     struct brcm_stream_in *bins[BRCM_DEVICE_IN_MAX];
     struct StandbyMonitorThread *standbyThread;
     NEXUS_MemoryBlockHandle stc_channel_mem_hdl;
+    android::AudioHardwareInput *input; // ATVR specific
 };
 
 struct brcm_stream_out_ops {
@@ -312,6 +319,10 @@ struct brcm_stream_in {
             int fd;
         } dummy;
 #endif
+        /* ATV remote specific */
+        struct {
+            android::AudioStreamIn *impl;
+        } atvr;
     };
 
     struct brcm_device *bdev;
@@ -332,6 +343,7 @@ extern struct brcm_stream_out_ops dummy_bout_ops;
 #endif
 
 extern struct brcm_stream_in_ops builtin_bin_ops;
+extern struct brcm_stream_in_ops atvr_bin_ops;
 
 #if DUMMY_AUDIO_IN
 extern struct brcm_stream_in_ops dummy_bin_ops;
