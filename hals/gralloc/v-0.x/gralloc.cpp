@@ -753,12 +753,11 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       fmt_set |= GR_NONE;
    } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
               && !(usage & GRALLOC_USAGE_PRIVATE_0)) {
-      fmt_set |= GR_YV12;
+      fmt_set |= (GR_YV12|GR_YV12_SW);
    } else if (((format == HAL_PIXEL_FORMAT_YV12) || (format == HAL_PIXEL_FORMAT_YCbCr_420_888))
               && (usage & GRALLOC_USAGE_PRIVATE_0)) {
-      if ((usage & GRALLOC_USAGE_SW_READ_OFTEN)) {
-         // private multimedia buffer, we only need a yv12 plane in case cpu is intending to read
-         // the content, eg decode->encode type of scenario yv12 data is produced during lock.
+      if (usage & GRALLOC_USAGE_SW_READ_OFTEN) {
+         // cpu will read content, need backing buffer; yv12 plane produced during lock.
          fmt_set |= (GR_YV12|GR_YV12_SW);
       } else if (usage & GRALLOC_USAGE_HW_TEXTURE) {
          fmt_set |= GR_YV12;
@@ -845,7 +844,8 @@ gralloc_alloc_buffer(alloc_device_t* dev,
       if (((hnd->fmt_set & GR_YV12) == GR_YV12) &&
           ((hnd->fmt_set & GR_HWTEX) == GR_HWTEX) &&
           !(hnd->fmt_set & GR_YV12_SW)) {
-         ALOGI("%s: dropping data plane in favor of hw-texture (%d,%d), size %d", __FUNCTION__, w, h, size);
+         ALOGI("%s: dropping data plane in favor of hw-texture (%dx%d:%x), size %d", __FUNCTION__,
+            w, h, hnd->fmt_set, size);
          if (!(w <= DATA_PLANE_MAX_WIDTH && h <= DATA_PLANE_MAX_HEIGHT)) {
             pSharedData->container.size = 0;
             pSharedData->container.allocSize = 0;
