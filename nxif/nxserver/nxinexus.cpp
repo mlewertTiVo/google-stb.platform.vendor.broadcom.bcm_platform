@@ -49,17 +49,165 @@
 #include "namevalue.h"
 #include "namevalue.inc"
 
-#define NX_HD_OUT_FMT             "nx.vidout.force"
-#define NX_HD_OUT_HWC             "dyn.nx.vidout.hwc"
-#define NX_HD_OUT_OBR             "ro.nx.vidout.obr"
-#define NX_HDCP_TOGGLE            "nx.hdcp.force"
-#define NX_HD_OUT_COLOR_DEPTH_10B "ro.nx.colordepth10b.force"
+#include <sys/socket.h>
+#include <linux/ethtool.h>
+#include <linux/if.h>
+#include <linux/socket.h>
+#include <utils/PropertyMap.h>
+
+#define NX_HD_OUT_FMT                "nx.vidout.force"
+#define NX_HD_OUT_HWC                "dyn.nx.vidout.hwc"
+#define NX_HD_OUT_OBR                "ro.nx.vidout.obr"
+#define NX_HDCP_TOGGLE               "nx.hdcp.force"
+#define NX_HD_OUT_COLOR_DEPTH_10B    "ro.nx.colordepth10b.force"
+#define PROPERTY_PM_WOL_OPTS         "ro.pm.wol.opts"
+#define DEFAULT_PROPERTY_PM_WOL_OPTS "s"
 
 Return<NexusStatus> NexusImpl::rmlmk(uint64_t cid) {
    Mutex::Autolock _l(mLock);
-   ALOGW("rmlmk:client: %" PRIu64 "", cid);
+   ALOGD("rmlmk:client: %" PRIu64 "", cid);
    if (mRmlmkCb)
       mRmlmkCb(cid);
+   return NexusStatus::SUCCESS;
+}
+
+static status_t parse_wolopts(char *optstr, uint32_t *data)
+{
+    status_t status = NO_ERROR;
+    *data = 0;
+
+    while (*optstr) {
+    switch (*optstr) {
+    case 'p': *data |= WAKE_PHY; break;
+    case 'u': *data |= WAKE_UCAST; break;
+    case 'm': *data |= WAKE_MCAST; break;
+    case 'b': *data |= WAKE_BCAST; break;
+    case 'a': *data |= WAKE_ARP; break;
+    case 'g': *data |= WAKE_MAGIC; break;
+    case 's': *data |= WAKE_MAGICSECURE; break;
+    case 'd': *data = 0; break;
+    default: status = BAD_VALUE; break;
+    }
+    optstr++;
+    }
+    return status;
+}
+
+#define SOPASS_KEY_FILE_PATH "/data/misc/nexus/sopass.key"
+static String8 get_sopass_file_path()
+{
+    String8 path;
+    path.setTo(SOPASS_KEY_FILE_PATH);
+
+    if (!access(path.string(), R_OK))
+        return path;
+    else
+        return String8();
+}
+
+static status_t parse_sopass(String8& src, uint8_t *dest)
+{
+    status_t status = NO_ERROR;
+    int count;
+    unsigned int buf[ETH_ALEN];
+
+    count = sscanf(src.string(), "%2x:%2x:%2x:%2x:%2x:%2x",
+        &buf[0], &buf[1], &buf[2], &buf[3], &buf[4], &buf[5]);
+
+    if (count != ETH_ALEN) {
+        status = BAD_VALUE;
+    }
+    else {
+        for (int i = 0; i < count; i++) {
+            dest[i] = buf[i];
+        }
+    }
+    return status;
+}
+
+Return<NexusStatus> NexusImpl::setWoL(const hidl_string& ifc) {
+   Mutex::Autolock _l(mLock);
+   int status;
+   struct ifreq ifr;
+   int fd = socket(AF_INET, SOCK_DGRAM, 0);
+   if (fd < 0) {
+      return NexusStatus::UNKNOWN;
+   }
+   memset(&ifr, 0, sizeof(ifr));
+   strcpy(ifr.ifr_name, ifc.c_str());
+   status = ioctl(fd, SIOCGIFFLAGS, &ifr);
+   if (status < 0) {
+      close(fd);
+      return NexusStatus::UNKNOWN;
+   } else if (!(ifr.ifr_flags & IFF_UP)) {
+      close(fd);
+      return NexusStatus::UNKNOWN;
+   } else {
+      struct ethtool_rxnfc rxnfc;
+      memset(&rxnfc, 0, sizeof(rxnfc));
+      rxnfc.cmd = ETHTOOL_SRXCLSRLINS;
+      rxnfc.fs.flow_type = IPV4_USER_FLOW;
+      rxnfc.fs.h_u.usr_ip4_spec.ip_ver = ETH_RX_NFC_IP4;
+      rxnfc.fs.h_u.usr_ip4_spec.ip4dst = ntohl(0xE00000FB); /* 224.0.0.251 */
+      rxnfc.fs.m_u.usr_ip4_spec.ip4dst = ~0;
+      ifr.ifr_data = (void *)&rxnfc;
+      status = ioctl(fd, SIOCETHTOOL, &ifr);
+      if (status != NO_ERROR) {
+         close(fd);
+         return NexusStatus::UNKNOWN;
+      }
+   }
+   // success, now setup options if any.
+   {
+      struct ethtool_wolinfo wolinfo;
+      char wol_opts[PROPERTY_VALUE_MAX];
+      memset(&wolinfo, 0, sizeof(wolinfo));
+      int len = property_get(PROPERTY_PM_WOL_OPTS, wol_opts, DEFAULT_PROPERTY_PM_WOL_OPTS);
+      if (len) {
+         uint32_t data;
+         int i;
+         status = parse_wolopts(wol_opts, &data);
+         if (status == NO_ERROR) {
+            wolinfo.wolopts = data;
+            if (data & WAKE_MAGICSECURE) {
+               uint8_t sopass[SOPASS_MAX];
+               String8 path;
+               String8 value;
+               PropertyMap* config;
+               path = get_sopass_file_path();
+               if (path.isEmpty()) {
+                  goto exit;
+               }
+               status = PropertyMap::load(path, &config);
+               if (status == NO_ERROR) {
+                  size_t numEntries = config->getProperties().size();
+                  if (numEntries != 1) {
+                     goto exit;
+                  }
+                  if (config->tryGetProperty(String8("SOPASS"), value)) {
+                     status = parse_sopass(value, sopass);
+                     if (status == NO_ERROR) {
+                        for (i = 0; i < SOPASS_MAX; i++) {
+                           wolinfo.sopass[i] = sopass[i];
+                        }
+                     }
+                  } else {
+                     goto exit;
+                  }
+               }
+            }
+         }
+         if (status == NO_ERROR) {
+            wolinfo.cmd = ETHTOOL_SWOL;
+            ifr.ifr_data = (void *)&wolinfo;
+            status = ioctl(fd, SIOCETHTOOL, &ifr);
+         }
+      }
+   }
+
+exit:
+   close(fd);
+   ALOGI("setWoL(%s) - SUCCESS", ifc.c_str());
    return NexusStatus::SUCCESS;
 }
 
