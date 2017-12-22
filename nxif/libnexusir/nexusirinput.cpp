@@ -52,7 +52,7 @@
 #define PROPERTY_IR_INITIAL_TIMEOUT "ro.ir_remote.initial_timeout"
 #define PROPERTY_IR_TIMEOUT "ro.ir_remote.timeout"
 
-#define PROPERTY_BOOT_REASON "ro.boot.bootreason"
+#define PROPERTY_BOOT_REASON "ro.nx.bootreason"
 #define BOOT_FROM_DEEP_SLEEP "s3_wakeup"
 
 #define PROPERTY_NX_BOOT_KEY_TWO "dyn.nx.boot.key2"
