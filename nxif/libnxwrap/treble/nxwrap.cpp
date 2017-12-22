@@ -277,6 +277,15 @@ void NxWrap::rmlmk(uint64_t client) {
    }
 }
 
+int NxWrap::setWoL(const char *ifc) {
+   hidl_string hifc(ifc);
+   if (nxi() != NULL) {
+      NexusStatus status = nxi()->setWoL(hifc);
+      return status == NexusStatus::SUCCESS ? 0 : -EAGAIN;
+   }
+   return -EAGAIN;
+}
+
 // helper functions for easy hook up.  creates the middleware client and returns a
 // reference to it, no standby activation in place since simple client.
 //

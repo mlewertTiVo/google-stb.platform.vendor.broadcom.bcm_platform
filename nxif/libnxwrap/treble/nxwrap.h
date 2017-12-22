@@ -83,6 +83,8 @@ public:
    void getPwr(struct pmlib_state_t *s);
    // invoke rmlmk.
    void rmlmk(uint64_t cid);
+   // setup wake-on-lan
+   int setWoL(const char *ifc);
 
    static Mutex mLck;
 

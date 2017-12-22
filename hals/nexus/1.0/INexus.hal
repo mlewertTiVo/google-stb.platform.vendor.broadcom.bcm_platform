@@ -39,6 +39,12 @@ interface INexus {
      *
      */
     rmlmk(uint64_t cId) generates (NexusStatus s);
+
+    /**
+     * issue wake on lan configuration for named interface.
+     *
+     */
+    setWoL(string ifc) generates (NexusStatus s);
 };
 
 

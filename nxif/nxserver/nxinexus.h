@@ -79,6 +79,7 @@ public:
    Return<NexusStatus> setPwr(const NexusPowerState& p);
    Return<void> getPwr(getPwr_cb _hidl_cb);
    Return<NexusStatus> rmlmk(uint64_t cId);
+   Return<NexusStatus> setWoL(const hidl_string& ifc);
 
    void start_middleware();
    void stop_middleware();
