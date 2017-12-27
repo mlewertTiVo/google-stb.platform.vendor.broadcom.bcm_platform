@@ -783,6 +783,13 @@ gralloc_alloc_buffer(alloc_device_t* dev,
             } else {
                ashmem_alloc.size = pSharedData->container.allocSize;
             }
+         } else if ((usage & GRALLOC_USAGE_SW_READ_OFTEN) &&
+                    (usage & GRALLOC_USAGE_SW_WRITE_OFTEN)) {
+            // note that we do not allow pure sw planes larger than max data planes because
+            // we still want to prevent performance bottleneck on composition hw.
+            if (!skip_alloc) {
+               ashmem_alloc.size = pSharedData->container.allocSize;
+            }
          }
       } else {
          if (!((fmt_set & GR_BLOB) || (fmt_set & GR_FP))) {
