@@ -85,6 +85,8 @@ public:
     virtual void getOverscanAdjust(const sp<IHwcListener>& listener,
                              struct hwc_position &position);
 
+    virtual void evalPlm(const sp<IHwcListener>& listener);
+
     virtual status_t onTransact(uint32_t code,
                                 const Parcel& data,
                                 Parcel* reply,

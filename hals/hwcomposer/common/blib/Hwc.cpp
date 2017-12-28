@@ -527,6 +527,25 @@ void Hwc::binderDied(const wp<IBinder>& who) {
     }
 }
 
+void Hwc::evalPlm(const sp<IHwcListener>& listener)
+{
+    (void)listener;
+
+    Mutex::Autolock _l(mLock);
+
+    size_t N = mNotificationListeners.size();
+    for (size_t i = 0; i < N; i++) {
+        const hwc_listener_t& client = mNotificationListeners[i];
+        if (client.kind == HWC_BINDER_HWC) {
+           sp<IBinder> binder = client.binder;
+           sp<IHwcListener> client = interface_cast<IHwcListener> (binder);
+           struct hwc_notification_info ntfy;
+           memset(&ntfy, 0, sizeof(struct hwc_notification_info));
+           client->notify(HWC_BINDER_NTFY_EVALPLM, ntfy);
+        }
+    }
+}
+
 status_t Hwc::onTransact( uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags)
 {
     return BnHwc::onTransact(code, data, reply, flags);

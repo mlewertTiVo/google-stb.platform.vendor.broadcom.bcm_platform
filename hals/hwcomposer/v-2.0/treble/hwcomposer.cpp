@@ -2150,7 +2150,6 @@ static size_t hwc2_dump_gen(
 
    hwc2->sgl = hwc2_enabled(hwc2_tweak_scale_gles);
    hwc2_eval_log(hwc2);
-   hwc2_eval_plm(hwc2);
    if (hwc2->ext != NULL) {
       hwc2->ext->dmp =
          (enum hwc2_record_dump_e)hwc2_setting(hwc2_tweak_dump_enabled);
@@ -6515,6 +6514,9 @@ static void hwc2_hb_ntfy(
    break;
    case HWC_BINDER_NTFY_OVERSCAN:
       hwc2_op(hwc2->ext, &ntfy);
+   break;
+   case HWC_BINDER_NTFY_EVALPLM:
+      hwc2_eval_plm(hwc2);
    break;
    case HWC_BINDER_NTFY_SIDEBAND_SURFACE_ACQUIRED:
    default:

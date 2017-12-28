@@ -59,12 +59,99 @@
 #include <sys/resource.h>
 #include <cutils/sched_policy.h>
 
+#include <binder/IInterface.h>
+#include <binder/Parcel.h>
+#include <binder/IServiceManager.h>
+#include <binder/IPCThreadState.h>
+#include <binder/ProcessState.h>
+#include "HwcCommon.h"
+#include "Hwc.h"
+#include "HwcListener.h"
+#include "IHwc.h"
+#include "HwcSvc.h"
+
 #define PLM_TOG_MODE "dyn.nx.hwc2.tweak.plmoff"
 #define PLM_TOG_DO   "dyn.nx.tog.plm"
+
+using namespace android;
+typedef void (* HWC_APP_BINDER_NTFY_CB)(int, int, struct hwc_notification_info &);
+
+class HwcAppBinder : public HwcListener
+{
+public:
+
+    HwcAppBinder() : cb(NULL), cb_data(0) {};
+    virtual ~HwcAppBinder() {};
+
+    virtual void notify(int msg, struct hwc_notification_info &ntfy);
+
+    inline void listen() {
+        if (get_hwc(false) != NULL)
+            get_hwc(false)->registerListener(this, HWC_BINDER_COM);
+        else
+            ALOGE("%s: failed to associate %p with HwcAppBinder service.", __FUNCTION__, this);
+    };
+
+    inline void hangup() {
+        if (get_hwc(false) != NULL)
+            get_hwc(false)->unregisterListener(this);
+        else
+            ALOGE("%s: failed to dissociate %p from HwcAppBinder service.", __FUNCTION__, this);
+    };
+
+    inline void evalplm(void) {
+        if (get_hwc(false) != NULL) {
+            get_hwc(false)->evalPlm(this);
+        }
+    };
+
+private:
+    HWC_APP_BINDER_NTFY_CB cb;
+    int cb_data;
+};
+
+class HwcAppBinder_wrap
+{
+private:
+
+    sp<HwcAppBinder> ihwc;
+
+public:
+    HwcAppBinder_wrap(void) {
+        ALOGV("%s: allocated %p", __FUNCTION__, this);
+        ihwc = new HwcAppBinder;
+        ihwc.get()->listen();
+    };
+
+    virtual ~HwcAppBinder_wrap(void) {
+        ALOGV("%s: cleared %p", __FUNCTION__, this);
+        ihwc.get()->hangup();
+        ihwc.clear();
+    };
+
+    void evalplm(void) {
+        ihwc.get()->evalplm();
+    }
+
+    HwcAppBinder *get(void) {
+        return ihwc.get();
+    }
+};
+
+void HwcAppBinder::notify(int msg, struct hwc_notification_info &ntfy)
+{
+    ALOGV( "%s: notify received: msg=%u", __FUNCTION__, msg);
+
+    if (cb)
+        cb(cb_data, msg, ntfy);
+}
+
+HwcAppBinder_wrap *m_appHwcBinder;
 
 int main(int argc, char* argv[])
 {
    bool plm;
+
    (void)argc;
    (void)argv;
 
@@ -76,6 +163,15 @@ int main(int argc, char* argv[])
    }
 
    property_set(PLM_TOG_DO, "done");
-   system("dumpsys SurfaceFlinger");
+
+   m_appHwcBinder = new HwcAppBinder_wrap;
+   if ( NULL == m_appHwcBinder ) {
+      ALOGE("Unable to connect to HwcBinder");
+   } else {
+      m_appHwcBinder->evalplm();
+      sleep(5);
+      delete m_appHwcBinder;
+   }
+
    return 0;
 }
