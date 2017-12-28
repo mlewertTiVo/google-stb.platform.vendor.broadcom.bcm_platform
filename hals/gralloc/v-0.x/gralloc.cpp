@@ -170,14 +170,24 @@ void gralloc_explicit_load(void)
    }
 }
 
+pthread_mutex_t *gralloc_g2d_lock(void)
+{
+   return &moduleLock;
+}
+
 void gralloc_g2d_hdl_end(void)
 {
-   if (hGraphics == NULL) {
+   pthread_mutex_t *pMutex = gralloc_g2d_lock();
+   if (pMutex == NULL) {
       return;
-   } else {
+   }
+
+   if (hGraphics != NULL) {
       NEXUS_Graphics2D_Close(hGraphics);
       hGraphics = NULL;
    }
+
+   pthread_mutex_unlock(pMutex);
 }
 
 void gralloc_explicit_unload(void)
@@ -224,15 +234,17 @@ void * gralloc_v3d_get_nexus_client_context(void)
    return nexus_client;
 }
 
-pthread_mutex_t *gralloc_g2d_lock(void)
-{
-   return &moduleLock;
-}
-
 NEXUS_Graphics2DHandle gralloc_g2d_hdl(void)
 {
    NEXUS_Error rc;
    NEXUS_Graphics2DOpenSettings g2dOpenSettings;
+
+   pthread_mutex_t *pMutex = gralloc_g2d_lock();
+   if (pMutex == NULL) {
+      hGraphics = NULL;
+      return NULL;
+   }
+   pthread_mutex_lock(pMutex);
 
    if (hCheckpointEvent == NULL) {
       hGraphics = NULL;
@@ -269,7 +281,6 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
 {
     NEXUS_Graphics2DHandle gfx = gralloc_g2d_hdl();
     BKNI_EventHandle event = gralloc_g2d_evt();
-    pthread_mutex_t *pMutex = gralloc_g2d_lock();
     bool done=false;
     NEXUS_Addr physAddr;
     void *pMemory = NULL;
@@ -289,12 +300,11 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
        goto out;
     }
 
-    if (gfx && event && pMutex) {
+    if (gfx && event) {
         NEXUS_Error errCode;
         size_t pktSize;
         void *pktBuffer, *next;
 
-        pthread_mutex_lock(pMutex);
         switch (pSharedData->container.format) {
         case HAL_PIXEL_FORMAT_YV12:
         case HAL_PIXEL_FORMAT_YCbCr_420_888:
@@ -350,7 +360,6 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
            }
            break;
         }
-        pthread_mutex_unlock(pMutex);
         if (!errCode) {
            done = true;
         }
@@ -360,7 +369,6 @@ static void gralloc_bzero(PSHARED_DATA pSharedData)
        bzero(pMemory, pSharedData->container.size);
     }
 
-out_release:
     if (block_handle) {
        if (!lrco) NEXUS_MemoryBlock_UnlockOffset(block_handle);
        if (!lrc)  NEXUS_MemoryBlock_Unlock(block_handle);
