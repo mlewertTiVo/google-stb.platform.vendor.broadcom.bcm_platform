@@ -15,6 +15,8 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
+ifeq ($(HW_GPU_VULKAN_SUPPORT),y)
+
 LOCAL_SHARED_LIBRARIES := libcutils liblog libutils libnexus
 LOCAL_SHARED_LIBRARIES += libnxclient libnxwrap
 ifeq ($(LOCAL_DEVICE_FULL_TREBLE),y)
@@ -46,3 +48,6 @@ LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_MODULE_RELATIVE_PATH := hw
 include $(BUILD_SHARED_LIBRARY)
+
+endif
+
